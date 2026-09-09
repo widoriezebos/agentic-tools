@@ -1,20 +1,12 @@
 # Backlog rank application record — 8 September 2026
 
-**Publication update, 9 September:** all 185 items below carry ranks in the pulled ledger at `7735afec1723373a38d62939cf82269a8bb5a3e7`; later human reordering is also recorded. This table preserves the order prepared on 8 September. The agent's original attempt was refused with `TERMINAL_NOT_REACHED`; subsequent human ranking commands are recorded in the ledger. Do not rerun this historical batch over newer ranking decisions.
+**Publication update, 9 September:** all 185 items below carry ranks in the pulled ledger at `7735afec1723373a38d62939cf82269a8bb5a3e7`; later human reordering is also recorded. This table preserves the order prepared on 8 September. The agent's original attempt was refused with `TERMINAL_NOT_REACHED`; subsequent human ranking commands are recorded in the ledger. The live ledger is authoritative for current ranks.
 
 Source: shared ledger `17a10df4b3816aebdfe838f00a72646448420c39`. There are 185 live records: 31 at priority 1, 33 at priority 2 and 121 at priority 3. Priority is independent of approval; queued and parked work retains its execution restrictions.
 
 The previous four-priority report is preserved. This mapping removes the now-concluded stop/start goal and closes its numbering gap, leaves priority 2 unchanged, and appends the former priority 4 after priority 3. The four goals created since the report are appended in creation order after that preserved sequence. Every retained report item keeps its relative position.
 
-The [TSV mapping](backlog-ranks-ready-2026-09-08.tsv) includes the old report numbers for comparison. The [terminal batch](apply-backlog-ranks-2026-09-08.sh) calls only the shipped `goal set-priority` verb to change ranks. It does not enroll a terminal, approve, claim, unpark or launch work. It stops on any refusal; completed goals are skipped and the remaining positions compacted. Running it again resumes the same desired order.
-
-Historical command prepared for the enrolled human terminal (retained for provenance, not a current instruction):
-
-```sh
-bash /Users/wido/LocalStorage/GitHub/agentic-tools/development/apply-backlog-ranks-2026-09-08.sh
-```
-
-The batch is a machine-specific historical artifact with absolute paths to the privately compiled, unchanged shipped engine because this checkout's usual executable predates the ranking command. It leaves that usual executable and running services untouched. The batch retains command results and final readback under its printed evidence directory. Its final success line appears only after the ranks have been read back and checked.
+The [TSV mapping](backlog-ranks-ready-2026-09-08.tsv) includes the old report numbers for comparison. The temporary, machine-specific application script has been removed. The reports, sequence tables and receipts retain the useful planning and audit history. Future ranking changes belong to the normal `goal set-priority` command and should start from the live ledger.
 
 At the preparation snapshot, the implementation ordered the listing. Ranked next-item selection and channel reporting were the unfinished second slice; applying these values alone does not finish autonomous scheduling.
 

@@ -2413,3 +2413,5 @@ Review linkage: goal plans/goals/account-provenance.md (opid=XN7ZQ13TV2FCF2P6AW9
 Limitation — Register citation resolution: The accepted-risk register reader validates that each specimen fact has non-empty durable-reference citations of allowed kinds, but it does not dereference commit, goal, ruling, job, or record targets during intake. Enrichment: Add cross-record citation resolution that checks each target before an entry can count.
 2026-09-09T06:13:37Z HIGHLIGHT — A landing moved the repository storyline to commit 7735afec1723. (source: commit 7735afec1723373a38d62939cf82269a8bb5a3e7)
 2026-09-09T06:13:37Z LOWLIGHT — The steward escalated: the goal ledger or journal cannot be read; refusing to guess. (source: episode escalation-degraded-7735afec1723373a38d62939cf82269a8bb5a3e7)
+2026-09-09T06:23:39Z HIGHLIGHT — A landing moved the repository storyline to commit 6a3ef3d1c52f. (source: commit 6a3ef3d1c52f536a1a15d05e1b163ca78e872983)
+2026-09-09T06:23:39Z LOWLIGHT — The steward escalated: the goal ledger or journal cannot be read; refusing to guess. (source: episode escalation-degraded-6a3ef3d1c52f536a1a15d05e1b163ca78e872983)
