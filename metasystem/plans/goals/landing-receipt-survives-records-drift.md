@@ -1,6 +1,6 @@
 # landing-receipt-survives-records-drift
 
-- State: queued
+- State: approved
 - Priority: 1
 - Sequence: 3
 - Risk: severity=2 novelty=1 exposure=3 accumulation=2 basis="severity 2: it refuses proven landings and discards batteries, but loses no work and every recovery is mechanical; novelty 1: the exclusion mechanism already exists as gittree.FilterTree and this applies it to the receipt's posture reads; exposure 3: every landing on every machine reads that posture twice; accumulation 2: it cost seven refusals and one twenty-minute battery in a single evening, and every future landing pays the same manual recovery"
@@ -9,11 +9,13 @@
 - Origin: main
 - Next step: Start from internal/landing/receipt.go receiptPosture, which reads workspace.StagedTree and workspace.Snapshot(HEAD), and from internal/gittree/gittree.go Snapshot, whose git add -A over the workspace is what pulls the bookkeeping logs in. gittree.FilterTree already removes named paths from a tree for the mission wall and its comment records why. Decide where the excluded set is declared so it is one list rather than a second policy, then apply it to both posture reads and to the receipt's stored binding. The proving fixture appends a line to records/narrator-digest.log between the battery finishing and the landing committing, and the landing must still pass.
 - OpenedAt: 2026-09-09T07:04:37Z
-- Revision: 2
+- Revision: 3
 - Budget: elapsedLimit=1d attemptLimit=10 reservedJobMinutesLimit=1200 activeJobLimit=1 reviewRoundLimit=3
 - BudgetExceptions: 0
+- Approved: by=human:Wido at=2026-09-09T08:00:19Z revision=3 opid=QEP3894W4SK63E6SB4EAXN3908-m1b-c6925449 authority=proven digest=4a834db3b63326aca22f31df86163f3fa2b4efd09fa1eb44460eebf2aa04abde
 
 History:
 - 2026-09-09T07:04:37Z JB3MDBKSRAXWJ33SFQGCW5V96K-m1b-c6925449 open actor=m1b+main-1788680071-18713-e76d5d targets=landing-receipt-survives-records-drift
 - 2026-09-09T07:32:44Z MXJ2MBB9CW7M5FQMAK5B22KTC7-m1b-c6925449 set-priority actor=human:Wido targets=actionable-metrics,breach-clock-and-budget-honesty,breach-stop-wedges-seat,burn-without-delivery-tripwire,delegate-job-liveness,dispatch-cap-necessity,failed-job-attention,fixture-stewards-outlive-their-suite,governed-exhaustion-reprojection,human-goal-verbs-forgiving,job-record-birth-token,landing-receipt-survives-records-drift,lease-sweep-death-evidence,live-job-on-a-done-goal-unnoticed,machine-concurrency-governor,proof-harness-process-custody,review-round-limit-counts-per-chain,severity-tiered-rigor,severity-tiered-rigor-p2,small-change-lane,steward-catchup-livelock,steward-revives-a-done-goal,stop-batch-strands-a-resumable-goal,suite-custody,token-spend-fence,turn-verdict-hardening,watch-verb,watcher-repair-request-never-names-current,winddown-census-handoff-leak reason=priority-order subject=landing-receipt-survives-records-drift from=unranked to=1:3 requested-sequence=3
-Integrity: sha256=ca29c1811c6559396529462d3f0c541d4e1101dfc3d34e17844e3452555c1b20
+- 2026-09-09T08:00:19Z QEP3894W4SK63E6SB4EAXN3908-m1b-c6925449 approve actor=human:Wido targets=landing-receipt-survives-records-drift
+Integrity: sha256=52f49d759f318191ece535a314c45f7594b720de880fc51f952aff9297f065f2
