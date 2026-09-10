@@ -5,9 +5,9 @@
 - Sequence: 13
 - Intent: The governed exhaustion check decides on a reserved figure frozen at admission (internal/dispatch/governed.go:149 ReservedBefore; internal/run/conclude.go:316-318 ReservedBefore + observedMinutes >= limit) and never re-projects at conclusion, so open caps that have since settled still count and a failing attempt can be marked exhausted, raise retroactive debt and block later governed work on spend that no longer exists. DONE means exhaustion at conclusion is decided on a fresh projection taken at that instant, excluding the concluding run from both the run records and the durable attempts, retry-safe after a partial commit, with every production store that concludes a governed run carrying the projection seam
 - Origin: main
-- Next step: UNPARKED AND CLAIMED by m1b 2026-09-10 20:00Z now that dispatch-cap-necessity is on main (a633b7a0). Build dispatched to Sol as gerp-build1 from section 4.3 of plans/dispatch-cap-settlement-design.md plus the nine constraints of the pre-build read (proof-reservation term in the snapshot, the fourth store site in stoptransition, caller-owned retry convergence, uniqueness before exclusion, the observation excluding the concluding run, an overflow-safe comparison, Store.Now as the clock, the binding-failure diagnostic string). Then closing read (Opus), receipt and landing in the fleet hold behind members 1 and 3.
+- Next step: BUILD: round 1 stopped before writing on constraint C8 (the revision-mismatch diagnostic named an error text that does not exist in that case); decided in the follow-up: reuse the observation's own mismatch sentence from governed.go verbatim. Round 2 dispatched (gerp-build1-r2, Sol). Then closing read (Opus), receipt and landing in the fleet hold behind members 1 and 3 of the bootstrap umbrella.
 - OpenedAt: 2026-09-02T18:37:29Z
-- Revision: 29
+- Revision: 30
 - Budget: elapsedLimit=4h attemptLimit=10 reservedJobMinutesLimit=240 activeJobLimit=1 reviewRoundLimit=3
 - BudgetExceptions: 0
 - Approved: by=human:Wido at=2026-09-06T06:53:37Z revision=3 opid=A35EHY2TGAWCCFA1Q1J0WZGS35-m1-a4f8999f authority=proven digest=2163cb860d8d3cead232af07a67468d33497865331ba06537617e18ab2ba2eca
@@ -45,4 +45,5 @@ History:
 - 2026-09-10T14:03:47Z 92ZXY79EE7G3BDPYRYSX38VZ2S-m1b-c6925449 unpark actor=human:Wido targets=governed-exhaustion-reprojection
 - 2026-09-10T14:03:57Z FZPF27GW7BVTAGZZ5YVRBEFM2C-m1b-c6925449 claim actor=m1b+main-1788680071-18713-e76d5d targets=governed-exhaustion-reprojection
 - 2026-09-10T14:04:12Z D9JNQZB2PN9J1EYEN2TSS2J2NM-m1b-c6925449 edit actor=m1b+main-1788680071-18713-e76d5d targets=governed-exhaustion-reprojection
-Integrity: sha256=e80d75c157a9df722c7ca144d9f4270ca3251a83ea1b3847019973280c246b02
+- 2026-09-10T14:14:01Z M9BZ4DM0FZTWQN30WF286WV5XA-m1b-c6925449 edit actor=m1b+main-1788680071-18713-e76d5d targets=governed-exhaustion-reprojection
+Integrity: sha256=0738c0ec167faa4b4cdd7009bbb0e6da8e9b02f2756591788a10abe8b77cfd44
