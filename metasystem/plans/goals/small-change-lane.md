@@ -1,17 +1,18 @@
 # small-change-lane
 
-- State: approved
+- State: parked
 - Priority: 1
 - Sequence: 18
 - Intent: The 'change this little thing' case has a supported path: a dispatch lane cheap and fast enough that a certified one-line fix is not ceremony
 - Origin: main
 - Next step: DESIGN REVISION 1 RETURNED (scl-design1, Fable, 597 lines; page saved in m1b's scratchpad, scl-design1.patch; unlandable until records can land). WIDO'S DECISIONS 2026-09-10 on its three open points: (1) proof depth follows the four risk answers, never the diff's size (kept the contract's rule; locality is goal blast-radius-beside-risk, later); (2) critique follows the TIER, not the class (goal critique-always re-scoped): the small lane's 'one bounded critique' becomes 'a critique when the tier is 2 or 3, none at tier 1', and the tier-1 direct-fix class is NOT retired: it is the low-risk lane, R-54-m1 stands; (3) the bounds are four files and eighty changed lines, measured on the computed diff at conformance review, a change over the bound moves to the ordinary ladder rather than failing, revisited after ten lane landings. Revision 2 folds these three into the page (sections 2, 3, 7 and the revision record) before read 1. Parked until the bootstrap members land.
 - OpenedAt: 2026-08-20T00:14:00Z
-- Revision: 27
+- Revision: 28
 - Budget: elapsedLimit=1d attemptLimit=6 reservedJobMinutesLimit=240 activeJobLimit=1 reviewRoundLimit=3
 - BudgetExceptions: 0
 - Approved: by=human:Wido at=2026-09-06T06:53:37Z revision=5 opid=A35EHY2TGAWCCFA1Q1J0WZGS35-m1-a4f8999f authority=proven digest=ce78111a14c81468a494d5bb4235f81b054a41696cc40003f8b906dee0e8aa27
 - Sliced: machine=m1b lineage=main-1788680071-18713-e76d5d revision=16 at=2026-09-10T07:25:39Z
+- Parked: by=m1b+main-1788680071-18713-e76d5d at=2026-09-10T08:12:45Z because=Parked 2026-09-10 11:45Z after recording Wido's three decisions; resume with design revision 2 folding them, then read 1 (Sol), once records can land.
 
 History:
 - 2026-08-22T06:30:55Z BXWE9NXAWCGCTR3MFCE8GDC4P5-widos-m5-pro-bf243850 migrate actor=human:wido targets=small-change-lane
@@ -41,4 +42,5 @@ History:
 - 2026-09-10T07:32:18Z 845A6R0XBX8AV4RD2CAVQF7CZ0-m1b-c6925449 park actor=m1b+main-1788680071-18713-e76d5d targets=small-change-lane reason=Parked 2026-09-10 10:25Z on Wido's word to unblock landings first: design revision 1 (scl-design1, Fable) is in flight and returns to the worktree; resume by reading its return, landing the page once records can land, then read 1 (Sol).
 - 2026-09-10T08:12:30Z 5DW1WM67CX83AFPNQRGJ4FRADE-m1b-c6925449 unpark actor=human:Wido targets=small-change-lane
 - 2026-09-10T08:12:41Z 0W11QVMDH1KQM3360519J4B12B-m1b-c6925449 edit actor=m1b+main-1788680071-18713-e76d5d targets=small-change-lane
-Integrity: sha256=ab0930b804b626bacac8acad85c3f59b385655b4695a2d6d7c0271db5aa028e0
+- 2026-09-10T08:12:45Z VG6QEDQJ6FB7WB2QD09Y42C43C-m1b-c6925449 park actor=m1b+main-1788680071-18713-e76d5d targets=small-change-lane reason=Parked 2026-09-10 11:45Z after recording Wido's three decisions; resume with design revision 2 folding them, then read 1 (Sol), once records can land.
+Integrity: sha256=5b2c52727a48b1d96725d77f3c6ad0719fdb68b43821514420dd8c67bda925ee
