@@ -1,6 +1,6 @@
 # landing-receipt-survives-records-drift
 
-- State: approved
+- State: claimed
 - Priority: 1
 - Sequence: 7
 - Risk: severity=2 novelty=1 exposure=3 accumulation=2 basis="severity 2: it refuses proven landings and discards batteries, but loses no work and every recovery is mechanical; novelty 1: the exclusion mechanism already exists as gittree.FilterTree and this applies it to the receipt's posture reads; exposure 3: every landing on every machine reads that posture twice; accumulation 2: it cost seven refusals and one twenty-minute battery in a single evening, and every future landing pays the same manual recovery"
@@ -9,11 +9,13 @@
 - Origin: main
 - Next step: CHAIN lrsrd-build1 FULLY PROVEN, LANDING BLOCKED UPSTREAM. Round 2: closing read lrsrd-crit3 (Opus) zero material; all five Go packages green on its tree. Round 3 (the two-line fixture extraction fix): land-fixtures.sh on its tree exit 0 at 15:10Z, the full-width-chain leg PASSED, which is the first execution of the three new shell canaries: the refusal canary reaching its refusal through the drift verb's tab line, the passing landing with both registers dirty, a sentinel stash entry and a live concurrent receipts-log writer through the real land.sh and the advance verb, and the contended refusal with its register-carriage repair route. Beds on round 2's tree: dispatch-fixtures.sh exit 0; goal-cli-fixtures.sh exit 1 on brain-stop-seeded, and the same bed FAILS the same scenario on untouched main (1c0950a6), so it is pre-existing: commit d533caf1's one-screen renderer, landed without the bed; goal one-screen-renderer-breaks-brain-stop-seeded carries the evidence. Because that bed is in the full battery every receipt-bound landing must pass, this chain cannot land until that conflict is resolved on main; it touches no path this chain certified, so no recertification follows. THE LANDING SEQUENCE once main is green: fresh read of round 3 (the chain-close law binds the final round; attempts 9/10, so Wido's set-budget to 12 attempts and 1440 minutes first, recommended), stage the candidate, receipt battery and crossover landing under METASYSTEM_BIN at a proof build of the candidate, rebuild and re-arm. The read can run before the upstream fix; nothing is dispatched until Wido's word.
 - OpenedAt: 2026-09-09T07:04:37Z
-- Revision: 29
+- Revision: 30
 - Budget: elapsedLimit=1d attemptLimit=10 reservedJobMinutesLimit=1200 activeJobLimit=1 reviewRoundLimit=3
 - BudgetExceptions: 0
 - Approved: by=human:Wido at=2026-09-09T08:00:19Z revision=3 opid=QEP3894W4SK63E6SB4EAXN3908-m1b-c6925449 authority=proven digest=4a834db3b63326aca22f31df86163f3fa2b4efd09fa1eb44460eebf2aa04abde
 - Sliced: machine=m1b lineage=main-1788680071-18713-e76d5d revision=5 at=2026-09-09T11:13:15Z
+- Claimed: machine=m1e lineage=main-1789030447-51011-5722fc at=2026-09-10T09:11:40Z revision=30 accountingRevision=30
+- StopCapability: generation=30 revision=30 machine=m1e claimEpoch=1 fenceEpoch=0
 
 History:
 - 2026-09-09T07:04:37Z JB3MDBKSRAXWJ33SFQGCW5V96K-m1b-c6925449 open actor=m1b+main-1788680071-18713-e76d5d targets=landing-receipt-survives-records-drift
@@ -45,4 +47,5 @@ History:
 - 2026-09-10T07:29:59Z 37GM1PEX7GPQ4XQX3S0EY52HKD-m1b-c6925449 set-priority actor=human:Wido targets=actionable-metrics,breach-clock-and-budget-honesty,breach-stop-wedges-seat,burn-without-delivery-tripwire,delegate-job-liveness,dispatch-cap-necessity,failed-job-attention,fixture-stewards-outlive-their-suite,goal-abandoned-with-a-reason,governed-exhaustion-reprojection,human-carried-landing-verb,human-goal-verbs-forgiving,job-record-birth-token,landing-receipt-survives-records-drift,lease-sweep-death-evidence,live-job-on-a-done-goal-unnoticed,machine-concurrency-governor,proof-harness-process-custody,review-round-limit-counts-per-chain,severity-tiered-rigor,severity-tiered-rigor-p2,small-change-lane,steward-catchup-livelock,steward-revives-a-done-goal,stop-batch-strands-a-resumable-goal,suite-custody,token-spend-fence,turn-verdict-hardening,watch-verb,watcher-repair-request-never-names-current,winddown-census-handoff-leak reason=priority-order subject=human-carried-landing-verb from=1:5 to=1:6 requested-sequence=5
 - 2026-09-10T07:30:08Z WVGXF51GYFDAEHJSQF6JZYHJZ2-m1b-c6925449 set-priority actor=human:Wido targets=actionable-metrics,breach-clock-and-budget-honesty,breach-stop-wedges-seat,burn-without-delivery-tripwire,carried-landing-debt-and-cap,delegate-job-liveness,dispatch-cap-necessity,failed-job-attention,fixture-stewards-outlive-their-suite,goal-abandoned-with-a-reason,governed-exhaustion-reprojection,human-goal-verbs-forgiving,job-record-birth-token,landing-receipt-survives-records-drift,lease-sweep-death-evidence,live-job-on-a-done-goal-unnoticed,machine-concurrency-governor,proof-harness-process-custody,review-round-limit-counts-per-chain,severity-tiered-rigor,severity-tiered-rigor-p2,small-change-lane,steward-catchup-livelock,steward-revives-a-done-goal,stop-batch-strands-a-resumable-goal,suite-custody,token-spend-fence,turn-verdict-hardening,watch-verb,watcher-repair-request-never-names-current,winddown-census-handoff-leak reason=priority-order subject=carried-landing-debt-and-cap from=1:6 to=1:7 requested-sequence=6
 - 2026-09-10T09:10:58Z 54G6AA1V726HVMAS70W0DEMS3X-m1e-892cdaec unpark actor=m1e+main-1789030447-51011-5722fc targets=landing-receipt-survives-records-drift
-Integrity: sha256=0436edffa15d0a363aa9c4f83bf20cadb988471933a010e3c927881afe2fd32f
+- 2026-09-10T09:11:40Z 30ET10TWS0RGT91YVQ0MR0YWSA-m1e-892cdaec claim actor=m1e+main-1789030447-51011-5722fc targets=landing-receipt-survives-records-drift
+Integrity: sha256=ba79e3586c2a64f48406534cf3cc8e6f77bcbc722e75da7de47e95adc917992c
