@@ -1,6 +1,6 @@
 # receipt-beds-run-the-candidate-engine
 
-- State: approved
+- State: parked
 - Priority: 1
 - Sequence: 3
 - Risk: severity=3 novelty=1 exposure=3 accumulation=1 basis="severity 3: the group refuses every engine-changing candidate; novelty 1: the proof engine and the METASYSTEM_BIN convention already exist; exposure 3: every code landing; accumulation 1: nothing built on it yet"
@@ -9,12 +9,13 @@
 - Origin: main
 - Next step: LAND-READY (chain rbce-build1 closed on round 4 after four Opus reads; candidate patch rbce-build1-r4.patch and four registers in m1b's scratchpad; one low debt: restore the exact unknown-stamp assertion in dispatch-fixtures.sh). RECEIPT EVIDENCE on the round-4 tree (proof-mtvg2is2, 63 min): 39 of 41 groups green; the two failures are load artifacts, not defects: goal-full-coverage cut by Go's ten-minute default (goal-suite-sits-on-the-default-test-timeout; another seat is building the timeout fix), and section/suite-progress-fixtures' absolute-cap timing assertion, which passes alone in five seconds on the same tree. Every receipt of this candidate was void before it finished because other seats' ledger publishes move the whole-project index (delivery-candidate-is-the-workspace-not-the-ledger, 1:2) and the enrollment (member 3, building). LANDING: in a quiet hour, run m1b's scratchpad script land-rbce-in-quiet-window.sh in one turn with no other heavy job on the machine; or after the two members land. Then rebuild and re-arm, m1c integrates, member 2 is concluded as satisfied by this design.
 - OpenedAt: 2026-09-10T07:27:25Z
-- Revision: 19
+- Revision: 20
 - Labels: bootstrap
 - Budget: elapsedLimit=1d attemptLimit=20 reservedJobMinutesLimit=1200 activeJobLimit=6 reviewRoundLimit=3
 - BudgetExceptions: 3
 - Approved: by=human:Wido at=2026-09-10T11:26:23Z revision=14 opid=KAS8DVPHVX6EQY2XPR8E82BKPE-m1b-c6925449 authority=proven digest=057aa8b8c15c9fb749b6f3ab97743dc40316ccd5ba5da3bd6bb9ae525a8ce5c4
 - Sliced: machine=m1b lineage=main-1788680071-18713-e76d5d revision=4 at=2026-09-10T07:32:46Z
+- Parked: by=m1b+main-1788680071-18713-e76d5d at=2026-09-10T12:34:44Z because=Parked 2026-09-10 17:40Z LAND-READY; resume in a quiet hour with land-rbce-in-quiet-window.sh, or when delivery-candidate-is-the-workspace-not-the-ledger and enrollment-binds-by-the-skew-rule-not-the-tip land.
 
 History:
 - 2026-09-10T07:27:25Z J23YGSQ7VB7AEY7BPVQTRVV2CT-m1b-c6925449 open actor=m1b+main-1788680071-18713-e76d5d targets=receipt-beds-run-the-candidate-engine
@@ -36,4 +37,5 @@ History:
 - 2026-09-10T12:22:00Z H5F1MT3CMCMG612JV6CK2ABFQG-m1b-c6925449 set-priority actor=human:Wido targets=actionable-metrics,breach-clock-and-budget-honesty,breach-stop-wedges-seat,burn-without-delivery-tripwire,carried-landing-debt-and-cap,delegate-job-liveness,delivery-candidate-is-the-workspace-not-the-ledger,enrollment-binds-by-the-skew-rule-not-the-tip,failed-job-attention,fixture-stewards-outlive-their-suite,goal-abandoned-with-a-reason,governed-exhaustion-reprojection,human-carried-landing-verb,human-goal-verbs-forgiving,job-record-birth-token,landing-receipt-survives-records-drift,lease-sweep-death-evidence,live-job-on-a-done-goal-unnoticed,machine-concurrency-governor,proof-harness-process-custody,receipt-beds-run-the-candidate-engine,review-round-limit-counts-per-chain,severity-tiered-rigor,severity-tiered-rigor-p2,skew-preflight-knows-a-receipt-worktree,small-change-lane,steward-catchup-livelock,steward-revives-a-done-goal,stop-batch-strands-a-resumable-goal,suite-custody,testing-contract-owns-record-paths,token-spend-fence,turn-verdict-hardening,watch-verb,watcher-repair-request-never-names-current,winddown-census-handoff-leak reason=priority-order subject=delivery-candidate-is-the-workspace-not-the-ledger from=1:2 to=1:3 requested-sequence=2
 - 2026-09-10T12:34:31Z T3K1RVRT5R51C85B92F36PCKC5-m1b-c6925449 unpark actor=human:Wido targets=receipt-beds-run-the-candidate-engine
 - 2026-09-10T12:34:40Z 0WR69YEX7MXMYZ647Y0W4X14DQ-m1b-c6925449 edit actor=m1b+main-1788680071-18713-e76d5d targets=receipt-beds-run-the-candidate-engine
-Integrity: sha256=04be5955e89d002427e7614f207cc46718e3bbf6d3f1b2e65a103f276f8c8b7f
+- 2026-09-10T12:34:44Z B9A7E46Z51JB3001KR64AAZQ8E-m1b-c6925449 park actor=m1b+main-1788680071-18713-e76d5d targets=receipt-beds-run-the-candidate-engine reason=Parked 2026-09-10 17:40Z LAND-READY; resume in a quiet hour with land-rbce-in-quiet-window.sh, or when delivery-candidate-is-the-workspace-not-the-ledger and enrollment-binds-by-the-skew-rule-not-the-tip land.
+Integrity: sha256=68ec8765e333ffef73f976784747f6cc59e75e9f336ed084d438658e39215df0
