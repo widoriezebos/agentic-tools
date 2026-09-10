@@ -2,14 +2,14 @@
 
 - State: parked
 - Priority: 1
-- Sequence: 6
+- Sequence: 5
 - Risk: severity=2 novelty=1 exposure=3 accumulation=1 basis="severity 2: every seat rebuilds and re-arms after every ledger move or cannot land; novelty 1: the skew rule exists in dispatch.sh; exposure 3: every seat; accumulation 1: nothing built on it"
 - Tier: 3
 - Intent: The steward's rearm resolver (internal/steward/rearm_resolver.go around line 272) refuses 'enrollment records landed source X but the executable stamp resolves to Y' whenever the binary was built at any commit other than the enrollment's recorded tip, and the tip moves on every ledger publish (a goal edit, a claim), which changes no engine code. Seen 2026-09-10 09:00Z on m1b: a binary built three goal-edits behind the tip was refused by test verify until a rebuild on a clean tree at the exact tip and a steward arm. DONE means: the binding applies the same rule as dispatch's skew preflight (the engine is stale only when engine or agent scripts changed between its stamp and the tip), a binary built at an older commit with no such change is accepted, and a fixture proves a ledger-only move does not drift the enrollment while an engine change still does.
 - Origin: main
 - Next step: LAND-READY: chain ebsr-build1 closed on round 2 (read 1 four material folded; read 2 zero material, four debts: a merge shape neither rule can see, a misleading witness refusal message, LandedCommit may record an unpublished local commit, and the coordinator's checkout had held round-1 content, since reset). Candidate is rounds/2 (ebsr-build1-r2.patch in m1b's scratchpad; landing script land-ebsr-in-quiet-window.sh). Receipt evidence on round 1: 40 of 41 green, the failure the ten-minute cap. Lands right after receipt-beds-run-the-candidate-engine in the fleet hold; then rebuild and re-arm at the new tip.
 - OpenedAt: 2026-09-10T07:27:32Z
-- Revision: 13
+- Revision: 14
 - Labels: bootstrap
 - Budget: elapsedLimit=1d attemptLimit=10 reservedJobMinutesLimit=1200 activeJobLimit=3 reviewRoundLimit=3
 - BudgetExceptions: 2
@@ -31,4 +31,5 @@ History:
 - 2026-09-10T13:03:00Z QN3JNYB5HQKC2B8GAZ3F493AP0-m1b-c6925449 edit actor=m1b+main-1788680071-18713-e76d5d targets=enrollment-binds-by-the-skew-rule-not-the-tip
 - 2026-09-10T14:00:11Z K54FMT2N63A5NVSH4D848NRZSZ-m1b-c6925449 edit actor=m1b+main-1788680071-18713-e76d5d targets=enrollment-binds-by-the-skew-rule-not-the-tip
 - 2026-09-10T14:00:16Z 4Y2NDXNVNKK5VX30SE9EQSJ531-m1b-c6925449 park actor=m1b+main-1788680071-18713-e76d5d targets=enrollment-binds-by-the-skew-rule-not-the-tip reason=Parked 2026-09-10 19:25Z LAND-READY behind the fleet hold (a receipt needs the tip to hold for fifty minutes); lands second in the hold, after member 1, with land-ebsr-in-quiet-window.sh.
-Integrity: sha256=bda8f322f1c5d155d49553cbb640fa8517da9beb64d38cfc2ad938802371f16c
+- 2026-09-10T14:41:28Z 9597A6GQQ6W4JGJ16KWA7ZXYVH-m1c-66a02980 done actor=human:Wido targets=actionable-metrics,breach-clock-and-budget-honesty,burn-without-delivery-tripwire,carried-landing-debt-and-cap,delegate-job-liveness,enrollment-binds-by-the-skew-rule-not-the-tip,failed-job-attention,fixture-stewards-outlive-their-suite,goal-abandoned-with-a-reason,governed-exhaustion-reprojection,human-carried-landing-carry,human-carried-landing-verb,human-goal-verbs-forgiving,job-record-birth-token,landing-receipt-survives-records-drift,lease-sweep-death-evidence,live-job-on-a-done-goal-unnoticed,machine-concurrency-governor,proof-harness-process-custody,receipt-beds-run-the-candidate-engine,review-round-limit-counts-per-chain,severity-tiered-rigor,severity-tiered-rigor-p2,skew-preflight-knows-a-receipt-worktree,small-change-lane,steward-catchup-livelock,steward-revives-a-done-goal,stop-batch-strands-a-resumable-goal,suite-custody,testing-contract-owns-record-paths,token-spend-fence,turn-verdict-hardening,watch-verb,watcher-repair-request-never-names-current,winddown-census-handoff-leak reason=priority-order from=1:6 to=1:5
+Integrity: sha256=43444eaae7b112544ec40aa0e8ef72d57b2daf6dab8ec76d12a3547a7e0bfe91
