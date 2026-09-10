@@ -7,9 +7,9 @@
 - Tier: 3
 - Intent: The goal box's reviewRoundLimit does not bound what the tier norm says it bounds. The limit is copied onto each critic chain root and counted there (internal/dispatch/finding_register.go: criticRoundsConsumed per root), so it bounds fold-and-recritique rounds inside ONE critic chain. Every review the seats actually run is a fresh critic root at one round, so a goal can take any number of critiques and the only bound that ever fires is reservedJobMinutesLimit. Seen 2026-09-06 on engine-rebuild-rearms-itself: three design critiques and two code critiques under a limit of 2, stopped twice by minutes and never by rounds; Wido's set-budget to 4 was refused by review-round-max=3 for a knob that was not in the way. The limit counts critic chains bound to the goal, design critiques and code critiques separately, each against the box; the norm stays 2 per class; set-budget raises it as today; the per-root fold count stays as an inner bound. The health line and the refusal name which class is exhausted.
 - Origin: main
-- Next step: BUILD DONE in rrl-build1 round 1 (18 files, all fixtures and the fast gate green). Round 2 dispatched for one landing fact: the testing contract owns 17 of the 18 paths; the command-level admission fixture moves from cmd/metasystem/goalsync_mutations_test.go (unowned) into dispatch_verbs_test.go (owned). Then: beds outside the sandbox, schema-2 receipt on the staged candidate, land.sh --chain rrl-build1 --test-receipt. This is the first chain of the night whose every path the contract owns; it lands as soon as the steward is re-armed on the rebuilt engine (Wido's act).
+- Next step: BUILD DONE in rrl-build1 round 1 (18 files, all fixtures and the fast gate green). Round 2 stopped on a contradiction in the coordinator's brief (the unowned test file calls the changed entry point). Round 3 dispatched with the decision: the old admission entry point stays as a thin wrapper reproducing today's behaviour, the new role-and-mode-aware one is called from the new code, so cmd/metasystem/goalsync_mutations_test.go stays byte-identical and every candidate path is owned by the contract. Then: beds outside the sandbox, schema-2 receipt on the staged candidate, land.sh --chain rrl-build1 --test-receipt. The steward re-armed itself on the rebuilt engine (generation 37) and the gate authenticates it.
 - OpenedAt: 2026-09-06T10:38:37Z
-- Revision: 16
+- Revision: 17
 - Budget: elapsedLimit=1d attemptLimit=10 reservedJobMinutesLimit=1200 activeJobLimit=1 reviewRoundLimit=3
 - BudgetExceptions: 0
 - Approved: by=human:Wido at=2026-09-06T10:39:18Z revision=2 opid=SE0TDND1R5PT5PP85ZQ75EVVG1-m1-a4f8999f authority=proven digest=98dbad0c115ce25fd9cd226687f57a9106e091ebb57f902a1de8f1794fa469cc
@@ -34,4 +34,5 @@ History:
 - 2026-09-10T04:59:16Z 144TZAZY3TMVJFTX94DDFS061H-m1b-c6925449 edit actor=m1b+main-1788680071-18713-e76d5d targets=review-round-limit-counts-per-chain
 - 2026-09-10T06:05:46Z 3A282C9FJ6B67S157N68CV1J1X-m1b-c6925449 edit actor=m1b+main-1788680071-18713-e76d5d targets=review-round-limit-counts-per-chain
 - 2026-09-10T06:06:28Z JBF8XTHAWGWTC7VSVR0V6R6VGR-m1b-c6925449 edit actor=m1b+main-1788680071-18713-e76d5d targets=review-round-limit-counts-per-chain
-Integrity: sha256=3551ce0c3b72622b5d614efe1b0d12118c82f6259affb042305817959af0aedd
+- 2026-09-10T06:13:19Z GRNEA72K7YT6009QSB77BYMXDQ-m1b-c6925449 edit actor=m1b+main-1788680071-18713-e76d5d targets=review-round-limit-counts-per-chain
+Integrity: sha256=3ba567a413b74b5314186d768e69d5ba907bbbcf16c2f53a3e1af76afce072a0
