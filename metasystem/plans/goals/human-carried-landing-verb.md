@@ -1,6 +1,6 @@
 # human-carried-landing-verb
 
-- State: approved
+- State: queued
 - Priority: 1
 - Sequence: 8
 - Risk: severity=3 novelty=2 exposure=3 accumulation=2 basis="severity 3: without it a broken gate is a hand edit of the tree; novelty 2: designed and audited, unbuilt; exposure 3: every seat; accumulation 2: the register already points at it"
@@ -9,11 +9,9 @@
 - Origin: main
 - Next step: Small by construction: the verb and the trailer, from the landed HCL design's slice 1. Fourth of the bootstrap members; do not fold the debt into it.
 - OpenedAt: 2026-09-10T07:27:35Z
-- Revision: 8
+- Revision: 9
 - Labels: bootstrap
-- Budget: elapsedLimit=1d attemptLimit=10 reservedJobMinutesLimit=1200 activeJobLimit=1 reviewRoundLimit=3
 - BudgetExceptions: 0
-- Approved: by=human:Wido at=2026-09-10T07:29:14Z revision=2 opid=4ZK6CRTM3WB0139F8R1W7B9NNZ-m1b-c6925449 authority=proven digest=d451b13dd9012503ff757387b43409be18454acef01ab5a622e28d9dd513dc24
 
 History:
 - 2026-09-10T07:27:35Z NSZNTWH89GNYGNQ7ZMX1J6SRAS-m1b-c6925449 open actor=m1b+main-1788680071-18713-e76d5d targets=human-carried-landing-verb
@@ -24,4 +22,5 @@ History:
 - 2026-09-10T14:01:03Z 4ZAYC93RJ8Y3970Q57867E3ZWY-m1b-c6925449 claim actor=m1b+main-1788680071-18713-e76d5d targets=human-carried-landing-verb
 - 2026-09-10T14:02:11Z SX3HDMP0NTWKKENRWVX21KPFQJ-m1b-c6925449 release actor=m1b+main-1788680071-18713-e76d5d targets=human-carried-landing-verb
 - 2026-09-10T14:02:22Z KH8B0DNJHEB7RN17M71XTX5PRY-m1b-c6925449 set-priority actor=human:Wido targets=account-provenance,actionable-metrics,adopt-bed-authority-probe-passes-tier,adopt-bed-gate-unreachable-under-load,alert-escalation-channel,app-doctrine,app-guardrail-custody,app-guardrail-program,battery-adoption-red,breach-clock-and-budget-honesty,burn-without-delivery-tripwire,carried-landing-debt-and-cap,channel-totp-verified-at-poll-time,codex-handshake-budget,codex-handshake-budget-load-fragile,continuous-self-improvement,counselor,cross-repo-guardrails,delegate-job-liveness,design-prohibition-is-role-scoped,disk-hygiene,dispatch-fixture-recollection-pass-budget,dispatch-fixture-refused-by-goal-norm,effort-by-complexity-per-model,failed-job-attention,fixture-default-branch-assumption,fixture-enrollment-notes,fixture-review-by-date-rolls-over,fixture-scripts-call-python3-outside-declared-sites,fixture-stewards-outlive-their-suite,go-toolchain-pinned-in-go-mod,goal-abandoned-with-a-reason,goal-suite-sits-on-the-default-test-timeout,governed-exhaustion-reprojection,hook-root-resolver-design,human-carried-landing-carry,human-carried-landing-verb,human-goal-verbs-forgiving,incident-proposal-drafting,integration-branch,job-record-birth-token,land-verb-pruning,landing-receipt-survives-records-drift,lease-sweep-death-evidence,ledger-authentication,live-job-on-a-done-goal-unnoticed,machine-concurrency-governor,metasystem-way-patterns,mission-completion-protocol,missionrunner-terminate-flake,missionrunner-tests-count-attempts,nested-gate-witness-reuse,open-work-scanner-blindspots,os-dependency-reduction,paid-proof-authorization,paper-prose,precedent-index,proof-harness-process-custody,python3-kit-port,reconciliation-guards,registry-design-names-selection-rows,repo-flag-resolves-one-root,review-round-limit-counts-per-chain,rounds-prove-with-the-smallest-run,runtime-install-execution,severity-tiered-rigor,severity-tiered-rigor-p2,small-change-lane,standing-validation,steward-catchup-livelock,steward-revives-a-done-goal,steward-tick-stop-on-failure,stop-batch-strands-a-resumable-goal,stop-refusal-fits-on-one-screen,suite-custody,suite-flake-supervision-watch,suite-outcomes-as-steward-incidents,supervise-start-gate-linux-red,supervision-fixture-child-custody-join,supervision-fixture-self-check-announcement-scan,token-spend-fence,turn-verdict-hardening,validation-harvest-mode,watch-verb,watchdog-kill-observation-gap,watcher-repair-request-never-names-current,winddown-census-handoff-leak reason=priority-order subject=human-carried-landing-carry from=1:7 to=1:8 requested-sequence=7
-Integrity: sha256=78f999fa9d6c230002c923dee9f95bf597bf2db95c32615d0a04a494e64431f0
+- 2026-09-10T14:02:50Z XZK745YXZVMCZQ52RVPMP12W6R-m1b-c6925449 unapprove actor=human:Wido targets=human-carried-landing-verb reason=duplicate of human-carried-landing-carry; holds no work
+Integrity: sha256=733ab43fa2855e63880e1a9a5572d9af54346a5c6f6fc8a53b98a8839a60c7cb
