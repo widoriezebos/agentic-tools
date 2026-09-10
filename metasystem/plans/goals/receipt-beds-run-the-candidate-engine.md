@@ -9,14 +9,14 @@
 - Origin: main
 - Next step: BUILDING (rbce-build1, Sol, started 09:32). COORDINATION with m1c 2026-09-10: m1c claimed gate-fence-returns-to-per-landing-proof at 06:54 with the same candidate-engine intent, saw this chain on the remote at 07:50 and yielded the ENGINE implementation to m1b; m1c does the cmd fixture repairs, the dispatch-fixtures METASYSTEM_BIN selection and the gate-fence runtime-custody declarations in testing.json, then integrates this delivery. m1c's design critique of the receipt engine (evidence receipt-engine-20260910/design-critic-r1-return.json) raised four material concerns that this chain's closing read must judge against the built code: frontend/worker identity mismatch at completion, precommit base-key invalidated by postcommit verification, unbound GOENV build inputs, build-cache coverage. Then: closing read and the receipt IN PARALLEL on the staged candidate (new practice), land, and m1c integrates.
 - OpenedAt: 2026-09-10T07:27:25Z
-- Revision: 7
+- Revision: 8
 - Labels: bootstrap
-- Budget: elapsedLimit=1d attemptLimit=10 reservedJobMinutesLimit=1200 activeJobLimit=1 reviewRoundLimit=3
-- BudgetExceptions: 0
-- Approved: by=human:Wido at=2026-09-10T07:29:14Z revision=2 opid=4ZK6CRTM3WB0139F8R1W7B9NNZ-m1b-c6925449 authority=proven digest=7791b53db49be871db3b8d576863dbc78b9bd85bf95c16442cc4679e296e3910
+- Budget: elapsedLimit=1d attemptLimit=10 reservedJobMinutesLimit=1200 activeJobLimit=2 reviewRoundLimit=3
+- BudgetExceptions: 1
+- Approved: by=human:Wido at=2026-09-10T09:11:59Z revision=8 opid=H0YZ6RR8KZNEA23EY1HT9MHPC4-m1b-c6925449 authority=proven digest=2153b3541c62a3543205811e14f87bb8c84f8edae25e385cdd9433abefff3c2e
 - Sliced: machine=m1b lineage=main-1788680071-18713-e76d5d revision=4 at=2026-09-10T07:32:46Z
-- Claimed: machine=m1b lineage=main-1788680071-18713-e76d5d at=2026-09-10T07:32:21Z revision=4 accountingRevision=4
-- StopCapability: generation=4 revision=4 machine=m1b claimEpoch=1 fenceEpoch=0
+- Claimed: machine=m1b lineage=main-1788680071-18713-e76d5d at=2026-09-10T09:11:59Z revision=8 accountingRevision=8
+- StopCapability: generation=8 revision=8 machine=m1b claimEpoch=1 fenceEpoch=0
 
 History:
 - 2026-09-10T07:27:25Z J23YGSQ7VB7AEY7BPVQTRVV2CT-m1b-c6925449 open actor=m1b+main-1788680071-18713-e76d5d targets=receipt-beds-run-the-candidate-engine
@@ -26,4 +26,5 @@ History:
 - 2026-09-10T07:32:46Z SP212Q6CGP64T5HV4P5TTH0P62-m1b-c6925449 slice-start actor=m1b+main-1788680071-18713-e76d5d targets=receipt-beds-run-the-candidate-engine
 - 2026-09-10T07:32:57Z 62S14K1DARRTSYHBCWJEA8GXJ9-m1b-c6925449 edit actor=m1b+main-1788680071-18713-e76d5d targets=receipt-beds-run-the-candidate-engine
 - 2026-09-10T08:44:25Z SX9M1FHE0NWPTXZAEB8RP6AJCT-m1b-c6925449 edit actor=m1b+main-1788680071-18713-e76d5d targets=receipt-beds-run-the-candidate-engine
-Integrity: sha256=0282a2e6efd533b0ec8ac0f4d9b275ef1562da49a935cf0733cd9e0647ed6f5d
+- 2026-09-10T09:11:59Z H0YZ6RR8KZNEA23EY1HT9MHPC4-m1b-c6925449 set-budget actor=human:Wido targets=receipt-beds-run-the-candidate-engine
+Integrity: sha256=dd766b3d911db1e03b894cc65bff4dcd98e55283aa9f8b4048c661c4c20ae71c
