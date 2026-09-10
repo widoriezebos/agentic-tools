@@ -9,17 +9,18 @@
 - Origin: main
 - Next step: Small-change lane, high risk: one MECHANICAL implementer round (two files, a handful of lines), then one code-critic read because the receipt gate is fleet-wide; receipt; land with the chain. Opened by m1b 2026-09-10 17:45Z under the four-day authority; member of the-metasystem-validates-itself-with-itself (repairs member 1, landed as 016b83e2). Until it lands, no seat can take a sufficient receipt on a tip at or after 016b83e2.
 - OpenedAt: 2026-09-10T15:39:22Z
-- Revision: 4
+- Revision: 5
 - Labels: bootstrap
-- Budget: elapsedLimit=1d attemptLimit=10 reservedJobMinutesLimit=1200 activeJobLimit=1 reviewRoundLimit=3
-- BudgetExceptions: 0
-- Approved: by=human:Wido at=2026-09-10T15:40:06Z revision=2 opid=5R666BKDY991ZHPBQJXA59ENQ8-m1b-c6925449 authority=proven digest=548bfad8990e7978262b2eb2fb19250054acb9401f19781eb6a6a2a18a7fc11d
-- Claimed: machine=m1b lineage=main-1788680071-18713-e76d5d at=2026-09-10T15:40:33Z revision=4 accountingRevision=4
-- StopCapability: generation=4 revision=4 machine=m1b claimEpoch=1 fenceEpoch=0
+- Budget: elapsedLimit=1d attemptLimit=10 reservedJobMinutesLimit=600 activeJobLimit=3 reviewRoundLimit=2
+- BudgetExceptions: 1
+- Approved: by=human:Wido at=2026-09-10T15:40:37Z revision=5 opid=AWTM4M23HHCEQY9YK69CB5WFDF-m1b-c6925449 authority=proven digest=70b788d9be914d903526cc702ea34a0bdbbee7e669300725057dc62659153c65
+- Claimed: machine=m1b lineage=main-1788680071-18713-e76d5d at=2026-09-10T15:40:37Z revision=5 accountingRevision=5
+- StopCapability: generation=5 revision=5 machine=m1b claimEpoch=1 fenceEpoch=0
 
 History:
 - 2026-09-10T15:39:22Z AVMNAVT6BFK2RJ1KMT8W35B8SV-m1b-c6925449 open actor=m1b+main-1788680071-18713-e76d5d targets=receipt-section-beds-do-not-export-the-engine
 - 2026-09-10T15:40:06Z 5R666BKDY991ZHPBQJXA59ENQ8-m1b-c6925449 approve actor=human:Wido targets=receipt-section-beds-do-not-export-the-engine
 - 2026-09-10T15:40:09Z 1WTD8HRVWQJCEY48YP2CBHA1VZ-m1b-c6925449 set-priority actor=human:Wido targets=actionable-metrics,breach-clock-and-budget-honesty,burn-without-delivery-tripwire,carried-landing-debt-and-cap,delegate-job-liveness,delivery-candidate-is-the-workspace-not-the-ledger,enrollment-binds-by-the-skew-rule-not-the-tip,failed-job-attention,fixture-stewards-outlive-their-suite,goal-abandoned-with-a-reason,governed-exhaustion-reprojection,human-carried-landing-carry,human-carried-landing-verb,human-goal-verbs-forgiving,job-record-birth-token,landing-receipt-survives-records-drift,landing-runs-standard-deep-runs-at-cadence,lease-sweep-death-evidence,live-job-on-a-done-goal-unnoticed,machine-concurrency-governor,proof-harness-process-custody,receipt-section-beds-do-not-export-the-engine,review-round-limit-counts-per-chain,severity-tiered-rigor,severity-tiered-rigor-p2,skew-preflight-knows-a-receipt-worktree,small-change-lane,steward-catchup-livelock,steward-revives-a-done-goal,stop-batch-strands-a-resumable-goal,suite-custody,testing-contract-owns-record-paths,token-spend-fence,turn-verdict-hardening,watch-verb,watcher-repair-request-never-names-current,winddown-census-handoff-leak reason=priority-order subject=receipt-section-beds-do-not-export-the-engine from=unranked to=1:1 requested-sequence=1
 - 2026-09-10T15:40:33Z XYJ6FDWKWGHH37E8YBQSKB47Q7-m1b-c6925449 claim actor=m1b+main-1788680071-18713-e76d5d targets=receipt-section-beds-do-not-export-the-engine
-Integrity: sha256=786d630d250109f03ee695aaae87f6cf8bdfc82e7de8b48a70f92739410f5b10
+- 2026-09-10T15:40:37Z AWTM4M23HHCEQY9YK69CB5WFDF-m1b-c6925449 set-budget actor=human:Wido targets=receipt-section-beds-do-not-export-the-engine
+Integrity: sha256=0d8a96c598df7f9ef08b602674a81300f80ff7090c98e65ef42368fb973674c1
