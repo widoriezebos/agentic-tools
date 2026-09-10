@@ -9,14 +9,14 @@
 - Origin: main
 - Next step: CLAIMED BY m1d 2026-09-10 (the steward claimed the head for the seat at 12:34Z; m1d carries it). Design round 1 in flight: job dcwl-design1-20260910 (Fable, DESIGN-BEARING) writes plans/delivery-candidate-is-the-workspace-design.md from plans/delivery-candidate-is-the-workspace-design-brief.md; the brief inventories the twelve whole-project binding sites (test.go:235 and :551, ExactReusableTestResult, PrepareTestingReceiptPayload, PublishCommittedReceipt, readTestReceipt, land.sh check_supplied_test_receipt and the post-rebase verify, commit.sh, landing test-receipt, the recertified target check) and the two land-ready sibling chains it must not fight (m1e's lrsrd registers.go declaration, m1b's rbce candidate-engine stamp). Then: Sol critiques the design once, Sol implements (DESTRUCTIVE-REACH), Opus reads, verifier live proof, receipt, land.sh --chain. Sequenced right after receipt-beds-run-the-candidate-engine, whose landing waits on this.
 - OpenedAt: 2026-09-10T12:21:47Z
-- Revision: 8
+- Revision: 9
 - Labels: bootstrap
-- Budget: elapsedLimit=1d attemptLimit=10 reservedJobMinutesLimit=1200 activeJobLimit=1 reviewRoundLimit=3
-- BudgetExceptions: 0
-- Approved: by=human:Wido at=2026-09-10T12:21:51Z revision=2 opid=FYEJR5V1PM86NK7GJZA5BBSRAE-m1b-c6925449 authority=proven digest=596df51f012516706953eb2e4fdda5af78a9155d074c986ae18b86507e530611
+- Budget: elapsedLimit=1d attemptLimit=14 reservedJobMinutesLimit=1200 activeJobLimit=1 reviewRoundLimit=3
+- BudgetExceptions: 1
+- Approved: by=human:Wido at=2026-09-10T20:47:49Z revision=9 opid=Y0Y3J94S82CRMGJ53GT0P8RTKX-m1d-a38bcdde authority=proven digest=970a729711b3d52559bca1bbe177e0ff44b06abb60ab7eb5e30792d3f5d997ff
 - Sliced: machine=m1d lineage=main-1788941004-20871-6e7a43 revision=4 at=2026-09-10T14:01:38Z
-- Claimed: machine=m1d lineage=main-1788941004-20871-6e7a43 at=2026-09-10T12:34:13Z revision=4 accountingRevision=4
-- StopCapability: generation=4 revision=4 machine=m1d claimEpoch=3 fenceEpoch=0
+- Claimed: machine=m1d lineage=main-1788941004-20871-6e7a43 at=2026-09-10T20:47:49Z revision=9 accountingRevision=9
+- StopCapability: generation=9 revision=9 machine=m1d claimEpoch=3 fenceEpoch=0
 
 History:
 - 2026-09-10T12:21:47Z ZZSFMGPMXRGTV6BBKJC90JEMGG-m1b-c6925449 open actor=m1b+main-1788680071-18713-e76d5d targets=delivery-candidate-is-the-workspace-not-the-ledger
@@ -27,4 +27,5 @@ History:
 - 2026-09-10T14:02:15Z Q8Y5PKGBTPMB51ZTQ83QBCKRY7-m1d-a38bcdde edit actor=m1d+main-1788941004-20871-6e7a43 targets=delivery-candidate-is-the-workspace-not-the-ledger
 - 2026-09-10T15:40:09Z 1WTD8HRVWQJCEY48YP2CBHA1VZ-m1b-c6925449 set-priority actor=human:Wido targets=actionable-metrics,breach-clock-and-budget-honesty,burn-without-delivery-tripwire,carried-landing-debt-and-cap,delegate-job-liveness,delivery-candidate-is-the-workspace-not-the-ledger,enrollment-binds-by-the-skew-rule-not-the-tip,failed-job-attention,fixture-stewards-outlive-their-suite,goal-abandoned-with-a-reason,governed-exhaustion-reprojection,human-carried-landing-carry,human-carried-landing-verb,human-goal-verbs-forgiving,job-record-birth-token,landing-receipt-survives-records-drift,landing-runs-standard-deep-runs-at-cadence,lease-sweep-death-evidence,live-job-on-a-done-goal-unnoticed,machine-concurrency-governor,proof-harness-process-custody,receipt-section-beds-do-not-export-the-engine,review-round-limit-counts-per-chain,severity-tiered-rigor,severity-tiered-rigor-p2,skew-preflight-knows-a-receipt-worktree,small-change-lane,steward-catchup-livelock,steward-revives-a-done-goal,stop-batch-strands-a-resumable-goal,suite-custody,testing-contract-owns-record-paths,token-spend-fence,turn-verdict-hardening,watch-verb,watcher-repair-request-never-names-current,winddown-census-handoff-leak reason=priority-order subject=receipt-section-beds-do-not-export-the-engine from=1:2 to=1:3 requested-sequence=1
 - 2026-09-10T18:59:37Z QQC0B89CZVTEYYGV4RHKP5R6AD-m1b-c6925449 done actor=m1b+main-1788680071-18713-e76d5d targets=actionable-metrics,breach-clock-and-budget-honesty,burn-without-delivery-tripwire,carried-landing-debt-and-cap,delegate-job-liveness,delivery-candidate-is-the-workspace-not-the-ledger,enrollment-binds-by-the-skew-rule-not-the-tip,failed-job-attention,fixture-stewards-outlive-their-suite,goal-abandoned-with-a-reason,governed-exhaustion-reprojection,human-carried-landing-carry,human-carried-landing-verb,human-goal-verbs-forgiving,job-record-birth-token,landing-receipt-survives-records-drift,landing-runs-standard-deep-runs-at-cadence,lease-sweep-death-evidence,live-job-on-a-done-goal-unnoticed,machine-concurrency-governor,proof-harness-process-custody,receipt-section-beds-do-not-export-the-engine,review-round-limit-counts-per-chain,severity-tiered-rigor,severity-tiered-rigor-p2,skew-preflight-knows-a-receipt-worktree,small-change-lane,steward-catchup-livelock,steward-revives-a-done-goal,stop-batch-strands-a-resumable-goal,suite-custody,testing-contract-owns-record-paths,token-spend-fence,turn-verdict-hardening,watch-verb,watcher-repair-request-never-names-current,winddown-census-handoff-leak reason=priority-order from=1:3 to=1:2
-Integrity: sha256=ea2d5ad831cd348f44524666d9c46979e190d7b0f3ceb58094f5d98eb0b39cdf
+- 2026-09-10T20:47:49Z Y0Y3J94S82CRMGJ53GT0P8RTKX-m1d-a38bcdde set-budget actor=human:Wido targets=delivery-candidate-is-the-workspace-not-the-ledger
+Integrity: sha256=a2d21c4b05d5f4f69773e7911384338612984a1a5913a92f9f2f471597e69ee6
