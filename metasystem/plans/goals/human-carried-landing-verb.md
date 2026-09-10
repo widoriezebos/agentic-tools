@@ -1,6 +1,6 @@
 # human-carried-landing-verb
 
-- State: approved
+- State: claimed
 - Priority: 1
 - Sequence: 7
 - Risk: severity=3 novelty=2 exposure=3 accumulation=2 basis="severity 3: without it a broken gate is a hand edit of the tree; novelty 2: designed and audited, unbuilt; exposure 3: every seat; accumulation 2: the register already points at it"
@@ -9,11 +9,13 @@
 - Origin: main
 - Next step: Small by construction: the verb and the trailer, from the landed HCL design's slice 1. Fourth of the bootstrap members; do not fold the debt into it.
 - OpenedAt: 2026-09-10T07:27:35Z
-- Revision: 5
+- Revision: 6
 - Labels: bootstrap
 - Budget: elapsedLimit=1d attemptLimit=10 reservedJobMinutesLimit=1200 activeJobLimit=1 reviewRoundLimit=3
 - BudgetExceptions: 0
 - Approved: by=human:Wido at=2026-09-10T07:29:14Z revision=2 opid=4ZK6CRTM3WB0139F8R1W7B9NNZ-m1b-c6925449 authority=proven digest=d451b13dd9012503ff757387b43409be18454acef01ab5a622e28d9dd513dc24
+- Claimed: machine=m1b lineage=main-1788680071-18713-e76d5d at=2026-09-10T14:01:03Z revision=6 accountingRevision=6
+- StopCapability: generation=6 revision=6 machine=m1b claimEpoch=1 fenceEpoch=0
 
 History:
 - 2026-09-10T07:27:35Z NSZNTWH89GNYGNQ7ZMX1J6SRAS-m1b-c6925449 open actor=m1b+main-1788680071-18713-e76d5d targets=human-carried-landing-verb
@@ -21,4 +23,5 @@ History:
 - 2026-09-10T07:29:59Z 37GM1PEX7GPQ4XQX3S0EY52HKD-m1b-c6925449 set-priority actor=human:Wido targets=actionable-metrics,breach-clock-and-budget-honesty,breach-stop-wedges-seat,burn-without-delivery-tripwire,delegate-job-liveness,dispatch-cap-necessity,failed-job-attention,fixture-stewards-outlive-their-suite,goal-abandoned-with-a-reason,governed-exhaustion-reprojection,human-carried-landing-verb,human-goal-verbs-forgiving,job-record-birth-token,landing-receipt-survives-records-drift,lease-sweep-death-evidence,live-job-on-a-done-goal-unnoticed,machine-concurrency-governor,proof-harness-process-custody,review-round-limit-counts-per-chain,severity-tiered-rigor,severity-tiered-rigor-p2,small-change-lane,steward-catchup-livelock,steward-revives-a-done-goal,stop-batch-strands-a-resumable-goal,suite-custody,token-spend-fence,turn-verdict-hardening,watch-verb,watcher-repair-request-never-names-current,winddown-census-handoff-leak reason=priority-order subject=human-carried-landing-verb from=unranked to=1:5 requested-sequence=5
 - 2026-09-10T12:04:12Z PPC8N1B8YQGCEBWRC66HHP6DCQ-m1-c6925449 set-priority actor=human:Wido targets=actionable-metrics,breach-clock-and-budget-honesty,breach-stop-wedges-seat,burn-without-delivery-tripwire,carried-landing-debt-and-cap,delegate-job-liveness,enrollment-binds-by-the-skew-rule-not-the-tip,failed-job-attention,fixture-stewards-outlive-their-suite,goal-abandoned-with-a-reason,governed-exhaustion-reprojection,human-carried-landing-verb,human-goal-verbs-forgiving,job-record-birth-token,landing-receipt-survives-records-drift,landing-runs-standard-deep-runs-at-cadence,lease-sweep-death-evidence,live-job-on-a-done-goal-unnoticed,machine-concurrency-governor,proof-harness-process-custody,receipt-beds-run-the-candidate-engine,review-round-limit-counts-per-chain,severity-tiered-rigor,severity-tiered-rigor-p2,skew-preflight-knows-a-receipt-worktree,small-change-lane,steward-catchup-livelock,steward-revives-a-done-goal,stop-batch-strands-a-resumable-goal,suite-custody,testing-contract-owns-record-paths,token-spend-fence,turn-verdict-hardening,watch-verb,watcher-repair-request-never-names-current,winddown-census-handoff-leak reason=priority-order subject=landing-runs-standard-deep-runs-at-cadence from=1:5 to=1:6 requested-sequence=1
 - 2026-09-10T12:22:00Z H5F1MT3CMCMG612JV6CK2ABFQG-m1b-c6925449 set-priority actor=human:Wido targets=actionable-metrics,breach-clock-and-budget-honesty,breach-stop-wedges-seat,burn-without-delivery-tripwire,carried-landing-debt-and-cap,delegate-job-liveness,delivery-candidate-is-the-workspace-not-the-ledger,enrollment-binds-by-the-skew-rule-not-the-tip,failed-job-attention,fixture-stewards-outlive-their-suite,goal-abandoned-with-a-reason,governed-exhaustion-reprojection,human-carried-landing-verb,human-goal-verbs-forgiving,job-record-birth-token,landing-receipt-survives-records-drift,lease-sweep-death-evidence,live-job-on-a-done-goal-unnoticed,machine-concurrency-governor,proof-harness-process-custody,receipt-beds-run-the-candidate-engine,review-round-limit-counts-per-chain,severity-tiered-rigor,severity-tiered-rigor-p2,skew-preflight-knows-a-receipt-worktree,small-change-lane,steward-catchup-livelock,steward-revives-a-done-goal,stop-batch-strands-a-resumable-goal,suite-custody,testing-contract-owns-record-paths,token-spend-fence,turn-verdict-hardening,watch-verb,watcher-repair-request-never-names-current,winddown-census-handoff-leak reason=priority-order subject=delivery-candidate-is-the-workspace-not-the-ledger from=1:6 to=1:7 requested-sequence=2
-Integrity: sha256=3022769d81f35554b7c0bf527551c226522fdf5664545d0fae37ee4bf34f578f
+- 2026-09-10T14:01:03Z 4ZAYC93RJ8Y3970Q57867E3ZWY-m1b-c6925449 claim actor=m1b+main-1788680071-18713-e76d5d targets=human-carried-landing-verb
+Integrity: sha256=38879027e3f474790267583abfd47f4aeedc3cba930d975ec5e5f40e569bcfea
