@@ -6,7 +6,7 @@
 - MigrationEpoch: 2026-08-20T00:00:00Z
 - ManifestDigest: d82032bee818c2d82e6a95e6f1b75347499b88ee8b68c4d20a0f3c94d00ba320
 - MigrationMode: manifest
-- Revision: 15
+- Revision: 16
 - ApprovalGate: since=2026-09-03T14:16:24Z opid=JY54AQT8101VK9353WT9FQYGA9-m0-c5dbf036
 - FleetEnrollment: at=2026-09-06T06:37:21Z machine=m1 generation=1 opid=CMNCRETKYCB18MFZNYFSZJPXQY-m1-a4f8999f
 
@@ -28,4 +28,8 @@ History:
 - 2026-09-09T13:09:24Z J886PPPDT9VWDHJR9TGXVWR9PQ-m1c-1274caf4 ack actor=m1c+main-1788759014-39092-24fa5c targets=coordinator-loop-prevention displaced=m1c+main-1788759014-39092-24fa5c@2026-09-09T07:45:39Z ack
 - 2026-09-09T13:09:24Z J886PPPDT9VWDHJR9TGXVWR9PQ-m1c-1274caf4 ack actor=m1c+main-1788759014-39092-24fa5c targets=coordinator-loop-prevention displaced=m1c+main-1788759014-39092-24fa5c@2026-09-09T09:14:14Z ack
 - 2026-09-09T13:09:24Z J886PPPDT9VWDHJR9TGXVWR9PQ-m1c-1274caf4 ack actor=m1c+main-1788759014-39092-24fa5c targets=coordinator-loop-prevention displaced=m1c+main-1788759014-39092-24fa5c@2026-09-09T10:32:42Z ack
-Integrity: sha256=b157dc63b7e52dcc514b58a53aecd2f47286a690783c0c86f07c66a9c9d6e6d2
+- 2026-09-10T06:03:24Z GFGTDQ5RH0TX7NY6KH8K03NBR9-m1c-1274caf4 ack actor=m1c+main-1788759014-39092-24fa5c targets=coordinator-loop-prevention displaced=m1c+main-1788759014-39092-24fa5c@2026-09-09T12:29:23Z ack
+- 2026-09-10T06:03:24Z GFGTDQ5RH0TX7NY6KH8K03NBR9-m1c-1274caf4 ack actor=m1c+main-1788759014-39092-24fa5c targets=coordinator-loop-prevention displaced=m1c+main-1788759014-39092-24fa5c@2026-09-09T16:28:40Z ack
+- 2026-09-10T06:03:24Z GFGTDQ5RH0TX7NY6KH8K03NBR9-m1c-1274caf4 ack actor=m1c+main-1788759014-39092-24fa5c targets=coordinator-loop-prevention displaced=m1c+main-1788759014-39092-24fa5c@2026-09-09T18:15:06Z ack
+- 2026-09-10T06:03:24Z GFGTDQ5RH0TX7NY6KH8K03NBR9-m1c-1274caf4 ack actor=m1c+main-1788759014-39092-24fa5c targets=coordinator-loop-prevention displaced=m1c+main-1788759014-39092-24fa5c@2026-09-09T20:30:14Z ack
+Integrity: sha256=768bdfd11f1d7c09f4130a00981f4691318da514e350a70f106a549223db5be6
