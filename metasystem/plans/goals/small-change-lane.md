@@ -1,18 +1,17 @@
 # small-change-lane
 
-- State: parked
+- State: approved
 - Priority: 1
 - Sequence: 18
 - Intent: The 'change this little thing' case has a supported path: a dispatch lane cheap and fast enough that a certified one-line fix is not ceremony
 - Origin: main
 - Next step: CLAIMED by m1b 2026-09-10 09:50Z (the frontier's next claimable; review-round-limit-counts-per-chain parked LAND-READY behind the gate-fence receipt failure). Design revision 1 dispatched to the Fable lane as scl-design1: the lane keeps an independent critique (Wido's 2026-09-01 order, goal critique-always, supersedes the record's 'certification folded into the return'); it decides what small is mechanically, a one-round build from a templated brief plus one bounded critic round plus an area-width receipt, what is never skipped, a small tier box, the seat's reduced part, fixtures, rollout. Grounded on tonight's evidence of what a 15-file MECHANICAL change costs. Then read 1 (Sol), fold, build. Landing waits on the two machinery goals like everything else.
 - OpenedAt: 2026-08-20T00:14:00Z
-- Revision: 25
+- Revision: 26
 - Budget: elapsedLimit=1d attemptLimit=6 reservedJobMinutesLimit=240 activeJobLimit=1 reviewRoundLimit=3
 - BudgetExceptions: 0
 - Approved: by=human:Wido at=2026-09-06T06:53:37Z revision=5 opid=A35EHY2TGAWCCFA1Q1J0WZGS35-m1-a4f8999f authority=proven digest=ce78111a14c81468a494d5bb4235f81b054a41696cc40003f8b906dee0e8aa27
 - Sliced: machine=m1b lineage=main-1788680071-18713-e76d5d revision=16 at=2026-09-10T07:25:39Z
-- Parked: by=m1b+main-1788680071-18713-e76d5d at=2026-09-10T07:32:18Z because=Parked 2026-09-10 10:25Z on Wido's word to unblock landings first: design revision 1 (scl-design1, Fable) is in flight and returns to the worktree; resume by reading its return, landing the page once records can land, then read 1 (Sol).
 
 History:
 - 2026-08-22T06:30:55Z BXWE9NXAWCGCTR3MFCE8GDC4P5-widos-m5-pro-bf243850 migrate actor=human:wido targets=small-change-lane
@@ -40,4 +39,5 @@ History:
 - 2026-09-10T07:29:59Z 37GM1PEX7GPQ4XQX3S0EY52HKD-m1b-c6925449 set-priority actor=human:Wido targets=actionable-metrics,breach-clock-and-budget-honesty,breach-stop-wedges-seat,burn-without-delivery-tripwire,delegate-job-liveness,dispatch-cap-necessity,failed-job-attention,fixture-stewards-outlive-their-suite,goal-abandoned-with-a-reason,governed-exhaustion-reprojection,human-carried-landing-verb,human-goal-verbs-forgiving,job-record-birth-token,landing-receipt-survives-records-drift,lease-sweep-death-evidence,live-job-on-a-done-goal-unnoticed,machine-concurrency-governor,proof-harness-process-custody,review-round-limit-counts-per-chain,severity-tiered-rigor,severity-tiered-rigor-p2,small-change-lane,steward-catchup-livelock,steward-revives-a-done-goal,stop-batch-strands-a-resumable-goal,suite-custody,token-spend-fence,turn-verdict-hardening,watch-verb,watcher-repair-request-never-names-current,winddown-census-handoff-leak reason=priority-order subject=human-carried-landing-verb from=1:16 to=1:17 requested-sequence=5
 - 2026-09-10T07:30:08Z WVGXF51GYFDAEHJSQF6JZYHJZ2-m1b-c6925449 set-priority actor=human:Wido targets=actionable-metrics,breach-clock-and-budget-honesty,breach-stop-wedges-seat,burn-without-delivery-tripwire,carried-landing-debt-and-cap,delegate-job-liveness,dispatch-cap-necessity,failed-job-attention,fixture-stewards-outlive-their-suite,goal-abandoned-with-a-reason,governed-exhaustion-reprojection,human-goal-verbs-forgiving,job-record-birth-token,landing-receipt-survives-records-drift,lease-sweep-death-evidence,live-job-on-a-done-goal-unnoticed,machine-concurrency-governor,proof-harness-process-custody,review-round-limit-counts-per-chain,severity-tiered-rigor,severity-tiered-rigor-p2,small-change-lane,steward-catchup-livelock,steward-revives-a-done-goal,stop-batch-strands-a-resumable-goal,suite-custody,token-spend-fence,turn-verdict-hardening,watch-verb,watcher-repair-request-never-names-current,winddown-census-handoff-leak reason=priority-order subject=carried-landing-debt-and-cap from=1:17 to=1:18 requested-sequence=6
 - 2026-09-10T07:32:18Z 845A6R0XBX8AV4RD2CAVQF7CZ0-m1b-c6925449 park actor=m1b+main-1788680071-18713-e76d5d targets=small-change-lane reason=Parked 2026-09-10 10:25Z on Wido's word to unblock landings first: design revision 1 (scl-design1, Fable) is in flight and returns to the worktree; resume by reading its return, landing the page once records can land, then read 1 (Sol).
-Integrity: sha256=90316fcb3eb60fcb5c47817f2bfa1fb8956e6f319025cd86716ebb925cf688ec
+- 2026-09-10T08:12:30Z 5DW1WM67CX83AFPNQRGJ4FRADE-m1b-c6925449 unpark actor=human:Wido targets=small-change-lane
+Integrity: sha256=ce59797c7f0d0c3633f4edbb791b39687916ae9aac22a737355f0966f9467329
