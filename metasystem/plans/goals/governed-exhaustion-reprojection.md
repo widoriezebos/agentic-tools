@@ -1,17 +1,19 @@
 # governed-exhaustion-reprojection
 
-- State: approved
+- State: claimed
 - Priority: 1
 - Sequence: 11
 - Intent: The governed exhaustion check decides on a reserved figure frozen at admission (internal/dispatch/governed.go:149 ReservedBefore; internal/run/conclude.go:316-318 ReservedBefore + observedMinutes >= limit) and never re-projects at conclusion, so open caps that have since settled still count and a failing attempt can be marked exhausted, raise retroactive debt and block later governed work on spend that no longer exists. DONE means exhaustion at conclusion is decided on a fresh projection taken at that instant, excluding the concluding run from both the run records and the durable attempts, retry-safe after a partial commit, with every production store that concludes a governed run carrying the projection seam
 - Origin: main
 - Next step: BUILD: round 1 stopped before writing on constraint C8 (the revision-mismatch diagnostic named an error text that does not exist in that case); decided in the follow-up: reuse the observation's own mismatch sentence from governed.go verbatim. Round 2 dispatched (gerp-build1-r2, Sol). Then closing read (Opus), receipt and landing in the fleet hold behind members 1 and 3 of the bootstrap umbrella.
 - OpenedAt: 2026-09-02T18:37:29Z
-- Revision: 36
+- Revision: 37
 - Budget: elapsedLimit=4h attemptLimit=10 reservedJobMinutesLimit=240 activeJobLimit=1 reviewRoundLimit=3
 - BudgetExceptions: 0
 - Approved: by=human:Wido at=2026-09-06T06:53:37Z revision=3 opid=A35EHY2TGAWCCFA1Q1J0WZGS35-m1-a4f8999f authority=proven digest=2163cb860d8d3cead232af07a67468d33497865331ba06537617e18ab2ba2eca
 - Sliced: machine=m1b lineage=main-1788680071-18713-e76d5d revision=12 at=2026-09-10T04:32:06Z
+- Claimed: machine=m1b lineage=main-1788680071-18713-e76d5d at=2026-09-10T19:55:48Z revision=37 accountingRevision=37
+- StopCapability: generation=37 revision=37 machine=m1b claimEpoch=1 fenceEpoch=0
 
 History:
 - 2026-09-02T18:37:29Z HPTWTQNYQHY9BEMEMGQN383W4Y-m1b-fad3674e open actor=m1b+main-1788333346-60696-6a3256 targets=governed-exhaustion-reprojection
@@ -50,4 +52,5 @@ History:
 - 2026-09-10T18:59:37Z QQC0B89CZVTEYYGV4RHKP5R6AD-m1b-c6925449 done actor=m1b+main-1788680071-18713-e76d5d targets=actionable-metrics,breach-clock-and-budget-honesty,burn-without-delivery-tripwire,carried-landing-debt-and-cap,delegate-job-liveness,delivery-candidate-is-the-workspace-not-the-ledger,enrollment-binds-by-the-skew-rule-not-the-tip,failed-job-attention,fixture-stewards-outlive-their-suite,goal-abandoned-with-a-reason,governed-exhaustion-reprojection,human-carried-landing-carry,human-carried-landing-verb,human-goal-verbs-forgiving,job-record-birth-token,landing-receipt-survives-records-drift,landing-runs-standard-deep-runs-at-cadence,lease-sweep-death-evidence,live-job-on-a-done-goal-unnoticed,machine-concurrency-governor,proof-harness-process-custody,receipt-section-beds-do-not-export-the-engine,review-round-limit-counts-per-chain,severity-tiered-rigor,severity-tiered-rigor-p2,skew-preflight-knows-a-receipt-worktree,small-change-lane,steward-catchup-livelock,steward-revives-a-done-goal,stop-batch-strands-a-resumable-goal,suite-custody,testing-contract-owns-record-paths,token-spend-fence,turn-verdict-hardening,watch-verb,watcher-repair-request-never-names-current,winddown-census-handoff-leak reason=priority-order from=1:13 to=1:12
 - 2026-09-10T19:55:00Z 08VS51W6FTSNWDKBWP76HPCD52-m1b-c6925449 done actor=m1b+main-1788680071-18713-e76d5d targets=actionable-metrics,breach-clock-and-budget-honesty,burn-without-delivery-tripwire,carried-landing-debt-and-cap,delegate-job-liveness,enrollment-binds-by-the-skew-rule-not-the-tip,failed-job-attention,fixture-stewards-outlive-their-suite,goal-abandoned-with-a-reason,governed-exhaustion-reprojection,human-carried-landing-carry,human-carried-landing-verb,human-goal-verbs-forgiving,job-record-birth-token,landing-receipt-survives-records-drift,lease-sweep-death-evidence,live-job-on-a-done-goal-unnoticed,machine-concurrency-governor,proof-harness-process-custody,review-round-limit-counts-per-chain,severity-tiered-rigor,severity-tiered-rigor-p2,small-change-lane,steward-catchup-livelock,steward-revives-a-done-goal,stop-batch-strands-a-resumable-goal,suite-custody,token-spend-fence,turn-verdict-hardening,watch-verb,watcher-repair-request-never-names-current,winddown-census-handoff-leak reason=priority-order from=1:12 to=1:11
 - 2026-09-10T19:55:43Z Y3Y83JF79NBKBPPXKHR1K8HKCF-m1b-c6925449 unpark actor=human:Wido targets=governed-exhaustion-reprojection
-Integrity: sha256=6bdc15a32e99996ec5cb44de00869bf53b88b4ac5611b5a8aa720573c9b15158
+- 2026-09-10T19:55:48Z 0NARDG55MGVT4JEV5SZT2MZ0GN-m1b-c6925449 claim actor=m1b+main-1788680071-18713-e76d5d targets=governed-exhaustion-reprojection
+Integrity: sha256=4dd0e1993b2046cf8c62b7950643370b53dbe33e503560887c51dd1dcee6f735
