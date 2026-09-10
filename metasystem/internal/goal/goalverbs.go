@@ -825,9 +825,12 @@ func (s *Store) ServingProjection() (id, intent string, ok bool) {
 		if err != nil || proj.Tree == nil {
 			return "", "", false
 		}
-		for goalId, f := range proj.Tree.Live {
-			if f.State == "claimed" && f.Claimed != nil && f.Claimed.Machine == machine {
-				return goalId, f.Intent, true
+		for _, goalID := range OrderedOpenGoalIDs(proj.Tree.Live) {
+			f := proj.Tree.Live[goalID]
+			// A breach-stopped goal is waiting on a human and must not keep the
+			// machine from taking the next item.
+			if f.State == StateClaimed && f.Claimed != nil && f.Claimed.Machine == machine && !f.IsFencedClaim() {
+				return goalID, f.Intent, true
 			}
 		}
 		return "", "", false

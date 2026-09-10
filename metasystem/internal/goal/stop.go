@@ -450,6 +450,22 @@ func resumeRequest(r ResumeRequest) PublishRequest {
 				return nil, err
 			}
 			machine, lineage, claimEpoch := f.Claimed.Machine, f.Claimed.Lineage, f.StopCapability.ClaimEpoch
+			for _, otherID := range OrderedOpenGoalIDs(t.Live) {
+				other := t.Live[otherID]
+				// A breach-stopped goal is waiting on a human and must not keep the
+				// machine from taking the next item.
+				if otherID == r.GoalID || other.State != StateClaimed || other.Claimed == nil ||
+					other.Claimed.Machine != machine || other.IsFencedClaim() {
+					continue
+				}
+				if f.Arc != "" && other.Arc == f.Arc {
+					continue
+				}
+				return nil, fmt.Errorf(
+					"goal resume %s refused: machine %s already holds live claim %s; conclude, park or release %s first, then resume %s",
+					r.GoalID, machine, otherID, otherID, r.GoalID,
+				)
+			}
 			touch(f, r.VerbRequest, "resume", []string{r.GoalID})
 			f.History[len(f.History)-1].ApprovedRef = r.ApprovedRef
 			if temporaryAuthority {

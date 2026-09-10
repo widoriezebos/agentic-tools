@@ -140,6 +140,39 @@ func TestConvertedForeignClaimAndQueueIsNotOwnedHere(t *testing.T) {
 	}
 }
 
+func TestConvertedOnlyFencedClaimLeavesQueueOpenForHumanResume(t *testing.T) {
+	fenced := approvedStewardGoal("fenced-here", "Wait for the human", "Resume after the stop.", "2026-08-23T00:00:00Z")
+	fenced.State = goal.StateClaimed
+	fenced.Revision++
+	claimRevision := fenced.Revision
+	fenced.Claimed = &goal.ClaimRecord{
+		Machine: "bed-m1", Lineage: "coordinator", At: "2026-08-23T01:00:00Z",
+		Revision: claimRevision, AccountingRevision: claimRevision,
+	}
+	fenced.StopCapability = &goal.StopCapability{
+		Generation: claimRevision, Revision: claimRevision, Machine: "bed-m1", ClaimEpoch: 1, FenceEpoch: 1,
+	}
+	fenced.History = append(fenced.History, goal.HistoryLine{
+		At: "2026-08-23T01:00:00Z", Opid: "01ARZ3NDEKTSV4RRFFQ69G5FAX-bed-m1-00000001",
+		Verb: "claim", Actor: "bed-m1+coordinator", Targets: []string{fenced.Id}, Keep: -1,
+	})
+	fenced.StopFence = &goal.StopFence{
+		StopID: "stop-fenced-here-r3-f1", Revision: claimRevision, Epoch: 1,
+		CapabilityGeneration: claimRevision, ClosedAt: "2026-08-23T01:02:00Z", Reason: goal.StopReasonElapsedLimit,
+	}
+	fenced.Revision++
+	fenced.History = append(fenced.History, goal.HistoryLine{
+		At: "2026-08-23T01:02:00Z", Opid: "01ARZ3NDEKTSV4RRFFQ69G5FAY-bed-m1-00000002",
+		Verb: "breach-stop", Actor: "bed-m1+goal-stop-custodian", Targets: []string{fenced.Id}, Keep: -1,
+	})
+	root := convertedBed(t, "bed-m1", map[string]*goal.GoalFile{fenced.Id: fenced})
+	w, reason, err := ReadOpenWork(root)
+	want := "the only claim held here is breach-stopped: fenced-here (stop stop-fenced-here-r3-f1); it waits on a human resume, and the queue is open"
+	if err != nil || w != WorkNone || reason != want {
+		t.Fatalf("fenced-only claim classification mismatch: work=%v reason=%q err=%v", w, reason, err)
+	}
+}
+
 func TestConvertedUnenrolledMachineDegradesNeverGuesses(t *testing.T) {
 	root := convertedBed(t, "bed-m1", nil)
 	run := exec.Command("git", "-C", root, "config", "--unset", "metasystem.goal.machine")

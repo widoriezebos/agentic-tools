@@ -486,6 +486,13 @@ func nextSynced(root, machine string, fetchFirst bool, requiredLabels ...string)
 		fmt.Fprintln(os.Stderr, "goal next could not answer: "+frontierErr.Error())
 		return 1
 	}
+	fenced := make([]*goal.GoalFile, 0, len(frontier.Fenced))
+	for _, id := range frontier.Fenced {
+		fenced = append(fenced, p.Tree.Live[id])
+	}
+	for _, line := range goal.FencedClaimLines(fenced) {
+		fmt.Println(line)
+	}
 	selection := goal.SelectNext(frontier)
 	switch selection.Kind {
 	case goal.NextSelectionContinue:

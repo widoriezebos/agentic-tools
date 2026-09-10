@@ -100,3 +100,28 @@ func TestServingProjectionForeignClaimServesNothing(t *testing.T) {
 		t.Fatal("a foreign claim must serve nothing here")
 	}
 }
+
+func TestServingProjectionAlwaysServesLiveClaimInsteadOfFencedClaim(t *testing.T) {
+	fenced := breachStoppedGoalForTest("fenced-first", "bed-m1")
+	fenced.Priority, fenced.Sequence = 1, 1
+	live := &GoalFile{
+		Id: "live-second", State: StateClaimed, Intent: "Carry the live work", Origin: OriginMain,
+		NextStep: "Continue it.", OpenedAt: "2026-08-23T00:00:00Z", Revision: 2,
+		Priority: 1, Sequence: 2,
+		Claimed: &ClaimRecord{
+			Machine: "bed-m1", Lineage: "coordinator", At: "2026-08-23T01:01:00Z",
+			Revision: 2, AccountingRevision: 2,
+		},
+	}
+	root := servingBed(t, "bed-m1", map[string]*GoalFile{
+		fenced.Id: fenced,
+		live.Id:   live,
+	})
+	store := &Store{Root: root}
+	for call := 1; call <= 40; call++ {
+		id, intent, ok := store.ServingProjection()
+		if !ok || id != live.Id || intent != live.Intent {
+			t.Fatalf("call %d served fenced or missing work: id=%q intent=%q ok=%t", call, id, intent, ok)
+		}
+	}
+}

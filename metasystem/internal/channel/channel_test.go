@@ -739,6 +739,45 @@ func TestReportNextUpRequiresClaimAndDelivery(t *testing.T) {
 	}
 }
 
+func TestReportShowsFencedClaimInNextUpBlock(t *testing.T) {
+	now := time.Now().UTC().Add(time.Minute)
+	fenced := reportFencedClaim("fenced-report", "Wait for the human.", "fleet-one", "stop-fenced-report-r3-f1", now)
+	root := reportLedger(t, fenced)
+	reportGit(t, root, "commit", "-q", "--allow-empty", "-m", "Ship work before stop\n\nGoal-Item: "+fenced.Id)
+	reportGit(t, root, "update-ref", "refs/remotes/origin/main", "HEAD")
+
+	text := mustComposeReport(t, ReportConfig{
+		RepoRoot: root, Machine: "fleet-one", Now: now, WindowStart: now.Add(-4 * time.Hour), Location: time.UTC,
+	})
+	wantFence := "FENCED fenced-report: breach-stopped by stop-fenced-report-r3-f1 (ELAPSED_LIMIT); only goal resume, a human act, clears it; the queue is open"
+	deliveredAt := strings.Index(text, "Delivered: fenced report")
+	fencedAt := strings.Index(text, wantFence)
+	backlogAt := strings.Index(text, "Backlog first:")
+	if deliveredAt < 0 || fencedAt <= deliveredAt || backlogAt <= fencedAt {
+		t.Fatalf("fenced claim was not visible in the Next up block:\n%s", text)
+	}
+}
+
+func TestReportShowsTwoLiveArcClaimsBesideFencedClaim(t *testing.T) {
+	now := time.Now().UTC().Add(time.Minute)
+	first := reportClaimedGoal("arc-live-one", "Work the first arc member.", "fleet-one", now)
+	second := reportClaimedGoal("arc-live-two", "Work the second arc member.", "fleet-one", now)
+	first.Arc = "report-live-arc"
+	second.Arc = "report-live-arc"
+	fenced := reportFencedClaim("fenced-report", "Wait for the human.", "fleet-one", "stop-fenced-report-r3-f1", now)
+	root := reportLedger(t, first, second, fenced)
+	reportGit(t, root, "commit", "-q", "--allow-empty", "-m", "Ship arc work\n\nGoal-Item: "+first.Id)
+	reportGit(t, root, "update-ref", "refs/remotes/origin/main", "HEAD")
+
+	text := mustComposeReport(t, ReportConfig{
+		RepoRoot: root, Machine: "fleet-one", Now: now, WindowStart: now.Add(-4 * time.Hour), Location: time.UTC,
+	})
+	wantFence := "FENCED fenced-report: breach-stopped by stop-fenced-report-r3-f1 (ELAPSED_LIMIT); only goal resume, a human act, clears it; the queue is open"
+	if !strings.Contains(text, wantFence) || strings.Count(text, "Next up:") != 2 {
+		t.Fatalf("report did not keep both live arc members beside the fenced claim:\n%s", text)
+	}
+}
+
 func TestReportCapsAllOutputAtTwelveLines(t *testing.T) {
 	root := t.TempDir()
 	for i := 0; i < 20; i++ {
@@ -823,6 +862,24 @@ func reportClaimedGoal(id, intent, machine string, now time.Time) *goal.GoalFile
 	f.Revision++
 	f.History = append(f.History, goal.HistoryLine{At: now.Format(time.RFC3339), Opid: goal.Opid("01J5X0000000000000000000R2", machine, id), Verb: "claim", Actor: machine + "+test-lineage", Targets: []string{id}, Keep: -1})
 	f.Claimed = &goal.ClaimRecord{Machine: machine, Lineage: "test-lineage", At: now.Format(time.RFC3339), Revision: f.Revision}
+	return f
+}
+
+func reportFencedClaim(id, intent, machine, stopID string, now time.Time) *goal.GoalFile {
+	f := reportClaimedGoal(id, intent, machine, now)
+	claimRevision := f.Claimed.Revision
+	f.StopCapability = &goal.StopCapability{
+		Generation: claimRevision, Revision: claimRevision, Machine: machine, ClaimEpoch: 1, FenceEpoch: 1,
+	}
+	f.StopFence = &goal.StopFence{
+		StopID: stopID, Revision: claimRevision, Epoch: 1,
+		CapabilityGeneration: claimRevision, ClosedAt: now.Format(time.RFC3339), Reason: goal.StopReasonElapsedLimit,
+	}
+	f.Revision++
+	f.History = append(f.History, goal.HistoryLine{
+		At: now.Format(time.RFC3339), Opid: goal.Opid("01J5X0000000000000000000R3", machine, "stop"),
+		Verb: "breach-stop", Actor: machine + "+goal-stop-custodian", Targets: []string{f.Id}, Keep: -1,
+	})
 	return f
 }
 

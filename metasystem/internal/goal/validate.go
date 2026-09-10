@@ -295,11 +295,15 @@ func ValidateTree(t *TreeGoals) []Problem {
 		}
 	}
 
-	// Quota: one claim per machine, tree-wide; the members of ONE
-	// arc under one claimant count once.
+	// Quota: one claim per machine, tree-wide; the members of ONE arc under
+	// one claimant count once. A breach-stopped goal is waiting on a human
+	// and must not keep the machine from taking the next item.
 	claimsByMachine := map[string][]*GoalFile{}
 	for _, id := range sortedGoalIds(t.Live) {
 		f := t.Live[id]
+		if f.IsFencedClaim() {
+			continue
+		}
 		if f.State == StateClaimed && f.Claimed != nil {
 			claimsByMachine[f.Claimed.Machine] = append(claimsByMachine[f.Claimed.Machine], f)
 		}

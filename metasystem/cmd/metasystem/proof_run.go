@@ -554,8 +554,14 @@ func uniqueActiveProofGoal(root string, now time.Time) (string, error) {
 		return "", fmt.Errorf("resolve active claimed goal for proof: accepted goal projection is empty")
 	}
 	selected := ""
-	for id, file := range projection.Tree.Live {
+	fenced := make([]*goal.GoalFile, 0)
+	for _, id := range goal.OrderedOpenGoalIDs(projection.Tree.Live) {
+		file := projection.Tree.Live[id]
 		if file.State != goal.StateClaimed || file.Claimed == nil || file.Claimed.Machine != machine {
+			continue
+		}
+		if file.IsFencedClaim() {
+			fenced = append(fenced, file)
 			continue
 		}
 		if selected != "" {
@@ -564,6 +570,12 @@ func uniqueActiveProofGoal(root string, now time.Time) (string, error) {
 		selected = id
 	}
 	if selected == "" {
+		if len(fenced) == 1 {
+			return "", fmt.Errorf(
+				"proof accounting has no live claimed goal for machine %s; the only claim here is breach-stopped: %s (stop %s); pass --goal",
+				machine, fenced[0].Id, fenced[0].StopFence.StopID,
+			)
+		}
 		return "", fmt.Errorf("proof accounting is ambiguous: machine %s has no claimed goal; pass --goal", machine)
 	}
 	return selected, nil

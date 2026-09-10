@@ -1085,6 +1085,82 @@ func syncedStoppedGoalFixture(t *testing.T) string {
 	return root
 }
 
+func addSyncedLiveProofGoal(t *testing.T, root string) {
+	t.Helper()
+	openedAt := "2026-08-30T08:10:00Z"
+	claimAt := "2026-08-30T08:15:00Z"
+	approvedAt := "2026-08-30T08:16:00Z"
+	budget := &goal.Budget{ElapsedLimit: "4h", AttemptLimit: 4, ReservedJobMinutesLimit: 240, ActiveJobLimit: 2, ReviewRoundLimit: 3}
+	approvalOpid := goal.Opid("01ARZ3NDEKTSV4RRFFQ69G5FBZ", "mac-cli", "m1")
+	file := &goal.GoalFile{
+		Id: "live-validation", State: goal.StateClaimed, Tier: 3, Intent: "Govern live validation.", Origin: goal.OriginMain,
+		NextStep: "Run it.", OpenedAt: openedAt, Revision: 3,
+		Budget:  budget,
+		Claimed: &goal.ClaimRecord{Machine: "mac-cli", Lineage: "m1", At: claimAt, Revision: 2, AccountingRevision: 2},
+		Approved: &goal.ApprovalRecord{
+			By: "human:Wido", At: approvedAt, Revision: 3, Opid: approvalOpid,
+			Authority: goal.ApprovalAuthorityProven, Digest: goal.ApprovalDigest("Govern live validation.", 3, *budget),
+		},
+		History: []goal.HistoryLine{
+			{At: openedAt, Opid: goal.Opid("01ARZ3NDEKTSV4RRFFQ69G5FBA", "mac-cli", "m1"), Verb: "open", Actor: "mac-cli+m1", Targets: []string{"live-validation"}, Keep: -1},
+			{At: claimAt, Opid: goal.Opid("01ARZ3NDEKTSV4RRFFQ69G5FBB", "mac-cli", "m1"), Verb: "claim", Actor: "mac-cli+m1", Targets: []string{"live-validation"}, Keep: -1},
+			{At: approvedAt, Opid: approvalOpid, Verb: "approve", Actor: "human:Wido", Targets: []string{"live-validation"}, Keep: -1},
+		},
+	}
+	path := filepath.Join(root, "plans", "goals", file.Id+".md")
+	if err := os.WriteFile(path, goal.RenderFile(file), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	goalSyncMutationGit(t, root, "add", "plans/goals/"+file.Id+".md")
+	goalSyncMutationGit(t, root, "commit", "-q", "-m", "add live proof goal fixture")
+	goalSyncMutationGit(t, root, "update-ref", goal.LocalLedgerBranch, "HEAD")
+	goalSyncMutationGit(t, root, "update-ref", goal.AcceptedRef, "HEAD")
+}
+
+func TestProofGoalResolutionUsesLiveClaimBesideBreachStoppedClaim(t *testing.T) {
+	root := syncedStoppedGoalFixture(t)
+	addSyncedLiveProofGoal(t, root)
+	t.Setenv("METASYSTEM_PROOF_CONTROL_ROOT", "")
+	t.Setenv("METASYSTEM_PROOF_ATTEMPT", "")
+
+	for _, test := range []struct {
+		name    string
+		resolve func() (string, error)
+	}{
+		{name: "proof run", resolve: func() (string, error) { return uniqueActiveProofGoal(root, time.Now().UTC()) }},
+		{name: "testing", resolve: func() (string, error) { return resolveTestingGoal(root, "") }},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			got, err := test.resolve()
+			if err != nil || got != "live-validation" {
+				t.Fatalf("live proof goal resolution = %q, %v", got, err)
+			}
+		})
+	}
+}
+
+func TestProofGoalResolutionNamesTheOnlyBreachStoppedClaim(t *testing.T) {
+	root := syncedStoppedGoalFixture(t)
+	t.Setenv("METASYSTEM_PROOF_CONTROL_ROOT", "")
+	t.Setenv("METASYSTEM_PROOF_ATTEMPT", "")
+	want := "proof accounting has no live claimed goal for machine mac-cli; the only claim here is breach-stopped: standing-validation (stop stop-standing-validation-r2-f1); pass --goal"
+
+	for _, test := range []struct {
+		name    string
+		resolve func() (string, error)
+	}{
+		{name: "proof run", resolve: func() (string, error) { return uniqueActiveProofGoal(root, time.Now().UTC()) }},
+		{name: "testing", resolve: func() (string, error) { return resolveTestingGoal(root, "") }},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			got, err := test.resolve()
+			if err == nil || got != "" || err.Error() != want || strings.Contains(err.Error(), "ambiguous") {
+				t.Fatalf("breach-stopped-only proof resolution = %q, %v", got, err)
+			}
+		})
+	}
+}
+
 func amendSyncedGoalFixture(t *testing.T, root, message string, mutate func(*goal.GoalFile)) {
 	t.Helper()
 	path := filepath.Join(root, "plans", "goals", "standing-validation.md")

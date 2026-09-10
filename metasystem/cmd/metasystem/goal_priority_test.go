@@ -240,6 +240,18 @@ func TestGoalPrioritySelection(t *testing.T) {
 	})
 }
 
+func TestGoalNextPrintsFencedClaimBeforeNoClaimableGoal(t *testing.T) {
+	root := syncedStoppedGoalFixture(t)
+	stdout, code := captureStdout(t, func() int {
+		return runGoalNext([]string{"--root", root, "--machine", "mac-cli"})
+	})
+	wantFence := "FENCED standing-validation: breach-stopped by stop-standing-validation-r2-f1 (ELAPSED_LIMIT); only goal resume, a human act, clears it; the queue is open"
+	wantSelection := "no claimable goal for machine mac-cli; no matching eligible work"
+	if code != 0 || !strings.Contains(stdout, wantFence+"\n"+wantSelection+"\n") {
+		t.Fatalf("goal next hid the fenced claim or reordered its selection line: code=%d output=%q", code, stdout)
+	}
+}
+
 func priorityListingFixture(t *testing.T) string {
 	t.Helper()
 	root := syncedClaimedGoalFixture(t)

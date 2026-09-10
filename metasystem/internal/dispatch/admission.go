@@ -134,13 +134,9 @@ func EvaluateGoalAdmission(repoRoot, stopLineage string, now time.Time) (GoalAdm
 			file.Claimed.Machine != machine || file.Claimed.Lineage != stopLineage {
 			continue
 		}
-		if file.StopFence != nil {
-			verdict.Refusals = append(verdict.Refusals, GoalAdmissionRefusal{
-				GoalID: id, GoalRevision: file.Claimed.Revision,
-				Unknown: &BudgetUnknownEvidence{Code: BudgetUnknown, Record: goalRecordPath(id),
-					Reason: fmt.Sprintf("launch fence closed by stop batch %s", file.StopFence.StopID)},
-				LiveStopReason: file.StopFence.Reason,
-			})
+		// A breach-stopped goal is waiting on a human and must not keep the
+		// machine from working the next item.
+		if file.IsFencedClaim() {
 			continue
 		}
 		budget := ProjectBudget(repoRoot, file, now)

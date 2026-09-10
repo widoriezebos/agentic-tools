@@ -198,6 +198,7 @@ type ClaimableBudgetedWork struct {
 	NonTerminalJobs []string
 	Queued          int
 	GoalFree        bool
+	fencedClaims    []*GoalFile
 }
 
 func (w ClaimableBudgetedWork) HasInFlight() bool { return len(w.InFlight) > 0 }
@@ -317,6 +318,11 @@ func readClaimableBudgetedWork(root string, now time.Time, prober identity.Probe
 		Claimed:  append([]string(nil), frontier.Claimed...),
 		Refused:  append([]AdmissionRefusal(nil), frontier.Refused...),
 		GoalFree: projection.Tree.Root != nil && projection.Tree.Root.Free != nil,
+	}
+	for _, id := range frontier.Fenced {
+		if file := projection.Tree.Live[id]; file != nil {
+			work.fencedClaims = append(work.fencedClaims, file)
+		}
 	}
 	claimLineages := make(map[string]string, len(frontier.Claimed))
 	for _, id := range frontier.Claimed {
@@ -503,6 +509,7 @@ type AdmissionRefusal struct {
 // dispatch, and steward decisions.
 type NextVerdict struct {
 	Claimed  []string           // this machine's claimed goals in backlog order
+	Fenced   []string           // this machine's breach-stopped claims in backlog order
 	Ready    []string           // approved and unexpired with every blocker done
 	Blocked  []string           // approved and unexpired behind an open blocker
 	Awaiting []string           // queued or carrying an expired relayed approval
@@ -549,7 +556,13 @@ func Next(p Projection, machine string, requiredLabels ...string) (NextVerdict, 
 		switch f.State {
 		case StateClaimed:
 			if f.Claimed != nil && f.Claimed.Machine == machine {
-				v.Claimed = append(v.Claimed, id)
+				// A breach-stopped goal is waiting on a human and must not
+				// keep the machine from taking the next item.
+				if f.IsFencedClaim() {
+					v.Fenced = append(v.Fenced, id)
+				} else {
+					v.Claimed = append(v.Claimed, id)
+				}
 			}
 		case StateQueued:
 			if MatchesLabels(f.Labels, requiredLabels) {

@@ -74,6 +74,12 @@ type GoalFile struct {
 	History        []HistoryLine
 }
 
+// IsFencedClaim reports a breach-stopped claim that is waiting on a human
+// and must not keep the machine from taking the next item.
+func (f *GoalFile) IsFencedClaim() bool {
+	return f != nil && f.State == StateClaimed && f.Claimed != nil && f.StopFence != nil
+}
+
 type RiskRecord struct {
 	Severity     uint8
 	Novelty      uint8

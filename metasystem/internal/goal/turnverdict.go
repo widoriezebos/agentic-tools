@@ -478,6 +478,8 @@ func (s *Store) enforceIdleBacklog(verdict *Verdict, work *ClaimableBudgetedWork
 	if session.IdleBlocks >= 3 {
 		goalID := work.Claimable[0]
 		claimNeeded := true
+		// A breach-stopped goal is waiting on a human and must not keep the
+		// machine from taking the next item; Next excludes it from Claimed.
 		if len(work.Claimed) > 0 {
 			goalID = work.Claimed[0]
 			claimNeeded = false
@@ -748,6 +750,33 @@ func composeDisplay(prefix []string, ladder string, greens []string) string {
 	return strings.Join(parts, "\n")
 }
 
+// FencedClaimLines renders breach-stopped claims without treating them as
+// work this machine can continue before the human resumes them.
+func FencedClaimLines(files []*GoalFile) []string {
+	lines := make([]string, 0, len(files))
+	for _, file := range files {
+		// A breach-stopped goal is waiting on a human and must not keep the
+		// machine from taking the next item.
+		if !file.IsFencedClaim() {
+			continue
+		}
+		lines = append(lines, fmt.Sprintf(
+			"FENCED %s: breach-stopped by %s (%s); only goal resume, a human act, clears it; the queue is open",
+			file.Id, file.StopFence.StopID, file.StopFence.Reason,
+		))
+	}
+	return lines
+}
+
+// OnlyFencedClaim reports the one held claim that cannot be live work until
+// the human resumes it.
+func (w ClaimableBudgetedWork) OnlyFencedClaim() (*GoalFile, bool) {
+	if len(w.Claimed) != 0 || len(w.fencedClaims) != 1 || !w.fencedClaims[0].IsFencedClaim() {
+		return nil, false
+	}
+	return w.fencedClaims[0], true
+}
+
 // decide is the precedence ladder from the design, in order.
 func (s *Store) decide(verdict *Verdict, scan ScanResult, session *sessionState, work *ClaimableBudgetedWork, brainSeat bool) {
 	for _, item := range scan.Open {
@@ -851,13 +880,22 @@ func (s *Store) decide(verdict *Verdict, scan ScanResult, session *sessionState,
 					blockGoal(fmt.Sprintf("the shared goal queue changed while %s remains claimed here; it %s", facts.Id, queueNow))
 				}
 			}
+			if work != nil {
+				display = append(display, FencedClaimLines(work.fencedClaims)...)
+			}
 		case "queued-only":
 			first, _ := s.queuedFrontier()
 			if first == "" {
 				display = append(display, "no goal is claimed here and the queue is empty; `goal open` starts one")
+				if work != nil {
+					display = append(display, FencedClaimLines(work.fencedClaims)...)
+				}
 				break
 			}
 			display = append(display, "no current goal; the queue holds "+first)
+			if work != nil {
+				display = append(display, FencedClaimLines(work.fencedClaims)...)
+			}
 		case "goal-free":
 			fresh, digest, declared := s.freeState()
 			if fresh {
@@ -916,7 +954,9 @@ func (s *Store) convertedGoalFacts() (*GoalFacts, string, string) {
 		return nil, "degraded", "the accepted tree is unreadable"
 	}
 	for id, f := range proj.Tree.Live {
-		if f.State == "claimed" && f.Claimed != nil && f.Claimed.Machine == machine {
+		// A breach-stopped goal is waiting on a human and must not keep the
+		// machine from taking the next item.
+		if f.State == StateClaimed && f.Claimed != nil && f.Claimed.Machine == machine && !f.IsFencedClaim() {
 			return &GoalFacts{
 				Id:       id,
 				Intent:   f.Intent,
