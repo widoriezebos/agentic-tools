@@ -1,6 +1,6 @@
 # testing-contract-owns-record-paths
 
-- State: claimed
+- State: approved
 - Priority: 1
 - Sequence: 5
 - Risk: severity=3 novelty=1 exposure=3 accumulation=1 basis="severity 3: no seat can land a register, brief or ruling until this is fixed, which is the whole carriage of judgment; novelty 1: one surface entry and one fixture in a contract that already has twelve surfaces; exposure 3: every seat's every record landing; accumulation 1: nothing has been built on it yet"
@@ -9,13 +9,11 @@
 - Origin: main
 - Next step: CLAIMED BY m1e 2026-09-10. Round 1 of job implementer-4f7f89d5ae26d31cd1fa3ae8 (Sol) built the fallback: contract field 'fallback' names the surface owning any path no other surface matches; the fallback surface owns by exclusion (empty paths, the only one allowed); Select affects it instead of raising uncertainty; a contract without a fallback is unchanged; testing.json gains fallback=residual with group lists equal to the union of every other surface's groups, pinned by a test. GREEN (testpolicy package, cmd contract tests, fast gate, test check) and a scratch plan for a candidate touching only static-reproof-fixtures.sh selected residual with no uncertainty. CONSTRAINT FOUND: the retained trusted-base policy engine decodes the candidate contract on its own and refuses the unknown field, so the schema addition lands in TWO steps (the migration the contract design requires for a version change): (1) this chain lands the engine with testing.json unchanged (round 2 reverts the file and makes the union pin vacuous until a fallback is declared), read, receipt, land, rebuild and re-arm the engine; (2) a second chain lands the residual declaration and the live pin (hunk saved in m1e's scratchpad tcorp/testing-json-residual.hunk), read, receipt with the enrolled engine, land. Then goal done with the journey chapter, and unpark landing-receipt-survives-records-drift, whose landing this unblocks (with m1b's gawr-build1 and the slice-3 chain).
 - OpenedAt: 2026-09-09T21:49:17Z
-- Revision: 11
+- Revision: 12
 - Budget: elapsedLimit=1d attemptLimit=10 reservedJobMinutesLimit=1200 activeJobLimit=1 reviewRoundLimit=3
 - BudgetExceptions: 0
 - Approved: by=human:Wido at=2026-09-10T07:29:14Z revision=4 opid=4ZK6CRTM3WB0139F8R1W7B9NNZ-m1b-c6925449 authority=proven digest=3ba72d9bfc753d2638ad986ff5cb13e30a10404dbcad76e53800bdbef94dcb8b
 - Sliced: machine=m1e lineage=main-1789030447-51011-5722fc revision=6 at=2026-09-10T10:59:18Z
-- Claimed: machine=m1e lineage=main-1789030447-51011-5722fc at=2026-09-10T10:57:12Z revision=6 accountingRevision=6
-- StopCapability: generation=6 revision=6 machine=m1e claimEpoch=1 fenceEpoch=0
 
 History:
 - 2026-09-09T21:49:17Z HM3T2QVDJE4SEVNYC59QJ148Y3-m1b-c6925449 open actor=m1b+main-1788680071-18713-e76d5d targets=testing-contract-owns-record-paths
@@ -29,4 +27,5 @@ History:
 - 2026-09-10T11:32:48Z Z9YE5VVK648AH521F9DVA4GJ5J-m1e-892cdaec edit actor=m1e+main-1789030447-51011-5722fc targets=testing-contract-owns-record-paths
 - 2026-09-10T12:04:12Z PPC8N1B8YQGCEBWRC66HHP6DCQ-m1-c6925449 set-priority actor=human:Wido targets=actionable-metrics,breach-clock-and-budget-honesty,breach-stop-wedges-seat,burn-without-delivery-tripwire,carried-landing-debt-and-cap,delegate-job-liveness,enrollment-binds-by-the-skew-rule-not-the-tip,failed-job-attention,fixture-stewards-outlive-their-suite,goal-abandoned-with-a-reason,governed-exhaustion-reprojection,human-carried-landing-verb,human-goal-verbs-forgiving,job-record-birth-token,landing-receipt-survives-records-drift,landing-runs-standard-deep-runs-at-cadence,lease-sweep-death-evidence,live-job-on-a-done-goal-unnoticed,machine-concurrency-governor,proof-harness-process-custody,receipt-beds-run-the-candidate-engine,review-round-limit-counts-per-chain,severity-tiered-rigor,severity-tiered-rigor-p2,skew-preflight-knows-a-receipt-worktree,small-change-lane,steward-catchup-livelock,steward-revives-a-done-goal,stop-batch-strands-a-resumable-goal,suite-custody,testing-contract-owns-record-paths,token-spend-fence,turn-verdict-hardening,watch-verb,watcher-repair-request-never-names-current,winddown-census-handoff-leak reason=priority-order subject=landing-runs-standard-deep-runs-at-cadence from=1:3 to=1:4 requested-sequence=1
 - 2026-09-10T12:22:00Z H5F1MT3CMCMG612JV6CK2ABFQG-m1b-c6925449 set-priority actor=human:Wido targets=actionable-metrics,breach-clock-and-budget-honesty,breach-stop-wedges-seat,burn-without-delivery-tripwire,carried-landing-debt-and-cap,delegate-job-liveness,delivery-candidate-is-the-workspace-not-the-ledger,enrollment-binds-by-the-skew-rule-not-the-tip,failed-job-attention,fixture-stewards-outlive-their-suite,goal-abandoned-with-a-reason,governed-exhaustion-reprojection,human-carried-landing-verb,human-goal-verbs-forgiving,job-record-birth-token,landing-receipt-survives-records-drift,lease-sweep-death-evidence,live-job-on-a-done-goal-unnoticed,machine-concurrency-governor,proof-harness-process-custody,receipt-beds-run-the-candidate-engine,review-round-limit-counts-per-chain,severity-tiered-rigor,severity-tiered-rigor-p2,skew-preflight-knows-a-receipt-worktree,small-change-lane,steward-catchup-livelock,steward-revives-a-done-goal,stop-batch-strands-a-resumable-goal,suite-custody,testing-contract-owns-record-paths,token-spend-fence,turn-verdict-hardening,watch-verb,watcher-repair-request-never-names-current,winddown-census-handoff-leak reason=priority-order subject=delivery-candidate-is-the-workspace-not-the-ledger from=1:4 to=1:5 requested-sequence=2
-Integrity: sha256=f6e916b4b9d65e79d062645fe270361ec7b751dee98c8e7adc62866b4e9b9e2d
+- 2026-09-10T14:02:25Z AB9EATRR7VTF7N68R9V82JVGTT-m1e-892cdaec release actor=m1e+main-1789030447-51011-5722fc targets=testing-contract-owns-record-paths
+Integrity: sha256=ce9989166a267dcd0894d17faa0a8fc96762960eb12286c2d40a0d1adcd54e56
