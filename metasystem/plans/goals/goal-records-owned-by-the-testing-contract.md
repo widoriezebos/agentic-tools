@@ -1,17 +1,19 @@
 # goal-records-owned-by-the-testing-contract
 
-- State: approved
+- State: claimed
 - Risk: severity=2 novelty=1 exposure=3 accumulation=2 basis="severity 2: no records can land, so every goal's evidence trail stays untracked; novelty 1: one surface entry in an existing contract; exposure 3: every seat's every goal; accumulation 2: untracked records pile up in every checkout until it lands"
 - Tier: 3
 - Intent: Since 1b12f534 the testing contract (metasystem/testing.json) owns no plans/**, records/** or memory/rulings.md, so every register-carriage landing of a goal's briefs, dispositions and shared append-only records is refused at land.sh's test verify --purpose delivery with 'delivery impact is unresolved: no surface owns changed path'. DONE means a goal-records surface owns those paths with the same static groups as the instructions surface, a records-only carriage resolves as delivery again, and the seat's test-policy tests pin that plans/ and records/ paths are owned.
 - Origin: main
 - Next step: One Sol round adding the goal-records surface (metasystem/plans/**, metasystem/records/**, metasystem/memory/rulings.md, metasystem/memory/receipts.log; groups section/static-contract-audits) to metasystem/testing.json with a testpolicy test that a records-only change selects delivery; one Opus review; land with --chain. Found by m1 on 2026-09-10 00:25 local landing the dispatch-cap-necessity records; m1c messaged (held for approval). Wido approves at the terminal.
 - OpenedAt: 2026-09-09T22:15:49Z
-- Revision: 19
+- Revision: 20
 - Budget: elapsedLimit=1d attemptLimit=10 reservedJobMinutesLimit=1200 activeJobLimit=1 reviewRoundLimit=3
 - BudgetExceptions: 0
 - Approved: by=human:Wido at=2026-09-10T09:58:34Z revision=13 opid=FMK6TTJWTWPG2B58S27RTBMSQR-m1-c6925449 authority=proven digest=4c3c0cd054441164af8c62d982c44dd8f37f4d6c9c2f46b8fd4e53a9d894edfc
 - Sliced: machine=m1 lineage=main-1788940932-18533-7fa6c2 revision=3 at=2026-09-10T05:50:10Z
+- Claimed: machine=m1 lineage=main-1788940932-18533-7fa6c2 at=2026-09-10T13:23:17Z revision=20 accountingRevision=20
+- StopCapability: generation=20 revision=20 machine=m1 claimEpoch=6 fenceEpoch=0
 
 History:
 - 2026-09-09T22:15:49Z 3DBVQYVHVWMX8YZQ4FQAGE6VHY-m1-1701c13c open actor=m1+main-1788940932-18533-7fa6c2 targets=goal-records-owned-by-the-testing-contract
@@ -33,4 +35,5 @@ History:
 - 2026-09-10T11:31:28Z FXH5E47YZVMWGZ2Z40RAB3GF1J-m1-1701c13c release actor=m1+main-1788940932-18533-7fa6c2 targets=goal-records-owned-by-the-testing-contract
 - 2026-09-10T13:19:03Z P8KQDB2AB9QDK5MV3W2XB5P2FQ-m1-1701c13c claim actor=m1+main-1788940932-18533-7fa6c2 targets=goal-records-owned-by-the-testing-contract
 - 2026-09-10T13:19:07Z 3SJKDDZDSZA80DJS5JFBQ87546-m1-1701c13c release actor=m1+main-1788940932-18533-7fa6c2 targets=goal-records-owned-by-the-testing-contract
-Integrity: sha256=48e9a238d6be34837cce4d51a2d2ab686853ac8683d427e261d22f2198b3f820
+- 2026-09-10T13:23:17Z GYQJJQGKH4F6X6KER6RXKJA0P0-m1-1701c13c claim actor=m1+main-1788940932-18533-7fa6c2 targets=goal-records-owned-by-the-testing-contract
+Integrity: sha256=89ffbb8b4277f1d5bf3b4f5fd53e7f1c13d4389de458dbfee710cb2b63aa0c9b
