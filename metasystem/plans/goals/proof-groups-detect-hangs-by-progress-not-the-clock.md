@@ -7,10 +7,11 @@
 - Origin: main
 - Next step: Slice 1, this seat: design revision 1 by the seat (plans/proof-groups-progress-hang-design.md), Sol critiques; then Sol builds the go adapter: -timeout 0, streaming -json supervision, progress = events or CPU time of the process group (ps -o cputime -g), hung = no progress for the window (a constant, not a config key), SIGQUIT then SIGKILL, reason on the record; Opus critiques; land. Slice 2: the section runner and fixture-budget.sh caps become progress bounds the same way. The census freshness fixture is goal supervision-fixture-census-window-fails-under-load. The parked goal go-groups-carry-their-target-as-the-test-timeout is superseded.
 - OpenedAt: 2026-09-10T13:40:12Z
-- Revision: 5
+- Revision: 6
 - Budget: elapsedLimit=1d attemptLimit=10 reservedJobMinutesLimit=1200 activeJobLimit=1 reviewRoundLimit=3
 - BudgetExceptions: 0
 - Approved: by=human:Wido at=2026-09-10T13:40:35Z revision=2 opid=5V7PAWS77HJNSVW2GKJFPCJMR6-m1-c6925449 authority=proven digest=999d6933823998abfed59fcbbffdffbd547ce9a97bad19e899482298636ffbf1
+- Sliced: machine=m1 lineage=main-1788940932-18533-7fa6c2 revision=5 at=2026-09-10T14:14:54Z
 - Claimed: machine=m1 lineage=main-1788940932-18533-7fa6c2 at=2026-09-10T14:14:31Z revision=5 accountingRevision=5
 - StopCapability: generation=5 revision=5 machine=m1 claimEpoch=6 fenceEpoch=0
 
@@ -20,4 +21,5 @@ History:
 - 2026-09-10T13:40:41Z BBFTT4VJ1Q7R300R1GQ4QTCF4X-m1-1701c13c claim actor=m1+main-1788940932-18533-7fa6c2 targets=proof-groups-detect-hangs-by-progress-not-the-clock
 - 2026-09-10T13:46:52Z 8S4CN12MFTC38EVBH3F91E75ZA-m1-1701c13c release actor=m1+main-1788940932-18533-7fa6c2 targets=proof-groups-detect-hangs-by-progress-not-the-clock
 - 2026-09-10T14:14:31Z KCR8N6Y9K8SX767BX658GA3Z79-m1-1701c13c claim actor=m1+main-1788940932-18533-7fa6c2 targets=proof-groups-detect-hangs-by-progress-not-the-clock
-Integrity: sha256=b2f54ad336c6d565f4fe44eb8b5f7080ac1f9affcfb97ce37d795cde35940d46
+- 2026-09-10T14:14:54Z ADG3S62X97Q5BH3RKVV2TZSDET-m1-1701c13c slice-start actor=m1+main-1788940932-18533-7fa6c2 targets=proof-groups-detect-hangs-by-progress-not-the-clock
+Integrity: sha256=4070a62b38a7287e06212414dda81c5fea9eba0508875d86b5206c8d6b578c28
