@@ -5,9 +5,9 @@
 - Tier: 3
 - Intent: A human at any live terminal of the host, with no agent in the ancestry, can stop, park, release or unpark-without-approval, and session-stop, without an enrolled terminal: a second proof grade (the enrollment walk without the write), placed on those acts only, so no seat is ever wedged by a dead enrolled terminal. Design plans/human-proof-fits-the-act-design.md revision 2, sections "The two proofs" and the stopping rows of section 1.
 - Origin: main
-- Next step: Sol builds ProveTerminal beside Prove in internal/humanauthority, the grade field on the proof and the request, and the terminal-grade rows for session stop, park, release, unpark onto a queued state and the stopping process verbs; fixtures drive an agent shell refused for a stop and a human shell at an unenrolled terminal allowed to stop and refused for an approve. One Sol round, one Opus review, land. Shared design: plans/human-proof-fits-the-act-design.md revision 2 (the parent human-proof-fits-the-act, concluded as decomposed).
+- Next step: LAND-READY, blocked by the receipt (2026-09-10 02:00Z, m1): chain hp-terminal-build1-20260909 rounds/14 (reviewed tree 01f26b23645901c0ee1d86effedbc9d1d4b4d4ef, twelfth critic hp-terminal-crit12-20260909: no material finding after 14 rounds; HPT-01..39 dispositions and all briefs untracked in the m1 checkout) is closed and its diff applies to main. Same receipt wall as dispatch-cap-necessity (section/gate-fence-fixtures refuses an engine-changing candidate under the enrolled engine). Land with run-landing.sh chain hp-terminal-build1-20260909 hp-terminal-grade-for-stopping-acts metasystem/artifacts/agents/hp-terminal-build1-20260909/rounds/14/diff.patch <msg> hp-terminal-crit12-20260909, then goal done. Delivered: ProveTerminal walks to the process-tree root through root-owned protected system images, the terminal grade on park/unpark/release/session stop incl. --arc forms, journal replay refuses named entries and passes typed outcomes through, proof-grades scenario runs end to end (allow path only on an agent-free bed). Notes for members: HPT-36 (proof-free verbs under the blanket replay refusal) on hp-recovery-grants-no-grade-to-unstamped-intents; HPT-39 (root not asserted as pid 1 in production) on the shared design.
 - OpenedAt: 2026-09-09T14:35:03Z
-- Revision: 30
+- Revision: 31
 - Labels: comfort
 - Budget: elapsedLimit=1d attemptLimit=10 reservedJobMinutesLimit=1200 activeJobLimit=1 reviewRoundLimit=3
 - BudgetExceptions: 0
@@ -47,4 +47,5 @@ History:
 - 2026-09-10T01:06:25Z F8D2PVD4971D269EACSSKCBYDD-m1-1701c13c claim actor=m1+main-1788940932-18533-7fa6c2 targets=hp-terminal-grade-for-stopping-acts
 - 2026-09-10T01:22:25Z RE19HFPSNV11GW6J7WAQRE9SD6-m1-1701c13c release actor=m1+main-1788940932-18533-7fa6c2 targets=hp-terminal-grade-for-stopping-acts
 - 2026-09-10T01:47:30Z 4TE0E4HMW26A9GX2WJFH5B7S6S-m1-1701c13c claim actor=m1+main-1788940932-18533-7fa6c2 targets=hp-terminal-grade-for-stopping-acts
-Integrity: sha256=ea74757b858d53f8365791ffbe35d7537678e1955b3a74a13ba4d7bc2f44c6cc
+- 2026-09-10T01:47:39Z 36MJT4SNMYZRR8C7HP1MYV0YA9-m1-1701c13c edit actor=m1+main-1788940932-18533-7fa6c2 targets=hp-terminal-grade-for-stopping-acts
+Integrity: sha256=cadae27bfb2e2dbfe210d0c334ff9e9af9333c9c825d8c76c928568596bc642c
