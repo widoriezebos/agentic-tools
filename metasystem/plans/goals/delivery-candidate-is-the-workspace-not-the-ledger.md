@@ -1,6 +1,6 @@
 # delivery-candidate-is-the-workspace-not-the-ledger
 
-- State: approved
+- State: claimed
 - Priority: 1
 - Sequence: 2
 - Risk: severity=3 novelty=2 exposure=3 accumulation=2 basis="severity 3: with more than one active seat nothing can land except by chance or by stopping the others; novelty 2: the workspace projection exists in the landing observation, the contract just binds the wrong tree; exposure 3: every landing on every seat; accumulation 2: three receipts and a whole afternoon lost to it today"
@@ -9,14 +9,17 @@
 - Origin: main
 - Next step: Sixth member of the-metasystem-validates-itself-with-itself, sequenced right after receipt-beds-run-the-candidate-engine. Tier 3, design-bearing but small: one projection rule in test.go and the landing's post-rebase verify, plus the two fixtures. Opened by m1b at Wido's word 2026-09-10 16:45Z.
 - OpenedAt: 2026-09-10T12:21:47Z
-- Revision: 3
+- Revision: 4
 - Labels: bootstrap
 - Budget: elapsedLimit=1d attemptLimit=10 reservedJobMinutesLimit=1200 activeJobLimit=1 reviewRoundLimit=3
 - BudgetExceptions: 0
 - Approved: by=human:Wido at=2026-09-10T12:21:51Z revision=2 opid=FYEJR5V1PM86NK7GJZA5BBSRAE-m1b-c6925449 authority=proven digest=596df51f012516706953eb2e4fdda5af78a9155d074c986ae18b86507e530611
+- Claimed: machine=m1d lineage=main-1788941004-20871-6e7a43 at=2026-09-10T12:34:13Z revision=4 accountingRevision=4
+- StopCapability: generation=4 revision=4 machine=m1d claimEpoch=3 fenceEpoch=0
 
 History:
 - 2026-09-10T12:21:47Z ZZSFMGPMXRGTV6BBKJC90JEMGG-m1b-c6925449 open actor=m1b+main-1788680071-18713-e76d5d targets=delivery-candidate-is-the-workspace-not-the-ledger
 - 2026-09-10T12:21:51Z FYEJR5V1PM86NK7GJZA5BBSRAE-m1b-c6925449 approve actor=human:Wido targets=delivery-candidate-is-the-workspace-not-the-ledger
 - 2026-09-10T12:22:00Z H5F1MT3CMCMG612JV6CK2ABFQG-m1b-c6925449 set-priority actor=human:Wido targets=actionable-metrics,breach-clock-and-budget-honesty,breach-stop-wedges-seat,burn-without-delivery-tripwire,carried-landing-debt-and-cap,delegate-job-liveness,delivery-candidate-is-the-workspace-not-the-ledger,enrollment-binds-by-the-skew-rule-not-the-tip,failed-job-attention,fixture-stewards-outlive-their-suite,goal-abandoned-with-a-reason,governed-exhaustion-reprojection,human-carried-landing-verb,human-goal-verbs-forgiving,job-record-birth-token,landing-receipt-survives-records-drift,lease-sweep-death-evidence,live-job-on-a-done-goal-unnoticed,machine-concurrency-governor,proof-harness-process-custody,receipt-beds-run-the-candidate-engine,review-round-limit-counts-per-chain,severity-tiered-rigor,severity-tiered-rigor-p2,skew-preflight-knows-a-receipt-worktree,small-change-lane,steward-catchup-livelock,steward-revives-a-done-goal,stop-batch-strands-a-resumable-goal,suite-custody,testing-contract-owns-record-paths,token-spend-fence,turn-verdict-hardening,watch-verb,watcher-repair-request-never-names-current,winddown-census-handoff-leak reason=priority-order subject=delivery-candidate-is-the-workspace-not-the-ledger from=unranked to=1:2 requested-sequence=2
-Integrity: sha256=b4f74e1ead0cf4a9eed7d750c28758676fc534047e5adf538d79b2a3bceeab85
+- 2026-09-10T12:34:13Z MEK9PAMFX86MPS0WTBCE1JGYZ9-m1d-a38bcdde claim actor=m1d+main-1788941004-20871-6e7a43 targets=delivery-candidate-is-the-workspace-not-the-ledger
+Integrity: sha256=7dec87739b0b5cee1fe55b13bf73776a73eda8e8dda26093f3964bb198befea1
