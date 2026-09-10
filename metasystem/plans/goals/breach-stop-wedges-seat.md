@@ -1,6 +1,6 @@
 # breach-stop-wedges-seat
 
-- State: claimed
+- State: approved
 - Priority: 1
 - Sequence: 6
 - Risk: severity=2 novelty=1 exposure=3 accumulation=2 basis="severity 2: one budget breach freezes a whole seat until a human resumes, no work lost; novelty 1: one predicate, a claim under a standing StopFence is not this machine's live work, applied where the machine's work is chosen; exposure 3: every machine's ledger validator, goal next and turn verdict; accumulation 2: each stranded claim adds a frozen seat until cleared"
@@ -9,13 +9,11 @@
 - Origin: main
 - Next step: WAITING ON WIDO, two acts at his terminal, then the seat continues (m1d, 2026-09-09 12:0xZ). (1) metasystem arm --repo /Users/wido/LocalStorage/GitHub/agentic-tools-m1d, because the engine was rebuilt to trunk 5a316c26 after a pull and dispatch refuses on the census fingerprint until the re-arm. (2) goal set-budget to 10 attempts, 960 reserved minutes, 8h elapsed (script wido-commands-2.sh in the m1d session scratchpad), because six of six attempts are spent: rounds 1 to 4 plus critic bsws-crit1b and critic bsws-crit2, which died on an HTTP 429 rate limit with nothing returned. STATE OF THE BUILD: chain bsws-build1b-20260909, rounds 1 to 4 complete. One predicate, GoalFile.IsFencedClaim, applied at the quota (validate.go), the goal-next frontier (project.go, new Fenced list ignored by SelectNext), the turn verdict's current goal and idle branch (turnverdict.go), ServingProjection (goalverbs.go), the resume mutation (stop.go: a resume against a seat holding another live claim refuses in plain words naming the remedy), goal next and the channel report (one FENCED line per fenced claim), and the steward's open-work classifier. The fence law is byte-identical. Critic round 1 (bsws-crit1b, Opus 5) found five material defects, all folded in round 4; register at records/misc/breach-stop-wedges-seat-critique-r1.md. Proven outside the sandbox on the round-4 tree: focused goal fixtures, the cmd test the sandbox cannot run, steward and channel packages, and the full goal-cli bed, all green. TRUNK MOVED under the chain by 54 commits touching six of its files; the engine's rebase plan says rebase, no unmerged paths. NEXT, in order: dispatch round 5 as a follow-up of round 4 with plans/breach-stop-wedges-seat-build-brief-r5.md (merge-forward, no behaviour change; the dispatcher rebases the chain); clean the worktree control plane of sandbox bed litter; validate conformance --stage review on round 5; dispatch the closing code-critic on the rebased tree (brief: plans/breach-stop-wedges-seat-critique2-brief.md, retarget to round 5); with zero material findings, dispatch.sh close, conformance merge, landing test-receipt with 'scripts/agents/go-gate.sh --fast && scripts/agents/dispatch-fixtures.sh && scripts/agents/goal-cli-fixtures.sh', land.sh --chain, mirror main to transport, prove the live seat (claim while a fenced goal is held on this machine), goal done. Residue already backlogged: steward-continues-a-fenced-goal, stop-hook-treats-a-fenced-goal-as-current-work, and the delivery-health hazard BSW-07 (goal steward-delivery-counts-a-fenced-claim, in the same script for Wido to open).
 - OpenedAt: 2026-09-01T06:49:32Z
-- Revision: 21
+- Revision: 22
 - Budget: elapsedLimit=1d attemptLimit=10 reservedJobMinutesLimit=960 activeJobLimit=1 reviewRoundLimit=3
 - BudgetExceptions: 0
 - Approved: by=human:Wido at=2026-09-10T06:18:07Z revision=21 opid=KA76E25MRN5RMZR5GMA60M174P-m1-c6925449 authority=proven digest=91ed9e5521bd28f47b0c6b7a474e49248065399e1fdde01c63d37ec8a0f520a0
 - Sliced: machine=m1d lineage=main-1788941004-20871-6e7a43 revision=8 at=2026-09-09T09:11:09Z
-- Claimed: machine=m1d lineage=main-1788941004-20871-6e7a43 at=2026-09-10T06:18:07Z revision=21 accountingRevision=21
-- StopCapability: generation=21 revision=21 machine=m1d claimEpoch=6 fenceEpoch=0
 
 History:
 - 2026-09-01T06:49:32Z FP70QX8HBN6WY1V8PX52K60QHN-m3-a5da21ff open actor=m3+mac-m3 targets=breach-stop-wedges-seat
@@ -39,4 +37,5 @@ History:
 - 2026-09-10T04:29:09Z S4K6NBVV91BT6VVNV6W1KJTWNH-m1b-c6925449 done actor=m1b+main-1788680071-18713-e76d5d targets=actionable-metrics,breach-clock-and-budget-honesty,breach-stop-wedges-seat,burn-without-delivery-tripwire,delegate-job-liveness,dispatch-cap-necessity,failed-job-attention,fixture-stewards-outlive-their-suite,goal-abandoned-with-a-reason,governed-exhaustion-reprojection,human-goal-verbs-forgiving,job-record-birth-token,landing-receipt-survives-records-drift,lease-sweep-death-evidence,live-job-on-a-done-goal-unnoticed,machine-concurrency-governor,one-screen-renderer-breaks-brain-stop-seeded,proof-harness-process-custody,review-round-limit-counts-per-chain,severity-tiered-rigor,severity-tiered-rigor-p2,small-change-lane,steward-catchup-livelock,steward-revives-a-done-goal,stop-batch-strands-a-resumable-goal,suite-custody,token-spend-fence,turn-verdict-hardening,watch-verb,watcher-repair-request-never-names-current,winddown-census-handoff-leak reason=priority-order from=1:7 to=1:6
 - 2026-09-10T06:18:03Z V3PWTQ46K05NT2X2NNYS1GCKYH-m1-c6925449 resume actor=human:Wido targets=breach-stop-wedges-seat
 - 2026-09-10T06:18:07Z KA76E25MRN5RMZR5GMA60M174P-m1-c6925449 set-budget actor=human:Wido targets=breach-stop-wedges-seat displaced=m1d+main-1788941004-20871-6e7a43@2026-09-10T06:18:03Z
-Integrity: sha256=9e308d8f3116ffdc712cccbf38a8876ce74c5b18f8609945674cf606cf051817
+- 2026-09-10T06:18:28Z 83XV5YWBR1PN5MV65PNHJS6ZY8-m1d-a38bcdde release actor=m1d+main-1788941004-20871-6e7a43 targets=breach-stop-wedges-seat
+Integrity: sha256=58eaab952f94467f936e8390b86fc6bc8f6565ba600d166d4e3f9ad471185437
