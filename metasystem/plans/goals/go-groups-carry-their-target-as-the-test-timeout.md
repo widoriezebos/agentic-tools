@@ -7,10 +7,11 @@
 - Origin: main
 - Next step: m1c's lane (proof engine): in test_go.go build the argv with -timeout <targetMs as a Go duration> when targetMs exceeds the default, record it on the group, one unit test; Sol builds, Opus critiques.
 - OpenedAt: 2026-09-10T11:24:31Z
-- Revision: 3
+- Revision: 4
 - Budget: elapsedLimit=4h attemptLimit=6 reservedJobMinutesLimit=720 activeJobLimit=1 reviewRoundLimit=2
 - BudgetExceptions: 0
 - Approved: by=human:Wido at=2026-09-10T11:25:06Z revision=2 opid=4AH1P389PPBSZ6TWT43EP59GZ2-m1-c6925449 authority=proven digest=b2ee827f724e159ba6098d3c7e74370e8fdfe48608d85b50e42e94b9772c7f76
+- Sliced: machine=m1 lineage=main-1788940932-18533-7fa6c2 revision=3 at=2026-09-10T11:31:41Z
 - Claimed: machine=m1 lineage=main-1788940932-18533-7fa6c2 at=2026-09-10T11:31:33Z revision=3 accountingRevision=3
 - StopCapability: generation=3 revision=3 machine=m1 claimEpoch=6 fenceEpoch=0
 
@@ -18,4 +19,5 @@ History:
 - 2026-09-10T11:24:31Z J2NF02RE4HDBASGVHV14Z9H0MQ-m1-1701c13c open actor=m1+main-1788940932-18533-7fa6c2 targets=go-groups-carry-their-target-as-the-test-timeout
 - 2026-09-10T11:25:06Z 4AH1P389PPBSZ6TWT43EP59GZ2-m1-c6925449 approve actor=human:Wido targets=go-groups-carry-their-target-as-the-test-timeout
 - 2026-09-10T11:31:33Z XNQN94WAFF76409ZYJSTYA06P7-m1-1701c13c claim actor=m1+main-1788940932-18533-7fa6c2 targets=go-groups-carry-their-target-as-the-test-timeout
-Integrity: sha256=fc814853d306951a79edab62f1128061206a27d774233a5d1a25e585e0f67678
+- 2026-09-10T11:31:41Z 22FSCND2KV6JTSYR9RTZSA05SB-m1-1701c13c slice-start actor=m1+main-1788940932-18533-7fa6c2 targets=go-groups-carry-their-target-as-the-test-timeout
+Integrity: sha256=e54ddf6e8856bdc014596c3ba35c641a913cdd9a42e410c4577cb7b0c3cab7fb
