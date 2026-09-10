@@ -1,19 +1,18 @@
 # governed-exhaustion-reprojection
 
-- State: claimed
+- State: parked
 - Priority: 1
 - Sequence: 12
 - Intent: The governed exhaustion check decides on a reserved figure frozen at admission (internal/dispatch/governed.go:149 ReservedBefore; internal/run/conclude.go:316-318 ReservedBefore + observedMinutes >= limit) and never re-projects at conclusion, so open caps that have since settled still count and a failing attempt can be marked exhausted, raise retroactive debt and block later governed work on spend that no longer exists. DONE means exhaustion at conclusion is decided on a fresh projection taken at that instant, excluding the concluding run from both the run records and the durable attempts, retry-safe after a partial commit, with every production store that concludes a governed run carrying the projection seam
 - Origin: main
 - Next step: BUILD: round 1 stopped before writing on constraint C8 (the revision-mismatch diagnostic named an error text that does not exist in that case); decided in the follow-up: reuse the observation's own mismatch sentence from governed.go verbatim. Round 2 dispatched (gerp-build1-r2, Sol). Then closing read (Opus), receipt and landing in the fleet hold behind members 1 and 3 of the bootstrap umbrella.
 - OpenedAt: 2026-09-02T18:37:29Z
-- Revision: 31
+- Revision: 32
 - Budget: elapsedLimit=4h attemptLimit=10 reservedJobMinutesLimit=240 activeJobLimit=1 reviewRoundLimit=3
 - BudgetExceptions: 0
 - Approved: by=human:Wido at=2026-09-06T06:53:37Z revision=3 opid=A35EHY2TGAWCCFA1Q1J0WZGS35-m1-a4f8999f authority=proven digest=2163cb860d8d3cead232af07a67468d33497865331ba06537617e18ab2ba2eca
 - Sliced: machine=m1b lineage=main-1788680071-18713-e76d5d revision=12 at=2026-09-10T04:32:06Z
-- Claimed: machine=m1b lineage=main-1788680071-18713-e76d5d at=2026-09-10T14:03:57Z revision=28 accountingRevision=28
-- StopCapability: generation=28 revision=28 machine=m1b claimEpoch=1 fenceEpoch=0
+- Parked: by=m1b+main-1788680071-18713-e76d5d at=2026-09-10T14:45:10Z because=Parked 2026-09-10 21:05Z for the landing window: the claim quota is one per machine and members 1 and 3 land first; build gerp-build1-r2 keeps running to its return; unpark and claim again right after the two landings.
 
 History:
 - 2026-09-02T18:37:29Z HPTWTQNYQHY9BEMEMGQN383W4Y-m1b-fad3674e open actor=m1b+main-1788333346-60696-6a3256 targets=governed-exhaustion-reprojection
@@ -47,4 +46,5 @@ History:
 - 2026-09-10T14:04:12Z D9JNQZB2PN9J1EYEN2TSS2J2NM-m1b-c6925449 edit actor=m1b+main-1788680071-18713-e76d5d targets=governed-exhaustion-reprojection
 - 2026-09-10T14:14:01Z M9BZ4DM0FZTWQN30WF286WV5XA-m1b-c6925449 edit actor=m1b+main-1788680071-18713-e76d5d targets=governed-exhaustion-reprojection
 - 2026-09-10T14:41:28Z 9597A6GQQ6W4JGJ16KWA7ZXYVH-m1c-66a02980 done actor=human:Wido targets=actionable-metrics,breach-clock-and-budget-honesty,burn-without-delivery-tripwire,carried-landing-debt-and-cap,delegate-job-liveness,enrollment-binds-by-the-skew-rule-not-the-tip,failed-job-attention,fixture-stewards-outlive-their-suite,goal-abandoned-with-a-reason,governed-exhaustion-reprojection,human-carried-landing-carry,human-carried-landing-verb,human-goal-verbs-forgiving,job-record-birth-token,landing-receipt-survives-records-drift,lease-sweep-death-evidence,live-job-on-a-done-goal-unnoticed,machine-concurrency-governor,proof-harness-process-custody,receipt-beds-run-the-candidate-engine,review-round-limit-counts-per-chain,severity-tiered-rigor,severity-tiered-rigor-p2,skew-preflight-knows-a-receipt-worktree,small-change-lane,steward-catchup-livelock,steward-revives-a-done-goal,stop-batch-strands-a-resumable-goal,suite-custody,testing-contract-owns-record-paths,token-spend-fence,turn-verdict-hardening,watch-verb,watcher-repair-request-never-names-current,winddown-census-handoff-leak reason=priority-order from=1:13 to=1:12
-Integrity: sha256=36c8b572ae9763db2cac1aecf45af87c258327b08109d33ae4ab50e2980f3c1e
+- 2026-09-10T14:45:10Z 2YAEJ3YJ217CHAXQPYNQFJ1BWW-m1b-c6925449 park actor=m1b+main-1788680071-18713-e76d5d targets=governed-exhaustion-reprojection reason=Parked 2026-09-10 21:05Z for the landing window: the claim quota is one per machine and members 1 and 3 land first; build gerp-build1-r2 keeps running to its return; unpark and claim again right after the two landings.
+Integrity: sha256=d32982a239c0431bd36bde98d2dcf0fe641380ec6983da1a6d2c1641a04bb3e9
