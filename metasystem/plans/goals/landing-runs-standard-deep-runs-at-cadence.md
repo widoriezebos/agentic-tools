@@ -7,7 +7,8 @@
 - Origin: human
 - Next step: INTENT: the goal's risk answers stop choosing per-landing depth; depth is decided by the change (protected policy change, unknown paths, a surface whose critical obligations demand it, or an explicit --mode deep), the goal's risk answers scale cadence weight instead and may add one deep run when a large goal concludes (ruling R-3): that is option B of section 5 slice 1 with option C's move of the two coverage groups and the big process sections out of every surface's deep list into cadence only, the plan's recommendation, recorded as the decision unless Wido names another option. CONSTRAINTS: no group leaves testing.json (groups move between per-landing and cadence, none is deleted); ruling R-16 stands (runs continue and collect); ruling R-18 stands (a changed contract runs its callers, so this landing itself runs the protected set once); TestModesDoNotLowerRequiredRisk and the protection tests are updated to the new law, never deleted; docs/collaboration.md lines 40 to 56 and the R-3 enforcement note in memory/rulings.md say the new law. FREEDOMS: whether risk feeds weight in internal/gaterun/weight.go or through the contract; how the design page states the rule. ROSTER (R-25): Fable designs (one page, plans/landing-runs-standard-design.md), Sol critiques the design once, Sol implements, Fable critiques the implementation. Files: internal/testpolicy/risk.go (requiresDeep), select.go if the required-set composition changes, testing.json deep lists, gaterun/weight.go if risk scales weight, the testpolicy tests, the two prose sites. Read sections 2, 4 and 7 of plans/suite-speed-plan.md and rulings R-2, R-3, R-16, R-17, R-18 first.
 - OpenedAt: 2026-09-10T12:02:32Z
-- Revision: 2
+- Revision: 3
+- Pinned: m1e
 - Budget: elapsedLimit=4h attemptLimit=4 reservedJobMinutesLimit=720 activeJobLimit=1 reviewRoundLimit=2
 - BudgetExceptions: 0
 - Approved: by=human:Wido at=2026-09-10T12:04:04Z revision=2 opid=HZEC0T9ZQC0S464BM9AMDWCB2S-m1-c6925449 authority=proven digest=7dbee6881e0007063959d26916b3e2c90eb0e9c7ea6a6701d93e66e723ff1a5d
@@ -15,4 +16,5 @@
 History:
 - 2026-09-10T12:02:32Z 9CGDMRV8C8W6DP3MD8DRXVQ2PP-m1e-892cdaec open actor=m1e+main-1789030447-51011-5722fc targets=landing-runs-standard-deep-runs-at-cadence
 - 2026-09-10T12:04:04Z HZEC0T9ZQC0S464BM9AMDWCB2S-m1-c6925449 approve actor=human:Wido targets=landing-runs-standard-deep-runs-at-cadence
-Integrity: sha256=8edd53abd1c89b49a8d2b8fedecd5f9661713ed799097f80db8941587740ea2c
+- 2026-09-10T12:04:08Z ZZT19D1EJXQRPRGNNTFJPHTQTT-m1-c6925449 set-pin actor=human:Wido targets=landing-runs-standard-deep-runs-at-cadence
+Integrity: sha256=4900f487b41228fdd333bf0f820703d5bbd7c77d997c4eeb137aa8e8c59dc923
