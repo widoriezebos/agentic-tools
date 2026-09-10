@@ -1,6 +1,6 @@
 # review-round-limit-counts-per-chain
 
-- State: claimed
+- State: parked
 - Priority: 1
 - Sequence: 8
 - Risk: severity=1 novelty=1 exposure=3 accumulation=2 basis="severity 1: nothing unsafe lands, the minutes bound still holds; novelty 1: one counter moves from the critic root to the goal, in code that exists; exposure 3: every goal's box on every machine; accumulation 2: the norm's review-round figure is quietly meaningless, and every tiering decision that leans on it inherits the gap"
@@ -9,13 +9,12 @@
 - Origin: main
 - Next step: LAND-READY, BLOCKED BY THE RECEIPT (2026-09-10 09:20Z): chain rrl-build1 closed on round 3 (15 files, every path owned by the contract, MECHANICAL, no critique per the hazard table). Schema-2 receipt on the staged candidate (tree ea00c14a): 35 of 36 selected groups passed in 54 minutes; section/gate-fence-fixtures failed for the machinery reason goal gate-fence-fixtures-refuse-engine-changing-candidates records (the beds dispatch with the enrolled engine inside the candidate worktree and the skew preflight refuses). The same failure blocks m1's dispatch-cap-necessity and hp-terminal-grade chains. Candidate patch in m1b's scratchpad (rrl-build1-r3.patch); nothing staged on main. When the gate-fence goal lands or the group is lawfully waived for engine-changing candidates: stage the patch, landing test-receipt --mode auto, land.sh --chain rrl-build1 --test-receipt, goal done.
 - OpenedAt: 2026-09-06T10:38:37Z
-- Revision: 18
+- Revision: 19
 - Budget: elapsedLimit=1d attemptLimit=10 reservedJobMinutesLimit=1200 activeJobLimit=1 reviewRoundLimit=3
 - BudgetExceptions: 0
 - Approved: by=human:Wido at=2026-09-06T10:39:18Z revision=2 opid=SE0TDND1R5PT5PP85ZQ75EVVG1-m1-a4f8999f authority=proven digest=98dbad0c115ce25fd9cd226687f57a9106e091ebb57f902a1de8f1794fa469cc
 - Sliced: machine=m1b lineage=main-1788680071-18713-e76d5d revision=12 at=2026-09-10T04:59:06Z
-- Claimed: machine=m1b lineage=main-1788680071-18713-e76d5d at=2026-09-10T04:58:20Z revision=12 accountingRevision=12
-- StopCapability: generation=12 revision=12 machine=m1b claimEpoch=1 fenceEpoch=0
+- Parked: by=m1b+main-1788680071-18713-e76d5d at=2026-09-10T07:24:27Z because=Parked 2026-09-10 09:50Z, LAND-READY: chain rrl-build1 closed on round 3 (15 files, every path owned by the contract); the schema-2 receipt passed 35 of 36 groups and section/gate-fence-fixtures refuses every engine-changing candidate (goal gate-fence-fixtures-refuse-engine-changing-candidates). Resume when that goal lands or the group is lawfully carried: stage the patch from m1b's scratchpad (rrl-build1-r3.patch), landing test-receipt --mode auto, land.sh --chain rrl-build1 --test-receipt, goal done.
 
 History:
 - 2026-09-06T10:38:37Z K5T6D71J8CK76PGHRBHDY1FSBP-m1-a4f8999f open actor=m1+main-1788594343-3833-fb64b9 targets=review-round-limit-counts-per-chain
@@ -36,4 +35,5 @@ History:
 - 2026-09-10T06:06:28Z JBF8XTHAWGWTC7VSVR0V6R6VGR-m1b-c6925449 edit actor=m1b+main-1788680071-18713-e76d5d targets=review-round-limit-counts-per-chain
 - 2026-09-10T06:13:19Z GRNEA72K7YT6009QSB77BYMXDQ-m1b-c6925449 edit actor=m1b+main-1788680071-18713-e76d5d targets=review-round-limit-counts-per-chain
 - 2026-09-10T07:21:56Z PK9BENPVE882XMFPQAV28BHVWN-m1b-c6925449 edit actor=m1b+main-1788680071-18713-e76d5d targets=review-round-limit-counts-per-chain
-Integrity: sha256=b290dd38bcc90c0be0e6cd2c62131b7eb984a00410e0415cd8df2c346e7ef25a
+- 2026-09-10T07:24:27Z E8TAMKW9PS9RHVS9WGZ8PQCCKW-m1b-c6925449 park actor=m1b+main-1788680071-18713-e76d5d targets=review-round-limit-counts-per-chain reason=Parked 2026-09-10 09:50Z, LAND-READY: chain rrl-build1 closed on round 3 (15 files, every path owned by the contract); the schema-2 receipt passed 35 of 36 groups and section/gate-fence-fixtures refuses every engine-changing candidate (goal gate-fence-fixtures-refuse-engine-changing-candidates). Resume when that goal lands or the group is lawfully carried: stage the patch from m1b's scratchpad (rrl-build1-r3.patch), landing test-receipt --mode auto, land.sh --chain rrl-build1 --test-receipt, goal done.
+Integrity: sha256=54c5a67ca4ad19adc6684afa4afe95fda8f7d80714fa15496accd1482e00c165
