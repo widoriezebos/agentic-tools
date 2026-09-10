@@ -7,10 +7,11 @@
 - Origin: main
 - Next step: One Sol round adding the goal-records surface (metasystem/plans/**, metasystem/records/**, metasystem/memory/rulings.md, metasystem/memory/receipts.log; groups section/static-contract-audits) to metasystem/testing.json with a testpolicy test that a records-only change selects delivery; one Opus review; land with --chain. Found by m1 on 2026-09-10 00:25 local landing the dispatch-cap-necessity records; m1c messaged (held for approval). Wido approves at the terminal.
 - OpenedAt: 2026-09-09T22:15:49Z
-- Revision: 3
+- Revision: 4
 - Budget: elapsedLimit=1d attemptLimit=10 reservedJobMinutesLimit=1200 activeJobLimit=1 reviewRoundLimit=3
 - BudgetExceptions: 0
 - Approved: by=human:Wido at=2026-09-10T05:48:24Z revision=2 opid=J91KS4812YR2Z1GKMWPG86SSSM-m1-c6925449 authority=proven digest=4c3c0cd054441164af8c62d982c44dd8f37f4d6c9c2f46b8fd4e53a9d894edfc
+- Sliced: machine=m1 lineage=main-1788940932-18533-7fa6c2 revision=3 at=2026-09-10T05:50:10Z
 - Claimed: machine=m1 lineage=main-1788940932-18533-7fa6c2 at=2026-09-10T05:50:03Z revision=3 accountingRevision=3
 - StopCapability: generation=3 revision=3 machine=m1 claimEpoch=6 fenceEpoch=0
 
@@ -18,4 +19,5 @@ History:
 - 2026-09-09T22:15:49Z 3DBVQYVHVWMX8YZQ4FQAGE6VHY-m1-1701c13c open actor=m1+main-1788940932-18533-7fa6c2 targets=goal-records-owned-by-the-testing-contract
 - 2026-09-10T05:48:24Z J91KS4812YR2Z1GKMWPG86SSSM-m1-c6925449 approve actor=human:Wido targets=goal-records-owned-by-the-testing-contract
 - 2026-09-10T05:50:03Z YXSZJEFAXMCBVCM8S08PX6EWAW-m1-1701c13c claim actor=m1+main-1788940932-18533-7fa6c2 targets=goal-records-owned-by-the-testing-contract
-Integrity: sha256=7f5f3bda17d33b598c517cb3e9f0852e3110e306f95bf00b084279739923472e
+- 2026-09-10T05:50:10Z WYRSX5XGC356BGDWK8EGT95H5N-m1-1701c13c slice-start actor=m1+main-1788940932-18533-7fa6c2 targets=goal-records-owned-by-the-testing-contract
+Integrity: sha256=f0ab7881f0b97eacb482eeea7f70d86726eca7386151d365d3722338780ced2c
