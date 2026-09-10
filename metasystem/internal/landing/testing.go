@@ -26,6 +26,9 @@ func PrepareTestingReceiptPayload(installationRoot, tree string, result proofrun
 	if err := proofrun.ValidateTestResult(result); err != nil || !result.Delivery.Sufficient {
 		return TestReceipt{}, nil, fmt.Errorf("testing result is not sufficient delivery evidence: %v", err)
 	}
+	if result.CandidateEngineIdentityVersion != proofrun.CandidateEngineIdentitySchemaVersion || result.CandidateEngineDigest == "" {
+		return TestReceipt{}, nil, fmt.Errorf("testing result has no candidate engine digest")
+	}
 	if result.CandidateTree != tree {
 		return TestReceipt{}, nil, fmt.Errorf("testing result proves tree %s, not receipt tree %s", result.CandidateTree, tree)
 	}
@@ -64,6 +67,7 @@ func PrepareTestingReceiptPayload(installationRoot, tree string, result proofrun
 	receipt := TestReceipt{SchemaVersion: 2, Tree: tree, ProvedTree: result.CandidateTree, ExitStatus: 0,
 		Time: completedAt.UTC().Format(time.RFC3339Nano), Binding: TestReceiptBinding{IndexTreeBefore: indexBefore,
 			WorktreeTreeBefore: worktreeBefore, IndexTreeAfter: indexAfter, WorktreeTreeAfter: worktreeAfter},
+		PolicyEngineDigest: result.PolicyEngineDigest, CandidateEngineDigest: result.CandidateEngineDigest,
 		Testing: &copyResult, AttemptIDs: ids}
 	encoded, err := json.Marshal(receipt)
 	if err != nil {
@@ -153,7 +157,26 @@ func decodeCommittedTestingReceipt(payload json.RawMessage) (TestReceipt, error)
 	if err := decoder.Decode(&struct{}{}); err != io.EOF || receipt.SchemaVersion != 2 || receipt.Testing == nil {
 		return TestReceipt{}, fmt.Errorf("schema-2 testing receipt is incomplete or has trailing data")
 	}
+	if err := validateTestingReceiptEngineIdentity(receipt); err != nil {
+		return TestReceipt{}, err
+	}
 	return receipt, nil
+}
+
+func validateTestingReceiptEngineIdentity(receipt TestReceipt) error {
+	if receipt.Testing == nil {
+		return fmt.Errorf("schema-2 testing receipt has no testing evidence")
+	}
+	switch receipt.Testing.CandidateEngineIdentityVersion {
+	case 0:
+		return nil
+	case proofrun.CandidateEngineIdentitySchemaVersion:
+		if receipt.CandidateEngineDigest != "" && receipt.PolicyEngineDigest == receipt.Testing.PolicyEngineDigest &&
+			receipt.CandidateEngineDigest == receipt.Testing.CandidateEngineDigest {
+			return nil
+		}
+	}
+	return fmt.Errorf("schema-2 testing receipt contradicts its policy or candidate engine identity")
 }
 
 // Schema two binds the whole staged candidate and projects only actual test inputs.

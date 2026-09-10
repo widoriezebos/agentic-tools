@@ -2,6 +2,7 @@ package landing
 
 import (
 	"bytes"
+	"encoding/json"
 	"os"
 	"path/filepath"
 	"strings"
@@ -47,10 +48,11 @@ func TestSchemaTwoReceiptRequiresSuccessfulTerminalGroupOwners(t *testing.T) {
 	}
 	zero := 0
 	digest := strings.Repeat("a", 64)
-	result := proofrun.TestResult{SchemaVersion: proofrun.TestResultSchemaVersion, AttemptID: attempt.AttemptID,
+	result := proofrun.TestResult{SchemaVersion: proofrun.TestResultSchemaVersion,
+		CandidateEngineIdentityVersion: proofrun.CandidateEngineIdentitySchemaVersion, AttemptID: attempt.AttemptID,
 		Purpose: testpolicy.PurposeDelivery, RequestedMode: testpolicy.ModeAuto, RequiredMode: testpolicy.ModeStandard, ExecutedMode: testpolicy.ModeStandard,
 		ProjectRoot: projectRoot, BaseCommit: head, CandidateTree: tree, PolicyBaseCommit: head,
-		ContractDigest: digest, BaseContractDigest: digest, PolicyEngineDigest: digest, BehaviorPolicyDigest: digest, PlanDigest: digest,
+		ContractDigest: digest, BaseContractDigest: digest, PolicyEngineDigest: digest, CandidateEngineDigest: strings.Repeat("e", 64), BehaviorPolicyDigest: digest, PlanDigest: digest,
 		RequiredGroups: []string{"application"}, SelectedGroups: []string{"application"}, LaunchCounts: proofrun.LaunchCounts{Test: 1, CountsComplete: true},
 		StartedAt: now.Add(-2 * time.Second).Format(time.RFC3339Nano), Cost: proofrun.TestCost{DeclaredTargetMS: 1}, Groups: []proofrun.GroupResult{{ID: "application", Kind: "unit", Obligations: []string{"behavior"},
 			InputDigest: digest, InputManifest: []string{"source/**"}, ExecutionIdentity: digest, CWD: ".", ToolIdentities: map[string]string{},
@@ -84,9 +86,58 @@ func TestSchemaTwoReceiptRequiresSuccessfulTerminalGroupOwners(t *testing.T) {
 	if err != nil || receipt.SchemaVersion != 2 || len(receipt.AttemptIDs) != 1 || !fullReceiptCommandAccepted(receipt) {
 		t.Fatalf("schema-2 receipt=%+v err=%v", receipt, err)
 	}
+	if receipt.PolicyEngineDigest != result.PolicyEngineDigest || receipt.CandidateEngineDigest != result.CandidateEngineDigest || receipt.ProvedTree != tree {
+		t.Fatalf("schema-2 receipt lost policy engine, candidate engine, or candidate tree: %+v", receipt)
+	}
 	if _, err := readTestReceipt(ObserveParams{RepoRoot: f.root, CandidateTree: subtree, TestReceipt: TestReceiptPath(f.root, tree)}); err != nil {
 		t.Fatalf("schema-2 receipt consumer: %v", err)
 	}
+	legacyPayload := legacyTestingReceiptPayload(t, receipt)
+	t.Run("landing observe and tier-one read an unmarked schema-2 payload", func(t *testing.T) {
+		if err := os.WriteFile(TestReceiptPath(f.root, tree), legacyPayload, 0o600); err != nil {
+			t.Fatal(err)
+		}
+		if _, err := readTestReceipt(ObserveParams{RepoRoot: f.root, CandidateTree: subtree, TestReceipt: TestReceiptPath(f.root, tree)}); err != nil {
+			t.Fatalf("shared landing receipt reader rejected an old-format schema-2 payload: %v", err)
+		}
+	})
+	t.Run("committed receipt recovery reads an unmarked schema-2 payload", func(t *testing.T) {
+		attemptPath, err := proofrun.AttemptPath(f.root, attempt.AttemptID)
+		if err != nil {
+			t.Fatal(err)
+		}
+		originalAttempt, err := os.ReadFile(attemptPath)
+		if err != nil {
+			t.Fatal(err)
+		}
+		defer func() {
+			if restoreErr := os.WriteFile(attemptPath, originalAttempt, 0o600); restoreErr != nil {
+				t.Errorf("restore current-format attempt: %v", restoreErr)
+			}
+		}()
+		retained, err := proofrun.ReadAttempt(f.root, attempt.AttemptID)
+		if err != nil {
+			t.Fatal(err)
+		}
+		var legacyReceipt TestReceipt
+		if err := json.Unmarshal(legacyPayload, &legacyReceipt); err != nil {
+			t.Fatal(err)
+		}
+		retained.TestResult = legacyReceipt.Testing
+		retained.DeliveryReceipt = nil
+		retained.DeliveryReceiptBytes = append([]byte(nil), legacyPayload...)
+		encodedAttempt, err := json.MarshalIndent(retained, "", "  ")
+		if err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(attemptPath, append(encodedAttempt, '\n'), 0o600); err != nil {
+			t.Fatal(err)
+		}
+		published, err := PublishCommittedReceipt(f.root, attempt.AttemptID)
+		if err != nil || published.Testing == nil || published.Testing.CandidateEngineIdentityVersion != 0 {
+			t.Fatalf("committed receipt recovery rejected an old-format schema-2 payload: receipt=%+v err=%v", published, err)
+		}
+	})
 	if err := os.MkdirAll(filepath.Join(projectRoot, "source"), 0o755); err != nil {
 		t.Fatal(err)
 	}
@@ -104,6 +155,31 @@ func TestSchemaTwoReceiptRequiresSuccessfulTerminalGroupOwners(t *testing.T) {
 	if _, err := CreateTestingReceipt(f.root, tree, failed); err == nil {
 		t.Fatal("receipt projection accepted a group without terminal outer authority")
 	}
+}
+
+func legacyTestingReceiptPayload(t *testing.T, receipt TestReceipt) []byte {
+	t.Helper()
+	encoded, err := json.Marshal(receipt)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var payload map[string]any
+	if err := json.Unmarshal(encoded, &payload); err != nil {
+		t.Fatal(err)
+	}
+	delete(payload, "policyEngineDigest")
+	delete(payload, "candidateEngineDigest")
+	testingPayload, ok := payload["testing"].(map[string]any)
+	if !ok {
+		t.Fatal("schema-2 fixture has no nested testing payload")
+	}
+	delete(testingPayload, "candidateEngineIdentityVersion")
+	delete(testingPayload, "candidateEngineDigest")
+	encoded, err = json.Marshal(payload)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return encoded
 }
 
 func TestAdoptionRulingsPreserveApplicationAndLandingAuthority(t *testing.T) {

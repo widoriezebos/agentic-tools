@@ -565,6 +565,7 @@ git commit "${commit_args[@]}" --trailer "Landing-Provenance: $provenance" \
 
 	writeReceiptFixture(t, root, ".gitignore", "artifacts/\nbin/\n")
 	writeReceiptFixture(t, root, "metasystem.conf", "metasystem.version=1\nmetasystem.runtimes=fake\nrole.code-critic.runtime=fake\ntesting.contract=testing.json\ndispatch.cap-min=1\ndispatch.cap-max=120\n")
+	writeCandidateEngineBuildFixture(t, root, filepath.Join(root, "bin", "metasystem"))
 	writeReceiptFixture(t, root, "internal/app/source.txt", "base-one\nkeep-two\nkeep-three\nkeep-four\nbase-five\n")
 	recertificationContract := testpolicy.Contract{SchemaVersion: 1,
 		ProjectRisk: testpolicy.ProjectRisk{Severity: 1, Exposure: 1, Reversibility: "revert", Detection: "immediate", Recovery: "bounded"},
@@ -1355,11 +1356,13 @@ func runSharedTestingReceiptRecovery(t *testing.T, prefix string) {
 	writeReceiptFixture(t, root, ".gitignore", "artifacts/\nbin/\n")
 	writeReceiptFixture(t, projectRoot, "payload.txt", "public shared testing input\n")
 	writeReceiptFixture(t, root, "metasystem.conf", "testing.contract=testing.json\nmetasystem.runtimes=fake\ndispatch.cap-min=1\ndispatch.cap-max=120\n")
+	engine := filepath.Join(t.TempDir(), "metasystem")
+	writeCandidateEngineBuildFixture(t, root, engine)
 	launchCount := filepath.Join(root, "artifacts", "shared-testing-launches")
 	contract := testpolicy.Contract{SchemaVersion: 1,
 		ProjectRisk: testpolicy.ProjectRisk{Severity: 1, Exposure: 1, Reversibility: "revert", Detection: "immediate", Recovery: "bounded"},
 		Surfaces: []testpolicy.Surface{
-			{ID: "application", Paths: []string{"testing.json", "plans/**", "scripts/agents/coverage-ratchet.json", "scripts/agents/coverage-ratchet-linux.json"}, Standard: []string{"policy-protection", "candidate-smoke"}, Critical: []string{"application-proof"}},
+			{ID: "application", Paths: []string{"testing.json", "plans/**", "scripts/agents/go-build.sh", "scripts/agents/coverage-ratchet.json", "scripts/agents/coverage-ratchet-linux.json"}, Standard: []string{"policy-protection", "candidate-smoke"}, Critical: []string{"application-proof"}},
 			{ID: "proof-and-landing", Paths: []string{"payload.txt"}, DependsOn: []string{"application"}, Standard: []string{"policy-protection", "candidate-smoke"}, Critical: []string{"application-proof"}},
 		},
 		Groups: []testpolicy.Group{{ID: "policy-protection", Kind: "unit", Adapter: "command", CWD: ".", Inputs: []string{"payload.txt"},
@@ -1423,7 +1426,6 @@ func runSharedTestingReceiptRecovery(t *testing.T, prefix string) {
 	runReceiptGit(t, root, "update-ref", goal.LocalLedgerBranch, head)
 	runReceiptGit(t, root, "update-ref", goal.AcceptedRef, head)
 	tree := runReceiptGit(t, root, "write-tree")
-	engine := filepath.Join(t.TempDir(), "metasystem")
 	build := exec.Command("go", "build", "-buildvcs=false", "-ldflags",
 		"-X github.com/widoriezebos/agentic-tools/metasystem/internal/supervise.BuildStamp="+head, "-o", engine, ".")
 	if output, buildErr := build.CombinedOutput(); buildErr != nil {
@@ -1547,6 +1549,28 @@ func runSharedTestingReceiptRecovery(t *testing.T, prefix string) {
 	if launches, err := os.ReadFile(launchCount); err != nil || strings.TrimSpace(string(launches)) != "1" {
 		t.Fatalf("current-candidate recomposition or verification relaunched a group: launches=%q err=%v", launches, err)
 	}
+	t.Run("candidate-engine-build-failure-is-insufficient", func(t *testing.T) {
+		writeReceiptFixture(t, root, "scripts/agents/go-build.sh", "#!/usr/bin/env bash\necho 'fixture candidate engine compile failed' >&2\nexit 23\n")
+		if err := os.Chmod(filepath.Join(root, "scripts", "agents", "go-build.sh"), 0o755); err != nil {
+			t.Fatal(err)
+		}
+		runReceiptGit(t, projectRoot, "add", filepath.ToSlash(filepath.Join(prefix, "scripts/agents/go-build.sh")))
+		failedTree := runReceiptGit(t, projectRoot, "write-tree")
+		tree = failedTree
+		failureOutput, failureErr := runPublic()
+		if exit, ok := failureErr.(*exec.ExitError); !ok || exit.ExitCode() != 1 ||
+			!strings.Contains(string(failureOutput), "candidate engine build failed") ||
+			!strings.Contains(string(failureOutput), "fixture candidate engine compile failed") {
+			t.Fatalf("candidate engine build failure did not make the receipt insufficient: err=%v\n%s", failureErr, failureOutput)
+		}
+		if _, err := os.Stat(landing.TestReceiptPath(root, failedTree)); !os.IsNotExist(err) {
+			t.Fatalf("candidate engine build failure left a receipt: %v", err)
+		}
+		remaining, err := proofrun.ReadAttempts(root)
+		if err != nil || len(remaining) != 1 {
+			t.Fatalf("candidate engine build failure fell through to proof admission: attempts=%d err=%v", len(remaining), err)
+		}
+	})
 }
 
 func receiptCanaryEnvironment() []string {
@@ -1604,6 +1628,19 @@ func writeReceiptFixture(t *testing.T, root, relative, content string) {
 		t.Fatal(err)
 	}
 	if err := os.WriteFile(path, []byte(content), 0o644); err != nil {
+		t.Fatal(err)
+	}
+}
+
+func writeCandidateEngineBuildFixture(t *testing.T, root, policyEngine string) {
+	t.Helper()
+	writeReceiptFixture(t, root, "scripts/agents/go-build.sh", fmt.Sprintf(`#!/usr/bin/env bash
+set -euo pipefail
+[[ "$1" == --trimpath && "$2" == --out && -n "${3:-}" ]]
+printf '#!/usr/bin/env bash\n# candidate commit %%s\nexec "%%s" "$@"\n' "$METASYSTEM_BUILD_STAMP" %s >"$3"
+chmod +x "$3"
+`, strconv.Quote(policyEngine)))
+	if err := os.Chmod(filepath.Join(root, "scripts", "agents", "go-build.sh"), 0o755); err != nil {
 		t.Fatal(err)
 	}
 }

@@ -492,6 +492,139 @@ func testingRunRequest(prepared testingPreparation, attemptID, logRoot, candidat
 		CandidateEngine: candidateEngine, CandidateEngineDigest: candidateEngineDigest}
 }
 
+type candidateEngineBuild struct {
+	Path, Digest, Commit string
+	directory            string
+}
+
+func candidateEngineBuildEnvironment(environment []string, stamp string) []string {
+	owned := map[string]bool{
+		"CGO_ENABLED": true, "GOENV": true, "GOEXPERIMENT": true, "GOFLAGS": true,
+		"GOTOOLCHAIN": true, "GOWORK": true, "METASYSTEM_BUILD_STAMP": true,
+	}
+	result := make([]string, 0, len(environment)+7)
+	for _, entry := range environment {
+		key, _, _ := strings.Cut(entry, "=")
+		if !owned[key] {
+			result = append(result, entry)
+		}
+	}
+	return append(result, "CGO_ENABLED=0", "GOENV=off", "GOEXPERIMENT=", "GOFLAGS=",
+		"GOTOOLCHAIN=local", "GOWORK=off", "METASYSTEM_BUILD_STAMP="+stamp)
+}
+
+func (build *candidateEngineBuild) Close() error {
+	if build == nil || build.directory == "" {
+		return nil
+	}
+	directory := build.directory
+	build.directory = ""
+	return os.RemoveAll(directory)
+}
+
+// buildCandidateEngine materializes the exact project tree, stamps its
+// synthetic candidate commit into one proof build, and leaves bin/metasystem
+// untouched. The output survives worktree cleanup for the authenticated
+// worker and every detached group it launches.
+func buildCandidateEngine(ctx context.Context, workspace gittree.Workspace, installationPrefix, candidateTree string, environment []string) (*candidateEngineBuild, error) {
+	detached, err := workspace.NewDetachedWorktree(candidateTree)
+	if err != nil {
+		return nil, fmt.Errorf("candidate engine build failed while materializing tree %s: %w", candidateTree, err)
+	}
+	removeDetached := func() error { return detached.Close() }
+	candidateCommit, err := bindMaterializedCandidateCommit(ctx, detached.Workspace().Dir)
+	if err != nil {
+		closeErr := removeDetached()
+		return nil, fmt.Errorf("candidate engine build failed while resolving the materialized candidate commit: %v (cleanup: %v)", err, closeErr)
+	}
+	directory, err := os.MkdirTemp("", "metasystem-candidate-engine.*")
+	if err != nil {
+		closeErr := removeDetached()
+		return nil, fmt.Errorf("candidate engine build failed while allocating its private output: %v (cleanup: %v)", err, closeErr)
+	}
+	build := &candidateEngineBuild{Path: filepath.Join(directory, "metasystem"), Commit: candidateCommit, directory: directory}
+	fail := func(cause error, output []byte) (*candidateEngineBuild, error) {
+		closeErr := removeDetached()
+		removeErr := build.Close()
+		detail := strings.TrimSpace(string(output))
+		if detail != "" {
+			cause = fmt.Errorf("%w: %s", cause, detail)
+		}
+		if closeErr != nil || removeErr != nil {
+			cause = fmt.Errorf("%w (cleanup: worktree=%v output=%v)", cause, closeErr, removeErr)
+		}
+		return nil, fmt.Errorf("candidate engine build failed at commit %s through scripts/agents/go-build.sh --trimpath --out: %w", candidateCommit, cause)
+	}
+	installationRoot := filepath.Join(detached.Workspace().Dir, filepath.FromSlash(installationPrefix))
+	command := exec.CommandContext(ctx, "bash", "scripts/agents/go-build.sh", "--trimpath", "--out", build.Path)
+	command.Dir = installationRoot
+	command.Env = candidateEngineBuildEnvironment(environment, candidateCommit)
+	command.WaitDelay = 5 * time.Second
+	output, commandErr := command.CombinedOutput()
+	if commandErr != nil {
+		return fail(commandErr, output)
+	}
+	if err := removeDetached(); err != nil {
+		_ = build.Close()
+		return nil, fmt.Errorf("candidate engine build failed while cleaning its materialized worktree: %w", err)
+	}
+	info, err := os.Stat(build.Path)
+	if err != nil || !info.Mode().IsRegular() || info.Mode()&0o111 == 0 {
+		_ = build.Close()
+		return nil, fmt.Errorf("candidate engine build failed: scripts/agents/go-build.sh did not produce a regular executable: %v", err)
+	}
+	build.Digest, err = fileSHA256(build.Path)
+	if err != nil {
+		_ = build.Close()
+		return nil, fmt.Errorf("candidate engine build failed while hashing its proof output: %w", err)
+	}
+	return build, nil
+}
+
+func bindMaterializedCandidateCommit(ctx context.Context, root string) (string, error) {
+	gitLine := func(environment []string, args ...string) (string, error) {
+		command := exec.CommandContext(ctx, "git", append([]string{"-C", root}, args...)...)
+		command.Env = environment
+		output, err := command.CombinedOutput()
+		if err != nil {
+			return "", fmt.Errorf("git %s: %w: %s", strings.Join(args, " "), err, strings.TrimSpace(string(output)))
+		}
+		return strings.TrimSpace(string(output)), nil
+	}
+	environment := gittree.ScrubbedEnviron()
+	tree, err := gitLine(environment, "rev-parse", "HEAD^{tree}")
+	if err != nil {
+		return "", err
+	}
+	commitEnvironment := make([]string, 0, len(environment)+2)
+	for _, entry := range environment {
+		name, _, _ := strings.Cut(entry, "=")
+		switch name {
+		case "GIT_AUTHOR_NAME", "GIT_AUTHOR_EMAIL", "GIT_COMMITTER_NAME", "GIT_COMMITTER_EMAIL",
+			"GIT_AUTHOR_DATE", "GIT_COMMITTER_DATE":
+			continue
+		}
+		commitEnvironment = append(commitEnvironment, entry)
+	}
+	commitEnvironment = append(commitEnvironment,
+		"GIT_AUTHOR_DATE=2000-01-01T00:00:00Z", "GIT_COMMITTER_DATE=2000-01-01T00:00:00Z")
+	commit, err := gitLine(commitEnvironment, "-c", "user.name=MetaSystem", "-c", "user.email=metasystem@invalid",
+		"-c", "author.name=MetaSystem", "-c", "author.email=metasystem@invalid",
+		"-c", "committer.name=MetaSystem", "-c", "committer.email=metasystem@invalid",
+		"-c", "i18n.commitEncoding=UTF-8", "commit-tree", tree, "-m", "stable candidate proof snapshot")
+	if err != nil {
+		return "", err
+	}
+	current, unborn, err := (gittree.Workspace{Dir: root}).HeadCommit()
+	if err != nil || unborn {
+		return "", fmt.Errorf("resolve temporary candidate HEAD: %v", err)
+	}
+	if _, err := gitLine(environment, "update-ref", "--no-deref", "HEAD", commit, current); err != nil {
+		return "", err
+	}
+	return commit, nil
+}
+
 func runTestRun(args []string) int {
 	commandStarted := time.Now().UTC()
 	request, _, status := parseTestingSelection("test run", args, true)
@@ -513,18 +646,22 @@ func runTestRun(args []string) int {
 		fmt.Fprintln(os.Stderr, "metasystem test run:", err)
 		return 1
 	}
-	engineDigest, err := fileSHA256(engine)
+	buildContext, cancelBuild := context.WithTimeout(context.Background(), limits.sectionCap)
+	candidateEngine, err := buildCandidateEngine(buildContext, gittree.Workspace{Dir: prepared.ProjectRoot}, prepared.Prefix,
+		prepared.CandidateTree, inheritedTestingEnvironment(prepared.Environment, os.Environ()))
+	cancelBuild()
 	if err != nil {
 		fmt.Fprintln(os.Stderr, "metasystem test run:", err)
 		return 1
 	}
+	defer candidateEngine.Close()
 	planDigest := proofrun.TestPlanDigest(prepared.EffectiveContract, prepared.Plan, prepared.CandidateTree)
 	manifestDigest, err := testingCandidateManifest(gittree.Workspace{Dir: prepared.ProjectRoot}, prepared.CandidateTree)
 	if err != nil {
 		fmt.Fprintln(os.Stderr, "metasystem test run: capture candidate manifest:", err)
 		return proofrun.ExitAdmissionRefused
 	}
-	preRequest := testingRunRequest(prepared, "", "", engine, engineDigest)
+	preRequest := testingRunRequest(prepared, "", "", candidateEngine.Path, candidateEngine.Digest)
 	metadataStarted := time.Now()
 	metadataContext, cancelMetadata := context.WithTimeout(context.Background(), limits.sectionCap)
 	identities, preparedGroups, preparationLaunches, identityErr := proofrun.PrepareGroupExecutionIdentities(metadataContext, preRequest)
@@ -549,7 +686,7 @@ func runTestRun(args []string) int {
 		ExecutionRoot: prepared.ProjectRoot, ConfPath: prepared.ConfPath, GoalID: request.GoalID, RetryDecision: request.RetryDecision,
 		CapMin:     request.CapMin,
 		ScopeClass: "selected", CommandClass: "testing", IdentityInputs: append([]string{prepared.CandidateTree, prepared.ContractDigest,
-			prepared.BaseContractDigest, prepared.PolicyEngineDigest, prepared.BehaviorPolicyDigest, planDigest}, identityInputs...), Environment: prepared.Environment,
+			prepared.BaseContractDigest, prepared.PolicyEngineDigest, candidateEngine.Digest, prepared.BehaviorPolicyDigest, planDigest}, identityInputs...), Environment: prepared.Environment,
 		SharedEngine: engine, SharedManifestDigest: manifestDigest, ComponentIdentities: identities})
 	if err != nil {
 		fmt.Fprintln(os.Stderr, "metasystem test run:", err)
@@ -584,7 +721,7 @@ func runTestRun(args []string) int {
 		return decision.ExitStatus
 	}
 	prepared.GoalID, prepared.AccountingRevision = attempt.GoalID, attempt.AccountingRevision
-	preRequest = testingRunRequest(prepared, "", "", engine, engineDigest)
+	preRequest = testingRunRequest(prepared, "", "", candidateEngine.Path, candidateEngine.Digest)
 	preRequest.PreparedGroups, preRequest.PreparationLaunches = preparedGroups, preparationLaunches
 	preRequest.PreparationDurationMS, preRequest.CommandStartedAt = preparationDuration, commandStarted.Format(time.RFC3339Nano)
 	reusedGroups := map[string]proofrun.GroupResult{}
@@ -607,7 +744,7 @@ func runTestRun(args []string) int {
 		fmt.Fprintln(os.Stderr, "metasystem test run:", err)
 		return retainIncompleteProofAttempt(prepared.Installation, attempt.AttemptID, joined, 1)
 	}
-	runRequest := testingRunRequest(prepared, attempt.AttemptID, filepath.Join(pathsRoot, "groups"), engine, engineDigest)
+	runRequest := testingRunRequest(prepared, attempt.AttemptID, filepath.Join(pathsRoot, "groups"), candidateEngine.Path, candidateEngine.Digest)
 	runRequest.ProgressPath = filepath.Join(pathsRoot, "progress.jsonl")
 	runRequest.Reused, runRequest.ComponentIdentities = reusedGroups, identities
 	runRequest.PreparedGroups, runRequest.PreparationLaunches = preparedGroups, preparationLaunches
@@ -788,17 +925,6 @@ func runTestVerify(args []string) int {
 		fmt.Fprintln(os.Stderr, "metasystem test verify:", err)
 		return 1
 	}
-	engine, err := os.Executable()
-	if err != nil {
-		fmt.Fprintln(os.Stderr, "metasystem test verify:", err)
-		return 1
-	}
-	engineDigest, err := fileSHA256(engine)
-	if err != nil {
-		fmt.Fprintln(os.Stderr, "metasystem test verify:", err)
-		return 1
-	}
-	runRequest := testingRunRequest(prepared, "", "", engine, engineDigest)
 	limits, err := resolveProofRunLimits(prepared.ConfPath)
 	if err != nil {
 		fmt.Fprintln(os.Stderr, "metasystem test verify:", err)
@@ -809,6 +935,12 @@ func runTestVerify(args []string) int {
 		fmt.Fprintln(os.Stderr, "metasystem test verify:", err)
 		return 1
 	}
+	candidateEngineDigest, err := retainedCandidateEngineDigest(prepared, attempts)
+	if err != nil {
+		fmt.Fprintln(os.Stderr, "metasystem test verify:", err)
+		return 1
+	}
+	runRequest := testingRunRequest(prepared, "", "", "", candidateEngineDigest)
 	metadataContext, cancelMetadata := context.WithTimeout(context.Background(), limits.sectionCap)
 	identities, err := proofrun.RevalidateRetainedGroupExecutionIdentities(metadataContext, runRequest, attempts)
 	cancelMetadata()
@@ -828,6 +960,54 @@ func runTestVerify(args []string) int {
 		return 1
 	}
 	return 0
+}
+
+func retainedCandidateEngineDigest(prepared testingPreparation, attempts []proofrun.Attempt) (string, error) {
+	matching := func(result proofrun.TestResult) (string, bool) {
+		matches := result.CandidateTree == prepared.CandidateTree && result.ContractDigest == prepared.ContractDigest &&
+			result.BaseContractDigest == prepared.BaseContractDigest && result.PolicyEngineDigest == prepared.PolicyEngineDigest &&
+			result.BehaviorPolicyDigest == prepared.BehaviorPolicyDigest && result.Purpose == testpolicy.PurposeDelivery &&
+			result.Delivery.Sufficient && proofrun.ValidateTestResult(result) == nil
+		if !matches {
+			return "", false
+		}
+		if result.CandidateEngineIdentityVersion == 0 {
+			return result.PolicyEngineDigest, true
+		}
+		if result.CandidateEngineIdentityVersion == proofrun.CandidateEngineIdentitySchemaVersion &&
+			len(result.CandidateEngineDigest) == sha256.Size*2 {
+			return result.CandidateEngineDigest, true
+		}
+		return "", false
+	}
+	var newestStarted time.Time
+	digest := ""
+	for _, attempt := range attempts {
+		started, startErr := time.Parse(time.RFC3339Nano, attempt.StartedAt)
+		candidateDigest, matches := "", false
+		if attempt.TestResult != nil {
+			candidateDigest, matches = matching(*attempt.TestResult)
+		}
+		if startErr == nil && attempt.Terminal != nil && attempt.Terminal.Result == proofrun.TerminalSuccess && matches &&
+			(newestStarted.IsZero() || started.After(newestStarted)) {
+			newestStarted, digest = started, candidateDigest
+		}
+	}
+	if digest != "" {
+		return digest, nil
+	}
+	var receipt landing.TestReceipt
+	if err := readStrictJSON(landing.TestReceiptPath(prepared.Installation, prepared.CandidateTree), &receipt); err == nil &&
+		receipt.SchemaVersion == 2 && receipt.Tree == prepared.CandidateTree && receipt.Testing != nil {
+		candidateDigest, matches := matching(*receipt.Testing)
+		legacy := receipt.Testing.CandidateEngineIdentityVersion == 0
+		markedIdentityMatches := receipt.PolicyEngineDigest == receipt.Testing.PolicyEngineDigest &&
+			receipt.CandidateEngineDigest == receipt.Testing.CandidateEngineDigest
+		if matches && (legacy || markedIdentityMatches) {
+			return candidateDigest, nil
+		}
+	}
+	return "", fmt.Errorf("candidate engine digest is absent from retained evidence for tree %s; run metasystem test run", prepared.CandidateTree)
 }
 
 func loadPhysicalTestingContract(root string) (string, testpolicy.Contract, string, error) {

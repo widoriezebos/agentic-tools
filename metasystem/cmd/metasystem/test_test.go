@@ -14,6 +14,7 @@ import (
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/gittree"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/goal"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/identity"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/landing"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/proofrun"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/steward"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/testpolicy"
@@ -27,6 +28,405 @@ func TestTrustedPolicyEngineIsRequiredWithoutBuildingDuringReadOnlySelection(t *
 	if entries, err := os.ReadDir(root); err != nil || len(entries) != 0 {
 		t.Fatalf("read-only policy selection created build inputs: entries=%v err=%v", entries, err)
 	}
+}
+
+func TestCandidateEngineIsBuiltFromCandidateTreeAndBindsExecutionIdentity(t *testing.T) {
+	fixture := newCandidateEngineFixture(t)
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+	built, err := buildCandidateEngine(ctx, gittree.Workspace{Dir: fixture.projectRoot}, "metasystem", fixture.candidateTree, testingEnvironment(os.Environ()))
+	if err != nil {
+		t.Fatalf("build candidate proof engine: %v", err)
+	}
+	t.Cleanup(func() { _ = built.Close() })
+	repeated, err := buildCandidateEngine(ctx, gittree.Workspace{Dir: fixture.projectRoot}, "metasystem", fixture.candidateTree, testingEnvironment(os.Environ()))
+	if err != nil {
+		t.Fatalf("repeat candidate proof engine build: %v", err)
+	}
+	t.Cleanup(func() { _ = repeated.Close() })
+	if repeated.Commit != built.Commit || repeated.Digest != built.Digest {
+		t.Fatalf("same candidate tree produced unstable proof engine identity: first=%+v repeated=%+v", built, repeated)
+	}
+	testingFixtureGit(t, fixture.projectRoot, "config", "i18n.commitEncoding", "ISO-8859-1")
+	testingFixtureGit(t, fixture.projectRoot, "config", "author.name", "repository author")
+	t.Run("foreign Git identity and encoding", func(t *testing.T) {
+		for name, value := range map[string]string{
+			"GIT_AUTHOR_NAME": "foreign author", "GIT_AUTHOR_EMAIL": "foreign-author@example.invalid",
+			"GIT_COMMITTER_NAME": "foreign committer", "GIT_COMMITTER_EMAIL": "foreign-committer@example.invalid",
+			"GIT_AUTHOR_DATE": "2010-01-02T03:04:05Z", "GIT_COMMITTER_DATE": "2011-02-03T04:05:06Z",
+		} {
+			t.Setenv(name, value)
+		}
+		foreignEnvironment, err := buildCandidateEngine(ctx, gittree.Workspace{Dir: fixture.projectRoot}, "metasystem", fixture.candidateTree, testingEnvironment(os.Environ()))
+		if err != nil {
+			t.Fatalf("build identical tree with foreign Git identity and encoding: %v", err)
+		}
+		t.Cleanup(func() { _ = foreignEnvironment.Close() })
+		if foreignEnvironment.Commit != built.Commit || foreignEnvironment.Digest != built.Digest {
+			t.Fatalf("same tree depended on ambient Git identity or encoding: first=%+v foreign=%+v", built, foreignEnvironment)
+		}
+	})
+	testingFixtureGit(t, fixture.projectRoot, "-c", "user.name=Test", "-c", "user.email=test@example.invalid", "commit", "-qm", "land candidate tree")
+	afterLanding, err := buildCandidateEngine(ctx, gittree.Workspace{Dir: fixture.projectRoot}, "metasystem", fixture.candidateTree, testingEnvironment(os.Environ()))
+	if err != nil {
+		t.Fatalf("build identical tree after its checkout history moved: %v", err)
+	}
+	t.Cleanup(func() { _ = afterLanding.Close() })
+	if afterLanding.Commit != built.Commit || afterLanding.Digest != built.Digest {
+		t.Fatalf("same tree depended on its checkout history: first=%+v after-landing=%+v", built, afterLanding)
+	}
+	actualDigest, err := fileSHA256(built.Path)
+	if err != nil || actualDigest != built.Digest || actualDigest == fixture.policyDigest {
+		t.Fatalf("candidate engine digest=%s policy=%s actual=%s err=%v", built.Digest, fixture.policyDigest, actualDigest, err)
+	}
+	data, err := os.ReadFile(built.Path)
+	if err != nil || !strings.Contains(string(data), "candidate engine source") || !strings.Contains(string(data), built.Commit) {
+		t.Fatalf("candidate engine does not carry candidate source and commit: commit=%s data=%q err=%v", built.Commit, data, err)
+	}
+
+	group := testpolicy.Group{ID: "candidate-bed", Kind: "integration", Adapter: "section", CWD: "metasystem",
+		Inputs: []string{"metasystem/cmd/metasystem/engine.txt"}, Obligations: []string{"candidate-engine"},
+		Platforms: []string{"any"}, TargetMS: 1, Section: "candidate-bed"}
+	contract := testpolicy.Contract{SchemaVersion: 1, Groups: []testpolicy.Group{group}}
+	plan := testpolicy.Plan{Purpose: testpolicy.PurposeDelivery, RequestedMode: testpolicy.ModeStandard,
+		RequiredMode: testpolicy.ModeStandard, ExecutedMode: testpolicy.ModeStandard,
+		RequiredGroups: []string{group.ID}, SelectedGroups: []string{group.ID}, Stages: []testpolicy.Stage{{ID: "standard", Groups: []string{group.ID}}}}
+	prepared := testingPreparation{ProjectRoot: fixture.projectRoot, Prefix: "metasystem", CandidateTree: fixture.candidateTree,
+		BaseCommit: fixture.baseCommit, PolicyBaseCommit: fixture.baseCommit, EffectiveContract: contract, Plan: plan,
+		ContractDigest: strings.Repeat("1", 64), BaseContractDigest: strings.Repeat("2", 64),
+		PolicyEngineDigest: fixture.policyDigest, BehaviorPolicyDigest: strings.Repeat("3", 64)}
+	request := testingRunRequest(prepared, "", "", built.Path, built.Digest)
+	result := proofrun.NewTestResult(request)
+	if result.PolicyEngineDigest != fixture.policyDigest || result.CandidateEngineDigest != built.Digest || result.CandidateTree != fixture.candidateTree {
+		t.Fatalf("retained execution identity lost policy, candidate engine, or tree: %+v", result)
+	}
+	identities, err := proofrun.GroupExecutionIdentities(ctx, request)
+	if err != nil {
+		t.Fatal(err)
+	}
+	changedPolicy := request
+	changedPolicy.PolicyEngineDigest = strings.Repeat("4", 64)
+	policyIdentities, err := proofrun.GroupExecutionIdentities(ctx, changedPolicy)
+	if err != nil {
+		t.Fatal(err)
+	}
+	changedCandidate := request
+	changedCandidate.CandidateEngineDigest = strings.Repeat("5", 64)
+	candidateIdentities, err := proofrun.GroupExecutionIdentities(ctx, changedCandidate)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if identities[group.ID] == policyIdentities[group.ID] || identities[group.ID] == candidateIdentities[group.ID] {
+		t.Fatalf("group execution identity omitted one engine digest: current=%s policy-change=%s candidate-change=%s", identities[group.ID], policyIdentities[group.ID], candidateIdentities[group.ID])
+	}
+}
+
+func TestCandidateEngineTrimpathIsReproducibleAcrossMaterializationDirectories(t *testing.T) {
+	script, err := os.ReadFile(filepath.Join("..", "..", "scripts", "agents", "go-build.sh"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	cacheRoot := t.TempDir()
+	stamp := strings.Repeat("a", 40)
+	build := func(name string) string {
+		root := filepath.Join(t.TempDir(), name)
+		writeTestingFixtureFile(t, filepath.Join(root, "scripts", "agents", "go-build.sh"), script, 0o755)
+		writeTestingFixtureFile(t, filepath.Join(root, "go.mod"), []byte("module github.com/widoriezebos/agentic-tools/metasystem\n\ngo 1.26\n"), 0o644)
+		writeTestingFixtureFile(t, filepath.Join(root, "cmd", "metasystem", "main.go"), []byte("package main\nfunc main() {}\n"), 0o644)
+		output := filepath.Join(t.TempDir(), "metasystem")
+		command := exec.Command("bash", "scripts/agents/go-build.sh", "--trimpath", "--out", output)
+		command.Dir = root
+		command.Env = append(candidateEngineBuildEnvironment(testingEnvironment(os.Environ()), stamp),
+			"GOCACHE="+filepath.Join(cacheRoot, "build"), "GOMODCACHE="+filepath.Join(cacheRoot, "modules"))
+		if combined, buildErr := command.CombinedOutput(); buildErr != nil {
+			t.Fatalf("build identical tree in %s: %v\n%s", root, buildErr, combined)
+		}
+		digest, digestErr := fileSHA256(output)
+		if digestErr != nil {
+			t.Fatal(digestErr)
+		}
+		return digest
+	}
+	first, second := build("first-materialization"), build("second-materialization")
+	if first != second {
+		t.Fatalf("one source tree built in two directories had different candidate engine digests: first=%s second=%s", first, second)
+	}
+}
+
+func TestCandidateEngineBuildEnvironmentIsPinnedWithoutDroppingProofCustody(t *testing.T) {
+	stamp := strings.Repeat("a", 40)
+	environment := candidateEngineBuildEnvironment([]string{
+		"PATH=/fixture/bin", "GOFLAGS=-mod=vendor", "GOWORK=/foreign/workspace", "GOTOOLCHAIN=auto",
+		"GOEXPERIMENT=fieldtrack", "GOENV=/foreign/goenv", "CGO_ENABLED=1",
+		"METASYSTEM_PROOF_CONTROL_ROOT=/proof", "METASYSTEM_PROOF_ATTEMPT=proof-attempt",
+	}, stamp)
+	values := map[string]string{}
+	for _, entry := range environment {
+		name, value, _ := strings.Cut(entry, "=")
+		values[name] = value
+	}
+	want := map[string]string{"CGO_ENABLED": "0", "GOENV": "off", "GOEXPERIMENT": "", "GOFLAGS": "",
+		"GOTOOLCHAIN": "local", "GOWORK": "off", "METASYSTEM_BUILD_STAMP": stamp,
+		"METASYSTEM_PROOF_CONTROL_ROOT": "/proof", "METASYSTEM_PROOF_ATTEMPT": "proof-attempt"}
+	for name, value := range want {
+		if values[name] != value {
+			t.Fatalf("candidate build environment %s=%q, want %q: %v", name, values[name], value, environment)
+		}
+	}
+}
+
+func TestCandidateBuiltCommitPassesDispatchSkewPreflight(t *testing.T) {
+	fixture := newCandidateEngineFixture(t)
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+	built, err := buildCandidateEngine(ctx, gittree.Workspace{Dir: fixture.projectRoot}, "metasystem", fixture.candidateTree, testingEnvironment(os.Environ()))
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = built.Close() })
+	detached, err := (gittree.Workspace{Dir: fixture.projectRoot}).NewDetachedWorktree(fixture.candidateTree)
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = detached.Close() })
+	candidateRoot := filepath.Join(detached.Workspace().Dir, "metasystem")
+	installedEngine := filepath.Join(candidateRoot, "bin", "metasystem")
+	data, err := os.ReadFile(built.Path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	writeTestingFixtureFile(t, installedEngine, data, 0o755)
+	preflight := func(stamp string) ([]byte, error) {
+		command := exec.Command("bash", "scripts/agents/dispatch.sh", "__engine-skew-preflight", stamp)
+		command.Dir = candidateRoot
+		command.Env = append(testingEnvironment(os.Environ()), "METASYSTEM_BIN="+installedEngine)
+		return command.CombinedOutput()
+	}
+	oldOutput, oldErr := preflight(fixture.baseCommit)
+	if exit, ok := oldErr.(*exec.ExitError); !ok || exit.ExitCode() != 1 || !strings.Contains(string(oldOutput), "is older than checkout commit") {
+		t.Fatalf("untouched refusal was not reproduced with the enrolled engine stamp: err=%v output=%s", oldErr, oldOutput)
+	}
+	if output, err := preflight(""); err != nil {
+		t.Fatalf("installed candidate engine's reported stamp did not pass dispatch skew preflight: %v\n%s", err, output)
+	}
+	ancestry := exec.Command("git", "-C", detached.Workspace().Dir, "log", "--ancestry-path", built.Commit+"..HEAD")
+	ancestry.Env = gittree.ScrubbedEnviron()
+	if output, err := ancestry.CombinedOutput(); err != nil || len(strings.TrimSpace(string(output))) != 0 {
+		t.Fatalf("candidate stamp unexpectedly has an ancestry path to its materialized checkout: err=%v output=%s", err, output)
+	}
+	for _, stamp := range []string{"witness-0123456789ab", "dev-0123456789ab-dirty", "dev", "adopted-target"} {
+		if output, err := preflight(stamp); err != nil {
+			t.Fatalf("non-commit engine stamp %q was refused: %v\n%s", stamp, err, output)
+		}
+	}
+	freshProject := t.TempDir()
+	freshCandidateRoot := filepath.Join(freshProject, "metasystem")
+	for _, relative := range []string{"dispatch.sh", "checkout-execution-guard.sh"} {
+		script, err := os.ReadFile(filepath.Join(candidateRoot, "scripts", "agents", relative))
+		if err != nil {
+			t.Fatal(err)
+		}
+		writeTestingFixtureFile(t, filepath.Join(freshCandidateRoot, "scripts", "agents", relative), script, 0o755)
+	}
+	freshEngine := filepath.Join(freshCandidateRoot, "bin", "metasystem")
+	writeTestingFixtureFile(t, freshEngine, data, 0o755)
+	testingFixtureGit(t, freshProject, "init", "-q", "-b", "main")
+	testingFixtureGit(t, freshProject, "add", ".")
+	testingFixtureGit(t, freshProject, "-c", "user.name=Test", "-c", "user.email=test@example.invalid", "commit", "-qm", "fresh fixture repository")
+	missingCandidate := exec.Command("git", "-C", freshProject, "cat-file", "-e", built.Commit+"^{commit}")
+	missingCandidate.Env = gittree.ScrubbedEnviron()
+	if err := missingCandidate.Run(); err == nil {
+		t.Fatalf("fresh fixture repository unexpectedly contains candidate stamp %s", built.Commit)
+	}
+	freshPreflight := exec.Command("bash", "scripts/agents/dispatch.sh", "__engine-skew-preflight")
+	freshPreflight.Dir = freshCandidateRoot
+	freshPreflight.Env = append(testingEnvironment(os.Environ()), "METASYSTEM_BIN="+freshEngine)
+	if output, err := freshPreflight.CombinedOutput(); err != nil {
+		t.Fatalf("fresh repository refused its installed candidate engine's reported stamp: %v\n%s", err, output)
+	}
+}
+
+func TestCandidateEngineBuildFailureCannotFallBackToPolicyEngine(t *testing.T) {
+	fixture := newCandidateEngineFixture(t)
+	broken := []byte("#!/usr/bin/env bash\nset -euo pipefail\necho 'fixture candidate compile failed' >&2\nexit 23\n")
+	writeTestingFixtureFile(t, filepath.Join(fixture.installationRoot, "scripts", "agents", "go-build.sh"), broken, 0o755)
+	testingFixtureGit(t, fixture.projectRoot, "add", "metasystem/scripts/agents/go-build.sh")
+	brokenTree, err := (gittree.Workspace{Dir: fixture.projectRoot}).StagedTree()
+	if err != nil {
+		t.Fatal(err)
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+	built, err := buildCandidateEngine(ctx, gittree.Workspace{Dir: fixture.projectRoot}, "metasystem", brokenTree, testingEnvironment(os.Environ()))
+	if built != nil || err == nil || !strings.Contains(err.Error(), "candidate engine build failed") || !strings.Contains(err.Error(), "fixture candidate compile failed") {
+		t.Fatalf("candidate build failure did not remain an explicit insufficient outcome: build=%+v err=%v", built, err)
+	}
+	if digest, digestErr := fileSHA256(fixture.policyEngine); digestErr != nil || digest != fixture.policyDigest {
+		t.Fatalf("candidate failure changed or substituted the policy engine: digest=%s err=%v", digest, digestErr)
+	}
+}
+
+func TestVerifyRecoversCandidateDigestFromNewestSufficientAttempt(t *testing.T) {
+	const groupID = "candidate-bed"
+	digest := strings.Repeat("a", 64)
+	executionIdentity := strings.Repeat("b", 64)
+	candidateDigest := strings.Repeat("c", 64)
+	failedDigest := strings.Repeat("d", 64)
+	candidateTree := strings.Repeat("e", 40)
+	group := testpolicy.Group{ID: groupID, Kind: "unit", CWD: ".", Inputs: []string{"source.go"},
+		Obligations: []string{"candidate-engine"}, Platforms: []string{"any"}, TargetMS: 1}
+	contract := testpolicy.Contract{SchemaVersion: 1, Groups: []testpolicy.Group{group}}
+	plan := testpolicy.Plan{Purpose: testpolicy.PurposeDelivery, RequestedMode: testpolicy.ModeAuto,
+		RequiredMode: testpolicy.ModeStandard, ExecutedMode: testpolicy.ModeStandard,
+		RequiredGroups: []string{groupID}, SelectedGroups: []string{groupID}}
+	prepared := testingPreparation{CandidateTree: candidateTree, EffectiveContract: contract, Plan: plan,
+		ContractDigest: digest, BaseContractDigest: digest, PolicyEngineDigest: digest, BehaviorPolicyDigest: digest,
+		GoalID: "goal", AccountingRevision: 2}
+	request := testingRunRequest(prepared, "successful-attempt", "", "", candidateDigest)
+	request.ProjectRoot, request.BaseCommit = "/project", "base"
+	successful := proofrun.NewTestResult(request)
+	zero := 0
+	successful.Groups = []proofrun.GroupResult{{ID: groupID, Kind: group.Kind, Obligations: group.Obligations,
+		InputManifest: group.Inputs, ExecutionIdentity: executionIdentity, Status: "passed", NativeLaunched: true,
+		CollectionComplete: true, NativeExitStatus: &zero, ToolIdentities: map[string]string{}, ReportDigests: map[string]string{}}}
+	// A sufficient attempt from an earlier plan remains a valid source for
+	// the deterministic candidate engine and for independently matching groups.
+	successful.PlanDigest = strings.Repeat("1", 64)
+	successful.RecomputeDelivery()
+	failed := successful
+	failed.AttemptID = "later-failed-attempt"
+	failed.CandidateEngineDigest = failedDigest
+	exit := 23
+	failed.Groups = append([]proofrun.GroupResult(nil), successful.Groups...)
+	failed.Groups[0].Status, failed.Groups[0].NativeExitStatus = "failed", &exit
+	failed.RecomputeDelivery()
+	now := time.Now().UTC()
+	attempts := []proofrun.Attempt{
+		{AttemptID: successful.AttemptID, GoalID: prepared.GoalID, AccountingRevision: prepared.AccountingRevision,
+			StartedAt: now.Add(-time.Minute).Format(time.RFC3339Nano), Terminal: &proofrun.AttemptTerminal{Result: proofrun.TerminalSuccess},
+			PendingTestGroups: map[string]string{groupID: executionIdentity}, TestResult: &successful},
+		{AttemptID: failed.AttemptID, GoalID: prepared.GoalID, AccountingRevision: prepared.AccountingRevision,
+			StartedAt: now.Format(time.RFC3339Nano), Terminal: &proofrun.AttemptTerminal{Result: proofrun.TerminalFailed}, TestResult: &failed},
+	}
+	recovered, err := retainedCandidateEngineDigest(prepared, attempts)
+	if err != nil || recovered != candidateDigest {
+		t.Fatalf("later failed attempt hid the sufficient candidate engine: digest=%s err=%v", recovered, err)
+	}
+	templateRequest := testingRunRequest(prepared, "", "", "", recovered)
+	templateRequest.ProjectRoot, templateRequest.BaseCommit = "/project", "base"
+	projection := proofrun.ReusedTestResult(proofrun.NewTestResult(templateRequest), attempts,
+		map[string]string{groupID: executionIdentity}, contract, prepared.GoalID, prepared.AccountingRevision)
+	if !projection.Delivery.Sufficient || len(projection.Groups) != 1 || projection.Groups[0].ReuseAttempt != successful.AttemptID {
+		t.Fatalf("verification did not compose the earlier sufficient group after a failed attempt: %+v", projection)
+	}
+}
+
+func TestVerifyRecoversLegacyCandidateDigestFromUnmarkedSchemaTwoReceipt(t *testing.T) {
+	const groupID = "candidate-bed"
+	digest := strings.Repeat("a", 64)
+	candidateTree := strings.Repeat("b", 40)
+	group := testpolicy.Group{ID: groupID, Kind: "unit", CWD: ".", Inputs: []string{"source.go"},
+		Obligations: []string{"candidate-engine"}, Platforms: []string{"any"}, TargetMS: 1}
+	contract := testpolicy.Contract{SchemaVersion: 1, Groups: []testpolicy.Group{group}}
+	plan := testpolicy.Plan{Purpose: testpolicy.PurposeDelivery, RequestedMode: testpolicy.ModeAuto,
+		RequiredMode: testpolicy.ModeStandard, ExecutedMode: testpolicy.ModeStandard,
+		RequiredGroups: []string{groupID}, SelectedGroups: []string{groupID}}
+	prepared := testingPreparation{Installation: t.TempDir(), CandidateTree: candidateTree, EffectiveContract: contract, Plan: plan,
+		ContractDigest: digest, BaseContractDigest: digest, PolicyEngineDigest: digest, BehaviorPolicyDigest: digest,
+		GoalID: "goal", AccountingRevision: 2}
+	request := testingRunRequest(prepared, "legacy-success", "", "", digest)
+	request.ProjectRoot, request.BaseCommit = "/project", "base"
+	legacy := proofrun.NewTestResult(request)
+	legacy.CandidateEngineIdentityVersion = 0
+	legacy.CandidateEngineDigest = ""
+	zero := 0
+	legacy.Groups = []proofrun.GroupResult{{ID: groupID, Kind: group.Kind, Obligations: group.Obligations,
+		InputManifest: group.Inputs, ExecutionIdentity: digest, Status: "passed", NativeLaunched: true,
+		CollectionComplete: true, NativeExitStatus: &zero, ToolIdentities: map[string]string{}, ReportDigests: map[string]string{}}}
+	legacy.RecomputeDelivery()
+	receipt := landing.TestReceipt{SchemaVersion: 2, Tree: candidateTree, ProvedTree: candidateTree, Testing: &legacy}
+	payload, err := json.Marshal(receipt)
+	if err != nil {
+		t.Fatal(err)
+	}
+	path := landing.TestReceiptPath(prepared.Installation, candidateTree)
+	if err := os.MkdirAll(filepath.Dir(path), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(path, payload, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	recovered, err := retainedCandidateEngineDigest(prepared, nil)
+	if err != nil || recovered != digest {
+		t.Fatalf("test verify did not recover the enrolled engine used by an unmarked schema-2 receipt: digest=%s err=%v", recovered, err)
+	}
+}
+
+type candidateEngineFixture struct {
+	projectRoot, installationRoot, baseCommit, candidateTree, policyEngine, policyDigest string
+}
+
+func newCandidateEngineFixture(t *testing.T) candidateEngineFixture {
+	t.Helper()
+	projectRoot := t.TempDir()
+	installationRoot := filepath.Join(projectRoot, "metasystem")
+	buildScript := `#!/usr/bin/env bash
+set -euo pipefail
+[[ "$1" == --trimpath && "$2" == --out && -n "${3:-}" ]]
+[[ "${CGO_ENABLED+x}:$CGO_ENABLED" == x:0 ]]
+[[ "${GOENV+x}:$GOENV" == x:off ]]
+[[ "${GOEXPERIMENT+x}:$GOEXPERIMENT" == x: ]]
+[[ "${GOFLAGS+x}:$GOFLAGS" == x: ]]
+[[ "${GOTOOLCHAIN+x}:$GOTOOLCHAIN" == x:local ]]
+[[ "${GOWORK+x}:$GOWORK" == x:off ]]
+stamp=$(git rev-parse HEAD)
+[[ "$METASYSTEM_BUILD_STAMP" == "$stamp" ]]
+source=$(cat cmd/metasystem/engine.txt)
+{
+  printf '#!/usr/bin/env bash\nstamp=%q\n' "$stamp"
+  cat <<'ENGINE'
+if [[ "${1:-}" == supervise && "${2:-}" == status ]]; then
+  printf '{"engineBuild":"%s"}\n' "$stamp"
+  exit 0
+fi
+if [[ "${1:-}" == json && "${2:-}" == get ]]; then
+  printf '%s\n' "$stamp"
+  exit 0
+fi
+exit 0
+ENGINE
+  printf '# %s\n' "$source"
+} >"$3"
+chmod +x "$3"
+`
+	writeTestingFixtureFile(t, filepath.Join(installationRoot, "scripts", "agents", "go-build.sh"), []byte(buildScript), 0o755)
+	for _, relative := range []string{"dispatch.sh", "checkout-execution-guard.sh"} {
+		data, err := os.ReadFile(filepath.Join("..", "..", "scripts", "agents", relative))
+		if err != nil {
+			t.Fatal(err)
+		}
+		writeTestingFixtureFile(t, filepath.Join(installationRoot, "scripts", "agents", relative), data, 0o755)
+	}
+	writeTestingFixtureFile(t, filepath.Join(installationRoot, "scripts", "agents", "validate-section-selector.sh"), []byte("#!/usr/bin/env bash\nexit 0\n"), 0o755)
+	writeTestingFixtureFile(t, filepath.Join(installationRoot, "cmd", "metasystem", "engine.txt"), []byte("enrolled engine source\n"), 0o644)
+	testingFixtureGit(t, projectRoot, "init", "-q", "-b", "main")
+	testingFixtureGit(t, projectRoot, "add", ".")
+	testingFixtureGit(t, projectRoot, "-c", "user.name=Test", "-c", "user.email=test@example.invalid", "commit", "-qm", "enrolled engine")
+	baseCommit := strings.TrimSpace(testingFixtureGit(t, projectRoot, "rev-parse", "HEAD"))
+	policyEngine := filepath.Join(t.TempDir(), "metasystem")
+	writeTestingFixtureFile(t, policyEngine, []byte("#!/usr/bin/env bash\n# enrolled engine\nexit 0\n"), 0o755)
+	policyDigest, err := fileSHA256(policyEngine)
+	if err != nil {
+		t.Fatal(err)
+	}
+	writeTestingFixtureFile(t, filepath.Join(installationRoot, "cmd", "metasystem", "engine.txt"), []byte("candidate engine source\n"), 0o644)
+	testingFixtureGit(t, projectRoot, "add", "metasystem/cmd/metasystem/engine.txt")
+	candidateTree, err := (gittree.Workspace{Dir: projectRoot}).StagedTree()
+	if err != nil {
+		t.Fatal(err)
+	}
+	return candidateEngineFixture{projectRoot: projectRoot, installationRoot: installationRoot, baseCommit: baseCommit,
+		candidateTree: candidateTree, policyEngine: policyEngine, policyDigest: policyDigest}
 }
 
 func TestProtectedCoverageFloorCannotFallOrDisappear(t *testing.T) {

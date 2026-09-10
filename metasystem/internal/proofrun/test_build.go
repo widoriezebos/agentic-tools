@@ -208,7 +208,8 @@ func NewTestResult(request TestRunRequest) TestResult {
 		ExecutedMode: request.Plan.ExecutedMode, ProjectRoot: request.ProjectRoot, InstallationPrefix: request.InstallationPrefix,
 		BaseCommit: request.BaseCommit, CandidateTree: request.CandidateTree, PolicyBaseCommit: request.PolicyBaseCommit,
 		ContractDigest: contractDigest, BaseContractDigest: baseContractDigest,
-		PolicyEngineDigest: policyEngineDigest, BehaviorPolicyDigest: behaviorPolicyDigest,
+		PolicyEngineDigest: policyEngineDigest, CandidateEngineIdentityVersion: CandidateEngineIdentitySchemaVersion,
+		CandidateEngineDigest: request.CandidateEngineDigest, BehaviorPolicyDigest: behaviorPolicyDigest,
 		PlanDigest: TestPlanDigest(request.Contract, request.Plan, request.CandidateTree), Risk: request.Plan.Risk,
 		RequiredGroups: append([]string(nil), request.Plan.RequiredGroups...), SelectedGroups: append([]string(nil), request.Plan.SelectedGroups...),
 		Omissions: append([]testpolicy.Omission(nil), request.Plan.Omissions...), Uncertainty: append([]string(nil), request.Plan.Uncertainty...),
@@ -317,11 +318,13 @@ func runTestGroup(ctx context.Context, request TestRunRequest, group testpolicy.
 	switch group.Adapter {
 	case "go":
 		if metaSystemStewardConsumesCandidateEngine(request, group, cwd) {
-			if _, err := prepareSectionEngine(cwd, request.CandidateEngine, request.CandidateEngineDigest); err != nil {
+			engine, err := prepareSectionEngine(cwd, request.CandidateEngine, request.CandidateEngineDigest)
+			if err != nil {
 				result.Status, result.NotRunReason = "invalid", err.Error()
 				result.EndedAt, result.DurationMS = resultDuration(started)
 				return result
 			}
+			environment = mergeTestEnvironment(environment, map[string]string{"METASYSTEM_BIN": engine})
 		}
 	case "section":
 		sectionReport = filepath.Join(request.LogRoot, group.ID+".stage-results.tsv")
@@ -337,10 +340,11 @@ func runTestGroup(ctx context.Context, request TestRunRequest, group testpolicy.
 			// The shell still authenticates this worker's actual parent custody.
 			environment = mergeTestEnvironment(environment, map[string]string{
 				"METASYSTEM_ENUMERATION_ENGINE_DEPENDENCY": "ready",
-				"METASYSTEM_PROOF_AUTH_BIN":                engine,
-				"METASYSTEM_SUITE_PROGRESS_ACTIVE":         "1",
-				"METASYSTEM_SUITE_PROGRESS_LOG":            filepath.Join(request.LogRoot, group.ID+".log"),
-				"METASYSTEM_SUITE_PROGRESS_ROOT":           cwd,
+				"METASYSTEM_BIN":                   engine,
+				"METASYSTEM_PROOF_AUTH_BIN":        engine,
+				"METASYSTEM_SUITE_PROGRESS_ACTIVE": "1",
+				"METASYSTEM_SUITE_PROGRESS_LOG":    filepath.Join(request.LogRoot, group.ID+".log"),
+				"METASYSTEM_SUITE_PROGRESS_ROOT":   cwd,
 			})
 		}
 	}

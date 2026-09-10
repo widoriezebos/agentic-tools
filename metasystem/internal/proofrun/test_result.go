@@ -13,7 +13,10 @@ import (
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/testpolicy"
 )
 
-const TestResultSchemaVersion = 1
+const (
+	TestResultSchemaVersion              = 1
+	CandidateEngineIdentitySchemaVersion = 1
+)
 
 type NativeTestIdentity struct {
 	Report    string `json:"report,omitempty"`
@@ -68,10 +71,16 @@ type LaunchCounts struct {
 }
 
 func ValidateTestResult(result TestResult) error {
+	candidateEngineMissing := result.CandidateEngineDigest == ""
+	candidateEngineInvalid := !candidateEngineMissing && !validResultDigest(result.CandidateEngineDigest)
+	candidateEngineIdentityInvalid := result.CandidateEngineIdentityVersion < 0 ||
+		result.CandidateEngineIdentityVersion > CandidateEngineIdentitySchemaVersion ||
+		result.CandidateEngineIdentityVersion == CandidateEngineIdentitySchemaVersion && candidateEngineMissing
 	if result.SchemaVersion != TestResultSchemaVersion || result.Purpose == "" || result.RequestedMode == "" ||
 		result.RequiredMode == "" || result.ExecutedMode == "" || result.ProjectRoot == "" || result.BaseCommit == "" ||
 		!validTreeDigest(result.CandidateTree) || !validResultDigest(result.ContractDigest) ||
 		!validResultDigest(result.BaseContractDigest) || !validResultDigest(result.PolicyEngineDigest) ||
+		candidateEngineInvalid || candidateEngineIdentityInvalid ||
 		!validResultDigest(result.BehaviorPolicyDigest) || !validResultDigest(result.PlanDigest) ||
 		!result.LaunchCounts.CountsComplete || result.Cost.DeclaredTargetMS <= 0 {
 		return fmt.Errorf("test result has incomplete identity or launch accounting")
@@ -152,35 +161,37 @@ type TestCost struct {
 }
 
 type TestResult struct {
-	SchemaVersion        int                       `json:"schemaVersion"`
-	AttemptID            string                    `json:"attemptId"`
-	Purpose              testpolicy.Purpose        `json:"purpose"`
-	RequestedMode        testpolicy.Mode           `json:"requestedMode"`
-	RequiredMode         testpolicy.Mode           `json:"requiredMode"`
-	ExecutedMode         testpolicy.Mode           `json:"executedMode"`
-	ProjectRoot          string                    `json:"projectRoot"`
-	InstallationPrefix   string                    `json:"installationPrefix"`
-	BaseCommit           string                    `json:"baseCommit"`
-	CandidateTree        string                    `json:"candidateTree"`
-	PolicyBaseCommit     string                    `json:"policyBaseCommit"`
-	ContractDigest       string                    `json:"contractDigest"`
-	BaseContractDigest   string                    `json:"baseContractDigest"`
-	PolicyEngineDigest   string                    `json:"policyEngineDigest"`
-	BehaviorPolicyDigest string                    `json:"behaviorPolicyDigest"`
-	PlanDigest           string                    `json:"planDigest"`
-	Risk                 testpolicy.RiskAssessment `json:"risk"`
-	RequiredGroups       []string                  `json:"requiredGroups"`
-	SelectedGroups       []string                  `json:"selectedGroups"`
-	Omissions            []testpolicy.Omission     `json:"omissions"`
-	Uncertainty          []string                  `json:"uncertainty,omitempty"`
-	Groups               []GroupResult             `json:"groups"`
-	LaunchCounts         LaunchCounts              `json:"launchCounts"`
-	StartedAt            string                    `json:"startedAt,omitempty"`
-	EndedAt              string                    `json:"endedAt"`
-	DurationMS           int64                     `json:"durationMs"`
-	ChildDurationMS      int64                     `json:"childDurationMs"`
-	Cost                 TestCost                  `json:"cost"`
-	Delivery             DeliveryJudgment          `json:"delivery"`
+	SchemaVersion                  int                       `json:"schemaVersion"`
+	AttemptID                      string                    `json:"attemptId"`
+	Purpose                        testpolicy.Purpose        `json:"purpose"`
+	RequestedMode                  testpolicy.Mode           `json:"requestedMode"`
+	RequiredMode                   testpolicy.Mode           `json:"requiredMode"`
+	ExecutedMode                   testpolicy.Mode           `json:"executedMode"`
+	ProjectRoot                    string                    `json:"projectRoot"`
+	InstallationPrefix             string                    `json:"installationPrefix"`
+	BaseCommit                     string                    `json:"baseCommit"`
+	CandidateTree                  string                    `json:"candidateTree"`
+	PolicyBaseCommit               string                    `json:"policyBaseCommit"`
+	ContractDigest                 string                    `json:"contractDigest"`
+	BaseContractDigest             string                    `json:"baseContractDigest"`
+	PolicyEngineDigest             string                    `json:"policyEngineDigest"`
+	CandidateEngineIdentityVersion int                       `json:"candidateEngineIdentityVersion,omitempty"`
+	CandidateEngineDigest          string                    `json:"candidateEngineDigest"`
+	BehaviorPolicyDigest           string                    `json:"behaviorPolicyDigest"`
+	PlanDigest                     string                    `json:"planDigest"`
+	Risk                           testpolicy.RiskAssessment `json:"risk"`
+	RequiredGroups                 []string                  `json:"requiredGroups"`
+	SelectedGroups                 []string                  `json:"selectedGroups"`
+	Omissions                      []testpolicy.Omission     `json:"omissions"`
+	Uncertainty                    []string                  `json:"uncertainty,omitempty"`
+	Groups                         []GroupResult             `json:"groups"`
+	LaunchCounts                   LaunchCounts              `json:"launchCounts"`
+	StartedAt                      string                    `json:"startedAt,omitempty"`
+	EndedAt                        string                    `json:"endedAt"`
+	DurationMS                     int64                     `json:"durationMs"`
+	ChildDurationMS                int64                     `json:"childDurationMs"`
+	Cost                           TestCost                  `json:"cost"`
+	Delivery                       DeliveryJudgment          `json:"delivery"`
 }
 
 func (result *TestResult) RecomputeDelivery() {
@@ -267,6 +278,7 @@ func ExactReusableTestResult(template TestResult, attempts []Attempt, identities
 		if result.CandidateTree != template.CandidateTree || result.BaseCommit != template.BaseCommit ||
 			result.PolicyBaseCommit != template.PolicyBaseCommit || result.ContractDigest != template.ContractDigest ||
 			result.BaseContractDigest != template.BaseContractDigest || result.PolicyEngineDigest != template.PolicyEngineDigest ||
+			result.CandidateEngineDigest != template.CandidateEngineDigest ||
 			result.BehaviorPolicyDigest != template.BehaviorPolicyDigest || result.PlanDigest != template.PlanDigest ||
 			result.Purpose != template.Purpose || result.RequiredMode != template.RequiredMode || result.ExecutedMode != template.ExecutedMode ||
 			!reflect.DeepEqual(result.SelectedGroups, template.SelectedGroups) || !reflect.DeepEqual(result.RequiredGroups, template.RequiredGroups) ||

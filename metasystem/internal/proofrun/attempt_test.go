@@ -259,9 +259,10 @@ func TestAttemptSchemaTwoAtomicallyRetainsTestingAndReadsSchemaOne(t *testing.T)
 	}
 	zero := 0
 	digest := strings.Repeat("a", 64)
-	result := TestResult{SchemaVersion: 1, AttemptID: attempt.AttemptID, Purpose: "delivery", RequestedMode: "auto",
+	result := TestResult{SchemaVersion: 1, CandidateEngineIdentityVersion: CandidateEngineIdentitySchemaVersion,
+		AttemptID: attempt.AttemptID, Purpose: "delivery", RequestedMode: "auto",
 		RequiredMode: "standard", ExecutedMode: "standard", ProjectRoot: root, BaseCommit: "base", CandidateTree: strings.Repeat("b", 40),
-		ContractDigest: digest, BaseContractDigest: digest, PolicyEngineDigest: digest, BehaviorPolicyDigest: digest, PlanDigest: digest,
+		ContractDigest: digest, BaseContractDigest: digest, PolicyEngineDigest: digest, CandidateEngineDigest: digest, BehaviorPolicyDigest: digest, PlanDigest: digest,
 		SelectedGroups: []string{"smoke"}, RequiredGroups: []string{"smoke"}, LaunchCounts: LaunchCounts{CountsComplete: true}, Cost: TestCost{DeclaredTargetMS: 1},
 		Groups: []GroupResult{{ID: "smoke", Kind: "unit", InputManifest: []string{"source"}, Status: "passed", NativeLaunched: true, CollectionComplete: true, NativeExitStatus: &zero,
 			ToolIdentities: map[string]string{}, ReportDigests: map[string]string{}}}}
@@ -273,6 +274,30 @@ func TestAttemptSchemaTwoAtomicallyRetainsTestingAndReadsSchemaOne(t *testing.T)
 	if err != nil || stored.SchemaVersion != 2 || stored.TestResult == nil || stored.TestResult.AttemptID != attempt.AttemptID {
 		t.Fatalf("schema-2 testing result was not retained atomically: attempt=%+v err=%v", stored, err)
 	}
+	path, _ := AttemptPath(root, attempt.AttemptID)
+	data, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var oldFormat map[string]any
+	if json.Unmarshal(data, &oldFormat) != nil {
+		t.Fatal("decode retained testing fixture")
+	}
+	testingResult := oldFormat["testResult"].(map[string]any)
+	delete(testingResult, "candidateEngineIdentityVersion")
+	delete(testingResult, "candidateEngineDigest")
+	data, _ = json.Marshal(oldFormat)
+	if err := os.WriteFile(path, data, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if read, err := ReadAttempts(root); err != nil || len(read) != 1 || read[0].TestResult == nil || read[0].TestResult.CandidateEngineDigest != "" {
+		t.Fatalf("old-format delivery result was not readable: attempts=%+v err=%v", read, err)
+	}
+	newFormatWithoutDigest := result
+	newFormatWithoutDigest.CandidateEngineDigest = ""
+	if err := ValidateTestResult(newFormatWithoutDigest); err == nil {
+		t.Fatal("new-format delivery result without its candidate engine digest was accepted")
+	}
 
 	legacyIdentity := identity
 	legacyIdentity.CommandClass = "legacy"
@@ -282,8 +307,8 @@ func TestAttemptSchemaTwoAtomicallyRetainsTestingAndReadsSchemaOne(t *testing.T)
 	if err != nil {
 		t.Fatal(err)
 	}
-	path, _ := AttemptPath(root, legacy.AttemptID)
-	data, err := os.ReadFile(path)
+	path, _ = AttemptPath(root, legacy.AttemptID)
+	data, err = os.ReadFile(path)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -427,9 +452,10 @@ func componentAttemptResult(attemptID, groupID, executionIdentity, status string
 	if status == "failed" {
 		exit = 23
 	}
-	result := TestResult{SchemaVersion: 1, AttemptID: attemptID, Purpose: "delivery", RequestedMode: "auto", RequiredMode: "standard",
+	result := TestResult{SchemaVersion: 1, CandidateEngineIdentityVersion: CandidateEngineIdentitySchemaVersion,
+		AttemptID: attemptID, Purpose: "delivery", RequestedMode: "auto", RequiredMode: "standard",
 		ExecutedMode: "standard", ProjectRoot: "/project", BaseCommit: "base", CandidateTree: strings.Repeat("b", 40),
-		ContractDigest: digest, BaseContractDigest: digest, PolicyEngineDigest: digest, BehaviorPolicyDigest: digest, PlanDigest: digest,
+		ContractDigest: digest, BaseContractDigest: digest, PolicyEngineDigest: digest, CandidateEngineDigest: digest, BehaviorPolicyDigest: digest, PlanDigest: digest,
 		SelectedGroups: []string{groupID}, RequiredGroups: []string{groupID}, Groups: []GroupResult{group},
 		LaunchCounts: LaunchCounts{Test: 1, CountsComplete: true}, Cost: TestCost{DeclaredTargetMS: 1}}
 	result.RecomputeDelivery()

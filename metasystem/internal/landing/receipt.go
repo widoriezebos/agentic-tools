@@ -31,17 +31,19 @@ const (
 // TestReceipt records the command result together with the four tree
 // observations that bind its execution to one candidate.
 type TestReceipt struct {
-	SchemaVersion int                        `json:"schemaVersion"`
-	Tree          string                     `json:"tree"`
-	Command       string                     `json:"command"`
-	ExitStatus    int                        `json:"exitStatus"`
-	Time          string                     `json:"time"`
-	Binding       TestReceiptBinding         `json:"binding"`
-	Proof         *TestReceiptProof          `json:"proof,omitempty"`
-	Coverage      *proofrun.CoverageEvidence `json:"coverage,omitempty"`
-	ProvedTree    string                     `json:"provedTree,omitempty"`
-	AttemptIDs    []string                   `json:"attemptIds,omitempty"`
-	Testing       *proofrun.TestResult       `json:"testing,omitempty"`
+	SchemaVersion         int                        `json:"schemaVersion"`
+	Tree                  string                     `json:"tree"`
+	Command               string                     `json:"command"`
+	ExitStatus            int                        `json:"exitStatus"`
+	Time                  string                     `json:"time"`
+	Binding               TestReceiptBinding         `json:"binding"`
+	Proof                 *TestReceiptProof          `json:"proof,omitempty"`
+	Coverage              *proofrun.CoverageEvidence `json:"coverage,omitempty"`
+	ProvedTree            string                     `json:"provedTree,omitempty"`
+	AttemptIDs            []string                   `json:"attemptIds,omitempty"`
+	PolicyEngineDigest    string                     `json:"policyEngineDigest,omitempty"`
+	CandidateEngineDigest string                     `json:"candidateEngineDigest,omitempty"`
+	Testing               *proofrun.TestResult       `json:"testing,omitempty"`
 }
 
 type TestReceiptProof struct {
@@ -476,6 +478,9 @@ func readTestReceipt(params ObserveParams) (TestReceipt, error) {
 	if receipt.SchemaVersion == 2 {
 		if receipt.ProvedTree == "" || receipt.Testing == nil || receipt.ExitStatus != 0 || receipt.Command != "" || receipt.Proof != nil || receipt.Coverage != nil {
 			return TestReceipt{}, fmt.Errorf("schema-2 test receipt has incomplete or legacy evidence")
+		}
+		if err := validateTestingReceiptEngineIdentity(receipt); err != nil {
+			return TestReceipt{}, err
 		}
 		projected, projectErr := (gittree.Workspace{Dir: params.RepoRoot}).TreeOf(receipt.Tree)
 		if projectErr != nil || projected != params.CandidateTree {

@@ -43,7 +43,7 @@ run_fixture_bed_scenarios() { # bed name, success line, script, scenario names..
   log_root=$(mktemp -d "${TMPDIR:-/tmp}/metasystem-${bed}-scenarios.XXXXXX")
   fixture_bed_parent_log_root=$log_root
 	shared_engine=$log_root/fixture-engine
-	bash "$fixture_bed_root/scripts/agents/go-build.sh" --out "$shared_engine" >/dev/null
+	METASYSTEM_BUILD_STAMP=dev bash "$fixture_bed_root/scripts/agents/go-build.sh" --out "$shared_engine" >/dev/null
   trap fixture_bed_parent_cleanup EXIT
   trap 'exit 129' HUP
   trap 'exit 130' INT

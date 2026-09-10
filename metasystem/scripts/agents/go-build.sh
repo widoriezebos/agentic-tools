@@ -17,11 +17,24 @@ cd "$root"
 # (found live: the benchmark kit's wrapped-commit probe rebuilt the
 # provisioned target's engine and its preflight then refused).
 proof_out=
-if [[ "${1:-}" == --out ]]; then
-  [[ $# -ge 2 && -n "$2" ]] || { echo "go-build: --out needs a path" >&2; exit 2; }
-  proof_out=$2
-  shift 2
-fi
+proof_trimpath=0
+while (( $# > 0 )); do
+  case "$1" in
+    --out)
+      [[ $# -ge 2 && -n "$2" ]] || { echo "go-build: --out needs a path" >&2; exit 2; }
+      proof_out=$2
+      shift 2
+      ;;
+    --trimpath)
+      proof_trimpath=1
+      shift
+      ;;
+    *)
+      echo "go-build: unknown argument: $1" >&2
+      exit 2
+      ;;
+  esac
+done
 
 command -v go >/dev/null 2>&1 \
   || { echo "go-build: no go toolchain on PATH; the engine cannot be built" >&2; exit 1; }
@@ -70,7 +83,11 @@ mkdir -p bin
 # replace), and the atomic rename never leaves a half-written binary where
 # a live process might exec it.
 if [[ -n "$proof_out" ]]; then
-  CGO_ENABLED=0 go build -buildvcs=false \
+  proof_flags=(-buildvcs=false)
+  if (( proof_trimpath == 1 )); then
+    proof_flags+=(-trimpath)
+  fi
+  CGO_ENABLED=0 go build "${proof_flags[@]}" \
     -ldflags "-X github.com/widoriezebos/agentic-tools/metasystem/internal/supervise.BuildStamp=$commit" \
     -o "$proof_out" ./cmd/metasystem \
     || { echo "go-build: build failed" >&2; exit 1; }

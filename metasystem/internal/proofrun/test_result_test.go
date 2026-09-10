@@ -70,9 +70,10 @@ import (
 )
 
 func TestDetachedStewardReadsCandidateEngine(t *testing.T) {
-	data, err := os.ReadFile("../../bin/metasystem")
+	engine := os.Getenv("METASYSTEM_BIN")
+	data, err := os.ReadFile(engine)
 	if err != nil || string(data) != "#!/bin/sh\nexit 0\n" {
-		t.Fatalf("candidate engine data=%q err=%v", data, err)
+		t.Fatalf("candidate engine path=%q data=%q err=%v", engine, data, err)
 	}
 }
 `), 0o644)
@@ -86,7 +87,7 @@ func TestDetachedStewardReadsCandidateEngine(t *testing.T) {
 		Inputs: []string{"metasystem/go.mod", "metasystem/internal/steward/**"}, Tools: []testpolicy.Tool{{ID: "go", Executable: "go", VersionArgs: []string{"version"}}},
 		Obligations: []string{"steward-engine"}, Platforms: []string{"any"}, TargetMS: 5000, Packages: []string{"internal/steward"}, Tests: []byte(`"all"`)}
 	result := runTestGroup(context.Background(), TestRunRequest{ProjectRoot: root, InstallationPrefix: "metasystem", CandidateTree: tree,
-		CandidateEngine: engine, CandidateEngineDigest: digestBytes(engineData), LogRoot: filepath.Join(root, "logs")}, group)
+		CandidateEngine: engine, CandidateEngineDigest: digestBytes(engineData), Environment: append(gittree.ScrubbedEnviron(), "GOFLAGS=-buildvcs=false"), LogRoot: filepath.Join(root, "logs")}, group)
 	if result.Status != "passed" || !result.CollectionComplete || result.ExecutionIdentity == "" {
 		t.Fatalf("detached steward result=%+v", result)
 	}
@@ -294,6 +295,7 @@ func TestSectionMismatchKeepsNativeStatusAndLaterIndependentResult(t *testing.T)
 	runTestResultGit(t, root, "config", "user.email", "fixture@example.invalid")
 	script := `#!/usr/bin/env bash
 set -u
+[[ "$METASYSTEM_BIN" == "$PWD/bin/metasystem" ]] || exit 26
 section=${2:-}
 case "$section" in
   mismatch)
@@ -319,8 +321,12 @@ esac
 	plan := testpolicy.Plan{Purpose: testpolicy.PurposeDelivery, RequestedMode: testpolicy.ModeStandard, RequiredMode: testpolicy.ModeStandard,
 		ExecutedMode: testpolicy.ModeStandard, RequiredGroups: []string{"later", "mismatch"}, SelectedGroups: []string{"later", "mismatch"},
 		Stages: []testpolicy.Stage{{ID: "standard", Groups: []string{"mismatch", "later"}}}}
+	engineData := []byte("#!/usr/bin/env bash\nexit 0\n")
+	engine := filepath.Join(t.TempDir(), "metasystem")
+	writeTestResultFile(t, engine, engineData, 0o500)
 	result, status, err := RunTestPlan(context.Background(), TestRunRequest{ProjectRoot: root, CandidateTree: tree, BaseCommit: "HEAD",
-		PolicyBaseCommit: "HEAD", Contract: contract, Plan: plan, AttemptID: "attempt", LogRoot: filepath.Join(root, "logs")})
+		PolicyBaseCommit: "HEAD", Contract: contract, Plan: plan, AttemptID: "attempt", LogRoot: filepath.Join(root, "logs"),
+		CandidateEngine: engine, CandidateEngineDigest: digestBytes(engineData)})
 	if err != nil || status != 23 || len(result.Groups) != 2 || result.Groups[0].Status != "invalid" ||
 		result.Groups[0].NativeExitStatus == nil || *result.Groups[0].NativeExitStatus != 23 ||
 		!strings.Contains(result.Groups[0].NotRunReason, "disagrees") || result.Groups[1].Status != "passed" {
@@ -378,6 +384,11 @@ func TestReusedTestResultComposesAcrossCandidateChangeWhileExactRecoveryStaysStr
 	exactTemplate.AttemptID = ""
 	if exact, ok := ExactReusableTestResult(exactTemplate, []Attempt{attempt}, map[string]string{"application": groupIdentity}, "goal-a", 2); !ok || exact.AttemptID != attempt.AttemptID || exact.EndedAt != endedAt {
 		t.Fatalf("same-candidate exact recovery lost the original result: ok=%v result=%+v", ok, exact)
+	}
+	differentEngine := exactTemplate
+	differentEngine.CandidateEngineDigest = strings.Repeat("e", 64)
+	if exact, ok := ExactReusableTestResult(differentEngine, []Attempt{attempt}, map[string]string{"application": groupIdentity}, "goal-a", 2); ok {
+		t.Fatalf("different candidate engine recovered an old exact result: %+v", exact)
 	}
 
 	for _, mismatch := range []struct {
