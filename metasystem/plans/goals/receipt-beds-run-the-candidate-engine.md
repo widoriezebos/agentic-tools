@@ -7,9 +7,9 @@
 - Tier: 3
 - Intent: Inside a schema-2 receipt (metasystem landing test-receipt --mode auto) the fixture-bed groups (section/gate-fence-fixtures, section/dispatch-fixtures, section/goal-cli-fixtures, section/land-fixtures and the rest) run in an isolated worktree of the candidate but with the checkout's ENROLLED bin/metasystem, so they test the old engine against the new scripts and, for engine-changing candidates, refuse at dispatch's skew preflight. DONE means: the receipt builds one proof engine from the candidate tree the way commit.sh's static re-proof does (go-gate.sh --fast --proof-out), every bed group in the receipt runs with METASYSTEM_BIN set to that engine, the receipt records both digests (enrolled engine, proof engine) and the candidate tree, and a fixture proves an engine-changing candidate's section/gate-fence-fixtures group passes in a receipt. Evidence: proof run proof-mtv5baou-9cb72e840909376d on m1b (35 of 36 groups green, gate-fence refused 'engine commit 2c1bc7db is older than checkout commit 2be2ed91...'); the same on m1's dispatch-cap-necessity. Replaces the first half of gate-fence-fixtures-refuse-engine-changing-candidates.
 - Origin: main
-- Next step: ROUND 2 folded read 1 (13 files: trimpath build with a deterministic parentless stamp commit; legacy results readable through candidateEngineIdentityVersion; digest recovery from the newest sufficient attempt; the skew fixture reads the installed stamp and dispatch refuses unresolvable stamps; Go env pinned; WaitDelay and custody). Read 2 (rbce-read2, Opus) and the fresh receipt run IN PARALLEL on the round-2 candidate (tree noted in m1b's scratchpad), with the enrolled engine rebuilt and re-armed at the tip. If clean and sufficient: land.sh --chain rbce-build1 --test-receipt, then rebuild and re-arm at the new tip; m1c integrates. Fold-read cycle 1; review round 1 of 3 consumed.
+- Next step: READ 2 (rbce-read2, Opus): the round-2 fold closed RBE-01 (narrowed: author variables leak into the stamp), RBE-02, RBE-03, RBE-05 (over-closed: the preflight now refuses witness and dev-dirty stamps too), RBE-07; two material regressions and one legacy-reader debt folded in ROUND 3 (fold-read cycle 2, said aloud: no natural exit; review rounds 2 of 3 consumed). DONE wording corrected: the receipt builds the candidate engine with go-build.sh --trimpath --out in the isolated candidate worktree (not go-gate.sh --proof-out). The void receipt of round 2 (engine stamp behind the tip after a ledger publish) is being cancelled. After round 3: read 3 and the receipt in one uninterrupted sequence with no ledger writes until the landing; if read 3 is clean, land; if not, the land-or-fold call is Wido's.
 - OpenedAt: 2026-09-10T07:27:25Z
-- Revision: 11
+- Revision: 12
 - Labels: bootstrap
 - Budget: elapsedLimit=1d attemptLimit=10 reservedJobMinutesLimit=1200 activeJobLimit=2 reviewRoundLimit=3
 - BudgetExceptions: 1
@@ -30,4 +30,5 @@ History:
 - 2026-09-10T09:25:16Z FC6G4NTNPVMECV6KRR5JNQR9E5-m1b-c6925449 edit actor=m1b+main-1788680071-18713-e76d5d targets=receipt-beds-run-the-candidate-engine
 - 2026-09-10T10:05:28Z 7YV2Q8ZZ1M34HC9GRGZRMR9VRA-m1b-c6925449 edit actor=m1b+main-1788680071-18713-e76d5d targets=receipt-beds-run-the-candidate-engine
 - 2026-09-10T10:26:42Z A01KJYZYG379HR9QE9HG83FD2S-m1b-c6925449 edit actor=m1b+main-1788680071-18713-e76d5d targets=receipt-beds-run-the-candidate-engine
-Integrity: sha256=b0842c17841e5f088d146f6c5412292e42ab2146b4f8878419fb491d91c9fbb5
+- 2026-09-10T10:41:28Z WG0CVMV46ZGSPEGAR43YTJ09AF-m1b-c6925449 edit actor=m1b+main-1788680071-18713-e76d5d targets=receipt-beds-run-the-candidate-engine
+Integrity: sha256=9a2b7b10d738b04723999686d307c39471cc2c91b53811f79c2ac5cf3315cce7
