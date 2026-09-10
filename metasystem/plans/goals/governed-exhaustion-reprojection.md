@@ -9,13 +9,13 @@
 - Origin: main
 - Next step: BUILD: round 1 stopped before writing on constraint C8 (the revision-mismatch diagnostic named an error text that does not exist in that case); decided in the follow-up: reuse the observation's own mismatch sentence from governed.go verbatim. Round 2 dispatched (gerp-build1-r2, Sol). Then closing read (Opus), receipt and landing in the fleet hold behind members 1 and 3 of the bootstrap umbrella.
 - OpenedAt: 2026-09-02T18:37:29Z
-- Revision: 38
-- Budget: elapsedLimit=4h attemptLimit=10 reservedJobMinutesLimit=240 activeJobLimit=1 reviewRoundLimit=3
-- BudgetExceptions: 0
-- Approved: by=human:Wido at=2026-09-10T19:57:25Z revision=38 opid=3FX9S39EQ15065A11561ZVMJSM-m1b-c6925449 authority=raise=3FX9S39EQ15065A11561ZVMJSM-m1b-c6925449 digest=f6213d389994ed59002efc563af81ff030853f7de9b85e2d2238ad177e21c786
+- Revision: 39
+- Budget: elapsedLimit=1d attemptLimit=10 reservedJobMinutesLimit=600 activeJobLimit=3 reviewRoundLimit=3
+- BudgetExceptions: 1
+- Approved: by=human:Wido at=2026-09-10T19:58:45Z revision=39 opid=034K4EV4XEJXG6XADMVBJYSCB3-m1b-c6925449 authority=proven digest=89eec7c9bbd6e50bf641c7a5c145299fd12b42394c3e6e48f7fed714a294f727
 - Sliced: machine=m1b lineage=main-1788680071-18713-e76d5d revision=12 at=2026-09-10T04:32:06Z
-- Claimed: machine=m1b lineage=main-1788680071-18713-e76d5d at=2026-09-10T19:55:48Z revision=38 accountingRevision=37
-- StopCapability: generation=38 revision=38 machine=m1b claimEpoch=1 fenceEpoch=0
+- Claimed: machine=m1b lineage=main-1788680071-18713-e76d5d at=2026-09-10T19:58:45Z revision=39 accountingRevision=39
+- StopCapability: generation=39 revision=39 machine=m1b claimEpoch=1 fenceEpoch=0
 
 History:
 - 2026-09-02T18:37:29Z HPTWTQNYQHY9BEMEMGQN383W4Y-m1b-fad3674e open actor=m1b+main-1788333346-60696-6a3256 targets=governed-exhaustion-reprojection
@@ -56,4 +56,5 @@ History:
 - 2026-09-10T19:55:43Z Y3Y83JF79NBKBPPXKHR1K8HKCF-m1b-c6925449 unpark actor=human:Wido targets=governed-exhaustion-reprojection
 - 2026-09-10T19:55:48Z 0NARDG55MGVT4JEV5SZT2MZ0GN-m1b-c6925449 claim actor=m1b+main-1788680071-18713-e76d5d targets=governed-exhaustion-reprojection
 - 2026-09-10T19:57:25Z 3FX9S39EQ15065A11561ZVMJSM-m1b-c6925449 edit actor=m1b+main-1788680071-18713-e76d5d targets=governed-exhaustion-reprojection reason=Misclassified: from=0 to=3 evidence=root:gerp-build1
-Integrity: sha256=65f0cebdfe70dd48425d3676243158996a7e57aaa423b8c0647b5566e48717db
+- 2026-09-10T19:58:45Z 034K4EV4XEJXG6XADMVBJYSCB3-m1b-c6925449 set-budget actor=human:Wido targets=governed-exhaustion-reprojection
+Integrity: sha256=f56d0b40c228dac6ff501c178c61561c045760feddf389c5b8ad87095106bdaa
