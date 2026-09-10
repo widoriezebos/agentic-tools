@@ -1,6 +1,6 @@
 # enrollment-binds-by-the-skew-rule-not-the-tip
 
-- State: approved
+- State: claimed
 - Priority: 1
 - Sequence: 5
 - Risk: severity=2 novelty=1 exposure=3 accumulation=1 basis="severity 2: every seat rebuilds and re-arms after every ledger move or cannot land; novelty 1: the skew rule exists in dispatch.sh; exposure 3: every seat; accumulation 1: nothing built on it"
@@ -9,12 +9,14 @@
 - Origin: main
 - Next step: LAND-READY: chain ebsr-build1 closed on round 2 (read 1 four material folded; read 2 zero material, four debts: a merge shape neither rule can see, a misleading witness refusal message, LandedCommit may record an unpublished local commit, and the coordinator's checkout had held round-1 content, since reset). Candidate is rounds/2 (ebsr-build1-r2.patch in m1b's scratchpad; landing script land-ebsr-in-quiet-window.sh). Receipt evidence on round 1: 40 of 41 green, the failure the ten-minute cap. Lands right after receipt-beds-run-the-candidate-engine in the fleet hold; then rebuild and re-arm at the new tip.
 - OpenedAt: 2026-09-10T07:27:32Z
-- Revision: 15
+- Revision: 16
 - Labels: bootstrap
 - Budget: elapsedLimit=1d attemptLimit=10 reservedJobMinutesLimit=1200 activeJobLimit=3 reviewRoundLimit=3
 - BudgetExceptions: 2
 - Approved: by=human:Wido at=2026-09-10T12:47:21Z revision=10 opid=DPC11T5426HHED7BF6PCYVG77S-m1b-c6925449 authority=proven digest=dc3f54775b905124d3f395e46a7f4d1b2cd370a937671ed83c3b0812b69feb6c
 - Sliced: machine=m1b lineage=main-1788680071-18713-e76d5d revision=4 at=2026-09-10T11:41:21Z
+- Claimed: machine=m1b lineage=main-1788680071-18713-e76d5d at=2026-09-10T14:49:35Z revision=16 accountingRevision=16
+- StopCapability: generation=16 revision=16 machine=m1b claimEpoch=1 fenceEpoch=0
 
 History:
 - 2026-09-10T07:27:32Z 74CMETNC39NSF6P3H6WX26XPMV-m1b-c6925449 open actor=m1b+main-1788680071-18713-e76d5d targets=enrollment-binds-by-the-skew-rule-not-the-tip
@@ -32,4 +34,5 @@ History:
 - 2026-09-10T14:00:16Z 4Y2NDXNVNKK5VX30SE9EQSJ531-m1b-c6925449 park actor=m1b+main-1788680071-18713-e76d5d targets=enrollment-binds-by-the-skew-rule-not-the-tip reason=Parked 2026-09-10 19:25Z LAND-READY behind the fleet hold (a receipt needs the tip to hold for fifty minutes); lands second in the hold, after member 1, with land-ebsr-in-quiet-window.sh.
 - 2026-09-10T14:41:28Z 9597A6GQQ6W4JGJ16KWA7ZXYVH-m1c-66a02980 done actor=human:Wido targets=actionable-metrics,breach-clock-and-budget-honesty,burn-without-delivery-tripwire,carried-landing-debt-and-cap,delegate-job-liveness,enrollment-binds-by-the-skew-rule-not-the-tip,failed-job-attention,fixture-stewards-outlive-their-suite,goal-abandoned-with-a-reason,governed-exhaustion-reprojection,human-carried-landing-carry,human-carried-landing-verb,human-goal-verbs-forgiving,job-record-birth-token,landing-receipt-survives-records-drift,lease-sweep-death-evidence,live-job-on-a-done-goal-unnoticed,machine-concurrency-governor,proof-harness-process-custody,receipt-beds-run-the-candidate-engine,review-round-limit-counts-per-chain,severity-tiered-rigor,severity-tiered-rigor-p2,skew-preflight-knows-a-receipt-worktree,small-change-lane,steward-catchup-livelock,steward-revives-a-done-goal,stop-batch-strands-a-resumable-goal,suite-custody,testing-contract-owns-record-paths,token-spend-fence,turn-verdict-hardening,watch-verb,watcher-repair-request-never-names-current,winddown-census-handoff-leak reason=priority-order from=1:6 to=1:5
 - 2026-09-10T14:49:25Z R96Y6XMG6W71QQQ2QD37TWC61R-m1b-c6925449 unpark actor=human:Wido targets=enrollment-binds-by-the-skew-rule-not-the-tip
-Integrity: sha256=fd5a1e48460649e62ce739302979e5f6d03c9b622634d14f5ba231e1eba5b1ab
+- 2026-09-10T14:49:35Z X7CD4N81VSVK2QD1HPJZP805KX-m1b-c6925449 claim actor=m1b+main-1788680071-18713-e76d5d targets=enrollment-binds-by-the-skew-rule-not-the-tip
+Integrity: sha256=971e32cb649d5c00b342b49d16bbfb8c260a6dd20829b50dc13fa3bc027c8613
