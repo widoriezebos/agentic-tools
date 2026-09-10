@@ -1,6 +1,6 @@
 # skew-preflight-knows-a-receipt-worktree
 
-- State: approved
+- State: claimed
 - Priority: 1
 - Sequence: 3
 - Risk: severity=3 novelty=1 exposure=3 accumulation=1 basis="severity 3: same refusal; novelty 1: one comparison reads a different stamp; exposure 3: every code landing; accumulation 1: nothing built on it"
@@ -9,11 +9,13 @@
 - Origin: main
 - Next step: SATISFIED BY MEMBER 1'S DESIGN (m1b, 2026-09-10 19:30Z): receipt-beds-run-the-candidate-engine stamps the candidate engine with a deterministic parentless commit over the exact candidate tree, so inside a receipt worktree the preflight's ancestry walk from that stamp is empty and the check passes without any change to dispatch.sh (read 4 of that chain, RBE-24, verified it; dispatch.sh is byte-identical to the base). Nothing to build here. Conclude this goal done the moment receipt-beds-run-the-candidate-engine lands; do not claim it for work.
 - OpenedAt: 2026-09-10T07:27:29Z
-- Revision: 7
+- Revision: 8
 - Labels: bootstrap
 - Budget: elapsedLimit=1d attemptLimit=10 reservedJobMinutesLimit=1200 activeJobLimit=1 reviewRoundLimit=3
 - BudgetExceptions: 0
 - Approved: by=human:Wido at=2026-09-10T07:29:14Z revision=2 opid=4ZK6CRTM3WB0139F8R1W7B9NNZ-m1b-c6925449 authority=proven digest=61c5382670ef4dbcdabfa94944072b8521590ed5b414e1c3613859756be5e1c6
+- Claimed: machine=m1c lineage=main-1789023008-75159-b69143 at=2026-09-10T14:45:17Z revision=8 accountingRevision=8
+- StopCapability: generation=8 revision=8 machine=m1c claimEpoch=4 fenceEpoch=0
 
 History:
 - 2026-09-10T07:27:29Z 50AGRJMEYNP0GD01N57BN4FMGP-m1b-c6925449 open actor=m1b+main-1788680071-18713-e76d5d targets=skew-preflight-knows-a-receipt-worktree
@@ -23,4 +25,5 @@ History:
 - 2026-09-10T12:22:00Z H5F1MT3CMCMG612JV6CK2ABFQG-m1b-c6925449 set-priority actor=human:Wido targets=actionable-metrics,breach-clock-and-budget-honesty,breach-stop-wedges-seat,burn-without-delivery-tripwire,carried-landing-debt-and-cap,delegate-job-liveness,delivery-candidate-is-the-workspace-not-the-ledger,enrollment-binds-by-the-skew-rule-not-the-tip,failed-job-attention,fixture-stewards-outlive-their-suite,goal-abandoned-with-a-reason,governed-exhaustion-reprojection,human-carried-landing-verb,human-goal-verbs-forgiving,job-record-birth-token,landing-receipt-survives-records-drift,lease-sweep-death-evidence,live-job-on-a-done-goal-unnoticed,machine-concurrency-governor,proof-harness-process-custody,receipt-beds-run-the-candidate-engine,review-round-limit-counts-per-chain,severity-tiered-rigor,severity-tiered-rigor-p2,skew-preflight-knows-a-receipt-worktree,small-change-lane,steward-catchup-livelock,steward-revives-a-done-goal,stop-batch-strands-a-resumable-goal,suite-custody,testing-contract-owns-record-paths,token-spend-fence,turn-verdict-hardening,watch-verb,watcher-repair-request-never-names-current,winddown-census-handoff-leak reason=priority-order subject=delivery-candidate-is-the-workspace-not-the-ledger from=1:3 to=1:4 requested-sequence=2
 - 2026-09-10T14:00:52Z 2RN3NGQ8V9TAS54ET4W2FFQGFZ-m1b-c6925449 edit actor=m1b+main-1788680071-18713-e76d5d targets=skew-preflight-knows-a-receipt-worktree
 - 2026-09-10T14:41:28Z 9597A6GQQ6W4JGJ16KWA7ZXYVH-m1c-66a02980 done actor=human:Wido targets=actionable-metrics,breach-clock-and-budget-honesty,burn-without-delivery-tripwire,carried-landing-debt-and-cap,delegate-job-liveness,enrollment-binds-by-the-skew-rule-not-the-tip,failed-job-attention,fixture-stewards-outlive-their-suite,goal-abandoned-with-a-reason,governed-exhaustion-reprojection,human-carried-landing-carry,human-carried-landing-verb,human-goal-verbs-forgiving,job-record-birth-token,landing-receipt-survives-records-drift,lease-sweep-death-evidence,live-job-on-a-done-goal-unnoticed,machine-concurrency-governor,proof-harness-process-custody,receipt-beds-run-the-candidate-engine,review-round-limit-counts-per-chain,severity-tiered-rigor,severity-tiered-rigor-p2,skew-preflight-knows-a-receipt-worktree,small-change-lane,steward-catchup-livelock,steward-revives-a-done-goal,stop-batch-strands-a-resumable-goal,suite-custody,testing-contract-owns-record-paths,token-spend-fence,turn-verdict-hardening,watch-verb,watcher-repair-request-never-names-current,winddown-census-handoff-leak reason=priority-order from=1:4 to=1:3
-Integrity: sha256=60bbc96ed92dca1c93f4c16598a2392642a868301c1c7cb61a3d67f8ec690a1b
+- 2026-09-10T14:45:17Z QSR3YKN48Q5HYR91Z7J5VMRVAG-m1c-66a02980 claim actor=m1c+main-1789023008-75159-b69143 targets=skew-preflight-knows-a-receipt-worktree
+Integrity: sha256=56da81c7fa1333467d97d43f3b9c27f905ae397d191accabb9114888d9e3cfc8
