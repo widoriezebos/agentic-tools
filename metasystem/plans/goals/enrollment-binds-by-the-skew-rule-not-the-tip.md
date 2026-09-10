@@ -9,14 +9,14 @@
 - Origin: main
 - Next step: CLAIMED by m1b 2026-09-10 16:20Z (member 1 parked land-ready behind the fleet's publish cadence). Build dispatched to Sol as ebsr-build1: the rearm resolver binds by dispatch's skew rule (stamp an ancestor of the landed source with no engine or script change between), the machine re-mint on a ledger-only landing keeps the enrollment valid, four fixtures. Then closing read (Opus), receipt and landing in a quiet window. With this and landing-receipt-survives-records-drift landed, a receipt and its landing stop being voided by other seats' ledger writes.
 - OpenedAt: 2026-09-10T07:27:32Z
-- Revision: 9
+- Revision: 10
 - Labels: bootstrap
-- Budget: elapsedLimit=1d attemptLimit=10 reservedJobMinutesLimit=480 activeJobLimit=3 reviewRoundLimit=3
-- BudgetExceptions: 1
-- Approved: by=human:Wido at=2026-09-10T12:47:01Z revision=9 opid=YM85Z6MDDE9AXKGEEXK2WYATZQ-m1b-c6925449 authority=proven digest=6b927213b3e1de332b5603728e62507d8d2d4f196dcdb7ef3092317249fec92b
+- Budget: elapsedLimit=1d attemptLimit=10 reservedJobMinutesLimit=1200 activeJobLimit=3 reviewRoundLimit=3
+- BudgetExceptions: 2
+- Approved: by=human:Wido at=2026-09-10T12:47:21Z revision=10 opid=DPC11T5426HHED7BF6PCYVG77S-m1b-c6925449 authority=proven digest=dc3f54775b905124d3f395e46a7f4d1b2cd370a937671ed83c3b0812b69feb6c
 - Sliced: machine=m1b lineage=main-1788680071-18713-e76d5d revision=4 at=2026-09-10T11:41:21Z
-- Claimed: machine=m1b lineage=main-1788680071-18713-e76d5d at=2026-09-10T12:47:01Z revision=9 accountingRevision=9
-- StopCapability: generation=9 revision=9 machine=m1b claimEpoch=1 fenceEpoch=0
+- Claimed: machine=m1b lineage=main-1788680071-18713-e76d5d at=2026-09-10T12:47:21Z revision=10 accountingRevision=10
+- StopCapability: generation=10 revision=10 machine=m1b claimEpoch=1 fenceEpoch=0
 
 History:
 - 2026-09-10T07:27:32Z 74CMETNC39NSF6P3H6WX26XPMV-m1b-c6925449 open actor=m1b+main-1788680071-18713-e76d5d targets=enrollment-binds-by-the-skew-rule-not-the-tip
@@ -28,4 +28,5 @@ History:
 - 2026-09-10T12:04:12Z PPC8N1B8YQGCEBWRC66HHP6DCQ-m1-c6925449 set-priority actor=human:Wido targets=actionable-metrics,breach-clock-and-budget-honesty,breach-stop-wedges-seat,burn-without-delivery-tripwire,carried-landing-debt-and-cap,delegate-job-liveness,enrollment-binds-by-the-skew-rule-not-the-tip,failed-job-attention,fixture-stewards-outlive-their-suite,goal-abandoned-with-a-reason,governed-exhaustion-reprojection,human-carried-landing-verb,human-goal-verbs-forgiving,job-record-birth-token,landing-receipt-survives-records-drift,landing-runs-standard-deep-runs-at-cadence,lease-sweep-death-evidence,live-job-on-a-done-goal-unnoticed,machine-concurrency-governor,proof-harness-process-custody,receipt-beds-run-the-candidate-engine,review-round-limit-counts-per-chain,severity-tiered-rigor,severity-tiered-rigor-p2,skew-preflight-knows-a-receipt-worktree,small-change-lane,steward-catchup-livelock,steward-revives-a-done-goal,stop-batch-strands-a-resumable-goal,suite-custody,testing-contract-owns-record-paths,token-spend-fence,turn-verdict-hardening,watch-verb,watcher-repair-request-never-names-current,winddown-census-handoff-leak reason=priority-order subject=landing-runs-standard-deep-runs-at-cadence from=1:4 to=1:5 requested-sequence=1
 - 2026-09-10T12:22:00Z H5F1MT3CMCMG612JV6CK2ABFQG-m1b-c6925449 set-priority actor=human:Wido targets=actionable-metrics,breach-clock-and-budget-honesty,breach-stop-wedges-seat,burn-without-delivery-tripwire,carried-landing-debt-and-cap,delegate-job-liveness,delivery-candidate-is-the-workspace-not-the-ledger,enrollment-binds-by-the-skew-rule-not-the-tip,failed-job-attention,fixture-stewards-outlive-their-suite,goal-abandoned-with-a-reason,governed-exhaustion-reprojection,human-carried-landing-verb,human-goal-verbs-forgiving,job-record-birth-token,landing-receipt-survives-records-drift,lease-sweep-death-evidence,live-job-on-a-done-goal-unnoticed,machine-concurrency-governor,proof-harness-process-custody,receipt-beds-run-the-candidate-engine,review-round-limit-counts-per-chain,severity-tiered-rigor,severity-tiered-rigor-p2,skew-preflight-knows-a-receipt-worktree,small-change-lane,steward-catchup-livelock,steward-revives-a-done-goal,stop-batch-strands-a-resumable-goal,suite-custody,testing-contract-owns-record-paths,token-spend-fence,turn-verdict-hardening,watch-verb,watcher-repair-request-never-names-current,winddown-census-handoff-leak reason=priority-order subject=delivery-candidate-is-the-workspace-not-the-ledger from=1:5 to=1:6 requested-sequence=2
 - 2026-09-10T12:47:01Z YM85Z6MDDE9AXKGEEXK2WYATZQ-m1b-c6925449 set-budget actor=human:Wido targets=enrollment-binds-by-the-skew-rule-not-the-tip
-Integrity: sha256=e896a6d78141e5865623894a90967724b81aee74748774fefba59f68a97bceca
+- 2026-09-10T12:47:21Z DPC11T5426HHED7BF6PCYVG77S-m1b-c6925449 set-budget actor=human:Wido targets=enrollment-binds-by-the-skew-rule-not-the-tip
+Integrity: sha256=9a543a107c4e5ad1091aed41eb8996f9ea46fbad4d7ae82ec97eed9d30cbc486
