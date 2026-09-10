@@ -1,6 +1,6 @@
 # receipt-beds-run-the-candidate-engine
 
-- State: approved
+- State: claimed
 - Priority: 1
 - Sequence: 1
 - Risk: severity=3 novelty=1 exposure=3 accumulation=1 basis="severity 3: the group refuses every engine-changing candidate; novelty 1: the proof engine and the METASYSTEM_BIN convention already exist; exposure 3: every code landing; accumulation 1: nothing built on it yet"
@@ -9,14 +9,17 @@
 - Origin: main
 - Next step: Small: one change in the receipt's bed runner (internal/landing/testing.go or where test-receipt launches groups) plus the two digests on the receipt. First of the bootstrap members; see the-metasystem-validates-itself-with-itself.
 - OpenedAt: 2026-09-10T07:27:25Z
-- Revision: 3
+- Revision: 4
 - Labels: bootstrap
 - Budget: elapsedLimit=1d attemptLimit=10 reservedJobMinutesLimit=1200 activeJobLimit=1 reviewRoundLimit=3
 - BudgetExceptions: 0
 - Approved: by=human:Wido at=2026-09-10T07:29:14Z revision=2 opid=4ZK6CRTM3WB0139F8R1W7B9NNZ-m1b-c6925449 authority=proven digest=7791b53db49be871db3b8d576863dbc78b9bd85bf95c16442cc4679e296e3910
+- Claimed: machine=m1b lineage=main-1788680071-18713-e76d5d at=2026-09-10T07:32:21Z revision=4 accountingRevision=4
+- StopCapability: generation=4 revision=4 machine=m1b claimEpoch=1 fenceEpoch=0
 
 History:
 - 2026-09-10T07:27:25Z J23YGSQ7VB7AEY7BPVQTRVV2CT-m1b-c6925449 open actor=m1b+main-1788680071-18713-e76d5d targets=receipt-beds-run-the-candidate-engine
 - 2026-09-10T07:29:14Z 4ZK6CRTM3WB0139F8R1W7B9NNZ-m1b-c6925449 approve actor=human:Wido targets=carried-landing-debt-and-cap,enrollment-binds-by-the-skew-rule-not-the-tip,human-carried-landing-verb,receipt-beds-run-the-candidate-engine,skew-preflight-knows-a-receipt-worktree,testing-contract-owns-record-paths,the-metasystem-validates-itself-with-itself
 - 2026-09-10T07:29:23Z 4YQ8846PHRPC35JCF0ETCW674J-m1b-c6925449 set-priority actor=human:Wido targets=actionable-metrics,breach-clock-and-budget-honesty,breach-stop-wedges-seat,burn-without-delivery-tripwire,delegate-job-liveness,dispatch-cap-necessity,failed-job-attention,fixture-stewards-outlive-their-suite,goal-abandoned-with-a-reason,governed-exhaustion-reprojection,human-goal-verbs-forgiving,job-record-birth-token,landing-receipt-survives-records-drift,lease-sweep-death-evidence,live-job-on-a-done-goal-unnoticed,machine-concurrency-governor,proof-harness-process-custody,receipt-beds-run-the-candidate-engine,review-round-limit-counts-per-chain,severity-tiered-rigor,severity-tiered-rigor-p2,small-change-lane,steward-catchup-livelock,steward-revives-a-done-goal,stop-batch-strands-a-resumable-goal,suite-custody,token-spend-fence,turn-verdict-hardening,watch-verb,watcher-repair-request-never-names-current,winddown-census-handoff-leak reason=priority-order subject=receipt-beds-run-the-candidate-engine from=unranked to=1:1 requested-sequence=1
-Integrity: sha256=36cf54dbdcfca850f01d40f49999b8a94eca2209f4698095d5560a0079af859d
+- 2026-09-10T07:32:21Z Y70P5YVK9Q98CSWHE7A2ZG427W-m1b-c6925449 claim actor=m1b+main-1788680071-18713-e76d5d targets=receipt-beds-run-the-candidate-engine
+Integrity: sha256=d41284371f95e4eae4ecc4eff06b681ae2aea0bad0883f011ea76d42795de441
