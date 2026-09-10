@@ -9,14 +9,14 @@
 - Origin: main
 - Next step: READ 2 (rbce-read2, Opus): the round-2 fold closed RBE-01 (narrowed: author variables leak into the stamp), RBE-02, RBE-03, RBE-05 (over-closed: the preflight now refuses witness and dev-dirty stamps too), RBE-07; two material regressions and one legacy-reader debt folded in ROUND 3 (fold-read cycle 2, said aloud: no natural exit; review rounds 2 of 3 consumed). DONE wording corrected: the receipt builds the candidate engine with go-build.sh --trimpath --out in the isolated candidate worktree (not go-gate.sh --proof-out). The void receipt of round 2 (engine stamp behind the tip after a ledger publish) is being cancelled. After round 3: read 3 and the receipt in one uninterrupted sequence with no ledger writes until the landing; if read 3 is clean, land; if not, the land-or-fold call is Wido's.
 - OpenedAt: 2026-09-10T07:27:25Z
-- Revision: 12
+- Revision: 13
 - Labels: bootstrap
-- Budget: elapsedLimit=1d attemptLimit=10 reservedJobMinutesLimit=1200 activeJobLimit=2 reviewRoundLimit=3
-- BudgetExceptions: 1
-- Approved: by=human:Wido at=2026-09-10T09:11:59Z revision=8 opid=H0YZ6RR8KZNEA23EY1HT9MHPC4-m1b-c6925449 authority=proven digest=2153b3541c62a3543205811e14f87bb8c84f8edae25e385cdd9433abefff3c2e
+- Budget: elapsedLimit=1d attemptLimit=10 reservedJobMinutesLimit=1200 activeJobLimit=4 reviewRoundLimit=3
+- BudgetExceptions: 2
+- Approved: by=human:Wido at=2026-09-10T11:03:25Z revision=13 opid=89SCT11P329BARW98B5MDX0VTF-m1b-c6925449 authority=proven digest=23422d6e844ea32321e54755f870d49149196a743aca27d3d9acdf25239b1faa
 - Sliced: machine=m1b lineage=main-1788680071-18713-e76d5d revision=4 at=2026-09-10T07:32:46Z
-- Claimed: machine=m1b lineage=main-1788680071-18713-e76d5d at=2026-09-10T09:11:59Z revision=8 accountingRevision=8
-- StopCapability: generation=8 revision=8 machine=m1b claimEpoch=1 fenceEpoch=0
+- Claimed: machine=m1b lineage=main-1788680071-18713-e76d5d at=2026-09-10T11:03:25Z revision=13 accountingRevision=13
+- StopCapability: generation=13 revision=13 machine=m1b claimEpoch=1 fenceEpoch=0
 
 History:
 - 2026-09-10T07:27:25Z J23YGSQ7VB7AEY7BPVQTRVV2CT-m1b-c6925449 open actor=m1b+main-1788680071-18713-e76d5d targets=receipt-beds-run-the-candidate-engine
@@ -31,4 +31,5 @@ History:
 - 2026-09-10T10:05:28Z 7YV2Q8ZZ1M34HC9GRGZRMR9VRA-m1b-c6925449 edit actor=m1b+main-1788680071-18713-e76d5d targets=receipt-beds-run-the-candidate-engine
 - 2026-09-10T10:26:42Z A01KJYZYG379HR9QE9HG83FD2S-m1b-c6925449 edit actor=m1b+main-1788680071-18713-e76d5d targets=receipt-beds-run-the-candidate-engine
 - 2026-09-10T10:41:28Z WG0CVMV46ZGSPEGAR43YTJ09AF-m1b-c6925449 edit actor=m1b+main-1788680071-18713-e76d5d targets=receipt-beds-run-the-candidate-engine
-Integrity: sha256=9a2b7b10d738b04723999686d307c39471cc2c91b53811f79c2ac5cf3315cce7
+- 2026-09-10T11:03:25Z 89SCT11P329BARW98B5MDX0VTF-m1b-c6925449 set-budget actor=human:Wido targets=receipt-beds-run-the-candidate-engine
+Integrity: sha256=703701fb5df8558f85ca41d2a395959fb3f7edb972cf937bbe63634a397368bc
