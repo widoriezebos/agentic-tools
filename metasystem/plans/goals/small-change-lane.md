@@ -1,16 +1,18 @@
 # small-change-lane
 
-- State: approved
+- State: claimed
 - Priority: 1
 - Sequence: 12
 - Intent: The 'change this little thing' case has a supported path: a dispatch lane cheap and fast enough that a certified one-line fix is not ceremony
 - Origin: main
 - Next step: PULLED FORWARD (Wido 2026-08-27 evening, with severity-tiered-rigor, ahead of remaining feature items): design when picked up — a micro-dispatch shape (single delegate round, certification folded into the build return, seat oracle-proof (custodial mechanics) instead of a separate critic round) for single-slice mechanical items, so process-to-payload stays sane on small work. Third leg of the proof-pricing overhaul beside the staged-batch witness and severity-tiered rigor.
 - OpenedAt: 2026-08-20T00:14:00Z
-- Revision: 15
+- Revision: 16
 - Budget: elapsedLimit=1d attemptLimit=6 reservedJobMinutesLimit=240 activeJobLimit=1 reviewRoundLimit=3
 - BudgetExceptions: 0
 - Approved: by=human:Wido at=2026-09-06T06:53:37Z revision=5 opid=A35EHY2TGAWCCFA1Q1J0WZGS35-m1-a4f8999f authority=proven digest=ce78111a14c81468a494d5bb4235f81b054a41696cc40003f8b906dee0e8aa27
+- Claimed: machine=m1b lineage=main-1788680071-18713-e76d5d at=2026-09-10T07:24:30Z revision=16 accountingRevision=16
+- StopCapability: generation=16 revision=16 machine=m1b claimEpoch=1 fenceEpoch=0
 
 History:
 - 2026-08-22T06:30:55Z BXWE9NXAWCGCTR3MFCE8GDC4P5-widos-m5-pro-bf243850 migrate actor=human:wido targets=small-change-lane
@@ -28,4 +30,5 @@ History:
 - 2026-09-09T20:16:52Z 58PB14TJ4ARNET1QS5G1D8CBKB-m1b-c6925449 set-priority actor=human:Wido targets=actionable-metrics,breach-clock-and-budget-honesty,breach-stop-wedges-seat,burn-without-delivery-tripwire,coordinator-loop-prevention,delegate-job-liveness,dispatch-cap-necessity,failed-job-attention,fixture-stewards-outlive-their-suite,goal-abandoned-with-a-reason,governed-exhaustion-reprojection,human-goal-verbs-forgiving,job-record-birth-token,landing-receipt-survives-records-drift,lease-sweep-death-evidence,live-job-on-a-done-goal-unnoticed,machine-concurrency-governor,one-screen-renderer-breaks-brain-stop-seeded,proof-harness-process-custody,review-round-limit-counts-per-chain,severity-tiered-rigor,severity-tiered-rigor-p2,small-change-lane,steward-catchup-livelock,steward-revives-a-done-goal,stop-batch-strands-a-resumable-goal,suite-custody,token-spend-fence,turn-verdict-hardening,watch-verb,watcher-repair-request-never-names-current,winddown-census-handoff-leak reason=priority-order subject=one-screen-renderer-breaks-brain-stop-seeded from=1:13 to=1:14 requested-sequence=1
 - 2026-09-09T21:38:32Z 898HYDNSVARZ5VG9KSJY8X1A35-m1c-c6925449 done actor=human:Wido targets=actionable-metrics,breach-clock-and-budget-honesty,breach-stop-wedges-seat,burn-without-delivery-tripwire,coordinator-loop-prevention,delegate-job-liveness,dispatch-cap-necessity,failed-job-attention,fixture-stewards-outlive-their-suite,goal-abandoned-with-a-reason,governed-exhaustion-reprojection,human-goal-verbs-forgiving,job-record-birth-token,landing-receipt-survives-records-drift,lease-sweep-death-evidence,live-job-on-a-done-goal-unnoticed,machine-concurrency-governor,proof-harness-process-custody,review-round-limit-counts-per-chain,severity-tiered-rigor,severity-tiered-rigor-p2,small-change-lane,steward-catchup-livelock,steward-revives-a-done-goal,stop-batch-strands-a-resumable-goal,suite-custody,token-spend-fence,turn-verdict-hardening,watch-verb,watcher-repair-request-never-names-current,winddown-census-handoff-leak reason=priority-order from=1:14 to=1:13
 - 2026-09-10T04:29:09Z S4K6NBVV91BT6VVNV6W1KJTWNH-m1b-c6925449 done actor=m1b+main-1788680071-18713-e76d5d targets=actionable-metrics,breach-clock-and-budget-honesty,breach-stop-wedges-seat,burn-without-delivery-tripwire,delegate-job-liveness,dispatch-cap-necessity,failed-job-attention,fixture-stewards-outlive-their-suite,goal-abandoned-with-a-reason,governed-exhaustion-reprojection,human-goal-verbs-forgiving,job-record-birth-token,landing-receipt-survives-records-drift,lease-sweep-death-evidence,live-job-on-a-done-goal-unnoticed,machine-concurrency-governor,one-screen-renderer-breaks-brain-stop-seeded,proof-harness-process-custody,review-round-limit-counts-per-chain,severity-tiered-rigor,severity-tiered-rigor-p2,small-change-lane,steward-catchup-livelock,steward-revives-a-done-goal,stop-batch-strands-a-resumable-goal,suite-custody,token-spend-fence,turn-verdict-hardening,watch-verb,watcher-repair-request-never-names-current,winddown-census-handoff-leak reason=priority-order from=1:13 to=1:12
-Integrity: sha256=a3ec973d86a11909068d32ab4bd690a75c98a4cae04f94b1d3e6337a1d74d931
+- 2026-09-10T07:24:30Z J6NV15N5AH710PVXF5NX980C37-m1b-c6925449 claim actor=m1b+main-1788680071-18713-e76d5d targets=small-change-lane
+Integrity: sha256=8be09f94404ea5581fab47c3794633506fe1ca08125960eb865321eeb4c2884e
