@@ -1,6 +1,6 @@
 # dispatch-cap-necessity
 
-- State: approved
+- State: claimed
 - Priority: 1
 - Sequence: 4
 - Risk: severity=2 novelty=1 exposure=3 accumulation=2 basis="severity 2: a wrong reservation charge starves lean goals of budget they never spent and can refuse admission wrongly, but grants nothing and destroys nothing; novelty 1: the settlement mirrors the governed-run path's existing terminal settlement; exposure 3: every dispatch on every seat projects the reserved pool; accumulation 2: each unsettled record keeps charging its cap until the goal's revision changes, so the error compounds across a chain's rounds"
@@ -9,11 +9,13 @@
 - Origin: main
 - Next step: LAND-READY, blocked by the receipt (2026-09-10 01:55Z, m1): chain dispatch-cap-build2-20260910 rounds/2 (reviewed tree 95d34c943b1e25326726767b6bef22da24889f6d, critic dispatch-cap-crit3-20260910: no material finding; dispositions and briefs untracked in the m1 checkout) is closed and its diff applies to main. The deep receipt fails only section/gate-fence-fixtures: the isolated worktree runs the ENROLLED engine and the skew preflight refuses an engine-changing candidate; a candidate engine cannot be enrolled (ENROLLMENT_DRIFT). When the receipt runs sections with a proof engine built from the candidate, land with the m1 scratchpad's run-landing.sh chain dispatch-cap-build2-20260910 dispatch-cap-necessity metasystem/artifacts/agents/dispatch-cap-build2-20260910/rounds/2/diff.patch <msg> dispatch-cap-crit3-20260910, then goal done. The box: observed + open-caps + proof reservation components, refusal line 'reserved observed=<n> open-caps=<m> [proof=<p>] limit=<L>'. Follow-up goal proof-attempts-settle-to-minutes-run opened.
 - OpenedAt: 2026-09-01T13:49:31Z
-- Revision: 43
+- Revision: 44
 - Budget: elapsedLimit=1d attemptLimit=10 reservedJobMinutesLimit=480 activeJobLimit=1 reviewRoundLimit=3
 - BudgetExceptions: 0
 - Approved: by=human:Wido at=2026-09-09T20:39:20Z revision=20 opid=Q4EW6RPG2FQD5QVP0ATZVNPQP5-m1-1701c13c authority=raise=Q4EW6RPG2FQD5QVP0ATZVNPQP5-m1-1701c13c digest=6e7847dce495307741495cb4c49f4e58a3f8d6e52afd087909f89dac97b86e05
 - Sliced: machine=m1b lineage=main-1788333346-60696-6a3256 revision=4 at=2026-09-02T17:08:46Z
+- Claimed: machine=m1 lineage=main-1788940932-18533-7fa6c2 at=2026-09-10T04:14:00Z revision=44 accountingRevision=44
+- StopCapability: generation=44 revision=44 machine=m1 claimEpoch=6 fenceEpoch=0
 
 History:
 - 2026-09-01T13:49:31Z 43EKD9F0H470RXJZ1BDKFH564B-m0b-6638932d open actor=m0b+main-1788250419-3170380-8a1fb3 targets=dispatch-cap-necessity
@@ -59,4 +61,5 @@ History:
 - 2026-09-10T01:47:25Z 9SWPAWE1BQ2YFM7SH6GAH512S1-m1-1701c13c release actor=m1+main-1788940932-18533-7fa6c2 targets=dispatch-cap-necessity
 - 2026-09-10T01:48:28Z 41846CYMHF1F0YW1HDG3N2R3V3-m1-1701c13c claim actor=m1+main-1788940932-18533-7fa6c2 targets=dispatch-cap-necessity
 - 2026-09-10T03:11:46Z S8ZY931WTQZ1CEV7Z3EK06XQ1S-m1-1701c13c release actor=m1+main-1788940932-18533-7fa6c2 targets=dispatch-cap-necessity
-Integrity: sha256=a7a32d6bbc558af38b5b4ce4a0081dca0c3708586a9317ec0f85da4b4fa41463
+- 2026-09-10T04:14:00Z 5P6MRJG9VT57V4H2NB04VQH3MC-m1-1701c13c claim actor=m1+main-1788940932-18533-7fa6c2 targets=dispatch-cap-necessity
+Integrity: sha256=d4e3bc0624ef3b84adce3c05fe620e1fac96fdefe4635e228f4c008a8102e532
