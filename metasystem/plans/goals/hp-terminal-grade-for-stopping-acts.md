@@ -7,7 +7,7 @@
 - Origin: main
 - Next step: LAND-READY, blocked by the receipt (2026-09-10 02:00Z, m1): chain hp-terminal-build1-20260909 rounds/14 (reviewed tree 01f26b23645901c0ee1d86effedbc9d1d4b4d4ef, twelfth critic hp-terminal-crit12-20260909: no material finding after 14 rounds; HPT-01..39 dispositions and all briefs untracked in the m1 checkout) is closed and its diff applies to main. Same receipt wall as dispatch-cap-necessity (section/gate-fence-fixtures refuses an engine-changing candidate under the enrolled engine). Land with run-landing.sh chain hp-terminal-build1-20260909 hp-terminal-grade-for-stopping-acts metasystem/artifacts/agents/hp-terminal-build1-20260909/rounds/14/diff.patch <msg> hp-terminal-crit12-20260909, then goal done. Delivered: ProveTerminal walks to the process-tree root through root-owned protected system images, the terminal grade on park/unpark/release/session stop incl. --arc forms, journal replay refuses named entries and passes typed outcomes through, proof-grades scenario runs end to end (allow path only on an agent-free bed). Notes for members: HPT-36 (proof-free verbs under the blanket replay refusal) on hp-recovery-grants-no-grade-to-unstamped-intents; HPT-39 (root not asserted as pid 1 in production) on the shared design.
 - OpenedAt: 2026-09-09T14:35:03Z
-- Revision: 34
+- Revision: 36
 - Labels: comfort
 - Budget: elapsedLimit=1d attemptLimit=10 reservedJobMinutesLimit=1200 activeJobLimit=1 reviewRoundLimit=3
 - BudgetExceptions: 0
@@ -49,4 +49,6 @@ History:
 - 2026-09-10T01:47:43Z 2KTAFGDZ6HEDNF43EV9PFBG1MG-m1-1701c13c release actor=m1+main-1788940932-18533-7fa6c2 targets=hp-terminal-grade-for-stopping-acts
 - 2026-09-10T03:11:50Z ZD2ZFM161YT65A34XACS9BW100-m1-1701c13c claim actor=m1+main-1788940932-18533-7fa6c2 targets=hp-terminal-grade-for-stopping-acts
 - 2026-09-10T04:13:56Z WQ00D53B6MTTVN1SG8K9EZ9Q9X-m1-1701c13c release actor=m1+main-1788940932-18533-7fa6c2 targets=hp-terminal-grade-for-stopping-acts
-Integrity: sha256=08f54e1f4d95cf330d1491e15fae8d49b538bcbe0e87d0286873fe6b55bd226c
+- 2026-09-10T07:16:53Z 9AHDV4EW716TZSSETNANTVFMXD-m1-1701c13c claim actor=m1+main-1788940932-18533-7fa6c2 targets=hp-terminal-grade-for-stopping-acts
+- 2026-09-10T07:21:06Z 1AQ5W2ZHSPE9NXNE7PC6NTV9E8-m1-1701c13c release actor=m1+main-1788940932-18533-7fa6c2 targets=hp-terminal-grade-for-stopping-acts
+Integrity: sha256=1b2d2304103e52bd7b54429eb8fc4eea42245d583d48fd813a365e0a2a499986
