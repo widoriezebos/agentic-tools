@@ -1,6 +1,6 @@
 # one-screen-renderer-breaks-brain-stop-seeded
 
-- State: claimed
+- State: done
 - Priority: 1
 - Sequence: 1
 - Risk: severity=3 novelty=1 exposure=3 accumulation=3 basis="severity 3: the goal-cli fixture bed fails on main, and that bed is part of the full battery every receipt-bound landing must pass, so every full-width landing on this machine is refused at its receipt until this is settled; novelty 1: two landed intents disagree about which line leads a stop summary, and the fix is to make the renderer and the fixture agree, one way or the other; exposure 3: every seat's landing on every machine that pulls main, and every brain checkout's stop summary; accumulation 3: it blocks landings now, it was landed without the bed that would have caught it, and each landing that hits it costs a twenty-minute battery to discover"
@@ -8,13 +8,12 @@
 - Intent: On a brain-declared checkout the turn verdict's display no longer leads with the BRAIN SEAT summary; it leads with the OPEN WORK line, because the one-screen verdict renderer landed by commit d533caf1 places the verdict line first. The goal-cli fixture bed's brain-stop-seeded scenario pins the old order and fails on main, and that bed is part of the full battery every receipt-bound landing must pass, so every full-width landing on this machine is refused at its receipt until the renderer and the fixture agree. The landing that introduced it ran without the bed. DONE means the two landed intents are reconciled by decision, the renderer and the fixture agree, goal-cli-fixtures.sh runs green on main, and the brain design's page states which line leads a brain checkout's stop display and why.
 - Origin: main
 - Next step: RESOLVED ON MAIN, not by this goal: m1's landing 536c74bd (The brain summary leads the Stop display again, goal brain-summary-leads-the-stop-display) restored the order. Verified 2026-09-09 22:40Z: scripts/agents/goal-cli-fixtures.sh on main 8c841fbe exits 0, brain-stop-seeded and brain-stop-corrupt pass. Nothing left to build. Whoever holds a free claim closes this done with that evidence (m1b is quota-bound to goal-abandoned-with-a-reason tonight); once goal abandon exists it is the textbook case for it.
+- Concluded: Resolved on main by m1's landing 536c74bd (The brain summary leads the Stop display again, goal brain-summary-leads-the-stop-display), which restored the BRAIN SEAT summary ahead of the OPEN WORK line in the one-screen renderer. Verified by m1b on 2026-09-09 22:40Z: scripts/agents/goal-cli-fixtures.sh on main 8c841fbe exits 0 with brain-stop-seeded and brain-stop-corrupt passing (goal CLI fixtures: PASSED), and again on the candidates of 2026-09-10. Nothing was built under this goal; it recorded the blocker and its evidence while the fix landed elsewhere.
 - OpenedAt: 2026-09-09T15:09:48Z
-- Revision: 6
+- Revision: 7
 - Budget: elapsedLimit=1d attemptLimit=10 reservedJobMinutesLimit=1200 activeJobLimit=1 reviewRoundLimit=3
 - BudgetExceptions: 0
 - Approved: by=human:Wido at=2026-09-09T20:16:48Z revision=3 opid=QST7XZ8YXSJEQQ724H7E5CDFN6-m1b-c6925449 authority=proven digest=807bcfc09d6141b6b9a2ce71e56402c0f1335a7b3c7e432bbde6cd7257915642
-- Claimed: machine=m1b lineage=main-1788680071-18713-e76d5d at=2026-09-10T04:28:58Z revision=6 accountingRevision=6
-- StopCapability: generation=6 revision=6 machine=m1b claimEpoch=1 fenceEpoch=0
 
 History:
 - 2026-09-09T15:09:48Z PHDCYW6SHSJ2WCW8PZSC4C92ME-m1b-c6925449 open actor=m1b+main-1788680071-18713-e76d5d targets=one-screen-renderer-breaks-brain-stop-seeded
@@ -23,4 +22,5 @@ History:
 - 2026-09-09T20:16:52Z 58PB14TJ4ARNET1QS5G1D8CBKB-m1b-c6925449 set-priority actor=human:Wido targets=actionable-metrics,breach-clock-and-budget-honesty,breach-stop-wedges-seat,burn-without-delivery-tripwire,coordinator-loop-prevention,delegate-job-liveness,dispatch-cap-necessity,failed-job-attention,fixture-stewards-outlive-their-suite,goal-abandoned-with-a-reason,governed-exhaustion-reprojection,human-goal-verbs-forgiving,job-record-birth-token,landing-receipt-survives-records-drift,lease-sweep-death-evidence,live-job-on-a-done-goal-unnoticed,machine-concurrency-governor,one-screen-renderer-breaks-brain-stop-seeded,proof-harness-process-custody,review-round-limit-counts-per-chain,severity-tiered-rigor,severity-tiered-rigor-p2,small-change-lane,steward-catchup-livelock,steward-revives-a-done-goal,stop-batch-strands-a-resumable-goal,suite-custody,token-spend-fence,turn-verdict-hardening,watch-verb,watcher-repair-request-never-names-current,winddown-census-handoff-leak reason=priority-order subject=one-screen-renderer-breaks-brain-stop-seeded from=unranked to=1:1 requested-sequence=1
 - 2026-09-09T20:22:30Z K1FHB54K7TK7F4X7BDM3AN0SVB-m1b-c6925449 edit actor=m1b+main-1788680071-18713-e76d5d targets=one-screen-renderer-breaks-brain-stop-seeded
 - 2026-09-10T04:28:58Z KQEM6693BGWK5JBW1JGKKE4TR7-m1b-c6925449 claim actor=m1b+main-1788680071-18713-e76d5d targets=one-screen-renderer-breaks-brain-stop-seeded
-Integrity: sha256=43caf78f5d91e67fed5c28eea161571f7d43a2572fa909c4d6998cee2380c010
+- 2026-09-10T04:29:09Z S4K6NBVV91BT6VVNV6W1KJTWNH-m1b-c6925449 done actor=m1b+main-1788680071-18713-e76d5d targets=actionable-metrics,breach-clock-and-budget-honesty,breach-stop-wedges-seat,burn-without-delivery-tripwire,delegate-job-liveness,dispatch-cap-necessity,failed-job-attention,fixture-stewards-outlive-their-suite,goal-abandoned-with-a-reason,governed-exhaustion-reprojection,human-goal-verbs-forgiving,job-record-birth-token,landing-receipt-survives-records-drift,lease-sweep-death-evidence,live-job-on-a-done-goal-unnoticed,machine-concurrency-governor,one-screen-renderer-breaks-brain-stop-seeded,proof-harness-process-custody,review-round-limit-counts-per-chain,severity-tiered-rigor,severity-tiered-rigor-p2,small-change-lane,steward-catchup-livelock,steward-revives-a-done-goal,stop-batch-strands-a-resumable-goal,suite-custody,token-spend-fence,turn-verdict-hardening,watch-verb,watcher-repair-request-never-names-current,winddown-census-handoff-leak
+Integrity: sha256=bcc2d9c2c933bb7b2d248ec5c3b385039194e25297e2294b3e32cde3db64d3fa
