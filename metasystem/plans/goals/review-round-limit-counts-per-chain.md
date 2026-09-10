@@ -1,6 +1,6 @@
 # review-round-limit-counts-per-chain
 
-- State: approved
+- State: claimed
 - Priority: 1
 - Sequence: 8
 - Risk: severity=1 novelty=1 exposure=3 accumulation=2 basis="severity 1: nothing unsafe lands, the minutes bound still holds; novelty 1: one counter moves from the critic root to the goal, in code that exists; exposure 3: every goal's box on every machine; accumulation 2: the norm's review-round figure is quietly meaningless, and every tiering decision that leans on it inherits the gap"
@@ -9,10 +9,12 @@
 - Origin: main
 - Next step: MECHANICAL, one chain: (1) the admission for --role code-critic and design-critic counts existing critic roots bound to the goal revision by class and refuses BUDGET_REFUSED naming class, used and limit when the next would exceed it; (2) the goal record's box gains the per-class reading in the health line (claimed-goal-appetite: designCritiques=n/limit codeCritiques=n/limit); (3) tier norms (metasystem.budget.review-round-max and the tier tables) are read as per-class limits, unchanged in value; (4) fixtures: a third code critique under limit 2 refuses; a design critique does not consume the code class; a follow-up round inside one critic root still counts against the per-root bound. Landing note: goals in flight keep their current numbers; none is retroactively exhausted.
 - OpenedAt: 2026-09-06T10:38:37Z
-- Revision: 11
+- Revision: 12
 - Budget: elapsedLimit=1d attemptLimit=10 reservedJobMinutesLimit=1200 activeJobLimit=1 reviewRoundLimit=3
 - BudgetExceptions: 0
 - Approved: by=human:Wido at=2026-09-06T10:39:18Z revision=2 opid=SE0TDND1R5PT5PP85ZQ75EVVG1-m1-a4f8999f authority=proven digest=98dbad0c115ce25fd9cd226687f57a9106e091ebb57f902a1de8f1794fa469cc
+- Claimed: machine=m1b lineage=main-1788680071-18713-e76d5d at=2026-09-10T04:58:20Z revision=12 accountingRevision=12
+- StopCapability: generation=12 revision=12 machine=m1b claimEpoch=1 fenceEpoch=0
 
 History:
 - 2026-09-06T10:38:37Z K5T6D71J8CK76PGHRBHDY1FSBP-m1-a4f8999f open actor=m1+main-1788594343-3833-fb64b9 targets=review-round-limit-counts-per-chain
@@ -26,4 +28,5 @@ History:
 - 2026-09-09T20:16:52Z 58PB14TJ4ARNET1QS5G1D8CBKB-m1b-c6925449 set-priority actor=human:Wido targets=actionable-metrics,breach-clock-and-budget-honesty,breach-stop-wedges-seat,burn-without-delivery-tripwire,coordinator-loop-prevention,delegate-job-liveness,dispatch-cap-necessity,failed-job-attention,fixture-stewards-outlive-their-suite,goal-abandoned-with-a-reason,governed-exhaustion-reprojection,human-goal-verbs-forgiving,job-record-birth-token,landing-receipt-survives-records-drift,lease-sweep-death-evidence,live-job-on-a-done-goal-unnoticed,machine-concurrency-governor,one-screen-renderer-breaks-brain-stop-seeded,proof-harness-process-custody,review-round-limit-counts-per-chain,severity-tiered-rigor,severity-tiered-rigor-p2,small-change-lane,steward-catchup-livelock,steward-revives-a-done-goal,stop-batch-strands-a-resumable-goal,suite-custody,token-spend-fence,turn-verdict-hardening,watch-verb,watcher-repair-request-never-names-current,winddown-census-handoff-leak reason=priority-order subject=one-screen-renderer-breaks-brain-stop-seeded from=1:9 to=1:10 requested-sequence=1
 - 2026-09-09T21:38:32Z 898HYDNSVARZ5VG9KSJY8X1A35-m1c-c6925449 done actor=human:Wido targets=actionable-metrics,breach-clock-and-budget-honesty,breach-stop-wedges-seat,burn-without-delivery-tripwire,coordinator-loop-prevention,delegate-job-liveness,dispatch-cap-necessity,failed-job-attention,fixture-stewards-outlive-their-suite,goal-abandoned-with-a-reason,governed-exhaustion-reprojection,human-goal-verbs-forgiving,job-record-birth-token,landing-receipt-survives-records-drift,lease-sweep-death-evidence,live-job-on-a-done-goal-unnoticed,machine-concurrency-governor,proof-harness-process-custody,review-round-limit-counts-per-chain,severity-tiered-rigor,severity-tiered-rigor-p2,small-change-lane,steward-catchup-livelock,steward-revives-a-done-goal,stop-batch-strands-a-resumable-goal,suite-custody,token-spend-fence,turn-verdict-hardening,watch-verb,watcher-repair-request-never-names-current,winddown-census-handoff-leak reason=priority-order from=1:10 to=1:9
 - 2026-09-10T04:29:09Z S4K6NBVV91BT6VVNV6W1KJTWNH-m1b-c6925449 done actor=m1b+main-1788680071-18713-e76d5d targets=actionable-metrics,breach-clock-and-budget-honesty,breach-stop-wedges-seat,burn-without-delivery-tripwire,delegate-job-liveness,dispatch-cap-necessity,failed-job-attention,fixture-stewards-outlive-their-suite,goal-abandoned-with-a-reason,governed-exhaustion-reprojection,human-goal-verbs-forgiving,job-record-birth-token,landing-receipt-survives-records-drift,lease-sweep-death-evidence,live-job-on-a-done-goal-unnoticed,machine-concurrency-governor,one-screen-renderer-breaks-brain-stop-seeded,proof-harness-process-custody,review-round-limit-counts-per-chain,severity-tiered-rigor,severity-tiered-rigor-p2,small-change-lane,steward-catchup-livelock,steward-revives-a-done-goal,stop-batch-strands-a-resumable-goal,suite-custody,token-spend-fence,turn-verdict-hardening,watch-verb,watcher-repair-request-never-names-current,winddown-census-handoff-leak reason=priority-order from=1:9 to=1:8
-Integrity: sha256=d9e81900cbbcbcec5421394c7d9b35f5e0c169821183eedd98ffc063fabe06c6
+- 2026-09-10T04:58:20Z 63YPAQBWMXV3X33VZZBTCGTECE-m1b-c6925449 claim actor=m1b+main-1788680071-18713-e76d5d targets=review-round-limit-counts-per-chain
+Integrity: sha256=6fb47c6276bd41cefcd14375b47b4d85f7f642efe03bc090d83029aa93a16538
