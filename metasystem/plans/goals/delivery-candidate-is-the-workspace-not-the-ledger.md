@@ -9,14 +9,14 @@
 - Origin: main
 - Next step: CLAIMED BY m1d 2026-09-10 (the steward claimed the head for the seat at 12:34Z; m1d carries it). Design round 1 in flight: job dcwl-design1-20260910 (Fable, DESIGN-BEARING) writes plans/delivery-candidate-is-the-workspace-design.md from plans/delivery-candidate-is-the-workspace-design-brief.md; the brief inventories the twelve whole-project binding sites (test.go:235 and :551, ExactReusableTestResult, PrepareTestingReceiptPayload, PublishCommittedReceipt, readTestReceipt, land.sh check_supplied_test_receipt and the post-rebase verify, commit.sh, landing test-receipt, the recertified target check) and the two land-ready sibling chains it must not fight (m1e's lrsrd registers.go declaration, m1b's rbce candidate-engine stamp). Then: Sol critiques the design once, Sol implements (DESTRUCTIVE-REACH), Opus reads, verifier live proof, receipt, land.sh --chain. Sequenced right after receipt-beds-run-the-candidate-engine, whose landing waits on this.
 - OpenedAt: 2026-09-10T12:21:47Z
-- Revision: 11
+- Revision: 12
 - Labels: bootstrap
-- Budget: elapsedLimit=1d attemptLimit=18 reservedJobMinutesLimit=1200 activeJobLimit=1 reviewRoundLimit=3
-- BudgetExceptions: 3
-- Approved: by=human:Wido at=2026-09-10T23:35:02Z revision=11 opid=QRRJ879ZC4CT3MW4ZZ627FN6PH-m1d-a38bcdde authority=proven digest=5f18333d2b53124e5e7dea56c4e24f3412bd643f9acf950a574aa7805722b927
+- Budget: elapsedLimit=1d attemptLimit=20 reservedJobMinutesLimit=1200 activeJobLimit=1 reviewRoundLimit=3
+- BudgetExceptions: 4
+- Approved: by=human:Wido at=2026-09-10T23:51:21Z revision=12 opid=CRSVF55DB7NWDCWR6YDGZMYC6D-m1d-a38bcdde authority=proven digest=e7ad42f81803245ea573bc29f99ebcbfa1d999b3b6680c032db09a7626dfe8ab
 - Sliced: machine=m1d lineage=main-1788941004-20871-6e7a43 revision=4 at=2026-09-10T14:01:38Z
-- Claimed: machine=m1d lineage=main-1788941004-20871-6e7a43 at=2026-09-10T23:35:02Z revision=11 accountingRevision=11
-- StopCapability: generation=11 revision=11 machine=m1d claimEpoch=3 fenceEpoch=0
+- Claimed: machine=m1d lineage=main-1788941004-20871-6e7a43 at=2026-09-10T23:51:21Z revision=12 accountingRevision=12
+- StopCapability: generation=12 revision=12 machine=m1d claimEpoch=3 fenceEpoch=0
 
 History:
 - 2026-09-10T12:21:47Z ZZSFMGPMXRGTV6BBKJC90JEMGG-m1b-c6925449 open actor=m1b+main-1788680071-18713-e76d5d targets=delivery-candidate-is-the-workspace-not-the-ledger
@@ -30,4 +30,5 @@ History:
 - 2026-09-10T20:47:49Z Y0Y3J94S82CRMGJ53GT0P8RTKX-m1d-a38bcdde set-budget actor=human:Wido targets=delivery-candidate-is-the-workspace-not-the-ledger
 - 2026-09-10T22:15:57Z 4Q3NNQMY4BZQYAWE2F9XKQDFWD-m1d-a38bcdde set-budget actor=human:Wido targets=delivery-candidate-is-the-workspace-not-the-ledger
 - 2026-09-10T23:35:02Z QRRJ879ZC4CT3MW4ZZ627FN6PH-m1d-a38bcdde set-budget actor=human:Wido targets=delivery-candidate-is-the-workspace-not-the-ledger
-Integrity: sha256=1932a33fbe988fc8bd7b77039bf888763d2856fe7886bdb5ba7eaaa4d7dbb1c7
+- 2026-09-10T23:51:21Z CRSVF55DB7NWDCWR6YDGZMYC6D-m1d-a38bcdde set-budget actor=human:Wido targets=delivery-candidate-is-the-workspace-not-the-ledger
+Integrity: sha256=e44a170023b82d9005a5af27a915d355ed32e142e13632edd887c8194c68e642
