@@ -1,6 +1,6 @@
 # review-round-limit-counts-per-chain
 
-- State: approved
+- State: parked
 - Priority: 1
 - Sequence: 14
 - Risk: severity=1 novelty=1 exposure=3 accumulation=2 basis="severity 1: nothing unsafe lands, the minutes bound still holds; novelty 1: one counter moves from the critic root to the goal, in code that exists; exposure 3: every goal's box on every machine; accumulation 2: the norm's review-round figure is quietly meaningless, and every tiering decision that leans on it inherits the gap"
@@ -9,11 +9,12 @@
 - Origin: main
 - Next step: LAND-READY, BLOCKED BY THE RECEIPT (gate-fence group refuses every engine-changing candidate; goal receipt-beds-run-the-candidate-engine is building the fix). RULE CHANGE 2026-09-10 (critique follows the tier, not the class; goal critique-always re-scoped): this goal is tier 3, so its chain rrl-build1 needs an independent code-critic read before it lands, even though it was dispatched MECHANICAL; dispatch that read (Fable lane) before the receipt. Then: stage rrl-build1-r3.patch from m1b's scratchpad, landing test-receipt --mode auto, land.sh --chain rrl-build1 --test-receipt, goal done.
 - OpenedAt: 2026-09-06T10:38:37Z
-- Revision: 27
+- Revision: 28
 - Budget: elapsedLimit=1d attemptLimit=10 reservedJobMinutesLimit=1200 activeJobLimit=1 reviewRoundLimit=3
 - BudgetExceptions: 0
 - Approved: by=human:Wido at=2026-09-06T10:39:18Z revision=2 opid=SE0TDND1R5PT5PP85ZQ75EVVG1-m1-a4f8999f authority=proven digest=98dbad0c115ce25fd9cd226687f57a9106e091ebb57f902a1de8f1794fa469cc
 - Sliced: machine=m1b lineage=main-1788680071-18713-e76d5d revision=12 at=2026-09-10T04:59:06Z
+- Parked: by=m1b+main-1788680071-18713-e76d5d at=2026-09-10T08:13:02Z because=Parked 2026-09-10 11:45Z: land-ready behind the gate-fence receipt fix and, under the 2026-09-10 rule, one code-critic read before landing (tier 3).
 
 History:
 - 2026-09-06T10:38:37Z K5T6D71J8CK76PGHRBHDY1FSBP-m1-a4f8999f open actor=m1+main-1788594343-3833-fb64b9 targets=review-round-limit-counts-per-chain
@@ -43,4 +44,5 @@ History:
 - 2026-09-10T07:30:08Z WVGXF51GYFDAEHJSQF6JZYHJZ2-m1b-c6925449 set-priority actor=human:Wido targets=actionable-metrics,breach-clock-and-budget-honesty,breach-stop-wedges-seat,burn-without-delivery-tripwire,carried-landing-debt-and-cap,delegate-job-liveness,dispatch-cap-necessity,failed-job-attention,fixture-stewards-outlive-their-suite,goal-abandoned-with-a-reason,governed-exhaustion-reprojection,human-goal-verbs-forgiving,job-record-birth-token,landing-receipt-survives-records-drift,lease-sweep-death-evidence,live-job-on-a-done-goal-unnoticed,machine-concurrency-governor,proof-harness-process-custody,review-round-limit-counts-per-chain,severity-tiered-rigor,severity-tiered-rigor-p2,small-change-lane,steward-catchup-livelock,steward-revives-a-done-goal,stop-batch-strands-a-resumable-goal,suite-custody,token-spend-fence,turn-verdict-hardening,watch-verb,watcher-repair-request-never-names-current,winddown-census-handoff-leak reason=priority-order subject=carried-landing-debt-and-cap from=1:13 to=1:14 requested-sequence=6
 - 2026-09-10T08:12:48Z BY23G6GKEZCNGP50QTAAB5FXP6-m1b-c6925449 unpark actor=human:Wido targets=review-round-limit-counts-per-chain
 - 2026-09-10T08:12:59Z G9XEDQ6ZRC476YCP71WQTEQMK4-m1b-c6925449 edit actor=m1b+main-1788680071-18713-e76d5d targets=review-round-limit-counts-per-chain
-Integrity: sha256=bfedb9566e38d38148e3cf71308a234b39946e319cc8e6ca0490a7e7b131e1d5
+- 2026-09-10T08:13:02Z XX5G6JFP2YPTP90C725JBTBHFW-m1b-c6925449 park actor=m1b+main-1788680071-18713-e76d5d targets=review-round-limit-counts-per-chain reason=Parked 2026-09-10 11:45Z: land-ready behind the gate-fence receipt fix and, under the 2026-09-10 rule, one code-critic read before landing (tier 3).
+Integrity: sha256=f251929b5789352bc0505e6b5ce7965b80989a60c76d83452b3966dfd2fa35bd
