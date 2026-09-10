@@ -1,6 +1,6 @@
 # breach-stop-wedges-seat
 
-- State: claimed
+- State: approved
 - Priority: 1
 - Sequence: 12
 - Risk: severity=2 novelty=1 exposure=3 accumulation=2 basis="severity 2: one budget breach freezes a whole seat until a human resumes, no work lost; novelty 1: one predicate, a claim under a standing StopFence is not this machine's live work, applied where the machine's work is chosen; exposure 3: every machine's ledger validator, goal next and turn verdict; accumulation 2: each stranded claim adds a frozen seat until cleared"
@@ -9,14 +9,12 @@
 - Origin: main
 - Next step: IN FLIGHT (m1d, 2026-09-10 10:3xZ): the closing read of round 8, job bsws-crit6-20260910, charged to sibling goal dispatch-admission-refuses-on-a-fenced-sibling (both goals in arc fenced-claim-wedge, held by this seat). STATE: chain bsws-build1b-20260909 is at round 8; rounds 1 to 6 as recorded before; round 7 folded the third read's finding BSW-12 (dispatch admission's machine-wide claim scan skips fenced claims; the fenced goal itself stays refused by the per-goal check); the fourth read (bsws-crit5, under the sibling goal because this goal is at the three-read ceiling of R-42-m0) found BSW-15: trunk had created its own internal/dispatch/admission_test.go, colliding with the chain's new file; round 8 moved the chain's three admission fixtures to admission_fenced_sibling_test.go beside it, no production change. Registers: records/misc/breach-stop-wedges-seat-critique-r1.md to -r4.md. Proven outside the sandbox on the round-8 tree: dispatch, goal, steward, channel and command chain fixtures, the full dispatch bed and the full goal-cli bed. Trunk is 18 commits past the chain's rebase base, disjoint from its 18 files; the chain applies cleanly to origin/main. NEXT, with zero material findings from bsws-crit6: dispatch.sh close on bsws-build1b-20260909 and on bsws-crit6-20260910; validate conformance --stage recertify --job bsws-build1b-20260909-r8 (onto local main at origin), then --stage merge with the record; apply the certified diff into this checkout; landing test-receipt --root . --tree <candidate whole-project tree> --mode auto --goal breach-stop-wedges-seat; land.sh -m <message in the m1d scratchpad> --goal breach-stop-wedges-seat --chain bsws-build1b-20260909 --recertification <record> --test-receipt <receipt> with the 18 paths plus the four critique registers and the carried-fold record; push transport main; re-arm through the enrolled tmux pane under R-90-m1d; prove live on this seat: hold a fenced claim, claim another goal, dispatch on it; then goal done on both arc members. Residue already on its own goals: steward-continues-a-fenced-goal, stop-hook-treats-a-fenced-goal-as-current-work, steward-delivery-counts-a-fenced-claim, brain-advice-names-a-refused-release, human-budget-act-keeps-the-seats-lease-epoch, cross-cutting-change-inventories-its-readers.
 - OpenedAt: 2026-09-01T06:49:32Z
-- Revision: 35
+- Revision: 36
 - Arc: fenced-claim-wedge
 - Budget: elapsedLimit=1d attemptLimit=10 reservedJobMinutesLimit=960 activeJobLimit=1 reviewRoundLimit=3
 - BudgetExceptions: 0
 - Approved: by=human:Wido at=2026-09-10T06:18:07Z revision=21 opid=KA76E25MRN5RMZR5GMA60M174P-m1-c6925449 authority=proven digest=91ed9e5521bd28f47b0c6b7a474e49248065399e1fdde01c63d37ec8a0f520a0
 - Sliced: machine=m1d lineage=main-1788941004-20871-6e7a43 revision=8 at=2026-09-09T09:11:09Z
-- Claimed: machine=m1d lineage=main-1788941004-20871-6e7a43 at=2026-09-10T09:20:47Z revision=33 accountingRevision=33
-- StopCapability: generation=33 revision=33 machine=m1d claimEpoch=3 fenceEpoch=0
 
 History:
 - 2026-09-01T06:49:32Z FP70QX8HBN6WY1V8PX52K60QHN-m3-a5da21ff open actor=m3+mac-m3 targets=breach-stop-wedges-seat
@@ -54,4 +52,5 @@ History:
 - 2026-09-10T09:20:47Z N0EVC8WJ0YEPBC2Z3J4DGMXA57-m1d-a38bcdde claim actor=m1d+main-1788941004-20871-6e7a43 targets=breach-stop-wedges-seat,dispatch-admission-refuses-on-a-fenced-sibling
 - 2026-09-10T10:28:41Z B73KC2SEY3FGE9FSZ1Q9S25VX0-m1d-a38bcdde edit actor=m1d+main-1788941004-20871-6e7a43 targets=breach-stop-wedges-seat
 - 2026-09-10T12:04:12Z PPC8N1B8YQGCEBWRC66HHP6DCQ-m1-c6925449 set-priority actor=human:Wido targets=actionable-metrics,breach-clock-and-budget-honesty,breach-stop-wedges-seat,burn-without-delivery-tripwire,carried-landing-debt-and-cap,delegate-job-liveness,enrollment-binds-by-the-skew-rule-not-the-tip,failed-job-attention,fixture-stewards-outlive-their-suite,goal-abandoned-with-a-reason,governed-exhaustion-reprojection,human-carried-landing-verb,human-goal-verbs-forgiving,job-record-birth-token,landing-receipt-survives-records-drift,landing-runs-standard-deep-runs-at-cadence,lease-sweep-death-evidence,live-job-on-a-done-goal-unnoticed,machine-concurrency-governor,proof-harness-process-custody,receipt-beds-run-the-candidate-engine,review-round-limit-counts-per-chain,severity-tiered-rigor,severity-tiered-rigor-p2,skew-preflight-knows-a-receipt-worktree,small-change-lane,steward-catchup-livelock,steward-revives-a-done-goal,stop-batch-strands-a-resumable-goal,suite-custody,testing-contract-owns-record-paths,token-spend-fence,turn-verdict-hardening,watch-verb,watcher-repair-request-never-names-current,winddown-census-handoff-leak reason=priority-order subject=landing-runs-standard-deep-runs-at-cadence from=1:11 to=1:12 requested-sequence=1
-Integrity: sha256=4bf8db399bd02a4b199876ee77802f3b5795ae5471cdda58f85ab6eb08e05eb6
+- 2026-09-10T12:21:39Z MN6B82HBNXG3X52PCNY17K73WH-m1d-a38bcdde release actor=m1d+main-1788941004-20871-6e7a43 targets=breach-stop-wedges-seat,dispatch-admission-refuses-on-a-fenced-sibling
+Integrity: sha256=6ccda3105efaae699c755f6b308cc3a60a450c6f94b8d64bdec89689b8f197c8
