@@ -2,14 +2,14 @@
 
 - State: queued
 - Priority: 1
-- Sequence: 7
+- Sequence: 8
 - Risk: severity=3 novelty=2 exposure=3 accumulation=2 basis="severity 3: without it a broken gate is a hand edit of the tree; novelty 2: designed and audited, unbuilt; exposure 3: every seat; accumulation 2: the register already points at it"
 - Tier: 3
 - Intent: DUPLICATE, opened by m1b on 2026-09-10 before finding the sibling goal human-carried-landing-carry (approved 2026-09-04 on Wido's ruling as the home of the carry verb, the carried landing and the commit critic, points 02 and 04-09 of plans/human-carried-landing-design.md). This record holds no work and must not be claimed or approved; the umbrella the-metasystem-validates-itself-with-itself names human-carried-landing-carry as its fourth member. Abandon once goal abandon exists.
 - Origin: main
 - Next step: Do not claim. Abandon with --because 'duplicate of human-carried-landing-carry' when goal abandon lands.
 - OpenedAt: 2026-09-10T07:27:35Z
-- Revision: 11
+- Revision: 12
 - Labels: bootstrap
 - BudgetExceptions: 0
 
@@ -25,4 +25,5 @@ History:
 - 2026-09-10T14:02:50Z XZK745YXZVMCZQ52RVPMP12W6R-m1b-c6925449 unapprove actor=human:Wido targets=human-carried-landing-verb reason=duplicate of human-carried-landing-carry; holds no work
 - 2026-09-10T14:03:08Z 5NTVMSM380CRDK8H38W42K5M0G-m1b-c6925449 edit actor=m1b+main-1788680071-18713-e76d5d targets=human-carried-landing-verb
 - 2026-09-10T14:41:28Z 9597A6GQQ6W4JGJ16KWA7ZXYVH-m1c-66a02980 done actor=human:Wido targets=actionable-metrics,breach-clock-and-budget-honesty,burn-without-delivery-tripwire,carried-landing-debt-and-cap,delegate-job-liveness,enrollment-binds-by-the-skew-rule-not-the-tip,failed-job-attention,fixture-stewards-outlive-their-suite,goal-abandoned-with-a-reason,governed-exhaustion-reprojection,human-carried-landing-carry,human-carried-landing-verb,human-goal-verbs-forgiving,job-record-birth-token,landing-receipt-survives-records-drift,lease-sweep-death-evidence,live-job-on-a-done-goal-unnoticed,machine-concurrency-governor,proof-harness-process-custody,receipt-beds-run-the-candidate-engine,review-round-limit-counts-per-chain,severity-tiered-rigor,severity-tiered-rigor-p2,skew-preflight-knows-a-receipt-worktree,small-change-lane,steward-catchup-livelock,steward-revives-a-done-goal,stop-batch-strands-a-resumable-goal,suite-custody,testing-contract-owns-record-paths,token-spend-fence,turn-verdict-hardening,watch-verb,watcher-repair-request-never-names-current,winddown-census-handoff-leak reason=priority-order from=1:8 to=1:7
-Integrity: sha256=fa97564270b2116b94454afcd242beaa373e741b5f4d879f5260bd47b76eba86
+- 2026-09-10T15:40:09Z 1WTD8HRVWQJCEY48YP2CBHA1VZ-m1b-c6925449 set-priority actor=human:Wido targets=actionable-metrics,breach-clock-and-budget-honesty,burn-without-delivery-tripwire,carried-landing-debt-and-cap,delegate-job-liveness,delivery-candidate-is-the-workspace-not-the-ledger,enrollment-binds-by-the-skew-rule-not-the-tip,failed-job-attention,fixture-stewards-outlive-their-suite,goal-abandoned-with-a-reason,governed-exhaustion-reprojection,human-carried-landing-carry,human-carried-landing-verb,human-goal-verbs-forgiving,job-record-birth-token,landing-receipt-survives-records-drift,landing-runs-standard-deep-runs-at-cadence,lease-sweep-death-evidence,live-job-on-a-done-goal-unnoticed,machine-concurrency-governor,proof-harness-process-custody,receipt-section-beds-do-not-export-the-engine,review-round-limit-counts-per-chain,severity-tiered-rigor,severity-tiered-rigor-p2,skew-preflight-knows-a-receipt-worktree,small-change-lane,steward-catchup-livelock,steward-revives-a-done-goal,stop-batch-strands-a-resumable-goal,suite-custody,testing-contract-owns-record-paths,token-spend-fence,turn-verdict-hardening,watch-verb,watcher-repair-request-never-names-current,winddown-census-handoff-leak reason=priority-order subject=receipt-section-beds-do-not-export-the-engine from=1:7 to=1:8 requested-sequence=1
+Integrity: sha256=945c0d47d1fd92046eb12f1c2015266d2c7b2da8b5ed0b896c4b1110aa333cbb

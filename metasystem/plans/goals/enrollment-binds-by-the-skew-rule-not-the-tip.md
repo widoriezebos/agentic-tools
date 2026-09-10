@@ -2,14 +2,14 @@
 
 - State: parked
 - Priority: 1
-- Sequence: 5
+- Sequence: 6
 - Risk: severity=2 novelty=1 exposure=3 accumulation=1 basis="severity 2: every seat rebuilds and re-arms after every ledger move or cannot land; novelty 1: the skew rule exists in dispatch.sh; exposure 3: every seat; accumulation 1: nothing built on it"
 - Tier: 3
 - Intent: The steward's rearm resolver (internal/steward/rearm_resolver.go around line 272) refuses 'enrollment records landed source X but the executable stamp resolves to Y' whenever the binary was built at any commit other than the enrollment's recorded tip, and the tip moves on every ledger publish (a goal edit, a claim), which changes no engine code. Seen 2026-09-10 09:00Z on m1b: a binary built three goal-edits behind the tip was refused by test verify until a rebuild on a clean tree at the exact tip and a steward arm. DONE means: the binding applies the same rule as dispatch's skew preflight (the engine is stale only when engine or agent scripts changed between its stamp and the tip), a binary built at an older commit with no such change is accepted, and a fixture proves a ledger-only move does not drift the enrollment while an engine change still does.
 - Origin: main
 - Next step: LAND-READY: chain ebsr-build1 closed on round 2 (read 1 four material folded; read 2 zero material, four debts: a merge shape neither rule can see, a misleading witness refusal message, LandedCommit may record an unpublished local commit, and the coordinator's checkout had held round-1 content, since reset). Candidate is rounds/2 (ebsr-build1-r2.patch in m1b's scratchpad; landing script land-ebsr-in-quiet-window.sh). Receipt evidence on round 1: 40 of 41 green, the failure the ten-minute cap. Lands right after receipt-beds-run-the-candidate-engine in the fleet hold; then rebuild and re-arm at the new tip.
 - OpenedAt: 2026-09-10T07:27:32Z
-- Revision: 17
+- Revision: 18
 - Labels: bootstrap
 - Budget: elapsedLimit=1d attemptLimit=10 reservedJobMinutesLimit=1200 activeJobLimit=3 reviewRoundLimit=3
 - BudgetExceptions: 2
@@ -35,4 +35,5 @@ History:
 - 2026-09-10T14:49:25Z R96Y6XMG6W71QQQ2QD37TWC61R-m1b-c6925449 unpark actor=human:Wido targets=enrollment-binds-by-the-skew-rule-not-the-tip
 - 2026-09-10T14:49:35Z X7CD4N81VSVK2QD1HPJZP805KX-m1b-c6925449 claim actor=m1b+main-1788680071-18713-e76d5d targets=enrollment-binds-by-the-skew-rule-not-the-tip
 - 2026-09-10T15:39:45Z 55CYZVJR2NY71PWFDG9AQ24KAD-m1b-c6925449 park actor=m1b+main-1788680071-18713-e76d5d targets=enrollment-binds-by-the-skew-rule-not-the-tip reason=Parked by m1b 2026-09-10 17:50Z, LAND-READY: chain ebsr-build1 closed on round 2 (patch kept by m1b). Its receipt proof-mtvn9elr failed only adoption-fixtures and supervision-and-census-fixtures, which fail for every candidate on a tip at or after 016b83e2 (see receipt-section-beds-do-not-export-the-engine). Re-take the receipt once that fix lands; nothing in this chain needs a fold.
-Integrity: sha256=4e51cf2ad024fb36b94da8819678adc25330172a2673debac7d19fba66f17b7a
+- 2026-09-10T15:40:09Z 1WTD8HRVWQJCEY48YP2CBHA1VZ-m1b-c6925449 set-priority actor=human:Wido targets=actionable-metrics,breach-clock-and-budget-honesty,burn-without-delivery-tripwire,carried-landing-debt-and-cap,delegate-job-liveness,delivery-candidate-is-the-workspace-not-the-ledger,enrollment-binds-by-the-skew-rule-not-the-tip,failed-job-attention,fixture-stewards-outlive-their-suite,goal-abandoned-with-a-reason,governed-exhaustion-reprojection,human-carried-landing-carry,human-carried-landing-verb,human-goal-verbs-forgiving,job-record-birth-token,landing-receipt-survives-records-drift,landing-runs-standard-deep-runs-at-cadence,lease-sweep-death-evidence,live-job-on-a-done-goal-unnoticed,machine-concurrency-governor,proof-harness-process-custody,receipt-section-beds-do-not-export-the-engine,review-round-limit-counts-per-chain,severity-tiered-rigor,severity-tiered-rigor-p2,skew-preflight-knows-a-receipt-worktree,small-change-lane,steward-catchup-livelock,steward-revives-a-done-goal,stop-batch-strands-a-resumable-goal,suite-custody,testing-contract-owns-record-paths,token-spend-fence,turn-verdict-hardening,watch-verb,watcher-repair-request-never-names-current,winddown-census-handoff-leak reason=priority-order subject=receipt-section-beds-do-not-export-the-engine from=1:5 to=1:6 requested-sequence=1
+Integrity: sha256=dc9788cd3a62bf1701eddc3d60bebc3a76c182063653ac34c6bca7c29b31e04f

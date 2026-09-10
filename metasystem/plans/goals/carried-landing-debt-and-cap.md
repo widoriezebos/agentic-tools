@@ -2,14 +2,14 @@
 
 - State: queued
 - Priority: 1
-- Sequence: 8
+- Sequence: 9
 - Risk: severity=2 novelty=2 exposure=2 accumulation=1 basis="severity 2: an unbounded hatch erodes every guard; novelty 2: the obligation and health-line machinery exist, the class is new; exposure 2: seats that carry; accumulation 1: depends on the verb"
 - Tier: 2
 - Intent: DUPLICATE, opened by m1b on 2026-09-10 before finding human-carried-landing-carry, whose design points HCL-OBLIGATION-07 and HCL-COUNTER-08 already carry the debt and the counter; the fleet cap on open carries is noted on that goal for its revision 3. This record holds no work and must not be claimed or approved. Abandon once goal abandon exists.
 - Origin: main
 - Next step: Do not claim. Abandon with --because 'duplicate of human-carried-landing-carry' when goal abandon lands.
 - OpenedAt: 2026-09-10T07:27:39Z
-- Revision: 9
+- Revision: 10
 - Labels: bootstrap
 - BudgetExceptions: 0
 
@@ -23,4 +23,5 @@ History:
 - 2026-09-10T14:02:59Z V2K4HB2H5CRDKK33P5P2VY9T6V-m1b-c6925449 unapprove actor=human:Wido targets=carried-landing-debt-and-cap reason=duplicate of human-carried-landing-carry; holds no work
 - 2026-09-10T14:03:12Z WNMABK0J4FGH3D96MF2VH825RW-m1b-c6925449 edit actor=m1b+main-1788680071-18713-e76d5d targets=carried-landing-debt-and-cap
 - 2026-09-10T14:41:28Z 9597A6GQQ6W4JGJ16KWA7ZXYVH-m1c-66a02980 done actor=human:Wido targets=actionable-metrics,breach-clock-and-budget-honesty,burn-without-delivery-tripwire,carried-landing-debt-and-cap,delegate-job-liveness,enrollment-binds-by-the-skew-rule-not-the-tip,failed-job-attention,fixture-stewards-outlive-their-suite,goal-abandoned-with-a-reason,governed-exhaustion-reprojection,human-carried-landing-carry,human-carried-landing-verb,human-goal-verbs-forgiving,job-record-birth-token,landing-receipt-survives-records-drift,lease-sweep-death-evidence,live-job-on-a-done-goal-unnoticed,machine-concurrency-governor,proof-harness-process-custody,receipt-beds-run-the-candidate-engine,review-round-limit-counts-per-chain,severity-tiered-rigor,severity-tiered-rigor-p2,skew-preflight-knows-a-receipt-worktree,small-change-lane,steward-catchup-livelock,steward-revives-a-done-goal,stop-batch-strands-a-resumable-goal,suite-custody,testing-contract-owns-record-paths,token-spend-fence,turn-verdict-hardening,watch-verb,watcher-repair-request-never-names-current,winddown-census-handoff-leak reason=priority-order from=1:9 to=1:8
-Integrity: sha256=62f509ced74b7fccb6f8c19ed1ebf6a0ba465299919f5932bb9596207f55596c
+- 2026-09-10T15:40:09Z 1WTD8HRVWQJCEY48YP2CBHA1VZ-m1b-c6925449 set-priority actor=human:Wido targets=actionable-metrics,breach-clock-and-budget-honesty,burn-without-delivery-tripwire,carried-landing-debt-and-cap,delegate-job-liveness,delivery-candidate-is-the-workspace-not-the-ledger,enrollment-binds-by-the-skew-rule-not-the-tip,failed-job-attention,fixture-stewards-outlive-their-suite,goal-abandoned-with-a-reason,governed-exhaustion-reprojection,human-carried-landing-carry,human-carried-landing-verb,human-goal-verbs-forgiving,job-record-birth-token,landing-receipt-survives-records-drift,landing-runs-standard-deep-runs-at-cadence,lease-sweep-death-evidence,live-job-on-a-done-goal-unnoticed,machine-concurrency-governor,proof-harness-process-custody,receipt-section-beds-do-not-export-the-engine,review-round-limit-counts-per-chain,severity-tiered-rigor,severity-tiered-rigor-p2,skew-preflight-knows-a-receipt-worktree,small-change-lane,steward-catchup-livelock,steward-revives-a-done-goal,stop-batch-strands-a-resumable-goal,suite-custody,testing-contract-owns-record-paths,token-spend-fence,turn-verdict-hardening,watch-verb,watcher-repair-request-never-names-current,winddown-census-handoff-leak reason=priority-order subject=receipt-section-beds-do-not-export-the-engine from=1:8 to=1:9 requested-sequence=1
+Integrity: sha256=ce149a2ff31cfa58052b06853d988e2c2d1f398f5354d3d1dfb801238bf75ea9
