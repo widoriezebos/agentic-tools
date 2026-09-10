@@ -1,6 +1,6 @@
 # enrollment-binds-by-the-skew-rule-not-the-tip
 
-- State: claimed
+- State: parked
 - Priority: 1
 - Sequence: 6
 - Risk: severity=2 novelty=1 exposure=3 accumulation=1 basis="severity 2: every seat rebuilds and re-arms after every ledger move or cannot land; novelty 1: the skew rule exists in dispatch.sh; exposure 3: every seat; accumulation 1: nothing built on it"
@@ -9,14 +9,13 @@
 - Origin: main
 - Next step: LAND-READY: chain ebsr-build1 closed on round 2 (read 1 four material folded; read 2 zero material, four debts: a merge shape neither rule can see, a misleading witness refusal message, LandedCommit may record an unpublished local commit, and the coordinator's checkout had held round-1 content, since reset). Candidate is rounds/2 (ebsr-build1-r2.patch in m1b's scratchpad; landing script land-ebsr-in-quiet-window.sh). Receipt evidence on round 1: 40 of 41 green, the failure the ten-minute cap. Lands right after receipt-beds-run-the-candidate-engine in the fleet hold; then rebuild and re-arm at the new tip.
 - OpenedAt: 2026-09-10T07:27:32Z
-- Revision: 12
+- Revision: 13
 - Labels: bootstrap
 - Budget: elapsedLimit=1d attemptLimit=10 reservedJobMinutesLimit=1200 activeJobLimit=3 reviewRoundLimit=3
 - BudgetExceptions: 2
 - Approved: by=human:Wido at=2026-09-10T12:47:21Z revision=10 opid=DPC11T5426HHED7BF6PCYVG77S-m1b-c6925449 authority=proven digest=dc3f54775b905124d3f395e46a7f4d1b2cd370a937671ed83c3b0812b69feb6c
 - Sliced: machine=m1b lineage=main-1788680071-18713-e76d5d revision=4 at=2026-09-10T11:41:21Z
-- Claimed: machine=m1b lineage=main-1788680071-18713-e76d5d at=2026-09-10T12:47:21Z revision=10 accountingRevision=10
-- StopCapability: generation=10 revision=10 machine=m1b claimEpoch=1 fenceEpoch=0
+- Parked: by=m1b+main-1788680071-18713-e76d5d at=2026-09-10T14:00:16Z because=Parked 2026-09-10 19:25Z LAND-READY behind the fleet hold (a receipt needs the tip to hold for fifty minutes); lands second in the hold, after member 1, with land-ebsr-in-quiet-window.sh.
 
 History:
 - 2026-09-10T07:27:32Z 74CMETNC39NSF6P3H6WX26XPMV-m1b-c6925449 open actor=m1b+main-1788680071-18713-e76d5d targets=enrollment-binds-by-the-skew-rule-not-the-tip
@@ -31,4 +30,5 @@ History:
 - 2026-09-10T12:47:21Z DPC11T5426HHED7BF6PCYVG77S-m1b-c6925449 set-budget actor=human:Wido targets=enrollment-binds-by-the-skew-rule-not-the-tip
 - 2026-09-10T13:03:00Z QN3JNYB5HQKC2B8GAZ3F493AP0-m1b-c6925449 edit actor=m1b+main-1788680071-18713-e76d5d targets=enrollment-binds-by-the-skew-rule-not-the-tip
 - 2026-09-10T14:00:11Z K54FMT2N63A5NVSH4D848NRZSZ-m1b-c6925449 edit actor=m1b+main-1788680071-18713-e76d5d targets=enrollment-binds-by-the-skew-rule-not-the-tip
-Integrity: sha256=efe5b92d6f886a89951a2489553f274aa93fd831d8b0b047de7ae201dda04cfb
+- 2026-09-10T14:00:16Z 4Y2NDXNVNKK5VX30SE9EQSJ531-m1b-c6925449 park actor=m1b+main-1788680071-18713-e76d5d targets=enrollment-binds-by-the-skew-rule-not-the-tip reason=Parked 2026-09-10 19:25Z LAND-READY behind the fleet hold (a receipt needs the tip to hold for fifty minutes); lands second in the hold, after member 1, with land-ebsr-in-quiet-window.sh.
+Integrity: sha256=bda8f322f1c5d155d49553cbb640fa8517da9beb64d38cfc2ad938802371f16c
