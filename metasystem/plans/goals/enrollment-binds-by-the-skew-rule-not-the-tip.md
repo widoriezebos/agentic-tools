@@ -9,11 +9,12 @@
 - Origin: main
 - Next step: Small: one comparison in the rearm resolver plus a fixture. Third of the bootstrap members.
 - OpenedAt: 2026-09-10T07:27:32Z
-- Revision: 4
+- Revision: 5
 - Labels: bootstrap
 - Budget: elapsedLimit=1d attemptLimit=10 reservedJobMinutesLimit=1200 activeJobLimit=1 reviewRoundLimit=3
 - BudgetExceptions: 0
 - Approved: by=human:Wido at=2026-09-10T07:29:14Z revision=2 opid=4ZK6CRTM3WB0139F8R1W7B9NNZ-m1b-c6925449 authority=proven digest=d3e191083c884f1144976481818c6489ad5dd538f3c60139b3438608f5997db7
+- Sliced: machine=m1b lineage=main-1788680071-18713-e76d5d revision=4 at=2026-09-10T11:41:21Z
 - Claimed: machine=m1b lineage=main-1788680071-18713-e76d5d at=2026-09-10T11:41:13Z revision=4 accountingRevision=4
 - StopCapability: generation=4 revision=4 machine=m1b claimEpoch=1 fenceEpoch=0
 
@@ -22,4 +23,5 @@ History:
 - 2026-09-10T07:29:14Z 4ZK6CRTM3WB0139F8R1W7B9NNZ-m1b-c6925449 approve actor=human:Wido targets=carried-landing-debt-and-cap,enrollment-binds-by-the-skew-rule-not-the-tip,human-carried-landing-verb,receipt-beds-run-the-candidate-engine,skew-preflight-knows-a-receipt-worktree,testing-contract-owns-record-paths,the-metasystem-validates-itself-with-itself
 - 2026-09-10T07:29:50Z K95ARETHRMP34B6ZDJX6ECK6BT-m1b-c6925449 set-priority actor=human:Wido targets=actionable-metrics,breach-clock-and-budget-honesty,breach-stop-wedges-seat,burn-without-delivery-tripwire,delegate-job-liveness,dispatch-cap-necessity,enrollment-binds-by-the-skew-rule-not-the-tip,failed-job-attention,fixture-stewards-outlive-their-suite,goal-abandoned-with-a-reason,governed-exhaustion-reprojection,human-goal-verbs-forgiving,job-record-birth-token,landing-receipt-survives-records-drift,lease-sweep-death-evidence,live-job-on-a-done-goal-unnoticed,machine-concurrency-governor,proof-harness-process-custody,review-round-limit-counts-per-chain,severity-tiered-rigor,severity-tiered-rigor-p2,small-change-lane,steward-catchup-livelock,steward-revives-a-done-goal,stop-batch-strands-a-resumable-goal,suite-custody,token-spend-fence,turn-verdict-hardening,watch-verb,watcher-repair-request-never-names-current,winddown-census-handoff-leak reason=priority-order subject=enrollment-binds-by-the-skew-rule-not-the-tip from=unranked to=1:4 requested-sequence=4
 - 2026-09-10T11:41:13Z 6TCE75DP3PM7S9V6R70T57ZV5Z-m1b-c6925449 claim actor=m1b+main-1788680071-18713-e76d5d targets=enrollment-binds-by-the-skew-rule-not-the-tip
-Integrity: sha256=913cad449adbf86543140d9c3c93da95a69e5430432e90de2bf9b559f8276c38
+- 2026-09-10T11:41:21Z DQ7NK8QTPXA4V4VDRVE32PES9R-m1b-c6925449 slice-start actor=m1b+main-1788680071-18713-e76d5d targets=enrollment-binds-by-the-skew-rule-not-the-tip
+Integrity: sha256=5db39bf965f2a07a8813fa4062de2e9a9afdfa8f2bb3ef1936bc3a88796bdccc
