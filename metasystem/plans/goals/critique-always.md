@@ -1,6 +1,6 @@
 # critique-always
 
-- State: queued
+- State: approved
 - Priority: 2
 - Sequence: 12
 - Risk: severity=2 novelty=1 exposure=3 accumulation=1 basis="severity 2: a wrong critique switch lets a risky change land unread or makes every small fix pay for a read; novelty 1: the tier already exists on every record and the enforcement table already has the switch, it moves from class to tier; exposure 3: every build chain on every seat; accumulation 1: nothing built on it yet"
@@ -9,9 +9,11 @@
 - Origin: main
 - Next step: Appetite: 1h. Build: replace independentCritiqueRequired-by-class with a tier-keyed rule in internal/dispatch/hazard.go (requiredConfigurationByHazard) and scripts/agents/role-packets.json, read the tier from the goal record at admission and at chain close, keep the per-class effort rows (R-90-m1: MECHANICAL builds at xhigh); fixtures as the DONE names. Supersedes Ruling O's class-keyed critique clause; R-54-m1 stands (ruling row R-92-m1b drafted, lands with the rulings register). Consistency sweep by m1b 2026-09-10 11:40Z: no other backlog record contradicts this; small-change-lane and review-round-limit-counts-per-chain updated.
 - OpenedAt: 2026-09-01T07:18:55Z
-- Revision: 13
+- Revision: 14
 - Labels: headless-fleet, headless-process
+- Budget: elapsedLimit=1d attemptLimit=10 reservedJobMinutesLimit=1200 activeJobLimit=1 reviewRoundLimit=3
 - BudgetExceptions: 0
+- Approved: by=human:Wido at=2026-09-10T08:13:29Z revision=14 opid=N3FDKEGWRF1GMSQ2D7CBRMKVZY-m1b-c6925449 authority=proven digest=5123214c2ba4c5d04e73600d9c99c968c656423daf01b48d9c0d6560db7fde87
 
 History:
 - 2026-09-01T07:18:55Z STC2KV4CD66GWZWMTY6ND3TJVM-m3-a5da21ff open actor=m3+mac-m3 targets=critique-always
@@ -27,4 +29,5 @@ History:
 - 2026-09-10T08:12:06Z BQ14PS42MWYHBK26SA9YT3E7E7-m1b-c6925449 unapprove actor=human:Wido targets=critique-always reason=re-scoped 2026-09-10: critique follows the tier, not the class
 - 2026-09-10T08:12:17Z QYS12F9AAVTAQ7KVDBM2EA34P0-m1b-c6925449 edit actor=m1b+main-1788680071-18713-e76d5d targets=critique-always
 - 2026-09-10T08:13:26Z SA977M7MSK2T6ZDED57D5TD1K3-m1b-c6925449 edit actor=m1b+main-1788680071-18713-e76d5d targets=critique-always
-Integrity: sha256=402ac8f44dcb9760eff09aa875cff498f752c1e7932e4613388ae4bd31bf3d15
+- 2026-09-10T08:13:29Z N3FDKEGWRF1GMSQ2D7CBRMKVZY-m1b-c6925449 approve actor=human:Wido targets=critique-always
+Integrity: sha256=7c6cdbf250350a303e46fe2123cd0434e1bf68ba8f0e4080f9d93ff472d9af58
