@@ -244,7 +244,8 @@ func TestTerminalStateRoundTripRetainsFieldsAndPruneMarker(t *testing.T) {
 		t.Fatalf("prune retention marker did not round-trip: %+v found=%t err=%v", state, found, err)
 	}
 	projection := dispatch.ProjectBudget(root, budgetGoal(), time.Date(2026, 8, 29, 9, 0, 0, 0, time.UTC))
-	if projection.Status != dispatch.BudgetKnown || projection.Attempts != 1 || projection.ReservedJobMinutes != attempt.ObservedCostMinutes {
+	if projection.Status != dispatch.BudgetKnown || projection.Attempts != 1 || projection.ReservedJobMinutes != attempt.ObservedCostMinutes ||
+		projection.ObservedJobMinutes != attempt.ObservedCostMinutes || projection.OpenCapMinutes != 0 {
 		t.Fatalf("pruned run evidence did not retain durable spend: %+v", projection)
 	}
 }

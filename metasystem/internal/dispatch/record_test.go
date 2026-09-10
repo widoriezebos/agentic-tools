@@ -8,6 +8,7 @@ import (
 	"strings"
 	"sync"
 	"testing"
+	"time"
 )
 
 // sandbox creates a checkout root and returns it. Records land under
@@ -201,6 +202,66 @@ func TestRecordCASRefusesImmutableField(t *testing.T) {
 	patch := writeJSON(t, filepath.Join(t.TempDir(), "p.json"), map[string]any{"capMin": 999})
 	_, err := RecordCAS(root, "job-a", "pending", "running", patch)
 	wantCode(t, err, 1)
+}
+
+func TestRecordCASRefusesEndedAtPatch(t *testing.T) {
+	root := sandbox(t)
+	createPending(t, root, "job-a")
+	setupPending(t, root, "job-a")
+	patch := writeJSON(t, filepath.Join(t.TempDir(), "ended.json"), map[string]any{
+		"endedAt": "2026-08-28T09:00:00Z",
+	})
+	wantMessage := "record patch cannot contain endedAt; the terminal transition stamps it"
+	for _, transition := range []struct {
+		name, target string
+	}{{name: "transition", target: "running"}, {name: "metadata update", target: "pending"}} {
+		t.Run(transition.name, func(t *testing.T) {
+			path := filepath.Join(root, "artifacts", "agents", "jobs", "job-a.json")
+			before, readErr := os.ReadFile(path)
+			if readErr != nil {
+				t.Fatal(readErr)
+			}
+			_, err := RecordCAS(root, "job-a", "pending", transition.target, patch)
+			wantCode(t, err, 1)
+			if err.Error() != wantMessage {
+				t.Fatalf("endedAt refusal = %q, want %q", err, wantMessage)
+			}
+			after, readErr := os.ReadFile(path)
+			if readErr != nil {
+				t.Fatal(readErr)
+			}
+			if string(after) != string(before) {
+				t.Fatalf("refused endedAt patch changed the record: before=%s after=%s", before, after)
+			}
+		})
+	}
+
+	empty := writeJSON(t, filepath.Join(t.TempDir(), "empty.json"), map[string]any{})
+	if _, err := RecordCAS(root, "job-a", "pending", "running", empty); err != nil {
+		t.Fatalf("empty pending-to-running patch: %v", err)
+	}
+	if _, err := RecordCAS(root, "job-a", "running", "completed", empty); err != nil {
+		t.Fatalf("empty running-to-completed patch: %v", err)
+	}
+	record := readRecord(t, root, "job-a")
+	endedAt, ok := record["endedAt"].(string)
+	if !ok {
+		t.Fatalf("terminal transition did not stamp endedAt: %v", record["endedAt"])
+	}
+	if _, err := time.Parse(time.RFC3339, endedAt); err != nil {
+		t.Fatalf("terminal endedAt is not an RFC3339 timestamp: %q", endedAt)
+	}
+	terminalPatch := writeJSON(t, filepath.Join(t.TempDir(), "terminal-ended.json"), map[string]any{
+		"mirror": map[string]any{"status": "complete"}, "endedAt": "2026-01-01T00:00:00Z",
+	})
+	_, err := RecordCAS(root, "job-a", "completed", "completed", terminalPatch)
+	wantCode(t, err, 1)
+	if err.Error() != wantMessage {
+		t.Fatalf("terminal endedAt refusal = %q, want %q", err, wantMessage)
+	}
+	if after := readRecord(t, root, "job-a")["endedAt"]; after != endedAt {
+		t.Fatalf("terminal endedAt changed from %q to %v", endedAt, after)
+	}
 }
 
 func TestRecordCASRefusesAliasProvenanceChanges(t *testing.T) {

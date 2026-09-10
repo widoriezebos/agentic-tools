@@ -70,6 +70,7 @@ type GoalAdmissionRefusal struct {
 	GoalID         string
 	GoalRevision   uint64
 	Breaches       []BudgetBreach
+	Reserved       *ReservedMinutesEvidence
 	Unknown        *BudgetUnknownEvidence
 	LiveStopReason string
 }
@@ -153,6 +154,7 @@ func EvaluateGoalAdmission(repoRoot, stopLineage string, now time.Time) (GoalAdm
 		if len(breaches) > 0 {
 			verdict.Refusals = append(verdict.Refusals, GoalAdmissionRefusal{
 				GoalID: id, GoalRevision: budget.GoalRevision, Breaches: breaches,
+				Reserved:       reservedMinutesEvidence(budget),
 				LiveStopReason: liveStopReason(budget),
 			})
 		}
@@ -230,7 +232,8 @@ func EvaluateGoalRevisionAdmission(repoRoot, id string, revision, proposedCap ui
 	if reason := liveStopReason(projection); reason != "" {
 		verdict.LiveStopReason = reason
 		verdict.Refusal = &GoalAdmissionRefusal{
-			GoalID: id, GoalRevision: revision, Breaches: projection.Breaches, LiveStopReason: reason,
+			GoalID: id, GoalRevision: revision, Breaches: projection.Breaches,
+			Reserved: reservedMinutesEvidence(projection), LiveStopReason: reason,
 		}
 		return verdict, nil
 	}
@@ -244,7 +247,8 @@ func EvaluateGoalRevisionAdmission(repoRoot, id string, revision, proposedCap ui
 		})
 	}
 	if len(breaches) > 0 {
-		verdict.Refusal = &GoalAdmissionRefusal{GoalID: id, GoalRevision: revision, Breaches: breaches}
+		verdict.Refusal = &GoalAdmissionRefusal{GoalID: id, GoalRevision: revision, Breaches: breaches,
+			Reserved: reservedMinutesEvidence(projection)}
 	}
 	return verdict, nil
 }
@@ -290,25 +294,40 @@ func FormatGoalAdmission(verdict GoalAdmissionVerdict) []string {
 				refusal.Unknown.Record, refusal.GoalID, refusal.GoalRevision, refusal.Unknown.Reason))
 			continue
 		}
-		fields := make([]string, 0, len(refusal.Breaches))
-		showAttemptRule := false
+		detail := formatRefusalDetail(refusal.Breaches, refusal.Reserved)
 		for _, breach := range refusal.Breaches {
-			state := ""
-			if breach.State != "" {
-				state = " state=" + string(breach.State)
-			}
-			fields = append(fields, fmt.Sprintf("%s%s used=%s limit=%s", breach.Field, state, breach.Used, breach.Limit))
 			if breach.Field == "attemptLimit" || breach.Field == "reservedJobMinutesLimit" {
-				showAttemptRule = true
+				detail += fmt.Sprintf("; rule=%s: terminal records with phase=setup and refusalClass=setup count as neither attempts nor reserved job minutes",
+					goalbudget.SetupRefusalReleaseRule)
+				break
 			}
 		}
 		line := fmt.Sprintf("BUDGET_REFUSED: goal %s revision=%d admission closed: %s",
-			refusal.GoalID, refusal.GoalRevision, strings.Join(fields, ", "))
-		if showAttemptRule {
-			line += fmt.Sprintf("; rule=%s: terminal records with phase=setup and refusalClass=setup count as neither attempts nor reserved job minutes",
-				goalbudget.SetupRefusalReleaseRule)
-		}
+			refusal.GoalID, refusal.GoalRevision, detail)
 		lines = append(lines, line)
 	}
 	return lines
+}
+
+func formatRefusalDetail(breaches []BudgetBreach, reserved *ReservedMinutesEvidence) string {
+	fields := make([]string, 0, len(breaches))
+	for _, breach := range breaches {
+		state := ""
+		if breach.State != "" {
+			state = " state=" + string(breach.State)
+		}
+		fields = append(fields, fmt.Sprintf("%s%s used=%s limit=%s", breach.Field, state, breach.Used, breach.Limit))
+	}
+	detail := strings.Join(fields, ", ")
+	if reserved != nil {
+		if detail != "" {
+			detail += "; "
+		}
+		detail += fmt.Sprintf("reserved observed=%d open-caps=%d", reserved.Observed, reserved.OpenCaps)
+		if reserved.Proof != 0 {
+			detail += fmt.Sprintf(" proof=%d", reserved.Proof)
+		}
+		detail += fmt.Sprintf(" limit=%d", reserved.Limit)
+	}
+	return detail
 }

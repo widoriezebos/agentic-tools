@@ -50,7 +50,8 @@ func TestBudgetProjectionStartsAtConsumedDurableProofEpoch(t *testing.T) {
 	projection := ProjectBudget(root, file, time.Date(2026, 8, 28, 10, 0, 0, 0, time.UTC))
 	if projection.Status != BudgetKnown || projection.StartedAt.Format(time.RFC3339) != "2026-08-28T09:30:00Z" ||
 		projection.WeightEpoch == nil || *projection.WeightEpoch != 1 || projection.Elapsed != 30*time.Minute ||
-		projection.Attempts != 1 || projection.ReservedJobMinutes != 20 || projection.ActiveJobs != 1 {
+		projection.Attempts != 1 || projection.ReservedJobMinutes != 20 || projection.ObservedJobMinutes != 0 ||
+		projection.OpenCapMinutes != 20 || projection.ActiveJobs != 1 {
 		t.Fatalf("consumed durable proof did not establish the new spending epoch: %+v", projection)
 	}
 }

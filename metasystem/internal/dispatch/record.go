@@ -527,6 +527,9 @@ func RecordCAS(root, job, expect, target, patchPath string) (observed string, er
 		if _, has := patch["status"]; has {
 			return refuse(1, "record patch must be an object and cannot contain status")
 		}
+		if _, has := patch["endedAt"]; has {
+			return refuse(1, "record patch cannot contain endedAt; the terminal transition stamps it")
+		}
 		if validationErr := validateOwnershipPatch(record, patch); validationErr != nil {
 			return refuse(1, "%v", validationErr)
 		}

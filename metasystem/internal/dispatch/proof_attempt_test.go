@@ -32,7 +32,9 @@ func TestOrdinaryProofSharesGoalBudget(t *testing.T) {
 	if err != nil || attempt.BudgetEpoch != nil {
 		t.Fatalf("reserve ordinary proof with nullable epoch: attempt=%+v err=%v", attempt, err)
 	}
-	writeBudgetJob(t, root, "delegate", "delegate-reservation", 3, 30, "completed")
+	writeBudgetJob(t, root, "delegate", "delegate-reservation", 3, 30, "completed", budgetJobLife{
+		pid: 4242, startedAt: "2026-08-28T08:15:00Z", endedAt: "2026-08-28T08:45:00Z",
+	})
 	file := budgetGoal()
 	file.Claimed.AccountingRevision = 3
 	projection := ProjectBudget(root, file, time.Date(2026, 8, 28, 10, 0, 0, 0, time.UTC))

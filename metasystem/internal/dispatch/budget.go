@@ -56,24 +56,28 @@ type BudgetBreach struct {
 
 // BudgetProjection is the complete four-dimensional view for one claimed
 // goal revision. Limits come from the goal; spending comes from job records,
-// live governed runs, and durable terminal obligation state. Elapsed time
-// begins at the claim or the latest exact consumed discharge proof.
+// retained proof-attempt reservations, live governed runs, and durable terminal
+// obligation state. Elapsed time begins at the claim or the latest exact
+// consumed discharge proof.
 type BudgetProjection struct {
-	Status              BudgetProjectionStatus
-	GoalID              string
-	GoalRevision        uint64
-	Limits              goal.Budget
-	StartedAt           time.Time
-	WeightEpoch         *uint64
-	Attempts            uint64
-	ReservedJobMinutes  uint64
-	ActiveJobs          uint64
-	Elapsed             time.Duration
-	ElapsedGracePercent uint64
-	ElapsedBreachLimit  time.Duration
-	ElapsedState        ElapsedBudgetState
-	Breaches            []BudgetBreach
-	Unknown             *BudgetUnknownEvidence
+	Status                  BudgetProjectionStatus
+	GoalID                  string
+	GoalRevision            uint64
+	Limits                  goal.Budget
+	StartedAt               time.Time
+	WeightEpoch             *uint64
+	Attempts                uint64
+	ReservedJobMinutes      uint64
+	ObservedJobMinutes      uint64
+	OpenCapMinutes          uint64
+	ProofReservationMinutes uint64
+	ActiveJobs              uint64
+	Elapsed                 time.Duration
+	ElapsedGracePercent     uint64
+	ElapsedBreachLimit      time.Duration
+	ElapsedState            ElapsedBudgetState
+	Breaches                []BudgetBreach
+	Unknown                 *BudgetUnknownEvidence
 }
 
 func obligationBudgetStart(repoRoot string, file *goal.GoalFile, claimedAt time.Time) (time.Time, *uint64, *BudgetUnknownEvidence) {
@@ -361,9 +365,13 @@ func ProjectBudget(repoRoot string, file *goal.GoalFile, now time.Time) BudgetPr
 			continue
 		}
 		if budgetStartedAt.After(claimedAt) {
-			startedAt, startErr := time.Parse(time.RFC3339, asString(record["startedAt"]))
+			reservationAt := asString(record["startedAt"])
+			if reservationAt == "" {
+				reservationAt = asString(record["createdAt"])
+			}
+			startedAt, startErr := time.Parse(time.RFC3339, reservationAt)
 			if startErr != nil {
-				return unknownBudget(file.Id, revision, logicalPath, "the post-discharge reservation has no readable startedAt")
+				return unknownBudget(file.Id, revision, logicalPath, "the post-discharge reservation has no readable startedAt or createdAt")
 			}
 			if !startedAt.After(budgetStartedAt) {
 				continue
@@ -376,11 +384,66 @@ func ProjectBudget(repoRoot string, file *goal.GoalFile, now time.Time) BudgetPr
 			return unknownBudget(file.Id, revision, logicalPath, "attempt accounting overflowed")
 		}
 		projection.Attempts++
-		if capMinutes > math.MaxUint64-projection.ReservedJobMinutes {
+		charge := capMinutes
+		terminal := TerminalStatus(status)
+		if terminal {
+			if !recordHasProcessIdentity(record) {
+				charge = 0
+			} else {
+				var start time.Time
+				hasStart := false
+				ownershipProof, proofPresent := record["ownershipProof"]
+				if proofPresent && ownershipProof != nil {
+					proof, ok := ownershipProof.(map[string]any)
+					if !ok {
+						return unknownBudget(file.Id, revision, logicalPath, "the terminal reservation has an unreadable ownershipProof.provenAt")
+					}
+					provenAt, provenAtPresent := proof["provenAt"]
+					if provenAtPresent && provenAt != nil && asString(provenAt) == "" {
+						if _, isString := provenAt.(string); !isString {
+							return unknownBudget(file.Id, revision, logicalPath, "the terminal reservation has an unreadable ownershipProof.provenAt")
+						}
+					}
+					if proofAt := asString(provenAt); proofAt != "" {
+						var startErr error
+						start, startErr = time.Parse(time.RFC3339, proofAt)
+						if startErr != nil {
+							return unknownBudget(file.Id, revision, logicalPath, "the terminal reservation has an unreadable ownershipProof.provenAt")
+						}
+						hasStart = true
+					}
+				}
+				if !hasStart {
+					var startErr error
+					start, startErr = time.Parse(time.RFC3339, asString(record["startedAt"]))
+					if startErr != nil {
+						return unknownBudget(file.Id, revision, logicalPath, "the terminal reservation has no readable ownership proof time or startedAt")
+					}
+				}
+				end, endErr := time.Parse(time.RFC3339, asString(record["endedAt"]))
+				if endErr != nil {
+					return unknownBudget(file.Id, revision, logicalPath, "the terminal reservation has no readable endedAt")
+				}
+				if end.Before(start) {
+					return unknownBudget(file.Id, revision, logicalPath, "CLOCK_REGRESSED: the terminal reservation ended before its ownership was proven")
+				}
+				charge = settledJobMinutes(start, end, capMinutes)
+			}
+		}
+		if charge > math.MaxUint64-projection.ReservedJobMinutes {
 			return unknownBudget(file.Id, revision, logicalPath, "reserved job-minute accounting overflowed")
 		}
-		projection.ReservedJobMinutes += capMinutes
-		if !TerminalStatus(status) {
+		projection.ReservedJobMinutes += charge
+		if terminal {
+			if charge > math.MaxUint64-projection.ObservedJobMinutes {
+				return unknownBudget(file.Id, revision, logicalPath, "observed job-minute accounting overflowed")
+			}
+			projection.ObservedJobMinutes += charge
+		} else {
+			if charge > math.MaxUint64-projection.OpenCapMinutes {
+				return unknownBudget(file.Id, revision, logicalPath, "open-cap minute accounting overflowed")
+			}
+			projection.OpenCapMinutes += charge
 			if projection.ActiveJobs == math.MaxUint64 {
 				return unknownBudget(file.Id, revision, logicalPath, "active-job accounting overflowed")
 			}
@@ -437,11 +500,13 @@ func ProjectBudget(repoRoot string, file *goal.GoalFile, now time.Time) BudgetPr
 			}
 			continue
 		}
-		if projection.Attempts == math.MaxUint64 || attempt.ReservedMinutes > math.MaxUint64-projection.ReservedJobMinutes {
+		if projection.Attempts == math.MaxUint64 || attempt.ReservedMinutes > math.MaxUint64-projection.ReservedJobMinutes ||
+			attempt.ReservedMinutes > math.MaxUint64-projection.ProofReservationMinutes {
 			return unknownBudget(file.Id, revision, logicalPath, "proof-attempt accounting overflowed")
 		}
 		projection.Attempts++
 		projection.ReservedJobMinutes += attempt.ReservedMinutes
+		projection.ProofReservationMinutes += attempt.ReservedMinutes
 		if attempt.Terminal == nil {
 			if projection.ActiveJobs == math.MaxUint64 {
 				return unknownBudget(file.Id, revision, logicalPath, "active proof-attempt accounting overflowed")
@@ -524,11 +589,13 @@ func ProjectBudget(repoRoot string, file *goal.GoalFile, now time.Time) BudgetPr
 			}
 		}
 		cost := governed.ExecutionCostMinutes
-		if projection.Attempts == math.MaxUint64 || cost > math.MaxUint64-projection.ReservedJobMinutes {
+		if projection.Attempts == math.MaxUint64 || cost > math.MaxUint64-projection.ReservedJobMinutes ||
+			cost > math.MaxUint64-projection.OpenCapMinutes {
 			return unknownBudget(file.Id, revision, logicalPath, "governed attempt accounting overflowed")
 		}
 		projection.Attempts++
 		projection.ReservedJobMinutes += cost
+		projection.OpenCapMinutes += cost
 		if !run.Terminal(record.Status) {
 			if projection.ActiveJobs == math.MaxUint64 {
 				return unknownBudget(file.Id, revision, logicalPath, "active execution accounting overflowed")
@@ -555,11 +622,13 @@ func ProjectBudget(repoRoot string, file *goal.GoalFile, now time.Time) BudgetPr
 		if weightEpoch == nil && budgetStartedAt.After(claimedAt) && !startedAt.After(budgetStartedAt) {
 			continue
 		}
-		if projection.Attempts == math.MaxUint64 || attempt.ObservedCostMinutes > math.MaxUint64-projection.ReservedJobMinutes {
+		if projection.Attempts == math.MaxUint64 || attempt.ObservedCostMinutes > math.MaxUint64-projection.ReservedJobMinutes ||
+			attempt.ObservedCostMinutes > math.MaxUint64-projection.ObservedJobMinutes {
 			return unknownBudget(file.Id, revision, owned.record, "governed terminal attempt accounting overflowed")
 		}
 		projection.Attempts++
 		projection.ReservedJobMinutes += attempt.ObservedCostMinutes
+		projection.ObservedJobMinutes += attempt.ObservedCostMinutes
 	}
 	return finishBudgetProjection(projection)
 }
@@ -567,6 +636,45 @@ func ProjectBudget(repoRoot string, file *goal.GoalFile, now time.Time) BudgetPr
 func mustProofAttemptPath(root, id string) string {
 	path, _ := proofrun.AttemptPath(root, id)
 	return path
+}
+
+func settledJobMinutes(start, end time.Time, capMinutes uint64) uint64 {
+	seconds := uint64(end.Sub(start) / time.Second)
+	minutes := (seconds + 59) / 60
+	if minutes == 0 {
+		minutes = 1
+	}
+	if minutes > capMinutes {
+		return capMinutes
+	}
+	return minutes
+}
+
+func recordHasProcessIdentity(record map[string]any) bool {
+	pid, hasPID := numInt(record["pid"])
+	return hasPID && pid >= 1
+}
+
+// ReservedMinutesEvidence is the reserved-minutes fact every budget refusal
+// names: settled minutes of ended work, ceilings of open work, proof
+// reservations, and the limit all three are measured against.
+type ReservedMinutesEvidence struct {
+	Observed uint64
+	OpenCaps uint64
+	Proof    uint64
+	Limit    uint64
+}
+
+func reservedMinutesEvidence(projection BudgetProjection) *ReservedMinutesEvidence {
+	if projection.Status != BudgetKnown {
+		return nil
+	}
+	return &ReservedMinutesEvidence{
+		Observed: projection.ObservedJobMinutes,
+		OpenCaps: projection.OpenCapMinutes,
+		Proof:    projection.ProofReservationMinutes,
+		Limit:    projection.Limits.ReservedJobMinutesLimit,
+	}
 }
 
 func terminalStateContradiction(record *run.Record, attempt obligationstate.TerminalAttempt) string {

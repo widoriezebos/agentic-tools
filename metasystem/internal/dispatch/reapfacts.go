@@ -118,8 +118,7 @@ func fingerprintedIdentitylessReservation(record map[string]any) bool {
 	if asString(record["fingerprint"]) == "" || asString(record["instanceTag"]) == "" {
 		return false
 	}
-	pid, hasPID := numInt(record["pid"])
-	return !hasPID || pid < 1
+	return !recordHasProcessIdentity(record)
 }
 
 func reservationWakeReached(record map[string]any, now time.Time) bool {

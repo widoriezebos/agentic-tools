@@ -137,7 +137,8 @@ func EvaluateGovernedRunAdmission(repoRoot string, request run.GovernedAdmission
 			Used: fmt.Sprintf("%d+%d proposed", projection.ReservedJobMinutes, cost), Limit: fmt.Sprint(projection.Limits.ReservedJobMinutesLimit)})
 	}
 	if active && len(breaches) > 0 {
-		return run.GovernedAdmissionResult{}, fmt.Errorf("BUDGET_REFUSED: goal %s revision=%d admission closed", request.GoalID, binding.Revision)
+		return run.GovernedAdmissionResult{}, fmt.Errorf("BUDGET_REFUSED: goal %s revision=%d admission closed: %s",
+			request.GoalID, binding.Revision, formatRefusalDetail(breaches, reservedMinutesEvidence(projection)))
 	}
 	observation := ObserveGovernedAssumptions(repoRoot, o.Assumptions, projection.ActiveJobs+1, 0, now)
 	if active && observation.AssumptionState != run.AssumptionMatch {
