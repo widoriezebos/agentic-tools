@@ -1,18 +1,20 @@
 # goal-records-owned-by-the-testing-contract
 
-- State: approved
+- State: claimed
 - Risk: severity=2 novelty=1 exposure=3 accumulation=2 basis="severity 2: no records can land, so every goal's evidence trail stays untracked; novelty 1: one surface entry in an existing contract; exposure 3: every seat's every goal; accumulation 2: untracked records pile up in every checkout until it lands"
 - Tier: 3
 - Intent: Since 1b12f534 the testing contract (metasystem/testing.json) owns no plans/**, records/** or memory/rulings.md, so every register-carriage landing of a goal's briefs, dispositions and shared append-only records is refused at land.sh's test verify --purpose delivery with 'delivery impact is unresolved: no surface owns changed path'. DONE means a goal-records surface owns those paths with the same static groups as the instructions surface, a records-only carriage resolves as delivery again, and the seat's test-policy tests pin that plans/ and records/ paths are owned.
 - Origin: main
 - Next step: One Sol round adding the goal-records surface (metasystem/plans/**, metasystem/records/**, metasystem/memory/rulings.md, metasystem/memory/receipts.log; groups section/static-contract-audits) to metasystem/testing.json with a testpolicy test that a records-only change selects delivery; one Opus review; land with --chain. Found by m1 on 2026-09-10 00:25 local landing the dispatch-cap-necessity records; m1c messaged (held for approval). Wido approves at the terminal.
 - OpenedAt: 2026-09-09T22:15:49Z
-- Revision: 34
+- Revision: 35
 - Budget: elapsedLimit=1d attemptLimit=10 reservedJobMinutesLimit=1200 activeJobLimit=1 reviewRoundLimit=3
 - BudgetExceptions: 0
 - Approved: by=human:Wido at=2026-09-10T09:58:34Z revision=13 opid=FMK6TTJWTWPG2B58S27RTBMSQR-m1-c6925449 authority=proven digest=4c3c0cd054441164af8c62d982c44dd8f37f4d6c9c2f46b8fd4e53a9d894edfc
 - Sliced: machine=m1 lineage=main-1788940932-18533-7fa6c2 revision=3 at=2026-09-10T05:50:10Z
 - AcceptedRisk: finding=HAS-05 chain=ha-surfacecrit2-20260910 by=Wido opid=W4SJTD2MHV2NWKA0KZWYR7G03V-m1-c6925449
+- Claimed: machine=m1 lineage=main-1788940932-18533-7fa6c2 at=2026-09-10T14:37:34Z revision=35 accountingRevision=35
+- StopCapability: generation=35 revision=35 machine=m1 claimEpoch=6 fenceEpoch=0
 
 History:
 - 2026-09-09T22:15:49Z 3DBVQYVHVWMX8YZQ4FQAGE6VHY-m1-1701c13c open actor=m1+main-1788940932-18533-7fa6c2 targets=goal-records-owned-by-the-testing-contract
@@ -49,4 +51,5 @@ History:
 - 2026-09-10T13:49:57Z 3VX8DQNM7ZFQWVF1V1J73XJCWC-m1-1701c13c release actor=m1+main-1788940932-18533-7fa6c2 targets=goal-records-owned-by-the-testing-contract
 - 2026-09-10T14:13:03Z HQ4CA960VHV9M7HYCC5R53ZFZ7-m1-1701c13c claim actor=m1+main-1788940932-18533-7fa6c2 targets=goal-records-owned-by-the-testing-contract
 - 2026-09-10T14:13:11Z AEAHPD230WXQTBEKT5WXMF0D7Z-m1-1701c13c release actor=m1+main-1788940932-18533-7fa6c2 targets=goal-records-owned-by-the-testing-contract
-Integrity: sha256=e379bc7ce2270cf80933a98650b26623a476c84c83cf40a3bf98775fcc39a19e
+- 2026-09-10T14:37:34Z R5YENH75KC2P6141M108HRYDFZ-m1-1701c13c claim actor=m1+main-1788940932-18533-7fa6c2 targets=goal-records-owned-by-the-testing-contract
+Integrity: sha256=0a0f6d05e0c34e1d5fdf7f8e645d10bc3752ce52910220e597166860c610c437
