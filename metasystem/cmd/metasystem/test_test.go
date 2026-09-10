@@ -13,6 +13,7 @@ import (
 
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/gittree"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/goal"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/identity"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/proofrun"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/steward"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/testpolicy"
@@ -265,7 +266,21 @@ func TestFrozenPublicVersionOneCorpusRunsAllSixCasesThroughFirstTransitionWorker
 		t.Fatalf("build first-transition worker: %v\n%s", buildErr, output)
 	}
 	identityTable := filepath.Join(t.TempDir(), "process-identities.json")
-	if err := os.WriteFile(identityTable, []byte(fmt.Sprintf(`{"%d":{"terminal":true}}`, os.Getpid())), 0o600); err != nil {
+	identities := map[string]map[string]any{
+		fmt.Sprint(os.Getpid()): {"terminal": true},
+	}
+	seen := map[int64]bool{int64(os.Getpid()): true}
+	current, ok := identity.ParentPid(int64(os.Getpid()))
+	for ok && !seen[current] {
+		seen[current] = true
+		identities[fmt.Sprint(current)] = map[string]any{"pidStartedAt": 1, "command": "fixture-neutral-ancestor"}
+		current, ok = identity.ParentPid(current)
+	}
+	identityData, err := json.Marshal(identities)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(identityTable, identityData, 0o600); err != nil {
 		t.Fatal(err)
 	}
 	fixtureEnvironment := append(receiptCanaryEnvironment(), "METASYSTEM_FAKE_PROCESS_IDENTITY_FILE="+identityTable)

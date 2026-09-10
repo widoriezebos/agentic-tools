@@ -179,15 +179,15 @@ func TestArmTemporaryWordStillRequiresHumanCallerAndLeavesFenceUnchanged(t *test
 }
 
 func TestProcessClassifierDataFailureRepairsThenRetriesTheRequestedVerb(t *testing.T) {
-	repo, installation := separateProcessScopeFixture(t)
-	jobPath := filepath.Join(repo, "artifacts", "agents", "jobs", "damaged.json")
+	repo, installation := runnableSeparateProcessScopeFixture(t)
+	jobPath := filepath.Join(installation, "artifacts", "agents", "jobs", "damaged.json")
 	if err := os.MkdirAll(filepath.Dir(jobPath), 0o755); err != nil {
 		t.Fatal(err)
 	}
 	if err := os.WriteFile(jobPath, []byte("{\n"), 0o644); err != nil {
 		t.Fatal(err)
 	}
-	if err := stopfence.Write(repo, stopfence.Record{
+	if err := stopfence.Write(installation, stopfence.Record{
 		State: stopfence.StateClosed, Phase: stopfence.PhaseStopIncomplete, Generation: 8,
 		ChangedAt: "2026-09-08T08:00:00Z", Checkout: repo,
 		By:         stopfence.Actor{Verb: "stop", Process: stopfence.Process{Pid: 71, PidStartedAt: 70}},
@@ -195,7 +195,7 @@ func TestProcessClassifierDataFailureRepairsThenRetriesTheRequestedVerb(t *testi
 	}); err != nil {
 		t.Fatal(err)
 	}
-	fencePath := stopfence.TransitionPath(repo)
+	fencePath := stopfence.TransitionPath(installation)
 	before, err := os.ReadFile(fencePath)
 	if err != nil {
 		t.Fatal(err)
@@ -209,7 +209,7 @@ func TestProcessClassifierDataFailureRepairsThenRetriesTheRequestedVerb(t *testi
 	} {
 		t.Run(test.verb, func(t *testing.T) {
 			stderr, code := captureStderr(t, func() int {
-				_, authorized := requireHumanTerminalAt(repo, installation, "metasystem "+test.verb, processVerbRetryCommand(processScope{Checkout: repo, Installation: installation, InstallationExplicit: true}, test.verb))
+				_, authorized := requireHumanTerminalAt(installation, installation, "metasystem "+test.verb, processVerbRetryCommand(processScope{Checkout: repo, Installation: installation, InstallationExplicit: true}, test.verb))
 				if authorized {
 					return 0
 				}
@@ -239,7 +239,7 @@ func TestProcessClassifierDataFailureRepairsThenRetriesTheRequestedVerb(t *testi
 		t.Fatal(err)
 	}
 	stderr, code = captureStderr(t, func() int {
-		_, authorized := requireHumanTerminalAt(repo, installation, "metasystem arm", processVerbRetryCommand(processScope{Checkout: repo, Installation: installation, InstallationExplicit: true}, "arm"))
+		_, authorized := requireHumanTerminalAt(installation, installation, "metasystem arm", processVerbRetryCommand(processScope{Checkout: repo, Installation: installation, InstallationExplicit: true}, "arm"))
 		if authorized {
 			return 0
 		}

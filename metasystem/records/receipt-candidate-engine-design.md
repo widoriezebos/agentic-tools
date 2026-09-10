@@ -1,5 +1,7 @@
 # Candidate engine for landing receipts
 
+Status: Withdrawn before implementation. On 2026-09-10 the coordinator found that m1b already owned and was implementing the candidate-engine correction under receipt-beds-run-the-candidate-engine, chain rbce-build1. This record preserves the abandoned proposal and is not an implementation contract. Its four accepted review findings remain diagnostic evidence; the actual m1b implementation requires its own verification.
+
 Date: 2026-09-10. Goal: gate-fence-returns-to-per-landing-proof. Design round 2.
 
 **Settled decision:** prepare and retain one exact candidate engine during test-run preparation. Pass its existing path/digest fields and owner-pinned Git metadata to the unchanged enrolled worker. Keep source/build binding local to preparation and verification. No packet migration, enrollment change or candidate policy-worker substitution.

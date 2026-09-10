@@ -135,7 +135,7 @@ harness_dispatch_fixture_bed_child_scenario() { # bed name, optional private chi
     printf '%s fixtures: shared immutable engine build descriptor is malformed\n' "$bed" >&2
     return 64
   }
-  actual=$($fixture_bed_root/bin/metasystem util sha256 --file "$engine") || return 64
+  actual=$("${METASYSTEM_BIN:-$fixture_bed_root/bin/metasystem}" util sha256 --file "$engine") || return 64
   [[ "$actual" == "$digest" ]] || {
     printf '%s fixtures: shared immutable engine digest mismatch\n' "$bed" >&2
     return 64
@@ -164,7 +164,7 @@ harness_dispatch_fixture_bed_mint_capability() { # private directory, index, sce
 	capability=$(mktemp "$directory/$index.capability.XXXXXX") || return 1
 	chmod 600 "$capability" || return 1
 	[[ -f "$engine" && ! -L "$engine" ]] || return 1
-  digest=$($fixture_bed_root/bin/metasystem util sha256 --file "$engine") || return 1
+  digest=$("${METASYSTEM_BIN:-$fixture_bed_root/bin/metasystem}" util sha256 --file "$engine") || return 1
   stamp=$(go version -m "$engine" | sed -n 's/.*supervise.BuildStamp=\([^[:space:]]*\).*/\1/p' | head -1)
   [[ -n "$stamp" ]] || return 1
   printf '%s\n%s\n%s\n%s\n' "$scenario" "$engine" "$digest" "$stamp" >"$capability" || return 1

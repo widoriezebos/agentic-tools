@@ -94,7 +94,7 @@ if (( ! fixture_bed_child )); then
 	fi
   fixture_bed_script=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd -P)/$(basename "${BASH_SOURCE[0]}")
 	fixture_parent_scenarios=()
-	fixture_parent_scenario_lines=$("$fixture_bed_root/bin/metasystem" proof-run fixture-selection \
+	fixture_parent_scenario_lines=$("${METASYSTEM_BIN:-$fixture_bed_root/bin/metasystem}" proof-run fixture-selection \
 		--family dispatcher --selection "$fixture_parent_selection")
 	while IFS= read -r scenario; do
 		fixture_parent_scenarios+=("$scenario")
@@ -163,7 +163,7 @@ export PATH="$tmp/notify-shim:$PATH"
 engine="$tmp/fixture-engine"
 if [[ -n "${harness_fixture_shared_engine:-}" ]]; then
   cp "$harness_fixture_shared_engine" "$engine"
-  [[ "$($fixture_bed_root/bin/metasystem util sha256 --file "$engine")" == "$harness_fixture_shared_engine_digest" ]] \
+  [[ "$("${METASYSTEM_BIN:-$fixture_bed_root/bin/metasystem}" util sha256 --file "$engine")" == "$harness_fixture_shared_engine_digest" ]] \
     || { echo "dispatch fixtures: private engine copy failed immutable verification" >&2; exit 64; }
 else
   bash scripts/agents/go-build.sh --out "$engine" >/dev/null

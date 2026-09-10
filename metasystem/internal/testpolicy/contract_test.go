@@ -127,6 +127,36 @@ func TestMetaSystemContractKeepsMixedPackageCoverageExplicit(t *testing.T) {
 	}
 }
 
+func TestMetaSystemContractSelectsStaticProofForGoalRecords(t *testing.T) {
+	data, err := os.ReadFile("../../testing.json")
+	if err != nil {
+		t.Fatal(err)
+	}
+	contract, err := Decode(data)
+	if err != nil {
+		t.Fatal(err)
+	}
+	plan, err := Select(contract, SelectionRequest{
+		ChangedPaths:  []string{"metasystem/records/misc/goal-records-owned-by-the-testing-contract.md"},
+		RequestedMode: ModeAuto,
+		Purpose:       PurposeDelivery,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(plan.Uncertainty) != 0 {
+		t.Fatalf("goal record has unresolved delivery impact: %+v", plan)
+	}
+	if !contains(plan.AffectedSurfaces, "goal-records") {
+		t.Fatalf("goal record did not select its owning surface: %+v", plan)
+	}
+	for _, id := range []string{"section/static-contract-audits", "section/return-schema-fixtures"} {
+		if !contains(plan.SelectedGroups, id) || !contains(plan.RequiredGroups, id) {
+			t.Fatalf("goal record delivery omitted static group %s: %+v", id, plan)
+		}
+	}
+}
+
 func TestMetaSystemContractOwnsDeliveryBoundaryAndSelectsFastBeforeBroadProof(t *testing.T) {
 	data, err := os.ReadFile("../../testing.json")
 	if err != nil {
