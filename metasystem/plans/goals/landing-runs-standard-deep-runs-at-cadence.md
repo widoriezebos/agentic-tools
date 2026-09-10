@@ -1,0 +1,16 @@
+# landing-runs-standard-deep-runs-at-cadence
+
+- State: queued
+- Risk: severity=2 novelty=1 exposure=3 accumulation=1 basis="severity 2: a landing proves less than today until the cadence battery catches what standard missed; novelty 1: the mode rule and the deep lists already exist and only their inputs change; exposure 3: every landing on every seat is affected; accumulation 1: the cadence run still sweeps the whole battery"
+- Tier: 3
+- Intent: Per-landing verification is standard; deep runs at cadence. test plan --mode auto --purpose delivery on an ordinary goal selects canary plus standard only and a delivery run completes in about a minute; deep still runs at the weight cadence, on protected policy changes, on unknown paths, and on explicit request. DONE is that sentence, proven by the plan probe on an ordinary goal (requiredMode standard, about 11 groups), the same probe with --purpose cadence still listing every cadence group, a diff touching internal/testpolicy still planning deep, and a later ordinary landing's attempt record under 120000 ms. Slice 1 of plans/suite-speed-plan.md; Wido's word 2026-09-10: implement right after the gate goal lands, on the M1E seat.
+- Origin: human
+- Next step: INTENT: the goal's risk answers stop choosing per-landing depth; depth is decided by the change (protected policy change, unknown paths, a surface whose critical obligations demand it, or an explicit --mode deep), the goal's risk answers scale cadence weight instead and may add one deep run when a large goal concludes (ruling R-3): that is option B of section 5 slice 1 with option C's move of the two coverage groups and the big process sections out of every surface's deep list into cadence only, the plan's recommendation, recorded as the decision unless Wido names another option. CONSTRAINTS: no group leaves testing.json (groups move between per-landing and cadence, none is deleted); ruling R-16 stands (runs continue and collect); ruling R-18 stands (a changed contract runs its callers, so this landing itself runs the protected set once); TestModesDoNotLowerRequiredRisk and the protection tests are updated to the new law, never deleted; docs/collaboration.md lines 40 to 56 and the R-3 enforcement note in memory/rulings.md say the new law. FREEDOMS: whether risk feeds weight in internal/gaterun/weight.go or through the contract; how the design page states the rule. ROSTER (R-25): Fable designs (one page, plans/landing-runs-standard-design.md), Sol critiques the design once, Sol implements, Fable critiques the implementation. Files: internal/testpolicy/risk.go (requiresDeep), select.go if the required-set composition changes, testing.json deep lists, gaterun/weight.go if risk scales weight, the testpolicy tests, the two prose sites. Read sections 2, 4 and 7 of plans/suite-speed-plan.md and rulings R-2, R-3, R-16, R-17, R-18 first.
+- OpenedAt: 2026-09-10T12:02:32Z
+- Revision: 1
+- Budget: elapsedLimit=1d attemptLimit=10 reservedJobMinutesLimit=1200 activeJobLimit=1 reviewRoundLimit=3
+- BudgetExceptions: 0
+
+History:
+- 2026-09-10T12:02:32Z 9CGDMRV8C8W6DP3MD8DRXVQ2PP-m1e-892cdaec open actor=m1e+main-1789030447-51011-5722fc targets=landing-runs-standard-deep-runs-at-cadence
+Integrity: sha256=0847f154c6eaa4f20fa16d7d1dc8b8611dfac3a27e807b2c1333bad518ba4960
