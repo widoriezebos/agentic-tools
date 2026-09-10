@@ -1,6 +1,6 @@
 # goal-abandoned-with-a-reason
 
-- State: claimed
+- State: parked
 - Priority: 1
 - Sequence: 3
 - Risk: severity=2 novelty=3 exposure=3 accumulation=2 basis="severity 2: nothing wedges, but the only two moves available today are both dishonest, a false done that corrupts every count of completed work or a silent drop to the lowest rank that hides the problem; novelty 3: a new terminal state read by four consumers, a transition that must not reuse the claim-clearing path, a retention rule change and an ordered fleet rollout because the record grammar is closed; exposure 3: every reader of the live set, every completion count and every prune; accumulation 2: two specimens already, and one of them is reported as open work in every seat's end-of-turn scan"
@@ -9,13 +9,12 @@
 - Origin: main
 - Next step: NIGHT END STATE (06:40Z). Built and green, none landed: chain gawr-build1 = slices 1 and 2 (ledger side; 43 files; closed clean on round 5 after three Opus reads; both beds green); chain gawr-build3 = slice 3 (landing side; 14 files; seven Go fixtures, landing and command packages, fast gate green; land-fixtures bed passes ten scenarios, one sub-leg skipped and recorded). BLOCKED ON TWO HUMAN ACTS: (1) the testing contract owns none of several code paths and no record path, so no chain on this seat can take a receipt (goal testing-contract-owns-record-paths, m1c's contract; approve and rank it first); (2) this goal's reserved job minutes are 1200/1200 and the raise to 2400 was REJECTED as over-norm (GOAL_NORM_REFUSED; needs --approved-ref naming a rulings-register row), so slice 3's closing read (gawr-read4, brief ready in the coordinator's scratchpad) waits for a set-budget with the reference. Then, in order: dispatch gawr-read4; when the contract owns the paths, stage gawr-build1 rounds/5/diff.patch, landing test-receipt --mode auto, land.sh --chain gawr-build1; then gawr-build3 the same way; then the registers (three reads of chain 1, one of chain 3), the design page's doc slice, the done-for-abandon switch in two named helpers, and the rollout (rebuild and re-arm every seat, goal engine-floor from the enrolled terminal, the two specimens). Human acts run tonight in Wido's name: steward arm after a rebuild (the refusal register's named override, not among the three verbs), the rejected set-budget attempt; my own goal opens and edits.
 - OpenedAt: 2026-09-09T07:35:51Z
-- Revision: 36
+- Revision: 37
 - Budget: elapsedLimit=3d attemptLimit=25 reservedJobMinutesLimit=1200 activeJobLimit=1 reviewRoundLimit=3
 - BudgetExceptions: 1
 - Approved: by=human:Wido at=2026-09-09T20:16:56Z revision=20 opid=SVP8737N5CYBZD4WF48CPJEMQE-m1b-c6925449 authority=proven digest=bf8e76e1624c3976d7838e2e849f77cc157286db4db0b6eb7fd29005cadffbd0
 - Sliced: machine=m1b lineage=main-1788680071-18713-e76d5d revision=5 at=2026-09-09T15:15:59Z
-- Claimed: machine=m1b lineage=main-1788680071-18713-e76d5d at=2026-09-09T20:16:56Z revision=20 accountingRevision=20
-- StopCapability: generation=20 revision=20 machine=m1b claimEpoch=1 fenceEpoch=0
+- Parked: by=m1b+main-1788680071-18713-e76d5d at=2026-09-10T04:28:55Z because=Parked 2026-09-10 06:55Z at a slice boundary with everything built and green and nothing landable: chain gawr-build1 (slices 1 and 2, 43 files, closed clean on round 5) and chain gawr-build3 (slice 3, 14 files, its closing read gawr-read4 written but undispatched) both wait on goal testing-contract-owns-record-paths (no receipt possible) and on a set-budget raise of reserved job minutes past the tier box (rejected GOAL_NORM_REFUSED without an --approved-ref). Resume steps, in order: set-budget with the reference; dispatch gawr-read4 (brief in m1b's scratchpad); when the contract owns the paths, stage gawr-build1 rounds/5/diff.patch, landing test-receipt --mode auto, land.sh --chain gawr-build1 --test-receipt; then gawr-build3 the same way; then the four registers, slice 4 (doc), the done-for-abandon switch, the rollout.
 
 History:
 - 2026-09-09T07:35:51Z CD1FD0A7Q0S3NMWB4C52P9Q39V-m1b-c6925449 open actor=m1b+main-1788680071-18713-e76d5d targets=goal-abandoned-with-a-reason
@@ -54,4 +53,5 @@ History:
 - 2026-09-10T02:33:29Z 58GK85RQVASA51S0GQN5K9YKVX-m1b-c6925449 edit actor=m1b+main-1788680071-18713-e76d5d targets=goal-abandoned-with-a-reason
 - 2026-09-10T03:32:04Z 7M8X363WD9EJ4DWVESK0Y99602-m1b-c6925449 edit actor=m1b+main-1788680071-18713-e76d5d targets=goal-abandoned-with-a-reason
 - 2026-09-10T04:27:42Z 4NYK7SEDVBHC7MKD22CHQNNC1G-m1b-c6925449 edit actor=m1b+main-1788680071-18713-e76d5d targets=goal-abandoned-with-a-reason
-Integrity: sha256=e71c4fe6420775da2e88c06a80da3164a0444bb04bfdcc97920f2b65e35a73f7
+- 2026-09-10T04:28:55Z R7P5VVPGT8M2QNY3KT2RN9823X-m1b-c6925449 park actor=m1b+main-1788680071-18713-e76d5d targets=goal-abandoned-with-a-reason reason=Parked 2026-09-10 06:55Z at a slice boundary with everything built and green and nothing landable: chain gawr-build1 (slices 1 and 2, 43 files, closed clean on round 5) and chain gawr-build3 (slice 3, 14 files, its closing read gawr-read4 written but undispatched) both wait on goal testing-contract-owns-record-paths (no receipt possible) and on a set-budget raise of reserved job minutes past the tier box (rejected GOAL_NORM_REFUSED without an --approved-ref). Resume steps, in order: set-budget with the reference; dispatch gawr-read4 (brief in m1b's scratchpad); when the contract owns the paths, stage gawr-build1 rounds/5/diff.patch, landing test-receipt --mode auto, land.sh --chain gawr-build1 --test-receipt; then gawr-build3 the same way; then the four registers, slice 4 (doc), the done-for-abandon switch, the rollout.
+Integrity: sha256=76f24b568d5d62f0d16870abf958860580cd2ba52c51f9d77c2f4cfa1913c965
