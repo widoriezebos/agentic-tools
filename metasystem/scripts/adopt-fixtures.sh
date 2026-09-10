@@ -303,10 +303,10 @@ if true; then  # template-gated by the orchestrator
   git -C "$guard_repo" -c user.name=m -c user.email=m@example.invalid commit -qm seed
   echo new >"$guard_repo/plans/surprise.md"
   git -C "$guard_repo" add plans/surprise.md
-  if (cd "$guard_repo" && "$guard_under_test" >/dev/null 2>&1); then
+  if (cd "$guard_repo" && METASYSTEM_BIN="$guard_stub_root/bin/metasystem" "$guard_under_test" >/dev/null 2>&1); then
     echo "guard allowed a new plan file without acknowledgment" >&2; exit 1
   fi
-  (cd "$guard_repo" && METASYSTEM_ALLOW_NEW_PLAN=1 "$guard_under_test") \
+  (cd "$guard_repo" && METASYSTEM_BIN="$guard_stub_root/bin/metasystem" METASYSTEM_ALLOW_NEW_PLAN=1 "$guard_under_test") \
     || { echo "guard refused an acknowledged new plan" >&2; exit 1; }
   unborn_repo="$tmp/guard-unborn"
   mkdir -p "$unborn_repo/plans"
@@ -314,12 +314,12 @@ if true; then  # template-gated by the orchestrator
   git -C "$unborn_repo" config metasystem.goal.machine fixture-machine
   echo first >"$unborn_repo/plans/new.md"
   git -C "$unborn_repo" add plans/new.md
-  (cd "$unborn_repo" && "$guard_under_test") \
+  (cd "$unborn_repo" && METASYSTEM_BIN="$guard_stub_root/bin/metasystem" "$guard_under_test") \
     || { echo "guard refused the initial commit of an unborn branch" >&2; exit 1; }
   git -C "$guard_repo" reset -q
   echo changed >"$guard_repo/plans/existing.md"
   git -C "$guard_repo" add plans/existing.md
-  (cd "$guard_repo" && "$guard_under_test") \
+  (cd "$guard_repo" && METASYSTEM_BIN="$guard_stub_root/bin/metasystem" "$guard_under_test") \
     || { echo "guard refused a modification to a tracked plan" >&2; exit 1; }
   [[ -x "$nested_tgt/.git/hooks/pre-commit" ]] \
     || { echo "adoption did not install the pre-commit guard hook" >&2; exit 1; }

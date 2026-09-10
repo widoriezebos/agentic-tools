@@ -256,7 +256,7 @@ func runTestGroup(ctx context.Context, request TestRunRequest, group testpolicy.
 	}()
 	root := detached.Workspace().Dir
 	cwd := filepath.Join(root, filepath.FromSlash(group.CWD))
-	environment := mergeTestEnvironment(request.Environment, group.Env)
+	environment := groupTestEnvironment(request, group)
 	prepared, hasPrepared := request.PreparedGroups[group.ID]
 	implicitInputs := prepared.ImplicitInputs
 	coverageInventory := prepared.CoverageInventory
@@ -340,11 +340,10 @@ func runTestGroup(ctx context.Context, request TestRunRequest, group testpolicy.
 			// The shell still authenticates this worker's actual parent custody.
 			environment = mergeTestEnvironment(environment, map[string]string{
 				"METASYSTEM_ENUMERATION_ENGINE_DEPENDENCY": "ready",
-				"METASYSTEM_BIN":                   engine,
-				"METASYSTEM_PROOF_AUTH_BIN":        engine,
-				"METASYSTEM_SUITE_PROGRESS_ACTIVE": "1",
-				"METASYSTEM_SUITE_PROGRESS_LOG":    filepath.Join(request.LogRoot, group.ID+".log"),
-				"METASYSTEM_SUITE_PROGRESS_ROOT":   cwd,
+				"METASYSTEM_PROOF_AUTH_BIN":                engine,
+				"METASYSTEM_SUITE_PROGRESS_ACTIVE":         "1",
+				"METASYSTEM_SUITE_PROGRESS_LOG":            filepath.Join(request.LogRoot, group.ID+".log"),
+				"METASYSTEM_SUITE_PROGRESS_ROOT":           cwd,
 			})
 		}
 	}
@@ -535,7 +534,7 @@ func RevalidateRetainedGroupExecutionIdentities(ctx context.Context, request Tes
 				implicit = append(implicit, path)
 			}
 		}
-		environment := mergeTestEnvironment(request.Environment, group.Env)
+		environment := groupTestEnvironment(request, group)
 		inputDigest, digestErr := digestGroupInputsWithImplicit(root, group, environment, implicit)
 		cwd := filepath.Join(root, filepath.FromSlash(group.CWD))
 		if digestErr != nil || inputDigest != source.InputDigest || digestEnvironment(environment) != source.EnvironmentDigest ||
@@ -572,7 +571,7 @@ func PrepareGroupExecutionIdentities(ctx context.Context, request TestRunRequest
 			return nil, nil, launches, fmt.Errorf("selected testing group %s is absent", id)
 		}
 		cwd := filepath.Join(root, filepath.FromSlash(group.CWD))
-		environment := mergeTestEnvironment(request.Environment, group.Env)
+		environment := groupTestEnvironment(request, group)
 		toolIdentities, executables, argv, expected, implicitInputs, coverageInventory, coverageModule, count, availabilityErr := plannedToolIdentities(ctx, cwd, environment, group, root, discoveryCache)
 		launches += count
 		inputDigest, digestErr := digestGroupInputsWithImplicit(root, group, environment, implicitInputs)
@@ -1020,6 +1019,25 @@ func mergeTestEnvironment(base []string, additions map[string]string) []string {
 	result := make([]string, 0, len(order))
 	for _, name := range order {
 		result = append(result, name+"="+values[name])
+	}
+	return result
+}
+
+func groupTestEnvironment(request TestRunRequest, group testpolicy.Group) []string {
+	environment := mergeTestEnvironment(request.Environment, group.Env)
+	if group.Adapter == "section" {
+		environment = dropTestEnvironmentName(environment, "METASYSTEM_BIN")
+	}
+	return environment
+}
+
+func dropTestEnvironmentName(environment []string, drop string) []string {
+	result := make([]string, 0, len(environment))
+	for _, entry := range environment {
+		name, _, ok := strings.Cut(entry, "=")
+		if !ok || name != drop {
+			result = append(result, entry)
+		}
 	}
 	return result
 }

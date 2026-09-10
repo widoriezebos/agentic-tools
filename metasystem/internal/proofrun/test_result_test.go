@@ -295,7 +295,7 @@ func TestSectionMismatchKeepsNativeStatusAndLaterIndependentResult(t *testing.T)
 	runTestResultGit(t, root, "config", "user.email", "fixture@example.invalid")
 	script := `#!/usr/bin/env bash
 set -u
-[[ "$METASYSTEM_BIN" == "$PWD/bin/metasystem" ]] || exit 26
+[[ -x "$PWD/bin/metasystem" && -z "${METASYSTEM_BIN:-}" ]] || exit 26
 section=${2:-}
 case "$section" in
   mismatch)
@@ -324,9 +324,16 @@ esac
 	engineData := []byte("#!/usr/bin/env bash\nexit 0\n")
 	engine := filepath.Join(t.TempDir(), "metasystem")
 	writeTestResultFile(t, engine, engineData, 0o500)
-	result, status, err := RunTestPlan(context.Background(), TestRunRequest{ProjectRoot: root, CandidateTree: tree, BaseCommit: "HEAD",
+	t.Setenv("METASYSTEM_BIN", filepath.Join(t.TempDir(), "ambient-engine"))
+	request := TestRunRequest{ProjectRoot: root, CandidateTree: tree, BaseCommit: "HEAD",
 		PolicyBaseCommit: "HEAD", Contract: contract, Plan: plan, AttemptID: "attempt", LogRoot: filepath.Join(root, "logs"),
-		CandidateEngine: engine, CandidateEngineDigest: digestBytes(engineData)})
+		CandidateEngine: engine, CandidateEngineDigest: digestBytes(engineData)}
+	var prepareErr error
+	_, request.PreparedGroups, request.PreparationLaunches, prepareErr = PrepareGroupExecutionIdentities(context.Background(), request)
+	if prepareErr != nil {
+		t.Fatal(prepareErr)
+	}
+	result, status, err := RunTestPlan(context.Background(), request)
 	if err != nil || status != 23 || len(result.Groups) != 2 || result.Groups[0].Status != "invalid" ||
 		result.Groups[0].NativeExitStatus == nil || *result.Groups[0].NativeExitStatus != 23 ||
 		!strings.Contains(result.Groups[0].NotRunReason, "disagrees") || result.Groups[1].Status != "passed" {

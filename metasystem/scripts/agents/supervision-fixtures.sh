@@ -129,6 +129,7 @@ export METASYSTEM_SUPERVISION_FIXTURE_AUDIT=$tmp/arm-audit.tsv
 mkdir -p "$METASYSTEM_SUPERVISION_REGISTRY_HOME"
 
 ms="${METASYSTEM_BIN:-$source_root/bin/metasystem}"
+unset METASYSTEM_BIN
 
 # Every hook-side `metasystem up` crosses this fixture-only auditor before the
 # checkout-local engine receives it. This gives the final isolation check the

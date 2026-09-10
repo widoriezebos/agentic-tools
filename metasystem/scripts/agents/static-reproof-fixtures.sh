@@ -8,6 +8,7 @@
 set -euo pipefail
 
 root=$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd -P)
+unset METASYSTEM_BIN
 
 TestRealCommitWrapperStampsParseableObservation() {
   local fixture real_engine wrapper candidate_tree observation expected_provenance expected_verdict expected_mode message
