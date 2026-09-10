@@ -7,9 +7,9 @@
 - Tier: 3
 - Intent: The steward's rearm resolver (internal/steward/rearm_resolver.go around line 272) refuses 'enrollment records landed source X but the executable stamp resolves to Y' whenever the binary was built at any commit other than the enrollment's recorded tip, and the tip moves on every ledger publish (a goal edit, a claim), which changes no engine code. Seen 2026-09-10 09:00Z on m1b: a binary built three goal-edits behind the tip was refused by test verify until a rebuild on a clean tree at the exact tip and a steward arm. DONE means: the binding applies the same rule as dispatch's skew preflight (the engine is stale only when engine or agent scripts changed between its stamp and the tip), a binary built at an older commit with no such change is accepted, and a fixture proves a ledger-only move does not drift the enrollment while an engine change still does.
 - Origin: main
-- Next step: READ 1 (ebsr-read1, Opus): four material, two of them from the coordinator's brief mis-stating dispatch's rule (first-parent instead of --ancestry-path; the re-mint measuring against the remote tip instead of the checkout HEAD), plus the witness-stamp case and one lost test assertion. Round 2 dispatched as a follow-up with the rule as dispatch has it (fold-read cycle 1; review round 1 of 3 consumed). Then read 2 and the receipt together; landing needs the fleet's tip to hold for the receipt, or delivery-candidate-is-the-workspace-not-the-ledger.
+- Next step: LAND-READY: chain ebsr-build1 closed on round 2 (read 1 four material folded; read 2 zero material, four debts: a merge shape neither rule can see, a misleading witness refusal message, LandedCommit may record an unpublished local commit, and the coordinator's checkout had held round-1 content, since reset). Candidate is rounds/2 (ebsr-build1-r2.patch in m1b's scratchpad; landing script land-ebsr-in-quiet-window.sh). Receipt evidence on round 1: 40 of 41 green, the failure the ten-minute cap. Lands right after receipt-beds-run-the-candidate-engine in the fleet hold; then rebuild and re-arm at the new tip.
 - OpenedAt: 2026-09-10T07:27:32Z
-- Revision: 11
+- Revision: 12
 - Labels: bootstrap
 - Budget: elapsedLimit=1d attemptLimit=10 reservedJobMinutesLimit=1200 activeJobLimit=3 reviewRoundLimit=3
 - BudgetExceptions: 2
@@ -30,4 +30,5 @@ History:
 - 2026-09-10T12:47:01Z YM85Z6MDDE9AXKGEEXK2WYATZQ-m1b-c6925449 set-budget actor=human:Wido targets=enrollment-binds-by-the-skew-rule-not-the-tip
 - 2026-09-10T12:47:21Z DPC11T5426HHED7BF6PCYVG77S-m1b-c6925449 set-budget actor=human:Wido targets=enrollment-binds-by-the-skew-rule-not-the-tip
 - 2026-09-10T13:03:00Z QN3JNYB5HQKC2B8GAZ3F493AP0-m1b-c6925449 edit actor=m1b+main-1788680071-18713-e76d5d targets=enrollment-binds-by-the-skew-rule-not-the-tip
-Integrity: sha256=3e2ebf6f2400425f8735149cbfa9b7ac2ffe875d3a0e8b3b3b1caae132a6c9b9
+- 2026-09-10T14:00:11Z K54FMT2N63A5NVSH4D848NRZSZ-m1b-c6925449 edit actor=m1b+main-1788680071-18713-e76d5d targets=enrollment-binds-by-the-skew-rule-not-the-tip
+Integrity: sha256=efe5b92d6f886a89951a2489553f274aa93fd831d8b0b047de7ae201dda04cfb
