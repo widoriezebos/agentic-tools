@@ -1,6 +1,6 @@
 # stop-message-truth
 
-- State: claimed
+- State: approved
 - Priority: 3
 - Sequence: 18
 - Risk: severity=2 novelty=1 exposure=3 accumulation=2 basis="severity 2: a wrong Stop judgement stalls a seat or hands it to the steward while it works, but grants nothing and destroys nothing; novelty 1: three local rules in the existing scanner and verdict; exposure 3: every seat's every Stop; accumulation 2: each stale hung flag and each miscounted idle refusal compounds until the seat is silenced or taken over"
@@ -9,14 +9,12 @@
 - Origin: main
 - Next step: After cutover retargets the verdict to the new projection (that half is a backlog-git-sync cutover obligation), fold in the steward's status surface: the stop message names any live worker, in-flight continuation, or pending steward incident, so silence is never ambiguous; acceptance = the frozen-ledger staleness observed 2026-08-20 cannot recur. Proposal from m2 (2026-08-24, for the primary dispatch delegate's ratification): extend the idle-watchdog predicate to be ledger-aware — arm the watchdog on every enrolled checkout, and revive/notify when goal next names a tokened, unclaimed, unblocked item AND the machine holds no claim; that makes the distributed backlog itself the wake signal, so a machine with standing work never sits idle behind a stale stop message. SIGHTING 2026-09-06 (m1, first Stop after c1525b90a): the Stop verdict named 244 run records from mid-August ('looks hung', 'ended ended-unknown', 'finished green; the run record says: no continuation recorded') in one refusal beside the single actionable line. Runs that finished weeks ago with no recorded continuation are not open work: the scanner ages them out or reports them as one class-and-count line; the printed shape is stop-refusal-fits-on-one-screen's, the judgement of what is open work is this goal's. open-work-scanner-blindspots stays parked as merged here (Wido tried to resume it 2026-09-06; the verb refuses an unclaimed parked goal, so nothing to resume). JUDGEMENT DEFECT TRACED, m1, 2026-09-09: 27 of the 32 run-warning lines on every Stop are runs that finished GREEN in August and still print 'looks hung'. Cause: internal/report/scan.go line 288 sets RunFact.Hung from record.HungSince != nil with no status check, so a run that was once past its stale window keeps the flag after it ends; and decideRuns in internal/goal/turnverdict.go warns on Hung with no Acked check, so run ack does not silence it (proven today: acking the 5 terminal red/ended-unknown runs removed those 5 lines; the 27 green hung-flagged runs stayed). Both blockers named in this goal are done, and the printed SHAPE is landing under stop-refusal-fits-on-one-screen today, so what remains here is small and mechanical: a terminal run is never hung (clear or ignore HungSince once status is terminal), a hung warning respects ack, and run prune's 14-day rule applies to hung-flagged terminals like any other. Prune today dropped only 3 of 151 records; 91 unacked greens remain and print once per new session. SECOND TRUTH DEFECT, m1, 2026-09-09: on this template-layout seat the Stop hook's health line reported steward-runner, supervision-owner, repo-watcher and session-main DEAD two lines after the re-arm notice proved them alive, because scripts/agents/supervision-hook.sh calls health with --repo set to the repository root while the installation lives under metasystem/; PreviewHealthAt takes both roots but its artifact-backed roles read under --repo. A candidate fix (every role reads the installation root when given; remedies name it; the preview renders the aggregate plus only the checks that are not alive, full text beside the turn verdict) was built and reviewed under stop-refusal-fits-on-one-screen, judged out of that goal's scope by Wido, and is landed as the record records/misc/stop-refusal-fits-on-one-screen-build2-round1.patch with its critic's findings in records/misc/stop-refusal-fits-on-one-screen-build2-critique-r1-dispositions.md (OSR-11: the hook completion must carry the health line it emitted; OSR-12: a failed evidence write must not discard the verdict). Whoever takes this goal starts from that patch and those two findings; it must wait for m1c's hook chain to land first.
 - OpenedAt: 2026-08-20T16:51:00Z
-- Revision: 21
+- Revision: 22
 - BlockedBy: backlog-git-sync, idle-watchdog
 - Budget: elapsedLimit=1d attemptLimit=10 reservedJobMinutesLimit=720 activeJobLimit=1 reviewRoundLimit=3
 - BudgetExceptions: 0
 - Approved: by=human:Wido at=2026-09-10T04:17:57Z revision=17 opid=NRZX6G2N1P7H73HP82K527SFJ6-m1-1701c13c authority=raise=NRZX6G2N1P7H73HP82K527SFJ6-m1-1701c13c digest=a930bb1f6a26517c7fabd7fdada7804a736daa92f3c383fa3ffa7663bce90a46
 - Sliced: machine=m1 lineage=main-1788940932-18533-7fa6c2 revision=15 at=2026-09-10T04:17:39Z
-- Claimed: machine=m1 lineage=main-1788940932-18533-7fa6c2 at=2026-09-10T08:46:56Z revision=21 accountingRevision=21
-- StopCapability: generation=21 revision=21 machine=m1 claimEpoch=6 fenceEpoch=0
 
 History:
 - 2026-08-22T06:30:55Z BXWE9NXAWCGCTR3MFCE8GDC4P5-widos-m5-pro-bf243850 migrate actor=human:wido targets=stop-message-truth
@@ -40,4 +38,5 @@ History:
 - 2026-09-10T07:16:37Z A9282N26RYTFDC258QSZTPKYJH-m1-1701c13c claim actor=m1+main-1788940932-18533-7fa6c2 targets=stop-message-truth
 - 2026-09-10T07:16:45Z Y6SBCNK3S0HZXMA4395BV20FKP-m1-1701c13c release actor=m1+main-1788940932-18533-7fa6c2 targets=stop-message-truth
 - 2026-09-10T08:46:56Z 3DVMDTJE558NRBPC36SKAD7R6Q-m1-1701c13c claim actor=m1+main-1788940932-18533-7fa6c2 targets=stop-message-truth
-Integrity: sha256=b980e3d95395658936120a1304c77ce8d8f038d4dec8286717fc13868df81ad6
+- 2026-09-10T08:53:40Z 9M8FC74AZHJBC44YWXNTKP9MQ2-m1-1701c13c release actor=m1+main-1788940932-18533-7fa6c2 targets=stop-message-truth
+Integrity: sha256=49dcb6985f096720b107673d3784691415c5fafff3b093a4b21b120161efbf4d
