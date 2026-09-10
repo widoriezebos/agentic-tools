@@ -1,7 +1,7 @@
 # Design: a proof group is bounded by what it consumes, never by the host's clock
 
 Goal: proof-groups-detect-hangs-by-progress-not-the-clock (tier 3,
-DESIGN-BEARING). **Revision 2, 2026-09-10**, written on the m1 seat
+DESIGN-BEARING). **Revision 3, 2026-09-10 22:20Z**, written on the m1 seat
 (lineage main-1788940932-18533-7fa6c2). Revision 1 (landed 19775023a as
 plans/proof-groups-progress-hang-design.md, which this file supersedes:
 records carried under a goal are named after it) was critiqued by phd-design-crit1b-20260910 (codex gpt-5.6-sol); its
@@ -13,6 +13,27 @@ records/misc/proof-groups-progress-hang-critique-r1-dispositions.md.
 Wido, 2026-09-10 13:45Z: "we have a test that is load dependent. That's
 not a test at all. Remove the entire timeout. We need to replace it with
 something else, something that is not load dependent."
+
+
+## Revision 3: the second critique folded as decisions, then the build
+
+Revision 2 was critiqued by phd-design-crit2c-20260910 (nine material
+findings, carried in records/misc/proof-groups-detect-hangs-by-progress-not-the-clock-critique-r2-dispositions.md).
+Under the implementation-first ruling (two prose rounds spent), this
+revision records the decisions and the build proceeds behind the
+fixtures; what the fixtures cannot settle is named as residual.
+
+| Finding | Decision |
+| --- | --- |
+| PHD-ZERO-SCHEDULER-STATE | The dead rule reads task state as well as consumption: a tree is dead only when, over the window, consumption is zero, output is absent, AND no member is stopped (Darwin state `T`, Linux `T`/`t`) or in uninterruptible wait (`U`/`D`). A stopped tree is reported `stopped` and left alone; a tree in uninterruptible wait is `waiting on the host` and left alone; each is a named verdict on the record, never a kill. Quota and container freezing do not exist on this fleet's hosts and are residual (d). |
+| PHD-CPU-BUDGET-NONINVARIANT | The budget is a ceiling against runaway, not a measurement of the test: it is set at eight times the group's measured consumption, and the design assumes contention inflates consumption by less than that factor (residual (e), with the measured figures on every record so the assumption is checked by the fleet's own history). Proof row 4 asserts the same order of magnitude across quiet and loaded runs, not equality. |
+| PHD-COUNTER-UNIT-RACE | Units: Linux ticks divided by `sysconf(_SC_CLK_TCK)`; Darwin `ps -o cputime=` parsed as [[dd-]hh:]mm:ss, one-second precision. "Consumption" over the window means the high-water counter rose by at least one second at some sample. A member that vanishes between the tree scan and its read is a partial sample: the counter keeps its high-water value and the sample counts as read. Only a reader that fails outright three samples in a row ends the group `invalid`; that rule counts failures, not time. |
+| PHD-SEED-MULTICORE | No seed from wall time. `cpuBudgetSeconds` is optional; a group without it runs under the dead rule only and its record carries the measured consumption; a later contract change sets the budget from the fleet's measurements (eight times the largest observed). The seed question dissolves. |
+| PHD-DUMP-NONTERMINATING | The supervisor drains the child's output continuously into the log (the tee), so a dumping process never blocks on a pipe. After SIGQUIT the supervisor waits for the process to exit; if the tree keeps consuming for one more sample after the signal, it has ignored the dump request and is killed at once with `dump: not produced, the process kept computing`; if it stops consuming, the zero-consumption rule applies as the only fallback. |
+| PHD-FIXTURE-WAIT-SEMANTICS | Slice 3 leaves this goal: fixture waits are owned-producer contracts, one per wait, and are goal fixture-waits-name-their-producer. This goal's DONE sentence is narrowed to the receipt's groups and attempt (slices 1 and 2). |
+| PHD-CLOCK-INVENTORY-GAPS | Inventory rows added, all slice 2: the two-minute trusted-policy-engine context, the section-cap contexts around candidate-engine construction, metadata preparation and retained-result verification, the sixty-second detached-evidence preservation bound (which can turn a group `invalid`), and the one-second attempt mutation-lock ceiling. Each becomes a progress or retry rule with no clock, or is shown to decide no proof outcome. |
+| PHD-BUDGET-PROTECTION | `cpuBudgetSeconds` is part of the protected contract: for a group present in both base and candidate the effective value is the base's (a candidate may lower it in the same change only through the protected-policy path that already guards the contract); a new group takes the candidate's value. `testpolicy.ProtectedContract` is where this lives, with a test that a raised value in the candidate is ignored. |
+| PHD-FOUR-LOOPS-NOT-STARVATION | Rows 1 and 4 measure their precondition: the fixture starts two busy loops per online processor, samples the test's own scheduling share (consumed CPU over wall time) and asserts it below one half before asserting the outcome; on a host where the share cannot be pushed down the row is skipped by name, not passed. |
 
 ## What changed from revision 1
 
