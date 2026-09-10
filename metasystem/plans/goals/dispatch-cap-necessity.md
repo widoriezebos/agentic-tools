@@ -1,6 +1,6 @@
 # dispatch-cap-necessity
 
-- State: approved
+- State: claimed
 - Priority: 1
 - Sequence: 3
 - Risk: severity=2 novelty=1 exposure=3 accumulation=2 basis="severity 2: a wrong reservation charge starves lean goals of budget they never spent and can refuse admission wrongly, but grants nothing and destroys nothing; novelty 1: the settlement mirrors the governed-run path's existing terminal settlement; exposure 3: every dispatch on every seat projects the reserved pool; accumulation 2: each unsettled record keeps charging its cap until the goal's revision changes, so the error compounds across a chain's rounds"
@@ -9,11 +9,13 @@
 - Origin: main
 - Next step: LAND-READY, blocked by the receipt (2026-09-10 01:55Z, m1): chain dispatch-cap-build2-20260910 rounds/2 (reviewed tree 95d34c943b1e25326726767b6bef22da24889f6d, critic dispatch-cap-crit3-20260910: no material finding; dispositions and briefs untracked in the m1 checkout) is closed and its diff applies to main. The deep receipt fails only section/gate-fence-fixtures: the isolated worktree runs the ENROLLED engine and the skew preflight refuses an engine-changing candidate; a candidate engine cannot be enrolled (ENROLLMENT_DRIFT). When the receipt runs sections with a proof engine built from the candidate, land with the m1 scratchpad's run-landing.sh chain dispatch-cap-build2-20260910 dispatch-cap-necessity metasystem/artifacts/agents/dispatch-cap-build2-20260910/rounds/2/diff.patch <msg> dispatch-cap-crit3-20260910, then goal done. The box: observed + open-caps + proof reservation components, refusal line 'reserved observed=<n> open-caps=<m> [proof=<p>] limit=<L>'. Follow-up goal proof-attempts-settle-to-minutes-run opened. | m1b passed over this goal at 07:05Z on 2026-09-10: its closed chain and its receipt attempts live in m1's checkout, so m1 is the seat to land it; m1b holds nothing of it.
 - OpenedAt: 2026-09-01T13:49:31Z
-- Revision: 47
+- Revision: 48
 - Budget: elapsedLimit=1d attemptLimit=10 reservedJobMinutesLimit=480 activeJobLimit=1 reviewRoundLimit=3
 - BudgetExceptions: 0
 - Approved: by=human:Wido at=2026-09-09T20:39:20Z revision=20 opid=Q4EW6RPG2FQD5QVP0ATZVNPQP5-m1-1701c13c authority=raise=Q4EW6RPG2FQD5QVP0ATZVNPQP5-m1-1701c13c digest=6e7847dce495307741495cb4c49f4e58a3f8d6e52afd087909f89dac97b86e05
 - Sliced: machine=m1b lineage=main-1788333346-60696-6a3256 revision=4 at=2026-09-02T17:08:46Z
+- Claimed: machine=m1 lineage=main-1788940932-18533-7fa6c2 at=2026-09-10T07:21:24Z revision=48 accountingRevision=48
+- StopCapability: generation=48 revision=48 machine=m1 claimEpoch=6 fenceEpoch=0
 
 History:
 - 2026-09-01T13:49:31Z 43EKD9F0H470RXJZ1BDKFH564B-m0b-6638932d open actor=m0b+main-1788250419-3170380-8a1fb3 targets=dispatch-cap-necessity
@@ -63,4 +65,5 @@ History:
 - 2026-09-10T04:16:24Z WKBG76J8PK61J8W6KAFWAWJ5CB-m1-1701c13c release actor=m1+main-1788940932-18533-7fa6c2 targets=dispatch-cap-necessity
 - 2026-09-10T04:29:09Z S4K6NBVV91BT6VVNV6W1KJTWNH-m1b-c6925449 done actor=m1b+main-1788680071-18713-e76d5d targets=actionable-metrics,breach-clock-and-budget-honesty,breach-stop-wedges-seat,burn-without-delivery-tripwire,delegate-job-liveness,dispatch-cap-necessity,failed-job-attention,fixture-stewards-outlive-their-suite,goal-abandoned-with-a-reason,governed-exhaustion-reprojection,human-goal-verbs-forgiving,job-record-birth-token,landing-receipt-survives-records-drift,lease-sweep-death-evidence,live-job-on-a-done-goal-unnoticed,machine-concurrency-governor,one-screen-renderer-breaks-brain-stop-seeded,proof-harness-process-custody,review-round-limit-counts-per-chain,severity-tiered-rigor,severity-tiered-rigor-p2,small-change-lane,steward-catchup-livelock,steward-revives-a-done-goal,stop-batch-strands-a-resumable-goal,suite-custody,token-spend-fence,turn-verdict-hardening,watch-verb,watcher-repair-request-never-names-current,winddown-census-handoff-leak reason=priority-order from=1:4 to=1:3
 - 2026-09-10T04:29:50Z G9QE105T3PT09PRN7FG1S098N0-m1b-c6925449 edit actor=m1b+main-1788680071-18713-e76d5d targets=dispatch-cap-necessity
-Integrity: sha256=57abd80e9a73e7a0c190bee642cc0e2091102eec42d007efa2b3153353853b20
+- 2026-09-10T07:21:24Z MPB9AXKK3EH5YXNRD4NEZ87X80-m1-1701c13c claim actor=m1+main-1788940932-18533-7fa6c2 targets=dispatch-cap-necessity
+Integrity: sha256=b75cd871db5ae9266003ac01fcec7bb0c5934c6d52f24cb0044a50f9b5979aa1
