@@ -1,20 +1,18 @@
 # hp-terminal-grade-for-stopping-acts
 
-- State: claimed
+- State: approved
 - Risk: severity=2 novelty=2 exposure=3 accumulation=1 basis="severity 2: a wrong terminal grade lets an unenrolled human stop or park work, which halts and never grants; the agent exclusion stays; novelty 2: a second walk variant beside Prove; exposure 3: every seat's stop, park and release; accumulation 1: each act judged on its own"
 - Tier: 3
 - Intent: A human at any live terminal of the host, with no agent in the ancestry, can stop, park, release or unpark-without-approval, and session-stop, without an enrolled terminal: a second proof grade (the enrollment walk without the write), placed on those acts only, so no seat is ever wedged by a dead enrolled terminal. Design plans/human-proof-fits-the-act-design.md revision 2, sections "The two proofs" and the stopping rows of section 1.
 - Origin: main
 - Next step: LAND-READY, blocked by the receipt (2026-09-10 02:00Z, m1): chain hp-terminal-build1-20260909 rounds/14 (reviewed tree 01f26b23645901c0ee1d86effedbc9d1d4b4d4ef, twelfth critic hp-terminal-crit12-20260909: no material finding after 14 rounds; HPT-01..39 dispositions and all briefs untracked in the m1 checkout) is closed and its diff applies to main. Same receipt wall as dispatch-cap-necessity (section/gate-fence-fixtures refuses an engine-changing candidate under the enrolled engine). Land with run-landing.sh chain hp-terminal-build1-20260909 hp-terminal-grade-for-stopping-acts metasystem/artifacts/agents/hp-terminal-build1-20260909/rounds/14/diff.patch <msg> hp-terminal-crit12-20260909, then goal done. Delivered: ProveTerminal walks to the process-tree root through root-owned protected system images, the terminal grade on park/unpark/release/session stop incl. --arc forms, journal replay refuses named entries and passes typed outcomes through, proof-grades scenario runs end to end (allow path only on an agent-free bed). Notes for members: HPT-36 (proof-free verbs under the blanket replay refusal) on hp-recovery-grants-no-grade-to-unstamped-intents; HPT-39 (root not asserted as pid 1 in production) on the shared design.
 - OpenedAt: 2026-09-09T14:35:03Z
-- Revision: 33
+- Revision: 34
 - Labels: comfort
 - Budget: elapsedLimit=1d attemptLimit=10 reservedJobMinutesLimit=1200 activeJobLimit=1 reviewRoundLimit=3
 - BudgetExceptions: 0
 - Approved: by=human:Wido at=2026-09-09T14:36:28Z revision=2 opid=76XV3QEKM1Y759NSDZ4GYEH9R3-m1-c6925449 authority=proven digest=bdc6d051905b5142f0d5196ed9feb58ee5f4b6295de62bfc033c101f09e65924
 - Sliced: machine=m1 lineage=main-1788940932-18533-7fa6c2 revision=3 at=2026-09-09T14:37:00Z
-- Claimed: machine=m1 lineage=main-1788940932-18533-7fa6c2 at=2026-09-10T03:11:50Z revision=33 accountingRevision=33
-- StopCapability: generation=33 revision=33 machine=m1 claimEpoch=6 fenceEpoch=0
 
 History:
 - 2026-09-09T14:35:03Z 9BG7PRF2TDXGKXFEE6CG7FVVZ1-m1-1701c13c open actor=m1+main-1788940932-18533-7fa6c2 targets=hp-terminal-grade-for-stopping-acts
@@ -50,4 +48,5 @@ History:
 - 2026-09-10T01:47:39Z 36MJT4SNMYZRR8C7HP1MYV0YA9-m1-1701c13c edit actor=m1+main-1788940932-18533-7fa6c2 targets=hp-terminal-grade-for-stopping-acts
 - 2026-09-10T01:47:43Z 2KTAFGDZ6HEDNF43EV9PFBG1MG-m1-1701c13c release actor=m1+main-1788940932-18533-7fa6c2 targets=hp-terminal-grade-for-stopping-acts
 - 2026-09-10T03:11:50Z ZD2ZFM161YT65A34XACS9BW100-m1-1701c13c claim actor=m1+main-1788940932-18533-7fa6c2 targets=hp-terminal-grade-for-stopping-acts
-Integrity: sha256=811c61287a917b04a872d8082ee226d4ac6db36960ceb87510355c36e81d908e
+- 2026-09-10T04:13:56Z WQ00D53B6MTTVN1SG8K9EZ9Q9X-m1-1701c13c release actor=m1+main-1788940932-18533-7fa6c2 targets=hp-terminal-grade-for-stopping-acts
+Integrity: sha256=08f54e1f4d95cf330d1491e15fae8d49b538bcbe0e87d0286873fe6b55bd226c
