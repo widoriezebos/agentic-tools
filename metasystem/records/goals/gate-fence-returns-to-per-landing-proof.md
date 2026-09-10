@@ -1,19 +1,18 @@
 # gate-fence-returns-to-per-landing-proof
 
-- State: claimed
+- State: done
 - Risk: severity=2 novelty=1 exposure=3 accumulation=1 basis="severity 2: without the section at landing, custody-fence regressions reach main until the cadence run; novelty 1: the proof engine build already exists (go-build.sh --out); exposure 3: every engine landing on every seat; accumulation 1: each landing is judged on its own"
 - Tier: 3
 - Intent: section/gate-fence-fixtures proves only at cadence since 2026-09-10 (chain gate-fence-cadence1-20260910): the landing receipt runs its sections with the enrolled engine copied into the candidate worktree, so the section's dispatch skew preflight refuses every engine-changing candidate. DONE means the receipt runs its sections with a proof engine built from the candidate tree (the enrolled engine stays the policy engine), the gate-fence group's runtime-custody obligation is restored in metasystem/testing.json, and an engine-changing candidate passes the section inside the receipt.
 - Origin: main
 - Next step: m1c integrated the preserved m1b round-4 candidate: 13 staged files, tree 883b7ece121e675d823a7a50603bf585f1efd28f at base 5ab3ea6f; all imported runtime code matches the independent reviewed bytes. Both Go imports retained; stronger unknown-stamp assertion restored; gate-fence obligation and deep selection restored. Focused cmd tests passed 75.592s, proofrun 0.985s, landing 2.194s. The public receipt canary for an isolated engine-changing fixture passed gate-fence plus the real runtime provider in 51.8s and recorded separate policy and candidate digests. This is not a whole-repository delivery receipt. Actual test plan resolves 42 groups; retained earlier full proofs remain insufficient on the known Go timeout and peer suite-progress timing failure. No full rerun or publication attempted for this integrated tree. Source, original reviews, focused logs, fixture receipt, three scratch-driver corrections, exact tree and binary digests are preserved in /Users/wido/metasystem-evidence/agentic-tools/receipt-engine-20260910/m1b-transfer-assessment/integration-result.json and integrated-candidate.patch. User issued a boundary warning after the handoff; clarify whether delegated approval covers a failed-proof publication exception before any such action. Do not use the enrolled terminal to force publication; the normal passing-proof route remains the default. Preserve staged code and unrelated record tails. No new design or implementation scope.
+- Concluded: Published 016b83e2f3ed1e25e10579b1eb5b413b44e6723b to origin and transport: sections build and use the candidate engine while the enrolled engine remains policy owner; distinct digests are recorded; gate-fence runtime-custody obligation is restored. m1b rbce-build1 round 4 was imported with reviewed runtime bytes, existing command ancestry repair and the stronger unknown-stamp assertion. Focused command/proofrun/landing checks passed and the real admitted receipt fixture passed gate-fence plus its runtime provider in 51.8 seconds. Wido explicitly approved publication on this focused evidence without the 42-group repository delivery receipt; previous whole-repository results remain insufficient. Codex executed under Wido delegated authority through the enrolled human terminal, with normal Git hooks. Evidence: /Users/wido/metasystem-evidence/agentic-tools/receipt-engine-20260910/m1b-transfer-assessment. The delivery contract is complete; separate baseline timeout work remains owned by goal:go-groups-carry-their-target-as-the-test-timeout.
 - OpenedAt: 2026-09-10T06:16:49Z
-- Revision: 13
+- Revision: 14
 - Budget: elapsedLimit=1d attemptLimit=12 reservedJobMinutesLimit=1200 activeJobLimit=1 reviewRoundLimit=3
 - BudgetExceptions: 1
 - Approved: by=human:Wido at=2026-09-10T09:14:52Z revision=8 opid=EJQVN61HD3NA26E9SSR5S7BSJQ-m1c-c6925449 authority=proven digest=9af4fc8abe56a9208d810d810711e9c76b26bccbc27b0746b9b59d22c96dc505
 - Sliced: machine=m1c lineage=main-1789023008-75159-b69143 revision=3 at=2026-09-10T06:56:25Z
-- Claimed: machine=m1c lineage=main-1789023008-75159-b69143 at=2026-09-10T09:14:52Z revision=8 accountingRevision=8
-- StopCapability: generation=8 revision=8 machine=m1c claimEpoch=4 fenceEpoch=0
 
 History:
 - 2026-09-10T06:16:49Z TDPBRYSAH4R9ZR49ZD6HZR6DG1-m1-1701c13c open actor=m1+main-1788940932-18533-7fa6c2 targets=gate-fence-returns-to-per-landing-proof
@@ -29,4 +28,5 @@ History:
 - 2026-09-10T12:24:47Z VT7H5DT4D4813N1X68TK32KD6R-m1c-66a02980 edit actor=m1c+main-1789023008-75159-b69143 targets=gate-fence-returns-to-per-landing-proof
 - 2026-09-10T13:39:30Z XXETD4C9Y43P3GGPP4A7M0QHR6-m1c-66a02980 edit actor=m1c+main-1789023008-75159-b69143 targets=gate-fence-returns-to-per-landing-proof
 - 2026-09-10T13:58:34Z AMA8A63C8PW4CAVH76GVXTM64N-m1c-66a02980 edit actor=m1c+main-1789023008-75159-b69143 targets=gate-fence-returns-to-per-landing-proof
-Integrity: sha256=e2f93f8e6ea55556a09603cedbafd20c106e156e68cbaf1bb49c0b56a0204254
+- 2026-09-10T14:41:21Z 2SESDPHZ49YESXDV6QDYAFBZ08-m1c-66a02980 done actor=human:Wido targets=gate-fence-returns-to-per-landing-proof
+Integrity: sha256=8af45f9b179b98f952706f5673d1775ada666ccdf76a6df6782d8c47aab87909
