@@ -249,6 +249,51 @@ func resolveLandedBuild(repoRoot, installationRoot, landingRef, stamp string) (s
 	return commit, nil
 }
 
+var enrollmentSkewPathspecs = [...]string{"internal", "cmd", "scripts/agents"}
+
+func verifyEnrollmentLandedSource(installationRoot, sourceCommit, landedCommit string) error {
+	if sourceCommit == landedCommit {
+		return nil
+	}
+	seconds := RearmResolveSeconds(installationRoot)
+	ctx, cancel := context.WithTimeout(context.Background(), time.Duration(seconds)*time.Second)
+	defer cancel()
+	ancestor := exec.CommandContext(ctx, "git", "-C", installationRoot, "merge-base", "--is-ancestor", sourceCommit, landedCommit)
+	if out, err := ancestor.CombinedOutput(); err != nil {
+		if ctx.Err() != nil {
+			return witnessTimeoutError(seconds)
+		}
+		return fmt.Errorf("enrollment records landed source %q but executable stamp source %q is not its ancestor (%s)", landedCommit, sourceCommit, strings.TrimSpace(string(out)))
+	}
+	args := []string{"log", "--format=", "--name-only", "--ancestry-path", "--diff-merges=first-parent", sourceCommit + ".." + landedCommit, "--"}
+	args = append(args, enrollmentSkewPathspecs[:]...)
+	changedPaths, err := gitOutputContext(ctx, installationRoot, args...)
+	if err != nil {
+		if ctx.Err() != nil {
+			return witnessTimeoutError(seconds)
+		}
+		return fmt.Errorf("read enrollment engine-and-agent-script skew: %w", err)
+	}
+	if changedPaths != "" {
+		return fmt.Errorf("enrollment records landed source %q but engine or agent scripts changed after executable stamp source %q", landedCommit, sourceCommit)
+	}
+	return nil
+}
+
+func verifyEnrollmentBuildSource(installationRoot, stamp, sourceCommit, landedCommit string) error {
+	err := verifyEnrollmentLandedSource(installationRoot, sourceCommit, landedCommit)
+	if err == nil || !witnessBuildStamp.MatchString(stamp) {
+		return err
+	}
+	// A witness names ENGINE content rather than one commit. Its resolver
+	// deliberately chooses the newest matching commit, which may be a
+	// ledger-only descendant of the commit recorded by enrollment.
+	if reverseErr := verifyEnrollmentLandedSource(installationRoot, landedCommit, sourceCommit); reverseErr == nil {
+		return nil
+	}
+	return err
+}
+
 // VerifySourceAtDestination proves that the pinned enrolled bytes still own
 // policy for a captured destination commit. The enrollment remains bound to
 // the commit that genuinely supplied the executable; later destination
@@ -268,8 +313,10 @@ func (b *EnrolledBinary) VerifySourceAtDestination(installationRoot, destination
 	// Only an automatic re-arm records landing provenance. A human enrollment
 	// still has to prove its actual pinned build stamp, ancestry and complete
 	// ENGINE projection below; it does not invent a machine landing record.
-	if b.Install.LandedCommit != "" && b.Install.LandedCommit != sourceCommit {
-		return fmt.Errorf("enrollment records landed source %q but the executable stamp resolves to %q", b.Install.LandedCommit, sourceCommit)
+	if b.Install.LandedCommit != "" {
+		if err := verifyEnrollmentBuildSource(installationRoot, stamp, sourceCommit, b.Install.LandedCommit); err != nil {
+			return err
+		}
 	}
 	if b.Install.MintedBy == "machine-rebuild" && (b.Install.LandedCommit == "" || b.Install.LandingRef == "") {
 		return fmt.Errorf("machine enrollment is missing its landed source or landing ref")

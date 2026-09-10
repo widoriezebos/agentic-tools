@@ -8,6 +8,8 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"reflect"
+	"regexp"
 	"strings"
 	"syscall"
 	"testing"
@@ -152,18 +154,97 @@ func TestVerifySourceAtDestinationHumanEnrollmentAndMachineRearm(t *testing.T) {
 		t.Fatalf("machine rearm lost record-only reuse: %v", err)
 	}
 	pinned.Install.LandedCommit = destination
-	if err := pinned.VerifySourceAtDestination(root, destination); err == nil || !strings.Contains(err.Error(), "executable stamp resolves") {
-		t.Fatalf("machine source mismatch was accepted: %v", err)
+	if err := pinned.VerifySourceAtDestination(root, destination); err != nil {
+		t.Fatalf("machine rearm lost a newer record-only landed source: %v", err)
 	}
 	pinned.Install = human
 	changed := commitRearmTree(t, root, "different engine")
 	if err := pinned.VerifySourceAtDestination(root, changed); err == nil || !strings.Contains(err.Error(), "different ENGINE projections") {
 		t.Fatalf("human enrollment accepted changed engine source: %v", err)
 	}
+	pinned.Install.MintedBy = "machine-rebuild"
+	pinned.Install.LandedCommit, pinned.Install.LandingRef = changed, "refs/remotes/origin/trunk"
+	if err := pinned.VerifySourceAtDestination(root, changed); err == nil || !strings.Contains(err.Error(), "engine or agent scripts changed") {
+		t.Fatalf("machine enrollment accepted changed engine source: %v", err)
+	}
+	pinned.Install = human
 	rearmGit(t, root, "checkout", "--orphan", "unrelated")
 	unrelated := commitRearmTree(t, root, "unrelated source")
 	if err := pinned.VerifySourceAtDestination(root, unrelated); err == nil || !strings.Contains(err.Error(), "not landed") {
 		t.Fatalf("human enrollment accepted unrelated destination: %v", err)
+	}
+}
+
+func TestEnrollmentLandedSourceUsesEngineScriptSkewRule(t *testing.T) {
+	t.Run("ledger-only movement binds", func(t *testing.T) {
+		root := initRearmRepo(t)
+		source := commitRearmTree(t, root, "source")
+		writeRearmFile(t, filepath.Join(root, "plans", "goals", "peer.md"), "ledger only\n")
+		rearmGit(t, root, "add", ".")
+		rearmGit(t, root, "commit", "-qm", "ledger only")
+		landed := rearmGit(t, root, "rev-parse", "HEAD")
+		if err := verifyEnrollmentLandedSource(root, source, landed); err != nil {
+			t.Fatalf("ledger-only movement did not bind: %v", err)
+		}
+	})
+
+	t.Run("ledger-only second-parent movement binds", func(t *testing.T) {
+		root := initRearmRepo(t)
+		commitRearmTree(t, root, "base")
+		rearmGit(t, root, "checkout", "-qb", "landed-seat")
+		writeRearmFile(t, filepath.Join(root, "plans", "goals", "landed-seat.md"), "seat landing\n")
+		rearmGit(t, root, "add", ".")
+		rearmGit(t, root, "commit", "-qm", "seat landing")
+		source := rearmGit(t, root, "rev-parse", "HEAD")
+		rearmGit(t, root, "checkout", "-q", "trunk")
+		writeRearmFile(t, filepath.Join(root, "plans", "goals", "trunk.md"), "trunk ledger\n")
+		rearmGit(t, root, "add", ".")
+		rearmGit(t, root, "commit", "-qm", "trunk ledger")
+		rearmGit(t, root, "merge", "--no-ff", "-qm", "merge landed seat", "landed-seat")
+		landed := rearmGit(t, root, "rev-parse", "HEAD")
+		if err := verifyEnrollmentLandedSource(root, source, landed); err != nil {
+			t.Fatalf("ledger-only second-parent movement did not bind: %v", err)
+		}
+	})
+
+	t.Run("engine movement drifts", func(t *testing.T) {
+		root := initRearmRepo(t)
+		source := commitRearmTree(t, root, "source")
+		writeRearmFile(t, filepath.Join(root, "internal", "skew.go"), "package internal\n")
+		rearmGit(t, root, "add", ".")
+		rearmGit(t, root, "commit", "-qm", "changed engine")
+		landed := rearmGit(t, root, "rev-parse", "HEAD")
+		if err := verifyEnrollmentLandedSource(root, source, landed); err == nil || !strings.Contains(err.Error(), "engine or agent scripts changed") {
+			t.Fatalf("engine movement did not drift through the skew rule: %v", err)
+		}
+	})
+
+	t.Run("non-ancestor stamp drifts", func(t *testing.T) {
+		root := initRearmRepo(t)
+		commitRearmTree(t, root, "trunk")
+		rearmGit(t, root, "checkout", "-qb", "side")
+		source := commitRearmTree(t, root, "side source")
+		rearmGit(t, root, "checkout", "-q", "trunk")
+		landed := commitRearmTree(t, root, "landed")
+		if err := verifyEnrollmentLandedSource(root, source, landed); err == nil || !strings.Contains(err.Error(), "not its ancestor") {
+			t.Fatalf("non-ancestor stamp did not drift: %v", err)
+		}
+	})
+}
+
+func TestEnrollmentSkewPathspecsMatchDispatch(t *testing.T) {
+	script, err := os.ReadFile(filepath.Join("..", "..", "scripts", "agents", "dispatch.sh"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	matches := regexp.MustCompile(`"\$protected_prefix"([^|)]+)/\*`).FindAllStringSubmatch(string(script), -1)
+	got := make([]string, 0, len(matches))
+	for _, match := range matches {
+		got = append(got, match[1])
+	}
+	want := enrollmentSkewPathspecs[:]
+	if !reflect.DeepEqual(got, want) {
+		t.Fatalf("steward enrollment skew paths %v differ from dispatch paths %v", want, got)
 	}
 }
 
@@ -611,6 +692,16 @@ func TestRearmAndTemporaryHumanArmPreserveTheHumanWord(t *testing.T) {
 
 func TestMachineRebuildCarriesFixtureEnrollmentForward(t *testing.T) {
 	bed := newRearmBed(t, false)
+	rearmGit(t, bed.root, "checkout", "-qb", "newer-remote-engine")
+	writeRearmFile(t, filepath.Join(bed.root, "cmd", "surface.txt"), "newer remote engine landing\n")
+	rearmGit(t, bed.root, "add", "cmd/surface.txt")
+	rearmGit(t, bed.root, "commit", "-qm", "newer remote engine landing")
+	remoteTip := rearmGit(t, bed.root, "rev-parse", "HEAD")
+	rearmGit(t, bed.root, "checkout", "-q", "trunk")
+	if checkoutHead := rearmGit(t, bed.root, "rev-parse", "HEAD"); checkoutHead != bed.second {
+		t.Fatalf("remote fixture moved checkout HEAD: got=%s want=%s", checkoutHead, bed.second)
+	}
+	rearmGit(t, bed.root, "update-ref", "refs/remotes/origin/trunk", remoteTip)
 	installed, err := VerifyIdentity(RepoIdentityPath(bed.root), bed.root)
 	if err != nil {
 		t.Fatal(err)
@@ -621,11 +712,44 @@ func TestMachineRebuildCarriesFixtureEnrollmentForward(t *testing.T) {
 	}
 	outcome, err := ReArmRebuiltEngine(bed.root, bed.root, bed.engine)
 	if err != nil || outcome.Status != "re-armed" {
-		t.Fatalf("machine re-arm: %+v %v", outcome, err)
+		t.Fatalf("machine re-arm with newer remote engine landing: %+v %v", outcome, err)
 	}
 	installed, err = VerifyIdentity(RepoIdentityPath(bed.root), bed.root)
-	if err != nil || installed.Enrollment != EnrollmentFixture {
-		t.Fatalf("machine rebuild changed fixture enrollment: %+v %v", installed, err)
+	if err != nil || installed.Enrollment != EnrollmentFixture || installed.EngineBuild != bed.second || installed.LandedCommit != bed.second {
+		t.Fatalf("machine rebuild did not retain checkout landing provenance: %+v %v", installed, err)
+	}
+}
+
+func TestWitnessStampedMachineEnrollmentSurvivesLedgerOnlyLanding(t *testing.T) {
+	bed := newRearmBed(t, false)
+	policy, err := behaviorsurface.Load()
+	if err != nil {
+		t.Fatal(err)
+	}
+	digest, err := policy.Digest(bed.root, behaviorsurface.Engine)
+	if err != nil {
+		t.Fatal(err)
+	}
+	stamp := "witness-" + digest[:12]
+	buildFakeRunner(t, bed.engine, stamp)
+	if outcome, err := ReArmRebuiltEngine(bed.root, bed.root, bed.engine); err != nil || outcome.Status != "re-armed" {
+		t.Fatalf("arm witness-stamped machine engine: %+v %v", outcome, err)
+	}
+	writeRearmFile(t, filepath.Join(bed.root, "plans", "goals", "peer.md"), "ledger-only landing\n")
+	rearmGit(t, bed.root, "add", "plans/goals/peer.md")
+	rearmGit(t, bed.root, "commit", "-qm", "ledger-only landing")
+	landed := rearmGit(t, bed.root, "rev-parse", "HEAD")
+	rearmGit(t, bed.root, "update-ref", "refs/remotes/origin/trunk", landed)
+	pinned, err := OpenEnrolledBinary(bed.root)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer pinned.Close()
+	if pinned.Install.LandedCommit != bed.second || pinned.BuildStamp() != stamp {
+		t.Fatalf("witness enrollment was not valid before ledger movement: %+v stamp=%s", pinned.Install, pinned.BuildStamp())
+	}
+	if err := pinned.VerifySourceAtDestination(bed.root, landed); err != nil {
+		t.Fatalf("witness-stamped enrollment drifted after ledger-only landing: %v", err)
 	}
 }
 

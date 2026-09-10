@@ -754,6 +754,8 @@ func TestTestListCheckPlanAndVerifyWithoutLaunching(t *testing.T) {
 	// separate retained-engine process boundary is covered by the public
 	// binary fixture; this test covers zero application launches.
 	root := t.TempDir()
+	t.Setenv("GIT_OBJECT_DIRECTORY", filepath.Join(root, ".git", "objects"))
+	t.Setenv("GIT_ALTERNATE_OBJECT_DIRECTORIES", filepath.Join(root, ".git", "objects"))
 	gitPath, err := exec.LookPath("git")
 	if err != nil {
 		t.Fatal(err)
@@ -832,17 +834,20 @@ func TestTestListCheckPlanAndVerifyWithoutLaunching(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	writeTestingFixtureFile(t, filepath.Join(root, "plans", "goals", "peer.md"), []byte("ledger-only destination advancement\n"), 0o644)
+	testingFixtureGit(t, root, "add", "plans/goals/peer.md")
+	testingFixtureGit(t, root, "-c", "user.name=Test", "-c", "user.email=test@example.invalid", "commit", "-m", "ledger-only destination advancement")
+	recordOnlyDestination := strings.TrimSpace(testingFixtureGit(t, root, "rev-parse", "HEAD"))
 	if err := steward.MintIdentity(steward.RepoIdentityPath(root), steward.InstallIdentity{RepoIdentity: canonicalRoot, Generation: 1,
 		InstallPath: canonicalEngine, InstallDigest: "sha256:" + digest, MintedAt: "2026-09-09T00:00:00Z", Enrollment: steward.EnrollmentFixture,
-		EngineBuild: head[:12], LandedCommit: head}); err != nil {
+		MintedBy: "machine-rebuild", EngineBuild: head[:12], LandedCommit: recordOnlyDestination, LandingRef: "refs/remotes/origin/main"}); err != nil {
 		t.Fatal(err)
 	}
-	writeTestingFixtureFile(t, filepath.Join(root, "README.md"), []byte("coordination-only destination advancement\n"), 0o644)
-	testingFixtureGit(t, root, "add", "README.md")
-	testingFixtureGit(t, root, "-c", "user.name=Test", "-c", "user.email=test@example.invalid", "commit", "-m", "record-only destination advancement")
-	recordOnlyDestination := strings.TrimSpace(testingFixtureGit(t, root, "rev-parse", "HEAD"))
+	if got := strings.TrimSpace(testingFixtureGit(t, root, "rev-parse", "--verify", head+"^{commit}")); got != head {
+		t.Fatalf("fixture source commit moved: got=%s want=%s", got, head)
+	}
 	if _, _, _, err := trustedPolicyEngine(root, recordOnlyDestination, false); err != nil {
-		t.Fatalf("record-only destination advancement did not reuse the genuinely source-bound engine: %v", err)
+		t.Fatalf("record-only destination advancement did not reuse the genuinely source-bound engine built at %s: %v", head, err)
 	}
 	tree, err := (gittree.Workspace{Dir: root}).HeadTree()
 	if err != nil {
