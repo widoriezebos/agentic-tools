@@ -1,19 +1,18 @@
 # governed-exhaustion-reprojection
 
-- State: claimed
+- State: parked
 - Priority: 1
 - Sequence: 5
 - Intent: The governed exhaustion check decides on a reserved figure frozen at admission (internal/dispatch/governed.go:149 ReservedBefore; internal/run/conclude.go:316-318 ReservedBefore + observedMinutes >= limit) and never re-projects at conclusion, so open caps that have since settled still count and a failing attempt can be marked exhausted, raise retroactive debt and block later governed work on spend that no longer exists. DONE means exhaustion at conclusion is decided on a fresh projection taken at that instant, excluding the concluding run from both the run records and the durable attempts, retry-safe after a partial commit, with every production store that concludes a governed run carrying the projection seam
 - Origin: main
 - Next step: PRE-BUILD READ DONE (gerp-read1, Sol, 2026-09-10 06:55Z): section 4.3 read against main with m1's dispatch-cap chain applied: seven material findings, all accepted. Two the design could not know: proof-reservation minutes joined ReservedJobMinutes and need a snapshot term (GER-01); stoptransition/families.go is a fourth terminalizing store site (GER-02). Also: post-debt retry cannot converge under RecordTerminal's rule (GER-03; coordinator's decision: the caller adopts its own unpruned attempt's fields), the exclusion must keep the duplicate-owner check (GER-04), ObserveGovernedRun must exclude the concluding run too (GER-05), the comparison can wrap uint64 (GER-06), ProjectSpend gets Store.Now not EndedAt (GER-07), and the binding-failure diagnostic string is fixed (coordinator's decision). BUILD BRIEF DRAFTED in m1b's scratchpad with nine constraints and their fixtures; register there too. THE BUILD WAITS for dispatch-cap-necessity to land (it rewrites budget.go); then dispatch the build (Sol), closing read, land. Every landing on this seat also waits on goal testing-contract-owns-record-paths.
 - OpenedAt: 2026-09-02T18:37:29Z
-- Revision: 15
+- Revision: 16
 - Budget: elapsedLimit=4h attemptLimit=10 reservedJobMinutesLimit=240 activeJobLimit=1 reviewRoundLimit=3
 - BudgetExceptions: 0
 - Approved: by=human:Wido at=2026-09-06T06:53:37Z revision=3 opid=A35EHY2TGAWCCFA1Q1J0WZGS35-m1-a4f8999f authority=proven digest=2163cb860d8d3cead232af07a67468d33497865331ba06537617e18ab2ba2eca
 - Sliced: machine=m1b lineage=main-1788680071-18713-e76d5d revision=12 at=2026-09-10T04:32:06Z
-- Claimed: machine=m1b lineage=main-1788680071-18713-e76d5d at=2026-09-10T04:30:08Z revision=12 accountingRevision=12
-- StopCapability: generation=12 revision=12 machine=m1b claimEpoch=1 fenceEpoch=0
+- Parked: by=m1b+main-1788680071-18713-e76d5d at=2026-09-10T04:57:31Z because=Parked 2026-09-10 07:10Z: the build is ready to dispatch (nine-constraint brief in m1b's scratchpad, from the pre-build read gerp-read1) but must wait for dispatch-cap-necessity to land, because that unlanded chain rewrites internal/dispatch/budget.go and governed.go, the files section 4.3 edits. Unpark and dispatch the build the moment dispatch-cap-necessity is on main; the record should carry a BlockedBy edge on it so the frontier stops offering this goal early.
 
 History:
 - 2026-09-02T18:37:29Z HPTWTQNYQHY9BEMEMGQN383W4Y-m1b-fad3674e open actor=m1b+main-1788333346-60696-6a3256 targets=governed-exhaustion-reprojection
@@ -31,4 +30,5 @@ History:
 - 2026-09-10T04:32:06Z 1VKY4X3PTCM0QAYD8YD14VTQSF-m1b-c6925449 slice-start actor=m1b+main-1788680071-18713-e76d5d targets=governed-exhaustion-reprojection
 - 2026-09-10T04:32:16Z VF20EE0QG1KX0KVXE1QNJ3M9A2-m1b-c6925449 edit actor=m1b+main-1788680071-18713-e76d5d targets=governed-exhaustion-reprojection
 - 2026-09-10T04:57:05Z BVAA1GRDMZ463D6N6ZY38ZC1VQ-m1b-c6925449 edit actor=m1b+main-1788680071-18713-e76d5d targets=governed-exhaustion-reprojection
-Integrity: sha256=bd2fda50bfe36d36cf4f6e5b56a6068b2e62cd145cb2f5a630c50f4db7b25ff7
+- 2026-09-10T04:57:31Z QFJBZZCDNCQS7PBGW33PBJ3DJQ-m1b-c6925449 park actor=m1b+main-1788680071-18713-e76d5d targets=governed-exhaustion-reprojection reason=Parked 2026-09-10 07:10Z: the build is ready to dispatch (nine-constraint brief in m1b's scratchpad, from the pre-build read gerp-read1) but must wait for dispatch-cap-necessity to land, because that unlanded chain rewrites internal/dispatch/budget.go and governed.go, the files section 4.3 edits. Unpark and dispatch the build the moment dispatch-cap-necessity is on main; the record should carry a BlockedBy edge on it so the frontier stops offering this goal early.
+Integrity: sha256=b700007b32092dc5bf912f9c0f9d163a403a9c8e5f1d78a33f91b697a3ad9fad
