@@ -7,10 +7,11 @@
 - Origin: main
 - Next step: Appetite: 2h. Adopt the round-7 diff of chain bsws-build1b-20260909 (admission.go and its tests) into a fresh chain's round 1 on current trunk, run one independent code-critic read, land, then prove live: hold a fenced claim on this machine, claim another goal, dispatch a job on it, watch it start.
 - OpenedAt: 2026-09-10T08:18:11Z
-- Revision: 3
+- Revision: 4
 - Budget: elapsedLimit=1d attemptLimit=10 reservedJobMinutesLimit=1200 activeJobLimit=1 reviewRoundLimit=3
 - BudgetExceptions: 0
 - Approved: by=human:Wido at=2026-09-10T09:05:38Z revision=2 opid=9QG50YD61TG6WDQH6RPDW5W9GJ-m1-c6925449 authority=proven digest=2573697b22b5c7aef90b62309318320e91921760d8db98c1cf7d1b9a0c383701
+- Sliced: machine=m1d lineage=main-1788941004-20871-6e7a43 revision=3 at=2026-09-10T09:06:42Z
 - Claimed: machine=m1d lineage=main-1788941004-20871-6e7a43 at=2026-09-10T09:06:03Z revision=3 accountingRevision=3
 - StopCapability: generation=3 revision=3 machine=m1d claimEpoch=3 fenceEpoch=0
 
@@ -18,4 +19,5 @@ History:
 - 2026-09-10T08:18:11Z QK0QJFZXFE0QWHTPRCHNF3C2S1-m1-c6925449 open actor=human:Wido targets=dispatch-admission-refuses-on-a-fenced-sibling
 - 2026-09-10T09:05:38Z 9QG50YD61TG6WDQH6RPDW5W9GJ-m1-c6925449 approve actor=human:Wido targets=dispatch-admission-refuses-on-a-fenced-sibling
 - 2026-09-10T09:06:03Z 3CV1WQ8SFJTT99MFV6EMFDQ9D5-m1d-a38bcdde claim actor=m1d+main-1788941004-20871-6e7a43 targets=dispatch-admission-refuses-on-a-fenced-sibling
-Integrity: sha256=ba52dc5968e21e5c7df0fe13af28c9675ec473b45814569dd223632909e8423b
+- 2026-09-10T09:06:42Z F33G4RS31MRHCPNWX48SWS0Q4W-m1d-a38bcdde slice-start actor=m1d+main-1788941004-20871-6e7a43 targets=dispatch-admission-refuses-on-a-fenced-sibling
+Integrity: sha256=9a28217fb13a663a73340a5822436bcccaf61dfd86b4bd7bf7f5346f2eb98d2f
