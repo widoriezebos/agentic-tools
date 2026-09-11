@@ -9,6 +9,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"runtime"
 	"strconv"
 	"strings"
 	"time"
@@ -645,6 +646,23 @@ type proofRunLimits struct {
 	sectionCap      time.Duration
 	evidenceTimeout time.Duration
 	evidenceMax     int64
+	concurrency     int
+}
+
+// defaultTestingConcurrency is how many groups of one stage run at once when
+// metasystem.conf names no testing.concurrency: half the cores, at most six,
+// at least one. Section groups spawn process trees (stewards, runners, fake
+// adapters), so the cap is about processes, not cores: an 18-core Mac runs
+// six, a 4-vCPU VM runs two.
+func defaultTestingConcurrency() int {
+	cap := runtime.NumCPU() / 2
+	if cap > 6 {
+		cap = 6
+	}
+	if cap < 1 {
+		cap = 1
+	}
+	return cap
 }
 
 func proofRunConfigProblems(confPath string) ([]string, error) {
@@ -658,6 +676,7 @@ func proofRunConfigProblems(confPath string) ([]string, error) {
 		{"suite.section-cap-min", 1, 600},
 		{"suite.evidence-copy-timeout-sec", 1, 600},
 		{"suite.evidence-copy-max-mb", 1, 10240},
+		{"testing.concurrency", 1, 64},
 	} {
 		raw, found, err := config.ConfLookup(confPath, knob.name)
 		if err != nil {
@@ -704,11 +723,16 @@ func resolveProofRunLimits(confPath string) (proofRunLimits, error) {
 	if err != nil {
 		return proofRunLimits{}, err
 	}
+	concurrency, err := read("testing.concurrency", defaultTestingConcurrency(), 1, 64)
+	if err != nil {
+		return proofRunLimits{}, err
+	}
 	return proofRunLimits{
 		silence:         time.Duration(silence) * time.Minute,
 		sectionCap:      time.Duration(section) * time.Minute,
 		evidenceTimeout: time.Duration(evidenceTimeout) * time.Second,
 		evidenceMax:     int64(evidenceMB) * 1024 * 1024,
+		concurrency:     concurrency,
 	}, nil
 }
 

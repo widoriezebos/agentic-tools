@@ -1,0 +1,43 @@
+# The deep battery under ten minutes
+
+Owner: the proof runner (`internal/proofrun`) and its launcher knobs in
+`cmd/metasystem/proof_run.go`. Goal: deep-battery-under-ten-minutes, slices
+2, 3 and 5 of `plans/suite-speed-plan.md`. Ruling R-16 stands: runs continue
+and collect; nothing stops early.
+
+## Slice 2: groups run side by side inside one attempt
+
+Every group already runs in its own detached worktree of the candidate tree
+with its own logs, so the groups of one stage are independent. `RunTestPlan`
+now runs each stage's groups under a bounded pool and appends their results
+in plan order; the stage order stays canary, standard, deep. The progress
+file and the `TEST-GROUP` lines on stdout are written through one mutex, so
+the launcher's silence watch and the structure check see the same events as
+before, interleaved. A group that fails still preserves its evidence while
+the others run. A progress-record failure stops new launches; the groups
+already running finish and report, and the failure is returned after the
+stage drains. The pool lives inside the single worker process: no scheduler,
+no daemon, no second proof store.
+
+The cap is `testing.concurrency` in `metasystem.conf`, 1 to 64. Absent, it
+is half the cores, at most six, at least one: six on the 18-core Mac, two on
+the 4-vCPU VM. Section groups spawn process trees, so the cap is about
+processes, not cores. Wido decides the VM's committed value if two is wrong.
+
+Expected on the Mac: the cadence battery drops from about 56 minutes to the
+length of its longest group, the dispatcher section at about 9.5 minutes.
+
+## Slices 3 and 5: sharding and the race gate
+
+Not in this landing. With the pool the wall time equals the longest group;
+sharding the two coverage groups and splitting the big sections is the next
+cut and reuses this pool. The race gate follows the shards.
+
+## Proof
+
+- `TestStageRunsIndependentGroupsSideBySide`: three two-second groups under a
+  cap of three finish in under five seconds, keep plan order, count their
+  launches and child time, and record one start and one end each.
+- `TestStageWithCapOfOneRunsSerially`: the old behaviour under a cap of one.
+- Cadence runs on the Mac after landing: the attempt ids and wall times are
+  in the goal's conclusion.

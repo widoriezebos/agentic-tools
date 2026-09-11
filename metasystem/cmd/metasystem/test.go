@@ -850,6 +850,7 @@ func runTestRun(args []string) int {
 	runRequest.PreparedGroups, runRequest.PreparationLaunches = preparedGroups, preparationLaunches
 	runRequest.PreparationDurationMS, runRequest.CommandStartedAt = preparationDuration, preRequest.CommandStartedAt
 	runRequest.EvidenceTimeoutMS, runRequest.EvidenceMaxBytes = limits.evidenceTimeout.Milliseconds(), limits.evidenceMax
+	runRequest.Concurrency = limits.concurrency
 	packetPath, workerResultPath := filepath.Join(pathsRoot, "request.json"), filepath.Join(pathsRoot, "result.json")
 	if err := writePrivateJSON(packetPath, runRequest); err != nil {
 		fmt.Fprintln(os.Stderr, "metasystem test run:", err)

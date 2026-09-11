@@ -17,6 +17,7 @@ import (
 	"runtime"
 	"sort"
 	"strings"
+	"sync"
 	"syscall"
 	"time"
 
@@ -53,6 +54,9 @@ type TestRunRequest struct {
 	PreparationDurationMS        int64
 	EvidenceTimeoutMS            int64
 	EvidenceMaxBytes             int64
+	// Concurrency bounds how many groups of one stage run at once; zero or
+	// one runs them in plan order, one after another.
+	Concurrency int
 }
 
 // PreparedGroupExecution is immutable metadata collected once before
@@ -83,7 +87,9 @@ func RunTestPlan(ctx context.Context, request TestRunRequest) (TestResult, int, 
 		groups[group.ID] = group
 	}
 	firstStatus := 0
+	progress := &progressWriter{path: request.ProgressPath}
 	for _, stage := range request.Plan.Stages {
+		var runnable []string
 		for _, id := range stage.Groups {
 			if reused, ok := request.Reused[id]; ok {
 				if err := validateRetainedGroupReuse(request.ControlRoot, id, reused); err != nil {
@@ -105,18 +111,19 @@ func RunTestPlan(ctx context.Context, request TestRunRequest) (TestResult, int, 
 				}
 				continue
 			}
-			if err := testGroupProgress(request.ProgressPath, id, "start", "", ""); err != nil {
-				return result, 1, err
-			}
-			groupResult := runTestGroup(ctx, request, groups[id])
+			runnable = append(runnable, id)
+		}
+		// Groups of one stage are independent (each runs in its own detached
+		// worktree of the candidate tree), so a bounded pool runs them side by
+		// side; results are appended in plan order, and the stage order stays
+		// canary, standard, deep. The wall time of a stage is its longest group.
+		stageResults, progressErr := runStageGroups(ctx, request, groups, runnable, progress)
+		for _, groupResult := range stageResults {
 			result.Groups = append(result.Groups, groupResult)
-			if err := testGroupProgress(request.ProgressPath, id, "end", groupResult.Status, groupResult.NotRunReason); err != nil {
-				return result, 1, err
-			}
 			result.ChildDurationMS += groupResult.DurationMS
 			result.LaunchCounts.Other += groupResult.OtherLaunches
 			if groupResult.NativeLaunched {
-				switch groups[id].Kind {
+				switch groups[groupResult.ID].Kind {
 				case "build":
 					result.LaunchCounts.Build++
 				default:
@@ -133,6 +140,9 @@ func RunTestPlan(ctx context.Context, request TestRunRequest) (TestResult, int, 
 				}
 			}
 		}
+		if progressErr != nil {
+			return result, 1, progressErr
+		}
 	}
 	result.EndedAt, result.DurationMS = resultDuration(started)
 	result.Cost.ActualDurationMS, result.Cost.ChildDurationMS = result.DurationMS, result.ChildDurationMS
@@ -143,6 +153,85 @@ func RunTestPlan(ctx context.Context, request TestRunRequest) (TestResult, int, 
 		firstStatus = 1
 	}
 	return result, firstStatus, nil
+}
+
+// progressWriter serializes the progress file and the TEST-GROUP lines on
+// stdout, which several groups now write at once.
+type progressWriter struct {
+	mu   sync.Mutex
+	path string
+}
+
+func (w *progressWriter) record(group, event, status, reason string) error {
+	w.mu.Lock()
+	defer w.mu.Unlock()
+	return testGroupProgress(w.path, group, event, status, reason)
+}
+
+// runStageGroups runs one stage's groups under the request's concurrency cap
+// and returns their results in plan order. A progress-record failure stops
+// new launches; the groups already running still finish and report, so no
+// evidence is lost, and the failure is returned after the stage drains.
+func runStageGroups(ctx context.Context, request TestRunRequest, groups map[string]testpolicy.Group, ids []string, progress *progressWriter) ([]GroupResult, error) {
+	results := make([]GroupResult, len(ids))
+	if len(ids) == 0 {
+		return results, nil
+	}
+	cap := request.Concurrency
+	if cap < 1 {
+		cap = 1
+	}
+	if cap > len(ids) {
+		cap = len(ids)
+	}
+	var (
+		wg        sync.WaitGroup
+		errMu     sync.Mutex
+		firstErr  error
+		slots     = make(chan struct{}, cap)
+		stopped   = make(chan struct{})
+		stoppedMu sync.Once
+	)
+	stop := func(err error) {
+		errMu.Lock()
+		if firstErr == nil {
+			firstErr = err
+		}
+		errMu.Unlock()
+		stoppedMu.Do(func() { close(stopped) })
+	}
+	for index, id := range ids {
+		select {
+		case <-stopped:
+			results[index] = GroupResult{ID: id, Kind: groups[id].Kind, Obligations: append([]string(nil), groups[id].Obligations...),
+				InputDigest: request.CandidateTree, InputManifest: append([]string(nil), groups[id].Inputs...), CWD: groups[id].CWD,
+				Status: "not-run", NotRunReason: "progress record failed before this group launched",
+				ToolIdentities: map[string]string{}, ReportDigests: map[string]string{}}
+			continue
+		default:
+		}
+		slots <- struct{}{}
+		wg.Add(1)
+		go func(index int, id string) {
+			defer wg.Done()
+			defer func() { <-slots }()
+			if err := progress.record(id, "start", "", ""); err != nil {
+				stop(err)
+				results[index] = GroupResult{ID: id, Kind: groups[id].Kind, Obligations: append([]string(nil), groups[id].Obligations...),
+					InputDigest: request.CandidateTree, InputManifest: append([]string(nil), groups[id].Inputs...), CWD: groups[id].CWD,
+					Status: "not-run", NotRunReason: "record testing group start: " + err.Error(),
+					ToolIdentities: map[string]string{}, ReportDigests: map[string]string{}}
+				return
+			}
+			groupResult := runTestGroup(ctx, request, groups[id])
+			results[index] = groupResult
+			if err := progress.record(id, "end", groupResult.Status, groupResult.NotRunReason); err != nil {
+				stop(err)
+			}
+		}(index, id)
+	}
+	wg.Wait()
+	return results, firstErr
 }
 
 func testGroupProgress(path, group, event, status, reason string) error {
