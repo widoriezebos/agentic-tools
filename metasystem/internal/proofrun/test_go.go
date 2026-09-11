@@ -73,7 +73,7 @@ func goArgumentsCached(ctx context.Context, group testpolicy.Group, cwd string, 
 	if err != nil {
 		return nil, nil, discovery, started, err
 	}
-	args := []string{"go", "test", "-json", "-count=1"}
+	args := []string{"go", "test", "-json", "-count=1", "-timeout", "0"}
 	if group.Race {
 		args = append(args, "-race")
 	}
@@ -137,16 +137,23 @@ func loadGoPackageCatalog(ctx context.Context, moduleRoot, moduleName string, en
 	if err != nil {
 		return goPackageCatalog{}, false, err
 	}
-	var stdout, stderr bytes.Buffer
-	command.Stdout, command.Stderr = &stdout, &stderr
-	if err := command.Start(); err != nil {
-		return goPackageCatalog{}, false, fmt.Errorf("start go package discovery: %w", err)
+	var stdout, stderr synchronizedBuffer
+	activity := newOutputActivity(time.Now())
+	command.Stdout = &activityWriter{activity: activity, writer: &stdout}
+	command.Stderr = &activityWriter{activity: activity, writer: &stderr}
+	outcome := superviseCommand(command, supervisorOptions{Context: ctx, Activity: activity,
+		Limits: supervisorLimits{CPUBudgetSeconds: 60}, SampleInterval: supervisorSampleInterval})
+	if !outcome.Started {
+		return goPackageCatalog{}, false, fmt.Errorf("start go package discovery: %w", outcome.WaitErr)
 	}
-	waitErr := command.Wait()
+	if outcome.Verdict != "" {
+		return goPackageCatalog{}, true, fmt.Errorf("go package discovery %s: %s", outcome.Verdict, outcome.Reason)
+	}
+	waitErr := outcome.WaitErr
 	if waitErr != nil {
 		return goPackageCatalog{}, true, fmt.Errorf("go package discovery failed: %w: %s", waitErr, strings.TrimSpace(stderr.String()))
 	}
-	decoder := json.NewDecoder(&stdout)
+	decoder := json.NewDecoder(bytes.NewReader(stdout.Bytes()))
 	canonicalModuleRoot := canonicalGoPath(moduleRoot)
 	allPackages := map[string]goListPackage{}
 	for {
@@ -362,9 +369,7 @@ func CheckNativeDiscovery(projectRoot, installation string, contract testpolicy.
 	for _, group := range contract.Groups {
 		switch group.Adapter {
 		case "go":
-			ctx, cancel := context.WithTimeout(context.Background(), 30*time.Minute)
-			_, expected, _, _, err := goArgumentsCached(ctx, group, filepath.Join(projectRoot, filepath.FromSlash(group.CWD)), os.Environ(), discoveryCache)
-			cancel()
+			_, expected, _, _, err := goArgumentsCached(context.Background(), group, filepath.Join(projectRoot, filepath.FromSlash(group.CWD)), os.Environ(), discoveryCache)
 			if err != nil {
 				return fmt.Errorf("testing group %s native discovery: %w", group.ID, err)
 			}

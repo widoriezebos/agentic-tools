@@ -175,6 +175,15 @@ func TestStageCollectsIndependentFailuresAndNativePrerequisiteResults(t *testing
 	if byID["first"].Status != "failed" || byID["second"].Status != "failed" || byID["later"].Status != "passed" || byID["deep"].Status != "failed" || !byID["deep"].CollectionComplete {
 		t.Fatalf("independent cross-stage collection results=%+v", result.Groups)
 	}
+	for id, group := range byID {
+		if group.ProgressRule != "cpu-budget/none+zero-window/30m" || group.LongestSilentSeconds < 0 || group.LongestZeroCPUSeconds < 0 {
+			t.Fatalf("group %s omitted progress supervision record: %+v", id, group)
+		}
+		logged, readErr := os.ReadFile(group.LogPath)
+		if readErr != nil || digestBytes(logged) != group.LogDigest {
+			t.Fatalf("group %s tee log differs from parsed buffer: err=%v", id, readErr)
+		}
+	}
 	run, err := ReadLatestProgressRun(progress)
 	if err != nil {
 		t.Fatal(err)

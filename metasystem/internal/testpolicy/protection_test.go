@@ -49,6 +49,32 @@ func TestProtectedContractUnionsCandidateExtensionsWithoutReplacingBaseGroups(t 
 	}
 }
 
+func TestProtectedContractKeepsBaseCPUBudgetAndAcceptsNewGroupBudget(t *testing.T) {
+	base, candidate := fixtureContract(), fixtureContract()
+	baseBudget, raisedBudget, newBudget := int64(40), int64(400), int64(25)
+	base.Groups[0].CPUBudgetSeconds = &baseBudget
+	candidate.Groups[0].CPUBudgetSeconds = &raisedBudget
+	candidate.Groups = append(candidate.Groups, Group{ID: "new-budgeted", Kind: "unit", Adapter: "go", CWD: ".",
+		Inputs: []string{"go.mod", "src/**"}, Platforms: []string{"any"}, TargetMS: 1000, CPUBudgetSeconds: &newBudget,
+		Packages: []string{"src"}, Tests: json.RawMessage(`"all"`)})
+
+	protected := ProtectedContract(base, candidate)
+	groups := groupMap(protected.Groups)
+	if groups["app-unit"].CPUBudgetSeconds == nil || *groups["app-unit"].CPUBudgetSeconds != baseBudget {
+		t.Fatalf("candidate raised protected CPU budget: %+v", groups["app-unit"].CPUBudgetSeconds)
+	}
+	if groups["new-budgeted"].CPUBudgetSeconds == nil || *groups["new-budgeted"].CPUBudgetSeconds != newBudget {
+		t.Fatalf("new group lost its candidate CPU budget: %+v", groups["new-budgeted"].CPUBudgetSeconds)
+	}
+	for _, invalid := range []int64{0, -1} {
+		contract := fixtureContract()
+		contract.Groups[0].CPUBudgetSeconds = &invalid
+		if err := contract.Validate(); err == nil {
+			t.Fatalf("invalid CPU budget %d was accepted", invalid)
+		}
+	}
+}
+
 func TestMainConformanceAcceptedPolicyBoundaries(t *testing.T) {
 	t.Run("low-risk-standard-excludes-deep-requirements", func(t *testing.T) {
 		contract := fixtureContract()

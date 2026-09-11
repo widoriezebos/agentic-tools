@@ -135,6 +135,10 @@ func cloneContract(value Contract) Contract {
 
 func cloneGroup(value Group) Group {
 	result := value
+	if value.CPUBudgetSeconds != nil {
+		budget := *value.CPUBudgetSeconds
+		result.CPUBudgetSeconds = &budget
+	}
 	result.Inputs = append([]string(nil), value.Inputs...)
 	result.Outputs = append([]string(nil), value.Outputs...)
 	result.Tools = append([]Tool(nil), value.Tools...)

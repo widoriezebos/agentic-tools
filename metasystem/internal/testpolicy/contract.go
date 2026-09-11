@@ -82,27 +82,28 @@ type ExpectedTest struct {
 }
 
 type Group struct {
-	ID             string            `json:"id"`
-	Kind           string            `json:"kind"`
-	Adapter        string            `json:"adapter"`
-	CWD            string            `json:"cwd"`
-	Inputs         []string          `json:"inputs"`
-	Outputs        []string          `json:"outputs"`
-	Tools          []Tool            `json:"tools"`
-	ExternalInputs []ExternalInput   `json:"externalInputs,omitempty"`
-	Obligations    []string          `json:"obligations"`
-	Platforms      []string          `json:"platforms"`
-	TargetMS       int64             `json:"targetMs"`
-	Packages       []string          `json:"packages,omitempty"`
-	Tests          json.RawMessage   `json:"tests,omitempty"`
-	Race           bool              `json:"race,omitempty"`
-	Coverage       bool              `json:"coverage,omitempty"`
-	Env            map[string]string `json:"env,omitempty"`
-	Section        string            `json:"section,omitempty"`
-	Argv           []string          `json:"argv,omitempty"`
-	Reports        []string          `json:"reports,omitempty"`
-	Format         string            `json:"format,omitempty"`
-	ExpectedTests  []ExpectedTest    `json:"expectedTests,omitempty"`
+	ID               string            `json:"id"`
+	Kind             string            `json:"kind"`
+	Adapter          string            `json:"adapter"`
+	CWD              string            `json:"cwd"`
+	Inputs           []string          `json:"inputs"`
+	Outputs          []string          `json:"outputs"`
+	Tools            []Tool            `json:"tools"`
+	ExternalInputs   []ExternalInput   `json:"externalInputs,omitempty"`
+	Obligations      []string          `json:"obligations"`
+	Platforms        []string          `json:"platforms"`
+	TargetMS         int64             `json:"targetMs"`
+	CPUBudgetSeconds *int64            `json:"cpuBudgetSeconds,omitempty"`
+	Packages         []string          `json:"packages,omitempty"`
+	Tests            json.RawMessage   `json:"tests,omitempty"`
+	Race             bool              `json:"race,omitempty"`
+	Coverage         bool              `json:"coverage,omitempty"`
+	Env              map[string]string `json:"env,omitempty"`
+	Section          string            `json:"section,omitempty"`
+	Argv             []string          `json:"argv,omitempty"`
+	Reports          []string          `json:"reports,omitempty"`
+	Format           string            `json:"format,omitempty"`
+	ExpectedTests    []ExpectedTest    `json:"expectedTests,omitempty"`
 }
 
 func Decode(data []byte) (Contract, error) {
@@ -242,6 +243,9 @@ func validateGroup(group Group) error {
 	kinds := map[string]bool{"unit": true, "component": true, "integration": true, "e2e": true, "performance": true, "static": true, "build": true}
 	if !kinds[group.Kind] || group.CWD == "" || !validRelative(group.CWD) || len(group.Inputs) == 0 || len(group.Platforms) == 0 || group.TargetMS <= 0 {
 		return fmt.Errorf("kind, cwd, platforms, and positive targetMs are required")
+	}
+	if group.CPUBudgetSeconds != nil && *group.CPUBudgetSeconds <= 0 {
+		return fmt.Errorf("cpuBudgetSeconds must be a positive integer when present")
 	}
 	for _, path := range append(append([]string{}, group.Inputs...), group.Outputs...) {
 		if !validPathDeclaration(path) {

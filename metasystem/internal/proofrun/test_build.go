@@ -9,6 +9,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"io"
 	"io/fs"
 	"os"
 	"os/exec"
@@ -19,7 +20,6 @@ import (
 	"syscall"
 	"time"
 
-	"github.com/widoriezebos/agentic-tools/metasystem/internal/atomicfile"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/gittree"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/testpolicy"
 )
@@ -105,12 +105,12 @@ func RunTestPlan(ctx context.Context, request TestRunRequest) (TestResult, int, 
 				}
 				continue
 			}
-			if err := testGroupProgress(request.ProgressPath, id, "start", ""); err != nil {
+			if err := testGroupProgress(request.ProgressPath, id, "start", "", ""); err != nil {
 				return result, 1, err
 			}
 			groupResult := runTestGroup(ctx, request, groups[id])
 			result.Groups = append(result.Groups, groupResult)
-			if err := testGroupProgress(request.ProgressPath, id, "end", groupResult.Status); err != nil {
+			if err := testGroupProgress(request.ProgressPath, id, "end", groupResult.Status, groupResult.NotRunReason); err != nil {
 				return result, 1, err
 			}
 			result.ChildDurationMS += groupResult.DurationMS
@@ -145,7 +145,7 @@ func RunTestPlan(ctx context.Context, request TestRunRequest) (TestResult, int, 
 	return result, firstStatus, nil
 }
 
-func testGroupProgress(path, group, event, status string) error {
+func testGroupProgress(path, group, event, status, reason string) error {
 	if path == "" {
 		return nil
 	}
@@ -155,7 +155,7 @@ func testGroupProgress(path, group, event, status string) error {
 	}
 	// The launcher watches output growth separately from section boundaries.
 	// Emit actual group transitions into its pipe so completed work resets silence.
-	_, err := fmt.Fprintf(os.Stdout, "TEST-GROUP %s %s %s\n", event, group, status)
+	_, err := fmt.Fprintf(os.Stdout, "TEST-GROUP %s %s status=%s reason=%s\n", event, group, status, reason)
 	return err
 }
 
@@ -225,9 +225,11 @@ func NewTestResult(request TestRunRequest) TestResult {
 
 func runTestGroup(ctx context.Context, request TestRunRequest, group testpolicy.Group) (result GroupResult) {
 	started := time.Now().UTC()
+	limits, sampleInterval := groupSupervisorSettings(group.CPUBudgetSeconds)
 	result = GroupResult{ID: group.ID, Kind: group.Kind, Obligations: append([]string(nil), group.Obligations...),
 		InputDigest: request.CandidateTree, InputManifest: append([]string(nil), group.Inputs...), CWD: group.CWD,
-		ToolIdentities: map[string]string{}, ReportDigests: map[string]string{}, StartedAt: started.Format(time.RFC3339Nano)}
+		ToolIdentities: map[string]string{}, ReportDigests: map[string]string{}, StartedAt: started.Format(time.RFC3339Nano),
+		ProgressRule: progressRule(limits)}
 	detached, err := (gittree.Workspace{Dir: request.ProjectRoot}).NewDetachedWorktree(request.CandidateTree)
 	if err != nil {
 		result.Status = "invalid"
@@ -368,10 +370,38 @@ func runTestGroup(ctx context.Context, request TestRunRequest, group testpolicy.
 		result.EndedAt, result.DurationMS = resultDuration(started)
 		return result
 	}
-	var output bytes.Buffer
-	command.Stdout, command.Stderr = &output, &output
-	result.NativeLaunched = true
-	err = command.Run()
+	if err := os.MkdirAll(request.LogRoot, 0o700); err != nil {
+		result.Status, result.NotRunReason = "invalid", fmt.Sprintf("create group log directory: %v", err)
+		result.EndedAt, result.DurationMS = resultDuration(started)
+		return result
+	}
+	result.LogPath = filepath.Join(request.LogRoot, group.ID+".log")
+	if err := os.MkdirAll(filepath.Dir(result.LogPath), 0o700); err != nil {
+		result.Status, result.NotRunReason = "invalid", fmt.Sprintf("create group log parent: %v", err)
+		result.EndedAt, result.DurationMS = resultDuration(started)
+		return result
+	}
+	logFile, err := os.OpenFile(result.LogPath, os.O_CREATE|os.O_TRUNC|os.O_WRONLY, 0o600)
+	if err != nil {
+		result.Status, result.NotRunReason = "invalid", fmt.Sprintf("create group log: %v", err)
+		result.EndedAt, result.DurationMS = resultDuration(started)
+		return result
+	}
+	var output synchronizedBuffer
+	activity := newOutputActivity(time.Now())
+	tee := &activityWriter{activity: activity, writer: io.MultiWriter(&output, logFile)}
+	command.Stdout, command.Stderr = tee, tee
+	supervised := superviseCommand(command, supervisorOptions{Context: ctx, Limits: limits, SampleInterval: sampleInterval,
+		Activity: activity, StageResultPath: sectionReport})
+	closeErr := logFile.Close()
+	if supervised.RuleSuffix != "" {
+		result.ProgressRule += "+" + supervised.RuleSuffix
+	}
+	result.CPUSeconds = supervised.CPUSeconds
+	result.LongestSilentSeconds = supervised.LongestSilentSeconds
+	result.LongestZeroCPUSeconds = supervised.LongestZeroCPUSeconds
+	result.NativeLaunched = supervised.Started
+	err = supervised.WaitErr
 	exit := 0
 	if err != nil {
 		var exitErr *exec.ExitError
@@ -388,17 +418,25 @@ func runTestGroup(ctx context.Context, request TestRunRequest, group testpolicy.
 			result.NativeExitStatus = nil
 		}
 	}
+	if closeErr != nil && result.Status == "" {
+		result.Status, result.NotRunReason = "invalid", fmt.Sprintf("close group log: %v", closeErr)
+	}
+	if supervised.Verdict != "" && supervised.Verdict != "cancelled" {
+		result.Status = supervised.Verdict
+		result.NotRunReason = supervised.Reason
+		if supervised.Dump != "" {
+			result.NotRunReason += "; " + supervised.Dump
+		}
+	} else if supervised.Verdict == "cancelled" {
+		result.Status, result.NotRunReason = "cancelled", supervised.Reason
+	}
 	if result.Status != "unavailable" {
 		result.NativeExitStatus = &exit
 	}
 	// A native nonzero status is retained above. It is not an adapter parse
 	// error and must not overwrite the structured section/JUnit diagnostics.
 	err = nil
-	if mkErr := os.MkdirAll(request.LogRoot, 0o700); mkErr == nil {
-		result.LogPath = filepath.Join(request.LogRoot, group.ID+".log")
-		_ = atomicfile.WriteVolatile(result.LogPath, output.String())
-		result.LogDigest = digestBytes(output.Bytes())
-	}
+	result.LogDigest = digestBytes(output.Bytes())
 	if result.Status == "" {
 		switch group.Adapter {
 		case "go":

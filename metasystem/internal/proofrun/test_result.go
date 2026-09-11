@@ -28,37 +28,42 @@ type NativeTestIdentity struct {
 }
 
 type GroupResult struct {
-	ID                 string               `json:"id"`
-	Kind               string               `json:"kind"`
-	Obligations        []string             `json:"obligations"`
-	InputDigest        string               `json:"inputDigest"`
-	InputManifest      []string             `json:"inputManifest"`
-	ExecutionIdentity  string               `json:"executionIdentity"`
-	Argv               []string             `json:"argv"`
-	CWD                string               `json:"cwd"`
-	EnvironmentDigest  string               `json:"environmentDigest"`
-	ToolIdentities     map[string]string    `json:"toolIdentities"`
-	ExecutableDigests  map[string]string    `json:"executableDigests,omitempty"`
-	Status             string               `json:"status"`
-	NativeLaunched     bool                 `json:"nativeLaunched"`
-	OtherLaunches      int                  `json:"otherLaunches"`
-	NativeExitStatus   *int                 `json:"nativeExitStatus"`
-	Signal             *string              `json:"signal"`
-	Expected           []NativeTestIdentity `json:"expected"`
-	Observed           []NativeTestIdentity `json:"observed"`
-	Missing            []NativeTestIdentity `json:"missing"`
-	Blocked            []NativeTestIdentity `json:"blocked"`
-	Unexpected         []NativeTestIdentity `json:"unexpected"`
-	CollectionComplete bool                 `json:"collectionComplete"`
-	LogPath            string               `json:"logPath"`
-	LogDigest          string               `json:"logDigest"`
-	ReportDigests      map[string]string    `json:"reportDigests"`
-	StartedAt          string               `json:"startedAt,omitempty"`
-	EndedAt            string               `json:"endedAt,omitempty"`
-	DurationMS         int64                `json:"durationMs"`
-	ReuseAttempt       string               `json:"reuseAttempt,omitempty"`
-	NotRunReason       string               `json:"notRunReason,omitempty"`
-	BlockingGroups     []string             `json:"blockingGroups,omitempty"`
+	ID                    string               `json:"id"`
+	Kind                  string               `json:"kind"`
+	Obligations           []string             `json:"obligations"`
+	InputDigest           string               `json:"inputDigest"`
+	InputManifest         []string             `json:"inputManifest"`
+	ExecutionIdentity     string               `json:"executionIdentity"`
+	Argv                  []string             `json:"argv"`
+	CWD                   string               `json:"cwd"`
+	EnvironmentDigest     string               `json:"environmentDigest"`
+	ToolIdentities        map[string]string    `json:"toolIdentities"`
+	ExecutableDigests     map[string]string    `json:"executableDigests,omitempty"`
+	Status                string               `json:"status"`
+	ProgressRule          string               `json:"progressRule"`
+	CPUSeconds            float64              `json:"cpuSeconds"`
+	LongestSilentSeconds  int64                `json:"longestSilentSeconds"`
+	LongestZeroCPUSeconds int64                `json:"longestZeroCpuSeconds"`
+	ProgressReadings      []string             `json:"progressReadings,omitempty"`
+	NativeLaunched        bool                 `json:"nativeLaunched"`
+	OtherLaunches         int                  `json:"otherLaunches"`
+	NativeExitStatus      *int                 `json:"nativeExitStatus"`
+	Signal                *string              `json:"signal"`
+	Expected              []NativeTestIdentity `json:"expected"`
+	Observed              []NativeTestIdentity `json:"observed"`
+	Missing               []NativeTestIdentity `json:"missing"`
+	Blocked               []NativeTestIdentity `json:"blocked"`
+	Unexpected            []NativeTestIdentity `json:"unexpected"`
+	CollectionComplete    bool                 `json:"collectionComplete"`
+	LogPath               string               `json:"logPath"`
+	LogDigest             string               `json:"logDigest"`
+	ReportDigests         map[string]string    `json:"reportDigests"`
+	StartedAt             string               `json:"startedAt,omitempty"`
+	EndedAt               string               `json:"endedAt,omitempty"`
+	DurationMS            int64                `json:"durationMs"`
+	ReuseAttempt          string               `json:"reuseAttempt,omitempty"`
+	NotRunReason          string               `json:"notRunReason,omitempty"`
+	BlockingGroups        []string             `json:"blockingGroups,omitempty"`
 }
 
 type LaunchCounts struct {
@@ -110,7 +115,7 @@ func ValidateTestResult(result TestResult) error {
 			if !group.CollectionComplete || group.ReuseAttempt == "" {
 				return fmt.Errorf("reused group %s has no successful source", group.ID)
 			}
-		case "failed", "invalid", "unavailable", "cancelled":
+		case "failed", "invalid", "unavailable", "cancelled", "runaway", "dead":
 		case "not-run":
 			if group.NativeLaunched || group.StartedAt != "" || group.EndedAt != "" || group.NativeExitStatus != nil || group.NotRunReason == "" {
 				return fmt.Errorf("not-run group %s invents execution facts or lacks a reason", group.ID)
