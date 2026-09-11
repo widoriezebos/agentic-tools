@@ -333,7 +333,18 @@ func runShardedGoGroup(ctx context.Context, request TestRunRequest, group testpo
 		err     error
 	}
 	runs := make([]shardRun, shards)
+	// An error while launching a later shard must not leave the earlier
+	// shards running inside a worktree the caller is about to remove: the
+	// shards share one cancelable context, and the launch loop's failures
+	// cancel it and wait before returning (a critic's finding, 2026-09-12).
+	shardCtx, cancelShards := context.WithCancel(ctx)
+	defer cancelShards()
 	var wg sync.WaitGroup
+	launchFailed := func(err error) (supervisorOutcome, error, string, error) {
+		cancelShards()
+		wg.Wait()
+		return supervisorOutcome{}, nil, "", err
+	}
 	for index := range partitions {
 		args := []string{"go", "test", "-json", "-count=1", "-timeout", "0"}
 		if group.Race {
@@ -353,7 +364,7 @@ func runShardedGoGroup(ctx context.Context, request TestRunRequest, group testpo
 		shardDir := filepath.Join(coverageRoot, fmt.Sprintf("shard-%d", index+1))
 		if group.Coverage {
 			if err := os.MkdirAll(shardDir, 0o700); err != nil {
-				return supervisorOutcome{}, nil, "", fmt.Errorf("create shard coverage directory: %w", err)
+				return launchFailed(fmt.Errorf("create shard coverage directory: %w", err))
 			}
 			// The test binary writes its counters here only at exit, so for
 			// the shard's whole run the directory would stand empty, and the
@@ -363,18 +374,18 @@ func runShardedGoGroup(ctx context.Context, request TestRunRequest, group testpo
 			// directory does not exist"). The marker says a writer is coming;
 			// covdata ignores it.
 			if err := os.WriteFile(filepath.Join(shardDir, ".pending"), []byte(group.ID+"\n"), 0o600); err != nil {
-				return supervisorOutcome{}, nil, "", fmt.Errorf("mark shard coverage directory: %w", err)
+				return launchFailed(fmt.Errorf("mark shard coverage directory: %w", err))
 			}
 			args = append(args, "-args", "-test.gocoverdir="+shardDir)
 		}
 		runs[index].logPath = fmt.Sprintf("%s.shard-%d.log", strings.TrimSuffix(logPath, ".log"), index+1)
-		command, err := explicitEnvironmentCommand(ctx, cwd, environment, args)
+		command, err := explicitEnvironmentCommand(shardCtx, cwd, environment, args)
 		if err != nil {
-			return supervisorOutcome{}, nil, "", err
+			return launchFailed(err)
 		}
 		logFile, err := os.OpenFile(runs[index].logPath, os.O_CREATE|os.O_TRUNC|os.O_WRONLY, 0o600)
 		if err != nil {
-			return supervisorOutcome{}, nil, "", fmt.Errorf("create shard log: %w", err)
+			return launchFailed(fmt.Errorf("create shard log: %w", err))
 		}
 		wg.Add(1)
 		go func(index int, command *exec.Cmd, logFile *os.File) {
@@ -382,7 +393,7 @@ func runShardedGoGroup(ctx context.Context, request TestRunRequest, group testpo
 			activity := newOutputActivity(time.Now())
 			tee := &activityWriter{activity: activity, writer: io.MultiWriter(&runs[index].output, logFile)}
 			command.Stdout, command.Stderr = tee, tee
-			runs[index].outcome = superviseCommand(command, supervisorOptions{Context: ctx, Limits: limits, SampleInterval: sampleInterval, Activity: activity})
+			runs[index].outcome = superviseCommand(command, supervisorOptions{Context: shardCtx, Limits: limits, SampleInterval: sampleInterval, Activity: activity})
 			runs[index].err = logFile.Close()
 		}(index, command, logFile)
 	}
@@ -413,8 +424,16 @@ func runShardedGoGroup(ctx context.Context, request TestRunRequest, group testpo
 		}
 		output.Write(run.output.Bytes())
 	}
-	if err := os.WriteFile(logPath, output.Bytes(), 0o600); err != nil {
-		return merged, closeErr, "", fmt.Errorf("write group log: %w", err)
+	// The merged percentages are appended to the group's own output before
+	// the log is written and digested, so the retained log carries the
+	// numbers the floor verdict used, not only the shards' partial ones
+	// (a critic's finding, 2026-09-12); the caller receives no separate
+	// merge text.
+	writeLog := func() error {
+		if err := os.WriteFile(logPath, output.Bytes(), 0o600); err != nil {
+			return fmt.Errorf("write group log: %w", err)
+		}
+		return nil
 	}
 	coverageMerge := ""
 	if group.Coverage && merged.Started {
@@ -424,10 +443,12 @@ func runShardedGoGroup(ctx context.Context, request TestRunRequest, group testpo
 		}
 		percent, err := explicitEnvironmentCommand(ctx, cwd, environment, []string{"go", "tool", "covdata", "percent", "-i=" + strings.Join(dirs, ",")})
 		if err != nil {
+			_ = writeLog()
 			return merged, closeErr, "", err
 		}
 		data, err := percent.CombinedOutput()
 		if err != nil {
+			_ = writeLog()
 			return merged, closeErr, "", fmt.Errorf("merge shard coverage: %v: %s", err, strings.TrimSpace(string(data)))
 		}
 		// The merged percentages join the group's go test -json stream as
@@ -441,6 +462,7 @@ func runShardedGoGroup(ctx context.Context, request TestRunRequest, group testpo
 				event, err := json.Marshal(goEvent{Action: "output", Package: fields[0],
 					Output: fmt.Sprintf("ok  \t%s\t0.000s\tcoverage: %s of statements\n", fields[0], fields[2])})
 				if err != nil {
+					_ = writeLog()
 					return merged, closeErr, "", err
 				}
 				lines.Write(event)
@@ -448,8 +470,12 @@ func runShardedGoGroup(ctx context.Context, request TestRunRequest, group testpo
 			}
 		}
 		coverageMerge = "\n" + lines.String()
+		output.Write([]byte(coverageMerge))
 	}
-	return merged, closeErr, coverageMerge, nil
+	if err := writeLog(); err != nil {
+		return merged, closeErr, "", err
+	}
+	return merged, closeErr, "", nil
 }
 
 func testGroupProgress(path, group, event, status, reason string) error {

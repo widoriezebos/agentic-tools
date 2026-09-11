@@ -697,8 +697,13 @@ done
 # The timeout matches the unit run; go test's own ten-minute default is what
 # a loaded box trips. Its verdict is read after the unit stage's.
 cmd_log=$(mktemp "${TMPDIR:-/tmp}/metasystem-gate-cmd.XXXXXX")
+# The run gets its own process group (job control on for the one launch),
+# because a signal to the go test driver alone leaves the compiled test
+# binary running to its end; the unit-red branch below ends the group.
+set -m
 go test -race -timeout 60m ./cmd/... >"$cmd_log" 2>&1 &
 gate_cmd_pid=$!
+set +m
 for gate_pid in "${gate_shard_pids[@]+"${gate_shard_pids[@]}"}"; do
   wait "$gate_pid" || gate_unit_rc=1
 done
@@ -734,8 +739,9 @@ if (( gate_unit_rc != 0 )); then
   echo "go gate: unit tests failed (output kept: $keep)" >&2
   # The unit red is the verdict; the cmd run still in flight is ended
   # rather than left to finish an answer nobody will read.
-  kill "$gate_cmd_pid" 2>/dev/null || true
+  kill -TERM -- "-$gate_cmd_pid" 2>/dev/null || true
   wait "$gate_cmd_pid" 2>/dev/null || true
+  kill -KILL -- "-$gate_cmd_pid" 2>/dev/null || true
   rm -f "$cmd_log"
   exit 1
 fi

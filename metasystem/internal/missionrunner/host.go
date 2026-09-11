@@ -111,9 +111,10 @@ func (e *Engine) terminateGroup(pgid int, tag string, allowFake bool) (string, e
 	// for a group that is provably ours a moment later (2026-09-11: a
 	// TERM-immune owned group was left to the census under a fully
 	// parallel battery). A few probes over a short window separate a
-	// transient unreadable member from a group that is really not ours.
+	// transient unreadable member from a group that is really not ours; a
+	// group already proven not ours is not probed again.
 	ownership := groupOwnership(pgid, tag, grant)
-	for probe := 0; probe < 5 && ownership != janitor.GroupOwned && groupAlive(pgid); probe++ {
+	for probe := 0; probe < 5 && ownership == janitor.GroupIndeterminate && groupAlive(pgid); probe++ {
 		time.Sleep(100 * time.Millisecond)
 		ownership = groupOwnership(pgid, tag, grant)
 	}

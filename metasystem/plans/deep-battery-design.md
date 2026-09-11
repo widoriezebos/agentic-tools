@@ -86,6 +86,13 @@ the source itself. Measured (attempt proof-mtxc3kvu): adoption 929 to
 448 s, dispatcher 713 to 585 s, supervision 422 to 389 s, goal-cli 126 to
 87 s.
 
+Correction (2026-09-12, from the first critique round, F-3): bb1e2dfd's
+commit message claims the whole command package green under the gate's
+environment; that run was started before the bed edits the landing carried
+and verified an earlier tree, and the dispatcher-bed literal test it missed
+was red on main for about fifty minutes until 9a10d20e. A verification is
+of the tree that lands. Dispositions of the round: dispositions/deep-battery-code-critique-r1.md.
+
 What remains of the walls is the dispatcher bed's `dispatch` scenario: one
 bed, 81 legs, 43 dispatched jobs, 574 s under the pooled battery. A phase
 trace (attempt proof-mtxcowtr, not landed) put a fake dispatch at 3.0 to
