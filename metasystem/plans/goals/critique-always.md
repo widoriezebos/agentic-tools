@@ -1,6 +1,6 @@
 # critique-always
 
-- State: queued
+- State: approved
 - Priority: 1
 - Sequence: 18
 - Risk: severity=2 novelty=1 exposure=3 accumulation=1 basis="severity 2: a wrong critique switch lets a risky change land unread or makes every small fix pay for a read; novelty 1: the tier already exists on every record and the enforcement table already has the switch, it moves from class to tier; exposure 3: every build chain on every seat; accumulation 1: nothing built on it yet"
@@ -9,10 +9,12 @@
 - Origin: main
 - Next step: Appetite: 1h. Build: replace independentCritiqueRequired-by-class with a tier-keyed rule in internal/dispatch/hazard.go (requiredConfigurationByHazard) and scripts/agents/role-packets.json, read the tier from the goal record at admission and at chain close, keep the per-class effort rows (R-90-m1: MECHANICAL builds at xhigh); fixtures as the DONE names. Supersedes Ruling O's class-keyed critique clause; R-54-m1 stands (ruling row R-92-m1b drafted, lands with the rulings register). Consistency sweep by m1b 2026-09-10 11:40Z: no other backlog record contradicts this; small-change-lane and review-round-limit-counts-per-chain updated.
 - OpenedAt: 2026-09-01T07:18:55Z
-- Revision: 21
+- Revision: 22
 - Labels: headless-fleet, headless-process
 - Pinned: m1e
+- Budget: elapsedLimit=1d attemptLimit=10 reservedJobMinutesLimit=1200 activeJobLimit=1 reviewRoundLimit=3
 - BudgetExceptions: 0
+- Approved: by=human:Wido at=2026-09-11T20:33:52Z revision=22 opid=APTVMZCTPE9WAKRTEX385KQ5KK-m1-c6925449 authority=proven digest=93436451dcd9398c818546d0d60c32120c397191bfb1d425c03540a88530839f
 
 History:
 - 2026-09-01T07:18:55Z STC2KV4CD66GWZWMTY6ND3TJVM-m3-a5da21ff open actor=m3+mac-m3 targets=critique-always
@@ -36,4 +38,5 @@ History:
 - 2026-09-11T16:19:32Z 439WBKS627H5KZFXR4ER4QC1BG-m1-c6925449 approve actor=human:Wido targets=critique-always
 - 2026-09-11T20:31:21Z K75P6MGXW1JXF1H8AA8RPXM05M-m1-c6925449 unapprove actor=human:Wido targets=critique-always reason=Wido 2026-09-11: every program goal states runtime independence (claude, codex, devin, future adapters); intent amended before re-approval
 - 2026-09-11T20:32:34Z S19GN1BW1MPM03AF2PYPFS0MT1-m1e-3ca84c28 edit actor=m1e+main-1789158700-39729-b9c0d2 targets=critique-always
-Integrity: sha256=45d61acee2e4f870ac68f4547194b66ee6b1c9653c8d3f162b24ce0461fd8f87
+- 2026-09-11T20:33:52Z APTVMZCTPE9WAKRTEX385KQ5KK-m1-c6925449 approve actor=human:Wido targets=critique-always
+Integrity: sha256=fd0173c6edb775884b1152167d2f72bdf0f7e9b932012b4eecc72324e5a4bf25
