@@ -7,10 +7,12 @@
 - Origin: human
 - Next step: Read the claim quota in internal/goal/validate.go, rebindClaimKeepEpisode in verbs.go and the receipt's workspace projection, design, critique, build, land.
 - OpenedAt: 2026-09-11T15:45:27Z
-- Revision: 1
+- Revision: 2
+- Pinned: m1e
 - Budget: elapsedLimit=1d attemptLimit=10 reservedJobMinutesLimit=1200 activeJobLimit=1 reviewRoundLimit=3
 - BudgetExceptions: 0
 
 History:
 - 2026-09-11T15:45:27Z 6Z8WZ99H2QDDXDP19V3KT6VFDC-m1e-5083721b open actor=m1e+main-1789141490-27414-b9c0d2 targets=land-ready-work-lands-without-a-claim-slot
-Integrity: sha256=655936b7b252e032db1d077e52f96a362be59caec32f22fea97750cb41f2435d
+- 2026-09-11T15:48:42Z T7KTMBA9MZW0CD0A6TSGV22M1E-m1-c6925449 set-pin actor=human:Wido targets=land-ready-work-lands-without-a-claim-slot
+Integrity: sha256=46722591441d7641ba8981ed2525338094e97026d13c9a63ec61e88ca09470ac
