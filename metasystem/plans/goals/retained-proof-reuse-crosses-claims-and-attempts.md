@@ -7,11 +7,13 @@
 - Origin: human
 - Next step: Design first, because this changes the judge: read digestGroupInputsWithImplicit and groupExecutionIdentity in internal/proofrun/test_build.go and the retained scan in attempt.go; write the design with the identity composition per adapter and the soundness argument; critique; build; land after delivery-receipt-stops-at-first-failure.
 - OpenedAt: 2026-09-11T12:00:24Z
-- Revision: 2
+- Revision: 3
+- Pinned: m1e
 - Budget: elapsedLimit=1d attemptLimit=10 reservedJobMinutesLimit=1200 activeJobLimit=1 reviewRoundLimit=3
 - BudgetExceptions: 0
 
 History:
 - 2026-09-11T12:00:24Z NSAM5W0MV6P1BDGHYZ212KW6FA-m1e-7776b921 open actor=m1e+main-1789128024-87765-b9c0d2 targets=retained-proof-reuse-crosses-claims-and-attempts
 - 2026-09-11T15:45:31Z 8FB28Q80B2MXRBXT7HRXCWZT58-m1e-5083721b edit actor=m1e+main-1789141490-27414-b9c0d2 targets=retained-proof-reuse-crosses-claims-and-attempts
-Integrity: sha256=5c9dffbce4007e2bbd20a0db988db95f612bcd0eb85517f16cef1e120ac1cc71
+- 2026-09-11T15:47:38Z FZCPD2B1G301E7D8ED0CDV7SX2-m1-c6925449 set-pin actor=human:Wido targets=retained-proof-reuse-crosses-claims-and-attempts
+Integrity: sha256=3378d38cad8b831f180fb850346e5aa86f62d64ca0f2001abcbc6ca0c8a59611
