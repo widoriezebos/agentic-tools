@@ -1,6 +1,6 @@
 # proof-groups-detect-hangs-by-progress-not-the-clock
 
-- State: queued
+- State: approved
 - Priority: 1
 - Sequence: 11
 - Risk: severity=2 novelty=2 exposure=3 accumulation=1 basis="severity 2: a correct candidate is refused, or a truly hung group runs longer before it is caught, nothing granted or destroyed; novelty 2: progress-based supervision of a child is new in the adapter, the event stream and process accounting exist; exposure 3: every landing receipt on every seat; accumulation 1: one adapter and one runner, no compounding"
@@ -9,9 +9,11 @@
 - Origin: main
 - Next step: Slice 1 landed as c08fe2cb (a go test group is bounded by what it consumes, never by the clock). Remaining: slice 2, the attempt deadline and the remaining engine contexts, agreed with hung-proof-attempts-end-at-their-deadline so liveness reconciliation and elapsed-time patience have one owner; fixture waits belong to fixture-waits-name-their-producer, outside the delivery-efficiency program. Build slice 2 from the landed design and build brief, critique, land.
 - OpenedAt: 2026-09-10T13:40:12Z
-- Revision: 33
+- Revision: 34
 - Pinned: m1e
+- Budget: elapsedLimit=1d attemptLimit=10 reservedJobMinutesLimit=1200 activeJobLimit=1 reviewRoundLimit=3
 - BudgetExceptions: 3
+- Approved: by=human:Wido at=2026-09-11T20:33:30Z revision=34 opid=AV0G4X9FGVS3XSS6M166D5GC52-m1-c6925449 authority=proven digest=88700e7b9e1366f253d4db4c72a6f55004c57ad7f113616274c1f176a72bf535
 - Sliced: machine=m1 lineage=main-1788940932-18533-7fa6c2 revision=5 at=2026-09-10T14:14:54Z
 
 History:
@@ -48,4 +50,5 @@ History:
 - 2026-09-11T16:18:01Z 49PCG9ER1NY8SVNRF3WFFEBT7R-m1-c6925449 set-priority actor=human:Wido targets=human-carried-landing-carry,proof-groups-detect-hangs-by-progress-not-the-clock reason=priority-order subject=proof-groups-detect-hangs-by-progress-not-the-clock from=1:12 to=1:11 requested-sequence=11
 - 2026-09-11T20:30:58Z P51ZGA9WE8BQ65MYAP6FYHCZMW-m1-c6925449 unapprove actor=human:Wido targets=proof-groups-detect-hangs-by-progress-not-the-clock reason=Wido 2026-09-11: every program goal states runtime independence (claude, codex, devin, future adapters); intent amended before re-approval
 - 2026-09-11T20:32:14Z 4MQFF016M30J1F7NER3JHSTMMT-m1e-3ca84c28 edit actor=m1e+main-1789158700-39729-b9c0d2 targets=proof-groups-detect-hangs-by-progress-not-the-clock
-Integrity: sha256=3ebc676111dd79ee17920e4eeea3132da8eb12b40805720df7358e41af7105c3
+- 2026-09-11T20:33:30Z AV0G4X9FGVS3XSS6M166D5GC52-m1-c6925449 approve actor=human:Wido targets=proof-groups-detect-hangs-by-progress-not-the-clock
+Integrity: sha256=0c72aacd2ae1c1fc5d340469f9ee91fdd268c9bae5f1c63a3f4763c8f46eb1c4
