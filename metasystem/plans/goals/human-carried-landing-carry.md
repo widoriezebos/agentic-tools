@@ -2,14 +2,14 @@
 
 - State: claimed
 - Priority: 1
-- Sequence: 3
+- Sequence: 2
 - Risk: severity=3 novelty=2 exposure=3 accumulation=1 basis="severity 3: a carry verb lands human-approved trees past the gate, so a wrong carry is an unreviewed landing; novelty 2: carried landings and a commit critic are new, the landing pipeline is not; exposure 3: land.sh, commit.sh, dispatch.sh, the goal command layer and recovery on every machine; accumulation 1: one goal split off for a chain whose declared output list was frozen"
 - Tier: 3
 - Intent: Sibling of human-carried-landing (Wido's ruling 2026-09-04, 'All approved, also said this on Telegram', taking the recommended option 'new goal'): the carry verb, the carried landing and the commit critic, points 02 and 04-09 of human-carried-landing-design revision 2.1, redesigned as revision 3 answering all 13 standing findings from critic chain hcl-design-cc1, on a fresh chain with the full file list declared (land.sh, commit.sh, dispatch.sh, the goal command layer, recovery). human-carried-landing concludes with the audit alone.
 - Origin: main
 - Next step: Design revision 3 after the channel gateway design opens (Wido's priority R-76 first). Tier 3 ladder, same box as human-carried-landing. Register the design under plans/ with every output file declared before the first critique dispatch. | UMBRELLA NOTE (m1b, 2026-09-10 19:45Z): this goal is the escape hatch of the-metasystem-validates-itself-with-itself (its fourth member; the duplicates human-carried-landing-verb and carried-landing-debt-and-cap opened today point here). Today showed the case it exists for: every landing on m1b was blocked by the receipt machinery for a whole day with no lawful way past it. Revision 3 should add one thing to point 08: a tracked fleet cap on open carries per seat (default 1) refused in metasystem.conf.local like the other budget-law keys, and a carry may not stack on a base whose carry debt is unpaid. Ranked 1:7 in Wido's name so the hatch is built before the next such day; the sequencing after the channel gateway design (R-76) is his to keep or lift.
 - OpenedAt: 2026-09-04T17:14:07Z
-- Revision: 19
+- Revision: 20
 - Budget: elapsedLimit=2d attemptLimit=20 reservedJobMinutesLimit=1200 activeJobLimit=1 reviewRoundLimit=3
 - BudgetExceptions: 3
 - Approved: by=human:Wido at=2026-09-11T10:04:01Z revision=19 opid=XY00804EZFSMJF2462WQFKRTH3-m1d-a38bcdde authority=proven digest=6ddcccf730887072ae5efa680f9d4c6bee41b0ded9207a86ead404e0a7d98a3b
@@ -37,4 +37,5 @@ History:
 - 2026-09-11T05:31:52Z QMT9W0EJND0553ZPN5QPW95X6F-m1d-a38bcdde slice-start actor=m1d+main-1788941004-20871-6e7a43 targets=human-carried-landing-carry
 - 2026-09-11T09:48:22Z 4WVKXT8PV2EPWJEV598H0XGM42-m1-a38bcdde set-budget actor=human:Wido targets=human-carried-landing-carry displaced=m1d+main-1788941004-20871-6e7a43@2026-09-11T02:09:09Z
 - 2026-09-11T10:04:01Z XY00804EZFSMJF2462WQFKRTH3-m1d-a38bcdde set-budget actor=human:Wido targets=human-carried-landing-carry
-Integrity: sha256=f4be795c48b9cbff928caba468b7b268b5a9b0aeb43c9649758ace31b867171c
+- 2026-09-11T13:09:02Z M04194750MRRN6T2CCA9P869E1-m1e-892cdaec done actor=m1e+main-1789030447-51011-5722fc targets=actionable-metrics,breach-clock-and-budget-honesty,burn-without-delivery-tripwire,carried-landing-debt-and-cap,delegate-job-liveness,failed-job-attention,fixture-stewards-outlive-their-suite,goal-abandoned-with-a-reason,governed-exhaustion-reprojection,human-carried-landing-carry,human-carried-landing-verb,human-goal-verbs-forgiving,job-record-birth-token,landing-receipt-survives-records-drift,lease-sweep-death-evidence,live-job-on-a-done-goal-unnoticed,machine-concurrency-governor,proof-harness-process-custody,review-round-limit-counts-per-chain,severity-tiered-rigor,severity-tiered-rigor-p2,small-change-lane,steward-catchup-livelock,steward-revives-a-done-goal,stop-batch-strands-a-resumable-goal,suite-custody,testing-contract-owns-record-paths,token-spend-fence,turn-verdict-hardening,watch-verb,watcher-repair-request-never-names-current,winddown-census-handoff-leak reason=priority-order from=1:3 to=1:2
+Integrity: sha256=fda46c9b73537a6485267cdb976102746c3b3a75ae709ca7dd90697811414473

@@ -2,12 +2,12 @@
 
 - State: queued
 - Priority: 1
-- Sequence: 29
+- Sequence: 28
 - Intent: Validation suites run under process-group custody: killing a suite reaps its whole tree, and gate locks carry pids and self-clean when their owner dies (2026-08-24 collateral: orphaned go-gate child blocked the next battery)
 - Origin: human
 - Next step: RELEASED for the fresh session. DIAGNOSIS of the investigator zombies (2x): the task reproduces the detached-silence bug, and the reproduction itself wedges — the worker waits forever on the wedged detached child, log silent, status lying 'running'. The bug eats its investigator. INSTRUCTION: wrap every reproduction in an outer bounded timeout (the tar pit has no bound of its own), and slice the task smaller (reproduce+diagnose first, fix as a second task). m2's xtrace handoff stands; acceptance = detached green or loud named refusal; appetite 6h intact; shared tree clean.
 - OpenedAt: 2026-08-24T13:24:00Z
-- Revision: 47
+- Revision: 48
 - Labels: custody
 - BudgetExceptions: 0
 
@@ -59,4 +59,5 @@ History:
 - 2026-09-11T05:45:46Z T2AE5EG8JMKA86VEPX77M7MHGY-m1c-66a02980 set-priority actor=human:Wido targets=actionable-metrics,breach-clock-and-budget-honesty,budget-raises-preserve-elapsed-origin,burn-without-delivery-tripwire,delegate-job-liveness,failed-job-attention,fixture-stewards-outlive-their-suite,governed-exhaustion-reprojection,human-goal-verbs-forgiving,job-record-birth-token,lease-sweep-death-evidence,live-job-on-a-done-goal-unnoticed,machine-concurrency-governor,proof-harness-process-custody,review-round-limit-counts-per-chain,severity-tiered-rigor,severity-tiered-rigor-p2,small-change-lane,steward-catchup-livelock,steward-revives-a-done-goal,stop-batch-strands-a-resumable-goal,suite-custody,token-spend-fence,turn-verdict-hardening,watch-verb,watcher-repair-request-never-names-current,winddown-census-handoff-leak reason=priority-order subject=budget-raises-preserve-elapsed-origin from=1:29 to=1:30 requested-sequence=8
 - 2026-09-11T08:03:44Z 8YTXASE33ZARZJR9XX4W59W5PA-m1-c6925449 unapprove actor=human:Wido targets=suite-custody reason=Wido 2026-09-11: standing approval withdrawn to regain control of what is built next; re-approve deliberately
 - 2026-09-11T11:05:29Z P40SW96EDNR7JMQ0G6JZMPSRTV-m1c-66a02980 done actor=m1c+main-1789023008-75159-b69143 targets=actionable-metrics,breach-clock-and-budget-honesty,budget-raises-preserve-elapsed-origin,burn-without-delivery-tripwire,delegate-job-liveness,failed-job-attention,fixture-stewards-outlive-their-suite,governed-exhaustion-reprojection,human-goal-verbs-forgiving,job-record-birth-token,lease-sweep-death-evidence,live-job-on-a-done-goal-unnoticed,machine-concurrency-governor,proof-harness-process-custody,review-round-limit-counts-per-chain,severity-tiered-rigor,severity-tiered-rigor-p2,small-change-lane,steward-catchup-livelock,steward-revives-a-done-goal,stop-batch-strands-a-resumable-goal,suite-custody,token-spend-fence,turn-verdict-hardening,watch-verb,watcher-repair-request-never-names-current,winddown-census-handoff-leak reason=priority-order from=1:30 to=1:29
-Integrity: sha256=e9f36c680ff6cdbac92b5ba2719929de0f2b68f018d6b98e47dc3eb56b8b272d
+- 2026-09-11T13:09:02Z M04194750MRRN6T2CCA9P869E1-m1e-892cdaec done actor=m1e+main-1789030447-51011-5722fc targets=actionable-metrics,breach-clock-and-budget-honesty,burn-without-delivery-tripwire,carried-landing-debt-and-cap,delegate-job-liveness,failed-job-attention,fixture-stewards-outlive-their-suite,goal-abandoned-with-a-reason,governed-exhaustion-reprojection,human-carried-landing-carry,human-carried-landing-verb,human-goal-verbs-forgiving,job-record-birth-token,landing-receipt-survives-records-drift,lease-sweep-death-evidence,live-job-on-a-done-goal-unnoticed,machine-concurrency-governor,proof-harness-process-custody,review-round-limit-counts-per-chain,severity-tiered-rigor,severity-tiered-rigor-p2,small-change-lane,steward-catchup-livelock,steward-revives-a-done-goal,stop-batch-strands-a-resumable-goal,suite-custody,testing-contract-owns-record-paths,token-spend-fence,turn-verdict-hardening,watch-verb,watcher-repair-request-never-names-current,winddown-census-handoff-leak reason=priority-order from=1:29 to=1:28
+Integrity: sha256=59faf763687eff29c59386daadba5a57ceaf3cb1231db1a20e4b05170266331c
