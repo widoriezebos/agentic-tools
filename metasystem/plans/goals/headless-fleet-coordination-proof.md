@@ -2,14 +2,14 @@
 
 - State: queued
 - Priority: 2
-- Sequence: 30
+- Sequence: 29
 - Risk: severity=3 novelty=2 exposure=3 accumulation=2 basis="False acceptance would grant confidence in multi-node ownership, human authority and reliable message delivery; the scenario spans the fleet but uses isolated resources."
 - Tier: 3
 - Intent: Two headless nodes deliver from one approved backlog without duplicate ownership or a human relay, while the brain presents and shapes that backlog and worker execution remains independent of brain availability.
 - Origin: human
 - Next step: INTENT: one bounded integration scenario proves the fleet and brain contract after the single-node delivery proof. CONSTRAINTS: reuse the shared ledger, channel and node-discovery owners in a disposable fleet. Race both nodes for one goal and prove only the winning claim executes; process independent goals concurrently; show the brain receiving remote progress and a node question, proposing a backlog change, and the human granting the sole execution approval. Open the declared brain under its actual runtime and retain proof it receives its standing packet. Interrupt brain availability and demonstrate nodes continue approved work. Interrupt and replay channel delivery and prove an authenticated answer is applied once without loss or fabrication. Reuse recovery-rehearsal for process death and full stop/restart; do not duplicate its matrix here. No new service, fleet leader or gateway lease is implied. Record exact revisions, bounds, observed outcomes and any remaining limitation. Exposed defects become separately owned work, not extensions of this proof. FREEDOMS: supported runtimes and safe feature choices within the approved run budget. ROSTER: configured node roles, an advisory brain and a distinct acceptance custodian; no execution approval at intake; the engine supplies the standing tier budget for later human approval.
 - OpenedAt: 2026-09-07T21:10:22Z
-- Revision: 15
+- Revision: 16
 - BlockedBy: fleet-channel-gateway, fleet-coordinator-brain, fleet-join-bootstrap, headless-continuous-delivery-proof, seat-mutual-awareness
 - Labels: headless-fleet, headless-proof
 - Budget: elapsedLimit=1d attemptLimit=10 reservedJobMinutesLimit=1200 activeJobLimit=1 reviewRoundLimit=3
@@ -31,4 +31,5 @@ History:
 - 2026-09-11T22:00:17Z ZACQ95ADETGNC6PSNQESWF9MHH-m1-c6925449 done actor=human:Wido targets=adoption-inventory-from-install-set,chain-landing-carries-the-reviewed-diff,closing-read-follows-the-change-not-the-label,commit-goal-binding,design-gate-at-dispatch,first-headless-run,fleet-channel-gateway,fleet-join-bootstrap,fleet-pull,gate-governance-records,headless-continuous-delivery-proof,headless-fleet-coordination-proof,hook-enrollment-per-checkout,host-implementer-wall,human-approval-for-execution,idle-every-runtime-enforcement,landing-design-provenance,manifest-floor-at-dispatch,merge-stage-critic-close,metasystem-stop-escalation-proofs,mission-birth-baseline-from-dirty-worktree,never-idle-ironclad,one-approval-gate,recovery-rehearsal,recovery-to-good-state,repo-root-paths-ride-agent-commits-unjudged,role-context-composition,role-lane-packets,role-liveness-watchdog,seat-mutual-awareness,two-bars-for-changes reason=priority-order from=2:33 to=2:32
 - 2026-09-11T22:03:29Z Q33YMCT8ZN4BRPZ86BDG1XN3A0-m1-c6925449 done actor=human:Wido targets=headless-continuous-delivery-proof,headless-fleet-coordination-proof,host-implementer-wall,never-idle-ironclad reason=priority-order from=2:32 to=2:31
 - 2026-09-11T22:05:09Z AV2VQ526G6RR0PQX3DDQ1D7ABK-m1-c6925449 done actor=human:Wido targets=first-headless-run,fleet-channel-gateway,fleet-join-bootstrap,fleet-pull,headless-continuous-delivery-proof,headless-fleet-coordination-proof,metasystem-stop-escalation-proofs,mission-birth-baseline-from-dirty-worktree,never-idle-ironclad,recovery-rehearsal,recovery-to-good-state,role-liveness-watchdog,seat-mutual-awareness reason=priority-order from=2:31 to=2:30
-Integrity: sha256=3c1c00851364bda37c8b424155003a6c4b84fdbf036614b0ae60da6915c4072b
+- 2026-09-11T22:07:23Z EGBE3T6927VE848FP9ZJW9QK7V-m1-c6925449 done actor=human:Wido targets=first-headless-run,fleet-channel-gateway,fleet-join-bootstrap,fleet-pull,headless-continuous-delivery-proof,headless-fleet-coordination-proof,idle-every-runtime-enforcement,metasystem-stop-escalation-proofs,mission-birth-baseline-from-dirty-worktree,never-idle-ironclad,recovery-rehearsal,recovery-to-good-state,role-context-composition,role-lane-packets,seat-mutual-awareness,two-bars-for-changes reason=priority-order from=2:30 to=2:29
+Integrity: sha256=d77ad116ed15bdff4cf12cb34d758f3268ff7aa6a2f7ee21dcc8a7d3cdf160ff
