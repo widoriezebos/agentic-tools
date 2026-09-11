@@ -496,7 +496,10 @@ func filteredCoverageScriptEnvironment() []string {
 	var result []string
 	for _, entry := range os.Environ() {
 		key, _, _ := strings.Cut(entry, "=")
-		if strings.HasPrefix(key, "METASYSTEM_PROOF_") || strings.HasPrefix(key, "METASYSTEM_SUITE_PROGRESS_") {
+		// The full gate arms a witness for its nested validations and then runs
+		// this package's tests; a focused fast gate spawned here must not inherit
+		// that handoff, which fast mode refuses by law.
+		if strings.HasPrefix(key, "METASYSTEM_PROOF_") || strings.HasPrefix(key, "METASYSTEM_SUITE_PROGRESS_") || strings.HasPrefix(key, "METASYSTEM_GATE_WITNESS") {
 			continue
 		}
 		switch key {
