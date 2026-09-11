@@ -349,10 +349,24 @@ func historicalWitnessGateSource(t *testing.T) []byte {
 		t.Fatalf("read current witness gate source: %v", err)
 	}
 	corrected := `  if (( witness_gate_rc != 0 )); then
-    echo "witness gate failed in its clean snapshot" >&2
     rm -rf "$witness_state" || true
     rm -rf "$witness_snap" || true
     witness_state=
+    if (( witness_gate_rc == 3 )); then
+      # Exit 3 is the gate's own refusal (the snapshot's tree shape or
+      # toolchain, never a test): environmental, so the plain gate answers.
+      echo "witness gate refused in its clean snapshot (reason above); falling back to the plain gate" >&2
+      witness_fallback_rc=0
+      if [[ "${WITNESS_GATE_FALLBACK:-plain}" == plain ]]; then
+        bash scripts/agents/go-gate.sh || witness_fallback_rc=$?
+      else
+        witness_fallback_rc=$witness_gate_rc
+      fi
+      return "$witness_fallback_rc" 2>/dev/null || exit "$witness_fallback_rc"
+    fi
+    # A test failure or a coverage-ratchet refusal inside the snapshot is a
+    # deterministic answer; re-running everything would only repeat it.
+    echo "witness gate failed in its clean snapshot (exit $witness_gate_rc): the red above is the answer, no fallback" >&2
     return "$witness_gate_rc" 2>/dev/null || exit "$witness_gate_rc"
   fi
 `
@@ -368,7 +382,7 @@ func historicalWitnessGateSource(t *testing.T) []byte {
   fi
 `
 	if bytes.Count(source, []byte(corrected)) != 1 {
-		t.Fatal("current witness source no longer carries the executed-failure terminal block")
+		t.Fatal("current witness source no longer carries the terminal block (a refusal falls back, a red is terminal)")
 	}
 	return bytes.Replace(source, []byte(corrected), []byte(historical), 1)
 }
