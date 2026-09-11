@@ -1,6 +1,6 @@
 # budget-extends-by-consumption-and-breach-parks
 
-- State: approved
+- State: queued
 - Priority: 1
 - Sequence: 8
 - Risk: severity=2 novelty=2 exposure=3 accumulation=1 basis="severity 2: the budget law is the spend guard; novelty 2: extension by consumption and auto-park are new rules; exposure 3: every claimed goal; accumulation 1: the tuple stays"
@@ -9,11 +9,9 @@
 - Origin: human
 - Next step: Design first: read internal/goal approval.go, stop.go and the breach handling, and R-88, R-90 and R-91 in memory/rulings.md; write the design with the three rules and the guarantees they keep; critique; build; land.
 - OpenedAt: 2026-09-11T15:45:08Z
-- Revision: 5
+- Revision: 6
 - Pinned: m1e
-- Budget: elapsedLimit=1d attemptLimit=10 reservedJobMinutesLimit=1200 activeJobLimit=1 reviewRoundLimit=3
 - BudgetExceptions: 0
-- Approved: by=human:Wido at=2026-09-11T15:49:18Z revision=4 opid=FZSRQV9DYG5RBJ3S06PJ5RRQN5-m1-c6925449 authority=proven digest=2ed9d1c5950e7e2e476d36992dda3011be5f4d68b14f4ebb477006bebb660089
 
 History:
 - 2026-09-11T15:45:08Z 9QD56QEP3YRJBVPYD7Y5S3BS7S-m1e-5083721b open actor=m1e+main-1789141490-27414-b9c0d2 targets=budget-extends-by-consumption-and-breach-parks
@@ -21,4 +19,5 @@ History:
 - 2026-09-11T15:47:26Z W0NGHQ1G0390Z1Y46T1BV3PZ7A-m1-c6925449 set-priority actor=human:Wido targets=actionable-metrics,breach-clock-and-budget-honesty,budget-extends-by-consumption-and-breach-parks,burn-without-delivery-tripwire,carried-landing-debt-and-cap,delegate-job-liveness,failed-job-attention,fixture-stewards-outlive-their-suite,goal-abandoned-with-a-reason,human-carried-landing-verb,human-goal-verbs-forgiving,job-record-birth-token,landing-receipt-survives-records-drift,lease-sweep-death-evidence,live-job-on-a-done-goal-unnoticed,machine-concurrency-governor,proof-harness-process-custody,severity-tiered-rigor,severity-tiered-rigor-p2,small-change-lane,steward-catchup-livelock,steward-revives-a-done-goal,stop-batch-strands-a-resumable-goal,suite-custody,token-spend-fence,turn-verdict-hardening,watch-verb,watcher-repair-request-never-names-current,winddown-census-handoff-leak reason=priority-order subject=budget-extends-by-consumption-and-breach-parks from=unranked to=1:7 requested-sequence=7
 - 2026-09-11T15:49:18Z FZSRQV9DYG5RBJ3S06PJ5RRQN5-m1-c6925449 approve actor=human:Wido targets=budget-extends-by-consumption-and-breach-parks
 - 2026-09-11T15:50:51Z M4GZC1Q99QFRH9T13HSY774HAR-m1-c6925449 set-priority actor=human:Wido targets=actionable-metrics,breach-clock-and-budget-honesty,budget-extends-by-consumption-and-breach-parks,burn-without-delivery-tripwire,capped-round-continues-instead-of-restarting,carried-landing-debt-and-cap,coordinator-context-stays-under-budget,coordinator-wakes-on-events-not-polls,critique-closes-on-folded-proof,deep-battery-under-ten-minutes,delegate-job-liveness,delegate-rounds-reuse-a-warm-gate,delivery-receipt-stops-at-first-failure,failed-job-attention,fixture-stewards-outlive-their-suite,goal-abandoned-with-a-reason,human-carried-landing-carry,human-carried-landing-verb,human-goal-verbs-forgiving,job-record-birth-token,land-ready-work-lands-without-a-claim-slot,landing-receipt-survives-records-drift,landing-refuses-without-its-receipt-line,lease-sweep-death-evidence,live-job-on-a-done-goal-unnoticed,machine-concurrency-governor,proof-groups-detect-hangs-by-progress-not-the-clock,proof-harness-process-custody,retained-proof-reuse-crosses-claims-and-attempts,seat-opened-goals-name-their-blocker,severity-tiered-rigor,severity-tiered-rigor-p2,small-change-lane,steward-catchup-livelock,steward-revives-a-done-goal,stop-batch-strands-a-resumable-goal,suite-custody,token-spend-fence,turn-verdict-hardening,watch-verb,watcher-repair-request-never-names-current,winddown-census-handoff-leak reason=priority-order subject=landing-refuses-without-its-receipt-line from=1:7 to=1:8 requested-sequence=5
-Integrity: sha256=95bbc127c5472095b3c7705b53d550359c5d17df03c09c57a6c11a48124fad0c
+- 2026-09-11T16:13:15Z 1YK0M6FEJEGEP3DEAG7BQAJGXN-m1-c6925449 unapprove actor=human:Wido targets=budget-extends-by-consumption-and-breach-parks reason=Wido 2026-09-11: Codex critique round 1 of the delivery-efficiency plan accepted; intent amended before re-approval
+Integrity: sha256=a414f5a11b3b7aab2f08cba9c4a9e39f79c03e0453e047b4fc5a782dfd926205
