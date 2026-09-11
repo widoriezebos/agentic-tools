@@ -19,6 +19,14 @@ already running finish and report, and the failure is returned after the
 stage drains. The pool lives inside the single worker process: no scheduler,
 no daemon, no second proof store.
 
+Launch order inside a stage is longest first: each group's last measured
+duration in the retained attempts, with the contract's `targetMs` as the
+floor when nothing was measured. The first run with the pool showed why:
+every section declares 120 s, so the 574 s dispatcher section started in
+the middle of the queue and the stage's wall time was its start plus its
+length. With the measured order the long groups start first and the short
+ones fill the remaining slots.
+
 The cap is `testing.concurrency` in `metasystem.conf`, 1 to 64. Absent, it
 is half the cores, at most six, at least one: six on the 18-core Mac, two on
 the 4-vCPU VM. Section groups spawn process trees, so the cap is about

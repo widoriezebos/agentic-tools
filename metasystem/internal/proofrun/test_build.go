@@ -200,7 +200,28 @@ func runStageGroups(ctx context.Context, request TestRunRequest, groups map[stri
 		errMu.Unlock()
 		stoppedMu.Do(func() { close(stopped) })
 	}
-	for index, id := range ids {
+	// Longest first: each group's last measured duration in the retained
+	// attempts (its declared targetMs when nothing was measured) orders the
+	// launches, so the long groups start while the short ones fill the other
+	// slots and the stage's wall time approaches its longest group instead of
+	// the last long group's start plus its length. Results still land in plan
+	// order.
+	expected := retainedGroupDurations(request.ControlRoot)
+	weight := func(id string) int64 {
+		if measured, ok := expected[id]; ok && measured > groups[id].TargetMS {
+			return measured
+		}
+		return groups[id].TargetMS
+	}
+	order := make([]int, len(ids))
+	for index := range ids {
+		order[index] = index
+	}
+	sort.SliceStable(order, func(a, b int) bool {
+		return weight(ids[order[a]]) > weight(ids[order[b]])
+	})
+	for _, index := range order {
+		id := ids[index]
 		select {
 		case <-stopped:
 			results[index] = GroupResult{ID: id, Kind: groups[id].Kind, Obligations: append([]string(nil), groups[id].Obligations...),
@@ -232,6 +253,38 @@ func runStageGroups(ctx context.Context, request TestRunRequest, groups map[stri
 	}
 	wg.Wait()
 	return results, firstErr
+}
+
+// retainedGroupDurations reads the newest measured duration of every group
+// from the retained attempts under the control root. It is advisory
+// scheduling input only: a missing or unreadable inventory means no
+// measurements, never an error.
+func retainedGroupDurations(controlRoot string) map[string]int64 {
+	durations := map[string]int64{}
+	if controlRoot == "" {
+		return durations
+	}
+	attempts, err := ReadAttempts(controlRoot)
+	if err != nil {
+		return durations
+	}
+	newest := map[string]string{}
+	for _, attempt := range attempts {
+		if attempt.TestResult == nil {
+			continue
+		}
+		for _, group := range attempt.TestResult.Groups {
+			if group.DurationMS <= 0 || (group.Status != "passed" && group.Status != "failed") {
+				continue
+			}
+			if at, seen := newest[group.ID]; seen && at >= attempt.StartedAt {
+				continue
+			}
+			newest[group.ID] = attempt.StartedAt
+			durations[group.ID] = group.DurationMS
+		}
+	}
+	return durations
 }
 
 func testGroupProgress(path, group, event, status, reason string) error {
