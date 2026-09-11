@@ -2,14 +2,14 @@
 
 - State: queued
 - Priority: 1
-- Sequence: 18
+- Sequence: 19
 - Risk: severity=2 novelty=2 exposure=2 accumulation=1 basis="severity 2: an unbounded hatch erodes every guard; novelty 2: the obligation and health-line machinery exist, the class is new; exposure 2: seats that carry; accumulation 1: depends on the verb"
 - Tier: 2
 - Intent: DUPLICATE, opened by m1b on 2026-09-10 before finding human-carried-landing-carry, whose design points HCL-OBLIGATION-07 and HCL-COUNTER-08 already carry the debt and the counter; the fleet cap on open carries is noted on that goal for its revision 3. This record holds no work and must not be claimed or approved. Abandon once goal abandon exists.
 - Origin: main
 - Next step: Do not claim. Abandon with --because 'duplicate of human-carried-landing-carry' when goal abandon lands.
 - OpenedAt: 2026-09-10T07:27:39Z
-- Revision: 31
+- Revision: 32
 - Labels: bootstrap
 - BudgetExceptions: 0
 
@@ -45,4 +45,5 @@ History:
 - 2026-09-11T15:48:21Z 8NDX8QPSQXDM5YE46TQMM40YKA-m1-c6925449 set-priority actor=human:Wido targets=actionable-metrics,breach-clock-and-budget-honesty,burn-without-delivery-tripwire,carried-landing-debt-and-cap,coordinator-context-stays-under-budget,delegate-job-liveness,failed-job-attention,fixture-stewards-outlive-their-suite,goal-abandoned-with-a-reason,human-carried-landing-verb,human-goal-verbs-forgiving,job-record-birth-token,landing-receipt-survives-records-drift,lease-sweep-death-evidence,live-job-on-a-done-goal-unnoticed,machine-concurrency-governor,proof-harness-process-custody,severity-tiered-rigor,severity-tiered-rigor-p2,small-change-lane,steward-catchup-livelock,steward-revives-a-done-goal,stop-batch-strands-a-resumable-goal,suite-custody,token-spend-fence,turn-verdict-hardening,watch-verb,watcher-repair-request-never-names-current,winddown-census-handoff-leak reason=priority-order subject=coordinator-context-stays-under-budget from=1:15 to=1:16 requested-sequence=14
 - 2026-09-11T15:48:29Z Z5BVAA2T0FVBFRJC6ZDZ2M9KE7-m1-c6925449 set-priority actor=human:Wido targets=actionable-metrics,breach-clock-and-budget-honesty,burn-without-delivery-tripwire,carried-landing-debt-and-cap,critique-closes-on-folded-proof,delegate-job-liveness,failed-job-attention,fixture-stewards-outlive-their-suite,goal-abandoned-with-a-reason,human-carried-landing-verb,human-goal-verbs-forgiving,job-record-birth-token,landing-receipt-survives-records-drift,lease-sweep-death-evidence,live-job-on-a-done-goal-unnoticed,machine-concurrency-governor,proof-harness-process-custody,severity-tiered-rigor,severity-tiered-rigor-p2,small-change-lane,steward-catchup-livelock,steward-revives-a-done-goal,stop-batch-strands-a-resumable-goal,suite-custody,token-spend-fence,turn-verdict-hardening,watch-verb,watcher-repair-request-never-names-current,winddown-census-handoff-leak reason=priority-order subject=critique-closes-on-folded-proof from=1:16 to=1:17 requested-sequence=15
 - 2026-09-11T15:48:39Z 6YNPZFT7SHSMH78WVASRFK2CAB-m1-c6925449 set-priority actor=human:Wido targets=breach-clock-and-budget-honesty,carried-landing-debt-and-cap,goal-abandoned-with-a-reason,human-goal-verbs-forgiving,landing-receipt-survives-records-drift,severity-tiered-rigor,severity-tiered-rigor-p2,small-change-lane,stop-batch-strands-a-resumable-goal reason=priority-order subject=small-change-lane from=1:17 to=1:18 requested-sequence=17
-Integrity: sha256=ee2d4874ec652b9d03e8839d05ff3d27c09ede2dc35aefcbf40d18e50bbbd468
+- 2026-09-11T15:48:46Z SNHTTKKSQVS18CCY79CZWNM1QG-m1-c6925449 set-priority actor=human:Wido targets=actionable-metrics,breach-clock-and-budget-honesty,burn-without-delivery-tripwire,carried-landing-debt-and-cap,delegate-job-liveness,failed-job-attention,fixture-stewards-outlive-their-suite,goal-abandoned-with-a-reason,human-goal-verbs-forgiving,job-record-birth-token,land-ready-work-lands-without-a-claim-slot,landing-receipt-survives-records-drift,lease-sweep-death-evidence,live-job-on-a-done-goal-unnoticed,machine-concurrency-governor,proof-harness-process-custody,severity-tiered-rigor,severity-tiered-rigor-p2,steward-catchup-livelock,steward-revives-a-done-goal,stop-batch-strands-a-resumable-goal,suite-custody,token-spend-fence,turn-verdict-hardening,watch-verb,watcher-repair-request-never-names-current,winddown-census-handoff-leak reason=priority-order subject=land-ready-work-lands-without-a-claim-slot from=1:18 to=1:19 requested-sequence=18
+Integrity: sha256=d10c764c8a29900163fbab14f7c50dbde52c2a758e62e3d89a824a2068e4682a
