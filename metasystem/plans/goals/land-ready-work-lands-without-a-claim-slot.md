@@ -2,14 +2,14 @@
 
 - State: queued
 - Priority: 1
-- Sequence: 20
+- Sequence: 21
 - Risk: severity=2 novelty=2 exposure=3 accumulation=1 basis="severity 2: the claim quota and accounting are the spend fence; novelty 2: a landing slot is a new state; exposure 3: every seat; accumulation 1: goal verbs and receipt"
 - Tier: 3
 - Intent: Built work waited 22 to 35 hours to land because the seat's one claim went elsewhere and a re-claim reset the accounting revision and voided retained proof (ledger.md finding 5, process-rules.md items 6 and 7). DONE means: (1) a landing slot exempt from the one-claim quota: a seat may hold one land-ready goal in landing beside its claim, with the slot's lifecycle (enter on land-ready, leave on done or park) recorded on the goal; (2) a same-pair re-claim keeps the accounting episode and its retained proof; receipt acceptance is not changed here: record-only tip moves are owned by landing-receipt-survives-records-drift (land-ready on m1e) and identity by retained-proof-reuse-crosses-claims-and-attempts; proven by fixtures and, in the field, by hours from land-ready to landed under 4 over a week. Goal 20 of plans/delivery-efficiency-plan.md.
 - Origin: human
 - Next step: Read the claim quota in internal/goal/validate.go and rebindClaimKeepEpisode in verbs.go; design the landing slot's lifecycle; critique; build; land.
 - OpenedAt: 2026-09-11T15:45:27Z
-- Revision: 8
+- Revision: 9
 - Pinned: m1e
 - BudgetExceptions: 0
 
@@ -22,4 +22,5 @@ History:
 - 2026-09-11T15:50:59Z XMVFS3RNBYJQA0S9A89QGZ8XAS-m1-c6925449 set-priority actor=human:Wido targets=actionable-metrics,breach-clock-and-budget-honesty,burn-without-delivery-tripwire,capped-round-continues-instead-of-restarting,carried-landing-debt-and-cap,critique-closes-on-folded-proof,delegate-job-liveness,failed-job-attention,fixture-stewards-outlive-their-suite,goal-abandoned-with-a-reason,human-carried-landing-verb,human-goal-verbs-forgiving,job-record-birth-token,land-ready-work-lands-without-a-claim-slot,landing-receipt-survives-records-drift,lease-sweep-death-evidence,live-job-on-a-done-goal-unnoticed,machine-concurrency-governor,proof-harness-process-custody,severity-tiered-rigor,severity-tiered-rigor-p2,small-change-lane,steward-catchup-livelock,steward-revives-a-done-goal,stop-batch-strands-a-resumable-goal,suite-custody,tier-from-severity-and-novelty,token-spend-fence,turn-verdict-hardening,watch-verb,watcher-repair-request-never-names-current,winddown-census-handoff-leak reason=priority-order subject=tier-from-severity-and-novelty from=1:19 to=1:20 requested-sequence=16
 - 2026-09-11T16:13:40Z 85NBXV0YK0SK6Z2Q51NHFCAGYY-m1-c6925449 unapprove actor=human:Wido targets=land-ready-work-lands-without-a-claim-slot reason=Wido 2026-09-11: Codex critique round 1 of the delivery-efficiency plan accepted; intent amended before re-approval
 - 2026-09-11T16:16:59Z 39F76RF10DHZ5D37WDBACK2VG8-m1e-ab5421f5 edit actor=m1e+main-1789143377-71578-b9c0d2 targets=land-ready-work-lands-without-a-claim-slot
-Integrity: sha256=854746a399a2d9ad55bdde8f0b49e0ed2c73eaf6b3870d60067d5a0475f5ad43
+- 2026-09-11T16:17:45Z 030HT9PVZGVHDS5RKBJJ1AFZZP-m1-c6925449 set-priority actor=human:Wido targets=actionable-metrics,breach-clock-and-budget-honesty,budget-extends-by-consumption-and-breach-parks,burn-without-delivery-tripwire,capped-round-continues-instead-of-restarting,carried-landing-debt-and-cap,coordinator-context-stays-under-budget,coordinator-wakes-on-events-not-polls,critique-closes-on-folded-proof,deep-battery-under-ten-minutes,delegate-job-liveness,delegate-rounds-reuse-a-warm-gate,delivery-receipt-stops-at-first-failure,failed-job-attention,fixture-stewards-outlive-their-suite,goal-abandoned-with-a-reason,human-carried-landing-carry,human-carried-landing-verb,human-goal-verbs-forgiving,job-record-birth-token,land-ready-work-lands-without-a-claim-slot,landing-receipt-survives-records-drift,lease-sweep-death-evidence,live-job-on-a-done-goal-unnoticed,machine-concurrency-governor,proof-attempts-settle-to-minutes-run,proof-groups-detect-hangs-by-progress-not-the-clock,proof-harness-process-custody,retained-proof-reuse-crosses-claims-and-attempts,severity-tiered-rigor,severity-tiered-rigor-p2,small-change-lane,steward-catchup-livelock,steward-revives-a-done-goal,stop-batch-strands-a-resumable-goal,suite-custody,tier-from-severity-and-novelty,token-spend-fence,turn-verdict-hardening,watch-verb,watcher-repair-request-never-names-current,winddown-census-handoff-leak reason=priority-order subject=proof-attempts-settle-to-minutes-run from=1:20 to=1:21 requested-sequence=7
+Integrity: sha256=0e40d13559a2c66c4ec6177fca42220387b0eaa7cd570178e6bf1f9430048ed7
