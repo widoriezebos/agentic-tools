@@ -2,12 +2,12 @@
 
 - State: queued
 - Priority: 1
-- Sequence: 41
+- Sequence: 40
 - Intent: A properly designed parallelism mechanism: run as much in parallel as possible under a MACHINE-LEVEL configurable concurrency governor so the machine never overloads - today parallel passes are the dispatch delegate's hand-scheduling with no load awareness, and last night's load flipped the missionrunner suite over its timeout and surfaced the acp flake (Wido 2026-08-29)
 - Origin: human
 - Next step: Appetite: 3h — design then build: machine-level slots configured at the repo/machine root (metasystem.concurrency.*: heavy-pass slots, suite slots, battery exclusivity), every run-launched job admitted against slots (queue, never refuse, when full), load-aware defaults derived from CPU count (the workflow precedent: min(16, cpus-2)), and the delegate verb's admission (L13) as the natural enforcement seam - design with L13 so it lands as one law, not a bolt-on. Until this lands the dispatch delegate hand-governs by recorded delegation: cap concurrent heavy passes, never run a battery beside gauntlets or beds, stagger suites under load SECOND DRIVING INCIDENT (2026-08-31): the first governed weight-discharge validation stalled in go-engine-gate past the 45m section cap while still producing output, during m3's attested heavy window on the shared Mac (both seats' timelines on record; cross-seat hold coordinated by session message). Wido's leniency word R-32-m2 covers the interim (machine-local cap 90m, coordinated quiet windows); THIS goal is the permanent fix and gains priority from the incident.
 - OpenedAt: 2026-08-29T07:38:20Z
-- Revision: 67
+- Revision: 68
 - BudgetExceptions: 0
 
 History:
@@ -78,4 +78,5 @@ History:
 - 2026-09-11T22:03:35Z 3M3DDFMQFG20R73AWT0GX1KQJH-m1-c6925449 done actor=human:Wido targets=actionable-metrics,breach-clock-and-budget-honesty,failed-job-attention,fixture-stewards-outlive-their-suite,goal-abandoned-with-a-reason,human-carried-landing-verb,human-goal-verbs-forgiving,job-record-birth-token,landing-receipt-survives-records-drift,lease-sweep-death-evidence,live-job-on-a-done-goal-unnoticed,machine-concurrency-governor,proof-harness-process-custody,severity-tiered-rigor,severity-tiered-rigor-p2,steward-catchup-livelock,steward-revives-a-done-goal,stop-batch-strands-a-resumable-goal,suite-custody,token-spend-fence,turn-verdict-hardening,watch-verb,watcher-repair-request-never-names-current,winddown-census-handoff-leak reason=priority-order from=1:44 to=1:43
 - 2026-09-11T22:04:49Z GKKH2ASFRKXEH0VXXWFTBHPN8B-m1-c6925449 done actor=human:Wido targets=fixture-stewards-outlive-their-suite,machine-concurrency-governor,proof-harness-process-custody,token-spend-fence reason=priority-order from=1:43 to=1:42
 - 2026-09-11T22:05:35Z WXHK62S6CXZXT6T7FQQTP61WZD-m1-c6925449 done actor=human:Wido targets=actionable-metrics,failed-job-attention,fixture-stewards-outlive-their-suite,job-record-birth-token,lease-sweep-death-evidence,live-job-on-a-done-goal-unnoticed,machine-concurrency-governor,severity-tiered-rigor,steward-catchup-livelock,steward-revives-a-done-goal,suite-custody,token-spend-fence,turn-verdict-hardening,watch-verb,watcher-repair-request-never-names-current,winddown-census-handoff-leak reason=priority-order from=1:42 to=1:41
-Integrity: sha256=905cb1ceaa777f127ea2de6d00a0ab3b3dd7b4e0026b8dc813224062066a0994
+- 2026-09-11T22:05:41Z FTP25Q13G54ETFC10EQTE6AWA6-m1-c6925449 done actor=human:Wido targets=actionable-metrics,failed-job-attention,fixture-stewards-outlive-their-suite,job-record-birth-token,lease-sweep-death-evidence,live-job-on-a-done-goal-unnoticed,machine-concurrency-governor,severity-tiered-rigor-p2,steward-catchup-livelock,steward-revives-a-done-goal,suite-custody,token-spend-fence,turn-verdict-hardening,watch-verb,watcher-repair-request-never-names-current,winddown-census-handoff-leak reason=priority-order from=1:41 to=1:40
+Integrity: sha256=51766675b3a3f6659cf3763e050d5f674eba05f63e5e826635d4d6397f49b8dc
