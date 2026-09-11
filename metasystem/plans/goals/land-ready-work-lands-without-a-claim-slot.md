@@ -5,11 +5,11 @@
 - Sequence: 20
 - Risk: severity=2 novelty=2 exposure=3 accumulation=1 basis="severity 2: the claim quota and accounting are the spend fence; novelty 2: a landing slot is a new state; exposure 3: every seat; accumulation 1: goal verbs and receipt"
 - Tier: 3
-- Intent: Built work waited 22 to 35 hours to land because the seat's one claim went elsewhere and a re-claim reset the accounting revision and voided retained proof (ledger.md finding 5, process-rules.md items 6 and 7). DONE means: (1) a landing slot exempt from the one-claim quota: a seat may hold one land-ready goal in landing beside its claim, with the slot's lifecycle (enter on land-ready, leave on done or park) recorded on the goal; (2) a same-pair re-claim keeps the accounting episode and its retained proof; receipt acceptance is not changed here: record-only tip moves are owned by landing-receipt-survives-records-drift (land-ready on m1e) and identity by retained-proof-reuse-crosses-claims-and-attempts; proven by fixtures and, in the field, by hours from land-ready to landed under 4 over a week. Goal 20 of plans/delivery-efficiency-plan.md.
+- Intent: Built work waited 22 to 35 hours to land because the seat's one claim went elsewhere and a re-claim reset the accounting revision and voided retained proof (ledger.md finding 5, process-rules.md items 6 and 7). DONE means: (1) a landing slot exempt from the one-claim quota: a seat may hold one land-ready goal in landing beside its claim, with the slot's lifecycle (enter on land-ready, leave on done or park) recorded on the goal; (2) a same-pair re-claim keeps the accounting episode and its retained proof; receipt acceptance is not changed here: record-only tip moves are owned by landing-receipt-survives-records-drift (land-ready on m1e) and identity by retained-proof-reuse-crosses-claims-and-attempts; proven by fixtures and, in the field, by hours from land-ready to landed under 4 over a week. Goal 20 of plans/delivery-efficiency-plan.md. RUNTIME INDEPENDENCE (plan principle 0; architecture doctrine of 2026-08-16: correctness never depends on an accelerator): this holds for every runtime the roster can host today (claude, codex, devin) and for future adapters such as opencode; the mechanism lives in the Go engine, the ledger verbs and the adapter contract, never in one runtime's hook, harness, CLI or transcript format; a native facility may accelerate it through its adapter, and an agent on any runtime with no accelerator gets the same guarantee from the records and the verb alone; where the goal touches a runtime path, DONE is proven on at least two runtimes.
 - Origin: human
 - Next step: Read the claim quota in internal/goal/validate.go and rebindClaimKeepEpisode in verbs.go; design the landing slot's lifecycle; critique; build; land.
 - OpenedAt: 2026-09-11T15:45:27Z
-- Revision: 13
+- Revision: 14
 - Pinned: m1e
 - BudgetExceptions: 0
 
@@ -27,4 +27,5 @@ History:
 - 2026-09-11T16:18:37Z YFNC9KN25D2E95W24CKBGS0EFH-m1-c6925449 set-priority actor=human:Wido targets=human-carried-landing-carry,human-carried-landing-verb,land-ready-work-lands-without-a-claim-slot reason=priority-order subject=land-ready-work-lands-without-a-claim-slot from=1:22 to=1:20 requested-sequence=20
 - 2026-09-11T16:19:36Z 4ZJ2SJZDCHZ4F8GWS1V7C58H0Q-m1-c6925449 approve actor=human:Wido targets=land-ready-work-lands-without-a-claim-slot
 - 2026-09-11T20:31:25Z 1WZYJW9AQSH38T3CZ8V8NQAFY7-m1-c6925449 unapprove actor=human:Wido targets=land-ready-work-lands-without-a-claim-slot reason=Wido 2026-09-11: every program goal states runtime independence (claude, codex, devin, future adapters); intent amended before re-approval
-Integrity: sha256=3843e81a358db55acb3d1f7ba865c062f4c21070b596a426c77534d62265f87a
+- 2026-09-11T20:32:40Z GXVV6V646A2DFV2V665RD10DC0-m1e-3ca84c28 edit actor=m1e+main-1789158700-39729-b9c0d2 targets=land-ready-work-lands-without-a-claim-slot
+Integrity: sha256=8e085d9b939fe43528e348fb51d86656b2e0a36a3a3a78c1f3071f447a2a195b
