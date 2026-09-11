@@ -1,6 +1,6 @@
 # delivery-receipt-stops-at-first-failure
 
-- State: queued
+- State: approved
 - Priority: 1
 - Sequence: 9
 - Risk: severity=2 novelty=1 exposure=3 accumulation=1 basis="severity 2: the receipt is the landing judge; novelty 1: the runner loop exists and gains a purpose-dependent stop; exposure 3: every delivery attempt; accumulation 1: cadence unchanged"
@@ -9,9 +9,11 @@
 - Origin: human
 - Next step: Wido's word recorded 2026-09-11 (R-96-m1e): yes, for the delivery purpose only; cadence keeps continue-and-collect. Next: build behind the fixture with a failing second group and its retry.
 - OpenedAt: 2026-09-11T15:45:11Z
-- Revision: 13
+- Revision: 14
 - Pinned: m1e
+- Budget: elapsedLimit=1d attemptLimit=10 reservedJobMinutesLimit=1200 activeJobLimit=1 reviewRoundLimit=3
 - BudgetExceptions: 0
+- Approved: by=human:Wido at=2026-09-11T20:33:23Z revision=14 opid=W10S05V1M1CHQ7X3033MTK2Y1Z-m1-c6925449 authority=proven digest=d564236287914adef7d2b8a966daed07180f7499ff88ba3efdcc543731b34816
 
 History:
 - 2026-09-11T15:45:11Z RKPY1HJBS8V1X9RAP3GX84EXYT-m1e-5083721b open actor=m1e+main-1789141490-27414-b9c0d2 targets=delivery-receipt-stops-at-first-failure
@@ -27,4 +29,5 @@ History:
 - 2026-09-11T20:15:58Z E28N177HWSD66GHNZ17YC7GNW8-m1e-892cdaec edit actor=m1e+main-1789030447-51011-5722fc targets=delivery-receipt-stops-at-first-failure
 - 2026-09-11T20:30:50Z YNSXBTNTY71V7NTX1WWEP2P1HY-m1-c6925449 unapprove actor=human:Wido targets=delivery-receipt-stops-at-first-failure reason=Wido 2026-09-11: every program goal states runtime independence (claude, codex, devin, future adapters); intent amended before re-approval
 - 2026-09-11T20:32:08Z AG5CRKKFXQX2DTK7GA5TAMA46B-m1e-3ca84c28 edit actor=m1e+main-1789158700-39729-b9c0d2 targets=delivery-receipt-stops-at-first-failure
-Integrity: sha256=5d8a923accc4a6f3c86973d5149a49fb08f1fc7ff293cbe8aa0915448db2e1a3
+- 2026-09-11T20:33:23Z W10S05V1M1CHQ7X3033MTK2Y1Z-m1-c6925449 approve actor=human:Wido targets=delivery-receipt-stops-at-first-failure
+Integrity: sha256=c80cac28c0be36c5f57e46d8d4d60f6d0181df852bf876128e7f793257d10689
