@@ -829,8 +829,18 @@ wait_for_agent_fixture_process() { # fixture name, job id or -, exact child pid
   return "$result"
 }
 
+# A step that waits longer than this names itself and its wall time on
+# stderr, so a long gap in the section log is a named wait, never silence.
+agent_fixture_slow_step_sec=${METASYSTEM_FIXTURE_SLOW_STEP_SEC:-5}
+
+report_slow_agent_fixture_step() { # fixture name, started SECONDS
+  local elapsed=$(( SECONDS - $2 ))
+  (( elapsed >= agent_fixture_slow_step_sec )) || return 0
+  echo "dispatch fixture step $1 took ${elapsed}s" >&2
+}
+
 run_agent_fixture() { # fixture name, job id or -, command...
-  local name=$1 job=$2 child_pid result
+  local name=$1 job=$2 child_pid result started=$SECONDS
   shift 2
   case ${2:-} in
     dispatch|follow-up)
@@ -845,10 +855,12 @@ run_agent_fixture() { # fixture name, job id or -, command...
   "$@" &
   child_pid=$!
   if wait_for_agent_fixture_process "$name" "$job" "$child_pid"; then
+    report_slow_agent_fixture_step "$name" "$started"
     return 0
   else
     result=$?
   fi
+  report_slow_agent_fixture_step "$name" "$started"
   return "$result"
 }
 
@@ -1006,7 +1018,10 @@ wait_for_agent_status() { # job, expected
   local job=$1 expected=$2 observed= started=$SECONDS deadline=$((SECONDS + agent_status_cap_sec)) elapsed
   while (( SECONDS < deadline )); do
     observed=$(cd "$agent_repo" && scripts/agents/dispatch.sh status --job "$job" 2>/dev/null || true)
-    [[ "$observed" == "$expected" ]] && return 0
+    if [[ "$observed" == "$expected" ]]; then
+      report_slow_agent_fixture_step "wait-status:$job:$expected" "$started"
+      return 0
+    fi
     sleep "$METASYSTEM_FIXTURE_POLL_INTERVAL_SEC"
   done
   elapsed=$((SECONDS - started))
@@ -1027,7 +1042,7 @@ wait_for_agent_chain_unlock() { # root job
 }
 
 wait_for_agent_recollection() { # description, job, terminal field, expected value, reap fixture name
-  local description=$1 job=$2 field=$3 expected=$4 reap_fixture=$5
+  local description=$1 job=$2 field=$3 expected=$4 reap_fixture=$5 recollection_started=$SECONDS
   local verdict="$agent_supervision_repo/artifacts/agents/supervision/last-census.json"
   local snap="$agent_fixture/recollection-wait-snapshot.json" base marker sequence interval silence
   local last_advance=$SECONDS rebaselines=0 max_rebaselines=5 attempt_budget=2
@@ -1071,6 +1086,7 @@ wait_for_agent_recollection() { # description, job, terminal field, expected val
     run_agent_fixture "$reap_fixture" "$job" "$agent_dispatch" reap --job "$job"
     sleep "$METASYSTEM_FIXTURE_POLL_INTERVAL_SEC"
   done
+  report_slow_agent_fixture_step "wait-recollection:$job:$field=$expected" "$recollection_started"
 }
 
 fixture_record_snapshot() { # repository
