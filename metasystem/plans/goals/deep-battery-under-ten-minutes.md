@@ -9,11 +9,12 @@
 - Origin: human
 - Next step: STATE 2026-09-12 02:20Z (m1e): cadence run 8 (proof-mtxfyj9c) 969 s: dispatcher 388 (from 756), adoption 387 (from 638), the four slots full the whole run; run 9 (proof-mtxgkya4, six slots) in flight and slower per group under the contention. Landed 7a6babbb (four shards, the ENOMEM retry, cap default a third of the cores). CORRECTION: the internal/goal coverage shortfall (78.3 percent against the 80.0 floor) is not the shard count: it reads 78.3 with six and with four shards, and the goal package gained about 1300 lines in verbs.go from ce59b313 (another seat, 22:22Z) with one test line; blocker goal goal-package-coverage-under-its-floor-since-ce59b313 opened for it. The cadence cannot be green until that lands. NEXT: the land fixture's nested receipt cap (one minute) trips under six slots; decide four or six slots by run 9's wall; the CPU bound stays the duplicated coverage work (question for Wido on the design page). DONE still requires three consecutive green cadence runs under ten minutes with their attempt ids.
 - OpenedAt: 2026-09-10T12:02:35Z
-- Revision: 18
+- Revision: 19
 - Pinned: m1e
 - Budget: elapsedLimit=2d attemptLimit=24 reservedJobMinutesLimit=1200 activeJobLimit=1 reviewRoundLimit=3
 - BudgetExceptions: 1
 - Approved: by=human:Wido at=2026-09-11T19:55:43Z revision=13 opid=WD3K43ZFXYPYJHYYNPV2SHSVXS-m1-c6925449 authority=proven digest=48cbfde7036eb8cce88fb51eed374c47633e9aad2785e0059680914d9082cb69
+- Sliced: machine=m1e lineage=main-1789030447-51011-5722fc revision=15 at=2026-09-11T21:36:54Z
 - Claimed: machine=m1e lineage=main-1789030447-51011-5722fc at=2026-09-11T19:57:52Z revision=15 accountingRevision=15 episodeAt=2026-09-11T19:57:52Z episodeRevision=15
 - StopCapability: generation=15 revision=15 machine=m1e claimEpoch=1 fenceEpoch=0
 
@@ -36,4 +37,5 @@ History:
 - 2026-09-11T20:35:20Z YB6QAKBCQ85Z4YFF2HT16W3H2G-m1e-892cdaec edit actor=m1e+main-1789030447-51011-5722fc targets=deep-battery-under-ten-minutes
 - 2026-09-11T20:48:55Z ZRN4V4A2MDDBRS9H5TRET0MS2J-m1e-892cdaec edit actor=m1e+main-1789030447-51011-5722fc targets=deep-battery-under-ten-minutes
 - 2026-09-11T21:32:20Z JHB23YJZDVME511SP7SG0EJAKX-m1e-892cdaec edit actor=m1e+main-1789030447-51011-5722fc targets=deep-battery-under-ten-minutes
-Integrity: sha256=6a74c452988f5227ff97e292f5fa3a291f6f75309f518d528f1c9e505b470e17
+- 2026-09-11T21:36:54Z EWXRQAEFWDJK2YS8V5ZQDDADCF-m1e-892cdaec slice-start actor=m1e+main-1789030447-51011-5722fc targets=deep-battery-under-ten-minutes
+Integrity: sha256=44220f3ef7fe66e8c39b435b60d0fae38441b980c1cffa01f4342d9eb37ac7ca
