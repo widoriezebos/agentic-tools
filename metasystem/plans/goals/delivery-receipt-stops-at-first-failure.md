@@ -1,6 +1,6 @@
 # delivery-receipt-stops-at-first-failure
 
-- State: approved
+- State: queued
 - Priority: 1
 - Sequence: 9
 - Risk: severity=2 novelty=1 exposure=3 accumulation=1 basis="severity 2: the receipt is the landing judge; novelty 1: the runner loop exists and gains a purpose-dependent stop; exposure 3: every delivery attempt; accumulation 1: cadence unchanged"
@@ -9,11 +9,9 @@
 - Origin: human
 - Next step: Read RunTestPlan in internal/proofrun/test_build.go and R-16 in memory/rulings.md, design the purpose-dependent stop and the retry projection, critique, build, land with its own battery.
 - OpenedAt: 2026-09-11T15:45:11Z
-- Revision: 5
+- Revision: 6
 - Pinned: m1e
-- Budget: elapsedLimit=1d attemptLimit=10 reservedJobMinutesLimit=1200 activeJobLimit=1 reviewRoundLimit=3
 - BudgetExceptions: 0
-- Approved: by=human:Wido at=2026-09-11T15:49:22Z revision=4 opid=VFC808383NWWTGGSA8MY89B3RZ-m1-c6925449 authority=proven digest=fdd056da81529dc47373e0fa77308367a3e7770a068e85df023f227a4c385141
 
 History:
 - 2026-09-11T15:45:11Z RKPY1HJBS8V1X9RAP3GX84EXYT-m1e-5083721b open actor=m1e+main-1789141490-27414-b9c0d2 targets=delivery-receipt-stops-at-first-failure
@@ -21,4 +19,5 @@ History:
 - 2026-09-11T15:47:34Z BF0FVV403JF278KZJSGB8JWVAC-m1-c6925449 set-priority actor=human:Wido targets=actionable-metrics,breach-clock-and-budget-honesty,burn-without-delivery-tripwire,carried-landing-debt-and-cap,delegate-job-liveness,delivery-receipt-stops-at-first-failure,failed-job-attention,fixture-stewards-outlive-their-suite,goal-abandoned-with-a-reason,human-carried-landing-verb,human-goal-verbs-forgiving,job-record-birth-token,landing-receipt-survives-records-drift,lease-sweep-death-evidence,live-job-on-a-done-goal-unnoticed,machine-concurrency-governor,proof-harness-process-custody,severity-tiered-rigor,severity-tiered-rigor-p2,small-change-lane,steward-catchup-livelock,steward-revives-a-done-goal,stop-batch-strands-a-resumable-goal,suite-custody,token-spend-fence,turn-verdict-hardening,watch-verb,watcher-repair-request-never-names-current,winddown-census-handoff-leak reason=priority-order subject=delivery-receipt-stops-at-first-failure from=unranked to=1:8 requested-sequence=8
 - 2026-09-11T15:49:22Z VFC808383NWWTGGSA8MY89B3RZ-m1-c6925449 approve actor=human:Wido targets=delivery-receipt-stops-at-first-failure
 - 2026-09-11T15:50:51Z M4GZC1Q99QFRH9T13HSY774HAR-m1-c6925449 set-priority actor=human:Wido targets=actionable-metrics,breach-clock-and-budget-honesty,budget-extends-by-consumption-and-breach-parks,burn-without-delivery-tripwire,capped-round-continues-instead-of-restarting,carried-landing-debt-and-cap,coordinator-context-stays-under-budget,coordinator-wakes-on-events-not-polls,critique-closes-on-folded-proof,deep-battery-under-ten-minutes,delegate-job-liveness,delegate-rounds-reuse-a-warm-gate,delivery-receipt-stops-at-first-failure,failed-job-attention,fixture-stewards-outlive-their-suite,goal-abandoned-with-a-reason,human-carried-landing-carry,human-carried-landing-verb,human-goal-verbs-forgiving,job-record-birth-token,land-ready-work-lands-without-a-claim-slot,landing-receipt-survives-records-drift,landing-refuses-without-its-receipt-line,lease-sweep-death-evidence,live-job-on-a-done-goal-unnoticed,machine-concurrency-governor,proof-groups-detect-hangs-by-progress-not-the-clock,proof-harness-process-custody,retained-proof-reuse-crosses-claims-and-attempts,seat-opened-goals-name-their-blocker,severity-tiered-rigor,severity-tiered-rigor-p2,small-change-lane,steward-catchup-livelock,steward-revives-a-done-goal,stop-batch-strands-a-resumable-goal,suite-custody,token-spend-fence,turn-verdict-hardening,watch-verb,watcher-repair-request-never-names-current,winddown-census-handoff-leak reason=priority-order subject=landing-refuses-without-its-receipt-line from=1:8 to=1:9 requested-sequence=5
-Integrity: sha256=a41c50bb24009b4f5a5a31dc4df1ca736606b9eb4ee9ce471a2e5a72dedb9929
+- 2026-09-11T16:13:19Z N6XSYCT47X536DEVX8EG40F311-m1-c6925449 unapprove actor=human:Wido targets=delivery-receipt-stops-at-first-failure reason=Wido 2026-09-11: Codex critique round 1 of the delivery-efficiency plan accepted; intent amended before re-approval
+Integrity: sha256=51743031685f586aeefa2378705bdcb02cc27f37b8df56d53ad80d075b83532a
