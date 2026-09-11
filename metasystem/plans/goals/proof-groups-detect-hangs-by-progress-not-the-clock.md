@@ -7,7 +7,8 @@
 - Origin: main
 - Next step: Revision 3 folded the second critique as decisions (implementation-first ruling); DONE narrowed to the receipt's groups and attempt (slices 1 and 2); fixture waits are goal fixture-waits-name-their-producer. Next: Sol builds slice 1 from the build brief (supervisor with dead/stopped/waiting/runaway verdicts by consumption and task state, optional protected cpuBudgetSeconds, -timeout 0), Opus critiques, land; then slice 2 (attempt deadline and the remaining engine contexts).
 - OpenedAt: 2026-09-10T13:40:12Z
-- Revision: 25
+- Revision: 26
+- Pinned: m1e
 - Budget: elapsedLimit=3d attemptLimit=48 reservedJobMinutesLimit=1200 activeJobLimit=1 reviewRoundLimit=3
 - BudgetExceptions: 3
 - Approved: by=human:Wido at=2026-09-11T09:54:10Z revision=22 opid=QY1MYNZNDWHY57N6SFZ1M84G90-m1-c6925449 authority=proven digest=dad2e53d5dda53ed598a102ccd9d0638dc5a4b0c2d672c25c9bf01ac9811b7bc
@@ -39,4 +40,5 @@ History:
 - 2026-09-11T13:12:46Z EP76YEAF9FNDJ474Q4MKSYR87A-m1-1701c13c release actor=m1+main-1788940932-18533-7fa6c2 targets=proof-groups-detect-hangs-by-progress-not-the-clock
 - 2026-09-11T13:52:22Z S2R40KWSVJ8NQA8KJR2ER8E8QN-m1e-892cdaec claim actor=m1e+main-1789030447-51011-5722fc targets=proof-groups-detect-hangs-by-progress-not-the-clock
 - 2026-09-11T14:41:33Z ZEPE013D9KXJQ7Q4QPYVPC2XSR-m1e-892cdaec release actor=m1e+main-1789030447-51011-5722fc targets=proof-groups-detect-hangs-by-progress-not-the-clock
-Integrity: sha256=8d2c0b486c5256b9e6a65b19eaa82887109a5d3b220fc9a5bb56e65ef2ad981c
+- 2026-09-11T15:47:46Z KDEPR8XH6VAAHSD8H9JSP7Y2Z9-m1-c6925449 set-pin actor=human:Wido targets=proof-groups-detect-hangs-by-progress-not-the-clock
+Integrity: sha256=0529eaca028cac3c9817902b36790784ca1ebd8806198675be3475a0aa2be4e0
