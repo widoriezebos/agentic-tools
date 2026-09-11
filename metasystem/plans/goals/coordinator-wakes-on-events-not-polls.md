@@ -7,10 +7,12 @@
 - Origin: human
 - Next step: Design first: inventory the wait sites in the transcripts (watch, TaskOutput, tmux capture loops, Monitor), define the wait verb over the existing job, attempt and ledger records, critique, build, land.
 - OpenedAt: 2026-09-11T15:45:15Z
-- Revision: 1
+- Revision: 2
+- Pinned: m1e
 - Budget: elapsedLimit=1d attemptLimit=10 reservedJobMinutesLimit=1200 activeJobLimit=1 reviewRoundLimit=3
 - BudgetExceptions: 0
 
 History:
 - 2026-09-11T15:45:15Z HPJKBN0ZC1BZBK2M5KWKW0JP71-m1e-5083721b open actor=m1e+main-1789141490-27414-b9c0d2 targets=coordinator-wakes-on-events-not-polls
-Integrity: sha256=44845df537612f2e7bac3fbfd07cebbf58b0a487c414f9d1a7142a5ee0d0b5b7
+- 2026-09-11T15:48:09Z CSC5ES54ZZ6KDTH00Z9G0X0WAQ-m1-c6925449 set-pin actor=human:Wido targets=coordinator-wakes-on-events-not-polls
+Integrity: sha256=741d9d3cf039b942f8215966253d927fcf17ee5be0c80a22834d51603bcbcee2
