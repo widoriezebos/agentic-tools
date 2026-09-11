@@ -373,7 +373,7 @@ cat >"$brain_failure_engine" <<'BRAIN_FAILURE_ENGINE'
 if [[ ${1:-} == brain && ${2:-} == boot ]]; then
   case ${METASYSTEM_BRAIN_FAILURE_MODE:?} in
     exit) echo 'fixture boot exit' >&2; exit 1 ;;
-    sleep) sleep 30; exit 0 ;;
+    sleep) sleep 4; exit 0 ;;
     invalid) echo 'not json'; exit 0 ;;
   esac
 	fi
@@ -392,6 +392,7 @@ chmod +x "$brain_failure_engine"
 brain_arming_log=$tmp/brain-failure-arming.log
 for failure_mode in exit sleep invalid; do
   METASYSTEM_BIN=$brain_failure_engine METASYSTEM_BRAIN_REAL_ENGINE=$ms \
+    METASYSTEM_BRAIN_BOOT_DEADLINE_MS=500 \
     METASYSTEM_BRAIN_FAILURE_MODE=$failure_mode METASYSTEM_SUPERVISION_REGISTRY_HOME=$brain_registry \
     METASYSTEM_BRAIN_FIXTURE_PID=$$ METASYSTEM_BRAIN_FIXTURE_STARTED=$brain_fixture_started \
     METASYSTEM_BRAIN_ARMING_LOG=$brain_arming_log \

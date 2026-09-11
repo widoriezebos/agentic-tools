@@ -645,11 +645,17 @@ if [[ "$event" == start ]]; then
     brain_boot_rc=$start_context_rc
     printf '%s\n' 'runtime start-context declaration unreadable' >"$brain_boot_err"
   else
+    # The boot deadline is 5 s unless the environment lowers it (fixtures do,
+    # so a boot that must outlast the deadline costs seconds, not half a
+    # minute); the hook grants three seconds of grace beyond it.
+    brain_boot_deadline_ms=${METASYSTEM_BRAIN_BOOT_DEADLINE_MS:-5000}
+    [[ "$brain_boot_deadline_ms" =~ ^[1-9][0-9]*$ ]] || brain_boot_deadline_ms=5000
+    brain_boot_wait_sec=$(( brain_boot_deadline_ms / 1000 + 3 ))
 		"$ms" brain boot --root "$state_root" --repo "$state_root" --bytes "$start_context_bytes" \
-      --deadline-ms 5000 >"$brain_boot_out" 2>"$brain_boot_err" &
+      --deadline-ms "$brain_boot_deadline_ms" >"$brain_boot_out" 2>"$brain_boot_err" &
     brain_boot_pid=$!
     brain_boot_started=$SECONDS
-    while kill -0 "$brain_boot_pid" 2>/dev/null && (( SECONDS - brain_boot_started < 8 )); do
+    while kill -0 "$brain_boot_pid" 2>/dev/null && (( SECONDS - brain_boot_started < brain_boot_wait_sec )); do
       sleep 0.05
     done
     if kill -0 "$brain_boot_pid" 2>/dev/null; then
