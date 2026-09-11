@@ -46,6 +46,12 @@ if (( ! fixture_bed_child )); then
 	fixture_parent_scenario_lines=$("${METASYSTEM_BIN:-$fixture_bed_root/bin/metasystem}" proof-run fixture-selection \
 		--family dispatcher --selection "$fixture_parent_selection")
 	while IFS= read -r scenario; do
+		if [[ "$scenario" == dispatch ]]; then
+			# The dispatch scenario runs as five clusters, each on its own bed
+			# (the one scenario was 574 s of five-second dispatches on one bed).
+			fixture_parent_scenarios+=(dispatch-a dispatch-b dispatch-e dispatch-c dispatch-d)
+			continue
+		fi
 		fixture_parent_scenarios+=("$scenario")
 	done <<<"$fixture_parent_scenario_lines"
 	run_fixture_bed_scenarios dispatch \
@@ -53,7 +59,7 @@ if (( ! fixture_bed_child )); then
 		"$fixture_bed_script" "${fixture_parent_scenarios[@]}"
 fi
 case "$fixture_scenario" in
-	dispatch | mission-runner | adapter-selftest | steward-continuation | brain-delegate-refuses | brain-cancel-close-reap-refuse | brain-breach-stop-exempt | brain-absent-node-proceeds | brain-fence-helper-fails | seat-refused) ;;
+	dispatch-a | dispatch-b | dispatch-c | dispatch-d | dispatch-e | mission-runner | adapter-selftest | steward-continuation | brain-delegate-refuses | brain-cancel-close-reap-refuse | brain-breach-stop-exempt | brain-absent-node-proceeds | brain-fence-helper-fails | seat-refused) ;;
   *) echo "dispatch fixtures: unknown scenario: $fixture_scenario" >&2; exit 64 ;;
 esac
 
@@ -549,7 +555,7 @@ agent_config="$agent_repo/scripts/metasystem-config.sh"
 good_agent_conf="$agent_fixture/good-metasystem.conf"
 cp "$agent_repo/metasystem.conf" "$good_agent_conf"
 
-if [[ "$fixture_scenario" == dispatch ]]; then
+if [[ "$fixture_scenario" == dispatch-a ]]; then
   # A restoration failure keeps its named stash available for manual recovery.
   # An index lock makes both the reset and stash application fail deterministically
   # without changing the stash object that the assertion identifies.
@@ -1115,7 +1121,20 @@ seat_records_after=$(fixture_record_snapshot "$agent_repo")
 echo "seat-refused fixtures passed"
 fi
 
-if [[ "$fixture_scenario" == dispatch ]]; then
+if [[ "$fixture_scenario" == dispatch-* ]]; then
+dispatch_cluster() { # cluster letter
+  [[ "$fixture_scenario" == "dispatch-$1" ]]
+}
+# Definitions every cluster needs before its bed is armed.
+no_tier_conf="$agent_fixture/no-tier-metasystem.conf"
+grep -v '^model\.tier\.' "$good_agent_conf" >"$no_tier_conf"
+agent_process_fixture="$agent_fixture/processes.json"
+agent_identity_fixture="$agent_fixture/process-identities.json"
+printf '[]\n' >"$agent_process_fixture"
+printf '{}\n' >"$agent_identity_fixture"
+export METASYSTEM_CENSUS_PROCESS_FILE="$agent_process_fixture"
+export METASYSTEM_FAKE_PROCESS_IDENTITY_FILE="$agent_identity_fixture"
+if dispatch_cluster a; then
 # Build-stamp skew refuses before any dispatch state exists. The fixture engine
 # is built at one commit, then its checkout advances through an agent-script
 # change while the binary deliberately stays untouched.
@@ -1187,8 +1206,6 @@ EOF
 rm -f "$config_order/metasystem.conf.local"
 
 "$agent_config" validate
-no_tier_conf="$agent_fixture/no-tier-metasystem.conf"
-grep -v '^model\.tier\.' "$good_agent_conf" >"$no_tier_conf"
 cp "$no_tier_conf" "$agent_repo/metasystem.conf"
 "$agent_config" validate >"$agent_fixture/no-tier-validate.out"
 [[ $(grep -Fc 'INFO: model tiers are absent; dispatch overrides therefore always escalate' "$agent_fixture/no-tier-validate.out") -eq 1 ]] \
@@ -1338,12 +1355,6 @@ grep -Fq 'BUDGET_UNKNOWN record=plans/goals/budgetless-survivor.md' "$agent_fixt
 # All remaining dispatch fixtures run behind a real armed fake-runtime set.
 # The explicit synthetic process table is fixture-only and keeps this test
 # deterministic in restricted environments where ps enumeration is denied.
-agent_process_fixture="$agent_fixture/processes.json"
-agent_identity_fixture="$agent_fixture/process-identities.json"
-printf '[]\n' >"$agent_process_fixture"
-printf '{}\n' >"$agent_identity_fixture"
-export METASYSTEM_CENSUS_PROCESS_FILE="$agent_process_fixture"
-export METASYSTEM_FAKE_PROCESS_IDENTITY_FILE="$agent_identity_fixture"
 
 # A structured budget enters through the public human approval verb, then the
 # agent claims it without restating the tuple. Its first reservation is within
@@ -1475,6 +1486,7 @@ cp "$budget_dispatch_repo/scripts/agents/templates/follow-up.md" "$budget_follow
 [[ ! -e "$budget_dispatch_repo/artifacts/agents/jobs/structured-budget-within-r2.json" ]] \
   || { echo "the structured follow-up refusal created a child reservation" >&2; exit 1; }
 
+fi
 # The two migration-specific copies above deliberately began in the legacy
 # world. The main dispatch bed does not: convert its goal-free baseline through
 # the product's local cutover before any ordinary scenario can open a goal.
@@ -1514,6 +1526,12 @@ run_fixture_arm "dispatcher initial arm" "$agent_fixture/arming.out" \
 
 happy_brief="$agent_fixture/happy.md"
 make_agent_brief "$happy_brief" design
+
+# Legs more than one cluster needs, each with its own assertions. A
+# cluster runs the ones its legs read (happy for the follow-ups and the
+# close, default-role for the null-session follow-up, review-target and
+# flag-runtime for the critique chains and the envelope overrides).
+leg_happy() {
 if run_agent_fixture happy happy "$agent_dispatch" dispatch --role design-critic --outputs "$fixture_declared_outputs" --design metasystem/scripts/agents/roles/design-critic.md --brief "$happy_brief" --job-id happy --wait; then
   :
 else
@@ -1525,6 +1543,118 @@ fi
   || { echo "valid fake dispatch did not complete" >&2; exit 1; }
 [[ "$("$engine" json get --file "$agent_repo/artifacts/agents/jobs/happy.json" --field design)" == metasystem/scripts/agents/roles/design-critic.md ]] \
   || { echo "design-critic dispatch did not record its reviewed design path" >&2; exit 1; }
+  happy_record="$agent_repo/artifacts/agents/jobs/happy.json"
+}
+
+leg_default_role() {
+# The recorded default is a real fallback, while its absence refuses.
+cp "$good_agent_conf" "$agent_repo/metasystem.conf"
+conf_edit "$agent_repo/metasystem.conf" delete-line-first '^role[.]verifier[.]runtime=.*$'
+verifier_brief="$agent_fixture/verifier.md"
+make_agent_brief "$verifier_brief" verify
+run_agent_fixture default-role default-role "$agent_dispatch" dispatch --role verifier --brief "$verifier_brief" --permissions none --job-id default-role --wait
+cp "$agent_repo/metasystem.conf" "$agent_fixture/no-role.conf"
+conf_edit "$agent_repo/metasystem.conf" delete-line-first '^role[.]default[.]runtime=.*$'
+agent_fails no-role-default 'neither a runtime entry nor role.default.runtime' "$agent_dispatch" dispatch --role verifier --brief "$verifier_brief" --permissions none
+cp "$good_agent_conf" "$agent_repo/metasystem.conf"
+}
+
+make_code_brief() {
+code_brief="$agent_fixture/code.md"
+make_agent_brief "$code_brief" implement
+}
+
+leg_review_target_flag_runtime() {
+  make_code_brief
+review_target_brief="$agent_fixture/review-target.md"
+make_agent_brief "$review_target_brief" implement
+run_agent_fixture review-target review-target "$agent_dispatch" dispatch --role implementer --brief "$review_target_brief" --job-id review-target --worktree --wait
+review_target_effective="$agent_repo/artifacts/agents/review-target/rounds/1/effective-permissions.json"
+review_target_root=$("$engine" json get --file "$agent_repo/artifacts/agents/jobs/review-target.json" --field workspaceRoot)
+[[ "$("$engine" json get --file "$review_target_effective" --field writeRoots)" == *"$review_target_root"* \
+   && "$("$engine" json get --file "$review_target_effective" --field tools)" == runtime-default ]] \
+  || { echo "the implementer role lost its existing writable worktree envelope" >&2; cat "$review_target_effective" >&2; exit 1; }
+# The artifact namespace is nested even though this disposable adoption is at
+# its git toplevel. Give the reviewed implementer a real change under that
+# namespace, declare it, and persist conformance before any critic fold reads
+# the subject set.
+printf 'review target subject\n' >"$review_target_root/metasystem/review-target.txt"
+json_replace_field "$agent_repo/artifacts/agents/review-target/rounds/1/return.json" \
+  diffBoundary '["metasystem/review-target.txt"]'
+"$agent_repo/bin/metasystem" validate conformance --root "$agent_repo" \
+  --stage review --job review-target
+grep -Fq 'diff --git a/metasystem/review-target.txt b/metasystem/review-target.txt' \
+  "$agent_repo/artifacts/agents/review-target/rounds/1/diff.patch" \
+  || { echo "review-target conformance diff did not preserve the nested artifact path" >&2; exit 1; }
+conf_edit "$agent_repo/metasystem.conf" delete-line-first '^dispatch[.]permissions[.]code-critic=.*$'
+run_agent_fixture flag-runtime flag-runtime "$agent_dispatch" dispatch --role code-critic --brief "$code_brief" --reviews review-target --runtime fake --job-id flag-runtime --wait
+printf 'dispatch.permissions.code-critic=none\n' >>"$agent_repo/metasystem.conf"
+flag_runtime_record="$agent_repo/artifacts/agents/jobs/flag-runtime.json"
+review_target_record="$agent_repo/artifacts/agents/jobs/review-target.json"
+[[ "$("$engine" json get --file "$flag_runtime_record" --field runtime)" == fake \
+   && "$("$engine" json get --file "$flag_runtime_record" --field overridden)" == true ]] \
+  || { echo "flag runtime override was not recorded as overridden fake" >&2; exit 1; }
+[[ "$("$engine" json get --file "$flag_runtime_record" --field permissions.effective.network)" == deny ]] \
+  || { echo "a code critic without an explicit permissions key did not deny network" >&2; exit 1; }
+[[ "$("$engine" json get --file "$review_target_record" --field permissions.effective.network)" == allow ]] \
+  || { echo "an implementer fixture did not retain network access" >&2; exit 1; }
+[[ "$("$engine" json get --file "$flag_runtime_record" --field reviews)" == review-target ]] \
+  || { echo "flag-runtime record lost its reviews binding" >&2; cat "$flag_runtime_record" >&2; exit 1; }
+[[ "$("$engine" json get --file "$review_target_record" --field independentCritiqueJobRef)" == flag-runtime ]] \
+  || { echo "critic claim did not derive its reference onto the reviewed chain root" >&2; cat "$review_target_record" >&2; exit 1; }
+
+# HCL-09: a landed commit is a first-class critic subject. The dispatcher
+# freezes its parent-to-commit patch and exact tree without looking for an
+# implementer job, and a second critic chain may review the same commit.
+printf 'commit subject fixture\n' >"$agent_repo/metasystem/commit-subject.txt"
+git -C "$agent_repo" add -- metasystem/commit-subject.txt
+git -C "$agent_repo" -c core.hooksPath=/dev/null -c user.name=metasystem -c user.email=metasystem@example.invalid \
+  commit -qm 'commit subject fixture'
+commit_subject=$(git -C "$agent_repo" rev-parse HEAD)
+commit_subject_tree=$(git -C "$agent_repo" rev-parse "$commit_subject^{tree}")
+git -C "$agent_repo" diff --binary --full-index "$commit_subject^" "$commit_subject" \
+  >"$agent_fixture/commit-subject.expected.patch"
+run_agent_fixture commit-subject commit-subject "$agent_dispatch" dispatch --role code-critic \
+  --brief "$code_brief" --reviews "commit:$commit_subject" --runtime fake --job-id commit-subject --wait
+commit_subject_record="$agent_repo/artifacts/agents/jobs/commit-subject.json"
+commit_subject_round="$agent_repo/artifacts/agents/commit-subject/rounds/1"
+[[ "$("$engine" json get --file "$commit_subject_record" --field reviews)" == "commit:$commit_subject" ]] \
+  || { echo "commit-subject critic lost its exact reviews binding" >&2; exit 1; }
+[[ "$(<"$commit_subject_round/reviewedTree")" == "$commit_subject_tree" ]] \
+  || { echo "commit-subject critic froze the wrong reviewed tree" >&2; exit 1; }
+cmp -s "$agent_fixture/commit-subject.expected.patch" "$commit_subject_round/diff.patch" \
+  || { echo "commit-subject diff is not the exact parent-to-commit patch" >&2; exit 1; }
+run_agent_fixture commit-subject-two commit-subject-two "$agent_dispatch" dispatch --role code-critic \
+  --brief "$code_brief" --reviews "commit:$commit_subject" --runtime fake --job-id commit-subject-two --wait
+echo "commit-subject dispatch fixtures passed"
+}
+
+make_investigator_brief() {
+investigator_brief="$agent_fixture/investigator.md"
+make_agent_brief "$investigator_brief" take-a-step-back
+}
+
+make_restrictive_permissions() {
+restrictive_permissions="$agent_fixture/restrictive-permissions.json"
+printf '{"readRoots":["."],"writeRoots":[],"network":"deny","approvals":"deny","tools":"read-only"}\n' >"$restrictive_permissions"
+}
+
+make_timeout_brief() {
+timeout_brief="$agent_fixture/timeout.md"
+make_agent_brief "$timeout_brief" design 'FAKE:timeout'
+}
+
+leg_happy_follow_up() {
+  run_agent_fixture happy-follow-up happy-r2 "$agent_dispatch" follow-up --job happy --message "$follow_message" --wait
+}
+
+make_follow_message() {
+follow_message="$agent_fixture/follow.md"
+cp "$agent_repo/scripts/agents/templates/follow-up.md" "$follow_message"
+}
+
+if dispatch_cluster a; then
+leg_happy
 
 # Two wrappers for the same fresh operation queue at the short chain section.
 # The second wrapper must reach claim-launch and report the first wrapper's
@@ -1978,18 +2108,8 @@ agent_fails main-override 'assigned to main' "$agent_dispatch" dispatch --role d
 agent_fails costlier-unmapped 'cost direction is unranked' "$agent_dispatch" dispatch --role design-critic --outputs "$fixture_declared_outputs" --design metasystem/scripts/agents/roles/design-critic.md --brief "$happy_brief" --model absent-from-tier
 agent_fails ranked-costlier 'higher (tier 1 -> tier 2)' "$agent_dispatch" dispatch --role design-critic --outputs "$fixture_declared_outputs" --design metasystem/scripts/agents/roles/design-critic.md --brief "$happy_brief" --model fake-premium
 
-# The recorded default is a real fallback, while its absence refuses.
-cp "$good_agent_conf" "$agent_repo/metasystem.conf"
-conf_edit "$agent_repo/metasystem.conf" delete-line-first '^role[.]verifier[.]runtime=.*$'
-verifier_brief="$agent_fixture/verifier.md"
-make_agent_brief "$verifier_brief" verify
-run_agent_fixture default-role default-role "$agent_dispatch" dispatch --role verifier --brief "$verifier_brief" --permissions none --job-id default-role --wait
-cp "$agent_repo/metasystem.conf" "$agent_fixture/no-role.conf"
-conf_edit "$agent_repo/metasystem.conf" delete-line-first '^role[.]default[.]runtime=.*$'
-agent_fails no-role-default 'neither a runtime entry nor role.default.runtime' "$agent_dispatch" dispatch --role verifier --brief "$verifier_brief" --permissions none
-cp "$good_agent_conf" "$agent_repo/metasystem.conf"
-code_brief="$agent_fixture/code.md"
-make_agent_brief "$code_brief" implement
+leg_default_role
+make_code_brief
 wait_for_agent_census_fresh delegate-derived-worktree
 run_agent_fixture_captured delegate-derived-worktree delegate-derived-worktree \
   "$agent_fixture/delegate-derived-worktree.out" \
@@ -2003,67 +2123,7 @@ grep -Fq '"outcome":"WON"' "$agent_fixture/delegate-derived-worktree.out" \
   || { echo "the public writable delegate did not return a typed launch on derived worktree custody" >&2; cat "$agent_fixture/delegate-derived-worktree.out" "$delegate_implementer_record" >&2; exit 1; }
 echo "live delegate isolation probe passed"
 
-review_target_brief="$agent_fixture/review-target.md"
-make_agent_brief "$review_target_brief" implement
-run_agent_fixture review-target review-target "$agent_dispatch" dispatch --role implementer --brief "$review_target_brief" --job-id review-target --worktree --wait
-review_target_effective="$agent_repo/artifacts/agents/review-target/rounds/1/effective-permissions.json"
-review_target_root=$("$engine" json get --file "$agent_repo/artifacts/agents/jobs/review-target.json" --field workspaceRoot)
-[[ "$("$engine" json get --file "$review_target_effective" --field writeRoots)" == *"$review_target_root"* \
-   && "$("$engine" json get --file "$review_target_effective" --field tools)" == runtime-default ]] \
-  || { echo "the implementer role lost its existing writable worktree envelope" >&2; cat "$review_target_effective" >&2; exit 1; }
-# The artifact namespace is nested even though this disposable adoption is at
-# its git toplevel. Give the reviewed implementer a real change under that
-# namespace, declare it, and persist conformance before any critic fold reads
-# the subject set.
-printf 'review target subject\n' >"$review_target_root/metasystem/review-target.txt"
-json_replace_field "$agent_repo/artifacts/agents/review-target/rounds/1/return.json" \
-  diffBoundary '["metasystem/review-target.txt"]'
-"$agent_repo/bin/metasystem" validate conformance --root "$agent_repo" \
-  --stage review --job review-target
-grep -Fq 'diff --git a/metasystem/review-target.txt b/metasystem/review-target.txt' \
-  "$agent_repo/artifacts/agents/review-target/rounds/1/diff.patch" \
-  || { echo "review-target conformance diff did not preserve the nested artifact path" >&2; exit 1; }
-conf_edit "$agent_repo/metasystem.conf" delete-line-first '^dispatch[.]permissions[.]code-critic=.*$'
-run_agent_fixture flag-runtime flag-runtime "$agent_dispatch" dispatch --role code-critic --brief "$code_brief" --reviews review-target --runtime fake --job-id flag-runtime --wait
-printf 'dispatch.permissions.code-critic=none\n' >>"$agent_repo/metasystem.conf"
-flag_runtime_record="$agent_repo/artifacts/agents/jobs/flag-runtime.json"
-review_target_record="$agent_repo/artifacts/agents/jobs/review-target.json"
-[[ "$("$engine" json get --file "$flag_runtime_record" --field runtime)" == fake \
-   && "$("$engine" json get --file "$flag_runtime_record" --field overridden)" == true ]] \
-  || { echo "flag runtime override was not recorded as overridden fake" >&2; exit 1; }
-[[ "$("$engine" json get --file "$flag_runtime_record" --field permissions.effective.network)" == deny ]] \
-  || { echo "a code critic without an explicit permissions key did not deny network" >&2; exit 1; }
-[[ "$("$engine" json get --file "$review_target_record" --field permissions.effective.network)" == allow ]] \
-  || { echo "an implementer fixture did not retain network access" >&2; exit 1; }
-[[ "$("$engine" json get --file "$flag_runtime_record" --field reviews)" == review-target ]] \
-  || { echo "flag-runtime record lost its reviews binding" >&2; cat "$flag_runtime_record" >&2; exit 1; }
-[[ "$("$engine" json get --file "$review_target_record" --field independentCritiqueJobRef)" == flag-runtime ]] \
-  || { echo "critic claim did not derive its reference onto the reviewed chain root" >&2; cat "$review_target_record" >&2; exit 1; }
-
-# HCL-09: a landed commit is a first-class critic subject. The dispatcher
-# freezes its parent-to-commit patch and exact tree without looking for an
-# implementer job, and a second critic chain may review the same commit.
-printf 'commit subject fixture\n' >"$agent_repo/metasystem/commit-subject.txt"
-git -C "$agent_repo" add -- metasystem/commit-subject.txt
-git -C "$agent_repo" -c core.hooksPath=/dev/null -c user.name=metasystem -c user.email=metasystem@example.invalid \
-  commit -qm 'commit subject fixture'
-commit_subject=$(git -C "$agent_repo" rev-parse HEAD)
-commit_subject_tree=$(git -C "$agent_repo" rev-parse "$commit_subject^{tree}")
-git -C "$agent_repo" diff --binary --full-index "$commit_subject^" "$commit_subject" \
-  >"$agent_fixture/commit-subject.expected.patch"
-run_agent_fixture commit-subject commit-subject "$agent_dispatch" dispatch --role code-critic \
-  --brief "$code_brief" --reviews "commit:$commit_subject" --runtime fake --job-id commit-subject --wait
-commit_subject_record="$agent_repo/artifacts/agents/jobs/commit-subject.json"
-commit_subject_round="$agent_repo/artifacts/agents/commit-subject/rounds/1"
-[[ "$("$engine" json get --file "$commit_subject_record" --field reviews)" == "commit:$commit_subject" ]] \
-  || { echo "commit-subject critic lost its exact reviews binding" >&2; exit 1; }
-[[ "$(<"$commit_subject_round/reviewedTree")" == "$commit_subject_tree" ]] \
-  || { echo "commit-subject critic froze the wrong reviewed tree" >&2; exit 1; }
-cmp -s "$agent_fixture/commit-subject.expected.patch" "$commit_subject_round/diff.patch" \
-  || { echo "commit-subject diff is not the exact parent-to-commit patch" >&2; exit 1; }
-run_agent_fixture commit-subject-two commit-subject-two "$agent_dispatch" dispatch --role code-critic \
-  --brief "$code_brief" --reviews "commit:$commit_subject" --runtime fake --job-id commit-subject-two --wait
-echo "commit-subject dispatch fixtures passed"
+leg_review_target_flag_runtime
 # The production roster keeps verifier work in the current main session. This
 # isolated adapter fixture selects the configured fake default without an
 # authority-bearing runtime override, then restores the production-shaped
@@ -2073,8 +2133,7 @@ run_agent_fixture review-proof review-proof "$agent_dispatch" dispatch --role ve
 cp "$good_agent_conf" "$agent_repo/metasystem.conf"
 [[ "$("$engine" json get --file "$review_target_record" --field liveProofEvidenceRef)" == review-proof ]] \
   || { echo "verifier claim did not derive its reference onto the reviewed chain root" >&2; cat "$review_target_record" >&2; exit 1; }
-investigator_brief="$agent_fixture/investigator.md"
-make_agent_brief "$investigator_brief" take-a-step-back
+make_investigator_brief
 run_agent_fixture investigator-role investigator-role "$agent_dispatch" dispatch --role investigator --brief "$investigator_brief" --runtime fake --permissions none --job-id investigator-role --wait
 
 no_signal="$agent_fixture/no-signal.md"
@@ -2101,6 +2160,12 @@ agent_fails missing-session '' "$agent_dispatch" dispatch --role design-critic -
 grep -Fq 'handshake_missing_session_id' "$agent_repo/artifacts/agents/jobs/missing-session.json" \
   || { echo "missing session id did not fail the strong handshake" >&2; exit 1; }
 
+fi
+
+if dispatch_cluster b; then
+leg_happy
+leg_default_role
+make_follow_message
 pending_brief="$agent_fixture/pending.md"
 make_agent_brief "$pending_brief" design 'FAKE:no-session-signal'
 wait_for_agent_census_fresh pending-chain
@@ -2284,8 +2349,7 @@ agent_fails illegal-terminal-transition 'illegal job transition' "$agent_dispatc
 # The fake reports network access it was not granted. Now that the presets
 # grant it by default, the request has to withhold it explicitly for the
 # report to be wider than the request at all.
-restrictive_permissions="$agent_fixture/restrictive-permissions.json"
-printf '{"readRoots":["."],"writeRoots":[],"network":"deny","approvals":"deny","tools":"read-only"}\n' >"$restrictive_permissions"
+make_restrictive_permissions
 effective_wider="$agent_fixture/effective-wider.md"
 make_agent_brief "$effective_wider" design 'FAKE:effective-wider'
 agent_fails effective-wider '' "$agent_dispatch" dispatch --role design-critic --outputs "$fixture_declared_outputs" --design metasystem/scripts/agents/roles/design-critic.md --brief "$effective_wider" --permissions "$restrictive_permissions" --job-id effective-wider --wait
@@ -2361,8 +2425,7 @@ wait_for_agent_child_stopped "$agent_repo/artifacts/agents/process-loss/rounds/1
 grep -Fq 'groupDeathProvenAt' "$agent_repo/artifacts/agents/jobs/process-loss.json" \
   || { echo "process-loss terminal record lacks group-death proof" >&2; exit 1; }
 
-timeout_brief="$agent_fixture/timeout.md"
-make_agent_brief "$timeout_brief" design 'FAKE:timeout'
+make_timeout_brief
 timeout_result="$agent_fixture/timeout.status"
 wait_for_agent_census_fresh timed
 (
@@ -2476,9 +2539,80 @@ while IFS= read -r mirror_member; do
     || { echo "mirrored file digest mismatch: $mirror_rel" >&2; exit 1; }
 done < <(json_elements "$("$engine" json get --file "$mirror_home/manifest.json" --field files)")
 
+# The follow-up legs read jobs this cluster made (happy, default-role,
+# malformed-return, cancelled, timed, process-loss).
+run_agent_fixture happy-follow-up happy-r2 "$agent_dispatch" follow-up --job happy --message "$follow_message" --wait
+[[ -d "$agent_repo/artifacts/agents/happy/rounds/1" && -d "$agent_repo/artifacts/agents/happy/rounds/2" ]] \
+  || { echo "follow-up did not preserve round 1 and create round 2" >&2; exit 1; }
+happy_child="$agent_repo/artifacts/agents/jobs/happy-r2.json"
+[[ "$("$engine" json get --file "$happy_child" --field parentJob)" == happy \
+   && "$("$engine" json get --file "$happy_child" --field round)" == 2 \
+   && "$("$engine" json get --file "$happy_child" --field sessionId)" \
+      == "$("$engine" json get --file "$happy_record" --field sessionId)" ]] \
+  || { echo "follow-up child does not chain to happy round 1" >&2; exit 1; }
+happy_follow_session_key=$("$engine" json get --file "$happy_child" --field sessionKey)
+[[ "$happy_follow_session_key" == "fake:$("$engine" json get --file "$happy_record" --field sessionId)" ]] \
+  || { echo "follow-up did not record the resumed session occupancy key" >&2; exit 1; }
+[[ "$("$engine" json get --file "$happy_child" --field fingerprintVersion)" == 2 \
+   && -n "$("$engine" json get --file "$happy_child" --field fingerprint)" \
+   && "$("$engine" json get --file "$happy_child" --field dispatchMode)" == follow-up \
+   && "$("$engine" json get --file "$happy_child" --field resumedSessionId)" == "$("$engine" json get --file "$happy_record" --field sessionId)" \
+   && "$("$engine" json get --file "$happy_child" --field launchMode)" == shared-checkout \
+   && "$("$engine" json get --file "$happy_child" --field productRoots)" == "[\"$agent_repo\"]" \
+   && "$("$engine" json get --file "$happy_child" --field productRootScopes)" \
+      == "[{\"path\":\"$agent_repo\",\"reason\":\"shared-checkout\",\"standing\":\"attribution-only\"}]" ]] \
+  || { echo "ordinary follow-up did not complete its fingerprinted claim-launch reservation" >&2; exit 1; }
+happy_follow_session_digest=$(printf '%s' "$happy_follow_session_key" | "$engine" util sha256)
+happy_follow_session_index="$agent_repo/artifacts/agents/sessions/$happy_follow_session_digest.json"
+[[ -f "$happy_follow_session_index" \
+   && "$("$engine" json get --file "$happy_follow_session_index" --field sessionKey)" == "$happy_follow_session_key" \
+   && "$("$engine" json get --file "$happy_follow_session_index" --field occupants)" == '[]' ]] \
+  || { echo "follow-up did not maintain and release the resumed session occupancy index" >&2; cat "$happy_follow_session_index" >&2 2>/dev/null || true; exit 1; }
+happy_child_started=$("$engine" json get --file "$happy_child" --field startedAt)
+happy_parent_started=$("$engine" json get --file "$happy_record" --field startedAt)
+[[ ! "$happy_child_started" < "$happy_parent_started" ]] \
+  || { echo "follow-up child started before its parent" >&2; exit 1; }
+[[ "$("$engine" json get --file "$happy_child" --field capMin)" \
+   == "$("$engine" json get --file "$happy_record" --field capMin)" ]] \
+  || { echo "follow-up child changed the chain's cap" >&2; exit 1; }
+happy_child_snapshot=$("$engine" json get --file "$happy_child" --field capabilitySnapshot)
+[[ "$("$engine" json get --file "$happy_child" --field sessionEstablishedTimeoutSec)" \
+   == "$("$engine" json get --file "$agent_repo/$happy_child_snapshot" --field capabilities.sessionEstablishedTimeoutSec)" ]] \
+  || { echo "follow-up child does not carry its snapshot's session-established timeout" >&2; exit 1; }
+[[ "$("$engine" json get --file "$happy_record" --field chainUsage.providerUnits.fake.fake-unit)" == 2 ]] \
+  || { echo "chain usage did not aggregate two fake units" >&2; exit 1; }
+# One chain, one mirror home; each stamp records ITS OWN mirror moment
+# (chain-wide stamp equality was the lie KI-6 round 3 removed). The
+# durable proof is the shared manifest covering BOTH records.
+happy_mirror_home=$("$engine" json get --file "$happy_child" --field mirror.path)
+[[ "$("$engine" json get --file "$happy_record" --field mirror.path)" == "$happy_mirror_home" ]] \
+  || { echo "parent and child mirror to different homes" >&2; exit 1; }
+[[ "$("$engine" util sha256 --file "$happy_mirror_home/manifest.json")" \
+   == "$("$engine" json get --file "$happy_child" --field mirror.manifest)" ]] \
+  || { echo "chain manifest digest does not match the child stamp" >&2; exit 1; }
+happy_manifest_files=$("$engine" json get --file "$happy_mirror_home/manifest.json" --field files)
+[[ "$happy_manifest_files" == *'"jobs/happy.json":'* && "$happy_manifest_files" == *'"jobs/happy-r2.json":'* ]] \
+  || { echo "the shared manifest does not cover both chain records" >&2; exit 1; }
+run_agent_fixture malformed-return-follow-up malformed-return-r2 "$agent_dispatch" follow-up --job malformed-return --message "$follow_message" --wait
+[[ "$(cd "$agent_repo" && scripts/agents/dispatch.sh status --job malformed-return-r2)" == completed ]] \
+  || { echo "protocol-error retry did not create a completed child" >&2; exit 1; }
+malformed_follow_prompt="$agent_repo/artifacts/agents/malformed-return/rounds/2/prompt.md"
+grep -Fq '# Canonical critique register carry' "$malformed_follow_prompt" \
+  && grep -Fq -- '- synthetic-' "$malformed_follow_prompt" \
+  || { echo "the corrected protocol-return follow-up did not carry its synthetic finding identifier" >&2; cat "$malformed_follow_prompt" >&2; exit 1; }
+agent_fails pending-follow-up 'pending, running, timeout, or process-lost' "$agent_dispatch" follow-up --job cancelled --message "$follow_message"
+agent_fails timeout-follow-up 'pending, running, timeout, or process-lost' "$agent_dispatch" follow-up --job timed --message "$follow_message"
+agent_fails process-loss-follow-up 'pending, running, timeout, or process-lost' "$agent_dispatch" follow-up --job process-loss --message "$follow_message"
+
+json_replace_field "$agent_repo/artifacts/agents/jobs/default-role.json" sessionId null
+agent_fails null-session-follow-up 'fresh-context embed fallback' "$agent_dispatch" follow-up --job default-role --message "$follow_message"
+
+fi
+
+if dispatch_cluster c; then
+leg_review_target_flag_runtime
+make_follow_message
 # Follow-ups are child records under one serialized, explicitly closed chain.
-follow_message="$agent_fixture/follow.md"
-cp "$agent_repo/scripts/agents/templates/follow-up.md" "$follow_message"
 
 # Exhaustion precedes successor reservation. Build one severe code-critic
 # chain through its terminal third round and prove the refusal leaves no
@@ -2611,6 +2745,10 @@ grep -Eq '"outcome":"(BOUND|IN-PROGRESS)"' "$agent_fixture/repeat-follow-second.
 touch "$repeat_follow_release"
 wait_for_agent_status repeat-follow-r2 completed
 
+fi
+
+if dispatch_cluster d; then
+make_follow_message
 # Worktree chains pin both sides of the overlap decision and the recovery
 # paths around a fast-forward whose dirty changes do not apply cleanly.
 mkdir -p "$agent_repo/metasystem"
@@ -2848,72 +2986,16 @@ printf '%s\n' "$recover_direction_first" | grep -Fq "trunk commit $recover_to" \
   && printf '%s\n' "$recover_direction_first" | grep -Fq "resolve first, keeping both sides' behaviour" \
   || { echo "the corrected follow-up did not prepend its recovered conflict paragraph" >&2; sed -n '1,8p' "$recover_prompt" >&2; exit 1; }
 
-run_agent_fixture happy-follow-up happy-r2 "$agent_dispatch" follow-up --job happy --message "$follow_message" --wait
-[[ -d "$agent_repo/artifacts/agents/happy/rounds/1" && -d "$agent_repo/artifacts/agents/happy/rounds/2" ]] \
-  || { echo "follow-up did not preserve round 1 and create round 2" >&2; exit 1; }
-happy_child="$agent_repo/artifacts/agents/jobs/happy-r2.json"
-[[ "$("$engine" json get --file "$happy_child" --field parentJob)" == happy \
-   && "$("$engine" json get --file "$happy_child" --field round)" == 2 \
-   && "$("$engine" json get --file "$happy_child" --field sessionId)" \
-      == "$("$engine" json get --file "$happy_record" --field sessionId)" ]] \
-  || { echo "follow-up child does not chain to happy round 1" >&2; exit 1; }
-happy_follow_session_key=$("$engine" json get --file "$happy_child" --field sessionKey)
-[[ "$happy_follow_session_key" == "fake:$("$engine" json get --file "$happy_record" --field sessionId)" ]] \
-  || { echo "follow-up did not record the resumed session occupancy key" >&2; exit 1; }
-[[ "$("$engine" json get --file "$happy_child" --field fingerprintVersion)" == 2 \
-   && -n "$("$engine" json get --file "$happy_child" --field fingerprint)" \
-   && "$("$engine" json get --file "$happy_child" --field dispatchMode)" == follow-up \
-   && "$("$engine" json get --file "$happy_child" --field resumedSessionId)" == "$("$engine" json get --file "$happy_record" --field sessionId)" \
-   && "$("$engine" json get --file "$happy_child" --field launchMode)" == shared-checkout \
-   && "$("$engine" json get --file "$happy_child" --field productRoots)" == "[\"$agent_repo\"]" \
-   && "$("$engine" json get --file "$happy_child" --field productRootScopes)" \
-      == "[{\"path\":\"$agent_repo\",\"reason\":\"shared-checkout\",\"standing\":\"attribution-only\"}]" ]] \
-  || { echo "ordinary follow-up did not complete its fingerprinted claim-launch reservation" >&2; exit 1; }
-happy_follow_session_digest=$(printf '%s' "$happy_follow_session_key" | "$engine" util sha256)
-happy_follow_session_index="$agent_repo/artifacts/agents/sessions/$happy_follow_session_digest.json"
-[[ -f "$happy_follow_session_index" \
-   && "$("$engine" json get --file "$happy_follow_session_index" --field sessionKey)" == "$happy_follow_session_key" \
-   && "$("$engine" json get --file "$happy_follow_session_index" --field occupants)" == '[]' ]] \
-  || { echo "follow-up did not maintain and release the resumed session occupancy index" >&2; cat "$happy_follow_session_index" >&2 2>/dev/null || true; exit 1; }
-happy_child_started=$("$engine" json get --file "$happy_child" --field startedAt)
-happy_parent_started=$("$engine" json get --file "$happy_record" --field startedAt)
-[[ ! "$happy_child_started" < "$happy_parent_started" ]] \
-  || { echo "follow-up child started before its parent" >&2; exit 1; }
-[[ "$("$engine" json get --file "$happy_child" --field capMin)" \
-   == "$("$engine" json get --file "$happy_record" --field capMin)" ]] \
-  || { echo "follow-up child changed the chain's cap" >&2; exit 1; }
-happy_child_snapshot=$("$engine" json get --file "$happy_child" --field capabilitySnapshot)
-[[ "$("$engine" json get --file "$happy_child" --field sessionEstablishedTimeoutSec)" \
-   == "$("$engine" json get --file "$agent_repo/$happy_child_snapshot" --field capabilities.sessionEstablishedTimeoutSec)" ]] \
-  || { echo "follow-up child does not carry its snapshot's session-established timeout" >&2; exit 1; }
-[[ "$("$engine" json get --file "$happy_record" --field chainUsage.providerUnits.fake.fake-unit)" == 2 ]] \
-  || { echo "chain usage did not aggregate two fake units" >&2; exit 1; }
-# One chain, one mirror home; each stamp records ITS OWN mirror moment
-# (chain-wide stamp equality was the lie KI-6 round 3 removed). The
-# durable proof is the shared manifest covering BOTH records.
-happy_mirror_home=$("$engine" json get --file "$happy_child" --field mirror.path)
-[[ "$("$engine" json get --file "$happy_record" --field mirror.path)" == "$happy_mirror_home" ]] \
-  || { echo "parent and child mirror to different homes" >&2; exit 1; }
-[[ "$("$engine" util sha256 --file "$happy_mirror_home/manifest.json")" \
-   == "$("$engine" json get --file "$happy_child" --field mirror.manifest)" ]] \
-  || { echo "chain manifest digest does not match the child stamp" >&2; exit 1; }
-happy_manifest_files=$("$engine" json get --file "$happy_mirror_home/manifest.json" --field files)
-[[ "$happy_manifest_files" == *'"jobs/happy.json":'* && "$happy_manifest_files" == *'"jobs/happy-r2.json":'* ]] \
-  || { echo "the shared manifest does not cover both chain records" >&2; exit 1; }
-run_agent_fixture malformed-return-follow-up malformed-return-r2 "$agent_dispatch" follow-up --job malformed-return --message "$follow_message" --wait
-[[ "$(cd "$agent_repo" && scripts/agents/dispatch.sh status --job malformed-return-r2)" == completed ]] \
-  || { echo "protocol-error retry did not create a completed child" >&2; exit 1; }
-malformed_follow_prompt="$agent_repo/artifacts/agents/malformed-return/rounds/2/prompt.md"
-grep -Fq '# Canonical critique register carry' "$malformed_follow_prompt" \
-  && grep -Fq -- '- synthetic-' "$malformed_follow_prompt" \
-  || { echo "the corrected protocol-return follow-up did not carry its synthetic finding identifier" >&2; cat "$malformed_follow_prompt" >&2; exit 1; }
-agent_fails pending-follow-up 'pending, running, timeout, or process-lost' "$agent_dispatch" follow-up --job cancelled --message "$follow_message"
-agent_fails timeout-follow-up 'pending, running, timeout, or process-lost' "$agent_dispatch" follow-up --job timed --message "$follow_message"
-agent_fails process-loss-follow-up 'pending, running, timeout, or process-lost' "$agent_dispatch" follow-up --job process-loss --message "$follow_message"
+fi
 
-json_replace_field "$agent_repo/artifacts/agents/jobs/default-role.json" sessionId null
-agent_fails null-session-follow-up 'fresh-context embed fallback' "$agent_dispatch" follow-up --job default-role --message "$follow_message"
-
+if dispatch_cluster e; then
+leg_happy
+leg_review_target_flag_runtime
+make_follow_message
+leg_happy_follow_up
+make_investigator_brief
+make_restrictive_permissions
+make_timeout_brief
 resume_root="$agent_fixture/resume-root.md"
 make_agent_brief "$resume_root" design
 run_agent_fixture resume-root resume-root "$agent_dispatch" dispatch --role design-critic --outputs "$fixture_declared_outputs" --design metasystem/scripts/agents/roles/design-critic.md --brief "$resume_root" --job-id resume-root --wait
@@ -3514,6 +3596,7 @@ set -e
 # on it, silently, when this line was missing.
 rm -f "$agent_repo/artifacts/agents/jobs/malformed-status.json"
 
+fi
 run_fixture_arm "dispatcher final shutdown" - \
   "$agent_repo/scripts/agents/arm-supervision.sh" --repo "$agent_repo" --shutdown \
   || { echo "dispatcher fixture shutdown failed" >&2; exit 1; }

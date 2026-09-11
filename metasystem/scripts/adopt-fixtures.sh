@@ -27,10 +27,12 @@ if (( ! fixture_bed_child )) && [[ $# -ne 0 ]]; then
   echo "adopt fixtures: accepts only --comparison" >&2
   exit 64
 fi
-adopt_fixture_scenarios=(default runtimes nested refusals landing-refs covenant tracer skills)
+# Longest first: the two delivery scenarios each run one Go comparison
+# (an engine build and a test run on an adopted target).
+adopt_fixture_scenarios=(filled-delivery default runtimes nested copied-delivery landing-refs refusals tracer covenant skills)
 if (( fixture_bed_child )); then
   case "$fixture_scenario" in
-    default | runtimes | nested | refusals | landing-refs | covenant | tracer | skills) ;;
+    filled-delivery | copied-delivery | default | runtimes | nested | refusals | landing-refs | covenant | tracer | skills) ;;
     *) echo "adopt fixtures: unknown scenario: $fixture_scenario" >&2; exit 64 ;;
   esac
 fi
@@ -180,6 +182,17 @@ adopt_prepare_nested_src() {
 
 if (( ! fixture_bed_child )); then
   source "$root/scripts/agents/fixture-bed-scenarios.sh"
+  # This bed's scenarios are engine builds and tree copies, not process
+  # trees, so on a wide box four run beside each other (an explicit
+  # METASYSTEM_FIXTURE_SCENARIO_CONCURRENCY still wins).
+  if [[ ! "${METASYSTEM_FIXTURE_SCENARIO_CONCURRENCY:-}" =~ ^[1-9][0-9]*$ ]]; then
+    adopt_cores=$(sysctl -n hw.ncpu 2>/dev/null || nproc 2>/dev/null || echo 1)
+    [[ "$adopt_cores" =~ ^[1-9][0-9]*$ ]] || adopt_cores=1
+    adopt_slots=$((adopt_cores / 4))
+    (( adopt_slots >= 1 )) || adopt_slots=1
+    (( adopt_slots <= 4 )) || adopt_slots=4
+    export METASYSTEM_FIXTURE_SCENARIO_CONCURRENCY=$adopt_slots
+  fi
   adopt_parent_cleanup() {
     [[ -z "$witness_state" ]] || rm -rf "$witness_state" 2>/dev/null || true
     rm -rf "$tmp" 2>/dev/null || true
@@ -690,11 +703,6 @@ if adopt_leg default; then
   (( placeholder_refusal_elapsed < 60 )) \
     || { echo "adopt: configuration placeholder refusal took ${placeholder_refusal_elapsed}s; expected the pre-gate scan to fail within seconds" >&2; exit 1; }
   fill_harness_conf "$tgt/metasystem.conf" "$tmp/adopt-default-evidence"
-  fill_harness_testing_contract "$srcrepo/testing.json" "$tgt/testing.json"
-  prepare_filled_target_covenant "$tgt"
-  METASYSTEM_ADOPTION_TARGET="$tgt" METASYSTEM_ADOPTION_KIND=filled \
-    METASYSTEM_ADOPTION_FIXTURE_ROOT="$tmp" run_adoption_comparison
-
 
   mv "$tgt/.claude/skills" "$tgt/.claude/skills.missing"
   if "$tgt/scripts/metasystem-config.sh" validate >"$tmp/missing-registration.out" 2>&1; then
@@ -781,6 +789,13 @@ if adopt_leg runtimes; then
   fi
   bash "$adopt" "$tmp/adopt-java" --enable debug-java >/dev/null
   [[ -f "$tmp/adopt-java/skills/debug-java/SKILL.md" ]] || { echo "adopt: --enable did not move the optional skill" >&2; exit 1; }
+fi
+
+# The two delivery scenarios carry the Go comparisons (an engine build and a
+# test run on an adopted target each, the bed's longest legs), so the
+# checks around them run beside them instead of behind them.
+if adopt_leg copied-delivery; then
+  adopt_prepare_srcrepo
   bash "$adopt" "$tmp/adopt-copy" --runtimes claude,codex --copy-skills >/dev/null
   [[ -d "$tmp/adopt-copy/.claude/skills/verify" && ! -L "$tmp/adopt-copy/.claude/skills/verify" ]] \
     || { echo "adopt: --copy-skills did not copy" >&2; exit 1; }
@@ -798,6 +813,21 @@ if adopt_leg runtimes; then
   fill_harness_conf "$tmp/adopt-copy/metasystem.conf" "$tmp/adopt-copy-evidence"
   fill_harness_testing_contract "$srcrepo/testing.json" "$tmp/adopt-copy/testing.json"
   METASYSTEM_ADOPTION_TARGET="$tmp/adopt-copy" METASYSTEM_ADOPTION_KIND=copied \
+    METASYSTEM_ADOPTION_FIXTURE_ROOT="$tmp" run_adoption_comparison
+fi
+
+if adopt_leg filled-delivery; then
+  adopt_prepare_srcrepo
+  tgt="$tmp/adopt-default"
+  mkdir -p "$tgt"
+  printf 'project readme\n' >"$tgt/README.md"
+  bash "$adopt" "$tgt" >/dev/null
+  sed 's/<[^>]*>/filled/g' "$tgt/docs/project-rules.md" >"$tgt/docs/project-rules.md.new"
+  mv "$tgt/docs/project-rules.md.new" "$tgt/docs/project-rules.md"
+  fill_harness_conf "$tgt/metasystem.conf" "$tmp/adopt-default-evidence"
+  fill_harness_testing_contract "$srcrepo/testing.json" "$tgt/testing.json"
+  prepare_filled_target_covenant "$tgt"
+  METASYSTEM_ADOPTION_TARGET="$tgt" METASYSTEM_ADOPTION_KIND=filled \
     METASYSTEM_ADOPTION_FIXTURE_ROOT="$tmp" run_adoption_comparison
 fi
 
