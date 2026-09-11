@@ -1,13 +1,14 @@
 # goal-records-owned-by-the-testing-contract
 
-- State: queued
+- State: done
 - Risk: severity=2 novelty=1 exposure=3 accumulation=2 basis="severity 2: no records can land, so every goal's evidence trail stays untracked; novelty 1: one surface entry in an existing contract; exposure 3: every seat's every goal; accumulation 2: untracked records pile up in every checkout until it lands"
 - Tier: 3
 - Intent: Since 1b12f534 the testing contract (metasystem/testing.json) owns no plans/**, records/** or memory/rulings.md, so every register-carriage landing of a goal's briefs, dispositions and shared append-only records is refused at land.sh's test verify --purpose delivery with 'delivery impact is unresolved: no surface owns changed path'. DONE means a goal-records surface owns those paths with the same static groups as the instructions surface, a records-only carriage resolves as delivery again, and the seat's test-policy tests pin that plans/ and records/ paths are owned.
 - Origin: main
 - Next step: One Sol round adding the goal-records surface (metasystem/plans/**, metasystem/records/**, metasystem/memory/rulings.md, metasystem/memory/receipts.log; groups section/static-contract-audits) to metasystem/testing.json with a testpolicy test that a records-only change selects delivery; one Opus review; land with --chain. Found by m1 on 2026-09-10 00:25 local landing the dispatch-cap-necessity records; m1c messaged (held for approval). Wido approves at the terminal.
+- Concluded: Landed: 2779ffa4 (2026-09-11, The testing contract owns every path a landing can touch) concluded testing-contract-owns-record-paths; testing.json today has surface goal-records owning metasystem/plans/**, metasystem/records/**, memory/rulings.md and memory/receipts.log with section/static-contract-audits, exactly this record's DONE; 044aa355 carries this goal's own chain records. Concluded 2026-09-11 in the backlog consolidation on Wido's word, no further work.
 - OpenedAt: 2026-09-09T22:15:49Z
-- Revision: 41
+- Revision: 42
 - BudgetExceptions: 0
 - Sliced: machine=m1 lineage=main-1788940932-18533-7fa6c2 revision=3 at=2026-09-10T05:50:10Z
 - AcceptedRisk: finding=HAS-05 chain=ha-surfacecrit2-20260910 by=Wido opid=W4SJTD2MHV2NWKA0KZWYR7G03V-m1-c6925449
@@ -54,4 +55,5 @@ History:
 - 2026-09-10T21:04:54Z A63WC5T2CBGJH6NKTAEFBFJ360-m1-1701c13c claim actor=m1+main-1788940932-18533-7fa6c2 targets=goal-records-owned-by-the-testing-contract
 - 2026-09-10T22:07:30Z ZK1Q8PPD9WTC9GDRHR9CS7BP4C-m1-1701c13c release actor=m1+main-1788940932-18533-7fa6c2 targets=goal-records-owned-by-the-testing-contract
 - 2026-09-11T07:59:29Z X26YM5PQ1N5GQA3BANRA4V57F3-m1-c6925449 unapprove actor=human:Wido targets=goal-records-owned-by-the-testing-contract reason=Wido 2026-09-11: standing approval withdrawn to regain control of what is built next; re-approve deliberately
-Integrity: sha256=1ec03c6850621fb613f31151ce44c230105655c6a68dec58d93f45d686703050
+- 2026-09-11T22:03:23Z TTQ5DCSXTX3SN38165EEM8H6NT-m1-c6925449 done actor=human:Wido targets=goal-records-owned-by-the-testing-contract
+Integrity: sha256=d8ea428350d30c8c31b9d15c1fb75fd8a88954bddb3aa4a648e33d91b0b4ce7e
