@@ -2,12 +2,12 @@
 
 - State: queued
 - Priority: 1
-- Sequence: 39
+- Sequence: 38
 - Intent: The lease claim sweep stamps a stale job's endedAt and terminal status the moment SIGTERM delivery succeeds (internal/lease/sweep.go:198-204 returns on nil or ESRCH; concludeStaleJob :146-170 stamps at once) without waiting for the process group to die, unlike dispatch.sh's wind-down (:339-368: bounded wait, SIGKILL, group-absence check). A record can be terminal while its runtime still runs, so anything that reads endedAt as the end of the job's life - the reservation settlement, custody, the census - is wrong for that window. DONE means the sweep stamps only after death evidence and leaves the record non-terminal when the group will not die
 - Origin: main
 - Next step: Appetite: 4h, full ladder. Split out of dispatch-cap-necessity on 2026-09-02 by m1b (R-4: residue demands a token). Mechanism already designed and critiqued: plans/dispatch-cap-settlement-design.md revision 4 section 1.9 - after a successful SIGTERM poll group absence every 50ms for 2s, re-prove ownership and SIGKILL, poll 2s, final absence check via the group-absence function exported in place from internal/supervise/arming.go (lease may import supervise: measured with go list, lease -> steward -> supervise); when the group survives, concludeStaleJob writes nothing, the sweep returns the named error, the takeover refuses its sweep stamp and the next claim, succession or up retries; the dispatch reap path stamps timeout under its own ladder once the cap expires. Test: no endedAt stamp while the group lives. A builder starts from that section.
 - OpenedAt: 2026-09-02T18:37:50Z
-- Revision: 61
+- Revision: 62
 - BudgetExceptions: 0
 
 History:
@@ -72,4 +72,5 @@ History:
 - 2026-09-11T21:59:41Z 6GXPZ9RDTZYMYDPHSVTCCGTEEJ-m1-c6925449 done actor=human:Wido targets=actionable-metrics,burn-without-delivery-tripwire,delegate-job-liveness,fixture-stewards-outlive-their-suite,lease-sweep-death-evidence,machine-concurrency-governor,proof-harness-process-custody,steward-catchup-livelock,suite-custody,token-spend-fence,turn-verdict-hardening,watch-verb,watcher-repair-request-never-names-current,winddown-census-handoff-leak reason=priority-order from=1:42 to=1:41
 - 2026-09-11T21:59:48Z 97C3JYVES1D5WVZN59XAXSSHK8-m1-c6925449 done actor=human:Wido targets=actionable-metrics,breach-clock-and-budget-honesty,carried-landing-debt-and-cap,delegate-job-liveness,failed-job-attention,fixture-stewards-outlive-their-suite,goal-abandoned-with-a-reason,human-goal-verbs-forgiving,job-record-birth-token,landing-receipt-survives-records-drift,lease-sweep-death-evidence,live-job-on-a-done-goal-unnoticed,machine-concurrency-governor,proof-harness-process-custody,severity-tiered-rigor,severity-tiered-rigor-p2,steward-catchup-livelock,steward-revives-a-done-goal,stop-batch-strands-a-resumable-goal,suite-custody,token-spend-fence,turn-verdict-hardening,watch-verb,watcher-repair-request-never-names-current,winddown-census-handoff-leak reason=priority-order from=1:41 to=1:40
 - 2026-09-11T22:01:24Z E07T92YQT06XNWV8K1PBVBX8SX-m1-c6925449 done actor=human:Wido targets=actionable-metrics,delegate-job-liveness,fixture-stewards-outlive-their-suite,lease-sweep-death-evidence,machine-concurrency-governor,proof-harness-process-custody,suite-custody,token-spend-fence,winddown-census-handoff-leak reason=priority-order from=1:40 to=1:39
-Integrity: sha256=1e3bd8e572fb6405a43022732fbdfee909e503258ca2a5c060e18b42c6cce411
+- 2026-09-11T22:03:35Z 3M3DDFMQFG20R73AWT0GX1KQJH-m1-c6925449 done actor=human:Wido targets=actionable-metrics,breach-clock-and-budget-honesty,failed-job-attention,fixture-stewards-outlive-their-suite,goal-abandoned-with-a-reason,human-carried-landing-verb,human-goal-verbs-forgiving,job-record-birth-token,landing-receipt-survives-records-drift,lease-sweep-death-evidence,live-job-on-a-done-goal-unnoticed,machine-concurrency-governor,proof-harness-process-custody,severity-tiered-rigor,severity-tiered-rigor-p2,steward-catchup-livelock,steward-revives-a-done-goal,stop-batch-strands-a-resumable-goal,suite-custody,token-spend-fence,turn-verdict-hardening,watch-verb,watcher-repair-request-never-names-current,winddown-census-handoff-leak reason=priority-order from=1:39 to=1:38
+Integrity: sha256=8bbcd83096a2e3b016d43661c923dec0407902ed4b5a439c1faf3cfea92b9804

@@ -2,12 +2,12 @@
 
 - State: queued
 - Priority: 1
-- Sequence: 41
+- Sequence: 40
 - Intent: Validation suites run under process-group custody: killing a suite reaps its whole tree, and gate locks carry pids and self-clean when their owner dies (2026-08-24 collateral: orphaned go-gate child blocked the next battery)
 - Origin: human
 - Next step: RELEASED for the fresh session. DIAGNOSIS of the investigator zombies (2x): the task reproduces the detached-silence bug, and the reproduction itself wedges — the worker waits forever on the wedged detached child, log silent, status lying 'running'. The bug eats its investigator. INSTRUCTION: wrap every reproduction in an outer bounded timeout (the tar pit has no bound of its own), and slice the task smaller (reproduce+diagnose first, fix as a second task). m2's xtrace handoff stands; acceptance = detached green or loud named refusal; appetite 6h intact; shared tree clean. || Absorbed 2026-09-11 from goal proof-harness-process-custody: Merge into suite-custody (human-origin umbrella): every seat-run suite and proof harness runs its children (load generators, fixture steward runners, gate children) under process-group custody that one kill reaps whole, plus a census-guarded sweep the seat may run that reaps orphaned fixture beds older than a bound; sp || Note 2026-09-11: process-group custody of suites landed (internal/proofrun/launcher.go); the orphan-reaping remainder overlaps steward-owned-execution and fixture-stewards-outlive-their-suite; decide one owner at design time.
 - OpenedAt: 2026-08-24T13:24:00Z
-- Revision: 76
+- Revision: 77
 - Labels: custody
 - BudgetExceptions: 0
 
@@ -88,4 +88,5 @@ History:
 - 2026-09-11T21:59:41Z 6GXPZ9RDTZYMYDPHSVTCCGTEEJ-m1-c6925449 done actor=human:Wido targets=actionable-metrics,burn-without-delivery-tripwire,delegate-job-liveness,fixture-stewards-outlive-their-suite,lease-sweep-death-evidence,machine-concurrency-governor,proof-harness-process-custody,steward-catchup-livelock,suite-custody,token-spend-fence,turn-verdict-hardening,watch-verb,watcher-repair-request-never-names-current,winddown-census-handoff-leak reason=priority-order from=1:44 to=1:43
 - 2026-09-11T21:59:48Z 97C3JYVES1D5WVZN59XAXSSHK8-m1-c6925449 done actor=human:Wido targets=actionable-metrics,breach-clock-and-budget-honesty,carried-landing-debt-and-cap,delegate-job-liveness,failed-job-attention,fixture-stewards-outlive-their-suite,goal-abandoned-with-a-reason,human-goal-verbs-forgiving,job-record-birth-token,landing-receipt-survives-records-drift,lease-sweep-death-evidence,live-job-on-a-done-goal-unnoticed,machine-concurrency-governor,proof-harness-process-custody,severity-tiered-rigor,severity-tiered-rigor-p2,steward-catchup-livelock,steward-revives-a-done-goal,stop-batch-strands-a-resumable-goal,suite-custody,token-spend-fence,turn-verdict-hardening,watch-verb,watcher-repair-request-never-names-current,winddown-census-handoff-leak reason=priority-order from=1:43 to=1:42
 - 2026-09-11T22:01:24Z E07T92YQT06XNWV8K1PBVBX8SX-m1-c6925449 done actor=human:Wido targets=actionable-metrics,delegate-job-liveness,fixture-stewards-outlive-their-suite,lease-sweep-death-evidence,machine-concurrency-governor,proof-harness-process-custody,suite-custody,token-spend-fence,winddown-census-handoff-leak reason=priority-order from=1:42 to=1:41
-Integrity: sha256=9a172f97e62a0da35ff8ccdcf4cc4a907fa2f3f389e02442dacd11955076c107
+- 2026-09-11T22:03:35Z 3M3DDFMQFG20R73AWT0GX1KQJH-m1-c6925449 done actor=human:Wido targets=actionable-metrics,breach-clock-and-budget-honesty,failed-job-attention,fixture-stewards-outlive-their-suite,goal-abandoned-with-a-reason,human-carried-landing-verb,human-goal-verbs-forgiving,job-record-birth-token,landing-receipt-survives-records-drift,lease-sweep-death-evidence,live-job-on-a-done-goal-unnoticed,machine-concurrency-governor,proof-harness-process-custody,severity-tiered-rigor,severity-tiered-rigor-p2,steward-catchup-livelock,steward-revives-a-done-goal,stop-batch-strands-a-resumable-goal,suite-custody,token-spend-fence,turn-verdict-hardening,watch-verb,watcher-repair-request-never-names-current,winddown-census-handoff-leak reason=priority-order from=1:41 to=1:40
+Integrity: sha256=970a483a8328a39193386773fc22a68e6c4fd7aa945e6930cd8d5dadf1f1123a
