@@ -7,10 +7,12 @@
 - Origin: human
 - Next step: Read the Stop hook (scripts/agents and internal supervision), classify the recorded refusal causes into seat-actionable and steward-owned, write the design, critique, build, land.
 - OpenedAt: 2026-09-11T15:45:01Z
-- Revision: 1
+- Revision: 2
+- Pinned: m1e
 - Budget: elapsedLimit=1d attemptLimit=10 reservedJobMinutesLimit=1200 activeJobLimit=1 reviewRoundLimit=3
 - BudgetExceptions: 0
 
 History:
 - 2026-09-11T15:45:01Z T6Z7DYJ3CFGDRPYXNRNTTWXERM-m1e-5083721b open actor=m1e+main-1789141490-27414-b9c0d2 targets=stop-hook-never-forces-an-empty-turn
-Integrity: sha256=82f7632f1fc6467c03f4616424fbabc0251d54c353b34edaf79a9ccff6e1b478
+- 2026-09-11T15:47:04Z PNHSKRR4SQA1Q4SS26QWE5YQCW-m1-c6925449 set-pin actor=human:Wido targets=stop-hook-never-forces-an-empty-turn
+Integrity: sha256=391cd2097a96ad339e897a1005d2f87bcf6d496d688622621f74006d260d031d
