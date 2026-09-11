@@ -1,6 +1,6 @@
 # critique-closes-on-folded-proof
 
-- State: approved
+- State: queued
 - Priority: 1
 - Sequence: 16
 - Risk: severity=2 novelty=2 exposure=3 accumulation=1 basis="severity 2: a closure rule that is too loose lets a material finding land; novelty 2: fold-proven closure and the round-2 failsafe are new rules; exposure 3: every chain; accumulation 1: skills and dispatcher"
@@ -9,11 +9,9 @@
 - Origin: human
 - Next step: Wido's word recorded 2026-09-11 (R-97-m1e): yes to both rules; unresolved invariants escalate to Wido, never a third automatic round. Next: build in rank order.
 - OpenedAt: 2026-09-11T15:45:22Z
-- Revision: 12
+- Revision: 13
 - Pinned: m1e
-- Budget: elapsedLimit=1d attemptLimit=10 reservedJobMinutesLimit=1200 activeJobLimit=1 reviewRoundLimit=3
 - BudgetExceptions: 0
-- Approved: by=human:Wido at=2026-09-11T16:19:28Z revision=11 opid=YY3RNJAY0P03BPC54EHMZNB6GF-m1-c6925449 authority=proven digest=dce32d83aa86c96bbbdf42e5f148b312d234b1ec80d9c6ccdc84f4a88b689569
 
 History:
 - 2026-09-11T15:45:22Z WKPXEN9CTZR44TMFZTQJE9X68Q-m1e-5083721b open actor=m1e+main-1789141490-27414-b9c0d2 targets=critique-closes-on-folded-proof
@@ -28,4 +26,5 @@ History:
 - 2026-09-11T16:18:20Z J5PHE8R2SWPAM65XBB7MQ72P5H-m1-c6925449 set-priority actor=human:Wido targets=critique-closes-on-folded-proof,human-carried-landing-carry,tier-from-severity-and-novelty reason=priority-order subject=critique-closes-on-folded-proof from=1:18 to=1:16 requested-sequence=16
 - 2026-09-11T16:19:28Z YY3RNJAY0P03BPC54EHMZNB6GF-m1-c6925449 approve actor=human:Wido targets=critique-closes-on-folded-proof
 - 2026-09-11T20:16:05Z ZJ6R4YG0PMN2971ZD0R6PPRPQ2-m1e-892cdaec edit actor=m1e+main-1789030447-51011-5722fc targets=critique-closes-on-folded-proof
-Integrity: sha256=6542015cf0dec3e5573d54adcd1efcb9d1798d2a19001bfde3b0be86ba948394
+- 2026-09-11T20:31:13Z 2WC804E10CNMQH2FBG8MVCK6R0-m1-c6925449 unapprove actor=human:Wido targets=critique-closes-on-folded-proof reason=Wido 2026-09-11: every program goal states runtime independence (claude, codex, devin, future adapters); intent amended before re-approval
+Integrity: sha256=74b0bad156d5761772535f0b4e3b9d510420d7e1057a4797be7cdbdd06c0110f
