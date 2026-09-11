@@ -1,6 +1,6 @@
 # coordinator-context-stays-under-budget
 
-- State: approved
+- State: queued
 - Priority: 1
 - Sequence: 15
 - Risk: severity=2 novelty=2 exposure=3 accumulation=1 basis="severity 2: an over-bounded output hides evidence the seat needs; novelty 2: bounded verb output is a new discipline; exposure 3: every seat's every turn; accumulation 1: verbs and docs"
@@ -9,11 +9,9 @@
 - Origin: human
 - Next step: Measure which tool outputs dominate the context (goal list, watch, test logs, land output), bound them at the verb, write the instruction change, critique, build, land.
 - OpenedAt: 2026-09-11T15:45:19Z
-- Revision: 5
+- Revision: 6
 - Pinned: m1e
-- Budget: elapsedLimit=1d attemptLimit=10 reservedJobMinutesLimit=1200 activeJobLimit=1 reviewRoundLimit=3
 - BudgetExceptions: 0
-- Approved: by=human:Wido at=2026-09-11T15:49:36Z revision=4 opid=FCRJCZR5R6QY88PSK1BR16ME9T-m1-c6925449 authority=proven digest=aef011606fae6fab2b48ef2aa1a89fdc8ec8a33a920666a2d07626b99a357f78
 
 History:
 - 2026-09-11T15:45:19Z 5F6TSCSSSW5B4H5JVZDBKEWHPE-m1e-5083721b open actor=m1e+main-1789141490-27414-b9c0d2 targets=coordinator-context-stays-under-budget
@@ -21,4 +19,5 @@ History:
 - 2026-09-11T15:48:21Z 8NDX8QPSQXDM5YE46TQMM40YKA-m1-c6925449 set-priority actor=human:Wido targets=actionable-metrics,breach-clock-and-budget-honesty,burn-without-delivery-tripwire,carried-landing-debt-and-cap,coordinator-context-stays-under-budget,delegate-job-liveness,failed-job-attention,fixture-stewards-outlive-their-suite,goal-abandoned-with-a-reason,human-carried-landing-verb,human-goal-verbs-forgiving,job-record-birth-token,landing-receipt-survives-records-drift,lease-sweep-death-evidence,live-job-on-a-done-goal-unnoticed,machine-concurrency-governor,proof-harness-process-custody,severity-tiered-rigor,severity-tiered-rigor-p2,small-change-lane,steward-catchup-livelock,steward-revives-a-done-goal,stop-batch-strands-a-resumable-goal,suite-custody,token-spend-fence,turn-verdict-hardening,watch-verb,watcher-repair-request-never-names-current,winddown-census-handoff-leak reason=priority-order subject=coordinator-context-stays-under-budget from=unranked to=1:14 requested-sequence=14
 - 2026-09-11T15:49:36Z FCRJCZR5R6QY88PSK1BR16ME9T-m1-c6925449 approve actor=human:Wido targets=coordinator-context-stays-under-budget
 - 2026-09-11T15:50:51Z M4GZC1Q99QFRH9T13HSY774HAR-m1-c6925449 set-priority actor=human:Wido targets=actionable-metrics,breach-clock-and-budget-honesty,budget-extends-by-consumption-and-breach-parks,burn-without-delivery-tripwire,capped-round-continues-instead-of-restarting,carried-landing-debt-and-cap,coordinator-context-stays-under-budget,coordinator-wakes-on-events-not-polls,critique-closes-on-folded-proof,deep-battery-under-ten-minutes,delegate-job-liveness,delegate-rounds-reuse-a-warm-gate,delivery-receipt-stops-at-first-failure,failed-job-attention,fixture-stewards-outlive-their-suite,goal-abandoned-with-a-reason,human-carried-landing-carry,human-carried-landing-verb,human-goal-verbs-forgiving,job-record-birth-token,land-ready-work-lands-without-a-claim-slot,landing-receipt-survives-records-drift,landing-refuses-without-its-receipt-line,lease-sweep-death-evidence,live-job-on-a-done-goal-unnoticed,machine-concurrency-governor,proof-groups-detect-hangs-by-progress-not-the-clock,proof-harness-process-custody,retained-proof-reuse-crosses-claims-and-attempts,seat-opened-goals-name-their-blocker,severity-tiered-rigor,severity-tiered-rigor-p2,small-change-lane,steward-catchup-livelock,steward-revives-a-done-goal,stop-batch-strands-a-resumable-goal,suite-custody,token-spend-fence,turn-verdict-hardening,watch-verb,watcher-repair-request-never-names-current,winddown-census-handoff-leak reason=priority-order subject=landing-refuses-without-its-receipt-line from=1:14 to=1:15 requested-sequence=5
-Integrity: sha256=fb566566e2101b9a6203e9eb7152b16d8a6d700aa5e4c91e6ac620dfd452ebb8
+- 2026-09-11T16:13:33Z 15P0YSPM71CCPRJTMA5AGHTS29-m1-c6925449 unapprove actor=human:Wido targets=coordinator-context-stays-under-budget reason=Wido 2026-09-11: Codex critique round 1 of the delivery-efficiency plan accepted; intent amended before re-approval
+Integrity: sha256=d8f9d45b4edcddd0ed246b8f4f7befbc1247e0c62b39835d64d21253966de91c
