@@ -7,10 +7,12 @@
 - Origin: human
 - Next step: Measure which tool outputs dominate the context (goal list, watch, test logs, land output), bound them at the verb, write the instruction change, critique, build, land.
 - OpenedAt: 2026-09-11T15:45:19Z
-- Revision: 1
+- Revision: 2
+- Pinned: m1e
 - Budget: elapsedLimit=1d attemptLimit=10 reservedJobMinutesLimit=1200 activeJobLimit=1 reviewRoundLimit=3
 - BudgetExceptions: 0
 
 History:
 - 2026-09-11T15:45:19Z 5F6TSCSSSW5B4H5JVZDBKEWHPE-m1e-5083721b open actor=m1e+main-1789141490-27414-b9c0d2 targets=coordinator-context-stays-under-budget
-Integrity: sha256=5fc58d2480f4285cdd4612c3b91d8cad2649a64ce60468658c5be20e60d9fbe1
+- 2026-09-11T15:48:17Z JY6QJN1S56GD8Q82K5KW1R50ZH-m1-c6925449 set-pin actor=human:Wido targets=coordinator-context-stays-under-budget
+Integrity: sha256=6e449d62c9c59d6c5f331117a7be9f05eff7c7c1ef96b16246ca4b1f88ca7185
