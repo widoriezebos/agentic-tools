@@ -1,6 +1,6 @@
 # delivery-receipt-stops-at-first-failure
 
-- State: queued
+- State: approved
 - Priority: 1
 - Sequence: 9
 - Risk: severity=2 novelty=1 exposure=3 accumulation=1 basis="severity 2: the receipt is the landing judge; novelty 1: the runner loop exists and gains a purpose-dependent stop; exposure 3: every delivery attempt; accumulation 1: cadence unchanged"
@@ -9,9 +9,11 @@
 - Origin: human
 - Next step: Read RunTestPlan in internal/proofrun/test_build.go, the retained scan in attempt.go and R-16 in memory/rulings.md; design the purpose-dependent stop and the retry projection; critique; put the amendment to Wido; build; land with its own battery.
 - OpenedAt: 2026-09-11T15:45:11Z
-- Revision: 9
+- Revision: 10
 - Pinned: m1e
+- Budget: elapsedLimit=1d attemptLimit=10 reservedJobMinutesLimit=1200 activeJobLimit=1 reviewRoundLimit=3
 - BudgetExceptions: 0
+- Approved: by=human:Wido at=2026-09-11T16:19:10Z revision=10 opid=P8Z3GCEPE9S5HM17NWF595DS32-m1-c6925449 authority=proven digest=11618c2061cfa09797abdcb8601985c1edf975ac11dd3fb15718dbf00a69f5a5
 
 History:
 - 2026-09-11T15:45:11Z RKPY1HJBS8V1X9RAP3GX84EXYT-m1e-5083721b open actor=m1e+main-1789141490-27414-b9c0d2 targets=delivery-receipt-stops-at-first-failure
@@ -23,4 +25,5 @@ History:
 - 2026-09-11T16:16:38Z 3F0FVAKMJH4KMZGVWPG6XB3QBX-m1e-ab5421f5 edit actor=m1e+main-1789143377-71578-b9c0d2 targets=delivery-receipt-stops-at-first-failure
 - 2026-09-11T16:17:45Z 030HT9PVZGVHDS5RKBJJ1AFZZP-m1-c6925449 set-priority actor=human:Wido targets=actionable-metrics,breach-clock-and-budget-honesty,budget-extends-by-consumption-and-breach-parks,burn-without-delivery-tripwire,capped-round-continues-instead-of-restarting,carried-landing-debt-and-cap,coordinator-context-stays-under-budget,coordinator-wakes-on-events-not-polls,critique-closes-on-folded-proof,deep-battery-under-ten-minutes,delegate-job-liveness,delegate-rounds-reuse-a-warm-gate,delivery-receipt-stops-at-first-failure,failed-job-attention,fixture-stewards-outlive-their-suite,goal-abandoned-with-a-reason,human-carried-landing-carry,human-carried-landing-verb,human-goal-verbs-forgiving,job-record-birth-token,land-ready-work-lands-without-a-claim-slot,landing-receipt-survives-records-drift,lease-sweep-death-evidence,live-job-on-a-done-goal-unnoticed,machine-concurrency-governor,proof-attempts-settle-to-minutes-run,proof-groups-detect-hangs-by-progress-not-the-clock,proof-harness-process-custody,retained-proof-reuse-crosses-claims-and-attempts,severity-tiered-rigor,severity-tiered-rigor-p2,small-change-lane,steward-catchup-livelock,steward-revives-a-done-goal,stop-batch-strands-a-resumable-goal,suite-custody,tier-from-severity-and-novelty,token-spend-fence,turn-verdict-hardening,watch-verb,watcher-repair-request-never-names-current,winddown-census-handoff-leak reason=priority-order subject=proof-attempts-settle-to-minutes-run from=1:9 to=1:10 requested-sequence=7
 - 2026-09-11T16:17:54Z CF87BGWGV0RXDA5FDRY9K59XA6-m1-c6925449 set-priority actor=human:Wido targets=delivery-receipt-stops-at-first-failure,human-carried-landing-carry reason=priority-order subject=delivery-receipt-stops-at-first-failure from=1:10 to=1:9 requested-sequence=9
-Integrity: sha256=d8898e34eb9c0c0a17ef063086aba4313c18004a1521f4005897bd844e28bd09
+- 2026-09-11T16:19:10Z P8Z3GCEPE9S5HM17NWF595DS32-m1-c6925449 approve actor=human:Wido targets=delivery-receipt-stops-at-first-failure
+Integrity: sha256=024b5bc518dc90fcb29458267e7134a2a61cc511d8c1fed2a18e1f196bea3ec7
