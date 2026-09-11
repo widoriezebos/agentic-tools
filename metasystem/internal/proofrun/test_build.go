@@ -14,6 +14,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"regexp"
 	"runtime"
 	"sort"
 	"strings"
@@ -287,6 +288,160 @@ func retainedGroupDurations(controlRoot string) map[string]int64 {
 	return durations
 }
 
+// runShardedGoGroup runs one whole-package go group as group.Shards
+// concurrent go test launches, each over a round-robin share of the
+// discovered test names. Every shard writes its own log beside the group's;
+// the group log is their concatenation in shard order, which is also what
+// the group's parsers read. The outcome is the merged supervision: any
+// verdict, the first wait error, the summed CPU, the longest silences, and
+// the first nonzero exit. With coverage on, each shard writes coverage data
+// under the group's log directory and the merged per-package percentages
+// come back as go-test-shaped lines for the coverage floors.
+func runShardedGoGroup(ctx context.Context, request TestRunRequest, group testpolicy.Group, cwd string, environment []string, expected []NativeTestIdentity,
+	limits supervisorLimits, sampleInterval time.Duration, logPath string, output *synchronizedBuffer) (supervisorOutcome, error, string, error) {
+	seen := map[string]bool{}
+	names := make([]string, 0, len(expected))
+	for _, identity := range expected {
+		if identity.Name == "" || seen[identity.Name] {
+			continue
+		}
+		seen[identity.Name] = true
+		names = append(names, identity.Name)
+	}
+	sort.Strings(names)
+	shards := group.Shards
+	if shards > len(names) {
+		shards = len(names)
+	}
+	if shards < 1 {
+		shards = 1
+	}
+	partitions := make([][]string, shards)
+	for index, name := range names {
+		partitions[index%shards] = append(partitions[index%shards], name)
+	}
+	coverageRoot := strings.TrimSuffix(logPath, ".log") + ".coverage"
+	if group.Coverage {
+		if err := os.RemoveAll(coverageRoot); err != nil {
+			return supervisorOutcome{}, nil, "", fmt.Errorf("reset shard coverage directory: %w", err)
+		}
+	}
+	type shardRun struct {
+		outcome supervisorOutcome
+		output  synchronizedBuffer
+		logPath string
+		err     error
+	}
+	runs := make([]shardRun, shards)
+	var wg sync.WaitGroup
+	for index := range partitions {
+		args := []string{"go", "test", "-json", "-count=1", "-timeout", "0"}
+		if group.Race {
+			args = append(args, "-race")
+		}
+		if group.Coverage {
+			args = append(args, "-cover")
+		}
+		patterns := make([]string, len(partitions[index]))
+		for at, name := range partitions[index] {
+			patterns[at] = regexp.QuoteMeta(name)
+		}
+		args = append(args, "-run", "^("+strings.Join(patterns, "|")+")$")
+		for _, pkg := range group.Packages {
+			args = append(args, "./"+strings.TrimPrefix(pkg, "./"))
+		}
+		shardDir := filepath.Join(coverageRoot, fmt.Sprintf("shard-%d", index+1))
+		if group.Coverage {
+			if err := os.MkdirAll(shardDir, 0o700); err != nil {
+				return supervisorOutcome{}, nil, "", fmt.Errorf("create shard coverage directory: %w", err)
+			}
+			args = append(args, "-args", "-test.gocoverdir="+shardDir)
+		}
+		runs[index].logPath = fmt.Sprintf("%s.shard-%d.log", strings.TrimSuffix(logPath, ".log"), index+1)
+		command, err := explicitEnvironmentCommand(ctx, cwd, environment, args)
+		if err != nil {
+			return supervisorOutcome{}, nil, "", err
+		}
+		logFile, err := os.OpenFile(runs[index].logPath, os.O_CREATE|os.O_TRUNC|os.O_WRONLY, 0o600)
+		if err != nil {
+			return supervisorOutcome{}, nil, "", fmt.Errorf("create shard log: %w", err)
+		}
+		wg.Add(1)
+		go func(index int, command *exec.Cmd, logFile *os.File) {
+			defer wg.Done()
+			activity := newOutputActivity(time.Now())
+			tee := &activityWriter{activity: activity, writer: io.MultiWriter(&runs[index].output, logFile)}
+			command.Stdout, command.Stderr = tee, tee
+			runs[index].outcome = superviseCommand(command, supervisorOptions{Context: ctx, Limits: limits, SampleInterval: sampleInterval, Activity: activity})
+			runs[index].err = logFile.Close()
+		}(index, command, logFile)
+	}
+	wg.Wait()
+	merged := supervisorOutcome{}
+	var closeErr error
+	for index := range runs {
+		run := &runs[index]
+		merged.Started = merged.Started || run.outcome.Started
+		merged.CPUSeconds += run.outcome.CPUSeconds
+		if run.outcome.LongestSilentSeconds > merged.LongestSilentSeconds {
+			merged.LongestSilentSeconds = run.outcome.LongestSilentSeconds
+		}
+		if run.outcome.LongestZeroCPUSeconds > merged.LongestZeroCPUSeconds {
+			merged.LongestZeroCPUSeconds = run.outcome.LongestZeroCPUSeconds
+		}
+		if merged.Verdict == "" && run.outcome.Verdict != "" {
+			merged.Verdict, merged.Reason, merged.Dump = run.outcome.Verdict, fmt.Sprintf("shard %d: %s", index+1, run.outcome.Reason), run.outcome.Dump
+		}
+		if merged.RuleSuffix == "" {
+			merged.RuleSuffix = run.outcome.RuleSuffix
+		}
+		if merged.WaitErr == nil && run.outcome.WaitErr != nil {
+			merged.WaitErr = run.outcome.WaitErr
+		}
+		if closeErr == nil && run.err != nil {
+			closeErr = run.err
+		}
+		output.Write(run.output.Bytes())
+	}
+	if err := os.WriteFile(logPath, output.Bytes(), 0o600); err != nil {
+		return merged, closeErr, "", fmt.Errorf("write group log: %w", err)
+	}
+	coverageMerge := ""
+	if group.Coverage && merged.Started {
+		dirs := make([]string, shards)
+		for index := range dirs {
+			dirs[index] = filepath.Join(coverageRoot, fmt.Sprintf("shard-%d", index+1))
+		}
+		percent, err := explicitEnvironmentCommand(ctx, cwd, environment, []string{"go", "tool", "covdata", "percent", "-i=" + strings.Join(dirs, ",")})
+		if err != nil {
+			return merged, closeErr, "", err
+		}
+		data, err := percent.CombinedOutput()
+		if err != nil {
+			return merged, closeErr, "", fmt.Errorf("merge shard coverage: %v: %s", err, strings.TrimSpace(string(data)))
+		}
+		// The merged percentages join the group's go test -json stream as
+		// output events in go test's own summary shape, so the coverage
+		// parser reads them last and they win over the shards' partial lines.
+		var lines strings.Builder
+		for _, line := range strings.Split(string(data), "\n") {
+			fields := strings.Fields(line)
+			// covdata prints: <package>  coverage: N% of statements
+			if len(fields) >= 5 && fields[1] == "coverage:" {
+				event, err := json.Marshal(goEvent{Action: "output", Package: fields[0],
+					Output: fmt.Sprintf("ok  \t%s\t0.000s\tcoverage: %s of statements\n", fields[0], fields[2])})
+				if err != nil {
+					return merged, closeErr, "", err
+				}
+				lines.Write(event)
+				lines.WriteString("\n")
+			}
+		}
+		coverageMerge = "\n" + lines.String()
+	}
+	return merged, closeErr, coverageMerge, nil
+}
+
 func testGroupProgress(path, group, event, status, reason string) error {
 	if path == "" {
 		return nil
@@ -505,13 +660,6 @@ func runTestGroup(ctx context.Context, request TestRunRequest, group testpolicy.
 			return result
 		}
 	}
-	command, commandErr := explicitEnvironmentCommand(ctx, cwd, environment, argv)
-	if commandErr != nil {
-		result.Status = "unavailable"
-		result.NotRunReason = commandErr.Error()
-		result.EndedAt, result.DurationMS = resultDuration(started)
-		return result
-	}
 	if err := os.MkdirAll(request.LogRoot, 0o700); err != nil {
 		result.Status, result.NotRunReason = "invalid", fmt.Sprintf("create group log directory: %v", err)
 		result.EndedAt, result.DurationMS = resultDuration(started)
@@ -523,19 +671,43 @@ func runTestGroup(ctx context.Context, request TestRunRequest, group testpolicy.
 		result.EndedAt, result.DurationMS = resultDuration(started)
 		return result
 	}
-	logFile, err := os.OpenFile(result.LogPath, os.O_CREATE|os.O_TRUNC|os.O_WRONLY, 0o600)
-	if err != nil {
-		result.Status, result.NotRunReason = "invalid", fmt.Sprintf("create group log: %v", err)
-		result.EndedAt, result.DurationMS = resultDuration(started)
-		return result
-	}
 	var output synchronizedBuffer
-	activity := newOutputActivity(time.Now())
-	tee := &activityWriter{activity: activity, writer: io.MultiWriter(&output, logFile)}
-	command.Stdout, command.Stderr = tee, tee
-	supervised := superviseCommand(command, supervisorOptions{Context: ctx, Limits: limits, SampleInterval: sampleInterval,
-		Activity: activity, StageResultPath: sectionReport})
-	closeErr := logFile.Close()
+	var supervised supervisorOutcome
+	var closeErr error
+	var coverageMerge string
+	if group.Adapter == "go" && group.Shards > 1 {
+		// The group's discovered tests run as concurrent go test launches
+		// inside this one group; their outputs join in shard order, and
+		// whole-package coverage is merged from the shards' coverage data.
+		var launchErr error
+		supervised, closeErr, coverageMerge, launchErr = runShardedGoGroup(ctx, request, group, cwd, environment, expected, limits, sampleInterval, result.LogPath, &output)
+		if launchErr != nil {
+			result.Status = "unavailable"
+			result.NotRunReason = launchErr.Error()
+			result.EndedAt, result.DurationMS = resultDuration(started)
+			return result
+		}
+	} else {
+		command, commandErr := explicitEnvironmentCommand(ctx, cwd, environment, argv)
+		if commandErr != nil {
+			result.Status = "unavailable"
+			result.NotRunReason = commandErr.Error()
+			result.EndedAt, result.DurationMS = resultDuration(started)
+			return result
+		}
+		logFile, err := os.OpenFile(result.LogPath, os.O_CREATE|os.O_TRUNC|os.O_WRONLY, 0o600)
+		if err != nil {
+			result.Status, result.NotRunReason = "invalid", fmt.Sprintf("create group log: %v", err)
+			result.EndedAt, result.DurationMS = resultDuration(started)
+			return result
+		}
+		activity := newOutputActivity(time.Now())
+		tee := &activityWriter{activity: activity, writer: io.MultiWriter(&output, logFile)}
+		command.Stdout, command.Stderr = tee, tee
+		supervised = superviseCommand(command, supervisorOptions{Context: ctx, Limits: limits, SampleInterval: sampleInterval,
+			Activity: activity, StageResultPath: sectionReport})
+		closeErr = logFile.Close()
+	}
 	if supervised.RuleSuffix != "" {
 		result.ProgressRule += "+" + supervised.RuleSuffix
 	}
@@ -589,7 +761,7 @@ func runTestGroup(ctx context.Context, request TestRunRequest, group testpolicy.
 					result.Status = "invalid"
 					result.CollectionComplete = false
 					result.NotRunReason = "an explicit Go test-name subset cannot claim whole-package coverage floors"
-				} else if violations, coverageErr := checkGroupCoverage(root, coverageModule, coverageInventory, output.String()); coverageErr != nil {
+				} else if violations, coverageErr := checkGroupCoverage(root, coverageModule, coverageInventory, output.String()+coverageMerge); coverageErr != nil {
 					result.Status = "invalid"
 					result.CollectionComplete = false
 					result.NotRunReason = coverageErr.Error()

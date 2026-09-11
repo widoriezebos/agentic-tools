@@ -482,10 +482,10 @@ func checkGroupCoverage(root, modulePrefix string, inventory []string, output st
 	decoder := json.NewDecoder(strings.NewReader(output))
 	for {
 		var event goEvent
-		if err := decoder.Decode(&event); err == io.EOF {
+		if err := decoder.Decode(&event); err != nil {
+			// A decoder cannot step past malformed input; retrying the same
+			// error forever hung a runner on 2026-09-11. What was read stands.
 			break
-		} else if err != nil {
-			continue
 		}
 		native.WriteString(event.Output)
 	}

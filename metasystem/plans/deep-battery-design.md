@@ -35,11 +35,33 @@ processes, not cores. Wido decides the VM's committed value if two is wrong.
 Expected on the Mac: the cadence battery drops from about 56 minutes to the
 length of its longest group, the dispatcher section at about 9.5 minutes.
 
-## Slices 3 and 5: sharding and the race gate
+## Slice 3a: the long Go groups run in shards inside their group
 
-Not in this landing. With the pool the wall time equals the longest group;
-sharding the two coverage groups and splitting the big sections is the next
-cut and reuses this pool. The race gate follows the shards.
+A whole-package `go` group may declare `shards` (1 to 64, `tests` must be
+`all`). The runner partitions the discovered test names round-robin and
+runs that many `go test -json` launches at once inside the one group, each
+supervised like a single launch, each with its own log beside the group's;
+the group log is their concatenation in shard order, which is what the
+group's parsers read. The outcome is the merged supervision: any verdict,
+the first wait error, the summed CPU, the longest silences, the first
+nonzero exit. With `coverage` on, every shard writes coverage data under
+the group's log directory (`-test.gocoverdir`), and `go tool covdata
+percent` merges them; the merged per-package percentages join the group's
+JSON stream as output events in go test's own summary shape, so the
+coverage floors judge the whole package, never a shard. The group's
+identity, evidence, progress events and reuse are unchanged: one group.
+
+`goal-full-coverage` and `missionrunner-full-coverage` declare four shards.
+Measured before: 538 s and 444 s alone, 919 s and 711 s under the pool.
+
+Found on the way: the coverage parser's JSON loop retried a decode error
+forever; it now ends at the first error and keeps what it read.
+
+## Slices 3b and 5: the big sections and the race gate
+
+Not in this landing. Splitting the dispatcher, adoption and supervision
+sections into per-scenario groups is the next cut; the race gate follows
+the shards.
 
 ## Proof
 

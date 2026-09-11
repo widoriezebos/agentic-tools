@@ -82,28 +82,33 @@ type ExpectedTest struct {
 }
 
 type Group struct {
-	ID               string            `json:"id"`
-	Kind             string            `json:"kind"`
-	Adapter          string            `json:"adapter"`
-	CWD              string            `json:"cwd"`
-	Inputs           []string          `json:"inputs"`
-	Outputs          []string          `json:"outputs"`
-	Tools            []Tool            `json:"tools"`
-	ExternalInputs   []ExternalInput   `json:"externalInputs,omitempty"`
-	Obligations      []string          `json:"obligations"`
-	Platforms        []string          `json:"platforms"`
-	TargetMS         int64             `json:"targetMs"`
-	CPUBudgetSeconds *int64            `json:"cpuBudgetSeconds,omitempty"`
-	Packages         []string          `json:"packages,omitempty"`
-	Tests            json.RawMessage   `json:"tests,omitempty"`
-	Race             bool              `json:"race,omitempty"`
-	Coverage         bool              `json:"coverage,omitempty"`
-	Env              map[string]string `json:"env,omitempty"`
-	Section          string            `json:"section,omitempty"`
-	Argv             []string          `json:"argv,omitempty"`
-	Reports          []string          `json:"reports,omitempty"`
-	Format           string            `json:"format,omitempty"`
-	ExpectedTests    []ExpectedTest    `json:"expectedTests,omitempty"`
+	ID               string          `json:"id"`
+	Kind             string          `json:"kind"`
+	Adapter          string          `json:"adapter"`
+	CWD              string          `json:"cwd"`
+	Inputs           []string        `json:"inputs"`
+	Outputs          []string        `json:"outputs"`
+	Tools            []Tool          `json:"tools"`
+	ExternalInputs   []ExternalInput `json:"externalInputs,omitempty"`
+	Obligations      []string        `json:"obligations"`
+	Platforms        []string        `json:"platforms"`
+	TargetMS         int64           `json:"targetMs"`
+	CPUBudgetSeconds *int64          `json:"cpuBudgetSeconds,omitempty"`
+	Packages         []string        `json:"packages,omitempty"`
+	Tests            json.RawMessage `json:"tests,omitempty"`
+	Race             bool            `json:"race,omitempty"`
+	Coverage         bool            `json:"coverage,omitempty"`
+	// Shards splits a whole-package go group's discovered tests round-robin
+	// into this many concurrent go test launches inside the one group; zero
+	// or one runs the group as a single launch. Coverage is merged from the
+	// shards' coverage data.
+	Shards        int               `json:"shards,omitempty"`
+	Env           map[string]string `json:"env,omitempty"`
+	Section       string            `json:"section,omitempty"`
+	Argv          []string          `json:"argv,omitempty"`
+	Reports       []string          `json:"reports,omitempty"`
+	Format        string            `json:"format,omitempty"`
+	ExpectedTests []ExpectedTest    `json:"expectedTests,omitempty"`
 }
 
 func Decode(data []byte) (Contract, error) {
@@ -284,6 +289,12 @@ func validateGroup(group Group) error {
 		}
 		if group.Coverage && !allTests {
 			return fmt.Errorf("whole-package coverage requires tests=all")
+		}
+		if group.Shards < 0 || group.Shards > 64 {
+			return fmt.Errorf("go shards must be 0 through 64")
+		}
+		if group.Shards > 1 && !allTests {
+			return fmt.Errorf("go shards require tests=all")
 		}
 	case "section":
 		if !identifier.MatchString(group.Section) {
