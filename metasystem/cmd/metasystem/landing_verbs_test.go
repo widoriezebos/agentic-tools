@@ -809,7 +809,12 @@ exec "${CLBM_REAL_GIT:-/usr/bin/git}" "$@"
 		command := exec.Command("bash", append([]string{"-c", script, "holder", gate}, arguments...)...)
 		command.Dir = root
 		path := wrapperDir + string(os.PathListSeparator) + os.Getenv("PATH")
-		env := append(gittree.ScrubbedEnviron(), "PATH="+path, "METASYSTEM_OWNER_LINEAGE=race-lineage")
+		// The landing verifies the retained proof in the environment the
+		// receipt was made in: the receipt canary environment above. An
+		// ambient GOFLAGS (the race gate exports -mod=readonly to every
+		// test it runs) would otherwise enter the group execution identity
+		// on this side only, and the retained proof would read as missing.
+		env := append(receiptCanaryEnvironment(), "PATH="+path, "METASYSTEM_OWNER_LINEAGE=race-lineage")
 		env = append(env, extraEnv...)
 		command.Env = env
 		var output bytes.Buffer

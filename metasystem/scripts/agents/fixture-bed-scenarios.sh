@@ -2,11 +2,11 @@
 # The ONE owner of the continue-and-collect scenario harness for fixture
 # beds (Ruling P): a bed runs every scenario as its own child process,
 # records each red, continues past it, and fails once at the end with
-# every failure's tail. Four early conversions carry private copies of
-# this block (dispatch, health, goal-cli, supervision); new conversions
-# source this file instead so the harness has one home. Requires
-# fixture-budget.sh sourced first (child detection and capability
-# minting live there).
+# every failure's tail. Every bed sources this file (the four early
+# conversions that carried private serial copies of this block joined it
+# on 2026-09-11, so their scenarios run side by side like every other
+# bed's). Requires fixture-budget.sh sourced first (child detection and
+# capability minting live there).
 #
 # Usage, at the top of a bed after sourcing fixture-budget.sh:
 #   source "$root/scripts/agents/fixture-bed-scenarios.sh"
@@ -14,12 +14,31 @@
 #   run_fixture_bed_scenarios <bed> "<success line>" <script> <scenario>...
 # in the parent branch; the child's body gates its sections on
 # $fixture_scenario.
+#
+# A bed with a private need names a function in one of these variables
+# before calling the runner (each is optional):
+#   fixture_bed_prepare_hook        run once with the private log root before
+#                                   the first scenario launches (a shared
+#                                   engine build, say)
+#   fixture_bed_mint_capability     mints a child's capability file; called
+#                                   with the log root, the scenario index and
+#                                   the scenario name; defaults to
+#                                   harness_fixture_bed_mint_capability
+#   fixture_bed_scenario_verdict    judges one finished scenario; called with
+#                                   the scenario name, its exit status and
+#                                   its log path; returns 0 for a pass (the
+#                                   default passes exactly exit status 0)
+#   fixture_bed_parent_extra_cleanup runs inside the parent's exit cleanup
 
 fixture_bed_harness_root=$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd -P)
 fixture_bed_parent_log_root=
 fixture_bed_parent_child_pid=
 fixture_bed_parent_bed=
 fixture_bed_parent_scenario=
+fixture_bed_prepare_hook=${fixture_bed_prepare_hook:-}
+fixture_bed_mint_capability=${fixture_bed_mint_capability:-harness_fixture_bed_mint_capability}
+fixture_bed_scenario_verdict=${fixture_bed_scenario_verdict:-}
+fixture_bed_parent_extra_cleanup=${fixture_bed_parent_extra_cleanup:-}
 
 fixture_bed_reap_group() { # process-group leader pid
   local pgid=$1 deadline
@@ -56,6 +75,9 @@ fixture_bed_parent_cleanup() {
   done
   [[ -z "$fixture_bed_parent_log_root" ]] \
     || rm -rf "$fixture_bed_parent_log_root" 2>/dev/null || true
+  if [[ -n "$fixture_bed_parent_extra_cleanup" ]]; then
+    "$fixture_bed_parent_extra_cleanup" || true
+  fi
   return "$status"
 }
 
@@ -76,6 +98,9 @@ run_fixture_bed_scenarios() { # bed name, success line, script, scenario names..
   trap 'exit 130' INT
   trap 'exit 131' QUIT
   trap 'exit 143' TERM
+  if [[ -n "$fixture_bed_prepare_hook" ]]; then
+    "$fixture_bed_prepare_hook" "$log_root"
+  fi
   # Scenarios are independent children with their own temp roots, so a bed
   # runs up to METASYSTEM_FIXTURE_SCENARIO_CONCURRENCY of them side by side
   # (default: the cores divided by six, at least one, at most three; a bed's
@@ -101,7 +126,7 @@ run_fixture_bed_scenarios() { # bed name, success line, script, scenario names..
     while (( queued_at < total && ${#live_pids[@]} < scenario_slots )); do
       scenario=${queued[$queued_at]}
       log=$log_root/$queued_at.log
-      capability=$(harness_fixture_bed_mint_capability "$log_root" "$queued_at" "$scenario")
+      capability=$("$fixture_bed_mint_capability" "$log_root" "$queued_at" "$scenario")
       echo "$bed fixture scenario started: $scenario" >&2
       set -m
       "$script" --fixture-bed-child "$scenario" "$capability" </dev/null >"$log" 2>&1 &
@@ -133,13 +158,21 @@ run_fixture_bed_scenarios() { # bed name, success line, script, scenario names..
         set -e
       fi
       cat "$log"
+      scenario_elapsed=$((SECONDS - live_started[slot]))
+      if [[ -n "$fixture_bed_scenario_verdict" ]]; then
+        if "$fixture_bed_scenario_verdict" "$scenario" "$rc" "$log"; then
+          rc=0
+        elif [[ $rc -eq 0 ]]; then
+          rc=1
+        fi
+      fi
       if [[ $rc -eq 0 ]]; then
-        echo "$bed fixture scenario passed: $scenario" >&2
+        echo "$bed fixture scenario passed: $scenario (${scenario_elapsed}s)" >&2
       else
         failed_names+=("$scenario")
         failed_rcs+=("$rc")
         failed_logs+=("$log")
-        echo "$bed fixture scenario failed: $scenario (rc=$rc); continuing" >&2
+        echo "$bed fixture scenario failed: $scenario (rc=$rc, ${scenario_elapsed}s); continuing" >&2
       fi
       unset "live_pids[$slot]" "live_names[$slot]" "live_logs[$slot]" "live_started[$slot]" "live_deadlines[$slot]"
       live_pids=("${live_pids[@]+"${live_pids[@]}"}")

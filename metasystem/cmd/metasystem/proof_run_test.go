@@ -434,7 +434,11 @@ func TestProofRunCommandGovernedParentSharesOneCharge(t *testing.T) {
 			"--suite", "governed-command", "--root", root, "--control-root", root,
 			"--conf", filepath.Join(root, "metasystem.conf"), "--progress", filepath.Join(root, "artifacts", "governed.progress.jsonl"),
 			"--log", filepath.Join(root, "artifacts", "governed.log"), "--banner", "governed command canary", "--", "true")
-		command.Env = os.Environ()
+		// The governed locators travel under the fixture's own names: the
+		// package's TestMain clears every METASYSTEM_PROOF_* control before
+		// a test runs, so the engine receives them here, not by inheritance.
+		command.Env = append(os.Environ(), "METASYSTEM_PROOF_RUN_ROOT="+os.Getenv("GOVERNED_COMMAND_PROOF_RUN_ROOT"),
+			"METASYSTEM_PROOF_RUN_ID="+os.Getenv("GOVERNED_COMMAND_PROOF_RUN_ID"))
 		command.Stdout, command.Stderr = os.Stdout, os.Stderr
 		if err := command.Run(); err != nil {
 			if exit, ok := err.(*exec.ExitError); ok {
@@ -504,7 +508,7 @@ func TestProofRunCommandGovernedParentSharesOneCharge(t *testing.T) {
 	child := exec.Command(os.Args[0], "-test.run=^TestProofRunCommandGovernedParentSharesOneCharge$")
 	child.Env = append(receiptCanaryEnvironment(), "GO_WANT_GOVERNED_COMMAND_PARENT=1", "GOVERNED_COMMAND_READY="+ready,
 		"GOVERNED_COMMAND_RELEASE="+release, "GOVERNED_COMMAND_ROOT="+root, "GOVERNED_COMMAND_ENGINE="+engine,
-		"METASYSTEM_PROOF_RUN_ROOT="+root, "METASYSTEM_PROOF_RUN_ID=governed-command")
+		"GOVERNED_COMMAND_PROOF_RUN_ROOT="+root, "GOVERNED_COMMAND_PROOF_RUN_ID=governed-command")
 	child.SysProcAttr = &syscall.SysProcAttr{Setpgid: true}
 	var output bytes.Buffer
 	child.Stdout, child.Stderr = &output, &output

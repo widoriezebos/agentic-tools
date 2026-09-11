@@ -13,80 +13,22 @@ else
 fi
 unset METASYSTEM_FIXTURE_SCENARIO
 
-fixture_bed_parent_log_root=
-fixture_bed_parent_child_pid=
-fixture_bed_parent_cleanup() {
-  local status=$?
-  trap - EXIT HUP INT QUIT TERM
-  if [[ -n "$fixture_bed_parent_child_pid" ]]; then
-    kill -TERM "$fixture_bed_parent_child_pid" 2>/dev/null || true
-    wait "$fixture_bed_parent_child_pid" 2>/dev/null || true
-  fi
-  [[ -z "$fixture_bed_parent_log_root" ]] \
-    || rm -rf "$fixture_bed_parent_log_root" 2>/dev/null || true
-  return "$status"
-}
-
-run_fixture_bed_scenarios() { # bed name, success line, script, scenario names...
-  local bed=$1 success_line=$2 script=$3 log_root scenario capability log rc index=0
-  local failed_names=() failed_rcs=() failed_logs=()
-  shift 3
-  log_root=$(mktemp -d "${TMPDIR:-/tmp}/metasystem-${bed}-scenarios.XXXXXX")
-  fixture_bed_parent_log_root=$log_root
-  trap fixture_bed_parent_cleanup EXIT
-  trap 'exit 129' HUP
-  trap 'exit 130' INT
-  trap 'exit 131' QUIT
-  trap 'exit 143' TERM
-  for scenario in "$@"; do
-    log=$log_root/$index.log
-    capability=$(harness_fixture_bed_mint_capability "$log_root" "$index" "$scenario")
-    echo "$bed fixture scenario started: $scenario" >&2
-    "$script" --fixture-bed-child "$scenario" "$capability" >"$log" 2>&1 &
-    fixture_bed_parent_child_pid=$!
-    set +e
-    wait "$fixture_bed_parent_child_pid"
-    rc=$?
-    set -e
-    fixture_bed_parent_child_pid=
-    cat "$log"
-    if [[ "$scenario" == bed-death-self-test ]]; then
-      if [[ $rc -ne 0 ]] && grep -Fq 'unbound variable' "$log"; then
-        echo "$bed fixture scenario passed: $scenario" >&2
-      else
-        failed_names+=("$scenario")
-        failed_rcs+=("$rc")
-        failed_logs+=("$log")
-        if [[ $rc -eq 0 ]]; then
-          echo "the bed reported a dead child as passed" >&2
-        fi
-        echo "$bed fixture scenario failed: $scenario (rc=$rc); continuing" >&2
-      fi
-    elif [[ $rc -eq 0 ]]; then
-      echo "$bed fixture scenario passed: $scenario" >&2
-    else
-      failed_names+=("$scenario")
-      failed_rcs+=("$rc")
-      failed_logs+=("$log")
-      echo "$bed fixture scenario failed: $scenario (rc=$rc); continuing" >&2
+source "$fixture_bed_root/scripts/agents/fixture-bed-scenarios.sh"
+# bed-death-self-test proves the harness reports a dead child: that
+# scenario passes only by dying on an unbound variable.
+supervision_fixture_bed_verdict() { # scenario, exit status, log
+  if [[ "$1" == bed-death-self-test ]]; then
+    if [[ $2 -ne 0 ]] && grep -Fq 'unbound variable' "$3"; then
+      return 0
     fi
-    index=$((index + 1))
-  done
-  if (( ${#failed_names[@]} )); then
-    echo "=== $bed failed scenarios ===" >&2
-    for ((index = 0; index < ${#failed_names[@]}; index++)); do
-      echo "- ${failed_names[$index]} (rc=${failed_rcs[$index]})" >&2
-      echo "  output tail:" >&2
-      tail -n 40 "${failed_logs[$index]}" | sed 's/^/    /' >&2
-    done
-    echo "=== end $bed failed scenarios ===" >&2
-    rm -rf "$log_root"
-    exit 1
+    if [[ $2 -eq 0 ]]; then
+      echo "the bed reported a dead child as passed" >&2
+    fi
+    return 1
   fi
-  rm -rf "$log_root"
-  echo "$success_line"
-  exit 0
+  [[ $2 -eq 0 ]]
 }
+fixture_bed_scenario_verdict=supervision_fixture_bed_verdict
 
 if (( ! fixture_bed_child )); then
   export METASYSTEM_SUPERVISION_FIXTURE_SUITE_PID=$$

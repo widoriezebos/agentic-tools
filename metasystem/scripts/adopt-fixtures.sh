@@ -8,10 +8,35 @@ if [[ $# -eq 1 && $1 == --comparison ]]; then
   adopt_fixture_forward=(--comparison)
   shift
 fi
-if [[ $# -ne 0 ]]; then
+# The bed's legs are scenarios (fixture-bed-scenarios.sh): the parent runs
+# them side by side as children of this same script, each with its own
+# temp root and its own snapshot of the source; a child gates its legs on
+# $fixture_scenario below.
+fixture_bed_root=$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd -P)
+source "$fixture_bed_root/scripts/agents/fixture-budget.sh"
+fixture_bed_child=0
+fixture_scenario=
+if fixture_scenario=$(harness_fixture_bed_child_scenario adopt "$@"); then
+  fixture_bed_child=1
+else
+  fixture_bed_child_rc=$?
+  [[ $fixture_bed_child_rc -eq 1 ]] || exit "$fixture_bed_child_rc"
+fi
+unset METASYSTEM_FIXTURE_SCENARIO
+if (( ! fixture_bed_child )) && [[ $# -ne 0 ]]; then
   echo "adopt fixtures: accepts only --comparison" >&2
   exit 64
 fi
+adopt_fixture_scenarios=(default runtimes nested refusals landing-refs covenant tracer skills)
+if (( fixture_bed_child )); then
+  case "$fixture_scenario" in
+    default | runtimes | nested | refusals | landing-refs | covenant | tracer | skills) ;;
+    *) echo "adopt fixtures: unknown scenario: $fixture_scenario" >&2; exit 64 ;;
+  esac
+fi
+adopt_leg() { # scenario name
+  [[ "$fixture_scenario" == "$1" ]]
+}
 
 # adopt.sh self-test (script-validate-4/D35): extracted verbatim from
 # validate-metasystem.sh's inline template-mode blocks into the sub-suite
@@ -26,7 +51,9 @@ source scripts/agents/fixture-budget.sh
 
 adopt_progress_path="$root/artifacts/agents/supervision/suite-progress.jsonl"
 adopt_progress_parent=0
-if [[ "${METASYSTEM_SUITE_PROGRESS_ACTIVE:-0}" == 1 \
+if (( fixture_bed_child )); then
+  adopt_progress_parent=1
+elif [[ "${METASYSTEM_SUITE_PROGRESS_ACTIVE:-0}" == 1 \
   && "${METASYSTEM_SUITE_PROGRESS_ROOT:-}" == "$root" ]]; then
   adopt_progress_auth_bin=${METASYSTEM_PROOF_AUTH_BIN:-$root/bin/metasystem}
   if [[ -x "$adopt_progress_auth_bin" ]] \
@@ -55,7 +82,7 @@ if (( ! adopt_progress_parent )); then
       METASYSTEM_SUITE_PROGRESS_TMP="$adopt_progress_tmp" \
       METASYSTEM_SUITE_PROGRESS_LOG="$adopt_progress_log" \
       bash "$root/scripts/adopt-fixtures.sh" ${adopt_fixture_forward[@]+"${adopt_fixture_forward[@]}"}
-elif [[ "${METASYSTEM_SUITE_PROGRESS_SUITE:-}" != adopt-fixtures ]]; then
+elif (( ! fixture_bed_child )) && [[ "${METASYSTEM_SUITE_PROGRESS_SUITE:-}" != adopt-fixtures ]]; then
   "$root/bin/metasystem" proof-run banner --suite adopt-fixtures --root "$root" \
     --progress "$adopt_progress_path" --log "$METASYSTEM_SUITE_PROGRESS_LOG"
 fi
@@ -67,7 +94,10 @@ harness_fixture_warn_if_engine_stale "$root"
 # adoption shape (a goal-free ledger on a checkout whose history carries
 # none), judged against the target itself, so these fixtures carry no
 # invocation-shape dependence and no authority-root env hook.
-if [[ "${METASYSTEM_SUITE_PROGRESS_SUITE:-}" == adopt-fixtures \
+if (( fixture_bed_child )); then
+  mkdir -p "${METASYSTEM_SUITE_PROGRESS_TMP:-${TMPDIR:-/tmp}}"
+  tmp=$(mktemp -d "${METASYSTEM_SUITE_PROGRESS_TMP:-${TMPDIR:-/tmp}}/adopt-$fixture_scenario.XXXXXX")
+elif [[ "${METASYSTEM_SUITE_PROGRESS_SUITE:-}" == adopt-fixtures \
   && -n "${METASYSTEM_SUITE_PROGRESS_TMP:-}" ]]; then
   tmp=$METASYSTEM_SUITE_PROGRESS_TMP
 elif [[ -n "${METASYSTEM_SUITE_PROGRESS_TMP:-}" ]]; then
@@ -81,7 +111,7 @@ cleanup() {
   status=$?
   [[ -n "$witness_state" ]] && rm -rf "$witness_state" 2>/dev/null
   if [[ $status != 0 && -d "$tmp" ]]; then
-    keep="artifacts/agents/suite-failures/$(date -u +%Y%m%dT%H%M%SZ)-adopt-$$"
+    keep="artifacts/agents/suite-failures/$(date -u +%Y%m%dT%H%M%SZ)-adopt${fixture_scenario:+-$fixture_scenario}-$$"
     mkdir -p "$(dirname "$keep")"
     mv "$tmp" "$keep" 2>/dev/null && echo "adopt fixture evidence preserved: $keep" >&2
     return 0
@@ -96,7 +126,7 @@ trap cleanup EXIT
 # An outer validate's witness is inherited untouched; a dirty tree arms
 # nothing and the nested runs pay their own gates exactly as before
 # (fallback "none": this harness needs no worktree gate of its own).
-if [[ "$adopt_fixture_selection" == all && -z "${METASYSTEM_GATE_WITNESS:-}" \
+if (( ! fixture_bed_child )) && [[ "$adopt_fixture_selection" == all && -z "${METASYSTEM_GATE_WITNESS:-}" \
   && -z "${METASYSTEM_PROOF_ATTEMPT:-}" ]] \
   && grep -qs '^module github.com/widoriezebos/agentic-tools/metasystem$' go.mod; then
   delivery_contract=0
@@ -116,11 +146,54 @@ if [[ "$adopt_fixture_selection" == comparison ]]; then
   exit
 fi
 
+# Each scenario child snapshots the source itself: the committed snapshot
+# of the working tree (never a clone of HEAD) that adopt.sh runs from, and
+# the vendored layout the nested legs adopt from.
+adopt_prepare_srcrepo() {
+  srcrepo="$tmp/adopt-src"
+  mkdir -p "$srcrepo"
+  copy_tree_without_artifacts "$root" "$srcrepo"
+  echo 'ignored-fixture.txt' >>"$srcrepo/.gitignore"
+  echo junk >"$srcrepo/ignored-fixture.txt"
+  git init -q -b main "$srcrepo"
+  git -C "$srcrepo" config metasystem.goal.machine fixture-machine
+  git -C "$srcrepo" add -A
+  git -C "$srcrepo" -c user.name=metasystem -c user.email=metasystem@example.invalid commit -qm snapshot
+  adopt="$srcrepo/scripts/adopt.sh"
+  src_sha=$(git -C "$srcrepo" rev-parse HEAD)
+}
+adopt_prepare_nested_src() {
+  # The same adoption must work when the template is vendored one level below
+  # the git toplevel, which is the real repository's own layout. A tree path
+  # after the colon in git archive resolves relative to the cwd, so archiving
+  # HEAD:<prefix> from inside the prefix yields an empty archive with exit 0;
+  # every fixture stages at a root, which is why the first real adoption from
+  # the vendored layout found it and no fixture did.
+  nested_src="$tmp/adopt-nested"
+  mkdir -p "$nested_src/vendored"
+  copy_tree_without_artifacts "$root" "$nested_src/vendored"
+  git -C "$nested_src" init -q -b main
+  git -C "$nested_src" config metasystem.goal.machine fixture-machine
+  git -C "$nested_src" add .
+  git -C "$nested_src" -c user.name=metasystem -c user.email=metasystem@example.invalid commit -qm nested
+}
+
+if (( ! fixture_bed_child )); then
+  source "$root/scripts/agents/fixture-bed-scenarios.sh"
+  adopt_parent_cleanup() {
+    [[ -z "$witness_state" ]] || rm -rf "$witness_state" 2>/dev/null || true
+    rm -rf "$tmp" 2>/dev/null || true
+  }
+  fixture_bed_parent_extra_cleanup=adopt_parent_cleanup
+  adopt_fixture_script=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd -P)/$(basename "${BASH_SOURCE[0]}")
+  run_fixture_bed_scenarios adopt "adopt fixtures passed" "$adopt_fixture_script" "${adopt_fixture_scenarios[@]}"
+fi
+
 # Adopted-mode contract: a copy without the template marker validates with a
 # skill pruned, and a present-but-broken skill still fails. These legs call
 # the validator's skill-inventory owner directly so an unrelated engine or
 # process fixture cannot replace the result being asserted.
-if true; then  # template-gated by the orchestrator
+if adopt_leg skills; then
   adopted="$tmp/adopted"
   mkdir -p "$adopted"
 
@@ -179,24 +252,8 @@ fi
 # adopt.sh self-test, template mode only. The source is a committed snapshot
 # of the current working tree: a git clone would exercise committed HEAD, not
 # the implementation under review.
-if true; then  # template-gated by the orchestrator
-  srcrepo="$tmp/adopt-src"
-  mkdir -p "$srcrepo"
-  copy_tree_without_artifacts "$root" "$srcrepo"
-
-  # The same adoption must work when the template is vendored one level below
-  # the git toplevel, which is the real repository's own layout. A tree path
-  # after the colon in git archive resolves relative to the cwd, so archiving
-  # HEAD:<prefix> from inside the prefix yields an empty archive with exit 0;
-  # every fixture stages at a root, which is why the first real adoption from
-  # the vendored layout found it and no fixture did.
-  nested_src="$tmp/adopt-nested"
-  mkdir -p "$nested_src/vendored"
-  copy_tree_without_artifacts "$root" "$nested_src/vendored"
-  git -C "$nested_src" init -q -b main
-  git -C "$nested_src" config metasystem.goal.machine fixture-machine
-  git -C "$nested_src" add .
-  git -C "$nested_src" -c user.name=metasystem -c user.email=metasystem@example.invalid commit -qm nested
+if adopt_leg nested; then
+  adopt_prepare_nested_src
 
   # HOST-C3-001: adoption has always accepted an explicit installation
   # beneath an application's Git root. Runtime registration must stay in that
@@ -409,14 +466,10 @@ PLAN
     >"$chain_root/artifacts/agents/jobs/implementer-20260101t000000z-cccc.json"
   [[ -n "$("$root/bin/metasystem" report open-work --repo "$chain_root" | grep STALE-PLAN)" ]] \
     || { echo "a closed chain still suppressed the stale report" >&2; exit 1; }
-  echo 'ignored-fixture.txt' >>"$srcrepo/.gitignore"
-  echo junk >"$srcrepo/ignored-fixture.txt"
-  git init -q -b main "$srcrepo"
-  git -C "$srcrepo" config metasystem.goal.machine fixture-machine
-  git -C "$srcrepo" add -A
-  git -C "$srcrepo" -c user.name=metasystem -c user.email=metasystem@example.invalid commit -qm snapshot
-  adopt="$srcrepo/scripts/adopt.sh"
-  src_sha=$(git -C "$srcrepo" rev-parse HEAD)
+fi
+
+if adopt_leg landing-refs; then
+  adopt_prepare_srcrepo
 
 
   echo "adopt fixture leg started: a detached target must finish adoption without seeding a landing ref" >&2
@@ -483,8 +536,10 @@ PLAN
   [[ "$(git -C "$detached_preset_tgt" config --local --no-includes --get metasystem.steward.landing-ref)" == refs/remotes/kept/detached ]] \
     || { echo "adopt fixture leg failed: detached target's preset landing ref was overwritten" >&2; exit 1; }
   echo "adopt fixture leg passed: detached target kept its preset landing ref" >&2
+fi
 
-
+if adopt_leg default; then
+  adopt_prepare_srcrepo
   tgt="$tmp/adopt-default"
   mkdir -p "$tgt"
   printf 'project readme\n' >"$tgt/README.md"
@@ -649,7 +704,10 @@ PLAN
   grep -q 'registration directory .claude/skills is missing' "$tmp/missing-registration.out" \
     || { echo "adopt: missing-registration failure did not name the directory" >&2; exit 1; }
   mv "$tgt/.claude/skills.missing" "$tgt/.claude/skills"
+fi
 
+if adopt_leg runtimes; then
+  adopt_prepare_srcrepo
   bash "$adopt" "$tmp/adopt-devin" --runtimes devin >/dev/null
   [[ -f "$tmp/adopt-devin/.devin/agents/verify/AGENT.md" ]] || { echo "adopt: devin profile missing" >&2; exit 1; }
   [[ -L "$tmp/adopt-devin/.agents/skills/verify" && -L "$tmp/adopt-devin/.devin/skills/verify" ]] \
@@ -741,7 +799,10 @@ PLAN
   fill_harness_testing_contract "$srcrepo/testing.json" "$tmp/adopt-copy/testing.json"
   METASYSTEM_ADOPTION_TARGET="$tmp/adopt-copy" METASYSTEM_ADOPTION_KIND=copied \
     METASYSTEM_ADOPTION_FIXTURE_ROOT="$tmp" run_adoption_comparison
+fi
 
+if adopt_leg refusals; then
+  adopt_prepare_srcrepo
   mkdir -p "$tmp/adopt-foreign"
   touch "$tmp/adopt-foreign/.cursorrules"
   if bash "$adopt" "$tmp/adopt-foreign" >/dev/null 2>&1; then
@@ -800,6 +861,9 @@ PLAN
     exit 1
   fi
   git -C "$srcrepo" checkout -q -- wow.md
+fi
+
+if adopt_leg default; then
   rm -rf "$tgt/skills/take-a-step-back"
   if METASYSTEM_ENUMERATION_ENGINE_DEPENDENCY=ready \
       bash "$tgt/scripts/agents/validate-section-selector.sh" run runtime-contract-audits \
@@ -820,6 +884,8 @@ fi
 # machinery's obligation, proven when it exists).
 # The inception products ride the same law: the doctrine and a
 # covenant-referenced net file are app-owned exactly like the covenant.
+if adopt_leg covenant; then
+adopt_prepare_srcrepo
 mkdir -p "$tmp/adopt-covenant/docs"
 printf '{"identity": {"name": "the-app"}, "guardrails": ["goldens/", "gate.sh"]}\n' >"$tmp/adopt-covenant/covenant.json"
 printf '# the-app doctrine\npatterns the delegates honor\n' >"$tmp/adopt-covenant/docs/app-doctrine.md"
@@ -851,6 +917,7 @@ for f in covenant.json docs/app-doctrine.md docs/covenant-evidence.md gate.sh; d
     exit 1
   }
 done
+fi
 
 
 # The declared-touch-list tracer (memory-architecture slice 3, R-10's
@@ -860,7 +927,8 @@ done
 # digest-compared so modification and deletion are caught, not just
 # creation [MAC-S3-002]; two runtimes exercise the branchy writers
 # [MAC-S3-005].
-if true; then  # template-gated by the orchestrator
+if adopt_leg tracer; then
+  adopt_prepare_nested_src
   for tracer_runtime in claude codex; do
   tracer_tgt="$tmp/tracer-target-$tracer_runtime"
   mkdir -p "$tracer_tgt/docs" "$tracer_tgt/src"
@@ -907,4 +975,4 @@ if true; then  # template-gated by the orchestrator
   done
 fi
 
-echo "adopt fixtures passed"
+echo "adopt fixture scenario complete: $fixture_scenario"

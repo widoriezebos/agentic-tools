@@ -22,70 +22,19 @@ unset GIT_OBJECT_DIRECTORY GIT_ALTERNATE_OBJECT_DIRECTORIES
 export METASYSTEM_DELEGATE_INTERNAL=1
 export METASYSTEM_DISPATCH_FIXTURE_HAZARD=MECHANICAL
 
-fixture_bed_parent_log_root=
-fixture_bed_parent_child_pid=
-fixture_bed_parent_cleanup() {
-  local status=$?
-  trap - EXIT HUP INT QUIT TERM
-  if [[ -n "$fixture_bed_parent_child_pid" ]]; then
-    kill -TERM "$fixture_bed_parent_child_pid" 2>/dev/null || true
-    wait "$fixture_bed_parent_child_pid" 2>/dev/null || true
-  fi
-  [[ -z "$fixture_bed_parent_log_root" ]] \
-    || rm -rf "$fixture_bed_parent_log_root" 2>/dev/null || true
-  return "$status"
+source "$fixture_bed_root/scripts/agents/fixture-bed-scenarios.sh"
+# The dispatcher's scenarios share one engine build; each child's
+# capability pins its bytes and stamp.
+dispatch_fixture_shared_engine=
+dispatch_fixture_bed_prepare() { # private log root
+	dispatch_fixture_shared_engine=$1/fixture-engine
+	METASYSTEM_BUILD_STAMP=dev bash "$fixture_bed_root/scripts/agents/go-build.sh" --out "$dispatch_fixture_shared_engine" >/dev/null
 }
-
-run_fixture_bed_scenarios() { # bed name, success line, script, scenario names...
-  local bed=$1 success_line=$2 script=$3 log_root scenario capability log rc index=0 shared_engine
-  local failed_names=() failed_rcs=() failed_logs=()
-  shift 3
-  log_root=$(mktemp -d "${TMPDIR:-/tmp}/metasystem-${bed}-scenarios.XXXXXX")
-  fixture_bed_parent_log_root=$log_root
-	shared_engine=$log_root/fixture-engine
-	METASYSTEM_BUILD_STAMP=dev bash "$fixture_bed_root/scripts/agents/go-build.sh" --out "$shared_engine" >/dev/null
-  trap fixture_bed_parent_cleanup EXIT
-  trap 'exit 129' HUP
-  trap 'exit 130' INT
-  trap 'exit 131' QUIT
-  trap 'exit 143' TERM
-  for scenario in "$@"; do
-    log=$log_root/$index.log
-    capability=$(harness_dispatch_fixture_bed_mint_capability "$log_root" "$index" "$scenario" "$shared_engine")
-    echo "$bed fixture scenario started: $scenario" >&2
-    "$script" --fixture-bed-child "$scenario" "$capability" >"$log" 2>&1 &
-    fixture_bed_parent_child_pid=$!
-    set +e
-    wait "$fixture_bed_parent_child_pid"
-    rc=$?
-    set -e
-    fixture_bed_parent_child_pid=
-    cat "$log"
-    if [[ $rc -eq 0 ]]; then
-      echo "$bed fixture scenario passed: $scenario" >&2
-    else
-      failed_names+=("$scenario")
-      failed_rcs+=("$rc")
-      failed_logs+=("$log")
-      echo "$bed fixture scenario failed: $scenario (rc=$rc); continuing" >&2
-    fi
-    index=$((index + 1))
-  done
-  if (( ${#failed_names[@]} )); then
-    echo "=== $bed failed scenarios ===" >&2
-    for ((index = 0; index < ${#failed_names[@]}; index++)); do
-      echo "- ${failed_names[$index]} (rc=${failed_rcs[$index]})" >&2
-      echo "  output tail:" >&2
-      tail -n 40 "${failed_logs[$index]}" | sed 's/^/    /' >&2
-    done
-    echo "=== end $bed failed scenarios ===" >&2
-    rm -rf "$log_root"
-    exit 1
-  fi
-  rm -rf "$log_root"
-  echo "$success_line"
-  exit 0
+dispatch_fixture_bed_mint_capability() { # private directory, index, scenario
+	harness_dispatch_fixture_bed_mint_capability "$1" "$2" "$3" "$dispatch_fixture_shared_engine"
 }
+fixture_bed_prepare_hook=dispatch_fixture_bed_prepare
+fixture_bed_mint_capability=dispatch_fixture_bed_mint_capability
 
 if (( ! fixture_bed_child )); then
 	if [[ $# -gt 0 ]]; then
