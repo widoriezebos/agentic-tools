@@ -2,14 +2,14 @@
 
 - State: approved
 - Priority: 1
-- Sequence: 13
+- Sequence: 14
 - Risk: severity=2 novelty=2 exposure=3 accumulation=2 basis="severity 2: a wait that never returns idles a seat; novelty 2: a wait verb over existing records is new; exposure 3: every seat; accumulation 2: touches the hook and the verbs"
 - Tier: 3
 - Intent: Coordinator seats spent 302 of 360 session hours waiting: 25 percent in 2,139 blocking polls (90 hours, issued by turns carrying 982 million prompt tokens), 28 percent idle awaiting a background notification, 30 percent idle awaiting a human (claude-sessions.md sections 2d and 2f of the delivery deep dive). DONE means: a seat waiting on a delegate job, a proof attempt, a landing or a human act issues one wait verb (metasystem wait --job, --attempt or --goal) that returns on the event or a bounded deadline with no polling from the model; the harness's own background-task notification is the wake for Claude seats; the Stop hook does not force a turn while a registered wait is pending; proven by one coordinator session carrying a whole goal with fewer than 20 polling calls and a waiting share under 40 percent. Goal 13 of plans/delivery-efficiency-plan.md.
 - Origin: human
 - Next step: Design first: inventory the wait sites in the transcripts (watch, TaskOutput, tmux capture loops, Monitor), define the wait verb over the existing job, attempt and ledger records, critique, build, land.
 - OpenedAt: 2026-09-11T15:45:15Z
-- Revision: 4
+- Revision: 5
 - Pinned: m1e
 - Budget: elapsedLimit=1d attemptLimit=10 reservedJobMinutesLimit=1200 activeJobLimit=1 reviewRoundLimit=3
 - BudgetExceptions: 0
@@ -20,4 +20,5 @@ History:
 - 2026-09-11T15:48:09Z CSC5ES54ZZ6KDTH00Z9G0X0WAQ-m1-c6925449 set-pin actor=human:Wido targets=coordinator-wakes-on-events-not-polls
 - 2026-09-11T15:48:13Z V41W61BBKFACK0A5GD2BCGY19V-m1-c6925449 set-priority actor=human:Wido targets=actionable-metrics,breach-clock-and-budget-honesty,burn-without-delivery-tripwire,carried-landing-debt-and-cap,coordinator-wakes-on-events-not-polls,delegate-job-liveness,failed-job-attention,fixture-stewards-outlive-their-suite,goal-abandoned-with-a-reason,human-carried-landing-verb,human-goal-verbs-forgiving,job-record-birth-token,landing-receipt-survives-records-drift,lease-sweep-death-evidence,live-job-on-a-done-goal-unnoticed,machine-concurrency-governor,proof-harness-process-custody,severity-tiered-rigor,severity-tiered-rigor-p2,small-change-lane,steward-catchup-livelock,steward-revives-a-done-goal,stop-batch-strands-a-resumable-goal,suite-custody,token-spend-fence,turn-verdict-hardening,watch-verb,watcher-repair-request-never-names-current,winddown-census-handoff-leak reason=priority-order subject=coordinator-wakes-on-events-not-polls from=unranked to=1:13 requested-sequence=13
 - 2026-09-11T15:49:33Z EWK98JTZT8NB0ZH1YCRG8QFSQK-m1-c6925449 approve actor=human:Wido targets=coordinator-wakes-on-events-not-polls
-Integrity: sha256=145d5a6f49e77b0aadfcd92e8276d9a4e8011669d39e66df5853c1e832d72169
+- 2026-09-11T15:50:51Z M4GZC1Q99QFRH9T13HSY774HAR-m1-c6925449 set-priority actor=human:Wido targets=actionable-metrics,breach-clock-and-budget-honesty,budget-extends-by-consumption-and-breach-parks,burn-without-delivery-tripwire,capped-round-continues-instead-of-restarting,carried-landing-debt-and-cap,coordinator-context-stays-under-budget,coordinator-wakes-on-events-not-polls,critique-closes-on-folded-proof,deep-battery-under-ten-minutes,delegate-job-liveness,delegate-rounds-reuse-a-warm-gate,delivery-receipt-stops-at-first-failure,failed-job-attention,fixture-stewards-outlive-their-suite,goal-abandoned-with-a-reason,human-carried-landing-carry,human-carried-landing-verb,human-goal-verbs-forgiving,job-record-birth-token,land-ready-work-lands-without-a-claim-slot,landing-receipt-survives-records-drift,landing-refuses-without-its-receipt-line,lease-sweep-death-evidence,live-job-on-a-done-goal-unnoticed,machine-concurrency-governor,proof-groups-detect-hangs-by-progress-not-the-clock,proof-harness-process-custody,retained-proof-reuse-crosses-claims-and-attempts,seat-opened-goals-name-their-blocker,severity-tiered-rigor,severity-tiered-rigor-p2,small-change-lane,steward-catchup-livelock,steward-revives-a-done-goal,stop-batch-strands-a-resumable-goal,suite-custody,token-spend-fence,turn-verdict-hardening,watch-verb,watcher-repair-request-never-names-current,winddown-census-handoff-leak reason=priority-order subject=landing-refuses-without-its-receipt-line from=1:13 to=1:14 requested-sequence=5
+Integrity: sha256=61a233caa2b4c1ea996c6b34d51d1c134ebcf1aca2612d7fa315c6348a4c98fe
