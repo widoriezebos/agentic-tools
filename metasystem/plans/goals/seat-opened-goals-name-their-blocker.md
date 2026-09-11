@@ -7,10 +7,12 @@
 - Origin: human
 - Next step: Read OpenTiered in internal/goal/verbs.go and the open flags in cmd/metasystem/goalsync_mutations.go, add the flag, the edge and the refusal, the docs line, land.
 - OpenedAt: 2026-09-11T15:45:05Z
-- Revision: 1
+- Revision: 2
+- Pinned: m1e
 - Budget: elapsedLimit=4h attemptLimit=6 reservedJobMinutesLimit=720 activeJobLimit=1 reviewRoundLimit=2
 - BudgetExceptions: 0
 
 History:
 - 2026-09-11T15:45:05Z 5W0FM0WGJ00Q1A7X06ESJFVC4X-m1e-5083721b open actor=m1e+main-1789141490-27414-b9c0d2 targets=seat-opened-goals-name-their-blocker
-Integrity: sha256=b24522b7991b7254b16e7dc9200f39fea67bae5a64074a63e05f2f3688e19e7d
+- 2026-09-11T15:47:14Z X1PRNWZEXP7ZK7V0Q8NE34S5BY-m1-c6925449 set-pin actor=human:Wido targets=seat-opened-goals-name-their-blocker
+Integrity: sha256=b397c7336b1764bf1725c788de4580eec44c523f3ba0a504239e3b6b6322aacf
