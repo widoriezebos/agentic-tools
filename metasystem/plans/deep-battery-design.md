@@ -35,8 +35,10 @@ gate ran as single processes, and a quarter (four) was the afternoon's
 measured answer; once the giants ran in shards and every bed's scenarios
 side by side, cadence run 8 (969 s) had its four slots full with 8.9 of 18
 cores busy on average and the groups summing to 3796 s, so the slot count
-was the wall and six is the evening's measured answer. Wido decides the
-VM's committed value.
+was the wall; run 9 then measured six slots at 896 s with every heavy group
+30 to 60 percent slower (the walls summed to 5110 s) and one more fixed
+fixture cap tripped, so a quarter stays the default until the duplicated
+coverage work at cadence is gone. Wido decides the VM's committed value.
 
 Expected on the Mac: the cadence battery drops from about 56 minutes to the
 length of its longest group, the dispatcher section at about 9.5 minutes.
@@ -59,9 +61,11 @@ identity, evidence, progress events and reuse are unchanged: one group.
 
 `goal-full-coverage` and `missionrunner-full-coverage` declare four shards
 (six for one evening on 2026-09-11: six shards each plus the gate's launches
-oversubscribed the 18 cores, and the six-shard merge of internal/goal read
-78.3 percent against its 80 percent floor where four shards had passed it,
-so four is the measured number).
+oversubscribed the 18 cores; the 78.3 percent that the internal/goal merge
+read against its 80 percent floor in cadence run 8 was first blamed on the
+six shards, but run 9 read the identical 78.3 with four: the shortfall is
+ce59b313's untested additions to the package, another seat's landing, and
+the shard count was never its cause).
 Measured before: 538 s and 444 s alone, 919 s and 711 s under the pool.
 
 Found on the way: the coverage parser's JSON loop retried a decode error

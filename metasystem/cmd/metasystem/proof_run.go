@@ -657,10 +657,15 @@ type proofRunLimits struct {
 // measured answer that afternoon. By the end of that day the giants ran in
 // shards and every bed's scenarios side by side, and cadence run 8 spent
 // 969 s with the four slots full and 8.9 of 18 cores busy on average: the
-// slot count, not the box, was the wall (the groups summed to 3796 s). A
-// third runs six there, and a 4-vCPU VM still runs one.
+// slot count, not the box, was the wall (the groups summed to 3796 s). Run
+// 9 then measured six slots: 896 s, but every heavy group 30 to 60 percent
+// slower (the walls summed to 5110 s) and one more fixed fixture cap
+// tripped, so the 73 s were bought with contention that turns into reds.
+// A quarter stays the default (four there, one on a 4-vCPU VM) until the
+// duplicated coverage work at cadence is gone; a wide box that wants six
+// names it in metasystem.conf.
 func defaultTestingConcurrency() int {
-	cap := runtime.NumCPU() / 3
+	cap := runtime.NumCPU() / 4
 	if cap > 6 {
 		cap = 6
 	}

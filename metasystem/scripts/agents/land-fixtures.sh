@@ -529,7 +529,7 @@ BACKLOG
       --basis "This disposable fixture executes only its bounded local landing receipt." >/dev/null
     "$source_engine" goal approve --root "$leg_seed" --id fx --by Wido \
       --lineage land-receipt-fixture --elapsed-limit 4h --attempt-limit 4 \
-      --reserved-job-minutes-limit 4 --active-job-limit 1 --review-round-limit 0 \
+      --reserved-job-minutes-limit 12 --active-job-limit 1 --review-round-limit 0 \
       --fixture-human-authority
     seed_claim_engine=$source_engine
     if [[ "$fixture_scenario" == receipt-cutover ]]; then
@@ -676,7 +676,7 @@ if is_carried_scenario; then
         --basis "This disposable fixture serializes two carried landing seats." >/dev/null
     receipt_env_run env METASYSTEM_GOAL_NOW=$carried_now "$leg_peer/bin/metasystem" goal approve \
       --root "$leg_peer" --id fx-b --by Wido --lineage land-receipt-fixture-b \
-      --elapsed-limit 4h --attempt-limit 4 --reserved-job-minutes-limit 4 \
+      --elapsed-limit 4h --attempt-limit 4 --reserved-job-minutes-limit 12 \
       --active-job-limit 1 --review-round-limit 0 --fixture-human-authority >/dev/null
     receipt_env_run env METASYSTEM_GOAL_NOW=$carried_now METASYSTEM_OWNER_LINEAGE=land-receipt-fixture-b \
       "$leg_peer/bin/metasystem" goal claim --root "$leg_peer" \
@@ -1148,7 +1148,7 @@ take_fixture_receipt() { # engine, checkout, output log
   fixture_receipt_tree=$(git -C "$checkout" write-tree)
   fixture_receipt_path=$checkout/artifacts/agents/landing/receipts/$fixture_receipt_tree.json
   if ! receipt_checkout_env_run "$checkout" "$engine" landing test-receipt --root "$checkout" \
-      --tree "$fixture_receipt_tree" --mode auto --goal fx --cap-min 1 >"$output" 2>&1; then
+      --tree "$fixture_receipt_tree" --mode auto --goal fx --cap-min 3 >"$output" 2>&1; then
     echo "land $fixture_scenario fixture: landing test-receipt failed" >&2
     sed -n '1,240p' "$output" >&2
     return 1
@@ -1716,7 +1716,7 @@ full_chain_other_tree=$(git -C "$leg_local" rev-parse HEAD^{tree})
 (
   cd "$leg_local"
   "$source_engine" landing test-receipt --root . \
-    --tree "$full_chain_other_tree" --command "$full_battery_command" --goal fx --cap-min 1
+    --tree "$full_chain_other_tree" --command "$full_battery_command" --goal fx --cap-min 3
 ) >/dev/null
 full_chain_other_receipt=artifacts/agents/landing/receipts/$full_chain_other_tree.json
 
@@ -1816,7 +1816,7 @@ fi
 (
   cd "$leg_local"
   "$source_engine" landing test-receipt --root . \
-    --tree "$full_chain_candidate" --command "$full_battery_command" --goal fx --cap-min 1
+    --tree "$full_chain_candidate" --command "$full_battery_command" --goal fx --cap-min 3
 ) >/dev/null
 full_chain_receipt=artifacts/agents/landing/receipts/$full_chain_candidate.json
 (
