@@ -2,12 +2,12 @@
 
 - State: queued
 - Priority: 1
-- Sequence: 43
+- Sequence: 42
 - Intent: A properly designed parallelism mechanism: run as much in parallel as possible under a MACHINE-LEVEL configurable concurrency governor so the machine never overloads - today parallel passes are the dispatch delegate's hand-scheduling with no load awareness, and last night's load flipped the missionrunner suite over its timeout and surfaced the acp flake (Wido 2026-08-29)
 - Origin: human
 - Next step: Appetite: 3h — design then build: machine-level slots configured at the repo/machine root (metasystem.concurrency.*: heavy-pass slots, suite slots, battery exclusivity), every run-launched job admitted against slots (queue, never refuse, when full), load-aware defaults derived from CPU count (the workflow precedent: min(16, cpus-2)), and the delegate verb's admission (L13) as the natural enforcement seam - design with L13 so it lands as one law, not a bolt-on. Until this lands the dispatch delegate hand-governs by recorded delegation: cap concurrent heavy passes, never run a battery beside gauntlets or beds, stagger suites under load SECOND DRIVING INCIDENT (2026-08-31): the first governed weight-discharge validation stalled in go-engine-gate past the 45m section cap while still producing output, during m3's attested heavy window on the shared Mac (both seats' timelines on record; cross-seat hold coordinated by session message). Wido's leniency word R-32-m2 covers the interim (machine-local cap 90m, coordinated quiet windows); THIS goal is the permanent fix and gains priority from the incident.
 - OpenedAt: 2026-08-29T07:38:20Z
-- Revision: 65
+- Revision: 66
 - BudgetExceptions: 0
 
 History:
@@ -76,4 +76,5 @@ History:
 - 2026-09-11T21:59:48Z 97C3JYVES1D5WVZN59XAXSSHK8-m1-c6925449 done actor=human:Wido targets=actionable-metrics,breach-clock-and-budget-honesty,carried-landing-debt-and-cap,delegate-job-liveness,failed-job-attention,fixture-stewards-outlive-their-suite,goal-abandoned-with-a-reason,human-goal-verbs-forgiving,job-record-birth-token,landing-receipt-survives-records-drift,lease-sweep-death-evidence,live-job-on-a-done-goal-unnoticed,machine-concurrency-governor,proof-harness-process-custody,severity-tiered-rigor,severity-tiered-rigor-p2,steward-catchup-livelock,steward-revives-a-done-goal,stop-batch-strands-a-resumable-goal,suite-custody,token-spend-fence,turn-verdict-hardening,watch-verb,watcher-repair-request-never-names-current,winddown-census-handoff-leak reason=priority-order from=1:46 to=1:45
 - 2026-09-11T22:01:24Z E07T92YQT06XNWV8K1PBVBX8SX-m1-c6925449 done actor=human:Wido targets=actionable-metrics,delegate-job-liveness,fixture-stewards-outlive-their-suite,lease-sweep-death-evidence,machine-concurrency-governor,proof-harness-process-custody,suite-custody,token-spend-fence,winddown-census-handoff-leak reason=priority-order from=1:45 to=1:44
 - 2026-09-11T22:03:35Z 3M3DDFMQFG20R73AWT0GX1KQJH-m1-c6925449 done actor=human:Wido targets=actionable-metrics,breach-clock-and-budget-honesty,failed-job-attention,fixture-stewards-outlive-their-suite,goal-abandoned-with-a-reason,human-carried-landing-verb,human-goal-verbs-forgiving,job-record-birth-token,landing-receipt-survives-records-drift,lease-sweep-death-evidence,live-job-on-a-done-goal-unnoticed,machine-concurrency-governor,proof-harness-process-custody,severity-tiered-rigor,severity-tiered-rigor-p2,steward-catchup-livelock,steward-revives-a-done-goal,stop-batch-strands-a-resumable-goal,suite-custody,token-spend-fence,turn-verdict-hardening,watch-verb,watcher-repair-request-never-names-current,winddown-census-handoff-leak reason=priority-order from=1:44 to=1:43
-Integrity: sha256=8cfc44b3b51ab0776e781c97a1a5d6ca04ac7e9b4029c06c666ea74f96cba352
+- 2026-09-11T22:04:49Z GKKH2ASFRKXEH0VXXWFTBHPN8B-m1-c6925449 done actor=human:Wido targets=fixture-stewards-outlive-their-suite,machine-concurrency-governor,proof-harness-process-custody,token-spend-fence reason=priority-order from=1:43 to=1:42
+Integrity: sha256=fed54e2e9343e654fa412149fba915f90517b74611c5d9ce004191e67ec179b0
