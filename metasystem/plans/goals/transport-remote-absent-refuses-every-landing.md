@@ -1,6 +1,6 @@
 # transport-remote-absent-refuses-every-landing
 
-- State: approved
+- State: queued
 - Priority: 2
 - Sequence: 1
 - Risk: severity=2 novelty=1 exposure=3 accumulation=2 basis="severity 2: it misreports a landing that reached origin as a failed landing, and leaves the VM mirror the validation rule depends on unwritten; novelty 1: a remote configuration plus an honest refusal line, on machinery that already carries a skip flag; exposure 3: the step is required on every landing from this Mac; accumulation 2: every landing pays it and every report has to be read past it"
@@ -9,10 +9,8 @@
 - Origin: main
 - Next step: CONFIGURATION IS DONE, 2026-09-09, on Wido's word: all three seat clones (m1b, m1c, m1d) now carry the transport remote in their own .git/config, verified reachable with git ls-remote, all three reading transport main at a35731c0; the slice-2 commit 48d8bc39 is in that history. The path stays out of the repository in every form, out of this record, out of development/project-rules-local.md and out of every script default; the seat receives it from Wido directly. ROOT CAUSE, which is worth keeping: the older checkouts (custody, l10, l13) are WORKTREES of one parent clone and share its config, so the remote was configured once per machine and inherited; the seats are INDEPENDENT clones, so the same setup silently became once-per-seat when the layout changed. Nothing owns that step, which is why it was missed. WHAT REMAINS, both code: (1) whatever creates a seat clone adds the remote as a setup step, taking the path from local configuration rather than tracked content, so the next clone does not repeat this; (2) land.sh runs sync-transport.sh as a required step, so on any machine that legitimately has no mirror an unconfigured transport still turns a landing that already reached origin/main into a reported failure, as it did tonight; the step must say in one plain line that transport is unconfigured and name the remedy, and a landing that reached origin must never be reported as failed. The mirror is a bare repository shared into the benchmark VM at the same path, which is why a machine without that VM has nothing to point at and honest skipping is the correct behaviour there, not configuration. The fixture is a landing whose transport remote is absent.
 - OpenedAt: 2026-09-09T07:04:53Z
-- Revision: 5
-- Budget: elapsedLimit=1d attemptLimit=10 reservedJobMinutesLimit=1200 activeJobLimit=1 reviewRoundLimit=3
+- Revision: 6
 - BudgetExceptions: 0
-- Approved: by=human:Wido at=2026-09-09T08:00:22Z revision=5 opid=BGDG5WEFTYGMM806189P619A1M-m1b-c6925449 authority=proven digest=58a53186c659058296dd5bba034bce20a290c8c1ccb06bb6f8ae7e6c942fe8c9
 
 History:
 - 2026-09-09T07:04:53Z ZEPGVJX7EACT4X8WJV852K5PWV-m1b-c6925449 open actor=m1b+main-1788680071-18713-e76d5d targets=transport-remote-absent-refuses-every-landing
@@ -20,4 +18,5 @@ History:
 - 2026-09-09T07:36:10Z 7FRV8AJERFT1A799NC48KQBVJE-m1b-c6925449 edit actor=m1b+main-1788680071-18713-e76d5d targets=transport-remote-absent-refuses-every-landing
 - 2026-09-09T07:42:51Z 10RVVPG43QH5A45A000WAQ9VE1-m1b-c6925449 edit actor=m1b+main-1788680071-18713-e76d5d targets=transport-remote-absent-refuses-every-landing
 - 2026-09-09T08:00:22Z BGDG5WEFTYGMM806189P619A1M-m1b-c6925449 approve actor=human:Wido targets=transport-remote-absent-refuses-every-landing
-Integrity: sha256=8d689d8cb10874ee40fb86e93975583b9f9043e00062329c0c36c752f7110c22
+- 2026-09-11T08:04:19Z AB7K9V2D4MPDKGSXNJ244E2DS2-m1-c6925449 unapprove actor=human:Wido targets=transport-remote-absent-refuses-every-landing reason=Wido 2026-09-11: standing approval withdrawn to regain control of what is built next; re-approve deliberately
+Integrity: sha256=bd067b1456282874b54d4d703c17600dd1b36c7b0926965a98232d4be8cb99a3
