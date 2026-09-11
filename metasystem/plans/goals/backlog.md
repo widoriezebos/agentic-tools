@@ -6,7 +6,7 @@
 - MigrationEpoch: 2026-08-20T00:00:00Z
 - ManifestDigest: d82032bee818c2d82e6a95e6f1b75347499b88ee8b68c4d20a0f3c94d00ba320
 - MigrationMode: manifest
-- Revision: 24
+- Revision: 25
 - ApprovalGate: since=2026-09-03T14:16:24Z opid=JY54AQT8101VK9353WT9FQYGA9-m0-c5dbf036
 - FleetEnrollment: at=2026-09-06T06:37:21Z machine=m1 generation=1 opid=CMNCRETKYCB18MFZNYFSZJPXQY-m1-a4f8999f
 
@@ -42,4 +42,5 @@ History:
 - 2026-09-11T13:52:22Z S2R40KWSVJ8NQA8KJR2ER8E8QN-m1e-892cdaec ack actor=m1e+main-1789030447-51011-5722fc targets=landing-runs-standard-deep-runs-at-cadence displaced=m1e+main-1789030447-51011-5722fc@2026-09-11T13:25:46Z ack
 - 2026-09-11T14:53:37Z D582VB519KB1J9V7Q7BGYW7ZQN-m1e-892cdaec ack actor=m1e+main-1789030447-51011-5722fc targets=adoption-comparison-runs-once displaced=m1e+main-1789030447-51011-5722fc@2026-09-11T14:41:37Z ack
 - 2026-09-11T14:53:50Z 166K1EH4DGXAQTZN22W8W57RKS-m1e-892cdaec ack actor=m1e+main-1789030447-51011-5722fc targets=narration-cap-test-writes-its-history-once displaced=m1e+main-1789030447-51011-5722fc@2026-09-11T14:53:37Z ack
-Integrity: sha256=f38f4a069d40d80aae9819f839d7d22af597aa53c28d9ab4b7cb0a5be5c2e982
+- 2026-09-11T14:54:06Z 2PB2JN1G2SH0F8TV68R94WVAE0-m1e-892cdaec ack actor=m1e+main-1789030447-51011-5722fc targets=missionrunner-cycle-tests-lower-the-reap-interval displaced=m1e+main-1789030447-51011-5722fc@2026-09-11T14:53:50Z ack
+Integrity: sha256=e2fe5dcde56fb2b8366d2ea45c4d4d7ea51d36580d2c3172ede69cfa4034f40e
