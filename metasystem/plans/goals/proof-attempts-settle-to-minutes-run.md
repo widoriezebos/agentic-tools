@@ -7,11 +7,13 @@
 - Origin: main
 - Next step: One Sol round in internal/dispatch/budget.go's proof-attempt loop mirroring settledJobMinutes for proof attempts, with tests beside the sum-invariant test; one Opus review; land with --chain. Found by dispatch-cap-crit3-20260910 (DCN-09) on 2026-09-10. Wido approves at the terminal.
 - OpenedAt: 2026-09-09T22:51:49Z
-- Revision: 3
+- Revision: 4
+- Pinned: m1e
 - BudgetExceptions: 0
 
 History:
 - 2026-09-09T22:51:49Z 7MWERD2ZYAKHY1N3KVQVR8TY8K-m1-1701c13c open actor=m1+main-1788940932-18533-7fa6c2 targets=proof-attempts-settle-to-minutes-run
 - 2026-09-10T05:48:27Z WEXFFS3GDSTNTEYCMDYSEM1GJA-m1-c6925449 approve actor=human:Wido targets=proof-attempts-settle-to-minutes-run
 - 2026-09-11T08:01:57Z YVD6080SP15T0KF02T7S3MDJ8E-m1-c6925449 unapprove actor=human:Wido targets=proof-attempts-settle-to-minutes-run reason=Wido 2026-09-11: standing approval withdrawn to regain control of what is built next; re-approve deliberately
-Integrity: sha256=33efd3f2d7e475950ebbc81eb442eff5d69a38b7f320194f929e99cad29ebb62
+- 2026-09-11T16:17:29Z 8M31V7VHZ6TFG60GMGZQZ9S09F-m1-c6925449 set-pin actor=human:Wido targets=proof-attempts-settle-to-minutes-run
+Integrity: sha256=b1078906599a9694e47372dabe6368aa449103ad02e7099d43c2d0bfe477089f
