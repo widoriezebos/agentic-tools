@@ -1,6 +1,6 @@
 # delegate-rounds-reuse-a-warm-gate
 
-- State: queued
+- State: approved
 - Priority: 1
 - Sequence: 13
 - Risk: severity=2 novelty=1 exposure=2 accumulation=2 basis="severity 2: a skipped gate that should have run lets a red round close; novelty 1: caches and the fast gate exist; exposure 2: delegate rounds; accumulation 2: touches dispatch and the gate"
@@ -9,9 +9,11 @@
 - Origin: human
 - Next step: Read the job environment in scripts/agents/dispatch.sh (the per-job GOCACHE), go-gate.sh --fast and the round brief format; measure the cold cases first; design; critique; build; land.
 - OpenedAt: 2026-09-11T15:46:36Z
-- Revision: 12
+- Revision: 13
 - Pinned: m1e
+- Budget: elapsedLimit=1d attemptLimit=10 reservedJobMinutesLimit=1200 activeJobLimit=1 reviewRoundLimit=3
 - BudgetExceptions: 0
+- Approved: by=human:Wido at=2026-09-11T20:33:34Z revision=13 opid=9D29SE0D3E6PY8G0T03Y45FQXR-m1-c6925449 authority=proven digest=c13631452d806c05a2169a0b745d59a27aba92c58a7fbcd20f8d9391b993a574
 
 History:
 - 2026-09-11T15:46:36Z ESAZ2BX9DC37VFYCNAXPCDG92H-m1-c6925449 open actor=human:Wido targets=delegate-rounds-reuse-a-warm-gate reason=TierOverride: derived=2 set=3 why=Wido 2026-09-11: the gate is the delegate's judge; a skipped gate is a tier-3 hazard whatever the four answers derive
@@ -26,4 +28,5 @@ History:
 - 2026-09-11T16:19:17Z QK4GT5DFTN9JC9WB665Y8RN321-m1-c6925449 approve actor=human:Wido targets=delegate-rounds-reuse-a-warm-gate
 - 2026-09-11T20:31:02Z S7MN3S86JBMHT9GX2YJ88CZ0XG-m1-c6925449 unapprove actor=human:Wido targets=delegate-rounds-reuse-a-warm-gate reason=Wido 2026-09-11: every program goal states runtime independence (claude, codex, devin, future adapters); intent amended before re-approval
 - 2026-09-11T20:32:18Z MBFNPAE6E4P62FFPNA3TZP23WD-m1e-3ca84c28 edit actor=m1e+main-1789158700-39729-b9c0d2 targets=delegate-rounds-reuse-a-warm-gate
-Integrity: sha256=40c569360d89c433a9058385d938413c7b472a75e9658cd1e84867fdba44fbb6
+- 2026-09-11T20:33:34Z 9D29SE0D3E6PY8G0T03Y45FQXR-m1-c6925449 approve actor=human:Wido targets=delegate-rounds-reuse-a-warm-gate
+Integrity: sha256=878d8cd4896d26d6040128f5ffb26abd48e274c341600eb2c82c5d6006d13070
