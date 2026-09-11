@@ -1,13 +1,15 @@
 # proof-groups-detect-hangs-by-progress-not-the-clock
 
 - State: approved
+- Priority: 1
+- Sequence: 10
 - Risk: severity=2 novelty=2 exposure=3 accumulation=1 basis="severity 2: a correct candidate is refused, or a truly hung group runs longer before it is caught, nothing granted or destroyed; novelty 2: progress-based supervision of a child is new in the adapter, the event stream and process accounting exist; exposure 3: every landing receipt on every seat; accumulation 1: one adapter and one runner, no compounding"
 - Tier: 3
 - Intent: Wido, 2026-09-10 13:45Z: 'we have a test that is load dependent. That is not a test at all. Remove the entire timeout. We need to replace it with something else, something that is not load dependent.' Today the receipt's go adapter (internal/proofrun/test_go.go) runs every unit group under Go's ten-minute default -timeout, the shell sections run under wall-clock harness caps (scripts/agents/fixture-budget.sh), and one supervision fixture asserts a two-second census freshness; on 2026-09-10 the m1 seat, sharing its host with three other seats at load 6 to 12, saw goal-full-coverage fail at 600.3 s twice with every test passing and the census fixture refuse at its window, so correct candidates were refused by the clock. Done means: no proof group and no fixture bed is bounded by wall-clock time; a group is judged hung only by absence of progress, meaning no test event on the -json stream and no growth of the child process group's CPU time over a long window, and then killed with a goroutine dump and failed with that reason; a slow group under load passes; the group record names the progress rule it ran under; and a fixture that plays a starved host (a group that makes CPU progress but takes far longer than its target) passes while a fixture that plays a deadlocked test is failed as hung.
 - Origin: main
 - Next step: Revision 3 folded the second critique as decisions (implementation-first ruling); DONE narrowed to the receipt's groups and attempt (slices 1 and 2); fixture waits are goal fixture-waits-name-their-producer. Next: Sol builds slice 1 from the build brief (supervisor with dead/stopped/waiting/runaway verdicts by consumption and task state, optional protected cpuBudgetSeconds, -timeout 0), Opus critiques, land; then slice 2 (attempt deadline and the remaining engine contexts).
 - OpenedAt: 2026-09-10T13:40:12Z
-- Revision: 26
+- Revision: 27
 - Pinned: m1e
 - Budget: elapsedLimit=3d attemptLimit=48 reservedJobMinutesLimit=1200 activeJobLimit=1 reviewRoundLimit=3
 - BudgetExceptions: 3
@@ -41,4 +43,5 @@ History:
 - 2026-09-11T13:52:22Z S2R40KWSVJ8NQA8KJR2ER8E8QN-m1e-892cdaec claim actor=m1e+main-1789030447-51011-5722fc targets=proof-groups-detect-hangs-by-progress-not-the-clock
 - 2026-09-11T14:41:33Z ZEPE013D9KXJQ7Q4QPYVPC2XSR-m1e-892cdaec release actor=m1e+main-1789030447-51011-5722fc targets=proof-groups-detect-hangs-by-progress-not-the-clock
 - 2026-09-11T15:47:46Z KDEPR8XH6VAAHSD8H9JSP7Y2Z9-m1-c6925449 set-pin actor=human:Wido targets=proof-groups-detect-hangs-by-progress-not-the-clock
-Integrity: sha256=0529eaca028cac3c9817902b36790784ca1ebd8806198675be3475a0aa2be4e0
+- 2026-09-11T15:47:50Z 43X9ER4VK3DQBS3TJ1NYXJEBVB-m1-c6925449 set-priority actor=human:Wido targets=actionable-metrics,breach-clock-and-budget-honesty,burn-without-delivery-tripwire,carried-landing-debt-and-cap,delegate-job-liveness,failed-job-attention,fixture-stewards-outlive-their-suite,goal-abandoned-with-a-reason,human-carried-landing-verb,human-goal-verbs-forgiving,job-record-birth-token,landing-receipt-survives-records-drift,lease-sweep-death-evidence,live-job-on-a-done-goal-unnoticed,machine-concurrency-governor,proof-groups-detect-hangs-by-progress-not-the-clock,proof-harness-process-custody,severity-tiered-rigor,severity-tiered-rigor-p2,small-change-lane,steward-catchup-livelock,steward-revives-a-done-goal,stop-batch-strands-a-resumable-goal,suite-custody,token-spend-fence,turn-verdict-hardening,watch-verb,watcher-repair-request-never-names-current,winddown-census-handoff-leak reason=priority-order subject=proof-groups-detect-hangs-by-progress-not-the-clock from=unranked to=1:10 requested-sequence=10
+Integrity: sha256=5b1ac94e6db2e2e84389649ce7dc4c757bd7ad75bff4070508a829c9eb3174ca
