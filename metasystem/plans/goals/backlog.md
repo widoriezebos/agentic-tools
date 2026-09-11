@@ -6,7 +6,7 @@
 - MigrationEpoch: 2026-08-20T00:00:00Z
 - ManifestDigest: d82032bee818c2d82e6a95e6f1b75347499b88ee8b68c4d20a0f3c94d00ba320
 - MigrationMode: manifest
-- Revision: 19
+- Revision: 20
 - ApprovalGate: since=2026-09-03T14:16:24Z opid=JY54AQT8101VK9353WT9FQYGA9-m0-c5dbf036
 - FleetEnrollment: at=2026-09-06T06:37:21Z machine=m1 generation=1 opid=CMNCRETKYCB18MFZNYFSZJPXQY-m1-a4f8999f
 
@@ -35,4 +35,5 @@ History:
 - 2026-09-10T06:18:28Z 83XV5YWBR1PN5MV65PNHJS6ZY8-m1d-a38bcdde ack actor=m1d+main-1788941004-20871-6e7a43 targets=breach-stop-wedges-seat displaced=m1d+main-1788941004-20871-6e7a43@2026-09-10T06:18:03Z ack
 - 2026-09-10T09:21:37Z 2C24XF9AWAKWKYAJ8ZF7A1TKW2-m1c-66a02980 ack actor=m1c+main-1789023008-75159-b69143 targets=gate-fence-returns-to-per-landing-proof displaced=m1c+main-1789023008-75159-b69143@2026-09-10T06:53:58Z ack
 - 2026-09-11T10:04:01Z XY00804EZFSMJF2462WQFKRTH3-m1d-a38bcdde ack actor=human:Wido targets=human-carried-landing-carry displaced=m1d+main-1788941004-20871-6e7a43@2026-09-11T02:09:09Z ack
-Integrity: sha256=790cfb3fd519d9a80580349f24679cdf6a45802abc6bd99893713183ab526bf2
+- 2026-09-11T11:05:29Z P40SW96EDNR7JMQ0G6JZMPSRTV-m1c-66a02980 ack actor=m1c+main-1789023008-75159-b69143 targets=budget-raises-preserve-elapsed-origin displaced=m1c+main-1789023008-75159-b69143@2026-09-11T05:48:36Z ack
+Integrity: sha256=a2230cf8e72f2e845685b4f2f2840ed4c6b662cc02ddc480eed411e108c59662
