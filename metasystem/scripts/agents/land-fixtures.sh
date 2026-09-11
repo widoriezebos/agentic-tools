@@ -411,7 +411,14 @@ BACKLOG
       --lineage land-receipt-fixture --elapsed-limit 4h --attempt-limit 4 \
       --reserved-job-minutes-limit 4 --active-job-limit 1 --review-round-limit 0 \
       --fixture-human-authority
-    "$source_engine" goal claim --root "$leg_seed" --id fx --lineage land-receipt-fixture >/dev/null
+    seed_claim_engine=$source_engine
+    if [[ "$fixture_scenario" == receipt-cutover ]]; then
+      # The pre-cutover engine claims the seed goal itself: the cutover leg's
+      # older reader then meets a claim record in the grammar it writes, not
+      # the candidate's (the claim grammar grew episode keys on 2026-09-11).
+      seed_claim_engine=$cutover_seed_claim_engine
+    fi
+    "$seed_claim_engine" goal claim --root "$leg_seed" --id fx --lineage land-receipt-fixture >/dev/null
     git -C "$leg_seed" reset -q --hard refs/metasystem/goals/accepted
     if [[ "$fixture_scenario" == receipt-cutover ]]; then
       # In the cutover leg H0 is the one complete seed tip, including the fx
@@ -1398,14 +1405,20 @@ fi
 if [[ "$fixture_scenario" == receipt-cutover ]]; then
 clear_independent_fixture_context
 echo "land receipt-cutover fixture: one candidate engine build and one pinned old-engine build"
-make_leg receipt-cutover
-cutover_old_source=$leg_root/old-src
-cutover_old_engine=$leg_root/old-engine
-cutover_moved_remote=$leg_root/moved-origin.git
-git clone -q --bare "$leg_remote" "$cutover_moved_remote"
+# The pre-cutover source is archived once; a provisionally stamped build of it
+# claims the seed goal inside make_leg, and the seed-stamped build below is the
+# engine the cutover leg enrolls.
+cutover_old_source=$tmp/receipt-cutover-old-src
+cutover_seed_claim_engine=$tmp/receipt-cutover-seed-claim-engine
 cutover_source_top=$(git -C "$root" rev-parse --show-toplevel)
 mkdir -p "$cutover_old_source"
 git -C "$cutover_source_top" archive 6bc19ba1c metasystem/ | tar -x -C "$cutover_old_source"
+METASYSTEM_BUILD_STAMP=receipt-cutover-seed-claim \
+  bash "$cutover_old_source/metasystem/scripts/agents/go-build.sh" --out "$cutover_seed_claim_engine" >/dev/null
+make_leg receipt-cutover
+cutover_old_engine=$leg_root/old-engine
+cutover_moved_remote=$leg_root/moved-origin.git
+git clone -q --bare "$leg_remote" "$cutover_moved_remote"
 METASYSTEM_BUILD_STAMP="$receipt_seed_build_stamp" \
   bash "$cutover_old_source/metasystem/scripts/agents/go-build.sh" --out "$cutover_old_engine" >/dev/null
 install_cutover_engine "$leg_local" "$cutover_old_engine"
