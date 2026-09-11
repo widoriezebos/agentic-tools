@@ -28,9 +28,11 @@ length. With the measured order the long groups start first and the short
 ones fill the remaining slots.
 
 The cap is `testing.concurrency` in `metasystem.conf`, 1 to 64. Absent, it
-is half the cores, at most six, at least one: six on the 18-core Mac, two on
-the 4-vCPU VM. Section groups spawn process trees, so the cap is about
-processes, not cores. Wido decides the VM's committed value if two is wrong.
+is a quarter of the cores, at most six, at least one: four on the 18-core
+Mac, one on the 4-vCPU VM. The first pooled cadence runs (cap six) inflated
+every heavy group 1.5x to 1.7x because the race gate and the coverage
+packages each use many cores; a quarter keeps the box below saturation.
+Wido decides the VM's committed value.
 
 Expected on the Mac: the cadence battery drops from about 56 minutes to the
 length of its longest group, the dispatcher section at about 9.5 minutes.

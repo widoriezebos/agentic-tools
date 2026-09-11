@@ -46,11 +46,14 @@ fixture_bed_reap_group() { # process-group leader pid
 }
 
 fixture_bed_parent_cleanup() {
-  local status=$?
+  local status=$? live
   trap - EXIT HUP INT QUIT TERM
   if [[ -n "$fixture_bed_parent_child_pid" ]]; then
     fixture_bed_reap_group "$fixture_bed_parent_child_pid" || true
   fi
+  for live in ${fixture_bed_parent_child_pids:-}; do
+    fixture_bed_reap_group "$live" || true
+  done
   [[ -z "$fixture_bed_parent_log_root" ]] \
     || rm -rf "$fixture_bed_parent_log_root" 2>/dev/null || true
   return "$status"
@@ -73,45 +76,85 @@ run_fixture_bed_scenarios() { # bed name, success line, script, scenario names..
   trap 'exit 130' INT
   trap 'exit 131' QUIT
   trap 'exit 143' TERM
-  for scenario in "$@"; do
-    log=$log_root/$index.log
-    capability=$(harness_fixture_bed_mint_capability "$log_root" "$index" "$scenario")
-    fixture_bed_parent_scenario=$scenario
-    echo "$bed fixture scenario started: $scenario" >&2
-    set -m
-    "$script" --fixture-bed-child "$scenario" "$capability" </dev/null >"$log" 2>&1 &
-    fixture_bed_parent_child_pid=$!
-    set +m
-    scenario_started=$SECONDS
-    scenario_deadline=$((SECONDS + scenario_cap))
-    while kill -0 "$fixture_bed_parent_child_pid" 2>/dev/null \
-        && (( SECONDS < scenario_deadline )); do
-      sleep 0.25
+  # Scenarios are independent children with their own temp roots, so a bed
+  # runs up to METASYSTEM_FIXTURE_SCENARIO_CONCURRENCY of them side by side
+  # (default: the cores divided by six, at least one, at most three; a bed's
+  # scenarios spawn stewards, runners and fake adapters, so the cap is about
+  # process trees, not cores). Each child keeps its own ceiling; its log is
+  # printed whole when it ends, so the section log stays one scenario at a
+  # time even though the work overlapped.
+  local scenario_slots cores
+  scenario_slots=${METASYSTEM_FIXTURE_SCENARIO_CONCURRENCY:-}
+  if [[ ! "$scenario_slots" =~ ^[1-9][0-9]*$ ]]; then
+    cores=$(sysctl -n hw.ncpu 2>/dev/null || nproc 2>/dev/null || echo 1)
+    [[ "$cores" =~ ^[1-9][0-9]*$ ]] || cores=1
+    scenario_slots=$((cores / 6))
+    (( scenario_slots >= 1 )) || scenario_slots=1
+    (( scenario_slots <= 3 )) || scenario_slots=3
+  fi
+  local -a queued=("$@")
+  local queued_at=0 total=$#
+  local -a live_pids=() live_names=() live_logs=() live_started=() live_deadlines=()
+  local slot live_count collected
+  fixture_bed_parent_child_pids=
+  while (( queued_at < total || ${#live_pids[@]} > 0 )); do
+    while (( queued_at < total && ${#live_pids[@]} < scenario_slots )); do
+      scenario=${queued[$queued_at]}
+      log=$log_root/$queued_at.log
+      capability=$(harness_fixture_bed_mint_capability "$log_root" "$queued_at" "$scenario")
+      echo "$bed fixture scenario started: $scenario" >&2
+      set -m
+      "$script" --fixture-bed-child "$scenario" "$capability" </dev/null >"$log" 2>&1 &
+      live_pids+=("$!")
+      set +m
+      live_names+=("$scenario")
+      live_logs+=("$log")
+      live_started+=("$SECONDS")
+      live_deadlines+=("$((SECONDS + scenario_cap))")
+      fixture_bed_parent_child_pids="${live_pids[*]}"
+      queued_at=$((queued_at + 1))
     done
-    if kill -0 "$fixture_bed_parent_child_pid" 2>/dev/null; then
-      scenario_elapsed=$((SECONDS - scenario_started))
-      echo "$bed fixture scenario exceeded its ceiling: $scenario (elapsed ${scenario_elapsed}s, scaled cap ${scenario_cap}s)" >&2
-      fixture_bed_reap_group "$fixture_bed_parent_child_pid" || true
-      rc=124
-    else
-      set +e
-      wait "$fixture_bed_parent_child_pid"
-      rc=$?
-      set -e
-    fi
-    fixture_bed_parent_child_pid=
-    fixture_bed_parent_scenario=
-    cat "$log"
-    if [[ $rc -eq 0 ]]; then
-      echo "$bed fixture scenario passed: $scenario" >&2
-    else
-      failed_names+=("$scenario")
-      failed_rcs+=("$rc")
-      failed_logs+=("$log")
-      echo "$bed fixture scenario failed: $scenario (rc=$rc); continuing" >&2
-    fi
-    index=$((index + 1))
+    collected=0
+    for ((slot = 0; slot < ${#live_pids[@]}; slot++)); do
+      if kill -0 "${live_pids[$slot]}" 2>/dev/null && (( SECONDS < live_deadlines[slot] )); then
+        continue
+      fi
+      scenario=${live_names[$slot]}
+      log=${live_logs[$slot]}
+      if kill -0 "${live_pids[$slot]}" 2>/dev/null; then
+        scenario_elapsed=$((SECONDS - live_started[slot]))
+        echo "$bed fixture scenario exceeded its ceiling: $scenario (elapsed ${scenario_elapsed}s, scaled cap ${scenario_cap}s)" >&2
+        fixture_bed_reap_group "${live_pids[$slot]}" || true
+        rc=124
+      else
+        set +e
+        wait "${live_pids[$slot]}"
+        rc=$?
+        set -e
+      fi
+      cat "$log"
+      if [[ $rc -eq 0 ]]; then
+        echo "$bed fixture scenario passed: $scenario" >&2
+      else
+        failed_names+=("$scenario")
+        failed_rcs+=("$rc")
+        failed_logs+=("$log")
+        echo "$bed fixture scenario failed: $scenario (rc=$rc); continuing" >&2
+      fi
+      unset "live_pids[$slot]" "live_names[$slot]" "live_logs[$slot]" "live_started[$slot]" "live_deadlines[$slot]"
+      live_pids=("${live_pids[@]+"${live_pids[@]}"}")
+      live_names=("${live_names[@]+"${live_names[@]}"}")
+      live_logs=("${live_logs[@]+"${live_logs[@]}"}")
+      live_started=("${live_started[@]+"${live_started[@]}"}")
+      live_deadlines=("${live_deadlines[@]+"${live_deadlines[@]}"}")
+      fixture_bed_parent_child_pids="${live_pids[*]+"${live_pids[*]}"}"
+      collected=1
+      break
+    done
+    (( collected )) || sleep 0.25
   done
+  fixture_bed_parent_child_pid=
+  fixture_bed_parent_scenario=
   if (( ${#failed_names[@]} )); then
     echo "=== $bed failed scenarios ===" >&2
     for ((index = 0; index < ${#failed_names[@]}; index++)); do

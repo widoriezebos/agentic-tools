@@ -650,12 +650,14 @@ type proofRunLimits struct {
 }
 
 // defaultTestingConcurrency is how many groups of one stage run at once when
-// metasystem.conf names no testing.concurrency: half the cores, at most six,
-// at least one. Section groups spawn process trees (stewards, runners, fake
-// adapters), so the cap is about processes, not cores: an 18-core Mac runs
-// six, a 4-vCPU VM runs two.
+// metasystem.conf names no testing.concurrency: a quarter of the cores, at
+// most six, at least one. The heavy groups each use many cores (the race
+// gate and the coverage packages run their own parallel work), so half the
+// cores oversubscribed an 18-core Mac in the first pooled cadence runs of
+// 2026-09-11 and inflated every heavy group 1.5x to 1.7x; a quarter runs
+// four there, and a 4-vCPU VM runs one, no slower than before.
 func defaultTestingConcurrency() int {
-	cap := runtime.NumCPU() / 2
+	cap := runtime.NumCPU() / 4
 	if cap > 6 {
 		cap = 6
 	}

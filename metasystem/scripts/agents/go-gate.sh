@@ -643,10 +643,21 @@ go test -race -cover -timeout 60m ./internal/... | tee "$coverage_log" || {
 # wiring, but exempt-from-floors never meant exempt-from-running: a broken
 # cmd test rode through this gate unseen on 2026-08-14 because the race run
 # above scopes to ./internal/... (cli-10 follow-up).
-go test -race ./cmd/... >/dev/null || {
-  echo "go gate: cmd tests failed" >&2
+# The cmd run keeps its output like the unit run above: a red without its
+# output is a verdict nobody can act on (the pooled cadence runs of
+# 2026-09-11 ended "cmd tests failed" twice with the reason discarded). The
+# timeout matches the unit run; go test's own ten-minute default is what a
+# loaded box trips.
+cmd_log=$(mktemp "${TMPDIR:-/tmp}/metasystem-gate-cmd.XXXXXX")
+go test -race -timeout 60m ./cmd/... >"$cmd_log" 2>&1 || {
+  keep="artifacts/agents/gate-failures/$(date -u +%Y%m%dT%H%M%SZ)-$$-cmd.log"
+  mkdir -p "$(dirname "$keep")"
+  mv "$cmd_log" "$keep" 2>/dev/null || true
+  grep -E '^(--- FAIL|FAIL|panic:|ok  )' "$keep" 2>/dev/null | head -20 >&2 || true
+  echo "go gate: cmd tests failed (output kept: $keep)" >&2
   exit 1
 }
+rm -f "$cmd_log"
 
 # Build the binary the shell fixtures and wrappers exec, through the one
 # shared fenced build (go-production-grade Phase 0a): stamped with its
