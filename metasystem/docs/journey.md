@@ -896,3 +896,60 @@ chat is checked when the machine reads it, not when the human writes it,
 so a delayed reading can expire an otherwise timely answer. And when a
 question supplies the exact reply it expects, that reply is a token to
 repeat word for word; a plain-language yes is a different answer.
+
+## A section that ran nowhere
+
+Every adopted copy of the system validates itself with the same list of
+sections the template uses, minus the few that only make sense in the
+template itself. The landing that taught receipts to survive another
+seat's ledger writes added a new template-only section but did not add it
+to that short exclusion list. From that moment every adopted copy expected
+a section that never started, declared its whole validation invalid, and
+with it the adoption bed went red for every deep landing on the fleet;
+the next morning's engine landing on this seat was the first to hit it.
+
+The repair was three lines and a number: name the section beside the
+older template-only four in the selector and in the fixture that guards
+that list, and correct the adopted-copy section count the same landing had
+set one too high. Landing it took one more line, because the fixture that
+holds that count belonged to no testing surface, the same gap the fallback
+surface is being built to close.
+
+## The path nobody owned
+
+A landing is the moment a finished change is accepted into the shared
+project, and before that moment the system proves the change with tests
+chosen by a contract: a file that maps every part of the code to the tests
+that guard it. On the morning of the tenth of September four finished
+changes on one machine could not land. Each touched a file the contract
+had never assigned to anyone: a fixture script here, a data file there,
+the record pages that carry judgments. The contract, asked what proof such
+a change needs, could only answer that it did not know, and the gate
+refused rather than guess. Every one of those changes had already been
+built, reviewed and proven green.
+
+The obvious repair was a catch-all: one entry in the contract that owns
+everything. But the contract answers a change by taking every entry whose
+paths match, all of them together, so a catch-all that matched everything
+would have made every landing pay the full battery, the hour-long run
+meant for the end of a working day. The seat that took the work read the
+selection code first and shaped the repair as a fallback instead: an
+entry the contract names as the owner of any path that no other entry
+matches, and only those. An owned path keeps the proof its owner chose.
+A path nobody claims pays the full battery, which is the honest price of
+not knowing.
+
+The repair itself could not land in one piece. The engine that judges a
+candidate's contract is the trusted one already installed, not the one
+being proposed, so it refused a contract field it had never seen. The
+engine learned the field in a first landing with the contract untouched;
+the contract declared its fallback in a second, once that engine was
+installed. That is the migration the contract's own design prescribes for
+a change to its shape, and it is why the fix took two landings rather than
+one.
+
+Along the way the second independent read of a neighbouring change found
+something older: on this Mac the stock shell is old enough that a bare
+test line in a fixture script cannot stop the script when it is false, so
+dozens of assertions across the fixture beds had been decorative. That
+became its own backlog item, with the one-line proof attached.
