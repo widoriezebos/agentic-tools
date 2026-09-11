@@ -1,6 +1,6 @@
 # coordinator-wakes-on-events-not-polls
 
-- State: queued
+- State: approved
 - Priority: 1
 - Sequence: 13
 - Risk: severity=2 novelty=2 exposure=3 accumulation=2 basis="severity 2: a wait that never returns idles a seat; novelty 2: a wait verb over existing records is new; exposure 3: every seat; accumulation 2: touches the hook and the verbs"
@@ -9,13 +9,15 @@
 - Origin: human
 - Next step: Design first: inventory the wait sites in the transcripts (watch, TaskOutput, tmux capture loops, Monitor), define the wait verb over the existing job, attempt and ledger records, critique, build, land.
 - OpenedAt: 2026-09-11T15:45:15Z
-- Revision: 3
+- Revision: 4
 - Pinned: m1e
 - Budget: elapsedLimit=1d attemptLimit=10 reservedJobMinutesLimit=1200 activeJobLimit=1 reviewRoundLimit=3
 - BudgetExceptions: 0
+- Approved: by=human:Wido at=2026-09-11T15:49:33Z revision=4 opid=EWK98JTZT8NB0ZH1YCRG8QFSQK-m1-c6925449 authority=proven digest=b8a723f759486009e59eafb153326faf7b52f8708f3a40ba61ba9cf32f8687b5
 
 History:
 - 2026-09-11T15:45:15Z HPJKBN0ZC1BZBK2M5KWKW0JP71-m1e-5083721b open actor=m1e+main-1789141490-27414-b9c0d2 targets=coordinator-wakes-on-events-not-polls
 - 2026-09-11T15:48:09Z CSC5ES54ZZ6KDTH00Z9G0X0WAQ-m1-c6925449 set-pin actor=human:Wido targets=coordinator-wakes-on-events-not-polls
 - 2026-09-11T15:48:13Z V41W61BBKFACK0A5GD2BCGY19V-m1-c6925449 set-priority actor=human:Wido targets=actionable-metrics,breach-clock-and-budget-honesty,burn-without-delivery-tripwire,carried-landing-debt-and-cap,coordinator-wakes-on-events-not-polls,delegate-job-liveness,failed-job-attention,fixture-stewards-outlive-their-suite,goal-abandoned-with-a-reason,human-carried-landing-verb,human-goal-verbs-forgiving,job-record-birth-token,landing-receipt-survives-records-drift,lease-sweep-death-evidence,live-job-on-a-done-goal-unnoticed,machine-concurrency-governor,proof-harness-process-custody,severity-tiered-rigor,severity-tiered-rigor-p2,small-change-lane,steward-catchup-livelock,steward-revives-a-done-goal,stop-batch-strands-a-resumable-goal,suite-custody,token-spend-fence,turn-verdict-hardening,watch-verb,watcher-repair-request-never-names-current,winddown-census-handoff-leak reason=priority-order subject=coordinator-wakes-on-events-not-polls from=unranked to=1:13 requested-sequence=13
-Integrity: sha256=613141cdb885d662f3551029231a82100ebcd6a933a0577d0f2e3511614c68a8
+- 2026-09-11T15:49:33Z EWK98JTZT8NB0ZH1YCRG8QFSQK-m1-c6925449 approve actor=human:Wido targets=coordinator-wakes-on-events-not-polls
+Integrity: sha256=145d5a6f49e77b0aadfcd92e8276d9a4e8011669d39e66df5853c1e832d72169
