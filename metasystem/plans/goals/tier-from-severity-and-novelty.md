@@ -7,9 +7,9 @@
 - Tier: 2
 - Intent: 75 percent of concluded goals are tier 3 because exposure 3 alone lifts the tier, as it lifted test depth before landing-runs-standard-deep-runs-at-cadence (process-rules.md section 5 item 3 of the delivery deep dive); this very goal had to be opened by a human with a tier override to be tier 2. DONE means: the tier is derived from severity and novelty only; exposure and accumulation scale cadence weight and the one-time deep run, exactly as that goal did for test depth; docs/orchestration.md and the classify path say so; proven by the tier probe on the current backlog showing under 40 percent tier 3. Goal 16 of plans/delivery-efficiency-plan.md. Tier 2 by Wido's choice 2026-09-11. RUNTIME INDEPENDENCE (plan principle 0; architecture doctrine of 2026-08-16: correctness never depends on an accelerator): this holds for every runtime the roster can host today (claude, codex, devin) and for future adapters such as opencode; the mechanism lives in the Go engine, the ledger verbs and the adapter contract, never in one runtime's hook, harness, CLI or transcript format; a native facility may accelerate it through its adapter, and an agent on any runtime with no accelerator gets the same guarantee from the records and the verb alone; where the goal touches a runtime path, DONE is proven on at least two runtimes.
 - Origin: human
-- Next step: Read the tier derivation (the severity-tiered-rigor lineage and internal/testpolicy risk), change the formula and the docs, land.
+- Next step: Read the tier derivation (the severity-tiered-rigor lineage and internal/testpolicy risk), change the formula and the docs, land. || Absorbed 2026-09-11 from goal severity-tiered-rigor: Park naming program goal 17 (tier-from-severity-and-novelty); clause to add: the journey chapter for the tiering machinery and the pending rows of records/misc/severity-tiered-rigor-obligation-matrix.md, docs/orchestration.md, the two critique skills and AGENTS.md's intake sentence are re-touched when the tier formula 
 - OpenedAt: 2026-09-11T15:50:34Z
-- Revision: 10
+- Revision: 11
 - Pinned: m1e
 - Budget: elapsedLimit=4h attemptLimit=6 reservedJobMinutesLimit=720 activeJobLimit=1 reviewRoundLimit=2
 - BudgetExceptions: 0
@@ -26,4 +26,5 @@ History:
 - 2026-09-11T20:31:17Z W3RD1SBYGG2Q8YETZGYD026W2V-m1-c6925449 unapprove actor=human:Wido targets=tier-from-severity-and-novelty reason=Wido 2026-09-11: every program goal states runtime independence (claude, codex, devin, future adapters); intent amended before re-approval
 - 2026-09-11T20:32:31Z J1G92SJAT5P1D9143GRYMV4SFH-m1e-3ca84c28 edit actor=m1e+main-1789158700-39729-b9c0d2 targets=tier-from-severity-and-novelty
 - 2026-09-11T20:33:48Z DR01GGTHM75JB0MC0BH5CVVBQW-m1-c6925449 approve actor=human:Wido targets=tier-from-severity-and-novelty
-Integrity: sha256=0f73fb107e4535ca0816a6ca0b6317e0dc757cc7cfc8ff947b2bbbc38a243787
+- 2026-09-11T21:58:26Z GBFMG50YGPW71SE7YDPAV1QH1C-m1-c6925449 edit actor=human:Wido targets=tier-from-severity-and-novelty
+Integrity: sha256=2e8683a5e462c061f822f717618d79815bd3565f852dcb684e5edbf1af239f35
