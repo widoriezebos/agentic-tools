@@ -264,6 +264,9 @@ func prepareTesting(request testingSelectionRequest) (testingPreparation, error)
 		return testingPreparation{}, err
 	}
 	effective := testpolicy.ProtectedContract(baseContract, candidateContract)
+	if effective.Fallback == "" {
+		effective.Fallback = candidateContract.Fallback
+	}
 	if err := effective.Validate(); err != nil {
 		return testingPreparation{}, fmt.Errorf("protected testing contract: %w", err)
 	}

@@ -23,11 +23,13 @@ type Contract struct {
 	SchemaVersion     int         `json:"schemaVersion"`
 	TailoringRequired bool        `json:"tailoringRequired,omitempty"`
 	ProjectRisk       ProjectRisk `json:"projectRisk"`
-	Surfaces          []Surface   `json:"surfaces"`
-	Groups            []Group     `json:"groups"`
-	Always            Always      `json:"always"`
-	Unknown           []string    `json:"unknown"`
-	Cadence           []string    `json:"cadence"`
+	// Fallback names the surface that owns a changed path by exclusion when no surface path pattern matches.
+	Fallback string    `json:"fallback,omitempty"`
+	Surfaces []Surface `json:"surfaces"`
+	Groups   []Group   `json:"groups"`
+	Always   Always    `json:"always"`
+	Unknown  []string  `json:"unknown"`
+	Cadence  []string  `json:"cadence"`
 }
 
 type ProjectRisk struct {
@@ -156,7 +158,7 @@ func (contract Contract) Validate() error {
 	}
 	surfaces := make(map[string]Surface, len(contract.Surfaces))
 	for _, surface := range contract.Surfaces {
-		if !identifier.MatchString(surface.ID) || surfaces[surface.ID].ID != "" || len(surface.Paths) == 0 {
+		if !identifier.MatchString(surface.ID) || surfaces[surface.ID].ID != "" || len(surface.Paths) == 0 && surface.ID != contract.Fallback {
 			return fmt.Errorf("testing surface id %q is invalid, duplicated, or has no paths", surface.ID)
 		}
 		for _, path := range surface.Paths {
@@ -170,6 +172,20 @@ func (contract Contract) Validate() error {
 			}
 		}
 		surfaces[surface.ID] = surface
+	}
+	if contract.Fallback != "" {
+		fallback, ok := surfaces[contract.Fallback]
+		if !ok {
+			return fmt.Errorf("testing contract references missing fallback surface %s", contract.Fallback)
+		}
+		// A fallback owns only by exclusion, so it declares neither path
+		// patterns nor dependencies that could also activate it for an owned path.
+		if len(fallback.Paths) != 0 {
+			return fmt.Errorf("testing fallback surface %s must declare no paths", fallback.ID)
+		}
+		if len(fallback.DependsOn) != 0 {
+			return fmt.Errorf("testing fallback surface %s must declare no dependsOn", fallback.ID)
+		}
 	}
 	for _, surface := range contract.Surfaces {
 		for _, dependency := range surface.DependsOn {

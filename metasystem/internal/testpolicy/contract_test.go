@@ -3,6 +3,7 @@ package testpolicy
 import (
 	"encoding/json"
 	"os"
+	"reflect"
 	"strings"
 	"testing"
 )
@@ -31,6 +32,117 @@ func TestContractRejectsMissingNoopAndUnknownFields(t *testing.T) {
 	if err := noop.Validate(); err == nil {
 		t.Fatal("blanket success command was accepted")
 	}
+}
+
+func TestContractValidatesFallbackSurface(t *testing.T) {
+	t.Run("missing-surface", func(t *testing.T) {
+		contract := fixtureContract()
+		contract.Fallback = "missing"
+		if err := contract.Validate(); err == nil || !strings.Contains(err.Error(), "missing fallback surface missing") {
+			t.Fatalf("missing fallback surface was accepted: %v", err)
+		}
+	})
+	t.Run("only-fallback-may-have-no-paths", func(t *testing.T) {
+		contract := fixtureContract()
+		contract.Fallback = "residual"
+		contract.Surfaces = append(contract.Surfaces, Surface{ID: "residual", Paths: []string{}})
+		contract.Surfaces[0].Paths = []string{}
+		if err := contract.Validate(); err == nil || !strings.Contains(err.Error(), "has no paths") {
+			t.Fatalf("non-fallback surface without paths was accepted: %v", err)
+		}
+	})
+	t.Run("fallback-must-have-no-paths", func(t *testing.T) {
+		contract := fixtureContract()
+		contract.Fallback = "app"
+		if err := contract.Validate(); err == nil || !strings.Contains(err.Error(), "fallback surface app") || !strings.Contains(err.Error(), "paths") {
+			t.Fatalf("fallback surface with paths was accepted: %v", err)
+		}
+	})
+	t.Run("fallback-must-have-no-dependencies", func(t *testing.T) {
+		contract := fixtureContract()
+		contract.Fallback = "residual"
+		contract.Surfaces = append(contract.Surfaces, Surface{ID: "residual", Paths: []string{}, DependsOn: []string{"app"}})
+		if err := contract.Validate(); err == nil || !strings.Contains(err.Error(), "fallback surface residual") || !strings.Contains(err.Error(), "dependsOn") {
+			t.Fatalf("fallback surface with dependsOn was accepted: %v", err)
+		}
+	})
+	t.Run("pathless-dependency-free-fallback-is-valid", func(t *testing.T) {
+		contract := fixtureContract()
+		contract.Fallback = "residual"
+		contract.Surfaces = append(contract.Surfaces, Surface{ID: "residual", Paths: []string{}})
+		if err := contract.Validate(); err != nil {
+			t.Fatalf("pathless dependency-free fallback surface was refused: %v", err)
+		}
+	})
+}
+
+func TestMetaSystemContractPinsFallbackDeclarationAndGroupUnions(t *testing.T) {
+	data, err := os.ReadFile("../../testing.json")
+	if err != nil {
+		t.Fatal(err)
+	}
+	contract, err := Decode(data)
+	if err != nil {
+		t.Fatal(err)
+	}
+	// A contract may declare no fallback. In that state, no surface owns by
+	// exclusion and the residual declaration remains absent.
+	if contract.Fallback == "" {
+		for _, surface := range contract.Surfaces {
+			if len(surface.Paths) == 0 {
+				t.Fatalf("contract without a fallback has pathless surface %s", surface.ID)
+			}
+			if surface.ID == "residual" {
+				t.Fatal("contract without a fallback declares the residual surface")
+			}
+		}
+		return
+	}
+	var residual Surface
+	standard, deep, critical := []string{}, []string{}, []string{}
+	for _, surface := range contract.Surfaces {
+		if surface.ID == contract.Fallback {
+			residual = surface
+			continue
+		}
+		standard = appendUnique(standard, surface.Standard...)
+		deep = appendUnique(deep, surface.Deep...)
+		critical = appendUnique(critical, surface.Critical...)
+	}
+	if residual.ID == "" {
+		t.Fatalf("fallback surface %q is absent", contract.Fallback)
+	}
+	if len(residual.Paths) != 0 || len(residual.DependsOn) != 0 {
+		t.Fatalf("fallback surface must own by exclusion with empty paths and dependsOn: %+v", residual)
+	}
+	if !reflect.DeepEqual(residual.Standard, standard) || !reflect.DeepEqual(residual.Deep, deep) || !reflect.DeepEqual(residual.Critical, critical) {
+		t.Fatalf("fallback surface groups do not equal the other surface unions: residual=%+v standard=%v deep=%v critical=%v", residual, standard, deep, critical)
+	}
+	for _, surface := range contract.Surfaces {
+		if surface.ID == contract.Fallback || surface.Risk == nil {
+			continue
+		}
+		if residual.Risk == nil || residual.Risk.Severity < surface.Risk.Severity || residual.Risk.Exposure < surface.Risk.Exposure ||
+			reversibilityRank(residual.Risk.Reversibility) < reversibilityRank(surface.Risk.Reversibility) ||
+			detectionRank(residual.Risk.Detection) < detectionRank(surface.Risk.Detection) ||
+			recoveryRank(residual.Risk.Recovery) < recoveryRank(surface.Risk.Recovery) {
+			t.Fatalf("fallback surface risk raise is lower than surface %s: fallback=%+v surface=%+v", surface.ID, residual.Risk, surface.Risk)
+		}
+	}
+}
+
+func appendUnique(values []string, additions ...string) []string {
+	seen := make(map[string]bool, len(values)+len(additions))
+	for _, value := range values {
+		seen[value] = true
+	}
+	for _, addition := range additions {
+		if !seen[addition] {
+			values = append(values, addition)
+			seen[addition] = true
+		}
+	}
+	return values
 }
 
 func TestOutputOwnershipPreservesTrackedBinAndInputIntegrity(t *testing.T) {

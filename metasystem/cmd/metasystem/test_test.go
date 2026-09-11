@@ -497,6 +497,124 @@ chmod +x "$3"
 		candidateTree: candidateTree, policyEngine: policyEngine, policyDigest: policyDigest}
 }
 
+func TestTestingPlanAdoptsCandidateFallbackOnlyWhenBaseHasNone(t *testing.T) {
+	candidate := testFallbackContract()
+	for _, test := range []struct {
+		name             string
+		baseFallback     bool
+		expectedFallback string
+	}{
+		{name: "candidate-fallback-fills-empty-base", expectedFallback: "residual"},
+		{name: "base-fallback-remains-protected", baseFallback: true, expectedFallback: "trusted"},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			root := t.TempDir()
+			base := candidate
+			base.Surfaces = append([]testpolicy.Surface(nil), candidate.Surfaces...)
+			base.Groups = append([]testpolicy.Group(nil), candidate.Groups...)
+			if test.baseFallback {
+				base.Fallback = "trusted"
+				base.Surfaces[1].Paths = []string{"candidate-owned/**"}
+				base.Surfaces = append(base.Surfaces, testpolicy.Surface{ID: "trusted", Paths: []string{}, Standard: []string{"trusted"}})
+				base.Groups = append(base.Groups, testFallbackGroup("trusted", "unowned.txt"))
+			} else {
+				base.Fallback = ""
+				base.Surfaces = append([]testpolicy.Surface(nil), candidate.Surfaces[:1]...)
+				base.Groups = append([]testpolicy.Group(nil), candidate.Groups[:1]...)
+			}
+			baseBytes, err := json.Marshal(base)
+			if err != nil {
+				t.Fatal(err)
+			}
+			candidateBytes, err := json.Marshal(candidate)
+			if err != nil {
+				t.Fatal(err)
+			}
+			writeTestingFixtureFile(t, filepath.Join(root, "metasystem.conf"), []byte("testing.contract=testing.json\n"), 0o644)
+			writeTestingFixtureFile(t, filepath.Join(root, "testing.json"), baseBytes, 0o644)
+			writeTestingFixtureFile(t, filepath.Join(root, "owned", "source.go"), []byte("package owned\n"), 0o644)
+			testingFixtureGit(t, root, "init", "-q", "-b", "main")
+			testingFixtureGit(t, root, "add", ".")
+			testingFixtureGit(t, root, "-c", "user.name=Test", "-c", "user.email=test@example.invalid", "commit", "-qm", "base")
+			baseCommit := strings.TrimSpace(testingFixtureGit(t, root, "rev-parse", "HEAD"))
+			const landingRef = "refs/remotes/origin/main"
+			testingFixtureGit(t, root, "update-ref", landingRef, baseCommit)
+			testingFixtureGit(t, root, "config", "--local", "metasystem.steward.landing-ref", landingRef)
+
+			engine := filepath.Join(t.TempDir(), "metasystem")
+			build := exec.Command("go", "build", "-buildvcs=false", "-ldflags",
+				"-X github.com/widoriezebos/agentic-tools/metasystem/internal/supervise.BuildStamp="+baseCommit, "-o", engine, ".")
+			if output, buildErr := build.CombinedOutput(); buildErr != nil {
+				t.Fatalf("build fallback policy engine: %v\n%s", buildErr, output)
+			}
+			canonicalRoot, err := canonicalProofRoot(root)
+			if err != nil {
+				t.Fatal(err)
+			}
+			canonicalEngine, err := canonicalPath(engine)
+			if err != nil {
+				t.Fatal(err)
+			}
+			digest, err := fileSHA256(canonicalEngine)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if err := os.MkdirAll(filepath.Dir(steward.RepoIdentityPath(root)), 0o700); err != nil {
+				t.Fatal(err)
+			}
+			if err := steward.MintIdentity(steward.RepoIdentityPath(root), steward.InstallIdentity{RepoIdentity: canonicalRoot, Generation: 1,
+				InstallPath: canonicalEngine, InstallDigest: "sha256:" + digest, MintedAt: "2026-09-10T00:00:00Z", Enrollment: steward.EnrollmentFixture,
+				EngineBuild: baseCommit, LandedCommit: baseCommit, LandingRef: landingRef}); err != nil {
+				t.Fatal(err)
+			}
+
+			writeTestingFixtureFile(t, filepath.Join(root, "testing.json"), candidateBytes, 0o644)
+			writeTestingFixtureFile(t, filepath.Join(root, "unowned.txt"), []byte("changed\n"), 0o644)
+			testingFixtureGit(t, root, "add", "testing.json", "unowned.txt")
+			candidateTree, err := (gittree.Workspace{Dir: root}).StagedTree()
+			if err != nil {
+				t.Fatal(err)
+			}
+			t.Setenv("GIT_OBJECT_DIRECTORY", filepath.Join(root, ".git", "objects"))
+			t.Setenv("GIT_ALTERNATE_OBJECT_DIRECTORIES", "")
+			t.Setenv("GIT_CONFIG_COUNT", "0")
+			prepared, err := prepareTesting(testingSelectionRequest{Root: root, Tree: candidateTree, Mode: testpolicy.ModeAuto, Purpose: testpolicy.PurposeDiagnostic})
+			if err != nil {
+				t.Fatal(err)
+			}
+			if prepared.EffectiveContract.Fallback != test.expectedFallback {
+				t.Fatalf("effective fallback = %q, want %q", prepared.EffectiveContract.Fallback, test.expectedFallback)
+			}
+			if len(prepared.Plan.Uncertainty) != 0 || !containsString(prepared.Plan.AffectedSurfaces, test.expectedFallback) || !containsString(prepared.Plan.SelectedGroups, test.expectedFallback) {
+				t.Fatalf("unowned path did not select the fallback without uncertainty: %+v", prepared.Plan)
+			}
+			if test.baseFallback && containsString(prepared.Plan.AffectedSurfaces, candidate.Fallback) {
+				t.Fatalf("candidate fallback replaced the protected base fallback: %+v", prepared.Plan)
+			}
+		})
+	}
+}
+
+func testFallbackContract() testpolicy.Contract {
+	return testpolicy.Contract{SchemaVersion: 1,
+		ProjectRisk: testpolicy.ProjectRisk{Severity: 1, Exposure: 1, Reversibility: "revert", Detection: "immediate", Recovery: "bounded"},
+		Fallback:    "residual",
+		Surfaces: []testpolicy.Surface{
+			{ID: "app", Paths: []string{"owned/**"}, Standard: []string{"app"}},
+			{ID: "residual", Paths: []string{}, Standard: []string{"residual"}},
+		},
+		Groups:  []testpolicy.Group{testFallbackGroup("app", "owned/**"), testFallbackGroup("residual", "unowned.txt")},
+		Always:  testpolicy.Always{Canary: []string{"app"}},
+		Unknown: []string{"app"},
+		Cadence: []string{"app"},
+	}
+}
+
+func testFallbackGroup(id, input string) testpolicy.Group {
+	return testpolicy.Group{ID: id, Kind: "unit", Adapter: "go", CWD: ".", Inputs: []string{input}, Outputs: []string{}, Tools: []testpolicy.Tool{},
+		Obligations: []string{}, Platforms: []string{"any"}, TargetMS: 1000, Packages: []string{"."}, Tests: json.RawMessage(`"all"`)}
+}
+
 func TestProtectedCoverageFloorCannotFallOrDisappear(t *testing.T) {
 	root := t.TempDir()
 	writeTestingFixtureFile(t, filepath.Join(root, "scripts", "agents", "coverage-ratchet.json"), []byte(`{"floors":{"internal/app":80.0}}`), 0o644)

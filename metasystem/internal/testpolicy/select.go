@@ -121,6 +121,9 @@ func Select(contract Contract, request SelectionRequest) (Plan, error) {
 	for _, path := range request.ChangedPaths {
 		matched := false
 		for _, surface := range contract.Surfaces {
+			if surface.ID == contract.Fallback {
+				continue
+			}
 			for _, pattern := range surface.Paths {
 				if matchesPath(pattern, path) {
 					affected[surface.ID], matched = true, true
@@ -128,7 +131,11 @@ func Select(contract Contract, request SelectionRequest) (Plan, error) {
 			}
 		}
 		if !matched {
-			uncertainty = append(uncertainty, "no surface owns changed path "+path)
+			if contract.Fallback != "" {
+				affected[contract.Fallback] = true
+			} else {
+				uncertainty = append(uncertainty, "no surface owns changed path "+path)
+			}
 		}
 	}
 	queue := keys(affected)
