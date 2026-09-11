@@ -264,6 +264,7 @@ proved_tree=$(git -C "$toplevel" write-tree) || {
   exit 1
 }
 testing_contract=$($ms config conf-value --file "$root/metasystem.conf" --key testing.contract 2>/dev/null || true)
+static_reproof=1
 
 # Direct legacy commits receive the staged-package coverage boundary. A
 # migrated installation instead consumes the already-admitted shared result;
@@ -276,6 +277,10 @@ if [[ -n "$testing_contract" ]]; then
     exit 1
   }
   policy_engine=$ms
+  # The retained proof already ran fast-static-build (gofmt, vet, staticcheck,
+  # the refusal register and the build) on this exact tree; the boundary
+  # consumes it and only builds its proof engine below.
+  static_reproof=0
 else
 # The delta checker owns package discovery and reports every package below its
 # floor before it refuses.
@@ -310,10 +315,17 @@ bash "$root/scripts/agents/coverage-delta.sh" "${coverage_arguments[@]}" || {
 # binary cannot classify any prospective byte.
 proof_engine=$(mktemp "${TMPDIR:-/tmp}/metasystem-proof-engine.XXXXXX")
 trap 'rm -f -- "$proof_engine" "$token"' EXIT
-"$root/scripts/agents/go-gate.sh" --fast --proof-out "$proof_engine" 1>&2 || {
-  echo "agent commit refused: the static re-proof failed (go-gate.sh --fast)" >&2
-  exit 1
-}
+if (( static_reproof )); then
+  "$root/scripts/agents/go-gate.sh" --fast --proof-out "$proof_engine" 1>&2 || {
+    echo "agent commit refused: the static re-proof failed (go-gate.sh --fast)" >&2
+    exit 1
+  }
+else
+  bash "$root/scripts/agents/go-build.sh" --out "$proof_engine" 1>&2 || {
+    echo "agent commit refused: the proof engine could not be built (go-build.sh --out)" >&2
+    exit 1
+  }
+fi
 policy_engine=$proof_engine
 if [[ -s "$proof_engine" ]]; then
   chmod +x "$proof_engine"
