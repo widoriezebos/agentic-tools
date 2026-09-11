@@ -7,10 +7,12 @@
 - Origin: human
 - Next step: Read RunTestPlan in internal/proofrun/test_build.go and R-16 in memory/rulings.md, design the purpose-dependent stop and the retry projection, critique, build, land with its own battery.
 - OpenedAt: 2026-09-11T15:45:11Z
-- Revision: 1
+- Revision: 2
+- Pinned: m1e
 - Budget: elapsedLimit=1d attemptLimit=10 reservedJobMinutesLimit=1200 activeJobLimit=1 reviewRoundLimit=3
 - BudgetExceptions: 0
 
 History:
 - 2026-09-11T15:45:11Z RKPY1HJBS8V1X9RAP3GX84EXYT-m1e-5083721b open actor=m1e+main-1789141490-27414-b9c0d2 targets=delivery-receipt-stops-at-first-failure
-Integrity: sha256=f55fa409d0b1f54a28c921b26839804a6c9c65dd4b4fbb43bd100198f78e19a3
+- 2026-09-11T15:47:30Z BBEGJX7GSGNED7D58P9FT29YSG-m1-c6925449 set-pin actor=human:Wido targets=delivery-receipt-stops-at-first-failure
+Integrity: sha256=c4264576368320e185b8d620faf16cd19dd06623b0cea0fc81c0f69034c9c518
