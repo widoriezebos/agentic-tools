@@ -1,6 +1,6 @@
 # tier-from-severity-and-novelty
 
-- State: queued
+- State: approved
 - Priority: 1
 - Sequence: 17
 - Risk: severity=1 novelty=1 exposure=3 accumulation=1 basis="severity 1: a mis-tiered goal still gets critique at its tier; novelty 1: the derivation exists; exposure 3: every goal; accumulation 1: one formula"
@@ -9,9 +9,11 @@
 - Origin: human
 - Next step: Read the tier derivation (the severity-tiered-rigor lineage and internal/testpolicy risk), change the formula and the docs, land.
 - OpenedAt: 2026-09-11T15:50:34Z
-- Revision: 9
+- Revision: 10
 - Pinned: m1e
+- Budget: elapsedLimit=4h attemptLimit=6 reservedJobMinutesLimit=720 activeJobLimit=1 reviewRoundLimit=2
 - BudgetExceptions: 0
+- Approved: by=human:Wido at=2026-09-11T20:33:48Z revision=10 opid=DR01GGTHM75JB0MC0BH5CVVBQW-m1-c6925449 authority=proven digest=f82005960b0be10e2d5d517d5fb8023036c8aee02f94acf4af4285de248a87ac
 
 History:
 - 2026-09-11T15:50:34Z PGA3WGGB587Z9EJ8VSMBS1W4ZS-m1-c6925449 open actor=human:Wido targets=tier-from-severity-and-novelty reason=TierOverride: derived=3 set=2 why=Wido 2026-09-11: a formula change with the existing derivation; exposure alone does not make it tier 3, which is the point of this goal
@@ -23,4 +25,5 @@ History:
 - 2026-09-11T16:18:24Z 000ZBR0TR186F4J8EHPZC6423D-m1-c6925449 set-priority actor=human:Wido targets=human-carried-landing-carry,tier-from-severity-and-novelty reason=priority-order subject=tier-from-severity-and-novelty from=1:18 to=1:17 requested-sequence=17
 - 2026-09-11T20:31:17Z W3RD1SBYGG2Q8YETZGYD026W2V-m1-c6925449 unapprove actor=human:Wido targets=tier-from-severity-and-novelty reason=Wido 2026-09-11: every program goal states runtime independence (claude, codex, devin, future adapters); intent amended before re-approval
 - 2026-09-11T20:32:31Z J1G92SJAT5P1D9143GRYMV4SFH-m1e-3ca84c28 edit actor=m1e+main-1789158700-39729-b9c0d2 targets=tier-from-severity-and-novelty
-Integrity: sha256=7d63059337611cd2b3fdabcf04c571b2c5b588af65003cb431eb2ad920b454d6
+- 2026-09-11T20:33:48Z DR01GGTHM75JB0MC0BH5CVVBQW-m1-c6925449 approve actor=human:Wido targets=tier-from-severity-and-novelty
+Integrity: sha256=0f73fb107e4535ca0816a6ca0b6317e0dc757cc7cfc8ff947b2bbbc38a243787
