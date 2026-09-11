@@ -1,6 +1,6 @@
 # budget-extends-by-consumption-and-breach-parks
 
-- State: queued
+- State: approved
 - Priority: 1
 - Sequence: 8
 - Risk: severity=2 novelty=2 exposure=3 accumulation=1 basis="severity 2: the budget law is the spend guard; novelty 2: extension by consumption and auto-park are new rules; exposure 3: every claimed goal; accumulation 1: the tuple stays"
@@ -9,9 +9,11 @@
 - Origin: human
 - Next step: Design first: read internal/dispatch/budget.go settlement and admission.go eligibility, internal/goal approval.go and stop.go, and R-88, R-90, R-91 in memory/rulings.md; write the design with the two rules and their guarantees; critique; put the rules to Wido; build; land.
 - OpenedAt: 2026-09-11T15:45:08Z
-- Revision: 9
+- Revision: 10
 - Pinned: m1e
+- Budget: elapsedLimit=1d attemptLimit=10 reservedJobMinutesLimit=1200 activeJobLimit=1 reviewRoundLimit=3
 - BudgetExceptions: 0
+- Approved: by=human:Wido at=2026-09-11T16:19:06Z revision=10 opid=90AJBYTGEPQ46QAN4V1C7REW6S-m1-c6925449 authority=proven digest=4d7eb2892a80f8ceeb2fd3522ca678d8fc512bbd95ca2165d92ea36b50658ded
 
 History:
 - 2026-09-11T15:45:08Z 9QD56QEP3YRJBVPYD7Y5S3BS7S-m1e-5083721b open actor=m1e+main-1789141490-27414-b9c0d2 targets=budget-extends-by-consumption-and-breach-parks
@@ -23,4 +25,5 @@ History:
 - 2026-09-11T16:16:34Z DWEZTS2Q0DKSZE4C9EYVCSXWJX-m1e-ab5421f5 edit actor=m1e+main-1789143377-71578-b9c0d2 targets=budget-extends-by-consumption-and-breach-parks
 - 2026-09-11T16:17:45Z 030HT9PVZGVHDS5RKBJJ1AFZZP-m1-c6925449 set-priority actor=human:Wido targets=actionable-metrics,breach-clock-and-budget-honesty,budget-extends-by-consumption-and-breach-parks,burn-without-delivery-tripwire,capped-round-continues-instead-of-restarting,carried-landing-debt-and-cap,coordinator-context-stays-under-budget,coordinator-wakes-on-events-not-polls,critique-closes-on-folded-proof,deep-battery-under-ten-minutes,delegate-job-liveness,delegate-rounds-reuse-a-warm-gate,delivery-receipt-stops-at-first-failure,failed-job-attention,fixture-stewards-outlive-their-suite,goal-abandoned-with-a-reason,human-carried-landing-carry,human-carried-landing-verb,human-goal-verbs-forgiving,job-record-birth-token,land-ready-work-lands-without-a-claim-slot,landing-receipt-survives-records-drift,lease-sweep-death-evidence,live-job-on-a-done-goal-unnoticed,machine-concurrency-governor,proof-attempts-settle-to-minutes-run,proof-groups-detect-hangs-by-progress-not-the-clock,proof-harness-process-custody,retained-proof-reuse-crosses-claims-and-attempts,severity-tiered-rigor,severity-tiered-rigor-p2,small-change-lane,steward-catchup-livelock,steward-revives-a-done-goal,stop-batch-strands-a-resumable-goal,suite-custody,tier-from-severity-and-novelty,token-spend-fence,turn-verdict-hardening,watch-verb,watcher-repair-request-never-names-current,winddown-census-handoff-leak reason=priority-order subject=proof-attempts-settle-to-minutes-run from=1:8 to=1:9 requested-sequence=7
 - 2026-09-11T16:17:50Z JRKTBHK5ASQWECQE22XYCSATWR-m1-c6925449 set-priority actor=human:Wido targets=budget-extends-by-consumption-and-breach-parks,human-carried-landing-carry reason=priority-order subject=budget-extends-by-consumption-and-breach-parks from=1:9 to=1:8 requested-sequence=8
-Integrity: sha256=68ae7432a5ccfc3d866add0b11cf3dfb9acaa4724e39db5447e909fd20ed933e
+- 2026-09-11T16:19:06Z 90AJBYTGEPQ46QAN4V1C7REW6S-m1-c6925449 approve actor=human:Wido targets=budget-extends-by-consumption-and-breach-parks
+Integrity: sha256=50e8d33423c56f58e4c088dfeafb3ca988a5a9ec8a10bfc9e6e66d5f14546487
