@@ -1,6 +1,6 @@
 # critique-closes-on-folded-proof
 
-- State: queued
+- State: approved
 - Priority: 1
 - Sequence: 15
 - Risk: severity=2 novelty=2 exposure=3 accumulation=1 basis="severity 2: a closure rule that is too loose lets a material finding land; novelty 2: fold-proven closure and the round-2 failsafe are new rules; exposure 3: every chain; accumulation 1: skills and dispatcher"
@@ -9,13 +9,15 @@
 - Origin: human
 - Next step: Read skills/code-critique/SKILL.md, skills/design-critique/SKILL.md and the dispatcher's round-limit handling, write the design with the guarantees the rulings insist on, critique, build, land.
 - OpenedAt: 2026-09-11T15:45:22Z
-- Revision: 3
+- Revision: 4
 - Pinned: m1e
 - Budget: elapsedLimit=1d attemptLimit=10 reservedJobMinutesLimit=1200 activeJobLimit=1 reviewRoundLimit=3
 - BudgetExceptions: 0
+- Approved: by=human:Wido at=2026-09-11T15:49:40Z revision=4 opid=V953GBPMK7XESBV4PSV2SFRZ6C-m1-c6925449 authority=proven digest=d17b27a2268b9acac5fa0a4c5b80abd21b5f6ce3ca5b0b2925573a1ec9dcf8f7
 
 History:
 - 2026-09-11T15:45:22Z WKPXEN9CTZR44TMFZTQJE9X68Q-m1e-5083721b open actor=m1e+main-1789141490-27414-b9c0d2 targets=critique-closes-on-folded-proof
 - 2026-09-11T15:48:25Z 0HZAGDRGF46CYBV14EQGJBJAT7-m1-c6925449 set-pin actor=human:Wido targets=critique-closes-on-folded-proof
 - 2026-09-11T15:48:29Z Z5BVAA2T0FVBFRJC6ZDZ2M9KE7-m1-c6925449 set-priority actor=human:Wido targets=actionable-metrics,breach-clock-and-budget-honesty,burn-without-delivery-tripwire,carried-landing-debt-and-cap,critique-closes-on-folded-proof,delegate-job-liveness,failed-job-attention,fixture-stewards-outlive-their-suite,goal-abandoned-with-a-reason,human-carried-landing-verb,human-goal-verbs-forgiving,job-record-birth-token,landing-receipt-survives-records-drift,lease-sweep-death-evidence,live-job-on-a-done-goal-unnoticed,machine-concurrency-governor,proof-harness-process-custody,severity-tiered-rigor,severity-tiered-rigor-p2,small-change-lane,steward-catchup-livelock,steward-revives-a-done-goal,stop-batch-strands-a-resumable-goal,suite-custody,token-spend-fence,turn-verdict-hardening,watch-verb,watcher-repair-request-never-names-current,winddown-census-handoff-leak reason=priority-order subject=critique-closes-on-folded-proof from=unranked to=1:15 requested-sequence=15
-Integrity: sha256=92059263c3ea151c8d437600024aa314a491aa85cdde39ec1a9b086c8571c090
+- 2026-09-11T15:49:40Z V953GBPMK7XESBV4PSV2SFRZ6C-m1-c6925449 approve actor=human:Wido targets=critique-closes-on-folded-proof
+Integrity: sha256=a471b01339beecc153fdcc4ce27d5f27bd59b9d34e349e5eb2fdab71fbd29014
