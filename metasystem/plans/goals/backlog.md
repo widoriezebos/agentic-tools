@@ -6,7 +6,7 @@
 - MigrationEpoch: 2026-08-20T00:00:00Z
 - ManifestDigest: d82032bee818c2d82e6a95e6f1b75347499b88ee8b68c4d20a0f3c94d00ba320
 - MigrationMode: manifest
-- Revision: 28
+- Revision: 29
 - ApprovalGate: since=2026-09-03T14:16:24Z opid=JY54AQT8101VK9353WT9FQYGA9-m0-c5dbf036
 - FleetEnrollment: at=2026-09-06T06:37:21Z machine=m1 generation=1 opid=CMNCRETKYCB18MFZNYFSZJPXQY-m1-a4f8999f
 
@@ -46,4 +46,5 @@ History:
 - 2026-09-11T15:01:47Z 58EHC1WQTMB2B28F7A6XGGG1KY-m1e-892cdaec ack actor=m1e+main-1789030447-51011-5722fc targets=commit-does-not-repeat-the-fast-gate displaced=m1e+main-1789030447-51011-5722fc@2026-09-11T14:54:06Z ack
 - 2026-09-11T15:02:30Z 2VMTGJ8N67T3CC3A6ZYKPPBCYT-m1e-892cdaec ack actor=m1e+main-1789030447-51011-5722fc targets=brain-boot-sleep-fixture-matches-its-deadline displaced=m1e+main-1789030447-51011-5722fc@2026-09-11T15:01:47Z ack
 - 2026-09-11T15:15:53Z VDTHR8CEY32MD4FPYXZ91NKFDG-m1e-892cdaec ack actor=m1e+main-1789030447-51011-5722fc targets=witness-fallback-only-on-environmental-refusal displaced=m1e+main-1789030447-51011-5722fc@2026-09-11T15:02:30Z ack
-Integrity: sha256=ed4b03a3be898cb0f66f2d219edd66193f84a198fd65668ce63b37a2ea547edd
+- 2026-09-11T16:37:45Z KC7BM4TWZYTWMDWRXXX9S9V766-m1e-892cdaec ack actor=m1e+main-1789030447-51011-5722fc targets=dispatcher-fixture-long-waits-bounded displaced=m1e+main-1789030447-51011-5722fc@2026-09-11T16:22:22Z ack
+Integrity: sha256=96b4e8e7f1be54e9cfb771d20a0a152ad9891d3f2767622cdd19c2b43bc10795
