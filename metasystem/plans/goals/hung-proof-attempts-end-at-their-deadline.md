@@ -1,6 +1,6 @@
 # hung-proof-attempts-end-at-their-deadline
 
-- State: approved
+- State: queued
 - Priority: 1
 - Sequence: 3
 - Risk: severity=2 novelty=1 exposure=3 accumulation=1 basis="severity 2: a hung attempt holds a reservation and a seat's landing for a day; novelty 1: the deadline and watchdog exist and only their coverage changes; exposure 3: every attempt on every seat; accumulation 1: no new mechanism"
@@ -9,11 +9,9 @@
 - Origin: human
 - Next step: Read the watchdog and launcher in internal/proofrun and the section adapter's end-event handling; agree the liveness contract with the landed consumption supervisor (c08fe2cb); design the three reconciliation paths; fixture; land with its own battery.
 - OpenedAt: 2026-09-11T15:44:57Z
-- Revision: 7
+- Revision: 8
 - Pinned: m1e
-- Budget: elapsedLimit=1d attemptLimit=10 reservedJobMinutesLimit=1200 activeJobLimit=1 reviewRoundLimit=3
 - BudgetExceptions: 0
-- Approved: by=human:Wido at=2026-09-11T16:18:51Z revision=7 opid=50WPMJCAAPEZKP261JRMKRA7JK-m1-c6925449 authority=proven digest=62b786908849f1f72ebcc2bdbdd93dee536be641a1a716b2a95d2cb37f13329b
 
 History:
 - 2026-09-11T15:44:57Z G00GBWKD64KA1ZT4J6WDGWFCSB-m1e-5083721b open actor=m1e+main-1789141490-27414-b9c0d2 targets=hung-proof-attempts-end-at-their-deadline
@@ -23,4 +21,5 @@ History:
 - 2026-09-11T16:13:04Z 7N37D1HZY6Q26JPNP2AE4XQBHR-m1-c6925449 unapprove actor=human:Wido targets=hung-proof-attempts-end-at-their-deadline reason=Wido 2026-09-11: Codex critique round 1 of the delivery-efficiency plan accepted; intent amended before re-approval
 - 2026-09-11T16:16:24Z 1BXAQDCQF5NN6081ACS2HRQ5N4-m1e-ab5421f5 edit actor=m1e+main-1789143377-71578-b9c0d2 targets=hung-proof-attempts-end-at-their-deadline
 - 2026-09-11T16:18:51Z 50WPMJCAAPEZKP261JRMKRA7JK-m1-c6925449 approve actor=human:Wido targets=hung-proof-attempts-end-at-their-deadline
-Integrity: sha256=777fd0ef6b0cc709d359e9239c0fe20107bfb04b6a564401f58d345bab27039f
+- 2026-09-11T20:30:27Z 8FEM7KDHD01K2W2S8AV7PFSZGH-m1-c6925449 unapprove actor=human:Wido targets=hung-proof-attempts-end-at-their-deadline reason=Wido 2026-09-11: every program goal states runtime independence (claude, codex, devin, future adapters); intent amended before re-approval
+Integrity: sha256=21d396c9f808b64510ff037f370d62a8805cdcdf5328adea5dd80711b67f99d7
