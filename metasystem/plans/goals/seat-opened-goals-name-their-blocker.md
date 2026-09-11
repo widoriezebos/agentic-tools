@@ -1,6 +1,6 @@
 # seat-opened-goals-name-their-blocker
 
-- State: approved
+- State: queued
 - Priority: 1
 - Sequence: 6
 - Risk: severity=1 novelty=1 exposure=2 accumulation=1 basis="severity 1: a refused open is re-issued with its blocker; novelty 1: dependency edges exist; exposure 2: seat opens only; accumulation 1: one verb"
@@ -9,11 +9,9 @@
 - Origin: human
 - Next step: Wido's word recorded 2026-09-11 (R-93-m1e): yes; seats open only blockers with --blocks and the same-publish park; non-blocking discoveries go to the backlog-notes register as proposals. Next: build behind fixtures in rank order.
 - OpenedAt: 2026-09-11T15:45:05Z
-- Revision: 10
+- Revision: 11
 - Pinned: m1e
-- Budget: elapsedLimit=4h attemptLimit=6 reservedJobMinutesLimit=720 activeJobLimit=1 reviewRoundLimit=2
 - BudgetExceptions: 0
-- Approved: by=human:Wido at=2026-09-11T16:18:58Z revision=9 opid=VY3VHFYQSAFH7K0FCTYNM0XT1N-m1-c6925449 authority=proven digest=698a9d3a8a3192db448cda5c2e1eaabaf4b5da707371dcda5464e9d272589974
 
 History:
 - 2026-09-11T15:45:05Z 5W0FM0WGJ00Q1A7X06ESJFVC4X-m1e-5083721b open actor=m1e+main-1789141490-27414-b9c0d2 targets=seat-opened-goals-name-their-blocker
@@ -26,4 +24,5 @@ History:
 - 2026-09-11T16:17:42Z 10K1ZB3NEVAP7YG6XS8JK7N6VJ-m1-c6925449 set-priority actor=human:Wido targets=human-carried-landing-carry,seat-opened-goals-name-their-blocker reason=priority-order subject=seat-opened-goals-name-their-blocker from=1:7 to=1:6 requested-sequence=6
 - 2026-09-11T16:18:58Z VY3VHFYQSAFH7K0FCTYNM0XT1N-m1-c6925449 approve actor=human:Wido targets=seat-opened-goals-name-their-blocker
 - 2026-09-11T20:15:44Z 4PJ4YE6846N70DDF3YKG088B12-m1e-892cdaec edit actor=m1e+main-1789030447-51011-5722fc targets=seat-opened-goals-name-their-blocker
-Integrity: sha256=a90ef5dbed87f8d691734e918d54abe1085e0a357ca341fe7f47d2d211f7b461
+- 2026-09-11T20:30:39Z 23WP1DYT2V5FY2W0VWRF5EN9K8-m1-c6925449 unapprove actor=human:Wido targets=seat-opened-goals-name-their-blocker reason=Wido 2026-09-11: every program goal states runtime independence (claude, codex, devin, future adapters); intent amended before re-approval
+Integrity: sha256=ecfed8b76c10cb7e7f3ef10596c5a0c283a858b7ba2122e2cc0e48ae892e55fc
