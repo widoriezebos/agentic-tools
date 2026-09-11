@@ -5,11 +5,11 @@
 - Sequence: 13
 - Risk: severity=2 novelty=1 exposure=2 accumulation=2 basis="severity 2: a skipped gate that should have run lets a red round close; novelty 1: caches and the fast gate exist; exposure 2: delegate rounds; accumulation 2: touches dispatch and the gate"
 - Tier: 3
-- Intent: Codex delegate jobs spent 26.5 of 48.6 tool hours on verification: focused go test 12.4 hours over 1,829 runs, fixture scripts 9.3 hours, go-gate 4.4 hours over 587 runs with a 0.2 second median, a 12 second p90 and a 25 minute cold-cache maximum (codex-sessions.md section 4). Every round of a chain starts from a cold GOCACHE, and fold rounds that change no code re-run verification. DONE means: (1) rounds of one chain share a build cache keyed by the chain root; (2) a round whose diff touches none of a verification step's inputs skips that step and reuses the prior round's matching verdict, recording why; (3) proven by matched before-and-after measurements on the cold-cache cases (chains such as brain-build1b with 19 gates) and by a three-round chain whose second and third rounds verify in under three minutes. Goal 13 of plans/delivery-efficiency-plan.md.
+- Intent: Codex delegate jobs spent 26.5 of 48.6 tool hours on verification: focused go test 12.4 hours over 1,829 runs, fixture scripts 9.3 hours, go-gate 4.4 hours over 587 runs with a 0.2 second median, a 12 second p90 and a 25 minute cold-cache maximum (codex-sessions.md section 4). Every round of a chain starts from a cold build cache, and fold rounds that change no code re-run verification; the evidence is Codex because Codex built, but the cache and the skip rule live in dispatch.sh and the round record and apply to delegate rounds on every runtime. DONE means: (1) rounds of one chain share a build cache keyed by the chain root; (2) a round whose diff touches none of a verification step's inputs skips that step and reuses the prior round's matching verdict, recording why; (3) proven by matched before-and-after measurements on the cold-cache cases (chains such as brain-build1b with 19 gates) and by a three-round chain whose second and third rounds verify in under three minutes. Goal 13 of plans/delivery-efficiency-plan.md. RUNTIME INDEPENDENCE (plan principle 0; architecture doctrine of 2026-08-16: correctness never depends on an accelerator): this holds for every runtime the roster can host today (claude, codex, devin) and for future adapters such as opencode; the mechanism lives in the Go engine, the ledger verbs and the adapter contract, never in one runtime's hook, harness, CLI or transcript format; a native facility may accelerate it through its adapter, and an agent on any runtime with no accelerator gets the same guarantee from the records and the verb alone; where the goal touches a runtime path, DONE is proven on at least two runtimes.
 - Origin: human
 - Next step: Read the job environment in scripts/agents/dispatch.sh (the per-job GOCACHE), go-gate.sh --fast and the round brief format; measure the cold cases first; design; critique; build; land.
 - OpenedAt: 2026-09-11T15:46:36Z
-- Revision: 11
+- Revision: 12
 - Pinned: m1e
 - BudgetExceptions: 0
 
@@ -25,4 +25,5 @@ History:
 - 2026-09-11T16:18:10Z 38ZR0SX47MS7KGY1A6P8NASJAD-m1-c6925449 set-priority actor=human:Wido targets=delegate-rounds-reuse-a-warm-gate,human-carried-landing-carry reason=priority-order subject=delegate-rounds-reuse-a-warm-gate from=1:14 to=1:13 requested-sequence=13
 - 2026-09-11T16:19:17Z QK4GT5DFTN9JC9WB665Y8RN321-m1-c6925449 approve actor=human:Wido targets=delegate-rounds-reuse-a-warm-gate
 - 2026-09-11T20:31:02Z S7MN3S86JBMHT9GX2YJ88CZ0XG-m1-c6925449 unapprove actor=human:Wido targets=delegate-rounds-reuse-a-warm-gate reason=Wido 2026-09-11: every program goal states runtime independence (claude, codex, devin, future adapters); intent amended before re-approval
-Integrity: sha256=73aea767c70f33114c8e2530fa6d0883db18f7d205997ab067cfc46035e7c239
+- 2026-09-11T20:32:18Z MBFNPAE6E4P62FFPNA3TZP23WD-m1e-3ca84c28 edit actor=m1e+main-1789158700-39729-b9c0d2 targets=delegate-rounds-reuse-a-warm-gate
+Integrity: sha256=40c569360d89c433a9058385d938413c7b472a75e9658cd1e84867fdba44fbb6
