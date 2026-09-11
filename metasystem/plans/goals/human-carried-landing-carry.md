@@ -9,13 +9,13 @@
 - Origin: main
 - Next step: Design revision 3 after the channel gateway design opens (Wido's priority R-76 first). Tier 3 ladder, same box as human-carried-landing. Register the design under plans/ with every output file declared before the first critique dispatch. | UMBRELLA NOTE (m1b, 2026-09-10 19:45Z): this goal is the escape hatch of the-metasystem-validates-itself-with-itself (its fourth member; the duplicates human-carried-landing-verb and carried-landing-debt-and-cap opened today point here). Today showed the case it exists for: every landing on m1b was blocked by the receipt machinery for a whole day with no lawful way past it. Revision 3 should add one thing to point 08: a tracked fleet cap on open carries per seat (default 1) refused in metasystem.conf.local like the other budget-law keys, and a carry may not stack on a base whose carry debt is unpaid. Ranked 1:7 in Wido's name so the hatch is built before the next such day; the sequencing after the channel gateway design (R-76) is his to keep or lift.
 - OpenedAt: 2026-09-04T17:14:07Z
-- Revision: 42
-- Budget: elapsedLimit=2d attemptLimit=20 reservedJobMinutesLimit=1200 activeJobLimit=1 reviewRoundLimit=3
-- BudgetExceptions: 3
-- Approved: by=human:Wido at=2026-09-11T10:04:01Z revision=19 opid=XY00804EZFSMJF2462WQFKRTH3-m1d-a38bcdde authority=proven digest=6ddcccf730887072ae5efa680f9d4c6bee41b0ded9207a86ead404e0a7d98a3b
+- Revision: 43
+- Budget: elapsedLimit=2d attemptLimit=22 reservedJobMinutesLimit=1200 activeJobLimit=1 reviewRoundLimit=3
+- BudgetExceptions: 4
+- Approved: by=human:Wido at=2026-09-11T16:52:42Z revision=43 opid=BE01PJGVFE6C7VCF5XC3MZTA6M-m1d-a38bcdde authority=proven digest=6029c14e83e15255d5793a069f37aeb43e71b64fb9d263aa9b372e7c05f91cc0
 - Sliced: machine=m1d lineage=main-1788941004-20871-6e7a43 revision=15 at=2026-09-11T05:31:52Z
-- Claimed: machine=m1d lineage=main-1788941004-20871-6e7a43 at=2026-09-11T10:04:01Z revision=19 accountingRevision=19
-- StopCapability: generation=19 revision=19 machine=m1d claimEpoch=3 fenceEpoch=0
+- Claimed: machine=m1d lineage=main-1788941004-20871-6e7a43 at=2026-09-11T16:52:42Z revision=43 accountingRevision=43 episodeAt=2026-09-11T10:04:01Z episodeRevision=19
+- StopCapability: generation=43 revision=43 machine=m1d claimEpoch=3 fenceEpoch=0
 
 History:
 - 2026-09-04T17:14:07Z NTTABXR7SXQT4JEKGM0QW65Q2G-m3-587cb0f1 open actor=m3+main-1788172645-85501-aa86ee targets=human-carried-landing-carry
@@ -60,4 +60,5 @@ History:
 - 2026-09-11T16:18:33Z Z1CJ3EMRR5F53PQFSRSG5986GA-m1-c6925449 set-priority actor=human:Wido targets=human-carried-landing-carry,human-carried-landing-verb,small-change-lane reason=priority-order subject=small-change-lane from=1:19 to=1:20 requested-sequence=19
 - 2026-09-11T16:18:37Z YFNC9KN25D2E95W24CKBGS0EFH-m1-c6925449 set-priority actor=human:Wido targets=human-carried-landing-carry,human-carried-landing-verb,land-ready-work-lands-without-a-claim-slot reason=priority-order subject=land-ready-work-lands-without-a-claim-slot from=1:20 to=1:21 requested-sequence=20
 - 2026-09-11T16:18:40Z ZS03V77TDP8MF0CZS524557QZ3-m1-c6925449 set-priority actor=human:Wido targets=capped-round-continues-instead-of-restarting,human-carried-landing-carry,human-carried-landing-verb reason=priority-order subject=capped-round-continues-instead-of-restarting from=1:21 to=1:22 requested-sequence=21
-Integrity: sha256=836ae75a9d6764da0d563529ef46e9e55123ba82967d432325b47625a858c000
+- 2026-09-11T16:52:42Z BE01PJGVFE6C7VCF5XC3MZTA6M-m1d-a38bcdde set-budget actor=human:Wido targets=human-carried-landing-carry
+Integrity: sha256=b6793c112644ce05b82af52bdf3ceaaa91e83802cf60d805632b9bda2b378a82
