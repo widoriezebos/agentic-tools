@@ -7,10 +7,12 @@
 - Origin: human
 - Next step: Find where the steward composes its delegate command (grep the '<model>' placeholder under scripts/agents and internal), resolve it through the same roster path as dispatch, add the refusal and the fixture, land.
 - OpenedAt: 2026-09-11T15:44:54Z
-- Revision: 1
+- Revision: 2
+- Pinned: m1e
 - Budget: elapsedLimit=4h attemptLimit=6 reservedJobMinutesLimit=720 activeJobLimit=1 reviewRoundLimit=2
 - BudgetExceptions: 0
 
 History:
 - 2026-09-11T15:44:54Z HF9CZF90NBZDKY1K5Z5G13AQZ9-m1e-5083721b open actor=m1e+main-1789141490-27414-b9c0d2 targets=steward-launches-resolve-their-model
-Integrity: sha256=783a37dca177589d53e03b55b54973bdc4ed656fd804530bdf7e490fcb06de46
+- 2026-09-11T15:46:48Z XQVXPJ8T68PBAV19RD08435JFK-m1-c6925449 set-pin actor=human:Wido targets=steward-launches-resolve-their-model
+Integrity: sha256=443afa4a36cc78854c6afde9cb910d9c0ebd5717c779c42092336a6a10caeb1d
