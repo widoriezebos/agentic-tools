@@ -1,0 +1,16 @@
+# budget-extends-by-consumption-and-breach-parks
+
+- State: queued
+- Risk: severity=2 novelty=2 exposure=3 accumulation=1 basis="severity 2: the budget law is the spend guard; novelty 2: extension by consumption and auto-park are new rules; exposure 3: every claimed goal; accumulation 1: the tuple stays"
+- Tier: 3
+- Intent: In five days Wido performed 43 set-budget acts, 26 of them repeat raises on the same goal within 24 hours and 11 between 22:00 and 07:00; one goal took nine raises in 40 claimed hours; breach-stops held seats wedged for 35.8 and 25.4 hours (ledger.md findings 1 and 2 of the delivery deep dive). DONE means three rules, each proven by a fixture: (1) a claimed goal whose reserved minutes are exhausted while its last round advanced (a landed round, a closed critique or a passed receipt within the last two hours) extends its own budget once by one tier box and records the extension with that evidence; a second exhaustion breach-stops as today; (2) a breach-stopped goal auto-parks after 30 minutes with the breach in the park note and frees the seat's claim; resume stays a human act; (3) approve, set-budget and unpark of a seat park for tier 1 and 2 goals may run under a recorded power-of-attorney entry naming the human, the scope and the expiry, in the direction of rulings R-88, R-90 and R-91, and every such act is stamped with the entry. All three rules are Wido's to confirm on the design page. Success in the field: a week with no overnight raises. Goal 7 of plans/delivery-efficiency-plan.md.
+- Origin: human
+- Next step: Design first: read internal/goal approval.go, stop.go and the breach handling, and R-88, R-90 and R-91 in memory/rulings.md; write the design with the three rules and the guarantees they keep; critique; build; land.
+- OpenedAt: 2026-09-11T15:45:08Z
+- Revision: 1
+- Budget: elapsedLimit=1d attemptLimit=10 reservedJobMinutesLimit=1200 activeJobLimit=1 reviewRoundLimit=3
+- BudgetExceptions: 0
+
+History:
+- 2026-09-11T15:45:08Z 9QD56QEP3YRJBVPYD7Y5S3BS7S-m1e-5083721b open actor=m1e+main-1789141490-27414-b9c0d2 targets=budget-extends-by-consumption-and-breach-parks
+Integrity: sha256=855608125829efa89c21a9fd676fb6caa6dd351e2313e263cf093c77841eb255
