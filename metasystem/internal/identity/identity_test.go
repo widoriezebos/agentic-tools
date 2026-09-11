@@ -179,7 +179,12 @@ func TestLivenessStrings(t *testing.T) {
 }
 
 func TestProbeLiveChildArgv(t *testing.T) {
-	command := exec.Command("/bin/sh", "-c", "sleep 2")
+	// The child outlives the probe's own deadline by a wide margin: a child
+	// that slept exactly as long as the deadline could exit inside the
+	// fork-to-execve wait on a loaded box and read as an empty argv
+	// (2026-09-12, inside the pooled cadence battery); the deferred kill
+	// ends it.
+	command := exec.Command("/bin/sh", "-c", "sleep 60")
 	if err := command.Start(); err != nil {
 		t.Fatal(err)
 	}
