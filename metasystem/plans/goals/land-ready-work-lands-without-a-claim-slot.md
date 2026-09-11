@@ -1,6 +1,6 @@
 # land-ready-work-lands-without-a-claim-slot
 
-- State: queued
+- State: approved
 - Priority: 1
 - Sequence: 20
 - Risk: severity=2 novelty=2 exposure=3 accumulation=1 basis="severity 2: the claim quota and accounting are the spend fence; novelty 2: a landing slot is a new state; exposure 3: every seat; accumulation 1: goal verbs and receipt"
@@ -9,9 +9,11 @@
 - Origin: human
 - Next step: Read the claim quota in internal/goal/validate.go and rebindClaimKeepEpisode in verbs.go; design the landing slot's lifecycle; critique; build; land.
 - OpenedAt: 2026-09-11T15:45:27Z
-- Revision: 11
+- Revision: 12
 - Pinned: m1e
+- Budget: elapsedLimit=1d attemptLimit=10 reservedJobMinutesLimit=1200 activeJobLimit=1 reviewRoundLimit=3
 - BudgetExceptions: 0
+- Approved: by=human:Wido at=2026-09-11T16:19:36Z revision=12 opid=4ZJ2SJZDCHZ4F8GWS1V7C58H0Q-m1-c6925449 authority=proven digest=5a4511ff838f5e0d4302f459fe53d7883fbd4cd336ad633a129fa14df308e032
 
 History:
 - 2026-09-11T15:45:27Z 6Z8WZ99H2QDDXDP19V3KT6VFDC-m1e-5083721b open actor=m1e+main-1789141490-27414-b9c0d2 targets=land-ready-work-lands-without-a-claim-slot
@@ -25,4 +27,5 @@ History:
 - 2026-09-11T16:17:45Z 030HT9PVZGVHDS5RKBJJ1AFZZP-m1-c6925449 set-priority actor=human:Wido targets=actionable-metrics,breach-clock-and-budget-honesty,budget-extends-by-consumption-and-breach-parks,burn-without-delivery-tripwire,capped-round-continues-instead-of-restarting,carried-landing-debt-and-cap,coordinator-context-stays-under-budget,coordinator-wakes-on-events-not-polls,critique-closes-on-folded-proof,deep-battery-under-ten-minutes,delegate-job-liveness,delegate-rounds-reuse-a-warm-gate,delivery-receipt-stops-at-first-failure,failed-job-attention,fixture-stewards-outlive-their-suite,goal-abandoned-with-a-reason,human-carried-landing-carry,human-carried-landing-verb,human-goal-verbs-forgiving,job-record-birth-token,land-ready-work-lands-without-a-claim-slot,landing-receipt-survives-records-drift,lease-sweep-death-evidence,live-job-on-a-done-goal-unnoticed,machine-concurrency-governor,proof-attempts-settle-to-minutes-run,proof-groups-detect-hangs-by-progress-not-the-clock,proof-harness-process-custody,retained-proof-reuse-crosses-claims-and-attempts,severity-tiered-rigor,severity-tiered-rigor-p2,small-change-lane,steward-catchup-livelock,steward-revives-a-done-goal,stop-batch-strands-a-resumable-goal,suite-custody,tier-from-severity-and-novelty,token-spend-fence,turn-verdict-hardening,watch-verb,watcher-repair-request-never-names-current,winddown-census-handoff-leak reason=priority-order subject=proof-attempts-settle-to-minutes-run from=1:20 to=1:21 requested-sequence=7
 - 2026-09-11T16:18:28Z R6Q4D67N9P68NCRFR3P78M42QK-m1-c6925449 set-priority actor=human:Wido targets=actionable-metrics,breach-clock-and-budget-honesty,burn-without-delivery-tripwire,capped-round-continues-instead-of-restarting,carried-landing-debt-and-cap,chain-landing-carries-the-reviewed-diff,chain-landing-carries-unrelated-staged-plans,commit-goal-binding,critique-always,delegate-job-liveness,failed-job-attention,first-headless-run,fixture-stewards-outlive-their-suite,fleet-channel-gateway,fleet-join-bootstrap,fleet-pull,gate-governance-records,goal-abandoned-with-a-reason,headless-continuous-delivery-proof,headless-fleet-coordination-proof,host-implementer-wall,human-carried-landing-carry,human-carried-landing-verb,human-goal-verbs-forgiving,idle-every-runtime-enforcement,job-record-birth-token,land-ready-work-lands-without-a-claim-slot,landing-design-provenance,landing-receipt-survives-records-drift,lease-sweep-death-evidence,live-job-on-a-done-goal-unnoticed,machine-concurrency-governor,merge-stage-critic-close,metasystem-stop-escalation-proofs,mission-birth-baseline-from-dirty-worktree,never-idle-ironclad,proof-harness-process-custody,recovery-rehearsal,recovery-to-good-state,repo-root-paths-ride-agent-commits-unjudged,role-context-composition,role-lane-packets,role-liveness-watchdog,seat-mutual-awareness,severity-tiered-rigor,severity-tiered-rigor-p2,small-change-lane,steward-catchup-livelock,steward-revives-a-done-goal,stop-batch-strands-a-resumable-goal,suite-custody,token-spend-fence,turn-verdict-hardening,two-bars-for-changes,watch-verb,watcher-repair-request-never-names-current,winddown-census-handoff-leak reason=priority-order subject=critique-always from=1:21 to=1:22 requested-sequence=18
 - 2026-09-11T16:18:37Z YFNC9KN25D2E95W24CKBGS0EFH-m1-c6925449 set-priority actor=human:Wido targets=human-carried-landing-carry,human-carried-landing-verb,land-ready-work-lands-without-a-claim-slot reason=priority-order subject=land-ready-work-lands-without-a-claim-slot from=1:22 to=1:20 requested-sequence=20
-Integrity: sha256=5fbb857e332decdb03b7365e69395106f14f8aa7c0a0bf33d91082fcdd1f1120
+- 2026-09-11T16:19:36Z 4ZJ2SJZDCHZ4F8GWS1V7C58H0Q-m1-c6925449 approve actor=human:Wido targets=land-ready-work-lands-without-a-claim-slot
+Integrity: sha256=87900952a9df12c15f57a4f175ee5a0505e4a20713cf2b2b60d6f2a33c2add96
