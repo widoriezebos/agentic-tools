@@ -2,14 +2,14 @@
 
 - State: queued
 - Priority: 1
-- Sequence: 9
+- Sequence: 8
 - Risk: severity=2 novelty=2 exposure=3 accumulation=1 basis="severity 2: the budget law is the spend guard; novelty 2: extension by consumption and auto-park are new rules; exposure 3: every claimed goal; accumulation 1: the tuple stays"
 - Tier: 3
 - Intent: In five days Wido performed 43 set-budget acts, 26 of them repeat raises on the same goal within 24 hours and 11 between 22:00 and 07:00; one goal took nine raises in 40 claimed hours (ledger.md finding 1). DONE means two rules, each proven by a fixture: (1) when a dispatch or attempt proposal would cross the goal's reservedJobMinutesLimit or attemptLimit (used plus proposed, the admission's own test) and the goal's last round advanced (a landed round, a closed critique or a passed receipt within the last two hours), the goal extends reservedJobMinutesLimit and attemptLimit once by the tier box's values, keeps elapsedLimit, activeJobLimit and reviewRoundLimit unchanged, records the extension with its evidence and a durable once-per-goal marker that survives accounting-revision changes, and preserves consumption across the extension; a second exhaustion breach-stops as today; requires proof-attempts-settle-to-minutes-run landed first so ended attempts charge what they ran; (2) approve, set-budget and unpark of a seat park for tier 1 and 2 goals may run under a recorded power-of-attorney entry naming the human, the scope and the expiry, in the direction of R-88, R-90 and R-91, every such act stamped with the entry. The auto-park clause is dropped: fenced claims already leave the one-claim quota (breach-stop-wedges-seat, landed 2026-09-10). Both rules are policy decisions under R-36-m3: built after Wido records them on the design page. Success in the field: a week with no overnight raises. Goal 8 of plans/delivery-efficiency-plan.md.
 - Origin: human
 - Next step: Design first: read internal/dispatch/budget.go settlement and admission.go eligibility, internal/goal approval.go and stop.go, and R-88, R-90, R-91 in memory/rulings.md; write the design with the two rules and their guarantees; critique; put the rules to Wido; build; land.
 - OpenedAt: 2026-09-11T15:45:08Z
-- Revision: 8
+- Revision: 9
 - Pinned: m1e
 - BudgetExceptions: 0
 
@@ -22,4 +22,5 @@ History:
 - 2026-09-11T16:13:15Z 1YK0M6FEJEGEP3DEAG7BQAJGXN-m1-c6925449 unapprove actor=human:Wido targets=budget-extends-by-consumption-and-breach-parks reason=Wido 2026-09-11: Codex critique round 1 of the delivery-efficiency plan accepted; intent amended before re-approval
 - 2026-09-11T16:16:34Z DWEZTS2Q0DKSZE4C9EYVCSXWJX-m1e-ab5421f5 edit actor=m1e+main-1789143377-71578-b9c0d2 targets=budget-extends-by-consumption-and-breach-parks
 - 2026-09-11T16:17:45Z 030HT9PVZGVHDS5RKBJJ1AFZZP-m1-c6925449 set-priority actor=human:Wido targets=actionable-metrics,breach-clock-and-budget-honesty,budget-extends-by-consumption-and-breach-parks,burn-without-delivery-tripwire,capped-round-continues-instead-of-restarting,carried-landing-debt-and-cap,coordinator-context-stays-under-budget,coordinator-wakes-on-events-not-polls,critique-closes-on-folded-proof,deep-battery-under-ten-minutes,delegate-job-liveness,delegate-rounds-reuse-a-warm-gate,delivery-receipt-stops-at-first-failure,failed-job-attention,fixture-stewards-outlive-their-suite,goal-abandoned-with-a-reason,human-carried-landing-carry,human-carried-landing-verb,human-goal-verbs-forgiving,job-record-birth-token,land-ready-work-lands-without-a-claim-slot,landing-receipt-survives-records-drift,lease-sweep-death-evidence,live-job-on-a-done-goal-unnoticed,machine-concurrency-governor,proof-attempts-settle-to-minutes-run,proof-groups-detect-hangs-by-progress-not-the-clock,proof-harness-process-custody,retained-proof-reuse-crosses-claims-and-attempts,severity-tiered-rigor,severity-tiered-rigor-p2,small-change-lane,steward-catchup-livelock,steward-revives-a-done-goal,stop-batch-strands-a-resumable-goal,suite-custody,tier-from-severity-and-novelty,token-spend-fence,turn-verdict-hardening,watch-verb,watcher-repair-request-never-names-current,winddown-census-handoff-leak reason=priority-order subject=proof-attempts-settle-to-minutes-run from=1:8 to=1:9 requested-sequence=7
-Integrity: sha256=6c20ad1ac3fedeb4d0bd9885674a2440639b4af99d097a93ce0e7ce150964d94
+- 2026-09-11T16:17:50Z JRKTBHK5ASQWECQE22XYCSATWR-m1-c6925449 set-priority actor=human:Wido targets=budget-extends-by-consumption-and-breach-parks,human-carried-landing-carry reason=priority-order subject=budget-extends-by-consumption-and-breach-parks from=1:9 to=1:8 requested-sequence=8
+Integrity: sha256=68ae7432a5ccfc3d866add0b11cf3dfb9acaa4724e39db5447e909fd20ed933e
