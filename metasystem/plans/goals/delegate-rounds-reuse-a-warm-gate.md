@@ -7,10 +7,12 @@
 - Origin: human
 - Next step: Read the job environment in scripts/agents/dispatch.sh (the per-job GOCACHE), go-gate.sh --fast and the round brief format; design, critique, build, land.
 - OpenedAt: 2026-09-11T15:46:36Z
-- Revision: 1
+- Revision: 2
+- Pinned: m1e
 - Budget: elapsedLimit=1d attemptLimit=10 reservedJobMinutesLimit=1200 activeJobLimit=1 reviewRoundLimit=3
 - BudgetExceptions: 0
 
 History:
 - 2026-09-11T15:46:36Z ESAZ2BX9DC37VFYCNAXPCDG92H-m1-c6925449 open actor=human:Wido targets=delegate-rounds-reuse-a-warm-gate reason=TierOverride: derived=2 set=3 why=Wido 2026-09-11: the gate is the delegate's judge; a skipped gate is a tier-3 hazard whatever the four answers derive
-Integrity: sha256=e036ecb17ab8bffc4b3fc27cdcd00f0a61639227c6540397a55ab90d50cb97fa
+- 2026-09-11T15:48:02Z YWW2DBP7XHJ494RAHNKHH24MRC-m1-c6925449 set-pin actor=human:Wido targets=delegate-rounds-reuse-a-warm-gate
+Integrity: sha256=d06144ff67e212de9a4725d8f0f2eb652f8b05db15b6d971444267a20e1a91ac
