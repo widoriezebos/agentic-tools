@@ -1,6 +1,6 @@
 # retained-proof-reuse-crosses-claims-and-attempts
 
-- State: queued
+- State: approved
 - Priority: 1
 - Sequence: 10
 - Risk: severity=2 novelty=2 exposure=3 accumulation=1 basis="severity 2: a wrongly reused group lets a regression land unproven until the cadence battery catches it; novelty 2: reuse and identities exist and only their scope and composition change, but they are the judge; exposure 3: every landing and every retry on every seat; accumulation 1: the cadence run still sweeps the whole battery"
@@ -9,9 +9,11 @@
 - Origin: human
 - Next step: Design first, because this changes the judge: read digestGroupInputsWithImplicit and groupExecutionIdentity in internal/proofrun/test_build.go, the retained scan and newest-observation selection in attempt.go and test_result.go; write the design with the identity composition per adapter, the judge-compatibility key and the soundness argument; critique; build; land after delivery-receipt-stops-at-first-failure.
 - OpenedAt: 2026-09-11T12:00:24Z
-- Revision: 13
+- Revision: 14
 - Pinned: m1e
+- Budget: elapsedLimit=1d attemptLimit=10 reservedJobMinutesLimit=1200 activeJobLimit=1 reviewRoundLimit=3
 - BudgetExceptions: 0
+- Approved: by=human:Wido at=2026-09-11T20:33:27Z revision=14 opid=JRBKY3X8JQ9WZKMPQSGGB1T73Y-m1-c6925449 authority=proven digest=33f85b7b8a5b12a47c704b1d0069d002cfd1c0491afb7e9b476d59d036bf0a66
 
 History:
 - 2026-09-11T12:00:24Z NSAM5W0MV6P1BDGHYZ212KW6FA-m1e-7776b921 open actor=m1e+main-1789128024-87765-b9c0d2 targets=retained-proof-reuse-crosses-claims-and-attempts
@@ -27,4 +29,5 @@ History:
 - 2026-09-11T16:19:14Z 2Q8BGN09BASQ6GCQ3C5FMFHC9P-m1-c6925449 approve actor=human:Wido targets=retained-proof-reuse-crosses-claims-and-attempts
 - 2026-09-11T20:30:53Z 7ACT50T7QN2FB202G5EE7NSPTR-m1-c6925449 unapprove actor=human:Wido targets=retained-proof-reuse-crosses-claims-and-attempts reason=Wido 2026-09-11: every program goal states runtime independence (claude, codex, devin, future adapters); intent amended before re-approval
 - 2026-09-11T20:32:11Z VNTGHKF5K14538S69FBVYEF92E-m1e-3ca84c28 edit actor=m1e+main-1789158700-39729-b9c0d2 targets=retained-proof-reuse-crosses-claims-and-attempts
-Integrity: sha256=5fcf5d321aab4b58d229515e1b505f516a7544c4bdd481c012ee0c706c9e2229
+- 2026-09-11T20:33:27Z JRBKY3X8JQ9WZKMPQSGGB1T73Y-m1-c6925449 approve actor=human:Wido targets=retained-proof-reuse-crosses-claims-and-attempts
+Integrity: sha256=20bd8378323ea10dd801685a399e0dccc31edaaa9a44d0a45d27ad49565b139a
