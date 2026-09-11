@@ -1,6 +1,6 @@
 # hung-proof-attempts-end-at-their-deadline
 
-- State: queued
+- State: approved
 - Priority: 1
 - Sequence: 3
 - Risk: severity=2 novelty=1 exposure=3 accumulation=1 basis="severity 2: a hung attempt holds a reservation and a seat's landing for a day; novelty 1: the deadline and watchdog exist and only their coverage changes; exposure 3: every attempt on every seat; accumulation 1: no new mechanism"
@@ -9,13 +9,15 @@
 - Origin: human
 - Next step: Read the watchdog and launcher in internal/proofrun and the section adapter's end-event handling, design the three terminalization paths, write the fixture, land with its own battery.
 - OpenedAt: 2026-09-11T15:44:57Z
-- Revision: 3
+- Revision: 4
 - Pinned: m1e
 - Budget: elapsedLimit=1d attemptLimit=10 reservedJobMinutesLimit=1200 activeJobLimit=1 reviewRoundLimit=3
 - BudgetExceptions: 0
+- Approved: by=human:Wido at=2026-09-11T15:49:06Z revision=4 opid=AQGP66AJX5BDEEGY8TYHP47DVY-m1-c6925449 authority=proven digest=00088338f7005c7ea375b14a1446959475cf303ce98b026d97e82b19a445ea9f
 
 History:
 - 2026-09-11T15:44:57Z G00GBWKD64KA1ZT4J6WDGWFCSB-m1e-5083721b open actor=m1e+main-1789141490-27414-b9c0d2 targets=hung-proof-attempts-end-at-their-deadline
 - 2026-09-11T15:46:56Z 7ZCH1E0KCPY6ZZ18JTDK66Q29T-m1-c6925449 set-pin actor=human:Wido targets=hung-proof-attempts-end-at-their-deadline
 - 2026-09-11T15:46:59Z 57R7RXDCG69QZ86PM2WM8V8ZT1-m1-c6925449 set-priority actor=human:Wido targets=actionable-metrics,breach-clock-and-budget-honesty,burn-without-delivery-tripwire,carried-landing-debt-and-cap,delegate-job-liveness,failed-job-attention,fixture-stewards-outlive-their-suite,goal-abandoned-with-a-reason,human-carried-landing-carry,human-carried-landing-verb,human-goal-verbs-forgiving,hung-proof-attempts-end-at-their-deadline,job-record-birth-token,landing-receipt-survives-records-drift,lease-sweep-death-evidence,live-job-on-a-done-goal-unnoticed,machine-concurrency-governor,proof-harness-process-custody,severity-tiered-rigor,severity-tiered-rigor-p2,small-change-lane,steward-catchup-livelock,steward-revives-a-done-goal,stop-batch-strands-a-resumable-goal,suite-custody,token-spend-fence,turn-verdict-hardening,watch-verb,watcher-repair-request-never-names-current,winddown-census-handoff-leak reason=priority-order subject=hung-proof-attempts-end-at-their-deadline from=unranked to=1:3 requested-sequence=3
-Integrity: sha256=0677fb6516d5d33be0142e2be043b33370af03958e133fd1d78eed9032da62b5
+- 2026-09-11T15:49:06Z AQGP66AJX5BDEEGY8TYHP47DVY-m1-c6925449 approve actor=human:Wido targets=hung-proof-attempts-end-at-their-deadline
+Integrity: sha256=83916f4871d7776792370d8a8eb4f418392f4c310a9713be9cd7b9ba56e00cb7
