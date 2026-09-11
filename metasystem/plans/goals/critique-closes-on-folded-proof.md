@@ -7,10 +7,12 @@
 - Origin: human
 - Next step: Read skills/code-critique/SKILL.md, skills/design-critique/SKILL.md and the dispatcher's round-limit handling, write the design with the guarantees the rulings insist on, critique, build, land.
 - OpenedAt: 2026-09-11T15:45:22Z
-- Revision: 1
+- Revision: 2
+- Pinned: m1e
 - Budget: elapsedLimit=1d attemptLimit=10 reservedJobMinutesLimit=1200 activeJobLimit=1 reviewRoundLimit=3
 - BudgetExceptions: 0
 
 History:
 - 2026-09-11T15:45:22Z WKPXEN9CTZR44TMFZTQJE9X68Q-m1e-5083721b open actor=m1e+main-1789141490-27414-b9c0d2 targets=critique-closes-on-folded-proof
-Integrity: sha256=97e98b43291fb1ba831665e445abdcea862f9154c09551dc51f7d83604f524b8
+- 2026-09-11T15:48:25Z 0HZAGDRGF46CYBV14EQGJBJAT7-m1-c6925449 set-pin actor=human:Wido targets=critique-closes-on-folded-proof
+Integrity: sha256=938ba3c68419c6c2a0e4f14aa63f5c6d80c90e0f16edd2856d94c1955c6d5f06
