@@ -1,19 +1,18 @@
 # breach-clock-and-budget-honesty
 
-- State: claimed
+- State: parked
 - Priority: 1
 - Sequence: 9
 - Intent: Wido's highest-priority order (2026-09-01, verbatim: 'This needs to be fixed immediately... Only resume work after these problems are fixed, proven with tests'): two of the three proven breach-machinery breakdowns from the night of 2026-08-31, sharing the goal-machinery seam. (1) THE RAISE-RESET CLOCK: SetBudget re-binds the claim record on every raise and the elapsed breach clock anchors on the current revision's claim timestamp - every budget raise restarts the breach clock (the night reset it five times lawfully; internal/goal/verbs.go SetBudget comment + internal/dispatch/budget.go anchor are the proof). (2) DISHONEST DURATIONS: budget elapsed limits parse through a working-hours grammar (d = 8 hours) and New() normalizes inputs into it - a human's 24h displays as 3d, and a human's 9d is enforced at 72 clock hours, one third of intent, silently, across every live budget.
 - Origin: main
 - Next step: Wido resumed execution and publication on 2026-09-11, including delegated human approvals. m1c claimed through goal next. First perform a bounded read-only recovery and scope assessment: locate the existing breach-build-3b candidate and round-1 critique, identify current-code overlap, and separate the later human-wait exclusion requirement before implementation. No new implementation or broad proof until that boundary is concrete. Retain prior reviewed design and every requirement; do not repeat a full critique of unchanged certified work. Evidence and 20-minute assessment ledger: /Users/wido/metasystem-evidence/agentic-tools/breach-clock-20260911. Old HOLD and old attempt counts described the prior seat execution; native current budget and claim govern this resumed work.
 - OpenedAt: 2026-09-01T06:54:30Z
-- Revision: 62
+- Revision: 63
 - Budget: elapsedLimit=1d attemptLimit=10 reservedJobMinutesLimit=840 activeJobLimit=1 reviewRoundLimit=3
 - BudgetExceptions: 0
 - Approved: by=human:Wido at=2026-09-06T06:53:37Z revision=34 opid=A35EHY2TGAWCCFA1Q1J0WZGS35-m1-a4f8999f authority=proven digest=2142bad3c2d3dbf735f8981046cac2475a29900b6aa0daf607bac07be1355c06
 - Sliced: machine=m2 lineage=mac-coordinator revision=4 at=2026-09-01T07:31:13Z
-- Claimed: machine=m1c lineage=main-1789023008-75159-b69143 at=2026-09-11T05:29:40Z revision=60 accountingRevision=60
-- StopCapability: generation=60 revision=60 machine=m1c claimEpoch=4 fenceEpoch=0
+- Parked: by=human:Wido at=2026-09-11T05:48:21Z because=Wido delegated bounded execution. Remaining requirements are owned by budget-raises-preserve-elapsed-origin, new-elapsed-budgets-use-explicit-hours, and human-wait-does-not-consume-goal-budget. Parent stays unfinished until all three deliver; quota repair 2f764c60 already landed. First slice inherits priority 1 sequence 8. Astra current-owner design retained under job breach-episode-slice-design-20260911.
 
 History:
 - 2026-09-01T06:54:30Z XQ8RYAX5R7JBZ9DH0TX694ENCA-m2-bc1be9cb open actor=m2+mac-coordinator targets=breach-clock-and-budget-honesty
@@ -78,4 +77,5 @@ History:
 - 2026-09-11T05:29:40Z BBKR0ASFWCYZK5PYGTMKK6DF5K-m1c-66a02980 claim actor=m1c+main-1789023008-75159-b69143 targets=breach-clock-and-budget-honesty
 - 2026-09-11T05:31:12Z 1CSNH6CJVGZJRST0R0K6E5WCM3-m1c-66a02980 edit actor=m1c+main-1789023008-75159-b69143 targets=breach-clock-and-budget-honesty
 - 2026-09-11T05:45:46Z T2AE5EG8JMKA86VEPX77M7MHGY-m1c-66a02980 set-priority actor=human:Wido targets=actionable-metrics,breach-clock-and-budget-honesty,budget-raises-preserve-elapsed-origin,burn-without-delivery-tripwire,delegate-job-liveness,failed-job-attention,fixture-stewards-outlive-their-suite,governed-exhaustion-reprojection,human-goal-verbs-forgiving,job-record-birth-token,lease-sweep-death-evidence,live-job-on-a-done-goal-unnoticed,machine-concurrency-governor,proof-harness-process-custody,review-round-limit-counts-per-chain,severity-tiered-rigor,severity-tiered-rigor-p2,small-change-lane,steward-catchup-livelock,steward-revives-a-done-goal,stop-batch-strands-a-resumable-goal,suite-custody,token-spend-fence,turn-verdict-hardening,watch-verb,watcher-repair-request-never-names-current,winddown-census-handoff-leak reason=priority-order subject=budget-raises-preserve-elapsed-origin from=1:8 to=1:9 requested-sequence=8
-Integrity: sha256=41b14c8b016bcbacc32eb53b5cbc8ec52397c370e2df81405b77e3c1448af850
+- 2026-09-11T05:48:21Z 8RCEKJNZPNCTQA8JJ6ZR1KPNP0-m1c-66a02980 park actor=human:Wido targets=breach-clock-and-budget-honesty reason=Wido delegated bounded execution. Remaining requirements are owned by budget-raises-preserve-elapsed-origin, new-elapsed-budgets-use-explicit-hours, and human-wait-does-not-consume-goal-budget. Parent stays unfinished until all three deliver; quota repair 2f764c60 already landed. First slice inherits priority 1 sequence 8. Astra current-owner design retained under job breach-episode-slice-design-20260911.
+Integrity: sha256=21cdb955e4fc614a02d36f499a602f5e4c3b5e39de964883ecb229040b287100
