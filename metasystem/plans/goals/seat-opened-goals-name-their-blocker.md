@@ -1,6 +1,6 @@
 # seat-opened-goals-name-their-blocker
 
-- State: queued
+- State: approved
 - Priority: 1
 - Sequence: 6
 - Risk: severity=1 novelty=1 exposure=2 accumulation=1 basis="severity 1: a refused open is re-issued with its blocker; novelty 1: dependency edges exist; exposure 2: seat opens only; accumulation 1: one verb"
@@ -9,13 +9,15 @@
 - Origin: human
 - Next step: Read OpenTiered in internal/goal/verbs.go and the open flags in cmd/metasystem/goalsync_mutations.go, add the flag, the edge and the refusal, the docs line, land.
 - OpenedAt: 2026-09-11T15:45:05Z
-- Revision: 3
+- Revision: 4
 - Pinned: m1e
 - Budget: elapsedLimit=4h attemptLimit=6 reservedJobMinutesLimit=720 activeJobLimit=1 reviewRoundLimit=2
 - BudgetExceptions: 0
+- Approved: by=human:Wido at=2026-09-11T15:49:14Z revision=4 opid=D0Z826ZYBY6WV1HRZCFH6B9Q4C-m1-c6925449 authority=proven digest=0b13e488aaec84e57a7552169768b56d4e9589891109c93a31f741ca406aee47
 
 History:
 - 2026-09-11T15:45:05Z 5W0FM0WGJ00Q1A7X06ESJFVC4X-m1e-5083721b open actor=m1e+main-1789141490-27414-b9c0d2 targets=seat-opened-goals-name-their-blocker
 - 2026-09-11T15:47:14Z X1PRNWZEXP7ZK7V0Q8NE34S5BY-m1-c6925449 set-pin actor=human:Wido targets=seat-opened-goals-name-their-blocker
 - 2026-09-11T15:47:18Z CW7PT0773AXANF6XTDSKH1KX37-m1-c6925449 set-priority actor=human:Wido targets=actionable-metrics,breach-clock-and-budget-honesty,burn-without-delivery-tripwire,carried-landing-debt-and-cap,delegate-job-liveness,failed-job-attention,fixture-stewards-outlive-their-suite,goal-abandoned-with-a-reason,human-carried-landing-verb,human-goal-verbs-forgiving,job-record-birth-token,landing-receipt-survives-records-drift,lease-sweep-death-evidence,live-job-on-a-done-goal-unnoticed,machine-concurrency-governor,proof-harness-process-custody,seat-opened-goals-name-their-blocker,severity-tiered-rigor,severity-tiered-rigor-p2,small-change-lane,steward-catchup-livelock,steward-revives-a-done-goal,stop-batch-strands-a-resumable-goal,suite-custody,token-spend-fence,turn-verdict-hardening,watch-verb,watcher-repair-request-never-names-current,winddown-census-handoff-leak reason=priority-order subject=seat-opened-goals-name-their-blocker from=unranked to=1:6 requested-sequence=6
-Integrity: sha256=62b843607243a7828f2a6679d07e9933583c8380e541893cbad832a27666decf
+- 2026-09-11T15:49:14Z D0Z826ZYBY6WV1HRZCFH6B9Q4C-m1-c6925449 approve actor=human:Wido targets=seat-opened-goals-name-their-blocker
+Integrity: sha256=a8f25bac2d26f548251c5607e8a13be455869cdb6ff08b8e444f82e87d6a4f34
