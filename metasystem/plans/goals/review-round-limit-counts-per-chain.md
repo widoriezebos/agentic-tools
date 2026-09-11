@@ -9,13 +9,13 @@
 - Origin: main
 - Next step: LAND-READY, BLOCKED BY THE RECEIPT (gate-fence group refuses every engine-changing candidate; goal receipt-beds-run-the-candidate-engine is building the fix). RULE CHANGE 2026-09-10 (critique follows the tier, not the class; goal critique-always re-scoped): this goal is tier 3, so its chain rrl-build1 needs an independent code-critic read before it lands, even though it was dispatched MECHANICAL; dispatch that read (Fable lane) before the receipt. Then: stage rrl-build1-r3.patch from m1b's scratchpad, landing test-receipt --mode auto, land.sh --chain rrl-build1 --test-receipt, goal done.
 - OpenedAt: 2026-09-06T10:38:37Z
-- Revision: 43
-- Budget: elapsedLimit=1d attemptLimit=10 reservedJobMinutesLimit=1200 activeJobLimit=1 reviewRoundLimit=3
-- BudgetExceptions: 0
-- Approved: by=human:Wido at=2026-09-06T10:39:18Z revision=2 opid=SE0TDND1R5PT5PP85ZQ75EVVG1-m1-a4f8999f authority=proven digest=98dbad0c115ce25fd9cd226687f57a9106e091ebb57f902a1de8f1794fa469cc
+- Revision: 44
+- Budget: elapsedLimit=2d attemptLimit=20 reservedJobMinutesLimit=1200 activeJobLimit=3 reviewRoundLimit=3
+- BudgetExceptions: 1
+- Approved: by=human:Wido at=2026-09-11T11:10:39Z revision=44 opid=9KVD7FDXZ914H85D1GR72XSHGE-m1b-c6925449 authority=proven digest=c4869632151ee70c73e9e491326210145c2680b9e589dac9c7e2fce4646a8a7f
 - Sliced: machine=m1b lineage=main-1788680071-18713-e76d5d revision=12 at=2026-09-10T04:59:06Z
-- Claimed: machine=m1b lineage=main-1788680071-18713-e76d5d at=2026-09-11T07:24:21Z revision=42 accountingRevision=42
-- StopCapability: generation=42 revision=42 machine=m1b claimEpoch=1 fenceEpoch=0
+- Claimed: machine=m1b lineage=main-1788680071-18713-e76d5d at=2026-09-11T11:10:39Z revision=44 accountingRevision=44 episodeAt=2026-09-11T07:24:21Z episodeRevision=42
+- StopCapability: generation=44 revision=44 machine=m1b claimEpoch=1 fenceEpoch=0
 
 History:
 - 2026-09-06T10:38:37Z K5T6D71J8CK76PGHRBHDY1FSBP-m1-a4f8999f open actor=m1+main-1788594343-3833-fb64b9 targets=review-round-limit-counts-per-chain
@@ -61,4 +61,5 @@ History:
 - 2026-09-11T07:24:16Z HDS1VAR67VEFVWQ0R6VQCZRDSE-m1b-c6925449 unpark actor=human:Wido targets=review-round-limit-counts-per-chain
 - 2026-09-11T07:24:21Z GWZCYHQV001ZPA5BZHWTAB6T0C-m1b-c6925449 claim actor=m1b+main-1788680071-18713-e76d5d targets=review-round-limit-counts-per-chain
 - 2026-09-11T11:05:29Z P40SW96EDNR7JMQ0G6JZMPSRTV-m1c-66a02980 done actor=m1c+main-1789023008-75159-b69143 targets=actionable-metrics,breach-clock-and-budget-honesty,budget-raises-preserve-elapsed-origin,burn-without-delivery-tripwire,delegate-job-liveness,failed-job-attention,fixture-stewards-outlive-their-suite,governed-exhaustion-reprojection,human-goal-verbs-forgiving,job-record-birth-token,lease-sweep-death-evidence,live-job-on-a-done-goal-unnoticed,machine-concurrency-governor,proof-harness-process-custody,review-round-limit-counts-per-chain,severity-tiered-rigor,severity-tiered-rigor-p2,small-change-lane,steward-catchup-livelock,steward-revives-a-done-goal,stop-batch-strands-a-resumable-goal,suite-custody,token-spend-fence,turn-verdict-hardening,watch-verb,watcher-repair-request-never-names-current,winddown-census-handoff-leak reason=priority-order from=1:12 to=1:11
-Integrity: sha256=93439c192aadd9df4d5953c98bdb57c2cbde9cb1f1232bd371876770b2ed7552
+- 2026-09-11T11:10:39Z 9KVD7FDXZ914H85D1GR72XSHGE-m1b-c6925449 set-budget actor=human:Wido targets=review-round-limit-counts-per-chain
+Integrity: sha256=669e2eefe57064104cb0931f59e14c788a562efd2a3f531fc1bb8a82d00008aa
