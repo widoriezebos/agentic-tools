@@ -19,6 +19,14 @@ func TestMain(m *testing.M) {
 	// longer dominate — real subprocess and git work does — so the flip
 	// buys nothing and costs timing fidelity. Export a scale to compress
 	// for triage; the numbers above are the reason the default stands.
+	// Measured 2026-09-11 (goal missionrunner-cycle-tests-lower-the-reap-interval):
+	// TestInternalRunFullCycle 22.2 s at the 5000 ms default, 19.6 s at 300 ms.
+	// The cycle waits on the reap once per drain, so the package lowers the
+	// interval unless the environment already chose one; the test that asserts
+	// timing (jobs_test.go) sets its own.
+	if os.Getenv("METASYSTEM_DRAIN_REAP_INTERVAL_MS") == "" {
+		os.Setenv("METASYSTEM_DRAIN_REAP_INTERVAL_MS", "300")
+	}
 	if err := prepareMissionBedTemplates(); err != nil {
 		fmt.Fprintf(os.Stderr, "prepare mission-bed templates: %v\n", err)
 		os.Exit(1)
