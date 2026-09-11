@@ -9,13 +9,13 @@
 - Origin: main
 - Next step: BUILD: round 1 stopped before writing on constraint C8 (the revision-mismatch diagnostic named an error text that does not exist in that case); decided in the follow-up: reuse the observation's own mismatch sentence from governed.go verbatim. Round 2 dispatched (gerp-build1-r2, Sol). Then closing read (Opus), receipt and landing in the fleet hold behind members 1 and 3 of the bootstrap umbrella.
 - OpenedAt: 2026-09-02T18:37:29Z
-- Revision: 41
-- Budget: elapsedLimit=1d attemptLimit=10 reservedJobMinutesLimit=600 activeJobLimit=3 reviewRoundLimit=3
-- BudgetExceptions: 1
-- Approved: by=human:Wido at=2026-09-10T19:58:45Z revision=39 opid=034K4EV4XEJXG6XADMVBJYSCB3-m1b-c6925449 authority=proven digest=89eec7c9bbd6e50bf641c7a5c145299fd12b42394c3e6e48f7fed714a294f727
+- Revision: 42
+- Budget: elapsedLimit=2d attemptLimit=30 reservedJobMinutesLimit=1200 activeJobLimit=3 reviewRoundLimit=3
+- BudgetExceptions: 2
+- Approved: by=human:Wido at=2026-09-11T05:30:33Z revision=42 opid=BE4ZK04Y6JFF4AX19A2M2Q7WPR-m1b-c6925449 authority=proven digest=34e32bf8d5ae042ef6f71b90de6a94ae38a718e2647f6830dd8ac6ce569444b4
 - Sliced: machine=m1b lineage=main-1788680071-18713-e76d5d revision=12 at=2026-09-10T04:32:06Z
-- Claimed: machine=m1b lineage=main-1788680071-18713-e76d5d at=2026-09-10T19:58:45Z revision=39 accountingRevision=39
-- StopCapability: generation=39 revision=39 machine=m1b claimEpoch=1 fenceEpoch=0
+- Claimed: machine=m1b lineage=main-1788680071-18713-e76d5d at=2026-09-11T05:30:33Z revision=42 accountingRevision=42
+- StopCapability: generation=42 revision=42 machine=m1b claimEpoch=1 fenceEpoch=0
 
 History:
 - 2026-09-02T18:37:29Z HPTWTQNYQHY9BEMEMGQN383W4Y-m1b-fad3674e open actor=m1b+main-1788333346-60696-6a3256 targets=governed-exhaustion-reprojection
@@ -59,4 +59,5 @@ History:
 - 2026-09-10T19:58:45Z 034K4EV4XEJXG6XADMVBJYSCB3-m1b-c6925449 set-budget actor=human:Wido targets=governed-exhaustion-reprojection
 - 2026-09-11T02:07:36Z 5J8GDGATVH7WEH3SCW823CQY7J-m1d-a38bcdde done actor=m1d+main-1788941004-20871-6e7a43 targets=actionable-metrics,breach-clock-and-budget-honesty,burn-without-delivery-tripwire,carried-landing-debt-and-cap,delegate-job-liveness,delivery-candidate-is-the-workspace-not-the-ledger,failed-job-attention,fixture-stewards-outlive-their-suite,goal-abandoned-with-a-reason,governed-exhaustion-reprojection,human-carried-landing-carry,human-carried-landing-verb,human-goal-verbs-forgiving,job-record-birth-token,landing-receipt-survives-records-drift,lease-sweep-death-evidence,live-job-on-a-done-goal-unnoticed,machine-concurrency-governor,proof-harness-process-custody,review-round-limit-counts-per-chain,severity-tiered-rigor,severity-tiered-rigor-p2,skew-preflight-knows-a-receipt-worktree,small-change-lane,steward-catchup-livelock,steward-revives-a-done-goal,stop-batch-strands-a-resumable-goal,suite-custody,testing-contract-owns-record-paths,token-spend-fence,turn-verdict-hardening,watch-verb,watcher-repair-request-never-names-current,winddown-census-handoff-leak reason=priority-order from=1:11 to=1:10
 - 2026-09-11T05:28:50Z H621Z5TSTX76A08GYPE5NN03BW-m1c-66a02980 done actor=human:Wido targets=actionable-metrics,breach-clock-and-budget-honesty,burn-without-delivery-tripwire,carried-landing-debt-and-cap,delegate-job-liveness,failed-job-attention,fixture-stewards-outlive-their-suite,goal-abandoned-with-a-reason,governed-exhaustion-reprojection,human-carried-landing-carry,human-carried-landing-verb,human-goal-verbs-forgiving,job-record-birth-token,landing-receipt-survives-records-drift,lease-sweep-death-evidence,live-job-on-a-done-goal-unnoticed,machine-concurrency-governor,proof-harness-process-custody,review-round-limit-counts-per-chain,severity-tiered-rigor,severity-tiered-rigor-p2,skew-preflight-knows-a-receipt-worktree,small-change-lane,steward-catchup-livelock,steward-revives-a-done-goal,stop-batch-strands-a-resumable-goal,suite-custody,testing-contract-owns-record-paths,token-spend-fence,turn-verdict-hardening,watch-verb,watcher-repair-request-never-names-current,winddown-census-handoff-leak reason=priority-order from=1:10 to=1:9
-Integrity: sha256=1571385556b0de8877b898ac683a719efe57646563af64e714f13b39996fe767
+- 2026-09-11T05:30:33Z BE4ZK04Y6JFF4AX19A2M2Q7WPR-m1b-c6925449 set-budget actor=human:Wido targets=governed-exhaustion-reprojection
+Integrity: sha256=614f4674346f301ef4adab7316f129ee65e7c373438316bc37a6024164c295dd
