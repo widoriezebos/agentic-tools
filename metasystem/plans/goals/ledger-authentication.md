@@ -2,12 +2,12 @@
 
 - State: queued
 - Priority: 3
-- Sequence: 80
+- Sequence: 79
 - Intent: The accepted goal ledger is unauthenticated by design (ValidateAcceptedTree accepts any structurally-valid tree), so an agent with checkout write access can forge any in-repo human-authority record - session-stop, resume, set-obligation all share this. Wido 2026-09-02, deferring true forge-proofing: this is the foundational goal for authenticating ledger history (signing or equivalent) so a forged human act is mechanically rejected. Wide blast radius; its own design program. NOT the idle fix (that ships under bar (a): impossible by accident/honest agent). Opened as the home for the forge threat so idle-with-backlog does not carry it.
 - Origin: main
 - Next step: INTENT: forged human-authority ledger records become mechanically rejectable. This is a design-first foundational goal, not a slice - it touches every human-only verb's trust boundary. CONSTRAINTS: must not break the existing unauthenticated fast-path for ordinary agent ledger ops; the authentication binds only human-reserved acts. FREEDOMS: signing scheme, key custody, whether it is per-op or per-tree - all design. Budget: Wido's word at claim (design-bearing, likely multi-slice). Back of queue unless Wido prioritises.
 - OpenedAt: 2026-09-02T11:31:48Z
-- Revision: 39
+- Revision: 40
 - BudgetExceptions: 0
 
 History:
@@ -50,4 +50,5 @@ History:
 - 2026-09-11T22:04:16Z TZW6AX24WM7MJN0QYZ04V3F9DV-m1-c6925449 done actor=human:Wido targets=alert-escalation-channel,app-doctrine,app-guardrail-custody,app-guardrail-program,continuous-self-improvement,counselor,cross-repo-guardrails,design-prohibition-is-role-scoped,effort-by-complexity-per-model,fixture-default-branch-assumption,fixture-enrollment-notes,goal-suite-sits-on-the-default-test-timeout,hook-root-resolver-design,incident-proposal-drafting,integration-branch,ledger-authentication,metasystem-way-patterns,missionrunner-terminate-flake,nested-gate-witness-reuse,open-work-scanner-blindspots,os-dependency-reduction,paid-proof-authorization,paper-prose,precedent-index,python3-kit-port,reconciliation-guards,registry-design-names-selection-rows,repo-flag-resolves-one-root,runtime-install-execution,steward-tick-stop-on-failure,stop-refusal-fits-on-one-screen,suite-flake-supervision-watch,suite-outcomes-as-steward-incidents,supervise-start-gate-linux-red,supervision-fixture-child-custody-join,supervision-fixture-self-check-announcement-scan,watchdog-kill-observation-gap reason=priority-order from=3:83 to=3:82
 - 2026-09-11T22:04:23Z B9X5K2AFTT5CG5MG8YPRTM0TS3-m1-c6925449 done actor=human:Wido targets=alert-escalation-channel,app-doctrine,app-guardrail-custody,app-guardrail-program,continuous-self-improvement,counselor,cross-repo-guardrails,design-prohibition-is-role-scoped,incident-proposal-drafting,integration-branch,ledger-authentication,metasystem-way-patterns,open-work-scanner-blindspots,paid-proof-authorization,paper-prose,precedent-index,reconciliation-guards,stop-refusal-fits-on-one-screen,suite-outcomes-as-steward-incidents reason=priority-order from=3:82 to=3:81
 - 2026-09-11T22:04:31Z Q6VHY9XGNM7SKGZQV3F25XCP3E-m1-c6925449 done actor=human:Wido targets=alert-escalation-channel,app-doctrine,app-guardrail-custody,app-guardrail-program,continuous-self-improvement,counselor,cross-repo-guardrails,design-prohibition-is-role-scoped,effort-by-complexity-per-model,incident-proposal-drafting,integration-branch,ledger-authentication,metasystem-way-patterns,os-dependency-reduction,paid-proof-authorization,paper-prose,precedent-index,reconciliation-guards,stop-refusal-fits-on-one-screen,suite-outcomes-as-steward-incidents reason=priority-order from=3:81 to=3:80
-Integrity: sha256=4cd7add796656ae26d31d1579be63e84188beb5de9fd9f9b741c275ba5ee8937
+- 2026-09-11T22:04:38Z 4WBSTRKYRPSAQVWW0ST28KDNYT-m1-c6925449 done actor=human:Wido targets=alert-escalation-channel,design-prohibition-is-role-scoped,ledger-authentication,paper-prose,stop-refusal-fits-on-one-screen reason=priority-order from=3:80 to=3:79
+Integrity: sha256=d64f9c7b7d77dca05be895d1084a24828a03fd6edf9163d53ef3d2353bb96832

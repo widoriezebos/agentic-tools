@@ -1,13 +1,14 @@
 # paper-prose
 
-- State: queued
+- State: done
 - Priority: 3
 - Sequence: 78
 - Intent: Write the concept paper's prose from the converged skeleton in docs/paper (iron-out records ride with it). PROBE FIRST per Wido: one chapter drafted by codex through the iron-out loop, half-day appetite, Wido judges the voice before the remaining chapters get their appetite.
 - Origin: human
 - Next step: VOICE LOCKED on ch1 (two critique rounds + confirming LOCK; 1774 words landed in tree). Chapters 2-16 drafting in THREE parallel codex batches (2-6, 7-11, 12-16), disjoint files, ch1 as exemplar, running example threaded. NEXT on their return: whole-manuscript critique rounds (voice consistency, cross-references, running-example continuity) to convergence, then land the manuscript. The chapter drafts land with the next free landing window (battery lane holds the wrapper meanwhile).
+- Concluded: Landed: docs/paper chapters 02-16 each hold 1,400 to 3,000 words of prose; whole-paper rounds landed 2026-08-30 (18a2e8e6, 0203ca9c, f581a45e) and the manuscript update e096ea5f (2026-09-08). Concluded 2026-09-11 in the backlog consolidation on Wido's word, no further work.
 - OpenedAt: 2026-08-26T11:08:17Z
-- Revision: 44
+- Revision: 45
 - BudgetExceptions: 0
 
 History:
@@ -55,4 +56,5 @@ History:
 - 2026-09-11T22:04:16Z TZW6AX24WM7MJN0QYZ04V3F9DV-m1-c6925449 done actor=human:Wido targets=alert-escalation-channel,app-doctrine,app-guardrail-custody,app-guardrail-program,continuous-self-improvement,counselor,cross-repo-guardrails,design-prohibition-is-role-scoped,effort-by-complexity-per-model,fixture-default-branch-assumption,fixture-enrollment-notes,goal-suite-sits-on-the-default-test-timeout,hook-root-resolver-design,incident-proposal-drafting,integration-branch,ledger-authentication,metasystem-way-patterns,missionrunner-terminate-flake,nested-gate-witness-reuse,open-work-scanner-blindspots,os-dependency-reduction,paid-proof-authorization,paper-prose,precedent-index,python3-kit-port,reconciliation-guards,registry-design-names-selection-rows,repo-flag-resolves-one-root,runtime-install-execution,steward-tick-stop-on-failure,stop-refusal-fits-on-one-screen,suite-flake-supervision-watch,suite-outcomes-as-steward-incidents,supervise-start-gate-linux-red,supervision-fixture-child-custody-join,supervision-fixture-self-check-announcement-scan,watchdog-kill-observation-gap reason=priority-order from=3:81 to=3:80
 - 2026-09-11T22:04:23Z B9X5K2AFTT5CG5MG8YPRTM0TS3-m1-c6925449 done actor=human:Wido targets=alert-escalation-channel,app-doctrine,app-guardrail-custody,app-guardrail-program,continuous-self-improvement,counselor,cross-repo-guardrails,design-prohibition-is-role-scoped,incident-proposal-drafting,integration-branch,ledger-authentication,metasystem-way-patterns,open-work-scanner-blindspots,paid-proof-authorization,paper-prose,precedent-index,reconciliation-guards,stop-refusal-fits-on-one-screen,suite-outcomes-as-steward-incidents reason=priority-order from=3:80 to=3:79
 - 2026-09-11T22:04:31Z Q6VHY9XGNM7SKGZQV3F25XCP3E-m1-c6925449 done actor=human:Wido targets=alert-escalation-channel,app-doctrine,app-guardrail-custody,app-guardrail-program,continuous-self-improvement,counselor,cross-repo-guardrails,design-prohibition-is-role-scoped,effort-by-complexity-per-model,incident-proposal-drafting,integration-branch,ledger-authentication,metasystem-way-patterns,os-dependency-reduction,paid-proof-authorization,paper-prose,precedent-index,reconciliation-guards,stop-refusal-fits-on-one-screen,suite-outcomes-as-steward-incidents reason=priority-order from=3:79 to=3:78
-Integrity: sha256=88f3622ce1167419b130451627378977021480e1b9985be8bed94327e2c532da
+- 2026-09-11T22:04:38Z 4WBSTRKYRPSAQVWW0ST28KDNYT-m1-c6925449 done actor=human:Wido targets=alert-escalation-channel,design-prohibition-is-role-scoped,ledger-authentication,paper-prose,stop-refusal-fits-on-one-screen
+Integrity: sha256=af868505d20f8335be73854a8438647ca1daa07dc55fd5426a704b009b56b047
