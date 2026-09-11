@@ -2,14 +2,14 @@
 
 - State: claimed
 - Priority: 1
-- Sequence: 16
+- Sequence: 17
 - Risk: severity=3 novelty=2 exposure=3 accumulation=1 basis="severity 3: a carry verb lands human-approved trees past the gate, so a wrong carry is an unreviewed landing; novelty 2: carried landings and a commit critic are new, the landing pipeline is not; exposure 3: land.sh, commit.sh, dispatch.sh, the goal command layer and recovery on every machine; accumulation 1: one goal split off for a chain whose declared output list was frozen"
 - Tier: 3
 - Intent: Sibling of human-carried-landing (Wido's ruling 2026-09-04, 'All approved, also said this on Telegram', taking the recommended option 'new goal'): the carry verb, the carried landing and the commit critic, points 02 and 04-09 of human-carried-landing-design revision 2.1, redesigned as revision 3 answering all 13 standing findings from critic chain hcl-design-cc1, on a fresh chain with the full file list declared (land.sh, commit.sh, dispatch.sh, the goal command layer, recovery). human-carried-landing concludes with the audit alone.
 - Origin: main
 - Next step: Design revision 3 after the channel gateway design opens (Wido's priority R-76 first). Tier 3 ladder, same box as human-carried-landing. Register the design under plans/ with every output file declared before the first critique dispatch. | UMBRELLA NOTE (m1b, 2026-09-10 19:45Z): this goal is the escape hatch of the-metasystem-validates-itself-with-itself (its fourth member; the duplicates human-carried-landing-verb and carried-landing-debt-and-cap opened today point here). Today showed the case it exists for: every landing on m1b was blocked by the receipt machinery for a whole day with no lawful way past it. Revision 3 should add one thing to point 08: a tracked fleet cap on open carries per seat (default 1) refused in metasystem.conf.local like the other budget-law keys, and a carry may not stack on a base whose carry debt is unpaid. Ranked 1:7 in Wido's name so the hatch is built before the next such day; the sequencing after the channel gateway design (R-76) is his to keep or lift.
 - OpenedAt: 2026-09-04T17:14:07Z
-- Revision: 36
+- Revision: 37
 - Budget: elapsedLimit=2d attemptLimit=20 reservedJobMinutesLimit=1200 activeJobLimit=1 reviewRoundLimit=3
 - BudgetExceptions: 3
 - Approved: by=human:Wido at=2026-09-11T10:04:01Z revision=19 opid=XY00804EZFSMJF2462WQFKRTH3-m1d-a38bcdde authority=proven digest=6ddcccf730887072ae5efa680f9d4c6bee41b0ded9207a86ead404e0a7d98a3b
@@ -54,4 +54,5 @@ History:
 - 2026-09-11T16:18:10Z 38ZR0SX47MS7KGY1A6P8NASJAD-m1-c6925449 set-priority actor=human:Wido targets=delegate-rounds-reuse-a-warm-gate,human-carried-landing-carry reason=priority-order subject=delegate-rounds-reuse-a-warm-gate from=1:13 to=1:14 requested-sequence=13
 - 2026-09-11T16:18:13Z 84YWW9QNN595GXNC8VTKSSMYE8-m1-c6925449 set-priority actor=human:Wido targets=coordinator-wakes-on-events-not-polls,human-carried-landing-carry reason=priority-order subject=coordinator-wakes-on-events-not-polls from=1:14 to=1:15 requested-sequence=14
 - 2026-09-11T16:18:17Z H1Z9B4FFZKDGN46A10AWVH9812-m1-c6925449 set-priority actor=human:Wido targets=coordinator-context-stays-under-budget,human-carried-landing-carry reason=priority-order subject=coordinator-context-stays-under-budget from=1:15 to=1:16 requested-sequence=15
-Integrity: sha256=cb3ef16546211b70d8b394338b5882084eccded9bc8a21361c1970f3f27560ff
+- 2026-09-11T16:18:20Z J5PHE8R2SWPAM65XBB7MQ72P5H-m1-c6925449 set-priority actor=human:Wido targets=critique-closes-on-folded-proof,human-carried-landing-carry,tier-from-severity-and-novelty reason=priority-order subject=critique-closes-on-folded-proof from=1:16 to=1:17 requested-sequence=16
+Integrity: sha256=b02569d53b908073c625a7ddcf77c8bf51917df6076795309d18c276c8eca506
