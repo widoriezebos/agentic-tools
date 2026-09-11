@@ -1,6 +1,6 @@
 # steward-launches-resolve-their-model
 
-- State: queued
+- State: approved
 - Priority: 1
 - Sequence: 2
 - Risk: severity=2 novelty=1 exposure=2 accumulation=1 basis="severity 2: steward continuation has delivered nothing on any seat since the launches die; novelty 1: the roster resolution exists for delegates; exposure 2: steward launches on every seat; accumulation 1: one code path"
@@ -9,9 +9,11 @@
 - Origin: human
 - Next step: Read steward_verbs.go launch staging and internal/dispatch/roster.go fallback acceptance; add the template refusal and the config validation; fix metasystem.conf and each seat's roster; fixture; land.
 - OpenedAt: 2026-09-11T15:44:54Z
-- Revision: 9
+- Revision: 10
 - Pinned: m1e
+- Budget: elapsedLimit=4h attemptLimit=6 reservedJobMinutesLimit=720 activeJobLimit=1 reviewRoundLimit=2
 - BudgetExceptions: 0
+- Approved: by=human:Wido at=2026-09-11T20:32:59Z revision=10 opid=J65P8AXF7707T2H171WCBNYNDZ-m1-c6925449 authority=proven digest=d0ea1a04569935b3dc87f3cd14936f4395bcb118d3c1ce1725f97765915721f5
 
 History:
 - 2026-09-11T15:44:54Z HF9CZF90NBZDKY1K5Z5G13AQZ9-m1e-5083721b open actor=m1e+main-1789141490-27414-b9c0d2 targets=steward-launches-resolve-their-model
@@ -23,4 +25,5 @@ History:
 - 2026-09-11T16:18:47Z VTE5YDQ7B24KF5NEC0N4G8MZZK-m1-c6925449 approve actor=human:Wido targets=steward-launches-resolve-their-model
 - 2026-09-11T20:30:23Z AEMR8ZWRCZ46DKYW8BZNAKGKBV-m1-c6925449 unapprove actor=human:Wido targets=steward-launches-resolve-their-model reason=Wido 2026-09-11: every program goal states runtime independence (claude, codex, devin, future adapters); intent amended before re-approval
 - 2026-09-11T20:31:45Z 92N38X2PJ1NY34CJ9KH0QPMAVV-m1e-3ca84c28 edit actor=m1e+main-1789158700-39729-b9c0d2 targets=steward-launches-resolve-their-model
-Integrity: sha256=9a93973fdbf3b836c53b1e55d4f1721e0862efd91ce0a40e49c7e2298689eb1e
+- 2026-09-11T20:32:59Z J65P8AXF7707T2H171WCBNYNDZ-m1-c6925449 approve actor=human:Wido targets=steward-launches-resolve-their-model
+Integrity: sha256=579e03f3b818c8309220940497fecadf770ee147ed46af81f17abdf41aadf07b
