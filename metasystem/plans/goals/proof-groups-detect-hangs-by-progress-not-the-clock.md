@@ -7,13 +7,13 @@
 - Origin: main
 - Next step: Revision 3 folded the second critique as decisions (implementation-first ruling); DONE narrowed to the receipt's groups and attempt (slices 1 and 2); fixture waits are goal fixture-waits-name-their-producer. Next: Sol builds slice 1 from the build brief (supervisor with dead/stopped/waiting/runaway verdicts by consumption and task state, optional protected cpuBudgetSeconds, -timeout 0), Opus critiques, land; then slice 2 (attempt deadline and the remaining engine contexts).
 - OpenedAt: 2026-09-10T13:40:12Z
-- Revision: 21
-- Budget: elapsedLimit=1d attemptLimit=24 reservedJobMinutesLimit=1200 activeJobLimit=1 reviewRoundLimit=3
-- BudgetExceptions: 2
-- Approved: by=human:Wido at=2026-09-11T01:15:34Z revision=21 opid=87JWTKBBYTX3AC574KEW5CQMG6-m1-c6925449 authority=proven digest=d4443fc8a0754a6868a2b5da590598f5d404ea73909994d2973780c1dd80ad21
+- Revision: 22
+- Budget: elapsedLimit=3d attemptLimit=48 reservedJobMinutesLimit=1200 activeJobLimit=1 reviewRoundLimit=3
+- BudgetExceptions: 3
+- Approved: by=human:Wido at=2026-09-11T09:54:10Z revision=22 opid=QY1MYNZNDWHY57N6SFZ1M84G90-m1-c6925449 authority=proven digest=dad2e53d5dda53ed598a102ccd9d0638dc5a4b0c2d672c25c9bf01ac9811b7bc
 - Sliced: machine=m1 lineage=main-1788940932-18533-7fa6c2 revision=5 at=2026-09-10T14:14:54Z
-- Claimed: machine=m1 lineage=main-1788940932-18533-7fa6c2 at=2026-09-11T01:15:34Z revision=21 accountingRevision=21
-- StopCapability: generation=21 revision=21 machine=m1 claimEpoch=6 fenceEpoch=0
+- Claimed: machine=m1 lineage=main-1788940932-18533-7fa6c2 at=2026-09-11T09:54:10Z revision=22 accountingRevision=22
+- StopCapability: generation=22 revision=22 machine=m1 claimEpoch=6 fenceEpoch=0
 
 History:
 - 2026-09-10T13:40:12Z 9E6AJGS1CME0CPWS26NAGGCS5J-m1-1701c13c open actor=m1+main-1788940932-18533-7fa6c2 targets=proof-groups-detect-hangs-by-progress-not-the-clock
@@ -37,4 +37,5 @@ History:
 - 2026-09-10T22:37:29Z VCGRWAKR7KHCMPNV5TVNR4T337-m1-1701c13c claim actor=m1+main-1788940932-18533-7fa6c2 targets=proof-groups-detect-hangs-by-progress-not-the-clock
 - 2026-09-11T00:34:18Z BQAQ501W1XWTRZSRSP7GZJKS5V-m1-c6925449 set-budget actor=human:Wido targets=proof-groups-detect-hangs-by-progress-not-the-clock displaced=m1+main-1788940932-18533-7fa6c2@2026-09-10T22:37:29Z
 - 2026-09-11T01:15:34Z 87JWTKBBYTX3AC574KEW5CQMG6-m1-c6925449 set-budget actor=human:Wido targets=proof-groups-detect-hangs-by-progress-not-the-clock displaced=m1+main-1788940932-18533-7fa6c2@2026-09-11T00:34:18Z
-Integrity: sha256=53220f8f37f1f1004329a2469520d430c9ac89cdbcfc9b9926ece04dc475273f
+- 2026-09-11T09:54:10Z QY1MYNZNDWHY57N6SFZ1M84G90-m1-c6925449 set-budget actor=human:Wido targets=proof-groups-detect-hangs-by-progress-not-the-clock displaced=m1+main-1788940932-18533-7fa6c2@2026-09-11T01:15:34Z
+Integrity: sha256=8bf9c460d8d56f8e8c12b6237cffe234970ac38cdfc06e0a866586f01a4c5014
