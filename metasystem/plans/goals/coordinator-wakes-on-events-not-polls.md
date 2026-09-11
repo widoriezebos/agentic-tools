@@ -1,6 +1,6 @@
 # coordinator-wakes-on-events-not-polls
 
-- State: queued
+- State: approved
 - Priority: 1
 - Sequence: 14
 - Risk: severity=2 novelty=2 exposure=3 accumulation=2 basis="severity 2: a wait that never returns idles a seat; novelty 2: a wait verb over existing records is new; exposure 3: every seat; accumulation 2: touches the hook and the verbs"
@@ -9,9 +9,11 @@
 - Origin: human
 - Next step: Design first: inventory the wait sites in the transcripts (watch, TaskOutput, tmux capture loops, Monitor), define the wait verb over the existing job, attempt and ledger records and its restart recovery, critique, build, land.
 - OpenedAt: 2026-09-11T15:45:15Z
-- Revision: 12
+- Revision: 13
 - Pinned: m1e
+- Budget: elapsedLimit=1d attemptLimit=10 reservedJobMinutesLimit=1200 activeJobLimit=1 reviewRoundLimit=3
 - BudgetExceptions: 0
+- Approved: by=human:Wido at=2026-09-11T20:33:37Z revision=13 opid=SKG6KKD1D4X47D0F681RTY11AS-m1-c6925449 authority=proven digest=acfb9e16feb6090b3ad627c4c41225d9c946af808c6d672d570a86b07343c73f
 
 History:
 - 2026-09-11T15:45:15Z HPJKBN0ZC1BZBK2M5KWKW0JP71-m1e-5083721b open actor=m1e+main-1789141490-27414-b9c0d2 targets=coordinator-wakes-on-events-not-polls
@@ -26,4 +28,5 @@ History:
 - 2026-09-11T16:19:21Z DHFSYVVEW7VVCERQM87VZPT8GC-m1-c6925449 approve actor=human:Wido targets=coordinator-wakes-on-events-not-polls
 - 2026-09-11T20:31:06Z KJ9PB0BE9C9EFEETCR8V70MXFV-m1-c6925449 unapprove actor=human:Wido targets=coordinator-wakes-on-events-not-polls reason=Wido 2026-09-11: every program goal states runtime independence (claude, codex, devin, future adapters); intent amended before re-approval
 - 2026-09-11T20:32:21Z H973VE8T2DGA105MR1D3PNB02D-m1e-3ca84c28 edit actor=m1e+main-1789158700-39729-b9c0d2 targets=coordinator-wakes-on-events-not-polls
-Integrity: sha256=d64a880aa95da33f5fe60fcca7b9c58b1c79e60159127aacb52940fe2e672bd5
+- 2026-09-11T20:33:37Z SKG6KKD1D4X47D0F681RTY11AS-m1-c6925449 approve actor=human:Wido targets=coordinator-wakes-on-events-not-polls
+Integrity: sha256=7111101bccc13309bca8afacbe79baa214005db4048154f9fd1c8757ca15336b
