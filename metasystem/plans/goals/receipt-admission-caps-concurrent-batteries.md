@@ -1,6 +1,6 @@
 # receipt-admission-caps-concurrent-batteries
 
-- State: approved
+- State: queued
 - Priority: 1
 - Sequence: 1
 - Risk: severity=2 novelty=2 exposure=3 accumulation=1 basis="severity 2: a wrong cap starves landings or lets batteries collide as today; novelty 2: attempt reservations exist per checkout but nothing is host-wide; exposure 3: every receipt on every seat; accumulation 1: the battery content is unchanged"
@@ -9,11 +9,9 @@
 - Origin: human
 - Next step: Wido's word recorded 2026-09-11 (R-92-m1e): no admission cap for now; build the attribution (host load and overlapping-attempt count in every attempt record; load failures of consumption-bounded groups filed as patience defects) and put the cap question again with a week of post-c08fe2cb numbers. Next: claim when deep-battery-under-ten-minutes ends; design page names R-92-m1e.
 - OpenedAt: 2026-09-11T15:44:50Z
-- Revision: 8
+- Revision: 9
 - Pinned: m1e
-- Budget: elapsedLimit=1d attemptLimit=10 reservedJobMinutesLimit=1200 activeJobLimit=1 reviewRoundLimit=3
 - BudgetExceptions: 0
-- Approved: by=human:Wido at=2026-09-11T16:18:44Z revision=7 opid=MR82975FP1C9JVF7ZS7YEBMQTS-m1-c6925449 authority=proven digest=31ab67526b103a10219722699bdf9042e95e9a1e8e84d0ae187755a7339bb028
 
 History:
 - 2026-09-11T15:44:50Z ATQJYESKCTSPAS92AEEAW0TKS3-m1e-5083721b open actor=m1e+main-1789141490-27414-b9c0d2 targets=receipt-admission-caps-concurrent-batteries
@@ -24,4 +22,5 @@ History:
 - 2026-09-11T16:16:17Z SXAC0HTV3ETPBGR4CRYSW2XJ7Q-m1e-ab5421f5 edit actor=m1e+main-1789143377-71578-b9c0d2 targets=receipt-admission-caps-concurrent-batteries
 - 2026-09-11T16:18:44Z MR82975FP1C9JVF7ZS7YEBMQTS-m1-c6925449 approve actor=human:Wido targets=receipt-admission-caps-concurrent-batteries
 - 2026-09-11T20:15:37Z VJGH901E4AZJXM3TJDV3GKKNMB-m1e-892cdaec edit actor=m1e+main-1789030447-51011-5722fc targets=receipt-admission-caps-concurrent-batteries
-Integrity: sha256=4f921c56421901725512af2f284edf2a82c5492c4b801fabd6cb5c1a074c39b0
+- 2026-09-11T20:30:19Z 9ZHHVRGX65BDG6VFKBFHTGAE3X-m1-c6925449 unapprove actor=human:Wido targets=receipt-admission-caps-concurrent-batteries reason=Wido 2026-09-11: every program goal states runtime independence (claude, codex, devin, future adapters); intent amended before re-approval
+Integrity: sha256=8349d9dd38850d65616e6e4d1171792079ecc8d3f6e8448b4f37816d59461d52
