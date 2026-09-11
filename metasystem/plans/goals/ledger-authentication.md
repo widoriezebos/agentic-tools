@@ -2,12 +2,12 @@
 
 - State: queued
 - Priority: 3
-- Sequence: 70
+- Sequence: 69
 - Intent: The accepted goal ledger is unauthenticated by design (ValidateAcceptedTree accepts any structurally-valid tree), so an agent with checkout write access can forge any in-repo human-authority record - session-stop, resume, set-obligation all share this. Wido 2026-09-02, deferring true forge-proofing: this is the foundational goal for authenticating ledger history (signing or equivalent) so a forged human act is mechanically rejected. Wide blast radius; its own design program. NOT the idle fix (that ships under bar (a): impossible by accident/honest agent). Opened as the home for the forge threat so idle-with-backlog does not carry it.
 - Origin: main
 - Next step: INTENT: forged human-authority ledger records become mechanically rejectable. This is a design-first foundational goal, not a slice - it touches every human-only verb's trust boundary. CONSTRAINTS: must not break the existing unauthenticated fast-path for ordinary agent ledger ops; the authentication binds only human-reserved acts. FREEDOMS: signing scheme, key custody, whether it is per-op or per-tree - all design. Budget: Wido's word at claim (design-bearing, likely multi-slice). Back of queue unless Wido prioritises.
 - OpenedAt: 2026-09-02T11:31:48Z
-- Revision: 49
+- Revision: 50
 - BudgetExceptions: 0
 
 History:
@@ -60,4 +60,5 @@ History:
 - 2026-09-11T22:06:20Z JXK2RF67K14XYVZY3M8HBXJA1W-m1-c6925449 done actor=human:Wido targets=alert-escalation-channel,app-doctrine,app-guardrail-custody,app-guardrail-program,counselor,cross-repo-guardrails,design-prohibition-is-role-scoped,incident-proposal-drafting,integration-branch,ledger-authentication,metasystem-way-patterns,paid-proof-authorization,precedent-index,reconciliation-guards,stop-refusal-fits-on-one-screen,suite-outcomes-as-steward-incidents reason=priority-order from=3:73 to=3:72
 - 2026-09-11T22:06:27Z 1Z9VYDC4HT7QDGHEW8QAGFYX5S-m1-c6925449 done actor=human:Wido targets=alert-escalation-channel,app-doctrine,app-guardrail-custody,app-guardrail-program,continuous-self-improvement,counselor,cross-repo-guardrails,design-prohibition-is-role-scoped,effort-by-complexity-per-model,hook-root-resolver-design,incident-proposal-drafting,integration-branch,ledger-authentication,metasystem-way-patterns,paid-proof-authorization,precedent-index,python3-kit-port,reconciliation-guards,registry-design-names-selection-rows,repo-flag-resolves-one-root,stop-refusal-fits-on-one-screen,supervise-start-gate-linux-red,supervision-fixture-child-custody-join,supervision-fixture-self-check-announcement-scan,watchdog-kill-observation-gap reason=priority-order from=3:72 to=3:71
 - 2026-09-11T22:06:39Z 6K3RQYRH2TPVQB9DFX35CH4SGY-m1-c6925449 done actor=human:Wido targets=alert-escalation-channel,app-doctrine,app-guardrail-custody,app-guardrail-program,continuous-self-improvement,counselor,cross-repo-guardrails,design-prohibition-is-role-scoped,effort-by-complexity-per-model,hook-root-resolver-design,incident-proposal-drafting,integration-branch,ledger-authentication,metasystem-way-patterns,paid-proof-authorization,precedent-index,python3-kit-port,reconciliation-guards,registry-design-names-selection-rows,repo-flag-resolves-one-root,stop-refusal-fits-on-one-screen,supervision-fixture-child-custody-join,supervision-fixture-self-check-announcement-scan,watchdog-kill-observation-gap reason=priority-order from=3:71 to=3:70
-Integrity: sha256=e05954663baa0ea009919367efdc3539f6a0237c6130b4e69d078f8e1ad2770d
+- 2026-09-11T22:06:45Z B6T2098JANY9TT6T8Z5P3K5WS0-m1-c6925449 done actor=human:Wido targets=alert-escalation-channel,app-doctrine,app-guardrail-custody,app-guardrail-program,continuous-self-improvement,counselor,cross-repo-guardrails,design-prohibition-is-role-scoped,effort-by-complexity-per-model,hook-root-resolver-design,incident-proposal-drafting,integration-branch,ledger-authentication,metasystem-way-patterns,paid-proof-authorization,precedent-index,python3-kit-port,reconciliation-guards,registry-design-names-selection-rows,repo-flag-resolves-one-root,stop-refusal-fits-on-one-screen,supervision-fixture-self-check-announcement-scan,watchdog-kill-observation-gap reason=priority-order from=3:70 to=3:69
+Integrity: sha256=65f6aa5bb6562bb6c5b79eac2680622d08967f3cafba0f5fb846dd596d30c1c4

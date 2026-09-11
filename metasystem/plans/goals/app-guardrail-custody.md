@@ -2,12 +2,12 @@
 
 - State: queued
 - Priority: 3
-- Sequence: 65
+- Sequence: 64
 - Intent: Guardrail files get distinct custody: no implementation authorization may touch them; changes take their own review lane with the warden at its gate — the net cannot be quietly weakened by the work it judges
 - Origin: human
 - Next step: SLICE TWO, PARITY HALF LANDED 2d0b7d3 (rebased from efa5374; codex AGREE round one, zero findings): warden chains answer to the critic's critique-exhaustion discipline through one shared judgment — second exhaustion refuses outright, an exhausted warden with open material findings admits nothing, critic path behavior-identical through the extraction. THE HUMAN-TIER HALF WAITS, honestly recorded: budget loosening, golden replacement, and probe waivers rule on COVENANT-DECLARED surfaces (budgets, goldens live in covenant.json; probes are adequacy machinery) — building it on heuristics ahead of the covenant would violate staged minimality. It resumes when Wido's app-covenant decision lands (extend-or-park, raised on that goal; the H2 self-custody ruling would also make covenant-section changes escalate to this tier). Pilot's kit declaration still deferred with m2's arc.
 - OpenedAt: 2026-08-23T16:29:41Z
-- Revision: 57
+- Revision: 58
 - BudgetExceptions: 0
 
 History:
@@ -68,4 +68,5 @@ History:
 - 2026-09-11T22:06:20Z JXK2RF67K14XYVZY3M8HBXJA1W-m1-c6925449 done actor=human:Wido targets=alert-escalation-channel,app-doctrine,app-guardrail-custody,app-guardrail-program,counselor,cross-repo-guardrails,design-prohibition-is-role-scoped,incident-proposal-drafting,integration-branch,ledger-authentication,metasystem-way-patterns,paid-proof-authorization,precedent-index,reconciliation-guards,stop-refusal-fits-on-one-screen,suite-outcomes-as-steward-incidents reason=priority-order from=3:68 to=3:67
 - 2026-09-11T22:06:27Z 1Z9VYDC4HT7QDGHEW8QAGFYX5S-m1-c6925449 done actor=human:Wido targets=alert-escalation-channel,app-doctrine,app-guardrail-custody,app-guardrail-program,continuous-self-improvement,counselor,cross-repo-guardrails,design-prohibition-is-role-scoped,effort-by-complexity-per-model,hook-root-resolver-design,incident-proposal-drafting,integration-branch,ledger-authentication,metasystem-way-patterns,paid-proof-authorization,precedent-index,python3-kit-port,reconciliation-guards,registry-design-names-selection-rows,repo-flag-resolves-one-root,stop-refusal-fits-on-one-screen,supervise-start-gate-linux-red,supervision-fixture-child-custody-join,supervision-fixture-self-check-announcement-scan,watchdog-kill-observation-gap reason=priority-order from=3:67 to=3:66
 - 2026-09-11T22:06:39Z 6K3RQYRH2TPVQB9DFX35CH4SGY-m1-c6925449 done actor=human:Wido targets=alert-escalation-channel,app-doctrine,app-guardrail-custody,app-guardrail-program,continuous-self-improvement,counselor,cross-repo-guardrails,design-prohibition-is-role-scoped,effort-by-complexity-per-model,hook-root-resolver-design,incident-proposal-drafting,integration-branch,ledger-authentication,metasystem-way-patterns,paid-proof-authorization,precedent-index,python3-kit-port,reconciliation-guards,registry-design-names-selection-rows,repo-flag-resolves-one-root,stop-refusal-fits-on-one-screen,supervision-fixture-child-custody-join,supervision-fixture-self-check-announcement-scan,watchdog-kill-observation-gap reason=priority-order from=3:66 to=3:65
-Integrity: sha256=d5f55021ef1cc460996c6b883456621c34872fbf94d782ac529a265f3e10dd15
+- 2026-09-11T22:06:45Z B6T2098JANY9TT6T8Z5P3K5WS0-m1-c6925449 done actor=human:Wido targets=alert-escalation-channel,app-doctrine,app-guardrail-custody,app-guardrail-program,continuous-self-improvement,counselor,cross-repo-guardrails,design-prohibition-is-role-scoped,effort-by-complexity-per-model,hook-root-resolver-design,incident-proposal-drafting,integration-branch,ledger-authentication,metasystem-way-patterns,paid-proof-authorization,precedent-index,python3-kit-port,reconciliation-guards,registry-design-names-selection-rows,repo-flag-resolves-one-root,stop-refusal-fits-on-one-screen,supervision-fixture-self-check-announcement-scan,watchdog-kill-observation-gap reason=priority-order from=3:65 to=3:64
+Integrity: sha256=1a1f7ae8af23952bae294567ac6dcfdb209d29ebf97f5c394c5db6335db32648

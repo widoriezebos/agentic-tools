@@ -2,12 +2,12 @@
 
 - State: queued
 - Priority: 3
-- Sequence: 58
+- Sequence: 57
 - Intent: The metasystem notices problematic behavior the human would notice — custody violations, dead suites, process-lost jobs, repeated refusals — and DRAFTS remediation proposals brought to the human for discussion (Wido 2026-08-24: detection alone is not enough; drafted proposals must reach my attention)
 - Origin: human
 - Next step: Appetite: 3h, after suite-outcomes-as-steward-incidents (its detection layer). The steward's incident stream gains a drafting step: each incident class maps to a proposal template (evidence links, suspected cause, candidate remedy, proposed appetite) written to a proposals queue the stop message and goal next surface for ratification — mechanizing the bank-finding/open-item/propose-appetite loop the dispatch delegate runs by hand today. Acceptance: replay 2026-08-24's collateral (killed critic, orphaned gate, battery-vs-dispatch clash) and each produces a drafted proposal awaiting the human, unprompted.
 - OpenedAt: 2026-08-24T13:26:02Z
-- Revision: 52
+- Revision: 53
 - Labels: custody
 - BudgetExceptions: 0
 
@@ -64,4 +64,5 @@ History:
 - 2026-09-11T22:06:20Z JXK2RF67K14XYVZY3M8HBXJA1W-m1-c6925449 done actor=human:Wido targets=alert-escalation-channel,app-doctrine,app-guardrail-custody,app-guardrail-program,counselor,cross-repo-guardrails,design-prohibition-is-role-scoped,incident-proposal-drafting,integration-branch,ledger-authentication,metasystem-way-patterns,paid-proof-authorization,precedent-index,reconciliation-guards,stop-refusal-fits-on-one-screen,suite-outcomes-as-steward-incidents reason=priority-order from=3:61 to=3:60
 - 2026-09-11T22:06:27Z 1Z9VYDC4HT7QDGHEW8QAGFYX5S-m1-c6925449 done actor=human:Wido targets=alert-escalation-channel,app-doctrine,app-guardrail-custody,app-guardrail-program,continuous-self-improvement,counselor,cross-repo-guardrails,design-prohibition-is-role-scoped,effort-by-complexity-per-model,hook-root-resolver-design,incident-proposal-drafting,integration-branch,ledger-authentication,metasystem-way-patterns,paid-proof-authorization,precedent-index,python3-kit-port,reconciliation-guards,registry-design-names-selection-rows,repo-flag-resolves-one-root,stop-refusal-fits-on-one-screen,supervise-start-gate-linux-red,supervision-fixture-child-custody-join,supervision-fixture-self-check-announcement-scan,watchdog-kill-observation-gap reason=priority-order from=3:60 to=3:59
 - 2026-09-11T22:06:39Z 6K3RQYRH2TPVQB9DFX35CH4SGY-m1-c6925449 done actor=human:Wido targets=alert-escalation-channel,app-doctrine,app-guardrail-custody,app-guardrail-program,continuous-self-improvement,counselor,cross-repo-guardrails,design-prohibition-is-role-scoped,effort-by-complexity-per-model,hook-root-resolver-design,incident-proposal-drafting,integration-branch,ledger-authentication,metasystem-way-patterns,paid-proof-authorization,precedent-index,python3-kit-port,reconciliation-guards,registry-design-names-selection-rows,repo-flag-resolves-one-root,stop-refusal-fits-on-one-screen,supervision-fixture-child-custody-join,supervision-fixture-self-check-announcement-scan,watchdog-kill-observation-gap reason=priority-order from=3:59 to=3:58
-Integrity: sha256=b1381d7fd19e5a83fc38b0d3c2b009b98b77d6db72fd539de80ba9c64898a442
+- 2026-09-11T22:06:45Z B6T2098JANY9TT6T8Z5P3K5WS0-m1-c6925449 done actor=human:Wido targets=alert-escalation-channel,app-doctrine,app-guardrail-custody,app-guardrail-program,continuous-self-improvement,counselor,cross-repo-guardrails,design-prohibition-is-role-scoped,effort-by-complexity-per-model,hook-root-resolver-design,incident-proposal-drafting,integration-branch,ledger-authentication,metasystem-way-patterns,paid-proof-authorization,precedent-index,python3-kit-port,reconciliation-guards,registry-design-names-selection-rows,repo-flag-resolves-one-root,stop-refusal-fits-on-one-screen,supervision-fixture-self-check-announcement-scan,watchdog-kill-observation-gap reason=priority-order from=3:58 to=3:57
+Integrity: sha256=794de1c7550438840adf1f9751a61c7f946860d81b6cea0a229f42867619191c

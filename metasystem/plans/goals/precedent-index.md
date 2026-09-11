@@ -2,12 +2,12 @@
 
 - State: queued
 - Priority: 3
-- Sequence: 60
+- Sequence: 59
 - Intent: Rulings become citable law: a first-class precedent index the counselor cites at sittings, so settled questions are distinguished, not re-litigated (Wido 2026-08-25, common-law study area)
 - Origin: human
 - Next step: Appetite: 1d design-first. The legal insight redesigned: a ruling binds by its PRINCIPLE, not its circumstances, and the discipline is distinguishing a new case from an old precedent rather than re-arguing. Design questions: the record shape (principle, circumstances, who ruled, what it superseded), the app-owned home (seeded at inception from harvested design decisions; this repo's D-numbers are the template's own instance), the citing surfaces (the counselor's sitting and the dispatch delegate's intake ask 'is this the same case?'), and supersession (a precedent is overturned by a new ruling that names it, never silently). Queue: after reconciliation-guards.
 - OpenedAt: 2026-08-25T06:54:54Z
-- Revision: 51
+- Revision: 52
 - BudgetExceptions: 0
 
 History:
@@ -62,4 +62,5 @@ History:
 - 2026-09-11T22:06:20Z JXK2RF67K14XYVZY3M8HBXJA1W-m1-c6925449 done actor=human:Wido targets=alert-escalation-channel,app-doctrine,app-guardrail-custody,app-guardrail-program,counselor,cross-repo-guardrails,design-prohibition-is-role-scoped,incident-proposal-drafting,integration-branch,ledger-authentication,metasystem-way-patterns,paid-proof-authorization,precedent-index,reconciliation-guards,stop-refusal-fits-on-one-screen,suite-outcomes-as-steward-incidents reason=priority-order from=3:63 to=3:62
 - 2026-09-11T22:06:27Z 1Z9VYDC4HT7QDGHEW8QAGFYX5S-m1-c6925449 done actor=human:Wido targets=alert-escalation-channel,app-doctrine,app-guardrail-custody,app-guardrail-program,continuous-self-improvement,counselor,cross-repo-guardrails,design-prohibition-is-role-scoped,effort-by-complexity-per-model,hook-root-resolver-design,incident-proposal-drafting,integration-branch,ledger-authentication,metasystem-way-patterns,paid-proof-authorization,precedent-index,python3-kit-port,reconciliation-guards,registry-design-names-selection-rows,repo-flag-resolves-one-root,stop-refusal-fits-on-one-screen,supervise-start-gate-linux-red,supervision-fixture-child-custody-join,supervision-fixture-self-check-announcement-scan,watchdog-kill-observation-gap reason=priority-order from=3:62 to=3:61
 - 2026-09-11T22:06:39Z 6K3RQYRH2TPVQB9DFX35CH4SGY-m1-c6925449 done actor=human:Wido targets=alert-escalation-channel,app-doctrine,app-guardrail-custody,app-guardrail-program,continuous-self-improvement,counselor,cross-repo-guardrails,design-prohibition-is-role-scoped,effort-by-complexity-per-model,hook-root-resolver-design,incident-proposal-drafting,integration-branch,ledger-authentication,metasystem-way-patterns,paid-proof-authorization,precedent-index,python3-kit-port,reconciliation-guards,registry-design-names-selection-rows,repo-flag-resolves-one-root,stop-refusal-fits-on-one-screen,supervision-fixture-child-custody-join,supervision-fixture-self-check-announcement-scan,watchdog-kill-observation-gap reason=priority-order from=3:61 to=3:60
-Integrity: sha256=8926c8b285458e1c9ee0e1006c2fe7d72e2d2581463fce4aab31e4768ce404ca
+- 2026-09-11T22:06:45Z B6T2098JANY9TT6T8Z5P3K5WS0-m1-c6925449 done actor=human:Wido targets=alert-escalation-channel,app-doctrine,app-guardrail-custody,app-guardrail-program,continuous-self-improvement,counselor,cross-repo-guardrails,design-prohibition-is-role-scoped,effort-by-complexity-per-model,hook-root-resolver-design,incident-proposal-drafting,integration-branch,ledger-authentication,metasystem-way-patterns,paid-proof-authorization,precedent-index,python3-kit-port,reconciliation-guards,registry-design-names-selection-rows,repo-flag-resolves-one-root,stop-refusal-fits-on-one-screen,supervision-fixture-self-check-announcement-scan,watchdog-kill-observation-gap reason=priority-order from=3:60 to=3:59
+Integrity: sha256=9bcaf331f4a6d4ee6d2a0ebdfcc3a76b275bbc5d20750bd10e97fa0c2ae88cdf

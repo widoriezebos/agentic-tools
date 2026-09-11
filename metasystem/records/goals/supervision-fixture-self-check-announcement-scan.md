@@ -1,6 +1,6 @@
 # supervision-fixture-self-check-announcement-scan
 
-- State: queued
+- State: done
 - Priority: 3
 - Sequence: 50
 - Risk: severity=1 novelty=1 exposure=1 accumulation=1 basis="One scan in the supervision suite's self-check misreads two pidless bookkeeping files as main announcements; only the suite's own verdict is affected."
@@ -8,8 +8,9 @@
 - Intent: scripts/agents/supervision-fixtures.sh, assert_fixture_supervision_isolation: the announcement scan treats every JSON file under a harness root's mains directory as a main announcement, but the protocol cursor and the reaped-after-claim stamp carry no pid, so the scan can misjudge them (critic finding SCC-61 of chain scp-build1-cc3); the operator-layout scenario's harness root is one level below its state root so the scan looks in a mains directory that does not exist (SCC-62); the ancestor walk under set -e can flake when an ancestor exits mid-walk (SCC-65). DONE means the scan reads only announcement files that carry a pid, the harness root is the state root, the walk tolerates an exiting ancestor, and the self-check fails a scenario that arms with the seat's pid.
 - Origin: main
 - Next step: One fixture round with the suite run seat-side; tier 1.
+- Concluded: Landed: scripts/agents/supervision-fixtures.sh assert_fixture_supervision_isolation now skips *.protocol-cursor.json, reaped-after-claim.json, worktree-commit-token.json and worktree-lease.json before reading a pid (SCC-61; the exclusion landed in c1525b90 on 2026-09-06, after this goal opened 2026-09-05), tolerates a missing mains directory (find ... || true, SCC-62) and the ancestor walk reads ps through a pipeline that ca. Concluded 2026-09-11 in the backlog consolidation on Wido's word, no further work.
 - OpenedAt: 2026-09-05T14:23:36Z
-- Revision: 40
+- Revision: 41
 - Labels: robustness
 - BudgetExceptions: 0
 
@@ -54,4 +55,5 @@ History:
 - 2026-09-11T22:06:14Z MQ8AB3E09V7FHDTX5M5TQAGYQ3-m1-c6925449 done actor=human:Wido targets=alert-escalation-channel,app-doctrine,app-guardrail-custody,app-guardrail-program,continuous-self-improvement,counselor,cross-repo-guardrails,design-prohibition-is-role-scoped,effort-by-complexity-per-model,hook-root-resolver-design,incident-proposal-drafting,integration-branch,ledger-authentication,metasystem-way-patterns,paid-proof-authorization,precedent-index,python3-kit-port,reconciliation-guards,registry-design-names-selection-rows,repo-flag-resolves-one-root,stop-refusal-fits-on-one-screen,suite-flake-supervision-watch,suite-outcomes-as-steward-incidents,supervise-start-gate-linux-red,supervision-fixture-child-custody-join,supervision-fixture-self-check-announcement-scan,watchdog-kill-observation-gap reason=priority-order from=3:53 to=3:52
 - 2026-09-11T22:06:27Z 1Z9VYDC4HT7QDGHEW8QAGFYX5S-m1-c6925449 done actor=human:Wido targets=alert-escalation-channel,app-doctrine,app-guardrail-custody,app-guardrail-program,continuous-self-improvement,counselor,cross-repo-guardrails,design-prohibition-is-role-scoped,effort-by-complexity-per-model,hook-root-resolver-design,incident-proposal-drafting,integration-branch,ledger-authentication,metasystem-way-patterns,paid-proof-authorization,precedent-index,python3-kit-port,reconciliation-guards,registry-design-names-selection-rows,repo-flag-resolves-one-root,stop-refusal-fits-on-one-screen,supervise-start-gate-linux-red,supervision-fixture-child-custody-join,supervision-fixture-self-check-announcement-scan,watchdog-kill-observation-gap reason=priority-order from=3:52 to=3:51
 - 2026-09-11T22:06:39Z 6K3RQYRH2TPVQB9DFX35CH4SGY-m1-c6925449 done actor=human:Wido targets=alert-escalation-channel,app-doctrine,app-guardrail-custody,app-guardrail-program,continuous-self-improvement,counselor,cross-repo-guardrails,design-prohibition-is-role-scoped,effort-by-complexity-per-model,hook-root-resolver-design,incident-proposal-drafting,integration-branch,ledger-authentication,metasystem-way-patterns,paid-proof-authorization,precedent-index,python3-kit-port,reconciliation-guards,registry-design-names-selection-rows,repo-flag-resolves-one-root,stop-refusal-fits-on-one-screen,supervision-fixture-child-custody-join,supervision-fixture-self-check-announcement-scan,watchdog-kill-observation-gap reason=priority-order from=3:51 to=3:50
-Integrity: sha256=304b0924f6ca744a3143c510072b635fc3ee0d841e7a43a94ab2f417eff0cbe4
+- 2026-09-11T22:06:45Z B6T2098JANY9TT6T8Z5P3K5WS0-m1-c6925449 done actor=human:Wido targets=alert-escalation-channel,app-doctrine,app-guardrail-custody,app-guardrail-program,continuous-self-improvement,counselor,cross-repo-guardrails,design-prohibition-is-role-scoped,effort-by-complexity-per-model,hook-root-resolver-design,incident-proposal-drafting,integration-branch,ledger-authentication,metasystem-way-patterns,paid-proof-authorization,precedent-index,python3-kit-port,reconciliation-guards,registry-design-names-selection-rows,repo-flag-resolves-one-root,stop-refusal-fits-on-one-screen,supervision-fixture-self-check-announcement-scan,watchdog-kill-observation-gap
+Integrity: sha256=19565c1d6de47edf90b8e33368f28d7d0e63a21072fc23ec1b691a9673789d69
