@@ -1,6 +1,6 @@
 # steward-launches-resolve-their-model
 
-- State: queued
+- State: approved
 - Priority: 1
 - Sequence: 2
 - Risk: severity=2 novelty=1 exposure=2 accumulation=1 basis="severity 2: steward continuation has delivered nothing on any seat since the launches die; novelty 1: the roster resolution exists for delegates; exposure 2: steward launches on every seat; accumulation 1: one code path"
@@ -9,9 +9,11 @@
 - Origin: human
 - Next step: Read steward_verbs.go launch staging and internal/dispatch/roster.go fallback acceptance; add the template refusal and the config validation; fix metasystem.conf and each seat's roster; fixture; land.
 - OpenedAt: 2026-09-11T15:44:54Z
-- Revision: 6
+- Revision: 7
 - Pinned: m1e
+- Budget: elapsedLimit=4h attemptLimit=6 reservedJobMinutesLimit=720 activeJobLimit=1 reviewRoundLimit=2
 - BudgetExceptions: 0
+- Approved: by=human:Wido at=2026-09-11T16:18:47Z revision=7 opid=VTE5YDQ7B24KF5NEC0N4G8MZZK-m1-c6925449 authority=proven digest=73f65b9b8ee21b518fae1e7009bcc64708016e8302dca1c353905e9f1e3668b4
 
 History:
 - 2026-09-11T15:44:54Z HF9CZF90NBZDKY1K5Z5G13AQZ9-m1e-5083721b open actor=m1e+main-1789141490-27414-b9c0d2 targets=steward-launches-resolve-their-model
@@ -20,4 +22,5 @@ History:
 - 2026-09-11T15:49:03Z N6S7EPVKSG4ZJZWHAD0ATBM8G6-m1-c6925449 approve actor=human:Wido targets=steward-launches-resolve-their-model
 - 2026-09-11T16:13:00Z RGKPCT8NZ7YN5YW8MZJ19MJ8N5-m1-c6925449 unapprove actor=human:Wido targets=steward-launches-resolve-their-model reason=Wido 2026-09-11: Codex critique round 1 of the delivery-efficiency plan accepted; intent amended before re-approval
 - 2026-09-11T16:16:21Z 4NQENWEFHQWYXEGGYR3WT3NQHQ-m1e-ab5421f5 edit actor=m1e+main-1789143377-71578-b9c0d2 targets=steward-launches-resolve-their-model
-Integrity: sha256=0f0792c3ddda800c841490318333030b0c05abdbe13d4952d5070d3f6d909635
+- 2026-09-11T16:18:47Z VTE5YDQ7B24KF5NEC0N4G8MZZK-m1-c6925449 approve actor=human:Wido targets=steward-launches-resolve-their-model
+Integrity: sha256=e97a7023ff42e682bc9e28c0ad15d5329b5ccc3c263ec8f98f0f106a68305a0c
