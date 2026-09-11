@@ -70,6 +70,23 @@ receipt_env_run() {
   env -i "${receipt_environment[@]}" "$@"
 }
 
+receipt_checkout_env_run() { # checkout, command...
+  local checkout=$1 entry receipt_path= receipt_path_found=0
+  shift
+  for entry in "${receipt_environment[@]}"; do
+    if [[ "$entry" == PATH=* ]]; then
+      receipt_path=${entry#PATH=}
+      receipt_path_found=1
+      break
+    fi
+  done
+  (( receipt_path_found )) || {
+    echo "land $fixture_scenario fixture: receipt environment has no PATH entry" >&2
+    return 1
+  }
+  receipt_env_run env PATH="$checkout/bin:$receipt_path" "$@"
+}
+
 stop_receipt_runner() {
   local index checkout engine runner_pid identity_file registry stop_log
   local stop_rc wait_deadline runner_dead=1
@@ -266,15 +283,17 @@ SH
     cp "$root/scripts/agents/landing-classes.json" "$leg_seed/scripts/agents/landing-classes.json"
     cp "$root/scripts/agents/landing-promotion.json" "$leg_seed/scripts/agents/landing-promotion.json"
     cp "$root/memory/rulings.md" "$leg_seed/memory/rulings.md"
-    candidate_fixture_engine=$leg_root/engine
-    printf -v candidate_fixture_engine_q '%q' "$candidate_fixture_engine"
-    cat >"$leg_seed/scripts/agents/go-build.sh" <<SH
+    cat >"$leg_seed/scripts/agents/go-build.sh" <<'SH'
 #!/usr/bin/env bash
 set -euo pipefail
-[[ "\${1:-}" == --trimpath && "\${2:-}" == --out && -n "\${3:-}" ]]
-printf '#!/usr/bin/env bash\n# candidate commit %s\nexec %s "\$@"\n' \
-  "\${METASYSTEM_BUILD_STAMP:?}" "$candidate_fixture_engine_q" >"\$3"
-chmod +x "\$3"
+[[ "${1:-}" == --trimpath && "${2:-}" == --out && -n "${3:-}" ]]
+candidate_fixture_engine=$(command -v metasystem || true)
+[[ -n "$candidate_fixture_engine" ]] || {
+  echo "fixture candidate build: no metasystem executable is available on PATH" >&2
+  exit 1
+}
+cp "$candidate_fixture_engine" "$3"
+chmod +x "$3"
 SH
     cat >"$leg_seed/metasystem.conf" <<'CONF'
 testing.contract=testing.json
@@ -539,7 +558,7 @@ take_fixture_receipt() { # engine, checkout, output log
   local engine=$1 checkout=$2 output=$3
   fixture_receipt_tree=$(git -C "$checkout" write-tree)
   fixture_receipt_path=$checkout/artifacts/agents/landing/receipts/$fixture_receipt_tree.json
-  if ! receipt_env_run "$engine" landing test-receipt --root "$checkout" \
+  if ! receipt_checkout_env_run "$checkout" "$engine" landing test-receipt --root "$checkout" \
       --tree "$fixture_receipt_tree" --mode auto --goal fx --cap-min 1 >"$output" 2>&1; then
     echo "land $fixture_scenario fixture: landing test-receipt failed" >&2
     sed -n '1,240p' "$output" >&2
@@ -596,7 +615,7 @@ publish_peer_input_move() {
 
 run_fixture_landing() { # checkout, message, chain, receipt, output, chain log
   local checkout=$1 message=$2 chain=$3 receipt=$4 output=$5 chain_log=$6
-  receipt_env_run env LAND_FIXTURE_CHAIN_LOG="$chain_log" \
+  receipt_checkout_env_run "$checkout" env LAND_FIXTURE_CHAIN_LOG="$chain_log" \
     bash "$checkout/scripts/agents/land.sh" -m "$message" --chain "$chain" --goal fx \
       --test-receipt "$receipt" --staged-only --skip-transport >"$output" 2>&1
 }
@@ -1258,7 +1277,7 @@ prepare_receipt_chain "$leg_local" ledger-move-chain "$ledger_candidate"
 take_fixture_receipt "$leg_local/bin/metasystem" "$leg_local" "$leg_root/receipt.out"
 ledger_receipt=$fixture_receipt_path
 ledger_receipt_tree=$fixture_receipt_tree
-[[ $(receipt_env_run "$leg_local/bin/metasystem" json get --file "$ledger_receipt" --field workspace.tree) =~ ^[0-9a-f]{40}$ ]]
+[[ $(receipt_checkout_env_run "$leg_local" "$leg_local/bin/metasystem" json get --file "$ledger_receipt" --field workspace.tree) =~ ^[0-9a-f]{40}$ ]]
 
 printf 'x' >>"$leg_local/payload.txt"
 if run_fixture_landing "$leg_local" "$ledger_message" ledger-move-chain "$ledger_receipt" \
@@ -1296,8 +1315,8 @@ git -C "$leg_local" fetch -q origin
 git -C "$leg_local" merge -q --ff-only origin/main
 ledger_moved_candidate=$(git -C "$leg_local" write-tree)
 [[ "$ledger_moved_candidate" != "$ledger_receipt_tree" ]]
-ledger_receipt_workspace=$(receipt_env_run "$leg_local/bin/metasystem" landing workspace --root "$leg_local" --tree "$ledger_receipt_tree")
-ledger_candidate_workspace=$(receipt_env_run "$leg_local/bin/metasystem" landing workspace --root "$leg_local" --tree "$ledger_moved_candidate")
+ledger_receipt_workspace=$(receipt_checkout_env_run "$leg_local" "$leg_local/bin/metasystem" landing workspace --root "$leg_local" --tree "$ledger_receipt_tree")
+ledger_candidate_workspace=$(receipt_checkout_env_run "$leg_local" "$leg_local/bin/metasystem" landing workspace --root "$leg_local" --tree "$ledger_moved_candidate")
 [[ "$ledger_receipt_workspace" == "$ledger_candidate_workspace" ]]
 if ! run_fixture_landing "$leg_local" "$ledger_message" ledger-move-chain "$ledger_receipt" \
     "$ledger_output" "$ledger_chain_log"; then
@@ -1338,8 +1357,8 @@ records_peer=$(git --git-dir="$leg_remote" rev-parse refs/heads/main)
 git -C "$leg_local" fetch -q origin
 git -C "$leg_local" merge -q --ff-only origin/main
 records_moved_candidate=$(git -C "$leg_local" write-tree)
-records_receipt_workspace=$(receipt_env_run "$leg_local/bin/metasystem" landing workspace --root "$leg_local" --tree "$records_receipt_tree")
-records_candidate_workspace=$(receipt_env_run "$leg_local/bin/metasystem" landing workspace --root "$leg_local" --tree "$records_moved_candidate")
+records_receipt_workspace=$(receipt_checkout_env_run "$leg_local" "$leg_local/bin/metasystem" landing workspace --root "$leg_local" --tree "$records_receipt_tree")
+records_candidate_workspace=$(receipt_checkout_env_run "$leg_local" "$leg_local/bin/metasystem" landing workspace --root "$leg_local" --tree "$records_moved_candidate")
 [[ "$records_receipt_workspace" != "$records_candidate_workspace" ]]
 if ! run_fixture_landing "$leg_local" "$records_message" records-move-chain "$records_receipt" \
     "$records_output" "$records_chain_log"; then
@@ -1448,16 +1467,16 @@ prepare_receipt_chain "$leg_local" cutover-exact-chain "$cutover_candidate"
 take_fixture_receipt "$leg_local/bin/metasystem" "$leg_local" "$leg_root/old-receipt.out"
 cutover_old_receipt=$fixture_receipt_path
 cutover_tree=$fixture_receipt_tree
-if receipt_env_run "$leg_local/bin/metasystem" json get --file "$cutover_old_receipt" --field workspace >/dev/null 2>&1 ||
-    receipt_env_run "$leg_local/bin/metasystem" json get --file "$cutover_old_receipt" --field candidateEngineBuildIdentity >/dev/null 2>&1; then
+if receipt_checkout_env_run "$leg_local" "$leg_local/bin/metasystem" json get --file "$cutover_old_receipt" --field workspace >/dev/null 2>&1 ||
+    receipt_checkout_env_run "$leg_local" "$leg_local/bin/metasystem" json get --file "$cutover_old_receipt" --field candidateEngineBuildIdentity >/dev/null 2>&1; then
   echo "land receipt-cutover fixture: old engine wrote a cutover-only identity field" >&2
   exit 1
 fi
-cutover_control=$(receipt_env_run "$leg_local/bin/metasystem" landing observe --root "$leg_local" \
+cutover_control=$(receipt_checkout_env_run "$leg_local" "$leg_local/bin/metasystem" landing observe --root "$leg_local" \
   --tree "$cutover_tree" --chain cutover-exact-chain --goal fx \
   --actor fixture-machine+land-receipt-fixture --test-receipt "$cutover_old_receipt")
-[[ $(receipt_env_run "$leg_local/bin/metasystem" json get --value "$cutover_control" --field mode) == observe ]]
-[[ $(receipt_env_run "$leg_local/bin/metasystem" json get --value "$cutover_control" --field verdictTrailer) == 'pass bar=a' ]]
+[[ $(receipt_checkout_env_run "$leg_local" "$leg_local/bin/metasystem" json get --value "$cutover_control" --field mode) == observe ]]
+[[ $(receipt_checkout_env_run "$leg_local" "$leg_local/bin/metasystem" json get --value "$cutover_control" --field verdictTrailer) == 'pass bar=a' ]]
 if ! run_fixture_landing "$leg_local" "$cutover_message" cutover-exact-chain "$cutover_old_receipt" \
     "$cutover_output" "$cutover_chain_log"; then
   echo "land receipt-cutover fixture: exact old receipt did not land" >&2
@@ -1476,15 +1495,15 @@ take_fixture_receipt "$leg_peer/bin/metasystem" "$leg_peer" "$leg_root/new-recei
 cutover_candidate_receipt=$fixture_receipt_path
 [[ "$fixture_receipt_tree" == "$cutover_tree" ]]
 [[ ${cutover_candidate_receipt##*/} == ${cutover_old_receipt##*/} ]]
-receipt_env_run "$leg_peer/bin/metasystem" json get --file "$cutover_candidate_receipt" --field workspace.tree >/dev/null
-receipt_env_run "$leg_peer/bin/metasystem" json get --file "$cutover_candidate_receipt" --field candidateEngineBuildIdentity >/dev/null
-[[ $(receipt_env_run "$leg_peer/bin/metasystem" json get --file "$cutover_candidate_receipt" --field testing.candidateEngineIdentityVersion) == 2 ]]
+receipt_checkout_env_run "$leg_peer" "$leg_peer/bin/metasystem" json get --file "$cutover_candidate_receipt" --field workspace.tree >/dev/null
+receipt_checkout_env_run "$leg_peer" "$leg_peer/bin/metasystem" json get --file "$cutover_candidate_receipt" --field candidateEngineBuildIdentity >/dev/null
+[[ $(receipt_checkout_env_run "$leg_peer" "$leg_peer/bin/metasystem" json get --file "$cutover_candidate_receipt" --field testing.candidateEngineIdentityVersion) == 2 ]]
 cp "$cutover_candidate_receipt" "$cutover_old_receipt"
 select_receipt_runner_environment "$leg_local"
-cutover_refusal=$(receipt_env_run "$leg_local/bin/metasystem" landing observe --root "$leg_local" \
+cutover_refusal=$(receipt_checkout_env_run "$leg_local" "$leg_local/bin/metasystem" landing observe --root "$leg_local" \
   --tree "$cutover_tree" --chain cutover-exact-chain --goal fx \
   --actor fixture-machine+land-receipt-fixture --test-receipt "$cutover_old_receipt")
-[[ $(receipt_env_run "$leg_local/bin/metasystem" json get --value "$cutover_refusal" --field verdictTrailer) == 'would-refuse code=chain-test-receipt-refused' ]]
+[[ $(receipt_checkout_env_run "$leg_local" "$leg_local/bin/metasystem" json get --value "$cutover_refusal" --field verdictTrailer) == 'would-refuse code=chain-test-receipt-refused' ]]
 stop_receipt_runner
 stop_receipt_runner
 
