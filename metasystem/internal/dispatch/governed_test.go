@@ -202,6 +202,7 @@ func TestExhaustedObligationSurvivesIDOverlayAttemptAndGovernedRunPrune(t *testi
 	store.ObserveGoverned = func(*run.Record, time.Time) run.AssumptionObservation {
 		return run.AssumptionObservation{ObservedAt: now.UTC().Format(time.RFC3339), AssumptionState: run.AssumptionMatch}
 	}
+	store.ProjectSpend = func(*run.Record, time.Time) (run.SpendSnapshot, string) { return run.SpendSnapshot{}, "" }
 	params := run.LaunchParams{Id: "red-n", Kind: "suite", Display: "governed red N", Log: "artifacts/red-n.log",
 		GoalId: "bounded", ObligationRevision: obligationRevision, StandingShared: true}
 	if err := os.MkdirAll(filepath.Join(root, "artifacts"), 0o755); err != nil {
@@ -266,7 +267,7 @@ func TestMissingUnprunedRunEvidenceMakesDurableSpendFailClosed(t *testing.T) {
 			return EvaluateGovernedRunAdmission(root, request, now)
 		}, ObserveGoverned: func(*run.Record, time.Time) run.AssumptionObservation {
 			return run.AssumptionObservation{ObservedAt: now.UTC().Format(time.RFC3339), AssumptionState: run.AssumptionMatch}
-		}}
+		}, ProjectSpend: func(*run.Record, time.Time) (run.SpendSnapshot, string) { return run.SpendSnapshot{}, "" }}
 	if _, err := store.Launch(run.Caller{Class: "HUMAN"}, run.LaunchParams{Id: "lost-evidence", Kind: "suite",
 		Display: "lost evidence", Log: "artifacts/lost.log", GoalId: "bounded", ObligationRevision: obligationRevision,
 		StandingShared: true}); err != nil {

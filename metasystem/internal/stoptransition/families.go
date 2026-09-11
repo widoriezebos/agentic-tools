@@ -452,7 +452,7 @@ type runFamily struct {
 
 func newRunFamily(root string, scaleMilli int, suiteStops *suiteStopGroups) *runFamily {
 	return &runFamily{
-		store: &runpkg.Store{Root: root}, items: map[string]runpkg.Record{}, scaleMilli: scaleMilli,
+		store: dispatch.NewConcludingRunStore(root, nil), items: map[string]runpkg.Record{}, scaleMilli: scaleMilli,
 		suiteStops: suiteStops, now: time.Now, sleep: time.Sleep,
 	}
 }

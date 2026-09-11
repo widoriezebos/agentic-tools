@@ -255,6 +255,30 @@ func TestBudgetProjectionUsesJobRecordsForTheBoundRevision(t *testing.T) {
 	}
 }
 
+func TestProjectBudgetWithoutRunStillRejectsDuplicateDurableOwners(t *testing.T) {
+	root := budgetProjectionRoot(t)
+	file := budgetGoal()
+	attempt := obligationstate.TerminalAttempt{
+		RunID: "duplicate-run", Status: run.StatusRed,
+		StartedAt: "2026-08-28T08:10:00Z", EndedAt: "2026-08-28T08:11:00Z",
+		AttemptOrdinal: 1, ExecutionCostMinutes: 1, ObservedCostMinutes: 1,
+		Breaker: run.BreakerClosed,
+	}
+	if err := obligationstate.RecordTerminal(root, "bounded", 3, 1, attempt); err != nil {
+		t.Fatal(err)
+	}
+	if err := obligationstate.RecordTerminal(root, "bounded", 3, 2, attempt); err != nil {
+		t.Fatal(err)
+	}
+
+	projection := ProjectBudgetWithoutRun(root, file, time.Date(2026, 8, 28, 10, 0, 0, 0, time.UTC), "duplicate-run")
+	wantRecord := "artifacts/agents/governed-obligations/bounded.g3.o2.json"
+	if projection.Status != BudgetUnknown || projection.Unknown == nil || projection.Unknown.Record != wantRecord ||
+		!strings.Contains(projection.Unknown.Reason, `runId "duplicate-run" duplicates terminal state in artifacts/agents/governed-obligations/bounded.g3.o1.json`) {
+		t.Fatalf("excluded run bypassed durable owner uniqueness: %+v", projection)
+	}
+}
+
 func TestCompletedJobChargesObservedMinutesNotItsCap(t *testing.T) {
 	root := budgetProjectionRoot(t)
 	writeBudgetJob(t, root, "completed", "reserve-completed", 3, 120, "completed", budgetJobLife{

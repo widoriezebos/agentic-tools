@@ -36,6 +36,11 @@ func terminalAttempt(runID string) obligationstate.TerminalAttempt {
 		ObservedCostMinutes:  5,
 		WeightGeneration:     1,
 		Breaker:              run.BreakerClosed,
+		Observation: &obligationstate.AssumptionObservation{
+			ObservedAt: endedAt, Platform: "fixture/os", ToolchainIdentity: "fixture-go",
+			SurfaceDigest: "fixture-digest", ActiveJobs: 1, DurationSeconds: 300,
+			AssumptionState: run.AssumptionMatch, DriftedFields: []string{},
+		},
 	}
 }
 

@@ -253,6 +253,12 @@ func jobRecordPath(name string) string {
 // spending view for the claim revision. It has no side effects; health and
 // pre-publication admission consume the same complete projection.
 func ProjectBudget(repoRoot string, file *goal.GoalFile, now time.Time) BudgetProjection {
+	return ProjectBudgetWithoutRun(repoRoot, file, now, "")
+}
+
+// ProjectBudgetWithoutRun reconstructs spend while omitting one concluding
+// run from its live record and durable terminal charge state.
+func ProjectBudgetWithoutRun(repoRoot string, file *goal.GoalFile, now time.Time, excludeRunID string) BudgetProjection {
 	if file == nil {
 		return unknownBudget("", 0, "plans/goals", "the goal record is missing")
 	}
@@ -588,7 +594,7 @@ func ProjectBudget(repoRoot string, file *goal.GoalFile, now time.Time) BudgetPr
 			}
 			return unknownBudget(file.Id, revision, logicalPath, reason)
 		}
-		if record.GoalId != file.Id {
+		if record.GoalId != file.Id || record.RunId == excludeRunID {
 			continue
 		}
 		if record.Governed == nil {
@@ -643,6 +649,9 @@ func ProjectBudget(repoRoot string, file *goal.GoalFile, now time.Time) BudgetPr
 		}
 	}
 	for runID, owned := range durable {
+		if runID == excludeRunID {
+			continue
+		}
 		attempt := owned.attempt
 		if !owned.seen && attempt.PrunedAt == "" {
 			return unknownBudget(file.Id, revision, owned.record,

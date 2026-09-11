@@ -174,6 +174,7 @@ func TestProofGovernedReservationJoin(t *testing.T) {
 	store.ObserveGoverned = func(*run.Record, time.Time) run.AssumptionObservation {
 		return run.AssumptionObservation{ObservedAt: clock.Format(time.RFC3339), AssumptionState: run.AssumptionMatch}
 	}
+	store.ProjectSpend = func(*run.Record, time.Time) (run.SpendSnapshot, string) { return run.SpendSnapshot{}, "" }
 	nonce, err := store.Launch(run.Caller{Class: "MAIN", MainId: "main-fixture", OwnerLineage: "main-fixture"}, run.LaunchParams{
 		Id: "governed-proof", Kind: "suite", Display: "governed proof owner", Log: "artifacts/governed.log",
 		GoalId: "bounded", ObligationRevision: 7, StandingShared: true,

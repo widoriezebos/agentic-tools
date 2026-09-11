@@ -50,17 +50,13 @@ func runCaller(root string, callerPid int64, mode string) (run.Caller, error) {
 // ALWAYS wires CurrentEpoch so a stale-epoch child cannot mutate
 // records after a takeover; only library/test use leaves the seam nil.
 func runStore(root string) *run.Store {
-	return &run.Store{Root: root, CurrentEpoch: func() (*int64, bool) {
+	return dispatchcore.NewConcludingRunStore(root, func() (*int64, bool) {
 		view, err := classifyVerbCaller(root, int64(os.Getpid()))
 		if err != nil {
 			return nil, false
 		}
 		return view.ClaimEpoch, true
-	}, AdmitGoverned: func(request run.GovernedAdmissionRequest) (run.GovernedAdmissionResult, error) {
-		return dispatchcore.EvaluateGovernedRunAdmission(root, request, time.Now().UTC())
-	}, ObserveGoverned: func(record *run.Record, now time.Time) run.AssumptionObservation {
-		return dispatchcore.ObserveGovernedRun(root, record, now)
-	}}
+	})
 }
 
 func holdGovernedGoalRevision(root, goalID string, obligationRevision uint64, standing bool, tag string) (func(), error) {

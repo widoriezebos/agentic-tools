@@ -262,6 +262,7 @@ func completeGreenProofForGoal(t *testing.T, root, id, goalID string, obligation
 	store.ObserveGoverned = func(record *run.Record, ended time.Time) run.AssumptionObservation {
 		return dispatch.ObserveGovernedRun(root, record, ended)
 	}
+	store.ProjectSpend = func(*run.Record, time.Time) (run.SpendSnapshot, string) { return run.SpendSnapshot{}, "" }
 	nonce, err := store.Launch(run.Caller{Class: "HUMAN"}, run.LaunchParams{Id: id, Kind: "suite",
 		Display: "weight-triggered direct validation", Log: filepath.Join("artifacts", id+".log"), GoalId: goalID,
 		ObligationRevision: obligationRevision, StandingShared: true})

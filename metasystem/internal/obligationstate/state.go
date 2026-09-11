@@ -29,20 +29,34 @@ var goalIDPattern = regexp.MustCompile(`^[a-z0-9][a-z0-9-]{0,63}$`)
 // is written before deliberate run-record deletion; absence without that
 // marker is therefore evidence loss and must fail closed at reconstruction.
 type TerminalAttempt struct {
-	RunID                string  `json:"runId"`
-	Status               string  `json:"status"`
-	StartedAt            string  `json:"startedAt"`
-	EndedAt              string  `json:"endedAt"`
-	AttemptOrdinal       uint64  `json:"attemptOrdinal"`
-	ExecutionCostMinutes uint64  `json:"executionCostMinutes"`
-	ObservedCostMinutes  uint64  `json:"observedCostMinutes"`
-	WeightGeneration     uint64  `json:"weightGeneration"`
-	BudgetEpoch          *uint64 `json:"budgetEpoch,omitempty"`
-	Breaker              string  `json:"breaker"`
-	Exhausted            bool    `json:"exhausted"`
-	ExhaustionReason     string  `json:"exhaustionReason,omitempty"`
-	RetroDebtRaised      bool    `json:"retroDebtRaised,omitempty"`
-	PrunedAt             string  `json:"prunedAt,omitempty"`
+	RunID                string                 `json:"runId"`
+	Status               string                 `json:"status"`
+	StartedAt            string                 `json:"startedAt"`
+	EndedAt              string                 `json:"endedAt"`
+	AttemptOrdinal       uint64                 `json:"attemptOrdinal"`
+	ExecutionCostMinutes uint64                 `json:"executionCostMinutes"`
+	ObservedCostMinutes  uint64                 `json:"observedCostMinutes"`
+	WeightGeneration     uint64                 `json:"weightGeneration"`
+	BudgetEpoch          *uint64                `json:"budgetEpoch,omitempty"`
+	Breaker              string                 `json:"breaker"`
+	Exhausted            bool                   `json:"exhausted"`
+	ExhaustionReason     string                 `json:"exhaustionReason,omitempty"`
+	RetroDebtRaised      bool                   `json:"retroDebtRaised,omitempty"`
+	Observation          *AssumptionObservation `json:"observation,omitempty"`
+	PrunedAt             string                 `json:"prunedAt,omitempty"`
+}
+
+// AssumptionObservation preserves the terminal observation independently of
+// the prunable run record so a partial-commit retry can adopt the same facts.
+type AssumptionObservation struct {
+	ObservedAt        string   `json:"observedAt"`
+	Platform          string   `json:"platform"`
+	ToolchainIdentity string   `json:"toolchainIdentity"`
+	SurfaceDigest     string   `json:"surfaceDigest"`
+	ActiveJobs        uint64   `json:"activeJobs"`
+	DurationSeconds   uint64   `json:"durationSeconds"`
+	AssumptionState   string   `json:"assumptionState"`
+	DriftedFields     []string `json:"driftedFields"`
 }
 
 type State struct {

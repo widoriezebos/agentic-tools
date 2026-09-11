@@ -245,7 +245,7 @@ func (s *Store) terminalizeWithVerdict(record *Record, verdict string, exitCode 
 		endedAt = &now
 	}
 	raiseDebt := false
-	_, err = s.cas(record.RunId, from, record.Generation, func(r *Record) error {
+	concluded, err := s.cas(record.RunId, from, record.Generation, func(r *Record) error {
 		r.Status = verdict
 		r.ProvisionalVerdict = nil
 		r.TerminalSeq = &seq
@@ -256,9 +256,9 @@ func (s *Store) terminalizeWithVerdict(record *Record, verdict string, exitCode 
 		return err
 	})
 	if err == nil {
-		result.Transitioned, result.From, result.To = true, from, verdict
+		result.Transitioned, result.From, result.To = true, from, concluded.Status
 		s.emit("run-transition", map[string]string{
-			"runId": record.RunId, "from": from, "to": verdict,
+			"runId": record.RunId, "from": from, "to": concluded.Status,
 			"generation": fmt.Sprint(record.Generation),
 		})
 		if raiseDebt {
@@ -278,7 +278,7 @@ func (s *Store) terminalize(record *Record, status string, exitCode *int64, note
 	}
 	from := record.Status
 	raiseDebt := false
-	_, err = s.cas(record.RunId, from, record.Generation, func(r *Record) error {
+	concluded, err := s.cas(record.RunId, from, record.Generation, func(r *Record) error {
 		r.Status = status
 		r.TerminalSeq = &seq
 		r.ExitCode = exitCode
@@ -291,9 +291,9 @@ func (s *Store) terminalize(record *Record, status string, exitCode *int64, note
 		return err
 	})
 	if err == nil {
-		result.Transitioned, result.From, result.To = true, from, status
+		result.Transitioned, result.From, result.To = true, from, concluded.Status
 		s.emit("run-transition", map[string]string{
-			"runId": record.RunId, "from": from, "to": status,
+			"runId": record.RunId, "from": from, "to": concluded.Status,
 			"generation": fmt.Sprint(record.Generation),
 		})
 		if raiseDebt {
@@ -309,8 +309,44 @@ func (s *Store) applyGovernedTerminal(record *Record, verdict, endedAt string) (
 	if record.Governed == nil {
 		return false, nil
 	}
-	ended, endedErr := time.Parse(time.RFC3339, endedAt)
+	if s.ProjectSpend == nil {
+		return false, fmt.Errorf("terminal governed run %s cannot settle its spend: %w", record.RunId, ErrNoSpendProjection)
+	}
 	started, startedErr := time.Parse(time.RFC3339, record.StartedAt)
+	state, found, stateErr := obligationstate.Load(s.Root, record.GoalId, record.Governed.GoalRevision,
+		record.Governed.ObligationRevision)
+	if stateErr != nil {
+		return false, fmt.Errorf("terminal governed run %s cannot inspect durable obligation state: %w", record.RunId, stateErr)
+	}
+	if found {
+		for _, existing := range state.Attempts {
+			if existing.RunID != record.RunId || existing.PrunedAt != "" {
+				continue
+			}
+			record.Status = existing.Status
+			record.EndedAt = strPtr(existing.EndedAt)
+			record.Governed.ObservedCostMinutes = &existing.ObservedCostMinutes
+			record.Governed.Breaker = existing.Breaker
+			record.Governed.Exhausted = existing.Exhausted
+			record.Governed.ExhaustionReason = existing.ExhaustionReason
+			record.Governed.RetroDebtRaised = existing.RetroDebtRaised
+			if existing.Observation != nil {
+				record.Governed.Observation = observationFromDurable(existing.Observation)
+			} else {
+				adoptedEnd, adoptedErr := time.Parse(time.RFC3339, existing.EndedAt)
+				observation := AssumptionObservation{ObservedAt: s.now().UTC().Format(time.RFC3339),
+					AssumptionState: AssumptionUnavailable, DriftedFields: []string{"observation"}}
+				if s.ObserveGoverned != nil {
+					observation = s.ObserveGoverned(record, adoptedEnd)
+				} else if adoptedErr != nil || startedErr != nil || adoptedEnd.Before(started) {
+					observation.DriftedFields = []string{"durationSeconds"}
+				}
+				record.Governed.Observation = &observation
+			}
+			return existing.Exhausted && !existing.RetroDebtRaised, nil
+		}
+	}
+	ended, endedErr := time.Parse(time.RFC3339, endedAt)
 	observation := AssumptionObservation{ObservedAt: s.now().UTC().Format(time.RFC3339),
 		AssumptionState: AssumptionUnavailable, DriftedFields: []string{"observation"}}
 	if s.ObserveGoverned != nil {
@@ -333,14 +369,26 @@ func (s *Store) applyGovernedTerminal(record *Record, verdict, endedAt string) (
 		record.Governed.ExhaustionReason = "ASSUMPTION_DRIFT"
 	}
 	startedBudget, budgetErr := time.Parse(time.RFC3339, record.Governed.BudgetStartedAt)
-	reached := record.Governed.AttemptOrdinal >= record.Governed.Budget.AttemptLimit ||
-		record.Governed.ReservedBefore+observedMinutes >= record.Governed.Budget.ReservedJobMinutesLimit ||
+	snapshot, unknown := s.ProjectSpend(record, s.now())
+	reachedReserved := unknown != "" || reachesReservedLimit(record.Governed.Budget.ReservedJobMinutesLimit,
+		snapshot.ObservedMinutes, snapshot.OpenCapMinutes, snapshot.ProofReservationMinutes, observedMinutes)
+	reached := record.Governed.AttemptOrdinal >= record.Governed.Budget.AttemptLimit || reachedReserved ||
 		(budgetErr == nil && !ended.Before(startedBudget) && ended.Sub(startedBudget) >= record.Governed.Budget.ElapsedDuration())
 	failing := verdict != StatusGreen || observation.AssumptionState != AssumptionMatch
 	if failing && reached {
 		record.Governed.Exhausted = true
 		record.Governed.Breaker = BreakerExhausted
-		record.Governed.ExhaustionReason = "terminal non-green attempt reached the human-set tuple"
+		if unknown != "" {
+			record.Governed.ExhaustionReason = "BUDGET_UNKNOWN at conclusion: " + unknown
+		} else {
+			reason := fmt.Sprintf("terminal non-green attempt reached the human-set tuple: observed=%d open-caps=%d",
+				snapshot.ObservedMinutes, snapshot.OpenCapMinutes)
+			if snapshot.ProofReservationMinutes != 0 {
+				reason += fmt.Sprintf(" proof=%d", snapshot.ProofReservationMinutes)
+			}
+			record.Governed.ExhaustionReason = reason + fmt.Sprintf(" attempt=%d limit=%d", observedMinutes,
+				record.Governed.Budget.ReservedJobMinutesLimit)
+		}
 	}
 	weightGeneration := uint64(0)
 	if record.Governed.WeightGeneration != nil {
@@ -353,10 +401,44 @@ func (s *Store) applyGovernedTerminal(record *Record, verdict, endedAt string) (
 			ObservedCostMinutes: observedMinutes, WeightGeneration: weightGeneration, BudgetEpoch: record.Governed.BudgetEpoch,
 			Breaker:   record.Governed.Breaker,
 			Exhausted: record.Governed.Exhausted, ExhaustionReason: record.Governed.ExhaustionReason,
+			Observation: observationToDurable(record.Governed.Observation),
 		}); err != nil {
 		return false, fmt.Errorf("terminal governed run %s could not publish durable obligation state: %w", record.RunId, err)
 	}
 	return record.Governed.Exhausted, nil
+}
+
+func observationToDurable(observation *AssumptionObservation) *obligationstate.AssumptionObservation {
+	if observation == nil {
+		return nil
+	}
+	return &obligationstate.AssumptionObservation{
+		ObservedAt: observation.ObservedAt, Platform: observation.Platform, ToolchainIdentity: observation.ToolchainIdentity,
+		SurfaceDigest: observation.SurfaceDigest, ActiveJobs: observation.ActiveJobs, DurationSeconds: observation.DurationSeconds,
+		AssumptionState: observation.AssumptionState, DriftedFields: append([]string(nil), observation.DriftedFields...),
+	}
+}
+
+func observationFromDurable(observation *obligationstate.AssumptionObservation) *AssumptionObservation {
+	if observation == nil {
+		return nil
+	}
+	return &AssumptionObservation{
+		ObservedAt: observation.ObservedAt, Platform: observation.Platform, ToolchainIdentity: observation.ToolchainIdentity,
+		SurfaceDigest: observation.SurfaceDigest, ActiveJobs: observation.ActiveJobs, DurationSeconds: observation.DurationSeconds,
+		AssumptionState: observation.AssumptionState, DriftedFields: append([]string(nil), observation.DriftedFields...),
+	}
+}
+
+func reachesReservedLimit(limit uint64, values ...uint64) bool {
+	remaining := limit
+	for _, value := range values {
+		if value >= remaining {
+			return true
+		}
+		remaining -= value
+	}
+	return false
 }
 
 func (s *Store) raiseGovernedDebt(runID string) error {
@@ -430,7 +512,7 @@ func (s *Store) SweepStale(epoch int64,
 				proofBeforeGone: true,
 			})
 			if outcome.err != nil {
-				return fmt.Errorf("run sweep cannot stop stale run %s: %v", record.RunId, outcome.err)
+				return fmt.Errorf("run sweep cannot stop stale run %s: %w", record.RunId, outcome.err)
 			}
 			if outcome.Result == StopResultNotStopped {
 				if record.Custody != CustodyWrapped {

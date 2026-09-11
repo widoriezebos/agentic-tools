@@ -17,6 +17,7 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -72,6 +73,8 @@ const (
 var runIdRe = regexp.MustCompile(`^[a-z0-9][a-z0-9-]{0,63}$`)
 var nonceRe = regexp.MustCompile(`^[0-9a-f]{32}$`)
 
+var ErrNoSpendProjection = errors.New("run store carries no ProjectSpend seam; build it with dispatch.NewConcludingRunStore")
+
 // Evidence is how a conclusion is proven.
 type Evidence struct {
 	Mode           string `json:"mode"`
@@ -107,6 +110,14 @@ type AssumptionObservation struct {
 	DurationSeconds   uint64   `json:"durationSeconds"`
 	AssumptionState   string   `json:"assumptionState"`
 	DriftedFields     []string `json:"driftedFields"`
+}
+
+// SpendSnapshot is a goal's settled spend at one instant, excluding the run
+// being concluded: minutes of ended work and ceilings of open work.
+type SpendSnapshot struct {
+	ObservedMinutes         uint64
+	OpenCapMinutes          uint64
+	ProofReservationMinutes uint64
 }
 
 // GovernedAttempt binds a recurring run to one immutable obligation and the
@@ -235,6 +246,9 @@ type Store struct {
 	// explicitly names an obligation revision.
 	AdmitGoverned   func(GovernedAdmissionRequest) (GovernedAdmissionResult, error)
 	ObserveGoverned func(*Record, time.Time) AssumptionObservation
+	// ProjectSpend re-projects the goal at conclusion. A non-empty unknown
+	// names the record that prevented a trustworthy projection.
+	ProjectSpend func(record *Record, now time.Time) (snapshot SpendSnapshot, unknown string)
 	// FenceRead is the process-creation fence reader. Production uses the
 	// durable stop fence; tests can deterministically close it between the
 	// two reads of the creation handshake.

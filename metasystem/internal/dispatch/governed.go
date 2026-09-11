@@ -2,6 +2,7 @@ package dispatch
 
 import (
 	"fmt"
+	"math"
 	"runtime"
 	"sort"
 	"time"
@@ -12,6 +13,8 @@ import (
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/obligationstate"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/run"
 )
+
+const governedObligationRevisionMismatch = "obligationRevision"
 
 // ObserveGovernedAssumptions evaluates only the five typed fields declared by
 // the obligation. There is intentionally no expression or plug-in language.
@@ -53,6 +56,10 @@ func ObserveGovernedAssumptions(repoRoot string, expected goal.ObligationAssumpt
 // ObserveGovernedRun resolves active executions from the same budget
 // projection used by admission. Any unreadable observation fails closed.
 func ObserveGovernedRun(repoRoot string, record *run.Record, now time.Time) run.AssumptionObservation {
+	return observeGovernedRun(repoRoot, record, now, "")
+}
+
+func observeGovernedRun(repoRoot string, record *run.Record, now time.Time, excludeRunID string) run.AssumptionObservation {
 	unavailable := func(field string) run.AssumptionObservation {
 		return run.AssumptionObservation{ObservedAt: now.UTC().Format(time.RFC3339), AssumptionState: run.AssumptionUnavailable,
 			DriftedFields: []string{field}}
@@ -63,9 +70,9 @@ func ObserveGovernedRun(repoRoot string, record *run.Record, now time.Time) run.
 	binding, err := ResolveGoalBinding(repoRoot, record.GoalId, now)
 	if err != nil || binding.Revision != record.Governed.GoalRevision || binding.File.Obligation == nil ||
 		binding.File.Obligation.Revision != record.Governed.ObligationRevision {
-		return unavailable("obligationRevision")
+		return unavailable(governedObligationRevisionMismatch)
 	}
-	projection := ProjectBudget(repoRoot, binding.File, now)
+	projection := ProjectBudgetWithoutRun(repoRoot, binding.File, now, excludeRunID)
 	if projection.Status != BudgetKnown {
 		return unavailable("activeJobs")
 	}
@@ -73,8 +80,50 @@ func ObserveGovernedRun(repoRoot string, record *run.Record, now time.Time) run.
 	if err != nil || now.Before(started) {
 		return unavailable("durationSeconds")
 	}
+	activeJobs := projection.ActiveJobs
+	if excludeRunID != "" {
+		if activeJobs == math.MaxUint64 {
+			return unavailable("activeJobs")
+		}
+		activeJobs++
+	}
 	return ObserveGovernedAssumptions(repoRoot, record.Governed.ExpectedAssumptions,
-		projection.ActiveJobs, uint64(now.Sub(started)/time.Second), now)
+		activeJobs, uint64(now.Sub(started)/time.Second), now)
+}
+
+// SettledSpendAtConclusion projects every spend owner except the run whose
+// terminal record is being written.
+func SettledSpendAtConclusion(repoRoot string, record *run.Record, now time.Time) (run.SpendSnapshot, string) {
+	binding, err := ResolveGoalBinding(repoRoot, record.GoalId, now)
+	if err != nil {
+		return run.SpendSnapshot{}, fmt.Sprintf("record=%s reason=%s", record.RunId, err)
+	}
+	if record.Governed == nil || binding.Revision != record.Governed.GoalRevision || binding.File.Obligation == nil ||
+		binding.File.Obligation.Revision != record.Governed.ObligationRevision {
+		return run.SpendSnapshot{}, fmt.Sprintf("record=%s reason=%s", record.RunId, governedObligationRevisionMismatch)
+	}
+	projection := ProjectBudgetWithoutRun(repoRoot, binding.File, now, record.RunId)
+	if projection.Status != BudgetKnown {
+		return run.SpendSnapshot{}, fmt.Sprintf("record=%s reason=%s", projection.Unknown.Record, projection.Unknown.Reason)
+	}
+	return run.SpendSnapshot{ObservedMinutes: projection.ObservedJobMinutes, OpenCapMinutes: projection.OpenCapMinutes,
+		ProofReservationMinutes: projection.ProofReservationMinutes}, ""
+}
+
+// NewConcludingRunStore is the production constructor for a run store that
+// may terminalize a governed run.
+func NewConcludingRunStore(root string, currentEpoch func() (*int64, bool)) *run.Store {
+	return &run.Store{Root: root, CurrentEpoch: currentEpoch,
+		AdmitGoverned: func(request run.GovernedAdmissionRequest) (run.GovernedAdmissionResult, error) {
+			return EvaluateGovernedRunAdmission(root, request, time.Now().UTC())
+		},
+		ObserveGoverned: func(record *run.Record, now time.Time) run.AssumptionObservation {
+			return observeGovernedRun(root, record, now, record.RunId)
+		},
+		ProjectSpend: func(record *run.Record, now time.Time) (run.SpendSnapshot, string) {
+			return SettledSpendAtConclusion(root, record, now)
+		},
+	}
 }
 
 // EvaluateGovernedRunAdmission binds authorization and the complete existing

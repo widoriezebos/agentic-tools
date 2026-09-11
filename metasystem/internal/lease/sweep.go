@@ -11,8 +11,8 @@ import (
 
 	"golang.org/x/sys/unix"
 
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/dispatch"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/identity"
-	"github.com/widoriezebos/agentic-tools/metasystem/internal/run"
 )
 
 // terminalStatuses are the job states the sweep must never touch — the job
@@ -64,7 +64,7 @@ func (c *claimer) cleanupStaleJobs(epoch int64) error {
 // drain, and the forced conclusion; this side
 // supplies the group-proof and kill seams the job sweep already tests.
 func (c *claimer) cleanupStaleRuns(epoch int64) error {
-	store := &run.Store{Root: c.root}
+	store := dispatch.NewConcludingRunStore(c.root, nil)
 	return store.SweepStale(epoch,
 		func(pgid int64, nonce string) (bool, bool) { return groupOwnsTag(pgid, nonce, nil) },
 		func(pgid int64) error {

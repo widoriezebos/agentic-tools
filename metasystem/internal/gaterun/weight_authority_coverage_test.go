@@ -37,6 +37,7 @@ func completeWeightProof(t *testing.T, root, id string, now *time.Time, exitCode
 	store.ObserveGoverned = func(record *run.Record, ended time.Time) run.AssumptionObservation {
 		return dispatch.ObserveGovernedRun(root, record, ended)
 	}
+	store.ProjectSpend = func(*run.Record, time.Time) (run.SpendSnapshot, string) { return run.SpendSnapshot{}, "" }
 	nonce, err := store.Launch(run.Caller{Class: "HUMAN"}, run.LaunchParams{Id: id, Kind: "suite",
 		Display: "weight authority proof", Log: filepath.Join("artifacts", id+".log"), GoalId: "bounded",
 		ObligationRevision: 3, StandingShared: true})

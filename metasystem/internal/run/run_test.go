@@ -43,8 +43,9 @@ func testStore(t *testing.T) *Store {
 		Now:  func() time.Time { return base },
 		// Synthetic pids are their own group leaders unless a test
 		// overrides with the real kernel.
-		Getpgid: func(pid int64) (int64, error) { return pid, nil },
-		AllPids: func() ([]int64, error) { return []int64{}, nil },
+		Getpgid:      func(pid int64) (int64, error) { return pid, nil },
+		AllPids:      func() ([]int64, error) { return []int64{}, nil },
+		ProjectSpend: func(*Record, time.Time) (SpendSnapshot, string) { return SpendSnapshot{}, "" },
 	}
 }
 

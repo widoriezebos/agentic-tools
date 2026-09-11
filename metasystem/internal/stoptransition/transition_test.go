@@ -11,8 +11,11 @@ import (
 	"time"
 
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/dispatch"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/goalbudget"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/governance"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/identity"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/lock"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/obligationstate"
 	runpkg "github.com/widoriezebos/agentic-tools/metasystem/internal/run"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/steward"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/stopfence"
@@ -192,6 +195,60 @@ func TestSuiteHostedRunConcludesFromSidecarBeforeAnyRunSignal(t *testing.T) {
 	concluded, err := store.Read("suite-host")
 	if err != nil || concluded == nil || concluded.Status != runpkg.StatusRed || concluded.ExitCode == nil || *concluded.ExitCode != 7 {
 		t.Fatalf("suite-hosted record=%+v err=%v", concluded, err)
+	}
+}
+
+func TestStopTransitionRunFamilyCarriesGovernedSpendProjection(t *testing.T) {
+	root := t.TempDir()
+	now := time.Date(2026, 8, 28, 10, 30, 0, 0, time.UTC)
+	pid := int64(64)
+	states := fakeProber{pid: identity.Alive}
+	family := newRunFamily(root, 1, &suiteStopGroups{groups: map[int64]bool{pid: true}})
+	if family.store.ProjectSpend == nil {
+		t.Fatal("production stop-transition run family has no governed spend projection")
+	}
+	family.store.Now = func() time.Time { return now }
+	family.store.Prober = states
+	family.store.Getpgid = func(int64) (int64, error) { return pid, nil }
+	family.store.AllPids = func() ([]int64, error) { return nil, nil }
+	weightGeneration := uint64(0)
+	family.store.AdmitGoverned = func(runpkg.GovernedAdmissionRequest) (runpkg.GovernedAdmissionResult, error) {
+		return runpkg.GovernedAdmissionResult{Attempt: runpkg.GovernedAttempt{
+			GoalRevision: 3, ObligationRevision: 6, Recurrence: governance.StandingSharedProcess,
+			WeightGeneration: &weightGeneration, ExecutionCostMinutes: 30, AttemptOrdinal: 1,
+			Budget:          goalbudget.Budget{ElapsedLimit: "4h", AttemptLimit: 2, ReservedJobMinutesLimit: 60, ActiveJobLimit: 1},
+			BudgetStartedAt: now.Format(time.RFC3339), ExpectedAssumptions: governance.ObligationAssumptions{
+				Recurrence: governance.StandingSharedProcess, Platform: "fixture/os", ToolchainIdentity: "fixture-go",
+				SurfaceDigest: "fixture-digest", MaxActiveJobs: 1, TimingEnvelopeSeconds: 1800, ObservationSource: "run-terminal-record",
+			}, AdmissionDecision: governance.ConsequenceDecision{Apply: true}, Breaker: runpkg.BreakerClosed,
+		}}, nil
+	}
+	nonce, err := family.store.Launch(runpkg.Caller{Class: "HUMAN"}, runpkg.LaunchParams{Id: "governed-stop", Kind: "suite",
+		Display: "governed stop", Log: "artifacts/governed-stop.log", GoalId: "bounded", ObligationRevision: 6, StandingShared: true})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := family.store.Bind("governed-stop", nonce, pid, pid); err != nil {
+		t.Fatal(err)
+	}
+	record, err := family.store.Read("governed-stop")
+	if err != nil || record == nil {
+		t.Fatalf("read governed stop run: %+v %v", record, err)
+	}
+	if err := family.store.WriteSidecar(record.RunId, record.Generation, record.LaunchNonce, 1); err != nil {
+		t.Fatal(err)
+	}
+	states[pid] = identity.Dead
+	family.items["run:governed-stop"] = *record
+	outcome, err := family.Stop(Item{Key: "run:governed-stop", Survivor: stopfence.Survivor{Component: "run", ID: "governed-stop", Pid: pid}})
+	if err != nil || !outcome.Complete {
+		t.Fatalf("production run-family stop did not complete: %+v %v", outcome, err)
+	}
+	concluded, err := family.store.Read("governed-stop")
+	state, found, stateErr := obligationstate.Load(root, "bounded", 3, 6)
+	if err != nil || stateErr != nil || concluded == nil || concluded.Status != runpkg.StatusRed || !found || len(state.Attempts) != 1 ||
+		!strings.Contains(concluded.Governed.ExhaustionReason, "BUDGET_UNKNOWN at conclusion: record=governed-stop reason=") {
+		t.Fatalf("stop did not durably carry the projection reason: run=%+v state=%+v found=%t err=%v stateErr=%v", concluded, state, found, err, stateErr)
 	}
 }
 

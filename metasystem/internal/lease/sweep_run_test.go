@@ -4,9 +4,22 @@ import (
 	"os"
 	"strings"
 	"testing"
+	"time"
 
+	"golang.org/x/sys/unix"
+
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/goalbudget"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/governance"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/identity"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/obligationstate"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/run"
 )
+
+type sweepGovernedProber struct{ started time.Time }
+
+func (p sweepGovernedProber) Probe(pid int64) (identity.Exact, identity.Liveness, error) {
+	return identity.Exact{Pid: pid, StartedAt: p.started}, identity.Alive, nil
+}
 
 // MON-06 (sweep side): a stale-epoch run without a provable group makes
 // the sweep REFUSE loudly — it never signals blind and never silently
@@ -51,5 +64,51 @@ func TestRunSweepProofOrRefuse(t *testing.T) {
 		`"claimEpoch":9`, `"claimEpoch":null`, 1)), 0o644)
 	if err := c.cleanupStaleRuns(5); err != nil {
 		t.Fatalf("human run swept: %v", err)
+	}
+}
+
+func TestCleanupStaleRunsCarriesGovernedSpendProjection(t *testing.T) {
+	savedPids, savedPgid, savedCommand, savedKill := sweepAllPids, sweepGetpgid, sweepProcessCommand, sweepKill
+	defer func() {
+		sweepAllPids, sweepGetpgid, sweepProcessCommand, sweepKill = savedPids, savedPgid, savedCommand, savedKill
+	}()
+	root := t.TempDir()
+	c, _ := newClaimer(root)
+	now := time.Date(2026, 8, 28, 10, 30, 0, 0, time.UTC)
+	pid := int64(424242)
+	epoch := int64(1)
+	weightGeneration := uint64(0)
+	store := &run.Store{Root: root, Now: func() time.Time { return now }, Prober: sweepGovernedProber{started: now},
+		Getpgid: func(int64) (int64, error) { return pid, nil }, AllPids: func() ([]int64, error) { return nil, nil },
+		AdmitGoverned: func(run.GovernedAdmissionRequest) (run.GovernedAdmissionResult, error) {
+			return run.GovernedAdmissionResult{Attempt: run.GovernedAttempt{GoalRevision: 3, ObligationRevision: 6,
+				WeightGeneration: &weightGeneration, Recurrence: governance.StandingSharedProcess, ExecutionCostMinutes: 30, AttemptOrdinal: 1,
+				Budget:          goalbudget.Budget{ElapsedLimit: "4h", AttemptLimit: 2, ReservedJobMinutesLimit: 60, ActiveJobLimit: 1},
+				BudgetStartedAt: now.Format(time.RFC3339), ExpectedAssumptions: governance.ObligationAssumptions{
+					Recurrence: governance.StandingSharedProcess, Platform: "fixture/os", ToolchainIdentity: "fixture-go",
+					SurfaceDigest: "fixture-digest", MaxActiveJobs: 1, TimingEnvelopeSeconds: 1800, ObservationSource: "run-terminal-record",
+				}, AdmissionDecision: governance.ConsequenceDecision{Apply: true}, Breaker: run.BreakerClosed}}, nil
+		}}
+	nonce, err := store.Launch(run.Caller{Class: "MAIN", MainId: "old", OwnerLineage: "old", ClaimEpoch: &epoch}, run.LaunchParams{
+		Id: "governed-sweep", Kind: "suite", Display: "governed sweep", Log: "artifacts/governed-sweep.log",
+		GoalId: "bounded", ObligationRevision: 6, StandingShared: true})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := store.Bind("governed-sweep", nonce, pid, pid); err != nil {
+		t.Fatal(err)
+	}
+	sweepAllPids = func() ([]int64, error) { return []int64{pid}, nil }
+	sweepGetpgid = func(int64) (int64, error) { return pid, nil }
+	sweepProcessCommand = func(int64, identity.FixtureProbe) (string, bool) { return "wrapper " + nonce, true }
+	sweepKill = func(int64, unix.Signal) error { return nil }
+	if err := c.cleanupStaleRuns(5); err != nil {
+		t.Fatal(err)
+	}
+	concluded, err := store.Read("governed-sweep")
+	state, found, stateErr := obligationstate.Load(root, "bounded", 3, 6)
+	if err != nil || stateErr != nil || concluded == nil || !run.Terminal(concluded.Status) || !found || len(state.Attempts) != 1 ||
+		!strings.Contains(concluded.Governed.ExhaustionReason, "BUDGET_UNKNOWN at conclusion: record=governed-sweep reason=") {
+		t.Fatalf("stale-run sweep did not durably carry its projection: run=%+v state=%+v found=%t err=%v stateErr=%v", concluded, state, found, err, stateErr)
 	}
 }
