@@ -7,10 +7,12 @@
 - Origin: human
 - Next step: Design first: read internal/goal approval.go, stop.go and the breach handling, and R-88, R-90 and R-91 in memory/rulings.md; write the design with the three rules and the guarantees they keep; critique; build; land.
 - OpenedAt: 2026-09-11T15:45:08Z
-- Revision: 1
+- Revision: 2
+- Pinned: m1e
 - Budget: elapsedLimit=1d attemptLimit=10 reservedJobMinutesLimit=1200 activeJobLimit=1 reviewRoundLimit=3
 - BudgetExceptions: 0
 
 History:
 - 2026-09-11T15:45:08Z 9QD56QEP3YRJBVPYD7Y5S3BS7S-m1e-5083721b open actor=m1e+main-1789141490-27414-b9c0d2 targets=budget-extends-by-consumption-and-breach-parks
-Integrity: sha256=855608125829efa89c21a9fd676fb6caa6dd351e2313e263cf093c77841eb255
+- 2026-09-11T15:47:22Z Q7D6D2F0439PVS81XV0J9TX583-m1-c6925449 set-pin actor=human:Wido targets=budget-extends-by-consumption-and-breach-parks
+Integrity: sha256=1992c0ff6828df1beb59a5e807cb33bd8e9a6e2a1994ae9feba14de15bb90ee9
