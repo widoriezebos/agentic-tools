@@ -1,6 +1,6 @@
 # deep-battery-under-ten-minutes
 
-- State: claimed
+- State: approved
 - Priority: 1
 - Sequence: 12
 - Risk: severity=2 novelty=2 exposure=3 accumulation=2 basis="severity 2: a wrong merge of shard results could pass a red test unseen; novelty 2: a worker pool and shard merging are new shapes in proofrun; exposure 3: every cadence run and every seat consumes the result; accumulation 2: a flake introduced by concurrency compounds across landings"
@@ -9,13 +9,11 @@
 - Origin: human
 - Next step: STATE 2026-09-11 22:05Z (m1e, coordinator-built, human commits on Wido's word): landed the worker pool (fc3c0b98; testing.concurrency, default cores/4), longest-first order (6adaa73a), in-group shards for the two coverage groups (864c9581), the sharded race gate (b13771d7), cadence reds fixed forward (6284fff4, b78b5aea, b13771d7, 46098b94), and bb1e2dfd: every bed's scenarios side by side (dispatch, supervision, goal-cli and health beds joined the shared runner; the adoption bed is eight scenarios) plus the gate-only cmd reds fixed at their real cause (the gate's GOFLAGS=-mod=readonly entering the group identity on the landing side only; the TestMain scrub eating the governed locators). Measured (diagnostic attempt proof-mtxc3kvu, five sections side by side, 608 s): adoption 929 -> 448 s, dispatcher 713 -> 585 s, supervision 422 -> 389 s, goal-cli 126 -> 87 s. Last full cadence wall 1177 s (proof-mtxaf7t4) before bb1e2dfd. NEXT: the dispatch scenario alone is 574 s of about-five-second dispatcher steps (a hundred dispatches on one bed); profile a step's phases (trace in dispatch.sh) and either cut the per-dispatch cost or split the scenario into clusters with their own bed; then a full cadence run; the remaining walls are the gate (592 s), goal-full-coverage (552 s) and missionrunner (447 s), and the pool cap (4 on 18 cores) bounds the sum, so the cap default may need to rise to cores/3 once the beds stop oversubscribing. DONE still requires three consecutive green cadence runs under ten minutes with their attempt ids.
 - OpenedAt: 2026-09-10T12:02:35Z
-- Revision: 13
+- Revision: 14
 - Pinned: m1e
 - Budget: elapsedLimit=2d attemptLimit=24 reservedJobMinutesLimit=1200 activeJobLimit=1 reviewRoundLimit=3
 - BudgetExceptions: 1
 - Approved: by=human:Wido at=2026-09-11T19:55:43Z revision=13 opid=WD3K43ZFXYPYJHYYNPV2SHSVXS-m1-c6925449 authority=proven digest=48cbfde7036eb8cce88fb51eed374c47633e9aad2785e0059680914d9082cb69
-- Claimed: machine=m1e lineage=main-1789030447-51011-5722fc at=2026-09-11T19:55:43Z revision=13 accountingRevision=13 episodeAt=2026-09-11T16:37:45Z episodeRevision=10
-- StopCapability: generation=13 revision=13 machine=m1e claimEpoch=6 fenceEpoch=0
 
 History:
 - 2026-09-10T12:02:35Z T349JE65PA2AZGXK28VA4PN6T1-m1e-892cdaec open actor=m1e+main-1789030447-51011-5722fc targets=deep-battery-under-ten-minutes
@@ -31,4 +29,5 @@ History:
 - 2026-09-11T18:46:29Z WBMHC9T2HHD0EMSA7NF7WMA7V4-m1e-892cdaec edit actor=m1e+main-1789030447-51011-5722fc targets=deep-battery-under-ten-minutes
 - 2026-09-11T19:28:53Z HEFK2GJTPQJ16PW67PRARBGX26-m1e-892cdaec edit actor=m1e+main-1789030447-51011-5722fc targets=deep-battery-under-ten-minutes
 - 2026-09-11T19:55:43Z WD3K43ZFXYPYJHYYNPV2SHSVXS-m1-c6925449 set-budget actor=human:Wido targets=deep-battery-under-ten-minutes displaced=m1e+main-1789030447-51011-5722fc@2026-09-11T16:37:45Z
-Integrity: sha256=8425e8e348f700a742c20e376cccd3886407724066a98702b64fe0d13d5b0eb1
+- 2026-09-11T19:57:46Z RK9AQ3TT6EG56TEMHAWN2M0AV6-m1e-892cdaec release actor=m1e+main-1789030447-51011-5722fc targets=deep-battery-under-ten-minutes
+Integrity: sha256=fc5dda45f41228a1aba544ee42138b7788bfd819cc055a3fb1c747324823ac07
