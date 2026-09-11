@@ -53,7 +53,9 @@ JSON stream as output events in go test's own summary shape, so the
 coverage floors judge the whole package, never a shard. The group's
 identity, evidence, progress events and reuse are unchanged: one group.
 
-`goal-full-coverage` and `missionrunner-full-coverage` declare four shards.
+`goal-full-coverage` and `missionrunner-full-coverage` declare six shards
+(four until 2026-09-11 evening; the shards were 480 to 509 s each under the
+pooled battery, and the pool's own inflation, not the shard count, set that).
 Measured before: 538 s and 444 s alone, 919 s and 711 s under the pool.
 
 Found on the way: the coverage parser's JSON loop retried a decode error
@@ -61,9 +63,34 @@ forever; it now ends at the first error and keeps what it read.
 
 ## Slices 3b and 5: the big sections and the race gate
 
-Not in this landing. Splitting the dispatcher, adoption and supervision
-sections into per-scenario groups is the next cut; the race gate follows
-the shards.
+Landed 2026-09-11 evening. Slice 5 (b13771d7): the race gate runs its two
+giants as METASYSTEM_GATE_SHARDS race+cover launches beside one run over
+the rest, coverage merged by covdata; since the follow-up landing the cmd
+package's tests run beside the unit shards instead of after them, and the
+default is six shards. Slice 3b (bb1e2dfd): every bed runs its scenarios
+through the shared runner in fixture-bed-scenarios.sh (the dispatch,
+supervision, goal-cli and health beds had private serial loops; the runner
+gained prepare, capability-mint, verdict and cleanup hooks for their
+private needs), and the adoption bed is eight scenarios, each snapshotting
+the source itself. Measured (attempt proof-mtxc3kvu): adoption 929 to
+448 s, dispatcher 713 to 585 s, supervision 422 to 389 s, goal-cli 126 to
+87 s.
+
+What remains of the walls is the dispatcher bed's `dispatch` scenario: one
+bed, 81 legs, 43 dispatched jobs, 574 s under the pooled battery. A phase
+trace (attempt proof-mtxcowtr, not landed) put a fake dispatch at 3.0 to
+3.8 s alone and 5 to 6 s under contention, spread evenly over its phases
+(preparation, snapshot, record build and setup, launch, fence, the job's
+run, reap): the cost is the dispatcher's own shape, every sub-step a fresh
+run of dispatch.sh under the lease with dozens of engine calls, not a wait.
+The scenario cannot be cut at any leg: six jobs are referenced across most
+of it (`happy` from line 1517 to 3468, `review-target` 2008 to 3304,
+`default-role` 1986 to 2890, `malformed-return` 2236 to 2878,
+`process-loss` 2328 to 2887, `flag-runtime` 2027 to 2499). The next cut is
+therefore clusters that each build their own bed and re-dispatch the shared
+jobs they reference (a few five-second dispatches per cluster against a
+574-second scenario), with the fixture's own assertions on those jobs kept
+where they are; or a cheaper dispatch.sh, which is a goal of its own.
 
 ## Proof
 

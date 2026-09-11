@@ -103,7 +103,7 @@ func GC(checkoutRoot, evidenceRoot string, graceSeconds float64, out io.Writer) 
 	if err != nil {
 		return err
 	}
-	residue += pruneEmptyDirs(agents)
+	residue += pruneEmptyDirs(agents, now(), time.Duration(graceSeconds*float64(time.Second)))
 	if err := collectEventArchives(checkoutRoot, evidenceRoot, out); err != nil {
 		return err
 	}
@@ -696,12 +696,25 @@ func rsplitTwo(s string) []string {
 // in one pass. Empty directories are confusion, not placeholders: every
 // writer here mkdir-ps before writing, so a directory with nothing in it
 // carries no information and comes back the moment it is needed. The spine
-// stays even when empty, and the supervision tree is never touched.
-func pruneEmptyDirs(agents string) int {
+// stays even when empty, and the supervision tree is never touched. A
+// directory younger than the grace stays too: between a writer's mkdir and
+// its first write the directory is a reservation, and some writers are
+// external (a go test binary writes its coverage counters into a directory
+// the runner created for it only when it exits, minutes later); on
+// 2026-09-11 a collection pass in that window took every shard directory of
+// a live proof attempt.
+func pruneEmptyDirs(agents string, now time.Time, grace time.Duration) int {
 	var directories []string
+	// Ages are read before any removal: taking a child entry away touches
+	// the parent's modification time, and a parent emptied by this very
+	// pass is old confusion, not a young reservation.
+	modified := map[string]time.Time{}
 	filepath.WalkDir(agents, func(path string, entry fs.DirEntry, err error) error {
 		if err != nil || path == agents || !entry.IsDir() {
 			return nil
+		}
+		if info, infoErr := entry.Info(); infoErr == nil {
+			modified[path] = info.ModTime()
 		}
 		directories = append(directories, path)
 		return nil
@@ -711,6 +724,9 @@ func pruneEmptyDirs(agents string) int {
 	for i := len(directories) - 1; i >= 0; i-- {
 		directory := directories[i]
 		if spineDirs[filepath.Base(directory)] || underSupervision(agents, directory) {
+			continue
+		}
+		if modifiedAt, ok := modified[directory]; !ok || now.Sub(modifiedAt) < grace {
 			continue
 		}
 		if err := os.Remove(directory); err == nil { // only succeeds when empty

@@ -355,6 +355,16 @@ func runShardedGoGroup(ctx context.Context, request TestRunRequest, group testpo
 			if err := os.MkdirAll(shardDir, 0o700); err != nil {
 				return supervisorOutcome{}, nil, "", fmt.Errorf("create shard coverage directory: %w", err)
 			}
+			// The test binary writes its counters here only at exit, so for
+			// the shard's whole run the directory would stand empty, and the
+			// evidence collector sweeps empty directories under artifacts as
+			// confusion (2026-09-11: a collection pass during a sharded run
+			// took every shard directory, and every shard ended "output
+			// directory does not exist"). The marker says a writer is coming;
+			// covdata ignores it.
+			if err := os.WriteFile(filepath.Join(shardDir, ".pending"), []byte(group.ID+"\n"), 0o600); err != nil {
+				return supervisorOutcome{}, nil, "", fmt.Errorf("mark shard coverage directory: %w", err)
+			}
 			args = append(args, "-args", "-test.gocoverdir="+shardDir)
 		}
 		runs[index].logPath = fmt.Sprintf("%s.shard-%d.log", strings.TrimSuffix(logPath, ".log"), index+1)

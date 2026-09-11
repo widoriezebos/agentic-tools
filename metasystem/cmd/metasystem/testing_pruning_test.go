@@ -128,8 +128,9 @@ func TestDispatcherSharedEngineCapabilityRejectsTamperAndForeignBed(t *testing.T
 func TestDispatcherAndAdoptionOptimizationsKeepPrivateOwnersAndUniqueAssertions(t *testing.T) {
 	dispatch := fixtureSource(t, "scripts", "agents", "dispatch-fixtures.sh")
 	for _, required := range []string{
-		`shared_engine=$log_root/fixture-engine`,
-		`harness_dispatch_fixture_bed_mint_capability "$log_root" "$index" "$scenario" "$shared_engine"`,
+		`dispatch_fixture_shared_engine=$1/fixture-engine`,
+		`harness_dispatch_fixture_bed_mint_capability "$1" "$2" "$3" "$dispatch_fixture_shared_engine"`,
+		`fixture_bed_mint_capability=dispatch_fixture_bed_mint_capability`,
 		`if harness_dispatch_fixture_bed_child_scenario dispatch "$@"; then`,
 		`fixture_scenario=$harness_fixture_child_scenario`,
 		`export METASYSTEM_SUPERVISION_REGISTRY_HOME="$tmp/supervision-home"`,

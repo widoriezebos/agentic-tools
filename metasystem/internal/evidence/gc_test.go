@@ -381,8 +381,30 @@ func TestPrunesEmptyDirsButNeverTheSpine(t *testing.T) {
 	if err := os.MkdirAll(filepath.Join(agents, "worktrees", "gone", "deeper"), 0o755); err != nil {
 		t.Fatal(err)
 	}
+	// Empties older than the grace are confusion; the young one is a
+	// writer's reservation (a shard coverage directory a test binary fills
+	// only at exit) and stays.
+	old := testNow.Add(-2 * time.Hour)
+	for _, dir := range []string{
+		filepath.Join(agents, "worktrees", "gone", "deeper"), filepath.Join(agents, "worktrees", "gone"), filepath.Join(agents, "worktrees"),
+	} {
+		if err := os.Chtimes(dir, old, old); err != nil {
+			t.Fatal(err)
+		}
+	}
+	young := filepath.Join(agents, "proof-runs", "attempt", "groups", "goal.coverage", "shard-1")
+	if err := os.MkdirAll(young, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Chtimes(young, testNow, testNow); err != nil {
+		t.Fatal(err)
+	}
 
 	runGC(t, root, evidenceRoot)
+
+	if _, err := os.Stat(young); err != nil {
+		t.Fatalf("an empty directory younger than the grace must survive the sweep: %v", err)
+	}
 
 	for _, dir := range []string{"jobs", "capabilities", "mains", "record-locks", "supervision"} {
 		if _, err := os.Stat(filepath.Join(agents, dir)); err != nil {

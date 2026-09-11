@@ -746,8 +746,25 @@ func (e *Engine) launch(mode string, foreground bool, generations ...int64) erro
 	if err != nil {
 		return err
 	}
-	deadline := time.Now().Add(verifyWindow)
+	// The window slides while the runner's process tree keeps consuming CPU:
+	// a slow birth on a saturated box is work in progress, not a stall
+	// (R-35-m3; on 2026-09-11 a nested birth of about eight seconds took
+	// more than the fifteen-second window under a fully parallel battery).
+	// Only a tree that stops consuming for one whole window, or the
+	// absolute ceiling, ends the wait.
+	started := time.Now()
+	ceiling := started.Add(8 * verifyWindow)
+	deadline := started.Add(verifyWindow)
+	progress := newTreeCPUProgress(command.Process.Pid)
 	for !time.Now().After(deadline) {
+		if progress.advanced(time.Now()) {
+			if extended := time.Now().Add(verifyWindow); extended.After(deadline) {
+				deadline = extended
+				if deadline.After(ceiling) {
+					deadline = ceiling
+				}
+			}
+		}
 		if pathExists(signalPath) {
 			signal, err := readDocLabeled(signalPath, "runner start signal", 3)
 			if err != nil {
@@ -789,4 +806,101 @@ func (e *Engine) launch(mode string, foreground bool, generations ...int64) erro
 		}
 	}
 	return failf(3, "mission runner start verification timed out")
+}
+
+// treeCPUProgress samples the CPU time of a process and its descendants at
+// most once a second and reports whether it grew since the last sample.
+type treeCPUProgress struct {
+	rootPID  int
+	lastAt   time.Time
+	lastCPU  float64
+	sampled  bool
+	interval time.Duration
+}
+
+func newTreeCPUProgress(rootPID int) *treeCPUProgress {
+	return &treeCPUProgress{rootPID: rootPID, interval: time.Second}
+}
+
+func (p *treeCPUProgress) advanced(now time.Time) bool {
+	if p.sampled && now.Sub(p.lastAt) < p.interval {
+		return false
+	}
+	cpu, ok := processTreeCPUSeconds(p.rootPID)
+	if !ok {
+		return false
+	}
+	grew := p.sampled && cpu > p.lastCPU
+	p.lastAt, p.lastCPU, p.sampled = now, cpu, true
+	return grew
+}
+
+// processTreeCPUSeconds sums the CPU time of a process and every descendant
+// from one ps listing. It reports false when the listing is unreadable, so a
+// caller never mistakes a missing sample for a stall.
+func processTreeCPUSeconds(rootPID int) (float64, bool) {
+	output, err := exec.Command("ps", "-axo", "pid=,ppid=,cputime=").Output()
+	if err != nil {
+		return 0, false
+	}
+	children := map[int][]int{}
+	cpu := map[int]float64{}
+	for _, line := range strings.Split(string(output), "\n") {
+		fields := strings.Fields(line)
+		if len(fields) != 3 {
+			continue
+		}
+		pid, pidErr := strconv.Atoi(fields[0])
+		ppid, ppidErr := strconv.Atoi(fields[1])
+		seconds, cpuErr := parsePSCPUTime(fields[2])
+		if pidErr != nil || ppidErr != nil || cpuErr != nil {
+			continue
+		}
+		children[ppid] = append(children[ppid], pid)
+		cpu[pid] = seconds
+	}
+	if _, ok := cpu[rootPID]; !ok {
+		return 0, false
+	}
+	total := 0.0
+	queue := []int{rootPID}
+	seen := map[int]bool{}
+	for len(queue) > 0 {
+		pid := queue[0]
+		queue = queue[1:]
+		if seen[pid] {
+			continue
+		}
+		seen[pid] = true
+		total += cpu[pid]
+		queue = append(queue, children[pid]...)
+	}
+	return total, true
+}
+
+// parsePSCPUTime reads ps's cputime column: [[dd-]hh:]mm:ss[.ff].
+func parsePSCPUTime(value string) (float64, error) {
+	days := 0.0
+	if before, after, ok := strings.Cut(value, "-"); ok {
+		parsed, err := strconv.Atoi(before)
+		if err != nil {
+			return 0, err
+		}
+		days, value = float64(parsed), after
+	}
+	parts := strings.Split(value, ":")
+	if len(parts) < 2 || len(parts) > 3 {
+		return 0, fmt.Errorf("invalid cputime %q", value)
+	}
+	total := days * 24 * 3600
+	multiplier := 1.0
+	for i := len(parts) - 1; i >= 0; i-- {
+		field, err := strconv.ParseFloat(parts[i], 64)
+		if err != nil || field < 0 {
+			return 0, fmt.Errorf("invalid cputime %q", value)
+		}
+		total += field * multiplier
+		multiplier *= 60
+	}
+	return total, nil
 }
