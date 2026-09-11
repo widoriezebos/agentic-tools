@@ -1,6 +1,6 @@
 # stop-hook-never-forces-an-empty-turn
 
-- State: approved
+- State: queued
 - Priority: 1
 - Sequence: 4
 - Risk: severity=2 novelty=2 exposure=3 accumulation=1 basis="severity 2: a wrong refusal rule either forces turns as today or lets an unsafe stop through; novelty 2: refusal causes are reclassified between seat and steward; exposure 3: every seat's every stop; accumulation 1: one hook"
@@ -9,11 +9,9 @@
 - Origin: human
 - Next step: Read the Stop hook (scripts/agents and internal supervision, turnverdict.go) and classify the recorded refusal causes into seat-actionable, steward-owned and idle-path; write the design; critique; build; land.
 - OpenedAt: 2026-09-11T15:45:01Z
-- Revision: 7
+- Revision: 8
 - Pinned: m1e
-- Budget: elapsedLimit=1d attemptLimit=10 reservedJobMinutesLimit=1200 activeJobLimit=1 reviewRoundLimit=3
 - BudgetExceptions: 0
-- Approved: by=human:Wido at=2026-09-11T16:18:55Z revision=7 opid=CAT3YQTAVZKM2NQKKMAMQHAFX1-m1-c6925449 authority=proven digest=25956757d950e784f1417f33261024d4a5e40c23dd46f502b4f760761178bc36
 
 History:
 - 2026-09-11T15:45:01Z T6Z7DYJ3CFGDRPYXNRNTTWXERM-m1e-5083721b open actor=m1e+main-1789141490-27414-b9c0d2 targets=stop-hook-never-forces-an-empty-turn
@@ -23,4 +21,5 @@ History:
 - 2026-09-11T16:13:08Z 8YPN9R8X6K7CZSTKV5HDV265MX-m1-c6925449 unapprove actor=human:Wido targets=stop-hook-never-forces-an-empty-turn reason=Wido 2026-09-11: Codex critique round 1 of the delivery-efficiency plan accepted; intent amended before re-approval
 - 2026-09-11T16:16:28Z 1YCC1Y3B6VEXMPQYS1MGSF8KY3-m1e-ab5421f5 edit actor=m1e+main-1789143377-71578-b9c0d2 targets=stop-hook-never-forces-an-empty-turn
 - 2026-09-11T16:18:55Z CAT3YQTAVZKM2NQKKMAMQHAFX1-m1-c6925449 approve actor=human:Wido targets=stop-hook-never-forces-an-empty-turn
-Integrity: sha256=82db7f2bb335e5c46a17b566d10346555001cfd3b1148ab4056c1c2c883dfcf6
+- 2026-09-11T20:30:31Z 117SRE9GY4WS8N9GCWPJ00SPZJ-m1-c6925449 unapprove actor=human:Wido targets=stop-hook-never-forces-an-empty-turn reason=Wido 2026-09-11: every program goal states runtime independence (claude, codex, devin, future adapters); intent amended before re-approval
+Integrity: sha256=e63aceeed629840aa11fa4997121fcea05330c4ed078e46bc96cfc92d8f8571e
