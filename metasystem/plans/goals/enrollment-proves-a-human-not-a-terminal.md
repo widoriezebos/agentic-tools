@@ -1,6 +1,6 @@
 # enrollment-proves-a-human-not-a-terminal
 
-- State: approved
+- State: queued
 - Priority: 2
 - Sequence: 2
 - Risk: severity=3 novelty=2 exposure=3 accumulation=2 basis="severity 3: the enrolled terminal is the only thing separating an agent from every human-reserved act in a checkout, including stop, arm, approve, set-budget, steal and resume, and today an agent can create one; novelty 2: a second factor and its storage are new to this system, though the enrollment record and its generation already exist; exposure 3: every checkout on every machine, and the whole point of the stop verb's classifier depends on it; accumulation 2: every act performed through an agent-made enrollment is a ledger line that says a human typed it, and those accumulate unreadably"
@@ -9,11 +9,9 @@
 - Origin: main
 - Next step: Read internal/humanauthority/authority.go around Enroll and ReadEnrollment, the callers that demand enrolled ancestry (the human-act gate in cmd/metasystem/goalsync_mutations.go and the classifier paths the stop verb fixed), and ruling R-88-m1b in memory/rulings.md. Design first, on the design lane: where the secret lives so an agent in the checkout cannot read it, how the code is presented and verified, what happens to the enrolments that already exist, and whether renewal is periodic or per-act. Canary before battery: the smallest proof is one enrolment attempt without a code refused and one with a valid code accepted, each a named test with a ceiling, before any bed runs. Note for whoever takes it: relayed approval was retired when the authority horizon passed on 2026-09-06, and this goal is what could replace it, so it is worth asking Wido about that in the same design round rather than after.
 - OpenedAt: 2026-09-08T10:42:59Z
-- Revision: 5
+- Revision: 6
 - Labels: security
-- Budget: elapsedLimit=1d attemptLimit=10 reservedJobMinutesLimit=1200 activeJobLimit=1 reviewRoundLimit=3
 - BudgetExceptions: 0
-- Approved: by=human:Wido at=2026-09-08T20:45:16Z revision=3 opid=ARMSSWKCR3ER156C992E06YGRW-m1b-c6925449 authority=proven digest=a395150289be80f4f391b8b1f62fff794ec32945d57e511caeac5eee14575624
 
 History:
 - 2026-09-08T10:42:59Z 6V62XC1SN8TEWMJSFFWQF7Z7W0-m1b-c6925449 open actor=m1b+main-1788680071-18713-e76d5d targets=enrollment-proves-a-human-not-a-terminal
@@ -21,4 +19,5 @@ History:
 - 2026-09-08T20:45:16Z ARMSSWKCR3ER156C992E06YGRW-m1b-c6925449 approve actor=human:Wido targets=enrollment-proves-a-human-not-a-terminal
 - 2026-09-09T06:01:35Z QW24FXYF0B3B0TPXMQ8711EJPH-m1b-c6925449 set-priority actor=human:Wido targets=account-provenance,adoption-inventory-from-install-set,capped-round-continues-instead-of-restarting,chain-landing-carries-the-reviewed-diff,chain-landing-carries-unrelated-staged-plans,closing-read-follows-the-change-not-the-label,commit-goal-binding,critique-always,design-gate-at-dispatch,enrollment-proves-a-human-not-a-terminal,first-headless-run,fleet-channel-gateway,fleet-join-bootstrap,fleet-pull,gate-governance-records,headless-continuous-delivery-proof,headless-fleet-coordination-proof,hook-enrollment-per-checkout,host-implementer-wall,human-approval-for-execution,idle-every-runtime-enforcement,landing-design-provenance,manifest-floor-at-dispatch,merge-stage-critic-close,metasystem-stop-escalation-proofs,mission-birth-baseline-from-dirty-worktree,never-idle-ironclad,one-approval-gate,recovery-rehearsal,recovery-to-good-state,repo-root-paths-ride-agent-commits-unjudged,role-context-composition,role-lane-packets,role-liveness-watchdog,seat-mutual-awareness,two-bars-for-changes reason=priority-order subject=enrollment-proves-a-human-not-a-terminal from=3:119 to=2:1 requested-sequence=1
 - 2026-09-09T07:32:48Z SEGWH3575FR5TXSSHS4JFGHC46-m1b-c6925449 set-priority actor=human:Wido targets=account-provenance-carried,adoption-inventory-from-install-set,capped-round-continues-instead-of-restarting,chain-landing-carries-the-reviewed-diff,chain-landing-carries-unrelated-staged-plans,closing-read-follows-the-change-not-the-label,commit-goal-binding,critique-always,design-gate-at-dispatch,enrollment-proves-a-human-not-a-terminal,first-headless-run,fleet-channel-gateway,fleet-join-bootstrap,fleet-pull,gate-governance-records,headless-continuous-delivery-proof,headless-fleet-coordination-proof,hook-enrollment-per-checkout,host-implementer-wall,human-approval-for-execution,idle-every-runtime-enforcement,landing-design-provenance,manifest-floor-at-dispatch,merge-stage-critic-close,metasystem-stop-escalation-proofs,mission-birth-baseline-from-dirty-worktree,never-idle-ironclad,one-approval-gate,recovery-rehearsal,recovery-to-good-state,repo-root-paths-ride-agent-commits-unjudged,role-context-composition,role-lane-packets,role-liveness-watchdog,seat-mutual-awareness,transport-remote-absent-refuses-every-landing,two-bars-for-changes reason=priority-order subject=transport-remote-absent-refuses-every-landing from=2:1 to=2:2 requested-sequence=1
-Integrity: sha256=abf715daf90f17d81a40b91455f4494386f45f83d5df83937069e4c8986ae371
+- 2026-09-11T07:58:39Z MRQ6HZJ9JCXRY1BB4HYXWPWC64-m1-c6925449 unapprove actor=human:Wido targets=enrollment-proves-a-human-not-a-terminal reason=Wido 2026-09-11: standing approval withdrawn to regain control of what is built next; re-approve deliberately
+Integrity: sha256=fbcc5420c936f858aac8aca99e4b0ab842f74461989a2761bbfecfcddb6e5dbb
