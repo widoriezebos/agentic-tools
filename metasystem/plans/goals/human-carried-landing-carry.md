@@ -9,12 +9,12 @@
 - Origin: main
 - Next step: Design revision 3 after the channel gateway design opens (Wido's priority R-76 first). Tier 3 ladder, same box as human-carried-landing. Register the design under plans/ with every output file declared before the first critique dispatch. | UMBRELLA NOTE (m1b, 2026-09-10 19:45Z): this goal is the escape hatch of the-metasystem-validates-itself-with-itself (its fourth member; the duplicates human-carried-landing-verb and carried-landing-debt-and-cap opened today point here). Today showed the case it exists for: every landing on m1b was blocked by the receipt machinery for a whole day with no lawful way past it. Revision 3 should add one thing to point 08: a tracked fleet cap on open carries per seat (default 1) refused in metasystem.conf.local like the other budget-law keys, and a carry may not stack on a base whose carry debt is unpaid. Ranked 1:7 in Wido's name so the hatch is built before the next such day; the sequencing after the channel gateway design (R-76) is his to keep or lift.
 - OpenedAt: 2026-09-04T17:14:07Z
-- Revision: 14
-- Budget: elapsedLimit=1d attemptLimit=10 reservedJobMinutesLimit=1200 activeJobLimit=1 reviewRoundLimit=3
-- BudgetExceptions: 0
-- Approved: by=human:Wido at=2026-09-06T06:53:37Z revision=2 opid=A35EHY2TGAWCCFA1Q1J0WZGS35-m1-a4f8999f authority=proven digest=4cae2814283e33c6a446b7e056f2b072cae480a2f67efe67993220f0c74d7f3d
-- Claimed: machine=m1d lineage=main-1788941004-20871-6e7a43 at=2026-09-11T02:08:44Z revision=14 accountingRevision=14
-- StopCapability: generation=14 revision=14 machine=m1d claimEpoch=3 fenceEpoch=0
+- Revision: 15
+- Budget: elapsedLimit=1d attemptLimit=12 reservedJobMinutesLimit=1200 activeJobLimit=1 reviewRoundLimit=3
+- BudgetExceptions: 1
+- Approved: by=human:Wido at=2026-09-11T02:09:09Z revision=15 opid=79K3XKAZF3JVHDSDWGWP7GKQ7A-m1d-a38bcdde authority=proven digest=de13a915af9f332417e9f678e4dd34d4a3d8cebbd0e0c3a2ba4fe42393266efc
+- Claimed: machine=m1d lineage=main-1788941004-20871-6e7a43 at=2026-09-11T02:09:09Z revision=15 accountingRevision=15
+- StopCapability: generation=15 revision=15 machine=m1d claimEpoch=3 fenceEpoch=0
 
 History:
 - 2026-09-04T17:14:07Z NTTABXR7SXQT4JEKGM0QW65Q2G-m3-587cb0f1 open actor=m3+main-1788172645-85501-aa86ee targets=human-carried-landing-carry
@@ -31,4 +31,5 @@ History:
 - 2026-09-10T19:55:00Z 08VS51W6FTSNWDKBWP76HPCD52-m1b-c6925449 done actor=m1b+main-1788680071-18713-e76d5d targets=actionable-metrics,breach-clock-and-budget-honesty,burn-without-delivery-tripwire,carried-landing-debt-and-cap,delegate-job-liveness,enrollment-binds-by-the-skew-rule-not-the-tip,failed-job-attention,fixture-stewards-outlive-their-suite,goal-abandoned-with-a-reason,governed-exhaustion-reprojection,human-carried-landing-carry,human-carried-landing-verb,human-goal-verbs-forgiving,job-record-birth-token,landing-receipt-survives-records-drift,lease-sweep-death-evidence,live-job-on-a-done-goal-unnoticed,machine-concurrency-governor,proof-harness-process-custody,review-round-limit-counts-per-chain,severity-tiered-rigor,severity-tiered-rigor-p2,small-change-lane,steward-catchup-livelock,steward-revives-a-done-goal,stop-batch-strands-a-resumable-goal,suite-custody,token-spend-fence,turn-verdict-hardening,watch-verb,watcher-repair-request-never-names-current,winddown-census-handoff-leak reason=priority-order from=1:6 to=1:5
 - 2026-09-11T02:07:36Z 5J8GDGATVH7WEH3SCW823CQY7J-m1d-a38bcdde done actor=m1d+main-1788941004-20871-6e7a43 targets=actionable-metrics,breach-clock-and-budget-honesty,burn-without-delivery-tripwire,carried-landing-debt-and-cap,delegate-job-liveness,delivery-candidate-is-the-workspace-not-the-ledger,failed-job-attention,fixture-stewards-outlive-their-suite,goal-abandoned-with-a-reason,governed-exhaustion-reprojection,human-carried-landing-carry,human-carried-landing-verb,human-goal-verbs-forgiving,job-record-birth-token,landing-receipt-survives-records-drift,lease-sweep-death-evidence,live-job-on-a-done-goal-unnoticed,machine-concurrency-governor,proof-harness-process-custody,review-round-limit-counts-per-chain,severity-tiered-rigor,severity-tiered-rigor-p2,skew-preflight-knows-a-receipt-worktree,small-change-lane,steward-catchup-livelock,steward-revives-a-done-goal,stop-batch-strands-a-resumable-goal,suite-custody,testing-contract-owns-record-paths,token-spend-fence,turn-verdict-hardening,watch-verb,watcher-repair-request-never-names-current,winddown-census-handoff-leak reason=priority-order from=1:5 to=1:4
 - 2026-09-11T02:08:44Z QS601KFKN7YJM69X00VNMWDC4F-m1d-a38bcdde claim actor=m1d+main-1788941004-20871-6e7a43 targets=human-carried-landing-carry
-Integrity: sha256=22fedc22ea30afb5e9df8c149a08c1423218a9723665979b02b5d6ffb0f8c217
+- 2026-09-11T02:09:09Z 79K3XKAZF3JVHDSDWGWP7GKQ7A-m1d-a38bcdde set-budget actor=human:Wido targets=human-carried-landing-carry
+Integrity: sha256=3c81a13b886b6a130b8a39dbdc2e28d0989ba12a71c51a23d81ce28882157b6d
