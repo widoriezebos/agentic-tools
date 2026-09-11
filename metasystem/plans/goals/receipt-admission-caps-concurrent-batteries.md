@@ -1,6 +1,6 @@
 # receipt-admission-caps-concurrent-batteries
 
-- State: queued
+- State: approved
 - Priority: 1
 - Sequence: 1
 - Risk: severity=2 novelty=2 exposure=3 accumulation=1 basis="severity 2: a wrong cap starves landings or lets batteries collide as today; novelty 2: attempt reservations exist per checkout but nothing is host-wide; exposure 3: every receipt on every seat; accumulation 1: the battery content is unchanged"
@@ -9,9 +9,11 @@
 - Origin: human
 - Next step: Wido's word recorded 2026-09-11 (R-92-m1e): no admission cap for now; build the attribution (host load and overlapping-attempt count in every attempt record; load failures of consumption-bounded groups filed as patience defects) and put the cap question again with a week of post-c08fe2cb numbers. Next: claim when deep-battery-under-ten-minutes ends; design page names R-92-m1e.
 - OpenedAt: 2026-09-11T15:44:50Z
-- Revision: 10
+- Revision: 11
 - Pinned: m1e
+- Budget: elapsedLimit=1d attemptLimit=10 reservedJobMinutesLimit=1200 activeJobLimit=1 reviewRoundLimit=3
 - BudgetExceptions: 0
+- Approved: by=human:Wido at=2026-09-11T20:32:56Z revision=11 opid=HNYC0AM7335NZ9RHE7RAB3N61K-m1-c6925449 authority=proven digest=43d1bc530ae6606ca2a5937c4719b1017143a7f249e4da9fb1b5c4b6da160d7c
 
 History:
 - 2026-09-11T15:44:50Z ATQJYESKCTSPAS92AEEAW0TKS3-m1e-5083721b open actor=m1e+main-1789141490-27414-b9c0d2 targets=receipt-admission-caps-concurrent-batteries
@@ -24,4 +26,5 @@ History:
 - 2026-09-11T20:15:37Z VJGH901E4AZJXM3TJDV3GKKNMB-m1e-892cdaec edit actor=m1e+main-1789030447-51011-5722fc targets=receipt-admission-caps-concurrent-batteries
 - 2026-09-11T20:30:19Z 9ZHHVRGX65BDG6VFKBFHTGAE3X-m1-c6925449 unapprove actor=human:Wido targets=receipt-admission-caps-concurrent-batteries reason=Wido 2026-09-11: every program goal states runtime independence (claude, codex, devin, future adapters); intent amended before re-approval
 - 2026-09-11T20:31:42Z 32RQN1GTZ0MNXNEJR154BVMAFH-m1e-3ca84c28 edit actor=m1e+main-1789158700-39729-b9c0d2 targets=receipt-admission-caps-concurrent-batteries
-Integrity: sha256=9d1025f0c4c20159907d315993ff4493bf4ed4bd94a2daa6ee558a6155d95cc3
+- 2026-09-11T20:32:56Z HNYC0AM7335NZ9RHE7RAB3N61K-m1-c6925449 approve actor=human:Wido targets=receipt-admission-caps-concurrent-batteries
+Integrity: sha256=d4899a2a31a2b63dd5238799cf3f971db79a2e45e20c5f0a3cd692fad8e1f814
