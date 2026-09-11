@@ -7,10 +7,12 @@
 - Origin: human
 - Next step: Design first: read internal/proofrun/attempt.go admission and reservation (the 'reserved before process publication' status lines), choose the host-wide primitive, write the design page, critique, build, land with its own battery and three green cadence runs.
 - OpenedAt: 2026-09-11T15:44:50Z
-- Revision: 1
+- Revision: 2
+- Pinned: m1e
 - Budget: elapsedLimit=1d attemptLimit=10 reservedJobMinutesLimit=1200 activeJobLimit=1 reviewRoundLimit=3
 - BudgetExceptions: 0
 
 History:
 - 2026-09-11T15:44:50Z ATQJYESKCTSPAS92AEEAW0TKS3-m1e-5083721b open actor=m1e+main-1789141490-27414-b9c0d2 targets=receipt-admission-caps-concurrent-batteries
-Integrity: sha256=fc915165b9b87b16b789c3732ba861d54ad0147cb98960b7d0f78bd2fa3fddb3
+- 2026-09-11T15:46:40Z 3TKA7BCN8ABA87V8RE4843HSYM-m1-c6925449 set-pin actor=human:Wido targets=receipt-admission-caps-concurrent-batteries
+Integrity: sha256=571c5743af98aaa3b072ae7d59e7a4084d58282b123da1093703001230c6fe5f
