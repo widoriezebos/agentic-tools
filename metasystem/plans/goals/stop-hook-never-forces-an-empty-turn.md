@@ -1,6 +1,6 @@
 # stop-hook-never-forces-an-empty-turn
 
-- State: queued
+- State: approved
 - Priority: 1
 - Sequence: 4
 - Risk: severity=2 novelty=2 exposure=3 accumulation=1 basis="severity 2: a wrong refusal rule either forces turns as today or lets an unsafe stop through; novelty 2: refusal causes are reclassified between seat and steward; exposure 3: every seat's every stop; accumulation 1: one hook"
@@ -9,9 +9,11 @@
 - Origin: human
 - Next step: Read the Stop hook (scripts/agents and internal supervision, turnverdict.go) and classify the recorded refusal causes into seat-actionable, steward-owned and idle-path; write the design; critique; build; land.
 - OpenedAt: 2026-09-11T15:45:01Z
-- Revision: 9
+- Revision: 10
 - Pinned: m1e
+- Budget: elapsedLimit=1d attemptLimit=10 reservedJobMinutesLimit=1200 activeJobLimit=1 reviewRoundLimit=3
 - BudgetExceptions: 0
+- Approved: by=human:Wido at=2026-09-11T20:33:06Z revision=10 opid=E8FTZC5HAT5QQ1ANYHR53FNVAE-m1-c6925449 authority=proven digest=2e1c7149776e2d5db51a6e1b319f9e6b77f7793aa24d621a6222d5f077423609
 
 History:
 - 2026-09-11T15:45:01Z T6Z7DYJ3CFGDRPYXNRNTTWXERM-m1e-5083721b open actor=m1e+main-1789141490-27414-b9c0d2 targets=stop-hook-never-forces-an-empty-turn
@@ -23,4 +25,5 @@ History:
 - 2026-09-11T16:18:55Z CAT3YQTAVZKM2NQKKMAMQHAFX1-m1-c6925449 approve actor=human:Wido targets=stop-hook-never-forces-an-empty-turn
 - 2026-09-11T20:30:31Z 117SRE9GY4WS8N9GCWPJ00SPZJ-m1-c6925449 unapprove actor=human:Wido targets=stop-hook-never-forces-an-empty-turn reason=Wido 2026-09-11: every program goal states runtime independence (claude, codex, devin, future adapters); intent amended before re-approval
 - 2026-09-11T20:31:51Z 8YMPPDYQVFAENFQ44AQKK9GYAP-m1e-3ca84c28 edit actor=m1e+main-1789158700-39729-b9c0d2 targets=stop-hook-never-forces-an-empty-turn
-Integrity: sha256=5e7f56433e51036de4a066c469b1d720db65cb3ece4c1990e98429f9598a79e2
+- 2026-09-11T20:33:06Z E8FTZC5HAT5QQ1ANYHR53FNVAE-m1-c6925449 approve actor=human:Wido targets=stop-hook-never-forces-an-empty-turn
+Integrity: sha256=a5bf39da7fc464ad660261a9257adbe24b01dba6d56914098082110e279955ed
