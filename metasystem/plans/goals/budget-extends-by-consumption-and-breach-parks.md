@@ -1,6 +1,6 @@
 # budget-extends-by-consumption-and-breach-parks
 
-- State: approved
+- State: queued
 - Priority: 1
 - Sequence: 8
 - Risk: severity=2 novelty=2 exposure=3 accumulation=1 basis="severity 2: the budget law is the spend guard; novelty 2: extension by consumption and auto-park are new rules; exposure 3: every claimed goal; accumulation 1: the tuple stays"
@@ -9,11 +9,9 @@
 - Origin: human
 - Next step: Wido's word recorded 2026-09-11 (R-94-m1e and R-95-m1e): rule 1 yes with the once-per-goal marker, after proof-attempts-settle-to-minutes-run; rule 2 yes for tier 1 first, tier 2 only after tier-from-severity-and-novelty lands, every entry expiring within seven days. Next: build in rank order.
 - OpenedAt: 2026-09-11T15:45:08Z
-- Revision: 11
+- Revision: 12
 - Pinned: m1e
-- Budget: elapsedLimit=1d attemptLimit=10 reservedJobMinutesLimit=1200 activeJobLimit=1 reviewRoundLimit=3
 - BudgetExceptions: 0
-- Approved: by=human:Wido at=2026-09-11T16:19:06Z revision=10 opid=90AJBYTGEPQ46QAN4V1C7REW6S-m1-c6925449 authority=proven digest=4d7eb2892a80f8ceeb2fd3522ca678d8fc512bbd95ca2165d92ea36b50658ded
 
 History:
 - 2026-09-11T15:45:08Z 9QD56QEP3YRJBVPYD7Y5S3BS7S-m1e-5083721b open actor=m1e+main-1789141490-27414-b9c0d2 targets=budget-extends-by-consumption-and-breach-parks
@@ -27,4 +25,5 @@ History:
 - 2026-09-11T16:17:50Z JRKTBHK5ASQWECQE22XYCSATWR-m1-c6925449 set-priority actor=human:Wido targets=budget-extends-by-consumption-and-breach-parks,human-carried-landing-carry reason=priority-order subject=budget-extends-by-consumption-and-breach-parks from=1:9 to=1:8 requested-sequence=8
 - 2026-09-11T16:19:06Z 90AJBYTGEPQ46QAN4V1C7REW6S-m1-c6925449 approve actor=human:Wido targets=budget-extends-by-consumption-and-breach-parks
 - 2026-09-11T20:15:50Z W5YJ9TXDNBY5FAZVG250F16Q3N-m1e-892cdaec edit actor=m1e+main-1789030447-51011-5722fc targets=budget-extends-by-consumption-and-breach-parks
-Integrity: sha256=1d8b44f561250a40ce85ee079272232d2c8d53abddfcbcd7a9ee40487bbddbb8
+- 2026-09-11T20:30:46Z EPHM5WEN8FJRDVNY7EMHR0TB9A-m1-c6925449 unapprove actor=human:Wido targets=budget-extends-by-consumption-and-breach-parks reason=Wido 2026-09-11: every program goal states runtime independence (claude, codex, devin, future adapters); intent amended before re-approval
+Integrity: sha256=03db0b3f486fcce3bcfea5c257958ebaf65ab4bf4666942401f077d76af3c2ea
