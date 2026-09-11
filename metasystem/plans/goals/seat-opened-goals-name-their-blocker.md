@@ -2,14 +2,14 @@
 
 - State: queued
 - Priority: 1
-- Sequence: 7
+- Sequence: 6
 - Risk: severity=1 novelty=1 exposure=2 accumulation=1 basis="severity 1: a refused open is re-issued with its blocker; novelty 1: dependency edges exist; exposure 2: seat opens only; accumulation 1: one verb"
 - Tier: 2
 - Intent: Seats opened 165 goals in five days against 62 concluded, growing the backlog by 117 (ledger.md section 5). DONE means: goal open from a seat (origin main) requires --blocks naming the goal it unblocks and, in the same publish, parks that goal with the blocker named (a claimed goal may not carry an unfinished blocker, internal/goal/validate.go) and records the edge on the parked goal, which is claimable again only when the blocker is done; a seat open without --blocks is refused with the ruling; human-origin opens are unchanged; docs/orchestration.md carries the ruling that a seat opens only the defect that blocks its current goal and every other goal is opened by a person. The ruling is a policy decision under R-36-m3: it is built after Wido records it on the design page. Goal 6 of plans/delivery-efficiency-plan.md.
 - Origin: human
 - Next step: Read OpenTiered in internal/goal/verbs.go, the park verb and the claimed-blocker validation; design the atomic open-and-park publish; put the ruling to Wido; build; docs; land.
 - OpenedAt: 2026-09-11T15:45:05Z
-- Revision: 7
+- Revision: 8
 - Pinned: m1e
 - BudgetExceptions: 0
 
@@ -21,4 +21,5 @@ History:
 - 2026-09-11T15:50:51Z M4GZC1Q99QFRH9T13HSY774HAR-m1-c6925449 set-priority actor=human:Wido targets=actionable-metrics,breach-clock-and-budget-honesty,budget-extends-by-consumption-and-breach-parks,burn-without-delivery-tripwire,capped-round-continues-instead-of-restarting,carried-landing-debt-and-cap,coordinator-context-stays-under-budget,coordinator-wakes-on-events-not-polls,critique-closes-on-folded-proof,deep-battery-under-ten-minutes,delegate-job-liveness,delegate-rounds-reuse-a-warm-gate,delivery-receipt-stops-at-first-failure,failed-job-attention,fixture-stewards-outlive-their-suite,goal-abandoned-with-a-reason,human-carried-landing-carry,human-carried-landing-verb,human-goal-verbs-forgiving,job-record-birth-token,land-ready-work-lands-without-a-claim-slot,landing-receipt-survives-records-drift,landing-refuses-without-its-receipt-line,lease-sweep-death-evidence,live-job-on-a-done-goal-unnoticed,machine-concurrency-governor,proof-groups-detect-hangs-by-progress-not-the-clock,proof-harness-process-custody,retained-proof-reuse-crosses-claims-and-attempts,seat-opened-goals-name-their-blocker,severity-tiered-rigor,severity-tiered-rigor-p2,small-change-lane,steward-catchup-livelock,steward-revives-a-done-goal,stop-batch-strands-a-resumable-goal,suite-custody,token-spend-fence,turn-verdict-hardening,watch-verb,watcher-repair-request-never-names-current,winddown-census-handoff-leak reason=priority-order subject=landing-refuses-without-its-receipt-line from=1:6 to=1:7 requested-sequence=5
 - 2026-09-11T16:13:11Z BDBGP0J34XP4KAE6VGDVG6HQYY-m1-c6925449 unapprove actor=human:Wido targets=seat-opened-goals-name-their-blocker reason=Wido 2026-09-11: Codex critique round 1 of the delivery-efficiency plan accepted; intent amended before re-approval
 - 2026-09-11T16:16:31Z 2W377S4HCBEC3XM0ND8DBQP9H4-m1e-ab5421f5 edit actor=m1e+main-1789143377-71578-b9c0d2 targets=seat-opened-goals-name-their-blocker
-Integrity: sha256=b06eb12d2b0ffb1390b0dea8aac26dbb80fed65ef14d1c16ea98b4b16cf82e31
+- 2026-09-11T16:17:42Z 10K1ZB3NEVAP7YG6XS8JK7N6VJ-m1-c6925449 set-priority actor=human:Wido targets=human-carried-landing-carry,seat-opened-goals-name-their-blocker reason=priority-order subject=seat-opened-goals-name-their-blocker from=1:7 to=1:6 requested-sequence=6
+Integrity: sha256=82ce789db537da04dd48e9c798541fe97b5642c966fbe74b0ff20f6e92d6f383
