@@ -2,14 +2,14 @@
 
 - State: queued
 - Priority: 1
-- Sequence: 22
+- Sequence: 23
 - Risk: severity=3 novelty=2 exposure=3 accumulation=2 basis="severity 3: without it a broken gate is a hand edit of the tree; novelty 2: designed and audited, unbuilt; exposure 3: every seat; accumulation 2: the register already points at it"
 - Tier: 3
 - Intent: DUPLICATE, opened by m1b on 2026-09-10 before finding the sibling goal human-carried-landing-carry (approved 2026-09-04 on Wido's ruling as the home of the carry verb, the carried landing and the commit critic, points 02 and 04-09 of plans/human-carried-landing-design.md). This record holds no work and must not be claimed or approved; the umbrella the-metasystem-validates-itself-with-itself names human-carried-landing-carry as its fourth member. Abandon once goal abandon exists.
 - Origin: main
 - Next step: Do not claim. Abandon with --because 'duplicate of human-carried-landing-carry' when goal abandon lands.
 - OpenedAt: 2026-09-10T07:27:35Z
-- Revision: 38
+- Revision: 39
 - Labels: bootstrap
 - BudgetExceptions: 0
 
@@ -52,4 +52,5 @@ History:
 - 2026-09-11T16:18:28Z R6Q4D67N9P68NCRFR3P78M42QK-m1-c6925449 set-priority actor=human:Wido targets=actionable-metrics,breach-clock-and-budget-honesty,burn-without-delivery-tripwire,capped-round-continues-instead-of-restarting,carried-landing-debt-and-cap,chain-landing-carries-the-reviewed-diff,chain-landing-carries-unrelated-staged-plans,commit-goal-binding,critique-always,delegate-job-liveness,failed-job-attention,first-headless-run,fixture-stewards-outlive-their-suite,fleet-channel-gateway,fleet-join-bootstrap,fleet-pull,gate-governance-records,goal-abandoned-with-a-reason,headless-continuous-delivery-proof,headless-fleet-coordination-proof,host-implementer-wall,human-carried-landing-carry,human-carried-landing-verb,human-goal-verbs-forgiving,idle-every-runtime-enforcement,job-record-birth-token,land-ready-work-lands-without-a-claim-slot,landing-design-provenance,landing-receipt-survives-records-drift,lease-sweep-death-evidence,live-job-on-a-done-goal-unnoticed,machine-concurrency-governor,merge-stage-critic-close,metasystem-stop-escalation-proofs,mission-birth-baseline-from-dirty-worktree,never-idle-ironclad,proof-harness-process-custody,recovery-rehearsal,recovery-to-good-state,repo-root-paths-ride-agent-commits-unjudged,role-context-composition,role-lane-packets,role-liveness-watchdog,seat-mutual-awareness,severity-tiered-rigor,severity-tiered-rigor-p2,small-change-lane,steward-catchup-livelock,steward-revives-a-done-goal,stop-batch-strands-a-resumable-goal,suite-custody,token-spend-fence,turn-verdict-hardening,two-bars-for-changes,watch-verb,watcher-repair-request-never-names-current,winddown-census-handoff-leak reason=priority-order subject=critique-always from=1:19 to=1:20 requested-sequence=18
 - 2026-09-11T16:18:33Z Z1CJ3EMRR5F53PQFSRSG5986GA-m1-c6925449 set-priority actor=human:Wido targets=human-carried-landing-carry,human-carried-landing-verb,small-change-lane reason=priority-order subject=small-change-lane from=1:20 to=1:21 requested-sequence=19
 - 2026-09-11T16:18:37Z YFNC9KN25D2E95W24CKBGS0EFH-m1-c6925449 set-priority actor=human:Wido targets=human-carried-landing-carry,human-carried-landing-verb,land-ready-work-lands-without-a-claim-slot reason=priority-order subject=land-ready-work-lands-without-a-claim-slot from=1:21 to=1:22 requested-sequence=20
-Integrity: sha256=39c135df892e3c1831da971b062513cfdbe512220c91a8fe24ceca8c022acf63
+- 2026-09-11T16:18:40Z ZS03V77TDP8MF0CZS524557QZ3-m1-c6925449 set-priority actor=human:Wido targets=capped-round-continues-instead-of-restarting,human-carried-landing-carry,human-carried-landing-verb reason=priority-order subject=capped-round-continues-instead-of-restarting from=1:22 to=1:23 requested-sequence=21
+Integrity: sha256=dc9a5689e0916d93c72977f8193e42d1d524f0a264dbaab303b0c497b33e81dd
