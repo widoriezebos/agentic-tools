@@ -5,11 +5,11 @@
 - Sequence: 17
 - Risk: severity=1 novelty=1 exposure=3 accumulation=1 basis="severity 1: a mis-tiered goal still gets critique at its tier; novelty 1: the derivation exists; exposure 3: every goal; accumulation 1: one formula"
 - Tier: 2
-- Intent: 75 percent of concluded goals are tier 3 because exposure 3 alone lifts the tier, as it lifted test depth before landing-runs-standard-deep-runs-at-cadence (process-rules.md section 5 item 3 of the delivery deep dive); this very goal had to be opened by a human with a tier override to be tier 2. DONE means: the tier is derived from severity and novelty only; exposure and accumulation scale cadence weight and the one-time deep run, exactly as that goal did for test depth; docs/orchestration.md and the classify path say so; proven by the tier probe on the current backlog showing under 40 percent tier 3. Goal 16 of plans/delivery-efficiency-plan.md. Tier 2 by Wido's choice 2026-09-11.
+- Intent: 75 percent of concluded goals are tier 3 because exposure 3 alone lifts the tier, as it lifted test depth before landing-runs-standard-deep-runs-at-cadence (process-rules.md section 5 item 3 of the delivery deep dive); this very goal had to be opened by a human with a tier override to be tier 2. DONE means: the tier is derived from severity and novelty only; exposure and accumulation scale cadence weight and the one-time deep run, exactly as that goal did for test depth; docs/orchestration.md and the classify path say so; proven by the tier probe on the current backlog showing under 40 percent tier 3. Goal 16 of plans/delivery-efficiency-plan.md. Tier 2 by Wido's choice 2026-09-11. RUNTIME INDEPENDENCE (plan principle 0; architecture doctrine of 2026-08-16: correctness never depends on an accelerator): this holds for every runtime the roster can host today (claude, codex, devin) and for future adapters such as opencode; the mechanism lives in the Go engine, the ledger verbs and the adapter contract, never in one runtime's hook, harness, CLI or transcript format; a native facility may accelerate it through its adapter, and an agent on any runtime with no accelerator gets the same guarantee from the records and the verb alone; where the goal touches a runtime path, DONE is proven on at least two runtimes.
 - Origin: human
 - Next step: Read the tier derivation (the severity-tiered-rigor lineage and internal/testpolicy risk), change the formula and the docs, land.
 - OpenedAt: 2026-09-11T15:50:34Z
-- Revision: 8
+- Revision: 9
 - Pinned: m1e
 - BudgetExceptions: 0
 
@@ -22,4 +22,5 @@ History:
 - 2026-09-11T16:18:20Z J5PHE8R2SWPAM65XBB7MQ72P5H-m1-c6925449 set-priority actor=human:Wido targets=critique-closes-on-folded-proof,human-carried-landing-carry,tier-from-severity-and-novelty reason=priority-order subject=critique-closes-on-folded-proof from=1:17 to=1:18 requested-sequence=16
 - 2026-09-11T16:18:24Z 000ZBR0TR186F4J8EHPZC6423D-m1-c6925449 set-priority actor=human:Wido targets=human-carried-landing-carry,tier-from-severity-and-novelty reason=priority-order subject=tier-from-severity-and-novelty from=1:18 to=1:17 requested-sequence=17
 - 2026-09-11T20:31:17Z W3RD1SBYGG2Q8YETZGYD026W2V-m1-c6925449 unapprove actor=human:Wido targets=tier-from-severity-and-novelty reason=Wido 2026-09-11: every program goal states runtime independence (claude, codex, devin, future adapters); intent amended before re-approval
-Integrity: sha256=e9f1bff5e7d4bbe82c4e349c680b564d4a1beb637731d8930cb6045dc7c3ff5d
+- 2026-09-11T20:32:31Z J1G92SJAT5P1D9143GRYMV4SFH-m1e-3ca84c28 edit actor=m1e+main-1789158700-39729-b9c0d2 targets=tier-from-severity-and-novelty
+Integrity: sha256=7d63059337611cd2b3fdabcf04c571b2c5b588af65003cb431eb2ad920b454d6
