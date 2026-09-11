@@ -92,6 +92,20 @@ jobs they reference (a few five-second dispatches per cluster against a
 574-second scenario), with the fixture's own assertions on those jobs kept
 where they are; or a cheaper dispatch.sh, which is a goal of its own.
 
+The leg map (2026-09-11, lines of dispatch-fixtures.sh) gives five
+clusters with few crossings: A, lines 1517 to 2060 (happy through
+investigator-role), self-contained; B, 2081 to 2450 (pending-chain through
+mirror-retry), where only mirror-retry's second reap reads flag-runtime and
+review-target from A; C, 2454 to 2590 (the cap chains and repeat-follow),
+which need flag-runtime and review-target from A; D, 2589 to 2830 (the
+worktree chains), self-contained; E, 2826 to 3496 (follow-ups through the
+mission legs), which needs happy, review-target and default-role from A
+and malformed-return and process-loss from B. A cluster child runs the bed
+setup, then the shared legs it needs as functions (each leg keeps its own
+assertions), then its own legs. Hidden state the map does not show:
+metasystem.conf edits between legs (the good, no-tier and tier-renamed
+configurations), which a cluster must restore before its legs.
+
 ## Proof
 
 - `TestStageRunsIndependentGroupsSideBySide`: three two-second groups under a

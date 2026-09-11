@@ -278,8 +278,13 @@ func writeFreshSupervision(t *testing.T, engine *Engine) {
 	writeDoc(reaperBeat, map[string]any{
 		"function": "reaper", "pid": reaperPid, "pidStartedAt": reaperStart, "observedAtEpoch": now,
 	})
+	// The bed's census is written once and never refreshed, and the
+	// preflight counts a census older than the declared interval as stale;
+	// a fixture that spends its whole test on real mission births under a
+	// loaded box outlives sixty seconds (2026-09-11, the pooled battery),
+	// so the fixture declares the interval its tests actually need.
 	writeDoc(filepath.Join(supervision, "state.json"), map[string]any{
-		"intervalSec": 60, "fingerprint": "fixture-fingerprint",
+		"intervalSec": 600, "fingerprint": "fixture-fingerprint",
 		"components": map[string]any{
 			"watcher": map[string]any{"pid": watcherPid, "pidStartedAt": watcherStart,
 				"instanceTag": "fixture-watcher-tag", "heartbeat": watcherBeat},

@@ -580,14 +580,20 @@ func TestFreshLedgerFailureAndFetchTimeoutBlockTheStop(t *testing.T) {
 
 	t.Run("fetch timeout", func(t *testing.T) {
 		freshProjectionTimeout = 20 * time.Millisecond
+		// The fetch outlives the verdict by a wide margin, so the proof is
+		// that the verdict returned without it (the fetch is still asleep),
+		// not a wall-clock figure a loaded box inflates.
+		fetched := make(chan struct{})
 		fetchForProjection = func(Endpoint) (AdvanceResult, error) {
-			time.Sleep(100 * time.Millisecond)
+			time.Sleep(10 * time.Second)
+			close(fetched)
 			return AdvanceResult{}, nil
 		}
-		started := time.Now()
 		verdict, err := (&Store{Root: root}).TurnVerdict(ScanResult{}, "fetch-timeout", "", "main-1")
-		if elapsed := time.Since(started); elapsed > time.Second {
-			t.Fatalf("the bounded fetch did not release the verdict promptly: %s", elapsed)
+		select {
+		case <-fetched:
+			t.Fatal("the bounded fetch did not release the verdict before the fetch returned")
+		default:
 		}
 		if err != nil || !verdict.ShouldBlock || !strings.Contains(verdict.Display, "timed out") {
 			t.Fatalf("a fetch timeout must return a structured block: %+v %v", verdict, err)

@@ -106,7 +106,21 @@ func (e *Engine) terminateGroup(pgid int, tag string, allowFake bool) (string, e
 		}
 		grant = authorization.GroupOwnership()
 	}
-	if groupOwnership(pgid, tag, grant) != janitor.GroupOwned {
+	// One probe can land while a member is between fork and exec, or
+	// while the process table is slow under load, and read INDETERMINATE
+	// for a group that is provably ours a moment later (2026-09-11: a
+	// TERM-immune owned group was left to the census under a fully
+	// parallel battery). A few probes over a short window separate a
+	// transient unreadable member from a group that is really not ours.
+	ownership := groupOwnership(pgid, tag, grant)
+	for probe := 0; probe < 5 && ownership != janitor.GroupOwned && groupAlive(pgid); probe++ {
+		time.Sleep(100 * time.Millisecond)
+		ownership = groupOwnership(pgid, tag, grant)
+	}
+	if !groupAlive(pgid) {
+		return TerminationAlreadyGone, nil
+	}
+	if ownership != janitor.GroupOwned {
 		fmt.Fprintf(os.Stderr, "host process group %d is not provably ours; "+
 			"leaving it to the census rather than signaling an unowned group\n", pgid)
 		e.emit("wind-down", fmt.Sprintf("group %d unowned; skipped", pgid), map[string]string{

@@ -178,7 +178,13 @@ func TestCreateTestReceiptRemovesIsolatedWorktreeAfterSignal(t *testing.T) {
 			_ = helper.Wait()
 		}
 	})
-	deadline := time.Now().Add(10 * time.Second)
+	// The helper is a second copy of this test binary doing real git work;
+	// under a loaded box its probe takes longer than a quiet box's few
+	// seconds, so the bound is one only a hang trips (2026-09-11: ten
+	// seconds failed inside the pooled battery). And the helper's output is
+	// read only after the helper has been waited for: its stdout copier
+	// writes the buffer until then, which the race detector reported.
+	deadline := time.Now().Add(90 * time.Second)
 	var isolatedRoot string
 	for time.Now().Before(deadline) {
 		data, readErr := os.ReadFile(probe)
@@ -192,6 +198,9 @@ func TestCreateTestReceiptRemovesIsolatedWorktreeAfterSignal(t *testing.T) {
 		time.Sleep(10 * time.Millisecond)
 	}
 	if isolatedRoot == "" {
+		_ = helper.Process.Signal(os.Interrupt)
+		_ = helper.Wait()
+		helperWaited = true
 		t.Fatalf("signal helper did not expose its isolated root:\n%s", output.String())
 	}
 	resolvedTemp, err := filepath.EvalSymlinks(os.TempDir())
