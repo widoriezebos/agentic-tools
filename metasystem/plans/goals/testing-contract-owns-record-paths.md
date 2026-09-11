@@ -1,6 +1,6 @@
 # testing-contract-owns-record-paths
 
-- State: parked
+- State: approved
 - Priority: 1
 - Sequence: 2
 - Risk: severity=3 novelty=1 exposure=3 accumulation=1 basis="severity 3: no seat can land a register, brief or ruling until this is fixed, which is the whole carriage of judgment; novelty 1: one surface entry and one fixture in a contract that already has twelve surfaces; exposure 3: every seat's every record landing; accumulation 1: nothing has been built on it yet"
@@ -9,12 +9,11 @@
 - Origin: main
 - Next step: CLAIMED BY m1e (revision 13 after a release and re-claim to reset accounting; the stopped proof attempt proof-mtvl0alu-d730bf3fb129f4ae stays non-terminal under revision 6). ENGINE LANDING, ATTEMPT 2: chain implementer-4f7f89d5ae26d31cd1fa3ae8 (three rounds, closed, reads tcorp-cc1 and tcorp-cc2, full receipt proof-mtvlkow8 sufficient on tree 6207691f) was overtaken by main at ce71e66d (m1b's enrollment-skew fix also changed cmd/metasystem/test_test.go at the certified test's position), and the closed chain can take no round; the recertify stage refuses because a design-bearing critic chain never closes (goal merge-stage-critic-close). So the certified diff is carried into a fresh chain: job implementer-2aae86f16a7801089540f7dc (Sol, DESIGN-BEARING, union merge of the test file; brief in m1e's scratchpad tcorp/carry-brief.md). THEN: conformance review, one independent read (Opus, brief tcorp/critic-carry-brief.md), dispositions, close, stage, receipt minted from a Bash shell with GOFLAGS=-timeout=30m (a group's identity digests the whole environment, so the receipt and the landing must share one shell environment; Wido approved the timeout workaround), land.sh --chain <job> --test-receipt, rebuild and re-arm. THEN chain 2: declare the residual surface with the highest risk raise, amend the design page's rule on unowned paths, read, receipt, land; goal done with the journey chapter and the receipt line (drafted in tcorp/). Wido's go for landings was given 20:5xZ; next after this goal: landing-runs-standard-deep-runs-at-cadence (pinned, P1:1).
 - OpenedAt: 2026-09-09T21:49:17Z
-- Revision: 24
+- Revision: 25
 - Budget: elapsedLimit=1d attemptLimit=10 reservedJobMinutesLimit=1200 activeJobLimit=1 reviewRoundLimit=3
 - BudgetExceptions: 0
 - Approved: by=human:Wido at=2026-09-10T07:29:14Z revision=4 opid=4ZK6CRTM3WB0139F8R1W7B9NNZ-m1b-c6925449 authority=proven digest=3ba72d9bfc753d2638ad986ff5cb13e30a10404dbcad76e53800bdbef94dcb8b
 - Sliced: machine=m1e lineage=main-1789030447-51011-5722fc revision=6 at=2026-09-10T10:59:18Z
-- Parked: by=m1e+main-1789030447-51011-5722fc at=2026-09-11T06:36:56Z because=Parked 2026-09-11 06:5xZ by m1e, LAND-READY, blocked by a fleet red: since 612b1e57 the adoption bed fails in every adopted copy (goal adopted-validation-expects-a-template-only-section, opened with the reproduction), so the engine landing's receipt (tree a28da131 on main 16b42bb5, 41 of 42 green) cannot be sufficient. Carry chain implementer-2aae86f16a7801089540f7dc is closed on a clean read (tcorp-cc3); dispositions r1 to r3 written under plans/dispositions; the candidate re-stages cleanly from its round-1 diff. Resume: unpark, claim, re-stage on the tip (rebuild and re-arm first), receipt with GOFLAGS=-timeout=30m from the same shell as the landing, land via scratchpad tcorp/land-engine.sh, then chain 2 (tcorp/chain2-brief.md), goal done (journey chapter and receipt line drafted in tcorp/). Wido's word 2026-09-11: land this goal, then stop.
 
 History:
 - 2026-09-09T21:49:17Z HM3T2QVDJE4SEVNYC59QJ148Y3-m1b-c6925449 open actor=m1b+main-1788680071-18713-e76d5d targets=testing-contract-owns-record-paths
@@ -41,4 +40,5 @@ History:
 - 2026-09-11T05:30:11Z QG60W427D6T7E5F26YD5P3AW52-m1e-892cdaec release actor=m1e+main-1789030447-51011-5722fc targets=testing-contract-owns-record-paths
 - 2026-09-11T05:30:15Z FR6HQ65JSKTSW64P25YCCCYW3F-m1e-892cdaec claim actor=m1e+main-1789030447-51011-5722fc targets=testing-contract-owns-record-paths
 - 2026-09-11T06:36:56Z VREY99KSN4RDD7HKCHPQ3ZFG2B-m1e-892cdaec park actor=m1e+main-1789030447-51011-5722fc targets=testing-contract-owns-record-paths reason=Parked 2026-09-11 06:5xZ by m1e, LAND-READY, blocked by a fleet red: since 612b1e57 the adoption bed fails in every adopted copy (goal adopted-validation-expects-a-template-only-section, opened with the reproduction), so the engine landing's receipt (tree a28da131 on main 16b42bb5, 41 of 42 green) cannot be sufficient. Carry chain implementer-2aae86f16a7801089540f7dc is closed on a clean read (tcorp-cc3); dispositions r1 to r3 written under plans/dispositions; the candidate re-stages cleanly from its round-1 diff. Resume: unpark, claim, re-stage on the tip (rebuild and re-arm first), receipt with GOFLAGS=-timeout=30m from the same shell as the landing, land via scratchpad tcorp/land-engine.sh, then chain 2 (tcorp/chain2-brief.md), goal done (journey chapter and receipt line drafted in tcorp/). Wido's word 2026-09-11: land this goal, then stop.
-Integrity: sha256=8f0f1b963e9d69c6b13c9778715d0e2cf506e846df5cc486eafa65a6c9b2abbb
+- 2026-09-11T08:21:41Z B9A5TPSA6G6WT9HY6VHN0TX3YS-m1e-892cdaec unpark actor=m1e+main-1789030447-51011-5722fc targets=testing-contract-owns-record-paths
+Integrity: sha256=2d82ed2d57dc7d202cfc494f60441d96afce1444da02ba6941980a34b1a84c67
