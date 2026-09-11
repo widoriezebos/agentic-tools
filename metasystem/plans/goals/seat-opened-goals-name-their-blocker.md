@@ -7,9 +7,9 @@
 - Tier: 2
 - Intent: Seats opened 165 goals in five days against 62 concluded, growing the backlog by 117 (ledger.md section 5). DONE means: goal open from a seat (origin main) requires --blocks naming the goal it unblocks and, in the same publish, parks that goal with the blocker named (a claimed goal may not carry an unfinished blocker, internal/goal/validate.go) and records the edge on the parked goal, which is claimable again only when the blocker is done; a seat open without --blocks is refused with the ruling; human-origin opens are unchanged; docs/orchestration.md carries the ruling that a seat opens only the defect that blocks its current goal and every other goal is opened by a person. The ruling is a policy decision under R-36-m3: it is built after Wido records it on the design page. Goal 6 of plans/delivery-efficiency-plan.md.
 - Origin: human
-- Next step: Read OpenTiered in internal/goal/verbs.go, the park verb and the claimed-blocker validation; design the atomic open-and-park publish; put the ruling to Wido; build; docs; land.
+- Next step: Wido's word recorded 2026-09-11 (R-93-m1e): yes; seats open only blockers with --blocks and the same-publish park; non-blocking discoveries go to the backlog-notes register as proposals. Next: build behind fixtures in rank order.
 - OpenedAt: 2026-09-11T15:45:05Z
-- Revision: 9
+- Revision: 10
 - Pinned: m1e
 - Budget: elapsedLimit=4h attemptLimit=6 reservedJobMinutesLimit=720 activeJobLimit=1 reviewRoundLimit=2
 - BudgetExceptions: 0
@@ -25,4 +25,5 @@ History:
 - 2026-09-11T16:16:31Z 2W377S4HCBEC3XM0ND8DBQP9H4-m1e-ab5421f5 edit actor=m1e+main-1789143377-71578-b9c0d2 targets=seat-opened-goals-name-their-blocker
 - 2026-09-11T16:17:42Z 10K1ZB3NEVAP7YG6XS8JK7N6VJ-m1-c6925449 set-priority actor=human:Wido targets=human-carried-landing-carry,seat-opened-goals-name-their-blocker reason=priority-order subject=seat-opened-goals-name-their-blocker from=1:7 to=1:6 requested-sequence=6
 - 2026-09-11T16:18:58Z VY3VHFYQSAFH7K0FCTYNM0XT1N-m1-c6925449 approve actor=human:Wido targets=seat-opened-goals-name-their-blocker
-Integrity: sha256=3255f1d1ff16856e26eada8771b14419413e8ba19c28d98dfdf564a4d39b9caf
+- 2026-09-11T20:15:44Z 4PJ4YE6846N70DDF3YKG088B12-m1e-892cdaec edit actor=m1e+main-1789030447-51011-5722fc targets=seat-opened-goals-name-their-blocker
+Integrity: sha256=a90ef5dbed87f8d691734e918d54abe1085e0a357ca341fe7f47d2d211f7b461
