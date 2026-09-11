@@ -627,7 +627,91 @@ fi
 # gate's contention, the slowest packages take about ten minutes on a large
 # machine and have passed thirty on a small one. Sixty minutes leaves room for
 # a small machine and still ends a hung package.
-go test -race -cover -timeout 60m ./internal/... | tee "$coverage_log" || {
+# The two serial giants (goal, missionrunner) run as shards beside the rest:
+# their discovered test names are dealt round-robin into
+# METASYSTEM_GATE_SHARDS (default 4) race+cover launches each, with the
+# coverage data of every shard written under one directory and merged by
+# go tool covdata; the merged per-package lines join the coverage log last,
+# in go test's own summary shape, so the ratchet judges the whole package.
+# Every other package runs as before in one go test over the rest of
+# ./internal/... . The gate's wall time becomes its longest package or
+# shard instead of the serial sum of two.
+gate_shards=${METASYSTEM_GATE_SHARDS:-4}
+[[ "$gate_shards" =~ ^[1-9][0-9]*$ ]] || gate_shards=4
+# bash 3.2 under set -u cannot size an empty array, so counts travel beside them.
+gate_sharded_packages=()
+gate_rest_packages=()
+gate_sharded_count=0
+gate_rest_count=0
+while IFS= read -r gate_pkg; do
+  case "$gate_pkg" in
+    */internal/goal) gate_sharded_packages+=(internal/goal); gate_sharded_count=$((gate_sharded_count + 1)) ;;
+    */internal/missionrunner) gate_sharded_packages+=(internal/missionrunner); gate_sharded_count=$((gate_sharded_count + 1)) ;;
+    *) gate_rest_packages+=("$gate_pkg"); gate_rest_count=$((gate_rest_count + 1)) ;;
+  esac
+done < <(go list ./internal/... 2>/dev/null)
+gate_unit_rc=0
+gate_shard_root=$(mktemp -d "${TMPDIR:-/tmp}/metasystem-gate-shards.XXXXXX")
+gate_shard_pids=()
+gate_shard_logs=()
+if (( gate_sharded_count == 0 )); then
+  # A module without the two giants (every fixture module, and a toolchain
+  # that cannot list) runs as the one launch it always was, spelled the way
+  # the fixture toolchains recognise.
+  gate_sharded_count=0
+  go test -race -cover -timeout 60m ./internal/... >"$gate_shard_root/rest.log" 2>&1 &
+  gate_shard_pids+=("$!")
+  gate_shard_logs+=("$gate_shard_root/rest.log")
+elif (( gate_rest_count )); then
+  go test -race -cover -timeout 60m "${gate_rest_packages[@]}" >"$gate_shard_root/rest.log" 2>&1 &
+  gate_shard_pids+=("$!")
+  gate_shard_logs+=("$gate_shard_root/rest.log")
+fi
+for gate_pkg in "${gate_sharded_packages[@]+"${gate_sharded_packages[@]}"}"; do
+  (( gate_sharded_count )) || break
+  gate_names=$(go test -list '.*' "./$gate_pkg" 2>/dev/null | grep -E '^Test' || true)
+  if [[ -z "$gate_names" ]]; then
+    go test -race -cover -timeout 60m "./$gate_pkg" >"$gate_shard_root/${gate_pkg//\//-}.log" 2>&1 &
+    gate_shard_pids+=("$!")
+    gate_shard_logs+=("$gate_shard_root/${gate_pkg//\//-}.log")
+    continue
+  fi
+  gate_pkg_dir="$gate_shard_root/${gate_pkg//\//-}"
+  for ((gate_i = 1; gate_i <= gate_shards; gate_i++)); do
+    gate_pattern=$(printf '%s\n' "$gate_names" | awk -v n="$gate_shards" -v i="$gate_i" 'NR % n == i % n {printf "%s%s", (c++ ? "|" : ""), $0}')
+    [[ -n "$gate_pattern" ]] || continue
+    mkdir -p "$gate_pkg_dir/shard-$gate_i"
+    go test -race -cover -timeout 60m -run "^($gate_pattern)\$" "./$gate_pkg" -args -test.gocoverdir="$gate_pkg_dir/shard-$gate_i" \
+      >"$gate_pkg_dir/shard-$gate_i.log" 2>&1 &
+    gate_shard_pids+=("$!")
+    gate_shard_logs+=("$gate_pkg_dir/shard-$gate_i.log")
+  done
+done
+for gate_pid in "${gate_shard_pids[@]+"${gate_shard_pids[@]}"}"; do
+  wait "$gate_pid" || gate_unit_rc=1
+done
+for gate_log in "${gate_shard_logs[@]+"${gate_shard_logs[@]}"}"; do
+  cat "$gate_log" >>"$coverage_log"
+done
+if (( gate_unit_rc == 0 && gate_sharded_count )); then
+  for gate_pkg in "${gate_sharded_packages[@]+"${gate_sharded_packages[@]}"}"; do
+    gate_pkg_dir="$gate_shard_root/${gate_pkg//\//-}"
+    [[ -d "$gate_pkg_dir" ]] || continue
+    # Only the shard directories carry coverage data; the shard logs sit
+    # beside them and must not reach covdata.
+    gate_dirs=$(ls -d "$gate_pkg_dir"/shard-*/ 2>/dev/null | sed 's#/$##' | tr '\n' ',' | sed 's/,$//')
+    [[ -n "$gate_dirs" ]] || continue
+    if ! gate_merged=$(go tool covdata percent -i="$gate_dirs" 2>&1); then
+      echo "go gate: shard coverage merge failed for $gate_pkg: $gate_merged" | tee -a "$coverage_log" >&2
+      gate_unit_rc=1
+      continue
+    fi
+    printf '%s\n' "$gate_merged" | awk '$2 == "coverage:" {printf "ok  \t%s\t0.000s\tcoverage: %s of statements\n", $1, $3}' >>"$coverage_log"
+  done
+fi
+cat "$coverage_log"
+rm -rf "$gate_shard_root"
+if (( gate_unit_rc != 0 )); then
   # Evidence beats disk (the suite's own rule): a transient test failure
   # with its log deleted is undiagnosable — tonight's nested-gate flake
   # was exactly that. Keep the failing run's output where the suite keeps
@@ -637,7 +721,7 @@ go test -race -cover -timeout 60m ./internal/... | tee "$coverage_log" || {
   mv "$coverage_log" "$keep" 2>/dev/null || true
   echo "go gate: unit tests failed (output kept: $keep)" >&2
   exit 1
-}
+fi
 
 # cmd's own tests run too. The package is coverage-ratchet-exempt as thin
 # wiring, but exempt-from-floors never meant exempt-from-running: a broken
@@ -653,7 +737,9 @@ go test -race -timeout 60m ./cmd/... >"$cmd_log" 2>&1 || {
   keep="artifacts/agents/gate-failures/$(date -u +%Y%m%dT%H%M%SZ)-$$-cmd.log"
   mkdir -p "$(dirname "$keep")"
   mv "$cmd_log" "$keep" 2>/dev/null || true
-  grep -E '^(--- FAIL|FAIL|panic:|ok  )' "$keep" 2>/dev/null | head -20 >&2 || true
+  # The failing tests' own words travel with the section log, because the
+  # kept file lives in a worktree the suite may clean up.
+  grep -nE -A8 '^(--- FAIL|panic:)' "$keep" 2>/dev/null | head -120 >&2 || true
   echo "go gate: cmd tests failed (output kept: $keep)" >&2
   exit 1
 }

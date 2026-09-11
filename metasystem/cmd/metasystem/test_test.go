@@ -787,13 +787,16 @@ func TestFrozenPublicVersionOneSelectionProbesRunAgainstCandidateExecutable(t *t
 }
 
 func TestFrozenPublicVersionOneCorpusRunsAllSixCasesThroughFirstTransitionWorker(t *testing.T) {
-	sourceRoot, err := filepath.Abs(filepath.Join("..", "..", ".."))
+	// The module root is the metasystem directory wherever the package sits:
+	// under the repository (<repo>/metasystem) or at the root of the gate's
+	// extracted snapshot, which has no parent repository around it.
+	moduleRoot, err := filepath.Abs(filepath.Join("..", ".."))
 	if err != nil {
 		t.Fatal(err)
 	}
 	// Freeze the actual source under test, whether it is committed or still
 	// being edited. The executable and both commits must name these bytes.
-	frozen, err := proofrun.Freeze(filepath.Join(sourceRoot, "metasystem"))
+	frozen, err := proofrun.Freeze(moduleRoot)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -860,7 +863,10 @@ func TestFrozenPublicVersionOneCorpusRunsAllSixCasesThroughFirstTransitionWorker
 	writeTestingFixtureFile(t, ignorePath, append(ignore, []byte("reports*/\n")...), 0o644)
 	now := time.Now().UTC()
 	risk := &goal.RiskRecord{Severity: 1, Novelty: 1, Exposure: 1, Accumulation: 1, Basis: "The fixture runs one bounded policy corpus."}
-	budget := &goal.Budget{ElapsedLimit: "1h", AttemptLimit: 2, ReservedJobMinutesLimit: 2, ActiveJobLimit: 1, ReviewRoundLimit: 2}
+	// Six frozen cases through a real worker take about two and a half
+	// minutes under the race detector on a loaded box; a one-minute cap made
+	// this a wall-clock test that failed only inside the race gate.
+	budget := &goal.Budget{ElapsedLimit: "1h", AttemptLimit: 2, ReservedJobMinutesLimit: 6, ActiveJobLimit: 1, ReviewRoundLimit: 2}
 	intent := "Run the frozen policy corpus through the first testing transition."
 	rootRecord := &goal.RootRecord{Identity: "01ARZ3NDEKTSV4RRFFQ69G5FB0", FormatVersion: "1", SyncMode: goal.SyncLocal, Revision: 1}
 	goalFile := &goal.GoalFile{Id: "policy-corpus", State: goal.StateClaimed, Tier: 1, Risk: risk, Intent: intent, Origin: goal.OriginMain,
@@ -919,7 +925,7 @@ func TestFrozenPublicVersionOneCorpusRunsAllSixCasesThroughFirstTransitionWorker
 	// and atomic terminal receipt. A manually reserved parent would bind a
 	// different source/configuration context from the actual testing command.
 	public := exec.Command(engine, "test", "run", "--root", root, "--tree", candidate,
-		"--mode", "auto", "--purpose", "delivery", "--goal", "policy-corpus", "--cap-min", "1")
+		"--mode", "auto", "--purpose", "delivery", "--goal", "policy-corpus", "--cap-min", "5")
 	public.Dir = projectRoot
 	public.Env = fixtureEnvironment
 	output, runErr := public.CombinedOutput()
