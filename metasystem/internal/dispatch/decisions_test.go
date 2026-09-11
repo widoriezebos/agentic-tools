@@ -507,6 +507,81 @@ func TestBuildRecordDesignCriticCarriesDeclaredOutputs(t *testing.T) {
 	if limit, _ := numInt(record[reviewRoundLimitField]); limit != 3 {
 		t.Fatalf("review round limit = %v", record[reviewRoundLimitField])
 	}
+	if counted, _ := record[reviewChainCountedField].(bool); !counted {
+		t.Fatalf("new design-critic root is not marked for per-class chain accounting: %v", record[reviewChainCountedField])
+	}
+	followOutput := filepath.Join(tmp, "follow-record.json")
+	if err := BuildFollowRecord(BuildFollowRecordParams{
+		Output: followOutput, Parent: output, Job: "design-critic-r2", Round: 2, ParentJob: "design-critic",
+		Snapshot: "artifacts/agents/capabilities/fake.json", Fallbacks: "[]", Signal: true, HandshakeBudget: 20,
+		ResumeMode: "fresh", InputBytes: 4, InputHash: "follow-hash", MainID: "main-1", ClaimEpoch: "7",
+		CapResolution: capResolution, Model: "fake-model", DestructiveReach: HazardMechanical,
+		LaunchMode: LaunchModeSharedCheckout, OutputStream: filepath.Join(tmp, "follow-stream.jsonl"),
+	}); err != nil {
+		t.Fatalf("BuildFollowRecord: %v", err)
+	}
+	follow := readJSONFile(t, followOutput)
+	if follow["parentJob"] != "design-critic" {
+		t.Fatalf("follow-up parent = %v", follow["parentJob"])
+	}
+	if _, present := follow[reviewChainCountedField]; present {
+		t.Fatalf("follow-up copied the critic-root counted marker: %v", follow[reviewChainCountedField])
+	}
+}
+
+func TestBuildRecordCodeCriticMarksOnlyFreshRoot(t *testing.T) {
+	root := t.TempDir()
+	tmp := t.TempDir()
+	workspace := filepath.Join(tmp, "workspace")
+	if err := os.MkdirAll(workspace, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	for _, args := range [][]string{
+		{"init", "-q"}, {"config", "user.email", "t@example.invalid"}, {"config", "user.name", "t"},
+		{"commit", "-q", "--allow-empty", "-m", "base"},
+	} {
+		command := exec.Command("git", append([]string{"-C", workspace}, args...)...)
+		if output, err := command.CombinedOutput(); err != nil {
+			t.Fatalf("git %v: %v: %s", args, err, output)
+		}
+	}
+	capResolution := filepath.Join(tmp, "cap.json")
+	if err := WriteCapResolution(capResolution, 45, "built-in", "default"); err != nil {
+		t.Fatal(err)
+	}
+	permissions := writeJSONFile(t, tmp, "permissions.json", map[string]any{
+		"preset": "none", "readRoots": []any{}, "writeRoots": []any{},
+		"network": "deny", "approvals": "deny", "tools": "read-only",
+	})
+	rootOutput := filepath.Join(tmp, "code-root.json")
+	if err := BuildRecord(BuildRecordParams{
+		Output: rootOutput, Job: "code-critic", Role: "code-critic", Root: root, Runtime: "fake",
+		Workspace: workspace, CapResolution: capResolution, Model: "fake-model",
+		Snapshot: "artifacts/agents/capabilities/fake.json", InputBytes: 12, InputHash: "root-hash",
+		Permissions: permissions, Fallbacks: "[]", Signal: true, HandshakeBudget: 20,
+		MainID: "main-1", ClaimEpoch: "7", DestructiveReach: HazardMechanical, ReasoningEffort: "medium",
+		LaunchMode: LaunchModeSharedCheckout, OutputStream: filepath.Join(tmp, "root-stream.jsonl"),
+	}); err != nil {
+		t.Fatal(err)
+	}
+	rootRecord := readJSONFile(t, rootOutput)
+	if counted, _ := rootRecord[reviewChainCountedField].(bool); !counted {
+		t.Fatalf("fresh code-critic root is not marked for chain accounting: %v", rootRecord[reviewChainCountedField])
+	}
+	followOutput := filepath.Join(tmp, "code-follow.json")
+	if err := BuildFollowRecord(BuildFollowRecordParams{
+		Output: followOutput, Parent: rootOutput, Job: "code-critic-r2", Round: 2, ParentJob: "code-critic",
+		Snapshot: "artifacts/agents/capabilities/fake.json", Fallbacks: "[]", Signal: true, HandshakeBudget: 20,
+		ResumeMode: "fresh", InputBytes: 4, InputHash: "follow-hash", MainID: "main-1", ClaimEpoch: "7",
+		CapResolution: capResolution, Model: "fake-model", DestructiveReach: HazardMechanical,
+		LaunchMode: LaunchModeSharedCheckout, OutputStream: filepath.Join(tmp, "follow-stream.jsonl"),
+	}); err != nil {
+		t.Fatal(err)
+	}
+	followRecord := readJSONFile(t, followOutput)
+	if _, present := followRecord[reviewChainCountedField]; present {
+		t.Fatalf("code-critic follow-up copied the root marker: %v", followRecord[reviewChainCountedField])
+	}
 }
 
 func TestBuildRecordCarriesConfiguredMaximalModelEffort(t *testing.T) {

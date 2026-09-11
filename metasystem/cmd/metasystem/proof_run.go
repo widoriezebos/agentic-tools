@@ -524,8 +524,8 @@ func admitProofLaunch(request proofLaunchAdmission) (proofrun.Attempt, proofrun.
 		return proofrun.Attempt{}, decision, false, nil
 	}
 	if reservationOwner == nil {
-		verdict, err := dispatchcore.EvaluateGoalRevisionAdmission(request.ControlRoot, request.GoalID, binding.Revision,
-			uint64(capValue), now, dispatchcore.HazardMechanical)
+		verdict, err := dispatchcore.EvaluateGoalRevisionAdmissionForDispatch(request.ControlRoot, request.GoalID, binding.Revision,
+			uint64(capValue), now, "implementer", "fresh", dispatchcore.HazardMechanical)
 		if err != nil {
 			return proofrun.Attempt{}, proofrun.LaunchResult{}, false, err
 		}

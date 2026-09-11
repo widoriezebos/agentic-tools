@@ -128,3 +128,244 @@ func TestEveryBudgetRefusalNamesObservedAndOpenCaps(t *testing.T) {
 		}
 	})
 }
+
+func reviewChainBudgetBed(t *testing.T) string {
+	t.Helper()
+	root := revisionBindingBed(t, 2)
+	path := filepath.Join(root, "plans", "goals", "bounded.md")
+	data, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	file, problems := goal.ParseFile(data)
+	if len(problems) != 0 {
+		t.Fatalf("parse goal fixture: %v", problems)
+	}
+	file.Budget.AttemptLimit = 20
+	file.Budget.ReservedJobMinutesLimit = 1000
+	file.Budget.ActiveJobLimit = 10
+	file.Budget.ReviewRoundLimit = 2
+	if err := os.WriteFile(path, goal.RenderFile(file), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	for _, args := range [][]string{{"add", "plans/goals/bounded.md"}, {"commit", "-q", "-m", "review chain budget bed"}, {"update-ref", goal.AcceptedRef, "HEAD"}} {
+		command := exec.Command("git", append([]string{"-C", root}, args...)...)
+		command.Env = []string{"PATH=" + os.Getenv("PATH"), "LC_ALL=C"}
+		if output, runErr := command.CombinedOutput(); runErr != nil {
+			t.Fatalf("git %v: %v: %s", args, runErr, output)
+		}
+	}
+	return root
+}
+
+func writeCountedCriticRootAtRevision(t *testing.T, root, job, role string, revision uint64) {
+	t.Helper()
+	writeJSON(t, filepath.Join(root, "artifacts", "agents", "jobs", job+".json"), map[string]any{
+		"jobId": job, "operationId": job, "role": role, "parentJob": nil,
+		"goalId": "bounded", "goalRevision": revision, "capMin": 1, "status": "completed",
+		reviewChainCountedField: true,
+	})
+}
+
+func writeCountedCriticRoot(t *testing.T, root, job, role string) {
+	t.Helper()
+	writeCountedCriticRootAtRevision(t, root, job, role, 2)
+}
+
+func amendReviewChainBudgetBed(t *testing.T, root, message string, mutate func(*goal.GoalFile)) {
+	t.Helper()
+	path := filepath.Join(root, "plans", "goals", "bounded.md")
+	data, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	file, problems := goal.ParseFile(data)
+	if len(problems) != 0 {
+		t.Fatalf("parse goal fixture before amendment: %v", problems)
+	}
+	mutate(file)
+	if err := os.WriteFile(path, goal.RenderFile(file), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	for _, args := range [][]string{{"add", "plans/goals/bounded.md"}, {"commit", "-q", "-m", message}, {"update-ref", goal.AcceptedRef, "HEAD"}} {
+		command := exec.Command("git", append([]string{"-C", root}, args...)...)
+		command.Env = []string{"PATH=" + os.Getenv("PATH"), "LC_ALL=C"}
+		if output, runErr := command.CombinedOutput(); runErr != nil {
+			t.Fatalf("git %v: %v: %s", args, runErr, output)
+		}
+	}
+}
+
+func TestGoalRevisionAdmissionRefusesThirdCodeCritiqueChain(t *testing.T) {
+	root := reviewChainBudgetBed(t)
+	writeCountedCriticRoot(t, root, "code-one", "code-critic")
+	writeCountedCriticRoot(t, root, "code-two", "code-critic")
+	now := time.Date(2026, 8, 28, 9, 0, 0, 0, time.UTC)
+
+	verdict, err := EvaluateGoalRevisionAdmissionForDispatch(root, "bounded", 2, 1, now, "code-critic", "fresh", HazardMechanical)
+	if err != nil || !verdict.Refused() || verdict.Refusal == nil {
+		t.Fatalf("third code critique was not refused: verdict=%+v err=%v", verdict, err)
+	}
+	lines := FormatGoalAdmission(GoalAdmissionVerdict{Refusals: []GoalAdmissionRefusal{*verdict.Refusal}})
+	want := "BUDGET_REFUSED: goal bounded revision=2 admission closed: codeCritiques=2/2; reserved observed=0 open-caps=0 limit=1000"
+	if len(lines) != 1 || lines[0] != want {
+		t.Fatalf("third code critique refusal = %v, want %q", lines, want)
+	}
+}
+
+func TestGoalRevisionAdmissionKeepsCritiqueClassesSeparate(t *testing.T) {
+	root := reviewChainBudgetBed(t)
+	now := time.Date(2026, 8, 28, 9, 0, 0, 0, time.UTC)
+	sequence := []struct{ job, role string }{
+		{"design-one", "design-critic"}, {"design-two", "design-critic"},
+		{"code-one", "code-critic"}, {"code-two", "code-critic"},
+	}
+	for _, step := range sequence {
+		verdict, err := EvaluateGoalRevisionAdmissionForDispatch(root, "bounded", 2, 1, now, step.role, "fresh", HazardMechanical)
+		if err != nil || verdict.Refused() {
+			t.Fatalf("%s was not admitted before its class reached two chains: verdict=%+v err=%v", step.job, verdict, err)
+		}
+		writeCountedCriticRoot(t, root, step.job, step.role)
+	}
+	for _, role := range []string{"design-critic", "code-critic"} {
+		verdict, err := EvaluateGoalRevisionAdmissionForDispatch(root, "bounded", 2, 1, now, role, "fresh", HazardMechanical)
+		if err != nil || !verdict.Refused() || verdict.Refusal == nil {
+			t.Fatalf("third %s chain was admitted: verdict=%+v err=%v", role, verdict, err)
+		}
+		lines := FormatGoalAdmission(GoalAdmissionVerdict{Refusals: []GoalAdmissionRefusal{*verdict.Refusal}})
+		field := "codeCritiques"
+		if role == "design-critic" {
+			field = "designCritiques"
+		}
+		want := field + "=2/2; reserved observed=0 open-caps=0 limit=1000"
+		if len(lines) != 1 || !strings.HasSuffix(lines[0], want) {
+			t.Fatalf("%s refusal lost its separate class count: %v", role, lines)
+		}
+	}
+}
+
+func TestGoalRevisionAdmissionDoesNotChargeFollowUpOrLegacyRootsAsNewChains(t *testing.T) {
+	root := reviewChainBudgetBed(t)
+	writeCountedCriticRoot(t, root, "code-one", "code-critic")
+	writeCountedCriticRoot(t, root, "code-two", "code-critic")
+	legacy := filepath.Join(root, "artifacts", "agents", "jobs", "legacy-code.json")
+	writeJSON(t, legacy, map[string]any{
+		"jobId": "legacy-code", "operationId": "legacy-code", "role": "code-critic", "parentJob": nil,
+		"goalId": "bounded", "goalRevision": 2, "capMin": 1, "status": "completed",
+	})
+	now := time.Date(2026, 8, 28, 9, 0, 0, 0, time.UTC)
+
+	verdict, err := EvaluateGoalRevisionAdmissionForDispatch(root, "bounded", 2, 1, now, "code-critic", "follow-up", HazardMechanical)
+	if err != nil || verdict.Refused() {
+		t.Fatalf("follow-up inside a counted critic root consumed another chain: verdict=%+v err=%v", verdict, err)
+	}
+}
+
+func TestGoalRevisionAdmissionDoesNotChargeSetupRefusedCriticRoot(t *testing.T) {
+	root := reviewChainBudgetBed(t)
+	writeJSON(t, filepath.Join(root, "artifacts", "agents", "jobs", "setup-refused.json"), map[string]any{
+		"jobId": "setup-refused", "operationId": "setup-refused", "role": "code-critic", "parentJob": nil,
+		"goalId": "bounded", "goalRevision": 2, "capMin": 1, "status": "failed", "phase": "setup", "refusalClass": "setup",
+		reviewChainCountedField: true,
+	})
+	now := time.Date(2026, 8, 28, 9, 0, 0, 0, time.UTC)
+	for _, job := range []string{"code-one", "code-two"} {
+		verdict, err := EvaluateGoalRevisionAdmissionForDispatch(root, "bounded", 2, 1, now, "code-critic", "fresh", HazardMechanical)
+		if err != nil || verdict.Refused() {
+			t.Fatalf("%s was refused after a setup refusal that consumed no budget: verdict=%+v err=%v", job, verdict, err)
+		}
+		writeCountedCriticRoot(t, root, job, "code-critic")
+	}
+	verdict, err := EvaluateGoalRevisionAdmissionForDispatch(root, "bounded", 2, 1, now, "code-critic", "fresh", HazardMechanical)
+	if err != nil || !verdict.Refused() || verdict.Refusal == nil {
+		t.Fatalf("third consumed code critique was not refused: verdict=%+v err=%v", verdict, err)
+	}
+	lines := FormatGoalAdmission(GoalAdmissionVerdict{Refusals: []GoalAdmissionRefusal{*verdict.Refusal}})
+	if len(lines) != 1 || !strings.Contains(lines[0], "codeCritiques=2/2") {
+		t.Fatalf("refusal did not name the two consumed code critiques: %v", lines)
+	}
+}
+
+func TestGoalRevisionAdmissionKeepsCritiquesAcrossRiskRaiseAndResetsOnFreshClaim(t *testing.T) {
+	root := reviewChainBudgetBed(t)
+	writeCountedCriticRoot(t, root, "code-one", "code-critic")
+	writeCountedCriticRoot(t, root, "code-two", "code-critic")
+	amendReviewChainBudgetBed(t, root, "risk raise", func(file *goal.GoalFile) {
+		file.Claimed.Revision = 3
+		file.History[2].Reason = "Misclassified: from=1 to=3 evidence=refusal:BUDGET_REFUSED"
+		file.StopCapability.Generation = 3
+		file.StopCapability.Revision = 3
+		file.Budget.ReviewRoundLimit = 3
+	})
+	now := time.Date(2026, 8, 28, 10, 0, 0, 0, time.UTC)
+	projection := ProjectBudget(root, loadReviewChainGoal(t, root), now)
+	if projection.Status != BudgetKnown || projection.CodeCritiques != 2 || projection.Limits.ReviewRoundLimit != 3 {
+		t.Fatalf("risk raise did not preserve two code critiques inside the raised box: %+v", projection)
+	}
+	verdict, err := EvaluateGoalRevisionAdmissionForDispatch(root, "bounded", 3, 1, now, "code-critic", "fresh", HazardMechanical)
+	if err != nil || verdict.Refused() {
+		t.Fatalf("third code critique was not admitted after the box rose to three: verdict=%+v err=%v", verdict, err)
+	}
+	writeCountedCriticRootAtRevision(t, root, "code-three", "code-critic", 3)
+	verdict, err = EvaluateGoalRevisionAdmissionForDispatch(root, "bounded", 3, 1, now, "code-critic", "fresh", HazardMechanical)
+	if err != nil || !verdict.Refused() || verdict.Refusal == nil {
+		t.Fatalf("fourth code critique was not refused after the raise: verdict=%+v err=%v", verdict, err)
+	}
+	lines := FormatGoalAdmission(GoalAdmissionVerdict{Refusals: []GoalAdmissionRefusal{*verdict.Refusal}})
+	if len(lines) != 1 || !strings.Contains(lines[0], "codeCritiques=3/3") {
+		t.Fatalf("raised-box refusal lost the prior chains: %v", lines)
+	}
+	amendReviewChainBudgetBed(t, root, "fresh claim", func(file *goal.GoalFile) {
+		file.Claimed.Revision = 4
+		file.Claimed.AccountingRevision = 4
+		file.Claimed.At = file.History[3].At
+		file.StopCapability.Generation = 4
+		file.StopCapability.Revision = 4
+	})
+	projection = ProjectBudget(root, loadReviewChainGoal(t, root), now.Add(time.Hour))
+	if projection.Status != BudgetKnown || projection.CodeCritiques != 0 || projection.Limits.ReviewRoundLimit != 3 {
+		t.Fatalf("fresh claim did not restart the critique count at zero: %+v", projection)
+	}
+	verdict, err = EvaluateGoalRevisionAdmissionForDispatch(root, "bounded", 4, 1, now.Add(time.Hour), "code-critic", "fresh", HazardMechanical)
+	if err != nil || verdict.Refused() {
+		t.Fatalf("fresh claim did not restart critique accounting at zero: verdict=%+v err=%v", verdict, err)
+	}
+}
+
+func TestBudgetProjectionCountsFollowUpAsAttemptButNotCriticChain(t *testing.T) {
+	root := reviewChainBudgetBed(t)
+	writeCountedCriticRoot(t, root, "code-one", "code-critic")
+	writeJSON(t, filepath.Join(root, "artifacts", "agents", "jobs", "code-one-r2.json"), map[string]any{
+		"jobId": "code-one-r2", "operationId": "code-one-r2", "role": "code-critic", "parentJob": "code-one",
+		"goalId": "bounded", "goalRevision": 2, "capMin": 1, "status": "completed",
+	})
+	projection := ProjectBudget(root, loadReviewChainGoal(t, root), time.Date(2026, 8, 28, 9, 0, 0, 0, time.UTC))
+	if projection.Status != BudgetKnown || projection.Attempts != 2 || projection.CodeCritiques != 1 {
+		t.Fatalf("follow-up did not remain inside one critic chain: %+v", projection)
+	}
+}
+
+func TestBudgetProjectionRejectsCountedMarkerOnFollowUp(t *testing.T) {
+	root := reviewChainBudgetBed(t)
+	writeJSON(t, filepath.Join(root, "artifacts", "agents", "jobs", "code-one-r2.json"), map[string]any{
+		"jobId": "code-one-r2", "operationId": "code-one-r2", "role": "code-critic", "parentJob": "code-one",
+		"goalId": "bounded", "goalRevision": 2, "capMin": 1, "status": "completed", reviewChainCountedField: true,
+	})
+	projection := ProjectBudget(root, loadReviewChainGoal(t, root), time.Date(2026, 8, 28, 9, 0, 0, 0, time.UTC))
+	if projection.Status != BudgetUnknown || projection.Unknown == nil || !strings.Contains(projection.Unknown.Reason, "does not name a design-critic or code-critic chain root") {
+		t.Fatalf("counted marker on a follow-up did not fail closed: %+v", projection)
+	}
+}
+
+func loadReviewChainGoal(t *testing.T, root string) *goal.GoalFile {
+	t.Helper()
+	data, err := os.ReadFile(filepath.Join(root, "plans", "goals", "bounded.md"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	file, problems := goal.ParseFile(data)
+	if len(problems) != 0 {
+		t.Fatalf("parse accepted goal fixture: %v", problems)
+	}
+	return file
+}

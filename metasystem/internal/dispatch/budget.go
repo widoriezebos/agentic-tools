@@ -54,11 +54,11 @@ type BudgetBreach struct {
 	State ElapsedBudgetState
 }
 
-// BudgetProjection is the complete four-dimensional view for one claimed
-// goal revision. Limits come from the goal; spending comes from job records,
-// retained proof-attempt reservations, live governed runs, and durable terminal
-// obligation state. Elapsed time begins at the claim or the latest exact
-// consumed discharge proof.
+// BudgetProjection is the complete spending and per-class critique-chain view
+// for one claimed goal revision. Limits come from the goal; usage comes from
+// job records, retained proof-attempt reservations, live governed runs, and
+// durable terminal obligation state. Elapsed time begins at the claim or the
+// latest exact consumed discharge proof.
 type BudgetProjection struct {
 	Status                  BudgetProjectionStatus
 	GoalID                  string
@@ -72,6 +72,8 @@ type BudgetProjection struct {
 	OpenCapMinutes          uint64
 	ProofReservationMinutes uint64
 	ActiveJobs              uint64
+	DesignCritiques         uint64
+	CodeCritiques           uint64
 	Elapsed                 time.Duration
 	ElapsedGracePercent     uint64
 	ElapsedBreachLimit      time.Duration
@@ -79,6 +81,8 @@ type BudgetProjection struct {
 	Breaches                []BudgetBreach
 	Unknown                 *BudgetUnknownEvidence
 }
+
+const reviewChainCountedField = "reviewChainCounted"
 
 func obligationBudgetStart(repoRoot string, file *goal.GoalFile, episodeAt time.Time, episodeRevision uint64) (time.Time, *uint64, *BudgetUnknownEvidence) {
 	if file.Obligation == nil && file.Claimed.EpisodeObligationRevision == 0 {
@@ -363,6 +367,19 @@ func ProjectBudget(repoRoot string, file *goal.GoalFile, now time.Time) BudgetPr
 		if recordRevision > revision {
 			return unknownBudget(file.Id, revision, logicalPath, fmt.Sprintf("goalRevision %d is later than accepted claim revision %d", recordRevision, revision))
 		}
+		countedCriticRole := ""
+		if countedValue, present := record[reviewChainCountedField]; present {
+			counted, typed := countedValue.(bool)
+			if !typed || !counted {
+				return unknownBudget(file.Id, revision, logicalPath, reviewChainCountedField+" must be true when present")
+			}
+			role, _ := record["role"].(string)
+			parent, parentPresent := record["parentJob"]
+			if !parentPresent || parent != nil || (role != "design-critic" && role != "code-critic") {
+				return unknownBudget(file.Id, revision, logicalPath, reviewChainCountedField+" does not name a design-critic or code-critic chain root")
+			}
+			countedCriticRole = role
+		}
 		capMinutes, ok := lens.CapMinutes()
 		if !ok || capMinutes == 0 {
 			return unknownBudget(file.Id, revision, logicalPath, "the authoritative reservation has no positive capMin")
@@ -389,6 +406,18 @@ func ProjectBudget(repoRoot string, file *goal.GoalFile, now time.Time) BudgetPr
 		}
 		if !goalbudget.ReservationConsumesBudget(TerminalStatus(status), lens.Phase(), lens.RefusalClass()) {
 			continue
+		}
+		switch countedCriticRole {
+		case "design-critic":
+			if projection.DesignCritiques == math.MaxUint64 {
+				return unknownBudget(file.Id, revision, logicalPath, "design critique chain accounting overflowed")
+			}
+			projection.DesignCritiques++
+		case "code-critic":
+			if projection.CodeCritiques == math.MaxUint64 {
+				return unknownBudget(file.Id, revision, logicalPath, "code critique chain accounting overflowed")
+			}
+			projection.CodeCritiques++
 		}
 		if projection.Attempts == math.MaxUint64 {
 			return unknownBudget(file.Id, revision, logicalPath, "attempt accounting overflowed")
@@ -731,6 +760,12 @@ func finishBudgetProjection(projection BudgetProjection) BudgetProjection {
 	}
 	if projection.ActiveJobs > projection.Limits.ActiveJobLimit {
 		projection.Breaches = append(projection.Breaches, budgetIntegerBreach("activeJobLimit", projection.ActiveJobs, projection.Limits.ActiveJobLimit))
+	}
+	if projection.DesignCritiques > uint64(projection.Limits.ReviewRoundLimit) {
+		projection.Breaches = append(projection.Breaches, budgetIntegerBreach("designCritiques", projection.DesignCritiques, uint64(projection.Limits.ReviewRoundLimit)))
+	}
+	if projection.CodeCritiques > uint64(projection.Limits.ReviewRoundLimit) {
+		projection.Breaches = append(projection.Breaches, budgetIntegerBreach("codeCritiques", projection.CodeCritiques, uint64(projection.Limits.ReviewRoundLimit)))
 	}
 	return projection
 }

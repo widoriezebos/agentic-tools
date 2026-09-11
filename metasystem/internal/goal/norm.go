@@ -93,7 +93,7 @@ func RecordedNormApproval(repoRoot string, tree *TreeGoals, ref, goalID string) 
 }
 
 func refuseGoalNorm(id string, budget, box Budget) error {
-	return fmt.Errorf("GOAL_NORM_REFUSED: goal %s tuple minutes=%d reviewRounds=%d exceeds its tier box minutes=%d reviewRounds=%d; split it into an arc of members within the box, or record the human word and pass --approved-ref (strict form: goal=%s minutes=%d reviewRounds=%d goalRevision=<r>)",
+	return fmt.Errorf("GOAL_NORM_REFUSED: goal %s tuple minutes=%d reviewRounds=%d per class exceeds its tier box minutes=%d reviewRounds=%d per class; split it into an arc of members within the box, or record the human word and pass --approved-ref (strict form: goal=%s minutes=%d reviewRounds=%d goalRevision=<r>)",
 		id, budget.ReservedJobMinutesLimit, budget.ReviewRoundLimit, box.ReservedJobMinutesLimit, box.ReviewRoundLimit, id, budget.ReservedJobMinutesLimit, budget.ReviewRoundLimit)
 }
 

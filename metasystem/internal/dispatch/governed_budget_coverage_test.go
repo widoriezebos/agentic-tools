@@ -16,6 +16,7 @@ func TestBudgetProjectionStartsAtConsumedDurableProofEpoch(t *testing.T) {
 	root := budgetProjectionRoot(t)
 	file := budgetGoal()
 	file.Obligation = &goal.GovernedObligation{Revision: 6}
+	file.Budget.ReviewRoundLimit = 3
 	zero := uint64(0)
 	if err := obligationstate.RecordTerminal(root, "bounded", 3, 6, obligationstate.TerminalAttempt{
 		RunID: "green-proof", Status: run.StatusGreen,
@@ -42,8 +43,9 @@ func TestBudgetProjectionStartsAtConsumedDurableProofEpoch(t *testing.T) {
 		{id: "after-proof", started: "2026-08-28T09:45:00Z", status: "running", cap: 20},
 	} {
 		writeJSON(t, filepath.Join(root, "artifacts", "agents", "jobs", job.id+".json"), map[string]any{
-			"jobId": job.id, "operationId": job.id, "goalId": "bounded", "goalRevision": 3,
-			"capMin": job.cap, "status": job.status, "startedAt": job.started,
+			"jobId": job.id, "operationId": job.id, "role": "code-critic", "parentJob": nil,
+			"goalId": "bounded", "goalRevision": 3, "capMin": job.cap, "status": job.status, "startedAt": job.started,
+			reviewChainCountedField: true,
 		})
 	}
 
@@ -51,7 +53,7 @@ func TestBudgetProjectionStartsAtConsumedDurableProofEpoch(t *testing.T) {
 	if projection.Status != BudgetKnown || projection.StartedAt.Format(time.RFC3339) != "2026-08-28T09:30:00Z" ||
 		projection.WeightEpoch == nil || *projection.WeightEpoch != 1 || projection.Elapsed != 30*time.Minute ||
 		projection.Attempts != 1 || projection.ReservedJobMinutes != 20 || projection.ObservedJobMinutes != 0 ||
-		projection.OpenCapMinutes != 20 || projection.ActiveJobs != 1 {
+		projection.OpenCapMinutes != 20 || projection.ActiveJobs != 1 || projection.CodeCritiques != 1 {
 		t.Fatalf("consumed durable proof did not establish the new spending epoch: %+v", projection)
 	}
 }

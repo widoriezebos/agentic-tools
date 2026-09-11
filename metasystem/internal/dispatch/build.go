@@ -615,6 +615,9 @@ func BuildRecord(p BuildRecordParams) error {
 		record["reviewRoundLimit"] = limit
 		record["criticRoundsConsumed"] = 0
 		record["demotions"] = []any{}
+		if p.Role == "design-critic" || p.Role == "code-critic" {
+			record[reviewChainCountedField] = true
+		}
 		if p.Role == "design-critic" {
 			if p.DeclaredOutputs == "" || p.Design == "" {
 				return fmt.Errorf("design-critic dispatch requires --outputs <file> and --design <file>")

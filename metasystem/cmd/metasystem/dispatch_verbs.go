@@ -1080,6 +1080,8 @@ func runDispatchGoalRevisionAdmission(args []string) int {
 	goalID := flags.String("goal", "", "goal id")
 	revision := flags.Uint64("revision", 0, "exact accepted goal revision")
 	proposedCap := flags.Uint64("proposed-cap", 0, "reserved minutes proposed by this dispatch")
+	role := flags.String("role", "implementer", "role proposed by this dispatch")
+	dispatchMode := flags.String("dispatch-mode", "fresh", "fresh or follow-up")
 	destructiveReach := flags.String("destructive-reach", "", "MECHANICAL, DESIGN-BEARING, or DESTRUCTIVE-REACH")
 	if flags.Parse(args) != nil {
 		return 2
@@ -1092,7 +1094,7 @@ func runDispatchGoalRevisionAdmission(args []string) int {
 	if err != nil {
 		return recordExit(err)
 	}
-	verdict, err := dispatchcore.EvaluateGoalRevisionAdmission(*root, *goalID, *revision, *proposedCap, now, dispatchcore.HazardClass(*destructiveReach))
+	verdict, err := dispatchcore.EvaluateGoalRevisionAdmissionForDispatch(*root, *goalID, *revision, *proposedCap, now, *role, *dispatchMode, dispatchcore.HazardClass(*destructiveReach))
 	if err != nil {
 		return recordExit(err)
 	}

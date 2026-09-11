@@ -173,9 +173,16 @@ type GoalRevisionAdmission struct {
 
 func (v GoalRevisionAdmission) Refused() bool { return v.Refusal != nil || v.PolicyRefusal != "" }
 
-// EvaluateGoalRevisionAdmission binds the final fence and projected cap
-// decision to the exact accepted revision about to publish a reservation.
+// EvaluateGoalRevisionAdmission preserves admission for callers that do not
+// dispatch a critic chain.
 func EvaluateGoalRevisionAdmission(repoRoot, id string, revision, proposedCap uint64, now time.Time, hazards ...HazardClass) (GoalRevisionAdmission, error) {
+	return EvaluateGoalRevisionAdmissionForDispatch(repoRoot, id, revision, proposedCap, now, "implementer", "fresh", hazards...)
+}
+
+// EvaluateGoalRevisionAdmissionForDispatch binds the final fence and projected
+// cap decision to the exact accepted revision and dispatch context about to
+// publish a reservation.
+func EvaluateGoalRevisionAdmissionForDispatch(repoRoot, id string, revision, proposedCap uint64, now time.Time, role, dispatchMode string, hazards ...HazardClass) (GoalRevisionAdmission, error) {
 	verdict := GoalRevisionAdmission{GoalID: id, GoalRevision: revision}
 	if len(hazards) > 1 {
 		return verdict, fmt.Errorf("exactly one destructiveReach class may govern goal revision admission")
@@ -234,6 +241,23 @@ func EvaluateGoalRevisionAdmission(repoRoot, id string, revision, proposedCap ui
 		return verdict, nil
 	}
 	breaches := budgetAdmissionBreaches(projection)
+	if role == "design-critic" || role == "code-critic" {
+		if dispatchMode != "fresh" && dispatchMode != "follow-up" {
+			return verdict, fmt.Errorf("critic goal revision admission requires dispatch mode fresh or follow-up")
+		}
+		if dispatchMode == "fresh" {
+			used := projection.CodeCritiques
+			field := "codeCritiques"
+			if role == "design-critic" {
+				used = projection.DesignCritiques
+				field = "designCritiques"
+			}
+			limit := uint64(projection.Limits.ReviewRoundLimit)
+			if used >= limit {
+				breaches = append(breaches, budgetIntegerBreach(field, used, limit))
+			}
+		}
+	}
 	if proposedCap > 0 && projection.ReservedJobMinutes < projection.Limits.ReservedJobMinutesLimit &&
 		proposedCap > projection.Limits.ReservedJobMinutesLimit-projection.ReservedJobMinutes {
 		breaches = append(breaches, BudgetBreach{
@@ -312,7 +336,11 @@ func formatRefusalDetail(breaches []BudgetBreach, reserved *ReservedMinutesEvide
 		if breach.State != "" {
 			state = " state=" + string(breach.State)
 		}
-		fields = append(fields, fmt.Sprintf("%s%s used=%s limit=%s", breach.Field, state, breach.Used, breach.Limit))
+		if breach.Field == "designCritiques" || breach.Field == "codeCritiques" {
+			fields = append(fields, fmt.Sprintf("%s=%s/%s", breach.Field, breach.Used, breach.Limit))
+		} else {
+			fields = append(fields, fmt.Sprintf("%s%s used=%s limit=%s", breach.Field, state, breach.Used, breach.Limit))
+		}
 	}
 	detail := strings.Join(fields, ", ")
 	if reserved != nil {

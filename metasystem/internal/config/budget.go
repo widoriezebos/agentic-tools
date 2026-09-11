@@ -42,6 +42,7 @@ var retiredKeys = map[string]string{
 	GoalNormJobMinutesKey: "is retired; use " + Tier1BudgetKey + ", " + Tier2BudgetKey + ", and " + Tier3BudgetKey,
 }
 
+// ReviewRoundMax is the ceiling applied independently to each critique class.
 func ReviewRoundMax(confPath string) (uint64, error) {
 	value, err := budgetLawValue(confPath, ReviewRoundMaxKey, strconv.FormatUint(DefaultReviewRoundMax, 10))
 	if err != nil {
@@ -218,6 +219,7 @@ func (s *TierBoxSet) reviewRoundMax() (uint64, error) {
 }
 
 // TierBox resolves one complete five-member budget from this immutable set.
+// Its review-round member limits design-critique and code-critique chains independently.
 func (s *TierBoxSet) TierBox(tier uint8) (goalbudget.Budget, error) {
 	key, err := tierBudgetKey(tier)
 	if err != nil {
@@ -230,14 +232,14 @@ func (s *TierBoxSet) TierBox(tier uint8) (goalbudget.Budget, error) {
 	}
 	parts := strings.Split(value, "/")
 	if len(parts) != 5 || !strings.HasSuffix(parts[2], "m") {
-		return goalbudget.Budget{}, fmt.Errorf("%s must use <elapsed>/<attempts>/<minutes>/<active>/<rounds>", key)
+		return goalbudget.Budget{}, fmt.Errorf("%s must use <elapsed>/<attempts>/<minutes>/<active>/<rounds-per-class>", key)
 	}
 	attempts, attemptsErr := strconv.ParseInt(parts[1], 10, 64)
 	minutes, minutesErr := strconv.ParseInt(strings.TrimSuffix(parts[2], "m"), 10, 64)
 	active, activeErr := strconv.ParseInt(parts[3], 10, 64)
 	rounds, roundsErr := strconv.ParseInt(parts[4], 10, 64)
 	if attemptsErr != nil || minutesErr != nil || activeErr != nil || roundsErr != nil {
-		return goalbudget.Budget{}, fmt.Errorf("%s must use <elapsed>/<attempts>/<minutes>/<active>/<rounds>", key)
+		return goalbudget.Budget{}, fmt.Errorf("%s must use <elapsed>/<attempts>/<minutes>/<active>/<rounds-per-class>", key)
 	}
 	budget, err := goalbudget.New(parts[0], attempts, minutes, active, rounds)
 	if err != nil {

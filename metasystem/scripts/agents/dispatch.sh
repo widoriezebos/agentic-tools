@@ -705,12 +705,13 @@ run_breach_stop_routes() {
   done <<<"$routes"
 }
 
-require_goal_revision_admission() { # proposed cap minutes
-  local proposed=$1 output result=0 batch stop_id
+require_goal_revision_admission() { # proposed cap minutes, dispatch mode
+  local proposed=$1 dispatch_mode=$2 output result=0 batch stop_id
   [[ -n "${goal:-}" ]] || return 0
   set +e
   output=$("$ms" job goal-revision-admission --root "$root" --goal "$goal" \
-    --revision "$goal_revision" --proposed-cap "$proposed" --destructive-reach "$destructive_reach" 2>&1)
+    --revision "$goal_revision" --proposed-cap "$proposed" --role "$role" \
+    --dispatch-mode "$dispatch_mode" --destructive-reach "$destructive_reach" 2>&1)
   result=$?
   set -e
   [[ -z "$output" ]] || printf '%s\n' "$output" >&2
@@ -1689,7 +1690,7 @@ dispatch_job() {
   [[ "$preflight_outcome" != PREFLIGHT-MATCHED ]] || replay_operation=1
   if (( replay_operation == 0 )); then
     require_goal_admission
-    require_goal_revision_admission "$cap"
+    require_goal_revision_admission "$cap" fresh
     require_slice_admission "$cap" "$approved_ref" "$goal" "$goal_revision"
   fi
   if ! acquire_lifecycle_lock_until "$job" 5; then
@@ -2505,7 +2506,7 @@ follow_up() {
   [[ "$preflight_outcome" != PREFLIGHT-MATCHED ]] || replay_operation=1
   if (( replay_operation == 0 )); then
     require_goal_admission
-    require_goal_revision_admission "$cap"
+    require_goal_revision_admission "$cap" follow-up
     require_slice_admission "$cap" "$approved_ref" "$goal" "$goal_revision"
   fi
   if ! acquire_lifecycle_lock_until "$child" 5; then

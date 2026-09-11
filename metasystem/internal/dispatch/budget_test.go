@@ -626,14 +626,26 @@ func TestSTR2P2A01AccountingRevisionPreservesRaisedSpendAndSetBudgetResetsIt(t *
 	file.Claimed.AccountingRevision = 3
 	file.Claimed.EpisodeAt = file.History[2].At
 	file.Claimed.EpisodeRevision = 3
+	file.Budget.ReviewRoundLimit = 3
 	file.History[4].Reason = "Misclassified: from=1 to=3 evidence=refusal:BUDGET_REFUSED"
 	writeBudgetJob(t, root, "root-before-raise-one", "reserve-before-one", 3, 20, "completed", budgetJobLife{
 		startedAt: "2026-08-28T08:10:00Z", endedAt: "2026-08-28T08:30:00Z", pid: 4242,
 	})
 	writeBudgetJob(t, root, "root-before-raise-two", "reserve-before-two", 4, 30, "running", budgetJobLife{})
+	for _, job := range []string{"root-before-raise-one", "root-before-raise-two"} {
+		path := filepath.Join(root, "artifacts", "agents", "jobs", job+".json")
+		record, err := readObject(path)
+		if err != nil {
+			t.Fatal(err)
+		}
+		record["role"] = "code-critic"
+		record["parentJob"] = nil
+		record[reviewChainCountedField] = true
+		writeJSON(t, path, record)
+	}
 
 	projection := ProjectBudget(root, file, time.Date(2026, 8, 28, 10, 0, 0, 0, time.UTC))
-	if projection.Status != BudgetKnown || projection.Attempts != 2 || projection.ReservedJobMinutes != 50 || projection.ActiveJobs != 1 {
+	if projection.Status != BudgetKnown || projection.Attempts != 2 || projection.ReservedJobMinutes != 50 || projection.ActiveJobs != 1 || projection.CodeCritiques != 2 {
 		t.Fatalf("risk raise erased spend from the accounting interval: %+v", projection)
 	}
 	episodeOrigin, err := time.Parse(time.RFC3339, file.Claimed.EpisodeAt)
@@ -645,7 +657,7 @@ func TestSTR2P2A01AccountingRevisionPreservesRaisedSpendAndSetBudgetResetsIt(t *
 	}
 	file.Claimed.AccountingRevision = file.Claimed.Revision
 	reset := ProjectBudget(root, file, time.Date(2026, 8, 28, 10, 0, 0, 0, time.UTC))
-	if reset.Status != BudgetKnown || reset.Attempts != 0 || reset.ReservedJobMinutes != 0 || reset.ActiveJobs != 0 {
+	if reset.Status != BudgetKnown || reset.Attempts != 0 || reset.ReservedJobMinutes != 0 || reset.ActiveJobs != 0 || reset.CodeCritiques != 0 {
 		t.Fatalf("human set-budget boundary did not reset the tally: %+v", reset)
 	}
 	if !reset.StartedAt.Equal(projection.StartedAt) {

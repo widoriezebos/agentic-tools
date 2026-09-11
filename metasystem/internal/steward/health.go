@@ -1083,24 +1083,29 @@ func checkClaimedGoalBudgets(repoRoot string, now time.Time) RoleVerdict {
 				fields = append(fields, fmt.Sprintf("%s%s used=%s limit=%s", state, breach.Field, breach.Used, breach.Limit))
 			}
 			dead = append(dead, budgetFailure{
-				reason: fmt.Sprintf("%s revision=%d BREACH %s", id, budget.GoalRevision, strings.Join(fields, ", ")),
+				reason: fmt.Sprintf("%s revision=%d BREACH %s designCritiques=%d/%d codeCritiques=%d/%d", id, budget.GoalRevision, strings.Join(fields, ", "),
+					budget.DesignCritiques, budget.Limits.ReviewRoundLimit, budget.CodeCritiques, budget.Limits.ReviewRoundLimit),
 				remedy: "metasystem steward tick --repo " + strconv.Quote(repoRoot), automatic: true,
 			})
 			continue
 		}
 		if budget.ElapsedState == dispatch.AdmissionClosedElapsed {
-			known = append(known, fmt.Sprintf("%s revision=%d ADMISSION_CLOSED_ELAPSED elapsed=%s admissionLimit=%s breachLimit=%s gracePercent=%d attempts=%d/%d reservedJobMinutes=%d/%d activeJobs=%d/%d%s",
+			known = append(known, fmt.Sprintf("%s revision=%d ADMISSION_CLOSED_ELAPSED elapsed=%s admissionLimit=%s breachLimit=%s gracePercent=%d attempts=%d/%d reservedJobMinutes=%d/%d activeJobs=%d/%d designCritiques=%d/%d codeCritiques=%d/%d%s",
 				id, budget.GoalRevision, budget.Elapsed.Round(time.Second), budget.Limits.ElapsedLimit,
 				budget.ElapsedBreachLimit, budget.ElapsedGracePercent,
 				budget.Attempts, budget.Limits.AttemptLimit,
 				budget.ReservedJobMinutes, budget.Limits.ReservedJobMinutesLimit,
-				budget.ActiveJobs, budget.Limits.ActiveJobLimit, exceptionEvidence))
+				budget.ActiveJobs, budget.Limits.ActiveJobLimit,
+				budget.DesignCritiques, budget.Limits.ReviewRoundLimit,
+				budget.CodeCritiques, budget.Limits.ReviewRoundLimit, exceptionEvidence))
 			continue
 		}
-		known = append(known, fmt.Sprintf("%s revision=%d attempts=%d/%d reservedJobMinutes=%d/%d activeJobs=%d/%d elapsed=%s/%s%s",
+		known = append(known, fmt.Sprintf("%s revision=%d attempts=%d/%d reservedJobMinutes=%d/%d activeJobs=%d/%d designCritiques=%d/%d codeCritiques=%d/%d elapsed=%s/%s%s",
 			id, budget.GoalRevision, budget.Attempts, budget.Limits.AttemptLimit,
 			budget.ReservedJobMinutes, budget.Limits.ReservedJobMinutesLimit,
 			budget.ActiveJobs, budget.Limits.ActiveJobLimit,
+			budget.DesignCritiques, budget.Limits.ReviewRoundLimit,
+			budget.CodeCritiques, budget.Limits.ReviewRoundLimit,
 			budget.Elapsed.Round(time.Second), budget.Limits.ElapsedLimit, exceptionEvidence))
 	}
 	if len(dead) > 0 {

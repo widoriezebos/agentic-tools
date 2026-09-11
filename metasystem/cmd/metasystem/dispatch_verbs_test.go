@@ -9,7 +9,59 @@ import (
 	"strings"
 	"testing"
 	"time"
+
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/goal"
 )
+
+func TestGoalRevisionAdmissionCommandMarksThenEnforcesWithExplicitDispatchContext(t *testing.T) {
+	root := syncedClaimedGoalFixture(t)
+	amendSyncedGoalFixture(t, root, "breach-stop capable admission fixture", func(file *goal.GoalFile) {
+		file.StopCapability = &goal.StopCapability{Generation: 2, Revision: 2, Machine: "mac-cli", ClaimEpoch: 1}
+	})
+	t.Setenv("METASYSTEM_GOAL_NOW", "2026-08-30T09:00:00Z")
+	args := []string{"--root", root, "--goal", "standing-validation", "--revision", "2", "--proposed-cap", "5", "--role", "implementer", "--dispatch-mode", "fresh", "--destructive-reach", "MECHANICAL"}
+	marked, markCode := captureStdout(t, func() int { return runDispatchGoalRevisionAdmission(args) })
+	want := "RISK_UNANSWERED goal=standing-validation tier=3 next: goal edit --risk"
+	if markCode != 0 || strings.TrimSpace(marked) != want {
+		t.Fatalf("mark-mode command did not print its notice and proceed: code=%d output=%q", markCode, marked)
+	}
+	if err := os.WriteFile(filepath.Join(root, "metasystem.conf"), []byte("metasystem.runtimes=fake\nmetasystem.governance.correlation-policy=A\nmetasystem.budget.risk-gate=enforce\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	refusal, enforceCode := captureStderr(t, func() int { return runDispatchGoalRevisionAdmission(args) })
+	if enforceCode != 9 || strings.TrimSpace(refusal) != want {
+		t.Fatalf("enforce-mode command did not refuse with the same code: code=%d output=%q", enforceCode, refusal)
+	}
+}
+
+func TestGoalRevisionAdmissionCommandRefusesExhaustedCodeCriticClass(t *testing.T) {
+	root := syncedClaimedGoalFixture(t)
+	amendSyncedGoalFixture(t, root, "critic class admission fixture", func(file *goal.GoalFile) {
+		file.StopCapability = &goal.StopCapability{Generation: 2, Revision: 2, Machine: "mac-cli", ClaimEpoch: 1}
+		file.Budget.AttemptLimit = 20
+		file.Budget.ReservedJobMinutesLimit = 1000
+		file.Budget.ActiveJobLimit = 10
+		file.Budget.ReviewRoundLimit = 2
+		file.Approved.Digest = goal.ApprovalDigest(file.Intent, file.Tier, *file.Budget, file.Risk)
+	})
+	jobs := filepath.Join(root, "artifacts", "agents", "jobs")
+	if err := os.MkdirAll(jobs, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	for _, job := range []string{"code-one", "code-two"} {
+		writeTemp(t, jobs, job+".json", map[string]any{
+			"jobId": job, "operationId": job, "role": "code-critic", "parentJob": nil,
+			"goalId": "standing-validation", "goalRevision": 2, "capMin": 1, "status": "completed",
+			"reviewChainCounted": true,
+		})
+	}
+	t.Setenv("METASYSTEM_GOAL_NOW", "2026-08-30T09:00:00Z")
+	args := []string{"--root", root, "--goal", "standing-validation", "--revision", "2", "--proposed-cap", "1", "--role", "code-critic", "--dispatch-mode", "fresh", "--destructive-reach", "MECHANICAL"}
+	refusal, code := captureStdout(t, func() int { return runDispatchGoalRevisionAdmission(args) })
+	if code != 9 || !strings.Contains(refusal, "codeCritiques=2/2") {
+		t.Fatalf("command did not refuse the exhausted code-critic class: code=%d stdout=%q", code, refusal)
+	}
+}
 
 func TestCommandTaggedProcessScannerUsesAuthorizedCompleteFixtureTable(t *testing.T) {
 	root := t.TempDir()

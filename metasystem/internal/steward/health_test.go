@@ -215,7 +215,7 @@ func structuredHealthGoal() *goal.GoalFile {
 		Id: "bounded-goal", State: goal.StateClaimed, Intent: "Keep work bounded", Origin: goal.OriginMain,
 		NextStep: "Finish the bounded slice.", OpenedAt: "2026-08-28T08:00:00Z", Revision: 3,
 		Budget: &goal.Budget{
-			ElapsedLimit: "4h", AttemptLimit: 2, ReservedJobMinutesLimit: 60, ActiveJobLimit: 1,
+			ElapsedLimit: "4h", AttemptLimit: 2, ReservedJobMinutesLimit: 60, ActiveJobLimit: 1, ReviewRoundLimit: 2,
 		},
 		Claimed: &goal.ClaimRecord{
 			Machine: "bed-m1", Lineage: "coordinator", At: "2026-08-28T08:00:00Z", Revision: 2,
@@ -240,8 +240,10 @@ func TestClaimedGoalStructuredBudgetHealthEvidence(t *testing.T) {
 
 	t.Run("within budget", func(t *testing.T) {
 		root := convertedBed(t, "bed-m1", map[string]*goal.GoalFile{"bounded-goal": structuredHealthGoal()})
+		writeHealthJob(t, root, "design-one", `{"jobId":"design-one","operationId":"design-one","role":"design-critic","parentJob":null,"reviewChainCounted":true,"goalId":"bounded-goal","goalRevision":2,"capMin":1,"status":"completed"}`)
+		writeHealthJob(t, root, "code-one", `{"jobId":"code-one","operationId":"code-one","role":"code-critic","parentJob":null,"reviewChainCounted":true,"goalId":"bounded-goal","goalRevision":2,"capMin":1,"status":"completed"}`)
 		role := checkClaimedGoalBudgets(root, now)
-		if role.Status != HealthAlive || !strings.Contains(role.Reason, "attempts=0/2") {
+		if role.Status != HealthAlive || !strings.Contains(role.Reason, "designCritiques=1/2 codeCritiques=1/2") {
 			t.Fatalf("known structured budget was not judged: %+v", role)
 		}
 	})
