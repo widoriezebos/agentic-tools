@@ -2,14 +2,14 @@
 
 - State: queued
 - Priority: 1
-- Sequence: 15
+- Sequence: 14
 - Risk: severity=2 novelty=2 exposure=3 accumulation=2 basis="severity 2: a wait that never returns idles a seat; novelty 2: a wait verb over existing records is new; exposure 3: every seat; accumulation 2: touches the hook and the verbs"
 - Tier: 3
 - Intent: Coordinator seats spent 302 of 360 session hours waiting: 25 percent in 2,139 blocking polls (90 hours, issued by turns carrying 982 million prompt tokens), 28 percent idle awaiting a background notification, 30 percent idle awaiting a human (claude-sessions.md sections 2d and 2f). The waiting itself is intrinsic; the cost is the model waking to ask. DONE means: a seat waiting on a delegate job, a proof attempt, a landing or a human act issues one wait verb (metasystem wait --job, --attempt or --goal) that returns on the event or a bounded deadline with no polling from the model; the harness's own background-task notification is the wake for Claude seats; the Stop hook does not force a turn while a registered wait is pending; a missed event or a seat restart recovers by re-registering the wait; measured by model wake-ups per pending hour (under 4), prompt tokens spent while pending (under 5 percent of the seat's day) and event-to-resume latency (under 60 seconds), proven on one coordinator session carrying a whole goal. Goal 14 of plans/delivery-efficiency-plan.md.
 - Origin: human
 - Next step: Design first: inventory the wait sites in the transcripts (watch, TaskOutput, tmux capture loops, Monitor), define the wait verb over the existing job, attempt and ledger records and its restart recovery, critique, build, land.
 - OpenedAt: 2026-09-11T15:45:15Z
-- Revision: 8
+- Revision: 9
 - Pinned: m1e
 - BudgetExceptions: 0
 
@@ -22,4 +22,5 @@ History:
 - 2026-09-11T16:13:30Z BHG7AFGCH7RQ1M6V0D93QYV5W7-m1-c6925449 unapprove actor=human:Wido targets=coordinator-wakes-on-events-not-polls reason=Wido 2026-09-11: Codex critique round 1 of the delivery-efficiency plan accepted; intent amended before re-approval
 - 2026-09-11T16:16:48Z YTC3YS2MDD5H8D8RABSY8C1WKX-m1e-ab5421f5 edit actor=m1e+main-1789143377-71578-b9c0d2 targets=coordinator-wakes-on-events-not-polls
 - 2026-09-11T16:17:45Z 030HT9PVZGVHDS5RKBJJ1AFZZP-m1-c6925449 set-priority actor=human:Wido targets=actionable-metrics,breach-clock-and-budget-honesty,budget-extends-by-consumption-and-breach-parks,burn-without-delivery-tripwire,capped-round-continues-instead-of-restarting,carried-landing-debt-and-cap,coordinator-context-stays-under-budget,coordinator-wakes-on-events-not-polls,critique-closes-on-folded-proof,deep-battery-under-ten-minutes,delegate-job-liveness,delegate-rounds-reuse-a-warm-gate,delivery-receipt-stops-at-first-failure,failed-job-attention,fixture-stewards-outlive-their-suite,goal-abandoned-with-a-reason,human-carried-landing-carry,human-carried-landing-verb,human-goal-verbs-forgiving,job-record-birth-token,land-ready-work-lands-without-a-claim-slot,landing-receipt-survives-records-drift,lease-sweep-death-evidence,live-job-on-a-done-goal-unnoticed,machine-concurrency-governor,proof-attempts-settle-to-minutes-run,proof-groups-detect-hangs-by-progress-not-the-clock,proof-harness-process-custody,retained-proof-reuse-crosses-claims-and-attempts,severity-tiered-rigor,severity-tiered-rigor-p2,small-change-lane,steward-catchup-livelock,steward-revives-a-done-goal,stop-batch-strands-a-resumable-goal,suite-custody,tier-from-severity-and-novelty,token-spend-fence,turn-verdict-hardening,watch-verb,watcher-repair-request-never-names-current,winddown-census-handoff-leak reason=priority-order subject=proof-attempts-settle-to-minutes-run from=1:14 to=1:15 requested-sequence=7
-Integrity: sha256=cb42fbc3d5049c73a6821ab1c4e235e9e5884ae6f7ae4cacaecb379470982446
+- 2026-09-11T16:18:13Z 84YWW9QNN595GXNC8VTKSSMYE8-m1-c6925449 set-priority actor=human:Wido targets=coordinator-wakes-on-events-not-polls,human-carried-landing-carry reason=priority-order subject=coordinator-wakes-on-events-not-polls from=1:15 to=1:14 requested-sequence=14
+Integrity: sha256=5802acdce719bcb3be3ed43f45d395bfcec51e6ed68f658dd94b4b33bda9b61d
