@@ -1,6 +1,6 @@
 # retained-proof-reuse-crosses-claims-and-attempts
 
-- State: approved
+- State: queued
 - Priority: 1
 - Sequence: 10
 - Risk: severity=2 novelty=2 exposure=3 accumulation=1 basis="severity 2: a wrongly reused group lets a regression land unproven until the cadence battery catches it; novelty 2: reuse and identities exist and only their scope and composition change, but they are the judge; exposure 3: every landing and every retry on every seat; accumulation 1: the cadence run still sweeps the whole battery"
@@ -9,11 +9,9 @@
 - Origin: human
 - Next step: Design first, because this changes the judge: read digestGroupInputsWithImplicit and groupExecutionIdentity in internal/proofrun/test_build.go, the retained scan and newest-observation selection in attempt.go and test_result.go; write the design with the identity composition per adapter, the judge-compatibility key and the soundness argument; critique; build; land after delivery-receipt-stops-at-first-failure.
 - OpenedAt: 2026-09-11T12:00:24Z
-- Revision: 11
+- Revision: 12
 - Pinned: m1e
-- Budget: elapsedLimit=1d attemptLimit=10 reservedJobMinutesLimit=1200 activeJobLimit=1 reviewRoundLimit=3
 - BudgetExceptions: 0
-- Approved: by=human:Wido at=2026-09-11T16:19:14Z revision=11 opid=2Q8BGN09BASQ6GCQ3C5FMFHC9P-m1-c6925449 authority=proven digest=de3233e6523c558e1acd977a0e8cc86bff700b77a8862fd73299432dd08ce74e
 
 History:
 - 2026-09-11T12:00:24Z NSAM5W0MV6P1BDGHYZ212KW6FA-m1e-7776b921 open actor=m1e+main-1789128024-87765-b9c0d2 targets=retained-proof-reuse-crosses-claims-and-attempts
@@ -27,4 +25,5 @@ History:
 - 2026-09-11T16:17:45Z 030HT9PVZGVHDS5RKBJJ1AFZZP-m1-c6925449 set-priority actor=human:Wido targets=actionable-metrics,breach-clock-and-budget-honesty,budget-extends-by-consumption-and-breach-parks,burn-without-delivery-tripwire,capped-round-continues-instead-of-restarting,carried-landing-debt-and-cap,coordinator-context-stays-under-budget,coordinator-wakes-on-events-not-polls,critique-closes-on-folded-proof,deep-battery-under-ten-minutes,delegate-job-liveness,delegate-rounds-reuse-a-warm-gate,delivery-receipt-stops-at-first-failure,failed-job-attention,fixture-stewards-outlive-their-suite,goal-abandoned-with-a-reason,human-carried-landing-carry,human-carried-landing-verb,human-goal-verbs-forgiving,job-record-birth-token,land-ready-work-lands-without-a-claim-slot,landing-receipt-survives-records-drift,lease-sweep-death-evidence,live-job-on-a-done-goal-unnoticed,machine-concurrency-governor,proof-attempts-settle-to-minutes-run,proof-groups-detect-hangs-by-progress-not-the-clock,proof-harness-process-custody,retained-proof-reuse-crosses-claims-and-attempts,severity-tiered-rigor,severity-tiered-rigor-p2,small-change-lane,steward-catchup-livelock,steward-revives-a-done-goal,stop-batch-strands-a-resumable-goal,suite-custody,tier-from-severity-and-novelty,token-spend-fence,turn-verdict-hardening,watch-verb,watcher-repair-request-never-names-current,winddown-census-handoff-leak reason=priority-order subject=proof-attempts-settle-to-minutes-run from=1:10 to=1:11 requested-sequence=7
 - 2026-09-11T16:17:58Z SP8BKRXC766Q7FHXNR26KAER74-m1-c6925449 set-priority actor=human:Wido targets=human-carried-landing-carry,retained-proof-reuse-crosses-claims-and-attempts reason=priority-order subject=retained-proof-reuse-crosses-claims-and-attempts from=1:11 to=1:10 requested-sequence=10
 - 2026-09-11T16:19:14Z 2Q8BGN09BASQ6GCQ3C5FMFHC9P-m1-c6925449 approve actor=human:Wido targets=retained-proof-reuse-crosses-claims-and-attempts
-Integrity: sha256=5622a77e560fab283a0fc4f84380d70786b941006437cacfb08f5adf161e0ae5
+- 2026-09-11T20:30:53Z 7ACT50T7QN2FB202G5EE7NSPTR-m1-c6925449 unapprove actor=human:Wido targets=retained-proof-reuse-crosses-claims-and-attempts reason=Wido 2026-09-11: every program goal states runtime independence (claude, codex, devin, future adapters); intent amended before re-approval
+Integrity: sha256=2166fbcd86c27861f66654ee6301099fc11c15477d5a147f53f60afa0078e66d
