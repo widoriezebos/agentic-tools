@@ -1,13 +1,15 @@
 # coordinator-wakes-on-events-not-polls
 
 - State: queued
+- Priority: 1
+- Sequence: 13
 - Risk: severity=2 novelty=2 exposure=3 accumulation=2 basis="severity 2: a wait that never returns idles a seat; novelty 2: a wait verb over existing records is new; exposure 3: every seat; accumulation 2: touches the hook and the verbs"
 - Tier: 3
 - Intent: Coordinator seats spent 302 of 360 session hours waiting: 25 percent in 2,139 blocking polls (90 hours, issued by turns carrying 982 million prompt tokens), 28 percent idle awaiting a background notification, 30 percent idle awaiting a human (claude-sessions.md sections 2d and 2f of the delivery deep dive). DONE means: a seat waiting on a delegate job, a proof attempt, a landing or a human act issues one wait verb (metasystem wait --job, --attempt or --goal) that returns on the event or a bounded deadline with no polling from the model; the harness's own background-task notification is the wake for Claude seats; the Stop hook does not force a turn while a registered wait is pending; proven by one coordinator session carrying a whole goal with fewer than 20 polling calls and a waiting share under 40 percent. Goal 13 of plans/delivery-efficiency-plan.md.
 - Origin: human
 - Next step: Design first: inventory the wait sites in the transcripts (watch, TaskOutput, tmux capture loops, Monitor), define the wait verb over the existing job, attempt and ledger records, critique, build, land.
 - OpenedAt: 2026-09-11T15:45:15Z
-- Revision: 2
+- Revision: 3
 - Pinned: m1e
 - Budget: elapsedLimit=1d attemptLimit=10 reservedJobMinutesLimit=1200 activeJobLimit=1 reviewRoundLimit=3
 - BudgetExceptions: 0
@@ -15,4 +17,5 @@
 History:
 - 2026-09-11T15:45:15Z HPJKBN0ZC1BZBK2M5KWKW0JP71-m1e-5083721b open actor=m1e+main-1789141490-27414-b9c0d2 targets=coordinator-wakes-on-events-not-polls
 - 2026-09-11T15:48:09Z CSC5ES54ZZ6KDTH00Z9G0X0WAQ-m1-c6925449 set-pin actor=human:Wido targets=coordinator-wakes-on-events-not-polls
-Integrity: sha256=741d9d3cf039b942f8215966253d927fcf17ee5be0c80a22834d51603bcbcee2
+- 2026-09-11T15:48:13Z V41W61BBKFACK0A5GD2BCGY19V-m1-c6925449 set-priority actor=human:Wido targets=actionable-metrics,breach-clock-and-budget-honesty,burn-without-delivery-tripwire,carried-landing-debt-and-cap,coordinator-wakes-on-events-not-polls,delegate-job-liveness,failed-job-attention,fixture-stewards-outlive-their-suite,goal-abandoned-with-a-reason,human-carried-landing-verb,human-goal-verbs-forgiving,job-record-birth-token,landing-receipt-survives-records-drift,lease-sweep-death-evidence,live-job-on-a-done-goal-unnoticed,machine-concurrency-governor,proof-harness-process-custody,severity-tiered-rigor,severity-tiered-rigor-p2,small-change-lane,steward-catchup-livelock,steward-revives-a-done-goal,stop-batch-strands-a-resumable-goal,suite-custody,token-spend-fence,turn-verdict-hardening,watch-verb,watcher-repair-request-never-names-current,winddown-census-handoff-leak reason=priority-order subject=coordinator-wakes-on-events-not-polls from=unranked to=1:13 requested-sequence=13
+Integrity: sha256=613141cdb885d662f3551029231a82100ebcd6a933a0577d0f2e3511614c68a8
