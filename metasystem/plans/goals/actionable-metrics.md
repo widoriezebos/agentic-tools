@@ -2,12 +2,12 @@
 
 - State: queued
 - Priority: 1
-- Sequence: 35
+- Sequence: 34
 - Intent: The metric family ships as machinery: plain-named, each metric paired with its action and owner, computed from existing records, WATCHED by the responsible role and acted on — never dashboard decoration (Wido 2026-08-25)
 - Origin: human
 - Next step: SLICE ONE LANDED 6ff72a4 (2026-08-27, both remotes; receipt row carries the first goal=/built_by= keys). Delivered: internal/metrics + metasystem metrics report — nine ratified metrics with equations, typed thresholds, paired actions, owners; coverage-first (gaps speak, never silent zeros); two report tiers; atomic writes; goal-done fast path + period sweep; forward-only provenance (job goalId through the lifecycle, receipt goal= built_by=). Certification: 2 design rounds + 6 code rounds (14-8-4-5-4-1 material, 32 findings dispositioned, plans/actionable-metrics-code-critique.md); BOTH budgets spent; the script-side chain-attribution writer was STRIPPED at the second exhaustion under Wido's recorded ruling (five straight rounds of material findings there) — the certified Go reader stays, attribution returns when critique rounds route through the job machinery (severity-tiered-rigor prescribes retiring the script driver). REMAINING: slices two (watch wiring: steward metric-<name> incidents, stop-message outliers line) and three (draft-queue act hook) — BOTH QUEUE BEHIND delegate-job-liveness per Wido's 2026-08-27 ordering, and their appetite needs his word (slice one alone consumed ~7h of the original 6h whole-goal appetite; breach was raised and ridden under his engagement). Claim released so m1's slot opens for the custody arc.
 - OpenedAt: 2026-08-25T20:18:07Z
-- Revision: 83
+- Revision: 84
 - BudgetExceptions: 0
 
 History:
@@ -94,4 +94,5 @@ History:
 - 2026-09-11T22:03:35Z 3M3DDFMQFG20R73AWT0GX1KQJH-m1-c6925449 done actor=human:Wido targets=actionable-metrics,breach-clock-and-budget-honesty,failed-job-attention,fixture-stewards-outlive-their-suite,goal-abandoned-with-a-reason,human-carried-landing-verb,human-goal-verbs-forgiving,job-record-birth-token,landing-receipt-survives-records-drift,lease-sweep-death-evidence,live-job-on-a-done-goal-unnoticed,machine-concurrency-governor,proof-harness-process-custody,severity-tiered-rigor,severity-tiered-rigor-p2,steward-catchup-livelock,steward-revives-a-done-goal,stop-batch-strands-a-resumable-goal,suite-custody,token-spend-fence,turn-verdict-hardening,watch-verb,watcher-repair-request-never-names-current,winddown-census-handoff-leak reason=priority-order from=1:38 to=1:37
 - 2026-09-11T22:05:35Z WXHK62S6CXZXT6T7FQQTP61WZD-m1-c6925449 done actor=human:Wido targets=actionable-metrics,failed-job-attention,fixture-stewards-outlive-their-suite,job-record-birth-token,lease-sweep-death-evidence,live-job-on-a-done-goal-unnoticed,machine-concurrency-governor,severity-tiered-rigor,steward-catchup-livelock,steward-revives-a-done-goal,suite-custody,token-spend-fence,turn-verdict-hardening,watch-verb,watcher-repair-request-never-names-current,winddown-census-handoff-leak reason=priority-order from=1:37 to=1:36
 - 2026-09-11T22:05:41Z FTP25Q13G54ETFC10EQTE6AWA6-m1-c6925449 done actor=human:Wido targets=actionable-metrics,failed-job-attention,fixture-stewards-outlive-their-suite,job-record-birth-token,lease-sweep-death-evidence,live-job-on-a-done-goal-unnoticed,machine-concurrency-governor,severity-tiered-rigor-p2,steward-catchup-livelock,steward-revives-a-done-goal,suite-custody,token-spend-fence,turn-verdict-hardening,watch-verb,watcher-repair-request-never-names-current,winddown-census-handoff-leak reason=priority-order from=1:36 to=1:35
-Integrity: sha256=385d623c60d048b155a2420161a39e6091d678e172f22c71253ffae46dc3a261
+- 2026-09-11T22:07:17Z Z39383WPJDDVZJHKZN9EKAAC27-m1-c6925449 done actor=human:Wido targets=actionable-metrics,fixture-stewards-outlive-their-suite,lease-sweep-death-evidence,machine-concurrency-governor,steward-catchup-livelock,suite-custody,token-spend-fence,turn-verdict-hardening,watcher-repair-request-never-names-current,winddown-census-handoff-leak reason=priority-order from=1:35 to=1:34
+Integrity: sha256=804f35b4abb75b9ce0b1e8b2fe70ae0bc08547e3851c233a45d1846a990daeb3

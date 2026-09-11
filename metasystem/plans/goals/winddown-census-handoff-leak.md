@@ -2,12 +2,12 @@
 
 - State: queued
 - Priority: 1
-- Sequence: 37
+- Sequence: 36
 - Intent: The sharpened compression wind-down leak test (chain mr-flake-fix2, certified 2026-08-31) caught the real defect it was rebuilt to catch: in governed run governed-discharge-20260901-a, a live process group (pid-group 88961) survived the SIGKILL window, the wind-down lawfully abandoned it under the fail-closed ownership law, and the census NEVER ADOPTED IT - alive, unkilled, outside all custody (census enumeration returned empty, 0 of the abandoned groups in custody, 4 unknown within the signalable universe). This is the zombie-leak class the whole custody family exists to prevent, on the wind-down-to-census handoff seam. Evidence: artifacts/agents/suite-failures/20260831T224116Z-1742/go-engine-gate.log (winddown_test.go:225-229); the test passed in run -e and failed in -a, so the handoff loss is timing/load-dependent.
 - Origin: main
 - Next step: Appetite: 3h, HIGH priority - this blocks the first weight discharge (goal standing-validation, envelope at ceiling) and is a real custody hole. Triage first: is the census adoption of abandoned groups (a) never implemented for this path, (b) implemented but racing the group's process identity, or (c) implemented but the abandonment never reaches it. The dab1dbd fold contract and the lease-fold fix (3ba27a82) are adjacent - verify the handoff against both. Then fix on the owning seam with a test that constructs the survived-SIGKILL case deterministically. The discharge resumes on Wido's word after this lands.
 - OpenedAt: 2026-08-31T22:42:31Z
-- Revision: 64
+- Revision: 65
 - BudgetExceptions: 0
 
 History:
@@ -75,4 +75,5 @@ History:
 - 2026-09-11T22:03:35Z 3M3DDFMQFG20R73AWT0GX1KQJH-m1-c6925449 done actor=human:Wido targets=actionable-metrics,breach-clock-and-budget-honesty,failed-job-attention,fixture-stewards-outlive-their-suite,goal-abandoned-with-a-reason,human-carried-landing-verb,human-goal-verbs-forgiving,job-record-birth-token,landing-receipt-survives-records-drift,lease-sweep-death-evidence,live-job-on-a-done-goal-unnoticed,machine-concurrency-governor,proof-harness-process-custody,severity-tiered-rigor,severity-tiered-rigor-p2,steward-catchup-livelock,steward-revives-a-done-goal,stop-batch-strands-a-resumable-goal,suite-custody,token-spend-fence,turn-verdict-hardening,watch-verb,watcher-repair-request-never-names-current,winddown-census-handoff-leak reason=priority-order from=1:40 to=1:39
 - 2026-09-11T22:05:35Z WXHK62S6CXZXT6T7FQQTP61WZD-m1-c6925449 done actor=human:Wido targets=actionable-metrics,failed-job-attention,fixture-stewards-outlive-their-suite,job-record-birth-token,lease-sweep-death-evidence,live-job-on-a-done-goal-unnoticed,machine-concurrency-governor,severity-tiered-rigor,steward-catchup-livelock,steward-revives-a-done-goal,suite-custody,token-spend-fence,turn-verdict-hardening,watch-verb,watcher-repair-request-never-names-current,winddown-census-handoff-leak reason=priority-order from=1:39 to=1:38
 - 2026-09-11T22:05:41Z FTP25Q13G54ETFC10EQTE6AWA6-m1-c6925449 done actor=human:Wido targets=actionable-metrics,failed-job-attention,fixture-stewards-outlive-their-suite,job-record-birth-token,lease-sweep-death-evidence,live-job-on-a-done-goal-unnoticed,machine-concurrency-governor,severity-tiered-rigor-p2,steward-catchup-livelock,steward-revives-a-done-goal,suite-custody,token-spend-fence,turn-verdict-hardening,watch-verb,watcher-repair-request-never-names-current,winddown-census-handoff-leak reason=priority-order from=1:38 to=1:37
-Integrity: sha256=42f70f234987cc0322416bb29e41de7d67898a73d059ccad894593d85a0a1c4a
+- 2026-09-11T22:07:17Z Z39383WPJDDVZJHKZN9EKAAC27-m1-c6925449 done actor=human:Wido targets=actionable-metrics,fixture-stewards-outlive-their-suite,lease-sweep-death-evidence,machine-concurrency-governor,steward-catchup-livelock,suite-custody,token-spend-fence,turn-verdict-hardening,watcher-repair-request-never-names-current,winddown-census-handoff-leak reason=priority-order from=1:37 to=1:36
+Integrity: sha256=6979df3c57a75e46c45905b941eeeb8b0559b13fd79d77fae4a48e9b45149fd2

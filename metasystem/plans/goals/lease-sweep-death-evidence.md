@@ -2,12 +2,12 @@
 
 - State: queued
 - Priority: 1
-- Sequence: 36
+- Sequence: 35
 - Intent: The lease claim sweep stamps a stale job's endedAt and terminal status the moment SIGTERM delivery succeeds (internal/lease/sweep.go:198-204 returns on nil or ESRCH; concludeStaleJob :146-170 stamps at once) without waiting for the process group to die, unlike dispatch.sh's wind-down (:339-368: bounded wait, SIGKILL, group-absence check). A record can be terminal while its runtime still runs, so anything that reads endedAt as the end of the job's life - the reservation settlement, custody, the census - is wrong for that window. DONE means the sweep stamps only after death evidence and leaves the record non-terminal when the group will not die
 - Origin: main
 - Next step: Appetite: 4h, full ladder. Split out of dispatch-cap-necessity on 2026-09-02 by m1b (R-4: residue demands a token). Mechanism already designed and critiqued: plans/dispatch-cap-settlement-design.md revision 4 section 1.9 - after a successful SIGTERM poll group absence every 50ms for 2s, re-prove ownership and SIGKILL, poll 2s, final absence check via the group-absence function exported in place from internal/supervise/arming.go (lease may import supervise: measured with go list, lease -> steward -> supervise); when the group survives, concludeStaleJob writes nothing, the sweep returns the named error, the takeover refuses its sweep stamp and the next claim, succession or up retries; the dispatch reap path stamps timeout under its own ladder once the cap expires. Test: no endedAt stamp while the group lives. A builder starts from that section.
 - OpenedAt: 2026-09-02T18:37:50Z
-- Revision: 64
+- Revision: 65
 - BudgetExceptions: 0
 
 History:
@@ -75,4 +75,5 @@ History:
 - 2026-09-11T22:03:35Z 3M3DDFMQFG20R73AWT0GX1KQJH-m1-c6925449 done actor=human:Wido targets=actionable-metrics,breach-clock-and-budget-honesty,failed-job-attention,fixture-stewards-outlive-their-suite,goal-abandoned-with-a-reason,human-carried-landing-verb,human-goal-verbs-forgiving,job-record-birth-token,landing-receipt-survives-records-drift,lease-sweep-death-evidence,live-job-on-a-done-goal-unnoticed,machine-concurrency-governor,proof-harness-process-custody,severity-tiered-rigor,severity-tiered-rigor-p2,steward-catchup-livelock,steward-revives-a-done-goal,stop-batch-strands-a-resumable-goal,suite-custody,token-spend-fence,turn-verdict-hardening,watch-verb,watcher-repair-request-never-names-current,winddown-census-handoff-leak reason=priority-order from=1:39 to=1:38
 - 2026-09-11T22:05:35Z WXHK62S6CXZXT6T7FQQTP61WZD-m1-c6925449 done actor=human:Wido targets=actionable-metrics,failed-job-attention,fixture-stewards-outlive-their-suite,job-record-birth-token,lease-sweep-death-evidence,live-job-on-a-done-goal-unnoticed,machine-concurrency-governor,severity-tiered-rigor,steward-catchup-livelock,steward-revives-a-done-goal,suite-custody,token-spend-fence,turn-verdict-hardening,watch-verb,watcher-repair-request-never-names-current,winddown-census-handoff-leak reason=priority-order from=1:38 to=1:37
 - 2026-09-11T22:05:41Z FTP25Q13G54ETFC10EQTE6AWA6-m1-c6925449 done actor=human:Wido targets=actionable-metrics,failed-job-attention,fixture-stewards-outlive-their-suite,job-record-birth-token,lease-sweep-death-evidence,live-job-on-a-done-goal-unnoticed,machine-concurrency-governor,severity-tiered-rigor-p2,steward-catchup-livelock,steward-revives-a-done-goal,suite-custody,token-spend-fence,turn-verdict-hardening,watch-verb,watcher-repair-request-never-names-current,winddown-census-handoff-leak reason=priority-order from=1:37 to=1:36
-Integrity: sha256=98d29f09dbd67acc8b07d4af2965db5de7e04899962d6cc080a645f1b64a577e
+- 2026-09-11T22:07:17Z Z39383WPJDDVZJHKZN9EKAAC27-m1-c6925449 done actor=human:Wido targets=actionable-metrics,fixture-stewards-outlive-their-suite,lease-sweep-death-evidence,machine-concurrency-governor,steward-catchup-livelock,suite-custody,token-spend-fence,turn-verdict-hardening,watcher-repair-request-never-names-current,winddown-census-handoff-leak reason=priority-order from=1:36 to=1:35
+Integrity: sha256=81e48d3dfed682cd9204198cf67abcea101e4ebe4827e75c010144658cc321a2
