@@ -9,14 +9,13 @@
 - Origin: main
 - Next step: SATISFIED BY MEMBER 1'S DESIGN (m1b, 2026-09-10 19:30Z): receipt-beds-run-the-candidate-engine stamps the candidate engine with a deterministic parentless commit over the exact candidate tree, so inside a receipt worktree the preflight's ancestry walk from that stamp is empty and the check passes without any change to dispatch.sh (read 4 of that chain, RBE-24, verified it; dispatch.sh is byte-identical to the base). Nothing to build here. Conclude this goal done the moment receipt-beds-run-the-candidate-engine lands; do not claim it for work.
 - OpenedAt: 2026-09-10T07:27:29Z
-- Revision: 12
+- Revision: 13
 - Labels: bootstrap
 - Budget: elapsedLimit=1d attemptLimit=10 reservedJobMinutesLimit=1200 activeJobLimit=1 reviewRoundLimit=3
 - BudgetExceptions: 0
 - Approved: by=human:Wido at=2026-09-10T07:29:14Z revision=2 opid=4ZK6CRTM3WB0139F8R1W7B9NNZ-m1b-c6925449 authority=proven digest=61c5382670ef4dbcdabfa94944072b8521590ed5b414e1c3613859756be5e1c6
-- Claimed: machine=m1c lineage=main-1789023008-75159-b69143 at=2026-09-10T14:45:17Z revision=8 accountingRevision=8
-- StopCapability: generation=8 revision=8 machine=m1c claimEpoch=4 fenceEpoch=1
-- StopFence: stopId=stop-skew-preflight-knows-a-receipt-worktree-r8-f1 revision=8 epoch=1 capabilityGeneration=8 closedAt=2026-09-11T02:45:56Z reason=ELAPSED_LIMIT
+- Claimed: machine=m1c lineage=main-1789023008-75159-b69143 at=2026-09-11T05:28:46Z revision=13 accountingRevision=13
+- StopCapability: generation=13 revision=13 machine=m1c claimEpoch=4 fenceEpoch=0
 
 History:
 - 2026-09-10T07:27:29Z 50AGRJMEYNP0GD01N57BN4FMGP-m1b-c6925449 open actor=m1b+main-1788680071-18713-e76d5d targets=skew-preflight-knows-a-receipt-worktree
@@ -31,4 +30,5 @@ History:
 - 2026-09-10T18:59:37Z QQC0B89CZVTEYYGV4RHKP5R6AD-m1b-c6925449 done actor=m1b+main-1788680071-18713-e76d5d targets=actionable-metrics,breach-clock-and-budget-honesty,burn-without-delivery-tripwire,carried-landing-debt-and-cap,delegate-job-liveness,delivery-candidate-is-the-workspace-not-the-ledger,enrollment-binds-by-the-skew-rule-not-the-tip,failed-job-attention,fixture-stewards-outlive-their-suite,goal-abandoned-with-a-reason,governed-exhaustion-reprojection,human-carried-landing-carry,human-carried-landing-verb,human-goal-verbs-forgiving,job-record-birth-token,landing-receipt-survives-records-drift,landing-runs-standard-deep-runs-at-cadence,lease-sweep-death-evidence,live-job-on-a-done-goal-unnoticed,machine-concurrency-governor,proof-harness-process-custody,receipt-section-beds-do-not-export-the-engine,review-round-limit-counts-per-chain,severity-tiered-rigor,severity-tiered-rigor-p2,skew-preflight-knows-a-receipt-worktree,small-change-lane,steward-catchup-livelock,steward-revives-a-done-goal,stop-batch-strands-a-resumable-goal,suite-custody,testing-contract-owns-record-paths,token-spend-fence,turn-verdict-hardening,watch-verb,watcher-repair-request-never-names-current,winddown-census-handoff-leak reason=priority-order from=1:4 to=1:3
 - 2026-09-11T02:07:36Z 5J8GDGATVH7WEH3SCW823CQY7J-m1d-a38bcdde done actor=m1d+main-1788941004-20871-6e7a43 targets=actionable-metrics,breach-clock-and-budget-honesty,burn-without-delivery-tripwire,carried-landing-debt-and-cap,delegate-job-liveness,delivery-candidate-is-the-workspace-not-the-ledger,failed-job-attention,fixture-stewards-outlive-their-suite,goal-abandoned-with-a-reason,governed-exhaustion-reprojection,human-carried-landing-carry,human-carried-landing-verb,human-goal-verbs-forgiving,job-record-birth-token,landing-receipt-survives-records-drift,lease-sweep-death-evidence,live-job-on-a-done-goal-unnoticed,machine-concurrency-governor,proof-harness-process-custody,review-round-limit-counts-per-chain,severity-tiered-rigor,severity-tiered-rigor-p2,skew-preflight-knows-a-receipt-worktree,small-change-lane,steward-catchup-livelock,steward-revives-a-done-goal,stop-batch-strands-a-resumable-goal,suite-custody,testing-contract-owns-record-paths,token-spend-fence,turn-verdict-hardening,watch-verb,watcher-repair-request-never-names-current,winddown-census-handoff-leak reason=priority-order from=1:3 to=1:2
 - 2026-09-11T02:45:56Z 2DXW8Y78HG5FRT5MHCAHRZPP5Y-m1c-43182c96 breach-stop actor=m1c+goal-stop-custodian targets=skew-preflight-knows-a-receipt-worktree
-Integrity: sha256=eae27cee14cceb0ba8dc124434e0d2c3863ffe0d28f6f42a5c9811b1b5bb0af7
+- 2026-09-11T05:28:46Z TE524YSCGQFZ6XBQE38K0G0SMD-m1c-66a02980 resume actor=human:Wido targets=skew-preflight-knows-a-receipt-worktree
+Integrity: sha256=bb9cdc90d0375407a0f967a62d9d84803c80ddf2df66f019b7bf382d92436a67
