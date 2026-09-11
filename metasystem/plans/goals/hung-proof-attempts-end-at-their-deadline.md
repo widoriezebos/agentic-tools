@@ -7,10 +7,12 @@
 - Origin: human
 - Next step: Read the watchdog and launcher in internal/proofrun and the section adapter's end-event handling, design the three terminalization paths, write the fixture, land with its own battery.
 - OpenedAt: 2026-09-11T15:44:57Z
-- Revision: 1
+- Revision: 2
+- Pinned: m1e
 - Budget: elapsedLimit=1d attemptLimit=10 reservedJobMinutesLimit=1200 activeJobLimit=1 reviewRoundLimit=3
 - BudgetExceptions: 0
 
 History:
 - 2026-09-11T15:44:57Z G00GBWKD64KA1ZT4J6WDGWFCSB-m1e-5083721b open actor=m1e+main-1789141490-27414-b9c0d2 targets=hung-proof-attempts-end-at-their-deadline
-Integrity: sha256=ecdd42ec87df8822c34b1bb5fda577d92abf81b1ae0e4d1ba0200bc975e709fa
+- 2026-09-11T15:46:56Z 7ZCH1E0KCPY6ZZ18JTDK66Q29T-m1-c6925449 set-pin actor=human:Wido targets=hung-proof-attempts-end-at-their-deadline
+Integrity: sha256=b2ee1ed02e686dace5fb8ab7f18349e4eae95ac18c08bed67b89d63d41a32efb
