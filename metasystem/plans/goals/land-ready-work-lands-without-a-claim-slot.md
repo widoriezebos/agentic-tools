@@ -1,6 +1,6 @@
 # land-ready-work-lands-without-a-claim-slot
 
-- State: approved
+- State: queued
 - Priority: 1
 - Sequence: 20
 - Risk: severity=2 novelty=2 exposure=3 accumulation=1 basis="severity 2: the claim quota and accounting are the spend fence; novelty 2: a landing slot is a new state; exposure 3: every seat; accumulation 1: goal verbs and receipt"
@@ -9,11 +9,9 @@
 - Origin: human
 - Next step: Read the claim quota in internal/goal/validate.go, rebindClaimKeepEpisode in verbs.go and the receipt's workspace projection, design, critique, build, land.
 - OpenedAt: 2026-09-11T15:45:27Z
-- Revision: 6
+- Revision: 7
 - Pinned: m1e
-- Budget: elapsedLimit=1d attemptLimit=10 reservedJobMinutesLimit=1200 activeJobLimit=1 reviewRoundLimit=3
 - BudgetExceptions: 0
-- Approved: by=human:Wido at=2026-09-11T15:49:45Z revision=4 opid=AY5XZ00TW4XS6X47VYBN4EGNBV-m1-c6925449 authority=proven digest=90c034d0528d21caaa5a5699096461d156bd877449b9881a3cda6dee19f31ace
 
 History:
 - 2026-09-11T15:45:27Z 6Z8WZ99H2QDDXDP19V3KT6VFDC-m1e-5083721b open actor=m1e+main-1789141490-27414-b9c0d2 targets=land-ready-work-lands-without-a-claim-slot
@@ -22,4 +20,5 @@ History:
 - 2026-09-11T15:49:45Z AY5XZ00TW4XS6X47VYBN4EGNBV-m1-c6925449 approve actor=human:Wido targets=land-ready-work-lands-without-a-claim-slot
 - 2026-09-11T15:50:51Z M4GZC1Q99QFRH9T13HSY774HAR-m1-c6925449 set-priority actor=human:Wido targets=actionable-metrics,breach-clock-and-budget-honesty,budget-extends-by-consumption-and-breach-parks,burn-without-delivery-tripwire,capped-round-continues-instead-of-restarting,carried-landing-debt-and-cap,coordinator-context-stays-under-budget,coordinator-wakes-on-events-not-polls,critique-closes-on-folded-proof,deep-battery-under-ten-minutes,delegate-job-liveness,delegate-rounds-reuse-a-warm-gate,delivery-receipt-stops-at-first-failure,failed-job-attention,fixture-stewards-outlive-their-suite,goal-abandoned-with-a-reason,human-carried-landing-carry,human-carried-landing-verb,human-goal-verbs-forgiving,job-record-birth-token,land-ready-work-lands-without-a-claim-slot,landing-receipt-survives-records-drift,landing-refuses-without-its-receipt-line,lease-sweep-death-evidence,live-job-on-a-done-goal-unnoticed,machine-concurrency-governor,proof-groups-detect-hangs-by-progress-not-the-clock,proof-harness-process-custody,retained-proof-reuse-crosses-claims-and-attempts,seat-opened-goals-name-their-blocker,severity-tiered-rigor,severity-tiered-rigor-p2,small-change-lane,steward-catchup-livelock,steward-revives-a-done-goal,stop-batch-strands-a-resumable-goal,suite-custody,token-spend-fence,turn-verdict-hardening,watch-verb,watcher-repair-request-never-names-current,winddown-census-handoff-leak reason=priority-order subject=landing-refuses-without-its-receipt-line from=1:18 to=1:19 requested-sequence=5
 - 2026-09-11T15:50:59Z XMVFS3RNBYJQA0S9A89QGZ8XAS-m1-c6925449 set-priority actor=human:Wido targets=actionable-metrics,breach-clock-and-budget-honesty,burn-without-delivery-tripwire,capped-round-continues-instead-of-restarting,carried-landing-debt-and-cap,critique-closes-on-folded-proof,delegate-job-liveness,failed-job-attention,fixture-stewards-outlive-their-suite,goal-abandoned-with-a-reason,human-carried-landing-verb,human-goal-verbs-forgiving,job-record-birth-token,land-ready-work-lands-without-a-claim-slot,landing-receipt-survives-records-drift,lease-sweep-death-evidence,live-job-on-a-done-goal-unnoticed,machine-concurrency-governor,proof-harness-process-custody,severity-tiered-rigor,severity-tiered-rigor-p2,small-change-lane,steward-catchup-livelock,steward-revives-a-done-goal,stop-batch-strands-a-resumable-goal,suite-custody,tier-from-severity-and-novelty,token-spend-fence,turn-verdict-hardening,watch-verb,watcher-repair-request-never-names-current,winddown-census-handoff-leak reason=priority-order subject=tier-from-severity-and-novelty from=1:19 to=1:20 requested-sequence=16
-Integrity: sha256=06389fe76b95fb6dbdfe31273f582b65de8b8096f2971a2538151732e73f2cdf
+- 2026-09-11T16:13:40Z 85NBXV0YK0SK6Z2Q51NHFCAGYY-m1-c6925449 unapprove actor=human:Wido targets=land-ready-work-lands-without-a-claim-slot reason=Wido 2026-09-11: Codex critique round 1 of the delivery-efficiency plan accepted; intent amended before re-approval
+Integrity: sha256=a363c68d7a53ded2c1e6a11844b8d1dcc4dc0cd918a24dd7a4e99d966e39535c
