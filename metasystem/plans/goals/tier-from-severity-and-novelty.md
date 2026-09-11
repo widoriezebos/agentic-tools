@@ -1,6 +1,6 @@
 # tier-from-severity-and-novelty
 
-- State: approved
+- State: queued
 - Priority: 1
 - Sequence: 17
 - Risk: severity=1 novelty=1 exposure=3 accumulation=1 basis="severity 1: a mis-tiered goal still gets critique at its tier; novelty 1: the derivation exists; exposure 3: every goal; accumulation 1: one formula"
@@ -9,11 +9,9 @@
 - Origin: human
 - Next step: Read the tier derivation (the severity-tiered-rigor lineage and internal/testpolicy risk), change the formula and the docs, land.
 - OpenedAt: 2026-09-11T15:50:34Z
-- Revision: 7
+- Revision: 8
 - Pinned: m1e
-- Budget: elapsedLimit=4h attemptLimit=6 reservedJobMinutesLimit=720 activeJobLimit=1 reviewRoundLimit=2
 - BudgetExceptions: 0
-- Approved: by=human:Wido at=2026-09-11T15:51:08Z revision=4 opid=ZWRQYRDHT7Y0SFYRKMX2EYGEE6-m1-c6925449 authority=proven digest=18cf4bf95eff26a97153afd842aff1ddb8bd1a07148cecc44564760526b63fdd
 
 History:
 - 2026-09-11T15:50:34Z PGA3WGGB587Z9EJ8VSMBS1W4ZS-m1-c6925449 open actor=human:Wido targets=tier-from-severity-and-novelty reason=TierOverride: derived=3 set=2 why=Wido 2026-09-11: a formula change with the existing derivation; exposure alone does not make it tier 3, which is the point of this goal
@@ -23,4 +21,5 @@ History:
 - 2026-09-11T16:17:45Z 030HT9PVZGVHDS5RKBJJ1AFZZP-m1-c6925449 set-priority actor=human:Wido targets=actionable-metrics,breach-clock-and-budget-honesty,budget-extends-by-consumption-and-breach-parks,burn-without-delivery-tripwire,capped-round-continues-instead-of-restarting,carried-landing-debt-and-cap,coordinator-context-stays-under-budget,coordinator-wakes-on-events-not-polls,critique-closes-on-folded-proof,deep-battery-under-ten-minutes,delegate-job-liveness,delegate-rounds-reuse-a-warm-gate,delivery-receipt-stops-at-first-failure,failed-job-attention,fixture-stewards-outlive-their-suite,goal-abandoned-with-a-reason,human-carried-landing-carry,human-carried-landing-verb,human-goal-verbs-forgiving,job-record-birth-token,land-ready-work-lands-without-a-claim-slot,landing-receipt-survives-records-drift,lease-sweep-death-evidence,live-job-on-a-done-goal-unnoticed,machine-concurrency-governor,proof-attempts-settle-to-minutes-run,proof-groups-detect-hangs-by-progress-not-the-clock,proof-harness-process-custody,retained-proof-reuse-crosses-claims-and-attempts,severity-tiered-rigor,severity-tiered-rigor-p2,small-change-lane,steward-catchup-livelock,steward-revives-a-done-goal,stop-batch-strands-a-resumable-goal,suite-custody,tier-from-severity-and-novelty,token-spend-fence,turn-verdict-hardening,watch-verb,watcher-repair-request-never-names-current,winddown-census-handoff-leak reason=priority-order subject=proof-attempts-settle-to-minutes-run from=1:16 to=1:17 requested-sequence=7
 - 2026-09-11T16:18:20Z J5PHE8R2SWPAM65XBB7MQ72P5H-m1-c6925449 set-priority actor=human:Wido targets=critique-closes-on-folded-proof,human-carried-landing-carry,tier-from-severity-and-novelty reason=priority-order subject=critique-closes-on-folded-proof from=1:17 to=1:18 requested-sequence=16
 - 2026-09-11T16:18:24Z 000ZBR0TR186F4J8EHPZC6423D-m1-c6925449 set-priority actor=human:Wido targets=human-carried-landing-carry,tier-from-severity-and-novelty reason=priority-order subject=tier-from-severity-and-novelty from=1:18 to=1:17 requested-sequence=17
-Integrity: sha256=2142ff865da15f83cf7aafaa74ce40fac47c50b7b756686f450e3cdfe3a78d73
+- 2026-09-11T20:31:17Z W3RD1SBYGG2Q8YETZGYD026W2V-m1-c6925449 unapprove actor=human:Wido targets=tier-from-severity-and-novelty reason=Wido 2026-09-11: every program goal states runtime independence (claude, codex, devin, future adapters); intent amended before re-approval
+Integrity: sha256=e9f1bff5e7d4bbe82c4e349c680b564d4a1beb637731d8930cb6045dc7c3ff5d
