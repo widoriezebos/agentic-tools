@@ -1,18 +1,17 @@
 # small-change-lane
 
-- State: parked
+- State: approved
 - Priority: 1
 - Sequence: 11
 - Intent: The 'change this little thing' case has a supported path: a dispatch lane cheap and fast enough that a certified one-line fix is not ceremony
 - Origin: main
 - Next step: DESIGN REVISION 1 RETURNED (scl-design1, Fable, 597 lines; page saved in m1b's scratchpad, scl-design1.patch; unlandable until records can land). WIDO'S DECISIONS 2026-09-10 on its three open points: (1) proof depth follows the four risk answers, never the diff's size (kept the contract's rule; locality is goal blast-radius-beside-risk, later); (2) critique follows the TIER, not the class (goal critique-always re-scoped): the small lane's 'one bounded critique' becomes 'a critique when the tier is 2 or 3, none at tier 1', and the tier-1 direct-fix class is NOT retired: it is the low-risk lane, R-54-m1 stands; (3) the bounds are four files and eighty changed lines, measured on the computed diff at conformance review, a change over the bound moves to the ordinary ladder rather than failing, revisited after ten lane landings. Revision 2 folds these three into the page (sections 2, 3, 7 and the revision record) before read 1. Parked until the bootstrap members land.
 - OpenedAt: 2026-08-20T00:14:00Z
-- Revision: 45
+- Revision: 46
 - Budget: elapsedLimit=1d attemptLimit=6 reservedJobMinutesLimit=240 activeJobLimit=1 reviewRoundLimit=3
 - BudgetExceptions: 0
 - Approved: by=human:Wido at=2026-09-06T06:53:37Z revision=5 opid=A35EHY2TGAWCCFA1Q1J0WZGS35-m1-a4f8999f authority=proven digest=ce78111a14c81468a494d5bb4235f81b054a41696cc40003f8b906dee0e8aa27
 - Sliced: machine=m1b lineage=main-1788680071-18713-e76d5d revision=16 at=2026-09-10T07:25:39Z
-- Parked: by=m1b+main-1788680071-18713-e76d5d at=2026-09-10T08:12:45Z because=Parked 2026-09-10 11:45Z after recording Wido's three decisions; resume with design revision 2 folding them, then read 1 (Sol), once records can land.
 
 History:
 - 2026-08-22T06:30:55Z BXWE9NXAWCGCTR3MFCE8GDC4P5-widos-m5-pro-bf243850 migrate actor=human:wido targets=small-change-lane
@@ -60,4 +59,5 @@ History:
 - 2026-09-11T13:09:13Z 87YV4GSZZ2V6VDXWR3YDCQTQRM-m1b-c6925449 done actor=m1b+main-1788680071-18713-e76d5d targets=actionable-metrics,burn-without-delivery-tripwire,delegate-job-liveness,failed-job-attention,fixture-stewards-outlive-their-suite,human-goal-verbs-forgiving,job-record-birth-token,lease-sweep-death-evidence,live-job-on-a-done-goal-unnoticed,machine-concurrency-governor,proof-harness-process-custody,review-round-limit-counts-per-chain,severity-tiered-rigor,severity-tiered-rigor-p2,small-change-lane,steward-catchup-livelock,steward-revives-a-done-goal,suite-custody,token-spend-fence,turn-verdict-hardening,watch-verb,watcher-repair-request-never-names-current,winddown-census-handoff-leak reason=priority-order from=1:14 to=1:13
 - 2026-09-11T13:11:55Z WP2FQ9P2QXDC6SSC4W9KBN4WAX-m1b-c6925449 done actor=m1b+main-1788680071-18713-e76d5d targets=actionable-metrics,burn-without-delivery-tripwire,delegate-job-liveness,failed-job-attention,fixture-stewards-outlive-their-suite,governed-exhaustion-reprojection,human-goal-verbs-forgiving,job-record-birth-token,lease-sweep-death-evidence,live-job-on-a-done-goal-unnoticed,machine-concurrency-governor,proof-harness-process-custody,severity-tiered-rigor,severity-tiered-rigor-p2,small-change-lane,steward-catchup-livelock,steward-revives-a-done-goal,stop-batch-strands-a-resumable-goal,suite-custody,token-spend-fence,turn-verdict-hardening,watch-verb,watcher-repair-request-never-names-current,winddown-census-handoff-leak reason=priority-order from=1:13 to=1:12
 - 2026-09-11T13:44:07Z YQGA1GNJW2TGAHDWSD6QTPGEFW-m1-c6925449 done actor=human:Wido targets=actionable-metrics,breach-clock-and-budget-honesty,burn-without-delivery-tripwire,carried-landing-debt-and-cap,delegate-job-liveness,failed-job-attention,fixture-stewards-outlive-their-suite,goal-abandoned-with-a-reason,human-carried-landing-carry,human-carried-landing-verb,human-goal-verbs-forgiving,job-record-birth-token,landing-receipt-survives-records-drift,landing-runs-standard-deep-runs-at-cadence,lease-sweep-death-evidence,live-job-on-a-done-goal-unnoticed,machine-concurrency-governor,proof-harness-process-custody,severity-tiered-rigor,severity-tiered-rigor-p2,small-change-lane,steward-catchup-livelock,steward-revives-a-done-goal,stop-batch-strands-a-resumable-goal,suite-custody,token-spend-fence,turn-verdict-hardening,watch-verb,watcher-repair-request-never-names-current,winddown-census-handoff-leak reason=priority-order from=1:12 to=1:11
-Integrity: sha256=cfc8ac868ffe931146ff718a18ff2b4a37bf5cd842434328ca80a92c009fc193
+- 2026-09-11T15:45:34Z PPBXEX8MZWDR4JPS90RJB76RGE-m1e-5083721b unpark actor=m1e+main-1789141490-27414-b9c0d2 targets=small-change-lane
+Integrity: sha256=263a8eb167fef5271d662965d409643912e3ab316d8f80f081b9f88f3521d3b6
