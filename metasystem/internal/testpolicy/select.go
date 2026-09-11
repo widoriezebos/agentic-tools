@@ -153,7 +153,16 @@ func Select(contract Contract, request SelectionRequest) (Plan, error) {
 	for _, id := range keys(affected) {
 		surfaces = append(surfaces, byID[id])
 	}
-	risk := assessRisk(contract, surfaces, request.GoalRisk)
+	// Per-landing depth is decided by the change alone: a protected policy
+	// change, an unowned path, or a surface whose declared raise or critical
+	// obligations demand it. The goal's four risk answers never choose depth;
+	// they scale the landing's cadence weight (gate weight-add --goal), so a
+	// riskier goal brings the deep cadence run sooner (ruling R-3).
+	risk := assessRisk(contract, surfaces, GoalRisk{})
+	if request.GoalRisk != (GoalRisk{}) {
+		risk.Reasons = append(risk.Reasons, fmt.Sprintf("goal risk answers severity=%d novelty=%d exposure=%d accumulation=%d scale cadence weight, not per-landing depth",
+			request.GoalRisk.Severity, request.GoalRisk.Novelty, request.GoalRisk.Exposure, request.GoalRisk.Accumulation))
+	}
 	protected := ProtectedPolicyChange(request.ChangedPaths)
 	requiredMode := ModeStandard
 	if requiresDeep(risk, protected) {

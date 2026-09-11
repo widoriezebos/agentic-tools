@@ -282,10 +282,23 @@ func LandingWeight(numstat []byte, prefix string) (int64, error) {
 }
 
 func WeightAdd(root, commit string, numstat []byte, prefix string, threshold int64) (WeightState, bool, error) {
+	return WeightAddScaled(root, commit, numstat, prefix, threshold, 1)
+}
+
+// WeightAddScaled folds one landing's measured weight, multiplied by the
+// owning goal's risk scale, into the accumulator. The scale is the goal's
+// highest risk answer (1 to 3): the goal's answers never choose per-landing
+// depth, they bring the deep cadence run sooner (ruling R-3). A scale below
+// 1 counts as 1.
+func WeightAddScaled(root, commit string, numstat []byte, prefix string, threshold, scale int64) (WeightState, bool, error) {
 	weight, err := LandingWeight(numstat, prefix)
 	if err != nil {
 		return WeightState{}, false, err
 	}
+	if scale < 1 {
+		scale = 1
+	}
+	weight *= scale
 	lock, err := acquireWeightLock(root)
 	if err != nil {
 		return WeightState{}, false, err

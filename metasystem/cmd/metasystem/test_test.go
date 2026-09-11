@@ -680,7 +680,10 @@ func TestFrozenWorkerProbeReaderAcceptsCandidateGroupFields(t *testing.T) {
 		t.Fatal(err)
 	}
 	candidateGroups := candidate["groups"].([]any)
-	candidateGroups[0].(map[string]any)["progressRule"] = "cpu-or-output"
+	// A field only a newer candidate engine writes; it must stay unknown to
+	// this engine's strict reader, so it is not any field the shape has since
+	// adopted (progressRule joined the shape on 2026-09-11).
+	candidateGroups[0].(map[string]any)["candidateOnlyField"] = "from-a-newer-engine"
 	data, err = json.Marshal(candidate)
 	if err != nil {
 		t.Fatal(err)
@@ -694,7 +697,7 @@ func TestFrozenWorkerProbeReaderAcceptsCandidateGroupFields(t *testing.T) {
 	if err != nil || len(probeResult.Groups) != 1 || probeResult.Groups[0].Status != "invalid" || probeResult.Groups[0].CollectionComplete {
 		t.Fatalf("probe reader lost the negative worker judgment: result=%+v err=%v", probeResult, err)
 	}
-	if _, err := readTestingWorkerResult(path); err == nil || !strings.Contains(err.Error(), `unknown field "progressRule"`) {
+	if _, err := readTestingWorkerResult(path); err == nil || !strings.Contains(err.Error(), `unknown field "candidateOnlyField"`) {
 		t.Fatalf("strict destination worker reader accepted the candidate field: %v", err)
 	}
 }

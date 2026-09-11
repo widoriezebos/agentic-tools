@@ -621,4 +621,5 @@ fi
 git -C "$root" show --no-renames --numstat -z --format= HEAD 2>/dev/null \
   | "$policy_engine" gate weight-add --root "$root" --prefix "$prefix" \
       --commit "$(git -C "$root" rev-parse --short HEAD)" \
+      ${landing_goal:+--goal "$landing_goal"} \
   || echo "validation-weight bookkeeping skipped (non-fatal)" >&2

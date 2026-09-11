@@ -103,6 +103,12 @@ func assessRisk(contract Contract, surfaces []Surface, goal GoalRisk) RiskAssess
 	return result
 }
 
+// requiresDeep is the per-landing depth law. Its input is the change's own
+// risk (the project's declared baseline raised by the affected surfaces),
+// never the goal's answers: those scale cadence weight instead. Deep is
+// owed for a protected policy change or when a surface raise lifts any
+// dimension to 2 or worse, declares a reversibility other than revert,
+// delayed detection, or unbounded recovery.
 func requiresDeep(risk RiskAssessment, protected bool) bool {
 	return protected || risk.Severity >= 2 || risk.Exposure >= 2 || risk.Novelty >= 2 ||
 		risk.Accumulation >= 2 || risk.Reversibility != "revert" || risk.Detection == "delayed" || risk.Recovery == "unbounded"

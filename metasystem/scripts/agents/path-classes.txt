@@ -10,6 +10,7 @@ install:go.work behavior
 install:go.work.sum behavior
 install:.gitattributes behavior
 install:.gitignore behavior
+install:testing.json behavior
 install:cmd/ behavior
 install:internal/ behavior
 install:docs/ behavior

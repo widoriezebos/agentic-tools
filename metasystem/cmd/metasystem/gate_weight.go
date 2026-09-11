@@ -35,8 +35,9 @@ func runGateWeightAdd(args []string) int {
 	root := flags.String("root", "", "checkout root")
 	commit := flags.String("commit", "", "landed commit")
 	prefix := flags.String("prefix", "", "metasystem path relative to Git toplevel")
+	goalID := flags.String("goal", "", "goal owning the landing; its highest risk answer scales the weight")
 	if flags.Parse(args) != nil || *root == "" || *commit == "" || flags.NArg() != 0 {
-		fmt.Fprintln(os.Stderr, "usage: metasystem gate weight-add --root R --commit SHA [--prefix PREFIX]  (numstat -z on stdin)")
+		fmt.Fprintln(os.Stderr, "usage: metasystem gate weight-add --root R --commit SHA [--prefix PREFIX] [--goal ID]  (numstat -z on stdin)")
 		return 2
 	}
 	numstat, err := io.ReadAll(os.Stdin)
@@ -44,12 +45,13 @@ func runGateWeightAdd(args []string) int {
 		fmt.Fprintln(os.Stderr, err)
 		return 1
 	}
-	state, due, err := gaterun.WeightAdd(*root, *commit, numstat, *prefix, weightThreshold(*root))
+	scale := goalWeightScale(*root, *goalID)
+	state, due, err := gaterun.WeightAddScaled(*root, *commit, numstat, *prefix, weightThreshold(*root), scale)
 	if err != nil {
 		fmt.Fprintln(os.Stderr, err)
 		return 1
 	}
-	fmt.Printf("validation weight %d over %d landing(s) since %s\n", state.Accumulated, state.Landings, state.SinceUTC)
+	fmt.Printf("validation weight %d over %d landing(s) since %s (this landing scaled by goal risk %d)\n", state.Accumulated, state.Landings, state.SinceUTC, scale)
 	if due {
 		fmt.Printf("validation weight reached (threshold %d): run the governed direct validator; findings fix forward\n", weightThreshold(*root))
 	}
@@ -107,4 +109,28 @@ func runGateWeightDischarge(args []string) int {
 		return 3
 	}
 	return 0
+}
+
+// goalWeightScale is the owning goal's highest risk answer, 1 when no goal
+// is named or its risk cannot be read: weight bookkeeping never refuses a
+// concluded landing, it only scales it.
+func goalWeightScale(root, goalID string) int64 {
+	if goalID == "" {
+		return 1
+	}
+	risk, _, err := testingGoalRisk(root, goalID)
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "validation weight: goal %s risk not read (%v); the landing weighs unscaled\n", goalID, err)
+		return 1
+	}
+	scale := 1
+	for _, answer := range []int{risk.Severity, risk.Novelty, risk.Exposure, risk.Accumulation} {
+		if answer > scale {
+			scale = answer
+		}
+	}
+	if scale > 3 {
+		scale = 3
+	}
+	return int64(scale)
 }

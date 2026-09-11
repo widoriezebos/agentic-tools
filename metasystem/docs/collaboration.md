@@ -35,8 +35,15 @@ Keep reviews small and cheap:
 ## Weight-Triggered Direct Validation
 
 Ordinary landings consume the risk-selected shared testing result through
-`test verify`; they add no governance command or approval form. The landing
-path still adds behavior-surface weight. When the configured threshold is due,
+`test verify`; they add no governance command or approval form. Per-landing
+depth is decided by the change, never by the goal's risk answers: a protected
+policy change, an unowned path, a surface whose declared raise or critical
+obligations demand it, or an explicit `--mode deep` runs deep; every other
+landing runs canary plus standard and finishes in about a minute. The two
+whole-package coverage groups and the big process sections run at cadence
+only. The goal's four risk answers scale the landing's behavior-surface weight
+instead (`gate weight-add --goal`, the highest answer as the factor), so a
+riskier goal brings the deep cadence run sooner. When the configured threshold is due,
 the standing validator's custodian runs the deep cadence selection through the
 governed run boundary and joins its testing worker to that one reservation:
 

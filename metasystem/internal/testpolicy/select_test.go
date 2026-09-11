@@ -105,6 +105,17 @@ func TestModesDoNotLowerRequiredRisk(t *testing.T) {
 	if _, err := Select(contract, SelectionRequest{ChangedPaths: []string{"src/output.go"}, RequestedMode: ModeStandard, Purpose: PurposeDelivery}); err == nil {
 		t.Fatal("standard request lowered a deep delivery requirement")
 	}
+	raised := fixtureContract()
+	raised.Surfaces[0].Risk = &RiskRaise{Severity: 2}
+	if _, err := Select(raised, SelectionRequest{ChangedPaths: []string{"src/output.go"}, RequestedMode: ModeStandard, Purpose: PurposeDelivery}); err == nil {
+		t.Fatal("standard request lowered a surface-raised deep delivery requirement")
+	}
+	ordinary := fixtureContract()
+	ordinaryPlan, ordinaryErr := Select(ordinary, SelectionRequest{ChangedPaths: []string{"src/output.go"}, GoalRisk: GoalRisk{Severity: 3, Novelty: 3, Exposure: 3, Accumulation: 3},
+		RequestedMode: ModeStandard, Purpose: PurposeDelivery})
+	if ordinaryErr != nil || ordinaryPlan.RequiredMode != ModeStandard || ordinaryPlan.ExecutedMode != ModeStandard {
+		t.Fatalf("a goal's risk answers raised the per-landing depth: plan=%+v err=%v", ordinaryPlan, ordinaryErr)
+	}
 	plan, err := Select(contract, SelectionRequest{ChangedPaths: []string{"src/output.go"}, RequestedMode: ModeStandard, Purpose: PurposeDiagnostic})
 	if err != nil || plan.ExecutedMode != ModeStandard {
 		t.Fatalf("standard diagnostic was unavailable: plan=%+v err=%v", plan, err)
@@ -133,4 +144,46 @@ func contains(values []string, wanted string) bool {
 		}
 	}
 	return false
+}
+
+func TestDepthIsDecidedByTheChangeNotTheGoal(t *testing.T) {
+	riskiest := GoalRisk{Severity: 3, Novelty: 3, Exposure: 3, Accumulation: 3}
+	t.Run("ordinary-change-under-the-riskiest-goal-is-standard", func(t *testing.T) {
+		plan, err := Select(fixtureContract(), SelectionRequest{ChangedPaths: []string{"src/output.go"}, GoalRisk: riskiest, RequestedMode: ModeAuto, Purpose: PurposeDelivery})
+		if err != nil {
+			t.Fatal(err)
+		}
+		if plan.RequiredMode != ModeStandard || plan.ExecutedMode != ModeStandard || contains(plan.SelectedGroups, "app-deep") {
+			t.Fatalf("goal answers chose depth: %+v", plan)
+		}
+		if plan.Risk.Severity != 1 || !containsSubstring(plan.Risk.Reasons, "severity=3 novelty=3 exposure=3 accumulation=3 scale cadence weight") {
+			t.Fatalf("plan risk must be the change's own, with the goal's answers named: %+v", plan.Risk)
+		}
+	})
+	t.Run("surface-raise-is-deep", func(t *testing.T) {
+		contract := fixtureContract()
+		contract.Surfaces[0].Risk = &RiskRaise{Severity: 2}
+		plan, err := Select(contract, SelectionRequest{ChangedPaths: []string{"src/output.go"}, RequestedMode: ModeAuto, Purpose: PurposeDelivery})
+		if err != nil || plan.RequiredMode != ModeDeep || !contains(plan.SelectedGroups, "app-deep") {
+			t.Fatalf("surface raise did not plan deep: plan=%+v err=%v", plan, err)
+		}
+	})
+	t.Run("unowned-path-is-deep", func(t *testing.T) {
+		plan, err := Select(fixtureContract(), SelectionRequest{ChangedPaths: []string{"unowned/file"}, RequestedMode: ModeAuto, Purpose: PurposeDiagnostic})
+		if err != nil || plan.RequiredMode != ModeDeep || len(plan.Uncertainty) != 1 {
+			t.Fatalf("unowned path did not plan deep with uncertainty: plan=%+v err=%v", plan, err)
+		}
+	})
+	t.Run("explicit-deep-runs-deep", func(t *testing.T) {
+		plan, err := Select(fixtureContract(), SelectionRequest{ChangedPaths: []string{"src/output.go"}, RequestedMode: ModeDeep, Purpose: PurposeDelivery})
+		if err != nil || plan.ExecutedMode != ModeDeep || !contains(plan.SelectedGroups, "app-deep") {
+			t.Fatalf("explicit deep request was not honoured: plan=%+v err=%v", plan, err)
+		}
+	})
+	t.Run("cadence-still-selects-the-whole-battery", func(t *testing.T) {
+		plan, err := Select(fixtureContract(), SelectionRequest{ChangedPaths: []string{"src/output.go"}, RequestedMode: ModeDeep, Purpose: PurposeCadence})
+		if err != nil || !contains(plan.SelectedGroups, "app-deep") || !contains(plan.SelectedGroups, "app-unit") {
+			t.Fatalf("cadence lost a battery group: plan=%+v err=%v", plan, err)
+		}
+	})
 }

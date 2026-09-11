@@ -234,8 +234,20 @@ func TestMetaSystemContractKeepsMixedPackageCoverageExplicit(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if !contains(deep.RequiredGroups, "goal-full-coverage") || !contains(deep.RequiredGroups, "missionrunner-full-coverage") {
-		t.Fatalf("coverage-sensitive deep selection omitted package floors: %+v", deep)
+	if deep.RequiredMode != ModeDeep {
+		t.Fatalf("a protected policy change did not plan deep: %+v", deep)
+	}
+	// Whole-package coverage is measured at the weight cadence, never per
+	// landing (slice 1 of plans/suite-speed-plan.md).
+	if contains(deep.RequiredGroups, "goal-full-coverage") || contains(deep.RequiredGroups, "missionrunner-full-coverage") {
+		t.Fatalf("per-landing deep selection pulled in whole-package coverage: %+v", deep)
+	}
+	cadence, err := Select(contract, SelectionRequest{ChangedPaths: []string{"metasystem/internal/testpolicy/select.go"}, RequestedMode: ModeDeep, Purpose: PurposeCadence})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !contains(cadence.SelectedGroups, "goal-full-coverage") || !contains(cadence.SelectedGroups, "missionrunner-full-coverage") {
+		t.Fatalf("cadence omitted the package coverage floors: %+v", cadence)
 	}
 }
 
@@ -351,13 +363,35 @@ func TestMetaSystemContractOwnsDeliveryBoundaryAndSelectsFastBeforeBroadProof(t 
 	if len(plan.Uncertainty) != 0 {
 		t.Fatalf("complete accumulated delivery boundary has unowned paths: %v", plan.Uncertainty)
 	}
-	for _, id := range []string{"fast-static-build", "goal-full-coverage", "missionrunner-full-coverage"} {
-		if !contains(plan.RequiredGroups, id) {
-			t.Fatalf("coverage-sensitive delivery omitted %s: %+v", id, plan)
+	if !contains(plan.RequiredGroups, "fast-static-build") {
+		t.Fatalf("delivery omitted the fast static build: %+v", plan)
+	}
+	// The two coverage groups run at cadence only (slice 1 of
+	// plans/suite-speed-plan.md): even the riskiest goal touching the whole
+	// delivery boundary pays them at the weight cadence, not per landing. The
+	// big process sections left every deep list too; they still run here only
+	// because surfaces in this boundary name them as critical providers.
+	for _, id := range []string{"goal-full-coverage", "missionrunner-full-coverage", "section/go-engine-gate"} {
+		if contains(plan.SelectedGroups, id) {
+			t.Fatalf("delivery pulled in cadence-only group %s: %+v", id, plan)
 		}
 	}
-	if contains(plan.SelectedGroups, "section/go-engine-gate") {
-		t.Fatalf("ordinary selected delivery pulled in the broad cadence Go battery: %+v", plan)
+	for _, surface := range contract.Surfaces {
+		for _, id := range surface.Deep {
+			if id == "section/adoption-fixtures" || id == "section/supervision-and-census-fixtures" || id == "section/dispatcher-adapter-and-mission-runner-fixtures" {
+				t.Fatalf("surface %s still lists the cadence-only section %s as deep", surface.ID, id)
+			}
+		}
+	}
+	cadence, err := Select(contract, SelectionRequest{ChangedPaths: boundary, RequestedMode: ModeDeep, Purpose: PurposeCadence})
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, id := range []string{"goal-full-coverage", "missionrunner-full-coverage", "section/dispatcher-adapter-and-mission-runner-fixtures",
+		"section/adoption-fixtures", "section/supervision-and-census-fixtures"} {
+		if !contains(cadence.SelectedGroups, id) {
+			t.Fatalf("cadence lost %s: %+v", id, cadence)
+		}
 	}
 
 	ordinary, err := Select(contract, SelectionRequest{ChangedPaths: []string{"metasystem/cmd/metasystem/goal_test.go"}, RequestedMode: ModeAuto, Purpose: PurposeDelivery})

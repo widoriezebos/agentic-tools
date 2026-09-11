@@ -2,6 +2,7 @@ package testpolicy
 
 import (
 	"encoding/json"
+	"strings"
 	"testing"
 )
 
@@ -128,15 +129,27 @@ func TestMainConformanceAcceptedPolicyBoundaries(t *testing.T) {
 			t.Fatal("protected composition mutated a policy input")
 		}
 	})
-	t.Run("accumulation-requires-affected-deep-groups", func(t *testing.T) {
+	t.Run("accumulation-scales-cadence-weight-not-depth", func(t *testing.T) {
 		contract := fixtureContract()
 		contract.Surfaces[0].Critical = nil
 		plan, err := Select(contract, SelectionRequest{ChangedPaths: []string{"src/output.go"}, GoalRisk: GoalRisk{Accumulation: 2}, RequestedMode: ModeAuto, Purpose: PurposeDelivery})
 		if err != nil {
 			t.Fatal(err)
 		}
-		if plan.RequiredMode != ModeDeep || !contains(plan.RequiredGroups, "app-deep") {
-			t.Fatalf("accumulation did not add affected deep proof: %+v", plan)
+		if plan.RequiredMode != ModeStandard || contains(plan.RequiredGroups, "app-deep") {
+			t.Fatalf("a goal's accumulation answer chose per-landing depth: %+v", plan)
+		}
+		if !containsSubstring(plan.Risk.Reasons, "accumulation=2 scale cadence weight") {
+			t.Fatalf("the plan does not say where the goal's answers went: %+v", plan.Risk.Reasons)
 		}
 	})
+}
+
+func containsSubstring(values []string, wanted string) bool {
+	for _, value := range values {
+		if strings.Contains(value, wanted) {
+			return true
+		}
+	}
+	return false
 }
