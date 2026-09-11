@@ -475,14 +475,18 @@ func TestChainLandingRecertifiesAfterBaseMove(t *testing.T) {
 }
 
 func TestRecertifiedLandingParksOnOriginMove(t *testing.T) {
-	runRecertifiedLandingFixture(t, "", true)
+	runRecertifiedLandingFixture(t, "", true, false)
 }
 
 func TestRecertifiedLandingPublishesNestedSchemaTwoCandidate(t *testing.T) {
-	runRecertifiedLandingFixture(t, "metasystem", false)
+	runRecertifiedLandingFixture(t, "metasystem", false, false)
 }
 
-func runRecertifiedLandingFixture(t *testing.T, prefix string, moveOrigin bool) {
+func TestLandingTestReceiptModeWithoutTreePublishesIndexReceipt(t *testing.T) {
+	runRecertifiedLandingFixture(t, "", false, true)
+}
+
+func runRecertifiedLandingFixture(t *testing.T, prefix string, moveOrigin, omitTree bool) {
 	bed, err := filepath.EvalSymlinks(t.TempDir())
 	if err != nil {
 		t.Fatal(err)
@@ -720,8 +724,12 @@ git commit "${commit_args[@]}" --trailer "Landing-Provenance: $provenance" \
 	if err := os.WriteFile(identityTable, []byte(fmt.Sprintf(`{"%d":{"terminal":true}}`, os.Getpid())), 0o600); err != nil {
 		t.Fatal(err)
 	}
-	testReceiptCommand := exec.Command(filepath.Join(root, "bin", "metasystem"), "landing", "test-receipt", "--root", root,
-		"--tree", candidateTree, "--mode", "auto", "--goal", "landing-goal", "--cap-min", "1")
+	testReceiptArgs := []string{"landing", "test-receipt", "--root", root}
+	if !omitTree {
+		testReceiptArgs = append(testReceiptArgs, "--tree", candidateTree)
+	}
+	testReceiptArgs = append(testReceiptArgs, "--mode", "auto", "--goal", "landing-goal", "--cap-min", "1")
+	testReceiptCommand := exec.Command(filepath.Join(root, "bin", "metasystem"), testReceiptArgs...)
 	testReceiptCommand.Env = append(receiptCanaryEnvironment(), "METASYSTEM_FAKE_PROCESS_IDENTITY_FILE="+identityTable)
 	if !moveOrigin {
 		started, ok := lease.StartedAt(int64(os.Getpid()), nil)
@@ -743,6 +751,9 @@ git commit "${commit_args[@]}" --trailer "Landing-Provenance: $provenance" \
 	var receipt landing.TestReceipt
 	if err := json.Unmarshal(receiptBytes, &receipt); err != nil || receipt.SchemaVersion != 2 || receipt.Testing == nil || !receipt.Testing.Delivery.Sufficient {
 		t.Fatalf("recertification did not retain sufficient schema-two testing evidence: receipt=%+v err=%v", receipt, err)
+	}
+	if omitTree {
+		return
 	}
 	landingCandidateTree, err := (gittree.Workspace{Dir: root}).TreeOf(candidateTree)
 	if err != nil {
@@ -1338,6 +1349,32 @@ func TestLandingSharedTestingReceiptPublicRecoveryKeepsExactOuterAuthority(t *te
 	}
 }
 
+func TestLandingWorkspacePrintsSameIDAcrossLedgerOnlyTrees(t *testing.T) {
+	root := t.TempDir()
+	runReceiptGit(t, root, "init", "-q", "-b", "main")
+	writeReceiptFixture(t, root, "application.txt", "stable application input\n")
+	writeReceiptFixture(t, root, "plans/goals/x.md", "revision one\n")
+	writeReceiptFixture(t, root, "records/counselor/x.md", "revision one\n")
+	runReceiptGit(t, root, "add", "-A")
+	firstTree := runReceiptGit(t, root, "write-tree")
+	writeReceiptFixture(t, root, "plans/goals/x.md", "revision two\n")
+	writeReceiptFixture(t, root, "records/counselor/x.md", "revision two\n")
+	runReceiptGit(t, root, "add", "-A")
+	secondTree := runReceiptGit(t, root, "write-tree")
+	if firstTree == secondTree {
+		t.Fatal("ledger fixture did not produce distinct whole-project trees")
+	}
+	first, firstStatus := captureStdout(t, func() int {
+		return runLandingWorkspace([]string{"--root", root, "--tree", firstTree})
+	})
+	second, secondStatus := captureStdout(t, func() int {
+		return runLandingWorkspace([]string{"--root", root, "--tree", secondTree})
+	})
+	if firstStatus != 0 || secondStatus != 0 || strings.TrimSpace(first) == "" || strings.TrimSpace(first) != strings.TrimSpace(second) {
+		t.Fatalf("landing workspace did not ignore goal and counselor ledgers: first=%q/%d second=%q/%d", first, firstStatus, second, secondStatus)
+	}
+}
+
 func runSharedTestingReceiptRecovery(t *testing.T, prefix string) {
 	projectRoot, err := filepath.EvalSymlinks(t.TempDir())
 	if err != nil {
@@ -1359,13 +1396,14 @@ func runSharedTestingReceiptRecovery(t *testing.T, prefix string) {
 	engine := filepath.Join(t.TempDir(), "metasystem")
 	writeCandidateEngineBuildFixture(t, root, engine)
 	launchCount := filepath.Join(root, "artifacts", "shared-testing-launches")
+	engineDeclaredInput := filepath.ToSlash(filepath.Join(prefix, "scripts/agents/coverage-ratchet.json"))
 	contract := testpolicy.Contract{SchemaVersion: 1,
 		ProjectRisk: testpolicy.ProjectRisk{Severity: 1, Exposure: 1, Reversibility: "revert", Detection: "immediate", Recovery: "bounded"},
 		Surfaces: []testpolicy.Surface{
-			{ID: "application", Paths: []string{"testing.json", "plans/**", "scripts/agents/go-build.sh", "scripts/agents/coverage-ratchet.json", "scripts/agents/coverage-ratchet-linux.json"}, Standard: []string{"policy-protection", "candidate-smoke"}, Critical: []string{"application-proof"}},
+			{ID: "application", Paths: []string{"testing.json", "plans/**", "records/**", "scripts/agents/go-build.sh", "scripts/agents/coverage-ratchet.json", "scripts/agents/coverage-ratchet-linux.json"}, Standard: []string{"policy-protection", "candidate-smoke"}, Critical: []string{"application-proof"}},
 			{ID: "proof-and-landing", Paths: []string{"payload.txt"}, DependsOn: []string{"application"}, Standard: []string{"policy-protection", "candidate-smoke"}, Critical: []string{"application-proof"}},
 		},
-		Groups: []testpolicy.Group{{ID: "policy-protection", Kind: "unit", Adapter: "command", CWD: ".", Inputs: []string{"payload.txt"},
+		Groups: []testpolicy.Group{{ID: "policy-protection", Kind: "unit", Adapter: "command", CWD: ".", Inputs: []string{"payload.txt", engineDeclaredInput},
 			Outputs: []string{"reports"}, Tools: []testpolicy.Tool{}, Obligations: []string{"application-proof"}, Platforms: []string{"any"}, TargetMS: 1000,
 			Env:     map[string]string{"SHARED_TEST_LAUNCH_COUNT": launchCount},
 			Argv:    []string{"sh", "-c", "count=0; test ! -f \"$SHARED_TEST_LAUNCH_COUNT\" || count=$(cat \"$SHARED_TEST_LAUNCH_COUNT\"); printf '%s\\n' $((count + 1)) >\"$SHARED_TEST_LAUNCH_COUNT\"; mkdir -p reports; printf '%s\\n' '<testsuite><testcase classname=\"application\" name=\"public-receipt\"/></testsuite>' >reports/result.xml"},
@@ -1504,50 +1542,135 @@ func runSharedTestingReceiptRecovery(t *testing.T, prefix string) {
 	}
 
 	originalTree := tree
-	writeReceiptFixture(t, root, "plans/coordination-note.md", "irrelevant staged coordination change\n")
-	runReceiptGit(t, root, "add", "plans/coordination-note.md")
+	writeReceiptFixture(t, root, "records/misc/peer-note.md", "irrelevant staged records change\n")
+	runReceiptGit(t, projectRoot, "add", filepath.ToSlash(filepath.Join(prefix, "records/misc/peer-note.md")))
 	tree = runReceiptGit(t, projectRoot, "write-tree")
 	if tree == originalTree {
-		t.Fatal("staged coordination change did not change the whole-project candidate")
+		t.Fatal("staged records change did not change the whole-project candidate")
 	}
-	recomposedOutput, recomposedErr := runPublic()
-	if recomposedErr != nil {
-		t.Fatalf("public schema-two current-candidate recomposition failed: %v\n%s", recomposedErr, recomposedOutput)
+	reusedOutput, reusedErr := runPublic()
+	if reusedErr != nil {
+		t.Fatalf("public schema-two current-candidate exact reuse failed: %v\n%s", reusedErr, reusedOutput)
 	}
-	recomposedBytes, err := os.ReadFile(landing.TestReceiptPath(root, tree))
-	if err != nil {
-		t.Fatal(err)
+	if _, err := os.Stat(landing.TestReceiptPath(root, tree)); !os.IsNotExist(err) {
+		t.Fatalf("exact reuse forged a receipt on the moved whole-project tree: %v", err)
 	}
-	var recomposed landing.TestReceipt
-	if err := json.Unmarshal(recomposedBytes, &recomposed); err != nil || recomposed.SchemaVersion != 2 || recomposed.Tree != tree ||
-		recomposed.ProvedTree != tree || recomposed.Testing == nil || recomposed.Testing.CandidateTree != tree || recomposed.Testing.AttemptID != "" ||
-		len(recomposed.AttemptIDs) != 1 || recomposed.AttemptIDs[0] != attempts[0].AttemptID || len(recomposed.Testing.Groups) != 2 ||
-		recomposed.Testing.LaunchCounts.Test != 0 || recomposed.Testing.LaunchCounts.ReusedTest != 2 || recomposed.Testing.Cost.ReusedLaunches != 2 {
-		t.Fatalf("current-candidate receipt did not compose the original component owners: receipt=%+v err=%v", recomposed, err)
-	}
-	for _, group := range recomposed.Testing.Groups {
-		if group.Status != "reused" || group.ReuseAttempt != attempts[0].AttemptID {
-			t.Fatalf("current-candidate receipt changed retained group authority: %+v", group)
-		}
-		for _, originalGroup := range attempts[0].TestResult.Groups {
-			if originalGroup.ID == group.ID && (group.StartedAt != originalGroup.StartedAt || group.EndedAt != originalGroup.EndedAt || group.DurationMS != originalGroup.DurationMS) {
-				t.Fatalf("current-candidate receipt changed original measurement time: original=%+v reused=%+v", originalGroup, group)
-			}
-		}
+	reusedBytes, err := os.ReadFile(landing.TestReceiptPath(root, originalTree))
+	if err != nil || !bytes.Equal(bytes.TrimSpace(original), bytes.TrimSpace(reusedBytes)) {
+		t.Fatalf("current-candidate exact reuse changed the original committed receipt: err=%v", err)
 	}
 	verify := exec.Command(engine, "test", "verify", "--root", root, "--tree", tree, "--goal", "receipt-goal")
 	verify.Env = append(receiptCanaryEnvironment(), "SHARED_TEST_LAUNCH_COUNT="+launchCount, "METASYSTEM_FAKE_PROCESS_IDENTITY_FILE="+identityTable)
 	verifyOutput, verifyErr := verify.CombinedOutput()
 	if verifyErr != nil || !strings.Contains(string(verifyOutput), "TEST-RESULT sufficient=true tree="+tree) {
-		t.Fatalf("normal test verification did not consume recomposed evidence: %v\n%s", verifyErr, verifyOutput)
+		t.Fatalf("normal test verification did not consume retained records-only evidence: %v\n%s", verifyErr, verifyOutput)
 	}
 	retained, err := proofrun.ReadAttempts(root)
 	if err != nil || len(retained) != 1 || retained[0].TestResult == nil || retained[0].TestResult.CandidateTree != originalTree ||
 		retained[0].TestResult.EndedAt != originalTime || !bytes.Equal(retained[0].DeliveryReceiptBytes, original) {
-		t.Fatalf("current-candidate recomposition changed original committed evidence: attempts=%+v err=%v", retained, err)
+		t.Fatalf("current-candidate reuse changed original committed evidence: attempts=%+v err=%v", retained, err)
 	}
 	if launches, err := os.ReadFile(launchCount); err != nil || strings.TrimSpace(string(launches)) != "1" {
-		t.Fatalf("current-candidate recomposition or verification relaunched a group: launches=%q err=%v", launches, err)
+		t.Fatalf("current-candidate reuse or verification relaunched a group: launches=%q err=%v", launches, err)
+	}
+
+	writeReceiptFixture(t, projectRoot, "payload.txt", "moved declared input\n")
+	runReceiptGit(t, projectRoot, "add", "payload.txt")
+	movedTree := runReceiptGit(t, projectRoot, "write-tree")
+	movedVerify := exec.Command(engine, "test", "verify", "--root", root, "--tree", movedTree, "--goal", "receipt-goal")
+	movedVerify.Env = append(receiptCanaryEnvironment(), "SHARED_TEST_LAUNCH_COUNT="+launchCount, "METASYSTEM_FAKE_PROCESS_IDENTITY_FILE="+identityTable)
+	movedOutput, movedErr := movedVerify.CombinedOutput()
+	if exit, ok := movedErr.(*exec.ExitError); !ok || exit.ExitCode() != 1 ||
+		!strings.Contains(string(movedOutput), "proof-input-moved-after-receipt: group policy-protection") ||
+		!strings.Contains(string(movedOutput), "moved declared paths: payload.txt") {
+		t.Fatalf("moved declared input lacked the refusal code, group, or path: err=%v\n%s", movedErr, movedOutput)
+	}
+	writeReceiptFixture(t, projectRoot, "payload.txt", "public shared testing input\n")
+	runReceiptGit(t, projectRoot, "add", "payload.txt")
+	tree = runReceiptGit(t, projectRoot, "write-tree")
+
+	fakeBin := t.TempDir()
+	writeReceiptFixture(t, fakeBin, "sh", "#!/bin/sh\nexec /bin/sh \"$@\"\n")
+	if err := os.Chmod(filepath.Join(fakeBin, "sh"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	environmentVerify := exec.Command(engine, "test", "verify", "--root", root, "--tree", tree, "--goal", "receipt-goal")
+	environmentVerify.Env = append(receiptCanaryEnvironment(), "PATH="+fakeBin+string(os.PathListSeparator)+os.Getenv("PATH"),
+		"SHARED_TEST_LAUNCH_COUNT="+launchCount, "METASYSTEM_FAKE_PROCESS_IDENTITY_FILE="+identityTable)
+	environmentOutput, environmentErr := environmentVerify.CombinedOutput()
+	if exit, ok := environmentErr.(*exec.ExitError); !ok || exit.ExitCode() != 1 ||
+		!strings.Contains(string(environmentOutput), "proof-input-moved-after-receipt: group policy-protection") ||
+		!strings.Contains(string(environmentOutput), "no declared path moved; the environment or a tool identity changed") {
+		t.Fatalf("environment-only identity move lacked its refusal detail: err=%v\n%s", environmentErr, environmentOutput)
+	}
+	writeReceiptFixture(t, root, "scripts/agents/coverage-ratchet.json", `{"floors":{"fixture/application":81.0}}`)
+	runReceiptGit(t, projectRoot, "add", engineDeclaredInput)
+	engineInputTree := runReceiptGit(t, projectRoot, "write-tree")
+	engineInputVerify := exec.Command(engine, "test", "verify", "--root", root, "--tree", engineInputTree, "--goal", "receipt-goal")
+	engineInputVerify.Env = append(receiptCanaryEnvironment(), "SHARED_TEST_LAUNCH_COUNT="+launchCount, "METASYSTEM_FAKE_PROCESS_IDENTITY_FILE="+identityTable)
+	engineInputOutput, engineInputErr := engineInputVerify.CombinedOutput()
+	if exit, ok := engineInputErr.(*exec.ExitError); !ok || exit.ExitCode() != 1 ||
+		!strings.Contains(string(engineInputOutput), "proof-input-moved-after-receipt: group policy-protection") ||
+		!strings.Contains(string(engineInputOutput), "moved declared paths: "+engineDeclaredInput) {
+		t.Fatalf("engine-build input move lacked the refusal code, group, or path: err=%v\n%s", engineInputErr, engineInputOutput)
+	}
+	writeReceiptFixture(t, root, "scripts/agents/coverage-ratchet.json", `{"floors":{"fixture/application":80.0}}`)
+	runReceiptGit(t, projectRoot, "add", engineDeclaredInput)
+	tree = runReceiptGit(t, projectRoot, "write-tree")
+
+	if err := os.Remove(filepath.Join(root, "records", "misc", "peer-note.md")); err != nil {
+		t.Fatal(err)
+	}
+	runReceiptGit(t, projectRoot, "add", "-A", filepath.ToSlash(filepath.Join(prefix, "records/misc/peer-note.md")))
+	tree = runReceiptGit(t, projectRoot, "write-tree")
+	if tree != originalTree {
+		t.Fatalf("observer fixture did not restore the originally proved tree: got=%s want=%s", tree, originalTree)
+	}
+	chainID := "observer-chain"
+	writeReceiptFixture(t, root, filepath.Join("artifacts", "agents", "jobs", chainID+".json"),
+		`{"jobId":"observer-chain","parentJob":null,"role":"implementer"}`)
+	if prefix == "" {
+		var unmarked landing.TestReceipt
+		if err := json.Unmarshal(original, &unmarked); err != nil {
+			t.Fatal(err)
+		}
+		unmarked.Workspace = nil
+		unmarkedBytes, err := json.Marshal(unmarked)
+		if err != nil {
+			t.Fatal(err)
+		}
+		unmarkedPath := landing.TestReceiptPath(root, originalTree)
+		if err := os.WriteFile(unmarkedPath, append(unmarkedBytes, '\n'), 0o600); err != nil {
+			t.Fatal(err)
+		}
+		unmarkedObserve := exec.Command(engine, "landing", "observe", "--root", root, "--tree", tree, "--chain", chainID,
+			"--goal", "receipt-goal", "--test-receipt", unmarkedPath)
+		unmarkedObserve.Env = append(receiptCanaryEnvironment(), "PATH="+fakeBin+string(os.PathListSeparator)+os.Getenv("PATH"),
+			"SHARED_TEST_LAUNCH_COUNT="+launchCount, "METASYSTEM_FAKE_PROCESS_IDENTITY_FILE="+identityTable)
+		unmarkedOutput, unmarkedErr := unmarkedObserve.CombinedOutput()
+		if unmarkedErr != nil || !strings.Contains(string(unmarkedOutput), `"code":"chain-not-design-bearing"`) {
+			t.Fatalf("observer computed the verify core for a receipt without workspace: err=%v\n%s", unmarkedErr, unmarkedOutput)
+		}
+		if err := os.WriteFile(unmarkedPath, append(original, '\n'), 0o600); err != nil {
+			t.Fatal(err)
+		}
+	}
+	verifyBeforeObserve := exec.Command(engine, "test", "verify", "--root", root, "--tree", tree, "--goal", "receipt-goal")
+	verifyBeforeObserve.Env = append(receiptCanaryEnvironment(), "SHARED_TEST_LAUNCH_COUNT="+launchCount, "METASYSTEM_FAKE_PROCESS_IDENTITY_FILE="+identityTable)
+	if output, err := verifyBeforeObserve.CombinedOutput(); err != nil || !strings.Contains(string(output), "TEST-RESULT sufficient=true") {
+		t.Fatalf("pre-observer retained verification was not sufficient: %v\n%s", err, output)
+	}
+	attemptPath, err := proofrun.AttemptPath(root, attempts[0].AttemptID)
+	if err != nil || os.Remove(attemptPath) != nil {
+		t.Fatalf("remove retained attempt before observer: path=%s err=%v", attemptPath, err)
+	}
+	observe := exec.Command(engine, "landing", "observe", "--root", root, "--tree", tree, "--chain", chainID,
+		"--goal", "receipt-goal", "--test-receipt", landing.TestReceiptPath(root, originalTree))
+	observe.Env = append(receiptCanaryEnvironment(), "SHARED_TEST_LAUNCH_COUNT="+launchCount, "METASYSTEM_FAKE_PROCESS_IDENTITY_FILE="+identityTable)
+	observeOutput, observeErr := observe.CombinedOutput()
+	if observeErr != nil || !strings.Contains(string(observeOutput), `"code":"chain-test-receipt-refused"`) ||
+		!strings.Contains(string(observeOutput), "retained proof is not sufficient for the index; missing groups: candidate-smoke,policy-protection") {
+		t.Fatalf("observer failed open after retained evidence disappeared: err=%v\n%s", observeErr, observeOutput)
 	}
 	t.Run("candidate-engine-build-failure-is-insufficient", func(t *testing.T) {
 		writeReceiptFixture(t, root, "scripts/agents/go-build.sh", "#!/usr/bin/env bash\necho 'fixture candidate engine compile failed' >&2\nexit 23\n")
@@ -1567,7 +1690,7 @@ func runSharedTestingReceiptRecovery(t *testing.T, prefix string) {
 			t.Fatalf("candidate engine build failure left a receipt: %v", err)
 		}
 		remaining, err := proofrun.ReadAttempts(root)
-		if err != nil || len(remaining) != 1 {
+		if err != nil || len(remaining) != 0 {
 			t.Fatalf("candidate engine build failure fell through to proof admission: attempts=%d err=%v", len(remaining), err)
 		}
 	})

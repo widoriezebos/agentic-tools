@@ -3,6 +3,7 @@ package landing
 import (
 	"bytes"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"os"
@@ -26,24 +27,26 @@ func PrepareTestingReceiptPayload(installationRoot, tree string, result proofrun
 	if err := proofrun.ValidateTestResult(result); err != nil || !result.Delivery.Sufficient {
 		return TestReceipt{}, nil, fmt.Errorf("testing result is not sufficient delivery evidence: %v", err)
 	}
-	if result.CandidateEngineIdentityVersion != proofrun.CandidateEngineIdentitySchemaVersion || result.CandidateEngineDigest == "" {
-		return TestReceipt{}, nil, fmt.Errorf("testing result has no candidate engine digest")
+	if result.CandidateEngineIdentityVersion != proofrun.CandidateEngineIdentitySchemaVersion || result.CandidateEngineDigest == "" || result.CandidateEngineBuildIdentity == "" {
+		return TestReceipt{}, nil, fmt.Errorf("testing result has no candidate engine build identity or digest")
 	}
 	if result.CandidateTree != tree {
 		return TestReceipt{}, nil, fmt.Errorf("testing result proves tree %s, not receipt tree %s", result.CandidateTree, tree)
 	}
 	workspace := gittree.Workspace{Dir: result.ProjectRoot}
 	indexBefore, worktreeBefore, err := testingReceiptPosture(installationRoot, result)
-	if err != nil || indexBefore != tree || worktreeBefore != tree {
+	indexBeforeMatches, indexBeforeErr := testingReceiptIndexMatches(installationRoot, tree, indexBefore)
+	if err != nil || indexBeforeErr != nil || !indexBeforeMatches || worktreeBefore != tree {
 		changed, _ := workspace.ChangedPaths(tree, worktreeBefore)
-		return TestReceipt{}, nil, fmt.Errorf("testing receipt candidate moved before preparation: index=%s worktree=%s expected=%s changed=%v cause=%v", indexBefore, worktreeBefore, tree, changed, err)
+		return TestReceipt{}, nil, fmt.Errorf("testing receipt candidate moved before preparation: index=%s worktree=%s expected=%s changed=%v cause=%v", indexBefore, worktreeBefore, tree, changed, errors.Join(err, indexBeforeErr))
 	}
 	ids, err := validateTestingAttemptOwners(installationRoot, result, true)
 	if err != nil {
 		return TestReceipt{}, nil, err
 	}
 	indexAfter, worktreeAfter, err := testingReceiptPosture(installationRoot, result)
-	if err != nil || indexAfter != tree || worktreeAfter != tree {
+	indexAfterMatches, indexAfterErr := testingReceiptIndexMatches(installationRoot, tree, indexAfter)
+	if err != nil || indexAfterErr != nil || !indexAfterMatches || worktreeAfter != tree {
 		return TestReceipt{}, nil, fmt.Errorf("testing receipt candidate moved during preparation")
 	}
 	if completedAt.IsZero() {
@@ -64,16 +67,36 @@ func PrepareTestingReceiptPayload(installationRoot, tree string, result proofrun
 		copyResult.Cost.ActualDurationMS += publicationMS
 		copyResult.DurationMS += publicationMS
 	}
+	workspaceTree, err := ProjectWorkspaceTree(installationRoot, tree)
+	if err != nil {
+		return TestReceipt{}, nil, fmt.Errorf("testing receipt workspace projection: %w", err)
+	}
 	receipt := TestReceipt{SchemaVersion: 2, Tree: tree, ProvedTree: result.CandidateTree, ExitStatus: 0,
-		Time: completedAt.UTC().Format(time.RFC3339Nano), Binding: TestReceiptBinding{IndexTreeBefore: indexBefore,
-			WorktreeTreeBefore: worktreeBefore, IndexTreeAfter: indexAfter, WorktreeTreeAfter: worktreeAfter},
+		Time: completedAt.UTC().Format(time.RFC3339Nano), Binding: TestReceiptBinding{IndexTreeBefore: tree,
+			WorktreeTreeBefore: tree, IndexTreeAfter: tree, WorktreeTreeAfter: tree},
 		PolicyEngineDigest: result.PolicyEngineDigest, CandidateEngineDigest: result.CandidateEngineDigest,
-		Testing: &copyResult, AttemptIDs: ids}
+		CandidateEngineBuildIdentity: result.CandidateEngineBuildIdentity,
+		Workspace:                    &TestReceiptProjection{Excludes: WorkspaceExclusions(), Tree: workspaceTree}, Testing: &copyResult, AttemptIDs: ids}
 	encoded, err := json.Marshal(receipt)
 	if err != nil {
 		return TestReceipt{}, nil, err
 	}
 	return receipt, encoded, nil
+}
+
+func testingReceiptIndexMatches(installationRoot, receiptTree, indexTree string) (bool, error) {
+	if indexTree == receiptTree {
+		return true, nil
+	}
+	receiptWorkspace, err := ProjectWorkspaceTree(installationRoot, receiptTree)
+	if err != nil {
+		return false, err
+	}
+	indexWorkspace, err := ProjectWorkspaceTree(installationRoot, indexTree)
+	if err != nil {
+		return false, err
+	}
+	return receiptWorkspace == indexWorkspace, nil
 }
 
 // CreateTestingReceipt projects sufficient schema-2 testing evidence without
@@ -170,9 +193,16 @@ func validateTestingReceiptEngineIdentity(receipt TestReceipt) error {
 	switch receipt.Testing.CandidateEngineIdentityVersion {
 	case 0:
 		return nil
-	case proofrun.CandidateEngineIdentitySchemaVersion:
+	case 1:
 		if receipt.CandidateEngineDigest != "" && receipt.PolicyEngineDigest == receipt.Testing.PolicyEngineDigest &&
 			receipt.CandidateEngineDigest == receipt.Testing.CandidateEngineDigest {
+			return nil
+		}
+	case proofrun.CandidateEngineIdentitySchemaVersion:
+		if receipt.CandidateEngineDigest != "" && receipt.CandidateEngineBuildIdentity != "" &&
+			receipt.PolicyEngineDigest == receipt.Testing.PolicyEngineDigest &&
+			receipt.CandidateEngineDigest == receipt.Testing.CandidateEngineDigest &&
+			receipt.CandidateEngineBuildIdentity == receipt.Testing.CandidateEngineBuildIdentity {
 			return nil
 		}
 	}

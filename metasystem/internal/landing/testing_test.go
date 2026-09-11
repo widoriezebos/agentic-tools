@@ -3,6 +3,7 @@ package landing
 import (
 	"bytes"
 	"encoding/json"
+	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
@@ -52,7 +53,8 @@ func TestSchemaTwoReceiptRequiresSuccessfulTerminalGroupOwners(t *testing.T) {
 		CandidateEngineIdentityVersion: proofrun.CandidateEngineIdentitySchemaVersion, AttemptID: attempt.AttemptID,
 		Purpose: testpolicy.PurposeDelivery, RequestedMode: testpolicy.ModeAuto, RequiredMode: testpolicy.ModeStandard, ExecutedMode: testpolicy.ModeStandard,
 		ProjectRoot: projectRoot, BaseCommit: head, CandidateTree: tree, PolicyBaseCommit: head,
-		ContractDigest: digest, BaseContractDigest: digest, PolicyEngineDigest: digest, CandidateEngineDigest: strings.Repeat("e", 64), BehaviorPolicyDigest: digest, PlanDigest: digest,
+		ContractDigest: digest, BaseContractDigest: digest, PolicyEngineDigest: digest, CandidateEngineDigest: strings.Repeat("e", 64),
+		CandidateEngineBuildIdentity: strings.Repeat("f", 40), BehaviorPolicyDigest: digest, PlanDigest: digest,
 		RequiredGroups: []string{"application"}, SelectedGroups: []string{"application"}, LaunchCounts: proofrun.LaunchCounts{Test: 1, CountsComplete: true},
 		StartedAt: now.Add(-2 * time.Second).Format(time.RFC3339Nano), Cost: proofrun.TestCost{DeclaredTargetMS: 1}, Groups: []proofrun.GroupResult{{ID: "application", Kind: "unit", Obligations: []string{"behavior"},
 			InputDigest: digest, InputManifest: []string{"source/**"}, ExecutionIdentity: digest, CWD: ".", ToolIdentities: map[string]string{},
@@ -68,13 +70,13 @@ func TestSchemaTwoReceiptRequiresSuccessfulTerminalGroupOwners(t *testing.T) {
 		preparedReceipt.Testing.Cost.ActualDurationMS < 2000 || preparedReceipt.Testing.EndedAt == "" {
 		t.Fatalf("schema-2 terminal preparation did not retain whole-command timing: %+v", preparedReceipt.Testing)
 	}
-	if _, err := PublishCommittedReceipt(f.root, attempt.AttemptID); err == nil {
+	if _, err := PublishCommittedReceipt(f.root, attempt.AttemptID, tree); err == nil {
 		t.Fatal("live schema-2 attempt published before terminal success")
 	}
 	if _, err := proofrun.FinalizeAttemptWithTestResultLocked(f.root, attempt.AttemptID, proofrun.TerminalSuccess, 0, "fixture", payload, preparedReceipt.Testing, completedAt); err != nil {
 		t.Fatal(err)
 	}
-	published, err := PublishCommittedReceipt(f.root, attempt.AttemptID)
+	published, err := PublishCommittedReceipt(f.root, attempt.AttemptID, tree)
 	if err != nil || published.Time != preparedReceipt.Time {
 		t.Fatalf("publish atomic schema-2 receipt: receipt=%+v err=%v", published, err)
 	}
@@ -86,12 +88,181 @@ func TestSchemaTwoReceiptRequiresSuccessfulTerminalGroupOwners(t *testing.T) {
 	if err != nil || receipt.SchemaVersion != 2 || len(receipt.AttemptIDs) != 1 || !fullReceiptCommandAccepted(receipt) {
 		t.Fatalf("schema-2 receipt=%+v err=%v", receipt, err)
 	}
-	if receipt.PolicyEngineDigest != result.PolicyEngineDigest || receipt.CandidateEngineDigest != result.CandidateEngineDigest || receipt.ProvedTree != tree {
+	if receipt.PolicyEngineDigest != result.PolicyEngineDigest || receipt.CandidateEngineDigest != result.CandidateEngineDigest ||
+		receipt.CandidateEngineBuildIdentity != result.CandidateEngineBuildIdentity || receipt.ProvedTree != tree {
 		t.Fatalf("schema-2 receipt lost policy engine, candidate engine, or candidate tree: %+v", receipt)
 	}
 	if _, err := readTestReceipt(ObserveParams{RepoRoot: f.root, CandidateTree: subtree, TestReceipt: TestReceiptPath(f.root, tree)}); err != nil {
 		t.Fatalf("schema-2 receipt consumer: %v", err)
 	}
+	writeReceipt := func(t *testing.T, value TestReceipt) {
+		t.Helper()
+		encoded, err := json.MarshalIndent(value, "", "  ")
+		if err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(TestReceiptPath(f.root, tree), append(encoded, '\n'), 0o600); err != nil {
+			t.Fatal(err)
+		}
+	}
+	baseVerified := *receipt.Testing
+	verify := func(value proofrun.TestResult, verifyErr error) func() (proofrun.TestResult, error) {
+		return func() (proofrun.TestResult, error) { return value, verifyErr }
+	}
+	stageCandidate := func(t *testing.T, paths map[string]string) (string, string) {
+		t.Helper()
+		for path, content := range paths {
+			f.write(path, content)
+			f.git("add", path)
+		}
+		whole, err := (gittree.Workspace{Dir: projectRoot}).StagedTree()
+		if err != nil {
+			t.Fatal(err)
+		}
+		installationTree, err := (gittree.Workspace{Dir: f.root}).TreeOf(whole)
+		if err != nil {
+			t.Fatal(err)
+		}
+		return whole, installationTree
+	}
+	unstageCandidate := func(t *testing.T, paths ...string) {
+		t.Helper()
+		for _, path := range paths {
+			f.git("reset", "-q", "HEAD", "--", path)
+			if err := os.Remove(filepath.Join(f.root, path)); err != nil {
+				t.Fatal(err)
+			}
+		}
+	}
+
+	t.Run("preparation and publication accept the judged index across goal-ledger motion", func(t *testing.T) {
+		whole, _ := stageCandidate(t, map[string]string{"plans/goals/x.md": "goal revision\n"})
+		defer unstageCandidate(t, "plans/goals/x.md")
+		if _, _, err := PrepareTestingReceiptPayload(f.root, tree, result, completedAt); err != nil {
+			t.Fatalf("workspace-equivalent index invalidated receipt preparation: %v", err)
+		}
+		if _, err := PublishCommittedReceipt(f.root, attempt.AttemptID, whole); err != nil {
+			t.Fatalf("publication refused the accepted index tree: %v", err)
+		}
+		if _, err := PublishCommittedReceipt(f.root, attempt.AttemptID, tree); err == nil {
+			t.Fatal("publication accepted an index that moved after the reuse decision")
+		}
+	})
+
+	t.Run("workspace path accepts goal-ledger motion", func(t *testing.T) {
+		writeReceipt(t, receipt)
+		whole, installationTree := stageCandidate(t, map[string]string{
+			"plans/goals/x.md": "goal revision\n",
+			"plans/goals.md":   "legacy goal revision\n",
+		})
+		defer unstageCandidate(t, "plans/goals/x.md", "plans/goals.md")
+		current := baseVerified
+		current.CandidateTree = whole
+		if _, err := readTestReceipt(ObserveParams{RepoRoot: f.root, CandidateTree: installationTree,
+			TestReceipt: TestReceiptPath(f.root, tree), VerifyTesting: verify(current, nil)}); err != nil {
+			t.Fatalf("workspace-equivalent receipt was refused: %v", err)
+		}
+	})
+
+	t.Run("execution-identity key accepts an unrelated records path", func(t *testing.T) {
+		writeReceipt(t, receipt)
+		keyWhole, keyInstallation := stageCandidate(t, map[string]string{"records/misc/x.md": "record revision\n"})
+		defer unstageCandidate(t, "records/misc/x.md")
+		current := baseVerified
+		current.CandidateTree = keyWhole
+		if _, err := readTestReceipt(ObserveParams{RepoRoot: f.root, CandidateTree: keyInstallation,
+			TestReceipt: TestReceiptPath(f.root, tree), VerifyTesting: verify(current, nil)}); err != nil {
+			t.Fatalf("identity-equivalent receipt was refused: %v", err)
+		}
+	})
+
+	t.Run("execution-identity key names a differing group", func(t *testing.T) {
+		writeReceipt(t, receipt)
+		whole, installationTree := stageCandidate(t, map[string]string{"records/misc/x.md": "record revision\n"})
+		defer unstageCandidate(t, "records/misc/x.md")
+		current := baseVerified
+		current.CandidateTree = whole
+		current.Groups = append([]proofrun.GroupResult(nil), current.Groups...)
+		current.Groups[0].ExecutionIdentity = strings.Repeat("f", 64)
+		_, err := readTestReceipt(ObserveParams{RepoRoot: f.root, CandidateTree: installationTree,
+			TestReceipt: TestReceiptPath(f.root, tree), VerifyTesting: verify(current, nil)})
+		if err == nil || !strings.Contains(err.Error(), "application") {
+			t.Fatalf("differing execution identity did not name its group: %v", err)
+		}
+	})
+
+	for _, test := range []struct {
+		name, want string
+		result     proofrun.TestResult
+		err        error
+	}{
+		{name: "verify core error", want: "testing-receipt: verify core failed: unavailable", result: baseVerified, err: fmt.Errorf("unavailable")},
+		{name: "insufficient result", want: "testing-receipt: retained proof is not sufficient for the index; missing groups: application", result: func() proofrun.TestResult {
+			value := baseVerified
+			value.Delivery.Sufficient = false
+			value.Delivery.MissingGroups = []string{"application"}
+			return value
+		}()},
+		{name: "other tree", want: "testing-receipt: verify core judged tree", result: func() proofrun.TestResult {
+			keyWhole, _ := stageCandidate(t, map[string]string{"records/misc/step-zero-other-tree.md": "other tree\n"})
+			unstageCandidate(t, "records/misc/step-zero-other-tree.md")
+			value := baseVerified
+			value.CandidateTree = keyWhole
+			return value
+		}()},
+	} {
+		t.Run(test.name+" refuses before exact coverage", func(t *testing.T) {
+			writeReceipt(t, receipt)
+			_, err := readTestReceipt(ObserveParams{RepoRoot: f.root, CandidateTree: subtree,
+				TestReceipt: TestReceiptPath(f.root, tree), VerifyTesting: verify(test.result, test.err)})
+			if err == nil || !strings.Contains(err.Error(), test.want) {
+				t.Fatalf("step-zero refusal = %v, want %q", err, test.want)
+			}
+		})
+	}
+
+	t.Run("workspace tree is recomputed", func(t *testing.T) {
+		tampered := receipt
+		projection := *receipt.Workspace
+		projection.Tree = strings.Repeat("0", 40)
+		tampered.Workspace = &projection
+		writeReceipt(t, tampered)
+		if _, err := readTestReceipt(ObserveParams{RepoRoot: f.root, CandidateTree: subtree,
+			TestReceipt: TestReceiptPath(f.root, tree), VerifyTesting: verify(baseVerified, nil)}); err == nil {
+			t.Fatal("receipt with a false workspace tree was accepted")
+		}
+	})
+
+	t.Run("workspace exclusions must equal the engine list", func(t *testing.T) {
+		tampered := receipt
+		projection := *receipt.Workspace
+		projection.Excludes = append([]string(nil), projection.Excludes...)
+		projection.Excludes = projection.Excludes[1:]
+		tampered.Workspace = &projection
+		writeReceipt(t, tampered)
+		if _, err := readTestReceipt(ObserveParams{RepoRoot: f.root, CandidateTree: subtree,
+			TestReceipt: TestReceiptPath(f.root, tree), VerifyTesting: verify(baseVerified, nil)}); err == nil {
+			t.Fatal("receipt with a different workspace exclusion list was accepted")
+		}
+	})
+
+	t.Run("receipt without workspace keeps exact coverage and skips verification", func(t *testing.T) {
+		legacy := receipt
+		legacy.Workspace = nil
+		writeReceipt(t, legacy)
+		called := false
+		if _, err := readTestReceipt(ObserveParams{RepoRoot: f.root, CandidateTree: subtree,
+			TestReceipt: TestReceiptPath(f.root, tree), VerifyTesting: func() (proofrun.TestResult, error) {
+				called = true
+				return proofrun.TestResult{}, fmt.Errorf("must not be called")
+			}}); err != nil {
+			t.Fatalf("legacy exact receipt was refused: %v", err)
+		}
+		if called {
+			t.Fatal("receipt without workspace called the verify core")
+		}
+	})
+	writeReceipt(t, receipt)
 	legacyPayload := legacyTestingReceiptPayload(t, receipt)
 	t.Run("landing observe and tier-one read an unmarked schema-2 payload", func(t *testing.T) {
 		if err := os.WriteFile(TestReceiptPath(f.root, tree), legacyPayload, 0o600); err != nil {
@@ -133,7 +304,7 @@ func TestSchemaTwoReceiptRequiresSuccessfulTerminalGroupOwners(t *testing.T) {
 		if err := os.WriteFile(attemptPath, append(encodedAttempt, '\n'), 0o600); err != nil {
 			t.Fatal(err)
 		}
-		published, err := PublishCommittedReceipt(f.root, attempt.AttemptID)
+		published, err := PublishCommittedReceipt(f.root, attempt.AttemptID, tree)
 		if err != nil || published.Testing == nil || published.Testing.CandidateEngineIdentityVersion != 0 {
 			t.Fatalf("committed receipt recovery rejected an old-format schema-2 payload: receipt=%+v err=%v", published, err)
 		}
@@ -147,7 +318,7 @@ func TestSchemaTwoReceiptRequiresSuccessfulTerminalGroupOwners(t *testing.T) {
 	if _, _, err := PrepareTestingReceiptPayload(f.root, tree, result, completedAt); err == nil {
 		t.Fatal("relevant source mutation accepted")
 	}
-	if _, err := PublishCommittedReceipt(f.root, attempt.AttemptID); err == nil {
+	if _, err := PublishCommittedReceipt(f.root, attempt.AttemptID, tree); err == nil {
 		t.Fatal("recovery accepted relevant source mutation")
 	}
 	failed := result

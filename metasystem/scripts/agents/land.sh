@@ -363,9 +363,14 @@ staged_project_tree() {
 }
 
 check_supplied_test_receipt() {
-  local candidate_tree receipt_tree receipt_schema receipt_failure=
+  local candidate_tree receipt_tree receipt_schema receipt_failure= receipt_workspace candidate_workspace verify_output verify_status
+  local receipt_workspace_present=0
+  local -a verify_arguments
   # A caller-provided --test-receipt belongs to one exact staged candidate.
   receipt_schema=$($ms json get --file "$landing_test_receipt" --field schemaVersion 2>/dev/null || true)
+  if [[ "$receipt_schema" == 2 ]] && "$ms" json get --file "$landing_test_receipt" --field workspace >/dev/null 2>&1; then
+    receipt_workspace_present=1
+  fi
   if [[ "$receipt_schema" == 2 ]]; then
     candidate_tree=$(staged_project_tree) || return $?
   else
@@ -382,10 +387,28 @@ check_supplied_test_receipt() {
     echo "land refused: the receipt at $landing_test_receipt cannot be read as a landing receipt ($receipt_failure)" >&2
     return 2
   fi
-  if [[ "$receipt_tree" != "$candidate_tree" ]]; then
+  if [[ "$receipt_tree" == "$candidate_tree" ]]; then
+    return 0
+  fi
+  if (( ! receipt_workspace_present )); then
     echo "land refused: the receipt at $landing_test_receipt names tree $receipt_tree but the staged candidate is $candidate_tree; make the receipt against this exact candidate" >&2
     return 2
   fi
+  if receipt_workspace=$("$ms" landing workspace --root "$root" --tree "$receipt_tree") &&
+     candidate_workspace=$("$ms" landing workspace --root "$root" --tree "$candidate_tree") &&
+     [[ "$receipt_workspace" == "$candidate_workspace" ]]; then
+    return 0
+  fi
+  verify_arguments=(test verify --root "$root" --tree "$candidate_tree" --mode auto --purpose delivery)
+  (( landing_goal_set )) && verify_arguments+=(--goal "$landing_goal")
+  verify_output=$("$ms" "${verify_arguments[@]}" 2>&1)
+  verify_status=$?
+  if (( verify_status == 0 )); then
+    return 0
+  fi
+  echo "land refused: the receipt at $landing_test_receipt names tree $receipt_tree but the staged candidate is $candidate_tree; make the receipt against this exact candidate" >&2
+  printf '%s\n' "$verify_output" | tail -n 20 >&2
+  return 2
 }
 
 create_test_receipt() {

@@ -14,6 +14,19 @@ import (
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/testpolicy"
 )
 
+func TestNewTestResultKeepsDigestOnlyIdentityForLegacyPolicyProbe(t *testing.T) {
+	digestOnly := NewTestResult(TestRunRequest{CandidateEngineDigest: strings.Repeat("a", 64)})
+	if digestOnly.CandidateEngineIdentityVersion != candidateEngineDigestIdentityVersion || digestOnly.CandidateEngineBuildIdentity != "" {
+		t.Fatalf("digest-only candidate identity was not projected as version one: %+v", digestOnly)
+	}
+	fieldBearing := NewTestResult(TestRunRequest{CandidateEngineDigest: strings.Repeat("a", 64),
+		CandidateEngineBuildIdentity: strings.Repeat("b", 40)})
+	if fieldBearing.CandidateEngineIdentityVersion != CandidateEngineIdentitySchemaVersion ||
+		fieldBearing.CandidateEngineBuildIdentity == "" {
+		t.Fatalf("field-bearing candidate identity was not projected as version two: %+v", fieldBearing)
+	}
+}
+
 func TestSectionEnginePreparationPreservesBytesAndNestedSelector(t *testing.T) {
 	root := t.TempDir()
 	cwd := filepath.Join(root, "vendor", "engine with spaces")
@@ -355,7 +368,7 @@ func TestCadenceCatchClassesRequireTerminalCompleteGroups(t *testing.T) {
 	}
 }
 
-func TestReusedTestResultComposesAcrossCandidateChangeWhileExactRecoveryStaysStrict(t *testing.T) {
+func TestReusedTestResultComposesAcrossCandidateChangeAndExactRecoveryUsesExecutionIdentity(t *testing.T) {
 	groupIdentity := strings.Repeat("7", 64)
 	oldTree := strings.Repeat("b", 40)
 	currentTree := strings.Repeat("c", 40)
@@ -375,6 +388,9 @@ func TestReusedTestResultComposesAcrossCandidateChangeWhileExactRecoveryStaysStr
 	template := source
 	template.AttemptID = ""
 	template.CandidateTree = currentTree
+	template.BaseCommit = "current-base"
+	template.PolicyBaseCommit = "current-policy-base"
+	template.PlanDigest = strings.Repeat("9", 64)
 	template.Groups = nil
 	contract := testpolicy.Contract{Groups: []testpolicy.Group{{ID: "application", Kind: "unit", Inputs: []string{"source"}}}}
 
@@ -384,8 +400,11 @@ func TestReusedTestResultComposesAcrossCandidateChangeWhileExactRecoveryStaysStr
 		composed.Groups[0].StartedAt != startedAt || composed.Groups[0].EndedAt != endedAt || composed.Groups[0].DurationMS != 1000 {
 		t.Fatalf("current-candidate component projection lost retained evidence: %+v", composed)
 	}
-	if exact, ok := ExactReusableTestResult(template, []Attempt{attempt}, map[string]string{"application": groupIdentity}, "goal-a", 2); ok {
-		t.Fatalf("changed candidate recovered an old exact result: %+v", exact)
+	if exact, ok := ExactReusableTestResult(template, []Attempt{attempt}, map[string]string{"application": groupIdentity}, "goal-a", 2); !ok || exact.AttemptID != attempt.AttemptID || exact.CandidateTree != oldTree {
+		t.Fatalf("identity-equivalent candidate did not recover the original exact result: ok=%v result=%+v", ok, exact)
+	}
+	if exact, ok := ExactReusableTestResult(template, []Attempt{attempt}, map[string]string{"application": strings.Repeat("8", 64)}, "goal-a", 2); ok {
+		t.Fatalf("different group execution identity recovered an old exact result: %+v", exact)
 	}
 	exactTemplate := source
 	exactTemplate.AttemptID = ""

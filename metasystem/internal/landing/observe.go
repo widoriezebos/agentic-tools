@@ -20,6 +20,7 @@ import (
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/gittree"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/goal"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/pathclass"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/proofrun"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/stateroot"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/validate"
 )
@@ -50,6 +51,7 @@ type ObserveParams struct {
 	RootJob         string
 	TestReceipt     string
 	Recertification string
+	VerifyTesting   func() (proofrun.TestResult, error)
 }
 
 // Observation is safe to put directly in a commit trailer. The values never
@@ -179,7 +181,12 @@ func observeChain(params ObserveParams, change string) (observation Observation)
 	if testingContractEnabled(params.RepoRoot) && params.Recertification == "" {
 		receipt, receiptErr := readTestReceipt(params)
 		if receiptErr != nil || receipt.SchemaVersion != 2 {
-			return wouldRefuse("chain-test-receipt-refused", provenance)
+			observation := wouldRefuse("chain-test-receipt-refused", provenance)
+			var verificationFailure *testingReceiptVerificationFailure
+			if errors.As(receiptErr, &verificationFailure) {
+				observation.Detail = verificationFailure.Error()
+			}
+			return observation
 		}
 	} else if width == "full" && params.Recertification == "" {
 		receipt, receiptErr := readTestReceipt(params)

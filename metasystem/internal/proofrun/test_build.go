@@ -25,33 +25,34 @@ import (
 )
 
 type TestRunRequest struct {
-	ProjectRoot           string
-	InstallationPrefix    string
-	CandidateTree         string
-	BaseCommit            string
-	PolicyBaseCommit      string
-	Contract              testpolicy.Contract
-	Plan                  testpolicy.Plan
-	AttemptID             string
-	Environment           []string
-	LogRoot               string
-	ProgressPath          string
-	Reused                map[string]GroupResult
-	ContractDigest        string
-	BaseContractDigest    string
-	PolicyEngineDigest    string
-	PolicyEngine          string
-	CandidateEngine       string
-	CandidateEngineDigest string
-	ControlRoot           string
-	BehaviorPolicyDigest  string
-	ComponentIdentities   map[string]string
-	PreparedGroups        map[string]PreparedGroupExecution
-	CommandStartedAt      string
-	PreparationLaunches   int
-	PreparationDurationMS int64
-	EvidenceTimeoutMS     int64
-	EvidenceMaxBytes      int64
+	ProjectRoot                  string
+	InstallationPrefix           string
+	CandidateTree                string
+	BaseCommit                   string
+	PolicyBaseCommit             string
+	Contract                     testpolicy.Contract
+	Plan                         testpolicy.Plan
+	AttemptID                    string
+	Environment                  []string
+	LogRoot                      string
+	ProgressPath                 string
+	Reused                       map[string]GroupResult
+	ContractDigest               string
+	BaseContractDigest           string
+	PolicyEngineDigest           string
+	PolicyEngine                 string
+	CandidateEngine              string
+	CandidateEngineDigest        string
+	CandidateEngineBuildIdentity string
+	ControlRoot                  string
+	BehaviorPolicyDigest         string
+	ComponentIdentities          map[string]string
+	PreparedGroups               map[string]PreparedGroupExecution
+	CommandStartedAt             string
+	PreparationLaunches          int
+	PreparationDurationMS        int64
+	EvidenceTimeoutMS            int64
+	EvidenceMaxBytes             int64
 }
 
 // PreparedGroupExecution is immutable metadata collected once before
@@ -203,14 +204,19 @@ func NewTestResult(request TestRunRequest) TestResult {
 			targetMS += group.TargetMS
 		}
 	}
+	candidateEngineIdentityVersion := CandidateEngineIdentitySchemaVersion
+	if request.CandidateEngineBuildIdentity == "" {
+		candidateEngineIdentityVersion = candidateEngineDigestIdentityVersion
+	}
 	return TestResult{SchemaVersion: TestResultSchemaVersion, AttemptID: request.AttemptID,
 		Purpose: request.Plan.Purpose, RequestedMode: request.Plan.RequestedMode, RequiredMode: request.Plan.RequiredMode,
 		ExecutedMode: request.Plan.ExecutedMode, ProjectRoot: request.ProjectRoot, InstallationPrefix: request.InstallationPrefix,
 		BaseCommit: request.BaseCommit, CandidateTree: request.CandidateTree, PolicyBaseCommit: request.PolicyBaseCommit,
 		ContractDigest: contractDigest, BaseContractDigest: baseContractDigest,
-		PolicyEngineDigest: policyEngineDigest, CandidateEngineIdentityVersion: CandidateEngineIdentitySchemaVersion,
-		CandidateEngineDigest: request.CandidateEngineDigest, BehaviorPolicyDigest: behaviorPolicyDigest,
-		PlanDigest: TestPlanDigest(request.Contract, request.Plan, request.CandidateTree), Risk: request.Plan.Risk,
+		PolicyEngineDigest: policyEngineDigest, CandidateEngineIdentityVersion: candidateEngineIdentityVersion,
+		CandidateEngineDigest: request.CandidateEngineDigest, CandidateEngineBuildIdentity: request.CandidateEngineBuildIdentity,
+		BehaviorPolicyDigest: behaviorPolicyDigest,
+		PlanDigest:           TestPlanDigest(request.Contract, request.Plan, request.CandidateTree), Risk: request.Plan.Risk,
 		RequiredGroups: append([]string(nil), request.Plan.RequiredGroups...), SelectedGroups: append([]string(nil), request.Plan.SelectedGroups...),
 		Omissions: append([]testpolicy.Omission(nil), request.Plan.Omissions...), Uncertainty: append([]string(nil), request.Plan.Uncertainty...),
 		LaunchCounts: LaunchCounts{Other: request.PreparationLaunches, CountsComplete: true}, StartedAt: request.CommandStartedAt,

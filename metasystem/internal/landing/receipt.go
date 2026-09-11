@@ -12,7 +12,9 @@ import (
 	"path/filepath"
 	"reflect"
 	"runtime"
+	"sort"
 	"strconv"
+	"strings"
 	"syscall"
 	"time"
 
@@ -31,19 +33,21 @@ const (
 // TestReceipt records the command result together with the four tree
 // observations that bind its execution to one candidate.
 type TestReceipt struct {
-	SchemaVersion         int                        `json:"schemaVersion"`
-	Tree                  string                     `json:"tree"`
-	Command               string                     `json:"command"`
-	ExitStatus            int                        `json:"exitStatus"`
-	Time                  string                     `json:"time"`
-	Binding               TestReceiptBinding         `json:"binding"`
-	Proof                 *TestReceiptProof          `json:"proof,omitempty"`
-	Coverage              *proofrun.CoverageEvidence `json:"coverage,omitempty"`
-	ProvedTree            string                     `json:"provedTree,omitempty"`
-	AttemptIDs            []string                   `json:"attemptIds,omitempty"`
-	PolicyEngineDigest    string                     `json:"policyEngineDigest,omitempty"`
-	CandidateEngineDigest string                     `json:"candidateEngineDigest,omitempty"`
-	Testing               *proofrun.TestResult       `json:"testing,omitempty"`
+	SchemaVersion                int                        `json:"schemaVersion"`
+	Tree                         string                     `json:"tree"`
+	Command                      string                     `json:"command"`
+	ExitStatus                   int                        `json:"exitStatus"`
+	Time                         string                     `json:"time"`
+	Binding                      TestReceiptBinding         `json:"binding"`
+	Proof                        *TestReceiptProof          `json:"proof,omitempty"`
+	Coverage                     *proofrun.CoverageEvidence `json:"coverage,omitempty"`
+	ProvedTree                   string                     `json:"provedTree,omitempty"`
+	AttemptIDs                   []string                   `json:"attemptIds,omitempty"`
+	PolicyEngineDigest           string                     `json:"policyEngineDigest,omitempty"`
+	CandidateEngineDigest        string                     `json:"candidateEngineDigest,omitempty"`
+	CandidateEngineBuildIdentity string                     `json:"candidateEngineBuildIdentity,omitempty"`
+	Workspace                    *TestReceiptProjection     `json:"workspace,omitempty"`
+	Testing                      *proofrun.TestResult       `json:"testing,omitempty"`
 }
 
 type TestReceiptProof struct {
@@ -114,6 +118,9 @@ func PrepareTestReceipt(root, tree, command string) (*ReceiptPreparation, error)
 
 func (preparation *ReceiptPreparation) ExecutionRoot() string { return preparation.candidate.Dir }
 
+// AcceptedIndexTree is the index tree whose checkout posture preparation validated.
+func (preparation *ReceiptPreparation) AcceptedIndexTree() string { return preparation.tree }
+
 func (preparation *ReceiptPreparation) Close() error {
 	if preparation == nil {
 		return nil
@@ -176,7 +183,10 @@ func (preparation *ReceiptPreparation) Complete(attempt proofrun.Attempt, comple
 
 // PublishCommittedReceipt restores the canonical projection only from the
 // exact payload atomically committed with a successful retained attempt.
-func PublishCommittedReceipt(root, attemptID string) (TestReceipt, error) {
+func PublishCommittedReceipt(root, attemptID, acceptedIndexTree string) (TestReceipt, error) {
+	if !treeOID.MatchString(acceptedIndexTree) {
+		return TestReceipt{}, fmt.Errorf("committed delivery receipt requires the accepted index tree")
+	}
 	attempt, err := proofrun.ReadAttempt(root, attemptID)
 	payload := proofrun.CommittedDeliveryReceipt(attempt)
 	if err != nil || attempt.Terminal == nil || attempt.Terminal.Result != proofrun.TerminalSuccess || len(payload) == 0 {
@@ -190,6 +200,9 @@ func PublishCommittedReceipt(root, attemptID string) (TestReceipt, error) {
 	}
 	if version.SchemaVersion == 2 {
 		receipt, decodeErr := decodeCommittedTestingReceipt(payload)
+		if decodeErr == nil {
+			decodeErr = validateTestReceiptWorkspace(root, receipt)
+		}
 		if decodeErr != nil || receipt.Testing.AttemptID != attempt.AttemptID || attempt.TestResult == nil ||
 			!reflect.DeepEqual(*attempt.TestResult, *receipt.Testing) {
 			return TestReceipt{}, fmt.Errorf("committed schema-2 delivery receipt contradicts its proof attempt: %v", decodeErr)
@@ -199,7 +212,7 @@ func PublishCommittedReceipt(root, attemptID string) (TestReceipt, error) {
 			return TestReceipt{}, fmt.Errorf("committed schema-2 delivery receipt has invalid outer owners: %v", ownerErr)
 		}
 		indexTree, worktreeTree, postureErr := testingReceiptPosture(root, *receipt.Testing)
-		if postureErr != nil || indexTree != receipt.Tree || worktreeTree != receipt.Tree {
+		if postureErr != nil || indexTree != acceptedIndexTree || worktreeTree != receipt.Tree {
 			return TestReceipt{}, fmt.Errorf("candidate moved after the committed schema-2 delivery receipt")
 		}
 		if err := atomicfile.WriteVolatile(TestReceiptPath(root, receipt.Tree), string(payload)+"\n"); err != nil {
@@ -219,7 +232,7 @@ func PublishCommittedReceipt(root, attemptID string) (TestReceipt, error) {
 		return TestReceipt{}, fmt.Errorf("committed delivery receipt contradicts its proof attempt")
 	}
 	indexTree, worktreeTree, postureErr := receiptPosture(gittree.Workspace{Dir: root})
-	if postureErr != nil || indexTree != receipt.Tree || worktreeTree != receipt.Tree {
+	if postureErr != nil || indexTree != acceptedIndexTree || worktreeTree != receipt.Tree {
 		return TestReceipt{}, fmt.Errorf("candidate moved after the committed delivery receipt")
 	}
 	if err := atomicfile.WriteVolatile(TestReceiptPath(root, receipt.Tree), string(payload)+"\n"); err != nil {
@@ -437,6 +450,78 @@ func receiptPosture(workspace gittree.Workspace) (string, string, error) {
 	return indexTree, worktreeTree, nil
 }
 
+type testingReceiptVerificationFailure struct {
+	detail string
+}
+
+func (failure *testingReceiptVerificationFailure) Error() string { return failure.detail }
+
+func verifyTestingReceipt(params ObserveParams) (proofrun.TestResult, bool, error) {
+	if params.VerifyTesting == nil {
+		return proofrun.TestResult{}, false, nil
+	}
+	result, err := params.VerifyTesting()
+	if err != nil {
+		return proofrun.TestResult{}, false, &testingReceiptVerificationFailure{detail: "testing-receipt: verify core failed: " + err.Error()}
+	}
+	if !result.Delivery.Sufficient {
+		return proofrun.TestResult{}, false, &testingReceiptVerificationFailure{detail: "testing-receipt: retained proof is not sufficient for the index; missing groups: " + strings.Join(result.Delivery.MissingGroups, ",")}
+	}
+	projected, projectErr := (gittree.Workspace{Dir: params.RepoRoot}).TreeOf(result.CandidateTree)
+	if projectErr != nil {
+		return proofrun.TestResult{}, false, &testingReceiptVerificationFailure{detail: "testing-receipt: verify core failed: " + projectErr.Error()}
+	}
+	if projected != params.CandidateTree {
+		return proofrun.TestResult{}, false, &testingReceiptVerificationFailure{detail: fmt.Sprintf("testing-receipt: verify core judged tree %s, not the landing candidate %s", projected, params.CandidateTree)}
+	}
+	return result, true, nil
+}
+
+func validateTestReceiptWorkspace(root string, receipt TestReceipt) error {
+	if receipt.Workspace == nil {
+		return nil
+	}
+	wantExcludes := WorkspaceExclusions()
+	if !reflect.DeepEqual(receipt.Workspace.Excludes, wantExcludes) {
+		return fmt.Errorf("schema-2 test receipt workspace exclusions differ from this engine")
+	}
+	wantTree, err := ProjectWorkspaceTree(root, receipt.Tree)
+	if err != nil {
+		return fmt.Errorf("recompute schema-2 test receipt workspace tree: %w", err)
+	}
+	if receipt.Workspace.Tree != wantTree {
+		return fmt.Errorf("schema-2 test receipt workspace tree differs from its receipt tree")
+	}
+	return nil
+}
+
+func testingIdentityDifferences(current, receipt proofrun.TestResult) []string {
+	different := map[string]bool{}
+	if !reflect.DeepEqual(current.SelectedGroups, receipt.SelectedGroups) || !reflect.DeepEqual(current.RequiredGroups, receipt.RequiredGroups) {
+		for _, id := range append(append([]string(nil), current.SelectedGroups...), receipt.SelectedGroups...) {
+			different[id] = true
+		}
+		for _, id := range append(append([]string(nil), current.RequiredGroups...), receipt.RequiredGroups...) {
+			different[id] = true
+		}
+	}
+	currentIdentities := map[string]string{}
+	for _, group := range current.Groups {
+		currentIdentities[group.ID] = group.ExecutionIdentity
+	}
+	for _, group := range receipt.Groups {
+		if currentIdentities[group.ID] != group.ExecutionIdentity {
+			different[group.ID] = true
+		}
+	}
+	ids := make([]string, 0, len(different))
+	for id := range different {
+		ids = append(ids, id)
+	}
+	sort.Strings(ids)
+	return ids
+}
+
 func readTestReceipt(params ObserveParams) (TestReceipt, error) {
 	if params.TestReceipt == "" {
 		return TestReceipt{}, fmt.Errorf("tier-1 requires --test-receipt")
@@ -479,11 +564,22 @@ func readTestReceipt(params ObserveParams) (TestReceipt, error) {
 		if receipt.ProvedTree == "" || receipt.Testing == nil || receipt.ExitStatus != 0 || receipt.Command != "" || receipt.Proof != nil || receipt.Coverage != nil {
 			return TestReceipt{}, fmt.Errorf("schema-2 test receipt has incomplete or legacy evidence")
 		}
+		var verified proofrun.TestResult
+		verifiedAvailable := false
+		if receipt.Workspace != nil {
+			verified, verifiedAvailable, err = verifyTestingReceipt(params)
+			if err != nil {
+				return TestReceipt{}, err
+			}
+		}
+		if err := validateTestReceiptWorkspace(params.RepoRoot, receipt); err != nil {
+			return TestReceipt{}, err
+		}
 		if err := validateTestingReceiptEngineIdentity(receipt); err != nil {
 			return TestReceipt{}, err
 		}
 		projected, projectErr := (gittree.Workspace{Dir: params.RepoRoot}).TreeOf(receipt.Tree)
-		if projectErr != nil || projected != params.CandidateTree {
+		if projectErr != nil {
 			return TestReceipt{}, fmt.Errorf("schema-2 whole-project receipt does not project to landing candidate")
 		}
 		if err := proofrun.ValidateTestResult(*receipt.Testing); err != nil || !receipt.Testing.Delivery.Sufficient || receipt.Testing.CandidateTree != receipt.ProvedTree {
@@ -502,8 +598,34 @@ func readTestReceipt(params ObserveParams) (TestReceipt, error) {
 				return TestReceipt{}, fmt.Errorf("schema-2 test receipt binding does not equal the current candidate tree")
 			}
 		}
+		exactCandidate := projected == params.CandidateTree
+		workspaceCandidate := false
+		identityDifferences := []string(nil)
+		if !exactCandidate && verifiedAvailable {
+			receiptWorkspace, receiptWorkspaceErr := InstallationWorkspaceTree(params.RepoRoot, projected)
+			candidateWorkspace, candidateWorkspaceErr := InstallationWorkspaceTree(params.RepoRoot, params.CandidateTree)
+			if receiptWorkspaceErr != nil || candidateWorkspaceErr != nil {
+				return TestReceipt{}, fmt.Errorf("compare schema-2 installation workspace trees: %v", errors.Join(receiptWorkspaceErr, candidateWorkspaceErr))
+			}
+			workspaceCandidate = receiptWorkspace == candidateWorkspace
+		}
+		if verifiedAvailable {
+			identityDifferences = testingIdentityDifferences(verified, *receipt.Testing)
+		}
+		if !exactCandidate && !workspaceCandidate && (!verifiedAvailable || len(identityDifferences) != 0) {
+			return TestReceipt{}, &testingReceiptVerificationFailure{detail: "testing-receipt: receipt does not cover the candidate: " + strings.Join(identityDifferences, ",")}
+		}
 		indexTree, worktreeTree, postureErr := testingReceiptPosture(params.RepoRoot, *receipt.Testing)
-		if postureErr != nil || indexTree != receipt.Tree || worktreeTree != receipt.Tree {
+		indexMatches := indexTree == receipt.Tree
+		if !indexMatches && verifiedAvailable {
+			indexWorkspace, indexWorkspaceErr := ProjectWorkspaceTree(params.RepoRoot, indexTree)
+			receiptWorkspace, receiptWorkspaceErr := ProjectWorkspaceTree(params.RepoRoot, receipt.Tree)
+			if indexWorkspaceErr != nil || receiptWorkspaceErr != nil {
+				return TestReceipt{}, fmt.Errorf("compare schema-2 project workspace trees: %v", errors.Join(indexWorkspaceErr, receiptWorkspaceErr))
+			}
+			indexMatches = indexWorkspace == receiptWorkspace || len(identityDifferences) == 0
+		}
+		if postureErr != nil || !indexMatches || worktreeTree != receipt.Tree {
 			return TestReceipt{}, fmt.Errorf("the whole-project index or working tree moved after the schema-2 test receipt")
 		}
 		return receipt, nil

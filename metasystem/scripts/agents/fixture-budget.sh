@@ -267,6 +267,11 @@ harness_fixture_base_cap() { # named harness cap
   local name=$1 base
   case "$name" in
     calibration-census) base=30 ;;
+    bed-scenario)
+      base=${METASYSTEM_BED_SCENARIO_FIXTURE_TIMEOUT_SEC:-120}
+      [[ "$base" =~ ^[1-9][0-9]*$ && "$base" -ge 1 && "$base" -le 120 ]] \
+        || { echo "METASYSTEM_BED_SCENARIO_FIXTURE_TIMEOUT_SEC must be an integer from 1 through 120" >&2; return 1; }
+      ;;
     supervision-wait)
       base=${METASYSTEM_SUPERVISION_FIXTURE_TIMEOUT_SEC:-12}
       [[ "$base" =~ ^[1-9][0-9]*$ && "$base" -ge 12 && "$base" -le 60 ]] \

@@ -1003,6 +1003,7 @@ for link in \
   scripts/agents/path-class-fixtures.sh \
   scripts/agents/witness-gate-fixtures.sh \
   scripts/agents/suite-progress-fixtures.sh \
+  scripts/agents/fixture-bed-scenarios-fixtures.sh \
   scripts/agents/land-fixtures.sh \
   scripts/agents/checkout-execution-guard-fixtures.sh \
   scripts/agents/record-protocol-fixtures.sh \
@@ -1098,6 +1099,7 @@ bash -n scripts/agents/static-reproof-fixtures.sh
 bash -n scripts/agents/path-class-fixtures.sh
 bash -n scripts/agents/witness-gate-fixtures.sh
 bash -n scripts/agents/suite-progress-fixtures.sh
+bash -n scripts/agents/fixture-bed-scenarios-fixtures.sh
 bash -n scripts/agents/land.sh
 bash -n scripts/agents/coverage-delta.sh
 bash -n scripts/agents/land-fixtures.sh
@@ -2906,6 +2908,10 @@ fi
 if (( template_mode )) && section_selected suite-progress-fixtures; then
   # Watchdog fixtures emit heartbeat evidence while the sequencer records their outcome.
   run_section suite-progress-fixtures needs-engine bash scripts/agents/suite-progress-fixtures.sh
+fi
+if (( template_mode )) && section_selected fixture-bed-scenarios-fixtures; then
+  run_section fixture-bed-scenarios-fixtures needs-engine \
+    bash scripts/agents/fixture-bed-scenarios-fixtures.sh
 fi
 if (( template_mode )) && section_selected land-fixtures; then
   run_section land-fixtures needs-engine bash scripts/agents/land-fixtures.sh

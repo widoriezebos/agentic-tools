@@ -41,7 +41,7 @@ Where agents can spend real money (model calls, paid APIs, cloud runs), state th
 List only rules that cannot be inferred from code or tooling and apply broadly in this repository. Prefer an executable check whenever the rule is binary.
 
 - A commit is gated on the verification run that produced its verdict, in one shell chain whose failure stops the push. Never read a verdict from a log tail or a previous shell.
-- The candidate index and every delivery-relevant working-tree input must describe the same whole-project bytes before selected testing evidence can authorize delivery; a mismatch is repaired, never treated as permission to publish partial coverage.
+- The candidate index and every delivery-relevant working-tree input must describe the same workspace bytes (the whole project minus the goal ledger paths that goal verbs rewrite: `plans/goals`, `plans/goals.md`, `plans/goals-accepted.json`, `records/goals`, `records/counselor`, `memory/receipts.log`, `records/narrator-digest.log`) before selected testing evidence can authorize delivery; the exact tree the proof ran on is still recorded; a tip move that leaves every selected test group's execution identity unchanged never voids that proof, however many records it touched; a moved declared input is proved again, never treated as permission to publish partial coverage.
 - A receipt is appended in the same commit as the work it describes; bookkeeping-only commits hide the ratio of records to evidence.
 - When the same repository is developed by expensive models and measured or exercised by cheap ones, pin both rosters explicitly and name which activity each configuration serves; a cost rule applied to the wrong roster cancels healthy work.
 

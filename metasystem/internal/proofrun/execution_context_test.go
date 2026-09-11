@@ -4,7 +4,9 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"os"
+	"os/exec"
 	"path/filepath"
+	"strings"
 	"testing"
 )
 
@@ -67,6 +69,76 @@ func TestPreparedEnvironmentSelectsTheMeasuredGoExecutable(t *testing.T) {
 	wantHash := sha256.Sum256(wantBytes)
 	if want := hex.EncodeToString(wantHash[:]); got != want {
 		t.Fatalf("toolchain identity used bytes outside prepared PATH: got %s want %s", got, want)
+	}
+}
+
+func TestToolchainClosureIdentityBindsExecutableBytesAndGoRootVersion(t *testing.T) {
+	root := t.TempDir()
+	goPath, err := exec.LookPath("go")
+	if err != nil {
+		t.Fatal(err)
+	}
+	baseEnvironment := replaceContextEnvironment(os.Environ(), map[string]string{"PATH": filepath.Dir(goPath) + string(os.PathListSeparator) + os.Getenv("PATH")})
+	realIdentity, err := ToolchainClosureIdentity(root, baseEnvironment)
+	if err != nil {
+		t.Fatal(err)
+	}
+	versionOutput, err := exec.Command(goPath, "version").Output()
+	if err != nil {
+		t.Fatal(err)
+	}
+	environmentOutput, err := exec.Command(goPath, "env", "GOOS", "GOARCH", "GOFLAGS", "GOWORK", "GOEXPERIMENT", "CGO_ENABLED", "GOTOOLCHAIN").Output()
+	if err != nil {
+		t.Fatal(err)
+	}
+	realGoRoot, err := exec.Command(goPath, "env", "GOROOT").Output()
+	if err != nil {
+		t.Fatal(err)
+	}
+	realVersion, err := os.ReadFile(filepath.Join(strings.TrimSpace(string(realGoRoot)), "VERSION"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	fixtureRoot := t.TempDir()
+	goRoot := filepath.Join(fixtureRoot, "goroot")
+	writeTestFile(t, filepath.Join(goRoot, "VERSION"), realVersion, 0o644)
+	versionPath := filepath.Join(fixtureRoot, "version.out")
+	environmentPath := filepath.Join(fixtureRoot, "environment.out")
+	writeTestFile(t, versionPath, versionOutput, 0o644)
+	writeTestFile(t, environmentPath, environmentOutput, 0o644)
+	script := []byte("#!/bin/sh\ncase \"$*\" in\n  version) /bin/cat \"$FIXTURE_VERSION_OUTPUT\" ;;\n  \"env GOOS GOARCH GOFLAGS GOWORK GOEXPERIMENT CGO_ENABLED GOTOOLCHAIN\") /bin/cat \"$FIXTURE_ENV_OUTPUT\" ;;\n  \"env GOROOT\") printf '%s\\n' \"$FIXTURE_GOROOT\" ;;\n  *) exit 9 ;;\nesac\n")
+	fakeIdentity := func(bin string) (string, error) {
+		if err := os.MkdirAll(bin, 0o755); err != nil {
+			return "", err
+		}
+		writeTestFile(t, filepath.Join(bin, "go"), script, 0o755)
+		environment := replaceContextEnvironment(baseEnvironment, map[string]string{
+			"PATH":                   bin + string(os.PathListSeparator) + os.Getenv("PATH"),
+			"FIXTURE_VERSION_OUTPUT": versionPath,
+			"FIXTURE_ENV_OUTPUT":     environmentPath,
+			"FIXTURE_GOROOT":         goRoot,
+		})
+		return ToolchainClosureIdentity(root, environment)
+	}
+	first, err := fakeIdentity(filepath.Join(fixtureRoot, "first-bin"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	second, err := fakeIdentity(filepath.Join(fixtureRoot, "second-bin"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if first == realIdentity {
+		t.Fatal("different selected Go executable bytes retained the real toolchain closure identity")
+	}
+	if first != second {
+		t.Fatalf("identical selected Go bytes depended on their path: first=%s second=%s", first, second)
+	}
+	if err := os.Remove(filepath.Join(goRoot, "VERSION")); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := fakeIdentity(filepath.Join(fixtureRoot, "third-bin")); err == nil {
+		t.Fatal("toolchain closure accepted a missing Go root VERSION file")
 	}
 }
 

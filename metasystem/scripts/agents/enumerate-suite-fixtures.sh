@@ -40,8 +40,8 @@ rm "$template_clone/development/metasystem-design.md"
   || { echo "enumeration fixture: an independent template clone classified as adopted" >&2; exit 1; }
 [[ $(METASYSTEM_DELIVERY_CONTRACT=1 bash "$template_root/scripts/agents/validate-section-selector.sh" context) == adopted ]] \
   || { echo "enumeration fixture: explicit delivery mode did not classify a template clone as adopted" >&2; exit 1; }
-[[ $(METASYSTEM_DELIVERY_CONTRACT=0 bash "$template_root/scripts/agents/validate-section-selector.sh" list | wc -l | tr -d ' ') == 43 ]] \
-  || { echo "enumeration fixture: an independent template clone did not select 43 sections" >&2; exit 1; }
+[[ $(METASYSTEM_DELIVERY_CONTRACT=0 bash "$template_root/scripts/agents/validate-section-selector.sh" list | wc -l | tr -d ' ') == 44 ]] \
+  || { echo "enumeration fixture: an independent template clone did not select 44 sections" >&2; exit 1; }
 METASYSTEM_DELIVERY_CONTRACT=0 bash "$template_root/scripts/agents/validate-section-selector.sh" list | cut -f1 | grep -Fxq brain-fixtures \
   || { echo "enumeration fixture: an independent template clone omitted brain-fixtures" >&2; exit 1; }
 
@@ -59,8 +59,8 @@ git -C "$adopted_repo" -c user.name=metasystem -c user.email=metasystem@example.
 printf 'not repository identity\n' >"$adopted_repo/development/metasystem-design.md"
 [[ $(METASYSTEM_DELIVERY_CONTRACT=0 bash "$adopted_root/scripts/agents/validate-section-selector.sh" context) == adopted ]] \
   || { echo "enumeration fixture: an untracked marker promoted an adopted installation" >&2; exit 1; }
-[[ $(METASYSTEM_DELIVERY_CONTRACT=0 bash "$adopted_root/scripts/agents/validate-section-selector.sh" list | wc -l | tr -d ' ') == 39 ]] \
-  || { echo "enumeration fixture: an adopted installation did not select 39 sections" >&2; exit 1; }
+[[ $(METASYSTEM_DELIVERY_CONTRACT=0 bash "$adopted_root/scripts/agents/validate-section-selector.sh" list | wc -l | tr -d ' ') == 40 ]] \
+  || { echo "enumeration fixture: an adopted installation did not select 40 sections" >&2; exit 1; }
 METASYSTEM_DELIVERY_CONTRACT=0 bash "$adopted_root/scripts/agents/validate-section-selector.sh" list | cut -f1 | grep -Fxq brain-fixtures \
   || { echo "enumeration fixture: an adopted installation omitted brain-fixtures" >&2; exit 1; }
 

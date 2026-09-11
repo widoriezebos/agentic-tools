@@ -22,11 +22,11 @@ func TestCanonicalReceiptProofContext(t *testing.T) {
 		fixture.receipt.Coverage == nil {
 		t.Fatalf("canonical receipt lost admitted proof or measured coverage context: %+v", fixture.receipt)
 	}
-	if _, err := PublishCommittedReceipt(fixture.root, fixture.attempt.AttemptID); err == nil {
+	if _, err := PublishCommittedReceipt(fixture.root, fixture.attempt.AttemptID, fixture.tree); err == nil {
 		t.Fatal("receipt projection was published before the atomic terminal-success commit")
 	}
 	fixture.commit(t)
-	published, err := PublishCommittedReceipt(fixture.root, fixture.attempt.AttemptID)
+	published, err := PublishCommittedReceipt(fixture.root, fixture.attempt.AttemptID, fixture.tree)
 	if err != nil || published.Time != fixture.receipt.Time || !fullReceiptCommandAccepted(published) {
 		t.Fatalf("canonical committed receipt was not accepted: receipt=%+v err=%v", published, err)
 	}
@@ -58,7 +58,7 @@ func TestReceiptPublicationRecovery(t *testing.T) {
 	if err := os.WriteFile(blocker, []byte("projection blocked\n"), 0o600); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := PublishCommittedReceipt(fixture.root, fixture.attempt.AttemptID); err == nil {
+	if _, err := PublishCommittedReceipt(fixture.root, fixture.attempt.AttemptID, fixture.tree); err == nil {
 		t.Fatal("projection write fault unexpectedly reported success")
 	}
 	retained, err := proofrun.ReadAttempt(fixture.root, fixture.attempt.AttemptID)
@@ -68,7 +68,7 @@ func TestReceiptPublicationRecovery(t *testing.T) {
 	if err := os.Remove(blocker); err != nil {
 		t.Fatal(err)
 	}
-	recovered, err := PublishCommittedReceipt(fixture.root, fixture.attempt.AttemptID)
+	recovered, err := PublishCommittedReceipt(fixture.root, fixture.attempt.AttemptID, fixture.tree)
 	if err != nil || recovered.Time != fixture.receipt.Time {
 		t.Fatalf("retained payload was not recoverable without execution: receipt=%+v err=%v", recovered, err)
 	}
@@ -191,14 +191,14 @@ func TestReceiptPreparationSurvivesCanonicalRecordMotion(t *testing.T) {
 	if _, err := proofrun.FinalizeAttempt(f.root, attempt.AttemptID, proofrun.TerminalSuccess, 0, "prepared receipt", payload, now.Add(2*time.Second)); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := PublishCommittedReceipt(f.root, attempt.AttemptID); err == nil {
+	if _, err := PublishCommittedReceipt(f.root, attempt.AttemptID, tree); err == nil {
 		t.Fatal("ordinary publication ignored the moved live candidate posture")
 	}
 	f.git("reset", "-q", "HEAD", "records/steward/narration.txt")
 	if err := os.Remove(filepath.Join(f.root, "records", "steward", "narration.txt")); err != nil {
 		t.Fatal(err)
 	}
-	recovered, err := PublishCommittedReceipt(f.root, attempt.AttemptID)
+	recovered, err := PublishCommittedReceipt(f.root, attempt.AttemptID, tree)
 	if err != nil || recovered.Time != receipt.Time {
 		t.Fatalf("exact prepared receipt was not recoverable after ordinary posture returned: receipt=%+v err=%v", recovered, err)
 	}

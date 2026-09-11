@@ -15,7 +15,8 @@ import (
 
 const (
 	TestResultSchemaVersion              = 1
-	CandidateEngineIdentitySchemaVersion = 1
+	candidateEngineDigestIdentityVersion = 1
+	CandidateEngineIdentitySchemaVersion = 2
 )
 
 type NativeTestIdentity struct {
@@ -75,7 +76,9 @@ func ValidateTestResult(result TestResult) error {
 	candidateEngineInvalid := !candidateEngineMissing && !validResultDigest(result.CandidateEngineDigest)
 	candidateEngineIdentityInvalid := result.CandidateEngineIdentityVersion < 0 ||
 		result.CandidateEngineIdentityVersion > CandidateEngineIdentitySchemaVersion ||
-		result.CandidateEngineIdentityVersion == CandidateEngineIdentitySchemaVersion && candidateEngineMissing
+		result.CandidateEngineIdentityVersion == candidateEngineDigestIdentityVersion && candidateEngineMissing ||
+		result.CandidateEngineIdentityVersion == CandidateEngineIdentitySchemaVersion &&
+			(candidateEngineMissing || !validTreeDigest(result.CandidateEngineBuildIdentity))
 	if result.SchemaVersion != TestResultSchemaVersion || result.Purpose == "" || result.RequestedMode == "" ||
 		result.RequiredMode == "" || result.ExecutedMode == "" || result.ProjectRoot == "" || result.BaseCommit == "" ||
 		!validTreeDigest(result.CandidateTree) || !validResultDigest(result.ContractDigest) ||
@@ -177,6 +180,7 @@ type TestResult struct {
 	PolicyEngineDigest             string                    `json:"policyEngineDigest"`
 	CandidateEngineIdentityVersion int                       `json:"candidateEngineIdentityVersion,omitempty"`
 	CandidateEngineDigest          string                    `json:"candidateEngineDigest"`
+	CandidateEngineBuildIdentity   string                    `json:"candidateEngineBuildIdentity,omitempty"`
 	BehaviorPolicyDigest           string                    `json:"behaviorPolicyDigest"`
 	PlanDigest                     string                    `json:"planDigest"`
 	Risk                           testpolicy.RiskAssessment `json:"risk"`
@@ -275,11 +279,12 @@ func ExactReusableTestResult(template TestResult, attempts []Attempt, identities
 			continue
 		}
 		result := attempt.TestResult
-		if result.CandidateTree != template.CandidateTree || result.BaseCommit != template.BaseCommit ||
-			result.PolicyBaseCommit != template.PolicyBaseCommit || result.ContractDigest != template.ContractDigest ||
+		if result.ContractDigest != template.ContractDigest ||
 			result.BaseContractDigest != template.BaseContractDigest || result.PolicyEngineDigest != template.PolicyEngineDigest ||
 			result.CandidateEngineDigest != template.CandidateEngineDigest ||
-			result.BehaviorPolicyDigest != template.BehaviorPolicyDigest || result.PlanDigest != template.PlanDigest ||
+			result.CandidateEngineIdentityVersion != template.CandidateEngineIdentityVersion ||
+			result.CandidateEngineBuildIdentity != template.CandidateEngineBuildIdentity ||
+			result.BehaviorPolicyDigest != template.BehaviorPolicyDigest ||
 			result.Purpose != template.Purpose || result.RequiredMode != template.RequiredMode || result.ExecutedMode != template.ExecutedMode ||
 			!reflect.DeepEqual(result.SelectedGroups, template.SelectedGroups) || !reflect.DeepEqual(result.RequiredGroups, template.RequiredGroups) ||
 			!result.Delivery.Sufficient || ValidateTestResult(*result) != nil {

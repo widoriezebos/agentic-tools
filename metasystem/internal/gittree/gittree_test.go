@@ -600,6 +600,96 @@ func TestSnapshotMatchesLegacyProjection(t *testing.T) {
 	}
 }
 
+func TestFilterTreePrefixes(t *testing.T) {
+	f := newTreeFixture(t)
+	f.write("plans/goals/a.md", "a\n")
+	f.write("plans/goals/b.md", "b\n")
+	f.write("plans/goals.md", "legacy\n")
+	f.write("plans/kept.md", "kept\n")
+	f.git("add", ".")
+	f.commit("add filter inputs")
+	tree := f.snapshot()
+
+	t.Run("directory prefix leaves siblings", func(t *testing.T) {
+		filtered, err := f.w.FilterTreePrefixes(tree, []string{"plans/goals"})
+		if err != nil {
+			t.Fatal(err)
+		}
+		entries, err := f.w.Entries(filtered, []string{"plans"})
+		if err != nil {
+			t.Fatal(err)
+		}
+		if _, ok := entries["plans/goals/a.md"]; ok {
+			t.Fatal("directory entry survived the prefix filter")
+		}
+		if _, ok := entries["plans/goals/b.md"]; ok {
+			t.Fatal("second directory entry survived the prefix filter")
+		}
+		if _, ok := entries["plans/goals.md"]; !ok {
+			t.Fatal("sibling file was removed by the prefix filter")
+		}
+		if _, ok := entries["plans/kept.md"]; !ok {
+			t.Fatal("sibling directory entry was removed by the prefix filter")
+		}
+	})
+
+	t.Run("absent prefix is a no-op", func(t *testing.T) {
+		filtered, err := f.w.FilterTreePrefixes(tree, []string{"absent"})
+		if err != nil {
+			t.Fatal(err)
+		}
+		if filtered != tree {
+			t.Fatalf("absent prefix produced %s, want %s", filtered, tree)
+		}
+	})
+
+	t.Run("file and directory may be mixed", func(t *testing.T) {
+		filtered, err := f.w.FilterTreePrefixes(tree, []string{"plans/goals", "plans/goals.md"})
+		if err != nil {
+			t.Fatal(err)
+		}
+		entries, err := f.w.Entries(filtered, []string{"plans"})
+		if err != nil {
+			t.Fatal(err)
+		}
+		if _, ok := entries["plans/goals/a.md"]; ok {
+			t.Fatal("directory entry survived the mixed filter")
+		}
+		if _, ok := entries["plans/goals.md"]; ok {
+			t.Fatal("file entry survived the mixed filter")
+		}
+		if _, ok := entries["plans/kept.md"]; !ok {
+			t.Fatal("unrelated entry was removed by the mixed filter")
+		}
+	})
+
+	t.Run("matches recursive cached removal", func(t *testing.T) {
+		paths := []string{"plans/goals", "plans/goals.md"}
+		got, err := f.w.FilterTreePrefixes(tree, paths)
+		if err != nil {
+			t.Fatal(err)
+		}
+		indexDir := t.TempDir()
+		env := append(ScrubbedEnviron(), "GIT_INDEX_FILE="+filepath.Join(indexDir, "index"))
+		run := func(args ...string) string {
+			t.Helper()
+			cmd := exec.Command("git", append([]string{"-C", f.w.Dir}, args...)...)
+			cmd.Env = env
+			out, err := cmd.CombinedOutput()
+			if err != nil {
+				t.Fatalf("git %v: %v %s", args, err, out)
+			}
+			return strings.TrimSpace(string(out))
+		}
+		run("read-tree", tree)
+		run(append([]string{"rm", "-r", "-f", "--cached", "--ignore-unmatch", "--"}, paths...)...)
+		want := run("write-tree")
+		if got != want {
+			t.Fatalf("FilterTreePrefixes produced %s, git rm produced %s", got, want)
+		}
+	})
+}
+
 // A nested checkout (the workspace is a subdirectory of the git toplevel —
 // the supported deployment layout) speaks the SAME workspace-relative path
 // space as a toplevel checkout: trees are scoped to the workspace prefix,

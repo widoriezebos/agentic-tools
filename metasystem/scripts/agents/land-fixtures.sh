@@ -27,14 +27,125 @@ fi
 unset METASYSTEM_FIXTURE_SCENARIO
 if (( ! fixture_bed_child )); then
   fixture_bed_script=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd -P)/$(basename "${BASH_SOURCE[0]}")
-  run_fixture_bed_scenarios land "land fixtures passed (9 isolated legs)" \
+  run_fixture_bed_scenarios land "land fixtures passed (13 isolated legs)" \
     "$fixture_bed_script" push-retry step-failure new-plan goal tier-one full-width-chain build-stamp \
-    brain-land-refuses brain-absent-node-proceeds
+    brain-land-refuses brain-absent-node-proceeds ledger-move-lands records-move-lands \
+    input-move-refuses receipt-cutover
 fi
 
 tmp=$(mktemp -d "${TMPDIR:-/tmp}/metasystem-land.XXXXXX")
-trap 'rm -rf "$tmp"' EXIT
+tmp=$(cd "$tmp" && pwd -P)
 real_git=$(command -v git)
+receipt_environment=()
+receipt_runner_checkouts=()
+receipt_runner_engines=()
+receipt_runner_pids=()
+receipt_runner_identity_files=()
+receipt_runner_registries=()
+receipt_runner_stop_logs=()
+
+is_workspace_receipt_scenario() {
+  case "$fixture_scenario" in
+    ledger-move-lands | records-move-lands | input-move-refuses | receipt-cutover) return 0 ;;
+    *) return 1 ;;
+  esac
+}
+
+prepare_receipt_environment() { # process identity file, registry
+  local identity_file=$1 registry=$2 name value
+  receipt_environment=()
+  for name in GOCACHE GOMODCACHE GOPATH GOROOT HOME LANG LC_ALL PATH SYSTEMROOT TEMP TMP TMPDIR TZ; do
+    if value=$(printenv "$name" 2>/dev/null); then
+      receipt_environment+=("$name=$value")
+    fi
+  done
+  receipt_environment+=(
+    "METASYSTEM_FAKE_PROCESS_IDENTITY_FILE=$identity_file"
+    "METASYSTEM_SUPERVISION_REGISTRY_HOME=$registry"
+    "METASYSTEM_OWNER_LINEAGE=land-receipt-fixture"
+  )
+}
+
+receipt_env_run() {
+  env -i "${receipt_environment[@]}" "$@"
+}
+
+stop_receipt_runner() {
+  local index checkout engine runner_pid identity_file registry stop_log
+  local stop_rc wait_deadline runner_dead=1
+  index=$((${#receipt_runner_checkouts[@]} - 1))
+  (( index >= 0 )) || return 0
+  checkout=${receipt_runner_checkouts[$index]}
+  engine=${receipt_runner_engines[$index]}
+  runner_pid=${receipt_runner_pids[$index]}
+  identity_file=${receipt_runner_identity_files[$index]}
+  registry=${receipt_runner_registries[$index]}
+  stop_log=${receipt_runner_stop_logs[$index]}
+  prepare_receipt_environment "$identity_file" "$registry"
+  if receipt_env_run "$engine" steward disarm --repo "$checkout" \
+      >"$stop_log" 2>&1; then
+    stop_rc=0
+  else
+    stop_rc=$?
+  fi
+  if [[ "$runner_pid" =~ ^[1-9][0-9]*$ ]]; then
+    wait_deadline=$((SECONDS + 5))
+    while kill -0 "$runner_pid" 2>/dev/null && (( SECONDS < wait_deadline )); do
+      sleep 0.25
+    done
+    if kill -0 "$runner_pid" 2>/dev/null; then
+      echo "land $fixture_scenario fixture: steward runner pid $runner_pid survived steward disarm --repo" >&2
+      runner_dead=0
+    fi
+  fi
+  if (( runner_dead )); then
+    receipt_runner_checkouts=("${receipt_runner_checkouts[@]:0:$index}")
+    receipt_runner_engines=("${receipt_runner_engines[@]:0:$index}")
+    receipt_runner_pids=("${receipt_runner_pids[@]:0:$index}")
+    receipt_runner_identity_files=("${receipt_runner_identity_files[@]:0:$index}")
+    receipt_runner_registries=("${receipt_runner_registries[@]:0:$index}")
+    receipt_runner_stop_logs=("${receipt_runner_stop_logs[@]:0:$index}")
+    echo "land $fixture_scenario fixture: steward runner pid ${runner_pid:-unknown} stopped with no survivor"
+  fi
+  if (( stop_rc != 0 )); then
+    echo "land $fixture_scenario fixture: steward disarm --repo failed for $checkout" >&2
+    sed -n '1,200p' "$stop_log" >&2
+    return 1
+  fi
+  (( runner_dead ))
+}
+
+select_receipt_runner_environment() { # checkout
+  local checkout=$1 index
+  for ((index = ${#receipt_runner_checkouts[@]} - 1; index >= 0; index--)); do
+    if [[ "${receipt_runner_checkouts[$index]}" == "$checkout" ]]; then
+      prepare_receipt_environment "${receipt_runner_identity_files[$index]}" \
+        "${receipt_runner_registries[$index]}"
+      return 0
+    fi
+  done
+  echo "land $fixture_scenario fixture: no armed receipt runner for $checkout" >&2
+  return 1
+}
+
+cleanup_land_fixture() {
+  local status=$? cleanup_status=0 before stop_status
+  trap - EXIT
+  while (( ${#receipt_runner_checkouts[@]} )); do
+    before=${#receipt_runner_checkouts[@]}
+    if stop_receipt_runner; then
+      :
+    else
+      stop_status=$?
+      cleanup_status=$stop_status
+      (( ${#receipt_runner_checkouts[@]} < before )) || break
+    fi
+  done
+  rm -rf "$tmp"
+  (( cleanup_status == 0 )) || status=1
+  exit "$status"
+}
+trap cleanup_land_fixture EXIT
 
 clear_independent_fixture_context() {
   unset METASYSTEM_PROOF_CONTROL_ROOT METASYSTEM_PROOF_ATTEMPT \
@@ -58,7 +169,9 @@ make_leg() { # name
   cp "$root/scripts/agents/coverage-delta.sh" "$leg_seed/scripts/agents/coverage-delta.sh"
   cp "$root/scripts/agents/pre-commit-guard.sh" "$leg_seed/scripts/agents/pre-commit-guard.sh"
   cp "$root/scripts/agents/sync-transport.sh" "$leg_seed/scripts/agents/sync-transport.sh"
-  cp "$source_engine" "$leg_seed/bin/metasystem"
+  if ! is_workspace_receipt_scenario; then
+    cp "$source_engine" "$leg_seed/bin/metasystem"
+  fi
   cat >"$leg_seed/scripts/agents/commit.sh" <<'SH'
 #!/usr/bin/env bash
 set -euo pipefail
@@ -124,7 +237,10 @@ if [[ -n "$chain" ]]; then
     candidate_tree=$(git -C "$root" rev-parse "$candidate_tree:${prefix%/}")
   fi
   landing_args=(landing observe --root "$root" --tree "$candidate_tree" --chain "$chain")
+  [[ -z "$goal" ]] || landing_args+=(--goal "$goal")
   [[ -z "$test_receipt" ]] || landing_args+=(--test-receipt "$test_receipt")
+  machine_nickname=$(git -C "$root" config --get metasystem.goal.machine)
+  landing_args+=(--actor "${machine_nickname}+${METASYSTEM_OWNER_LINEAGE:-human}")
   landing_observation=$("$root/bin/metasystem" "${landing_args[@]}")
   landing_provenance=$("$root/bin/metasystem" json get --value "$landing_observation" --field provenance)
   landing_verdict=$("$root/bin/metasystem" json get --value "$landing_observation" --field verdictTrailer)
@@ -144,6 +260,50 @@ git show --no-renames --numstat -z --format= HEAD \
   | "$root/bin/metasystem" gate weight-add --root "$root" \
       --commit "$(git rev-parse --short HEAD)"
 SH
+  if is_workspace_receipt_scenario; then
+    mkdir -p "$leg_seed/memory"
+    cp "$root/scripts/agents/path-classes.txt" "$leg_seed/scripts/agents/path-classes.txt"
+    cp "$root/scripts/agents/landing-classes.json" "$leg_seed/scripts/agents/landing-classes.json"
+    cp "$root/scripts/agents/landing-promotion.json" "$leg_seed/scripts/agents/landing-promotion.json"
+    cp "$root/memory/rulings.md" "$leg_seed/memory/rulings.md"
+    candidate_fixture_engine=$leg_root/engine
+    printf -v candidate_fixture_engine_q '%q' "$candidate_fixture_engine"
+    cat >"$leg_seed/scripts/agents/go-build.sh" <<SH
+#!/usr/bin/env bash
+set -euo pipefail
+[[ "\${1:-}" == --trimpath && "\${2:-}" == --out && -n "\${3:-}" ]]
+printf '#!/usr/bin/env bash\n# candidate commit %s\nexec %s "\$@"\n' \
+  "\${METASYSTEM_BUILD_STAMP:?}" "$candidate_fixture_engine_q" >"\$3"
+chmod +x "\$3"
+SH
+    cat >"$leg_seed/metasystem.conf" <<'CONF'
+testing.contract=testing.json
+metasystem.runtimes=fake
+dispatch.cap-min=1
+dispatch.cap-max=120
+CONF
+    cat >"$leg_seed/testing.json" <<'JSON'
+{
+  "schemaVersion": 1,
+  "projectRisk": {"severity": 1, "exposure": 1, "reversibility": "revert", "detection": "immediate", "recovery": "bounded"},
+  "surfaces": [
+    {"id": "application", "paths": ["testing.json", "metasystem.conf", "plans/**", "records/**", "scripts/**"], "dependsOn": [], "standard": ["policy-protection", "candidate-smoke"], "deep": [], "critical": ["application-proof"]},
+    {"id": "proof-and-landing", "paths": ["payload.txt"], "dependsOn": ["application"], "standard": ["policy-protection", "candidate-smoke"], "deep": [], "critical": ["application-proof"]}
+  ],
+  "groups": [
+    {"id": "policy-protection", "kind": "unit", "adapter": "command", "cwd": ".", "inputs": ["payload.txt", "scripts/**"], "outputs": ["policy-reports"], "tools": [], "obligations": ["application-proof"], "platforms": ["any"], "targetMs": 1000, "argv": ["sh", "-c", "mkdir -p policy-reports; printf '%s\\n' '<testsuite><testcase classname=\"application\" name=\"policy\"/></testsuite>' >policy-reports/result.xml"], "reports": ["policy-reports"], "format": "junit-xml", "expectedTests": [{"report": "policy-reports/result.xml", "classname": "application", "name": "policy"}]},
+    {"id": "candidate-smoke", "kind": "unit", "adapter": "command", "cwd": ".", "inputs": ["payload.txt"], "outputs": ["smoke-reports"], "tools": [], "obligations": ["application-proof"], "platforms": ["any"], "targetMs": 1000, "argv": ["sh", "-c", "mkdir -p smoke-reports; printf '%s\\n' '<testsuite><testcase classname=\"application\" name=\"smoke\"/></testsuite>' >smoke-reports/result.xml"], "reports": ["smoke-reports"], "format": "junit-xml", "expectedTests": [{"report": "smoke-reports/result.xml", "classname": "application", "name": "smoke"}]}
+  ],
+  "always": {"canary": ["policy-protection", "candidate-smoke"], "standard": ["policy-protection", "candidate-smoke"]},
+  "unknown": ["policy-protection", "candidate-smoke"],
+  "cadence": ["policy-protection", "candidate-smoke"]
+}
+JSON
+    printf '%s\n' '{"floors":{"fixture/application":80.0}}' \
+      >"$leg_seed/scripts/agents/coverage-ratchet.json"
+    printf '%s\n' '{"floors":{"fixture/application":80.0}}' \
+      >"$leg_seed/scripts/agents/coverage-ratchet-linux.json"
+  fi
   if [[ "$fixture_scenario" == full-width-chain ]]; then
     mkdir -p "$leg_seed/memory"
     cp "$root/scripts/agents/path-classes.txt" "$leg_seed/scripts/agents/path-classes.txt"
@@ -159,11 +319,21 @@ SH
     "$leg_seed/scripts/agents/coverage-delta.sh" \
     "$leg_seed/scripts/agents/pre-commit-guard.sh" \
     "$leg_seed/scripts/agents/commit.sh" \
-    "$leg_seed/scripts/agents/sync-transport.sh" \
-    "$leg_seed/bin/metasystem"
+    "$leg_seed/scripts/agents/sync-transport.sh"
+  if is_workspace_receipt_scenario; then
+    chmod +x "$leg_seed/scripts/agents/go-build.sh"
+  else
+    chmod +x "$leg_seed/bin/metasystem"
+  fi
   printf 'seed\n' >"$leg_seed/payload.txt"
   printf 'existing plan\n' >"$leg_seed/plans/existing.md"
-  printf 'artifacts/\n' >"$leg_seed/.gitignore"
+  if [[ "$fixture_scenario" == receipt-cutover ]]; then
+    printf 'artifacts/\nrecords/narrator-digest.log\nbin/\n' >"$leg_seed/.gitignore"
+  elif is_workspace_receipt_scenario; then
+    printf 'artifacts/\nrecords/narrator-digest.log\n' >"$leg_seed/.gitignore"
+  else
+    printf 'artifacts/\n' >"$leg_seed/.gitignore"
+  fi
   if [[ "$fixture_scenario" == tier-one || "$fixture_scenario" == full-width-chain ]]; then
     cat >"$leg_seed/metasystem.conf" <<'CONF'
 metasystem.runtimes=fake
@@ -184,24 +354,48 @@ BACKLOG
     receipt_root_digest=$("$source_engine" util sha256 --file "$leg_seed/plans/goals/backlog.md")
     printf 'Integrity: sha256=%s\n' "$receipt_root_digest" >>"$leg_seed/plans/goals/backlog.md"
   fi
+  if is_workspace_receipt_scenario; then
+    mkdir -p "$leg_seed/plans/goals"
+    cat >"$leg_seed/plans/goals/backlog.md" <<'BACKLOG'
+# Backlog
+
+- Identity: 01ARZ3NDEKTSV4RRFFQ69G5FBV
+- FormatVersion: 1
+- SyncMode: local
+- Revision: 1
+
+History:
+BACKLOG
+    receipt_root_digest=$("$source_engine" util sha256 --file "$leg_seed/plans/goals/backlog.md")
+    printf 'Integrity: sha256=%s\n' "$receipt_root_digest" >>"$leg_seed/plans/goals/backlog.md"
+  fi
   git -C "$leg_seed" init -q
   git -C "$leg_seed" symbolic-ref HEAD refs/heads/main
   git -C "$leg_seed" config user.name fixture
   git -C "$leg_seed" config user.email fixture@example.invalid
-  if [[ "$fixture_scenario" == tier-one || "$fixture_scenario" == full-width-chain ]]; then
+  if [[ "$fixture_scenario" == tier-one || "$fixture_scenario" == full-width-chain ]] || is_workspace_receipt_scenario; then
     git -C "$leg_seed" config goal.sync-remote local
     git -C "$leg_seed" config goal.sync-branch refs/heads/metasystem/goals
     git -C "$leg_seed" config metasystem.goal.machine fixture-machine
   fi
-  git -C "$leg_seed" add -- scripts bin payload.txt plans/existing.md .gitignore
+  git -C "$leg_seed" add -- scripts payload.txt plans/existing.md .gitignore
+  if ! is_workspace_receipt_scenario; then
+    git -C "$leg_seed" add -- bin
+  fi
   if [[ "$fixture_scenario" == tier-one || "$fixture_scenario" == full-width-chain ]]; then
     git -C "$leg_seed" add -- metasystem.conf plans/goals/backlog.md
+  fi
+  if is_workspace_receipt_scenario; then
+    git -C "$leg_seed" add -- metasystem.conf testing.json plans/goals/backlog.md memory/rulings.md
   fi
   if [[ "$fixture_scenario" == full-width-chain ]]; then
     git -C "$leg_seed" add -- memory/rulings.md
   fi
   git -C "$leg_seed" commit -qm seed
-  if [[ "$fixture_scenario" == tier-one || "$fixture_scenario" == full-width-chain ]]; then
+  if is_workspace_receipt_scenario; then
+    receipt_seed_build_stamp=$(git -C "$leg_seed" rev-parse HEAD)
+  fi
+  if [[ "$fixture_scenario" == tier-one || "$fixture_scenario" == full-width-chain ]] || is_workspace_receipt_scenario; then
     git -C "$leg_seed" update-ref refs/heads/metasystem/goals HEAD
     git -C "$leg_seed" update-ref refs/metasystem/goals/accepted HEAD
     receipt_fixture_start=$("$source_engine" proc started-at --pid "$$")
@@ -219,8 +413,23 @@ BACKLOG
       --fixture-human-authority
     "$source_engine" goal claim --root "$leg_seed" --id fx --lineage land-receipt-fixture >/dev/null
     git -C "$leg_seed" reset -q --hard refs/metasystem/goals/accepted
+    if [[ "$fixture_scenario" == receipt-cutover ]]; then
+      # In the cutover leg H0 is the one complete seed tip, including the fx
+      # goal produced by the fixture's verbs. No engine-install commit follows.
+      receipt_seed_build_stamp=$(git -C "$leg_seed" rev-parse HEAD)
+    fi
     "$source_engine" lease retire --root "$leg_seed" --session "land-$fixture_scenario-seed" \
       --pid "$$" --start "$receipt_fixture_start" >/dev/null
+  fi
+  if is_workspace_receipt_scenario; then
+    METASYSTEM_BUILD_STAMP="$receipt_seed_build_stamp" \
+      bash "$root/scripts/agents/go-build.sh" --out "$leg_root/engine" >/dev/null
+    if [[ "$fixture_scenario" != receipt-cutover ]]; then
+      cp "$leg_root/engine" "$leg_seed/bin/metasystem"
+      chmod +x "$leg_seed/bin/metasystem"
+      git -C "$leg_seed" add -f -- bin/metasystem
+      (cd "$leg_seed" && scripts/agents/commit.sh -qm "install candidate engine")
+    fi
   fi
   git init --bare -q "$leg_remote"
   git --git-dir="$leg_remote" symbolic-ref HEAD refs/heads/main
@@ -232,16 +441,166 @@ BACKLOG
   git -C "$leg_local" config user.email fixture-local@example.invalid
   git -C "$leg_peer" config user.name fixture-peer
   git -C "$leg_peer" config user.email fixture-peer@example.invalid
-  if [[ "$fixture_scenario" == tier-one || "$fixture_scenario" == full-width-chain ]]; then
+  if [[ "$fixture_scenario" == tier-one || "$fixture_scenario" == full-width-chain ]] || is_workspace_receipt_scenario; then
     git -C "$leg_local" config goal.sync-remote local
     git -C "$leg_local" config goal.sync-branch refs/heads/metasystem/goals
     git -C "$leg_local" config metasystem.goal.machine fixture-machine
     git -C "$leg_local" update-ref refs/heads/metasystem/goals origin/main
     git -C "$leg_local" update-ref refs/metasystem/goals/accepted origin/main
+    git -C "$leg_local" config metasystem.steward.landing-ref refs/remotes/origin/main
+    git -C "$leg_peer" config goal.sync-remote local
+    git -C "$leg_peer" config goal.sync-branch refs/heads/metasystem/goals
+    git -C "$leg_peer" config metasystem.goal.machine fixture-peer
+    git -C "$leg_peer" config metasystem.steward.landing-ref refs/remotes/origin/main
+    git -C "$leg_peer" update-ref refs/heads/metasystem/goals origin/main
+    git -C "$leg_peer" update-ref refs/metasystem/goals/accepted origin/main
+  fi
+  if [[ "$fixture_scenario" == tier-one || "$fixture_scenario" == full-width-chain ]]; then
     receipt_fixture_start=$("$source_engine" proc started-at --pid "$$")
     "$source_engine" lease announce --root "$leg_local" --session "land-$fixture_scenario" \
       --pid "$$" --start "$receipt_fixture_start" --tag "land-$fixture_scenario" \
       --runtime fake --owner-lineage land-receipt-fixture >/dev/null
+  fi
+}
+
+arm_receipt_runner() { # checkout, engine
+  local checkout=$1 engine=$2 identity_file registry arm_log runner_record deadline index runner_pid
+  identity_file=$leg_root/process-identities.$(basename "$checkout").json
+  registry=$leg_root/registry.$(basename "$checkout")
+  arm_log=$leg_root/$(basename "$checkout").steward-arm.out
+  mkdir -p "$registry"
+  printf '{"%s":{"terminal":true}}\n' "$$" >"$identity_file"
+  prepare_receipt_environment "$identity_file" "$registry"
+  if ! receipt_env_run "$engine" steward arm --repo "$checkout" >"$arm_log" 2>&1; then
+    echo "land $fixture_scenario fixture: steward arm --repo failed for $checkout" >&2
+    sed -n '1,240p' "$arm_log" >&2
+    return 1
+  fi
+  index=${#receipt_runner_checkouts[@]}
+  receipt_runner_checkouts+=("$checkout")
+  receipt_runner_engines+=("$engine")
+  receipt_runner_pids+=("")
+  receipt_runner_identity_files+=("$identity_file")
+  receipt_runner_registries+=("$registry")
+  receipt_runner_stop_logs+=("$leg_root/$(basename "$checkout").disarm.out")
+  runner_record=$checkout/artifacts/agents/steward/runner.json
+  deadline=$((SECONDS + 5))
+  while [[ ! -s "$runner_record" ]] && (( SECONDS < deadline )); do
+    sleep 0.25
+  done
+  [[ -s "$runner_record" ]] || {
+    echo "land $fixture_scenario fixture: steward arm returned without a runner record" >&2
+    return 1
+  }
+  runner_pid=$("$source_engine" json get --file "$runner_record" --field pid)
+  receipt_runner_pids[$index]=$runner_pid
+  [[ "$runner_pid" =~ ^[1-9][0-9]*$ ]] && kill -0 "$runner_pid" 2>/dev/null || {
+    echo "land $fixture_scenario fixture: steward runner is not alive after arm" >&2
+    return 1
+  }
+}
+
+prepare_receipt_chain() { # checkout, chain, candidate tree
+  local checkout=$1 chain=$2 candidate_tree=$3 round_root
+  round_root=$checkout/artifacts/agents/$chain/rounds/1
+  mkdir -p "$checkout/artifacts/agents/jobs" "$round_root"
+  cat >"$checkout/artifacts/agents/jobs/$chain.json" <<JSON
+{
+  "jobId": "$chain",
+  "goalId": null,
+  "parentJob": null,
+  "role": "implementer",
+  "round": 1,
+  "status": "completed",
+  "goalTier": 1,
+  "gateWidth": "area",
+  "destructiveReach": "DESTRUCTIVE-REACH",
+  "chainClosed": true
+}
+JSON
+  git -C "$checkout" diff --cached --binary --full-index --no-ext-diff --no-textconv -- >"$round_root/diff.patch"
+  cat >"$round_root/review.json" <<JSON
+{
+  "diffArtifact": "diff.patch",
+  "implementerJob": "$chain",
+  "reviewedTree": "$candidate_tree"
+}
+JSON
+}
+
+take_fixture_receipt() { # engine, checkout, output log
+  local engine=$1 checkout=$2 output=$3
+  fixture_receipt_tree=$(git -C "$checkout" write-tree)
+  fixture_receipt_path=$checkout/artifacts/agents/landing/receipts/$fixture_receipt_tree.json
+  if ! receipt_env_run "$engine" landing test-receipt --root "$checkout" \
+      --tree "$fixture_receipt_tree" --mode auto --goal fx --cap-min 1 >"$output" 2>&1; then
+    echo "land $fixture_scenario fixture: landing test-receipt failed" >&2
+    sed -n '1,240p' "$output" >&2
+    return 1
+  fi
+  [[ -s "$fixture_receipt_path" ]] || {
+    echo "land $fixture_scenario fixture: landing test-receipt wrote no receipt for $fixture_receipt_tree" >&2
+    return 1
+  }
+}
+
+publish_peer_ledger_move() { # optional peer checkout
+  local checkout=${1:-$leg_peer} engine peer_start goal_base accepted_base
+  engine=$checkout/bin/metasystem
+  git -C "$checkout" fetch -q origin
+  git -C "$checkout" reset -q --hard origin/main
+  goal_base=origin/main
+  accepted_base=origin/main
+  if git -C "$checkout" rev-parse --verify -q origin/metasystem/goals >/dev/null; then
+    goal_base=origin/metasystem/goals
+    accepted_base=origin/metasystem/accepted
+  fi
+  git -C "$checkout" update-ref refs/heads/metasystem/goals "$goal_base"
+  git -C "$checkout" update-ref refs/metasystem/goals/accepted "$accepted_base"
+  peer_start=$(receipt_env_run "$engine" proc started-at --pid "$$")
+  receipt_env_run "$engine" lease announce --root "$checkout" --session land-receipt-fixture-peer \
+    --pid "$$" --start "$peer_start" --tag land-receipt-fixture-peer \
+    --runtime fake --owner-lineage land-receipt-fixture-peer >/dev/null
+  receipt_env_run env METASYSTEM_OWNER_LINEAGE=land-receipt-fixture-peer \
+    "$engine" goal open --root "$checkout" --id peer-goal \
+      --intent "Publish one fixture peer goal." \
+      --next "Let the landing consume this ledger-only move." \
+      --risk severity=1,novelty=1,exposure=1,accumulation=1 \
+      --basis "This disposable fixture writes one isolated goal ledger commit." >/dev/null
+  receipt_env_run "$engine" lease retire --root "$checkout" --session land-receipt-fixture-peer \
+    --pid "$$" --start "$peer_start" >/dev/null
+  git -C "$checkout" push -q origin refs/heads/metasystem/goals:refs/heads/main
+}
+
+publish_peer_records_move() {
+  mkdir -p "$leg_peer/records/misc"
+  printf 'fixture peer record\n' >"$leg_peer/records/misc/peer-note.md"
+  git -C "$leg_peer" add -- records/misc/peer-note.md
+  git -C "$leg_peer" commit -qm "peer publishes a records-only move"
+  git -C "$leg_peer" push -q origin main
+}
+
+publish_peer_input_move() {
+  printf 'fixture peer input move\n' >"$leg_peer/scripts/application-input.txt"
+  git -C "$leg_peer" add -- scripts/application-input.txt
+  git -C "$leg_peer" commit -qm "peer changes a declared testing input"
+  git -C "$leg_peer" push -q origin main
+}
+
+run_fixture_landing() { # checkout, message, chain, receipt, output, chain log
+  local checkout=$1 message=$2 chain=$3 receipt=$4 output=$5 chain_log=$6
+  receipt_env_run env LAND_FIXTURE_CHAIN_LOG="$chain_log" \
+    bash "$checkout/scripts/agents/land.sh" -m "$message" --chain "$chain" --goal fx \
+      --test-receipt "$receipt" --staged-only --skip-transport >"$output" 2>&1
+}
+
+install_cutover_engine() { # checkout, engine
+  local checkout=$1 engine=$2
+  mkdir -p "$checkout/bin"
+  cp "$engine" "$checkout/bin/metasystem"
+  chmod +x "$checkout/bin/metasystem"
+  if git -C "$checkout" ls-files --error-unmatch bin/metasystem >/dev/null 2>&1; then
+    git -C "$checkout" update-index --assume-unchanged bin/metasystem
   fi
 }
 
@@ -868,4 +1227,309 @@ git -C "$leg_local" show -s --format=%B HEAD \
   | grep -Fq 'Landing-Provenance: chain=full-chain change='
 [[ $(git -C "$leg_local" rev-parse HEAD) == $(git --git-dir="$leg_remote" rev-parse refs/heads/main) ]]
 echo "land full-width-chain fixture passed"
+fi
+
+# 10. A receipt taken through the enrolled candidate engine survives a peer's
+# goal-verb commit. The two drift probes run first on the same receipt so the
+# cross-tip projection cannot weaken the exact checkout posture.
+if [[ "$fixture_scenario" == ledger-move-lands ]]; then
+clear_independent_fixture_context
+echo "land ledger-move-lands fixture: one candidate engine build"
+make_leg ledger-move-lands
+arm_receipt_runner "$leg_local" "$leg_local/bin/metasystem"
+ledger_message=$leg_root/message.txt
+ledger_output=$leg_root/land.out
+ledger_chain_log=$leg_root/chain.log
+ledger_unstaged_output=$leg_root/unstaged.out
+ledger_staged_output=$leg_root/staged.out
+printf 'fixture lands across a peer goal commit\n' >"$ledger_message"
+printf 'ledger landing\n' >"$leg_local/payload.txt"
+git -C "$leg_local" add -- payload.txt
+ledger_base=$(git -C "$leg_local" rev-parse HEAD)
+ledger_candidate=$(git -C "$leg_local" write-tree)
+prepare_receipt_chain "$leg_local" ledger-move-chain "$ledger_candidate"
+take_fixture_receipt "$leg_local/bin/metasystem" "$leg_local" "$leg_root/receipt.out"
+ledger_receipt=$fixture_receipt_path
+ledger_receipt_tree=$fixture_receipt_tree
+[[ $(receipt_env_run "$leg_local/bin/metasystem" json get --file "$ledger_receipt" --field workspace.tree) =~ ^[0-9a-f]{40}$ ]]
+
+printf 'x' >>"$leg_local/payload.txt"
+if run_fixture_landing "$leg_local" "$ledger_message" ledger-move-chain "$ledger_receipt" \
+    "$ledger_unstaged_output" "$ledger_chain_log"; then
+  ledger_unstaged_rc=0
+else
+  ledger_unstaged_rc=$?
+fi
+[[ $ledger_unstaged_rc -ne 0 ]] || { echo "land ledger-move-lands fixture: unstaged drift landed" >&2; exit 1; }
+grep -Fq 'unstaged changes remain after staging' "$ledger_unstaged_output"
+[[ $(git -C "$leg_local" rev-parse HEAD) == "$ledger_base" ]]
+git -C "$leg_local" checkout -q -- payload.txt
+
+printf 'x' >>"$leg_local/payload.txt"
+git -C "$leg_local" add -- payload.txt
+ledger_drift_tree=$(git -C "$leg_local" write-tree)
+if run_fixture_landing "$leg_local" "$ledger_message" ledger-move-chain "$ledger_receipt" \
+    "$ledger_staged_output" "$ledger_chain_log"; then
+  ledger_staged_rc=0
+else
+  ledger_staged_rc=$?
+fi
+[[ $ledger_staged_rc -ne 0 ]] || { echo "land ledger-move-lands fixture: staged drift landed" >&2; exit 1; }
+grep -Fq "land refused: the receipt at $ledger_receipt names tree $ledger_receipt_tree but the staged candidate is $ledger_drift_tree; make the receipt against this exact candidate" "$ledger_staged_output"
+grep -Fq 'proof-input-moved-after-receipt: group policy-protection' "$ledger_staged_output"
+grep -Fq 'moved declared paths: payload.txt' "$ledger_staged_output"
+[[ $(git -C "$leg_local" rev-parse HEAD) == "$ledger_base" ]]
+
+printf 'ledger landing\n' >"$leg_local/payload.txt"
+git -C "$leg_local" add -- payload.txt
+[[ $(git -C "$leg_local" write-tree) == "$ledger_receipt_tree" ]]
+publish_peer_ledger_move
+ledger_peer=$(git --git-dir="$leg_remote" rev-parse refs/heads/main)
+git -C "$leg_local" fetch -q origin
+git -C "$leg_local" merge -q --ff-only origin/main
+ledger_moved_candidate=$(git -C "$leg_local" write-tree)
+[[ "$ledger_moved_candidate" != "$ledger_receipt_tree" ]]
+ledger_receipt_workspace=$(receipt_env_run "$leg_local/bin/metasystem" landing workspace --root "$leg_local" --tree "$ledger_receipt_tree")
+ledger_candidate_workspace=$(receipt_env_run "$leg_local/bin/metasystem" landing workspace --root "$leg_local" --tree "$ledger_moved_candidate")
+[[ "$ledger_receipt_workspace" == "$ledger_candidate_workspace" ]]
+if ! run_fixture_landing "$leg_local" "$ledger_message" ledger-move-chain "$ledger_receipt" \
+    "$ledger_output" "$ledger_chain_log"; then
+  echo "site 8 refused a ledger-only move" >&2
+  sed -n '1,260p' "$ledger_output" >&2
+  exit 1
+fi
+grep -Fxq "testReceipt=$ledger_receipt" "$ledger_chain_log"
+ledger_head=$(git -C "$leg_local" rev-parse HEAD)
+[[ "$ledger_head" == $(git --git-dir="$leg_remote" rev-parse refs/heads/main) ]]
+[[ $(git -C "$leg_local" rev-parse HEAD^1) == "$ledger_peer" ]]
+git --git-dir="$leg_remote" show main:plans/goals/peer-goal.md >/dev/null
+stop_receipt_runner
+echo "land ledger-move-lands fixture passed"
+exit 0
+fi
+
+# 11. A records-only peer commit changes the workspace projection but not a
+# selected execution identity, so site 8 reaches retained-proof verification.
+if [[ "$fixture_scenario" == records-move-lands ]]; then
+clear_independent_fixture_context
+echo "land records-move-lands fixture: one candidate engine build"
+make_leg records-move-lands
+arm_receipt_runner "$leg_local" "$leg_local/bin/metasystem"
+records_message=$leg_root/message.txt
+records_output=$leg_root/land.out
+records_chain_log=$leg_root/chain.log
+printf 'fixture lands across an unrelated records commit\n' >"$records_message"
+printf 'records landing\n' >"$leg_local/payload.txt"
+git -C "$leg_local" add -- payload.txt
+records_candidate=$(git -C "$leg_local" write-tree)
+prepare_receipt_chain "$leg_local" records-move-chain "$records_candidate"
+take_fixture_receipt "$leg_local/bin/metasystem" "$leg_local" "$leg_root/receipt.out"
+records_receipt=$fixture_receipt_path
+records_receipt_tree=$fixture_receipt_tree
+publish_peer_records_move
+records_peer=$(git --git-dir="$leg_remote" rev-parse refs/heads/main)
+git -C "$leg_local" fetch -q origin
+git -C "$leg_local" merge -q --ff-only origin/main
+records_moved_candidate=$(git -C "$leg_local" write-tree)
+records_receipt_workspace=$(receipt_env_run "$leg_local/bin/metasystem" landing workspace --root "$leg_local" --tree "$records_receipt_tree")
+records_candidate_workspace=$(receipt_env_run "$leg_local/bin/metasystem" landing workspace --root "$leg_local" --tree "$records_moved_candidate")
+[[ "$records_receipt_workspace" != "$records_candidate_workspace" ]]
+if ! run_fixture_landing "$leg_local" "$records_message" records-move-chain "$records_receipt" \
+    "$records_output" "$records_chain_log"; then
+  echo "land records-move-lands fixture: the records-only move did not land" >&2
+  sed -n '1,260p' "$records_output" >&2
+  exit 1
+fi
+grep -Fq '== STEP: test receipt for staged candidate' "$records_output"
+if grep -Fq 'proof-input-moved-after-receipt' "$records_output"; then
+  echo "land records-move-lands fixture: an unrelated record moved a selected input identity" >&2
+  exit 1
+fi
+records_head=$(git -C "$leg_local" rev-parse HEAD)
+[[ "$records_head" == $(git --git-dir="$leg_remote" rev-parse refs/heads/main) ]]
+[[ $(git -C "$leg_local" rev-parse HEAD^1) == "$records_peer" ]]
+git --git-dir="$leg_remote" show main:records/misc/peer-note.md >/dev/null
+stop_receipt_runner
+echo "land records-move-lands fixture passed"
+exit 0
+fi
+
+# 12. A peer change under scripts/** changes the declared execution identity.
+# The pre-rebase receipt is accepted exactly, but the post-rebase proof wall
+# refuses the local commit before it can reach origin.
+if [[ "$fixture_scenario" == input-move-refuses ]]; then
+clear_independent_fixture_context
+echo "land input-move-refuses fixture: one candidate engine build"
+make_leg input-move-refuses
+arm_receipt_runner "$leg_local" "$leg_local/bin/metasystem"
+input_message=$leg_root/message.txt
+input_output=$leg_root/land.out
+input_chain_log=$leg_root/chain.log
+printf 'fixture refuses a moved declared input\n' >"$input_message"
+printf 'input landing\n' >"$leg_local/payload.txt"
+git -C "$leg_local" add -- payload.txt
+input_candidate=$(git -C "$leg_local" write-tree)
+prepare_receipt_chain "$leg_local" input-move-chain "$input_candidate"
+take_fixture_receipt "$leg_local/bin/metasystem" "$leg_local" "$leg_root/receipt.out"
+input_receipt=$fixture_receipt_path
+publish_peer_input_move
+input_peer=$(git --git-dir="$leg_remote" rev-parse refs/heads/main)
+if run_fixture_landing "$leg_local" "$input_message" input-move-chain "$input_receipt" \
+    "$input_output" "$input_chain_log"; then
+  input_rc=0
+else
+  input_rc=$?
+fi
+[[ $input_rc -ne 0 ]] || { echo "land input-move-refuses fixture: the moved input landed" >&2; exit 1; }
+grep -Fq '!! STEP FAILED: verify shared testing proof after rebase' "$input_output"
+grep -Fq 'proof-input-moved-after-receipt: group policy-protection' "$input_output"
+grep -Fq 'scripts/application-input.txt' "$input_output"
+[[ $(git --git-dir="$leg_remote" rev-parse refs/heads/main) == "$input_peer" ]]
+[[ $(git -C "$leg_local" rev-parse HEAD) != "$input_peer" ]]
+git -C "$leg_local" merge-base --is-ancestor "$input_peer" HEAD
+stop_receipt_runner
+echo "land input-move-refuses fixture passed"
+exit 0
+fi
+
+# 13. The pre-cutover engine is real and keeps its own receipt intact. The
+# candidate engine writes the newer receipt shape in the peer clone for the
+# same tree, which the enrolled older reader must reject after it is copied.
+if [[ "$fixture_scenario" == receipt-cutover ]]; then
+clear_independent_fixture_context
+echo "land receipt-cutover fixture: one candidate engine build and one pinned old-engine build"
+make_leg receipt-cutover
+cutover_old_source=$leg_root/old-src
+cutover_old_engine=$leg_root/old-engine
+cutover_moved_remote=$leg_root/moved-origin.git
+git clone -q --bare "$leg_remote" "$cutover_moved_remote"
+cutover_source_top=$(git -C "$root" rev-parse --show-toplevel)
+mkdir -p "$cutover_old_source"
+git -C "$cutover_source_top" archive 6bc19ba1c metasystem/ | tar -x -C "$cutover_old_source"
+METASYSTEM_BUILD_STAMP="$receipt_seed_build_stamp" \
+  bash "$cutover_old_source/metasystem/scripts/agents/go-build.sh" --out "$cutover_old_engine" >/dev/null
+install_cutover_engine "$leg_local" "$cutover_old_engine"
+install_cutover_engine "$leg_peer" "$leg_root/engine"
+[[ $(git -C "$leg_local" rev-parse HEAD) == "$receipt_seed_build_stamp" ]]
+[[ $(git -C "$leg_peer" rev-parse HEAD) == "$receipt_seed_build_stamp" ]]
+git -C "$leg_local" check-ignore -q bin/metasystem
+git -C "$leg_peer" check-ignore -q bin/metasystem
+if git -C "$leg_local" ls-files --error-unmatch bin/metasystem >/dev/null 2>&1 ||
+    git -C "$leg_peer" ls-files --error-unmatch bin/metasystem >/dev/null 2>&1; then
+  echo "land receipt-cutover fixture: an installed cutover engine is tracked" >&2
+  exit 1
+fi
+arm_receipt_runner "$leg_local" "$leg_local/bin/metasystem"
+cutover_message=$leg_root/message.txt
+cutover_output=$leg_root/land.out
+cutover_chain_log=$leg_root/chain.log
+printf 'fixture lands an exact old-engine receipt\n' >"$cutover_message"
+printf 'cutover exact landing\n' >"$leg_local/payload.txt"
+printf 'cutover exact landing\n' >"$leg_peer/payload.txt"
+git -C "$leg_local" add -- payload.txt
+git -C "$leg_peer" add -- payload.txt
+cutover_candidate=$(git -C "$leg_local" write-tree)
+cutover_peer_candidate=$(git -C "$leg_peer" write-tree)
+[[ "$cutover_peer_candidate" == "$cutover_candidate" ]]
+prepare_receipt_chain "$leg_local" cutover-exact-chain "$cutover_candidate"
+take_fixture_receipt "$leg_local/bin/metasystem" "$leg_local" "$leg_root/old-receipt.out"
+cutover_old_receipt=$fixture_receipt_path
+cutover_tree=$fixture_receipt_tree
+if receipt_env_run "$leg_local/bin/metasystem" json get --file "$cutover_old_receipt" --field workspace >/dev/null 2>&1 ||
+    receipt_env_run "$leg_local/bin/metasystem" json get --file "$cutover_old_receipt" --field candidateEngineBuildIdentity >/dev/null 2>&1; then
+  echo "land receipt-cutover fixture: old engine wrote a cutover-only identity field" >&2
+  exit 1
+fi
+cutover_control=$(receipt_env_run "$leg_local/bin/metasystem" landing observe --root "$leg_local" \
+  --tree "$cutover_tree" --chain cutover-exact-chain --goal fx \
+  --actor fixture-machine+land-receipt-fixture --test-receipt "$cutover_old_receipt")
+[[ $(receipt_env_run "$leg_local/bin/metasystem" json get --value "$cutover_control" --field mode) == observe ]]
+[[ $(receipt_env_run "$leg_local/bin/metasystem" json get --value "$cutover_control" --field verdictTrailer) == 'pass bar=a' ]]
+if ! run_fixture_landing "$leg_local" "$cutover_message" cutover-exact-chain "$cutover_old_receipt" \
+    "$cutover_output" "$cutover_chain_log"; then
+  echo "land receipt-cutover fixture: exact old receipt did not land" >&2
+  sed -n '1,260p' "$cutover_output" >&2
+  exit 1
+fi
+if grep -Fq 'proof-input-moved-after-receipt' "$cutover_output"; then
+  echo "land receipt-cutover fixture: exact old receipt reported moved proof input" >&2
+  exit 1
+fi
+[[ $(git -C "$leg_local" rev-parse HEAD) == $(git --git-dir="$leg_remote" rev-parse refs/heads/main) ]]
+[[ $(git -C "$leg_local" rev-parse HEAD^{tree}) == "$cutover_tree" ]]
+
+arm_receipt_runner "$leg_peer" "$leg_peer/bin/metasystem"
+take_fixture_receipt "$leg_peer/bin/metasystem" "$leg_peer" "$leg_root/new-receipt.out"
+cutover_candidate_receipt=$fixture_receipt_path
+[[ "$fixture_receipt_tree" == "$cutover_tree" ]]
+[[ ${cutover_candidate_receipt##*/} == ${cutover_old_receipt##*/} ]]
+receipt_env_run "$leg_peer/bin/metasystem" json get --file "$cutover_candidate_receipt" --field workspace.tree >/dev/null
+receipt_env_run "$leg_peer/bin/metasystem" json get --file "$cutover_candidate_receipt" --field candidateEngineBuildIdentity >/dev/null
+[[ $(receipt_env_run "$leg_peer/bin/metasystem" json get --file "$cutover_candidate_receipt" --field testing.candidateEngineIdentityVersion) == 2 ]]
+cp "$cutover_candidate_receipt" "$cutover_old_receipt"
+select_receipt_runner_environment "$leg_local"
+cutover_refusal=$(receipt_env_run "$leg_local/bin/metasystem" landing observe --root "$leg_local" \
+  --tree "$cutover_tree" --chain cutover-exact-chain --goal fx \
+  --actor fixture-machine+land-receipt-fixture --test-receipt "$cutover_old_receipt")
+[[ $(receipt_env_run "$leg_local/bin/metasystem" json get --value "$cutover_refusal" --field verdictTrailer) == 'would-refuse code=chain-test-receipt-refused' ]]
+stop_receipt_runner
+stop_receipt_runner
+
+leg_local=$leg_root/moved
+cutover_moved_peer=$leg_root/moved-peer
+git clone -q "$cutover_moved_remote" "$leg_local"
+git clone -q "$cutover_moved_remote" "$cutover_moved_peer"
+git -C "$leg_local" config user.name fixture-cutover-moved
+git -C "$leg_local" config user.email fixture-cutover-moved@example.invalid
+git -C "$cutover_moved_peer" config user.name fixture-cutover-moved-peer
+git -C "$cutover_moved_peer" config user.email fixture-cutover-moved-peer@example.invalid
+git -C "$leg_local" config goal.sync-remote local
+git -C "$leg_local" config goal.sync-branch refs/heads/metasystem/goals
+git -C "$leg_local" config metasystem.goal.machine fixture-machine
+git -C "$leg_local" config metasystem.steward.landing-ref refs/remotes/origin/main
+git -C "$leg_local" update-ref refs/heads/metasystem/goals origin/main
+git -C "$leg_local" update-ref refs/metasystem/goals/accepted origin/main
+git -C "$cutover_moved_peer" config goal.sync-remote local
+git -C "$cutover_moved_peer" config goal.sync-branch refs/heads/metasystem/goals
+git -C "$cutover_moved_peer" config metasystem.goal.machine fixture-peer
+git -C "$cutover_moved_peer" config metasystem.steward.landing-ref refs/remotes/origin/main
+git -C "$cutover_moved_peer" update-ref refs/heads/metasystem/goals origin/main
+git -C "$cutover_moved_peer" update-ref refs/metasystem/goals/accepted origin/main
+install_cutover_engine "$leg_local" "$cutover_old_engine"
+install_cutover_engine "$cutover_moved_peer" "$leg_root/engine"
+[[ $(git -C "$leg_local" rev-parse HEAD) == "$receipt_seed_build_stamp" ]]
+arm_receipt_runner "$leg_local" "$leg_local/bin/metasystem"
+cutover_moved_message=$leg_root/moved-message.txt
+cutover_moved_output=$leg_root/moved-land.out
+cutover_moved_chain_log=$leg_root/moved-chain.log
+printf 'fixture refuses an old receipt after a goal commit\n' >"$cutover_moved_message"
+printf 'cutover moved landing\n' >"$leg_local/payload.txt"
+git -C "$leg_local" add -- payload.txt
+cutover_moved_candidate=$(git -C "$leg_local" write-tree)
+prepare_receipt_chain "$leg_local" cutover-moved-chain "$cutover_moved_candidate"
+take_fixture_receipt "$leg_local/bin/metasystem" "$leg_local" "$leg_root/moved-receipt.out"
+cutover_moved_receipt=$fixture_receipt_path
+cutover_moved_receipt_tree=$fixture_receipt_tree
+publish_peer_ledger_move "$cutover_moved_peer"
+cutover_peer=$(git --git-dir="$cutover_moved_remote" rev-parse refs/heads/main)
+git -C "$leg_local" fetch -q origin
+git -C "$leg_local" merge -q --ff-only origin/main
+cutover_after_ledger=$(git -C "$leg_local" write-tree)
+if run_fixture_landing "$leg_local" "$cutover_moved_message" cutover-moved-chain "$cutover_moved_receipt" \
+    "$cutover_moved_output" "$cutover_moved_chain_log"; then
+  cutover_moved_rc=0
+else
+  cutover_moved_rc=$?
+fi
+[[ $cutover_moved_rc -ne 0 ]] || { echo "land receipt-cutover fixture: old receipt crossed a ledger move" >&2; exit 1; }
+grep -Fq "land refused: the receipt at $cutover_moved_receipt names tree $cutover_moved_receipt_tree but the staged candidate is $cutover_after_ledger; make the receipt against this exact candidate" "$cutover_moved_output"
+if grep -Eqi 'unknown (verb|command)|landing workspace' "$cutover_moved_output"; then
+  echo "land receipt-cutover fixture: legacy exact path called a new verb" >&2
+  exit 1
+fi
+[[ $(git -C "$leg_local" rev-parse HEAD) == "$cutover_peer" ]]
+[[ $(git --git-dir="$cutover_moved_remote" rev-parse refs/heads/main) == "$cutover_peer" ]]
+stop_receipt_runner
+echo "land receipt-cutover fixture passed"
+exit 0
 fi

@@ -1,0 +1,57 @@
+# Code read register: delivery-candidate-is-the-workspace implementation, closing read 2
+
+Job dcwl-cc2-20260911 (claude, claude-opus-5, code-critic) re-read the final work round dcwl-build2-20260910-r2 at reviewed tree c27379772a9fefb83d2e2ab5b63a2c2d3aadf66d (the first read, dcwl-cc1-20260911, named the whole-project tree and could not be joined). Material findings: 1 of 6. Projected verbatim from artifacts/agents/dcwl-cc2-20260911/rounds/1/return.json.
+
+## DCW-19 (medium)
+
+**Claim.** The public command 'landing test-receipt --mode auto' given without --tree now refuses to publish its receipt, after running or reusing the proof. This is a regression in a documented operator command. Where: metasystem/cmd/metasystem/landing_verbs.go:120, :178 and :215 pass the raw --tree flag value to PublishCommittedReceipt, and metasystem/internal/landing/receipt.go:184-186 now refuses anything that is not a tree id. The design says otherwise (section 2, sites 6 and 11; section 3, 'Projection of a committed payload'): the accepted index tree is the tree the reuse decision was judged on, which site 1 proved equal to the index, and site 1 resolves an empty tree to the index. The brief's mandate 3 also asks that the accepted tree be 'never an empty string'. The code passes an empty string whenever the flag is omitted.
+
+**Evidence.** Read, step by step in the reviewed tree. (1) 'test run' takes --tree as optional: the usage at metasystem/cmd/metasystem/test.go:157 prints '[--tree TREE]', and prepareTesting resolves an empty tree to the staged whole-project index (test.go:227-229). (2) runLandingTestReceipt (landing_verbs.go:94-131) forwards the empty value as '--tree ""' to runTestRun. That call either executes the battery or takes the reusable-success path, where ExactReusableTestResult keeps the original attempt id (test.go:797-810, which publishes the projection and returns the reusable-success exit). (3) With a non-empty attempt id, landing_verbs.go:120 calls PublishCommittedReceipt(controlRoot, attemptID, ""). The new first check refuses with 'committed delivery receipt requires the accepted index tree' (receipt.go:184-186), and the verb exits non-zero through recordExit. The first-time path, where the battery actually runs, fails the same way after the battery. (4) At the base commit 6c28684cd, PublishCommittedReceipt took no tree and compared the index to receipt.tree, so this form published the committed attempt. (5) Two shipped instructions use this exact form. metasystem/docs/project-adaptation.md:14 says the first agent change 'projects only that committed attempt with bin/metasystem landing test-receipt --root . --mode auto', and metasystem/scripts/adopt.sh:466 prints 'project it with landing test-receipt --mode auto'. (6) No test calls the mode form without --tree: every Go test and bed leg passes --tree. The refusal fails closed and never publishes wrong evidence, and re-running with --tree $(git write-tree) reuses the retained attempt without executing again. What changes if it stands: in runLandingTestReceipt, resolve an empty --tree to the staged whole-project index (git write-tree, which site 1 then proves equal) before calling runTestRun, and pass that resolved tree to the result path, CreateTestingReceipt and all three PublishCommittedReceipt calls. The alternative is to refuse an empty --tree before any admission and correct project-adaptation.md and adopt.sh. Either way, add a test that runs the mode form without --tree on both the executed path and the exact-reuse path.
+
+## DCW-20 (low)
+
+**Claim.** The round-2 compatibility shim is only partly tested. The shim lets the test worker accept a request without a candidate engine build identity when METASYSTEM_POLICY_PROBE_WORKER is 1 (metasystem/cmd/metasystem/test.go:953-958). The only test is NewTestResult's version-1 projection (metasystem/internal/proofrun/test_result_test.go, TestNewTestResultKeepsDigestOnlyIdentityForLegacyPolicyProbe). The worker's own gate is untested: nothing checks that it refuses such a request without the variable and accepts it only with the variable.
+
+**Evidence.** A search of every test file and script for 'input-bound candidate engine is absent', for policyProbeWorkerEnvironment and for METASYSTEM_POLICY_PROBE_WORKER found no match. Judged on the code, the shim is a door kept open for old engines only, not a weakening. Only the destination engine's frozen-probe launchers set the variable (test_protection.go:238 and :373), and they launch the candidate engine's 'test plan' and 'test worker' inside a throwaway repository. A current engine copies the build identity into that probe request (test_protection.go:356), and every current testingRunRequest caller passes candidateEngine.Commit. So only an older destination engine's probe can send a request without it. The worker still authenticates the request and checks the engine file's digest (test.go:959-980). A version-1 result cannot become delivery evidence under a current engine, for three reasons. PrepareTestingReceiptPayload requires version 2 and a build identity (metasystem/internal/landing/testing.go:30-31). ExactReusableTestResult compares the version and the build identity (test_result.go:285-286). retainedCandidateEngineDigest requires version 2 (test.go:1206). test_result.go:79-81 still refuses a version-2 result without a valid build identity. What changes if it stands: nothing now; a worker-level test would stop a later edit from widening the door without anyone noticing.
+
+## DCW-21 (low)
+
+**Claim.** The new refusal register row names the wrong line. metasystem/internal/refusal/register.go:113 records Site 'test.go:1135' for proof-input-moved-after-receipt, but the refusal text is printed at test.go:1137 and :1140 (the composed path) and :1189 (the path used when the candidate engine digest cannot be found). Line 1135 is the 'if len(moved) == 0' branch.
+
+**Evidence.** git show of the reviewed test.go, lines 1128-1142, and a grep for the refusal text. The register tests (metasystem/internal/refusal/register_test.go) check that every code has a row, that override verbs are real and that pending markers are valid, but they never read Site line numbers, so nothing fails. What changes if it stands: nothing functional; the pointer is slightly off.
+
+## DCW-22 (low)
+
+**Claim.** The ledger-move-lands leg does not print the failure message the design asks for (design section 8.2, first bullet: grep for site 8's first sentence and report 'site 8 refused a ledger-only move'). On failure it prints 'the ledger-only move did not land' and dumps land.out (metasystem/scripts/agents/land-fixtures.sh, the ledger-move-lands block starting near :1231). Separately, records-move-lands cannot show in land.out that site 8 reached step 5 on success, because land.sh prints the output of 'test verify' only when it fails (metasystem/scripts/agents/land.sh:403-411).
+
+**Evidence.** Read the land-fixtures.sh diff. The leg still fails on a base engine, earlier: the check that the receipt carries workspace.tree fails. The records leg proves step 5 only by elimination, as DCW-18(b) already records. What changes if it stands: nothing that affects proof; only how readable a failure is.
+
+## DCW-23 (low)
+
+**Claim.** The step-0 'other tree' subtest in metasystem/internal/landing/testing_test.go builds its result from keyWhole, a variable assigned by the earlier 'execution-identity key accepts an unrelated records path' subtest. Run alone with a -run filter, keyWhole is empty. TreeOf then fails, and the detail becomes 'verify core failed' instead of the expected 'verify core judged tree', so the subtest fails in isolation.
+
+**Evidence.** Read the testing_test.go diff: keyWhole is declared once, assigned inside one subtest, and read in the table-driven step-0 case. In a full run the order holds and the test proves the design's third step-0 condition. What changes if it stands: nothing for the gate; the subtest should compute its own second tree.
+
+## DCW-24 (low)
+
+**Claim.** The engine build identity (candidateEngineBuildIdentity, metasystem/cmd/metasystem/test.go:587-621) does not bind the Go microarchitecture settings (GOAMD64, GOARM64, GOARM). They change the compiled bytes but are not in the go env tuple that ToolchainClosureIdentity inherits (metasystem/internal/proofrun/execution_context.go:98), and not in the fixed build-context string.
+
+**Evidence.** Read. Design section 5 lists what the build fixes (CGO_ENABLED=0, -trimpath, -mod=readonly, the pinned toolchain), claims byte identity only for an identical build context, and does not name these variables. So this is a design-level gap, not a departure. Impact is nil for delivery correctness: verify folds in the digest of the engine that the retained section attempts actually ran. I also checked that no Go source file in the module lies outside cmd/ and internal/, so the ENGINE projection covers every compiled package on the reviewed tree. What changes if it stands: nothing now; a follow-up could add these variables to the identity.
+
+## Gaps the critic named
+
+- The runtime is read-only, so the register file metasystem/records/misc/delivery-candidate-is-the-workspace-code-read-r2.md was not written; this return is the register for the coordinator to place.
+- I did not run 'metasystem validate conformance --stage review' because the runtime is read-only. I confirmed with git that the build worktree's index equals 32c57bfd, that its installation subtree is c27379772a9fefb83d2e2ab5b63a2c2d3aadf66d as round 2's review.json records, and that main has not touched any changed file since the base 6c28684cd.
+- The design page I read hashes to a9a2755936cc97ad5719c4829dfe5a874d88762f650ee5535c5b907910cb69f2 (commit 6c28684cd), not the brief's 1622cf7cfc4fd10259e23eabb0fdae2d1ba7a59a67666cea679f2b951bcca83b.
+- As the brief required, I ran no beds and no Go tests. DCW-19 is traced by reading the code and not by running the no-tree command; its base-tree behaviour is read from the base's PublishCommittedReceipt, which took no tree.
+- The DCW-17 counterfactual (that moving coverage-delta.sh would still have produced the moved-input line through the engine-less fallback) is inferred from the code and not run.
+- Real Go byte-reproducibility of the candidate engine across a records-only move is not measured; the design-named fixture uses a stub build script (DCW-18c).
+
+## Coordinator dispositions (m1d, 2026-09-11, binding on round 3 of chain dcwl-build2-20260910)
+
+- DCW-19 (medium, material): accepted. `landing test-receipt --mode auto` without `--tree` must publish again: the accepted index tree is the tree the run judged (the result's `CandidateTree`, which site 1 resolved to the index), never the raw flag; every caller of `PublishCommittedReceipt` passes it; one test runs the no-tree form.
+- DCW-20 (low): accepted; a worker-level test pins the door (refuses a build-identity-less request without the variable, accepts it with).
+- DCW-21 (low): accepted; the register row names the printing line.
+- DCW-22 (low): accepted; the ledger leg prints the design's failure line.
+- DCW-23 (low): accepted; the subtest computes its own second tree.
+- DCW-24 (low): accepted as a build-context pin: GOAMD64, GOARM64 and GOARM are fixed in the candidate engine's build environment and named in the build-context string, so the identity covers them; the design's "identical build context" now includes them.

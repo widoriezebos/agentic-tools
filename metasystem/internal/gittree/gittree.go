@@ -311,6 +311,49 @@ func (w Workspace) FilterTree(tree string, paths []string) (string, error) {
 	return filtered, nil
 }
 
+// FilterTreePrefixes rewrites tree with every entry at or below the named
+// paths removed. Paths are toplevel-relative and may name files or
+// directories; an absent path removes nothing.
+func (w Workspace) FilterTreePrefixes(tree string, paths []string) (string, error) {
+	if len(paths) == 0 {
+		return tree, nil
+	}
+	env, cleanup, err := isolatedIndex()
+	if err != nil {
+		return "", err
+	}
+	defer cleanup()
+	if _, err := w.git(env, "read-tree", tree); err != nil {
+		return "", fmt.Errorf("gittree prefix filter: %w", err)
+	}
+	entries, err := w.gitTop(env, append([]string{"ls-files", "-z", "--"}, paths...)...)
+	if err != nil {
+		return "", fmt.Errorf("gittree prefix filter: %w", err)
+	}
+	if len(entries) > 0 {
+		top, err := w.topLevel()
+		if err != nil {
+			return "", err
+		}
+		stdout, stderr, code, probeErr := w.gitProbe(top, env, entries,
+			"update-index", "-z", "--force-remove", "--stdin")
+		if probeErr != nil {
+			return "", probeErr
+		}
+		if code != 0 {
+			return "", answerErr("update-index --force-remove", stderr, stdout)
+		}
+	}
+	filtered, err := w.gitLine(env, "write-tree")
+	if err != nil {
+		return "", fmt.Errorf("gittree prefix filter: %w", err)
+	}
+	if !treeID.MatchString(filtered) {
+		return "", fmt.Errorf("gittree prefix filter: write-tree returned %q", filtered)
+	}
+	return filtered, nil
+}
+
 // Diff produces the exact binary patch between two trees, renames
 // represented as delete+add so changed-path sets stay literal. Every
 // driver a config could inject is disabled and the a/ b/ prefixes are

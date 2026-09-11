@@ -262,7 +262,8 @@ func TestAttemptSchemaTwoAtomicallyRetainsTestingAndReadsSchemaOne(t *testing.T)
 	result := TestResult{SchemaVersion: 1, CandidateEngineIdentityVersion: CandidateEngineIdentitySchemaVersion,
 		AttemptID: attempt.AttemptID, Purpose: "delivery", RequestedMode: "auto",
 		RequiredMode: "standard", ExecutedMode: "standard", ProjectRoot: root, BaseCommit: "base", CandidateTree: strings.Repeat("b", 40),
-		ContractDigest: digest, BaseContractDigest: digest, PolicyEngineDigest: digest, CandidateEngineDigest: digest, BehaviorPolicyDigest: digest, PlanDigest: digest,
+		ContractDigest: digest, BaseContractDigest: digest, PolicyEngineDigest: digest, CandidateEngineDigest: digest,
+		CandidateEngineBuildIdentity: strings.Repeat("c", 40), BehaviorPolicyDigest: digest, PlanDigest: digest,
 		SelectedGroups: []string{"smoke"}, RequiredGroups: []string{"smoke"}, LaunchCounts: LaunchCounts{CountsComplete: true}, Cost: TestCost{DeclaredTargetMS: 1},
 		Groups: []GroupResult{{ID: "smoke", Kind: "unit", InputManifest: []string{"source"}, Status: "passed", NativeLaunched: true, CollectionComplete: true, NativeExitStatus: &zero,
 			ToolIdentities: map[string]string{}, ReportDigests: map[string]string{}}}}
@@ -286,6 +287,7 @@ func TestAttemptSchemaTwoAtomicallyRetainsTestingAndReadsSchemaOne(t *testing.T)
 	testingResult := oldFormat["testResult"].(map[string]any)
 	delete(testingResult, "candidateEngineIdentityVersion")
 	delete(testingResult, "candidateEngineDigest")
+	delete(testingResult, "candidateEngineBuildIdentity")
 	data, _ = json.Marshal(oldFormat)
 	if err := os.WriteFile(path, data, 0o600); err != nil {
 		t.Fatal(err)
@@ -456,7 +458,8 @@ func componentAttemptResult(attemptID, groupID, executionIdentity, status string
 		AttemptID: attemptID, Purpose: "delivery", RequestedMode: "auto", RequiredMode: "standard",
 		ExecutedMode: "standard", ProjectRoot: "/project", BaseCommit: "base", CandidateTree: strings.Repeat("b", 40),
 		ContractDigest: digest, BaseContractDigest: digest, PolicyEngineDigest: digest, CandidateEngineDigest: digest, BehaviorPolicyDigest: digest, PlanDigest: digest,
-		SelectedGroups: []string{groupID}, RequiredGroups: []string{groupID}, Groups: []GroupResult{group},
+		CandidateEngineBuildIdentity: strings.Repeat("c", 40),
+		SelectedGroups:               []string{groupID}, RequiredGroups: []string{groupID}, Groups: []GroupResult{group},
 		LaunchCounts: LaunchCounts{Test: 1, CountsComplete: true}, Cost: TestCost{DeclaredTargetMS: 1}}
 	result.RecomputeDelivery()
 	return result

@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"io"
 	"os"
+	"path/filepath"
 	"runtime"
 	"strings"
 )
@@ -107,6 +108,52 @@ func CompleteToolchainIdentityAtWithEnvironment(root string, environment []strin
 		return "", fmt.Errorf("read complete go environment: %w", err)
 	}
 	digest := sha256.Sum256(append(version, values...))
+	return hex.EncodeToString(digest[:]), nil
+}
+
+// ToolchainClosureIdentity binds the selected Go front-end bytes and release
+// VERSION file beside the reported version and effective Go environment.
+func ToolchainClosureIdentity(root string, environment []string) (string, error) {
+	reported, err := CompleteToolchainIdentityAtWithEnvironment(root, environment)
+	if err != nil {
+		return "", err
+	}
+	goCommand, err := explicitEnvironmentCommand(context.Background(), root, environment, []string{"go", "version"})
+	if err != nil {
+		return "", fmt.Errorf("resolve go from prepared environment: %w", err)
+	}
+	goPath, err := filepath.EvalSymlinks(goCommand.Path)
+	if err != nil {
+		return "", fmt.Errorf("resolve selected go executable: %w", err)
+	}
+	goBytes, err := os.ReadFile(goPath)
+	if err != nil {
+		return "", fmt.Errorf("read selected go executable: %w", err)
+	}
+	goDigest := sha256.Sum256(goBytes)
+	gorootCommand, err := explicitEnvironmentCommand(context.Background(), root, environment, []string{"go", "env", "GOROOT"})
+	if err != nil {
+		return "", fmt.Errorf("resolve go from prepared environment: %w", err)
+	}
+	gorootBytes, err := gorootCommand.Output()
+	if err != nil {
+		return "", fmt.Errorf("read selected Go root: %w", err)
+	}
+	goroot := strings.TrimSpace(string(gorootBytes))
+	if goroot == "" {
+		return "", fmt.Errorf("selected Go root is empty")
+	}
+	versionBytes, err := os.ReadFile(filepath.Join(goroot, "VERSION"))
+	if err != nil {
+		return "", fmt.Errorf("read selected Go root VERSION: %w", err)
+	}
+	payload := make([]byte, 0, len(reported)+len(goDigest)+len(versionBytes)+2)
+	payload = append(payload, reported...)
+	payload = append(payload, 0)
+	payload = append(payload, goDigest[:]...)
+	payload = append(payload, 0)
+	payload = append(payload, versionBytes...)
+	digest := sha256.Sum256(payload)
 	return hex.EncodeToString(digest[:]), nil
 }
 

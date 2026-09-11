@@ -47,6 +47,34 @@ func TestCandidateEngineIsBuiltFromCandidateTreeAndBindsExecutionIdentity(t *tes
 	if repeated.Commit != built.Commit || repeated.Digest != built.Digest {
 		t.Fatalf("same candidate tree produced unstable proof engine identity: first=%+v repeated=%+v", built, repeated)
 	}
+	writeTestingFixtureFile(t, filepath.Join(fixture.installationRoot, "records", "counselor", "peer.md"), []byte("ledger-only move\n"), 0o644)
+	testingFixtureGit(t, fixture.projectRoot, "add", "metasystem/records/counselor/peer.md")
+	recordsTree, err := (gittree.Workspace{Dir: fixture.projectRoot}).StagedTree()
+	if err != nil {
+		t.Fatal(err)
+	}
+	recordsBuild, err := buildCandidateEngine(ctx, gittree.Workspace{Dir: fixture.projectRoot}, "metasystem", recordsTree, testingEnvironment(os.Environ()))
+	if err != nil {
+		t.Fatalf("build candidate proof engine after records-only move: %v", err)
+	}
+	t.Cleanup(func() { _ = recordsBuild.Close() })
+	if recordsBuild.Commit != built.Commit || recordsBuild.Digest != built.Digest {
+		t.Fatalf("records-only move changed engine build identity or bytes: first=%+v records=%+v", built, recordsBuild)
+	}
+	writeTestingFixtureFile(t, filepath.Join(fixture.installationRoot, "go.sum"), []byte("fixture.example/module v1.0.0 h1:changed\n"), 0o644)
+	testingFixtureGit(t, fixture.projectRoot, "add", "metasystem/go.sum")
+	moduleTree, err := (gittree.Workspace{Dir: fixture.projectRoot}).StagedTree()
+	if err != nil {
+		t.Fatal(err)
+	}
+	moduleBuild, err := buildCandidateEngine(ctx, gittree.Workspace{Dir: fixture.projectRoot}, "metasystem", moduleTree, testingEnvironment(os.Environ()))
+	if err != nil {
+		t.Fatalf("build candidate proof engine after go.sum move: %v", err)
+	}
+	t.Cleanup(func() { _ = moduleBuild.Close() })
+	if moduleBuild.Commit == built.Commit {
+		t.Fatalf("go.sum move did not change engine build identity: first=%s changed=%s", built.Commit, moduleBuild.Commit)
+	}
 	testingFixtureGit(t, fixture.projectRoot, "config", "i18n.commitEncoding", "ISO-8859-1")
 	testingFixtureGit(t, fixture.projectRoot, "config", "author.name", "repository author")
 	t.Run("foreign Git identity and encoding", func(t *testing.T) {
@@ -95,9 +123,10 @@ func TestCandidateEngineIsBuiltFromCandidateTreeAndBindsExecutionIdentity(t *tes
 		BaseCommit: fixture.baseCommit, PolicyBaseCommit: fixture.baseCommit, EffectiveContract: contract, Plan: plan,
 		ContractDigest: strings.Repeat("1", 64), BaseContractDigest: strings.Repeat("2", 64),
 		PolicyEngineDigest: fixture.policyDigest, BehaviorPolicyDigest: strings.Repeat("3", 64)}
-	request := testingRunRequest(prepared, "", "", built.Path, built.Digest)
+	request := testingRunRequest(prepared, "", "", built.Path, built.Digest, built.Commit)
 	result := proofrun.NewTestResult(request)
-	if result.PolicyEngineDigest != fixture.policyDigest || result.CandidateEngineDigest != built.Digest || result.CandidateTree != fixture.candidateTree {
+	if result.PolicyEngineDigest != fixture.policyDigest || result.CandidateEngineDigest != built.Digest ||
+		result.CandidateEngineBuildIdentity != built.Commit || result.CandidateTree != fixture.candidateTree {
 		t.Fatalf("retained execution identity lost policy, candidate engine, or tree: %+v", result)
 	}
 	identities, err := proofrun.GroupExecutionIdentities(ctx, request)
@@ -157,7 +186,7 @@ func TestCandidateEngineBuildEnvironmentIsPinnedWithoutDroppingProofCustody(t *t
 	stamp := strings.Repeat("a", 40)
 	environment := candidateEngineBuildEnvironment([]string{
 		"PATH=/fixture/bin", "GOFLAGS=-mod=vendor", "GOWORK=/foreign/workspace", "GOTOOLCHAIN=auto",
-		"GOEXPERIMENT=fieldtrack", "GOENV=/foreign/goenv", "CGO_ENABLED=1",
+		"GOEXPERIMENT=fieldtrack", "GOENV=/foreign/goenv", "CGO_ENABLED=1", "GOAMD64=v4", "GOARM64=v9.5", "GOARM=5",
 		"METASYSTEM_PROOF_CONTROL_ROOT=/proof", "METASYSTEM_PROOF_ATTEMPT=proof-attempt",
 	}, stamp)
 	values := map[string]string{}
@@ -165,13 +194,50 @@ func TestCandidateEngineBuildEnvironmentIsPinnedWithoutDroppingProofCustody(t *t
 		name, value, _ := strings.Cut(entry, "=")
 		values[name] = value
 	}
-	want := map[string]string{"CGO_ENABLED": "0", "GOENV": "off", "GOEXPERIMENT": "", "GOFLAGS": "",
-		"GOTOOLCHAIN": "local", "GOWORK": "off", "METASYSTEM_BUILD_STAMP": stamp,
+	want := map[string]string{"CGO_ENABLED": "0", "GOAMD64": "v1", "GOARM64": "v8.0", "GOARM": "7",
+		"GOENV": "off", "GOEXPERIMENT": "", "GOFLAGS": "-mod=readonly", "GOTOOLCHAIN": "local", "GOWORK": "off", "METASYSTEM_BUILD_STAMP": stamp,
 		"METASYSTEM_PROOF_CONTROL_ROOT": "/proof", "METASYSTEM_PROOF_ATTEMPT": "proof-attempt"}
 	for name, value := range want {
 		if values[name] != value {
 			t.Fatalf("candidate build environment %s=%q, want %q: %v", name, values[name], value, environment)
 		}
+	}
+}
+
+func TestTestWorkerBuildIdentityCompatibilityDoorIsPolicyProbeOnly(t *testing.T) {
+	root := t.TempDir()
+	candidateEngine := filepath.Join(root, "candidate-engine")
+	writeTestingFixtureFile(t, candidateEngine, []byte("candidate engine\n"), 0o755)
+	candidateDigest, err := fileSHA256(candidateEngine)
+	if err != nil {
+		t.Fatal(err)
+	}
+	request := proofrun.TestRunRequest{
+		CandidateEngine: candidateEngine, CandidateEngineDigest: candidateDigest,
+	}
+	packet, err := json.Marshal(request)
+	if err != nil {
+		t.Fatal(err)
+	}
+	packetPath := filepath.Join(root, "request.json")
+	writeTestingFixtureFile(t, packetPath, packet, 0o600)
+	packetDigest, err := fileSHA256(packetPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	args := []string{"--packet", packetPath, "--packet-sha256", packetDigest, "--result", filepath.Join(root, "result.json")}
+
+	t.Setenv(policyProbeWorkerEnvironment, "")
+	stderr, code := captureStderr(t, func() int { return runTestWorker(args) })
+	if code != 3 || !strings.Contains(stderr, "input-bound candidate engine is absent") {
+		t.Fatalf("ordinary worker accepted a request without a candidate build identity: code=%d stderr=%q", code, stderr)
+	}
+
+	t.Setenv(policyProbeWorkerEnvironment, "1")
+	stderr, code = captureStderr(t, func() int { return runTestWorker(args) })
+	if code != 3 || strings.Contains(stderr, "input-bound candidate engine is absent") ||
+		!strings.Contains(stderr, "input-bound policy engine changed") {
+		t.Fatalf("legacy policy probe did not pass the build-identity request check: code=%d stderr=%q", code, stderr)
 	}
 }
 
@@ -271,6 +337,7 @@ func TestVerifyRecoversCandidateDigestFromNewestSufficientAttempt(t *testing.T) 
 	digest := strings.Repeat("a", 64)
 	executionIdentity := strings.Repeat("b", 64)
 	candidateDigest := strings.Repeat("c", 64)
+	buildIdentity := strings.Repeat("f", 40)
 	failedDigest := strings.Repeat("d", 64)
 	candidateTree := strings.Repeat("e", 40)
 	group := testpolicy.Group{ID: groupID, Kind: "unit", CWD: ".", Inputs: []string{"source.go"},
@@ -282,7 +349,7 @@ func TestVerifyRecoversCandidateDigestFromNewestSufficientAttempt(t *testing.T) 
 	prepared := testingPreparation{CandidateTree: candidateTree, EffectiveContract: contract, Plan: plan,
 		ContractDigest: digest, BaseContractDigest: digest, PolicyEngineDigest: digest, BehaviorPolicyDigest: digest,
 		GoalID: "goal", AccountingRevision: 2}
-	request := testingRunRequest(prepared, "successful-attempt", "", "", candidateDigest)
+	request := testingRunRequest(prepared, "successful-attempt", "", "", candidateDigest, buildIdentity)
 	request.ProjectRoot, request.BaseCommit = "/project", "base"
 	successful := proofrun.NewTestResult(request)
 	zero := 0
@@ -291,6 +358,7 @@ func TestVerifyRecoversCandidateDigestFromNewestSufficientAttempt(t *testing.T) 
 		CollectionComplete: true, NativeExitStatus: &zero, ToolIdentities: map[string]string{}, ReportDigests: map[string]string{}}}
 	// A sufficient attempt from an earlier plan remains a valid source for
 	// the deterministic candidate engine and for independently matching groups.
+	successful.CandidateTree = strings.Repeat("9", 40)
 	successful.PlanDigest = strings.Repeat("1", 64)
 	successful.RecomputeDelivery()
 	failed := successful
@@ -308,11 +376,11 @@ func TestVerifyRecoversCandidateDigestFromNewestSufficientAttempt(t *testing.T) 
 		{AttemptID: failed.AttemptID, GoalID: prepared.GoalID, AccountingRevision: prepared.AccountingRevision,
 			StartedAt: now.Format(time.RFC3339Nano), Terminal: &proofrun.AttemptTerminal{Result: proofrun.TerminalFailed}, TestResult: &failed},
 	}
-	recovered, err := retainedCandidateEngineDigest(prepared, attempts)
+	recovered, err := retainedCandidateEngineDigest(prepared, attempts, buildIdentity)
 	if err != nil || recovered != candidateDigest {
 		t.Fatalf("later failed attempt hid the sufficient candidate engine: digest=%s err=%v", recovered, err)
 	}
-	templateRequest := testingRunRequest(prepared, "", "", "", recovered)
+	templateRequest := testingRunRequest(prepared, "", "", "", recovered, buildIdentity)
 	templateRequest.ProjectRoot, templateRequest.BaseCommit = "/project", "base"
 	projection := proofrun.ReusedTestResult(proofrun.NewTestResult(templateRequest), attempts,
 		map[string]string{groupID: executionIdentity}, contract, prepared.GoalID, prepared.AccountingRevision)
@@ -321,7 +389,7 @@ func TestVerifyRecoversCandidateDigestFromNewestSufficientAttempt(t *testing.T) 
 	}
 }
 
-func TestVerifyRecoversLegacyCandidateDigestFromUnmarkedSchemaTwoReceipt(t *testing.T) {
+func TestVerifyDoesNotKeyLegacyCandidateDigestByWholeTreeReceipt(t *testing.T) {
 	const groupID = "candidate-bed"
 	digest := strings.Repeat("a", 64)
 	candidateTree := strings.Repeat("b", 40)
@@ -334,7 +402,7 @@ func TestVerifyRecoversLegacyCandidateDigestFromUnmarkedSchemaTwoReceipt(t *test
 	prepared := testingPreparation{Installation: t.TempDir(), CandidateTree: candidateTree, EffectiveContract: contract, Plan: plan,
 		ContractDigest: digest, BaseContractDigest: digest, PolicyEngineDigest: digest, BehaviorPolicyDigest: digest,
 		GoalID: "goal", AccountingRevision: 2}
-	request := testingRunRequest(prepared, "legacy-success", "", "", digest)
+	request := testingRunRequest(prepared, "legacy-success", "", "", digest, strings.Repeat("c", 40))
 	request.ProjectRoot, request.BaseCommit = "/project", "base"
 	legacy := proofrun.NewTestResult(request)
 	legacy.CandidateEngineIdentityVersion = 0
@@ -356,9 +424,9 @@ func TestVerifyRecoversLegacyCandidateDigestFromUnmarkedSchemaTwoReceipt(t *test
 	if err := os.WriteFile(path, payload, 0o600); err != nil {
 		t.Fatal(err)
 	}
-	recovered, err := retainedCandidateEngineDigest(prepared, nil)
-	if err != nil || recovered != digest {
-		t.Fatalf("test verify did not recover the enrolled engine used by an unmarked schema-2 receipt: digest=%s err=%v", recovered, err)
+	recovered, err := retainedCandidateEngineDigest(prepared, nil, strings.Repeat("d", 40))
+	if err == nil || recovered != "" || !strings.Contains(err.Error(), "candidate engine digest is absent") {
+		t.Fatalf("legacy whole-tree receipt unexpectedly supplied a cross-tip engine identity: digest=%s err=%v", recovered, err)
 	}
 }
 
@@ -376,7 +444,7 @@ set -euo pipefail
 [[ "${CGO_ENABLED+x}:$CGO_ENABLED" == x:0 ]]
 [[ "${GOENV+x}:$GOENV" == x:off ]]
 [[ "${GOEXPERIMENT+x}:$GOEXPERIMENT" == x: ]]
-[[ "${GOFLAGS+x}:$GOFLAGS" == x: ]]
+[[ "${GOFLAGS+x}:$GOFLAGS" == x:-mod=readonly ]]
 [[ "${GOTOOLCHAIN+x}:$GOTOOLCHAIN" == x:local ]]
 [[ "${GOWORK+x}:$GOWORK" == x:off ]]
 stamp=$(git rev-parse HEAD)
@@ -776,7 +844,7 @@ func TestTestListCheckPlanAndVerifyWithoutLaunching(t *testing.T) {
 	if err := os.Mkdir(pathOnly, 0o755); err != nil {
 		t.Fatal(err)
 	}
-	for name, target := range map[string]string{"git": gitPath, "sh": shPath, "tar": tarPath} {
+	for name, target := range map[string]string{"git": gitPath, "go": goPath, "sh": shPath, "tar": tarPath} {
 		if err := os.Symlink(target, filepath.Join(pathOnly, name)); err != nil {
 			t.Fatal(err)
 		}

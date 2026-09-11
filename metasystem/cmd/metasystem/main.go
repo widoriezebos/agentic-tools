@@ -131,6 +131,7 @@ func families() []family {
 			summary: "classify and record the two bars for a prospective landing",
 			verbs: []verb{
 				{"observe", "emit a provenance verdict for the prospective project tree", runLandingObserve},
+				{"workspace", "print the delivery workspace projection of a whole-project tree", runLandingWorkspace},
 				{"adoption-rulings", "prepare required landing authority while preserving application rulings", runLandingAdoptionRulings},
 				{"park", "durably record one stopped recertified landing attempt", runLandingPark},
 				{"test-receipt", "run tests against one exact candidate tree and record their result", runLandingTestReceipt},

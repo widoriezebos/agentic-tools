@@ -10,8 +10,10 @@ import (
 	"strings"
 	"time"
 
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/gittree"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/landing"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/proofrun"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/testpolicy"
 )
 
 type landingRepeatedStrings []string
@@ -37,12 +39,35 @@ func runLandingObserve(args []string) int {
 	if flags.Parse(args) != nil || flags.NArg() != 0 {
 		return 2
 	}
-	observation := landing.Observe(landing.ObserveParams{
+	params := landing.ObserveParams{
 		RepoRoot: *root, CandidateTree: *tree, Chain: *chain,
 		DirectFix: *directFix, RevertOf: *revertOf, Goal: *goal, Actor: *actor,
 		RootJob: *rootJob, TestReceipt: *testReceipt, Recertification: *recertification,
-	})
+	}
+	if *testReceipt != "" && *recertification == "" {
+		params.VerifyTesting = func() (proofrun.TestResult, error) {
+			return verifyRetainedTesting(testingSelectionRequest{Root: *root, GoalID: *goal,
+				Mode: testpolicy.ModeAuto, Purpose: testpolicy.PurposeDelivery})
+		}
+	}
+	observation := landing.Observe(params)
 	printJSON(observation)
+	return 0
+}
+
+func runLandingWorkspace(args []string) int {
+	flags := flag.NewFlagSet("landing workspace", flag.ContinueOnError)
+	root := flags.String("root", "", "MetaSystem installation root")
+	tree := flags.String("tree", "", "whole-project tree")
+	if flags.Parse(args) != nil || flags.NArg() != 0 || *root == "" || *tree == "" {
+		fmt.Fprintln(os.Stderr, "usage: metasystem landing workspace --root INSTALLATION --tree TREE")
+		return 2
+	}
+	workspace, err := landing.ProjectWorkspaceTree(*root, *tree)
+	if err != nil {
+		return recordExit(err)
+	}
+	fmt.Println(workspace)
 	return 0
 }
 
@@ -72,8 +97,22 @@ func runLandingTestReceipt(args []string) (status int) {
 			fmt.Fprintln(os.Stderr, "landing test-receipt --mode must be auto, standard, or deep")
 			return 2
 		}
+		projectRoot, err := (gittree.Workspace{Dir: controlRoot}).TopLevel()
+		if err != nil {
+			return recordExit(err)
+		}
+		workspace := gittree.Workspace{Dir: projectRoot}
+		acceptedIndexTree := *tree
+		if acceptedIndexTree == "" {
+			acceptedIndexTree, err = workspace.StagedTree()
+		} else {
+			acceptedIndexTree, err = workspace.ResolveTree(acceptedIndexTree)
+		}
+		if err != nil {
+			return recordExit(err)
+		}
 		resultPath := filepath.Join(controlRoot, "artifacts", "agents", "proof-runs", "delivery", "testing-result-"+*tree+".json")
-		testArgs := []string{"--root", controlRoot, "--tree", *tree, "--mode", *mode, "--purpose", "delivery", "--result", resultPath}
+		testArgs := []string{"--root", controlRoot, "--tree", acceptedIndexTree, "--mode", *mode, "--purpose", "delivery", "--result", resultPath}
 		if *goalID != "" {
 			testArgs = append(testArgs, "--goal", *goalID)
 		}
@@ -93,12 +132,12 @@ func runLandingTestReceipt(args []string) (status int) {
 		}
 		var receipt landing.TestReceipt
 		if result.AttemptID != "" {
-			receipt, err = landing.PublishCommittedReceipt(controlRoot, result.AttemptID)
+			receipt, err = landing.PublishCommittedReceipt(controlRoot, result.AttemptID, acceptedIndexTree)
 		} else {
 			// A verifier may lawfully compose unchanged successful groups from
 			// several older outer attempts. No new execution or synthetic
 			// attempt is created for that schema-2 projection.
-			receipt, err = landing.CreateTestingReceipt(controlRoot, *tree, result)
+			receipt, err = landing.CreateTestingReceipt(controlRoot, result.CandidateTree, result)
 		}
 		if err != nil {
 			return recordExit(err)
@@ -151,7 +190,7 @@ func runLandingTestReceipt(args []string) (status int) {
 	}
 	if decision.Disposition != proofrun.DispositionExecuted {
 		if decision.Disposition == proofrun.DispositionReusableSuccess {
-			if _, err := landing.PublishCommittedReceipt(controlRoot, decision.AttemptID); err != nil {
+			if _, err := landing.PublishCommittedReceipt(controlRoot, decision.AttemptID, preparation.AcceptedIndexTree()); err != nil {
 				return recordExit(err)
 			}
 		}
@@ -188,7 +227,7 @@ func runLandingTestReceipt(args []string) (status int) {
 	if status != 0 {
 		decision.Disposition = proofrun.DispositionFailed
 	} else {
-		receipt, publishErr := landing.PublishCommittedReceipt(controlRoot, attempt.AttemptID)
+		receipt, publishErr := landing.PublishCommittedReceipt(controlRoot, attempt.AttemptID, preparation.AcceptedIndexTree())
 		if publishErr != nil {
 			fmt.Fprintln(os.Stderr, publishErr)
 			status = 1
