@@ -109,7 +109,10 @@ func TestSTR4R1RaiseTransaction(t *testing.T) {
 	if !bytes.Equal(beforeFence, afterFence) || !bytes.Equal(beforeObligation, afterObligation) {
 		t.Fatalf("raise changed the standing fence or governed obligation: fence before=%s after=%s obligation before=%s after=%s", beforeFence, afterFence, beforeObligation, afterObligation)
 	}
-	if after.Claimed.Revision != after.Revision || after.Claimed.AccountingRevision != beforeClaim.AccountingRevision || after.Claimed.At != beforeClaim.At || after.Claimed.Machine != beforeClaim.Machine || after.Claimed.Lineage != beforeClaim.Lineage {
+	if after.Claimed.Revision != after.Revision || after.Claimed.AccountingRevision != beforeClaim.AccountingRevision || after.Claimed.At != beforeClaim.At ||
+		after.Claimed.Machine != beforeClaim.Machine || after.Claimed.Lineage != beforeClaim.Lineage ||
+		after.Claimed.EpisodeAt != beforeClaim.EpisodeAt || after.Claimed.EpisodeRevision != beforeClaim.EpisodeRevision ||
+		after.Claimed.EpisodeObligationRevision != beforeClaim.EpisodeObligationRevision {
 		t.Fatalf("claim rebind changed more than its revision: before=%+v after=%+v", beforeClaim, after.Claimed)
 	}
 	if after.StopCapability.Revision != after.Revision || after.StopCapability.Generation != after.Revision || after.StopCapability.Machine != beforeCapability.Machine || after.StopCapability.ClaimEpoch != beforeCapability.ClaimEpoch || after.StopCapability.FenceEpoch != beforeCapability.FenceEpoch {

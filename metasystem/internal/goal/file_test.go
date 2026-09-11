@@ -59,6 +59,108 @@ func TestGoldenClaimedFileRoundTrips(t *testing.T) {
 	}
 }
 
+func episodeGolden() *GoalFile {
+	f := claimedGolden()
+	f.Revision = 5
+	f.History = append(f.History,
+		HistoryLine{At: "2026-08-20T01:30:00Z", Opid: "01J5X0000000000000000000C3-mac-studio-1a2b3c4d", Verb: "set-obligation", Actor: "human:wido", Targets: []string{f.Id}, Keep: -1},
+		HistoryLine{At: "2026-08-20T02:00:00Z", Opid: "01J5X0000000000000000000C4-mac-studio-1a2b3c4d", Verb: "set-budget", Actor: "human:wido", Targets: []string{f.Id}, Keep: -1},
+	)
+	f.Claimed.At = f.History[4].At
+	f.Claimed.Revision = 5
+	f.Claimed.AccountingRevision = 5
+	f.Claimed.EpisodeAt = f.History[1].At
+	f.Claimed.EpisodeRevision = 2
+	return f
+}
+
+func TestClaimedEpisodeRoundTrip(t *testing.T) {
+	for _, obligationRevision := range []uint64{0, 4} {
+		t.Run(fmt.Sprintf("obligation revision %d", obligationRevision), func(t *testing.T) {
+			file := episodeGolden()
+			file.Claimed.EpisodeObligationRevision = obligationRevision
+			rendered := RenderFile(file)
+			parsed, problems := ParseFile(rendered)
+			if len(problems) != 0 || parsed.Claimed == nil || *parsed.Claimed != *file.Claimed || string(RenderFile(parsed)) != string(rendered) {
+				t.Fatalf("episode fields did not round-trip: claim=%+v problems=%v\n%s", parsed.Claimed, problems, rendered)
+			}
+			if obligationRevision == 0 && strings.Contains(string(rendered), "episodeObligationRevision=") {
+				t.Fatalf("zero inherited obligation revision was rendered: %s", rendered)
+			}
+		})
+	}
+}
+
+func TestEpisodeObligationRevisionParse(t *testing.T) {
+	legacy := string(RenderFile(claimedGolden()))
+	thirdOnly := strings.Replace(legacy, " accountingRevision=2", " accountingRevision=2 episodeObligationRevision=1", 1)
+	if _, problems := ParseFile([]byte(withFreshIntegrity(thirdOnly))); !problemsContain(problems, "Claimed episodeObligationRevision requires the episode binding (episodeAt and episodeRevision)") {
+		t.Fatalf("third episode key without its pair did not refuse exactly: %v", problems)
+	}
+	file := episodeGolden()
+	file.Claimed.EpisodeObligationRevision = 4
+	parsed, problems := ParseFile(RenderFile(file))
+	if len(problems) != 0 || parsed.Claimed.EpisodeObligationRevision != 4 {
+		t.Fatalf("third episode key beside its pair did not parse: claim=%+v problems=%v", parsed.Claimed, problems)
+	}
+}
+
+func TestEpisodeBindingContradictionsRefuse(t *testing.T) {
+	base := string(RenderFile(claimedGolden()))
+	for _, test := range []struct {
+		name, suffix, want string
+	}{
+		{name: "lone episode time", suffix: " episodeAt=2026-08-20T00:35:00Z", want: "Claimed episode binding is incomplete (episodeAt and episodeRevision travel together)"},
+		{name: "lone episode revision", suffix: " episodeRevision=2", want: "Claimed episode binding is incomplete (episodeAt and episodeRevision travel together)"},
+		{name: "empty episode revision", suffix: " episodeAt=2026-08-20T00:35:00Z episodeRevision=", want: `Claimed episodeRevision="" is not a positive integer`},
+		{name: "zero episode revision", suffix: " episodeAt=2026-08-20T00:35:00Z episodeRevision=0", want: `Claimed episodeRevision="0" is not a positive integer`},
+		{name: "empty inherited obligation", suffix: " episodeAt=2026-08-20T00:35:00Z episodeRevision=2 episodeObligationRevision=", want: `Claimed episodeObligationRevision="" is not a positive integer`},
+		{name: "zero inherited obligation", suffix: " episodeAt=2026-08-20T00:35:00Z episodeRevision=2 episodeObligationRevision=0", want: `Claimed episodeObligationRevision="0" is not a positive integer`},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			raw := strings.Replace(base, " accountingRevision=2", " accountingRevision=2"+test.suffix, 1)
+			if _, problems := ParseFile([]byte(withFreshIntegrity(raw))); !problemsContain(problems, test.want) {
+				t.Fatalf("malformed episode keys did not refuse with %q: %v", test.want, problems)
+			}
+		})
+	}
+
+	for _, test := range []struct {
+		name   string
+		mutate func(*GoalFile)
+		want   string
+	}{
+		{name: "episode later than claim revision", mutate: func(f *GoalFile) { f.Claimed.EpisodeRevision = 6 }, want: "claimed episodeRevision=6 is later than claim revision=5"},
+		{name: "malformed episode time", mutate: func(f *GoalFile) { f.Claimed.EpisodeAt = "not-a-time" }, want: "the claim episode timestamp is malformed"},
+		{name: "episode contradicts history", mutate: func(f *GoalFile) { f.Claimed.EpisodeAt = "2026-08-20T00:34:00Z" }, want: "claimed episodeAt=2026-08-20T00:34:00Z contradicts History revision=2 at=2026-08-20T00:35:00Z"},
+		{name: "episode later than claim time", mutate: func(f *GoalFile) { f.History[1].At = "2026-08-20T03:00:00Z"; f.Claimed.EpisodeAt = f.History[1].At }, want: "claimed episodeAt=2026-08-20T03:00:00Z is later than claimed at=2026-08-20T02:00:00Z"},
+		{name: "inherited obligation equals episode", mutate: func(f *GoalFile) { f.Claimed.EpisodeObligationRevision = 2 }, want: "claimed episodeObligationRevision=2 must be later than episodeRevision=2 and earlier than claim revision=5"},
+		{name: "inherited obligation below episode", mutate: func(f *GoalFile) { f.Claimed.EpisodeObligationRevision = 1 }, want: "claimed episodeObligationRevision=1 must be later than episodeRevision=2 and earlier than claim revision=5"},
+		{name: "inherited obligation equals claim", mutate: func(f *GoalFile) { f.Claimed.EpisodeObligationRevision = 5 }, want: "claimed episodeObligationRevision=5 must be later than episodeRevision=2 and earlier than claim revision=5"},
+		{name: "inherited obligation above claim", mutate: func(f *GoalFile) { f.Claimed.EpisodeObligationRevision = 6 }, want: "claimed episodeObligationRevision=6 must be later than episodeRevision=2 and earlier than claim revision=5"},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			file := episodeGolden()
+			test.mutate(file)
+			if _, problems := ParseFile(RenderFile(file)); !problemsContain(problems, "BUDGET_UNKNOWN "+test.want) {
+				t.Fatalf("contradictory episode binding did not refuse with %q: %v", test.want, problems)
+			}
+		})
+	}
+	valid := episodeGolden()
+	valid.Claimed.EpisodeObligationRevision = 3
+	if _, problems := ParseFile(RenderFile(valid)); len(problems) != 0 {
+		t.Fatalf("a strict interior inherited obligation revision did not remain readable: %v", problems)
+	}
+	missing := episodeGolden()
+	missing.Claimed.EpisodeAt = ""
+	missing.Claimed.EpisodeRevision = 0
+	missing.Claimed.EpisodeObligationRevision = 3
+	if err := missing.ValidateClaimRevision(); err == nil || err.Error() != "claimed episodeObligationRevision=3 has no episode binding" {
+		t.Fatalf("in-memory inherited identity without its episode did not refuse exactly: %v", err)
+	}
+}
+
 func TestSTR2P2A05ZeroClaimRevisionObligationIsAProblemNotAPanic(t *testing.T) {
 	f := vGoal("zero-claim-obligation", StateClaimed)
 	f.Budget = &Budget{ElapsedLimit: "1h", AttemptLimit: 1, ReservedJobMinutesLimit: 5, ActiveJobLimit: 1, ReviewRoundLimit: 0}

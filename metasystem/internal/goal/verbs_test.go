@@ -2,6 +2,8 @@ package goal
 
 import (
 	"fmt"
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 	"time"
@@ -175,7 +177,8 @@ func TestBudgetedClaimRevisionLaws(t *testing.T) {
 			t.Fatal(err)
 		}
 		f := tree.Live["budgeted"]
-		if f.Budget == nil || f.Claimed == nil || f.Claimed.Revision != f.Revision || f.Claimed.Revision != 3 || f.Claimed.AccountingRevision != f.Claimed.Revision {
+		if f.Budget == nil || f.Claimed == nil || f.Claimed.Revision != f.Revision || f.Claimed.Revision != 3 || f.Claimed.AccountingRevision != f.Claimed.Revision ||
+			f.Claimed.EpisodeAt != f.Claimed.At || f.Claimed.EpisodeRevision != f.Claimed.Revision || f.Claimed.EpisodeObligationRevision != 0 {
 			t.Fatalf("claim did not bind the complete tuple to its revision: %+v", f)
 		}
 		if rendered := string(RenderFile(f)); !strings.Contains(rendered, "- Budget: elapsedLimit=4h attemptLimit=4 reservedJobMinutesLimit=240 activeJobLimit=2") ||
@@ -184,7 +187,7 @@ func TestBudgetedClaimRevisionLaws(t *testing.T) {
 		}
 	})
 
-	t.Run("set-budget starts the new revision elapsed clock", func(t *testing.T) {
+	t.Run("set-budget preserves elapsed origin while advancing claim and accounting", func(t *testing.T) {
 		claimReq := obligationAuthorityVerbReq(a, "01J5X00000000000000000H200", "mac-b")
 		res, err := openClaimForTest(t, claimReq, "rebudget", "Bounded work.", "main", "Start.", testBudget())
 		if err != nil || res.Outcome != OutcomeConfirmed {
@@ -206,10 +209,293 @@ func TestBudgetedClaimRevisionLaws(t *testing.T) {
 		}
 		f := tree.Live["rebudget"]
 		if f.Revision != 4 || f.Claimed.Revision != 4 || f.Claimed.AccountingRevision != 4 || f.Claimed.At != setReq.stamp() || *f.Budget != next ||
+			f.Claimed.EpisodeAt != claimReq.stamp() || f.Claimed.EpisodeRevision != 3 || f.Claimed.EpisodeObligationRevision != 0 ||
 			f.History[len(f.History)-1].Verb != "set-budget" {
-			t.Fatalf("set-budget did not establish a fresh bound revision: %+v", f)
+			t.Fatalf("set-budget did not advance the bound revision while preserving its episode: %+v", f)
 		}
 	})
+}
+
+func publishClaimFixtureMutation(t *testing.T, root, id, opid string, mutate func(*GoalFile)) PublishResult {
+	t.Helper()
+	result, err := Publish(obligationAuthorityEndpoint(root), PublishRequest{
+		Opid: opid, Machine: "fixture", Lineage: "episode", Intent: testIntentFor("fixture-episode"), Message: "fixture episode shape",
+		Mutate: func(tip string) ([]Change, error) {
+			tree, err := loadTree(root, tip)
+			if err != nil {
+				return nil, err
+			}
+			file := tree.Live[id]
+			if file == nil {
+				return nil, fmt.Errorf("fixture goal %s is missing", id)
+			}
+			mutate(file)
+			return []Change{{Path: livePath(id), Content: RenderFile(file)}}, nil
+		},
+		Validate: func(commit string) error { return ValidateCommit(root, commit) },
+	})
+	if err != nil || result.Outcome != OutcomeConfirmed {
+		t.Fatalf("publish claim fixture mutation: %+v %v", result, err)
+	}
+	return result
+}
+
+func TestSetBudgetUnchangedIsNoOp(t *testing.T) {
+	root := riskLocalRoot(t, "unchanged-budget-bed")
+	request := obligationAuthorityVerbReq(root, "01J5X00000000000000000EA00", "mac-a")
+	if result, err := openClaimForTest(t, request, "unchanged-budget", "Keep the tuple stable.", OriginMain, "Observe it.", testBudget()); err != nil || result.Outcome != OutcomeConfirmed {
+		t.Fatalf("open and claim: %+v %v", result, err)
+	}
+	beforeTip := acceptedTip(t, root)
+	before, err := loadTree(root, beforeTip)
+	if err != nil {
+		t.Fatal(err)
+	}
+	beforeBytes := RenderFile(before.Live["unchanged-budget"])
+	unchanged := obligationAuthorityVerbReq(root, "01J5X00000000000000000EA01", "mac-a")
+	unchanged.Now = request.Now.Add(time.Hour)
+	result, err := setBudgetApprovedForTest(t, unchanged, "unchanged-budget", testBudget())
+	if err != nil || result.Outcome != OutcomeAbandoned || !strings.Contains(result.Detail, "already reads exactly") {
+		t.Fatalf("identical budget was not a typed no-op: %+v %v", result, err)
+	}
+	if afterTip := acceptedTip(t, root); afterTip != beforeTip || result.Tip != beforeTip {
+		t.Fatalf("identical budget moved the accepted tip: before=%s result=%s after=%s", beforeTip, result.Tip, afterTip)
+	}
+	after, err := loadTree(root, beforeTip)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := RenderFile(after.Live["unchanged-budget"]); string(got) != string(beforeBytes) {
+		t.Fatalf("identical budget changed the claim record:\n%s\n---\n%s", beforeBytes, got)
+	}
+
+	legacyRoot := riskLocalRoot(t, "unchanged-legacy-budget-bed")
+	legacyRequest := obligationAuthorityVerbReq(legacyRoot, "01J5X00000000000000000ED00", "mac-a")
+	if legacyResult, legacyErr := openClaimForTest(t, legacyRequest, "unchanged-legacy-budget", "Keep the legacy tuple stable.", OriginMain, "Observe it.", testBudget()); legacyErr != nil || legacyResult.Outcome != OutcomeConfirmed {
+		t.Fatalf("open and claim legacy fixture: %+v %v", legacyResult, legacyErr)
+	}
+	publishClaimFixtureMutation(t, legacyRoot, "unchanged-legacy-budget", "fixture-unchanged-legacy-budget", func(file *GoalFile) {
+		file.Claimed.EpisodeAt = ""
+		file.Claimed.EpisodeRevision = 0
+		file.Claimed.EpisodeObligationRevision = 0
+	})
+	legacyTip := acceptedTip(t, legacyRoot)
+	legacyTree, err := loadTree(legacyRoot, legacyTip)
+	if err != nil {
+		t.Fatal(err)
+	}
+	legacyBytes := RenderFile(legacyTree.Live["unchanged-legacy-budget"])
+	legacyNoOp := obligationAuthorityVerbReq(legacyRoot, "01J5X00000000000000000ED01", "mac-a")
+	legacyNoOp.Now = legacyRequest.Now.Add(time.Hour)
+	legacyResult, legacyErr := setBudgetApprovedForTest(t, legacyNoOp, "unchanged-legacy-budget", testBudget())
+	if legacyErr != nil || legacyResult.Outcome != OutcomeAbandoned {
+		t.Fatalf("identical legacy budget was not a typed no-op: %+v %v", legacyResult, legacyErr)
+	}
+	legacyAfter, err := loadTree(legacyRoot, acceptedTip(t, legacyRoot))
+	if err != nil {
+		t.Fatal(err)
+	}
+	legacyClaim := legacyAfter.Live["unchanged-legacy-budget"].Claimed
+	if acceptedTip(t, legacyRoot) != legacyTip || string(RenderFile(legacyAfter.Live["unchanged-legacy-budget"])) != string(legacyBytes) ||
+		legacyClaim.EpisodeAt != "" || legacyClaim.EpisodeRevision != 0 || legacyClaim.EpisodeObligationRevision != 0 {
+		t.Fatalf("legacy no-op moved the tip, rewrote bytes, or backfilled the episode: %+v", legacyClaim)
+	}
+}
+
+func TestSetBudgetPinsLegacyAnchor(t *testing.T) {
+	for _, withObligation := range []bool{false, true} {
+		t.Run(fmt.Sprintf("live obligation %v", withObligation), func(t *testing.T) {
+			root := obligationAuthorityLocalRoot(t, "legacy-anchor")
+			if withObligation {
+				if err := os.WriteFile(filepath.Join(root, "metasystem.conf"), []byte("metasystem.governance.correlation-policy=A\n"), 0o644); err != nil {
+					t.Fatal(err)
+				}
+			}
+			before, err := loadTree(root, acceptedTip(t, root))
+			if err != nil {
+				t.Fatal(err)
+			}
+			legacy := before.Live["legacy-anchor"]
+			originalAt := legacy.Claimed.At
+			originalAccounting := legacy.Claimed.AccountingRevision
+			var obligationRevision uint64
+			if withObligation {
+				proof := proveObligationHuman(t, root)
+				set := obligationAuthorityVerbReq(root, "01J5X00000000000000000EP00", "mac-a")
+				set.Actor.Human = "Wido"
+				set.Now = time.Date(2026, 8, 30, 8, 10, 0, 0, time.UTC)
+				if result, err := SetObligation(set, "legacy-anchor", testGovernedObligation(ObligationDraft), &proof); err != nil || result.Outcome != OutcomeConfirmed {
+					t.Fatalf("set obligation: %+v %v", result, err)
+				}
+				withLive, err := loadTree(root, acceptedTip(t, root))
+				if err != nil {
+					t.Fatal(err)
+				}
+				obligationRevision = withLive.Live["legacy-anchor"].Obligation.Revision
+			}
+			next := testBudget()
+			next.ElapsedLimit = "8h"
+			setBudget := obligationAuthorityVerbReq(root, "01J5X00000000000000000EP01", "mac-a")
+			setBudget.Now = time.Date(2026, 8, 30, 9, 0, 0, 0, time.UTC)
+			result, err := setBudgetApprovedForTest(t, setBudget, "legacy-anchor", next)
+			if err != nil || result.Outcome != OutcomeConfirmed {
+				t.Fatalf("set budget: %+v %v", result, err)
+			}
+			tree, err := loadTree(root, result.Tip)
+			if err != nil {
+				t.Fatal(err)
+			}
+			claim := tree.Live["legacy-anchor"].Claimed
+			if claim.EpisodeAt != originalAt || claim.EpisodeRevision != originalAccounting || claim.EpisodeObligationRevision != obligationRevision ||
+				claim.At != setBudget.stamp() || claim.AccountingRevision != claim.Revision {
+				t.Fatalf("legacy anchor was not pinned exactly at its effective accounting origin: %+v", claim)
+			}
+		})
+	}
+}
+
+func TestSetBudgetRejectsContradictoryLegacyOrigin(t *testing.T) {
+	root := obligationAuthorityLocalRoot(t, "contradictory-legacy")
+	publishClaimFixtureMutation(t, root, "contradictory-legacy", "fixture-contradictory-legacy", func(file *GoalFile) {
+		file.Claimed.AccountingRevision = 1
+		file.Claimed.EpisodeAt = ""
+		file.Claimed.EpisodeRevision = 0
+		file.Claimed.EpisodeObligationRevision = 0
+	})
+	beforeTip := acceptedTip(t, root)
+	before, err := loadTree(root, beforeTip)
+	if err != nil {
+		t.Fatal(err)
+	}
+	beforeBytes := RenderFile(before.Live["contradictory-legacy"])
+	next := testBudget()
+	next.ElapsedLimit = "8h"
+	request := obligationAuthorityVerbReq(root, "01J5X00000000000000000EC00", "mac-a")
+	request.Now = time.Date(2026, 8, 30, 9, 0, 0, 0, time.UTC)
+	result, err := setBudgetApprovedForTest(t, request, "contradictory-legacy", next)
+	if err != nil || result.Outcome != OutcomeRejected || !strings.Contains(result.Detail, "claimed episodeAt=") || !strings.Contains(result.Detail, "contradicts History revision=1") {
+		t.Fatalf("contradictory legacy origin was not refused without a history search: %+v %v", result, err)
+	}
+	if afterTip := acceptedTip(t, root); afterTip != beforeTip {
+		t.Fatalf("refused legacy materialization moved the accepted tip: before=%s after=%s", beforeTip, afterTip)
+	}
+	after, err := loadTree(root, beforeTip)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := RenderFile(after.Live["contradictory-legacy"]); string(got) != string(beforeBytes) {
+		t.Fatalf("refused legacy materialization changed accepted bytes:\n%s\n---\n%s", beforeBytes, got)
+	}
+}
+
+func TestSetBudgetStartsFirstEpisodeForRevisionlessMigration(t *testing.T) {
+	root := obligationAuthorityLocalRoot(t, "revisionless-migration")
+	publishClaimFixtureMutation(t, root, "revisionless-migration", "fixture-revisionless-migration", func(file *GoalFile) {
+		file.Budget = nil
+		file.Claimed.Revision = 0
+		file.Claimed.AccountingRevision = 0
+		file.Claimed.EpisodeAt = ""
+		file.Claimed.EpisodeRevision = 0
+		file.Claimed.EpisodeObligationRevision = 0
+	})
+	legacy, err := loadTree(root, acceptedTip(t, root))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if legacy.Live["revisionless-migration"].Claimed.Revision != 0 || legacy.Live["revisionless-migration"].Budget != nil {
+		t.Fatal("fixture did not retain its lawful revisionless, unbudgeted claim")
+	}
+	next := testBudget()
+	next.ElapsedLimit = "8h"
+	first := obligationAuthorityVerbReq(root, "01J5X00000000000000000EM00", "mac-a")
+	first.Now = time.Date(2026, 8, 30, 9, 0, 0, 0, time.UTC)
+	result, err := setBudgetApprovedForTest(t, first, "revisionless-migration", next)
+	if err != nil || result.Outcome != OutcomeConfirmed {
+		t.Fatalf("first approved migration budget: %+v %v", result, err)
+	}
+	tree, err := loadTree(root, result.Tip)
+	if err != nil {
+		t.Fatal(err)
+	}
+	initialized := tree.Live["revisionless-migration"].Claimed
+	if initialized.EpisodeAt != first.stamp() || initialized.EpisodeRevision != initialized.Revision || initialized.EpisodeObligationRevision != 0 {
+		t.Fatalf("first approved budget did not initialize a fresh measurable episode: %+v", initialized)
+	}
+	secondBudget := next
+	secondBudget.ElapsedLimit = "10h"
+	second := obligationAuthorityVerbReq(root, "01J5X00000000000000000EM01", "mac-a")
+	second.Now = first.Now.Add(time.Hour)
+	result, err = setBudgetApprovedForTest(t, second, "revisionless-migration", secondBudget)
+	if err != nil || result.Outcome != OutcomeConfirmed {
+		t.Fatalf("later approved budget: %+v %v", result, err)
+	}
+	tree, err = loadTree(root, result.Tip)
+	if err != nil {
+		t.Fatal(err)
+	}
+	after := tree.Live["revisionless-migration"].Claimed
+	if after.EpisodeAt != initialized.EpisodeAt || after.EpisodeRevision != initialized.EpisodeRevision || after.AccountingRevision != after.Revision {
+		t.Fatalf("later budget did not preserve the initialized migration episode: first=%+v after=%+v", initialized, after)
+	}
+}
+
+func TestReleaseReclaimStartsNewEpisode(t *testing.T) {
+	root := riskLocalRoot(t, "release-reclaim-bed")
+	claim := obligationAuthorityVerbReq(root, "01J5X00000000000000000ER00", "mac-a")
+	if result, err := openClaimForTest(t, claim, "release-reclaim", "Restart ownership.", OriginMain, "Claim twice.", testBudget()); err != nil || result.Outcome != OutcomeConfirmed {
+		t.Fatalf("initial claim: %+v %v", result, err)
+	}
+	before, err := loadTree(root, acceptedTip(t, root))
+	if err != nil {
+		t.Fatal(err)
+	}
+	first := *before.Live["release-reclaim"].Claimed
+	release := obligationAuthorityVerbReq(root, "01J5X00000000000000000ER01", "mac-a")
+	release.Now = claim.Now.Add(time.Hour)
+	if result, err := Release(release, "release-reclaim"); err != nil || result.Outcome != OutcomeConfirmed {
+		t.Fatalf("release: %+v %v", result, err)
+	}
+	reclaim := obligationAuthorityVerbReq(root, "01J5X00000000000000000ER02", "mac-a")
+	reclaim.Now = release.Now.Add(time.Hour)
+	if result, err := Claim(reclaim, "release-reclaim"); err != nil || result.Outcome != OutcomeConfirmed {
+		t.Fatalf("reclaim: %+v %v", result, err)
+	}
+	after, err := loadTree(root, acceptedTip(t, root))
+	if err != nil {
+		t.Fatal(err)
+	}
+	second := after.Live["release-reclaim"].Claimed
+	if second.EpisodeAt != reclaim.stamp() || second.EpisodeRevision != second.Revision || second.EpisodeAt == first.EpisodeAt || second.EpisodeObligationRevision != 0 {
+		t.Fatalf("release and reclaim did not start a fresh episode: first=%+v second=%+v", first, second)
+	}
+}
+
+func TestStealStartsNewEpisode(t *testing.T) {
+	root := riskLocalRoot(t, "steal-episode-bed")
+	claim := obligationAuthorityVerbReq(root, "01J5X00000000000000000ES00", "mac-a")
+	if result, err := openClaimForTest(t, claim, "steal-episode", "Transfer ownership.", OriginMain, "Steal it.", testBudget()); err != nil || result.Outcome != OutcomeConfirmed {
+		t.Fatalf("initial claim: %+v %v", result, err)
+	}
+	before, err := loadTree(root, acceptedTip(t, root))
+	if err != nil {
+		t.Fatal(err)
+	}
+	first := *before.Live["steal-episode"].Claimed
+	steal := obligationAuthorityVerbReq(root, "01J5X00000000000000000ES01", "mac-b")
+	steal.Actor.Human = "Wido"
+	steal.Now = claim.Now.Add(time.Hour)
+	if result, err := Steal(steal, "steal-episode"); err != nil || result.Outcome != OutcomeConfirmed {
+		t.Fatalf("steal: %+v %v", result, err)
+	}
+	after, err := loadTree(root, acceptedTip(t, root))
+	if err != nil {
+		t.Fatal(err)
+	}
+	second := after.Live["steal-episode"].Claimed
+	if second.Machine != "mac-b" || second.EpisodeAt != steal.stamp() || second.EpisodeRevision != second.Revision ||
+		second.EpisodeAt == first.EpisodeAt || second.EpisodeObligationRevision != 0 {
+		t.Fatalf("steal did not start a fresh episode: first=%+v second=%+v", first, second)
+	}
 }
 
 func TestLabelVerbWritesCanonicalWholeFields(t *testing.T) {

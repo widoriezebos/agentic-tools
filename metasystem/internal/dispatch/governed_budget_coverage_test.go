@@ -94,6 +94,46 @@ func TestBudgetProjectionRefusesMalformedConsumedProofLedger(t *testing.T) {
 	}
 }
 
+func TestBudgetProjectionRequiresExactDurableDischargePair(t *testing.T) {
+	for _, test := range []struct {
+		name                           string
+		durableGoal, durableObligation uint64
+	}{
+		{name: "wrong goal revision", durableGoal: 4, durableObligation: 6},
+		{name: "wrong obligation revision", durableGoal: 3, durableObligation: 7},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			root := budgetProjectionRoot(t)
+			file := budgetGoal()
+			file.Claimed.Revision = 5
+			file.Claimed.AccountingRevision = 3
+			file.Claimed.At = file.History[4].At
+			file.Claimed.EpisodeAt = file.History[2].At
+			file.Claimed.EpisodeRevision = 3
+			file.Obligation = &goal.GovernedObligation{Revision: 6}
+			zero := uint64(0)
+			if err := obligationstate.RecordTerminal(root, "bounded", test.durableGoal, test.durableObligation, obligationstate.TerminalAttempt{
+				RunID: "green-proof", Status: run.StatusGreen, StartedAt: "2026-08-28T09:00:00Z", EndedAt: "2026-08-28T09:25:00Z",
+				PrunedAt: "2026-08-28T09:31:00Z", AttemptOrdinal: 1, ExecutionCostMinutes: 30, ObservedCostMinutes: 25,
+				WeightGeneration: 1, BudgetEpoch: &zero, Breaker: run.BreakerClosed,
+			}); err != nil {
+				t.Fatal(err)
+			}
+			writeJSON(t, filepath.Join(root, "artifacts", "agents", "validation-weight.json"), map[string]any{
+				"schema": 1, "generation": 2, "consumedProofs": []any{map[string]any{
+					"runId": "green-proof", "goalId": "bounded", "goalRevision": 3, "obligationRevision": 6,
+					"weightGeneration": 1, "consumedAt": "2026-08-28T09:30:00Z",
+					"resetDecision": map[string]any{"apply": true, "wouldRefuse": false}, "dischargeDecision": map[string]any{"apply": true, "wouldRefuse": false},
+				}},
+			})
+			projection := ProjectBudget(root, file, time.Date(2026, 8, 28, 10, 0, 0, 0, time.UTC))
+			if projection.Status != BudgetUnknown || projection.Unknown == nil || !strings.Contains(projection.Unknown.Reason, "no exact durable green proof") {
+				t.Fatalf("durable pair goal=%d obligation=%d substituted for the consumed proof pair: %+v", test.durableGoal, test.durableObligation, projection)
+			}
+		})
+	}
+}
+
 func TestObserveGovernedRunUsesAcceptedObligationAndBudgetState(t *testing.T) {
 	root := revisionBindingBed(t, 2)
 	obligationRevision := installEnforcedObligation(t, root, 5)

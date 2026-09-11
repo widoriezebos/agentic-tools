@@ -80,15 +80,19 @@ type BudgetProjection struct {
 	Unknown                 *BudgetUnknownEvidence
 }
 
-func obligationBudgetStart(repoRoot string, file *goal.GoalFile, claimedAt time.Time) (time.Time, *uint64, *BudgetUnknownEvidence) {
-	if file.Obligation == nil {
-		return claimedAt, nil, nil
+func obligationBudgetStart(repoRoot string, file *goal.GoalFile, episodeAt time.Time, episodeRevision uint64) (time.Time, *uint64, *BudgetUnknownEvidence) {
+	if file.Obligation == nil && file.Claimed.EpisodeObligationRevision == 0 {
+		return episodeAt, nil, nil
+	}
+	selectedObligationRevision := file.Claimed.EpisodeObligationRevision
+	if file.Obligation != nil {
+		selectedObligationRevision = file.Obligation.Revision
 	}
 	logicalPath := "artifacts/agents/validation-weight.json"
 	path := filepath.Join(repoRoot, filepath.FromSlash(logicalPath))
 	state, err := readObject(path)
 	if os.IsNotExist(err) {
-		return claimedAt, nil, nil
+		return episodeAt, nil, nil
 	}
 	if err != nil {
 		return time.Time{}, nil, &BudgetUnknownEvidence{Code: BudgetUnknown, Record: logicalPath, Reason: "the validation-weight record is unreadable: " + err.Error()}
@@ -105,20 +109,18 @@ func obligationBudgetStart(repoRoot string, file *goal.GoalFile, claimedAt time.
 				return time.Time{}, nil, &BudgetUnknownEvidence{Code: BudgetUnknown, Record: logicalPath, Reason: "applied discharge has no durable consumed-proof ledger"}
 			}
 		}
-		return claimedAt, nil, nil
+		return episodeAt, nil, nil
 	}
 	consumed, ok := rawConsumed.([]any)
 	if !ok {
 		return time.Time{}, nil, &BudgetUnknownEvidence{Code: BudgetUnknown, Record: logicalPath, Reason: "consumed-proof ledger is not an array"}
 	}
-	latest := claimedAt
+	latest := episodeAt
 	latestRunID := ""
 	latestProofEpoch := uint64(0)
+	latestGoalRevision := uint64(0)
+	latestObligationRevision := uint64(0)
 	seenProofs := map[string]bool{}
-	accountingRevision := file.Claimed.AccountingRevision
-	if accountingRevision == 0 {
-		accountingRevision = file.Claimed.Revision
-	}
 	for _, item := range consumed {
 		proof, typed := item.(map[string]any)
 		if !typed {
@@ -140,12 +142,14 @@ func obligationBudgetStart(repoRoot string, file *goal.GoalFile, claimedAt time.
 			return time.Time{}, nil, &BudgetUnknownEvidence{Code: BudgetUnknown, Record: logicalPath, Reason: "consumed-proof ledger has an incomplete or unauthorized entry"}
 		}
 		seenProofs[proofKey] = true
-		if asString(proof["goalId"]) == file.Id && uint64(goalRevision) >= accountingRevision && uint64(goalRevision) <= file.Claimed.Revision &&
-			uint64(obligationRevision) == file.Obligation.Revision && !consumedAt.Before(claimedAt) &&
+		if asString(proof["goalId"]) == file.Id && uint64(goalRevision) >= episodeRevision && uint64(goalRevision) <= file.Claimed.Revision &&
+			uint64(obligationRevision) == selectedObligationRevision && !consumedAt.Before(episodeAt) &&
 			(consumedAt.After(latest) || consumedAt.Equal(latest) && uint64(proofEpoch) > latestProofEpoch) {
 			latest = consumedAt.UTC()
 			latestRunID = asString(proof["runId"])
 			latestProofEpoch = uint64(proofEpoch)
+			latestGoalRevision = uint64(goalRevision)
+			latestObligationRevision = uint64(obligationRevision)
 		}
 	}
 	if latestRunID != "" {
@@ -155,7 +159,7 @@ func obligationBudgetStart(repoRoot string, file *goal.GoalFile, claimedAt time.
 		}
 		matched := false
 		for _, obligation := range states {
-			if obligation.GoalRevision < accountingRevision || obligation.GoalRevision > file.Claimed.Revision || obligation.ObligationRevision != file.Obligation.Revision {
+			if obligation.GoalRevision != latestGoalRevision || obligation.ObligationRevision != latestObligationRevision {
 				continue
 			}
 			for _, attempt := range obligation.Attempts {
@@ -269,16 +273,22 @@ func ProjectBudget(repoRoot string, file *goal.GoalFile, now time.Time) BudgetPr
 	if err := file.Budget.Validate(); err != nil {
 		return unknownBudget(file.Id, revision, recordPath, "the budget tuple is malformed: "+err.Error())
 	}
-	claimedAt, err := time.Parse(time.RFC3339, file.Claimed.At)
-	if err != nil {
-		return unknownBudget(file.Id, revision, recordPath, "the revision claim timestamp is malformed")
+	episodeAtText := file.Claimed.EpisodeAt
+	episodeRevision := file.Claimed.EpisodeRevision
+	if episodeRevision == 0 {
+		episodeAtText = file.Claimed.At
+		episodeRevision = accountingRevision
 	}
-	budgetStartedAt, weightEpoch, startUnknown := obligationBudgetStart(repoRoot, file, claimedAt)
+	episodeAt, err := time.Parse(time.RFC3339, episodeAtText)
+	if err != nil {
+		return unknownBudget(file.Id, revision, recordPath, "the claim episode timestamp is malformed")
+	}
+	budgetStartedAt, weightEpoch, startUnknown := obligationBudgetStart(repoRoot, file, episodeAt, episodeRevision)
 	if startUnknown != nil {
 		return unknownBudget(file.Id, revision, startUnknown.Record, startUnknown.Reason)
 	}
 	if now.Before(budgetStartedAt) {
-		return unknownBudget(file.Id, revision, recordPath, "CLOCK_REGRESSED: the revision claim is later than the observation")
+		return unknownBudget(file.Id, revision, recordPath, "CLOCK_REGRESSED: the claim episode origin is later than the observation")
 	}
 	gracePercent, err := config.ElapsedGracePercent(filepath.Join(repoRoot, "metasystem.conf"))
 	if err != nil {
@@ -364,7 +374,7 @@ func ProjectBudget(repoRoot string, file *goal.GoalFile, now time.Time) BudgetPr
 		if recordRevision < accountingRevision {
 			continue
 		}
-		if budgetStartedAt.After(claimedAt) {
+		if budgetStartedAt.After(episodeAt) {
 			reservationAt := asString(record["startedAt"])
 			if reservationAt == "" {
 				reservationAt = asString(record["createdAt"])
@@ -475,7 +485,7 @@ func ProjectBudget(repoRoot string, file *goal.GoalFile, now time.Time) BudgetPr
 		if startErr != nil {
 			return unknownBudget(file.Id, revision, logicalPath, "the proof reservation has no readable startedAt")
 		}
-		if weightEpoch == nil && budgetStartedAt.After(claimedAt) && !startedAt.After(budgetStartedAt) {
+		if weightEpoch == nil && budgetStartedAt.After(episodeAt) && !startedAt.After(budgetStartedAt) {
 			continue
 		}
 		if attempt.ReservationOwner != nil {
@@ -579,7 +589,7 @@ func ProjectBudget(repoRoot string, file *goal.GoalFile, now time.Time) BudgetPr
 			}
 		} else if governed.BudgetEpoch != nil {
 			return unknownBudget(file.Id, revision, logicalPath, "the governed run claims a missing budget epoch")
-		} else if budgetStartedAt.After(claimedAt) {
+		} else if budgetStartedAt.After(episodeAt) {
 			startedAt, startErr := time.Parse(time.RFC3339, record.StartedAt)
 			if startErr != nil {
 				return unknownBudget(file.Id, revision, logicalPath, "the governed run has no readable startedAt")
@@ -619,7 +629,7 @@ func ProjectBudget(repoRoot string, file *goal.GoalFile, now time.Time) BudgetPr
 		if weightEpoch == nil && attempt.BudgetEpoch != nil {
 			return unknownBudget(file.Id, revision, owned.record, "terminal attempt claims a missing budget epoch")
 		}
-		if weightEpoch == nil && budgetStartedAt.After(claimedAt) && !startedAt.After(budgetStartedAt) {
+		if weightEpoch == nil && budgetStartedAt.After(episodeAt) && !startedAt.After(budgetStartedAt) {
 			continue
 		}
 		if projection.Attempts == math.MaxUint64 || attempt.ObservedCostMinutes > math.MaxUint64-projection.ReservedJobMinutes ||

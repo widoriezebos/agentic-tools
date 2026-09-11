@@ -72,6 +72,26 @@ func TestGeneratedFieldTamperRefusesByFileAndField(t *testing.T) {
 	if err == nil || !strings.Contains(err.Error(), "editable.md") || !strings.Contains(err.Error(), "Revision") {
 		t.Fatalf("a tampered generated field refuses by file and field: %v", err)
 	}
+	for _, test := range []struct {
+		name   string
+		mutate func(*ClaimRecord)
+	}{
+		{name: "episode time", mutate: func(claim *ClaimRecord) { claim.EpisodeAt = "2026-08-20T00:00:00Z" }},
+		{name: "episode revision", mutate: func(claim *ClaimRecord) { claim.EpisodeRevision-- }},
+		{name: "episode obligation revision", mutate: func(claim *ClaimRecord) { claim.EpisodeObligationRevision++ }},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			base := episodeGolden()
+			edited := *base
+			claim := *base.Claimed
+			edited.Claimed = &claim
+			test.mutate(edited.Claimed)
+			_, err := mapOneChange("plans/goals/episode.md", base, &edited)
+			if err == nil || !strings.Contains(err.Error(), "episode.md") || !strings.Contains(err.Error(), "Claimed is a generated field") {
+				t.Fatalf("tampered %s did not refuse by file and field owner: %v", test.name, err)
+			}
+		})
+	}
 }
 
 func TestHandCreatedFileMapsToOpen(t *testing.T) {

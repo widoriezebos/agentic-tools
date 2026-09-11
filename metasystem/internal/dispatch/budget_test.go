@@ -75,6 +75,165 @@ func writeBudgetJob(t *testing.T, root, name, operation string, revision, cap ui
 	writeJSON(t, filepath.Join(root, "artifacts", "agents", "jobs", name+".json"), record)
 }
 
+func writeConsumedBudgetProof(t *testing.T, root, runID string, goalRevision, obligationRevision uint64, consumedAt time.Time) {
+	t.Helper()
+	if err := obligationstate.RecordTerminal(root, "bounded", goalRevision, obligationRevision, obligationstate.TerminalAttempt{
+		RunID: runID, Status: run.StatusGreen, StartedAt: consumedAt.Add(-30 * time.Minute).Format(time.RFC3339),
+		EndedAt: consumedAt.Add(-time.Minute).Format(time.RFC3339), PrunedAt: consumedAt.Add(time.Minute).Format(time.RFC3339),
+		AttemptOrdinal: 1, ExecutionCostMinutes: 30, ObservedCostMinutes: 29, WeightGeneration: 1, Breaker: run.BreakerClosed,
+	}); err != nil {
+		t.Fatal(err)
+	}
+	writeJSON(t, filepath.Join(root, "artifacts", "agents", "validation-weight.json"), map[string]any{
+		"schema": 1, "generation": 2,
+		"consumedProofs": []any{map[string]any{
+			"runId": runID, "goalId": "bounded", "goalRevision": goalRevision, "obligationRevision": obligationRevision,
+			"weightGeneration": 1, "consumedAt": consumedAt.Format(time.RFC3339),
+			"resetDecision": map[string]any{"apply": true, "wouldRefuse": false}, "dischargeDecision": map[string]any{"apply": true, "wouldRefuse": false},
+		}},
+	})
+}
+
+func raisedEpisodeGoal(revision, inheritedObligationRevision uint64) *goal.GoalFile {
+	file := budgetGoal()
+	for uint64(len(file.History)) < revision {
+		index := len(file.History) - 5
+		file.History = append(file.History, goal.HistoryLine{At: time.Date(2026, 8, 28, 9, 40+index*10, 0, 0, time.UTC).Format(time.RFC3339)})
+	}
+	file.Revision = revision
+	file.Claimed.Revision = revision
+	file.Claimed.AccountingRevision = revision
+	file.Claimed.At = file.History[revision-1].At
+	file.Claimed.EpisodeAt = file.History[2].At
+	file.Claimed.EpisodeRevision = 3
+	file.Claimed.EpisodeObligationRevision = inheritedObligationRevision
+	file.Obligation = nil
+	return file
+}
+
+func dischargedEpisodeGoal() *goal.GoalFile {
+	file := budgetGoal()
+	file.Claimed.AccountingRevision = 3
+	file.Claimed.EpisodeAt = file.Claimed.At
+	file.Claimed.EpisodeRevision = 3
+	file.Obligation = &goal.GovernedObligation{Revision: 5}
+	return file
+}
+
+func TestRaiseDoesNotResetBreachClock(t *testing.T) {
+	root := budgetProjectionRoot(t)
+	if err := os.WriteFile(filepath.Join(root, "metasystem.conf"), []byte("metasystem.budget.elapsed-grace-percent=0\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	file := raisedEpisodeGoal(6, 0)
+	projection := ProjectBudget(root, file, time.Date(2026, 8, 28, 13, 0, 0, 0, time.UTC))
+	if projection.Status != BudgetKnown || projection.StartedAt.Format(time.RFC3339) != "2026-08-28T08:00:00Z" ||
+		projection.Elapsed != 5*time.Hour || projection.ElapsedState != ElapsedBreach {
+		t.Fatalf("a budget change reset or weakened the elapsed breach clock: %+v", projection)
+	}
+}
+
+func TestFiveRaisesCannotOutrunTheBreaker(t *testing.T) {
+	root := budgetProjectionRoot(t)
+	var priorStart time.Time
+	for revision := uint64(4); revision <= 8; revision++ {
+		projection := ProjectBudget(root, raisedEpisodeGoal(revision, 0), time.Date(2026, 8, 28, 14, 0, 0, 0, time.UTC))
+		if projection.Status != BudgetKnown || projection.StartedAt.Format(time.RFC3339) != "2026-08-28T08:00:00Z" ||
+			projection.Elapsed != 6*time.Hour || projection.ElapsedState != ElapsedBreach {
+			t.Fatalf("raise at revision %d bought a fresh elapsed period: %+v", revision, projection)
+		}
+		if !priorStart.IsZero() && !projection.StartedAt.Equal(priorStart) {
+			t.Fatalf("raise at revision %d moved the elapsed start from %s to %s", revision, priorStart, projection.StartedAt)
+		}
+		priorStart = projection.StartedAt
+	}
+}
+
+func TestRaiseAfterDischargeKeepsThePostDischargeStart(t *testing.T) {
+	root := budgetProjectionRoot(t)
+	dischargeAt := time.Date(2026, 8, 28, 9, 30, 0, 0, time.UTC)
+	writeConsumedBudgetProof(t, root, "green-discharge", 3, 5, dischargeAt)
+	before := ProjectBudget(root, dischargedEpisodeGoal(), dischargeAt.Add(5*time.Minute))
+	after := ProjectBudget(root, raisedEpisodeGoal(6, 5), time.Date(2026, 8, 28, 10, 30, 0, 0, time.UTC))
+	if before.Status != BudgetKnown || after.Status != BudgetKnown || !before.StartedAt.Equal(dischargeAt) || !after.StartedAt.Equal(dischargeAt) ||
+		before.WeightEpoch == nil || after.WeightEpoch == nil || *before.WeightEpoch != *after.WeightEpoch || after.Elapsed != time.Hour {
+		t.Fatalf("budget change lost the consumed discharge origin: before=%+v after=%+v", before, after)
+	}
+}
+
+func TestSecondRaiseWithNoLiveObligation(t *testing.T) {
+	root := budgetProjectionRoot(t)
+	dischargeAt := time.Date(2026, 8, 28, 9, 30, 0, 0, time.UTC)
+	writeConsumedBudgetProof(t, root, "green-discharge", 3, 5, dischargeAt)
+	first := ProjectBudget(root, raisedEpisodeGoal(6, 5), time.Date(2026, 8, 28, 10, 0, 0, 0, time.UTC))
+	secondFile := raisedEpisodeGoal(7, 5)
+	second := ProjectBudget(root, secondFile, time.Date(2026, 8, 28, 10, 30, 0, 0, time.UTC))
+	if secondFile.Obligation != nil || secondFile.Claimed.EpisodeObligationRevision != 5 || first.Status != BudgetKnown || second.Status != BudgetKnown ||
+		!first.StartedAt.Equal(dischargeAt) || !second.StartedAt.Equal(dischargeAt) || first.WeightEpoch == nil || second.WeightEpoch == nil || *first.WeightEpoch != *second.WeightEpoch {
+		t.Fatalf("a second budget change lost the inherited discharge identity: first=%+v second=%+v claim=%+v", first, second, secondFile.Claimed)
+	}
+}
+
+func TestFreshEpisodeExcludesPriorDischarge(t *testing.T) {
+	root := budgetProjectionRoot(t)
+	dischargeAt := time.Date(2026, 8, 28, 9, 30, 0, 0, time.UTC)
+	writeConsumedBudgetProof(t, root, "prior-episode-discharge", 3, 5, dischargeAt)
+	fresh := raisedEpisodeGoal(8, 0)
+	fresh.Claimed.EpisodeAt = fresh.History[7].At
+	fresh.Claimed.EpisodeRevision = 8
+	projection := ProjectBudget(root, fresh, time.Date(2026, 8, 28, 11, 0, 0, 0, time.UTC))
+	if projection.Status != BudgetKnown || projection.WeightEpoch != nil || !projection.StartedAt.Equal(time.Date(2026, 8, 28, 10, 0, 0, 0, time.UTC)) {
+		t.Fatalf("a consumed proof crossed into the fresh ownership episode: %+v", projection)
+	}
+}
+
+func TestSetObligationReturnsTheStartToTheEpisodeOrigin(t *testing.T) {
+	root := budgetProjectionRoot(t)
+	dischargeAt := time.Date(2026, 8, 28, 9, 30, 0, 0, time.UTC)
+	writeConsumedBudgetProof(t, root, "green-discharge", 3, 5, dischargeAt)
+	file := dischargedEpisodeGoal()
+	file.Obligation = &goal.GovernedObligation{Revision: 7}
+	projection := ProjectBudget(root, file, time.Date(2026, 8, 28, 10, 0, 0, 0, time.UTC))
+	if projection.Status != BudgetKnown || projection.StartedAt.Format(time.RFC3339) != "2026-08-28T08:00:00Z" || projection.WeightEpoch != nil {
+		t.Fatalf("a replacement obligation inherited the superseded proof: %+v unknown=%+v", projection, projection.Unknown)
+	}
+}
+
+func TestRaiseAfterSetObligationKeepsTheSupersession(t *testing.T) {
+	root := budgetProjectionRoot(t)
+	dischargeAt := time.Date(2026, 8, 28, 9, 30, 0, 0, time.UTC)
+	writeConsumedBudgetProof(t, root, "green-discharge", 3, 5, dischargeAt)
+	file := raisedEpisodeGoal(8, 7)
+	projection := ProjectBudget(root, file, time.Date(2026, 8, 28, 10, 30, 0, 0, time.UTC))
+	if projection.Status != BudgetKnown || projection.StartedAt.Format(time.RFC3339) != "2026-08-28T08:00:00Z" || projection.WeightEpoch != nil {
+		t.Fatalf("a budget change resurrected a proof superseded by obligation revision 7: %+v", projection)
+	}
+}
+
+func TestRaiseThenSetObligationThenRaiseStaysAtTheEpisodeOrigin(t *testing.T) {
+	root := budgetProjectionRoot(t)
+	dischargeAt := time.Date(2026, 8, 28, 9, 30, 0, 0, time.UTC)
+	writeConsumedBudgetProof(t, root, "green-discharge", 3, 5, dischargeAt)
+	firstRaise := ProjectBudget(root, raisedEpisodeGoal(6, 5), time.Date(2026, 8, 28, 10, 0, 0, 0, time.UTC))
+	replacement := raisedEpisodeGoal(6, 5)
+	replacement.Obligation = &goal.GovernedObligation{Revision: 9}
+	afterReplacement := ProjectBudget(root, replacement, time.Date(2026, 8, 28, 10, 10, 0, 0, time.UTC))
+	afterSecondRaise := ProjectBudget(root, raisedEpisodeGoal(10, 9), time.Date(2026, 8, 28, 11, 0, 0, 0, time.UTC))
+	if firstRaise.Status != BudgetKnown || !firstRaise.StartedAt.Equal(dischargeAt) || afterReplacement.Status != BudgetKnown || afterSecondRaise.Status != BudgetKnown ||
+		afterReplacement.StartedAt.Format(time.RFC3339) != "2026-08-28T08:00:00Z" || afterSecondRaise.StartedAt.Format(time.RFC3339) != "2026-08-28T08:00:00Z" ||
+		afterReplacement.WeightEpoch != nil || afterSecondRaise.WeightEpoch != nil {
+		t.Fatalf("replacement obligation supersession did not survive the next raise: first=%+v replacement=%+v second=%+v", firstRaise, afterReplacement, afterSecondRaise)
+	}
+}
+
+func TestClockRegressedNamesEpisodeOrigin(t *testing.T) {
+	root := budgetProjectionRoot(t)
+	projection := ProjectBudget(root, raisedEpisodeGoal(6, 0), time.Date(2026, 8, 28, 7, 59, 0, 0, time.UTC))
+	if projection.Status != BudgetUnknown || projection.Unknown == nil || projection.Unknown.Reason != "CLOCK_REGRESSED: the claim episode origin is later than the observation" {
+		t.Fatalf("clock regression did not name the episode origin: %+v", projection)
+	}
+}
+
 func TestBudgetProjectionUsesJobRecordsForTheBoundRevision(t *testing.T) {
 	root := budgetProjectionRoot(t)
 	writeBudgetJob(t, root, "done", "reserve-a", 3, 30, "completed", budgetJobLife{
@@ -465,6 +624,8 @@ func TestSTR2P2A01AccountingRevisionPreservesRaisedSpendAndSetBudgetResetsIt(t *
 	file := budgetGoal()
 	file.Claimed.Revision = 5
 	file.Claimed.AccountingRevision = 3
+	file.Claimed.EpisodeAt = file.History[2].At
+	file.Claimed.EpisodeRevision = 3
 	file.History[4].Reason = "Misclassified: from=1 to=3 evidence=refusal:BUDGET_REFUSED"
 	writeBudgetJob(t, root, "root-before-raise-one", "reserve-before-one", 3, 20, "completed", budgetJobLife{
 		startedAt: "2026-08-28T08:10:00Z", endedAt: "2026-08-28T08:30:00Z", pid: 4242,
@@ -475,10 +636,20 @@ func TestSTR2P2A01AccountingRevisionPreservesRaisedSpendAndSetBudgetResetsIt(t *
 	if projection.Status != BudgetKnown || projection.Attempts != 2 || projection.ReservedJobMinutes != 50 || projection.ActiveJobs != 1 {
 		t.Fatalf("risk raise erased spend from the accounting interval: %+v", projection)
 	}
+	episodeOrigin, err := time.Parse(time.RFC3339, file.Claimed.EpisodeAt)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !projection.StartedAt.Equal(episodeOrigin) {
+		t.Fatalf("risk raise changed the elapsed origin while retaining spend: %+v", projection)
+	}
 	file.Claimed.AccountingRevision = file.Claimed.Revision
 	reset := ProjectBudget(root, file, time.Date(2026, 8, 28, 10, 0, 0, 0, time.UTC))
 	if reset.Status != BudgetKnown || reset.Attempts != 0 || reset.ReservedJobMinutes != 0 || reset.ActiveJobs != 0 {
 		t.Fatalf("human set-budget boundary did not reset the tally: %+v", reset)
+	}
+	if !reset.StartedAt.Equal(projection.StartedAt) {
+		t.Fatalf("accounting reset also reset the elapsed origin: before=%s after=%s", projection.StartedAt, reset.StartedAt)
 	}
 }
 

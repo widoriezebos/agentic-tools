@@ -174,7 +174,8 @@ func TestBreachStopFenceAndHumanResumeAreOneWayTransactions(t *testing.T) {
 	fresh := p.Tree.Live["stop-me"]
 	if fresh.StopFence != nil || fresh.StopCapability == nil || fresh.StopCapability.FenceEpoch != 0 ||
 		fresh.StopCapability.Revision != fresh.Claimed.Revision || fresh.Budget.ElapsedLimit != "1m" ||
-		fresh.History[len(fresh.History)-1].Verb != "resume" {
+		fresh.Claimed.EpisodeAt != resume.stamp() || fresh.Claimed.EpisodeRevision != fresh.Claimed.Revision ||
+		fresh.Claimed.EpisodeObligationRevision != 0 || fresh.History[len(fresh.History)-1].Verb != "resume" {
 		t.Fatalf("resume did not create one fresh revision and tuple: %+v", fresh)
 	}
 }

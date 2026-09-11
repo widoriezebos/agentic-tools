@@ -263,6 +263,8 @@ func bindClaim(f *GoalFile, machine, lineage, at string, revision uint64, claimE
 		return fmt.Errorf("claim requires the authenticated lease holder's positive claim epoch")
 	}
 	f.Claimed = newClaimRecord(machine, lineage, at, revision)
+	f.Claimed.EpisodeAt = at
+	f.Claimed.EpisodeRevision = revision
 	f.StopCapability = &StopCapability{
 		Generation: revision, Revision: revision, Machine: machine, ClaimEpoch: claimEpoch,
 	}
@@ -270,6 +272,51 @@ func bindClaim(f *GoalFile, machine, lineage, at string, revision uint64, claimE
 	// A fresh claim or budget revision cannot inherit authority from an older
 	// obligation. The human creates a new immutable binding explicitly.
 	f.Obligation = nil
+	return nil
+}
+
+// rebindClaimKeepEpisode advances the budget and accounting revision without
+// changing when the current ownership episode began or which discharge moved
+// its clock.
+func rebindClaimKeepEpisode(f *GoalFile, at string, revision uint64, claimEpoch int64) error {
+	if f.Claimed == nil {
+		return fmt.Errorf("goal %s has no claim to rebind", f.Id)
+	}
+	if f.Claimed.Revision == 0 {
+		if f.Claimed.EpisodeAt != "" || f.Claimed.EpisodeRevision != 0 || f.Claimed.EpisodeObligationRevision != 0 {
+			return f.ValidateClaimRevision()
+		}
+		return bindClaim(f, f.Claimed.Machine, f.Claimed.Lineage, at, revision, claimEpoch)
+	}
+	machine, lineage := f.Claimed.Machine, f.Claimed.Lineage
+	episodeAt, episodeRevision := f.Claimed.EpisodeAt, f.Claimed.EpisodeRevision
+	if episodeRevision == 0 {
+		episodeAt = f.Claimed.At
+		episodeRevision = f.Claimed.AccountingRevision
+		if episodeRevision == 0 {
+			episodeRevision = f.Claimed.Revision
+		}
+		candidate := *f.Claimed
+		candidate.EpisodeAt = episodeAt
+		candidate.EpisodeRevision = episodeRevision
+		checked := *f
+		checked.Claimed = &candidate
+		if err := checked.ValidateClaimRevision(); err != nil {
+			return err
+		}
+	} else if err := f.ValidateClaimRevision(); err != nil {
+		return err
+	}
+	episodeObligationRevision := f.Claimed.EpisodeObligationRevision
+	if f.Obligation != nil {
+		episodeObligationRevision = f.Obligation.Revision
+	}
+	if err := bindClaim(f, machine, lineage, at, revision, claimEpoch); err != nil {
+		return err
+	}
+	f.Claimed.EpisodeAt = episodeAt
+	f.Claimed.EpisodeRevision = episodeRevision
+	f.Claimed.EpisodeObligationRevision = episodeObligationRevision
 	return nil
 }
 
@@ -662,9 +709,9 @@ func claimRequest(r VerbRequest, id string, supplied *Budget) PublishRequest {
 }
 
 // SetBudget without human proof is retired. SetBudgetApproved replaces the
-// whole tuple under the same authority boundary as approval. On claimed work it also starts the
-// claim record for the new revision, so elapsed time and job reservations
-// have one unambiguous revision boundary.
+// whole tuple under the same authority boundary as approval. On claimed work
+// it advances the claim and spending boundary while preserving the ownership
+// episode used by the elapsed clock.
 func SetBudget(r VerbRequest, id string, budget Budget) (PublishResult, error) {
 	return PublishResult{}, fmt.Errorf("the budget was bound by the human's approval; goal set-budget requires the human authority proof")
 }
@@ -763,7 +810,7 @@ func setBudgetRequest(r VerbRequest, id string, budget Budget, proof *humanautho
 				if claimEpoch < 1 && r.Actor.Human != "" && f.StopCapability != nil {
 					claimEpoch = f.StopCapability.ClaimEpoch
 				}
-				if err := bindClaim(f, f.Claimed.Machine, f.Claimed.Lineage, r.stamp(), f.Revision, claimEpoch); err != nil {
+				if err := rebindClaimKeepEpisode(f, r.stamp(), f.Revision, claimEpoch); err != nil {
 					return nil, err
 				}
 			}

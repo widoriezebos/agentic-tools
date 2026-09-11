@@ -246,6 +246,13 @@ type ClaimRecord struct {
 	// belongs to the current human-approved budget. Legacy records default it
 	// to Revision when parsed.
 	AccountingRevision uint64
+	// EpisodeAt and EpisodeRevision pin the start of the current ownership
+	// episode while a budget change advances the claim and accounting binding.
+	EpisodeAt       string
+	EpisodeRevision uint64
+	// EpisodeObligationRevision keeps the identity of a consumed discharge
+	// after a budget change clears the live obligation.
+	EpisodeObligationRevision uint64
 }
 
 // StopCapability binds breach-stop authority to one exact local claim. The
@@ -656,10 +663,23 @@ func misclassificationRaises(reason string) bool {
 // A revisionless claim has no binding to validate; structured admission
 // refuses it rather than guessing which history event began the work.
 func (f *GoalFile) ValidateClaimRevision() error {
-	if f == nil || f.Claimed == nil || f.Claimed.Revision == 0 {
+	if f == nil || f.Claimed == nil {
 		return nil
 	}
-	revision := f.Claimed.Revision
+	claim := f.Claimed
+	if claim.EpisodeAt != "" && claim.EpisodeRevision == 0 {
+		return fmt.Errorf("claimed episode binding is incomplete (episodeAt and episodeRevision travel together)")
+	}
+	if claim.EpisodeAt == "" && claim.EpisodeRevision > 0 {
+		return fmt.Errorf("the claim episode timestamp is malformed")
+	}
+	if claim.EpisodeObligationRevision > 0 && claim.EpisodeRevision == 0 {
+		return fmt.Errorf("claimed episodeObligationRevision=%d has no episode binding", claim.EpisodeObligationRevision)
+	}
+	if claim.Revision == 0 {
+		return nil
+	}
+	revision := claim.Revision
 	if revision > f.Revision {
 		return fmt.Errorf("claimed revision=%d does not exist in goal Revision=%d", revision, f.Revision)
 	}
@@ -667,20 +687,46 @@ func (f *GoalFile) ValidateClaimRevision() error {
 		return fmt.Errorf("claimed revision=%d has no History event; the goal records %d event(s)", revision, len(f.History))
 	}
 	event := f.History[revision-1]
-	if event.At != f.Claimed.At {
+	if event.At != claim.At {
 		if !misclassificationRaises(event.Reason) {
-			return fmt.Errorf("claimed at=%s contradicts History revision=%d at=%s", f.Claimed.At, revision, event.At)
+			return fmt.Errorf("claimed at=%s contradicts History revision=%d at=%s", claim.At, revision, event.At)
 		}
 		foundOrigin := false
 		for _, prior := range f.History[:revision-1] {
-			if prior.At == f.Claimed.At {
+			if prior.At == claim.At {
 				foundOrigin = true
 				break
 			}
 		}
 		if !foundOrigin {
-			return fmt.Errorf("claimed at=%s has no pre-raise History event", f.Claimed.At)
+			return fmt.Errorf("claimed at=%s has no pre-raise History event", claim.At)
 		}
+	}
+	if claim.EpisodeRevision == 0 {
+		return nil
+	}
+	if claim.EpisodeRevision > revision {
+		return fmt.Errorf("claimed episodeRevision=%d is later than claim revision=%d", claim.EpisodeRevision, revision)
+	}
+	if claim.EpisodeRevision > uint64(len(f.History)) {
+		return fmt.Errorf("claimed episodeRevision=%d has no History event; the goal records %d event(s)", claim.EpisodeRevision, len(f.History))
+	}
+	episodeAt, err := time.Parse(time.RFC3339, claim.EpisodeAt)
+	if err != nil {
+		return fmt.Errorf("the claim episode timestamp is malformed")
+	}
+	episodeEvent := f.History[claim.EpisodeRevision-1]
+	if episodeEvent.At != claim.EpisodeAt {
+		return fmt.Errorf("claimed episodeAt=%s contradicts History revision=%d at=%s", claim.EpisodeAt, claim.EpisodeRevision, episodeEvent.At)
+	}
+	claimedAt, err := time.Parse(time.RFC3339, claim.At)
+	if err == nil && episodeAt.After(claimedAt) {
+		return fmt.Errorf("claimed episodeAt=%s is later than claimed at=%s", claim.EpisodeAt, claim.At)
+	}
+	if obligationRevision := claim.EpisodeObligationRevision; obligationRevision > 0 &&
+		(obligationRevision <= claim.EpisodeRevision || obligationRevision >= revision) {
+		return fmt.Errorf("claimed episodeObligationRevision=%d must be later than episodeRevision=%d and earlier than claim revision=%d",
+			obligationRevision, claim.EpisodeRevision, revision)
 	}
 	return nil
 }
@@ -920,7 +966,7 @@ func parseFileField(f *GoalFile, field string, seen map[string]bool, addProblem 
 		// appetite= has no budget authority. Discarding it keeps the claim
 		// readable so admission can name the record whose structured tuple is
 		// missing; the value never enters GoalFile.
-		rec, err := parseKVRecord(value, []string{"machine", "lineage", "at"}, []string{"revision", "accountingRevision", "appetite"}, "")
+		rec, err := parseKVRecord(value, []string{"machine", "lineage", "at"}, []string{"revision", "accountingRevision", "episodeAt", "episodeRevision", "episodeObligationRevision", "appetite"}, "")
 		if err != nil {
 			addProblem("Claimed: %v", err)
 			return
@@ -941,7 +987,38 @@ func parseFileField(f *GoalFile, field string, seen map[string]bool, addProblem 
 				return
 			}
 		}
-		f.Claimed = &ClaimRecord{Machine: rec["machine"], Lineage: rec["lineage"], At: rec["at"], Revision: revision, AccountingRevision: accountingRevision}
+		episodeAt, episodeAtPresent := rec["episodeAt"]
+		episodeRevisionRaw, episodeRevisionPresent := rec["episodeRevision"]
+		episodeObligationRaw, episodeObligationPresent := rec["episodeObligationRevision"]
+		incompleteEpisode := episodeAtPresent != episodeRevisionPresent
+		if incompleteEpisode {
+			addProblem("Claimed episode binding is incomplete (episodeAt and episodeRevision travel together)")
+		}
+		if episodeObligationPresent && (!episodeAtPresent || !episodeRevisionPresent) {
+			addProblem("Claimed episodeObligationRevision requires the episode binding (episodeAt and episodeRevision)")
+		}
+		if incompleteEpisode || episodeObligationPresent && (!episodeAtPresent || !episodeRevisionPresent) {
+			return
+		}
+		var episodeRevision uint64
+		if episodeRevisionPresent {
+			episodeRevision, err = strconv.ParseUint(episodeRevisionRaw, 10, 64)
+			if err != nil || episodeRevision == 0 {
+				addProblem("Claimed episodeRevision=%q is not a positive integer", episodeRevisionRaw)
+				return
+			}
+		}
+		var episodeObligationRevision uint64
+		if episodeObligationPresent {
+			episodeObligationRevision, err = strconv.ParseUint(episodeObligationRaw, 10, 64)
+			if err != nil || episodeObligationRevision == 0 {
+				addProblem("Claimed episodeObligationRevision=%q is not a positive integer", episodeObligationRaw)
+				return
+			}
+		}
+		f.Claimed = &ClaimRecord{Machine: rec["machine"], Lineage: rec["lineage"], At: rec["at"], Revision: revision,
+			AccountingRevision: accountingRevision, EpisodeAt: episodeAt, EpisodeRevision: episodeRevision,
+			EpisodeObligationRevision: episodeObligationRevision}
 	case "StopCapability":
 		rec, err := parseKVRecord(value, []string{"generation", "revision", "machine", "claimEpoch", "fenceEpoch"}, nil, "")
 		if err != nil {
@@ -1247,6 +1324,12 @@ func RenderFile(f *GoalFile) []byte {
 				accountingRevision = f.Claimed.Revision
 			}
 			fmt.Fprintf(&b, " revision=%d accountingRevision=%d", f.Claimed.Revision, accountingRevision)
+		}
+		if f.Claimed.EpisodeRevision > 0 {
+			fmt.Fprintf(&b, " episodeAt=%s episodeRevision=%d", f.Claimed.EpisodeAt, f.Claimed.EpisodeRevision)
+			if f.Claimed.EpisodeObligationRevision > 0 {
+				fmt.Fprintf(&b, " episodeObligationRevision=%d", f.Claimed.EpisodeObligationRevision)
+			}
 		}
 		b.WriteByte('\n')
 	}
