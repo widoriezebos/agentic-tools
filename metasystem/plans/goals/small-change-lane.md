@@ -2,12 +2,12 @@
 
 - State: approved
 - Priority: 1
-- Sequence: 25
+- Sequence: 17
 - Intent: The 'change this little thing' case has a supported path: a dispatch lane cheap and fast enough that a certified one-line fix is not ceremony
 - Origin: main
 - Next step: DESIGN REVISION 1 RETURNED (scl-design1, Fable, 597 lines; page saved in m1b's scratchpad, scl-design1.patch; unlandable until records can land). WIDO'S DECISIONS 2026-09-10 on its three open points: (1) proof depth follows the four risk answers, never the diff's size (kept the contract's rule; locality is goal blast-radius-beside-risk, later); (2) critique follows the TIER, not the class (goal critique-always re-scoped): the small lane's 'one bounded critique' becomes 'a critique when the tier is 2 or 3, none at tier 1', and the tier-1 direct-fix class is NOT retired: it is the low-risk lane, R-54-m1 stands; (3) the bounds are four files and eighty changed lines, measured on the computed diff at conformance review, a change over the bound moves to the ordinary ladder rather than failing, revisited after ten lane landings. Revision 2 folds these three into the page (sections 2, 3, 7 and the revision record) before read 1. Parked until the bootstrap members land.
 - OpenedAt: 2026-08-20T00:14:00Z
-- Revision: 61
+- Revision: 62
 - Pinned: m1e
 - Budget: elapsedLimit=1d attemptLimit=6 reservedJobMinutesLimit=240 activeJobLimit=1 reviewRoundLimit=3
 - BudgetExceptions: 0
@@ -76,4 +76,5 @@ History:
 - 2026-09-11T15:48:21Z 8NDX8QPSQXDM5YE46TQMM40YKA-m1-c6925449 set-priority actor=human:Wido targets=actionable-metrics,breach-clock-and-budget-honesty,burn-without-delivery-tripwire,carried-landing-debt-and-cap,coordinator-context-stays-under-budget,delegate-job-liveness,failed-job-attention,fixture-stewards-outlive-their-suite,goal-abandoned-with-a-reason,human-carried-landing-verb,human-goal-verbs-forgiving,job-record-birth-token,landing-receipt-survives-records-drift,lease-sweep-death-evidence,live-job-on-a-done-goal-unnoticed,machine-concurrency-governor,proof-harness-process-custody,severity-tiered-rigor,severity-tiered-rigor-p2,small-change-lane,steward-catchup-livelock,steward-revives-a-done-goal,stop-batch-strands-a-resumable-goal,suite-custody,token-spend-fence,turn-verdict-hardening,watch-verb,watcher-repair-request-never-names-current,winddown-census-handoff-leak reason=priority-order subject=coordinator-context-stays-under-budget from=1:23 to=1:24 requested-sequence=14
 - 2026-09-11T15:48:29Z Z5BVAA2T0FVBFRJC6ZDZ2M9KE7-m1-c6925449 set-priority actor=human:Wido targets=actionable-metrics,breach-clock-and-budget-honesty,burn-without-delivery-tripwire,carried-landing-debt-and-cap,critique-closes-on-folded-proof,delegate-job-liveness,failed-job-attention,fixture-stewards-outlive-their-suite,goal-abandoned-with-a-reason,human-carried-landing-verb,human-goal-verbs-forgiving,job-record-birth-token,landing-receipt-survives-records-drift,lease-sweep-death-evidence,live-job-on-a-done-goal-unnoticed,machine-concurrency-governor,proof-harness-process-custody,severity-tiered-rigor,severity-tiered-rigor-p2,small-change-lane,steward-catchup-livelock,steward-revives-a-done-goal,stop-batch-strands-a-resumable-goal,suite-custody,token-spend-fence,turn-verdict-hardening,watch-verb,watcher-repair-request-never-names-current,winddown-census-handoff-leak reason=priority-order subject=critique-closes-on-folded-proof from=1:24 to=1:25 requested-sequence=15
 - 2026-09-11T15:48:35Z RXDYK1X24N9EC2RPM4S828DYST-m1-c6925449 set-pin actor=human:Wido targets=small-change-lane
-Integrity: sha256=7108cc5470936b5b5e214ddaf343293ab47dcd155a54c94ee67119a7c8a40386
+- 2026-09-11T15:48:39Z 6YNPZFT7SHSMH78WVASRFK2CAB-m1-c6925449 set-priority actor=human:Wido targets=breach-clock-and-budget-honesty,carried-landing-debt-and-cap,goal-abandoned-with-a-reason,human-goal-verbs-forgiving,landing-receipt-survives-records-drift,severity-tiered-rigor,severity-tiered-rigor-p2,small-change-lane,stop-batch-strands-a-resumable-goal reason=priority-order subject=small-change-lane from=1:25 to=1:17 requested-sequence=17
+Integrity: sha256=fbab18442732bf8c27b0c26a8fe02c1b5d0f4599889487c48e01805bf762aea8
