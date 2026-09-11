@@ -2,14 +2,14 @@
 
 - State: queued
 - Priority: 1
-- Sequence: 16
+- Sequence: 15
 - Risk: severity=2 novelty=2 exposure=3 accumulation=1 basis="severity 2: an over-bounded output hides evidence the seat needs; novelty 2: bounded verb output is a new discipline; exposure 3: every seat's every turn; accumulation 1: verbs and docs"
 - Tier: 3
 - Intent: Coordinator calls carried 386 to 507 thousand prompt tokens each, 5.33 billion cache-read tokens in five days, 19 compactions dropping 14.85 million tokens, while delegates ran efficiently at 76 to 126 thousand (claude-sessions.md sections 1a and 4b); goal list prints 9 MB of JSON. DONE means: cumulative per-call context is accounted and bounded by construction: tool output over a size bound lands in a file with a summary line, ledger and status verbs print bounded summaries with --json for detail, briefs and evidence are referenced by path, and at the boundary the seat hands off to itself through a written state file rather than compacting; proven by a week where the 95th percentile of coordinator per-call prompt tokens is under 150 thousand, no call exceeds 200 thousand, no compaction occurs, and every required evidence path stays reachable. Goal 15 of plans/delivery-efficiency-plan.md.
 - Origin: human
 - Next step: Measure which tool outputs dominate the context (goal list, watch, test logs, land output), bound them at the verb, design the handoff-at-boundary, write the instruction change, critique, build, land.
 - OpenedAt: 2026-09-11T15:45:19Z
-- Revision: 8
+- Revision: 9
 - Pinned: m1e
 - BudgetExceptions: 0
 
@@ -22,4 +22,5 @@ History:
 - 2026-09-11T16:13:33Z 15P0YSPM71CCPRJTMA5AGHTS29-m1-c6925449 unapprove actor=human:Wido targets=coordinator-context-stays-under-budget reason=Wido 2026-09-11: Codex critique round 1 of the delivery-efficiency plan accepted; intent amended before re-approval
 - 2026-09-11T16:16:52Z B9ZFWK1ASSC0VCXH626C3Y7BNT-m1e-ab5421f5 edit actor=m1e+main-1789143377-71578-b9c0d2 targets=coordinator-context-stays-under-budget
 - 2026-09-11T16:17:45Z 030HT9PVZGVHDS5RKBJJ1AFZZP-m1-c6925449 set-priority actor=human:Wido targets=actionable-metrics,breach-clock-and-budget-honesty,budget-extends-by-consumption-and-breach-parks,burn-without-delivery-tripwire,capped-round-continues-instead-of-restarting,carried-landing-debt-and-cap,coordinator-context-stays-under-budget,coordinator-wakes-on-events-not-polls,critique-closes-on-folded-proof,deep-battery-under-ten-minutes,delegate-job-liveness,delegate-rounds-reuse-a-warm-gate,delivery-receipt-stops-at-first-failure,failed-job-attention,fixture-stewards-outlive-their-suite,goal-abandoned-with-a-reason,human-carried-landing-carry,human-carried-landing-verb,human-goal-verbs-forgiving,job-record-birth-token,land-ready-work-lands-without-a-claim-slot,landing-receipt-survives-records-drift,lease-sweep-death-evidence,live-job-on-a-done-goal-unnoticed,machine-concurrency-governor,proof-attempts-settle-to-minutes-run,proof-groups-detect-hangs-by-progress-not-the-clock,proof-harness-process-custody,retained-proof-reuse-crosses-claims-and-attempts,severity-tiered-rigor,severity-tiered-rigor-p2,small-change-lane,steward-catchup-livelock,steward-revives-a-done-goal,stop-batch-strands-a-resumable-goal,suite-custody,tier-from-severity-and-novelty,token-spend-fence,turn-verdict-hardening,watch-verb,watcher-repair-request-never-names-current,winddown-census-handoff-leak reason=priority-order subject=proof-attempts-settle-to-minutes-run from=1:15 to=1:16 requested-sequence=7
-Integrity: sha256=770f9710ae5883e43f4b26583de978f8bf73f8fbecd076d5daadee55ada40ccd
+- 2026-09-11T16:18:17Z H1Z9B4FFZKDGN46A10AWVH9812-m1-c6925449 set-priority actor=human:Wido targets=coordinator-context-stays-under-budget,human-carried-landing-carry reason=priority-order subject=coordinator-context-stays-under-budget from=1:16 to=1:15 requested-sequence=15
+Integrity: sha256=7f6bb4b528e4e0e816a109b07c6ed39469cb029b5d48f94aecfadc630abf2c3c
