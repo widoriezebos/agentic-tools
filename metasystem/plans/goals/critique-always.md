@@ -9,8 +9,9 @@
 - Origin: main
 - Next step: Appetite: 1h. Build: replace independentCritiqueRequired-by-class with a tier-keyed rule in internal/dispatch/hazard.go (requiredConfigurationByHazard) and scripts/agents/role-packets.json, read the tier from the goal record at admission and at chain close, keep the per-class effort rows (R-90-m1: MECHANICAL builds at xhigh); fixtures as the DONE names. Supersedes Ruling O's class-keyed critique clause; R-54-m1 stands (ruling row R-92-m1b drafted, lands with the rulings register). Consistency sweep by m1b 2026-09-10 11:40Z: no other backlog record contradicts this; small-change-lane and review-round-limit-counts-per-chain updated.
 - OpenedAt: 2026-09-01T07:18:55Z
-- Revision: 16
+- Revision: 17
 - Labels: headless-fleet, headless-process
+- Pinned: m1e
 - BudgetExceptions: 0
 
 History:
@@ -30,4 +31,5 @@ History:
 - 2026-09-10T08:13:29Z N3FDKEGWRF1GMSQ2D7CBRMKVZY-m1b-c6925449 approve actor=human:Wido targets=critique-always
 - 2026-09-11T07:57:56Z 6SFDGG4XY740YZJZY669QKBPJA-m1-c6925449 unapprove actor=human:Wido targets=critique-always reason=Wido 2026-09-11: standing approval withdrawn to regain control of what is built next; re-approve deliberately
 - 2026-09-11T15:48:54Z VKSQDY36W11YSM8YFGRZMS22K4-m1-c6925449 set-priority actor=human:Wido targets=actionable-metrics,adoption-inventory-from-install-set,breach-clock-and-budget-honesty,burn-without-delivery-tripwire,capped-round-continues-instead-of-restarting,carried-landing-debt-and-cap,chain-landing-carries-the-reviewed-diff,chain-landing-carries-unrelated-staged-plans,closing-read-follows-the-change-not-the-label,commit-goal-binding,critique-always,delegate-job-liveness,design-gate-at-dispatch,failed-job-attention,first-headless-run,fixture-stewards-outlive-their-suite,fleet-channel-gateway,fleet-join-bootstrap,fleet-pull,gate-governance-records,goal-abandoned-with-a-reason,headless-continuous-delivery-proof,headless-fleet-coordination-proof,hook-enrollment-per-checkout,host-implementer-wall,human-approval-for-execution,human-goal-verbs-forgiving,idle-every-runtime-enforcement,job-record-birth-token,landing-design-provenance,landing-receipt-survives-records-drift,lease-sweep-death-evidence,live-job-on-a-done-goal-unnoticed,machine-concurrency-governor,manifest-floor-at-dispatch,merge-stage-critic-close,metasystem-stop-escalation-proofs,mission-birth-baseline-from-dirty-worktree,never-idle-ironclad,one-approval-gate,proof-harness-process-custody,recovery-rehearsal,recovery-to-good-state,repo-root-paths-ride-agent-commits-unjudged,role-context-composition,role-lane-packets,role-liveness-watchdog,seat-mutual-awareness,severity-tiered-rigor,severity-tiered-rigor-p2,steward-catchup-livelock,steward-revives-a-done-goal,stop-batch-strands-a-resumable-goal,suite-custody,token-spend-fence,turn-verdict-hardening,two-bars-for-changes,watch-verb,watcher-repair-request-never-names-current,winddown-census-handoff-leak reason=priority-order subject=capped-round-continues-instead-of-restarting from=2:12 to=2:11 requested-sequence=19
-Integrity: sha256=8a75e59201dcdb93dac543daa68ec9e128e30d1d920e5b70949fc2c1b27a3a18
+- 2026-09-11T16:17:33Z FTETDDH79F9A50RGMH9V6BM9SV-m1-c6925449 set-pin actor=human:Wido targets=critique-always
+Integrity: sha256=1704eb6852051d64a068aad4249e4997083e7ba9ce279482bd2c46e4dd9ff683
