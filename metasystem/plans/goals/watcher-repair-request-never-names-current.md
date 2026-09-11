@@ -2,14 +2,14 @@
 
 - State: queued
 - Priority: 1
-- Sequence: 36
+- Sequence: 35
 - Risk: severity=3 novelty=2 exposure=3 accumulation=3 basis="severity 3: the seat's watcher repair silently does not happen, and health reads healthy while it does not; novelty 2: the failure is in the owner's own repair branch, not a known seam; exposure 3: every seat runs this owner; accumulation 3: it spun for twenty hours here and nothing bounded it"
 - Tier: 3
 - Intent: The supervision owner can get stuck in a repair loop it can never complete. On m1d, artifacts/agents/supervision/owner.ndjson carries 1177 consecutive ticks of "watcher-restart-failed: watcher restart request does not name the owner's current watcher", once a minute from 2026-09-06 13:24 to 2026-09-07 09:12 - roughly twenty hours of a repair the owner keeps attempting and keeps refusing to itself, because the pending restart request names a watcher that is no longer the owner's current one. Nothing escalated: the tick kept reporting verdict=continue and observation=healthy while the repair never happened. DONE means the owner either rewrites a stale restart request against its current watcher or abandons it and mints a fresh one, so a repair cannot spin; and a repair that fails more than a few consecutive ticks stops reporting healthy and surfaces as an alert with the request and the current watcher both named.
 - Origin: main
 - Next step: Read the failed-repair branch in the supervision owner against owner.ndjson on m1d (1177 lines, first at 2026-09-06T13:24:29+02:00, last at 2026-09-07T09:11:18+02:00, cleared when the restart finally completed at 09:12:18). Decide between rewriting the stale request and re-minting it, then add the consecutive-failure escalation so twenty silent hours cannot recur.
 - OpenedAt: 2026-09-07T07:21:49Z
-- Revision: 58
+- Revision: 59
 - Budget: elapsedLimit=1d attemptLimit=10 reservedJobMinutesLimit=1200 activeJobLimit=1 reviewRoundLimit=3
 - BudgetExceptions: 0
 
@@ -72,4 +72,5 @@ History:
 - 2026-09-11T21:59:41Z 6GXPZ9RDTZYMYDPHSVTCCGTEEJ-m1-c6925449 done actor=human:Wido targets=actionable-metrics,burn-without-delivery-tripwire,delegate-job-liveness,fixture-stewards-outlive-their-suite,lease-sweep-death-evidence,machine-concurrency-governor,proof-harness-process-custody,steward-catchup-livelock,suite-custody,token-spend-fence,turn-verdict-hardening,watch-verb,watcher-repair-request-never-names-current,winddown-census-handoff-leak reason=priority-order from=1:39 to=1:38
 - 2026-09-11T21:59:48Z 97C3JYVES1D5WVZN59XAXSSHK8-m1-c6925449 done actor=human:Wido targets=actionable-metrics,breach-clock-and-budget-honesty,carried-landing-debt-and-cap,delegate-job-liveness,failed-job-attention,fixture-stewards-outlive-their-suite,goal-abandoned-with-a-reason,human-goal-verbs-forgiving,job-record-birth-token,landing-receipt-survives-records-drift,lease-sweep-death-evidence,live-job-on-a-done-goal-unnoticed,machine-concurrency-governor,proof-harness-process-custody,severity-tiered-rigor,severity-tiered-rigor-p2,steward-catchup-livelock,steward-revives-a-done-goal,stop-batch-strands-a-resumable-goal,suite-custody,token-spend-fence,turn-verdict-hardening,watch-verb,watcher-repair-request-never-names-current,winddown-census-handoff-leak reason=priority-order from=1:38 to=1:37
 - 2026-09-11T22:03:35Z 3M3DDFMQFG20R73AWT0GX1KQJH-m1-c6925449 done actor=human:Wido targets=actionable-metrics,breach-clock-and-budget-honesty,failed-job-attention,fixture-stewards-outlive-their-suite,goal-abandoned-with-a-reason,human-carried-landing-verb,human-goal-verbs-forgiving,job-record-birth-token,landing-receipt-survives-records-drift,lease-sweep-death-evidence,live-job-on-a-done-goal-unnoticed,machine-concurrency-governor,proof-harness-process-custody,severity-tiered-rigor,severity-tiered-rigor-p2,steward-catchup-livelock,steward-revives-a-done-goal,stop-batch-strands-a-resumable-goal,suite-custody,token-spend-fence,turn-verdict-hardening,watch-verb,watcher-repair-request-never-names-current,winddown-census-handoff-leak reason=priority-order from=1:37 to=1:36
-Integrity: sha256=8e428176c2c2e33e9967dca41da7af9aee7b87c23c74a7090a8faa9127b477cf
+- 2026-09-11T22:05:35Z WXHK62S6CXZXT6T7FQQTP61WZD-m1-c6925449 done actor=human:Wido targets=actionable-metrics,failed-job-attention,fixture-stewards-outlive-their-suite,job-record-birth-token,lease-sweep-death-evidence,live-job-on-a-done-goal-unnoticed,machine-concurrency-governor,severity-tiered-rigor,steward-catchup-livelock,steward-revives-a-done-goal,suite-custody,token-spend-fence,turn-verdict-hardening,watch-verb,watcher-repair-request-never-names-current,winddown-census-handoff-leak reason=priority-order from=1:36 to=1:35
+Integrity: sha256=41b064b93263439db8f8d6074feea4afebeab804bf3f0a43c826e38d945179f6
