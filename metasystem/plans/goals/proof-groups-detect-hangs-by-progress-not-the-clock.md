@@ -1,6 +1,6 @@
 # proof-groups-detect-hangs-by-progress-not-the-clock
 
-- State: approved
+- State: queued
 - Priority: 1
 - Sequence: 11
 - Risk: severity=2 novelty=2 exposure=3 accumulation=1 basis="severity 2: a correct candidate is refused, or a truly hung group runs longer before it is caught, nothing granted or destroyed; novelty 2: progress-based supervision of a child is new in the adapter, the event stream and process accounting exist; exposure 3: every landing receipt on every seat; accumulation 1: one adapter and one runner, no compounding"
@@ -9,11 +9,9 @@
 - Origin: main
 - Next step: Slice 1 landed as c08fe2cb (a go test group is bounded by what it consumes, never by the clock). Remaining: slice 2, the attempt deadline and the remaining engine contexts, agreed with hung-proof-attempts-end-at-their-deadline so liveness reconciliation and elapsed-time patience have one owner; fixture waits belong to fixture-waits-name-their-producer, outside the delivery-efficiency program. Build slice 2 from the landed design and build brief, critique, land.
 - OpenedAt: 2026-09-10T13:40:12Z
-- Revision: 31
+- Revision: 32
 - Pinned: m1e
-- Budget: elapsedLimit=3d attemptLimit=48 reservedJobMinutesLimit=1200 activeJobLimit=1 reviewRoundLimit=3
 - BudgetExceptions: 3
-- Approved: by=human:Wido at=2026-09-11T09:54:10Z revision=22 opid=QY1MYNZNDWHY57N6SFZ1M84G90-m1-c6925449 authority=proven digest=dad2e53d5dda53ed598a102ccd9d0638dc5a4b0c2d672c25c9bf01ac9811b7bc
 - Sliced: machine=m1 lineage=main-1788940932-18533-7fa6c2 revision=5 at=2026-09-10T14:14:54Z
 
 History:
@@ -48,4 +46,5 @@ History:
 - 2026-09-11T16:17:07Z JTX3Z7VRVANBK70T93NV3F92MB-m1e-ab5421f5 edit actor=m1e+main-1789143377-71578-b9c0d2 targets=proof-groups-detect-hangs-by-progress-not-the-clock
 - 2026-09-11T16:17:45Z 030HT9PVZGVHDS5RKBJJ1AFZZP-m1-c6925449 set-priority actor=human:Wido targets=actionable-metrics,breach-clock-and-budget-honesty,budget-extends-by-consumption-and-breach-parks,burn-without-delivery-tripwire,capped-round-continues-instead-of-restarting,carried-landing-debt-and-cap,coordinator-context-stays-under-budget,coordinator-wakes-on-events-not-polls,critique-closes-on-folded-proof,deep-battery-under-ten-minutes,delegate-job-liveness,delegate-rounds-reuse-a-warm-gate,delivery-receipt-stops-at-first-failure,failed-job-attention,fixture-stewards-outlive-their-suite,goal-abandoned-with-a-reason,human-carried-landing-carry,human-carried-landing-verb,human-goal-verbs-forgiving,job-record-birth-token,land-ready-work-lands-without-a-claim-slot,landing-receipt-survives-records-drift,lease-sweep-death-evidence,live-job-on-a-done-goal-unnoticed,machine-concurrency-governor,proof-attempts-settle-to-minutes-run,proof-groups-detect-hangs-by-progress-not-the-clock,proof-harness-process-custody,retained-proof-reuse-crosses-claims-and-attempts,severity-tiered-rigor,severity-tiered-rigor-p2,small-change-lane,steward-catchup-livelock,steward-revives-a-done-goal,stop-batch-strands-a-resumable-goal,suite-custody,tier-from-severity-and-novelty,token-spend-fence,turn-verdict-hardening,watch-verb,watcher-repair-request-never-names-current,winddown-census-handoff-leak reason=priority-order subject=proof-attempts-settle-to-minutes-run from=1:11 to=1:12 requested-sequence=7
 - 2026-09-11T16:18:01Z 49PCG9ER1NY8SVNRF3WFFEBT7R-m1-c6925449 set-priority actor=human:Wido targets=human-carried-landing-carry,proof-groups-detect-hangs-by-progress-not-the-clock reason=priority-order subject=proof-groups-detect-hangs-by-progress-not-the-clock from=1:12 to=1:11 requested-sequence=11
-Integrity: sha256=45b08c6dd492788c10330632501b37692d4e4ac496e14d1da78746c2b77cc057
+- 2026-09-11T20:30:58Z P51ZGA9WE8BQ65MYAP6FYHCZMW-m1-c6925449 unapprove actor=human:Wido targets=proof-groups-detect-hangs-by-progress-not-the-clock reason=Wido 2026-09-11: every program goal states runtime independence (claude, codex, devin, future adapters); intent amended before re-approval
+Integrity: sha256=6a63a4c3d67281e6093db46dfed61de1a54dc95325fff9456e4069a0186e27b7
