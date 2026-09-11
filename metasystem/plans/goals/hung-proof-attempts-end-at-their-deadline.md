@@ -1,6 +1,6 @@
 # hung-proof-attempts-end-at-their-deadline
 
-- State: queued
+- State: approved
 - Priority: 1
 - Sequence: 3
 - Risk: severity=2 novelty=1 exposure=3 accumulation=1 basis="severity 2: a hung attempt holds a reservation and a seat's landing for a day; novelty 1: the deadline and watchdog exist and only their coverage changes; exposure 3: every attempt on every seat; accumulation 1: no new mechanism"
@@ -9,9 +9,11 @@
 - Origin: human
 - Next step: Read the watchdog and launcher in internal/proofrun and the section adapter's end-event handling; agree the liveness contract with the landed consumption supervisor (c08fe2cb); design the three reconciliation paths; fixture; land with its own battery.
 - OpenedAt: 2026-09-11T15:44:57Z
-- Revision: 9
+- Revision: 10
 - Pinned: m1e
+- Budget: elapsedLimit=1d attemptLimit=10 reservedJobMinutesLimit=1200 activeJobLimit=1 reviewRoundLimit=3
 - BudgetExceptions: 0
+- Approved: by=human:Wido at=2026-09-11T20:33:03Z revision=10 opid=QZ0ZZNFRRHPZCRZDPB3BHHZ9BA-m1-c6925449 authority=proven digest=0b664b748049da466bbc1cbbb6db0f0249bc30ae26dcd4bc80d49170a1a8f0b8
 
 History:
 - 2026-09-11T15:44:57Z G00GBWKD64KA1ZT4J6WDGWFCSB-m1e-5083721b open actor=m1e+main-1789141490-27414-b9c0d2 targets=hung-proof-attempts-end-at-their-deadline
@@ -23,4 +25,5 @@ History:
 - 2026-09-11T16:18:51Z 50WPMJCAAPEZKP261JRMKRA7JK-m1-c6925449 approve actor=human:Wido targets=hung-proof-attempts-end-at-their-deadline
 - 2026-09-11T20:30:27Z 8FEM7KDHD01K2W2S8AV7PFSZGH-m1-c6925449 unapprove actor=human:Wido targets=hung-proof-attempts-end-at-their-deadline reason=Wido 2026-09-11: every program goal states runtime independence (claude, codex, devin, future adapters); intent amended before re-approval
 - 2026-09-11T20:31:48Z J3QFJC5HS7B2P9CHG9RP64EKNE-m1e-3ca84c28 edit actor=m1e+main-1789158700-39729-b9c0d2 targets=hung-proof-attempts-end-at-their-deadline
-Integrity: sha256=7a03b5b4fac0ab0da7d1d093175ede4bed914ec56bff80453840ab53c023fb3c
+- 2026-09-11T20:33:03Z QZ0ZZNFRRHPZCRZDPB3BHHZ9BA-m1-c6925449 approve actor=human:Wido targets=hung-proof-attempts-end-at-their-deadline
+Integrity: sha256=ab57b0efc256c2bdb118136fdcbeb365d6d7bc899fa47fffd7df112b55ad7383
