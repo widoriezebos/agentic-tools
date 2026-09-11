@@ -1,6 +1,6 @@
 # stop-hook-never-forces-an-empty-turn
 
-- State: approved
+- State: queued
 - Priority: 1
 - Sequence: 4
 - Risk: severity=2 novelty=2 exposure=3 accumulation=1 basis="severity 2: a wrong refusal rule either forces turns as today or lets an unsafe stop through; novelty 2: refusal causes are reclassified between seat and steward; exposure 3: every seat's every stop; accumulation 1: one hook"
@@ -9,15 +9,14 @@
 - Origin: human
 - Next step: Read the Stop hook (scripts/agents and internal supervision), classify the recorded refusal causes into seat-actionable and steward-owned, write the design, critique, build, land.
 - OpenedAt: 2026-09-11T15:45:01Z
-- Revision: 4
+- Revision: 5
 - Pinned: m1e
-- Budget: elapsedLimit=1d attemptLimit=10 reservedJobMinutesLimit=1200 activeJobLimit=1 reviewRoundLimit=3
 - BudgetExceptions: 0
-- Approved: by=human:Wido at=2026-09-11T15:49:10Z revision=4 opid=2CS1CQV2DB5829AVW6VW20FGE7-m1-c6925449 authority=proven digest=192d4e6cd12ae2d6bc099e9fcdd00cb5d84d70cf52d6511ccb341a223fbfb155
 
 History:
 - 2026-09-11T15:45:01Z T6Z7DYJ3CFGDRPYXNRNTTWXERM-m1e-5083721b open actor=m1e+main-1789141490-27414-b9c0d2 targets=stop-hook-never-forces-an-empty-turn
 - 2026-09-11T15:47:04Z PNHSKRR4SQA1Q4SS26QWE5YQCW-m1-c6925449 set-pin actor=human:Wido targets=stop-hook-never-forces-an-empty-turn
 - 2026-09-11T15:47:07Z VR9BVNVCK32QBWEFW8H5JVCSA9-m1-c6925449 set-priority actor=human:Wido targets=actionable-metrics,breach-clock-and-budget-honesty,burn-without-delivery-tripwire,carried-landing-debt-and-cap,delegate-job-liveness,failed-job-attention,fixture-stewards-outlive-their-suite,goal-abandoned-with-a-reason,human-carried-landing-carry,human-carried-landing-verb,human-goal-verbs-forgiving,job-record-birth-token,landing-receipt-survives-records-drift,lease-sweep-death-evidence,live-job-on-a-done-goal-unnoticed,machine-concurrency-governor,proof-harness-process-custody,severity-tiered-rigor,severity-tiered-rigor-p2,small-change-lane,steward-catchup-livelock,steward-revives-a-done-goal,stop-batch-strands-a-resumable-goal,stop-hook-never-forces-an-empty-turn,suite-custody,token-spend-fence,turn-verdict-hardening,watch-verb,watcher-repair-request-never-names-current,winddown-census-handoff-leak reason=priority-order subject=stop-hook-never-forces-an-empty-turn from=unranked to=1:4 requested-sequence=4
 - 2026-09-11T15:49:10Z 2CS1CQV2DB5829AVW6VW20FGE7-m1-c6925449 approve actor=human:Wido targets=stop-hook-never-forces-an-empty-turn
-Integrity: sha256=89d43f15353eebdcad1f6f4039264537d1ead569276838869c95dd649eb657a0
+- 2026-09-11T16:13:08Z 8YPN9R8X6K7CZSTKV5HDV265MX-m1-c6925449 unapprove actor=human:Wido targets=stop-hook-never-forces-an-empty-turn reason=Wido 2026-09-11: Codex critique round 1 of the delivery-efficiency plan accepted; intent amended before re-approval
+Integrity: sha256=e8caf060311a14e02bf85d5dc24573c863d15a4e03dc7a2145e0c3c1ec03033a
