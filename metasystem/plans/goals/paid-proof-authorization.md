@@ -2,12 +2,12 @@
 
 - State: queued
 - Priority: 3
-- Sequence: 63
+- Sequence: 62
 - Intent: Proofs that cost real money become first-class: cost-classed in the evidence table, runnable only under an explicit spend authorization at a declared cadence, recorded against their budget — the paid bench joins the covenant's rhythm instead of living on human memory (Wido 2026-08-25)
 - Origin: human
 - Next step: Appetite: half-day design. The driving case: morpheus's bench-full-run.sh (paid) with bench-cost-gate.sh beside it. Design questions: a cost class on evidence rows (free/metered/paid), the authorization shape (the mission fence machinery already authorizes delegate spend — extend that shape to proof spend rather than invent a second grammar), cadence + budget-row integration, and what the battery/guards may NEVER do (a paid proof can never be the battery; the free tier stays the rhythm). Queue: after cross-repo-guardrails.
 - OpenedAt: 2026-08-25T06:41:21Z
-- Revision: 49
+- Revision: 50
 - BudgetExceptions: 0
 
 History:
@@ -60,4 +60,5 @@ History:
 - 2026-09-11T22:06:14Z MQ8AB3E09V7FHDTX5M5TQAGYQ3-m1-c6925449 done actor=human:Wido targets=alert-escalation-channel,app-doctrine,app-guardrail-custody,app-guardrail-program,continuous-self-improvement,counselor,cross-repo-guardrails,design-prohibition-is-role-scoped,effort-by-complexity-per-model,hook-root-resolver-design,incident-proposal-drafting,integration-branch,ledger-authentication,metasystem-way-patterns,paid-proof-authorization,precedent-index,python3-kit-port,reconciliation-guards,registry-design-names-selection-rows,repo-flag-resolves-one-root,stop-refusal-fits-on-one-screen,suite-flake-supervision-watch,suite-outcomes-as-steward-incidents,supervise-start-gate-linux-red,supervision-fixture-child-custody-join,supervision-fixture-self-check-announcement-scan,watchdog-kill-observation-gap reason=priority-order from=3:66 to=3:65
 - 2026-09-11T22:06:20Z JXK2RF67K14XYVZY3M8HBXJA1W-m1-c6925449 done actor=human:Wido targets=alert-escalation-channel,app-doctrine,app-guardrail-custody,app-guardrail-program,counselor,cross-repo-guardrails,design-prohibition-is-role-scoped,incident-proposal-drafting,integration-branch,ledger-authentication,metasystem-way-patterns,paid-proof-authorization,precedent-index,reconciliation-guards,stop-refusal-fits-on-one-screen,suite-outcomes-as-steward-incidents reason=priority-order from=3:65 to=3:64
 - 2026-09-11T22:06:27Z 1Z9VYDC4HT7QDGHEW8QAGFYX5S-m1-c6925449 done actor=human:Wido targets=alert-escalation-channel,app-doctrine,app-guardrail-custody,app-guardrail-program,continuous-self-improvement,counselor,cross-repo-guardrails,design-prohibition-is-role-scoped,effort-by-complexity-per-model,hook-root-resolver-design,incident-proposal-drafting,integration-branch,ledger-authentication,metasystem-way-patterns,paid-proof-authorization,precedent-index,python3-kit-port,reconciliation-guards,registry-design-names-selection-rows,repo-flag-resolves-one-root,stop-refusal-fits-on-one-screen,supervise-start-gate-linux-red,supervision-fixture-child-custody-join,supervision-fixture-self-check-announcement-scan,watchdog-kill-observation-gap reason=priority-order from=3:64 to=3:63
-Integrity: sha256=6d6e0820c266502f557b5058ea03bba04755b76a964da7316bd8363141d18a5f
+- 2026-09-11T22:06:39Z 6K3RQYRH2TPVQB9DFX35CH4SGY-m1-c6925449 done actor=human:Wido targets=alert-escalation-channel,app-doctrine,app-guardrail-custody,app-guardrail-program,continuous-self-improvement,counselor,cross-repo-guardrails,design-prohibition-is-role-scoped,effort-by-complexity-per-model,hook-root-resolver-design,incident-proposal-drafting,integration-branch,ledger-authentication,metasystem-way-patterns,paid-proof-authorization,precedent-index,python3-kit-port,reconciliation-guards,registry-design-names-selection-rows,repo-flag-resolves-one-root,stop-refusal-fits-on-one-screen,supervision-fixture-child-custody-join,supervision-fixture-self-check-announcement-scan,watchdog-kill-observation-gap reason=priority-order from=3:63 to=3:62
+Integrity: sha256=db9e20437c398e05cb42f8177dc04607c37adc755472f498822464459032d173

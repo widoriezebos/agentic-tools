@@ -2,12 +2,12 @@
 
 - State: queued
 - Priority: 3
-- Sequence: 65
+- Sequence: 64
 - Intent: The net can include guardrails that live outside the repository at a pinned commit — a corpora repo's frozen gold, a consumer's pin of its upstream — so an app's most valuable guardrails are enforced, not merely described (Wido 2026-08-25, morpheus/yoda fit)
 - Origin: human
 - Next step: Appetite: 1d design-first (custody arc discipline). The driving cases: morpheus's gold lives in a separate corpora repository at a pinned commit under a freeze contract; yoda consumes morpheus through pins needing deliberate refresh. Design questions the chain must settle: the reference grammar (repo identity + commit + paths within it), how the wall proves pinned bytes at mission time without network trust, pin MOVEMENT as a guardrail change through the warden's lane, the counselor's stale-pin signal (drift signal 3's cross-repo sibling), and what adoption/validation do when the pinned repo is absent on a machine. Out of scope: fetching/mirroring machinery beyond what proof requires. Queue: after metasystem-way-patterns.
 - OpenedAt: 2026-08-25T06:41:14Z
-- Revision: 49
+- Revision: 50
 - BudgetExceptions: 0
 
 History:
@@ -60,4 +60,5 @@ History:
 - 2026-09-11T22:06:14Z MQ8AB3E09V7FHDTX5M5TQAGYQ3-m1-c6925449 done actor=human:Wido targets=alert-escalation-channel,app-doctrine,app-guardrail-custody,app-guardrail-program,continuous-self-improvement,counselor,cross-repo-guardrails,design-prohibition-is-role-scoped,effort-by-complexity-per-model,hook-root-resolver-design,incident-proposal-drafting,integration-branch,ledger-authentication,metasystem-way-patterns,paid-proof-authorization,precedent-index,python3-kit-port,reconciliation-guards,registry-design-names-selection-rows,repo-flag-resolves-one-root,stop-refusal-fits-on-one-screen,suite-flake-supervision-watch,suite-outcomes-as-steward-incidents,supervise-start-gate-linux-red,supervision-fixture-child-custody-join,supervision-fixture-self-check-announcement-scan,watchdog-kill-observation-gap reason=priority-order from=3:68 to=3:67
 - 2026-09-11T22:06:20Z JXK2RF67K14XYVZY3M8HBXJA1W-m1-c6925449 done actor=human:Wido targets=alert-escalation-channel,app-doctrine,app-guardrail-custody,app-guardrail-program,counselor,cross-repo-guardrails,design-prohibition-is-role-scoped,incident-proposal-drafting,integration-branch,ledger-authentication,metasystem-way-patterns,paid-proof-authorization,precedent-index,reconciliation-guards,stop-refusal-fits-on-one-screen,suite-outcomes-as-steward-incidents reason=priority-order from=3:67 to=3:66
 - 2026-09-11T22:06:27Z 1Z9VYDC4HT7QDGHEW8QAGFYX5S-m1-c6925449 done actor=human:Wido targets=alert-escalation-channel,app-doctrine,app-guardrail-custody,app-guardrail-program,continuous-self-improvement,counselor,cross-repo-guardrails,design-prohibition-is-role-scoped,effort-by-complexity-per-model,hook-root-resolver-design,incident-proposal-drafting,integration-branch,ledger-authentication,metasystem-way-patterns,paid-proof-authorization,precedent-index,python3-kit-port,reconciliation-guards,registry-design-names-selection-rows,repo-flag-resolves-one-root,stop-refusal-fits-on-one-screen,supervise-start-gate-linux-red,supervision-fixture-child-custody-join,supervision-fixture-self-check-announcement-scan,watchdog-kill-observation-gap reason=priority-order from=3:66 to=3:65
-Integrity: sha256=d8ccb5741e2f6a98709ad9a622a0c47a71c4768aaeac9ce5d3ee330c67f3ad5e
+- 2026-09-11T22:06:39Z 6K3RQYRH2TPVQB9DFX35CH4SGY-m1-c6925449 done actor=human:Wido targets=alert-escalation-channel,app-doctrine,app-guardrail-custody,app-guardrail-program,continuous-self-improvement,counselor,cross-repo-guardrails,design-prohibition-is-role-scoped,effort-by-complexity-per-model,hook-root-resolver-design,incident-proposal-drafting,integration-branch,ledger-authentication,metasystem-way-patterns,paid-proof-authorization,precedent-index,python3-kit-port,reconciliation-guards,registry-design-names-selection-rows,repo-flag-resolves-one-root,stop-refusal-fits-on-one-screen,supervision-fixture-child-custody-join,supervision-fixture-self-check-announcement-scan,watchdog-kill-observation-gap reason=priority-order from=3:65 to=3:64
+Integrity: sha256=0db534bcc41a59a46bf24ca36e98eef4034c127f306fcb9b7df3ea07946b64c8
