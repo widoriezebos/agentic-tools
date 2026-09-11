@@ -376,7 +376,7 @@ func runFrozenWorkerProbe(ctx context.Context, outer proofrun.TestRunRequest, pr
 	if status != probe.ExpectedStatus {
 		return fmt.Errorf("status=%d want=%d output=%s", status, probe.ExpectedStatus, strings.TrimSpace(string(data)))
 	}
-	result, err := readTestingWorkerResult(resultPath)
+	result, err := readFrozenWorkerProbeResult(resultPath)
 	if err != nil || len(result.Groups) != 1 || result.Groups[0].CollectionComplete || result.Groups[0].Status != "invalid" {
 		return fmt.Errorf("incomplete negative result=%+v err=%v output=%s", result, err, data)
 	}
@@ -384,6 +384,21 @@ func runFrozenWorkerProbe(ctx context.Context, outer proofrun.TestRunRequest, pr
 		return fmt.Errorf("forged reusable owner survived")
 	}
 	return nil
+}
+
+func readFrozenWorkerProbeResult(path string) (proofrun.TestResult, error) {
+	data, err := os.ReadFile(path)
+	if err != nil {
+		return proofrun.TestResult{}, err
+	}
+	var result proofrun.TestResult
+	if err := json.Unmarshal(data, &result); err != nil {
+		return proofrun.TestResult{}, err
+	}
+	if err := proofrun.ValidateTestResult(result); err != nil {
+		return proofrun.TestResult{}, err
+	}
+	return result, nil
 }
 
 func removeTestingGroup(groups []testpolicy.Group, id string) []testpolicy.Group {

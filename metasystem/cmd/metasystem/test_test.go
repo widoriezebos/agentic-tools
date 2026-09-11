@@ -539,6 +539,48 @@ func TestFrozenPublicVersionOneProtectionCorpusIsComplete(t *testing.T) {
 	}
 }
 
+func TestFrozenWorkerProbeReaderAcceptsCandidateGroupFields(t *testing.T) {
+	group := testpolicy.Group{ID: "literal", Kind: "unit", Inputs: []string{"source.txt"}, TargetMS: 1}
+	request := proofrun.TestRunRequest{
+		ProjectRoot:           t.TempDir(),
+		CandidateTree:         strings.Repeat("a", 40),
+		BaseCommit:            strings.Repeat("b", 40),
+		Contract:              testpolicy.Contract{SchemaVersion: 1, Groups: []testpolicy.Group{group}},
+		Plan:                  testpolicy.Plan{Purpose: testpolicy.PurposeDelivery, RequestedMode: testpolicy.ModeStandard, RequiredMode: testpolicy.ModeStandard, ExecutedMode: testpolicy.ModeStandard, RequiredGroups: []string{group.ID}, SelectedGroups: []string{group.ID}},
+		CandidateEngineDigest: strings.Repeat("c", 64),
+	}
+	result := proofrun.NewTestResult(request)
+	result.Groups = []proofrun.GroupResult{{ID: group.ID, Kind: group.Kind, InputManifest: group.Inputs, Status: "invalid"}}
+	result.RecomputeDelivery()
+
+	data, err := json.Marshal(result)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var candidate map[string]any
+	if err := json.Unmarshal(data, &candidate); err != nil {
+		t.Fatal(err)
+	}
+	candidateGroups := candidate["groups"].([]any)
+	candidateGroups[0].(map[string]any)["progressRule"] = "cpu-or-output"
+	data, err = json.Marshal(candidate)
+	if err != nil {
+		t.Fatal(err)
+	}
+	path := filepath.Join(t.TempDir(), "result.json")
+	if err := os.WriteFile(path, data, 0o600); err != nil {
+		t.Fatal(err)
+	}
+
+	probeResult, err := readFrozenWorkerProbeResult(path)
+	if err != nil || len(probeResult.Groups) != 1 || probeResult.Groups[0].Status != "invalid" || probeResult.Groups[0].CollectionComplete {
+		t.Fatalf("probe reader lost the negative worker judgment: result=%+v err=%v", probeResult, err)
+	}
+	if _, err := readTestingWorkerResult(path); err == nil || !strings.Contains(err.Error(), `unknown field "progressRule"`) {
+		t.Fatalf("strict destination worker reader accepted the candidate field: %v", err)
+	}
+}
+
 func TestFrozenPublicVersionOneSelectionProbesRunAgainstCandidateExecutable(t *testing.T) {
 	root := t.TempDir()
 	group := testpolicy.Group{ID: "policy-protection", Kind: "unit", Adapter: "go", CWD: ".", Inputs: []string{"source.go"},
