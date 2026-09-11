@@ -1,6 +1,6 @@
 # critique-always
 
-- State: approved
+- State: queued
 - Priority: 1
 - Sequence: 18
 - Risk: severity=2 novelty=1 exposure=3 accumulation=1 basis="severity 2: a wrong critique switch lets a risky change land unread or makes every small fix pay for a read; novelty 1: the tier already exists on every record and the enforcement table already has the switch, it moves from class to tier; exposure 3: every build chain on every seat; accumulation 1: nothing built on it yet"
@@ -9,12 +9,10 @@
 - Origin: main
 - Next step: Appetite: 1h. Build: replace independentCritiqueRequired-by-class with a tier-keyed rule in internal/dispatch/hazard.go (requiredConfigurationByHazard) and scripts/agents/role-packets.json, read the tier from the goal record at admission and at chain close, keep the per-class effort rows (R-90-m1: MECHANICAL builds at xhigh); fixtures as the DONE names. Supersedes Ruling O's class-keyed critique clause; R-54-m1 stands (ruling row R-92-m1b drafted, lands with the rulings register). Consistency sweep by m1b 2026-09-10 11:40Z: no other backlog record contradicts this; small-change-lane and review-round-limit-counts-per-chain updated.
 - OpenedAt: 2026-09-01T07:18:55Z
-- Revision: 19
+- Revision: 20
 - Labels: headless-fleet, headless-process
 - Pinned: m1e
-- Budget: elapsedLimit=1d attemptLimit=10 reservedJobMinutesLimit=1200 activeJobLimit=1 reviewRoundLimit=3
 - BudgetExceptions: 0
-- Approved: by=human:Wido at=2026-09-11T16:19:32Z revision=19 opid=439WBKS627H5KZFXR4ER4QC1BG-m1-c6925449 authority=proven digest=5123214c2ba4c5d04e73600d9c99c968c656423daf01b48d9c0d6560db7fde87
 
 History:
 - 2026-09-01T07:18:55Z STC2KV4CD66GWZWMTY6ND3TJVM-m3-a5da21ff open actor=m3+mac-m3 targets=critique-always
@@ -36,4 +34,5 @@ History:
 - 2026-09-11T16:17:33Z FTETDDH79F9A50RGMH9V6BM9SV-m1-c6925449 set-pin actor=human:Wido targets=critique-always
 - 2026-09-11T16:18:28Z R6Q4D67N9P68NCRFR3P78M42QK-m1-c6925449 set-priority actor=human:Wido targets=actionable-metrics,breach-clock-and-budget-honesty,burn-without-delivery-tripwire,capped-round-continues-instead-of-restarting,carried-landing-debt-and-cap,chain-landing-carries-the-reviewed-diff,chain-landing-carries-unrelated-staged-plans,commit-goal-binding,critique-always,delegate-job-liveness,failed-job-attention,first-headless-run,fixture-stewards-outlive-their-suite,fleet-channel-gateway,fleet-join-bootstrap,fleet-pull,gate-governance-records,goal-abandoned-with-a-reason,headless-continuous-delivery-proof,headless-fleet-coordination-proof,host-implementer-wall,human-carried-landing-carry,human-carried-landing-verb,human-goal-verbs-forgiving,idle-every-runtime-enforcement,job-record-birth-token,land-ready-work-lands-without-a-claim-slot,landing-design-provenance,landing-receipt-survives-records-drift,lease-sweep-death-evidence,live-job-on-a-done-goal-unnoticed,machine-concurrency-governor,merge-stage-critic-close,metasystem-stop-escalation-proofs,mission-birth-baseline-from-dirty-worktree,never-idle-ironclad,proof-harness-process-custody,recovery-rehearsal,recovery-to-good-state,repo-root-paths-ride-agent-commits-unjudged,role-context-composition,role-lane-packets,role-liveness-watchdog,seat-mutual-awareness,severity-tiered-rigor,severity-tiered-rigor-p2,small-change-lane,steward-catchup-livelock,steward-revives-a-done-goal,stop-batch-strands-a-resumable-goal,suite-custody,token-spend-fence,turn-verdict-hardening,two-bars-for-changes,watch-verb,watcher-repair-request-never-names-current,winddown-census-handoff-leak reason=priority-order subject=critique-always from=2:11 to=1:18 requested-sequence=18
 - 2026-09-11T16:19:32Z 439WBKS627H5KZFXR4ER4QC1BG-m1-c6925449 approve actor=human:Wido targets=critique-always
-Integrity: sha256=24df0a59333c5cc4244a6f2397999ae3b97d09727620cbfa92e81c3462fdedbb
+- 2026-09-11T20:31:21Z K75P6MGXW1JXF1H8AA8RPXM05M-m1-c6925449 unapprove actor=human:Wido targets=critique-always reason=Wido 2026-09-11: every program goal states runtime independence (claude, codex, devin, future adapters); intent amended before re-approval
+Integrity: sha256=96c792a2a2bc89e5e7b5c763072615fe9d7fc3e7b7b0d4534fc0cf3013af7b59
