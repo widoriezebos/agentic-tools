@@ -1,6 +1,6 @@
 # coordinator-context-stays-under-budget
 
-- State: queued
+- State: approved
 - Priority: 1
 - Sequence: 15
 - Risk: severity=2 novelty=2 exposure=3 accumulation=1 basis="severity 2: an over-bounded output hides evidence the seat needs; novelty 2: bounded verb output is a new discipline; exposure 3: every seat's every turn; accumulation 1: verbs and docs"
@@ -9,9 +9,11 @@
 - Origin: human
 - Next step: Measure which tool outputs dominate the context (goal list, watch, test logs, land output), bound them at the verb, design the handoff-at-boundary, write the instruction change, critique, build, land.
 - OpenedAt: 2026-09-11T15:45:19Z
-- Revision: 12
+- Revision: 13
 - Pinned: m1e
+- Budget: elapsedLimit=1d attemptLimit=10 reservedJobMinutesLimit=1200 activeJobLimit=1 reviewRoundLimit=3
 - BudgetExceptions: 0
+- Approved: by=human:Wido at=2026-09-11T20:33:41Z revision=13 opid=5E536DZV81YW62T1T2FFBA1YNC-m1-c6925449 authority=proven digest=c2091d088534cc7439a99fa65e62c9775d5f123680cef44e6e1953282c59f419
 
 History:
 - 2026-09-11T15:45:19Z 5F6TSCSSSW5B4H5JVZDBKEWHPE-m1e-5083721b open actor=m1e+main-1789141490-27414-b9c0d2 targets=coordinator-context-stays-under-budget
@@ -26,4 +28,5 @@ History:
 - 2026-09-11T16:19:25Z H8K1WS89NXPHC36402SHMSB4M9-m1-c6925449 approve actor=human:Wido targets=coordinator-context-stays-under-budget
 - 2026-09-11T20:31:09Z X9R9DGZF7Q3XE2ACR5E13E7HTJ-m1-c6925449 unapprove actor=human:Wido targets=coordinator-context-stays-under-budget reason=Wido 2026-09-11: every program goal states runtime independence (claude, codex, devin, future adapters); intent amended before re-approval
 - 2026-09-11T20:32:24Z T1Y2EWP9WJFRVH86A5EY64ABNE-m1e-3ca84c28 edit actor=m1e+main-1789158700-39729-b9c0d2 targets=coordinator-context-stays-under-budget
-Integrity: sha256=ab9a6a73230c721a42bab53e6a2dcd1736412929eee0c8fe0a63d11e3f406947
+- 2026-09-11T20:33:41Z 5E536DZV81YW62T1T2FFBA1YNC-m1-c6925449 approve actor=human:Wido targets=coordinator-context-stays-under-budget
+Integrity: sha256=28e4a3e78b632adcd200a6aa3fa99cca09eb7edacb671ebb3a4d06e714d479d1
