@@ -7,10 +7,12 @@
 - Origin: human
 - Next step: Read the tier derivation (the severity-tiered-rigor lineage and internal/testpolicy risk), change the formula and the docs, land.
 - OpenedAt: 2026-09-11T15:50:34Z
-- Revision: 1
+- Revision: 2
+- Pinned: m1e
 - Budget: elapsedLimit=4h attemptLimit=6 reservedJobMinutesLimit=720 activeJobLimit=1 reviewRoundLimit=2
 - BudgetExceptions: 0
 
 History:
 - 2026-09-11T15:50:34Z PGA3WGGB587Z9EJ8VSMBS1W4ZS-m1-c6925449 open actor=human:Wido targets=tier-from-severity-and-novelty reason=TierOverride: derived=3 set=2 why=Wido 2026-09-11: a formula change with the existing derivation; exposure alone does not make it tier 3, which is the point of this goal
-Integrity: sha256=1e7056855ca431a54f6a4d2f3dee81f46a15dad13f3efc41c5c46e35ed0c3a39
+- 2026-09-11T15:50:56Z 2GRVB10B9CHYJN2VG2N2T4N173-m1-c6925449 set-pin actor=human:Wido targets=tier-from-severity-and-novelty
+Integrity: sha256=9af53ef7604e478686a2582b63abee50737d1c2b3f55c3582a5360ec8eda2749
