@@ -629,15 +629,15 @@ fi
 # a small machine and still ends a hung package.
 # The two serial giants (goal, missionrunner) run as shards beside the rest:
 # their discovered test names are dealt round-robin into
-# METASYSTEM_GATE_SHARDS (default 6) race+cover launches each, with the
+# METASYSTEM_GATE_SHARDS (default 4) race+cover launches each, with the
 # coverage data of every shard written under one directory and merged by
 # go tool covdata; the merged per-package lines join the coverage log last,
 # in go test's own summary shape, so the ratchet judges the whole package.
 # Every other package runs as before in one go test over the rest of
 # ./internal/... . The gate's wall time becomes its longest package or
 # shard instead of the serial sum of two.
-gate_shards=${METASYSTEM_GATE_SHARDS:-6}
-[[ "$gate_shards" =~ ^[1-9][0-9]*$ ]] || gate_shards=6
+gate_shards=${METASYSTEM_GATE_SHARDS:-4}
+[[ "$gate_shards" =~ ^[1-9][0-9]*$ ]] || gate_shards=4
 # bash 3.2 under set -u cannot size an empty array, so counts travel beside them.
 gate_sharded_packages=()
 gate_rest_packages=()

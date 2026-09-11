@@ -4,7 +4,9 @@ package identity
 
 import (
 	"encoding/binary"
+	"errors"
 	"fmt"
+	"time"
 	"unsafe"
 
 	"golang.org/x/sys/unix"
@@ -21,12 +23,28 @@ import (
 // is 648. The tests assert AllPids finds our own pid and that the pids
 // resolve, so an ABI drift is caught rather than silently corrupting.
 func AllPids() ([]int64, error) {
-	raw, err := unix.SysctlRaw("kern.proc.all")
+	var raw []byte
+	var err error
+	// The sysctl sizes its buffer in one call and fills it in another; a
+	// process table that grows between the two answers ENOMEM, which on a
+	// box running a parallel battery is a moment, not a state (2026-09-11:
+	// TestProcLaunchRealChild inside the pooled cadence). A few retries
+	// separate that moment from a real enumeration failure.
+	for attempt := 0; attempt < 5; attempt++ {
+		raw, err = sysctlRaw("kern.proc.all")
+		if err == nil || !errors.Is(err, unix.ENOMEM) {
+			break
+		}
+		time.Sleep(time.Duration(10*(attempt+1)) * time.Millisecond)
+	}
 	if err != nil {
 		return nil, fmt.Errorf("identity: sysctl kern.proc.all: %w", err)
 	}
 	return decodeAllPids(raw)
 }
+
+// sysctlRaw is the kernel query; a test replaces it to shape its answers.
+var sysctlRaw = unix.SysctlRaw
 
 func decodeAllPids(raw []byte) ([]int64, error) {
 	if len(raw) == 0 {

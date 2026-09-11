@@ -28,11 +28,15 @@ length. With the measured order the long groups start first and the short
 ones fill the remaining slots.
 
 The cap is `testing.concurrency` in `metasystem.conf`, 1 to 64. Absent, it
-is a quarter of the cores, at most six, at least one: four on the 18-core
-Mac, one on the 4-vCPU VM. The first pooled cadence runs (cap six) inflated
-every heavy group 1.5x to 1.7x because the race gate and the coverage
-packages each use many cores; a quarter keeps the box below saturation.
-Wido decides the VM's committed value.
+is a third of the cores, at most six, at least one: six on the 18-core Mac,
+one on the 4-vCPU VM. The first pooled cadence runs (cap six) inflated
+every heavy group 1.5x to 1.7x because two serial giants and the whole race
+gate ran as single processes, and a quarter (four) was the afternoon's
+measured answer; once the giants ran in shards and every bed's scenarios
+side by side, cadence run 8 (969 s) had its four slots full with 8.9 of 18
+cores busy on average and the groups summing to 3796 s, so the slot count
+was the wall and six is the evening's measured answer. Wido decides the
+VM's committed value.
 
 Expected on the Mac: the cadence battery drops from about 56 minutes to the
 length of its longest group, the dispatcher section at about 9.5 minutes.
@@ -53,9 +57,11 @@ JSON stream as output events in go test's own summary shape, so the
 coverage floors judge the whole package, never a shard. The group's
 identity, evidence, progress events and reuse are unchanged: one group.
 
-`goal-full-coverage` and `missionrunner-full-coverage` declare six shards
-(four until 2026-09-11 evening; the shards were 480 to 509 s each under the
-pooled battery, and the pool's own inflation, not the shard count, set that).
+`goal-full-coverage` and `missionrunner-full-coverage` declare four shards
+(six for one evening on 2026-09-11: six shards each plus the gate's launches
+oversubscribed the 18 cores, and the six-shard merge of internal/goal read
+78.3 percent against its 80 percent floor where four shards had passed it,
+so four is the measured number).
 Measured before: 538 s and 444 s alone, 919 s and 711 s under the pool.
 
 Found on the way: the coverage parser's JSON loop retried a decode error

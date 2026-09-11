@@ -650,14 +650,17 @@ type proofRunLimits struct {
 }
 
 // defaultTestingConcurrency is how many groups of one stage run at once when
-// metasystem.conf names no testing.concurrency: a quarter of the cores, at
-// most six, at least one. The heavy groups each use many cores (the race
-// gate and the coverage packages run their own parallel work), so half the
-// cores oversubscribed an 18-core Mac in the first pooled cadence runs of
-// 2026-09-11 and inflated every heavy group 1.5x to 1.7x; a quarter runs
-// four there, and a 4-vCPU VM runs one, no slower than before.
+// metasystem.conf names no testing.concurrency: a third of the cores, at
+// most six, at least one. Half the cores oversubscribed an 18-core Mac in
+// the first pooled cadence runs of 2026-09-11, when two serial giants and
+// the whole race gate ran as single processes, and a quarter (four) was the
+// measured answer that afternoon. By the end of that day the giants ran in
+// shards and every bed's scenarios side by side, and cadence run 8 spent
+// 969 s with the four slots full and 8.9 of 18 cores busy on average: the
+// slot count, not the box, was the wall (the groups summed to 3796 s). A
+// third runs six there, and a 4-vCPU VM still runs one.
 func defaultTestingConcurrency() int {
-	cap := runtime.NumCPU() / 4
+	cap := runtime.NumCPU() / 3
 	if cap > 6 {
 		cap = 6
 	}
