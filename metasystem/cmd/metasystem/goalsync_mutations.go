@@ -8,9 +8,11 @@ package main
 
 import (
 	"encoding/json"
+	"errors"
 	"flag"
 	"fmt"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"strconv"
 	"strings"
@@ -24,8 +26,345 @@ import (
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/goal"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/goalrevision"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/humanauthority"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/landing"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/lease"
 )
+
+func printCarryMutation(res goal.PublishResult, detail string, err error) int {
+	if err != nil {
+		var ask *goal.CarryAskError
+		if errors.As(err, &ask) {
+			fmt.Fprintln(os.Stderr, ask.Error())
+			return 3
+		}
+		fmt.Fprintln(os.Stderr, err)
+		return 1
+	}
+	if detail != "" {
+		fmt.Printf("%s ledger=%s\n", detail, res.Tip)
+	} else {
+		printJSON(map[string]any{"outcome": res.Outcome, "tip": res.Tip, "detail": res.Detail})
+	}
+	if res.Outcome != goal.OutcomeConfirmed {
+		return 1
+	}
+	return 0
+}
+
+func runGoalCarry(args []string) int {
+	flags := flag.NewFlagSet("goal carry", flag.ContinueOnError)
+	root := flags.String("root", ".", "checkout root")
+	id := flags.String("id", "", "goal id")
+	by := flags.String("by", "", "the directing human")
+	lineage := flags.String("lineage", "", "coordinator lineage")
+	tree := flags.String("tree", "", "full whole-project tree id")
+	past := flags.String("past", "", "one named refusal code or testing group")
+	why := flags.String("why", "", "human reason for carrying the landing")
+	expires := flags.Duration("expires", 2*time.Hour, "word lifetime, at most four hours")
+	supersede := flags.String("supersede", "", "unconsumed carry word replaced by this word")
+	transfer := flags.Bool("transfer", false, "allow superseding a word from another seat")
+	raiseFormat := flags.Bool("raise-format", false, "raise ledger format 1 to format 2 in this transaction")
+	fixtureAuthority := flags.Bool("fixture-human-authority", false, "fixture-only enrolled-human proof")
+	temporary := flags.String("temporary-human-word", "", "not accepted by carry")
+	reviewBy := flags.String("review-by", "", "not accepted by carry")
+	if flags.Parse(args) != nil || flags.NArg() != 0 || *id == "" || *by == "" || *tree == "" || *past == "" || strings.TrimSpace(*why) == "" {
+		fmt.Fprintln(os.Stderr, "usage: metasystem goal carry --root ROOT --id GOAL --by NAME --tree SHA40 --past NAME --why TEXT [--expires 2h] [--supersede OPID] [--transfer] [--raise-format]")
+		return 2
+	}
+	if *temporary != "" || *reviewBy != "" {
+		fmt.Fprintln(os.Stderr, "carry takes no relayed word")
+		return 2
+	}
+	if strings.HasPrefix(*by, "human:") {
+		fmt.Fprintln(os.Stderr, "goal carry --by takes the human name without the human: actor prefix")
+		return 2
+	}
+	if *expires <= 0 || *expires > 4*time.Hour {
+		fmt.Fprintln(os.Stderr, "the carry expiry must be positive and no more than the four-hour ceiling")
+		return 3
+	}
+	if *transfer && *supersede == "" {
+		fmt.Fprintln(os.Stderr, "--transfer requires --supersede")
+		return 2
+	}
+	if len(*tree) != 40 || !allLowerHex(*tree) || gitObjectType(*root, *tree) != "tree" {
+		fmt.Fprintln(os.Stderr, "carry asks for the full 40-digit tree id of a Git tree")
+		return 3
+	}
+	projected, err := landing.ProjectWorkspaceTree(*root, *tree)
+	if err != nil {
+		fmt.Fprintln(os.Stderr, err)
+		return 1
+	}
+	f := &syncFlags{root: *root, id: *id, by: *by, lineage: *lineage, fixtureHumanAuthority: *fixtureAuthority}
+	classification, err := classifyGoalAuthorityFirst("carry", f)
+	if err != nil {
+		fmt.Fprintln(os.Stderr, err)
+		return 1
+	}
+	proof, err := proveGoalHumanAuthority("carry", f, proveEnrolledGoalHumanAuthority)
+	if err != nil {
+		fmt.Fprintln(os.Stderr, err)
+		return 1
+	}
+	req, err := syncReqClassified(*root, *by, *lineage, &proof, classification)
+	if err != nil {
+		fmt.Fprintln(os.Stderr, err)
+		return 1
+	}
+	opid := goal.Opid(req.Ulid, req.Actor.Machine, req.Actor.Lineage)
+	result, err := goal.Carry(req, goal.CarryArgs{Goal: *id, Workspace: projected, Past: *past, Why: *why, Supersede: *supersede, Expires: req.Now.Add(*expires), Transfer: *transfer, RaiseFormat: *raiseFormat}, &proof)
+	if err != nil || result.Outcome != goal.OutcomeConfirmed {
+		return printCarryMutation(result, "", err)
+	}
+	if err := humanauthority.RecordCarryProof(*root, opid, proof); err != nil {
+		fmt.Fprintln(os.Stderr, err)
+		return 1
+	}
+	projection, err := goal.Project(req.Endpoint, false, req.Now)
+	if err != nil {
+		fmt.Fprintln(os.Stderr, err)
+		return 1
+	}
+	file := projection.Tree.Live[*id]
+	if file == nil {
+		fmt.Fprintf(os.Stderr, "goal %s vanished after its carry word was confirmed\n", *id)
+		return 1
+	}
+	if file.Risk == nil {
+		fmt.Println("risk: unanswered")
+	} else {
+		fmt.Printf("tier: %d risk: severity=%d novelty=%d exposure=%d accumulation=%d\n", file.Tier, file.Risk.Severity, file.Risk.Novelty, file.Risk.Exposure, file.Risk.Accumulation)
+	}
+	reviewRounds := int64(0)
+	if file.Budget != nil {
+		reviewRounds = file.Budget.ReviewRoundLimit
+	}
+	fmt.Printf("review rounds: %d skipped by human carry\n", reviewRounds)
+	codeTip := "refs/remotes/origin/main"
+	if req.Endpoint.LocalMode() {
+		codeTip = "refs/heads/main"
+	} else if result.Tip != "" {
+		// The confirmed word itself is anchored on the accepted tip even
+		// though Publish deliberately leaves the checkout's tracking ref alone.
+		codeTip = result.Tip
+	}
+	open, err := goal.OpenCarryWords(*root, projection.Tree, codeTip, req.Actor.Machine, req.Now)
+	if err != nil {
+		fmt.Fprintln(os.Stderr, err)
+		return 1
+	}
+	counts, err := goal.CountCarries(*root, projection.Tree, codeTip, req.Now)
+	if err != nil {
+		fmt.Fprintln(os.Stderr, err)
+		return 1
+	}
+	fmt.Printf("open carries: %d on seat %s\n", len(open), req.Actor.Machine)
+	fmt.Printf("carry debt: obligations=%d inflight=%d\n", counts.Debt, counts.Inflight)
+	fmt.Printf("expires: %s\n", req.Now.Add(*expires).UTC().Format(time.RFC3339))
+	fmt.Printf("ledger format: %s\n", projection.Tree.Root.FormatVersion)
+	fmt.Printf("carry=%s workspace=%s past=%s ledger=%s\n", opid, projected, *past, result.Tip)
+	return 0
+}
+
+func runGoalCarrying(args []string) int {
+	flags := flag.NewFlagSet("goal carrying", flag.ContinueOnError)
+	root := flags.String("root", ".", "checkout root")
+	id := flags.String("id", "", "goal id")
+	ref := flags.String("ref", "", "carry word operation id")
+	carrying := flags.String("carrying", "", "fleet reservation row operation id")
+	commit := flags.String("commit", "", "carried commit id for the local intent form")
+	tree := flags.String("tree", "", "whole-project tree")
+	workspace := flags.String("workspace", "", "workspace projection for the local intent form")
+	past := flags.String("past", "", "named refusal")
+	battery := flags.String("battery", "", "green or red testing battery")
+	missing := flags.String("missing", "", "comma-separated missing groups")
+	failing := flags.String("failing", "", "comma-separated failing groups")
+	judge := flags.String("judge", "", "live or base")
+	judgeTree := flags.String("judge-tree", "", "base judge tree")
+	judgeDigest := flags.String("judge-digest", "", "judge SHA-256 digest")
+	liveFailure := flags.String("live-failure", "", "live judge failure")
+	ledger := flags.String("ledger", "", "accepted ledger tip")
+	by := flags.String("by", "", "human actor; reservations default to the carry word's actor")
+	ownerPID := flags.Int64("owner-pid", 0, "live ancestor process that owns the local intent")
+	abandon := flags.String("abandon", "", "reservation row to close")
+	why := flags.String("why", "landing is not continuing", "reason for abandoning the reservation")
+	lineage := flags.String("lineage", "", "coordinator lineage")
+	if flags.Parse(args) != nil || flags.NArg() != 0 || *id == "" {
+		return 2
+	}
+	req, err := syncReq("carrying", *root, "", *lineage)
+	if err != nil {
+		fmt.Fprintln(os.Stderr, err)
+		return 1
+	}
+	if *abandon != "" {
+		result, err := goal.AbandonCarrying(req, *id, *abandon, *why)
+		return printCarryMutation(result, "", err)
+	}
+	if *ref == "" || *tree == "" || len(*tree) != 40 || gitObjectType(*root, *tree) != "tree" {
+		fmt.Fprintln(os.Stderr, "goal carrying needs --id, --ref, and a full --tree")
+		return 2
+	}
+	projected, err := landing.ProjectWorkspaceTree(*root, *tree)
+	if err != nil {
+		fmt.Fprintln(os.Stderr, err)
+		return 1
+	}
+	if *commit != "" {
+		if *workspace == "" {
+			*workspace = projected
+		}
+		if *workspace != projected {
+			fmt.Fprintf(os.Stderr, "goal carrying --commit workspace differs: supplied=%s projected=%s\n", *workspace, projected)
+			return 1
+		}
+		if *carrying == "" || len(*commit) != 40 || gitObjectType(*root, *commit) != "commit" || *past == "" || (*battery != "green" && *battery != "red") || *judge == "" || *judgeDigest == "" || *ledger == "" || *by == "" || *ownerPID < 1 {
+			fmt.Fprintln(os.Stderr, "goal carrying --commit needs the reservation, carried fields, and a live --owner-pid")
+			return 2
+		}
+	}
+	result, row, err := goal.Carrying(req, goal.CarryingArgs{Goal: *id, ApprovedRef: *ref, Carrying: *carrying, Commit: *commit, Project: *tree, Workspace: projected, Past: *past, Battery: *battery, Missing: *missing, Failing: *failing, Judge: *judge, JudgeTree: *judgeTree, JudgeDigest: *judgeDigest, LiveFailure: *liveFailure, Ledger: *ledger, By: *by, OwnerPID: *ownerPID})
+	if err != nil && *ownerPID > 0 && strings.Contains(err.Error(), "owner must be a live ancestor") {
+		fmt.Fprintln(os.Stderr, err)
+		return 2
+	}
+	detail := ""
+	if row != "" {
+		detail = "carrying=" + row
+	}
+	return printCarryMutation(result, detail, err)
+}
+
+func runGoalCarried(args []string) int {
+	flags := flag.NewFlagSet("goal carried", flag.ContinueOnError)
+	root := flags.String("root", ".", "checkout root")
+	entry := flags.String("entry", "", "created carried journal entry")
+	rebuild := flags.String("rebuild-from-commit", "", "landed commit whose carried trailers rebuild the record")
+	repair := flags.Bool("repair-counselor", false, "repair the counselor line from the carried row")
+	ref := flags.String("ref", "", "carry word operation id")
+	id := flags.String("id", "", "goal id for a rebuilt record")
+	lineage := flags.String("lineage", "", "coordinator lineage")
+	if flags.Parse(args) != nil || flags.NArg() != 0 {
+		return 2
+	}
+	req, err := syncReq("carried", *root, "", *lineage)
+	if err != nil {
+		fmt.Fprintln(os.Stderr, err)
+		return 1
+	}
+	selected := 0
+	if *entry != "" {
+		selected++
+	}
+	if *rebuild != "" {
+		selected++
+	}
+	if *repair {
+		selected++
+	}
+	if selected != 1 {
+		fmt.Fprintln(os.Stderr, "goal carried needs exactly one of --entry, --rebuild-from-commit, or --repair-counselor")
+		return 2
+	}
+	if *repair {
+		if *ref == "" {
+			return 2
+		}
+		if err := goal.RepairCarriedCounselor(req.Endpoint, *ref, req.Now); err != nil {
+			fmt.Fprintln(os.Stderr, err)
+			return 1
+		}
+		return 0
+	}
+	if *entry != "" {
+		result, err := goal.Carried(req, *entry)
+		return printCarryMutation(result, "", err)
+	}
+	if *id == "" || *ref == "" {
+		fmt.Fprintln(os.Stderr, "goal carried --rebuild-from-commit needs --id and --ref")
+		return 2
+	}
+	carriedArgs, err := carriedArgsFromCommit(*root, *id, *ref, *rebuild)
+	if err != nil {
+		fmt.Fprintln(os.Stderr, err)
+		return 1
+	}
+	result, err := goal.CarriedFromCommit(req, carriedArgs)
+	return printCarryMutation(result, "", err)
+}
+
+func allLowerHex(value string) bool {
+	for _, character := range value {
+		if character < '0' || character > '9' {
+			if character < 'a' || character > 'f' {
+				return false
+			}
+		}
+	}
+	return true
+}
+
+func gitObjectType(root, object string) string {
+	output, err := exec.Command("git", "-C", root, "cat-file", "-t", object).Output()
+	if err != nil {
+		return ""
+	}
+	return strings.TrimSpace(string(output))
+}
+
+func carriedArgsFromCommit(root, goalID, ref, commit string) (goal.CarriedArgs, error) {
+	if len(commit) != 40 || !allLowerHex(commit) || gitObjectType(root, commit) != "commit" {
+		return goal.CarriedArgs{}, fmt.Errorf("rebuild requires a full carried commit id")
+	}
+	message, err := exec.Command("git", "-C", root, "log", "-1", "--format=%B", commit).Output()
+	if err != nil {
+		return goal.CarriedArgs{}, err
+	}
+	trailer := func(key string) (string, error) {
+		var matches []string
+		for _, line := range strings.Split(strings.ReplaceAll(string(message), "\r\n", "\n"), "\n") {
+			if strings.HasPrefix(line, key+": ") {
+				matches = append(matches, strings.TrimPrefix(line, key+": "))
+			}
+		}
+		if len(matches) != 1 || matches[0] == "" {
+			return "", fmt.Errorf("carried commit %s requires exactly one %s trailer", commit, key)
+		}
+		return matches[0], nil
+	}
+	values := map[string]string{}
+	for _, key := range []string{"Carry", "Carried-By", "Carried-Tree", "Carried-Past", "Carried-Battery", "Carried-Judge", "Carried-Ledger", "Landing-Provenance"} {
+		values[key], err = trailer(key)
+		if err != nil {
+			return goal.CarriedArgs{}, err
+		}
+	}
+	if values["Carry"] != ref {
+		return goal.CarriedArgs{}, fmt.Errorf("carry trailer is %s, not %s", values["Carry"], ref)
+	}
+	fields := func(value string) (string, map[string]string) {
+		parts := strings.Fields(value)
+		first := ""
+		keyed := map[string]string{}
+		if len(parts) > 0 {
+			first = parts[0]
+		}
+		for _, part := range parts {
+			if k, v, ok := strings.Cut(part, "="); ok {
+				keyed[k] = v
+			}
+		}
+		return first, keyed
+	}
+	_, treeValues := fields(values["Carried-Tree"])
+	battery, batteryValues := fields(values["Carried-Battery"])
+	judge, judgeValues := fields(values["Carried-Judge"])
+	if treeValues["workspace"] == "" || treeValues["project"] == "" || (battery != "green" && battery != "red") || (judge != "live" && judge != "base") || judgeValues["sha256"] == "" {
+		return goal.CarriedArgs{}, fmt.Errorf("carried commit %s has malformed Carried-Tree, Carried-Battery, or Carried-Judge trailer", commit)
+	}
+	return goal.CarriedArgs{Goal: goalID, ApprovedRef: ref, Commit: commit, Workspace: treeValues["workspace"], Project: treeValues["project"], Past: values["Carried-Past"], Battery: battery, Missing: batteryValues["missing"], Failing: batteryValues["failing"], Judge: judge, JudgeTree: judgeValues["tree"], JudgeDigest: judgeValues["sha256"], LiveFailure: judgeValues["live-failure"], Ledger: values["Carried-Ledger"], By: values["Carried-By"], Outcome: "landed"}, nil
+}
 
 // syncReq assembles the one request every synced verb consumes. A
 // mutation without an identity refuses: the silent "session"
@@ -242,7 +581,7 @@ func parseSyncFlags(name string, args []string) (*syncFlags, bool) {
 		fs.StringVar(&f.temporaryWord, "temporary-human-word", "", "recorded relayed words presented as the human's; provenance is not verified; resumes TEMPORARILY")
 		fs.StringVar(&f.reviewBy, "review-by", "", "recorded re-approval date supplied with the relay (required with --temporary-human-word)")
 	}
-	if name == "approve" || name == "set-budget" || name == "open" || name == "edit" {
+	if name == "approve" || name == "set-budget" || name == "accept-risk" || name == "open" || name == "edit" {
 		fs.BoolVar(&f.fixtureHumanAuthority, "fixture-human-authority", false, "fixture-only enrolled-human proof; accepted only for an exact fake-runtime root")
 	}
 	fs.Var(&f.labels, "label", "label token (repeatable)")
@@ -292,6 +631,17 @@ func runGoalDischargeReviewObligation(args []string) int {
 		fmt.Fprintln(os.Stderr, "goal discharge-review-obligation needs --id, --finding, --chain, --by, and --test")
 		return 2
 	}
+	if f.chain == goal.HumanCarriedChain {
+		commit, commitErr := humanCarriedFindingCommit(f.finding)
+		if commitErr != nil {
+			fmt.Fprintln(os.Stderr, commitErr)
+			return 1
+		}
+		if err := dispatchcore.ValidateHumanCarriedCritic(f.root, f.test, commit); err != nil {
+			fmt.Fprintln(os.Stderr, err)
+			return 1
+		}
+	}
 	req, err := syncReq("discharge-review-obligation", f.root, f.by, f.lineage)
 	if err != nil {
 		fmt.Fprintln(os.Stderr, err)
@@ -310,7 +660,10 @@ func runGoalAcceptRisk(args []string) int {
 
 func runGoalAcceptRiskWithAuthority(args []string, prove goalAuthorityProver) int {
 	f, ok := parseSyncFlags("accept-risk", args)
-	if !ok || f.id == "" || f.finding == "" || f.chain == "" || f.by == "" || strings.TrimSpace(f.why) == "" {
+	if ok {
+		f.why = strings.TrimSpace(f.why)
+	}
+	if !ok || f.id == "" || f.finding == "" || f.chain == "" || f.by == "" || f.why == "" {
 		fmt.Fprintln(os.Stderr, "goal accept-risk needs --id, --finding, --chain, --by, and --why")
 		return 2
 	}
@@ -323,10 +676,13 @@ func runGoalAcceptRiskWithAuthority(args []string, prove goalAuthorityProver) in
 		fmt.Fprintln(os.Stderr, err)
 		return 1
 	}
-	finding, err := dispatchcore.CritiqueRegisterDecisionFinding(f.root, f.chain, f.finding, f.id)
-	if err != nil {
-		fmt.Fprintln(os.Stderr, err)
-		return 1
+	var finding dispatchcore.CritiqueDecisionFinding
+	if f.chain != goal.HumanCarriedChain {
+		finding, err = dispatchcore.CritiqueRegisterDecisionFinding(f.root, f.chain, f.finding, f.id)
+		if err != nil {
+			fmt.Fprintln(os.Stderr, err)
+			return 1
+		}
 	}
 	proof, err := proveGoalHumanAuthority("accept-risk", f, prove)
 	if err != nil {
@@ -338,28 +694,59 @@ func runGoalAcceptRiskWithAuthority(args []string, prove goalAuthorityProver) in
 		fmt.Fprintln(os.Stderr, err)
 		return 1
 	}
+	opid := goal.Opid(req.Ulid, req.Actor.Machine, req.Actor.Lineage)
+	var carriedRisk counselor.CarriedAcceptedRiskAppend
+	if f.chain == goal.HumanCarriedChain {
+		commit, commitErr := humanCarriedFindingCommit(f.finding)
+		if commitErr != nil {
+			fmt.Fprintln(os.Stderr, commitErr)
+			return 1
+		}
+		carriedRisk = counselor.CarriedAcceptedRiskAppend{Goal: f.id, Finding: f.finding, By: f.by, Why: f.why, OpID: opid, Commit: commit, RecordedAt: req.Now}
+		if err := counselor.ValidateCarriedAcceptedRisk(f.root, carriedRisk); err != nil {
+			fmt.Fprintln(os.Stderr, err)
+			return 1
+		}
+	}
 	res, err := goal.AcceptedRiskDecision(req, f.id, f.finding, f.chain, f.by, f.why, &proof)
 	if err != nil {
 		return printSyncResult(res, err)
 	}
-	opid, err := goal.AcceptedRiskDecisionOpID(f.root, f.id, f.finding, f.chain, req.Now)
+	opid, err = goal.AcceptedRiskDecisionOpID(f.root, f.id, f.finding, f.chain, req.Now)
 	if err != nil {
 		fmt.Fprintln(os.Stderr, err)
 		return 1
 	}
-	if err := counselor.AppendAcceptedRisk(f.root, counselor.AcceptedRiskAppend{Goal: f.id, RootJob: f.chain, FindingID: f.finding, Class: finding.RigorClass, Title: finding.Title, Claim: finding.Claim, Evidence: finding.Evidence, Why: f.why, OpID: opid, RecordedAt: req.Now}); err != nil {
-		fmt.Fprintln(os.Stderr, err)
-		return 1
-	}
-	if err := dispatchcore.CritiqueRegisterAcceptRisk(f.root, f.chain, f.finding, opid); err != nil {
-		fmt.Fprintln(os.Stderr, err)
-		return 1
+	if f.chain == goal.HumanCarriedChain {
+		carriedRisk.OpID = opid
+		if err := counselor.AppendCarriedAcceptedRisk(f.root, carriedRisk); err != nil {
+			fmt.Fprintln(os.Stderr, err)
+			return 1
+		}
+	} else {
+		if err := counselor.AppendAcceptedRisk(f.root, counselor.AcceptedRiskAppend{Goal: f.id, RootJob: f.chain, FindingID: f.finding, Class: finding.RigorClass, Title: finding.Title, Claim: finding.Claim, Evidence: finding.Evidence, Why: f.why, OpID: opid, RecordedAt: req.Now}); err != nil {
+			fmt.Fprintln(os.Stderr, err)
+			return 1
+		}
+		if err := dispatchcore.CritiqueRegisterAcceptRisk(f.root, f.chain, f.finding, opid); err != nil {
+			fmt.Fprintln(os.Stderr, err)
+			return 1
+		}
 	}
 	if err := recordGoalApprovalProof(f.root, opid, "goal accept-risk", proof); err != nil {
 		fmt.Fprintln(os.Stderr, err)
 		return 1
 	}
 	return printSyncResult(res, nil)
+}
+
+func humanCarriedFindingCommit(finding string) (string, error) {
+	value := strings.TrimPrefix(finding, "carried:")
+	value = strings.TrimSuffix(value, ":battery-red")
+	if value == finding || len(value) != 40 || !allLowerHex(value) || finding != "carried:"+value && finding != "carried:"+value+":battery-red" {
+		return "", fmt.Errorf("human-carried finding must be carried:<sha40> or carried:<sha40>:battery-red")
+	}
+	return value, nil
 }
 
 func (f *syncFlags) hasAnyBudgetFlag() bool {

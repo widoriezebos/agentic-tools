@@ -1614,6 +1614,58 @@ func pollLedgerBed(t *testing.T) (string, *testProvider, Question, time.Time) {
 	}
 	return root, &testProvider{cursor: "done"}, q, q.OpenedAt
 }
+
+func hclCarryAnswer(t *testing.T, answer string) (goal.HistoryLine, error) {
+	t.Helper()
+	root, provider, question, now := pollLedgerBed(t)
+	question.Kind = "carry"
+	question.Wants = "carry workspace=" + strings.Repeat("a", 40) + " goal=g past=missing-declaration"
+	question.Facts = []string{"workspace", "refusal", "risk", "diff", "carries and debt", "expiry"}
+	if err := writeJSON(questionPath(root, question.ID), question); err != nil {
+		t.Fatal(err)
+	}
+	code, err := TOTPCode("JBSWY3DPEHPK3PXP", now)
+	if err != nil {
+		t.Fatal(err)
+	}
+	provider.inbound = []Inbound{{Ref: MessageRef{ID: "2", ThreadID: "1"}, ThreadID: "1", UserID: "UWIDO", Text: answer + " " + code, SentAt: now}}
+	if _, err := Poll(context.Background(), pollBedConfig(root, provider, now)); err != nil {
+		t.Fatal(err)
+	}
+	file := projectGoal(t, root, "g")
+	row := file.History[len(file.History)-1]
+	tree := &goal.TreeGoals{Live: map[string]*goal.GoalFile{"g": file}, Done: map[string]*goal.GoalFile{}}
+	_, wordErr := goal.CarryWordAt(tree, "g", row.Opid)
+	return row, wordErr
+}
+
+func assertHCLVerbatimCarryAnswer(t *testing.T) {
+	t.Helper()
+	token := "carry workspace=" + strings.Repeat("a", 40) + " goal=g past=missing-declaration"
+	row, err := hclCarryAnswer(t, token)
+	if err != nil {
+		t.Fatalf("verbatim carry token was not a carry word: %v", err)
+	}
+	if row.Reason != token || row.Actor != "human:wido" || row.AuthorityOutcome != goal.AuthorityOutcomeAuthenticatedChannelWord ||
+		row.ChannelProvider != "fake" || row.ChannelUser != "UWIDO" || row.ChannelRef != "1/2" || row.ChannelStep == 0 {
+		t.Fatalf("authenticated carry answer changed: %+v", row)
+	}
+	seat, err := goal.OpidMachine(row.Opid)
+	if err != nil || seat != "machine" {
+		t.Fatalf("answer row seat = %q, %v", seat, err)
+	}
+}
+
+func TestCarryAnswerRecordsTheAuthenticatedVerbatimToken(t *testing.T) {
+	assertHCLVerbatimCarryAnswer(t)
+}
+
+func TestHCL12NoDoesNotCarry(t *testing.T) {
+	row, err := hclCarryAnswer(t, "no")
+	if row.Reason != "no" || err == nil || !strings.Contains(err.Error(), "exactly one token") {
+		t.Fatalf("negative carry answer was changed or treated as a word: row=%+v err=%v", row, err)
+	}
+}
 func testGitEnv() []string {
 	drop := map[string]bool{"GIT_DIR": true, "GIT_WORK_TREE": true, "GIT_COMMON_DIR": true, "GIT_INDEX_FILE": true, "GIT_CEILING_DIRECTORIES": true, "GIT_OBJECT_DIRECTORY": true, "GIT_ALTERNATE_OBJECT_DIRECTORIES": true, "GIT_CONFIG": true, "GIT_CONFIG_PARAMETERS": true, "GIT_CONFIG_COUNT": true, "GIT_CONFIG_GLOBAL": true, "GIT_CONFIG_SYSTEM": true, "GIT_CONFIG_NOSYSTEM": true, "GIT_GRAFT_FILE": true, "GIT_SHALLOW_FILE": true, "GIT_REPLACE_REF_BASE": true}
 	out := []string{}

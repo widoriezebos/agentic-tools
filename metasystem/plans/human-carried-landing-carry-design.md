@@ -2334,3 +2334,31 @@ the same two facts as 08's third form.
 | HCL-C-25 | `Intent.Targets` is part of the complete normalized intent (journal.go:57-66); 06 step 5 stores the goal there; the `carried` row's `targets=` is `HistoryLine.Targets` (file.go:298); revision 5's replay compared fourteen reason fields and never the goal, so a row on another goal with the same ref was `AlreadyApplied`. | 06's replay: before any field comparison the intent's one target must equal the goal the row is on; a row on another goal is refused `goal differs` naming both goals, recorded as a rejection, nothing written. HCL-25-REPLAY-MISMATCH-REFUSED drives the target case first, then the fourteen fields. |
 | HCL-C-03 | The parser imports governance (file.go:19) and routes every non-channel outcome through its recorded validation (:1436-1441; types.go:91-101, 108-115, 134-158); the goal package compares `humanauthority.OutcomeVerifiedChannel` (approval.go:387, 398; norm.go:114) and 02 records `Proof.TerminalGeneration` (authority.go:79) on the row; step 4 admits generation zero only under `fixtureauth.FixtureModeRoot` (fixtureauth.go:291); revision 5's fence had none of the three. | 05 step 11: the fence gains `internal/governance/`, `internal/humanauthority/` and `internal/fixtureauth/`, named as the three compiled owners of the authority wire the ledger grammar reads, with the rule that every package the goal package imports for an authority fact is fenced. HCL-03-BASE-JUDGE-BLIND-ASKS gains a row for `governance/types.go`, `humanauthority/authority.go` and `fixtureauth/fixtureauth.go`. |
 | HCL-C-34 | testing.json:5-7 owns cmd/metasystem file by file (`matchesPath`, select.go:251-258); revision 5 put every command fixture in `carry-landing-standard` and attached its obligation to `proof-and-landing` alone; selection adds groups only from affected surfaces and their critical obligations' providers (select.go:162-177), and consumers are affected with providers, never the reverse (:134-144), so a change to a channel or goalsync command file ran none of them. The go adapter expands one named list per defining package (test_go.go:91-102). | The contract section: the command fixtures live in exactly three files with three owners (channel_verbs_test.go, goalsync_mutations_test.go, landing_verbs_test.go) and in no new file; the group stays one and `carried-landing-landing` enters the critical lists of `proof-and-landing`, `dispatch-goal-mission` and `human-authority-and-channel`, with the group in each standard list; the split alternative is named and declined with the reason. HCL-34-PLAN-EXECUTES-EVERY-FIXTURE has one row per owner path, the three command files as exact paths, and two more negative drives. |
+
+## Coordinator's notes at landing (m1d, 2026-09-11)
+
+Three amendments decided in the implementation folds, binding on the page
+as built (the reads: records/misc/human-carried-landing-carry-code-read-r1.md
+to -r6.md; the folds: plans/human-carried-landing-carry-build2-fold-r1-brief.md,
+build3-fold-r2 to -r6):
+
+- The stop list of HCL-LANDING-05 ("an empty staging set is a stop in every
+  mode") excludes the rerun states of `land.sh --carried`: `local:<sha>`,
+  `origin:<sha>`, `ledger:` and the counselor repair read `landing
+  carry-status` and take their branch before staging; only a fresh word
+  stages (HCL-C-35).
+- Single-machine mode is out of scope by name: `goal carry`, `goal carrying`
+  and the carried classification ask `carry-remote-required` when the
+  checkout has no code remote; the anchor rule of HCL-TRANSACTION-06 holds
+  for remote mode (HCL-C-40).
+- `goal carry` speaks its word lines after its transaction, because the
+  word's opid is minted inside it; the landing's eight lines are spoken
+  before the push as HCL-COUNTER-08 says (HCL-C-44).
+
+Page fixtures recorded as follow-ups on the goal, by finding id: HCL-C-58
+(the dead-live-judge and no-judge legs), HCL-C-59 (the ledger repair leg,
+the goal recover tests), HCL-C-60 (abandon from another seat, the
+reservation's compare-and-swap), HCL-C-61 (the forward-path legs, the cap
+and unneeded asks at the landing, main-only, the record-failure stop list,
+the seven-step order, two commands), HCL-C-64 (weaker bed assertions),
+HCL-C-70 to -73, HCL-C-78, HCL-C-81 to -85 (recorded, low).

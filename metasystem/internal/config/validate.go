@@ -518,6 +518,9 @@ func Validate(confPath, repoRoot string) (tiersAbsent bool, problems []string, e
 			}
 		}
 	}
+	if _, carryErr := CarryOpenMax(confPath); carryErr != nil {
+		add("%v", carryErr)
+	}
 	if isFile(localPath) {
 		if raw, present, lookupErr := ConfLookup(localPath, ElapsedGracePercentKey); lookupErr != nil {
 			add("%v", lookupErr)

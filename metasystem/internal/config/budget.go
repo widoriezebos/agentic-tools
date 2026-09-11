@@ -25,7 +25,27 @@ const (
 	RiskGateKey                = "metasystem.budget.risk-gate"
 	RiskGateMark               = "mark"
 	RiskGateEnforce            = "enforce"
+	CarryOpenMaxKey            = "metasystem.budget.carry-open-max"
+	DefaultCarryOpenMax        = uint64(1)
 )
+
+// CarryOpenMax is the committed budget-law ceiling for simultaneous open
+// carry words owned by one seat.
+func CarryOpenMax(confPath string) (uint64, error) {
+	set, err := LoadTierBoxSet(confPath)
+	if err != nil {
+		return 0, err
+	}
+	value, err := set.lawValue(CarryOpenMaxKey, strconv.FormatUint(DefaultCarryOpenMax, 10))
+	if err != nil {
+		return 0, fmt.Errorf("resolve %s: %w", CarryOpenMaxKey, err)
+	}
+	maximum, err := strconv.ParseUint(value, 10, 64)
+	if err != nil || maximum == 0 {
+		return 0, fmt.Errorf("%s must be a positive integer", CarryOpenMaxKey)
+	}
+	return maximum, nil
+}
 
 func RiskGate(confPath string) (string, error) {
 	value, err := budgetLawValue(confPath, RiskGateKey, RiskGateMark)

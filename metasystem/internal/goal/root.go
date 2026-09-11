@@ -14,6 +14,8 @@ import (
 	"strings"
 )
 
+var knownLedgerFormats = map[string]bool{"1": true, "2": true}
+
 // RootRecord is the parsed plans/goals/backlog.md.
 type RootRecord struct {
 	Identity        string // ULID, minted once, the ledger identity
@@ -136,10 +138,15 @@ func ParseRoot(data []byte) (*RootRecord, []Problem) {
 	if r.SyncMode != SyncRemote && r.SyncMode != SyncLocal {
 		addProblem("SyncMode %q is not remote|local", r.SyncMode)
 	}
-	if r.FormatVersion != "1" {
+	if !knownLedgerFormats[r.FormatVersion] {
 		// A version this reader does not know is a tree it must not
 		// trust — refusal is the forward-compatibility story.
-		addProblem("FormatVersion %q is not 1", r.FormatVersion)
+		formats := make([]string, 0, len(knownLedgerFormats))
+		for format := range knownLedgerFormats {
+			formats = append(formats, format)
+		}
+		sort.Strings(formats)
+		addProblem("FormatVersion %q is not %s", r.FormatVersion, strings.Join(formats, " or "))
 	}
 	if r.Revision == 0 {
 		addProblem("missing or zero Revision")

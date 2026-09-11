@@ -4,10 +4,12 @@ import (
 	"bytes"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"os"
 	"os/exec"
 	"path/filepath"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 
@@ -507,6 +509,157 @@ func TestSTR3GapRegisterLine(t *testing.T) {
 	entry := entries[0]
 	if entry.ID != "ar-critic-a-F-1" || entry.Kind != RegisterAcceptedRisk || entry.Class != "severe" || entry.Title != "claim title" || entry.AcceptanceStatus != "accepted" || entry.AcceptanceReason != "human accepted it" || len(entry.SpecimenFacts) != 2 || len(entry.ReviewLinks) != 1 {
 		t.Fatalf("accepted-risk fields changed: %+v", entry)
+	}
+}
+
+func TestHCL08CounselorLine(t *testing.T) {
+	root := t.TempDir()
+	stamp := time.Date(2026, 9, 11, 12, 0, 0, 0, time.UTC)
+	opid := "01K4J000000000000000000001-seat-a-12345678"
+	sha40 := strings.Repeat("a", 40)
+	reason := "landed commit=" + sha40 + " workspace=" + strings.Repeat("b", 40) + " project=" + strings.Repeat("c", 40) +
+		" past=missing-declaration battery=green missing=- failing=- judge=live judgeTree=- judgeDigest=" + strings.Repeat("d", 64) +
+		" liveFailure=- ledger=" + strings.Repeat("e", 40) + " by=human:Wido"
+	row := goal.HistoryLine{At: stamp.Format(time.RFC3339), Opid: opid, Verb: "carried", Actor: "seat-a+lineage", Targets: []string{"carry-goal"}, ApprovedRef: "word", Reason: reason, Keep: -1}
+	line, err := CarriedLandingLine(row)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if line.ID != "cl-"+opid || line.RecordedAt != stamp.Format(time.RFC3339) || line.Goal != "carry-goal" || line.Commit != sha40 || line.Judge.Mode != "live" || line.Judge.Digest != strings.Repeat("d", 64) || line.By != "human:Wido" {
+		t.Fatalf("carried counselor line changed: %+v", line)
+	}
+	if err := AppendCarriedLanding(root, line); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := os.Stat(filepath.Join(root, filepath.FromSlash(carriedLandingsSource+".lock"))); !os.IsNotExist(err) {
+		t.Fatalf("carried landing register lock survived release: %v", err)
+	}
+	if err := AppendCarriedLanding(root, line); err != nil {
+		t.Fatal(err)
+	}
+	data, err := os.ReadFile(filepath.Join(root, filepath.FromSlash(carriedLandingsSource)))
+	if err != nil || len(bytes.Split(bytes.TrimSpace(data), []byte("\n"))) != 1 {
+		t.Fatalf("carried line was not append-once: %q, %v", data, err)
+	}
+}
+
+func TestHCL79RegisterLockSurvivesRelease(t *testing.T) {
+	root := t.TempDir()
+	path := filepath.Join(root, filepath.FromSlash(carriedLandingsSource))
+	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	var seed bytes.Buffer
+	encoder := json.NewEncoder(&seed)
+	for index := 0; index < 3000; index++ {
+		if err := encoder.Encode(struct {
+			ID string `json:"id"`
+		}{ID: fmt.Sprintf("seed-%04d", index)}); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if err := os.WriteFile(path, seed.Bytes(), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	start := make(chan struct{})
+	errors := make(chan error, 16)
+	var writers sync.WaitGroup
+	for writer := 0; writer < 16; writer++ {
+		writers.Add(1)
+		go func(writer int) {
+			defer writers.Done()
+			<-start
+			for iteration := 0; iteration < 100; iteration++ {
+				id := fmt.Sprintf("unique-%02d-%03d", writer, iteration)
+				if iteration%2 == 0 {
+					id = fmt.Sprintf("repeated-%03d", iteration)
+				}
+				if err := appendRegisterLine(root, carriedLandingsSource, id, struct {
+					ID string `json:"id"`
+				}{ID: id}); err != nil {
+					errors <- err
+					return
+				}
+			}
+		}(writer)
+	}
+	close(start)
+	writers.Wait()
+	close(errors)
+	for err := range errors {
+		t.Fatalf("concurrent register append: %v", err)
+	}
+
+	data, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	counts := map[string]int{}
+	for _, encoded := range bytes.Split(bytes.TrimSpace(data), []byte("\n")) {
+		var line struct {
+			ID string `json:"id"`
+		}
+		if err := json.Unmarshal(encoded, &line); err != nil {
+			t.Fatalf("decode register line: %v", err)
+		}
+		counts[line.ID]++
+		if counts[line.ID] != 1 {
+			t.Fatalf("register id %q appears %d times", line.ID, counts[line.ID])
+		}
+	}
+}
+
+func TestHCL07AcceptedRiskLineComplete(t *testing.T) {
+	root := t.TempDir()
+	mustGit(t, root, "init", "-q", "-b", "main")
+	mustGit(t, root, "config", "user.name", "carry fixture")
+	mustGit(t, root, "config", "user.email", "carry@example.invalid")
+	message := strings.Join([]string{
+		"carried fixture", "", "Carry: word", "Carried-By: human:Wido",
+		"Carried-Tree: workspace=" + strings.Repeat("a", 40) + " project=" + strings.Repeat("b", 40),
+		"Carried-Past: missing-declaration", "Carried-Battery: red missing=group-a failing=-",
+		"Carried-Judge: live sha256=" + strings.Repeat("c", 64), "Carried-Ledger: " + strings.Repeat("d", 40),
+		"Landing-Provenance: carried opid=word past=missing-declaration", "",
+	}, "\n")
+	mustGit(t, root, "commit", "-q", "--allow-empty", "-m", message)
+	command := exec.Command("git", "-C", root, "rev-parse", "HEAD")
+	command.Env = gittree.ScrubbedEnviron()
+	output, err := command.Output()
+	if err != nil {
+		t.Fatal(err)
+	}
+	commit := strings.TrimSpace(string(output))
+	finding := "carried:" + commit + ":battery-red"
+	input := CarriedAcceptedRiskAppend{Goal: "carry-goal", Finding: finding, By: "Wido", Why: "accepted for delivery", OpID: "accept-opid", Commit: commit, RecordedAt: time.Date(2026, 9, 11, 13, 0, 0, 0, time.UTC)}
+	if err := AppendCarriedAcceptedRisk(root, input); err != nil {
+		t.Fatal(err)
+	}
+	if err := AppendCarriedAcceptedRisk(root, input); err != nil {
+		t.Fatal(err)
+	}
+	data, err := os.ReadFile(filepath.Join(root, filepath.FromSlash(acceptedRiskRegisterSource)))
+	if err != nil {
+		t.Fatal(err)
+	}
+	lines := bytes.Split(bytes.TrimSpace(data), []byte("\n"))
+	if len(lines) != 1 {
+		t.Fatalf("accepted-risk replay appended %d lines", len(lines))
+	}
+	var line acceptedRiskRegisterLine
+	if err := json.Unmarshal(lines[0], &line); err != nil {
+		t.Fatal(err)
+	}
+	if line.ID != "ar-human-carried-"+finding || line.Class != "carried-red" || line.AcceptanceReason != input.Why || len(line.SpecimenFacts) != 8 || len(line.ReviewLinks) != 2 {
+		t.Fatalf("carried accepted-risk line changed: %+v", line)
+	}
+	if _, err := os.Stat(filepath.Join(root, filepath.FromSlash(acceptedRiskRegisterSource+".lock"))); !os.IsNotExist(err) {
+		t.Fatalf("accepted-risk register lock survived release: %v", err)
+	}
+	for _, fact := range line.SpecimenFacts {
+		if len(fact.Citations) != 1 || fact.Citations[0].Kind != "commit" || fact.Citations[0].Target != commit || fact.Citations[0].Detail != finding {
+			t.Fatalf("carried accepted-risk citation changed: %+v", fact)
+		}
 	}
 }
 

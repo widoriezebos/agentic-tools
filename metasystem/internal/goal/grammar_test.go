@@ -89,7 +89,7 @@ func TestRootFieldsAreShapedNotMerelyNonempty(t *testing.T) {
 		fragment string
 	}{
 		{"a malformed Identity", func(r *RootRecord) { r.Identity = "not-a-ulid" }, "not ULID-shaped"},
-		{"an unknown FormatVersion", func(r *RootRecord) { r.FormatVersion = "2" }, "FormatVersion \"2\" is not 1"},
+		{"an unknown FormatVersion", func(r *RootRecord) { r.FormatVersion = "3" }, "FormatVersion \"3\" is not 1 or 2"},
 		{"a malformed MigrationEpoch", func(r *RootRecord) { r.MigrationEpoch = "August" }, "not an RFC3339 timestamp"},
 		{"a malformed ManifestDigest", func(r *RootRecord) { r.ManifestDigest = "abc123" }, "not a sha256 hex digest"},
 		{"an unknown MigrationMode", func(r *RootRecord) { r.MigrationMode = "vibes" }, "not manifest|bare"},

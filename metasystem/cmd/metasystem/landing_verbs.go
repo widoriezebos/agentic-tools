@@ -36,22 +36,70 @@ func runLandingObserve(args []string) int {
 	rootJob := flags.String("root-job", "", "tier-1 root implementer job")
 	testReceipt := flags.String("test-receipt", "", "candidate test receipt path")
 	recertification := flags.String("recertification", "", "canonical recertification record path")
+	carried := flags.String("carried", "", "human carry word operation id")
+	projectTree := flags.String("project-tree", "", "whole-project tree used for the carry workspace projection")
+	ledgerTip := flags.String("ledger-tip", "", "frozen accepted goal-ledger tip")
+	judge := flags.String("judge", "", "carried evaluation engine: live or base")
+	liveFailure := flags.String("live-failure", "", "live evaluator refusal code or exit status used by the base judge")
+	carriedBy := flags.String("carried-by", "", "human actor stamped in the carried commit")
 	if flags.Parse(args) != nil || flags.NArg() != 0 {
 		return 2
+	}
+	if *carried != "" && (*judge != "live" && *judge != "base" || *judge == "base" && *liveFailure == "") {
+		fmt.Fprintln(os.Stderr, "landing observe --carried requires --judge live, or --judge base with --live-failure")
+		return 2
+	}
+	now, err := goalCommandNow(*root)
+	if err != nil {
+		return recordExit(err)
 	}
 	params := landing.ObserveParams{
 		RepoRoot: *root, CandidateTree: *tree, Chain: *chain,
 		DirectFix: *directFix, RevertOf: *revertOf, Goal: *goal, Actor: *actor,
 		RootJob: *rootJob, TestReceipt: *testReceipt, Recertification: *recertification,
+		Carried: *carried, ProjectTree: *projectTree, LedgerTip: *ledgerTip, Judge: *judge, LiveFailure: *liveFailure, CarriedBy: *carriedBy, Now: now,
 	}
-	if *testReceipt != "" && *recertification == "" {
+	if (*testReceipt != "" || *carried != "") && *recertification == "" {
 		params.VerifyTesting = func() (proofrun.TestResult, error) {
 			return verifyRetainedTesting(testingSelectionRequest{Root: *root, GoalID: *goal,
-				Mode: testpolicy.ModeAuto, Purpose: testpolicy.PurposeDelivery})
+				Mode: testpolicy.ModeAuto, Purpose: testpolicy.PurposeDelivery, Carried: *carried != ""})
 		}
 	}
 	observation := landing.Observe(params)
 	printJSON(observation)
+	return 0
+}
+
+func runLandingCarryStatus(args []string) int {
+	flags := flag.NewFlagSet("landing carry-status", flag.ContinueOnError)
+	root := flags.String("root", "", "project checkout root")
+	carried := flags.String("carried", "", "human carry word operation id")
+	goalID := flags.String("goal", "", "goal item that holds the word")
+	ledgerTip := flags.String("ledger-tip", "", "frozen accepted goal-ledger tip")
+	jsonOutput := flags.Bool("json", false, "print the complete machine-readable status")
+	if flags.Parse(args) != nil || flags.NArg() != 0 || *root == "" || *carried == "" || *goalID == "" || *ledgerTip == "" {
+		fmt.Fprintln(os.Stderr, "usage: metasystem landing carry-status --root ROOT --carried OPID --goal ID --ledger-tip SHA")
+		return 2
+	}
+	now, err := goalCommandNow(*root)
+	if err != nil {
+		return recordExit(err)
+	}
+	status, err := landing.ReadCarryStatus(*root, *carried, *goalID, *ledgerTip, now)
+	if err != nil {
+		return recordExit(err)
+	}
+	if *jsonOutput {
+		printJSON(status)
+		return 0
+	}
+	fmt.Println(status.Word)
+	fmt.Println(status.Consumption)
+	fmt.Println(status.Reservation)
+	fmt.Println(status.Intent)
+	if status.Counselor != "" {
+		fmt.Println(status.Counselor)
+	}
 	return 0
 }
 

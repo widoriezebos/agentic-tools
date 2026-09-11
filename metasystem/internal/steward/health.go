@@ -1024,7 +1024,7 @@ func checkClaimedGoalBudgets(repoRoot string, now time.Time) RoleVerdict {
 		if file.Risk == nil {
 			riskUnanswered++
 		}
-		exceptionEvidence := fmt.Sprintf(" exceptions=%d", file.BudgetExceptions)
+		exceptionEvidence := fmt.Sprintf(" exceptions=%d carried=%d", file.BudgetExceptions, goal.LandedCarryCount(file))
 		if file.BudgetExceptions >= 2 {
 			exceptionEvidence += " repeated exception: defect signal"
 		}
@@ -1108,6 +1108,15 @@ func checkClaimedGoalBudgets(repoRoot string, now time.Time) RoleVerdict {
 			budget.CodeCritiques, budget.Limits.ReviewRoundLimit,
 			budget.Elapsed.Round(time.Second), budget.Limits.ElapsedLimit, exceptionEvidence))
 	}
+	codeTip := "refs/remotes/origin/main"
+	if endpoint.LocalMode() {
+		codeTip = "refs/heads/main"
+	}
+	carryCounts, carryErr := goal.CountCarries(repoRoot, projection.Tree, codeTip, now)
+	if carryErr != nil {
+		return roleUnknown(RoleClaimedGoalBudget, "the carried-landing counter is unreadable: "+carryErr.Error(), "repair the carried ledger or code history, then rerun metasystem health")
+	}
+	known = append([]string{fmt.Sprintf("CARRIED today=%d open=%d inflight=%d debt=%d", carryCounts.Today, carryCounts.Open, carryCounts.Inflight, carryCounts.Debt)}, known...)
 	if len(dead) > 0 {
 		reasons := make([]string, 0, len(dead))
 		remedy := dead[0].remedy

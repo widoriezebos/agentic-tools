@@ -772,7 +772,11 @@ func claimReservationRecord(opid, operationID, reviews string, fingerprint Launc
 
 func validateClaimReviews(role, reviews string) error {
 	switch role {
-	case "code-critic", "warden":
+	case "code-critic":
+		if !validJobID.MatchString(reviews) && !validCommitReview.MatchString(reviews) {
+			return fmt.Errorf("claim-launch role %s requires a valid reviews job id or commit:<sha40>", role)
+		}
+	case "warden":
 		if !validJobID.MatchString(reviews) {
 			return fmt.Errorf("claim-launch role %s requires a valid reviews job id", role)
 		}
@@ -792,6 +796,9 @@ func validateFreshCriticReviewsLatest(repoRoot, role, reviews, adapterVerb strin
 	if adapterVerb != "dispatch" || (role != "code-critic" && role != "warden") {
 		// A follow-up resolves the register of the round it continues; certification
 		// of a later work round is a fresh critic's job.
+		return nil
+	}
+	if role == "code-critic" && validCommitReview.MatchString(reviews) {
 		return nil
 	}
 	state := loadCritiqueState(repoRoot)

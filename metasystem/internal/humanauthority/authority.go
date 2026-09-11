@@ -695,6 +695,7 @@ func Prove(root string, invokerPID int64, reader Reader, now time.Time) (Proof, 
 const (
 	setObligationAction = "goal set-obligation"
 	resumeAction        = "goal resume"
+	carryAction         = "goal carry"
 )
 
 // RecordProof stores the observed proof beside the local authority records,
@@ -713,6 +714,12 @@ func RecordSetObligationProof(root, operationID string, proof Proof) error {
 // RecordResumeProof stores either accepted proof form for one exact resume.
 func RecordResumeProof(root, operationID string, proof Proof) error {
 	return recordProof(root, operationID, resumeAction, proof, proof.AuthorizesResume(root))
+}
+
+// RecordCarryProof stores the proof for a carry word after its ledger
+// transaction is confirmed. It never authorizes a later process.
+func RecordCarryProof(root, operationID string, proof Proof) error {
+	return recordProof(root, operationID, carryAction, proof, proof.ValidFor(root))
 }
 
 func recordProof(root, operationID, action string, proof Proof, recordable bool) error {

@@ -3,11 +3,12 @@ package landing
 import (
 	"path/filepath"
 	"sort"
+	"strings"
 
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/gittree"
 )
 
-var appendOnlyRegisters = []string{"memory/receipts.log", "records/narrator-digest.log"}
+var appendOnlyRegisters = []string{"memory/receipts.log", "records/counselor/accepted-risk-register.jsonl", "records/counselor/carried-landings.jsonl", "records/narrator-digest.log"}
 
 var ledgerPaths = []string{
 	"plans/goals",
@@ -23,7 +24,20 @@ func WorkspaceExclusions() []string {
 	paths := append([]string(nil), appendOnlyRegisters...)
 	paths = append(paths, ledgerPaths...)
 	sort.Strings(paths)
-	return paths
+	compact := paths[:0]
+	for _, candidate := range paths {
+		covered := false
+		for _, parent := range paths {
+			if parent != candidate && strings.HasPrefix(candidate, strings.TrimSuffix(parent, "/")+"/") {
+				covered = true
+				break
+			}
+		}
+		if !covered {
+			compact = append(compact, candidate)
+		}
+	}
+	return compact
 }
 
 // TestReceiptProjection records a reproducible projection of a receipt tree.

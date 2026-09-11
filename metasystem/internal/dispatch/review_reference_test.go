@@ -219,3 +219,45 @@ func TestReconcileLegacyDesignCriticAcceptsExplicitPairing(t *testing.T) {
 		t.Fatalf("legacy design-critic reviews = %v", got)
 	}
 }
+
+func TestHCL09BadFormRefused(t *testing.T) {
+	sha := strings.Repeat("a", 40)
+	if err := validateClaimReviews("code-critic", "commit:"+sha); err != nil {
+		t.Fatalf("full commit review reference was refused: %v", err)
+	}
+	for _, bad := range []string{"commit:" + sha[:7], "commit:" + strings.ToUpper(sha), "tree:" + sha} {
+		if err := validateClaimReviews("code-critic", bad); err == nil || !strings.Contains(err.Error(), "commit:<sha40>") {
+			t.Errorf("malformed commit review reference admitted: %s (%v)", bad, err)
+		}
+	}
+}
+
+func TestHCL09ReviewReferenceAdmits(t *testing.T) {
+	sha := strings.Repeat("a", 40)
+	root := t.TempDir()
+	record := map[string]any{"jobId": "critic", "role": "code-critic", "reviews": "commit:" + sha, "status": "completed"}
+	writeJSONFile(t, filepath.Join(root, "artifacts", "agents", "jobs"), "critic.json", record)
+	field, reviews, err := reviewReferenceBinding("critic", record)
+	if err != nil || field != independentCritiqueReferenceField || reviews != "commit:"+sha {
+		t.Fatalf("code-critic commit binding changed: field=%q reviews=%q err=%v", field, reviews, err)
+	}
+	if err := StampClaimedReviewReference(root, "critic"); err != nil {
+		t.Fatalf("commit subject should need no chain stamp: %v", err)
+	}
+	if err := ReconcileReviewReference(root, "critic", "critic"); err == nil || !strings.Contains(err.Error(), "a commit subject carries no chain pointer; the obligation on the goal is its record") {
+		t.Fatalf("commit subject reconcile did not state the pointer law: %v", err)
+	}
+}
+
+func TestHCL09TwoChainsUnite(t *testing.T) {
+	sha := strings.Repeat("a", 40)
+	first := reviewedSubject{ReviewsTarget: "commit:" + sha, ReviewedTree: strings.Repeat("b", 40)}
+	second := reviewedSubject{ReviewsTarget: "commit:" + sha, ReviewedTree: strings.Repeat("c", 40)}
+	if !first.matches(second) || !second.matches(first) {
+		t.Fatalf("two critic chains on one commit did not share a subject: %s / %s", first, second)
+	}
+	different := reviewedSubject{ReviewsTarget: "commit:" + strings.Repeat("d", 40), ReviewedTree: strings.Repeat("e", 40)}
+	if first.matches(different) {
+		t.Fatalf("different commits were united: %s / %s", first, different)
+	}
+}

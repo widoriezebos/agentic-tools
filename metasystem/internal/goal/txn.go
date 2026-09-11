@@ -447,9 +447,10 @@ func (l LostToCompetitor) Error() string {
 }
 
 // AlreadyApplied is the mutation callback's idempotent-success
-// classification, lawful ONLY when the callback FOUND THIS
-// OPERATION'S OWN OPID on the rebuilt tip (a resumed recovery, a
-// delayed push). A semantic no-op without that proof is
+// classification, lawful when the callback found this operation's own opid.
+// A carried operation may instead find its ApprovedRef because one human word
+// is consumed exactly once and a fresh-opid replay is lawful there alone. A
+// semantic no-op without either proof is
 // NothingToDo — the journal's truth predicate is the opid, and a
 // confirmed entry whose opid is nowhere would be a lie.
 type AlreadyApplied struct{}
@@ -546,6 +547,40 @@ func Publish(e Endpoint, req PublishRequest) (PublishResult, error) {
 		return PublishResult{}, err
 	}
 	return runTransaction(e, req)
+}
+
+// CompleteEntry runs a request against its already-created journal entry.
+// Intent equality prevents a caller from reusing an authorized entry for
+// different bytes.
+func CompleteEntry(e Endpoint, req PublishRequest) (PublishResult, error) {
+	entry, err := ReadEntry(e.Root, req.Opid)
+	if err != nil {
+		return PublishResult{}, err
+	}
+	if entry.Phase != PhaseCreated && entry.Phase != PhasePushed {
+		return PublishResult{}, fmt.Errorf("journal entry %s is %s, not created or pushed", req.Opid, entry.Phase)
+	}
+	if !intentsEqual(entry.Intent, req.Intent) {
+		return PublishResult{}, fmt.Errorf("journal entry %s intent differs from the carried request", req.Opid)
+	}
+	return runTransaction(e, req)
+}
+
+func intentsEqual(left, right Intent) bool {
+	if left.Verb != right.Verb || strings.Join(left.Targets, "\x00") != strings.Join(right.Targets, "\x00") || len(left.Args) != len(right.Args) || len(left.Deltas) != len(right.Deltas) {
+		return false
+	}
+	for key, value := range left.Args {
+		if right.Args[key] != value {
+			return false
+		}
+	}
+	for index := range left.Deltas {
+		if left.Deltas[index] != right.Deltas[index] {
+			return false
+		}
+	}
+	return true
 }
 
 // runTransaction drives one journaled transaction whose entry

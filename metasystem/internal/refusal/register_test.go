@@ -298,3 +298,102 @@ func compositeHasStringField(t *testing.T, literal *ast.CompositeLit, field, wan
 	}
 	return false
 }
+
+func TestHCL03NoPendingAfterSlice2(t *testing.T) {
+	root := moduleRoot(t)
+	carriedRows := 0
+	for _, row := range Rows {
+		if row.Pending != "" {
+			t.Errorf("refusal %s still has pending marker %q", row.Code, row.Pending)
+		}
+		if strings.HasPrefix(row.Override, "land.sh --carried") {
+			carriedRows++
+		}
+		if strings.HasPrefix(row.Code, "carry-") && (row.Shape != Question || row.Override != "") {
+			t.Errorf("carried ask %s is not a Question row with no override", row.Code)
+		}
+	}
+	if carriedRows == 0 {
+		t.Fatal("the register has no carried refusal rows")
+	}
+	for _, row := range ShellRows {
+		if row.Override == "" && !row.Record {
+			t.Errorf("shell row %s:%s has neither override nor record-failure marker", row.Script, row.Line)
+		}
+		if row.Record && row.Override != "" {
+			t.Errorf("shell row %s:%s is both overridable and a record failure", row.Script, row.Line)
+		}
+	}
+	read := func(path string) string {
+		t.Helper()
+		data, err := os.ReadFile(filepath.Join(root, filepath.FromSlash(path)))
+		if err != nil {
+			t.Fatal(err)
+		}
+		return string(data)
+	}
+	checks := []struct{ name, path, needle string }{
+		{"goal carry", "cmd/metasystem/main.go", `{"carry",`},
+		{"goal carrying", "cmd/metasystem/main.go", `{"carrying",`},
+		{"goal carried", "cmd/metasystem/main.go", `{"carried",`},
+		{"landing carry-status", "cmd/metasystem/main.go", `{"carry-status",`},
+		{"land argument", "scripts/agents/land.sh", `--carried <opid>`},
+		{"commit argument-loop case", "scripts/agents/commit.sh", "\n    --carried)\n"},
+	}
+	sources := map[string]string{}
+	for _, check := range checks {
+		if _, ok := sources[check.path]; !ok {
+			sources[check.path] = read(check.path)
+		}
+		if !strings.Contains(sources[check.path], check.needle) {
+			t.Errorf("entry point %s is absent from %s", check.name, check.path)
+		}
+	}
+	for _, removed := range checks {
+		mutated := make(map[string]string, len(sources))
+		for path, source := range sources {
+			mutated[path] = source
+		}
+		mutated[removed.path] = strings.Replace(mutated[removed.path], removed.needle, "", 1)
+		missing := false
+		for _, check := range checks {
+			if !strings.Contains(mutated[check.path], check.needle) {
+				missing = true
+				break
+			}
+		}
+		if !missing {
+			t.Errorf("removing %s did not fail the entry-point check", removed.name)
+		}
+	}
+}
+
+func TestHCL11EntryPointsPresent(t *testing.T) {
+	carriedOverrides := 0
+	carryQuestions := map[string]bool{}
+	for _, row := range Rows {
+		if strings.HasPrefix(row.Override, "land.sh --carried") {
+			carriedOverrides++
+			if row.Pending != "" {
+				t.Errorf("carried override %s is still pending: %s", row.Code, row.Pending)
+			}
+		}
+		if strings.HasPrefix(row.Code, "carry-") {
+			carryQuestions[row.Code] = true
+			if row.Shape != Question || row.Override != "" {
+				t.Errorf("carry ask %s must be a Question with no override", row.Code)
+			}
+		}
+	}
+	// The original 48 pending Rows lose three non-carry ledger-meaning
+	// overrides in the same flip, leaving 45 carryable refusal codes.
+	if carriedOverrides != 45 {
+		t.Fatalf("carried refusal override count = %d, want 45 carryable refusal rows", carriedOverrides)
+	}
+	want := []string{"carry-ledger-moved", "carry-goal-not-live", "carry-word-missing", "carry-word-unproven", "carry-seat-mismatch", "carry-tree-mismatch", "carry-not-carryable", "carry-word-expired", "carry-word-consumed", "carry-debt-unpaid", "carry-cap-reached", "carry-base-judge-blind", "carry-battery-unverified", "carry-unneeded", "carry-refusal-mismatch"}
+	for _, code := range want {
+		if !carryQuestions[code] {
+			t.Errorf("carry ask row %s is absent", code)
+		}
+	}
+}

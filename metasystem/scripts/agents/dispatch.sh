@@ -1386,10 +1386,16 @@ dispatch_job() {
   fi
   if [[ "$role" == code-critic || "$role" == warden ]]; then
     [[ -n "$reviews" ]] || die 2 "$role dispatch requires --reviews <implementer-job-id>"
-    valid_id "$reviews" || die 2 "invalid implementer job id for --reviews: $reviews"
-    [[ -f "$jobs/$reviews.json" ]] || die 1 "$role dispatch cannot review unknown implementer job: $reviews"
-    [[ "$(json_field "$jobs/$reviews.json" role 2>/dev/null || true)" == implementer ]] \
-      || die 1 "$role dispatch --reviews must name an implementer job: $reviews"
+    if [[ "$role" == code-critic && "$reviews" =~ ^commit:[0-9a-f]{40}$ ]]; then
+      local reviewed_commit=${reviews#commit:}
+      [[ "$(git -C "$root" cat-file -t "$reviewed_commit" 2>/dev/null || true)" == commit ]] \
+        || die 1 "code-critic dispatch --reviews commit subject is not a readable commit: $reviews"
+    else
+      valid_id "$reviews" || die 2 "invalid implementer job id for --reviews: $reviews"
+      [[ -f "$jobs/$reviews.json" ]] || die 1 "$role dispatch cannot review unknown implementer job: $reviews"
+      [[ "$(json_field "$jobs/$reviews.json" role 2>/dev/null || true)" == implementer ]] \
+        || die 1 "$role dispatch --reviews must name an implementer job: $reviews"
+    fi
   elif [[ "$role" == verifier && -n "$reviews" ]]; then
     valid_id "$reviews" || die 2 "invalid implementer job id for --reviews: $reviews"
     [[ -f "$jobs/$reviews.json" ]] || die 1 "verifier dispatch cannot review unknown implementer job: $reviews"
@@ -1734,6 +1740,13 @@ dispatch_job() {
   release_cap_authority_lock
 
   mkdir -p "$round_dir"
+  if [[ "$role" == code-critic && "$reviews" =~ ^commit:[0-9a-f]{40}$ ]]; then
+    local reviewed_commit=${reviews#commit:}
+    git -C "$root" diff --binary --full-index "$reviewed_commit^" "$reviewed_commit" >"$round_dir/diff.patch" \
+      || die 1 "code-critic commit subject has no readable parent diff: $reviews"
+    git -C "$root" rev-parse "$reviewed_commit^{tree}" >"$round_dir/reviewedTree" \
+      || die 1 "code-critic commit subject has no readable tree: $reviews"
+  fi
   cp "$brief" "$payload/brief.md"
   mv "$prompt_temp" "$round_dir/prompt.md"
   mv "$composition_temp" "$round_dir/composition.json"

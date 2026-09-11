@@ -16,6 +16,7 @@ func mustGit(t *testing.T, dir string, args ...string) string {
 	cmd := exec.Command("git", append([]string{"-C", dir,
 		"-c", "user.name=t", "-c", "user.email=t@t",
 		"-c", "protocol.file.allow=always"}, args...)...)
+	cmd.Env = environWithoutGitSteering()
 	out, err := cmd.CombinedOutput()
 	if err != nil {
 		t.Fatalf("git %v: %v\n%s", args, err, out)

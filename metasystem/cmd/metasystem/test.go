@@ -136,6 +136,7 @@ type testingSelectionRequest struct {
 	Mode                                                  testpolicy.Mode
 	Purpose                                               testpolicy.Purpose
 	Groups                                                []string
+	Carried                                               bool
 }
 
 func parseTestingSelection(name string, args []string, execution bool) (testingSelectionRequest, bool, int) {
@@ -148,6 +149,7 @@ func parseTestingSelection(name string, args []string, execution bool) (testingS
 	purpose := flags.String("purpose", "delivery", "delivery, diagnostic, or cadence")
 	groups := flags.String("groups", "", "comma-separated diagnostic groups")
 	jsonOutput := flags.Bool("json", false, "emit structured JSON")
+	flags.BoolVar(&request.Carried, "carried", false, "compose a completed red result for carried-landing classification")
 	if execution {
 		flags.StringVar(&request.CapMin, "cap-min", "", "reserved proof minutes")
 		flags.StringVar(&request.RetryDecision, "retry-decision", "", "accountable version-1 retry decision")
@@ -1067,7 +1069,7 @@ func verifyRetainedTesting(request testingSelectionRequest) (proofrun.TestResult
 	if err != nil {
 		return proofrun.TestResult{}, err
 	}
-	candidateEngineDigest, err := retainedCandidateEngineDigest(prepared, attempts, candidateEngineBuildIdentity)
+	candidateEngineDigest, err := retainedCandidateEngineDigest(prepared, attempts, candidateEngineBuildIdentity, request.Carried)
 	if err != nil {
 		return proofrun.TestResult{}, err
 	}
@@ -1207,10 +1209,10 @@ func testInputManifestContains(manifest []string, candidate string) bool {
 	return false
 }
 
-func retainedCandidateEngineDigest(prepared testingPreparation, attempts []proofrun.Attempt, buildIdentity string) (string, error) {
+func retainedCandidateEngineDigest(prepared testingPreparation, attempts []proofrun.Attempt, buildIdentity string, carried bool) (string, error) {
 	matching := func(result proofrun.TestResult) (string, bool) {
 		matches := result.CandidateEngineIdentityVersion == proofrun.CandidateEngineIdentitySchemaVersion &&
-			result.CandidateEngineBuildIdentity == buildIdentity && result.Delivery.Sufficient &&
+			result.CandidateEngineBuildIdentity == buildIdentity && (carried || result.Delivery.Sufficient) &&
 			proofrun.ValidateTestResult(result) == nil
 		if !matches {
 			return "", false
@@ -1228,7 +1230,9 @@ func retainedCandidateEngineDigest(prepared testingPreparation, attempts []proof
 		if attempt.TestResult != nil {
 			candidateDigest, matches = matching(*attempt.TestResult)
 		}
-		if startErr == nil && attempt.Terminal != nil && attempt.Terminal.Result == proofrun.TerminalSuccess && matches &&
+		completedMeasurement := attempt.Terminal != nil &&
+			(attempt.Terminal.Result == proofrun.TerminalSuccess || carried && attempt.Terminal.Result == proofrun.TerminalFailed)
+		if startErr == nil && completedMeasurement && matches &&
 			(newestStarted.IsZero() || started.After(newestStarted)) {
 			newestStarted, digest = started, candidateDigest
 		}

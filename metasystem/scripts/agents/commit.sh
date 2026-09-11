@@ -11,7 +11,7 @@ landing_requested=0
 for argument in "$@"; do
   [[ "$argument" != -- ]] || break
   case "$argument" in
-    --chain|--direct-fix|--revert-of|--root-job|--test-receipt|--recertification) landing_requested=1 ;;
+    --chain|--direct-fix|--revert-of|--root-job|--test-receipt|--recertification|--carried) landing_requested=1 ;;
   esac
 done
 if (( landing_requested )); then
@@ -68,6 +68,10 @@ landing_goal_set=0
 landing_root_job=
 landing_test_receipt=
 landing_recertification=
+landing_carried=
+landing_ledger_tip=
+landing_carried_by=
+landing_carried_past=
 commit_args=()
 while (( $# )); do
   case "$1" in
@@ -136,6 +140,26 @@ while (( $# )); do
       landing_recertification=$2
       shift 2
       ;;
+    --carried)
+      [[ $# -ge 2 && -z "$landing_carried" ]] || { echo "commit refused: --carried requires one opid" >&2; exit 2; }
+      landing_carried=$2
+      shift 2
+      ;;
+    --ledger-tip)
+      [[ $# -ge 2 && -z "$landing_ledger_tip" ]] || { echo "commit refused: --ledger-tip requires one commit" >&2; exit 2; }
+      landing_ledger_tip=$2
+      shift 2
+      ;;
+    --carried-by)
+      [[ $# -ge 2 && -z "$landing_carried_by" ]] || { echo "commit refused: --carried-by requires one recorded actor" >&2; exit 2; }
+      landing_carried_by=$2
+      shift 2
+      ;;
+    --carried-past)
+      [[ $# -ge 2 && -z "$landing_carried_past" ]] || { echo "commit refused: --carried-past requires one name" >&2; exit 2; }
+      landing_carried_past=$2
+      shift 2
+      ;;
     --)
       commit_args+=("$1")
       shift
@@ -151,6 +175,11 @@ while (( $# )); do
   esac
 done
 
+if [[ -n "$landing_carried" && ( $landing_goal_set -eq 0 || -z "$landing_ledger_tip" || -z "$landing_carried_by" || -z "$landing_carried_past" ) ]]; then
+  echo "commit refused: --carried requires --goal, --ledger-tip, --carried-by, and --carried-past" >&2
+  exit 2
+fi
+
 if (( landing_goal_set )) && [[ -z "$landing_goal" || ${#landing_goal} -gt 100 || ! "$landing_goal" =~ ^[a-z0-9-]+$ ]]; then
   echo "commit refused: --goal must be a lowercase kebab identifier of at most 100 characters" >&2
   exit 2
@@ -158,6 +187,10 @@ fi
 
 message_has_goal_item() { # message text
   LC_ALL=C grep -Eiq '^Goal-Item:' <<<"$1"
+}
+
+message_has_carried_item() { # message text
+  LC_ALL=C grep -Eq '^(Carry|Carried-By|Carried-Tree|Carried-Past|Carried-Battery|Carried-Judge|Carried-Ledger):' <<<"$1"
 }
 
 scan_commit_message_inputs() {
@@ -173,10 +206,14 @@ scan_commit_message_inputs() {
         value=${commit_args[index+1]}
         case "$arg" in
           -m|--message|--trailer)
-            if message_has_goal_item "$value"; then
-              echo "commit refused: Goal-Item is stamped by --goal, never typed" >&2
-              return 2
-            fi
+		    if message_has_carried_item "$value"; then
+		      echo "commit refused: Goal-Item and carried trailers are stamped by the wrapper, never typed" >&2
+		      return 1
+		    fi
+		    if message_has_goal_item "$value"; then
+		      echo "commit refused: Goal-Item and carried trailers are stamped by the wrapper, never typed" >&2
+		      return 2
+		    fi
             ;;
           -F|--file)
             if [[ "$value" == - ]]; then
@@ -187,10 +224,14 @@ scan_commit_message_inputs() {
               echo "commit refused: commit message file is not readable: $value" >&2
               return 2
             fi
-            if message_has_goal_item "$(<"$value")"; then
-              echo "commit refused: Goal-Item is stamped by --goal, never typed" >&2
-              return 2
-            fi
+		    if message_has_carried_item "$(<"$value")"; then
+		      echo "commit refused: Goal-Item and carried trailers are stamped by the wrapper, never typed" >&2
+		      return 1
+		    fi
+		    if message_has_goal_item "$(<"$value")"; then
+		      echo "commit refused: Goal-Item and carried trailers are stamped by the wrapper, never typed" >&2
+		      return 2
+		    fi
             ;;
           *)
             echo "commit refused: $arg is an unscannable commit message source" >&2
@@ -201,10 +242,14 @@ scan_commit_message_inputs() {
         ;;
       --message=*|--trailer=*)
         value=${arg#*=}
-        if message_has_goal_item "$value"; then
-          echo "commit refused: Goal-Item is stamped by --goal, never typed" >&2
-          return 2
-        fi
+		if message_has_carried_item "$value"; then
+		  echo "commit refused: Goal-Item and carried trailers are stamped by the wrapper, never typed" >&2
+		  return 1
+		fi
+		if message_has_goal_item "$value"; then
+		  echo "commit refused: Goal-Item and carried trailers are stamped by the wrapper, never typed" >&2
+		  return 2
+		fi
         index=$((index + 1))
         ;;
       --file=*)
@@ -217,10 +262,14 @@ scan_commit_message_inputs() {
           echo "commit refused: commit message file is not readable: $value" >&2
           return 2
         fi
-        if message_has_goal_item "$(<"$value")"; then
-          echo "commit refused: Goal-Item is stamped by --goal, never typed" >&2
-          return 2
-        fi
+		if message_has_carried_item "$(<"$value")"; then
+		  echo "commit refused: Goal-Item and carried trailers are stamped by the wrapper, never typed" >&2
+		  return 1
+		fi
+		if message_has_goal_item "$(<"$value")"; then
+		  echo "commit refused: Goal-Item and carried trailers are stamped by the wrapper, never typed" >&2
+		  return 2
+		fi
         index=$((index + 1))
         ;;
       --reuse-message=*|--reedit-message=*|--template=*|--squash=*|--fixup=*|--amend)
@@ -266,16 +315,61 @@ proved_tree=$(git -C "$toplevel" write-tree) || {
 testing_contract=$($ms config conf-value --file "$root/metasystem.conf" --key testing.contract 2>/dev/null || true)
 static_reproof=1
 
+# A carried landing asks the live installed engine first. A candidate may have
+# made that engine unreadable; in that one case build the enrolled HEAD engine
+# in a detached scratch worktree. The base engine is allowed to decide only
+# after the Go observer proves the candidate changed none of its policy owners.
+build_base_carry_judge() { # output path
+  local output=$1 scratch worktree build_root build_rc remove_rc
+  scratch=$(mktemp -d "${TMPDIR:-/tmp}/metasystem-carry-judge.XXXXXX") || return $?
+  worktree=$scratch/base
+  git -C "$toplevel" worktree add --detach "$worktree" HEAD 1>&2 || {
+    build_rc=$?
+    rmdir "$scratch" 2>/dev/null || true
+    return "$build_rc"
+  }
+  build_root=$worktree
+  [[ -z "$prefix" ]] || build_root=$worktree/${prefix%/}
+  (
+    cd "$build_root" || exit $?
+    go build -o "$output" ./cmd/metasystem
+  ) 1>&2
+  build_rc=$?
+  git -C "$toplevel" worktree remove --force "$worktree" 1>&2
+  remove_rc=$?
+  rmdir "$scratch" 2>/dev/null || true
+  (( build_rc == 0 )) || return "$build_rc"
+  (( remove_rc == 0 )) || return "$remove_rc"
+  chmod +x "$output"
+}
+
+sha256_file() { # path
+  shasum -a 256 "$1" | awk '{print $1}'
+}
+
+json_csv() { # judge, json, delivery field
+  local reader=$1 value=$2 field=$3 encoded
+  encoded=$("$reader" json get --value "$value" --field "delivery.$field" 2>/dev/null) || return $?
+  if [[ "$encoded" == '[]' ]]; then
+    printf '%s\n' '-'
+    return 0
+  fi
+  printf '%s\n' "$encoded" | sed -E 's/^\[//; s/\]$//; s/"//g; s/,[[:space:]]*/,/g'
+}
+
 # Direct legacy commits receive the staged-package coverage boundary. A
 # migrated installation instead consumes the already-admitted shared result;
-# verify is read-only and starts neither tests nor builds.
+# verify is read-only and starts neither tests nor builds. Carried mode defers
+# that judgment into its observer so a readable red battery can be carried.
 if [[ -n "$testing_contract" ]]; then
-  testing_verify_args=(test verify --root "$root" --tree "$proved_tree" --mode auto --purpose delivery)
-  [[ -z "$landing_goal" ]] || testing_verify_args+=(--goal "$landing_goal")
-  "$ms" "${testing_verify_args[@]}" 1>&2 || {
-    echo "agent commit refused: required shared testing proof is missing or insufficient" >&2
-    exit 1
-  }
+  if [[ -z "$landing_carried" ]]; then
+    testing_verify_args=(test verify --root "$root" --tree "$proved_tree" --mode auto --purpose delivery)
+    [[ -z "$landing_goal" ]] || testing_verify_args+=(--goal "$landing_goal")
+    "$ms" "${testing_verify_args[@]}" 1>&2 || {
+      echo "agent commit refused: required shared testing proof is missing or insufficient" >&2
+      exit 1
+    }
+  fi
   policy_engine=$ms
   # The retained proof already ran fast-static-build (gofmt, vet, staticcheck,
   # the refusal register and the build) on this exact tree; the boundary
@@ -479,6 +573,10 @@ landing_observe_args=(landing observe --root "$root" --tree "$landing_tree")
 [[ -z "$landing_root_job" ]] || landing_observe_args+=(--root-job "$landing_root_job")
 [[ -z "$landing_test_receipt" ]] || landing_observe_args+=(--test-receipt "$landing_test_receipt")
 [[ -z "$landing_recertification" ]] || landing_observe_args+=(--recertification "$landing_recertification")
+if [[ -n "$landing_carried" ]]; then
+  landing_observe_args+=(--carried "$landing_carried" --project-tree "$settled_tree" \
+    --ledger-tip "$landing_ledger_tip" --carried-by "$landing_carried_by")
+fi
 landing_observe_args+=(--actor "$landing_actor")
 landing_provenance="none change=unknown"
 landing_verdict="would-refuse code=evaluator-unavailable"
@@ -486,12 +584,19 @@ landing_code="evaluator-unavailable"
 landing_mode="refuse"
 landing_observation=
 landing_refusal=
-if landing_observation=$("$policy_engine" "${landing_observe_args[@]}" 2>/dev/null); then
-  observed_provenance=$("$ms" json get --value "$landing_observation" --field provenance 2>/dev/null || true)
-  observed_verdict=$("$ms" json get --value "$landing_observation" --field verdictTrailer 2>/dev/null || true)
-  observed_code=$("$ms" json get --value "$landing_observation" --field code 2>/dev/null || true)
-  observed_mode=$("$ms" json get --value "$landing_observation" --field mode 2>/dev/null || true)
-  observed_refusal=$("$ms" json get --value "$landing_observation" --field refusal --default "" 2>/dev/null || true)
+judge=$policy_engine
+judge_mode=
+judge_tree=
+judge_digest=
+live_failure=
+judge_trailer=
+read_landing_observation() { # JSON reader
+  local reader=$1
+  observed_provenance=$("$reader" json get --value "$landing_observation" --field provenance 2>/dev/null || true)
+  observed_verdict=$("$reader" json get --value "$landing_observation" --field verdictTrailer 2>/dev/null || true)
+  observed_code=$("$reader" json get --value "$landing_observation" --field code 2>/dev/null || true)
+  observed_mode=$("$reader" json get --value "$landing_observation" --field mode 2>/dev/null || true)
+  observed_refusal=$("$reader" json get --value "$landing_observation" --field refusal --default "" 2>/dev/null || true)
   if [[ -n "$observed_provenance" && -n "$observed_verdict" && -n "$observed_code" \
     && ( "$observed_mode" == observe || "$observed_mode" == refuse ) ]]; then
     landing_provenance=$observed_provenance
@@ -499,7 +604,59 @@ if landing_observation=$("$policy_engine" "${landing_observe_args[@]}" 2>/dev/nu
     landing_code=$observed_code
     landing_mode=$observed_mode
     landing_refusal=$observed_refusal
+    return 0
   fi
+  return 1
+}
+
+if [[ -n "$landing_carried" ]]; then
+  set +e
+  landing_observation=$("$ms" "${landing_observe_args[@]}" --judge live 2>/dev/null)
+  live_rc=$?
+  set -e
+  if (( live_rc == 0 )) && read_landing_observation "$ms"; then
+    judge=$ms
+    judge_mode=live
+  else
+    live_code=$("$ms" json get --value "$landing_observation" --field code 2>/dev/null || true)
+    if [[ -n "$live_code" ]]; then
+      live_failure=$live_code
+    else
+      live_failure=exit=$live_rc
+    fi
+    judge=$(mktemp "${TMPDIR:-/tmp}/metasystem-base-judge.XXXXXX") || exit $?
+    trap 'rm -f -- "$judge" "$token"' EXIT
+    if ! build_base_carry_judge "$judge"; then
+      echo "no live or base judge decided; the base judge build failed; rebuild and arm an engine at a good commit with steward arm" >&2
+      exit 3
+    fi
+    judge_tree=$(git -C "$root" rev-parse HEAD^{tree}) || exit $?
+    set +e
+    landing_observation=$("$judge" "${landing_observe_args[@]}" --judge base --live-failure "$live_failure" 2>/dev/null)
+    base_rc=$?
+    set -e
+    if (( base_rc != 0 )) || ! read_landing_observation "$judge"; then
+      echo "no live or base judge decided; base judge exit=$base_rc; rebuild and arm an engine at a good commit with steward arm" >&2
+      exit 3
+    fi
+    judge_mode=base
+  fi
+  judge_digest=$(sha256_file "$judge") || exit $?
+  judge_trailer="$judge_mode sha256=$judge_digest"
+  if [[ "$judge_mode" == base ]]; then
+    judge_trailer="base tree=$judge_tree sha256=$judge_digest live-failure=$live_failure"
+  fi
+elif landing_observation=$("$policy_engine" "${landing_observe_args[@]}" 2>/dev/null); then
+  read_landing_observation "$ms" || true
+fi
+
+if [[ -n "$landing_carried" && "$landing_mode" == refuse ]]; then
+  if [[ -n "$landing_refusal" ]]; then
+    printf '%s: %s\n' "$landing_code" "$landing_refusal" >&2
+  else
+    printf 'carried landing asks: %s\n' "$landing_verdict" >&2
+  fi
+  exit 3
 fi
 if (( agent_commit )) && [[ "$landing_mode" == refuse ]]; then
   refusal_paths=$(mktemp "${TMPDIR:-/tmp}/metasystem-landing-refusal-paths.XXXXXX")
@@ -562,6 +719,57 @@ if (( agent_commit )) && [[ "$landing_mode" == refuse ]]; then
   echo "lawful classification exits: declare the reviewed implementation chain with --chain <root-job-id>, or fix the Change-Class classification and retry" >&2
   exit 1
 fi
+
+carried_workspace=
+carried_battery=
+carried_missing=-
+carried_failing=-
+if [[ -n "$landing_carried" ]]; then
+  if [[ "$landing_mode" != observe || "$landing_code" != human-carried \
+    || "$landing_provenance" != *" opid=$landing_carried "* \
+    || "$landing_provenance" != *" past=$landing_carried_past "* \
+    || "$landing_provenance" != *" ledger=$landing_ledger_tip "* ]]; then
+    echo "carried landing asks: the deciding observation does not bind the requested word, refusal, and ledger" >&2
+    exit 3
+  fi
+  carried_workspace=$("$judge" landing workspace --root "$root" --tree "$settled_tree") || {
+    echo "agent commit refused: the carried workspace projection is unreadable" >&2
+    exit 1
+  }
+  testing_json=
+  testing_args=(test verify --root "$root" --tree "$settled_tree" --mode auto --purpose delivery --carried --json)
+  [[ -z "$landing_goal" ]] || testing_args+=(--goal "$landing_goal")
+  set +e
+  testing_json=$("$judge" "${testing_args[@]}" 2>/dev/null)
+  testing_rc=$?
+  set -e
+  testing_sufficient=$("$judge" json get --value "$testing_json" --field delivery.sufficient 2>/dev/null || true)
+  if [[ "$testing_sufficient" != true && "$testing_sufficient" != false ]]; then
+    echo "test verify failed: no structured delivery result; no word carries an unverified battery; repair the testing tool or its evidence and rerun" >&2
+    exit 3
+  fi
+  if [[ "$testing_sufficient" == true ]]; then
+    (( testing_rc == 0 )) || {
+      echo "agent commit refused: test verify returned success evidence with a failing process status" >&2
+      exit 1
+    }
+    carried_battery=green
+  else
+    carried_battery=red
+    carried_missing=$(json_csv "$judge" "$testing_json" missingGroups) || {
+      echo "agent commit refused: test verify returned an unreadable missing-groups list" >&2
+      exit 1
+    }
+    carried_failing=$(json_csv "$judge" "$testing_json" failingGroups) || {
+      echo "agent commit refused: test verify returned an unreadable failing-groups list" >&2
+      exit 1
+    }
+  fi
+fi
+carried_battery_trailer=$carried_battery
+if [[ "$carried_battery" == red ]]; then
+  carried_battery_trailer="red missing=$carried_missing failing=$carried_failing"
+fi
 # The proof binds THE INDEX; the postcondition proves the commit
 # recorded exactly that tree. This replaces any argument grammar
 # (IL28-R2-2, IL28-R3-2, IL28-R4-1, IL28-R4-5): whatever selected
@@ -581,6 +789,23 @@ commit_trailers=(
   --trailer "Landing-Provenance-Verdict: $landing_verdict"
 )
 [[ -z "$landing_goal" ]] || commit_trailers+=(--trailer "Goal-Item: $landing_goal")
+if [[ -n "$landing_carried" ]]; then
+  commit_trailers+=(
+    --trailer "Carried-By: $landing_carried_by"
+    --trailer "Carry: $landing_carried"
+    --trailer "Carried-Tree: workspace=$carried_workspace project=$settled_tree"
+    --trailer "Carried-Past: $landing_carried_past"
+  )
+  if [[ "$carried_battery" == green ]]; then
+    commit_trailers+=(--trailer "Carried-Battery: green")
+  else
+    commit_trailers+=(--trailer "Carried-Battery: red missing=$carried_missing failing=$carried_failing")
+  fi
+  commit_trailers+=(
+    --trailer "Carried-Judge: $judge_trailer"
+    --trailer "Carried-Ledger: $landing_ledger_tip"
+  )
+fi
 git -C "$root" commit "${commit_trailers[@]}" "${commit_args[@]}"
 landed_tree=$(git -C "$root" rev-parse HEAD^{tree})
 landed_message=$(git -C "$root" log -1 --format=%B)
@@ -589,7 +814,43 @@ exact_goal_item_count=0
 if [[ -n "$landing_goal" ]]; then
   exact_goal_item_count=$(grep -Fxc -- "Goal-Item: $landing_goal" <<<"$landed_message" || true)
 fi
-if [[ "$landed_tree" != "$proved_tree" || ( -n "$landing_goal" && ( $goal_item_count -ne 1 || $exact_goal_item_count -ne 1 ) ) || ( -z "$landing_goal" && $goal_item_count -ne 0 ) ]]; then
+carried_postcondition=0
+carried_postcondition_detail=
+carried_keys=(Carry Carried-By Carried-Tree Carried-Past Carried-Battery Carried-Judge Carried-Ledger)
+if [[ -n "$landing_carried" ]]; then
+  for carried_key in "${carried_keys[@]}"; do
+    carried_count=$(LC_ALL=C grep -Ec "^${carried_key}:" <<<"$landed_message" || true)
+    if (( carried_count != 1 )); then
+      carried_postcondition=1
+      carried_postcondition_detail="$carried_key count=$carried_count"
+      break
+    fi
+  done
+  for expected_line in \
+    "Carry: $landing_carried" \
+    "Carried-By: $landing_carried_by" \
+    "Carried-Tree: workspace=$carried_workspace project=$settled_tree" \
+    "Carried-Past: $landing_carried_past" \
+    "Carried-Battery: $carried_battery_trailer" \
+    "Carried-Judge: $judge_trailer" \
+    "Carried-Ledger: $landing_ledger_tip"; do
+    if [[ $(grep -Fxc -- "$expected_line" <<<"$landed_message" || true) -ne 1 ]]; then
+      carried_postcondition=1
+      carried_postcondition_detail="wrong carried trailer: $expected_line"
+      break
+    fi
+  done
+else
+  for carried_key in "${carried_keys[@]}"; do
+    carried_count=$(LC_ALL=C grep -Ec "^${carried_key}:" <<<"$landed_message" || true)
+    if (( carried_count != 0 )); then
+      carried_postcondition=1
+      carried_postcondition_detail="$carried_key must be absent"
+      break
+    fi
+  done
+fi
+if [[ "$landed_tree" != "$proved_tree" || ( -n "$landing_goal" && ( $goal_item_count -ne 1 || $exact_goal_item_count -ne 1 ) ) || ( -z "$landing_goal" && $goal_item_count -ne 0 ) || $carried_postcondition -ne 0 ]]; then
   if [[ -n "$proved_head" ]]; then
     git -C "$root" reset --soft "$proved_head"
   else
@@ -597,6 +858,8 @@ if [[ "$landed_tree" != "$proved_tree" || ( -n "$landing_goal" && ( $goal_item_c
   fi
   if [[ "$landed_tree" != "$proved_tree" ]]; then
     echo "agent commit refused: the commit recorded a tree the static re-proof never judged (content selection beyond the index); the commit was rolled back — stage the exact bytes and commit them plainly" >&2
+  elif (( carried_postcondition )); then
+    echo "agent commit refused: the final commit message failed the carried-trailer postcondition ($carried_postcondition_detail); the commit was rolled back" >&2
   else
     echo "agent commit refused: the final commit message did not contain exactly one byte-exact Goal-Item stamped by --goal; the commit was rolled back" >&2
   fi

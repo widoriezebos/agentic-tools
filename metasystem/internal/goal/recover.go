@@ -73,7 +73,7 @@ func RecoverWithPolicy(e Endpoint, policy SensitiveRecoveryPolicy) ([]RecoveryRe
 		report := RecoveryReport{Opid: entry.Opid, Action: action}
 		switch action {
 		case ActionConfirm:
-			if err := recoverSplitConfirmedEffect(e, tip, entry); err != nil {
+			if err := recoverConfirmedEffect(e, tip, entry); err != nil {
 				return reports, err
 			}
 			if err := MarkTerminal(e.Root, entry.Opid, OutcomeConfirmed, "opid found on "+short(tip)+" by recovery"); err != nil {
@@ -91,7 +91,7 @@ func RecoverWithPolicy(e Endpoint, policy SensitiveRecoveryPolicy) ([]RecoveryRe
 			}
 			CleanupRefs(e, entry.Opid)
 		case ActionConfirmLate:
-			if err := recoverSplitConfirmedEffect(e, tip, entry); err != nil {
+			if err := recoverConfirmedEffect(e, tip, entry); err != nil {
 				return reports, err
 			}
 			if err := CorrectLate(e.Root, entry.Opid, "opid found on "+short(tip)+" by recovery"); err != nil {
@@ -242,6 +242,10 @@ func requestForEntry(e Endpoint, entry Entry) (PublishRequest, error) {
 	}
 	cascade := in.Args["cascade"] == "arc"
 	switch in.Verb {
+	case "carrying":
+		return carryingRequest(r, CarryingArgs{Goal: target, ApprovedRef: in.Args["approvedRef"], Workspace: in.Args["workspace"], Project: in.Args["tree"], By: in.Args["by"]}), nil
+	case "carried":
+		return carriedRequestFromIntentMode(e, entry, true)
 	case "classify-sweep":
 		by := strings.TrimSpace(in.Args["by"])
 		if by == "" {
@@ -413,14 +417,18 @@ func requestForEntry(e Endpoint, entry Entry) (PublishRequest, error) {
 	return PublishRequest{}, fmt.Errorf("verb %q re-runs from its own entry point (reconcile from the checkout it captures, migrate from its reviewed inputs); this entry closes toward that path", in.Verb)
 }
 
-func recoverSplitConfirmedEffect(e Endpoint, tip string, entry Entry) error {
-	if entry.Intent.Verb != "split" {
+func recoverConfirmedEffect(e Endpoint, tip string, entry Entry) error {
+	switch entry.Intent.Verb {
+	case "split":
+		if len(entry.Intent.Targets) != 1 {
+			return fmt.Errorf("confirmed split %s has no unique parent target", entry.Opid)
+		}
+		return raiseSplitOldArcDebt(e, tip, entry.Intent.Targets[0], entry.Opid, timeNowUTC())
+	case "carried":
+		return carriedAfterConfirmed(e.Root, entry.Intent.Args["approvedRef"], timeNowUTC())(tip)
+	default:
 		return nil
 	}
-	if len(entry.Intent.Targets) != 1 {
-		return fmt.Errorf("confirmed split %s has no unique parent target", entry.Opid)
-	}
-	return raiseSplitOldArcDebt(e, tip, entry.Intent.Targets[0], entry.Opid, timeNowUTC())
 }
 
 func actorFromEntry(entry Entry) Actor {

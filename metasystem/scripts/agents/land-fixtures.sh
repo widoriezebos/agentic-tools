@@ -27,10 +27,12 @@ fi
 unset METASYSTEM_FIXTURE_SCENARIO
 if (( ! fixture_bed_child )); then
   fixture_bed_script=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd -P)/$(basename "${BASH_SOURCE[0]}")
-  run_fixture_bed_scenarios land "land fixtures passed (13 isolated legs)" \
+  run_fixture_bed_scenarios land "land fixtures passed (25 isolated legs)" \
     "$fixture_bed_script" push-retry step-failure new-plan goal tier-one full-width-chain build-stamp \
     brain-land-refuses brain-absent-node-proceeds ledger-move-lands records-move-lands \
-    input-move-refuses receipt-cutover
+    input-move-refuses receipt-cutover carried-fresh carried-prefixed carried-second carried-red-battery \
+    carried-intent-failure carried-crash-local carried-asks carried-ledger-path carried-crash \
+    carried-two-seat carried-debt-abandoned carried-debt-expired
 fi
 
 tmp=$(mktemp -d "${TMPDIR:-/tmp}/metasystem-land.XXXXXX")
@@ -47,6 +49,20 @@ receipt_runner_stop_logs=()
 is_workspace_receipt_scenario() {
   case "$fixture_scenario" in
     ledger-move-lands | records-move-lands | input-move-refuses | receipt-cutover) return 0 ;;
+    *) return 1 ;;
+  esac
+}
+
+is_carried_scenario() {
+  case "$fixture_scenario" in
+    carried-fresh | carried-prefixed | carried-second | carried-red-battery | carried-intent-failure | carried-crash-local | carried-asks | carried-ledger-path | carried-crash | carried-two-seat | carried-debt-abandoned | carried-debt-expired) return 0 ;;
+    *) return 1 ;;
+  esac
+}
+
+is_carried_two_seat_scenario() {
+  case "$fixture_scenario" in
+    carried-two-seat | carried-debt-abandoned | carried-debt-expired) return 0 ;;
     *) return 1 ;;
   esac
 }
@@ -177,10 +193,18 @@ clear_independent_fixture_context() {
 
 make_leg() { # name
   leg_root=$tmp/$1
-  leg_seed=$leg_root/seed
+  leg_seed_repo=$leg_root/seed
+  leg_seed=$leg_seed_repo
   leg_remote=$leg_root/origin.git
-  leg_local=$leg_root/local
-  leg_peer=$leg_root/peer
+  leg_local_repo=$leg_root/local
+  leg_peer_repo=$leg_root/peer
+  leg_local=$leg_local_repo
+  leg_peer=$leg_peer_repo
+  if [[ "$1" == carried-prefixed ]]; then
+    leg_seed=$leg_seed_repo/metasystem
+    leg_local=$leg_local_repo/metasystem
+    leg_peer=$leg_peer_repo/metasystem
+  fi
   mkdir -p "$leg_seed/scripts/agents" "$leg_seed/plans" "$leg_seed/bin"
   cp "$root/scripts/agents/land.sh" "$leg_seed/scripts/agents/land.sh"
   cp "$root/scripts/agents/coverage-delta.sh" "$leg_seed/scripts/agents/coverage-delta.sh"
@@ -277,6 +301,24 @@ git show --no-renames --numstat -z --format= HEAD \
   | "$root/bin/metasystem" gate weight-add --root "$root" \
       --commit "$(git rev-parse --short HEAD)"
 SH
+	if is_carried_scenario; then
+	  cp "$root/scripts/agents/commit.sh" "$leg_seed/scripts/agents/commit.sh"
+	  cp "$root/scripts/agents/path-classes.txt" "$leg_seed/scripts/agents/path-classes.txt"
+	  cp "$root/scripts/agents/landing-classes.json" "$leg_seed/scripts/agents/landing-classes.json"
+	  cp "$root/scripts/agents/landing-promotion.json" "$leg_seed/scripts/agents/landing-promotion.json"
+	  mkdir -p "$leg_seed/memory"
+	  cp "$root/memory/rulings.md" "$leg_seed/memory/rulings.md"
+	  printf 'install:payload.txt behavior\ninstall:payload-b.txt behavior\n' >>"$leg_seed/scripts/agents/path-classes.txt"
+	  carried_fixture_engine=$leg_root/carried-engine
+	  printf -v carried_fixture_engine_q '%q' "$carried_fixture_engine"
+	  cat >"$leg_seed/scripts/agents/go-build.sh" <<SH
+#!/usr/bin/env bash
+set -euo pipefail
+[[ "\${1:-}" == --trimpath && "\${2:-}" == --out && -n "\${3:-}" ]]
+cp $carried_fixture_engine_q "\$3"
+chmod +x "\$3"
+SH
+	fi
   if is_workspace_receipt_scenario; then
     mkdir -p "$leg_seed/memory"
     cp "$root/scripts/agents/path-classes.txt" "$leg_seed/scripts/agents/path-classes.txt"
@@ -339,21 +381,21 @@ JSON
     "$leg_seed/scripts/agents/pre-commit-guard.sh" \
     "$leg_seed/scripts/agents/commit.sh" \
     "$leg_seed/scripts/agents/sync-transport.sh"
-  if is_workspace_receipt_scenario; then
-    chmod +x "$leg_seed/scripts/agents/go-build.sh"
-  else
+	if is_workspace_receipt_scenario || is_carried_scenario; then
+	  chmod +x "$leg_seed/scripts/agents/go-build.sh"
+	else
     chmod +x "$leg_seed/bin/metasystem"
   fi
   printf 'seed\n' >"$leg_seed/payload.txt"
   printf 'existing plan\n' >"$leg_seed/plans/existing.md"
   if [[ "$fixture_scenario" == receipt-cutover ]]; then
     printf 'artifacts/\nrecords/narrator-digest.log\nbin/\n' >"$leg_seed/.gitignore"
-  elif is_workspace_receipt_scenario; then
+  elif is_workspace_receipt_scenario || is_carried_scenario; then
     printf 'artifacts/\nrecords/narrator-digest.log\n' >"$leg_seed/.gitignore"
   else
     printf 'artifacts/\n' >"$leg_seed/.gitignore"
   fi
-  if [[ "$fixture_scenario" == tier-one || "$fixture_scenario" == full-width-chain ]]; then
+  if [[ "$fixture_scenario" == tier-one || "$fixture_scenario" == full-width-chain ]] || is_carried_scenario; then
     cat >"$leg_seed/metasystem.conf" <<'CONF'
 metasystem.runtimes=fake
 dispatch.cap-min=1
@@ -370,8 +412,52 @@ CONF
 
 History:
 BACKLOG
+    if is_carried_scenario; then
+      conf_edit "$leg_seed/plans/goals/backlog.md" replace-line-first \
+        '^- SyncMode: local$' '- SyncMode: remote'
+    fi
     receipt_root_digest=$("$source_engine" util sha256 --file "$leg_seed/plans/goals/backlog.md")
     printf 'Integrity: sha256=%s\n' "$receipt_root_digest" >>"$leg_seed/plans/goals/backlog.md"
+  fi
+  if is_carried_scenario; then
+    cat >"$leg_seed/metasystem.conf" <<'CONF'
+testing.contract=testing.json
+metasystem.runtimes=fake
+dispatch.cap-min=1
+dispatch.cap-max=120
+metasystem.budget.carry-open-max=1
+CONF
+    cat >"$leg_seed/testing.json" <<'JSON'
+{
+  "schemaVersion": 1,
+  "projectRisk": {"severity": 1, "exposure": 1, "reversibility": "revert", "detection": "immediate", "recovery": "bounded"},
+  "surfaces": [
+    {"id": "fixture-carry", "paths": ["payload.txt", "payload-b.txt", "records/misc/fx-red.md", "records/counselor/accepted-risk-register.jsonl", "records/counselor/carried-landings.jsonl"], "dependsOn": [], "standard": ["fixture-carry"], "deep": [], "critical": []},
+    {"id": "fixture-support", "paths": ["testing.json", "metasystem.conf", "plans/**", "scripts/**", "bin/**"], "dependsOn": [], "standard": ["fixture-carry"], "deep": [], "critical": []}
+  ],
+  "groups": [
+	{"id": "fixture-carry", "kind": "unit", "adapter": "command", "cwd": ".", "inputs": ["payload.txt", "records/misc/fx-red.md", "records/counselor/accepted-risk-register.jsonl", "records/counselor/carried-landings.jsonl"], "outputs": ["fixture-reports"], "tools": [], "obligations": [], "platforms": ["any"], "targetMs": 1000, "argv": ["sh", "-c", "mkdir -p fixture-reports; printf '%s\\n' '<testsuite><testcase classname=\"fixture\" name=\"carry\"/></testsuite>' >fixture-reports/result.xml; test ! -f fixture-red"], "reports": ["fixture-reports"], "format": "junit-xml", "expectedTests": [{"report": "fixture-reports/result.xml", "classname": "fixture", "name": "carry"}]}
+  ],
+  "always": {"canary": [], "standard": []},
+  "unknown": ["fixture-carry"],
+  "cadence": ["fixture-carry"]
+}
+JSON
+    if [[ "$fixture_scenario" == carried-prefixed ]]; then
+      conf_edit "$leg_seed/testing.json" replace-literal '"payload.txt"' '"metasystem/payload.txt"'
+      conf_edit "$leg_seed/testing.json" replace-literal '"payload-b.txt"' '"metasystem/payload-b.txt"'
+      conf_edit "$leg_seed/testing.json" replace-literal '"records/misc/fx-red.md"' '"metasystem/records/misc/fx-red.md"'
+      conf_edit "$leg_seed/testing.json" replace-literal '"records/counselor/accepted-risk-register.jsonl"' '"metasystem/records/counselor/accepted-risk-register.jsonl"'
+      conf_edit "$leg_seed/testing.json" replace-literal '"records/counselor/carried-landings.jsonl"' '"metasystem/records/counselor/carried-landings.jsonl"'
+      conf_edit "$leg_seed/testing.json" replace-literal '"testing.json"' '"metasystem/testing.json"'
+      conf_edit "$leg_seed/testing.json" replace-literal '"metasystem.conf"' '"metasystem/metasystem.conf"'
+      conf_edit "$leg_seed/testing.json" replace-literal '"plans/**"' '"metasystem/plans/**"'
+      conf_edit "$leg_seed/testing.json" replace-literal '"scripts/**"' '"metasystem/scripts/**"'
+      conf_edit "$leg_seed/testing.json" replace-literal '"bin/**"' '"metasystem/bin/**"'
+    fi
+    if [[ "$fixture_scenario" == carried-red-battery ]]; then
+      printf 'the fixture group exits red after producing its report\n' >"$leg_seed/fixture-red"
+    fi
   fi
   if is_workspace_receipt_scenario; then
     mkdir -p "$leg_seed/plans/goals"
@@ -388,21 +474,30 @@ BACKLOG
     receipt_root_digest=$("$source_engine" util sha256 --file "$leg_seed/plans/goals/backlog.md")
     printf 'Integrity: sha256=%s\n' "$receipt_root_digest" >>"$leg_seed/plans/goals/backlog.md"
   fi
-  git -C "$leg_seed" init -q
-  git -C "$leg_seed" symbolic-ref HEAD refs/heads/main
+  git -C "$leg_seed_repo" init -q
+  git -C "$leg_seed_repo" symbolic-ref HEAD refs/heads/main
   git -C "$leg_seed" config user.name fixture
   git -C "$leg_seed" config user.email fixture@example.invalid
-  if [[ "$fixture_scenario" == tier-one || "$fixture_scenario" == full-width-chain ]] || is_workspace_receipt_scenario; then
-    git -C "$leg_seed" config goal.sync-remote local
-    git -C "$leg_seed" config goal.sync-branch refs/heads/metasystem/goals
+  if [[ "$fixture_scenario" == tier-one || "$fixture_scenario" == full-width-chain ]] || is_workspace_receipt_scenario || is_carried_scenario; then
+    if is_carried_scenario; then
+      git -C "$leg_seed" config goal.sync-remote origin
+      git -C "$leg_seed" config goal.sync-branch refs/heads/main
+    else
+      git -C "$leg_seed" config goal.sync-remote local
+      git -C "$leg_seed" config goal.sync-branch refs/heads/metasystem/goals
+    fi
     git -C "$leg_seed" config metasystem.goal.machine fixture-machine
   fi
   git -C "$leg_seed" add -- scripts payload.txt plans/existing.md .gitignore
   if ! is_workspace_receipt_scenario; then
     git -C "$leg_seed" add -- bin
   fi
-  if [[ "$fixture_scenario" == tier-one || "$fixture_scenario" == full-width-chain ]]; then
+  if [[ "$fixture_scenario" == tier-one || "$fixture_scenario" == full-width-chain ]] || is_carried_scenario; then
     git -C "$leg_seed" add -- metasystem.conf plans/goals/backlog.md
+  fi
+  if is_carried_scenario; then
+    git -C "$leg_seed" add -- testing.json memory/rulings.md
+    [[ "$fixture_scenario" != carried-red-battery ]] || git -C "$leg_seed" add -- fixture-red
   fi
   if is_workspace_receipt_scenario; then
     git -C "$leg_seed" add -- metasystem.conf testing.json plans/goals/backlog.md memory/rulings.md
@@ -411,10 +506,16 @@ BACKLOG
     git -C "$leg_seed" add -- memory/rulings.md
   fi
   git -C "$leg_seed" commit -qm seed
+  if is_carried_scenario; then
+    git init --bare -q "$leg_remote"
+    git --git-dir="$leg_remote" symbolic-ref HEAD refs/heads/main
+    git -C "$leg_seed" remote add origin "$leg_remote"
+    git -C "$leg_seed" push -q -u origin main
+  fi
   if is_workspace_receipt_scenario; then
     receipt_seed_build_stamp=$(git -C "$leg_seed" rev-parse HEAD)
   fi
-  if [[ "$fixture_scenario" == tier-one || "$fixture_scenario" == full-width-chain ]] || is_workspace_receipt_scenario; then
+  if [[ "$fixture_scenario" == tier-one || "$fixture_scenario" == full-width-chain ]] || is_workspace_receipt_scenario || is_carried_scenario; then
     git -C "$leg_seed" update-ref refs/heads/metasystem/goals HEAD
     git -C "$leg_seed" update-ref refs/metasystem/goals/accepted HEAD
     receipt_fixture_start=$("$source_engine" proc started-at --pid "$$")
@@ -457,17 +558,29 @@ BACKLOG
       (cd "$leg_seed" && scripts/agents/commit.sh -qm "install candidate engine")
     fi
   fi
-  git init --bare -q "$leg_remote"
-  git --git-dir="$leg_remote" symbolic-ref HEAD refs/heads/main
-  git -C "$leg_seed" remote add origin "$leg_remote"
-  git -C "$leg_seed" push -q -u origin main
-  git clone -q "$leg_remote" "$leg_local"
-  git clone -q "$leg_remote" "$leg_peer"
+  if is_carried_scenario; then
+    carried_seed_stamp=$(git -C "$leg_seed" rev-parse HEAD)
+    METASYSTEM_BUILD_STAMP="$carried_seed_stamp" \
+      bash "$root/scripts/agents/go-build.sh" --out "$leg_root/carried-engine" >/dev/null
+    cp -f "$leg_root/carried-engine" "$leg_seed/bin/metasystem"
+    chmod +x "$leg_seed/bin/metasystem"
+    git -C "$leg_seed" add -f -- bin/metasystem
+    git -C "$leg_seed" -c core.hooksPath=/dev/null commit -qm 'install carried fixture engine'
+    git -C "$leg_seed" push -q origin main
+  fi
+  if ! is_carried_scenario; then
+    git init --bare -q "$leg_remote"
+    git --git-dir="$leg_remote" symbolic-ref HEAD refs/heads/main
+    git -C "$leg_seed" remote add origin "$leg_remote"
+    git -C "$leg_seed" push -q -u origin main
+  fi
+  git clone -q "$leg_remote" "$leg_local_repo"
+  git clone -q "$leg_remote" "$leg_peer_repo"
   git -C "$leg_local" config user.name fixture-local
   git -C "$leg_local" config user.email fixture-local@example.invalid
   git -C "$leg_peer" config user.name fixture-peer
   git -C "$leg_peer" config user.email fixture-peer@example.invalid
-  if [[ "$fixture_scenario" == tier-one || "$fixture_scenario" == full-width-chain ]] || is_workspace_receipt_scenario; then
+  if [[ "$fixture_scenario" == tier-one || "$fixture_scenario" == full-width-chain ]] || is_workspace_receipt_scenario || is_carried_scenario; then
     git -C "$leg_local" config goal.sync-remote local
     git -C "$leg_local" config goal.sync-branch refs/heads/metasystem/goals
     git -C "$leg_local" config metasystem.goal.machine fixture-machine
@@ -480,6 +593,12 @@ BACKLOG
     git -C "$leg_peer" config metasystem.steward.landing-ref refs/remotes/origin/main
     git -C "$leg_peer" update-ref refs/heads/metasystem/goals origin/main
     git -C "$leg_peer" update-ref refs/metasystem/goals/accepted origin/main
+  fi
+  if is_carried_scenario; then
+    git -C "$leg_local" config goal.sync-remote origin
+    git -C "$leg_local" config goal.sync-branch refs/heads/main
+    git -C "$leg_peer" config goal.sync-remote origin
+    git -C "$leg_peer" config goal.sync-branch refs/heads/main
   fi
   if [[ "$fixture_scenario" == tier-one || "$fixture_scenario" == full-width-chain ]]; then
     receipt_fixture_start=$("$source_engine" proc started-at --pid "$$")
@@ -525,6 +644,476 @@ arm_receipt_runner() { # checkout, engine
     return 1
   }
 }
+
+if is_carried_scenario; then
+  clear_independent_fixture_context
+  make_leg "$fixture_scenario"
+  arm_receipt_runner "$leg_local" "$leg_local/bin/metasystem"
+  carried_fixture_start=$(receipt_env_run "$leg_local/bin/metasystem" proc started-at --pid "$$")
+  receipt_env_run "$leg_local/bin/metasystem" lease announce --root "$leg_local" \
+    --session "land-$fixture_scenario" --pid "$$" --start "$carried_fixture_start" \
+    --tag "land-$fixture_scenario" --runtime fake --owner-lineage land-receipt-fixture >/dev/null
+  carried_epoch=$(date -u +%s)
+  carried_now=$(date -u -r "$carried_epoch" +%Y-%m-%dT%H:%M:%SZ 2>/dev/null) \
+    || carried_now=$(date -u -d "@$carried_epoch" +%Y-%m-%dT%H:%M:%SZ 2>/dev/null) \
+    || { echo "land $fixture_scenario fixture: cannot format the run clock" >&2; exit 1; }
+  carried_expired_epoch=$((carried_epoch + 7200))
+  carried_expired_now=$(date -u -r "$carried_expired_epoch" +%Y-%m-%dT%H:%M:%SZ 2>/dev/null) \
+    || carried_expired_now=$(date -u -d "@$carried_expired_epoch" +%Y-%m-%dT%H:%M:%SZ 2>/dev/null) \
+    || { echo "land $fixture_scenario fixture: cannot format the advanced run clock" >&2; exit 1; }
+  export METASYSTEM_GOAL_NOW=$carried_now
+  if is_carried_two_seat_scenario || [[ "$fixture_scenario" == carried-crash-local ]]; then
+    arm_receipt_runner "$leg_peer" "$leg_peer/bin/metasystem"
+    peer_fixture_start=$(receipt_env_run "$leg_peer/bin/metasystem" proc started-at --pid "$$")
+    receipt_env_run "$leg_peer/bin/metasystem" lease announce --root "$leg_peer" \
+      --session "land-$fixture_scenario-peer" --pid "$$" --start "$peer_fixture_start" \
+      --tag "land-$fixture_scenario-peer" --runtime fake --owner-lineage land-receipt-fixture-b >/dev/null
+    receipt_env_run env METASYSTEM_GOAL_NOW=$carried_now METASYSTEM_OWNER_LINEAGE=land-receipt-fixture-b \
+      "$leg_peer/bin/metasystem" goal open --root "$leg_peer" \
+        --id fx-b --intent "Create the second seat's carried landing." \
+        --next "Prove debt is visible between seats." \
+        --risk severity=1,novelty=1,exposure=1,accumulation=1 \
+        --basis "This disposable fixture serializes two carried landing seats." >/dev/null
+    receipt_env_run env METASYSTEM_GOAL_NOW=$carried_now "$leg_peer/bin/metasystem" goal approve \
+      --root "$leg_peer" --id fx-b --by Wido --lineage land-receipt-fixture-b \
+      --elapsed-limit 4h --attempt-limit 4 --reserved-job-minutes-limit 4 \
+      --active-job-limit 1 --review-round-limit 0 --fixture-human-authority >/dev/null
+    receipt_env_run env METASYSTEM_GOAL_NOW=$carried_now METASYSTEM_OWNER_LINEAGE=land-receipt-fixture-b \
+      "$leg_peer/bin/metasystem" goal claim --root "$leg_peer" \
+        --id fx-b --lineage land-receipt-fixture-b >/dev/null
+    git -C "$leg_local" fetch -q origin
+    git -C "$leg_local" update-ref refs/metasystem/goals/accepted origin/main
+    git -C "$leg_peer" fetch -q origin
+    git -C "$leg_peer" update-ref refs/metasystem/goals/accepted origin/main
+    select_receipt_runner_environment "$leg_local"
+  fi
+  carried_message=$leg_root/message.txt
+  carried_output=$leg_root/land.out
+  printf 'fixture carries one named testing group\n' >"$carried_message"
+  if [[ "$fixture_scenario" == carried-red-battery ]]; then
+    mkdir -p "$leg_local/records/misc"
+    printf 'carried red battery record\n' >"$leg_local/records/misc/fx-red.md"
+    git -C "$leg_local" add -- records/misc/fx-red.md
+  else
+    printf 'carried landing payload\n' >"$leg_local/payload.txt"
+    git -C "$leg_local" add -- payload.txt
+  fi
+  if [[ "$fixture_scenario" == carried-ledger-path ]]; then
+    printf 'ledger paths belong to goal verbs\n' >"$leg_local/plans/goals/illicit.md"
+    git -C "$leg_local" add -- plans/goals/illicit.md
+  fi
+  if is_carried_two_seat_scenario; then
+    printf 'carried landing payload\n' >"$leg_peer/payload.txt"
+    printf 'second seat payload\n' >"$leg_peer/payload-b.txt"
+    git -C "$leg_peer" add -- payload.txt payload-b.txt
+  fi
+  carried_tree=$(git -C "$leg_local" write-tree)
+	carried_word_past=missing-declaration
+	[[ "$fixture_scenario" != carried-asks ]] || carried_word_past=conflicting-declarations
+	[[ "$fixture_scenario" != carried-red-battery ]] || carried_word_past=group:fixture-carry
+	carried_expiry=4h
+	[[ "$fixture_scenario" != carried-debt-expired ]] || carried_expiry=1h
+  carried_word_output=$(METASYSTEM_GOAL_NOW=$carried_now METASYSTEM_OWNER_LINEAGE=land-receipt-fixture "$source_engine" goal carry \
+	  --root "$leg_local" --id fx --by Wido --tree "$carried_tree" \
+	  --past "$carried_word_past" --why "fixture carries one named landing refusal" \
+	  --expires "$carried_expiry" --raise-format --fixture-human-authority)
+  carried_word=$(sed -n 's/^carry=\([^ ]*\) workspace=.*/\1/p' <<<"$carried_word_output")
+  [[ -n "$carried_word" ]] \
+    || { echo "land $fixture_scenario fixture: goal carry returned no word" >&2; exit 1; }
+  if is_carried_two_seat_scenario; then
+    git -C "$leg_peer" fetch -q origin
+    git -C "$leg_peer" update-ref refs/metasystem/goals/accepted origin/main
+    peer_tree=$(git -C "$leg_peer" write-tree)
+    peer_word_output=$(METASYSTEM_GOAL_NOW=$carried_now METASYSTEM_OWNER_LINEAGE=land-receipt-fixture-b \
+      "$source_engine" goal carry --root "$leg_peer" --id fx-b --by Wido --tree "$peer_tree" \
+        --past missing-declaration --why "fixture carries the second seat's named refusal" \
+        --expires 4h --fixture-human-authority)
+    peer_word=$(sed -n 's/^carry=\([^ ]*\) workspace=.*/\1/p' <<<"$peer_word_output")
+    [[ -n "$peer_word" ]] \
+      || { echo "land $fixture_scenario fixture: second seat goal carry returned no word" >&2; exit 1; }
+  fi
+  set +e
+  receipt_env_run "$leg_local/bin/metasystem" test run --root "$leg_local" --goal fx \
+    --tree "$carried_tree" --mode auto >"$leg_root/carried-test.out" 2>&1
+  carried_test_rc=$?
+  set -e
+  if [[ "$fixture_scenario" == carried-red-battery ]]; then
+	[[ $carried_test_rc -ne 0 ]] && grep -Fq 'fixture-carry' "$leg_root/carried-test.out" \
+	  || { echo "land carried-red-battery fixture: the supporting battery was not red for fixture-carry" >&2; sed -n '1,240p' "$leg_root/carried-test.out" >&2; exit 1; }
+  else
+	[[ $carried_test_rc -eq 0 ]] \
+	  || { echo "land $fixture_scenario fixture: the supporting green battery did not pass" >&2; sed -n '1,240p' "$leg_root/carried-test.out" >&2; exit 1; }
+  fi
+  if is_carried_two_seat_scenario; then
+    select_receipt_runner_environment "$leg_peer"
+    set +e
+    receipt_env_run env METASYSTEM_GOAL_NOW=$carried_now \
+      "$leg_peer/bin/metasystem" test run --root "$leg_peer" --goal fx-b \
+      --tree "$peer_tree" --mode auto >"$leg_root/peer-test.out" 2>&1
+    peer_test_rc=$?
+    set -e
+    [[ $peer_test_rc -eq 0 ]] \
+      || { echo "land $fixture_scenario fixture: the second seat's green battery did not pass" >&2; sed -n '1,240p' "$leg_root/peer-test.out" >&2; exit 1; }
+  fi
+  if [[ "$fixture_scenario" != carried-second ]]; then
+    while (( ${#receipt_runner_checkouts[@]} )); do
+      stop_receipt_runner
+    done
+  fi
+  rm -f -- "$leg_local/records/narrator-digest.log"
+
+  if [[ "$fixture_scenario" == carried-intent-failure || "$fixture_scenario" == carried-crash-local ]]; then
+	intent_failure_output=$leg_root/intent-failure.out
+	crash_variable=METASYSTEM_LAND_FIXTURE_CRASH
+	crash_marker='FIXTURE-CRASH before-push pid='
+	if [[ "$fixture_scenario" == carried-crash-local ]]; then
+	  crash_variable=METASYSTEM_LAND_FIXTURE_KILL
+	  crash_marker='FIXTURE-KILL before-push pid='
+	fi
+	crash_environment=("$crash_variable=before-push")
+	if [[ "$fixture_scenario" == carried-crash-local ]]; then
+	  crash_environment+=(GIT_AUTHOR_DATE=2001-01-01T00:00:00Z)
+	fi
+	set +e
+	(cd "$leg_local" && METASYSTEM_OWNER_LINEAGE=land-receipt-fixture \
+	  env "${crash_environment[@]}" bash scripts/agents/land.sh \
+	    -m "$carried_message" --goal fx --carried "$carried_word" \
+	    --staged-only --skip-transport) >"$intent_failure_output" 2>&1
+	intent_failure_rc=$?
+	set -e
+	[[ $intent_failure_rc -ne 0 ]] && grep -Fq "$crash_marker" "$intent_failure_output" \
+	  || { echo "land $fixture_scenario fixture: before-push crash seam was not reached" >&2; cat "$intent_failure_output" >&2; exit 1; }
+	local_commit=$(git -C "$leg_local" rev-parse HEAD)
+	read -r first_candidate_payload_mode first_candidate_payload_type first_candidate_payload_blob first_candidate_payload_path \
+	  <<<"$(git -C "$leg_local" ls-tree "$carried_tree" -- payload.txt)"
+	[[ "$first_candidate_payload_type" == blob && "$first_candidate_payload_path" == payload.txt ]] \
+	  || { echo "land carried-crash-local fixture: first staged payload tree is unreadable" >&2; exit 1; }
+	crashed_author_date=$(git -C "$leg_local" show -s --format=%aI "$local_commit")
+	crashed_carry_line=$(git -C "$leg_local" show -s --format=%B "$local_commit" | grep '^Carry: ')
+	crashed_provenance_line=$(git -C "$leg_local" show -s --format=%B "$local_commit" | grep '^Landing-Provenance: ')
+	[[ $(git -C "$leg_local" log -1 --format=%B) == *"Carry: $carried_word"* ]] \
+	  || { echo "land $fixture_scenario fixture: local carried commit is absent" >&2; exit 1; }
+	[[ $(git -C "$leg_remote" rev-parse refs/heads/main) != "$local_commit" ]] \
+	  || { echo "land $fixture_scenario fixture: before-push crash moved origin" >&2; exit 1; }
+	carried_entry_file=
+	for candidate in "$leg_local"/artifacts/agents/goal-transactions/*.json; do
+	  [[ -f "$candidate" ]] || continue
+	  [[ $("$source_engine" json get --file "$candidate" --field intent.verb --default '') == carried ]] || continue
+	  carried_entry_file=$candidate
+	done
+	[[ -n "$carried_entry_file" ]] \
+	  || { echo "land $fixture_scenario fixture: no carried intent entry was written" >&2; exit 1; }
+	intent_goal_text=$(git -C "$leg_local" show refs/metasystem/goals/accepted:plans/goals/fx.md)
+	intent_reservation=$(awk -v ref="$carried_word" '$0 ~ " carrying " && $0 ~ "approvedRef=" ref && $0 ~ "reason=open " { print $3 }' <<<"$intent_goal_text")
+	if [[ "$fixture_scenario" == carried-intent-failure ]]; then
+	  [[ $("$source_engine" json get --file "$carried_entry_file" --field phase) == terminal ]] \
+	    || { echo "land carried-intent-failure fixture: the wrapper-owned carried intent stayed open" >&2; cat "$carried_entry_file" >&2; exit 1; }
+	  [[ -n "$intent_reservation" ]] && grep -Fq "reason=abandoned of=$intent_reservation " <<<"$intent_goal_text" \
+	    || { echo "land carried-intent-failure fixture: trap did not abandon its reservation after closing the intent" >&2; printf '%s\n' "$intent_goal_text" >&2; exit 1; }
+	  echo "land carried-intent-failure fixture passed"
+	  exit 0
+	fi
+	[[ $("$source_engine" json get --file "$carried_entry_file" --field phase) == created ]] \
+	  || { echo "land carried-crash-local fixture: killed wrapper did not leave its intent created" >&2; cat "$carried_entry_file" >&2; exit 1; }
+	[[ -n "$intent_reservation" ]] \
+	  || { echo "land carried-crash-local fixture: killed wrapper left no open reservation" >&2; printf '%s\n' "$intent_goal_text" >&2; exit 1; }
+	! grep -Fq "reason=abandoned of=$intent_reservation " <<<"$intent_goal_text" \
+	  || { echo "land carried-crash-local fixture: killed wrapper wrote an abandonment row" >&2; printf '%s\n' "$intent_goal_text" >&2; exit 1; }
+	git -C "$leg_local" diff --cached --quiet \
+	  || { echo "land carried-crash-local fixture: local recovery unexpectedly has staged bytes" >&2; exit 1; }
+	prepare_receipt_environment \
+	  "$leg_root/process-identities.$(basename "$leg_peer").json" \
+	  "$leg_root/registry.$(basename "$leg_peer")"
+	receipt_env_run env METASYSTEM_GOAL_NOW=$carried_now METASYSTEM_OWNER_LINEAGE=land-receipt-fixture-b \
+	  "$leg_peer/bin/metasystem" goal edit --root "$leg_peer" --id fx-b \
+	    --next "Keep the carried recovery word valid across this ledger move." \
+	    --lineage land-receipt-fixture-b >/dev/null
+	moved_origin_tip=$(git -C "$leg_remote" rev-parse refs/heads/main)
+	moved_origin_paths=$(git -C "$leg_remote" diff-tree --no-commit-id --name-only -r \
+	  "$moved_origin_tip^" "$moved_origin_tip")
+	[[ "$moved_origin_paths" == plans/goals/fx-b.md ]] \
+	  || { echo "land carried-crash-local fixture: peer move was not ledger-only: $moved_origin_paths" >&2; exit 1; }
+	local_rerun_output=$leg_root/local-rerun.out
+	(cd "$leg_local" && METASYSTEM_OWNER_LINEAGE=land-receipt-fixture \
+	  bash scripts/agents/land.sh -m "$carried_message" --goal fx --carried "$carried_word" \
+	    --skip-transport) >"$local_rerun_output" 2>&1 \
+	  || { echo "land carried-crash-local fixture: local recovery did not finish" >&2; cat "$local_rerun_output" >&2; exit 1; }
+	git -C "$leg_local" fetch -q origin
+	origin_code_commits=$(git -C "$leg_local" log --format=%H --grep="^Carry: $carried_word$" refs/remotes/origin/main)
+	[[ $(wc -w <<<"$origin_code_commits" | tr -d ' ') -eq 1 ]] \
+	  || { echo "land carried-crash-local fixture: origin does not hold exactly one carried code commit" >&2; printf '%s\n' "$origin_code_commits" >&2; exit 1; }
+	origin_code_commit=$(head -n 1 <<<"$origin_code_commits")
+	[[ $(git -C "$leg_local" rev-parse "$origin_code_commit^") == "$moved_origin_tip" ]] \
+	  || { echo "land carried-crash-local fixture: recovered code commit is not based on the moved origin tip" >&2; exit 1; }
+	[[ $(git -C "$leg_local" show -s --format=%aI "$origin_code_commit") == "$crashed_author_date" ]] \
+	  || { echo "land carried-crash-local fixture: recovery restamped the crashed commit's author date" >&2; exit 1; }
+	[[ $(git -C "$leg_local" show -s --format=%B "$origin_code_commit" | grep '^Carry: ') == "$crashed_carry_line" ]] \
+	  || { echo "land carried-crash-local fixture: recovery changed the Carry trailer" >&2; exit 1; }
+	[[ $(git -C "$leg_local" show -s --format=%B "$origin_code_commit" | grep '^Landing-Provenance: ') == "$crashed_provenance_line" ]] \
+	  || { echo "land carried-crash-local fixture: recovery changed the Landing-Provenance line" >&2; exit 1; }
+	[[ -z $(git -C "$leg_local" for-each-ref --format='%(refname)' --contains "$local_commit" refs/heads refs/remotes) ]] \
+	  || { echo "land carried-crash-local fixture: crashed commit remains on a branch after recovery" >&2; exit 1; }
+	expected_rebased_index=$leg_root/expected-rebased.index
+	GIT_INDEX_FILE=$expected_rebased_index git -C "$leg_local" read-tree "$moved_origin_tip"
+	GIT_INDEX_FILE=$expected_rebased_index git -C "$leg_local" update-index --add \
+	  --cacheinfo "$first_candidate_payload_mode,$first_candidate_payload_blob,payload.txt"
+	expected_rebased_tree=$(GIT_INDEX_FILE=$expected_rebased_index git -C "$leg_local" write-tree)
+	rm -f -- "$expected_rebased_index"
+	origin_code_tree=$(git -C "$leg_local" rev-parse "$origin_code_commit^{tree}")
+	[[ "$origin_code_tree" == "$expected_rebased_tree" ]] \
+	  || { echo "land carried-crash-local fixture: recovered code commit changed the staged candidate payload tree" >&2; exit 1; }
+	local_goal_text=$(git -C "$leg_local" show refs/metasystem/goals/accepted:plans/goals/fx.md)
+	[[ $(grep -Ec "^- [^ ]+ [^ ]+ carrying .*approvedRef=$carried_word .*reason=open " <<<"$local_goal_text") -eq 1 ]] \
+	  || { echo "land carried-crash-local fixture: goal does not hold exactly one carrying row" >&2; printf '%s\n' "$local_goal_text" >&2; exit 1; }
+	[[ $(grep -Ec "^- [^ ]+ [^ ]+ carried .*approvedRef=$carried_word .*reason=landed " <<<"$local_goal_text") -eq 1 ]] \
+	  || { echo "land carried-crash-local fixture: goal does not hold exactly one carried row" >&2; printf '%s\n' "$local_goal_text" >&2; exit 1; }
+	[[ $(wc -l <"$leg_local/records/counselor/carried-landings.jsonl" | tr -d ' ') -eq 1 ]] \
+	  || { echo "land carried-crash-local fixture: counselor record was not written exactly once" >&2; exit 1; }
+	echo "land carried-crash-local fixture passed"
+	exit 0
+  fi
+
+  if [[ "$fixture_scenario" == carried-crash ]]; then
+	crash_output=$leg_root/crash.out
+	rerun_output=$leg_root/rerun.out
+	set +e
+	(cd "$leg_local" && METASYSTEM_OWNER_LINEAGE=land-receipt-fixture \
+	  METASYSTEM_LAND_FIXTURE_CRASH=after-push \
+	  bash scripts/agents/land.sh -m "$carried_message" --goal fx --carried "$carried_word" \
+	    --staged-only --skip-transport) >"$crash_output" 2>&1
+	crash_rc=$?
+	set -e
+	[[ $crash_rc -ne 0 ]] && grep -Fq 'FIXTURE-CRASH after-push pid=' "$crash_output" \
+	  || { echo "land carried-crash fixture: after-push crash seam was not reached" >&2; cat "$crash_output" >&2; exit 1; }
+	crashed_commit=$(git -C "$leg_remote" log -1 --format=%H refs/heads/main)
+	[[ $(git -C "$leg_remote" log -1 --format=%B refs/heads/main) == *"Carry: $carried_word"* ]] \
+	  || { echo "land carried-crash fixture: carried commit was not pushed before the crash" >&2; exit 1; }
+	crash_goal_text=$(git -C "$leg_local" show refs/metasystem/goals/accepted:plans/goals/fx.md)
+	! grep -Fq " carried " <<<"$crash_goal_text" \
+	  || { echo "land carried-crash fixture: carried row existed before the crash" >&2; exit 1; }
+	git -C "$leg_local" diff --cached --quiet \
+	  || { echo "land carried-crash fixture: crash rerun unexpectedly has a staged set" >&2; exit 1; }
+	(cd "$leg_local" && METASYSTEM_OWNER_LINEAGE=land-receipt-fixture \
+	  bash scripts/agents/land.sh -m "$carried_message" --goal fx --carried "$carried_word" \
+	    --skip-transport) >"$rerun_output" 2>&1 \
+	  || { echo "land carried-crash fixture: rerun did not complete the record" >&2; cat "$rerun_output" >&2; exit 1; }
+	grep -Fq "already landed as $crashed_commit; completing the record" "$rerun_output" \
+	  || { echo "land carried-crash fixture: rerun did not take the origin recovery branch" >&2; cat "$rerun_output" >&2; exit 1; }
+	[[ $(git -C "$leg_remote" log --format=%H --grep="^Carry: $carried_word$" refs/heads/main | wc -l | tr -d ' ') == 1 ]] \
+	  || { echo "land carried-crash fixture: recovery wrote another carried commit" >&2; exit 1; }
+	crash_goal_text=$(git -C "$leg_local" show refs/metasystem/goals/accepted:plans/goals/fx.md)
+	[[ $(grep -Fc " approvedRef=$carried_word " <<<"$crash_goal_text") -ge 2 ]] \
+	  || { echo "land carried-crash fixture: reservation and carried rows are incomplete" >&2; printf '%s\n' "$crash_goal_text" >&2; exit 1; }
+	[[ -s "$leg_local/records/counselor/carried-landings.jsonl" ]] \
+	  || { echo "land carried-crash fixture: counselor line is absent after recovery" >&2; exit 1; }
+	echo "land carried-crash fixture passed"
+	exit 0
+  fi
+
+  if is_carried_two_seat_scenario; then
+	crash_output=$leg_root/seat-a-crash.out
+	peer_output=$leg_root/seat-b.out
+	run_clock=$carried_now
+	set +e
+	(cd "$leg_local" && METASYSTEM_GOAL_NOW=$carried_now \
+	  METASYSTEM_OWNER_LINEAGE=land-receipt-fixture METASYSTEM_LAND_FIXTURE_CRASH=after-push \
+	  bash scripts/agents/land.sh -m "$carried_message" --goal fx --carried "$carried_word" \
+	    --staged-only --skip-transport) >"$crash_output" 2>&1
+	crash_rc=$?
+	set -e
+	[[ $crash_rc -ne 0 ]] && grep -Fq 'FIXTURE-CRASH after-push pid=' "$crash_output" \
+	  || { echo "land $fixture_scenario fixture: seat A did not crash after its push" >&2; cat "$crash_output" >&2; exit 1; }
+	seat_a_commit=$(git -C "$leg_remote" log -1 --format=%H refs/heads/main)
+	[[ $(git -C "$leg_remote" log -1 --format=%B refs/heads/main) == *"Carry: $carried_word"* ]] \
+	  || { echo "land $fixture_scenario fixture: seat A's commit is absent from origin" >&2; exit 1; }
+	seat_a_goal=$(git -C "$leg_local" show refs/metasystem/goals/accepted:plans/goals/fx.md)
+	seat_a_row=$(awk -v ref="$carried_word" '$0 ~ " carrying " && $0 ~ "approvedRef=" ref && $0 ~ "reason=open " { print $3 }' <<<"$seat_a_goal")
+	[[ -n "$seat_a_row" ]] && ! grep -Fq " carried " <<<"$seat_a_goal" \
+	  || { echo "land $fixture_scenario fixture: seat A is not in the pushed-before-record interval" >&2; printf '%s\n' "$seat_a_goal" >&2; exit 1; }
+	if [[ "$fixture_scenario" == carried-debt-abandoned ]]; then
+	  METASYSTEM_GOAL_NOW=$carried_now METASYSTEM_OWNER_LINEAGE=land-receipt-fixture \
+	    "$source_engine" goal carrying --root "$leg_local" --id fx --abandon "$seat_a_row" \
+	      --why "fixture releases the crashed reservation" >/dev/null
+	  seat_a_status=$(METASYSTEM_GOAL_NOW=$carried_now "$source_engine" landing carry-status \
+	    --root "$leg_local" --carried "$carried_word" --goal fx \
+	    --ledger-tip "$(git -C "$leg_local" rev-parse refs/metasystem/goals/accepted)")
+	  grep -Fq "reservation: abandoned:$seat_a_row" <<<"$seat_a_status" \
+	    || { echo "land carried-debt-abandoned fixture: seat A's row was not abandoned" >&2; printf '%s\n' "$seat_a_status" >&2; exit 1; }
+	elif [[ "$fixture_scenario" == carried-debt-expired ]]; then
+	  run_clock=$carried_expired_now
+	  seat_a_status=$(METASYSTEM_GOAL_NOW=$run_clock "$source_engine" landing carry-status \
+	    --root "$leg_local" --carried "$carried_word" --goal fx \
+	    --ledger-tip "$(git -C "$leg_local" rev-parse refs/metasystem/goals/accepted)")
+	  grep -Fxq 'expired' <<<"$seat_a_status" && grep -Fq "reservation: expired:$seat_a_row" <<<"$seat_a_status" \
+	    || { echo "land carried-debt-expired fixture: the advanced clock did not expire seat A's word and row" >&2; printf '%s\n' "$seat_a_status" >&2; exit 1; }
+	fi
+	set +e
+	(cd "$leg_peer" && METASYSTEM_GOAL_NOW=$run_clock METASYSTEM_OWNER_LINEAGE=land-receipt-fixture-b \
+	  bash scripts/agents/land.sh -m "$carried_message" --goal fx-b --carried "$peer_word" \
+	    --staged-only --skip-transport) >"$peer_output" 2>&1
+	peer_rc=$?
+	set -e
+	[[ $peer_rc -eq 3 ]] && grep -Fq 'carry-debt-unpaid' "$peer_output" \
+	  || { echo "land $fixture_scenario fixture: seat B did not ask on seat A's debt" >&2; cat "$peer_output" >&2; exit 1; }
+	if [[ "$fixture_scenario" == carried-two-seat ]]; then
+	  grep -Fq "$seat_a_row" "$peer_output" && grep -Fq 'seat=fixture-machine' "$peer_output" \
+	    || { echo "land carried-two-seat fixture: in-flight ask did not name seat A's row and seat" >&2; cat "$peer_output" >&2; exit 1; }
+	else
+	  grep -Fq "$carried_word" "$peer_output" \
+	    || { echo "land $fixture_scenario fixture: trailer debt ask did not name seat A's word" >&2; cat "$peer_output" >&2; exit 1; }
+	fi
+	! git -C "$leg_remote" log --format=%B refs/heads/main | grep -Fq "Carry: $peer_word" \
+	  || { echo "land $fixture_scenario fixture: seat B pushed a commit despite seat A's debt" >&2; exit 1; }
+	git -C "$leg_peer" fetch -q origin
+	git -C "$leg_peer" update-ref refs/metasystem/goals/accepted origin/main
+	seat_b_goal=$(git -C "$leg_peer" show refs/metasystem/goals/accepted:plans/goals/fx-b.md)
+	! grep -Fq " carrying " <<<"$seat_b_goal" \
+	  || { echo "land $fixture_scenario fixture: seat B wrote a reservation despite seat A's debt" >&2; printf '%s\n' "$seat_b_goal" >&2; exit 1; }
+	seat_a_rerun=$leg_root/seat-a-rerun.out
+	(cd "$leg_local" && METASYSTEM_GOAL_NOW=$run_clock METASYSTEM_OWNER_LINEAGE=land-receipt-fixture \
+	  bash scripts/agents/land.sh -m "$carried_message" --goal fx --carried "$carried_word" \
+	    --staged-only --skip-transport) >"$seat_a_rerun" 2>&1 \
+	  || { echo "land $fixture_scenario fixture: seat A did not complete its pushed record" >&2; cat "$seat_a_rerun" >&2; exit 1; }
+	grep -Fq "already landed as $seat_a_commit; completing the record" "$seat_a_rerun" \
+	  || { echo "land $fixture_scenario fixture: seat A rerun missed the origin recovery branch" >&2; cat "$seat_a_rerun" >&2; exit 1; }
+	if [[ "$fixture_scenario" == carried-two-seat ]]; then
+	  set +e
+	  (cd "$leg_peer" && METASYSTEM_GOAL_NOW=$run_clock METASYSTEM_OWNER_LINEAGE=land-receipt-fixture-b \
+	    bash scripts/agents/land.sh -m "$carried_message" --goal fx-b --carried "$peer_word" \
+	      --staged-only --skip-transport) >"$leg_root/seat-b-rerun.out" 2>&1
+	  peer_rerun_rc=$?
+	  set -e
+	  [[ $peer_rerun_rc -eq 3 ]] && grep -Fq 'carry-debt-unpaid' "$leg_root/seat-b-rerun.out" \
+	    && grep -Fq "carried:$seat_a_commit" "$leg_root/seat-b-rerun.out" \
+	    || { echo "land carried-two-seat fixture: seat B rerun did not name seat A's review obligation" >&2; cat "$leg_root/seat-b-rerun.out" >&2; exit 1; }
+	fi
+	echo "land $fixture_scenario fixture passed"
+	exit 0
+  fi
+
+  if [[ "$fixture_scenario" == carried-asks || "$fixture_scenario" == carried-ledger-path ]]; then
+    set +e
+    (cd "$leg_local" && METASYSTEM_OWNER_LINEAGE=land-receipt-fixture \
+      bash scripts/agents/land.sh -m "$carried_message" --goal fx --carried "$carried_word" \
+        --staged-only --skip-transport) >"$carried_output" 2>&1
+    carried_rc=$?
+    set -e
+	if [[ "$fixture_scenario" == carried-asks ]]; then
+	  [[ $carried_rc -eq 3 ]] && grep -Fq 'the landing saw ordinary=missing-declaration' "$carried_output" \
+	    || { echo "land carried-asks fixture: the mismatched refusal did not ask" >&2; cat "$carried_output" >&2; exit 1; }
+	else
+	  [[ $carried_rc -eq 3 ]] && grep -Fq 'ledger-path-not-goal-verb' "$carried_output" \
+	    || { echo "land carried-ledger-path fixture: the ledger path was not refused by name" >&2; cat "$carried_output" >&2; exit 1; }
+	fi
+	carried_goal_text=$(git -C "$leg_local" show refs/metasystem/goals/accepted:plans/goals/fx.md)
+	carried_reservation=$(awk -v ref="$carried_word" '$0 ~ " carrying " && $0 ~ "approvedRef=" ref && $0 ~ "reason=open " { print $3 }' <<<"$carried_goal_text")
+	[[ -n "$carried_reservation" ]] && grep -Fq "reason=abandoned of=$carried_reservation " <<<"$carried_goal_text" \
+	  || { echo "land carried-asks fixture: the wrapper did not abandon its reservation" >&2; printf '%s\n' "$carried_goal_text" >&2; exit 1; }
+    echo "land $fixture_scenario fixture passed"
+    exit 0
+  fi
+
+  carried_land_args=(-m "$carried_message" --goal fx --carried "$carried_word" --staged-only --skip-transport)
+  [[ "$fixture_scenario" != carried-red-battery ]] || carried_land_args+=(--direct-fix register-carriage)
+  (cd "$leg_local" && METASYSTEM_OWNER_LINEAGE=land-receipt-fixture \
+    bash scripts/agents/land.sh "${carried_land_args[@]}") >"$carried_output" 2>&1 || {
+	  echo "land $fixture_scenario fixture: carried landing did not complete" >&2
+	  echo "land $fixture_scenario fixture: retained test run output" >&2
+	  [[ ! -f "$leg_root/carried-test.out" ]] || sed -n '1,240p' "$leg_root/carried-test.out" >&2
+	  sed -n '1,240p' "$carried_output" >&2
+	  exit 1
+	}
+  carried_commit=$(git -C "$leg_local" log --format=%H --grep="^Carry: $carried_word$" -1)
+  [[ "$carried_commit" =~ ^[0-9a-f]{40}$ ]] \
+    || { echo "land $fixture_scenario fixture: no carried commit is reachable" >&2; exit 1; }
+  carried_body=$(git -C "$leg_local" log -1 --format=%B "$carried_commit")
+  for key in Carry Carried-By Carried-Tree Carried-Past Carried-Battery Carried-Judge Carried-Ledger Landing-Provenance; do
+    [[ $(grep -c "^$key:" <<<"$carried_body") -eq 1 ]] \
+      || { echo "land $fixture_scenario fixture: $key trailer is not singular" >&2; exit 1; }
+  done
+  carried_status=$("$source_engine" landing carry-status --root "$leg_local" --carried "$carried_word" \
+    --goal fx --ledger-tip "$(git -C "$leg_local" rev-parse refs/metasystem/goals/accepted)")
+	grep -q '^ledger:' <<<"$carried_status" \
+	  || { echo "land $fixture_scenario fixture: carried row did not close the word: $carried_status" >&2; exit 1; }
+  grep -Fq 'reservation: closed:' <<<"$carried_status" \
+    || { echo "land $fixture_scenario fixture: reservation did not close" >&2; exit 1; }
+  grep -Fq '== STEP: complete carried goal record' "$carried_output"
+	previous_line=0
+	push_line=$(grep -nF '== STEP: push carried commit to origin (single attempt)' "$carried_output" | head -1 | cut -d: -f1)
+	[[ "$push_line" =~ ^[0-9]+$ ]] \
+	  || { echo "land carried-fresh fixture: push step is absent" >&2; cat "$carried_output" >&2; exit 1; }
+	for advisory in \
+	  'carried reservation:' \
+	  'carried ledger:' \
+	  'carried judge:' \
+	  'carried live failure:' \
+	  'carried ordinary verdict:' \
+	  'carried testing result:' \
+	  'carried obligation finding:' \
+	  'carried exception count after this one:'; do
+	  advisory_line=$(grep -nF "$advisory" "$carried_output" | head -1 | cut -d: -f1)
+	  [[ "$advisory_line" =~ ^[0-9]+$ && $advisory_line -gt $previous_line && $advisory_line -lt $push_line ]] \
+	    || { echo "land carried-fresh fixture: advisory '$advisory' is absent or out of order" >&2; cat "$carried_output" >&2; exit 1; }
+	  previous_line=$advisory_line
+	done
+  [[ -s "$leg_local/records/counselor/carried-landings.jsonl" ]] \
+    || { echo "land $fixture_scenario fixture: counselor line is absent" >&2; exit 1; }
+  if [[ "$fixture_scenario" == carried-red-battery ]]; then
+	grep -Eq '^Carried-Battery: red missing=[^[:space:]]+ failing=' <<<"$carried_body" \
+	  || { echo "land carried-red-battery fixture: commit.sh did not record the red group battery" >&2; printf '%s\n' "$carried_body" >&2; exit 1; }
+	red_goal_text=$(git -C "$leg_local" show refs/metasystem/goals/accepted:plans/goals/fx.md)
+	grep -Fq "finding=carried:$carried_commit:battery-red chain=human-carried" <<<"$red_goal_text" \
+	  || { echo "land carried-red-battery fixture: red carried obligation is absent" >&2; printf '%s\n' "$red_goal_text" >&2; exit 1; }
+	grep -Fq "carried obligation finding: carried:$carried_commit:battery-red" "$carried_output" \
+	  || { echo "land carried-red-battery fixture: advisory did not name the red obligation" >&2; cat "$carried_output" >&2; exit 1; }
+  fi
+  if [[ "$fixture_scenario" == carried-second ]]; then
+	first_counselor_line=$(sed -n '1p' "$leg_local/records/counselor/carried-landings.jsonl")
+	[[ -n "$first_counselor_line" ]] \
+	  || { echo "land carried-second fixture: first counselor line is absent" >&2; exit 1; }
+	METASYSTEM_GOAL_NOW=$carried_now METASYSTEM_OWNER_LINEAGE=land-receipt-fixture \
+	  "$source_engine" goal accept-risk --root "$leg_local" --id fx \
+	    --finding "carried:$carried_commit" --chain human-carried --by Wido \
+	    --why "fixture closes the first carried review before the second landing" \
+	    --fixture-human-authority >/dev/null
+	accepted_risk_line=$(sed -n '1p' "$leg_local/records/counselor/accepted-risk-register.jsonl")
+	[[ -n "$accepted_risk_line" ]] \
+	  || { echo "land carried-second fixture: accepted-risk counselor line is absent" >&2; exit 1; }
+	printf 'second carried landing payload\n' >"$leg_local/payload.txt"
+	git -C "$leg_local" add -- payload.txt records/counselor/accepted-risk-register.jsonl records/counselor/carried-landings.jsonl
+	second_tree=$(git -C "$leg_local" write-tree)
+	select_receipt_runner_environment "$leg_local"
+	receipt_env_run "$leg_local/bin/metasystem" test run --root "$leg_local" --goal fx \
+	  --tree "$second_tree" --mode auto >"$leg_root/second-test.out" 2>&1 \
+	  || { echo "land carried-second fixture: second battery did not pass" >&2; sed -n '1,240p' "$leg_root/second-test.out" >&2; exit 1; }
+	while (( ${#receipt_runner_checkouts[@]} )); do
+	  stop_receipt_runner
+	done
+	second_word_output=$(METASYSTEM_GOAL_NOW=$carried_now METASYSTEM_OWNER_LINEAGE=land-receipt-fixture \
+	  "$source_engine" goal carry --root "$leg_local" --id fx --by Wido --tree "$second_tree" \
+	    --past missing-declaration --why "fixture carries its prior counselor line" \
+	    --expires 4h --fixture-human-authority)
+	second_word=$(sed -n 's/^carry=\([^ ]*\) workspace=.*/\1/p' <<<"$second_word_output")
+	[[ -n "$second_word" ]] \
+	  || { echo "land carried-second fixture: second goal carry returned no word" >&2; exit 1; }
+	second_output=$leg_root/second-land.out
+	(cd "$leg_local" && METASYSTEM_OWNER_LINEAGE=land-receipt-fixture \
+	  bash scripts/agents/land.sh -m "$carried_message" --goal fx --carried "$second_word" \
+	    --staged-only --skip-transport) >"$second_output" 2>&1 \
+	  || { echo "land carried-second fixture: second landing failed" >&2; cat "$second_output" >&2; exit 1; }
+	second_commit=$(git -C "$leg_local" log --format=%H --grep="^Carry: $second_word$" -1)
+	first_record=$(git -C "$leg_local" show "$second_commit:records/counselor/carried-landings.jsonl")
+	grep -Fq "$first_counselor_line" <<<"$first_record" \
+	  || { echo "land carried-second fixture: second commit did not carry the first counselor line" >&2; exit 1; }
+	second_risk_record=$(git -C "$leg_local" show "$second_commit:records/counselor/accepted-risk-register.jsonl")
+	grep -Fqx "$accepted_risk_line" <<<"$second_risk_record" \
+	  || { echo "land carried-second fixture: second commit did not carry the paid-debt counselor line" >&2; exit 1; }
+	[[ $(wc -l <"$leg_local/records/counselor/carried-landings.jsonl" | tr -d ' ') -eq 2 ]] \
+	  || { echo "land carried-second fixture: counselor record is not append-once across both landings" >&2; exit 1; }
+  fi
+  echo "land $fixture_scenario fixture passed"
+  exit 0
+fi
 
 prepare_receipt_chain() { # checkout, chain, candidate tree
   local checkout=$1 chain=$2 candidate_tree=$3 round_root
@@ -1437,7 +2026,41 @@ METASYSTEM_BUILD_STAMP=receipt-cutover-seed-claim \
 make_leg receipt-cutover
 cutover_old_engine=$leg_root/old-engine
 cutover_moved_remote=$leg_root/moved-origin.git
+
+# Trunk's claimed record gained the elapsed-budget episode binding after the
+# pinned reader. Project only those optional keys away so this fixture still
+# compares the real pre-cutover receipt producer with the current producer.
+cutover_compat=$leg_root/compat
+git clone -q "$leg_remote" "$cutover_compat"
+git -C "$cutover_compat" config user.name fixture-cutover-compat
+git -C "$cutover_compat" config user.email fixture-cutover-compat@example.invalid
+cutover_goal=$cutover_compat/plans/goals/fx.md
+conf_edit "$cutover_goal" awk '
+  /^Integrity: sha256=/ { next }
+  /^- Claimed:/ {
+    gsub(/ episodeAt=[^ ]+/, "")
+    gsub(/ episodeRevision=[^ ]+/, "")
+    gsub(/ episodeObligationRevision=[^ ]+/, "")
+  }
+  { print }
+'
+cutover_goal_digest=$("$source_engine" util sha256 --file "$cutover_goal")
+printf 'Integrity: sha256=%s\n' "$cutover_goal_digest" >>"$cutover_goal"
+git -C "$cutover_compat" add -- plans/goals/fx.md
+if ! git -C "$cutover_compat" diff --cached --quiet; then
+  git -C "$cutover_compat" -c core.hooksPath=/dev/null commit -qm 'project claimed row for pre-cutover reader'
+fi
+git -C "$cutover_compat" push -q origin main
 git clone -q --bare "$leg_remote" "$cutover_moved_remote"
+receipt_seed_build_stamp=$(git -C "$cutover_compat" rev-parse HEAD)
+for cutover_checkout in "$leg_local" "$leg_peer"; do
+  git -C "$cutover_checkout" fetch -q origin main
+  git -C "$cutover_checkout" reset -q --hard origin/main
+  git -C "$cutover_checkout" update-ref refs/heads/metasystem/goals origin/main
+  git -C "$cutover_checkout" update-ref refs/metasystem/goals/accepted origin/main
+done
+METASYSTEM_BUILD_STAMP="$receipt_seed_build_stamp" \
+  bash "$root/scripts/agents/go-build.sh" --out "$leg_root/engine" >/dev/null
 METASYSTEM_BUILD_STAMP="$receipt_seed_build_stamp" \
   bash "$cutover_old_source/metasystem/scripts/agents/go-build.sh" --out "$cutover_old_engine" >/dev/null
 install_cutover_engine "$leg_local" "$cutover_old_engine"
@@ -1468,7 +2091,8 @@ take_fixture_receipt "$leg_local/bin/metasystem" "$leg_local" "$leg_root/old-rec
 cutover_old_receipt=$fixture_receipt_path
 cutover_tree=$fixture_receipt_tree
 if receipt_checkout_env_run "$leg_local" "$leg_local/bin/metasystem" json get --file "$cutover_old_receipt" --field workspace >/dev/null 2>&1 ||
-    receipt_checkout_env_run "$leg_local" "$leg_local/bin/metasystem" json get --file "$cutover_old_receipt" --field candidateEngineBuildIdentity >/dev/null 2>&1; then
+    receipt_checkout_env_run "$leg_local" "$leg_local/bin/metasystem" json get --file "$cutover_old_receipt" --field candidateEngineBuildIdentity >/dev/null 2>&1 ||
+    grep -Eq '"(workspace|candidateEngineBuildIdentity)"[[:space:]]*:' "$cutover_old_receipt"; then
   echo "land receipt-cutover fixture: old engine wrote a cutover-only identity field" >&2
   exit 1
 fi

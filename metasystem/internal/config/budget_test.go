@@ -9,7 +9,7 @@ import (
 
 func clearBudgetLawEnvironment(t *testing.T) {
 	t.Helper()
-	for _, key := range []string{ElapsedGracePercentKey, SliceNormHoursKey, ReviewRoundMaxKey, Tier1BudgetKey, Tier2BudgetKey, Tier3BudgetKey, GoalNormJobMinutesKey, RiskGateKey} {
+	for _, key := range []string{ElapsedGracePercentKey, SliceNormHoursKey, ReviewRoundMaxKey, Tier1BudgetKey, Tier2BudgetKey, Tier3BudgetKey, GoalNormJobMinutesKey, RiskGateKey, CarryOpenMaxKey} {
 		name := EnvName(key)
 		previous, present := os.LookupEnv(name)
 		if err := os.Unsetenv(name); err != nil {
@@ -22,6 +22,26 @@ func clearBudgetLawEnvironment(t *testing.T) {
 				_ = os.Unsetenv(name)
 			}
 		})
+	}
+}
+
+func TestHCL08CapKeyDefaultOne(t *testing.T) {
+	clearBudgetLawEnvironment(t)
+	conf := filepath.Join(t.TempDir(), "metasystem.conf")
+	putFile(t, conf, "")
+	got, err := CarryOpenMax(conf)
+	if err != nil || got != 1 {
+		t.Fatalf("carry-open default = %d, %v; want 1", got, err)
+	}
+}
+
+func TestHCL08CapLocalRefused(t *testing.T) {
+	clearBudgetLawEnvironment(t)
+	conf := filepath.Join(t.TempDir(), "metasystem.conf")
+	putFile(t, conf, CarryOpenMaxKey+"=1\n")
+	putFile(t, conf+".local", CarryOpenMaxKey+"=2\n")
+	if _, err := CarryOpenMax(conf); err == nil || !strings.Contains(err.Error(), "accepts only committed root configuration") {
+		t.Fatalf("production .local carry cap was not refused: %v", err)
 	}
 }
 

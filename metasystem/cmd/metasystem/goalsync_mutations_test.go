@@ -17,6 +17,7 @@ import (
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/governance"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/humanauthority"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/identity"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/landing"
 )
 
 type goalSyncEnrollmentReader struct {
@@ -399,10 +400,21 @@ func TestSTR3Gap05AcceptRiskWritesGoalCounselorAndRegisterThenCloses(t *testing.
 	writeTemp(t, jobs, "critic.json", rootRecord)
 	base := []string{
 		"--root", root, "--id", "standing-validation", "--finding", "S-1", "--chain", "critic",
-		"--by", "Wido", "--why", "human accepts the bounded exposure", "--lineage", "m1",
+		"--by", "Wido", "--why", "human accepts the bounded exposure ", "--lineage", "m1",
+	}
+	blankWhy := append([]string(nil), base...)
+	for index := range blankWhy {
+		if blankWhy[index] == "--why" {
+			blankWhy[index+1] = " \t "
+			break
+		}
+	}
+	stderr, code := captureStderr(t, func() int { return runGoalAcceptRiskWithAuthority(blankWhy, fixedTemporaryGoalAuthority) })
+	if code != 2 || !strings.Contains(stderr, "goal accept-risk needs") {
+		t.Fatalf("blank accepted-risk reason = exit %d stderr %q", code, stderr)
 	}
 	paired := append(append([]string(nil), base...), "--temporary-human-word", "Wido accepts this severe risk")
-	stderr, code := captureStderr(t, func() int { return runGoalAcceptRiskWithAuthority(paired, fixedTemporaryGoalAuthority) })
+	stderr, code = captureStderr(t, func() int { return runGoalAcceptRiskWithAuthority(paired, fixedTemporaryGoalAuthority) })
 	if code != 2 || !strings.Contains(stderr, "--temporary-human-word and --review-by travel together") {
 		t.Fatalf("unpaired authority flags = exit %d stderr %q", code, stderr)
 	}
@@ -422,10 +434,17 @@ func TestSTR3Gap05AcceptRiskWritesGoalCounselorAndRegisterThenCloses(t *testing.
 	if !strings.Contains(goalText, "- AcceptedRisk: finding=S-1 chain=critic by=Wido opid=") {
 		t.Fatalf("goal transaction did not land first:\n%s", goalText)
 	}
+	if !strings.Contains(goalText, " reason=human accepts the bounded exposure\n") {
+		t.Fatalf("goal transaction did not trim the accepted-risk reason:\n%s", goalText)
+	}
 	counselorPath := filepath.Join(root, "records", "counselor", "accepted-risk-register.jsonl")
 	counselorText, err := os.ReadFile(counselorPath)
-	if err != nil || !strings.Contains(string(counselorText), `"id":"ar-critic-S-1"`) || !strings.Contains(string(counselorText), `"kind":"accepted-risk"`) {
+	if err != nil || !strings.Contains(string(counselorText), `"id":"ar-critic-S-1"`) || !strings.Contains(string(counselorText), `"kind":"accepted-risk"`) ||
+		!strings.Contains(string(counselorText), `"acceptanceReason":"human accepts the bounded exposure"`) {
 		t.Fatalf("counselor append did not land second: err=%v text=%s", err, counselorText)
+	}
+	if _, err := os.Stat(counselorPath + ".lock"); !os.IsNotExist(err) {
+		t.Fatalf("accepted-risk register lock survived command completion: %v", err)
 	}
 	recordData, err := os.ReadFile(filepath.Join(jobs, "critic.json"))
 	if err != nil {
@@ -463,6 +482,91 @@ func TestSTR3Gap05AcceptRiskWritesGoalCounselorAndRegisterThenCloses(t *testing.
 	stderr, code = captureStderr(t, func() int { return runGoalAcceptRiskWithAuthority(boundedArgs, fixedTemporaryGoalAuthority) })
 	if code != 1 || !strings.Contains(stderr, "bounded findings defer at close, not by acceptance") {
 		t.Fatalf("bounded finding acceptance = exit %d stderr %q", code, stderr)
+	}
+}
+
+func TestHCL80TrailingWhitespaceWhyIsAdmitted(t *testing.T) {
+	root := syncedClaimedGoalFixture(t)
+	t.Setenv("METASYSTEM_GOAL_NOW", "2026-09-01T10:00:00Z")
+	for _, policy := range []string{"path-classes.txt", "landing-classes.json"} {
+		data, err := os.ReadFile(filepath.Join("..", "..", "scripts", "agents", policy))
+		if err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(filepath.Join(root, "scripts", "agents", policy), data, 0o644); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if err := os.MkdirAll(filepath.Join(root, "memory"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(root, "memory", "rulings.md"), []byte("| R-35-m0 | landing class authority |\n| R-54-m1 | tier-1 landing authority |\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	message := strings.Join([]string{
+		"carried fixture", "", "Carry: fixture-word", "Carried-By: human:Wido",
+		"Carried-Tree: workspace=" + strings.Repeat("a", 40) + " project=" + strings.Repeat("b", 40),
+		"Carried-Past: missing-declaration", "Carried-Battery: green",
+		"Carried-Judge: base tree=" + strings.Repeat("c", 40) + " sha256=" + strings.Repeat("d", 64),
+		"Carried-Ledger: " + strings.Repeat("e", 40),
+		"Landing-Provenance: carried opid=fixture-word", "",
+	}, "\n")
+	goalSyncMutationGit(t, root, "add", "scripts/agents/path-classes.txt", "scripts/agents/landing-classes.json", "memory/rulings.md")
+	goalSyncMutationGit(t, root, "commit", "-q", "-m", message)
+	commit := goalSyncMutationGit(t, root, "rev-parse", "HEAD")
+	finding := "carried:" + commit
+
+	goalPath := filepath.Join(root, "plans", "goals", "standing-validation.md")
+	goalData, err := os.ReadFile(goalPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	goalFile, problems := goal.ParseFile(goalData)
+	if len(problems) != 0 {
+		t.Fatalf("parse carried goal fixture: %v", problems)
+	}
+	goalFile.ReviewObligations = append(goalFile.ReviewObligations, goal.ReviewObligation{
+		Finding: finding, Chain: goal.HumanCarriedChain, Artifact: "commit:" + commit, Test: "pending", State: "open",
+	})
+	if err := os.WriteFile(goalPath, goal.RenderFile(goalFile), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	goalSyncMutationGit(t, root, "add", "plans/goals/standing-validation.md")
+	goalSyncMutationGit(t, root, "commit", "-q", "-m", "seed carried review debt")
+	goalSyncMutationGit(t, root, "update-ref", goal.LocalLedgerBranch, "HEAD")
+	goalSyncMutationGit(t, root, "update-ref", goal.AcceptedRef, "HEAD")
+
+	args := []string{
+		"--root", root, "--id", "standing-validation", "--finding", finding,
+		"--chain", goal.HumanCarriedChain, "--by", "Wido", "--why", "paid the carried debt ", "--lineage", "m1",
+		"--temporary-human-word", "Wido accepts this carried risk", "--review-by", "2026-09-06",
+	}
+	stdout, code := captureStdout(t, func() int { return runGoalAcceptRiskWithAuthority(args, fixedTemporaryGoalAuthority) })
+	if code != 0 || !strings.Contains(stdout, `"outcome":"confirmed"`) {
+		t.Fatalf("goal accept-risk = exit %d output %q", code, stdout)
+	}
+	registerPath := filepath.Join(root, "records", "counselor", "accepted-risk-register.jsonl")
+	registerData, err := os.ReadFile(registerPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(string(registerData), `"acceptanceReason":"paid the carried debt"`) || strings.Contains(string(registerData), `paid the carried debt `) {
+		t.Fatalf("goal accept-risk did not trim the counselor reason: %s", registerData)
+	}
+	goalSyncMutationGit(t, root, "add", "records/counselor/accepted-risk-register.jsonl")
+	candidateTree := goalSyncMutationGit(t, root, "write-tree")
+	endpoint, err := goal.ResolveEndpoint(root)
+	if err != nil {
+		t.Fatal(err)
+	}
+	projection, err := goal.Project(endpoint, false, time.Date(2026, 9, 1, 10, 0, 0, 0, time.UTC))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := landing.ValidateCarriedCandidatePaths(landing.ObserveParams{
+		RepoRoot: root, CandidateTree: candidateTree, Carried: "fixture-word",
+	}, projection.Tree); err != nil {
+		t.Fatalf("carried admission refused the command's accepted-risk line: %v", err)
 	}
 }
 
@@ -1180,6 +1284,16 @@ func amendSyncedGoalFixture(t *testing.T, root, message string, mutate func(*goa
 	goalSyncMutationGit(t, root, "commit", "-q", "-m", message)
 	goalSyncMutationGit(t, root, "update-ref", goal.LocalLedgerBranch, "HEAD")
 	goalSyncMutationGit(t, root, "update-ref", goal.AcceptedRef, "HEAD")
+}
+
+func TestHCL54CarryByRejectsStoredActorPrefix(t *testing.T) {
+	code := runGoalCarry([]string{
+		"--root", t.TempDir(), "--id", "g", "--by", "human:Wido",
+		"--tree", strings.Repeat("0", 40), "--past", "missing-declaration", "--why", "fixture",
+	})
+	if code != 2 {
+		t.Fatalf("goal carry with a stored actor prefix exited %d; want usage exit 2", code)
+	}
 }
 
 func captureSetObligationOutputWithAuthority(t *testing.T, args []string, prove goalAuthorityProver) (string, string, int) {

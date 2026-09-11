@@ -167,6 +167,15 @@ func WalkOpenQuestions(repo string) ([]Question, []string) {
 }
 
 func validateQuestionBudget(q Question) error {
+	if q.Kind == "carry" {
+		if q.Budget != nil {
+			return fmt.Errorf("a carry question cannot carry a proposed budget tuple")
+		}
+		if !goal.ValidCarryToken(q.Wants) {
+			return fmt.Errorf("a carry question requires --wants with exactly carry workspace=<sha40> goal=<id> past=<name>")
+		}
+		return nil
+	}
 	if q.Kind == "budget-above-norm" {
 		if q.Budget == nil {
 			return fmt.Errorf("a budget-above-norm question requires a complete proposed budget tuple")
@@ -199,7 +208,7 @@ func Ask(r AskRequest) (Question, error) {
 		return Question{}, fmt.Errorf("ask requires goal, kind, and a fact")
 	}
 	switch r.Kind {
-	case "budget-above-norm", "fork", "reserved-decision", "stop", "other":
+	case "budget-above-norm", "carry", "fork", "reserved-decision", "stop", "other":
 	default:
 		return Question{}, fmt.Errorf("unknown question kind %q", r.Kind)
 	}
@@ -278,8 +287,12 @@ func renderQuestion(q Question) string {
 	}
 
 	factCount := len(q.Facts)
-	if factCount > questionFactLimit {
-		factCount = questionFactLimit
+	factLimit := questionFactLimit
+	if q.Kind == "carry" {
+		factLimit = 6
+	}
+	if factCount > factLimit {
+		factCount = factLimit
 	}
 	noticeReserve := 0
 	for dropped := 0; dropped <= len(q.Facts); dropped++ {

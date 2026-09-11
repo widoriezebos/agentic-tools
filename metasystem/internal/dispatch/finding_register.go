@@ -747,6 +747,28 @@ func critiqueSubjectForRound(repoRoot string, state critiqueState, root map[stri
 		return s, nil
 	}
 	reviewedJob := asString(root["reviews"])
+	if role == "code-critic" && validCommitReview.MatchString(reviewedJob) {
+		commit := strings.TrimPrefix(reviewedJob, "commit:")
+		paths, err := exec.Command("git", "-C", repoRoot, "diff-tree", "-r", "--no-commit-id", "--name-only", commit+"^", commit).Output()
+		if err != nil {
+			return s, fmt.Errorf("commit subject %s is not a readable non-root commit: %v", reviewedJob, err)
+		}
+		for _, path := range strings.Split(strings.TrimSpace(string(paths)), "\n") {
+			path = filepath.ToSlash(strings.TrimSpace(path))
+			if path != "" {
+				s.paths[path] = true
+			}
+		}
+		if len(s.paths) == 0 {
+			return s, fmt.Errorf("commit subject %s has no changed paths", reviewedJob)
+		}
+		tree, err := exec.Command("git", "-C", repoRoot, "rev-parse", commit+"^{tree}").Output()
+		if err != nil {
+			return s, fmt.Errorf("commit subject %s has no readable tree: %v", reviewedJob, err)
+		}
+		s.tree = strings.TrimSpace(string(tree))
+		return s, nil
+	}
 	reviewed, ok := state.records[reviewedJob]
 	if !ok || asString(reviewed["role"]) != "implementer" {
 		return s, fmt.Errorf("critic root does not name a reviewed implementer round")

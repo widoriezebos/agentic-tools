@@ -147,6 +147,24 @@ func ValidateTree(t *TreeGoals) []Problem {
 	addf := func(format string, args ...any) {
 		problems = append(problems, Problem(fmt.Sprintf(format, args...)))
 	}
+	if t.Root != nil && t.Root.FormatVersion == "1" {
+		checkFormat := func(path string, f *GoalFile) {
+			for _, history := range f.History {
+				if history.AuthorityOutcome == AuthorityOutcomeHumanAuthorityProven {
+					addf("%s: HUMAN_AUTHORITY_PROVEN requires ledger FormatVersion 2", path)
+				}
+				if history.Verb == "carrying" || history.Verb == "carried" {
+					addf("%s: %s history requires ledger FormatVersion 2", path, history.Verb)
+				}
+			}
+		}
+		for id, f := range t.Live {
+			checkFormat(livePath(id), f)
+		}
+		for id, f := range t.Done {
+			checkFormat(doneLocation(t, id), f)
+		}
+	}
 
 	// Placement and State agree — path never silently implies state
 	//.

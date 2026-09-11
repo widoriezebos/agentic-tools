@@ -95,6 +95,7 @@ const (
 	AuthorityOutcomeTemporaryHumanWord       = "TEMPORARY_HUMAN_WORD"
 	AuthorityOutcomeAuthenticatedChannelWord = "AUTHENTICATED_CHANNEL_WORD"
 	AuthorityOutcomeVerifiedChannelAnswer    = "VERIFIED_CHANNEL_ANSWER"
+	AuthorityOutcomeHumanAuthorityProven     = "HUMAN_AUTHORITY_PROVEN"
 	TemporaryGoalAuthorityRuling             = "R-32-m1"
 	TemporaryGoalAuthorityHorizon            = "2026-09-06"
 	authorityReviewByDateLayout              = "2006-01-02"

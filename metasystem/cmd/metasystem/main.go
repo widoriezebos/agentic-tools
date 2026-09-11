@@ -131,6 +131,7 @@ func families() []family {
 			summary: "classify and record the two bars for a prospective landing",
 			verbs: []verb{
 				{"observe", "emit a provenance verdict for the prospective project tree", runLandingObserve},
+				{"carry-status", "report a carried word, consumption, reservation, intent, and counselor state", runLandingCarryStatus},
 				{"workspace", "print the delivery workspace projection of a whole-project tree", runLandingWorkspace},
 				{"adoption-rulings", "prepare required landing authority while preserving application rulings", runLandingAdoptionRulings},
 				{"park", "durably record one stopped recertified landing attempt", runLandingPark},
@@ -475,6 +476,9 @@ func families() []family {
 				{"classify-sweep", "human-confirmed classification of every open tierless goal", runGoalClassifySweep},
 				{"unapprove", "human-only: withdraw execution approval and park any standing claim", runGoalUnapprove},
 				{"set-budget", "human-only: replace a claimed goal's approved tuple and bind a new revision", runGoalSetBudget},
+				{"carry", "human-only: carry one landing past one named refusal or testing group", runGoalCarry},
+				{"carrying", "reserve a carry or create its local pre-push intent", runGoalCarrying},
+				{"carried", "complete or repair a carried landing record", runGoalCarried},
 				{"accept-risk", "human-only: accept one severe or unproven critic finding", runGoalAcceptRisk},
 				{"discharge-review-obligation", "discharge one chain-qualified review obligation", runGoalDischargeReviewObligation},
 				{"split", "atomize one goal into independently claimable arc members; conclude the parent as decomposed", runGoalSplit},

@@ -121,6 +121,13 @@ func runChannelAsk(args []string) int {
 	if f.Parse(args) != nil {
 		return 2
 	}
+	if *kind == "carry" {
+		budgetGiven := *elapsed != "" || *attempts != 0 || *minutes != 0 || *active != 0 || *reviewRounds != -1
+		if !goal.ValidCarryToken(*wants) || budgetGiven {
+			fmt.Fprintln(os.Stderr, "channel ask --kind carry requires --wants exactly `carry workspace=<sha40> goal=<id> past=<name>` and refuses every budget flag")
+			return 2
+		}
+	}
 	var proposedBudget *goal.Budget
 	if *kind == "stop" || *kind == "budget-above-norm" {
 		budget, budgetErr := goal.NewBudget(*elapsed, *attempts, *minutes, *active, *reviewRounds)

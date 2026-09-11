@@ -338,7 +338,6 @@ func TestVerifyRecoversCandidateDigestFromNewestSufficientAttempt(t *testing.T) 
 	executionIdentity := strings.Repeat("b", 64)
 	candidateDigest := strings.Repeat("c", 64)
 	buildIdentity := strings.Repeat("f", 40)
-	failedDigest := strings.Repeat("d", 64)
 	candidateTree := strings.Repeat("e", 40)
 	group := testpolicy.Group{ID: groupID, Kind: "unit", CWD: ".", Inputs: []string{"source.go"},
 		Obligations: []string{"candidate-engine"}, Platforms: []string{"any"}, TargetMS: 1}
@@ -363,7 +362,11 @@ func TestVerifyRecoversCandidateDigestFromNewestSufficientAttempt(t *testing.T) 
 	successful.RecomputeDelivery()
 	failed := successful
 	failed.AttemptID = "later-failed-attempt"
-	failed.CandidateEngineDigest = failedDigest
+	// A red battery is still a completed measurement of the deterministic
+	// candidate engine. Carried landing needs its structured insufficiency;
+	// sufficiency remains the later delivery decision, not an engine-identity
+	// precondition.
+	failed.CandidateEngineDigest = strings.Repeat("d", 64)
 	exit := 23
 	failed.Groups = append([]proofrun.GroupResult(nil), successful.Groups...)
 	failed.Groups[0].Status, failed.Groups[0].NativeExitStatus = "failed", &exit
@@ -376,9 +379,13 @@ func TestVerifyRecoversCandidateDigestFromNewestSufficientAttempt(t *testing.T) 
 		{AttemptID: failed.AttemptID, GoalID: prepared.GoalID, AccountingRevision: prepared.AccountingRevision,
 			StartedAt: now.Format(time.RFC3339Nano), Terminal: &proofrun.AttemptTerminal{Result: proofrun.TerminalFailed}, TestResult: &failed},
 	}
-	recovered, err := retainedCandidateEngineDigest(prepared, attempts, buildIdentity)
+	recovered, err := retainedCandidateEngineDigest(prepared, attempts, buildIdentity, false)
 	if err != nil || recovered != candidateDigest {
 		t.Fatalf("later failed attempt hid the sufficient candidate engine: digest=%s err=%v", recovered, err)
+	}
+	carriedDigest, err := retainedCandidateEngineDigest(prepared, attempts, buildIdentity, true)
+	if err != nil || carriedDigest != failed.CandidateEngineDigest {
+		t.Fatalf("carried verification did not retain the newest completed red measurement: digest=%s err=%v", carriedDigest, err)
 	}
 	templateRequest := testingRunRequest(prepared, "", "", "", recovered, buildIdentity)
 	templateRequest.ProjectRoot, templateRequest.BaseCommit = "/project", "base"
@@ -424,7 +431,7 @@ func TestVerifyDoesNotKeyLegacyCandidateDigestByWholeTreeReceipt(t *testing.T) {
 	if err := os.WriteFile(path, payload, 0o600); err != nil {
 		t.Fatal(err)
 	}
-	recovered, err := retainedCandidateEngineDigest(prepared, nil, strings.Repeat("d", 40))
+	recovered, err := retainedCandidateEngineDigest(prepared, nil, strings.Repeat("d", 40), false)
 	if err == nil || recovered != "" || !strings.Contains(err.Error(), "candidate engine digest is absent") {
 		t.Fatalf("legacy whole-tree receipt unexpectedly supplied a cross-tip engine identity: digest=%s err=%v", recovered, err)
 	}

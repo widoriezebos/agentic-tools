@@ -19,9 +19,22 @@ func TestSeverityTieredRigorAcceptedRiskLifecycle(t *testing.T) {
 		t.Fatalf("accept-risk without authority proof = %v", err)
 	}
 
-	result, err := AcceptedRiskDecision(req, "risk-goal", "F-1", "critic-a", "Wido", "bounded risk", &proof)
+	result, err := AcceptedRiskDecision(req, "risk-goal", "F-1", "critic-a", "Wido", " bounded risk ", &proof)
 	if err != nil || result.Outcome != OutcomeConfirmed {
 		t.Fatalf("accept-risk = %+v, %v", result, err)
+	}
+	projection, err := Project(obligationAuthorityEndpoint(root), false, req.Now)
+	if err != nil {
+		t.Fatal(err)
+	}
+	history := projection.Tree.Live["risk-goal"].History
+	if got := history[len(history)-1].Reason; got != "bounded risk" {
+		t.Fatalf("accepted-risk reason = %q; want trimmed reason", got)
+	}
+	blankReq := req
+	blankReq.Ulid = "01J5X00000000000000000SR29"
+	if _, err := AcceptedRiskDecision(blankReq, "risk-goal", "F-blank", "critic-a", "Wido", " \t ", &proof); err == nil || !strings.Contains(err.Error(), "requires") {
+		t.Fatalf("blank accepted-risk reason = %v; want refusal", err)
 	}
 	wantOpID := req.opid()
 	gotOpID, err := AcceptedRiskDecisionOpID(root, "risk-goal", "F-1", "critic-a", req.Now)

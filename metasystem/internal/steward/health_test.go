@@ -4,11 +4,13 @@ import (
 	"encoding/json"
 	"errors"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"strings"
 	"testing"
 	"time"
 
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/gittree"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/goal"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/identity"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/retrodebt"
@@ -300,6 +302,50 @@ func TestSTR4R1RepeatedExceptionAppetiteSignal(t *testing.T) {
 		!strings.Contains(role.Reason, "exceptions=2") ||
 		!strings.HasSuffix(role.Reason, "repeated exception: defect signal") {
 		t.Fatalf("two budget exceptions did not become the repeated-exception defect signal: %+v", role)
+	}
+}
+
+func TestHCL08FleetLine(t *testing.T) {
+	now := time.Date(2026, 8, 28, 9, 0, 0, 0, time.UTC)
+	file := structuredHealthGoal()
+	word := "01K4J000000000000000000001-bed-m1-00000003"
+	carriedReason := func(commit byte) string {
+		return "landed commit=" + strings.Repeat(string(commit), 40) + " workspace=" + strings.Repeat("a", 40) + " project=" + strings.Repeat("b", 40) +
+			" past=missing-declaration battery=green missing=- failing=- judge=live judgeTree=- judgeDigest=" + strings.Repeat("c", 64) +
+			" liveFailure=- ledger=" + strings.Repeat("d", 40) + " by=human:Wido"
+	}
+	file.History = append(file.History,
+		goal.HistoryLine{At: now.Add(-2 * time.Hour).Format(time.RFC3339), Opid: "01K4J000000000000000000002-bed-m1-00000004", Verb: "carried", Actor: "bed-m1+coordinator", Targets: []string{file.Id}, ApprovedRef: "first-word", Reason: carriedReason('e'), Keep: -1},
+		goal.HistoryLine{At: now.Add(-time.Hour).Format(time.RFC3339), Opid: "01K4J000000000000000000003-bed-m1-00000005", Verb: "carried", Actor: "bed-m1+coordinator", Targets: []string{file.Id}, ApprovedRef: "second-word", Reason: carriedReason('f'), Keep: -1},
+		goal.HistoryLine{At: now.Add(-30 * time.Minute).Format(time.RFC3339), Opid: word, Verb: "answer", Actor: "human:wido", Targets: []string{file.Id}, AuthorityOutcome: goal.AuthorityOutcomeAuthenticatedChannelWord, ChannelProvider: "fake", ChannelUser: "UWIDO", ChannelRef: "thread/reply", ChannelStep: 1, Reason: "carry workspace=" + strings.Repeat("a", 40) + " goal=" + file.Id + " past=missing-declaration", Keep: -1},
+		goal.HistoryLine{At: now.Add(-20 * time.Minute).Format(time.RFC3339), Opid: "01K4J000000000000000000004-bed-m1-00000006", Verb: "carrying", Actor: "bed-m1+coordinator", Targets: []string{file.Id}, ApprovedRef: word, Reason: "open workspace=" + strings.Repeat("a", 40) + " project=" + strings.Repeat("b", 40) + " expires=" + now.Add(time.Hour).Format(time.RFC3339) + " by=human:Wido", Keep: -1},
+	)
+	file.ReviewObligations = append(file.ReviewObligations, goal.ReviewObligation{Finding: "carried:" + strings.Repeat("f", 40), Chain: goal.HumanCarriedChain, Artifact: "commit:" + strings.Repeat("f", 40), Test: "pending", State: "open"})
+	root := convertedBed(t, "bed-m1", map[string]*goal.GoalFile{file.Id: file})
+	command := exec.Command("git", "-C", root, "read-tree", "HEAD")
+	command.Env = gittree.ScrubbedEnviron()
+	if output, err := command.CombinedOutput(); err != nil {
+		t.Fatalf("restore fixture index: %v: %s", err, output)
+	}
+	command = exec.Command("git", "-C", root, "commit", "--amend", "-q", "-m", "converted bed\n\nGoal-Transaction: "+word)
+	command.Env = gittree.ScrubbedEnviron()
+	if output, err := command.CombinedOutput(); err != nil {
+		t.Fatalf("amend carry anchor: %v: %s", err, output)
+	}
+	command = exec.Command("git", "-C", root, "update-ref", goal.AcceptedRef, "HEAD")
+	command.Env = gittree.ScrubbedEnviron()
+	if output, err := command.CombinedOutput(); err != nil {
+		t.Fatalf("advance accepted ref: %v: %s", err, output)
+	}
+	if !goal.NewWorld(root) {
+		command = exec.Command("git", "-C", root, "ls-tree", "-r", "HEAD")
+		command.Env = gittree.ScrubbedEnviron()
+		output, _ := command.CombinedOutput()
+		t.Fatalf("carried counter fixture lost its accepted ledger; tree: %s", output)
+	}
+	role := checkClaimedGoalBudgets(root, now)
+	if role.Status != HealthAlive || !strings.Contains(role.Reason, "carried=2") || !strings.Contains(role.Reason, "CARRIED today=2 open=1 inflight=1 debt=1") {
+		t.Fatalf("carried fleet and appetite lines changed: %+v", role)
 	}
 }
 

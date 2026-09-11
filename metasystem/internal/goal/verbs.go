@@ -15,6 +15,7 @@ import (
 	"os"
 	"path/filepath"
 	"regexp"
+	"sort"
 	"strconv"
 	"strings"
 	"time"
@@ -22,9 +23,12 @@ import (
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/brain"
 
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/config"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/fixtureauth"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/governance"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/humanauthority"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/refusal"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/retrodebt"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/testpolicy"
 )
 
 type AnswerProof struct {
@@ -79,7 +83,7 @@ func AuthenticatedChannelApproval(repoRoot, goalID, opid, strictToken string, no
 		return governance.RecordedChannelAuthority{}, fmt.Errorf("goal %s is not live", goalID)
 	}
 	for _, h := range f.History {
-		if h.ApprovedRef == opid && (h.Verb == "resume" || h.Verb == "set-obligation") {
+		if h.ApprovedRef == opid && (h.Verb == "resume" || h.Verb == "set-obligation" || h.Verb == "carrying" || h.Verb == "carried") {
 			return governance.RecordedChannelAuthority{}, fmt.Errorf("operation %s was already consumed by %s on goal %s", opid, h.Verb, goalID)
 		}
 	}
@@ -1082,7 +1086,8 @@ func reviewObligationMatch(obligations []ReviewObligation, finding, chain string
 }
 
 func AcceptedRiskDecision(r VerbRequest, id, finding, chain, by, why string, proof *humanauthority.Proof) (PublishResult, error) {
-	if r.Actor.Human == "" || by == "" || finding == "" || chain == "" || strings.TrimSpace(why) == "" {
+	why = strings.TrimSpace(why)
+	if r.Actor.Human == "" || by == "" || finding == "" || chain == "" || why == "" {
 		return PublishResult{}, fmt.Errorf("goal accept-risk is a human act and requires --id, --finding, --chain, --by, and --why")
 	}
 	if _, _, _, err := approvalProofClass(r.Endpoint.Root, proof); err != nil {
@@ -1110,10 +1115,36 @@ func AcceptedRiskDecision(r VerbRequest, id, finding, chain, by, why string, pro
 					if existing.By != by {
 						return nil, fmt.Errorf("finding %s on chain %s was already accepted by %s", finding, chain, existing.By)
 					}
+					if chain == HumanCarriedChain {
+						var prior *HistoryLine
+						for index := range f.History {
+							if f.History[index].Opid == existing.Opid {
+								prior = &f.History[index]
+								break
+							}
+						}
+						if prior == nil {
+							return nil, fmt.Errorf("accepted-risk replay is unrepeatable: history row %s is missing", existing.Opid)
+						}
+						if prior.Reason != why {
+							return nil, fmt.Errorf("accepted-risk replay refused: why differs: recorded=%s given=%s", prior.Reason, why)
+						}
+					}
 					return nil, AlreadyApplied{}
 				}
 			}
 			f.AcceptedRisks = append(f.AcceptedRisks, AcceptedRiskRecord{Finding: finding, Chain: chain, By: by, Opid: r.opid()})
+			if chain == HumanCarriedChain {
+				match, matchErr := reviewObligationMatch(f.ReviewObligations, finding, chain)
+				if matchErr != nil {
+					return nil, matchErr
+				}
+				if f.ReviewObligations[match].State != "open" {
+					return nil, fmt.Errorf("review obligation finding=%s chain=%s is not open", finding, chain)
+				}
+				f.ReviewObligations[match].State = "discharged"
+				f.ReviewObligations[match].Test = "accepted-risk:" + r.opid()
+			}
 			touch(f, r, "accept-risk", []string{id})
 			f.History[len(f.History)-1].Reason = why
 			return []Change{{Path: livePath(id), Content: RenderFile(f)}}, nil
@@ -1176,6 +1207,9 @@ func doneRequest(r VerbRequest, id, conclusion string) PublishRequest {
 				if obligation.State == "open" {
 					return nil, fmt.Errorf("goal %s has open review obligation finding=%s chain=%s test=%s", id, obligation.Finding, obligation.Chain, obligation.Test)
 				}
+			}
+			if err := doneCarryRefusal(r.Endpoint.Root, t, carryCodeTip(r.Endpoint, tip), id, f, r.Now); err != nil {
+				return nil, err
 			}
 			// Queued concludes directly; a foreign
 			// claim concludes only under a human, and the override
@@ -2608,4 +2642,1265 @@ func editDeltas(id string, fields EditFields) []FieldDelta {
 		deltas = append(deltas, FieldDelta{Target: id, Field: "labels", New: strings.Join(*fields.Labels, ",")})
 	}
 	return deltas
+}
+
+const (
+	HumanCarriedChain = "human-carried"
+	defaultCarryLife  = 2 * time.Hour
+	maximumCarryLife  = 4 * time.Hour
+)
+
+// CarryWord is the durable human word extracted from one goal-history row.
+type CarryWord struct {
+	Goal       string
+	History    HistoryLine
+	Workspace  string
+	Past       string
+	Expires    time.Time
+	Supersedes string
+}
+
+// CarryReservation is the newest reservation row for one carry word and its
+// derived state.
+type CarryReservation struct {
+	Goal    string
+	History HistoryLine
+	State   string
+}
+
+// CarryConsumption is the first durable fact that consumed a word.
+type CarryConsumption struct {
+	Kind string
+	ID   string
+}
+
+// CarryDebt is one unpaid carry found before a new word or reservation.
+type CarryDebt struct {
+	Kind, Goal, ID, Detail string
+}
+
+// CarryAskError is the question-shaped outcome shared by the command and
+// landing boundaries.
+type CarryAskError struct {
+	Code string
+	Text string
+}
+
+func (e *CarryAskError) Error() string {
+	if e == nil {
+		return ""
+	}
+	return e.Code + ": " + e.Text
+}
+
+func carryAsk(code, text string) error { return &CarryAskError{Code: code, Text: text} }
+
+func carryAskFromRejectedDetail(detail string) error {
+	code, text, ok := strings.Cut(detail, ": ")
+	if !ok || text == "" || (code != "goal-item-not-held" && !strings.HasPrefix(code, "carry-")) {
+		return nil
+	}
+	return carryAsk(code, text)
+}
+
+var carryTokenPattern = regexp.MustCompile(`(^|\s)carry workspace=([0-9a-f]{40}) goal=([a-z0-9][a-z0-9-]*) past=([^\s]+)(\s|$)`)
+var exactCarryTokenPattern = regexp.MustCompile(`^carry workspace=[0-9a-f]{40} goal=[a-z0-9][a-z0-9-]* past=[^\s]+$`)
+
+func ValidCarryToken(value string) bool { return exactCarryTokenPattern.MatchString(value) }
+
+// ParseCarryWord accepts exactly one contiguous four-field token. Terminal
+// words carry their explicit expiry; channel words derive the fixed lifetime.
+func ParseCarryWord(goalID string, history HistoryLine) (CarryWord, error) {
+	reasonBeforeWhy, reasonAfterWhy, err := splitCarryReasonAtWhy(history.Reason)
+	if err != nil {
+		return CarryWord{}, err
+	}
+	matches := carryTokenPattern.FindAllStringSubmatch(reasonBeforeWhy, -1)
+	if len(matches) != 1 || matches[0][3] != goalID {
+		return CarryWord{}, fmt.Errorf("carry word must contain exactly one token for goal %s", goalID)
+	}
+	at, err := time.Parse(time.RFC3339, history.At)
+	if err != nil {
+		return CarryWord{}, fmt.Errorf("carry word has invalid time: %w", err)
+	}
+	word := CarryWord{Goal: goalID, History: history, Workspace: matches[0][2], Past: matches[0][4]}
+	if history.Verb == "carry" {
+		expires := regexp.MustCompile(`(^|\s)expires=([^\s]+)`).FindStringSubmatch(reasonBeforeWhy)
+		if len(expires) != 3 {
+			return CarryWord{}, fmt.Errorf("terminal carry word has no expires field")
+		}
+		word.Expires, err = time.Parse(time.RFC3339, expires[2])
+		if err != nil {
+			return CarryWord{}, fmt.Errorf("terminal carry word has invalid expires field: %w", err)
+		}
+		if supersedes := regexp.MustCompile(`(^|\s)supersedes=([^\s]+)`).FindStringSubmatch(reasonAfterWhy); len(supersedes) == 3 {
+			word.Supersedes = supersedes[2]
+		}
+	} else if history.Verb == "answer" {
+		word.Expires = at.Add(defaultCarryLife)
+	} else {
+		return CarryWord{}, fmt.Errorf("history verb %s is not a carry word", history.Verb)
+	}
+	return word, nil
+}
+
+// splitCarryReasonAtWhy keeps keyed fields outside the quoted human reason.
+// A token-looking substring inside why is prose, never ledger grammar.
+func splitCarryReasonAtWhy(reason string) (string, string, error) {
+	marker := strings.Index(reason, " why=")
+	if marker < 0 {
+		return reason, "", nil
+	}
+	quoted := reason[marker+len(" why="):]
+	if quoted == "" || quoted[0] != '"' {
+		return "", "", fmt.Errorf("carry word has an invalid quoted why field")
+	}
+	escaped := false
+	for i := 1; i < len(quoted); i++ {
+		switch {
+		case escaped:
+			escaped = false
+		case quoted[i] == '\\':
+			escaped = true
+		case quoted[i] == '"':
+			if _, err := strconv.Unquote(quoted[:i+1]); err != nil {
+				return "", "", fmt.Errorf("carry word has an invalid quoted why field: %w", err)
+			}
+			return reason[:marker], quoted[i+1:], nil
+		}
+	}
+	return "", "", fmt.Errorf("carry word has an unterminated quoted why field")
+}
+
+// CarryWordAt finds a terminal or channel carry word on the named goal.
+func CarryWordAt(tree *TreeGoals, goalID, opid string) (CarryWord, error) {
+	if tree == nil {
+		return CarryWord{}, fmt.Errorf("the ledger tree is absent")
+	}
+	file := tree.Live[goalID]
+	if file == nil {
+		file = tree.Done[goalID]
+	}
+	if file == nil {
+		return CarryWord{}, fmt.Errorf("goal %s is absent", goalID)
+	}
+	for _, history := range file.History {
+		terminal := history.Verb == "carry" && history.AuthorityOutcome == AuthorityOutcomeHumanAuthorityProven
+		channel := history.Verb == "answer" && history.AuthorityOutcome == AuthorityOutcomeAuthenticatedChannelWord
+		if history.Opid == opid && (terminal || channel) {
+			return ParseCarryWord(goalID, history)
+		}
+	}
+	return CarryWord{}, fmt.Errorf("carry word %s is missing on goal %s", opid, goalID)
+}
+
+func carryWords(tree *TreeGoals) []CarryWord {
+	if tree == nil {
+		return nil
+	}
+	var words []CarryWord
+	collect := func(files map[string]*GoalFile) {
+		for _, id := range sortedGoalIds(files) {
+			for _, history := range files[id].History {
+				terminal := history.Verb == "carry" && history.AuthorityOutcome == AuthorityOutcomeHumanAuthorityProven
+				channel := history.Verb == "answer" && history.AuthorityOutcome == AuthorityOutcomeAuthenticatedChannelWord
+				if !terminal && !channel {
+					continue
+				}
+				if word, err := ParseCarryWord(id, history); err == nil {
+					words = append(words, word)
+				}
+			}
+		}
+	}
+	collect(tree.Live)
+	collect(tree.Done)
+	return words
+}
+
+// OpidMachine derives the seat from the operation identifier's middle field.
+func OpidMachine(opid string) (string, error) {
+	if !validOpidShape(opid) {
+		return "", fmt.Errorf("operation id %q is not valid", opid)
+	}
+	last := strings.LastIndex(opid, "-")
+	return opid[27:last], nil
+}
+
+// CarryWordProven applies the production generation fence while allowing the
+// explicit fake-runtime fixture authority.
+func CarryWordProven(root string, word CarryWord) bool {
+	return word.History.Verb == "answer" || word.History.AuthorityGeneration > 0 || fixtureauth.FixtureModeRoot(root)
+}
+
+func CarryableName(root, name string) bool {
+	if strings.HasPrefix(name, "group:") {
+		contract, err := testpolicy.Load(filepath.Join(root, "testing.json"))
+		if err != nil {
+			return false
+		}
+		group := strings.TrimPrefix(name, "group:")
+		for _, candidate := range contract.Groups {
+			if candidate.ID == group {
+				return true
+			}
+		}
+		return false
+	}
+	for _, row := range refusal.Rows {
+		if row.Code == name && strings.HasPrefix(row.Override, "land.sh --carried") && row.Pending == "" {
+			return true
+		}
+	}
+	return false
+}
+
+func historyFiles(tree *TreeGoals) map[string]*GoalFile {
+	files := make(map[string]*GoalFile, len(tree.Live)+len(tree.Done))
+	for id, file := range tree.Live {
+		files[id] = file
+	}
+	for id, file := range tree.Done {
+		files[id] = file
+	}
+	return files
+}
+
+func carriedRow(tree *TreeGoals, approvedRef string) (string, HistoryLine, bool) {
+	for _, id := range sortedGoalIds(historyFiles(tree)) {
+		for _, history := range historyFiles(tree)[id].History {
+			if history.Verb == "carried" && history.ApprovedRef == approvedRef {
+				return id, history, true
+			}
+		}
+	}
+	return "", HistoryLine{}, false
+}
+
+func hasExactTrailer(message, key, value string) bool {
+	wanted := key + ": " + value
+	for _, line := range strings.Split(strings.ReplaceAll(message, "\r\n", "\n"), "\n") {
+		if line == wanted {
+			return true
+		}
+	}
+	return false
+}
+
+func commitWithTrailer(root, revision, key, value string) (string, error) {
+	out, err := goalGit(root, nil, "log", "--format=%H%x1f%B%x1e", revision)
+	if err != nil {
+		return "", err
+	}
+	for _, record := range strings.Split(out, "\x1e") {
+		parts := strings.SplitN(strings.TrimSpace(record), "\x1f", 2)
+		if len(parts) == 2 && hasExactTrailer(parts[1], key, value) {
+			return strings.TrimSpace(parts[0]), nil
+		}
+	}
+	return "", nil
+}
+
+func carryAnchorAndCommit(root, codeTip, opid string) (string, string, error) {
+	anchor, err := commitWithTrailer(root, codeTip, "Goal-Transaction", opid)
+	if err != nil || anchor == "" {
+		return anchor, "", err
+	}
+	commit, err := commitWithTrailer(root, anchor+".."+codeTip, "Carry", opid)
+	return anchor, commit, err
+}
+
+// CarryConsumptionAt checks ledger rows first and then the anchored code
+// range; no timestamp participates in consumption.
+func CarryConsumptionAt(root string, tree *TreeGoals, codeTip string, word CarryWord) (CarryConsumption, error) {
+	if _, row, ok := carriedRow(tree, word.History.Opid); ok {
+		if strings.HasPrefix(row.Reason, "superseded ") {
+			match := regexp.MustCompile(`(^|\s)by=([^\s]+)`).FindStringSubmatch(row.Reason)
+			if len(match) == 3 {
+				return CarryConsumption{Kind: "superseded", ID: match[2]}, nil
+			}
+		}
+		return CarryConsumption{Kind: "ledger", ID: row.Opid}, nil
+	}
+	for _, successor := range carryWords(tree) {
+		if successor.Supersedes == word.History.Opid {
+			return CarryConsumption{Kind: "superseded", ID: successor.History.Opid}, nil
+		}
+	}
+	if codeTip == "" {
+		return CarryConsumption{Kind: "none"}, nil
+	}
+	anchor, commit, err := carryAnchorAndCommit(root, codeTip, word.History.Opid)
+	if err != nil {
+		return CarryConsumption{}, err
+	}
+	if anchor == "" {
+		return CarryConsumption{Kind: "missing-anchor"}, nil
+	}
+	if commit != "" {
+		return CarryConsumption{Kind: "origin", ID: commit}, nil
+	}
+	return CarryConsumption{Kind: "none"}, nil
+}
+
+func carryingRows(file *GoalFile, ref string) []HistoryLine {
+	var rows []HistoryLine
+	if file == nil {
+		return rows
+	}
+	for _, history := range file.History {
+		if history.Verb == "carrying" && history.ApprovedRef == ref {
+			rows = append(rows, history)
+		}
+	}
+	return rows
+}
+
+// CarryReservationAt derives open, expired, abandoned, or closed from the
+// newest opening row and its durable closers.
+func CarryReservationAt(tree *TreeGoals, goalID, ref string, now time.Time) CarryReservation {
+	file := tree.Live[goalID]
+	if file == nil {
+		file = tree.Done[goalID]
+	}
+	rows := carryingRows(file, ref)
+	var opening HistoryLine
+	for _, row := range rows {
+		if strings.HasPrefix(row.Reason, "open ") || row.Reason == "open" {
+			opening = row
+		}
+	}
+	if opening.Opid == "" {
+		return CarryReservation{Goal: goalID, State: "none"}
+	}
+	// A durable carried row is the final closer. It wins even if recovery
+	// previously abandoned the local reservation: the canonical landing is
+	// the debt-bearing fact the reservation exists to serialize.
+	if _, _, ok := carriedRow(tree, ref); ok {
+		return CarryReservation{Goal: goalID, History: opening, State: "closed"}
+	}
+	for _, row := range rows {
+		if row.Opid != opening.Opid && strings.HasPrefix(row.Reason, "abandoned ") && strings.Contains(row.Reason, "of="+opening.Opid) {
+			return CarryReservation{Goal: goalID, History: opening, State: "abandoned"}
+		}
+	}
+	expiry := regexp.MustCompile(`(^|\s)expires=([^\s]+)`).FindStringSubmatch(opening.Reason)
+	if len(expiry) == 3 {
+		if stamp, err := time.Parse(time.RFC3339, expiry[2]); err == nil && !now.Before(stamp) {
+			return CarryReservation{Goal: goalID, History: opening, State: "expired"}
+		}
+	}
+	return CarryReservation{Goal: goalID, History: opening, State: "open"}
+}
+
+func carryCodeTip(endpoint Endpoint, capturedTip string) string {
+	if capturedTip != "" && !endpoint.LocalMode() {
+		return capturedTip
+	}
+	return "refs/heads/main"
+}
+
+func openCarryWords(root string, tree *TreeGoals, codeTip, seat string, now time.Time) ([]CarryWord, error) {
+	var open []CarryWord
+	for _, word := range carryWords(tree) {
+		if !CarryWordProven(root, word) || !now.Before(word.Expires) {
+			continue
+		}
+		wordSeat, err := OpidMachine(word.History.Opid)
+		if err != nil || wordSeat != seat {
+			continue
+		}
+		consumption, err := CarryConsumptionAt(root, tree, codeTip, word)
+		if err != nil {
+			return nil, err
+		}
+		if consumption.Kind == "none" || consumption.Kind == "missing-anchor" {
+			open = append(open, word)
+		}
+	}
+	sort.Slice(open, func(i, j int) bool { return open[i].History.Opid < open[j].History.Opid })
+	return open, nil
+}
+
+// OpenCarryWords exposes the counter's single definition to the read-only
+// landing classifier and steward summary.
+func OpenCarryWords(root string, tree *TreeGoals, codeTip, seat string, now time.Time) ([]CarryWord, error) {
+	return openCarryWords(root, tree, codeTip, seat, now)
+}
+
+type CarryCounts struct{ Today, Open, Inflight, Debt int }
+
+func LandedCarryCount(file *GoalFile) int {
+	count := 0
+	if file != nil {
+		for _, history := range file.History {
+			if history.Verb == "carried" && strings.HasPrefix(history.Reason, "landed ") {
+				count++
+			}
+		}
+	}
+	return count
+}
+
+func CountCarries(root string, tree *TreeGoals, codeTip string, now time.Time) (CarryCounts, error) {
+	counts := CarryCounts{}
+	for _, collection := range []map[string]*GoalFile{tree.Live, tree.Done} {
+		for _, file := range collection {
+			seenReservations := map[string]bool{}
+			for _, history := range file.History {
+				if history.Verb == "carried" && strings.HasPrefix(history.Reason, "landed ") {
+					if stamp, err := time.Parse(time.RFC3339, history.At); err == nil && stamp.UTC().Format("2006-01-02") == now.UTC().Format("2006-01-02") {
+						counts.Today++
+					}
+				}
+				if history.Verb == "carrying" && history.ApprovedRef != "" && !seenReservations[history.ApprovedRef] {
+					seenReservations[history.ApprovedRef] = true
+					if CarryReservationAt(tree, file.Id, history.ApprovedRef, now).State == "open" {
+						counts.Inflight++
+					}
+				}
+			}
+			for _, obligation := range file.ReviewObligations {
+				if obligation.Chain == HumanCarriedChain && obligation.State == "open" {
+					counts.Debt++
+				}
+			}
+		}
+	}
+	for _, word := range carryWords(tree) {
+		if !CarryWordProven(root, word) || !now.Before(word.Expires) {
+			continue
+		}
+		consumption, err := CarryConsumptionAt(root, tree, codeTip, word)
+		if err != nil {
+			return CarryCounts{}, err
+		}
+		if consumption.Kind == "none" || consumption.Kind == "missing-anchor" {
+			counts.Open++
+		}
+	}
+	return counts, nil
+}
+
+func openCarryingDebt(tree *TreeGoals, exceptRef string, now time.Time) (CarryDebt, bool) {
+	for _, id := range sortedGoalIds(tree.Live) {
+		file := tree.Live[id]
+		seen := map[string]bool{}
+		for _, history := range file.History {
+			if history.Verb != "carrying" || history.ApprovedRef == "" || seen[history.ApprovedRef] || history.ApprovedRef == exceptRef {
+				continue
+			}
+			seen[history.ApprovedRef] = true
+			reservation := CarryReservationAt(tree, id, history.ApprovedRef, now)
+			if reservation.State == "open" {
+				seat, _ := OpidMachine(reservation.History.Opid)
+				expires := regexp.MustCompile(`(^|\s)expires=([^\s]+)`).FindStringSubmatch(reservation.History.Reason)
+				detail := ""
+				if len(expires) == 3 {
+					detail = expires[2]
+				}
+				return CarryDebt{Kind: "inflight", Goal: id, ID: reservation.History.Opid, Detail: "seat=" + seat + " expires=" + detail}, true
+			}
+		}
+	}
+	return CarryDebt{}, false
+}
+
+// CarryDebtAt finds reviewed-late, in-flight, and landed-without-a-row debt
+// in that order.
+func CarryDebtAt(root string, tree *TreeGoals, base, exceptRef string, now time.Time) (CarryDebt, bool, error) {
+	for _, id := range sortedGoalIds(tree.Live) {
+		for _, obligation := range tree.Live[id].ReviewObligations {
+			if obligation.Chain != HumanCarriedChain || obligation.State != "open" || !strings.HasPrefix(obligation.Artifact, "commit:") {
+				continue
+			}
+			commit := strings.TrimPrefix(obligation.Artifact, "commit:")
+			ancestor, err := IsAncestor(root, commit, base)
+			if err != nil {
+				return CarryDebt{}, false, err
+			}
+			if ancestor {
+				return CarryDebt{Kind: "obligation", Goal: id, ID: obligation.Finding, Detail: obligation.Artifact}, true, nil
+			}
+		}
+	}
+	if debt, ok := openCarryingDebt(tree, exceptRef, now); ok {
+		return debt, true, nil
+	}
+	for _, word := range carryWords(tree) {
+		if !CarryWordProven(root, word) {
+			continue
+		}
+		if _, _, exists := carriedRow(tree, word.History.Opid); exists {
+			continue
+		}
+		consumption, err := CarryConsumptionAt(root, tree, base, word)
+		if err != nil {
+			return CarryDebt{}, false, err
+		}
+		if consumption.Kind == "origin" {
+			return CarryDebt{Kind: "unrecorded", Goal: word.Goal, ID: word.History.Opid, Detail: consumption.ID}, true, nil
+		}
+	}
+	return CarryDebt{}, false, nil
+}
+
+func carryDebtText(debt CarryDebt) string {
+	switch debt.Kind {
+	case "obligation":
+		return fmt.Sprintf("carry debt is unpaid: goal %s has open obligation %s at %s; discharge it with a code critic of the commit or goal accept-risk", debt.Goal, debt.ID, debt.Detail)
+	case "inflight":
+		return fmt.Sprintf("carry debt is unpaid: reservation %s on goal %s is in flight (%s)", debt.ID, debt.Goal, debt.Detail)
+	case "unrecorded":
+		return fmt.Sprintf("carry debt is unpaid: commit %s carries word %s without its ledger row; close it with land.sh --carried %s", debt.Detail, debt.ID, debt.ID)
+	default:
+		return "carry debt is unpaid"
+	}
+}
+
+// CarryArgs is the complete terminal-word input after the command layer has
+// verified and projected the supplied tree.
+type CarryArgs struct {
+	Goal, Workspace, Past, Why, Supersede string
+	Expires                               time.Time
+	Transfer, RaiseFormat                 bool
+}
+
+const carryRemoteRequiredText = "a carried landing needs a code remote: set goal.sync-remote"
+
+func carryRemoteRequired() error { return carryAsk("carry-remote-required", carryRemoteRequiredText) }
+
+func Carry(r VerbRequest, args CarryArgs, proof *humanauthority.Proof) (PublishResult, error) {
+	if r.Endpoint.LocalMode() {
+		return PublishResult{}, carryRemoteRequired()
+	}
+	if proof == nil || !proof.ValidFor(r.Endpoint.Root) || r.Actor.Human == "" {
+		return PublishResult{}, fmt.Errorf("goal carry requires the enrolled human terminal; carry takes no relayed word")
+	}
+	if args.Goal == "" || args.Workspace == "" || args.Past == "" || strings.TrimSpace(args.Why) == "" {
+		return PublishResult{}, fmt.Errorf("goal carry requires the goal, workspace tree, named refusal, and why")
+	}
+	if !args.Expires.After(r.Now) || args.Expires.Sub(r.Now) > maximumCarryLife {
+		return PublishResult{}, carryAsk("carry-word-expired", "the carry expiry must be after now and no more than the four-hour ceiling")
+	}
+	if !CarryableName(r.Endpoint.Root, args.Past) {
+		return PublishResult{}, carryAsk("carry-not-carryable", fmt.Sprintf("%s is not a refusal or testing group a carry word may name", args.Past))
+	}
+	request := carryRequest(r, args, proof.TerminalGeneration)
+	result, err := Publish(r.Endpoint, request)
+	if err != nil {
+		return result, err
+	}
+	if result.Outcome == OutcomeRejected {
+		if ask := carryAskFromRejectedDetail(result.Detail); ask != nil {
+			return result, ask
+		}
+	}
+	return result, nil
+}
+
+func doneCarryRefusal(root string, tree *TreeGoals, codeTip, id string, file *GoalFile, now time.Time) error {
+	goalOnly := &TreeGoals{Root: tree.Root, Live: map[string]*GoalFile{id: file}, Done: map[string]*GoalFile{}}
+	for _, word := range carryWords(goalOnly) {
+		if !CarryWordProven(root, word) {
+			continue
+		}
+		consumption, err := CarryConsumptionAt(root, tree, codeTip, word)
+		if err != nil {
+			return err
+		}
+		if consumption.Kind == "origin" || (consumption.Kind == "none" && now.Before(word.Expires)) {
+			return fmt.Errorf("goal %s has open carry word %s; land it, supersede it, or let it expire; a carried commit without its ledger row must be closed with land.sh --carried %s whether the word is expired or not", id, word.History.Opid, word.History.Opid)
+		}
+	}
+	return nil
+}
+
+func carryDebtAskAt(root string, tree *TreeGoals, codeTip, exceptRef string, now time.Time) error {
+	debt, found, err := CarryDebtAt(root, tree, codeTip, exceptRef, now)
+	if err != nil {
+		return err
+	}
+	if found {
+		return carryAsk("carry-debt-unpaid", carryDebtText(debt))
+	}
+	return nil
+}
+
+func carryRequest(r VerbRequest, args CarryArgs, generation uint64) PublishRequest {
+	return PublishRequest{Opid: r.opid(), Machine: r.Actor.Machine, Lineage: r.Actor.Lineage,
+		Intent: Intent{Verb: "carry", Targets: []string{args.Goal}, Args: map[string]string{
+			"workspace": args.Workspace, "past": args.Past, "why": args.Why,
+			"expires": args.Expires.UTC().Format(time.RFC3339), "supersede": args.Supersede,
+			"transfer": strconv.FormatBool(args.Transfer), "raiseFormat": strconv.FormatBool(args.RaiseFormat),
+			"generation": strconv.FormatUint(generation, 10), "by": r.Actor.Human,
+		}}, Message: "goal carry " + args.Goal,
+		Mutate: func(tip string) ([]Change, error) {
+			tree, err := loadTree(r.Endpoint.Root, tip)
+			if err != nil {
+				return nil, err
+			}
+			goalFile := tree.Live[args.Goal]
+			if goalFile == nil {
+				return nil, carryAsk("carry-goal-not-live", fmt.Sprintf("goal %s is not live", args.Goal))
+			}
+			if opidLanded(goalFile, r) {
+				return nil, AlreadyApplied{}
+			}
+			if tree.Root.FormatVersion == "1" && !args.RaiseFormat {
+				return nil, carryAsk("carry-format-required", "the ledger is at format 1; a carry word needs format 2, which every older engine refuses to read: rebuild and re-arm every seat (`metasystem up` or `steward arm`), then run `goal carry --raise-format`")
+			}
+			if tree.Root.FormatVersion != "1" && args.RaiseFormat {
+				return nil, fmt.Errorf("--raise-format is only valid while the ledger is at format 1")
+			}
+			codeTip := carryCodeTip(r.Endpoint, tip)
+			if err := carryDebtAskAt(r.Endpoint.Root, tree, codeTip, "", r.Now); err != nil {
+				return nil, err
+			}
+			seat, _ := OpidMachine(r.opid())
+			open, openErr := openCarryWords(r.Endpoint.Root, tree, codeTip, seat, r.Now)
+			if openErr != nil {
+				return nil, openErr
+			}
+			maximum, maxErr := config.CarryOpenMax(filepath.Join(r.Endpoint.Root, "metasystem.conf"))
+			if maxErr != nil {
+				return nil, maxErr
+			}
+			if args.Supersede == "" && uint64(len(open)) >= maximum {
+				return nil, carryAsk("carry-cap-reached", fmt.Sprintf("carry cap reached by %s; supersede it with --supersede or let it expire", carryWordList(open)))
+			}
+
+			changesByGoal := map[string]*GoalFile{args.Goal: goalFile}
+			if args.Supersede != "" {
+				target, targetFile, targetErr := carrySupersedePrecondition(r, tree, codeTip, args)
+				if targetErr != nil {
+					return nil, targetErr
+				}
+				changesByGoal[target.Goal] = targetFile
+				touch(targetFile, r, "carried", []string{target.Goal})
+				closer := &targetFile.History[len(targetFile.History)-1]
+				closer.ApprovedRef = target.History.Opid
+				closer.Reason = "superseded by=" + r.opid()
+			}
+			touch(goalFile, r, "carry", []string{args.Goal})
+			row := &goalFile.History[len(goalFile.History)-1]
+			row.AuthorityOutcome = AuthorityOutcomeHumanAuthorityProven
+			row.AuthorityGeneration = generation
+			row.Reason = fmt.Sprintf("carry workspace=%s goal=%s past=%s expires=%s why=%s", args.Workspace, args.Goal, args.Past, args.Expires.UTC().Format(time.RFC3339), strconv.Quote(args.Why))
+			if args.Supersede != "" {
+				row.Reason += " supersedes=" + args.Supersede
+			}
+			changes := make([]Change, 0, len(changesByGoal)+1)
+			for _, id := range sortedGoalIds(changesByGoal) {
+				changes = append(changes, Change{Path: livePath(id), Content: RenderFile(changesByGoal[id])})
+			}
+			if tree.Root.FormatVersion == "1" {
+				tree.Root.FormatVersion = "2"
+				tree.Root.Revision++
+				tree.Root.History = append(tree.Root.History, HistoryLine{At: r.stamp(), Opid: r.opid(), Verb: "carry", Actor: r.Actor.historyActor(), Targets: []string{args.Goal}, Keep: -1, Reason: "FormatVersion=2"})
+				changes = append(changes, Change{Path: goalsPrefix + "backlog.md", Content: RenderRoot(tree.Root)})
+			}
+			return changes, nil
+		}, Validate: func(commit string) error { return ValidateCommit(r.Endpoint.Root, commit) }}
+}
+
+func carrySupersedePrecondition(r VerbRequest, tree *TreeGoals, codeTip string, args CarryArgs) (CarryWord, *GoalFile, error) {
+	target, err := findCarryWord(tree, args.Supersede)
+	if err != nil {
+		return CarryWord{}, nil, fmt.Errorf("supersede target %s is missing", args.Supersede)
+	}
+	targetSeat, _ := OpidMachine(target.History.Opid)
+	if targetSeat != r.Actor.Machine && !args.Transfer {
+		return CarryWord{}, nil, fmt.Errorf("supersede target belongs to seat %s; pass --transfer from the human on the new seat", targetSeat)
+	}
+	if !r.Now.Before(target.Expires) {
+		return CarryWord{}, nil, fmt.Errorf("supersede target expired at %s", target.Expires.UTC().Format(time.RFC3339))
+	}
+	reservation := CarryReservationAt(tree, target.Goal, target.History.Opid, r.Now)
+	if reservation.State == "open" {
+		return CarryWord{}, nil, fmt.Errorf("in flight on %s since %s: goal carrying --abandon %s on that seat, or wait for %s", targetSeat, reservation.History.At, reservation.History.Opid, target.Expires.UTC().Format(time.RFC3339))
+	}
+	consumption, err := CarryConsumptionAt(r.Endpoint.Root, tree, codeTip, target)
+	if err != nil {
+		return CarryWord{}, nil, err
+	}
+	if consumption.Kind != "none" {
+		if consumption.Kind == "origin" {
+			return CarryWord{}, nil, fmt.Errorf("consumed on origin by %s at %s; the record is incomplete: rerun land.sh --carried %s", consumption.ID, codeTip, target.History.Opid)
+		}
+		return CarryWord{}, nil, fmt.Errorf("supersede target consumed by %s", consumption.ID)
+	}
+	targetFile := tree.Live[target.Goal]
+	if targetFile == nil {
+		return CarryWord{}, nil, fmt.Errorf("supersede target goal %s is not live", target.Goal)
+	}
+	return target, targetFile, nil
+}
+
+func carryWordList(words []CarryWord) string {
+	parts := make([]string, 0, len(words))
+	for _, word := range words {
+		parts = append(parts, fmt.Sprintf("%s workspace=%s expires=%s", word.History.Opid, word.Workspace, word.Expires.UTC().Format(time.RFC3339)))
+	}
+	return strings.Join(parts, ", ")
+}
+
+func findCarryWord(tree *TreeGoals, opid string) (CarryWord, error) {
+	for _, word := range carryWords(tree) {
+		if word.History.Opid == opid {
+			return word, nil
+		}
+	}
+	return CarryWord{}, fmt.Errorf("carry word %s is missing", opid)
+}
+
+// CarryingArgs drives either the fleet-visible reservation or the local
+// carried-intent journal entry written immediately before the code push.
+type CarryingArgs struct {
+	Goal, ApprovedRef, Carrying, Commit, Project, Workspace string
+	Past, Battery, Missing, Failing                         string
+	Judge, JudgeTree, JudgeDigest, LiveFailure, Ledger, By  string
+	OwnerPID                                                int64
+}
+
+func validateCarryReservation(r VerbRequest, tree *TreeGoals, tip string, args CarryingArgs) (CarryWord, error) {
+	if tree.Root == nil || tree.Root.FormatVersion == "1" {
+		return CarryWord{}, carryAsk("carry-format-required", "the ledger is at format 1; a carried landing needs format 2: rebuild and re-arm every seat, then run goal carry --raise-format")
+	}
+	file := tree.Live[args.Goal]
+	if file == nil {
+		return CarryWord{}, carryAsk("carry-goal-not-live", fmt.Sprintf("goal %s is not live", args.Goal))
+	}
+	if file.State != StateClaimed || !ownPair(file.Claimed, r.Actor) {
+		return CarryWord{}, carryAsk("goal-item-not-held", fmt.Sprintf("goal %s is not held by %s+%s; use goal steal", args.Goal, r.Actor.Machine, r.Actor.Lineage))
+	}
+	word, err := CarryWordAt(tree, args.Goal, args.ApprovedRef)
+	if err != nil {
+		return CarryWord{}, carryAsk("carry-word-missing", err.Error()+"; fetch the ledger")
+	}
+	if !CarryWordProven(r.Endpoint.Root, word) {
+		return CarryWord{}, carryAsk("carry-word-unproven", fmt.Sprintf("carry word %s has no proven terminal generation", args.ApprovedRef))
+	}
+	seat, _ := OpidMachine(word.History.Opid)
+	if seat != r.Actor.Machine {
+		return CarryWord{}, carryAsk("carry-seat-mismatch", fmt.Sprintf("word %s belongs to seat %s; run goal carry --supersede %s --transfer on %s", word.History.Opid, seat, word.History.Opid, r.Actor.Machine))
+	}
+	if word.Workspace != args.Workspace {
+		return CarryWord{}, carryAsk("carry-tree-mismatch", fmt.Sprintf("word workspace=%s candidate workspace=%s; issue goal carry --supersede %s", word.Workspace, args.Workspace, word.History.Opid))
+	}
+	if !CarryableName(r.Endpoint.Root, word.Past) {
+		return CarryWord{}, carryAsk("carry-not-carryable", fmt.Sprintf("%s is not carryable", word.Past))
+	}
+	if !r.Now.Before(word.Expires) {
+		return CarryWord{}, carryAsk("carry-word-expired", fmt.Sprintf("word %s expired at %s; issue a fresh goal carry", word.History.Opid, word.Expires.UTC().Format(time.RFC3339)))
+	}
+	consumption, err := CarryConsumptionAt(r.Endpoint.Root, tree, carryCodeTip(r.Endpoint, tip), word)
+	if err != nil {
+		return CarryWord{}, err
+	}
+	if consumption.Kind != "none" {
+		return CarryWord{}, carryAsk("carry-word-consumed", fmt.Sprintf("word %s is consumed at %s:%s", word.History.Opid, consumption.Kind, consumption.ID))
+	}
+	if debt, found, debtErr := CarryDebtAt(r.Endpoint.Root, tree, carryCodeTip(r.Endpoint, tip), word.History.Opid, r.Now); debtErr != nil {
+		return CarryWord{}, debtErr
+	} else if found {
+		return CarryWord{}, carryAsk("carry-debt-unpaid", carryDebtText(debt))
+	}
+	open, err := openCarryWords(r.Endpoint.Root, tree, carryCodeTip(r.Endpoint, tip), seat, r.Now)
+	if err != nil {
+		return CarryWord{}, err
+	}
+	other := make([]CarryWord, 0, len(open))
+	for _, candidate := range open {
+		if candidate.History.Opid != word.History.Opid {
+			other = append(other, candidate)
+		}
+	}
+	maximum, err := config.CarryOpenMax(filepath.Join(r.Endpoint.Root, "metasystem.conf"))
+	if err != nil {
+		return CarryWord{}, err
+	}
+	if uint64(len(other)) >= maximum {
+		return CarryWord{}, carryAsk("carry-cap-reached", fmt.Sprintf("other open words reach the cap: %s", carryWordList(other)))
+	}
+	return word, nil
+}
+
+// Carrying publishes a reservation. With Commit set, it writes only the
+// local journal intent owned by the wrapper process.
+func Carrying(r VerbRequest, args CarryingArgs) (PublishResult, string, error) {
+	if r.Endpoint.LocalMode() {
+		return PublishResult{}, "", carryRemoteRequired()
+	}
+	if args.Commit != "" {
+		projection, err := Project(r.Endpoint, false, r.Now)
+		if err != nil {
+			return PublishResult{}, "", err
+		}
+		reservation := CarryReservationAt(projection.Tree, args.Goal, args.ApprovedRef, r.Now)
+		if reservation.State != "open" || reservation.History.Opid != args.Carrying {
+			return PublishResult{}, "", carryAsk("carry-debt-unpaid", "reserve first with goal carrying")
+		}
+		workspace := reasonField(reservation.History.Reason, "workspace")
+		if workspace != args.Workspace {
+			return PublishResult{}, "", fmt.Errorf("reservation workspace differs: row=%s intent=%s", workspace, args.Workspace)
+		}
+		intent := carriedIntent(args)
+		entryOpid := r.opid()
+		entries, entriesErr := Entries(r.Endpoint.Root)
+		if entriesErr != nil {
+			return PublishResult{}, "", entriesErr
+		}
+		for _, existing := range entries {
+			if existing.Intent.Verb == "carried" && existing.Intent.Args["approvedRef"] == args.ApprovedRef && existing.Phase != PhaseTerminal {
+				if OwnerAlive(existing) {
+					return PublishResult{}, "", fmt.Errorf("carried intent %s is in flight", existing.Opid)
+				}
+				if err := MarkTerminal(r.Endpoint.Root, existing.Opid, OutcomeAbandoned, "superseded by rebuilt carried intent"); err != nil {
+					return PublishResult{}, "", err
+				}
+			}
+		}
+		if _, err := CreateCarryingEntry(r.Endpoint.Root, entryOpid, r.Actor.Machine, r.Actor.Lineage, intent, args.OwnerPID); err != nil {
+			return PublishResult{}, "", err
+		}
+		return PublishResult{Outcome: OutcomeConfirmed, Tip: projection.Tip, Detail: "carrying=" + entryOpid}, entryOpid, nil
+	}
+	projection, err := Project(r.Endpoint, false, r.Now)
+	if err != nil {
+		return PublishResult{}, "", err
+	}
+	if reservation := CarryReservationAt(projection.Tree, args.Goal, args.ApprovedRef, r.Now); reservation.State == "open" {
+		seat, _ := OpidMachine(reservation.History.Opid)
+		if seat == r.Actor.Machine {
+			return PublishResult{Outcome: OutcomeConfirmed, Tip: projection.Tip, Detail: "carrying=" + reservation.History.Opid}, reservation.History.Opid, nil
+		}
+	}
+	// Preserve question-shaped refusals at the command boundary. Publish stores
+	// mutation refusals as terminal journal outcomes, so decide once against the
+	// projected tip before entering the transaction and rehydrate the same typed
+	// outcome if a concurrent ledger move makes the mutation re-decide.
+	word, err := validateCarryReservation(r, projection.Tree, projection.Tip, args)
+	if err != nil {
+		return PublishResult{}, "", err
+	}
+	if strings.TrimSpace(args.By) == "" {
+		args.By = word.History.Actor
+	}
+	if strings.TrimSpace(args.By) == "" {
+		return PublishResult{}, "", fmt.Errorf("goal carrying requires --by or a human actor on the carry word")
+	}
+	request := carryingRequest(r, args)
+	result, err := Publish(r.Endpoint, request)
+	if err != nil {
+		return result, "", err
+	}
+	row := r.opid()
+	if result.Outcome == OutcomeRejected {
+		if ask := carryAskFromRejectedDetail(result.Detail); ask != nil {
+			return result, "", ask
+		}
+		return result, "", nil
+	}
+	return result, row, nil
+}
+
+func carryingRequest(r VerbRequest, args CarryingArgs) PublishRequest {
+	return PublishRequest{Opid: r.opid(), Machine: r.Actor.Machine, Lineage: r.Actor.Lineage,
+		Intent:  Intent{Verb: "carrying", Targets: []string{args.Goal}, Args: map[string]string{"approvedRef": args.ApprovedRef, "workspace": args.Workspace, "tree": args.Project, "by": args.By}},
+		Message: "goal carrying " + args.Goal,
+		Mutate: func(tip string) ([]Change, error) {
+			tree, err := loadTree(r.Endpoint.Root, tip)
+			if err != nil {
+				return nil, err
+			}
+			word, err := validateCarryReservation(r, tree, tip, args)
+			if err != nil {
+				return nil, err
+			}
+			if reservation := CarryReservationAt(tree, args.Goal, args.ApprovedRef, r.Now); reservation.State == "open" {
+				seat, _ := OpidMachine(reservation.History.Opid)
+				if seat == r.Actor.Machine {
+					return nil, AlreadyApplied{}
+				}
+			}
+			file := tree.Live[args.Goal]
+			touch(file, r, "carrying", []string{args.Goal})
+			row := &file.History[len(file.History)-1]
+			row.ApprovedRef = args.ApprovedRef
+			row.Reason = fmt.Sprintf("open workspace=%s project=%s expires=%s by=%s", args.Workspace, args.Project, word.Expires.UTC().Format(time.RFC3339), args.By)
+			return []Change{{Path: livePath(args.Goal), Content: RenderFile(file)}}, nil
+		}, Validate: func(commit string) error { return ValidateCommit(r.Endpoint.Root, commit) }}
+}
+
+// AbandonCarrying closes a reservation from its own seat after proving that
+// no live wrapper still owns a matching carried intent.
+func AbandonCarrying(r VerbRequest, goalID, rowOpid, why string) (PublishResult, error) {
+	projection, err := Project(r.Endpoint, false, r.Now)
+	if err != nil {
+		return PublishResult{}, err
+	}
+	file := projection.Tree.Live[goalID]
+	if file == nil {
+		return PublishResult{}, fmt.Errorf("goal %s is not live", goalID)
+	}
+	var opening HistoryLine
+	for _, history := range file.History {
+		if history.Opid == rowOpid && history.Verb == "carrying" && strings.HasPrefix(history.Reason, "open ") {
+			opening = history
+		}
+	}
+	if opening.Opid == "" {
+		return PublishResult{}, fmt.Errorf("carrying row %s is missing", rowOpid)
+	}
+	seat, _ := OpidMachine(opening.Opid)
+	if seat != r.Actor.Machine {
+		return PublishResult{}, carryAsk("carry-seat-mismatch", fmt.Sprintf("reservation belongs to seat %s until %s", seat, reasonField(opening.Reason, "expires")))
+	}
+	entries, err := Entries(r.Endpoint.Root)
+	if err != nil {
+		return PublishResult{}, err
+	}
+	for _, entry := range entries {
+		if entry.Intent.Verb == "carried" && entry.Intent.Args["approvedRef"] == opening.ApprovedRef && entry.Phase != PhaseTerminal {
+			if OwnerAlive(entry) {
+				return PublishResult{}, carryAsk("carry-debt-unpaid", fmt.Sprintf("carried intent %s is in flight", entry.Opid))
+			}
+			_ = MarkTerminal(r.Endpoint.Root, entry.Opid, OutcomeAbandoned, "reservation abandoned")
+		}
+	}
+	return Publish(r.Endpoint, abandonCarryingRequest(r, goalID, opening, rowOpid, why))
+}
+
+func abandonCarryingRequest(r VerbRequest, goalID string, opening HistoryLine, rowOpid, why string) PublishRequest {
+	return PublishRequest{Opid: r.opid(), Machine: r.Actor.Machine, Lineage: r.Actor.Lineage, Intent: Intent{Verb: "carrying", Targets: []string{goalID}, Args: map[string]string{"abandon": rowOpid}}, Message: "goal carrying abandon " + goalID,
+		Mutate: func(tip string) ([]Change, error) {
+			tree, err := loadTree(r.Endpoint.Root, tip)
+			if err != nil {
+				return nil, err
+			}
+			file := tree.Live[goalID]
+			if file == nil {
+				return nil, fmt.Errorf("goal %s is not live", goalID)
+			}
+			reservation := CarryReservationAt(tree, goalID, opening.ApprovedRef, r.Now)
+			if reservation.State == "abandoned" || reservation.State == "closed" {
+				return nil, AlreadyApplied{}
+			}
+			if reservation.State != "open" || reservation.History.Opid != rowOpid {
+				return nil, fmt.Errorf("reservation %s is %s", rowOpid, reservation.State)
+			}
+			touch(file, r, "carrying", []string{goalID})
+			row := &file.History[len(file.History)-1]
+			row.ApprovedRef = opening.ApprovedRef
+			row.Reason = "abandoned of=" + rowOpid + " why=" + strconv.Quote(why)
+			return []Change{{Path: livePath(goalID), Content: RenderFile(file)}}, nil
+		}, Validate: func(commit string) error { return ValidateCommit(r.Endpoint.Root, commit) }}
+}
+
+func reasonField(reason, key string) string {
+	for _, field := range strings.Fields(reason) {
+		if value, ok := strings.CutPrefix(field, key+"="); ok {
+			return value
+		}
+	}
+	return ""
+}
+
+// CarriedArgs is the durable fourteen-field landing record plus its
+// reservation identity.
+type CarriedArgs struct {
+	Goal, ApprovedRef, Carrying, Commit, Project, Workspace string
+	Past, Battery, Missing, Failing                         string
+	Judge, JudgeTree, JudgeDigest, LiveFailure, Ledger, By  string
+	Outcome                                                 string
+}
+
+func carriedIntent(args CarryingArgs) Intent {
+	return Intent{Verb: "carried", Targets: []string{args.Goal}, Args: map[string]string{
+		"approvedRef": args.ApprovedRef, "carrying": args.Carrying, "commit": args.Commit,
+		"tree": args.Project, "workspace": args.Workspace, "past": args.Past,
+		"battery": args.Battery, "missing": listOrDash(args.Missing), "failing": listOrDash(args.Failing),
+		"judge": args.Judge, "judgeTree": valueOrDash(args.JudgeTree), "judgeDigest": args.JudgeDigest,
+		"liveFailure": valueOrDash(args.LiveFailure), "ledger": args.Ledger, "by": args.By, "outcome": "landed",
+	}}
+}
+
+func valueOrDash(value string) string {
+	if value == "" {
+		return "-"
+	}
+	return value
+}
+
+func listOrDash(value string) string { return valueOrDash(strings.TrimSpace(value)) }
+
+var carriedCounselorAppend = func(string, string, HistoryLine, time.Time) error {
+	return fmt.Errorf("the carried counselor writer is not bound")
+}
+
+// BindCarriedCounselorAppend connects the upward counselor owner without a
+// goal-to-counselor import cycle. It is called during counselor package init.
+func BindCarriedCounselorAppend(appendLine func(string, string, HistoryLine, time.Time) error) {
+	if appendLine != nil {
+		carriedCounselorAppend = appendLine
+	}
+}
+
+func carriedAfterConfirmed(root, approvedRef string, now time.Time) func(string) error {
+	return func(tip string) error {
+		tree, err := loadTree(root, tip)
+		if err != nil {
+			return err
+		}
+		goalID, row, ok := carriedRow(tree, approvedRef)
+		if !ok || !strings.HasPrefix(row.Reason, "landed ") {
+			return nil
+		}
+		return carriedCounselorAppend(root, goalID, row, now)
+	}
+}
+
+// RepairCarriedCounselor replays only the confirmed carried row's idempotent
+// local effect; it runs no ledger transaction.
+func RepairCarriedCounselor(endpoint Endpoint, approvedRef string, now time.Time) error {
+	projection, err := Project(endpoint, false, now)
+	if err != nil {
+		return err
+	}
+	goalID, row, ok := carriedRow(projection.Tree, approvedRef)
+	if !ok {
+		return fmt.Errorf("carried row for %s is absent", approvedRef)
+	}
+	return carriedCounselorAppend(endpoint.Root, goalID, row, now)
+}
+
+// Carried completes an existing local carried intent under its entry.
+func Carried(r VerbRequest, entryOpid string) (PublishResult, error) {
+	if r.Endpoint.LocalMode() {
+		return PublishResult{}, carryRemoteRequired()
+	}
+	// The format fence precedes even terminal journal replay. Otherwise a
+	// format-1 seat could report a carried record as confirmed without ever
+	// consulting the accepted ledger.
+	if projection, err := Project(r.Endpoint, false, r.Now); err == nil && (projection.Tree.Root == nil || projection.Tree.Root.FormatVersion == "1") {
+		return PublishResult{}, carryAsk("carry-format-required", "the ledger is at format 1; a carried landing needs format 2: rebuild and re-arm every seat, then run goal carry --raise-format")
+	}
+	if existing, err := ReadEntry(r.Endpoint.Root, entryOpid); err == nil && existing.Phase == PhaseTerminal && existing.Outcome == OutcomeConfirmed {
+		return PublishResult{Outcome: OutcomeConfirmed, Detail: "idempotent"}, nil
+	}
+	entry, err := TakeOverForCompletion(r.Endpoint.Root, entryOpid)
+	if err != nil {
+		return PublishResult{}, err
+	}
+	if entry.Intent.Verb != "carried" || entry.Phase != PhaseCreated {
+		return PublishResult{}, fmt.Errorf("journal entry %s is not a created carried intent", entryOpid)
+	}
+	request, err := carriedRequestFromIntent(r.Endpoint, entry)
+	if err != nil {
+		return PublishResult{}, err
+	}
+	result, err := CompleteEntry(r.Endpoint, request)
+	if err == nil && result.Outcome == OutcomeRejected {
+		if ask := carryAskFromRejectedDetail(result.Detail); ask != nil {
+			return result, ask
+		}
+	}
+	return result, err
+}
+
+// CarriedFromCommit publishes a rebuilt record after the local journal was
+// lost. The command layer derives every argument from commit trailers.
+func CarriedFromCommit(r VerbRequest, args CarriedArgs) (PublishResult, error) {
+	if r.Endpoint.LocalMode() {
+		return PublishResult{}, carryRemoteRequired()
+	}
+	result, err := Publish(r.Endpoint, carriedRequest(r, args))
+	if err == nil && result.Outcome == OutcomeRejected {
+		if ask := carryAskFromRejectedDetail(result.Detail); ask != nil {
+			return result, ask
+		}
+	}
+	return result, err
+}
+
+func carriedRequestFromIntent(endpoint Endpoint, entry Entry) (PublishRequest, error) {
+	return carriedRequestFromIntentMode(endpoint, entry, false)
+}
+
+func carriedRequestFromIntentMode(endpoint Endpoint, entry Entry, recovering bool) (PublishRequest, error) {
+	if len(entry.Intent.Targets) != 1 || len(entry.Opid) < 26 {
+		return PublishRequest{}, fmt.Errorf("carried intent %s has no unique goal", entry.Opid)
+	}
+	r := VerbRequest{Endpoint: endpoint, Actor: actorFromEntry(entry), Ulid: entry.Opid[:26], Now: timeNowUTC()}
+	args := CarriedArgs{Goal: entry.Intent.Targets[0], ApprovedRef: entry.Intent.Args["approvedRef"], Carrying: entry.Intent.Args["carrying"], Commit: entry.Intent.Args["commit"], Project: entry.Intent.Args["tree"], Workspace: entry.Intent.Args["workspace"], Past: entry.Intent.Args["past"], Battery: entry.Intent.Args["battery"], Missing: entry.Intent.Args["missing"], Failing: entry.Intent.Args["failing"], Judge: entry.Intent.Args["judge"], JudgeTree: entry.Intent.Args["judgeTree"], JudgeDigest: entry.Intent.Args["judgeDigest"], LiveFailure: entry.Intent.Args["liveFailure"], Ledger: entry.Intent.Args["ledger"], By: entry.Intent.Args["by"], Outcome: entry.Intent.Args["outcome"]}
+	return carriedRequestMode(r, args, recovering), nil
+}
+
+func carriedRequest(r VerbRequest, args CarriedArgs) PublishRequest {
+	return carriedRequestMode(r, args, false)
+}
+
+func carriedRequestMode(r VerbRequest, args CarriedArgs, recovering bool) PublishRequest {
+	intent := Intent{Verb: "carried", Targets: []string{args.Goal}, Args: map[string]string{
+		"approvedRef": args.ApprovedRef, "carrying": args.Carrying, "commit": args.Commit,
+		"tree": args.Project, "workspace": args.Workspace, "past": args.Past,
+		"battery": args.Battery, "missing": listOrDash(args.Missing), "failing": listOrDash(args.Failing),
+		"judge": args.Judge, "judgeTree": valueOrDash(args.JudgeTree), "judgeDigest": args.JudgeDigest,
+		"liveFailure": valueOrDash(args.LiveFailure), "ledger": args.Ledger, "by": args.By, "outcome": valueOrLanded(args.Outcome),
+	}}
+	return PublishRequest{Opid: r.opid(), Machine: r.Actor.Machine, Lineage: r.Actor.Lineage, Intent: intent, Message: "goal carried " + args.Goal,
+		Mutate: func(tip string) ([]Change, error) {
+			tree, err := loadTree(r.Endpoint.Root, tip)
+			if err != nil {
+				return nil, err
+			}
+			if tree.Root == nil || tree.Root.FormatVersion == "1" {
+				return nil, carryAsk("carry-format-required", "the ledger is at format 1; a carried landing needs format 2: rebuild and re-arm every seat, then run goal carry --raise-format")
+			}
+			if rowGoal, existing, ok := carriedRow(tree, args.ApprovedRef); ok {
+				if err := compareCarriedReplay(rowGoal, args.Goal, existing, intent.Args); err != nil {
+					return nil, err
+				}
+				return nil, AlreadyApplied{}
+			}
+			word, wordErr := CarryWordAt(tree, args.Goal, args.ApprovedRef)
+			if wordErr != nil {
+				return nil, wordErr
+			}
+			if !CarryWordProven(r.Endpoint.Root, word) {
+				return nil, fmt.Errorf("carry word %s is not proven", args.ApprovedRef)
+			}
+			if word.Workspace != args.Workspace || word.Past != args.Past {
+				return nil, fmt.Errorf("carried record differs from its word: workspace=%s/%s past=%s/%s", args.Workspace, word.Workspace, args.Past, word.Past)
+			}
+			_, landedCommit, scanErr := carryAnchorAndCommit(r.Endpoint.Root, carryCodeTip(r.Endpoint, tip), args.ApprovedRef)
+			if scanErr != nil {
+				return nil, scanErr
+			}
+			if landedCommit != args.Commit {
+				if !recovering {
+					return nil, fmt.Errorf("the carried commit %s is not on origin", args.Commit)
+				}
+				file := tree.Live[args.Goal]
+				if file == nil {
+					return nil, NothingToDo{Reason: fmt.Sprintf("the carried commit %s is not on origin; the word %s stays open", args.Commit, args.ApprovedRef)}
+				}
+				reservation := CarryReservationAt(tree, args.Goal, args.ApprovedRef, r.Now)
+				if reservation.State != "open" || (args.Carrying != "" && reservation.History.Opid != args.Carrying) {
+					return nil, NothingToDo{Reason: fmt.Sprintf("the carried commit %s is not on origin; the word %s stays open", args.Commit, args.ApprovedRef)}
+				}
+				touch(file, r, "carrying", []string{args.Goal})
+				closer := &file.History[len(file.History)-1]
+				closer.ApprovedRef = args.ApprovedRef
+				closer.Reason = fmt.Sprintf("abandoned of=%s why=%s", reservation.History.Opid, strconv.Quote("the carried commit "+args.Commit+" is not on origin"))
+				return []Change{{Path: livePath(args.Goal), Content: RenderFile(file)}}, nil
+			}
+			file := tree.Live[args.Goal]
+			if file == nil {
+				file = tree.Done[args.Goal]
+			}
+			if file == nil {
+				return nil, fmt.Errorf("goal %s is absent", args.Goal)
+			}
+			if args.Outcome != "" && args.Outcome != "landed" {
+				return nil, fmt.Errorf("carried outcome must be landed")
+			}
+			reservation := CarryReservationAt(tree, args.Goal, args.ApprovedRef, r.Now)
+			if reservation.State == "open" {
+				rowWorkspace := reasonField(reservation.History.Reason, "workspace")
+				if rowWorkspace != args.Workspace {
+					return nil, fmt.Errorf("carrying reservation workspace differs: row=%s intent=%s", rowWorkspace, args.Workspace)
+				}
+			}
+			touch(file, r, "carried", []string{args.Goal})
+			row := &file.History[len(file.History)-1]
+			row.ApprovedRef = args.ApprovedRef
+			row.Reason = renderCarriedReason(intent.Args)
+			finding := "carried:" + args.Commit
+			if args.Battery == "red" {
+				finding += ":battery-red"
+			}
+			found := false
+			for _, obligation := range file.ReviewObligations {
+				if obligation.Finding == finding && obligation.Chain == HumanCarriedChain {
+					found = true
+				}
+			}
+			if !found {
+				file.ReviewObligations = append(file.ReviewObligations, ReviewObligation{Finding: finding, Chain: HumanCarriedChain, Artifact: "commit:" + args.Commit, Test: "pending", State: "open"})
+				if file.BudgetExceptions < ^uint16(0) {
+					file.BudgetExceptions++
+				}
+			}
+			path := livePath(args.Goal)
+			if tree.Done[args.Goal] != nil {
+				path = donePath(args.Goal)
+			}
+			return []Change{{Path: path, Content: RenderFile(file)}}, nil
+		}, Validate: func(commit string) error { return ValidateCommit(r.Endpoint.Root, commit) }, AfterConfirmed: carriedAfterConfirmed(r.Endpoint.Root, args.ApprovedRef, r.Now)}
+}
+
+func valueOrLanded(value string) string {
+	if value == "" {
+		return "landed"
+	}
+	return value
+}
+
+var carriedFieldOrder = []string{"commit", "workspace", "project", "past", "battery", "missing", "failing", "judge", "judgeTree", "judgeDigest", "liveFailure", "ledger", "by"}
+
+func renderCarriedReason(args map[string]string) string {
+	var fields []string
+	for _, key := range carriedFieldOrder {
+		fields = append(fields, key+"="+carriedIntentValue(args, key))
+	}
+	return args["outcome"] + " " + strings.Join(fields, " ")
+}
+
+func parseCarriedReason(reason string) (map[string]string, error) {
+	parts := strings.Fields(reason)
+	if len(parts) != len(carriedFieldOrder)+1 || (parts[0] != "landed" && parts[0] != "superseded") {
+		return nil, fmt.Errorf("carried reason has an invalid field count or outcome")
+	}
+	values := map[string]string{"outcome": parts[0]}
+	if parts[0] == "superseded" {
+		return values, nil
+	}
+	for index, key := range carriedFieldOrder {
+		value, ok := strings.CutPrefix(parts[index+1], key+"=")
+		if !ok || value == "" {
+			return nil, fmt.Errorf("carried reason is missing %s", key)
+		}
+		values[key] = value
+	}
+	return values, nil
+}
+
+func compareCarriedRow(row HistoryLine, intent map[string]string) error {
+	values, err := parseCarriedReason(row.Reason)
+	if err != nil {
+		return err
+	}
+	for _, key := range append(carriedFieldOrder, "outcome") {
+		given := carriedIntentValue(intent, key)
+		if values[key] != given {
+			return fmt.Errorf("carried replay refused: %s differs: row=%s intent=%s", key, values[key], given)
+		}
+	}
+	return nil
+}
+
+func compareCarriedReplay(rowGoal, intentGoal string, row HistoryLine, intent map[string]string) error {
+	if rowGoal != intentGoal {
+		return fmt.Errorf("carried replay refused: goal differs: row=%s intent=%s", rowGoal, intentGoal)
+	}
+	return compareCarriedRow(row, intent)
+}
+
+func carriedIntentValue(intent map[string]string, key string) string {
+	if key == "project" {
+		return intent["tree"]
+	}
+	return intent[key]
 }

@@ -3,7 +3,10 @@ package testpolicy
 import (
 	"encoding/json"
 	"os"
+	"path/filepath"
 	"reflect"
+	"regexp"
+	"sort"
 	"strings"
 	"testing"
 )
@@ -143,6 +146,153 @@ func appendUnique(values []string, additions ...string) []string {
 		}
 	}
 	return values
+}
+
+func TestHCL31ContractOwnsFivePackages(t *testing.T) {
+	contract := hclContract(t)
+	changed := []string{
+		"metasystem/internal/humanauthority/authority.go",
+		"metasystem/internal/channel/question.go",
+		"metasystem/internal/governance/types.go",
+		"metasystem/internal/counselor/register.go",
+		"metasystem/internal/refusal/register.go",
+		"metasystem/cmd/metasystem/channel_verbs_test.go",
+		"metasystem/cmd/metasystem/goalsync_mutations_test.go",
+		"metasystem/cmd/metasystem/landing_verbs_test.go",
+	}
+	plan, err := Select(contract, SelectionRequest{ChangedPaths: changed, RequestedMode: ModeAuto, Purpose: PurposeDelivery})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(plan.Uncertainty) != 0 {
+		t.Fatalf("carried owner paths are uncertain: %v", plan.Uncertainty)
+	}
+	for _, group := range []string{"authority-standard", "refusal-register-standard", "carry-goal-standard", "carry-landing-standard", "carry-plumbing-standard"} {
+		if !contains(plan.SelectedGroups, group) {
+			t.Errorf("carried owner selection omitted %s", group)
+		}
+	}
+}
+
+func TestHCL34PlanExecutesEveryFixture(t *testing.T) {
+	contract := hclContract(t)
+	module := filepath.Clean(filepath.Join("..", ".."))
+	type owner struct {
+		changed string
+		pkg     string
+		scan    string
+	}
+	owners := []owner{
+		{"metasystem/internal/goal/hcl_carry_test.go", "internal/goal", filepath.Join(module, "internal", "goal")},
+		{"metasystem/internal/landing/hcl_carried_test.go", "internal/landing", filepath.Join(module, "internal", "landing")},
+		{"metasystem/internal/channel/question_test.go", "internal/channel", filepath.Join(module, "internal", "channel")},
+		{"metasystem/internal/dispatch/review_reference_test.go", "internal/dispatch", filepath.Join(module, "internal", "dispatch")},
+		{"metasystem/internal/refusal/register_test.go", "internal/refusal", filepath.Join(module, "internal", "refusal")},
+		{"metasystem/internal/config/budget_test.go", "internal/config", filepath.Join(module, "internal", "config")},
+		{"metasystem/internal/counselor/register_test.go", "internal/counselor", filepath.Join(module, "internal", "counselor")},
+		{"metasystem/internal/steward/health_test.go", "internal/steward", filepath.Join(module, "internal", "steward")},
+		{"metasystem/internal/testpolicy/contract_test.go", "internal/testpolicy", filepath.Join(module, "internal", "testpolicy")},
+		{"metasystem/cmd/metasystem/channel_verbs_test.go", "cmd/metasystem", filepath.Join(module, "cmd", "metasystem", "channel_verbs_test.go")},
+		{"metasystem/cmd/metasystem/goalsync_mutations_test.go", "cmd/metasystem", filepath.Join(module, "cmd", "metasystem", "goalsync_mutations_test.go")},
+		{"metasystem/cmd/metasystem/landing_verbs_test.go", "cmd/metasystem", filepath.Join(module, "cmd", "metasystem", "landing_verbs_test.go")},
+	}
+	for _, owner := range owners {
+		plan, err := Select(contract, SelectionRequest{ChangedPaths: []string{owner.changed}, RequestedMode: ModeAuto, Purpose: PurposeDelivery})
+		if err != nil {
+			t.Fatalf("select %s: %v", owner.changed, err)
+		}
+		if len(plan.Uncertainty) != 0 {
+			t.Fatalf("select %s: %v", owner.changed, plan.Uncertainty)
+		}
+		for _, name := range hclFixtureNames(t, owner.scan) {
+			if !hclPlanCovers(contract, plan, owner.pkg, name) {
+				t.Errorf("owner %s does not execute %s", owner.changed, name)
+			}
+		}
+	}
+
+	// The two required negative drives prove that explicit lists cannot lose a
+	// newly added fixture silently.
+	for _, negative := range []owner{owners[0], owners[10]} {
+		plan, err := Select(contract, SelectionRequest{ChangedPaths: []string{negative.changed}, RequestedMode: ModeAuto, Purpose: PurposeDelivery})
+		if err != nil {
+			t.Fatal(err)
+		}
+		if hclPlanCovers(contract, plan, negative.pkg, "TestHCL99NegativeInventoryProbe") {
+			t.Errorf("negative inventory probe was unexpectedly covered for %s", negative.changed)
+		}
+	}
+
+	allowedCommandFiles := map[string]bool{"channel_verbs_test.go": true, "goalsync_mutations_test.go": true, "landing_verbs_test.go": true}
+	commandFiles, err := filepath.Glob(filepath.Join(module, "cmd", "metasystem", "*_test.go"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, path := range commandFiles {
+		if !allowedCommandFiles[filepath.Base(path)] && len(hclFixtureNames(t, path)) != 0 {
+			t.Errorf("command fixtures must live in the three owned files, found TestHCL in %s", filepath.Base(path))
+		}
+	}
+}
+
+func hclContract(t *testing.T) Contract {
+	t.Helper()
+	data, err := os.ReadFile("../../testing.json")
+	if err != nil {
+		t.Fatal(err)
+	}
+	contract, err := Decode(data)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return contract
+}
+
+var hclTestDeclaration = regexp.MustCompile(`(?m)^func (TestHCL[[:alnum:]_]+)\(`)
+
+func hclFixtureNames(t *testing.T, path string) []string {
+	t.Helper()
+	info, err := os.Stat(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	paths := []string{path}
+	if info.IsDir() {
+		paths, err = filepath.Glob(filepath.Join(path, "*_test.go"))
+		if err != nil {
+			t.Fatal(err)
+		}
+	}
+	seen := map[string]bool{}
+	for _, source := range paths {
+		data, err := os.ReadFile(source)
+		if err != nil {
+			t.Fatal(err)
+		}
+		for _, match := range hclTestDeclaration.FindAllSubmatch(data, -1) {
+			seen[string(match[1])] = true
+		}
+	}
+	names := make([]string, 0, len(seen))
+	for name := range seen {
+		names = append(names, name)
+	}
+	sort.Strings(names)
+	return names
+}
+
+func hclPlanCovers(contract Contract, plan Plan, pkg, name string) bool {
+	selected := set(plan.SelectedGroups)
+	for _, group := range contract.Groups {
+		if !selected[group.ID] || !contains(group.Packages, pkg) {
+			continue
+		}
+		all, names, err := GoTests(group)
+		if err == nil && (all || contains(names, name)) {
+			return true
+		}
+	}
+	return false
 }
 
 func TestOutputOwnershipPreservesTrackedBinAndInputIntegrity(t *testing.T) {

@@ -1738,6 +1738,23 @@ func TestReceiptCanaryEnvironmentIgnoresAmbientProofControls(t *testing.T) {
 	}
 }
 
+func TestHCL55CarriedJudgeGrammar(t *testing.T) {
+	tests := []struct {
+		name string
+		args []string
+	}{
+		{name: "base needs live failure", args: []string{"--root", t.TempDir(), "--tree", strings.Repeat("0", 40), "--carried", "word", "--judge", "base"}},
+		{name: "judge is live or base", args: []string{"--root", t.TempDir(), "--tree", strings.Repeat("0", 40), "--carried", "word", "--judge", "other"}},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			if code := runLandingObserve(test.args); code != 2 {
+				t.Fatalf("landing observe exited %d; want usage exit 2", code)
+			}
+		})
+	}
+}
+
 func runReceiptGit(t *testing.T, root string, args ...string) string {
 	t.Helper()
 	command := exec.Command("git", append([]string{"-C", root}, args...)...)

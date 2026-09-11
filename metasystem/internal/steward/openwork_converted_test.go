@@ -8,6 +8,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/gittree"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/goal"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/identity"
 )
@@ -35,6 +36,7 @@ func convertedBed(t *testing.T, machine string, files map[string]*goal.GoalFile)
 	run := func(args ...string) {
 		t.Helper()
 		cmd := exec.Command("git", append([]string{"-C", root}, args...)...)
+		cmd.Env = gittree.ScrubbedEnviron()
 		if out, err := cmd.CombinedOutput(); err != nil {
 			t.Fatalf("git %v: %v\n%s", args, err, out)
 		}

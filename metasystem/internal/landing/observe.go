@@ -16,7 +16,9 @@ import (
 	"sort"
 	"strconv"
 	"strings"
+	"time"
 
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/counselor"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/gittree"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/goal"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/pathclass"
@@ -29,6 +31,7 @@ const (
 	BarChain     = "a"
 	BarDirectFix = "b"
 	BarRefusal   = "c"
+	BarCarried   = "d"
 )
 
 var (
@@ -51,6 +54,13 @@ type ObserveParams struct {
 	RootJob         string
 	TestReceipt     string
 	Recertification string
+	Carried         string
+	ProjectTree     string
+	LedgerTip       string
+	Judge           string
+	LiveFailure     string
+	CarriedBy       string
+	Now             time.Time
 	VerifyTesting   func() (proofrun.TestResult, error)
 }
 
@@ -75,6 +85,9 @@ type Observation struct {
 // policy recorded in the landing base. The caller remains responsible for
 // enforcing Mode only for agent commits; human commits stay sovereign.
 func Observe(params ObserveParams) Observation {
+	if params.Carried != "" {
+		return observeCarried(params)
+	}
 	observation := observe(params)
 	if params.Recertification == "" {
 		return applyPromotion(params, observation)
@@ -131,6 +144,165 @@ func observe(params ObserveParams) Observation {
 		return observeChain(params, change)
 	}
 	return observeDirectFix(params, change)
+}
+
+// candidatePathPolicy enforces the never-carried path and record laws before
+// declaration matching. Missing-declaration remains the ordinary answer only
+// when the candidate has no stronger path-policy defect.
+func candidatePathPolicy(params ObserveParams, ledgerTree *goal.TreeGoals) error {
+	workspace := gittree.Workspace{Dir: params.RepoRoot}
+	baseTree, err := workspace.HeadTree()
+	if err != nil {
+		return &carriageError{code: "register-carriage-policy-unreadable", err: err}
+	}
+	changedPaths, err := workspace.ChangedPaths(baseTree, params.CandidateTree)
+	if err != nil {
+		return &carriageError{code: "register-carriage-policy-unreadable", err: err}
+	}
+	classes, err := loadPathClasses(workspace, baseTree)
+	if err != nil {
+		return err
+	}
+	resolved, err := resolvePathClasses(workspace, classes, changedPaths)
+	if err != nil {
+		return &carriageError{code: "register-carriage-policy-unreadable", err: err}
+	}
+	if err := nonBehaviorClassError(resolved, changedPaths, true); err != nil {
+		return err
+	}
+	for _, changedPath := range changedPaths {
+		if resolved[changedPath] != pathclass.Record {
+			continue
+		}
+		if params.Carried != "" && strings.HasPrefix(changedPath, "records/counselor/") {
+			if !containsString(appendOnlyRegisters, changedPath) {
+				return &carriageError{code: "record-not-owned", err: fmt.Errorf("record %s is not owned by the carried landing", changedPath)}
+			}
+			if err := carriedCounselorCarriageError(workspace, baseTree, params.CandidateTree, changedPath, ledgerTree); err != nil {
+				return err
+			}
+			continue
+		}
+		if err := recordCarriageError(workspace, baseTree, params.CandidateTree, classes, changedPath, params.Goal, params.Actor); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+// ValidateCarriedCandidatePaths applies the carried landing's path classes and
+// counselor-row ownership rules against one accepted goal-ledger projection.
+func ValidateCarriedCandidatePaths(params ObserveParams, ledgerTree *goal.TreeGoals) error {
+	return candidatePathPolicy(params, ledgerTree)
+}
+
+func carriedCounselorCarriageError(workspace gittree.Workspace, baseTree, candidateTree, path string, ledgerTree *goal.TreeGoals) error {
+	lines, err := carriedCounselorAppendLines(workspace, baseTree, candidateTree, path)
+	if err != nil {
+		return err
+	}
+	switch path {
+	case "records/counselor/carried-landings.jsonl":
+		return carriedLandingAppendError(lines, ledgerTree)
+	case "records/counselor/accepted-risk-register.jsonl":
+		return carriedAcceptedRiskAppendError(workspace.Dir, lines, ledgerTree)
+	default:
+		return &carriageError{code: "record-not-owned", err: fmt.Errorf("record %s is not owned by the carried landing", path)}
+	}
+}
+
+func carriedCounselorAppendLines(workspace gittree.Workspace, baseTree, candidateTree, path string) ([]string, error) {
+	before, _, err := workspace.FileAt(baseTree, path)
+	if err != nil {
+		return nil, &carriageError{code: "register-carriage-policy-unreadable", err: err}
+	}
+	after, present, err := workspace.FileAt(candidateTree, path)
+	if err != nil {
+		return nil, &carriageError{code: "register-carriage-policy-unreadable", err: err}
+	}
+	if !present || len(after) <= len(before) || !bytes.Equal(after[:len(before)], before) || len(before) > 0 && before[len(before)-1] != '\n' || after[len(after)-1] != '\n' {
+		return nil, &carriageError{code: "register-carriage-not-append-only", err: fmt.Errorf("carried counselor record %s is not an append-only set of complete lines", path)}
+	}
+	return strings.Split(strings.TrimSuffix(string(after[len(before):]), "\n"), "\n"), nil
+}
+
+func carriedLandingAppendError(lines []string, ledgerTree *goal.TreeGoals) error {
+	rows := map[string]goal.HistoryLine{}
+	if ledgerTree != nil {
+		for _, files := range []map[string]*goal.GoalFile{ledgerTree.Live, ledgerTree.Done} {
+			for _, file := range files {
+				for _, row := range file.History {
+					if row.Verb == "carried" {
+						rows[row.Opid] = row
+					}
+				}
+			}
+		}
+	}
+	for _, line := range lines {
+		var got counselor.CarriedLanding
+		if json.Unmarshal([]byte(line), &got) != nil || got.ID != "cl-"+got.OpID {
+			return &carriageError{code: "record-not-owned", err: fmt.Errorf("carried counselor line is not owned by a carried row")}
+		}
+		row, ok := rows[got.OpID]
+		expected, expectedErr := counselor.CarriedLandingLine(row)
+		if !ok || expectedErr != nil || !reflect.DeepEqual(got, expected) {
+			return &carriageError{code: "record-not-owned", err: fmt.Errorf("carried counselor line %s has no equal carried row", got.ID)}
+		}
+	}
+	return nil
+}
+
+func carriedAcceptedRiskAppendError(root string, lines []string, ledgerTree *goal.TreeGoals) error {
+	var rows []counselor.CarriedAcceptedRiskAppend
+	if ledgerTree != nil {
+		for _, files := range []map[string]*goal.GoalFile{ledgerTree.Live, ledgerTree.Done} {
+			for _, file := range files {
+				for _, risk := range file.AcceptedRisks {
+					if risk.Chain != goal.HumanCarriedChain {
+						continue
+					}
+					commit, ok := humanCarriedRiskCommit(risk.Finding)
+					if !ok {
+						continue
+					}
+					for _, history := range file.History {
+						if history.Verb != "accept-risk" || history.Opid != risk.Opid {
+							continue
+						}
+						recordedAt, parseErr := time.Parse(time.RFC3339, history.At)
+						if parseErr == nil {
+							rows = append(rows, counselor.CarriedAcceptedRiskAppend{
+								Goal: file.Id, Finding: risk.Finding, By: risk.By, Why: history.Reason,
+								OpID: risk.Opid, Commit: commit, RecordedAt: recordedAt,
+							})
+						}
+						break
+					}
+				}
+			}
+		}
+	}
+	for _, line := range lines {
+		owned := false
+		for _, row := range rows {
+			if counselor.ValidateCarriedAcceptedRiskLine(root, row, []byte(line)) == nil {
+				owned = true
+				break
+			}
+		}
+		if !owned {
+			return &carriageError{code: "record-not-owned", err: fmt.Errorf("accepted-risk counselor line has no equal human-carried accepted-risk row")}
+		}
+	}
+	return nil
+}
+
+func humanCarriedRiskCommit(finding string) (string, bool) {
+	commit := strings.TrimPrefix(finding, "carried:")
+	commit = strings.TrimSuffix(commit, ":battery-red")
+	validShape := finding == "carried:"+commit || finding == "carried:"+commit+":battery-red"
+	return commit, validShape && len(commit) == 40 && treeOID.MatchString(commit)
 }
 
 func changeDigest(root, candidateTree string) (string, error) {

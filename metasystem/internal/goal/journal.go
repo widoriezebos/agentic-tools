@@ -255,6 +255,87 @@ func CreateEntry(repoRoot string, opid, machine, lineage string, intent Intent) 
 	return e, nil
 }
 
+func ownerForPID(pid int64) (OwnerIdentity, error) {
+	exact, state, err := identity.KernelProber{}.Probe(pid)
+	if err != nil || state != identity.Alive {
+		return OwnerIdentity{}, fmt.Errorf("the owner must be a live ancestor of the caller")
+	}
+	return OwnerIdentity{Pid: pid, StartTicks: exact.StartTicks, BootID: exact.BootID, PidStartedAt: exact.StartedAt.Unix()}, nil
+}
+
+func pidIsAncestor(ancestor, descendant int64) bool {
+	seen := map[int64]bool{}
+	for descendant > 0 && !seen[descendant] {
+		if descendant == ancestor {
+			return true
+		}
+		seen[descendant] = true
+		parent, ok := identity.ParentPid(descendant)
+		if !ok {
+			return false
+		}
+		descendant = parent
+	}
+	return false
+}
+
+// CreateCarryingEntry records the wrapper process as owner so a child command
+// can complete the entry while the wrapper remains alive.
+func CreateCarryingEntry(repoRoot, opid, machine, lineage string, intent Intent, ownerPID int64) (Entry, error) {
+	if opid == "" || intent.Verb != "carried" {
+		return Entry{}, fmt.Errorf("a carrying entry needs an opid and carried intent")
+	}
+	if !pidIsAncestor(ownerPID, int64(os.Getpid())) {
+		return Entry{}, fmt.Errorf("the owner must be a live ancestor of the caller")
+	}
+	owner, err := ownerForPID(ownerPID)
+	if err != nil {
+		return Entry{}, err
+	}
+	lock, err := AcquireJournalLock(repoRoot)
+	if err != nil {
+		return Entry{}, err
+	}
+	defer lock.Release()
+	if _, err := os.Stat(entryPath(repoRoot, opid)); err == nil {
+		return Entry{}, fmt.Errorf("journal entry %s already exists", opid)
+	}
+	entry := Entry{Opid: opid, Machine: machine, Lineage: lineage, Owner: owner, Intent: intent, Phase: PhaseCreated, CreatedAt: time.Now().UTC().Format(time.RFC3339)}
+	if err := writeEntry(repoRoot, entry); err != nil {
+		return Entry{}, err
+	}
+	return entry, nil
+}
+
+// TakeOverForCompletion admits the live wrapper's descendant or a dead-owner
+// recovery process and reassigns the entry to the completing command.
+func TakeOverForCompletion(repoRoot, opid string) (Entry, error) {
+	lock, err := AcquireJournalLock(repoRoot)
+	if err != nil {
+		return Entry{}, err
+	}
+	defer lock.Release()
+	entry, err := ReadEntry(repoRoot, opid)
+	if err != nil {
+		return Entry{}, err
+	}
+	if entry.Phase == PhaseTerminal {
+		return Entry{}, fmt.Errorf("journal entry %s is terminal; there is nothing to complete", opid)
+	}
+	if OwnerAlive(entry) && !pidIsAncestor(entry.Owner.Pid, int64(os.Getpid())) {
+		return Entry{}, fmt.Errorf("journal entry %s belongs to live process %d; the caller is not its descendant", opid, entry.Owner.Pid)
+	}
+	owner, err := SelfOwner()
+	if err != nil {
+		return Entry{}, err
+	}
+	entry.Owner = owner
+	if err := writeEntry(repoRoot, entry); err != nil {
+		return Entry{}, err
+	}
+	return entry, nil
+}
+
 // RecordSteps fills the step oids as the transaction advances;
 // owner-only while the owner lives, monotonic (non-terminal only).
 func RecordSteps(repoRoot, opid, fetchedOid, txnCommit string) error {

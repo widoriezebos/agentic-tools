@@ -298,25 +298,26 @@ type ParkRecord struct {
 //     authorityRuling=<id> temporaryHumanWord=<quoted words>]
 //     [reason=<rest of line>]
 type HistoryLine struct {
-	At                 string
-	Opid               string
-	Verb               string
-	Actor              string // machine+lineage or human:<name>
-	Targets            []string
-	Displaced          string
-	Ack                bool
-	Keep               int // -1 when absent; prune's root-record line only
-	AuthorityOutcome   string
-	AuthorityReviewBy  string
-	AuthorityRuling    string
-	TemporaryHumanWord string
-	ChannelProvider    string
-	ChannelUser        string
-	ChannelRef         string
-	ChannelContext     string
-	ChannelStep        int64
-	ApprovedRef        string
-	Reason             string
+	At                  string
+	Opid                string
+	Verb                string
+	Actor               string // machine+lineage or human:<name>
+	Targets             []string
+	Displaced           string
+	Ack                 bool
+	Keep                int // -1 when absent; prune's root-record line only
+	AuthorityOutcome    string
+	AuthorityGeneration uint64
+	AuthorityReviewBy   string
+	AuthorityRuling     string
+	TemporaryHumanWord  string
+	ChannelProvider     string
+	ChannelUser         string
+	ChannelRef          string
+	ChannelContext      string
+	ChannelStep         int64
+	ApprovedRef         string
+	Reason              string
 }
 
 func (h *HistoryLine) recordTemporaryRelay(reviewBy, ruling, word string) {
@@ -1467,6 +1468,15 @@ func ParseHistoryLine(line string) (HistoryLine, error) {
 				return h, err
 			}
 			h.AuthorityReviewBy = strings.TrimPrefix(tok, "authorityReviewBy=")
+		case strings.HasPrefix(tok, "authorityGeneration="):
+			if err := dup("authorityGeneration"); err != nil {
+				return h, err
+			}
+			generation, err := strconv.ParseUint(strings.TrimPrefix(tok, "authorityGeneration="), 10, 64)
+			if err != nil {
+				return h, fmt.Errorf("authorityGeneration= wants a non-negative decimal")
+			}
+			h.AuthorityGeneration = generation
 		case strings.HasPrefix(tok, "authorityRuling="):
 			if err := dup("authorityRuling"); err != nil {
 				return h, err
@@ -1517,7 +1527,17 @@ func ParseHistoryLine(line string) (HistoryLine, error) {
 		return h, fmt.Errorf("timestamp %q is not RFC3339", h.At)
 	}
 	channelAuthority := h.AuthorityOutcome == AuthorityOutcomeAuthenticatedChannelWord || h.AuthorityOutcome == AuthorityOutcomeVerifiedChannelAnswer
-	if !channelAuthority {
+	provenAuthority := h.AuthorityOutcome == AuthorityOutcomeHumanAuthorityProven
+	if provenAuthority {
+		if !strings.HasPrefix(h.Actor, "human:") || h.AuthorityReviewBy != "" || h.AuthorityRuling != "" || h.TemporaryHumanWord != "" {
+			return h, fmt.Errorf("HUMAN_AUTHORITY_PROVEN requires a human actor, authorityGeneration, and no relay fields")
+		}
+		if !seenKeys["authorityGeneration"] {
+			return h, fmt.Errorf("HUMAN_AUTHORITY_PROVEN requires authorityGeneration")
+		}
+	} else if seenKeys["authorityGeneration"] {
+		return h, fmt.Errorf("authorityGeneration requires HUMAN_AUTHORITY_PROVEN")
+	} else if !channelAuthority {
 		if err := validateRecordedTemporaryAuthority(h.AuthorityOutcome, h.AuthorityReviewBy, h.AuthorityRuling, h.TemporaryHumanWord); err != nil {
 			return h, fmt.Errorf("recorded temporary authority: %v", err)
 		}
@@ -1545,8 +1565,42 @@ func ParseHistoryLine(line string) (HistoryLine, error) {
 	} else if channelCount != 0 {
 		return h, fmt.Errorf("channel proof keys require a channel authority outcome")
 	}
-	if h.ApprovedRef != "" && h.Verb != "resume" && h.Verb != "set-obligation" {
-		return h, fmt.Errorf("approvedRef= is only valid on resume and set-obligation history")
+	if h.ApprovedRef != "" && h.Verb != "resume" && h.Verb != "set-obligation" && h.Verb != "carrying" && h.Verb != "carried" {
+		return h, fmt.Errorf("approvedRef= is only valid on resume, set-obligation, carrying, and carried history")
+	}
+	if h.Verb == "carry" && h.AuthorityOutcome == AuthorityOutcomeHumanAuthorityProven {
+		if len(h.Targets) != 1 {
+			return h, fmt.Errorf("carry history requires one target")
+		}
+		if _, err := ParseCarryWord(h.Targets[0], h); err != nil {
+			return h, err
+		}
+	}
+	if h.Verb == "carrying" {
+		if h.ApprovedRef == "" || len(h.Targets) != 1 {
+			return h, fmt.Errorf("carrying history requires approvedRef and one target")
+		}
+		if strings.HasPrefix(h.Reason, "open ") {
+			for _, key := range []string{"workspace", "project", "expires", "by"} {
+				if reasonField(h.Reason, key) == "" {
+					return h, fmt.Errorf("carrying open reason is missing %s", key)
+				}
+			}
+		} else if !strings.HasPrefix(h.Reason, "abandoned of=") || reasonField(h.Reason, "of") == "" {
+			return h, fmt.Errorf("carrying reason must be open or abandoned")
+		}
+	}
+	if h.Verb == "carried" {
+		if h.ApprovedRef == "" || len(h.Targets) != 1 {
+			return h, fmt.Errorf("carried history requires approvedRef and one target")
+		}
+		if strings.HasPrefix(h.Reason, "landed ") {
+			if _, err := parseCarriedReason(h.Reason); err != nil {
+				return h, err
+			}
+		} else if !strings.HasPrefix(h.Reason, "superseded by=") || reasonField(h.Reason, "by") == "" {
+			return h, fmt.Errorf("carried reason must be landed or superseded")
+		}
 	}
 	return h, nil
 }
@@ -1569,6 +1623,8 @@ func RenderHistoryLine(h HistoryLine) string {
 	}
 	if h.AuthorityOutcome == AuthorityOutcomeAuthenticatedChannelWord || h.AuthorityOutcome == AuthorityOutcomeVerifiedChannelAnswer {
 		fmt.Fprintf(&b, " authorityOutcome=%s", h.AuthorityOutcome)
+	} else if h.AuthorityOutcome == AuthorityOutcomeHumanAuthorityProven {
+		fmt.Fprintf(&b, " authorityOutcome=%s authorityGeneration=%d", h.AuthorityOutcome, h.AuthorityGeneration)
 	} else if (h.AuthorityOutcome != "" || h.AuthorityReviewBy != "") && h.AuthorityRuling == "" && h.TemporaryHumanWord == "" {
 		fmt.Fprintf(&b, " authorityOutcome=%s authorityReviewBy=%s", h.AuthorityOutcome, h.AuthorityReviewBy)
 	} else if h.AuthorityOutcome != "" || h.AuthorityReviewBy != "" || h.AuthorityRuling != "" || h.TemporaryHumanWord != "" {

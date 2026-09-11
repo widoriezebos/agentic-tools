@@ -19,11 +19,13 @@ if (( ! fixture_bed_child )); then
   fixture_bed_script=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd -P)/$(basename "${BASH_SOURCE[0]}")
   run_fixture_bed_scenarios goal-cli "goal CLI fixtures: PASSED" \
 	"$fixture_bed_script" migration-recovery human-lineage risk-basis labels-and-filtering structured-budget scope-bounds archive-and-prune classification-sweep \
-	brain-claim-refuses brain-human-word-refuses brain-classification-fails brain-stop-seeded brain-stop-corrupt brain-status-line wrong-terminal
+	brain-claim-refuses brain-human-word-refuses brain-classification-fails brain-stop-seeded brain-stop-corrupt brain-status-line wrong-terminal \
+	carry-word carried-record carried-discharge
 fi
 case "$fixture_scenario" in
 	migration-recovery | human-lineage | risk-basis | labels-and-filtering | structured-budget | scope-bounds | archive-and-prune | classification-sweep | \
-	brain-claim-refuses | brain-human-word-refuses | brain-classification-fails | brain-stop-seeded | brain-stop-corrupt | brain-status-line | wrong-terminal) ;;
+	brain-claim-refuses | brain-human-word-refuses | brain-classification-fails | brain-stop-seeded | brain-stop-corrupt | brain-status-line | wrong-terminal | \
+	carry-word | carried-record | carried-discharge) ;;
   *) echo "goal CLI fixtures: unknown scenario: $fixture_scenario" >&2; exit 64 ;;
 esac
 
@@ -256,6 +258,138 @@ approve_fixture_goal() { # goal id, optional complete tuple flags
     exit 1
   fi
 }
+
+prepare_carried_record_fixture() {
+  git -C "$clone" fetch -q origin
+  git -C "$clone" reset -q --hard origin/main
+  printf 'human carried landing fixture\n' >"$clone/carried-payload.txt"
+  git -C "$clone" add -- carried-payload.txt
+  carry_project=$(git -C "$clone" write-tree)
+  carry_workspace=$("$ms" landing workspace --root "$clone" --tree "$carry_project")
+  carry_output=$("$ms" goal carry --root "$clone" --id ship-widget --by Wido \
+    --tree "$carry_project" --past missing-declaration --why "fixture carries one named refusal" \
+    --raise-format --fixture-human-authority)
+  carry_word=$(sed -n 's/^carry=\([^ ]*\) workspace=.*/\1/p' <<<"$carry_output")
+  [[ -n "$carry_word" ]] || { echo "carried fixture received no carry word: $carry_output" >&2; exit 1; }
+  reservation_output=$("$ms" goal carrying --root "$clone" --id ship-widget --ref "$carry_word" --tree "$carry_project")
+  carrying_row=${reservation_output#carrying=}
+  carrying_row=${carrying_row%% ledger=*}
+  carrying_ledger=${reservation_output##* ledger=}
+  [[ -n "$carrying_row" && "$carrying_ledger" =~ ^[0-9a-f]{40}$ ]] \
+    || { echo "carried fixture received an incomplete reservation: $reservation_output" >&2; exit 1; }
+
+  git -C "$clone" fetch -q origin
+  git -C "$clone" reset -q --hard origin/main
+  printf 'human carried landing fixture\n' >"$clone/carried-payload.txt"
+  git -C "$clone" add -- carried-payload.txt
+  carried_project=$(git -C "$clone" write-tree)
+  carried_workspace=$("$ms" landing workspace --root "$clone" --tree "$carried_project")
+  [[ "$carried_workspace" == "$carry_workspace" ]] \
+    || { echo "carry-forward changed the workspace projection" >&2; exit 1; }
+  judge_digest=$(printf 'fixture carried judge' | shasum -a 256 | cut -d' ' -f1)
+  git -C "$clone" -c user.name=fixture -c user.email=fixture@example.invalid commit -qm "carried fixture" \
+    --trailer "Goal-Item: ship-widget" \
+    --trailer "Carry: $carry_word" \
+    --trailer "Carried-By: human:Wido" \
+    --trailer "Carried-Tree: workspace=$carried_workspace project=$carried_project" \
+    --trailer "Carried-Past: missing-declaration" \
+    --trailer "Carried-Battery: green" \
+    --trailer "Carried-Judge: live sha256=$judge_digest" \
+    --trailer "Carried-Ledger: $carrying_ledger" \
+    --trailer "Landing-Provenance: carried opid=$carry_word past=missing-declaration"
+  carried_commit=$(git -C "$clone" rev-parse HEAD)
+  git -C "$clone" push -q origin main
+  "$ms" goal carried --root "$clone" --id ship-widget --ref "$carry_word" \
+    --rebuild-from-commit "$carried_commit" >/dev/null
+}
+
+if [[ "$fixture_scenario" == carry-word ]]; then
+  printf 'carry word fixture\n' >"$clone/carry-word.txt"
+  git -C "$clone" add -- carry-word.txt
+  carry_tree=$(git -C "$clone" write-tree)
+  git -C "$clone" config goal.sync-remote local
+  set +e
+  remote_ask=$("$ms" goal carry --root "$clone" --id ship-widget --by Wido \
+    --tree "$carry_tree" --past missing-declaration --why "fixture remote fence" \
+    --fixture-human-authority 2>&1)
+  remote_rc=$?
+  set -e
+  [[ $remote_rc -eq 3 && "$remote_ask" == *"carry-remote-required: a carried landing needs a code remote: set goal.sync-remote"* ]] \
+    || { echo "single-machine carry did not ask for a code remote: rc=$remote_rc $remote_ask" >&2; exit 1; }
+  git -C "$clone" config goal.sync-remote origin
+  set +e
+  format_ask=$("$ms" goal carry --root "$clone" --id ship-widget --by Wido \
+    --tree "$carry_tree" --past missing-declaration --why "fixture format fence" \
+    --fixture-human-authority 2>&1)
+  format_rc=$?
+  set -e
+  [[ $format_rc -eq 3 && "$format_ask" == *"carry-format-required"* ]] \
+    || { echo "format-1 carry did not ask for the one-way raise: rc=$format_rc $format_ask" >&2; exit 1; }
+  word_output=$("$ms" goal carry --root "$clone" --id ship-widget --by Wido \
+    --tree "$carry_tree" --past missing-declaration --why "fixture raises the carry format" \
+    --raise-format --fixture-human-authority)
+  word=$(sed -n 's/^carry=\([^ ]*\) workspace=.*/\1/p' <<<"$word_output")
+  [[ -n "$word" && $(wc -l <<<"$word_output" | tr -d ' ') -eq 7 ]] \
+    || { echo "goal carry did not speak its seven counselor lines: $word_output" >&2; exit 1; }
+  grep -Fq "open carries: 1 on seat fixture-machine" <<<"$word_output"
+  grep -Fq "carry debt: obligations=0 inflight=0" <<<"$word_output"
+  grep -Fq "ledger format: 2" <<<"$word_output"
+  set +e
+  cap_ask=$("$ms" goal carry --root "$clone" --id ship-widget --by Wido \
+    --tree "$carry_tree" --past missing-declaration --why "fixture proves the cap" \
+    --fixture-human-authority 2>&1)
+  cap_rc=$?
+  set -e
+  [[ $cap_rc -eq 3 && "$cap_ask" == *"carry-cap-reached"* && "$cap_ask" == *"$word"* ]] \
+    || { echo "a second open carry did not ask with the existing word: rc=$cap_rc $cap_ask" >&2; exit 1; }
+  successor_output=$("$ms" goal carry --root "$clone" --id ship-widget --by Wido \
+    --tree "$carry_tree" --past missing-declaration --why "fixture supersedes the word" \
+    --supersede "$word" --fixture-human-authority)
+  successor=$(sed -n 's/^carry=\([^ ]*\) workspace=.*/\1/p' <<<"$successor_output")
+  [[ -n "$successor" && "$successor" != "$word" ]] \
+    || { echo "supersede did not mint a distinct word: $successor_output" >&2; exit 1; }
+  echo "carry-word passed"
+  exit 0
+fi
+
+if [[ "$fixture_scenario" == carried-record ]]; then
+  prepare_carried_record_fixture
+  carried_tip=$(git -C "$origin" rev-parse main)
+  carried_goal=$(git -C "$origin" show "$carried_tip:plans/goals/ship-widget.md")
+  grep -Fq "approvedRef=$carry_word" <<<"$carried_goal" \
+    || { echo "goal carried wrote no row for the carry word" >&2; exit 1; }
+  grep -Fq "finding=carried:$carried_commit chain=human-carried artifact=\"commit:$carried_commit\" test=\"pending\" state=open" <<<"$carried_goal" \
+    || { echo "goal carried wrote no exact review obligation" >&2; exit 1; }
+  grep -Fq -- "- BudgetExceptions: 1" <<<"$carried_goal" \
+    || { echo "goal carried did not count its budget exception" >&2; exit 1; }
+  "$ms" goal carried --root "$clone" --id ship-widget --ref "$carry_word" \
+    --rebuild-from-commit "$carried_commit" >/dev/null
+  replay_tip=$(git -C "$origin" rev-parse main)
+  [[ "$replay_tip" == "$carried_tip" ]] \
+    || { echo "goal carried replay advanced the accepted ledger" >&2; exit 1; }
+  echo "carried-record passed"
+  exit 0
+fi
+
+if [[ "$fixture_scenario" == carried-discharge ]]; then
+  prepare_carried_record_fixture
+  finding="carried:$carried_commit"
+  accepted=$("$ms" goal accept-risk --root "$clone" --id ship-widget --finding "$finding" \
+    --chain human-carried --by Wido --why "fixture accepts the deferred review" --fixture-human-authority)
+  [[ "$accepted" == *'"outcome":"confirmed"'* ]] \
+    || { echo "human-carried accept-risk did not confirm: $accepted" >&2; exit 1; }
+  accepted_tip=$(git -C "$origin" rev-parse main)
+  accepted_goal=$(git -C "$origin" show "$accepted_tip:plans/goals/ship-widget.md")
+  grep -Fq "finding=$finding chain=human-carried artifact=\"commit:$carried_commit\" test=\"accepted-risk:" <<<"$accepted_goal" \
+    || { echo "accepted risk did not discharge the carried obligation" >&2; exit 1; }
+  grep -Fq 'state=discharged' <<<"$accepted_goal" \
+    || { echo "accepted risk left the carried obligation open" >&2; exit 1; }
+  register="$clone/records/counselor/accepted-risk-register.jsonl"
+  [[ -s "$register" && $(wc -l <"$register" | tr -d ' ') -eq 1 ]] \
+    || { echo "accepted-risk counselor register was not append-once" >&2; exit 1; }
+  echo "carried-discharge passed"
+  exit 0
+fi
 
 declare_brain_fixture() {
   local registry=$tmp/brain-registry

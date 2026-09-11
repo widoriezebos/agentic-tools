@@ -92,6 +92,13 @@ human records `goal accept-risk` for it. The reviewer never dispatches a
 silent fourth round.
 Tier 1 has no critique and lands as a receipted direct fix bound to the
 candidate tree.
+A carried landing is the separate, human-only landing form: a verified human
+issues `goal carry` for one workspace tree and exactly one named refusal code
+or `group:<id>`, and `land.sh --carried <opid>` may carry only that fact. The
+landing writes the reservation and immutable commit trailers, then records one
+`human-carried` review obligation on the goal. Every use increments the goal's
+budget exceptions and the fleet's `CARRIED` counters; the configured open-word
+cap, any in-flight carry, and unpaid carried-review debt prevent stacking.
 The tier boxes' reserved-minute members are the runaway guard;
 `dispatch.cap-max` bounds each job's reservation, and
 `landing.receipt-bound-min` bounds the receipt command.

@@ -250,7 +250,7 @@ TestCommitWrapperStampsGoalItemTrailer() {
     --goal fx --goal fx --direct-fix register-carriage -m invalid
   expect_wrapper_exit_two "$fixture" "$tmp/lowercase-trailer.out" \
     --goal fx --direct-fix register-carriage -m $'message\ngoal-item: victim'
-  grep -Fq 'Goal-Item is stamped by --goal, never typed' "$tmp/lowercase-trailer.out"
+  grep -Fq 'Goal-Item and carried trailers are stamped by the wrapper, never typed' "$tmp/lowercase-trailer.out"
   expect_wrapper_exit_two "$fixture" "$tmp/typed-trailer.out" \
     --goal fx --direct-fix register-carriage --trailer 'Goal-Item: fx' -m invalid
   expect_wrapper_exit_two "$fixture" "$tmp/stdin-message.out" \

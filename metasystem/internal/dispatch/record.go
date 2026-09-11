@@ -31,6 +31,7 @@ import (
 )
 
 var validJobID = regexp.MustCompile(`^[a-z0-9][a-z0-9-]*$`)
+var validCommitReview = regexp.MustCompile(`^commit:[0-9a-f]{40}$`)
 
 // The lawful status graph. A record may only move along these edges; a
 // self-edge (target == current) is a metadata update that carries no

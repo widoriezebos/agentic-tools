@@ -44,6 +44,27 @@ func captureChannelOutput(t *testing.T, run func() int) (int, string, string) {
 	return code, string(out), string(problem)
 }
 
+func TestHCL12KindCarryRequiresWants(t *testing.T) {
+	valid := "carry workspace=" + strings.Repeat("a", 40) + " goal=g past=missing-declaration"
+	tests := []struct {
+		name string
+		args []string
+	}{
+		{name: "missing", args: []string{"--kind", "carry"}},
+		{name: "malformed", args: []string{"--kind", "carry", "--wants", "carry workspace=short goal=g past=missing-declaration"}},
+		{name: "extra field", args: []string{"--kind", "carry", "--wants", valid + " budget=forged"}},
+		{name: "budget flag", args: []string{"--kind", "carry", "--wants", valid, "--attempt-limit", "1"}},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			stderr, code := captureStderr(t, func() int { return runChannelAsk(test.args) })
+			if code != 2 || !strings.Contains(stderr, "requires --wants exactly") || !strings.Contains(stderr, "refuses every budget flag") {
+				t.Fatalf("carry channel question admitted invalid input: exit=%d stderr=%q", code, stderr)
+			}
+		})
+	}
+}
+
 func TestConfigurationIndependentChannelVerbs(t *testing.T) {
 	root := t.TempDir()
 	q, err := channel.Ask(channel.AskRequest{RepoRoot: root, Goal: "g", Kind: "other", Machine: "m", Facts: []string{"fact"}})

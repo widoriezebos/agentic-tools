@@ -2039,6 +2039,31 @@ review_target_record="$agent_repo/artifacts/agents/jobs/review-target.json"
   || { echo "flag-runtime record lost its reviews binding" >&2; cat "$flag_runtime_record" >&2; exit 1; }
 [[ "$("$engine" json get --file "$review_target_record" --field independentCritiqueJobRef)" == flag-runtime ]] \
   || { echo "critic claim did not derive its reference onto the reviewed chain root" >&2; cat "$review_target_record" >&2; exit 1; }
+
+# HCL-09: a landed commit is a first-class critic subject. The dispatcher
+# freezes its parent-to-commit patch and exact tree without looking for an
+# implementer job, and a second critic chain may review the same commit.
+printf 'commit subject fixture\n' >"$agent_repo/metasystem/commit-subject.txt"
+git -C "$agent_repo" add -- metasystem/commit-subject.txt
+git -C "$agent_repo" -c core.hooksPath=/dev/null -c user.name=metasystem -c user.email=metasystem@example.invalid \
+  commit -qm 'commit subject fixture'
+commit_subject=$(git -C "$agent_repo" rev-parse HEAD)
+commit_subject_tree=$(git -C "$agent_repo" rev-parse "$commit_subject^{tree}")
+git -C "$agent_repo" diff --binary --full-index "$commit_subject^" "$commit_subject" \
+  >"$agent_fixture/commit-subject.expected.patch"
+run_agent_fixture commit-subject commit-subject "$agent_dispatch" dispatch --role code-critic \
+  --brief "$code_brief" --reviews "commit:$commit_subject" --runtime fake --job-id commit-subject --wait
+commit_subject_record="$agent_repo/artifacts/agents/jobs/commit-subject.json"
+commit_subject_round="$agent_repo/artifacts/agents/commit-subject/rounds/1"
+[[ "$("$engine" json get --file "$commit_subject_record" --field reviews)" == "commit:$commit_subject" ]] \
+  || { echo "commit-subject critic lost its exact reviews binding" >&2; exit 1; }
+[[ "$(<"$commit_subject_round/reviewedTree")" == "$commit_subject_tree" ]] \
+  || { echo "commit-subject critic froze the wrong reviewed tree" >&2; exit 1; }
+cmp -s "$agent_fixture/commit-subject.expected.patch" "$commit_subject_round/diff.patch" \
+  || { echo "commit-subject diff is not the exact parent-to-commit patch" >&2; exit 1; }
+run_agent_fixture commit-subject-two commit-subject-two "$agent_dispatch" dispatch --role code-critic \
+  --brief "$code_brief" --reviews "commit:$commit_subject" --runtime fake --job-id commit-subject-two --wait
+echo "commit-subject dispatch fixtures passed"
 # The production roster keeps verifier work in the current main session. This
 # isolated adapter fixture selects the configured fake default without an
 # authority-bearing runtime override, then restores the production-shaped

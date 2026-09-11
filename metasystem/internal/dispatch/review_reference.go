@@ -1,11 +1,54 @@
 package dispatch
 
 import (
+	"encoding/json"
 	"fmt"
+	"os"
 	"path/filepath"
 	"strings"
 	"time"
 )
+
+// ValidateHumanCarriedCritic proves that a cited critic root completed a
+// zero-material review of the exact carried commit and folded its terminal
+// round into a closed register.
+func ValidateHumanCarriedCritic(repoRoot, rootJob, commit string) error {
+	state := loadCritiqueState(repoRoot)
+	root, present := state.records[rootJob]
+	expected := "commit:" + commit
+	if !present || asString(root["role"]) != "code-critic" || asString(root["reviews"]) != expected {
+		return fmt.Errorf("expected a code-critic root job reviewing %s", expected)
+	}
+	latest := state.latestMember(rootJob)
+	if latest == nil || asString(latest["status"]) != "completed" {
+		return fmt.Errorf("expected a completed code-critic root job reviewing %s", expected)
+	}
+	latestID := asString(latest["jobId"])
+	if err := requireFoldedCritique(state, latestID, latest); err != nil {
+		return err
+	}
+	register, present, err := critiqueFindingRegister(root)
+	if err != nil || !present || len(openRegisterFindingIDs(register)) != 0 {
+		return fmt.Errorf("code-critic root %s has no closed finding register", rootJob)
+	}
+	round, ok := numInt(latest["round"])
+	if !ok || round < 1 {
+		return fmt.Errorf("code-critic root %s has no terminal round", rootJob)
+	}
+	data, err := os.ReadFile(filepath.Join(repoRoot, "artifacts", "agents", rootJob, "rounds", fmt.Sprint(round), "return.json"))
+	if err != nil {
+		return fmt.Errorf("code-critic root %s has no terminal return", rootJob)
+	}
+	var returned map[string]any
+	if json.Unmarshal(data, &returned) != nil {
+		return fmt.Errorf("code-critic root %s has a malformed terminal return", rootJob)
+	}
+	material, ok := numInt(returned["verdictMaterialCount"])
+	if !ok || material != 0 {
+		return fmt.Errorf("code-critic root %s did not return zero material findings", rootJob)
+	}
+	return nil
+}
 
 const (
 	independentCritiqueReferenceField = "independentCritiqueJobRef"
@@ -32,6 +75,9 @@ func StampClaimedReviewReference(repoRoot, evidenceJob string) error {
 	if field == "" || reviews == "" {
 		return nil
 	}
+	if validCommitReview.MatchString(reviews) {
+		return nil
+	}
 	return stampReviewReference(repoRoot, state, evidenceJob, reviews, field, "")
 }
 
@@ -54,6 +100,9 @@ func ReconcileReviewReference(repoRoot, rootJob, evidenceJob string) error {
 	}
 	if field == "" {
 		return fmt.Errorf("job %s is not a critic, warden, or verifier review", evidenceJob)
+	}
+	if validCommitReview.MatchString(reviews) {
+		return fmt.Errorf("a commit subject carries no chain pointer; the obligation on the goal is its record")
 	}
 	designCritic := asString(evidence["role"]) == "design-critic"
 	criticReferenceJob := evidenceJob
@@ -125,6 +174,9 @@ func reviewReferenceBinding(evidenceJob string, evidence map[string]any) (field,
 	}
 	if role == "design-critic" && reviews == "" {
 		return field, "", nil
+	}
+	if role == "code-critic" && validCommitReview.MatchString(reviews) {
+		return field, reviews, nil
 	}
 	if !validJobID.MatchString(reviews) {
 		return "", "", fmt.Errorf("review evidence job %s has no valid reviews binding", evidenceJob)
