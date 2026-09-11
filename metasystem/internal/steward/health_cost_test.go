@@ -81,14 +81,20 @@ func TestHookPreviewWarmCostAtSyntheticVolume(t *testing.T) {
 		t.Fatal(err)
 	}
 	started = time.Now()
+	cpuBefore := processCPUTime()
 	second := PreviewHealthAt(root, root, now.Add(time.Minute), healthProbe{})
 	warm := time.Since(started)
-	fmt.Printf("hook preview synthetic volume: cold=%s warm=%s\n", cold, warm)
+	warmCPU := processCPUTime() - cpuBefore
+	fmt.Printf("hook preview synthetic volume: cold=%s warm=%s warm-cpu=%s\n", cold, warm, warmCPU)
 	if len(first.Roles) != len(healthRoleOrder) || len(second.Roles) != len(healthRoleOrder) {
 		t.Fatalf("synthetic health preview omitted roles: cold=%d warm=%d", len(first.Roles), len(second.Roles))
 	}
-	if warm >= time.Second {
-		t.Fatalf("warm hook preview took %s; the one-second ceiling is a small fraction of the Stop hook budget", warm)
+	// The ceiling is on the work, not the clock: under a saturated box the
+	// wall time of a cheap preview is the scheduler's, and a wall-clock bound
+	// that fails under load is not a test (Wido, 2026-09-11). CPU time is
+	// what the preview itself costs.
+	if warmCPU >= time.Second {
+		t.Fatalf("warm hook preview cost %s of CPU (wall %s); the one-second ceiling is a small fraction of the Stop hook budget", warmCPU, warm)
 	}
 }
 
