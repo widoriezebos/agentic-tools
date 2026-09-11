@@ -2,14 +2,14 @@
 
 - State: queued
 - Priority: 1
-- Sequence: 14
+- Sequence: 13
 - Risk: severity=2 novelty=1 exposure=2 accumulation=2 basis="severity 2: a skipped gate that should have run lets a red round close; novelty 1: caches and the fast gate exist; exposure 2: delegate rounds; accumulation 2: touches dispatch and the gate"
 - Tier: 3
 - Intent: Codex delegate jobs spent 26.5 of 48.6 tool hours on verification: focused go test 12.4 hours over 1,829 runs, fixture scripts 9.3 hours, go-gate 4.4 hours over 587 runs with a 0.2 second median, a 12 second p90 and a 25 minute cold-cache maximum (codex-sessions.md section 4). Every round of a chain starts from a cold GOCACHE, and fold rounds that change no code re-run verification. DONE means: (1) rounds of one chain share a build cache keyed by the chain root; (2) a round whose diff touches none of a verification step's inputs skips that step and reuses the prior round's matching verdict, recording why; (3) proven by matched before-and-after measurements on the cold-cache cases (chains such as brain-build1b with 19 gates) and by a three-round chain whose second and third rounds verify in under three minutes. Goal 13 of plans/delivery-efficiency-plan.md.
 - Origin: human
 - Next step: Read the job environment in scripts/agents/dispatch.sh (the per-job GOCACHE), go-gate.sh --fast and the round brief format; measure the cold cases first; design; critique; build; land.
 - OpenedAt: 2026-09-11T15:46:36Z
-- Revision: 8
+- Revision: 9
 - Pinned: m1e
 - BudgetExceptions: 0
 
@@ -22,4 +22,5 @@ History:
 - 2026-09-11T16:13:26Z T0D701ZRXJ65RG3FB5DW7A0W56-m1-c6925449 unapprove actor=human:Wido targets=delegate-rounds-reuse-a-warm-gate reason=Wido 2026-09-11: Codex critique round 1 of the delivery-efficiency plan accepted; intent amended before re-approval
 - 2026-09-11T16:16:44Z RW3XA45E3GFVNW9WTY64Z087VT-m1e-ab5421f5 edit actor=m1e+main-1789143377-71578-b9c0d2 targets=delegate-rounds-reuse-a-warm-gate
 - 2026-09-11T16:17:45Z 030HT9PVZGVHDS5RKBJJ1AFZZP-m1-c6925449 set-priority actor=human:Wido targets=actionable-metrics,breach-clock-and-budget-honesty,budget-extends-by-consumption-and-breach-parks,burn-without-delivery-tripwire,capped-round-continues-instead-of-restarting,carried-landing-debt-and-cap,coordinator-context-stays-under-budget,coordinator-wakes-on-events-not-polls,critique-closes-on-folded-proof,deep-battery-under-ten-minutes,delegate-job-liveness,delegate-rounds-reuse-a-warm-gate,delivery-receipt-stops-at-first-failure,failed-job-attention,fixture-stewards-outlive-their-suite,goal-abandoned-with-a-reason,human-carried-landing-carry,human-carried-landing-verb,human-goal-verbs-forgiving,job-record-birth-token,land-ready-work-lands-without-a-claim-slot,landing-receipt-survives-records-drift,lease-sweep-death-evidence,live-job-on-a-done-goal-unnoticed,machine-concurrency-governor,proof-attempts-settle-to-minutes-run,proof-groups-detect-hangs-by-progress-not-the-clock,proof-harness-process-custody,retained-proof-reuse-crosses-claims-and-attempts,severity-tiered-rigor,severity-tiered-rigor-p2,small-change-lane,steward-catchup-livelock,steward-revives-a-done-goal,stop-batch-strands-a-resumable-goal,suite-custody,tier-from-severity-and-novelty,token-spend-fence,turn-verdict-hardening,watch-verb,watcher-repair-request-never-names-current,winddown-census-handoff-leak reason=priority-order subject=proof-attempts-settle-to-minutes-run from=1:13 to=1:14 requested-sequence=7
-Integrity: sha256=864f13dc10202f252de445c416eeb0f1e89b1a200a54c4ca98d976b0912b571f
+- 2026-09-11T16:18:10Z 38ZR0SX47MS7KGY1A6P8NASJAD-m1-c6925449 set-priority actor=human:Wido targets=delegate-rounds-reuse-a-warm-gate,human-carried-landing-carry reason=priority-order subject=delegate-rounds-reuse-a-warm-gate from=1:14 to=1:13 requested-sequence=13
+Integrity: sha256=cb8fa88cb5f817002d489c3e6aa336c6593ddeaf1d83c1139c2e616bd8131a41
