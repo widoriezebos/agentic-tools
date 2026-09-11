@@ -1,6 +1,6 @@
 # critique-closes-on-folded-proof
 
-- State: approved
+- State: queued
 - Priority: 1
 - Sequence: 17
 - Risk: severity=2 novelty=2 exposure=3 accumulation=1 basis="severity 2: a closure rule that is too loose lets a material finding land; novelty 2: fold-proven closure and the round-2 failsafe are new rules; exposure 3: every chain; accumulation 1: skills and dispatcher"
@@ -9,11 +9,9 @@
 - Origin: human
 - Next step: Read skills/code-critique/SKILL.md, skills/design-critique/SKILL.md and the dispatcher's round-limit handling, write the design with the guarantees the rulings insist on, critique, build, land.
 - OpenedAt: 2026-09-11T15:45:22Z
-- Revision: 6
+- Revision: 7
 - Pinned: m1e
-- Budget: elapsedLimit=1d attemptLimit=10 reservedJobMinutesLimit=1200 activeJobLimit=1 reviewRoundLimit=3
 - BudgetExceptions: 0
-- Approved: by=human:Wido at=2026-09-11T15:49:40Z revision=4 opid=V953GBPMK7XESBV4PSV2SFRZ6C-m1-c6925449 authority=proven digest=d17b27a2268b9acac5fa0a4c5b80abd21b5f6ce3ca5b0b2925573a1ec9dcf8f7
 
 History:
 - 2026-09-11T15:45:22Z WKPXEN9CTZR44TMFZTQJE9X68Q-m1e-5083721b open actor=m1e+main-1789141490-27414-b9c0d2 targets=critique-closes-on-folded-proof
@@ -22,4 +20,5 @@ History:
 - 2026-09-11T15:49:40Z V953GBPMK7XESBV4PSV2SFRZ6C-m1-c6925449 approve actor=human:Wido targets=critique-closes-on-folded-proof
 - 2026-09-11T15:50:51Z M4GZC1Q99QFRH9T13HSY774HAR-m1-c6925449 set-priority actor=human:Wido targets=actionable-metrics,breach-clock-and-budget-honesty,budget-extends-by-consumption-and-breach-parks,burn-without-delivery-tripwire,capped-round-continues-instead-of-restarting,carried-landing-debt-and-cap,coordinator-context-stays-under-budget,coordinator-wakes-on-events-not-polls,critique-closes-on-folded-proof,deep-battery-under-ten-minutes,delegate-job-liveness,delegate-rounds-reuse-a-warm-gate,delivery-receipt-stops-at-first-failure,failed-job-attention,fixture-stewards-outlive-their-suite,goal-abandoned-with-a-reason,human-carried-landing-carry,human-carried-landing-verb,human-goal-verbs-forgiving,job-record-birth-token,land-ready-work-lands-without-a-claim-slot,landing-receipt-survives-records-drift,landing-refuses-without-its-receipt-line,lease-sweep-death-evidence,live-job-on-a-done-goal-unnoticed,machine-concurrency-governor,proof-groups-detect-hangs-by-progress-not-the-clock,proof-harness-process-custody,retained-proof-reuse-crosses-claims-and-attempts,seat-opened-goals-name-their-blocker,severity-tiered-rigor,severity-tiered-rigor-p2,small-change-lane,steward-catchup-livelock,steward-revives-a-done-goal,stop-batch-strands-a-resumable-goal,suite-custody,token-spend-fence,turn-verdict-hardening,watch-verb,watcher-repair-request-never-names-current,winddown-census-handoff-leak reason=priority-order subject=landing-refuses-without-its-receipt-line from=1:15 to=1:16 requested-sequence=5
 - 2026-09-11T15:50:59Z XMVFS3RNBYJQA0S9A89QGZ8XAS-m1-c6925449 set-priority actor=human:Wido targets=actionable-metrics,breach-clock-and-budget-honesty,burn-without-delivery-tripwire,capped-round-continues-instead-of-restarting,carried-landing-debt-and-cap,critique-closes-on-folded-proof,delegate-job-liveness,failed-job-attention,fixture-stewards-outlive-their-suite,goal-abandoned-with-a-reason,human-carried-landing-verb,human-goal-verbs-forgiving,job-record-birth-token,land-ready-work-lands-without-a-claim-slot,landing-receipt-survives-records-drift,lease-sweep-death-evidence,live-job-on-a-done-goal-unnoticed,machine-concurrency-governor,proof-harness-process-custody,severity-tiered-rigor,severity-tiered-rigor-p2,small-change-lane,steward-catchup-livelock,steward-revives-a-done-goal,stop-batch-strands-a-resumable-goal,suite-custody,tier-from-severity-and-novelty,token-spend-fence,turn-verdict-hardening,watch-verb,watcher-repair-request-never-names-current,winddown-census-handoff-leak reason=priority-order subject=tier-from-severity-and-novelty from=1:16 to=1:17 requested-sequence=16
-Integrity: sha256=5def1e96d6dccff7af39a67e524b8671f45ce978d8de7c8f8382912296fb1a97
+- 2026-09-11T16:13:37Z 5DYMTR71C6H0QG4XCCYVYDWTXG-m1-c6925449 unapprove actor=human:Wido targets=critique-closes-on-folded-proof reason=Wido 2026-09-11: Codex critique round 1 of the delivery-efficiency plan accepted; intent amended before re-approval
+Integrity: sha256=05a77c31578a9f222803ff6a5207815c2e81feb8b142689c1460792ad0f78b79
