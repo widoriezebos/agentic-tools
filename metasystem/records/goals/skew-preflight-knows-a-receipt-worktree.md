@@ -1,6 +1,6 @@
 # skew-preflight-knows-a-receipt-worktree
 
-- State: claimed
+- State: done
 - Priority: 1
 - Sequence: 2
 - Risk: severity=3 novelty=1 exposure=3 accumulation=1 basis="severity 3: same refusal; novelty 1: one comparison reads a different stamp; exposure 3: every code landing; accumulation 1: nothing built on it"
@@ -8,14 +8,13 @@
 - Intent: dispatch.sh's skew preflight (around line 249: engine stamp older than checkout HEAD along the ancestry path, and engine or agent scripts changed, then refuse 'run go-build.sh, then steward arm') is right on a seat's checkout and wrong inside a receipt worktree, where the checkout IS the candidate and the engine that will run is the proof engine built from it. DONE means: the preflight compares the engine that will actually run (METASYSTEM_BIN when set, else bin/metasystem) with the checkout it runs in, so a candidate-built engine in a candidate worktree shows no skew; a seat checkout with a stale engine still refuses exactly as today; fixtures for both. Second half of gate-fence-fixtures-refuse-engine-changing-candidates, which this and receipt-beds-run-the-candidate-engine together replace.
 - Origin: main
 - Next step: SATISFIED BY MEMBER 1'S DESIGN (m1b, 2026-09-10 19:30Z): receipt-beds-run-the-candidate-engine stamps the candidate engine with a deterministic parentless commit over the exact candidate tree, so inside a receipt worktree the preflight's ancestry walk from that stamp is empty and the check passes without any change to dispatch.sh (read 4 of that chain, RBE-24, verified it; dispatch.sh is byte-identical to the base). Nothing to build here. Conclude this goal done the moment receipt-beds-run-the-candidate-engine lands; do not claim it for work.
+- Concluded: The contract was delivered in 016b83e2f3ed1e25e10579b1eb5b413b44e6723b together with receipt-beds-run-the-candidate-engine. Dispatch reads METASYSTEM_BIN; the candidate engine carries the deterministic candidate-tree commit stamp. Existing stale-seat refusal is unchanged. TestCandidateBuiltCommitPassesDispatchSkewPreflight exercises stale-engine refusal and candidate-engine acceptance, and passed in the retained 75.592-second command canary. The actual admitted receipt fixture passed section/gate-fence-fixtures and its runtime provider in 51.8 seconds. No separate implementation was required. Prior publication used Wido explicit focused-evidence exception; this is not a full-repository delivery receipt. Evidence: /Users/wido/metasystem-evidence/agentic-tools/receipt-engine-20260910/m1b-transfer-assessment.
 - OpenedAt: 2026-09-10T07:27:29Z
-- Revision: 13
+- Revision: 14
 - Labels: bootstrap
 - Budget: elapsedLimit=1d attemptLimit=10 reservedJobMinutesLimit=1200 activeJobLimit=1 reviewRoundLimit=3
 - BudgetExceptions: 0
 - Approved: by=human:Wido at=2026-09-10T07:29:14Z revision=2 opid=4ZK6CRTM3WB0139F8R1W7B9NNZ-m1b-c6925449 authority=proven digest=61c5382670ef4dbcdabfa94944072b8521590ed5b414e1c3613859756be5e1c6
-- Claimed: machine=m1c lineage=main-1789023008-75159-b69143 at=2026-09-11T05:28:46Z revision=13 accountingRevision=13
-- StopCapability: generation=13 revision=13 machine=m1c claimEpoch=4 fenceEpoch=0
 
 History:
 - 2026-09-10T07:27:29Z 50AGRJMEYNP0GD01N57BN4FMGP-m1b-c6925449 open actor=m1b+main-1788680071-18713-e76d5d targets=skew-preflight-knows-a-receipt-worktree
@@ -31,4 +30,5 @@ History:
 - 2026-09-11T02:07:36Z 5J8GDGATVH7WEH3SCW823CQY7J-m1d-a38bcdde done actor=m1d+main-1788941004-20871-6e7a43 targets=actionable-metrics,breach-clock-and-budget-honesty,burn-without-delivery-tripwire,carried-landing-debt-and-cap,delegate-job-liveness,delivery-candidate-is-the-workspace-not-the-ledger,failed-job-attention,fixture-stewards-outlive-their-suite,goal-abandoned-with-a-reason,governed-exhaustion-reprojection,human-carried-landing-carry,human-carried-landing-verb,human-goal-verbs-forgiving,job-record-birth-token,landing-receipt-survives-records-drift,lease-sweep-death-evidence,live-job-on-a-done-goal-unnoticed,machine-concurrency-governor,proof-harness-process-custody,review-round-limit-counts-per-chain,severity-tiered-rigor,severity-tiered-rigor-p2,skew-preflight-knows-a-receipt-worktree,small-change-lane,steward-catchup-livelock,steward-revives-a-done-goal,stop-batch-strands-a-resumable-goal,suite-custody,testing-contract-owns-record-paths,token-spend-fence,turn-verdict-hardening,watch-verb,watcher-repair-request-never-names-current,winddown-census-handoff-leak reason=priority-order from=1:3 to=1:2
 - 2026-09-11T02:45:56Z 2DXW8Y78HG5FRT5MHCAHRZPP5Y-m1c-43182c96 breach-stop actor=m1c+goal-stop-custodian targets=skew-preflight-knows-a-receipt-worktree
 - 2026-09-11T05:28:46Z TE524YSCGQFZ6XBQE38K0G0SMD-m1c-66a02980 resume actor=human:Wido targets=skew-preflight-knows-a-receipt-worktree
-Integrity: sha256=bb9cdc90d0375407a0f967a62d9d84803c80ddf2df66f019b7bf382d92436a67
+- 2026-09-11T05:28:50Z H621Z5TSTX76A08GYPE5NN03BW-m1c-66a02980 done actor=human:Wido targets=actionable-metrics,breach-clock-and-budget-honesty,burn-without-delivery-tripwire,carried-landing-debt-and-cap,delegate-job-liveness,failed-job-attention,fixture-stewards-outlive-their-suite,goal-abandoned-with-a-reason,governed-exhaustion-reprojection,human-carried-landing-carry,human-carried-landing-verb,human-goal-verbs-forgiving,job-record-birth-token,landing-receipt-survives-records-drift,lease-sweep-death-evidence,live-job-on-a-done-goal-unnoticed,machine-concurrency-governor,proof-harness-process-custody,review-round-limit-counts-per-chain,severity-tiered-rigor,severity-tiered-rigor-p2,skew-preflight-knows-a-receipt-worktree,small-change-lane,steward-catchup-livelock,steward-revives-a-done-goal,stop-batch-strands-a-resumable-goal,suite-custody,testing-contract-owns-record-paths,token-spend-fence,turn-verdict-hardening,watch-verb,watcher-repair-request-never-names-current,winddown-census-handoff-leak
+Integrity: sha256=1a4ba17a6a30ae0740e1c9f3d7285ca1f00372db86b8e30a83354809b9482e83

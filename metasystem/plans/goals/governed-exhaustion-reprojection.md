@@ -2,14 +2,14 @@
 
 - State: claimed
 - Priority: 1
-- Sequence: 10
+- Sequence: 9
 - Risk: severity=2 novelty=2 exposure=3 accumulation=2 basis="severity 2: a wrong exhaustion decision at conclusion stops or overspends a governed run's budget, recoverable by a rerun; novelty 2: a new projection seam at four production stores and a retry-safe partial-commit path; exposure 3: every governed run on every seat concludes through it; accumulation 2: the stores and the stop transition build on the seam"
 - Tier: 3
 - Intent: The governed exhaustion check decides on a reserved figure frozen at admission (internal/dispatch/governed.go:149 ReservedBefore; internal/run/conclude.go:316-318 ReservedBefore + observedMinutes >= limit) and never re-projects at conclusion, so open caps that have since settled still count and a failing attempt can be marked exhausted, raise retroactive debt and block later governed work on spend that no longer exists. DONE means exhaustion at conclusion is decided on a fresh projection taken at that instant, excluding the concluding run from both the run records and the durable attempts, retry-safe after a partial commit, with every production store that concludes a governed run carrying the projection seam
 - Origin: main
 - Next step: BUILD: round 1 stopped before writing on constraint C8 (the revision-mismatch diagnostic named an error text that does not exist in that case); decided in the follow-up: reuse the observation's own mismatch sentence from governed.go verbatim. Round 2 dispatched (gerp-build1-r2, Sol). Then closing read (Opus), receipt and landing in the fleet hold behind members 1 and 3 of the bootstrap umbrella.
 - OpenedAt: 2026-09-02T18:37:29Z
-- Revision: 40
+- Revision: 41
 - Budget: elapsedLimit=1d attemptLimit=10 reservedJobMinutesLimit=600 activeJobLimit=3 reviewRoundLimit=3
 - BudgetExceptions: 1
 - Approved: by=human:Wido at=2026-09-10T19:58:45Z revision=39 opid=034K4EV4XEJXG6XADMVBJYSCB3-m1b-c6925449 authority=proven digest=89eec7c9bbd6e50bf641c7a5c145299fd12b42394c3e6e48f7fed714a294f727
@@ -58,4 +58,5 @@ History:
 - 2026-09-10T19:57:25Z 3FX9S39EQ15065A11561ZVMJSM-m1b-c6925449 edit actor=m1b+main-1788680071-18713-e76d5d targets=governed-exhaustion-reprojection reason=Misclassified: from=0 to=3 evidence=root:gerp-build1
 - 2026-09-10T19:58:45Z 034K4EV4XEJXG6XADMVBJYSCB3-m1b-c6925449 set-budget actor=human:Wido targets=governed-exhaustion-reprojection
 - 2026-09-11T02:07:36Z 5J8GDGATVH7WEH3SCW823CQY7J-m1d-a38bcdde done actor=m1d+main-1788941004-20871-6e7a43 targets=actionable-metrics,breach-clock-and-budget-honesty,burn-without-delivery-tripwire,carried-landing-debt-and-cap,delegate-job-liveness,delivery-candidate-is-the-workspace-not-the-ledger,failed-job-attention,fixture-stewards-outlive-their-suite,goal-abandoned-with-a-reason,governed-exhaustion-reprojection,human-carried-landing-carry,human-carried-landing-verb,human-goal-verbs-forgiving,job-record-birth-token,landing-receipt-survives-records-drift,lease-sweep-death-evidence,live-job-on-a-done-goal-unnoticed,machine-concurrency-governor,proof-harness-process-custody,review-round-limit-counts-per-chain,severity-tiered-rigor,severity-tiered-rigor-p2,skew-preflight-knows-a-receipt-worktree,small-change-lane,steward-catchup-livelock,steward-revives-a-done-goal,stop-batch-strands-a-resumable-goal,suite-custody,testing-contract-owns-record-paths,token-spend-fence,turn-verdict-hardening,watch-verb,watcher-repair-request-never-names-current,winddown-census-handoff-leak reason=priority-order from=1:11 to=1:10
-Integrity: sha256=ec16105acebc37282490744e3d0e1a9fcf8d0841dfb81c8740a9e20120de34ba
+- 2026-09-11T05:28:50Z H621Z5TSTX76A08GYPE5NN03BW-m1c-66a02980 done actor=human:Wido targets=actionable-metrics,breach-clock-and-budget-honesty,burn-without-delivery-tripwire,carried-landing-debt-and-cap,delegate-job-liveness,failed-job-attention,fixture-stewards-outlive-their-suite,goal-abandoned-with-a-reason,governed-exhaustion-reprojection,human-carried-landing-carry,human-carried-landing-verb,human-goal-verbs-forgiving,job-record-birth-token,landing-receipt-survives-records-drift,lease-sweep-death-evidence,live-job-on-a-done-goal-unnoticed,machine-concurrency-governor,proof-harness-process-custody,review-round-limit-counts-per-chain,severity-tiered-rigor,severity-tiered-rigor-p2,skew-preflight-knows-a-receipt-worktree,small-change-lane,steward-catchup-livelock,steward-revives-a-done-goal,stop-batch-strands-a-resumable-goal,suite-custody,testing-contract-owns-record-paths,token-spend-fence,turn-verdict-hardening,watch-verb,watcher-repair-request-never-names-current,winddown-census-handoff-leak reason=priority-order from=1:10 to=1:9
+Integrity: sha256=1571385556b0de8877b898ac683a719efe57646563af64e714f13b39996fe767
