@@ -1,7 +1,9 @@
 package steward
 
 import (
+	"fmt"
 	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 	"time"
@@ -49,7 +51,21 @@ func TestNarratedLandingWritesDurableDigestEntry(t *testing.T) {
 // The account is bounded: old ticks scroll away at the cap.
 func TestNarrationCapsItsHistory(t *testing.T) {
 	root := t.TempDir()
+	// The history is written to disk once, over the cap; a handful of ticks
+	// then prove the cap holds. Building it through 2000 Narrate calls, each an
+	// fsynced rewrite, cost 41 s and proved nothing more.
+	path := NarrationPath(root)
+	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	var history strings.Builder
 	for i := 0; i < narrationCapLines+25; i++ {
+		fmt.Fprintf(&history, "2026-09-11T00:00:%02dZ line %d of a long history\n", i%60, i)
+	}
+	if err := os.WriteFile(path, []byte(history.String()), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	for i := 0; i < 3; i++ {
 		Narrate(root, TickResult{OpenWork: "observing", Decision: Decision{Action: ActNone}}, TickConfig{})
 	}
 	data, err := os.ReadFile(NarrationPath(root))
