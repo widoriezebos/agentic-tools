@@ -2,12 +2,12 @@
 
 - State: queued
 - Priority: 1
-- Sequence: 43
+- Sequence: 42
 - Intent: Validation suites run under process-group custody: killing a suite reaps its whole tree, and gate locks carry pids and self-clean when their owner dies (2026-08-24 collateral: orphaned go-gate child blocked the next battery)
 - Origin: human
 - Next step: RELEASED for the fresh session. DIAGNOSIS of the investigator zombies (2x): the task reproduces the detached-silence bug, and the reproduction itself wedges — the worker waits forever on the wedged detached child, log silent, status lying 'running'. The bug eats its investigator. INSTRUCTION: wrap every reproduction in an outer bounded timeout (the tar pit has no bound of its own), and slice the task smaller (reproduce+diagnose first, fix as a second task). m2's xtrace handoff stands; acceptance = detached green or loud named refusal; appetite 6h intact; shared tree clean. || Absorbed 2026-09-11 from goal proof-harness-process-custody: Merge into suite-custody (human-origin umbrella): every seat-run suite and proof harness runs its children (load generators, fixture steward runners, gate children) under process-group custody that one kill reaps whole, plus a census-guarded sweep the seat may run that reaps orphaned fixture beds older than a bound; sp || Note 2026-09-11: process-group custody of suites landed (internal/proofrun/launcher.go); the orphan-reaping remainder overlaps steward-owned-execution and fixture-stewards-outlive-their-suite; decide one owner at design time.
 - OpenedAt: 2026-08-24T13:24:00Z
-- Revision: 74
+- Revision: 75
 - Labels: custody
 - BudgetExceptions: 0
 
@@ -86,4 +86,5 @@ History:
 - 2026-09-11T20:23:20Z JC7YH4TWVW35H91QSPWRRABZ1M-m1d-a38bcdde done actor=m1d+main-1788941004-20871-6e7a43 targets=actionable-metrics,breach-clock-and-budget-honesty,burn-without-delivery-tripwire,carried-landing-debt-and-cap,delegate-job-liveness,failed-job-attention,fixture-stewards-outlive-their-suite,goal-abandoned-with-a-reason,human-carried-landing-carry,human-carried-landing-verb,human-goal-verbs-forgiving,job-record-birth-token,landing-receipt-survives-records-drift,lease-sweep-death-evidence,live-job-on-a-done-goal-unnoticed,machine-concurrency-governor,proof-harness-process-custody,severity-tiered-rigor,severity-tiered-rigor-p2,steward-catchup-livelock,steward-revives-a-done-goal,stop-batch-strands-a-resumable-goal,suite-custody,token-spend-fence,turn-verdict-hardening,watch-verb,watcher-repair-request-never-names-current,winddown-census-handoff-leak reason=priority-order from=1:45 to=1:44
 - 2026-09-11T21:58:12Z QW2K6MNB6DT7JMM0ZXC7GTPX8S-m1-c6925449 edit actor=human:Wido targets=suite-custody
 - 2026-09-11T21:59:41Z 6GXPZ9RDTZYMYDPHSVTCCGTEEJ-m1-c6925449 done actor=human:Wido targets=actionable-metrics,burn-without-delivery-tripwire,delegate-job-liveness,fixture-stewards-outlive-their-suite,lease-sweep-death-evidence,machine-concurrency-governor,proof-harness-process-custody,steward-catchup-livelock,suite-custody,token-spend-fence,turn-verdict-hardening,watch-verb,watcher-repair-request-never-names-current,winddown-census-handoff-leak reason=priority-order from=1:44 to=1:43
-Integrity: sha256=70200460fdf37f0a3af71302b62d62293ab9d52c57e1649a0630d7501eef0521
+- 2026-09-11T21:59:48Z 97C3JYVES1D5WVZN59XAXSSHK8-m1-c6925449 done actor=human:Wido targets=actionable-metrics,breach-clock-and-budget-honesty,carried-landing-debt-and-cap,delegate-job-liveness,failed-job-attention,fixture-stewards-outlive-their-suite,goal-abandoned-with-a-reason,human-goal-verbs-forgiving,job-record-birth-token,landing-receipt-survives-records-drift,lease-sweep-death-evidence,live-job-on-a-done-goal-unnoticed,machine-concurrency-governor,proof-harness-process-custody,severity-tiered-rigor,severity-tiered-rigor-p2,steward-catchup-livelock,steward-revives-a-done-goal,stop-batch-strands-a-resumable-goal,suite-custody,token-spend-fence,turn-verdict-hardening,watch-verb,watcher-repair-request-never-names-current,winddown-census-handoff-leak reason=priority-order from=1:43 to=1:42
+Integrity: sha256=8a4c25b40190a1590972cc72a354b1bfdc650d22c94792fe43aa64090445c092
