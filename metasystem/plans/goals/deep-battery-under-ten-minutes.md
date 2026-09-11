@@ -7,9 +7,9 @@
 - Tier: 3
 - Intent: The cadence run (test run --mode deep --purpose cadence) completes in under ten minutes wall on the 18-core Mac with every cadence group still present and passing, and no slower than today on the 4-vCPU VM. DONE is that sentence, with three consecutive green cadence runs and their attempt ids in the receipt. Slices 2, 3 and 5 of plans/suite-speed-plan.md, arc-sized: groups run concurrently inside one attempt under a configurable cap; the long Go groups are sharded and the big fixture sections split into per-scenario groups; the race gate reuses the shards.
 - Origin: human
-- Next step: STATE 2026-09-11 22:55Z (m1e): landings today fc3c0b98, 6adaa73a, 864c9581, baa3a70e, b13771d7, bb1e2dfd (every bed's scenarios side by side, adoption as eight scenarios, gate-only cmd reds at their real cause), 9a10d20e (cmd tests beside the gate's unit stage, six shards, collector guard, shard markers, sliding start window), b85b81fc (four load-shaped reds fixed; the two coverage groups off the cadence list: the gate proves them). Cadence walls: run 5 1177 s (proof-mtxaf7t4), run 6 1189 s (proof-mtxe9exo: adoption 853, gate 724, goal-cov 598, dispatcher 569, missionrunner 566; CPU 7751 s on 18 cores, the box is CPU-bound, six shards each oversubscribed it). Run 7 (proof-mtxezk3l) in flight without the coverage groups. NEXT: the walls are adoption under contention (its default and runtimes scenarios carry the two Go comparison tests; split those into their own scenarios), the gate (13 race launches), and the dispatch scenario (574 s serial, cluster map in plans/deep-battery-design.md). DONE still requires three consecutive green cadence runs under ten minutes with their attempt ids.
+- Next step: STATE 2026-09-11 23:40Z (m1e): cadence run 7 (proof-mtxezk3l) 808 s wall from 1189 (run 6), CPU 6126 s; dispatcher 756 (the wall), adoption 638, gate 513, supervision 434; red only on two testpolicy contract tests that pin goal-full-coverage and missionrunner-full-coverage in the cadence list (b85b81fc took them out because the gate's sharded unit stage runs the same packages under -race -cover: about 2000 CPU seconds twice per cadence). The list is restored in the next landing; the duplication is a contract-law question for Wido under R-36-m3: let the gate's sharded coverage stand as those two groups' proof at cadence, or keep both. NEXT: land the dispatch scenario as five clusters and the adoption comparisons as their own scenarios (diagnostic in flight), then cadence run 8. DONE still requires three consecutive green cadence runs under ten minutes with their attempt ids.
 - OpenedAt: 2026-09-10T12:02:35Z
-- Revision: 16
+- Revision: 17
 - Pinned: m1e
 - Budget: elapsedLimit=2d attemptLimit=24 reservedJobMinutesLimit=1200 activeJobLimit=1 reviewRoundLimit=3
 - BudgetExceptions: 1
@@ -34,4 +34,5 @@ History:
 - 2026-09-11T19:57:46Z RK9AQ3TT6EG56TEMHAWN2M0AV6-m1e-892cdaec release actor=m1e+main-1789030447-51011-5722fc targets=deep-battery-under-ten-minutes
 - 2026-09-11T19:57:52Z 0RPSG28E200HWWZDTB3619BYHY-m1e-892cdaec claim actor=m1e+main-1789030447-51011-5722fc targets=deep-battery-under-ten-minutes
 - 2026-09-11T20:35:20Z YB6QAKBCQ85Z4YFF2HT16W3H2G-m1e-892cdaec edit actor=m1e+main-1789030447-51011-5722fc targets=deep-battery-under-ten-minutes
-Integrity: sha256=e7c7139525c6f6e5fc684a650751ea28ff41dee34c72a4311922023ccca6d270
+- 2026-09-11T20:48:55Z ZRN4V4A2MDDBRS9H5TRET0MS2J-m1e-892cdaec edit actor=m1e+main-1789030447-51011-5722fc targets=deep-battery-under-ten-minutes
+Integrity: sha256=88da04a5f6a748e90a975487c6aff569e18faea5dbcb2cd7d1f8f89883ff59e3
