@@ -5,11 +5,11 @@
 - Sequence: 6
 - Risk: severity=1 novelty=1 exposure=2 accumulation=1 basis="severity 1: a refused open is re-issued with its blocker; novelty 1: dependency edges exist; exposure 2: seat opens only; accumulation 1: one verb"
 - Tier: 2
-- Intent: Seats opened 165 goals in five days against 62 concluded, growing the backlog by 117 (ledger.md section 5). DONE means: goal open from a seat (origin main) requires --blocks naming the goal it unblocks and, in the same publish, parks that goal with the blocker named (a claimed goal may not carry an unfinished blocker, internal/goal/validate.go) and records the edge on the parked goal, which is claimable again only when the blocker is done; a seat open without --blocks is refused with the ruling; human-origin opens are unchanged; docs/orchestration.md carries the ruling that a seat opens only the defect that blocks its current goal and every other goal is opened by a person. The ruling is a policy decision under R-36-m3: it is built after Wido records it on the design page. Goal 6 of plans/delivery-efficiency-plan.md.
+- Intent: Seats opened 165 goals in five days against 62 concluded, growing the backlog by 117 (ledger.md section 5). DONE means: goal open from a seat (origin main) requires --blocks naming the goal it unblocks and, in the same publish, parks that goal with the blocker named (a claimed goal may not carry an unfinished blocker, internal/goal/validate.go) and records the edge on the parked goal, which is claimable again only when the blocker is done; a seat open without --blocks is refused with the ruling; human-origin opens are unchanged; docs/orchestration.md carries the ruling that a seat opens only the defect that blocks its current goal and every other goal is opened by a person. The ruling is a policy decision under R-36-m3: it is built after Wido records it on the design page. Goal 6 of plans/delivery-efficiency-plan.md. RUNTIME INDEPENDENCE (plan principle 0; architecture doctrine of 2026-08-16: correctness never depends on an accelerator): this holds for every runtime the roster can host today (claude, codex, devin) and for future adapters such as opencode; the mechanism lives in the Go engine, the ledger verbs and the adapter contract, never in one runtime's hook, harness, CLI or transcript format; a native facility may accelerate it through its adapter, and an agent on any runtime with no accelerator gets the same guarantee from the records and the verb alone; where the goal touches a runtime path, DONE is proven on at least two runtimes.
 - Origin: human
 - Next step: Wido's word recorded 2026-09-11 (R-93-m1e): yes; seats open only blockers with --blocks and the same-publish park; non-blocking discoveries go to the backlog-notes register as proposals. Next: build behind fixtures in rank order.
 - OpenedAt: 2026-09-11T15:45:05Z
-- Revision: 11
+- Revision: 12
 - Pinned: m1e
 - BudgetExceptions: 0
 
@@ -25,4 +25,5 @@ History:
 - 2026-09-11T16:18:58Z VY3VHFYQSAFH7K0FCTYNM0XT1N-m1-c6925449 approve actor=human:Wido targets=seat-opened-goals-name-their-blocker
 - 2026-09-11T20:15:44Z 4PJ4YE6846N70DDF3YKG088B12-m1e-892cdaec edit actor=m1e+main-1789030447-51011-5722fc targets=seat-opened-goals-name-their-blocker
 - 2026-09-11T20:30:39Z 23WP1DYT2V5FY2W0VWRF5EN9K8-m1-c6925449 unapprove actor=human:Wido targets=seat-opened-goals-name-their-blocker reason=Wido 2026-09-11: every program goal states runtime independence (claude, codex, devin, future adapters); intent amended before re-approval
-Integrity: sha256=ecfed8b76c10cb7e7f3ef10596c5a0c283a858b7ba2122e2cc0e48ae892e55fc
+- 2026-09-11T20:31:58Z QA8CNY306F32Y83B81T016FWJ3-m1e-3ca84c28 edit actor=m1e+main-1789158700-39729-b9c0d2 targets=seat-opened-goals-name-their-blocker
+Integrity: sha256=4d2648b15eb7c933dfd28a96e9c72516dfd4dd8f4a1fbf77a6bfffe98ea5c733
