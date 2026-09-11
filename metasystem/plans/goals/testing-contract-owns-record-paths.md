@@ -1,6 +1,6 @@
 # testing-contract-owns-record-paths
 
-- State: claimed
+- State: approved
 - Priority: 1
 - Sequence: 2
 - Risk: severity=3 novelty=1 exposure=3 accumulation=1 basis="severity 3: no seat can land a register, brief or ruling until this is fixed, which is the whole carriage of judgment; novelty 1: one surface entry and one fixture in a contract that already has twelve surfaces; exposure 3: every seat's every record landing; accumulation 1: nothing has been built on it yet"
@@ -9,13 +9,11 @@
 - Origin: main
 - Next step: CLAIMED BY m1e (revision 13 after a release and re-claim to reset accounting; the stopped proof attempt proof-mtvl0alu-d730bf3fb129f4ae stays non-terminal under revision 6). ENGINE LANDING, ATTEMPT 2: chain implementer-4f7f89d5ae26d31cd1fa3ae8 (three rounds, closed, reads tcorp-cc1 and tcorp-cc2, full receipt proof-mtvlkow8 sufficient on tree 6207691f) was overtaken by main at ce71e66d (m1b's enrollment-skew fix also changed cmd/metasystem/test_test.go at the certified test's position), and the closed chain can take no round; the recertify stage refuses because a design-bearing critic chain never closes (goal merge-stage-critic-close). So the certified diff is carried into a fresh chain: job implementer-2aae86f16a7801089540f7dc (Sol, DESIGN-BEARING, union merge of the test file; brief in m1e's scratchpad tcorp/carry-brief.md). THEN: conformance review, one independent read (Opus, brief tcorp/critic-carry-brief.md), dispositions, close, stage, receipt minted from a Bash shell with GOFLAGS=-timeout=30m (a group's identity digests the whole environment, so the receipt and the landing must share one shell environment; Wido approved the timeout workaround), land.sh --chain <job> --test-receipt, rebuild and re-arm. THEN chain 2: declare the residual surface with the highest risk raise, amend the design page's rule on unowned paths, read, receipt, land; goal done with the journey chapter and the receipt line (drafted in tcorp/). Wido's go for landings was given 20:5xZ; next after this goal: landing-runs-standard-deep-runs-at-cadence (pinned, P1:1).
 - OpenedAt: 2026-09-09T21:49:17Z
-- Revision: 21
+- Revision: 22
 - Budget: elapsedLimit=1d attemptLimit=10 reservedJobMinutesLimit=1200 activeJobLimit=1 reviewRoundLimit=3
 - BudgetExceptions: 0
 - Approved: by=human:Wido at=2026-09-10T07:29:14Z revision=4 opid=4ZK6CRTM3WB0139F8R1W7B9NNZ-m1b-c6925449 authority=proven digest=3ba72d9bfc753d2638ad986ff5cb13e30a10404dbcad76e53800bdbef94dcb8b
 - Sliced: machine=m1e lineage=main-1789030447-51011-5722fc revision=6 at=2026-09-10T10:59:18Z
-- Claimed: machine=m1e lineage=main-1789030447-51011-5722fc at=2026-09-10T22:33:29Z revision=19 accountingRevision=19
-- StopCapability: generation=19 revision=19 machine=m1e claimEpoch=1 fenceEpoch=0
 
 History:
 - 2026-09-09T21:49:17Z HM3T2QVDJE4SEVNYC59QJ148Y3-m1b-c6925449 open actor=m1b+main-1788680071-18713-e76d5d targets=testing-contract-owns-record-paths
@@ -39,4 +37,5 @@ History:
 - 2026-09-10T22:33:29Z MBTXP5SR3JT4SS36QH8GDBP3ST-m1e-892cdaec claim actor=m1e+main-1789030447-51011-5722fc targets=testing-contract-owns-record-paths
 - 2026-09-11T02:07:36Z 5J8GDGATVH7WEH3SCW823CQY7J-m1d-a38bcdde done actor=m1d+main-1788941004-20871-6e7a43 targets=actionable-metrics,breach-clock-and-budget-honesty,burn-without-delivery-tripwire,carried-landing-debt-and-cap,delegate-job-liveness,delivery-candidate-is-the-workspace-not-the-ledger,failed-job-attention,fixture-stewards-outlive-their-suite,goal-abandoned-with-a-reason,governed-exhaustion-reprojection,human-carried-landing-carry,human-carried-landing-verb,human-goal-verbs-forgiving,job-record-birth-token,landing-receipt-survives-records-drift,lease-sweep-death-evidence,live-job-on-a-done-goal-unnoticed,machine-concurrency-governor,proof-harness-process-custody,review-round-limit-counts-per-chain,severity-tiered-rigor,severity-tiered-rigor-p2,skew-preflight-knows-a-receipt-worktree,small-change-lane,steward-catchup-livelock,steward-revives-a-done-goal,stop-batch-strands-a-resumable-goal,suite-custody,testing-contract-owns-record-paths,token-spend-fence,turn-verdict-hardening,watch-verb,watcher-repair-request-never-names-current,winddown-census-handoff-leak reason=priority-order from=1:4 to=1:3
 - 2026-09-11T05:28:50Z H621Z5TSTX76A08GYPE5NN03BW-m1c-66a02980 done actor=human:Wido targets=actionable-metrics,breach-clock-and-budget-honesty,burn-without-delivery-tripwire,carried-landing-debt-and-cap,delegate-job-liveness,failed-job-attention,fixture-stewards-outlive-their-suite,goal-abandoned-with-a-reason,governed-exhaustion-reprojection,human-carried-landing-carry,human-carried-landing-verb,human-goal-verbs-forgiving,job-record-birth-token,landing-receipt-survives-records-drift,lease-sweep-death-evidence,live-job-on-a-done-goal-unnoticed,machine-concurrency-governor,proof-harness-process-custody,review-round-limit-counts-per-chain,severity-tiered-rigor,severity-tiered-rigor-p2,skew-preflight-knows-a-receipt-worktree,small-change-lane,steward-catchup-livelock,steward-revives-a-done-goal,stop-batch-strands-a-resumable-goal,suite-custody,testing-contract-owns-record-paths,token-spend-fence,turn-verdict-hardening,watch-verb,watcher-repair-request-never-names-current,winddown-census-handoff-leak reason=priority-order from=1:3 to=1:2
-Integrity: sha256=706b937633d3336e5955f70c62ff9858a7d46cdf08f14070b7ad4d6e9309d864
+- 2026-09-11T05:30:11Z QG60W427D6T7E5F26YD5P3AW52-m1e-892cdaec release actor=m1e+main-1789030447-51011-5722fc targets=testing-contract-owns-record-paths
+Integrity: sha256=ed9e095361f58c02afb6033500ba3bbc9494abb4c44a55391271adf3d9d64b43
