@@ -7,10 +7,12 @@
 - Origin: human
 - Next step: Read scripts/agents/land.sh and commit.sh and the memory/receipts.log format, add the check and its fixture, land.
 - OpenedAt: 2026-09-11T15:50:31Z
-- Revision: 1
+- Revision: 2
+- Pinned: m1e
 - Budget: elapsedLimit=4h attemptLimit=6 reservedJobMinutesLimit=720 activeJobLimit=1 reviewRoundLimit=2
 - BudgetExceptions: 0
 
 History:
 - 2026-09-11T15:50:31Z P8GF671DX0JP94MFS95CPM4H7G-m1-c6925449 open actor=human:Wido targets=landing-refuses-without-its-receipt-line reason=TierOverride: derived=3 set=2 why=Wido 2026-09-11: one check on the landing script; exposure alone does not make it tier 3, which goal 16 of the plan makes law
-Integrity: sha256=ad7151f00bd4fafb1bbfc10062519ff0721f0677853cde0cd21d045f9c22e9f5
+- 2026-09-11T15:50:38Z Y8KB1B921FG960ETKTTR5ATSR3-m1-c6925449 set-pin actor=human:Wido targets=landing-refuses-without-its-receipt-line
+Integrity: sha256=db109bc056cefb55fdf246ad87164780715e75bc0d60c2221b29aa5aa3450aa1
