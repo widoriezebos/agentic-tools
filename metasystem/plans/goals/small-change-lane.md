@@ -1,17 +1,15 @@
 # small-change-lane
 
-- State: approved
+- State: queued
 - Priority: 1
 - Sequence: 19
 - Intent: The 'change this little thing' case has a supported path: a dispatch lane cheap and fast enough that a certified one-line fix is not ceremony
 - Origin: main
 - Next step: DESIGN REVISION 1 RETURNED (scl-design1, Fable, 597 lines; page saved in m1b's scratchpad, scl-design1.patch; unlandable until records can land). WIDO'S DECISIONS 2026-09-10 on its three open points: (1) proof depth follows the four risk answers, never the diff's size (kept the contract's rule; locality is goal blast-radius-beside-risk, later); (2) critique follows the TIER, not the class (goal critique-always re-scoped): the small lane's 'one bounded critique' becomes 'a critique when the tier is 2 or 3, none at tier 1', and the tier-1 direct-fix class is NOT retired: it is the low-risk lane, R-54-m1 stands; (3) the bounds are four files and eighty changed lines, measured on the computed diff at conformance review, a change over the bound moves to the ordinary ladder rather than failing, revisited after ten lane landings. Revision 2 folds these three into the page (sections 2, 3, 7 and the revision record) before read 1. Parked until the bootstrap members land.
 - OpenedAt: 2026-08-20T00:14:00Z
-- Revision: 64
+- Revision: 65
 - Pinned: m1e
-- Budget: elapsedLimit=1d attemptLimit=6 reservedJobMinutesLimit=240 activeJobLimit=1 reviewRoundLimit=3
 - BudgetExceptions: 0
-- Approved: by=human:Wido at=2026-09-06T06:53:37Z revision=5 opid=A35EHY2TGAWCCFA1Q1J0WZGS35-m1-a4f8999f authority=proven digest=ce78111a14c81468a494d5bb4235f81b054a41696cc40003f8b906dee0e8aa27
 - Sliced: machine=m1b lineage=main-1788680071-18713-e76d5d revision=16 at=2026-09-10T07:25:39Z
 
 History:
@@ -79,4 +77,5 @@ History:
 - 2026-09-11T15:48:39Z 6YNPZFT7SHSMH78WVASRFK2CAB-m1-c6925449 set-priority actor=human:Wido targets=breach-clock-and-budget-honesty,carried-landing-debt-and-cap,goal-abandoned-with-a-reason,human-goal-verbs-forgiving,landing-receipt-survives-records-drift,severity-tiered-rigor,severity-tiered-rigor-p2,small-change-lane,stop-batch-strands-a-resumable-goal reason=priority-order subject=small-change-lane from=1:25 to=1:17 requested-sequence=17
 - 2026-09-11T15:50:51Z M4GZC1Q99QFRH9T13HSY774HAR-m1-c6925449 set-priority actor=human:Wido targets=actionable-metrics,breach-clock-and-budget-honesty,budget-extends-by-consumption-and-breach-parks,burn-without-delivery-tripwire,capped-round-continues-instead-of-restarting,carried-landing-debt-and-cap,coordinator-context-stays-under-budget,coordinator-wakes-on-events-not-polls,critique-closes-on-folded-proof,deep-battery-under-ten-minutes,delegate-job-liveness,delegate-rounds-reuse-a-warm-gate,delivery-receipt-stops-at-first-failure,failed-job-attention,fixture-stewards-outlive-their-suite,goal-abandoned-with-a-reason,human-carried-landing-carry,human-carried-landing-verb,human-goal-verbs-forgiving,job-record-birth-token,land-ready-work-lands-without-a-claim-slot,landing-receipt-survives-records-drift,landing-refuses-without-its-receipt-line,lease-sweep-death-evidence,live-job-on-a-done-goal-unnoticed,machine-concurrency-governor,proof-groups-detect-hangs-by-progress-not-the-clock,proof-harness-process-custody,retained-proof-reuse-crosses-claims-and-attempts,seat-opened-goals-name-their-blocker,severity-tiered-rigor,severity-tiered-rigor-p2,small-change-lane,steward-catchup-livelock,steward-revives-a-done-goal,stop-batch-strands-a-resumable-goal,suite-custody,token-spend-fence,turn-verdict-hardening,watch-verb,watcher-repair-request-never-names-current,winddown-census-handoff-leak reason=priority-order subject=landing-refuses-without-its-receipt-line from=1:17 to=1:18 requested-sequence=5
 - 2026-09-11T15:50:59Z XMVFS3RNBYJQA0S9A89QGZ8XAS-m1-c6925449 set-priority actor=human:Wido targets=actionable-metrics,breach-clock-and-budget-honesty,burn-without-delivery-tripwire,capped-round-continues-instead-of-restarting,carried-landing-debt-and-cap,critique-closes-on-folded-proof,delegate-job-liveness,failed-job-attention,fixture-stewards-outlive-their-suite,goal-abandoned-with-a-reason,human-carried-landing-verb,human-goal-verbs-forgiving,job-record-birth-token,land-ready-work-lands-without-a-claim-slot,landing-receipt-survives-records-drift,lease-sweep-death-evidence,live-job-on-a-done-goal-unnoticed,machine-concurrency-governor,proof-harness-process-custody,severity-tiered-rigor,severity-tiered-rigor-p2,small-change-lane,steward-catchup-livelock,steward-revives-a-done-goal,stop-batch-strands-a-resumable-goal,suite-custody,tier-from-severity-and-novelty,token-spend-fence,turn-verdict-hardening,watch-verb,watcher-repair-request-never-names-current,winddown-census-handoff-leak reason=priority-order subject=tier-from-severity-and-novelty from=1:18 to=1:19 requested-sequence=16
-Integrity: sha256=b3f660e42dba47fe03b24453bea7b8d0e02401ed655dce8e98ad098537eb7cfa
+- 2026-09-11T16:13:44Z E1C0S3MA3XZP0YPJ428M9TBFHB-m1-c6925449 unapprove actor=human:Wido targets=small-change-lane reason=Wido 2026-09-11: Codex critique round 1 of the delivery-efficiency plan accepted; intent amended before re-approval
+Integrity: sha256=d78efbb03b6690c3b42f1dfc87fc3f52ca0cedb3eda42b49c70e0aa52570b03b
