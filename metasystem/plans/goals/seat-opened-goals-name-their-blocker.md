@@ -1,6 +1,6 @@
 # seat-opened-goals-name-their-blocker
 
-- State: queued
+- State: approved
 - Priority: 1
 - Sequence: 6
 - Risk: severity=1 novelty=1 exposure=2 accumulation=1 basis="severity 1: a refused open is re-issued with its blocker; novelty 1: dependency edges exist; exposure 2: seat opens only; accumulation 1: one verb"
@@ -9,9 +9,11 @@
 - Origin: human
 - Next step: Read OpenTiered in internal/goal/verbs.go, the park verb and the claimed-blocker validation; design the atomic open-and-park publish; put the ruling to Wido; build; docs; land.
 - OpenedAt: 2026-09-11T15:45:05Z
-- Revision: 8
+- Revision: 9
 - Pinned: m1e
+- Budget: elapsedLimit=4h attemptLimit=6 reservedJobMinutesLimit=720 activeJobLimit=1 reviewRoundLimit=2
 - BudgetExceptions: 0
+- Approved: by=human:Wido at=2026-09-11T16:18:58Z revision=9 opid=VY3VHFYQSAFH7K0FCTYNM0XT1N-m1-c6925449 authority=proven digest=698a9d3a8a3192db448cda5c2e1eaabaf4b5da707371dcda5464e9d272589974
 
 History:
 - 2026-09-11T15:45:05Z 5W0FM0WGJ00Q1A7X06ESJFVC4X-m1e-5083721b open actor=m1e+main-1789141490-27414-b9c0d2 targets=seat-opened-goals-name-their-blocker
@@ -22,4 +24,5 @@ History:
 - 2026-09-11T16:13:11Z BDBGP0J34XP4KAE6VGDVG6HQYY-m1-c6925449 unapprove actor=human:Wido targets=seat-opened-goals-name-their-blocker reason=Wido 2026-09-11: Codex critique round 1 of the delivery-efficiency plan accepted; intent amended before re-approval
 - 2026-09-11T16:16:31Z 2W377S4HCBEC3XM0ND8DBQP9H4-m1e-ab5421f5 edit actor=m1e+main-1789143377-71578-b9c0d2 targets=seat-opened-goals-name-their-blocker
 - 2026-09-11T16:17:42Z 10K1ZB3NEVAP7YG6XS8JK7N6VJ-m1-c6925449 set-priority actor=human:Wido targets=human-carried-landing-carry,seat-opened-goals-name-their-blocker reason=priority-order subject=seat-opened-goals-name-their-blocker from=1:7 to=1:6 requested-sequence=6
-Integrity: sha256=82ce789db537da04dd48e9c798541fe97b5642c966fbe74b0ff20f6e92d6f383
+- 2026-09-11T16:18:58Z VY3VHFYQSAFH7K0FCTYNM0XT1N-m1-c6925449 approve actor=human:Wido targets=seat-opened-goals-name-their-blocker
+Integrity: sha256=3255f1d1ff16856e26eada8771b14419413e8ba19c28d98dfdf564a4d39b9caf
