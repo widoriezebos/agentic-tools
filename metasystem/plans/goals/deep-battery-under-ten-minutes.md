@@ -7,9 +7,9 @@
 - Tier: 3
 - Intent: The cadence run (test run --mode deep --purpose cadence) completes in under ten minutes wall on the 18-core Mac with every cadence group still present and passing, and no slower than today on the 4-vCPU VM. DONE is that sentence, with three consecutive green cadence runs and their attempt ids in the receipt. Slices 2, 3 and 5 of plans/suite-speed-plan.md, arc-sized: groups run concurrently inside one attempt under a configurable cap; the long Go groups are sharded and the big fixture sections split into per-scenario groups; the race gate reuses the shards.
 - Origin: human
-- Next step: STATE 2026-09-11 23:40Z (m1e): cadence run 7 (proof-mtxezk3l) 808 s wall from 1189 (run 6), CPU 6126 s; dispatcher 756 (the wall), adoption 638, gate 513, supervision 434; red only on two testpolicy contract tests that pin goal-full-coverage and missionrunner-full-coverage in the cadence list (b85b81fc took them out because the gate's sharded unit stage runs the same packages under -race -cover: about 2000 CPU seconds twice per cadence). The list is restored in the next landing; the duplication is a contract-law question for Wido under R-36-m3: let the gate's sharded coverage stand as those two groups' proof at cadence, or keep both. NEXT: land the dispatch scenario as five clusters and the adoption comparisons as their own scenarios (diagnostic in flight), then cadence run 8. DONE still requires three consecutive green cadence runs under ten minutes with their attempt ids.
+- Next step: STATE 2026-09-12 02:20Z (m1e): cadence run 8 (proof-mtxfyj9c) 969 s: dispatcher 388 (from 756), adoption 387 (from 638), the four slots full the whole run; run 9 (proof-mtxgkya4, six slots) in flight and slower per group under the contention. Landed 7a6babbb (four shards, the ENOMEM retry, cap default a third of the cores). CORRECTION: the internal/goal coverage shortfall (78.3 percent against the 80.0 floor) is not the shard count: it reads 78.3 with six and with four shards, and the goal package gained about 1300 lines in verbs.go from ce59b313 (another seat, 22:22Z) with one test line; blocker goal goal-package-coverage-under-its-floor-since-ce59b313 opened for it. The cadence cannot be green until that lands. NEXT: the land fixture's nested receipt cap (one minute) trips under six slots; decide four or six slots by run 9's wall; the CPU bound stays the duplicated coverage work (question for Wido on the design page). DONE still requires three consecutive green cadence runs under ten minutes with their attempt ids.
 - OpenedAt: 2026-09-10T12:02:35Z
-- Revision: 17
+- Revision: 18
 - Pinned: m1e
 - Budget: elapsedLimit=2d attemptLimit=24 reservedJobMinutesLimit=1200 activeJobLimit=1 reviewRoundLimit=3
 - BudgetExceptions: 1
@@ -35,4 +35,5 @@ History:
 - 2026-09-11T19:57:52Z 0RPSG28E200HWWZDTB3619BYHY-m1e-892cdaec claim actor=m1e+main-1789030447-51011-5722fc targets=deep-battery-under-ten-minutes
 - 2026-09-11T20:35:20Z YB6QAKBCQ85Z4YFF2HT16W3H2G-m1e-892cdaec edit actor=m1e+main-1789030447-51011-5722fc targets=deep-battery-under-ten-minutes
 - 2026-09-11T20:48:55Z ZRN4V4A2MDDBRS9H5TRET0MS2J-m1e-892cdaec edit actor=m1e+main-1789030447-51011-5722fc targets=deep-battery-under-ten-minutes
-Integrity: sha256=88da04a5f6a748e90a975487c6aff569e18faea5dbcb2cd7d1f8f89883ff59e3
+- 2026-09-11T21:32:20Z JHB23YJZDVME511SP7SG0EJAKX-m1e-892cdaec edit actor=m1e+main-1789030447-51011-5722fc targets=deep-battery-under-ten-minutes
+Integrity: sha256=6a74c452988f5227ff97e292f5fa3a291f6f75309f518d528f1c9e505b470e17
