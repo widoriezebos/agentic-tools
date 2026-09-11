@@ -1,6 +1,6 @@
 # delegate-rounds-reuse-a-warm-gate
 
-- State: queued
+- State: approved
 - Priority: 1
 - Sequence: 13
 - Risk: severity=2 novelty=1 exposure=2 accumulation=2 basis="severity 2: a skipped gate that should have run lets a red round close; novelty 1: caches and the fast gate exist; exposure 2: delegate rounds; accumulation 2: touches dispatch and the gate"
@@ -9,9 +9,11 @@
 - Origin: human
 - Next step: Read the job environment in scripts/agents/dispatch.sh (the per-job GOCACHE), go-gate.sh --fast and the round brief format; measure the cold cases first; design; critique; build; land.
 - OpenedAt: 2026-09-11T15:46:36Z
-- Revision: 9
+- Revision: 10
 - Pinned: m1e
+- Budget: elapsedLimit=1d attemptLimit=10 reservedJobMinutesLimit=1200 activeJobLimit=1 reviewRoundLimit=3
 - BudgetExceptions: 0
+- Approved: by=human:Wido at=2026-09-11T16:19:17Z revision=10 opid=QK4GT5DFTN9JC9WB665Y8RN321-m1-c6925449 authority=proven digest=7c37e87829e7206d256dfd2c81818c4c02422324555c8e0c61d9207dfa4c6229
 
 History:
 - 2026-09-11T15:46:36Z ESAZ2BX9DC37VFYCNAXPCDG92H-m1-c6925449 open actor=human:Wido targets=delegate-rounds-reuse-a-warm-gate reason=TierOverride: derived=2 set=3 why=Wido 2026-09-11: the gate is the delegate's judge; a skipped gate is a tier-3 hazard whatever the four answers derive
@@ -23,4 +25,5 @@ History:
 - 2026-09-11T16:16:44Z RW3XA45E3GFVNW9WTY64Z087VT-m1e-ab5421f5 edit actor=m1e+main-1789143377-71578-b9c0d2 targets=delegate-rounds-reuse-a-warm-gate
 - 2026-09-11T16:17:45Z 030HT9PVZGVHDS5RKBJJ1AFZZP-m1-c6925449 set-priority actor=human:Wido targets=actionable-metrics,breach-clock-and-budget-honesty,budget-extends-by-consumption-and-breach-parks,burn-without-delivery-tripwire,capped-round-continues-instead-of-restarting,carried-landing-debt-and-cap,coordinator-context-stays-under-budget,coordinator-wakes-on-events-not-polls,critique-closes-on-folded-proof,deep-battery-under-ten-minutes,delegate-job-liveness,delegate-rounds-reuse-a-warm-gate,delivery-receipt-stops-at-first-failure,failed-job-attention,fixture-stewards-outlive-their-suite,goal-abandoned-with-a-reason,human-carried-landing-carry,human-carried-landing-verb,human-goal-verbs-forgiving,job-record-birth-token,land-ready-work-lands-without-a-claim-slot,landing-receipt-survives-records-drift,lease-sweep-death-evidence,live-job-on-a-done-goal-unnoticed,machine-concurrency-governor,proof-attempts-settle-to-minutes-run,proof-groups-detect-hangs-by-progress-not-the-clock,proof-harness-process-custody,retained-proof-reuse-crosses-claims-and-attempts,severity-tiered-rigor,severity-tiered-rigor-p2,small-change-lane,steward-catchup-livelock,steward-revives-a-done-goal,stop-batch-strands-a-resumable-goal,suite-custody,tier-from-severity-and-novelty,token-spend-fence,turn-verdict-hardening,watch-verb,watcher-repair-request-never-names-current,winddown-census-handoff-leak reason=priority-order subject=proof-attempts-settle-to-minutes-run from=1:13 to=1:14 requested-sequence=7
 - 2026-09-11T16:18:10Z 38ZR0SX47MS7KGY1A6P8NASJAD-m1-c6925449 set-priority actor=human:Wido targets=delegate-rounds-reuse-a-warm-gate,human-carried-landing-carry reason=priority-order subject=delegate-rounds-reuse-a-warm-gate from=1:14 to=1:13 requested-sequence=13
-Integrity: sha256=cb8fa88cb5f817002d489c3e6aa336c6593ddeaf1d83c1139c2e616bd8131a41
+- 2026-09-11T16:19:17Z QK4GT5DFTN9JC9WB665Y8RN321-m1-c6925449 approve actor=human:Wido targets=delegate-rounds-reuse-a-warm-gate
+Integrity: sha256=fdccac637a4b2938ec8aa7e943de22a2845f8d754c8a646adb23151854ae2c61
