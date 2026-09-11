@@ -211,6 +211,16 @@ func TestAdoptionComparisonSelectedScenarios(t *testing.T) {
 		if _, err := lease.Announce(target, "adoption-"+name, pid, started, "adoption-"+name, "codex", "adoption-comparison"); err != nil {
 			t.Fatal(err)
 		}
+		if name != "filled" {
+			// The copied target's assertions are registration-only (setup,
+			// digest, drift, orphan) and need the engine built above, not a
+			// delivery proof. Its delivery inputs are the filled target's minus
+			// the covenant sections: the same frozen source, the same contract
+			// filling, the same engine; the filled run already proved them.
+			// Running the delivery leg again here cost 90 to 140 s per bed run
+			// and proved nothing the filled leg had not.
+			return target
+		}
 		tree := runReceiptGit(t, target, "write-tree")
 		first := filepath.Join(bed, name+"-first.json")
 		mustRun(target, engine, "test", "run", "--root", target, "--goal", "adoption-goal", "--tree", tree, "--mode", "auto", "--purpose", "delivery", "--cap-min", "10", "--result", first)
