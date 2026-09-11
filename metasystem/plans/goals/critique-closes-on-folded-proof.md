@@ -1,6 +1,6 @@
 # critique-closes-on-folded-proof
 
-- State: queued
+- State: approved
 - Priority: 1
 - Sequence: 16
 - Risk: severity=2 novelty=2 exposure=3 accumulation=1 basis="severity 2: a closure rule that is too loose lets a material finding land; novelty 2: fold-proven closure and the round-2 failsafe are new rules; exposure 3: every chain; accumulation 1: skills and dispatcher"
@@ -9,9 +9,11 @@
 - Origin: human
 - Next step: Wido's word recorded 2026-09-11 (R-97-m1e): yes to both rules; unresolved invariants escalate to Wido, never a third automatic round. Next: build in rank order.
 - OpenedAt: 2026-09-11T15:45:22Z
-- Revision: 14
+- Revision: 15
 - Pinned: m1e
+- Budget: elapsedLimit=1d attemptLimit=10 reservedJobMinutesLimit=1200 activeJobLimit=1 reviewRoundLimit=3
 - BudgetExceptions: 0
+- Approved: by=human:Wido at=2026-09-11T20:33:44Z revision=15 opid=8BE27ZT80ZJ6JTWNQ3GZAERK8Y-m1-c6925449 authority=proven digest=cf4c80f3b42d74737238cccc4774f7900e36fd98d52c0bc36aec01bab9f27fbb
 
 History:
 - 2026-09-11T15:45:22Z WKPXEN9CTZR44TMFZTQJE9X68Q-m1e-5083721b open actor=m1e+main-1789141490-27414-b9c0d2 targets=critique-closes-on-folded-proof
@@ -28,4 +30,5 @@ History:
 - 2026-09-11T20:16:05Z ZJ6R4YG0PMN2971ZD0R6PPRPQ2-m1e-892cdaec edit actor=m1e+main-1789030447-51011-5722fc targets=critique-closes-on-folded-proof
 - 2026-09-11T20:31:13Z 2WC804E10CNMQH2FBG8MVCK6R0-m1-c6925449 unapprove actor=human:Wido targets=critique-closes-on-folded-proof reason=Wido 2026-09-11: every program goal states runtime independence (claude, codex, devin, future adapters); intent amended before re-approval
 - 2026-09-11T20:32:27Z BZCT2B36SX7R6V0METTPMAWEJF-m1e-3ca84c28 edit actor=m1e+main-1789158700-39729-b9c0d2 targets=critique-closes-on-folded-proof
-Integrity: sha256=2ce5bb86a654bf51766de8a8b70fa09aa12815cfc4a455cb6a01cb2b587cd7a0
+- 2026-09-11T20:33:44Z 8BE27ZT80ZJ6JTWNQ3GZAERK8Y-m1-c6925449 approve actor=human:Wido targets=critique-closes-on-folded-proof
+Integrity: sha256=57e115089efa2a014226489e4d18276006adfae88856b0da7e3632d4cde4def6
