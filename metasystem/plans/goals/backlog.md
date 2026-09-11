@@ -6,7 +6,7 @@
 - MigrationEpoch: 2026-08-20T00:00:00Z
 - ManifestDigest: d82032bee818c2d82e6a95e6f1b75347499b88ee8b68c4d20a0f3c94d00ba320
 - MigrationMode: manifest
-- Revision: 30
+- Revision: 31
 - ApprovalGate: since=2026-09-03T14:16:24Z opid=JY54AQT8101VK9353WT9FQYGA9-m0-c5dbf036
 - FleetEnrollment: at=2026-09-06T06:37:21Z machine=m1 generation=1 opid=CMNCRETKYCB18MFZNYFSZJPXQY-m1-a4f8999f
 
@@ -48,4 +48,5 @@ History:
 - 2026-09-11T15:15:53Z VDTHR8CEY32MD4FPYXZ91NKFDG-m1e-892cdaec ack actor=m1e+main-1789030447-51011-5722fc targets=witness-fallback-only-on-environmental-refusal displaced=m1e+main-1789030447-51011-5722fc@2026-09-11T15:02:30Z ack
 - 2026-09-11T16:37:45Z KC7BM4TWZYTWMDWRXXX9S9V766-m1e-892cdaec ack actor=m1e+main-1789030447-51011-5722fc targets=dispatcher-fixture-long-waits-bounded displaced=m1e+main-1789030447-51011-5722fc@2026-09-11T16:22:22Z ack
 - 2026-09-11T19:57:46Z RK9AQ3TT6EG56TEMHAWN2M0AV6-m1e-892cdaec ack actor=m1e+main-1789030447-51011-5722fc targets=deep-battery-under-ten-minutes displaced=m1e+main-1789030447-51011-5722fc@2026-09-11T16:37:45Z ack
-Integrity: sha256=70d712a295a92171469105b953ff591a8fead689488c5ab168009f50384f96f7
+- 2026-09-11T22:09:34Z FR4FWH1KFPD58D0J91CJJMQB4M-m1e-892cdaec ack actor=m1e+main-1789030447-51011-5722fc targets=deep-battery-under-ten-minutes displaced=m1e+main-1789030447-51011-5722fc@2026-09-11T19:57:52Z ack
+Integrity: sha256=bb493525f4c05d1174426be72ce974db7f67e50d6959a962b832227783cc8cda
