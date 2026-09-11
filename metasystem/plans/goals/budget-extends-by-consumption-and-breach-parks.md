@@ -1,6 +1,6 @@
 # budget-extends-by-consumption-and-breach-parks
 
-- State: queued
+- State: approved
 - Priority: 1
 - Sequence: 7
 - Risk: severity=2 novelty=2 exposure=3 accumulation=1 basis="severity 2: the budget law is the spend guard; novelty 2: extension by consumption and auto-park are new rules; exposure 3: every claimed goal; accumulation 1: the tuple stays"
@@ -9,13 +9,15 @@
 - Origin: human
 - Next step: Design first: read internal/goal approval.go, stop.go and the breach handling, and R-88, R-90 and R-91 in memory/rulings.md; write the design with the three rules and the guarantees they keep; critique; build; land.
 - OpenedAt: 2026-09-11T15:45:08Z
-- Revision: 3
+- Revision: 4
 - Pinned: m1e
 - Budget: elapsedLimit=1d attemptLimit=10 reservedJobMinutesLimit=1200 activeJobLimit=1 reviewRoundLimit=3
 - BudgetExceptions: 0
+- Approved: by=human:Wido at=2026-09-11T15:49:18Z revision=4 opid=FZSRQV9DYG5RBJ3S06PJ5RRQN5-m1-c6925449 authority=proven digest=2ed9d1c5950e7e2e476d36992dda3011be5f4d68b14f4ebb477006bebb660089
 
 History:
 - 2026-09-11T15:45:08Z 9QD56QEP3YRJBVPYD7Y5S3BS7S-m1e-5083721b open actor=m1e+main-1789141490-27414-b9c0d2 targets=budget-extends-by-consumption-and-breach-parks
 - 2026-09-11T15:47:22Z Q7D6D2F0439PVS81XV0J9TX583-m1-c6925449 set-pin actor=human:Wido targets=budget-extends-by-consumption-and-breach-parks
 - 2026-09-11T15:47:26Z W0NGHQ1G0390Z1Y46T1BV3PZ7A-m1-c6925449 set-priority actor=human:Wido targets=actionable-metrics,breach-clock-and-budget-honesty,budget-extends-by-consumption-and-breach-parks,burn-without-delivery-tripwire,carried-landing-debt-and-cap,delegate-job-liveness,failed-job-attention,fixture-stewards-outlive-their-suite,goal-abandoned-with-a-reason,human-carried-landing-verb,human-goal-verbs-forgiving,job-record-birth-token,landing-receipt-survives-records-drift,lease-sweep-death-evidence,live-job-on-a-done-goal-unnoticed,machine-concurrency-governor,proof-harness-process-custody,severity-tiered-rigor,severity-tiered-rigor-p2,small-change-lane,steward-catchup-livelock,steward-revives-a-done-goal,stop-batch-strands-a-resumable-goal,suite-custody,token-spend-fence,turn-verdict-hardening,watch-verb,watcher-repair-request-never-names-current,winddown-census-handoff-leak reason=priority-order subject=budget-extends-by-consumption-and-breach-parks from=unranked to=1:7 requested-sequence=7
-Integrity: sha256=4f30bf39c39cdd0897402499cc74912d64e25c324ebcd5f61f35058d135dde06
+- 2026-09-11T15:49:18Z FZSRQV9DYG5RBJ3S06PJ5RRQN5-m1-c6925449 approve actor=human:Wido targets=budget-extends-by-consumption-and-breach-parks
+Integrity: sha256=ab1d2a6dc81ef61508b956b5dd8bb682bbb71c8910b71282e3609289972d92f1
