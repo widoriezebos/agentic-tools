@@ -28,6 +28,7 @@ import (
 
 type TestRunRequest struct {
 	ProjectRoot        string
+	EngineRearm        *EngineRearm
 	InstallationPrefix string
 	CandidateTree      string
 	BaseCommit         string
@@ -611,7 +612,7 @@ func NewTestResult(request TestRunRequest) TestResult {
 	if request.CandidateEngineBuildIdentity == "" {
 		candidateEngineIdentityVersion = candidateEngineDigestIdentityVersion
 	}
-	return TestResult{SchemaVersion: TestResultSchemaVersion, AttemptID: request.AttemptID,
+	return TestResult{SchemaVersion: TestResultSchemaVersion, AttemptID: request.AttemptID, EngineRearm: request.EngineRearm,
 		Purpose: request.Plan.Purpose, RequestedMode: request.Plan.RequestedMode, RequiredMode: request.Plan.RequiredMode,
 		ExecutedMode: request.Plan.ExecutedMode, ProjectRoot: request.ProjectRoot, InstallationPrefix: request.InstallationPrefix,
 		BaseCommit: request.BaseCommit, CandidateTree: request.CandidateTree, PolicyBaseCommit: request.PolicyBaseCommit,

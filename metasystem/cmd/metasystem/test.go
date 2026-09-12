@@ -38,6 +38,7 @@ type testingPreparation struct {
 	ContractDigest, BaseContractDigest          string
 	PolicyEngineDigest, BehaviorPolicyDigest    string
 	JudgeKey                                    string
+	EngineRearm                                 *proofrun.EngineRearm
 	PolicyEngine                                string
 	FirstTestingTransition                      bool
 	Plan                                        testpolicy.Plan
@@ -138,6 +139,9 @@ type testingSelectionRequest struct {
 	Purpose                                               testpolicy.Purpose
 	Groups                                                []string
 	Carried                                               bool
+	// LandedRearm is set by the outermost test run only: the pinned child
+	// plan and the verify verbs judge the engine as they find it.
+	LandedRearm bool
 }
 
 func parseTestingSelection(name string, args []string, execution bool) (testingSelectionRequest, bool, int) {
@@ -211,6 +215,18 @@ func prepareTesting(request testingSelectionRequest) (testingPreparation, error)
 		if err != nil {
 			return testingPreparation{}, err
 		}
+	}
+	// A landed engine is trusted by its landing: when the enrolled engine is
+	// behind the landing ref by landed commits only, the run fetches,
+	// fast-forwards, rebuilds and re-arms before it judges anything.
+	var engineRearm *proofrun.EngineRearm
+	if request.LandedRearm {
+		namedDeliveryTree := request.Tree != "" && request.Purpose == testpolicy.PurposeDelivery
+		rearm, rearmErr := landedRearm(installation, projectRoot, prefix, namedDeliveryTree)
+		if rearmErr != nil {
+			return testingPreparation{}, rearmErr
+		}
+		engineRearm = rearm
 	}
 	policyBaseCommit, policyBaseErr := trustedTestingPolicyBase(projectRoot, workspace)
 	if policyBaseErr != nil {
@@ -344,6 +360,7 @@ func prepareTesting(request testingSelectionRequest) (testingPreparation, error)
 		CandidateContract: candidateContract, EffectiveContract: effective, ContractDigest: bytesSHA256(candidateBytes),
 		BaseContractDigest: baseContractDigest, PolicyEngineDigest: policyEngineDigest, PolicyEngine: policyEngine,
 		JudgeKey:               proofrun.ComputeJudgeKey(context.Background(), projectRoot, policyBaseCommit, strings.TrimSuffix(prefix, "/")),
+		EngineRearm:            engineRearm,
 		FirstTestingTransition: !basePresent,
 		BehaviorPolicyDigest:   bytesSHA256(behaviorsurface.Bytes()), Plan: plan, Environment: testingEnvironment(os.Environ())}, nil
 }
@@ -498,6 +515,7 @@ func testingRunRequest(prepared testingPreparation, attemptID, logRoot, candidat
 		Contract: prepared.EffectiveContract, Plan: prepared.Plan, AttemptID: attemptID, Environment: prepared.Environment,
 		LogRoot: logRoot, ContractDigest: prepared.ContractDigest, BaseContractDigest: prepared.BaseContractDigest,
 		PolicyEngineDigest: prepared.PolicyEngineDigest, JudgeKey: prepared.JudgeKey, PolicyEngine: prepared.PolicyEngine, BehaviorPolicyDigest: prepared.BehaviorPolicyDigest,
+		EngineRearm:     prepared.EngineRearm,
 		CandidateEngine: candidateEngine, CandidateEngineDigest: candidateEngineDigest,
 		CandidateEngineBuildIdentity: candidateEngineBuildIdentity}
 }
@@ -735,6 +753,7 @@ func runTestRun(args []string) int {
 	if status != 0 {
 		return status
 	}
+	request.LandedRearm = true
 	prepared, err := prepareTesting(request)
 	if err != nil {
 		fmt.Fprintln(os.Stderr, "metasystem test run:", err)

@@ -184,6 +184,7 @@ type TestResult struct {
 	BaseContractDigest             string                    `json:"baseContractDigest"`
 	PolicyEngineDigest             string                    `json:"policyEngineDigest"`
 	JudgeKey                       string                    `json:"judgeKey,omitempty"`
+	EngineRearm                    *EngineRearm              `json:"engineRearm,omitempty"`
 	CandidateEngineIdentityVersion int                       `json:"candidateEngineIdentityVersion,omitempty"`
 	CandidateEngineDigest          string                    `json:"candidateEngineDigest"`
 	CandidateEngineBuildIdentity   string                    `json:"candidateEngineBuildIdentity,omitempty"`
@@ -525,4 +526,18 @@ func RequireResultGroups(result TestResult, required []string) error {
 		return fmt.Errorf("testing result lacks required successful groups: %s", strings.Join(missing, ","))
 	}
 	return nil
+}
+
+// EngineRearm records that the run brought its own enrolled engine to the
+// landed tip before it judged the candidate: the enrolled source it found,
+// the tip it fast-forwarded to and rebuilt at, the generations, and up's
+// own re-armed line.
+type EngineRearm struct {
+	SourceCommit       string `json:"sourceCommit"`
+	LandedTip          string `json:"landedTip"`
+	PreviousGeneration int    `json:"previousGeneration"`
+	Generation         int    `json:"generation,omitempty"`
+	ReArmed            string `json:"reArmed,omitempty"`
+	UpOutcome          string `json:"upOutcome,omitempty"`
+	At                 string `json:"at"`
 }
