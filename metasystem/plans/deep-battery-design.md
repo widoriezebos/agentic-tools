@@ -84,6 +84,20 @@ by design, so a floor moves only on a recorded human word outside a receipt.
 Found on the way: the coverage parser's JSON loop retried a decode error
 forever; it now ends at the first error and keeps what it read.
 
+## Correction of 2026-09-12: the night's numbers were measured on eight cores
+
+Every cadence run and diagnostic from run 5 (2026-09-11 22:xx) to run 11
+(2026-09-12 08:21) ran beside orphaned `yes` processes at a full core each,
+one per execution of TestProcessTreeCPUSecondsCountsDescendants (landed
+89711b7d): the test's Process.Kill ended the shell before the shell's own
+`kill $!`, and each `yes` was reparented to launchd. Ten of them were found
+at 08:40 by `ps` sorted on CPU and killed; the test owns a process group
+since e773669f and asserts the group is empty afterwards. The walls 1177,
+1189, 797, 957, 887, 1039 and 946 s, the six-slot comparison (run 9) and
+the shard-count note above were all measured with up to ten of the
+eighteen cores taken. They stand as recorded, on that box; run 12 onward
+measures the real one.
+
 ## Slices 3b and 5: the big sections and the race gate
 
 Landed 2026-09-11 evening. Slice 5 (b13771d7): the race gate runs its two
