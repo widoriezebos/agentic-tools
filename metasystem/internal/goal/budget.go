@@ -3,6 +3,7 @@ package goal
 import (
 	"fmt"
 	"strconv"
+	"strings"
 	"time"
 
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/goalbudget"
@@ -110,4 +111,73 @@ func budgetFromIntentArgs(args map[string]string) (Budget, error) {
 		return Budget{}, fmt.Errorf("the stored reviewRoundLimit is invalid: %v", err)
 	}
 	return NewBudget(args["elapsedLimit"], attempts, reserved, active, reviewRounds)
+}
+
+func parseBudgetExtensionArrow(value string) (uint64, uint64, error) {
+	fromRaw, toRaw, found := strings.Cut(value, "->")
+	if !found || strings.Contains(toRaw, "->") {
+		return 0, 0, fmt.Errorf("%q is not <from>-><to>", value)
+	}
+	from, fromErr := strconv.ParseUint(fromRaw, 10, 64)
+	to, toErr := strconv.ParseUint(toRaw, 10, 64)
+	if fromErr != nil || toErr != nil || from == 0 || to <= from {
+		return 0, 0, fmt.Errorf("%q is not a positive increasing pair", value)
+	}
+	return from, to, nil
+}
+
+// ValidateBudgetExtensionRecord proves the marker is complete and binds it
+// to the history event that wrote it. The current tuple is intentionally not
+// compared with To: a later person's set-budget may replace the tuple while
+// the marker remains.
+func (f *GoalFile) ValidateBudgetExtensionRecord() error {
+	if f == nil || f.BudgetExtension == nil {
+		return nil
+	}
+	x := f.BudgetExtension
+	if !validStamp(x.At) || !validOpidShape(x.Opid) || !validStamp(x.EvidenceAt) ||
+		x.AttemptLimitFrom == 0 || x.AttemptLimitTo <= x.AttemptLimitFrom ||
+		x.ReservedJobMinutesFrom == 0 || x.ReservedJobMinutesTo <= x.ReservedJobMinutesFrom {
+		return fmt.Errorf("record has incomplete or non-increasing coordinates")
+	}
+	if x.EvidenceKind != "review" && x.EvidenceKind != "landing" && x.EvidenceKind != "receipt" {
+		return fmt.Errorf("evidence kind %q is not review|landing|receipt", x.EvidenceKind)
+	}
+	if x.EvidenceID == "" || strings.ContainsAny(x.EvidenceID, " \t\r\n:@") {
+		return fmt.Errorf("evidence id %q is not one record token", x.EvidenceID)
+	}
+	for _, event := range f.History {
+		if event.At == x.At && event.Opid == x.Opid && event.Verb == "extend-budget" &&
+			event.Actor != "" && !strings.HasPrefix(event.Actor, "human:") && contains(event.Targets, f.Id) {
+			return nil
+		}
+	}
+	return fmt.Errorf("record does not bind its extend-budget History event")
+}
+
+// approvalPrecedesBudgetExtension distinguishes a later approval from the
+// approval whose tuple earned the extension. History order resolves lawful
+// same-second acts because ledger timestamps intentionally have no fraction.
+func approvalPrecedesBudgetExtension(f *GoalFile) bool {
+	if f == nil || f.Approved == nil || f.BudgetExtension == nil || f.Approved.Revision == 0 {
+		return false
+	}
+	approvedAt, approvedErr := time.Parse(time.RFC3339, f.Approved.At)
+	extendedAt, extendedErr := time.Parse(time.RFC3339, f.BudgetExtension.At)
+	if approvedErr != nil || extendedErr != nil {
+		return false
+	}
+	if approvedAt.Before(extendedAt) {
+		return true
+	}
+	if !approvedAt.Equal(extendedAt) {
+		return false
+	}
+	approvedIndex := int(f.Approved.Revision - 1)
+	for index, event := range f.History {
+		if event.Opid == f.BudgetExtension.Opid && event.Verb == "extend-budget" {
+			return approvedIndex < index
+		}
+	}
+	return false
 }

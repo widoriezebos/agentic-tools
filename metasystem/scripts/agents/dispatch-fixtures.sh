@@ -1366,6 +1366,8 @@ cp -R "$agent_repo" "$budget_dispatch_repo"
 enroll_fixture_repo "$budget_dispatch_repo"
 conf_edit "$budget_dispatch_repo/metasystem.conf" replace-line-first '^evidence[.]root=.*$' \
   "evidence.root=$budget_dispatch_evidence"
+conf_edit "$budget_dispatch_repo/metasystem.conf" replace-line-first '^metasystem[.]budget[.]tier-3=.*$' \
+  'metasystem.budget.tier-3=8h/1/1200m/1/3'
 mkdir -p "$budget_dispatch_repo/plans"
 cat >"$budget_dispatch_repo/plans/goals.md" <<'BUDGET_LEDGER'
 # Goals
@@ -1379,7 +1381,7 @@ budget_ledger=$(cat "$budget_dispatch_repo/plans/goals.md" && printf x) && budge
   sha256="$(shasum -a 256 "$budget_dispatch_repo/plans/goals.md" | cut -d' ' -f1)" \
   >"$budget_dispatch_repo/plans/goals-accepted.json"
 "$engine" json set --file "$budget_dispatch_repo/plans/goals-accepted.json" --int schemaVersion=1
-git -C "$budget_dispatch_repo" -c core.hooksPath=/dev/null add plans
+git -C "$budget_dispatch_repo" -c core.hooksPath=/dev/null add plans metasystem.conf
 git -C "$budget_dispatch_repo" -c core.hooksPath=/dev/null \
   -c user.name=fixture -c user.email=fixture@example.invalid commit -qm 'structured budget fixture goals'
 git -C "$budget_dispatch_repo" config metasystem.goal.machine budget-machine
@@ -1460,16 +1462,57 @@ set -e
 grep -Fq 'BUDGET_REFUSED: goal structured-budget' <<<"$budget_admission" \
   && grep -Fq 'attemptLimit used=1 limit=1' <<<"$budget_admission" \
   || { echo "the structured refusal did not name the exact attempt boundary: $budget_admission" >&2; exit 1; }
+
+# A shipped implementation receipt at the accepted tip is advancement
+# evidence. The revision seam extends the two consumption members once, then
+# the same dispatch continues and consumes the newly available attempt.
+budget_receipt_parent=$(git -C "$budget_dispatch_repo" rev-parse refs/metasystem/goals/accepted)
+git -C "$budget_dispatch_repo" -c core.hooksPath=/dev/null reset -q --hard "$budget_receipt_parent"
+mkdir -p "$budget_dispatch_repo/memory"
+printf '%s\n' \
+  '946685220|2000-01-01T00:07:00Z|RECEIPT|type=implement|outcome=shipped|goal=structured-budget|built_by=fixture|note=fixture advancement' \
+  >"$budget_dispatch_repo/memory/receipts.log"
+git -C "$budget_dispatch_repo" -c core.hooksPath=/dev/null add memory/receipts.log
+git -C "$budget_dispatch_repo" -c core.hooksPath=/dev/null \
+  -c user.name=fixture -c user.email=fixture@example.invalid commit -qm 'fixture advancement receipt'
+budget_receipt_tip=$(git -C "$budget_dispatch_repo" rev-parse HEAD)
+git -C "$budget_dispatch_repo" update-ref refs/heads/metasystem/goals "$budget_receipt_tip" "$budget_receipt_parent"
+git -C "$budget_dispatch_repo" update-ref refs/metasystem/goals/accepted "$budget_receipt_tip" "$budget_receipt_parent"
 (
   agent_repo=$budget_dispatch_repo
   agent_dispatch="$budget_dispatch_repo/scripts/agents/dispatch.sh"
   agent_supervision_repo=$budget_dispatch_repo
   export METASYSTEM_OWNER_LINEAGE=budget-fixture
   export METASYSTEM_GOAL_NOW=2000-01-01T00:07:00Z
+  run_agent_fixture_captured structured-budget-extended structured-budget-extended \
+    "$agent_fixture/structured-budget-extended.out" \
+    "$budget_dispatch_repo/bin/metasystem" delegate --role design-critic --outputs "$fixture_declared_outputs" --design metasystem/scripts/agents/roles/design-critic.md --brief "$budget_brief" \
+      --op structured-budget-extended --goal structured-budget --destructive-reach MECHANICAL --wait
+)
+grep -Fq '"outcome":"WON"' "$agent_fixture/structured-budget-extended.out" \
+  || { echo "the dispatcher did not proceed after the earned extension" >&2; cat "$agent_fixture/structured-budget-extended.out" >&2; exit 1; }
+budget_extended_tip=$(git -C "$budget_dispatch_repo" rev-parse refs/metasystem/goals/accepted)
+git -C "$budget_dispatch_repo" cat-file -p "$budget_extended_tip:plans/goals/structured-budget.md" >"$agent_fixture/structured-budget-extended.md"
+grep -Fq -- '- Budget: elapsedLimit=1d attemptLimit=2 reservedJobMinutesLimit=2400 activeJobLimit=1 reviewRoundLimit=3' \
+  "$agent_fixture/structured-budget-extended.md" \
+  && grep -Fq -- '- BudgetExtension: at=2000-01-01T00:07:00Z ' "$agent_fixture/structured-budget-extended.md" \
+  || { echo "the dispatcher did not persist the one tier-box extension" >&2; cat "$agent_fixture/structured-budget-extended.md" >&2; exit 1; }
+
+# The extension does not rebind the claim. Once the continuing dispatch has
+# consumed attempt two, another launch refuses as before and names the marker.
+(
+  agent_repo=$budget_dispatch_repo
+  agent_dispatch="$budget_dispatch_repo/scripts/agents/dispatch.sh"
+  agent_supervision_repo=$budget_dispatch_repo
+  export METASYSTEM_OWNER_LINEAGE=budget-fixture
+  export METASYSTEM_GOAL_NOW=2000-01-01T00:08:00Z
   agent_fails structured-budget-refused '"outcome":"REFUSED-BUDGET"' \
     "$budget_dispatch_repo/bin/metasystem" delegate --role design-critic --outputs "$fixture_declared_outputs" --design metasystem/scripts/agents/roles/design-critic.md --brief "$budget_brief" \
       --op structured-budget-refused --goal structured-budget --destructive-reach MECHANICAL
 )
+grep -Fq "extended once at 2000-01-01T00:07:00Z; a further raise is a person's set-budget" \
+  "$agent_fixture/structured-budget-refused.out" \
+  || { echo "the second exhaustion did not name the standing extension marker" >&2; cat "$agent_fixture/structured-budget-refused.out" >&2; exit 1; }
 [[ ! -e "$budget_dispatch_repo/artifacts/agents/jobs/structured-budget-refused.json" ]] \
   || { echo "the structured admission refusal created a job record" >&2; exit 1; }
 budget_follow_message="$agent_fixture/structured-budget-follow-up.md"

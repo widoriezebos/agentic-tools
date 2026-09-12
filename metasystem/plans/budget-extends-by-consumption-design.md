@@ -1,8 +1,8 @@
 # A budget extends once by consumption, and low-tier ceremony runs under power of attorney (goal budget-extends-by-consumption-and-breach-parks)
 
-- Status: revision 4 (2026-09-12 evening) after the second design read (Codex, gpt-5.6-sol; section 5). Rule 2 landed 4468c8211 for tier 1 (tier 2 joined with f55bbb6bf). Rule 1 is rewritten against both reads now that proof attempts settle to observed minutes (a633b7a08, 46e5678e4); the attorney unpark of R-105-m1e is section 2b. One invariant is Wido's (section 7); the build proceeds on the code's reading of it.
+- Status: revision 4 (2026-09-12 evening) after the second design read (Codex, gpt-5.6-sol; section 5); section 2b landed f3a9359b0 and rule 1 landed with it the same night (section 5 rounds 3 and 4, both on Opus). Rule 2 landed 4468c8211 for tier 1 (tier 2 joined with f55bbb6bf). Rule 1 is rewritten against both reads now that proof attempts settle to observed minutes (a633b7a08, 46e5678e4); the attorney unpark of R-105-m1e is section 2b. One invariant is Wido's (section 7); the build proceeds on the code's reading of it.
 - Goal: budget-extends-by-consumption-and-breach-parks (goal 8 of plans/delivery-efficiency-plan.md)
-- Next step: the attorney unpark (section 2b) lands with one code read on Opus 5 (the R-108-m1c lane); rule 1 (section 1) is built by Codex Sol in a worktree from the section 4 checklist, read on Opus, and lands as the next slice; Wido's word on section 7
+- Next step: section 2b landed f3a9359b0 (Opus read folded, section 5 round 3); rule 1 (section 1) was built by Codex Sol in a worktree from the section 4 checklist and lands after its Opus read (section 5 round 4); then the goal concludes in Wido's name with section 7 on his desk
 
 ## Decisions already recorded
 
@@ -63,9 +63,9 @@ minutes once, by itself, and leaves the second exhaustion to a person.
 **Trigger.** The revision seam (`EvaluateGoalRevisionAdmissionForDispatch`,
 internal/dispatch/admission.go, reached by `job goal-revision-admission`
 from the dispatcher and in-process by the proof run) is about to refuse a
-proposal on `attemptLimit` or on `reservedJobMinutesLimit` (at the limit,
-or used plus the proposed cap over it: the seam's own test) and on no
-other member, with no live-stop reason (a corrupt-over-limit state is a
+proposal on `attemptLimit`, on `reservedJobMinutesLimit`, or on both at
+once (at the limit, or used plus the proposed cap over it: the seam's own
+test) and on no other member, with no live-stop reason (a corrupt-over-limit state is a
 stop, never an extension). Elapsed, active-job and review-round breaches
 are never extended: elapsed has its grace and its stop, the other two are
 not consumption. The revision seam is the one authority for the offer: the
@@ -153,7 +153,22 @@ dispatcher's `require_goal_revision_admission` calls the json form,
 decodes the offer, runs `goal extend-budget` once with the same arguments
 and judges again; a second refusal refuses as today. The proof run
 (cmd/metasystem/proof_run.go) reads the Go field before it reserves and
-does the same in process. `require_goal_admission` is unchanged.
+does the same in process. `require_goal_admission` is unchanged in what it judges; the dispatcher
+now runs it after the revision seam for goal-bound work (before, the seat
+walk ran first and would have refused the same exhaustion before the seam
+could offer), and a goal-free operation keeps the early walk. The proof
+run's native-delegate custody check also compares the delegate record's
+machine and claim epoch with the binding, so the extension it applies is
+the claim holder pair's own act. The order has a cost the page accepts: a
+refusal by the seat walk after an extension (another claim on the machine
+over its box, or a breach-stop) leaves the marker spent; the offer itself
+is withheld when the raise would not admit the very proposal, so the
+marker is never spent on a refusal the seam would repeat. The norm
+coverage a later claim checks is extension-aware like the approval
+digest (the original tuple is judged against the box), the seam refuses
+a zero cap, an empty role and a dispatch mode outside fresh and follow-up
+for every role, and a reader failure on the receipt ledger or the attempt
+store refuses the seam instead of silently dropping an evidence kind.
 
 **The second exhaustion.** Both reads showed R-94-m1e's premise wrong: an
 attempts or minutes exhaustion does not breach-stop today; the seam exits
@@ -440,3 +455,27 @@ none of its verbs (docs advise a separate entry while older engines run).
 The grammar probes (reason text carrying `reason=`, authority tokens,
 tabs, a 1000-character value) all round-tripped; the breach-stop fence is
 unreachable from a parked goal; recovery closure and idempotency hold.
+
+Round 4 (implementation of section 1, built by Codex Sol), Opus 5
+code-critique agent, 2026-09-12 night: three material findings folded.
+The offer was withheld when attempts and minutes breached together, the
+commonest exhaustion (the gate is now "every breach is a consumption
+member"; a both-members fixture); a refused `goal extend-budget` killed
+the dispatch as an internal fault (the dispatcher now prints the refusal,
+retakes the lock and judges again); the dispatcher's admission order had
+changed while the page said it had not (recorded above with its cost; the
+bed leg for a seat-walk refusal after an extension is not added, the
+existing seam test proves the order's necessity and the cost is a decided
+fact on this page). Minor findings folded: the offer is withheld when the
+raise would not admit the proposal; evidence-reader errors refuse the seam;
+the bed asserts the landing identity by epoch and SHA-1; an attempts breach
+without evidence and a proposal beyond the raised box are proven to carry
+no offer. Recorded, not built: the receipt fold is a second reading of the
+ledger beside internal/metrics; the marker's validation cannot check the
+tier box without config (reconcile and the verb's arithmetic guard it);
+the verb's tier-0 fallback differs from the seam's TierLaw refusal; the
+closed-critique reader's register and completion legs have positive proof
+only; a refusal without an offer evaluates the seam twice. The seat
+reverted one Codex change outside the page (an episode drop on caller
+class in leaveOrDropEpisode) and updated the call-site test that pinned
+the old admission order.

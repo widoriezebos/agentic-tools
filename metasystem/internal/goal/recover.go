@@ -312,6 +312,36 @@ func requestForEntry(e Endpoint, entry Entry) (PublishRequest, error) {
 		return claimRequest(r, target, budget), nil
 	case "set-budget":
 		return PublishRequest{}, fmt.Errorf("APPROVAL_REQUIRED: set-budget is proof-bearing and cannot be replayed from journal text; re-run it from the human authority boundary and close this entry by hand")
+	case "extend-budget":
+		parse := func(key string) (uint64, error) {
+			value, err := strconv.ParseUint(in.Args[key], 10, 64)
+			if err != nil || value == 0 {
+				return 0, fmt.Errorf("the stored extend-budget %s is invalid; close it by hand", key)
+			}
+			return value, nil
+		}
+		attemptFrom, err := parse("attemptLimitFrom")
+		if err != nil {
+			return PublishRequest{}, err
+		}
+		attemptTo, err := parse("attemptLimitTo")
+		if err != nil {
+			return PublishRequest{}, err
+		}
+		reservedFrom, err := parse("reservedJobMinutesFrom")
+		if err != nil {
+			return PublishRequest{}, err
+		}
+		reservedTo, err := parse("reservedJobMinutesTo")
+		if err != nil {
+			return PublishRequest{}, err
+		}
+		offer := BudgetExtensionOffer{
+			EvidenceKind: in.Args["evidenceKind"], EvidenceID: in.Args["evidenceId"], EvidenceAt: in.Args["evidenceAt"],
+			AttemptLimitFrom: attemptFrom, AttemptLimitTo: attemptTo,
+			ReservedJobMinutesFrom: reservedFrom, ReservedJobMinutesTo: reservedTo,
+		}
+		return extendBudgetRequest(r, target, offer), nil
 	case "grant", "revoke":
 		return PublishRequest{}, fmt.Errorf("%s is proof-bearing and cannot be replayed from journal text; re-run it from the human authority boundary and close this entry by hand", in.Verb)
 	case "set-priority":

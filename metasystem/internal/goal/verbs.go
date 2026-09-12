@@ -955,6 +955,106 @@ func SetBudget(r VerbRequest, id string, budget Budget) (PublishResult, error) {
 	return PublishResult{}, fmt.Errorf("the budget was bound by the human's approval; goal set-budget requires the human authority proof")
 }
 
+// BudgetExtensionOffer is the exact read-only admission offer journaled by
+// extend-budget. Recovery replays these coordinates instead of rediscovering
+// evidence whose two-hour window may have moved on.
+type BudgetExtensionOffer struct {
+	EvidenceKind           string
+	EvidenceID             string
+	EvidenceAt             string
+	AttemptLimitFrom       uint64
+	AttemptLimitTo         uint64
+	ReservedJobMinutesFrom uint64
+	ReservedJobMinutesTo   uint64
+}
+
+// ExtendBudget applies the one consumption-earned raise. Admission owns
+// whether the offer exists; this verb owns actor, once, tuple, and tier-box
+// integrity under the publishing transaction.
+func ExtendBudget(r VerbRequest, id string, offer BudgetExtensionOffer) (PublishResult, error) {
+	if r.Actor.Human != "" {
+		return PublishResult{}, fmt.Errorf("goal extend-budget is the claim holder pair's own act; a person uses goal set-budget")
+	}
+	if r.Attorney != nil {
+		return PublishResult{}, fmt.Errorf("goal extend-budget takes no power of attorney; it is the claim holder pair's own act")
+	}
+	return Publish(r.Endpoint, extendBudgetRequest(r, id, offer))
+}
+
+func extendBudgetRequest(r VerbRequest, id string, offer BudgetExtensionOffer) PublishRequest {
+	args := intentArgs(r, map[string]string{
+		"evidenceKind": offer.EvidenceKind, "evidenceId": offer.EvidenceID, "evidenceAt": offer.EvidenceAt,
+		"attemptLimitFrom":       strconv.FormatUint(offer.AttemptLimitFrom, 10),
+		"attemptLimitTo":         strconv.FormatUint(offer.AttemptLimitTo, 10),
+		"reservedJobMinutesFrom": strconv.FormatUint(offer.ReservedJobMinutesFrom, 10),
+		"reservedJobMinutesTo":   strconv.FormatUint(offer.ReservedJobMinutesTo, 10),
+	})
+	return PublishRequest{
+		Opid: r.opid(), Machine: r.Actor.Machine, Lineage: r.Actor.Lineage,
+		Intent:  Intent{Verb: "extend-budget", Targets: []string{id}, Args: args},
+		Message: "goal extend-budget " + id,
+		Mutate: func(tip string) ([]Change, error) {
+			t, err := loadTree(r.Endpoint.Root, tip)
+			if err != nil {
+				return nil, err
+			}
+			f := t.Live[id]
+			if f == nil {
+				return nil, fmt.Errorf("goal %s is not live", id)
+			}
+			if opidLanded(f, r) {
+				return nil, AlreadyApplied{}
+			}
+			if r.Actor.Human != "" || r.CallerClass == "HUMAN" || r.Attorney != nil {
+				return nil, fmt.Errorf("goal extend-budget is the claim holder pair's own act")
+			}
+			if f.State != StateClaimed || f.Claimed == nil || f.Budget == nil {
+				return nil, fmt.Errorf("goal %s has no claimed structured budget to extend", id)
+			}
+			if !ownPair(f.Claimed, r.Actor) {
+				return nil, fmt.Errorf("goal %s is claimed by %s+%s; only that pair may extend its budget", id, f.Claimed.Machine, f.Claimed.Lineage)
+			}
+			if f.BudgetExtension != nil {
+				return nil, fmt.Errorf("goal %s extended once at %s; a further raise is a person's set-budget", id, f.BudgetExtension.At)
+			}
+			if offer.EvidenceKind != "review" && offer.EvidenceKind != "landing" && offer.EvidenceKind != "receipt" ||
+				offer.EvidenceID == "" || strings.ContainsAny(offer.EvidenceID, " \t\r\n:@") || !validStamp(offer.EvidenceAt) {
+				return nil, fmt.Errorf("goal extend-budget carries an invalid advancement offer")
+			}
+			if f.Budget.AttemptLimit != offer.AttemptLimitFrom || f.Budget.ReservedJobMinutesLimit != offer.ReservedJobMinutesFrom {
+				return nil, fmt.Errorf("goal %s budget moved after the extension offer", id)
+			}
+			boxTier := f.Tier
+			if boxTier == 0 {
+				boxTier = 3
+			}
+			box, err := config.TierBox(filepath.Join(r.Endpoint.Root, "metasystem.conf"), boxTier)
+			if err != nil {
+				return nil, err
+			}
+			if offer.AttemptLimitFrom > ^uint64(0)-box.AttemptLimit ||
+				offer.ReservedJobMinutesFrom > ^uint64(0)-box.ReservedJobMinutesLimit ||
+				offer.AttemptLimitTo != offer.AttemptLimitFrom+box.AttemptLimit ||
+				offer.ReservedJobMinutesTo != offer.ReservedJobMinutesFrom+box.ReservedJobMinutesLimit {
+				return nil, fmt.Errorf("goal %s extension offer does not add its tier-%d box", id, boxTier)
+			}
+			f.Budget.AttemptLimit = offer.AttemptLimitTo
+			f.Budget.ReservedJobMinutesLimit = offer.ReservedJobMinutesTo
+			touch(f, r, "extend-budget", []string{id})
+			f.History[len(f.History)-1].Reason = fmt.Sprintf("attemptLimit %d->%d reservedJobMinutesLimit %d->%d evidence=%s:%s@%s",
+				offer.AttemptLimitFrom, offer.AttemptLimitTo, offer.ReservedJobMinutesFrom, offer.ReservedJobMinutesTo,
+				offer.EvidenceKind, offer.EvidenceID, offer.EvidenceAt)
+			f.BudgetExtension = &BudgetExtensionRecord{
+				At: r.stamp(), Opid: r.opid(), AttemptLimitFrom: offer.AttemptLimitFrom, AttemptLimitTo: offer.AttemptLimitTo,
+				ReservedJobMinutesFrom: offer.ReservedJobMinutesFrom, ReservedJobMinutesTo: offer.ReservedJobMinutesTo,
+				EvidenceKind: offer.EvidenceKind, EvidenceID: offer.EvidenceID, EvidenceAt: offer.EvidenceAt,
+			}
+			return []Change{{Path: livePath(id), Content: RenderFile(f)}}, nil
+		},
+		Validate: func(commit string) error { return ValidateCommit(r.Endpoint.Root, commit) },
+	}
+}
+
 func SetBudgetApproved(r VerbRequest, id string, budget Budget, proof *humanauthority.Proof) (PublishResult, error) {
 	if r.Attorney != nil {
 		if err := attorneyActRequest(r, proof); err != nil {

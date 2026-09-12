@@ -3,6 +3,7 @@ package main
 import (
 	"bytes"
 	"encoding/json"
+	"errors"
 	"flag"
 	"fmt"
 	"io"
@@ -462,6 +463,7 @@ func admitProofLaunch(request proofLaunchAdmission) (proofrun.Attempt, proofrun.
 	if err != nil {
 		return proofrun.Attempt{}, proofrun.LaunchResult{}, false, fmt.Errorf("proof caller reclassification failed under admission lock: %w", err)
 	}
+	extensionAuthorized := false
 	if reservationOwner != nil {
 		runRecord, readErr := (&runpkg.Store{Root: request.ControlRoot}).Read(reservationOwner.RunID)
 		if readErr != nil || runRecord == nil || runRecord.Governed == nil || runRecord.Status != runpkg.StatusRunning ||
@@ -482,16 +484,20 @@ func admitProofLaunch(request proofLaunchAdmission) (proofrun.Attempt, proofrun.
 		record, readErr := dispatchcore.ReadRecordObject(filepath.Join(delegateState, "artifacts", "agents", "jobs", delegateJob+".json"))
 		lens := dispatchcore.JobRecordOf(record)
 		revision, revisionOK := lens.GoalRevision()
+		claimEpoch, claimEpochOK := lens.ClaimEpoch()
 		if verifyErr != nil || !verified.Delegate || verified.JobID != delegateJob || readErr != nil ||
-			lens.GoalID() != request.GoalID || !revisionOK || revision != binding.Revision {
+			lens.GoalID() != request.GoalID || !revisionOK || revision != binding.Revision ||
+			lens.MachineID() != binding.Machine || !claimEpochOK || claimEpoch != binding.Capability.ClaimEpoch {
 			return proofrun.Attempt{}, proofrun.LaunchResult{}, false, fmt.Errorf("native delegate proof custody changed before reservation")
 		}
+		extensionAuthorized = true
 	} else if classifiedCaller.Class == lease.ClassMain {
 		machine, machineErr := goal.ResolveMachine(request.ControlRoot)
 		if machineErr != nil || !classifiedCaller.Holder || classifiedCaller.ClaimEpoch == nil ||
 			*classifiedCaller.ClaimEpoch != binding.Capability.ClaimEpoch || machine != binding.Machine {
 			return proofrun.Attempt{}, proofrun.LaunchResult{}, false, fmt.Errorf("active coordinator does not own the claimed goal reservation")
 		}
+		extensionAuthorized = true
 	} else if classifiedCaller.Class != lease.ClassHuman {
 		return proofrun.Attempt{}, proofrun.LaunchResult{}, false, fmt.Errorf("proof caller has no authenticated goal reservation context")
 	}
@@ -531,8 +537,49 @@ func admitProofLaunch(request proofLaunchAdmission) (proofrun.Attempt, proofrun.
 		if err != nil {
 			return proofrun.Attempt{}, proofrun.LaunchResult{}, false, err
 		}
+		if verdict.Extension != nil {
+			if !extensionAuthorized {
+				return proofrun.Attempt{}, proofrun.LaunchResult{}, false, fmt.Errorf("proof reservation found an extension for goal %s, but only its claim holder pair may apply it", request.GoalID)
+			}
+			if delegateJob == "" {
+				holder, holderErr := lease.CurrentHolder(request.ControlRoot)
+				if holderErr != nil || holder.OwnerLineage != binding.Lineage {
+					return proofrun.Attempt{}, proofrun.LaunchResult{}, false, fmt.Errorf("proof reservation could not bind the budget extension to the claim holder pair")
+				}
+			}
+			endpoint, endpointErr := goal.ResolveEndpoint(request.ControlRoot)
+			ulid, ulidErr := goalUlid()
+			if endpointErr != nil || ulidErr != nil {
+				return proofrun.Attempt{}, proofrun.LaunchResult{}, false, errors.Join(endpointErr, ulidErr)
+			}
+			extensionRequest := goal.VerbRequest{Endpoint: endpoint,
+				Actor: goal.Actor{Machine: binding.Machine, Lineage: binding.Lineage}, Ulid: ulid, Now: now,
+				CallerClass: classifiedCaller.Class}
+			if _, extendErr := goal.ExtendBudget(extensionRequest, request.GoalID, verdict.Extension.GoalOffer()); extendErr != nil {
+				return proofrun.Attempt{}, proofrun.LaunchResult{}, false, fmt.Errorf("proof reservation extend budget: %w", extendErr)
+			}
+			binding, err = dispatchcore.ResolveGoalBinding(request.ControlRoot, request.GoalID, now)
+			if err != nil || binding.Revision != reservation.GoalRevision {
+				return proofrun.Attempt{}, proofrun.LaunchResult{}, false, fmt.Errorf("proof reservation lost its goal binding after budget extension")
+			}
+			projection = dispatchcore.ProjectBudget(request.ControlRoot, binding.File, now)
+			if projection.Status != dispatchcore.BudgetKnown {
+				return proofrun.Attempt{}, proofrun.LaunchResult{}, false, fmt.Errorf("proof reservation budget projection became unknown after extension")
+			}
+			reservation.BudgetEpoch = projection.WeightEpoch
+			verdict, err = dispatchcore.EvaluateGoalRevisionAdmissionForDispatch(request.ControlRoot, request.GoalID, binding.Revision,
+				uint64(capValue), now, "implementer", "fresh", dispatchcore.HazardMechanical)
+			if err != nil {
+				return proofrun.Attempt{}, proofrun.LaunchResult{}, false, err
+			}
+		}
 		if verdict.Refused() {
-			return proofrun.Attempt{}, proofrun.LaunchResult{}, false, fmt.Errorf("proof reservation refused for goal %s revision %d", request.GoalID, binding.Revision)
+			lines := dispatchcore.FormatGoalRevisionAdmission(verdict)
+			detail := strings.Join(lines, "; ")
+			if detail == "" {
+				detail = verdict.PolicyRefusal
+			}
+			return proofrun.Attempt{}, proofrun.LaunchResult{}, false, fmt.Errorf("proof reservation refused for goal %s revision %d: %s", request.GoalID, binding.Revision, detail)
 		}
 	}
 	attempt, decision, err := proofrun.ReserveLocked(reservation)

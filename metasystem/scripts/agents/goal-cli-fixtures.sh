@@ -20,12 +20,12 @@ if (( ! fixture_bed_child )); then
   run_fixture_bed_scenarios goal-cli "goal CLI fixtures: PASSED" \
 	"$fixture_bed_script" migration-recovery human-lineage risk-basis labels-and-filtering structured-budget scope-bounds archive-and-prune classification-sweep \
 	brain-claim-refuses brain-human-word-refuses brain-classification-fails brain-stop-seeded brain-stop-corrupt brain-status-line wrong-terminal \
-	carry-word carried-record carried-discharge seat-blocker power-of-attorney landing-slot
+	carry-word carried-record carried-discharge seat-blocker power-of-attorney landing-slot budget-extension
 fi
 case "$fixture_scenario" in
 	migration-recovery | human-lineage | risk-basis | labels-and-filtering | structured-budget | scope-bounds | archive-and-prune | classification-sweep | \
 	brain-claim-refuses | brain-human-word-refuses | brain-classification-fails | brain-stop-seeded | brain-stop-corrupt | brain-status-line | wrong-terminal | \
-	carry-word | carried-record | carried-discharge | seat-blocker | power-of-attorney | landing-slot) ;;
+	carry-word | carried-record | carried-discharge | seat-blocker | power-of-attorney | landing-slot | budget-extension) ;;
   *) echo "goal CLI fixtures: unknown scenario: $fixture_scenario" >&2; exit 64 ;;
 esac
 
@@ -302,6 +302,70 @@ prepare_carried_record_fixture() {
   "$ms" goal carried --root "$clone" --id ship-widget --ref "$carry_word" \
     --rebuild-from-commit "$carried_commit" >/dev/null
 }
+
+if [[ "$fixture_scenario" == budget-extension ]]; then
+  # Keep the fixture's tier box deliberately narrow: one completed attempt
+  # earns one more attempt, so the second exhaustion is observable without a
+  # row of redundant fake dispatches.
+  printf '%s\n' 'metasystem.budget.tier-3=1h/1/60m/1/3' >>"$clone/metasystem.conf"
+  git -C "$clone" -c core.hooksPath=/dev/null add metasystem.conf
+  git -C "$clone" -c core.hooksPath=/dev/null -c user.name=fixture -c user.email=fixture@example.invalid \
+    commit -qm 'narrow fixture budget box'
+  git -C "$clone" push -q origin main
+  "$ms" goal release --root "$clone" --id ship-widget >/dev/null
+  export METASYSTEM_GOAL_NOW=2026-09-12T20:00:00Z
+  "$ms" goal open --root "$clone" --id earned-extension --origin human \
+    --intent "Exercise the once-by-consumption budget extension." --next "Apply the earned extension." \
+    --tier 3 --risk severity=3,novelty=1,exposure=1,accumulation=1 --basis "budget extension fixture" >/dev/null
+  approve_fixture_goal earned-extension \
+    --elapsed-limit 8h --attempt-limit 1 --reserved-job-minutes-limit 60 --active-job-limit 1 --review-round-limit 3
+  "$ms" goal claim --root "$clone" --id earned-extension >/dev/null
+  extension_revision=$("$ms" job goal-revision --root "$clone" --goal earned-extension)
+
+  mkdir -p "$clone/artifacts/agents/jobs"
+  printf '%s\n' \
+    '{"jobId":"earned-first","operationId":"earned-first","goalId":"earned-extension","goalRevision":3,"capMin":1,"status":"completed","startedAt":"2026-09-12T20:05:00Z","endedAt":"2026-09-12T20:06:00Z"}' \
+    >"$clone/artifacts/agents/jobs/earned-first.json"
+
+  # Landing evidence is read from the accepted tree. Put one shipped
+  # implementation receipt on the canonical branch, then let the goal verb
+  # fetch and publish from that exact tip.
+  git -C "$clone" fetch -q origin
+  git -C "$clone" reset -q --hard origin/main
+  mkdir -p "$clone/memory"
+  extension_receipt='1789245000|2026-09-12T20:30:00Z|RECEIPT|type=implement|outcome=shipped|goal=earned-extension|built_by=fixture|note=fixture advancement'
+  extension_receipt_sha=$(printf '%s' "$extension_receipt" | shasum | cut -d' ' -f1)
+  printf '%s\n' "$extension_receipt" >"$clone/memory/receipts.log"
+  git -C "$clone" -c core.hooksPath=/dev/null add memory/receipts.log
+  git -C "$clone" -c core.hooksPath=/dev/null -c user.name=fixture -c user.email=fixture@example.invalid \
+    commit -qm 'fixture advancement receipt'
+  git -C "$clone" push -q origin main
+  "$ms" goal fetch --root "$clone" >/dev/null
+
+  export METASYSTEM_GOAL_NOW=2026-09-12T21:00:00Z
+  extension_out=$("$ms" goal extend-budget --root "$clone" --id earned-extension \
+    --revision "$extension_revision" --proposed-cap 1 --role implementer \
+    --dispatch-mode fresh --destructive-reach DESIGN-BEARING)
+  grep -q '"outcome":"confirmed"' <<<"$extension_out" \
+    || { echo "the earned extension did not confirm: $extension_out" >&2; exit 1; }
+  extension_tip=$(git -C "$origin" rev-parse main)
+  git -C "$clone" cat-file -p "$extension_tip:plans/goals/earned-extension.md" >"$tmp/earned-extension.md"
+  grep -q "^- BudgetExtension: .* evidence=landing:1789245000-$extension_receipt_sha@2026-09-12T20:30:00Z\$" "$tmp/earned-extension.md" \
+    || { echo "the extension marker does not name its landing evidence by epoch and line digest" >&2; cat "$tmp/earned-extension.md" >&2; exit 1; }
+
+  printf '%s\n' \
+    '{"jobId":"earned-second","operationId":"earned-second","goalId":"earned-extension","goalRevision":3,"capMin":1,"status":"completed","startedAt":"2026-09-12T21:01:00Z","endedAt":"2026-09-12T21:02:00Z"}' \
+    >"$clone/artifacts/agents/jobs/earned-second.json"
+  set +e
+  second_extension=$("$ms" goal extend-budget --root "$clone" --id earned-extension \
+    --revision "$extension_revision" --proposed-cap 1 --role implementer \
+    --dispatch-mode fresh --destructive-reach DESIGN-BEARING 2>&1)
+  second_extension_rc=$?
+  set -e
+  [[ $second_extension_rc -eq 1 && "$second_extension" == *"extended once at 2026-09-12T21:00:00Z"* ]] \
+    || { echo "the second extension did not refuse with its marker: rc=$second_extension_rc $second_extension" >&2; exit 1; }
+  unset METASYSTEM_GOAL_NOW
+fi
 
 if [[ "$fixture_scenario" == carry-word ]]; then
   printf 'carry word fixture\n' >"$clone/carry-word.txt"

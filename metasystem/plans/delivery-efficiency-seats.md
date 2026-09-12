@@ -152,6 +152,26 @@ eight `yes` burners, then the bed through the engine on the candidate tree.
   seat whose built work waits to land runs `goal land-ready --id <goal>` and
   claims the next goal beside it; one landing slot per machine.
 
+- m1c, 2026-09-12, f3a9359b0, budget-extends-by-consumption-and-breach-parks
+  slice B: a seat under a power of attorney lifts a person's park (`goal
+  unpark --under <entry> --verified "<what holds now>"`, R-105-m1e; tier-1
+  goals under an entry covering tier 1; never a blocker's park). `unpark`
+  joined the attorney verbs, so an engine older than this landing reads an
+  entry naming it as outside the bounds and honours none of that entry's
+  verbs: rebuild and re-arm before granting one. First landing read on Opus
+  under R-108-m1c (three material findings folded).
+- m1c, 2026-09-12, budget-extends-by-consumption-and-breach-parks slice A
+  (rule 1, R-94-m1e): the exact revision seam offers one consumption-earned
+  extension (attempts, minutes, or both; evidence a closed critique, a
+  shipped implement receipt or a sufficient delivery attempt within two
+  hours), `goal extend-budget` applies it once and writes the
+  `BudgetExtension` record, the dispatcher and the proof run judge again
+  after it. Built by Codex Sol in a worktree from the seat's brief, read on
+  Opus (three material findings folded): the first slice under the
+  R-108-m1c lanes end to end. An engine older than this landing does not
+  parse the BudgetExtension line: rebuild and re-arm before the first
+  extension. The dispatcher now judges the exact seam before the seat walk
+  for goal-bound work.
 - m1c, 2026-09-12, capped-round-continues-instead-of-restarting: a round cut
   off at its cap is continued by `follow-up` (implementer worktree chains),
   its successor's packet carries the `prior-worktree` slot and its record

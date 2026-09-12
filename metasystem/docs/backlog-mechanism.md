@@ -32,6 +32,27 @@ budget. Unknown evidence and a claimed goal without a budget also
 close admission, naming the exact record that needs repair. No refused
 dispatch creates a job record.
 
+**One extension earned by consumption.** When the exact revision seam would
+refuse on attempts, on reserved job minutes, or on both, and on no other
+member, a goal that has accepted advancement in the preceding two hours may
+raise those two members once by its tier box, provided the raise admits the
+very proposal that was refused. Accepted advancement is a closed independent code
+critique, a shipped implementation `RECEIPT` at the accepted tip, or a
+sufficient successful delivery proof attempt. Elapsed time, active jobs,
+review rounds, a breach that mixes them in, and live-stop conditions never
+offer the raise.
+The claim holder's pair applies it with `goal extend-budget`; no human proof or
+power of attorney is involved.
+
+The goal records the act as `BudgetExtension:`, including the before and after
+attempt and minute values and the evidence identity. That marker belongs to
+the goal, not its claim: release, re-claim, steal, approval changes,
+set-budget, done and reopen preserve it; split leaves it on the archived
+parent and gives no member a copy. The extension neither rebinds the claim nor
+rewrites the person's approval digest. A later set-budget remains the person's
+act. When the extended tuple is exhausted, admission refuses and names the
+marker; the goal cannot extend itself a second time.
+
 A verified channel answer is human approval proof only when the configured human user supplied the exact goal-bound token with a code valid at send time; its question or status thread, message reference, user, and code step are recorded with the goal operation, without the review date required by a relayed console word.
 An exact verified answer to a `budget-above-norm` question re-approves the goal with the question's complete proposed box, including when an earlier verified answer already raised that goal's box.
 

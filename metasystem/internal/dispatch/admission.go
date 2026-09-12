@@ -165,12 +165,14 @@ func EvaluateGoalAdmission(repoRoot, stopLineage string, now time.Time) (GoalAdm
 // elapsed breach boundary or for corrupt over-limit state; ordinary exhaustion
 // closes admission without cancelling already-authorized jobs.
 type GoalRevisionAdmission struct {
-	GoalID         string
-	GoalRevision   uint64
-	Refusal        *GoalAdmissionRefusal
-	PolicyRefusal  string
-	PolicyNotice   string
-	LiveStopReason string
+	GoalID         string                `json:"goalId"`
+	GoalRevision   uint64                `json:"goalRevision"`
+	Refusal        *GoalAdmissionRefusal `json:"refusal,omitempty"`
+	PolicyRefusal  string                `json:"policyRefusal,omitempty"`
+	PolicyNotice   string                `json:"policyNotice,omitempty"`
+	LiveStopReason string                `json:"liveStopReason,omitempty"`
+	Extension      *BudgetExtensionOffer `json:"extension,omitempty"`
+	ExtendedAt     string                `json:"extendedAt,omitempty"`
 }
 
 func (v GoalRevisionAdmission) Refused() bool { return v.Refusal != nil || v.PolicyRefusal != "" }
@@ -186,6 +188,15 @@ func EvaluateGoalRevisionAdmission(repoRoot, id string, revision, proposedCap ui
 // publish a reservation.
 func EvaluateGoalRevisionAdmissionForDispatch(repoRoot, id string, revision, proposedCap uint64, now time.Time, role, dispatchMode string, hazards ...HazardClass) (GoalRevisionAdmission, error) {
 	verdict := GoalRevisionAdmission{GoalID: id, GoalRevision: revision}
+	if proposedCap == 0 {
+		return verdict, fmt.Errorf("goal revision admission requires a positive proposed cap")
+	}
+	if strings.TrimSpace(role) == "" {
+		return verdict, fmt.Errorf("goal revision admission requires a role")
+	}
+	if dispatchMode != "fresh" && dispatchMode != "follow-up" {
+		return verdict, fmt.Errorf("goal revision admission requires dispatch mode fresh or follow-up")
+	}
 	if len(hazards) > 1 {
 		return verdict, fmt.Errorf("exactly one destructiveReach class may govern goal revision admission")
 	}
@@ -202,6 +213,9 @@ func EvaluateGoalRevisionAdmissionForDispatch(repoRoot, id string, revision, pro
 	}
 	if binding.Revision != revision {
 		return verdict, fmt.Errorf("goal %s accepted revision moved from %d to %d", id, revision, binding.Revision)
+	}
+	if binding.File.BudgetExtension != nil {
+		verdict.ExtendedAt = binding.File.BudgetExtension.At
 	}
 	if binding.File.Risk == nil {
 		line := fmt.Sprintf("RISK_UNANSWERED goal=%s tier=%d next: goal edit --risk", id, binding.Tier)
@@ -244,9 +258,6 @@ func EvaluateGoalRevisionAdmissionForDispatch(repoRoot, id string, revision, pro
 	}
 	breaches := admissionBreachesFor(binding.File, budgetAdmissionBreaches(projection))
 	if role == "design-critic" || role == "code-critic" {
-		if dispatchMode != "fresh" && dispatchMode != "follow-up" {
-			return verdict, fmt.Errorf("critic goal revision admission requires dispatch mode fresh or follow-up")
-		}
 		if dispatchMode == "fresh" {
 			used := projection.CodeCritiques
 			field := "codeCritiques"
@@ -271,8 +282,53 @@ func EvaluateGoalRevisionAdmissionForDispatch(repoRoot, id string, revision, pro
 	if len(breaches) > 0 {
 		verdict.Refusal = &GoalAdmissionRefusal{GoalID: id, GoalRevision: revision, Breaches: breaches,
 			Reserved: reservedMinutesEvidence(projection)}
+		if binding.File.BudgetExtension == nil && consumptionBreachesOnly(breaches) {
+			verdict.Extension, err = budgetExtensionOffer(repoRoot, binding.File, binding.Tier, now)
+			if err != nil {
+				return verdict, err
+			}
+			// The raise must admit this very proposal, or the once marker
+			// would be spent on a refusal that stands.
+			if offer := verdict.Extension; offer != nil &&
+				(projection.Attempts >= offer.To.AttemptLimit || proposedCap > offer.To.ReservedJobMinutesLimit-projection.ReservedJobMinutes) {
+				verdict.Extension = nil
+			}
+		}
 	}
 	return verdict, nil
+}
+
+// consumptionBreachesOnly reports whether every breach is on attempts or
+// reserved minutes, the two members consumption spends and the extension
+// raises (R-94-m1e): one of them, or both at once, and no other member.
+func consumptionBreachesOnly(breaches []BudgetBreach) bool {
+	if len(breaches) == 0 {
+		return false
+	}
+	for _, breach := range breaches {
+		if breach.Field != "attemptLimit" && breach.Field != "reservedJobMinutesLimit" {
+			return false
+		}
+	}
+	return true
+}
+
+// FormatGoalRevisionAdmission adds the revision seam's actionable offer or
+// durable once marker to the ordinary budget refusal line.
+func FormatGoalRevisionAdmission(verdict GoalRevisionAdmission) []string {
+	if verdict.Refusal == nil {
+		return nil
+	}
+	lines := FormatGoalAdmission(GoalAdmissionVerdict{Refusals: []GoalAdmissionRefusal{*verdict.Refusal}})
+	if len(lines) != 1 {
+		return lines
+	}
+	if offer := verdict.Extension; offer != nil {
+		lines[0] += fmt.Sprintf("; extension available: %s %s at %s", offer.EvidenceKind, offer.EvidenceID, offer.EvidenceAt)
+	} else if verdict.ExtendedAt != "" {
+		lines[0] += fmt.Sprintf("; extended once at %s; a further raise is a person's set-budget", verdict.ExtendedAt)
+	}
+	return lines
 }
 
 // stopReasonFor is the live-stop reason for one claim. A claim waiting to

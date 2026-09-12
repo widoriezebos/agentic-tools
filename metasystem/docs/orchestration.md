@@ -59,6 +59,22 @@ exhaustion opens no fresh budget. Only an approved token raising the goal's
 five-member tuple raises the stored member, never above the ceiling, and `job
 critique-budget-rebind` copies the raised member onto an open root.
 
+Before reserving a job, the dispatcher judges the exact claimed revision and
+the proposed cap. If that seam refuses on attempts, on reserved minutes, or on both and
+nothing else, its JSON verdict may offer the goal's one consumption-earned
+extension:
+the accepted tree or proof records must show a closed independent code
+critique, a shipped implementation receipt, or a sufficient successful
+delivery attempt from the preceding two hours. The dispatcher applies
+`goal extend-budget` with the same revision, cap, role, mode and destructive
+reach, then judges again, and only then runs the seat-wide admission walk
+for goal-bound work (a goal-free operation keeps the early walk). The walk
+never offers; a refusal there after an extension, another claim on the
+machine over its box, leaves the marker spent. Stops, breaches that include
+elapsed, active-job or review-round limits, and those limits themselves are
+unchanged. After one extension, a later exhaustion refuses with the marker and
+waits for a person's set-budget.
+
 Risk is four separate questions, never the shape of the change. A goal's
 Risk record scores severity, novelty, exposure and accumulation, each 1 to
 3 with a basis sentence, given to `goal open` and `goal edit` as `--risk

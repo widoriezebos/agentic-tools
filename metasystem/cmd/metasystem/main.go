@@ -480,6 +480,7 @@ func families() []family {
 				{"tier-probe", "report the backlog's recorded and derived tiers and the goals a person may lower", runGoalTierProbe},
 				{"unapprove", "human-only: withdraw execution approval and park any standing claim", runGoalUnapprove},
 				{"set-budget", "human-only (or a seat --under a power of attorney): replace a claimed goal's approved tuple and bind a new revision", runGoalSetBudget},
+				{"extend-budget", "extend attempts and reserved minutes once after accepted advancement consumes the box", runGoalExtendBudget},
 				{"grant", "human-only: record a power of attorney (tiers 1 and 2; approve, set-budget; expires within seven days) a seat acts under with --under", runGoalGrant},
 				{"revoke", "human-only: close a power of attorney early", runGoalRevoke},
 				{"carry", "human-only: carry one landing past one named refusal or testing group", runGoalCarry},

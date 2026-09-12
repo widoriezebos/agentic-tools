@@ -104,6 +104,9 @@ func MapDeltas(repoRoot, baseCommit string, snap *Snapshot) ([]MappedVerb, error
 			if edited.Budget != nil {
 				return nil, fmt.Errorf("%s: a hand-created goal carries no budget; open it, then have the human approve its tuple", d.Path)
 			}
+			if edited.BudgetExtension != nil {
+				return nil, fmt.Errorf("%s: a hand-created goal carries a generated BudgetExtension; only goal extend-budget writes it", d.Path)
+			}
 			if edited.Approved != nil || edited.NormApproval != nil || edited.Sliced != nil || edited.Ratified != nil {
 				return nil, fmt.Errorf("%s: a hand-created goal carries generated scope-boundary evidence; admission and split are the only writers", d.Path)
 			}
@@ -232,6 +235,9 @@ func mapOneChange(p string, base, edited *GoalFile) ([]MappedVerb, error) {
 	}
 	if !sameApprovalRecord(edited.Approved, base.Approved) {
 		return nil, fmt.Errorf("%s: Approved is a generated field; goal approve and unapprove publish it", p)
+	}
+	if !sameBudgetExtension(edited.BudgetExtension, base.BudgetExtension) {
+		return nil, fmt.Errorf("%s: BudgetExtension is a generated field; only goal extend-budget writes it", p)
 	}
 	if (edited.Sliced == nil) != (base.Sliced == nil) ||
 		(edited.Sliced != nil && *edited.Sliced != *base.Sliced) {
@@ -377,6 +383,10 @@ func mapOneChange(p string, base, edited *GoalFile) ([]MappedVerb, error) {
 		return nil, fmt.Errorf("%s: the bytes changed but no editable field did; the surface is closed", p)
 	}
 	return rows, nil
+}
+
+func sameBudgetExtension(left, right *BudgetExtensionRecord) bool {
+	return left == nil && right == nil || left != nil && right != nil && *left == *right
 }
 
 func rankDiagnosticPresent(problems []Problem) bool {

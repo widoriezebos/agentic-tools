@@ -16,6 +16,8 @@ import (
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/goal"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/goalbudget"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/governance"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/identity"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/lease"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/proofrun"
 	runpkg "github.com/widoriezebos/agentic-tools/metasystem/internal/run"
 )
@@ -301,6 +303,114 @@ while [[ ! -e "$done_path" ]]; do sleep 0.005; done
 	}
 	if _, err := proofrun.FinalizeAttempt(root, attempt.AttemptID, proofrun.TerminalFailed, 1, "deadline canary cleanup", nil, time.Now().UTC()); err != nil {
 		t.Fatal(err)
+	}
+}
+
+func proofExtensionGoalFixture(t *testing.T) (string, time.Time) {
+	t.Helper()
+	root := syncedClaimedGoalFixture(t)
+	now := time.Date(2026, 8, 30, 9, 0, 0, 0, time.UTC)
+	if err := os.WriteFile(filepath.Join(root, "metasystem.conf"), []byte("metasystem.runtimes=fake\nmetasystem.governance.correlation-policy=A\nmetasystem.budget.tier-3=8h/1/1200m/1/3\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	amendSyncedGoalFixture(t, root, "proof extension fixture", func(file *goal.GoalFile) {
+		file.StopCapability = &goal.StopCapability{Generation: 2, Revision: 2, Machine: "mac-cli", ClaimEpoch: 1}
+		file.Budget.AttemptLimit = 1
+		file.Budget.ReservedJobMinutesLimit = 10000
+		file.Budget.ActiveJobLimit = 10
+		file.Approved.Digest = goal.ApprovalDigest(file.Intent, file.Tier, *file.Budget, file.Risk)
+	})
+	if err := os.MkdirAll(filepath.Join(root, "memory"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	receiptAt := now.Add(-time.Hour)
+	receipt := fmt.Sprintf("%d|%s|RECEIPT|type=implement|outcome=shipped|goal=standing-validation|note=proof fixture\n",
+		receiptAt.Unix(), receiptAt.Format(time.RFC3339))
+	if err := os.WriteFile(filepath.Join(root, "memory", "receipts.log"), []byte(receipt), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	goalSyncMutationGit(t, root, "add", "memory/receipts.log", "metasystem.conf")
+	goalSyncMutationGit(t, root, "commit", "-q", "-m", "proof extension receipt")
+	goalSyncMutationGit(t, root, "update-ref", goal.LocalLedgerBranch, "HEAD")
+	goalSyncMutationGit(t, root, "update-ref", goal.AcceptedRef, "HEAD")
+	return root, now
+}
+
+func TestProofAdmissionExtendsRejudgesAndReserves(t *testing.T) {
+	root, now := proofExtensionGoalFixture(t)
+
+	jobs := filepath.Join(root, "artifacts", "agents", "jobs")
+	if err := os.MkdirAll(jobs, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	writeTemp(t, jobs, "proof-spent.json", map[string]any{
+		"jobId": "proof-spent", "operationId": "proof-spent", "goalId": "standing-validation", "goalRevision": 2,
+		"capMin": 1, "status": "completed", "startedAt": "2026-08-30T08:20:00Z", "endedAt": "2026-08-30T08:21:00Z",
+	})
+
+	parent, state, err := (identity.KernelProber{}).Probe(int64(os.Getppid()))
+	if err != nil || state != identity.Alive {
+		t.Fatalf("probe proof caller: state=%s err=%v", state, err)
+	}
+	if _, err := lease.AnnounceWithPair(root, "proof-extension-main", parent.Pid, parent.StartedAt.Unix(),
+		parent.StartTicks, parent.BootID, "proof-extension-main", "fake", "m1"); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("METASYSTEM_GOAL_NOW", now.Format(time.RFC3339))
+	attempt, decision, joined, err := admitProofLaunch(proofLaunchAdmission{
+		ControlRoot: root, ExecutionRoot: root, ConfPath: filepath.Join(root, "metasystem.conf"), GoalID: "standing-validation",
+		CapMin: "1", ScopeClass: "full", CommandClass: "testing",
+	})
+	if err != nil || joined || decision.Disposition != proofrun.DispositionExecuted || attempt.AttemptID == "" {
+		t.Fatalf("proof admission did not extend and reserve: attempt=%+v decision=%+v joined=%v err=%v", attempt, decision, joined, err)
+	}
+	tip := goalSyncMutationGit(t, root, "rev-parse", goal.AcceptedRef)
+	record := goalSyncMutationGit(t, root, "cat-file", "-p", tip+":plans/goals/standing-validation.md")
+	if !strings.Contains(record, "- BudgetExtension: ") || !strings.Contains(record, "attemptLimit=1->2") ||
+		!strings.Contains(record, "- Claimed: machine=mac-cli lineage=m1") {
+		t.Fatalf("proof admission did not preserve the claim and marker: %s", record)
+	}
+}
+
+func TestNativeDelegateProofAdmissionExtendsItsClaimPairBudget(t *testing.T) {
+	root, now := proofExtensionGoalFixture(t)
+	parent, state, err := (identity.KernelProber{}).Probe(int64(os.Getppid()))
+	if err != nil || state != identity.Alive {
+		t.Fatalf("probe native delegate parent: state=%s err=%v", state, err)
+	}
+	ref := parent.Ref()
+	record := map[string]any{
+		"jobId": "native-proof", "operationId": "native-proof", "goalId": "standing-validation", "goalRevision": 2,
+		"machineId": "mac-cli", "claimEpoch": 1, "capMin": 1, "status": "running",
+		"pid": parent.Pid, "pidStartedAt": ref.StartedAtSec,
+	}
+	if ref.StartedAtUnixMicro > 0 {
+		record["pidStartedAtExactMicro"] = ref.StartedAtUnixMicro
+	}
+	if ref.StartTicks > 0 {
+		record["pidStartTicks"] = ref.StartTicks
+		record["bootId"] = ref.BootID
+	}
+	jobs := filepath.Join(root, "artifacts", "agents", "jobs")
+	if err := os.MkdirAll(jobs, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	writeTemp(t, jobs, "native-proof.json", record)
+	t.Setenv("METASYSTEM_HOOK_DELEGATE_STATE_ROOT", root)
+	t.Setenv("METASYSTEM_HOOK_DELEGATE_INSTALLATION_ROOT", root)
+	t.Setenv("METASYSTEM_HOOK_DELEGATE_JOB", "native-proof")
+	t.Setenv("METASYSTEM_GOAL_NOW", now.Format(time.RFC3339))
+	attempt, decision, joined, err := admitProofLaunch(proofLaunchAdmission{
+		ControlRoot: root, ExecutionRoot: root, ConfPath: filepath.Join(root, "metasystem.conf"), GoalID: "standing-validation",
+		CapMin: "1", ScopeClass: "full", CommandClass: "testing",
+	})
+	if err != nil || joined || decision.Disposition != proofrun.DispositionExecuted || attempt.AttemptID == "" {
+		t.Fatalf("native delegate proof did not extend and reserve: attempt=%+v decision=%+v joined=%v err=%v", attempt, decision, joined, err)
+	}
+	tip := goalSyncMutationGit(t, root, "rev-parse", goal.AcceptedRef)
+	goalRecord := goalSyncMutationGit(t, root, "cat-file", "-p", tip+":plans/goals/standing-validation.md")
+	if !strings.Contains(goalRecord, "- BudgetExtension: ") || !strings.Contains(goalRecord, "attemptLimit=1->2") {
+		t.Fatalf("native delegate proof did not persist the extension: %s", goalRecord)
 	}
 }
 

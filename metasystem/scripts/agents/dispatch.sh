@@ -707,15 +707,57 @@ run_breach_stop_routes() {
 }
 
 require_goal_revision_admission() { # proposed cap minutes, dispatch mode
-  local proposed=$1 dispatch_mode=$2 output result=0 batch stop_id
+  local proposed=$1 dispatch_mode=$2 output result=0 batch stop_id extension kind evidence_id evidence_at extend_output
   [[ -n "${goal:-}" ]] || return 0
   set +e
   output=$("$ms" job goal-revision-admission --root "$root" --goal "$goal" \
     --revision "$goal_revision" --proposed-cap "$proposed" --role "$role" \
-    --dispatch-mode "$dispatch_mode" --destructive-reach "$destructive_reach" 2>&1)
+    --dispatch-mode "$dispatch_mode" --destructive-reach "$destructive_reach" --format json 2>&1)
   result=$?
   set -e
-  [[ -z "$output" ]] || printf '%s\n' "$output" >&2
+  if (( result == 9 )); then
+    extension=$("$ms" json get --value "$output" --field extension --default null 2>/dev/null) \
+      || die 1 "dispatch refused because exact goal revision admission returned malformed JSON"
+    if [[ "$extension" != null ]]; then
+      kind=$(json_value "$extension" evidenceKind) \
+        || die 1 "dispatch refused because the budget extension offer names no evidence kind"
+      evidence_id=$(json_value "$extension" evidenceId) \
+        || die 1 "dispatch refused because the budget extension offer names no evidence record"
+      evidence_at=$(json_value "$extension" evidenceAt) \
+        || die 1 "dispatch refused because the budget extension offer names no evidence time"
+      [[ -n "$kind" && -n "$evidence_id" && -n "$evidence_at" ]] \
+        || die 1 "dispatch refused because the budget extension offer is incomplete"
+      # The shell's owner lock and the Go verb use the same path but are
+      # process-owned. Let the verb acquire it, replay the exact seam and
+      # publish atomically, then reacquire before judging the proposal again.
+      release_goal_revision_lock
+      set +e
+      extend_output=$("$ms" goal extend-budget --root "$root" --id "$goal" \
+        --revision "$goal_revision" --proposed-cap "$proposed" --role "$role" \
+        --dispatch-mode "$dispatch_mode" --destructive-reach "$destructive_reach" 2>&1)
+      set -e
+      [[ -z "$extend_output" ]] || printf '%s\n' "$extend_output" >&2
+      # A refused extension (another dispatch spent the marker first, the
+      # box moved, the verb lost the lock race) is judged again below and
+      # refuses through the ordinary budget path, never as an internal fault.
+      acquire_goal_revision_lock "$goal" "$goal_revision"
+      set +e
+      output=$("$ms" job goal-revision-admission --root "$root" --goal "$goal" \
+        --revision "$goal_revision" --proposed-cap "$proposed" --role "$role" \
+        --dispatch-mode "$dispatch_mode" --destructive-reach "$destructive_reach" --format json 2>&1)
+      result=$?
+      set -e
+    fi
+  fi
+  if (( result != 0 )); then
+    set +e
+    output=$("$ms" job goal-revision-admission --root "$root" --goal "$goal" \
+      --revision "$goal_revision" --proposed-cap "$proposed" --role "$role" \
+      --dispatch-mode "$dispatch_mode" --destructive-reach "$destructive_reach" 2>&1)
+    result=$?
+    set -e
+    [[ -z "$output" ]] || printf '%s\n' "$output" >&2
+  fi
   case "$result" in
     0) return 0 ;;
     10)
@@ -1569,10 +1611,11 @@ dispatch_job() {
     authority_base=$(cd "$workspace" && pwd -P) || die 1 "workspace does not exist: $workspace"
   fi
   brief_authority "$brief" "$authority_base" || die 1 "brief authority admission refused"
-  # A new operation has no retry fingerprint to compare. Run the global
-  # budget gate before process setup; standing operations defer it until the
-  # exact v2 preflight has established replay versus mismatch.
-  if [[ ! -e "$jobs/$job.json" ]]; then
+  # A new goal-free operation has no exact revision seam, so its global
+  # budget gate still runs before process setup. Goal-bound work waits until
+  # its revision lock is held: the exact proposal may earn the one extension,
+  # after which the unchanged seat walk checks every claim on this machine.
+  if [[ ! -e "$jobs/$job.json" && -z "$goal" ]]; then
     require_goal_admission
   fi
   # Preconditions before the id is reserved keep a refused launch from leaving
@@ -1747,8 +1790,8 @@ dispatch_job() {
   fi
   [[ "$preflight_outcome" != PREFLIGHT-MATCHED ]] || replay_operation=1
   if (( replay_operation == 0 )); then
-    require_goal_admission
     require_goal_revision_admission "$cap" fresh
+    require_goal_admission
     require_slice_admission "$cap" "$approved_ref" "$goal" "$goal_revision"
   fi
   if ! acquire_lifecycle_lock_until "$job" 5; then
@@ -2629,8 +2672,8 @@ follow_up() {
   fi
   [[ "$preflight_outcome" != PREFLIGHT-MATCHED ]] || replay_operation=1
   if (( replay_operation == 0 )); then
-    require_goal_admission
     require_goal_revision_admission "$cap" follow-up
+    require_goal_admission
     require_slice_admission "$cap" "$approved_ref" "$goal" "$goal_revision"
   fi
   if ! acquire_lifecycle_lock_until "$child" 5; then

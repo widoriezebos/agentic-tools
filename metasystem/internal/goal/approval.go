@@ -326,10 +326,20 @@ func budgetHasNormCoverageWithContext(context *claimAdmissionContext, f *GoalFil
 	if err != nil {
 		return Budget{}, false, err
 	}
-	if budget.ReservedJobMinutesLimit <= box.ReservedJobMinutesLimit && budget.ReviewRoundLimit <= box.ReviewRoundLimit {
+	// The automatic extension is earned against the already-approved tuple. A
+	// later claim therefore tests that original tuple against the norm, just as
+	// approval-digest validation does. Any subsequent budget rewrite stops
+	// matching the marker's exact target and is judged in its own right.
+	normBudget := budget
+	if x := f.BudgetExtension; x != nil && f.Approved != nil && approvalPrecedesBudgetExtension(f) &&
+		budget.AttemptLimit == x.AttemptLimitTo && budget.ReservedJobMinutesLimit == x.ReservedJobMinutesTo {
+		normBudget.AttemptLimit = x.AttemptLimitFrom
+		normBudget.ReservedJobMinutesLimit = x.ReservedJobMinutesFrom
+	}
+	if normBudget.ReservedJobMinutesLimit <= box.ReservedJobMinutesLimit && normBudget.ReviewRoundLimit <= box.ReviewRoundLimit {
 		return box, true, nil
 	}
-	return box, f.NormApproval != nil && f.NormApproval.Minutes >= budget.ReservedJobMinutesLimit && f.NormApproval.ReviewRounds >= budget.ReviewRoundLimit, nil
+	return box, f.NormApproval != nil && f.NormApproval.Minutes >= normBudget.ReservedJobMinutesLimit && f.NormApproval.ReviewRounds >= normBudget.ReviewRoundLimit, nil
 }
 
 func budgetHasNormCoverage(repoRoot string, f *GoalFile, budget Budget) (box Budget, covered bool, err error) {

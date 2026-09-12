@@ -1135,11 +1135,16 @@ func runDispatchGoalRevisionAdmission(args []string) int {
 	role := flags.String("role", "implementer", "role proposed by this dispatch")
 	dispatchMode := flags.String("dispatch-mode", "fresh", "fresh or follow-up")
 	destructiveReach := flags.String("destructive-reach", "", "MECHANICAL, DESIGN-BEARING, or DESTRUCTIVE-REACH")
+	format := flags.String("format", "text", "text or json")
 	if flags.Parse(args) != nil {
 		return 2
 	}
-	if *root == "" || *goalID == "" || *revision == 0 || *destructiveReach == "" {
-		fmt.Fprintln(os.Stderr, "job goal-revision-admission: --root, --goal, --revision, and --destructive-reach are required")
+	if *root == "" || *goalID == "" || *revision == 0 || *proposedCap == 0 || *destructiveReach == "" {
+		fmt.Fprintln(os.Stderr, "job goal-revision-admission: --root, --goal, --revision, a positive --proposed-cap, and --destructive-reach are required")
+		return 2
+	}
+	if *format != "text" && *format != "json" {
+		fmt.Fprintln(os.Stderr, "job goal-revision-admission: --format must be text or json")
 		return 2
 	}
 	now, err := goalCommandNow(*root)
@@ -1149,6 +1154,16 @@ func runDispatchGoalRevisionAdmission(args []string) int {
 	verdict, err := dispatchcore.EvaluateGoalRevisionAdmissionForDispatch(*root, *goalID, *revision, *proposedCap, now, *role, *dispatchMode, dispatchcore.HazardClass(*destructiveReach))
 	if err != nil {
 		return recordExit(err)
+	}
+	if *format == "json" {
+		printJSON(verdict)
+		if verdict.LiveStopReason != "" {
+			return 10
+		}
+		if verdict.Refused() {
+			return 9
+		}
+		return 0
 	}
 	if verdict.PolicyNotice != "" {
 		fmt.Println(verdict.PolicyNotice)
@@ -1160,7 +1175,7 @@ func runDispatchGoalRevisionAdmission(args []string) int {
 		fmt.Fprintln(os.Stderr, verdict.PolicyRefusal)
 		return 9
 	}
-	for _, line := range dispatchcore.FormatGoalAdmission(dispatchcore.GoalAdmissionVerdict{Refusals: []dispatchcore.GoalAdmissionRefusal{*verdict.Refusal}}) {
+	for _, line := range dispatchcore.FormatGoalRevisionAdmission(verdict) {
 		fmt.Println(line)
 	}
 	if verdict.LiveStopReason != "" {

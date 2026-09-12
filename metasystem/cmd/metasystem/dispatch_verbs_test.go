@@ -2,6 +2,7 @@ package main
 
 import (
 	"encoding/json"
+	"fmt"
 	"io"
 	"os"
 	"path/filepath"
@@ -10,6 +11,7 @@ import (
 	"testing"
 	"time"
 
+	dispatchcore "github.com/widoriezebos/agentic-tools/metasystem/internal/dispatch"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/goal"
 )
 
@@ -61,6 +63,143 @@ func TestGoalRevisionAdmissionCommandRefusesExhaustedCodeCriticClass(t *testing.
 	if code != 9 || !strings.Contains(refusal, "codeCritiques=2/2") {
 		t.Fatalf("command did not refuse the exhausted code-critic class: code=%d stdout=%q", code, refusal)
 	}
+}
+
+func TestGoalRevisionAdmissionCommandJSONCarriesBudgetExtensionOffer(t *testing.T) {
+	root := syncedClaimedGoalFixture(t)
+	if err := os.WriteFile(filepath.Join(root, "metasystem.conf"), []byte("metasystem.runtimes=fake\nmetasystem.governance.correlation-policy=A\nmetasystem.budget.tier-3=8h/1/1200m/1/3\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	amendSyncedGoalFixture(t, root, "budget extension command fixture", func(file *goal.GoalFile) {
+		file.StopCapability = &goal.StopCapability{Generation: 2, Revision: 2, Machine: "mac-cli", ClaimEpoch: 1}
+		file.Budget.AttemptLimit = 1
+		file.Budget.ReservedJobMinutesLimit = 10000
+		file.Budget.ActiveJobLimit = 10
+		file.Approved.Digest = goal.ApprovalDigest(file.Intent, file.Tier, *file.Budget, file.Risk)
+	})
+	now := time.Date(2026, 8, 30, 9, 0, 0, 0, time.UTC)
+	receipt := fmt.Sprintf("%d|%s|RECEIPT|type=implement|outcome=shipped|goal=standing-validation|note=fixture\n",
+		now.Add(-time.Hour).Unix(), now.Add(-time.Hour).Format(time.RFC3339))
+	if err := os.MkdirAll(filepath.Join(root, "memory"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(root, "memory", "receipts.log"), []byte(receipt), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	goalSyncMutationGit(t, root, "add", "memory/receipts.log", "metasystem.conf")
+	goalSyncMutationGit(t, root, "commit", "-q", "-m", "extension receipt")
+	goalSyncMutationGit(t, root, "update-ref", goal.LocalLedgerBranch, "HEAD")
+	goalSyncMutationGit(t, root, "update-ref", goal.AcceptedRef, "HEAD")
+	jobs := filepath.Join(root, "artifacts", "agents", "jobs")
+	if err := os.MkdirAll(jobs, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	writeTemp(t, jobs, "spent.json", map[string]any{
+		"jobId": "spent", "operationId": "spent", "goalId": "standing-validation", "goalRevision": 2,
+		"capMin": 1, "status": "completed", "startedAt": "2026-08-30T08:20:00Z", "endedAt": "2026-08-30T08:21:00Z",
+		"pid": 4242,
+	})
+	t.Setenv("METASYSTEM_GOAL_NOW", now.Format(time.RFC3339))
+	args := []string{"--root", root, "--goal", "standing-validation", "--revision", "2", "--proposed-cap", "1",
+		"--role", "implementer", "--dispatch-mode", "fresh", "--destructive-reach", "MECHANICAL", "--format", "json"}
+	output, code := captureStdout(t, func() int { return runDispatchGoalRevisionAdmission(args) })
+	if code != 9 {
+		t.Fatalf("JSON offer command exit=%d output=%s", code, output)
+	}
+	var verdict dispatchcore.GoalRevisionAdmission
+	if err := json.Unmarshal([]byte(output), &verdict); err != nil || verdict.Extension == nil || verdict.Extension.EvidenceKind != "landing" {
+		t.Fatalf("JSON verdict lost the offer: %+v err=%v output=%s", verdict, err, output)
+	}
+
+	t.Setenv("METASYSTEM_OWNER_LINEAGE", "m1")
+	extendArgs := []string{"--root", root, "--id", "standing-validation", "--revision", "2", "--proposed-cap", "1",
+		"--role", "implementer", "--dispatch-mode", "fresh", "--destructive-reach", "MECHANICAL"}
+	extended, extendCode := captureStdout(t, func() int { return runGoalExtendBudget(extendArgs) })
+	if extendCode != 0 || !strings.Contains(extended, `"outcome":"confirmed"`) {
+		t.Fatalf("extend-budget command did not replay and apply the offer: code=%d output=%s", extendCode, extended)
+	}
+	tip := goalSyncMutationGit(t, root, "rev-parse", goal.AcceptedRef)
+	record := goalSyncMutationGit(t, root, "cat-file", "-p", tip+":plans/goals/standing-validation.md")
+	if !strings.Contains(record, "- BudgetExtension: ") || !strings.Contains(record, "attemptLimit=1->2") {
+		t.Fatalf("extend-budget command did not persist its marker: %s", record)
+	}
+
+	writeTemp(t, jobs, "spent-again.json", map[string]any{
+		"jobId": "spent-again", "operationId": "spent-again", "goalId": "standing-validation", "goalRevision": 2,
+		"capMin": 1, "status": "completed", "startedAt": "2026-08-30T08:30:00Z", "endedAt": "2026-08-30T08:31:00Z",
+	})
+	second, secondCode := captureStderr(t, func() int { return runGoalExtendBudget(extendArgs) })
+	if secondCode != 1 || !strings.Contains(second, "extended once at 2026-08-30T09:00:00Z") {
+		t.Fatalf("second extend-budget command did not name its marker: code=%d output=%s", secondCode, second)
+	}
+}
+
+func TestGoalExtendBudgetRefusesSeamsThatAreNotExtendable(t *testing.T) {
+	t.Setenv("METASYSTEM_OWNER_LINEAGE", "m1")
+	baseArgs := func(root string) []string {
+		return []string{"--root", root, "--id", "standing-validation", "--revision", "2", "--proposed-cap", "1",
+			"--role", "implementer", "--dispatch-mode", "fresh", "--destructive-reach", "MECHANICAL"}
+	}
+	t.Run("zero proposed cap", func(t *testing.T) {
+		root := syncedClaimedGoalFixture(t)
+		args := baseArgs(root)
+		for index := range args {
+			if args[index] == "--proposed-cap" {
+				args[index+1] = "0"
+			}
+		}
+		output, code := captureStderr(t, func() int { return runGoalExtendBudget(args) })
+		if code != 2 || !strings.Contains(output, "positive --proposed-cap") {
+			t.Fatalf("zero-cap extension refusal: code=%d output=%s", code, output)
+		}
+	})
+	t.Run("admitted", func(t *testing.T) {
+		root := syncedClaimedGoalFixture(t)
+		amendSyncedGoalFixture(t, root, "admitted extension refusal", func(file *goal.GoalFile) {
+			file.StopCapability = &goal.StopCapability{Generation: 2, Revision: 2, Machine: "mac-cli", ClaimEpoch: 1}
+		})
+		t.Setenv("METASYSTEM_GOAL_NOW", "2026-08-30T09:00:00Z")
+		output, code := captureStderr(t, func() int { return runGoalExtendBudget(baseArgs(root)) })
+		if code != 1 || !strings.Contains(output, "is admitted; there is no budget refusal to extend") {
+			t.Fatalf("admitted seam refusal: code=%d output=%s", code, output)
+		}
+	})
+	t.Run("active job", func(t *testing.T) {
+		root := syncedClaimedGoalFixture(t)
+		amendSyncedGoalFixture(t, root, "active job extension refusal", func(file *goal.GoalFile) {
+			file.StopCapability = &goal.StopCapability{Generation: 2, Revision: 2, Machine: "mac-cli", ClaimEpoch: 1}
+			file.Budget.AttemptLimit = 20
+			file.Budget.ReservedJobMinutesLimit = 10000
+			file.Budget.ActiveJobLimit = 1
+			file.Approved.Digest = goal.ApprovalDigest(file.Intent, file.Tier, *file.Budget, file.Risk)
+		})
+		jobs := filepath.Join(root, "artifacts", "agents", "jobs")
+		if err := os.MkdirAll(jobs, 0o755); err != nil {
+			t.Fatal(err)
+		}
+		writeTemp(t, jobs, "active.json", map[string]any{
+			"jobId": "active", "operationId": "active", "goalId": "standing-validation", "goalRevision": 2,
+			"capMin": 1, "status": "running",
+		})
+		t.Setenv("METASYSTEM_GOAL_NOW", "2026-08-30T09:00:00Z")
+		output, code := captureStderr(t, func() int { return runGoalExtendBudget(baseArgs(root)) })
+		if code != 1 || !strings.Contains(output, "activeJobLimit") || !strings.Contains(output, "no consumption-earned budget extension offer") {
+			t.Fatalf("active-job seam refusal: code=%d output=%s", code, output)
+		}
+	})
+	t.Run("live stop", func(t *testing.T) {
+		root := syncedClaimedGoalFixture(t)
+		amendSyncedGoalFixture(t, root, "live stop extension refusal", func(file *goal.GoalFile) {
+			file.StopCapability = &goal.StopCapability{Generation: 2, Revision: 2, Machine: "mac-cli", ClaimEpoch: 1}
+			file.Budget.ElapsedLimit = "1h"
+			file.Approved.Digest = goal.ApprovalDigest(file.Intent, file.Tier, *file.Budget, file.Risk)
+		})
+		t.Setenv("METASYSTEM_GOAL_NOW", "2026-08-30T10:00:00Z")
+		output, code := captureStderr(t, func() int { return runGoalExtendBudget(baseArgs(root)) })
+		if code != 1 || !strings.Contains(output, "names a live stop, not an extendable exhaustion") {
+			t.Fatalf("live-stop seam refusal: code=%d output=%s", code, output)
+		}
+	})
 }
 
 func TestCommandTaggedProcessScannerUsesAuthorizedCompleteFixtureTable(t *testing.T) {

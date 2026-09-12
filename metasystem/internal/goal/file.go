@@ -39,8 +39,12 @@ type GoalFile struct {
 	// Pinned names the ONE machine that may claim this goal — set when
 	// the work needs a setup, network, or resource only that machine
 	// has. Empty means any machine may claim.
-	Pinned           string
-	Budget           *Budget
+	Pinned string
+	Budget *Budget
+	// BudgetExtension is the durable once-per-goal marker for the seat's
+	// consumption-earned raise. It is deliberately outside the claim record:
+	// ownership and accounting revisions do not reset the once rule.
+	BudgetExtension  *BudgetExtensionRecord
 	BudgetExceptions uint16
 	// legacyFourBudget preserves the pre-tier approval digest until the
 	// classification sweep rebinds it to a tier and five-member tuple.
@@ -183,6 +187,21 @@ type ApprovalRecord struct {
 	Authority string // proven | relayed | channel
 	Digest    string
 	ReviewBy  string // relayed only
+}
+
+// BudgetExtensionRecord records the one automatic raise a goal may earn.
+// The two unchanged budget members are recovered from Budget; only the two
+// dimensions the act raises need before-and-after coordinates here.
+type BudgetExtensionRecord struct {
+	At                     string
+	Opid                   string
+	AttemptLimitFrom       uint64
+	AttemptLimitTo         uint64
+	ReservedJobMinutesFrom uint64
+	ReservedJobMinutesTo   uint64
+	EvidenceKind           string
+	EvidenceID             string
+	EvidenceAt             string
 }
 
 const (
@@ -554,6 +573,11 @@ func ParseFile(data []byte) (*GoalFile, []Problem) {
 			addProblem("Budget: %v", err)
 		}
 	}
+	if f.BudgetExtension != nil {
+		if err := f.ValidateBudgetExtensionRecord(); err != nil {
+			addProblem("BudgetExtension: %v", err)
+		}
+	}
 	if f.NormApproval != nil {
 		if f.NormApproval.ApprovedRef == "" || f.NormApproval.Minutes == 0 || f.NormApproval.ReviewRounds < 0 || f.NormApproval.GoalRevision == 0 {
 			addProblem("NormApproval is incomplete")
@@ -726,13 +750,20 @@ func (f *GoalFile) ValidateApprovalRecord() error {
 	if f.Budget == nil {
 		return fmt.Errorf("record requires a complete Budget")
 	}
-	want := ApprovalDigest(f.Intent, f.Tier, *f.Budget, f.Risk)
+	approvedBudget := *f.Budget
+	if f.BudgetExtension != nil && approvalPrecedesBudgetExtension(f) &&
+		approvedBudget.AttemptLimit == f.BudgetExtension.AttemptLimitTo &&
+		approvedBudget.ReservedJobMinutesLimit == f.BudgetExtension.ReservedJobMinutesTo {
+		approvedBudget.AttemptLimit = f.BudgetExtension.AttemptLimitFrom
+		approvedBudget.ReservedJobMinutesLimit = f.BudgetExtension.ReservedJobMinutesFrom
+	}
+	want := ApprovalDigest(f.Intent, f.Tier, approvedBudget, f.Risk)
 	// A tierless record is necessarily from before TierLaw. Its next ordinary
 	// rewrite may expand the stored four-member tuple to five members before
 	// classify-sweep can rebind the approval. Continue accepting the legacy
 	// digest until the sweep supplies the tier and new digest together.
 	if f.Tier == 0 {
-		want = legacyApprovalDigest(f.Intent, *f.Budget)
+		want = legacyApprovalDigest(f.Intent, approvedBudget)
 	}
 	if a.Digest != want {
 		return fmt.Errorf("digest does not match the approved intent and budget")
@@ -968,6 +999,33 @@ func parseFileField(f *GoalFile, field string, seen map[string]bool, addProblem 
 		}
 		f.Budget = &budget
 		f.legacyFourBudget = legacy
+	case "BudgetExtension":
+		rec, err := parseKVRecord(value, []string{"at", "opid", "attemptLimit", "reservedJobMinutesLimit", "evidence"}, nil, "")
+		if err != nil {
+			addProblem("BudgetExtension: %v", err)
+			return
+		}
+		attemptFrom, attemptTo, err := parseBudgetExtensionArrow(rec["attemptLimit"])
+		if err != nil {
+			addProblem("BudgetExtension attemptLimit: %v", err)
+			return
+		}
+		reservedFrom, reservedTo, err := parseBudgetExtensionArrow(rec["reservedJobMinutesLimit"])
+		if err != nil {
+			addProblem("BudgetExtension reservedJobMinutesLimit: %v", err)
+			return
+		}
+		kindAndID, evidenceAt, found := strings.Cut(rec["evidence"], "@")
+		kind, evidenceID, kindFound := strings.Cut(kindAndID, ":")
+		if !found || !kindFound || strings.Contains(evidenceAt, "@") {
+			addProblem("BudgetExtension evidence must be <kind>:<id>@<iso>")
+			return
+		}
+		f.BudgetExtension = &BudgetExtensionRecord{
+			At: rec["at"], Opid: rec["opid"], AttemptLimitFrom: attemptFrom, AttemptLimitTo: attemptTo,
+			ReservedJobMinutesFrom: reservedFrom, ReservedJobMinutesTo: reservedTo,
+			EvidenceKind: kind, EvidenceID: evidenceID, EvidenceAt: evidenceAt,
+		}
 	case "NormApproval":
 		rec, err := parseKVRecord(value, []string{"approvedRef", "minutes", "goalRevision"}, []string{"reviewRounds"}, "")
 		if err != nil {
@@ -1399,6 +1457,11 @@ func RenderFile(f *GoalFile) []byte {
 	}
 	if f.Budget != nil {
 		fmt.Fprintf(&b, "- Budget: %s\n", renderBudgetRecord(*f.Budget))
+	}
+	if x := f.BudgetExtension; x != nil {
+		fmt.Fprintf(&b, "- BudgetExtension: at=%s opid=%s attemptLimit=%d->%d reservedJobMinutesLimit=%d->%d evidence=%s:%s@%s\n",
+			x.At, x.Opid, x.AttemptLimitFrom, x.AttemptLimitTo, x.ReservedJobMinutesFrom, x.ReservedJobMinutesTo,
+			x.EvidenceKind, x.EvidenceID, x.EvidenceAt)
 	}
 	fmt.Fprintf(&b, "- BudgetExceptions: %d\n", f.BudgetExceptions)
 	if f.NormApproval != nil {
