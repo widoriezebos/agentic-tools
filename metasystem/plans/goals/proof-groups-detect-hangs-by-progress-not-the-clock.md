@@ -1,6 +1,6 @@
 # proof-groups-detect-hangs-by-progress-not-the-clock
 
-- State: claimed
+- State: approved
 - Priority: 1
 - Sequence: 6
 - Risk: severity=2 novelty=2 exposure=3 accumulation=1 basis="severity 2: a correct candidate is refused, or a truly hung group runs longer before it is caught, nothing granted or destroyed; novelty 2: progress-based supervision of a child is new in the adapter, the event stream and process accounting exist; exposure 3: every landing receipt on every seat; accumulation 1: one adapter and one runner, no compounding"
@@ -9,14 +9,13 @@
 - Origin: main
 - Next step: STATE 2026-09-12 21:55Z (m1e): slice 2c landed 8b4fd2f5 (design page section 'Slice 2c: the retry rule at the terminal commit'): the terminal commit tries a refused lock again six times from the top, 250 ms apart, releasing the stop fence between tries and noting the holder on the launcher's stream, and retains the attempt with the holder named on the last refusal; the testing launch's commit ends a worker that left no usable result as a failed terminal naming the reader's error. Census that shaped it: of 175 attempts on four checkouts, 19 lost their terminal before the commit, 13 to a missing worker result, 6 to a claim that moved under the proof (the ledger's rule), 0 to a lock refusal; the 'reaper finishes it later' half is deferred under R-103 until a refusal appears in a record. One Opus read, one material finding (the pause), folded. Verified through the engine on 8b4fd2f5: diagnostic canary proof-mtyx4v0t committed a success terminal on the first try (generation 65). Slice 2 landed 46e5678e with fixture fix-forwards 47df130d and e36995e5. Receipts since slice 2 (18:20Z to 21:30Z, four seats, nine attempts): nothing ended by the clock (five green, three real fixture failures on m1b, one missing-result unknown on m1b at 21:24Z, the kind this landing names). Remaining for DONE: the day of receipts through 2026-09-13 18:20Z on every seat showing no group or attempt ended by the clock; then conclude in Wido's name. Slice 3 belongs to fixture-waits-name-their-producer. Released.
 - OpenedAt: 2026-09-10T13:40:12Z
-- Revision: 53
+- Revision: 54
 - Pinned: m1e
 - Budget: elapsedLimit=1d attemptLimit=10 reservedJobMinutesLimit=1200 activeJobLimit=1 reviewRoundLimit=3
 - BudgetExceptions: 3
 - Approved: by=human:Wido at=2026-09-11T20:33:30Z revision=34 opid=AV0G4X9FGVS3XSS6M166D5GC52-m1-c6925449 authority=proven digest=88700e7b9e1366f253d4db4c72a6f55004c57ad7f113616274c1f176a72bf535
 - Sliced: machine=m1 lineage=main-1788940932-18533-7fa6c2 revision=5 at=2026-09-10T14:14:54Z
-- Claimed: machine=m1e lineage=main-1789030447-51011-5722fc at=2026-09-12T21:16:31Z revision=52 accountingRevision=46 episodeAt=2026-09-12T16:03:55Z episodeRevision=46 idleSeconds=11656
-- StopCapability: generation=52 revision=52 machine=m1e claimEpoch=1 fenceEpoch=0
+- Episode: machine=m1e lineage=main-1789030447-51011-5722fc accountingRevision=46 episodeAt=2026-09-12T16:03:55Z episodeRevision=46 idleSeconds=11656 released=2026-09-12T21:50:55Z
 
 History:
 - 2026-09-10T13:40:12Z 9E6AJGS1CME0CPWS26NAGGCS5J-m1-1701c13c open actor=m1+main-1788940932-18533-7fa6c2 targets=proof-groups-detect-hangs-by-progress-not-the-clock
@@ -72,4 +71,5 @@ History:
 - 2026-09-12T21:11:08Z 4DBXSCET2T1E5WP6VT68N623PF-m1e-c6925449 done actor=human:Wido targets=actionable-metrics,breach-clock-and-budget-honesty,budget-extends-by-consumption-and-breach-parks,coordinator-context-stays-under-budget,coordinator-wakes-on-events-not-polls,critique-always,critique-closes-on-folded-proof,delegate-rounds-reuse-a-warm-gate,failed-job-attention,fixture-stewards-outlive-their-suite,goal-abandoned-with-a-reason,human-goal-verbs-forgiving,job-record-birth-token,landing-receipt-survives-records-drift,lease-sweep-death-evidence,live-job-on-a-done-goal-unnoticed,machine-concurrency-governor,proof-groups-detect-hangs-by-progress-not-the-clock,steward-catchup-livelock,steward-revives-a-done-goal,stop-batch-strands-a-resumable-goal,suite-custody,token-spend-fence,watch-verb,watcher-repair-request-never-names-current,winddown-census-handoff-leak reason=priority-order from=1:7 to=1:6
 - 2026-09-12T21:16:31Z EMVX0G8TFFNYF6AY9GJDNB9R2D-m1e-892cdaec claim actor=m1e+main-1789030447-51011-5722fc targets=proof-groups-detect-hangs-by-progress-not-the-clock
 - 2026-09-12T21:50:52Z KXHDB71WZ2HAZYASKK0XQ7WBXH-m1e-892cdaec edit actor=m1e+main-1789030447-51011-5722fc targets=proof-groups-detect-hangs-by-progress-not-the-clock
-Integrity: sha256=644da200760318e2a5af8d54a8eb2d10c5ed287e4b8ca7205dd7e400a2176fb9
+- 2026-09-12T21:50:55Z TAGN40HTQEC0P2V5S5WF73S2C5-m1e-892cdaec release actor=m1e+main-1789030447-51011-5722fc targets=proof-groups-detect-hangs-by-progress-not-the-clock
+Integrity: sha256=1f361f661b0d5eab3eeaf445cb246f83475a2708de47417d87b3bc640b03d64d
