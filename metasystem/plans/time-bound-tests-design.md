@@ -2,11 +2,11 @@
 
 - Owner: m1e, claimed 2026-09-12; Wido's word R-104-m1e ("all time-bound tests use artificial clocks ... that is the only way forward").
 - Goal and current status: inventory first, then conversion in slices, each landed by human commit with the loaded sweep as its proof.
-- In flight right now: slices 1 to 5 built and critiqued (section 2); the loaded sweep on the final tree, then the landing by human commit.
+- In flight right now: nothing; slices 1 to 5 landed (1f27c506, staticcheck orphans removed in 56bc8fbb) and the goal concluded on 2026-09-12.
 - Decisions made (and who made them): Wido, 2026-09-12: a test that fails under load is a defect of the test, never a reason to widen a floor or retry; the fix is an injected clock and an injected process prober, with a few named end-to-end wiring proofs left.
 - Waiting on the human: nothing.
 - Dead ends: none yet.
-- Next step: land slices 1 to 5 by human commit once the three-round loaded sweep of missionrunner, proofrun, supervise, identity and lease is green and the land and supervision beds have run through the engine; then conclude the goal. The runner-loop beds' real-clock backoff (section 2, missionrunner) is the one follow-up, for the efficiency program.
+- Next step: settled. The runner-loop beds' real-clock backoff (section 2, missionrunner) is the one follow-up, for the efficiency program, not this goal.
 
 ## 1. Inventory (2026-09-12, tip d25c2ee0)
 
@@ -69,4 +69,4 @@ missionrunner and proofrun first (seven of the eight defects of 2026-09-12), the
 
 ## 4. Critique record
 
-Round 1 (2026-09-12, missionrunner slice, independent code critic): two material findings, both folded. F-1: the wiring proof's holders lived 30 s, the same as the death wait, so a leaked group could pass by dying of old age; holders now live 600 s and a wind-down error is classified before any wait. F-2: TestStartProcessLifecycle read "not exited" off a 100 ms child, an instant; the reading moved to a long-lived child. Non-material notes folded: the stop_test wording, a select on the launch-lock hook so a launcher failing before the lock fails fast, the fake kernel's unused recycled-pgid field. Left: TestWaitForBoundsItsWait's 5 s ceiling on a 200 ms timer, and the CPU wiring proof skipping when the first ps read fails.
+Round 1 (2026-09-12, missionrunner slice, independent code critic): two material findings, both folded. F-1: the wiring proof's holders lived 30 s, the same as the death wait, so a leaked group could pass by dying of old age; holders now live 600 s and a wind-down error is classified before any wait. F-2: TestStartProcessLifecycle read "not exited" off a 100 ms child, an instant; the reading moved to a long-lived child. Non-material notes folded: the stop_test wording, a select on the launch-lock hook so a launcher failing before the lock fails fast, the fake kernel's unused recycled-pgid field. Left: TestWaitForBoundsItsWait's 5 s ceiling on a 200 ms timer, and the CPU wiring proof skipping when the first ps read fails. After the landing the go gate's staticcheck refused the land bed's brain scenarios on the tip (the fake kernel's re-declared seam struct read as unused fields, the supervisor fixture's waitReady as an unused method); the seam is a named type and the orphan is gone (56bc8fbb).
