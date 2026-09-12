@@ -1,6 +1,6 @@
 # proof-groups-detect-hangs-by-progress-not-the-clock
 
-- State: approved
+- State: claimed
 - Priority: 1
 - Sequence: 6
 - Risk: severity=2 novelty=2 exposure=3 accumulation=1 basis="severity 2: a correct candidate is refused, or a truly hung group runs longer before it is caught, nothing granted or destroyed; novelty 2: progress-based supervision of a child is new in the adapter, the event stream and process accounting exist; exposure 3: every landing receipt on every seat; accumulation 1: one adapter and one runner, no compounding"
@@ -9,13 +9,14 @@
 - Origin: main
 - Next step: STATE 2026-09-12 18:20Z (m1e): slice 2 landed 46e5678e (decision 3 against revision 3) with two fixture fix-forwards, 47df130d (the stopped leg writes the supervisor's verdict) and e36995e5 (the recycle leg does too); both legs had relied on the removed silence window and hung their runs, and no other bed does (grep of scripts/agents). Verified through the engine on e36995e5: attempt proof-mtyoxbhq passed section/suite-progress-fixtures with the retry decision naming the hung run; proof-mtyn0ura earlier ran twenty-two minutes on a one-minute reservation with the watchdog's note, decision 3 live; the runs re-armed themselves on the landed tip (m1b's 67c6c557, generations 59 and 60). A Codex read of the reworked cut is plugin task task-mtym84ne-70oate, fetched by the person and folded forward. Remaining for DONE: the next day of receipts on every seat shows no group or attempt ended by the clock (DONE row 9 style observation); then conclude. Slice 3 belongs to fixture-waits-name-their-producer (PHD-FIXTURE-WAIT-SEMANTICS); a Codex draft of its page is in m1e's scratch.
 - OpenedAt: 2026-09-10T13:40:12Z
-- Revision: 51
+- Revision: 52
 - Pinned: m1e
 - Budget: elapsedLimit=1d attemptLimit=10 reservedJobMinutesLimit=1200 activeJobLimit=1 reviewRoundLimit=3
 - BudgetExceptions: 3
 - Approved: by=human:Wido at=2026-09-11T20:33:30Z revision=34 opid=AV0G4X9FGVS3XSS6M166D5GC52-m1-c6925449 authority=proven digest=88700e7b9e1366f253d4db4c72a6f55004c57ad7f113616274c1f176a72bf535
 - Sliced: machine=m1 lineage=main-1788940932-18533-7fa6c2 revision=5 at=2026-09-10T14:14:54Z
-- Episode: machine=m1e lineage=main-1789030447-51011-5722fc accountingRevision=46 episodeAt=2026-09-12T16:03:55Z episodeRevision=46 idleSeconds=0 released=2026-09-12T18:02:15Z
+- Claimed: machine=m1e lineage=main-1789030447-51011-5722fc at=2026-09-12T21:16:31Z revision=52 accountingRevision=46 episodeAt=2026-09-12T16:03:55Z episodeRevision=46 idleSeconds=11656
+- StopCapability: generation=52 revision=52 machine=m1e claimEpoch=1 fenceEpoch=0
 
 History:
 - 2026-09-10T13:40:12Z 9E6AJGS1CME0CPWS26NAGGCS5J-m1-1701c13c open actor=m1+main-1788940932-18533-7fa6c2 targets=proof-groups-detect-hangs-by-progress-not-the-clock
@@ -69,4 +70,5 @@ History:
 - 2026-09-12T18:00:53Z TXE15NKAKNJR5Y5E7RH89P7F5D-m1e-892cdaec edit actor=m1e+main-1789030447-51011-5722fc targets=proof-groups-detect-hangs-by-progress-not-the-clock
 - 2026-09-12T18:02:15Z EFV1E3Q7RMD74J0P3CV1Q4V92F-m1e-892cdaec release actor=m1e+main-1789030447-51011-5722fc targets=proof-groups-detect-hangs-by-progress-not-the-clock
 - 2026-09-12T21:11:08Z 4DBXSCET2T1E5WP6VT68N623PF-m1e-c6925449 done actor=human:Wido targets=actionable-metrics,breach-clock-and-budget-honesty,budget-extends-by-consumption-and-breach-parks,coordinator-context-stays-under-budget,coordinator-wakes-on-events-not-polls,critique-always,critique-closes-on-folded-proof,delegate-rounds-reuse-a-warm-gate,failed-job-attention,fixture-stewards-outlive-their-suite,goal-abandoned-with-a-reason,human-goal-verbs-forgiving,job-record-birth-token,landing-receipt-survives-records-drift,lease-sweep-death-evidence,live-job-on-a-done-goal-unnoticed,machine-concurrency-governor,proof-groups-detect-hangs-by-progress-not-the-clock,steward-catchup-livelock,steward-revives-a-done-goal,stop-batch-strands-a-resumable-goal,suite-custody,token-spend-fence,watch-verb,watcher-repair-request-never-names-current,winddown-census-handoff-leak reason=priority-order from=1:7 to=1:6
-Integrity: sha256=3fc602c0aef55a37d4640dc0de46c952e53d2bdfdccf1b2b98ff95ba3f545142
+- 2026-09-12T21:16:31Z EMVX0G8TFFNYF6AY9GJDNB9R2D-m1e-892cdaec claim actor=m1e+main-1789030447-51011-5722fc targets=proof-groups-detect-hangs-by-progress-not-the-clock
+Integrity: sha256=b46ff7f4a251fcb460cd9eeb6c2b263ab5ce4b3f9f9026d5addad74aaba513ec
