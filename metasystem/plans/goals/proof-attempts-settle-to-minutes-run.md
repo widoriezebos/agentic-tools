@@ -1,6 +1,6 @@
 # proof-attempts-settle-to-minutes-run
 
-- State: approved
+- State: claimed
 - Priority: 1
 - Sequence: 6
 - Risk: severity=2 novelty=1 exposure=2 accumulation=2 basis="severity 2: over-charging starves goals of budget they did not spend but grants nothing; novelty 1: the delegated-job settlement is the pattern; exposure 2: every goal that runs proof attempts; accumulation 2: each ended proof attempt keeps its full reservation charged until the goal's revision changes"
@@ -9,11 +9,13 @@
 - Origin: main
 - Next step: One Sol round in internal/dispatch/budget.go's proof-attempt loop mirroring settledJobMinutes for proof attempts, with tests beside the sum-invariant test; one Opus review; land with --chain. Found by dispatch-cap-crit3-20260910 (DCN-09) on 2026-09-10. Wido approves at the terminal.
 - OpenedAt: 2026-09-09T22:51:49Z
-- Revision: 19
+- Revision: 20
 - Pinned: m1c
 - Budget: elapsedLimit=4h attemptLimit=6 reservedJobMinutesLimit=720 activeJobLimit=1 reviewRoundLimit=2
 - BudgetExceptions: 0
 - Approved: by=human:Wido at=2026-09-11T20:33:16Z revision=9 opid=NZH2AJ83CDJ69SF806D5QFRK1Q-m1-c6925449 authority=proven digest=7e3f78dac1362ec9ec6080f265ac2273975f62b479b30898df538b3fe29f78f4
+- Claimed: machine=m1c lineage=main-1789191340-90689-8975a9 at=2026-09-12T17:17:11Z revision=20 accountingRevision=20 episodeAt=2026-09-12T17:17:11Z episodeRevision=20
+- StopCapability: generation=20 revision=20 machine=m1c claimEpoch=5 fenceEpoch=0
 
 History:
 - 2026-09-09T22:51:49Z 7MWERD2ZYAKHY1N3KVQVR8TY8K-m1-1701c13c open actor=m1+main-1788940932-18533-7fa6c2 targets=proof-attempts-settle-to-minutes-run
@@ -35,4 +37,5 @@ History:
 - 2026-09-12T15:43:27Z M0GVXTZSSG4C8ESSQ3NFKS969A-m1-c6925449 set-priority actor=human:Wido targets=actionable-metrics,breach-clock-and-budget-honesty,budget-extends-by-consumption-and-breach-parks,capped-round-continues-instead-of-restarting,coordinator-context-stays-under-budget,coordinator-wakes-on-events-not-polls,critique-always,critique-closes-on-folded-proof,delegate-rounds-reuse-a-warm-gate,engine-runs-re-arm-themselves-on-a-landed-engine,failed-job-attention,fixture-stewards-outlive-their-suite,goal-abandoned-with-a-reason,human-goal-verbs-forgiving,job-record-birth-token,landing-receipt-survives-records-drift,lease-sweep-death-evidence,live-job-on-a-done-goal-unnoticed,machine-concurrency-governor,proof-attempts-settle-to-minutes-run,proof-groups-detect-hangs-by-progress-not-the-clock,small-change-lane,steward-catchup-livelock,steward-launches-resolve-their-model,steward-revives-a-done-goal,stop-batch-strands-a-resumable-goal,stop-hook-never-forces-an-empty-turn,suite-custody,token-spend-fence,watch-verb,watcher-repair-request-never-names-current,winddown-census-handoff-leak reason=priority-order subject=engine-runs-re-arm-themselves-on-a-landed-engine from=1:4 to=1:5 requested-sequence=2
 - 2026-09-12T15:43:39Z 7VED87G6APJ5MWZRGHMHBYVEF8-m1-c6925449 set-priority actor=human:Wido targets=budget-extends-by-consumption-and-breach-parks,coordinator-context-stays-under-budget,coordinator-wakes-on-events-not-polls,critique-always,critique-closes-on-folded-proof,delegate-rounds-reuse-a-warm-gate,proof-attempts-settle-to-minutes-run,proof-groups-detect-hangs-by-progress-not-the-clock,small-change-lane,steward-launches-resolve-their-model,stop-hook-never-forces-an-empty-turn reason=priority-order subject=small-change-lane from=1:5 to=1:6 requested-sequence=3
 - 2026-09-12T15:44:52Z D7BX7FPR5HEZ8VKKH1JDR8SY8Q-m1-c6925449 set-pin actor=human:Wido targets=proof-attempts-settle-to-minutes-run
-Integrity: sha256=3bc8b24ed5e39bf0f37617572b13e8ffa228d23b7c0eb6c695687d084fe7b0f5
+- 2026-09-12T17:17:11Z NSBZYG5YMGTH5JREVDNFB3D4SY-m1c-69c9e454 claim actor=m1c+main-1789191340-90689-8975a9 targets=proof-attempts-settle-to-minutes-run
+Integrity: sha256=4bc0d639c83b0f49fea848ceb978ff6b35af642e5ed28833a1e47ebb0c86a485
