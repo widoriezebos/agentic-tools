@@ -9,11 +9,12 @@
 - Origin: human
 - Next step: 2026-09-12 m1b: slice A landed 809fc0d07 (one build cache per chain, exported by both adapters, recorded per round, removed on close and fully-terminal reap; test environment allowlist and environment digest folded; testing requirement names the cache and the proving run). Every seat rebuilds and re-arms (the environment digest is a judge change). Next: slice C, a three-round chain on the implementer runtime measured per the design page section 4 (round 2 a docs line, round 3 a comment in internal/refusal), then DONE with the measurements; slice B is the testing-requirement text already landed.
 - OpenedAt: 2026-09-11T15:46:36Z
-- Revision: 23
+- Revision: 24
 - Pinned: m1b
 - Budget: elapsedLimit=1d attemptLimit=10 reservedJobMinutesLimit=1200 activeJobLimit=1 reviewRoundLimit=3
 - BudgetExceptions: 0
 - Approved: by=human:Wido at=2026-09-11T20:33:34Z revision=13 opid=9D29SE0D3E6PY8G0T03Y45FQXR-m1-c6925449 authority=proven digest=c13631452d806c05a2169a0b745d59a27aba92c58a7fbcd20f8d9391b993a574
+- Sliced: machine=m1b lineage=main-1789191336-90295-e4b24b revision=20 at=2026-09-12T11:14:37Z
 - Claimed: machine=m1b lineage=main-1789191336-90295-e4b24b at=2026-09-12T09:52:29Z revision=20 accountingRevision=20 episodeAt=2026-09-12T09:52:29Z episodeRevision=20
 - StopCapability: generation=20 revision=20 machine=m1b claimEpoch=2 fenceEpoch=0
 
@@ -41,4 +42,5 @@ History:
 - 2026-09-12T09:57:51Z DQZPQAVDXET2WGQ3CYHKV3059X-m1b-30a7e141 edit actor=m1b+main-1789191336-90295-e4b24b targets=delegate-rounds-reuse-a-warm-gate
 - 2026-09-12T10:23:56Z N2501F7CHXD39E3SCN6AWMN9EZ-m1b-30a7e141 edit actor=m1b+main-1789191336-90295-e4b24b targets=delegate-rounds-reuse-a-warm-gate
 - 2026-09-12T11:12:50Z 4N3ZM4RT6KH9GYPPEBZ8GYN54S-m1b-30a7e141 edit actor=m1b+main-1789191336-90295-e4b24b targets=delegate-rounds-reuse-a-warm-gate
-Integrity: sha256=00570f3bcc76977e52c5880cf4e12581a36c237177d7802530f9be6ff405a5b1
+- 2026-09-12T11:14:37Z F2H9R5F9FMVX9CHWGABKGGTQ6P-m1b-30a7e141 slice-start actor=m1b+main-1789191336-90295-e4b24b targets=delegate-rounds-reuse-a-warm-gate
+Integrity: sha256=34f553116fba7b33aa685dc0142ff5dd95a76fcfac18f6752d2e8ab7873d1eb7
