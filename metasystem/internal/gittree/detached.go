@@ -50,10 +50,15 @@ func (w Workspace) NewDetachedWorktree(tree string) (_ *DetachedWorktree, err er
 		}
 		return nil, errors.Join(fmt.Errorf("gittree detached worktree: resolve temporary directory: %w", err), cleanupErr)
 	}
+	// The worktree's basename is unique per receipt: git names the admin
+	// entry under .git/worktrees after it, and two concurrent adds with the
+	// same basename against one repository race on each other's half-written
+	// entry ("failed to read .git/worktrees/worktree/commondir", cadence run
+	// 18, 2026-09-12, two proof groups of one receipt on a busy box).
 	detached := &DetachedWorktree{
 		control: Workspace{Dir: top},
 		parent:  parent,
-		top:     filepath.Join(parent, "worktree"),
+		top:     filepath.Join(parent, "worktree-"+strings.TrimPrefix(filepath.Base(parent), "metasystem-landing-receipt.")),
 	}
 	defer func() {
 		if err != nil {

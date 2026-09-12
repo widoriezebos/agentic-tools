@@ -164,3 +164,54 @@ func runDetachedGit(t *testing.T, root string, args ...string) string {
 	}
 	return strings.TrimSpace(string(output))
 }
+
+func TestDetachedWorktreesOpenConcurrentlyOnOneRepository(t *testing.T) {
+	// Two proof groups of one receipt open their detached worktrees at the
+	// same moment against the same repository. When every worktree carried
+	// the basename "worktree", git named both admin entries alike and the
+	// second add read the first's half-written commondir ("Undefined error:
+	// 0", cadence run 18, 2026-09-12). Unique basenames keep the adds apart.
+	repository := t.TempDir()
+	runDetachedGit(t, repository, "init", "-q", "-b", "main")
+	runDetachedGit(t, repository, "config", "user.name", "fixture")
+	runDetachedGit(t, repository, "config", "user.email", "fixture@example.invalid")
+	writeDetachedFile(t, filepath.Join(repository, "metasystem", "value.txt"), "base\n")
+	runDetachedGit(t, repository, "add", ".")
+	runDetachedGit(t, repository, "commit", "-qm", "base")
+	writeDetachedFile(t, filepath.Join(repository, "metasystem", "value.txt"), "candidate\n")
+	runDetachedGit(t, repository, "add", ".")
+	candidate := runDetachedGit(t, repository, "rev-parse", runDetachedGit(t, repository, "write-tree")+":metasystem")
+
+	const openers = 6
+	results := make(chan error, openers)
+	opened := make(chan *DetachedWorktree, openers)
+	for i := 0; i < openers; i++ {
+		go func() {
+			detached, err := (Workspace{Dir: filepath.Join(repository, "metasystem")}).NewDetachedWorktree(candidate)
+			if err == nil {
+				opened <- detached
+			}
+			results <- err
+		}()
+	}
+	for i := 0; i < openers; i++ {
+		if err := <-results; err != nil {
+			t.Errorf("concurrent detached worktree: %v", err)
+		}
+	}
+	close(opened)
+	tops := map[string]bool{}
+	for detached := range opened {
+		base := filepath.Base(detached.top)
+		if tops[base] {
+			t.Errorf("two detached worktrees share the basename %q", base)
+		}
+		tops[base] = true
+		if got, err := detached.Workspace().HeadTree(); err != nil || got != candidate {
+			t.Errorf("detached HEAD tree = %q, %v; want %q", got, err, candidate)
+		}
+		if err := detached.Close(); err != nil {
+			t.Error(err)
+		}
+	}
+}

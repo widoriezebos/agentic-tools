@@ -1066,14 +1066,25 @@ acceptance_start_job() {
     "$repo/scripts/agents/templates/brief.md" >"$brief"
   printf '\nFAKE:custodial-critique=%s\n' "$tmp/stop-everything-job-release" >>"$brief"
   printf '%s\n' 'metasystem/scripts/agents/adapters/fake.sh' >"$outputs"
-  (
-    cd "$repo"
-    METASYSTEM_DELEGATE_ROOT="$repo" METASYSTEM_FAKE_CRITIQUE_HOLD_CAP_SEC="$fixture_ceiling_sec" \
-      "$repo/bin/metasystem" delegate --role design-critic --outputs "$outputs" \
-        --design metasystem/scripts/agents/roles/design-critic.md --brief "$brief" \
-        --op stop-fixture-job --goal none-explicit --destructive-reach MECHANICAL
-  ) >"$tmp/stop-everything-dispatch.out" 2>&1 \
-    || { echo "stop-everything could not dispatch its held fake job" >&2; cat "$tmp/stop-everything-dispatch.out" >&2; exit 1; }
+  # A census verdict older than its window refuses the dispatch and says
+  # "retry in a moment": on a busy box (cadence run 18, 2026-09-12, load 37)
+  # the census cycle outran the fixture's two-second window once. The
+  # scenario retries that one refusal, bounded; any other refusal is red.
+  local dispatch_try=0 dispatch_rc=1
+  while (( dispatch_try < 15 )); do
+    dispatch_try=$((dispatch_try + 1))
+    (
+      cd "$repo"
+      METASYSTEM_DELEGATE_ROOT="$repo" METASYSTEM_FAKE_CRITIQUE_HOLD_CAP_SEC="$fixture_ceiling_sec" \
+        "$repo/bin/metasystem" delegate --role design-critic --outputs "$outputs" \
+          --design metasystem/scripts/agents/roles/design-critic.md --brief "$brief" \
+          --op stop-fixture-job --goal none-explicit --destructive-reach MECHANICAL
+    ) >"$tmp/stop-everything-dispatch.out" 2>&1 && { dispatch_rc=0; break; }
+    grep -q 'census verdict is stale' "$tmp/stop-everything-dispatch.out" || break
+    sleep 2
+  done
+  (( dispatch_rc == 0 )) \
+    || { echo "stop-everything could not dispatch its held fake job (after $dispatch_try attempts)" >&2; cat "$tmp/stop-everything-dispatch.out" >&2; exit 1; }
   acceptance_wait_for_json_value "stop-everything delegate command job running" "$record" status running
   wait_until "stop-everything custody child caused by delegate command" test -s \
     "$repo/artifacts/agents/stop-fixture-job/rounds/1/custody-child.pid"
