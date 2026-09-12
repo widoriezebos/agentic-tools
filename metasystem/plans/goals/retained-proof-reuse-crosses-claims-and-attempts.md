@@ -9,8 +9,8 @@
 - Origin: human
 - Next step: Design first, because this changes the judge: read digestGroupInputsWithImplicit and groupExecutionIdentity in internal/proofrun/test_build.go, the retained scan and newest-observation selection in attempt.go and test_result.go; write the design with the identity composition per adapter, the judge-compatibility key and the soundness argument; critique; build; land after delivery-receipt-stops-at-first-failure. || Absorbed 2026-09-11 from goal nested-gate-witness-reuse: Park under program goal 10; clause to add there: a nested or adopted validation (the adopt bed's witness gate, scripts/agents/witness-gate.sh) reuses the outer gate's retained proof for identical bytes instead of re-running the go gate, with the base-commit engine as sole judge and provenance-proven evidence (the r1 cr
 - OpenedAt: 2026-09-11T12:00:24Z
-- Revision: 15
-- Pinned: m1e
+- Revision: 16
+- Pinned: m1b
 - Budget: elapsedLimit=1d attemptLimit=10 reservedJobMinutesLimit=1200 activeJobLimit=1 reviewRoundLimit=3
 - BudgetExceptions: 0
 - Approved: by=human:Wido at=2026-09-11T20:33:27Z revision=14 opid=JRBKY3X8JQ9WZKMPQSGGB1T73Y-m1-c6925449 authority=proven digest=33f85b7b8a5b12a47c704b1d0069d002cfd1c0491afb7e9b476d59d036bf0a66
@@ -31,4 +31,5 @@ History:
 - 2026-09-11T20:32:11Z VNTGHKF5K14538S69FBVYEF92E-m1e-3ca84c28 edit actor=m1e+main-1789158700-39729-b9c0d2 targets=retained-proof-reuse-crosses-claims-and-attempts
 - 2026-09-11T20:33:27Z JRBKY3X8JQ9WZKMPQSGGB1T73Y-m1-c6925449 approve actor=human:Wido targets=retained-proof-reuse-crosses-claims-and-attempts
 - 2026-09-11T21:58:01Z 5VFEYQ4S7N2R7MTE0PVGN749XK-m1-c6925449 edit actor=human:Wido targets=retained-proof-reuse-crosses-claims-and-attempts
-Integrity: sha256=c120a8ade3c4e99843014b02274414e280267ec72587eec01a6220f5eceac792
+- 2026-09-12T05:28:41Z BEE46HKZBKVWJDYPYP7XAT7H3S-m1e-c6925449 set-pin actor=human:Wido targets=retained-proof-reuse-crosses-claims-and-attempts
+Integrity: sha256=4a7538c0f167373d86433f6fe4d993a47bf752267d87abecb6111c497c97c272
