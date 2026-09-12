@@ -96,13 +96,15 @@ func hostStartVerified(pid, pgid int, command, tag string, forceUnverified bool)
 // process table and an artificial clock, so the ladder's verdicts (TERM
 // worked, KILL was needed, a group was foreign, a group is down to zombies)
 // are proven without a scheduler in the loop (R-104-m1e).
-var windDown = struct {
+type windDownSeam struct {
 	now                       func() time.Time
 	sleep                     func(time.Duration)
 	groupAlive                func(pgid int) bool
 	groupHasSubstantiveMember func(pgid int) bool
 	groupOwnership            func(pgid int, tag string, grant fixtureauth.GroupOwnershipGrant) janitor.GroupOwnershipOutcome
-}{
+}
+
+var windDown = windDownSeam{
 	now: time.Now, sleep: time.Sleep, groupAlive: groupAlive,
 	groupHasSubstantiveMember: groupHasSubstantiveMember, groupOwnership: groupOwnership,
 }

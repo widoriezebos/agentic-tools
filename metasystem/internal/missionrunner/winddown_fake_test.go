@@ -38,14 +38,6 @@ type fakeKernel struct {
 	}
 }
 
-type windDownSeam = struct {
-	now                       func() time.Time
-	sleep                     func(time.Duration)
-	groupAlive                func(pgid int) bool
-	groupHasSubstantiveMember func(pgid int) bool
-	groupOwnership            func(pgid int, tag string, grant fixtureauth.GroupOwnershipGrant) janitor.GroupOwnershipOutcome
-}
-
 // installFakeClock puts the wind-down and stop ladders on an artificial
 // clock and leaves their process probes and signals real: every wait costs
 // nothing, every fact stays a fact.

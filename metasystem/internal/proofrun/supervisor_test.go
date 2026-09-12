@@ -555,13 +555,6 @@ func (fixture *supervisorHelperFixture) keepAliveUntilExit() {
 	fixture.keepOnce.Do(func() { close(fixture.keepAlive) })
 }
 
-func (fixture *supervisorHelperFixture) waitReady(t *testing.T) {
-	t.Helper()
-	if err := <-fixture.ready; err != nil {
-		t.Fatalf("helper exited or closed stdout before readiness: %v", err)
-	}
-}
-
 func (fixture *supervisorHelperFixture) gate(options *supervisorOptions, reader processTreeReader, onSample func(int, processTreeSample)) {
 	if options.Activity == nil {
 		options.Activity = newOutputActivity(time.Now())
