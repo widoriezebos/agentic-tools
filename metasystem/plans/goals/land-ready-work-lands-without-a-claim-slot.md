@@ -1,6 +1,6 @@
 # land-ready-work-lands-without-a-claim-slot
 
-- State: approved
+- State: claimed
 - Priority: 1
 - Sequence: 15
 - Risk: severity=2 novelty=2 exposure=3 accumulation=1 basis="severity 2: the claim quota and accounting are the spend fence; novelty 2: a landing slot is a new state; exposure 3: every seat; accumulation 1: goal verbs and receipt"
@@ -9,11 +9,13 @@
 - Origin: human
 - Next step: Read the claim quota in internal/goal/validate.go and rebindClaimKeepEpisode in verbs.go; design the landing slot's lifecycle; critique; build; land.
 - OpenedAt: 2026-09-11T15:45:27Z
-- Revision: 21
+- Revision: 22
 - Pinned: m1c
 - Budget: elapsedLimit=1d attemptLimit=10 reservedJobMinutesLimit=1200 activeJobLimit=1 reviewRoundLimit=3
 - BudgetExceptions: 0
 - Approved: by=human:Wido at=2026-09-11T20:33:55Z revision=15 opid=395T6MBCZB6SGKCBFKQNRK5WDF-m1-c6925449 authority=proven digest=cb7b05c1be432bf7be06cd25044bf55e42d6e5cae1c0126c35f5ced610b7b532
+- Claimed: machine=m1c lineage=main-1789191340-90689-8975a9 at=2026-09-12T11:18:02Z revision=22 accountingRevision=22 episodeAt=2026-09-12T11:18:02Z episodeRevision=22
+- StopCapability: generation=22 revision=22 machine=m1c claimEpoch=5 fenceEpoch=0
 
 History:
 - 2026-09-11T15:45:27Z 6Z8WZ99H2QDDXDP19V3KT6VFDC-m1e-5083721b open actor=m1e+main-1789141490-27414-b9c0d2 targets=land-ready-work-lands-without-a-claim-slot
@@ -37,4 +39,5 @@ History:
 - 2026-09-12T08:05:00Z 3E12A58616XA44CYXG0GW4DR2M-m1e-c6925449 done actor=human:Wido targets=actionable-metrics,breach-clock-and-budget-honesty,capped-round-continues-instead-of-restarting,coordinator-context-stays-under-budget,coordinator-wakes-on-events-not-polls,critique-always,critique-closes-on-folded-proof,deep-battery-under-ten-minutes,delegate-rounds-reuse-a-warm-gate,delivery-receipt-stops-at-first-failure,failed-job-attention,fixture-stewards-outlive-their-suite,goal-abandoned-with-a-reason,human-goal-verbs-forgiving,job-record-birth-token,land-ready-work-lands-without-a-claim-slot,landing-receipt-survives-records-drift,lease-sweep-death-evidence,live-job-on-a-done-goal-unnoticed,machine-concurrency-governor,proof-groups-detect-hangs-by-progress-not-the-clock,retained-proof-reuse-crosses-claims-and-attempts,small-change-lane,steward-catchup-livelock,steward-revives-a-done-goal,stop-batch-strands-a-resumable-goal,suite-custody,tier-from-severity-and-novelty,token-spend-fence,watch-verb,watcher-repair-request-never-names-current,winddown-census-handoff-leak reason=priority-order from=1:18 to=1:17
 - 2026-09-12T09:52:20Z 5EN6CPHWHP0VZTE1MGFZQBMBEE-m1e-c6925449 done actor=human:Wido targets=actionable-metrics,breach-clock-and-budget-honesty,capped-round-continues-instead-of-restarting,coordinator-context-stays-under-budget,coordinator-wakes-on-events-not-polls,critique-always,critique-closes-on-folded-proof,deep-battery-under-ten-minutes,delegate-rounds-reuse-a-warm-gate,failed-job-attention,fixture-stewards-outlive-their-suite,goal-abandoned-with-a-reason,human-goal-verbs-forgiving,job-record-birth-token,land-ready-work-lands-without-a-claim-slot,landing-receipt-survives-records-drift,lease-sweep-death-evidence,live-job-on-a-done-goal-unnoticed,machine-concurrency-governor,proof-groups-detect-hangs-by-progress-not-the-clock,retained-proof-reuse-crosses-claims-and-attempts,small-change-lane,steward-catchup-livelock,steward-revives-a-done-goal,stop-batch-strands-a-resumable-goal,suite-custody,tier-from-severity-and-novelty,token-spend-fence,watch-verb,watcher-repair-request-never-names-current,winddown-census-handoff-leak reason=priority-order from=1:17 to=1:16
 - 2026-09-12T11:17:18Z H4KSM9E8F8T630ZMG9B0AFKZHW-m1e-c6925449 done actor=human:Wido targets=actionable-metrics,breach-clock-and-budget-honesty,capped-round-continues-instead-of-restarting,critique-always,failed-job-attention,fixture-stewards-outlive-their-suite,goal-abandoned-with-a-reason,human-goal-verbs-forgiving,job-record-birth-token,land-ready-work-lands-without-a-claim-slot,landing-receipt-survives-records-drift,lease-sweep-death-evidence,live-job-on-a-done-goal-unnoticed,machine-concurrency-governor,small-change-lane,steward-catchup-livelock,steward-revives-a-done-goal,stop-batch-strands-a-resumable-goal,suite-custody,tier-from-severity-and-novelty,token-spend-fence,watch-verb,watcher-repair-request-never-names-current,winddown-census-handoff-leak reason=priority-order from=1:16 to=1:15
-Integrity: sha256=363305d149e835a7d319ea029b18d2806d2f0ec2f57c5ff311780969d76b8913
+- 2026-09-12T11:18:02Z HPF24PEEADES1RYW50C9NXRFZB-m1c-69c9e454 claim actor=m1c+main-1789191340-90689-8975a9 targets=land-ready-work-lands-without-a-claim-slot
+Integrity: sha256=aa1e75a0d30639b6240cb06e063ddbfe9e23f85104640b2095910d6d6ac39aa6
