@@ -531,3 +531,17 @@ nothing changed. That is a wall-clock cap turning load-slowness into
 failure (R-35-m3). Proposal: the witness resolution gets progress-based
 patience like the proof groups, or the bound is raised well above a loaded
 engine build; until then a seat waits for the load to pass and retries.
+
+P-5. 2026-09-12, m1b. The clause absorbed into goal
+retained-proof-reuse-crosses-claims-and-attempts from goal
+nested-gate-witness-reuse (a nested or adopted validation, the adopt bed's
+witness gate in scripts/agents/witness-gate.sh, reusing the outer gate's
+retained proof for identical bytes instead of re-running the go gate, with
+the base-commit engine as sole judge and provenance-proven evidence) is a
+shell-side mechanism over a different artifact (the go-gate witness) than
+the proof-attempt records the goal's two landed slices change (8f7becd65,
+db58ad931). It was parked on the goal's design page and is not built; the
+absorbed text is truncated in the goal record ("... (the r1 cr") and the
+source goal's page was never committed, so the paraphrase there is the only
+surviving text. Proposal: open it as its own goal with a design page of its
+own, once Wido restates the clause.
