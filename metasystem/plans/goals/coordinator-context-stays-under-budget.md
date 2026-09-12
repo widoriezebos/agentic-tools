@@ -1,6 +1,6 @@
 # coordinator-context-stays-under-budget
 
-- State: approved
+- State: claimed
 - Priority: 1
 - Sequence: 10
 - Risk: severity=2 novelty=2 exposure=3 accumulation=1 basis="severity 2: an over-bounded output hides evidence the seat needs; novelty 2: bounded verb output is a new discipline; exposure 3: every seat's every turn; accumulation 1: verbs and docs"
@@ -9,11 +9,13 @@
 - Origin: human
 - Next step: Measure which tool outputs dominate the context (goal list, watch, test logs, land output), bound them at the verb, design the handoff-at-boundary, write the instruction change, critique, build, land.
 - OpenedAt: 2026-09-11T15:45:19Z
-- Revision: 26
+- Revision: 27
 - Pinned: m1e
 - Budget: elapsedLimit=1d attemptLimit=10 reservedJobMinutesLimit=1200 activeJobLimit=1 reviewRoundLimit=3
 - BudgetExceptions: 0
 - Approved: by=human:Wido at=2026-09-11T20:33:41Z revision=13 opid=5E536DZV81YW62T1T2FFBA1YNC-m1-c6925449 authority=proven digest=c2091d088534cc7439a99fa65e62c9775d5f123680cef44e6e1953282c59f419
+- Claimed: machine=m1e lineage=main-1789030447-51011-5722fc at=2026-09-12T18:02:19Z revision=27 accountingRevision=27 episodeAt=2026-09-12T18:02:19Z episodeRevision=27
+- StopCapability: generation=27 revision=27 machine=m1e claimEpoch=1 fenceEpoch=0
 
 History:
 - 2026-09-11T15:45:19Z 5F6TSCSSSW5B4H5JVZDBKEWHPE-m1e-5083721b open actor=m1e+main-1789141490-27414-b9c0d2 targets=coordinator-context-stays-under-budget
@@ -42,4 +44,5 @@ History:
 - 2026-09-12T15:43:27Z M0GVXTZSSG4C8ESSQ3NFKS969A-m1-c6925449 set-priority actor=human:Wido targets=actionable-metrics,breach-clock-and-budget-honesty,budget-extends-by-consumption-and-breach-parks,capped-round-continues-instead-of-restarting,coordinator-context-stays-under-budget,coordinator-wakes-on-events-not-polls,critique-always,critique-closes-on-folded-proof,delegate-rounds-reuse-a-warm-gate,engine-runs-re-arm-themselves-on-a-landed-engine,failed-job-attention,fixture-stewards-outlive-their-suite,goal-abandoned-with-a-reason,human-goal-verbs-forgiving,job-record-birth-token,landing-receipt-survives-records-drift,lease-sweep-death-evidence,live-job-on-a-done-goal-unnoticed,machine-concurrency-governor,proof-attempts-settle-to-minutes-run,proof-groups-detect-hangs-by-progress-not-the-clock,small-change-lane,steward-catchup-livelock,steward-launches-resolve-their-model,steward-revives-a-done-goal,stop-batch-strands-a-resumable-goal,stop-hook-never-forces-an-empty-turn,suite-custody,token-spend-fence,watch-verb,watcher-repair-request-never-names-current,winddown-census-handoff-leak reason=priority-order subject=engine-runs-re-arm-themselves-on-a-landed-engine from=1:9 to=1:10 requested-sequence=2
 - 2026-09-12T15:43:39Z 7VED87G6APJ5MWZRGHMHBYVEF8-m1-c6925449 set-priority actor=human:Wido targets=budget-extends-by-consumption-and-breach-parks,coordinator-context-stays-under-budget,coordinator-wakes-on-events-not-polls,critique-always,critique-closes-on-folded-proof,delegate-rounds-reuse-a-warm-gate,proof-attempts-settle-to-minutes-run,proof-groups-detect-hangs-by-progress-not-the-clock,small-change-lane,steward-launches-resolve-their-model,stop-hook-never-forces-an-empty-turn reason=priority-order subject=small-change-lane from=1:10 to=1:11 requested-sequence=3
 - 2026-09-12T17:19:20Z JACDR5KVP8B0RDK6SV5EFNZG7N-m1c-69c9e454 done actor=m1c+main-1789191340-90689-8975a9 targets=actionable-metrics,breach-clock-and-budget-honesty,budget-extends-by-consumption-and-breach-parks,coordinator-context-stays-under-budget,coordinator-wakes-on-events-not-polls,critique-always,critique-closes-on-folded-proof,delegate-rounds-reuse-a-warm-gate,failed-job-attention,fixture-stewards-outlive-their-suite,goal-abandoned-with-a-reason,human-goal-verbs-forgiving,job-record-birth-token,landing-receipt-survives-records-drift,lease-sweep-death-evidence,live-job-on-a-done-goal-unnoticed,machine-concurrency-governor,proof-attempts-settle-to-minutes-run,proof-groups-detect-hangs-by-progress-not-the-clock,steward-catchup-livelock,steward-revives-a-done-goal,stop-batch-strands-a-resumable-goal,suite-custody,token-spend-fence,watch-verb,watcher-repair-request-never-names-current,winddown-census-handoff-leak reason=priority-order from=1:11 to=1:10
-Integrity: sha256=f2cbedec6e1b8a1d85292cdb6745523b2cfef8c9add5a9031b0ca3413bdab127
+- 2026-09-12T18:02:19Z 14C5S79B552QP4WM1WSD8RJA9R-m1e-892cdaec claim actor=m1e+main-1789030447-51011-5722fc targets=coordinator-context-stays-under-budget
+Integrity: sha256=0a4e45d0544cbc69066f9f966bdff97d89c6dab88bc488b929c955fef1f7396b
