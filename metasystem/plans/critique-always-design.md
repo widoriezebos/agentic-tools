@@ -2,11 +2,11 @@
 
 - Owner: m1e (goal 18 of plans/delivery-efficiency-plan.md), claimed 2026-09-12 21:55Z.
 - Goal and current status: critique follows the tier, not the hazard class (Wido, 2026-09-10: "if the risk is high, even though it is a small change, it should get a critique"). A chain on a tier-2 or tier-3 goal needs an independent critique before it closes whatever its class; a tier-1 chain closes without one (R-54-m1's tier-1 clause stands). Built by Codex gpt-5.6-sol from the seat's brief (section 2) in a worktree; read by Opus; integrated, landed and verified by the seat.
-- In flight right now: landing by human commit, then the dispatcher and land fixture beds through the engine on the landed tip.
+- In flight right now: nothing; landed 894a269e and verified through the engine. Concluding waits on the tip freeze m1b asked for during its delivery proof.
 - Decisions made (and who made them): Wido, 2026-09-10 (the small-change lane's second decision): the tier decides the critique, derived from the four recorded risk answers, never from the size or the class of the change. R-90-m1 (Wido): MECHANICAL builds run at xhigh through the configured per-model line; the hazard floor in the table stays medium. The seat, 2026-09-12: the seven build decisions of section 2.
 - Waiting on the human: nothing.
 - Dead ends (do not retry without new evidence): none.
-- Next step: land (the Opus read is folded, section 4); run section/dispatcher-adapter-and-mission-runner-fixtures and section/land-fixtures through the engine on the landed tip; then conclude in Wido's name under the authority grant.
+- Next step: conclude in Wido's name under the authority grant (every DONE clause holds: the tier-keyed rule in both surfaces, the named tests, the beds green through the engine).
 
 ## 1. What changes
 
@@ -27,7 +27,7 @@ Today `requiredConfigurationByHazard` (internal/dispatch/hazard.go) and the `des
 - internal/dispatch: `TestHazardDutiesGateChainCompletion` (a MECHANICAL chain at tier 3 refused closure without a critic and closed with one dispatched at the critique rows; at tier 2 refused; at tier 1 closes; a goal-less record and a record without the goalTier key keep the class floor; a same-class critic at tier 3 refused by name), `TestHazardConfigurationRefusesAWeakenedMinimum` (the tier map tampered or missing refused with the reader's and the resolver's messages), `TestClaimLaunchRecordsEffectiveTierObligations` (tier 3 records the critique duty, tier 1 the floor; builder rows and live proof untouched by the tier), `TestTierThreeMechanicalCompositionCarriesEffectiveFollowUpObligations`, the invalid-tier refusal; `internal/dispatch/provenance_test.go` derives its expectation through the resolver.
 - cmd/metasystem: `TestComposeRolePacketCommandCarriesGoalTier`, `TestOrdinaryLaunchCallSitesUsePreparedClaimStateMachineUnderLock` (the three compose calls pass the tier; the source-admission preflight runs before the binding is resolved and the real compose after it).
 - Both packages green in full under the race detector; the fast gate green (gofmt, vet, staticcheck, refusal register, build) on the seat, where the network reaches the pinned staticcheck.
-- Through the engine after landing: the dispatcher and land fixture beds (filled below when run).
+- Through the engine on the landed tip 894a269e (generation 66): diagnostic attempt proof-mtyyfody ran section/dispatcher-adapter-and-mission-runner-fixtures and section/land-fixtures, both passed (347 s wall).
 
 ## 4. Critique record
 
