@@ -26,6 +26,7 @@
       "liveProofRequired": true
     }
   },
+  "independentCritiqueByTier": {"1": false, "2": true, "3": true},
   "roles": {
     "behavior-judge": {
       "sources": [

@@ -15,6 +15,42 @@ import (
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/goal"
 )
 
+func TestComposeRolePacketCommandCarriesGoalTier(t *testing.T) {
+	root, err := filepath.Abs(filepath.Join("..", ".."))
+	if err != nil {
+		t.Fatal(err)
+	}
+	temp := t.TempDir()
+	brief := filepath.Join(temp, "brief.md")
+	if err := os.WriteFile(brief, []byte("Build the focused change.\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	composition := filepath.Join(temp, "composition.json")
+	code := runDispatchComposeRolePacket([]string{
+		"--root", root, "--role", "implementer", "--brief", brief,
+		"--job", "compose-tier-3", "--runtime", "fake", "--model", "fake-model",
+		"--tool-policy", "read-write", "--round", "1", "--destructive-reach", "MECHANICAL",
+		"--goal-tier", "3", "--output", filepath.Join(temp, "prompt.md"), "--composition", composition,
+	})
+	if code != 0 {
+		t.Fatalf("compose-role-packet exit = %d", code)
+	}
+	stored, err := os.ReadFile(composition)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var record map[string]any
+	if err := json.Unmarshal(stored, &record); err != nil {
+		t.Fatal(err)
+	}
+	obligations, ok := record["configurationObligations"].(map[string]any)
+	if !ok || obligations["independentCritiqueRequired"] != true ||
+		obligations["independentCritiqueEffortTier"] != "maximal" ||
+		obligations["independentCritiqueReasoningEffort"] != "xhigh" {
+		t.Fatalf("tier-3 command obligations = %#v", record["configurationObligations"])
+	}
+}
+
 func TestGoalRevisionAdmissionCommandMarksThenEnforcesWithExplicitDispatchContext(t *testing.T) {
 	root := syncedClaimedGoalFixture(t)
 	amendSyncedGoalFixture(t, root, "breach-stop capable admission fixture", func(file *goal.GoalFile) {

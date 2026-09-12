@@ -21,6 +21,10 @@ func TestSTR3TierSnapshotPlumbing02FreshFollowUpAndSetupMismatch(t *testing.T) {
 	if err := RecordCreate(root, "root-job", setup); err != nil {
 		t.Fatal(err)
 	}
+	effective, err := EffectiveObligations(HazardMechanical, 2)
+	if err != nil {
+		t.Fatal(err)
+	}
 	full := writeJSON(t, filepath.Join(stage, "root-full.json"), map[string]any{
 		"jobId": "root-job", "operationId": "root-job", "role": "implementer", "runtime": "fake", "round": 1,
 		"mission": nil, "missionIncarnation": nil, "stream": nil, "reviews": nil,
@@ -29,7 +33,7 @@ func TestSTR3TierSnapshotPlumbing02FreshFollowUpAndSetupMismatch(t *testing.T) {
 		"workspaceRoot": root, "baseSha": "base", "branch": "main",
 		"permissions":              map[string]any{"requested": map[string]any{}},
 		"destructiveReach":         "MECHANICAL",
-		"configurationObligations": requiredConfigurationByHazard[HazardMechanical],
+		"configurationObligations": effective,
 		"reasoningEffort":          "medium",
 		"requestedModel":           "fake-model", "startedAt": "2026-08-20T00:00:00Z", "endedAt": nil,
 	})

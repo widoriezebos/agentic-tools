@@ -122,7 +122,7 @@ func TestJobRecordRejectsExpandedOrDishonestComposition(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if _, err := readCompositionForJob(composition, "verify-a", "verifier", "fake", "fake-model", "", HazardMechanical, 1, int64(len(packet)), record.PacketDigest); err != nil {
+	if _, err := readCompositionForJob(composition, "verify-a", "verifier", "fake", "fake-model", "", HazardMechanical, 0, 1, int64(len(packet)), record.PacketDigest); err != nil {
 		t.Fatalf("generated composition did not validate: %v", err)
 	}
 
@@ -142,8 +142,40 @@ func TestJobRecordRejectsExpandedOrDishonestComposition(t *testing.T) {
 	if err := os.WriteFile(composition, tampered, 0o644); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := readCompositionForJob(composition, "verify-a", "verifier", "fake", "fake-model", "", HazardMechanical, 1, int64(len(packet)), record.PacketDigest); err == nil || !strings.Contains(err.Error(), "expanded") {
+	if _, err := readCompositionForJob(composition, "verify-a", "verifier", "fake", "fake-model", "", HazardMechanical, 0, 1, int64(len(packet)), record.PacketDigest); err == nil || !strings.Contains(err.Error(), "expanded") {
 		t.Fatalf("expanded composition result = %v", err)
+	}
+}
+
+func TestTierThreeMechanicalCompositionCarriesEffectiveFollowUpObligations(t *testing.T) {
+	root := compositionRepoRoot(t)
+	temp := t.TempDir()
+	brief := filepath.Join(temp, "brief.md")
+	if err := os.WriteFile(brief, []byte("Continue the focused task.\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	params := ComposeRolePacketParams{
+		Root: root, Role: "implementer", Brief: brief, JobID: "mechanical-tier-3-r2", Runtime: "fake",
+		Model: "fake-model", ToolPolicy: "read-write", Round: 2, DestructiveReach: HazardMechanical, GoalTier: 3,
+		Output: filepath.Join(temp, "prompt.md"), CompositionOutput: filepath.Join(temp, "composition.json"),
+	}
+	record, err := ComposeRolePacket(params)
+	if err != nil {
+		t.Fatal(err)
+	}
+	packet, err := os.ReadFile(params.Output)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := readCompositionForJob(params.CompositionOutput, params.JobID, params.Role, params.Runtime, params.Model, "", HazardMechanical, 3, 2, int64(len(packet)), record.PacketDigest); err != nil {
+		t.Fatalf("tier-3 effective obligations were refused: %v", err)
+	}
+
+	stored := readJSONFile(t, params.CompositionOutput)
+	stored["configurationObligations"] = requiredConfigurationByHazard[HazardMechanical]
+	writeRecord(params.CompositionOutput, stored)
+	if _, err := readCompositionForJob(params.CompositionOutput, params.JobID, params.Role, params.Runtime, params.Model, "", HazardMechanical, 3, 2, int64(len(packet)), record.PacketDigest); err == nil || !strings.Contains(err.Error(), "does not carry the hazard configuration obligations") {
+		t.Fatalf("bare mechanical class floor on a tier-3 follow-up = %v", err)
 	}
 }
 
@@ -181,7 +213,7 @@ func TestRolePacketTableCoversEveryDispatchableRole(t *testing.T) {
 
 func TestHazardConfigurationRefusesAWeakenedMinimum(t *testing.T) {
 	root := compositionRepoRoot(t)
-	destructive, err := ResolveHazardConfiguration(root, HazardDestructiveReach)
+	destructive, err := ResolveHazardConfiguration(root, HazardDestructiveReach, 0)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -214,8 +246,60 @@ func TestHazardConfigurationRefusesAWeakenedMinimum(t *testing.T) {
 	if err := os.WriteFile(path, encoded, 0o644); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := ResolveHazardConfiguration(tamperedRoot, HazardDestructiveReach); err == nil || !strings.Contains(err.Error(), "does not match its required configuration") {
+	if _, err := ResolveHazardConfiguration(tamperedRoot, HazardDestructiveReach, 0); err == nil || !strings.Contains(err.Error(), "does not match its required configuration") {
 		t.Fatalf("weakened destructive-reach configuration result = %v", err)
+	}
+
+	t.Run("tampered independent critique tier rule", func(t *testing.T) {
+		var tampered map[string]any
+		if err := json.Unmarshal(tableBytes, &tampered); err != nil {
+			t.Fatal(err)
+		}
+		tampered["independentCritiqueByTier"].(map[string]any)["3"] = false
+		encoded, err := json.Marshal(tampered)
+		if err != nil {
+			t.Fatal(err)
+		}
+		tamperedRoot := t.TempDir()
+		path := filepath.Join(tamperedRoot, rolePacketTablePath)
+		if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(path, encoded, 0o644); err != nil {
+			t.Fatal(err)
+		}
+		_, err = ResolveHazardConfiguration(tamperedRoot, HazardMechanical, 3)
+		if err == nil || !strings.Contains(err.Error(), "role packet table independentCritiqueByTier does not match its required rule") {
+			t.Fatalf("tampered independentCritiqueByTier result = %v", err)
+		}
+	})
+
+	t.Run("missing independent critique tier rule", func(t *testing.T) {
+		var missing map[string]any
+		if err := json.Unmarshal(tableBytes, &missing); err != nil {
+			t.Fatal(err)
+		}
+		delete(missing, "independentCritiqueByTier")
+		encoded, err := json.Marshal(missing)
+		if err != nil {
+			t.Fatal(err)
+		}
+		missingRoot := t.TempDir()
+		path := filepath.Join(missingRoot, rolePacketTablePath)
+		if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(path, encoded, 0o644); err != nil {
+			t.Fatal(err)
+		}
+		if _, err := ResolveHazardConfiguration(missingRoot, HazardMechanical, 3); err == nil ||
+			!strings.Contains(err.Error(), "independentCritiqueByTier, and at least one role") {
+			t.Fatalf("role packet table without independentCritiqueByTier was not refused by the reader: %v", err)
+		}
+	})
+
+	if _, err := EffectiveObligations(HazardMechanical, 4); err == nil || err.Error() != "goal tier must be 1, 2, or 3" {
+		t.Fatalf("invalid goal tier result = %v", err)
 	}
 }
 
@@ -348,11 +432,31 @@ func TestFMA_R2_ClaudeGateFixtureOmitted(t *testing.T) {
 
 func closeReadyHazardChain(t *testing.T, class HazardClass) (repo, evidence, job string) {
 	t.Helper()
+	return closeReadyHazardChainAtTier(t, class, nil)
+}
+
+func closeReadyHazardChainAtTier(t *testing.T, class HazardClass, tier any) (repo, evidence, job string) {
+	t.Helper()
 	repo, evidence, job = mirrorFixture(t)
 	path := filepath.Join(repo, "artifacts", "agents", "jobs", job+".json")
 	record := readJSONFile(t, path)
+	goalTier := uint8(0)
+	if tier != nil {
+		var ok bool
+		goalTier, ok = tier.(uint8)
+		if !ok {
+			t.Fatalf("test goal tier has type %T, want uint8 or nil", tier)
+		}
+		record["goalId"] = "goal-a"
+		record["goalRevision"] = 1
+	}
+	configuration, err := EffectiveObligations(class, goalTier)
+	if err != nil {
+		t.Fatal(err)
+	}
 	record["destructiveReach"] = class
-	record["configurationObligations"] = requiredConfigurationByHazard[class]
+	record["goalTier"] = tier
+	record["configurationObligations"] = configuration
 	record["dispatchMode"] = DispatchModeFresh
 	record["resumedSessionId"] = nil
 	record["sessionId"] = "builder-session"
@@ -650,10 +754,76 @@ func TestHazardDutiesGateChainCompletion(t *testing.T) {
 		}
 	})
 
-	t.Run("mechanical needs neither", func(t *testing.T) {
-		repo, _, job := closeReadyHazardChain(t, HazardMechanical)
+	t.Run("mechanical at tier 3 requires a critique", func(t *testing.T) {
+		repo, evidence, job := closeReadyHazardChainAtTier(t, HazardMechanical, uint8(3))
+		wantHazardClosureRefusal(t, CloseCheck(repo, job), hazardCritiqueClosureRefusal)
+
+		writeHazardEvidenceJob(t, repo, "mechanical-tier-3-critic", HazardDesignBearing, map[string]any{
+			"role": "code-critic", "reviews": job, "parentJob": nil,
+			"dispatchMode": DispatchModeFresh, "resumedSessionId": nil,
+			"sessionId": "mechanical-tier-3-critic-session", "reasoningEffort": "xhigh",
+			"configurationObligations": requiredConfigurationByHazard[HazardDesignBearing],
+		})
+		if err := StampClaimedReviewReference(repo, "mechanical-tier-3-critic"); err != nil {
+			t.Fatalf("could not attach tier-required critique: %v", err)
+		}
+		refreshHazardMirror(t, repo, evidence, job)
 		if err := CloseCheck(repo, job); err != nil {
-			t.Fatalf("mechanical chain required hazard evidence: %v", err)
+			t.Fatalf("mechanical tier-3 chain with independent critique did not close: %v", err)
+		}
+	})
+
+	t.Run("mechanical at tier 2 requires a critique", func(t *testing.T) {
+		repo, _, job := closeReadyHazardChainAtTier(t, HazardMechanical, uint8(2))
+		wantHazardClosureRefusal(t, CloseCheck(repo, job), hazardCritiqueClosureRefusal)
+	})
+
+	t.Run("mechanical at tier 1 closes without one", func(t *testing.T) {
+		repo, _, job := closeReadyHazardChainAtTier(t, HazardMechanical, uint8(1))
+		if err := CloseCheck(repo, job); err != nil {
+			t.Fatalf("mechanical tier-1 chain required hazard evidence: %v", err)
+		}
+	})
+
+	t.Run("mechanical without a goal keeps the class floor", func(t *testing.T) {
+		repo, _, job := closeReadyHazardChainAtTier(t, HazardMechanical, nil)
+		if err := CloseCheck(repo, job); err != nil {
+			t.Fatalf("goal-less mechanical chain required hazard evidence: %v", err)
+		}
+	})
+
+	t.Run("mechanical record without a goalTier key keeps the class floor", func(t *testing.T) {
+		repo, evidence, job := closeReadyHazardChainAtTier(t, HazardMechanical, nil)
+		path := filepath.Join(repo, "artifacts", "agents", "jobs", job+".json")
+		record := readJSONFile(t, path)
+		delete(record, "goalTier")
+		writeRecord(path, record)
+		refreshHazardMirror(t, repo, evidence, job)
+		if err := CloseCheck(repo, job); err != nil {
+			t.Fatalf("a record without the goalTier key required hazard evidence: %v", err)
+		}
+	})
+
+	t.Run("mechanical at tier 3 refuses a critic dispatched at its own class by name", func(t *testing.T) {
+		repo, evidence, job := closeReadyHazardChainAtTier(t, HazardMechanical, uint8(3))
+		critic, err := EffectiveObligations(HazardMechanical, 3)
+		if err != nil {
+			t.Fatal(err)
+		}
+		writeHazardEvidenceJob(t, repo, "same-class-critic", HazardMechanical, map[string]any{
+			"role": "code-critic", "reviews": job, "parentJob": nil,
+			"dispatchMode": DispatchModeFresh, "resumedSessionId": nil,
+			"sessionId": "critic-session", "reasoningEffort": "medium",
+			"configurationObligations": critic,
+		})
+		if err := StampClaimedReviewReference(repo, "same-class-critic"); err != nil {
+			t.Fatalf("could not attach the same-class critic: %v", err)
+		}
+		refreshHazardMirror(t, repo, evidence, job)
+		err = CloseCheck(repo, job)
+		wantHazardClosureRefusal(t, err, "REFUSED-R22-M1-RULING-O-INDEPENDENT-CRITIQUE")
+		if !strings.Contains(err.Error(), "its builder rows are ordinary/medium and its reasoning effort medium, the critique requires maximal/xhigh; dispatch the critic at a class whose builder rows are the critique's (DESIGN-BEARING)") {
+			t.Fatalf("the refusal does not name the field and the class: %v", err)
 		}
 	})
 
@@ -923,7 +1093,7 @@ func TestComposeRolePacketAcceptsThePriorWorktreeSlotAndRefusesOthers(t *testing
 	if last.Slot != "prior-worktree" || last.Source != "engine:prior-worktree" || !strings.Contains(string(packet), "# Prior Worktree\n\nRound 1 of this chain was cut off") {
 		t.Fatalf("the prior-worktree slot did not compose: %+v\n%s", last, packet)
 	}
-	if _, err := readCompositionForJob(params.CompositionOutput, "build-a-r2", "implementer", "fake", "fake-model", "", HazardMechanical, 2, int64(len(packet)), record.PacketDigest); err != nil {
+	if _, err := readCompositionForJob(params.CompositionOutput, "build-a-r2", "implementer", "fake", "fake-model", "", HazardMechanical, 0, 2, int64(len(packet)), record.PacketDigest); err != nil {
 		t.Fatalf("the composition validation refused the engine slot: %v", err)
 	}
 	params.Continuations = []CompositionContinuation{{Slot: "prior-worktree-notes", Path: worktreeFact}}

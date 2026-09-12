@@ -70,6 +70,7 @@ func runDispatchComposeRolePacket(args []string) int {
 	round := flags.Int64("round", 0, "job round")
 	mission := flags.String("mission", "", "mission id")
 	destructiveReach := flags.String("destructive-reach", "", "MECHANICAL, DESIGN-BEARING, or DESTRUCTIVE-REACH")
+	goalTier := flags.Uint("goal-tier", 0, "claimed-revision goal tier")
 	output := flags.String("output", "", "assembled packet output")
 	composition := flags.String("composition", "", "composition record output")
 	validateOnly := flags.Bool("validate-only", false, "validate asserted sources without reading or writing a packet")
@@ -85,6 +86,10 @@ func runDispatchComposeRolePacket(args []string) int {
 	}
 	if flags.NArg() != 0 {
 		fmt.Fprintln(os.Stderr, "job compose-role-packet: positional arguments are not accepted")
+		return 2
+	}
+	if *goalTier > 3 {
+		fmt.Fprintln(os.Stderr, "goal tier must be 1, 2, or 3")
 		return 2
 	}
 	if *validateOnly {
@@ -124,7 +129,7 @@ func runDispatchComposeRolePacket(args []string) int {
 	}
 	_, err := dispatchcore.ComposeRolePacket(dispatchcore.ComposeRolePacketParams{
 		Root: *root, Role: *role, Brief: *brief, JobID: *job, Runtime: *runtimeName,
-		Model: *model, ToolPolicy: *toolPolicy, Round: *round, Mission: *mission, DestructiveReach: dispatchcore.HazardClass(*destructiveReach), Output: *output,
+		Model: *model, ToolPolicy: *toolPolicy, Round: *round, Mission: *mission, DestructiveReach: dispatchcore.HazardClass(*destructiveReach), GoalTier: uint8(*goalTier), Output: *output,
 		CompositionOutput: *composition, ExtraSources: sources, Continuations: continuationInputs,
 		CapMinutes: *capMinutes, ReturnMarginMinutes: margin, CapTruncated: *capTruncated,
 	})

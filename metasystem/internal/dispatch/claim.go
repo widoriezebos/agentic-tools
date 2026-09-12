@@ -245,7 +245,7 @@ func ClaimLaunch(params ClaimLaunchParams, dependencies ClaimLaunchDependencies)
 	if err := validateFreshCriticReviewsLatest(params.Root, params.Request.Role, params.Reviews, params.AdapterVerb); err != nil {
 		return ClaimResult{}, err
 	}
-	configuration, err := MinimumHazardConfiguration(params.Request.DestructiveReach)
+	configuration, err := EffectiveObligations(params.Request.DestructiveReach, params.GoalTier)
 	if err != nil {
 		return ClaimResult{}, err
 	}

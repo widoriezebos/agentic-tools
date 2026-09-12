@@ -251,6 +251,42 @@ func TestClaimLaunchOutcomeWONCreatesExactReservation(t *testing.T) {
 	}
 }
 
+func TestClaimLaunchRecordsEffectiveTierObligations(t *testing.T) {
+	for _, row := range []struct {
+		name             string
+		tier             uint8
+		critiqueRequired bool
+		effortTier       string
+		reasoningEffort  string
+	}{
+		{name: "mechanical tier 3", tier: 3, critiqueRequired: true, effortTier: "maximal", reasoningEffort: "xhigh"},
+		{name: "mechanical tier 1", tier: 1, critiqueRequired: false, effortTier: "none", reasoningEffort: "none"},
+	} {
+		t.Run(row.name, func(t *testing.T) {
+			root := t.TempDir()
+			now := time.Date(2026, 8, 27, 10, 0, 0, 0, time.UTC)
+			params := claimParamsForTest(root, "tier-obligations")
+			params.GoalTier = row.tier
+			result, err := ClaimLaunch(params, claimDependenciesForTest(&now, identity.Verification{}))
+			if err != nil || result.Outcome != ClaimWON {
+				t.Fatalf("claim launch = %s, %v", result.Outcome, err)
+			}
+			record := readRecord(t, root, params.OpID)
+			obligations, ok := record["configurationObligations"].(map[string]any)
+			if !ok || obligations["independentCritiqueRequired"] != row.critiqueRequired ||
+				obligations["independentCritiqueEffortTier"] != row.effortTier ||
+				obligations["independentCritiqueReasoningEffort"] != row.reasoningEffort {
+				t.Fatalf("recorded obligations = %#v", record["configurationObligations"])
+			}
+			// The tier raises the critique only: the class's builder rows and
+			// its live-proof duty are the floor at every tier.
+			if obligations["builderEffortTier"] != "ordinary" || obligations["builderReasoningEffort"] != "medium" || obligations["liveProofRequired"] != false {
+				t.Fatalf("the tier changed more than the critique duty: %#v", record["configurationObligations"])
+			}
+		})
+	}
+}
+
 func TestClaimLaunchWONReservationCompletesRecordSetup(t *testing.T) {
 	root := t.TempDir()
 	now := time.Date(2026, 8, 27, 10, 0, 0, 0, time.UTC)

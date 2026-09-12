@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"path/filepath"
 	"reflect"
+	"strconv"
 	"strings"
 	"time"
 
@@ -21,9 +22,8 @@ const (
 	HazardDestructiveReach HazardClass = "DESTRUCTIVE-REACH"
 )
 
-// ConfigurationObligations is the minimum configuration fixed by one hazard
-// class. The custodian can read the review and proof duties without inferring
-// them from prose in the task packet.
+// ConfigurationObligations is the effective minimum carried by a job. The
+// hazard class supplies its floor, and a goal tier can raise its critique duty.
 type ConfigurationObligations struct {
 	BuilderEffortTier                  string `json:"builderEffortTier"`
 	BuilderReasoningEffort             string `json:"builderReasoningEffort"`
@@ -51,11 +51,32 @@ var requiredConfigurationByHazard = map[HazardClass]ConfigurationObligations{
 	},
 }
 
+var independentCritiqueRequiredByTier = map[uint8]bool{1: false, 2: true, 3: true}
+
+// EffectiveObligations applies a goal's critique duty to the class floor.
+// Builder effort and live proof remain properties of the hazard class.
+func EffectiveObligations(class HazardClass, tier uint8) (ConfigurationObligations, error) {
+	configuration, err := MinimumHazardConfiguration(class)
+	if err != nil {
+		return ConfigurationObligations{}, err
+	}
+	critiqueRequired, known := independentCritiqueRequiredByTier[tier]
+	if tier != 0 && !known {
+		return ConfigurationObligations{}, fmt.Errorf("goal tier must be 1, 2, or 3")
+	}
+	if critiqueRequired && !configuration.IndependentCritiqueRequired {
+		configuration.IndependentCritiqueRequired = true
+		configuration.IndependentCritiqueEffortTier = "maximal"
+		configuration.IndependentCritiqueReasoningEffort = "xhigh"
+	}
+	return configuration, nil
+}
+
 // ResolveHazardConfiguration reads the role-packet table and refuses any
-// missing, extra, or weakened class row. The table remains the recorded schema,
-// while this admission boundary fixes the currently lawful minimums.
-func ResolveHazardConfiguration(root string, class HazardClass) (ConfigurationObligations, error) {
-	expected, err := MinimumHazardConfiguration(class)
+// missing, extra, or weakened class or tier rule. The table remains the
+// recorded schema, while this admission boundary fixes the lawful obligations.
+func ResolveHazardConfiguration(root string, class HazardClass, tier uint8) (ConfigurationObligations, error) {
+	expected, err := EffectiveObligations(class, tier)
 	if err != nil {
 		return ConfigurationObligations{}, err
 	}
@@ -71,6 +92,13 @@ func ResolveHazardConfiguration(root string, class HazardClass) (ConfigurationOb
 		if !present || !reflect.DeepEqual(configured, required) {
 			return ConfigurationObligations{}, fmt.Errorf("role packet table destructiveReach class %s does not match its required configuration", requiredClass)
 		}
+	}
+	requiredTierRule := make(map[string]bool, len(independentCritiqueRequiredByTier))
+	for requiredTier, required := range independentCritiqueRequiredByTier {
+		requiredTierRule[strconv.FormatUint(uint64(requiredTier), 10)] = required
+	}
+	if !reflect.DeepEqual(table.IndependentCritiqueByTier, requiredTierRule) {
+		return ConfigurationObligations{}, fmt.Errorf("role packet table independentCritiqueByTier does not match its required rule")
 	}
 	return expected, nil
 }
@@ -165,6 +193,23 @@ type hazardFinalWorkState struct {
 func validateHazardCompletion(repoRoot, jobsDir, root string, members []chainMember) error {
 	var governed *ConfigurationObligations
 	var rootRecord map[string]any
+	for _, member := range members {
+		if asString(member.record["jobId"]) == root {
+			rootRecord = member.record
+			break
+		}
+	}
+	if rootRecord == nil {
+		return nil
+	}
+	rootTier := uint8(0)
+	if rawTier, present := rootRecord["goalTier"]; present && rawTier != nil {
+		tier, ok := numInt(rawTier)
+		if !ok || tier < 0 || tier > 255 {
+			return &OpError{Code: 9, Reason: hazardRecordClosureRefusal, Message: fmt.Sprintf("chain %s has an invalid goalTier record", root)}
+		}
+		rootTier = uint8(tier)
+	}
 	criticOnly := len(members) > 0
 	memberIDs := make(map[string]bool, len(members))
 	memberSessions := make(map[string]bool, len(members))
@@ -174,9 +219,6 @@ func validateHazardCompletion(repoRoot, jobsDir, root string, members []chainMem
 		if session := asString(member.record["sessionId"]); session != "" {
 			memberSessions[session] = true
 		}
-		if job == root {
-			rootRecord = member.record
-		}
 		if !exactCriticRole(member.record["role"]) {
 			criticOnly = false
 		}
@@ -184,9 +226,9 @@ func validateHazardCompletion(repoRoot, jobsDir, root string, members []chainMem
 		if class == "" {
 			continue
 		}
-		configuration, err := MinimumHazardConfiguration(class)
+		configuration, err := EffectiveObligations(class, rootTier)
 		if err != nil {
-			return &OpError{Code: 9, Reason: hazardRecordClosureRefusal, Message: fmt.Sprintf("chain %s has an invalid destructiveReach record", root)}
+			return &OpError{Code: 9, Reason: hazardRecordClosureRefusal, Message: fmt.Sprintf("chain %s has an invalid destructiveReach or goalTier record", root)}
 		}
 		if governed == nil || (!governed.IndependentCritiqueRequired && configuration.IndependentCritiqueRequired) ||
 			(!governed.LiveProofRequired && configuration.LiveProofRequired) {
@@ -194,7 +236,7 @@ func validateHazardCompletion(repoRoot, jobsDir, root string, members []chainMem
 			governed = &copy
 		}
 	}
-	if governed == nil || rootRecord == nil {
+	if governed == nil {
 		return nil
 	}
 	// Review-only chains close through their own register, terminal, and
@@ -313,7 +355,10 @@ func validateIndependentCritiqueReference(repoRoot, jobsDir string, rootRecord m
 	if !ok || asString(configuration["builderEffortTier"]) != required.IndependentCritiqueEffortTier ||
 		asString(configuration["builderReasoningEffort"]) != required.IndependentCritiqueReasoningEffort ||
 		asString(critic["reasoningEffort"]) != required.IndependentCritiqueReasoningEffort {
-		return hazardClosureRefusal(hazardCritiqueClosureRefusal, fmt.Sprintf("independent-critique job %q does not prove the required maximum critic effort", ref))
+		return hazardClosureRefusal(hazardCritiqueClosureRefusal, fmt.Sprintf(
+			"independent-critique job %q does not prove the required maximum critic effort: its builder rows are %s/%s and its reasoning effort %s, the critique requires %s/%s; dispatch the critic at a class whose builder rows are the critique's (DESIGN-BEARING)",
+			ref, asString(configuration["builderEffortTier"]), asString(configuration["builderReasoningEffort"]), asString(critic["reasoningEffort"]),
+			required.IndependentCritiqueEffortTier, required.IndependentCritiqueReasoningEffort))
 	}
 	proven, proofErr := runtimeProvesMaximalExecution(repoRoot, asString(critic["runtime"]), asString(critic["requestedModel"]))
 	if proofErr != nil || !proven {

@@ -1448,9 +1448,11 @@ dispatch_job() {
   require_open_dispatch_fence
   # Source admission is a pure preflight. A forbidden assertion refuses
   # before a runtime probe, worktree, branch, quarantine, lock, or job exists.
+  # The tier is not resolved yet and the validate-only path reads none: the
+  # flag carries the local's zero here so the call shape matches the compose.
   if (( ${#composition_source_args[@]} )); then
     set +e
-    composition_output=$("$ms" job compose-role-packet --validate-only --root "$root" --role "$role" \
+    composition_output=$("$ms" job compose-role-packet --validate-only --root "$root" --role "$role" --goal-tier "$goal_tier" \
       "${composition_source_args[@]}")
     composition_rc=$?
     set -e
@@ -1753,7 +1755,7 @@ dispatch_job() {
   set +e
   composition_output=$("$ms" job compose-role-packet --root "$root" --role "$role" --brief "$brief" \
     --job "$job" --runtime "$runtime" --model "$model" --tool-policy "$tool_policy" --round 1 --mission "$mission" \
-    --destructive-reach "$destructive_reach" \
+    --destructive-reach "$destructive_reach" --goal-tier "$goal_tier" \
     --output "$prompt_temp" --composition "$composition_temp" \
     "${cap_compose_args[@]}" \
     "${composition_source_args[@]+"${composition_source_args[@]}"}")
@@ -2636,7 +2638,7 @@ follow_up() {
   set +e
   composition_output=$("$ms" job compose-role-packet --root "$root" --role "$role" --brief "$delivery_content" \
     --job "$child" --runtime "$runtime" --model "$model" --tool-policy "$tool_policy" --round "$round" --mission "$mission" \
-    --destructive-reach "$destructive_reach" \
+    --destructive-reach "$destructive_reach" --goal-tier "$goal_tier" \
     --output "$prompt_temp" --composition "$composition_temp" \
     "${cap_compose_args[@]}" \
     "${continuation_args[@]+"${continuation_args[@]}"}")

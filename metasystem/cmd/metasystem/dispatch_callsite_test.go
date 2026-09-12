@@ -70,6 +70,18 @@ func TestOrdinaryLaunchCallSitesUsePreparedClaimStateMachineUnderLock(t *testing
 		!strings.Contains(fresh, `goal_width=$(json_value "$goal_binding" gateWidth)`) || strings.Count(fresh, `--gate-width "$goal_width"`) < 3 {
 		t.Fatal("fresh dispatch does not carry one claimed-revision goalTier and gateWidth through preflight, claim, and final record")
 	}
+	if !strings.Contains(fresh, `compose-role-packet --validate-only --root "$root" --role "$role" --goal-tier "$goal_tier"`) ||
+		!strings.Contains(fresh, `--destructive-reach "$destructive_reach" --goal-tier "$goal_tier"`) {
+		t.Fatal("fresh packet composition does not carry the resolved goal tier")
+	}
+	// The source-admission preflight runs before the goal binding is
+	// resolved (the binding's refusal must not pre-empt the preflight's), and
+	// the validate-only path reads no tier; the real compose comes after it.
+	assertShellOrder(t, fresh,
+		`compose-role-packet --validate-only --root "$root" --role "$role" --goal-tier "$goal_tier"`,
+		`goal_tier=$(json_value "$goal_binding" goalTier)`,
+		`--destructive-reach "$destructive_reach" --goal-tier "$goal_tier"`,
+	)
 
 	follow := dispatchShellSection(t, "follow_up() {", "\nstatus_job() {")
 	assertShellOrder(t, follow,
@@ -103,6 +115,9 @@ func TestOrdinaryLaunchCallSitesUsePreparedClaimStateMachineUnderLock(t *testing
 	if !strings.Contains(follow, `goal_tier=$(json_field "$latest" goalTier)`) || strings.Count(follow, `--goal-tier "$goal_tier"`) < 3 ||
 		!strings.Contains(follow, `goal_width=$(json_field "$latest" gateWidth`) || strings.Count(follow, `--gate-width "$goal_width"`) < 3 {
 		t.Fatal("follow-up does not carry the root's frozen goalTier and gateWidth through preflight, claim, and final record")
+	}
+	if !strings.Contains(follow, `--destructive-reach "$destructive_reach" --goal-tier "$goal_tier"`) {
+		t.Fatal("follow-up packet composition does not carry the root's frozen goal tier")
 	}
 }
 

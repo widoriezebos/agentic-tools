@@ -28,9 +28,10 @@ type CompositionRefusal struct {
 func (e *CompositionRefusal) Error() string { return e.Detail }
 
 type rolePacketTable struct {
-	SchemaVersion    int                                      `json:"schemaVersion"`
-	DestructiveReach map[HazardClass]ConfigurationObligations `json:"destructiveReach"`
-	Roles            map[string]rolePacketRecipe              `json:"roles"`
+	SchemaVersion             int                                      `json:"schemaVersion"`
+	DestructiveReach          map[HazardClass]ConfigurationObligations `json:"destructiveReach"`
+	IndependentCritiqueByTier map[string]bool                          `json:"independentCritiqueByTier"`
+	Roles                     map[string]rolePacketRecipe              `json:"roles"`
 }
 
 type rolePacketRecipe struct {
@@ -111,6 +112,7 @@ type ComposeRolePacketParams struct {
 	Round             int64
 	Mission           string
 	DestructiveReach  HazardClass
+	GoalTier          uint8
 	Output            string
 	CompositionOutput string
 	ToolPolicy        string
@@ -185,7 +187,7 @@ func ComposeRolePacket(p ComposeRolePacketParams) (CompositionRecord, error) {
 	if err != nil {
 		return CompositionRecord{}, err
 	}
-	configuration, err := ResolveHazardConfiguration(p.Root, p.DestructiveReach)
+	configuration, err := ResolveHazardConfiguration(p.Root, p.DestructiveReach, p.GoalTier)
 	if err != nil {
 		return CompositionRecord{}, &CompositionRefusal{Code: "REFUSED-HAZARD-CONFIGURATION", Source: string(p.DestructiveReach), Detail: err.Error()}
 	}
@@ -341,8 +343,8 @@ func readRolePacketTable(root string) ([]byte, rolePacketTable, error) {
 	if err := json.Unmarshal(data, &table); err != nil {
 		return nil, table, fmt.Errorf("decode role packet table: %w", err)
 	}
-	if table.SchemaVersion != 1 || len(table.Roles) == 0 || len(table.DestructiveReach) == 0 {
-		return nil, table, fmt.Errorf("role packet table must be schema version 1 with destructiveReach classes and at least one role")
+	if table.SchemaVersion != 1 || len(table.Roles) == 0 || len(table.DestructiveReach) == 0 || len(table.IndependentCritiqueByTier) == 0 {
+		return nil, table, fmt.Errorf("role packet table must be schema version 1 with destructiveReach classes, independentCritiqueByTier, and at least one role")
 	}
 	return data, table, nil
 }

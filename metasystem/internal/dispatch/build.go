@@ -450,7 +450,7 @@ func BuildRecord(p BuildRecordParams) error {
 	}
 	var composition any
 	if p.Composition != "" {
-		composition, err = readCompositionForJob(p.Composition, p.Job, p.Role, p.Runtime, p.Model, p.Mission, p.DestructiveReach, 1, p.InputBytes, p.InputHash)
+		composition, err = readCompositionForJob(p.Composition, p.Job, p.Role, p.Runtime, p.Model, p.Mission, p.DestructiveReach, p.GoalTier, 1, p.InputBytes, p.InputHash)
 		if err != nil {
 			return err
 		}
@@ -476,7 +476,7 @@ func BuildRecord(p BuildRecordParams) error {
 	if p.GoalID == "" && p.MachineID != "" {
 		return fmt.Errorf("machineId requires a goalId")
 	}
-	configuration, err := MinimumHazardConfiguration(p.DestructiveReach)
+	configuration, err := EffectiveObligations(p.DestructiveReach, p.GoalTier)
 	if err != nil {
 		return err
 	}
@@ -790,7 +790,7 @@ func BuildFollowRecord(p BuildFollowRecordParams) error {
 	}
 	var composition any
 	if p.Composition != "" {
-		composition, err = readCompositionForJob(p.Composition, p.Job, role, runtimeName, model, mission, p.DestructiveReach, p.Round, p.InputBytes, p.InputHash)
+		composition, err = readCompositionForJob(p.Composition, p.Job, role, runtimeName, model, mission, p.DestructiveReach, p.GoalTier, p.Round, p.InputBytes, p.InputHash)
 		if err != nil {
 			return err
 		}
@@ -834,7 +834,7 @@ func BuildFollowRecord(p BuildFollowRecordParams) error {
 			return fmt.Errorf("follow-up must inherit the parent gateWidth")
 		}
 	}
-	configuration, err := MinimumHazardConfiguration(p.DestructiveReach)
+	configuration, err := EffectiveObligations(p.DestructiveReach, p.GoalTier)
 	if err != nil {
 		return err
 	}
@@ -948,7 +948,7 @@ func BuildFollowRecord(p BuildFollowRecordParams) error {
 	return writeRecord(p.Output, record)
 }
 
-func readCompositionForJob(path, job, role, runtimeName, model, mission string, destructiveReach HazardClass, round, packetBytes int64, packetDigest string) (map[string]any, error) {
+func readCompositionForJob(path, job, role, runtimeName, model, mission string, destructiveReach HazardClass, goalTier uint8, round, packetBytes int64, packetDigest string) (map[string]any, error) {
 	if path == "" {
 		return nil, fmt.Errorf("delegate job requires a composition record")
 	}
@@ -982,7 +982,7 @@ func readCompositionForJob(path, job, role, runtimeName, model, mission string, 
 		return nil, fmt.Errorf("composition record does not bind the job, role, runtime, model, mission, round, and delivered packet digest")
 	}
 	configuration, configurationOK := record["configurationObligations"].(map[string]any)
-	expectedConfiguration, expectedErr := MinimumHazardConfiguration(destructiveReach)
+	expectedConfiguration, expectedErr := EffectiveObligations(destructiveReach, goalTier)
 	if expectedErr != nil || !configurationOK || !configurationObligationsMatchObject(expectedConfiguration, configuration) {
 		return nil, fmt.Errorf("composition record does not carry the hazard configuration obligations")
 	}
