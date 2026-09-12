@@ -18,8 +18,12 @@ func TestAllPidsRetriesAMomentaryENOMEM(t *testing.T) {
 		}
 		return original(name, args...)
 	}
+	// Two shaped ENOMEMs, then the kernel. The kernel's own answer may need
+	// retries of its own on a busy box (the process table grows between the
+	// sizing call and the filling call; cadence run 14, 2026-09-12, read a
+	// fourth call), so the count is a floor, not an exact figure.
 	pids, err := AllPids()
-	if err != nil || len(pids) == 0 || calls != 3 {
+	if err != nil || len(pids) == 0 || calls < 3 {
 		t.Fatalf("a momentary ENOMEM was not retried: calls=%d pids=%d err=%v", calls, len(pids), err)
 	}
 	calls = 0
