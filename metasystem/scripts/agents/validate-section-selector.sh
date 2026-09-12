@@ -72,7 +72,7 @@ run_context() {
 }
 
 selected_sections() {
-  local context section_id section_name
+  local context section_id section_name lines=""
   context=$(run_context)
   while IFS=$'\t' read -r section_id section_name; do
     if [[ "$context" == adopted ]]; then
@@ -82,8 +82,14 @@ selected_sections() {
           ;;
       esac
     fi
-    printf '%s\t%s\n' "$section_id" "$section_name"
+    lines+="$section_id"$'\t'"$section_name"$'\n'
   done < <(sections)
+  # One write for the whole list. A printf per line into a pipe whose reader
+  # is slow blocks on a full pipe, and a signal arriving then makes bash's
+  # printf give up with "write error: Interrupted system call" (the adoption
+  # bed under a deep attempt on a loaded box). The list is far smaller than
+  # a pipe buffer, so a single write completes without ever blocking.
+  printf '%s' "$lines"
 }
 
 twice_consulted_sections() {
