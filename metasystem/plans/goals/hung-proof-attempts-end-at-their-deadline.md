@@ -1,6 +1,6 @@
 # hung-proof-attempts-end-at-their-deadline
 
-- State: approved
+- State: claimed
 - Priority: 1
 - Sequence: 3
 - Risk: severity=2 novelty=1 exposure=3 accumulation=1 basis="severity 2: a hung attempt holds a reservation and a seat's landing for a day; novelty 1: the deadline and watchdog exist and only their coverage changes; exposure 3: every attempt on every seat; accumulation 1: no new mechanism"
@@ -9,11 +9,13 @@
 - Origin: human
 - Next step: Read the watchdog and launcher in internal/proofrun and the section adapter's end-event handling; agree the liveness contract with the landed consumption supervisor (c08fe2cb); design the three reconciliation paths; fixture; land with its own battery. || Absorbed 2026-09-11 from goal suite-outcomes-as-steward-incidents: Park naming program goal 3 (hung-proof-attempts-end-at-their-deadline); clause to add: a red or launcher-dead top-level attempt raises a steward incident (a health role beside governed-obligations and nonterminal-jobs) visible in the stop message without any hand-armed watcher.
 - OpenedAt: 2026-09-11T15:44:57Z
-- Revision: 11
+- Revision: 12
 - Pinned: m1e
 - Budget: elapsedLimit=1d attemptLimit=10 reservedJobMinutesLimit=1200 activeJobLimit=1 reviewRoundLimit=3
 - BudgetExceptions: 0
 - Approved: by=human:Wido at=2026-09-11T20:33:03Z revision=10 opid=QZ0ZZNFRRHPZCRZDPB3BHHZ9BA-m1-c6925449 authority=proven digest=0b664b748049da466bbc1cbbb6db0f0249bc30ae26dcd4bc80d49170a1a8f0b8
+- Claimed: machine=m1e lineage=main-1789030447-51011-5722fc at=2026-09-12T11:48:35Z revision=12 accountingRevision=12 episodeAt=2026-09-12T11:48:35Z episodeRevision=12
+- StopCapability: generation=12 revision=12 machine=m1e claimEpoch=1 fenceEpoch=0
 
 History:
 - 2026-09-11T15:44:57Z G00GBWKD64KA1ZT4J6WDGWFCSB-m1e-5083721b open actor=m1e+main-1789141490-27414-b9c0d2 targets=hung-proof-attempts-end-at-their-deadline
@@ -27,4 +29,5 @@ History:
 - 2026-09-11T20:31:48Z J3QFJC5HS7B2P9CHG9RP64EKNE-m1e-3ca84c28 edit actor=m1e+main-1789158700-39729-b9c0d2 targets=hung-proof-attempts-end-at-their-deadline
 - 2026-09-11T20:33:03Z QZ0ZZNFRRHPZCRZDPB3BHHZ9BA-m1-c6925449 approve actor=human:Wido targets=hung-proof-attempts-end-at-their-deadline
 - 2026-09-11T21:58:34Z WN322GZ8KV2PZ1DN58PNTWRW3R-m1-c6925449 edit actor=human:Wido targets=hung-proof-attempts-end-at-their-deadline
-Integrity: sha256=6c6b60ca46d32f0e2710ea1d3c9d2e79d437061ee88706ba515843ea6fadee9d
+- 2026-09-12T11:48:35Z NKHJHSZVZ09TRK5YDS4BRTH6VJ-m1e-892cdaec claim actor=m1e+main-1789030447-51011-5722fc targets=hung-proof-attempts-end-at-their-deadline
+Integrity: sha256=d7eb5a8e872dad307bf4f7c4250473f1c14665eedbe3dc3dd2f30b0d01ebfb77
