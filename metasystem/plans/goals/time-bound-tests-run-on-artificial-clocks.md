@@ -7,10 +7,12 @@
 - Origin: human
 - Next step: Inventory first: grep every _test.go in internal and cmd for exec.Command, time.Sleep, time.Now, Process.Kill, syscall.Kill, groupAlive and the fixture beds for sleep and deadline loops; classify each; design the clock and prober seams package by package (missionrunner, proofrun, supervise, identity, landing, lease, janitor, census first); convert in slices, each landed by human commit with the loaded sweep as its proof.
 - OpenedAt: 2026-09-12T12:13:17Z
-- Revision: 1
+- Revision: 2
+- Pinned: m1e
 - Budget: elapsedLimit=4h attemptLimit=6 reservedJobMinutesLimit=720 activeJobLimit=1 reviewRoundLimit=2
 - BudgetExceptions: 0
 
 History:
 - 2026-09-12T12:13:17Z KZEPT63WG4WET47CYY3TW2NTE2-m1-c6925449 open actor=human:Wido targets=time-bound-tests-run-on-artificial-clocks
-Integrity: sha256=9fd66794b885fdd9ba4f27ada142a93b9213bfd128411d3c8c24d701b19ccce9
+- 2026-09-12T12:13:22Z 2VB94VFDYJ5CWQF9E9KWSS3Q4D-m1-c6925449 set-pin actor=human:Wido targets=time-bound-tests-run-on-artificial-clocks
+Integrity: sha256=b116db8a97319bd430c35b92aafcefbd54094b2285350c35e849d65e86245643
