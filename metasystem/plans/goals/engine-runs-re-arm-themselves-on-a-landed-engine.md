@@ -1,6 +1,6 @@
 # engine-runs-re-arm-themselves-on-a-landed-engine
 
-- State: claimed
+- State: approved
 - Priority: 1
 - Sequence: 2
 - Risk: severity=2 novelty=1 exposure=3 accumulation=1 basis="severity 2: a run admitted against a stale or unlanded engine proves the wrong binary; novelty 1: the projection comparison, the landed-build resolver and the re-arm verb exist; exposure 3: every engine-driven run on every seat after any seat lands engine code; accumulation 1: one admission path"
@@ -9,12 +9,11 @@
 - Origin: human
 - Next step: 2026-09-12 m1b: landed 67c6c5579 (design plans/engine-runs-re-arm-on-a-landed-engine-design.md, one design read, one Codex code read, three fixtures, delivery proof). DONE 1 to 3 are met; DONE 4 is the next day of engine-driven runs on the seats, which the seat records on the page's section 6 before the goal is concluded (origin human: Wido concludes). Every seat rebuilds and re-arms by hand once more after 67c6c5579; from then on test run does it.
 - OpenedAt: 2026-09-12T15:43:23Z
-- Revision: 5
+- Revision: 6
 - Budget: elapsedLimit=4h attemptLimit=6 reservedJobMinutesLimit=720 activeJobLimit=1 reviewRoundLimit=2
 - BudgetExceptions: 0
 - Approved: by=human:Wido at=2026-09-12T15:43:32Z revision=3 opid=AX3Q277E04ZP8501F67754C72M-m1-c6925449 authority=proven digest=8579343d41e5a5c9b65d55e9fe41d9f4ce6c3af3e6a7f2d6241328ab270ed0d1
-- Claimed: machine=m1b lineage=main-1789191336-90295-e4b24b at=2026-09-12T15:51:22Z revision=4 accountingRevision=4 episodeAt=2026-09-12T15:51:22Z episodeRevision=4
-- StopCapability: generation=4 revision=4 machine=m1b claimEpoch=2 fenceEpoch=0
+- Episode: machine=m1b lineage=main-1789191336-90295-e4b24b accountingRevision=4 episodeAt=2026-09-12T15:51:22Z episodeRevision=4 idleSeconds=0 released=2026-09-12T17:00:13Z
 
 History:
 - 2026-09-12T15:43:23Z 4TSFK59B6Y85KDYSANGF7A36MW-m1-c6925449 open actor=human:Wido targets=engine-runs-re-arm-themselves-on-a-landed-engine
@@ -22,4 +21,5 @@ History:
 - 2026-09-12T15:43:32Z AX3Q277E04ZP8501F67754C72M-m1-c6925449 approve actor=human:Wido targets=engine-runs-re-arm-themselves-on-a-landed-engine
 - 2026-09-12T15:51:22Z 82W7BXG5191R1M7H4FACSD3TJE-m1b-30a7e141 claim actor=m1b+main-1789191336-90295-e4b24b targets=engine-runs-re-arm-themselves-on-a-landed-engine
 - 2026-09-12T16:57:13Z NAKH9P2PJKB4QXY52YQH5NJ2G0-m1b-30a7e141 edit actor=m1b+main-1789191336-90295-e4b24b targets=engine-runs-re-arm-themselves-on-a-landed-engine
-Integrity: sha256=d587d39d57d1f232424355a65e54c8c6995766d8965b1619e37f3a4f95f6aba6
+- 2026-09-12T17:00:13Z Y7HWYRPF4BMPM0DCFVNK8PJQA4-m1b-30a7e141 release actor=m1b+main-1789191336-90295-e4b24b targets=engine-runs-re-arm-themselves-on-a-landed-engine
+Integrity: sha256=4e07b95c7fad9f002df21e18f58a3255a2a9a3366920c44bdeee6a6a960e2f80
