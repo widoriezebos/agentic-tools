@@ -107,6 +107,22 @@ written by you and read by your critic before you build.
   after 1f27c5062 (m1e fixed it, 56bc8fbb1). Every seat proof of a round
   is an attempt of the goal: the attempt limit was raised to 24 in Wido's
   name; a chain of n rounds needs n attempts on top of its landings.
+- m1b, 2026-09-12 late: took the queue's head after the set,
+  engine-runs-re-arm-themselves-on-a-landed-engine, landed 67c6c5579: the
+  outermost `test run` fetches the landing ref and, when its enrolled
+  engine is behind by landed commits only, fast-forwards the checkout,
+  rebuilds, re-arms through the rebuilt binary's own `up --repo` and
+  re-executes itself on the landed engine; a dirty engine input, a
+  diverged HEAD, a live attempt or a delivery run naming its `--tree` keep
+  the manual path with the typed reason. Rebuild and re-arm by hand once
+  more after 67c6c5579; from then on the run does it (the first day of
+  runs is DONE 4, recorded on its page before Wido concludes it). Wido's
+  word this evening: spread the token burn to Codex. From here on m1b's
+  critics run on Codex (the code read of 67c6c5579 already did,
+  gpt-5.6-sol) and well-specified build slices go to Codex worktree
+  rounds proved with `job prove-round`; the seat keeps design, briefs,
+  proofs and landings. Next on m1b in Wido's name (m1e's pins):
+  stop-hook-never-forces-an-empty-turn, coordinator-wakes-on-events-not-polls.
 
 ## A red that is a flaky test (Wido, 2026-09-12 afternoon)
 
