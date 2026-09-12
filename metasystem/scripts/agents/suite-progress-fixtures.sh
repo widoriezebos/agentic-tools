@@ -43,6 +43,13 @@ case ${1:-} in
     printf 'evidence written before stop\n' >"$tmp/evidence.txt"
     printf '{"suite":"%s","section":"%s","event":"start","at":"%s","depth":0}\n' \
       "$suite" "$section" "$(date -u +%Y-%m-%dT%H:%M:%SZ)" >>"$progress"
+    # The watchdog ends a suite for the supervisor's dead or runaway verdict
+    # and for a cancellation intent, never for silence (decision 3 of the
+    # hang-detection design); this suite writes the verdict in the
+    # supervisor's place, then stops itself, so the stop ladder is what the
+    # leg proves.
+    printf '{"suite":"%s","section":"%s","event":"verdict","at":"%s","depth":0,"verdict":"dead"}\n' \
+      "$suite" "$section" "$(date -u +%Y-%m-%dT%H:%M:%SZ)" >>"$progress"
     kill -STOP $$
     exit 99
     ;;
@@ -218,8 +225,9 @@ grep -Fq "DROPPED $bounded/source/evidence" "$bounded/out" \
 grep -Fq "DROPPED $bounded/source/evidence" "$bounded/result/copy-note.txt" \
   || { echo "suite-progress fixture: bounded evidence note did not name dropped content" >&2; exit 1; }
 
-# A stopped suite cannot run cleanup. The sibling preserves evidence, resumes
-# and kills the suite group, then sweeps the separately detached guard member.
+# A stopped suite cannot run cleanup. Judged dead (the fixture writes the
+# supervisor's verdict), the sibling preserves evidence, resumes and kills
+# the suite group, then sweeps the separately detached guard member.
 stopped="$tmp/stopped"
 stopped_out="$tmp/stopped.out"
 if launch_fixture "$stopped" stopped stopped-section \
