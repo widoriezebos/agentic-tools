@@ -7,9 +7,9 @@
 - Tier: 3
 - Intent: The cadence run (test run --mode deep --purpose cadence) completes in under ten minutes wall on the 18-core Mac with every cadence group still present and passing, and no slower than today on the 4-vCPU VM. DONE is that sentence, with three consecutive green cadence runs and their attempt ids in the receipt. Slices 2, 3 and 5 of plans/suite-speed-plan.md, arc-sized: groups run concurrently inside one attempt under a configurable cap; the long Go groups are sharded and the big fixture sections split into per-scenario groups; the race gate reuses the shards.
 - Origin: human
-- Next step: STATE 2026-09-12 08:0xZ (m1e): Wido approved the three asks (R-99 to R-101-m1e) and ruled R-102-m1e (ten minutes is the aim, not a wall to keep hitting; the deep battery is no longer the price of every small or low-risk change). Under R-99-m1e the intent's 'every cadence group still present' reads over the cadence list without goal-full-coverage and missionrunner-full-coverage, which the gate's sharded ratchet replaces; the approved intent text stays as written because an intent edit needs unapprove and re-approve. Budget now 40 attempts and 2400 minutes; claim re-taken (epoch 1). In hand, unlanded: the two coverage groups out of the cadence list with the contract tests, supervise and validate floors at their loaded reading, the counselor test (85.2 percent against 83.7) and the goal package's carry lifecycle test (coverage being measured against 80.0). Next: land by human commit, rebuild and re-arm, cadence run 11; then the land-fixtures split if the wall stays above 600 s. Seats m1b and m1c start on the delivery-efficiency goals under plans/delivery-efficiency-seats.md.
+- Next step: STATE 2026-09-12 10:50Z (m1e): first green cadence run: proof-mty4qhaz-af176dcea378dae3 on 18b5effc, 842 s wall at box load 9 to 24 (two other seats working). Runs 12 to 14 (790, 917, 816 s) were each one red away, every red a landed fix: the burner test's reap wait (1f756012), three unfloored packages registered (1dd00469), the launcher losing the watchdog's verdict (a53476ba, goal suite-watchdog-loses-its-closing-stall-line concluded), the ENOMEM retry count as a floor (18b5effc). Under R-102-m1e the wall above 600 s is accepted for now if the next two runs are green; the remaining distance (the gate at 630 to 770 s, land-fixtures at 590 to 620 s under contention) becomes a follow-up goal. Run 16 in flight on the same tree.
 - OpenedAt: 2026-09-10T12:02:35Z
-- Revision: 32
+- Revision: 33
 - BlockedBy: suite-watchdog-loses-its-closing-stall-line
 - Pinned: m1e
 - Budget: elapsedLimit=2d attemptLimit=40 reservedJobMinutesLimit=2400 activeJobLimit=1 reviewRoundLimit=3
@@ -53,4 +53,5 @@ History:
 - 2026-09-12T08:11:40Z 1DSWQ3Y7G4Y3SHH6WNHPTWB8QK-m1e-892cdaec park actor=m1e+main-1789030447-51011-5722fc targets=deep-battery-under-ten-minutes reason=blocked by suite-watchdog-loses-its-closing-stall-line; returns when it is done
 - 2026-09-12T08:12:58Z R0C4BRJ43Z86YNEBKKMJ4DRFDC-m1e-c6925449 unpark actor=human:Wido targets=deep-battery-under-ten-minutes
 - 2026-09-12T08:19:30Z 125J2BBYNEJ3S17QJ0Z9DQNFFG-m1e-892cdaec claim actor=m1e+main-1789030447-51011-5722fc targets=deep-battery-under-ten-minutes
-Integrity: sha256=8cd20d802b836a8205cb11d8306143ae368db5286d2549b64cb084ea915999b6
+- 2026-09-12T08:49:46Z JWBJDACHXYFV11BY6EBP5FAVTP-m1e-892cdaec edit actor=m1e+main-1789030447-51011-5722fc targets=deep-battery-under-ten-minutes
+Integrity: sha256=cc81f3e63c40303721b4859933c7768551aae246c54fc4dfcf35c50c722eabad
