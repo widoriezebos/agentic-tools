@@ -1,6 +1,6 @@
 # deep-battery-under-ten-minutes
 
-- State: approved
+- State: claimed
 - Priority: 1
 - Sequence: 9
 - Risk: severity=2 novelty=2 exposure=3 accumulation=2 basis="severity 2: a wrong merge of shard results could pass a red test unseen; novelty 2: a worker pool and shard merging are new shapes in proofrun; exposure 3: every cadence run and every seat consumes the result; accumulation 2: a flake introduced by concurrency compounds across landings"
@@ -9,7 +9,7 @@
 - Origin: human
 - Next step: STATE 2026-09-12 08:0xZ (m1e): Wido approved the three asks (R-99 to R-101-m1e) and ruled R-102-m1e (ten minutes is the aim, not a wall to keep hitting; the deep battery is no longer the price of every small or low-risk change). Under R-99-m1e the intent's 'every cadence group still present' reads over the cadence list without goal-full-coverage and missionrunner-full-coverage, which the gate's sharded ratchet replaces; the approved intent text stays as written because an intent edit needs unapprove and re-approve. Budget now 40 attempts and 2400 minutes; claim re-taken (epoch 1). In hand, unlanded: the two coverage groups out of the cadence list with the contract tests, supervise and validate floors at their loaded reading, the counselor test (85.2 percent against 83.7) and the goal package's carry lifecycle test (coverage being measured against 80.0). Next: land by human commit, rebuild and re-arm, cadence run 11; then the land-fixtures split if the wall stays above 600 s. Seats m1b and m1c start on the delivery-efficiency goals under plans/delivery-efficiency-seats.md.
 - OpenedAt: 2026-09-10T12:02:35Z
-- Revision: 31
+- Revision: 32
 - BlockedBy: suite-watchdog-loses-its-closing-stall-line
 - Pinned: m1e
 - Budget: elapsedLimit=2d attemptLimit=40 reservedJobMinutesLimit=2400 activeJobLimit=1 reviewRoundLimit=3
@@ -17,6 +17,8 @@
 - NormApproval: approvedRef=R-101-m1e minutes=2400 reviewRounds=3 goalRevision=22
 - Approved: by=human:Wido at=2026-09-12T05:37:26Z revision=23 opid=Y21QHFGV4HKR43BEPDHV9F0PFV-m1-c6925449 authority=proven digest=3b855d096c0e7fe69fb53ccb2558e257bfe1ac15a0f75e7e8b611e14d5735b55
 - Sliced: machine=m1e lineage=main-1789030447-51011-5722fc revision=15 at=2026-09-11T21:36:54Z
+- Claimed: machine=m1e lineage=main-1789030447-51011-5722fc at=2026-09-12T08:19:30Z revision=32 accountingRevision=32 episodeAt=2026-09-12T08:19:30Z episodeRevision=32
+- StopCapability: generation=32 revision=32 machine=m1e claimEpoch=1 fenceEpoch=0
 
 History:
 - 2026-09-10T12:02:35Z T349JE65PA2AZGXK28VA4PN6T1-m1e-892cdaec open actor=m1e+main-1789030447-51011-5722fc targets=deep-battery-under-ten-minutes
@@ -50,4 +52,5 @@ History:
 - 2026-09-12T08:05:00Z 3E12A58616XA44CYXG0GW4DR2M-m1e-c6925449 done actor=human:Wido targets=actionable-metrics,breach-clock-and-budget-honesty,capped-round-continues-instead-of-restarting,coordinator-context-stays-under-budget,coordinator-wakes-on-events-not-polls,critique-always,critique-closes-on-folded-proof,deep-battery-under-ten-minutes,delegate-rounds-reuse-a-warm-gate,delivery-receipt-stops-at-first-failure,failed-job-attention,fixture-stewards-outlive-their-suite,goal-abandoned-with-a-reason,human-goal-verbs-forgiving,job-record-birth-token,land-ready-work-lands-without-a-claim-slot,landing-receipt-survives-records-drift,lease-sweep-death-evidence,live-job-on-a-done-goal-unnoticed,machine-concurrency-governor,proof-groups-detect-hangs-by-progress-not-the-clock,retained-proof-reuse-crosses-claims-and-attempts,small-change-lane,steward-catchup-livelock,steward-revives-a-done-goal,stop-batch-strands-a-resumable-goal,suite-custody,tier-from-severity-and-novelty,token-spend-fence,watch-verb,watcher-repair-request-never-names-current,winddown-census-handoff-leak reason=priority-order from=1:10 to=1:9
 - 2026-09-12T08:11:40Z 1DSWQ3Y7G4Y3SHH6WNHPTWB8QK-m1e-892cdaec park actor=m1e+main-1789030447-51011-5722fc targets=deep-battery-under-ten-minutes reason=blocked by suite-watchdog-loses-its-closing-stall-line; returns when it is done
 - 2026-09-12T08:12:58Z R0C4BRJ43Z86YNEBKKMJ4DRFDC-m1e-c6925449 unpark actor=human:Wido targets=deep-battery-under-ten-minutes
-Integrity: sha256=c5bd7bc3b19126d641bb9b728d0bfd6e81349878b1785856bc3e7df442bf9268
+- 2026-09-12T08:19:30Z 125J2BBYNEJ3S17QJ0Z9DQNFFG-m1e-892cdaec claim actor=m1e+main-1789030447-51011-5722fc targets=deep-battery-under-ten-minutes
+Integrity: sha256=8cd20d802b836a8205cb11d8306143ae368db5286d2549b64cb084ea915999b6
