@@ -1,6 +1,6 @@
 # critique-closes-on-folded-proof
 
-- State: approved
+- State: claimed
 - Priority: 1
 - Sequence: 10
 - Risk: severity=2 novelty=2 exposure=3 accumulation=1 basis="severity 2: a closure rule that is too loose lets a material finding land; novelty 2: fold-proven closure and the round-2 failsafe are new rules; exposure 3: every chain; accumulation 1: skills and dispatcher"
@@ -9,11 +9,13 @@
 - Origin: human
 - Next step: Wido's word recorded 2026-09-11 (R-97-m1e): yes to both rules; unresolved invariants escalate to Wido, never a third automatic round. Next: build in rank order. || Absorbed 2026-09-11 from goal closing-read-follows-the-change-not-the-label: Park naming critique-closes-on-folded-proof; clause to add there: 'a final round whose diff is empty, or that only restores a value the chain's own reviewed diff already fixes, closes on the prior read without a new one, the refusal names which rule applied, and a behaviour change dressed as a no-op still demands the r || Absorbed 2026-09-11 from goal critique-stamp-follow-up: Park naming critique-closes-on-folded-proof; clause to add there: 'a critique follow-up round that provably reviewed the terminal work round restamps the chain onto it (delegate --follow-up accepts --reviews, or the closure gate accepts a critic chain whose latest round reviewed the terminal round), so no stamp-only cr || Absorbed 2026-09-11 from goal design-loop-exit-in-the-skill: Park naming critique-closes-on-folded-proof; clause to add there: 'the design-critique skill's Round Budget section and docs/orchestration.md state the enforced stop rule and the D81 exit (implementation-first behind fixtures, never a third prose budget), and the stop-hook turn verdict prints the current fold-read cycl || Absorbed 2026-09-11 from goal severity-tiered-rigor-p2: Park naming program goal 16 (critique-closes-on-folded-proof); clause to add: the close table reads the unresolved set before the close is read (plans/severity-tiered-rigor-p2-design.md slice 2b, the field-grain clause the two failed 2b rounds lacked) and part four's docs re-touch lands with the rule.
 - OpenedAt: 2026-09-11T15:45:22Z
-- Revision: 30
+- Revision: 31
 - Pinned: m1e
 - Budget: elapsedLimit=1d attemptLimit=10 reservedJobMinutesLimit=1200 activeJobLimit=1 reviewRoundLimit=3
 - BudgetExceptions: 0
 - Approved: by=human:Wido at=2026-09-11T20:33:44Z revision=15 opid=8BE27ZT80ZJ6JTWNQ3GZAERK8Y-m1-c6925449 authority=proven digest=cf4c80f3b42d74737238cccc4774f7900e36fd98d52c0bc36aec01bab9f27fbb
+- Claimed: machine=m1e lineage=main-1789030447-51011-5722fc at=2026-09-12T22:51:49Z revision=31 accountingRevision=31 episodeAt=2026-09-12T22:51:49Z episodeRevision=31
+- StopCapability: generation=31 revision=31 machine=m1e claimEpoch=1 fenceEpoch=0
 
 History:
 - 2026-09-11T15:45:22Z WKPXEN9CTZR44TMFZTQJE9X68Q-m1e-5083721b open actor=m1e+main-1789141490-27414-b9c0d2 targets=critique-closes-on-folded-proof
@@ -46,4 +48,5 @@ History:
 - 2026-09-12T15:43:39Z 7VED87G6APJ5MWZRGHMHBYVEF8-m1-c6925449 set-priority actor=human:Wido targets=budget-extends-by-consumption-and-breach-parks,coordinator-context-stays-under-budget,coordinator-wakes-on-events-not-polls,critique-always,critique-closes-on-folded-proof,delegate-rounds-reuse-a-warm-gate,proof-attempts-settle-to-minutes-run,proof-groups-detect-hangs-by-progress-not-the-clock,small-change-lane,steward-launches-resolve-their-model,stop-hook-never-forces-an-empty-turn reason=priority-order subject=small-change-lane from=1:11 to=1:12 requested-sequence=3
 - 2026-09-12T17:19:20Z JACDR5KVP8B0RDK6SV5EFNZG7N-m1c-69c9e454 done actor=m1c+main-1789191340-90689-8975a9 targets=actionable-metrics,breach-clock-and-budget-honesty,budget-extends-by-consumption-and-breach-parks,coordinator-context-stays-under-budget,coordinator-wakes-on-events-not-polls,critique-always,critique-closes-on-folded-proof,delegate-rounds-reuse-a-warm-gate,failed-job-attention,fixture-stewards-outlive-their-suite,goal-abandoned-with-a-reason,human-goal-verbs-forgiving,job-record-birth-token,landing-receipt-survives-records-drift,lease-sweep-death-evidence,live-job-on-a-done-goal-unnoticed,machine-concurrency-governor,proof-attempts-settle-to-minutes-run,proof-groups-detect-hangs-by-progress-not-the-clock,steward-catchup-livelock,steward-revives-a-done-goal,stop-batch-strands-a-resumable-goal,suite-custody,token-spend-fence,watch-verb,watcher-repair-request-never-names-current,winddown-census-handoff-leak reason=priority-order from=1:12 to=1:11
 - 2026-09-12T21:11:08Z 4DBXSCET2T1E5WP6VT68N623PF-m1e-c6925449 done actor=human:Wido targets=actionable-metrics,breach-clock-and-budget-honesty,budget-extends-by-consumption-and-breach-parks,coordinator-context-stays-under-budget,coordinator-wakes-on-events-not-polls,critique-always,critique-closes-on-folded-proof,delegate-rounds-reuse-a-warm-gate,failed-job-attention,fixture-stewards-outlive-their-suite,goal-abandoned-with-a-reason,human-goal-verbs-forgiving,job-record-birth-token,landing-receipt-survives-records-drift,lease-sweep-death-evidence,live-job-on-a-done-goal-unnoticed,machine-concurrency-governor,proof-groups-detect-hangs-by-progress-not-the-clock,steward-catchup-livelock,steward-revives-a-done-goal,stop-batch-strands-a-resumable-goal,suite-custody,token-spend-fence,watch-verb,watcher-repair-request-never-names-current,winddown-census-handoff-leak reason=priority-order from=1:11 to=1:10
-Integrity: sha256=fbaf392235fb2551cfc81dbf3af3a8c5e548304141c16a0aef3bc35272fc0e41
+- 2026-09-12T22:51:49Z FTAD9PC8KSDC6PF0WFKRQPYB9F-m1e-892cdaec claim actor=m1e+main-1789030447-51011-5722fc targets=critique-closes-on-folded-proof
+Integrity: sha256=9da81ebbaccd0493dbdda6e49fdb47865e7043889af4f8f24cf884a839b52864
