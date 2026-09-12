@@ -1,6 +1,6 @@
 # delegate-rounds-reuse-a-warm-gate
 
-- State: approved
+- State: parked
 - Priority: 1
 - Sequence: 7
 - Risk: severity=2 novelty=1 exposure=2 accumulation=2 basis="severity 2: a skipped gate that should have run lets a red round close; novelty 1: caches and the fast gate exist; exposure 2: delegate rounds; accumulation 2: touches dispatch and the gate"
@@ -9,14 +9,14 @@
 - Origin: human
 - Next step: 2026-09-12 night, m1b: slices A, B and C are landed and measured (809fc0d07; blocker delegate-proof-runs-inside-the-sandbox done 616d049c6 and 758e41514; measurements 0417ccfc8 on the design page section 5: a docs-only round proves in 5 s with 11 of 12 groups reused, a one-package round in 28 s, both under the three minutes DONE allows). The goal has origin human, so its conclusion is Wido's; the seat proposes: done.
 - OpenedAt: 2026-09-11T15:46:36Z
-- Revision: 40
+- Revision: 41
 - BlockedBy: delegate-proof-runs-inside-the-sandbox
 - Pinned: m1b
 - Budget: elapsedLimit=1d attemptLimit=24 reservedJobMinutesLimit=1200 activeJobLimit=1 reviewRoundLimit=3
 - BudgetExceptions: 1
 - Approved: by=human:Wido at=2026-09-12T15:40:59Z revision=33 opid=WGC33V14461R1NEKE1XZ7M5WQV-m1b-c6925449 authority=proven digest=2a10db63e81c8719f0c7a13a0a0d12bed46b82c92789f2933be9f163bea38ff5
 - Sliced: machine=m1b lineage=main-1789191336-90295-e4b24b revision=20 at=2026-09-12T11:14:37Z
-- Episode: machine=m1b lineage=main-1789191336-90295-e4b24b accountingRevision=33 episodeAt=2026-09-12T12:40:44Z episodeRevision=30 idleSeconds=0 released=2026-09-12T15:51:18Z
+- Parked: by=human:Wido at=2026-09-12T21:13:14Z because=built and measured (see the next-step); waiting on Wido conclusion, origin human; parked so no seat counts it as idle backlog
 
 History:
 - 2026-09-11T15:46:36Z ESAZ2BX9DC37VFYCNAXPCDG92H-m1-c6925449 open actor=human:Wido targets=delegate-rounds-reuse-a-warm-gate reason=TierOverride: derived=2 set=3 why=Wido 2026-09-11: the gate is the delegate's judge; a skipped gate is a tier-3 hazard whatever the four answers derive
@@ -59,4 +59,5 @@ History:
 - 2026-09-12T15:51:18Z GN982SGF5RRKB3QP3TAJWYP2ES-m1b-30a7e141 release actor=m1b+main-1789191336-90295-e4b24b targets=delegate-rounds-reuse-a-warm-gate
 - 2026-09-12T17:19:20Z JACDR5KVP8B0RDK6SV5EFNZG7N-m1c-69c9e454 done actor=m1c+main-1789191340-90689-8975a9 targets=actionable-metrics,breach-clock-and-budget-honesty,budget-extends-by-consumption-and-breach-parks,coordinator-context-stays-under-budget,coordinator-wakes-on-events-not-polls,critique-always,critique-closes-on-folded-proof,delegate-rounds-reuse-a-warm-gate,failed-job-attention,fixture-stewards-outlive-their-suite,goal-abandoned-with-a-reason,human-goal-verbs-forgiving,job-record-birth-token,landing-receipt-survives-records-drift,lease-sweep-death-evidence,live-job-on-a-done-goal-unnoticed,machine-concurrency-governor,proof-attempts-settle-to-minutes-run,proof-groups-detect-hangs-by-progress-not-the-clock,steward-catchup-livelock,steward-revives-a-done-goal,stop-batch-strands-a-resumable-goal,suite-custody,token-spend-fence,watch-verb,watcher-repair-request-never-names-current,winddown-census-handoff-leak reason=priority-order from=1:9 to=1:8
 - 2026-09-12T21:11:08Z 4DBXSCET2T1E5WP6VT68N623PF-m1e-c6925449 done actor=human:Wido targets=actionable-metrics,breach-clock-and-budget-honesty,budget-extends-by-consumption-and-breach-parks,coordinator-context-stays-under-budget,coordinator-wakes-on-events-not-polls,critique-always,critique-closes-on-folded-proof,delegate-rounds-reuse-a-warm-gate,failed-job-attention,fixture-stewards-outlive-their-suite,goal-abandoned-with-a-reason,human-goal-verbs-forgiving,job-record-birth-token,landing-receipt-survives-records-drift,lease-sweep-death-evidence,live-job-on-a-done-goal-unnoticed,machine-concurrency-governor,proof-groups-detect-hangs-by-progress-not-the-clock,steward-catchup-livelock,steward-revives-a-done-goal,stop-batch-strands-a-resumable-goal,suite-custody,token-spend-fence,watch-verb,watcher-repair-request-never-names-current,winddown-census-handoff-leak reason=priority-order from=1:8 to=1:7
-Integrity: sha256=8b63ecf02354feabc9e9f30c5ba347cb8f814fce12f9445c69cfe34e96470b87
+- 2026-09-12T21:13:14Z 1SMQJR3QTJVZ7AHPTDNM03ZXQB-m1b-c6925449 park actor=human:Wido targets=delegate-rounds-reuse-a-warm-gate reason=built and measured (see the next-step); waiting on Wido conclusion, origin human; parked so no seat counts it as idle backlog
+Integrity: sha256=fccb50795c25496a46f87fa9fa9fc938c7b6e7d38535bbae54cfa8a6e41ac2ad
