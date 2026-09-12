@@ -9,8 +9,8 @@
 - Origin: human
 - Next step: Wido's word recorded 2026-09-11 (R-94-m1e and R-95-m1e): rule 1 yes with the once-per-goal marker, after proof-attempts-settle-to-minutes-run; rule 2 yes for tier 1 first, tier 2 only after tier-from-severity-and-novelty lands, every entry expiring within seven days. Next: build in rank order.
 - OpenedAt: 2026-09-11T15:45:08Z
-- Revision: 14
-- Pinned: m1e
+- Revision: 15
+- Pinned: m1c
 - Budget: elapsedLimit=1d attemptLimit=10 reservedJobMinutesLimit=1200 activeJobLimit=1 reviewRoundLimit=3
 - BudgetExceptions: 0
 - Approved: by=human:Wido at=2026-09-11T20:33:20Z revision=14 opid=G5J453V38KHNYSDP6P099NZS3Q-m1-c6925449 authority=proven digest=e0d545d12aaa71688dc4f8e0426a3e9f178822a2ae60a25f3c409f238b1a9f4d
@@ -30,4 +30,5 @@ History:
 - 2026-09-11T20:30:46Z EPHM5WEN8FJRDVNY7EMHR0TB9A-m1-c6925449 unapprove actor=human:Wido targets=budget-extends-by-consumption-and-breach-parks reason=Wido 2026-09-11: every program goal states runtime independence (claude, codex, devin, future adapters); intent amended before re-approval
 - 2026-09-11T20:32:05Z QR6E0VKJRBAS0Z1JXQ2YC3HK27-m1e-3ca84c28 edit actor=m1e+main-1789158700-39729-b9c0d2 targets=budget-extends-by-consumption-and-breach-parks
 - 2026-09-11T20:33:20Z G5J453V38KHNYSDP6P099NZS3Q-m1-c6925449 approve actor=human:Wido targets=budget-extends-by-consumption-and-breach-parks
-Integrity: sha256=90e21a33ac3fcd550f1b14e02ef6ebeb135c6d760832f32fa0c86188a86a3b12
+- 2026-09-12T05:28:53Z 40HGC5303HFGJ1GBT80S26XZHN-m1e-c6925449 set-pin actor=human:Wido targets=budget-extends-by-consumption-and-breach-parks
+Integrity: sha256=14bbc8f6f3a6824f30144b0df9399ade8f503c7c3981bd5d4e715020777d8a70
