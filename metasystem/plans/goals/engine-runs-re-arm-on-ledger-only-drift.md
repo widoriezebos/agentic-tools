@@ -1,6 +1,6 @@
 # engine-runs-re-arm-on-ledger-only-drift
 
-- State: queued
+- State: approved
 - Priority: 1
 - Sequence: 2
 - Risk: severity=2 novelty=1 exposure=3 accumulation=1 basis="severity 2: a run admitted against a stale engine proves the wrong binary; novelty 1: the projection comparison and the re-arm verb exist; exposure 3: every engine-driven run on every seat; accumulation 1: one admission path"
@@ -9,11 +9,13 @@
 - Origin: human
 - Next step: Design on plans/engine-runs-re-arm-on-ledger-only-drift-design.md (one page): where trustedPolicyEngine compares the enrolled source and the captured policy base (cmd/metasystem/test.go), the ledger-only test (the diff between the two commits touches no engine projection input), the self re-arm or the projection binding, and the fixture on the fake ledger. Built directly by the seat under R-98-m1e, one independent critic, landed by human commit, verified by an engine-driven run on the next ledger move.
 - OpenedAt: 2026-09-12T15:37:50Z
-- Revision: 2
+- Revision: 3
 - Budget: elapsedLimit=4h attemptLimit=6 reservedJobMinutesLimit=720 activeJobLimit=1 reviewRoundLimit=2
 - BudgetExceptions: 0
+- Approved: by=human:Wido at=2026-09-12T15:37:59Z revision=3 opid=BGWYN2V0RNNZK44T20BJNRDBZJ-m1-c6925449 authority=proven digest=1a534f65936dfd91b5eca624ea9728774970b8faeb6b9dd94d256ca4e7fe5ae4
 
 History:
 - 2026-09-12T15:37:50Z ZBQ1PGQKCBFXQNJZD4YNG4NNHR-m1-c6925449 open actor=human:Wido targets=engine-runs-re-arm-on-ledger-only-drift
 - 2026-09-12T15:37:54Z HFBA32G2QA5FV5QVR7Z8R4QXF6-m1-c6925449 set-priority actor=human:Wido targets=actionable-metrics,breach-clock-and-budget-honesty,budget-extends-by-consumption-and-breach-parks,capped-round-continues-instead-of-restarting,coordinator-context-stays-under-budget,coordinator-wakes-on-events-not-polls,critique-always,critique-closes-on-folded-proof,delegate-rounds-reuse-a-warm-gate,engine-runs-re-arm-on-ledger-only-drift,failed-job-attention,fixture-stewards-outlive-their-suite,goal-abandoned-with-a-reason,human-goal-verbs-forgiving,job-record-birth-token,landing-receipt-survives-records-drift,lease-sweep-death-evidence,live-job-on-a-done-goal-unnoticed,machine-concurrency-governor,proof-attempts-settle-to-minutes-run,proof-groups-detect-hangs-by-progress-not-the-clock,small-change-lane,steward-catchup-livelock,steward-launches-resolve-their-model,steward-revives-a-done-goal,stop-batch-strands-a-resumable-goal,stop-hook-never-forces-an-empty-turn,suite-custody,token-spend-fence,watch-verb,watcher-repair-request-never-names-current,winddown-census-handoff-leak reason=priority-order subject=engine-runs-re-arm-on-ledger-only-drift from=unranked to=1:2 requested-sequence=2
-Integrity: sha256=6bb609ff2de69a96c0b08b9757a00985b59a71c74b45848cc11b2ef6325ba624
+- 2026-09-12T15:37:59Z BGWYN2V0RNNZK44T20BJNRDBZJ-m1-c6925449 approve actor=human:Wido targets=engine-runs-re-arm-on-ledger-only-drift
+Integrity: sha256=4a38f152dbb0f55f20aff8186b66318eea28d14775e32d3e762135f131faf49d
