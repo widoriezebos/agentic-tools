@@ -1,6 +1,6 @@
 # budget-extends-by-consumption-and-breach-parks
 
-- State: approved
+- State: claimed
 - Priority: 1
 - Sequence: 6
 - Risk: severity=2 novelty=2 exposure=3 accumulation=1 basis="severity 2: the budget law is the spend guard; novelty 2: extension by consumption and auto-park are new rules; exposure 3: every claimed goal; accumulation 1: the tuple stays"
@@ -9,11 +9,13 @@
 - Origin: human
 - Next step: 2026-09-12 m1c: design page plans/budget-extends-by-consumption-design.md written and critiqued once (nine material findings folded). Rule 2 built for tier 1: goal grant/revoke, approve and set-budget --under <entry>, authority=attorney; unpark waits on Wido's word (design section 6); rule 1 is the design of record and builds after proof-attempts-settle-to-minutes-run lands (R-94-m1e). Verifying rule 2 on the candidate tree (goal-cli bed and audit through the engine, package tests, fast gate, one critic read), then land.
 - OpenedAt: 2026-09-11T15:45:08Z
-- Revision: 29
+- Revision: 30
 - Pinned: m1c
 - Budget: elapsedLimit=1d attemptLimit=10 reservedJobMinutesLimit=1200 activeJobLimit=1 reviewRoundLimit=3
 - BudgetExceptions: 0
 - Approved: by=human:Wido at=2026-09-11T20:33:20Z revision=14 opid=G5J453V38KHNYSDP6P099NZS3Q-m1-c6925449 authority=proven digest=e0d545d12aaa71688dc4f8e0426a3e9f178822a2ae60a25f3c409f238b1a9f4d
+- Claimed: machine=m1c lineage=main-1789191340-90689-8975a9 at=2026-09-12T17:19:41Z revision=30 accountingRevision=30 episodeAt=2026-09-12T17:19:41Z episodeRevision=30
+- StopCapability: generation=30 revision=30 machine=m1c claimEpoch=5 fenceEpoch=0
 
 History:
 - 2026-09-11T15:45:08Z 9QD56QEP3YRJBVPYD7Y5S3BS7S-m1e-5083721b open actor=m1e+main-1789141490-27414-b9c0d2 targets=budget-extends-by-consumption-and-breach-parks
@@ -45,4 +47,5 @@ History:
 - 2026-09-12T15:43:39Z 7VED87G6APJ5MWZRGHMHBYVEF8-m1-c6925449 set-priority actor=human:Wido targets=budget-extends-by-consumption-and-breach-parks,coordinator-context-stays-under-budget,coordinator-wakes-on-events-not-polls,critique-always,critique-closes-on-folded-proof,delegate-rounds-reuse-a-warm-gate,proof-attempts-settle-to-minutes-run,proof-groups-detect-hangs-by-progress-not-the-clock,small-change-lane,steward-launches-resolve-their-model,stop-hook-never-forces-an-empty-turn reason=priority-order subject=small-change-lane from=1:6 to=1:7 requested-sequence=3
 - 2026-09-12T17:19:20Z JACDR5KVP8B0RDK6SV5EFNZG7N-m1c-69c9e454 done actor=m1c+main-1789191340-90689-8975a9 targets=actionable-metrics,breach-clock-and-budget-honesty,budget-extends-by-consumption-and-breach-parks,coordinator-context-stays-under-budget,coordinator-wakes-on-events-not-polls,critique-always,critique-closes-on-folded-proof,delegate-rounds-reuse-a-warm-gate,failed-job-attention,fixture-stewards-outlive-their-suite,goal-abandoned-with-a-reason,human-goal-verbs-forgiving,job-record-birth-token,landing-receipt-survives-records-drift,lease-sweep-death-evidence,live-job-on-a-done-goal-unnoticed,machine-concurrency-governor,proof-attempts-settle-to-minutes-run,proof-groups-detect-hangs-by-progress-not-the-clock,steward-catchup-livelock,steward-revives-a-done-goal,stop-batch-strands-a-resumable-goal,suite-custody,token-spend-fence,watch-verb,watcher-repair-request-never-names-current,winddown-census-handoff-leak reason=priority-order from=1:7 to=1:6
 - 2026-09-12T17:19:29Z 96J33B1AX2TREJ6CXJD0X8WPZ6-m1e-c6925449 unpark actor=human:Wido targets=budget-extends-by-consumption-and-breach-parks
-Integrity: sha256=c92b62eade55e6c728e15d58a9da0b225ebd40dece5cad3009df4523d3c22b3c
+- 2026-09-12T17:19:41Z 7A8QM9TFQR2X25QJ26BTMREGMA-m1c-69c9e454 claim actor=m1c+main-1789191340-90689-8975a9 targets=budget-extends-by-consumption-and-breach-parks
+Integrity: sha256=30d1e0ea089808d8fbb05dc98e6696d23f69797dd098484a41caf44279e6123f
