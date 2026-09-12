@@ -140,8 +140,15 @@ func validateTestingAttemptOwners(installationRoot string, result proofrun.TestR
 			return nil, fmt.Errorf("testing group %s has no successful terminal outer attempt", group.ID)
 		}
 		currentLive := allowCurrentLive && attemptID == result.AttemptID && attempt.Terminal == nil && attempt.CancellationIntent == ""
-		if !currentLive && (attempt.Terminal == nil || attempt.Terminal.Result != proofrun.TerminalSuccess || attempt.TestResult == nil) {
-			return nil, fmt.Errorf("testing group %s has no successful terminal outer attempt", group.ID)
+		// A group the result reused may come from a failed delivery attempt that
+		// stopped at another group (R-96-m1e); the owner's own record of the
+		// group, checked below, still has to be a complete pass. The result's
+		// own attempt must be a success or the live attempt being finalized.
+		ownerAccepted := attempt.Terminal != nil && attempt.TestResult != nil &&
+			(attempt.Terminal.Result == proofrun.TerminalSuccess ||
+				(group.Status == "reused" && proofrun.ReusableTerminal(result.Purpose, attempt.Terminal.Result)))
+		if !currentLive && !ownerAccepted {
+			return nil, fmt.Errorf("testing group %s has no terminal outer attempt its purpose may reuse", group.ID)
 		}
 		owned := false
 		ownerResult := attempt.TestResult

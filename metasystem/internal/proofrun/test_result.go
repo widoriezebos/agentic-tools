@@ -346,7 +346,7 @@ func reusedTestResult(template TestResult, attempts []Attempt, identities map[st
 			}
 			newest = newerAttempt(newest, attempt)
 		}
-		if newest != nil && newest.Terminal != nil && newest.Terminal.Result == TerminalSuccess && newest.TestResult != nil {
+		if newest != nil && newest.Terminal != nil && ReusableTerminal(result.Purpose, newest.Terminal.Result) && newest.TestResult != nil {
 			source := newest.TestResult
 			if source.ContractDigest == result.ContractDigest &&
 				source.BaseContractDigest == result.BaseContractDigest && source.PolicyEngineDigest == result.PolicyEngineDigest &&
@@ -452,4 +452,14 @@ func RequireResultGroups(result TestResult, required []string) error {
 		return fmt.Errorf("testing result lacks required successful groups: %s", strings.Join(missing, ","))
 	}
 	return nil
+}
+
+// ReusableTerminal names the attempt terminals whose group evidence a
+// composed result, the runner and the receipt may reuse: a success always; a failed attempt only for the
+// delivery purpose (R-96-m1e), whose retry reruns the failed and unrun
+// groups alone and takes the predecessor's passed, complete groups as they
+// are. Whole-attempt exact reuse stays success-only: a failed attempt owns
+// no receipt.
+func ReusableTerminal(purpose testpolicy.Purpose, terminal string) bool {
+	return terminal == TerminalSuccess || (terminal == TerminalFailed && purpose == testpolicy.PurposeDelivery)
 }

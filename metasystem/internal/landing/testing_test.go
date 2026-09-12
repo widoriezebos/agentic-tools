@@ -394,3 +394,86 @@ func TestAdoptionRulingsPreserveApplicationAndLandingAuthority(t *testing.T) {
 		t.Fatalf("conflicting target was modified: %s, %v", after, err)
 	}
 }
+
+// A delivery retry reuses a group that passed in a predecessor which then
+// failed at another group (R-96-m1e); the receipt accepts that owner for the
+// delivery purpose alone, and only because the owner's own record of the
+// group is a complete pass.
+func TestSchemaTwoReceiptAcceptsReuseFromAFailedDeliveryPredecessor(t *testing.T) {
+	f := newObserveFixture(t)
+	f.write("metasystem.conf", "testing.contract=testing.json\ndispatch.cap-max=120\n")
+	f.git("add", ".", "../development/metasystem-design.md")
+	projectRoot, err := (gittree.Workspace{Dir: f.root}).TopLevel()
+	if err != nil {
+		t.Fatal(err)
+	}
+	tree, err := (gittree.Workspace{Dir: projectRoot}).StagedTree()
+	if err != nil {
+		t.Fatal(err)
+	}
+	head := f.git("rev-parse", "HEAD")
+	identity, err := proofrun.BuildProofIdentity(f.root, filepath.Join(f.root, "metasystem.conf"), "selected", "testing", nil, behaviorsurface.SupportedVersion)
+	if err != nil {
+		t.Fatal(err)
+	}
+	launcher, err := proofrun.CurrentProcessIdentity(nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	now := time.Now().UTC()
+	// The retry is a new attempt with its own proof identity; the same
+	// identity after a failed terminal would answer retry-required instead.
+	reserve := func(identity proofrun.ProofIdentity) string {
+		t.Helper()
+		attempt, _, err := proofrun.ReserveLocked(proofrun.AdmissionRequest{ControlRoot: f.root, ExecutionRoot: f.root,
+			GoalID: "goal", GoalRevision: 2, AccountingRevision: 2, ReservedMinutes: 5, Identity: identity, Launcher: launcher, Now: now})
+		if err != nil {
+			t.Fatal(err)
+		}
+		return attempt.AttemptID
+	}
+	zero, failedExit := 0, 24
+	digest := strings.Repeat("a", 64)
+	group := func(id, status string, exit *int) proofrun.GroupResult {
+		return proofrun.GroupResult{ID: id, Kind: "unit", Obligations: []string{id},
+			InputDigest: digest, InputManifest: []string{id + "/**"}, ExecutionIdentity: strings.Repeat(id[:1], 64), CWD: ".", ToolIdentities: map[string]string{},
+			Status: status, NativeLaunched: true, NativeExitStatus: exit, CollectionComplete: true, ReportDigests: map[string]string{}}
+	}
+	resultFor := func(attemptID string, purpose testpolicy.Purpose, groups []proofrun.GroupResult) proofrun.TestResult {
+		result := proofrun.TestResult{SchemaVersion: proofrun.TestResultSchemaVersion,
+			CandidateEngineIdentityVersion: proofrun.CandidateEngineIdentitySchemaVersion, AttemptID: attemptID,
+			Purpose: purpose, RequestedMode: testpolicy.ModeAuto, RequiredMode: testpolicy.ModeStandard, ExecutedMode: testpolicy.ModeStandard,
+			ProjectRoot: projectRoot, BaseCommit: head, CandidateTree: tree, PolicyBaseCommit: head,
+			ContractDigest: digest, BaseContractDigest: digest, PolicyEngineDigest: digest, CandidateEngineDigest: strings.Repeat("e", 64),
+			CandidateEngineBuildIdentity: strings.Repeat("f", 40), BehaviorPolicyDigest: digest, PlanDigest: digest,
+			RequiredGroups: []string{"application", "later"}, SelectedGroups: []string{"application", "later"}, LaunchCounts: proofrun.LaunchCounts{Test: 2, CountsComplete: true},
+			StartedAt: now.Add(-2 * time.Second).Format(time.RFC3339Nano), Cost: proofrun.TestCost{DeclaredTargetMS: 1}, Groups: groups}
+		result.RecomputeDelivery()
+		return result
+	}
+	predecessor := reserve(identity)
+	stopped := resultFor(predecessor, testpolicy.PurposeDelivery, []proofrun.GroupResult{group("application", "passed", &zero), group("later", "failed", &failedExit)})
+	if _, err := proofrun.FinalizeAttemptWithTestResultLocked(f.root, predecessor, proofrun.TerminalFailed, 24, "stopped at later", nil, &stopped, now.Add(time.Second)); err != nil {
+		t.Fatal(err)
+	}
+	retry := reserve(proofrun.BindIdentityInputs(identity, []string{"plan:retry"}))
+	reused := group("application", "reused", nil)
+	reused.NativeLaunched, reused.ReuseAttempt = false, predecessor
+	result := resultFor(retry, testpolicy.PurposeDelivery, []proofrun.GroupResult{reused, group("later", "passed", &zero)})
+	result.LaunchCounts = proofrun.LaunchCounts{Test: 1, ReusedTest: 1, CountsComplete: true}
+	f.write("records/narrator-digest.log", "ordinary append\n")
+	if _, _, err := PrepareTestingReceiptPayload(f.root, tree, result, now.Add(2*time.Second)); err != nil {
+		t.Fatalf("delivery retry reusing a failed predecessor's pass was refused at the receipt: %v", err)
+	}
+	cadence := result
+	cadence.Purpose = testpolicy.PurposeCadence
+	if _, _, err := PrepareTestingReceiptPayload(f.root, tree, cadence, now.Add(2*time.Second)); err == nil || !strings.Contains(err.Error(), "its purpose may reuse") {
+		t.Fatalf("cadence result reusing a failed predecessor's pass was accepted at the receipt: %v", err)
+	}
+	broken := result
+	broken.Groups = []proofrun.GroupResult{reused, group("later", "passed", &zero)}
+	broken.Groups[0].ExecutionIdentity = strings.Repeat("z", 64)
+	if _, _, err := PrepareTestingReceiptPayload(f.root, tree, broken, now.Add(2*time.Second)); err == nil {
+		t.Fatal("a reuse whose identity the failed predecessor never proved was accepted at the receipt")
+	}
+}

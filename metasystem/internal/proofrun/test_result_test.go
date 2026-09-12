@@ -158,7 +158,7 @@ func TestStageCollectsIndependentFailuresAndNativePrerequisiteResults(t *testing
 	contract := testpolicy.Contract{SchemaVersion: 1, ProjectRisk: testpolicy.ProjectRisk{Severity: 1, Exposure: 1, Reversibility: "revert", Detection: "immediate", Recovery: "bounded"},
 		Surfaces: []testpolicy.Surface{{ID: "app", Paths: []string{"scripts/**"}, Standard: []string{"first", "second", "later"}, Deep: []string{"deep"}, Critical: []string{"first"}}}, Groups: groups,
 		Always: testpolicy.Always{Canary: []string{"first", "second", "later"}}, Unknown: []string{"first"}, Cadence: []string{"deep"}}
-	plan := testpolicy.Plan{Purpose: testpolicy.PurposeDelivery, RequestedMode: testpolicy.ModeAuto, RequiredMode: testpolicy.ModeDeep, ExecutedMode: testpolicy.ModeDeep,
+	plan := testpolicy.Plan{Purpose: testpolicy.PurposeCadence, RequestedMode: testpolicy.ModeAuto, RequiredMode: testpolicy.ModeDeep, ExecutedMode: testpolicy.ModeDeep,
 		RequiredGroups: []string{"deep", "first", "later", "second"}, SelectedGroups: []string{"deep", "first", "later", "second"}, Stages: []testpolicy.Stage{{ID: "canary", Groups: []string{"first", "second", "later"}}, {ID: "deep", Groups: []string{"deep"}}}}
 	progress := filepath.Join(root, "artifacts", "progress.jsonl")
 	if err := AppendProgressHeader(progress, ProgressHeader{LogPaths: []string{filepath.Join(root, "artifacts", "launcher.log")}}); err != nil {
@@ -340,7 +340,7 @@ esac
 		{ID: "later", Kind: "integration", Adapter: "section", CWD: ".", Inputs: []string{"scripts/**"}, Outputs: []string{"reports-b"}, Obligations: []string{"later"}, Platforms: []string{"any"}, TargetMS: 1000, Section: "later"},
 	}
 	contract := testpolicy.Contract{SchemaVersion: 1, Groups: groups}
-	plan := testpolicy.Plan{Purpose: testpolicy.PurposeDelivery, RequestedMode: testpolicy.ModeStandard, RequiredMode: testpolicy.ModeStandard,
+	plan := testpolicy.Plan{Purpose: testpolicy.PurposeCadence, RequestedMode: testpolicy.ModeStandard, RequiredMode: testpolicy.ModeStandard,
 		ExecutedMode: testpolicy.ModeStandard, RequiredGroups: []string{"later", "mismatch"}, SelectedGroups: []string{"later", "mismatch"},
 		Stages: []testpolicy.Stage{{ID: "standard", Groups: []string{"mismatch", "later"}}}}
 	engineData := []byte("#!/usr/bin/env bash\nexit 0\n")

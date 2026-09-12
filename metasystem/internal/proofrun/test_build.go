@@ -89,16 +89,25 @@ func RunTestPlan(ctx context.Context, request TestRunRequest) (TestResult, int, 
 	}
 	firstStatus := 0
 	progress := &progressWriter{path: request.ProgressPath}
+	// A delivery attempt cannot become sufficient once one group failed, so
+	// it stops launching at the first failure and records the rest as not
+	// run (R-96-m1e); cadence and diagnostic attempts keep continue-and-
+	// collect (R-16), because they exist to see every failure.
+	stopAtFirstFailure := request.Plan.Purpose == testpolicy.PurposeDelivery
+	haltedBy := ""
 	for _, stage := range request.Plan.Stages {
 		var runnable []string
 		for _, id := range stage.Groups {
 			if reused, ok := request.Reused[id]; ok {
-				if err := validateRetainedGroupReuse(request.ControlRoot, id, reused); err != nil {
+				if err := validateRetainedGroupReuse(request.ControlRoot, id, reused, request.Plan.Purpose); err != nil {
 					reused.Status, reused.CollectionComplete, reused.NativeLaunched = "invalid", false, false
 					reused.NotRunReason, reused.ReuseAttempt = "forged or stale component reuse: "+err.Error(), ""
 					result.Groups = append(result.Groups, reused)
 					if firstStatus == 0 {
 						firstStatus = 1
+					}
+					if stopAtFirstFailure && haltedBy == "" {
+						haltedBy = id
 					}
 					continue
 				}
@@ -114,11 +123,22 @@ func RunTestPlan(ctx context.Context, request TestRunRequest) (TestResult, int, 
 			}
 			runnable = append(runnable, id)
 		}
+		// A halt closes the gate for the whole stage, whether it came from an
+		// earlier stage or from a stale reuse judged a moment ago in this one.
+		if haltedBy != "" {
+			for _, id := range runnable {
+				result.Groups = append(result.Groups, unlaunchedGroupResult(request, groups[id], haltReason(haltedBy)))
+			}
+			runnable = nil
+		}
 		// Groups of one stage are independent (each runs in its own detached
 		// worktree of the candidate tree), so a bounded pool runs them side by
 		// side; results are appended in plan order, and the stage order stays
 		// canary, standard, deep. The wall time of a stage is its longest group.
-		stageResults, progressErr := runStageGroups(ctx, request, groups, runnable, progress)
+		stageResults, stageHaltedBy, progressErr := runStageGroups(ctx, request, groups, runnable, progress, stopAtFirstFailure)
+		if haltedBy == "" {
+			haltedBy = stageHaltedBy
+		}
 		for _, groupResult := range stageResults {
 			result.Groups = append(result.Groups, groupResult)
 			result.ChildDurationMS += groupResult.DurationMS
@@ -156,6 +176,22 @@ func RunTestPlan(ctx context.Context, request TestRunRequest) (TestResult, int, 
 	return result, firstStatus, nil
 }
 
+// haltReason is the not-run reason of every group a delivery attempt left
+// unlaunched after its first failed group.
+func haltReason(haltedBy string) string {
+	return "delivery attempt stopped at the first failed group " + haltedBy
+}
+
+// unlaunchedGroupResult records a selected group that never launched, with
+// the reason; the shape is the one ValidateTestResult accepts for not-run.
+func unlaunchedGroupResult(request TestRunRequest, group testpolicy.Group, reason string) GroupResult {
+	return GroupResult{ID: group.ID, Kind: group.Kind, Obligations: append([]string(nil), group.Obligations...),
+		InputDigest: request.CandidateTree, InputManifest: append([]string(nil), group.Inputs...), CWD: group.CWD,
+		ExecutionIdentity: request.ComponentIdentities[group.ID],
+		Status:            "not-run", NotRunReason: reason,
+		ToolIdentities: map[string]string{}, ReportDigests: map[string]string{}}
+}
+
 // progressWriter serializes the progress file and the TEST-GROUP lines on
 // stdout, which several groups now write at once.
 type progressWriter struct {
@@ -170,13 +206,15 @@ func (w *progressWriter) record(group, event, status, reason string) error {
 }
 
 // runStageGroups runs one stage's groups under the request's concurrency cap
-// and returns their results in plan order. A progress-record failure stops
-// new launches; the groups already running still finish and report, so no
-// evidence is lost, and the failure is returned after the stage drains.
-func runStageGroups(ctx context.Context, request TestRunRequest, groups map[string]testpolicy.Group, ids []string, progress *progressWriter) ([]GroupResult, error) {
+// and returns their results in plan order and, in stop mode, the first group
+// that failed. A progress-record failure or, in stop mode, a failed group
+// stops new launches; the groups already running still finish and report,
+// so no evidence is lost, and a progress failure is returned after the stage
+// drains.
+func runStageGroups(ctx context.Context, request TestRunRequest, groups map[string]testpolicy.Group, ids []string, progress *progressWriter, stopAtFirstFailure bool) ([]GroupResult, string, error) {
 	results := make([]GroupResult, len(ids))
 	if len(ids) == 0 {
-		return results, nil
+		return results, "", nil
 	}
 	cap := request.Concurrency
 	if cap < 1 {
@@ -189,6 +227,7 @@ func runStageGroups(ctx context.Context, request TestRunRequest, groups map[stri
 		wg        sync.WaitGroup
 		errMu     sync.Mutex
 		firstErr  error
+		haltedBy  string
 		slots     = make(chan struct{}, cap)
 		stopped   = make(chan struct{})
 		stoppedMu sync.Once
@@ -200,6 +239,23 @@ func runStageGroups(ctx context.Context, request TestRunRequest, groups map[stri
 		}
 		errMu.Unlock()
 		stoppedMu.Do(func() { close(stopped) })
+	}
+	halt := func(id string) {
+		errMu.Lock()
+		if haltedBy == "" {
+			haltedBy = id
+		}
+		errMu.Unlock()
+		stoppedMu.Do(func() { close(stopped) })
+	}
+	unlaunched := func(id string) GroupResult {
+		errMu.Lock()
+		defer errMu.Unlock()
+		reason := "progress record failed before this group launched"
+		if firstErr == nil && haltedBy != "" {
+			reason = haltReason(haltedBy)
+		}
+		return unlaunchedGroupResult(request, groups[id], reason)
 	}
 	// Longest first: each group's last measured duration in the retained
 	// attempts (its declared targetMs when nothing was measured) orders the
@@ -225,35 +281,41 @@ func runStageGroups(ctx context.Context, request TestRunRequest, groups map[stri
 		id := ids[index]
 		select {
 		case <-stopped:
-			results[index] = GroupResult{ID: id, Kind: groups[id].Kind, Obligations: append([]string(nil), groups[id].Obligations...),
-				InputDigest: request.CandidateTree, InputManifest: append([]string(nil), groups[id].Inputs...), CWD: groups[id].CWD,
-				Status: "not-run", NotRunReason: "progress record failed before this group launched",
-				ToolIdentities: map[string]string{}, ReportDigests: map[string]string{}}
+			results[index] = unlaunched(id)
 			continue
 		default:
 		}
 		slots <- struct{}{}
+		// The slot may have been freed by the very group whose failure closed
+		// the gate; look again before spending it.
+		select {
+		case <-stopped:
+			<-slots
+			results[index] = unlaunched(id)
+			continue
+		default:
+		}
 		wg.Add(1)
 		go func(index int, id string) {
 			defer wg.Done()
 			defer func() { <-slots }()
 			if err := progress.record(id, "start", "", ""); err != nil {
 				stop(err)
-				results[index] = GroupResult{ID: id, Kind: groups[id].Kind, Obligations: append([]string(nil), groups[id].Obligations...),
-					InputDigest: request.CandidateTree, InputManifest: append([]string(nil), groups[id].Inputs...), CWD: groups[id].CWD,
-					Status: "not-run", NotRunReason: "record testing group start: " + err.Error(),
-					ToolIdentities: map[string]string{}, ReportDigests: map[string]string{}}
+				results[index] = unlaunchedGroupResult(request, groups[id], "record testing group start: "+err.Error())
 				return
 			}
 			groupResult := runTestGroup(ctx, request, groups[id])
 			results[index] = groupResult
+			if stopAtFirstFailure && groupResult.Status != "passed" && groupResult.Status != "reused" {
+				halt(id)
+			}
 			if err := progress.record(id, "end", groupResult.Status, groupResult.NotRunReason); err != nil {
 				stop(err)
 			}
 		}(index, id)
 	}
 	wg.Wait()
-	return results, firstErr
+	return results, haltedBy, firstErr
 }
 
 // retainedGroupDurations reads the newest measured duration of every group
@@ -492,13 +554,17 @@ func testGroupProgress(path, group, event, status, reason string) error {
 	return err
 }
 
-func validateRetainedGroupReuse(root, id string, reused GroupResult) error {
+// validateRetainedGroupReuse checks a supplied reuse against the attempt it
+// names in the control root: the attempt must be a retained terminal the
+// purpose may reuse (ReusableTerminal) and must own matching, complete,
+// passed evidence for the group.
+func validateRetainedGroupReuse(root, id string, reused GroupResult, purpose testpolicy.Purpose) error {
 	if root == "" || reused.ReuseAttempt == "" || reused.ID != id || reused.ExecutionIdentity == "" {
 		return fmt.Errorf("component has no exact retained outer owner")
 	}
 	attempt, err := ReadAttempt(root, reused.ReuseAttempt)
-	if err != nil || attempt.Terminal == nil || attempt.Terminal.Result != TerminalSuccess || attempt.TestResult == nil {
-		return fmt.Errorf("outer attempt is not retained terminal success")
+	if err != nil || attempt.Terminal == nil || !ReusableTerminal(purpose, attempt.Terminal.Result) || attempt.TestResult == nil {
+		return fmt.Errorf("outer attempt is not a retained terminal this purpose may reuse")
 	}
 	for _, recorded := range attempt.TestResult.Groups {
 		if recorded.ID == id && recorded.ExecutionIdentity == reused.ExecutionIdentity && recorded.CollectionComplete &&
