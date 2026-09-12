@@ -767,6 +767,36 @@ risk_line=$(grep -n '^- Risk: severity=2 novelty=1 exposure=1 accumulation=1 bas
 tier_line=$(grep -n '^- Tier: 2$' "$tmp/risk-basis.md" | cut -d: -f1)
 [[ -n "$risk_line" && -n "$tier_line" && $tier_line -eq $((risk_line + 1)) ]] \
   || { echo "risk-basis open did not render Risk immediately above derived Tier" >&2; cat "$tmp/risk-basis.md" >&2; exit 1; }
+# The tier derives from severity and novelty; exposure and accumulation
+# weight the proof (goal tier-from-severity-and-novelty). A recorded tier
+# above the derivation stands when a seat re-states the answers, the probe
+# lists it, and only a person lowers it with --tier and the same answers.
+"$ms" goal open --root "$clone" --id exposed-legacy --origin human \
+  --intent "Wide but routine, tiered by the earlier formula." --next "Lower it." \
+  --tier 3 --why "the earlier formula" --risk severity=1,novelty=1,exposure=3,accumulation=1 \
+  --basis "wide but routine" >/dev/null
+probe_out=$("$ms" goal tier-probe --root "$clone" --pretty)
+grep -q '^lowerable: exposed-legacy queued recorded=3 derived=1' <<<"$probe_out" \
+  || { echo "the tier probe does not list the exposure-lifted goal: $probe_out" >&2; exit 1; }
+"$ms" goal edit --root "$clone" --id exposed-legacy \
+  --risk severity=1,novelty=1,exposure=3,accumulation=1 --basis "wide but routine, reworded" >/dev/null
+restate_tip=$(git -C "$origin" rev-parse main)
+git -C "$clone" cat-file -p "$restate_tip:plans/goals/exposed-legacy.md" >"$tmp/exposed-legacy.md"
+grep -q '^- Tier: 3$' "$tmp/exposed-legacy.md" \
+  || { echo "a re-stated basis lowered the recorded tier" >&2; cat "$tmp/exposed-legacy.md" >&2; exit 1; }
+if seat_lower=$("$ms" goal edit --root "$clone" --id exposed-legacy --tier 1 \
+  --risk severity=1,novelty=1,exposure=3,accumulation=1 --basis "wide but routine, reworded" --why "the formula changed" 2>&1); then
+  echo "a seat lowered a recorded tier: $seat_lower" >&2; exit 1
+fi
+grep -q 'human act' <<<"$seat_lower" \
+  || { echo "the seat's lowering refusal does not name the human act: $seat_lower" >&2; exit 1; }
+"$ms" goal edit --root "$clone" --id exposed-legacy --tier 1 \
+  --risk severity=1,novelty=1,exposure=3,accumulation=1 --basis "wide but routine, reworded" --why "the formula changed" \
+  --by Wido --fixture-human-authority >/dev/null
+lower_tip=$(git -C "$origin" rev-parse main)
+git -C "$clone" cat-file -p "$lower_tip:plans/goals/exposed-legacy.md" >"$tmp/exposed-legacy.md"
+grep -q '^- Tier: 1$' "$tmp/exposed-legacy.md" \
+  || { echo "the person's lowering with unchanged answers did not land" >&2; cat "$tmp/exposed-legacy.md" >&2; exit 1; }
 fi
 
 if [[ "$fixture_scenario" == labels-and-filtering ]]; then
@@ -1353,6 +1383,18 @@ if tier_out=$("$ms" goal approve --root "$clone" --id poa-medium --under "$entry
 fi
 grep -q 'covers tier 1 only' <<<"$tier_out" \
   || { echo "the tier refusal does not name the scope: $tier_out" >&2; exit 1; }
+# An entry may cover tier 2 as well (R-95-m1e, since tier-from-severity-and-novelty).
+wide_out=$("$ms" goal grant --root "$clone" --by Wido --fixture-human-authority \
+  --tiers 1,2 --verbs approve --expires 2026-08-24)
+grep -q '"outcome":"confirmed"' <<<"$wide_out" \
+  || { echo "a tiers 1,2 grant did not confirm: $wide_out" >&2; exit 1; }
+wide=$(sed -n 's/.*"entry":"\([^"]*\)".*/\1/p' <<<"$wide_out")
+wide_approve=$("$ms" goal approve --root "$clone" --id poa-medium --under "$wide")
+grep -q '"outcome":"confirmed"' <<<"$wide_approve" \
+  || { echo "approve of a tier-2 goal under a tiers 1,2 entry did not confirm: $wide_approve" >&2; exit 1; }
+wide_tip=$(git -C "$origin" rev-parse main)
+git -C "$clone" cat-file -p "$wide_tip:plans/goals/backlog.md" | grep -q "^- $wide by=human:Wido tiers=1,2 verbs=approve " \
+  || { echo "the root record does not carry the tiers 1,2 entry" >&2; exit 1; }
 if by_out=$("$ms" goal approve --root "$clone" --id poa-late --under "$entry" --by Wido 2>&1); then
   echo "--under combined with --by: $by_out" >&2; exit 1
 fi

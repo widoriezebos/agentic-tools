@@ -63,8 +63,8 @@ When a design chain exited through fixtures-as-arbiter (see the design-critique 
 
 Part One stores the review-round member in the goal's tier box: zero rounds
 for Tier 1, two for Tier 2, and three for Tier 3, and the tier itself derives
-from the goal's four risk answers (severity, novelty, exposure, accumulation),
-never from the shape of the change. Part Two accounts mechanically (design
+from the goal's severity and novelty answers (exposure and accumulation
+weight the proof, not the tier), never from the shape of the change. Part Two accounts mechanically (design
 point STR2-ROUND-ACCOUNTING-05): dispatch freezes that member on the critic
 chain root (a goal-free root reads `metasystem.budget.review-round-max`
 alone), counts each follow-up round against it, refuses the round past it,

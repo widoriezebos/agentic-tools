@@ -112,16 +112,18 @@ PowerOfAttorney:
 - <id> by=human:<name> tiers=1 verbs=approve,set-budget since=<iso> expires=<YYYY-MM-DD> [revoked=<iso> revokedBy=human:<name>]
 ```
 
-`goal grant --by <name> --tiers 1 --verbs approve,set-budget --expires
+`goal grant --by <name> --tiers 1,2 --verbs approve,set-budget --expires
 <date>` writes it; the proof is the human's own: enrolled-terminal
 ancestry or the fixture grant (no channel question exists for a grant). A
 temporary relayed word cannot grant (a relay cannot mint a delegation).
 `--expires` is at most six days after the grant day, so an entry lives
 seven days with the expiry day included; an entry a hand edit widens past
-these bounds stays readable and is never honoured (`WithinBounds`); `--verbs` is a subset of {approve,
-set-budget}; `--tiers` is exactly 1 in this build. Tier 2 joins when goal
-tier-from-severity-and-novelty lands, by widening the accepted set in that
-landing, not by a gate keyed to a goal id that prune can erase. Several
+these bounds stays readable and is never honoured (`WithinBounds`);
+`--verbs` is a subset of {approve, set-budget}; `--tiers` is 1, 2 or both:
+tier 2 joined the delegable tiers with the landing of
+tier-from-severity-and-novelty (2026-09-12), as R-95-m1e sequenced it, by
+widening the accepted set in that landing rather than by a gate keyed to a
+goal id that prune can erase. Several
 entries may be live at once; a renewal is a new entry, and `goal revoke
 --by <name> --id <entry>` closes one early. Grant and revoke are root-record
 operations with their own history lines, journaled and recoverable.
@@ -224,7 +226,7 @@ breach-stop. Until his word, unpark is outside the entry's verbs.
 
 The critique also found that `goal unpark --by <name> --lineage <x>` from
 an agent shell lifts a person's park with no proof at all (the proof gate
-exists for approve and set-budget only); that is proposal P-2 in
+exists for approve and set-budget only); that is proposal P-5 in
 memory/backlog-notes.md, a person's to open.
 
 ## 5. Critique record

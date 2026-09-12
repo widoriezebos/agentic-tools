@@ -66,13 +66,16 @@ func (e PowerOfAttorneyEntry) Covers(verb string, tier uint8) bool {
 	return containsString(e.Verbs, verb) && containsTier(e.Tiers, tier)
 }
 
-// WithinBounds reports whether the entry keeps R-95-m1e's bounds: tier 1,
-// the attorney verbs, an expiry within seven days of since, a revocation
+// WithinBounds reports whether the entry keeps R-95-m1e's bounds: tiers 1
+// and 2 (tier 2 joined when tier-from-severity-and-novelty landed), the
+// attorney verbs, an expiry within seven days of since, a revocation
 // no earlier than since. The parser reads any well-formed entry so a landed
 // ledger stays readable; an entry outside the bounds is never honoured.
 func (e PowerOfAttorneyEntry) WithinBounds() (bool, string) {
-	if len(e.Tiers) != 1 || e.Tiers[0] != 1 {
-		return false, "tiers=" + renderTiers(e.Tiers) + " is outside tier 1"
+	for _, tier := range e.Tiers {
+		if tier != 1 && tier != 2 {
+			return false, "tiers=" + renderTiers(e.Tiers) + " is outside tiers 1 and 2"
+		}
 	}
 	for _, verb := range e.Verbs {
 		if !containsString(AttorneyVerbs, verb) {

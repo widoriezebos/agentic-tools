@@ -101,8 +101,11 @@ func TestGrantRecordsAPowerOfAttorneyWithinItsBounds(t *testing.T) {
 	if res, err := Grant(withUlid(bad, 6), proof, []uint8{1}, []string{"approve"}, human.Now.AddDate(0, 0, 6).Format("2006-01-02")); err != nil || res.Outcome != OutcomeConfirmed {
 		t.Fatalf("seven days, the expiry day included, is the bound: %+v %v", res, err)
 	}
-	res, err = Grant(bad, proof, []uint8{1, 2}, []string{"approve"}, expires)
-	expectRefusal(t, "tier 2", res, err, "tier 1 in this build")
+	res, err = Grant(bad, proof, []uint8{1, 3}, []string{"approve"}, expires)
+	expectRefusal(t, "tier 3", res, err, "tiers 1 and 2 only")
+	if res, err := Grant(withUlid(bad, 7), proof, []uint8{1, 2}, []string{"approve"}, expires); err != nil || res.Outcome != OutcomeConfirmed {
+		t.Fatalf("tiers 1 and 2 are the delegable tiers: %+v %v", res, err)
+	}
 	res, err = Grant(bad, proof, []uint8{1}, []string{"done"}, expires)
 	expectRefusal(t, "verb done", res, err, "covers approve,set-budget only")
 	res, err = Grant(attorneyReq(root, 3, "mac-a"), proof, []uint8{1}, []string{"approve"}, expires)
@@ -276,7 +279,7 @@ func TestAPowerOfAttorneyOutsideItsBoundsIsNeverLive(t *testing.T) {
 		label string
 		edit  func(e *PowerOfAttorneyEntry)
 	}{
-		{"tier 3", func(e *PowerOfAttorneyEntry) { e.Tiers = []uint8{1, 3} }},
+		{"tier 3", func(e *PowerOfAttorneyEntry) { e.Tiers = []uint8{2, 3} }},
 		{"verb done", func(e *PowerOfAttorneyEntry) { e.Verbs = []string{"approve", "done"} }},
 		{"a year", func(e *PowerOfAttorneyEntry) { e.Expires = "2027-09-12" }},
 		{"eight days", func(e *PowerOfAttorneyEntry) { e.Expires = "2026-09-19" }},

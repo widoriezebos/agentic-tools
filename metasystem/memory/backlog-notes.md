@@ -532,7 +532,7 @@ failure (R-35-m3). Proposal: the witness resolution gets progress-based
 patience like the proof groups, or the bound is raised well above a loaded
 engine build; until then a seat waits for the load to pass and retries.
 
-P-5. 2026-09-12, m1b. The clause absorbed into goal
+P-7. 2026-09-12, m1b. The clause absorbed into goal
 retained-proof-reuse-crosses-claims-and-attempts from goal
 nested-gate-witness-reuse (a nested or adopted validation, the adopt bed's
 witness gate in scripts/agents/witness-gate.sh, reusing the outer gate's

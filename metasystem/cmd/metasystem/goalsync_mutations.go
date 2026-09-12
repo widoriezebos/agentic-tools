@@ -1988,7 +1988,11 @@ var (
 					return goal.PublishResult{}, err
 				}
 			}
-			if current.Risk != nil && (risk.Severity < current.Risk.Severity || risk.Novelty < current.Risk.Novelty || risk.Exposure < current.Risk.Exposure || risk.Accumulation < current.Risk.Accumulation || risk.DerivedTier() < beforeDerived || (current.Risk.GateWidth() == "full" && risk.GateWidth() == "area")) {
+			// A lowering of an answer, the derivation, the width or the recorded
+			// tier is the human's act: with --by the edge proves the human; without
+			// it the verb refuses the lowering by name.
+			tierLowered := f.tier != 0 && uint8(f.tier) < current.Tier
+			if f.by != "" && (tierLowered || current.Risk != nil && (risk.Severity < current.Risk.Severity || risk.Novelty < current.Risk.Novelty || risk.Exposure < current.Risk.Exposure || risk.Accumulation < current.Risk.Accumulation || risk.DerivedTier() < beforeDerived || (current.Risk.GateWidth() == "full" && risk.GateWidth() == "area"))) {
 				proof, proofErr := proveGoalHumanAuthority("edit", f, humanauthority.ProveOrTemporaryGoalAuthority)
 				if proofErr != nil {
 					return goal.PublishResult{}, proofErr

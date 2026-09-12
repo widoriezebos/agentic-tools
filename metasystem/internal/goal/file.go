@@ -103,12 +103,16 @@ func (r RiskRecord) Validate() error {
 	return nil
 }
 
+// DerivedTier is the rigor tier the risk answers imply: the worse of
+// severity and novelty. Exposure and accumulation do not lift it; they
+// scale the proof instead (the highest of the four answers multiplies the
+// landing's cadence weight through gate weight-add --goal, and accumulation
+// 2 or higher owes the one-time full battery through GateWidth), as goal
+// tier-from-severity-and-novelty
+// records: exposure alone had lifted three quarters of the backlog to
+// tier 3.
 func (r RiskRecord) DerivedTier() uint8 {
-	tier := max(r.Severity, max(r.Novelty, r.Exposure))
-	if tier == 1 && r.Accumulation >= 2 {
-		return 2
-	}
-	return tier
+	return max(r.Severity, r.Novelty)
 }
 
 func (r RiskRecord) GateWidth() string {

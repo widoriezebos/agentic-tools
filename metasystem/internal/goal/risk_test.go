@@ -312,8 +312,18 @@ func TestSTR4R1ShapeFreeDerivation(t *testing.T) {
 	}
 	accumulating := low
 	accumulating.Accumulation = 2
-	if accumulating.DerivedTier() != 2 || accumulating.GateWidth() != "full" {
-		t.Fatalf("accumulation two = tier %d width %s, want tier 2 full", accumulating.DerivedTier(), accumulating.GateWidth())
+	if accumulating.DerivedTier() != 1 || accumulating.GateWidth() != "full" {
+		t.Fatalf("accumulation two = tier %d width %s, want tier 1 with the full width", accumulating.DerivedTier(), accumulating.GateWidth())
+	}
+	exposed := low
+	exposed.Exposure = 3
+	if exposed.DerivedTier() != 1 {
+		t.Fatalf("exposure alone does not lift the tier: got %d", exposed.DerivedTier())
+	}
+	novel := low
+	novel.Novelty = 2
+	if novel.DerivedTier() != 2 {
+		t.Fatalf("novelty lifts the tier: got %d", novel.DerivedTier())
 	}
 }
 
@@ -405,5 +415,64 @@ func TestRiskRecordRendersAboveTierAndRoundTrips(t *testing.T) {
 	}
 	if parsed.Risk == nil || *parsed.Risk != *risk {
 		t.Fatalf("round-trip Risk = %+v, want %+v", parsed.Risk, risk)
+	}
+}
+
+// A recorded tier above the derivation stands when a seat re-states or
+// raises the answers: the derivation lifts a tier and never lowers it, and
+// the lowering is the human's --tier. Goal tier-from-severity-and-novelty
+// left half the backlog recorded above its derivation, so this is the
+// everyday edit, not the exception.
+func TestRestatedAnswersNeverLowerARecordedTier(t *testing.T) {
+	root := riskLocalRoot(t, "restate-bed")
+	if err := os.WriteFile(filepath.Join(root, "metasystem.conf"), []byte("metasystem.runtimes=fake\nmetasystem.governance.correlation-policy=A\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	exposed := RiskRecord{Severity: 1, Novelty: 1, Exposure: 3, Accumulation: 1, Basis: "wide but routine"}
+	budget := Budget{ElapsedLimit: "1h", AttemptLimit: 3, ReservedJobMinutesLimit: 360, ActiveJobLimit: 1, ReviewRoundLimit: 0}
+	seat := obligationAuthorityVerbReq(root, "01J5X00000000000000000RT00", "mac-a")
+	// The old formula's tier 3 is recorded as an override above derivation 1.
+	if res, err := OpenRisked(seat, "wide", "Wide but routine.", OriginHuman, "Edit it.", "", exposed, 3, "the earlier formula", &budget, nil); err != nil || res.Outcome != OutcomeConfirmed {
+		t.Fatalf("open: %+v %v", res, err)
+	}
+	reworded := exposed
+	reworded.Basis = "wide but routine, reworded"
+	restate := seat
+	restate.Ulid = "01J5X00000000000000000RT10"
+	res, err := Edit(restate, "wide", EditFields{Risk: &reworded})
+	if err != nil || res.Outcome != OutcomeConfirmed {
+		t.Fatalf("a re-stated basis is not a lowering: %+v %v", res, err)
+	}
+	tree, err := loadTree(root, res.Tip)
+	if err != nil || tree.Live["wide"].Tier != 3 || tree.Live["wide"].Risk.Basis != reworded.Basis {
+		t.Fatalf("the recorded tier stands and the basis moved: %+v %v", tree.Live["wide"], err)
+	}
+	lifted := reworded
+	lifted.Novelty = 2
+	raise := seat
+	raise.Ulid = "01J5X00000000000000000RT20"
+	if res, err := Edit(raise, "wide", EditFields{Risk: &lifted}); err != nil || res.Outcome != OutcomeConfirmed {
+		t.Fatalf("a raised answer below the recorded tier is not a lowering: %+v %v", res, err)
+	}
+	if tree, err = loadTree(root, res.Tip); err != nil || tree.Live["wide"].Tier != 3 {
+		t.Fatalf("the recorded tier still stands: %+v %v", tree.Live["wide"], err)
+	}
+	one := uint8(1)
+	lower := seat
+	lower.Ulid = "01J5X00000000000000000RT30"
+	if res, err := Edit(lower, "wide", EditFields{Risk: &lifted, Tier: &one, Why: "the formula changed"}); err != nil || res.Outcome != OutcomeRejected || !strings.Contains(res.Detail, "human act") {
+		t.Fatalf("a seat cannot lower the recorded tier: %+v %v", res, err)
+	}
+	human := seat
+	human.Ulid = "01J5X00000000000000000RT40"
+	human.Actor.Human = "Wido"
+	proof := testHumanAuthority(t, root, human.Now)
+	two := uint8(2)
+	res, err = Edit(human, "wide", EditFields{Risk: &lifted, Tier: &two, Why: "the formula changed", Proof: proof})
+	if err != nil || res.Outcome != OutcomeConfirmed {
+		t.Fatalf("the human lowers the recorded tier with unchanged answers: %+v %v", res, err)
+	}
+	if tree, err = loadTree(root, res.Tip); err != nil || tree.Live["wide"].Tier != 2 {
+		t.Fatalf("the lowered tier is recorded: %+v %v", tree.Live["wide"], err)
 	}
 }

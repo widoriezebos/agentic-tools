@@ -46,3 +46,16 @@ func TestOnlyApproveAndSetBudgetTakeUnder(t *testing.T) {
 		t.Fatalf("goal grant carries its flags: ok=%v %+v", ok, g)
 	}
 }
+
+// goal tier-probe registers its flags and refuses a root with no ledger
+// without panicking.
+func TestGoalTierProbeFlagRegistrationDoesNotPanic(t *testing.T) {
+	defer func() {
+		if r := recover(); r != nil {
+			t.Fatalf("goal tier-probe panicked: %v", r)
+		}
+	}()
+	if code := runGoalTierProbe([]string{"--root", t.TempDir(), "--pretty"}); code == 0 {
+		t.Fatal("a root with no ledger is not a probe result")
+	}
+}

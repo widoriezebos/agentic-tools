@@ -1363,3 +1363,43 @@ func goalSyncMutationGit(t *testing.T, root string, args ...string) string {
 	}
 	return strings.TrimSpace(string(output))
 }
+
+// A recorded tier above its derivation (the earlier formula's tier 3 on an
+// exposure-3 goal) stands when a seat re-states the answers, and a person
+// lowers it with --tier and the same answers: the command edge collects
+// the human proof for that lowering.
+func TestGoalEditLowersARecordedTierOnlyUnderHumanProof(t *testing.T) {
+	root := syncedClaimedGoalFixture(t)
+	exposed := &goal.RiskRecord{Severity: 1, Novelty: 1, Exposure: 3, Accumulation: 1, Basis: "wide but routine"}
+	amendSyncedGoalFixture(t, root, "exposure-lifted tier fixture", func(file *goal.GoalFile) {
+		file.State = goal.StateQueued
+		file.Tier = 3
+		file.Risk = exposed
+		file.Budget = &goal.Budget{ElapsedLimit: "8h", AttemptLimit: 10, ReservedJobMinutesLimit: 1200, ActiveJobLimit: 1, ReviewRoundLimit: 3}
+		file.Approved = nil
+		file.Claimed = nil
+		file.StopCapability = nil
+	})
+	t.Setenv("METASYSTEM_OWNER_LINEAGE", "m1")
+	t.Setenv("METASYSTEM_GOAL_NOW", "2026-09-12T10:00:00Z")
+	same := []string{"--root", root, "--id", "standing-validation", "--risk", "severity=1,novelty=1,exposure=3,accumulation=1", "--basis", "wide but routine"}
+	if output, code := captureStdout(t, func() int { return runGoalEdit(same) }); code != 0 || !strings.Contains(output, `"outcome":"confirmed"`) {
+		t.Fatalf("a seat re-stating the answers is not a lowering: code=%d output=%q", code, output)
+	}
+	tip := goalSyncMutationGit(t, root, "rev-parse", "--verify", goal.AcceptedRef)
+	if text := goalSyncMutationGit(t, root, "cat-file", "-p", tip+":plans/goals/standing-validation.md"); !strings.Contains(text, "- Tier: 3\n") {
+		t.Fatalf("the recorded tier stands after a re-statement:\n%s", text)
+	}
+	lower := append(append([]string(nil), same...), "--tier", "1", "--why", "the formula changed")
+	if refusal, code := captureStdout(t, func() int { return runGoalEdit(lower) }); code == 0 || !strings.Contains(refusal, `"outcome":"rejected"`) || !strings.Contains(refusal, "human act") {
+		t.Fatalf("a seat's lowering was not refused by name: code=%d stdout=%q", code, refusal)
+	}
+	human := append(append([]string(nil), lower...), "--by", "Wido", "--fixture-human-authority")
+	if output, code := captureStdout(t, func() int { return runGoalEdit(human) }); code != 0 || !strings.Contains(output, `"outcome":"confirmed"`) {
+		t.Fatalf("the human's lowering with unchanged answers did not confirm: code=%d output=%q", code, output)
+	}
+	tip = goalSyncMutationGit(t, root, "rev-parse", "--verify", goal.AcceptedRef)
+	if text := goalSyncMutationGit(t, root, "cat-file", "-p", tip+":plans/goals/standing-validation.md"); !strings.Contains(text, "- Tier: 1\n") {
+		t.Fatalf("the lowered tier is recorded:\n%s", text)
+	}
+}

@@ -334,6 +334,43 @@ func converted(root string) bool {
 	return err == nil
 }
 
+// runGoalTierProbe prints the backlog's tier spread: recorded and derived
+// tiers over the open goals with a risk record, the tier-3 share of each,
+// and the goals whose recorded tier exceeds their derivation.
+func runGoalTierProbe(args []string) int {
+	flags := flag.NewFlagSet("goal tier-probe", flag.ContinueOnError)
+	root := flags.String("root", ".", "checkout root")
+	pretty := flags.Bool("pretty", false, "print lines instead of JSON")
+	fetchFirst := flags.Bool("fetch", false, "fetch the canonical tip before reading")
+	if flags.Parse(args) != nil {
+		return 2
+	}
+	e, err := goal.ResolveEndpoint(*root)
+	if err != nil {
+		fmt.Fprintln(os.Stderr, err)
+		return 1
+	}
+	p, err := goal.Project(e, *fetchFirst, time.Now())
+	if err != nil {
+		fmt.Fprintln(os.Stderr, err)
+		return 1
+	}
+	probe := goal.ProbeTiers(p.Tree)
+	recorded, derived := probe.Tier3Share()
+	if !*pretty {
+		printJSON(map[string]any{"open": probe.Open, "recorded": probe.Recorded, "derived": probe.Derived,
+			"tier3ShareRecorded": recorded, "tier3ShareDerived": derived, "lowerable": probe.Lowerable, "tip": p.Tip})
+		return 0
+	}
+	fmt.Printf("open goals with a risk record: %d\n", probe.Open)
+	fmt.Printf("recorded tiers: 1=%d 2=%d 3=%d (tier 3: %d%%)\n", probe.Recorded[1], probe.Recorded[2], probe.Recorded[3], recorded)
+	fmt.Printf("derived tiers:  1=%d 2=%d 3=%d (tier 3: %d%%)\n", probe.Derived[1], probe.Derived[2], probe.Derived[3], derived)
+	for _, lower := range probe.Lowerable {
+		fmt.Printf("lowerable: %s %s recorded=%d derived=%d\n", lower.ID, lower.State, lower.Recorded, lower.Derived)
+	}
+	return 0
+}
+
 // listSynced prints the accepted world: the same JSON idea as the
 // legacy list, grouped by state, with the projection's banners.
 func listSynced(root string, pretty, fetchFirst bool, requiredLabels ...string) int {

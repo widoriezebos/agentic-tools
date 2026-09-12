@@ -60,12 +60,18 @@ five-member tuple raises the stored member, never above the ceiling, and `job
 critique-budget-rebind` copies the raised member onto an open root.
 
 Risk is four separate questions, never the shape of the change. A goal's
-tier derives from its Risk record: severity, novelty, exposure and
-accumulation, each scored 1 to 3 with a basis sentence, given to `goal open`
-and `goal edit` as `--risk severity=<n>,novelty=<n>,exposure=<n>,accumulation=<n>
---basis <text>` (the classification sweep takes the same four scores as
-`<s>,<n>,<e>,<a>` and renders the tier itself); `--tier` without the four
-answers is refused. An override above the derivation is recorded
+Risk record scores severity, novelty, exposure and accumulation, each 1 to
+3 with a basis sentence, given to `goal open` and `goal edit` as `--risk
+severity=<n>,novelty=<n>,exposure=<n>,accumulation=<n> --basis <text>` (the
+classification sweep takes the same four scores as `<s>,<n>,<e>,<a>` and
+renders the tier itself); `--tier` without the four answers is refused. The
+tier derives from severity and novelty alone, the worse of the two; exposure
+and accumulation scale the proof instead: the highest of the four answers
+multiplies the landing's cadence weight (`gate weight-add --goal`), and
+accumulation 2 or higher owes the one-time full battery. Exposure alone had lifted three
+quarters of the backlog to tier 3 (goal tier-from-severity-and-novelty);
+`goal tier-probe` reports the backlog's recorded and derived tiers and the
+goals a person may lower. An override above the derivation is recorded
 with `--why`; an override below it, or a lowering after claim, is the human's
 act alone. A raise after claim is one transaction that re-binds the claim's
 revision and clears no fence or obligation; a chain dispatched before the
@@ -96,7 +102,7 @@ without `--blocks`. An improvement a seat discovers that blocks nothing is a
 proposal appended to `memory/backlog-notes.md`, never a goal.
 
 Low-tier ceremony may run under a recorded power of attorney (R-95-m1e,
-Wido 2026-09-11). A person records one with `goal grant --by <name> --tiers 1
+Wido 2026-09-11). A person records one with `goal grant --by <name> --tiers 1,2
 --verbs approve,set-budget --expires <date>` under their own proof (the
 enrolled terminal, or the fixture grant in a bed; never a relayed word); it
 lives in the root record's `PowerOfAttorney:` section, lives at most seven
@@ -107,9 +113,10 @@ on the ledger (`authority=attorney`, the entry named on the history line),
 stays within the goal's tier box, never rewrites an approval a person made
 (proven, relayed or channel), and is refused for any goal outside the entry's tiers or verbs, on the
 brain, or once the entry has expired or been revoked. The approval it
-records stands after the entry ends. Tier 2 joins when
-tier-from-severity-and-novelty lands; unpark waits on Wido's word (section
-6 of plans/budget-extends-by-consumption-design.md).
+records stands after the entry ends. An entry covers tier 1, tier 2 or
+both (tier 2 since tier-from-severity-and-novelty landed); tier 3 stays the
+person's own act; unpark waits on Wido's word (section 6 of
+plans/budget-extends-by-consumption-design.md).
 
 Under R-60-m1, the reviewer stops critique at the first round with no material
 finding. A material finding must change what gets built and name that

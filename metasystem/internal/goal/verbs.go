@@ -1079,7 +1079,7 @@ func ResolveAttorney(root, id, verb string, now time.Time) (PowerOfAttorneyEntry
 	}
 	entry, ok := rootAttorney(p.Tree.Root, id)
 	if !ok {
-		return PowerOfAttorneyEntry{}, fmt.Errorf("no power of attorney %s is recorded; a person records one with goal grant --by <name> --tiers 1 --verbs approve,set-budget --expires <YYYY-MM-DD>", id)
+		return PowerOfAttorneyEntry{}, fmt.Errorf("no power of attorney %s is recorded; a person records one with goal grant --by <name> --tiers 1,2 --verbs approve,set-budget --expires <YYYY-MM-DD>", id)
 	}
 	if live, why := entry.LiveAt(now); !live {
 		return PowerOfAttorneyEntry{}, fmt.Errorf("power of attorney %s is not live: %s", entry.ID, why)
@@ -1091,9 +1091,8 @@ func ResolveAttorney(root, id, verb string, now time.Time) (PowerOfAttorneyEntry
 }
 
 // Grant records a power of attorney: the human's own proof (enrolled
-// terminal, verified channel answer, or the fixture grant; never a relayed
-// word), tier 1 in this build, verbs from AttorneyVerbs, an expiry at most
-// seven days out (R-95-m1e).
+// terminal or the fixture grant; never a relayed word), tiers 1 and 2,
+// verbs from AttorneyVerbs, an expiry at most seven days out (R-95-m1e).
 func Grant(r VerbRequest, proof *humanauthority.Proof, tiers []uint8, verbs []string, expires string) (PublishResult, error) {
 	if r.Actor.Human == "" {
 		return PublishResult{}, fmt.Errorf("goal grant is human-only and requires --by from an authorized human boundary")
@@ -1105,8 +1104,10 @@ func Grant(r VerbRequest, proof *humanauthority.Proof, tiers []uint8, verbs []st
 	if temporary {
 		return PublishResult{}, fmt.Errorf("a relayed word cannot grant a power of attorney; grant from the enrolled terminal or a verified channel answer")
 	}
-	if len(tiers) != 1 || tiers[0] != 1 {
-		return PublishResult{}, fmt.Errorf("a power of attorney covers tier 1 in this build; tier 2 joins when goal tier-from-severity-and-novelty lands (R-95-m1e)")
+	for _, tier := range tiers {
+		if tier != 1 && tier != 2 {
+			return PublishResult{}, fmt.Errorf("a power of attorney covers tiers 1 and 2 only (R-95-m1e); tier 3 stays the human's own act")
+		}
 	}
 	canonicalVerbs := sortedUnique(verbs)
 	if len(canonicalVerbs) == 0 {
@@ -1983,14 +1984,16 @@ func editRequestReportingRiskRaise(r VerbRequest, id string, fields EditFields, 
 				newDerived, newWidth = fields.Risk.DerivedTier(), fields.Risk.GateWidth()
 			}
 			raise := fields.Risk != nil && newDerived > oldDerived && f.Approved != nil
+			// Re-stated or raised answers lift the tier to their derivation and
+			// never lower it: a recorded tier above the derivation stands (an
+			// override, or a tier the earlier formula set) until --tier lowers
+			// it or a lowered answer moves the derivation down, both the
+			// human's act.
 			targetTier := f.Tier
 			if fields.Tier != nil {
 				targetTier = *fields.Tier
-			} else if fields.Risk != nil {
+			} else if fields.Risk != nil && (newDerived > f.Tier || riskAnswersLower(f.Risk, fields.Risk)) {
 				targetTier = newDerived
-				if raise && f.Tier > oldDerived && f.Tier >= newDerived {
-					targetTier = f.Tier
-				}
 			}
 			if f.Tier != targetTier && (f.Approved != nil || f.State == StateClaimed || f.State == StateParked) && !raise {
 				return nil, fmt.Errorf("goal %s is approved, claimed, or parked; unapprove it, edit --tier, then approve it", id)

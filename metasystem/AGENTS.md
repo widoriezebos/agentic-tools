@@ -28,10 +28,10 @@ Use `wow.md` as the only routing index. Read just the guidance and skills releva
 
 ## The Goal Thread
 
-Every backlog item's intake tier sets its budget (R-54-m1); four risk answers
-await Part Two.
+Every backlog item's intake tier sets its budget (R-54-m1): severity and
+novelty derive the tier; exposure and accumulation weight its proof.
 
-Programs START with `goal open` by a person: a multi-session effort gets a ledger goal before its first commit, so intent survives turn boundaries; a seat's own `goal open` only names the claimed goal it blocks (`--blocks`) and parks it until that blocker is done, and non-blocking ideas are proposals in `memory/backlog-notes.md`. At turn end, read `goal next`, one orientation line every runtime has, hooks or none; a free seat adds `--machine <own-nick> --fetch` and claims only the ready goal it returns. Records explain work; they never select it, nor do scanning, kickoff order or pin preference. If another seat wins the claim, fetch and select again. Concluding or parking a human-opened goal is human-reserved. The ledger mutates only through `goal` verbs; manual edits go through `goal reconcile`.
+Programs START with `goal open` by a person: a multi-session effort gets a ledger goal before its first commit so intent survives turns; a seat's own `goal open` only names the claimed goal it blocks (`--blocks`) and parks it until that blocker is done, and non-blocking ideas go to `memory/backlog-notes.md`. At turn end, read `goal next`, one line every runtime has, hooks or none; a free seat adds `--machine <own-nick> --fetch` and claims only the ready goal it returns. Records explain work but never select it, nor do scanning, kickoff order or pin preference. If another seat wins the claim, fetch again. Concluding or parking a human-opened goal is human-reserved. The ledger mutates only through `goal` verbs; manual edits go through `goal reconcile`.
 
 ## Completion
 
