@@ -122,7 +122,23 @@ engine already holds proof for.
   dive were self-set caches under load and full gates; a warm cache cannot
   shorten a test that runs 137 s of its own accord, which is what slice B is
   for.
-- Slice C: filled in when the three-round chain runs.
+- Slice C, 2026-09-12: the chain ran as implementer-5881d3816c94692315588ba0
+  (implementer runtime, gpt-5.6-sol, briefs plans/delegate-rounds-reuse-a-warm-gate-chain-round{1,2,3,4}-brief.md)
+  and could not reach a proof attempt. Round 1 (3 min 06 s) made the edit
+  and warmed the cache (269 MB after `go run`) but invoked the engine as
+  `go -C metasystem run ... --root metasystem`, which resolved the root to
+  metasystem/metasystem: a brief defect, fixed by spelling the command
+  block. Round 2 (48 s) built the engine and ran `bin/metasystem test run
+  --root .`, which failed before admission: `fatal: git-write-tree: error
+  building trees`, git could not create an object in the shared store. The
+  engine's git invocations scrub GIT_OBJECT_DIRECTORY and
+  GIT_ALTERNATE_OBJECT_DIRECTORIES (gittree.ScrubbedEnviron), so the
+  delegate's quarantine is not used, and the runner materializes each group
+  in a detached worktree under the main .git, outside every granted root.
+  No delegate can meet the engine-appended testing requirement inside its
+  sandbox today. Opened as blocker goal
+  delegate-proof-runs-inside-the-sandbox (R-93-m1e), which parks this goal;
+  the measurement resumes when it is done. The chain is closed.
 
 ## 6. What does not change
 
