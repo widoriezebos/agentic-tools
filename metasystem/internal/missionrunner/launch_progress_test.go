@@ -40,8 +40,17 @@ func TestProcessTreeCPUSecondsCountsDescendants(t *testing.T) {
 	t.Cleanup(func() {
 		_ = syscall.Kill(-group, syscall.SIGKILL)
 		_ = command.Wait()
-		if err := syscall.Kill(-group, 0); err == nil {
-			t.Errorf("the burner outlived the test in process group %d", group)
+		// The burner is launchd's to reap once the shell is gone; a killed
+		// process answers signal 0 until it is reaped (cadence run 12 read
+		// the group alive 2 ms after the kill). Give the reap a bounded
+		// moment before calling the group a leak.
+		deadline := time.Now().Add(5 * time.Second)
+		for syscall.Kill(-group, 0) == nil {
+			if time.Now().After(deadline) {
+				t.Errorf("the burner outlived the test in process group %d", group)
+				return
+			}
+			time.Sleep(50 * time.Millisecond)
 		}
 	})
 	first, ok := processTreeCPUSeconds(command.Process.Pid)

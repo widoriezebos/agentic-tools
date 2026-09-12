@@ -106,7 +106,10 @@ if launch_fixture "$chatty" chatty over-cap \
   exit 1
 fi
 grep -Fq 'section exceeded its 400ms cap' "$chatty_out" \
-  || { echo "suite-progress fixture: absolute-cap failure did not name the stalled section and cap" >&2; exit 1; }
+  || { echo "suite-progress fixture: absolute-cap failure did not name the stalled section and cap" >&2
+       echo "suite-progress fixture: launcher output follows (cadence run 12, proof-mty2iq69, failed here once under load with no record of the reason)" >&2
+       sed 's/^/  launcher: /' "$chatty_out" >&2
+       exit 1; }
 
 # A missing selector section is structural red even when the command succeeds.
 silent="$tmp/silent"
