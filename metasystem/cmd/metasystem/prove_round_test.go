@@ -145,6 +145,18 @@ func TestProveRoundProvesTheChainWorktreesCommittedTreeOnTheInstallation(t *test
 	}
 }
 
+func TestProveRoundTreatsWholeReuseAsProof(t *testing.T) {
+	fixture := newProveRoundFixture(t)
+	stubProveRoundRun(t, proofrun.ExitReusableSuccess)
+	if status := runDispatchProveRound([]string{"--root", fixture.installation, "--job", "implementer-1"}); status != 0 {
+		t.Fatalf("a round proved by whole reuse exited %d; want 0", status)
+	}
+	record := readProofRoundRecord(t, fixture.installation, "implementer-1", 2)
+	if !record.ReusedWhole || !record.Sufficient || record.ExitStatus != 0 || record.AttemptID != "" {
+		t.Fatalf("whole reuse was not recorded as the proof: %+v", record)
+	}
+}
+
 func TestProveRoundRefusesWhatItCannotProveAsARound(t *testing.T) {
 	fixture := newProveRoundFixture(t)
 	captured := stubProveRoundRun(t, 0)

@@ -172,4 +172,21 @@ child fast-forwards under its parent (critique M2).
 
 ## 6. Field record
 
-To be written after the first day.
+- 2026-09-12 17:20Z, the first engine-driven run after the landing
+  (67c6c5579), on m1b: `job prove-round` for the Codex design round
+  stop-hook-design-190340 found the enrolled engine at 3215d350f behind the
+  landed tip 38cdce2e9 (m1e's ledger commits and one engine landing) by
+  landed commits only, fast-forwarded, rebuilt, re-armed (generation 97 to
+  98) and restarted itself on the landed engine; the attempt
+  proof-mtynioca-c866f393fab6ee73 carries the record in `engineRearm` and
+  ended sufficient with 47 groups. No person reset, rebuilt or re-armed.
+- 2026-09-12, m1e (reported by that seat): a diagnostic of
+  section/suite-progress-fixtures on 47df130d with the enrolled engine at
+  46e5678e, a landed-only skew and a clean checkout, re-armed (generation
+  59, engine 47df130d) and restarted itself; nothing refused. The first run
+  through the path on a second seat.
+- 2026-09-12 18:11Z, m1b: the same verb's next run found 38cdce2e9 behind
+  c304bdc10, re-armed (98 to 99) and restarted; admission then answered the
+  restarted run with a retained attempt (exit 76, whole reuse). Two seats,
+  three runs, no manual step.
+  The day's tally continues here.

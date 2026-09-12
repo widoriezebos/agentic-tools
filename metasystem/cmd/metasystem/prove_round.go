@@ -40,9 +40,13 @@ type ProofRoundRecord struct {
 	Purpose       string `json:"purpose"`
 	CandidateTree string `json:"candidateTree"`
 	AttemptID     string `json:"attemptId,omitempty"`
-	Sufficient    bool   `json:"sufficient"`
-	ExitStatus    int    `json:"exitStatus"`
-	ProvedAt      string `json:"provedAt"`
+	// ReusedWhole says admission answered the run with a retained attempt
+	// that already proves every selected group at this identity: no new
+	// attempt exists, and the round is proved by that reuse.
+	ReusedWhole bool   `json:"reusedWhole,omitempty"`
+	Sufficient  bool   `json:"sufficient"`
+	ExitStatus  int    `json:"exitStatus"`
+	ProvedAt    string `json:"provedAt"`
 }
 
 // runDispatchProveRound proves a delegate round where proof can be made and
@@ -102,6 +106,12 @@ func runDispatchProveRound(args []string) int {
 	}
 	proof.ExitStatus = proveRoundTestRun(runArgs)
 	proof.ProvedAt = time.Now().UTC().Format(time.RFC3339Nano)
+	if proof.ExitStatus == proofrun.ExitReusableSuccess {
+		// A round whose tree changed no group's inputs is proved by the
+		// retained attempt admission reused; that is the reuse this verb
+		// exists for, not a missing proof.
+		proof.ReusedWhole, proof.Sufficient, proof.ExitStatus = true, true, 0
+	}
 	if err := writeProofRoundRecord(installation, proof); err != nil {
 		fmt.Fprintln(os.Stderr, "job prove-round: record the proof:", err)
 		return 1
@@ -121,6 +131,8 @@ func runDispatchProveRound(args []string) int {
 		}
 	}
 	switch {
+	case proof.ReusedWhole:
+		fmt.Printf("prove-round: tree %s is proved by the retained attempts admission reused; no new attempt\n", proof.CandidateTree)
 	case !found:
 		fmt.Printf("prove-round: the run recorded no attempt for tree %s (test run exit %d)\n", proof.CandidateTree, proof.ExitStatus)
 	case proof.Sufficient:
