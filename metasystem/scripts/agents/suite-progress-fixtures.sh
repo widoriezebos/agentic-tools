@@ -258,9 +258,16 @@ done
 
 # A mismatched start identity authorizes neither supervision shutdown nor a
 # signal. The live process remains until this fixture, which spawned it, reaps.
+# The watchdog attempts a stop only on the supervisor's verdict (decision 3
+# of the hang-detection design), so the progress file carries a dead verdict
+# for the section, written here in the supervisor's place.
 recycle="$tmp/recycle"
 mkdir -p "$recycle"
-printf '{"tmpPaths":[],"logPaths":["%s"]}\n' "$recycle/log" >"$recycle/progress.jsonl"
+{
+  printf '{"tmpPaths":[],"logPaths":["%s"]}\n' "$recycle/log"
+  printf '{"suite":"recycle","section":"guard","event":"start","at":"%s","depth":0}\n' "$(date -u +%Y-%m-%dT%H:%M:%SZ)"
+  printf '{"suite":"recycle","section":"guard","event":"verdict","at":"%s","depth":0,"verdict":"dead"}\n' "$(date -u +%Y-%m-%dT%H:%M:%SZ)"
+} >"$recycle/progress.jsonl"
 : >"$recycle/log"
 sleep "$wait_cap" &
 recycle_pid=$!
