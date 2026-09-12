@@ -335,6 +335,8 @@ func requestForEntry(e Endpoint, entry Entry) (PublishRequest, error) {
 			return releaseArcRequest(r, target), nil
 		}
 		return releaseRequest(r, target), nil
+	case "land-ready":
+		return landReadyRequest(r, target), nil
 	case "done":
 		return doneRequest(r, target, in.Args["conclusion"]), nil
 	case "park":

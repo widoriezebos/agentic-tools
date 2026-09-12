@@ -261,7 +261,7 @@ func decideForRevival(repoRoot string, cfg TickConfig, census WorkerCensus, ev E
 		return Decision{VerdictDegraded, ActNotify, "seatIdle claim could not be re-read: " + err.Error()}, workReason, nil
 	}
 	targetPresent := false
-	targets := shared.Claimed
+	targets := append(append([]string(nil), shared.Claimed...), shared.Landing...)
 	missingReason := "seatIdle intent no longer names a claim held by this machine"
 	if intent.ClaimNeeded {
 		targets = shared.Claimable

@@ -100,6 +100,14 @@ class: `ps -axo pid=,etime=,%cpu=,command= | awk '$3 > 50'` for stray
 burners first, then the suspect package under the race detector beside
 eight `yes` burners, then the bed through the engine on the candidate tree.
 
+- m1c, 2026-09-12, land-ready-work-lands-without-a-claim-slot: goal land-ready
+  and the kept episode. A goal file may now carry `- Landing:` and
+  `- Episode:` records and the claim record an `idleSeconds=` token; an
+  engine older than this landing cannot parse a ledger that carries any of
+  them. Rebuild and re-arm after it lands, before your next ledger read. A
+  seat whose built work waits to land runs `goal land-ready --id <goal>` and
+  claims the next goal beside it; one landing slot per machine.
+
 ## Ledger hygiene
 
 - Claim before you start: `bin/metasystem goal claim --root . --id <goal>`

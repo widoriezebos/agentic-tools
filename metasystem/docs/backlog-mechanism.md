@@ -148,6 +148,39 @@ not, and may name any live goal, a parked one included, which then takes
 only the edge. An improvement a seat discovers that blocks nothing goes to
 `memory/backlog-notes.md` as a proposal, never to the ledger.
 
+## The landing slot and the kept episode
+
+A machine holds one working claim at a time. Built and verified work that
+waits to land no longer holds that slot: the claim holder runs
+`metasystem goal land-ready --root . --id <goal>`, which writes a `Landing:`
+record and a `land-ready` history line on the claimed goal. The goal stays
+claimed, so its receipts and proof attempts still bind to its claim and its
+box, but the one-claim quota no longer counts it, `goal next` lists it as
+`LANDING <id>` and continues or offers the next goal, and the turn verdict
+and channel report show it as live work for the landing. One landing slot
+per machine: a second `land-ready` is refused until the first lands. A
+landing goal's elapsed fence is suspended: no breach stop and no
+cancellation land on it for elapsed time, its own receipts keep admitting
+past the elapsed box (attempts, minutes and active jobs still bind), and
+past the box the lines read `LANDING OVERDUE <id>`. The slot leaves with
+the claim (done, park, release, steal, an arc join, unapprove); a human
+`set-budget` and a `resume` keep it. The hours from the `land-ready` line
+to the landing are the seat-side measure of goal 20.
+
+When the own pair releases or parks a claimed goal (the arc cascades and
+the park a seat's `--blocks` open records included), the goal keeps an
+`Episode:` record (the accounting revision, the episode start, the
+obligation revision it consumed, the idle seconds so far and the release
+time). The same pair's next `claim` restores those facts to the claim
+record and adds the unheld gap to `idleSeconds`, so attempts and minutes
+spent before the release keep counting against the box and the elapsed
+clock excludes the gap. A claim by another pair, a steal, an arc join, a
+person's park, unapprove and approve with a tuple
+start the box afresh and drop the record; the seat's own park of a goal it
+released keeps the pair's record. Both records are written by the
+verbs alone: a hand edit that adds or changes one is refused at reconcile,
+and a hand park may drop one only because the park itself does.
+
 ## The drop rule
 
 A backlog item earns its place from current behavior or current

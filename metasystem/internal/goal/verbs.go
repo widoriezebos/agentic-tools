@@ -281,7 +281,95 @@ func bindClaim(f *GoalFile, machine, lineage, at string, revision uint64, claimE
 	// A fresh claim or budget revision cannot inherit authority from an older
 	// obligation. The human creates a new immutable binding explicitly.
 	f.Obligation = nil
+	// A fresh bind is a fresh episode: the landing slot and any kept
+	// episode go with the old binding. The same pair's claim restores the
+	// kept episode itself, after this bind.
+	f.Landing = nil
+	f.Episode = nil
 	return nil
+}
+
+// leaveEpisode records the claim's accounting episode on the goal before
+// the own pair releases or parks it, so the same pair's next claim
+// continues the box instead of starting it afresh.
+func leaveEpisode(f *GoalFile, released string) {
+	if f.Claimed == nil || f.Claimed.Revision == 0 {
+		return
+	}
+	episodeAt, episodeRevision := f.Claimed.EpisodeAt, f.Claimed.EpisodeRevision
+	if episodeRevision == 0 {
+		episodeAt, episodeRevision = f.Claimed.At, f.Claimed.AccountingRevision
+	}
+	// A release stamped before the episode began is a regressed clock; no
+	// episode can be kept from it (the projection would refuse the gap as
+	// CLOCK_REGRESSED), so the next claim starts afresh as it did before.
+	// An episode binding the history cannot vouch for (a migrated claim
+	// raised by misclassification) is not kept either: the re-claim would
+	// fail ValidateClaimRevision and lock the pair out.
+	if released < episodeAt || episodeRevision == 0 || episodeRevision > uint64(len(f.History)) || f.History[episodeRevision-1].At != episodeAt {
+		f.Episode = nil
+		return
+	}
+	accountingRevision := f.Claimed.AccountingRevision
+	if accountingRevision == 0 {
+		accountingRevision = f.Claimed.Revision
+	}
+	obligationRevision := f.Claimed.EpisodeObligationRevision
+	if f.Obligation != nil {
+		obligationRevision = f.Obligation.Revision
+	}
+	f.Episode = &EpisodeRecord{
+		Machine: f.Claimed.Machine, Lineage: f.Claimed.Lineage,
+		AccountingRevision: accountingRevision, EpisodeAt: episodeAt, EpisodeRevision: episodeRevision,
+		EpisodeObligationRevision: obligationRevision, IdleSeconds: f.Claimed.IdleSeconds, Released: released,
+	}
+}
+
+// leaveOrDropEpisode is the one rule for a verb that ends or pauses a hold:
+// the own pair, acting for itself, keeps the accounting episode (a claimed
+// goal writes it from the claim; an unclaimed goal that already carries the
+// pair's record keeps it); a person's act or another pair's drops it.
+func leaveOrDropEpisode(f *GoalFile, r VerbRequest) {
+	if r.Actor.Human != "" {
+		f.Episode = nil
+		return
+	}
+	if f.Claimed != nil {
+		if ownPair(f.Claimed, r.Actor) {
+			leaveEpisode(f, r.stamp())
+		} else {
+			f.Episode = nil
+		}
+		return
+	}
+	if f.Episode != nil && (f.Episode.Machine != r.Actor.Machine || f.Episode.Lineage != r.Actor.Lineage) {
+		f.Episode = nil
+	}
+}
+
+// resumeEpisode continues a kept episode on a fresh same-pair claim: the
+// accounting facts return to the claim record and the unheld gap joins the
+// idle seconds the elapsed clock excludes.
+func resumeEpisode(f *GoalFile, kept EpisodeRecord, claimedAt string) error {
+	released, err := time.Parse(time.RFC3339, kept.Released)
+	if err != nil {
+		return fmt.Errorf("goal %s keeps an episode with a malformed release time %q", f.Id, kept.Released)
+	}
+	claimed, err := time.Parse(time.RFC3339, claimedAt)
+	if err != nil {
+		return fmt.Errorf("goal %s is claimed at a malformed time %q", f.Id, claimedAt)
+	}
+	gap := claimed.Sub(released)
+	if gap < 0 {
+		return fmt.Errorf("goal %s: the claim at %s precedes the release at %s the kept episode records (CLOCK_REGRESSED)", f.Id, claimedAt, kept.Released)
+	}
+	f.Claimed.AccountingRevision = kept.AccountingRevision
+	f.Claimed.EpisodeAt = kept.EpisodeAt
+	f.Claimed.EpisodeRevision = kept.EpisodeRevision
+	f.Claimed.EpisodeObligationRevision = kept.EpisodeObligationRevision
+	f.Claimed.IdleSeconds = kept.IdleSeconds + uint64(gap/time.Second)
+	f.Episode = nil
+	return f.ValidateClaimRevision()
 }
 
 // rebindClaimKeepEpisode advances the budget and accounting revision without
@@ -320,12 +408,15 @@ func rebindClaimKeepEpisode(f *GoalFile, at string, revision uint64, claimEpoch 
 	if f.Obligation != nil {
 		episodeObligationRevision = f.Obligation.Revision
 	}
+	idleSeconds, landing := f.Claimed.IdleSeconds, f.Landing
 	if err := bindClaim(f, machine, lineage, at, revision, claimEpoch); err != nil {
 		return err
 	}
 	f.Claimed.EpisodeAt = episodeAt
 	f.Claimed.EpisodeRevision = episodeRevision
 	f.Claimed.EpisodeObligationRevision = episodeObligationRevision
+	f.Claimed.IdleSeconds = idleSeconds
+	f.Landing = landing
 	return nil
 }
 
@@ -337,6 +428,7 @@ func clearClaimBinding(f *GoalFile) error {
 	f.StopCapability = nil
 	f.StopFence = nil
 	f.Obligation = nil
+	f.Landing = nil
 	return nil
 }
 
@@ -723,6 +815,7 @@ func parkBehindBlocker(t *TreeGoals, r VerbRequest, blocked, blocker string) (*G
 		By: r.Actor.historyActor(), At: r.stamp(),
 		Because: because, Displaced: displaced, Blocker: blocker,
 	}
+	leaveOrDropEpisode(f, r)
 	if err := clearClaimBinding(f); err != nil {
 		return nil, err
 	}
@@ -836,9 +929,17 @@ func claimRequest(r VerbRequest, id string, supplied *Budget) PublishRequest {
 			}
 			f.State = StateClaimed
 			f.Budget = &budget
+			kept := f.Episode
 			touch(f, r, "claim", []string{id})
 			if err := bindClaim(f, r.Actor.Machine, r.Actor.Lineage, r.stamp(), f.Revision, r.ClaimEpoch); err != nil {
 				return nil, err
+			}
+			// The same pair continues the episode it left; any other pair
+			// starts fresh and the kept record is gone with the bind.
+			if kept != nil && kept.Machine == r.Actor.Machine && kept.Lineage == r.Actor.Lineage {
+				if err := resumeEpisode(f, *kept, r.stamp()); err != nil {
+					return nil, err
+				}
 			}
 			return ackDisplacements(t, r, []Change{{Path: livePath(id), Content: RenderFile(f)}}), nil
 		},
@@ -965,6 +1066,7 @@ func setBudgetRequest(r VerbRequest, id string, budget Budget, proof *humanautho
 				displaced = pairMarker(f.Claimed)
 			}
 			f.Budget = &budget
+			f.Episode = nil
 			if overBox && f.BudgetExceptions < ^uint16(0) {
 				f.BudgetExceptions++
 			}
@@ -1316,10 +1418,69 @@ func releaseRequest(r VerbRequest, id string) PublishRequest {
 				displaced = pairMarker(f.Claimed)
 			}
 			f.State = restingState(f)
+			leaveOrDropEpisode(f, r)
 			if err := clearClaimBinding(f); err != nil {
 				return nil, err
 			}
 			touchDisplaced(f, r, "release", []string{id}, displaced)
+			return ackDisplacements(t, r, []Change{{Path: livePath(id), Content: RenderFile(f)}}), nil
+		},
+		Validate: func(commit string) error { return ValidateCommit(r.Endpoint.Root, commit) },
+	}
+}
+
+// LandReady marks the claim holder's built and verified work as waiting to
+// land. The goal stays claimed, so its receipts still bind to the claim,
+// but the claim leaves the machine's one-claim quota and its elapsed fence
+// while it waits; the landing lifts the record with the claim.
+func LandReady(r VerbRequest, id string) (PublishResult, error) {
+	if r.Actor.Human != "" {
+		return PublishResult{}, fmt.Errorf("land-ready is the claim holder's own act; it takes no --by")
+	}
+	return Publish(r.Endpoint, landReadyRequest(r, id))
+}
+
+// landReadyRequest builds the verb's complete transaction request — the
+// ONE mutation semantics both the live verb and recovery replay
+// run (recovery rebuilds through the real verb paths).
+func landReadyRequest(r VerbRequest, id string) PublishRequest {
+	return PublishRequest{
+		Opid: r.opid(), Machine: r.Actor.Machine, Lineage: r.Actor.Lineage,
+		Intent:  Intent{Verb: "land-ready", Targets: []string{id}, Args: intentArgs(r, nil)},
+		Message: "goal land-ready " + id,
+		Mutate: func(tip string) ([]Change, error) {
+			t, err := loadTree(r.Endpoint.Root, tip)
+			if err != nil {
+				return nil, err
+			}
+			f, exists := t.Live[id]
+			if !exists {
+				return nil, fmt.Errorf("goal %s is not live; nothing to land", id)
+			}
+			if opidLanded(f, r) {
+				return nil, AlreadyApplied{}
+			}
+			if f.State != StateClaimed || f.Claimed == nil {
+				return nil, fmt.Errorf("goal %s is %s, not claimed; land-ready marks the claim holder's built work", id, f.State)
+			}
+			if !ownPair(f.Claimed, r.Actor) {
+				return nil, fmt.Errorf("goal %s is claimed by %s+%s; land-ready is the claim holder's own act", id, f.Claimed.Machine, f.Claimed.Lineage)
+			}
+			if f.StopFence != nil {
+				return nil, fmt.Errorf("goal %s is breach-stopped by %s; only goal resume, a human act, clears the fence", id, f.StopFence.StopID)
+			}
+			if f.Landing != nil {
+				return nil, NothingToDo{Reason: "already in landing since " + f.Landing.At + " (not by this operation)"}
+			}
+			for _, other := range t.Live {
+				// A fenced landing claim still holds the slot: the resume
+				// restores it, and two slots would then refuse the resume.
+				if other.Id != id && other.State == StateClaimed && other.Claimed != nil && other.Landing != nil && other.Claimed.Machine == r.Actor.Machine {
+					return nil, fmt.Errorf("goal %s already waits to land on machine %s; one landing slot per machine: land it before entering %s", other.Id, r.Actor.Machine, id)
+				}
+			}
+			touch(f, r, "land-ready", []string{id})
+			f.Landing = &LandingRecord{At: r.stamp(), Opid: r.opid()}
 			return ackDisplacements(t, r, []Change{{Path: livePath(id), Content: RenderFile(f)}}), nil
 		},
 		Validate: func(commit string) error { return ValidateCommit(r.Endpoint.Root, commit) },
@@ -1611,6 +1772,7 @@ func doneRequest(r VerbRequest, id, conclusion string) PublishRequest {
 				return nil, err
 			}
 			f.Parked = nil
+			f.Episode = nil
 			t.Done[id] = f
 			delete(t.Live, id)
 			returned := returnBlockerParks(t, r, id)
@@ -1721,6 +1883,7 @@ func parkRequest(r VerbRequest, id, because string) PublishRequest {
 				By: r.Actor.historyActor(), At: r.stamp(),
 				Because: because, Displaced: displaced,
 			}
+			leaveOrDropEpisode(f, r)
 			if err := clearClaimBinding(f); err != nil {
 				return nil, err
 			}
@@ -2582,6 +2745,7 @@ func releaseArcRequest(r VerbRequest, id string) PublishRequest {
 					displaced = pairMarker(m.Claimed)
 				}
 				m.State = restingState(m)
+				leaveOrDropEpisode(m, r)
 				if err := clearClaimBinding(m); err != nil {
 					return nil, err
 				}
@@ -2657,6 +2821,7 @@ func parkArcRequest(r VerbRequest, id, because string) PublishRequest {
 					By: r.Actor.historyActor(), At: r.stamp(),
 					Because: because, Displaced: memberDisplaced,
 				}
+				leaveOrDropEpisode(m, r)
 				if err := clearClaimBinding(m); err != nil {
 					return nil, err
 				}

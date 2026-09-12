@@ -439,7 +439,12 @@ func TestSetBudgetStartsFirstEpisodeForRevisionlessMigration(t *testing.T) {
 	}
 }
 
-func TestReleaseReclaimStartsNewEpisode(t *testing.T) {
+// TestReleaseReclaimKeepsTheEpisodeForTheSamePair pins the law goal
+// land-ready-work-lands-without-a-claim-slot changed: an own-pair release
+// leaves the accounting episode on the goal and the same pair's re-claim
+// continues it, the unheld hour idle. Another pair still starts fresh
+// (TestStealStartsNewEpisode, and the landing tests).
+func TestReleaseReclaimKeepsTheEpisodeForTheSamePair(t *testing.T) {
 	root := riskLocalRoot(t, "release-reclaim-bed")
 	claim := obligationAuthorityVerbReq(root, "01J5X00000000000000000ER00", "mac-a")
 	if result, err := openClaimForTest(t, claim, "release-reclaim", "Restart ownership.", OriginMain, "Claim twice.", testBudget()); err != nil || result.Outcome != OutcomeConfirmed {
@@ -465,8 +470,9 @@ func TestReleaseReclaimStartsNewEpisode(t *testing.T) {
 		t.Fatal(err)
 	}
 	second := after.Live["release-reclaim"].Claimed
-	if second.EpisodeAt != reclaim.stamp() || second.EpisodeRevision != second.Revision || second.EpisodeAt == first.EpisodeAt || second.EpisodeObligationRevision != 0 {
-		t.Fatalf("release and reclaim did not start a fresh episode: first=%+v second=%+v", first, second)
+	if second.EpisodeAt != first.EpisodeAt || second.EpisodeRevision != first.EpisodeRevision || second.AccountingRevision != first.AccountingRevision ||
+		second.Revision == first.Revision || second.IdleSeconds != 3600 || second.EpisodeObligationRevision != 0 || after.Live["release-reclaim"].Episode != nil {
+		t.Fatalf("release and reclaim by the same pair did not continue the episode with the gap idle: first=%+v second=%+v", first, second)
 	}
 }
 

@@ -1956,6 +1956,9 @@ var (
 	runGoalSteal = runSyncOnly("steal", func(req goal.VerbRequest, f *syncFlags) (goal.PublishResult, error) {
 		return goal.Steal(req, f.id)
 	}, "id")
+	runGoalLandReady = runSyncOnly("land-ready", func(req goal.VerbRequest, f *syncFlags) (goal.PublishResult, error) {
+		return goal.LandReady(req, f.id)
+	}, "id")
 	runGoalEdit = runSyncOnly("edit", func(req goal.VerbRequest, f *syncFlags) (goal.PublishResult, error) {
 		fields := goal.EditFields{Why: f.why, Evidence: f.evidence}
 		var beforeDerived uint8

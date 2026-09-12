@@ -880,3 +880,83 @@ func TestBudgetAdmissionRefusalNamesSetupRefusalReleaseRule(t *testing.T) {
 		t.Fatalf("attempt refusal did not explain the setup-refusal release rule: %v", lines)
 	}
 }
+
+func TestIdleSecondsComeOffTheElapsedClockAfterTheDischargeStart(t *testing.T) {
+	root := budgetProjectionRoot(t)
+	// The episode began at 08:00, a consumed discharge at 08:30 advanced the
+	// start, the pair was away for half an hour and re-claimed at 09:00: at
+	// 10:30 the clock reads two hours less the idle half hour.
+	dischargeAt := time.Date(2026, 8, 28, 8, 30, 0, 0, time.UTC)
+	writeConsumedBudgetProof(t, root, "green-discharge", 3, 5, dischargeAt)
+	file := reclaimedBudgetGoal()
+	file.Claimed.IdleSeconds = 1800
+	file.Obligation = &goal.GovernedObligation{Revision: 5}
+	projection := ProjectBudget(root, file, time.Date(2026, 8, 28, 10, 30, 0, 0, time.UTC))
+	if projection.Status != BudgetKnown || !projection.StartedAt.Equal(dischargeAt) || projection.Elapsed != 90*time.Minute {
+		t.Fatalf("idle seconds did not compose with the discharge-advanced start: %+v", projection)
+	}
+	// Without a discharge the idle seconds come off the episode origin.
+	plain := raisedEpisodeGoal(6, 0)
+	plain.Claimed.IdleSeconds = 3600
+	projection = ProjectBudget(budgetProjectionRoot(t), plain, time.Date(2026, 8, 28, 13, 0, 0, 0, time.UTC))
+	if projection.Status != BudgetKnown || projection.Elapsed != 4*time.Hour || projection.ElapsedState != AdmissionClosedElapsed {
+		t.Fatalf("idle seconds did not come off the episode clock: %+v", projection)
+	}
+	// The clock never reads below zero.
+	plain.Claimed.IdleSeconds = 24 * 3600
+	projection = ProjectBudget(budgetProjectionRoot(t), plain, time.Date(2026, 8, 28, 13, 0, 0, 0, time.UTC))
+	if projection.Status != BudgetKnown || projection.Elapsed != 0 {
+		t.Fatalf("idle seconds drove the clock negative: %+v", projection)
+	}
+}
+
+// reclaimedBudgetGoal is the bounded goal after an own-pair release at 08:20
+// and the same pair's re-claim at 09:00 (revision 5): the box still counts
+// from revision 3 and the forty idle minutes come off the clock.
+func reclaimedBudgetGoal() *goal.GoalFile {
+	file := budgetGoal()
+	file.Claimed.At = file.History[4].At
+	file.Claimed.Revision = 5
+	file.Claimed.AccountingRevision = 3
+	file.Claimed.EpisodeAt = file.History[2].At
+	file.Claimed.EpisodeRevision = 3
+	file.Claimed.IdleSeconds = 40 * 60
+	return file
+}
+
+func TestReclaimedGoalCountsThePreReleaseAttemptAndKeepsTheDischargeStart(t *testing.T) {
+	root := budgetProjectionRoot(t)
+	// One attempt ran before the release, under the accounting revision.
+	writeBudgetJob(t, root, "before-release", "reserve-before", 3, 30, "completed", budgetJobLife{
+		startedAt: "2026-08-28T08:05:00Z", endedAt: "2026-08-28T08:15:00Z", pid: 4242,
+	})
+	plain := ProjectBudget(root, reclaimedBudgetGoal(), time.Date(2026, 8, 28, 11, 0, 0, 0, time.UTC))
+	if plain.Status != BudgetKnown || plain.Attempts != 1 || plain.StartedAt.Format(time.RFC3339) != "2026-08-28T08:00:00Z" || plain.Elapsed != 2*time.Hour+20*time.Minute {
+		t.Fatalf("the re-claimed goal lost its earlier attempt or its idle gap: %+v", plain)
+	}
+	// A discharge consumed in the earlier hold advances the start (and, as
+	// today, resets the attempts before it); the gap, which follows it,
+	// still comes off.
+	dischargeAt := time.Date(2026, 8, 28, 8, 10, 0, 0, time.UTC)
+	writeConsumedBudgetProof(t, root, "early-discharge", 3, 5, dischargeAt)
+	discharged := reclaimedBudgetGoal()
+	discharged.Obligation = &goal.GovernedObligation{Revision: 5}
+	projection := ProjectBudget(root, discharged, time.Date(2026, 8, 28, 11, 0, 0, 0, time.UTC))
+	if projection.Status != BudgetKnown || !projection.StartedAt.Equal(dischargeAt) || projection.Elapsed != 2*time.Hour+10*time.Minute {
+		t.Fatalf("the discharge-advanced start and the idle gap did not compose: %+v", projection)
+	}
+}
+
+func TestIdleSecondsDoNotApplyToAStartInsideTheCurrentHold(t *testing.T) {
+	root := budgetProjectionRoot(t)
+	// The discharge is consumed after the re-claim at 09:00: the window it
+	// starts holds no gap, so nothing comes off.
+	dischargeAt := time.Date(2026, 8, 28, 9, 30, 0, 0, time.UTC)
+	writeConsumedBudgetProof(t, root, "late-discharge", 3, 5, dischargeAt)
+	file := reclaimedBudgetGoal()
+	file.Obligation = &goal.GovernedObligation{Revision: 5}
+	projection := ProjectBudget(root, file, time.Date(2026, 8, 28, 11, 0, 0, 0, time.UTC))
+	if projection.Status != BudgetKnown || !projection.StartedAt.Equal(dischargeAt) || projection.Elapsed != 90*time.Minute {
+		t.Fatalf("idle seconds were subtracted from a window that held no gap: %+v", projection)
+	}
+}

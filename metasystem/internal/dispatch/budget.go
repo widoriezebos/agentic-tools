@@ -309,9 +309,24 @@ func ProjectBudgetWithoutRun(repoRoot string, file *goal.GoalFile, now time.Time
 		return unknownBudget(file.Id, revision, recordPath, err.Error())
 	}
 
+	// The elapsed clock excludes the time nobody held the goal (an own-pair
+	// release or park, then the same pair's claim): idle seconds come off
+	// after the discharge-advanced start is chosen, so a discharge reset is
+	// kept and no gap is subtracted twice.
+	// Every gap ends at the current hold's claim time, so a start at or after
+	// it (a discharge consumed inside this hold) measures a window with no
+	// gap in it and the idle seconds do not apply.
+	idle := time.Duration(file.Claimed.IdleSeconds) * time.Second
+	if claimedAt, parseErr := time.Parse(time.RFC3339, file.Claimed.At); parseErr == nil && !budgetStartedAt.Before(claimedAt) {
+		idle = 0
+	}
+	elapsed := now.Sub(budgetStartedAt) - idle
+	if elapsed < 0 {
+		elapsed = 0
+	}
 	projection := BudgetProjection{
 		Status: BudgetKnown, GoalID: file.Id, GoalRevision: revision,
-		Limits: *file.Budget, StartedAt: budgetStartedAt, WeightEpoch: weightEpoch, Elapsed: now.Sub(budgetStartedAt),
+		Limits: *file.Budget, StartedAt: budgetStartedAt, WeightEpoch: weightEpoch, Elapsed: elapsed,
 		ElapsedGracePercent: gracePercent, ElapsedBreachLimit: breachLimit,
 	}
 	jobsDir := filepath.Join(repoRoot, "artifacts", "agents", "jobs")

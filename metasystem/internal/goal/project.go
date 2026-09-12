@@ -192,6 +192,7 @@ func captureRemoteTipWithinDeadline(e Endpoint, nonce string) (string, error) {
 // is live.
 type ClaimableBudgetedWork struct {
 	Claimed         []string
+	Landing         []string
 	Claimable       []string
 	Refused         []AdmissionRefusal
 	InFlight        []string
@@ -199,7 +200,12 @@ type ClaimableBudgetedWork struct {
 	Queued          int
 	GoalFree        bool
 	fencedClaims    []*GoalFile
+	landingClaims   []*GoalFile
 }
+
+// LandingClaims returns this machine's claims waiting to land (goal
+// land-ready): live work for the landing, never the seat's working claim.
+func (w ClaimableBudgetedWork) LandingClaims() []*GoalFile { return w.landingClaims }
 
 func (w ClaimableBudgetedWork) HasInFlight() bool { return len(w.InFlight) > 0 }
 
@@ -316,6 +322,7 @@ func readClaimableBudgetedWork(root string, now time.Time, prober identity.Probe
 	}
 	work := ClaimableBudgetedWork{
 		Claimed:  append([]string(nil), frontier.Claimed...),
+		Landing:  append([]string(nil), frontier.Landing...),
 		Refused:  append([]AdmissionRefusal(nil), frontier.Refused...),
 		GoalFree: projection.Tree.Root != nil && projection.Tree.Root.Free != nil,
 	}
@@ -324,8 +331,15 @@ func readClaimableBudgetedWork(root string, now time.Time, prober identity.Probe
 			work.fencedClaims = append(work.fencedClaims, file)
 		}
 	}
-	claimLineages := make(map[string]string, len(frontier.Claimed))
-	for _, id := range frontier.Claimed {
+	for _, id := range frontier.Landing {
+		if file := projection.Tree.Live[id]; file != nil {
+			work.landingClaims = append(work.landingClaims, file)
+		}
+	}
+	// A landing claim is joined to liveness like a working claim: a process
+	// landing it is live backlog activity.
+	claimLineages := make(map[string]string, len(frontier.Claimed)+len(frontier.Landing))
+	for _, id := range append(append([]string(nil), frontier.Claimed...), frontier.Landing...) {
 		if file := projection.Tree.Live[id]; file != nil && file.Claimed != nil {
 			claimLineages[id] = file.Claimed.Lineage
 		}
@@ -510,6 +524,7 @@ type AdmissionRefusal struct {
 type NextVerdict struct {
 	Claimed  []string           // this machine's claimed goals in backlog order
 	Fenced   []string           // this machine's breach-stopped claims in backlog order
+	Landing  []string           // this machine's claims waiting to land (goal land-ready) in backlog order
 	Ready    []string           // approved and unexpired with every blocker done
 	Blocked  []string           // approved and unexpired behind an open blocker
 	Awaiting []string           // queued or carrying an expired relayed approval
@@ -558,9 +573,14 @@ func Next(p Projection, machine string, requiredLabels ...string) (NextVerdict, 
 			if f.Claimed != nil && f.Claimed.Machine == machine {
 				// A breach-stopped goal is waiting on a human and must not
 				// keep the machine from taking the next item.
-				if f.IsFencedClaim() {
+				switch {
+				case f.IsFencedClaim():
 					v.Fenced = append(v.Fenced, id)
-				} else {
+				case f.IsLandingClaim():
+					// Built work waiting to land keeps its claim for the
+					// landing and never blocks the next claim.
+					v.Landing = append(v.Landing, id)
+				default:
 					v.Claimed = append(v.Claimed, id)
 				}
 			}

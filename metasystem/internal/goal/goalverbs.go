@@ -825,13 +825,8 @@ func (s *Store) ServingProjection() (id, intent string, ok bool) {
 		if err != nil || proj.Tree == nil {
 			return "", "", false
 		}
-		for _, goalID := range OrderedOpenGoalIDs(proj.Tree.Live) {
-			f := proj.Tree.Live[goalID]
-			// A breach-stopped goal is waiting on a human and must not keep the
-			// machine from taking the next item.
-			if f.State == StateClaimed && f.Claimed != nil && f.Claimed.Machine == machine && !f.IsFencedClaim() {
-				return goalID, f.Intent, true
-			}
+		if f := currentClaimOf(proj.Tree, machine); f != nil {
+			return f.Id, f.Intent, true
 		}
 		return "", "", false
 	}
@@ -848,4 +843,26 @@ func (s *Store) CurrentProjection() (id, intent string, ok bool) {
 		return "", "", false
 	}
 	return ledger.Current.Id, ledger.Current.Intent, true
+}
+
+// currentClaimOf is the machine's current goal: its working claim, or, when
+// the machine holds nothing else, the claim waiting to land. A
+// breach-stopped goal is waiting on a human and must not keep the machine
+// from taking the next item, so it is never current.
+func currentClaimOf(t *TreeGoals, machine string) *GoalFile {
+	var landing *GoalFile
+	for _, goalID := range OrderedOpenGoalIDs(t.Live) {
+		f := t.Live[goalID]
+		if f.State != StateClaimed || f.Claimed == nil || f.Claimed.Machine != machine || f.IsFencedClaim() {
+			continue
+		}
+		if f.IsLandingClaim() {
+			if landing == nil {
+				landing = f
+			}
+			continue
+		}
+		return f
+	}
+	return landing
 }

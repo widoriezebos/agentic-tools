@@ -260,3 +260,32 @@ func TestConvertedJobsCountOnlyWithLiveProcessesAndPendingSetupAgrees(t *testing
 		t.Fatalf("pending-setup must use its live creator in the shared predicate: %v %q %v", w, reason, err)
 	}
 }
+
+func TestConvertedLandingClaimIsOwnedWorkNeverIdleness(t *testing.T) {
+	landing := approvedStewardGoal("landing-here", "Built work waiting to land", "Land it.", "2026-08-23T00:00:00Z")
+	landing.State = goal.StateClaimed
+	landing.Revision++
+	claimRevision := landing.Revision
+	landing.Claimed = &goal.ClaimRecord{
+		Machine: "bed-m1", Lineage: "coordinator", At: "2026-08-23T01:00:00Z",
+		Revision: claimRevision, AccountingRevision: claimRevision,
+	}
+	landing.StopCapability = &goal.StopCapability{
+		Generation: claimRevision, Revision: claimRevision, Machine: "bed-m1", ClaimEpoch: 1,
+	}
+	landing.History = append(landing.History, goal.HistoryLine{
+		At: "2026-08-23T01:00:00Z", Opid: "01ARZ3NDEKTSV4RRFFQ69G5FAX-bed-m1-00000001",
+		Verb: "claim", Actor: "bed-m1+coordinator", Targets: []string{landing.Id}, Keep: -1,
+	})
+	landing.Revision++
+	landing.History = append(landing.History, goal.HistoryLine{
+		At: "2026-08-23T03:00:00Z", Opid: "01ARZ3NDEKTSV4RRFFQ69G5FAY-bed-m1-00000002",
+		Verb: "land-ready", Actor: "bed-m1+coordinator", Targets: []string{landing.Id}, Keep: -1,
+	})
+	landing.Landing = &goal.LandingRecord{At: "2026-08-23T03:00:00Z", Opid: "01ARZ3NDEKTSV4RRFFQ69G5FAY-bed-m1-00000002"}
+	root := convertedBed(t, "bed-m1", map[string]*goal.GoalFile{landing.Id: landing})
+	w, reason, err := ReadOpenWork(root)
+	if err != nil || w != WorkOwned || !strings.Contains(reason, "waiting to land") || !strings.Contains(reason, "landing-here") {
+		t.Fatalf("a landing claim without a live process is owned work: work=%v reason=%q err=%v", w, reason, err)
+	}
+}

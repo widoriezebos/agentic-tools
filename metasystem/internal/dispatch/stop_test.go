@@ -326,3 +326,74 @@ func TestBreachStopRecoveryReprojectsBudgetAndIgnoresJournalAuthorityStrings(t *
 		}
 	})
 }
+
+// landingBed marks the revision bed's claim as waiting to land.
+func landingBed(t *testing.T) string {
+	t.Helper()
+	root := revisionBindingBed(t, 2)
+	path := filepath.Join(root, "plans", "goals", "bounded.md")
+	content, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	file, problems := goal.ParseFile(content)
+	if len(problems) != 0 {
+		t.Fatalf("parse accepted goal: %v", problems)
+	}
+	file.Landing = &goal.LandingRecord{At: "2026-08-28T12:00:00Z", Opid: "01ARZ3NDEKTSV4RRFFQ69G5FAZ-bed-m1-00000004"}
+	if err := os.WriteFile(path, goal.RenderFile(file), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	for _, args := range [][]string{{"add", "plans/goals/bounded.md"}, {"commit", "-q", "-m", "landing bed"}, {"update-ref", goal.LocalLedgerBranch, "HEAD"}, {"update-ref", goal.AcceptedRef, "HEAD"}} {
+		command := exec.Command("git", append([]string{"-C", root}, args...)...)
+		if output, runErr := command.CombinedOutput(); runErr != nil {
+			t.Fatalf("git %v: %v: %s", args, runErr, output)
+		}
+	}
+	return root
+}
+
+func TestLandingClaimSuspendsOnlyItsElapsedFence(t *testing.T) {
+	root := landingBed(t)
+	// The claim began at 09:00 with a one-day box: at 09:00 the next day the
+	// elapsed dimension is at its limit, and the grace band is behind it.
+	atLimit := time.Date(2026, 8, 29, 9, 0, 0, 0, time.UTC)
+	pastGrace := time.Date(2026, 8, 29, 22, 0, 0, 0, time.UTC)
+	// The seat walk skips the landing claim: nothing about its box closes
+	// the machine's working dispatch.
+	seat, err := EvaluateGoalAdmission(root, "coordinator", pastGrace)
+	if err != nil || seat.Refused() {
+		t.Fatalf("a landing claim's elapsed box closed the seat's admission: %+v %v", seat, err)
+	}
+	// Its own receipts keep admitting past the elapsed box.
+	for _, now := range []time.Time{atLimit, pastGrace} {
+		admission, err := EvaluateGoalRevisionAdmission(root, "bounded", 2, 5, now)
+		if err != nil || admission.Refused() || admission.LiveStopReason != "" {
+			t.Fatalf("a landing claim was refused or stopped for elapsed time at %s: %+v %v", now.Format(time.RFC3339), admission, err)
+		}
+	}
+	// No breach stop routes for it.
+	routes, err := FindBreachStops(root, pastGrace)
+	if err != nil || len(routes) != 0 {
+		t.Fatalf("a landing claim was routed to a breach stop for elapsed time: %+v %v", routes, err)
+	}
+	// The other three dimensions still bind: two admitted attempts fill the
+	// attempt limit of two, and the next reservation is refused.
+	for _, name := range []string{"first", "second"} {
+		writeBudgetJob(t, root, name, "reserve-"+name, 2, 10, "completed", budgetJobLife{
+			createdAt: "2026-08-28T10:00:00Z", startedAt: "2026-08-28T10:00:00Z", endedAt: "2026-08-28T10:10:00Z",
+		})
+	}
+	refused, err := EvaluateGoalRevisionAdmission(root, "bounded", 2, 5, pastGrace)
+	if err != nil || !refused.Refused() || refused.Refusal == nil || refused.Refusal.Unknown != nil {
+		t.Fatalf("an attempt breach on a landing claim still admitted: %+v %v", refused, err)
+	}
+	for _, breach := range refused.Refusal.Breaches {
+		if breach.Field == "elapsedLimit" {
+			t.Fatalf("the elapsed dimension was counted against a landing claim: %+v", refused.Refusal)
+		}
+	}
+	if len(refused.Refusal.Breaches) == 0 || refused.Refusal.Breaches[0].Field != "attemptLimit" {
+		t.Fatalf("the attempt breach was not the refusal: %+v", refused.Refusal)
+	}
+}

@@ -295,6 +295,7 @@ func splitRequest(r VerbRequest, parentID string, members []MemberDraft, ratific
 			parent.Conclude = "decomposed into arc " + parentID + ": " + goalPointers(memberIDs)
 			parent.Blocked = nil
 			parent.Parked = nil
+			parent.Episode = nil
 			if err := clearClaimBinding(parent); err != nil {
 				return nil, err
 			}

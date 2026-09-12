@@ -20,12 +20,12 @@ if (( ! fixture_bed_child )); then
   run_fixture_bed_scenarios goal-cli "goal CLI fixtures: PASSED" \
 	"$fixture_bed_script" migration-recovery human-lineage risk-basis labels-and-filtering structured-budget scope-bounds archive-and-prune classification-sweep \
 	brain-claim-refuses brain-human-word-refuses brain-classification-fails brain-stop-seeded brain-stop-corrupt brain-status-line wrong-terminal \
-	carry-word carried-record carried-discharge seat-blocker power-of-attorney
+	carry-word carried-record carried-discharge seat-blocker power-of-attorney landing-slot
 fi
 case "$fixture_scenario" in
 	migration-recovery | human-lineage | risk-basis | labels-and-filtering | structured-budget | scope-bounds | archive-and-prune | classification-sweep | \
 	brain-claim-refuses | brain-human-word-refuses | brain-classification-fails | brain-stop-seeded | brain-stop-corrupt | brain-status-line | wrong-terminal | \
-	carry-word | carried-record | carried-discharge | seat-blocker | power-of-attorney) ;;
+	carry-word | carried-record | carried-discharge | seat-blocker | power-of-attorney | landing-slot) ;;
   *) echo "goal CLI fixtures: unknown scenario: $fixture_scenario" >&2; exit 64 ;;
 esac
 
@@ -1331,6 +1331,97 @@ fi
 claim_back=$("$ms" goal claim --root "$clone" --id ship-widget)
 grep -q '"outcome":"confirmed"' <<<"$claim_back" \
   || { echo "the returned goal is not claimable again: $claim_back" >&2; exit 1; }
+fi
+
+if [[ "$fixture_scenario" == landing-slot ]]; then
+# 18. Built work lands beside the seat's claim (goal 20): land-ready keeps
+# the claim but frees the machine's one claim; a second slot is refused;
+# goal next continues the working claim and names the landing goal; a
+# person concludes the landing goal; and the same pair's release and
+# re-claim keep the accounting episode with the gap as idle seconds. The
+# stamps are computed from the real clock (the migrated claim carries it)
+# so every publish is later than the one before.
+fixture_stamp() { # seconds since the epoch -> RFC3339 UTC
+  date -u -r "$1" +%Y-%m-%dT%H:%M:%SZ 2>/dev/null || date -u -d "@$1" +%Y-%m-%dT%H:%M:%SZ
+}
+landing_base=$(( $(date -u +%s) + 60 ))
+land_at=$(fixture_stamp "$landing_base")
+open_at=$(fixture_stamp $((landing_base + 300)))
+release_at=$(fixture_stamp $((landing_base + 3600)))
+reclaim_at=$(fixture_stamp $((landing_base + 3600 + 7200)))
+export METASYSTEM_GOAL_NOW=$land_at
+"$ms" goal land-ready --root "$clone" --id ship-widget >/dev/null
+landing_tip=$(git -C "$origin" rev-parse main)
+git -C "$clone" cat-file -p "$landing_tip:plans/goals/ship-widget.md" >"$tmp/ship-widget-landing.md"
+grep -q "^- Landing: at=$land_at opid=" "$tmp/ship-widget-landing.md" \
+  || { echo "land-ready did not write the Landing record" >&2; cat "$tmp/ship-widget-landing.md" >&2; exit 1; }
+grep -q '^- Claimed: machine=fixture-machine lineage=fixture-lineage' "$tmp/ship-widget-landing.md" \
+  || { echo "land-ready dropped the claim" >&2; cat "$tmp/ship-widget-landing.md" >&2; exit 1; }
+grep -q ' land-ready actor=fixture-machine+fixture-lineage targets=ship-widget' "$tmp/ship-widget-landing.md" \
+  || { echo "land-ready wrote no history line" >&2; cat "$tmp/ship-widget-landing.md" >&2; exit 1; }
+set +e
+repeat=$("$ms" goal land-ready --root "$clone" --id ship-widget 2>&1)
+repeat_rc=$?
+set -e
+[[ "$repeat" == *"already in landing"* ]] \
+  || { echo "a repeated land-ready was not nothing to do: rc=$repeat_rc output=$repeat" >&2; exit 1; }
+# The seat's one claim is free: the next goal claims beside the landing goal.
+export METASYSTEM_GOAL_NOW=$open_at
+"$ms" goal open --root "$clone" --id next-widget --origin human \
+  --intent "The next goal the seat takes while ship-widget waits to land." --next "Build it." \
+  --risk severity=1,novelty=1,exposure=1,accumulation=1 --basis "landing slot fixture" >/dev/null
+approve_fixture_goal next-widget --budget box
+next_claim=$("$ms" goal claim --root "$clone" --id next-widget)
+grep -q '"outcome":"confirmed"' <<<"$next_claim" \
+  || { echo "the seat could not claim beside its landing goal: $next_claim" >&2; exit 1; }
+set +e
+second_slot=$("$ms" goal land-ready --root "$clone" --id next-widget 2>&1)
+second_rc=$?
+set -e
+[[ $second_rc -ne 0 && "$second_slot" == *"one landing slot per machine"* ]] \
+  || { echo "a second landing slot was not refused: rc=$second_rc output=$second_slot" >&2; exit 1; }
+next_out=$("$ms" goal next --root "$clone" --machine fixture-machine)
+grep -q "^LANDING ship-widget: land-ready since $land_at; the queue is open\$" <<<"$next_out" \
+  || { echo "goal next does not name the landing goal: $next_out" >&2; exit 1; }
+grep -q '^continue your claimed goal: next-widget$' <<<"$next_out" \
+  || { echo "goal next does not continue the working claim: $next_out" >&2; exit 1; }
+"$ms" goal list --root "$clone" --pretty >"$tmp/landing-list.txt" 2>&1 || true
+grep -q "landing since $land_at" "$tmp/landing-list.txt" \
+  || { echo "goal list does not show the landing slot" >&2; cat "$tmp/landing-list.txt" >&2; exit 1; }
+# The person concludes the landing goal; the archive keeps the land-ready
+# line and drops the slot with the claim.
+"$ms" goal done --root "$clone" --id ship-widget --by Wido \
+  --conclude "Landed by the person while next-widget was claimed." >/dev/null
+done_tip=$(git -C "$origin" rev-parse main)
+git -C "$clone" cat-file -p "$done_tip:records/goals/ship-widget.md" >"$tmp/ship-widget-done.md"
+grep -q ' land-ready actor=' "$tmp/ship-widget-done.md" \
+  || { echo "the land-ready line did not survive into the archive" >&2; cat "$tmp/ship-widget-done.md" >&2; exit 1; }
+if grep -q '^- Landing:' "$tmp/ship-widget-done.md"; then
+  echo "done kept the landing slot" >&2; cat "$tmp/ship-widget-done.md" >&2; exit 1
+fi
+# The same pair releases and re-claims: the accounting revision and episode
+# hold and the two-hour gap is idle time.
+git -C "$clone" cat-file -p "$done_tip:plans/goals/next-widget.md" >"$tmp/next-widget-claimed.md"
+accounting_before=$(sed -n 's/^- Claimed: .* accountingRevision=\([0-9]*\) .*/\1/p' "$tmp/next-widget-claimed.md")
+[[ -n "$accounting_before" ]] || { echo "the claim carries no accounting revision" >&2; cat "$tmp/next-widget-claimed.md" >&2; exit 1; }
+export METASYSTEM_GOAL_NOW=$release_at
+"$ms" goal release --root "$clone" --id next-widget >/dev/null
+release_tip=$(git -C "$origin" rev-parse main)
+git -C "$clone" cat-file -p "$release_tip:plans/goals/next-widget.md" >"$tmp/next-widget-released.md"
+grep -q "^- Episode: machine=fixture-machine lineage=fixture-lineage accountingRevision=$accounting_before .* idleSeconds=0 released=$release_at\$" "$tmp/next-widget-released.md" \
+  || { echo "the own pair's release did not keep the episode" >&2; cat "$tmp/next-widget-released.md" >&2; exit 1; }
+export METASYSTEM_GOAL_NOW=$reclaim_at
+reclaim=$("$ms" goal claim --root "$clone" --id next-widget)
+grep -q '"outcome":"confirmed"' <<<"$reclaim" \
+  || { echo "the same pair could not re-claim: $reclaim" >&2; exit 1; }
+reclaim_tip=$(git -C "$origin" rev-parse main)
+git -C "$clone" cat-file -p "$reclaim_tip:plans/goals/next-widget.md" >"$tmp/next-widget-reclaimed.md"
+grep -q "^- Claimed: machine=fixture-machine lineage=fixture-lineage at=$reclaim_at revision=[0-9]* accountingRevision=$accounting_before episodeAt=.* idleSeconds=7200\$" "$tmp/next-widget-reclaimed.md" \
+  || { echo "the re-claim did not keep the episode with the gap idle" >&2; cat "$tmp/next-widget-reclaimed.md" >&2; exit 1; }
+if grep -q '^- Episode:' "$tmp/next-widget-reclaimed.md"; then
+  echo "the re-claim did not consume the kept episode" >&2; cat "$tmp/next-widget-reclaimed.md" >&2; exit 1
+fi
+unset METASYSTEM_GOAL_NOW
 fi
 
 if [[ "$fixture_scenario" == power-of-attorney ]]; then

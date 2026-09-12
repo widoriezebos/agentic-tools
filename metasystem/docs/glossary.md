@@ -300,8 +300,9 @@ the engine's `metasystem goal` family (`internal/goal`).
   converted checkout every goal verb publishes directly to the shared
   remote, so all machines read the same truth; a checkout catches up
   with an ordinary pull.
-- **Claim** — one machine's exclusive hold on one goal (one claim per
-  machine at a time). An **arc** groups related goals; every member remains
+- **Claim** — one machine's exclusive hold on one goal (one working claim
+  per machine at a time; a breach-stopped claim and one claim waiting to
+  land after `goal land-ready` sit beside it). An **arc** groups related goals; every member remains
   independently claimable, and dependency edges — not arc membership — own
   ordering. Cascade verbs are explicit conveniences, never an invariant.
 - **Budget** — the complete four-field limit tuple supplied by a human

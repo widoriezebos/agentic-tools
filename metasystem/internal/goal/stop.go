@@ -455,7 +455,7 @@ func resumeRequest(r ResumeRequest) PublishRequest {
 				// A breach-stopped goal is waiting on a human and must not keep the
 				// machine from taking the next item.
 				if otherID == r.GoalID || other.State != StateClaimed || other.Claimed == nil ||
-					other.Claimed.Machine != machine || other.IsFencedClaim() {
+					other.Claimed.Machine != machine || other.IsFencedClaim() || other.IsLandingClaim() {
 					continue
 				}
 				if f.Arc != "" && other.Arc == f.Arc {
@@ -471,9 +471,13 @@ func resumeRequest(r ResumeRequest) PublishRequest {
 			if temporaryAuthority {
 				f.History[len(f.History)-1].recordTemporaryRelay(r.Authority.ReviewBy, r.Authority.Departure, r.Authority.TemporaryHumanWord)
 			}
+			// The resume keeps the owner, so built work waiting to land
+			// still waits to land after the fence lifts.
+			landing := f.Landing
 			if err := bindClaim(f, machine, lineage, r.stamp(), f.Revision, claimEpoch); err != nil {
 				return nil, err
 			}
+			f.Landing = landing
 			return []Change{{Path: livePath(r.GoalID), Content: RenderFile(f)}}, nil
 		},
 		Validate: func(commit string) error { return ValidateCommit(r.Endpoint.Root, commit) },

@@ -595,6 +595,9 @@ func Approve(r VerbRequest, ids []string, budget *Budget, proof *humanauthority.
 				}
 				f.Budget = nextBudget
 				f.NormApproval = norm
+				// A person's budget act starts the box afresh: a kept
+				// episode from an earlier claim does not carry into it.
+				f.Episode = nil
 				if f.State == StateQueued {
 					f.State = StateApproved
 				}
@@ -672,7 +675,7 @@ func Unapprove(r VerbRequest, id, because string, proof *humanauthority.Proof) (
 			default:
 				return nil, fmt.Errorf("goal %s is %s; its approval cannot be withdrawn in this state", id, f.State)
 			}
-			f.Approved, f.Budget, f.NormApproval = nil, nil, nil
+			f.Approved, f.Budget, f.NormApproval, f.Episode = nil, nil, nil, nil
 			touchDisplaced(f, r, "unapprove", []string{id}, displaced)
 			f.History[len(f.History)-1].Reason = because
 			recordApprovalRelay(f, proof, temporary)

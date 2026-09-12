@@ -107,6 +107,9 @@ func MapDeltas(repoRoot, baseCommit string, snap *Snapshot) ([]MappedVerb, error
 			if edited.Approved != nil || edited.NormApproval != nil || edited.Sliced != nil || edited.Ratified != nil {
 				return nil, fmt.Errorf("%s: a hand-created goal carries generated scope-boundary evidence; admission and split are the only writers", d.Path)
 			}
+			if edited.Landing != nil || edited.Episode != nil {
+				return nil, fmt.Errorf("%s: a hand-created goal carries no Landing or Episode record; land-ready, release and park write them", d.Path)
+			}
 			mapped = append(mapped, MappedVerb{Verb: "open", Id: id, Origin: edited.Origin, Fields: EditFields{
 				Intent: &edited.Intent, NextStep: &edited.NextStep,
 				Blocked: &edited.Blocked, Labels: &edited.Labels,
@@ -246,6 +249,23 @@ func mapOneChange(p string, base, edited *GoalFile) ([]MappedVerb, error) {
 	if !claimClearedByPark && ((edited.Claimed == nil) != (base.Claimed == nil) ||
 		(edited.Claimed != nil && *edited.Claimed != *base.Claimed)) {
 		return nil, fmt.Errorf("%s: Claimed is a generated field; claim and release are verbs", p)
+	}
+	// The landing slot lives with the claim: a hand park of a claimed goal
+	// may drop it with the Claimed line (the park's own effect); every
+	// other change refuses.
+	landingChanged := (edited.Landing == nil) != (base.Landing == nil) ||
+		(edited.Landing != nil && *edited.Landing != *base.Landing)
+	claimEndedByDone := base.State == StateClaimed && edited.State == StateDone
+	if landingChanged && !((claimClearedByPark || claimEndedByDone) && edited.Landing == nil) {
+		return nil, fmt.Errorf("%s: Landing is a generated field; land-ready writes it and the claim's end clears it", p)
+	}
+	// A kept episode leaves only where the mapped verb drops it: a hand
+	// park (a person's park starts the box afresh); a hand done drops it at
+	// replay from an unchanged copy.
+	episodeChanged := (edited.Episode == nil) != (base.Episode == nil) ||
+		(edited.Episode != nil && *edited.Episode != *base.Episode)
+	if episodeChanged && !(base.State != StateParked && edited.State == StateParked && edited.Episode == nil) {
+		return nil, fmt.Errorf("%s: Episode is a generated field; release and park write it and the same pair's claim consumes it", p)
 	}
 	stopRetainedByPark := claimClearedByPark && edited.StopCapability != nil && base.StopCapability != nil &&
 		*edited.StopCapability == *base.StopCapability &&

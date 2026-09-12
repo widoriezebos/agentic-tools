@@ -768,6 +768,48 @@ func FencedClaimLines(files []*GoalFile) []string {
 	return lines
 }
 
+// LandingClaimLines renders claims waiting to land (goal land-ready) as live
+// work for the landing, never as idleness and never as a claim the machine
+// must continue before the next item. Past its elapsed box the wait is
+// printed as overdue; the box's elapsed fence does not close on it.
+func LandingClaimLines(files []*GoalFile, now time.Time) []string {
+	lines := make([]string, 0, len(files))
+	for _, file := range files {
+		if !file.IsLandingClaim() {
+			continue
+		}
+		if LandingOverdue(file, now) {
+			lines = append(lines, fmt.Sprintf(
+				"LANDING OVERDUE %s: land-ready since %s and past its elapsed box; land it; the queue is open",
+				file.Id, file.Landing.At,
+			))
+			continue
+		}
+		lines = append(lines, fmt.Sprintf("LANDING %s: land-ready since %s; the queue is open", file.Id, file.Landing.At))
+	}
+	return lines
+}
+
+// LandingOverdue reports a landing claim whose episode clock, less its idle
+// seconds, has passed the budget's elapsed limit. It reads the claim's own
+// episode start; a consumed discharge that advanced dispatch's start only
+// makes this earlier, never later, so it is a floor on the wait.
+func LandingOverdue(file *GoalFile, now time.Time) bool {
+	if !file.IsLandingClaim() || file.Budget == nil {
+		return false
+	}
+	startText := file.Claimed.EpisodeAt
+	if file.Claimed.EpisodeRevision == 0 {
+		startText = file.Claimed.At
+	}
+	start, err := time.Parse(time.RFC3339, startText)
+	if err != nil {
+		return false
+	}
+	elapsed := now.Sub(start) - time.Duration(file.Claimed.IdleSeconds)*time.Second
+	return elapsed >= file.Budget.ElapsedDuration()
+}
+
 // OnlyFencedClaim reports the one held claim that cannot be live work until
 // the human resumes it.
 func (w ClaimableBudgetedWork) OnlyFencedClaim() (*GoalFile, bool) {
@@ -882,6 +924,7 @@ func (s *Store) decide(verdict *Verdict, scan ScanResult, session *sessionState,
 			}
 			if work != nil {
 				display = append(display, FencedClaimLines(work.fencedClaims)...)
+				display = append(display, LandingClaimLines(work.landingClaims, s.now())...)
 			}
 		case "queued-only":
 			first, _ := s.queuedFrontier()
@@ -889,12 +932,14 @@ func (s *Store) decide(verdict *Verdict, scan ScanResult, session *sessionState,
 				display = append(display, "no goal is claimed here and the queue is empty; a person opens the next goal (`goal open --origin human`); a seat opens only the blocker of its claimed goal (`--blocks`, R-93-m1e)")
 				if work != nil {
 					display = append(display, FencedClaimLines(work.fencedClaims)...)
+					display = append(display, LandingClaimLines(work.landingClaims, s.now())...)
 				}
 				break
 			}
 			display = append(display, "no current goal; the queue holds "+first)
 			if work != nil {
 				display = append(display, FencedClaimLines(work.fencedClaims)...)
+				display = append(display, LandingClaimLines(work.landingClaims, s.now())...)
 			}
 		case "goal-free":
 			fresh, digest, declared := s.freeState()
@@ -953,17 +998,13 @@ func (s *Store) convertedGoalFacts() (*GoalFacts, string, string) {
 	if proj.Tree == nil {
 		return nil, "degraded", "the accepted tree is unreadable"
 	}
-	for id, f := range proj.Tree.Live {
-		// A breach-stopped goal is waiting on a human and must not keep the
-		// machine from taking the next item.
-		if f.State == StateClaimed && f.Claimed != nil && f.Claimed.Machine == machine && !f.IsFencedClaim() {
-			return &GoalFacts{
-				Id:       id,
-				Intent:   f.Intent,
-				NextStep: f.NextStep,
-				Revision: fmt.Sprintf("%s@%d", id, f.Revision),
-			}, "ok", ""
-		}
+	if f := currentClaimOf(proj.Tree, machine); f != nil {
+		return &GoalFacts{
+			Id:       f.Id,
+			Intent:   f.Intent,
+			NextStep: f.NextStep,
+			Revision: fmt.Sprintf("%s@%d", f.Id, f.Revision),
+		}, "ok", ""
 	}
 	if proj.Tree.Root != nil && proj.Tree.Root.Free != nil {
 		return nil, "goal-free", ""

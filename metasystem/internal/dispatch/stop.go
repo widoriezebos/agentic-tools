@@ -148,7 +148,7 @@ func EnsureBreachStop(root, id string, revision uint64, now time.Time) (goal.Sto
 		if budget.Status != BudgetKnown {
 			return goal.StopBatch{}, fmt.Errorf("cannot prove a live-stop boundary: %s", budget.Unknown.Reason)
 		}
-		reason := liveStopReason(budget)
+		reason := stopReasonFor(binding.File, budget)
 		if reason == "" {
 			return goal.StopBatch{}, fmt.Errorf("goal %s revision %d has no live-stop breach", id, binding.Revision)
 		}
@@ -251,7 +251,7 @@ func (policy GoalRecoveryPolicy) BreachStop(endpoint goal.Endpoint, entry goal.E
 		release()
 		return goal.PublishRequest{}, nil, fmt.Errorf("cannot re-establish breach-stop authority: %s", projection.Unknown.Reason)
 	}
-	reason := liveStopReason(projection)
+	reason := stopReasonFor(binding.File, projection)
 	if reason == "" {
 		release()
 		return goal.PublishRequest{}, nil, fmt.Errorf("goal %s revision %d is not over its live budget", id, binding.Revision)
@@ -341,11 +341,14 @@ func FindBreachStops(root string, now time.Time) ([]StopRoute, error) {
 			})
 			continue
 		}
-		if liveStopReason(budget) == "" {
+		// A claim waiting to land is not stopped for elapsed time; its wait
+		// prints as overdue instead (goal land-ready).
+		reason := stopReasonFor(file, budget)
+		if reason == "" {
 			continue
 		}
 		route := StopRoute{
-			GoalID: id, Revision: file.Claimed.Revision, Reason: liveStopReason(budget), Condition: StopRouteBreach,
+			GoalID: id, Revision: file.Claimed.Revision, Reason: reason, Condition: StopRouteBreach,
 		}
 		if file.StopCapability == nil {
 			route.Condition = StopRouteIndeterminate

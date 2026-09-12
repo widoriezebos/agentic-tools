@@ -89,6 +89,11 @@ func ComposeStatusReport(c ReportConfig) (string, string, error) {
 				fenced = append(fenced, p.Tree.Live[id])
 			}
 			next = append(next, goal.FencedClaimLines(fenced)...)
+			landing := make([]*goal.GoalFile, 0, len(frontier.Landing))
+			for _, id := range frontier.Landing {
+				landing = append(landing, p.Tree.Live[id])
+			}
+			next = append(next, goal.LandingClaimLines(landing, c.Now)...)
 			claimed := 0
 			for _, id := range frontier.Claimed {
 				next = append(next, "Next up: "+featureName(id))

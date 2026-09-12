@@ -425,6 +425,9 @@ func listSynced(root string, pretty, fetchFirst bool, requiredLabels ...string) 
 			if f.Claimed != nil {
 				details = append(details, "claimed by "+f.Claimed.Machine+"+"+f.Claimed.Lineage)
 			}
+			if f.Landing != nil {
+				details = append(details, "landing since "+f.Landing.At)
+			}
 			if f.Parked != nil && f.Parked.Because != "" {
 				details = append(details, "parked: "+f.Parked.Because)
 			}
@@ -528,6 +531,13 @@ func nextSynced(root, machine string, fetchFirst bool, requiredLabels ...string)
 		fenced = append(fenced, p.Tree.Live[id])
 	}
 	for _, line := range goal.FencedClaimLines(fenced) {
+		fmt.Println(line)
+	}
+	landing := make([]*goal.GoalFile, 0, len(frontier.Landing))
+	for _, id := range frontier.Landing {
+		landing = append(landing, p.Tree.Live[id])
+	}
+	for _, line := range goal.LandingClaimLines(landing, now) {
 		fmt.Println(line)
 	}
 	selection := goal.SelectNext(frontier)

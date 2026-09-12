@@ -294,6 +294,7 @@ func applyRow(t *TreeGoals, r VerbRequest, row MappedVerb, session *replaySessio
 				f.Parked = &ParkRecord{By: r.Actor.historyActor(), At: r.stamp(), Because: row.Because}
 			}
 			f.State = StateParked
+			f.Episode = nil
 			if err := clearClaimBinding(f); err != nil {
 				return nil, err
 			}
@@ -347,6 +348,7 @@ func applyRow(t *TreeGoals, r VerbRequest, row MappedVerb, session *replaySessio
 			return nil, err
 		}
 		f.Parked = nil
+		f.Episode = nil
 		touchDisplaced(f, r, "done", []string{row.Id}, displaced)
 		delete(t.Live, row.Id)
 		t.Done[row.Id] = f

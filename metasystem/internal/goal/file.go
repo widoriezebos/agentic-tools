@@ -69,15 +69,30 @@ type GoalFile struct {
 	// admission for the revision.
 	StopCapability *StopCapability
 	StopFence      *StopFence
-	Parked         *ParkRecord
-	Legacy         []string // LegacyNotes: verbatim non-field prose from migration
-	History        []HistoryLine
+	// Landing marks a claimed goal whose work is built and waits to land;
+	// it lives with the claim binding and leaves with it.
+	Landing *LandingRecord
+	// Episode keeps the accounting episode of a claim the own pair released
+	// or parked, so the pair's next claim continues the same box. It lives
+	// only on an unclaimed live goal.
+	Episode *EpisodeRecord
+	Parked  *ParkRecord
+	Legacy  []string // LegacyNotes: verbatim non-field prose from migration
+	History []HistoryLine
 }
 
 // IsFencedClaim reports a breach-stopped claim that is waiting on a human
 // and must not keep the machine from taking the next item.
 func (f *GoalFile) IsFencedClaim() bool {
 	return f != nil && f.State == StateClaimed && f.Claimed != nil && f.StopFence != nil
+}
+
+// IsLandingClaim reports a claim whose work waits to land (goal land-ready):
+// it keeps its claim for receipts and the landing, but it is not the
+// machine's one working claim, and it is not fenced. A fenced landing claim
+// is fenced first.
+func (f *GoalFile) IsLandingClaim() bool {
+	return f != nil && f.State == StateClaimed && f.Claimed != nil && f.Landing != nil && f.StopFence == nil
 }
 
 type RiskRecord struct {
@@ -261,6 +276,32 @@ type ClaimRecord struct {
 	// EpisodeObligationRevision keeps the identity of a consumed discharge
 	// after a budget change clears the live obligation.
 	EpisodeObligationRevision uint64
+	// IdleSeconds is the time nobody held the goal during this episode (an
+	// own-pair release or park, then the same pair's claim); the elapsed
+	// clock excludes it.
+	IdleSeconds uint64
+}
+
+// LandingRecord is written by goal land-ready on a claimed goal whose work
+// is built and verified. The claim stays; the one-claim quota and the
+// elapsed fence stop counting it.
+type LandingRecord struct {
+	At   string
+	Opid string
+}
+
+// EpisodeRecord is the accounting episode an own-pair release or park left
+// behind on an unclaimed goal: the same pair's next claim restores it and
+// adds the unheld gap to IdleSeconds; any other bind drops it.
+type EpisodeRecord struct {
+	Machine                   string
+	Lineage                   string
+	AccountingRevision        uint64
+	EpisodeAt                 string
+	EpisodeRevision           uint64
+	EpisodeObligationRevision uint64
+	IdleSeconds               uint64
+	Released                  string
 }
 
 // StopCapability binds breach-stop authority to one exact local claim. The
@@ -580,6 +621,36 @@ func ParseFile(data []byte) (*GoalFile, []Problem) {
 		}
 		if fence.Reason != StopReasonElapsedLimit && fence.Reason != StopReasonCorruptOverLimit {
 			addProblem("StopFence reason %q is not a live-stop reason", fence.Reason)
+		}
+	}
+	if f.Landing != nil {
+		if f.Claimed == nil {
+			addProblem("Landing record on a goal that is not claimed; the slot lives with the claim")
+		}
+		if !validStamp(f.Landing.At) {
+			addProblem("Landing at=%q is not an RFC3339 timestamp", f.Landing.At)
+		}
+		if !validOpidShape(f.Landing.Opid) {
+			addProblem("Landing opid=%q is malformed", f.Landing.Opid)
+		}
+	}
+	if f.Episode != nil {
+		if f.State == StateClaimed || f.Claimed != nil {
+			addProblem("Episode record on a claimed goal; a claimed goal carries its episode inside the claim record")
+		}
+		if f.State == StateDone {
+			addProblem("Episode record on a done goal")
+		}
+		if !validStamp(f.Episode.EpisodeAt) || !validStamp(f.Episode.Released) {
+			addProblem("Episode timestamps must be RFC3339")
+		} else if f.Episode.Released < f.Episode.EpisodeAt {
+			addProblem("Episode released=%s precedes episodeAt=%s", f.Episode.Released, f.Episode.EpisodeAt)
+		}
+		if f.Episode.Machine == "" || f.Episode.Lineage == "" {
+			addProblem("Episode names no owning pair")
+		}
+		if f.Episode.EpisodeRevision > f.Revision || f.Episode.AccountingRevision > f.Revision {
+			addProblem("Episode names a revision the goal does not have")
 		}
 	}
 	if f.State == StateParked && f.Parked == nil {
@@ -990,7 +1061,7 @@ func parseFileField(f *GoalFile, field string, seen map[string]bool, addProblem 
 		// appetite= has no budget authority. Discarding it keeps the claim
 		// readable so admission can name the record whose structured tuple is
 		// missing; the value never enters GoalFile.
-		rec, err := parseKVRecord(value, []string{"machine", "lineage", "at"}, []string{"revision", "accountingRevision", "episodeAt", "episodeRevision", "episodeObligationRevision", "appetite"}, "")
+		rec, err := parseKVRecord(value, []string{"machine", "lineage", "at"}, []string{"revision", "accountingRevision", "episodeAt", "episodeRevision", "episodeObligationRevision", "idleSeconds", "appetite"}, "")
 		if err != nil {
 			addProblem("Claimed: %v", err)
 			return
@@ -1040,9 +1111,56 @@ func parseFileField(f *GoalFile, field string, seen map[string]bool, addProblem 
 				return
 			}
 		}
+		var idleSeconds uint64
+		if rec["idleSeconds"] != "" {
+			idleSeconds, err = parseUnsignedDecimal(rec["idleSeconds"], 64)
+			if err != nil {
+				addProblem("Claimed idleSeconds=%q is not a non-negative integer", rec["idleSeconds"])
+				return
+			}
+			if episodeRevision == 0 {
+				addProblem("Claimed idleSeconds requires the episode binding (episodeAt and episodeRevision)")
+				return
+			}
+		}
 		f.Claimed = &ClaimRecord{Machine: rec["machine"], Lineage: rec["lineage"], At: rec["at"], Revision: revision,
 			AccountingRevision: accountingRevision, EpisodeAt: episodeAt, EpisodeRevision: episodeRevision,
-			EpisodeObligationRevision: episodeObligationRevision}
+			EpisodeObligationRevision: episodeObligationRevision, IdleSeconds: idleSeconds}
+	case "Landing":
+		rec, err := parseKVRecord(value, []string{"at", "opid"}, nil, "")
+		if err != nil {
+			addProblem("Landing: %v", err)
+			return
+		}
+		f.Landing = &LandingRecord{At: rec["at"], Opid: rec["opid"]}
+	case "Episode":
+		rec, err := parseKVRecord(value, []string{"machine", "lineage", "accountingRevision", "episodeAt", "episodeRevision", "idleSeconds", "released"}, []string{"episodeObligationRevision"}, "")
+		if err != nil {
+			addProblem("Episode: %v", err)
+			return
+		}
+		episode := &EpisodeRecord{Machine: rec["machine"], Lineage: rec["lineage"], EpisodeAt: rec["episodeAt"], Released: rec["released"]}
+		for _, field := range []struct {
+			name     string
+			into     *uint64
+			positive bool
+		}{
+			{"accountingRevision", &episode.AccountingRevision, true},
+			{"episodeRevision", &episode.EpisodeRevision, true},
+			{"episodeObligationRevision", &episode.EpisodeObligationRevision, true},
+			{"idleSeconds", &episode.IdleSeconds, false},
+		} {
+			if rec[field.name] == "" {
+				continue
+			}
+			parsed, err := parseUnsignedDecimal(rec[field.name], 64)
+			if err != nil || field.positive && parsed == 0 {
+				addProblem("Episode %s=%q is not a positive integer", field.name, rec[field.name])
+				return
+			}
+			*field.into = parsed
+		}
+		f.Episode = episode
 	case "StopCapability":
 		rec, err := parseKVRecord(value, []string{"generation", "revision", "machine", "claimEpoch", "fenceEpoch"}, nil, "")
 		if err != nil {
@@ -1354,8 +1472,22 @@ func RenderFile(f *GoalFile) []byte {
 			if f.Claimed.EpisodeObligationRevision > 0 {
 				fmt.Fprintf(&b, " episodeObligationRevision=%d", f.Claimed.EpisodeObligationRevision)
 			}
+			if f.Claimed.IdleSeconds > 0 {
+				fmt.Fprintf(&b, " idleSeconds=%d", f.Claimed.IdleSeconds)
+			}
 		}
 		b.WriteByte('\n')
+	}
+	if f.Landing != nil {
+		fmt.Fprintf(&b, "- Landing: at=%s opid=%s\n", f.Landing.At, f.Landing.Opid)
+	}
+	if f.Episode != nil {
+		fmt.Fprintf(&b, "- Episode: machine=%s lineage=%s accountingRevision=%d episodeAt=%s episodeRevision=%d",
+			f.Episode.Machine, f.Episode.Lineage, f.Episode.AccountingRevision, f.Episode.EpisodeAt, f.Episode.EpisodeRevision)
+		if f.Episode.EpisodeObligationRevision > 0 {
+			fmt.Fprintf(&b, " episodeObligationRevision=%d", f.Episode.EpisodeObligationRevision)
+		}
+		fmt.Fprintf(&b, " idleSeconds=%d released=%s\n", f.Episode.IdleSeconds, f.Episode.Released)
 	}
 	if f.StopCapability != nil {
 		fmt.Fprintf(&b, "- StopCapability: generation=%d revision=%d machine=%s claimEpoch=%d fenceEpoch=%d\n",

@@ -1699,3 +1699,27 @@ func syncAccepted(t *testing.T, root string) {
 		t.Fatalf("advance accepted ref: %v %s", err, out)
 	}
 }
+
+func TestReportShowsLandingClaimInNextUpBlock(t *testing.T) {
+	now := time.Now().UTC().Add(time.Minute)
+	landing := reportClaimedGoal("landing-report", "Land the built work.", "fleet-one", now)
+	landing.Revision++
+	landing.History = append(landing.History, goal.HistoryLine{
+		At: now.Format(time.RFC3339), Opid: goal.Opid("01J5X0000000000000000000R4", "fleet-one", "land"),
+		Verb: "land-ready", Actor: "fleet-one+test-lineage", Targets: []string{landing.Id}, Keep: -1,
+	})
+	landing.Landing = &goal.LandingRecord{At: now.Format(time.RFC3339), Opid: goal.Opid("01J5X0000000000000000000R4", "fleet-one", "land")}
+	root := reportLedger(t, landing)
+	reportGit(t, root, "commit", "-q", "--allow-empty", "-m", "Ship the built work\n\nGoal-Item: "+landing.Id)
+	reportGit(t, root, "update-ref", "refs/remotes/origin/main", "HEAD")
+
+	text := mustComposeReport(t, ReportConfig{
+		RepoRoot: root, Machine: "fleet-one", Now: now, WindowStart: now.Add(-4 * time.Hour), Location: time.UTC,
+	})
+	wantLanding := "LANDING landing-report: land-ready since " + now.Format(time.RFC3339) + "; the queue is open"
+	deliveredAt := strings.Index(text, "Delivered: landing report")
+	landingAt := strings.Index(text, wantLanding)
+	if deliveredAt < 0 || landingAt <= deliveredAt {
+		t.Fatalf("landing claim was not visible in the Next up block:\n%s", text)
+	}
+}

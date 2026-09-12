@@ -62,6 +62,11 @@ func classifySharedBacklog(work goal.ClaimableBudgetedWork) (OpenWork, string, e
 		// claimable branch first, so this stale record cannot suppress it.
 		return WorkOwned, fmt.Sprintf("claimed goals have no directly joined live process: %s", strings.Join(work.Claimed, ", ")), nil
 	}
+	if len(work.Landing) > 0 {
+		// Built work waiting to land is owned work for the revival ladder
+		// like any held claim, though never the seat's working claim.
+		return WorkOwned, fmt.Sprintf("claims waiting to land have no directly joined live process: %s", strings.Join(work.Landing, ", ")), nil
+	}
 	if fenced, ok := work.OnlyFencedClaim(); ok {
 		return WorkNone, fmt.Sprintf(
 			"the only claim held here is breach-stopped: %s (stop %s); it waits on a human resume, and the queue is open",

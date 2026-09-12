@@ -315,15 +315,33 @@ func ValidateTree(t *TreeGoals) []Problem {
 
 	// Quota: one claim per machine, tree-wide; the members of ONE arc under
 	// one claimant count once. A breach-stopped goal is waiting on a human
-	// and must not keep the machine from taking the next item.
+	// and must not keep the machine from taking the next item; a claim
+	// waiting to land (goal land-ready) keeps its claim for the landing and
+	// leaves the count too, one landing slot per machine.
 	claimsByMachine := map[string][]*GoalFile{}
+	landingByMachine := map[string][]string{}
 	for _, id := range sortedGoalIds(t.Live) {
 		f := t.Live[id]
+		if f.State == StateClaimed && f.Claimed != nil && f.Landing != nil {
+			// A fenced landing claim keeps its slot: the resume restores it.
+			landingByMachine[f.Claimed.Machine] = append(landingByMachine[f.Claimed.Machine], id)
+			continue
+		}
 		if f.IsFencedClaim() {
 			continue
 		}
 		if f.State == StateClaimed && f.Claimed != nil {
 			claimsByMachine[f.Claimed.Machine] = append(claimsByMachine[f.Claimed.Machine], f)
+		}
+	}
+	landingMachines := make([]string, 0, len(landingByMachine))
+	for m := range landingByMachine {
+		landingMachines = append(landingMachines, m)
+	}
+	sort.Strings(landingMachines)
+	for _, m := range landingMachines {
+		if ids := landingByMachine[m]; len(ids) > 1 {
+			addf("machine %s has %s waiting to land: one landing slot per machine; land the first before the next land-ready", m, strings.Join(ids, ", "))
 		}
 	}
 	machines := make([]string, 0, len(claimsByMachine))

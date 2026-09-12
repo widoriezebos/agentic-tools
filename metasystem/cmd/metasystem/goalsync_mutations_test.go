@@ -1403,3 +1403,27 @@ func TestGoalEditLowersARecordedTierOnlyUnderHumanProof(t *testing.T) {
 		t.Fatalf("the lowered tier is recorded:\n%s", text)
 	}
 }
+
+func TestProofGoalResolutionStaysAmbiguousBesideALandingClaim(t *testing.T) {
+	root := syncedClaimedGoalFixture(t)
+	amendSyncedGoalFixture(t, root, "landing fixture", func(file *goal.GoalFile) {
+		file.Revision++
+		opid := goal.Opid("01ARZ3NDEKTSV4RRFFQ69G5FAD", "mac-cli", "m1")
+		file.History = append(file.History, goal.HistoryLine{
+			At: "2026-08-30T09:00:00Z", Opid: opid, Verb: "land-ready", Actor: "mac-cli+m1", Targets: []string{"standing-validation"}, Keep: -1,
+		})
+		file.Landing = &goal.LandingRecord{At: "2026-08-30T09:00:00Z", Opid: opid}
+	})
+	t.Setenv("METASYSTEM_PROOF_CONTROL_ROOT", "")
+	t.Setenv("METASYSTEM_PROOF_ATTEMPT", "")
+	// A landing goal alone resolves to it: its receipts still bind to its claim.
+	if got, err := uniqueActiveProofGoal(root, time.Now().UTC()); err != nil || got != "standing-validation" {
+		t.Fatalf("a landing goal alone did not resolve: %q %v", got, err)
+	}
+	// Beside a working claim both are live proof targets, so the seat names one.
+	addSyncedLiveProofGoal(t, root)
+	got, err := uniqueActiveProofGoal(root, time.Now().UTC())
+	if err == nil || got != "" || !strings.Contains(err.Error(), "ambiguous") || !strings.Contains(err.Error(), "--goal") {
+		t.Fatalf("a working claim beside a landing claim did not stay ambiguous: %q %v", got, err)
+	}
+}

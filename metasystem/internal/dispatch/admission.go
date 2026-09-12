@@ -135,8 +135,10 @@ func EvaluateGoalAdmission(repoRoot, stopLineage string, now time.Time) (GoalAdm
 			continue
 		}
 		// A breach-stopped goal is waiting on a human and must not keep the
-		// machine from working the next item.
-		if file.IsFencedClaim() {
+		// machine from working the next item; a claim waiting to land keeps
+		// its box for its own receipts and never closes the working claim's
+		// dispatch.
+		if file.IsFencedClaim() || file.IsLandingClaim() {
 			continue
 		}
 		budget := ProjectBudget(repoRoot, file, now)
@@ -232,15 +234,15 @@ func EvaluateGoalRevisionAdmissionForDispatch(repoRoot, id string, revision, pro
 		verdict.Refusal = &GoalAdmissionRefusal{GoalID: id, GoalRevision: revision, Unknown: projection.Unknown}
 		return verdict, nil
 	}
-	if reason := liveStopReason(projection); reason != "" {
+	if reason := stopReasonFor(binding.File, projection); reason != "" {
 		verdict.LiveStopReason = reason
 		verdict.Refusal = &GoalAdmissionRefusal{
-			GoalID: id, GoalRevision: revision, Breaches: projection.Breaches,
+			GoalID: id, GoalRevision: revision, Breaches: admissionBreachesFor(binding.File, projection.Breaches),
 			Reserved: reservedMinutesEvidence(projection), LiveStopReason: reason,
 		}
 		return verdict, nil
 	}
-	breaches := budgetAdmissionBreaches(projection)
+	breaches := admissionBreachesFor(binding.File, budgetAdmissionBreaches(projection))
 	if role == "design-critic" || role == "code-critic" {
 		if dispatchMode != "fresh" && dispatchMode != "follow-up" {
 			return verdict, fmt.Errorf("critic goal revision admission requires dispatch mode fresh or follow-up")
@@ -271,6 +273,37 @@ func EvaluateGoalRevisionAdmissionForDispatch(repoRoot, id string, revision, pro
 			Reserved: reservedMinutesEvidence(projection)}
 	}
 	return verdict, nil
+}
+
+// stopReasonFor is the live-stop reason for one claim. A claim waiting to
+// land (goal land-ready) has its elapsed fence suspended: the wait is
+// printed, never stopped; attempts, minutes and active jobs still bind, so
+// a corrupt-over-limit stop still fences it.
+func stopReasonFor(file *goal.GoalFile, projection BudgetProjection) string {
+	if !file.IsLandingClaim() {
+		return liveStopReason(projection)
+	}
+	for _, breach := range projection.Breaches {
+		if breach.Field != "elapsedLimit" {
+			return goal.StopReasonCorruptOverLimit
+		}
+	}
+	return ""
+}
+
+// admissionBreachesFor drops the elapsed dimension for a claim waiting to
+// land; every other breach stands.
+func admissionBreachesFor(file *goal.GoalFile, breaches []BudgetBreach) []BudgetBreach {
+	if !file.IsLandingClaim() {
+		return breaches
+	}
+	kept := make([]BudgetBreach, 0, len(breaches))
+	for _, breach := range breaches {
+		if breach.Field != "elapsedLimit" {
+			kept = append(kept, breach)
+		}
+	}
+	return kept
 }
 
 // budgetAdmissionBreaches uses admission boundaries rather than health's
