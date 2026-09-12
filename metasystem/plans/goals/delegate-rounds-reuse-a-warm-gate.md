@@ -1,6 +1,6 @@
 # delegate-rounds-reuse-a-warm-gate
 
-- State: claimed
+- State: parked
 - Priority: 1
 - Sequence: 8
 - Risk: severity=2 novelty=1 exposure=2 accumulation=2 basis="severity 2: a skipped gate that should have run lets a red round close; novelty 1: caches and the fast gate exist; exposure 2: delegate rounds; accumulation 2: touches dispatch and the gate"
@@ -9,14 +9,14 @@
 - Origin: human
 - Next step: 2026-09-12 m1b: slice A landed 809fc0d07 (one build cache per chain, exported by both adapters, recorded per round, removed on close and fully-terminal reap; test environment allowlist and environment digest folded; testing requirement names the cache and the proving run). Every seat rebuilds and re-arms (the environment digest is a judge change). Next: slice C, a three-round chain on the implementer runtime measured per the design page section 4 (round 2 a docs line, round 3 a comment in internal/refusal), then DONE with the measurements; slice B is the testing-requirement text already landed.
 - OpenedAt: 2026-09-11T15:46:36Z
-- Revision: 25
+- Revision: 26
+- BlockedBy: delegate-proof-runs-inside-the-sandbox
 - Pinned: m1b
 - Budget: elapsedLimit=1d attemptLimit=10 reservedJobMinutesLimit=1200 activeJobLimit=1 reviewRoundLimit=3
 - BudgetExceptions: 0
 - Approved: by=human:Wido at=2026-09-11T20:33:34Z revision=13 opid=9D29SE0D3E6PY8G0T03Y45FQXR-m1-c6925449 authority=proven digest=c13631452d806c05a2169a0b745d59a27aba92c58a7fbcd20f8d9391b993a574
 - Sliced: machine=m1b lineage=main-1789191336-90295-e4b24b revision=20 at=2026-09-12T11:14:37Z
-- Claimed: machine=m1b lineage=main-1789191336-90295-e4b24b at=2026-09-12T09:52:29Z revision=20 accountingRevision=20 episodeAt=2026-09-12T09:52:29Z episodeRevision=20
-- StopCapability: generation=20 revision=20 machine=m1b claimEpoch=2 fenceEpoch=0
+- Parked: by=m1b+main-1789191336-90295-e4b24b at=2026-09-12T11:22:49Z blocker=delegate-proof-runs-inside-the-sandbox because=blocked by delegate-proof-runs-inside-the-sandbox; returns when it is done
 
 History:
 - 2026-09-11T15:46:36Z ESAZ2BX9DC37VFYCNAXPCDG92H-m1-c6925449 open actor=human:Wido targets=delegate-rounds-reuse-a-warm-gate reason=TierOverride: derived=2 set=3 why=Wido 2026-09-11: the gate is the delegate's judge; a skipped gate is a tier-3 hazard whatever the four answers derive
@@ -44,4 +44,5 @@ History:
 - 2026-09-12T11:12:50Z 4N3ZM4RT6KH9GYPPEBZ8GYN54S-m1b-30a7e141 edit actor=m1b+main-1789191336-90295-e4b24b targets=delegate-rounds-reuse-a-warm-gate
 - 2026-09-12T11:14:37Z F2H9R5F9FMVX9CHWGABKGGTQ6P-m1b-30a7e141 slice-start actor=m1b+main-1789191336-90295-e4b24b targets=delegate-rounds-reuse-a-warm-gate
 - 2026-09-12T11:22:25Z 9DHJQRK19BYSF9MNBN94NKT4ZQ-m1-c6925449 done actor=human:Wido targets=actionable-metrics,breach-clock-and-budget-honesty,capped-round-continues-instead-of-restarting,coordinator-context-stays-under-budget,coordinator-wakes-on-events-not-polls,critique-always,critique-closes-on-folded-proof,deep-battery-under-ten-minutes,delegate-rounds-reuse-a-warm-gate,failed-job-attention,fixture-stewards-outlive-their-suite,goal-abandoned-with-a-reason,human-goal-verbs-forgiving,job-record-birth-token,land-ready-work-lands-without-a-claim-slot,landing-receipt-survives-records-drift,lease-sweep-death-evidence,live-job-on-a-done-goal-unnoticed,machine-concurrency-governor,small-change-lane,steward-catchup-livelock,steward-revives-a-done-goal,stop-batch-strands-a-resumable-goal,suite-custody,token-spend-fence,watch-verb,watcher-repair-request-never-names-current,winddown-census-handoff-leak reason=priority-order from=1:9 to=1:8
-Integrity: sha256=55db7505f6967da05fdf50985ab12e3931bf63a785bcf0813e3740f2ab8d2fad
+- 2026-09-12T11:22:49Z 39G69YXKB5EFS5TZ4SV9XE66ED-m1b-30a7e141 park actor=m1b+main-1789191336-90295-e4b24b targets=delegate-rounds-reuse-a-warm-gate reason=blocked by delegate-proof-runs-inside-the-sandbox; returns when it is done
+Integrity: sha256=ed272ba0e61519fe43bd2d688b531d96cded4eb822c95984c8d54c1f6eb2f73c
