@@ -68,6 +68,19 @@ ce59b313's untested additions to the package, another seat's landing, and
 the shard count was never its cause).
 Measured before: 538 s and 444 s alone, 919 s and 711 s under the pool.
 
+On 2026-09-12 both groups left the cadence list (R-99-m1e, Wido's word):
+the race gate's sharded coverage run measures the same packages against
+the same floors in scripts/agents/coverage-ratchet.json, so cadence paid
+about 2000 CPU seconds twice for one proof. The groups stay defined for
+diagnostic runs (`--groups goal-full-coverage`), and the contract tests
+now pin their absence from every selection list. Run 10 (proof-mtxie5w1)
+was the last with them: 579 s and 489 s beside a 680 s gate, wall 1039 s.
+The two floors that moved to their loaded reading the same morning
+(R-100-m1e: internal/supervise 89.0, internal/validate 63.6) landed as
+their own human commit: the delivery machinery refuses a candidate whose
+ratchet floors sit below the policy base's (TEST_POLICY_COVERAGE_FLOOR_LOWERED),
+by design, so a floor moves only on a recorded human word outside a receipt.
+
 Found on the way: the coverage parser's JSON loop retried a decode error
 forever; it now ends at the first error and keeps what it read.
 

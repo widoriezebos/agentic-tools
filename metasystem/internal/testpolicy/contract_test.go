@@ -368,8 +368,11 @@ func TestMetaSystemContractKeepsMixedPackageCoverageExplicit(t *testing.T) {
 		if err != nil || !all || !group.Coverage {
 			t.Fatalf("coverage group %s is not a whole-package measurement: group=%+v err=%v", id, group, err)
 		}
-		if !contains(contract.Cadence, id) {
-			t.Fatalf("coverage group %s is absent from cadence", id)
+		// R-99-m1e (2026-09-12): the gate's sharded coverage ratchet is the
+		// coverage proof; the whole-package groups stay defined for diagnostic
+		// runs and leave every selection list, cadence included.
+		if contains(contract.Cadence, id) {
+			t.Fatalf("coverage group %s duplicates the gate's ratchet at cadence", id)
 		}
 	}
 
@@ -396,8 +399,18 @@ func TestMetaSystemContractKeepsMixedPackageCoverageExplicit(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if !contains(cadence.SelectedGroups, "goal-full-coverage") || !contains(cadence.SelectedGroups, "missionrunner-full-coverage") {
-		t.Fatalf("cadence omitted the package coverage floors: %+v", cadence)
+	if contains(cadence.SelectedGroups, "goal-full-coverage") || contains(cadence.SelectedGroups, "missionrunner-full-coverage") {
+		t.Fatalf("cadence repeated the gate's package coverage floors: %+v", cadence)
+	}
+	if !contains(cadence.SelectedGroups, "section/go-engine-gate") {
+		t.Fatalf("cadence omitted the gate that measures the package coverage floors: %+v", cadence)
+	}
+	diagnostic, err := Select(contract, SelectionRequest{Groups: []string{"goal-full-coverage", "missionrunner-full-coverage"}, RequestedMode: ModeCanary, Purpose: PurposeDiagnostic})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !contains(diagnostic.SelectedGroups, "goal-full-coverage") || !contains(diagnostic.SelectedGroups, "missionrunner-full-coverage") {
+		t.Fatalf("the whole-package coverage groups are no longer reachable by name for a diagnostic run: %+v", diagnostic)
 	}
 }
 
@@ -516,14 +529,15 @@ func TestMetaSystemContractOwnsDeliveryBoundaryAndSelectsFastBeforeBroadProof(t 
 	if !contains(plan.RequiredGroups, "fast-static-build") {
 		t.Fatalf("delivery omitted the fast static build: %+v", plan)
 	}
-	// The two coverage groups run at cadence only (slice 1 of
-	// plans/suite-speed-plan.md): even the riskiest goal touching the whole
-	// delivery boundary pays them at the weight cadence, not per landing. The
-	// big process sections left every deep list too; they still run here only
-	// because surfaces in this boundary name them as critical providers.
+	// The two whole-package coverage groups run only as diagnostics (slice 1
+	// of plans/suite-speed-plan.md, then R-99-m1e): the gate's sharded ratchet
+	// measures the same floors at cadence, so no landing and no cadence run
+	// pays them twice. The big process sections left every deep list too;
+	// they still run here only because surfaces in this boundary name them as
+	// critical providers.
 	for _, id := range []string{"goal-full-coverage", "missionrunner-full-coverage", "section/go-engine-gate"} {
 		if contains(plan.SelectedGroups, id) {
-			t.Fatalf("delivery pulled in cadence-only group %s: %+v", id, plan)
+			t.Fatalf("delivery pulled in the diagnostic-only or cadence-only group %s: %+v", id, plan)
 		}
 	}
 	for _, surface := range contract.Surfaces {
@@ -537,10 +551,15 @@ func TestMetaSystemContractOwnsDeliveryBoundaryAndSelectsFastBeforeBroadProof(t 
 	if err != nil {
 		t.Fatal(err)
 	}
-	for _, id := range []string{"goal-full-coverage", "missionrunner-full-coverage", "section/dispatcher-adapter-and-mission-runner-fixtures",
+	for _, id := range []string{"section/go-engine-gate", "section/dispatcher-adapter-and-mission-runner-fixtures",
 		"section/adoption-fixtures", "section/supervision-and-census-fixtures"} {
 		if !contains(cadence.SelectedGroups, id) {
 			t.Fatalf("cadence lost %s: %+v", id, cadence)
+		}
+	}
+	for _, id := range []string{"goal-full-coverage", "missionrunner-full-coverage"} {
+		if contains(cadence.SelectedGroups, id) {
+			t.Fatalf("cadence repeated the gate's coverage floors through %s: %+v", id, cadence)
 		}
 	}
 

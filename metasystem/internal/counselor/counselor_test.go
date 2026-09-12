@@ -908,3 +908,65 @@ func registerLine(t *testing.T, line acceptedRiskRegisterLine) string {
 	}
 	return string(data)
 }
+
+func TestCarriedAcceptedRiskValidatorsReadTheSpecimen(t *testing.T) {
+	root := t.TempDir()
+	mustGit(t, root, "init", "-q", "-b", "main")
+	mustGit(t, root, "config", "user.name", "carry fixture")
+	mustGit(t, root, "config", "user.email", "carry@example.invalid")
+	message := strings.Join([]string{
+		"carried fixture", "", "Carry: word", "Carried-By: human:Wido",
+		"Carried-Tree: workspace=" + strings.Repeat("a", 40) + " project=" + strings.Repeat("b", 40),
+		"Carried-Past: missing-declaration", "Carried-Battery: green missing=- failing=-",
+		"Carried-Judge: live sha256=" + strings.Repeat("c", 64), "Carried-Ledger: " + strings.Repeat("d", 40),
+		"Landing-Provenance: carried opid=word past=missing-declaration", "",
+	}, "\n")
+	mustGit(t, root, "commit", "-q", "--allow-empty", "-m", message)
+	command := exec.Command("git", "-C", root, "rev-parse", "HEAD")
+	command.Env = gittree.ScrubbedEnviron()
+	output, err := command.Output()
+	if err != nil {
+		t.Fatal(err)
+	}
+	commit := strings.TrimSpace(string(output))
+	finding := "carried:" + commit + ":battery-green"
+	input := CarriedAcceptedRiskAppend{Goal: "carry-goal", Finding: finding, By: "Wido", Why: "accepted for delivery", OpID: "accept-opid", Commit: commit, RecordedAt: time.Date(2026, 9, 12, 5, 0, 0, 0, time.UTC)}
+	if err := ValidateCarriedAcceptedRisk(root, input); err != nil {
+		t.Fatalf("a complete carried entry did not validate: %v", err)
+	}
+	incomplete := input
+	incomplete.Why = ""
+	if err := ValidateCarriedAcceptedRisk(root, incomplete); err == nil || !strings.Contains(err.Error(), "incomplete") {
+		t.Fatalf("an entry without its why validated: %v", err)
+	}
+	if err := AppendCarriedAcceptedRisk(root, input); err != nil {
+		t.Fatal(err)
+	}
+	data, err := os.ReadFile(filepath.Join(root, filepath.FromSlash(acceptedRiskRegisterSource)))
+	if err != nil {
+		t.Fatal(err)
+	}
+	encoded := bytes.TrimSpace(data)
+	if err := ValidateCarriedAcceptedRiskLine(root, input, encoded); err != nil {
+		t.Fatalf("the appended line is not its own specimen: %v", err)
+	}
+	var line acceptedRiskRegisterLine
+	if err := json.Unmarshal(encoded, &line); err != nil {
+		t.Fatal(err)
+	}
+	if line.Class != "carried-green" {
+		t.Fatalf("a green battery did not class the line carried-green: %+v", line)
+	}
+	forged := bytes.Replace(encoded, []byte("accepted for delivery"), []byte("accepted for nothing"), 1)
+	if err := ValidateCarriedAcceptedRiskLine(root, input, forged); err == nil || !strings.Contains(err.Error(), "not the human-carried specimen") {
+		t.Fatalf("a line with a changed reason passed as the specimen: %v", err)
+	}
+	if err := ValidateCarriedAcceptedRiskLine(root, input, append(append([]byte{}, encoded...), []byte("\n{}")...)); err == nil {
+		t.Fatal("a line with trailing JSON passed as the specimen")
+	}
+	other := input
+	other.Finding = finding + ":other"
+	if err := ValidateCarriedAcceptedRiskLine(root, other, encoded); err == nil {
+		t.Fatal("a line for another finding passed as this finding's specimen")
+	}
+}
