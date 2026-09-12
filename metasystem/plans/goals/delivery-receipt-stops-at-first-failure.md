@@ -9,8 +9,8 @@
 - Origin: human
 - Next step: Wido's word recorded 2026-09-11 (R-96-m1e): yes, for the delivery purpose only; cadence keeps continue-and-collect. Next: build behind the fixture with a failing second group and its retry.
 - OpenedAt: 2026-09-11T15:45:11Z
-- Revision: 14
-- Pinned: m1e
+- Revision: 15
+- Pinned: m1b
 - Budget: elapsedLimit=1d attemptLimit=10 reservedJobMinutesLimit=1200 activeJobLimit=1 reviewRoundLimit=3
 - BudgetExceptions: 0
 - Approved: by=human:Wido at=2026-09-11T20:33:23Z revision=14 opid=W10S05V1M1CHQ7X3033MTK2Y1Z-m1-c6925449 authority=proven digest=d564236287914adef7d2b8a966daed07180f7499ff88ba3efdcc543731b34816
@@ -30,4 +30,5 @@ History:
 - 2026-09-11T20:30:50Z YNSXBTNTY71V7NTX1WWEP2P1HY-m1-c6925449 unapprove actor=human:Wido targets=delivery-receipt-stops-at-first-failure reason=Wido 2026-09-11: every program goal states runtime independence (claude, codex, devin, future adapters); intent amended before re-approval
 - 2026-09-11T20:32:08Z AG5CRKKFXQX2DTK7GA5TAMA46B-m1e-3ca84c28 edit actor=m1e+main-1789158700-39729-b9c0d2 targets=delivery-receipt-stops-at-first-failure
 - 2026-09-11T20:33:23Z W10S05V1M1CHQ7X3033MTK2Y1Z-m1-c6925449 approve actor=human:Wido targets=delivery-receipt-stops-at-first-failure
-Integrity: sha256=c80cac28c0be36c5f57e46d8d4d60f6d0181df852bf876128e7f793257d10689
+- 2026-09-12T05:28:37Z DRQNAPYNBB8ZF5V1FY65MGK86B-m1e-c6925449 set-pin actor=human:Wido targets=delivery-receipt-stops-at-first-failure
+Integrity: sha256=c30448f7865d991b8240ce562522cb6f45e0f6e460a60ed349610f2eddee081e
