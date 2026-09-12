@@ -9,8 +9,8 @@
 - Origin: human
 - Next step: Read the claim quota in internal/goal/validate.go and rebindClaimKeepEpisode in verbs.go; design the landing slot's lifecycle; critique; build; land.
 - OpenedAt: 2026-09-11T15:45:27Z
-- Revision: 15
-- Pinned: m1e
+- Revision: 16
+- Pinned: m1c
 - Budget: elapsedLimit=1d attemptLimit=10 reservedJobMinutesLimit=1200 activeJobLimit=1 reviewRoundLimit=3
 - BudgetExceptions: 0
 - Approved: by=human:Wido at=2026-09-11T20:33:55Z revision=15 opid=395T6MBCZB6SGKCBFKQNRK5WDF-m1-c6925449 authority=proven digest=cb7b05c1be432bf7be06cd25044bf55e42d6e5cae1c0126c35f5ced610b7b532
@@ -31,4 +31,5 @@ History:
 - 2026-09-11T20:31:25Z 1WZYJW9AQSH38T3CZ8V8NQAFY7-m1-c6925449 unapprove actor=human:Wido targets=land-ready-work-lands-without-a-claim-slot reason=Wido 2026-09-11: every program goal states runtime independence (claude, codex, devin, future adapters); intent amended before re-approval
 - 2026-09-11T20:32:40Z GXVV6V646A2DFV2V665RD10DC0-m1e-3ca84c28 edit actor=m1e+main-1789158700-39729-b9c0d2 targets=land-ready-work-lands-without-a-claim-slot
 - 2026-09-11T20:33:55Z 395T6MBCZB6SGKCBFKQNRK5WDF-m1-c6925449 approve actor=human:Wido targets=land-ready-work-lands-without-a-claim-slot
-Integrity: sha256=f515842b5ff7f58b58e43fe779dcba93441a92a1645836b48a340b88e9cf7d30
+- 2026-09-12T05:29:02Z 807DYXCDNTBRST1VFB5HRS09X0-m1e-c6925449 set-pin actor=human:Wido targets=land-ready-work-lands-without-a-claim-slot
+Integrity: sha256=922152de708dc71a72d2b164f901c5adbdd963d7d84521e336c6ef1e1648d590
