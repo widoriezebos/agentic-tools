@@ -148,6 +148,26 @@ scenario concurrency of three), and give the gate's cmd tests and unit
 shards their own slots; six pool slots are worth one more measurement now
 that ten cores are back.
 
+## Follow-up slice, not built (R-102-m1e): the land-fixtures split
+
+Run 19 (proof-mty9ejoz) measured the land bed's 26 legs at 2004 s of
+scenario time, run three at a time for a 693 s span: receipt-cutover 187,
+ledger-move-lands 173, brain-land-refuses 167, brain-absent-node-proceeds
+161, carried-second 131, records-move-lands 129, input-move-refuses 123,
+then the twelve carried legs at 51 to 101 s each and seven small legs
+under 32 s. The dispatcher bed's shape applies: three clusters on their
+own beds, `land-a` (the seven legs above 120 s, about 1070 s), `land-b`
+(the twelve carried legs, about 800 s) and `land-c` (the small legs, about
+140 s), each running its scenarios three at a time. The expected span is
+the largest cluster at three-way concurrency, about 360 s, against 693 s
+today, at the price of nine concurrent scenario trees beside the gate.
+The same arithmetic on the gate: its cmd tests and four unit shards share
+one section slot; giving them slots of their own under the pool would let
+the pool schedule the gate's tail beside the small groups. Neither is
+built: Wido's word of 2026-09-12 accepts the measured wall for now, and
+this section is the hand-off for whichever seat takes the remaining
+distance.
+
 ## Slices 3b and 5: the big sections and the race gate
 
 Landed 2026-09-11 evening. Slice 5 (b13771d7): the race gate runs its two
