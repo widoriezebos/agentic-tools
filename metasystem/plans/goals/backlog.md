@@ -6,7 +6,7 @@
 - MigrationEpoch: 2026-08-20T00:00:00Z
 - ManifestDigest: d82032bee818c2d82e6a95e6f1b75347499b88ee8b68c4d20a0f3c94d00ba320
 - MigrationMode: manifest
-- Revision: 35
+- Revision: 36
 - ApprovalGate: since=2026-09-03T14:16:24Z opid=JY54AQT8101VK9353WT9FQYGA9-m0-c5dbf036
 - FleetEnrollment: at=2026-09-06T06:37:21Z machine=m1 generation=1 opid=CMNCRETKYCB18MFZNYFSZJPXQY-m1-a4f8999f
 
@@ -53,4 +53,5 @@ History:
 - 2026-09-12T07:29:40Z YCT88RS6800D5203WBRYDJY72Z-m1b-30a7e141 ack actor=m1b+main-1789191336-90295-e4b24b targets=landing-refuses-without-its-receipt-line displaced=m1b+main-1789191336-90295-e4b24b@2026-09-12T06:07:26Z ack
 - 2026-09-12T08:05:37Z 1Q9KA44DBTZW7AV0505SD24JN0-m1b-30a7e141 ack actor=m1b+main-1789191336-90295-e4b24b targets=delivery-receipt-stops-at-first-failure displaced=m1b+main-1789191336-90295-e4b24b@2026-09-12T07:29:40Z ack
 - 2026-09-12T09:33:54Z XM1RW2NX75WRKF6GGXJRPP22V4-m1c-69c9e454 ack actor=m1c+main-1789191340-90689-8975a9 targets=budget-extends-by-consumption-and-breach-parks displaced=m1c+main-1789191340-90689-8975a9@2026-09-12T07:18:57Z ack
-Integrity: sha256=ec2283713913dd745709bdb3d466091fca6ec09718f03cea6884a5cfa5dc939d
+- 2026-09-12T09:52:29Z TB9PAF22EN5N6FH79ABVBRVF3J-m1b-30a7e141 ack actor=m1b+main-1789191336-90295-e4b24b targets=retained-proof-reuse-crosses-claims-and-attempts displaced=m1b+main-1789191336-90295-e4b24b@2026-09-12T08:05:37Z ack
+Integrity: sha256=353cc4d7a0bb657011a3876fe63f191846facc882279111adb5b5f477866ac96
