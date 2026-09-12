@@ -2,7 +2,8 @@
 
 - Status: revision 3 after two design reads (section 6); the second read's three material findings are values and bounded choices folded one-to-one into section 4, so under R-97-m1e the build started behind section 4 with no third round; built 2026-09-12 (the dispatch bed passes with the four new scenarios)
 - Goal: capped-round-continues-instead-of-restarting (goal 21 of plans/delivery-efficiency-plan.md)
-- Next step: landed 525bedb73 and concluded; nothing open on this page. Wido's word on section 3's two dispositions stands as the only follow-up, on his desk
+- Next step: none
+- Settled: landed 525bedb73 and concluded; nothing open on this page. Wido's word on section 3's two dispositions stands as the only follow-up, on his desk.
 
 ## What is true today (read in the tree)
 

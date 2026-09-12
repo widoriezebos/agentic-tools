@@ -2,7 +2,8 @@
 
 - Status: revision 4 (2026-09-12 evening) after the second design read (Codex, gpt-5.6-sol; section 5); section 2b landed f3a9359b0 and rule 1 landed with it the same night (section 5 rounds 3 and 4, both on Opus). Rule 2 landed 4468c8211 for tier 1 (tier 2 joined with f55bbb6bf). Rule 1 is rewritten against both reads now that proof attempts settle to observed minutes (a633b7a08, 46e5678e4); the attorney unpark of R-105-m1e is section 2b. One invariant is Wido's (section 7); the build proceeds on the code's reading of it.
 - Goal: budget-extends-by-consumption-and-breach-parks (goal 8 of plans/delivery-efficiency-plan.md)
-- Next step: landed (rule 2 4468c8211 and f55bbb6bf, section 2b f3a9359b0, rule 1 9a3102266) and concluded 72c7e435a; nothing open on this page. Wido's word on section 7 stands as the only follow-up, on his desk
+- Next step: none
+- Settled: landed (rule 2 4468c8211 and f55bbb6bf, section 2b f3a9359b0, rule 1 9a3102266) and concluded 72c7e435a; nothing open on this page. Wido's word on section 7 stands as the only follow-up, on his desk.
 
 ## Decisions already recorded
 

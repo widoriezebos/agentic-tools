@@ -2,7 +2,8 @@
 
 - Status: revision 3 after two design reads (section 6); the two budget-law choices of section 7 are taken as the second reader advised and put to Wido at the landing; built behind the fixtures in section 4 (2026-09-12)
 - Goal: land-ready-work-lands-without-a-claim-slot (goal 20 of plans/delivery-efficiency-plan.md)
-- Next step: landed f8fb2d8ea and concluded; nothing open on this page. Wido's word on section 7 stands as the only follow-up, on his desk
+- Next step: none
+- Settled: landed f8fb2d8ea and concluded; nothing open on this page. Wido's word on section 7 stands as the only follow-up, on his desk.
 
 ## What is true today (read in the tree)
 
