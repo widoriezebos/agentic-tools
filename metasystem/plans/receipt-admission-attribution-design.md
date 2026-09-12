@@ -1,12 +1,12 @@
 # receipt-admission-caps-concurrent-batteries
 
 - Owner: m1e (goal 1 of plans/delivery-efficiency-plan.md), claimed 2026-09-12 17:50Z.
-- Goal and current status: concurrent batteries on one host stop failing each other within R-35-m3 (no machine reservations between seats). Slice 1, the attribution, is built, critiqued (round 1 folded) and landing: every attempt record carries the host's load and the overlapping attempts at its start and its end, a failed terminal under a crowded host is attributed to the load in the record, a retry decision names the load it retries against, and a consumption-bounded group that failed under load is filed as its own patience defect. The cap (slice 2) is designed here and waits on Wido's word.
-- In flight right now: slice 1 landing by human commit; then the re-arm and the first attempt record with a load block on this seat.
+- Goal and current status: concurrent batteries on one host stop failing each other within R-35-m3 (no machine reservations between seats). Slice 1, the attribution, landed 0c621e4b (2026-09-12) after one critique round and is verified through the engine (attempt proof-mtykoip9 carries the load block): every attempt record carries the host's load and the overlapping attempts at its start and its end, a failed terminal under a crowded host is attributed to the load in the record, a retry decision names the load it retries against, and a consumption-bounded group that failed under load is filed as its own patience defect. The cap (slice 2) is designed here and waits on Wido's word.
+- In flight right now: nothing on this goal; a week of attempt records accrues before section 4 goes to Wido. The seat moves to engine-runs-re-arm-themselves-on-a-landed-engine.
 - Decisions made (and who made them): Wido, 2026-09-11 (R-92-m1e): no admission cap for now; build the attribution and put the cap question again with a week of post-c08fe2cb numbers. Wido, 2026-09-12 (R-107-m1e): a receipt cap only if it is configurable and works robustly on any machine. R-35-m3 stands: failing when slow is the defect; seats are not serialized.
-- Waiting on the human: the cap question (section 4), once the attribution has a week of records.
+- Waiting on the human: the cap question (section 4), once the attribution has a week of records (about 2026-09-19).
 - Dead ends (do not retry without new evidence): none yet.
-- Next step: land slice 1 by human commit, re-arm, and read the first attempt record with a `load` block on this seat; then a week of records before section 4 goes to Wido.
+- Next step: waiting on the human, by design: after a week of records (from 2026-09-12), put section 4 to Wido with the attribution numbers (R-92-m1e). No build is due on this goal until then.
 
 ## 1. What the audit found
 
@@ -25,7 +25,7 @@ The five-day audit (artifacts/reports/delivery-deep-dive-2026-09-11/proof-attemp
 ## 3. Proof
 
 - Unit: `internal/hostload` (a recorded sysctl buffer from the eighteen-core box, `/proc/loadavg` text, the saturation rule); `internal/proofrun/attemptload_test.go` (reserve and finalize record both samples; a failure under load is attributed and a success or a quiet failure is not; a retry decision carries the prior's load; the patience filing names exactly the failed consumption-bounded groups; an unreadable record is skipped and named). The whole proofrun and hostload packages and the attempt-reading command tests pass under the race detector; the fast gate is green.
-- Through the engine: after landing and re-arming, the next attempt record on this seat carries `load.start` and, at its terminal, `load.end`; `supervise status` lists live attempts beside any record it had to skip.
+- Through the engine: on the landed tip, attempt proof-mtykoip9 (2026-09-12 16:01Z) carries `load.start` (8.04 on 18 cores, no other launchers, overlap known) and `load.end` (9.48); `supervise status` lists live attempts beside any record it had to skip.
 
 ## 4. Slice 2: the cap (designed, not built)
 
