@@ -4433,6 +4433,29 @@ run_fixture_arm "steward end-to-end initial arm" - \
 "$steward_repo/scripts/agents/adapters/fake.sh" probe >/dev/null \
   || { echo "steward end-to-end: fake adapter probe failed" >&2; exit 1; }
 
+# A template placeholder as the steward's model refuses before anything
+# spawns, naming the key and the one command that sets it (R-106-m1e; nine
+# launches died within three seconds on the literal '<model>' from
+# 2026-09-09). The roster's real model is restored before the full path.
+"$steward_repo/bin/metasystem" config tailor --conf "$steward_repo/metasystem.conf" --runtimes fake \
+  --set 'role.default.model.fake=<model>' \
+  --set role.steward-continuation.runtime=fake
+steward_placeholder_out=$(cd "$steward_repo" && METASYSTEM_BIN="$steward_enrolled_engine" \
+  "$steward_enrolled_engine" steward revive --repo "$steward_repo" 2>&1) \
+  && { echo "steward placeholder: a launch with the template model was not refused: $steward_placeholder_out" >&2; exit 1; }
+grep -Fq "role steward-continuation resolves to fake:<model>, a template placeholder from role.default.model.fake; set it with: metasystem config tailor --conf" <<<"$steward_placeholder_out" \
+  || { echo "steward placeholder: the refusal did not name the key and the command: $steward_placeholder_out" >&2; exit 1; }
+grep -Fq -e "--set role.default.model.fake=" <<<"$steward_placeholder_out" \
+  || { echo "steward placeholder: the refusal did not name the key to set: $steward_placeholder_out" >&2; exit 1; }
+[[ -z "$(ls "$steward_repo/artifacts/agents/jobs/" 2>/dev/null)" ]] \
+  || { echo "steward placeholder: a job record exists after the refusal" >&2; exit 1; }
+[[ -z "$(ls "$steward_repo/artifacts/agents/steward/intents/" 2>/dev/null)" ]] \
+  || { echo "steward placeholder: an intent was staged after the refusal" >&2; exit 1; }
+"$steward_repo/bin/metasystem" config tailor --conf "$steward_repo/metasystem.conf" --runtimes fake \
+  --set role.default.model.fake=fake-model \
+  --set role.steward-continuation.runtime=fake
+echo "steward placeholder refused before launch"
+
 # The full path: revive launches exactly once through dispatch and the
 # fake adapter; the tick then reaps and closes.
 steward_out=$(cd "$steward_repo" && METASYSTEM_BIN="$steward_enrolled_engine" \

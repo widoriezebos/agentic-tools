@@ -56,6 +56,21 @@ func TestResolveRosterDecisions(t *testing.T) {
 			refusal: "role ghost has neither a runtime entry nor role.default.runtime",
 		},
 		{
+			name: "a template placeholder from the default model refuses and names the key and the command",
+			conf: []string{rosterBase,
+				"role.default.runtime=codex", "role.default.model.codex=<model>"},
+			params:  RosterParams{Role: "steward-continuation"},
+			refusal: "role steward-continuation resolves to codex:<model>, a template placeholder from role.default.model.codex; set it with: metasystem config tailor --conf ",
+		},
+		{
+			name: "a template placeholder from the role's own model refuses by that key",
+			conf: []string{rosterBase,
+				"role.default.runtime=codex", "role.default.model.codex=gpt-5.6",
+				"role.implementer.runtime=claude", "role.implementer.model.claude=<model>"},
+			params:  RosterParams{Role: "implementer"},
+			refusal: "a template placeholder from role.implementer.model.claude; set it with: metasystem config tailor --conf ",
+		},
+		{
 			name: "main roster cannot be dispatched",
 			conf: []string{rosterBase, "role.retro.runtime=main"},
 			params: RosterParams{

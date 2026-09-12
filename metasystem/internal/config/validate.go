@@ -21,6 +21,9 @@ import (
 // tiersAbsent signals that no model tier is configured, a valid state whose
 // INFO line belongs to the command surface. A non-nil err is a hard read
 // failure.
+// templateValue is an unfilled value of the shipped metasystem.conf (<model>, <runtime>).
+var templateValue = regexp.MustCompile(`^<[^<>]+>$`)
+
 func Validate(confPath, repoRoot string) (tiersAbsent bool, problems []string, err error) {
 	content, readErr := os.ReadFile(confPath)
 	if readErr != nil {
@@ -423,11 +426,29 @@ func Validate(confPath, repoRoot string) (tiersAbsent bool, problems []string, e
 			}
 		}
 	}
+	// The uncommitted .local wins over the shipped keys for the roster (a
+	// seat names its models there); the checks below see what a launch sees.
+	localValues := map[string]string{}
+	if isFile(localPath) {
+		if localContent, localErr := os.ReadFile(localPath); localErr == nil {
+			parseSettings(string(localContent), func(_ int, key, value string, ok bool) {
+				if ok {
+					localValues[key] = value
+				}
+			})
+		}
+	}
 	resolved := func(key, mode string) (string, bool) {
 		if mode != "" {
+			if v, ok := localValues["mode."+mode+"."+key]; ok {
+				return v, true
+			}
 			if v, ok := values["mode."+mode+"."+key]; ok {
 				return v, true
 			}
+		}
+		if v, ok := localValues[key]; ok {
+			return v, true
 		}
 		v, ok := values[key]
 		return v, ok
@@ -438,8 +459,11 @@ func Validate(confPath, repoRoot string) (tiersAbsent bool, problems []string, e
 	for _, mode := range modeScopes {
 		runtime, ok := resolved("role.default.runtime", mode)
 		if truthy(runtime, ok) && runtime != "main" {
-			if _, present := resolved("role.default.model."+runtime, mode); !present {
+			if model, present := resolved("role.default.model."+runtime, mode); !present {
 				add("%s resolves to %s but has no model.%s value", roleLabel("default", mode, true), runtime, runtime)
+			} else if templateValue.MatchString(model) {
+				add("%s resolves to %s:%s, a template placeholder from role.default.model.%s; set it with: metasystem config tailor --conf %s.local --set role.default.model.%s=<the %s model this seat runs>",
+					roleLabel("default", mode, true), runtime, model, runtime, confPath, runtime, runtime)
 			}
 		}
 	}
@@ -452,12 +476,19 @@ func Validate(confPath, repoRoot string) (tiersAbsent bool, problems []string, e
 			if !truthy(runtime, ok) || runtime == "main" {
 				continue
 			}
-			model, present := resolved("role."+role+".model."+runtime, mode)
+			modelKey := "role." + role + ".model." + runtime
+			model, present := resolved(modelKey, mode)
 			if !truthy(model, present) {
-				_, present = resolved("role.default.model."+runtime, mode)
+				modelKey = "role.default.model." + runtime
+				model, present = resolved(modelKey, mode)
 			}
 			if !present {
 				add("%s resolves to %s but has no model.%s value", roleLabel(role, mode, false), runtime, runtime)
+			} else if templateValue.MatchString(model) {
+				// A placeholder left from the shipped file launches with the
+				// literal text and dies at the API; the seat's .local names it.
+				add("%s resolves to %s:%s, a template placeholder from %s; set it with: metasystem config tailor --conf %s.local --set %s=<the %s model this seat runs>",
+					roleLabel(role, mode, false), runtime, model, modelKey, confPath, modelKey, runtime)
 			}
 		}
 	}

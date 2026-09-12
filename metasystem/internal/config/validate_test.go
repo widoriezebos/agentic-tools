@@ -181,6 +181,16 @@ func TestValidateRejections(t *testing.T) {
 			expect: "has no model.fake value",
 		},
 		{
+			name:   "template placeholder as the default model",
+			conf:   "metasystem.runtimes=fake\nevidence.root=@EVIDENCE@\nrole.default.runtime=fake\nrole.default.model.fake=<model>\n",
+			expect: "resolves to fake:<model>, a template placeholder from role.default.model.fake; set it with: metasystem config tailor --conf ",
+		},
+		{
+			name:   "template placeholder as a launching role's model",
+			conf:   "metasystem.runtimes=fake\nevidence.root=@EVIDENCE@\nrole.default.runtime=fake\nrole.default.model.fake=fake-model\nrole.implementer.runtime=fake\nrole.implementer.model.fake=<model>\n",
+			expect: "a template placeholder from role.implementer.model.fake; set it with: metasystem config tailor --conf ",
+		},
+		{
 			name:   "malformed tier key",
 			conf:   "metasystem.runtimes=fake\nevidence.root=@EVIDENCE@\nrole.default.runtime=fake\nrole.default.model.fake=fake-model\nmodel.tier.one=fake:fake-model\n",
 			expect: "is not a supported model tier key",

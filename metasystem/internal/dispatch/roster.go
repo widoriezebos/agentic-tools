@@ -3,6 +3,7 @@ package dispatch
 import (
 	"fmt"
 	"os"
+	"regexp"
 	"sort"
 	"strconv"
 	"strings"
@@ -48,6 +49,27 @@ type RosterResolution struct {
 // way, and the sentinel's survival into later key names (a roster-less role
 // dispatched with --runtime) is inherited behavior kept deliberately.
 const missingSentinel = "__missing__"
+
+// templatePlaceholder matches the shipped metasystem.conf's unfilled values
+// (<model>, <runtime>): a roster that resolves to one has never been
+// tailored for that runtime, and a launch with it dies at the API within
+// seconds (nine steward launches, 2026-09-09 to 2026-09-11).
+var templatePlaceholder = regexp.MustCompile(`^<[^<>]+>$`)
+
+// refuseTemplateModel names the key that produced the placeholder and the
+// one command that sets it, in the uncommitted metasystem.conf.local that
+// wins over the shipped file.
+func refuseTemplateModel(conf, role, runtime, model string) error {
+	if !templatePlaceholder.MatchString(model) {
+		return nil
+	}
+	key := "role." + role + ".model." + runtime
+	if value, err := rosterGet(conf, key, ""); err != nil || value == missingSentinel {
+		key = "role.default.model." + runtime
+	}
+	return fmt.Errorf("role %s resolves to %s:%s, a template placeholder from %s; set it with: metasystem config tailor --conf %s.local --set %s=<the %s model this seat runs>",
+		role, runtime, model, key, conf, key, runtime)
+}
 
 func rosterGet(conf, key, mode string) (string, error) {
 	value, _, err := config.Get(config.GetParams{
@@ -168,6 +190,9 @@ func ResolveRoster(p RosterParams) (RosterResolution, error) {
 		if rosterModel == missingSentinel {
 			return RosterResolution{}, fmt.Errorf("role %s resolves to %s but has no model.%s value", p.Role, rosterRuntime, rosterRuntime)
 		}
+		if err := refuseTemplateModel(p.ConfPath, p.Role, rosterRuntime, rosterModel); err != nil {
+			return RosterResolution{}, err
+		}
 		rosterInput = rosterModel
 		rosterModel, rosterAliased, err = config.ResolveModelAlias(p.ConfPath, rosterRuntime, rosterModel)
 		if err != nil {
@@ -186,6 +211,9 @@ func ResolveRoster(p RosterParams) (RosterResolution, error) {
 	}
 	if requestedModel == missingSentinel {
 		return RosterResolution{}, fmt.Errorf("role %s resolves to %s but has no model.%s value", p.Role, runtime, runtime)
+	}
+	if err := refuseTemplateModel(p.ConfPath, p.Role, runtime, requestedModel); err != nil {
+		return RosterResolution{}, err
 	}
 	requestedInput := requestedModel
 	requestedModel, requestedAliased, err := config.ResolveModelAlias(p.ConfPath, runtime, requestedModel)
