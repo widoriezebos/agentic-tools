@@ -2,14 +2,14 @@
 
 - State: approved
 - Priority: 1
-- Sequence: 9
+- Sequence: 8
 - Risk: severity=2 novelty=1 exposure=2 accumulation=2 basis="severity 2: a skipped gate that should have run lets a red round close; novelty 1: caches and the fast gate exist; exposure 2: delegate rounds; accumulation 2: touches dispatch and the gate"
 - Tier: 3
 - Intent: Codex delegate jobs spent 26.5 of 48.6 tool hours on verification: focused go test 12.4 hours over 1,829 runs, fixture scripts 9.3 hours, go-gate 4.4 hours over 587 runs with a 0.2 second median, a 12 second p90 and a 25 minute cold-cache maximum (codex-sessions.md section 4). Every round of a chain starts from a cold build cache, and fold rounds that change no code re-run verification; the evidence is Codex because Codex built, but the cache and the skip rule live in dispatch.sh and the round record and apply to delegate rounds on every runtime. DONE means: (1) rounds of one chain share a build cache keyed by the chain root; (2) a round whose diff touches none of a verification step's inputs skips that step and reuses the prior round's matching verdict, recording why; (3) proven by matched before-and-after measurements on the cold-cache cases (chains such as brain-build1b with 19 gates) and by a three-round chain whose second and third rounds verify in under three minutes. Goal 13 of plans/delivery-efficiency-plan.md. RUNTIME INDEPENDENCE (plan principle 0; architecture doctrine of 2026-08-16: correctness never depends on an accelerator): this holds for every runtime the roster can host today (claude, codex, devin) and for future adapters such as opencode; the mechanism lives in the Go engine, the ledger verbs and the adapter contract, never in one runtime's hook, harness, CLI or transcript format; a native facility may accelerate it through its adapter, and an agent on any runtime with no accelerator gets the same guarantee from the records and the verb alone; where the goal touches a runtime path, DONE is proven on at least two runtimes.
 - Origin: human
 - Next step: 2026-09-12 night, m1b: slices A, B and C are landed and measured (809fc0d07; blocker delegate-proof-runs-inside-the-sandbox done 616d049c6 and 758e41514; measurements 0417ccfc8 on the design page section 5: a docs-only round proves in 5 s with 11 of 12 groups reused, a one-package round in 28 s, both under the three minutes DONE allows). The goal has origin human, so its conclusion is Wido's; the seat proposes: done.
 - OpenedAt: 2026-09-11T15:46:36Z
-- Revision: 38
+- Revision: 39
 - BlockedBy: delegate-proof-runs-inside-the-sandbox
 - Pinned: m1b
 - Budget: elapsedLimit=1d attemptLimit=24 reservedJobMinutesLimit=1200 activeJobLimit=1 reviewRoundLimit=3
@@ -57,4 +57,5 @@ History:
 - 2026-09-12T15:43:39Z 7VED87G6APJ5MWZRGHMHBYVEF8-m1-c6925449 set-priority actor=human:Wido targets=budget-extends-by-consumption-and-breach-parks,coordinator-context-stays-under-budget,coordinator-wakes-on-events-not-polls,critique-always,critique-closes-on-folded-proof,delegate-rounds-reuse-a-warm-gate,proof-attempts-settle-to-minutes-run,proof-groups-detect-hangs-by-progress-not-the-clock,small-change-lane,steward-launches-resolve-their-model,stop-hook-never-forces-an-empty-turn reason=priority-order subject=small-change-lane from=1:8 to=1:9 requested-sequence=3
 - 2026-09-12T15:48:46Z Y53S7944GVPSNJQ4H661SSNCHV-m1b-30a7e141 edit actor=m1b+main-1789191336-90295-e4b24b targets=delegate-rounds-reuse-a-warm-gate
 - 2026-09-12T15:51:18Z GN982SGF5RRKB3QP3TAJWYP2ES-m1b-30a7e141 release actor=m1b+main-1789191336-90295-e4b24b targets=delegate-rounds-reuse-a-warm-gate
-Integrity: sha256=938bf9bd73fd0637ff1e372c8a32dde86b69a3e5fbe4649b756419bef094bf26
+- 2026-09-12T17:19:20Z JACDR5KVP8B0RDK6SV5EFNZG7N-m1c-69c9e454 done actor=m1c+main-1789191340-90689-8975a9 targets=actionable-metrics,breach-clock-and-budget-honesty,budget-extends-by-consumption-and-breach-parks,coordinator-context-stays-under-budget,coordinator-wakes-on-events-not-polls,critique-always,critique-closes-on-folded-proof,delegate-rounds-reuse-a-warm-gate,failed-job-attention,fixture-stewards-outlive-their-suite,goal-abandoned-with-a-reason,human-goal-verbs-forgiving,job-record-birth-token,landing-receipt-survives-records-drift,lease-sweep-death-evidence,live-job-on-a-done-goal-unnoticed,machine-concurrency-governor,proof-attempts-settle-to-minutes-run,proof-groups-detect-hangs-by-progress-not-the-clock,steward-catchup-livelock,steward-revives-a-done-goal,stop-batch-strands-a-resumable-goal,suite-custody,token-spend-fence,watch-verb,watcher-repair-request-never-names-current,winddown-census-handoff-leak reason=priority-order from=1:9 to=1:8
+Integrity: sha256=9a579b2291363b5dfc5205129c7bd716a0c55aa2f430363c9bed669f30d3508c
