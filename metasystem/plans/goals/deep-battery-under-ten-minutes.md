@@ -7,9 +7,9 @@
 - Tier: 3
 - Intent: The cadence run (test run --mode deep --purpose cadence) completes in under ten minutes wall on the 18-core Mac with every cadence group still present and passing, and no slower than today on the 4-vCPU VM. DONE is that sentence, with three consecutive green cadence runs and their attempt ids in the receipt. Slices 2, 3 and 5 of plans/suite-speed-plan.md, arc-sized: groups run concurrently inside one attempt under a configurable cap; the long Go groups are sharded and the big fixture sections split into per-scenario groups; the race gate reuses the shards.
 - Origin: human
-- Next step: STATE 2026-09-12 10:50Z (m1e): first green cadence run: proof-mty4qhaz-af176dcea378dae3 on 18b5effc, 842 s wall at box load 9 to 24 (two other seats working). Runs 12 to 14 (790, 917, 816 s) were each one red away, every red a landed fix: the burner test's reap wait (1f756012), three unfloored packages registered (1dd00469), the launcher losing the watchdog's verdict (a53476ba, goal suite-watchdog-loses-its-closing-stall-line concluded), the ENOMEM retry count as a floor (18b5effc). Under R-102-m1e the wall above 600 s is accepted for now if the next two runs are green; the remaining distance (the gate at 630 to 770 s, land-fixtures at 590 to 620 s under contention) becomes a follow-up goal. Run 16 in flight on the same tree.
+- Next step: STATE 2026-09-12 12:30Z (m1e): green cadence runs proof-mty4qhaz-af176dcea378dae3 (run 15, 18b5effc, 842 s) and proof-mty6o5n7-c165976081332c07 (run 17, 58b469e2, 846 s); run 16 between them went red on TestTerminateGroup reading a killed leader before its reap (fixed 58b469e2), so the consecutive count starts at run 17. Wido's word: fix flaky tests, do not retry them; the class (instant process-state assertions under load) is swept statically and now dynamically beside sixteen burners. A second attempt on an identical tree is a reuse by design, so runs 18 and 19 wait for the next landed trees. Walls on the real box: 790, 917, 816, 842, 820, 846 s, all beside two other seats; accepted under R-102-m1e for now.
 - OpenedAt: 2026-09-10T12:02:35Z
-- Revision: 33
+- Revision: 34
 - BlockedBy: suite-watchdog-loses-its-closing-stall-line
 - Pinned: m1e
 - Budget: elapsedLimit=2d attemptLimit=40 reservedJobMinutesLimit=2400 activeJobLimit=1 reviewRoundLimit=3
@@ -54,4 +54,5 @@ History:
 - 2026-09-12T08:12:58Z R0C4BRJ43Z86YNEBKKMJ4DRFDC-m1e-c6925449 unpark actor=human:Wido targets=deep-battery-under-ten-minutes
 - 2026-09-12T08:19:30Z 125J2BBYNEJ3S17QJ0Z9DQNFFG-m1e-892cdaec claim actor=m1e+main-1789030447-51011-5722fc targets=deep-battery-under-ten-minutes
 - 2026-09-12T08:49:46Z JWBJDACHXYFV11BY6EBP5FAVTP-m1e-892cdaec edit actor=m1e+main-1789030447-51011-5722fc targets=deep-battery-under-ten-minutes
-Integrity: sha256=cc81f3e63c40303721b4859933c7768551aae246c54fc4dfcf35c50c722eabad
+- 2026-09-12T09:43:52Z DC82RPB6Y57C41CNJHXM2TV01D-m1e-892cdaec edit actor=m1e+main-1789030447-51011-5722fc targets=deep-battery-under-ten-minutes
+Integrity: sha256=74641cb13b5c1ccdb7fcfa4fb30b1ee90405431162d6ff6d87eef690c5741aa8
