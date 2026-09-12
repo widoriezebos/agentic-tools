@@ -5,6 +5,7 @@ import (
 	"crypto/rand"
 	"encoding/hex"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"os"
@@ -329,6 +330,12 @@ func (s *Store) readSessionStopRegistry() (sessionStopRegistry, error) {
 	return registry, nil
 }
 
+// errSessionStopRegistryDurabilityUnknown says the consumed registry is in
+// place but its crash durability could not be proved: the authorization IS
+// spent, and a caller that treated this as an unspent authorization would
+// tell the seat the opposite of what the registry now records.
+var errSessionStopRegistryDurabilityUnknown = errors.New("session stop consumed registry durability is unknown")
+
 func (s *Store) saveSessionStopRegistry(registry sessionStopRegistry) error {
 	data, err := json.MarshalIndent(registry, "", "  ")
 	if err != nil {
@@ -339,7 +346,7 @@ func (s *Store) saveSessionStopRegistry(registry sessionStopRegistry) error {
 		return err
 	}
 	if !durable {
-		return fmt.Errorf("session stop consumed registry durability is unknown")
+		return errSessionStopRegistryDurabilityUnknown
 	}
 	return nil
 }
@@ -499,11 +506,16 @@ func (s *Store) consumeSessionStop(sessionId, mainId string) (SessionStop, bool,
 		ConsumedAt: s.nowISO(), SessionId: marker.SessionId,
 		HolderMainId: marker.HolderMainId, ClaimEpoch: marker.ClaimEpoch,
 	}
-	if err := s.saveSessionStopRegistry(registry); err != nil {
+	durabilityDetail := ""
+	if err := s.saveSessionStopRegistry(registry); errors.Is(err, errSessionStopRegistryDurabilityUnknown) {
+		// The registry records the use; only its durability is unproven.
+		// The authorization is spent, and the verdict says so.
+		durabilityDetail = "SESSION STOP authorization was consumed; the consumption record's crash durability is unknown"
+	} else if err != nil {
 		return SessionStop{}, false, "", err
 	}
 	if err := removeSessionStop(sessionStopPath(s.Root, marker.SessionId)); err != nil {
 		return marker, true, "SESSION STOP authorization was consumed, but its marker file could not be removed; copied bytes remain blocked: " + err.Error(), nil
 	}
-	return marker, true, "", nil
+	return marker, true, durabilityDetail, nil
 }

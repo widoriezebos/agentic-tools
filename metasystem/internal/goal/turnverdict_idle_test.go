@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/atomicfile"
 	"os"
 	"path/filepath"
 	"strings"
@@ -1002,6 +1003,42 @@ func TestSessionStopConsumeErrorKeepsDecidedBlock(t *testing.T) {
 	spent, err := store.TurnVerdict(ScanResult{}, marker.SessionId, "", marker.HolderMainId)
 	if err != nil || !spent.ShouldBlock || strings.Contains(spent.Display, "authorized once") {
 		t.Fatalf("one authorization covered two stops: %+v %v", spent, err)
+	}
+}
+
+func TestSessionStopConsumeWithUnknownDurabilityIsSpent(t *testing.T) {
+	// The registry is written but its crash durability cannot be proved: the
+	// authorization is spent, the stop it authorized is allowed, and the
+	// verdict says the record's durability is unknown instead of claiming an
+	// unspent authorization the next stop would find consumed.
+	now := time.Date(2026, 9, 2, 10, 1, 0, 0, time.UTC)
+	root := servingBed(t, "bed-m1", map[string]*GoalFile{
+		"waiting": budgetedQueuedGoal("waiting", "2026-08-23T00:00:00Z"),
+	})
+	store := &Store{Root: root, Now: func() time.Time { return now }, Prober: idleFixtureProber{41: {Pid: 41, StartedAt: time.Unix(100, 0)}}}
+	marker := sessionStopFixture(t, store, "durability-unknown", "main-1", 7)
+	previous := sessionStopRegistryWriter
+	sessionStopRegistryWriter = func(path, content, root string) (bool, error) {
+		if _, err := atomicfile.WriteText(path, content, root); err != nil {
+			return false, err
+		}
+		return false, nil
+	}
+	t.Cleanup(func() { sessionStopRegistryWriter = previous })
+	openWork := ScanResult{Open: []Item{{Kind: "plan", Id: "open", Detail: "OPEN-WORK open: finish it"}}}
+
+	verdict, err := store.TurnVerdict(openWork, marker.SessionId, "", marker.HolderMainId)
+	if err != nil || verdict.ShouldBlock || !strings.Contains(verdict.Display, "authorized once") ||
+		!strings.Contains(verdict.Display, "durability is unknown") || strings.Contains(verdict.Display, "stays unspent") {
+		t.Fatalf("a consumption of unknown durability was not reported as spent: %+v %v", verdict, err)
+	}
+	if _, err := os.Stat(sessionStopPath(root, marker.SessionId)); !os.IsNotExist(err) {
+		t.Fatalf("the spent marker was left in place: %v", err)
+	}
+	sessionStopRegistryWriter = previous
+	spent, err := store.TurnVerdict(ScanResult{}, marker.SessionId, "", marker.HolderMainId)
+	if err != nil || !spent.ShouldBlock || strings.Contains(spent.Display, "authorized once") {
+		t.Fatalf("a spent authorization covered a second stop: %+v %v", spent, err)
 	}
 }
 

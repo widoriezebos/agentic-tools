@@ -66,7 +66,9 @@ Where it lives:
   the notice and writes the log line; the seat class keeps today's block.
   The hook passes `--class infrastructure` at line 943 for every
   `record_stop_failure` cause and at the deadline path; the deadline's own
-  record-failure branch already allows and is kept.
+  record-failure branch already allows and is kept, and its notice is
+  printed by the shell without the engine (the engine is what is most
+  often missing when that branch runs).
 - `failClosedTurnVerdict` becomes `infrastructureVerdict`: `ShouldBlock`
   false, `LedgerStatus` degraded, the detail kept in `Diagnostics` and
   `Display`, a new `Class` field set to `infrastructure` on the verdict so

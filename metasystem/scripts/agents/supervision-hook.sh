@@ -15,7 +15,16 @@ event=${2:-}
 [[ "$runtime" =~ ^[a-z][a-z0-9-]{0,31}$ ]] || exit 2
 case "$event" in start|receipt|stop|end) ;; *) exit 2 ;; esac
 
-emit_raw_stop_block() { # optional fixed prefix line (plain text, no quotes or backslashes)
+# The deadline parent's own notices never depend on an engine: the engine
+# is the thing most likely to be missing, crashed or mid-replacement when the
+# parent has to speak. Fixed text only (no quotes or backslashes).
+emit_fixed_json_notice() { # fixed lines, joined by JSON newlines
+  local text=$1 line
+  shift
+  for line in "$@"; do text="$text"'\n'"$line"; done
+  printf '{"systemMessage":"%s"}\n' "$text"
+}
+emit_raw_stop_allowance() { # optional fixed prefix line (plain text, no quotes or backslashes)
   local prefix=${1:-}
   [[ -z "$prefix" ]] || prefix="$prefix"'\n'
   printf '{"systemMessage":"%sMetasystem Stop hook output was unreadable; stopping is allowed with degraded infrastructure. Cause: stop-hook-output-was-unreadable. Component: stop-worker. The steward owns repair."}\n' "$prefix"
@@ -239,7 +248,7 @@ if [[ "$event" == stop && "${METASYSTEM_STOP_DEADLINE_PARENT:-}" != "$PPID" ]]; 
     if (( deadline_rc != 0 )) || [[ "$deadline_valid" != true ]]; then
       deadline_log_stop_condition stop-hook-output-was-unreadable stop-worker
       deadline_log_stop_outcome invalid-worker-output-allow
-      emit_raw_stop_block "$deadline_log_failure"
+      emit_raw_stop_allowance "$deadline_log_failure"
     else
       command cat "$deadline_stdout" || true
     fi
@@ -366,17 +375,31 @@ if [[ "$event" == stop && "${METASYSTEM_STOP_DEADLINE_PARENT:-}" != "$PPID" ]]; 
   if [[ -n "$deadline_response" && -z "$deadline_record_failure" ]]; then
     deadline_log_stop_outcome deadline-expired-allow "$deadline_elapsed_sec"
     if [[ -n "$deadline_log_failure" ]]; then
-      deadline_message=$("$deadline_canonical" json get --value "$deadline_response" --field systemMessage 2>/dev/null || true)
-      deadline_response=$("$deadline_canonical" json object systemMessage="$deadline_log_failure
-$deadline_message")
+      # The engine answered a moment ago, so it is asked to carry the
+      # prefix; if it cannot, the record's notice goes out as it was and
+      # the log failure is said in fixed text after it.
+      deadline_prefixed=
+      deadline_message=$("$deadline_canonical" json get --value "$deadline_response" --field systemMessage 2>/dev/null) &&
+        deadline_prefixed=$("$deadline_canonical" json object systemMessage="$deadline_log_failure
+$deadline_message" 2>/dev/null) || deadline_prefixed=
+      if [[ -n "$deadline_prefixed" ]]; then
+        deadline_response=$deadline_prefixed
+      else
+        printf '%s\n' "$deadline_response"
+        deadline_response=$(emit_fixed_json_notice "$deadline_log_failure")
+      fi
     fi
     printf '%s\n' "$deadline_response"
   else
+    # The record could not be updated, most often because the engine itself
+    # is missing or being replaced: this notice is printed without it.
     deadline_log_stop_outcome deadline-expired-record-failure-allow "$deadline_elapsed_sec"
     deadline_record_message='Metasystem could not update the stop-refusal record; stopping is allowed so record failure cannot recreate the refusal loop. Cause: stop deadline expired. Remedy: A human or steward must restore supervision outside this seat, then retry.'
-    [[ -z "$deadline_log_failure" ]] || deadline_record_message="$deadline_log_failure
-$deadline_record_message"
-    "$deadline_canonical" json object systemMessage="$deadline_record_message"
+    if [[ -n "$deadline_log_failure" ]]; then
+      emit_fixed_json_notice "$deadline_log_failure" "$deadline_record_message"
+    else
+      emit_fixed_json_notice "$deadline_record_message"
+    fi
   fi
   if [[ "$deadline_worker_waited" == true ]]; then
     rm -f "$deadline_stdout" "$deadline_stderr" "$deadline_payload" \
@@ -984,7 +1007,7 @@ compose_failed_stop() { # cause, verdict display, verdict decision, non-blocking
   local record_failure_message blocking_message allowed_message
   failure_detail="$verdict_display
 
-Metasystem could not prove that stopping is safe: $cause"
+Infrastructure condition, not a refusal (the steward owns repair): $cause"
   remedy='A human or steward must restore supervision outside this seat, then retry.'
   if [[ "$cause" == 'supervision arming failed' && -n "$up_failure_result" ]]; then
     remedy=$up_failure_result
@@ -1102,7 +1125,7 @@ if [[ "$event" == stop ]]; then
   # hook-log line per infrastructure condition, in every outcome: the
   # advisor's allowance below appends its lines too.
   supervision_dir="$state_root/artifacts/agents/supervision"
-  mkdir -p "$supervision_dir"
+  mkdir -p "$supervision_dir" 2>/dev/null || true
   hook_log_failure=
   append_stop_condition() { # class, cause code, component, outcome
     local generation=${hook_generation:--} deadline_end=$((stop_started_epoch + 60))
@@ -1284,7 +1307,7 @@ $checkin_tail")
   else
     printf '%s stop verdict unavailable\n' "$(date -u +%Y-%m-%dT%H:%M:%SZ)" \
       >>"$supervision_dir/hooks.log" 2>/dev/null || true
-    degraded_message="turn-verdict unavailable: ${degraded_line:-no diagnostic}"
+    degraded_message="turn-verdict unavailable: stopping is allowed on degraded infrastructure; the steward owns repair. ${degraded_line:-no diagnostic}"
 	[[ -z "$up_failure" ]] || degraded_message="$degraded_message
 $up_failure"
 	[[ -z "$hook_evidence_failure" ]] || degraded_message="$degraded_message

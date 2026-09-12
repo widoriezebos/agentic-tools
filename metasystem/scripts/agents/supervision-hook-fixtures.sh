@@ -1001,6 +1001,27 @@ grep -Fq 'occurrence 2' "$tmp/deadline-second.out" \
   && grep -Fq 'A human or steward must restore supervision outside this seat, then retry.' "$tmp/deadline-second.out" \
   || { echo "repeated deadline overrun omitted its cause, count, or remedy" >&2; cat "$tmp/deadline-second.out" >&2; exit 1; }
 
+# The deadline parent with no canonical engine at all (the installation's
+# bin/metasystem gone while the worker hangs): the record cannot be updated,
+# and the parent still prints its allowance itself, exit 0, one JSON object.
+mv "$line_root/bin/metasystem" "$line_root/bin/metasystem.absent"
+deadline_noengine_rc=0
+METASYSTEM_BIN="$deadline_engine" METASYSTEM_DEADLINE_REAL_ENGINE="$ms" \
+  bash "$line_root/scripts/agents/supervision-hook.sh" claude stop <"$tmp/line-payload.json" \
+    >"$tmp/deadline-noengine.out" 2>"$tmp/deadline-noengine.err" || deadline_noengine_rc=$?
+mv "$line_root/bin/metasystem.absent" "$line_root/bin/metasystem"
+(( deadline_noengine_rc == 0 )) \
+  || { echo "supervision hook deadline fixture without an engine exited $deadline_noengine_rc" >&2; cat "$tmp/deadline-noengine.err" >&2; exit 1; }
+[[ $(grep -c . "$tmp/deadline-noengine.out") -eq 1 ]] \
+  || { echo "supervision hook deadline fixture without an engine did not print exactly one line" >&2; cat "$tmp/deadline-noengine.out" >&2; exit 1; }
+grep -Fq '"systemMessage":"' "$tmp/deadline-noengine.out" \
+  && grep -Fq 'could not update the stop-refusal record; stopping is allowed' "$tmp/deadline-noengine.out" \
+  && ! grep -Fq '"decision":"block"' "$tmp/deadline-noengine.out" \
+  || { echo "supervision hook deadline fixture without an engine did not allow with the record-failure notice" >&2; cat "$tmp/deadline-noengine.out" >&2; exit 1; }
+grep -Fq 'stop response outcome=deadline-expired-record-failure-allow' \
+  "$line_root/artifacts/agents/supervision/hooks.log" \
+  || { echo "supervision hook deadline fixture without an engine did not log its outcome" >&2; exit 1; }
+
 # A restricted host may prove that the worker still exists without exposing
 # its command line. The parent must keep the Stop deadline but must not signal
 # or wait for a process whose ownership it cannot verify.
