@@ -1,6 +1,6 @@
 # critique-always
 
-- State: approved
+- State: claimed
 - Priority: 1
 - Sequence: 11
 - Risk: severity=2 novelty=1 exposure=3 accumulation=1 basis="severity 2: a wrong critique switch lets a risky change land unread or makes every small fix pay for a read; novelty 1: the tier already exists on every record and the enforcement table already has the switch, it moves from class to tier; exposure 3: every build chain on every seat; accumulation 1: nothing built on it yet"
@@ -9,12 +9,14 @@
 - Origin: main
 - Next step: Appetite: 1h. Build: replace independentCritiqueRequired-by-class with a tier-keyed rule in internal/dispatch/hazard.go (requiredConfigurationByHazard) and scripts/agents/role-packets.json, read the tier from the goal record at admission and at chain close, keep the per-class effort rows (R-90-m1: MECHANICAL builds at xhigh); fixtures as the DONE names. Supersedes Ruling O's class-keyed critique clause; R-54-m1 stands (ruling row R-92-m1b drafted, lands with the rulings register). Consistency sweep by m1b 2026-09-10 11:40Z: no other backlog record contradicts this; small-change-lane and review-round-limit-counts-per-chain updated. || Absorbed 2026-09-11 from goal two-bars-for-changes: Park naming program goal 18 (critique-always); clause to add: the commit wrapper refuses a DELEGATE-classified or unannounced caller outright (commit.sh:8-30 collapses 'no claimEpoch' into the HUMAN branch and internal/lease RequireHolderAt returns success without an epoch for DELEGATE, proven live on m1b), with fixtur
 - OpenedAt: 2026-09-01T07:18:55Z
-- Revision: 38
+- Revision: 39
 - Labels: headless-fleet, headless-process
 - Pinned: m1e
 - Budget: elapsedLimit=1d attemptLimit=10 reservedJobMinutesLimit=1200 activeJobLimit=1 reviewRoundLimit=3
 - BudgetExceptions: 0
 - Approved: by=human:Wido at=2026-09-11T20:33:52Z revision=22 opid=APTVMZCTPE9WAKRTEX385KQ5KK-m1-c6925449 authority=proven digest=93436451dcd9398c818546d0d60c32120c397191bfb1d425c03540a88530839f
+- Claimed: machine=m1e lineage=main-1789030447-51011-5722fc at=2026-09-12T21:50:58Z revision=39 accountingRevision=39 episodeAt=2026-09-12T21:50:58Z episodeRevision=39
+- StopCapability: generation=39 revision=39 machine=m1e claimEpoch=1 fenceEpoch=0
 
 History:
 - 2026-09-01T07:18:55Z STC2KV4CD66GWZWMTY6ND3TJVM-m3-a5da21ff open actor=m3+mac-m3 targets=critique-always
@@ -55,4 +57,5 @@ History:
 - 2026-09-12T15:43:39Z 7VED87G6APJ5MWZRGHMHBYVEF8-m1-c6925449 set-priority actor=human:Wido targets=budget-extends-by-consumption-and-breach-parks,coordinator-context-stays-under-budget,coordinator-wakes-on-events-not-polls,critique-always,critique-closes-on-folded-proof,delegate-rounds-reuse-a-warm-gate,proof-attempts-settle-to-minutes-run,proof-groups-detect-hangs-by-progress-not-the-clock,small-change-lane,steward-launches-resolve-their-model,stop-hook-never-forces-an-empty-turn reason=priority-order subject=small-change-lane from=1:12 to=1:13 requested-sequence=3
 - 2026-09-12T17:19:20Z JACDR5KVP8B0RDK6SV5EFNZG7N-m1c-69c9e454 done actor=m1c+main-1789191340-90689-8975a9 targets=actionable-metrics,breach-clock-and-budget-honesty,budget-extends-by-consumption-and-breach-parks,coordinator-context-stays-under-budget,coordinator-wakes-on-events-not-polls,critique-always,critique-closes-on-folded-proof,delegate-rounds-reuse-a-warm-gate,failed-job-attention,fixture-stewards-outlive-their-suite,goal-abandoned-with-a-reason,human-goal-verbs-forgiving,job-record-birth-token,landing-receipt-survives-records-drift,lease-sweep-death-evidence,live-job-on-a-done-goal-unnoticed,machine-concurrency-governor,proof-attempts-settle-to-minutes-run,proof-groups-detect-hangs-by-progress-not-the-clock,steward-catchup-livelock,steward-revives-a-done-goal,stop-batch-strands-a-resumable-goal,suite-custody,token-spend-fence,watch-verb,watcher-repair-request-never-names-current,winddown-census-handoff-leak reason=priority-order from=1:13 to=1:12
 - 2026-09-12T21:11:08Z 4DBXSCET2T1E5WP6VT68N623PF-m1e-c6925449 done actor=human:Wido targets=actionable-metrics,breach-clock-and-budget-honesty,budget-extends-by-consumption-and-breach-parks,coordinator-context-stays-under-budget,coordinator-wakes-on-events-not-polls,critique-always,critique-closes-on-folded-proof,delegate-rounds-reuse-a-warm-gate,failed-job-attention,fixture-stewards-outlive-their-suite,goal-abandoned-with-a-reason,human-goal-verbs-forgiving,job-record-birth-token,landing-receipt-survives-records-drift,lease-sweep-death-evidence,live-job-on-a-done-goal-unnoticed,machine-concurrency-governor,proof-groups-detect-hangs-by-progress-not-the-clock,steward-catchup-livelock,steward-revives-a-done-goal,stop-batch-strands-a-resumable-goal,suite-custody,token-spend-fence,watch-verb,watcher-repair-request-never-names-current,winddown-census-handoff-leak reason=priority-order from=1:12 to=1:11
-Integrity: sha256=36554ad01d8e73447fb7c8d24e8f221c1e627086ec443fb90be311956d868238
+- 2026-09-12T21:50:58Z VS1FKZ3ZNG7XGEHAZ3A6ZWWBQ6-m1e-892cdaec claim actor=m1e+main-1789030447-51011-5722fc targets=critique-always
+Integrity: sha256=d72c2c8607ec0e181866b5948abb4b427d5b2aead2d1e73d9256b1ac7fbc204e
