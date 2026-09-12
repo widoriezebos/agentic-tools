@@ -2,11 +2,11 @@
 
 - Owner: m1e (goal 18 of plans/delivery-efficiency-plan.md), claimed 2026-09-12 21:55Z.
 - Goal and current status: critique follows the tier, not the hazard class (Wido, 2026-09-10: "if the risk is high, even though it is a small change, it should get a critique"). A chain on a tier-2 or tier-3 goal needs an independent critique before it closes whatever its class; a tier-1 chain closes without one (R-54-m1's tier-1 clause stands). Built by Codex gpt-5.6-sol from the seat's brief (section 2) in a worktree; read by Opus; integrated, landed and verified by the seat.
-- In flight right now: nothing; landed 894a269e and verified through the engine. Concluding waits on the tip freeze m1b asked for during its delivery proof.
+- In flight right now: nothing. Landed 894a269e, verified through the engine, concluded a5050811 in Wido's name (2026-09-13 01:00 local).
 - Decisions made (and who made them): Wido, 2026-09-10 (the small-change lane's second decision): the tier decides the critique, derived from the four recorded risk answers, never from the size or the class of the change. R-90-m1 (Wido): MECHANICAL builds run at xhigh through the configured per-model line; the hazard floor in the table stays medium. The seat, 2026-09-12: the seven build decisions of section 2.
 - Waiting on the human: nothing.
 - Dead ends (do not retry without new evidence): none.
-- Next step: conclude in Wido's name under the authority grant (every DONE clause holds: the tier-keyed rule in both surfaces, the named tests, the beds green through the engine).
+- Next step: settled; nothing open on this page. The critic's class choice and the MECHANICAL chain's landing lane are scheduled as goal mechanical-chains-at-tier-two-and-three-close-and-land (queued, tierless).
 
 ## 1. What changes
 
