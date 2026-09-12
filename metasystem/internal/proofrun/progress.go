@@ -27,6 +27,10 @@ type SectionEvent struct {
 	Event   string `json:"event"`
 	At      string `json:"at"`
 	Depth   int    `json:"depth"`
+	// Verdict names the supervisor's judgement of the section on an event
+	// of kind "verdict" (dead or runaway): the one reading the suite
+	// watchdog ends a suite on, besides a cancellation intent.
+	Verdict string `json:"verdict,omitempty"`
 }
 
 type ProgressRun struct {
@@ -45,8 +49,12 @@ func AppendSectionEvent(path string, event SectionEvent) error {
 	if event.Suite == "" || event.Section == "" || event.Depth < 0 {
 		return errors.New("suite progress event requires suite, section, and non-negative depth")
 	}
-	if event.Event != "start" && event.Event != "end" {
-		return fmt.Errorf("suite progress event must be start or end, got %q", event.Event)
+	if event.Event == "verdict" {
+		if event.Verdict != "dead" && event.Verdict != "runaway" {
+			return fmt.Errorf("suite progress verdict must be dead or runaway, got %q", event.Verdict)
+		}
+	} else if event.Event != "start" && event.Event != "end" {
+		return fmt.Errorf("suite progress event must be start, end or verdict, got %q", event.Event)
 	}
 	if _, err := time.Parse(time.RFC3339Nano, event.At); err != nil {
 		return fmt.Errorf("suite progress event has invalid time: %w", err)
@@ -111,7 +119,7 @@ func ReadLatestProgressRun(path string) (ProgressRun, error) {
 		if err := json.Unmarshal(scanner.Bytes(), &event); err != nil {
 			return ProgressRun{}, fmt.Errorf("suite progress line %d is an invalid event: %w", line, err)
 		}
-		if event.Event != "start" && event.Event != "end" {
+		if event.Event != "start" && event.Event != "end" && event.Event != "verdict" {
 			return ProgressRun{}, fmt.Errorf("suite progress line %d has unknown event %q", line, event.Event)
 		}
 		if event.Suite == "" || event.Section == "" || event.Depth < 0 {
@@ -209,7 +217,7 @@ func CurrentSection(run ProgressRun, suite string) (string, time.Time) {
 		}
 		if event.Event == "start" {
 			current, started = event.Section, at
-		} else if event.Section == current {
+		} else if event.Event == "end" && event.Section == current {
 			current, started = "between-sections", time.Time{}
 		}
 	}

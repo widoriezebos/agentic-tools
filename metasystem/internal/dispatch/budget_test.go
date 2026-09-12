@@ -514,7 +514,9 @@ func TestReservedJobMinutesIsSumOfNamedComponents(t *testing.T) {
 		{name: "delegated", delegated: true, observed: 10, open: 45, reserved: 55, attempts: 3},
 		{name: "governed", governed: true, observed: 25, open: 30, reserved: 55, attempts: 2},
 		{name: "mixed", delegated: true, governed: true, observed: 35, open: 75, reserved: 110, attempts: 5},
-		{name: "proof reservations", proofs: true, observed: 10, proof: 35, reserved: 45, attempts: 3},
+		// The terminal proof reserved 20 minutes and ran 5: it is charged
+		// what it used; the live one is charged its 15-minute reservation.
+		{name: "proof reservations", proofs: true, observed: 10, proof: 20, reserved: 30, attempts: 3},
 	} {
 		t.Run(test.name, func(t *testing.T) {
 			root := ""
@@ -551,7 +553,7 @@ func TestReservedJobMinutesIsSumOfNamedComponents(t *testing.T) {
 					GoalID: "bounded", GoalRevision: 3, Breaches: budgetAdmissionBreaches(projection),
 					Reserved: reservedMinutesEvidence(projection),
 				}}})
-				want := "BUDGET_REFUSED: goal bounded revision=3 admission closed: attemptLimit used=3 limit=2, activeJobLimit used=1 limit=1; reserved observed=10 open-caps=0 proof=35 limit=75; rule=setup-refusal-release: terminal records with phase=setup and refusalClass=setup count as neither attempts nor reserved job minutes"
+				want := "BUDGET_REFUSED: goal bounded revision=3 admission closed: attemptLimit used=3 limit=2, activeJobLimit used=1 limit=1; reserved observed=10 open-caps=0 proof=20 limit=75; rule=setup-refusal-release: terminal records with phase=setup and refusalClass=setup count as neither attempts nor reserved job minutes"
 				if len(lines) != 1 || lines[0] != want {
 					t.Fatalf("proof reservation refusal line = %v, want %q", lines, want)
 				}

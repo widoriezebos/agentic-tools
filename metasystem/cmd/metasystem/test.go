@@ -435,7 +435,9 @@ func planWithTrustedPolicyEngine(engine string, request testingSelectionRequest,
 	if len(request.Groups) > 0 {
 		args = append(args, "--groups", strings.Join(request.Groups, ","))
 	}
-	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Minute)
+	// No clock on the planning engine: a plan that never returns is ended
+	// by the attempt's cancellation, never by a wall bound under load.
+	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 	command := exec.CommandContext(ctx, engine, args...)
 	command.Env = testingEnvironment(os.Environ())
@@ -769,7 +771,7 @@ func runTestRun(args []string) int {
 		fmt.Fprintln(os.Stderr, "metasystem test run:", err)
 		return 1
 	}
-	buildContext, cancelBuild := context.WithTimeout(context.Background(), limits.sectionCap)
+	buildContext, cancelBuild := context.WithCancel(context.Background())
 	candidateEngine, err := buildCandidateEngine(buildContext, gittree.Workspace{Dir: prepared.ProjectRoot}, prepared.Prefix,
 		prepared.CandidateTree, inheritedTestingEnvironment(prepared.Environment, os.Environ()))
 	cancelBuild()
@@ -786,7 +788,7 @@ func runTestRun(args []string) int {
 	}
 	preRequest := testingRunRequest(prepared, "", "", candidateEngine.Path, candidateEngine.Digest, candidateEngine.Commit)
 	metadataStarted := time.Now()
-	metadataContext, cancelMetadata := context.WithTimeout(context.Background(), limits.sectionCap)
+	metadataContext, cancelMetadata := context.WithCancel(context.Background())
 	identities, preparedGroups, preparationLaunches, identityErr := proofrun.PrepareGroupExecutionIdentities(metadataContext, preRequest)
 	cancelMetadata()
 	preparationDuration := time.Since(metadataStarted).Milliseconds()
@@ -1023,14 +1025,17 @@ func runTestWorker(args []string) int {
 		fmt.Fprintln(os.Stderr, "metasystem test worker:", err)
 		return 3
 	}
-	deadline, err := time.Parse(time.RFC3339Nano, attempt.Deadline)
-	if err != nil || !time.Now().UTC().Before(deadline) {
-		fmt.Fprintln(os.Stderr, "metasystem test worker: admitted deadline is invalid or expired")
+	if _, err := time.Parse(time.RFC3339Nano, attempt.Deadline); err != nil {
+		fmt.Fprintln(os.Stderr, "metasystem test worker: admitted deadline is invalid")
 		return 3
 	}
 	request.Environment = inheritedTestingEnvironment(request.Environment, os.Environ())
-	workerContext, cancel := context.WithDeadline(context.Background(), deadline)
+	// The worker's context carries no deadline: the reservation is a
+	// figure, not a kill rule (proof-groups-detect-hangs-by-progress-not-
+	// the-clock, decision 3). A recorded cancellation intent cancels it.
+	workerContext, cancel := context.WithCancel(context.Background())
 	defer cancel()
+	go cancelOnRecordedIntent(workerContext, cancel, canonicalControl, attemptID)
 	if err := runFrozenPolicyProtectionCorpus(workerContext, request); err != nil {
 		fmt.Fprintln(os.Stderr, "metasystem test worker:", err)
 		return 1
@@ -1086,15 +1091,17 @@ func verifyRetainedTesting(request testingSelectionRequest) (proofrun.TestResult
 	if err != nil {
 		return proofrun.TestResult{}, err
 	}
-	limits, err := resolveProofRunLimits(prepared.ConfPath)
-	if err != nil {
+	// The limits are read for their validity; the retained-result checks
+	// below run under no clock (proof-groups-detect-hangs-by-progress-not-
+	// the-clock, slice 2).
+	if _, err := resolveProofRunLimits(prepared.ConfPath); err != nil {
 		return proofrun.TestResult{}, err
 	}
 	attempts, err := proofrun.ReadAttempts(prepared.Installation)
 	if err != nil {
 		return proofrun.TestResult{}, err
 	}
-	identityContext, cancelIdentity := context.WithTimeout(context.Background(), limits.sectionCap)
+	identityContext, cancelIdentity := context.WithCancel(context.Background())
 	candidateEngineBuildIdentity, err := candidateEngineBuildIdentity(identityContext, gittree.Workspace{Dir: prepared.ProjectRoot},
 		prepared.Prefix, prepared.CandidateTree, prepared.Environment)
 	cancelIdentity()
@@ -1106,7 +1113,7 @@ func verifyRetainedTesting(request testingSelectionRequest) (proofrun.TestResult
 		return proofrun.TestResult{}, err
 	}
 	runRequest := testingRunRequest(prepared, "", "", "", candidateEngineDigest, candidateEngineBuildIdentity)
-	metadataContext, cancelMetadata := context.WithTimeout(context.Background(), limits.sectionCap)
+	metadataContext, cancelMetadata := context.WithCancel(context.Background())
 	identities, err := proofrun.RevalidateRetainedGroupExecutionIdentities(metadataContext, runRequest, attempts)
 	cancelMetadata()
 	if err != nil {
@@ -1519,4 +1526,24 @@ func fileSHA256(path string) (string, error) {
 // moved candidate and turn a sufficient attempt into a failed terminal.
 func testingReceiptWanted(joined bool, purpose testpolicy.Purpose, sufficient bool) bool {
 	return !joined && sufficient && purpose != testpolicy.PurposeDiagnostic
+}
+
+// cancelOnRecordedIntent cancels the worker's context once a cancellation
+// intent is recorded on its attempt; it reads the record at a slow pace
+// and ends with the context.
+func cancelOnRecordedIntent(ctx context.Context, cancel context.CancelFunc, controlRoot, attemptID string) {
+	ticker := time.NewTicker(2 * time.Second)
+	defer ticker.Stop()
+	for {
+		select {
+		case <-ctx.Done():
+			return
+		case <-ticker.C:
+			if attempt, err := proofrun.ReadAttempt(controlRoot, attemptID); err == nil && attempt.CancellationIntent != "" {
+				fmt.Fprintf(os.Stderr, "metasystem test worker: cancellation intent recorded: %s\n", attempt.CancellationIntent)
+				cancel()
+				return
+			}
+		}
+	}
 }

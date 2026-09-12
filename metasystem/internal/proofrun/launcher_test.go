@@ -357,7 +357,10 @@ while [[ ! -e "$done_path" ]]; do sleep 0.01; done
 	}
 }
 
-func TestPreparationCrossingDeadlineCannotCommitSuccess(t *testing.T) {
+// A top-level receipt whose preparation outlives its reservation still
+// commits its success: the deadline is a horizon, not a kill rule, and the
+// minutes it ran are accounted (decision 3 of the hang-detection design).
+func TestPreparationCrossingTheReservationStillCommitsSuccess(t *testing.T) {
 	root, proofIdentity := proofAttemptFixture(t, "deadline-preparation")
 	launcher, err := CurrentProcessIdentity(nil)
 	if err != nil {
@@ -393,15 +396,12 @@ while [[ ! -e "$done_path" ]]; do sleep 0.005; done
 			}
 			return json.RawMessage(`{"prepared":true}`), nil
 		}})
-	if result == 0 {
-		t.Fatal("proof preparation crossed the absolute deadline and still committed success")
+	if result != 0 {
+		t.Fatalf("a top-level receipt that outlived its reservation was refused: result %d", result)
 	}
 	stored, err := ReadAttempt(root, attempt.AttemptID)
-	if err != nil || stored.Terminal != nil {
-		t.Fatalf("deadline-crossing preparation wrote a terminal success: attempt=%+v err=%v", stored, err)
-	}
-	if _, err := FinalizeAttempt(root, attempt.AttemptID, TerminalFailed, 1, "deadline fixture cleanup", nil, time.Now().UTC()); err != nil {
-		t.Fatal(err)
+	if err != nil || stored.Terminal == nil || stored.Terminal.Result != TerminalSuccess || stored.ObservedMinutes <= stored.ReservedMinutes {
+		t.Fatalf("the overrun was not committed and accounted: attempt=%+v err=%v", stored, err)
 	}
 }
 

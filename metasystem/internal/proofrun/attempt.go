@@ -247,18 +247,15 @@ func AcquireMutation(root string) (*MutationLock, error) {
 	if err != nil {
 		return nil, err
 	}
-	deadline := time.Now().Add(time.Second)
-	for {
-		err = syscall.Flock(int(file.Fd()), syscall.LOCK_EX|syscall.LOCK_NB)
-		if err == nil {
-			return &MutationLock{file: file}, nil
-		}
-		if !errors.Is(err, syscall.EWOULDBLOCK) || !time.Now().Before(deadline) {
-			file.Close()
-			return nil, fmt.Errorf("LOCK_BUSY rank=proof-mutation key=%s retry=retry-after-the-holder-releases", root)
-		}
-		time.Sleep(25 * time.Millisecond)
+	// The lock is waited for, never timed: a holder that dies releases it
+	// with its file descriptor, and a live holder is doing this checkout's
+	// proof work (proof-groups-detect-hangs-by-progress-not-the-clock,
+	// slice 2: the one-second ceiling refused under load).
+	if err := syscall.Flock(int(file.Fd()), syscall.LOCK_EX); err != nil {
+		file.Close()
+		return nil, fmt.Errorf("lock proof mutation for %s: %w", root, err)
 	}
+	return &MutationLock{file: file}, nil
 }
 
 func (lock *MutationLock) Release() error {
@@ -526,8 +523,8 @@ func ReserveLocked(request AdmissionRequest) (Attempt, LaunchResult, error) {
 	}
 	if request.ReservationOwner != nil {
 		ownerDeadline, err := time.Parse(time.RFC3339Nano, request.ReservationOwner.Deadline)
-		if err != nil || ownerDeadline.Before(now) {
-			return Attempt{}, LaunchResult{}, fmt.Errorf("governed reservation owner has no live deadline")
+		if err != nil {
+			return Attempt{}, LaunchResult{}, fmt.Errorf("governed reservation owner has no readable deadline")
 		}
 		attempt.Deadline = ownerDeadline.UTC().Format(time.RFC3339Nano)
 	}
@@ -970,13 +967,17 @@ func updateAttemptProcessesLocked(root, id string, launcher identity.Ref, proces
 	return writeAttempt(attempt)
 }
 
+// The attempt's deadline is a reservation figure, never a kill or refusal
+// (proof-groups-detect-hangs-by-progress-not-the-clock, decision 3): a
+// live attempt authorises children, authenticates parents and commits its
+// terminal whatever the clock says, and what it consumed is accounted when
+// it ends.
 func attemptLaunchAllowedLocked(root, id string, launcher identity.Ref, now time.Time) error {
 	attempt, err := ReadAttempt(root, id)
 	if err != nil {
 		return err
 	}
-	deadline, deadlineErr := time.Parse(time.RFC3339Nano, attempt.Deadline)
-	if attempt.Terminal != nil || attempt.CancellationIntent != "" || deadlineErr != nil || !now.UTC().Before(deadline) ||
+	if attempt.Terminal != nil || attempt.CancellationIntent != "" ||
 		!lineageContains(launcher.Pid, attempt.Launcher.Ref()) {
 		return fmt.Errorf("proof attempt no longer authorizes child creation")
 	}
@@ -1033,10 +1034,6 @@ func FinalizeAttemptWithTestResultLocked(root, id, result string, exitStatus int
 	}
 	if now.IsZero() {
 		now = time.Now().UTC()
-	}
-	deadline, deadlineErr := time.Parse(time.RFC3339Nano, attempt.Deadline)
-	if result == TerminalSuccess && (deadlineErr != nil || !now.Before(deadline)) {
-		return Attempt{}, fmt.Errorf("proof attempt deadline expired before success")
 	}
 	started, _ := time.Parse(time.RFC3339Nano, attempt.StartedAt)
 	observed := uint64(math.Ceil(now.Sub(started).Minutes()))
@@ -1131,10 +1128,6 @@ func AuthenticateContext(root, id string, callerPID int64) (Attempt, error) {
 	}
 	if attempt.Terminal != nil || attempt.CancellationIntent != "" {
 		return Attempt{}, fmt.Errorf("proof parent context is not live")
-	}
-	deadline, err := time.Parse(time.RFC3339Nano, attempt.Deadline)
-	if err != nil || !time.Now().UTC().Before(deadline) {
-		return Attempt{}, fmt.Errorf("proof parent context has reached its absolute deadline")
 	}
 	if lineageContains(callerPID, attempt.Launcher.Ref()) {
 		return attempt, nil

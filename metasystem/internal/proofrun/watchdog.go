@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"io"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -16,8 +17,12 @@ import (
 )
 
 type WatchdogOptions struct {
-	Suite            string
-	Root             string
+	Suite string
+	Root  string
+	// ControlRoot and AttemptID name the attempt whose cancellation intent
+	// ends the suite; empty for a suite that is not attempt-scoped.
+	ControlRoot      string
+	AttemptID        string
 	ProgressPath     string
 	DonePath         string
 	LogPaths         []string
@@ -44,8 +49,7 @@ func RunWatchdog(options WatchdogOptions) error {
 	if err := validateWatchdogOptions(options); err != nil {
 		return err
 	}
-	lastBytes := totalLogBytes(options.LogPaths)
-	lastGrowth := time.Now()
+	deadlineNoted, capNoted := false, ""
 	ticker := time.NewTicker(options.Poll)
 	defer ticker.Stop()
 	for {
@@ -53,29 +57,63 @@ func RunWatchdog(options WatchdogOptions) error {
 			return nil
 		}
 		now := time.Now()
-		bytes := totalLogBytes(options.LogPaths)
-		if bytes > lastBytes {
-			lastBytes = bytes
-			lastGrowth = now
-		}
 		run, readErr := ReadLatestProgressRun(options.ProgressPath)
 		section, sectionStarted := "startup", time.Time{}
 		if readErr == nil {
 			section, sectionStarted = CurrentSection(run, options.Suite)
 		}
-		reason := ""
-		if !options.Deadline.IsZero() && !now.Before(options.Deadline) {
-			reason = "absolute proof deadline expired"
-		} else if now.Sub(lastGrowth) > options.Silence {
-			reason = fmt.Sprintf("no output grew for %s", options.Silence)
-		} else if !sectionStarted.IsZero() && now.Sub(sectionStarted) > options.SectionCap {
-			reason = fmt.Sprintf("section exceeded its %s cap while still producing output", options.SectionCap)
+		// The clock ends nothing (proof-groups-detect-hangs-by-progress-not-
+		// the-clock, decision 3). The reservation's deadline and the section
+		// cap are noted once when they pass; the suite runs on, and what it
+		// consumed is accounted when it ends.
+		if !options.Deadline.IsZero() && !now.Before(options.Deadline) && !deadlineNoted {
+			deadlineNoted = true
+			fmt.Fprintf(errorOutput(options), "suite watchdog: the reservation's deadline %s passed in section %s; the suite runs on under the progress rule\n",
+				options.Deadline.UTC().Format(time.RFC3339), section)
 		}
-		if reason != "" {
-			return stopStalledSuite(options, section, reason, run)
+		if !sectionStarted.IsZero() && now.Sub(sectionStarted) > options.SectionCap && capNoted != section {
+			capNoted = section
+			fmt.Fprintf(errorOutput(options), "suite watchdog: section %s passed its %s cap while still producing output; it runs on under the progress rule\n",
+				section, options.SectionCap)
+		}
+		// A suite ends for two facts and for nothing else: the supervisor
+		// judged its current section dead or runaway, or a cancellation
+		// intent is recorded on the attempt.
+		if readErr == nil {
+			if verdict := sectionVerdict(run, options.Suite, section); verdict != "" {
+				return stopStalledSuite(options, section, fmt.Sprintf("the supervisor judged section %s %s", section, verdict), run)
+			}
+		}
+		if intent := recordedCancellation(options); intent != "" {
+			return stopStalledSuite(options, section, "cancellation intent recorded: "+intent, run)
 		}
 		<-ticker.C
 	}
+}
+
+// sectionVerdict reads the supervisor's judgement of a section from the
+// progress run: "dead" or "runaway", or nothing.
+func sectionVerdict(run ProgressRun, suite, section string) string {
+	for _, event := range run.Events {
+		if event.Event == "verdict" && event.Suite == suite && event.Section == section &&
+			(event.Verdict == "dead" || event.Verdict == "runaway") {
+			return event.Verdict
+		}
+	}
+	return ""
+}
+
+// recordedCancellation reads the attempt's cancellation intent, when the
+// watchdog knows its attempt; an unreadable record is no intent.
+func recordedCancellation(options WatchdogOptions) string {
+	if options.ControlRoot == "" || options.AttemptID == "" {
+		return ""
+	}
+	attempt, err := ReadAttempt(options.ControlRoot, options.AttemptID)
+	if err != nil {
+		return ""
+	}
+	return attempt.CancellationIntent
 }
 
 func validateWatchdogOptions(options WatchdogOptions) error {
@@ -95,16 +133,6 @@ func validateWatchdogOptions(options WatchdogOptions) error {
 		return errors.New("watchdog polling and signal grace periods must be positive")
 	}
 	return nil
-}
-
-func totalLogBytes(paths []string) int64 {
-	var total int64
-	for _, path := range paths {
-		if info, err := os.Stat(path); err == nil && info.Mode().IsRegular() {
-			total += info.Size()
-		}
-	}
-	return total
 }
 
 func stopStalledSuite(options WatchdogOptions, section, reason string, run ProgressRun) error {
@@ -322,4 +350,13 @@ func stopGuardMember(options WatchdogOptions, ref identity.Ref, prober identity.
 		return fmt.Errorf("kill execution-guard member %d: %w", ref.Pid, err)
 	}
 	return nil
+}
+
+// errorOutput is where the watchdog's notes go: the configured error
+// stream, or stderr when none was given.
+func errorOutput(options WatchdogOptions) io.Writer {
+	if options.ErrorOutput != nil {
+		return options.ErrorOutput
+	}
+	return os.Stderr
 }

@@ -821,6 +821,8 @@ func runProofRunWatchdog(args []string) int {
 	termGraceMS := flags.Int64("term-grace-ms", 5000, "TERM grace milliseconds")
 	killGraceMS := flags.Int64("kill-grace-ms", 1000, "KILL observation milliseconds")
 	deadlineRaw := flags.String("deadline", "", "absolute proof deadline")
+	watchControlRoot := flags.String("control-root", "", "control root of the attempt whose cancellation intent ends the suite")
+	watchAttempt := flags.String("attempt", "", "attempt whose cancellation intent ends the suite")
 	var logs repeatedFlag
 	flags.Var(&logs, "log", "watched output log (repeatable)")
 	if flags.Parse(args) != nil || flags.NArg() != 0 || *conf == "" {
@@ -850,6 +852,7 @@ func runProofRunWatchdog(args []string) int {
 	}
 	err = proofrun.RunWatchdog(proofrun.WatchdogOptions{
 		Suite: *suite, Root: *root, ProgressPath: *progress, DonePath: *done, LogPaths: logs,
+		ControlRoot: *watchControlRoot, AttemptID: *watchAttempt,
 		SuiteIdentity:   identity.Ref{Pid: *suitePID, StartedAtSec: *suiteStarted, StartTicks: *suiteTicks, BootID: *suiteBoot},
 		FenceGeneration: *fenceGeneration,
 		Deadline:        deadline,

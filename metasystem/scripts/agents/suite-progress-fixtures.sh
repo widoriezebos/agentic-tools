@@ -93,21 +93,23 @@ launch_fixture "$printing" printing long-printing "$printing_banner" \
 [[ $(grep -c -xF "$printing_banner" "$printing/logs/suite.log") -eq 1 ]] \
   || { echo "suite-progress fixture: cost banner was not logged exactly once" >&2; exit 1; }
 
-# A chatty section still dies on the independent absolute section ceiling.
+# A chatty section past its cap runs on: the clock ends nothing (decision 3
+# of the hang-detection design). The watchdog notes the cap once, the
+# section finishes its own work, and the launch succeeds.
 chatty="$tmp/chatty"
 chatty_out="$tmp/chatty.out"
-if launch_fixture "$chatty" chatty over-cap \
+if ! launch_fixture "$chatty" chatty over-cap \
     'suite-cost suite=chatty witness=armed duration=minutes heartbeat=progress.jsonl logs=logs/suite.log' \
     --silence-ms 2000 --section-cap-ms 400 --evidence-timeout-ms 1000 \
     --evidence-max-bytes 1048576 --poll-ms 50 --term-grace-ms 100 --kill-grace-ms 100 -- \
-    bash "$root/scripts/agents/suite-progress-fixtures.sh" __printing_forever \
+    bash "$root/scripts/agents/suite-progress-fixtures.sh" __printing \
       "$chatty/progress.jsonl" chatty over-cap >"$chatty_out" 2>&1; then
-  echo "suite-progress fixture: a printing section exceeded its cap without being killed" >&2
+  echo "suite-progress fixture: a printing section past its cap was ended by the clock" >&2
+  sed 's/^/  launcher: /' "$chatty_out" >&2
   exit 1
 fi
-grep -Fq 'section exceeded its 400ms cap' "$chatty_out" \
-  || { echo "suite-progress fixture: absolute-cap failure did not name the stalled section and cap" >&2
-       echo "suite-progress fixture: launcher output follows (cadence run 12, proof-mty2iq69, failed here once under load with no record of the reason)" >&2
+grep -Fq 'section over-cap passed its 400ms cap while still producing output' "$chatty_out" \
+  || { echo "suite-progress fixture: the watchdog did not note the section past its cap" >&2
        sed 's/^/  launcher: /' "$chatty_out" >&2
        exit 1; }
 

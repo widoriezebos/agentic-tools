@@ -180,8 +180,11 @@ func TestProofParentCustody(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if _, err := AuthenticateContext(root, expiredAttempt.AttemptID, int64(os.Getpid())); err == nil {
-		t.Fatal("expired absolute deadline authenticated a parent proof locator")
+	// A top-level attempt past its reservation horizon still authenticates
+	// its parent locator (the deadline governs only a job-capped
+	// reservation); the governed shape is proven in TestGovernedDeadlineStillGoverns.
+	if _, err := AuthenticateContext(root, expiredAttempt.AttemptID, int64(os.Getpid())); err != nil {
+		t.Fatalf("a top-level attempt past its reservation refused its parent locator: %v", err)
 	}
 	if err := RequestCancellation(root, attempt.AttemptID, "controlled cancellation"); err != nil {
 		t.Fatal(err)
@@ -523,5 +526,34 @@ func TestProofConfigurationToleratesTemplateModelKey(t *testing.T) {
 	}
 	if _, err := effectiveProofConfigurationDigest(conf, nil); err == nil {
 		t.Fatal("unrecognized invalid configuration key was silently accepted")
+	}
+}
+
+// TestAnAttemptPastItsReservationStillLaunchesAuthenticatesAndFinalizes is
+// row 10 of the hang-detection design: the deadline is a reservation
+// figure. An attempt reserved for two minutes three minutes ago still
+// authorises a child, authenticates its parent locator, and commits a
+// success accounted at the minutes it ran.
+func TestAnAttemptPastItsReservationStillLaunchesAuthenticatesAndFinalizes(t *testing.T) {
+	root, proofIdentity := proofAttemptFixture(t, "past-reservation")
+	launcher, err := CurrentProcessIdentity(nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	now := time.Now().UTC()
+	attempt, _, err := ReserveLocked(AdmissionRequest{ControlRoot: root, ExecutionRoot: root, GoalID: "goal-a", GoalRevision: 2,
+		AccountingRevision: 2, ReservedMinutes: 2, Identity: proofIdentity, Launcher: launcher, Now: now.Add(-3 * time.Minute)})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := attemptLaunchAllowedLocked(root, attempt.AttemptID, launcher.Ref(), now); err != nil {
+		t.Fatalf("a child was refused past the reservation: %v", err)
+	}
+	if _, err := AuthenticateContext(root, attempt.AttemptID, int64(os.Getpid())); err != nil {
+		t.Fatalf("a parent locator was refused past the reservation: %v", err)
+	}
+	finished, err := FinalizeAttempt(root, attempt.AttemptID, TerminalSuccess, 0, "green, late", nil, now)
+	if err != nil || finished.Terminal == nil || finished.Terminal.Result != TerminalSuccess || finished.ObservedMinutes != 3 {
+		t.Fatalf("a success past the reservation = %+v, %v", finished.Terminal, err)
 	}
 }

@@ -238,7 +238,14 @@ func TestProofRunLimitsRejectEffectiveLocalAndEnvironmentOverlays(t *testing.T) 
 	}
 }
 
-func TestCommitProofTerminalRechecksDeadlineAfterPreparation(t *testing.T) {
+// The command's terminal commit refuses a success when the goal-revision
+// authority it needs is absent (this fixture's goal carries no stop
+// capability): the launcher reports it, exits nonzero, and no terminal is
+// written. This test once claimed to recheck the deadline after
+// preparation; it never reached it, the authority refusal came first, and
+// decision 3 of the hang-detection design removed the recheck anyway (the
+// deadline is a reservation horizon, proven in proofrun's launcher test).
+func TestCommitProofTerminalRefusesWithoutGoalRevisionAuthority(t *testing.T) {
 	root := syncedClaimedGoalFixture(t)
 	proofIdentity, err := proofrun.BuildProofIdentity(root, filepath.Join(root, "metasystem.conf"), "full", "deadline-finalization", nil, 2)
 	if err != nil {
@@ -248,9 +255,9 @@ func TestCommitProofTerminalRechecksDeadlineAfterPreparation(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	started := time.Now().UTC().Add(-59*time.Second - 500*time.Millisecond)
+	started := time.Now().UTC()
 	attempt, _, err := proofrun.ReserveLocked(proofrun.AdmissionRequest{ControlRoot: root, ExecutionRoot: root,
-		GoalID: "standing-validation", GoalRevision: 2, AccountingRevision: 2, ReservedMinutes: 1,
+		GoalID: "standing-validation", GoalRevision: 2, AccountingRevision: 2, ReservedMinutes: 30,
 		Identity: proofIdentity, Launcher: launcher, Now: started})
 	if err != nil {
 		t.Fatal(err)
@@ -273,25 +280,24 @@ while [[ ! -e "$done_path" ]]; do sleep 0.005; done
 `), 0o755); err != nil {
 		t.Fatal(err)
 	}
-	result := proofrun.LaunchSuite(proofrun.LaunchOptions{Suite: "deadline-finalization", Root: root, ControlRoot: root,
+	var launcherErrors bytes.Buffer
+	result := proofrun.LaunchSuite(proofrun.LaunchOptions{Suite: "deadline-finalization", Root: root, ControlRoot: root, ErrorOutput: &launcherErrors,
 		AttemptID: attempt.AttemptID, Deadline: deadline, ConfPath: filepath.Join(root, "metasystem.conf"),
 		ProgressPath: filepath.Join(artifactDir, "progress.jsonl"), LogPath: filepath.Join(artifactDir, "proof.log"),
 		Banner: "deadline finalization fixture", Silence: time.Second, SectionCap: time.Second, EvidenceTimeout: time.Second,
 		EvidenceMax: 1024, Poll: 5 * time.Millisecond, TermGrace: time.Second, KillGrace: time.Second,
 		WatchdogExecutable: watchdog, Command: []string{"true"},
 		PrepareSuccess: func(proofrun.CompletionContext) (json.RawMessage, error) {
-			// Preparation outlives the deadline: it waits for that fact.
-			for !time.Now().After(deadline) {
-				time.Sleep(5 * time.Millisecond)
-			}
 			return json.RawMessage(`{"preparedAt":"before-terminal-locks"}`), nil
 		}, CommitTerminal: commitProofTerminal})
-	if result == 0 {
-		t.Fatal("terminal commit published success after preparation crossed the deadline")
+	if result == 0 || !strings.Contains(launcherErrors.String(), "lost goal-revision authority") {
+		t.Fatalf("a terminal commit without goal-revision authority was not refused by name: result %d\n%s", result, launcherErrors.String())
 	}
+	// The launcher's fallback retains the attempt as incomplete once the
+	// commit is refused; what must never appear is a success.
 	stored, err := proofrun.ReadAttempt(root, attempt.AttemptID)
-	if err != nil || stored.Terminal != nil || len(stored.DeliveryReceipt) != 0 {
-		t.Fatalf("deadline-crossing finalization retained a successful receipt: attempt=%+v err=%v", stored, err)
+	if err != nil || (stored.Terminal != nil && stored.Terminal.Result == proofrun.TerminalSuccess) || len(stored.DeliveryReceipt) != 0 {
+		t.Fatalf("a refused terminal commit still published a success: attempt=%+v err=%v", stored, err)
 	}
 	if _, err := proofrun.FinalizeAttempt(root, attempt.AttemptID, proofrun.TerminalFailed, 1, "deadline canary cleanup", nil, time.Now().UTC()); err != nil {
 		t.Fatal(err)

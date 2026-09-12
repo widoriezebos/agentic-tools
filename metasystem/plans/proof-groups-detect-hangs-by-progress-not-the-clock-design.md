@@ -202,6 +202,51 @@ live, which a633b7a08 already settles to observed minutes when the
 attempt ends. An attempt that outlives its reservation is not killed; it
 is charged what it used.
 
+## Build decisions after slice 2 (2026-09-12, m1e)
+
+Slice 2 built on the m1e seat under R-98-m1e, against this revision (a
+first cut edited the superseded revision 1 and kept a silence window and
+a governed exception; the critic sent it back, and this is what stands):
+
+- The suite watchdog ends a suite for a `dead` or `runaway` verdict on
+  its current section, read from the progress file where the group
+  runner now writes a `verdict` event, and for a cancellation intent
+  recorded on the attempt (the watchdog verb learns its attempt through
+  `--control-root` and `--attempt`), and for nothing else. A passed
+  deadline and a section past `suite.section-cap-min` are noted once on
+  the launcher's error stream; the silence window ends nothing. The
+  battery's chatty fixture (suite-progress-fixtures.sh) now expects the
+  note and a successful launch where it expected a kill.
+- The worker's context carries no deadline for any attempt; a goroutine
+  reads the attempt record every two seconds and cancels it on a recorded
+  cancellation intent. The planning engine's two-minute context and the
+  section-cap contexts around candidate-engine construction, metadata
+  preparation, identity and retained-result verification are
+  cancellation contexts now; the detached-evidence copy is bounded by
+  bytes only; the proof mutation lock is waited for, never timed (a dead
+  holder releases it with its descriptor).
+- Child admission, parent authentication and the terminal commit no
+  longer read the deadline; a governed reservation owner's deadline must
+  parse and nothing more. There is no governed exception: a delegate
+  job's cap is the job runner's rule, and the attempt of a job that was
+  ended is reconciled by the reaper from its dead launcher.
+- The goal budget charges a terminal attempt what it used
+  (`observedMinutes`) and a live one its reservation, which is what
+  "charged what it used" needed and a633b7a08 had not done for proof
+  attempts.
+- Proof: row 10 is TestAnAttemptPastItsReservationStillLaunchesAuthenticatesAndFinalizes;
+  row 11 is TestRunWatchdogEndsASuiteForAVerdictOrACancellationAndNothingElse
+  (silence and a passed cap end nothing, a dead verdict does, a recorded
+  cancellation does) with TestRunWatchdogLetsAPrintingSectionAndAnExpiredDeadlineRunOn
+  for the notes; TestPreparationCrossingTheReservationStillCommitsSuccess
+  commits and accounts an overrun through the launcher. The command's
+  test that claimed to recheck the deadline after preparation had never
+  reached it (its fixture's goal has no stop capability) and now says
+  what it proves, TestCommitProofTerminalRefusesWithoutGoalRevisionAuthority.
+- Residual, accepted by decision 3 and residual (a): a suite that stops
+  producing anything and whose group supervisor never judges it runs
+  until a person cancels the attempt.
+
 ## Decision 4: proof
 
 Every row names the path it exercises. The window and the budget are

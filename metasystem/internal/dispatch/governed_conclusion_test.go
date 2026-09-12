@@ -237,7 +237,10 @@ func TestGovernedExhaustionReprojectsSettledSpendAtConclusion(t *testing.T) {
 		if err != nil {
 			t.Fatal(err)
 		}
-		if _, err := proofrun.FinalizeAttempt(root, proof.AttemptID, proofrun.TerminalFailed, 1, "fixture", nil, now.Add(2*time.Minute)); err != nil {
+		// A terminal proof is charged what it used (decision 3 of the
+		// hang-detection design): this one runs its whole thirty-minute
+		// reservation before it fails, so it counts for thirty.
+		if _, err := proofrun.FinalizeAttempt(root, proof.AttemptID, proofrun.TerminalFailed, 1, "fixture", nil, now.Add(31*time.Minute)); err != nil {
 			t.Fatal(err)
 		}
 		record := concludeAttemptRed(t, store, prober, nonce, &now)

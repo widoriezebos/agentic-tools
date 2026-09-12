@@ -644,6 +644,9 @@ func watchdogCommand(options LaunchOptions, ref identity.Ref, donePath string, f
 	if !options.Deadline.IsZero() {
 		args = append(args, "--deadline", options.Deadline.UTC().Format(time.RFC3339Nano))
 	}
+	if options.ControlRoot != "" && options.AttemptID != "" {
+		args = append(args, "--control-root", options.ControlRoot, "--attempt", options.AttemptID)
+	}
 	for _, path := range []string{options.LogPath} {
 		args = append(args, "--log", path)
 	}

@@ -209,6 +209,18 @@ func (w *progressWriter) record(group, event, status, reason string) error {
 	return testGroupProgress(w.path, group, event, status, reason)
 }
 
+// verdict records the supervisor's judgement of a group in the progress
+// file, where the suite watchdog reads it.
+func (w *progressWriter) verdict(group, verdict string) error {
+	w.mu.Lock()
+	defer w.mu.Unlock()
+	if w.path == "" {
+		return nil
+	}
+	return AppendSectionEvent(w.path, SectionEvent{Suite: "testing", Section: group, Event: "verdict",
+		At: time.Now().UTC().Format(time.RFC3339Nano), Depth: 0, Verdict: verdict})
+}
+
 // runStageGroups runs one stage's groups under the request's concurrency cap
 // and returns their results in plan order and, in stop mode, the first group
 // that failed. A progress-record failure or, in stop mode, a failed group
@@ -312,6 +324,11 @@ func runStageGroups(ctx context.Context, request TestRunRequest, groups map[stri
 			results[index] = groupResult
 			if stopAtFirstFailure && groupResult.Status != "passed" && groupResult.Status != "reused" {
 				halt(id)
+			}
+			if groupResult.Status == "dead" || groupResult.Status == "runaway" {
+				if err := progress.verdict(id, groupResult.Status); err != nil {
+					stop(err)
+				}
 			}
 			if err := progress.record(id, "end", groupResult.Status, groupResult.NotRunReason); err != nil {
 				stop(err)
@@ -642,10 +659,10 @@ func runTestGroup(ctx context.Context, request TestRunRequest, group testpolicy.
 		return result
 	}
 	defer func() {
-		timeout, maxBytes := time.Duration(request.EvidenceTimeoutMS)*time.Millisecond, request.EvidenceMaxBytes
-		if timeout <= 0 {
-			timeout = 60 * time.Second
-		}
+		// The detached evidence copy is bounded by bytes, never by the clock:
+		// a sixty-second bound turned a group invalid on a slow disk under
+		// load (proof-groups-detect-hangs-by-progress-not-the-clock, slice 2).
+		timeout, maxBytes := time.Duration(0), request.EvidenceMaxBytes
 		if maxBytes < 1 {
 			maxBytes = 512 * 1024 * 1024
 		}

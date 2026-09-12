@@ -87,8 +87,10 @@ func preserveEvidence(ctx context.Context, destination string, sources []string,
 // deliberately specific to this cleanup boundary; ordinary evidence capture
 // continues to use PreserveEvidence directly.
 func PreserveDetachedSuiteFailures(controlRoot, candidateRoot, owner string, timeout time.Duration, maxBytes int64) (EvidenceResult, string, error) {
-	if controlRoot == "" || candidateRoot == "" || owner == "" || timeout <= 0 || maxBytes < 1 {
-		return EvidenceResult{}, "", errors.New("detached evidence preservation requires control root, candidate root, owner, and positive bounds")
+	// A zero timeout is no clock (the copy is bounded by bytes only); the
+	// byte bound stays positive.
+	if controlRoot == "" || candidateRoot == "" || owner == "" || maxBytes < 1 {
+		return EvidenceResult{}, "", errors.New("detached evidence preservation requires control root, candidate root, owner, and a positive byte bound")
 	}
 	controlRoot, err := filepath.Abs(controlRoot)
 	if err != nil {
@@ -103,7 +105,10 @@ func PreserveDetachedSuiteFailures(controlRoot, candidateRoot, owner string, tim
 	} else if relative == "." || relative != ".." && !strings.HasPrefix(relative, ".."+string(filepath.Separator)) {
 		return EvidenceResult{}, "", errors.New("detached evidence control root is inside the disposable candidate")
 	}
-	ctx, cancel := context.WithTimeout(context.Background(), timeout)
+	ctx, cancel := context.WithCancel(context.Background())
+	if timeout > 0 {
+		ctx, cancel = context.WithTimeout(context.Background(), timeout)
+	}
 	defer cancel()
 	var sources []string
 	err = filepath.WalkDir(candidateRoot, func(path string, entry fs.DirEntry, walkErr error) error {

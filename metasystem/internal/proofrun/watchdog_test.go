@@ -122,7 +122,10 @@ func (p fixedProbe) Probe(int64) (identity.Exact, identity.Liveness, error) {
 	return p.exact, p.state, nil
 }
 
-func TestRunWatchdogStopsPrintingSectionAtAbsoluteCap(t *testing.T) {
+// A printing section past its cap, and a suite past its reservation's
+// deadline, run on: the watchdog notes both and ends a suite only when
+// its output stops growing (decision 3 of the hang-detection design).
+func TestRunWatchdogLetsAPrintingSectionAndAnExpiredDeadlineRunOn(t *testing.T) {
 	root := t.TempDir()
 	progress := filepath.Join(root, "progress.jsonl")
 	logPath := filepath.Join(root, "suite.log")
@@ -142,22 +145,145 @@ func TestRunWatchdogStopsPrintingSectionAtAbsoluteCap(t *testing.T) {
 	writeExecutable(t, preserve, "#!/usr/bin/env bash\necho bounded-copy-completed\n")
 	shutdowns := 0
 	var signals []syscall.Signal
-	err := RunWatchdog(WatchdogOptions{
-		Suite: "fixture", Root: root, ProgressPath: progress, DonePath: filepath.Join(root, "done"), LogPaths: []string{logPath},
+	notes, err := os.Create(filepath.Join(root, "watchdog.err"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer notes.Close()
+	readNotes := func() string {
+		data, _ := os.ReadFile(notes.Name())
+		return string(data)
+	}
+	done := filepath.Join(root, "done")
+	// The suite ends on its own once the watchdog has noted both the cap
+	// and the deadline: the done file is written on that fact, never on a
+	// timer.
+	go func() {
+		for !strings.Contains(readNotes(), "passed its 1ms cap") || !strings.Contains(readNotes(), "deadline") {
+			time.Sleep(time.Millisecond)
+		}
+		_ = os.WriteFile(done, nil, 0o600)
+	}()
+	err = RunWatchdog(WatchdogOptions{
+		Suite: "fixture", Root: root, ProgressPath: progress, DonePath: done, LogPaths: []string{logPath},
 		SuiteIdentity: identity.Ref{Pid: 999999, StartedAtSec: started.Unix()},
+		Deadline:      time.Now().Add(-time.Minute),
 		Silence:       time.Hour, SectionCap: time.Millisecond, EvidenceTimeout: time.Second, EvidenceMax: 1024,
 		Poll: time.Millisecond, TermGrace: time.Millisecond, KillGrace: time.Millisecond,
-		Executable: preserve, Output: os.Stdout, ErrorOutput: os.Stderr,
+		Executable: preserve, Output: os.Stdout, ErrorOutput: notes,
 		Prober:   fixedProbe{exact: identity.Exact{Pid: 999999, StartedAt: time.Unix(started.Unix(), 0)}, state: identity.Alive},
 		Signal:   func(_ int, signal syscall.Signal) error { signals = append(signals, signal); return nil },
 		Shutdown: func() error { shutdowns++; return nil },
 	})
-	if err == nil || !strings.Contains(err.Error(), "printing") || !strings.Contains(err.Error(), "section exceeded") {
-		t.Fatalf("error = %v", err)
+	if err != nil {
+		t.Fatalf("a printing section past its cap and a passed deadline ended the suite: %v", err)
 	}
-	if shutdowns != 1 || fmt.Sprint(signals) != fmt.Sprint([]syscall.Signal{syscall.SIGCONT, syscall.SIGTERM, syscall.SIGKILL}) {
-		t.Fatalf("shutdowns = %d, signals = %v", shutdowns, signals)
+	if shutdowns != 0 || len(signals) != 0 {
+		t.Fatalf("the clock signalled the suite: shutdowns = %d, signals = %v", shutdowns, signals)
 	}
+	if got := readNotes(); strings.Count(got, "passed its 1ms cap") != 1 || strings.Count(got, "the reservation's deadline") != 1 {
+		t.Fatalf("the notes were not written once each:\n%s", got)
+	}
+}
+
+// TestRunWatchdogEndsASuiteForAVerdictOrACancellationAndNothingElse is
+// row 11 of the hang-detection design: a suite whose output stopped for
+// longer than any silence window runs on; the supervisor's dead or runaway
+// verdict on the current section ends it, and so does a cancellation
+// intent recorded on the attempt.
+func TestRunWatchdogEndsASuiteForAVerdictOrACancellationAndNothingElse(t *testing.T) {
+	newBed := func(t *testing.T) (string, string, string) {
+		root := t.TempDir()
+		progress := filepath.Join(root, "progress.jsonl")
+		logPath := filepath.Join(root, "suite.log")
+		if err := os.WriteFile(logPath, []byte("once\n"), 0o600); err != nil {
+			t.Fatal(err)
+		}
+		if err := AppendProgressHeader(progress, ProgressHeader{LogPaths: []string{logPath}}); err != nil {
+			t.Fatal(err)
+		}
+		if err := AppendSectionEvent(progress, SectionEvent{Suite: "fixture", Section: "quiet", Event: "start",
+			At: time.Now().Add(-time.Hour).UTC().Format(time.RFC3339Nano), Depth: 0}); err != nil {
+			t.Fatal(err)
+		}
+		preserve := filepath.Join(root, "preserve.sh")
+		writeExecutable(t, preserve, "#!/usr/bin/env bash\necho bounded-copy-completed\n")
+		return root, progress, logPath
+	}
+	started := time.Now().Add(-time.Minute)
+	options := func(root, progress, logPath string, shutdowns *int) WatchdogOptions {
+		return WatchdogOptions{
+			Suite: "fixture", Root: root, ProgressPath: progress, DonePath: filepath.Join(root, "done"), LogPaths: []string{logPath},
+			SuiteIdentity: identity.Ref{Pid: 999999, StartedAtSec: started.Unix()},
+			Silence:       time.Millisecond, SectionCap: time.Millisecond, EvidenceTimeout: time.Second, EvidenceMax: 1024,
+			Poll: time.Millisecond, TermGrace: time.Millisecond, KillGrace: time.Millisecond,
+			Executable: filepath.Join(root, "preserve.sh"), Output: os.Stdout, ErrorOutput: os.Stderr,
+			Prober:   fixedProbe{exact: identity.Exact{Pid: 999999, StartedAt: time.Unix(started.Unix(), 0)}, state: identity.Alive},
+			Signal:   func(int, syscall.Signal) error { return nil },
+			Shutdown: func() error { *shutdowns++; return nil },
+		}
+	}
+	t.Run("silence and a passed cap end nothing; the done file does", func(t *testing.T) {
+		root, progress, logPath := newBed(t)
+		shutdowns := 0
+		opts := options(root, progress, logPath, &shutdowns)
+		// The done file lands once the watchdog has noted the cap, a fact
+		// the note proves it read the silent section past its window.
+		notes, err := os.Create(filepath.Join(root, "watchdog.err"))
+		if err != nil {
+			t.Fatal(err)
+		}
+		defer notes.Close()
+		opts.ErrorOutput = notes
+		go func() {
+			for {
+				data, _ := os.ReadFile(notes.Name())
+				if strings.Contains(string(data), "passed its 1ms cap") {
+					break
+				}
+				time.Sleep(time.Millisecond)
+			}
+			_ = os.WriteFile(opts.DonePath, nil, 0o600)
+		}()
+		if err := RunWatchdog(opts); err != nil || shutdowns != 0 {
+			t.Fatalf("a silent suite past every window was ended by the clock: err = %v, shutdowns = %d", err, shutdowns)
+		}
+	})
+	t.Run("the supervisor's verdict on the current section ends the suite", func(t *testing.T) {
+		root, progress, logPath := newBed(t)
+		if err := AppendSectionEvent(progress, SectionEvent{Suite: "fixture", Section: "quiet", Event: "verdict",
+			At: time.Now().UTC().Format(time.RFC3339Nano), Depth: 0, Verdict: "dead"}); err != nil {
+			t.Fatal(err)
+		}
+		shutdowns := 0
+		err := RunWatchdog(options(root, progress, logPath, &shutdowns))
+		if err == nil || !strings.Contains(err.Error(), "the supervisor judged section quiet dead") || shutdowns != 1 {
+			t.Fatalf("a dead verdict did not end the suite: err = %v, shutdowns = %d", err, shutdowns)
+		}
+	})
+	t.Run("a cancellation intent recorded on the attempt ends the suite", func(t *testing.T) {
+		root, progress, logPath := newBed(t)
+		controlRoot, proofIdentity := proofAttemptFixture(t, "watchdog-cancellation")
+		launcher, err := CurrentProcessIdentity(nil)
+		if err != nil {
+			t.Fatal(err)
+		}
+		attempt, _, err := ReserveLocked(AdmissionRequest{ControlRoot: controlRoot, ExecutionRoot: controlRoot, GoalID: "goal-a",
+			GoalRevision: 2, AccountingRevision: 2, ReservedMinutes: 2, Identity: proofIdentity, Launcher: launcher, Now: time.Now().UTC()})
+		if err != nil {
+			t.Fatal(err)
+		}
+		if err := RequestCancellation(controlRoot, attempt.AttemptID, "a person said stop"); err != nil {
+			t.Fatal(err)
+		}
+		shutdowns := 0
+		opts := options(root, progress, logPath, &shutdowns)
+		opts.ControlRoot, opts.AttemptID = controlRoot, attempt.AttemptID
+		err = RunWatchdog(opts)
+		if err == nil || !strings.Contains(err.Error(), "cancellation intent recorded: a person said stop") || shutdowns != 1 {
+			t.Fatalf("a recorded cancellation did not end the suite: err = %v, shutdowns = %d", err, shutdowns)
+		}
+	})
 }
 
 func TestRunWatchdogReturnsOnDoneAndValidatesBounds(t *testing.T) {
