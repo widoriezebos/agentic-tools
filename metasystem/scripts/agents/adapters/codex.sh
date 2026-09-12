@@ -122,6 +122,7 @@ supervise() { # dispatch|follow-up and supervisor args
   local verb=$1
   shift
   prepare_supervision "$verb" "$@" || { usage; return 2; }
+  record_build_cache_path "$workspace" "$round_dir"
   local usage_file="$round_dir/usage.json"
   local cli_pid event_session event_turn reasoning_effort
   local -a command
@@ -148,6 +149,10 @@ supervise() { # dispatch|follow-up and supervisor args
   local -a job_git_env=()
   while IFS= read -r assignment; do job_git_env+=("$assignment"); done < <(job_git_quarantine_env "$workspace")
   mark_cli_prefork || { fail_pending prefork_marker handshake; return 1; }
+  # The chain's build cache: the sandbox cannot write the user's Go cache,
+  # and a delegate left to itself sets a cold one per round (the deep dive's
+  # slowest gates all did).
+  while IFS= read -r assignment; do job_git_env+=("$assignment"); done < <(job_build_cache_env "$workspace")
   ( cd "$workspace" && exec env ${job_git_env[@]+"${job_git_env[@]}"} "${command[@]}" ) <"$prompt" >"$events" 2>>"$log" &
   cli_pid=$!
   register_cli_custody "$cli_pid" || { terminate_cli_child "$cli_pid"; fail_pending custody_registration handshake; return 1; }

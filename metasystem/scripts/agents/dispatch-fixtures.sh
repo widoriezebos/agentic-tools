@@ -2593,6 +2593,35 @@ happy_mirror_home=$("$engine" json get --file "$happy_child" --field mirror.path
 happy_manifest_files=$("$engine" json get --file "$happy_mirror_home/manifest.json" --field files)
 [[ "$happy_manifest_files" == *'"jobs/happy.json":'* && "$happy_manifest_files" == *'"jobs/happy-r2.json":'* ]] \
   || { echo "the shared manifest does not cover both chain records" >&2; exit 1; }
+# One build cache per chain (delegate-rounds-reuse-a-warm-gate): both rounds
+# of a worktree chain record the same GOCACHE under the worktree's git dir,
+# another chain records its own, and a shared-checkout job records none.
+run_agent_fixture cache-chain cache-chain "$agent_dispatch" dispatch --role implementer --brief "$code_brief" --job-id cache-chain --worktree --wait
+run_agent_fixture cache-chain-follow-up cache-chain-r2 "$agent_dispatch" follow-up --job cache-chain --message "$follow_message" --wait
+cache_round1=$(<"$agent_repo/artifacts/agents/cache-chain/rounds/1/build-cache.txt")
+cache_round2=$(<"$agent_repo/artifacts/agents/cache-chain/rounds/2/build-cache.txt")
+cache_worktree=$("$engine" json get --file "$agent_repo/artifacts/agents/jobs/cache-chain.json" --field workspaceRoot)
+cache_gitdir=$(git -C "$cache_worktree" rev-parse --absolute-git-dir)
+[[ -n "$cache_round1" && "$cache_round1" == "$cache_round2" && "$cache_round1" == "$cache_gitdir/metasystem-build-cache/go-cache" && -d "$cache_round1" ]] \
+  || { echo "chain rounds did not share one build cache under the worktree git dir: r1=$cache_round1 r2=$cache_round2 gitdir=$cache_gitdir" >&2; exit 1; }
+run_agent_fixture cache-chain-b cache-chain-b "$agent_dispatch" dispatch --role implementer --brief "$code_brief" --job-id cache-chain-b --worktree --wait
+[[ "$(<"$agent_repo/artifacts/agents/cache-chain-b/rounds/1/build-cache.txt")" != "$cache_round1" ]] \
+  || { echo "two chains shared one build cache" >&2; exit 1; }
+[[ -z "$(<"$agent_repo/artifacts/agents/happy/rounds/1/build-cache.txt")" ]] \
+  || { echo "a shared-checkout job recorded a build cache" >&2; exit 1; }
+# The real adapters compute the path with job_build_cache_env; it must name
+# the same cache the fake runtime recorded, and nothing for a shared checkout.
+helper_cache=$(bash -c 'source "$1/scripts/agents/adapters/runtime-common.sh"; job_build_cache_env "$2" | sed -n "s/^GOCACHE=//p"' _ "$agent_repo" "$cache_worktree")
+[[ "$helper_cache" == "$cache_round1" ]] \
+  || { echo "job_build_cache_env names a different cache than the rounds recorded: helper=$helper_cache recorded=$cache_round1" >&2; exit 1; }
+[[ -z "$(bash -c 'source "$1/scripts/agents/adapters/runtime-common.sh"; job_build_cache_env "$1"' _ "$agent_repo")" ]] \
+  || { echo "job_build_cache_env exported a cache for a shared checkout" >&2; exit 1; }
+# A reap that finds every member of the chain terminal removes its cache;
+# the worktree stays.
+run_agent_fixture cache-chain-reap cache-chain "$agent_dispatch" reap --job cache-chain
+[[ ! -d "$cache_round1" && -d "$cache_worktree" ]] \
+  || { echo "reap of a terminal chain did not remove its build cache (or removed the worktree): cache=$cache_round1" >&2; exit 1; }
+
 run_agent_fixture malformed-return-follow-up malformed-return-r2 "$agent_dispatch" follow-up --job malformed-return --message "$follow_message" --wait
 [[ "$(cd "$agent_repo" && scripts/agents/dispatch.sh status --job malformed-return-r2)" == completed ]] \
   || { echo "protocol-error retry did not create a completed child" >&2; exit 1; }

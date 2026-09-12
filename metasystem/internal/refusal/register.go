@@ -150,6 +150,7 @@ var Exclusions = []Exclusion{
 	{Pattern: "BASH_SOURCE", Reason: "an environment name"},
 	{Pattern: "LC_ALL", Reason: "an environment name"},
 	{Pattern: "CGO_ENABLED", Reason: "a Go toolchain environment name"},
+	{Pattern: "STATICCHECK_CACHE", Reason: "a Go toolchain environment name"},
 	{Pattern: "JAVA_HOME", Reason: "a Java toolchain environment name"},
 	{Pattern: "STEWARD_MESSAGE", Reason: "an environment name"},
 	{Pattern: "HUMAN_AUTHORITY_PROVEN", Reason: "an authority outcome that admits rather than refuses"},

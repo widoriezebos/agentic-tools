@@ -11,6 +11,11 @@ Date: <YYYY-MM-DD>
 
 <State the path, branch, what may be touched, and what must not be touched.>
 
+The build cache is provided: the adapter sets GOCACHE, GOTMPDIR and
+STATICCHECK_CACHE to the chain's cache in the worktree's git dir, shared by every
+round; never set, unset or strip them (no env -u, no env -i before a gate): a
+self-set cache is cold every round.
+
 # Inputs
 
 <Name the design, accepted critique round, and files the delegate may rely on. An implementation design leaves no judgment calls.>

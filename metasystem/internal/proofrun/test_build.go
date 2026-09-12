@@ -1541,6 +1541,12 @@ func digestEnvironment(environment []string) string {
 		switch name {
 		case "METASYSTEM_PROOF_CONTROL_ROOT", "METASYSTEM_PROOF_ATTEMPT", "METASYSTEM_PROOF_RECORD_KEY", "METASYSTEM_PROOF_CREATION_CLAIM", "METASYSTEM_PROOF_AUTH_BIN":
 			continue
+		// Where a build caches or writes its temporary files does not change
+		// what a test does; binding the locations would key every identity to
+		// one chain's cache or one round's scratch and defeat reuse across
+		// rounds and seats' attempts (delegate-rounds-reuse-a-warm-gate).
+		case "GOCACHE", "GOMODCACHE", "GOTMPDIR", "STATICCHECK_CACHE", "TMPDIR", "TMP", "TEMP":
+			continue
 		}
 		filtered = append(filtered, entry)
 	}

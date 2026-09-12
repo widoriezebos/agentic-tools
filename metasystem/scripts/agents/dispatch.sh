@@ -1277,6 +1277,47 @@ recollect_lost_return() { # job id, record path, current status
   return 0
 }
 
+# The chain's build cache (delegate-rounds-reuse-a-warm-gate) lives in the
+# root worktree's private git dir and is 0.5 to 1 GB once warm; nothing
+# removes delegate worktrees today, so the cache is removed when the chain
+# closes and when a reap finds every member of the chain terminal. The
+# worktree itself stays as it always has.
+remove_chain_build_cache() { # root job id
+  local root_job=$1 ws gitdir jobs_root
+  ws=$(json_field "$jobs/$root_job.json" workspaceRoot 2>/dev/null || true)
+  [[ -n "$ws" && "$ws" != null && -d "$ws" ]] || return 0
+  jobs_root=$(cd "$worktrees" 2>/dev/null && pwd -P) || return 0
+  case "$(cd "$ws" 2>/dev/null && pwd -P)/" in "$jobs_root/"*) ;; *) return 0 ;; esac
+  gitdir=$(git -C "$ws" rev-parse --absolute-git-dir 2>/dev/null) || return 0
+  [[ "$gitdir" == */.git/worktrees/* && -d "$gitdir/metasystem-build-cache" ]] || return 0
+  rm -rf "$gitdir/metasystem-build-cache"
+}
+reap_chain_build_cache() { # any job id of the chain
+  local root_job
+  [[ -f "$jobs/$1.json" ]] || return 0
+  root_job=$(root_job_id "$1" 2>/dev/null || true)
+  [[ -n "$root_job" && -f "$jobs/$root_job.json" && -d "$worktrees/$root_job" ]] || return 0
+  reap_chain_build_cache_of_root "$root_job"
+}
+# The sweep visits chains that have a job worktree, not every record: the
+# cache can only live under a job worktree, and two engine reads per record
+# on a seat with hundreds of records cost a reap sweep minutes.
+reap_chain_build_caches() {
+  local ws
+  for ws in "$worktrees"/*/; do
+    [[ -d "$ws" && -f "$jobs/$(basename "$ws").json" ]] || continue
+    reap_chain_build_cache_of_root "$(basename "$ws")"
+  done
+}
+reap_chain_build_cache_of_root() { # root job id with a job worktree
+  local root_job=$1 members terminal
+  members=$("$ms" job chain-members --jobs "$jobs" --root "$root_job" 2>/dev/null | grep -c . || true)
+  terminal=$("$ms" job chain-members --jobs "$jobs" --root "$root_job" --terminal-only 2>/dev/null | grep -c . || true)
+  (( members > 0 && members == terminal )) || return 0
+  remove_chain_build_cache "$root_job"
+}
+
+
 reap_one() { # job
   local job=$1 result
   # An explicit reap has no next tick: skipping a busy lock silently would
@@ -2712,6 +2753,7 @@ close_chain() {
   lease_run_held "$current_claim_epoch" "$0" __record-cas --job "$root_id" \
     --expect "$status" --status "$status" --patch "$patch"
   rm -f "$patch"
+  remove_chain_build_cache "$root_id"
   release_chain_lock "$root_id"; trap - EXIT
 }
 
@@ -2747,7 +2789,7 @@ reap_jobs() {
     fi
     return
   fi
-  if [[ -n "$job" ]]; then reap_one "$job"; else
+  if [[ -n "$job" ]]; then reap_one "$job"; reap_chain_build_cache "$job"; else
     mkdir -p "$jobs"
     # One failing reap must not starve the jobs after it in sort order
     # (script-orchestration-07): visit every record, then report the
@@ -2757,6 +2799,7 @@ reap_jobs() {
       [[ -f "$record" ]] || continue
       reap_one "$(basename "${record%.json}")" || sweep_failed=1
     done
+    reap_chain_build_caches
     if (( sweep_failed != 0 )); then
       echo "reap sweep finished with failures (see above)" >&2
       exit 1

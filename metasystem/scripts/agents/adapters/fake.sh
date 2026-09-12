@@ -131,6 +131,19 @@ complete_valid() {
   fi
 }
 
+# The fake runtime does not source runtime-common.sh; this mirrors
+# job_build_cache_env there (the dispatch fixtures compare the two), so the
+# fake's rounds record the same cache path a real runtime's rounds would.
+fake_record_build_cache_path() { # workspace, round directory
+  local gitdir cache= jobs_root
+  jobs_root=$(cd "$agents/worktrees" 2>/dev/null && pwd -P || true)
+  if [[ -n "$jobs_root" && "$(cd "$1" 2>/dev/null && pwd -P)/" == "$jobs_root/"* ]] && gitdir=$(git -C "$1" rev-parse --absolute-git-dir 2>/dev/null) && [[ "$gitdir" == */.git/worktrees/* ]]; then
+    cache="$gitdir/metasystem-build-cache/go-cache"
+    mkdir -p "$cache" "$gitdir/metasystem-build-cache/go-tmp" 2>/dev/null || cache=
+  fi
+  printf '%s\n' "$cache" >"$2/build-cache.txt"
+}
+
 supervise() { # verb and remaining args
   local verb=$1 gate_poll heartbeat_sleep; shift
   parse_supervisor_args "$@"
@@ -154,6 +167,7 @@ supervise() { # verb and remaining args
   events="$round_dir/events.jsonl"
   heartbeat="$agents/hb/$job"
   mkdir -p "$round_dir" "$(dirname "$heartbeat")"
+  fake_record_build_cache_path "$(field "$record" workspaceRoot)" "$round_dir"
   printf 'fake supervisor started value=%s\n' "$instance_tag" >"$log"
   printf 'fake raw output\n' >"$raw"
   printf '{"pid":%s,"pgid":%s,"instanceTag":"%s"}\n' "$$" "$$" "$instance_tag" >"$heartbeat"

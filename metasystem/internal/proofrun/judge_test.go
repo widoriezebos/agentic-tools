@@ -215,3 +215,15 @@ func TestComputeJudgeKeyFollowsTheJudgeSourceNotTheBuild(t *testing.T) {
 		t.Fatal("a commit without the engine sources did not read as the default key")
 	}
 }
+
+func TestEnvironmentDigestIgnoresCacheAndTemporaryLocations(t *testing.T) {
+	base := []string{"PATH=/usr/bin", "HOME=/Users/seat", "GOFLAGS=-mod=mod", "GOCACHE=/a/go-cache", "GOTMPDIR=/a/go-tmp", "STATICCHECK_CACHE=/a/staticcheck", "TMPDIR=/a/tmp"}
+	moved := []string{"PATH=/usr/bin", "HOME=/Users/seat", "GOFLAGS=-mod=mod", "GOCACHE=/b/go-cache", "GOTMPDIR=/b/go-tmp", "STATICCHECK_CACHE=/b/staticcheck", "TMPDIR=/b/tmp"}
+	if digestEnvironment(base) != digestEnvironment(moved) {
+		t.Fatal("a moved build cache or scratch changed the environment digest")
+	}
+	changed := []string{"PATH=/usr/bin", "HOME=/Users/seat", "GOFLAGS=-mod=vendor", "GOCACHE=/a/go-cache"}
+	if digestEnvironment(base) == digestEnvironment(changed) {
+		t.Fatal("a changed build flag kept the environment digest")
+	}
+}

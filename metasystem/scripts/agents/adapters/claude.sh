@@ -102,6 +102,7 @@ supervise() { # dispatch|follow-up and supervisor args
   local verb=$1
   shift
   prepare_supervision "$verb" "$@" || { usage; return 2; }
+  record_build_cache_path "$workspace" "$round_dir"
   local settings_file="$round_dir/claude-settings.json"
   local signal_file="$round_dir/claude-session-signal.json"
   local result_file="$round_dir/claude-result.json"
@@ -143,10 +144,14 @@ supervise() { # dispatch|follow-up and supervisor args
     cd "$workspace"
     # Claude's sandbox cannot write the user's caches or the system temporary
     # directory itself; the settings allow only this private scratch directory.
-    mkdir -p "$scratch_dir/go-cache" "$scratch_dir/go-tmp"
+    mkdir -p "$scratch_dir/go-tmp"
     export TMPDIR="$scratch_dir"
     export GOCACHE="$scratch_dir/go-cache"
     export GOTMPDIR="$scratch_dir/go-tmp"
+    # The chain's cache (job_build_cache_env) overrides the per-round one
+    # when the job runs in a worktree, so follow-up rounds start warm.
+    while IFS= read -r assignment; do export "${assignment?}"; done < <(job_build_cache_env "$workspace")
+    mkdir -p "$GOCACHE"
     export METASYSTEM_CLAUDE_SESSION_SIGNAL="$signal_file"
     export METASYSTEM_CLAUDE_EVENTS="$events"
     while IFS= read -r assignment; do export "${assignment?}"; done < <(job_git_quarantine_env "$workspace")

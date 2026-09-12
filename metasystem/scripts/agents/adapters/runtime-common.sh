@@ -515,6 +515,39 @@ emit_contract_snapshot() { # runtime, enforcement-map JSON
 # behave identically, empty for non-worktree jobs. The shared object store
 # stays read-only to the delegate; reads fall through the alternates link
 # the engine created at worktree dispatch.
+# One build cache per chain (goal delegate-rounds-reuse-a-warm-gate): every
+# round of a chain runs in the chain root's worktree, and the sandboxes grant
+# writes only inside that worktree and its derived git roots, so the cache
+# lives in the worktree's private git dir beside the quarantine object store.
+# It is outside the shippable projection, shared by every round of the chain,
+# private to the chain, and removed with the worktree. A job without a
+# worktree exports nothing. Printed as assignments, like the quarantine
+# environment, for the launch's env; the path is also recorded in the round
+# so a reader sees which cache a round used.
+job_build_cache_env() { # workspace
+  local ws=$1 gitdir cache jobs_root
+  # Only a job worktree the dispatcher made (under artifacts/agents/worktrees)
+  # qualifies: a seat checkout that is itself a linked worktree, or a
+  # landing's detached one, has a git dir the envelope never grants.
+  jobs_root=$(cd "$agents/worktrees" 2>/dev/null && pwd -P) || return 0
+  case "$(cd "$ws" 2>/dev/null && pwd -P)/" in "$jobs_root/"*) ;; *) return 0 ;; esac
+  gitdir=$(git -C "$ws" rev-parse --absolute-git-dir 2>/dev/null) || return 0
+  [[ "$gitdir" == */.git/worktrees/* ]] || return 0
+  cache="$gitdir/metasystem-build-cache"
+  mkdir -p "$cache/go-cache" "$cache/go-tmp" "$cache/staticcheck" 2>/dev/null || return 0
+  printf 'GOCACHE=%s\n' "$cache/go-cache"
+  printf 'GOTMPDIR=%s\n' "$cache/go-tmp"
+  # staticcheck (the fast gate) keeps its own cache and exits 1 when it
+  # cannot write one; the slow gates in the deep dive all set it by hand.
+  printf 'STATICCHECK_CACHE=%s\n' "$cache/staticcheck"
+}
+record_build_cache_path() { # workspace, round directory
+  local assignment cache=
+  while IFS= read -r assignment; do
+    case "$assignment" in GOCACHE=*) cache=${assignment#GOCACHE=} ;; esac
+  done < <(job_build_cache_env "$1")
+  printf '%s\n' "$cache" >"$2/build-cache.txt"
+}
 job_git_quarantine_env() { # workspace
   local ws=$1 gitdir quarantine common
   gitdir=$(git -C "$ws" rev-parse --absolute-git-dir 2>/dev/null) || return 0

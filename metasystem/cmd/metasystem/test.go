@@ -1382,7 +1382,7 @@ func trustedTestingPolicyBase(projectRoot string, workspace gittree.Workspace) (
 
 func testingEnvironment(environment []string) []string {
 	allowed := map[string]bool{"PATH": true, "HOME": true, "TMPDIR": true, "TMP": true, "TEMP": true,
-		"GOCACHE": true, "GOMODCACHE": true, "GOPATH": true, "GOROOT": true, "GOFLAGS": true, "GOWORK": true,
+		"GOCACHE": true, "GOMODCACHE": true, "GOTMPDIR": true, "STATICCHECK_CACHE": true, "GOPATH": true, "GOROOT": true, "GOFLAGS": true, "GOWORK": true,
 		"CGO_ENABLED": true, "GOTOOLCHAIN": true, "GOEXPERIMENT": true, "JAVA_HOME": true, "LANG": true,
 		"LC_ALL": true, "SYSTEMROOT": true, "TZ": true}
 	var result []string
