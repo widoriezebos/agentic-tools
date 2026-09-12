@@ -155,6 +155,19 @@ func (h *Held) Release() error {
 	return err
 }
 
+// Busy is the refusal a live or unproven holder produces. Its text is the
+// ranked LOCK_BUSY line operators and tests match on; its type lets a caller
+// that may try again (the proof terminal commit) tell a refusal from every
+// other failure.
+type Busy struct {
+	Key    string
+	Holder string
+}
+
+func (b *Busy) Error() string {
+	return fmt.Sprintf("LOCK_BUSY rank=goal-revision key=%s holder=%s retry=retry-after-the-named-holder-releases", b.Key, b.Holder)
+}
+
 // BusyError names the rank, key, readable holder evidence, and retry action.
 func BusyError(path, key string) error {
 	holder := "unreadable"
@@ -163,5 +176,5 @@ func BusyError(path, key string) error {
 			holder = fmt.Sprintf("pid=%d,tag=%s", decoded.Pid, decoded.Tag)
 		}
 	}
-	return fmt.Errorf("LOCK_BUSY rank=goal-revision key=%s holder=%s retry=retry-after-the-named-holder-releases", key, holder)
+	return &Busy{Key: key, Holder: holder}
 }

@@ -3,6 +3,7 @@ package main
 import (
 	"bytes"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"os"
 	"os/exec"
@@ -15,11 +16,14 @@ import (
 	dispatchcore "github.com/widoriezebos/agentic-tools/metasystem/internal/dispatch"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/goal"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/goalbudget"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/goalrevision"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/governance"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/identity"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/lease"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/lock"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/proofrun"
 	runpkg "github.com/widoriezebos/agentic-tools/metasystem/internal/run"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/stopfence"
 )
 
 func TestProofRunWitnessStateUsesProbeAndFrozenEligibility(t *testing.T) {
@@ -681,5 +685,220 @@ func TestProofRunCommandGovernedParentSharesOneCharge(t *testing.T) {
 	projection := dispatchcore.ProjectBudget(root, file, now.Add(time.Second))
 	if projection.Status != dispatchcore.BudgetKnown || projection.Attempts != 1 || projection.ReservedJobMinutes != 2 {
 		t.Fatalf("governed parent and proof were not one accounting charge: %+v", projection)
+	}
+}
+
+// terminalCommitFixture reserves an attempt on a claimed goal that carries
+// stop capability, so the commit's authority checks pass and the scripted
+// lock seam alone decides the outcome. The launch it returns runs a command
+// under a watchdog stub and commits through the given terminal commit. The
+// fixture's 2026-08-30 goal dates are inert here: the commit's binding reads
+// committed fields only, and nothing on this path reads METASYSTEM_GOAL_NOW.
+func terminalCommitFixture(t *testing.T) (string, proofrun.Attempt, func([]string, func(proofrun.CompletionContext, json.RawMessage) error) (int, string)) {
+	t.Helper()
+	root, _ := proofExtensionGoalFixture(t)
+	proofIdentity, err := proofrun.BuildProofIdentity(root, filepath.Join(root, "metasystem.conf"), "full", "terminal-commit", nil, 2)
+	if err != nil {
+		t.Fatal(err)
+	}
+	launcher, err := proofrun.CurrentProcessIdentity(nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	attempt, _, err := proofrun.ReserveLocked(proofrun.AdmissionRequest{ControlRoot: root, ExecutionRoot: root,
+		GoalID: "standing-validation", GoalRevision: 2, AccountingRevision: 2, ReservedMinutes: 30,
+		Identity: proofIdentity, Launcher: launcher, Now: time.Now().UTC()})
+	if err != nil {
+		t.Fatal(err)
+	}
+	deadline, err := time.Parse(time.RFC3339Nano, attempt.Deadline)
+	if err != nil {
+		t.Fatal(err)
+	}
+	artifactDir := filepath.Join(root, "artifacts", "terminal-commit")
+	if err := os.MkdirAll(artifactDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	watchdog := filepath.Join(artifactDir, "watchdog.sh")
+	if err := os.WriteFile(watchdog, []byte(`#!/usr/bin/env bash
+done_path=
+while (($#)); do
+  if [[ "$1" == --done ]]; then done_path=$2; shift 2; else shift; fi
+done
+while [[ ! -e "$done_path" ]]; do sleep 0.005; done
+`), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	launch := func(command []string, commit func(proofrun.CompletionContext, json.RawMessage) error) (int, string) {
+		var launcherErrors bytes.Buffer
+		result := proofrun.LaunchSuite(proofrun.LaunchOptions{Suite: "terminal-commit", Root: root, ControlRoot: root, ErrorOutput: &launcherErrors,
+			AttemptID: attempt.AttemptID, Deadline: deadline, ConfPath: filepath.Join(root, "metasystem.conf"),
+			ProgressPath: filepath.Join(artifactDir, "progress.jsonl"), LogPath: filepath.Join(artifactDir, "proof.log"),
+			Banner: "terminal commit fixture", Silence: time.Second, SectionCap: time.Second, EvidenceTimeout: time.Second,
+			EvidenceMax: 1024, Poll: 5 * time.Millisecond, TermGrace: time.Second, KillGrace: time.Second,
+			WatchdogExecutable: watchdog, Command: command,
+			PrepareSuccess: func(proofrun.CompletionContext) (json.RawMessage, error) {
+				return json.RawMessage(`{"prepared":true}`), nil
+			}, CommitTerminal: commit})
+		return result, launcherErrors.String()
+	}
+	return root, attempt, launch
+}
+
+// scriptTerminalLocks installs a lock seam for one test; an unset acquirer
+// keeps the real one, the pause records its durations instead of sleeping,
+// and the notes written without a launcher stream are captured.
+func scriptTerminalLocks(t *testing.T, seam terminalLockSeam) (notes *bytes.Buffer, pauses *[]time.Duration) {
+	t.Helper()
+	previous := terminalLocks
+	if seam.stopFence == nil {
+		seam.stopFence = previous.stopFence
+	}
+	if seam.goalRevision == nil {
+		seam.goalRevision = previous.goalRevision
+	}
+	notes = &bytes.Buffer{}
+	pauses = &[]time.Duration{}
+	seam.notes = notes
+	seam.pause = func(d time.Duration) { *pauses = append(*pauses, d) }
+	terminalLocks = seam
+	t.Cleanup(func() { terminalLocks = previous })
+	return notes, pauses
+}
+
+func TestCommitProofTerminalTriesARefusedLockAgainAndNamesTheHolder(t *testing.T) {
+	root, attempt, launch := terminalCommitFixture(t)
+	fenceCalls, goalCalls := 0, 0
+	notes, pauses := scriptTerminalLocks(t, terminalLockSeam{
+		stopFence: func(root, verb string, ref identity.Ref, scaleMilli int) (*lock.Lock, error) {
+			fenceCalls++
+			if fenceCalls <= 2 {
+				return nil, &lock.HolderError{Path: "fence", Holder: lock.Identity{Pid: 4242, PidStartedAt: 7}, State: lock.Alive}
+			}
+			return stopfence.Acquire(root, verb, ref, scaleMilli)
+		},
+		goalRevision: func(root, goalID string, revision uint64, tag string) (*goalrevision.Held, error) {
+			goalCalls++
+			if goalCalls == 1 {
+				return nil, &goalrevision.Busy{Key: goalID + "/r2", Holder: "pid=4343,tag=goal-resume"}
+			}
+			return goalrevision.Acquire(root, goalID, revision, tag)
+		},
+	})
+	result, launcherErrors := launch([]string{"true"}, commitProofTerminal)
+	if result != 0 {
+		t.Fatalf("a commit whose locks were refused and then granted did not succeed: result %d\n%s", result, launcherErrors)
+	}
+	stored, err := proofrun.ReadAttempt(root, attempt.AttemptID)
+	if err != nil || stored.Terminal == nil || stored.Terminal.Result != proofrun.TerminalSuccess {
+		t.Fatalf("the green proof was not committed: attempt=%+v err=%v", stored, err)
+	}
+	if fenceCalls != 4 || goalCalls != 2 {
+		t.Fatalf("the commit did not try the locks again from the top: fence tries %d, goal-revision tries %d", fenceCalls, goalCalls)
+	}
+	// The notes go to the launcher's error stream, which the launcher tees
+	// into launcher.log, the record the evidence is mined from.
+	for _, want := range []string{
+		"try 1 of 6 waits behind lock fence is held by pid 4242 (started 7) alive",
+		"try 2 of 6 waits behind lock fence is held by pid 4242",
+		"try 3 of 6 waits behind LOCK_BUSY rank=goal-revision key=standing-validation/r2 holder=pid=4343,tag=goal-resume",
+	} {
+		if !strings.Contains(launcherErrors, want) {
+			t.Fatalf("the refused try did not name its holder on the launcher's stream: want %q in\n%s", want, launcherErrors)
+		}
+	}
+	if strings.Count(launcherErrors, "waits behind") != 3 || notes.Len() != 0 {
+		t.Fatalf("a granted try was noted as refused, or a note bypassed the launcher's stream:\n%s\n%s", launcherErrors, notes.String())
+	}
+	// Every refused try is followed by one pause of the named length, so a
+	// waiter polling the released fence can see it free.
+	if len(*pauses) != 3 || (*pauses)[0] != terminalCommitPause || (*pauses)[2] != terminalCommitPause {
+		t.Fatalf("the tries were not paused apart: %v", *pauses)
+	}
+	// The stop fence taken on the refused goal-revision try was released
+	// before the next try (the real acquisition on try 4 succeeded within
+	// its bound), and nothing is left held after the commit.
+	if _, err := os.Stat(stopfence.LockPath(root)); !os.IsNotExist(err) {
+		t.Fatalf("the stop fence is still held after the commit: %v", err)
+	}
+}
+
+func TestCommitProofTerminalGivesUpAfterNamedTriesWithTheHolderInTheRecord(t *testing.T) {
+	root, attempt, launch := terminalCommitFixture(t)
+	calls := 0
+	// The shape the lock produces for an unreadable owner file: no holder
+	// identity, unproven liveness, the read error as the cause.
+	_, pauses := scriptTerminalLocks(t, terminalLockSeam{
+		stopFence: func(string, string, identity.Ref, int) (*lock.Lock, error) {
+			calls++
+			return nil, &lock.HolderError{Path: "fence", Holder: lock.Identity{}, State: lock.Unknown,
+				Cause: errors.New("owner.json: permission denied")}
+		},
+	})
+	result, launcherErrors := launch([]string{"true"}, commitProofTerminal)
+	if result == 0 || !strings.Contains(launcherErrors,
+		"proof terminal commit refused 6 times; the last holder: lock fence is held by pid 0 (started 0) of unproven liveness (uninspectable is alive); owner file: owner.json: permission denied") {
+		t.Fatalf("the last refusal was not reported by name with its cause: result %d\n%s", result, launcherErrors)
+	}
+	if calls != terminalCommitTries || strings.Count(launcherErrors, "waits behind") != terminalCommitTries-1 || len(*pauses) != terminalCommitTries-1 {
+		t.Fatalf("the commit did not try the named number of times a pause apart: %d tries, %d pauses\n%s", calls, len(*pauses), launcherErrors)
+	}
+	stored, err := proofrun.ReadAttempt(root, attempt.AttemptID)
+	if err != nil || stored.Terminal == nil || stored.Terminal.Result != proofrun.TerminalUnknown || stored.Terminal.ExitStatus != 1 ||
+		!strings.Contains(stored.Terminal.Reason, "refused 6 times") || !strings.Contains(stored.Terminal.Reason, "owner file: owner.json: permission denied") {
+		t.Fatalf("the refused attempt was not retained with the holder named: attempt=%+v err=%v", stored, err)
+	}
+
+	// An attempt a stop batch asked to cancel while the commit was being
+	// refused is retained as cancelled, as the commit itself would have
+	// recorded it. The intent lands during the first refused try, after the
+	// launch (which refuses an attempt already cancelled) and before the
+	// retained terminal.
+	root, attempt, launch = terminalCommitFixture(t)
+	cancelledRoot, cancelledAttempt := root, attempt.AttemptID
+	scriptTerminalLocks(t, terminalLockSeam{
+		stopFence: func(string, string, identity.Ref, int) (*lock.Lock, error) {
+			if err := proofrun.RequestCancellation(cancelledRoot, cancelledAttempt, "stop batch"); err != nil {
+				t.Error(err)
+			}
+			return nil, &lock.HolderError{Path: "fence", Holder: lock.Identity{Pid: 4242, PidStartedAt: 7}, State: lock.Alive}
+		},
+	})
+	if result, _ := launch([]string{"true"}, commitProofTerminal); result == 0 {
+		t.Fatal("a refused commit on a cancelled attempt reported success")
+	}
+	stored, err = proofrun.ReadAttempt(root, attempt.AttemptID)
+	if err != nil || stored.Terminal == nil || stored.Terminal.Result != proofrun.TerminalCancelled || !strings.Contains(stored.Terminal.Reason, "refused 6 times") {
+		t.Fatalf("the refused cancelled attempt was not retained as cancelled: attempt=%+v err=%v", stored, err)
+	}
+}
+
+func TestATestingWorkerThatWroteNoResultEndsItsAttemptFailedWithTheFileNamed(t *testing.T) {
+	root, attempt, launch := terminalCommitFixture(t)
+	missing := filepath.Join(root, "artifacts", "terminal-commit", "worker-result.json")
+	var retained *proofrun.TestResult
+	result, launcherErrors := launch([]string{"false"}, testingTerminalCommit(missing, &retained))
+	if result != 1 || strings.Contains(launcherErrors, "commit terminal proof result") {
+		t.Fatalf("a failed worker without a result did not commit its terminal: result %d\n%s", result, launcherErrors)
+	}
+	stored, err := proofrun.ReadAttempt(root, attempt.AttemptID)
+	if err != nil || stored.Terminal == nil || stored.Terminal.Result != proofrun.TerminalFailed || stored.Terminal.ExitStatus != 1 ||
+		!strings.Contains(stored.Terminal.Reason, "the worker left no usable result: open "+missing) || stored.TestResult != nil || retained != nil {
+		t.Fatalf("the missing result was not named on a failed terminal: attempt=%+v err=%v", stored, err)
+	}
+
+	// A success without its result is a contradiction and is refused. In a
+	// real launch PrepareSuccess reads the result first and a missing one
+	// already fails the exit; this fixture's PrepareSuccess returns a canned
+	// payload, which is what reaches the commit's own guard.
+	root, attempt, launch = terminalCommitFixture(t)
+	missing = filepath.Join(root, "artifacts", "terminal-commit", "worker-result.json")
+	result, launcherErrors = launch([]string{"true"}, testingTerminalCommit(missing, &retained))
+	if result == 0 || !strings.Contains(launcherErrors, "commit terminal proof result: open "+missing) {
+		t.Fatalf("a success without its result was committed: result %d\n%s", result, launcherErrors)
+	}
+	stored, err = proofrun.ReadAttempt(root, attempt.AttemptID)
+	if err != nil || stored.Terminal != nil {
+		t.Fatalf("a refused success commit still wrote a terminal: attempt=%+v err=%v", stored, err)
 	}
 }

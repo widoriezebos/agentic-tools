@@ -67,6 +67,9 @@ type CompletionContext struct {
 	ExitStatus    int
 	CompletedAt   time.Time
 	InputIdentity string
+	// ErrorOutput is the launcher's error stream, teed into launcher.log,
+	// where the terminal commit notes what it waited behind.
+	ErrorOutput io.Writer
 }
 
 func LaunchSuite(options LaunchOptions) int {
@@ -458,7 +461,7 @@ func LaunchSuite(options LaunchOptions) int {
 	}
 	completedAt := time.Now().UTC()
 	completion := CompletionContext{ControlRoot: controlRoot, ExecutionRoot: options.Root, AttemptID: options.AttemptID,
-		RecordKey: record.Key(), ExitStatus: result, CompletedAt: completedAt, InputIdentity: parityIdentity}
+		RecordKey: record.Key(), ExitStatus: result, CompletedAt: completedAt, InputIdentity: parityIdentity, ErrorOutput: combinedErr}
 	var receipt json.RawMessage
 	if options.AttemptID != "" && result == 0 && options.PrepareSuccess != nil {
 		receipt, err = options.PrepareSuccess(completion)

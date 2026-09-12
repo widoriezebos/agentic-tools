@@ -280,6 +280,76 @@ the holder it waits behind on each try, and on the last refusal retains
 the attempt as incomplete with the holder named, so the reaper's next pass
 or a person can finish it; slice 2c.
 
+### Slice 2c: the retry rule at the terminal commit (2026-09-12, night)
+
+Built on the m1e seat as a fix-forward (seat build, one Opus read, under
+R-103: the evidence did not warrant the design chain). The records first:
+of the 175 attempts on the four checkouts (m1e 63, m1b 46, m1c 30, main
+36) nineteen carry the unknown terminal "proof launcher ended before its
+ordered terminal commit", and their launcher logs name the commit's
+refusal in every case: thirteen could not open the worker's result file
+(the worker had refused before its first group on a protected-probe
+failure, or its suite was ended under it), six lost goal-revision
+authority (the claim moved under a running proof: a goal concluded or
+re-claimed during its attempt, which is the ledger's rule), and none was
+refused a lock (the counts as the critic recomputed them; the seat's first
+count had misfiled one). So:
+
+- The commit tries its two ranked locks again on a refusal,
+  `terminalCommitTries` (six) times from the top: the stop fence, then the
+  goal revision, then the mutation lock; a refused goal-revision try
+  releases the stop fence before the next try, and the tries are
+  `terminalCommitPause` (250 ms) apart, ten of the other waiters' polls,
+  so the released fence is seen free and a holder there parks nothing
+  else (the Opus read's F-2 after slice 2; the pause is this read's F-1).
+  Each try is the lock's own bounded wait (ten seconds on the fence, one
+  on the revision); the seam `terminalLocks` scripts the acquisitions and
+  the pause in tests, which run in no wall time. Every refused try notes
+  the holder it waited behind, with the owner file's read error when that
+  is what made it unprovable, on the launcher's error stream, which the
+  launcher tees into launcher.log (the record this evidence was mined
+  from). A refusal is a `lock.HolderError` (a live holder, or an unproven
+  one: the unreadable owner file keeps its exit, F-1 after slice 2) or the
+  goal-revision lock's typed `Busy`; any other error is final on the first
+  try.
+- On the last refusal the attempt is retained under the mutation lock
+  alone as an unknown terminal (cancelled, when a stop batch had asked for
+  that meanwhile) whose reason names the tries and the holder ("proof
+  terminal commit refused 6 times; the last holder: lock ... is held by
+  pid ..."), so the record, the retry decision that follows it and a
+  person see what it waited behind. The "reaper finishes it later" half of
+  the design act is not built: a deferred commit needs the authority
+  checks (fence generation, goal binding) re-run by a process that is not
+  the launcher, and with zero refusals on record it buys nothing today
+  (R-103). It is designed if a refusal ever appears in a record; the
+  reason text above is how one would show.
+- The thirteen: the outer testing launch's commit (`testingTerminalCommit`)
+  ends an attempt whose worker left no usable result as a failed terminal
+  that names the reader's error, instead of failing the commit and leaving
+  an unknown terminal that hides the cause. A success without its result
+  is a contradiction and is refused; in a real launch the preparation
+  step reads the result first and turns a missing one into a failed exit,
+  so that guard is the commit's own defence. The six are the ledger's rule
+  and stand.
+- Proof: rows 16 to 18 below.
+- Critique record, round 1 (2026-09-12, Opus, code-critique): one
+  material finding, folded: F-1, no pause between tries, so the fence
+  released between them was retaken within milliseconds and the other
+  waiters, polling every 25 ms, never saw it free; a stop or arm could
+  then expire its own bound and report a checkout transition in progress.
+  Non-material, folded: F-2 (the notes went to the process stderr, not
+  the launcher's stream and launcher.log), F-3 (a cancellation intent
+  recorded meanwhile is now retained as cancelled), F-4 (the wording for a
+  result that exists but does not parse), F-5 (the success-without-result
+  leg is the commit's own guard; the test says so), F-6 (the owner file's
+  read error is now in the note and the reason), F-8 (the counts above),
+  F-9 (the fixture's stale goal dates are inert by construction; the
+  fixture says why). F-7 accepted as the ranked order: the fence is held
+  across the one-second goal-revision wait because fence, goal revision,
+  mutation is the order every acquirer uses, and the critic traced all
+  fifteen call sites to show the blocking mutation lock can wait but never
+  deadlock.
+
 ## Decision 4: proof
 
 Every row names the path it exercises. The window and the budget are
@@ -304,6 +374,9 @@ test asserts that pair (thirty minutes, and the budget from the group).
 | 13 | `cpuBudgetSeconds` is required on every group and the contract validator refuses a group without it | Go test in internal/testpolicy | internal/testpolicy |
 | 14 | The section adapter counts the section's stage-results growth as output and its descendant tree as consumption | Section fixture with a fake section that only writes stage results from a `Setsid` child | internal/proofrun |
 | 15 | `proc supervise` gives a shell command the same two rules and the same record | Shell fixture leg | scripts/agents |
+| 16 | The terminal commit tries a refused lock again from the top, a pause apart, names the holder on each refused try on the launcher's stream, releases the stop fence between tries, and commits the green proof once granted | Go test on the scripted lock seam | cmd/metasystem |
+| 17 | After the named number of refusals the attempt is retained as an unknown terminal (cancelled if asked meanwhile) whose reason names the tries, the holder and the owner file's error | Go test on the scripted lock seam | cmd/metasystem |
+| 18 | A testing worker that left no usable result ends its attempt failed with the reader's error named; a success without its result is refused | Go test | cmd/metasystem |
 
 Residual risks, named: (a) a legitimate wait with no activity in the
 whole tree for more than thirty minutes is judged dead; the record
@@ -322,6 +395,8 @@ consumed figure on the record, and the fix is one contract line.
    1 to 9 and 12 to 14. Unblocks every receipt on this Mac.
 2. The attempt deadline as a reservation figure only (Decision 3), rows
    10 and 11.
+   2c. The retry rule at the terminal commit and the truthful terminal for
+   a worker without a result, rows 16 to 18 (built 2026-09-12).
 3. `proc supervise` for the shell gate, the coverage run and the
    fixture beds, row 15; `SECONDS` deadlines and harness caps become
    calls to it.

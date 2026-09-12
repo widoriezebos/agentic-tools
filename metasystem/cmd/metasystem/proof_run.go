@@ -24,6 +24,7 @@ import (
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/identity"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/landing"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/lease"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/lock"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/proofrun"
 	runpkg "github.com/widoriezebos/agentic-tools/metasystem/internal/run"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/stopfence"
@@ -635,6 +636,162 @@ func commitProofTerminal(completion proofrun.CompletionContext, receipt json.Raw
 }
 
 func commitProofTerminalWithTestResult(completion proofrun.CompletionContext, receipt json.RawMessage, testResult *proofrun.TestResult) error {
+	return commitProofTerminalWithReason(completion, receipt, testResult, "proof launcher completed")
+}
+
+// terminalCommitTries is how many times the terminal commit tries its locks
+// before it gives the attempt up as incomplete with the holder named
+// (proof-groups-detect-hangs-by-progress-not-the-clock, slice 2c). Each try
+// is the lock's own bounded wait (ten seconds on the stop fence, one on the
+// goal revision), so a healthy holder that runs long under load is waited
+// out across the tries instead of losing a green proof at the first refusal;
+// a wedged holder is still refused, by name, within a minute or so. The stop
+// fence is released before a refused goal-revision try is repeated, so a
+// holder there never parks every landing's terminal commit behind this one.
+const terminalCommitTries = 6
+
+// terminalCommitPause is the gap between two tries. The lock's other
+// waiters poll every 25 ms, so a fence released and retaken within a few
+// milliseconds would never be seen free; the pause is what makes the
+// release between tries real (the Opus read of this slice, F-1).
+const terminalCommitPause = 250 * time.Millisecond
+
+// terminalLockSeam is how the terminal commit takes its two ranked locks,
+// pauses between tries and notes a refused try when no launcher stream is
+// at hand; tests script it and run in no wall time. The proof mutation lock
+// is not part of it: it is waited for, never refused.
+type terminalLockSeam struct {
+	stopFence    func(root, verb string, ref identity.Ref, scaleMilli int) (*lock.Lock, error)
+	goalRevision func(root, goalID string, revision uint64, tag string) (*goalrevision.Held, error)
+	pause        func(time.Duration)
+	notes        io.Writer
+}
+
+var terminalLocks = terminalLockSeam{stopFence: stopfence.Acquire, goalRevision: goalrevision.Acquire, pause: time.Sleep, notes: os.Stderr}
+
+// describeRefusal names the holder a refusal waited behind, with the owner
+// file's read error when that is what made the holder unprovable.
+func describeRefusal(err error) string {
+	var holder *lock.HolderError
+	if errors.As(err, &holder) && holder.Cause != nil {
+		return fmt.Sprintf("%v; owner file: %v", err, holder.Cause)
+	}
+	return err.Error()
+}
+
+// terminalCommitRefused is the last refusal after every try, carrying the
+// holder the commit waited behind.
+type terminalCommitRefused struct {
+	Tries  int
+	Holder error
+}
+
+func (e *terminalCommitRefused) Error() string {
+	return fmt.Sprintf("proof terminal commit refused %d times; the last holder: %s", e.Tries, describeRefusal(e.Holder))
+}
+
+func (e *terminalCommitRefused) Unwrap() error { return e.Holder }
+
+// terminalLockRefused reports whether an acquisition error names a holder
+// (live, or unproven: an unreadable owner file is a holder by the lock's
+// rule), the one case a later try can succeed on. Every other error is
+// final on the first try.
+func terminalLockRefused(err error) bool {
+	var holder *lock.HolderError
+	if errors.As(err, &holder) {
+		return true
+	}
+	var busy *goalrevision.Busy
+	return errors.As(err, &busy)
+}
+
+// heldTerminalLocks is the stop fence, the goal revision and the proof
+// mutation lock, taken in that order and released in reverse.
+type heldTerminalLocks struct {
+	fence *lock.Lock
+	goal  *goalrevision.Held
+	proof *proofrun.MutationLock
+}
+
+func (h *heldTerminalLocks) release() {
+	if h == nil {
+		return
+	}
+	if h.proof != nil {
+		_ = h.proof.Release()
+	}
+	if h.goal != nil {
+		_ = h.goal.Release()
+	}
+	if h.fence != nil {
+		_ = h.fence.Release()
+	}
+}
+
+func tryTerminalLocks(root, goalID string, revision uint64, ref identity.Ref) (*heldTerminalLocks, error) {
+	fence, err := terminalLocks.stopFence(root, "proof-finalize", ref, 1000)
+	if err != nil {
+		return nil, err
+	}
+	heldGoal, err := terminalLocks.goalRevision(root, goalID, revision, "proof-finalize")
+	if err != nil {
+		_ = fence.Release()
+		return nil, err
+	}
+	heldProof, err := proofrun.AcquireMutation(root)
+	if err != nil {
+		_ = heldGoal.Release()
+		_ = fence.Release()
+		return nil, err
+	}
+	return &heldTerminalLocks{fence: fence, goal: heldGoal, proof: heldProof}, nil
+}
+
+// acquireTerminalLocks takes the commit's locks, trying a refusal again up
+// to terminalCommitTries times, a pause apart, with the holder it waited
+// behind noted on each refused try. The last refusal is returned as
+// terminalCommitRefused.
+func acquireTerminalLocks(root, goalID string, revision uint64, ref identity.Ref, notes io.Writer) (*heldTerminalLocks, error) {
+	var last error
+	for try := 1; try <= terminalCommitTries; try++ {
+		held, err := tryTerminalLocks(root, goalID, revision, ref)
+		if err == nil {
+			return held, nil
+		}
+		if !terminalLockRefused(err) {
+			return nil, err
+		}
+		last = err
+		if try < terminalCommitTries {
+			fmt.Fprintf(notes, "proof terminal commit: try %d of %d waits behind %s\n", try, terminalCommitTries, describeRefusal(err))
+			terminalLocks.pause(terminalCommitPause)
+		}
+	}
+	return nil, &terminalCommitRefused{Tries: terminalCommitTries, Holder: last}
+}
+
+// retainRefusedTerminal records the attempt as incomplete with the holder
+// named once every try was refused, under the proof mutation lock alone: the
+// record says what the commit waited behind, so the next reader (a retry
+// decision, a person) can act on it, and the launcher's fallback finds a
+// terminal already written. An attempt that a stop batch had already asked
+// to cancel is recorded cancelled, as the commit would have recorded it.
+func retainRefusedTerminal(completion proofrun.CompletionContext, refused error, notes io.Writer) {
+	status := completion.ExitStatus
+	if status == 0 {
+		status = 1
+	}
+	result := proofrun.TerminalUnknown
+	if attempt, err := proofrun.ReadAttempt(completion.ControlRoot, completion.AttemptID); err == nil && attempt.CancellationIntent != "" {
+		result = proofrun.TerminalCancelled
+	}
+	if _, err := proofrun.FinalizeAttempt(completion.ControlRoot, completion.AttemptID, result, status,
+		refused.Error(), nil, time.Now().UTC()); err != nil {
+		fmt.Fprintf(notes, "proof terminal commit: retain the refused attempt: %v\n", err)
+	}
+}
+
+func commitProofTerminalWithReason(completion proofrun.CompletionContext, receipt json.RawMessage, testResult *proofrun.TestResult, reason string) error {
 	attempt, err := proofrun.ReadAttempt(completion.ControlRoot, completion.AttemptID)
 	if err != nil {
 		return err
@@ -643,21 +800,19 @@ func commitProofTerminalWithTestResult(completion proofrun.CompletionContext, re
 	if err != nil {
 		return err
 	}
-	transition, err := stopfence.Acquire(completion.ControlRoot, "proof-finalize", current.Ref(), 1000)
+	notes := terminalLocks.notes
+	if completion.ErrorOutput != nil {
+		notes = completion.ErrorOutput
+	}
+	held, err := acquireTerminalLocks(completion.ControlRoot, attempt.GoalID, attempt.GoalRevision, current.Ref(), notes)
 	if err != nil {
+		var refused *terminalCommitRefused
+		if errors.As(err, &refused) {
+			retainRefusedTerminal(completion, err, notes)
+		}
 		return err
 	}
-	defer transition.Release()
-	heldGoal, err := goalrevision.Acquire(completion.ControlRoot, attempt.GoalID, attempt.GoalRevision, "proof-finalize")
-	if err != nil {
-		return err
-	}
-	defer heldGoal.Release()
-	heldProof, err := proofrun.AcquireMutation(completion.ControlRoot)
-	if err != nil {
-		return err
-	}
-	defer heldProof.Release()
+	defer held.release()
 	attempt, err = proofrun.ReadAttempt(completion.ControlRoot, completion.AttemptID)
 	if err != nil {
 		return err
@@ -685,7 +840,7 @@ func commitProofTerminalWithTestResult(completion proofrun.CompletionContext, re
 		result = proofrun.TerminalSuccess
 	}
 	_, err = proofrun.FinalizeAttemptWithTestResultLocked(completion.ControlRoot, completion.AttemptID, result,
-		completion.ExitStatus, "proof launcher completed", receipt, testResult, finalizedAt)
+		completion.ExitStatus, reason, receipt, testResult, finalizedAt)
 	return err
 }
 

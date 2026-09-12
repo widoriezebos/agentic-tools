@@ -927,16 +927,7 @@ func runTestRun(args []string) int {
 			}
 			return payload, prepareErr
 		},
-		CommitTerminal: func(completion proofrun.CompletionContext, receipt json.RawMessage) error {
-			if retained == nil {
-				result, readErr := readTestingWorkerResult(workerResultPath)
-				if readErr != nil {
-					return readErr
-				}
-				retained = &result
-			}
-			return commitProofTerminalWithTestResult(completion, receipt, retained)
-		}})
+		CommitTerminal: testingTerminalCommit(workerResultPath, &retained)})
 	launchStatus = retainIncompleteProofAttempt(prepared.Installation, attempt.AttemptID, joined, launchStatus)
 	if retained == nil {
 		if result, readErr := readTestingWorkerResult(workerResultPath); readErr == nil {
@@ -1524,6 +1515,34 @@ func fileSHA256(path string) (string, error) {
 // checkout's index (a delegate round's worktree through job prove-round,
 // the bounded unknown groups), and the receipt preparation would refuse the
 // moved candidate and turn a sufficient attempt into a failed terminal.
+// testingTerminalCommit is the outer testing launch's terminal commit: the
+// worker's result is read once and committed with the terminal. A worker
+// that left no usable result (it refused before its first group, or its
+// suite was ended under it, or it wrote a result the reader refuses) ends
+// the attempt failed with the reader's error named, instead of failing the
+// commit itself and leaving an unknown terminal that hides the cause:
+// thirteen of the nineteen unknown terminals on four checkouts between
+// 2026-09-09 and 09-12 read that way. A success without its result is a
+// contradiction and is refused; in a real launch PrepareSuccess reads the
+// result first and turns a missing one into a failed exit, so this guard is
+// the commit's own defence.
+func testingTerminalCommit(workerResultPath string, retained **proofrun.TestResult) func(proofrun.CompletionContext, json.RawMessage) error {
+	return func(completion proofrun.CompletionContext, receipt json.RawMessage) error {
+		if *retained == nil {
+			result, readErr := readTestingWorkerResult(workerResultPath)
+			if readErr != nil {
+				if completion.ExitStatus == 0 {
+					return readErr
+				}
+				return commitProofTerminalWithReason(completion, receipt, nil,
+					"proof launcher completed; the worker left no usable result: "+readErr.Error())
+			}
+			*retained = &result
+		}
+		return commitProofTerminalWithTestResult(completion, receipt, *retained)
+	}
+}
+
 func testingReceiptWanted(joined bool, purpose testpolicy.Purpose, sufficient bool) bool {
 	return !joined && sufficient && purpose != testpolicy.PurposeDiagnostic
 }
