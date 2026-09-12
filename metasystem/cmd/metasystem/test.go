@@ -895,7 +895,7 @@ func runTestRun(args []string) int {
 				return nil, readErr
 			}
 			retained = &result
-			if joined || !result.Delivery.Sufficient {
+			if !testingReceiptWanted(joined, prepared.Plan.Purpose, result.Delivery.Sufficient) {
 				return nil, nil
 			}
 			receipt, payload, prepareErr := landing.PrepareTestingReceiptPayload(prepared.Installation,
@@ -1490,4 +1490,14 @@ func fileSHA256(path string) (string, error) {
 		return "", err
 	}
 	return bytesSHA256(data), nil
+}
+
+// testingReceiptWanted says whether a sufficient result becomes a testing
+// receipt on this checkout. A joined attempt has no result of its own, and
+// a diagnostic attempt never lands: it proves a tree that need not be this
+// checkout's index (a delegate round's worktree through job prove-round,
+// the bounded unknown groups), and the receipt preparation would refuse the
+// moved candidate and turn a sufficient attempt into a failed terminal.
+func testingReceiptWanted(joined bool, purpose testpolicy.Purpose, sufficient bool) bool {
+	return !joined && sufficient && purpose != testpolicy.PurposeDiagnostic
 }

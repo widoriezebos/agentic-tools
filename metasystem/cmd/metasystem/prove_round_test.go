@@ -12,6 +12,7 @@ import (
 
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/gittree"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/proofrun"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/testpolicy"
 )
 
 type proveRoundFixture struct {
@@ -135,6 +136,13 @@ func TestProveRoundProvesTheChainWorktreesCommittedTreeOnTheInstallation(t *test
 	if _, err := time.Parse(time.RFC3339Nano, record.ProvedAt); err != nil {
 		t.Fatalf("proof record time: %v", err)
 	}
+	// The retry decision of a red previous round rides along to admission.
+	if status := runDispatchProveRound([]string{"--root", fixture.installation, "--job", "implementer-1", "--retry-decision", "/tmp/decision.json"}); status != 7 {
+		t.Fatalf("prove-round with a retry decision exit = %d; want 7", status)
+	}
+	if joined := strings.Join(*captured, " "); !strings.HasSuffix(joined, "--purpose diagnostic --retry-decision /tmp/decision.json") {
+		t.Fatalf("the retry decision did not reach the test run: %v", *captured)
+	}
 }
 
 func TestProveRoundRefusesWhatItCannotProveAsARound(t *testing.T) {
@@ -203,5 +211,25 @@ func TestNewestAttemptForTreeIsTheNewestMatchingOne(t *testing.T) {
 	}
 	if _, found := newestAttemptForTree(attempts, strings.Repeat("c", 40), "g", nil); found {
 		t.Fatal("an attempt was found for a tree nothing proved")
+	}
+}
+
+func TestADiagnosticAttemptNeverBecomesATestingReceipt(t *testing.T) {
+	for _, test := range []struct {
+		name       string
+		joined     bool
+		purpose    testpolicy.Purpose
+		sufficient bool
+		want       bool
+	}{
+		{"delivery sufficient", false, testpolicy.PurposeDelivery, true, true},
+		{"delivery insufficient", false, testpolicy.PurposeDelivery, false, false},
+		{"joined", true, testpolicy.PurposeDelivery, true, false},
+		{"diagnostic sufficient (a proved delegate round)", false, testpolicy.PurposeDiagnostic, true, false},
+		{"cadence sufficient", false, testpolicy.PurposeCadence, true, true},
+	} {
+		if got := testingReceiptWanted(test.joined, test.purpose, test.sufficient); got != test.want {
+			t.Errorf("%s: receipt wanted = %v; want %v", test.name, got, test.want)
+		}
 	}
 }

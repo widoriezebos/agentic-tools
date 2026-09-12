@@ -152,7 +152,9 @@ stay exactly as they are.
 2. `TestProveRoundRefusesWhatItCannotProveAsARound`: an untracked change
    reaches the proved tree, shared-checkout job refused,
    goal-less job refused, a round still running refused, a record without a
-   launch mode placed by its worktree path; no refusal starts a run.
+   launch mode placed by its worktree path; no refusal starts a run. A
+   `--retry-decision` file rides along to admission (the previous round's
+   proof was red; proving the round that fixes it is a retry).
 3. `TestNewestAttemptForTreeIsTheNewestMatchingOne`: the attempt linked into
    the round record is the newest one for that tree and goal that the run
    itself made.

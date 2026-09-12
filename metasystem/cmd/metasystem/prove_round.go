@@ -59,6 +59,7 @@ func runDispatchProveRound(args []string) int {
 	flags := flag.NewFlagSet("job prove-round", flag.ContinueOnError)
 	root := flags.String("root", ".", "MetaSystem installation root")
 	job := flags.String("job", "", "any job id of the chain")
+	retryDecision := flags.String("retry-decision", "", "accountable retry decision file when the goal's newest attempt failed (the previous round's red proof)")
 	if flags.Parse(args) != nil || flags.NArg() != 0 {
 		return 2
 	}
@@ -92,8 +93,14 @@ func runDispatchProveRound(args []string) int {
 		known[attempt.AttemptID] = true
 	}
 	fmt.Printf("prove-round: chain %s round %d tree %s goal %s purpose %s\n", proof.RootJob, proof.Round, proof.CandidateTree, proof.GoalID, proof.Purpose)
-	proof.ExitStatus = proveRoundTestRun([]string{"--root", installation, "--tree", proof.CandidateTree,
-		"--goal", proof.GoalID, "--mode", "auto", "--purpose", proof.Purpose})
+	runArgs := []string{"--root", installation, "--tree", proof.CandidateTree, "--goal", proof.GoalID, "--mode", "auto", "--purpose", proof.Purpose}
+	if *retryDecision != "" {
+		// A red round's proof is a failed attempt of the goal; proving the
+		// round that fixes it is a retry, and admission wants the seat's
+		// accountable decision like any other retry.
+		runArgs = append(runArgs, "--retry-decision", *retryDecision)
+	}
+	proof.ExitStatus = proveRoundTestRun(runArgs)
 	proof.ProvedAt = time.Now().UTC().Format(time.RFC3339Nano)
 	if err := writeProofRoundRecord(installation, proof); err != nil {
 		fmt.Fprintln(os.Stderr, "job prove-round: record the proof:", err)
