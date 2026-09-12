@@ -66,7 +66,7 @@ func writeHostFile(t *testing.T, path, content string, mode os.FileMode) {
 	}
 }
 
-const claudeHooks = `{"hooks":{"SessionStart":[{"matcher":"startup|resume|clear|compact","hooks":[{"type":"command","command":"bash scripts/agents/supervision-hook.sh claude start","timeout":15}]}],"Stop":[{"hooks":[{"type":"command","command":"bash scripts/agents/supervision-hook.sh claude receipt"},{"type":"command","command":"(bash scripts/agents/supervision-hook.sh claude stop) || printf '%s\\n' '{\"decision\":\"block\",\"reason\":\"Metasystem Stop hook launcher failed before a safe verdict; stopping is refused.\"}'","timeout":60}]}],"SessionEnd":[{"hooks":[{"type":"command","command":"bash scripts/agents/supervision-hook.sh claude end","timeout":3}]}]}}`
+const claudeHooks = `{"hooks":{"SessionStart":[{"matcher":"startup|resume|clear|compact","hooks":[{"type":"command","command":"bash scripts/agents/supervision-hook.sh claude start","timeout":15}]}],"Stop":[{"hooks":[{"type":"command","command":"bash scripts/agents/supervision-hook.sh claude receipt"},{"type":"command","command":"(bash scripts/agents/supervision-hook.sh claude stop) || printf '%s\\n' '{\"systemMessage\":\"Metasystem Stop hook launcher failed in its own infrastructure; stopping is allowed with degraded supervision. Cause: hook-bootstrap-failed. Component: hook-launcher. The steward owns repair.\"}'","timeout":60}]}],"SessionEnd":[{"hooks":[{"type":"command","command":"bash scripts/agents/supervision-hook.sh claude end","timeout":3}]}]}}`
 const codexHooks = `{"hooks":{"SessionStart":[{"matcher":"startup|resume|clear|compact","hooks":[{"type":"command","command":"bash scripts/agents/supervision-hook.sh codex start","timeout":15}]}],"Stop":[{"hooks":[{"type":"command","command":"bash scripts/agents/supervision-hook.sh codex stop","timeout":60}]}],"SessionEnd":[{"hooks":[{"type":"command","command":"bash scripts/agents/supervision-hook.sh codex end","timeout":3}]}]}}`
 const devinHooks = `{"hooks":{"SessionStart":[{"hooks":[{"type":"command","command":"bash scripts/agents/supervision-hook.sh devin start","timeout":15}]}],"Stop":[{"hooks":[{"type":"command","command":"bash scripts/agents/supervision-hook.sh devin stop","timeout":60}]}],"SessionEnd":[{"hooks":[{"type":"command","command":"bash scripts/agents/supervision-hook.sh devin end","timeout":3}]}]}}`
 
@@ -412,13 +412,18 @@ func TestGeneratedFreshNonGitLifecycleNoopsOnlyBeforeHandlerInvocation(t *testin
 		err := invoke.Run()
 		return stdout.Bytes(), stderr.Bytes(), err
 	}
-	assertBlock := func(stdout []byte) {
+	// A Stop launcher that fails before the hook can answer allows the
+	// stop under a degraded notice naming its own bootstrap; it never
+	// blocks and never stays silent.
+	assertDegradedAllowance := func(stdout []byte) {
 		t.Helper()
 		var verdict struct {
-			Decision string `json:"decision"`
+			Decision      string `json:"decision"`
+			SystemMessage string `json:"systemMessage"`
 		}
-		if err := json.Unmarshal(bytes.TrimSpace(stdout), &verdict); err != nil || verdict.Decision != "block" {
-			t.Fatalf("Stop output is not a blocking JSON verdict: %q, %v", stdout, err)
+		if err := json.Unmarshal(bytes.TrimSpace(stdout), &verdict); err != nil || verdict.Decision != "" ||
+			!strings.Contains(verdict.SystemMessage, "hook-bootstrap-failed") || !strings.Contains(verdict.SystemMessage, "stopping is allowed") {
+			t.Fatalf("Stop output is not a degraded JSON allowance: %q, %v", stdout, err)
 		}
 	}
 	for _, action := range []string{"start", "receipt", "end"} {
@@ -434,7 +439,7 @@ func TestGeneratedFreshNonGitLifecycleNoopsOnlyBeforeHandlerInvocation(t *testin
 	if err != nil {
 		t.Fatalf("fresh non-Git Stop command failed instead of reporting its verdict: %v", err)
 	}
-	assertBlock(stdout)
+	assertDegradedAllowance(stdout)
 	if _, err := os.Stat(capture); !os.IsNotExist(err) {
 		t.Fatalf("fresh non-Git Stop unexpectedly reached its handler: %v", err)
 	}
@@ -467,9 +472,9 @@ func TestGeneratedFreshNonGitLifecycleNoopsOnlyBeforeHandlerInvocation(t *testin
 	_ = os.Remove(capture)
 	stdout, stderr, err := run(commands["stop"])
 	if err != nil || !strings.Contains(string(stderr), "handler failed: claude stop") {
-		t.Fatalf("Git Stop handler failure lost its blocking verdict: stdout %q, stderr %q, error %v", stdout, stderr, err)
+		t.Fatalf("Git Stop handler failure lost its degraded allowance: stdout %q, stderr %q, error %v", stdout, stderr, err)
 	}
-	assertBlock(stdout)
+	assertDegradedAllowance(stdout)
 
 	if err := os.Remove(filepath.Join(installation, "scripts", "agents", "supervision-hook.sh")); err != nil {
 		t.Fatal(err)
@@ -479,7 +484,7 @@ func TestGeneratedFreshNonGitLifecycleNoopsOnlyBeforeHandlerInvocation(t *testin
 	}
 }
 
-func TestGeneratedShippedClaudeStopLauncherFailsClosedOutsideGit(t *testing.T) {
+func TestGeneratedShippedClaudeStopLauncherAllowsDegradedOutsideGit(t *testing.T) {
 	root := hostSetupModuleRoot(t)
 	_, installation := hostFixture(t, false)
 	copyHostSourceFile(t, root, "scripts/enforcement/claude-code-hooks.json", filepath.Join(installation, "scripts", "enforcement", "claude-code-hooks.json"), 0o644)
@@ -502,13 +507,17 @@ func TestGeneratedShippedClaudeStopLauncherFailsClosedOutsideGit(t *testing.T) {
 		t.Fatalf("generated Stop launcher returned an error instead of a safe verdict: %v", err)
 	}
 	var verdict struct {
-		Decision string `json:"decision"`
-		Reason   string `json:"reason"`
+		Decision      string `json:"decision"`
+		Reason        string `json:"reason"`
+		SystemMessage string `json:"systemMessage"`
 	}
 	if err := json.Unmarshal(bytes.TrimSpace(output), &verdict); err != nil {
 		t.Fatalf("generated Stop launcher did not emit one JSON object: %q: %v", output, err)
 	}
-	if verdict.Decision != "block" || !strings.Contains(verdict.Reason, "launcher failed before a safe verdict") {
+	// The installed line is the one seats run: a launcher that fails in its
+	// own bootstrap allows the stop under a degraded notice and never blocks.
+	if verdict.Decision != "" || verdict.Reason != "" ||
+		!strings.Contains(verdict.SystemMessage, "hook-bootstrap-failed") || !strings.Contains(verdict.SystemMessage, "stopping is allowed") {
 		t.Fatalf("generated Stop launcher verdict = %#v", verdict)
 	}
 }

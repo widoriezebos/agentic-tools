@@ -13,6 +13,26 @@ const gitSteeringUnset = "unset GIT_DIR GIT_WORK_TREE GIT_COMMON_DIR GIT_INDEX_F
 
 var lifecycleCommand = regexp.MustCompile(`scripts/agents/supervision-hook\.sh\s+([a-z][a-z0-9-]{0,31})\s+(start|receipt|stop|end)(?:[)[:space:]]|$)`)
 
+// launcherFallback splits a shipped launcher of the form
+// `(<command>) || <fallback>`. The shipped template decides what a nonzero
+// hook exit prints; the renderer carries that tail byte for byte around the
+// command it rewrites and never composes one of its own.
+var launcherFallback = regexp.MustCompile(`^\((.*)\)\s*\|\|\s*(\S.*)$`)
+
+// legacyBlockFallback is the tail the Claude Stop launcher shipped before a
+// launcher failure became a degraded allowance. A live settings file may
+// still carry a launcher rendered with it; it is recognized as this
+// installation's so setup replaces it.
+const legacyBlockFallback = `printf '%s\n' '{"decision":"block","reason":"Metasystem Stop hook launcher failed before a safe verdict; stopping is refused."}'`
+
+func shippedFallback(command string) string {
+	match := launcherFallback.FindStringSubmatch(command)
+	if len(match) != 3 {
+		return ""
+	}
+	return match[2]
+}
+
 // MergeSettings removes only recognized handlers emitted by this installation,
 // retains foreign siblings in their original groups, and appends one desired
 // group per lifecycle handler declared by the shipped configuration.
@@ -241,7 +261,7 @@ func desiredSettings(shipped []byte, runtime, installationRel string, registrati
 				if registrationAtInstallation {
 					known[command] = true
 				}
-				desiredCommand := renderCommand(runtime, match[2], installationRel, strings.Contains(command, `"decision":"block"`))
+				desiredCommand := renderCommand(runtime, match[2], installationRel, shippedFallback(command))
 				known[desiredCommand] = true
 				newHandler := cloneMap(handler)
 				newHandler["command"] = desiredCommand
@@ -255,9 +275,9 @@ func desiredSettings(shipped []byte, runtime, installationRel string, registrati
 	return desired, known, nil
 }
 
-func renderCommand(runtime, action, installationRel string, failClosed bool) string {
-	if action == "stop" || failClosed {
-		return renderGitRequiredCommand(runtime, action, installationRel, failClosed)
+func renderCommand(runtime, action, installationRel, fallback string) string {
+	if action == "stop" || fallback != "" {
+		return renderGitRequiredCommand(runtime, action, installationRel, fallback)
 	}
 	destination := renderDestination(installationRel)
 	// A fresh adopted installation can exist before `git init`. Ordinary
@@ -269,11 +289,11 @@ func renderCommand(runtime, action, installationRel string, failClosed bool) str
 	return gitSteeringUnset + `; ` + discovery + `; cd ` + destination + ` && bash scripts/agents/supervision-hook.sh ` + runtime + ` ` + action
 }
 
-func renderGitRequiredCommand(runtime, action, installationRel string, failClosed bool) string {
+func renderGitRequiredCommand(runtime, action, installationRel, fallback string) string {
 	destination := renderDestination(installationRel)
 	core := gitSteeringUnset + `; repo=$(git rev-parse --show-toplevel) && cd ` + destination + ` && bash scripts/agents/supervision-hook.sh ` + runtime + ` ` + action
-	if failClosed {
-		return `(` + core + `) || printf '%s\n' '{"decision":"block","reason":"Metasystem Stop hook launcher failed before a safe verdict; stopping is refused."}'`
+	if fallback != "" {
+		return `(` + core + `) || ` + fallback
 	}
 	return core
 }
@@ -298,9 +318,11 @@ func shellDoubleQuoted(value string) string {
 func knownLegacyCommands(runtime, installationRel string, registrationAtInstallation bool) map[string]bool {
 	known := map[string]bool{}
 	for _, action := range []string{"start", "receipt", "stop", "end"} {
-		failClosed := action == "stop" && runtime == "claude"
-		known[renderCommand(runtime, action, installationRel, failClosed)] = true
-		known[renderGitRequiredCommand(runtime, action, installationRel, failClosed)] = true
+		known[renderCommand(runtime, action, installationRel, "")] = true
+		known[renderGitRequiredCommand(runtime, action, installationRel, "")] = true
+	}
+	if runtime == "claude" {
+		known[renderGitRequiredCommand(runtime, "stop", installationRel, legacyBlockFallback)] = true
 	}
 	legacyDirectory := `$CLAUDE_PROJECT_DIR`
 	if !registrationAtInstallation {
@@ -316,7 +338,7 @@ func knownLegacyCommands(runtime, installationRel string, registrationAtInstalla
 		}
 	}
 	if runtime == "claude" {
-		known[`(cd "`+legacyDirectory+`" && bash scripts/agents/supervision-hook.sh claude stop) || printf '%s\n' '{"decision":"block","reason":"Metasystem Stop hook launcher failed before a safe verdict; stopping is refused."}'`] = true
+		known[`(cd "`+legacyDirectory+`" && bash scripts/agents/supervision-hook.sh claude stop) || `+legacyBlockFallback] = true
 		for _, noun := range []string{"Metasystem", "Harness"} {
 			known[`if ! cd "`+legacyDirectory+`" 2>/dev/null; then echo '{"systemMessage":"`+noun+` hook could not resolve the project directory (CLAUDE_PROJECT_DIR)."}'; else bash scripts/receipt.sh check >/dev/null 2>&1; rc=$?; if [ "$rc" -eq 1 ]; then echo '{"systemMessage":"`+noun+` retro due: run scripts/receipt.sh check for details, then skills/retro."}'; elif [ "$rc" -ne 0 ]; then echo '{"systemMessage":"`+noun+` receipt check errored; run scripts/receipt.sh check to see why."}'; fi; fi`] = true
 		}

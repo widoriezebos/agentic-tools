@@ -19,9 +19,15 @@ func runReportStopBlock(args []string) int {
 	session := flags.String("session", "", "session recorded for an external stop refusal")
 	cause := flags.String("cause", "", "stable external stop-refusal cause")
 	remedy := flags.String("remedy", "", "operator remedy for an external stop refusal")
+	armingResult := flags.String("arming-result", "", "failed supervision component lines and aggregate carried in the stop notice")
+	class := flags.String("class", string(report.StopClassSeatActionable), "stop condition class: infrastructure or seat-actionable")
 	boundedIdle := flags.Bool("bounded-idle", false, "render a counted idle-backlog refusal without the open-work block-once preface")
 	openWorkRoot := flags.String("open-work-root", "", "checkout root whose open-work lines must be durably marked")
 	if flags.Parse(args) != nil {
+		return 2
+	}
+	if *class != string(report.StopClassInfrastructure) && *class != string(report.StopClassSeatActionable) {
+		fmt.Fprintln(os.Stderr, "report stop-block: --class must be infrastructure or seat-actionable")
 		return 2
 	}
 	if *openWorkRoot != "" {
@@ -31,6 +37,12 @@ func runReportStopBlock(args []string) int {
 			}
 			*systemMessage += warning
 		}
+	}
+	if *armingResult != "" {
+		if *systemMessage != "" {
+			*systemMessage += "\n"
+		}
+		*systemMessage += *armingResult
 	}
 	*systemMessage = report.BoundSystemMessage(*systemMessage)
 	detail := ""
@@ -44,7 +56,7 @@ func runReportStopBlock(args []string) int {
 			return 2
 		}
 		var err error
-		block, err = report.StopRefusal(*refusalRecord, *session, *cause, *remedy, detail, *systemMessage, time.Now())
+		block, err = report.StopRefusal(*refusalRecord, *session, *cause, *remedy, detail, *systemMessage, report.StopClass(*class), time.Now())
 		if err != nil {
 			fmt.Fprintf(os.Stderr, "report stop-block: %v\n", err)
 			return 1

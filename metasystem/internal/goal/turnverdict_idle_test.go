@@ -615,20 +615,21 @@ func TestMissingAcceptedGoalTreeReferenceBlocksAsUncertainty(t *testing.T) {
 	}
 }
 
-func TestUnreadableTurnVerdictStateBlocksAsUncertainty(t *testing.T) {
+func TestUnreadableTurnVerdictStateAllowsAsInfrastructure(t *testing.T) {
 	root := servingBed(t, "bed-m1", nil)
 	writeIdleJSON(t, filepath.Join(root, "artifacts", "agents", "turn-verdict-state.json"), map[string]any{
 		"schemaVersion": 2,
 		"sessions":      map[string]any{},
 	})
 	verdict, err := (&Store{Root: root}).TurnVerdict(ScanResult{}, "unreadable-state", "", "main-1")
-	if err != nil || !verdict.ShouldBlock || verdict.BlockSource == nil || *verdict.BlockSource != "uncertainty" ||
+	// The old assertion was the goal's DONE condition reversed: infrastructure no longer blocks.
+	if err != nil || verdict.ShouldBlock || verdict.Class != "infrastructure" || verdict.LedgerStatus != "degraded" ||
 		!strings.Contains(verdict.Display, "turn verdict state") {
-		t.Fatalf("unreadable turn verdict state did not fail closed: %+v %v", verdict, err)
+		t.Fatalf("unreadable turn verdict state did not allow as infrastructure: %+v %v", verdict, err)
 	}
 }
 
-func TestMissingTemplateStateRootBlocksAsUncertainty(t *testing.T) {
+func TestMissingTemplateStateRootAllowsAsInfrastructure(t *testing.T) {
 	outer := t.TempDir()
 	if err := os.MkdirAll(filepath.Join(outer, "development"), 0o755); err != nil {
 		t.Fatal(err)
@@ -637,9 +638,9 @@ func TestMissingTemplateStateRootBlocksAsUncertainty(t *testing.T) {
 		t.Fatal(err)
 	}
 	verdict, err := (&Store{Root: outer}).TurnVerdict(ScanResult{}, "missing-template-state", "", "main-1")
-	if err != nil || !verdict.ShouldBlock || verdict.BlockSource == nil || *verdict.BlockSource != "uncertainty" ||
+	if err != nil || verdict.ShouldBlock || verdict.Class != "infrastructure" ||
 		!strings.Contains(verdict.Display, "template installation is missing") {
-		t.Fatalf("missing template state root did not fail closed: %+v %v", verdict, err)
+		t.Fatalf("missing template state root did not allow as infrastructure: %+v %v", verdict, err)
 	}
 }
 
@@ -829,9 +830,9 @@ func TestBlockedHumanVerdictLeavesValidSessionStopUnspent(t *testing.T) {
 	})
 
 	blocked, err := store.TurnVerdict(ScanResult{}, marker.SessionId, "", marker.HolderMainId)
-	if err != nil || !blocked.ShouldBlock || blocked.BlockSource == nil || *blocked.BlockSource != "uncertainty" ||
+	if err != nil || blocked.ShouldBlock || blocked.Class != "infrastructure" ||
 		!strings.Contains(blocked.Display, "turn verdict state") || strings.Contains(blocked.Display, "authorized once") {
-		t.Fatalf("the incomplete local verdict did not fail closed: %+v %v", blocked, err)
+		t.Fatalf("the incomplete local verdict did not preserve authority while allowing infrastructure: %+v %v", blocked, err)
 	}
 	if _, err := os.Stat(sessionStopPath(root, marker.SessionId)); err != nil {
 		t.Fatalf("the blocked human verdict spent its valid marker: %v", err)
@@ -865,9 +866,142 @@ func TestSessionStopLibraryAndConsumerRequireHumanClassificationProof(t *testing
 		Human: SessionStopProcessRef{Pid: 42, PidStartedAt: 200},
 	})
 	verdict, err := store.TurnVerdict(ScanResult{}, "agent-library", "", "main-1")
-	if err != nil || !verdict.ShouldBlock || verdict.BlockSource == nil || *verdict.BlockSource != "uncertainty" ||
+	// The old block assertion was the goal's DONE condition reversed; no invalid proof invents authority.
+	if err != nil || verdict.ShouldBlock || verdict.Class != "infrastructure" ||
 		!strings.Contains(verdict.Display, "human-classification proof") {
-		t.Fatalf("the consumer accepted a marker lacking its proof token: %+v %v", verdict, err)
+		t.Fatalf("the consumer did not allow the marker read failure as infrastructure: %+v %v", verdict, err)
+	}
+	if _, err := os.Stat(sessionStopPath(root, "agent-library")); err != nil {
+		t.Fatalf("failed inspection consumed the marker: %v", err)
+	}
+	if _, err := os.Stat(sessionStopRegistryPath(root)); !os.IsNotExist(err) {
+		t.Fatalf("failed inspection recorded consumption: %v", err)
+	}
+}
+
+func TestIdleRefusalSurvivesALostCounter(t *testing.T) {
+	root := servingBed(t, "bed-m1", map[string]*GoalFile{"waiting": budgetedQueuedGoal("waiting", "2026-08-23T00:00:00Z")})
+	previous := verdictStateWriter
+	verdictStateWriter = func(string, []byte) error { return errors.New("fixture verdict-state write failure") }
+	t.Cleanup(func() { verdictStateWriter = previous })
+	verdict, err := (&Store{Root: root}).TurnVerdict(ScanResult{}, "lost-counter", "", "main-1")
+	if err != nil || !verdict.ShouldBlock || verdict.Class != "idle-with-backlog" || verdict.CountSpent ||
+		!strings.Contains(verdict.Display, "IDLE WITH BACKLOG") || !strings.Contains(verdict.Display, "count could not be spent") {
+		t.Fatalf("idle refusal did not survive its lost counter: %+v %v", verdict, err)
+	}
+	if _, err := os.Stat(statePath(root)); !os.IsNotExist(err) {
+		t.Fatalf("failed counter write left state: %v", err)
+	}
+	if _, err := os.Stat(turnVerdictArtifactPath(root, "lost-counter")); err != nil {
+		t.Fatalf("lost-counter refusal did not write its turn-verdict artifact: %v", err)
+	}
+}
+
+func TestSessionStopInfrastructurePreservesAuthority(t *testing.T) {
+	now := time.Date(2026, 9, 2, 10, 1, 0, 0, time.UTC)
+	t.Run("marker read failure", func(t *testing.T) {
+		root := servingBed(t, "bed-m1", nil)
+		path := sessionStopPath(root, "read-failure")
+		if err := os.MkdirAll(path, 0o755); err != nil {
+			t.Fatal(err)
+		}
+		verdict, err := (&Store{Root: root}).TurnVerdict(ScanResult{}, "read-failure", "", "main-1")
+		if err != nil || verdict.ShouldBlock || verdict.Class != "infrastructure" || !strings.Contains(verdict.Display, "marker unreadable") {
+			t.Fatalf("marker read failure did not allow without authority: %+v %v", verdict, err)
+		}
+		if _, err := os.Stat(path); err != nil {
+			t.Fatalf("marker read failure consumed its source: %v", err)
+		}
+		if _, err := os.Stat(sessionStopRegistryPath(root)); !os.IsNotExist(err) {
+			t.Fatalf("marker read failure recorded consumption: %v", err)
+		}
+	})
+
+	t.Run("consume failure", func(t *testing.T) {
+		root := servingBed(t, "bed-m1", map[string]*GoalFile{
+			"waiting": budgetedQueuedGoal("waiting", "2026-08-23T00:00:00Z"),
+		})
+		store := &Store{Root: root, Now: func() time.Time { return now }, Prober: idleFixtureProber{41: {Pid: 41, StartedAt: time.Unix(100, 0)}}}
+		marker := sessionStopFixture(t, store, "consume-failure", "main-1", 7)
+		previous := sessionStopRegistryWriter
+		sessionStopRegistryWriter = func(string, string, string) (bool, error) { return false, errors.New("fixture consume failure") }
+		t.Cleanup(func() { sessionStopRegistryWriter = previous })
+		verdict, err := store.TurnVerdict(ScanResult{}, marker.SessionId, "", marker.HolderMainId)
+		if err != nil || verdict.ShouldBlock || verdict.Class != "infrastructure" || !strings.Contains(verdict.Display, "consume failure") {
+			t.Fatalf("consume failure did not allow as infrastructure: %+v %v", verdict, err)
+		}
+		if _, err := os.Stat(sessionStopPath(root, marker.SessionId)); err != nil {
+			t.Fatalf("consume failure removed authority: %v", err)
+		}
+		if _, err := os.Stat(sessionStopRegistryPath(root)); !os.IsNotExist(err) {
+			t.Fatalf("consume failure reported consumption: %v", err)
+		}
+		state, err := store.loadVerdictState()
+		if err != nil {
+			t.Fatal(err)
+		}
+		if session := state.Sessions[marker.SessionId]; session == nil || session.IdleBlocks != 0 || verdict.CountSpent {
+			t.Fatalf("consume failure spent an idle refusal count: session=%+v verdict=%+v", session, verdict)
+		}
+	})
+}
+
+func TestSessionStopLostAuthorizationKeepsDecidedVerdict(t *testing.T) {
+	now := time.Date(2026, 9, 2, 10, 1, 0, 0, time.UTC)
+	root := servingBed(t, "bed-m1", map[string]*GoalFile{
+		"waiting": budgetedQueuedGoal("waiting", "2026-08-23T00:00:00Z"),
+	})
+	store := &Store{Root: root, Now: func() time.Time { return now }, Prober: idleFixtureProber{41: {Pid: 41, StartedAt: time.Unix(100, 0)}}}
+	marker := sessionStopFixture(t, store, "lost-authorization", "main-1", 7)
+	previous := consumeSessionStopForVerdict
+	consumeSessionStopForVerdict = func(*Store, string, string) (SessionStop, bool, string, error) {
+		return marker, false, "SESSION STOP authorization expired before this stop", nil
+	}
+	t.Cleanup(func() { consumeSessionStopForVerdict = previous })
+
+	verdict, err := store.TurnVerdict(ScanResult{Open: []Item{{Kind: "plan", Id: "open", Detail: "OPEN-WORK open: finish it"}}}, marker.SessionId, "", marker.HolderMainId)
+	if err != nil || !verdict.ShouldBlock || verdict.Class != "seat-actionable" ||
+		!strings.Contains(verdict.Display, "authorization expired") || strings.Contains(verdict.Display, "authorized once") {
+		t.Fatalf("lost authorization discarded the decided refusal: %+v %v", verdict, err)
+	}
+	if _, err := os.Stat(sessionStopPath(root, marker.SessionId)); err != nil {
+		t.Fatalf("lost authorization consumed its marker: %v", err)
+	}
+}
+
+func TestSessionStopConsumeErrorKeepsDecidedBlock(t *testing.T) {
+	now := time.Date(2026, 9, 2, 10, 1, 0, 0, time.UTC)
+	root := servingBed(t, "bed-m1", map[string]*GoalFile{
+		"waiting": budgetedQueuedGoal("waiting", "2026-08-23T00:00:00Z"),
+	})
+	store := &Store{Root: root, Now: func() time.Time { return now }, Prober: idleFixtureProber{41: {Pid: 41, StartedAt: time.Unix(100, 0)}}}
+	marker := sessionStopFixture(t, store, "consume-error-decided", "main-1", 7)
+	previous := sessionStopRegistryWriter
+	sessionStopRegistryWriter = func(string, string, string) (bool, error) { return false, errors.New("fixture consume failure") }
+	t.Cleanup(func() { sessionStopRegistryWriter = previous })
+	openWork := ScanResult{Open: []Item{{Kind: "plan", Id: "open", Detail: "OPEN-WORK open: finish it"}}}
+
+	verdict, err := store.TurnVerdict(openWork, marker.SessionId, "", marker.HolderMainId)
+	if err != nil || !verdict.ShouldBlock || verdict.Class != "seat-actionable" ||
+		!strings.Contains(verdict.Display, "consume failure") || !strings.Contains(verdict.Display, "remains blocking") ||
+		strings.Contains(verdict.Display, "authorized once") {
+		t.Fatalf("a failed consume turned a decided refusal into an allowance: %+v %v", verdict, err)
+	}
+	if _, err := os.Stat(sessionStopPath(root, marker.SessionId)); err != nil {
+		t.Fatalf("a failed consume under a decided refusal removed the authority: %v", err)
+	}
+	if _, err := os.Stat(sessionStopRegistryPath(root)); !os.IsNotExist(err) {
+		t.Fatalf("a failed consume reported consumption: %v", err)
+	}
+
+	sessionStopRegistryWriter = previous
+	quiet, err := store.TurnVerdict(ScanResult{}, marker.SessionId, "", marker.HolderMainId)
+	if err != nil || quiet.ShouldBlock || !strings.Contains(quiet.Display, "authorized once") {
+		t.Fatalf("the unspent authorization did not cover the next quiet stop once: %+v %v", quiet, err)
+	}
+	spent, err := store.TurnVerdict(ScanResult{}, marker.SessionId, "", marker.HolderMainId)
+	if err != nil || !spent.ShouldBlock || strings.Contains(spent.Display, "authorized once") {
+		t.Fatalf("one authorization covered two stops: %+v %v", spent, err)
 	}
 }
 
@@ -984,7 +1118,7 @@ func TestSessionStopConsumeOnUseSurvivesAbsentOrFailedSessionEnd(t *testing.T) {
 	}
 }
 
-func TestSessionStopConsumeErrorBlocksBeforeAuthorization(t *testing.T) {
+func TestSessionStopConsumeErrorAllowsWithoutAuthorization(t *testing.T) {
 	now := time.Date(2026, 9, 2, 10, 1, 0, 0, time.UTC)
 	root := servingBed(t, "bed-m1", map[string]*GoalFile{
 		"waiting": budgetedQueuedGoal("waiting", "2026-08-23T00:00:00Z"),
@@ -999,9 +1133,9 @@ func TestSessionStopConsumeErrorBlocksBeforeAuthorization(t *testing.T) {
 	})
 
 	verdict, err := store.TurnVerdict(ScanResult{}, marker.SessionId, "", marker.HolderMainId)
-	if err != nil || !verdict.ShouldBlock || verdict.BlockSource == nil || *verdict.BlockSource != "uncertainty" ||
+	if err != nil || verdict.ShouldBlock || verdict.Class != "infrastructure" ||
 		!strings.Contains(verdict.Display, "consumed registry unreadable") || strings.Contains(verdict.Display, "authorized once") {
-		t.Fatalf("an uncertain consume path authorized a quiet stop: %+v %v", verdict, err)
+		t.Fatalf("an uncertain consume path did not allow without authorization: %+v %v", verdict, err)
 	}
 	if _, err := os.Stat(sessionStopPath(root, marker.SessionId)); err != nil {
 		t.Fatalf("the failed consume path did not leave the unused marker available for a later proven consume: %v", err)

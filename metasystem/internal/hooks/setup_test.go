@@ -7,7 +7,7 @@ import (
 )
 
 const codexShipped = `{"hooks":{"SessionStart":[{"matcher":"startup|resume|clear|compact","hooks":[{"type":"command","command":"bash scripts/agents/supervision-hook.sh codex start","timeout":15}]}],"Stop":[{"hooks":[{"type":"command","command":"bash scripts/agents/supervision-hook.sh codex stop","timeout":60}]}],"SessionEnd":[{"hooks":[{"type":"command","command":"bash scripts/agents/supervision-hook.sh codex end","timeout":3}]}]}}`
-const claudeShipped = `{"hooks":{"SessionStart":[{"matcher":"startup|resume|clear|compact","hooks":[{"type":"command","command":"bash scripts/agents/supervision-hook.sh claude start","timeout":15}]}],"Stop":[{"hooks":[{"type":"command","command":"bash scripts/agents/supervision-hook.sh claude receipt"},{"type":"command","command":"(bash scripts/agents/supervision-hook.sh claude stop) || printf '%s\\n' '{\"decision\":\"block\",\"reason\":\"Metasystem Stop hook launcher failed before a safe verdict; stopping is refused.\"}'","timeout":60}]}],"SessionEnd":[{"hooks":[{"type":"command","command":"bash scripts/agents/supervision-hook.sh claude end","timeout":3}]}]}}`
+const claudeShipped = `{"hooks":{"SessionStart":[{"matcher":"startup|resume|clear|compact","hooks":[{"type":"command","command":"bash scripts/agents/supervision-hook.sh claude start","timeout":15}]}],"Stop":[{"hooks":[{"type":"command","command":"bash scripts/agents/supervision-hook.sh claude receipt"},{"type":"command","command":"(bash scripts/agents/supervision-hook.sh claude stop) || printf '%s\\n' '{\"systemMessage\":\"Metasystem Stop hook launcher failed in its own infrastructure; stopping is allowed with degraded supervision. Cause: hook-bootstrap-failed. Component: hook-launcher. The steward owns repair.\"}'","timeout":60}]}],"SessionEnd":[{"hooks":[{"type":"command","command":"bash scripts/agents/supervision-hook.sh claude end","timeout":3}]}]}}`
 const devinShipped = `{"hooks":{"SessionStart":[{"hooks":[{"type":"command","command":"bash scripts/agents/supervision-hook.sh devin start","timeout":15}]}],"Stop":[{"hooks":[{"type":"command","command":"bash scripts/agents/supervision-hook.sh devin stop","timeout":60}]}],"SessionEnd":[{"hooks":[{"type":"command","command":"bash scripts/agents/supervision-hook.sh devin end","timeout":3}]}]}}`
 
 func TestMergeSplitsOwnedHandlerFromForeignSiblingWhenMatcherChanges(t *testing.T) {
@@ -141,7 +141,7 @@ func TestCheckSettingsAcceptsEmptyDevinNonToolMatcher(t *testing.T) {
 	}
 }
 
-func TestClaudeMergePreservesReceiptNoticeAndFailClosedStop(t *testing.T) {
+func TestClaudeMergePreservesReceiptNoticeAndDegradedStop(t *testing.T) {
 	live := []byte(`{"hooks":{"Stop":[{"hooks":[{"type":"command","command":"if ! cd \"$CLAUDE_PROJECT_DIR/metasystem\" 2>/dev/null; then echo '{\"systemMessage\":\"Harness hook could not resolve the project directory (CLAUDE_PROJECT_DIR).\"}'; else bash scripts/receipt.sh check >/dev/null 2>&1; rc=$?; if [ \"$rc\" -eq 1 ]; then echo '{\"systemMessage\":\"Harness retro due: run scripts/receipt.sh check for details, then skills/retro.\"}'; elif [ \"$rc\" -ne 0 ]; then echo '{\"systemMessage\":\"Harness receipt check errored; run scripts/receipt.sh check to see why.\"}'; fi; fi"},{"type":"command","command":"cd \"$CLAUDE_PROJECT_DIR/metasystem\" && bash scripts/agents/supervision-hook.sh claude stop","timeout":60}]}]}}`)
 	merged, err := MergeSettings(live, []byte(claudeShipped), "claude", "metasystem", false)
 	if err != nil {
@@ -151,9 +151,43 @@ func TestClaudeMergePreservesReceiptNoticeAndFailClosedStop(t *testing.T) {
 		t.Fatal(err)
 	}
 	text := string(merged)
-	if strings.Count(text, "supervision-hook.sh claude receipt") != 1 || strings.Count(text, "supervision-hook.sh claude stop") != 1 || !strings.Contains(text, `\"decision\":\"block\"`) {
-		t.Fatalf("Claude receipt or fail-closed Stop was lost: %s", text)
+	if strings.Count(text, "supervision-hook.sh claude receipt") != 1 || strings.Count(text, "supervision-hook.sh claude stop") != 1 ||
+		!strings.Contains(text, `hook-bootstrap-failed`) || strings.Contains(text, `\"decision\":\"block\"`) {
+		t.Fatalf("Claude receipt or degraded Stop fallback was lost: %s", text)
 	}
+}
+
+func TestClaudeMergeReplacesTheBlockFallbackLauncher(t *testing.T) {
+	// A seat whose settings were rendered before the launcher's fallback
+	// became a degraded allowance still carries the block: it is this
+	// installation's launcher, so readiness fails on it and setup replaces
+	// it with the shipped fallback, byte for byte.
+	blocking := renderGitRequiredCommand("claude", "stop", "metasystem", legacyBlockFallback)
+	live := []byte(`{"hooks":{"Stop":[{"hooks":[{"type":"command","command":` + jsonString(t, blocking) + `,"timeout":60}]}]}}`)
+	if err := CheckSettings(live, []byte(claudeShipped), "claude", "metasystem", false); err == nil {
+		t.Fatal("a launcher with the retired block fallback passed readiness")
+	}
+	merged, err := MergeSettings(live, []byte(claudeShipped), "claude", "metasystem", false)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := CheckSettings(merged, []byte(claudeShipped), "claude", "metasystem", false); err != nil {
+		t.Fatal(err)
+	}
+	text := string(merged)
+	want := renderGitRequiredCommand("claude", "stop", "metasystem", shippedFallback(`(bash scripts/agents/supervision-hook.sh claude stop) || printf '%s\n' '{"systemMessage":"Metasystem Stop hook launcher failed in its own infrastructure; stopping is allowed with degraded supervision. Cause: hook-bootstrap-failed. Component: hook-launcher. The steward owns repair."}'`))
+	if strings.Count(text, "supervision-hook.sh claude stop") != 1 || strings.Contains(text, `\"decision\":\"block\"`) || !strings.Contains(text, jsonString(t, want)) {
+		t.Fatalf("the block fallback launcher was not replaced by the shipped degraded one: %s", text)
+	}
+}
+
+func jsonString(t *testing.T, value string) string {
+	t.Helper()
+	encoded, err := json.Marshal(value)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return string(encoded)
 }
 
 func TestClaudeMergeMigratesActualLegacyAdoptedRootReceipt(t *testing.T) {
@@ -166,12 +200,12 @@ func TestClaudeMergeMigratesActualLegacyAdoptedRootReceipt(t *testing.T) {
 		t.Fatal(err)
 	}
 	text := string(merged)
-	for _, fragment := range []string{"foreign-stop-handler", `"groupMetadata": "kept"`, `\"decision\":\"block\"`} {
+	for _, fragment := range []string{"foreign-stop-handler", `"groupMetadata": "kept"`, `hook-bootstrap-failed`} {
 		if !strings.Contains(text, fragment) {
 			t.Fatalf("legacy adopted-root migration lost %q: %s", fragment, text)
 		}
 	}
-	if strings.Contains(text, `cd \"$CLAUDE_PROJECT_DIR\"`) || strings.Count(text, "supervision-hook.sh claude receipt") != 1 {
+	if strings.Contains(text, `cd \"$CLAUDE_PROJECT_DIR\"`) || strings.Contains(text, `\"decision\":\"block\"`) || strings.Count(text, "supervision-hook.sh claude receipt") != 1 {
 		t.Fatalf("legacy adopted-root handlers were not replaced exactly once: %s", text)
 	}
 }
@@ -234,7 +268,7 @@ func TestMergeMigratesGitRequiredNonblockingLauncher(t *testing.T) {
 	}
 	events := live["hooks"].(map[string]any)
 	start := events["SessionStart"].([]any)[0].(map[string]any)["hooks"].([]any)[0].(map[string]any)
-	previous := renderGitRequiredCommand("codex", "start", ".", false)
+	previous := renderGitRequiredCommand("codex", "start", ".", "")
 	start["command"] = previous
 	encoded, err := json.Marshal(live)
 	if err != nil {
@@ -253,7 +287,7 @@ func TestMergeMigratesGitRequiredNonblockingLauncher(t *testing.T) {
 	}
 	readyEvents := ready["hooks"].(map[string]any)
 	command := readyEvents["SessionStart"].([]any)[0].(map[string]any)["hooks"].([]any)[0].(map[string]any)["command"].(string)
-	want := renderCommand("codex", "start", ".", false)
+	want := renderCommand("codex", "start", ".", "")
 	if command != want || command == previous {
 		t.Fatalf("launcher migration = %q, want %q and not previous form", command, want)
 	}
@@ -261,10 +295,13 @@ func TestMergeMigratesGitRequiredNonblockingLauncher(t *testing.T) {
 
 func TestStopLaunchersRemainGitRequiredForEveryRuntime(t *testing.T) {
 	for _, runtime := range []string{"claude", "codex", "devin"} {
-		failClosed := runtime == "claude"
-		got := renderCommand(runtime, "stop", "metasystem", failClosed)
-		want := renderGitRequiredCommand(runtime, "stop", "metasystem", failClosed)
-		if got != want || strings.Contains(got, `exit 0`) {
+		fallback := ""
+		if runtime == "claude" {
+			fallback = `printf '%s\n' '{"systemMessage":"degraded"}'`
+		}
+		got := renderCommand(runtime, "stop", "metasystem", fallback)
+		want := renderGitRequiredCommand(runtime, "stop", "metasystem", fallback)
+		if got != want || strings.Contains(got, `exit 0`) || !strings.HasSuffix(got, fallback) {
 			t.Fatalf("%s Stop launcher gained non-Git no-op behavior: %s", runtime, got)
 		}
 	}

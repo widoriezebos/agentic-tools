@@ -29,16 +29,33 @@ const stopBlockReason = "Work named in a plan is unblocked and nothing is in fli
 
 const systemMessageTrimNotice = "[system message trimmed to fit the Stop refusal]"
 
+type StopClass string
+
+const (
+	StopClassInfrastructure StopClass = "infrastructure"
+	StopClassSeatActionable StopClass = "seat-actionable"
+)
+
 // BoundSystemMessage keeps the first line and uses the turn-verdict display bound.
 func BoundSystemMessage(message string) string {
-	if len([]rune(message)) <= goal.TurnVerdictDisplayRuneLimit {
+	return boundSystemMessage(message, goal.TurnVerdictDisplayRuneLimit)
+}
+
+func boundSystemMessage(message string, limit int) string {
+	if limit <= 0 {
+		return ""
+	}
+	if len([]rune(message)) <= limit {
 		return message
+	}
+	if limit <= len([]rune(systemMessageTrimNotice))+1 {
+		return string([]rune(message)[:limit])
 	}
 	lines := strings.Split(message, "\n")
 	first := lines[0]
-	available := goal.TurnVerdictDisplayRuneLimit - len([]rune(first)) - len([]rune(systemMessageTrimNotice)) - 2
+	available := limit - len([]rune(first)) - len([]rune(systemMessageTrimNotice)) - 2
 	if available <= 0 {
-		kept := goal.TurnVerdictDisplayRuneLimit - len([]rune(systemMessageTrimNotice)) - 1
+		kept := limit - len([]rune(systemMessageTrimNotice)) - 1
 		firstRunes := []rune(first)
 		if kept > len(firstRunes) {
 			kept = len(firstRunes)
@@ -53,6 +70,25 @@ func BoundSystemMessage(message string) string {
 		return first + "\n" + systemMessageTrimNotice
 	}
 	return first + "\n" + string(rest) + "\n" + systemMessageTrimNotice
+}
+
+// boundSystemMessageWithTail keeps a separately bounded check-in tail at the
+// end of the provider message, trimming the notice before it when necessary.
+func boundSystemMessageWithTail(notice, tail string) string {
+	tail = BoundSystemMessage(tail)
+	if tail == "" {
+		return BoundSystemMessage(notice)
+	}
+	tailRunes := []rune(tail)
+	if len(tailRunes) >= goal.TurnVerdictDisplayRuneLimit {
+		return string(tailRunes[:goal.TurnVerdictDisplayRuneLimit])
+	}
+	available := goal.TurnVerdictDisplayRuneLimit - len(tailRunes) - 1
+	notice = boundSystemMessage(notice, available)
+	if notice == "" {
+		return tail
+	}
+	return notice + "\n" + tail
 }
 
 // StopBlock builds the stop-hook block decision with any caller detail first.
@@ -82,9 +118,12 @@ func BoundedIdleStopBlock(detail string) map[string]any {
 // or provably wedged, whatever the box's load.
 var stopRefusalLockWait = 100 * time.Millisecond
 
-func StopRefusal(path, session, cause, remedy, detail, systemMessage string, now time.Time) (map[string]any, error) {
+func StopRefusal(path, session, cause, remedy, detail, systemMessage string, class StopClass, now time.Time) (map[string]any, error) {
 	if path == "" || session == "" || cause == "" || remedy == "" {
 		return nil, fmt.Errorf("stop refusal requires a record path, session, cause, and remedy")
+	}
+	if class != StopClassInfrastructure && class != StopClassSeatActionable {
+		return nil, fmt.Errorf("stop refusal class must be infrastructure or seat-actionable")
 	}
 	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
 		return nil, fmt.Errorf("prepare stop-refusal directory: %w", err)
@@ -136,6 +175,13 @@ func StopRefusal(path, session, cause, remedy, detail, systemMessage string, now
 	}
 	if _, err := atomicfile.WriteText(path, string(encoded)+"\n", ""); err != nil {
 		return nil, fmt.Errorf("write stop-refusal record: %w", err)
+	}
+	if class == StopClassInfrastructure {
+		message := fmt.Sprintf("Metasystem allowed stopping with degraded infrastructure (occurrence %d).\nCause: %s\nRemedy: %s", entry.Count, cause, remedy)
+		if detail != "" {
+			message += "\n" + BoundSystemMessage(detail)
+		}
+		return map[string]any{"systemMessage": boundSystemMessageWithTail(message, systemMessage)}, nil
 	}
 
 	if !repeated {

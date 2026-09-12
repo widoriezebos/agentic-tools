@@ -42,14 +42,14 @@ func TestBoundedIdleStopBlockDoesNotClaimItIsNonRepeating(t *testing.T) {
 func TestStopRefusalBlocksOnceThenSurfacesAndRecords(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "session.json")
 	now := time.Date(2026, 9, 4, 10, 0, 0, 0, time.UTC)
-	first, err := StopRefusal(path, "session-a", "supervision arming failed", "exact up diagnostic", "unsafe", "health", now)
+	first, err := StopRefusal(path, "session-a", "supervision arming failed", "exact up diagnostic", "unsafe", "health", StopClassSeatActionable, now)
 	if err != nil {
 		t.Fatal(err)
 	}
 	if first["decision"] != "block" {
 		t.Fatalf("first external cause must block: %v", first)
 	}
-	second, err := StopRefusal(path, "session-a", "supervision arming failed", "exact up diagnostic", "unsafe", "health", now.Add(time.Minute))
+	second, err := StopRefusal(path, "session-a", "supervision arming failed", "exact up diagnostic", "unsafe", "health", StopClassSeatActionable, now.Add(time.Minute))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -87,10 +87,10 @@ func TestStopRefusalBlocksOnceThenSurfacesAndRecords(t *testing.T) {
 func TestStopRefusalDifferentCauseBlocksAgain(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "session.json")
 	now := time.Date(2026, 9, 4, 10, 0, 0, 0, time.UTC)
-	if _, err := StopRefusal(path, "session-a", "cause one", "remedy", "detail", "", now); err != nil {
+	if _, err := StopRefusal(path, "session-a", "cause one", "remedy", "detail", "", StopClassSeatActionable, now); err != nil {
 		t.Fatal(err)
 	}
-	second, err := StopRefusal(path, "session-a", "cause two", "remedy", "detail", "", now)
+	second, err := StopRefusal(path, "session-a", "cause two", "remedy", "detail", "", StopClassSeatActionable, now)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -104,7 +104,7 @@ func TestStopRefusalUnreadableRecordReturnsError(t *testing.T) {
 	if err := os.WriteFile(path, []byte("{broken\n"), 0o600); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := StopRefusal(path, "session-a", "cause", "remedy", "detail", "", time.Now()); err == nil {
+	if _, err := StopRefusal(path, "session-a", "cause", "remedy", "detail", "", StopClassSeatActionable, time.Now()); err == nil {
 		t.Fatal("an unreadable refusal record must be reported to the hook")
 	}
 }
@@ -130,7 +130,7 @@ func TestStopRefusalWaitsBrieflyForOverlappingWriter(t *testing.T) {
 		_ = unix.Flock(int(lockFile.Fd()), unix.LOCK_UN)
 		close(released)
 	}()
-	response, err := StopRefusal(path, "session-a", "cause", "remedy", "detail", "", time.Now())
+	response, err := StopRefusal(path, "session-a", "cause", "remedy", "detail", "", StopClassSeatActionable, time.Now())
 	<-released
 	if err != nil {
 		t.Fatalf("a brief overlapping writer must not force surfacing: %v", err)
@@ -155,8 +155,45 @@ func TestStopRefusalReportsAWedgedWriter(t *testing.T) {
 	previous := stopRefusalLockWait
 	stopRefusalLockWait = 0
 	t.Cleanup(func() { stopRefusalLockWait = previous })
-	if _, err := StopRefusal(path, "session-a", "cause", "remedy", "detail", "", time.Now()); err == nil || !strings.Contains(err.Error(), "busy after") {
+	if _, err := StopRefusal(path, "session-a", "cause", "remedy", "detail", "", StopClassSeatActionable, time.Now()); err == nil || !strings.Contains(err.Error(), "busy after") {
 		t.Fatalf("a wedged writer must be reported to the hook: %v", err)
+	}
+}
+
+func TestStopBlockClassesInfrastructureAllows(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "session.json")
+	now := time.Date(2026, 9, 12, 10, 0, 0, 0, time.UTC)
+	for occurrence := 1; occurrence <= 5; occurrence++ {
+		response, err := StopRefusal(path, "session-a", "narrator failed", "the steward owns repair", "detail", "health", StopClassInfrastructure, now.Add(time.Duration(occurrence)*time.Minute))
+		if err != nil {
+			t.Fatal(err)
+		}
+		if _, blocked := response["decision"]; blocked {
+			t.Fatalf("infrastructure occurrence %d blocked: %+v", occurrence, response)
+		}
+		if message, _ := response["systemMessage"].(string); !strings.Contains(message, fmt.Sprintf("occurrence %d", occurrence)) {
+			t.Fatalf("occurrence missing: %q", message)
+		}
+	}
+	seat, err := StopRefusal(filepath.Join(t.TempDir(), "seat.json"), "session-a", "owned work", "run it", "work remains", "", StopClassSeatActionable, now)
+	if err != nil || seat["decision"] != "block" {
+		t.Fatalf("seat-actionable behavior changed: %+v %v", seat, err)
+	}
+}
+
+func TestInfrastructureStopNoticePreservesCheckInTail(t *testing.T) {
+	tail := "HEALTH good — hook-freshness=current\nNARRATOR DIGEST since last check-in: landed abc123"
+	response, err := StopRefusal(filepath.Join(t.TempDir(), "session.json"), "session-a", "arming failed", "repair it",
+		strings.Repeat("large verdict detail ", 400), tail, StopClassInfrastructure, time.Now())
+	if err != nil {
+		t.Fatal(err)
+	}
+	message, _ := response["systemMessage"].(string)
+	if !strings.HasSuffix(message, tail) {
+		t.Fatalf("infrastructure notice trimmed the check-in tail: %q", message)
+	}
+	if len([]rune(message)) > goal.TurnVerdictDisplayRuneLimit {
+		t.Fatalf("infrastructure notice has %d runes", len([]rune(message)))
 	}
 }
 

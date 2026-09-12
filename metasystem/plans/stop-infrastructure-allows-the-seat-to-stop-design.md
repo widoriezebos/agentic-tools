@@ -70,7 +70,10 @@ Where it lives:
 - `failClosedTurnVerdict` becomes `infrastructureVerdict`: `ShouldBlock`
   false, `LedgerStatus` degraded, the detail kept in `Diagnostics` and
   `Display`, a new `Class` field set to `infrastructure` on the verdict so
-  the hook renders it as a notice, not a block. The idle branch is
+  the hook renders it as a notice, not a block: a fixed first line
+  (`turn-verdict degraded: stopping is allowed on degraded infrastructure;
+  the steward owns repair`, the cause code and the component) over the
+  detail, never an all-clear. The idle branch is
   evaluated before the verdict-state write, and a failed write returns the
   idle block with `CountSpent` false and the same class field set to
   `idle-with-backlog`.
@@ -81,11 +84,18 @@ Where it lives:
   component lines from the same call.
 - The hook log (line 878) gains one line per infrastructure condition and
   per uncounted idle refusal: `stop-condition <class> <cause code>
-  <component> <turn generation> <deadline end> <outcome>`. The append's
-  exit is checked; a failed append is said in the notice.
+  <component> <turn generation> <deadline end> <outcome>`, in every
+  outcome: the advisor's allowance and the deadline parent's own
+  allowances (worker output unreadable, deadline expired) append theirs
+  too. The append's exit is checked; a failed append is said in the notice.
 - The launcher's fallback becomes a degraded allowance: on a nonzero hook
   exit it prints a systemMessage that names the failure as the hook's own
-  and points at the steward, and never a block.
+  and points at the steward, and never a block. The installed Stop line
+  the seats run is not the template: `metasystem/internal/hooks/setup.go`
+  renders it. The renderer carries the template's fallback tail through
+  byte for byte instead of composing one, and recognizes the retired block
+  form as this installation's, so `runtime setup` replaces it; the tracked
+  `.claude/settings.json` is re-rendered in the landing.
 
 ## 3. What does not change
 
@@ -125,6 +135,9 @@ Where it lives:
 3. `TestSessionStopInfrastructurePreservesAuthority` in
    `metasystem/internal/goal/turnverdict_idle_test.go`: a marker read failure
    allows without consuming; a consume failure never reports consumption.
+   `TestSessionStopConsumeErrorKeepsDecidedBlock` there: a consume failure
+   under a decided refusal keeps the block and the marker unspent, and the
+   authorization then covers exactly one later quiet stop.
 4. `TestArmingDetailSurvivesStop` in `metasystem/cmd/metasystem/up_test.go`:
    an ENROLLMENT_DRIFT arming result reaches the stop notice with its
    component outcome, detail, remedy and aggregate byte for byte.
@@ -132,8 +145,16 @@ Where it lives:
    the three recorded causes replayed (narrator read failure, deadline
    expiry, arming failure), each on its first occurrence: the response is an
    allowance with the notice, the hook log carries the line, no block; the
-   launcher fallback leg: the hook exits nonzero on bootstrap and the
-   installed launcher line prints a degraded allowance, never a block.
+   killed-worker leg also finds the parent's stop-condition line; the
+   launcher fallback leg: the shipped Stop launcher line runs where the
+   hook cannot bootstrap and prints a degraded allowance, never a block.
+   The installed line is proved in Go:
+   `TestGeneratedShippedClaudeStopLauncherAllowsDegradedOutsideGit` in
+   `metasystem/internal/hostsetup/setup_test.go` runs the line `runtime
+   setup` renders from the shipped template, and
+   `TestClaudeMergeReplacesTheBlockFallbackLauncher` in
+   `metasystem/internal/hooks/setup_test.go` fails readiness on a live
+   block-fallback launcher and replaces it with the shipped one.
 6. The idle handoff regression: the existing idle tests in
    `metasystem/internal/goal/turnverdict_idle_test.go` keep passing
    unchanged.
@@ -145,7 +166,11 @@ Where it lives:
 `metasystem/internal/report/stopblock.go`, `metasystem/internal/goal/turnverdict.go`,
 `metasystem/internal/goal/sessionstop.go`, `metasystem/cmd/metasystem/report.go`
 (the `--class` flag), `metasystem/scripts/agents/supervision-hook.sh`,
-`metasystem/scripts/enforcement/claude-code-hooks.json`, the tests above.
+`metasystem/scripts/enforcement/claude-code-hooks.json`,
+`metasystem/internal/hooks/setup.go` (the launcher renderer; the Opus read
+of the build found that without it the installed Stop line never changes
+and `runtime setup --check` fails on every seat), the re-rendered
+`.claude/settings.json`, the tests above.
 Every seat rebuilds and re-arms once by hand after it lands (the hook file
 changes under the running seats; from then on runs re-arm themselves). The
 umbrella's members two to eight follow from its page.

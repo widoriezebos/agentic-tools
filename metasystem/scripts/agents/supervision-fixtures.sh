@@ -2721,7 +2721,10 @@ stop_hook() {
   run_fixture_hook "$stop_root" bash "$stop_root/scripts/agents/supervision-hook.sh" fake stop
 }
 first=$(printf '%s' "$stop_payload" | stop_hook)
-if printf '%s' "$first" | grep -Fq 'component=accepted-engine'; then
+# The arming notice carries every up component line as up prints it, the
+# verified ones included; only a non-verified accepted-engine line says the
+# fixture-supplied engine was rejected.
+if printf '%s' "$first" | grep -F 'component=accepted-engine' | grep -Fqv 'outcome=verified'; then
   echo "the Stop payload failed after the fixture supplied the enrolled engine" >&2
   echo "$first" >&2
   exit 1
@@ -2772,13 +2775,16 @@ evil_payload=$(printf '{"session_id":"../../evil","cwd":"%s","hook_event_name":"
 printf '%s' "$evil_payload" | stop_hook >/dev/null
 grep -q '\.\./' "$stop_root/artifacts/agents/turn-verdict-state.json" \
   && { echo "a path-shaped session id reached the verdict state" >&2; exit 1; }
-# (d) The degraded path: a verb that cannot speak yields the hook's fixed
-# message, never silence and never an all-clear.
+# (d) The degraded path: a verdict whose own state cannot be read yields
+# the hook's fixed degraded message with the detail, allows the stop, and
+# never composes an all-clear.
 chmod 0500 "$stop_root/artifacts/agents"
 degraded=$(printf '%s' "$stop_payload" | stop_hook)
 chmod 0755 "$stop_root/artifacts/agents"
-printf '%s' "$degraded" | grep -Fq 'turn-verdict unavailable:' \
-  || { echo "verb failure did not surface the fixed degraded message" >&2; echo "$degraded" >&2; exit 1; }
+printf '%s' "$degraded" | grep -Fq 'turn-verdict degraded:' \
+  && printf '%s' "$degraded" | grep -Fq 'turn verdict state:' \
+  && ! printf '%s' "$degraded" | grep -q '"decision":"block"' \
+  || { echo "an unreadable verdict state did not surface the fixed degraded message as an allowance" >&2; echo "$degraded" >&2; exit 1; }
 printf '%s' "$degraded" | grep -Fq 'NOTHING LEFT' \
   && { echo "the degraded path composed with an all-clear it cannot vouch for" >&2; exit 1; }
 

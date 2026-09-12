@@ -1,6 +1,7 @@
 package goal
 
 import (
+	"encoding/json"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -8,6 +9,9 @@ import (
 	"sync"
 	"testing"
 	"time"
+
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/brain"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/stopfence"
 )
 
 func openItem(detail string) Item { return Item{Kind: "plan", Id: detail, Detail: detail} }
@@ -100,18 +104,101 @@ func TestPrecedenceLadder(t *testing.T) {
 	}
 }
 
-func TestFailClosedVerdictCarriesItsMarker(t *testing.T) {
-	failClosed := failClosedTurnVerdict(fmt.Errorf("fixture state unavailable"))
-	if !failClosed.FailClosed {
-		t.Fatalf("the fail-closed verdict did not carry its marker: %+v", failClosed)
+func TestInfrastructureVerdictNeverBlocks(t *testing.T) {
+	assertInfrastructure := func(t *testing.T, verdict Verdict, err error, component, detail string) {
+		t.Helper()
+		if err != nil || verdict.ShouldBlock || verdict.Class != "infrastructure" || verdict.LedgerStatus != "degraded" ||
+			verdict.Component != component || !strings.Contains(verdict.Display, detail) {
+			t.Fatalf("%s producer did not allow with its detail: %+v %v", component, verdict, err)
+		}
 	}
+	t.Run("state root", func(t *testing.T) {
+		root := t.TempDir()
+		if err := os.MkdirAll(filepath.Join(root, "development"), 0o755); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(filepath.Join(root, "development", "metasystem-design.md"), []byte("fixture\n"), 0o644); err != nil {
+			t.Fatal(err)
+		}
+		verdict, err := (&Store{Root: root}).TurnVerdict(ScanResult{}, "state-root", "", "")
+		assertInfrastructure(t, verdict, err, "state-root", "missing metasystem.conf")
+	})
+	t.Run("goal fence", func(t *testing.T) {
+		store := testStore(t)
+		path := stopfence.TransitionPath(store.Root)
+		if err := os.MkdirAll(path, 0o755); err != nil {
+			t.Fatal(err)
+		}
+		verdict, err := store.TurnVerdict(ScanResult{}, "goal-fence", "", "")
+		assertInfrastructure(t, verdict, err, "goal-fence", "goal fence")
+	})
+	t.Run("verdict state", func(t *testing.T) {
+		store := testStore(t)
+		if err := os.MkdirAll(filepath.Dir(statePath(store.Root)), 0o755); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(statePath(store.Root), []byte("{broken\n"), 0o644); err != nil {
+			t.Fatal(err)
+		}
+		verdict, err := store.TurnVerdict(ScanResult{}, "verdict-state", "", "")
+		assertInfrastructure(t, verdict, err, "verdict-state", "turn verdict state")
+	})
+	t.Run("status write", func(t *testing.T) {
+		store := &Store{Root: servingBed(t, "bed-m1", nil), Now: func() time.Time { return time.Unix(1786800000, 0) }}
+		record := brain.Record{Schema: 1, Ledger: ExistingLedgerIdentity(store.Root), Machine: "bed-m1", DeclaredBy: "Wido", DeclaredAt: "2026-09-12T00:00:00Z"}
+		data, err := json.Marshal(record)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if err := os.MkdirAll(filepath.Dir(brain.Path(store.Root)), 0o755); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(brain.Path(store.Root), append(data, '\n'), 0o644); err != nil {
+			t.Fatal(err)
+		}
+		previous := brainStatusWriter
+		brainStatusWriter = func(string, brain.Record, time.Time) error { return fmt.Errorf("fixture status failure") }
+		t.Cleanup(func() { brainStatusWriter = previous })
+		verdict, err := store.TurnVerdict(ScanResult{}, "status-write", "", "")
+		assertInfrastructure(t, verdict, err, "status-write", "fixture status failure")
+	})
+}
 
-	ordinary, err := testStore(t).TurnVerdict(ScanResult{}, "ordinary", "", "")
+func TestInfrastructurePersistenceFailurePreservesSeatActionableRefusal(t *testing.T) {
+	store := &Store{Root: servingBed(t, "bed-m1", nil), Now: func() time.Time { return time.Unix(1786800000, 0) }}
+	previous := verdictStateWriter
+	verdictStateWriter = func(string, []byte) error { return fmt.Errorf("fixture state write failure") }
+	t.Cleanup(func() { verdictStateWriter = previous })
+	verdict, err := store.TurnVerdict(ScanResult{Open: []Item{openItem("OPEN-WORK fixture: finish it")}}, "seat-block", "", "")
+	if err != nil || !verdict.ShouldBlock || verdict.Class != "seat-actionable" ||
+		!strings.Contains(verdict.Display, "observed refusal remains blocking") {
+		t.Fatalf("seat-actionable refusal was lost with its state write: %+v %v", verdict, err)
+	}
+	if _, err := os.Stat(turnVerdictArtifactPath(store.Root, "seat-block")); err != nil {
+		t.Fatalf("surviving refusal did not write its turn-verdict artifact: %v", err)
+	}
+}
+
+func TestInfrastructureStatusWriteFailurePreservesSeatActionableRefusal(t *testing.T) {
+	store := &Store{Root: servingBed(t, "bed-m1", nil), Now: func() time.Time { return time.Unix(1786800000, 0) }}
+	record := brain.Record{Schema: 1, Ledger: ExistingLedgerIdentity(store.Root), Machine: "bed-m1", DeclaredBy: "Wido", DeclaredAt: "2026-09-12T00:00:00Z"}
+	data, err := json.Marshal(record)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if ordinary.FailClosed {
-		t.Fatalf("an ordinary verdict carried the fail-closed marker: %+v", ordinary)
+	if err := os.MkdirAll(filepath.Dir(brain.Path(store.Root)), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(brain.Path(store.Root), append(data, '\n'), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	previous := brainStatusWriter
+	brainStatusWriter = func(string, brain.Record, time.Time) error { return fmt.Errorf("fixture status failure") }
+	t.Cleanup(func() { brainStatusWriter = previous })
+	verdict, err := store.TurnVerdict(ScanResult{Open: []Item{openItem("OPEN-WORK fixture: finish it")}}, "status-block", "", "")
+	if err != nil || !verdict.ShouldBlock || verdict.Class != "seat-actionable" ||
+		!strings.Contains(verdict.Display, "observed refusal remains blocking") {
+		t.Fatalf("seat-actionable refusal was lost with its status write: %+v %v", verdict, err)
 	}
 }
 

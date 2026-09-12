@@ -15,10 +15,12 @@ event=${2:-}
 [[ "$runtime" =~ ^[a-z][a-z0-9-]{0,31}$ ]] || exit 2
 case "$event" in start|receipt|stop|end) ;; *) exit 2 ;; esac
 
-emit_raw_stop_block() {
-  printf '%s\n' '{"decision":"block","reason":"Metasystem could not prove that stopping is safe; stopping is refused."}'
+emit_raw_stop_block() { # optional fixed prefix line (plain text, no quotes or backslashes)
+  local prefix=${1:-}
+  [[ -z "$prefix" ]] || prefix="$prefix"'\n'
+  printf '{"systemMessage":"%sMetasystem Stop hook output was unreadable; stopping is allowed with degraded infrastructure. Cause: stop-hook-output-was-unreadable. Component: stop-worker. The steward owns repair."}\n' "$prefix"
 }
-raw_missing_engine_stop='{"decision":"block","reason":"Metasystem engine missing, so stopping safety cannot be judged; reinstall or rebuild bin/metasystem before stopping."}'
+raw_missing_engine_stop='{"systemMessage":"Metasystem engine missing; stopping is allowed with degraded infrastructure. Reinstall or rebuild bin/metasystem; the steward owns repair."}'
 internal_skip_result='METASYSTEM_INTERNAL_HOOK_SKIP_V1'
 
 # Claude Code marks a repeated Stop hook with stop_hook_active. The verdict
@@ -127,6 +129,27 @@ if [[ "$event" == stop && "${METASYSTEM_STOP_DEADLINE_PARENT:-}" != "$PPID" ]]; 
     printf '%s stop response outcome=%s elapsed=%ss\n' "$(date -u +%Y-%m-%dT%H:%M:%SZ)" \
       "$outcome" "$deadline_elapsed_sec" >>"$supervision_dir/hooks.log" 2>/dev/null || true
   }
+  # One hook-log line per infrastructure condition the parent decides on its
+  # own (the worker's output unreadable, the deadline expired). Both roots
+  # are set only when the payload resolved; a condition on an unresolved
+  # payload must still emit its allowance, so a failed line is said in the
+  # notice, never fatal.
+  deadline_log_failure=
+  deadline_log_stop_condition() { # cause code, component
+    local supervision_root deadline_log deadline_end
+    deadline_log_failure=
+    deadline_end=$((deadline_started_epoch + deadline_budget_sec))
+    supervision_root=${deadline_open_work_root:-${deadline_repo:-}}
+    deadline_log="$supervision_root/artifacts/agents/supervision/hooks.log"
+    if [[ -z "$supervision_root" ]]; then
+      deadline_log_failure='the infrastructure stop condition could not be logged: the payload named no checkout'
+    elif ! mkdir -p "$(dirname "$deadline_log")" 2>/dev/null; then
+      deadline_log_failure='the infrastructure stop condition log directory could not be prepared'
+    elif ! printf 'stop-condition infrastructure %s %s - %s degraded-allow\n' "$1" "$2" \
+        "$deadline_end" >>"$deadline_log" 2>/dev/null; then
+      deadline_log_failure='the infrastructure stop condition could not be appended to the hook log'
+    fi
+  }
   deadline_capture_engine_coordinates() {
     local first second
     [[ "$deadline_coordinates_from_engine" == false && -f "$deadline_resolution_ready" ]] || return 0
@@ -214,8 +237,9 @@ if [[ "$event" == stop && "${METASYSTEM_STOP_DEADLINE_PARENT:-}" != "$PPID" ]]; 
       [[ "$deadline_raw" == "$raw_missing_engine_stop" ]] && deadline_valid=true
     fi
     if (( deadline_rc != 0 )) || [[ "$deadline_valid" != true ]]; then
-      deadline_log_stop_outcome invalid-worker-output-block
-      emit_raw_stop_block
+      deadline_log_stop_condition stop-hook-output-was-unreadable stop-worker
+      deadline_log_stop_outcome invalid-worker-output-allow
+      emit_raw_stop_block "$deadline_log_failure"
     else
       command cat "$deadline_stdout" || true
     fi
@@ -328,21 +352,31 @@ if [[ "$event" == stop && "${METASYSTEM_STOP_DEADLINE_PARENT:-}" != "$PPID" ]]; 
   fi
   deadline_cause='stop deadline expired'
   deadline_remedy='A human or steward must restore supervision outside this seat, then retry.'
-  deadline_detail='Metasystem Stop deadline expired before a safe turn verdict; stopping is refused.'
+  deadline_detail='Metasystem Stop deadline expired before a turn verdict; stopping is allowed with degraded infrastructure.'
   deadline_response=
   if [[ -n "$deadline_record" ]]; then
     deadline_response=$("$deadline_canonical" report stop-block \
+      --class infrastructure \
       --refusal-record "$deadline_record" --session "$deadline_session" \
       --open-work-root "$deadline_open_work_root" \
       --cause "$deadline_cause" --remedy "$deadline_remedy" "$deadline_detail" 2>/dev/null) || \
       deadline_record_failure="the stop-refusal record could not be read or atomically updated"
   fi
+  deadline_log_stop_condition stop-deadline-expired stop-deadline
   if [[ -n "$deadline_response" && -z "$deadline_record_failure" ]]; then
-    deadline_log_stop_outcome deadline-expired-block "$deadline_elapsed_sec"
+    deadline_log_stop_outcome deadline-expired-allow "$deadline_elapsed_sec"
+    if [[ -n "$deadline_log_failure" ]]; then
+      deadline_message=$("$deadline_canonical" json get --value "$deadline_response" --field systemMessage 2>/dev/null || true)
+      deadline_response=$("$deadline_canonical" json object systemMessage="$deadline_log_failure
+$deadline_message")
+    fi
     printf '%s\n' "$deadline_response"
   else
     deadline_log_stop_outcome deadline-expired-record-failure-allow "$deadline_elapsed_sec"
-    printf '%s\n' '{"systemMessage":"Metasystem could not update the stop-refusal record; stopping is allowed so record failure cannot recreate the refusal loop. Cause: stop deadline expired. Remedy: A human or steward must restore supervision outside this seat, then retry."}'
+    deadline_record_message='Metasystem could not update the stop-refusal record; stopping is allowed so record failure cannot recreate the refusal loop. Cause: stop deadline expired. Remedy: A human or steward must restore supervision outside this seat, then retry.'
+    [[ -z "$deadline_log_failure" ]] || deadline_record_message="$deadline_log_failure
+$deadline_record_message"
+    "$deadline_canonical" json object systemMessage="$deadline_record_message"
   fi
   if [[ "$deadline_worker_waited" == true ]]; then
     rm -f "$deadline_stdout" "$deadline_stderr" "$deadline_payload" \
@@ -478,8 +512,21 @@ digest_cursor=
 digest_prefix=
 hook_evidence_failure=
 stop_failure=
-record_stop_failure() { # fixed diagnostic
-  [[ -n "$stop_failure" ]] || stop_failure=$1
+stop_failure_component=
+stop_failure_code=
+stop_conditions=()
+stop_cause_code() {
+  printf '%s' "$1" | tr '[:upper:]' '[:lower:]' | sed -E 's/[^a-z0-9]+/-/g; s/^-+//; s/-+$//; s/^the-//'
+}
+record_stop_failure() { # fixed diagnostic, component
+  local code
+  code=$(stop_cause_code "$1")
+  stop_conditions+=("$code|$2")
+  if [[ -z "$stop_failure" ]]; then
+    stop_failure=$1
+    stop_failure_component=$2
+    stop_failure_code=$code
+  fi
 }
 # Runtime signatures are anchored on the executable, so an intermediate
 # `/bin/sh -c` does not impersonate the runtime merely because its arguments
@@ -511,7 +558,7 @@ identity_started=
 if [[ -n "$identity" ]]; then
   identity_runtime=$("$ms" json get --value "$identity" --field runtime 2>/dev/null || true)
   if [[ -z "$identity_runtime" ]]; then
-    record_stop_failure "the runtime identity was unreadable"
+    record_stop_failure "the runtime identity was unreadable" runtime-identity
     identity=
   elif [[ "$identity_runtime" != "$runtime" ]]; then
     intentional_hook_skip
@@ -520,7 +567,7 @@ if [[ -n "$identity" ]]; then
     identity_pid=$("$ms" json get --value "$identity" --field pid 2>/dev/null || true)
     identity_started=$("$ms" json get --value "$identity" --field pidStartedAt 2>/dev/null || true)
     if ! [[ "$identity_pid" =~ ^[1-9][0-9]*$ && "$identity_started" =~ ^[1-9][0-9]*$ ]]; then
-      record_stop_failure "the runtime identity was unreadable"
+      record_stop_failure "the runtime identity was unreadable" runtime-identity
       identity=
       identity_pid=
       identity_started=
@@ -534,11 +581,11 @@ else
   parent_view=$("$ms" lease classify --root "$state_root" --metasystem-root "$harness_root" --caller-pid "$PPID" 2>/dev/null) || parent_view_rc=$?
   parent_class=$("$ms" json get --value "$parent_view" --field class 2>/dev/null || true)
   if (( parent_view_rc != 0 )) || [[ -z "$parent_class" ]]; then
-    record_stop_failure "the fallback runtime identity could not be classified"
+    record_stop_failure "the fallback runtime identity could not be classified" runtime-identity
   elif [[ "$parent_class" == MAIN ]]; then
     parent_runtime=$("$ms" json get --value "$parent_view" --field announcement.runtime 2>/dev/null || true)
     if [[ -z "$parent_runtime" ]]; then
-      record_stop_failure "the fallback runtime identity was unreadable"
+      record_stop_failure "the fallback runtime identity was unreadable" runtime-identity
     elif [[ "$parent_runtime" != "$runtime" ]]; then
       intentional_hook_skip
     else
@@ -546,7 +593,7 @@ else
       identity_started=$("$ms" json get --value "$parent_view" --field announcement.pidStartedAt 2>/dev/null || true)
       [[ "$identity_pid" =~ ^[1-9][0-9]*$ && "$identity_started" =~ ^[1-9][0-9]*$ ]] \
         && identity=recorded-main
-      [[ -n "$identity" ]] || record_stop_failure "the fallback runtime identity was unreadable"
+      [[ -n "$identity" ]] || record_stop_failure "the fallback runtime identity was unreadable" runtime-identity
     fi
   fi
 fi
@@ -742,19 +789,19 @@ if [[ "$event" == stop ]]; then
   turn_key=$({ printf '%s\n' "$session"; command cat "$payload"; } | "$ms" util sha256) || turn_key_rc=$?
   if (( turn_key_rc != 0 )) || [[ -z "$turn_key" ]]; then
     hook_evidence_failure="HEALTH unknown — hook-freshness=unknown (turn evidence could not be prepared)"
-    record_stop_failure "turn evidence could not be prepared"
+    record_stop_failure "turn evidence could not be prepared" turn-evidence
   else
     hook_attempt_rc=0
     hook_attempt=$("$ms" steward hook-attempt --repo "$repo" --pid "$$" --turn-key "$turn_key" 2>/dev/null) || hook_attempt_rc=$?
     if (( hook_attempt_rc != 0 )) || [[ -z "$hook_attempt" ]]; then
       hook_evidence_failure="HEALTH unknown — hook-freshness=unknown (attempt evidence could not be recorded)"
-      record_stop_failure "attempt evidence could not be recorded"
+      record_stop_failure "attempt evidence could not be recorded" turn-evidence
     else
       hook_generation=$("$ms" json get --value "$hook_attempt" --field generation 2>/dev/null || true)
       hook_attempt_seq=$("$ms" json get --value "$hook_attempt" --field attemptSeq 2>/dev/null || true)
       if ! [[ "$hook_generation" =~ ^[1-9][0-9]*$ && "$hook_attempt_seq" =~ ^[1-9][0-9]*$ ]]; then
         hook_evidence_failure="HEALTH unknown — hook-freshness=unknown (attempt evidence was unreadable)"
-        record_stop_failure "attempt evidence was unreadable"
+        record_stop_failure "attempt evidence was unreadable" turn-evidence
       fi
     fi
   fi
@@ -763,13 +810,13 @@ if [[ -n "$identity_pid" ]]; then
   lease_view_rc=0
   lease_view=$("$ms" lease classify --root "$state_root" --metasystem-root "$harness_root" --caller-pid "$identity_pid" 2>/dev/null) || lease_view_rc=$?
   if (( lease_view_rc != 0 )) || [[ -z "$lease_view" ]]; then
-    record_stop_failure "the checkout holder could not be classified"
+    record_stop_failure "the checkout holder could not be classified" checkout-holder
   else
     main_id=$("$ms" json get --value "$lease_view" --field mainId 2>/dev/null || true)
     main_class=$("$ms" json get --value "$lease_view" --field class 2>/dev/null || true)
     main_holder=$("$ms" json get --value "$lease_view" --field holder 2>/dev/null || true)
     if [[ -z "$main_class" || ( "$main_holder" != true && "$main_holder" != false ) ]]; then
-      record_stop_failure "the checkout holder classification was unreadable"
+      record_stop_failure "the checkout holder classification was unreadable" checkout-holder
     fi
   fi
 fi
@@ -788,9 +835,9 @@ stop_block_json() { # system message, reason, bounded idle
 }
 
 external_stop_json() { # system message, reason, cause, remedy
-  "$ms" report stop-block --system-message "$1" \
+  "$ms" report stop-block --class infrastructure --system-message "$1" \
     --refusal-record "$stop_refusal_record" --session "$session" \
-    --cause "$3" --remedy "$4" "$2"
+    --cause "$3" --remedy "$4" --arming-result "$up_failure_result" "$2"
 }
 
 if [[ "$event" == receipt ]]; then
@@ -806,6 +853,7 @@ fi
 
 tag="metasystem-main-$runtime-$("$ms" util slug "$session")"
 up_failure=
+up_failure_result=
 up_notice=
 if [[ "$event" == stop ]]; then
   up_rc=0
@@ -832,14 +880,17 @@ if [[ "$event" == stop ]]; then
     fi
   fi
   if (( up_rc != 0 )); then
-    up_failure="Metasystem supervision arming failed: $up_aggregate"
-    record_stop_failure "supervision arming failed"
+    up_component_lines=$(printf '%s\n' "$up_output" | sed -n '/^component=/p')
+    up_failure_result="$up_component_lines${up_component_lines:+$'\n'}$up_aggregate"
+    up_failure="Metasystem supervision arming failed:
+$up_failure_result"
+    record_stop_failure "supervision arming failed" supervision-arming
   fi
   health_rc=0
   health_line=$("$ms" health --hook-preview --repo "$repo" --metasystem-root "$harness_root" 2>/dev/null) || health_rc=$?
   if (( health_rc > 2 )) || [[ -z "$health_line" ]]; then
     health_line="HEALTH unknown — hook-freshness=unknown (the health engine returned no verdict)"
-    record_stop_failure "the health engine returned no verdict"
+    record_stop_failure "the health engine returned no verdict" health
   fi
   digest_rc=0
   digest_json=$("$ms" steward digest-pending --repo "$repo" 2>&1) || digest_rc=$?
@@ -852,11 +903,11 @@ if [[ "$event" == stop ]]; then
     digest_prefix=$("$ms" json get --value "$digest_json" --field prefixSha256 2>/dev/null) || digest_prefix_rc=$?
     if (( digest_message_rc != 0 || digest_cursor_rc != 0 || digest_prefix_rc != 0 )); then
       digest_message="NARRATOR DIGEST unavailable: the digest state was unreadable"
-      record_stop_failure "the narrator digest state was unreadable"
+      record_stop_failure "the narrator digest state was unreadable" narrator
     fi
   else
     digest_message="NARRATOR DIGEST unavailable: ${digest_json//$'\n'/ }"
-    record_stop_failure "the narrator digest could not be read"
+    record_stop_failure "the narrator digest could not be read" narrator
   fi
   checkin_tail=$health_line
   [[ -z "$up_notice" ]] || checkin_tail="$up_notice
@@ -929,16 +980,18 @@ emit_stop_payload() { # response
 compose_failed_stop() { # cause, verdict display, verdict decision, non-blocking detail
   local cause=$1 verdict_display=$2 verdict_should_block=$3 verdict_extras=$4
   local refusal_rc remedy refusal_decision refusal_message refusal_message_rc
-  local refusal_system_message repeated_message refusal_suffix message_length suffix_length prefix_length
+  local refusal_system_message refusal_report_tail repeated_message refusal_suffix message_length suffix_length prefix_length
   local record_failure_message blocking_message allowed_message
   failure_detail="$verdict_display
 
 Metasystem could not prove that stopping is safe: $cause"
   remedy='A human or steward must restore supervision outside this seat, then retry.'
-  if [[ "$cause" == 'supervision arming failed' && -n "$up_failure" ]]; then
-    remedy=$up_failure
+  if [[ "$cause" == 'supervision arming failed' && -n "$up_failure_result" ]]; then
+    remedy=$up_failure_result
   fi
   refusal_system_message="$verdict_extras${verdict_extras:+$'\n'}$checkin_tail"
+  refusal_report_tail=$refusal_system_message
+  [[ -z "$up_failure_result" ]] || refusal_report_tail="$refusal_report_tail${refusal_report_tail:+$'\n'}$up_failure_result"
   refusal_rc=0
   response=$(external_stop_json "$refusal_system_message" "$failure_detail" "$cause" "$remedy" 2>/dev/null) || refusal_rc=$?
   if (( refusal_rc != 0 )) || [[ -z "$response" ]]; then
@@ -995,8 +1048,8 @@ $checkin_tail"
   # notice. Split that known suffix so the repeated notice can precede the
   # ordinary verdict envelope without duplicating extras or the health line.
   repeated_message=$refusal_message
-  if [[ -n "$refusal_system_message" ]]; then
-    refusal_suffix=$'\n'"$refusal_system_message"
+  if [[ -n "$refusal_report_tail" ]]; then
+    refusal_suffix=$'\n'"$refusal_report_tail"
     message_length=${#refusal_message}
     suffix_length=${#refusal_suffix}
     if (( message_length >= suffix_length )); then
@@ -1034,17 +1087,30 @@ if [[ "$event" == stop ]]; then
     protocol_growth_rc=0
     protocol_growth=$("$ms" lease protocol-growth --root "$state_root" --main-id "$main_id" 2>/dev/null) || protocol_growth_rc=$?
     if (( protocol_growth_rc != 0 )); then
-      record_stop_failure "the holder protocol state could not be read"
+      record_stop_failure "the holder protocol state could not be read" holder-protocol
     elif [[ -n "$protocol_growth" ]]; then
       protocol_message_rc=0
       protocol_counts_rc=0
       protocol_message=$("$ms" json get --value "$protocol_growth" --field message 2>/dev/null) || protocol_message_rc=$?
       protocol_counts=$("$ms" json get --value "$protocol_growth" --field counts 2>/dev/null) || protocol_counts_rc=$?
       if (( protocol_message_rc != 0 || protocol_counts_rc != 0 )); then
-        record_stop_failure "the holder protocol state was unreadable"
+        record_stop_failure "the holder protocol state was unreadable" holder-protocol
       fi
     fi
   fi
+  # The evidence trail sits beside the rest of the supervision state. One
+  # hook-log line per infrastructure condition, in every outcome: the
+  # advisor's allowance below appends its lines too.
+  supervision_dir="$state_root/artifacts/agents/supervision"
+  mkdir -p "$supervision_dir"
+  hook_log_failure=
+  append_stop_condition() { # class, cause code, component, outcome
+    local generation=${hook_generation:--} deadline_end=$((stop_started_epoch + 60))
+    if ! printf 'stop-condition %s %s %s %s %s %s\n' "$1" "$2" "$3" \
+        "$generation" "$deadline_end" "$4" >>"$supervision_dir/hooks.log" 2>/dev/null; then
+      hook_log_failure="the infrastructure stop condition could not be appended to the hook log"
+    fi
+  }
   # "Advisor" is a positive finding, not a fallback. It means an announced main
   # of THIS checkout is not the one holding it. A caller that could not be
   # identified at all is not an advisor -- it is unclassified, and answering it
@@ -1058,6 +1124,13 @@ $up_failure"
 $hook_evidence_failure"
     [[ -z "$protocol_message" ]] || advisor_message="$advisor_message
 $protocol_message"
+    if (( ${#stop_conditions[@]} > 0 )); then
+      for stop_condition in "${stop_conditions[@]}"; do
+        append_stop_condition infrastructure "${stop_condition%%|*}" "${stop_condition#*|}" degraded-allow
+      done
+    fi
+    [[ -z "$hook_log_failure" ]] || advisor_message="$advisor_message
+$hook_log_failure"
     response=$(surface_json "$advisor_message
 $checkin_tail")
     emit_stop_payload "$response"
@@ -1069,7 +1142,7 @@ $checkin_tail")
   if [[ -n "$identity_pid" ]]; then
     renew_rc=0
     "$ms" lease renew --root "$state_root" --caller-pid "$identity_pid" >/dev/null 2>&1 || renew_rc=$?
-    (( renew_rc == 0 )) || record_stop_failure "the checkout holder lease could not be renewed"
+    (( renew_rc == 0 )) || record_stop_failure "the checkout holder lease could not be renewed" holder-lease
   fi
 
   # The WATCHDOG path calls the verdict like every other path (only the
@@ -1079,23 +1152,20 @@ $checkin_tail")
   # (goal-system GOAL-04; the loose per-session state files are retired).
   watchdog_rc=0
   watchdog_text=$("$ms" supervise watchdog-report --repo "$repo" 2>/dev/null) || watchdog_rc=$?
-  (( watchdog_rc == 0 )) || record_stop_failure "the supervision watchdog state could not be read"
+  (( watchdog_rc == 0 )) || record_stop_failure "the supervision watchdog state could not be read" watchdog
   watchdog_digest=
   if [[ -n "$watchdog_text" ]]; then
     watchdog_digest_rc=0
     watchdog_digest=$(printf '%s' "$watchdog_text" | "$ms" util sha256) || watchdog_digest_rc=$?
-    (( watchdog_digest_rc == 0 )) || record_stop_failure "the supervision watchdog evidence could not be prepared"
+    (( watchdog_digest_rc == 0 )) || record_stop_failure "the supervision watchdog evidence could not be prepared" watchdog
   fi
 
   # Leave evidence that this ran. Without it there is no telling a hook that
   # fired and found nothing from one that never fired, which is the confusion
   # that let this repository run for days with its hooks uninstalled.
-  # The evidence trail sits beside the rest of the supervision state.
-  supervision_dir="$state_root/artifacts/agents/supervision"
-  mkdir -p "$supervision_dir"
   evidence_gc_rc=0
   "$script_dir/evidence-gc.sh" >>"$supervision_dir/hooks.log" 2>&1 || evidence_gc_rc=$?
-  (( evidence_gc_rc == 0 )) || record_stop_failure "the hook evidence state could not be maintained"
+  (( evidence_gc_rc == 0 )) || record_stop_failure "the hook evidence state could not be maintained" hook-evidence
 
   # ONE structured decision (goal-system GOAL-05): the verdict verb owns
   # open work, the goal clause, precedence, block-once state, and the
@@ -1118,26 +1188,51 @@ $checkin_tail")
     display=$("$ms" json get --value "$verdict" --field display 2>/dev/null) || display_rc=$?
     surface_watchdog=$("$ms" json get --value "$verdict" --field surfaceWatchdog 2>/dev/null) || surface_watchdog_rc=$?
     idle_refusal=$("$ms" json get --value "$verdict" --field idleRefusal 2>/dev/null) || idle_refusal_rc=$?
-    brain_status_due=$("$ms" json get --value "$verdict" --field brainStatusDue 2>/dev/null) || brain_status_due_rc=$?
-    fail_closed=false
-    if fail_closed_value=$("$ms" json get --value "$verdict" --field failClosed 2>/dev/null); then
-      fail_closed=$fail_closed_value
+    verdict_class=seat-actionable
+    if class_value=$("$ms" json get --value "$verdict" --field class 2>/dev/null); then
+      verdict_class=$class_value
     fi
+    count_spent=true
+    if count_spent_value=$("$ms" json get --value "$verdict" --field countSpent 2>/dev/null); then
+      count_spent=$count_spent_value
+    fi
+    brain_status_due=$("$ms" json get --value "$verdict" --field brainStatusDue 2>/dev/null) || brain_status_due_rc=$?
     if (( should_block_rc != 0 || display_rc != 0 || surface_watchdog_rc != 0 || idle_refusal_rc != 0 || brain_status_due_rc != 0 )) || [[ -z "$display" ]] ||
         [[ ( "$should_block" != true && "$should_block" != false ) ||
            ( "$surface_watchdog" != true && "$surface_watchdog" != false ) ||
            ( "$idle_refusal" != true && "$idle_refusal" != false ) ||
            ( "$brain_status_due" != true && "$brain_status_due" != false ) ||
-           ( "$fail_closed" != true && "$fail_closed" != false ) ]]; then
+           ( "$count_spent" != true && "$count_spent" != false ) ||
+           ( "$verdict_class" != infrastructure && "$verdict_class" != seat-actionable && "$verdict_class" != idle-with-backlog ) ]]; then
       degraded_line='the turn verdict was unreadable'
-    elif [[ "$fail_closed" == true ]]; then
-      degraded_line=$display
     else
       verdict_readable=true
     fi
   else
     degraded_line=$(tail -1 "$verdict_stderr" 2>/dev/null || true)
     rm -f "$verdict_stderr"
+  fi
+
+  if (( ${#stop_conditions[@]} > 0 )); then
+    for stop_condition in "${stop_conditions[@]}"; do
+      append_stop_condition infrastructure "${stop_condition%%|*}" "${stop_condition#*|}" degraded-allow
+    done
+  fi
+  if [[ "$verdict_readable" == true && "$verdict_class" == infrastructure ]]; then
+    verdict_cause=$("$ms" json get --value "$verdict" --field causeCode 2>/dev/null || true)
+    verdict_component=$("$ms" json get --value "$verdict" --field component 2>/dev/null || true)
+    append_stop_condition infrastructure "${verdict_cause:-turn-verdict-unavailable}" "${verdict_component:-verdict-state}" degraded-allow
+    # The verdict's own state could not be read or written: the notice says
+    # so in fixed words, names the owner, and carries the detail; it never
+    # reads as an all-clear.
+    display="turn-verdict degraded: stopping is allowed on degraded infrastructure; the steward owns repair. Cause: ${verdict_cause:-turn-verdict-unavailable}. Component: ${verdict_component:-verdict-state}.
+$display"
+  fi
+  if [[ "$verdict_readable" == true && "$verdict_class" == idle-with-backlog && "$should_block" == true && "$count_spent" == false ]]; then
+    append_stop_condition idle-with-backlog idle-refusal-count-not-spent verdict-state refused-uncounted
+  fi
+  if [[ "$verdict_readable" != true ]]; then
+    append_stop_condition infrastructure turn-verdict-unavailable verdict-state degraded-allow
   fi
 
   if [[ "$verdict_readable" == true ]]; then
@@ -1161,11 +1256,13 @@ $checkin_tail")
       rm -f "$brain_post_stderr"
     fi
 
-	extras=$up_failure
+	extras=
 	[[ -z "$hook_evidence_failure" ]] || extras=$(printf '%s%s%s' "$extras" "${extras:+$'\n'}" "$hook_evidence_failure")
 	[[ "$surface_watchdog" != true || -z "$watchdog_text" ]] || extras=$(printf '%s%s%s' "$extras" "${extras:+$'\n'}" "$watchdog_text")
     [[ -z "$protocol_message" ]] || extras=$(printf '%s%s%s' "$extras" "${extras:+$'\n'}" "$protocol_message")
-    [[ -z "$brain_post_failure" ]] || extras=$(printf '%s%s%s' "$extras" "${extras:+$'\n'}" "$brain_post_failure")
+	[[ -z "$brain_post_failure" ]] || extras=$(printf '%s%s%s' "$extras" "${extras:+$'\n'}" "$brain_post_failure")
+
+    [[ -z "$hook_log_failure" ]] || extras=$(printf '%s%s%s' "$extras" "${extras:+$'\n'}" "$hook_log_failure")
 
     if [[ -n "$stop_failure" ]]; then
       compose_failed_stop "$stop_failure" "$display" "$should_block" "$extras"
@@ -1194,7 +1291,10 @@ $up_failure"
 $hook_evidence_failure"
     [[ -z "$protocol_message" ]] || degraded_message="$degraded_message
 $protocol_message"
-    response=$(stop_block_json "$checkin_tail" "$degraded_message")
+    [[ -z "$hook_log_failure" ]] || degraded_message="$degraded_message
+$hook_log_failure"
+    response=$(surface_json "$degraded_message
+$checkin_tail")
   fi
   emit_stop_payload "$response"
   [[ -z "$main_id" || -z "$identity_pid" || -z "$protocol_message" ]] || \

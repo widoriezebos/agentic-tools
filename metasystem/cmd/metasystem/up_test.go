@@ -1,6 +1,7 @@
 package main
 
 import (
+	"encoding/json"
 	"fmt"
 	"os"
 	"os/exec"
@@ -30,6 +31,34 @@ func TestTopLevelUpPrintsButDoesNotInstallSchedulerEntry(t *testing.T) {
 	}
 	if _, err := os.Stat(filepath.Join(root, "artifacts")); !os.IsNotExist(err) {
 		t.Fatalf("scheduler printing installed repository state: %v", err)
+	}
+}
+
+func TestArmingDetailSurvivesStop(t *testing.T) {
+	component := `component=steward-runner outcome=failed detail="ENROLLMENT_DRIFT" remedy="run metasystem steward restart from an agent-free terminal"`
+	aggregate := `up outcome=failed component=steward-runner remedy="ENROLLMENT_DRIFT: run 'metasystem steward restart' from an agent-free terminal"`
+	armingResult := component + "\n" + aggregate
+	remedy := "restore supervision from an agent-free terminal"
+	stdout, stderr, code := captureRelay(t, func() int {
+		return runReportStopBlock([]string{
+			"--class", "infrastructure", "--refusal-record", filepath.Join(t.TempDir(), "refusals.json"),
+			"--session", "arming-detail", "--cause", "supervision arming failed", "--remedy", remedy,
+			"--arming-result", armingResult, "arming failed",
+		})
+	})
+	if code != 0 || stderr != "" {
+		t.Fatalf("stop notice composition failed: code=%d stderr=%q", code, stderr)
+	}
+	var response map[string]any
+	if err := json.Unmarshal([]byte(stdout), &response); err != nil {
+		t.Fatal(err)
+	}
+	message, _ := response["systemMessage"].(string)
+	if !strings.Contains(message, armingResult) {
+		t.Fatalf("the stop notice did not preserve the failed component outcome, detail, remedy, and aggregate byte for byte: %q", message)
+	}
+	if !strings.Contains(message, "Remedy: "+remedy) {
+		t.Fatalf("the stop notice omitted its distinct remedy: %q", message)
 	}
 }
 

@@ -115,6 +115,9 @@ type GoalFacts struct {
 // Verdict is the verb's structured decision.
 type Verdict struct {
 	SchemaVersion     int        `json:"schemaVersion"`
+	Class             string     `json:"class"`
+	CauseCode         string     `json:"causeCode,omitempty"`
+	Component         string     `json:"component,omitempty"`
 	ShouldBlock       bool       `json:"shouldBlock"`
 	BlockSource       *string    `json:"blockSource"` // "open-work" | "goal" | "idle-backlog" | "uncertainty" | null
 	OpenWork          []string   `json:"openWork"`
@@ -133,6 +136,7 @@ type Verdict struct {
 	// counted idle-backlog branch, whose text must not use the open-work
 	// block-once preface.
 	IdleRefusal bool `json:"idleRefusal"`
+	CountSpent  bool `json:"countSpent"`
 	// BrainStatusDue asks the Stop hook to carry the visibility line. Posting
 	// is plumbing after this verdict and never changes the stop decision.
 	BrainStatusDue bool `json:"brainStatusDue"`
@@ -225,10 +229,10 @@ func (s *Store) TurnVerdict(scan ScanResult, sessionId, watchdogDigest, mainId s
 	if len(option) > 0 {
 		options = option[0]
 	}
-	verdict := Verdict{SchemaVersion: 1, LedgerStatus: "ok"}
+	verdict := Verdict{SchemaVersion: 1, Class: "seat-actionable", LedgerStatus: "ok"}
 	resolvedRoot, err := ResolveStateRoot(s.Root)
 	if err != nil {
-		return failClosedTurnVerdict(err), nil
+		return infrastructureVerdict("state-root", err), nil
 	}
 	store := *s
 	store.Root = resolvedRoot
@@ -239,18 +243,19 @@ func (s *Store) TurnVerdict(scan ScanResult, sessionId, watchdogDigest, mainId s
 		scan = withoutBrainOnlyScanEffects(scan)
 	}
 	if closed, fence, fenceErr := stopfence.Closed(s.Root); fenceErr != nil {
-		return failClosedTurnVerdict(fenceErr), nil
+		return infrastructureVerdict("goal-fence", fenceErr), nil
 	} else if closed {
 		description, descriptionErr := stopfence.ClosedDescription(fence, fence.Checkout)
 		command, commandErr := stopfence.ClosedCommand(fence, fence.Checkout)
 		if descriptionErr != nil {
-			return failClosedTurnVerdict(descriptionErr), nil
+			return infrastructureVerdict("goal-fence", descriptionErr), nil
 		}
 		if commandErr != nil {
-			return failClosedTurnVerdict(commandErr), nil
+			return infrastructureVerdict("goal-fence", commandErr), nil
 		}
 		return Verdict{
 			SchemaVersion: 1,
+			Class:         "seat-actionable",
 			ShouldBlock:   false,
 			LedgerStatus:  "stopped",
 			Display:       description + "; run: " + command,
@@ -260,7 +265,7 @@ func (s *Store) TurnVerdict(scan ScanResult, sessionId, watchdogDigest, mainId s
 	result, err := s.withLock(func() (Result, error) {
 		_, humanAuthorized, markerDetail, err := s.inspectSessionStop(sessionId, mainId)
 		if err != nil {
-			return Result{}, err
+			return Result{}, infrastructureFailure{"session-stop-marker", err}
 		}
 		var work ClaimableBudgetedWork
 		var workErr error
@@ -269,7 +274,7 @@ func (s *Store) TurnVerdict(scan ScanResult, sessionId, watchdogDigest, mainId s
 		}
 		state, err := s.loadVerdictState()
 		if err != nil {
-			return Result{}, err
+			return Result{}, infrastructureFailure{"verdict-state", err}
 		}
 		session := state.touch(sessionId, s.nowISO())
 
@@ -286,38 +291,74 @@ func (s *Store) TurnVerdict(scan ScanResult, sessionId, watchdogDigest, mainId s
 		greens := s.decideGreens(scan, session)
 		fullDisplay := composeDisplay(append(append([]string{}, brainLines...), runLines.lines...), verdict.Display, greens)
 		verdict.SurfaceWatchdog = session.watchdog(watchdogDigest)
+		verdictPersistenceFailed := false
 		if brainState.State == brain.Declared {
 			verdict.BrainStatusDue = brain.StatusDue(s.Root, s.now())
-			if err := brain.WriteStatus(s.Root, *brainState.Record, s.now()); err != nil {
-				return Result{}, err
+			if err := brainStatusWriter(s.Root, *brainState.Record, s.now()); err != nil {
+				failure := infrastructureFailure{"status-write", err}
+				if !verdict.ShouldBlock {
+					return Result{}, failure
+				}
+				verdictPersistenceFailed = true
+				detail := failure.Error() + "; the observed refusal remains blocking"
+				verdict.Diagnostics = append(verdict.Diagnostics, detail)
+				verdict.Display = strings.TrimSpace(verdict.Display + "\n" + detail)
+				fullDisplay = composeDisplay(append(append([]string{}, brainLines...), runLines.lines...), verdict.Display, greens)
 			}
 		}
 
+		verdictStateSaved := true
 		if err := s.saveVerdictState(state); err != nil {
-			return Result{}, err
-		}
-		if humanAuthorized {
-			marker, consumed, consumeDetail, err := s.consumeSessionStop(sessionId, mainId)
-			if err != nil {
-				return Result{}, err
+			verdictStateSaved = false
+			if verdict.ShouldBlock {
+				detail := infrastructureFailure{"verdict-state", err}.Error() + "; the observed refusal remains blocking"
+				if verdict.IdleRefusal {
+					verdict.CountSpent = false
+					detail = "the idle refusal count could not be spent because the turn verdict state could not be written: " + err.Error()
+				}
+				verdict.Diagnostics = append(verdict.Diagnostics, detail)
+				verdict.Display = strings.TrimSpace(verdict.Display + "\n" + detail)
+				fullDisplay = composeDisplay(append(append([]string{}, brainLines...), runLines.lines...), verdict.Display, greens)
+			} else {
+				return Result{}, infrastructureFailure{"verdict-state", err}
 			}
-			if !consumed {
+		}
+		if humanAuthorized && verdictStateSaved && !verdictPersistenceFailed {
+			marker, consumed, consumeDetail, err := consumeSessionStopForVerdict(s, sessionId, mainId)
+			if err != nil && !verdict.ShouldBlock {
+				// Nothing was decided, so the failed consume is the only
+				// finding: an infrastructure allowance, the marker unspent.
+				return Result{}, infrastructureFailure{"session-stop-marker", err}
+			}
+			if err != nil {
+				// A decided refusal survives a consume that could not be
+				// proved, exactly as it survives a lost consume race: the
+				// marker stays unspent for a stop that can prove its use,
+				// and no failure invents an authorization.
+				detail := infrastructureFailure{"session-stop-marker", err}.Error() + "; the observed refusal remains blocking and the authorization stays unspent"
+				verdict.Diagnostics = append(verdict.Diagnostics, detail)
+				verdict.Display = strings.TrimSpace(verdict.Display + "\n" + detail)
+				fullDisplay = strings.TrimSpace(fullDisplay + "\n" + detail)
+			} else if !consumed {
 				if consumeDetail == "" {
 					consumeDetail = "the authorization changed before its single use could be recorded"
 				}
-				return Result{}, fmt.Errorf("session stop authorization could not be completed: %s", consumeDetail)
-			}
-			if consumeDetail != "" {
 				verdict.Diagnostics = append(verdict.Diagnostics, consumeDetail)
 				verdict.Display = strings.TrimSpace(verdict.Display + "\n" + consumeDetail)
 				fullDisplay = strings.TrimSpace(fullDisplay + "\n" + consumeDetail)
+			} else {
+				if consumeDetail != "" {
+					verdict.Diagnostics = append(verdict.Diagnostics, consumeDetail)
+					verdict.Display = strings.TrimSpace(verdict.Display + "\n" + consumeDetail)
+					fullDisplay = strings.TrimSpace(fullDisplay + "\n" + consumeDetail)
+				}
+				verdict.ShouldBlock = false
+				verdict.BlockSource = nil
+				sessionStopLine := "SESSION STOP authorized once by " + marker.By +
+					fmt.Sprintf(" for holder %s at lease epoch %d", marker.HolderMainId, marker.ClaimEpoch)
+				verdict.Display = strings.TrimSpace(verdict.Display + "\n" + sessionStopLine)
+				fullDisplay = strings.TrimSpace(fullDisplay + "\n" + sessionStopLine)
 			}
-			verdict.ShouldBlock = false
-			verdict.BlockSource = nil
-			sessionStopLine := "SESSION STOP authorized once by " + marker.By +
-				fmt.Sprintf(" for holder %s at lease epoch %d", marker.HolderMainId, marker.ClaimEpoch)
-			verdict.Display = strings.TrimSpace(verdict.Display + "\n" + sessionStopLine)
-			fullDisplay = strings.TrimSpace(fullDisplay + "\n" + sessionStopLine)
 		}
 		artifactPath := turnVerdictArtifactPath(s.Root, sessionId)
 		fileLine := "Full turn verdict: " + artifactPath
@@ -335,7 +376,10 @@ func (s *Store) TurnVerdict(scan ScanResult, sessionId, watchdogDigest, mainId s
 	})
 	_ = result
 	if err != nil {
-		return failClosedTurnVerdict(err), nil
+		if failure, ok := err.(infrastructureFailure); ok {
+			return infrastructureVerdict(failure.component, failure.err), nil
+		}
+		return infrastructureVerdict("verdict-state-lock", err), nil
 	}
 	return verdict, nil
 }
@@ -409,13 +453,44 @@ func displayIDs(ids []string) string {
 	return strings.Join(ids, ", ")
 }
 
-func failClosedTurnVerdict(err error) Verdict {
-	source := "uncertainty"
-	detail := "cannot prove that stopping is safe: " + err.Error()
+type infrastructureFailure struct {
+	component string
+	err       error
+}
+
+func (failure infrastructureFailure) Error() string {
+	return infrastructureProducerPrefixes[failure.component] + ": " + failure.err.Error()
+}
+
+var infrastructureProducerPrefixes = map[string]string{
+	"state-root": "state root", "goal-fence": "goal fence", "verdict-state": "turn verdict state",
+	"verdict-state-lock": "turn verdict state lock", "status-write": "status write", "session-stop-marker": "session stop marker",
+}
+
+func infrastructureVerdict(component string, err error) Verdict {
+	prefix := infrastructureProducerPrefixes[component]
+	detail := prefix + ": " + err.Error()
 	return Verdict{
-		SchemaVersion: 1, ShouldBlock: true, BlockSource: &source,
-		LedgerStatus: "degraded", Diagnostics: []string{detail}, Display: detail, FailClosed: true,
+		SchemaVersion: 1, Class: "infrastructure", CauseCode: slugStopCause(prefix), Component: component,
+		ShouldBlock: false, LedgerStatus: "degraded", Diagnostics: []string{detail}, Display: detail,
 	}
+}
+
+func slugStopCause(value string) string {
+	value = strings.ToLower(value)
+	var out strings.Builder
+	dash := false
+	for _, r := range value {
+		if (r >= 'a' && r <= 'z') || (r >= '0' && r <= '9') {
+			out.WriteRune(r)
+			dash = false
+		} else if out.Len() > 0 && !dash {
+			out.WriteByte('-')
+			dash = true
+		}
+	}
+	result := strings.Trim(out.String(), "-")
+	return strings.TrimPrefix(result, "the-")
 }
 
 // enforceIdleBacklog owns the agent-path causal invariant. Without a valid
@@ -426,7 +501,9 @@ const unreadableIdleBacklogDigest = "ledger-unreadable"
 func (s *Store) enforceIdleBacklog(verdict *Verdict, work *ClaimableBudgetedWork, workErr error, session *sessionState, sessionID, mainID string, options TurnVerdictOptions) {
 	blockedBeforeIdle := verdict.ShouldBlock
 	if workErr != nil {
+		verdict.Class = "idle-with-backlog"
 		verdict.IdleRefusal = true
+		verdict.CountSpent = true
 		if session.IdleBlockDigest != unreadableIdleBacklogDigest {
 			session.IdleBlockDigest = unreadableIdleBacklogDigest
 			if options.StopHookActive && session.IdleBlocks > 0 {
@@ -469,6 +546,8 @@ func (s *Store) enforceIdleBacklog(verdict *Verdict, work *ClaimableBudgetedWork
 		return
 	}
 	verdict.IdleRefusal = true
+	verdict.Class = "idle-with-backlog"
+	verdict.CountSpent = true
 	if digest == session.IdleBlockDigest {
 		session.IdleBlocks++
 	} else {
@@ -1198,7 +1277,15 @@ func (s *Store) saveVerdictState(state *verdictState) error {
 	if err != nil {
 		return err
 	}
-	return atomicWrite(statePath(s.Root), append(data, '\n'))
+	return verdictStateWriter(statePath(s.Root), append(data, '\n'))
+}
+
+var verdictStateWriter = atomicWrite
+
+var brainStatusWriter = brain.WriteStatus
+
+var consumeSessionStopForVerdict = func(store *Store, sessionID, mainID string) (SessionStop, bool, string, error) {
+	return store.consumeSessionStop(sessionID, mainID)
 }
 
 // isoDaysBefore subtracts days from an ISO stamp lexically-safely.

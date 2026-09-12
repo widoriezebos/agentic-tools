@@ -334,7 +334,7 @@ func (s *Store) saveSessionStopRegistry(registry sessionStopRegistry) error {
 	if err != nil {
 		return err
 	}
-	durable, err := atomicfile.WriteText(sessionStopRegistryPath(s.Root), string(append(data, '\n')), s.Root)
+	durable, err := sessionStopRegistryWriter(sessionStopRegistryPath(s.Root), string(append(data, '\n')), s.Root)
 	if err != nil {
 		return err
 	}
@@ -343,6 +343,8 @@ func (s *Store) saveSessionStopRegistry(registry sessionStopRegistry) error {
 	}
 	return nil
 }
+
+var sessionStopRegistryWriter = atomicfile.WriteText
 
 func removeSessionStop(path string) error {
 	if err := os.Remove(path); err != nil && !os.IsNotExist(err) {
