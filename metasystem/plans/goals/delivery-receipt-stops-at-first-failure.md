@@ -1,6 +1,6 @@
 # delivery-receipt-stops-at-first-failure
 
-- State: approved
+- State: claimed
 - Priority: 1
 - Sequence: 7
 - Risk: severity=2 novelty=1 exposure=3 accumulation=1 basis="severity 2: the receipt is the landing judge; novelty 1: the runner loop exists and gains a purpose-dependent stop; exposure 3: every delivery attempt; accumulation 1: cadence unchanged"
@@ -9,11 +9,13 @@
 - Origin: human
 - Next step: Wido's word recorded 2026-09-11 (R-96-m1e): yes, for the delivery purpose only; cadence keeps continue-and-collect. Next: build behind the fixture with a failing second group and its retry.
 - OpenedAt: 2026-09-11T15:45:11Z
-- Revision: 17
+- Revision: 18
 - Pinned: m1b
 - Budget: elapsedLimit=1d attemptLimit=10 reservedJobMinutesLimit=1200 activeJobLimit=1 reviewRoundLimit=3
 - BudgetExceptions: 0
 - Approved: by=human:Wido at=2026-09-11T20:33:23Z revision=14 opid=W10S05V1M1CHQ7X3033MTK2Y1Z-m1-c6925449 authority=proven digest=d564236287914adef7d2b8a966daed07180f7499ff88ba3efdcc543731b34816
+- Claimed: machine=m1b lineage=main-1789191336-90295-e4b24b at=2026-09-12T07:29:40Z revision=18 accountingRevision=18 episodeAt=2026-09-12T07:29:40Z episodeRevision=18
+- StopCapability: generation=18 revision=18 machine=m1b claimEpoch=2 fenceEpoch=0
 
 History:
 - 2026-09-11T15:45:11Z RKPY1HJBS8V1X9RAP3GX84EXYT-m1e-5083721b open actor=m1e+main-1789141490-27414-b9c0d2 targets=delivery-receipt-stops-at-first-failure
@@ -33,4 +35,5 @@ History:
 - 2026-09-12T05:28:37Z DRQNAPYNBB8ZF5V1FY65MGK86B-m1e-c6925449 set-pin actor=human:Wido targets=delivery-receipt-stops-at-first-failure
 - 2026-09-12T07:16:42Z BAMMD587GA12SGNJ7N5MS6RSMA-m1e-c6925449 done actor=human:Wido targets=actionable-metrics,breach-clock-and-budget-honesty,budget-extends-by-consumption-and-breach-parks,capped-round-continues-instead-of-restarting,coordinator-context-stays-under-budget,coordinator-wakes-on-events-not-polls,critique-always,critique-closes-on-folded-proof,deep-battery-under-ten-minutes,delegate-rounds-reuse-a-warm-gate,delivery-receipt-stops-at-first-failure,failed-job-attention,fixture-stewards-outlive-their-suite,goal-abandoned-with-a-reason,human-goal-verbs-forgiving,job-record-birth-token,land-ready-work-lands-without-a-claim-slot,landing-receipt-survives-records-drift,lease-sweep-death-evidence,live-job-on-a-done-goal-unnoticed,machine-concurrency-governor,proof-attempts-settle-to-minutes-run,proof-groups-detect-hangs-by-progress-not-the-clock,retained-proof-reuse-crosses-claims-and-attempts,seat-opened-goals-name-their-blocker,small-change-lane,steward-catchup-livelock,steward-revives-a-done-goal,stop-batch-strands-a-resumable-goal,suite-custody,tier-from-severity-and-novelty,token-spend-fence,watch-verb,watcher-repair-request-never-names-current,winddown-census-handoff-leak reason=priority-order from=1:9 to=1:8
 - 2026-09-12T07:29:00Z WK0PQ7JPK1WQHG29DJS284PC4A-m1e-c6925449 done actor=human:Wido targets=actionable-metrics,breach-clock-and-budget-honesty,budget-extends-by-consumption-and-breach-parks,capped-round-continues-instead-of-restarting,coordinator-context-stays-under-budget,coordinator-wakes-on-events-not-polls,critique-always,critique-closes-on-folded-proof,deep-battery-under-ten-minutes,delegate-rounds-reuse-a-warm-gate,delivery-receipt-stops-at-first-failure,failed-job-attention,fixture-stewards-outlive-their-suite,goal-abandoned-with-a-reason,human-goal-verbs-forgiving,job-record-birth-token,land-ready-work-lands-without-a-claim-slot,landing-receipt-survives-records-drift,landing-refuses-without-its-receipt-line,lease-sweep-death-evidence,live-job-on-a-done-goal-unnoticed,machine-concurrency-governor,proof-attempts-settle-to-minutes-run,proof-groups-detect-hangs-by-progress-not-the-clock,retained-proof-reuse-crosses-claims-and-attempts,small-change-lane,steward-catchup-livelock,steward-revives-a-done-goal,stop-batch-strands-a-resumable-goal,suite-custody,tier-from-severity-and-novelty,token-spend-fence,watch-verb,watcher-repair-request-never-names-current,winddown-census-handoff-leak reason=priority-order from=1:8 to=1:7
-Integrity: sha256=f7b7843f8268d883bfb896ccc55453082f28abc5e8d1cd0df029d3be494cccf7
+- 2026-09-12T07:29:40Z YCT88RS6800D5203WBRYDJY72Z-m1b-30a7e141 claim actor=m1b+main-1789191336-90295-e4b24b targets=delivery-receipt-stops-at-first-failure
+Integrity: sha256=f5650edfa701ddde2b23273fd87705a16050bc00a6e22fce6871190c09cd2536
