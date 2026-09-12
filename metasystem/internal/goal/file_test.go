@@ -554,3 +554,34 @@ func TestParkedRecordRoundTripsWithDisplacementAndFreeText(t *testing.T) {
 		t.Fatal("parked file is not a render fixed point")
 	}
 }
+
+func TestParkedRecordCarriesItsBlockerAndRequiresTheEdge(t *testing.T) {
+	f := claimedGolden()
+	f.State = StateParked
+	f.Claimed = nil
+	f.Blocked = []string{"the-blocker"}
+	f.Parked = &ParkRecord{
+		By: "mac-a+lin-1", At: "2026-09-12T08:00:00Z",
+		Because: "blocked by the-blocker; returns when it is done", Blocker: "the-blocker",
+	}
+	rendered := RenderFile(f)
+	if !strings.Contains(string(rendered), " blocker=the-blocker because=blocked by the-blocker; returns when it is done\n") {
+		t.Fatalf("the blocker token precedes the free-text tail: %s", rendered)
+	}
+	parsed, problems := ParseFile(rendered)
+	if len(problems) != 0 {
+		t.Fatalf("blocker park must parse clean, got %v", problems)
+	}
+	if parsed.Parked == nil || parsed.Parked.Blocker != "the-blocker" || parsed.Parked.Because != f.Parked.Because {
+		t.Fatalf("blocker park lost: %+v", parsed.Parked)
+	}
+	if string(RenderFile(parsed)) != string(rendered) {
+		t.Fatal("blocker park is not a render fixed point")
+	}
+	// A blocker the edge does not carry is a diagnostic: only the blocker's
+	// own open writes the token, and it always writes the edge beside it.
+	f.Blocked = nil
+	if _, problems := ParseFile(RenderFile(f)); len(problems) == 0 || !strings.Contains(string(problems[0]), "blocker=the-blocker is not in BlockedBy") {
+		t.Fatalf("a blocker without its edge is a diagnostic: %v", problems)
+	}
+}

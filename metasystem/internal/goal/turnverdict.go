@@ -886,7 +886,7 @@ func (s *Store) decide(verdict *Verdict, scan ScanResult, session *sessionState,
 		case "queued-only":
 			first, _ := s.queuedFrontier()
 			if first == "" {
-				display = append(display, "no goal is claimed here and the queue is empty; `goal open` starts one")
+				display = append(display, "no goal is claimed here and the queue is empty; a person opens the next goal (`goal open --origin human`); a seat opens only the blocker of its claimed goal (`--blocks`, R-93-m1e)")
 				if work != nil {
 					display = append(display, FencedClaimLines(work.fencedClaims)...)
 				}

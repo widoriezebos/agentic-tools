@@ -520,6 +520,7 @@ func printSyncResult(res goal.PublishResult, err error) int {
 // it consumes and ignores the rest.
 type syncFlags struct {
 	root, by, id, intent, next, origin, because, conclude, arc, pin, members string
+	blocks                                                                   string
 	lineage, digest, elapsedLimit, approvedRef, temporaryWord, reviewBy      string
 	budgetBox, confirm, risk, basis, evidence                                string
 	finding, chain, why, test                                                string
@@ -551,6 +552,7 @@ func parseSyncFlags(name string, args []string) (*syncFlags, bool) {
 	fs.StringVar(&f.intent, "intent", "", "one-line intent")
 	fs.StringVar(&f.next, "next", "", "the next step")
 	fs.StringVar(&f.origin, "origin", "main", "creation provenance: human|main")
+	fs.StringVar(&f.blocks, "blocks", "", "the live goal this open unblocks: it parks with this blocker in the same publish and returns when the blocker is done (a seat's open, origin main, requires it)")
 	fs.StringVar(&f.because, "because", "", "the park's reason")
 	fs.StringVar(&f.conclude, "conclude", "", "the conclusion")
 	fs.StringVar(&f.arc, "arc", "", "the destination arc")
@@ -590,6 +592,10 @@ func parseSyncFlags(name string, args []string) (*syncFlags, bool) {
 	fs.BoolVar(&f.refreshOnly, "refresh-only", false, "complete a died refresh")
 	fs.IntVar(&f.keep, "keep", 10, "archive entries to keep")
 	if fs.Parse(args) != nil {
+		return nil, false
+	}
+	if name != "open" && f.blocks != "" {
+		fmt.Fprintf(os.Stderr, "goal %s does not take --blocks\n", name)
 		return nil, false
 	}
 	if name != "open" && name != "edit" {
@@ -850,7 +856,7 @@ func trySyncMutation(name string, args []string) (int, bool) {
 			fmt.Fprintln(os.Stderr, budgetErr)
 			return 2, true
 		}
-		res, err := goal.OpenRisked(req, f.id, f.intent, f.origin, f.next, risk, uint8(f.tier), f.why, budget, proof, f.labels...)
+		res, err := goal.OpenRisked(req, f.id, f.intent, f.origin, f.next, f.blocks, risk, uint8(f.tier), f.why, budget, proof, f.labels...)
 		return printSyncResult(res, err), true
 	case "park":
 		if !need(f.id, "id") || !need(f.because, "because") {

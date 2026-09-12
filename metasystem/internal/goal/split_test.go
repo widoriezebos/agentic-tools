@@ -1,6 +1,7 @@
 package goal
 
 import (
+	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
@@ -559,5 +560,51 @@ func TestValidatorRefusesADecomposedParentMadeLiveAgain(t *testing.T) {
 	problems := ValidateTree(&TreeGoals{Root: root, Live: map[string]*GoalFile{"retired-parent": vGoal("retired-parent", StateQueued)}, Done: map[string]*GoalFile{}})
 	if !problemsContain(problems, "decomposed parent retired-parent is live again") {
 		t.Fatalf("decomposition registry did not enforce permanent retirement: %v", problems)
+	}
+}
+
+// A blocker that is split leaves its dependents waiting on the arc: the
+// edge expands to every member, the park marker moves to the first member
+// so it stays inside BlockedBy, and the park lifts only when the last
+// member is done.
+func TestSplitMovesABlockerParkToTheFirstMember(t *testing.T) {
+	_, root := oneClone(t)
+	seedLedger(t, root)
+	risk := RiskRecord{Severity: 1, Novelty: 1, Exposure: 1, Accumulation: 1, Basis: "fixture"}
+	budget := testBudget()
+	if res, err := Open(verbReq(root, "01J5X00000000000000000SP00", "mac-a"), "held", "The seat's goal.", OriginHuman, "Build."); err != nil || res.Outcome != OutcomeConfirmed {
+		t.Fatalf("open held: %+v %v", res, err)
+	}
+	if res, err := claimApprovedForTest(t, verbReq(root, "01J5X00000000000000000SP01", "mac-a"), "held", budget); err != nil || res.Outcome != OutcomeConfirmed {
+		t.Fatalf("claim held: %+v %v", res, err)
+	}
+	if res, err := OpenRisked(verbReq(root, "01J5X00000000000000000SP02", "mac-a"), "split-parent", "A large blocker.", OriginMain, "Decompose it.", "held", risk, 0, "", &budget, nil); err != nil || res.Outcome != OutcomeConfirmed {
+		t.Fatalf("open the blocker: %+v %v", res, err)
+	}
+	members := testMembers("split-parent")
+	result, err := Split(verbReq(root, "01J5X00000000000000000SP03", "mac-a"), "split-parent", members, mainRatification("split-parent", members), nil)
+	if err != nil || result.Outcome != OutcomeConfirmed {
+		t.Fatalf("split: %+v %v", result, err)
+	}
+	tree, err := loadTree(root, result.Tip)
+	if err != nil {
+		t.Fatal(err)
+	}
+	held := tree.Live["held"]
+	if held.State != StateParked || held.Parked == nil || held.Parked.Blocker != "split-parent-one" || strings.Join(held.Blocked, ",") != "split-parent-one,split-parent-two" {
+		t.Fatalf("the split moves the edge and the marker to the members: state=%s parked=%+v blocked=%v", held.State, held.Parked, held.Blocked)
+	}
+	for index, member := range []string{"split-parent-one", "split-parent-two"} {
+		claim := verbReq(root, fmt.Sprintf("01J5X00000000000000000SP%d0", index+1), "mac-a")
+		if res, err := claimApprovedForTest(t, claim, member, budget); err != nil || res.Outcome != OutcomeConfirmed {
+			t.Fatalf("claim %s: %+v %v", member, res, err)
+		}
+		result, err = Done(verbReq(root, fmt.Sprintf("01J5X00000000000000000SP%d1", index+1), "mac-a"), member, "Done.")
+		if err != nil || result.Outcome != OutcomeConfirmed {
+			t.Fatalf("done %s: %+v %v", member, result, err)
+		}
+	}
+	if tree, err = loadTree(root, result.Tip); err != nil || tree.Live["held"].State != StateApproved || tree.Live["held"].Parked != nil {
+		t.Fatalf("the last member's done returns the held goal: %v %+v", err, tree.Live["held"])
 	}
 }

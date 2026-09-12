@@ -513,6 +513,9 @@ func archivedPath(t *TreeGoals, id string) string {
 // Open adds a tier-3 queued goal for in-package callers that predate the
 // tiered command surface. The command surface never uses this compatibility
 // entry point: goal open requires an explicit tier and calls OpenTiered.
+// Open and OpenTiered are fixture conveniences: they take no risk record
+// and no blocker, so they never model a seat's open. The command surface
+// admits only OpenRisked, which carries the seat rule (R-93-m1e).
 func Open(r VerbRequest, id, intent, origin, nextStep string, labels ...string) (PublishResult, error) {
 	return OpenTiered(r, id, intent, origin, nextStep, 3, nil, labels...)
 }
@@ -520,14 +523,22 @@ func Open(r VerbRequest, id, intent, origin, nextStep string, labels ...string) 
 // OpenTiered adds a queued goal at the caller-selected tier. Goal-free clears
 // in the same commit when it was declared.
 func OpenTiered(r VerbRequest, id, intent, origin, nextStep string, tier uint8, supplied *Budget, labels ...string) (PublishResult, error) {
-	req, err := openRequest(r, id, intent, origin, nextStep, tier, supplied, nil, "", labels)
+	req, err := openRequest(r, id, intent, origin, nextStep, "", tier, supplied, nil, "", labels)
 	if err != nil {
 		return PublishResult{}, err
 	}
 	return Publish(r.Endpoint, req)
 }
 
-func OpenRisked(r VerbRequest, id, intent, origin, nextStep string, risk RiskRecord, requestedTier uint8, why string, supplied *Budget, proof *humanauthority.Proof, labels ...string) (PublishResult, error) {
+// OpenRisked is the open the command surface runs. A seat's open (origin
+// main) names the live goal it unblocks in blocks: that goal parks in the
+// same publish with the blocker recorded and returns when the blocker is
+// done (R-93-m1e, Wido 2026-09-11: seats open only blockers). A person's
+// open (origin human) may name a blocker or not.
+func OpenRisked(r VerbRequest, id, intent, origin, nextStep, blocks string, risk RiskRecord, requestedTier uint8, why string, supplied *Budget, proof *humanauthority.Proof, labels ...string) (PublishResult, error) {
+	if origin == OriginMain && strings.TrimSpace(blocks) == "" {
+		return PublishResult{}, fmt.Errorf("%s", SeatOpenNeedsBlocker)
+	}
 	if err := risk.Validate(); err != nil {
 		return PublishResult{}, fmt.Errorf("invalid risk: %v", err)
 	}
@@ -550,19 +561,27 @@ func OpenRisked(r VerbRequest, id, intent, origin, nextStep string, risk RiskRec
 			return PublishResult{}, err
 		}
 	}
-	req, err := openRequest(r, id, intent, origin, nextStep, tier, supplied, &risk, why, labels)
+	req, err := openRequest(r, id, intent, origin, nextStep, blocks, tier, supplied, &risk, why, labels)
 	if err != nil {
 		return PublishResult{}, err
 	}
 	return Publish(r.Endpoint, req)
 }
 
+// SeatOpenNeedsBlocker is the refusal a seat's open without --blocks gets:
+// the ruling, the lawful forms, and where a non-blocking discovery goes.
+const SeatOpenNeedsBlocker = "a seat opens only the defect that blocks its claimed goal: name that goal with --blocks <goal-id>, and it parks with the blocker recorded until the blocker is done (R-93-m1e, Wido 2026-09-11). An improvement that blocks nothing is a proposal in memory/backlog-notes.md, never a goal; every other goal is opened by a person (--origin human)"
+
 // openRequest builds the verb's complete transaction request — the
 // ONE mutation semantics both the live verb and recovery replay
 // run (recovery rebuilds through the real verb paths).
-func openRequest(r VerbRequest, id, intent, origin, nextStep string, tier uint8, supplied *Budget, risk *RiskRecord, why string, labels []string) (PublishRequest, error) {
+func openRequest(r VerbRequest, id, intent, origin, nextStep, blocks string, tier uint8, supplied *Budget, risk *RiskRecord, why string, labels []string) (PublishRequest, error) {
 	if tier < 1 || tier > 3 {
 		return PublishRequest{}, fmt.Errorf("goal open requires --tier 1, 2, or 3")
+	}
+	blocks = strings.TrimSpace(blocks)
+	if blocks == id {
+		return PublishRequest{}, fmt.Errorf("goal %s cannot block itself", id)
 	}
 	budget := supplied
 	if budget == nil {
@@ -584,12 +603,21 @@ func openRequest(r VerbRequest, id, intent, origin, nextStep string, tier uint8,
 	if err != nil {
 		return PublishRequest{}, err
 	}
+	args := map[string]string{
+		"intent": intent, "origin": origin, "next": nextStep, "labels": strings.Join(canonical, ","), "tier": strconv.Itoa(int(tier)),
+	}
+	targets := []string{id}
+	message := "goal open " + id
+	if blocks != "" {
+		args["blocks"] = blocks
+		targets = append(targets, blocks)
+		message += " (blocks " + blocks + ")"
+	}
 	return PublishRequest{
 		Opid: r.opid(), Machine: r.Actor.Machine, Lineage: r.Actor.Lineage,
-		Intent: Intent{Verb: "open", Targets: []string{id}, Args: intentArgs(r, mergeIntentArgs(map[string]string{
-			"intent": intent, "origin": origin, "next": nextStep, "labels": strings.Join(canonical, ","), "tier": strconv.Itoa(int(tier)),
-		}, mergeIntentArgs(budgetIntentArgs(*budget), riskIntentArgs(risk, why))))},
-		Message: "goal open " + id,
+		Intent: Intent{Verb: "open", Targets: targets, Args: intentArgs(r, mergeIntentArgs(args,
+			mergeIntentArgs(budgetIntentArgs(*budget), riskIntentArgs(risk, why))))},
+		Message: message,
 		Mutate: func(tip string) ([]Change, error) {
 			t, err := loadTree(r.Endpoint.Root, tip)
 			if err != nil {
@@ -611,18 +639,25 @@ func openRequest(r VerbRequest, id, intent, origin, nextStep string, tier uint8,
 				Id: id, State: StateQueued, Tier: tier, Intent: intent, Origin: origin,
 				NextStep: nextStep, OpenedAt: r.stamp(), Revision: 0, Labels: canonical, Budget: budget, Risk: risk,
 			}
-			touch(f, r, "open", []string{id})
+			touch(f, r, "open", targets)
 			if risk != nil && tier != risk.DerivedTier() {
 				f.History[len(f.History)-1].Reason = fmt.Sprintf("TierOverride: derived=%d set=%d why=%s", risk.DerivedTier(), tier, why)
 			}
 			changes := []Change{{Path: livePath(id), Content: RenderFile(f)}}
+			if blocks != "" {
+				blocked, err := parkBehindBlocker(t, r, blocks, id)
+				if err != nil {
+					return nil, err
+				}
+				changes = append(changes, Change{Path: livePath(blocks), Content: RenderFile(blocked)})
+			}
 			// Opening clears a declared Goal-free in the same commit.
 			if t.Root != nil && t.Root.Free != nil {
 				t.Root.Free = nil
 				t.Root.Revision++
 				t.Root.History = append(t.Root.History, HistoryLine{
 					At: r.stamp(), Opid: r.opid(), Verb: "open",
-					Actor: r.Actor.historyActor(), Targets: []string{id}, Keep: -1,
+					Actor: r.Actor.historyActor(), Targets: targets, Keep: -1,
 				})
 				changes = append(changes, Change{Path: goalsPrefix + "backlog.md", Content: RenderRoot(t.Root)})
 			}
@@ -630,6 +665,100 @@ func openRequest(r VerbRequest, id, intent, origin, nextStep string, tier uint8,
 		},
 		Validate: func(commit string) error { return ValidateCommit(r.Endpoint.Root, commit) },
 	}, nil
+}
+
+// parkBehindBlocker records that the goal being opened (blocker) blocks
+// an existing live goal, in the open's own publish: the edge lands on the
+// blocked goal and, unless it is parked already, the goal parks with the
+// blocker named. A seat may name only the goal it holds: the park clears
+// that claim, which frees the seat's one claim for the blocker. The goal's
+// origin does not matter here: a person's standing reservation parks too,
+// because the ruling asks for exactly this park, it is recorded with its
+// blocker, and the goal returns by itself when the blocker is done. A
+// person may name any live goal, and only a person reaches the branch
+// that adds a second blocker to a goal that is parked already.
+func parkBehindBlocker(t *TreeGoals, r VerbRequest, blocked, blocker string) (*GoalFile, error) {
+	f, live := t.Live[blocked]
+	if !live {
+		if _, done := t.Done[blocked]; done {
+			return nil, fmt.Errorf("--blocks %s names a done goal; a blocker opens only for live work", blocked)
+		}
+		return nil, fmt.Errorf("--blocks %s names a goal that is not live", blocked)
+	}
+	if r.Actor.Human == "" && (f.State != StateClaimed || f.Claimed == nil || !ownPair(f.Claimed, r.Actor)) {
+		holder := "unclaimed"
+		if f.Claimed != nil {
+			holder = "claimed by " + f.Claimed.Machine + "+" + f.Claimed.Lineage
+		}
+		return nil, fmt.Errorf("a seat opens only the defect that blocks the goal it holds (R-93-m1e): goal %s is %s, %s, not this seat's claim", blocked, f.State, holder)
+	}
+	if !contains(f.Blocked, blocker) {
+		f.Blocked = sortedUnique(append(append([]string(nil), f.Blocked...), blocker))
+	}
+	because := "blocked by " + blocker + "; returns when it is done"
+	if f.State == StateParked {
+		// The park stands; only the edge is new.
+		f.Revision++
+		f.History = append(f.History, HistoryLine{
+			At: r.stamp(), Opid: r.opid(), Verb: "edit",
+			Actor: r.Actor.historyActor(), Targets: []string{blocked}, Keep: -1,
+			Reason: "blockedBy adds " + blocker + " (its open)",
+		})
+		return f, nil
+	}
+	if f.State != StateQueued && f.State != StateApproved && f.State != StateClaimed {
+		return nil, fmt.Errorf("goal %s is %s; only queued, approved, claimed or parked goals take a blocker", blocked, f.State)
+	}
+	displaced := ""
+	if f.State == StateClaimed && f.Claimed != nil && !ownPair(f.Claimed, r.Actor) {
+		displaced = pairMarker(f.Claimed)
+	}
+	f.State = StateParked
+	f.Parked = &ParkRecord{
+		By: r.Actor.historyActor(), At: r.stamp(),
+		Because: because, Displaced: displaced, Blocker: blocker,
+	}
+	if err := clearClaimBinding(f); err != nil {
+		return nil, err
+	}
+	f.Revision++
+	f.History = append(f.History, HistoryLine{
+		At: r.stamp(), Opid: r.opid(), Verb: "park",
+		Actor: r.Actor.historyActor(), Targets: []string{blocked},
+		Displaced: displaced, Keep: -1, Reason: because,
+	})
+	return f, nil
+}
+
+// returnBlockerParks lifts every park a blocker's open recorded whose
+// blockers are now all done — done, the verb that finishes the last
+// blocker, calls it after moving that goal to the archive. The goal
+// returns to its resting state (approved when its approval stands,
+// queued otherwise) and is claimable again at once.
+func returnBlockerParks(t *TreeGoals, r VerbRequest, finished string) []*GoalFile {
+	var returned []*GoalFile
+	for _, id := range sortedGoalIds(t.Live) {
+		f := t.Live[id]
+		if f.State != StateParked || f.Parked == nil || f.Parked.Blocker == "" {
+			continue
+		}
+		clear := true
+		for _, dep := range f.Blocked {
+			if depState(t, dep) != StateDone {
+				clear = false
+				break
+			}
+		}
+		if !clear {
+			continue
+		}
+		f.State = restingState(f)
+		f.Parked = nil
+		touch(f, r, "unpark", []string{id})
+		f.History[len(f.History)-1].Reason = "blocker " + finished + " is done; the park lifts"
+		returned = append(returned, f)
+	}
+	return returned
 }
 
 // Claim takes ownership of a human-approved goal for the actor's pair.
@@ -1240,6 +1369,7 @@ func doneRequest(r VerbRequest, id, conclusion string) PublishRequest {
 			f.Parked = nil
 			t.Done[id] = f
 			delete(t.Live, id)
+			returned := returnBlockerParks(t, r, id)
 			compactions := compactDepartedPriorities(t.Live, []*GoalFile{f})
 			targets := []string{id}
 			if len(compactions) > 0 {
@@ -1250,10 +1380,19 @@ func doneRequest(r VerbRequest, id, conclusion string) PublishRequest {
 				{Path: livePath(id), Delete: true},
 				{Path: donePath(id), Content: RenderFile(f)},
 			}
+			written := map[string]bool{}
 			for _, compaction := range compactions {
 				for _, change := range compaction.Changed {
 					mergePriorityEvent(change.File, r, "done", compaction.Targets, change.Before, change.After)
 					changes = append(changes, Change{Path: livePath(change.File.Id), Content: RenderFile(change.File)})
+					written[change.File.Id] = true
+				}
+			}
+			// A returned goal that the compaction already rendered
+			// carries both effects in that one render; one write per file.
+			for _, g := range returned {
+				if !written[g.Id] {
+					changes = append(changes, Change{Path: livePath(g.Id), Content: RenderFile(g)})
 				}
 			}
 			return ackDisplacements(t, r, changes), nil
@@ -1386,6 +1525,15 @@ func unparkRequest(r VerbRequest, id string) PublishRequest {
 			// silently lift (the table's human-origin-park row).
 			if f.Parked != nil && strings.HasPrefix(f.Parked.By, "human:") && r.Actor.Human == "" {
 				return nil, fmt.Errorf("goal %s was parked by %s; lifting a human's pause is a human act", id, f.Parked.By)
+			}
+			// A blocker's park lifts by itself when every blocker is done
+			// (R-93-m1e); an agent cannot lift it earlier, a human can.
+			if f.Parked != nil && f.Parked.Blocker != "" && r.Actor.Human == "" {
+				for _, dep := range f.Blocked {
+					if depState(t, dep) != StateDone {
+						return nil, fmt.Errorf("goal %s is parked behind %s, which is not done; it returns by itself when every blocker is done (R-93-m1e), and lifting it earlier is a human act", id, dep)
+					}
+				}
 			}
 			f.State = restingState(f)
 			f.Parked = nil

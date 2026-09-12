@@ -270,6 +270,9 @@ func mapOneChange(p string, base, edited *GoalFile) ([]MappedVerb, error) {
 			if edited.Parked == nil || edited.Parked.Because == "" {
 				return nil, fmt.Errorf("%s: a hand-park needs its Parked because", p)
 			}
+			if edited.Parked.Blocker != "" {
+				return nil, fmt.Errorf("%s: Parked blocker= is written by goal open --blocks; a hand park carries no blocker", p)
+			}
 			rows = append(rows, MappedVerb{Verb: "park", Id: base.Id, Because: edited.Parked.Because, BaseState: base.State})
 		case base.State == StateParked && (edited.State == StateQueued || edited.State == StateApproved):
 			rows = append(rows, MappedVerb{Verb: "unpark", Id: base.Id, BaseState: base.State})
@@ -454,7 +457,7 @@ func parkReasonChanged(base, edited *GoalFile) bool {
 	if base.Parked == nil || edited.Parked == nil {
 		return false
 	}
-	return base.Parked.Because != edited.Parked.Because
+	return base.Parked.Because != edited.Parked.Because || base.Parked.Blocker != edited.Parked.Blocker
 }
 
 // renderHistory serializes a history for content comparison — a

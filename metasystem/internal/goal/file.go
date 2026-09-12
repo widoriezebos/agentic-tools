@@ -287,6 +287,10 @@ type ParkRecord struct {
 	At        string
 	Because   string
 	Displaced string // machine+lineage@claimedAt of a displaced claimant, or empty
+	// Blocker names the goal whose open parked this one (goal open
+	// --blocks). Only that verb writes it; the park lifts by itself when
+	// every BlockedBy goal is done, and an agent cannot lift it earlier.
+	Blocker string
 }
 
 // HistoryLine is one entry of the append-only History block, exactly
@@ -581,6 +585,9 @@ func ParseFile(data []byte) (*GoalFile, []Problem) {
 	}
 	if f.Parked != nil && strings.TrimSpace(f.Parked.Because) == "" {
 		addProblem("Parked without its because — a pause without a why is a stall in disguise")
+	}
+	if f.Parked != nil && f.Parked.Blocker != "" && !contains(f.Blocked, f.Parked.Blocker) {
+		addProblem("Parked blocker=%s is not in BlockedBy; the park that a blocker's open records always carries the edge", f.Parked.Blocker)
 	}
 	if f.State == StateDone && f.Conclude == "" {
 		addProblem("done without Concluded")
@@ -1058,13 +1065,13 @@ func parseFileField(f *GoalFile, field string, seen map[string]bool, addProblem 
 			CapabilityGeneration: generation, ClosedAt: rec["closedAt"], Reason: rec["reason"],
 		}
 	case "Parked":
-		rec, err := parseKVRecord(value, []string{"by", "at"}, []string{"displaced"}, "because")
+		rec, err := parseKVRecord(value, []string{"by", "at"}, []string{"displaced", "blocker"}, "because")
 		if err != nil {
 			addProblem("Parked: %v", err)
 			return
 		}
 		because, displaced := splitParkTail(value)
-		f.Parked = &ParkRecord{By: rec["by"], At: rec["at"], Because: because, Displaced: displaced}
+		f.Parked = &ParkRecord{By: rec["by"], At: rec["at"], Because: because, Displaced: displaced, Blocker: rec["blocker"]}
 	default:
 		addProblem("unknown field %q", key)
 	}
@@ -1348,6 +1355,9 @@ func RenderFile(f *GoalFile) []byte {
 		line := fmt.Sprintf("- Parked: by=%s at=%s", f.Parked.By, f.Parked.At)
 		if f.Parked.Displaced != "" {
 			line += " displaced=" + f.Parked.Displaced
+		}
+		if f.Parked.Blocker != "" {
+			line += " blocker=" + f.Parked.Blocker
 		}
 		line += " because=" + f.Parked.Because
 		b.WriteString(line + "\n")

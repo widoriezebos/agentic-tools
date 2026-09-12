@@ -659,3 +659,39 @@ func TestRecoveryClassifiesOldArcDebtAfterDecomposedParentWasPruned(t *testing.T
 		t.Fatalf("registry coordinates did not let recovery terminalize: %+v %v reports=%+v", entry, err, reports)
 	}
 }
+
+func TestRecoveryCompletesADeadOwnersBlockerOpen(t *testing.T) {
+	_, a, _ := twoClones(t)
+	seedLedger(t, a)
+	if res, err := Open(verbReq(a, "01J5X00000000000000000Q100", "mac-a"), "held", "Work the blocker holds.", OriginHuman, "Wait."); err != nil || res.Outcome != OutcomeConfirmed {
+		t.Fatalf("open: %+v %v", res, err)
+	}
+	if res, err := claimApprovedForTest(t, verbReq(a, "01J5X00000000000000000Q101", "mac-a"), "held", testBudget()); err != nil || res.Outcome != OutcomeConfirmed {
+		t.Fatalf("claim: %+v %v", res, err)
+	}
+	// The dead owner held that goal and its open named the blocker:
+	// recovery replays the whole publish, the park included, under the
+	// original opid.
+	opid := Opid("01J5X00000000000000000Q110", "mac-a", "lin-1")
+	strandEntry(t, a, opid, PhaseCreated, Intent{
+		Verb: "open", Targets: []string{"fixer", "held"},
+		Args: map[string]string{"intent": "The dead owner's blocker.", "origin": "main", "next": "Fix.", "blocks": "held", "labels": ""},
+	})
+	if _, err := Recover(endpointFor(a)); err != nil {
+		t.Fatal(err)
+	}
+	p, err := Project(endpointFor(a), true, time.Now())
+	if err != nil {
+		t.Fatal(err)
+	}
+	fixer, held := p.Tree.Live["fixer"], p.Tree.Live["held"]
+	if fixer == nil || fixer.State != StateQueued || fixer.History[0].Opid != opid {
+		t.Fatalf("the recovered blocker opens under the original opid: %+v", fixer)
+	}
+	if held == nil || held.State != StateParked || held.Claimed != nil || held.Parked == nil || held.Parked.Blocker != "fixer" || strings.Join(held.Blocked, ",") != "fixer" {
+		t.Fatalf("the recovered open parks the blocked goal with its blocker: %+v", held)
+	}
+	if held.History[len(held.History)-1].Opid != opid {
+		t.Fatalf("the park rides the original opid: %+v", held.History[len(held.History)-1])
+	}
+}

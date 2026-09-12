@@ -462,3 +462,25 @@
     invariants), part cheap-model agent role (judgment calls),
     rostered like the narrator. Design → critique → implement when
     its turn comes.
+
+## Proposals (R-93-m1e, 2026-09-11)
+
+A seat that discovers an improvement which blocks nothing appends it here
+as a proposal, never as a goal: one numbered entry with the date, the
+seat, what was seen and where, and what it proposes. A person promotes a
+proposal with `goal open --origin human` or drops it here with the reason.
+A defect that blocks a seat's claimed goal is not a proposal; it is the
+blocker `goal open --blocks` opens.
+
+P-1. 2026-09-12, m1c. A preserved suite-failure bed under
+`artifacts/agents/suite-failures/20260909T164049Z-detached-section_adoption-fixtures-.../adopt-default/`
+carries a full copy of `cmd/metasystem` with no `go.mod` of its own, so it
+sits inside the main module and `go vet ./...`, `go build ./...` and the
+fast gate compile it against the live internal packages; every signature
+change on main turns the gate red in that checkout for a reason that is
+not in the code (seen on `goal.OpenRisked` and on an older
+`landing.PublishCommittedReceipt` drift). Worked around on m1c by
+renaming the directory with a leading underscore, which Go skips.
+Proposal: the suite-failure preservation writes evidence outside the
+module tree (or drops a `go.mod` beside any copied source), and the gate
+refuses to run over `artifacts/` at all.

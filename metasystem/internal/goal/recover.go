@@ -289,7 +289,7 @@ func requestForEntry(e Endpoint, entry Entry) (PublishRequest, error) {
 			}
 			risk = &parsedRisk
 		}
-		return openRequest(r, target, in.Args["intent"], in.Args["origin"], in.Args["next"], uint8(tier), budget, risk, in.Args["why"], commaValues(in.Args["labels"]))
+		return openRequest(r, target, in.Args["intent"], in.Args["origin"], in.Args["next"], in.Args["blocks"], uint8(tier), budget, risk, in.Args["why"], commaValues(in.Args["labels"]))
 	case "open-claim":
 		budget, err := budgetFromIntentArgs(in.Args)
 		if err != nil {

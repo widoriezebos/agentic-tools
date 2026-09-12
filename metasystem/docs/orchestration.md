@@ -81,6 +81,20 @@ for those groups rather than a literal full-battery command. Every over-box budg
 `BudgetExceptions`; a second exception marks the appetite line `repeated
 exception: defect signal`.
 
+A seat opens only the defect that blocks its claimed goal (R-93-m1e, Wido
+2026-09-11). Its `goal open` (origin main) names that goal with
+`--blocks <goal-id>`, and one publish does the whole move: the blocker opens
+queued, the blocked goal parks with the blocker recorded
+(`Parked: ... blocker=<id>`) and the edge written to `BlockedBy`, and the
+seat's claim on it clears, so the seat may take the blocker once a person
+approves it. The parked goal returns to its resting state by itself in the
+publish that concludes its last blocker and is claimable again at once; an
+agent cannot lift that park earlier, a person can. A seat open without
+`--blocks` is refused with the ruling. A person opens every other goal
+(`--origin human`, or a seat relaying the person's recorded word), with or
+without `--blocks`. An improvement a seat discovers that blocks nothing is a
+proposal appended to `memory/backlog-notes.md`, never a goal.
+
 Under R-60-m1, the reviewer stops critique at the first round with no material
 finding. A material finding must change what gets built and name that
 artifact; a finding that fails the artifact test is demoted at registration.

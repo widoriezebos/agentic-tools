@@ -352,10 +352,17 @@ func applyRow(t *TreeGoals, r VerbRequest, row MappedVerb, session *replaySessio
 		t.Done[row.Id] = f
 		session.archived[row.Id] = true
 		session.moved[row.Id] = true
-		return []Change{
+		changes := []Change{
 			{Path: livePath(row.Id), Delete: true},
 			{Path: donePath(row.Id), Content: RenderFile(f)},
-		}, nil
+		}
+		// A hand-concluded blocker lifts the parks its open recorded,
+		// exactly as the done verb does.
+		for _, returned := range returnBlockerParks(t, r, row.Id) {
+			session.moved[returned.Id] = true
+			changes = append(changes, Change{Path: livePath(returned.Id), Content: RenderFile(returned)})
+		}
+		return changes, nil
 
 	case "edit":
 		// done+edit compose: the edited goal may already have

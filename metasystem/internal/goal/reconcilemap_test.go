@@ -370,3 +370,38 @@ func TestHandParkWithDuplicateKeysRefusesUnrewritten(t *testing.T) {
 		t.Fatalf("a duplicate park key refuses by diagnostic, never a cleaned rewrite: %v", mapErr)
 	}
 }
+
+func TestHandParkWithABlockerTokenRefuses(t *testing.T) {
+	a, tip := reconcileBed(t)
+	abs := filepath.Join(a, "plans", "goals", "editable.md")
+	data, err := os.ReadFile(abs)
+	if err != nil {
+		t.Fatal(err)
+	}
+	// Without the edge the token is a diagnostic the surface refuses.
+	edited := strings.Replace(string(data), "- State: queued",
+		"- State: parked\n- Parked: by=h at=2026-09-12T08:00:00Z blocker=editable-blocker because=held", 1)
+	if err := os.WriteFile(abs, []byte(edited), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	snap, err := CaptureSnapshot(a)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, mapErr := MapDeltas(a, tip, snap); mapErr == nil || !strings.Contains(mapErr.Error(), "diagnostic") {
+		t.Fatalf("a blocker token without its edge refuses by diagnostic: %v", mapErr)
+	}
+	// With the edge the file parses, and the hand grammar refuses the token
+	// itself: only goal open --blocks writes a blocker park.
+	edited = strings.Replace(string(data), "- State: queued",
+		"- State: parked\n- BlockedBy: editable-blocker\n- Parked: by=h at=2026-09-12T08:00:00Z blocker=editable-blocker because=held", 1)
+	if err := os.WriteFile(abs, []byte(edited), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if snap, err = CaptureSnapshot(a); err != nil {
+		t.Fatal(err)
+	}
+	if _, mapErr := MapDeltas(a, tip, snap); mapErr == nil || !strings.Contains(mapErr.Error(), "goal open --blocks") {
+		t.Fatalf("a hand park carries no blocker: %v", mapErr)
+	}
+}

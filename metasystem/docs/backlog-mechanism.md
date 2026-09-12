@@ -64,9 +64,11 @@ enforces both the citation and the evidence-carrying refutation rule.
 Items are shaped in `plans/goals-drafts/` — free-form files, no
 grammar, no budget required. "Draft" is the status name. The
 backlog itself holds only ready items: promotion (`goal open`) is
-the dispatch delegate's explicit intake act, performed after the checklist
-below passes. Delete the draft file in the same change that
-promotes it.
+a person's intake act, performed after the checklist below passes; the
+person runs it, or a seat runs it with `--origin human` on the person's
+recorded word. Delete the draft file in the same change that
+promotes it. A seat's own open is confined to the blocker of its claimed
+goal (R-93-m1e); see "Blockers a seat opens" below.
 
 ## The intake checklist
 
@@ -98,6 +100,37 @@ Before promoting any draft:
       exists for the system's outputs binds the system's own work
       UNPROMPTED — the human reminding us is the failure, not the
       mechanism.
+
+## Blockers a seat opens
+
+Seats opened 165 goals in five days against 62 concluded (the delivery
+audit of 6 to 11 September 2026). Under R-93-m1e a seat's `goal open`
+(origin main) opens one thing only: the defect that blocks the goal it
+holds. The open names that goal with `--blocks <goal-id>` and is refused
+without it, with the ruling and the lawful forms in the refusal. The verb
+does the whole move in one publish:
+
+- the blocker opens queued, awaiting a person's approval like any goal;
+- the blocked goal parks, its `Parked` record naming the blocker
+  (`blocker=<id>`) beside the reason, and its `BlockedBy` gains the edge;
+- the seat's claim on the blocked goal clears, which frees the seat's one
+  claim for the blocker.
+
+A goal that is already parked takes only the edge. Another seat's claim
+still parks only under a person, and a goal that is not live takes no
+blocker. The blocked goal returns to its resting state (approved when its
+approval stands, queued otherwise) in the publish that concludes its last
+blocker, with an `unpark` line naming the blocker, and is claimable again
+at once; that publish lifts the park whoever recorded it, through the
+done verb or a hand-concluded blocker at reconcile. An agent cannot lift
+such a park earlier; a person can, and the edge then keeps the goal out of
+the claimable frontier until the blocker is done. Only the verb writes the
+blocker token: a hand edit that carries one is refused at reconcile.
+
+A person's open (`--origin human`) is unchanged: it takes `--blocks` or
+not, and may name any live goal, a parked one included, which then takes
+only the edge. An improvement a seat discovers that blocks nothing goes to
+`memory/backlog-notes.md` as a proposal, never to the ledger.
 
 ## The drop rule
 

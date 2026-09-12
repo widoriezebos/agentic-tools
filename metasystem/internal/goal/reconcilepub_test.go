@@ -570,3 +570,44 @@ func TestHandJoinIntoForeignClaimedArcLandsQueued(t *testing.T) {
 		t.Fatalf("a queued join displaced a foreign claimant it did not move: %+v", last)
 	}
 }
+
+// A blocker concluded by hand at reconcile lifts the park its open
+// recorded, exactly as the done verb does.
+func TestHandDoneOfABlockerLiftsItsPark(t *testing.T) {
+	_, a, _ := twoClones(t)
+	seedLedger(t, a)
+	risk := RiskRecord{Severity: 1, Novelty: 1, Exposure: 1, Accumulation: 1, Basis: "fixture"}
+	budget := testBudget()
+	if res, err := Open(verbReq(a, "01J5X00000000000000000HD00", "mac-a"), "held", "The seat's goal.", OriginHuman, "Build."); err != nil || res.Outcome != OutcomeConfirmed {
+		t.Fatalf("open held: %+v %v", res, err)
+	}
+	if res, err := claimApprovedForTest(t, verbReq(a, "01J5X00000000000000000HD01", "mac-a"), "held", budget); err != nil || res.Outcome != OutcomeConfirmed {
+		t.Fatalf("claim held: %+v %v", res, err)
+	}
+	res, err := OpenRisked(verbReq(a, "01J5X00000000000000000HD02", "mac-a"), "fixer", "The blocker.", OriginMain, "Fix.", "held", risk, 0, "", &budget, nil)
+	if err != nil || res.Outcome != OutcomeConfirmed {
+		t.Fatalf("open the blocker: %+v %v", res, err)
+	}
+	materialize(t, a, res.Tip)
+	path := filepath.Join(a, "plans", "goals", "fixer.md")
+	raw, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	edited := strings.Replace(string(raw), "- State: queued", "- State: done\n- Concluded: Concluded by hand.", 1)
+	if err := os.WriteFile(path, []byte(edited), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	reconciled, err := Reconcile(humanReconcileReq(a, "01J5X00000000000000000HD10"))
+	if err != nil || reconciled.Publish.Outcome != OutcomeConfirmed || reconciled.Rows[0].Verb != "done" {
+		t.Fatalf("the hand-done row applies: %+v %v", reconciled, err)
+	}
+	tree, err := loadTree(a, reconciled.Publish.Tip)
+	if err != nil {
+		t.Fatal(err)
+	}
+	held := tree.Live["held"]
+	if held == nil || held.State != StateApproved || held.Parked != nil || held.History[len(held.History)-1].Verb != "unpark" {
+		t.Fatalf("the hand-concluded blocker lifts the park: %+v", held)
+	}
+}

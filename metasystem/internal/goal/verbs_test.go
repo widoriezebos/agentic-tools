@@ -1484,3 +1484,152 @@ func TestMachinePinning(t *testing.T) {
 		t.Fatalf("an unpinned goal claims anywhere: %+v %v", res, err)
 	}
 }
+
+// R-93-m1e: a seat opens only the defect that blocks its claimed goal.
+// The open names that goal with --blocks; one publish opens the blocker
+// and parks the blocked goal with the blocker recorded; the park lifts
+// by itself when every blocker is done. A person's open is unchanged.
+func TestSeatOpenNamesItsBlockerAndTheParkReturnsOnDone(t *testing.T) {
+	_, a, b := twoClones(t)
+	seedLedger(t, a)
+	risk := RiskRecord{Severity: 1, Novelty: 1, Exposure: 1, Accumulation: 1, Basis: "fixture"}
+	budget := testBudget()
+	// The seat holds an approved, claimed goal a person opened.
+	if res, err := Open(verbReq(a, "01J5X00000000000000000SB00", "mac-a"), "current-work", "The seat's current goal.", OriginHuman, "Build it."); err != nil || res.Outcome != OutcomeConfirmed {
+		t.Fatalf("open: %+v %v", res, err)
+	}
+	if res, err := claimApprovedForTest(t, verbReq(a, "01J5X00000000000000000SB01", "mac-a"), "current-work", budget); err != nil || res.Outcome != OutcomeConfirmed {
+		t.Fatalf("claim: %+v %v", res, err)
+	}
+	// A seat open without its blocker is refused with the ruling before anything publishes.
+	before := acceptedTip(t, a)
+	if _, err := OpenRisked(verbReq(a, "01J5X00000000000000000SB02", "mac-a"), "stray-idea", "An improvement that blocks nothing.", OriginMain, "Do it.", "", risk, 0, "", &budget, nil); err == nil || !strings.Contains(err.Error(), "R-93-m1e") || !strings.Contains(err.Error(), "--blocks") {
+		t.Fatalf("a seat open without --blocks is refused with the ruling: %v", err)
+	}
+	if acceptedTip(t, a) != before {
+		t.Fatal("the refused open moved the ledger")
+	}
+	// A person's open needs no blocker.
+	if res, err := OpenRisked(verbReq(a, "01J5X00000000000000000SB03", "mac-a"), "person-asked", "What the person asked for.", OriginHuman, "Do it.", "", risk, 0, "", &budget, nil); err != nil || res.Outcome != OutcomeConfirmed {
+		t.Fatalf("a human-origin open is unchanged: %+v %v", res, err)
+	}
+	// --blocks names live work.
+	if res, err := OpenRisked(verbReq(a, "01J5X00000000000000000SB04", "mac-a"), "blocker-of-nothing", "Blocks a goal that is not there.", OriginMain, "Fix.", "no-such-goal", risk, 0, "", &budget, nil); err != nil || res.Outcome != OutcomeRejected || !strings.Contains(res.Detail, "not live") {
+		t.Fatalf("--blocks names live work only: %+v %v", res, err)
+	}
+	// A seat names only the goal it holds: another seat's claim and an
+	// unclaimed goal are both refused, whatever their origin.
+	if res, err := OpenRisked(verbReq(b, "01J5X00000000000000000SB05", "mac-b"), "foreign-fix", "mac-b blocks mac-a's work.", OriginMain, "Fix.", "current-work", risk, 0, "", &budget, nil); err != nil || res.Outcome != OutcomeRejected || !strings.Contains(res.Detail, "not this seat's claim") {
+		t.Fatalf("a seat cannot park another pair's claim through --blocks: %+v %v", res, err)
+	}
+	if res, err := OpenRisked(verbReq(b, "01J5X00000000000000000SB0K", "mac-b"), "idle-fix", "An idle seat blocks a queued goal.", OriginMain, "Fix.", "person-asked", risk, 0, "", &budget, nil); err != nil || res.Outcome != OutcomeRejected || !strings.Contains(res.Detail, "not this seat's claim") {
+		t.Fatalf("a seat cannot park a goal it does not hold through --blocks: %+v %v", res, err)
+	}
+	// The seat opens the defect that blocks its claimed goal: one publish
+	// opens the blocker and parks the blocked goal, claim cleared, edge and
+	// blocker recorded, approval kept.
+	res, err := OpenRisked(verbReq(a, "01J5X00000000000000000SB06", "mac-a"), "fix-the-defect", "The defect that blocks current-work.", OriginMain, "Fix it.", "current-work", risk, 0, "", &budget, nil)
+	if err != nil || res.Outcome != OutcomeConfirmed {
+		t.Fatalf("open --blocks: %+v %v", res, err)
+	}
+	tree, err := loadTree(a, res.Tip)
+	if err != nil {
+		t.Fatal(err)
+	}
+	blocker := tree.Live["fix-the-defect"]
+	if blocker == nil || blocker.State != StateQueued || blocker.Origin != OriginMain {
+		t.Fatalf("the blocker opens queued with seat origin: %+v", blocker)
+	}
+	if got := strings.Join(blocker.History[0].Targets, ","); got != "fix-the-defect,current-work" {
+		t.Fatalf("the open's history names both goals: %s", got)
+	}
+	blocked := tree.Live["current-work"]
+	if blocked.State != StateParked || blocked.Parked == nil || blocked.Parked.Blocker != "fix-the-defect" || !strings.Contains(blocked.Parked.Because, "blocked by fix-the-defect") {
+		t.Fatalf("the blocked goal parks with its blocker recorded: %+v", blocked.Parked)
+	}
+	if blocked.Claimed != nil || strings.Join(blocked.Blocked, ",") != "fix-the-defect" || blocked.Approved == nil {
+		t.Fatalf("the park clears the claim, records the edge and keeps the approval: claimed=%+v blocked=%v approved=%v", blocked.Claimed, blocked.Blocked, blocked.Approved != nil)
+	}
+	if last := blocked.History[len(blocked.History)-1]; last.Verb != "park" || last.Opid != blocker.History[0].Opid || !strings.Contains(last.Reason, "fix-the-defect") {
+		t.Fatalf("the park rides the open's operation: %+v", last)
+	}
+	// An agent cannot lift the park early, and the parked goal is not claimable.
+	if res, err := Unpark(verbReq(a, "01J5X00000000000000000SB07", "mac-a"), "current-work"); err != nil || res.Outcome != OutcomeRejected || !strings.Contains(res.Detail, "returns by itself") {
+		t.Fatalf("an agent cannot lift a blocker park early: %+v %v", res, err)
+	}
+	if res, err := Claim(verbReq(a, "01J5X00000000000000000SB08", "mac-a"), "current-work"); err == nil && res.Outcome == OutcomeConfirmed {
+		t.Fatal("a parked, blocked goal is not claimable")
+	}
+	// The seat's one claim is free for the blocker; finishing it returns
+	// the blocked goal to approved in the same publish, claimable again.
+	if res, err := claimApprovedForTest(t, verbReq(a, "01J5X00000000000000000SB09", "mac-a"), "fix-the-defect", budget); err != nil || res.Outcome != OutcomeConfirmed {
+		t.Fatalf("claim the blocker: %+v %v", res, err)
+	}
+	res, err = Done(verbReq(a, "01J5X00000000000000000SB0A", "mac-a"), "fix-the-defect", "Fixed.")
+	if err != nil || res.Outcome != OutcomeConfirmed {
+		t.Fatalf("done the blocker: %+v %v", res, err)
+	}
+	tree, err = loadTree(a, res.Tip)
+	if err != nil {
+		t.Fatal(err)
+	}
+	returned := tree.Live["current-work"]
+	if returned.State != StateApproved || returned.Parked != nil || strings.Join(returned.Blocked, ",") != "fix-the-defect" {
+		t.Fatalf("the blocked goal returns approved with its edge when the blocker is done: state=%s parked=%+v blocked=%v", returned.State, returned.Parked, returned.Blocked)
+	}
+	if last := returned.History[len(returned.History)-1]; last.Verb != "unpark" || last.Opid != tree.Done["fix-the-defect"].History[len(tree.Done["fix-the-defect"].History)-1].Opid || !strings.Contains(last.Reason, "fix-the-defect is done") {
+		t.Fatalf("the return rides done's operation and names the blocker: %+v", last)
+	}
+	if res, err := Claim(verbReq(a, "01J5X00000000000000000SB0B", "mac-a"), "current-work"); err != nil || res.Outcome != OutcomeConfirmed {
+		t.Fatalf("the returned goal is claimable again: %+v %v", res, err)
+	}
+
+	// A person may name any live goal. A second blocker on a goal that is
+	// already parked adds only the edge; the goal returns when the LAST
+	// blocker is done, to its resting state (queued here: never approved).
+	if res, err := Open(verbReq(b, "01J5X00000000000000000SB0C", "mac-b"), "twice-blocked", "Queued work two defects hold.", OriginHuman, "Wait."); err != nil || res.Outcome != OutcomeConfirmed {
+		t.Fatalf("open twice-blocked: %+v %v", res, err)
+	}
+	person := verbReq(b, "01J5X00000000000000000SB0D", "mac-b")
+	person.Actor.Human = "Wido"
+	if res, err := OpenRisked(person, "first-fix", "First defect.", OriginHuman, "Fix.", "twice-blocked", risk, 0, "", &budget, nil); err != nil || res.Outcome != OutcomeConfirmed {
+		t.Fatalf("a person's --blocks parks an unclaimed goal: %+v %v", res, err)
+	}
+	person.Ulid = "01J5X00000000000000000SB0E"
+	res, err = OpenRisked(person, "second-fix", "Second defect.", OriginHuman, "Fix.", "twice-blocked", risk, 0, "", &budget, nil)
+	if err != nil || res.Outcome != OutcomeConfirmed {
+		t.Fatalf("second blocker: %+v %v", res, err)
+	}
+	tree, err = loadTree(b, res.Tip)
+	if err != nil {
+		t.Fatal(err)
+	}
+	twice := tree.Live["twice-blocked"]
+	if twice.State != StateParked || twice.Parked.Blocker != "first-fix" || twice.Parked.By != "human:Wido" || strings.Join(twice.Blocked, ",") != "first-fix,second-fix" || twice.History[len(twice.History)-1].Verb != "edit" {
+		t.Fatalf("a second blocker adds only the edge: state=%s parked=%+v blocked=%v last=%+v", twice.State, twice.Parked, twice.Blocked, twice.History[len(twice.History)-1])
+	}
+	// The person's blockers are human-origin goals: the seat works them and
+	// the person concludes them; each conclusion checks the park.
+	if res, err := claimApprovedForTest(t, verbReq(b, "01J5X00000000000000000SB0F", "mac-b"), "first-fix", budget); err != nil || res.Outcome != OutcomeConfirmed {
+		t.Fatalf("claim first-fix: %+v %v", res, err)
+	}
+	person.Ulid = "01J5X00000000000000000SB0G"
+	res, err = Done(person, "first-fix", "Fixed.")
+	if err != nil || res.Outcome != OutcomeConfirmed {
+		t.Fatalf("done first-fix: %+v %v", res, err)
+	}
+	if tree, err = loadTree(b, res.Tip); err != nil || tree.Live["twice-blocked"].State != StateParked {
+		t.Fatalf("one blocker done of two keeps the park: %v %+v", err, tree.Live["twice-blocked"])
+	}
+	if res, err := claimApprovedForTest(t, verbReq(b, "01J5X00000000000000000SB0H", "mac-b"), "second-fix", budget); err != nil || res.Outcome != OutcomeConfirmed {
+		t.Fatalf("claim second-fix: %+v %v", res, err)
+	}
+	person.Ulid = "01J5X00000000000000000SB0J"
+	res, err = Done(person, "second-fix", "Fixed.")
+	if err != nil || res.Outcome != OutcomeConfirmed {
+		t.Fatalf("done second-fix: %+v %v", res, err)
+	}
+	if tree, err = loadTree(b, res.Tip); err != nil || tree.Live["twice-blocked"].State != StateQueued || tree.Live["twice-blocked"].Parked != nil {
+		t.Fatalf("the last blocker's done returns the goal to its resting state: %v %+v", err, tree.Live["twice-blocked"])
+	}
+}

@@ -2036,7 +2036,7 @@ set -e
 [[ ! -f "$agent_repo/artifacts/agents/jobs/sg-refused.json" ]] \
   || { echo "a refused --serving-goal dispatch left a job record" >&2; exit 1; }
 METASYSTEM_OWNER_LINEAGE=agent-fixture "$engine" goal open --root "$agent_repo" \
-	--id fixture-serving --intent "Serve the fixture goal" --next "Dispatch with the projection." \
+	--id fixture-serving --origin human --intent "Serve the fixture goal" --next "Dispatch with the projection." \
 	--risk severity=3,novelty=1,exposure=1,accumulation=1 \
 	--basis "This established, isolated fixture has low novelty, exposure, and accumulation, but a misbound goal could give a delegated critic the wrong authority context." >/dev/null
 "$engine" goal approve --root "$agent_repo" --id fixture-serving --by Wido --lineage agent-fixture \

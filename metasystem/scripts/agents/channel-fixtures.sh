@@ -69,7 +69,7 @@ fixture_start=$("$ms" proc started-at --pid "$$")
 grep -q 'status ' "$bed/status.out"
 grep -q '"method":"chat.postMessage"' "$fake_dir/journal.jsonl"
 
-"$ms" goal open --root "$repo" --id channel-fixture \
+"$ms" goal open --root "$repo" --id channel-fixture --origin human \
   --intent 'Prove the fleet channel fixture.' --next 'Ask for authority.' \
   --risk severity=3,novelty=1,exposure=1,accumulation=1 \
   --basis 'This established, isolated fixture has low novelty, exposure, and accumulation, but an incorrect channel answer could authorize a one-hour budget without the human.' >/dev/null
@@ -116,7 +116,7 @@ opid=$(sed -n 's/^- [^ ]* \([^ ]*\) answer actor=human:wido.*/\1/p' <<<"$history
 "$ms" goal claim --root "$repo" --id channel-fixture >/dev/null
 [[ $("$ms" channel wait --root "$repo" --question "$qid" --timeout 1) == approve ]]
 
-"$ms" goal done --root "$repo" --id channel-fixture --conclude 'Slack fixture passed.' >/dev/null
+"$ms" goal done --root "$repo" --id channel-fixture --by Wido --conclude 'Slack fixture passed.' >/dev/null
 rm -f "$repo/artifacts/agents/channel/fleet/cursor.json"
 cat >>"$repo/metasystem.conf.local" <<CONF
 channel.destination.fleet.fake.face=telegram
@@ -127,7 +127,7 @@ export METASYSTEM_CHANNEL_DESTINATION_FLEET_TELEGRAM_BOT_TOKEN=fake-telegram-tok
 "$ms" channel status --root "$repo" --post >"$bed/telegram-status.out"
 grep -q '"method":"sendMessage"' "$fake_dir/journal.jsonl"
 
-"$ms" goal open --root "$repo" --id channel-telegram-fixture \
+"$ms" goal open --root "$repo" --id channel-telegram-fixture --origin human \
   --intent 'Prove the Telegram fleet channel fixture.' --next 'Ask for authority.' \
   --risk severity=3,novelty=1,exposure=1,accumulation=1 \
   --basis 'This established, isolated fixture has low novelty, exposure, and accumulation, but an incorrect Telegram answer could authorize a one-hour budget without the human.' >/dev/null

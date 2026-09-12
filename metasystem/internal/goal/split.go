@@ -281,6 +281,12 @@ func splitRequest(r VerbRequest, parentID string, members []MemberDraft, ratific
 					}
 				}
 				dependent.Blocked = sortedUnique(append(rewritten, memberIDs...))
+				// A park the parent's own open recorded now waits on the arc:
+				// the marker moves to the first member so it stays inside
+				// BlockedBy, and the return still needs every member done.
+				if dependent.Parked != nil && dependent.Parked.Blocker == parentID {
+					dependent.Parked.Blocker = memberIDs[0]
+				}
 				touch(dependent, r, "split", targets)
 				changes = append(changes, Change{Path: livePath(id), Content: RenderFile(dependent)})
 			}

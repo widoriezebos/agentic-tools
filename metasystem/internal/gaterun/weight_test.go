@@ -336,7 +336,7 @@ func openApprovedClaimedWriterGoal(t *testing.T, endpoint goal.Endpoint, proof *
 		result, err = goal.Open(open, "bounded", "Preserve the episode.", goal.OriginMain, "Exercise real writers.")
 	} else {
 		budget = goal.Budget{ElapsedLimit: "1h", AttemptLimit: 3, ReservedJobMinutesLimit: 360, ActiveJobLimit: 1}
-		result, err = goal.OpenRisked(open, "bounded", "Preserve the legacy episode.", goal.OriginMain, "Exercise real writers.", *risk, 0, "", &budget, nil)
+		result, err = goal.OpenRisked(open, "bounded", "Preserve the legacy episode.", goal.OriginHuman, "Exercise real writers.", "", *risk, 0, "", &budget, nil)
 	}
 	if err != nil || result.Outcome != goal.OutcomeConfirmed {
 		t.Fatalf("open writer goal: %+v %v", result, err)

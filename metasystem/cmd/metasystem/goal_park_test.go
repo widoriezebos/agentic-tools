@@ -15,3 +15,15 @@ func TestGoalParkFlagRegistrationDoesNotPanic(t *testing.T) {
 	root := t.TempDir()
 	_ = runGoalPark([]string{"--root", root, "--id", "nope", "--because", "x"})
 }
+
+// --blocks belongs to goal open alone: every other verb refuses it at the
+// flag edge, and open carries it to the verb.
+func TestOnlyGoalOpenTakesBlocks(t *testing.T) {
+	if _, ok := parseSyncFlags("park", []string{"--root", t.TempDir(), "--id", "x", "--because", "y", "--blocks", "z"}); ok {
+		t.Fatal("goal park accepted --blocks")
+	}
+	f, ok := parseSyncFlags("open", []string{"--root", t.TempDir(), "--id", "x", "--blocks", "z"})
+	if !ok || f.blocks != "z" {
+		t.Fatalf("goal open carries --blocks: ok=%v blocks=%q", ok, f.blocks)
+	}
+}
