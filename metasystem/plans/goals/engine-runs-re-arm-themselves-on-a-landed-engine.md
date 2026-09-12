@@ -1,6 +1,6 @@
 # engine-runs-re-arm-themselves-on-a-landed-engine
 
-- State: queued
+- State: approved
 - Priority: 1
 - Sequence: 2
 - Risk: severity=2 novelty=1 exposure=3 accumulation=1 basis="severity 2: a run admitted against a stale or unlanded engine proves the wrong binary; novelty 1: the projection comparison, the landed-build resolver and the re-arm verb exist; exposure 3: every engine-driven run on every seat after any seat lands engine code; accumulation 1: one admission path"
@@ -9,11 +9,13 @@
 - Origin: human
 - Next step: Design on plans/engine-runs-re-arm-on-a-landed-engine-design.md (one page): trustedPolicyEngine in cmd/metasystem/test.go and VerifySourceAtDestination in internal/steward/rearm_resolver.go; the landed test (the enrolled source is an ancestor of the fetched tip and the working tree is clean in every engine input); the self re-arm through the up path; the attempt record naming it; the fixture on the fake ledger. Built directly by the seat under R-98-m1e, one independent critic, landed by human commit, verified by the next engine-driven run after another seat lands engine code.
 - OpenedAt: 2026-09-12T15:43:23Z
-- Revision: 2
+- Revision: 3
 - Budget: elapsedLimit=4h attemptLimit=6 reservedJobMinutesLimit=720 activeJobLimit=1 reviewRoundLimit=2
 - BudgetExceptions: 0
+- Approved: by=human:Wido at=2026-09-12T15:43:32Z revision=3 opid=AX3Q277E04ZP8501F67754C72M-m1-c6925449 authority=proven digest=8579343d41e5a5c9b65d55e9fe41d9f4ce6c3af3e6a7f2d6241328ab270ed0d1
 
 History:
 - 2026-09-12T15:43:23Z 4TSFK59B6Y85KDYSANGF7A36MW-m1-c6925449 open actor=human:Wido targets=engine-runs-re-arm-themselves-on-a-landed-engine
 - 2026-09-12T15:43:27Z M0GVXTZSSG4C8ESSQ3NFKS969A-m1-c6925449 set-priority actor=human:Wido targets=actionable-metrics,breach-clock-and-budget-honesty,budget-extends-by-consumption-and-breach-parks,capped-round-continues-instead-of-restarting,coordinator-context-stays-under-budget,coordinator-wakes-on-events-not-polls,critique-always,critique-closes-on-folded-proof,delegate-rounds-reuse-a-warm-gate,engine-runs-re-arm-themselves-on-a-landed-engine,failed-job-attention,fixture-stewards-outlive-their-suite,goal-abandoned-with-a-reason,human-goal-verbs-forgiving,job-record-birth-token,landing-receipt-survives-records-drift,lease-sweep-death-evidence,live-job-on-a-done-goal-unnoticed,machine-concurrency-governor,proof-attempts-settle-to-minutes-run,proof-groups-detect-hangs-by-progress-not-the-clock,small-change-lane,steward-catchup-livelock,steward-launches-resolve-their-model,steward-revives-a-done-goal,stop-batch-strands-a-resumable-goal,stop-hook-never-forces-an-empty-turn,suite-custody,token-spend-fence,watch-verb,watcher-repair-request-never-names-current,winddown-census-handoff-leak reason=priority-order subject=engine-runs-re-arm-themselves-on-a-landed-engine from=unranked to=1:2 requested-sequence=2
-Integrity: sha256=fe0e08da4cf89ea34dc4aa53cbfcac0d27829a3a3c4b2bcf8ab888ba61608391
+- 2026-09-12T15:43:32Z AX3Q277E04ZP8501F67754C72M-m1-c6925449 approve actor=human:Wido targets=engine-runs-re-arm-themselves-on-a-landed-engine
+Integrity: sha256=7e1cfb905394291355539bfcc128fd19404227eb430fd12b9d35d9225bd49619
