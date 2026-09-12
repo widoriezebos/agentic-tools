@@ -1,6 +1,6 @@
 # delegate-rounds-reuse-a-warm-gate
 
-- State: claimed
+- State: approved
 - Priority: 1
 - Sequence: 9
 - Risk: severity=2 novelty=1 exposure=2 accumulation=2 basis="severity 2: a skipped gate that should have run lets a red round close; novelty 1: caches and the fast gate exist; exposure 2: delegate rounds; accumulation 2: touches dispatch and the gate"
@@ -9,15 +9,14 @@
 - Origin: human
 - Next step: 2026-09-12 night, m1b: slices A, B and C are landed and measured (809fc0d07; blocker delegate-proof-runs-inside-the-sandbox done 616d049c6 and 758e41514; measurements 0417ccfc8 on the design page section 5: a docs-only round proves in 5 s with 11 of 12 groups reused, a one-package round in 28 s, both under the three minutes DONE allows). The goal has origin human, so its conclusion is Wido's; the seat proposes: done.
 - OpenedAt: 2026-09-11T15:46:36Z
-- Revision: 37
+- Revision: 38
 - BlockedBy: delegate-proof-runs-inside-the-sandbox
 - Pinned: m1b
 - Budget: elapsedLimit=1d attemptLimit=24 reservedJobMinutesLimit=1200 activeJobLimit=1 reviewRoundLimit=3
 - BudgetExceptions: 1
 - Approved: by=human:Wido at=2026-09-12T15:40:59Z revision=33 opid=WGC33V14461R1NEKE1XZ7M5WQV-m1b-c6925449 authority=proven digest=2a10db63e81c8719f0c7a13a0a0d12bed46b82c92789f2933be9f163bea38ff5
 - Sliced: machine=m1b lineage=main-1789191336-90295-e4b24b revision=20 at=2026-09-12T11:14:37Z
-- Claimed: machine=m1b lineage=main-1789191336-90295-e4b24b at=2026-09-12T15:40:59Z revision=33 accountingRevision=33 episodeAt=2026-09-12T12:40:44Z episodeRevision=30
-- StopCapability: generation=33 revision=33 machine=m1b claimEpoch=2 fenceEpoch=0
+- Episode: machine=m1b lineage=main-1789191336-90295-e4b24b accountingRevision=33 episodeAt=2026-09-12T12:40:44Z episodeRevision=30 idleSeconds=0 released=2026-09-12T15:51:18Z
 
 History:
 - 2026-09-11T15:46:36Z ESAZ2BX9DC37VFYCNAXPCDG92H-m1-c6925449 open actor=human:Wido targets=delegate-rounds-reuse-a-warm-gate reason=TierOverride: derived=2 set=3 why=Wido 2026-09-11: the gate is the delegate's judge; a skipped gate is a tier-3 hazard whatever the four answers derive
@@ -57,4 +56,5 @@ History:
 - 2026-09-12T15:43:27Z M0GVXTZSSG4C8ESSQ3NFKS969A-m1-c6925449 set-priority actor=human:Wido targets=actionable-metrics,breach-clock-and-budget-honesty,budget-extends-by-consumption-and-breach-parks,capped-round-continues-instead-of-restarting,coordinator-context-stays-under-budget,coordinator-wakes-on-events-not-polls,critique-always,critique-closes-on-folded-proof,delegate-rounds-reuse-a-warm-gate,engine-runs-re-arm-themselves-on-a-landed-engine,failed-job-attention,fixture-stewards-outlive-their-suite,goal-abandoned-with-a-reason,human-goal-verbs-forgiving,job-record-birth-token,landing-receipt-survives-records-drift,lease-sweep-death-evidence,live-job-on-a-done-goal-unnoticed,machine-concurrency-governor,proof-attempts-settle-to-minutes-run,proof-groups-detect-hangs-by-progress-not-the-clock,small-change-lane,steward-catchup-livelock,steward-launches-resolve-their-model,steward-revives-a-done-goal,stop-batch-strands-a-resumable-goal,stop-hook-never-forces-an-empty-turn,suite-custody,token-spend-fence,watch-verb,watcher-repair-request-never-names-current,winddown-census-handoff-leak reason=priority-order subject=engine-runs-re-arm-themselves-on-a-landed-engine from=1:7 to=1:8 requested-sequence=2
 - 2026-09-12T15:43:39Z 7VED87G6APJ5MWZRGHMHBYVEF8-m1-c6925449 set-priority actor=human:Wido targets=budget-extends-by-consumption-and-breach-parks,coordinator-context-stays-under-budget,coordinator-wakes-on-events-not-polls,critique-always,critique-closes-on-folded-proof,delegate-rounds-reuse-a-warm-gate,proof-attempts-settle-to-minutes-run,proof-groups-detect-hangs-by-progress-not-the-clock,small-change-lane,steward-launches-resolve-their-model,stop-hook-never-forces-an-empty-turn reason=priority-order subject=small-change-lane from=1:8 to=1:9 requested-sequence=3
 - 2026-09-12T15:48:46Z Y53S7944GVPSNJQ4H661SSNCHV-m1b-30a7e141 edit actor=m1b+main-1789191336-90295-e4b24b targets=delegate-rounds-reuse-a-warm-gate
-Integrity: sha256=41102a2c3fcb047b820fb7c2dfdc6cd86d19e5dab88c0bec5c6830fb0794ec88
+- 2026-09-12T15:51:18Z GN982SGF5RRKB3QP3TAJWYP2ES-m1b-30a7e141 release actor=m1b+main-1789191336-90295-e4b24b targets=delegate-rounds-reuse-a-warm-gate
+Integrity: sha256=938bf9bd73fd0637ff1e372c8a32dde86b69a3e5fbe4649b756419bef094bf26
