@@ -1,6 +1,6 @@
 # tier-from-severity-and-novelty
 
-- State: approved
+- State: claimed
 - Priority: 1
 - Sequence: 14
 - Risk: severity=1 novelty=1 exposure=3 accumulation=1 basis="severity 1: a mis-tiered goal still gets critique at its tier; novelty 1: the derivation exists; exposure 3: every goal; accumulation 1: one formula"
@@ -9,11 +9,13 @@
 - Origin: human
 - Next step: Read the tier derivation (the severity-tiered-rigor lineage and internal/testpolicy risk), change the formula and the docs, land. || Absorbed 2026-09-11 from goal severity-tiered-rigor: Park naming program goal 17 (tier-from-severity-and-novelty); clause to add: the journey chapter for the tiering machinery and the pending rows of records/misc/severity-tiered-rigor-obligation-matrix.md, docs/orchestration.md, the two critique skills and AGENTS.md's intake sentence are re-touched when the tier formula
 - OpenedAt: 2026-09-11T15:50:34Z
-- Revision: 15
+- Revision: 16
 - Pinned: m1c
 - Budget: elapsedLimit=4h attemptLimit=6 reservedJobMinutesLimit=720 activeJobLimit=1 reviewRoundLimit=2
 - BudgetExceptions: 0
 - Approved: by=human:Wido at=2026-09-11T20:33:48Z revision=10 opid=DR01GGTHM75JB0MC0BH5CVVBQW-m1-c6925449 authority=proven digest=f82005960b0be10e2d5d517d5fb8023036c8aee02f94acf4af4285de248a87ac
+- Claimed: machine=m1c lineage=main-1789191340-90689-8975a9 at=2026-09-12T09:33:54Z revision=16 accountingRevision=16 episodeAt=2026-09-12T09:33:54Z episodeRevision=16
+- StopCapability: generation=16 revision=16 machine=m1c claimEpoch=5 fenceEpoch=0
 
 History:
 - 2026-09-11T15:50:34Z PGA3WGGB587Z9EJ8VSMBS1W4ZS-m1-c6925449 open actor=human:Wido targets=tier-from-severity-and-novelty reason=TierOverride: derived=3 set=2 why=Wido 2026-09-11: a formula change with the existing derivation; exposure alone does not make it tier 3, which is the point of this goal
@@ -31,4 +33,5 @@ History:
 - 2026-09-12T07:16:42Z BAMMD587GA12SGNJ7N5MS6RSMA-m1e-c6925449 done actor=human:Wido targets=actionable-metrics,breach-clock-and-budget-honesty,budget-extends-by-consumption-and-breach-parks,capped-round-continues-instead-of-restarting,coordinator-context-stays-under-budget,coordinator-wakes-on-events-not-polls,critique-always,critique-closes-on-folded-proof,deep-battery-under-ten-minutes,delegate-rounds-reuse-a-warm-gate,delivery-receipt-stops-at-first-failure,failed-job-attention,fixture-stewards-outlive-their-suite,goal-abandoned-with-a-reason,human-goal-verbs-forgiving,job-record-birth-token,land-ready-work-lands-without-a-claim-slot,landing-receipt-survives-records-drift,lease-sweep-death-evidence,live-job-on-a-done-goal-unnoticed,machine-concurrency-governor,proof-attempts-settle-to-minutes-run,proof-groups-detect-hangs-by-progress-not-the-clock,retained-proof-reuse-crosses-claims-and-attempts,seat-opened-goals-name-their-blocker,small-change-lane,steward-catchup-livelock,steward-revives-a-done-goal,stop-batch-strands-a-resumable-goal,suite-custody,tier-from-severity-and-novelty,token-spend-fence,watch-verb,watcher-repair-request-never-names-current,winddown-census-handoff-leak reason=priority-order from=1:17 to=1:16
 - 2026-09-12T07:29:00Z WK0PQ7JPK1WQHG29DJS284PC4A-m1e-c6925449 done actor=human:Wido targets=actionable-metrics,breach-clock-and-budget-honesty,budget-extends-by-consumption-and-breach-parks,capped-round-continues-instead-of-restarting,coordinator-context-stays-under-budget,coordinator-wakes-on-events-not-polls,critique-always,critique-closes-on-folded-proof,deep-battery-under-ten-minutes,delegate-rounds-reuse-a-warm-gate,delivery-receipt-stops-at-first-failure,failed-job-attention,fixture-stewards-outlive-their-suite,goal-abandoned-with-a-reason,human-goal-verbs-forgiving,job-record-birth-token,land-ready-work-lands-without-a-claim-slot,landing-receipt-survives-records-drift,landing-refuses-without-its-receipt-line,lease-sweep-death-evidence,live-job-on-a-done-goal-unnoticed,machine-concurrency-governor,proof-attempts-settle-to-minutes-run,proof-groups-detect-hangs-by-progress-not-the-clock,retained-proof-reuse-crosses-claims-and-attempts,small-change-lane,steward-catchup-livelock,steward-revives-a-done-goal,stop-batch-strands-a-resumable-goal,suite-custody,tier-from-severity-and-novelty,token-spend-fence,watch-verb,watcher-repair-request-never-names-current,winddown-census-handoff-leak reason=priority-order from=1:16 to=1:15
 - 2026-09-12T08:05:00Z 3E12A58616XA44CYXG0GW4DR2M-m1e-c6925449 done actor=human:Wido targets=actionable-metrics,breach-clock-and-budget-honesty,capped-round-continues-instead-of-restarting,coordinator-context-stays-under-budget,coordinator-wakes-on-events-not-polls,critique-always,critique-closes-on-folded-proof,deep-battery-under-ten-minutes,delegate-rounds-reuse-a-warm-gate,delivery-receipt-stops-at-first-failure,failed-job-attention,fixture-stewards-outlive-their-suite,goal-abandoned-with-a-reason,human-goal-verbs-forgiving,job-record-birth-token,land-ready-work-lands-without-a-claim-slot,landing-receipt-survives-records-drift,lease-sweep-death-evidence,live-job-on-a-done-goal-unnoticed,machine-concurrency-governor,proof-groups-detect-hangs-by-progress-not-the-clock,retained-proof-reuse-crosses-claims-and-attempts,small-change-lane,steward-catchup-livelock,steward-revives-a-done-goal,stop-batch-strands-a-resumable-goal,suite-custody,tier-from-severity-and-novelty,token-spend-fence,watch-verb,watcher-repair-request-never-names-current,winddown-census-handoff-leak reason=priority-order from=1:15 to=1:14
-Integrity: sha256=4a805f26f5bb071c5760254a9498f1673ebb01f73f6a596fb163e23d046fc3eb
+- 2026-09-12T09:33:54Z XM1RW2NX75WRKF6GGXJRPP22V4-m1c-69c9e454 claim actor=m1c+main-1789191340-90689-8975a9 targets=tier-from-severity-and-novelty
+Integrity: sha256=4b491c2b5c590f580d6e1a7cfce823df2cd6cc43f7252de582cb3225b2298d3b
