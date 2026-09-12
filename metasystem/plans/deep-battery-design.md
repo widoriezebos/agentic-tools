@@ -98,6 +98,28 @@ the shard-count note above were all measured with up to ten of the
 eighteen cores taken. They stand as recorded, on that box; run 12 onward
 measures the real one.
 
+## Found on the way (2026-09-12): the launcher lost the watchdog's verdict
+
+The suite-progress fixture's chatty scenario went red in cadence runs 12
+and 13 because the watchdog's closing line ("suite stalled in section
+over-cap (section exceeded its 400ms cap ...)") never reached the
+launcher's output, one bare launch in five on a quiet box. Cause: the
+launcher read the watchdog's stdout and stderr through pipes copied by
+goroutines and called exec.Cmd.Wait on the watchdog before those copies
+had drained; Wait closes the pipes when the process exits, and whatever
+the copy goroutine had not yet read was gone. The verdict is the last
+thing the watchdog writes, so it was the line lost. The launcher now
+drains the watchdog's two pipes before waiting for the process (the
+watchdog's own children end before it returns, so this cannot hang); the
+suite keeps the old order because a detached fixture child may hold the
+suite's descriptors open. The watchdog also announces the section and
+reason before any kill-capable action, so the reason is on record even
+if a future tail is lost, and the launcher prints how the watchdog ended.
+Proof: twenty bare launches with the closing line present, and
+TestLaunchSuiteKeepsTheWatchdogsLastLine, which streams three thousand
+lines and a verdict from a fake watchdog twenty-five times and fails on
+the old order. Goal suite-watchdog-loses-its-closing-stall-line.
+
 ## Slices 3b and 5: the big sections and the race gate
 
 Landed 2026-09-11 evening. Slice 5 (b13771d7): the race gate runs its two

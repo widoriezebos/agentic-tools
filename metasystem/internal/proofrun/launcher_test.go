@@ -523,3 +523,50 @@ func writeExecutable(t *testing.T, path, content string) {
 		t.Fatal(err)
 	}
 }
+
+func TestLaunchSuiteKeepsTheWatchdogsLastLine(t *testing.T) {
+	// The watchdog writes its verdict last and exits at once. exec.Cmd.Wait
+	// closes the pipes when the process exits, so a launcher that waited for
+	// the process before draining lost that line one launch in five
+	// (2026-09-12, the suite-progress fixture's chatty scenario). The
+	// launcher drains the watchdog's pipes first; twenty-five launches must
+	// all carry the line.
+	root := t.TempDir()
+	watchdog := filepath.Join(root, "watchdog.sh")
+	writeExecutable(t, watchdog, `#!/usr/bin/env bash
+done_path=
+while (($#)); do
+  if [[ "$1" == --done ]]; then done_path=$2; shift 2; else shift; fi
+done
+while [[ ! -e "$done_path" ]]; do sleep 0.001; done
+for ((i = 0; i < 3000; i++)); do echo "suite watchdog: cleanup line $i" >&2; done
+echo "suite watchdog: the verdict written last" >&2
+exit 1
+`)
+	banner := "suite-cost suite=fixture witness=armed duration=minutes heartbeat=progress.jsonl logs=logs/suite.log"
+	sectionCommand := `printf '{"suite":"fixture","section":"only","event":"start","at":"%s","depth":0}\n' "$(date -u +%Y-%m-%dT%H:%M:%SZ)" >>"$1"
+printf '{"suite":"fixture","section":"only","event":"end","at":"%s","depth":0}\n' "$(date -u +%Y-%m-%dT%H:%M:%SZ)" >>"$1"`
+	for round := 0; round < 25; round++ {
+		bed := filepath.Join(root, fmt.Sprintf("round-%02d", round))
+		if err := os.MkdirAll(bed, 0o755); err != nil {
+			t.Fatal(err)
+		}
+		progress := filepath.Join(bed, "progress.jsonl")
+		var output, errors bytes.Buffer
+		result := LaunchSuite(LaunchOptions{
+			Suite: "fixture", Root: bed, ConfPath: filepath.Join(bed, "metasystem.conf"), ProgressPath: progress, LogPath: filepath.Join(bed, "logs", "suite.log"),
+			TmpPaths: []string{filepath.Join(bed, "tmp")}, Banner: banner,
+			ExpectedSections: []string{"only"}, TwiceConsulted: map[string]bool{},
+			Silence: time.Second, SectionCap: time.Second, EvidenceTimeout: time.Second, EvidenceMax: 1024,
+			Poll: 10 * time.Millisecond, TermGrace: time.Millisecond, KillGrace: time.Millisecond,
+			WatchdogExecutable: watchdog, Command: []string{"bash", "-c", sectionCommand, "fixture", progress},
+			Output: &output, ErrorOutput: &errors,
+		})
+		if result != 1 {
+			t.Fatalf("round %d: result = %d (the watchdog exits 1), errors = %q", round, result, errors.String())
+		}
+		if !strings.Contains(errors.String(), "suite watchdog: the verdict written last\n") || !strings.Contains(errors.String(), "watchdog ended: exit status 1") {
+			t.Fatalf("round %d lost the watchdog's last line: errors = %q", round, errors.String())
+		}
+	}
+}

@@ -270,9 +270,18 @@ func LaunchSuite(options LaunchOptions) int {
 		fmt.Fprintf(combinedErr, "suite launcher: cannot record exact watchdog identity: %v (%s)\n", watchdogProbeErr, watchdogState)
 		return 1
 	}
-	copies.Add(2)
-	go copyStream(&copies, combined, watchdogOut)
-	go copyStream(&copies, combinedErr, watchdogErr)
+	// The watchdog's streams have their own group: its verdict is the last
+	// thing it writes, and exec.Cmd.Wait closes the pipes when the process
+	// exits, so waiting for the process first lost the verdict one launch in
+	// five (2026-09-12, the suite-progress fixture's chatty scenario). The
+	// watchdog's own children (evidence preservation, supervision shutdown)
+	// end before it returns, so draining its pipes before Wait cannot hang.
+	// The suite keeps the old order: a detached fixture child may hold the
+	// suite's descriptors open long after the suite itself has exited.
+	var watchdogCopies sync.WaitGroup
+	watchdogCopies.Add(2)
+	go copyStream(&watchdogCopies, combined, watchdogOut)
+	go copyStream(&watchdogCopies, combinedErr, watchdogErr)
 
 	launcherPgid, _ := syscall.Getpgid(os.Getpid())
 	record := Record{
@@ -291,6 +300,7 @@ func LaunchSuite(options LaunchOptions) int {
 			_ = watchdog.Process.Kill()
 			_ = watchdog.Wait()
 			copies.Wait()
+			watchdogCopies.Wait()
 			fmt.Fprintln(combinedErr, "suite launcher: create process launch identity:", launchErr)
 			return 1
 		}
@@ -305,6 +315,7 @@ func LaunchSuite(options LaunchOptions) int {
 		_ = watchdog.Process.Kill()
 		_ = watchdog.Wait()
 		copies.Wait()
+		watchdogCopies.Wait()
 		fmt.Fprintln(combinedErr, "suite launcher: publish proof-run record:", err)
 		return 1
 	}
@@ -316,6 +327,7 @@ func LaunchSuite(options LaunchOptions) int {
 			_ = watchdog.Process.Kill()
 			_ = watchdog.Wait()
 			copies.Wait()
+			watchdogCopies.Wait()
 			fmt.Fprintln(combinedErr, "suite launcher: publish proof attempt processes:", err)
 			return 1
 		}
@@ -353,6 +365,7 @@ func LaunchSuite(options LaunchOptions) int {
 			_ = watchdog.Process.Kill()
 			_ = watchdog.Wait()
 			copies.Wait()
+			watchdogCopies.Wait()
 			fmt.Fprintln(combinedErr, "suite launcher: close creation claim:", err)
 			return 1
 		}
@@ -369,6 +382,7 @@ func LaunchSuite(options LaunchOptions) int {
 	if doneErr != nil {
 		fmt.Fprintln(combinedErr, "suite launcher: write watchdog done file:", doneErr)
 	}
+	watchdogCopies.Wait()
 	watchdogErrWait := watchdog.Wait()
 	copies.Wait()
 	defer os.Remove(donePath)
@@ -385,6 +399,10 @@ func LaunchSuite(options LaunchOptions) int {
 		result = 1
 	}
 	if watchdogErrWait != nil {
+		// The watchdog's own end is part of the record: a verdict it printed
+		// ends in exit status 1; a watchdog that died inside its cleanup
+		// ends in a signal, and its verdict never reached this output.
+		fmt.Fprintln(combinedErr, "suite launcher: watchdog ended:", watchdogErrWait)
 		result = 1
 	}
 	if err := assertBanner(options.LogPath, options.Banner); err != nil {
