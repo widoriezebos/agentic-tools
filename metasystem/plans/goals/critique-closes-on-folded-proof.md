@@ -1,6 +1,6 @@
 # critique-closes-on-folded-proof
 
-- State: claimed
+- State: approved
 - Priority: 1
 - Sequence: 10
 - Risk: severity=2 novelty=2 exposure=3 accumulation=1 basis="severity 2: a closure rule that is too loose lets a material finding land; novelty 2: fold-proven closure and the round-2 failsafe are new rules; exposure 3: every chain; accumulation 1: skills and dispatcher"
@@ -9,13 +9,12 @@
 - Origin: human
 - Next step: ESCALATED TO WIDO 2026-09-13 02:00 local (m1e), by the design's own rule 2: revision 2 (landed 1c233266) was read by Codex gpt-5.6-sol and drew eight material findings again (8, 8: not falling; records/misc/critique-closes-on-folded-proof-design-critique-r2.md), four of them on the certification's proof contract (a textual hunk is not a stable unit of change; a passing test does not prove the finding; two closure authorities; a non-idempotent write order). Section 13 of the page puts one decision to Wido with a recommended default: (a) narrow this goal to the buildable parts (the redundant-read refusal and the close on a prior clean read under one closure object, the design-critic cap at two with R-97's falling-trajectory condition and a schema v5 for the grain, the measure on durable events) and open the certification record as its own design-lane goal starting from the critic's amendments; (b) fund revision 3 with all eight amendments; (c) accept the risk of building decisions 1 and 2 as written. The seat recommends (a). No build and no third automatic round until Wido answers. Released.
 - OpenedAt: 2026-09-11T15:45:22Z
-- Revision: 33
+- Revision: 34
 - Pinned: m1e
 - Budget: elapsedLimit=1d attemptLimit=10 reservedJobMinutesLimit=1200 activeJobLimit=1 reviewRoundLimit=3
 - BudgetExceptions: 0
 - Approved: by=human:Wido at=2026-09-11T20:33:44Z revision=15 opid=8BE27ZT80ZJ6JTWNQ3GZAERK8Y-m1-c6925449 authority=proven digest=cf4c80f3b42d74737238cccc4774f7900e36fd98d52c0bc36aec01bab9f27fbb
-- Claimed: machine=m1e lineage=main-1789030447-51011-5722fc at=2026-09-12T22:51:49Z revision=31 accountingRevision=31 episodeAt=2026-09-12T22:51:49Z episodeRevision=31
-- StopCapability: generation=31 revision=31 machine=m1e claimEpoch=1 fenceEpoch=0
+- Episode: machine=m1e lineage=main-1789030447-51011-5722fc accountingRevision=31 episodeAt=2026-09-12T22:51:49Z episodeRevision=31 idleSeconds=0 released=2026-09-12T23:09:07Z
 
 History:
 - 2026-09-11T15:45:22Z WKPXEN9CTZR44TMFZTQJE9X68Q-m1e-5083721b open actor=m1e+main-1789141490-27414-b9c0d2 targets=critique-closes-on-folded-proof
@@ -51,4 +50,5 @@ History:
 - 2026-09-12T22:51:49Z FTAD9PC8KSDC6PF0WFKRQPYB9F-m1e-892cdaec claim actor=m1e+main-1789030447-51011-5722fc targets=critique-closes-on-folded-proof
 - 2026-09-12T22:54:30Z EGMSKA76NEAQ8Z8PXM8BRPXV62-m1e-892cdaec edit actor=m1e+main-1789030447-51011-5722fc targets=critique-closes-on-folded-proof
 - 2026-09-12T23:08:38Z M2DZNP3CNQWNR08Y9E2NNWS99Q-m1e-892cdaec edit actor=m1e+main-1789030447-51011-5722fc targets=critique-closes-on-folded-proof
-Integrity: sha256=b4cdd1eaa7196548cca5996ec02d1ed5ef4c532a288b5f0251168880a65b2bb1
+- 2026-09-12T23:09:07Z NR2BPR4S0G8199F8AX5Q8CKWJ4-m1e-892cdaec release actor=m1e+main-1789030447-51011-5722fc targets=critique-closes-on-folded-proof
+Integrity: sha256=a3b42426ae2e06e7cc7d43bf5e83eaa4489889eaf332046acc81135f66326e2f
