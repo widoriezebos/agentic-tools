@@ -1,6 +1,6 @@
 # seat-opened-goals-name-their-blocker
 
-- State: claimed
+- State: done
 - Priority: 1
 - Sequence: 6
 - Risk: severity=1 novelty=1 exposure=2 accumulation=1 basis="severity 1: a refused open is re-issued with its blocker; novelty 1: dependency edges exist; exposure 2: seat opens only; accumulation 1: one verb"
@@ -8,14 +8,13 @@
 - Intent: Seats opened 165 goals in five days against 62 concluded, growing the backlog by 117 (ledger.md section 5). DONE means: goal open from a seat (origin main) requires --blocks naming the goal it unblocks and, in the same publish, parks that goal with the blocker named (a claimed goal may not carry an unfinished blocker, internal/goal/validate.go) and records the edge on the parked goal, which is claimable again only when the blocker is done; a seat open without --blocks is refused with the ruling; human-origin opens are unchanged; docs/orchestration.md carries the ruling that a seat opens only the defect that blocks its current goal and every other goal is opened by a person. The ruling is a policy decision under R-36-m3: it is built after Wido records it on the design page. Goal 6 of plans/delivery-efficiency-plan.md. RUNTIME INDEPENDENCE (plan principle 0; architecture doctrine of 2026-08-16: correctness never depends on an accelerator): this holds for every runtime the roster can host today (claude, codex, devin) and for future adapters such as opencode; the mechanism lives in the Go engine, the ledger verbs and the adapter contract, never in one runtime's hook, harness, CLI or transcript format; a native facility may accelerate it through its adapter, and an agent on any runtime with no accelerator gets the same guarantee from the records and the verb alone; where the goal touches a runtime path, DONE is proven on at least two runtimes.
 - Origin: human
 - Next step: Built 2026-09-12 on m1c in fix-forward mode: goal open --blocks (OpenRisked refuses a seat open without it; the same publish parks the seat's claimed goal with blocker=<id> and the BlockedBy edge; done and a hand-concluded blocker lift the park; an agent cannot lift it early; split moves the marker to the first member). Critic read done (one material finding folded: a seat names only the goal it holds). Final verification on the candidate tree in flight: goal, cmd and gaterun package tests, fast gate, goal-cli/land/dispatcher/audit sections through the engine, channel bed. Then land via land.sh and conclude.
+- Concluded: Landed 8de5ef009 (2026-09-12): goal open --blocks in the Go ledger verbs; a seat open (origin main) without it, or naming a goal the seat does not hold, is refused with R-93-m1e; one publish opens the blocker queued and parks the held goal with blocker=<id> and the BlockedBy edge, claim cleared; done and a hand-concluded blocker lift the park in the same publish; an agent cannot lift it early, a person can; split moves the marker to the first member; recovery replays --blocks; hand edits carrying the token are refused; docs/orchestration.md, docs/backlog-mechanism.md and AGENTS.md carry the rule and memory/backlog-notes.md gains the Proposals section. Verified on the candidate tree: go test of internal/goal, cmd/metasystem, internal/gaterun; fast gate; audit; sections goal-cli, land, dispatcher and audit through the engine; the channel bed against a candidate engine. Read by one code-critique subagent, its material finding folded. Runtime independence: the mechanism is a ledger verb and touches no runtime path.
 - OpenedAt: 2026-09-11T15:45:05Z
-- Revision: 16
+- Revision: 17
 - Pinned: m1c
 - Budget: elapsedLimit=4h attemptLimit=6 reservedJobMinutesLimit=720 activeJobLimit=1 reviewRoundLimit=2
 - BudgetExceptions: 0
 - Approved: by=human:Wido at=2026-09-11T20:33:13Z revision=13 opid=C5C357M0RA9C6EXTRHRSNCNCRM-m1-c6925449 authority=proven digest=7be15311558e8e416cde43df7807408afa74fccfbfd3957e93bab7e69ed98372
-- Claimed: machine=m1c lineage=main-1789191340-90689-8975a9 at=2026-09-12T06:04:09Z revision=15 accountingRevision=15 episodeAt=2026-09-12T06:04:09Z episodeRevision=15
-- StopCapability: generation=15 revision=15 machine=m1c claimEpoch=5 fenceEpoch=0
 
 History:
 - 2026-09-11T15:45:05Z 5W0FM0WGJ00Q1A7X06ESJFVC4X-m1e-5083721b open actor=m1e+main-1789141490-27414-b9c0d2 targets=seat-opened-goals-name-their-blocker
@@ -34,4 +33,5 @@ History:
 - 2026-09-12T05:28:49Z KNZM8TPGQBQ62X20M9J48NGEH3-m1e-c6925449 set-pin actor=human:Wido targets=seat-opened-goals-name-their-blocker
 - 2026-09-12T06:04:09Z 6D1SEXHF065QWFVTAZ4G5JKCBZ-m1c-69c9e454 claim actor=m1c+main-1789191340-90689-8975a9 targets=seat-opened-goals-name-their-blocker
 - 2026-09-12T07:02:20Z HW5GE8K7R9MDVBKM7ZDA12J5QN-m1c-69c9e454 edit actor=m1c+main-1789191340-90689-8975a9 targets=seat-opened-goals-name-their-blocker
-Integrity: sha256=774c637c14a5b4d349327de9b94c847451094588e8e4bcf5db88d2731f1ac56e
+- 2026-09-12T07:16:42Z BAMMD587GA12SGNJ7N5MS6RSMA-m1e-c6925449 done actor=human:Wido targets=actionable-metrics,breach-clock-and-budget-honesty,budget-extends-by-consumption-and-breach-parks,capped-round-continues-instead-of-restarting,coordinator-context-stays-under-budget,coordinator-wakes-on-events-not-polls,critique-always,critique-closes-on-folded-proof,deep-battery-under-ten-minutes,delegate-rounds-reuse-a-warm-gate,delivery-receipt-stops-at-first-failure,failed-job-attention,fixture-stewards-outlive-their-suite,goal-abandoned-with-a-reason,human-goal-verbs-forgiving,job-record-birth-token,land-ready-work-lands-without-a-claim-slot,landing-receipt-survives-records-drift,lease-sweep-death-evidence,live-job-on-a-done-goal-unnoticed,machine-concurrency-governor,proof-attempts-settle-to-minutes-run,proof-groups-detect-hangs-by-progress-not-the-clock,retained-proof-reuse-crosses-claims-and-attempts,seat-opened-goals-name-their-blocker,small-change-lane,steward-catchup-livelock,steward-revives-a-done-goal,stop-batch-strands-a-resumable-goal,suite-custody,tier-from-severity-and-novelty,token-spend-fence,watch-verb,watcher-repair-request-never-names-current,winddown-census-handoff-leak displaced=m1c+main-1789191340-90689-8975a9@2026-09-12T06:04:09Z
+Integrity: sha256=506a983e787bfef993478958697392178db573f34b966d17974048d3517e1cd0

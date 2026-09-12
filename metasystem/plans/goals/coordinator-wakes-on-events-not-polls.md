@@ -2,14 +2,14 @@
 
 - State: approved
 - Priority: 1
-- Sequence: 14
+- Sequence: 13
 - Risk: severity=2 novelty=2 exposure=3 accumulation=2 basis="severity 2: a wait that never returns idles a seat; novelty 2: a wait verb over existing records is new; exposure 3: every seat; accumulation 2: touches the hook and the verbs"
 - Tier: 3
 - Intent: Coordinator seats spent 302 of 360 session hours waiting: 25 percent in 2,139 blocking polls (90 hours, issued by turns carrying 982 million prompt tokens), 28 percent idle awaiting a background notification, 30 percent idle awaiting a human (claude-sessions.md sections 2d and 2f). The waiting itself is intrinsic; the cost is the model waking to ask. DONE means: a seat waiting on a delegate job, a proof attempt, a landing or a human act issues one wait verb (metasystem wait --job, --attempt or --goal) that returns on the event or a bounded deadline with no polling from the model; a runtime's native wake (a Claude Code background-task notification, a Codex or Devin session event) accelerates the return through its adapter, and a runtime without one gets the same wait verb with bounded blocking and a records-based resume; the seat's stop gate on every runtime does not force a turn while a registered wait is pending; a missed event or a seat restart recovers by re-registering the wait; measured by model wake-ups per pending hour (under 4), prompt tokens spent while pending (under 5 percent of the seat's day) and event-to-resume latency (under 60 seconds), proven on one coordinator session carrying a whole goal on each of two runtimes. Goal 14 of plans/delivery-efficiency-plan.md. RUNTIME INDEPENDENCE (plan principle 0; architecture doctrine of 2026-08-16: correctness never depends on an accelerator): this holds for every runtime the roster can host today (claude, codex, devin) and for future adapters such as opencode; the mechanism lives in the Go engine, the ledger verbs and the adapter contract, never in one runtime's hook, harness, CLI or transcript format; a native facility may accelerate it through its adapter, and an agent on any runtime with no accelerator gets the same guarantee from the records and the verb alone; where the goal touches a runtime path, DONE is proven on at least two runtimes.
 - Origin: human
 - Next step: Design first: inventory the wait sites in the transcripts (watch, TaskOutput, tmux capture loops, Monitor), define the wait verb over the existing job, attempt and ledger records and its restart recovery, critique, build, land.
 - OpenedAt: 2026-09-11T15:45:15Z
-- Revision: 13
+- Revision: 14
 - Pinned: m1e
 - Budget: elapsedLimit=1d attemptLimit=10 reservedJobMinutesLimit=1200 activeJobLimit=1 reviewRoundLimit=3
 - BudgetExceptions: 0
@@ -29,4 +29,5 @@ History:
 - 2026-09-11T20:31:06Z KJ9PB0BE9C9EFEETCR8V70MXFV-m1-c6925449 unapprove actor=human:Wido targets=coordinator-wakes-on-events-not-polls reason=Wido 2026-09-11: every program goal states runtime independence (claude, codex, devin, future adapters); intent amended before re-approval
 - 2026-09-11T20:32:21Z H973VE8T2DGA105MR1D3PNB02D-m1e-3ca84c28 edit actor=m1e+main-1789158700-39729-b9c0d2 targets=coordinator-wakes-on-events-not-polls
 - 2026-09-11T20:33:37Z SKG6KKD1D4X47D0F681RTY11AS-m1-c6925449 approve actor=human:Wido targets=coordinator-wakes-on-events-not-polls
-Integrity: sha256=7111101bccc13309bca8afacbe79baa214005db4048154f9fd1c8757ca15336b
+- 2026-09-12T07:16:42Z BAMMD587GA12SGNJ7N5MS6RSMA-m1e-c6925449 done actor=human:Wido targets=actionable-metrics,breach-clock-and-budget-honesty,budget-extends-by-consumption-and-breach-parks,capped-round-continues-instead-of-restarting,coordinator-context-stays-under-budget,coordinator-wakes-on-events-not-polls,critique-always,critique-closes-on-folded-proof,deep-battery-under-ten-minutes,delegate-rounds-reuse-a-warm-gate,delivery-receipt-stops-at-first-failure,failed-job-attention,fixture-stewards-outlive-their-suite,goal-abandoned-with-a-reason,human-goal-verbs-forgiving,job-record-birth-token,land-ready-work-lands-without-a-claim-slot,landing-receipt-survives-records-drift,lease-sweep-death-evidence,live-job-on-a-done-goal-unnoticed,machine-concurrency-governor,proof-attempts-settle-to-minutes-run,proof-groups-detect-hangs-by-progress-not-the-clock,retained-proof-reuse-crosses-claims-and-attempts,seat-opened-goals-name-their-blocker,small-change-lane,steward-catchup-livelock,steward-revives-a-done-goal,stop-batch-strands-a-resumable-goal,suite-custody,tier-from-severity-and-novelty,token-spend-fence,watch-verb,watcher-repair-request-never-names-current,winddown-census-handoff-leak reason=priority-order from=1:14 to=1:13
+Integrity: sha256=b661c9266dce314388adf0d70a638218e4d145203ca5cce8d11338fcd6f14166

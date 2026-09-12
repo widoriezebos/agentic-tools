@@ -2,14 +2,14 @@
 
 - State: approved
 - Priority: 1
-- Sequence: 9
+- Sequence: 8
 - Risk: severity=2 novelty=1 exposure=3 accumulation=1 basis="severity 2: the receipt is the landing judge; novelty 1: the runner loop exists and gains a purpose-dependent stop; exposure 3: every delivery attempt; accumulation 1: cadence unchanged"
 - Tier: 3
 - Intent: 31 failed attempts consumed 26 hours; 20.7 hours of them ran groups that passed, 10.3 of those after the first failure, because the runner continues after the first failure under R-16 (proof-attempts.md finding 3). DONE means: (1) a delivery-purpose attempt stops launching new groups at the first failed group, records the rest as not-run with the reason and preserves the failure evidence; (2) cadence-purpose attempts keep continue-and-collect; (3) the retry of a failed delivery attempt reuses the predecessor's passed, collection-complete groups whose execution identity is unchanged and re-runs only the failed and not-run groups, a narrow lift of the success-only reuse scope for the same goal and revision (the wider identity work is retained-proof-reuse-crosses-claims-and-attempts); proven by a fixture with a failing second group and its retry, and in the field by time-to-green per goal and failed-attempt mean duration under 15 minutes over a week. The R-16 amendment for the delivery purpose is a policy decision under R-36-m3: built after Wido records it. Goal 9 of plans/delivery-efficiency-plan.md. RUNTIME INDEPENDENCE (plan principle 0; architecture doctrine of 2026-08-16: correctness never depends on an accelerator): this holds for every runtime the roster can host today (claude, codex, devin) and for future adapters such as opencode; the mechanism lives in the Go engine, the ledger verbs and the adapter contract, never in one runtime's hook, harness, CLI or transcript format; a native facility may accelerate it through its adapter, and an agent on any runtime with no accelerator gets the same guarantee from the records and the verb alone; where the goal touches a runtime path, DONE is proven on at least two runtimes.
 - Origin: human
 - Next step: Wido's word recorded 2026-09-11 (R-96-m1e): yes, for the delivery purpose only; cadence keeps continue-and-collect. Next: build behind the fixture with a failing second group and its retry.
 - OpenedAt: 2026-09-11T15:45:11Z
-- Revision: 15
+- Revision: 16
 - Pinned: m1b
 - Budget: elapsedLimit=1d attemptLimit=10 reservedJobMinutesLimit=1200 activeJobLimit=1 reviewRoundLimit=3
 - BudgetExceptions: 0
@@ -31,4 +31,5 @@ History:
 - 2026-09-11T20:32:08Z AG5CRKKFXQX2DTK7GA5TAMA46B-m1e-3ca84c28 edit actor=m1e+main-1789158700-39729-b9c0d2 targets=delivery-receipt-stops-at-first-failure
 - 2026-09-11T20:33:23Z W10S05V1M1CHQ7X3033MTK2Y1Z-m1-c6925449 approve actor=human:Wido targets=delivery-receipt-stops-at-first-failure
 - 2026-09-12T05:28:37Z DRQNAPYNBB8ZF5V1FY65MGK86B-m1e-c6925449 set-pin actor=human:Wido targets=delivery-receipt-stops-at-first-failure
-Integrity: sha256=c30448f7865d991b8240ce562522cb6f45e0f6e460a60ed349610f2eddee081e
+- 2026-09-12T07:16:42Z BAMMD587GA12SGNJ7N5MS6RSMA-m1e-c6925449 done actor=human:Wido targets=actionable-metrics,breach-clock-and-budget-honesty,budget-extends-by-consumption-and-breach-parks,capped-round-continues-instead-of-restarting,coordinator-context-stays-under-budget,coordinator-wakes-on-events-not-polls,critique-always,critique-closes-on-folded-proof,deep-battery-under-ten-minutes,delegate-rounds-reuse-a-warm-gate,delivery-receipt-stops-at-first-failure,failed-job-attention,fixture-stewards-outlive-their-suite,goal-abandoned-with-a-reason,human-goal-verbs-forgiving,job-record-birth-token,land-ready-work-lands-without-a-claim-slot,landing-receipt-survives-records-drift,lease-sweep-death-evidence,live-job-on-a-done-goal-unnoticed,machine-concurrency-governor,proof-attempts-settle-to-minutes-run,proof-groups-detect-hangs-by-progress-not-the-clock,retained-proof-reuse-crosses-claims-and-attempts,seat-opened-goals-name-their-blocker,small-change-lane,steward-catchup-livelock,steward-revives-a-done-goal,stop-batch-strands-a-resumable-goal,suite-custody,tier-from-severity-and-novelty,token-spend-fence,watch-verb,watcher-repair-request-never-names-current,winddown-census-handoff-leak reason=priority-order from=1:9 to=1:8
+Integrity: sha256=b4238c3b05c0b304147f72e6f6bd3101e267ccb4fa1ac805487084940acaca81
