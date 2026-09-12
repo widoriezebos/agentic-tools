@@ -55,6 +55,13 @@ written by you and read by your critic before you build.
   and re-arm before your next ledger read once any seat has used --blocks.
   A seat's own open now needs --blocks naming the goal it holds; what blocks
   nothing goes to memory/backlog-notes.md as a proposal.
+- m1b, 2026-09-12: group execution identities (retained-proof-reuse-crosses-claims-and-attempts slice 1).
+  The Go closure is the forward test-aware closure and the identity binds a
+  judge key instead of the engine's file digest; the worker records the
+  launcher's planned identity and its packet carries a new field, so a worker
+  older than this landing refuses the packet. Rebuild and re-arm before your
+  next test run; identities retained before it never match again (expected,
+  once).
 
 ## Ledger hygiene
 

@@ -352,7 +352,7 @@ func runFrozenWorkerProbe(ctx context.Context, outer proofrun.TestRunRequest, pr
 	request := proofrun.TestRunRequest{ControlRoot: outer.ControlRoot, ProjectRoot: root, CandidateTree: tree, BaseCommit: outer.BaseCommit,
 		PolicyBaseCommit: outer.PolicyBaseCommit, Contract: testpolicy.Contract{SchemaVersion: 1, Groups: []testpolicy.Group{group}}, Plan: plan,
 		AttemptID: outer.AttemptID, Environment: outer.Environment, LogRoot: filepath.Join(root, "logs"), PolicyEngine: outer.PolicyEngine,
-		PolicyEngineDigest: outer.PolicyEngineDigest, CandidateEngine: outer.CandidateEngine, CandidateEngineDigest: outer.CandidateEngineDigest,
+		PolicyEngineDigest: outer.PolicyEngineDigest, JudgeKey: outer.JudgeKey, CandidateEngine: outer.CandidateEngine, CandidateEngineDigest: outer.CandidateEngineDigest,
 		CandidateEngineBuildIdentity: outer.CandidateEngineBuildIdentity,
 		BehaviorPolicyDigest:         outer.BehaviorPolicyDigest, CommandStartedAt: outer.CommandStartedAt}
 	if probe.ID == "forge-component-reuse" {

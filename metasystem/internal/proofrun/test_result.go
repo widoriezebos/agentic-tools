@@ -183,6 +183,7 @@ type TestResult struct {
 	ContractDigest                 string                    `json:"contractDigest"`
 	BaseContractDigest             string                    `json:"baseContractDigest"`
 	PolicyEngineDigest             string                    `json:"policyEngineDigest"`
+	JudgeKey                       string                    `json:"judgeKey,omitempty"`
 	CandidateEngineIdentityVersion int                       `json:"candidateEngineIdentityVersion,omitempty"`
 	CandidateEngineDigest          string                    `json:"candidateEngineDigest"`
 	CandidateEngineBuildIdentity   string                    `json:"candidateEngineBuildIdentity,omitempty"`
@@ -285,7 +286,7 @@ func ExactReusableTestResult(template TestResult, attempts []Attempt, identities
 		}
 		result := attempt.TestResult
 		if result.ContractDigest != template.ContractDigest ||
-			result.BaseContractDigest != template.BaseContractDigest || result.PolicyEngineDigest != template.PolicyEngineDigest ||
+			result.BaseContractDigest != template.BaseContractDigest || result.JudgeKey != template.JudgeKey ||
 			result.CandidateEngineDigest != template.CandidateEngineDigest ||
 			result.CandidateEngineIdentityVersion != template.CandidateEngineIdentityVersion ||
 			result.CandidateEngineBuildIdentity != template.CandidateEngineBuildIdentity ||
@@ -349,7 +350,7 @@ func reusedTestResult(template TestResult, attempts []Attempt, identities map[st
 		if newest != nil && newest.Terminal != nil && ReusableTerminal(result.Purpose, newest.Terminal.Result) && newest.TestResult != nil {
 			source := newest.TestResult
 			if source.ContractDigest == result.ContractDigest &&
-				source.BaseContractDigest == result.BaseContractDigest && source.PolicyEngineDigest == result.PolicyEngineDigest &&
+				source.BaseContractDigest == result.BaseContractDigest && source.JudgeKey == result.JudgeKey &&
 				source.BehaviorPolicyDigest == result.BehaviorPolicyDigest {
 				for _, group := range source.Groups {
 					if group.ID == id && (group.Status == "passed" || group.Status == "reused") && group.CollectionComplete &&

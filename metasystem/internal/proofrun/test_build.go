@@ -27,21 +27,24 @@ import (
 )
 
 type TestRunRequest struct {
-	ProjectRoot                  string
-	InstallationPrefix           string
-	CandidateTree                string
-	BaseCommit                   string
-	PolicyBaseCommit             string
-	Contract                     testpolicy.Contract
-	Plan                         testpolicy.Plan
-	AttemptID                    string
-	Environment                  []string
-	LogRoot                      string
-	ProgressPath                 string
-	Reused                       map[string]GroupResult
-	ContractDigest               string
-	BaseContractDigest           string
-	PolicyEngineDigest           string
+	ProjectRoot        string
+	InstallationPrefix string
+	CandidateTree      string
+	BaseCommit         string
+	PolicyBaseCommit   string
+	Contract           testpolicy.Contract
+	Plan               testpolicy.Plan
+	AttemptID          string
+	Environment        []string
+	LogRoot            string
+	ProgressPath       string
+	Reused             map[string]GroupResult
+	ContractDigest     string
+	BaseContractDigest string
+	PolicyEngineDigest string
+	// JudgeKey names the judge that reads the candidate (ComputeJudgeKey); it
+	// binds group identities where the policy engine's file digest used to.
+	JudgeKey                     string
 	PolicyEngine                 string
 	CandidateEngine              string
 	CandidateEngineDigest        string
@@ -589,6 +592,7 @@ func NewTestResult(request TestRunRequest) TestResult {
 	if policyEngineDigest == "" {
 		policyEngineDigest = digestBytes([]byte(fmt.Sprintf("testpolicy-schema-%d", request.Contract.SchemaVersion)))
 	}
+	judgeKey := judgeKeyOf(request)
 	behaviorPolicyDigest := request.BehaviorPolicyDigest
 	if behaviorPolicyDigest == "" {
 		behaviorPolicyDigest = digestBytes([]byte(fmt.Sprintf("behavior-policy-version-%d", request.Contract.SchemaVersion)))
@@ -612,7 +616,7 @@ func NewTestResult(request TestRunRequest) TestResult {
 		ExecutedMode: request.Plan.ExecutedMode, ProjectRoot: request.ProjectRoot, InstallationPrefix: request.InstallationPrefix,
 		BaseCommit: request.BaseCommit, CandidateTree: request.CandidateTree, PolicyBaseCommit: request.PolicyBaseCommit,
 		ContractDigest: contractDigest, BaseContractDigest: baseContractDigest,
-		PolicyEngineDigest: policyEngineDigest, CandidateEngineIdentityVersion: candidateEngineIdentityVersion,
+		PolicyEngineDigest: policyEngineDigest, JudgeKey: judgeKey, CandidateEngineIdentityVersion: candidateEngineIdentityVersion,
 		CandidateEngineDigest: request.CandidateEngineDigest, CandidateEngineBuildIdentity: request.CandidateEngineBuildIdentity,
 		BehaviorPolicyDigest: behaviorPolicyDigest,
 		PlanDigest:           TestPlanDigest(request.Contract, request.Plan, request.CandidateTree), Risk: request.Plan.Risk,
@@ -708,7 +712,14 @@ func runTestGroup(ctx context.Context, request TestRunRequest, group testpolicy.
 	}
 	result.InputManifest = mergeInputManifest(group.Inputs, implicitInputs)
 	result.Argv, result.Expected = argv, expected
+	// One composition per attempt: the launcher planned this group's identity
+	// on the same candidate tree, and the record carries that plan, so a
+	// launcher and a worker of different builds cannot disagree inside one
+	// attempt. The inputs digest is still read before and after the run.
 	result.ExecutionIdentity = groupExecutionIdentity(request, group, cwd, inputDigest, result.EnvironmentDigest, result.ToolIdentities, expected)
+	if planned := request.ComponentIdentities[group.ID]; planned != "" {
+		result.ExecutionIdentity = planned
+	}
 	if availabilityErr != nil {
 		result.Status = "unavailable"
 		result.NotRunReason = availabilityErr.Error()
@@ -963,12 +974,15 @@ func RevalidateRetainedGroupExecutionIdentities(ctx context.Context, request Tes
 		var newest *Attempt
 		for index := range attempts {
 			attempt := attempts[index]
-			if attempt.TestResult == nil || attempt.Terminal == nil || attempt.Terminal.Result != TerminalSuccess {
+			// The same sources the composer may reuse: a terminal the purpose
+			// accepts, and the judge key rather than the engine's bytes, so a
+			// rebuilt judge still finds the metadata it retained.
+			if attempt.TestResult == nil || attempt.Terminal == nil || !ReusableTerminal(request.Plan.Purpose, attempt.Terminal.Result) {
 				continue
 			}
 			result := attempt.TestResult
 			if result.ContractDigest != request.ContractDigest || result.BaseContractDigest != request.BaseContractDigest ||
-				result.PolicyEngineDigest != request.PolicyEngineDigest || result.BehaviorPolicyDigest != request.BehaviorPolicyDigest {
+				result.JudgeKey != judgeKeyOf(request) || result.BehaviorPolicyDigest != request.BehaviorPolicyDigest {
 				continue
 			}
 			for groupIndex := range result.Groups {
@@ -1119,12 +1133,12 @@ func groupExecutionIdentity(request TestRunRequest, group testpolicy.Group, cwd,
 		Platform             string
 		ContractDigest       string
 		BaseContractDigest   string
-		PolicyEngineDigest   string
+		JudgeKey             string
 		BehaviorPolicyDigest string
 		SectionEngineDigest  string
 		StewardEngineDigest  string `json:",omitempty"`
 	}{group, inputDigest, environmentDigest, toolIdentities, discovery, runtime.GOOS + "/" + runtime.GOARCH,
-		request.ContractDigest, request.BaseContractDigest, request.PolicyEngineDigest, request.BehaviorPolicyDigest, sectionEngine, stewardEngine})
+		request.ContractDigest, request.BaseContractDigest, judgeKeyOf(request), request.BehaviorPolicyDigest, sectionEngine, stewardEngine})
 	return digestBytes(identityBytes)
 }
 
@@ -1599,4 +1613,14 @@ func explicitEnvironmentCommand(ctx context.Context, cwd string, environment, ar
 	command.Args[0] = argv[0]
 	command.Dir, command.Env = cwd, environment
 	return command, nil
+}
+
+// judgeKeyOf is the request's judge key, or the default when the caller
+// computed none: a rebuild of an unchanged judge keeps every group identity,
+// which the engine's file digest could not.
+func judgeKeyOf(request TestRunRequest) string {
+	if request.JudgeKey != "" {
+		return request.JudgeKey
+	}
+	return DefaultJudgeKey()
 }

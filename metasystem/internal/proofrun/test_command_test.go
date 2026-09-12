@@ -195,7 +195,10 @@ func TestGoDiscoveryBindsDeclaredNamesToActualPackages(t *testing.T) {
 	}
 }
 
-func TestGoDiscoveryBindsDependencyConsumerEmbedAndTestdataClosure(t *testing.T) {
+// A consumer of the target (a dependent) is outside the closure: it cannot
+// change the target's outcome, and following it once swept the whole module
+// into every group's identity (goal retained-proof-reuse-crosses-claims-and-attempts).
+func TestGoDiscoveryBindsDependencyEmbedAndTestdataClosureWithoutConsumers(t *testing.T) {
 	root := t.TempDir()
 	write := func(relative, body string) {
 		t.Helper()
@@ -222,14 +225,19 @@ func TestGoDiscoveryBindsDependencyConsumerEmbedAndTestdataClosure(t *testing.T)
 	}
 	for _, required := range []string{
 		"provider/provider.go", "provider/embedded.txt", "target/target.go", "target/target_test.go",
-		"target/testdata/case.txt", "testdep/testdep.go", "consumer/consumer.go",
+		"target/testdata/case.txt", "testdep/testdep.go",
 	} {
 		found := false
 		for _, observed := range discovery.Inputs {
 			found = found || observed == required
 		}
 		if !found {
-			t.Fatalf("Go discovery omitted %s from dependency/consumer closure: %v", required, discovery.Inputs)
+			t.Fatalf("Go discovery omitted %s from the dependency closure: %v", required, discovery.Inputs)
+		}
+	}
+	for _, observed := range discovery.Inputs {
+		if observed == "consumer/consumer.go" {
+			t.Fatalf("Go discovery followed a consumer into the closure: %v", discovery.Inputs)
 		}
 	}
 

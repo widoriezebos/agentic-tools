@@ -32,7 +32,7 @@ func TestTrustedPolicyEngineIsRequiredWithoutBuildingDuringReadOnlySelection(t *
 
 func TestCandidateEngineIsBuiltFromCandidateTreeAndBindsExecutionIdentity(t *testing.T) {
 	fixture := newCandidateEngineFixture(t)
-	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second)
 	defer cancel()
 	built, err := buildCandidateEngine(ctx, gittree.Workspace{Dir: fixture.projectRoot}, "metasystem", fixture.candidateTree, testingEnvironment(os.Environ()))
 	if err != nil {
@@ -122,9 +122,16 @@ func TestCandidateEngineIsBuiltFromCandidateTreeAndBindsExecutionIdentity(t *tes
 	prepared := testingPreparation{ProjectRoot: fixture.projectRoot, Prefix: "metasystem", CandidateTree: fixture.candidateTree,
 		BaseCommit: fixture.baseCommit, PolicyBaseCommit: fixture.baseCommit, EffectiveContract: contract, Plan: plan,
 		ContractDigest: strings.Repeat("1", 64), BaseContractDigest: strings.Repeat("2", 64),
-		PolicyEngineDigest: fixture.policyDigest, BehaviorPolicyDigest: strings.Repeat("3", 64)}
+		PolicyEngineDigest: fixture.policyDigest, BehaviorPolicyDigest: strings.Repeat("3", 64),
+		JudgeKey: proofrun.ComputeJudgeKey(ctx, fixture.projectRoot, fixture.baseCommit, "metasystem")}
+	if prepared.JudgeKey == proofrun.DefaultJudgeKey() || strings.Contains(prepared.JudgeKey, ":unreadable:") {
+		t.Fatalf("the fixture's engine sources did not yield a judge key: %s", prepared.JudgeKey)
+	}
 	request := testingRunRequest(prepared, "", "", built.Path, built.Digest, built.Commit)
 	result := proofrun.NewTestResult(request)
+	if request.JudgeKey != prepared.JudgeKey || result.JudgeKey != prepared.JudgeKey {
+		t.Fatalf("the judge key was not carried into the request and the result: request=%s result=%s", request.JudgeKey, result.JudgeKey)
+	}
 	if result.PolicyEngineDigest != fixture.policyDigest || result.CandidateEngineDigest != built.Digest ||
 		result.CandidateEngineBuildIdentity != built.Commit || result.CandidateTree != fixture.candidateTree {
 		t.Fatalf("retained execution identity lost policy, candidate engine, or tree: %+v", result)
@@ -139,6 +146,15 @@ func TestCandidateEngineIsBuiltFromCandidateTreeAndBindsExecutionIdentity(t *tes
 	if err != nil {
 		t.Fatal(err)
 	}
+	if identities[group.ID] != policyIdentities[group.ID] {
+		t.Fatalf("a rebuilt judge (engine digest alone changed) changed the group execution identity: current=%s rebuilt=%s", identities[group.ID], policyIdentities[group.ID])
+	}
+	changedJudge := request
+	changedJudge.JudgeKey = prepared.JudgeKey + ":changed"
+	policyIdentities, err = proofrun.GroupExecutionIdentities(ctx, changedJudge)
+	if err != nil {
+		t.Fatal(err)
+	}
 	changedCandidate := request
 	changedCandidate.CandidateEngineDigest = strings.Repeat("5", 64)
 	candidateIdentities, err := proofrun.GroupExecutionIdentities(ctx, changedCandidate)
@@ -146,7 +162,7 @@ func TestCandidateEngineIsBuiltFromCandidateTreeAndBindsExecutionIdentity(t *tes
 		t.Fatal(err)
 	}
 	if identities[group.ID] == policyIdentities[group.ID] || identities[group.ID] == candidateIdentities[group.ID] {
-		t.Fatalf("group execution identity omitted one engine digest: current=%s policy-change=%s candidate-change=%s", identities[group.ID], policyIdentities[group.ID], candidateIdentities[group.ID])
+		t.Fatalf("group execution identity omitted the judge key or the candidate engine: current=%s judge-change=%s candidate-change=%s", identities[group.ID], policyIdentities[group.ID], candidateIdentities[group.ID])
 	}
 }
 
@@ -976,7 +992,10 @@ func TestAmbientTrustedPolicyDecisionCannotBypassRetainedEngine(t *testing.T) {
 	testingFixtureGit(t, root, "update-ref", landingRef, head)
 	testingFixtureGit(t, root, "config", "--local", "metasystem.steward.landing-ref", landingRef)
 	t.Setenv("METASYSTEM_TRUSTED_POLICY_DECISION", "1")
-	_, err = prepareTesting(testingSelectionRequest{Root: root, Tree: tree, Mode: testpolicy.ModeStandard, Purpose: testpolicy.PurposeDiagnostic})
+	prepared, err := prepareTesting(testingSelectionRequest{Root: root, Tree: tree, Mode: testpolicy.ModeStandard, Purpose: testpolicy.PurposeDiagnostic})
+	if err == nil && (!strings.HasPrefix(prepared.JudgeKey, proofrun.JudgeCompatibilityVersion+":") || strings.Contains(prepared.JudgeKey, ":unreadable:")) {
+		t.Fatalf("preparation did not compute a readable judge key: %q", prepared.JudgeKey)
+	}
 	if err == nil || !strings.Contains(err.Error(), "TEST_POLICY_ENGINE_REQUIRED") {
 		t.Fatalf("ordinary caller bypassed retained engine authentication with an ambient flag: %v", err)
 	}

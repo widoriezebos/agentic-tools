@@ -215,26 +215,34 @@ func discoveryFromGoCatalog(catalog goPackageCatalog, cwd string, packages []str
 		sort.Strings(observedDirs)
 		return goDiscovery{}, started, fmt.Errorf("go package discovery omitted one or more declared package directories: declared=%v observed=%v", declaredDirs, observedDirs)
 	}
+	// The closure is what the roots' test binaries compile and run: the roots
+	// with their test imports, then the plain imports of everything reached
+	// (a dependency's own tests never run here). What imports a root is not
+	// followed: a dependent cannot change a root's outcome, and following it
+	// once swept the whole module into every group's identity.
 	relevant := map[string]bool{}
+	queue := []string{}
 	for name := range rootPackages {
 		relevant[name] = true
+		queue = append(queue, name)
 	}
-	changed := true
-	for changed {
-		changed = false
-		for name, pkg := range allPackages {
-			importsRelevant := false
-			for _, imported := range append(append(append([]string{}, pkg.Imports...), pkg.TestImports...), pkg.XTestImports...) {
-				if relevant[imported] {
-					importsRelevant = true
-				}
-				if relevant[name] && allPackages[imported].ImportPath != "" && !relevant[imported] {
-					relevant[imported], changed = true, true
-				}
+	for len(queue) > 0 {
+		name := queue[0]
+		queue = queue[1:]
+		pkg, ok := allPackages[name]
+		if !ok {
+			continue
+		}
+		imports := append([]string{}, pkg.Imports...)
+		if rootPackages[name] {
+			imports = append(append(imports, pkg.TestImports...), pkg.XTestImports...)
+		}
+		for _, imported := range imports {
+			if allPackages[imported].ImportPath == "" || relevant[imported] {
+				continue
 			}
-			if importsRelevant && !relevant[name] {
-				relevant[name], changed = true, true
-			}
+			relevant[imported] = true
+			queue = append(queue, imported)
 		}
 	}
 	discovery := goDiscovery{Tests: map[string][]string{}, ModulePrefix: moduleName + "/"}
@@ -258,8 +266,14 @@ func discoveryFromGoCatalog(catalog goPackageCatalog, cwd string, packages []str
 		if !relevant[name] {
 			continue
 		}
+		// A dependency contributes what the root's test binary compiles from
+		// it: its package files and embeds. Its own test files, test embeds
+		// and testdata belong to the groups that run its tests.
 		files := [][]string{pkg.GoFiles, pkg.CgoFiles, pkg.CFiles, pkg.CXXFiles, pkg.MFiles, pkg.HFiles, pkg.FFiles, pkg.SFiles,
-			pkg.SysoFiles, pkg.SwigFiles, pkg.SwigCXXFiles, pkg.TestGoFiles, pkg.XTestGoFiles, pkg.EmbedFiles, pkg.TestEmbedFiles, pkg.XTestEmbedFiles}
+			pkg.SysoFiles, pkg.SwigFiles, pkg.SwigCXXFiles, pkg.EmbedFiles}
+		if rootPackages[name] {
+			files = append(files, pkg.TestGoFiles, pkg.XTestGoFiles, pkg.TestEmbedFiles, pkg.XTestEmbedFiles)
+		}
 		for _, names := range files {
 			for _, fileName := range names {
 				absolute := filepath.Join(pkg.Dir, fileName)
@@ -268,6 +282,9 @@ func discoveryFromGoCatalog(catalog goPackageCatalog, cwd string, packages []str
 					inputSet[filepath.ToSlash(relative)] = true
 				}
 			}
+		}
+		if !rootPackages[name] {
+			continue
 		}
 		testdata := filepath.Join(pkg.Dir, "testdata")
 		walkErr := filepath.WalkDir(testdata, func(path string, entry os.DirEntry, walkErr error) error {

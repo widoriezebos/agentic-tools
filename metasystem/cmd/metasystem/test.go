@@ -37,6 +37,7 @@ type testingPreparation struct {
 	EffectiveContract                           testpolicy.Contract
 	ContractDigest, BaseContractDigest          string
 	PolicyEngineDigest, BehaviorPolicyDigest    string
+	JudgeKey                                    string
 	PolicyEngine                                string
 	FirstTestingTransition                      bool
 	Plan                                        testpolicy.Plan
@@ -342,6 +343,7 @@ func prepareTesting(request testingSelectionRequest) (testingPreparation, error)
 		ConfPath: confPath, BaseCommit: baseCommit, PolicyBaseCommit: policyBaseCommit, CandidateTree: candidateTree, BaseContract: baseContract,
 		CandidateContract: candidateContract, EffectiveContract: effective, ContractDigest: bytesSHA256(candidateBytes),
 		BaseContractDigest: baseContractDigest, PolicyEngineDigest: policyEngineDigest, PolicyEngine: policyEngine,
+		JudgeKey:               proofrun.ComputeJudgeKey(context.Background(), projectRoot, policyBaseCommit, strings.TrimSuffix(prefix, "/")),
 		FirstTestingTransition: !basePresent,
 		BehaviorPolicyDigest:   bytesSHA256(behaviorsurface.Bytes()), Plan: plan, Environment: testingEnvironment(os.Environ())}, nil
 }
@@ -495,7 +497,7 @@ func testingRunRequest(prepared testingPreparation, attemptID, logRoot, candidat
 		CandidateTree: prepared.CandidateTree, BaseCommit: prepared.BaseCommit, PolicyBaseCommit: prepared.PolicyBaseCommit,
 		Contract: prepared.EffectiveContract, Plan: prepared.Plan, AttemptID: attemptID, Environment: prepared.Environment,
 		LogRoot: logRoot, ContractDigest: prepared.ContractDigest, BaseContractDigest: prepared.BaseContractDigest,
-		PolicyEngineDigest: prepared.PolicyEngineDigest, PolicyEngine: prepared.PolicyEngine, BehaviorPolicyDigest: prepared.BehaviorPolicyDigest,
+		PolicyEngineDigest: prepared.PolicyEngineDigest, JudgeKey: prepared.JudgeKey, PolicyEngine: prepared.PolicyEngine, BehaviorPolicyDigest: prepared.BehaviorPolicyDigest,
 		CandidateEngine: candidateEngine, CandidateEngineDigest: candidateEngineDigest,
 		CandidateEngineBuildIdentity: candidateEngineBuildIdentity}
 }

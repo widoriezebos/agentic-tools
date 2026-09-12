@@ -432,7 +432,7 @@ func TestReusedTestResultComposesAcrossCandidateChangeAndExactRecoveryUsesExecut
 	}{
 		{name: "candidate contract", change: func(result *TestResult) { result.ContractDigest = strings.Repeat("d", 64) }},
 		{name: "base contract", change: func(result *TestResult) { result.BaseContractDigest = strings.Repeat("d", 64) }},
-		{name: "policy engine", change: func(result *TestResult) { result.PolicyEngineDigest = strings.Repeat("d", 64) }},
+		{name: "judge key", change: func(result *TestResult) { result.JudgeKey = "judge/v1:changed" }},
 		{name: "behavior policy", change: func(result *TestResult) { result.BehaviorPolicyDigest = strings.Repeat("d", 64) }},
 	} {
 		t.Run(mismatch.name, func(t *testing.T) {
