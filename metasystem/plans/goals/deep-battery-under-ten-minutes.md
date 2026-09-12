@@ -2,14 +2,14 @@
 
 - State: claimed
 - Priority: 1
-- Sequence: 9
+- Sequence: 8
 - Risk: severity=2 novelty=2 exposure=3 accumulation=2 basis="severity 2: a wrong merge of shard results could pass a red test unseen; novelty 2: a worker pool and shard merging are new shapes in proofrun; exposure 3: every cadence run and every seat consumes the result; accumulation 2: a flake introduced by concurrency compounds across landings"
 - Tier: 3
 - Intent: The cadence run (test run --mode deep --purpose cadence) completes in under ten minutes wall on the 18-core Mac with every cadence group still present and passing, and no slower than today on the 4-vCPU VM. DONE is that sentence, with three consecutive green cadence runs and their attempt ids in the receipt. Slices 2, 3 and 5 of plans/suite-speed-plan.md, arc-sized: groups run concurrently inside one attempt under a configurable cap; the long Go groups are sharded and the big fixture sections split into per-scenario groups; the race gate reuses the shards.
 - Origin: human
 - Next step: STATE 2026-09-12 12:30Z (m1e): green cadence runs proof-mty4qhaz-af176dcea378dae3 (run 15, 18b5effc, 842 s) and proof-mty6o5n7-c165976081332c07 (run 17, 58b469e2, 846 s); run 16 between them went red on TestTerminateGroup reading a killed leader before its reap (fixed 58b469e2), so the consecutive count starts at run 17. Wido's word: fix flaky tests, do not retry them; the class (instant process-state assertions under load) is swept statically and now dynamically beside sixteen burners. A second attempt on an identical tree is a reuse by design, so runs 18 and 19 wait for the next landed trees. Walls on the real box: 790, 917, 816, 842, 820, 846 s, all beside two other seats; accepted under R-102-m1e for now.
 - OpenedAt: 2026-09-10T12:02:35Z
-- Revision: 34
+- Revision: 35
 - BlockedBy: suite-watchdog-loses-its-closing-stall-line
 - Pinned: m1e
 - Budget: elapsedLimit=2d attemptLimit=40 reservedJobMinutesLimit=2400 activeJobLimit=1 reviewRoundLimit=3
@@ -55,4 +55,5 @@ History:
 - 2026-09-12T08:19:30Z 125J2BBYNEJ3S17QJ0Z9DQNFFG-m1e-892cdaec claim actor=m1e+main-1789030447-51011-5722fc targets=deep-battery-under-ten-minutes
 - 2026-09-12T08:49:46Z JWBJDACHXYFV11BY6EBP5FAVTP-m1e-892cdaec edit actor=m1e+main-1789030447-51011-5722fc targets=deep-battery-under-ten-minutes
 - 2026-09-12T09:43:52Z DC82RPB6Y57C41CNJHXM2TV01D-m1e-892cdaec edit actor=m1e+main-1789030447-51011-5722fc targets=deep-battery-under-ten-minutes
-Integrity: sha256=74641cb13b5c1ccdb7fcfa4fb30b1ee90405431162d6ff6d87eef690c5741aa8
+- 2026-09-12T09:52:20Z 5EN6CPHWHP0VZTE1MGFZQBMBEE-m1e-c6925449 done actor=human:Wido targets=actionable-metrics,breach-clock-and-budget-honesty,capped-round-continues-instead-of-restarting,coordinator-context-stays-under-budget,coordinator-wakes-on-events-not-polls,critique-always,critique-closes-on-folded-proof,deep-battery-under-ten-minutes,delegate-rounds-reuse-a-warm-gate,failed-job-attention,fixture-stewards-outlive-their-suite,goal-abandoned-with-a-reason,human-goal-verbs-forgiving,job-record-birth-token,land-ready-work-lands-without-a-claim-slot,landing-receipt-survives-records-drift,lease-sweep-death-evidence,live-job-on-a-done-goal-unnoticed,machine-concurrency-governor,proof-groups-detect-hangs-by-progress-not-the-clock,retained-proof-reuse-crosses-claims-and-attempts,small-change-lane,steward-catchup-livelock,steward-revives-a-done-goal,stop-batch-strands-a-resumable-goal,suite-custody,tier-from-severity-and-novelty,token-spend-fence,watch-verb,watcher-repair-request-never-names-current,winddown-census-handoff-leak reason=priority-order from=1:9 to=1:8
+Integrity: sha256=3ee54514cffd19b25080546c9d338c4d9b6d33fe8ebc6989e9541343d9e99c96
