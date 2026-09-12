@@ -109,6 +109,14 @@ engine already holds proof for.
   the chain id.
 - The chain runs while nothing else heavy runs on the Mac and never beside a
   cadence attempt (the seats page box).
+- Revised 2026-09-12 evening with blocker goal
+  delegate-proof-runs-inside-the-sandbox: no delegate can run the engine's
+  proof verbs in its worktree (no enrolled engine there, and an attempt
+  recorded in a sandbox is invisible to the landing), so each round is
+  proved by the seat with `bin/metasystem job prove-round --root . --job
+  <chain id>` on the round's committed tree, recorded on this installation
+  in `artifacts/agents/<chain>/rounds/<n>/proof.json` and the attempt it
+  names. The three-minute measure is read from those attempts.
 
 ## 5. Measurements
 
@@ -139,6 +147,10 @@ engine already holds proof for.
   sandbox today. Opened as blocker goal
   delegate-proof-runs-inside-the-sandbox (R-93-m1e), which parks this goal;
   the measurement resumes when it is done. The chain is closed.
+  Its critique read (evening) showed two more walls behind those (no enrolled
+  engine in a worktree; an in-sandbox attempt is recorded where the landing
+  never looks), so the blocker was rebuilt the other way round: the seat
+  proves each round on its own engine (`job prove-round`, section 4).
 
 ## 6. What does not change
 

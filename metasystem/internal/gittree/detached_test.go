@@ -10,6 +10,8 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+
+	"golang.org/x/sys/unix"
 )
 
 func TestDetachedWorktreeHeadArchivesCandidate(t *testing.T) {
@@ -213,5 +215,45 @@ func TestDetachedWorktreesOpenConcurrentlyOnOneRepository(t *testing.T) {
 		if err := detached.Close(); err != nil {
 			t.Error(err)
 		}
+	}
+}
+
+func TestWorktreeAdministrationIsOneLockPerRepository(t *testing.T) {
+	// The lock lives in the common git dir: the main checkout and a linked
+	// worktree of it contend for the same one, and a non-blocking attempt
+	// while it is held is refused instead of racing git's half-written
+	// admin entry.
+	repository := t.TempDir()
+	runDetachedGit(t, repository, "init", "-q", "-b", "main")
+	runDetachedGit(t, repository, "config", "user.name", "fixture")
+	runDetachedGit(t, repository, "config", "user.email", "fixture@example.invalid")
+	writeDetachedFile(t, filepath.Join(repository, "metasystem", "value.txt"), "base\n")
+	runDetachedGit(t, repository, "add", ".")
+	runDetachedGit(t, repository, "commit", "-qm", "base")
+	linked := filepath.Join(t.TempDir(), "linked")
+	runDetachedGit(t, repository, "worktree", "add", "-q", "--detach", linked, "HEAD")
+
+	held, err := (Workspace{Dir: filepath.Join(repository, "metasystem")}).lockWorktreeAdmin(true)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := (Workspace{Dir: linked}).lockWorktreeAdmin(false); !errors.Is(err, unix.EWOULDBLOCK) {
+		t.Fatalf("the linked worktree took the worktree administration while the main checkout held it: %v", err)
+	}
+	if _, err := (Workspace{Dir: repository}).lockWorktreeAdmin(false); !errors.Is(err, unix.EWOULDBLOCK) {
+		t.Fatalf("a second engine on the main checkout took the held worktree administration: %v", err)
+	}
+	if err := held.release(); err != nil {
+		t.Fatal(err)
+	}
+	second, err := (Workspace{Dir: linked}).lockWorktreeAdmin(false)
+	if err != nil {
+		t.Fatalf("the released worktree administration was not free: %v", err)
+	}
+	if err := second.release(); err != nil {
+		t.Fatal(err)
+	}
+	if err := held.release(); err != nil {
+		t.Fatalf("releasing twice is not idempotent: %v", err)
 	}
 }

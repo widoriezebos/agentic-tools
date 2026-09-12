@@ -16,7 +16,7 @@ func TestRuntimeAndFollowupCannotLowerTestPolicy(t *testing.T) {
 	}
 	for name, requirement := range map[string]string{"initial": area, "follow-up": full} {
 		if !strings.Contains(requirement, "goal-a") || !strings.Contains(requirement, "metasystem test") ||
-			!strings.Contains(requirement, "collect every independent result") ||
+			!strings.Contains(requirement, "job prove-round") || !strings.Contains(requirement, "do not run `metasystem test run`") ||
 			strings.Contains(requirement, "dispatch-fixtures.sh") || strings.Contains(requirement, "goal-cli-fixtures.sh") {
 			t.Fatalf("%s requirement does not preserve the shared policy: %q", name, requirement)
 		}

@@ -545,3 +545,22 @@ absorbed text is truncated in the goal record ("... (the r1 cr") and the
 source goal's page was never committed, so the paraphrase there is the only
 surviving text. Proposal: open it as its own goal with a design page of its
 own, once Wido restates the clause.
+
+## P-6 (m1b, 2026-09-12): the engine honoring a workspace's own quarantine
+
+Built and green in a detached worktree, then parked unlanded: a
+`gittree.Workspace` rule that, when the process environment names exactly
+`<absolute git dir>/objects-quarantine` of that workspace and it exists,
+re-adds `GIT_OBJECT_DIRECTORY=<quarantine>` and
+`GIT_ALTERNATE_OBJECT_DIRECTORIES=<common objects>` after the scrub, so an
+engine verb run inside a delegate worktree writes its trees where the
+sandbox lets it; any other inherited value stays scrubbed, a workspace
+without a quarantine ignores the variable
+(`TestQuarantinedWorkspaceHonorsOnlyItsOwnObjectDirectory`, patch kept by the
+m1b seat). It has no consumer after delegate-proof-runs-inside-the-sandbox
+moved the round's proof to the orchestrator's engine, and the direct git
+callers in cmd/metasystem/test.go (`engineProjectionTree`,
+`commitCandidateEngineTree`) and the worker's environment allowlist would
+need the same rule before any snapshotting verb could run in a sandbox.
+Proposal: land it only when a delegate must run such a verb inside its
+worktree.

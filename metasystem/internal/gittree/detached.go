@@ -6,6 +6,8 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+
+	"golang.org/x/sys/unix"
 )
 
 // DetachedWorktree is a temporary linked worktree whose workspace subtree
@@ -66,7 +68,15 @@ func (w Workspace) NewDetachedWorktree(tree string) (_ *DetachedWorktree, err er
 		}
 	}()
 
-	if _, err = detached.control.git(nil, "worktree", "add", "--detach", detached.top, "HEAD"); err != nil {
+	admin, err := detached.control.lockWorktreeAdmin(true)
+	if err != nil {
+		return nil, err
+	}
+	_, err = detached.control.git(nil, "worktree", "add", "--detach", detached.top, "HEAD")
+	if releaseErr := admin.release(); releaseErr != nil {
+		err = errors.Join(err, releaseErr)
+	}
+	if err != nil {
 		return nil, fmt.Errorf("gittree detached worktree: add: %w", err)
 	}
 	detached.registered = true
@@ -117,6 +127,51 @@ func (w Workspace) NewDetachedWorktree(tree string) (_ *DetachedWorktree, err er
 	return detached, nil
 }
 
+// worktreeAdminLock serializes git's worktree administration in one
+// repository. `git worktree add` writes .git/worktrees/<name> in steps (the
+// directory first, commondir and gitdir after it), and a second add that
+// enumerates the worktrees meanwhile dies on the half-written neighbour:
+// "failed to read .git/worktrees/<name>/commondir: Undefined error: 0".
+// Unique basenames moved that collision from the entry itself to its
+// neighbour (the adoption bed's nested proof under a deep attempt,
+// 2026-09-12). The lock is a file in the common git dir, so every engine
+// on the repository serializes its adds and removes, within one process
+// and across processes alike.
+type worktreeAdminLock struct{ file *os.File }
+
+func (w Workspace) lockWorktreeAdmin(blocking bool) (*worktreeAdminLock, error) {
+	common, err := w.gitPathLine(nil, "rev-parse", "--git-common-dir")
+	if err != nil {
+		return nil, fmt.Errorf("gittree worktree administration: %w", err)
+	}
+	if !filepath.IsAbs(common) {
+		common = filepath.Join(w.Dir, common)
+	}
+	file, err := os.OpenFile(filepath.Join(common, "metasystem-worktree-admin.lock"), os.O_CREATE|os.O_RDWR, 0o644)
+	if err != nil {
+		return nil, fmt.Errorf("gittree worktree administration: %w", err)
+	}
+	how := unix.LOCK_EX
+	if !blocking {
+		how |= unix.LOCK_NB
+	}
+	if err := unix.Flock(int(file.Fd()), how); err != nil {
+		_ = file.Close()
+		return nil, err
+	}
+	return &worktreeAdminLock{file: file}, nil
+}
+
+func (l *worktreeAdminLock) release() error {
+	if l == nil || l.file == nil {
+		return nil
+	}
+	err := unix.Flock(int(l.file.Fd()), unix.LOCK_UN)
+	closeErr := l.file.Close()
+	l.file = nil
+	return errors.Join(err, closeErr)
+}
+
 func (d *DetachedWorktree) graftSubtree(prefix, tree string) (string, error) {
 	env, cleanup, err := isolatedIndex()
 	if err != nil {
@@ -161,8 +216,17 @@ func (d *DetachedWorktree) Close() error {
 	d.closed = true
 	var cleanupErrs []error
 	if d.registered {
-		if _, err := d.control.git(nil, "worktree", "remove", "--force", "--force", d.top); err != nil {
-			cleanupErrs = append(cleanupErrs, fmt.Errorf("remove linked worktree: %w", err))
+		admin, err := d.control.lockWorktreeAdmin(true)
+		if err != nil {
+			cleanupErrs = append(cleanupErrs, err)
+		} else {
+			_, err = d.control.git(nil, "worktree", "remove", "--force", "--force", d.top)
+			if releaseErr := admin.release(); releaseErr != nil {
+				cleanupErrs = append(cleanupErrs, releaseErr)
+			}
+			if err != nil {
+				cleanupErrs = append(cleanupErrs, fmt.Errorf("remove linked worktree: %w", err))
+			}
 		}
 	}
 	if err := os.RemoveAll(d.parent); err != nil {

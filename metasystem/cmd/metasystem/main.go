@@ -203,6 +203,7 @@ func families() []family {
 				{"cap-resolution", "write a cap-resolution record", runDispatchCapResolution},
 				{"resolve-cap", "resolve the non-mission cap chain or refuse an unsigned mission cap", runDispatchResolveCap},
 				{"testing-requirement", "print the shared testing requirement for an implementer brief", runDispatchTestingRequirement},
+				{"prove-round", "prove a chain round's committed worktree tree on this installation's engine and record the attempt in the round directory", runDispatchProveRound},
 				{"brief-mode", "check a brief names a known mode", runDispatchBriefMode},
 				{"owner-lock", "claim or release the dispatch owner lock (0 done, 3 busy, 4 not-owner)", runDispatchOwnerLock},
 				{"snapshot-select", "select the capability snapshot matching a dispatch's identity", runCapabilitySelect},
