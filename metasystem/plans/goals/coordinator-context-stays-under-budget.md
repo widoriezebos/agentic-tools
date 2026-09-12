@@ -1,6 +1,6 @@
 # coordinator-context-stays-under-budget
 
-- State: claimed
+- State: approved
 - Priority: 1
 - Sequence: 9
 - Risk: severity=2 novelty=2 exposure=3 accumulation=1 basis="severity 2: an over-bounded output hides evidence the seat needs; novelty 2: bounded verb output is a new discipline; exposure 3: every seat's every turn; accumulation 1: verbs and docs"
@@ -9,13 +9,12 @@
 - Origin: human
 - Next step: STATE 2026-09-12 21:20Z (m1e): released, waiting on the human by design. Slice 1 landed 644960b4 (budget fix 2903f6af); design revision 2 landed 5b5e917b and its Codex read is records/misc/coordinator-context-design-critique-r2.md. Two decisions sit on Wido's desk (page section 'Waiting on the human'): (1) the reading of 'bounded by construction' for goal 15 (by construction where the engine owns the surface, by measurement elsewhere, or re-scope); (2) exclusivity at the handoff (an ownership epoch at every mutation and model call, or an observed predecessor death before the steward continuation launches). Revision 3 is the seat's design act under Wido's lanes (R-108-m1c) and folds round 2 (nonce-bound immutable state file staged with the intent; typed per-call sample API on one package with session identity and cursoring; spill contract only for measured producers; typed path reference with digest verification); then a Codex sol read, then slice 1b on Codex with an Opus read. A steward continuation intent f090b085a22b51cc was cancelled with this reason. No build is due until Wido answers.
 - OpenedAt: 2026-09-11T15:45:19Z
-- Revision: 33
+- Revision: 34
 - Pinned: m1e
 - Budget: elapsedLimit=1d attemptLimit=10 reservedJobMinutesLimit=1200 activeJobLimit=1 reviewRoundLimit=3
 - BudgetExceptions: 0
 - Approved: by=human:Wido at=2026-09-11T20:33:41Z revision=13 opid=5E536DZV81YW62T1T2FFBA1YNC-m1-c6925449 authority=proven digest=c2091d088534cc7439a99fa65e62c9775d5f123680cef44e6e1953282c59f419
-- Claimed: machine=m1e lineage=main-1789030447-51011-5722fc at=2026-09-12T18:02:19Z revision=27 accountingRevision=27 episodeAt=2026-09-12T18:02:19Z episodeRevision=27
-- StopCapability: generation=27 revision=27 machine=m1e claimEpoch=1 fenceEpoch=0
+- Episode: machine=m1e lineage=main-1789030447-51011-5722fc accountingRevision=27 episodeAt=2026-09-12T18:02:19Z episodeRevision=27 idleSeconds=0 released=2026-09-12T21:16:28Z
 
 History:
 - 2026-09-11T15:45:19Z 5F6TSCSSSW5B4H5JVZDBKEWHPE-m1e-5083721b open actor=m1e+main-1789141490-27414-b9c0d2 targets=coordinator-context-stays-under-budget
@@ -51,4 +50,5 @@ History:
 - 2026-09-12T19:55:42Z 4XDA1ZPH8PSCGS81TZNN6QTWNV-m1e-892cdaec edit actor=m1e+main-1789030447-51011-5722fc targets=coordinator-context-stays-under-budget
 - 2026-09-12T21:11:08Z 4DBXSCET2T1E5WP6VT68N623PF-m1e-c6925449 done actor=human:Wido targets=actionable-metrics,breach-clock-and-budget-honesty,budget-extends-by-consumption-and-breach-parks,coordinator-context-stays-under-budget,coordinator-wakes-on-events-not-polls,critique-always,critique-closes-on-folded-proof,delegate-rounds-reuse-a-warm-gate,failed-job-attention,fixture-stewards-outlive-their-suite,goal-abandoned-with-a-reason,human-goal-verbs-forgiving,job-record-birth-token,landing-receipt-survives-records-drift,lease-sweep-death-evidence,live-job-on-a-done-goal-unnoticed,machine-concurrency-governor,proof-groups-detect-hangs-by-progress-not-the-clock,steward-catchup-livelock,steward-revives-a-done-goal,stop-batch-strands-a-resumable-goal,suite-custody,token-spend-fence,watch-verb,watcher-repair-request-never-names-current,winddown-census-handoff-leak reason=priority-order from=1:10 to=1:9
 - 2026-09-12T21:16:24Z 2C9AFKYVCY5QX46PMXW1DJYN4Z-m1e-892cdaec edit actor=m1e+main-1789030447-51011-5722fc targets=coordinator-context-stays-under-budget
-Integrity: sha256=eef8267a3e25aa23687ffd8836ced71926309245498a2dfa15a068e7d14eb493
+- 2026-09-12T21:16:28Z P680BSDTVXF02FGT3SZTW62EA1-m1e-892cdaec release actor=m1e+main-1789030447-51011-5722fc targets=coordinator-context-stays-under-budget
+Integrity: sha256=e0e16eef56e7b9a966bc6ece42cd1f5bff119d65e65864302f27ef7741c3eb86
