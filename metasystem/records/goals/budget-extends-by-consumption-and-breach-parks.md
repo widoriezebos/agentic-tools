@@ -1,6 +1,6 @@
 # budget-extends-by-consumption-and-breach-parks
 
-- State: claimed
+- State: done
 - Priority: 1
 - Sequence: 6
 - Risk: severity=2 novelty=2 exposure=3 accumulation=1 basis="severity 2: the budget law is the spend guard; novelty 2: extension by consumption and auto-park are new rules; exposure 3: every claimed goal; accumulation 1: the tuple stays"
@@ -8,14 +8,13 @@
 - Intent: In five days Wido performed 43 set-budget acts, 26 of them repeat raises on the same goal within 24 hours and 11 between 22:00 and 07:00; one goal took nine raises in 40 claimed hours (ledger.md finding 1). DONE means two rules, each proven by a fixture: (1) when a dispatch or attempt proposal would cross the goal's reservedJobMinutesLimit or attemptLimit (used plus proposed, the admission's own test) and the goal's last round advanced (a landed round, a closed critique or a passed receipt within the last two hours), the goal extends reservedJobMinutesLimit and attemptLimit once by the tier box's values, keeps elapsedLimit, activeJobLimit and reviewRoundLimit unchanged, records the extension with its evidence and a durable once-per-goal marker that survives accounting-revision changes, and preserves consumption across the extension; a second exhaustion breach-stops as today; requires proof-attempts-settle-to-minutes-run landed first so ended attempts charge what they ran; (2) approve, set-budget and unpark of a seat park for tier 1 and 2 goals may run under a recorded power-of-attorney entry naming the human, the scope and the expiry, in the direction of R-88, R-90 and R-91, every such act stamped with the entry. The auto-park clause is dropped: fenced claims already leave the one-claim quota (breach-stop-wedges-seat, landed 2026-09-10). Both rules are policy decisions under R-36-m3: built after Wido records them on the design page. Success in the field: a week with no overnight raises. Goal 8 of plans/delivery-efficiency-plan.md. RUNTIME INDEPENDENCE (plan principle 0; architecture doctrine of 2026-08-16: correctness never depends on an accelerator): this holds for every runtime the roster can host today (claude, codex, devin) and for future adapters such as opencode; the mechanism lives in the Go engine, the ledger verbs and the adapter contract, never in one runtime's hook, harness, CLI or transcript format; a native facility may accelerate it through its adapter, and an agent on any runtime with no accelerator gets the same guarantee from the records and the verb alone; where the goal touches a runtime path, DONE is proven on at least two runtimes.
 - Origin: human
 - Next step: Slice B (the attorney unpark, R-105-m1e) landed f3a9359b0. Slice A (rule 1: the once-by-consumption budget extension on the revision seam, goal extend-budget, the BudgetExtension record, the dispatcher's one extension) is built by Codex Sol in a worktree from the design page's section 4 checklist, read on Opus 5, verified by hand and landed by the seat; then the goal concludes in Wido's name with section 7 (a second exhaustion: refuse as today or breach-stop) named to him.
+- Concluded: Rule 2 landed 4468c8211 and f55bbb6bf (power of attorney, tiers 1 and 2), the attorney unpark of R-105-m1e landed f3a9359b0, and rule 1 landed 9a3102266: the exact revision seam offers one consumption-earned extension of attempts and reserved minutes on accepted advancement within two hours, goal extend-budget applies it once and writes the BudgetExtension record, the dispatcher and the proof run judge again after it, and a second exhaustion refuses naming the marker. Open on Wido's desk: section 7 of plans/budget-extends-by-consumption-design.md, whether the second exhaustion should breach-stop instead of refusing as today (one further slice if so).
 - OpenedAt: 2026-09-11T15:45:08Z
-- Revision: 33
+- Revision: 34
 - Pinned: m1c
 - Budget: elapsedLimit=1d attemptLimit=10 reservedJobMinutesLimit=1200 activeJobLimit=1 reviewRoundLimit=3
 - BudgetExceptions: 0
 - Approved: by=human:Wido at=2026-09-11T20:33:20Z revision=14 opid=G5J453V38KHNYSDP6P099NZS3Q-m1-c6925449 authority=proven digest=e0d545d12aaa71688dc4f8e0426a3e9f178822a2ae60a25f3c409f238b1a9f4d
-- Claimed: machine=m1c lineage=main-1789191340-90689-8975a9 at=2026-09-12T17:19:41Z revision=30 accountingRevision=30 episodeAt=2026-09-12T17:19:41Z episodeRevision=30
-- StopCapability: generation=30 revision=30 machine=m1c claimEpoch=5 fenceEpoch=0
 
 History:
 - 2026-09-11T15:45:08Z 9QD56QEP3YRJBVPYD7Y5S3BS7S-m1e-5083721b open actor=m1e+main-1789141490-27414-b9c0d2 targets=budget-extends-by-consumption-and-breach-parks
@@ -51,4 +50,5 @@ History:
 - 2026-09-12T17:20:27Z KTMQ8R1QHTDESM6ZVJAG1JRQX4-m1c-69c9e454 edit actor=m1c+main-1789191340-90689-8975a9 targets=budget-extends-by-consumption-and-breach-parks
 - 2026-09-12T17:46:59Z FHTEXMER5R2109PNX9ABJEA8NB-m1c-69c9e454 edit actor=m1c+main-1789191340-90689-8975a9 targets=budget-extends-by-consumption-and-breach-parks
 - 2026-09-12T18:48:18Z RBNTDEYV9AV7WBAACJ79SR08B3-m1c-69c9e454 edit actor=m1c+main-1789191340-90689-8975a9 targets=budget-extends-by-consumption-and-breach-parks
-Integrity: sha256=38b887ddf13014c8fe782a1aa41f1b711b4a1928125af410c6fddf851f4ed8ae
+- 2026-09-12T21:11:08Z 4DBXSCET2T1E5WP6VT68N623PF-m1e-c6925449 done actor=human:Wido targets=actionable-metrics,breach-clock-and-budget-honesty,budget-extends-by-consumption-and-breach-parks,coordinator-context-stays-under-budget,coordinator-wakes-on-events-not-polls,critique-always,critique-closes-on-folded-proof,delegate-rounds-reuse-a-warm-gate,failed-job-attention,fixture-stewards-outlive-their-suite,goal-abandoned-with-a-reason,human-goal-verbs-forgiving,job-record-birth-token,landing-receipt-survives-records-drift,lease-sweep-death-evidence,live-job-on-a-done-goal-unnoticed,machine-concurrency-governor,proof-groups-detect-hangs-by-progress-not-the-clock,steward-catchup-livelock,steward-revives-a-done-goal,stop-batch-strands-a-resumable-goal,suite-custody,token-spend-fence,watch-verb,watcher-repair-request-never-names-current,winddown-census-handoff-leak displaced=m1c+main-1789191340-90689-8975a9@2026-09-12T17:19:41Z
+Integrity: sha256=3ef6a7a0e22a74050095a2fe493c04147bdaba26c9d5f0c1c44d246f9501c73d
