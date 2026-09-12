@@ -2,14 +2,14 @@
 
 - State: claimed
 - Priority: 1
-- Sequence: 15
+- Sequence: 14
 - Risk: severity=2 novelty=2 exposure=3 accumulation=1 basis="severity 2: the claim quota and accounting are the spend fence; novelty 2: a landing slot is a new state; exposure 3: every seat; accumulation 1: goal verbs and receipt"
 - Tier: 3
 - Intent: Built work waited 22 to 35 hours to land because the seat's one claim went elsewhere and a re-claim reset the accounting revision and voided retained proof (ledger.md finding 5, process-rules.md items 6 and 7). DONE means: (1) a landing slot exempt from the one-claim quota: a seat may hold one land-ready goal in landing beside its claim, with the slot's lifecycle (enter on land-ready, leave on done or park) recorded on the goal; (2) a same-pair re-claim keeps the accounting episode and its retained proof; receipt acceptance is not changed here: record-only tip moves are owned by landing-receipt-survives-records-drift (land-ready on m1e) and identity by retained-proof-reuse-crosses-claims-and-attempts; proven by fixtures and, in the field, by hours from land-ready to landed under 4 over a week. Goal 20 of plans/delivery-efficiency-plan.md. RUNTIME INDEPENDENCE (plan principle 0; architecture doctrine of 2026-08-16: correctness never depends on an accelerator): this holds for every runtime the roster can host today (claude, codex, devin) and for future adapters such as opencode; the mechanism lives in the Go engine, the ledger verbs and the adapter contract, never in one runtime's hook, harness, CLI or transcript format; a native facility may accelerate it through its adapter, and an agent on any runtime with no accelerator gets the same guarantee from the records and the verb alone; where the goal touches a runtime path, DONE is proven on at least two runtimes.
 - Origin: human
 - Next step: 2026-09-12 m1c: design page plans/land-ready-work-lands-without-a-claim-slot-design.md written (the landing slot as a Landing record on a claimed goal, exempt from the one-claim quota like a fenced claim; a same-pair re-claim restores the accounting episode from an Episode record left by release and shifts the elapsed start past the gap); one design-critique read in flight, then build behind the page's fixtures, one code read, land.
 - OpenedAt: 2026-09-11T15:45:27Z
-- Revision: 23
+- Revision: 24
 - Pinned: m1c
 - Budget: elapsedLimit=1d attemptLimit=10 reservedJobMinutesLimit=1200 activeJobLimit=1 reviewRoundLimit=3
 - BudgetExceptions: 0
@@ -41,4 +41,5 @@ History:
 - 2026-09-12T11:17:18Z H4KSM9E8F8T630ZMG9B0AFKZHW-m1e-c6925449 done actor=human:Wido targets=actionable-metrics,breach-clock-and-budget-honesty,capped-round-continues-instead-of-restarting,critique-always,failed-job-attention,fixture-stewards-outlive-their-suite,goal-abandoned-with-a-reason,human-goal-verbs-forgiving,job-record-birth-token,land-ready-work-lands-without-a-claim-slot,landing-receipt-survives-records-drift,lease-sweep-death-evidence,live-job-on-a-done-goal-unnoticed,machine-concurrency-governor,small-change-lane,steward-catchup-livelock,steward-revives-a-done-goal,stop-batch-strands-a-resumable-goal,suite-custody,tier-from-severity-and-novelty,token-spend-fence,watch-verb,watcher-repair-request-never-names-current,winddown-census-handoff-leak reason=priority-order from=1:16 to=1:15
 - 2026-09-12T11:18:02Z HPF24PEEADES1RYW50C9NXRFZB-m1c-69c9e454 claim actor=m1c+main-1789191340-90689-8975a9 targets=land-ready-work-lands-without-a-claim-slot
 - 2026-09-12T11:21:14Z RX5YT0CA658S12WRZ0CK4Q64A0-m1c-69c9e454 edit actor=m1c+main-1789191340-90689-8975a9 targets=land-ready-work-lands-without-a-claim-slot
-Integrity: sha256=45078aa4b5117f99b57c655c8e2f9db556c9cac35bc5648e410d46b864ef8166
+- 2026-09-12T11:22:25Z 9DHJQRK19BYSF9MNBN94NKT4ZQ-m1-c6925449 done actor=human:Wido targets=actionable-metrics,breach-clock-and-budget-honesty,capped-round-continues-instead-of-restarting,coordinator-context-stays-under-budget,coordinator-wakes-on-events-not-polls,critique-always,critique-closes-on-folded-proof,deep-battery-under-ten-minutes,delegate-rounds-reuse-a-warm-gate,failed-job-attention,fixture-stewards-outlive-their-suite,goal-abandoned-with-a-reason,human-goal-verbs-forgiving,job-record-birth-token,land-ready-work-lands-without-a-claim-slot,landing-receipt-survives-records-drift,lease-sweep-death-evidence,live-job-on-a-done-goal-unnoticed,machine-concurrency-governor,small-change-lane,steward-catchup-livelock,steward-revives-a-done-goal,stop-batch-strands-a-resumable-goal,suite-custody,token-spend-fence,watch-verb,watcher-repair-request-never-names-current,winddown-census-handoff-leak reason=priority-order from=1:15 to=1:14
+Integrity: sha256=661988d3b08adb4b2281b71ac401905edc2d75a17259239541408124285300f0

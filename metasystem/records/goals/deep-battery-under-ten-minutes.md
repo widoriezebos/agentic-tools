@@ -1,6 +1,6 @@
 # deep-battery-under-ten-minutes
 
-- State: claimed
+- State: done
 - Priority: 1
 - Sequence: 8
 - Risk: severity=2 novelty=2 exposure=3 accumulation=2 basis="severity 2: a wrong merge of shard results could pass a red test unseen; novelty 2: a worker pool and shard merging are new shapes in proofrun; exposure 3: every cadence run and every seat consumes the result; accumulation 2: a flake introduced by concurrency compounds across landings"
@@ -8,8 +8,9 @@
 - Intent: The cadence run (test run --mode deep --purpose cadence) completes in under ten minutes wall on the 18-core Mac with every cadence group still present and passing, and no slower than today on the 4-vCPU VM. DONE is that sentence, with three consecutive green cadence runs and their attempt ids in the receipt. Slices 2, 3 and 5 of plans/suite-speed-plan.md, arc-sized: groups run concurrently inside one attempt under a configurable cap; the long Go groups are sharded and the big fixture sections split into per-scenario groups; the race gate reuses the shards.
 - Origin: human
 - Next step: STATE 2026-09-12 15:00Z (m1e): green cadence runs proof-mty4qhaz-af176dcea378dae3 (run 15), proof-mty6o5n7-c165976081332c07 (run 17) and proof-mty9ejoz-9c626c90b9464750 (run 19, d4230891, 971 s at box load 29); runs 16 and 18 between them were red on load-shaped defects, each fixed and landed the same hour (58b469e2, d4230891), so the consecutive count stands at one from run 19. Wido's rule of the afternoon: flaky tests are fixed, never retried; the class was swept statically and under eight burners (five packages green at load 46). Runs 20 and 21 follow on the next two landed trees; the wall above 600 s is accepted under R-102-m1e.
+- Concluded: DONE on Wido's word of 2026-09-12 (R-103-m1e): three green cadence runs on three trees, proof-mty4qhaz-af176dcea378dae3 (run 15, 18b5effc, 842 s), proof-mty6o5n7-c165976081332c07 (run 17, 58b469e2, 846 s) and proof-mty9ejoz-9c626c90b9464750 (run 19, d4230891, 971 s), all deep, all beside two other seats on the eighteen-core box (load 9 to 29); the two reds between them were fixed defects (58b469e2, d4230891). Built: groups run concurrently under a configurable cap (slice 2), the Go groups sharded and the big beds split per scenario (slice 3), the race gate reusing the shards (slice 5); the two whole-package coverage groups left the cadence list under R-99-m1e; ten orphaned burners from a test of this goal, found 2026-09-12, had taken up to ten cores under every measurement of the night before (e773669f). Walls on the real box 790 to 971 s under three-seat load: ten minutes was not reached and is accepted under R-102-m1e; the remaining distance (internal/goal's tests under the race detector, 540 to 610 s per shard, then the land-fixtures split) is handed off on plans/deep-battery-design.md.
 - OpenedAt: 2026-09-10T12:02:35Z
-- Revision: 36
+- Revision: 37
 - BlockedBy: suite-watchdog-loses-its-closing-stall-line
 - Pinned: m1e
 - Budget: elapsedLimit=2d attemptLimit=40 reservedJobMinutesLimit=2400 activeJobLimit=1 reviewRoundLimit=3
@@ -17,8 +18,6 @@
 - NormApproval: approvedRef=R-101-m1e minutes=2400 reviewRounds=3 goalRevision=22
 - Approved: by=human:Wido at=2026-09-12T05:37:26Z revision=23 opid=Y21QHFGV4HKR43BEPDHV9F0PFV-m1-c6925449 authority=proven digest=3b855d096c0e7fe69fb53ccb2558e257bfe1ac15a0f75e7e8b611e14d5735b55
 - Sliced: machine=m1e lineage=main-1789030447-51011-5722fc revision=15 at=2026-09-11T21:36:54Z
-- Claimed: machine=m1e lineage=main-1789030447-51011-5722fc at=2026-09-12T08:19:30Z revision=32 accountingRevision=32 episodeAt=2026-09-12T08:19:30Z episodeRevision=32
-- StopCapability: generation=32 revision=32 machine=m1e claimEpoch=1 fenceEpoch=0
 
 History:
 - 2026-09-10T12:02:35Z T349JE65PA2AZGXK28VA4PN6T1-m1e-892cdaec open actor=m1e+main-1789030447-51011-5722fc targets=deep-battery-under-ten-minutes
@@ -57,4 +56,5 @@ History:
 - 2026-09-12T09:43:52Z DC82RPB6Y57C41CNJHXM2TV01D-m1e-892cdaec edit actor=m1e+main-1789030447-51011-5722fc targets=deep-battery-under-ten-minutes
 - 2026-09-12T09:52:20Z 5EN6CPHWHP0VZTE1MGFZQBMBEE-m1e-c6925449 done actor=human:Wido targets=actionable-metrics,breach-clock-and-budget-honesty,capped-round-continues-instead-of-restarting,coordinator-context-stays-under-budget,coordinator-wakes-on-events-not-polls,critique-always,critique-closes-on-folded-proof,deep-battery-under-ten-minutes,delegate-rounds-reuse-a-warm-gate,failed-job-attention,fixture-stewards-outlive-their-suite,goal-abandoned-with-a-reason,human-goal-verbs-forgiving,job-record-birth-token,land-ready-work-lands-without-a-claim-slot,landing-receipt-survives-records-drift,lease-sweep-death-evidence,live-job-on-a-done-goal-unnoticed,machine-concurrency-governor,proof-groups-detect-hangs-by-progress-not-the-clock,retained-proof-reuse-crosses-claims-and-attempts,small-change-lane,steward-catchup-livelock,steward-revives-a-done-goal,stop-batch-strands-a-resumable-goal,suite-custody,tier-from-severity-and-novelty,token-spend-fence,watch-verb,watcher-repair-request-never-names-current,winddown-census-handoff-leak reason=priority-order from=1:9 to=1:8
 - 2026-09-12T11:02:22Z NEAB9R95M684ZX2JKX9P7BKD59-m1e-892cdaec edit actor=m1e+main-1789030447-51011-5722fc targets=deep-battery-under-ten-minutes
-Integrity: sha256=013bf62e8032a7b26bf31493c27fe3b055f8df3074d0a45fe00da7dc420f516a
+- 2026-09-12T11:22:25Z 9DHJQRK19BYSF9MNBN94NKT4ZQ-m1-c6925449 done actor=human:Wido targets=actionable-metrics,breach-clock-and-budget-honesty,capped-round-continues-instead-of-restarting,coordinator-context-stays-under-budget,coordinator-wakes-on-events-not-polls,critique-always,critique-closes-on-folded-proof,deep-battery-under-ten-minutes,delegate-rounds-reuse-a-warm-gate,failed-job-attention,fixture-stewards-outlive-their-suite,goal-abandoned-with-a-reason,human-goal-verbs-forgiving,job-record-birth-token,land-ready-work-lands-without-a-claim-slot,landing-receipt-survives-records-drift,lease-sweep-death-evidence,live-job-on-a-done-goal-unnoticed,machine-concurrency-governor,small-change-lane,steward-catchup-livelock,steward-revives-a-done-goal,stop-batch-strands-a-resumable-goal,suite-custody,token-spend-fence,watch-verb,watcher-repair-request-never-names-current,winddown-census-handoff-leak displaced=m1e+main-1789030447-51011-5722fc@2026-09-12T08:19:30Z
+Integrity: sha256=f7b31f11179c6a8a3b5aea5920a4fd191614eea5e695e030cc1eabcfebbe2dba

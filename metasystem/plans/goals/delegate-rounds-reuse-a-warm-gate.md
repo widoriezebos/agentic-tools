@@ -2,14 +2,14 @@
 
 - State: claimed
 - Priority: 1
-- Sequence: 9
+- Sequence: 8
 - Risk: severity=2 novelty=1 exposure=2 accumulation=2 basis="severity 2: a skipped gate that should have run lets a red round close; novelty 1: caches and the fast gate exist; exposure 2: delegate rounds; accumulation 2: touches dispatch and the gate"
 - Tier: 3
 - Intent: Codex delegate jobs spent 26.5 of 48.6 tool hours on verification: focused go test 12.4 hours over 1,829 runs, fixture scripts 9.3 hours, go-gate 4.4 hours over 587 runs with a 0.2 second median, a 12 second p90 and a 25 minute cold-cache maximum (codex-sessions.md section 4). Every round of a chain starts from a cold build cache, and fold rounds that change no code re-run verification; the evidence is Codex because Codex built, but the cache and the skip rule live in dispatch.sh and the round record and apply to delegate rounds on every runtime. DONE means: (1) rounds of one chain share a build cache keyed by the chain root; (2) a round whose diff touches none of a verification step's inputs skips that step and reuses the prior round's matching verdict, recording why; (3) proven by matched before-and-after measurements on the cold-cache cases (chains such as brain-build1b with 19 gates) and by a three-round chain whose second and third rounds verify in under three minutes. Goal 13 of plans/delivery-efficiency-plan.md. RUNTIME INDEPENDENCE (plan principle 0; architecture doctrine of 2026-08-16: correctness never depends on an accelerator): this holds for every runtime the roster can host today (claude, codex, devin) and for future adapters such as opencode; the mechanism lives in the Go engine, the ledger verbs and the adapter contract, never in one runtime's hook, harness, CLI or transcript format; a native facility may accelerate it through its adapter, and an agent on any runtime with no accelerator gets the same guarantee from the records and the verb alone; where the goal touches a runtime path, DONE is proven on at least two runtimes.
 - Origin: human
 - Next step: 2026-09-12 m1b: slice A landed 809fc0d07 (one build cache per chain, exported by both adapters, recorded per round, removed on close and fully-terminal reap; test environment allowlist and environment digest folded; testing requirement names the cache and the proving run). Every seat rebuilds and re-arms (the environment digest is a judge change). Next: slice C, a three-round chain on the implementer runtime measured per the design page section 4 (round 2 a docs line, round 3 a comment in internal/refusal), then DONE with the measurements; slice B is the testing-requirement text already landed.
 - OpenedAt: 2026-09-11T15:46:36Z
-- Revision: 24
+- Revision: 25
 - Pinned: m1b
 - Budget: elapsedLimit=1d attemptLimit=10 reservedJobMinutesLimit=1200 activeJobLimit=1 reviewRoundLimit=3
 - BudgetExceptions: 0
@@ -43,4 +43,5 @@ History:
 - 2026-09-12T10:23:56Z N2501F7CHXD39E3SCN6AWMN9EZ-m1b-30a7e141 edit actor=m1b+main-1789191336-90295-e4b24b targets=delegate-rounds-reuse-a-warm-gate
 - 2026-09-12T11:12:50Z 4N3ZM4RT6KH9GYPPEBZ8GYN54S-m1b-30a7e141 edit actor=m1b+main-1789191336-90295-e4b24b targets=delegate-rounds-reuse-a-warm-gate
 - 2026-09-12T11:14:37Z F2H9R5F9FMVX9CHWGABKGGTQ6P-m1b-30a7e141 slice-start actor=m1b+main-1789191336-90295-e4b24b targets=delegate-rounds-reuse-a-warm-gate
-Integrity: sha256=34f553116fba7b33aa685dc0142ff5dd95a76fcfac18f6752d2e8ab7873d1eb7
+- 2026-09-12T11:22:25Z 9DHJQRK19BYSF9MNBN94NKT4ZQ-m1-c6925449 done actor=human:Wido targets=actionable-metrics,breach-clock-and-budget-honesty,capped-round-continues-instead-of-restarting,coordinator-context-stays-under-budget,coordinator-wakes-on-events-not-polls,critique-always,critique-closes-on-folded-proof,deep-battery-under-ten-minutes,delegate-rounds-reuse-a-warm-gate,failed-job-attention,fixture-stewards-outlive-their-suite,goal-abandoned-with-a-reason,human-goal-verbs-forgiving,job-record-birth-token,land-ready-work-lands-without-a-claim-slot,landing-receipt-survives-records-drift,lease-sweep-death-evidence,live-job-on-a-done-goal-unnoticed,machine-concurrency-governor,small-change-lane,steward-catchup-livelock,steward-revives-a-done-goal,stop-batch-strands-a-resumable-goal,suite-custody,token-spend-fence,watch-verb,watcher-repair-request-never-names-current,winddown-census-handoff-leak reason=priority-order from=1:9 to=1:8
+Integrity: sha256=55db7505f6967da05fdf50985ab12e3931bf63a785bcf0813e3740f2ab8d2fad
