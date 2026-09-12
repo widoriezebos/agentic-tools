@@ -1,6 +1,6 @@
 # landing-refuses-without-its-receipt-line
 
-- State: approved
+- State: claimed
 - Priority: 1
 - Sequence: 5
 - Risk: severity=1 novelty=1 exposure=3 accumulation=1 basis="severity 1: a refused landing is retried with the line; novelty 1: land.sh already validates the commit; exposure 3: every landing; accumulation 1: one check"
@@ -9,11 +9,13 @@
 - Origin: human
 - Next step: Read scripts/agents/land.sh and commit.sh and the memory/receipts.log format, add the check and its fixture, land.
 - OpenedAt: 2026-09-11T15:50:31Z
-- Revision: 8
+- Revision: 9
 - Pinned: m1b
 - Budget: elapsedLimit=4h attemptLimit=6 reservedJobMinutesLimit=720 activeJobLimit=1 reviewRoundLimit=2
 - BudgetExceptions: 0
 - Approved: by=human:Wido at=2026-09-11T20:33:10Z revision=7 opid=DWQ8CW24MN97QSVKMFZ36DGZK7-m1-c6925449 authority=proven digest=4450556aa366cf6847449506cbdbc53f41a644cb2dcf87c64b35f0de4ef861cd
+- Claimed: machine=m1b lineage=main-1789191336-90295-e4b24b at=2026-09-12T06:07:26Z revision=9 accountingRevision=9 episodeAt=2026-09-12T06:07:26Z episodeRevision=9
+- StopCapability: generation=9 revision=9 machine=m1b claimEpoch=2 fenceEpoch=0
 
 History:
 - 2026-09-11T15:50:31Z P8GF671DX0JP94MFS95CPM4H7G-m1-c6925449 open actor=human:Wido targets=landing-refuses-without-its-receipt-line reason=TierOverride: derived=3 set=2 why=Wido 2026-09-11: one check on the landing script; exposure alone does not make it tier 3, which goal 16 of the plan makes law
@@ -24,4 +26,5 @@ History:
 - 2026-09-11T20:31:54Z DM1D3QCJDQYJBWHVRYDS2BYK6S-m1e-3ca84c28 edit actor=m1e+main-1789158700-39729-b9c0d2 targets=landing-refuses-without-its-receipt-line
 - 2026-09-11T20:33:10Z DWQ8CW24MN97QSVKMFZ36DGZK7-m1-c6925449 approve actor=human:Wido targets=landing-refuses-without-its-receipt-line
 - 2026-09-12T05:28:26Z 1M075XT14WZM0R275BBMJFVB85-m1e-c6925449 set-pin actor=human:Wido targets=landing-refuses-without-its-receipt-line
-Integrity: sha256=479a3b7c41977bf5b9d087f6a11065bc497301fe16e330da0769531ac33e6b1e
+- 2026-09-12T06:07:26Z B2PGHP7FCFYRK1F5K0143KYYGN-m1b-30a7e141 claim actor=m1b+main-1789191336-90295-e4b24b targets=landing-refuses-without-its-receipt-line
+Integrity: sha256=19eaaba5a4191e1684577d011e3cbc21d237fd58af67d8877399382a71dbac8c
