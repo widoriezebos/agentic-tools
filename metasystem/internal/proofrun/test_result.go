@@ -257,18 +257,95 @@ func TestPlanDigest(contract testpolicy.Contract, plan testpolicy.Plan, candidat
 	return hex.EncodeToString(digest[:])
 }
 
-// ReusedTestResult composes only successful terminal attempt components with
-// matching contract, policy, and current group identities. It starts no test
-// or build and creates no attempt.
-func ReusedTestResult(template TestResult, attempts []Attempt, identities map[string]string, contract testpolicy.Contract, goalID string, accountingRevision uint64) TestResult {
-	return reusedTestResult(template, attempts, identities, contract, goalID, accountingRevision, "")
+// ReusedTestResult composes the selected groups from the newest retained
+// observation of each group's current execution identity on this seat,
+// whatever goal or attempt produced it (retained-proof-reuse-crosses-
+// claims-and-attempts). It starts no test or build and creates no attempt.
+func ReusedTestResult(template TestResult, attempts []Attempt, identities map[string]string, contract testpolicy.Contract) TestResult {
+	return reusedTestResult(template, attempts, identities, contract, "")
 }
 
 // ReusedTestResultExcluding composes evidence retained before the current
 // reservation. The current live attempt is the mutation-locked exclusion
 // that prevents another caller from reserving the same missing components.
-func ReusedTestResultExcluding(template TestResult, attempts []Attempt, identities map[string]string, contract testpolicy.Contract, goalID string, accountingRevision uint64, excludedAttempt string) TestResult {
-	return reusedTestResult(template, attempts, identities, contract, goalID, accountingRevision, excludedAttempt)
+func ReusedTestResultExcluding(template TestResult, attempts []Attempt, identities map[string]string, contract testpolicy.Contract, excludedAttempt string) TestResult {
+	return reusedTestResult(template, attempts, identities, contract, excludedAttempt)
+}
+
+// reuseObservation is one retained sighting of a group at an execution
+// identity: a launched or reused record of an attempt that has a terminal,
+// or a live attempt's plan for the group. Live plans rank newest of all;
+// records rank by the group's own end, then by the attempt's start.
+type reuseObservation struct {
+	attemptID string
+	at        time.Time
+	started   time.Time
+	live      bool
+	passed    bool
+	group     GroupResult
+}
+
+func (observation reuseObservation) newerThan(other reuseObservation) bool {
+	if observation.live != other.live {
+		return observation.live
+	}
+	if !observation.at.Equal(other.at) {
+		return observation.at.After(other.at)
+	}
+	return observation.started.After(other.started)
+}
+
+// newestReuseObservation scans every attempt on the seat for the newest
+// observation of one group at one identity. A not-run or invalid record is
+// not an observation: the group was not judged there. Goal, accounting
+// revision and the attempt's terminal result do not scope the scan; the
+// result-level digests (contract, base contract, judge key, behavior
+// policy) must match the template's.
+func newestReuseObservation(template TestResult, attempts []Attempt, id, identity, excludedAttempt string) (reuseObservation, bool) {
+	var newest reuseObservation
+	found := false
+	consider := func(observation reuseObservation) {
+		if !found || observation.newerThan(newest) {
+			newest, found = observation, true
+		}
+	}
+	if identity == "" {
+		return newest, false
+	}
+	for index := range attempts {
+		attempt := attempts[index]
+		if attempt.AttemptID == excludedAttempt {
+			continue
+		}
+		started, _ := time.Parse(time.RFC3339Nano, attempt.StartedAt)
+		if attempt.Terminal == nil {
+			planned := componentInputs(attempt.ProofIdentity.IdentityInputs)
+			for plannedID, plannedIdentity := range attempt.PendingTestGroups {
+				planned[plannedID] = plannedIdentity
+			}
+			if planned[id] == identity {
+				consider(reuseObservation{attemptID: attempt.AttemptID, started: started, live: true})
+			}
+			continue
+		}
+		source := attempt.TestResult
+		if source == nil || source.ContractDigest != template.ContractDigest || source.BaseContractDigest != template.BaseContractDigest ||
+			source.JudgeKey != template.JudgeKey || source.BehaviorPolicyDigest != template.BehaviorPolicyDigest {
+			continue
+		}
+		for _, group := range source.Groups {
+			if group.ID != id || group.ExecutionIdentity != identity || !(group.NativeLaunched || group.Status == "reused") {
+				continue
+			}
+			at, err := time.Parse(time.RFC3339Nano, group.EndedAt)
+			if err != nil {
+				at = started
+			}
+			consider(reuseObservation{attemptID: attempt.AttemptID, at: at, started: started, group: group,
+				passed: (group.Status == "passed" || group.Status == "reused") && group.CollectionComplete})
+		}
+	}
+	return newest, found
 }
 
 // ExactReusableTestResult returns the original successful outer result when
@@ -306,6 +383,15 @@ func ExactReusableTestResult(template TestResult, attempts []Attempt, identities
 		for id, identity := range identities {
 			matches = matches && observed[id] == identity
 		}
+		// The newest observation on the seat still decides: a newer failure or
+		// a live plan for any group, under any goal, means the committed
+		// result no longer describes what the seat knows.
+		for id, identity := range identities {
+			observation, found := newestReuseObservation(template, attempts, id, identity, "")
+			if !found || observation.live || !observation.passed {
+				matches = false
+			}
+		}
 		if matches {
 			newest = newerAttempt(newest, attempt)
 		}
@@ -316,7 +402,7 @@ func ExactReusableTestResult(template TestResult, attempts []Attempt, identities
 	return *newest.TestResult, true
 }
 
-func reusedTestResult(template TestResult, attempts []Attempt, identities map[string]string, contract testpolicy.Contract, goalID string, accountingRevision uint64, excludedAttempt string) TestResult {
+func reusedTestResult(template TestResult, attempts []Attempt, identities map[string]string, contract testpolicy.Contract, excludedAttempt string) TestResult {
 	result := template
 	result.AttemptID = ""
 	result.Groups = nil
@@ -330,49 +416,35 @@ func reusedTestResult(template TestResult, attempts []Attempt, identities map[st
 		definitions[group.ID] = group
 	}
 	for _, id := range result.SelectedGroups {
-		var found *GroupResult
-		var newest *Attempt
-		for index := range attempts {
-			attempt := attempts[index]
-			if attempt.AttemptID == excludedAttempt {
-				continue
-			}
-			components := componentInputs(attempt.ProofIdentity.IdentityInputs)
-			for componentID, identity := range attempt.PendingTestGroups {
-				components[componentID] = identity
-			}
-			if goalID == "" || accountingRevision == 0 || attempt.GoalID != goalID || attempt.AccountingRevision != accountingRevision ||
-				components[id] != identities[id] {
-				continue
-			}
-			newest = newerAttempt(newest, attempt)
+		definition := definitions[id]
+		unrun := func(reason string) GroupResult {
+			return GroupResult{ID: id, Kind: definition.Kind, Obligations: append([]string(nil), definition.Obligations...),
+				InputDigest: result.CandidateTree, InputManifest: append([]string(nil), definition.Inputs...), ExecutionIdentity: identities[id], CWD: definition.CWD, Status: "not-run", NotRunReason: reason,
+				ToolIdentities: map[string]string{}, ReportDigests: map[string]string{}}
 		}
-		if newest != nil && newest.Terminal != nil && ReusableTerminal(result.Purpose, newest.Terminal.Result) && newest.TestResult != nil {
-			source := newest.TestResult
-			if source.ContractDigest == result.ContractDigest &&
-				source.BaseContractDigest == result.BaseContractDigest && source.JudgeKey == result.JudgeKey &&
-				source.BehaviorPolicyDigest == result.BehaviorPolicyDigest {
-				for _, group := range source.Groups {
-					if group.ID == id && (group.Status == "passed" || group.Status == "reused") && group.CollectionComplete &&
-						group.ExecutionIdentity != "" && group.ExecutionIdentity == identities[id] {
-						copyGroup := group
-						copyGroup.Status = "reused"
-						copyGroup.ReuseAttempt = newest.AttemptID
-						found = &copyGroup
-						break
-					}
-				}
-			}
-		}
-		if found == nil {
-			definition := definitions[id]
-			result.Groups = append(result.Groups, GroupResult{ID: id, Kind: definition.Kind, Obligations: append([]string(nil), definition.Obligations...),
-				InputDigest: result.CandidateTree, InputManifest: append([]string(nil), definition.Inputs...), ExecutionIdentity: identities[id], CWD: definition.CWD, Status: "not-run", NotRunReason: "missing-proof",
-				ToolIdentities: map[string]string{}, ReportDigests: map[string]string{}})
+		// A cadence attempt is the fresh sweep that establishes trust in a
+		// judge; it inherits nothing.
+		if result.Purpose == testpolicy.PurposeCadence {
+			result.Groups = append(result.Groups, unrun("cadence-executes-afresh"))
 			continue
 		}
-		result.Groups = append(result.Groups, *found)
-		switch found.Kind {
+		observation, found := newestReuseObservation(result, attempts, id, identities[id], excludedAttempt)
+		switch {
+		case !found:
+			result.Groups = append(result.Groups, unrun("missing-proof"))
+			continue
+		case observation.live:
+			result.Groups = append(result.Groups, unrun("live-observation-blocks-reuse"))
+			continue
+		case !observation.passed:
+			result.Groups = append(result.Groups, unrun("newest-observation-failed"))
+			continue
+		}
+		reused := observation.group
+		reused.Status = "reused"
+		reused.ReuseAttempt = observation.attemptID
+		result.Groups = append(result.Groups, reused)
+		switch reused.Kind {
 		case "build":
 			result.LaunchCounts.ReusedBuild++
 		default:
@@ -453,14 +525,4 @@ func RequireResultGroups(result TestResult, required []string) error {
 		return fmt.Errorf("testing result lacks required successful groups: %s", strings.Join(missing, ","))
 	}
 	return nil
-}
-
-// ReusableTerminal names the attempt terminals whose group evidence a
-// composed result, the runner and the receipt may reuse: a success always; a failed attempt only for the
-// delivery purpose (R-96-m1e), whose retry reruns the failed and unrun
-// groups alone and takes the predecessor's passed, complete groups as they
-// are. Whole-attempt exact reuse stays success-only: a failed attempt owns
-// no receipt.
-func ReusableTerminal(purpose testpolicy.Purpose, terminal string) bool {
-	return terminal == TerminalSuccess || (terminal == TerminalFailed && purpose == testpolicy.PurposeDelivery)
 }

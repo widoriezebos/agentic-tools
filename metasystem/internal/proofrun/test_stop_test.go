@@ -132,7 +132,7 @@ func TestDeliveryRetryReusesTheFailedPredecessorsPassedGroups(t *testing.T) {
 	template := componentAttemptResult("", "first", identities["first"], "passed")
 	template.Groups = nil
 	template.SelectedGroups, template.RequiredGroups = []string{"first", "second", "third"}, []string{"first", "second", "third"}
-	projection := ReusedTestResult(template, attempts, identities, contract, "goal-a", 2)
+	projection := ReusedTestResult(template, attempts, identities, contract)
 	byID := map[string]GroupResult{}
 	for _, group := range projection.Groups {
 		byID[group.ID] = group
@@ -140,18 +140,15 @@ func TestDeliveryRetryReusesTheFailedPredecessorsPassedGroups(t *testing.T) {
 	if byID["first"].Status != "reused" || byID["first"].ReuseAttempt != attempt.AttemptID {
 		t.Fatalf("the predecessor's passed group was not reused for the delivery retry: %+v", projection.Groups)
 	}
-	if byID["second"].Status != "not-run" || byID["second"].NotRunReason != "missing-proof" || byID["third"].Status != "not-run" || projection.Delivery.Sufficient {
+	if byID["second"].Status != "not-run" || byID["second"].NotRunReason != "newest-observation-failed" || byID["third"].Status != "not-run" || byID["third"].NotRunReason != "missing-proof" || projection.Delivery.Sufficient {
 		t.Fatalf("the failed or unrun groups were reused: %+v", projection.Groups)
 	}
-	if err := validateRetainedGroupReuse(controlRoot, "first", byID["first"], testpolicy.PurposeDelivery); err != nil {
+	if err := validateRetainedGroupReuse(controlRoot, "first", byID["first"]); err != nil {
 		t.Fatalf("the runner refused the delivery retry's reuse: %v", err)
-	}
-	if err := validateRetainedGroupReuse(controlRoot, "first", byID["first"], testpolicy.PurposeCadence); err == nil {
-		t.Fatal("a cadence attempt reused a group from a failed predecessor")
 	}
 	cadence := template
 	cadence.Purpose = testpolicy.PurposeCadence
-	for _, group := range ReusedTestResult(cadence, attempts, identities, contract, "goal-a", 2).Groups {
+	for _, group := range ReusedTestResult(cadence, attempts, identities, contract).Groups {
 		if group.Status == "reused" {
 			t.Fatalf("a cadence template reused %s from a failed predecessor", group.ID)
 		}

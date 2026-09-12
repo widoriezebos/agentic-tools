@@ -372,7 +372,8 @@ func TestVerifyRecoversCandidateDigestFromNewestSufficientAttempt(t *testing.T) 
 		InputManifest: group.Inputs, ExecutionIdentity: executionIdentity, Status: "passed", NativeLaunched: true,
 		CollectionComplete: true, NativeExitStatus: &zero, ToolIdentities: map[string]string{}, ReportDigests: map[string]string{}}}
 	// A sufficient attempt from an earlier plan remains a valid source for
-	// the deterministic candidate engine and for independently matching groups.
+	// the deterministic candidate engine; its groups are reused only while no
+	// newer observation at the same identity contradicts them.
 	successful.CandidateTree = strings.Repeat("9", 40)
 	successful.PlanDigest = strings.Repeat("1", 64)
 	successful.RecomputeDelivery()
@@ -406,9 +407,12 @@ func TestVerifyRecoversCandidateDigestFromNewestSufficientAttempt(t *testing.T) 
 	templateRequest := testingRunRequest(prepared, "", "", "", recovered, buildIdentity)
 	templateRequest.ProjectRoot, templateRequest.BaseCommit = "/project", "base"
 	projection := proofrun.ReusedTestResult(proofrun.NewTestResult(templateRequest), attempts,
-		map[string]string{groupID: executionIdentity}, contract, prepared.GoalID, prepared.AccountingRevision)
-	if !projection.Delivery.Sufficient || len(projection.Groups) != 1 || projection.Groups[0].ReuseAttempt != successful.AttemptID {
-		t.Fatalf("verification did not compose the earlier sufficient group after a failed attempt: %+v", projection)
+		map[string]string{groupID: executionIdentity}, contract)
+	// The later attempt failed the same group at the same identity: that is
+	// the newest observation, so the earlier pass is not reused (green then
+	// red yields no reuse) while the candidate digest above is still recovered.
+	if projection.Delivery.Sufficient || len(projection.Groups) != 1 || projection.Groups[0].Status != "not-run" || projection.Groups[0].NotRunReason != "newest-observation-failed" {
+		t.Fatalf("verification composed the earlier pass although a newer attempt failed the group at the same identity: %+v", projection)
 	}
 }
 

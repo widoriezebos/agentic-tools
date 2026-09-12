@@ -786,38 +786,49 @@ func runTestRun(args []string) int {
 		fmt.Fprintln(os.Stderr, "metasystem test run: bounded testing metadata preparation:", identityErr)
 		return proofrun.ExitAdmissionRefused
 	}
-	attempt, decision, joined, err := admitProofLaunch(proofLaunchAdmission{ControlRoot: prepared.Installation,
+	admission := proofLaunchAdmission{ControlRoot: prepared.Installation,
 		ExecutionRoot: prepared.ProjectRoot, ConfPath: prepared.ConfPath, GoalID: request.GoalID, RetryDecision: request.RetryDecision,
 		CapMin:     request.CapMin,
 		ScopeClass: "selected", CommandClass: "testing", IdentityInputs: append([]string{prepared.CandidateTree, prepared.ContractDigest,
 			prepared.BaseContractDigest, prepared.PolicyEngineDigest, candidateEngine.Digest, prepared.BehaviorPolicyDigest, planDigest}, identityInputs...), Environment: prepared.Environment,
-		SharedEngine: engine, SharedManifestDigest: manifestDigest, ComponentIdentities: identities})
+		SharedEngine: engine, SharedManifestDigest: manifestDigest, ComponentIdentities: identities,
+		// A cadence attempt is the fresh sweep: it never inherits a
+		// reusable-success answer from an earlier run of its goal.
+		ExecuteAfresh: request.Purpose == testpolicy.PurposeCadence}
+	attempt, decision, joined, err := admitProofLaunch(admission)
 	if err != nil {
 		fmt.Fprintln(os.Stderr, "metasystem test run:", err)
 		return proofrun.ExitAdmissionRefused
 	}
-	if decision.Disposition != proofrun.DispositionExecuted {
-		if decision.Disposition == proofrun.DispositionReusableSuccess {
-			attempts, readErr := proofrun.ReadAttempts(prepared.Installation)
-			if readErr != nil || identityErr != nil {
-				fmt.Fprintln(os.Stderr, "metasystem test run: reusable component evidence is unreadable")
-				return 1
-			}
-			template := proofrun.NewTestResult(preRequest)
-			projection, exact := proofrun.ExactReusableTestResult(template, attempts, identities, prepared.GoalID, prepared.AccountingRevision)
-			if !exact {
-				projection = proofrun.ReusedTestResult(template, attempts, identities, prepared.EffectiveContract, prepared.GoalID, prepared.AccountingRevision)
-			}
-			if !projection.Delivery.Sufficient {
-				fmt.Fprintln(os.Stderr, "metasystem test run: retained component evidence is incomplete")
-				return 1
-			}
+	if decision.Disposition == proofrun.DispositionReusableSuccess {
+		attempts, readErr := proofrun.ReadAttempts(prepared.Installation)
+		if readErr != nil || identityErr != nil {
+			fmt.Fprintln(os.Stderr, "metasystem test run: reusable component evidence is unreadable")
+			return 1
+		}
+		template := proofrun.NewTestResult(preRequest)
+		projection, exact := proofrun.ExactReusableTestResult(template, attempts, identities, prepared.GoalID, prepared.AccountingRevision)
+		if !exact {
+			projection = proofrun.ReusedTestResult(template, attempts, identities, prepared.EffectiveContract)
+		}
+		if projection.Delivery.Sufficient {
 			if err := publishTestingResult(request.ResultPath, projection); err != nil {
 				fmt.Fprintln(os.Stderr, "metasystem test run:", err)
 				return 1
 			}
 			return decision.ExitStatus
 		}
+		// The goal-scoped admission saw only this goal's successes; the seat's
+		// newest observations say otherwise (a newer failure or a live plan
+		// under another goal). Run afresh instead of stranding the caller.
+		admission.ExecuteAfresh = true
+		attempt, decision, joined, err = admitProofLaunch(admission)
+		if err != nil {
+			fmt.Fprintln(os.Stderr, "metasystem test run:", err)
+			return proofrun.ExitAdmissionRefused
+		}
+	}
+	if decision.Disposition != proofrun.DispositionExecuted {
 		if err := proofrun.EncodeResult(os.Stdout, request.ResultPath, decision); err != nil {
 			fmt.Fprintln(os.Stderr, "metasystem test run: publish no-child result:", err)
 			return 1
@@ -836,7 +847,7 @@ func runTestRun(args []string) int {
 			return retainIncompleteProofAttempt(prepared.Installation, attempt.AttemptID, joined, 1)
 		}
 		reused := proofrun.ReusedTestResultExcluding(proofrun.NewTestResult(preRequest), attempts, identities,
-			prepared.EffectiveContract, prepared.GoalID, prepared.AccountingRevision, attempt.AttemptID)
+			prepared.EffectiveContract, attempt.AttemptID)
 		for _, group := range reused.Groups {
 			if group.Status == "reused" {
 				reusedGroups[group.ID] = group
@@ -1083,7 +1094,7 @@ func verifyRetainedTesting(request testingSelectionRequest) (proofrun.TestResult
 		return proofrun.TestResult{}, err
 	}
 	return proofrun.ReusedTestResult(proofrun.NewTestResult(runRequest), attempts, identities,
-		prepared.EffectiveContract, prepared.GoalID, prepared.AccountingRevision), nil
+		prepared.EffectiveContract), nil
 }
 
 func printMovedProofInputs(request testingSelectionRequest, current proofrun.TestResult) {

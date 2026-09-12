@@ -269,6 +269,7 @@ type proofLaunchAdmission struct {
 	SharedEngine                                                        string
 	SharedManifestDigest                                                string
 	ComponentIdentities                                                 map[string]string
+	ExecuteAfresh                                                       bool
 }
 
 func canonicalProofRoot(path string) (string, error) {
@@ -321,7 +322,7 @@ func admitProofLaunch(request proofLaunchAdmission) (proofrun.Attempt, proofrun.
 			}
 			componentRequest := proofrun.AdmissionRequest{ControlRoot: request.ControlRoot, GoalID: attempt.GoalID,
 				GoalRevision: attempt.GoalRevision, AccountingRevision: attempt.AccountingRevision,
-				RetryDecisionPath: request.RetryDecision, ComponentIdentities: request.ComponentIdentities}
+				RetryDecisionPath: request.RetryDecision, ComponentIdentities: request.ComponentIdentities, ExecuteAfresh: request.ExecuteAfresh}
 			decision, decided, decisionErr := proofrun.JoinedComponentDecisionLocked(componentRequest)
 			if decisionErr != nil {
 				return proofrun.Attempt{}, proofrun.LaunchResult{}, false, decisionErr

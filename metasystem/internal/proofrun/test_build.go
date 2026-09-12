@@ -102,7 +102,7 @@ func RunTestPlan(ctx context.Context, request TestRunRequest) (TestResult, int, 
 		var runnable []string
 		for _, id := range stage.Groups {
 			if reused, ok := request.Reused[id]; ok {
-				if err := validateRetainedGroupReuse(request.ControlRoot, id, reused, request.Plan.Purpose); err != nil {
+				if err := validateRetainedGroupReuse(request.ControlRoot, id, reused); err != nil {
 					reused.Status, reused.CollectionComplete, reused.NativeLaunched = "invalid", false, false
 					reused.NotRunReason, reused.ReuseAttempt = "forged or stale component reuse: "+err.Error(), ""
 					result.Groups = append(result.Groups, reused)
@@ -558,16 +558,16 @@ func testGroupProgress(path, group, event, status, reason string) error {
 }
 
 // validateRetainedGroupReuse checks a supplied reuse against the attempt it
-// names in the control root: the attempt must be a retained terminal the
-// purpose may reuse (ReusableTerminal) and must own matching, complete,
-// passed evidence for the group.
-func validateRetainedGroupReuse(root, id string, reused GroupResult, purpose testpolicy.Purpose) error {
+// names in the control root: the attempt must have reached a
+// terminal (never live, whatever its result) and must own matching, complete,
+// passed evidence for the group at the same identity.
+func validateRetainedGroupReuse(root, id string, reused GroupResult) error {
 	if root == "" || reused.ReuseAttempt == "" || reused.ID != id || reused.ExecutionIdentity == "" {
 		return fmt.Errorf("component has no exact retained outer owner")
 	}
 	attempt, err := ReadAttempt(root, reused.ReuseAttempt)
-	if err != nil || attempt.Terminal == nil || !ReusableTerminal(purpose, attempt.Terminal.Result) || attempt.TestResult == nil {
-		return fmt.Errorf("outer attempt is not a retained terminal this purpose may reuse")
+	if err != nil || attempt.Terminal == nil || attempt.TestResult == nil {
+		return fmt.Errorf("outer attempt is not a retained terminal")
 	}
 	for _, recorded := range attempt.TestResult.Groups {
 		if recorded.ID == id && recorded.ExecutionIdentity == reused.ExecutionIdentity && recorded.CollectionComplete &&
@@ -974,10 +974,10 @@ func RevalidateRetainedGroupExecutionIdentities(ctx context.Context, request Tes
 		var newest *Attempt
 		for index := range attempts {
 			attempt := attempts[index]
-			// The same sources the composer may reuse: a terminal the purpose
-			// accepts, and the judge key rather than the engine's bytes, so a
+			// The same sources the composer may reuse: any attempt with a terminal,
+			// and the judge key rather than the engine's bytes, so a
 			// rebuilt judge still finds the metadata it retained.
-			if attempt.TestResult == nil || attempt.Terminal == nil || !ReusableTerminal(request.Plan.Purpose, attempt.Terminal.Result) {
+			if attempt.TestResult == nil || attempt.Terminal == nil {
 				continue
 			}
 			result := attempt.TestResult

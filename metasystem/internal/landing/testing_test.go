@@ -467,8 +467,8 @@ func TestSchemaTwoReceiptAcceptsReuseFromAFailedDeliveryPredecessor(t *testing.T
 	}
 	cadence := result
 	cadence.Purpose = testpolicy.PurposeCadence
-	if _, _, err := PrepareTestingReceiptPayload(f.root, tree, cadence, now.Add(2*time.Second)); err == nil || !strings.Contains(err.Error(), "its purpose may reuse") {
-		t.Fatalf("cadence result reusing a failed predecessor's pass was accepted at the receipt: %v", err)
+	if _, _, err := PrepareTestingReceiptPayload(f.root, tree, cadence, now.Add(2*time.Second)); err == nil || !strings.Contains(err.Error(), "reuses nothing") {
+		t.Fatalf("cadence result carrying a reused group was accepted at the receipt: %v", err)
 	}
 	broken := result
 	broken.Groups = []proofrun.GroupResult{reused, group("later", "passed", &zero)}

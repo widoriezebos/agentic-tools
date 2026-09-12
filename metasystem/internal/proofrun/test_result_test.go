@@ -403,7 +403,7 @@ func TestReusedTestResultComposesAcrossCandidateChangeAndExactRecoveryUsesExecut
 	template.Groups = nil
 	contract := testpolicy.Contract{Groups: []testpolicy.Group{{ID: "application", Kind: "unit", Inputs: []string{"source"}}}}
 
-	composed := ReusedTestResult(template, []Attempt{attempt}, map[string]string{"application": groupIdentity}, contract, "goal-a", 2)
+	composed := ReusedTestResult(template, []Attempt{attempt}, map[string]string{"application": groupIdentity}, contract)
 	if !composed.Delivery.Sufficient || composed.CandidateTree != currentTree || composed.AttemptID != "" || len(composed.Groups) != 1 ||
 		composed.Groups[0].Status != "reused" || composed.Groups[0].ReuseAttempt != attempt.AttemptID ||
 		composed.Groups[0].StartedAt != startedAt || composed.Groups[0].EndedAt != endedAt || composed.Groups[0].DurationMS != 1000 {
@@ -438,7 +438,7 @@ func TestReusedTestResultComposesAcrossCandidateChangeAndExactRecoveryUsesExecut
 		t.Run(mismatch.name, func(t *testing.T) {
 			changed := template
 			mismatch.change(&changed)
-			projection := ReusedTestResult(changed, []Attempt{attempt}, map[string]string{"application": groupIdentity}, contract, "goal-a", 2)
+			projection := ReusedTestResult(changed, []Attempt{attempt}, map[string]string{"application": groupIdentity}, contract)
 			if projection.Delivery.Sufficient || len(projection.Groups) != 1 || projection.Groups[0].Status != "not-run" {
 				t.Fatalf("mismatched policy binding reused evidence: %+v", projection)
 			}

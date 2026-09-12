@@ -16,6 +16,7 @@ import (
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/config"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/gittree"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/proofrun"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/testpolicy"
 )
 
 // PrepareTestingReceiptPayload builds the exact schema-2 receipt bytes before
@@ -128,6 +129,11 @@ func testingContractEnabled(root string) bool {
 func validateTestingAttemptOwners(installationRoot string, result proofrun.TestResult, allowCurrentLive bool) ([]string, error) {
 	attemptIDs := map[string]bool{}
 	for _, group := range result.Groups {
+		// A cadence attempt executes every group afresh; a cadence result that
+		// carries a reused group did not come from the composer.
+		if group.Status == "reused" && result.Purpose == testpolicy.PurposeCadence {
+			return nil, fmt.Errorf("testing group %s is reused in a cadence result, which reuses nothing", group.ID)
+		}
 		attemptID := result.AttemptID
 		if group.Status == "reused" {
 			attemptID = group.ReuseAttempt
@@ -140,15 +146,15 @@ func validateTestingAttemptOwners(installationRoot string, result proofrun.TestR
 			return nil, fmt.Errorf("testing group %s has no successful terminal outer attempt", group.ID)
 		}
 		currentLive := allowCurrentLive && attemptID == result.AttemptID && attempt.Terminal == nil && attempt.CancellationIntent == ""
-		// A group the result reused may come from a failed delivery attempt that
-		// stopped at another group (R-96-m1e); the owner's own record of the
-		// group, checked below, still has to be a complete pass. The result's
-		// own attempt must be a success or the live attempt being finalized.
+		// A reused group may come from any attempt that reached a terminal,
+		// whatever goal or result (retained-proof-reuse-crosses-claims-and-
+		// attempts); the owner's own record of the group, checked below, still
+		// has to be a complete pass at the same identity. The result's own
+		// attempt must be a success or the live attempt being finalized.
 		ownerAccepted := attempt.Terminal != nil && attempt.TestResult != nil &&
-			(attempt.Terminal.Result == proofrun.TerminalSuccess ||
-				(group.Status == "reused" && proofrun.ReusableTerminal(result.Purpose, attempt.Terminal.Result)))
+			(attempt.Terminal.Result == proofrun.TerminalSuccess || group.Status == "reused")
 		if !currentLive && !ownerAccepted {
-			return nil, fmt.Errorf("testing group %s has no terminal outer attempt its purpose may reuse", group.ID)
+			return nil, fmt.Errorf("testing group %s has no terminal outer attempt", group.ID)
 		}
 		owned := false
 		ownerResult := attempt.TestResult

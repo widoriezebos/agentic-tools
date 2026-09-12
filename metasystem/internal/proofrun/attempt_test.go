@@ -378,7 +378,7 @@ func TestComponentRepeatDecisionSpansPlanChanges(t *testing.T) {
 	template := componentAttemptResult("", "failed", strings.Repeat("3", 64), "passed")
 	template.Groups = nil
 	contract := testpolicy.Contract{Groups: []testpolicy.Group{{ID: "failed", Kind: "unit", Inputs: []string{"source"}, Obligations: []string{"failed"}}}}
-	projection := ReusedTestResult(template, attempts, map[string]string{"failed": strings.Repeat("3", 64)}, contract, "goal-a", 2)
+	projection := ReusedTestResult(template, attempts, map[string]string{"failed": strings.Repeat("3", 64)}, contract)
 	if projection.Groups[0].Status != "not-run" || projection.Delivery.Sufficient {
 		t.Fatalf("an older success masked the newest matching component failure: %+v", projection)
 	}
@@ -413,7 +413,7 @@ func TestExactReusableTestResultPreservesCommittedOuterOwner(t *testing.T) {
 		t.Fatalf("exact reuse lost its terminal owner or original result: ok=%v result=%+v", ok, exact)
 	}
 	composed := ReusedTestResult(template, attempts, map[string]string{"application": groupIdentity},
-		testpolicy.Contract{Groups: []testpolicy.Group{{ID: "application", Kind: "unit", Inputs: []string{"source"}}}}, "goal-a", 2)
+		testpolicy.Contract{Groups: []testpolicy.Group{{ID: "application", Kind: "unit", Inputs: []string{"source"}}}})
 	if composed.AttemptID != "" {
 		t.Fatalf("component composition invented an outer owner: %+v", composed)
 	}

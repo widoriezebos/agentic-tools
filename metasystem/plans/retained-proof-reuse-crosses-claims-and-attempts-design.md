@@ -149,6 +149,9 @@ adoption-fixtures runs is the candidate changing, not churn).
   rule: a delivery attempt beside a cadence run on one seat reuses nothing
   the cadence run is executing; the intent asks for it, and the cadence run
   is rare beside a landing.
+- The composed record names why a group is not reused: `missing-proof` (no
+  observation), `live-observation-blocks-reuse`, `newest-observation-failed`,
+  or `cadence-executes-afresh`.
 - The composition's result-level checks stay: contract digest,
   base-contract digest, judge key and behavior-policy digest of the source
   result must equal the template's.
@@ -157,15 +160,23 @@ adoption-fixtures runs is the candidate changing, not churn).
   requiring its record of the group to be passed and collection-complete at
   the same identity; the owner attempt must have a terminal (never live);
   its terminal result is no longer a criterion.
-- `ExactReusableTestResult` keeps its goal and accounting-revision scope:
-  it recovers a committed receipt, which belongs to one goal.
+- `ExactReusableTestResult` keeps its goal and accounting-revision scope (it
+  recovers a committed receipt, which belongs to one goal) but yields to the
+  seat: it republishes the committed green only while every group's newest
+  observation on the seat is still a pass (code critique F-3).
 - The frozen protection corpus probe `forge-component-reuse`
   (cmd/metasystem/test_protection.go) keeps holding: a reuse naming an
   attempt the control root never retained, or one whose record of the
   group is not a complete pass at the identity, is still refused.
-- Admission (`componentDecisionLocked`, the live-duplicate and
-  retry-required decisions) keeps its goal scope: it governs one goal's
-  attempts and budget, not evidence.
+- Admission (`componentDecisionLocked`, `noChildDecisionLocked`: the
+  live-duplicate, reusable-success and retry-required decisions) keeps its
+  goal scope for budget, duplicates and retry decisions, but it is only a
+  hint about evidence. `AdmissionRequest.ExecuteAfresh` makes it never answer
+  reusable-success: the worker sets it for every cadence attempt (clause 3,
+  code critique F-2) and, when a reusable-success answer met a composition
+  the seat's newest observations refuse, admits again with it and runs
+  afresh instead of exiting red (code critique F-1). Live duplicates and
+  retry decisions still apply.
 
 ### 3.2 Cadence attempts execute every group afresh
 
