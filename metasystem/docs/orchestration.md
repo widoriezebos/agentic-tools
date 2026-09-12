@@ -115,8 +115,10 @@ stays within the goal's tier box, never rewrites an approval a person made
 brain, or once the entry has expired or been revoked. The approval it
 records stands after the entry ends. An entry covers tier 1, tier 2 or
 both (tier 2 since tier-from-severity-and-novelty landed); tier 3 stays the
-person's own act; unpark waits on Wido's word (section 6 of
-plans/budget-extends-by-consumption-design.md).
+person's own act. An entry naming `unpark` lets the seat lift a park a
+person recorded with `park` or `unapprove` on a tier-1 goal, saying what
+it verified (`goal unpark --id <goal> --under <entry> --verified "<what
+holds now>"`, R-105-m1e); never a blocker's park.
 
 Under R-60-m1, the reviewer stops critique at the first round with no material
 finding. A material finding must change what gets built and name that

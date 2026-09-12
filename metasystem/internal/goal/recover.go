@@ -348,7 +348,10 @@ func requestForEntry(e Endpoint, entry Entry) (PublishRequest, error) {
 		if cascade {
 			return unparkArcRequest(r, target), nil
 		}
-		return unparkRequest(r, target), nil
+		if in.Args["under"] != "" {
+			return PublishRequest{}, fmt.Errorf("an unpark under power of attorney is judged live at the act and cannot be replayed from journal text; close this entry by hand and rerun goal unpark --under while the entry is live")
+		}
+		return unparkRequest(r, target, ""), nil
 	case "reopen":
 		return reopenRequest(r, target), nil
 	case "edit":

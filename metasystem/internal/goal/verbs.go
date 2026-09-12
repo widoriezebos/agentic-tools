@@ -1181,7 +1181,7 @@ func ResolveAttorney(root, id, verb string, now time.Time) (PowerOfAttorneyEntry
 	}
 	entry, ok := rootAttorney(p.Tree.Root, id)
 	if !ok {
-		return PowerOfAttorneyEntry{}, fmt.Errorf("no power of attorney %s is recorded; a person records one with goal grant --by <name> --tiers 1,2 --verbs approve,set-budget --expires <YYYY-MM-DD>", id)
+		return PowerOfAttorneyEntry{}, fmt.Errorf("no power of attorney %s is recorded; a person records one with goal grant --by <name> --tiers 1,2 --verbs approve,set-budget,unpark --expires <YYYY-MM-DD>", id)
 	}
 	if live, why := entry.LiveAt(now); !live {
 		return PowerOfAttorneyEntry{}, fmt.Errorf("power of attorney %s is not live: %s", entry.ID, why)
@@ -1902,16 +1902,41 @@ func parkRequest(r VerbRequest, id, because string) PublishRequest {
 // Unpark returns a parked goal to its approved or queued resting state. The park's records
 // stay in the history; Goal-free clears when it was declared.
 func Unpark(r VerbRequest, id string) (PublishResult, error) {
-	return Publish(r.Endpoint, unparkRequest(r, id))
+	if r.Attorney != nil {
+		return PublishResult{}, fmt.Errorf("an unpark under power of attorney says what the seat verified: use goal unpark --under <entry> --verified <what holds now>")
+	}
+	return Publish(r.Endpoint, unparkRequest(r, id, ""))
+}
+
+// UnparkUnderAttorney lifts a park a person recorded, as the seat's own
+// act under a recorded power of attorney (R-105-m1e): tier-1 goals only,
+// never a blocker park, never a claimed goal, and the seat says what it
+// verified, which the history line carries beside the park's reason.
+func UnparkUnderAttorney(r VerbRequest, id, verified string) (PublishResult, error) {
+	if r.Attorney == nil {
+		return PublishResult{}, fmt.Errorf("an unpark under power of attorney names its entry with --under")
+	}
+	if err := attorneyActRequest(r, nil); err != nil {
+		return PublishResult{}, err
+	}
+	if strings.TrimSpace(verified) == "" || strings.ContainsAny(verified, "\r\n") {
+		return PublishResult{}, fmt.Errorf("an unpark under power of attorney says, in one line, what the seat verified holds now (--verified); the park's own reason names the condition")
+	}
+	return Publish(r.Endpoint, unparkRequest(r, id, verified))
 }
 
 // unparkRequest builds the verb's complete transaction request — the
 // ONE mutation semantics both the live verb and recovery replay
-// run (recovery rebuilds through the real verb paths).
-func unparkRequest(r VerbRequest, id string) PublishRequest {
+// run (recovery rebuilds through the real verb paths). An attorney unpark
+// is not replayed: its entry is judged live at the act (recover.go).
+func unparkRequest(r VerbRequest, id, verified string) PublishRequest {
+	args := map[string]string(nil)
+	if r.Attorney != nil {
+		args = map[string]string{"under": r.Attorney.ID, "verified": verified}
+	}
 	return PublishRequest{
 		Opid: r.opid(), Machine: r.Actor.Machine, Lineage: r.Actor.Lineage,
-		Intent:  Intent{Verb: "unpark", Targets: []string{id}, Args: intentArgs(r, nil)},
+		Intent:  Intent{Verb: "unpark", Targets: []string{id}, Args: intentArgs(r, args)},
 		Message: "goal unpark " + id,
 		Mutate: func(tip string) ([]Change, error) {
 			t, err := loadTree(r.Endpoint.Root, tip)
@@ -1928,10 +1953,37 @@ func unparkRequest(r VerbRequest, id string) PublishRequest {
 			if f.State != StateParked {
 				return nil, fmt.Errorf("goal %s is %s, not parked", id, f.State)
 			}
+			var entry PowerOfAttorneyEntry
+			if r.Attorney != nil {
+				// The seat lifts a person's park under the entry: tier 1
+				// only (R-105-m1e), never the park a blocker's open recorded.
+				entry, err = liveAttorney(t, r, "unpark")
+				if err != nil {
+					return nil, err
+				}
+				if err := attorneyCoversGoal(entry, "unpark", f); err != nil {
+					return nil, err
+				}
+				if f.Tier != 1 {
+					return nil, fmt.Errorf("power of attorney %s lifts a person's park on tier-1 goals only (R-105-m1e); goal %s is tier %d", entry.ID, id, f.Tier)
+				}
+				if f.Parked != nil && f.Parked.Blocker != "" {
+					return nil, fmt.Errorf("goal %s is parked behind %s; a blocker's park returns by itself when every blocker is done (R-93-m1e), and no power of attorney lifts it", id, f.Parked.Blocker)
+				}
+				// A person's park that gained a blocker edge afterwards is
+				// not a blocker's park, but lifting it proves nothing: the
+				// goal cannot be claimed until the blocker is done.
+				for _, dep := range f.Blocked {
+					if depState(t, dep) != StateDone {
+						return nil, fmt.Errorf("goal %s is blocked by %s, which is not done; a power of attorney lifts a person's park only when the goal can be worked (R-93-m1e)", id, dep)
+					}
+				}
+			}
 			// A human's park is a standing reservation an agent cannot
-			// silently lift (the table's human-origin-park row).
-			if f.Parked != nil && strings.HasPrefix(f.Parked.By, "human:") && r.Actor.Human == "" {
-				return nil, fmt.Errorf("goal %s was parked by %s; lifting a human's pause is a human act", id, f.Parked.By)
+			// silently lift (the table's human-origin-park row); under a
+			// power of attorney the seat lifts it and says what it verified.
+			if f.Parked != nil && strings.HasPrefix(f.Parked.By, "human:") && r.Actor.Human == "" && r.Attorney == nil {
+				return nil, fmt.Errorf("goal %s was parked by %s; lifting a human's pause is a human act, or the seat's under a power of attorney that names unpark (goal unpark --under <entry> --verified <what holds now>)", id, f.Parked.By)
 			}
 			// A blocker's park lifts by itself when every blocker is done
 			// (R-93-m1e); an agent cannot lift it earlier, a human can.
@@ -1945,14 +1997,22 @@ func unparkRequest(r VerbRequest, id string) PublishRequest {
 			f.State = restingState(f)
 			f.Parked = nil
 			touch(f, r, "unpark", []string{id})
+			if r.Attorney != nil {
+				recordAttorney(f, entry.ID)
+				f.History[len(f.History)-1].Reason = "verified: " + verified
+			}
 			changes := []Change{{Path: livePath(id), Content: RenderFile(f)}}
 			if t.Root != nil && t.Root.Free != nil {
 				t.Root.Free = nil
 				t.Root.Revision++
-				t.Root.History = append(t.Root.History, HistoryLine{
+				line := HistoryLine{
 					At: r.stamp(), Opid: r.opid(), Verb: "unpark",
 					Actor: r.Actor.historyActor(), Targets: []string{id}, Keep: -1,
-				})
+				}
+				if r.Attorney != nil {
+					line.AuthorityOutcome, line.AuthorityRuling = AuthorityOutcomePowerOfAttorney, entry.ID
+				}
+				t.Root.History = append(t.Root.History, line)
 				changes = append(changes, Change{Path: goalsPrefix + "backlog.md", Content: RenderRoot(t.Root)})
 			}
 			return ackDisplacements(t, r, changes), nil

@@ -1,8 +1,8 @@
 # A budget extends once by consumption, and low-tier ceremony runs under power of attorney (goal budget-extends-by-consumption-and-breach-parks)
 
-- Status: critiqued once (2026-09-12, nine material findings, all folded below); rule 2 builds now for tier 1; rule 1 is the design of record and is rewritten and read again when proof-attempts-settle-to-minutes-run lands (R-94-m1e)
+- Status: revision 4 (2026-09-12 evening) after the second design read (Codex, gpt-5.6-sol; section 5). Rule 2 landed 4468c8211 for tier 1 (tier 2 joined with f55bbb6bf). Rule 1 is rewritten against both reads now that proof attempts settle to observed minutes (a633b7a08, 46e5678e4); the attorney unpark of R-105-m1e is section 2b. One invariant is Wido's (section 7); the build proceeds on the code's reading of it.
 - Goal: budget-extends-by-consumption-and-breach-parks (goal 8 of plans/delivery-efficiency-plan.md)
-- Next step: build rule 2 (approve and set-budget under a tier-1 entry) behind the fixtures in section 4; put the unpark question of section 6 to Wido
+- Next step: the attorney unpark (section 2b) lands with one code read on Opus 5 (the R-108-m1c lane); rule 1 (section 1) is built by Codex Sol in a worktree from the section 4 checklist, read on Opus, and lands as the next slice; Wido's word on section 7
 
 ## Decisions already recorded
 
@@ -32,6 +32,12 @@ verb under a StopCapability, and resume is a human act. Every attempt
 reserves its cap (120 minutes for a diagnostic run today), so consumption
 overstates what ran until proof-attempts-settle-to-minutes-run lands.
 
+Every attempt reserved its full cap until a633b7a08: an ended proof attempt
+is now charged the minutes it ran (`observedMinutes`, rounded up, at least
+one; internal/dispatch/budget.go's proof-attempt loop) and a live one its
+reservation, and 46e5678e4 keeps the deadline as a reservation figure only.
+Consumption is therefore what ran, and rule 1 can read it.
+
 Human authority for approve, set-budget, unpark of a human park, resume and
 accept-risk comes from three proofs: freshly observed enrolled-terminal
 ancestry (`humanauthority.Prove`), a recorded temporary relayed word with a
@@ -46,60 +52,124 @@ record: nothing on disk names its scope or its end, and every act reads as
 five-day audit counted 43 set-budget acts, 26 repeat raises within a day
 and 11 overnight.
 
-## 1. Rule 1: the budget extends once by consumption (design of record)
+## 1. Rule 1: the budget extends once by consumption (revision 3)
 
-**Trigger.** Admission is about to refuse a proposal on attemptLimit or
-reservedJobMinutesLimit (used plus proposed, admission's own test) and on no
-other member. Elapsed, active-job and review-round breaches are never
-extended: elapsed has its grace and the other two are not consumption.
+**What the rule is for.** Forty-three set-budget acts in five days,
+twenty-six of them repeat raises within a day, eleven overnight (R-94-m1e):
+a goal that is working consumes its box and a person is woken to raise it.
+The rule lets a goal that is demonstrably advancing extend its attempts and
+minutes once, by itself, and leaves the second exhaustion to a person.
+
+**Trigger.** The revision seam (`EvaluateGoalRevisionAdmissionForDispatch`,
+internal/dispatch/admission.go, reached by `job goal-revision-admission`
+from the dispatcher and in-process by the proof run) is about to refuse a
+proposal on `attemptLimit` or on `reservedJobMinutesLimit` (at the limit,
+or used plus the proposed cap over it: the seam's own test) and on no
+other member, with no live-stop reason (a corrupt-over-limit state is a
+stop, never an extension). Elapsed, active-job and review-round breaches
+are never extended: elapsed has its grace and its stop, the other two are
+not consumption. The revision seam is the one authority for the offer: the
+seat walk (`EvaluateGoalAdmission`) keeps refusing as today and offers
+nothing, because it judges without a proposal and would spend the
+once-per-goal marker on a refusal the exact seam might not make.
 
 **Advancement.** The goal advanced within the two hours before the
-judgement. The critique showed that "a completed job record" is satisfied
+judgement. The first read showed that a completed job record is satisfied
 by the very attempts that spent the box, and that a critique register close
-writes no timestamped record at all, so the evidence set is narrowed to what
-exists only on acceptance: (a) a reviewed round, the completed code-critic
-root with its mirrored diff (internal/dispatch/review_reference.go), or a
-landing or carry record for this goal; (c) a delivery receipt for this goal
-that passed: a proof attempt with `GoalID`, `TestResult.Purpose` delivery,
-`Terminal.Result` success and `EndedAt` inside the window. A goal that
-consumed its box without one of these gets no extension.
+writes no record of its own; the second read tightened each selector to
+what proves acceptance. The evidence is one of:
 
-**The extension.** A new verb, `goal extend-budget --id <goal>
---proposed-cap <minutes>`, is the seat's act (the claim holder's pair). It
-refuses unless admission would refuse the goal on those two members for
-that proposal (the same used-plus-proposed test the revision seam runs) and
-the advancement test holds; it refuses when the goal already carries a
-`BudgetExtension` record. It raises attemptLimit and reservedJobMinutesLimit
-by the goal's tier box values, keeps the other three members, and writes on
-the goal file:
+- a closed critique: a chain root for this goal carrying
+  `independentCritiqueJobRef` to a code-critic chain root with
+  `chainClosed=true`, its register folded, and its latest member
+  `completed` with `endedAt` inside the window (the pointer alone is an
+  index, internal/dispatch/review_reference.go; the closed chain is what
+  internal/validate/recertification.go already demands);
+- a landing: a RECEIPT line in memory/receipts.log read at the accepted
+  tip, `goal=` this goal, `type=implement` and `outcome=shipped` (the
+  shape only a code landing writes; a design, investigate, blocked or
+  parked receipt is not a landing), corrections applied (a CORRECTION line
+  that moves `goal=` away removes the evidence), whose epoch is inside the
+  window; its identity is epoch plus the line's SHA-1, as corrections
+  already address a line;
+- a passed delivery receipt: a proof attempt for this goal with a valid
+  `TestResult`, `Purpose` delivery, `Delivery.Sufficient=true`,
+  `Terminal.Result` success, and `EndedAt` (equal to the terminal's time)
+  inside the window (internal/proofrun/attempt.go).
+
+The code-critic round and the proof attempt spend the same box they may
+help unlock; R-94-m1e names exactly those as advancement, so that is
+lawful. A goal that consumed its box without one of these gets no
+extension. The window is two hours before the judgement, on the clock the
+seam already uses (`now`).
+
+**The extension.** A new verb, `goal extend-budget --id <goal> --revision
+<n> --proposed-cap <minutes> --role <role> --dispatch-mode <mode>
+--destructive-reach <class>`, is the seat's act (the claim holder's pair,
+no human, no attorney). It replays the exact revision seam under the goal
+revision lock with the same arguments the refused proposal carried
+(cmd/metasystem owns this: the goal package cannot import dispatch), and
+proceeds only when that seam refuses on attempts or minutes alone with no
+live-stop reason and names the acceptance evidence; it refuses when the
+seam admits (nothing to extend), when the refusal is on another member or
+is a stop, when no evidence is inside the window, and when the goal
+already carries a `BudgetExtension` record. It raises `attemptLimit` and
+`reservedJobMinutesLimit` by the goal's tier box values (config.TierBox),
+keeps `elapsedLimit`, `activeJobLimit` and `reviewRoundLimit`, and writes
+on the goal file:
 
 ```text
 - BudgetExtension: at=<iso> opid=<opid> attemptLimit=<from>-><to> reservedJobMinutesLimit=<from>-><to> evidence=<review|landing|receipt>:<record id>@<iso>
 ```
 
-The record is the durable once-per-goal marker: not part of the claim
-record, so release, reclaim, steal and set-budget leave it in place. The
-extension does not rebind the claim revision or start a new accounting
-episode; consumption is preserved. A human set-budget afterwards is
-unchanged law; the marker stays, so the goal never extends itself twice.
+The record is the durable once-per-goal marker: it is not part of the
+claim record, so release, re-claim, steal, approve, unapprove, set-budget,
+done and reopen leave it in place, and it survives the accounting-revision
+change a human set-budget makes; split keeps it on the archived parent and
+copies it to no member (a member is a new goal with its own box). The
+extension does not rebind the claim revision and starts no accounting
+episode: the tuple changes, the consumption stays, and the approval record
+stays. An extension is not an approval: the human's `ApprovalDigest` is
+not rewritten (rewriting it would say the human approved the extension),
+so the approval check becomes extension-aware: an approval whose `at`
+precedes the marker's `at` is validated against the tuple the marker's
+`from` values reconstruct; an approve or set-budget after the marker
+validates against the current tuple as today. A human set-budget afterwards
+is unchanged law, and the marker stays, so the goal never extends itself
+twice. `goal edit` cannot write or remove the record; a hand edit that
+adds, removes or alters the line refuses at reconcile; recovery replays
+the verb from its journaled offer.
 
-**The second exhaustion.** The critique showed the premise wrong: today an
-attempt or minutes exhaustion does not breach-stop; `job goal-admission`
-and the revision seam exit 9 and dispatch.sh asks for a budget revision,
-which is the raise loop this goal exists to cut. What the second exhaustion
-does is therefore an open design question for the rewrite, not "as today".
+**Wiring.** `GoalRevisionAdmission` gains `Extension *BudgetExtensionOffer`
+(the evidence kind, record id and time, and the from and to tuples), set
+only when the refusal is on attempts or minutes alone with no live-stop
+reason, no marker on the goal, and evidence inside the window. `job
+goal-revision-admission --format json` prints the verdict with the offer;
+the exit codes do not change (9 refuses, 10 stops). The refusal line
+carries the offer in words for a reader (`; extension available:
+<kind> <id> at <iso>`) and, after an extension, the marker (`; extended
+once at <iso>; a further raise is a person's set-budget`). The
+dispatcher's `require_goal_revision_admission` calls the json form,
+decodes the offer, runs `goal extend-budget` once with the same arguments
+and judges again; a second refusal refuses as today. The proof run
+(cmd/metasystem/proof_run.go) reads the Go field before it reserves and
+does the same in process. `require_goal_admission` is unchanged.
 
-**Wiring.** Both seams gain the verdict: `EvaluateGoalRevisionAdmission`
-(the only place used-plus-proposed is judged, reached by `job
-goal-revision-admission` from dispatch.sh's `require_goal_revision_admission`
-and in-process from the proof run) and `EvaluateGoalAdmission`. Each prints
-`BUDGET_EXTENSION_AVAILABLE goal=<id> evidence=<...>` with its own exit code
-(11 is taken by stop-batch-reconcile's INDETERMINATE); the callers run
-`goal extend-budget` once and judge again.
+**The second exhaustion.** Both reads showed R-94-m1e's premise wrong: an
+attempts or minutes exhaustion does not breach-stop today; the seam exits
+9 and the dispatcher asks for a budget revision. This is the one invariant
+of the page that is Wido's (section 7). The build proceeds on the code's
+reading: after the one extension a further exhaustion refuses as today and
+the refusal line names the marker, so the seat's report and the channel
+carry the fact and no seat retries the verb; no new stop is added. If Wido
+means a breach-stop, it is one further slice (a stop reason, the
+capability and cancellation flow, exit 10 and its fixtures) on top of this
+build, not a change to it.
 
-**Order.** Rule 1 is built after proof-attempts-settle-to-minutes-run
-lands; this section is rewritten against the findings above and read once
-more before it builds.
+**Where consumption is read.** The verb and the seam read one projection
+(`ProjectBudget`), so what the seat sees and what admission judges agree;
+the projection counts ended proof attempts at their observed minutes and
+live ones at their reservation (the settlement this rule waited for).
 
 ## 2. Rule 2: low-tier ceremony under a recorded power of attorney
 
@@ -162,6 +232,35 @@ word carried by an agent (brainHumanWordClassification); an attorney act is
 exactly that, so it is refused there too. Attorney entries are not relays,
 so `refuseRelayedAfterFleetEnrollment` does not end them.
 
+## 2b. The attorney unpark (R-105-m1e)
+
+Wido's word of 2026-09-12 evening answers section 6: under a tier-1 entry
+(tier 2 once it joined, f55bbb6bf), a seat may lift a park a person
+recorded by `park` or by `unapprove` on a goal the entry covers; never a
+blocker park (R-93-m1e), never a breach-stop; and the park's own reason
+must name a condition the seat can verify.
+
+`goal unpark --id <goal> --under <entry> --verified "<what holds now>"` is
+the seat's act under the entry. `unpark` joins `AttorneyVerbs`; a grant
+names it like the others. The verb refuses when the entry does not name
+`unpark` or is not live; when the goal's tier is not 1 (R-105-m1e grants
+the unpark for tier-1 goals only, under an entry that covers tier 1 (a
+tiers 1,2 entry lifts no tier-2 park, a tier-2 entry lifts nothing); tier 2
+would be a new ruling); when the park carries a `blocker=` token (that
+park lifts by itself when its blockers conclude); when the goal is not
+parked (a breach-stopped goal is claimed, so the fence is never touched);
+and when `--verified` is empty. The journaled intent carries `under` and
+`verified`; recovery does not replay an attorney unpark (like grant and
+revoke, the entry's liveness is judged at the act), it closes the entry by
+name and the seat reruns the verb while the entry is live. It writes the `unpark` history line as the seat's own with
+`authorityOutcome=POWER_OF_ATTORNEY authorityRuling=<entry>` and the
+reason `verified: <what holds now>`, so a reader sees the park's reason
+beside what the seat checked. What the seat verifies is the seat's word:
+the verb cannot judge "the vendor shipped"; the history line makes the
+claim auditable and the entry's expiry bounds the trust. `unapprove`'s
+park (`approval revoked: …`) lifts the same way and returns the goal to
+queued, because the approval it revoked is gone.
+
 ## 3. Alternatives not taken
 
 - Admission writing the extension itself: judgement is read-only everywhere
@@ -201,16 +300,57 @@ Rule 2 (built now, tier 1):
 - docs/orchestration.md and docs/backlog-mechanism.md carry the entry and
   the act; AGENTS.md is not touched (word budget).
 
-Rule 1 (after settlement; fixtures rewritten with the section):
+Rule 1 (revision 3):
 
-- internal/dispatch: the extension verdict on both seams, only for attempts
-  or minutes breaches with acceptance evidence inside two hours and no
-  marker; never for elapsed.
-- internal/goal: extend-budget once, marker survives release, reclaim and
-  set-budget, consumption preserved, a second exhaustion does what the
-  rewrite decides.
+- internal/dispatch: the offer on the revision seam only, for an attempts
+  breach at the limit and for a minutes refusal at the limit or by
+  used-plus-proposed (the existing 170+120 over 240 shape), never for
+  elapsed, a review-round breach, a mixed breach or a live-stop reason,
+  never when the marker is present; each of the three evidence kinds found
+  and named (a closed critique chain, a shipped implement RECEIPT line at
+  the tip with corrections applied, a sufficient delivery attempt) and
+  each weaker shape refused (an open critique pointer, a design or parked
+  receipt, a corrected-away goal, a terminal-success-but-insufficient
+  attempt, evidence outside the window); the refusal line carries the
+  offer and, after an extension, the marker; `--format json` carries the
+  offer with exit 9.
+- internal/goal: extend-budget raises the two members by the tier box,
+  keeps the other three, writes the record and the history line, refuses
+  with a marker, from another pair and from a person; the marker survives
+  release, re-claim, steal, approve, unapprove, set-budget, done and
+  reopen, stays on the split parent and reaches no member; the claim
+  revision is untouched; the approval check accepts a pre-extension
+  approval against the reconstructed tuple and a later approve or
+  set-budget against the current one; a hand-written, hand-removed or
+  hand-altered record refuses at reconcile; recovery replays the verb from
+  its journaled offer; the file round-trips.
+- cmd/metasystem: extend-budget replays the seam and refuses when the seam
+  admits, refuses on another member or names a stop; the proof run's
+  in-process path extends, re-judges and reserves.
+- scripts/agents/dispatch-fixtures.sh: a goal exhausted on attempts with a
+  shipped RECEIPT line inside the window is extended once by the
+  dispatcher and the dispatch proceeds; the same goal exhausted again
+  refuses naming the marker.
+- scripts/agents/goal-cli-fixtures.sh: `extend-budget` on a fixture goal
+  with a fixture receipt line; the second call refuses with the marker.
 
-## 6. Question for Wido (R-36-m3)
+The attorney unpark (section 2b):
+
+- internal/goal: unpark under a live entry naming `unpark` lifts a park
+  recorded by `park` and one recorded by `unapprove` on a tier-1 goal,
+  with the history line's outcome, ruling and verified reason; refuses a
+  blocker park, a tier-2 goal under a tiers 1,2 entry, an entry without
+  the verb, an empty `--verified`, and a goal that is not parked (an
+  attorney unpark on a fenced claimed goal refuses and leaves the fence
+  unchanged); recovery closes an interrupted attorney unpark by name.
+- cmd/metasystem: `goal unpark --under` accepts `--verified` and combines
+  with neither `--by` nor a proof.
+- scripts/agents/goal-cli-fixtures.sh: the `power-of-attorney` scenario
+  grants `unpark`, parks a tier-1 goal in Wido's name and the seat lifts it
+  under the entry with a verified reason; a blocker park is refused.
+- docs/backlog-mechanism.md carries the extension and the attorney unpark.
+
+## 6. Question for Wido (R-36-m3), answered by R-105-m1e
 
 R-95-m1e names "unpark of a seat park" among the attorney acts. A seat's
 own park needs no authority today, so that grant is empty; what a seat
@@ -222,12 +362,22 @@ that for one goal on 2026-09-09 and the audit's overnight waits include such
 parks. Evidence for no: a person's park is the one pause a seat has never
 been able to end. Advice: yes, for parks recorded by `park` and `unapprove`
 on tier-1 goals, never for a blocker park (R-93-m1e) and never for a
-breach-stop. Until his word, unpark is outside the entry's verbs.
+breach-stop. Wido's answer is R-105-m1e (2026-09-12 evening): yes, as
+advised; section 2b builds it.
 
 The critique also found that `goal unpark --by <name> --lineage <x>` from
 an agent shell lifts a person's park with no proof at all (the proof gate
 exists for approve and set-budget only); that is proposal P-5 in
 memory/backlog-notes.md, a person's to open.
+
+## 7. Wido's invariant (R-36-m3)
+
+R-94-m1e says a second exhaustion "breach-stops as today"; the code has
+never breach-stopped on attempts or minutes (a corrupt-over-limit state
+stops; equality and a crossing proposal refuse with exit 9 and the
+dispatcher asks for a raise). Both reads name this as Wido's to settle.
+The build takes the code's reading (refuse, naming the marker); if Wido
+means a stop, one further slice adds it. Put to him with this landing.
 
 ## 5. Critique record
 
@@ -250,3 +400,43 @@ job is not an advance; register closes leave no record) folded into the
 rule 1 design of record, which is rewritten and read again before it
 builds. Non-material notes N1 to N9 kept with the findings in the session
 record.
+
+Revision 3 (2026-09-12 evening, m1c): rule 1 rewritten against F6 to F9
+now that proof attempts settle to observed minutes; the verb takes no
+proposal and extends an exhausted box; the availability rides the refusal
+line and a verdict field, no new exit code; the second exhaustion refuses
+as today naming the marker (put to Wido as the reading of R-94-m1e's
+"breach-stops as today"); the attorney unpark of R-105-m1e added as
+section 2b. Awaiting its second read.
+
+Round 2 (design), Codex gpt-5.6-sol, 2026-09-12 evening, revision 3: ten
+material and two minor findings; the loop closes under R-97-m1e with one
+invariant to Wido (section 7). Folded: F1 the verb replays the exact
+revision seam with the refused proposal's arguments and the seat walk
+offers nothing; F3 the approval check is extension-aware and the human's
+digest is not rewritten; F4 a `--format json` verdict carries the offer
+for the dispatcher and the proof run reads the Go field; F5 a closed
+critique chain, not a pointer; F6 a shipped implement RECEIPT line at the
+tip with corrections applied; F7 a sufficient delivery attempt; F8 the
+marker's lifecycle across approve, unapprove, set-budget, steal, reopen
+and split; F9 the attorney unpark is tier 1 only; F10 the journal carries
+`under` and `verified` and recovery closes the act by name; F11 the fenced
+fixture reworded; F12 the stale sentence removed. F2 is section 7.
+
+Round 3 (implementation of section 2b), Opus 5 code-critique agent (the
+R-108-m1c lane), 2026-09-12 evening: three material findings folded. The
+unpark checked the goal's tier but not the entry's recorded tiers, so a
+tier-2 entry lifted a tier-1 park (`attorneyCoversGoal` now runs beside the
+tier-1 check, and section 2b says so); docs/orchestration.md still said
+unpark waited on Wido's word; the CLI's refusal of `--by` with `--under`
+was unproven for unpark (the bed proves it). Minor findings folded: the
+grant help and the missing-entry refusal name `unpark`; a stray
+`--verified` without `--under` refuses; the stale test name; a person's
+park that gained a blocker edge afterwards is not lifted until the blocker
+is done; the root record's history line carries the entry when the unpark
+clears a free slot. Acknowledged, not built: an engine older than the
+landing reads an entry naming `unpark` as outside the bounds and honours
+none of its verbs (docs advise a separate entry while older engines run).
+The grammar probes (reason text carrying `reason=`, authority tokens,
+tabs, a 1000-character value) all round-tripped; the breach-stop fence is
+unreachable from a parked goal; recovery closure and idempotency hold.

@@ -520,7 +520,7 @@ func printSyncResult(res goal.PublishResult, err error) int {
 // it consumes and ignores the rest.
 type syncFlags struct {
 	root, by, id, intent, next, origin, because, conclude, arc, pin, members string
-	blocks, under, tiers, verbs, expires                                     string
+	blocks, under, tiers, verbs, expires, verified                           string
 	lineage, digest, elapsedLimit, approvedRef, temporaryWord, reviewBy      string
 	budgetBox, confirm, risk, basis, evidence                                string
 	finding, chain, why, test                                                string
@@ -553,9 +553,12 @@ func parseSyncFlags(name string, args []string) (*syncFlags, bool) {
 	fs.StringVar(&f.next, "next", "", "the next step")
 	fs.StringVar(&f.origin, "origin", "main", "creation provenance: human|main")
 	fs.StringVar(&f.blocks, "blocks", "", "the live goal this open unblocks: it parks with this blocker in the same publish and returns when the blocker is done (a seat's open, origin main, requires it)")
-	fs.StringVar(&f.under, "under", "", "act under a recorded power of attorney entry (approve and set-budget): the seat's own act, no --by and no proof")
+	fs.StringVar(&f.under, "under", "", "act under a recorded power of attorney entry (approve, set-budget and unpark): the seat's own act, no --by and no proof")
+	if name == "unpark" {
+		fs.StringVar(&f.verified, "verified", "", "with --under: what the seat verified holds now, one line, recorded beside the park's reason")
+	}
 	fs.StringVar(&f.tiers, "tiers", "", "grant: the tiers the power of attorney covers (1 in this build)")
-	fs.StringVar(&f.verbs, "verbs", "", "grant: the verbs the power of attorney covers, from approve,set-budget")
+	fs.StringVar(&f.verbs, "verbs", "", "grant: the verbs the power of attorney covers, from approve,set-budget,unpark")
 	fs.StringVar(&f.expires, "expires", "", "grant: the last day the power of attorney covers, YYYY-MM-DD, at most seven days out")
 	fs.StringVar(&f.because, "because", "", "the park's reason")
 	fs.StringVar(&f.conclude, "conclude", "", "the conclusion")
@@ -602,8 +605,8 @@ func parseSyncFlags(name string, args []string) (*syncFlags, bool) {
 		fmt.Fprintf(os.Stderr, "goal %s does not take --blocks\n", name)
 		return nil, false
 	}
-	if name != "approve" && name != "set-budget" && f.under != "" {
-		fmt.Fprintf(os.Stderr, "goal %s does not take --under; a power of attorney covers approve and set-budget\n", name)
+	if name != "approve" && name != "set-budget" && name != "unpark" && f.under != "" {
+		fmt.Fprintf(os.Stderr, "goal %s does not take --under; a power of attorney covers approve, set-budget and unpark\n", name)
 		return nil, false
 	}
 	if name != "grant" && (f.tiers != "" || f.verbs != "" || f.expires != "") {
@@ -882,6 +885,17 @@ func trySyncMutation(name string, args []string) (int, bool) {
 		return printSyncResult(res, err), true
 	case "unpark":
 		if !need(f.id, "id") {
+			return 2, true
+		}
+		if f.under != "" {
+			if f.arc != "" {
+				fmt.Fprintln(os.Stderr, "goal unpark --under lifts one goal's park; --arc is not taken")
+				return 2, true
+			}
+			return runGoalUnderAttorney("unpark", f), true
+		}
+		if f.verified != "" {
+			fmt.Fprintln(os.Stderr, "goal unpark --verified belongs to an unpark under a power of attorney: add --under <entry>")
 			return 2, true
 		}
 		if f.arc != "" {
@@ -1466,6 +1480,12 @@ func runGoalUnderAttorney(name string, f *syncFlags) int {
 			return 2
 		}
 		res, err = goal.SetBudgetApproved(req, f.id, *budget, nil)
+	case "unpark":
+		if f.verified == "" {
+			fmt.Fprintln(os.Stderr, "goal unpark --under says what the seat verified holds now: --verified <one line>")
+			return 2
+		}
+		res, err = goal.UnparkUnderAttorney(req, f.id, f.verified)
 	}
 	return printSyncResult(res, err)
 }

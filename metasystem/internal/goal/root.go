@@ -55,7 +55,7 @@ type PowerOfAttorneyEntry struct {
 }
 
 // AttorneyVerbs are the verbs a delegation may cover in this build.
-var AttorneyVerbs = []string{"approve", "set-budget"}
+var AttorneyVerbs = []string{"approve", "set-budget", "unpark"}
 
 // AttorneyMaxDays bounds an entry's life: expires is at most this many days
 // after since (R-95-m1e: no entry lives longer than seven days).

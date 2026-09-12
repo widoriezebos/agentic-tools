@@ -37,7 +37,8 @@ An exact verified answer to a `budget-above-norm` question re-approves the goal 
 
 **Acts under power of attorney.** A person may delegate approve and
 set-budget on tier-1 and tier-2 goals for up to seven days: `goal grant
---by <name> --tiers 1,2 --verbs approve,set-budget --expires <YYYY-MM-DD>`
+--by <name> --tiers 1,2 --verbs approve,set-budget,unpark --expires
+<YYYY-MM-DD>`
 records an entry in the
 root record's `PowerOfAttorney:` section under the person's own proof, and
 `goal revoke --by <name> --id <entry>` closes it early. A seat acts under it
@@ -50,6 +51,17 @@ refusal), and by any approval a person made (proven, relayed or channel),
 which neither verb rewrites. An entry a hand edit widens past the ruling's
 bounds (tier, verbs, seven days) stays readable and is never honoured. An
 approval given under an entry stands after the entry ends (R-95-m1e).
+An entry may also name `unpark` (R-105-m1e): `goal unpark --id <goal>
+--under <entry> --verified "<what holds now>"` lets the seat lift a park a
+person recorded with `park` or `unapprove` on a tier-1 goal under an entry
+that covers tier 1 (a tiers 1,2 entry still lifts no tier-2 park); the
+history line carries the entry and what the seat verified beside the
+park's own reason. An engine built before `unpark` joined the verbs reads
+an entry naming it as outside the bounds and honours none of its verbs,
+so grant `unpark` in its own entry while older engines run. A blocker's park is never
+lifted this way (it returns by itself, R-93-m1e), a claimed goal is not
+parked and its fence is untouched, and recovery does not replay such an
+unpark: the entry is judged live at the act and the seat reruns it.
 
 Health judges claimed goals only. A claimed goal without the tuple is
 dead under `claimed-goal-appetite` and names this remedy:

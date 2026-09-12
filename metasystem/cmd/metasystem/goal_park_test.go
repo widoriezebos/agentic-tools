@@ -32,11 +32,16 @@ func TestOnlyGoalOpenTakesBlocks(t *testing.T) {
 	}
 }
 
-// --under belongs to approve and set-budget; the grant flags to grant.
-func TestOnlyApproveAndSetBudgetTakeUnder(t *testing.T) {
+// --under belongs to the attorney verbs (approve, set-budget and unpark,
+// the last with --verified); the grant flags to grant.
+func TestUnderBelongsToTheAttorneyVerbs(t *testing.T) {
 	root := t.TempDir()
-	if _, ok := parseSyncFlags("unpark", []string{"--root", root, "--id", "x", "--under", "e"}); ok {
-		t.Fatal("goal unpark accepted --under")
+	if _, ok := parseSyncFlags("park", []string{"--root", root, "--id", "x", "--because", "y", "--under", "e"}); ok {
+		t.Fatal("goal park accepted --under")
+	}
+	u, ok := parseSyncFlags("unpark", []string{"--root", root, "--id", "x", "--under", "e", "--verified", "the vendor shipped 1.2"})
+	if !ok || u.under != "e" || u.verified != "the vendor shipped 1.2" {
+		t.Fatalf("goal unpark carries --under and --verified (R-105-m1e): ok=%v %+v", ok, u)
 	}
 	if _, ok := parseSyncFlags("open", []string{"--root", root, "--id", "x", "--tiers", "1"}); ok {
 		t.Fatal("goal open accepted --tiers")

@@ -15,6 +15,12 @@ m1c; m1e wrote it and coordinates the program.
   subagent over `git diff origin/main`, its material findings folded and
   tested. No second read, no delegate chain, no delivery receipt (R-98-m1e:
   the machinery returns per capability when its gate is measured).
+  Lanes since Wido's word of 2026-09-12 evening (R-108-m1c): the seat
+  designs and briefs; Codex Sol (gpt-5.6-sol) critiques designs and builds
+  a well-specified slice in a worktree of the seat's checkout; Opus 5 (the
+  code-critique agent, model opus) reads the build; the seat folds,
+  verifies by hand and lands. A slice the seat builds by hand is the
+  exception, taken only while a slice is too unsettled to brief.
 - Land by human commit in Wido's name from the enrolled terminal through the
   shared drivers in `/Users/wido/LocalStorage/hact-20260912/` (README there).
   `land.sh <your checkout> <message file> <diff file>` stages and lands;

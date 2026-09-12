@@ -1491,11 +1491,67 @@ if by_out=$("$ms" goal approve --root "$clone" --id poa-late --under "$entry" --
 fi
 grep -q "seat's own act" <<<"$by_out" \
   || { echo "the --by refusal does not say whose act it is: $by_out" >&2; exit 1; }
-if unpark_out=$("$ms" goal unpark --root "$clone" --id poa-late --under "$entry" 2>&1); then
-  echo "unpark accepted --under: $unpark_out" >&2; exit 1
+# The attorney unpark (R-105-m1e): a seat under an entry naming unpark lifts
+# a park a person recorded on a tier-1 goal, saying what it verified; an
+# entry without the verb, a tier-2 goal and a blocker park refuse.
+"$ms" goal park --root "$clone" --id poa-late --by Wido --because "wait for the vendor's 1.2 release" >/dev/null
+if noverb_out=$("$ms" goal unpark --root "$clone" --id poa-late --under "$entry" --verified "1.2 is on the vendor's page" 2>&1); then
+  echo "an entry without unpark lifted a person's park: $noverb_out" >&2; exit 1
 fi
-grep -q 'does not take --under' <<<"$unpark_out" \
-  || { echo "the unpark refusal is not the flag refusal: $unpark_out" >&2; exit 1; }
+grep -q 'covers approve,set-budget, not unpark' <<<"$noverb_out" \
+  || { echo "the verb refusal does not name the entry's verbs: $noverb_out" >&2; exit 1; }
+if bare_out=$("$ms" goal unpark --root "$clone" --id poa-late 2>&1); then
+  echo "a seat lifted a person's park with no entry: $bare_out" >&2; exit 1
+fi
+grep -q "lifting a human's pause is a human act" <<<"$bare_out" \
+  || { echo "the bare unpark refusal changed: $bare_out" >&2; exit 1; }
+lift_grant=$("$ms" goal grant --root "$clone" --by Wido --fixture-human-authority \
+  --tiers 1,2 --verbs unpark --expires 2026-08-24)
+grep -q '"outcome":"confirmed"' <<<"$lift_grant" \
+  || { echo "a grant naming unpark did not confirm: $lift_grant" >&2; exit 1; }
+lift=$(sed -n 's/.*"entry":"\([^"]*\)".*/\1/p' <<<"$lift_grant")
+if noreason_out=$("$ms" goal unpark --root "$clone" --id poa-late --under "$lift" 2>&1); then
+  echo "an attorney unpark ran without --verified: $noreason_out" >&2; exit 1
+fi
+grep -q -- '--verified' <<<"$noreason_out" \
+  || { echo "the missing --verified refusal does not name the flag: $noreason_out" >&2; exit 1; }
+if lift_by=$("$ms" goal unpark --root "$clone" --id poa-late --under "$lift" --verified "it holds" --by Wido 2>&1); then
+  echo "unpark --under combined with --by: $lift_by" >&2; exit 1
+fi
+grep -q "seat's own act" <<<"$lift_by" \
+  || { echo "the --by refusal on unpark does not say whose act it is: $lift_by" >&2; exit 1; }
+if stray_verified=$("$ms" goal unpark --root "$clone" --id poa-late --verified "it holds" 2>&1); then
+  echo "unpark --verified without --under ran: $stray_verified" >&2; exit 1
+fi
+grep -q -- '--under' <<<"$stray_verified" \
+  || { echo "the stray --verified refusal does not name --under: $stray_verified" >&2; exit 1; }
+lift_out=$("$ms" goal unpark --root "$clone" --id poa-late --under "$lift" --verified "1.2 is on the vendor's page")
+grep -q '"outcome":"confirmed"' <<<"$lift_out" \
+  || { echo "the attorney unpark did not confirm: $lift_out" >&2; exit 1; }
+lift_tip=$(git -C "$origin" rev-parse main)
+git -C "$clone" cat-file -p "$lift_tip:plans/goals/poa-late.md" >"$tmp/poa-late.md"
+grep -q '^- State: queued$' "$tmp/poa-late.md" \
+  || { echo "the lifted goal did not return to its resting state" >&2; cat "$tmp/poa-late.md" >&2; exit 1; }
+grep -q " unpark actor=fixture-machine+fixture-lineage targets=poa-late authorityOutcome=POWER_OF_ATTORNEY authorityRuling=$lift reason=verified: 1.2 is on the vendor's page" "$tmp/poa-late.md" \
+  || { echo "the attorney unpark's history line does not carry the entry and what was verified" >&2; cat "$tmp/poa-late.md" >&2; exit 1; }
+# poa-medium is tier 2 (approved under the tiers 1,2 entry above): the
+# ruling grants the unpark for tier-1 goals only, whatever the entry covers.
+"$ms" goal park --root "$clone" --id poa-medium --by Wido --because "the person pauses a tier-2 goal" >/dev/null
+if tier_lift=$("$ms" goal unpark --root "$clone" --id poa-medium --under "$lift" --verified "it holds" 2>&1); then
+  echo "a tier-2 person park was lifted under attorney: $tier_lift" >&2; exit 1
+fi
+grep -q 'tier-1 goals only' <<<"$tier_lift" \
+  || { echo "the tier refusal does not name the ruling's scope: $tier_lift" >&2; exit 1; }
+# poa-small is the seat's claimed tier-1 goal: a defect opened against it
+# parks it behind the blocker, and no entry lifts that park (R-93-m1e).
+"$ms" goal open --root "$clone" --id poa-defect --blocks poa-small \
+  --intent "The defect that blocks poa-small." --next "Fix it." \
+  --risk severity=1,novelty=1,exposure=1,accumulation=1 --basis "power of attorney fixture" >/dev/null
+if blocker_lift=$("$ms" goal unpark --root "$clone" --id poa-small --under "$lift" --verified "the defect is fixed" 2>&1); then
+  echo "a blocker park was lifted under attorney: $blocker_lift" >&2; exit 1
+fi
+grep -q 'returns by itself' <<<"$blocker_lift" \
+  || { echo "the blocker refusal does not say the park returns by itself: $blocker_lift" >&2; exit 1; }
 export METASYSTEM_GOAL_NOW=2026-08-26T09:00:00Z
 if late_out=$("$ms" goal approve --root "$clone" --id poa-late --under "$entry" 2>&1); then
   echo "an expired entry approved a goal: $late_out" >&2; exit 1
