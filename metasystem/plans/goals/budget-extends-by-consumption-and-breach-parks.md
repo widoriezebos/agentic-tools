@@ -1,6 +1,6 @@
 # budget-extends-by-consumption-and-breach-parks
 
-- State: claimed
+- State: parked
 - Priority: 1
 - Sequence: 6
 - Risk: severity=2 novelty=2 exposure=3 accumulation=1 basis="severity 2: the budget law is the spend guard; novelty 2: extension by consumption and auto-park are new rules; exposure 3: every claimed goal; accumulation 1: the tuple stays"
@@ -9,13 +9,12 @@
 - Origin: human
 - Next step: 2026-09-12 m1c: design page plans/budget-extends-by-consumption-design.md written and critiqued once (nine material findings folded). Rule 2 built for tier 1: goal grant/revoke, approve and set-budget --under <entry>, authority=attorney; unpark waits on Wido's word (design section 6); rule 1 is the design of record and builds after proof-attempts-settle-to-minutes-run lands (R-94-m1e). Verifying rule 2 on the candidate tree (goal-cli bed and audit through the engine, package tests, fast gate, one critic read), then land.
 - OpenedAt: 2026-09-11T15:45:08Z
-- Revision: 19
+- Revision: 20
 - Pinned: m1c
 - Budget: elapsedLimit=1d attemptLimit=10 reservedJobMinutesLimit=1200 activeJobLimit=1 reviewRoundLimit=3
 - BudgetExceptions: 0
 - Approved: by=human:Wido at=2026-09-11T20:33:20Z revision=14 opid=G5J453V38KHNYSDP6P099NZS3Q-m1-c6925449 authority=proven digest=e0d545d12aaa71688dc4f8e0426a3e9f178822a2ae60a25f3c409f238b1a9f4d
-- Claimed: machine=m1c lineage=main-1789191340-90689-8975a9 at=2026-09-12T07:18:57Z revision=17 accountingRevision=17 episodeAt=2026-09-12T07:18:57Z episodeRevision=17
-- StopCapability: generation=17 revision=17 machine=m1c claimEpoch=5 fenceEpoch=0
+- Parked: by=human:Wido at=2026-09-12T09:33:24Z displaced=m1c+main-1789191340-90689-8975a9@2026-09-12T07:18:57Z because=Rule 2 landed 4468c8211 (tier-1 approve and set-budget under a recorded power of attorney). Rule 1 waits on proof-attempts-settle-to-minutes-run (m1e, R-94-m1e) and is the design of record in plans/budget-extends-by-consumption-design.md, to be rewritten and read once more before it builds; the attorney unpark question is with Wido in section 6 of that page. First to return on m1c when the blocker lands.
 
 History:
 - 2026-09-11T15:45:08Z 9QD56QEP3YRJBVPYD7Y5S3BS7S-m1e-5083721b open actor=m1e+main-1789141490-27414-b9c0d2 targets=budget-extends-by-consumption-and-breach-parks
@@ -37,4 +36,5 @@ History:
 - 2026-09-12T07:18:57Z HSYCR4FGWYB94K6XTT9MD9YVMH-m1c-69c9e454 claim actor=m1c+main-1789191340-90689-8975a9 targets=budget-extends-by-consumption-and-breach-parks
 - 2026-09-12T07:29:00Z WK0PQ7JPK1WQHG29DJS284PC4A-m1e-c6925449 done actor=human:Wido targets=actionable-metrics,breach-clock-and-budget-honesty,budget-extends-by-consumption-and-breach-parks,capped-round-continues-instead-of-restarting,coordinator-context-stays-under-budget,coordinator-wakes-on-events-not-polls,critique-always,critique-closes-on-folded-proof,deep-battery-under-ten-minutes,delegate-rounds-reuse-a-warm-gate,delivery-receipt-stops-at-first-failure,failed-job-attention,fixture-stewards-outlive-their-suite,goal-abandoned-with-a-reason,human-goal-verbs-forgiving,job-record-birth-token,land-ready-work-lands-without-a-claim-slot,landing-receipt-survives-records-drift,landing-refuses-without-its-receipt-line,lease-sweep-death-evidence,live-job-on-a-done-goal-unnoticed,machine-concurrency-governor,proof-attempts-settle-to-minutes-run,proof-groups-detect-hangs-by-progress-not-the-clock,retained-proof-reuse-crosses-claims-and-attempts,small-change-lane,steward-catchup-livelock,steward-revives-a-done-goal,stop-batch-strands-a-resumable-goal,suite-custody,tier-from-severity-and-novelty,token-spend-fence,watch-verb,watcher-repair-request-never-names-current,winddown-census-handoff-leak reason=priority-order from=1:7 to=1:6
 - 2026-09-12T07:55:34Z GWNAAKEPVM6GAXFSMJKKPWNVRY-m1c-69c9e454 edit actor=m1c+main-1789191340-90689-8975a9 targets=budget-extends-by-consumption-and-breach-parks
-Integrity: sha256=086fdc0fd19e5ce8c49f9222761f533fe6ec696b17416d4015abfd02d70746c8
+- 2026-09-12T09:33:24Z STASH1Y8XY98QVBVYEKSZ5WQ4M-m1e-c6925449 park actor=human:Wido targets=budget-extends-by-consumption-and-breach-parks displaced=m1c+main-1789191340-90689-8975a9@2026-09-12T07:18:57Z reason=Rule 2 landed 4468c8211 (tier-1 approve and set-budget under a recorded power of attorney). Rule 1 waits on proof-attempts-settle-to-minutes-run (m1e, R-94-m1e) and is the design of record in plans/budget-extends-by-consumption-design.md, to be rewritten and read once more before it builds; the attorney unpark question is with Wido in section 6 of that page. First to return on m1c when the blocker lands.
+Integrity: sha256=46f202b3672018989072bb29c7b0f51b533996b6a6d6181e13a885285d40150f
