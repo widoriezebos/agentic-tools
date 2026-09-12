@@ -47,6 +47,15 @@ Work your set in its backlog order. Each goal's page under plans/goals/ carries
 its intent and DONE sentence; the design page of a goal that needs one is
 written by you and read by your critic before you build.
 
+## Landed under this page
+
+- m1c, 2026-09-12, 8de5ef009: goal open --blocks (seat-opened-goals-name-their-blocker).
+  A blocker's park writes a `blocker=<id>` token into the goal's Parked record;
+  an engine older than 8de5ef009 cannot parse a ledger that carries one. Rebuild
+  and re-arm before your next ledger read once any seat has used --blocks.
+  A seat's own open now needs --blocks naming the goal it holds; what blocks
+  nothing goes to memory/backlog-notes.md as a proposal.
+
 ## Ledger hygiene
 
 - Claim before you start: `bin/metasystem goal claim --root . --id <goal>`
