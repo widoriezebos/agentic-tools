@@ -3,6 +3,7 @@ package missionrunner
 import (
 	"os"
 	"os/exec"
+	"syscall"
 	"testing"
 	"time"
 )
@@ -24,11 +25,25 @@ func TestParsePSCPUTime(t *testing.T) {
 func TestProcessTreeCPUSecondsCountsDescendants(t *testing.T) {
 	// A busy child under a shell: the tree's CPU time grows while the shell
 	// itself sits in wait, so descendant time must be part of the sum.
+	// The shell and its burner share a process group of their own, and the
+	// group is what ends. A bare Process.Kill ended only the shell, before
+	// its own `kill $!` ran, and every run of this test left a `yes` at a
+	// full core behind it: ten of them burned through the night of
+	// 2026-09-11 under every cadence measurement (found 2026-09-12 08:40,
+	// parent launchd, start times matching the runs).
 	command := exec.Command("sh", "-c", "yes >/dev/null & sleep 3; kill $!")
+	command.SysProcAttr = &syscall.SysProcAttr{Setpgid: true}
 	if err := command.Start(); err != nil {
 		t.Fatal(err)
 	}
-	defer func() { _ = command.Process.Kill(); _ = command.Wait() }()
+	group := command.Process.Pid
+	t.Cleanup(func() {
+		_ = syscall.Kill(-group, syscall.SIGKILL)
+		_ = command.Wait()
+		if err := syscall.Kill(-group, 0); err == nil {
+			t.Errorf("the burner outlived the test in process group %d", group)
+		}
+	})
 	first, ok := processTreeCPUSeconds(command.Process.Pid)
 	if !ok {
 		t.Skip("platform process reader is unavailable on this test host")
