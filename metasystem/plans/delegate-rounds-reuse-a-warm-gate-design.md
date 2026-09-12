@@ -152,6 +152,54 @@ engine already holds proof for.
   never looks), so the blocker was rebuilt the other way round: the seat
   proves each round on its own engine (`job prove-round`, section 4).
 
+- Slice C, second chain, 2026-09-12 afternoon and evening (UTC times), chain
+  implementer-2a9bb5b2f97c0c266271e765 on the implementer runtime
+  (codex, gpt-5.6-sol), briefs
+  plans/delegate-rounds-reuse-a-warm-gate-chain2-round{1..5}-brief.md, every
+  round proved by the seat with `bin/metasystem job prove-round`; round
+  time from the job records, proof time from the attempt records
+  (StartedAt to EndedAt), reuse from the groups' `reuseAttempt`.
+
+  | Round | Change | Delegate round | Its own gate | Seat proof: attempt | Groups ran / reused |
+  |---|---|---|---|---|---|
+  | 1 | one comment, internal/refusal | 92 s | go test 3.0 s, fast gate 18.1 s (cold) | 34 s (proof-mtydmgu6) | 11 / 0 |
+  | 2 | one docs line | 49 s | fast gate 4.7 s (warm) | 13 min (proof-mtyeadcn, deep) | 46 / 0, adoption red |
+  | 3 | one comment, internal/refusal | 62 s | go test 0.8 s, fast gate 11.0 s | 28 s (proof-mtyjix0z) | 10 / 2 |
+  | 4 | one docs line | 56 s | fast gate 10.3 s | 5.2 s (proof-mtyk0qtc) | 1 / 11 |
+  | 5 | one word in a comment, internal/refusal | 63 s | go test 0.7 s, fast gate 5.0 s | 28 s (proof-mtyk2qf5) | 10 / 2 |
+
+  Rounds 4 and 5 are the measure the design asked for, taken once the judge
+  and the chain's base stood still: a docs-only round verifies in 5 seconds
+  of proof (one audit group whose inputs name the docs reran; the eleven
+  others were reused from round 3's attempt, each naming it), and a
+  one-package round in 28 seconds (the ten groups whose inputs include
+  `internal/**` reran on the warm cache, the two canaries were reused).
+  With the delegate's own round both are under two minutes end to end,
+  against the three the DONE clause allows. The warm cache shows in the
+  delegate's gate: 18 s cold in round 1, 4.7 to 11 s warm after.
+
+  Rounds 2 and 3 are not clean measures and are kept as what happened.
+  Round 2's proof went deep (47 groups, 13 minutes, nothing reused)
+  because the seat's own landings between rounds 1 and 2 changed the
+  judge key (cmd/ and internal/ moved), and it went red on a real defect it
+  found: the adoption bed's section selector died on an interrupted
+  printf under load (fixed, 82f50da0c). Round 3's first proof went red on
+  trunk itself (staticcheck on m1e's artificial-clock landing, fixed by
+  m1e, 56bc8fbb1); the chain worktree was then fast-forwarded onto trunk
+  by the seat (the follow-up had left it four commits behind, none on the
+  chain's files) and proved again, which is the 28 s row. Round 1's proof
+  was closed as failed by a defect of the new verb itself (the launcher
+  tried to make a testing receipt out of a diagnostic attempt; fixed,
+  758e41514), which also cost round 2 a retry decision.
+
+  Two more facts the chain taught. A round's proof is a diagnostic attempt
+  and therefore never stops at the first failed group, which is what a
+  follow-up wants (every red at once). And every seat proof of a round is
+  an attempt of the goal: the goal's attempt limit of 10 was spent after
+  three rounds plus the blocker's landings, and was raised to 24 in
+  Wido's name under the standing authority; a chain of n rounds needs at
+  least n attempts of budget on top of its landings.
+
 ## 6. What does not change
 
 - Which runtime runs a delegate, the envelope's rule that writes stay inside

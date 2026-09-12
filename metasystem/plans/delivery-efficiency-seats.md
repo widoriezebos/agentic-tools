@@ -85,6 +85,28 @@ written by you and read by your critic before you build.
   the engine. Note: `goal.sh approve` from the m1e checkout refused (its
   artifacts/agents/authority/human-terminal.json is absent); the approve ran
   from the m1b checkout through the same pane.
+- m1b, 2026-09-12 night: the set is landed and measured. The blocker
+  delegate-proof-runs-inside-the-sandbox is done (616d049c6, 758e41514):
+  its critique read showed the in-sandbox design proves the wrong thing in
+  the wrong place (no enrolled engine in a job worktree; an in-sandbox
+  attempt lands where the landing never looks), so the seat proves each
+  delegate round on its own engine with `bin/metasystem job prove-round
+  --root . --job <chain>` (worktree snapshot, diagnostic purpose, the
+  landing reuses the passed groups by identity), and the engine-appended
+  testing requirement, the brief template and docs/orchestration.md now say
+  what a delegate can do (focused tests and the fast gate with the provided
+  cache, no commit, no engine proof verbs). Every seat rebuilds and re-arms
+  (cmd/ and internal/ changed). Goal delegate-rounds-reuse-a-warm-gate's
+  measured chain (implementer-2a9bb5b2f97c0c266271e765, five rounds) is on
+  its design page section 5: a docs-only round proves in 5 s with 11 of 12
+  groups reused, a one-package round in 28 s; the goal is Wido's to
+  conclude (origin human). Reds met and fixed on the way: git worktree
+  administration raced on a half-written `.git/worktrees` entry (616d049c6,
+  a file lock per repository); the section selector's per-line printf died
+  on EINTR under load (82f50da0c); trunk's fast gate was red on staticcheck
+  after 1f27c5062 (m1e fixed it, 56bc8fbb1). Every seat proof of a round
+  is an attempt of the goal: the attempt limit was raised to 24 in Wido's
+  name; a chain of n rounds needs n attempts on top of its landings.
 
 ## A red that is a flaky test (Wido, 2026-09-12 afternoon)
 
