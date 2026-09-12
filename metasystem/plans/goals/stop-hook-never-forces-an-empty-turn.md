@@ -9,11 +9,12 @@
 - Origin: human
 - Next step: Read the Stop hook (scripts/agents and internal supervision, turnverdict.go) and classify the recorded refusal causes into seat-actionable, steward-owned and idle-path; write the design; critique; build; land. || Absorbed 2026-09-11 from goal stop-hook-arming-failure-drops-the-cause: Park naming program goal 4 (stop-hook-never-forces-an-empty-turn); clause to add: the arming-failure line carries the component outcome, detail and remedy exactly as metasystem up prints them (ENROLLMENT_DRIFT with the steward-restart remedy in the specimen), never the bare 'supervision arming failed'; fixture bed with || Absorbed 2026-09-11 from goal stop-hook-arming-races-fixture-beds: Park naming program goal 4 (stop-hook-never-forces-an-empty-turn); clause to add: every refusal the hook issues is persisted with the underlying up aggregate before the hook exits (supervision-hook.sh:829-830 recorded nothing on 2026-09-09), the hook records its turn generation on the checkout, and fixture-bed rows (7, || Absorbed 2026-09-11 from goal stop-hook-treats-a-fenced-goal-as-current-work: Park naming program goal 4 (stop-hook-never-forces-an-empty-turn); clause to add: a held goal under a StopFence is reported FENCED once per unchanged fence state (extend the seen-state marker of 47e5f2f2 to the goal branch) and the WORK IN FLIGHT early exit of the verdict's normal branch still appends the FENCED lines  || Absorbed 2026-09-11 from goal turn-verdict-hardening: Park naming program goal 4 (stop-hook-never-forces-an-empty-turn); clause to add: INFLIGHT counts only jobs and attempts joined to the ready frontier by goal and revision, never any same-session job, and READY is scoped to the machine and lineage owner pair with a freshness proof for the projected board; two-seat fixtu
 - OpenedAt: 2026-09-11T15:45:01Z
-- Revision: 20
+- Revision: 21
 - Pinned: m1b
 - Budget: elapsedLimit=1d attemptLimit=10 reservedJobMinutesLimit=1200 activeJobLimit=1 reviewRoundLimit=3
 - BudgetExceptions: 0
 - Approved: by=human:Wido at=2026-09-11T20:33:06Z revision=10 opid=E8FTZC5HAT5QQ1ANYHR53FNVAE-m1-c6925449 authority=proven digest=2e1c7149776e2d5db51a6e1b319f9e6b77f7793aa24d621a6222d5f077423609
+- Sliced: machine=m1b lineage=main-1789191336-90295-e4b24b revision=20 at=2026-09-12T17:01:57Z
 - Claimed: machine=m1b lineage=main-1789191336-90295-e4b24b at=2026-09-12T17:00:18Z revision=20 accountingRevision=20 episodeAt=2026-09-12T17:00:18Z episodeRevision=20
 - StopCapability: generation=20 revision=20 machine=m1b claimEpoch=2 fenceEpoch=0
 
@@ -38,4 +39,5 @@ History:
 - 2026-09-12T15:43:39Z 7VED87G6APJ5MWZRGHMHBYVEF8-m1-c6925449 set-priority actor=human:Wido targets=budget-extends-by-consumption-and-breach-parks,coordinator-context-stays-under-budget,coordinator-wakes-on-events-not-polls,critique-always,critique-closes-on-folded-proof,delegate-rounds-reuse-a-warm-gate,proof-attempts-settle-to-minutes-run,proof-groups-detect-hangs-by-progress-not-the-clock,small-change-lane,steward-launches-resolve-their-model,stop-hook-never-forces-an-empty-turn reason=priority-order subject=small-change-lane from=1:4 to=1:5 requested-sequence=3
 - 2026-09-12T15:44:43Z QK44Q1RY4W0HD1PTH5F7BBWR6Q-m1-c6925449 set-pin actor=human:Wido targets=stop-hook-never-forces-an-empty-turn
 - 2026-09-12T17:00:18Z S26YG6YMRQAM6M7VZN0A9TF3G8-m1b-30a7e141 claim actor=m1b+main-1789191336-90295-e4b24b targets=stop-hook-never-forces-an-empty-turn
-Integrity: sha256=138d28f549aadaafadf827f8ab431673c589e88ba180abb141f31e18f2556d9f
+- 2026-09-12T17:01:57Z D05DGGFRAX567CKNKQVAH9QT4S-m1b-30a7e141 slice-start actor=m1b+main-1789191336-90295-e4b24b targets=stop-hook-never-forces-an-empty-turn
+Integrity: sha256=453a5416e1d940b74543299d6986dd9c2afa83953028fca9c3c919991b9ca58c
