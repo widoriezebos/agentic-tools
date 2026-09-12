@@ -23,6 +23,7 @@ import (
 
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/atomicfile"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/config"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/hostload"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/identity"
 )
 
@@ -72,6 +73,11 @@ type RetryEvidence struct {
 	EvidenceSHA256 string `json:"evidenceSha256"`
 	Rationale      string `json:"rationale"`
 	Automatic      bool   `json:"automatic,omitempty"`
+	// PriorLoad and PriorAttribution carry the prior attempt's host facts
+	// into the decision that retries it, so a retry names the load it is
+	// retrying against.
+	PriorLoad        *AttemptLoad `json:"priorLoad,omitempty"`
+	PriorAttribution string       `json:"priorAttribution,omitempty"`
 }
 
 type ReservationOwner struct {
@@ -91,6 +97,10 @@ type AttemptTerminal struct {
 	ExitStatus int    `json:"exitStatus"`
 	Reason     string `json:"reason,omitempty"`
 	At         string `json:"at"`
+	// Attribution is "load" when a non-success terminal was committed while
+	// the end sample showed a crowded host (another proof launcher on the
+	// host, or the minute load at the cores).
+	Attribution string `json:"attribution,omitempty"`
 }
 
 type CoverageEvidence struct {
@@ -148,6 +158,8 @@ type Attempt struct {
 	// so it cannot be the recovery source for byte-exact publication.
 	DeliveryReceiptBytes []byte      `json:"deliveryReceiptBytes,omitempty"`
 	TestResult           *TestResult `json:"testResult,omitempty"`
+	// Load is the host as this attempt saw it at its start and its end.
+	Load *AttemptLoad `json:"load,omitempty"`
 }
 
 // CommittedDeliveryReceipt returns a defensive copy of the payload committed
@@ -507,6 +519,7 @@ func ReserveLocked(request AdmissionRequest) (Attempt, LaunchResult, error) {
 		StartedAt: now.Format(time.RFC3339Nano), Deadline: now.Add(time.Duration(request.ReservedMinutes) * time.Minute).Format(time.RFC3339Nano),
 		ProofIdentity: request.Identity, ControlRoot: request.ControlRoot, ExecutionRoot: request.ExecutionRoot,
 		Launcher: request.Launcher, ProcessKeys: []string{}, Retry: retry, ReservationOwner: request.ReservationOwner,
+		Load: &AttemptLoad{Start: sampleLoad(request.ControlRoot, id, request.Launcher.Pid, now)},
 	}
 	if previous != nil {
 		attempt.PreviousAttempt = previous.AttemptID
@@ -789,8 +802,19 @@ func readRetryDecision(path, root, goalID, identityDigest, prior string) (*Retry
 		return nil, err
 	}
 	digest := sha256.Sum256(evidence)
-	return &RetryEvidence{SchemaVersion: 1, PriorAttempt: prior, Cause: decision.Cause,
-		EvidencePath: evidencePath, EvidenceSHA256: hex.EncodeToString(digest[:]), Rationale: decision.Rationale}, nil
+	retry := &RetryEvidence{SchemaVersion: 1, PriorAttempt: prior, Cause: decision.Cause,
+		EvidencePath: evidencePath, EvidenceSHA256: hex.EncodeToString(digest[:]), Rationale: decision.Rationale}
+	// The decision names the load it retries against: the prior's samples
+	// and its attribution ride along, so "flaky" cannot hide a crowded box.
+	retry.PriorAttribution = "no load block: the prior attempt was recorded before the attribution landed"
+	if priorAttempt.Load != nil {
+		retry.PriorLoad = priorAttempt.Load
+		retry.PriorAttribution = "no load attribution"
+		if priorAttempt.Terminal != nil && priorAttempt.Terminal.Attribution == LoadAttribution && priorAttempt.Load.End != nil {
+			retry.PriorAttribution = LoadAttribution + ": " + priorAttempt.Load.End.Describe()
+		}
+	}
+	return retry, nil
 }
 
 func newAttemptID(now time.Time) (string, error) {
@@ -1031,6 +1055,19 @@ func FinalizeAttemptWithTestResultLocked(root, id, result string, exitStatus int
 		}
 		attempt.TestResult = &copyResult
 	}
+	// The end sample: a failure under a crowded host is attributed in the
+	// record. A cancellation or an unknown terminal is not a failure the
+	// load caused, and carries the sample without the label. An attempt
+	// reserved before the attribution landed has no start sample, and the
+	// record says so rather than inventing one.
+	end := sampleLoad(root, id, attempt.Launcher.Pid, now)
+	if attempt.Load == nil {
+		attempt.Load = &AttemptLoad{Start: LoadSample{Sample: hostload.Sample{Detail: "not sampled at start"}}}
+	}
+	attempt.Load.End = &end
+	if result == TerminalFailed && end.Loaded() {
+		attempt.Terminal.Attribution = LoadAttribution
+	}
 	if len(deliveryReceipt) > 0 {
 		if attempt.TestResult != nil {
 			attempt.DeliveryReceiptBytes = append([]byte(nil), deliveryReceipt...)
@@ -1041,6 +1078,13 @@ func FinalizeAttemptWithTestResultLocked(root, id, result string, exitStatus int
 	}
 	if err := writeAttempt(attempt); err != nil {
 		return Attempt{}, err
+	}
+	// Every failed consumption-bounded group of a failed attempt under load
+	// is filed as its own patience defect, after the commit and never fatal
+	// to it: a filing that cannot be written is reported, the terminal
+	// stands.
+	if _, err := filePatienceDefects(attempt, end); err != nil {
+		fmt.Fprintf(os.Stderr, "proof attempt %s: patience defects not filed: %v\n", id, err)
 	}
 	return attempt, nil
 }

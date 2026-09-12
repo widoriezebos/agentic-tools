@@ -74,9 +74,9 @@ func ReconcileAttempts(root string, options ReconcileOptions) ([]ReconcileOutcom
 	if emit == nil {
 		emit = func(string) {}
 	}
-	attempts, err := ReadAttempts(root)
-	if err != nil {
-		return nil, err
+	attempts, unreadable := readAttemptsSkippingUnreadable(root)
+	for _, problem := range unreadable {
+		emit("proof attempt record skipped: " + problem)
 	}
 	sort.Slice(attempts, func(i, j int) bool { return attempts[i].AttemptID < attempts[j].AttemptID })
 	var outcomes []ReconcileOutcome
@@ -310,6 +310,9 @@ type LiveAttemptSummary struct {
 	LauncherPid      int64  `json:"launcherPid"`
 	LauncherLiveness string `json:"launcherLiveness"`
 	ProcessRecords   int    `json:"processRecords"`
+	// Unreadable names a record the reader had to skip; the other fields
+	// are empty on such an entry.
+	Unreadable string `json:"unreadable,omitempty"`
 }
 
 // LiveAttempts lists every attempt without a terminal and how its launcher
@@ -318,11 +321,11 @@ func LiveAttempts(root string, prober identity.Prober) ([]LiveAttemptSummary, er
 	if prober == nil {
 		prober = identity.KernelProber{}
 	}
-	attempts, err := ReadAttempts(root)
-	if err != nil {
-		return nil, err
-	}
+	attempts, unreadable := readAttemptsSkippingUnreadable(root)
 	var live []LiveAttemptSummary
+	for _, problem := range unreadable {
+		live = append(live, LiveAttemptSummary{Unreadable: problem})
+	}
 	for _, attempt := range attempts {
 		if attempt.Terminal != nil {
 			continue
