@@ -6,8 +6,9 @@ Date: 2026-09-10
 
 FINDING IDS: PHD-<NAME>, chain-unique, never F-n. You are the design
 critic of revision 1; report `round` as 1. One focused round. Write
-your record to the declared output path
-(metasystem/records/misc/proof-groups-progress-hang-critique-r1.md).
+your record to the one path the declared outputs manifest names, a new
+file in the records directory under misc, named for this design and
+critique round one.
 
 The design is metasystem/plans/proof-groups-progress-hang-design.md,
 revision 1, written by the m1 seat on 2026-09-10 against main at

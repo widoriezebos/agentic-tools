@@ -7,6 +7,7 @@
   the specification; this page settles its shape and adds the evidence of
   2026-09-09 on m1)
 - Next step: one more critique round on this revision, then slice 2 builds it
+- Waiting on the human: Wido's goal split of human-proof-fits-the-act into eight members (2026-09-09); this page becomes the members' shared design and no single build follows it
   behind the canaries of section 7
 
 ## What is true today (read in the tree)
