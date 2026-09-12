@@ -1342,3 +1342,58 @@ func TestObserveVerdictSurvivesLanding(t *testing.T) {
 		}
 	}
 }
+
+func TestObserveTierOneBoundsIgnoreTheReceiptLedger(t *testing.T) {
+	const receipt = "receipt=existing\n1|2026-09-12T00:00:00Z|RECEIPT|type=implement|outcome=shipped|goal=tier-one|note=fixture\n"
+	t.Run("three files and the receipt line", func(t *testing.T) {
+		f := newObserveFixture(t)
+		f.prepareTierOne("area")
+		for _, name := range []string{"one", "two", "three"} {
+			f.write("docs/"+name+".txt", name+"\n")
+		}
+		f.write("memory/receipts.log", receipt)
+		f.git("add", "docs", "memory/receipts.log")
+		candidate, testReceipt := f.tierOneReceipt("true")
+		got := Observe(tierOneParams(f, candidate, testReceipt))
+		if got.Verdict != "pass" || got.Bar != BarDirectFix {
+			t.Fatalf("three files with their receipt line classified as %+v", got)
+		}
+	})
+	t.Run("forty lines and the receipt line", func(t *testing.T) {
+		f := newObserveFixture(t)
+		f.prepareTierOne("area")
+		f.write("docs/large.txt", strings.Repeat("changed\n", 40))
+		f.write("memory/receipts.log", receipt)
+		f.git("add", "docs", "memory/receipts.log")
+		candidate, testReceipt := f.tierOneReceipt("true")
+		got := Observe(tierOneParams(f, candidate, testReceipt))
+		if got.Verdict != "pass" || got.Bar != BarDirectFix {
+			t.Fatalf("forty lines with their receipt line classified as %+v", got)
+		}
+	})
+}
+
+func TestObserveChainCarriesAnAppendedReceiptLedger(t *testing.T) {
+	f := newObserveFixture(t)
+	f.write("internal/x.go", "package internal\n")
+	certified := f.tree()
+	f.writeChainRecord("impl-chain", map[string]any{
+		"jobId": "impl-chain", "parentJob": nil, "role": "implementer",
+		"round": 1, "destructiveReach": "DESIGN-BEARING", "chainClosed": true,
+	})
+	f.writeChainRecord("impl-chain-r2", map[string]any{
+		"jobId": "impl-chain-r2", "parentJob": "impl-chain", "role": "implementer",
+		"round": 2, "destructiveReach": "DESIGN-BEARING", "status": "completed",
+	})
+	f.writeChainReview("impl-chain", 1, "impl-chain", certified)
+	f.write("memory/receipts.log", "receipt=existing\n1|2026-09-12T00:00:00Z|RECEIPT|type=implement|outcome=shipped|goal=fx|note=fixture\n")
+	got := Observe(ObserveParams{RepoRoot: f.root, CandidateTree: f.tree(), Chain: "impl-chain"})
+	if got.Bar != BarChain || got.Verdict != "pass" || got.Code != "closed-chain" {
+		t.Fatalf("chain landing with its appended receipt line classified as %+v", got)
+	}
+	f.write("memory/receipts.log", "rewritten\n")
+	got = Observe(ObserveParams{RepoRoot: f.root, CandidateTree: f.tree(), Chain: "impl-chain"})
+	if got.Code != "chain-has-uncarried-paths" {
+		t.Fatalf("chain landing that rewrites the receipt ledger classified as %+v", got)
+	}
+}

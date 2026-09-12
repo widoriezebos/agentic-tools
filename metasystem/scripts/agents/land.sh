@@ -441,6 +441,55 @@ staged_project_tree() {
   git -C "$root" write-tree
 }
 
+# A landing that changes code appends the RECEIPT line describing it in the
+# same commit (development/project-rules-local.md); the engine decides which
+# landings are code and which line counts, this step only relays its answer.
+check_receipt_line() {
+  local candidate_tree decision detail rc
+  local -a arguments
+  candidate_tree=$(staged_project_tree) || return $?
+  arguments=(landing receipt-line --root "$root" --tree "$candidate_tree")
+  (( landing_goal_set )) && arguments+=(--goal "$landing_goal")
+  [[ -z "$landing_direct_fix" ]] || arguments+=(--direct-fix "$landing_direct_fix")
+  decision=$("$ms" "${arguments[@]}" 2>&1)
+  rc=$?
+  # The legacy exact-receipt path runs under an engine older than this verb
+  # (the receipt-cutover fixture pins one); that engine cannot judge the
+  # line. Exit 3 lets the step report the skip where the caller sees it.
+  if (( rc == 2 )) && [[ "$decision" == *"landing: unknown verb"* ]]; then
+    return 3
+  fi
+  if (( rc == 2 )); then
+    detail=$("$ms" json get --value "$decision" --field detail --default "the landing appends no RECEIPT line")
+    echo "land refused: $detail" >&2
+    # Pathspec mode staged the set itself; give the index back so the retry
+    # is the same command with the ledger path added, not a --staged-only dance.
+    if (( ! staged_only )); then
+      git reset -q -- "${pathspecs[@]}" || true
+    fi
+    return 2
+  fi
+  if (( rc != 0 )); then
+    printf '%s\n' "$decision" >&2
+    return "$rc"
+  fi
+  printf '%s\n' "$decision"
+}
+
+# The receipt-line step is required, but an engine that predates the verb
+# skips it audibly: the skip is printed where the caller reads the landing,
+# never buried in a step's captured output, and names the rebuild that ends it.
+run_receipt_line_step() {
+  local rc
+  run_step "receipt line for the landing" check_receipt_line
+  rc=$?
+  if (( rc == 3 )); then
+    echo "-- skipped: the engine at $ms predates landing receipt-line and cannot judge the receipt; rebuild it with scripts/agents/go-build.sh before the next landing" >&2
+    return 0
+  fi
+  (( rc == 0 )) || fail_step "$rc"
+}
+
 check_supplied_test_receipt() {
   local candidate_tree receipt_tree receipt_schema receipt_failure= receipt_workspace candidate_workspace verify_output verify_status
   local receipt_workspace_present=0
@@ -932,6 +981,7 @@ run_carried_landing() {
   esac
   [[ "$carried_consumption" == none ]] || carry_ask "word $landing_carried has unsupported consumption state $carried_consumption"
   run_required_step "stage caller paths" stage_changes
+run_receipt_line_step
   carry_forward_staged
   fixture_pause carry-forward
   reserve_carry
@@ -968,6 +1018,7 @@ if [[ -n "$landing_carried" ]]; then
   exit $?
 fi
 run_required_step "stage caller paths" stage_changes
+run_receipt_line_step
 if [[ -n "$landing_test_receipt" ]]; then
   if [[ -n "$landing_recertification" ]]; then
     run_step "test receipt for staged candidate" check_supplied_test_receipt

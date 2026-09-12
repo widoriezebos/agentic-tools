@@ -136,6 +136,7 @@ func families() []family {
 				{"adoption-rulings", "prepare required landing authority while preserving application rulings", runLandingAdoptionRulings},
 				{"park", "durably record one stopped recertified landing attempt", runLandingPark},
 				{"test-receipt", "run tests against one exact candidate tree and record their result", runLandingTestReceipt},
+				{"receipt-line", "decide whether a staged landing appends the RECEIPT line for its goal", runLandingReceiptLine},
 			},
 		},
 		{

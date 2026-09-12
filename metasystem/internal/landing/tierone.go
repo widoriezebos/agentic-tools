@@ -70,11 +70,19 @@ func observeTierOne(params ObserveParams, change string) Observation {
 	if err := chainClassError(resolved, paths); err != nil {
 		return refuse(carriageRefusalCode(err), provenance)
 	}
-	metric, err := tierOneDiffMetric(params.RepoRoot, workspace, baseTree, params.CandidateTree, paths)
+	// The receipt line every code landing appends (landing receipt-line) is
+	// bookkeeping, not the fix: the file and line bounds measure the work.
+	bound := make([]string, 0, len(paths))
+	for _, changedPath := range paths {
+		if changedPath != receiptLedgerPath {
+			bound = append(bound, changedPath)
+		}
+	}
+	metric, err := tierOneDiffMetric(params.RepoRoot, workspace, baseTree, params.CandidateTree, bound)
 	if err != nil {
 		return refuse("tier1-diff-shape-refused", provenance)
 	}
-	if len(paths) > 3 {
+	if len(bound) > 3 {
 		return refuse("tier1-file-bound-refused", provenance)
 	}
 	if metric > 40 {
@@ -139,6 +147,10 @@ func tierOneDiffMetric(root string, workspace gittree.Workspace, baseTree, candi
 	}
 	type counts struct{ added, deleted int }
 	byPath := make(map[string]counts, len(paths))
+	counted := make(map[string]bool, len(paths))
+	for _, changedPath := range paths {
+		counted[changedPath] = true
+	}
 	total := 0
 	for _, record := range bytes.Split(numstat, []byte{0}) {
 		if len(record) == 0 {
@@ -154,7 +166,9 @@ func tierOneDiffMetric(root string, workspace gittree.Workspace, baseTree, candi
 			return 0, fmt.Errorf("malformed numstat count")
 		}
 		byPath[string(fields[2])] = counts{added: added, deleted: deleted}
-		total += added + deleted
+		if counted[string(fields[2])] {
+			total += added + deleted
+		}
 	}
 
 	before, err := workspace.Entries(baseTree, paths)

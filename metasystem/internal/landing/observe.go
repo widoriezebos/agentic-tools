@@ -475,6 +475,10 @@ func observeChain(params ObserveParams, change string) (observation Observation)
 	if classErr := chainClassError(resolved, changedPaths); classErr != nil {
 		return wouldRefuseFromCarriage(classErr, provenance)
 	}
+	// The receipt line a code landing must append (landing receipt-line) is
+	// never part of a delegate's certified diff; an append-only change to the
+	// receipt ledger rides with the chain instead of counting as uncarried.
+	extraPaths = carriedReceiptLedger(workspace, baseTree, params.CandidateTree, extraPaths)
 	if len(extraPaths) > 0 && params.DirectFix != "register-carriage" {
 		return wouldRefuse("chain-has-uncarried-paths", provenance)
 	}
@@ -1515,4 +1519,18 @@ func AdoptionRulings(sourceRoot, targetRoot string) ([]byte, error) {
 		}
 	}
 	return data, nil
+}
+
+// carriedReceiptLedger drops the receipt ledger from a chain landing's
+// uncarried extras when its change is a pure append; any other change to it
+// stays an extra and is refused as before.
+func carriedReceiptLedger(workspace gittree.Workspace, baseTree, candidateTree string, extras []string) []string {
+	var kept []string
+	for _, extra := range extras {
+		if extra == receiptLedgerPath && appendOnly(workspace, baseTree, candidateTree, extra) == nil {
+			continue
+		}
+		kept = append(kept, extra)
+	}
+	return kept
 }

@@ -353,3 +353,36 @@ func runLandingAdoptionRulings(args []string) int {
 	}
 	return 0
 }
+
+// runLandingReceiptLine answers whether a prospective landing appends the
+// RECEIPT line for its goal; land.sh runs it on the staged whole-project
+// tree right after staging. Exit 2 is a refusal with the detail in the
+// printed decision, exit 1 an unreadable checkout.
+func runLandingReceiptLine(args []string) int {
+	flags := flag.NewFlagSet("landing receipt-line", flag.ContinueOnError)
+	root := flags.String("root", "", "MetaSystem installation root")
+	tree := flags.String("tree", "", "whole-project staged tree")
+	goalID := flags.String("goal", "", "goal the landing serves")
+	directFix := flags.String("direct-fix", "", "direct-fix landing class")
+	if flags.Parse(args) != nil || flags.NArg() != 0 || *root == "" || *tree == "" {
+		fmt.Fprintln(os.Stderr, "usage: metasystem landing receipt-line --root INSTALLATION --tree TREE [--goal ID] [--direct-fix CLASS]")
+		return 2
+	}
+	decision, err := landing.ObserveReceiptLine(landing.ReceiptLineParams{
+		RepoRoot: *root, CandidateTree: *tree, Goal: *goalID, DirectFix: *directFix,
+	})
+	if err != nil {
+		fmt.Fprintln(os.Stderr, "landing receipt-line:", err)
+		return 1
+	}
+	encoded, err := json.Marshal(decision)
+	if err != nil {
+		fmt.Fprintln(os.Stderr, "landing receipt-line:", err)
+		return 1
+	}
+	fmt.Println(string(encoded))
+	if decision.Outcome == landing.ReceiptLineOutcomeRefused {
+		return 2
+	}
+	return 0
+}

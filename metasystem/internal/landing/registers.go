@@ -8,7 +8,11 @@ import (
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/gittree"
 )
 
-var appendOnlyRegisters = []string{"memory/receipts.log", "records/counselor/accepted-risk-register.jsonl", "records/counselor/carried-landings.jsonl", "records/narrator-digest.log"}
+// receiptLedgerPath is the receipt ledger by its installation-relative path,
+// the register every code landing appends to (landing receipt-line).
+const receiptLedgerPath = "memory/receipts.log"
+
+var appendOnlyRegisters = []string{receiptLedgerPath, "records/counselor/accepted-risk-register.jsonl", "records/counselor/carried-landings.jsonl", "records/narrator-digest.log"}
 
 var ledgerPaths = []string{
 	"plans/goals",

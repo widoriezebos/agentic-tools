@@ -27,8 +27,8 @@ fi
 unset METASYSTEM_FIXTURE_SCENARIO
 if (( ! fixture_bed_child )); then
   fixture_bed_script=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd -P)/$(basename "${BASH_SOURCE[0]}")
-  run_fixture_bed_scenarios land "land fixtures passed (25 isolated legs)" \
-    "$fixture_bed_script" push-retry step-failure new-plan goal tier-one full-width-chain build-stamp \
+  run_fixture_bed_scenarios land "land fixtures passed (26 isolated legs)" \
+    "$fixture_bed_script" push-retry step-failure new-plan goal receipt-line tier-one full-width-chain build-stamp \
     brain-land-refuses brain-absent-node-proceeds ledger-move-lands records-move-lands \
     input-move-refuses receipt-cutover carried-fresh carried-prefixed carried-second carried-red-battery \
     carried-intent-failure carried-crash-local carried-asks carried-ledger-path carried-crash \
@@ -365,6 +365,13 @@ JSON
     printf '%s\n' '{"floors":{"fixture/application":80.0}}' \
       >"$leg_seed/scripts/agents/coverage-ratchet-linux.json"
   fi
+  if [[ "$fixture_scenario" == receipt-line ]]; then
+    mkdir -p "$leg_seed/memory"
+    cp "$root/scripts/agents/path-classes.txt" "$leg_seed/scripts/agents/path-classes.txt"
+    printf 'install:payload.txt behavior\n' >>"$leg_seed/scripts/agents/path-classes.txt"
+    printf '%s\n' '1|2026-01-01T00:00:00Z|RECEIPT|type=implement|outcome=shipped|skills=none|verify=skipped|corrections=0|stop_loss=no|delegate=none|goal=seed|built_by=coordinator|critique_waived=none|waiver_stream=none|note=seed' \
+      >"$leg_seed/memory/receipts.log"
+  fi
   if [[ "$fixture_scenario" == full-width-chain ]]; then
     mkdir -p "$leg_seed/memory"
     cp "$root/scripts/agents/path-classes.txt" "$leg_seed/scripts/agents/path-classes.txt"
@@ -505,6 +512,7 @@ BACKLOG
   if [[ "$fixture_scenario" == full-width-chain ]]; then
     git -C "$leg_seed" add -- memory/rulings.md
   fi
+  [[ "$fixture_scenario" != receipt-line ]] || git -C "$leg_seed" add -- memory/receipts.log
   git -C "$leg_seed" commit -qm seed
   if is_carried_scenario; then
     git init --bare -q "$leg_remote"
@@ -1633,6 +1641,78 @@ printf 'fixture forwards a goal item\n' >"$goal_message"
 [[ $(<"$goal_log") == fx ]] \
   || { echo "land goal fixture: the commit boundary did not receive goal fx" >&2; exit 1; }
 echo "land goal fixture passed"
+fi
+
+# 4b. A code landing appends the RECEIPT line for its goal in the same commit.
+# Without the line land.sh refuses, names the missing line and the one
+# command that writes it, and commits nothing; with the line it lands; a
+# records-only landing needs no line. Step output stays inside land.sh, so
+# the proof reads the commits the leg ends up with.
+if [[ "$fixture_scenario" == receipt-line ]]; then
+make_leg receipt-line
+receipt_line_message=$leg_root/message.txt
+receipt_line_refusal=$leg_root/refused.out
+receipt_line_output=$leg_root/land.out
+receipt_line_records_output=$leg_root/records-land.out
+receipt_line_seed_head=$(git -C "$leg_local" rev-parse HEAD)
+printf 'fixture lands code with its receipt line\n' >"$receipt_line_message"
+printf 'receipt line landing\n' >"$leg_local/payload.txt"
+set +e
+(
+  cd "$leg_local"
+  bash scripts/agents/land.sh -m "$receipt_line_message" --goal fx --skip-transport payload.txt
+) >"$receipt_line_refusal" 2>&1
+receipt_line_rc=$?
+set -e
+[[ $receipt_line_rc -ne 0 ]] \
+  || { echo "land receipt-line fixture: a code landing without its receipt line was accepted" >&2; exit 1; }
+grep -Fq 'land refused: the landing changes code (payload.txt) but its staged memory/receipts.log appends no RECEIPT line for goal fx' "$receipt_line_refusal" \
+  || { echo "land receipt-line fixture: the refusal does not name the missing line" >&2; sed -n '1,120p' "$receipt_line_refusal" >&2; exit 1; }
+grep -Fq 'write the line with scripts/receipt.sh add --type implement --outcome shipped --goal fx --built-by coordinator --note "<what landed and how it was verified>" and include memory/receipts.log in the landing' "$receipt_line_refusal" \
+  || { echo "land receipt-line fixture: the refusal does not name the command that writes the line" >&2; sed -n '1,120p' "$receipt_line_refusal" >&2; exit 1; }
+[[ $(git -C "$leg_local" rev-parse HEAD) == "$receipt_line_seed_head" ]] \
+  || { echo "land receipt-line fixture: the refused landing committed" >&2; exit 1; }
+git -C "$leg_local" diff --cached --quiet -- \
+  || { echo "land receipt-line fixture: the refused landing left its pathspecs staged" >&2; exit 1; }
+# The named command, run against the leg's own ledger, writes the line the
+# check then accepts; the retry is the same command with the ledger added.
+(
+  cd "$leg_local"
+  bin/metasystem receipt add --root "$leg_local" --file memory/receipts.log \
+    --type implement --outcome shipped --goal fx --built-by coordinator --note 'fixture receipt'
+) >"$leg_root/receipt-add.out" 2>&1 \
+  || { echo "land receipt-line fixture: the named receipt command failed" >&2; cat "$leg_root/receipt-add.out" >&2; exit 1; }
+(
+  cd "$leg_local"
+  bash scripts/agents/land.sh -m "$receipt_line_message" --goal fx --skip-transport payload.txt memory/receipts.log
+) >"$receipt_line_output" 2>&1 || {
+  echo "land receipt-line fixture: the landing with its receipt line was refused" >&2
+  sed -n '1,160p' "$receipt_line_output" >&2
+  exit 1
+}
+grep -Fq '== STEP: receipt line for the landing' "$receipt_line_output" \
+  || { echo "land receipt-line fixture: the landing did not run the receipt line step" >&2; sed -n '1,160p' "$receipt_line_output" >&2; exit 1; }
+receipt_line_code_head=$(git -C "$leg_local" rev-parse HEAD)
+[[ "$receipt_line_code_head" != "$receipt_line_seed_head" ]] \
+  || { echo "land receipt-line fixture: the landing with its receipt line committed nothing" >&2; exit 1; }
+[[ $(git -C "$leg_local" show --name-only --format= HEAD | sort | tr '\n' ' ') == "memory/receipts.log payload.txt " ]] \
+  || { echo "land receipt-line fixture: the landed commit does not carry the code and its receipt together" >&2; exit 1; }
+git -C "$leg_local" show HEAD:memory/receipts.log | grep -F '|RECEIPT|' | grep -Fq '|goal=fx|' \
+  || { echo "land receipt-line fixture: the landed ledger lacks the goal's RECEIPT line" >&2; exit 1; }
+printf 'records only\n' >>"$leg_local/plans/existing.md"
+(
+  cd "$leg_local"
+  bash scripts/agents/land.sh -m "$receipt_line_message" --goal fx --skip-transport plans/existing.md
+) >"$receipt_line_records_output" 2>&1 || {
+  echo "land receipt-line fixture: a records-only landing without a receipt line was refused" >&2
+  sed -n '1,160p' "$receipt_line_records_output" >&2
+  exit 1
+}
+[[ $(git -C "$leg_local" rev-parse HEAD^) == "$receipt_line_code_head" ]] \
+  || { echo "land receipt-line fixture: the records-only landing committed nothing" >&2; sed -n '1,160p' "$receipt_line_records_output" >&2; exit 1; }
+[[ $(git -C "$leg_local" show --name-only --format= HEAD) == "plans/existing.md" ]] \
+  || { echo "land receipt-line fixture: the records-only landing carried more than its record" >&2; exit 1; }
+echo "land receipt-line fixture passed"
 fi
 
 # 5. Tier 1 runs the declared command against the staged candidate before the

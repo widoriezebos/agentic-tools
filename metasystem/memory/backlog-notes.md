@@ -484,3 +484,30 @@ renaming the directory with a leading underscore, which Go skips.
 Proposal: the suite-failure preservation writes evidence outside the
 module tree (or drops a `go.mod` beside any copied source), and the gate
 refuses to run over `artifacts/` at all.
+
+P-2. 2026-09-12, m1b. `go test ./cmd/metasystem` rewrites `bin/metasystem`
+from the working tree (a test drives `scripts/agents/go-build.sh` without
+`--out`), so after the package tests the enrolled engine carries a
+`-dirty` stamp and `test run` refuses with ENROLLMENT_DRIFT until the
+landed engine is rebuilt and re-armed; seen twice on m1b on 2026-09-12
+(digest c7234d73 became d69247dd during one test run). Proposal: every
+test that builds the engine builds to a scratch path, and the fast gate's
+"bin/metasystem stays byte-identical" contract gets a test of its own over
+the package tests.
+
+P-3. 2026-09-12, m1b. The human-terminal driver of the fix-forward lane
+(`/Users/wido/LocalStorage/hact-20260912/land.sh`) commits with raw `git
+commit -F`, so the receipt-line rule land.sh now enforces (goal
+landing-refuses-without-its-receipt-line) does not bind the lane that
+lands most code this week; the receipt line rides in each diff by the
+seat's discipline alone. Proposal: the driver runs `metasystem landing
+receipt-line` on its staged index before the commit, or the pre-commit
+guard learns the same check for human commits, once the engine of the
+human terminal carries the verb.
+
+P-4. 2026-09-12, m1b. In a carried landing the receipt-line step judges the
+staged delta against local HEAD, not the folded commit that
+`carry_forward_staged` builds afterwards; a carried retry whose local HEAD
+already carries the receipt can be refused although the folded commit
+would carry it (critic note on the receipt-line landing). Proposal: the
+carried flow runs the check on the folded tree, after carry-forward.

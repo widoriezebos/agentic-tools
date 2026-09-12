@@ -1789,3 +1789,38 @@ chmod +x "$3"
 		t.Fatal(err)
 	}
 }
+
+func TestLandingReceiptLineRefusesCodeWithoutItsLineAndPassesWithIt(t *testing.T) {
+	root := t.TempDir()
+	runReceiptGit(t, root, "init", "-q", "-b", "main")
+	runReceiptGit(t, root, "config", "user.name", "receipt fixture")
+	runReceiptGit(t, root, "config", "user.email", "receipt@example.invalid")
+	manifest, err := os.ReadFile(filepath.Join("..", "..", "scripts", "agents", "path-classes.txt"))
+	if err != nil {
+		t.Fatalf("read path class manifest: %v", err)
+	}
+	writeReceiptFixture(t, root, "scripts/agents/path-classes.txt", string(manifest)+"install:payload.txt behavior\n")
+	writeReceiptFixture(t, root, "memory/receipts.log", "1|2026-01-01T00:00:00Z|RECEIPT|type=implement|outcome=shipped|goal=seed|note=seed\n")
+	writeReceiptFixture(t, root, "payload.txt", "base\n")
+	runReceiptGit(t, root, "add", "-A")
+	runReceiptGit(t, root, "commit", "-qm", "base")
+
+	writeReceiptFixture(t, root, "payload.txt", "candidate\n")
+	runReceiptGit(t, root, "add", "payload.txt")
+	candidate := runReceiptGit(t, root, "write-tree")
+	if code := runLandingReceiptLine([]string{"--root", root, "--tree", candidate, "--goal", "fx"}); code != 2 {
+		t.Fatalf("a code landing without its receipt line exited %d, want 2", code)
+	}
+
+	writeReceiptFixture(t, root, "memory/receipts.log",
+		"1|2026-01-01T00:00:00Z|RECEIPT|type=implement|outcome=shipped|goal=seed|note=seed\n"+
+			"2|2026-09-12T00:00:00Z|RECEIPT|type=implement|outcome=shipped|goal=fx|note=candidate\n")
+	runReceiptGit(t, root, "add", "memory/receipts.log")
+	candidate = runReceiptGit(t, root, "write-tree")
+	if code := runLandingReceiptLine([]string{"--root", root, "--tree", candidate, "--goal", "fx"}); code != 0 {
+		t.Fatalf("a code landing with its receipt line exited %d, want 0", code)
+	}
+	if code := runLandingReceiptLine([]string{"--root", root}); code != 2 {
+		t.Fatalf("a call without a tree exited %d, want 2", code)
+	}
+}
