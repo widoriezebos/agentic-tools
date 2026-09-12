@@ -9,8 +9,8 @@
 - Origin: human
 - Next step: Read scripts/agents/land.sh and commit.sh and the memory/receipts.log format, add the check and its fixture, land.
 - OpenedAt: 2026-09-11T15:50:31Z
-- Revision: 7
-- Pinned: m1e
+- Revision: 8
+- Pinned: m1b
 - Budget: elapsedLimit=4h attemptLimit=6 reservedJobMinutesLimit=720 activeJobLimit=1 reviewRoundLimit=2
 - BudgetExceptions: 0
 - Approved: by=human:Wido at=2026-09-11T20:33:10Z revision=7 opid=DWQ8CW24MN97QSVKMFZ36DGZK7-m1-c6925449 authority=proven digest=4450556aa366cf6847449506cbdbc53f41a644cb2dcf87c64b35f0de4ef861cd
@@ -23,4 +23,5 @@ History:
 - 2026-09-11T20:30:35Z BYJ0MTDXRFF6G7Z8M4J89XNVG1-m1-c6925449 unapprove actor=human:Wido targets=landing-refuses-without-its-receipt-line reason=Wido 2026-09-11: every program goal states runtime independence (claude, codex, devin, future adapters); intent amended before re-approval
 - 2026-09-11T20:31:54Z DM1D3QCJDQYJBWHVRYDS2BYK6S-m1e-3ca84c28 edit actor=m1e+main-1789158700-39729-b9c0d2 targets=landing-refuses-without-its-receipt-line
 - 2026-09-11T20:33:10Z DWQ8CW24MN97QSVKMFZ36DGZK7-m1-c6925449 approve actor=human:Wido targets=landing-refuses-without-its-receipt-line
-Integrity: sha256=2fd70eb9087c8c7ccbb761ca5a8d4da0c03dea5f8ecd80569c1a962a6cc89de6
+- 2026-09-12T05:28:26Z 1M075XT14WZM0R275BBMJFVB85-m1e-c6925449 set-pin actor=human:Wido targets=landing-refuses-without-its-receipt-line
+Integrity: sha256=479a3b7c41977bf5b9d087f6a11065bc497301fe16e330da0769531ac33e6b1e
