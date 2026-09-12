@@ -3,10 +3,13 @@ package proofrun
 import (
 	"context"
 	"encoding/json"
+	"errors"
+	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/testpolicy"
 )
@@ -213,6 +216,53 @@ func TestComputeJudgeKeyFollowsTheJudgeSourceNotTheBuild(t *testing.T) {
 	}
 	if ComputeJudgeKey(context.Background(), root, first, "elsewhere") != DefaultJudgeKey() {
 		t.Fatal("a commit without the engine sources did not read as the default key")
+	}
+}
+
+func TestComputeJudgeKeyWaitsForSlowSuccessfulGitAndKeepsTheStableKey(t *testing.T) {
+	entered := make(chan struct{})
+	release := make(chan struct{})
+	blocked := false
+	digest := strings.Repeat("a", 40)
+	readGit := func(ctx context.Context, _ string, args ...string) (string, error) {
+		if _, hasDeadline := ctx.Deadline(); hasDeadline {
+			return "", errors.New("judge Git received a derived deadline")
+		}
+		if !blocked {
+			blocked = true
+			close(entered)
+			<-release
+		}
+		if args[0] == "rev-parse" {
+			return digest, nil
+		}
+		sourcePath := args[len(args)-1]
+		return fmt.Sprintf("040000 tree %s\t%s\x00", digest, sourcePath), nil
+	}
+	result := make(chan string, 1)
+	go func() {
+		result <- computeJudgeKey(context.Background(), "/slow-repository", digest, "metasystem", readGit)
+	}()
+	select {
+	case <-entered:
+	case <-time.After(wiringBound):
+		t.Fatal("slow Git reader did not start")
+	}
+	select {
+	case key := <-result:
+		t.Fatalf("judge key returned before successful Git completed: %s", key)
+	default:
+	}
+	close(release)
+	var first string
+	select {
+	case first = <-result:
+	case <-time.After(wiringBound):
+		t.Fatal("judge key did not follow successful Git completion")
+	}
+	second := computeJudgeKey(context.Background(), "/slow-repository", digest, "metasystem", readGit)
+	if first != second || !strings.HasPrefix(first, JudgeCompatibilityVersion+":"+digest+":") {
+		t.Fatalf("slow successful Git produced unstable judge keys: first=%q second=%q", first, second)
 	}
 }
 

@@ -1,6 +1,8 @@
 package dispatch
 
 import (
+	"encoding/json"
+	"math"
 	"os"
 	"path/filepath"
 	"strings"
@@ -559,6 +561,46 @@ func TestReservedJobMinutesIsSumOfNamedComponents(t *testing.T) {
 				}
 			}
 		})
+	}
+}
+
+func TestBudgetProjectionRefusesObservedProofAccountingOverflow(t *testing.T) {
+	root, proofIdentity := dispatchProofFixture(t, "overflowed-terminal-proof")
+	writeBudgetJob(t, root, "one-observed-minute", "one-observed-minute", 3, 1, "completed", budgetJobLife{
+		startedAt: "2026-08-28T08:00:00Z", endedAt: "2026-08-28T08:01:00Z", pid: 4242,
+	})
+	launcher, err := proofrun.CurrentProcessIdentity(nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	started := time.Date(2026, 8, 28, 8, 2, 0, 0, time.UTC)
+	attempt, _, err := proofrun.ReserveLocked(proofrun.AdmissionRequest{
+		ControlRoot: root, ExecutionRoot: root, GoalID: "bounded", GoalRevision: 3, AccountingRevision: 3,
+		ReservedMinutes: 1, Identity: proofIdentity, Launcher: launcher, Now: started, AttemptID: "overflowed-terminal-proof",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	terminal, err := proofrun.FinalizeAttempt(root, attempt.AttemptID, proofrun.TerminalFailed, 1, "controlled failure", nil, started.Add(time.Minute))
+	if err != nil {
+		t.Fatal(err)
+	}
+	terminal.ObservedMinutes = math.MaxUint64
+	encoded, err := json.MarshalIndent(terminal, "", "  ")
+	if err != nil {
+		t.Fatal(err)
+	}
+	path, err := proofrun.AttemptPath(root, terminal.AttemptID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(path, append(encoded, '\n'), 0o600); err != nil {
+		t.Fatal(err)
+	}
+
+	projection := ProjectBudget(root, budgetGoal(), time.Date(2026, 8, 28, 10, 0, 0, 0, time.UTC))
+	if projection.Status != BudgetUnknown || projection.Unknown == nil || projection.Unknown.Reason != "proof-attempt accounting overflowed" {
+		t.Fatalf("overflowed observed proof accounting = %+v", projection)
 	}
 }
 

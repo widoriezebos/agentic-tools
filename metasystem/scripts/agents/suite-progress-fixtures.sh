@@ -23,6 +23,18 @@ case ${1:-} in
       "$suite" "$section" "$(date -u +%Y-%m-%dT%H:%M:%SZ)" >>"$progress"
     while :; do echo "fixture remains chatty"; sleep 0.05; done
     ;;
+  __printing_until)
+    release=$2 progress=$3 suite=$4 section=$5
+    printf '{"suite":"%s","section":"%s","event":"start","at":"%s","depth":0}\n' \
+      "$suite" "$section" "$(date -u +%Y-%m-%dT%H:%M:%SZ)" >>"$progress"
+    while [[ ! -e "$release" ]]; do
+      echo "fixture output is still growing"
+      sleep 0.05
+    done
+    printf '{"suite":"%s","section":"%s","event":"end","at":"%s","depth":0}\n' \
+      "$suite" "$section" "$(date -u +%Y-%m-%dT%H:%M:%SZ)" >>"$progress"
+    exit 0
+    ;;
   __detached)
     trap '' TERM
     while :; do sleep 1; done
@@ -105,20 +117,43 @@ launch_fixture "$printing" printing long-printing "$printing_banner" \
 # section finishes its own work, and the launch succeeds.
 chatty="$tmp/chatty"
 chatty_out="$tmp/chatty.out"
-if ! launch_fixture "$chatty" chatty over-cap \
-    'suite-cost suite=chatty witness=armed duration=minutes heartbeat=progress.jsonl logs=logs/suite.log' \
-    --silence-ms 2000 --section-cap-ms 400 --evidence-timeout-ms 1000 \
-    --evidence-max-bytes 1048576 --poll-ms 50 --term-grace-ms 100 --kill-grace-ms 100 -- \
-    bash "$root/scripts/agents/suite-progress-fixtures.sh" __printing \
-      "$chatty/progress.jsonl" chatty over-cap >"$chatty_out" 2>&1; then
-  echo "suite-progress fixture: a printing section past its cap was ended by the clock" >&2
+chatty_release="$tmp/chatty.release"
+chatty_note='section over-cap passed its 400ms cap while still producing output'
+launch_fixture "$chatty" chatty over-cap \
+  'suite-cost suite=chatty witness=armed duration=minutes heartbeat=progress.jsonl logs=logs/suite.log' \
+  --silence-ms 2000 --section-cap-ms 400 --evidence-timeout-ms 1000 \
+  --evidence-max-bytes 1048576 --poll-ms 50 --term-grace-ms 100 --kill-grace-ms 100 -- \
+  bash "$root/scripts/agents/suite-progress-fixtures.sh" __printing_until \
+    "$chatty_release" "$chatty/progress.jsonl" chatty over-cap >"$chatty_out" 2>&1 &
+chatty_pid=$!
+owned_pids+=("$chatty_pid")
+chatty_deadline=$((SECONDS + wait_cap))
+chatty_noted=0
+while (( SECONDS < chatty_deadline )); do
+  if grep -Fq "$chatty_note" "$chatty_out"; then
+    chatty_noted=1
+    break
+  fi
+  kill -0 "$chatty_pid" 2>/dev/null || break
+  sleep 0.05
+done
+if (( chatty_noted == 0 )); then
+  kill "$chatty_pid" 2>/dev/null || true
+  wait "$chatty_pid" 2>/dev/null || true
+  owned_pids=()
+  echo "suite-progress fixture: the watchdog did not note the section past its cap within ${wait_cap}s" >&2
   sed 's/^/  launcher: /' "$chatty_out" >&2
   exit 1
 fi
-grep -Fq 'section over-cap passed its 400ms cap while still producing output' "$chatty_out" \
-  || { echo "suite-progress fixture: the watchdog did not note the section past its cap" >&2
-       sed 's/^/  launcher: /' "$chatty_out" >&2
-       exit 1; }
+: >"$chatty_release"
+chatty_status=0
+wait "$chatty_pid" || chatty_status=$?
+owned_pids=()
+if (( chatty_status != 0 )); then
+  echo "suite-progress fixture: a printing section past its cap ended with status $chatty_status" >&2
+  sed 's/^/  launcher: /' "$chatty_out" >&2
+  exit 1
+fi
 
 # A missing selector section is structural red even when the command succeeds.
 silent="$tmp/silent"

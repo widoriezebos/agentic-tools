@@ -4,6 +4,7 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
+	"errors"
 	"os"
 	"path/filepath"
 	"strings"
@@ -555,5 +556,32 @@ func TestAnAttemptPastItsReservationStillLaunchesAuthenticatesAndFinalizes(t *te
 	finished, err := FinalizeAttempt(root, attempt.AttemptID, TerminalSuccess, 0, "green, late", nil, now)
 	if err != nil || finished.Terminal == nil || finished.Terminal.Result != TerminalSuccess || finished.ObservedMinutes != 3 {
 		t.Fatalf("a success past the reservation = %+v, %v", finished.Terminal, err)
+	}
+}
+
+func TestReserveLockedRefusesGovernedReservationWhoseCapHasPassed(t *testing.T) {
+	root, proofIdentity := proofAttemptFixture(t, "passed-governed-cap")
+	launcher, err := CurrentProcessIdentity(nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	now := time.Date(2026, 9, 12, 12, 0, 0, 0, time.UTC)
+	ownerDeadline := now.Add(-time.Minute)
+	owner := &ReservationOwner{
+		ControlRoot: root, RunID: "governed-proof", RunGeneration: 1, LaunchNonce: "nonce",
+		GoalRevision: 2, ObligationRevision: 1, AttemptOrdinal: 1,
+		Deadline: ownerDeadline.Format(time.RFC3339Nano),
+	}
+	_, _, err = ReserveLocked(AdmissionRequest{
+		ControlRoot: root, ExecutionRoot: root, GoalID: "goal-a", GoalRevision: 2, AccountingRevision: 2,
+		ReservedMinutes: 2, Identity: proofIdentity, Launcher: launcher, ReservationOwner: owner, Now: now,
+	})
+	if err == nil || !strings.Contains(err.Error(), "governed reservation owner's cap has passed") ||
+		!strings.Contains(err.Error(), ownerDeadline.Format(time.RFC3339Nano)) || !strings.Contains(err.Error(), now.Format(time.RFC3339Nano)) {
+		t.Fatalf("passed governed cap refusal = %v", err)
+	}
+	var passed *ReservationOwnerCapPassedError
+	if !errors.As(err, &passed) || !passed.OwnerDeadline.Equal(ownerDeadline) || !passed.RequestNow.Equal(now) {
+		t.Fatalf("passed governed cap did not retain typed facts: %#v, %v", passed, err)
 	}
 }

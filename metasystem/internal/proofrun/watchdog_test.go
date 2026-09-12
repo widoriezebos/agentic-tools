@@ -122,9 +122,43 @@ func (p fixedProbe) Probe(int64) (identity.Exact, identity.Liveness, error) {
 	return p.exact, p.state, nil
 }
 
+func endSuiteAfterNotes(t *testing.T, notePath, donePath string, fragments ...string) {
+	t.Helper()
+	stop := make(chan struct{})
+	t.Cleanup(func() { close(stop) })
+	go func() {
+		ticker := time.NewTicker(time.Millisecond)
+		defer ticker.Stop()
+		bound := time.NewTimer(wiringBound)
+		defer bound.Stop()
+		for {
+			data, _ := os.ReadFile(notePath)
+			found := true
+			for _, fragment := range fragments {
+				found = found && strings.Contains(string(data), fragment)
+			}
+			if found {
+				if err := os.WriteFile(donePath, nil, 0o600); err != nil {
+					t.Errorf("publish suite completion after watchdog notes: %v", err)
+				}
+				return
+			}
+			select {
+			case <-stop:
+				return
+			case <-bound.C:
+				t.Errorf("watchdog notes did not contain %q within the wiring bound; notes = %q", fragments, data)
+				_ = os.WriteFile(donePath, nil, 0o600)
+				return
+			case <-ticker.C:
+			}
+		}
+	}()
+}
+
 // A printing section past its cap, and a suite past its reservation's
-// deadline, run on: the watchdog notes both and ends a suite only when
-// its output stops growing (decision 3 of the hang-detection design).
+// deadline, run on: the watchdog notes both and neither clock reading
+// authorizes the suite to end.
 func TestRunWatchdogLetsAPrintingSectionAndAnExpiredDeadlineRunOn(t *testing.T) {
 	root := t.TempDir()
 	progress := filepath.Join(root, "progress.jsonl")
@@ -155,15 +189,9 @@ func TestRunWatchdogLetsAPrintingSectionAndAnExpiredDeadlineRunOn(t *testing.T) 
 		return string(data)
 	}
 	done := filepath.Join(root, "done")
-	// The suite ends on its own once the watchdog has noted both the cap
-	// and the deadline: the done file is written on that fact, never on a
-	// timer.
-	go func() {
-		for !strings.Contains(readNotes(), "passed its 1ms cap") || !strings.Contains(readNotes(), "deadline") {
-			time.Sleep(time.Millisecond)
-		}
-		_ = os.WriteFile(done, nil, 0o600)
-	}()
+	// The suite completion follows the two notes. The wiring bound can only
+	// fail a broken test; it never supplies the completion fact.
+	endSuiteAfterNotes(t, notes.Name(), done, "passed its 1ms cap", "deadline")
 	err = RunWatchdog(WatchdogOptions{
 		Suite: "fixture", Root: root, ProgressPath: progress, DonePath: done, LogPaths: []string{logPath},
 		SuiteIdentity: identity.Ref{Pid: 999999, StartedAtSec: started.Unix()},
@@ -235,21 +263,46 @@ func TestRunWatchdogEndsASuiteForAVerdictOrACancellationAndNothingElse(t *testin
 		}
 		defer notes.Close()
 		opts.ErrorOutput = notes
-		go func() {
-			for {
-				data, _ := os.ReadFile(notes.Name())
-				if strings.Contains(string(data), "passed its 1ms cap") {
-					break
-				}
-				time.Sleep(time.Millisecond)
-			}
-			_ = os.WriteFile(opts.DonePath, nil, 0o600)
-		}()
+		endSuiteAfterNotes(t, notes.Name(), opts.DonePath, "passed its 1ms cap")
 		if err := RunWatchdog(opts); err != nil || shutdowns != 0 {
 			t.Fatalf("a silent suite past every window was ended by the clock: err = %v, shutdowns = %d", err, shutdowns)
 		}
 	})
-	t.Run("the supervisor's verdict on the current section ends the suite", func(t *testing.T) {
+	t.Run("a verdict followed by an end does not end a later invocation of the section", func(t *testing.T) {
+		root, progress, logPath := newBed(t)
+		for _, progressEvent := range []SectionEvent{
+			{Suite: "fixture", Section: "quiet", Event: "verdict", At: time.Now().Add(-2 * time.Minute).UTC().Format(time.RFC3339Nano), Depth: 0, Verdict: "dead"},
+			{Suite: "fixture", Section: "quiet", Event: "end", At: time.Now().Add(-time.Minute).UTC().Format(time.RFC3339Nano), Depth: 0},
+			{Suite: "fixture", Section: "quiet", Event: "start", At: time.Now().Add(-time.Minute).UTC().Format(time.RFC3339Nano), Depth: 0},
+		} {
+			if err := AppendSectionEvent(progress, progressEvent); err != nil {
+				t.Fatal(err)
+			}
+		}
+		run, err := ReadLatestProgressRun(progress)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if verdict := sectionVerdict(run, "fixture", "quiet"); verdict != "" {
+			t.Fatalf("closed section verdict %q attached to a later invocation", verdict)
+		}
+		shutdowns := 0
+		opts := options(root, progress, logPath, &shutdowns)
+		notes, err := os.Create(filepath.Join(root, "watchdog.err"))
+		if err != nil {
+			t.Fatal(err)
+		}
+		defer notes.Close()
+		opts.ErrorOutput = notes
+		endSuiteAfterNotes(t, notes.Name(), opts.DonePath, "passed its 1ms cap")
+		if err := RunWatchdog(opts); err != nil || shutdowns != 0 {
+			t.Fatalf("a verdict from a closed section invocation ended the suite: err = %v, shutdowns = %d", err, shutdowns)
+		}
+		if _, err := os.Stat(opts.DonePath); err != nil {
+			t.Fatalf("suite did not continue to its completion file: %v", err)
+		}
+	})
+	t.Run("the supervisor's verdict on the still-open section ends the suite", func(t *testing.T) {
 		root, progress, logPath := newBed(t)
 		if err := AppendSectionEvent(progress, SectionEvent{Suite: "fixture", Section: "quiet", Event: "verdict",
 			At: time.Now().UTC().Format(time.RFC3339Nano), Depth: 0, Verdict: "dead"}); err != nil {

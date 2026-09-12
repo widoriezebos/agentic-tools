@@ -560,10 +560,6 @@ func ProjectBudgetWithoutRun(repoRoot string, file *goal.GoalFile, now time.Time
 			}
 			continue
 		}
-		if projection.Attempts == math.MaxUint64 || attempt.ReservedMinutes > math.MaxUint64-projection.ReservedJobMinutes ||
-			attempt.ReservedMinutes > math.MaxUint64-projection.ProofReservationMinutes {
-			return unknownBudget(file.Id, revision, logicalPath, "proof-attempt accounting overflowed")
-		}
 		// A live attempt is charged its reservation; a terminal one is
 		// charged what it used, so an attempt that outlived its reservation
 		// shows its true cost (proof-groups-detect-hangs-by-progress-not-
@@ -571,6 +567,10 @@ func ProjectBudgetWithoutRun(repoRoot string, file *goal.GoalFile, now time.Time
 		charged := attempt.ReservedMinutes
 		if attempt.Terminal != nil && attempt.ObservedMinutes > 0 {
 			charged = attempt.ObservedMinutes
+		}
+		if projection.Attempts == math.MaxUint64 || charged > math.MaxUint64-projection.ReservedJobMinutes ||
+			charged > math.MaxUint64-projection.ProofReservationMinutes {
+			return unknownBudget(file.Id, revision, logicalPath, "proof-attempt accounting overflowed")
 		}
 		projection.Attempts++
 		projection.ReservedJobMinutes += charged

@@ -247,6 +247,39 @@ a governed exception; the critic sent it back, and this is what stands):
   producing anything and whose group supervisor never judges it runs
   until a person cancels the attempt.
 
+### After slice 2: the residual reads (2026-09-12, evening)
+
+A Codex read of the first cut, written before the rework, left seven
+findings that held on the landed tip; Codex gpt-5.6-sol built the fixes in
+a worktree and Opus read the build. Six landed: the watchdog acts on a
+verdict only for a section still open, per invocation, so the group
+runner's own end event never hides one (a verdict with no start is ignored;
+both writers pair them); a governed reservation whose cap has passed is
+refused at admission by name (exit 78 on the result path) instead of
+failing later as an invalid time bound; the chatty fixture leg hands the
+watchdog its note through a release file instead of a two-second window;
+the judge key runs under the caller's context with no bound of its own and
+never trades a slow git for a random key (the one production caller passes
+a background context, so a wedged git during preparation now waits until
+the run is ended by hand: the accepted residual for preparation before
+admission, which has no cancellation owner); the budget's overflow check
+reads the charged minutes; the watchdog tests' note pollers stop on cleanup
+under the shared bound.
+
+One stays open, by the Opus read: the terminal commit still acquires the
+stop-fence lock with a ten-second wait and the goal-revision lock with a
+one-second wait (cmd/metasystem/proof_run.go), and a healthy holder
+delayed past either loses a green proof with no retry. The built fix (an
+opt-in wait without a clock in the shared lock) was refused because it
+also removed the exit for an unreadable owner file and an uninspectable
+holder, and because the wait sits after the watchdog is reaped, where a
+wedged holder would park every landing's terminal commit while holding
+the stop fence. The next design act is a retry rule at the commit, not a
+wait: the commit retries its acquisition a named number of times, prints
+the holder it waits behind on each try, and on the last refusal retains
+the attempt as incomplete with the holder named, so the reaper's next pass
+or a person can finish it; slice 2c.
+
 ## Decision 4: proof
 
 Every row names the path it exercises. The window and the budget are

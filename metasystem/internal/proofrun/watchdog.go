@@ -94,11 +94,31 @@ func RunWatchdog(options WatchdogOptions) error {
 // sectionVerdict reads the supervisor's judgement of a section from the
 // progress run: "dead" or "runaway", or nothing.
 func sectionVerdict(run ProgressRun, suite, section string) string {
+	open := false
+	verdict := ""
 	for _, event := range run.Events {
-		if event.Event == "verdict" && event.Suite == suite && event.Section == section &&
-			(event.Verdict == "dead" || event.Verdict == "runaway") {
-			return event.Verdict
+		if event.Suite != suite || event.Section != section {
+			continue
 		}
+		switch event.Event {
+		case "start":
+			// A repeated section is a new invocation. Its open interval cannot
+			// inherit a supervisor verdict from an invocation that already ended.
+			open = true
+			verdict = ""
+		case "verdict":
+			if open && (event.Verdict == "dead" || event.Verdict == "runaway") {
+				verdict = event.Verdict
+			}
+		case "end":
+			if open {
+				open = false
+				verdict = ""
+			}
+		}
+	}
+	if open {
+		return verdict
 	}
 	return ""
 }

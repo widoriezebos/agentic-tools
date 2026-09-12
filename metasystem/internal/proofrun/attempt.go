@@ -92,6 +92,18 @@ type ReservationOwner struct {
 	Deadline           string  `json:"deadline"`
 }
 
+// ReservationOwnerCapPassedError retains the two facts that make a governed
+// proof reservation inadmissible, so callers do not have to parse prose.
+type ReservationOwnerCapPassedError struct {
+	OwnerDeadline time.Time
+	RequestNow    time.Time
+}
+
+func (e *ReservationOwnerCapPassedError) Error() string {
+	return fmt.Sprintf("governed reservation owner's cap has passed: owner deadline %s, request now %s",
+		e.OwnerDeadline.UTC().Format(time.RFC3339Nano), e.RequestNow.UTC().Format(time.RFC3339Nano))
+}
+
 type AttemptTerminal struct {
 	Result     string `json:"result"`
 	ExitStatus int    `json:"exitStatus"`
@@ -490,6 +502,16 @@ func ReserveLocked(request AdmissionRequest) (Attempt, LaunchResult, error) {
 	if decided {
 		return Attempt{}, decision, nil
 	}
+	var ownerDeadline time.Time
+	if request.ReservationOwner != nil {
+		ownerDeadline, err = time.Parse(time.RFC3339Nano, request.ReservationOwner.Deadline)
+		if err != nil {
+			return Attempt{}, LaunchResult{}, fmt.Errorf("governed reservation owner has no readable deadline")
+		}
+		if !ownerDeadline.After(now) {
+			return Attempt{}, LaunchResult{}, &ReservationOwnerCapPassedError{OwnerDeadline: ownerDeadline, RequestNow: now}
+		}
+	}
 	var retry *RetryEvidence
 	if previous != nil {
 		retry, err = readRetryDecision(request.RetryDecisionPath, request.ControlRoot, request.GoalID, previous.ProofIdentity.IdentityDigest, previous.AttemptID)
@@ -522,10 +544,6 @@ func ReserveLocked(request AdmissionRequest) (Attempt, LaunchResult, error) {
 		attempt.PreviousAttempt = previous.AttemptID
 	}
 	if request.ReservationOwner != nil {
-		ownerDeadline, err := time.Parse(time.RFC3339Nano, request.ReservationOwner.Deadline)
-		if err != nil {
-			return Attempt{}, LaunchResult{}, fmt.Errorf("governed reservation owner has no readable deadline")
-		}
 		attempt.Deadline = ownerDeadline.UTC().Format(time.RFC3339Nano)
 	}
 	if err := writeAttempt(attempt); err != nil {

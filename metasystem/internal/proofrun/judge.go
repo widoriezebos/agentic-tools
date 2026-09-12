@@ -47,17 +47,23 @@ func DefaultJudgeKey() string {
 // matches another unreadable run: a key must never make a test run fail,
 // and never let two unknown judges look alike.
 func ComputeJudgeKey(ctx context.Context, projectRoot, policyBaseCommit, installationPrefix string) string {
+	return computeJudgeKey(ctx, projectRoot, policyBaseCommit, installationPrefix, judgeGit)
+}
+
+type judgeGitReader func(context.Context, string, ...string) (string, error)
+
+func computeJudgeKey(ctx context.Context, projectRoot, policyBaseCommit, installationPrefix string, readGit judgeGitReader) string {
 	if projectRoot == "" || policyBaseCommit == "" {
 		return unreadableJudgeKey()
 	}
-	bounded, cancel := context.WithTimeout(ctx, 30*time.Second)
-	defer cancel()
-	if _, err := judgeGit(bounded, projectRoot, "rev-parse", "--verify", "--quiet", policyBaseCommit+"^{commit}"); err != nil {
+	// Repository reads can be delayed by host load. The caller owns
+	// cancellation, so this computation adds no deadline of its own.
+	if _, err := readGit(ctx, projectRoot, "rev-parse", "--verify", "--quiet", policyBaseCommit+"^{commit}"); err != nil {
 		return unreadableJudgeKey()
 	}
 	parts := []string{JudgeCompatibilityVersion}
 	for _, source := range judgeSources {
-		id, err := judgeSourceID(bounded, projectRoot, policyBaseCommit, path.Join(installationPrefix, source))
+		id, err := judgeSourceIDWith(ctx, projectRoot, policyBaseCommit, path.Join(installationPrefix, source), readGit)
 		if err != nil {
 			return unreadableJudgeKey()
 		}
@@ -66,12 +72,13 @@ func ComputeJudgeKey(ctx context.Context, projectRoot, policyBaseCommit, install
 	return strings.Join(parts, ":")
 }
 
-// judgeSourceID is the git id of one engine source at the commit, "absent"
-// when the commit carries no such path (ls-tree lists nothing), and an
-// error when git could not answer at all. Paths are read against the
-// repository top, whatever directory the engine runs in.
-func judgeSourceID(ctx context.Context, projectRoot, commit, sourcePath string) (string, error) {
-	listing, err := judgeGit(ctx, projectRoot, "ls-tree", "-z", "--full-tree", commit, "--", sourcePath)
+// judgeSourceIDWith is the git id of one engine source at the commit,
+// "absent" when the commit carries no such path (ls-tree lists nothing),
+// and an error when git could not answer at all. Paths are read against
+// the repository top, whatever directory the engine runs in; the reader is
+// a seam so a test can play a slow or a failing git.
+func judgeSourceIDWith(ctx context.Context, projectRoot, commit, sourcePath string, readGit judgeGitReader) (string, error) {
+	listing, err := readGit(ctx, projectRoot, "ls-tree", "-z", "--full-tree", commit, "--", sourcePath)
 	if err != nil {
 		return "", err
 	}
