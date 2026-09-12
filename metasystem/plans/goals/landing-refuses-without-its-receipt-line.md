@@ -7,9 +7,9 @@
 - Tier: 2
 - Intent: 48 of 67 code landings between 6 and 11 September carry no task receipt anywhere and only 7 carry it in the same commit (git-records.md section 2 of the delivery deep dive), although development/project-rules-local.md requires the receipt in the same commit as the work, so the retro's evidence base is gone. DONE means: land.sh refuses a code landing whose commit does not append a RECEIPT line for its goal to memory/receipts.log, names the missing line and the one command that writes it; records-only and receipt-only commits are exempt; proven by a fixture landing with and without the line. Goal 5 of plans/delivery-efficiency-plan.md. Tier 2 by Wido's choice 2026-09-11: one check on the landing script. RUNTIME INDEPENDENCE (plan principle 0; architecture doctrine of 2026-08-16: correctness never depends on an accelerator): this holds for every runtime the roster can host today (claude, codex, devin) and for future adapters such as opencode; the mechanism lives in the Go engine, the ledger verbs and the adapter contract, never in one runtime's hook, harness, CLI or transcript format; a native facility may accelerate it through its adapter, and an agent on any runtime with no accelerator gets the same guarantee from the records and the verb alone; where the goal touches a runtime path, DONE is proven on at least two runtimes.
 - Origin: human
-- Next step: Read scripts/agents/land.sh and commit.sh and the memory/receipts.log format, add the check and its fixture, land.
+- Next step: Built 2026-09-12: engine verb landing receipt-line (internal/landing/receiptline.go), land.sh step after staging in both flows, land-fixtures leg receipt-line, docs/project-rules.md. go test internal/landing + cmd/metasystem green, go-gate --fast green; section/land-fixtures through the engine and the one critic read in flight; then land via the human terminal and conclude.
 - OpenedAt: 2026-09-11T15:50:31Z
-- Revision: 9
+- Revision: 10
 - Pinned: m1b
 - Budget: elapsedLimit=4h attemptLimit=6 reservedJobMinutesLimit=720 activeJobLimit=1 reviewRoundLimit=2
 - BudgetExceptions: 0
@@ -27,4 +27,5 @@ History:
 - 2026-09-11T20:33:10Z DWQ8CW24MN97QSVKMFZ36DGZK7-m1-c6925449 approve actor=human:Wido targets=landing-refuses-without-its-receipt-line
 - 2026-09-12T05:28:26Z 1M075XT14WZM0R275BBMJFVB85-m1e-c6925449 set-pin actor=human:Wido targets=landing-refuses-without-its-receipt-line
 - 2026-09-12T06:07:26Z B2PGHP7FCFYRK1F5K0143KYYGN-m1b-30a7e141 claim actor=m1b+main-1789191336-90295-e4b24b targets=landing-refuses-without-its-receipt-line
-Integrity: sha256=19eaaba5a4191e1684577d011e3cbc21d237fd58af67d8877399382a71dbac8c
+- 2026-09-12T06:43:17Z QSB0620FAHAY4E16FQF7T0CK73-m1b-30a7e141 edit actor=m1b+main-1789191336-90295-e4b24b targets=landing-refuses-without-its-receipt-line
+Integrity: sha256=07e786d09c51574c393e694ab304ae86f2dac47a6ad8c38764314397a08c85fd
