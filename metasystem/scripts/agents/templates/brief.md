@@ -13,8 +13,8 @@ Date: <YYYY-MM-DD>
 
 The build cache is provided: the adapter sets GOCACHE, GOTMPDIR and
 STATICCHECK_CACHE to the chain's cache in the worktree's git dir, shared by every
-round; never set, unset or strip them (no env -u, no env -i before a gate): a
-self-set cache is cold every round.
+round; never set, unset or strip them (no env -u, no env -i before a proving
+run): a self-set cache is cold every round.
 
 # Inputs
 
