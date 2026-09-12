@@ -194,6 +194,15 @@ func TestTerminateGroup(t *testing.T) {
 	if _, err := engine.terminateGroup(ownedPgid, tag, false); err != nil {
 		t.Fatalf("terminating an owned group errored: %v", err)
 	}
+	// The leader is reaped by spawnTaggedGroup's goroutine, and a killed
+	// leader answers signal 0 until that reap lands; on a busy box the reap
+	// trails the wind-down's return (cadence run 16, 2026-09-12, box at load
+	// 25). Survival is a group still answering after the reap has had a
+	// bounded moment, which is the rule the wind-down itself applies.
+	deadline := time.Now().Add(5 * time.Second)
+	for groupAlive(ownedPgid) && time.Now().Before(deadline) {
+		time.Sleep(20 * time.Millisecond)
+	}
 	if groupAlive(ownedPgid) {
 		owned.Process.Kill()
 		t.Fatal("the owned group survived its wind-down")

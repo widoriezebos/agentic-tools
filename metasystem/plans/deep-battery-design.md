@@ -120,6 +120,34 @@ TestLaunchSuiteKeepsTheWatchdogsLastLine, which streams three thousand
 lines and a verdict from a fake watchdog twenty-five times and fails on
 the old order. Goal suite-watchdog-loses-its-closing-stall-line.
 
+## Status 2026-09-12 midday: the first green run, and what the real box says
+
+Runs on the eighteen-core box since the burners died, all beside two
+other seats' work (box load 9 to 29):
+
+| run | tree | wall | verdict |
+|---|---|---|---|
+| 12 | 0edbc3d8 | 790 s | two reds: the burner test's reap wait; the chatty fixture |
+| 13 | 1f756012 | 917 s | every test green; three unfloored packages; the chatty fixture |
+| 14 | a12daf37 | 816 s | one red: the ENOMEM retry count |
+| 15 | 18b5effc | 842 s | green (proof-mty4qhaz-af176dcea378dae3) |
+
+Every red ended in a landed fix (1f756012, 1dd00469, a53476ba, 18b5effc).
+The critical path is now the gate (630 to 770 s) and land-fixtures (590
+to 620 s), both under contention from the other seats; dispatcher 530 to
+570 s, supervision 445 to 470 s, adoption 320 to 345 s starting when
+supervision ends. A second cadence attempt on an identical tree is a
+reuse by design (internal/proofrun/attempt.go returns the retained
+success), so the three consecutive green runs DONE asks for are measured
+on three consecutive trees, one per landing.
+
+Under R-102-m1e the wall above 600 s is accepted for now. The remaining
+distance is a follow-up: split land-fixtures into per-leg clusters like
+the dispatcher bed (its twelve carried legs run 56 to 171 s each at a
+scenario concurrency of three), and give the gate's cmd tests and unit
+shards their own slots; six pool slots are worth one more measurement now
+that ten cores are back.
+
 ## Slices 3b and 5: the big sections and the race gate
 
 Landed 2026-09-11 evening. Slice 5 (b13771d7): the race gate runs its two
