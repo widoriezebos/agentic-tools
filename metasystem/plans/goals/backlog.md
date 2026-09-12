@@ -6,7 +6,7 @@
 - MigrationEpoch: 2026-08-20T00:00:00Z
 - ManifestDigest: d82032bee818c2d82e6a95e6f1b75347499b88ee8b68c4d20a0f3c94d00ba320
 - MigrationMode: manifest
-- Revision: 40
+- Revision: 41
 - ApprovalGate: since=2026-09-03T14:16:24Z opid=JY54AQT8101VK9353WT9FQYGA9-m0-c5dbf036
 - FleetEnrollment: at=2026-09-06T06:37:21Z machine=m1 generation=1 opid=CMNCRETKYCB18MFZNYFSZJPXQY-m1-a4f8999f
 
@@ -58,4 +58,5 @@ History:
 - 2026-09-12T11:24:23Z 1488BWB7Q9GB3M70XT0QK7AT2V-m1e-892cdaec ack actor=m1e+main-1789030447-51011-5722fc targets=deep-battery-under-ten-minutes displaced=m1e+main-1789030447-51011-5722fc@2026-09-12T08:19:30Z ack
 - 2026-09-12T11:24:37Z DHDRSCC796KT7ZT4NQHBF5PETZ-m1b-c6925449 ack actor=human:Wido targets=defect-analysis-gate displaced=m1b+main-1788680071-18713-e76d5d@2026-09-12T05:46:33Z ack
 - 2026-09-12T12:24:00Z E2H64P1E38N6Y36P3YMNK4AGDH-m1e-892cdaec ack actor=m1e+main-1789030447-51011-5722fc targets=hung-proof-attempts-end-at-their-deadline displaced=m1e+main-1789030447-51011-5722fc@2026-09-12T11:48:35Z ack
-Integrity: sha256=d7a96a9d521fd9f1e2887f6cbe31d39bb4b96dd039300f97fa521affd99c7a85
+- 2026-09-12T12:40:44Z JCVKBXXEV2V9VDHACGNXQF64WK-m1b-30a7e141 ack actor=m1b+main-1789191336-90295-e4b24b targets=delegate-proof-runs-inside-the-sandbox displaced=m1b+main-1789191336-90295-e4b24b@2026-09-12T11:24:41Z ack
+Integrity: sha256=f03dd9e737193e04bd78ee086b92e6348c80618b35416090b1da3d20272e101d
