@@ -114,6 +114,11 @@ func stopStalledSuite(options WatchdogOptions, section, reason string, run Progr
 	if suiteDone(options.DonePath) {
 		return nil
 	}
+	// The reason is announced before any kill-capable action. The closing
+	// line below is the verdict, but a watchdog that dies inside its own
+	// cleanup (seen one run in five on the chatty fixture, 2026-09-12) took
+	// the reason with it; this line survives that.
+	fmt.Fprintf(options.ErrorOutput, "suite watchdog: stalling suite in section %s (%s)\n", section, reason)
 	evidenceDir := filepath.Join(options.Root, "artifacts", "agents", "suite-failures",
 		time.Now().UTC().Format("20060102T150405Z")+"-watchdog-"+strconv.FormatInt(options.SuiteIdentity.Pid, 10))
 	sources := append([]string{}, run.Header.TmpPaths...)
