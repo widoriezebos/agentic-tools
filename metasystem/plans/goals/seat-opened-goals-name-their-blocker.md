@@ -9,8 +9,8 @@
 - Origin: human
 - Next step: Wido's word recorded 2026-09-11 (R-93-m1e): yes; seats open only blockers with --blocks and the same-publish park; non-blocking discoveries go to the backlog-notes register as proposals. Next: build behind fixtures in rank order.
 - OpenedAt: 2026-09-11T15:45:05Z
-- Revision: 13
-- Pinned: m1e
+- Revision: 14
+- Pinned: m1c
 - Budget: elapsedLimit=4h attemptLimit=6 reservedJobMinutesLimit=720 activeJobLimit=1 reviewRoundLimit=2
 - BudgetExceptions: 0
 - Approved: by=human:Wido at=2026-09-11T20:33:13Z revision=13 opid=C5C357M0RA9C6EXTRHRSNCNCRM-m1-c6925449 authority=proven digest=7be15311558e8e416cde43df7807408afa74fccfbfd3957e93bab7e69ed98372
@@ -29,4 +29,5 @@ History:
 - 2026-09-11T20:30:39Z 23WP1DYT2V5FY2W0VWRF5EN9K8-m1-c6925449 unapprove actor=human:Wido targets=seat-opened-goals-name-their-blocker reason=Wido 2026-09-11: every program goal states runtime independence (claude, codex, devin, future adapters); intent amended before re-approval
 - 2026-09-11T20:31:58Z QA8CNY306F32Y83B81T016FWJ3-m1e-3ca84c28 edit actor=m1e+main-1789158700-39729-b9c0d2 targets=seat-opened-goals-name-their-blocker
 - 2026-09-11T20:33:13Z C5C357M0RA9C6EXTRHRSNCNCRM-m1-c6925449 approve actor=human:Wido targets=seat-opened-goals-name-their-blocker
-Integrity: sha256=a4c51bbebd39893afa693c89590a2db087b087ed46844f3b73ac6f85d01574f5
+- 2026-09-12T05:28:49Z KNZM8TPGQBQ62X20M9J48NGEH3-m1e-c6925449 set-pin actor=human:Wido targets=seat-opened-goals-name-their-blocker
+Integrity: sha256=f82a99eb67f0eefe3309e175d05afa5e256a9b2daa0adbd8da607bef0fb467b5
