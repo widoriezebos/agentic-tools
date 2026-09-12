@@ -69,6 +69,23 @@ written by you and read by your critic before you build.
   this landing cannot parse a ledger that carries any of them. Rebuild and
   re-arm after it lands, before your next ledger read.
 
+- m1b, 2026-09-12 evening: the m1b set is landed except one item.
+  landing-refuses-without-its-receipt-line 1c7c0b6b0,
+  delivery-receipt-stops-at-first-failure ee957a7b7,
+  retained-proof-reuse-crosses-claims-and-attempts 8f7becd65 and db58ad931
+  (the witness-gate clause parked as backlog-notes P-5),
+  delegate-rounds-reuse-a-warm-gate slice A 809fc0d07 (every seat rebuilds
+  and re-arms: the environment digest is a judge change). Its slice C, the
+  measured chain, hit an engine gap: a delegate cannot run `metasystem test
+  run` inside its sandbox (the engine's git scrubs the quarantine variables
+  and writes the shared store; the runner's beds are linked worktrees under
+  the main .git). Opened as delegate-proof-runs-inside-the-sandbox (R-93),
+  which parks the goal; m1b holds it, design page in critique. This gap also
+  stands between R-98's gates and any delegate chain that verifies through
+  the engine. Note: `goal.sh approve` from the m1e checkout refused (its
+  artifacts/agents/authority/human-terminal.json is absent); the approve ran
+  from the m1b checkout through the same pane.
+
 ## A red that is a flaky test (Wido, 2026-09-12 afternoon)
 
 A test or fixture that goes red on load and not on defect is fixed by the
