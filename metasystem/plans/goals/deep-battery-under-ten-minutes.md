@@ -1,6 +1,6 @@
 # deep-battery-under-ten-minutes
 
-- State: claimed
+- State: approved
 - Priority: 1
 - Sequence: 12
 - Risk: severity=2 novelty=2 exposure=3 accumulation=2 basis="severity 2: a wrong merge of shard results could pass a red test unseen; novelty 2: a worker pool and shard merging are new shapes in proofrun; exposure 3: every cadence run and every seat consumes the result; accumulation 2: a flake introduced by concurrency compounds across landings"
@@ -9,15 +9,13 @@
 - Origin: human
 - Next step: STATE 2026-09-12 03:45Z (m1e): cadence walls 1177, 1189, 808 (without the coverage groups), 969 (four slots), 896 (six slots; four restored). Landings since 18:50Z: bb1e2dfd, 9a10d20e, b85b81fc, 89711b7d, 7a6babbb, bebc1b0a, 9c622d18 (the first critique round's fold: gate cmd run ended as a process group, shards cancel on a launch error, merged coverage in the retained log, skip where ps is denied, re-probe only indeterminate; dispositions at plans/dispositions/deep-battery-code-critique-r1.md). The critic chain code-critic-abb457065f1f63f2205a664a is completed but its register cannot close: five material findings are folded and tested yet the register wants a second read or a human accept-risk per finding, the closing read R-98-m1e declines until critique-closes-on-folded-proof (goal 16) lands; left open with that note. BLOCKED for DONE by the ratchet (goal goal-package-coverage-under-its-floor-since-ce59b313) and by the coverage duplication question for Wido. Cadence run 10 in flight. DONE still requires three consecutive green cadence runs under ten minutes with their attempt ids.
 - OpenedAt: 2026-09-10T12:02:35Z
-- Revision: 23
+- Revision: 24
 - Pinned: m1e
 - Budget: elapsedLimit=2d attemptLimit=40 reservedJobMinutesLimit=2400 activeJobLimit=1 reviewRoundLimit=3
 - BudgetExceptions: 2
 - NormApproval: approvedRef=R-101-m1e minutes=2400 reviewRounds=3 goalRevision=22
 - Approved: by=human:Wido at=2026-09-12T05:37:26Z revision=23 opid=Y21QHFGV4HKR43BEPDHV9F0PFV-m1-c6925449 authority=proven digest=3b855d096c0e7fe69fb53ccb2558e257bfe1ac15a0f75e7e8b611e14d5735b55
 - Sliced: machine=m1e lineage=main-1789030447-51011-5722fc revision=15 at=2026-09-11T21:36:54Z
-- Claimed: machine=m1e lineage=main-1789030447-51011-5722fc at=2026-09-12T05:37:26Z revision=23 accountingRevision=23 episodeAt=2026-09-11T19:57:52Z episodeRevision=15
-- StopCapability: generation=23 revision=23 machine=m1e claimEpoch=6 fenceEpoch=0
 
 History:
 - 2026-09-10T12:02:35Z T349JE65PA2AZGXK28VA4PN6T1-m1e-892cdaec open actor=m1e+main-1789030447-51011-5722fc targets=deep-battery-under-ten-minutes
@@ -43,4 +41,5 @@ History:
 - 2026-09-11T21:58:37Z ET2890T5B9YKZ68FD9K5K81CVA-m1-c6925449 edit actor=human:Wido targets=deep-battery-under-ten-minutes displaced=m1e+main-1789030447-51011-5722fc@2026-09-11T19:57:52Z
 - 2026-09-11T22:09:34Z FR4FWH1KFPD58D0J91CJJMQB4M-m1e-892cdaec edit actor=m1e+main-1789030447-51011-5722fc targets=deep-battery-under-ten-minutes
 - 2026-09-12T05:37:26Z Y21QHFGV4HKR43BEPDHV9F0PFV-m1-c6925449 set-budget actor=human:Wido targets=deep-battery-under-ten-minutes displaced=m1e+main-1789030447-51011-5722fc@2026-09-11T19:57:52Z
-Integrity: sha256=0e517d6ec728b9389aea3ad62bcc954d8d34117e9b6007bece4e4ee0f0174572
+- 2026-09-12T05:37:44Z 14JH2H01GRHFZRQK5NB39P1V4B-m1e-892cdaec release actor=m1e+main-1789030447-51011-5722fc targets=deep-battery-under-ten-minutes
+Integrity: sha256=56ca05aeb4054c7ab3bfc46bba02864a33a5bfbb3575ae3841ebecf023e6dd17
