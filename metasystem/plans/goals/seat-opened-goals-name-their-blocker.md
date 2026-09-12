@@ -7,9 +7,9 @@
 - Tier: 2
 - Intent: Seats opened 165 goals in five days against 62 concluded, growing the backlog by 117 (ledger.md section 5). DONE means: goal open from a seat (origin main) requires --blocks naming the goal it unblocks and, in the same publish, parks that goal with the blocker named (a claimed goal may not carry an unfinished blocker, internal/goal/validate.go) and records the edge on the parked goal, which is claimable again only when the blocker is done; a seat open without --blocks is refused with the ruling; human-origin opens are unchanged; docs/orchestration.md carries the ruling that a seat opens only the defect that blocks its current goal and every other goal is opened by a person. The ruling is a policy decision under R-36-m3: it is built after Wido records it on the design page. Goal 6 of plans/delivery-efficiency-plan.md. RUNTIME INDEPENDENCE (plan principle 0; architecture doctrine of 2026-08-16: correctness never depends on an accelerator): this holds for every runtime the roster can host today (claude, codex, devin) and for future adapters such as opencode; the mechanism lives in the Go engine, the ledger verbs and the adapter contract, never in one runtime's hook, harness, CLI or transcript format; a native facility may accelerate it through its adapter, and an agent on any runtime with no accelerator gets the same guarantee from the records and the verb alone; where the goal touches a runtime path, DONE is proven on at least two runtimes.
 - Origin: human
-- Next step: Wido's word recorded 2026-09-11 (R-93-m1e): yes; seats open only blockers with --blocks and the same-publish park; non-blocking discoveries go to the backlog-notes register as proposals. Next: build behind fixtures in rank order.
+- Next step: Built 2026-09-12 on m1c in fix-forward mode: goal open --blocks (OpenRisked refuses a seat open without it; the same publish parks the seat's claimed goal with blocker=<id> and the BlockedBy edge; done and a hand-concluded blocker lift the park; an agent cannot lift it early; split moves the marker to the first member). Critic read done (one material finding folded: a seat names only the goal it holds). Final verification on the candidate tree in flight: goal, cmd and gaterun package tests, fast gate, goal-cli/land/dispatcher/audit sections through the engine, channel bed. Then land via land.sh and conclude.
 - OpenedAt: 2026-09-11T15:45:05Z
-- Revision: 15
+- Revision: 16
 - Pinned: m1c
 - Budget: elapsedLimit=4h attemptLimit=6 reservedJobMinutesLimit=720 activeJobLimit=1 reviewRoundLimit=2
 - BudgetExceptions: 0
@@ -33,4 +33,5 @@ History:
 - 2026-09-11T20:33:13Z C5C357M0RA9C6EXTRHRSNCNCRM-m1-c6925449 approve actor=human:Wido targets=seat-opened-goals-name-their-blocker
 - 2026-09-12T05:28:49Z KNZM8TPGQBQ62X20M9J48NGEH3-m1e-c6925449 set-pin actor=human:Wido targets=seat-opened-goals-name-their-blocker
 - 2026-09-12T06:04:09Z 6D1SEXHF065QWFVTAZ4G5JKCBZ-m1c-69c9e454 claim actor=m1c+main-1789191340-90689-8975a9 targets=seat-opened-goals-name-their-blocker
-Integrity: sha256=27940dd3aee5f3d228f1a412c6af3891eed36d42b1056a15b353d38d4ebbe2cf
+- 2026-09-12T07:02:20Z HW5GE8K7R9MDVBKM7ZDA12J5QN-m1c-69c9e454 edit actor=m1c+main-1789191340-90689-8975a9 targets=seat-opened-goals-name-their-blocker
+Integrity: sha256=774c637c14a5b4d349327de9b94c847451094588e8e4bcf5db88d2731f1ac56e
