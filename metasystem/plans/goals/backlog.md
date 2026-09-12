@@ -6,7 +6,7 @@
 - MigrationEpoch: 2026-08-20T00:00:00Z
 - ManifestDigest: d82032bee818c2d82e6a95e6f1b75347499b88ee8b68c4d20a0f3c94d00ba320
 - MigrationMode: manifest
-- Revision: 44
+- Revision: 45
 - ApprovalGate: since=2026-09-03T14:16:24Z opid=JY54AQT8101VK9353WT9FQYGA9-m0-c5dbf036
 - FleetEnrollment: at=2026-09-06T06:37:21Z machine=m1 generation=1 opid=CMNCRETKYCB18MFZNYFSZJPXQY-m1-a4f8999f
 
@@ -62,4 +62,5 @@ History:
 - 2026-09-12T15:09:31Z 4685C09HB51JJ643WR0X37G5XK-m1c-69c9e454 ack actor=m1c+main-1789191340-90689-8975a9 targets=land-ready-work-lands-without-a-claim-slot displaced=m1c+main-1789191340-90689-8975a9@2026-09-12T11:18:02Z ack
 - 2026-09-12T15:19:34Z 0338M903FQ19JSZAP4ETNRAA42-m1e-892cdaec ack actor=m1e+main-1789030447-51011-5722fc targets=time-bound-tests-run-on-artificial-clocks displaced=m1e+main-1789030447-51011-5722fc@2026-09-12T12:24:00Z ack
 - 2026-09-12T15:48:46Z Y53S7944GVPSNJQ4H661SSNCHV-m1b-30a7e141 ack actor=m1b+main-1789191336-90295-e4b24b targets=delegate-rounds-reuse-a-warm-gate displaced=m1b+main-1789191336-90295-e4b24b@2026-09-12T12:40:44Z ack
-Integrity: sha256=4d498b62271fc0fe0ee6d3e723946d86ccb433a1910603d55b8c53557baffcba
+- 2026-09-12T17:15:40Z Z3B6P74Y7T7J632YQB12RN10EW-m1c-69c9e454 ack actor=m1c+main-1789191340-90689-8975a9 targets=capped-round-continues-instead-of-restarting displaced=m1c+main-1789191340-90689-8975a9@2026-09-12T15:09:31Z ack
+Integrity: sha256=3d02ba987a3a114dd8741dacb7fbba93cedd5601e6111b7fb7ad126e95852666
