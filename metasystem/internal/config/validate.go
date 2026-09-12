@@ -510,6 +510,11 @@ func Validate(confPath, repoRoot string) (tiersAbsent bool, problems []string, e
 			}
 		}
 	}
+	if raw, present := values["dispatch.return-margin-min"]; present {
+		if parsed, parseErr := strconv.Atoi(raw); parseErr != nil || parsed < 0 {
+			add("dispatch.return-margin-min must be a non-negative integer, got %s", pyRepr(raw))
+		}
+	}
 	if raw, present := values["steward.tick-patience-sec"]; present {
 		const maxPatienceSeconds = int64(^uint64(0)>>1) / int64(time.Second)
 		if parsed, parseErr := strconv.ParseInt(raw, 10, 64); parseErr == nil && parsed > maxPatienceSeconds {

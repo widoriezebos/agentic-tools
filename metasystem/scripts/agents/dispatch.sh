@@ -85,6 +85,7 @@ exit_cleanup_job=
 exit_cleanup_chain=
 exit_cleanup_authorization=
 exit_cleanup_message=
+exit_cleanup_continuation=
 exit_cleanup_lifecycle=
 exit_cleanup_creation_claim=
 wind_down_escalated_to_kill=0
@@ -1680,6 +1681,30 @@ dispatch_job() {
   brief=$brief_with_return_path_form
 
   payload="$agents/$job"; round_dir="$payload/rounds/1"
+  # The cap is authorized before the packet is composed so the packet can
+  # carry its return-by line (the fingerprint binds the cap and the input
+  # hash together; a repeated operation reads the reservation's cap).
+  product_root_args=(--product-root "$workspace")
+  acquire_cap_authority_lock
+  cap_resolution=$(mktemp "$record_locks/cap-resolution.XXXXXX")
+  model_key=$(canonical_model "$model")
+  [[ -n "$model_key" ]] || die 1 "requested model has no canonical cap-key form"
+  local cap_truncated=
+  if [[ -e "$jobs/$job.json" && -n "$mission" ]]; then
+    cap=${cap_override:-$(json_field "$jobs/$job.json" capMin)}
+    "$ms" job cap-resolution --cap "$cap" --rule repeated-operation \
+      --origin existing-reservation --output "$cap_resolution"
+    # The standing reservation's truncation, so the repeat composes the
+    # same bytes as the first wrapper.
+    cap_truncated=$(json_field "$jobs/$job.json" capResolution.truncatedBy 2>/dev/null || true)
+  else
+    exit_cleanup_authorization=$job
+    authorize_job_cap "$job" "$role" "$runtime" "$model_key" "$aliased_from" "$mission" "$cap_override" dispatch "$cap_resolution"
+    cap_truncated=$(json_field "$cap_resolution" source.truncatedBy 2>/dev/null || true)
+  fi
+  cap=$(json_field "$cap_resolution" capMin)
+  local -a cap_compose_args=(--cap-min "$cap")
+  [[ -z "$cap_truncated" || "$cap_truncated" == null ]] || cap_compose_args+=(--cap-truncated)
   prompt_temp=$(mktemp "$record_locks/composed-packet.XXXXXX")
   composition_temp=$(mktemp "$record_locks/composition.XXXXXX")
   set +e
@@ -1687,6 +1712,7 @@ dispatch_job() {
     --job "$job" --runtime "$runtime" --model "$model" --tool-policy "$tool_policy" --round 1 --mission "$mission" \
     --destructive-reach "$destructive_reach" \
     --output "$prompt_temp" --composition "$composition_temp" \
+    "${cap_compose_args[@]}" \
     "${composition_source_args[@]+"${composition_source_args[@]}"}")
   composition_rc=$?
   set -e
@@ -1700,21 +1726,6 @@ dispatch_job() {
   local output_stream
   output_stream=$("$root/scripts/agents/adapters/$runtime.sh" output-stream --round-dir "$round_dir") \
     || die 1 "$runtime adapter could not resolve its child output stream"
-
-  product_root_args=(--product-root "$workspace")
-  acquire_cap_authority_lock
-  cap_resolution=$(mktemp "$record_locks/cap-resolution.XXXXXX")
-  model_key=$(canonical_model "$model")
-  [[ -n "$model_key" ]] || die 1 "requested model has no canonical cap-key form"
-  if [[ -e "$jobs/$job.json" && -n "$mission" ]]; then
-    cap=${cap_override:-$(json_field "$jobs/$job.json" capMin)}
-    "$ms" job cap-resolution --cap "$cap" --rule repeated-operation \
-      --origin existing-reservation --output "$cap_resolution"
-  else
-    exit_cleanup_authorization=$job
-    authorize_job_cap "$job" "$role" "$runtime" "$model_key" "$aliased_from" "$mission" "$cap_override" dispatch "$cap_resolution"
-  fi
-  cap=$(json_field "$cap_resolution" capMin)
   set +e
   preflight_output=$("$ms" job claim-launch --preflight --root "$root" --opid "$job" \
     --operation-id "$job" \
@@ -1949,6 +1960,8 @@ watch_job() { # --job <id>
 cleanup_follow_up_message() {
   [[ -z "$exit_cleanup_message" ]] || rm -f -- "$exit_cleanup_message"
   exit_cleanup_message=
+  [[ -z "${exit_cleanup_continuation:-}" ]] || rm -f -- "$exit_cleanup_continuation"
+  exit_cleanup_continuation=
 }
 
 append_critique_open_ids() { # source message, output message, critic root
@@ -2216,7 +2229,8 @@ follow_up() {
   local occupancy_preparation claim_output claim_outcome claim_rc=0 launch_capability= creation_claim= cap resumed_for_claim input_bytes input_hash prompt_temp composition_temp composition_output composition_rc=0 preflight_output preflight_outcome preflight_rc=0 replay_operation=0
   local repeated_follow_up=0 parent_job fresh_context_temp= worktree_path= trunk_commit= rebase_plan= plan_rebase=false behind=0 unmerged_json= authority_message=
   local rebased_from= rebased_to= rebase_failure= rebase_message_temp= previous_message_temp= root_launch_mode=
-  local -a product_root_args=() continuation_args=() conflicted_paths=() rebase_record_args=()
+  local continuation= continuation_role= continuation_launch= continuation_workspace= continuation_temp= cap_truncated=
+  local -a product_root_args=() continuation_args=() conflicted_paths=() rebase_record_args=() cap_compose_args=()
 	local brain_fence_rc=0
 	brain_outcome=$(brain_fence_outcome follow-up) || brain_fence_rc=$?
 	if (( brain_fence_rc == 0 )); then
@@ -2279,8 +2293,33 @@ follow_up() {
     valid_id "$parent_job" && [[ -f "$jobs/$parent_job.json" ]] \
       || die 1 "the active follow-up has no readable parent record"
     latest="$jobs/$parent_job.json"
+    # A standing continuation after a cap is repeated as one: the same
+    # fresh-context packet with the paragraph the first wrapper kept.
+    continuation=$(json_field "$standing_child_record" continuation 2>/dev/null || true)
+    [[ "$continuation" == after-cap ]] || continuation=
+  elif [[ "$status" == timeout && "$error" == budget-cap ]]; then
+    # A round the reaper cut off at its cap left its work in the chain
+    # worktree and wrote no return; an implementer chain continues it in a
+    # fresh-context round that is told so (goal
+    # capped-round-continues-instead-of-restarting). Critic chains keep the
+    # refusal (their register cannot fold a capped round) and so do the
+    # roles whose returns carry no diff boundary.
+    continuation_role=$(json_field "$latest" role 2>/dev/null || true)
+    continuation_workspace=$(json_field "$latest" workspaceRoot 2>/dev/null || true)
+    continuation_launch=$(json_field "$latest" launchMode 2>/dev/null || true)
+    [[ "$continuation_role" == implementer ]] \
+      || die 1 "follow-up after a cap continues implementer worktree chains only; the newest record is a $continuation_role round cut off at its cap: start a fresh $continuation_role round (a critique re-runs under its critique cap)"
+    # The recorded launch mode admits, never a path shape: a capped record
+    # without launchMode=worktree is not continued.
+    [[ "$continuation_launch" == worktree && -n "$continuation_workspace" && "$continuation_workspace" != null ]] \
+      || die 1 "follow-up after a cap continues a job worktree (launchMode=worktree on the capped record); this chain does not record one, use a fresh dispatch"
+    [[ -d "$continuation_workspace" ]] \
+      || die 1 "follow-up after a cap needs the chain's worktree $continuation_workspace, which is gone; nothing is left to continue, use a fresh dispatch"
+    continuation=after-cap
+    round=$(( $(json_field "$latest" round) + 1 )); child="$root_id-r$round"
+    [[ ! -e "$jobs/$child.json" ]] || die 1 "follow-up job id collision: $child"
   else
-    die 1 "follow-up requires the newest record to be completed or failed with protocol_error; use a fresh dispatch after pending, running, timeout, or process-lost"
+    die 1 "follow-up requires the newest record to be completed, failed with protocol_error, or an implementer worktree round cut off at its cap (timeout with budget-cap); use a fresh dispatch after pending, running, process-lost, or cancelled"
   fi
   worktree_path=$(json_field "$jobs/$root_id.json" workspaceRoot 2>/dev/null || true)
   root_launch_mode=$(json_field "$jobs/$root_id.json" launchMode 2>/dev/null || true)
@@ -2495,15 +2534,60 @@ follow_up() {
   delivery_with_return_path_form=$(mktemp "$record_locks/follow-return-path-form.XXXXXX")
   append_return_path_form "$delivery_content" "$delivery_with_return_path_form"
   delivery_content=$delivery_with_return_path_form
-  if [[ "$resume_cap" != true ]]; then
+  # A continuation after a cap never resumes the killed session: a blind
+  # resume of a broken transcript lands a failure nothing admits and strands
+  # the worktree again. It composes fresh context with the prior brief and
+  # the prior-worktree paragraph; the prior return rides only when the
+  # parent wrote one.
+  if [[ "$resume_cap" != true || -n "$continuation" ]]; then
     resume_mode=fresh-context
     adapter_verb=dispatch
     parent_round=$(json_field "$latest" round)
-    continuation_args=(
-      --continuation "prior-brief=$payload/brief.md"
-      --continuation "prior-return=$payload/rounds/$parent_round/return.json"
-    )
+    continuation_args=(--continuation "prior-brief=$payload/brief.md")
+    # A continuation after a cap never carries a prior return: a return
+    # written in the seconds before the kill is not the round's word (the
+    # reaper judges the cap before recollection), and the paragraph says
+    # the round wrote none.
+    if [[ -z "$continuation" && -s "$payload/rounds/$parent_round/return.json" ]]; then
+      continuation_args+=(--continuation "prior-return=$payload/rounds/$parent_round/return.json")
+    fi
+    if [[ -n "$continuation" ]]; then
+      if [[ -s "$payload/rounds/$round/prior-worktree.md" ]]; then
+        # The standing wrapper's paragraph: a repeat composes the same bytes.
+        continuation_args+=(--continuation "prior-worktree=$payload/rounds/$round/prior-worktree.md")
+      else
+        continuation_temp=$(mktemp "$record_locks/follow-prior-worktree.XXXXXX")
+        exit_cleanup_continuation=$continuation_temp
+        "$ms" job cap-continuation --root "$root" --parent "$latest" --worktree "$workspace" --output "$continuation_temp" \
+          || die 1 "could not compose the continuation's prior-worktree paragraph"
+        continuation_args+=(--continuation "prior-worktree=$continuation_temp")
+      fi
+    fi
   fi
+  # The cap is authorized before the packet is composed so the packet can
+  # carry its return-by line; the fingerprint binds the cap and the input
+  # hash together, and a repeated operation reads the reservation's cap and
+  # composes the same bytes.
+  product_root_args=(--product-root "$workspace")
+  acquire_cap_authority_lock
+  cap_resolution=$(mktemp "$record_locks/follow-cap-resolution.XXXXXX")
+  model_key=$(canonical_model "$model")
+  [[ -n "$model_key" ]] || die 1 "requested model has no canonical cap-key form"
+  if (( repeated_follow_up )) && [[ -n "$mission" ]]; then
+    cap=$(json_field "$jobs/$child.json" capMin)
+    "$ms" job cap-resolution --cap "$cap" --rule repeated-operation \
+      --origin existing-reservation --output "$cap_resolution"
+    # The standing reservation's truncation, so the repeat composes the
+    # same bytes as the first wrapper.
+    cap_truncated=$(json_field "$jobs/$child.json" capResolution.truncatedBy 2>/dev/null || true)
+  else
+    exit_cleanup_authorization=$child
+    authorize_job_cap "$child" "$role" "$runtime" "$model_key" "$aliased_from" "$mission" "" follow-up "$cap_resolution"
+    cap_truncated=$(json_field "$cap_resolution" source.truncatedBy 2>/dev/null || true)
+  fi
+  cap=$(json_field "$cap_resolution" capMin)
+  cap_compose_args=(--cap-min "$cap")
+  [[ -z "$cap_truncated" || "$cap_truncated" == null ]] || cap_compose_args+=(--cap-truncated)
   prompt_temp=$(mktemp "$record_locks/follow-composed-packet.XXXXXX")
   composition_temp=$(mktemp "$record_locks/follow-composition.XXXXXX")
   set +e
@@ -2511,6 +2595,7 @@ follow_up() {
     --job "$child" --runtime "$runtime" --model "$model" --tool-policy "$tool_policy" --round "$round" --mission "$mission" \
     --destructive-reach "$destructive_reach" \
     --output "$prompt_temp" --composition "$composition_temp" \
+    "${cap_compose_args[@]}" \
     "${continuation_args[@]+"${continuation_args[@]}"}")
   composition_rc=$?
   set -e
@@ -2523,21 +2608,6 @@ follow_up() {
   local output_stream
   output_stream=$("$root/scripts/agents/adapters/$runtime.sh" output-stream --round-dir "$round_dir") \
     || die 1 "$runtime adapter could not resolve its child output stream"
-
-  product_root_args=(--product-root "$workspace")
-  acquire_cap_authority_lock
-  cap_resolution=$(mktemp "$record_locks/follow-cap-resolution.XXXXXX")
-  model_key=$(canonical_model "$model")
-  [[ -n "$model_key" ]] || die 1 "requested model has no canonical cap-key form"
-  if (( repeated_follow_up )) && [[ -n "$mission" ]]; then
-    cap=$(json_field "$jobs/$child.json" capMin)
-    "$ms" job cap-resolution --cap "$cap" --rule repeated-operation \
-      --origin existing-reservation --output "$cap_resolution"
-  else
-    exit_cleanup_authorization=$child
-    authorize_job_cap "$child" "$role" "$runtime" "$model_key" "$aliased_from" "$mission" "" follow-up "$cap_resolution"
-  fi
-  cap=$(json_field "$cap_resolution" capMin)
   set +e
   preflight_output=$("$ms" job claim-launch --preflight --root "$root" --opid "$child" \
 	--operation-id "$operation_id" \
@@ -2613,6 +2683,11 @@ follow_up() {
     mv "$fresh_context_temp" "$delivery_content"
     fresh_context_temp=
   fi
+  if [[ -n "$continuation_temp" ]]; then
+    mv "$continuation_temp" "$round_dir/prior-worktree.md"
+    continuation_temp=
+    exit_cleanup_continuation=
+  fi
   mv "$prompt_temp" "$round_dir/prompt.md"
   mv "$composition_temp" "$round_dir/composition.json"
 
@@ -2629,6 +2704,7 @@ follow_up() {
     --model "$model" --aliased-from "$aliased_from" \
     --snapshot "$snapshot_path" --fallbacks "$fallbacks" --signal "$signal" \
     --handshake-budget "$handshake_budget" --resume-mode "$resume_mode" \
+    ${continuation:+--continuation "$continuation"} \
     --input-bytes "$input_bytes" --input-hash "$input_hash" \
     --mission-turn "$mission_turn" --main-id "$current_main_id" \
     --claim-epoch "$reservation_claim_epoch" --cap-resolution "$cap_resolution" \

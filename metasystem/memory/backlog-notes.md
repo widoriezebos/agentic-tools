@@ -564,3 +564,17 @@ callers in cmd/metasystem/test.go (`engineProjectionTree`,
 need the same rule before any snapshotting verb could run in a sandbox.
 Proposal: land it only when a delegate must run such a verb inside its
 worktree.
+
+P-8. 2026-09-12, m1c (from the design read of goal
+capped-round-continues-instead-of-restarting). A follow-up round that
+writes its return and then loses its process is recorded
+`failed/process-lost`, never `completed`: both recollection paths
+(`recollect_lost_return` in scripts/agents/dispatch.sh and the reaper in
+internal/supervise/reaper.go) look for `return.json` under the reaped
+job's own id, `artifacts/agents/<job-id>/rounds`, while rounds two and up
+write under the root's payload, `artifacts/agents/<root>/rounds/<n>`. The
+only recollection fixture runs on round 1. Proposal: resolve the round
+directory through the chain root (`adapter root-job`) in both paths and
+add a round-2 recollection fixture; once that lands, admitting a
+process-lost round that ran and returned nothing as a continuation is the
+same one-line rule goal 21 adds for a capped round.

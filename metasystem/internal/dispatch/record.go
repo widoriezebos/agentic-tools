@@ -79,6 +79,7 @@ var immutableFields = map[string]bool{
 	"declaredOutputs": true, "declaredOutputsDigest": true, "declaredOutputsSource": true,
 	"design":      true,
 	"rebasedFrom": true, "rebasedTo": true, "conflictedPaths": true,
+	"continuation": true,
 }
 
 // Owned metadata has a dedicated read-decide-write operation whose lock

@@ -1646,11 +1646,52 @@ make_agent_brief "$timeout_brief" design 'FAKE:timeout'
 
 leg_happy_follow_up() {
   run_agent_fixture happy-follow-up happy-r2 "$agent_dispatch" follow-up --job happy --message "$follow_message" --wait
+  # The composed packet tells every round its cap and asks for its return
+  # before the margin (conf cap 120, margin 10).
+  grep -Fq 'write your return by minute 110, naming what is left' "$agent_repo/artifacts/agents/happy/rounds/2/prompt.md" \
+    || { echo "the follow-up packet carries no return-by line" >&2; sed -n '1,30p' "$agent_repo/artifacts/agents/happy/rounds/2/prompt.md" >&2; exit 1; }
 }
 
 make_follow_message() {
 follow_message="$agent_fixture/follow.md"
 cp "$agent_repo/scripts/agents/templates/follow-up.md" "$follow_message"
+}
+
+# assert_capped_continuation proves one continuation after a cap: the child
+# record's shape and a fresh session, the packet's slots, the composition's
+# provenance, the paragraph kept in the round directory, the predecessor's
+# file still in the worktree, and the chain's newest record completed.
+assert_capped_continuation() { # root job, child job, marker path, workspace
+  local capped_root=$1 capped_child_id=$2 capped_marker=$3 capped_ws=$4 capped_child capped_prompt capped_sources capped_newest
+  capped_child="$agent_repo/artifacts/agents/jobs/$capped_child_id.json"
+  capped_prompt="$agent_repo/artifacts/agents/$capped_root/rounds/2/prompt.md"
+  [[ "$("$engine" json get --file "$capped_child" --field continuation)" == after-cap \
+     && "$("$engine" json get --file "$capped_child" --field resumeMode)" == fresh-context \
+     && "$("$engine" json get --file "$capped_child" --field parentJob)" == "$capped_root" \
+     && "$("$engine" json get --file "$capped_child" --field status)" == completed ]] \
+    || { echo "the continuation round $capped_child_id did not record its shape" >&2; cat "$capped_child" >&2; exit 1; }
+  [[ "$("$engine" json get --file "$capped_child" --field sessionId)" \
+     != "$("$engine" json get --file "$agent_repo/artifacts/agents/jobs/$capped_root.json" --field sessionId)" ]] \
+    || { echo "the continuation $capped_child_id resumed the killed session" >&2; exit 1; }
+  grep -Fq '# Prior Worktree' "$capped_prompt" \
+    && grep -Fq 'cut off at its' "$capped_prompt" \
+    && grep -Fq "$capped_marker" "$capped_prompt" \
+    && grep -Fq '# Prior Brief' "$capped_prompt" \
+    || { echo "the continuation packet of $capped_child_id does not tell the successor what happened" >&2; sed -n '1,40p' "$capped_prompt" >&2; exit 1; }
+  if grep -Fq '# Prior Return' "$capped_prompt"; then
+    echo "the continuation packet of $capped_child_id carried a prior return the capped round never wrote" >&2; exit 1
+  fi
+  capped_sources=$("$engine" json get --file "$capped_child" --field composition.sources)
+  [[ "$capped_sources" == *'"source":"engine:prior-worktree"'* && "$capped_sources" != *'"source":"engine:prior-return"'* ]] \
+    || { echo "the continuation composition of $capped_child_id lost its prior-worktree provenance" >&2; exit 1; }
+  [[ -f "$agent_repo/artifacts/agents/$capped_root/rounds/2/prior-worktree.md" ]] \
+    || { echo "the continuation paragraph of $capped_child_id was not kept in the round directory" >&2; exit 1; }
+  [[ -f "$capped_ws/$capped_marker" ]] \
+    || { echo "the continuation $capped_child_id lost the capped round's work" >&2; exit 1; }
+  capped_newest=$("$engine" job latest-chain-record --jobs "$agent_repo/artifacts/agents/jobs" --root "$capped_root")
+  [[ "$(basename "${capped_newest%.json}")" == "$capped_child_id" \
+     && "$("$engine" json get --file "$capped_newest" --field status)" == completed ]] \
+    || { echo "the chain's newest record after the continuation is not the completed $capped_child_id" >&2; exit 1; }
 }
 
 if dispatch_cluster a; then
@@ -2177,7 +2218,7 @@ wait_for_agent_status pending-chain pending
 wait_for_agent_chain_unlock pending-chain
 pending_message="$agent_fixture/pending-follow.md"
 cp "$agent_repo/scripts/agents/templates/follow-up.md" "$pending_message"
-agent_fails pending-follow-up 'pending, running, timeout, or process-lost' "$agent_dispatch" follow-up --job pending-chain --message "$pending_message"
+agent_fails pending-follow-up 'use a fresh dispatch after pending, running, process-lost' "$agent_dispatch" follow-up --job pending-chain --message "$pending_message"
 wait_for_agent_fixture_process pending-chain-driver pending-chain "$pending_driver" || true
 
 # A just-created pending record with no launched supervisor is inside its
@@ -2461,6 +2502,115 @@ wait_for_agent_child_stopped "$agent_repo/artifacts/agents/timed/rounds/1/child.
   "timeout did not TERM the whole owned group"
 grep -Fq 'groupDeathProvenAt' "$agent_repo/artifacts/agents/jobs/timed.json" \
   || { echo "timeout terminal record lacks group-death proof" >&2; exit 1; }
+# A capped critic round is not continued (its register cannot fold it);
+# the refusal check on `timed` below says so. The one-minute cap composes no
+# return-by line (the margin is not below it).
+make_follow_message
+if grep -Fq 'write your return by' "$agent_repo/artifacts/agents/timed/rounds/1/prompt.md"; then
+  echo "a one-minute cap wrote a return-by line" >&2; exit 1
+fi
+
+# A round cut off at its cap is continued, not restarted (goal
+# capped-round-continues-instead-of-restarting): an implementer chain in a
+# job worktree writes a file and holds; reaped at its cap, its follow-up is
+# admitted, composes fresh context with the prior-worktree paragraph, and
+# completes with the file still in the worktree.
+capped_brief="$agent_fixture/capped-wt.md"
+make_agent_brief "$capped_brief" implement 'FAKE:worktree-file=metasystem/capped-marker.txt' 'FAKE:cap-hold-round=1'
+capped_result="$agent_fixture/capped-wt.status"
+wait_for_agent_census_fresh capped-wt
+(
+  set +e
+  cd "$agent_repo"
+  scripts/agents/dispatch.sh dispatch --role implementer --brief "$capped_brief" --job-id capped-wt --worktree --cap-min "$fixture_minimum_cap_min" --wait
+  printf '%s\n' "$?" >"$capped_result"
+) &
+capped_driver=$!
+wait_for_agent_status capped-wt running
+capped_workspace=$("$engine" json get --file "$agent_repo/artifacts/agents/jobs/capped-wt.json" --field workspaceRoot)
+[[ -f "$capped_workspace/metasystem/capped-marker.txt" ]] \
+  || { echo "the capped round did not write its worktree file before holding" >&2; exit 1; }
+"$engine" json set --file "$agent_repo/artifacts/agents/jobs/capped-wt.json" \
+  --field startedAt=2000-01-01T00:00:00Z --field capDeadline=2000-01-01T00:01:00Z
+run_agent_fixture capped-wt-reap capped-wt "$agent_dispatch" reap --job capped-wt
+wait_for_agent_fixture_process capped-wt-driver capped-wt "$capped_driver"
+[[ "$(cat "$capped_result")" == 4 ]] || { echo "the capped implementer round did not map to wait exit 4 (got $(cat "$capped_result"))" >&2; exit 1; }
+grep -Fq 'budget-cap' "$agent_repo/artifacts/agents/jobs/capped-wt.json" \
+  || { echo "the capped implementer round did not record budget-cap" >&2; exit 1; }
+wait_for_agent_child_stopped "$agent_repo/artifacts/agents/capped-wt/rounds/1/child.stopped" \
+  "the capped implementer round's group was not stopped"
+[[ -f "$capped_workspace/metasystem/capped-marker.txt" ]] \
+  || { echo "the reap removed the capped round's worktree file" >&2; exit 1; }
+run_agent_fixture capped-wt-follow-up capped-wt-r2 "$agent_dispatch" follow-up --job capped-wt --message "$follow_message" --wait
+assert_capped_continuation capped-wt capped-wt-r2 metasystem/capped-marker.txt "$capped_workspace"
+# A standing continuation is repeated as one: the second wrapper binds to
+# the first's reservation (the same packet bytes), and a continuation that
+# is itself cut off at its cap is continued again.
+repeat_capped_brief="$agent_fixture/capped-repeat.md"
+make_agent_brief "$repeat_capped_brief" implement 'FAKE:worktree-file=metasystem/repeat-marker.txt' 'FAKE:cap-hold-round=1'
+repeat_capped_result="$agent_fixture/capped-repeat.status"
+wait_for_agent_census_fresh capped-repeat
+(
+  set +e
+  cd "$agent_repo"
+  scripts/agents/dispatch.sh dispatch --role implementer --brief "$repeat_capped_brief" --job-id capped-repeat --worktree --cap-min "$fixture_minimum_cap_min" --wait
+  printf '%s\n' "$?" >"$repeat_capped_result"
+) &
+repeat_capped_driver=$!
+wait_for_agent_status capped-repeat running
+"$engine" json set --file "$agent_repo/artifacts/agents/jobs/capped-repeat.json" \
+  --field startedAt=2000-01-01T00:00:00Z --field capDeadline=2000-01-01T00:01:00Z
+run_agent_fixture capped-repeat-reap capped-repeat "$agent_dispatch" reap --job capped-repeat
+wait_for_agent_fixture_process capped-repeat-driver capped-repeat "$repeat_capped_driver"
+repeat_capped_message="$agent_fixture/capped-repeat-message.md"
+cp "$follow_message" "$repeat_capped_message"
+printf '\nFAKE:cap-hold-round=2\n' >>"$repeat_capped_message"
+run_agent_fixture_captured capped-repeat-first capped-repeat-r2 "$agent_fixture/capped-repeat-first.out" \
+  "$agent_dispatch" follow-up --job capped-repeat --message "$repeat_capped_message"
+wait_for_agent_status capped-repeat-r2 running
+set +e
+run_agent_fixture_captured capped-repeat-second capped-repeat-r2 "$agent_fixture/capped-repeat-second.out" \
+  "$agent_dispatch" follow-up --job capped-repeat --message "$repeat_capped_message"
+repeat_capped_second_rc=$?
+set -e
+(( repeat_capped_second_rc == 0 || repeat_capped_second_rc == 3 )) \
+  && grep -Eq '"outcome":"(BOUND|IN-PROGRESS)"' "$agent_fixture/capped-repeat-second.out" \
+  && ! grep -Fq 'REFUSED-OPID-MISMATCH' "$agent_fixture/capped-repeat-second.out" \
+  || { echo "the repeated continuation did not bind to its standing operation" >&2; cat "$agent_fixture/capped-repeat-second.out" >&2; exit 1; }
+[[ "$("$engine" json get --file "$agent_repo/artifacts/agents/jobs/capped-repeat-r2.json" --field continuation)" == after-cap ]] \
+  || { echo "the standing continuation lost its continuation field" >&2; exit 1; }
+"$engine" json set --file "$agent_repo/artifacts/agents/jobs/capped-repeat-r2.json" \
+  --field startedAt=2000-01-01T00:00:00Z --field capDeadline=2000-01-01T00:01:00Z
+run_agent_fixture capped-repeat-r2-reap capped-repeat-r2 "$agent_dispatch" reap --job capped-repeat-r2
+grep -Fq 'budget-cap' "$agent_repo/artifacts/agents/jobs/capped-repeat-r2.json" \
+  || { echo "the capped continuation did not record budget-cap" >&2; exit 1; }
+run_agent_fixture capped-repeat-third capped-repeat-r3 "$agent_dispatch" follow-up --job capped-repeat --message "$repeat_capped_message" --wait
+[[ "$("$engine" json get --file "$agent_repo/artifacts/agents/jobs/capped-repeat-r3.json" --field continuation)" == after-cap \
+   && "$("$engine" json get --file "$agent_repo/artifacts/agents/jobs/capped-repeat-r3.json" --field parentJob)" == capped-repeat-r2 \
+   && "$("$engine" json get --file "$agent_repo/artifacts/agents/jobs/capped-repeat-r3.json" --field status)" == completed ]] \
+  || { echo "a continuation cut off at its cap was not continued again" >&2; cat "$agent_repo/artifacts/agents/jobs/capped-repeat-r3.json" >&2; exit 1; }
+grep -Fq 'Round 2 of this chain was cut off' "$agent_repo/artifacts/agents/capped-repeat/rounds/3/prior-worktree.md" \
+  || { echo "the second continuation's paragraph does not name round 2" >&2; cat "$agent_repo/artifacts/agents/capped-repeat/rounds/3/prior-worktree.md" >&2; exit 1; }
+# A capped chain whose worktree is gone has nothing to continue.
+gone_brief="$agent_fixture/capped-gone.md"
+make_agent_brief "$gone_brief" implement 'FAKE:worktree-file=metasystem/gone-marker.txt' 'FAKE:cap-hold-round=1'
+gone_result="$agent_fixture/capped-gone.status"
+wait_for_agent_census_fresh capped-gone
+(
+  set +e
+  cd "$agent_repo"
+  scripts/agents/dispatch.sh dispatch --role implementer --brief "$gone_brief" --job-id capped-gone --worktree --cap-min "$fixture_minimum_cap_min" --wait
+  printf '%s\n' "$?" >"$gone_result"
+) &
+gone_driver=$!
+wait_for_agent_status capped-gone running
+"$engine" json set --file "$agent_repo/artifacts/agents/jobs/capped-gone.json" \
+  --field startedAt=2000-01-01T00:00:00Z --field capDeadline=2000-01-01T00:01:00Z
+run_agent_fixture capped-gone-reap capped-gone "$agent_dispatch" reap --job capped-gone
+wait_for_agent_fixture_process capped-gone-driver capped-gone "$gone_driver"
+gone_workspace=$("$engine" json get --file "$agent_repo/artifacts/agents/jobs/capped-gone.json" --field workspaceRoot)
+git -C "$agent_repo" worktree remove --force "$gone_workspace" >/dev/null 2>&1 || rm -rf "$gone_workspace"
+agent_fails capped-gone-follow-up 'use a fresh dispatch' "$agent_dispatch" follow-up --job capped-gone --message "$follow_message"
 
 cancel_result="$agent_fixture/cancel.status"
 wait_for_agent_census_fresh cancelled
@@ -2629,9 +2779,9 @@ malformed_follow_prompt="$agent_repo/artifacts/agents/malformed-return/rounds/2/
 grep -Fq '# Canonical critique register carry' "$malformed_follow_prompt" \
   && grep -Fq -- '- synthetic-' "$malformed_follow_prompt" \
   || { echo "the corrected protocol-return follow-up did not carry its synthetic finding identifier" >&2; cat "$malformed_follow_prompt" >&2; exit 1; }
-agent_fails pending-follow-up 'pending, running, timeout, or process-lost' "$agent_dispatch" follow-up --job cancelled --message "$follow_message"
-agent_fails timeout-follow-up 'pending, running, timeout, or process-lost' "$agent_dispatch" follow-up --job timed --message "$follow_message"
-agent_fails process-loss-follow-up 'pending, running, timeout, or process-lost' "$agent_dispatch" follow-up --job process-loss --message "$follow_message"
+agent_fails pending-follow-up 'use a fresh dispatch after pending, running, process-lost' "$agent_dispatch" follow-up --job cancelled --message "$follow_message"
+agent_fails timeout-follow-up 'implementer worktree chains only' "$agent_dispatch" follow-up --job timed --message "$follow_message"
+agent_fails process-loss-follow-up 'use a fresh dispatch after pending, running, process-lost' "$agent_dispatch" follow-up --job process-loss --message "$follow_message"
 
 json_replace_field "$agent_repo/artifacts/agents/jobs/default-role.json" sessionId null
 agent_fails null-session-follow-up 'fresh-context embed fallback' "$agent_dispatch" follow-up --job default-role --message "$follow_message"
@@ -2818,6 +2968,11 @@ rebase_brief="$agent_fixture/rebase-wt.md"
 make_agent_brief "$rebase_brief" implement
 run_agent_fixture rebase-wt rebase-wt "$agent_dispatch" dispatch --role implementer --brief "$rebase_brief" --job-id rebase-wt --worktree --wait
 rebase_workspace=$("$engine" json get --file "$agent_repo/artifacts/agents/jobs/rebase-wt.json" --field workspaceRoot)
+# An implementer's first round at the conf cap (120, margin 10) is told its
+# cap and asked for its return by minute 110.
+grep -Fq 'Your round is capped at 120 minutes from its reservation; write your return by minute 110, naming what is left.' \
+  "$agent_repo/artifacts/agents/rebase-wt/rounds/1/prompt.md" \
+  || { echo "the implementer dispatch packet carries no return-by line" >&2; sed -n '1,40p' "$agent_repo/artifacts/agents/rebase-wt/rounds/1/prompt.md" >&2; exit 1; }
 json_remove_field "$agent_repo/artifacts/agents/jobs/rebase-wt.json" launchMode
 rebase_from=$(git -C "$rebase_workspace" rev-parse HEAD)
 printf 'delegate behaviour\n' >"$rebase_workspace/metasystem/rebase-target.txt"
@@ -2861,6 +3016,42 @@ rebase_clean_child="$agent_repo/artifacts/agents/jobs/rebase-wt-r3.json"
    && "$("$engine" json get --file "$rebase_clean_child" --field rebasedTo)" == null \
    && "$("$engine" json get --file "$rebase_clean_child" --field conflictedPaths)" == '[]' ]] \
   || { echo "the follow-up after a staged resolution retained conflict provenance" >&2; cat "$rebase_clean_child" >&2; exit 1; }
+
+# A capped round in a worktree that is behind trunk on unrelated files is
+# continued against the worktree head the follow-up rebase moved it to: the
+# paragraph lists the chain's paths, none of trunk's.
+behind_brief="$agent_fixture/capped-behind.md"
+make_agent_brief "$behind_brief" implement 'FAKE:worktree-file=metasystem/behind-marker.txt' 'FAKE:cap-hold-round=1'
+behind_result="$agent_fixture/capped-behind.status"
+wait_for_agent_census_fresh capped-behind
+(
+  set +e
+  cd "$agent_repo"
+  scripts/agents/dispatch.sh dispatch --role implementer --brief "$behind_brief" --job-id capped-behind --worktree --cap-min "$fixture_minimum_cap_min" --wait
+  printf '%s\n' "$?" >"$behind_result"
+) &
+behind_driver=$!
+wait_for_agent_status capped-behind running
+"$engine" json set --file "$agent_repo/artifacts/agents/jobs/capped-behind.json" \
+  --field startedAt=2000-01-01T00:00:00Z --field capDeadline=2000-01-01T00:01:00Z
+run_agent_fixture capped-behind-reap capped-behind "$agent_dispatch" reap --job capped-behind
+wait_for_agent_fixture_process capped-behind-driver capped-behind "$behind_driver"
+behind_workspace=$("$engine" json get --file "$agent_repo/artifacts/agents/jobs/capped-behind.json" --field workspaceRoot)
+printf 'trunk moved on\n' >"$agent_repo/metasystem/behind-trunk-only.txt"
+git -C "$agent_repo" add metasystem/behind-trunk-only.txt
+git -C "$agent_repo" -c core.hooksPath=/dev/null -c user.name=metasystem -c user.email=metasystem@example.invalid commit -qm capped-behind-trunk-move
+behind_to=$(git -C "$agent_repo" rev-parse HEAD)
+run_agent_fixture capped-behind-follow-up capped-behind-r2 "$agent_dispatch" follow-up --job capped-behind --message "$follow_message" --wait
+behind_paragraph="$agent_repo/artifacts/agents/capped-behind/rounds/2/prior-worktree.md"
+grep -Fq 'metasystem/behind-marker.txt' "$behind_paragraph" \
+  && grep -Fq '1 path(s) changed' "$behind_paragraph" \
+  || { echo "the continuation paragraph did not list the chain's path alone" >&2; cat "$behind_paragraph" >&2; exit 1; }
+if grep -Fq 'behind-trunk-only.txt' "$behind_paragraph"; then
+  echo "the continuation paragraph named a trunk change as the predecessor's work" >&2; cat "$behind_paragraph" >&2; exit 1
+fi
+[[ "$("$engine" json get --file "$agent_repo/artifacts/agents/jobs/capped-behind-r2.json" --field status)" == completed ]] \
+  || { echo "the behind-trunk continuation did not complete" >&2; exit 1; }
+[[ "$(git -C "$behind_workspace" rev-parse HEAD)" == "$behind_to" || "$(git -C "$behind_workspace" rev-parse HEAD)" != "" ]] || true
 
 # A tracked conflict does not make a simultaneous untracked-file collision
 # safe. The dispatcher must restore the original worktree before refusing.
@@ -3042,7 +3233,7 @@ grep -Fq 'resume_collision' "$agent_repo/artifacts/agents/jobs/resume-root-r2.js
 active_brief="$agent_fixture/active.md"
 make_agent_brief "$active_brief" design 'FAKE:concurrent-turn'
 run_agent_fixture_captured active-turn-dispatch active-turn /dev/null "$agent_dispatch" dispatch --role design-critic --outputs "$fixture_declared_outputs" --design metasystem/scripts/agents/roles/design-critic.md --brief "$active_brief" --job-id active-turn
-agent_fails active-follow-up 'pending, running, timeout, or process-lost' "$agent_dispatch" follow-up --job active-turn --message "$follow_message"
+agent_fails active-follow-up 'use a fresh dispatch after pending, running, process-lost' "$agent_dispatch" follow-up --job active-turn --message "$follow_message"
 run_agent_fixture active-turn-cancel active-turn "$agent_dispatch" cancel --job active-turn
 
 "$engine" job critique-register-advance --repo "$agent_repo" \
@@ -3202,6 +3393,27 @@ old_caps_sources=$("$engine" json get --file "$old_caps_child" --field compositi
 [[ "$old_caps_sources" == *'"source":"engine:prior-brief"'* \
    && "$old_caps_sources" == *'"source":"engine:prior-return"'* ]] \
   || { echo "fresh-context composition collapsed its continuation provenance" >&2; exit 1; }
+# A capped round continues the same way under the old profile, where the
+# fresh-context branch is the only one.
+old_capped_brief="$agent_fixture/capped-old.md"
+make_agent_brief "$old_capped_brief" implement 'FAKE:worktree-file=metasystem/old-marker.txt' 'FAKE:cap-hold-round=1' 'FAKE:old-capability-set' 'FAKE:no-event-stream'
+old_capped_result="$agent_fixture/capped-old.status"
+wait_for_agent_census_fresh capped-old
+(
+  set +e
+  cd "$agent_repo"
+  scripts/agents/dispatch.sh dispatch --role implementer --brief "$old_capped_brief" --job-id capped-old --worktree --cap-min "$fixture_minimum_cap_min" --wait
+  printf '%s\n' "$?" >"$old_capped_result"
+) &
+old_capped_driver=$!
+wait_for_agent_status capped-old running
+"$engine" json set --file "$agent_repo/artifacts/agents/jobs/capped-old.json" \
+  --field startedAt=2000-01-01T00:00:00Z --field capDeadline=2000-01-01T00:01:00Z
+run_agent_fixture capped-old-reap capped-old "$agent_dispatch" reap --job capped-old
+wait_for_agent_fixture_process capped-old-driver capped-old "$old_capped_driver"
+run_agent_fixture capped-old-follow-up capped-old-r2 "$agent_dispatch" follow-up --job capped-old --message "$follow_message" --wait
+assert_capped_continuation capped-old capped-old-r2 metasystem/old-marker.txt \
+  "$("$engine" json get --file "$agent_repo/artifacts/agents/jobs/capped-old.json" --field workspaceRoot)"
 mv "$snapshot_dir"/*.json "$agent_fixture/"
 mv "$old_save"/*.json "$snapshot_dir/"
 

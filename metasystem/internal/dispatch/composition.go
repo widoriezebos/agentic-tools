@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"unicode/utf8"
 
@@ -115,6 +116,55 @@ type ComposeRolePacketParams struct {
 	ToolPolicy        string
 	ExtraSources      []string
 	Continuations     []CompositionContinuation
+	// CapMinutes is the round's authorized cap when the dispatcher resolved
+	// it before composing; ReturnMarginMinutes is the margin the return-by
+	// sentence keeps before it (zero asks for the return by the cap itself,
+	// a margin at or over the cap writes nothing), and CapTruncated says the
+	// cap was cut by a mission's wall clock, in which case the minutes are
+	// not the true budget and no sentence is written. A zero cap writes
+	// nothing.
+	CapMinutes          int64
+	ReturnMarginMinutes int64
+	CapTruncated        bool
+}
+
+// ReturnMarginMinutes reads dispatch.return-margin-min (default 10): the
+// minutes before its cap by which a round is asked to have written its
+// return, naming what is left.
+func ReturnMarginMinutes(confPath string) (int64, error) {
+	value, err := capGet(confPath, "dispatch.return-margin-min")
+	if err != nil {
+		return 0, err
+	}
+	if value == missingSentinel {
+		return 10, nil
+	}
+	margin, err := strconv.ParseInt(value, 10, 64)
+	if err != nil || margin < 0 {
+		return 0, fmt.Errorf("dispatch.return-margin-min must be a non-negative integer, got %q", value)
+	}
+	return margin, nil
+}
+
+// returnBySentence is the one line a delegate gets about its wall-clock cap:
+// a function of the cap and the margin alone, never of the clock, so a
+// repeated operation composes the same bytes.
+func returnBySentence(capMinutes, marginMinutes int64, truncated bool) string {
+	if capMinutes <= 0 || marginMinutes < 0 || marginMinutes >= capMinutes || truncated {
+		return ""
+	}
+	return fmt.Sprintf("Your round is capped at %d minutes from its reservation; write your return by minute %d, naming what is left.\n", capMinutes, capMinutes-marginMinutes)
+}
+
+// engineContinuationSlot reports the fixed continuation slots the engine
+// composes: the prior brief and return of a follow-up, the critique
+// register, and the worktree a capped predecessor left behind.
+func engineContinuationSlot(slot string) bool {
+	switch slot {
+	case "prior-brief", "prior-return", "critique-register", "prior-worktree":
+		return true
+	}
+	return false
 }
 
 // CompositionContinuation is engine-owned same-lineage context. Its slots
@@ -203,10 +253,10 @@ func ComposeRolePacket(p ComposeRolePacketParams) (CompositionRecord, error) {
 		configuration.BuilderEffortTier, configuration.BuilderReasoningEffort,
 		configuration.IndependentCritiqueRequired, configuration.IndependentCritiqueEffortTier,
 		configuration.IndependentCritiqueReasoningEffort, configuration.LiveProofRequired)
-	appendSource("generated-runtime-notice", "generated:runtime-notice", []byte(identity+"Context classification: advisory. This broad-read runtime does not prove context isolation or independent examination.\n"))
+	appendSource("generated-runtime-notice", "generated:runtime-notice", []byte(identity+"Context classification: advisory. This broad-read runtime does not prove context isolation or independent examination.\n"+returnBySentence(p.CapMinutes, p.ReturnMarginMinutes, p.CapTruncated)))
 	seenContinuations := map[string]bool{}
 	for _, continuation := range p.Continuations {
-		if continuation.Slot != "prior-brief" && continuation.Slot != "prior-return" && continuation.Slot != "critique-register" {
+		if !engineContinuationSlot(continuation.Slot) {
 			return CompositionRecord{}, &CompositionRefusal{Code: "REFUSED-CONTEXT-SOURCE", Source: continuation.Slot, Detail: fmt.Sprintf("role packet refused undeclared continuation slot %q", continuation.Slot)}
 		}
 		if continuation.Path == "" || seenContinuations[continuation.Slot] {

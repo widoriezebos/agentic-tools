@@ -73,6 +73,9 @@ func runDispatchComposeRolePacket(args []string) int {
 	output := flags.String("output", "", "assembled packet output")
 	composition := flags.String("composition", "", "composition record output")
 	validateOnly := flags.Bool("validate-only", false, "validate asserted sources without reading or writing a packet")
+	capMinutes := flags.Int64("cap-min", 0, "the round's authorized cap in minutes, when resolved before composition (adds the return-by sentence)")
+	returnMargin := flags.Int64("return-margin-min", -1, "minutes before the cap by which the return is due (default dispatch.return-margin-min, 10)")
+	capTruncated := flags.Bool("cap-truncated", false, "the cap was truncated by a mission's wall clock; no return-by sentence")
 	var sources repeatedStringFlag
 	var continuations repeatedStringFlag
 	flags.Var(&sources, "source", "asserted packet source (repeatable)")
@@ -110,10 +113,20 @@ func runDispatchComposeRolePacket(args []string) int {
 		}
 		continuationInputs = append(continuationInputs, dispatchcore.CompositionContinuation{Slot: slot, Path: path})
 	}
+	margin := *returnMargin
+	if *capMinutes > 0 && margin < 0 {
+		resolved, marginErr := dispatchcore.ReturnMarginMinutes(filepath.Join(*root, "metasystem.conf"))
+		if marginErr != nil {
+			fmt.Fprintln(os.Stderr, "job compose-role-packet:", marginErr)
+			return 1
+		}
+		margin = resolved
+	}
 	_, err := dispatchcore.ComposeRolePacket(dispatchcore.ComposeRolePacketParams{
 		Root: *root, Role: *role, Brief: *brief, JobID: *job, Runtime: *runtimeName,
 		Model: *model, ToolPolicy: *toolPolicy, Round: *round, Mission: *mission, DestructiveReach: dispatchcore.HazardClass(*destructiveReach), Output: *output,
 		CompositionOutput: *composition, ExtraSources: sources, Continuations: continuationInputs,
+		CapMinutes: *capMinutes, ReturnMarginMinutes: margin, CapTruncated: *capTruncated,
 	})
 	if err == nil {
 		return 0
@@ -915,6 +928,7 @@ func runDispatchBuildFollowRecord(args []string) int {
 	signal := strictBool(flags, "signal", "true", "false", "true when the runtime signals session establishment")
 	flags.Int64Var(&p.HandshakeBudget, "handshake-budget", 0, "session-established timeout seconds")
 	flags.StringVar(&p.ResumeMode, "resume-mode", "", "resumed or fresh-context")
+	flags.StringVar(&p.Continuation, "continuation", "", "after-cap when the round continues a predecessor cut off at its cap")
 	flags.Int64Var(&p.InputBytes, "input-bytes", 0, "delivery size in bytes")
 	flags.StringVar(&p.InputHash, "input-hash", "", "delivery SHA-256")
 	flags.StringVar(&p.MissionTurn, "mission-turn", "", "mission turn id (optional)")
@@ -950,6 +964,44 @@ func runDispatchBuildFollowRecord(args []string) int {
 	p.GoalTier = uint8(*goalTier)
 	p.LaunchMode = dispatchcore.LaunchMode(*launchMode)
 	return recordExit(dispatchcore.BuildFollowRecord(p))
+}
+
+// runDispatchCapContinuation writes the prior-worktree paragraph a
+// continuation round is told after its predecessor was cut off at its cap.
+func runDispatchCapContinuation(args []string) int {
+	flags := flag.NewFlagSet("job cap-continuation", flag.ContinueOnError)
+	root := flags.String("root", ".", "MetaSystem installation root (relative paths resolve against it)")
+	parent := flags.String("parent", "", "the capped parent round's record")
+	worktree := flags.String("worktree", "", "the chain's job worktree")
+	output := flags.String("output", "", "paragraph output file")
+	if flags.Parse(args) != nil {
+		return 2
+	}
+	if flags.NArg() != 0 {
+		fmt.Fprintln(os.Stderr, "job cap-continuation: positional arguments are not accepted")
+		return 2
+	}
+	if *parent == "" || *worktree == "" || *output == "" {
+		fmt.Fprintln(os.Stderr, "job cap-continuation: --parent, --worktree and --output are required")
+		return 2
+	}
+	resolve := func(path string) string {
+		if filepath.IsAbs(path) {
+			return path
+		}
+		return filepath.Join(*root, path)
+	}
+	*parent, *worktree, *output = resolve(*parent), resolve(*worktree), resolve(*output)
+	text, err := dispatchcore.CapContinuationText(*parent, *worktree)
+	if err != nil {
+		fmt.Fprintln(os.Stderr, "job cap-continuation:", err)
+		return 1
+	}
+	if err := os.WriteFile(*output, []byte(text), 0o644); err != nil {
+		fmt.Fprintln(os.Stderr, "job cap-continuation:", err)
+		return 1
+	}
+	return 0
 }
 
 func runDispatchFollowUpRebasePlan(args []string) int {

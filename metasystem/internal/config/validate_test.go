@@ -286,6 +286,8 @@ func TestValidateNumericKnobs(t *testing.T) {
 		{"negative review round ceiling", ReviewRoundMaxKey + "=-1\n", ReviewRoundMaxKey + " must be a non-negative integer"},
 		{"tier box above round ceiling", Tier2BudgetKey + "=4h/6/720m/1/4\n", ReviewRoundMaxKey},
 		{"zero dispatch cap maximum", "dispatch.cap-max=0\n", "dispatch.cap-max must be a positive integer"},
+		{"negative return margin", "dispatch.return-margin-min=-1\n", "dispatch.return-margin-min must be a non-negative integer"},
+		{"nonnumeric return margin", "dispatch.return-margin-min=soon\n", "dispatch.return-margin-min must be a non-negative integer"},
 	} {
 		problems := validateRepo(t, validConf+tc.line)
 		if !hasProblem(problems, tc.expect) {
@@ -293,7 +295,7 @@ func TestValidateNumericKnobs(t *testing.T) {
 		}
 	}
 	// Valid knobs raise nothing.
-	good := validConf + "exec.local-timeout-sec=120\nlanding.receipt-bound-min=40\nwatch.interval-sec=60\ncensus.max-interval-share-percent=50\nmetasystem.budget.elapsed-grace-percent=200\nmetasystem.budget.slice-norm-hours=4\n" + LedgerAttentionStaleMinutesKey + "=30\n" + ReviewRoundMaxKey + "=3\n" + Tier1BudgetKey + "=1h/3/360m/1/0\n" + Tier2BudgetKey + "=4h/6/720m/1/2\n" + Tier3BudgetKey + "=8h/10/1200m/1/3\ndispatch.cap-max=120\nmetasystem.counselor.brief-cadence-hours=24\nsteward.stop-slow-sec=59\n"
+	good := validConf + "exec.local-timeout-sec=120\nlanding.receipt-bound-min=40\nwatch.interval-sec=60\ncensus.max-interval-share-percent=50\nmetasystem.budget.elapsed-grace-percent=200\nmetasystem.budget.slice-norm-hours=4\n" + LedgerAttentionStaleMinutesKey + "=30\n" + ReviewRoundMaxKey + "=3\n" + Tier1BudgetKey + "=1h/3/360m/1/0\n" + Tier2BudgetKey + "=4h/6/720m/1/2\n" + Tier3BudgetKey + "=8h/10/1200m/1/3\ndispatch.cap-max=120\nmetasystem.counselor.brief-cadence-hours=24\nsteward.stop-slow-sec=59\ndispatch.return-margin-min=0\n"
 	if problems := validateRepo(t, good); len(problems) != 0 {
 		t.Fatalf("valid knobs rejected: %v", problems)
 	}

@@ -170,6 +170,7 @@ func families() []family {
 				{"build-record", "assemble the full pending job record", runDispatchBuildRecord},
 				{"build-follow-record", "assemble a follow-up round's record from its parent", runDispatchBuildFollowRecord},
 				{"follow-up-rebase-plan", "decide whether trunk movement overlaps a follow-up chain", runDispatchFollowUpRebasePlan},
+				{"cap-continuation", "write the prior-worktree paragraph a continuation round is told after its predecessor was cut off at its cap", runDispatchCapContinuation},
 				{"verify-chain-incarnation", "refuse a follow-up whose mission was re-provisioned", runDispatchVerifyChainIncarnation},
 				{"latest-chain-record", "print the newest record path in a job chain", runDispatchLatestChainRecord},
 				{"chain-members", "list a chain's jobs and statuses", runDispatchChainMembers},

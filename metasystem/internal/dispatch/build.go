@@ -641,17 +641,21 @@ func BuildRecord(p BuildRecordParams) error {
 
 // BuildFollowRecordParams carries the inputs for a follow-up round record.
 type BuildFollowRecordParams struct {
-	Output           string
-	Parent           string // parent (latest) record file
-	Job              string
-	OperationID      string
-	Round            int64
-	ParentJob        string
-	Snapshot         string
-	Fallbacks        string
-	Signal           bool
-	HandshakeBudget  int64
-	ResumeMode       string
+	Output          string
+	Parent          string // parent (latest) record file
+	Job             string
+	OperationID     string
+	Round           int64
+	ParentJob       string
+	Snapshot        string
+	Fallbacks       string
+	Signal          bool
+	HandshakeBudget int64
+	ResumeMode      string
+	// Continuation names the successor's relation to its parent beyond a
+	// correction: "after-cap" when the parent was cut off at its cap and the
+	// successor inherits its worktree. Empty for an ordinary follow-up.
+	Continuation     string
 	InputBytes       int64
 	InputHash        string
 	MissionTurn      string
@@ -776,6 +780,14 @@ func BuildFollowRecord(p BuildFollowRecordParams) error {
 	if asString(parent["destructiveReach"]) != string(p.DestructiveReach) {
 		return fmt.Errorf("follow-up must inherit the parent destructiveReach class")
 	}
+	if p.Continuation != "" && p.Continuation != ContinuationAfterCap {
+		return fmt.Errorf("follow-up continuation must be empty or %q, got %q", ContinuationAfterCap, p.Continuation)
+	}
+	if p.Continuation == ContinuationAfterCap {
+		if err := validateAfterCapParent(parent, p); err != nil {
+			return err
+		}
+	}
 	var composition any
 	if p.Composition != "" {
 		composition, err = readCompositionForJob(p.Composition, p.Job, role, runtimeName, model, mission, p.DestructiveReach, p.Round, p.InputBytes, p.InputHash)
@@ -847,6 +859,12 @@ func BuildFollowRecord(p BuildFollowRecordParams) error {
 			return fmt.Errorf("parent record has no session id to resume")
 		}
 	}
+	if p.Continuation == ContinuationAfterCap {
+		compositionRecord, _ := composition.(map[string]any)
+		if err := validateAfterCapPacket(compositionRecord); err != nil {
+			return err
+		}
+	}
 	record := map[string]any{
 		"role":                     parent["role"],
 		"mission":                  parent["mission"],
@@ -915,6 +933,9 @@ func BuildFollowRecord(p BuildFollowRecordParams) error {
 		"endedAt":         nil,
 		"usage":           nil,
 		"mirror":          nil,
+	}
+	if p.Continuation != "" {
+		record["continuation"] = p.Continuation
 	}
 	// A follow-up serves the same product as its chain: the parent's declared
 	// roots carry, and an empty declaration falls back to the workspace.
@@ -1030,7 +1051,7 @@ func readCompositionForJob(path, job, role, runtimeName, model, mission string, 
 	for _, raw := range sources[toolIndex+2:] {
 		source, _ := raw.(map[string]any)
 		slot := asString(source["slot"])
-		continuationsValid = continuationsValid && (slot == "prior-brief" || slot == "prior-return" || slot == "critique-register") && asString(source["source"]) == "engine:"+slot
+		continuationsValid = continuationsValid && engineContinuationSlot(slot) && asString(source["source"]) == "engine:"+slot
 	}
 	if asString(first["slot"]) != "task-direction" || asString(first["source"]) != "caller:brief" ||
 		asString(toolNames["source"]) != "generated:tool-names" ||
@@ -1060,4 +1081,43 @@ func TestingRequirement(goalID, gateWidth string) (string, error) {
 		return "", fmt.Errorf("testing requirement needs an accepted goal and gate width")
 	}
 	return fmt.Sprintf("\n# Required testing contract\n\nUse the committed shared testing contract for goal %s (recorded gate width %s). The proof of your round is made by the orchestrator, not inside your sandbox: when you return, the orchestrator's enrolled engine runs the risk-selected public `metasystem test` plan on your worktree as you left it, HEAD plus every change in the working tree, the same snapshot conformance reviews (`metasystem job prove-round`), a diagnostic run that collects every failed group, and the chain lands only when the landing's own delivery receipt, which reuses that run's passed groups by execution identity, is sufficient. Retained proof is reused across rounds and attempts by execution identity, so a round that changed no group's inputs proves in seconds and the landing reuses the last round's attempt. Your worktree carries no enrolled engine: do not run `metasystem test run`, `test plan` or `test verify` there. While developing, run the focused tests and the fast gate for what you change; leave every change in the worktree and do not commit (the dispatcher and the proof read the worktree); report the commands you ran. A failed group comes back to you as a follow-up with its evidence. The build cache is provided for the whole chain (GOCACHE, GOTMPDIR and STATICCHECK_CACHE are set): never set, unset or strip them, and never run a gate under env -u or env -i.\n", goalID, gateWidth), nil
+}
+
+// validateAfterCapParent is the record owner's own check of a continuation
+// after a cap: the parent is an implementer round the reaper cut off
+// (timeout with budget-cap) in a job worktree and the successor composes
+// fresh context. validateAfterCapPacket checks the packet: the
+// prior-worktree slot rides and no prior return does.
+func validateAfterCapParent(parent map[string]any, p BuildFollowRecordParams) error {
+	if asString(parent["role"]) != "implementer" {
+		return fmt.Errorf("a continuation after a cap follows an implementer round; the parent's role is %q", asString(parent["role"]))
+	}
+	if asString(parent["status"]) != "timeout" || asString(parent["error"]) != "budget-cap" {
+		return fmt.Errorf("a continuation after a cap follows a round in timeout with budget-cap; the parent is %s with error %s", asString(parent["status"]), orNone(asString(parent["error"])))
+	}
+	if p.ResumeMode != "fresh-context" {
+		return fmt.Errorf("a continuation after a cap composes fresh context, never a resume")
+	}
+	if p.LaunchMode != LaunchModeWorktree {
+		return fmt.Errorf("a continuation after a cap runs in the chain's job worktree")
+	}
+	return nil
+}
+
+func validateAfterCapPacket(composition map[string]any) error {
+	sources, _ := composition["sources"].([]any)
+	priorWorktree, priorReturn := false, false
+	for _, raw := range sources {
+		source, _ := raw.(map[string]any)
+		switch asString(source["source"]) {
+		case "engine:prior-worktree":
+			priorWorktree = true
+		case "engine:prior-return":
+			priorReturn = true
+		}
+	}
+	if !priorWorktree || priorReturn {
+		return fmt.Errorf("a continuation after a cap carries the prior-worktree slot and no prior return in its packet")
+	}
+	return nil
 }

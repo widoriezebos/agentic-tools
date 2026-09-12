@@ -25,7 +25,10 @@ resume-collision, concurrent-turn, cancel-race, process-loss,
 return-then-process-loss, timeout,
 no-session-signal, handshake-failure, no-event-stream, hook-unavailable,
 interrupted-atomic-write, nested-agent-events, effective-wider,
-effective-narrower, and mirror-failure. A Fake-Argument: line is captured as
+effective-narrower, mirror-failure, worktree-file=<relative path> (a
+guarded write into the workspace in round 1, before the behaviours run)
+and cap-hold-round=<n> (hold like timeout, in that round only). A
+Fake-Argument: line is captured as
 data and never executed. custodial-critique=/absolute/release-file holds one
 registered child until the fixture releases the round.
 USAGE
@@ -253,7 +256,29 @@ supervise() { # verb and remaining args
     printf '{"lost":true}\n' >"$heartbeat"
     kill -KILL "$$"
   fi
-  if behavior_present timeout || behavior_present concurrent-turn; then
+  # worktree-file=<path relative to the workspace>: the round writes that
+  # file through the guarded write before anything else happens to it, so
+  # a round cut off at its cap leaves work in its worktree for the
+  # continuation fixtures to find.
+  # It runs in round 1 only, so a continuation that inherits the brief
+  # through the prior-brief slot cannot recreate what its predecessor
+  # wrote; the path is a clean relative path inside the workspace.
+  worktree_file=$(behavior_value worktree-file)
+  if [[ -n "$worktree_file" && "$round" == 1 ]]; then
+    case "/$worktree_file/" in
+      //*|*/../*|*/./*) cas_terminal failed worktree_file_path execute; exit 1 ;;
+    esac
+    workspace_root=$(field "$record" workspaceRoot)
+    mkdir -p "$(dirname "$workspace_root/$worktree_file")" \
+      || { cas_terminal failed worktree_write_refused execute; exit 1; }
+    fake_guarded_write "$effective" "$workspace_root/$worktree_file" \
+      || { cas_terminal failed worktree_write_refused execute; exit 1; }
+  fi
+  # cap-hold-round=<n>: hold (as timeout does) in that round only, so a
+  # continuation round that inherits the brief through the prior-brief
+  # slot completes instead of holding again.
+  hold_round=$(behavior_value cap-hold-round)
+  if behavior_present timeout || behavior_present concurrent-turn || [[ -n "$hold_round" && "$hold_round" == "$round" ]]; then
     "$ms" util hold --tag "$instance_tag" --stopped-file "$round_dir/child.stopped" &
     printf '%s\n' "$!" >"$round_dir/child.pid"
     while true; do touch "$heartbeat"; sleep "$heartbeat_sleep"; done

@@ -893,3 +893,107 @@ func TestDefaultOperationIdentityAndFingerprintBindGoalRevision(t *testing.T) {
 		t.Fatalf("v2 fingerprints did not bind revision: %+v %+v", fingerprintOne, fingerprintTwo)
 	}
 }
+
+func TestComposeRolePacketAcceptsThePriorWorktreeSlotAndRefusesOthers(t *testing.T) {
+	root := compositionRepoRoot(t)
+	temp := t.TempDir()
+	brief := filepath.Join(temp, "brief.md")
+	worktreeFact := filepath.Join(temp, "prior-worktree.md")
+	if err := os.WriteFile(brief, []byte("Continue the build.\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(worktreeFact, []byte("Round 1 of this chain was cut off at its 120-minute cap.\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	params := ComposeRolePacketParams{
+		Root: root, Role: "implementer", Brief: brief, JobID: "build-a-r2", Runtime: "fake",
+		Model: "fake-model", ToolPolicy: "read-write", Round: 2, DestructiveReach: HazardMechanical,
+		Output: filepath.Join(temp, "prompt.md"), CompositionOutput: filepath.Join(temp, "composition.json"),
+		Continuations: []CompositionContinuation{{Slot: "prior-worktree", Path: worktreeFact}},
+	}
+	record, err := ComposeRolePacket(params)
+	if err != nil {
+		t.Fatal(err)
+	}
+	packet, err := os.ReadFile(params.Output)
+	if err != nil {
+		t.Fatal(err)
+	}
+	last := record.Sources[len(record.Sources)-1]
+	if last.Slot != "prior-worktree" || last.Source != "engine:prior-worktree" || !strings.Contains(string(packet), "# Prior Worktree\n\nRound 1 of this chain was cut off") {
+		t.Fatalf("the prior-worktree slot did not compose: %+v\n%s", last, packet)
+	}
+	if _, err := readCompositionForJob(params.CompositionOutput, "build-a-r2", "implementer", "fake", "fake-model", "", HazardMechanical, 2, int64(len(packet)), record.PacketDigest); err != nil {
+		t.Fatalf("the composition validation refused the engine slot: %v", err)
+	}
+	params.Continuations = []CompositionContinuation{{Slot: "prior-worktree-notes", Path: worktreeFact}}
+	if _, err := ComposeRolePacket(params); err == nil || !strings.Contains(err.Error(), "undeclared continuation slot") {
+		t.Fatalf("an undeclared slot was accepted: %v", err)
+	}
+}
+
+func TestComposeRolePacketWritesTheReturnBySentenceForAKnownCap(t *testing.T) {
+	root := compositionRepoRoot(t)
+	temp := t.TempDir()
+	brief := filepath.Join(temp, "brief.md")
+	if err := os.WriteFile(brief, []byte("Do the focused task.\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	compose := func(name string, capMinutes, margin int64, truncated bool) string {
+		t.Helper()
+		params := ComposeRolePacketParams{
+			Root: root, Role: "verifier", Brief: brief, JobID: "verify-" + name, Runtime: "fake",
+			Model: "fake-model", ToolPolicy: "read-only", Round: 1, DestructiveReach: HazardMechanical,
+			Output: filepath.Join(temp, name+".md"), CompositionOutput: filepath.Join(temp, name+".json"),
+			CapMinutes: capMinutes, ReturnMarginMinutes: margin, CapTruncated: truncated,
+		}
+		if _, err := ComposeRolePacket(params); err != nil {
+			t.Fatal(err)
+		}
+		packet, err := os.ReadFile(params.Output)
+		if err != nil {
+			t.Fatal(err)
+		}
+		return string(packet)
+	}
+	if packet := compose("known", 120, 10, false); !strings.Contains(packet, "Your round is capped at 120 minutes from its reservation; write your return by minute 110, naming what is left.") {
+		t.Fatalf("a known cap did not write the return-by sentence:\n%s", packet)
+	}
+	if packet := compose("zero", 120, 0, false); !strings.Contains(packet, "write your return by minute 120, naming what is left.") {
+		t.Fatalf("a zero margin did not ask for the return by the cap itself:\n%s", packet)
+	}
+	for name, packet := range map[string]string{
+		"no cap":      compose("nocap", 0, 10, false),
+		"margin over": compose("over", 1, 10, false),
+		"truncated":   compose("cut", 120, 10, true),
+	} {
+		if strings.Contains(packet, "write your return by") {
+			t.Fatalf("%s wrote a return-by sentence:\n%s", name, packet)
+		}
+	}
+	if sentence := returnBySentence(120, 10, false); !strings.HasSuffix(sentence, "\n") || strings.Contains(sentence, "2026") {
+		t.Fatalf("the sentence is not one clock-free line: %q", sentence)
+	}
+}
+
+func TestReturnMarginMinutesReadsTheConfiguredMargin(t *testing.T) {
+	conf := filepath.Join(t.TempDir(), "metasystem.conf")
+	if err := os.WriteFile(conf, nil, 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if margin, err := ReturnMarginMinutes(conf); err != nil || margin != 10 {
+		t.Fatalf("default margin = %d, %v", margin, err)
+	}
+	if err := os.WriteFile(conf, []byte("dispatch.return-margin-min=15\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if margin, err := ReturnMarginMinutes(conf); err != nil || margin != 15 {
+		t.Fatalf("configured margin = %d, %v", margin, err)
+	}
+	if err := os.WriteFile(conf, []byte("dispatch.return-margin-min=soon\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := ReturnMarginMinutes(conf); err == nil {
+		t.Fatal("a malformed margin was accepted")
+	}
+}

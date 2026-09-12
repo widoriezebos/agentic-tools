@@ -146,6 +146,16 @@ eight `yes` burners, then the bed through the engine on the candidate tree.
   seat whose built work waits to land runs `goal land-ready --id <goal>` and
   claims the next goal beside it; one landing slot per machine.
 
+- m1c, 2026-09-12, capped-round-continues-instead-of-restarting: a round cut
+  off at its cap is continued by `follow-up` (implementer worktree chains),
+  its successor's packet carries the `prior-worktree` slot and its record
+  `continuation=after-cap`, and a packet whose cap leaves room for the
+  margin carries a return-by line. An engine older than this landing
+  cannot create or repeat a continuation round (it has no `job
+  cap-continuation` verb and refuses the composition's new source), and
+  its packets carry no return-by line. Rebuild and re-arm after it lands,
+  before your next dispatch or follow-up.
+
 ## Ledger hygiene
 
 - Claim before you start: `bin/metasystem goal claim --root . --id <goal>`

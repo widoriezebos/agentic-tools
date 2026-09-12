@@ -1,6 +1,10 @@
 package main
 
-import "testing"
+import (
+	"os"
+	"path/filepath"
+	"testing"
+)
 
 // goal park's flag setup once registered and-none TWICE (a stray
 // f.Bool beside boolAsString) and panicked on every invocation — the
@@ -71,5 +75,24 @@ func TestGoalLandReadyIsRegisteredAsASyncOnlyVerb(t *testing.T) {
 	if _, ok := parseSyncFlags("land-ready", []string{"--root", t.TempDir(), "--id", "built", "--by", "Wido"}); !ok {
 		// --by parses on every sync verb; the verb itself refuses a human actor.
 		t.Fatal("parse of --by failed at the flag edge")
+	}
+}
+
+// job cap-continuation refuses without its flags, refuses positional
+// arguments, and refuses a parent that is not a capped implementer round.
+func TestJobCapContinuationFlagsAndRefusals(t *testing.T) {
+	dir := t.TempDir()
+	if code := runDispatchCapContinuation([]string{"--root", dir}); code != 2 {
+		t.Fatalf("missing flags exit = %d, want 2", code)
+	}
+	if code := runDispatchCapContinuation([]string{"--root", dir, "--parent", "p.json", "--worktree", dir, "--output", "o.md", "stray"}); code != 2 {
+		t.Fatalf("a positional argument was accepted: exit %d", code)
+	}
+	parent := filepath.Join(dir, "parent.json")
+	if err := os.WriteFile(parent, []byte(`{"jobId":"chain","role":"implementer","round":1,"status":"completed","error":null,"capMin":120}`), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if code := runDispatchCapContinuation([]string{"--root", dir, "--parent", "parent.json", "--worktree", dir, "--output", "out.md"}); code != 1 {
+		t.Fatalf("a completed parent was accepted: exit %d", code)
 	}
 }
