@@ -183,8 +183,13 @@ func TestProbeLiveChildArgv(t *testing.T) {
 	// that slept exactly as long as the deadline could exit inside the
 	// fork-to-execve wait on a loaded box and read as an empty argv
 	// (2026-09-12, inside the pooled cadence battery); the deferred kill
-	// ends it.
-	command := exec.Command("/bin/sh", "-c", "sleep 60")
+	// ends it. The command is a list, not one simple command: bash replaces
+	// itself with a lone `sleep 60` (exec optimization), so the three-word
+	// argv this test reads existed only until that exec, a few milliseconds
+	// the probe won on a quiet box and lost under load (cadence run 11,
+	// proof-mtxzv4im, read `[sleep 60]` for the whole deadline). With the
+	// trailing `true` the shell stays the process the probe reads.
+	command := exec.Command("/bin/sh", "-c", "sleep 60; true")
 	if err := command.Start(); err != nil {
 		t.Fatal(err)
 	}
