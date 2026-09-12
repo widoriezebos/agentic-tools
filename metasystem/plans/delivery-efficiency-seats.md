@@ -69,6 +69,20 @@ written by you and read by your critic before you build.
   this landing cannot parse a ledger that carries any of them. Rebuild and
   re-arm after it lands, before your next ledger read.
 
+## A red that is a flaky test (Wido, 2026-09-12 afternoon)
+
+A test or fixture that goes red on load and not on defect is fixed by the
+seat that meets it, at once and unblocked: never retried, never worked
+around. The standard of 2026-09-12 (eight such defects that day): find the
+timing or ordering assumption, fix it in the test or the code it exposed,
+land by human commit with a test that fails on the old code wherever one
+can be written, and record it on the goal in flight. Open a defect goal
+only when the defect truly blocks the goal: a seat's `--blocks` open parks
+the blocked goal and drops its claim (R-93-m1e). The sweep that found the
+class: `ps -axo pid=,etime=,%cpu=,command= | awk '$3 > 50'` for stray
+burners first, then the suspect package under the race detector beside
+eight `yes` burners, then the bed through the engine on the candidate tree.
+
 ## Ledger hygiene
 
 - Claim before you start: `bin/metasystem goal claim --root . --id <goal>`
