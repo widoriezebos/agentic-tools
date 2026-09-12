@@ -221,6 +221,30 @@ A goal the claim gate would refuse is reported by `goal next` and the channel
 status with the gate's own cause, is never handed to a seat, and is repaired
 by the human act the cause names.
 
+## Reading the backlog
+
+`metasystem goal list --root .` prints a text summary capped at 64 KiB:
+bucket counts and the accepted ledger tip, projection notices, then one line
+per goal in claimed, approved, queued, parked order (the legacy ledger lists
+its current goal first). Each line carries the goal's rank, state, tier, id,
+pin and claimant, then a landing in progress, a park's reason or a relayed
+approval's standing, then the first sentence of its next step cut at 120
+runes with a visible mark. Each bucket sorts
+by priority, sequence, then id, with unranked goals last. Rows carry the rank,
+state, tier, id, pin, claim machine, and the first sentence of the next step
+cut at 120 characters. `--done` adds archived rows. A truncated summary ends with
+an omitted-goal count and the command for saving the records.
+
+`goal list --json > file` supplies the detail with the existing JSON keys;
+every goal's `History` is an empty list. `--json --history > file` includes
+all ledger history, and `--json --pretty` indents the JSON. The JSON `open`
+array continues to contain all live goals, also listed in their state arrays;
+the text summary prints each goal once. `--label` remains repeatable with
+AND matching, and `--fetch` validates and advances the accepted backlog.
+
+`goal show --id <id>` keeps the JSON page envelope and goal fields, with an
+empty `History` list by default. Add `--history` for the complete record.
+
 ## Ordering the backlog
 
 An open goal may carry a priority from 1 (highest) through 3 and a one-based

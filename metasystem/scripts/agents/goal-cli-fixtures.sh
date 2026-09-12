@@ -856,29 +856,29 @@ fi
 
 # 8. List filters use AND across repeated labels and leave zero-label
 # goals lawful but absent from a filtered result.
-pretty_goal_ids() {
-  awk 'NF == 5 && $1 ~ /^([123]|-)$/ && $2 ~ /^([0-9]+|-)$/ && $3 ~ /^(queued|approved|claimed|parked)$/ && $5 ~ /^[a-z][a-z0-9-]*$/ { print $5 }'
+summary_goal_ids() {
+  awk '$1 ~ /^[0-3]:[0-9]+$/ && $2 ~ /^(queued|approved|claimed|parked)$/ && $3 == "tier" && $5 ~ /^[a-z][a-z0-9-]*$/ { print $5 }'
 }
 "$ms" goal open --root "$clone" --id labeled-two --origin human \
 	--intent "Second labeled goal." --next "Continue." --tier 3 --risk severity=3,novelty=1,exposure=1,accumulation=1 --basis "fixture risk" \
   --label shared --label alpha >/dev/null
-one_filter=$("$ms" goal list --root "$clone" --pretty --label shared)
-one_ids=$(pretty_goal_ids <<<"$one_filter")
+one_filter=$("$ms" goal list --root "$clone" --label shared)
+one_ids=$(summary_goal_ids <<<"$one_filter")
 grep -Fxq 'labeled-one' <<<"$one_ids" && grep -Fxq 'labeled-two' <<<"$one_ids" \
   || { echo "one-label list filtering lost a match: $one_filter" >&2; exit 1; }
 if grep -Fxq 'plain-goal' <<<"$one_ids"; then
   echo "a zero-label goal appeared in a filtered list" >&2; exit 1
 fi
-two_filters=$("$ms" goal list --root "$clone" --pretty --label alpha --label shared)
-two_ids=$(pretty_goal_ids <<<"$two_filters")
+two_filters=$("$ms" goal list --root "$clone" --label alpha --label shared)
+two_ids=$(summary_goal_ids <<<"$two_filters")
 grep -Fxq 'labeled-one' <<<"$two_ids" && grep -Fxq 'labeled-two' <<<"$two_ids" \
   || { echo "two-label AND filtering lost a match: $two_filters" >&2; exit 1; }
 "$ms" goal open --root "$clone" --id and-a --origin human \
 	--intent "Carries only a." --next "Continue." --tier 3 --risk severity=3,novelty=1,exposure=1,accumulation=1 --basis "fixture risk" --label a >/dev/null
 "$ms" goal open --root "$clone" --id and-ab --origin human \
 	--intent "Carries a and b." --next "Continue." --tier 3 --risk severity=3,novelty=1,exposure=1,accumulation=1 --basis "fixture risk" --label a --label b >/dev/null
-and_probe=$("$ms" goal list --root "$clone" --pretty --label a --label b)
-and_ids=$(pretty_goal_ids <<<"$and_probe")
+and_probe=$("$ms" goal list --root "$clone" --label a --label b)
+and_ids=$(summary_goal_ids <<<"$and_probe")
 [[ "$and_ids" == "and-ab" ]] \
   || { echo "the two-label list filter did not return exactly the goal carrying both labels: $and_probe" >&2; exit 1; }
 
@@ -1251,8 +1251,8 @@ git -C "$clone" -c user.name=fixture -c user.email=fixture@example.invalid \
 git -C "$clone" push -q origin HEAD:main
 legacy_tip=$(git -C "$clone" rev-parse HEAD)
 git -C "$clone" update-ref refs/metasystem/goals/accepted "$legacy_tip"
-dual_list=$("$ms" goal list --root "$clone" --pretty)
-grep -q '^done: 3 archived$' <<<"$dual_list" \
+dual_list=$("$ms" goal list --root "$clone")
+grep -q ' done=3 tip=' <<<"$dual_list" \
   || { echo "the dual-location soak reader did not count both conclusions: $dual_list" >&2; exit 1; }
 dual_show=$("$ms" goal show --root "$clone" --id archive-roundtrip)
 grep -q '"where":"archived"' <<<"$dual_show" \
@@ -1385,8 +1385,8 @@ grep -q "^LANDING ship-widget: land-ready since $land_at; the queue is open\$" <
   || { echo "goal next does not name the landing goal: $next_out" >&2; exit 1; }
 grep -q '^continue your claimed goal: next-widget$' <<<"$next_out" \
   || { echo "goal next does not continue the working claim: $next_out" >&2; exit 1; }
-"$ms" goal list --root "$clone" --pretty >"$tmp/landing-list.txt" 2>&1 || true
-grep -q "landing since $land_at" "$tmp/landing-list.txt" \
+"$ms" goal list --json --root "$clone" >"$tmp/landing-list.txt"
+grep -q "\"Landing\":{\"At\":\"$land_at\"" "$tmp/landing-list.txt" \
   || { echo "goal list does not show the landing slot" >&2; cat "$tmp/landing-list.txt" >&2; exit 1; }
 # The person concludes the landing goal; the archive keeps the land-ready
 # line and drops the slot with the claim.

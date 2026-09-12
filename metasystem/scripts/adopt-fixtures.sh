@@ -610,7 +610,7 @@ if adopt_leg default; then
   # consistency assertion needs no write authority — and no python
   # (the kill-python doctrine: metasystem-coupled decisions live in
   # the Go engine).
-  "$tgt/bin/metasystem" goal list --root "$tgt" | grep -q '"baselineMatches":true' \
+  "$tgt/bin/metasystem" goal list --json --root "$tgt" | grep -q '"baselineMatches":true' \
     || { echo "adopt: the seeded goal pair is not reconciled (baseline out of step)" >&2; exit 1; }
   # Genesis authorizes seeding, nothing more: once the pair stands, an
   # intent-bearing write is holder-only against the TARGET. Probe a COPY

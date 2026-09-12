@@ -426,7 +426,7 @@ if git -C "$target" rev-parse --git-dir >/dev/null 2>&1; then
   fi
 fi
 
-pair_state=$("$target/bin/metasystem" goal list --root "$target" 2>/dev/null || true)
+pair_state=$("$target/bin/metasystem" goal list --json --root "$target" 2>/dev/null || true)
 if [[ -n "$pair_state" ]] \
   && [[ $("$ms" json get --value "$pair_state" --field baselinePresent --default false) == true ]] \
   && [[ $("$ms" json get --value "$pair_state" --field baselineMatches --default false) == true ]]; then

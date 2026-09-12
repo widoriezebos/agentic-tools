@@ -4,7 +4,6 @@ import (
 	"encoding/json"
 	"os"
 	"path/filepath"
-	"regexp"
 	"strings"
 	"testing"
 	"time"
@@ -68,7 +67,7 @@ func TestGoalPriorityAuthority(t *testing.T) {
 func TestGoalPriorityListing(t *testing.T) {
 	t.Run("cross-state", func(t *testing.T) {
 		root := priorityListingFixture(t)
-		stdout, code := captureStdout(t, func() int { return runGoalList([]string{"--root", root}) })
+		stdout, code := captureStdout(t, func() int { return runGoalList([]string{"--root", root, "--json"}) })
 		if code != 0 {
 			t.Fatalf("JSON list failed: code=%d output=%q", code, stdout)
 		}
@@ -90,18 +89,6 @@ func TestGoalPriorityListing(t *testing.T) {
 		}
 		if listed.Open[0].Priority != 1 || listed.Open[0].Sequence != 1 || listed.Open[2].Priority != 0 || listed.Open[2].Sequence != 0 {
 			t.Fatalf("JSON did not expose ranked and unranked field values: %+v", listed.Open)
-		}
-
-		pretty, prettyCode := captureStdout(t, func() int { return runGoalList([]string{"--root", root, "--pretty"}) })
-		if prettyCode != 0 || !strings.Contains(pretty, "PRIORITY") || !strings.Contains(pretty, "SEQUENCE") || !strings.Contains(pretty, "STATE") || !strings.Contains(pretty, "PIN") || !strings.Contains(pretty, "GOAL") {
-			t.Fatalf("pretty list lacks the open-goal table: code=%d\n%s", prettyCode, pretty)
-		}
-		zAt, standingAt, aAt := strings.Index(pretty, "z-ranked"), strings.Index(pretty, "standing-validation"), strings.Index(pretty, "a-unranked")
-		if zAt < 0 || standingAt <= zAt || aAt <= standingAt {
-			t.Fatalf("pretty list grouped by state instead of rank: %s", pretty)
-		}
-		if !strings.Contains(pretty, "queued") || !strings.Contains(pretty, "claimed") || !strings.Contains(pretty, "parked") || !strings.Contains(pretty, "m2") || !regexp.MustCompile(`(?m)^-\s+-\s+parked\s+m3\s+a-unranked$`).MatchString(pretty) || !strings.Contains(pretty, "Ranked queue intent.") {
-			t.Fatalf("pretty rows lost state, pin, unranked marker, or intent detail: %s", pretty)
 		}
 	})
 }

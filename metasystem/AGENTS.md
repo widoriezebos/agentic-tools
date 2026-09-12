@@ -33,6 +33,10 @@ novelty derive the tier; exposure and accumulation weight its proof.
 
 Programs START with `goal open` by a person: a multi-session effort gets a ledger goal before its first commit so intent survives turns; a seat's own `goal open` only names the claimed goal it blocks (`--blocks`) and parks it until that blocker is done, and non-blocking ideas go to `memory/backlog-notes.md`. At turn end, read `goal next`, one line every runtime has, hooks or none; a free seat adds `--machine <own-nick> --fetch` and claims only the ready goal it returns. Records explain work but never select it, nor do scanning, kickoff order or pin preference. If another seat wins the claim, fetch again. Concluding or parking a human-opened goal is human-reserved. The ledger mutates only through `goal` verbs; manual edits go through `goal reconcile`.
 
+For backlog inspection, `goal list` defaults to a bounded summary; `--json`
+provides the records and `--json --history` includes ledger history. See
+`docs/backlog-mechanism.md` for the output contract.
+
 ## Completion
 
 Before calling any change complete, run the default completion check in `docs/design/design-obligation-gate.md`. When the change has a runnable surface, verify it end to end per `skills/verify/SKILL.md`. Work is complete only when the requested outcome exists, focused verification passes, and all critical or high design obligations are done. Report what changed, what proved it, what was not run, and remaining risk, structured for human review per `docs/collaboration.md`. On unfinished multi-session work, update the stream's handoff note in `plans/` before ending the session. If the task changed the repository, append a receipt with `scripts/receipt.sh add`; in review-only work, include the proposed receipt line in your report instead of writing it.

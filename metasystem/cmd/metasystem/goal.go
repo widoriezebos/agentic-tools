@@ -9,7 +9,6 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
-	"text/tabwriter"
 	"time"
 
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/authority"
@@ -269,16 +268,26 @@ func boolAsString(f *flag.FlagSet, name string) *string {
 	return &value
 }
 
-// runGoalList prints the parsed ledger as JSON — read-only, never
-// mutating, with problems carried as degraded facts.
+// The summary keeps backlog reads bounded; explicit JSON preserves the
+// records needed by scripts and detailed inspection.
 func runGoalList(args []string) int {
 	flags := flag.NewFlagSet("goal list", flag.ContinueOnError)
 	root := flags.String("root", ".", "checkout root")
-	pretty := flags.Bool("pretty", false, "a human table instead of JSON")
+	var output goalListOutput
+	flags.BoolVar(&output.JSON, "json", false, "print goal records as JSON")
+	flags.BoolVar(&output.History, "history", false, "include ledger history in JSON records")
+	flags.BoolVar(&output.Done, "done", false, "include archived goals in the summary")
+	flags.BoolVar(&output.Pretty, "pretty", false, "indent --json output")
 	fetch := flags.Bool("fetch", false, "fetch and validate the canonical backlog before listing")
 	var labels repeatedStrings
 	flags.Var(&labels, "label", "label token required on every listed goal (repeatable)")
 	if flags.Parse(args) != nil {
+		return 2
+	}
+	// A flag that shapes the JSON records is refused on the summary rather
+	// than ignored: a silent no-op reads as "the ledger has no history".
+	if !output.JSON && (output.History || output.Pretty) {
+		fmt.Fprintln(os.Stderr, "goal list: --history and --pretty shape the JSON records; add --json")
 		return 2
 	}
 	if err := goal.ValidateLabels(labels); err != nil {
@@ -286,7 +295,7 @@ func runGoalList(args []string) int {
 		return 1
 	}
 	if converted(*root) {
-		return listSynced(*root, *pretty, *fetch, labels...)
+		return listSynced(*root, output, *fetch, labels...)
 	}
 	if len(labels) > 0 || *fetch {
 		fmt.Fprintln(os.Stderr, "goal list --label and --fetch read the synced backlog; this checkout still carries the legacy ledger and must migrate first")
@@ -297,6 +306,15 @@ func runGoalList(args []string) int {
 	if err != nil {
 		fmt.Fprintln(os.Stderr, err)
 		return 1
+	}
+	if !output.JSON {
+		grouped := legacyGoalGroups(ledger)
+		notices := make([]string, len(problems))
+		for i, problem := range problems {
+			notices[i] = string(problem)
+		}
+		fmt.Print(goalListSummary(grouped, legacyListStates, "legacy", notices, output.Done, goal.ApprovalHorizon{}))
+		return 0
 	}
 	out := map[string]any{
 		"root":            *root,
@@ -316,8 +334,7 @@ func runGoalList(args []string) int {
 		out["done"] = ledger.Done
 		out["goalFree"] = ledger.Free
 	}
-	printJSON(out)
-	return 0
+	return printGoalListJSON(out, output.Pretty)
 }
 
 // converted reports the post-migration world by POSITIVE evidence:
@@ -325,7 +342,7 @@ func runGoalList(args []string) int {
 // of goals.md alone is not conversion — fixture sandboxes and plain
 // directories never had a backlog, and routing them into the sync
 // engine sends fetches at remotes that do not exist. The legacy
-// file's presence keeps every pre-conversion behavior byte-identical.
+// file's presence keeps reads on the legacy store until migration.
 func converted(root string) bool {
 	if _, err := os.Stat(filepath.Join(root, "plans", "goals.md")); err == nil {
 		return false
@@ -371,9 +388,7 @@ func runGoalTierProbe(args []string) int {
 	return 0
 }
 
-// listSynced prints the accepted world: the same JSON idea as the
-// legacy list, grouped by state, with the projection's banners.
-func listSynced(root string, pretty, fetchFirst bool, requiredLabels ...string) int {
+func listSynced(root string, output goalListOutput, fetchFirst bool, requiredLabels ...string) int {
 	e, err := goal.ResolveEndpoint(root)
 	if err != nil {
 		fmt.Fprintln(os.Stderr, err)
@@ -391,82 +406,41 @@ func listSynced(root string, pretty, fetchFirst bool, requiredLabels ...string) 
 		if !goal.MatchesLabels(f.Labels, requiredLabels) {
 			continue
 		}
+		f = goalDisplayRecord(f, output.History)
 		open = append(open, f)
 		grouped[f.State] = append(grouped[f.State], f)
 	}
 	var done []*goal.GoalFile
 	for _, id := range goal.SortedGoalIds(p.Tree.Done) {
 		if f := p.Tree.Done[id]; goal.MatchesLabels(f.Labels, requiredLabels) {
-			done = append(done, f)
+			done = append(done, goalDisplayRecord(f, output.History))
 		}
 	}
-	if pretty {
-		for _, banner := range p.Banners {
-			fmt.Println("! " + banner)
-		}
-		writer := tabwriter.NewWriter(os.Stdout, 0, 4, 2, ' ', 0)
-		fmt.Fprintln(writer, "PRIORITY\tSEQUENCE\tSTATE\tPIN\tGOAL")
-		for _, f := range open {
-			priority, sequence, pin := "-", "-", "-"
-			if f.Priority != 0 {
-				priority = fmt.Sprintf("%d", f.Priority)
-			}
-			if f.Sequence != 0 {
-				sequence = fmt.Sprintf("%d", f.Sequence)
-			}
-			if f.Pinned != "" {
-				pin = f.Pinned
-			}
-			fmt.Fprintf(writer, "%s\t%s\t%s\t%s\t%s\n", priority, sequence, f.State, pin, f.Id)
-			var details []string
-			if f.Intent != "" {
-				details = append(details, f.Intent)
-			}
-			if f.Claimed != nil {
-				details = append(details, "claimed by "+f.Claimed.Machine+"+"+f.Claimed.Lineage)
-			}
-			if f.Landing != nil {
-				details = append(details, "landing since "+f.Landing.At)
-			}
-			if f.Parked != nil && f.Parked.Because != "" {
-				details = append(details, "parked: "+f.Parked.Because)
-			}
-			if f.Approved != nil && f.Approved.Authority == goal.ApprovalAuthorityRelayed {
-				if expired, why := f.ApprovalExpired(p.Horizon); expired {
-					details = append(details, "relayed, EXPIRED: "+why)
-				} else {
-					details = append(details, "relayed, review by "+f.Approved.ReviewBy)
-				}
-			}
-			if len(details) > 0 {
-				fmt.Fprintf(writer, "\t\t\t\t  %s\n", strings.Join(details, "; "))
-			}
-		}
-		_ = writer.Flush()
-		fmt.Printf("done: %d archived\n", len(done))
+	if !output.JSON {
+		grouped[goal.StateDone] = done
+		fmt.Print(goalListSummary(grouped, syncedListStates, p.Tip, p.Banners, output.Done, p.Horizon))
 		return 0
 	}
-	printJSON(map[string]any{
+	return printGoalListJSON(map[string]any{
 		"root": root, "world": "synced", "tip": p.Tip, "banners": p.Banners,
 		"open":   open,
 		"queued": grouped[goal.StateQueued], "approved": grouped[goal.StateApproved], "claimed": grouped[goal.StateClaimed],
 		"parked": grouped[goal.StateParked], "done": done,
-	})
-	return 0
+	}, output.Pretty)
 }
 
-// runGoalShow addresses ONE goal: fields, claim, park, and history,
-// from the accepted tree.
+// History stays opt-in so inspecting one goal does not replay its ledger.
 func runGoalShow(args []string) int {
 	flags := flag.NewFlagSet("goal show", flag.ContinueOnError)
 	root := flags.String("root", ".", "checkout root")
 	id := flags.String("id", "", "goal id")
+	history := flags.Bool("history", false, "include ledger history")
 	if flags.Parse(args) != nil || *id == "" {
 		fmt.Fprintln(os.Stderr, "goal show needs --id")
 		return 2
 	}
 	if !converted(*root) {
-		fmt.Fprintln(os.Stderr, "goal show reads the synced backlog; this checkout still carries the legacy ledger (goal list shows it whole)")
+		fmt.Fprintln(os.Stderr, "goal show reads the synced backlog; this checkout still carries the legacy ledger (goal list --json shows it whole)")
 		return 1
 	}
 	e, err := goal.ResolveEndpoint(*root)
@@ -494,7 +468,7 @@ func runGoalShow(args []string) int {
 		state = "archived"
 	}
 	printJSON(map[string]any{
-		"root": *root, "world": "synced", "tip": p.Tip, "where": state, "goal": f,
+		"root": *root, "world": "synced", "tip": p.Tip, "where": state, "goal": goalDisplayRecord(f, *history),
 	})
 	return 0
 }
