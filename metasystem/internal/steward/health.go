@@ -60,6 +60,7 @@ const (
 	RoleNonterminalJobs     HealthRole = "nonterminal-jobs"
 	RoleCapabilitySnapshots HealthRole = "capability-snapshots"
 	RoleGovernedObligations HealthRole = "governed-obligations"
+	RoleProofAttempts       HealthRole = "proof-attempts"
 )
 
 var healthRoleOrder = []HealthRole{
@@ -78,6 +79,7 @@ var healthRoleOrder = []HealthRole{
 	RoleSpendFence,
 	RoleGovernedObligations,
 	RoleNonterminalJobs,
+	RoleProofAttempts,
 	RoleCapabilitySnapshots,
 }
 
@@ -360,6 +362,7 @@ func evaluateHealthRoles(repoRoot, metasystemRoot string, now time.Time, prober 
 		spendRole,
 		timed(func() RoleVerdict { return checkGovernedObligations(repoRoot) }),
 		timed(func() RoleVerdict { return checkNonterminalJobs(repoRoot, prober) }),
+		timed(func() RoleVerdict { return checkProofAttempts(repoRoot, prober) }),
 		timed(func() RoleVerdict { return checkCapabilitySnapshots(repoRoot, metasystemRoot, now) }),
 	}, spendObservation
 }
@@ -1357,6 +1360,58 @@ func installedEnrollment(repoRoot string) (InstallIdentity, bool, error) {
 		return InstallIdentity{}, false, markerErr
 	}
 	return installed, markerErr == nil, nil
+}
+
+// checkProofAttempts is the steward incident for a hung proof: a live
+// attempt whose launcher is provably dead, or whose every recorded process
+// has ended, holds a reservation nobody can release but the reaper's next
+// reconciliation pass. The role reads what the reconciler reads.
+func checkProofAttempts(repoRoot string, prober identity.Prober) RoleVerdict {
+	root := filepath.Join(repoRoot, "metasystem")
+	if _, err := os.Stat(filepath.Join(root, "artifacts", "agents", "proof-runs")); err != nil {
+		root = repoRoot
+	}
+	paths, _ := filepath.Glob(filepath.Join(root, "artifacts", "agents", "proof-runs", "attempts", "*.json"))
+	sort.Strings(paths)
+	var dead, unknown []string
+	for _, path := range paths {
+		value, err := readHealthObject(path)
+		if err != nil {
+			unknown = append(unknown, strings.TrimSuffix(filepath.Base(path), ".json"))
+			continue
+		}
+		if value["terminal"] != nil {
+			continue
+		}
+		attemptID, _ := value["attemptId"].(string)
+		if attemptID == "" {
+			attemptID = strings.TrimSuffix(filepath.Base(path), ".json")
+		}
+		launcher, ok := value["launcher"].(map[string]any)
+		if !ok {
+			unknown = append(unknown, attemptID)
+			continue
+		}
+		ref, ok := processRef(launcher)
+		if !ok {
+			unknown = append(unknown, attemptID)
+			continue
+		}
+		switch identity.AliveRef(prober, ref) {
+		case identity.Dead:
+			dead = append(dead, fmt.Sprintf("%s (launcher pid %d)", attemptID, ref.Pid))
+		case identity.Unknown:
+			unknown = append(unknown, attemptID)
+		}
+	}
+	remedy := "the job reaper reconciles a dead launcher's attempt on its next pass; if the reaper is not running, metasystem up --repo <checkout> re-arms it"
+	if len(dead) > 0 {
+		return roleDead(RoleProofAttempts, "live proof attempts whose launcher is dead: "+strings.Join(dead, ","), remedy)
+	}
+	if len(unknown) > 0 {
+		return roleUnknown(RoleProofAttempts, "live proof attempts with unreadable launcher evidence: "+strings.Join(unknown, ","), remedy)
+	}
+	return roleAlive(RoleProofAttempts, "no live proof attempt has a dead launcher")
 }
 
 func processRef(value map[string]any) (identity.Ref, bool) {

@@ -15,6 +15,7 @@ import (
 	dispatchpkg "github.com/widoriezebos/agentic-tools/metasystem/internal/dispatch"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/fixtureauth"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/identity"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/proofrun"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/run"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/steward"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/supervise"
@@ -330,6 +331,14 @@ func setupReaper(repo, metasystemRoot string) func() {
 	return func() {
 		if err := cfg.ReaperPass(); err != nil {
 			fmt.Fprintln(os.Stderr, "supervise component reaper:", err)
+		}
+		// Proof attempts are reconciled on the same tick: a dead launcher
+		// commits no terminal, and nothing else on the checkout read the
+		// attempt records (goal hung-proof-attempts-end-at-their-deadline).
+		if _, err := proofrun.ReconcileAttempts(metasystemRoot, proofrun.ReconcileOptions{
+			Emit: func(line string) { fmt.Fprintln(os.Stderr, "supervise component reaper:", line) },
+		}); err != nil {
+			fmt.Fprintln(os.Stderr, "supervise component reaper: proof attempts:", err)
 		}
 	}
 }

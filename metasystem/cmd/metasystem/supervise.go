@@ -11,6 +11,7 @@ import (
 
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/census"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/identity"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/proofrun"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/supervise"
 )
 
@@ -141,6 +142,20 @@ func runSuperviseStatus(args []string) int {
 		owner["error"] = err.Error()
 	}
 	result["owner"] = owner
+
+	// Live proof attempts and how their launchers read: after the reaper's
+	// reconciliation no live attempt has a dead launcher.
+	metasystemRoot := filepath.Join(*repo, "metasystem")
+	if _, err := os.Stat(filepath.Join(metasystemRoot, "artifacts", "agents", "proof-runs")); err != nil {
+		metasystemRoot = *repo
+	}
+	if live, err := proofrun.LiveAttempts(metasystemRoot, identity.KernelProber{}); err != nil {
+		result["liveAttempts"] = map[string]any{"error": err.Error()}
+	} else if live == nil {
+		result["liveAttempts"] = []proofrun.LiveAttemptSummary{}
+	} else {
+		result["liveAttempts"] = live
+	}
 
 	if _, err := os.Stat(filepath.Join(supervision, "state.json")); err == nil {
 		result["stateFile"] = "present"
