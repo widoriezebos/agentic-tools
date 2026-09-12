@@ -1,6 +1,6 @@
 # receipt-admission-caps-concurrent-batteries
 
-- State: approved
+- State: claimed
 - Priority: 1
 - Sequence: 1
 - Risk: severity=2 novelty=2 exposure=3 accumulation=1 basis="severity 2: a wrong cap starves landings or lets batteries collide as today; novelty 2: attempt reservations exist per checkout but nothing is host-wide; exposure 3: every receipt on every seat; accumulation 1: the battery content is unchanged"
@@ -9,11 +9,13 @@
 - Origin: human
 - Next step: Wido's word recorded 2026-09-11 (R-92-m1e): no admission cap for now; build the attribution (host load and overlapping-attempt count in every attempt record; load failures of consumption-bounded groups filed as patience defects) and put the cap question again with a week of post-c08fe2cb numbers. Working rule R-98-m1e (2026-09-12): built directly by the seat, landed by human commit, verified through the engine, read by one independent critic; the delegate machinery returns per capability when its gate is measured. Next: claim when deep-battery-under-ten-minutes ends; design page names R-92-m1e and R-98-m1e.
 - OpenedAt: 2026-09-11T15:44:50Z
-- Revision: 12
+- Revision: 13
 - Pinned: m1e
 - Budget: elapsedLimit=1d attemptLimit=10 reservedJobMinutesLimit=1200 activeJobLimit=1 reviewRoundLimit=3
 - BudgetExceptions: 0
 - Approved: by=human:Wido at=2026-09-11T20:32:56Z revision=11 opid=HNYC0AM7335NZ9RHE7RAB3N61K-m1-c6925449 authority=proven digest=43d1bc530ae6606ca2a5937c4719b1017143a7f249e4da9fb1b5c4b6da160d7c
+- Claimed: machine=m1e lineage=main-1789030447-51011-5722fc at=2026-09-12T15:19:34Z revision=13 accountingRevision=13 episodeAt=2026-09-12T15:19:34Z episodeRevision=13
+- StopCapability: generation=13 revision=13 machine=m1e claimEpoch=1 fenceEpoch=0
 
 History:
 - 2026-09-11T15:44:50Z ATQJYESKCTSPAS92AEEAW0TKS3-m1e-5083721b open actor=m1e+main-1789141490-27414-b9c0d2 targets=receipt-admission-caps-concurrent-batteries
@@ -28,4 +30,5 @@ History:
 - 2026-09-11T20:31:42Z 32RQN1GTZ0MNXNEJR154BVMAFH-m1e-3ca84c28 edit actor=m1e+main-1789158700-39729-b9c0d2 targets=receipt-admission-caps-concurrent-batteries
 - 2026-09-11T20:32:56Z HNYC0AM7335NZ9RHE7RAB3N61K-m1-c6925449 approve actor=human:Wido targets=receipt-admission-caps-concurrent-batteries
 - 2026-09-11T21:02:27Z GFXJM609JWM179CFGAGE9C0Q8W-m1e-892cdaec edit actor=m1e+main-1789030447-51011-5722fc targets=receipt-admission-caps-concurrent-batteries
-Integrity: sha256=9b5fe80caa770ea79027eb23dd6a74a1e5675f9868ae7e04fc8ad1894ca00f15
+- 2026-09-12T15:19:34Z 0338M903FQ19JSZAP4ETNRAA42-m1e-892cdaec claim actor=m1e+main-1789030447-51011-5722fc targets=receipt-admission-caps-concurrent-batteries
+Integrity: sha256=77d172d96ff249b9b352f1e4c8db8a39ea5a8f224e0e756ea7bc929d6a81e441
