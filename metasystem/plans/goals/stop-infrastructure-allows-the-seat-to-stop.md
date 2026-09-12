@@ -7,8 +7,9 @@
 - Origin: main
 - Next step: 2026-09-12 21:1xZ m1b: Codex sol chain implementer-b18d717d6d38a443b0cb339f rounds 1-4 (round 4 folded the second Opus read); third Opus read: one material left (an unset-variable guard on the hook's deadline path, supervision-hook.sh:343) and my proof's last red is the delegate's own arming bed leg (its assertion versus the notice shape; the chat-line digest leg now passes). Next morning, the seat integrates under R-103 (small fix-forwards): apply the round-4 diff to the checkout, fix the guard and the arming leg, run scripts/agents/supervision-hook-fixtures.sh locally, delivery proof on the staged index, one Opus read of the seat's delta, land by human commit with the four round briefs; every seat rebuilds once by hand (the hook file changes).
 - OpenedAt: 2026-09-12T19:40:17Z
-- Revision: 6
-- Budget: elapsedLimit=1d attemptLimit=8 reservedJobMinutesLimit=720 activeJobLimit=1 reviewRoundLimit=2
+- Revision: 7
+- Budget: elapsedLimit=1d attemptLimit=14 reservedJobMinutesLimit=1440 activeJobLimit=1 reviewRoundLimit=2
+- BudgetExtension: at=2026-09-12T21:24:40Z opid=5APN0CPX4JW6K2FMVKFY7HX15H-m1b-30a7e141 attemptLimit=8->14 reservedJobMinutesLimit=720->1440 evidence=receipt:proof-mtysl27k-8034dd789afac524@2026-09-12T19:43:10.877687Z
 - BudgetExceptions: 0
 - Approved: by=human:Wido at=2026-09-12T19:41:14Z revision=2 opid=6T4YC151XMMQJW32W3FABYAJ82-m1b-c6925449 authority=proven digest=40c4d2ddbb076cde0d556e2f77d314d12f3ea70d3ceec0e5104b524801c56dde
 - Sliced: machine=m1b lineage=main-1789191336-90295-e4b24b revision=3 at=2026-09-12T19:45:29Z
@@ -22,4 +23,5 @@ History:
 - 2026-09-12T19:45:29Z TEJ8S8AE1E7GFXKCZV0BFP7MV1-m1b-30a7e141 slice-start actor=m1b+main-1789191336-90295-e4b24b targets=stop-infrastructure-allows-the-seat-to-stop
 - 2026-09-12T19:46:07Z 858883CMGMA0ESH34KJ27K3B01-m1b-30a7e141 edit actor=m1b+main-1789191336-90295-e4b24b targets=stop-infrastructure-allows-the-seat-to-stop
 - 2026-09-12T21:02:15Z X6DK3F2QKNHQJ2S1JYPM8GM7E9-m1b-30a7e141 edit actor=m1b+main-1789191336-90295-e4b24b targets=stop-infrastructure-allows-the-seat-to-stop
-Integrity: sha256=279e9cc3d02664cf66ccba9fb0a22b5001f60515810048248d60d7596285ef17
+- 2026-09-12T21:24:40Z 5APN0CPX4JW6K2FMVKFY7HX15H-m1b-30a7e141 extend-budget actor=m1b+main-1789191336-90295-e4b24b targets=stop-infrastructure-allows-the-seat-to-stop reason=attemptLimit 8->14 reservedJobMinutesLimit 720->1440 evidence=receipt:proof-mtysl27k-8034dd789afac524@2026-09-12T19:43:10.877687Z
+Integrity: sha256=bf493408cdb75bd6a2c3d76c1c2badf340343f7412cdfaaf5a88d07971c3dad3
