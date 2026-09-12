@@ -62,6 +62,12 @@ written by you and read by your critic before you build.
   older than this landing refuses the packet. Rebuild and re-arm before your
   next test run; identities retained before it never match again (expected,
   once).
+- m1c, 2026-09-12, rule 2 of budget-extends-by-consumption-and-breach-parks:
+  goal grant, goal revoke, and approve or set-budget --under <entry>. The root
+  record gains a `PowerOfAttorney:` section, history lines the outcome
+  `POWER_OF_ATTORNEY`, approvals the authority `attorney`; an engine older than
+  this landing cannot parse a ledger that carries any of them. Rebuild and
+  re-arm after it lands, before your next ledger read.
 
 ## Ledger hygiene
 

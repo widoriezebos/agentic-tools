@@ -95,6 +95,22 @@ agent cannot lift that park earlier, a person can. A seat open without
 without `--blocks`. An improvement a seat discovers that blocks nothing is a
 proposal appended to `memory/backlog-notes.md`, never a goal.
 
+Low-tier ceremony may run under a recorded power of attorney (R-95-m1e,
+Wido 2026-09-11). A person records one with `goal grant --by <name> --tiers 1
+--verbs approve,set-budget --expires <date>` under their own proof (the
+enrolled terminal, or the fixture grant in a bed; never a relayed word); it
+lives in the root record's `PowerOfAttorney:` section, lives at most seven
+days with the expiry day included, and `goal revoke` closes it early. A seat then
+runs `goal approve --under <entry>` or `goal set-budget --under <entry>` on
+a tier-1 goal with no terminal and no `--by`: the act stays the seat's own
+on the ledger (`authority=attorney`, the entry named on the history line),
+stays within the goal's tier box, never rewrites an approval a person made
+(proven, relayed or channel), and is refused for any goal outside the entry's tiers or verbs, on the
+brain, or once the entry has expired or been revoked. The approval it
+records stands after the entry ends. Tier 2 joins when
+tier-from-severity-and-novelty lands; unpark waits on Wido's word (section
+6 of plans/budget-extends-by-consumption-design.md).
+
 Under R-60-m1, the reviewer stops critique at the first round with no material
 finding. A material finding must change what gets built and name that
 artifact; a finding that fails the artifact test is demoted at registration.

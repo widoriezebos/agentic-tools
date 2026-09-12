@@ -12,6 +12,7 @@ import (
 	"sort"
 	"strconv"
 	"strings"
+	"time"
 )
 
 var knownLedgerFormats = map[string]bool{"1": true, "2": true}
@@ -29,9 +30,185 @@ type RootRecord struct {
 	TierLaw         string // operation id of the final classification edit
 	FleetEnrollment *FleetEnrollmentRecord
 	Decomposed      []DecomposedEntry
+	// PowerOfAttorney lists the recorded delegations (goal grant): scoped
+	// by tier and verb, expiring within seven days, revocable. A seat's
+	// approve or set-budget under a live entry is the seat's own act with
+	// the entry named on its history line.
+	PowerOfAttorney []PowerOfAttorneyEntry
 	Legacy          []string // root-level LegacyNotes from migration
 	Revision        uint64
 	History         []HistoryLine
+}
+
+// PowerOfAttorneyEntry is one recorded delegation. Its ID is the grant's
+// operation id; Expires is a date, and the entry covers acts until that
+// day ends; Revoked closes it earlier.
+type PowerOfAttorneyEntry struct {
+	ID        string
+	By        string // human:<name>
+	Tiers     []uint8
+	Verbs     []string
+	Since     string // RFC3339
+	Expires   string // YYYY-MM-DD
+	Revoked   string // RFC3339, empty while live
+	RevokedBy string // human:<name>, empty while live
+}
+
+// AttorneyVerbs are the verbs a delegation may cover in this build.
+var AttorneyVerbs = []string{"approve", "set-budget"}
+
+// AttorneyMaxDays bounds an entry's life: expires is at most this many days
+// after since (R-95-m1e: no entry lives longer than seven days).
+const AttorneyMaxDays = 7
+
+// Covers reports whether the entry names the verb and the tier.
+func (e PowerOfAttorneyEntry) Covers(verb string, tier uint8) bool {
+	return containsString(e.Verbs, verb) && containsTier(e.Tiers, tier)
+}
+
+// WithinBounds reports whether the entry keeps R-95-m1e's bounds: tier 1,
+// the attorney verbs, an expiry within seven days of since, a revocation
+// no earlier than since. The parser reads any well-formed entry so a landed
+// ledger stays readable; an entry outside the bounds is never honoured.
+func (e PowerOfAttorneyEntry) WithinBounds() (bool, string) {
+	if len(e.Tiers) != 1 || e.Tiers[0] != 1 {
+		return false, "tiers=" + renderTiers(e.Tiers) + " is outside tier 1"
+	}
+	for _, verb := range e.Verbs {
+		if !containsString(AttorneyVerbs, verb) {
+			return false, "verb " + verb + " is outside " + strings.Join(AttorneyVerbs, ",")
+		}
+	}
+	since, err := time.Parse(time.RFC3339, e.Since)
+	if err != nil {
+		return false, "since " + e.Since + " is not RFC3339"
+	}
+	expires, err := time.Parse("2006-01-02", e.Expires)
+	if err != nil {
+		return false, "expiry " + e.Expires + " is not a date"
+	}
+	sinceDay := time.Date(since.UTC().Year(), since.UTC().Month(), since.UTC().Day(), 0, 0, 0, 0, time.UTC)
+	if expires.Before(sinceDay) || expires.After(sinceDay.AddDate(0, 0, AttorneyMaxDays-1)) {
+		return false, "expiry " + e.Expires + " is outside seven days from " + e.Since
+	}
+	if e.Revoked != "" {
+		revoked, err := time.Parse(time.RFC3339, e.Revoked)
+		if err != nil || revoked.Before(since) {
+			return false, "revocation " + e.Revoked + " precedes the grant"
+		}
+	}
+	return true, ""
+}
+
+// LiveAt reports whether the entry is within its bounds, unrevoked and not
+// yet expired at now (the expiry day itself still counts).
+func (e PowerOfAttorneyEntry) LiveAt(now time.Time) (bool, string) {
+	if within, why := e.WithinBounds(); !within {
+		return false, "outside its bounds: " + why
+	}
+	if e.Revoked != "" {
+		return false, "revoked at " + e.Revoked + " by " + e.RevokedBy
+	}
+	expires, err := time.Parse("2006-01-02", e.Expires)
+	if err != nil {
+		return false, "expiry " + e.Expires + " is not a date"
+	}
+	day := now.UTC()
+	today := time.Date(day.Year(), day.Month(), day.Day(), 0, 0, 0, 0, time.UTC)
+	if today.After(expires) {
+		return false, "expired " + e.Expires
+	}
+	return true, ""
+}
+
+func containsTier(tiers []uint8, tier uint8) bool {
+	for _, candidate := range tiers {
+		if candidate == tier {
+			return true
+		}
+	}
+	return false
+}
+
+// rootAttorney finds one entry by id.
+func rootAttorney(root *RootRecord, id string) (PowerOfAttorneyEntry, bool) {
+	if root == nil {
+		return PowerOfAttorneyEntry{}, false
+	}
+	for _, entry := range root.PowerOfAttorney {
+		if entry.ID == id {
+			return entry, true
+		}
+	}
+	return PowerOfAttorneyEntry{}, false
+}
+
+func renderTiers(tiers []uint8) string {
+	parts := make([]string, 0, len(tiers))
+	for _, tier := range tiers {
+		parts = append(parts, strconv.Itoa(int(tier)))
+	}
+	return strings.Join(parts, ",")
+}
+
+// ParseTiers reads a comma-separated tier list (1, 2 or 3), deduplicated
+// and sorted.
+func ParseTiers(value string) ([]uint8, error) {
+	var tiers []uint8
+	for _, part := range strings.Split(value, ",") {
+		n, err := strconv.ParseUint(strings.TrimSpace(part), 10, 8)
+		if err != nil || n < 1 || n > 3 {
+			return nil, fmt.Errorf("tiers must list 1, 2 or 3")
+		}
+		if !containsTier(tiers, uint8(n)) {
+			tiers = append(tiers, uint8(n))
+		}
+	}
+	if len(tiers) == 0 {
+		return nil, fmt.Errorf("tiers must list 1, 2 or 3")
+	}
+	sort.Slice(tiers, func(i, j int) bool { return tiers[i] < tiers[j] })
+	return tiers, nil
+}
+
+func parseAttorneyEntry(value string) (PowerOfAttorneyEntry, error) {
+	fields := strings.Fields(value)
+	if len(fields) < 6 || !validOpidShape(fields[0]) {
+		return PowerOfAttorneyEntry{}, fmt.Errorf("expected <opid> by=human:<name> tiers=<n,..> verbs=<verb,..> since=<RFC3339> expires=<YYYY-MM-DD> [revoked=<RFC3339> revokedBy=human:<name>]")
+	}
+	rec, err := parseKVRecord(strings.Join(fields[1:], " "), []string{"by", "tiers", "verbs", "since", "expires"}, []string{"revoked", "revokedBy"}, "")
+	if err != nil {
+		return PowerOfAttorneyEntry{}, err
+	}
+	tiers, err := ParseTiers(rec["tiers"])
+	if err != nil {
+		return PowerOfAttorneyEntry{}, err
+	}
+	entry := PowerOfAttorneyEntry{ID: fields[0], By: rec["by"], Tiers: tiers, Verbs: strings.Split(rec["verbs"], ","),
+		Since: rec["since"], Expires: rec["expires"], Revoked: rec["revoked"], RevokedBy: rec["revokedBy"]}
+	if !strings.HasPrefix(entry.By, "human:") || !validStamp(entry.Since) {
+		return PowerOfAttorneyEntry{}, fmt.Errorf("by= must name a human and since= must be RFC3339")
+	}
+	if _, err := time.Parse("2006-01-02", entry.Expires); err != nil {
+		return PowerOfAttorneyEntry{}, fmt.Errorf("expires= must be a date")
+	}
+	if (entry.Revoked != "" || entry.RevokedBy != "") && (!validStamp(entry.Revoked) || !strings.HasPrefix(entry.RevokedBy, "human:")) {
+		return PowerOfAttorneyEntry{}, fmt.Errorf("revoked= must be RFC3339 with revokedBy=human:<name>")
+	}
+	for _, verb := range entry.Verbs {
+		if strings.TrimSpace(verb) == "" {
+			return PowerOfAttorneyEntry{}, fmt.Errorf("verbs= must list verbs")
+		}
+	}
+	return entry, nil
+}
+
+func renderAttorneyEntry(e PowerOfAttorneyEntry) string {
+	line := fmt.Sprintf("- %s by=%s tiers=%s verbs=%s since=%s expires=%s", e.ID, e.By, renderTiers(e.Tiers), strings.Join(e.Verbs, ","), e.Since, e.Expires)
+	if e.Revoked != "" {
+		line += " revoked=" + e.Revoked + " revokedBy=" + e.RevokedBy
+	}
+	return line
 }
 
 // ApprovalGateRecord permanently marks when the execution-approval invariant
@@ -99,6 +276,8 @@ func ParseRoot(data []byte) (*RootRecord, []Problem) {
 			section = "history"
 		case line == "Decomposed:":
 			section = "decomposed"
+		case line == "PowerOfAttorney:":
+			section = "attorney"
 		case line == "LegacyNotes:":
 			section = "legacy"
 		case section == "history" && strings.HasPrefix(line, "- "):
@@ -117,6 +296,13 @@ func ParseRoot(data []byte) (*RootRecord, []Problem) {
 				continue
 			}
 			r.Decomposed = append(r.Decomposed, entry)
+		case section == "attorney" && strings.HasPrefix(line, "- "):
+			entry, entryErr := parseAttorneyEntry(strings.TrimPrefix(line, "- "))
+			if entryErr != nil {
+				addProblem("PowerOfAttorney line %d: %v", i+1, entryErr)
+				continue
+			}
+			r.PowerOfAttorney = append(r.PowerOfAttorney, entry)
 		case strings.HasPrefix(line, "- "):
 			parseRootField(r, strings.TrimPrefix(line, "- "), seen, addProblem)
 		case strings.TrimSpace(line) == "":
@@ -179,6 +365,13 @@ func ParseRoot(data []byte) (*RootRecord, []Problem) {
 			addProblem("Decomposed contains duplicate parent %s", entry.Id)
 		}
 		seenDecomposed[entry.Id] = true
+	}
+	seenAttorney := map[string]bool{}
+	for _, entry := range r.PowerOfAttorney {
+		if seenAttorney[entry.ID] {
+			addProblem("PowerOfAttorney contains duplicate entry %s", entry.ID)
+		}
+		seenAttorney[entry.ID] = true
 	}
 	return r, problems
 }
@@ -363,6 +556,19 @@ func RenderRoot(r *RootRecord) []byte {
 				oldArc = "-"
 			}
 			fmt.Fprintf(&b, "- %s opid=%s at=%s oldArc=%s\n", entry.Id, entry.Opid, entry.At, oldArc)
+		}
+	}
+	if len(r.PowerOfAttorney) > 0 {
+		entries := append([]PowerOfAttorneyEntry(nil), r.PowerOfAttorney...)
+		sort.Slice(entries, func(i, j int) bool {
+			if entries[i].Since == entries[j].Since {
+				return entries[i].ID < entries[j].ID
+			}
+			return entries[i].Since < entries[j].Since
+		})
+		b.WriteString("\nPowerOfAttorney:\n")
+		for _, entry := range entries {
+			b.WriteString(renderAttorneyEntry(entry) + "\n")
 		}
 	}
 	b.WriteString("\nHistory:\n")

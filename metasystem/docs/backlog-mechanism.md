@@ -35,6 +35,21 @@ dispatch creates a job record.
 A verified channel answer is human approval proof only when the configured human user supplied the exact goal-bound token with a code valid at send time; its question or status thread, message reference, user, and code step are recorded with the goal operation, without the review date required by a relayed console word.
 An exact verified answer to a `budget-above-norm` question re-approves the goal with the question's complete proposed box, including when an earlier verified answer already raised that goal's box.
 
+**Acts under power of attorney.** A person may delegate tier-1 approve
+and set-budget for up to seven days: `goal grant --by <name> --tiers 1
+--verbs approve,set-budget --expires <YYYY-MM-DD>` records an entry in the
+root record's `PowerOfAttorney:` section under the person's own proof, and
+`goal revoke --by <name> --id <entry>` closes it early. A seat acts under it
+with `--under <entry>` and nothing else: no `--by`, no proof, no
+`--approved-ref`. The act is the seat's own on the ledger (`authority=attorney`,
+`authorityOutcome=POWER_OF_ATTORNEY authorityRuling=<entry>` on the history
+line) and is bounded by the entry (verb, tier, expiry, revocation), by the
+goal's tier box (a set-budget over the box is refused with the norm
+refusal), and by any approval a person made (proven, relayed or channel),
+which neither verb rewrites. An entry a hand edit widens past the ruling's
+bounds (tier, verbs, seven days) stays readable and is never honoured. An
+approval given under an entry stands after the entry ends (R-95-m1e).
+
 Health judges claimed goals only. A claimed goal without the tuple is
 dead under `claimed-goal-appetite` and names this remedy:
 `metasystem goal set-budget --root . --id <id> --elapsed-limit ...

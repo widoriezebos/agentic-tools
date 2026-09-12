@@ -96,9 +96,12 @@ const (
 	AuthorityOutcomeAuthenticatedChannelWord = "AUTHENTICATED_CHANNEL_WORD"
 	AuthorityOutcomeVerifiedChannelAnswer    = "VERIFIED_CHANNEL_ANSWER"
 	AuthorityOutcomeHumanAuthorityProven     = "HUMAN_AUTHORITY_PROVEN"
-	TemporaryGoalAuthorityRuling             = "R-32-m1"
-	TemporaryGoalAuthorityHorizon            = "2026-09-06"
-	authorityReviewByDateLayout              = "2006-01-02"
+	// AuthorityOutcomePowerOfAttorney marks a seat's act under a recorded,
+	// scoped, expiring delegation; the line's ruling names the entry.
+	AuthorityOutcomePowerOfAttorney = "POWER_OF_ATTORNEY"
+	TemporaryGoalAuthorityRuling    = "R-32-m1"
+	TemporaryGoalAuthorityHorizon   = "2026-09-06"
+	authorityReviewByDateLayout     = "2006-01-02"
 )
 
 type RecordedChannelAuthority struct {

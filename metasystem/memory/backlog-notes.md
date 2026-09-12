@@ -511,3 +511,23 @@ staged delta against local HEAD, not the folded commit that
 already carries the receipt can be refused although the folded commit
 would carry it (critic note on the receipt-line landing). Proposal: the
 carried flow runs the check on the folded tree, after carry-forward.
+
+P-5. 2026-09-12, m1c (from the design critique of goal
+budget-extends-by-consumption-and-breach-parks). `goal unpark --by <name>
+--lineage <x>` run from an agent shell lifts a person's park with no proof:
+the enrolled-terminal proof gate exists for approve, set-budget, unapprove,
+resume and accept-risk (cmd/metasystem/goalsync_mutations.go), while unpark,
+park and done take `--by` through syncReq alone, which proves nothing once a
+lineage is supplied. Proposal: give the human path of unpark, park and done
+the same proof gate as approve, with `--fixture-human-authority` for the
+beds; sweep the fixture beds that rely on the bare relay.
+
+P-6. 2026-09-12, m1c. `bin/metasystem test run` refuses under load with
+`TEST_POLICY_ENGINE_REQUIRED: retained destination engine does not bind the
+captured policy base: witness resolution exceeded the configured 20-second
+bound (metasystem.steward.rearm-resolve-seconds)` while two package test
+runs compile on the same Mac; the same command passes minutes later with
+nothing changed. That is a wall-clock cap turning load-slowness into
+failure (R-35-m3). Proposal: the witness resolution gets progress-based
+patience like the proof groups, or the bound is raised well above a loaded
+engine build; until then a seat waits for the load to pass and retries.

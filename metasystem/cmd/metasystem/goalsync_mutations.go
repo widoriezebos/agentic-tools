@@ -520,7 +520,7 @@ func printSyncResult(res goal.PublishResult, err error) int {
 // it consumes and ignores the rest.
 type syncFlags struct {
 	root, by, id, intent, next, origin, because, conclude, arc, pin, members string
-	blocks                                                                   string
+	blocks, under, tiers, verbs, expires                                     string
 	lineage, digest, elapsedLimit, approvedRef, temporaryWord, reviewBy      string
 	budgetBox, confirm, risk, basis, evidence                                string
 	finding, chain, why, test                                                string
@@ -553,6 +553,10 @@ func parseSyncFlags(name string, args []string) (*syncFlags, bool) {
 	fs.StringVar(&f.next, "next", "", "the next step")
 	fs.StringVar(&f.origin, "origin", "main", "creation provenance: human|main")
 	fs.StringVar(&f.blocks, "blocks", "", "the live goal this open unblocks: it parks with this blocker in the same publish and returns when the blocker is done (a seat's open, origin main, requires it)")
+	fs.StringVar(&f.under, "under", "", "act under a recorded power of attorney entry (approve and set-budget): the seat's own act, no --by and no proof")
+	fs.StringVar(&f.tiers, "tiers", "", "grant: the tiers the power of attorney covers (1 in this build)")
+	fs.StringVar(&f.verbs, "verbs", "", "grant: the verbs the power of attorney covers, from approve,set-budget")
+	fs.StringVar(&f.expires, "expires", "", "grant: the last day the power of attorney covers, YYYY-MM-DD, at most seven days out")
 	fs.StringVar(&f.because, "because", "", "the park's reason")
 	fs.StringVar(&f.conclude, "conclude", "", "the conclusion")
 	fs.StringVar(&f.arc, "arc", "", "the destination arc")
@@ -579,11 +583,11 @@ func parseSyncFlags(name string, args []string) (*syncFlags, bool) {
 		fs.BoolVar(&f.sweep, "sweep", false, "preview or confirm the grandfather approval sweep")
 		fs.StringVar(&f.confirm, "confirm", "", "sha256 from the exact sweep listing")
 	}
-	if name == "resume" || name == "approve" || name == "unapprove" || name == "set-budget" || name == "accept-risk" || name == "open" || name == "edit" {
+	if name == "resume" || name == "approve" || name == "unapprove" || name == "set-budget" || name == "accept-risk" || name == "open" || name == "edit" || name == "grant" || name == "revoke" {
 		fs.StringVar(&f.temporaryWord, "temporary-human-word", "", "recorded relayed words presented as the human's; provenance is not verified; resumes TEMPORARILY")
 		fs.StringVar(&f.reviewBy, "review-by", "", "recorded re-approval date supplied with the relay (required with --temporary-human-word)")
 	}
-	if name == "approve" || name == "set-budget" || name == "accept-risk" || name == "open" || name == "edit" {
+	if name == "approve" || name == "set-budget" || name == "accept-risk" || name == "open" || name == "edit" || name == "grant" || name == "revoke" {
 		fs.BoolVar(&f.fixtureHumanAuthority, "fixture-human-authority", false, "fixture-only enrolled-human proof; accepted only for an exact fake-runtime root")
 	}
 	fs.Var(&f.labels, "label", "label token (repeatable)")
@@ -596,6 +600,14 @@ func parseSyncFlags(name string, args []string) (*syncFlags, bool) {
 	}
 	if name != "open" && f.blocks != "" {
 		fmt.Fprintf(os.Stderr, "goal %s does not take --blocks\n", name)
+		return nil, false
+	}
+	if name != "approve" && name != "set-budget" && f.under != "" {
+		fmt.Fprintf(os.Stderr, "goal %s does not take --under; a power of attorney covers approve and set-budget\n", name)
+		return nil, false
+	}
+	if name != "grant" && (f.tiers != "" || f.verbs != "" || f.expires != "") {
+		fmt.Fprintf(os.Stderr, "goal %s does not take --tiers, --verbs or --expires\n", name)
 		return nil, false
 	}
 	if name != "open" && name != "edit" {
@@ -1252,6 +1264,13 @@ func runGoalApproveWithAuthority(args []string, prove goalAuthorityProver) int {
 		}
 		return 0
 	}
+	if f.under != "" {
+		if f.sweep || len(f.ids) == 0 {
+			fmt.Fprintln(os.Stderr, "goal approve --under takes repeatable --id and no --sweep")
+			return 2
+		}
+		return runGoalUnderAttorney("approve", f)
+	}
 	if f.by == "" || (!f.sweep && len(f.ids) == 0) {
 		fmt.Fprintln(os.Stderr, "goal approve needs --by and either repeatable --id or --sweep")
 		return 2
@@ -1355,6 +1374,13 @@ func runGoalSetBudgetWithAuthority(args []string, prove goalAuthorityProver) int
 	if !ok {
 		return 2
 	}
+	if f.under != "" {
+		if !converted(f.root) || f.id == "" {
+			fmt.Fprintln(os.Stderr, "goal set-budget --under needs a synced backlog plus --id")
+			return 2
+		}
+		return runGoalUnderAttorney("set-budget", f)
+	}
 	if !converted(f.root) || f.id == "" || f.by == "" {
 		fmt.Fprintln(os.Stderr, "goal set-budget needs a synced backlog plus --id and --by")
 		return 2
@@ -1391,6 +1417,154 @@ func runGoalSetBudgetWithAuthority(args []string, prove goalAuthorityProver) int
 		}
 		if proof.TemporaryResumeFor(f.root) {
 			fmt.Printf("goal set-budget: TEMPORARY authority under a recorded relayed word (human provenance not verified); re-approval due %s at an agent-free terminal\n", f.reviewBy)
+		}
+	}
+	return printSyncResult(res, nil)
+}
+
+// runGoalUnderAttorney runs approve or set-budget as the seat's own act under
+// a recorded power of attorney: no --by, no human proof, the entry resolved
+// from the accepted tree and checked again inside the transaction.
+func runGoalUnderAttorney(name string, f *syncFlags) int {
+	if f.by != "" || f.fixtureHumanAuthority || f.temporaryWord != "" || f.reviewBy != "" || f.approvedRef != "" {
+		fmt.Fprintf(os.Stderr, "goal %s --under is the seat's own act: it combines with neither --by, a human proof, nor --approved-ref\n", name)
+		return 2
+	}
+	if brainState := brain.Read(f.root, goal.ExistingLedgerIdentity(f.root)); brainState.State != brain.Undeclared {
+		fmt.Fprintf(os.Stderr, "this checkout is declared the brain; the brain never carries a human's word into goal %s, a power of attorney included. Wido runs, from an agent-free terminal: metasystem goal %s --root <checkout> --id <id> --by <name> <the verb's own flags>\n", name, name)
+		return 1
+	}
+	now, err := goalCommandNow(f.root)
+	if err != nil {
+		fmt.Fprintln(os.Stderr, err)
+		return 1
+	}
+	entry, err := goal.ResolveAttorney(f.root, f.under, name, now)
+	if err != nil {
+		fmt.Fprintln(os.Stderr, err)
+		return 1
+	}
+	req, err := syncReq(name, f.root, "", f.lineage)
+	if err != nil {
+		fmt.Fprintln(os.Stderr, err)
+		return 1
+	}
+	req.Attorney = &entry
+	var res goal.PublishResult
+	switch name {
+	case "approve":
+		budget, budgetErr := f.approvalBudget()
+		if budgetErr != nil {
+			fmt.Fprintln(os.Stderr, budgetErr)
+			return 2
+		}
+		res, err = goal.Approve(req, f.ids, budget, nil)
+	case "set-budget":
+		budget, budgetErr := f.budgetTuple(true)
+		if budgetErr != nil {
+			fmt.Fprintln(os.Stderr, budgetErr)
+			return 2
+		}
+		res, err = goal.SetBudgetApproved(req, f.id, *budget, nil)
+	}
+	return printSyncResult(res, err)
+}
+
+func runGoalGrant(args []string) int {
+	return runGoalGrantWithAuthority(args, humanauthority.ProveOrTemporaryGoalAuthority)
+}
+
+// runGoalGrantWithAuthority records a power of attorney under the human's
+// own proof and prints the entry id the seat will name with --under.
+func runGoalGrantWithAuthority(args []string, prove goalAuthorityProver) int {
+	f, ok := parseSyncFlags("grant", args)
+	if !ok {
+		return 2
+	}
+	if !converted(f.root) || f.by == "" || f.tiers == "" || f.verbs == "" || f.expires == "" {
+		fmt.Fprintln(os.Stderr, "goal grant needs a synced backlog plus --by, --tiers, --verbs and --expires")
+		return 2
+	}
+	tiers, err := goal.ParseTiers(f.tiers)
+	if err != nil {
+		fmt.Fprintln(os.Stderr, err)
+		return 2
+	}
+	var verbs []string
+	for _, verb := range strings.Split(f.verbs, ",") {
+		if verb = strings.TrimSpace(verb); verb != "" {
+			verbs = append(verbs, verb)
+		}
+	}
+	classification, err := classifyGoalAuthorityFirst("grant", f)
+	if err != nil {
+		fmt.Fprintln(os.Stderr, err)
+		return 1
+	}
+	proof, err := proveGoalHumanAuthority("grant", f, prove)
+	if err != nil {
+		fmt.Fprintln(os.Stderr, err)
+		return 1
+	}
+	req, err := syncReqClassified(f.root, f.by, f.lineage, &proof, classification)
+	if err != nil {
+		fmt.Fprintln(os.Stderr, err)
+		return 1
+	}
+	res, err := goal.Grant(req, &proof, tiers, verbs, f.expires)
+	if err != nil {
+		return printSyncResult(res, err)
+	}
+	opid := goal.Opid(req.Ulid, req.Actor.Machine, req.Actor.Lineage)
+	if res.Outcome == goal.OutcomeConfirmed {
+		if err := recordGoalApprovalProof(f.root, opid, "goal grant", proof); err != nil {
+			fmt.Fprintln(os.Stderr, "goal grant confirmed but could not record its authority proof:", err)
+			return 1
+		}
+	}
+	printJSON(map[string]any{"outcome": res.Outcome, "tip": res.Tip, "entry": opid, "detail": res.Detail})
+	if res.Outcome != goal.OutcomeConfirmed {
+		return 1
+	}
+	return 0
+}
+
+func runGoalRevoke(args []string) int {
+	return runGoalRevokeWithAuthority(args, humanauthority.ProveOrTemporaryGoalAuthority)
+}
+
+func runGoalRevokeWithAuthority(args []string, prove goalAuthorityProver) int {
+	f, ok := parseSyncFlags("revoke", args)
+	if !ok {
+		return 2
+	}
+	if !converted(f.root) || f.by == "" || f.id == "" {
+		fmt.Fprintln(os.Stderr, "goal revoke needs a synced backlog plus --by and --id <entry>")
+		return 2
+	}
+	classification, err := classifyGoalAuthorityFirst("revoke", f)
+	if err != nil {
+		fmt.Fprintln(os.Stderr, err)
+		return 1
+	}
+	proof, err := proveGoalHumanAuthority("revoke", f, prove)
+	if err != nil {
+		fmt.Fprintln(os.Stderr, err)
+		return 1
+	}
+	req, err := syncReqClassified(f.root, f.by, f.lineage, &proof, classification)
+	if err != nil {
+		fmt.Fprintln(os.Stderr, err)
+		return 1
+	}
+	res, err := goal.Revoke(req, &proof, f.id)
+	if err != nil {
+		return printSyncResult(res, err)
+	}
+	if res.Outcome == goal.OutcomeConfirmed {
+		if err := recordGoalApprovalProof(f.root, goal.Opid(req.Ulid, req.Actor.Machine, req.Actor.Lineage), "goal revoke", proof); err != nil {
+			fmt.Fprintln(os.Stderr, "goal revoke confirmed but could not record its authority proof:", err)
+			return 1
 		}
 	}
 	return printSyncResult(res, nil)

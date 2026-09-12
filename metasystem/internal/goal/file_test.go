@@ -585,3 +585,26 @@ func TestParkedRecordCarriesItsBlockerAndRequiresTheEdge(t *testing.T) {
 		t.Fatalf("a blocker without its edge is a diagnostic: %v", problems)
 	}
 }
+
+func TestHistoryLineCarriesAPowerOfAttorney(t *testing.T) {
+	entry := Opid("01J5X00000000000000000PA00", "mac-a", "lin-1")
+	line := HistoryLine{At: "2026-09-12T10:00:00Z", Opid: Opid("01J5X00000000000000000PA01", "mac-a", "lin-1"), Verb: "approve",
+		Actor: "mac-a+lin-1", Targets: []string{"small"}, Keep: -1, AuthorityOutcome: AuthorityOutcomePowerOfAttorney, AuthorityRuling: entry}
+	rendered := RenderHistoryLine(line)
+	if !strings.HasSuffix(rendered, " authorityOutcome=POWER_OF_ATTORNEY authorityRuling="+entry) {
+		t.Fatalf("the line names the entry and nothing else: %s", rendered)
+	}
+	parsed, err := ParseHistoryLine(rendered)
+	if err != nil || parsed.AuthorityOutcome != AuthorityOutcomePowerOfAttorney || parsed.AuthorityRuling != entry || parsed.AuthorityReviewBy != "" || parsed.TemporaryHumanWord != "" {
+		t.Fatalf("round trip: %+v %v", parsed, err)
+	}
+	line.Actor = "human:Wido"
+	if _, err := ParseHistoryLine(RenderHistoryLine(line)); err == nil || !strings.Contains(err.Error(), "seat actor") {
+		t.Fatalf("an attorney act is never a human actor: %v", err)
+	}
+	line.Actor = "mac-a+lin-1"
+	line.AuthorityRuling = "not-an-opid"
+	if _, err := ParseHistoryLine(RenderHistoryLine(line)); err == nil {
+		t.Fatal("the ruling must be an entry id")
+	}
+}

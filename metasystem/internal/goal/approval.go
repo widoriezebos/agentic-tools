@@ -463,15 +463,25 @@ func armApprovalGate(t *TreeGoals, r VerbRequest, changes []Change) []Change {
 // Approve moves queued work into the human-approved state or re-ratifies a
 // standing record. One complete tuple applies to every target.
 func Approve(r VerbRequest, ids []string, budget *Budget, proof *humanauthority.Proof) (PublishResult, error) {
-	if r.Actor.Human == "" {
-		return PublishResult{}, fmt.Errorf("goal approve is human-only and requires --by from an authorized human boundary")
-	}
 	if len(ids) == 0 {
 		return PublishResult{}, fmt.Errorf("goal approve needs at least one goal id")
 	}
-	authority, reviewBy, temporary, err := approvalProofClassForApprove(r.Endpoint.Root, proof)
-	if err != nil {
-		return PublishResult{}, err
+	var authority, reviewBy string
+	var temporary bool
+	if r.Attorney != nil {
+		if err := attorneyActRequest(r, proof); err != nil {
+			return PublishResult{}, err
+		}
+		authority = ApprovalAuthorityAttorney
+	} else {
+		if r.Actor.Human == "" {
+			return PublishResult{}, fmt.Errorf("goal approve is human-only and requires --by from an authorized human boundary")
+		}
+		var err error
+		authority, reviewBy, temporary, err = approvalProofClassForApprove(r.Endpoint.Root, proof)
+		if err != nil {
+			return PublishResult{}, err
+		}
 	}
 	if budget != nil {
 		maximum, maxErr := config.ReviewRoundMax(filepath.Join(r.Endpoint.Root, "metasystem.conf"))
@@ -491,6 +501,9 @@ func Approve(r VerbRequest, ids []string, budget *Budget, proof *humanauthority.
 			if budget != nil {
 				args = budgetIntentArgs(*budget)
 			}
+			if r.Attorney != nil {
+				args["under"] = r.Attorney.ID
+			}
 			return args
 		}())},
 		Message: "goal approve " + strings.Join(targets, ","),
@@ -501,6 +514,14 @@ func Approve(r VerbRequest, ids []string, budget *Budget, proof *humanauthority.
 			}
 			if err := refuseRelayedAfterFleetEnrollment(t, temporary); err != nil {
 				return nil, err
+			}
+			var entry *PowerOfAttorneyEntry
+			if r.Attorney != nil {
+				live, err := liveAttorney(t, r, "approve")
+				if err != nil {
+					return nil, err
+				}
+				entry = &live
 			}
 			if len(targets) > 1 {
 				for _, id := range targets {
@@ -536,6 +557,17 @@ func Approve(r VerbRequest, ids []string, budget *Budget, proof *humanauthority.
 					}
 					nextBudget = &box
 				}
+				if entry != nil {
+					if err := attorneyCoversGoal(*entry, "approve", f); err != nil {
+						return nil, err
+					}
+					if err := withinTierBox(r.Endpoint.Root, f, *nextBudget); err != nil {
+						return nil, err
+					}
+					if err := attorneyMayRebind(f, entry.ID); err != nil {
+						return nil, err
+					}
+				}
 				var norm *GoalNormApprovalClaim
 				if budget == nil {
 					norm = f.NormApproval
@@ -552,6 +584,10 @@ func Approve(r VerbRequest, ids []string, budget *Budget, proof *humanauthority.
 						continue
 					}
 				}
+				if f.Approved != nil && f.Approved.Authority == ApprovalAuthorityAttorney && authority == ApprovalAuthorityAttorney &&
+					*f.Budget == *nextBudget && sameGoalNormApproval(f.NormApproval, norm) {
+					continue
+				}
 				if temporary {
 					if err := repeatedRelayedActError(t.Root, f, "approve", proof.Departure); err != nil {
 						return nil, err
@@ -564,11 +600,17 @@ func Approve(r VerbRequest, ids []string, budget *Budget, proof *humanauthority.
 				}
 				touch(f, r, "approve", targets)
 				recordApprovalProof(f, proof, temporary)
+				if entry != nil {
+					recordAttorney(f, entry.ID)
+				}
 				bindApproval(f, r, authority, reviewBy)
 				changes = append(changes, Change{Path: livePath(id), Content: RenderFile(f)})
 				changed = true
 			}
 			if !changed {
+				if authority == ApprovalAuthorityAttorney {
+					return nil, NothingToDo{Reason: "every target already has the same approval under power of attorney"}
+				}
 				return nil, NothingToDo{Reason: "every target already has the same proven approval"}
 			}
 			changes = armApprovalGate(t, r, changes)

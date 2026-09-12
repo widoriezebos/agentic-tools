@@ -170,6 +170,10 @@ const (
 	ApprovalAuthorityProven  = "proven"
 	ApprovalAuthorityRelayed = "relayed"
 	ApprovalAuthorityChannel = "channel"
+	// ApprovalAuthorityAttorney marks a seat's own act under a recorded
+	// power of attorney: by is the seat actor and the bound history line
+	// names the entry.
+	ApprovalAuthorityAttorney = "attorney"
 )
 
 // ApprovalHorizon is the complete observation used to decide whether a
@@ -602,7 +606,11 @@ func (f *GoalFile) ValidateApprovalRecord() error {
 		return nil
 	}
 	a := f.Approved
-	if !strings.HasPrefix(a.By, "human:") || strings.TrimSpace(strings.TrimPrefix(a.By, "human:")) == "" {
+	if a.Authority == ApprovalAuthorityAttorney {
+		if strings.HasPrefix(a.By, "human:") || strings.TrimSpace(a.By) == "" {
+			return fmt.Errorf("by=%q must name the seat that acted under power of attorney", a.By)
+		}
+	} else if !strings.HasPrefix(a.By, "human:") || strings.TrimSpace(strings.TrimPrefix(a.By, "human:")) == "" {
 		return fmt.Errorf("by=%q does not name a human", a.By)
 	}
 	if !validStamp(a.At) || a.Revision == 0 || a.Revision > f.Revision || a.Revision > uint64(len(f.History)) ||
@@ -629,6 +637,10 @@ func (f *GoalFile) ValidateApprovalRecord() error {
 	case ApprovalAuthorityChannel:
 		if a.ReviewBy != "" || event.AuthorityOutcome != AuthorityOutcomeVerifiedChannelAnswer || event.ChannelContext == "" {
 			return fmt.Errorf("channel authority does not match its verified answer facts")
+		}
+	case ApprovalAuthorityAttorney:
+		if a.ReviewBy != "" || event.AuthorityOutcome != AuthorityOutcomePowerOfAttorney || event.AuthorityRuling == "" {
+			return fmt.Errorf("attorney authority does not name its power of attorney entry on the History event")
 		}
 	default:
 		if raise && a.ReviewBy == "" {
@@ -1538,7 +1550,11 @@ func ParseHistoryLine(line string) (HistoryLine, error) {
 	}
 	channelAuthority := h.AuthorityOutcome == AuthorityOutcomeAuthenticatedChannelWord || h.AuthorityOutcome == AuthorityOutcomeVerifiedChannelAnswer
 	provenAuthority := h.AuthorityOutcome == AuthorityOutcomeHumanAuthorityProven
-	if provenAuthority {
+	if h.AuthorityOutcome == AuthorityOutcomePowerOfAttorney {
+		if strings.HasPrefix(h.Actor, "human:") || h.AuthorityReviewBy != "" || h.TemporaryHumanWord != "" || !validOpidShape(h.AuthorityRuling) {
+			return h, fmt.Errorf("POWER_OF_ATTORNEY requires the seat actor and authorityRuling=<entry id>, with no relay fields")
+		}
+	} else if provenAuthority {
 		if !strings.HasPrefix(h.Actor, "human:") || h.AuthorityReviewBy != "" || h.AuthorityRuling != "" || h.TemporaryHumanWord != "" {
 			return h, fmt.Errorf("HUMAN_AUTHORITY_PROVEN requires a human actor, authorityGeneration, and no relay fields")
 		}
@@ -1635,6 +1651,8 @@ func RenderHistoryLine(h HistoryLine) string {
 		fmt.Fprintf(&b, " authorityOutcome=%s", h.AuthorityOutcome)
 	} else if h.AuthorityOutcome == AuthorityOutcomeHumanAuthorityProven {
 		fmt.Fprintf(&b, " authorityOutcome=%s authorityGeneration=%d", h.AuthorityOutcome, h.AuthorityGeneration)
+	} else if h.AuthorityOutcome == AuthorityOutcomePowerOfAttorney {
+		fmt.Fprintf(&b, " authorityOutcome=%s authorityRuling=%s", h.AuthorityOutcome, h.AuthorityRuling)
 	} else if (h.AuthorityOutcome != "" || h.AuthorityReviewBy != "") && h.AuthorityRuling == "" && h.TemporaryHumanWord == "" {
 		fmt.Fprintf(&b, " authorityOutcome=%s authorityReviewBy=%s", h.AuthorityOutcome, h.AuthorityReviewBy)
 	} else if h.AuthorityOutcome != "" || h.AuthorityReviewBy != "" || h.AuthorityRuling != "" || h.TemporaryHumanWord != "" {

@@ -20,12 +20,12 @@ if (( ! fixture_bed_child )); then
   run_fixture_bed_scenarios goal-cli "goal CLI fixtures: PASSED" \
 	"$fixture_bed_script" migration-recovery human-lineage risk-basis labels-and-filtering structured-budget scope-bounds archive-and-prune classification-sweep \
 	brain-claim-refuses brain-human-word-refuses brain-classification-fails brain-stop-seeded brain-stop-corrupt brain-status-line wrong-terminal \
-	carry-word carried-record carried-discharge seat-blocker
+	carry-word carried-record carried-discharge seat-blocker power-of-attorney
 fi
 case "$fixture_scenario" in
 	migration-recovery | human-lineage | risk-basis | labels-and-filtering | structured-budget | scope-bounds | archive-and-prune | classification-sweep | \
 	brain-claim-refuses | brain-human-word-refuses | brain-classification-fails | brain-stop-seeded | brain-stop-corrupt | brain-status-line | wrong-terminal | \
-	carry-word | carried-record | carried-discharge | seat-blocker) ;;
+	carry-word | carried-record | carried-discharge | seat-blocker | power-of-attorney) ;;
   *) echo "goal CLI fixtures: unknown scenario: $fixture_scenario" >&2; exit 64 ;;
 esac
 
@@ -1301,4 +1301,73 @@ fi
 claim_back=$("$ms" goal claim --root "$clone" --id ship-widget)
 grep -q '"outcome":"confirmed"' <<<"$claim_back" \
   || { echo "the returned goal is not claimable again: $claim_back" >&2; exit 1; }
+fi
+
+if [[ "$fixture_scenario" == power-of-attorney ]]; then
+# 17. A person records a power of attorney (R-95-m1e); the seat then approves
+# and set-budgets a tier-1 goal with no terminal and no --by, as its own act
+# with the entry on the line; anything outside the entry's scope is refused.
+"$ms" goal release --root "$clone" --id ship-widget >/dev/null
+export METASYSTEM_GOAL_NOW=2026-08-20T09:00:00Z
+"$ms" goal open --root "$clone" --id poa-small --origin human \
+  --intent "Tier-one work the seat may approve under attorney." --next "Approve it under the entry." \
+  --risk severity=1,novelty=1,exposure=1,accumulation=1 --basis "power of attorney fixture" >/dev/null
+"$ms" goal open --root "$clone" --id poa-medium --origin human \
+  --intent "Tier-two work outside the entry." --next "Refuse it under the entry." \
+  --risk severity=2,novelty=1,exposure=1,accumulation=1 --basis "power of attorney fixture" >/dev/null
+"$ms" goal open --root "$clone" --id poa-late --origin human \
+  --intent "Tier-one work asked for after the entry expires." --next "Refuse it under the entry." \
+  --risk severity=1,novelty=1,exposure=1,accumulation=1 --basis "power of attorney fixture" >/dev/null
+grant_out=$("$ms" goal grant --root "$clone" --by Wido --fixture-human-authority \
+  --tiers 1 --verbs approve,set-budget --expires 2026-08-25)
+grep -q '"outcome":"confirmed"' <<<"$grant_out" \
+  || { echo "goal grant did not confirm: $grant_out" >&2; exit 1; }
+entry=$(sed -n 's/.*"entry":"\([^"]*\)".*/\1/p' <<<"$grant_out")
+[[ -n "$entry" ]] || { echo "goal grant printed no entry id: $grant_out" >&2; exit 1; }
+grant_tip=$(git -C "$origin" rev-parse main)
+git -C "$clone" cat-file -p "$grant_tip:plans/goals/backlog.md" >"$tmp/backlog-grant.md"
+grep -q "^- $entry by=human:Wido tiers=1 verbs=approve,set-budget since=2026-08-20T09:00:00Z expires=2026-08-25$" "$tmp/backlog-grant.md" \
+  || { echo "the root record does not carry the entry" >&2; cat "$tmp/backlog-grant.md" >&2; exit 1; }
+under_out=$("$ms" goal approve --root "$clone" --id poa-small --under "$entry")
+grep -q '"outcome":"confirmed"' <<<"$under_out" \
+  || { echo "approve under attorney did not confirm: $under_out" >&2; exit 1; }
+under_tip=$(git -C "$origin" rev-parse main)
+git -C "$clone" cat-file -p "$under_tip:plans/goals/poa-small.md" >"$tmp/poa-small.md"
+grep -q '^- Approved: by=fixture-machine+fixture-lineage .* authority=attorney ' "$tmp/poa-small.md" \
+  || { echo "the approval is not the seat's own act under attorney" >&2; cat "$tmp/poa-small.md" >&2; exit 1; }
+grep -q " approve actor=fixture-machine+fixture-lineage targets=poa-small authorityOutcome=POWER_OF_ATTORNEY authorityRuling=$entry" "$tmp/poa-small.md" \
+  || { echo "the history line does not name the entry" >&2; cat "$tmp/poa-small.md" >&2; exit 1; }
+"$ms" goal claim --root "$clone" --id poa-small >/dev/null
+budget_out=$("$ms" goal set-budget --root "$clone" --id poa-small --under "$entry" \
+  --elapsed-limit 1h --attempt-limit 2 --reserved-job-minutes-limit 120 --active-job-limit 1 --review-round-limit 0)
+grep -q '"outcome":"confirmed"' <<<"$budget_out" \
+  || { echo "set-budget under attorney did not confirm: $budget_out" >&2; exit 1; }
+if over_out=$("$ms" goal set-budget --root "$clone" --id poa-small --under "$entry" \
+  --elapsed-limit 8h --attempt-limit 2 --reserved-job-minutes-limit 120 --active-job-limit 1 --review-round-limit 0 2>&1); then
+  echo "an over-box set-budget under attorney succeeded: $over_out" >&2; exit 1
+fi
+grep -q 'GOAL_NORM_REFUSED' <<<"$over_out" \
+  || { echo "the over-box refusal is not the norm refusal: $over_out" >&2; exit 1; }
+if tier_out=$("$ms" goal approve --root "$clone" --id poa-medium --under "$entry" 2>&1); then
+  echo "a tier-2 goal was approved under a tier-1 entry: $tier_out" >&2; exit 1
+fi
+grep -q 'covers tier 1 only' <<<"$tier_out" \
+  || { echo "the tier refusal does not name the scope: $tier_out" >&2; exit 1; }
+if by_out=$("$ms" goal approve --root "$clone" --id poa-late --under "$entry" --by Wido 2>&1); then
+  echo "--under combined with --by: $by_out" >&2; exit 1
+fi
+grep -q "seat's own act" <<<"$by_out" \
+  || { echo "the --by refusal does not say whose act it is: $by_out" >&2; exit 1; }
+if unpark_out=$("$ms" goal unpark --root "$clone" --id poa-late --under "$entry" 2>&1); then
+  echo "unpark accepted --under: $unpark_out" >&2; exit 1
+fi
+grep -q 'does not take --under' <<<"$unpark_out" \
+  || { echo "the unpark refusal is not the flag refusal: $unpark_out" >&2; exit 1; }
+export METASYSTEM_GOAL_NOW=2026-08-26T09:00:00Z
+if late_out=$("$ms" goal approve --root "$clone" --id poa-late --under "$entry" 2>&1); then
+  echo "an expired entry approved a goal: $late_out" >&2; exit 1
+fi
+grep -q 'expired 2026-08-25' <<<"$late_out" \
+  || { echo "the expiry refusal does not name the date: $late_out" >&2; exit 1; }
+unset METASYSTEM_GOAL_NOW
 fi

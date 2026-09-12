@@ -312,6 +312,8 @@ func requestForEntry(e Endpoint, entry Entry) (PublishRequest, error) {
 		return claimRequest(r, target, budget), nil
 	case "set-budget":
 		return PublishRequest{}, fmt.Errorf("APPROVAL_REQUIRED: set-budget is proof-bearing and cannot be replayed from journal text; re-run it from the human authority boundary and close this entry by hand")
+	case "grant", "revoke":
+		return PublishRequest{}, fmt.Errorf("%s is proof-bearing and cannot be replayed from journal text; re-run it from the human authority boundary and close this entry by hand", in.Verb)
 	case "set-priority":
 		return PublishRequest{}, fmt.Errorf("set-priority is proof-bearing and cannot be replayed from journal text; re-run it from the enrolled terminal")
 	case "split":

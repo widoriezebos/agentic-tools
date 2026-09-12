@@ -156,6 +156,7 @@ var Exclusions = []Exclusion{
 	{Pattern: "TEMPORARY_HUMAN_WORD", Reason: "an authority outcome that admits rather than refuses"},
 	{Pattern: "AUTHENTICATED_CHANNEL_WORD", Reason: "an authority outcome that admits rather than refuses"},
 	{Pattern: "VERIFIED_CHANNEL_ANSWER", Reason: "an authority outcome that admits rather than refuses"},
+	{Pattern: "POWER_OF_ATTORNEY", Reason: "an authority outcome that admits rather than refuses"},
 	{Pattern: "AUTO_HEAL_ELIGIBLE", Reason: "a steward health observation that refuses nothing"},
 	{Pattern: "DEADLINE_EXPIRED", Reason: "a steward health observation that refuses nothing"},
 	{Pattern: "AUTO_HEAL_ENDED", Reason: "a steward health observation that refuses nothing"},

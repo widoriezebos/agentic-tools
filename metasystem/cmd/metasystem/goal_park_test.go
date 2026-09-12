@@ -27,3 +27,22 @@ func TestOnlyGoalOpenTakesBlocks(t *testing.T) {
 		t.Fatalf("goal open carries --blocks: ok=%v blocks=%q", ok, f.blocks)
 	}
 }
+
+// --under belongs to approve and set-budget; the grant flags to grant.
+func TestOnlyApproveAndSetBudgetTakeUnder(t *testing.T) {
+	root := t.TempDir()
+	if _, ok := parseSyncFlags("unpark", []string{"--root", root, "--id", "x", "--under", "e"}); ok {
+		t.Fatal("goal unpark accepted --under")
+	}
+	if _, ok := parseSyncFlags("open", []string{"--root", root, "--id", "x", "--tiers", "1"}); ok {
+		t.Fatal("goal open accepted --tiers")
+	}
+	f, ok := parseSyncFlags("set-budget", []string{"--root", root, "--id", "x", "--under", "e"})
+	if !ok || f.under != "e" {
+		t.Fatalf("goal set-budget carries --under: ok=%v under=%q", ok, f.under)
+	}
+	g, ok := parseSyncFlags("grant", []string{"--root", root, "--by", "Wido", "--tiers", "1", "--verbs", "approve", "--expires", "2026-09-19"})
+	if !ok || g.tiers != "1" || g.verbs != "approve" || g.expires != "2026-09-19" {
+		t.Fatalf("goal grant carries its flags: ok=%v %+v", ok, g)
+	}
+}

@@ -206,6 +206,11 @@ type VerbRequest struct {
 	// human-word mutation. It prevents later verbs from reclassifying a
 	// different process view after the actor was assembled.
 	CallerClass string
+	// Attorney is the recorded delegation a seat acts under (goal approve
+	// or set-budget --under <entry>): resolved at the command edge from the
+	// accepted tree and checked again inside the transaction. The act stays
+	// the seat's own: no human actor, no proof.
+	Attorney *PowerOfAttorneyEntry
 }
 
 func (r VerbRequest) opid() string {
@@ -850,6 +855,12 @@ func SetBudget(r VerbRequest, id string, budget Budget) (PublishResult, error) {
 }
 
 func SetBudgetApproved(r VerbRequest, id string, budget Budget, proof *humanauthority.Proof) (PublishResult, error) {
+	if r.Attorney != nil {
+		if err := attorneyActRequest(r, proof); err != nil {
+			return PublishResult{}, err
+		}
+		return Publish(r.Endpoint, setBudgetRequest(r, id, budget, nil, ApprovalAuthorityAttorney, "", false))
+	}
 	maximum, maxErr := config.ReviewRoundMax(filepath.Join(r.Endpoint.Root, "metasystem.conf"))
 	if maxErr != nil {
 		return PublishResult{}, maxErr
@@ -870,7 +881,13 @@ func SetBudgetApproved(r VerbRequest, id string, budget Budget, proof *humanauth
 func setBudgetRequest(r VerbRequest, id string, budget Budget, proof *humanauthority.Proof, authority, reviewBy string, temporary bool) PublishRequest {
 	return PublishRequest{
 		Opid: r.opid(), Machine: r.Actor.Machine, Lineage: r.Actor.Lineage,
-		Intent:  Intent{Verb: "set-budget", Targets: []string{id}, Args: claimIntentArgs(r, budgetIntentArgs(budget))},
+		Intent: Intent{Verb: "set-budget", Targets: []string{id}, Args: claimIntentArgs(r, func() map[string]string {
+			args := budgetIntentArgs(budget)
+			if r.Attorney != nil {
+				args["under"] = r.Attorney.ID
+			}
+			return args
+		}())},
 		Message: "goal set-budget " + id,
 		Mutate: func(tip string) ([]Change, error) {
 			t, err := loadTree(r.Endpoint.Root, tip)
@@ -884,7 +901,7 @@ func setBudgetRequest(r VerbRequest, id string, budget Budget, proof *humanautho
 			if opidLanded(f, r) {
 				return nil, AlreadyApplied{}
 			}
-			if proof == nil || r.Actor.Human == "" || authority == "" {
+			if authority == "" || (r.Attorney == nil && (proof == nil || r.Actor.Human == "")) {
 				return nil, approvalRequired(f, "set-budget recovery")
 			}
 			if err := refuseRelayedAfterFleetEnrollment(t, temporary); err != nil {
@@ -892,6 +909,23 @@ func setBudgetRequest(r VerbRequest, id string, budget Budget, proof *humanautho
 			}
 			if f.State != StateClaimed || f.Claimed == nil {
 				return nil, fmt.Errorf("budgets on unclaimed work are the human's approval act, set through goal approve --id %s with --budget", id)
+			}
+			var entry *PowerOfAttorneyEntry
+			if r.Attorney != nil {
+				live, err := liveAttorney(t, r, "set-budget")
+				if err != nil {
+					return nil, err
+				}
+				if err := attorneyCoversGoal(live, "set-budget", f); err != nil {
+					return nil, err
+				}
+				if err := withinTierBox(r.Endpoint.Root, f, budget); err != nil {
+					return nil, err
+				}
+				if err := attorneyMayRebind(f, live.ID); err != nil {
+					return nil, err
+				}
+				entry = &live
 			}
 			boxTier := f.Tier
 			if boxTier == 0 {
@@ -937,6 +971,9 @@ func setBudgetRequest(r VerbRequest, id string, budget Budget, proof *humanautho
 			f.NormApproval = approval
 			touchDisplaced(f, r, "set-budget", []string{id}, displaced)
 			recordApprovalRelay(f, proof, temporary)
+			if entry != nil {
+				recordAttorney(f, entry.ID)
+			}
 			bindApproval(f, r, authority, reviewBy)
 			if f.State == StateClaimed && f.Claimed != nil {
 				claimEpoch := r.ClaimEpoch
@@ -952,6 +989,212 @@ func setBudgetRequest(r VerbRequest, id string, budget Budget, proof *humanautho
 		},
 		Validate: func(commit string) error { return ValidateCommit(r.Endpoint.Root, commit) },
 	}
+}
+
+// attorneyActRequest checks the shape of an act under power of attorney: it
+// is the seat's own act, so it carries no human actor, no proof and no
+// over-norm reference.
+func attorneyActRequest(r VerbRequest, proof *humanauthority.Proof) error {
+	if r.Actor.Human != "" || proof != nil {
+		return fmt.Errorf("an act under power of attorney is the seat's own: it takes --under <entry>, not --by or a human proof")
+	}
+	if r.ApprovedRef != "" {
+		return fmt.Errorf("an act under power of attorney stays within the tier box; --approved-ref is the human's own act")
+	}
+	return nil
+}
+
+// liveAttorney re-resolves the request's entry against the tree at the tip
+// the transaction reads, so a revoke or an expiry that landed meanwhile
+// refuses the act.
+func liveAttorney(t *TreeGoals, r VerbRequest, verb string) (PowerOfAttorneyEntry, error) {
+	entry, ok := rootAttorney(t.Root, r.Attorney.ID)
+	if !ok {
+		return PowerOfAttorneyEntry{}, fmt.Errorf("power of attorney %s is not recorded on the ledger tip", r.Attorney.ID)
+	}
+	if live, why := entry.LiveAt(r.Now); !live {
+		return PowerOfAttorneyEntry{}, fmt.Errorf("power of attorney %s is not live: %s", entry.ID, why)
+	}
+	if !containsString(entry.Verbs, verb) {
+		return PowerOfAttorneyEntry{}, fmt.Errorf("power of attorney %s covers %s, not %s", entry.ID, strings.Join(entry.Verbs, ","), verb)
+	}
+	return entry, nil
+}
+
+func attorneyCoversGoal(entry PowerOfAttorneyEntry, verb string, f *GoalFile) error {
+	if f.Tier == 0 || !entry.Covers(verb, f.Tier) {
+		return fmt.Errorf("power of attorney %s covers tier %s only; goal %s is tier %d", entry.ID, renderTiers(entry.Tiers), f.Id, f.Tier)
+	}
+	return nil
+}
+
+// withinTierBox refuses any member above the goal's tier box: an act under
+// power of attorney never raises a goal past its norm.
+func withinTierBox(root string, f *GoalFile, budget Budget) error {
+	tier := f.Tier
+	if tier == 0 {
+		tier = 3
+	}
+	box, err := config.TierBox(filepath.Join(root, "metasystem.conf"), tier)
+	if err != nil {
+		return err
+	}
+	if budget.ElapsedDuration() > box.ElapsedDuration() || budget.AttemptLimit > box.AttemptLimit ||
+		budget.ReservedJobMinutesLimit > box.ReservedJobMinutesLimit || budget.ActiveJobLimit > box.ActiveJobLimit ||
+		budget.ReviewRoundLimit > box.ReviewRoundLimit {
+		return fmt.Errorf("GOAL_NORM_REFUSED: an act under power of attorney stays within goal %s's tier %d box (%s); the human's own act raises it", f.Id, tier, renderBudgetRecord(box))
+	}
+	return nil
+}
+
+// attorneyMayRebind refuses to rewrite a standing approval a person made
+// (proven, relayed or channel): an act under attorney binds only where no
+// approval stands or where the standing one is itself an attorney act.
+func attorneyMayRebind(f *GoalFile, entryID string) error {
+	if f.Approved == nil || f.Approved.Authority == ApprovalAuthorityAttorney {
+		return nil
+	}
+	return fmt.Errorf("goal %s carries the human's own %s approval; an act under power of attorney %s does not rewrite it", f.Id, f.Approved.Authority, entryID)
+}
+
+// recordAttorney stamps the newest history line with the delegation the
+// act ran under.
+func recordAttorney(f *GoalFile, entryID string) {
+	h := &f.History[len(f.History)-1]
+	h.AuthorityOutcome = AuthorityOutcomePowerOfAttorney
+	h.AuthorityRuling = entryID
+}
+
+// ResolveAttorney reads the accepted tree offline and returns the entry a
+// seat may act under for the verb, or the refusal that names the grant
+// command.
+func ResolveAttorney(root, id, verb string, now time.Time) (PowerOfAttorneyEntry, error) {
+	e, err := ResolveEndpoint(root)
+	if err != nil {
+		return PowerOfAttorneyEntry{}, err
+	}
+	p, err := Project(e, false, now)
+	if err != nil {
+		return PowerOfAttorneyEntry{}, err
+	}
+	entry, ok := rootAttorney(p.Tree.Root, id)
+	if !ok {
+		return PowerOfAttorneyEntry{}, fmt.Errorf("no power of attorney %s is recorded; a person records one with goal grant --by <name> --tiers 1 --verbs approve,set-budget --expires <YYYY-MM-DD>", id)
+	}
+	if live, why := entry.LiveAt(now); !live {
+		return PowerOfAttorneyEntry{}, fmt.Errorf("power of attorney %s is not live: %s", entry.ID, why)
+	}
+	if !containsString(entry.Verbs, verb) {
+		return PowerOfAttorneyEntry{}, fmt.Errorf("power of attorney %s covers %s, not %s", entry.ID, strings.Join(entry.Verbs, ","), verb)
+	}
+	return entry, nil
+}
+
+// Grant records a power of attorney: the human's own proof (enrolled
+// terminal, verified channel answer, or the fixture grant; never a relayed
+// word), tier 1 in this build, verbs from AttorneyVerbs, an expiry at most
+// seven days out (R-95-m1e).
+func Grant(r VerbRequest, proof *humanauthority.Proof, tiers []uint8, verbs []string, expires string) (PublishResult, error) {
+	if r.Actor.Human == "" {
+		return PublishResult{}, fmt.Errorf("goal grant is human-only and requires --by from an authorized human boundary")
+	}
+	_, _, temporary, err := approvalProofClassForApprove(r.Endpoint.Root, proof)
+	if err != nil {
+		return PublishResult{}, err
+	}
+	if temporary {
+		return PublishResult{}, fmt.Errorf("a relayed word cannot grant a power of attorney; grant from the enrolled terminal or a verified channel answer")
+	}
+	if len(tiers) != 1 || tiers[0] != 1 {
+		return PublishResult{}, fmt.Errorf("a power of attorney covers tier 1 in this build; tier 2 joins when goal tier-from-severity-and-novelty lands (R-95-m1e)")
+	}
+	canonicalVerbs := sortedUnique(verbs)
+	if len(canonicalVerbs) == 0 {
+		return PublishResult{}, fmt.Errorf("a power of attorney names at least one of %s", strings.Join(AttorneyVerbs, ","))
+	}
+	for _, verb := range canonicalVerbs {
+		if !containsString(AttorneyVerbs, verb) {
+			return PublishResult{}, fmt.Errorf("a power of attorney covers %s only, not %s", strings.Join(AttorneyVerbs, ","), verb)
+		}
+	}
+	expiry, err := time.Parse("2006-01-02", expires)
+	if err != nil {
+		return PublishResult{}, fmt.Errorf("--expires must be a date, YYYY-MM-DD")
+	}
+	day := r.Now.UTC()
+	today := time.Date(day.Year(), day.Month(), day.Day(), 0, 0, 0, 0, time.UTC)
+	if expiry.Before(today) || expiry.After(today.AddDate(0, 0, AttorneyMaxDays-1)) {
+		return PublishResult{}, fmt.Errorf("--expires must fall between today and %s (no entry lives longer than %d days, the expiry day included, R-95-m1e)", today.AddDate(0, 0, AttorneyMaxDays-1).Format("2006-01-02"), AttorneyMaxDays)
+	}
+	reason := "tiers=" + renderTiers(tiers) + " verbs=" + strings.Join(canonicalVerbs, ",") + " expires=" + expires
+	return Publish(r.Endpoint, PublishRequest{
+		Opid: r.opid(), Machine: r.Actor.Machine, Lineage: r.Actor.Lineage,
+		Intent: Intent{Verb: "grant", Args: intentArgs(r, map[string]string{
+			"tiers": renderTiers(tiers), "verbs": strings.Join(canonicalVerbs, ","), "expires": expires,
+		})},
+		Message: "goal grant",
+		Mutate: func(tip string) ([]Change, error) {
+			t, err := loadTree(r.Endpoint.Root, tip)
+			if err != nil {
+				return nil, err
+			}
+			if _, exists := rootAttorney(t.Root, r.opid()); exists {
+				return nil, AlreadyApplied{}
+			}
+			t.Root.PowerOfAttorney = append(t.Root.PowerOfAttorney, PowerOfAttorneyEntry{
+				ID: r.opid(), By: r.Actor.historyActor(), Tiers: append([]uint8(nil), tiers...), Verbs: canonicalVerbs,
+				Since: r.stamp(), Expires: expires,
+			})
+			t.Root.Revision++
+			t.Root.History = append(t.Root.History, HistoryLine{At: r.stamp(), Opid: r.opid(), Verb: "grant", Actor: r.Actor.historyActor(), Keep: -1, Reason: reason})
+			return []Change{{Path: goalsPrefix + "backlog.md", Content: RenderRoot(t.Root)}}, nil
+		},
+		Validate: func(commit string) error { return ValidateCommit(r.Endpoint.Root, commit) },
+	})
+}
+
+// Revoke closes a power of attorney early, under the human's own proof.
+func Revoke(r VerbRequest, proof *humanauthority.Proof, id string) (PublishResult, error) {
+	if r.Actor.Human == "" {
+		return PublishResult{}, fmt.Errorf("goal revoke is human-only and requires --by from an authorized human boundary")
+	}
+	_, _, temporary, err := approvalProofClassForApprove(r.Endpoint.Root, proof)
+	if err != nil {
+		return PublishResult{}, err
+	}
+	if temporary {
+		return PublishResult{}, fmt.Errorf("a relayed word cannot revoke a power of attorney; revoke from the enrolled terminal or a verified channel answer")
+	}
+	return Publish(r.Endpoint, PublishRequest{
+		Opid: r.opid(), Machine: r.Actor.Machine, Lineage: r.Actor.Lineage,
+		Intent:  Intent{Verb: "revoke", Args: intentArgs(r, map[string]string{"entry": id})},
+		Message: "goal revoke " + id,
+		Mutate: func(tip string) ([]Change, error) {
+			t, err := loadTree(r.Endpoint.Root, tip)
+			if err != nil {
+				return nil, err
+			}
+			for i := range t.Root.PowerOfAttorney {
+				entry := &t.Root.PowerOfAttorney[i]
+				if entry.ID != id {
+					continue
+				}
+				if entry.Revoked != "" {
+					if rootOpidLanded(t.Root, r) {
+						return nil, AlreadyApplied{}
+					}
+					return nil, NothingToDo{Reason: "power of attorney " + id + " was revoked at " + entry.Revoked}
+				}
+				entry.Revoked = r.stamp()
+				entry.RevokedBy = r.Actor.historyActor()
+				t.Root.Revision++
+				t.Root.History = append(t.Root.History, HistoryLine{At: r.stamp(), Opid: r.opid(), Verb: "revoke", Actor: r.Actor.historyActor(), Keep: -1, Reason: "entry " + id})
+				return []Change{{Path: goalsPrefix + "backlog.md", Content: RenderRoot(t.Root)}}, nil
+			}
+			return nil, fmt.Errorf("no power of attorney %s is recorded", id)
+		},
+		Validate: func(commit string) error { return ValidateCommit(r.Endpoint.Root, commit) },
+	})
 }
 
 // SetObligation records the human decision that turns an already claimed,
