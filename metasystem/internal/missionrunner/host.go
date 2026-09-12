@@ -91,8 +91,24 @@ func hostStartVerified(pid, pgid int, command, tag string, forceUnverified bool)
 // We never signal without proof; we also never die over a group that already
 // stopped being ours. Anything genuinely left behind is UNTRACKED to the
 // census, which is the safety net designed to catch it.
+// windDown is the wind-down's clock and kernel, one seam: production reads
+// the kernel and the wall clock; a test drives every function from a fake
+// process table and an artificial clock, so the ladder's verdicts (TERM
+// worked, KILL was needed, a group was foreign, a group is down to zombies)
+// are proven without a scheduler in the loop (R-104-m1e).
+var windDown = struct {
+	now                       func() time.Time
+	sleep                     func(time.Duration)
+	groupAlive                func(pgid int) bool
+	groupHasSubstantiveMember func(pgid int) bool
+	groupOwnership            func(pgid int, tag string, grant fixtureauth.GroupOwnershipGrant) janitor.GroupOwnershipOutcome
+}{
+	now: time.Now, sleep: time.Sleep, groupAlive: groupAlive,
+	groupHasSubstantiveMember: groupHasSubstantiveMember, groupOwnership: groupOwnership,
+}
+
 func (e *Engine) terminateGroup(pgid int, tag string, allowFake bool) (string, error) {
-	if !groupAlive(pgid) {
+	if !windDown.groupAlive(pgid) {
 		return TerminationAlreadyGone, nil
 	}
 	// The GroupOwnershipGrant is issued HERE, on the runner's one signal
@@ -113,12 +129,12 @@ func (e *Engine) terminateGroup(pgid int, tag string, allowFake bool) (string, e
 	// parallel battery). A few probes over a short window separate a
 	// transient unreadable member from a group that is really not ours; a
 	// group already proven not ours is not probed again.
-	ownership := groupOwnership(pgid, tag, grant)
-	for probe := 0; probe < 5 && ownership == janitor.GroupIndeterminate && groupAlive(pgid); probe++ {
-		time.Sleep(100 * time.Millisecond)
-		ownership = groupOwnership(pgid, tag, grant)
+	ownership := windDown.groupOwnership(pgid, tag, grant)
+	for probe := 0; probe < 5 && ownership == janitor.GroupIndeterminate && windDown.groupAlive(pgid); probe++ {
+		windDown.sleep(100 * time.Millisecond)
+		ownership = windDown.groupOwnership(pgid, tag, grant)
 	}
-	if !groupAlive(pgid) {
+	if !windDown.groupAlive(pgid) {
 		return TerminationAlreadyGone, nil
 	}
 	if ownership != janitor.GroupOwned {
@@ -145,17 +161,17 @@ func (e *Engine) terminateGroup(pgid int, tag string, allowFake bool) (string, e
 	if err != nil {
 		return "", err
 	}
-	deadline := time.Now().Add(grace)
-	for groupAlive(pgid) && time.Now().Before(deadline) {
-		time.Sleep(pollInterval)
+	deadline := windDown.now().Add(grace)
+	for windDown.groupAlive(pgid) && windDown.now().Before(deadline) {
+		windDown.sleep(pollInterval)
 	}
-	if groupAlive(pgid) {
+	if windDown.groupAlive(pgid) {
 		// The kill-through rule: this wind-down proved ownership before
 		// its own TERM, and a group mid-death often has unreadable argv —
 		// INDETERMINATE within this bounded window is still ours to
 		// finish. Only a PROVABLY foreign group (a recycled pgid whose
 		// members positively carry someone else's argv) stops the kill.
-		if groupOwnership(pgid, tag, grant) == janitor.GroupNotOwned {
+		if windDown.groupOwnership(pgid, tag, grant) == janitor.GroupNotOwned {
 			fmt.Fprintf(os.Stderr, "host process group %d is provably foreign after TERM; "+
 				"skipping the kill of a recycled group\n", pgid)
 			e.emit("wind-down", fmt.Sprintf("group %d recycled; kill skipped", pgid), map[string]string{
@@ -168,12 +184,12 @@ func (e *Engine) terminateGroup(pgid int, tag string, allowFake bool) (string, e
 		if floorErr != nil {
 			return "", floorErr
 		}
-		killDeadline := time.Now().Add(killFloor)
-		for groupAlive(pgid) && time.Now().Before(killDeadline) {
-			time.Sleep(pollInterval)
+		killDeadline := windDown.now().Add(killFloor)
+		for windDown.groupAlive(pgid) && windDown.now().Before(killDeadline) {
+			windDown.sleep(pollInterval)
 		}
-		if groupAlive(pgid) {
-			if !groupHasSubstantiveMember(pgid) {
+		if windDown.groupAlive(pgid) {
+			if !windDown.groupHasSubstantiveMember(pgid) {
 				// Zombies keep a pgid signalable on Linux until the
 				// parent reaps; the work is dead and the kill did its
 				// job — the reaping debt is the parent's, not a leak.

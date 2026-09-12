@@ -32,7 +32,7 @@ func TestRunUtilHoldWritesStoppedFileOnTerm(t *testing.T) {
 
 	// The signal is re-sent until the verb reports it saw one, because there
 	// is no ordering guarantee between this send and its handler install.
-	deadline := time.After(10 * time.Second)
+	deadline := time.After(wiringBound)
 	tick := time.NewTicker(50 * time.Millisecond)
 	defer tick.Stop()
 	for {

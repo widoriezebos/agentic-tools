@@ -2798,12 +2798,24 @@ printf '%s' "$mon2" | grep -q '"decision":"block"' \
   && { echo "the same unwatched set blocked twice" >&2; exit 1; }
 "$stop_root/bin/metasystem" run watch --id fixture-run --root "$stop_root" --poll-ms 200 &
 mon_watch_pid=$!
-sleep 1
-mon3=$(printf '%s' "$stop_payload" | stop_hook)
-printf '%s' "$mon3" | grep -Fq 'STILL WORKING' \
-  && printf '%s' "$mon3" | grep -Fq 'run fixture-run' \
+# The watch publishes its waiter record in its own time; the hook reads the
+# live watch once that record exists, a fact waited for under the harness
+# cap, never an instant.
+mon3=
+mon_watch_live() {
+  mon3=$(printf '%s' "$stop_payload" | stop_hook)
+  printf '%s' "$mon3" | grep -Fq 'STILL WORKING'
+}
+wait_until "S4-16 live watch reads STILL WORKING" mon_watch_live \
   || { echo "a live watched run did not read STILL WORKING" >&2; echo "$mon3" >&2; exit 1; }
-sleep 2.5
+printf '%s' "$mon3" | grep -Fq 'run fixture-run' \
+  || { echo "a live watched run did not name itself" >&2; echo "$mon3" >&2; exit 1; }
+# The run ends when its command does, and the wrapper's exit sidecar is
+# that fact; conclusion waits for the sidecar, not for the two seconds
+# the command sleeps.
+wait_until "S4-16 fixture run command ended" \
+  bash -c 'compgen -G "$1/artifacts/agents/runs/fixture-run.g*.exit.json" >/dev/null' _ "$stop_root" \
+  || exit 1
 "$stop_root/bin/metasystem" run conclude --root "$stop_root" --id fixture-run >/dev/null
 mon_watch_rc=0
 wait "$mon_watch_pid" || mon_watch_rc=$?

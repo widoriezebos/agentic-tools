@@ -592,7 +592,7 @@ func TestWaiterContract(t *testing.T) {
 	done := make(chan int, 1)
 	go func() { done <- s.Watch("watch-run", mainCaller, 30*time.Millisecond, nil) }()
 	waiterTarget := WaiterTarget{Generation: record.Generation, LaunchNonce: record.LaunchNonce}
-	deadline := time.Now().Add(5 * time.Second)
+	deadline := time.Now().Add(wiringBound)
 	for !LiveWaiter(s.Root, prober, "run", "watch-run", mainCaller.MainId, waiterTarget) {
 		if time.Now().After(deadline) {
 			t.Fatal("watch did not publish its waiter record")
@@ -607,7 +607,7 @@ func TestWaiterContract(t *testing.T) {
 		if code != ExitGreen {
 			t.Fatalf("watch exit %d, want green", code)
 		}
-	case <-time.After(5 * time.Second):
+	case <-time.After(wiringBound):
 		t.Fatal("watch did not return after conclusion")
 	}
 	if LiveWaiter(s.Root, prober, "run", "watch-run", mainCaller.MainId, waiterTarget) {

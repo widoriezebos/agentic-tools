@@ -77,6 +77,11 @@ func BoundedIdleStopBlock(detail string) map[string]any {
 // StopRefusal records one external stop failure and returns the provider
 // response for that occurrence. The first occurrence blocks; later
 // occurrences remain visible without keeping the turn open.
+// stopRefusalLockWait bounds the wait for an overlapping writer of the
+// refusal record; tests set it so the waited-for writer is provably brief
+// or provably wedged, whatever the box's load.
+var stopRefusalLockWait = 100 * time.Millisecond
+
 func StopRefusal(path, session, cause, remedy, detail, systemMessage string, now time.Time) (map[string]any, error) {
 	if path == "" || session == "" || cause == "" || remedy == "" {
 		return nil, fmt.Errorf("stop refusal requires a record path, session, cause, and remedy")
@@ -90,13 +95,13 @@ func StopRefusal(path, session, cause, remedy, detail, systemMessage string, now
 	}
 	defer lockFile.Close()
 	if err := unix.Flock(int(lockFile.Fd()), unix.LOCK_EX|unix.LOCK_NB); err != nil {
-		deadline := time.Now().Add(100 * time.Millisecond)
+		deadline := time.Now().Add(stopRefusalLockWait)
 		for err != nil && time.Now().Before(deadline) {
 			time.Sleep(10 * time.Millisecond)
 			err = unix.Flock(int(lockFile.Fd()), unix.LOCK_EX|unix.LOCK_NB)
 		}
 		if err != nil {
-			return nil, fmt.Errorf("lock stop-refusal record: busy after 100 milliseconds: %w", err)
+			return nil, fmt.Errorf("lock stop-refusal record: busy after %s: %w", stopRefusalLockWait, err)
 		}
 	}
 	defer func() { _ = unix.Flock(int(lockFile.Fd()), unix.LOCK_UN) }()

@@ -23,10 +23,12 @@ func spawnTaggedGroup(t *testing.T, tag string, termImmune bool) *exec.Cmd {
 	ready := filepath.Join(t.TempDir(), "ready")
 	// The trailing no-op keeps Bash from replacing the positioned, tagged
 	// leader with its final external command. The ready file is published by
-	// that leader only after any TERM trap has been installed.
-	script := `: > "$METASYSTEM_TEST_OWNER_READY"; sleep 30; :`
+	// that leader only after any TERM trap has been installed. The holder
+	// outlives the wiring bound by an order of magnitude: a group gone
+	// within the bound was wound down, never dead of old age.
+	script := `: > "$METASYSTEM_TEST_OWNER_READY"; sleep 600; :`
 	if termImmune {
-		script = `trap "" TERM; : > "$METASYSTEM_TEST_OWNER_READY"; sleep 30; :`
+		script = `trap "" TERM; : > "$METASYSTEM_TEST_OWNER_READY"; sleep 600; :`
 	}
 	cmd := exec.Command("bash", "-c", script, "metasystem", "util", "hold", "--tag", tag)
 	cmd.Env = append(os.Environ(), "METASYSTEM_TEST_OWNER_READY="+ready)
@@ -38,13 +40,23 @@ func spawnTaggedGroup(t *testing.T, tag string, termImmune bool) *exec.Cmd {
 	// group technically alive after the kill, which is this harness's
 	// artifact, not the wind-down's failure (the same rule the older
 	// TestTerminateGroup records).
-	go func() { _ = cmd.Wait() }()
+	waited := make(chan struct{})
+	go func() { _ = cmd.Wait(); close(waited) }()
 	t.Cleanup(func() {
-		if taggedGroupLeader(cmd.Process.Pid, tag) {
+		// An unreaped leader is still ours, whatever its argv reads now; a
+		// reaped one may have handed its pid on, and only a leader still
+		// carrying the tag proves the group is ours to end.
+		select {
+		case <-waited:
+			if taggedGroupLeader(cmd.Process.Pid, tag) {
+				_ = syscall.Kill(-cmd.Process.Pid, syscall.SIGKILL)
+			}
+		default:
 			_ = syscall.Kill(-cmd.Process.Pid, syscall.SIGKILL)
+			<-waited
 		}
 	})
-	deadline := time.Now().Add(5 * time.Second)
+	deadline := time.Now().Add(wiringBound)
 	for time.Now().Before(deadline) {
 		if _, err := os.Stat(ready); err == nil && taggedGroupLeader(cmd.Process.Pid, tag) {
 			return cmd
@@ -124,39 +136,6 @@ func scanTaggedGroup(tag string) census.TaggedProcessCensus {
 	})
 }
 
-func TestTerminateGroupKillsThroughATermImmuneOwnedGroup(t *testing.T) {
-	engine := &Engine{Root: t.TempDir(), Mission: "mr-winddown"}
-	tag := fmt.Sprintf("metasystem-job-winddown-%d", os.Getpid())
-	cmd := spawnTaggedGroup(t, tag, true)
-	pgid := cmd.Process.Pid
-	if _, err := engine.terminateGroup(pgid, tag, false); err != nil {
-		t.Fatalf("kill-through wind-down failed: %v", err)
-	}
-	if !waitGroupDead(pgid, 3*time.Second) {
-		t.Fatal("a TERM-immune owned group must die through the SIGKILL path")
-	}
-}
-
-func TestTerminateGroupNeverSignalsAForeignGroup(t *testing.T) {
-	engine := &Engine{Root: t.TempDir(), Mission: "mr-winddown"}
-	foreign := exec.Command("sleep", "30")
-	foreign.SysProcAttr = &syscall.SysProcAttr{Setpgid: true}
-	if err := foreign.Start(); err != nil {
-		t.Fatal(err)
-	}
-	t.Cleanup(func() {
-		_ = syscall.Kill(-foreign.Process.Pid, syscall.SIGKILL)
-		_, _ = foreign.Process.Wait()
-	})
-	tag := fmt.Sprintf("metasystem-job-foreign-%d", os.Getpid())
-	if _, err := engine.terminateGroup(foreign.Process.Pid, tag, false); err != nil {
-		t.Fatalf("foreign wind-down must skip without error: %v", err)
-	}
-	if !groupAlive(foreign.Process.Pid) {
-		t.Fatal("a group without the positioned tag was signaled")
-	}
-}
-
 func TestClassifyLiveWindDownDistinguishesLeakFromLawfulCensusHandoff(t *testing.T) {
 	const pgid = int64(700)
 	tagged := census.TaggedProcessCensus{Tagged: []census.TaggedProcess{{PGID: pgid}}}
@@ -225,6 +204,10 @@ func TestClassifyLiveWindDownDistinguishesLeakFromLawfulCensusHandoff(t *testing
 	}
 }
 
+// TestTerminateGroupLeaksNoGroupsUnderCompression is the wind-down's wiring
+// proof: real tagged groups, TERM-honouring and TERM-immune, through the
+// real probes and signals. The ladder's verdicts themselves are proven on
+// the fake kernel (winddown_fake_test.go) with no wall time.
 func TestTerminateGroupLeaksNoGroupsUnderCompression(t *testing.T) {
 	// Repeated wind-downs under an aggressive compression scale may leave an
 	// unprovable group to the census, but may not lose a live group outside
@@ -238,7 +221,9 @@ func TestTerminateGroupLeaksNoGroupsUnderCompression(t *testing.T) {
 		cmd := spawnTaggedGroup(t, tag, cycle%2 == 1)
 		pgid := cmd.Process.Pid
 		_, windDownErr := engine.terminateGroup(pgid, tag, false)
-		if waitGroupDead(pgid, 3*time.Second) {
+		// A wind-down that reports a leak is one, whatever the group does
+		// afterwards; only a clean wind-down earns the wait for its death.
+		if windDownErr == nil && waitGroupDead(pgid, wiringBound) {
 			continue
 		}
 		classification, observed := classifyLiveWindDown(pgid, windDownErr, func() census.TaggedProcessCensus {

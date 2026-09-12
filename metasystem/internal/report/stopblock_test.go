@@ -119,6 +119,11 @@ func TestStopRefusalWaitsBrieflyForOverlappingWriter(t *testing.T) {
 	if err := unix.Flock(int(lockFile.Fd()), unix.LOCK_EX); err != nil {
 		t.Fatal(err)
 	}
+	// The writer is brief by construction: the refusal's wait is far above
+	// the moment the writer holds the lock, whatever the box's load.
+	previous := stopRefusalLockWait
+	stopRefusalLockWait = 30 * time.Second
+	t.Cleanup(func() { stopRefusalLockWait = previous })
 	released := make(chan struct{})
 	go func() {
 		time.Sleep(40 * time.Millisecond)
@@ -132,6 +137,26 @@ func TestStopRefusalWaitsBrieflyForOverlappingWriter(t *testing.T) {
 	}
 	if response["decision"] != "block" {
 		t.Fatalf("the first occurrence must still block after waiting for its writer: %v", response)
+	}
+}
+
+func TestStopRefusalReportsAWedgedWriter(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "session.json")
+	lockFile, err := os.OpenFile(path+".lock", os.O_CREATE|os.O_RDWR, 0o600)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer lockFile.Close()
+	if err := unix.Flock(int(lockFile.Fd()), unix.LOCK_EX); err != nil {
+		t.Fatal(err)
+	}
+	// A writer that never releases is wedged by construction: no wait
+	// makes it brief, and the refusal reports the record busy at once.
+	previous := stopRefusalLockWait
+	stopRefusalLockWait = 0
+	t.Cleanup(func() { stopRefusalLockWait = previous })
+	if _, err := StopRefusal(path, "session-a", "cause", "remedy", "detail", "", time.Now()); err == nil || !strings.Contains(err.Error(), "busy after") {
+		t.Fatalf("a wedged writer must be reported to the hook: %v", err)
 	}
 }
 

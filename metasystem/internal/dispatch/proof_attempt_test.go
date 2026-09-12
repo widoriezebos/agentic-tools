@@ -79,7 +79,7 @@ func TestProofOnlyGoalStopBatch(t *testing.T) {
 			<-waited
 		}
 	})
-	deadline := time.Now().Add(3 * time.Second)
+	deadline := time.Now().Add(wiringBound)
 	for {
 		if _, err := os.Stat(ready); err == nil {
 			break

@@ -73,7 +73,7 @@ func armingOwnerHelper(args []string) error {
 	fingerprint := processArgument(args, "--fingerprint")
 	interval, _ := strconv.Atoi(processArgument(args, "--interval"))
 	watcherCap, _ := strconv.Atoi(processArgument(args, "--watcher-cap"))
-	deadline := time.Now().Add(5 * time.Second)
+	deadline := time.Now().Add(wiringBound)
 	for {
 		if _, err := os.Stat(gate); err == nil {
 			break
@@ -1110,7 +1110,7 @@ func TestDeadOwnerTakeoverSweepsPrePublicationWatcher(t *testing.T) {
 		_ = componentCommand.Process.Kill()
 		select {
 		case <-componentDone:
-		case <-time.After(time.Second):
+		case <-time.After(wiringBound):
 		}
 	})
 	componentExact, state, err := (identity.KernelProber{}).Probe(int64(componentCommand.Process.Pid))
@@ -1137,7 +1137,7 @@ func TestDeadOwnerTakeoverSweepsPrePublicationWatcher(t *testing.T) {
 	appendPreviousOwnerRows(t, registryPath, root, result)
 	select {
 	case <-componentDone:
-	case <-time.After(2 * time.Second):
+	case <-time.After(wiringBound):
 		t.Fatal("the pre-publication watcher survived the takeover sweep")
 	}
 	enumerateTakeoverProcesses = func(string) ([]census.Process, error) { return nil, nil }
@@ -1374,7 +1374,7 @@ func exerciseCheckoutCustodyInvariant(t *testing.T) {
 	if err := signalGroup(requestedResult.Owner.Pid, syscall.SIGTERM); err != nil {
 		t.Fatalf("stop requested checkout owner for takeover: %v", err)
 	}
-	ownerDeadline := time.Now().Add(2 * time.Second)
+	ownerDeadline := time.Now().Add(wiringBound)
 	for ownerLiveness(requestedResult.Owner) != identity.Dead && time.Now().Before(ownerDeadline) {
 		time.Sleep(20 * time.Millisecond)
 	}

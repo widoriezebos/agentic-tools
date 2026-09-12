@@ -584,7 +584,7 @@ func TestSelftestWaitForJobCeiling(t *testing.T) {
 	if p.waitForJob("stuck-job") {
 		t.Fatal("a stuck job read as terminal")
 	}
-	if time.Since(start) > 5*time.Second {
+	if time.Since(start) > wiringBound {
 		t.Fatal("ceiling did not bound the wait")
 	}
 }

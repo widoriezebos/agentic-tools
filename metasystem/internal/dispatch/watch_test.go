@@ -41,7 +41,7 @@ func TestJobWatchRoundTrip(t *testing.T) {
 	// than sleeping a fixed slice: under a loaded -race suite the watcher
 	// goroutine can take longer than any constant to write its record.
 	target := run.WaiterTarget{StartedAt: "2026-08-15T10:00:00Z"}
-	deadline := time.Now().Add(5 * time.Second)
+	deadline := time.Now().Add(wiringBound)
 	for !run.LiveWaiter(root, identity.KernelProber{}, "job", "j-watch", "main-w", target) {
 		if time.Now().After(deadline) {
 			t.Fatal("the waiting watch holds no live waiter record")
@@ -58,7 +58,7 @@ func TestJobWatchRoundTrip(t *testing.T) {
 		if code != 0 {
 			t.Fatalf("completed job watch exit %d", code)
 		}
-	case <-time.After(5 * time.Second):
+	case <-time.After(wiringBound):
 		t.Fatal("watch did not return")
 	}
 

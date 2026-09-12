@@ -94,7 +94,7 @@ func spawnTaggedHold(t *testing.T, tag string) (int, int64) {
 	// Wait out the fork-to-exec window: immediately after Start the argv
 	// is empty and the probe under-reports (the nested-gate flake's root).
 	var exact identity.Exact
-	for deadline := time.Now().Add(5 * time.Second); time.Now().Before(deadline); {
+	for deadline := time.Now().Add(wiringBound); time.Now().Before(deadline); {
 		probed, state, err := identity.KernelProber{}.Probe(int64(cmd.Process.Pid))
 		if err == nil && state == identity.Alive && probed.ArgvKnown &&
 			strings.Contains(strings.Join(probed.Argv, " "), tag) {
@@ -735,10 +735,20 @@ func TestLaunchLockSerializesStartDecisions(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	// The competitor announces its arrival at the lock; the birth lands
+	// while it is held there, a fact waited for rather than an instant.
+	blocked := make(chan struct{})
+	var once sync.Once
+	previous := launchLockAttempted
+	launchLockAttempted = func() { once.Do(func() { close(blocked) }) }
+	t.Cleanup(func() { launchLockAttempted = previous })
 	done := make(chan error, 1)
 	go func() { done <- engine.armAndPreflight("start") }()
-	// While the competing launcher is blocked, a birth lands.
-	time.Sleep(300 * time.Millisecond)
+	select {
+	case <-blocked:
+	case err := <-done:
+		t.Fatalf("the competing launcher ended before reaching the lock: %v", err)
+	}
 	writeJSONFile(t, filepath.Join(engine.missionDir(), "state.json"),
 		map[string]any{"fabricated": "born in the gap"})
 	writeJSONFile(t, engine.birthRecordPath(), map[string]any{"missionId": engine.Mission})
@@ -1064,18 +1074,14 @@ func TestNestedCheckoutMissionBirth(t *testing.T) {
 			}
 			_ = syscall.Kill(-int(recPgid), syscall.SIGKILL)
 		}
-		capSeconds, scaleErr := ScaledSeconds(15)
-		if scaleErr != nil {
-			capSeconds = 15
-		}
-		deadline := time.Now().Add(time.Duration(capSeconds) * time.Second)
+		deadline := time.Now().Add(wiringBound)
 		for _, g := range groups {
 			for {
 				if err := syscall.Kill(-int(g), 0); err != nil {
 					break
 				}
 				if time.Now().After(deadline) {
-					t.Errorf("mission-birth teardown: process group %d still alive after the %ds scaled ceiling; TempDir removal would race it", g, capSeconds)
+					t.Errorf("mission-birth teardown: process group %d still alive after %s; TempDir removal would race it", g, wiringBound)
 					break
 				}
 				time.Sleep(50 * time.Millisecond)
@@ -1088,7 +1094,7 @@ func TestNestedCheckoutMissionBirth(t *testing.T) {
 		// inside this test's private TempDir: sweep by cwd, then wait
 		// the directory quiet before TempDir removal runs.
 		checkout := filepath.Dir(engine.Root)
-		sweepDeadline := time.Now().Add(time.Duration(capSeconds) * time.Second)
+		sweepDeadline := time.Now().Add(wiringBound)
 		for {
 			live := 0
 			if pids, pidErr := identity.AllPids(); pidErr == nil {
@@ -1105,7 +1111,7 @@ func TestNestedCheckoutMissionBirth(t *testing.T) {
 				break
 			}
 			if time.Now().After(sweepDeadline) {
-				t.Errorf("mission-birth teardown: %d process(es) still working under %s after the %ds scaled ceiling; TempDir removal would race them", live, checkout, capSeconds)
+				t.Errorf("mission-birth teardown: %d process(es) still working under %s after %s; TempDir removal would race them", live, checkout, wiringBound)
 				break
 			}
 			time.Sleep(50 * time.Millisecond)
@@ -1118,7 +1124,9 @@ func TestNestedCheckoutMissionBirth(t *testing.T) {
 	if err != nil {
 		t.Fatalf("the nested start must give birth: %v\n%s", err, out)
 	}
-	deadline := time.Now().Add(90 * time.Second)
+	// A nested engine run measures fifteen seconds on a quiet box; the
+	// bound is ten times that.
+	deadline := time.Now().Add(180 * time.Second)
 	var state map[string]any
 	for {
 		state, err = readJSONDoc(statePath)

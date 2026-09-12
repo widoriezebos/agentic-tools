@@ -6,7 +6,7 @@
 - Decisions made (and who made them): Wido, 2026-09-11 (delivery-efficiency program): the goal owns liveness reconciliation, not clocks; elapsed-time patience is proof-groups-detect-hangs-by-progress-not-the-clock, and c08fe2cb bounds go test groups by consumption. m1e, 2026-09-12: the reaper's pass is the tick (it already proves custody of every job record against the kernel each interval); an Unknown liveness never authorizes an action.
 - Waiting on the human: nothing.
 - Dead ends (do not retry without new evidence): none yet.
-- Next step: land slice 1; watch the first reaper pass reconcile proof-mtvl0alu-d730 (live on this checkout since 2026-09-10 13:47Z with launcher pid 73492 long dead); then the steward-incident clause.
+- Next step: settled for the goal (landed d25c2ee0; the first reaper pass reconciled proof-mtvl0alu-d730 at 12:22:33Z and `supervise status` lists no live attempt). One fix rides the artificial-clock landing: `supervise status --repo .` compared the relative flag against absolute control roots and read every attempt as contradicting its path; the flag is resolved first. The steward-incident clause stays a follow-up under the program.
 
 ## 1. What the audit found
 

@@ -262,12 +262,12 @@ func waitRunnerGone(item Item, authorization *fixtureauth.Authorization, limit t
 	if err != nil {
 		poll = 50 * time.Millisecond
 	}
-	deadline := time.Now().Add(limit)
-	for time.Now().Before(deadline) {
+	deadline := windDown.now().Add(limit)
+	for windDown.now().Before(deadline) {
 		if runnerItemLiveness(item, authorization) == identity.Dead {
 			return true
 		}
-		time.Sleep(poll)
+		windDown.sleep(poll)
 	}
 	return runnerItemLiveness(item, authorization) == identity.Dead
 }

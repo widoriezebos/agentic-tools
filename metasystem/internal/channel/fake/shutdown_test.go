@@ -28,7 +28,7 @@ func cancellationServer(t *testing.T) (string, string, context.CancelFunc, <-cha
 			}
 		})
 	}()
-	deadline := time.Now().Add(5 * time.Second)
+	deadline := time.Now().Add(wiringBound)
 	basePath := filepath.Join(dir, "base-url")
 	for time.Now().Before(deadline) {
 		if data, err := os.ReadFile(basePath); err == nil && strings.TrimSpace(string(data)) != "" {
@@ -44,7 +44,7 @@ func cancellationServer(t *testing.T) (string, string, context.CancelFunc, <-cha
 
 func waitConnectionState(t *testing.T, states <-chan http.ConnState, want http.ConnState) {
 	t.Helper()
-	deadline := time.After(5 * time.Second)
+	deadline := time.After(wiringBound)
 	for {
 		select {
 		case got := <-states:
@@ -64,7 +64,7 @@ func waitServerCancellation(t *testing.T, done <-chan error) {
 		if err != nil {
 			t.Fatalf("fake server cancellation failed: %v", err)
 		}
-	case <-time.After(time.Second):
+	case <-time.After(wiringBound):
 		t.Fatal("fake server cancellation waited for a fixture client")
 	}
 }

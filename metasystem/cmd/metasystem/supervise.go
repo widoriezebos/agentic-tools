@@ -145,9 +145,16 @@ func runSuperviseStatus(args []string) int {
 
 	// Live proof attempts and how their launchers read: after the reaper's
 	// reconciliation no live attempt has a dead launcher.
-	metasystemRoot := filepath.Join(*repo, "metasystem")
+	// Attempt records name their control root absolutely, so the repo
+	// flag is resolved before the records are read against it (a relative
+	// --repo read every record as contradicting its path).
+	repoRoot := *repo
+	if absolute, err := filepath.Abs(repoRoot); err == nil {
+		repoRoot = absolute
+	}
+	metasystemRoot := filepath.Join(repoRoot, "metasystem")
 	if _, err := os.Stat(filepath.Join(metasystemRoot, "artifacts", "agents", "proof-runs")); err != nil {
-		metasystemRoot = *repo
+		metasystemRoot = repoRoot
 	}
 	if live, err := proofrun.LiveAttempts(metasystemRoot, identity.KernelProber{}); err != nil {
 		result["liveAttempts"] = map[string]any{"error": err.Error()}

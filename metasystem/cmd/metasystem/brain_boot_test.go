@@ -78,7 +78,10 @@ func TestBrainBootDeadlineKeepsCompletedSections(t *testing.T) {
 		if dir == "" {
 			t.Fatal("boot-inputs command omitted --dir")
 		}
-		return exec.Command("sh", "-c", `printf '%s\n' "$2" >"$1"; sleep 30`, "brain-boot-test",
+		// The command outlives any bound the boot could honour: a boot that
+		// waited for it would take minutes, one that kept its deadline
+		// returns well inside the wiring bound.
+		return exec.Command("sh", "-c", `printf '%s\n' "$2" >"$1"; sleep 120`, "brain-boot-test",
 			filepath.Join(dir, "asks.json"), `{"status":"complete","lines":[{"text":"kept ask"}]}`)
 	}
 	t.Cleanup(func() { newBrainBootInputsCommand = original })
@@ -88,7 +91,7 @@ func TestBrainBootDeadlineKeepsCompletedSections(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if elapsed := time.Since(started); elapsed > 2*time.Second {
+	if elapsed := time.Since(started); elapsed > wiringBound {
 		t.Fatalf("deadline boot took %s", elapsed)
 	}
 	if output.Sections["asks"] != "complete" || !strings.Contains(output.Payload, "kept ask") {

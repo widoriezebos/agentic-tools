@@ -82,7 +82,9 @@ func TestStopTurnReportsSurvivorWhenSignalsDoNothing(t *testing.T) {
 	_, item, command := fixtureOrphanTurn(t)
 	defer command.Wait()
 	defer command.Process.Kill()
-	t.Setenv("METASYSTEM_FIXTURE_CAP_SCALE_MILLI", "1")
+	// The grace and kill windows pass on the artificial clock; the process
+	// probes stay real, and the group stays alive because nothing signals it.
+	installFakeClock(t)
 	original := stopSignal
 	stopSignal = func(int, syscall.Signal) error { return nil }
 	defer func() { stopSignal = original }()
@@ -193,7 +195,9 @@ func TestStopDeadRunnerReleasesLeaseAndClosesOrphanHost(t *testing.T) {
 	waited := make(chan struct{})
 	go func() { _ = command.Wait(); close(waited) }()
 	t.Cleanup(func() { _ = command.Process.Kill(); <-waited })
-	t.Setenv("METASYSTEM_FIXTURE_CAP_SCALE_MILLI", "100")
+	// The default TERM grace stays: it bounds the fact the stop waits for
+	// (a real group ending) and a compressed grace turned a slow box's
+	// reap into an escalation to KILL and a red.
 
 	engine := NewEngine(root, "orphan")
 	recordPath, _, _ := engine.runnerPaths()
@@ -253,7 +257,9 @@ func TestStopLiveRunnerSignalsOwnedGroup(t *testing.T) {
 	waited := make(chan struct{})
 	go func() { _ = command.Wait(); close(waited) }()
 	t.Cleanup(func() { _ = command.Process.Kill(); <-waited })
-	t.Setenv("METASYSTEM_FIXTURE_CAP_SCALE_MILLI", "100")
+	// The default TERM grace stays: it bounds the fact the stop waits for
+	// (a real group ending) and a compressed grace turned a slow box's
+	// reap into an escalation to KILL and a red.
 	runner.Kind = ItemRunner
 	engine := NewEngine(root, runner.MissionID)
 	runner.RecordPath, _, _ = engine.runnerPaths()

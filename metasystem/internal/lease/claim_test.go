@@ -19,7 +19,7 @@ func liveChild(t *testing.T) (pid, start int64) {
 	// The child's identity is rightly unreadable inside its fork-to-execve
 	// window (the flake dossier's family — sixth instance, first seen on
 	// the VM's snapshot gate); the property is steady-state, wait bounded.
-	deadline := time.Now().Add(2 * time.Second)
+	deadline := time.Now().Add(wiringBound)
 	for {
 		s, ok := StartedAt(pid, nil)
 		if ok {

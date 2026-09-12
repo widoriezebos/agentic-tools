@@ -32,7 +32,7 @@ func announceLiveChild(t *testing.T, root string) (pid, start int64) {
 	// bounded.
 	var s int64
 	ok := false
-	for deadline := time.Now().Add(5 * time.Second); time.Now().Before(deadline); {
+	for deadline := time.Now().Add(wiringBound); time.Now().Before(deadline); {
 		if s, ok = StartedAt(pid, nil); ok {
 			break
 		}

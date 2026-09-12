@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"io"
 	"net/http"
 	"net/http/httptest"
 	"os"
@@ -271,23 +272,29 @@ func TestConfirmRequestShapeAndEmptyCursor(t *testing.T) {
 }
 
 func TestReceiveAppliesRequestDeadline(t *testing.T) {
+	released := make(chan struct{})
 	s := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if strings.HasSuffix(r.URL.Path, "/getMe") {
 			fmt.Fprint(w, `{"ok":true,"result":{"id":1}}`)
 			return
 		}
-		time.Sleep(1200 * time.Millisecond)
-		fmt.Fprint(w, `{"ok":true,"result":[]}`)
+		// The poll never answers: only the request deadline can end the
+		// receive, so the error it reports is the whole proof and no
+		// stopwatch is read. The body is consumed so the server notices
+		// the client's cancellation, and the test releases the handler
+		// before the server closes, whatever the connection did.
+		_, _ = io.Copy(io.Discard, r.Body)
+		select {
+		case <-r.Context().Done():
+		case <-released:
+		}
 	}))
 	defer s.Close()
-	d := channel.DestinationConfig{ChannelID: "1", Token: "token", APIBase: s.URL, HTTPTimeout: time.Second}
-	started := time.Now()
+	defer close(released)
+	d := channel.DestinationConfig{ChannelID: "1", Token: "token", APIBase: s.URL, HTTPTimeout: 200 * time.Millisecond}
 	_, _, err := telegram.New(nil).Receive(context.Background(), d, nil, "")
 	if err == nil || !channel.IsKind(err, channel.ReceiveFailed) || !strings.Contains(err.Error(), context.DeadlineExceeded.Error()) {
 		t.Fatal(err)
-	}
-	if elapsed := time.Since(started); elapsed < 900*time.Millisecond || elapsed > 2*time.Second {
-		t.Fatalf("request deadline fired after %s", elapsed)
 	}
 }
 

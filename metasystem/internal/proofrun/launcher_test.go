@@ -387,7 +387,10 @@ while [[ ! -e "$done_path" ]]; do sleep 0.005; done
 		EvidenceTimeout: time.Second, EvidenceMax: 1024, Poll: 5 * time.Millisecond, TermGrace: time.Second, KillGrace: time.Second,
 		WatchdogExecutable: watchdog, Command: []string{"true"}, ErrorOutput: io.Discard,
 		PrepareSuccess: func(CompletionContext) (json.RawMessage, error) {
-			<-time.After(700 * time.Millisecond)
+			// Preparation outlives the deadline: it waits for that fact.
+			for !time.Now().After(deadline) {
+				time.Sleep(5 * time.Millisecond)
+			}
 			return json.RawMessage(`{"prepared":true}`), nil
 		}})
 	if result == 0 {

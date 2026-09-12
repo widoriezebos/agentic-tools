@@ -66,7 +66,7 @@ func TestRunLoopTicksUntilTheStopFile(t *testing.T) {
 		if ev.TicksSinceAdvance >= 2 {
 			break
 		}
-		if now.Sub(lastEvidenceChange) >= 10*time.Second || !now.Before(overallDeadline) {
+		if now.Sub(lastEvidenceChange) >= wiringBound || !now.Before(overallDeadline) {
 			break
 		}
 		time.Sleep(20 * time.Millisecond)
@@ -125,7 +125,7 @@ func TestSecondRunnerRefusesBesideALiveOne(t *testing.T) {
 	census := fakeCensus{workers: Workers{Live: 1, CensusComplete: true}}
 	done := make(chan error, 1)
 	go func() { done <- RunLoop(root, census, nil, time.Hour) }()
-	deadline := time.Now().Add(3 * time.Second)
+	deadline := time.Now().Add(wiringBound)
 	for time.Now().Before(deadline) {
 		if _, err := os.Stat(runnerRecordPath(root)); err == nil {
 			break

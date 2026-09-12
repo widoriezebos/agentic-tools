@@ -282,7 +282,7 @@ func grandchild(t *testing.T, root string) (int64, int64) {
 		t.Fatalf("spawn intermediate: %v", err)
 	}
 	t.Cleanup(func() { _ = cmd.Process.Kill(); _ = cmd.Wait() })
-	deadline := time.Now().Add(10 * time.Second)
+	deadline := time.Now().Add(wiringBound)
 	for {
 		data, err := os.ReadFile(pidFile)
 		if err == nil && len(data) > 0 {
@@ -340,7 +340,7 @@ func spawnAndSettle(t *testing.T, bin string) int64 {
 	}
 	t.Cleanup(func() { _ = cmd.Process.Kill(); _ = cmd.Wait() })
 	pid := int64(cmd.Process.Pid)
-	deadline := time.Now().Add(3 * time.Second)
+	deadline := time.Now().Add(wiringBound)
 	for time.Now().Before(deadline) {
 		if command, ok := ProcessCommand(pid, nil); ok && command != "" {
 			return pid

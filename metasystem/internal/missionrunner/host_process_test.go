@@ -25,10 +25,7 @@ func TestStartProcessLifecycle(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if process.exited() {
-		t.Fatal("reported exited while sleeping")
-	}
-	if !process.waitFor(5 * time.Second) {
+	if !process.waitFor(wiringBound) {
 		t.Fatal("never reaped")
 	}
 	if !process.exited() {
@@ -45,6 +42,9 @@ func TestWaitForBoundsItsWait(t *testing.T) {
 		t.Fatal(err)
 	}
 	defer process.cmd.Process.Kill()
+	if process.exited() {
+		t.Fatal("reported exited while sleeping")
+	}
 	started := time.Now()
 	if process.waitFor(200 * time.Millisecond) {
 		t.Fatal("a running child reported reaped")
@@ -57,14 +57,14 @@ func TestWaitForBoundsItsWait(t *testing.T) {
 func TestExitCodeShapes(t *testing.T) {
 	// A failing child reports its code.
 	process, _ := startProcess(exec.Command("false"))
-	process.waitFor(5 * time.Second)
+	process.waitFor(wiringBound)
 	if code := process.exitCode(); code != 1 {
 		t.Fatalf("false exited %d", code)
 	}
 	// A signaled child reads as -1, the plain-failure convention.
 	process, _ = startProcess(exec.Command("sleep", "30"))
 	process.cmd.Process.Signal(syscall.SIGKILL)
-	process.waitFor(5 * time.Second)
+	process.waitFor(wiringBound)
 	if code := process.exitCode(); code != -1 {
 		t.Fatalf("a signaled child read as %d", code)
 	}
@@ -155,58 +155,6 @@ func TestAssembleHostCommandExportsMissionLineage(t *testing.T) {
 		}
 	}
 	t.Fatalf("host environment must carry %s, got:\n%s", want, strings.Join(launch.command.Env, "\n"))
-}
-
-// terminateGroup's three verdicts: a dead group is a no-op; an unowned live
-// group is skipped with the census left to catch strays; an owned group is
-// signaled and reaped within the grace window.
-func TestTerminateGroup(t *testing.T) {
-	engine := &Engine{Mission: "mr-test", Root: t.TempDir()}
-
-	// Dead group: nothing to do, no error.
-	if _, err := engine.terminateGroup(1<<28, "any", false); err != nil {
-		t.Fatalf("a dead group errored: %v", err)
-	}
-
-	// Live but unowned: never signaled. The child survives the call.
-	unowned := exec.Command("sleep", "5")
-	unowned.SysProcAttr = &syscall.SysProcAttr{Setpgid: true}
-	if err := unowned.Start(); err != nil {
-		t.Fatal(err)
-	}
-	defer unowned.Process.Kill()
-	defer unowned.Wait()
-	pgid, _ := syscall.Getpgid(unowned.Process.Pid)
-	if _, err := engine.terminateGroup(pgid, "tag-no-member-carries", false); err != nil {
-		t.Fatalf("skipping an unowned group errored: %v", err)
-	}
-	if err := unowned.Process.Signal(syscall.Signal(0)); err != nil {
-		t.Fatal("an unowned group was signaled")
-	}
-
-	// Owned: the tag rides a SHIPPED positional shape (the tagged-hold
-	// form), because ownership is a positioned proof now — an argv that
-	// merely mentions or embeds the tag never authorizes a signal (the
-	// substring-kill hazard the janitor shapes closed).
-	tag := "metasystem-job-mr-owned-4c1d"
-	owned := spawnTaggedGroup(t, tag, false)
-	ownedPgid := owned.Process.Pid
-	if _, err := engine.terminateGroup(ownedPgid, tag, false); err != nil {
-		t.Fatalf("terminating an owned group errored: %v", err)
-	}
-	// The leader is reaped by spawnTaggedGroup's goroutine, and a killed
-	// leader answers signal 0 until that reap lands; on a busy box the reap
-	// trails the wind-down's return (cadence run 16, 2026-09-12, box at load
-	// 25). Survival is a group still answering after the reap has had a
-	// bounded moment, which is the rule the wind-down itself applies.
-	deadline := time.Now().Add(5 * time.Second)
-	for groupAlive(ownedPgid) && time.Now().Before(deadline) {
-		time.Sleep(20 * time.Millisecond)
-	}
-	if groupAlive(ownedPgid) {
-		owned.Process.Kill()
-		t.Fatal("the owned group survived its wind-down")
-	}
 }
 
 func TestSmallPureHelpers(t *testing.T) {

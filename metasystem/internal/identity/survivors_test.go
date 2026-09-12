@@ -46,7 +46,7 @@ func TestTaggedSurvivorsSeesARealTaggedProcess(t *testing.T) {
 		_ = child.Process.Kill()
 		_, _ = child.Process.Wait()
 	}()
-	deadline := time.Now().Add(5 * time.Second)
+	deadline := time.Now().Add(wiringBound)
 	for {
 		alive, certain := TaggedSurvivors(tag, 0, childGroup)
 		if alive && certain {
@@ -68,7 +68,7 @@ func TestTaggedSurvivorsSeesARealTaggedProcess(t *testing.T) {
 	// may conclude.
 	_ = child.Process.Kill()
 	_, _ = child.Process.Wait()
-	deadline = time.Now().Add(5 * time.Second)
+	deadline = time.Now().Add(wiringBound)
 	for {
 		alive, certain := TaggedSurvivors(tag, 0, childGroup)
 		if !alive && certain {

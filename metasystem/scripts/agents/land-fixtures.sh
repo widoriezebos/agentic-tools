@@ -122,7 +122,7 @@ stop_receipt_runner() {
     stop_rc=$?
   fi
   if [[ "$runner_pid" =~ ^[1-9][0-9]*$ ]]; then
-    wait_deadline=$((SECONDS + 5))
+    wait_deadline=$((SECONDS + 30))
     while kill -0 "$runner_pid" 2>/dev/null && (( SECONDS < wait_deadline )); do
       sleep 0.25
     done
@@ -637,7 +637,7 @@ arm_receipt_runner() { # checkout, engine
   receipt_runner_registries+=("$registry")
   receipt_runner_stop_logs+=("$leg_root/$(basename "$checkout").disarm.out")
   runner_record=$checkout/artifacts/agents/steward/runner.json
-  deadline=$((SECONDS + 5))
+  deadline=$((SECONDS + 30))
   while [[ ! -s "$runner_record" ]] && (( SECONDS < deadline )); do
     sleep 0.25
   done

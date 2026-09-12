@@ -41,7 +41,7 @@ func startTestProcessGroup(t *testing.T, command *exec.Cmd) int64 {
 
 func waitForGroupOwnership(t *testing.T, pgid int64, tag string, want janitor.GroupOwnershipOutcome) {
 	t.Helper()
-	deadline := time.Now().Add(2 * time.Second)
+	deadline := time.Now().Add(wiringBound)
 	for time.Now().Before(deadline) {
 		if janitor.GroupOwnership(pgid, tag) == want {
 			return

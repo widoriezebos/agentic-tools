@@ -156,7 +156,7 @@ func TestSelftestListenerAnswersExactlyOneRequest(t *testing.T) {
 	go func() { done <- SelftestListener(portFile, requestLog, 5*time.Second) }()
 
 	var port string
-	deadline := time.Now().Add(5 * time.Second)
+	deadline := time.Now().Add(wiringBound)
 	for time.Now().Before(deadline) {
 		if data, err := os.ReadFile(portFile); err == nil && len(data) > 0 {
 			port = string(data)

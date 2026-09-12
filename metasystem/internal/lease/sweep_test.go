@@ -76,7 +76,7 @@ func TestGroupOwnsTag(t *testing.T) {
 	// (the execve/report window the flake dossier root-caused for the
 	// other child-probing tests); the property is steady-state, so the
 	// assertion waits it out, bounded.
-	deadline := time.Now().Add(2 * time.Second)
+	deadline := time.Now().Add(wiringBound)
 	for {
 		owned, provable := groupOwnsTag(int64(pgid), command, nil)
 		if owned && provable {
@@ -92,7 +92,7 @@ func TestGroupOwnsTag(t *testing.T) {
 	// process on the machine inside its fork-to-execve window makes the
 	// sweep rightly unprovable for that instant. Same dossier mechanism,
 	// same remedy: the property is steady-state, wait it out bounded.
-	deadline = time.Now().Add(2 * time.Second)
+	deadline = time.Now().Add(wiringBound)
 	for {
 		owned, provable := groupOwnsTag(int64(pgid), "no-process-carries-this-xyzzy", nil)
 		if !owned && provable {

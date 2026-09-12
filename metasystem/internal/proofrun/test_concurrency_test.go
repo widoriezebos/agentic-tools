@@ -7,7 +7,6 @@ import (
 	"strconv"
 	"strings"
 	"testing"
-	"time"
 
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/testpolicy"
 )
@@ -22,9 +21,24 @@ func TestStageRunsIndependentGroupsSideBySide(t *testing.T) {
 	runTestResultGit(t, root, "config", "user.email", "fixture@example.invalid")
 	ids := []string{"alpha", "beta", "gamma"}
 	groups := []testpolicy.Group{}
+	// Side by side is a fact the groups witness themselves: each announces
+	// its start in a rendezvous directory outside the tree and waits for
+	// the other two before it reports, so a stage that ran them one after
+	// another fails loudly, and no stopwatch is read on a loaded box. The
+	// wait is bounded far above what three shells need to arrive.
+	meet := t.TempDir()
+	allStarted := ""
+	for _, id := range ids {
+		allStarted += " && [[ -e " + strconv.Quote(filepath.Join(meet, "started-"+id)) + " ]]"
+	}
+	allStarted = strings.TrimPrefix(allStarted, " && ")
 	for _, id := range ids {
 		body := "<testsuite><testcase classname=\"fixture\" name=\"" + id + "\"></testcase></testsuite>"
-		script := "#!/usr/bin/env bash\nset -euo pipefail\nsleep 2\nmkdir -p reports-" + id + "\nprintf '%s\\n' " + strconv.Quote(body) + " > reports-" + id + "/tests.xml\n"
+		script := "#!/usr/bin/env bash\nset -euo pipefail\n" +
+			": > " + strconv.Quote(filepath.Join(meet, "started-"+id)) + "\n" +
+			"for ((i = 0; i < 300; i++)); do\n  if " + allStarted + "; then break; fi\n  sleep 0.1\ndone\n" +
+			"if ! { " + allStarted + "; }; then echo '" + id + " never saw the other groups start: the stage ran them one after another' >&2; exit 1; fi\n" +
+			"mkdir -p reports-" + id + "\nprintf '%s\\n' " + strconv.Quote(body) + " > reports-" + id + "/tests.xml\n"
 		path := filepath.Join(root, "scripts", id+".sh")
 		if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
 			t.Fatal(err)
@@ -49,15 +63,10 @@ func TestStageRunsIndependentGroupsSideBySide(t *testing.T) {
 	if err := AppendProgressHeader(progress, ProgressHeader{LogPaths: []string{filepath.Join(root, "artifacts", "launcher.log")}}); err != nil {
 		t.Fatal(err)
 	}
-	started := time.Now()
 	result, status, err := RunTestPlan(context.Background(), TestRunRequest{ProjectRoot: root, CandidateTree: tree, BaseCommit: "HEAD", PolicyBaseCommit: "HEAD",
 		Contract: contract, Plan: plan, AttemptID: "attempt", LogRoot: filepath.Join(root, "artifacts", "test-logs"), ProgressPath: progress, Concurrency: 3})
-	wall := time.Since(started)
 	if err != nil || status != 0 {
 		t.Fatalf("concurrent stage: status=%d err=%v result=%+v", status, err, result.Groups)
-	}
-	if wall >= 5*time.Second {
-		t.Fatalf("three two-second groups under a cap of three took %s; they did not run side by side", wall)
 	}
 	if len(result.Groups) != 3 {
 		t.Fatalf("expected three results, got %+v", result.Groups)
@@ -67,19 +76,31 @@ func TestStageRunsIndependentGroupsSideBySide(t *testing.T) {
 			t.Fatalf("results left plan order or failed: %+v", result.Groups)
 		}
 	}
-	if result.LaunchCounts.Test != 3 || result.ChildDurationMS < 6000 {
+	if result.LaunchCounts.Test != 3 || result.ChildDurationMS <= 0 {
 		t.Fatalf("launch counts or child durations lost under the pool: counts=%+v child=%d", result.LaunchCounts, result.ChildDurationMS)
 	}
 	data, err := os.ReadFile(progress)
 	if err != nil {
 		t.Fatal(err)
 	}
+	lastStart, firstEnd := -1, len(data)
 	for _, id := range ids {
 		starts := strings.Count(string(data), `"section":"`+id+`","event":"start"`)
 		ends := strings.Count(string(data), `"section":"`+id+`","event":"end"`)
 		if starts != 1 || ends != 1 {
 			t.Fatalf("progress for %s has %d starts and %d ends:\n%s", id, starts, ends, data)
 		}
+		if at := strings.Index(string(data), `"section":"`+id+`","event":"start"`); at > lastStart {
+			lastStart = at
+		}
+		if at := strings.Index(string(data), `"section":"`+id+`","event":"end"`); at < firstEnd {
+			firstEnd = at
+		}
+	}
+	// The rendezvous holds every group until all three have started, so the
+	// progress log must show every start before any end.
+	if firstEnd < lastStart {
+		t.Fatalf("a group ended before every group had started:\n%s", data)
 	}
 }
 

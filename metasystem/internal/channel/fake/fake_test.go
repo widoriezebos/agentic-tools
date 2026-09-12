@@ -382,7 +382,7 @@ func TestTelegramPauseBeforeHoldsOneRequest(t *testing.T) {
 		if err != nil {
 			t.Fatal(err)
 		}
-	case <-time.After(2 * time.Second):
+	case <-time.After(wiringBound):
 		t.Fatal("paused request did not resume")
 	}
 }
@@ -424,10 +424,10 @@ func TestTelegramLongPollWaitsForAnUpdate(t *testing.T) {
 		if got.err != nil || got.count != 1 {
 			t.Fatalf("long poll result = %+v", got)
 		}
-		if elapsed := time.Since(started); elapsed < 250*time.Millisecond || elapsed > 2*time.Second {
-			t.Fatalf("long poll returned after %s", elapsed)
+		if elapsed := time.Since(started); elapsed < 250*time.Millisecond {
+			t.Fatalf("long poll returned after %s, before the update was appended", elapsed)
 		}
-	case <-time.After(2 * time.Second):
+	case <-time.After(wiringBound):
 		t.Fatal("long poll did not return after an update arrived")
 	}
 }
@@ -535,7 +535,7 @@ func TestTelegramLongPollReloadsMalformedControl(t *testing.T) {
 		if got.err != nil || got.status != http.StatusInternalServerError || !strings.Contains(got.description, "invalid character") {
 			t.Fatalf("malformed mid-poll control result = %+v", got)
 		}
-	case <-time.After(2 * time.Second):
+	case <-time.After(wiringBound):
 		t.Fatal("malformed mid-poll control did not end the request")
 	}
 }

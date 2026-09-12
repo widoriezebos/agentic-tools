@@ -280,7 +280,10 @@ while [[ ! -e "$done_path" ]]; do sleep 0.005; done
 		EvidenceMax: 1024, Poll: 5 * time.Millisecond, TermGrace: time.Second, KillGrace: time.Second,
 		WatchdogExecutable: watchdog, Command: []string{"true"},
 		PrepareSuccess: func(proofrun.CompletionContext) (json.RawMessage, error) {
-			<-time.After(700 * time.Millisecond)
+			// Preparation outlives the deadline: it waits for that fact.
+			for !time.Now().After(deadline) {
+				time.Sleep(5 * time.Millisecond)
+			}
 			return json.RawMessage(`{"preparedAt":"before-terminal-locks"}`), nil
 		}, CommitTerminal: commitProofTerminal})
 	if result == 0 {
@@ -419,7 +422,7 @@ func TestProofRunCommandGovernedParentSharesOneCharge(t *testing.T) {
 		if err := os.WriteFile(os.Getenv("GOVERNED_COMMAND_READY"), []byte("ready\n"), 0o600); err != nil {
 			os.Exit(97)
 		}
-		deadline := time.Now().Add(5 * time.Second)
+		deadline := time.Now().Add(wiringBound)
 		for {
 			if _, err := os.Stat(os.Getenv("GOVERNED_COMMAND_RELEASE")); err == nil {
 				break
@@ -522,7 +525,7 @@ func TestProofRunCommandGovernedParentSharesOneCharge(t *testing.T) {
 			_ = child.Wait()
 		}
 	})
-	deadline := time.Now().Add(5 * time.Second)
+	deadline := time.Now().Add(wiringBound)
 	for {
 		if _, err := os.Stat(ready); err == nil {
 			break

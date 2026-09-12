@@ -201,7 +201,7 @@ func TestProbeLiveChildArgv(t *testing.T) {
 	var exact Exact
 	var state Liveness
 	var err error
-	deadline := time.Now().Add(2 * time.Second)
+	deadline := time.Now().Add(wiringBound)
 	for {
 		exact, state, err = KernelProber{}.Probe(int64(command.Process.Pid))
 		if err == nil && state == Alive && len(exact.Argv) == 3 {

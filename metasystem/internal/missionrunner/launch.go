@@ -60,12 +60,18 @@ func (e *Engine) acquireLaunchLock() (*launchLock, error) {
 	if err != nil {
 		return nil, err
 	}
+	launchLockAttempted()
 	if err := unix.Flock(int(f.Fd()), unix.LOCK_EX); err != nil {
 		f.Close()
 		return nil, failf(3, "cannot acquire the mission launch lock: %v", err)
 	}
 	return &launchLock{f: f}, nil
 }
+
+// launchLockAttempted runs just before a launcher blocks on the launch
+// lock: a test that must land a birth while a competitor is held at the
+// lock waits for this fact instead of sleeping an instant.
+var launchLockAttempted = func() {}
 
 func (l *launchLock) release() {
 	_ = unix.Flock(int(l.f.Fd()), unix.LOCK_UN)
@@ -816,17 +822,20 @@ type treeCPUProgress struct {
 	lastCPU  float64
 	sampled  bool
 	interval time.Duration
+	// sample reads the tree's CPU seconds; tests drive the tracker with a
+	// scripted reader and an artificial clock, so no wall time passes.
+	sample func(rootPID int) (float64, bool)
 }
 
 func newTreeCPUProgress(rootPID int) *treeCPUProgress {
-	return &treeCPUProgress{rootPID: rootPID, interval: time.Second}
+	return &treeCPUProgress{rootPID: rootPID, interval: time.Second, sample: processTreeCPUSeconds}
 }
 
 func (p *treeCPUProgress) advanced(now time.Time) bool {
 	if p.sampled && now.Sub(p.lastAt) < p.interval {
 		return false
 	}
-	cpu, ok := processTreeCPUSeconds(p.rootPID)
+	cpu, ok := p.sample(p.rootPID)
 	if !ok {
 		return false
 	}

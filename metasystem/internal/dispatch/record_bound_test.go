@@ -33,7 +33,7 @@ func TestWithRecordLockIsBounded(t *testing.T) {
 	if err == nil || !strings.Contains(err.Error(), "wedged") || !strings.Contains(err.Error(), "busy") {
 		t.Fatalf("a held record lock must refuse by name: %v", err)
 	}
-	if elapsed := time.Since(started); elapsed > 5*time.Second {
+	if elapsed := time.Since(started); elapsed > wiringBound {
 		t.Fatalf("the bound did not release the caller: %v", elapsed)
 	}
 }

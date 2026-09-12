@@ -90,7 +90,7 @@ func TestRunKillsTheWholeProcessGroup(t *testing.T) {
 			return time.After(duration)
 		})
 	}()
-	readyBy := time.Now().Add(5 * time.Second)
+	readyBy := time.Now().Add(wiringBound)
 	for {
 		if _, err := os.Stat(ready); err == nil {
 			break
@@ -107,7 +107,7 @@ func TestRunKillsTheWholeProcessGroup(t *testing.T) {
 	if err == nil || !strings.Contains(err.Error(), "timed out") {
 		t.Fatalf("the spawning script was not bounded: %v", err)
 	}
-	groupGoneBy := time.Now().Add(5 * time.Second)
+	groupGoneBy := time.Now().Add(wiringBound)
 	for {
 		probeErr := syscall.Kill(-command.Process.Pid, 0)
 		if errors.Is(probeErr, syscall.ESRCH) {

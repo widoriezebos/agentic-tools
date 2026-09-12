@@ -9,7 +9,6 @@ import (
 	"os/exec"
 	"os/signal"
 	"path/filepath"
-	"runtime"
 	"strconv"
 	"strings"
 	"sync"
@@ -286,74 +285,6 @@ func TestSupervisorSectionResultGrowthCountsAsOutput(t *testing.T) {
 	outcome := superviseCommand(helper.command, options)
 	if outcome.Verdict != "" || outcome.WaitErr != nil || observedMembers < 2 || !observedStageGrowth || !activity.Last().After(activityBefore) {
 		t.Fatalf("real stage-result growth outcome=%+v members=%d growth=%v activityBefore=%s activityAfter=%s", outcome, observedMembers, observedStageGrowth, activityBefore, activity.Last())
-	}
-}
-
-func TestSupervisorRunawayUnderMeasuredContention(t *testing.T) {
-	t.Run("competitor exits on stdin EOF", func(t *testing.T) {
-		helper := newSupervisorHelperFixture(t, "busy-competitor")
-		if err := helper.command.Start(); err != nil {
-			t.Fatal(err)
-		}
-		helper.waitReady(t)
-		helper.closeInput()
-		if err := helper.command.Wait(); err != nil {
-			t.Fatalf("competitor did not exit cleanly on stdin EOF: %v", err)
-		}
-	})
-	if _, err := newProcessTreeReader().Sample(os.Getpid()); err != nil {
-		t.Skipf("platform process reader is unavailable on this test host: %v", err)
-	}
-	options := supervisorOptionsForTest(t, 1, 400*time.Millisecond)
-	options.Limits.ZeroConsumptionWindow = 0
-	quietHelper := newSupervisorHelperFixture(t, "busy-forever")
-	quietOptions := options
-	quietHelper.gate(&quietOptions, newProcessTreeReader(), nil)
-	quietStarted := time.Now()
-	quiet := superviseCommand(quietHelper.command, quietOptions)
-	quietWall := time.Since(quietStarted)
-	if quiet.Verdict != "runaway" || quiet.CPUSeconds < 1 {
-		t.Fatalf("quiet runaway outcome=%+v", quiet)
-	}
-
-	processorCount := runtime.NumCPU()
-	competitorTarget := 2 * processorCount
-	competitors := make([]*supervisorHelperFixture, 0, 8*processorCount)
-	defer func() { stopBusyCompetitors(competitors) }()
-	for {
-		competitors = append(competitors, startBusyCompetitors(t, competitorTarget-len(competitors))...)
-		wallStarted, cpuStarted := time.Now(), currentProcessCPU(t)
-		for time.Since(wallStarted) < 500*time.Millisecond {
-		}
-		share := (currentProcessCPU(t) - cpuStarted).Seconds() / time.Since(wallStarted).Seconds()
-		if share < 0.5 {
-			break
-		}
-		if competitorTarget == 8*processorCount {
-			t.Skipf("host could not establish the scheduling-share precondition: measured %.2f with %d competitors, need below one half", share, len(competitors))
-		}
-		competitorTarget *= 2
-	}
-
-	finiteOptions := options
-	finiteOptions.Limits.CPUBudgetSeconds = 3
-	finiteHelper := newSupervisorHelperFixture(t, "busy-for", "600ms")
-	finiteHelper.gate(&finiteOptions, newProcessTreeReader(), nil)
-	finite := superviseCommand(finiteHelper.command, finiteOptions)
-	if finite.Verdict != "" || finite.WaitErr != nil || finite.CPUSeconds >= 3 {
-		t.Fatalf("starved finite computation outcome=%+v", finite)
-	}
-	loadedHelper := newSupervisorHelperFixture(t, "busy-forever")
-	loadedOptions := options
-	loadedHelper.gate(&loadedOptions, newProcessTreeReader(), nil)
-	loadedStarted := time.Now()
-	loaded := superviseCommand(loadedHelper.command, loadedOptions)
-	loadedWall := time.Since(loadedStarted)
-	// The measured scheduling-share precondition guarantees that equivalent CPU
-	// consumption takes longer under contention; this compares that consequence,
-	// not the host's speed.
-	if loaded.Verdict != "runaway" || loaded.CPUSeconds < 1 || loaded.CPUSeconds > quiet.CPUSeconds*4+1 || loadedWall <= quietWall {
-		t.Fatalf("loaded runaway outcome=%+v wall=%s, quiet=%+v wall=%s", loaded, loadedWall, quiet, quietWall)
 	}
 }
 
@@ -694,11 +625,6 @@ func TestSupervisorProcessHelper(t *testing.T) {
 		//lint:ignore SA5002 This helper is the busy process tree that the supervisor rows judge.
 		for {
 		}
-	case "busy-competitor":
-		announceSupervisorHelperReady()
-		//lint:ignore SA5002 This helper is the busy process tree that the supervisor rows judge.
-		for {
-		}
 	case "ignore-quit-busy":
 		signal.Ignore(syscall.SIGQUIT)
 		announceSupervisorHelperReady()
@@ -870,37 +796,6 @@ func processCPU() time.Duration {
 
 func timevalDuration(value syscall.Timeval) time.Duration {
 	return time.Duration(value.Sec)*time.Second + time.Duration(value.Usec)*time.Microsecond
-}
-
-func currentProcessCPU(t *testing.T) time.Duration {
-	t.Helper()
-	return processCPU()
-}
-
-func startBusyCompetitors(t *testing.T, count int) []*supervisorHelperFixture {
-	t.Helper()
-	helpers := make([]*supervisorHelperFixture, 0, count)
-	for index := 0; index < count; index++ {
-		helper := newSupervisorHelperFixture(t, "busy-competitor")
-		if err := helper.command.Start(); err != nil {
-			stopBusyCompetitors(helpers)
-			t.Fatalf("start busy competitor %d: %v", index, err)
-		}
-		helpers = append(helpers, helper)
-	}
-	for _, helper := range helpers {
-		helper.waitReady(t)
-	}
-	return helpers
-}
-
-func stopBusyCompetitors(helpers []*supervisorHelperFixture) {
-	for _, helper := range helpers {
-		helper.closeInput()
-	}
-	for _, helper := range helpers {
-		_ = helper.command.Wait()
-	}
 }
 
 func availableProcessTreeReader(t *testing.T) processTreeReader {

@@ -26,7 +26,7 @@ func TestComponentEvidenceHealthReadIsBoundedWhenWriterIsBusy(t *testing.T) {
 		unlockComponentEvidence(lock)
 		t.Fatalf("the contended health read did not return its typed busy error: %v", err)
 	}
-	if elapsed >= time.Second {
+	if elapsed >= wiringBound {
 		unlockComponentEvidence(lock)
 		t.Fatalf("the contended health read exceeded its one-second test bound: %s", elapsed)
 	}
