@@ -1,6 +1,6 @@
 # steward-launches-resolve-their-model
 
-- State: claimed
+- State: approved
 - Priority: 1
 - Sequence: 2
 - Risk: severity=2 novelty=1 exposure=2 accumulation=1 basis="severity 2: steward continuation has delivered nothing on any seat since the launches die; novelty 1: the roster resolution exists for delegates; exposure 2: steward launches on every seat; accumulation 1: one code path"
@@ -9,13 +9,11 @@
 - Origin: human
 - Next step: STATE 2026-09-12 11:50Z (m1e): landed b44fabdc (resolver and config validate refuse a template placeholder naming the key and the command; the shipped conf carries no default model; the dispatcher bed's steward-continuation scenario proves the refusal and the configured completion under the fake adapter, diagnostic proof-mtybg8cp). Each seat's metasystem.conf.local names role.steward-continuation.model.codex=gpt-5.6-luna (R-106-m1e). Remaining for DONE: one live steward continuation launch completing per seat; a launch starts only when a seat is idle with a held goal (the stop hook's continuation intent) or when its worker is provably dead, so it completes at each seat's next idle; m1e's engine carries the fix, m1b and m1c resolve a concrete model through their .local on their current engines. Released so the seat can take the next program goal; the seat that sees the launches complete records their job ids here and concludes.
 - OpenedAt: 2026-09-11T15:44:54Z
-- Revision: 12
+- Revision: 13
 - Pinned: m1e
 - Budget: elapsedLimit=4h attemptLimit=6 reservedJobMinutesLimit=720 activeJobLimit=1 reviewRoundLimit=2
 - BudgetExceptions: 0
 - Approved: by=human:Wido at=2026-09-11T20:32:59Z revision=10 opid=J65P8AXF7707T2H171WCBNYNDZ-m1-c6925449 authority=proven digest=d0ea1a04569935b3dc87f3cd14936f4395bcb118d3c1ce1725f97765915721f5
-- Claimed: machine=m1e lineage=main-1789030447-51011-5722fc at=2026-09-12T11:24:23Z revision=11 accountingRevision=11 episodeAt=2026-09-12T11:24:23Z episodeRevision=11
-- StopCapability: generation=11 revision=11 machine=m1e claimEpoch=1 fenceEpoch=0
 
 History:
 - 2026-09-11T15:44:54Z HF9CZF90NBZDKY1K5Z5G13AQZ9-m1e-5083721b open actor=m1e+main-1789141490-27414-b9c0d2 targets=steward-launches-resolve-their-model
@@ -30,4 +28,5 @@ History:
 - 2026-09-11T20:32:59Z J65P8AXF7707T2H171WCBNYNDZ-m1-c6925449 approve actor=human:Wido targets=steward-launches-resolve-their-model
 - 2026-09-12T11:24:23Z 1488BWB7Q9GB3M70XT0QK7AT2V-m1e-892cdaec claim actor=m1e+main-1789030447-51011-5722fc targets=steward-launches-resolve-their-model
 - 2026-09-12T11:48:28Z ZSZGM0P4YJGHK2J6JESW5253JM-m1e-892cdaec edit actor=m1e+main-1789030447-51011-5722fc targets=steward-launches-resolve-their-model
-Integrity: sha256=1f0f438866e78a7b2f2df47075481dd2827a54419e900344c2e364b535a023d7
+- 2026-09-12T11:48:32Z NT4NEJ5TV6PZWVXSR764X54TYH-m1e-892cdaec release actor=m1e+main-1789030447-51011-5722fc targets=steward-launches-resolve-their-model
+Integrity: sha256=24bde8d12179dbfbfcbad31aa04b49caf6cdea97e83eac451c93b375e54b7ec7
