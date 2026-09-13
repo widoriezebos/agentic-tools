@@ -1,20 +1,19 @@
 # wait-verb-returns-on-recorded-events
 
-- State: claimed
+- State: approved
 - Risk: severity=2 novelty=2 exposure=3 accumulation=2 basis="severity 2: a wait that never returns idles a seat, a wait that returns early spends a model turn; novelty 2: a wait verb over the existing job, run, attempt and ledger records is new, the records are not; exposure 3: every seat's waiting; accumulation 2: the waiter record, the four source readers, the adapter answer and the verbs"
 - Tier: 2
 - Intent: Member 1 of coordinator-wakes-on-events-not-polls (its design page plans/coordinator-wakes-on-events-not-polls-design.md, sections 2, 5 and 6). DONE means: the installed commands metasystem wait --job, --run, --attempt and --goal (landing and human-act, the answer wait keyed by question and taking its cursor from the question record) return on the recorded event or the bounded deadline with the typed exits of section 2; every adapter's wait-delivery operation answers blocking and the row records it, so no temporary fallback is needed; the version-2 waiter row and its by-id pointer exist; a restart recovers from the rows alone through --resume, with session start printing the WAITING commands where a start hook exists. This member owns the parent's DONE clauses 1 and 4 and clause 2's adapter operation. Fixtures: TestWaitJobTerminals, TestWaitRunTerminalsAndDeadline, TestWaitAdapterBlocking, TestWaitAttemptRequiresCommittedTerminal, TestWaitAttemptAfterDrain, TestWaitGoalLandingAndHumanAct, TestWaitGoalCursorHistory, TestWaitChannelAnswer, TestWaitRestartRecoveryReplay, TestWaitLockClockAndFetchBounds, TestWaitGoalFetchDeadline; bed legs wait-job-run, wait-proof, wait-ledger, wait-restart, wait-bounds.
 - Origin: main
 - Next step: 2026-09-13 m1b: LANDED 57ba0586 (delivery proof proof-mtzq167v on the staged index; harness Opus reads of rounds 7 and 8, the last with nothing material). The installed verb answers 0 for a finished job, 67 for bad arguments and 4 for a missing record, and every adapter answers blocking. Waiting on the human: the build chain wait-member1-build-1 cannot close, because its DESIGN-BEARING critic root (wait-member1-codecritic-r6c) reviewed round 6, not the terminal round 8, and WVB-55 is open in its register. Closing needs a rostered read of round 8, a fifth review round over the three granted on R-109-m1e. On that word: raise reviewRounds with --approved-ref, claim, dispatch a fresh code-critic root --reviews wait-member1-build-1-r8, close with --reconcile-evidence, then conclude. Later-member design questions (Fable): constant-cost replay of a saved goal act; a pruned goal's replay answer.
 - OpenedAt: 2026-09-13T02:05:04Z
-- Revision: 25
+- Revision: 26
 - Budget: elapsedLimit=1d attemptLimit=14 reservedJobMinutesLimit=720 activeJobLimit=1 reviewRoundLimit=3
 - BudgetExceptions: 2
 - NormApproval: approvedRef=R-109-m1e minutes=720 reviewRounds=3 goalRevision=16
 - Approved: by=human:Wido at=2026-09-13T08:41:27Z revision=17 opid=0GJS0PQ05HBYNJ0612VQF81DGV-m1e-c6925449 authority=proven digest=42695f94fceb534f7c3ca2f51f1c9104fb6b84e09f04c0208bf1f519b384eeb8
 - Sliced: machine=m1b lineage=main-1789191336-90295-e4b24b revision=3 at=2026-09-13T02:06:30Z
-- Claimed: machine=m1b lineage=main-1789191336-90295-e4b24b at=2026-09-13T08:44:27Z revision=20 accountingRevision=17 episodeAt=2026-09-13T07:23:39Z episodeRevision=12 idleSeconds=1841
-- StopCapability: generation=20 revision=20 machine=m1b claimEpoch=2 fenceEpoch=0
+- Episode: machine=m1b lineage=main-1789191336-90295-e4b24b accountingRevision=17 episodeAt=2026-09-13T07:23:39Z episodeRevision=12 idleSeconds=1841 released=2026-09-13T11:47:29Z
 
 History:
 - 2026-09-13T02:05:04Z XEGWW0F70SRXPGCJ6280FM4W68-m1b-30a7e141 open actor=m1b+main-1789191336-90295-e4b24b targets=wait-verb-returns-on-recorded-events,coordinator-wakes-on-events-not-polls
@@ -42,4 +41,5 @@ History:
 - 2026-09-13T10:01:09Z Q7XVA61JNRVE808BXM2FK98BAC-m1b-30a7e141 edit actor=m1b+main-1789191336-90295-e4b24b targets=wait-verb-returns-on-recorded-events
 - 2026-09-13T11:29:49Z CBJ8EN0WCQMSJNQXD53KK6A6BQ-m1b-30a7e141 edit actor=m1b+main-1789191336-90295-e4b24b targets=wait-verb-returns-on-recorded-events
 - 2026-09-13T11:47:26Z NXXWD2Q5R6TGJ6E3TB9AJ9HE8T-m1b-30a7e141 edit actor=m1b+main-1789191336-90295-e4b24b targets=wait-verb-returns-on-recorded-events
-Integrity: sha256=804b662fad91993bd87c12ce51333f6f98af503b71a8c4b77739284523e9e28c
+- 2026-09-13T11:47:29Z 9MF6W0BJAKN3RNSRB2AET1VSDZ-m1b-30a7e141 release actor=m1b+main-1789191336-90295-e4b24b targets=wait-verb-returns-on-recorded-events
+Integrity: sha256=412b49f5b3d560581965b6c81717a20a4a4d3687ff3a3d962f7ad7de21315a51
