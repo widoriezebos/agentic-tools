@@ -1,6 +1,6 @@
 # stop-hook-never-forces-an-empty-turn
 
-- State: parked
+- State: approved
 - Priority: 1
 - Sequence: 5
 - Risk: severity=2 novelty=2 exposure=3 accumulation=1 basis="severity 2: a wrong refusal rule either forces turns as today or lets an unsafe stop through; novelty 2: refusal causes are reclassified between seat and steward; exposure 3: every seat's every stop; accumulation 1: one hook"
@@ -9,7 +9,7 @@
 - Origin: human
 - Next step: 2026-09-12 19:4xZ m1b: the page (landed e57d9f5ec) has had four fold-read cycles (three Codex sol reads through the harness, two rostered design-critic jobs: design-critic-9c6decadb978428a41209f9c returned SHK-01/02, folded; stop-hook-read-212519 returned SHK-03 to SHK-07, unfolded: the Codex boundary cannot carry the three-refusal handoff with one re-invocation; neither decision store has a crash-durability protocol; the hook log line lacks outcome, incident identity and full arming fields; the two-record failure has two incompatible invariants; member 1 cannot land with section 5's fixtures as allocated). WAITING ON WIDO'S CALL. The seat's recommendation: stop polishing the umbrella page, keep it as landed context, and design per member: member 1 (stop-infrastructure-allows-the-seat-to-stop) gets its own one-mechanism page with its own fixtures, read once, built by Codex sol; the boundary, durability and log-schema questions are settled in the members that own them (7, 2, 3). Nothing else blocks.
 - OpenedAt: 2026-09-11T15:45:01Z
-- Revision: 24
+- Revision: 25
 - BlockedBy: stop-infrastructure-allows-the-seat-to-stop
 - Pinned: m1b
 - Budget: elapsedLimit=1d attemptLimit=10 reservedJobMinutesLimit=1200 activeJobLimit=1 reviewRoundLimit=3
@@ -17,7 +17,6 @@
 - Approved: by=human:Wido at=2026-09-11T20:33:06Z revision=10 opid=E8FTZC5HAT5QQ1ANYHR53FNVAE-m1-c6925449 authority=proven digest=2e1c7149776e2d5db51a6e1b319f9e6b77f7793aa24d621a6222d5f077423609
 - Sliced: machine=m1b lineage=main-1789191336-90295-e4b24b revision=20 at=2026-09-12T17:01:57Z
 - Episode: machine=m1b lineage=main-1789191336-90295-e4b24b accountingRevision=20 episodeAt=2026-09-12T17:00:18Z episodeRevision=20 idleSeconds=0 released=2026-09-12T19:40:17Z
-- Parked: by=m1b+main-1789191336-90295-e4b24b at=2026-09-12T19:40:17Z blocker=stop-infrastructure-allows-the-seat-to-stop because=blocked by stop-infrastructure-allows-the-seat-to-stop; returns when it is done
 
 History:
 - 2026-09-11T15:45:01Z T6Z7DYJ3CFGDRPYXNRNTTWXERM-m1e-5083721b open actor=m1e+main-1789141490-27414-b9c0d2 targets=stop-hook-never-forces-an-empty-turn
@@ -44,4 +43,5 @@ History:
 - 2026-09-12T19:12:08Z T8TCZY0MY8VBF9WK8H72CZY9V1-m1b-30a7e141 edit actor=m1b+main-1789191336-90295-e4b24b targets=stop-hook-never-forces-an-empty-turn
 - 2026-09-12T19:38:01Z ZZNDNNR5XS0CD1974VFZBT9S2G-m1b-30a7e141 edit actor=m1b+main-1789191336-90295-e4b24b targets=stop-hook-never-forces-an-empty-turn
 - 2026-09-12T19:40:17Z 783B8M0P3AQKQZ3JK8BJNZT42S-m1b-30a7e141 park actor=m1b+main-1789191336-90295-e4b24b targets=stop-hook-never-forces-an-empty-turn reason=blocked by stop-infrastructure-allows-the-seat-to-stop; returns when it is done
-Integrity: sha256=9772a190282f0f7d7a759e5a1c2ed0eb53ff299d52aa04cbfd953751331c35f6
+- 2026-09-13T00:15:07Z HS0A1TQZSY5XAS73WTZQCK5SQY-m1b-30a7e141 unpark actor=human:Wido targets=stop-hook-never-forces-an-empty-turn
+Integrity: sha256=1ac4800d02741289b3d2831808c9b5d482cb36961310acc92c529778b375e494
