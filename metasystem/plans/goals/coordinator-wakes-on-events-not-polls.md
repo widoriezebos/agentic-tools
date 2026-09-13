@@ -1,6 +1,6 @@
 # coordinator-wakes-on-events-not-polls
 
-- State: claimed
+- State: parked
 - Priority: 1
 - Sequence: 8
 - Risk: severity=2 novelty=2 exposure=3 accumulation=2 basis="severity 2: a wait that never returns idles a seat; novelty 2: a wait verb over existing records is new; exposure 3: every seat; accumulation 2: touches the hook and the verbs"
@@ -9,14 +9,15 @@
 - Origin: human
 - Next step: 2026-09-13 04:0xZ m1b: design page settled at 0acef6eb6 after three rostered Codex reads (wait-design-read-3, rounds 1-3: CWE-01..10 resolved; CWE-11, the channel-answer handoff, folded by the seat: channel ask saves its ledger cursor in the question record and the answer wait takes --after from it). WIDO'S CALL: the review budget (3) is spent and the critic root wait-design-read-3 holds CWE-11 open at rigor unproven, so the design chain implementer-fa5b5830882bcf6ea864cdf6 cannot close: either a fourth read over the norm (goal set-budget --review-round-limit 4 --approved-ref 'goal=coordinator-wakes-on-events-not-polls minutes=1200 reviewRounds=4 goalRevision=<r>', then the seat re-runs the read with a brief asking CWE-11 back with material false) or accept-risk on CWE-11 with the seat's fold as the answer. Meanwhile the seat opens member 1, wait-verb-returns-on-recorded-events, as a blocker (section 6) and briefs its Codex sol build.
 - OpenedAt: 2026-09-11T15:45:15Z
-- Revision: 36
+- Revision: 37
+- BlockedBy: wait-verb-returns-on-recorded-events
 - Pinned: m1b
 - Budget: elapsedLimit=1d attemptLimit=10 reservedJobMinutesLimit=1200 activeJobLimit=1 reviewRoundLimit=3
 - BudgetExceptions: 0
 - Approved: by=human:Wido at=2026-09-11T20:33:37Z revision=13 opid=SKG6KKD1D4X47D0F681RTY11AS-m1-c6925449 authority=proven digest=acfb9e16feb6090b3ad627c4c41225d9c946af808c6d672d570a86b07343c73f
 - Sliced: machine=m1b lineage=main-1789191336-90295-e4b24b revision=29 at=2026-09-13T00:19:49Z
-- Claimed: machine=m1b lineage=main-1789191336-90295-e4b24b at=2026-09-13T00:18:31Z revision=29 accountingRevision=29 episodeAt=2026-09-13T00:18:31Z episodeRevision=29
-- StopCapability: generation=29 revision=29 machine=m1b claimEpoch=2 fenceEpoch=0
+- Episode: machine=m1b lineage=main-1789191336-90295-e4b24b accountingRevision=29 episodeAt=2026-09-13T00:18:31Z episodeRevision=29 idleSeconds=0 released=2026-09-13T02:05:04Z
+- Parked: by=m1b+main-1789191336-90295-e4b24b at=2026-09-13T02:05:04Z blocker=wait-verb-returns-on-recorded-events because=blocked by wait-verb-returns-on-recorded-events; returns when it is done
 
 History:
 - 2026-09-11T15:45:15Z HPJKBN0ZC1BZBK2M5KWKW0JP71-m1e-5083721b open actor=m1e+main-1789141490-27414-b9c0d2 targets=coordinator-wakes-on-events-not-polls
@@ -55,4 +56,5 @@ History:
 - 2026-09-13T01:43:45Z RGGM2MMZM00RGBFS9AB2KEXQBS-m1b-30a7e141 edit actor=m1b+main-1789191336-90295-e4b24b targets=coordinator-wakes-on-events-not-polls
 - 2026-09-13T01:54:58Z GVFMPVNDG8H0XWFEH4DSQKA97C-m1b-30a7e141 edit actor=m1b+main-1789191336-90295-e4b24b targets=coordinator-wakes-on-events-not-polls
 - 2026-09-13T02:04:42Z 1VN06H01KWAV43Z4G5K7DTB1Z4-m1b-30a7e141 edit actor=m1b+main-1789191336-90295-e4b24b targets=coordinator-wakes-on-events-not-polls
-Integrity: sha256=ae33b2691b6acb35571c947784cb0baa57066565e3aeecad1d2413846ab42364
+- 2026-09-13T02:05:04Z XEGWW0F70SRXPGCJ6280FM4W68-m1b-30a7e141 park actor=m1b+main-1789191336-90295-e4b24b targets=coordinator-wakes-on-events-not-polls reason=blocked by wait-verb-returns-on-recorded-events; returns when it is done
+Integrity: sha256=d93735e8c2d611982c0a4064a393c5c76102b9faf4b15183dc4d3d51953be8e6
