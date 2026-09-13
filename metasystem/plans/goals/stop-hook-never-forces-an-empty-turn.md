@@ -1,6 +1,6 @@
 # stop-hook-never-forces-an-empty-turn
 
-- State: claimed
+- State: parked
 - Priority: 1
 - Sequence: 5
 - Risk: severity=2 novelty=2 exposure=3 accumulation=1 basis="severity 2: a wrong refusal rule either forces turns as today or lets an unsafe stop through; novelty 2: refusal causes are reclassified between seat and steward; exposure 3: every seat's every stop; accumulation 1: one hook"
@@ -9,15 +9,15 @@
 - Origin: human
 - Next step: 2026-09-12 19:4xZ m1b: the page (landed e57d9f5ec) has had four fold-read cycles (three Codex sol reads through the harness, two rostered design-critic jobs: design-critic-9c6decadb978428a41209f9c returned SHK-01/02, folded; stop-hook-read-212519 returned SHK-03 to SHK-07, unfolded: the Codex boundary cannot carry the three-refusal handoff with one re-invocation; neither decision store has a crash-durability protocol; the hook log line lacks outcome, incident identity and full arming fields; the two-record failure has two incompatible invariants; member 1 cannot land with section 5's fixtures as allocated). WAITING ON WIDO'S CALL. The seat's recommendation: stop polishing the umbrella page, keep it as landed context, and design per member: member 1 (stop-infrastructure-allows-the-seat-to-stop) gets its own one-mechanism page with its own fixtures, read once, built by Codex sol; the boundary, durability and log-schema questions are settled in the members that own them (7, 2, 3). Nothing else blocks.
 - OpenedAt: 2026-09-11T15:45:01Z
-- Revision: 34
-- BlockedBy: stop-infrastructure-allows-the-seat-to-stop
+- Revision: 35
+- BlockedBy: stop-decisions-record-deadline-evidence, stop-infrastructure-allows-the-seat-to-stop
 - Pinned: m1b
 - Budget: elapsedLimit=1d attemptLimit=10 reservedJobMinutesLimit=1200 activeJobLimit=1 reviewRoundLimit=3
 - BudgetExceptions: 0
 - Approved: by=human:Wido at=2026-09-11T20:33:06Z revision=10 opid=E8FTZC5HAT5QQ1ANYHR53FNVAE-m1-c6925449 authority=proven digest=2e1c7149776e2d5db51a6e1b319f9e6b77f7793aa24d621a6222d5f077423609
 - Sliced: machine=m1b lineage=main-1789191336-90295-e4b24b revision=20 at=2026-09-12T17:01:57Z
-- Claimed: machine=m1b lineage=main-1789191336-90295-e4b24b at=2026-09-13T07:32:59Z revision=34 accountingRevision=34 episodeAt=2026-09-13T07:32:59Z episodeRevision=34
-- StopCapability: generation=34 revision=34 machine=m1b claimEpoch=2 fenceEpoch=0
+- Episode: machine=m1b lineage=main-1789191336-90295-e4b24b accountingRevision=34 episodeAt=2026-09-13T07:32:59Z episodeRevision=34 idleSeconds=0 released=2026-09-13T07:33:02Z
+- Parked: by=m1b+main-1789191336-90295-e4b24b at=2026-09-13T07:33:02Z blocker=stop-decisions-record-deadline-evidence because=blocked by stop-decisions-record-deadline-evidence; returns when it is done
 
 History:
 - 2026-09-11T15:45:01Z T6Z7DYJ3CFGDRPYXNRNTTWXERM-m1e-5083721b open actor=m1e+main-1789141490-27414-b9c0d2 targets=stop-hook-never-forces-an-empty-turn
@@ -54,4 +54,5 @@ History:
 - 2026-09-13T07:25:36Z 802C6XFBCS0ASF0SB1RZFD7221-m1c-69c9e454 done actor=m1c+main-1789191340-90689-8975a9 targets=actionable-metrics,breach-clock-and-budget-honesty,chain-landing-carries-the-reviewed-diff,closing-read-and-receipt-in-parallel,coordinator-context-stays-under-budget,coordinator-wakes-on-events-not-polls,critique-closes-on-folded-proof,dispatch-bases-chains-on-the-remote-tip,failed-job-attention,fixture-repo-copies-exclude-the-artifacts-store,fixture-stewards-outlive-their-suite,fixture-waits-name-their-producer,goal-abandoned-with-a-reason,hook-root-resolver-design,human-authority-surface-runs-its-cmd-tests,human-goal-verbs-forgiving,job-record-birth-token,landing-receipt-survives-records-drift,lease-sweep-death-evidence,live-job-on-a-done-goal-unnoticed,machine-concurrency-governor,proof-groups-detect-hangs-by-progress-not-the-clock,repo-root-paths-ride-agent-commits-unjudged,run-scoped-build-caches-have-a-janitor,skipped-test-fails-its-group-on-the-other-os,small-change-lane,steward-catchup-livelock,steward-launches-resolve-their-model,steward-narrates-beside-the-repo-root,steward-revives-a-done-goal,stop-batch-strands-a-resumable-goal,stop-hook-never-forces-an-empty-turn,stop-refusal-fits-on-one-screen,suite-custody,token-spend-fence,watch-verb,watcher-repair-request-never-names-current,winddown-census-handoff-leak reason=priority-order from=1:6 to=1:5
 - 2026-09-13T07:32:55Z RKAKDW9450BQZCDP027GGYB8KW-m1b-30a7e141 unpark actor=human:Wido targets=stop-hook-never-forces-an-empty-turn
 - 2026-09-13T07:32:59Z ZM4YC7Q1K3G7VW41Y98NNFB5W4-m1b-30a7e141 claim actor=m1b+main-1789191336-90295-e4b24b targets=stop-hook-never-forces-an-empty-turn
-Integrity: sha256=ca581ba817319bd040540956ae70c184abab92605bd99d909357b048d122744f
+- 2026-09-13T07:33:02Z 5HG893JMDPRP75G97Y7F9VH7Z8-m1b-30a7e141 park actor=m1b+main-1789191336-90295-e4b24b targets=stop-hook-never-forces-an-empty-turn reason=blocked by stop-decisions-record-deadline-evidence; returns when it is done
+Integrity: sha256=8f919f0f1128aa6a93c61683bcd7943ea8d40b38fad034591a714602a16505e0
