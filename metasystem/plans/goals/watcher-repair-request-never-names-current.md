@@ -9,7 +9,8 @@
 - Origin: main
 - Next step: Read the failed-repair branch in the supervision owner against owner.ndjson on m1d (1177 lines, first at 2026-09-06T13:24:29+02:00, last at 2026-09-07T09:11:18+02:00, cleared when the restart finally completed at 09:12:18). Decide between rewriting the stale request and re-minting it, then add the consecutive-failure escalation so twenty silent hours cannot recur.
 - OpenedAt: 2026-09-07T07:21:49Z
-- Revision: 80
+- Revision: 81
+- Pinned: m1b
 - Budget: elapsedLimit=1d attemptLimit=10 reservedJobMinutesLimit=1200 activeJobLimit=1 reviewRoundLimit=3
 - BudgetExceptions: 0
 
@@ -94,4 +95,5 @@ History:
 - 2026-09-12T22:50:58Z YJJ8PSXZYDASFVX04HR5GRV2M4-m1e-c6925449 done actor=human:Wido targets=actionable-metrics,breach-clock-and-budget-honesty,critique-always,failed-job-attention,fixture-stewards-outlive-their-suite,goal-abandoned-with-a-reason,human-goal-verbs-forgiving,job-record-birth-token,landing-receipt-survives-records-drift,lease-sweep-death-evidence,live-job-on-a-done-goal-unnoticed,machine-concurrency-governor,steward-catchup-livelock,steward-revives-a-done-goal,stop-batch-strands-a-resumable-goal,suite-custody,token-spend-fence,watch-verb,watcher-repair-request-never-names-current,winddown-census-handoff-leak reason=priority-order from=1:23 to=1:22
 - 2026-09-13T06:37:44Z 99P3BRXY1587W281SDZ1PFYSB0-m1e-c6925449 done actor=human:Wido targets=actionable-metrics,breach-clock-and-budget-honesty,coordinator-context-stays-under-budget,coordinator-wakes-on-events-not-polls,critique-closes-on-folded-proof,delegate-rounds-reuse-a-warm-gate,failed-job-attention,fixture-stewards-outlive-their-suite,goal-abandoned-with-a-reason,human-goal-verbs-forgiving,job-record-birth-token,landing-receipt-survives-records-drift,lease-sweep-death-evidence,live-job-on-a-done-goal-unnoticed,machine-concurrency-governor,steward-catchup-livelock,steward-revives-a-done-goal,stop-batch-strands-a-resumable-goal,suite-custody,token-spend-fence,watch-verb,watcher-repair-request-never-names-current,winddown-census-handoff-leak reason=priority-order from=1:22 to=1:21
 - 2026-09-13T06:37:52Z 0Z49HACVY4QBKH33QGX9X20769-m1e-c6925449 done actor=human:Wido targets=actionable-metrics,breach-clock-and-budget-honesty,coordinator-context-stays-under-budget,coordinator-wakes-on-events-not-polls,critique-closes-on-folded-proof,engine-runs-re-arm-themselves-on-a-landed-engine,failed-job-attention,fixture-stewards-outlive-their-suite,goal-abandoned-with-a-reason,human-goal-verbs-forgiving,job-record-birth-token,landing-receipt-survives-records-drift,lease-sweep-death-evidence,live-job-on-a-done-goal-unnoticed,machine-concurrency-governor,proof-groups-detect-hangs-by-progress-not-the-clock,small-change-lane,steward-catchup-livelock,steward-launches-resolve-their-model,steward-revives-a-done-goal,stop-batch-strands-a-resumable-goal,stop-hook-never-forces-an-empty-turn,suite-custody,token-spend-fence,watch-verb,watcher-repair-request-never-names-current,winddown-census-handoff-leak reason=priority-order from=1:21 to=1:20
-Integrity: sha256=603cf9784bf564067cfebef85c1a9325886337e6b0423854ecc5e1d072e8e02f
+- 2026-09-13T06:41:40Z J4GYR56K4MRQ50M9X9W0CK1ZAH-m1e-c6925449 set-pin actor=human:Wido targets=watcher-repair-request-never-names-current
+Integrity: sha256=949985bc1037018d60f36aa340d2f4eb38f75c4168e0ddb576ff3a54fcf1a56b
