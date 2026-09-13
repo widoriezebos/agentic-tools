@@ -1,6 +1,6 @@
 # winddown-census-handoff-leak
 
-- State: queued
+- State: approved
 - Priority: 1
 - Sequence: 23
 - Risk: severity=2 novelty=2 exposure=2 accumulation=1 basis="severity 2: a live process group surviving the wind-down is a custody hole that blocks a weight discharge; novelty 2: the census adoption of abandoned groups is untriaged (never implemented, racing, or misordered); exposure 2: every governed run's wind-down; accumulation 1: one census path"
@@ -9,9 +9,11 @@
 - Origin: main
 - Next step: Appetite: 3h, HIGH priority - this blocks the first weight discharge (goal standing-validation, envelope at ceiling) and is a real custody hole. Triage first: is the census adoption of abandoned groups (a) never implemented for this path, (b) implemented but racing the group's process identity, or (c) implemented but the abandonment never reaches it. The dab1dbd fold contract and the lease-fold fix (3ba27a82) are adjacent - verify the handoff against both. Then fix on the owning seam with a test that constructs the survived-SIGKILL case deterministically. The discharge resumes on Wido's word after this lands.
 - OpenedAt: 2026-08-31T22:42:31Z
-- Revision: 86
+- Revision: 87
 - Pinned: m1b
+- Budget: elapsedLimit=4h attemptLimit=6 reservedJobMinutesLimit=720 activeJobLimit=1 reviewRoundLimit=2
 - BudgetExceptions: 0
+- Approved: by=human:Wido at=2026-09-13T06:42:29Z revision=87 opid=QMR318TA5VCTCS0VYCW4EN9H29-m1e-c6925449 authority=proven digest=d8302bcef2cac204eee96f51eb9a52a38afccb3751c6b2fe3c7e5b5138c3fbfb
 
 History:
 - 2026-08-31T22:42:31Z N02MC9XCBZ382B3ZSTNPPCR5MV-m2-bc1be9cb open actor=m2+mac-coordinator targets=winddown-census-handoff-leak
@@ -100,4 +102,5 @@ History:
 - 2026-09-13T06:37:52Z 0Z49HACVY4QBKH33QGX9X20769-m1e-c6925449 done actor=human:Wido targets=actionable-metrics,breach-clock-and-budget-honesty,coordinator-context-stays-under-budget,coordinator-wakes-on-events-not-polls,critique-closes-on-folded-proof,engine-runs-re-arm-themselves-on-a-landed-engine,failed-job-attention,fixture-stewards-outlive-their-suite,goal-abandoned-with-a-reason,human-goal-verbs-forgiving,job-record-birth-token,landing-receipt-survives-records-drift,lease-sweep-death-evidence,live-job-on-a-done-goal-unnoticed,machine-concurrency-governor,proof-groups-detect-hangs-by-progress-not-the-clock,small-change-lane,steward-catchup-livelock,steward-launches-resolve-their-model,steward-revives-a-done-goal,stop-batch-strands-a-resumable-goal,stop-hook-never-forces-an-empty-turn,suite-custody,token-spend-fence,watch-verb,watcher-repair-request-never-names-current,winddown-census-handoff-leak reason=priority-order from=1:24 to=1:23
 - 2026-09-13T06:39:39Z FZDTBPX0YJJ8J01TP872CE3DM8-m1e-892cdaec edit actor=m1e+main-1789030447-51011-5722fc targets=winddown-census-handoff-leak
 - 2026-09-13T06:42:23Z DK1V6RQ8921W8C5HJK8JCZD46P-m1e-c6925449 set-pin actor=human:Wido targets=winddown-census-handoff-leak
-Integrity: sha256=139bd587c4541be974509e4e51aa92544443a6c792e7ff10223ff742f19115ff
+- 2026-09-13T06:42:29Z QMR318TA5VCTCS0VYCW4EN9H29-m1e-c6925449 approve actor=human:Wido targets=winddown-census-handoff-leak
+Integrity: sha256=9b3003fd7b0941333651d91676cab1c7ce2f1d9b03e80ad7c7ce662f3da96081
