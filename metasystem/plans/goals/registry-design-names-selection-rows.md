@@ -1,6 +1,6 @@
 # registry-design-names-selection-rows
 
-- State: queued
+- State: parked
 - Priority: 3
 - Sequence: 26
 - Risk: severity=1 novelty=1 exposure=2 accumulation=2 basis="The registry design's REG-3 text no longer describes what the reduction keeps for owner selection; every reader of the design is exposed to a stale contract, and each further reduction change widens the gap."
@@ -9,9 +9,10 @@
 - Origin: main
 - Next step: One doc round and one logging line; tier from the risk basis. Residue of goal supervision-custody-per-checkout.
 - OpenedAt: 2026-09-05T15:09:55Z
-- Revision: 70
+- Revision: 71
 - Labels: robustness
 - BudgetExceptions: 0
+- Parked: by=human:Wido at=2026-09-13T08:24:13Z because=Not now (2026-09-13 backlog consolidation, Wido's word): Ride-along, not a goal: one doc round on docs/design/supervision-registry.md REG-3 (line 141) and one logging line for internal/registry/reduce.go:151-153 Dropped, taken by whoever next touches internal/registry; no runtime defect; leftover of supervision-custody-per-checkout (done e516ad5d).
 
 History:
 - 2026-09-05T15:09:55Z 7231WAM1A3DZTBYH58G0GKFYBS-m2-5fcf08ab open actor=human:Wido targets=registry-design-names-selection-rows
@@ -84,4 +85,5 @@ History:
 - 2026-09-13T08:22:24Z TSR1R55W14V9FG2PK9ZTG9JSB0-m1-c6925449 done actor=human:Wido targets=app-doctrine,app-guardrail-custody,app-guardrail-program,continuous-self-improvement,counselor,cross-repo-guardrails,design-prohibition-is-role-scoped,effort-by-complexity-per-model,fixture-default-branch-assumption,goal-suite-sits-on-the-default-test-timeout,human-carried-landing,incident-proposal-drafting,integration-branch,land-verb-pruning,ledger-authentication,metasystem-way-patterns,missionrunner-terminate-flake,paid-proof-authorization,precedent-index,python3-kit-port,reconciliation-guards,registry-design-names-selection-rows,repo-flag-resolves-one-root,seam-eventstream-error-surface,standing-validation,watchdog-kill-observation-gap reason=priority-order from=3:29 to=3:28
 - 2026-09-13T08:22:31Z HEFP5WKYB8V4MWGW41R8JSH6VC-m1-c6925449 done actor=human:Wido targets=answer-archive,app-doctrine,app-guardrail-custody,app-guardrail-program,claude-delegate-scratch-cleanup,claude-denywrite-list-is-a-snapshot,continuous-self-improvement,counselor,cross-repo-guardrails,delegate-sandbox-cannot-run-the-beds,design-prohibition-is-role-scoped,effort-by-complexity-per-model,fable-effort-high,fixture-default-branch-assumption,follow-up-brief-cannot-cite-fresh-trunk-files,goal-suite-sits-on-the-default-test-timeout,hook-demands-what-landing-forbids,human-carried-landing,incident-proposal-drafting,integration-branch,land-verb-pruning,ledger-authentication,metasystem-way-patterns,missionrunner-terminate-flake,narrator-digests,paid-proof-authorization,precedent-index,python3-kit-port,reconciliation-guards,registry-design-names-selection-rows,repo-flag-resolves-one-root,runtime-limit-is-not-a-protocol-error,seam-declaration-convergence,shutdown-claims-more-than-it-stops,standing-validation,stop-message-truth,uncapped-delegate-fanout,watchdog-kill-observation-gap reason=priority-order from=3:28 to=3:27
 - 2026-09-13T08:22:58Z 6QJV3SGEV054J7AVXBA2JE4MBE-m1-c6925449 done actor=human:Wido targets=app-doctrine,app-guardrail-custody,app-guardrail-program,claude-delegate-scratch-cleanup,continuous-self-improvement,counselor,cross-repo-guardrails,design-prohibition-is-role-scoped,effort-by-complexity-per-model,fable-effort-high,fixture-default-branch-assumption,goal-suite-sits-on-the-default-test-timeout,human-carried-landing,incident-proposal-drafting,integration-branch,land-verb-pruning,ledger-authentication,metasystem-way-patterns,missionrunner-terminate-flake,paid-proof-authorization,precedent-index,python3-kit-port,reconciliation-guards,registry-design-names-selection-rows,repo-flag-resolves-one-root,seam-declaration-convergence,standing-validation,watchdog-kill-observation-gap reason=priority-order from=3:27 to=3:26
-Integrity: sha256=5749151161665c4c31d2602dde698fd917fd15fd1451928894a479df64f95165
+- 2026-09-13T08:24:13Z JFA6M5D3GR652N3SRDSRCSBPG4-m1-c6925449 park actor=human:Wido targets=registry-design-names-selection-rows reason=Not now (2026-09-13 backlog consolidation, Wido's word): Ride-along, not a goal: one doc round on docs/design/supervision-registry.md REG-3 (line 141) and one logging line for internal/registry/reduce.go:151-153 Dropped, taken by whoever next touches internal/registry; no runtime defect; leftover of supervision-custody-per-checkout (done e516ad5d).
+Integrity: sha256=9060489077675eb643043b94800c9245ecc2da16e7e6951433e13291a36d2645
