@@ -1,6 +1,6 @@
 # coordinator-wakes-on-events-not-polls
 
-- State: approved
+- State: claimed
 - Priority: 1
 - Sequence: 8
 - Risk: severity=2 novelty=2 exposure=3 accumulation=2 basis="severity 2: a wait that never returns idles a seat; novelty 2: a wait verb over existing records is new; exposure 3: every seat; accumulation 2: touches the hook and the verbs"
@@ -9,11 +9,13 @@
 - Origin: human
 - Next step: Design first: inventory the wait sites in the transcripts (watch, TaskOutput, tmux capture loops, Monitor), define the wait verb over the existing job, attempt and ledger records and its restart recovery, critique, build, land.
 - OpenedAt: 2026-09-11T15:45:15Z
-- Revision: 28
+- Revision: 29
 - Pinned: m1b
 - Budget: elapsedLimit=1d attemptLimit=10 reservedJobMinutesLimit=1200 activeJobLimit=1 reviewRoundLimit=3
 - BudgetExceptions: 0
 - Approved: by=human:Wido at=2026-09-11T20:33:37Z revision=13 opid=SKG6KKD1D4X47D0F681RTY11AS-m1-c6925449 authority=proven digest=acfb9e16feb6090b3ad627c4c41225d9c946af808c6d672d570a86b07343c73f
+- Claimed: machine=m1b lineage=main-1789191336-90295-e4b24b at=2026-09-13T00:18:31Z revision=29 accountingRevision=29 episodeAt=2026-09-13T00:18:31Z episodeRevision=29
+- StopCapability: generation=29 revision=29 machine=m1b claimEpoch=2 fenceEpoch=0
 
 History:
 - 2026-09-11T15:45:15Z HPJKBN0ZC1BZBK2M5KWKW0JP71-m1e-5083721b open actor=m1e+main-1789141490-27414-b9c0d2 targets=coordinator-wakes-on-events-not-polls
@@ -44,4 +46,5 @@ History:
 - 2026-09-12T15:44:48Z KWY5JF1YQHMT27QZNA79W39PWM-m1-c6925449 set-pin actor=human:Wido targets=coordinator-wakes-on-events-not-polls
 - 2026-09-12T17:19:20Z JACDR5KVP8B0RDK6SV5EFNZG7N-m1c-69c9e454 done actor=m1c+main-1789191340-90689-8975a9 targets=actionable-metrics,breach-clock-and-budget-honesty,budget-extends-by-consumption-and-breach-parks,coordinator-context-stays-under-budget,coordinator-wakes-on-events-not-polls,critique-always,critique-closes-on-folded-proof,delegate-rounds-reuse-a-warm-gate,failed-job-attention,fixture-stewards-outlive-their-suite,goal-abandoned-with-a-reason,human-goal-verbs-forgiving,job-record-birth-token,landing-receipt-survives-records-drift,lease-sweep-death-evidence,live-job-on-a-done-goal-unnoticed,machine-concurrency-governor,proof-attempts-settle-to-minutes-run,proof-groups-detect-hangs-by-progress-not-the-clock,steward-catchup-livelock,steward-revives-a-done-goal,stop-batch-strands-a-resumable-goal,suite-custody,token-spend-fence,watch-verb,watcher-repair-request-never-names-current,winddown-census-handoff-leak reason=priority-order from=1:10 to=1:9
 - 2026-09-12T21:11:08Z 4DBXSCET2T1E5WP6VT68N623PF-m1e-c6925449 done actor=human:Wido targets=actionable-metrics,breach-clock-and-budget-honesty,budget-extends-by-consumption-and-breach-parks,coordinator-context-stays-under-budget,coordinator-wakes-on-events-not-polls,critique-always,critique-closes-on-folded-proof,delegate-rounds-reuse-a-warm-gate,failed-job-attention,fixture-stewards-outlive-their-suite,goal-abandoned-with-a-reason,human-goal-verbs-forgiving,job-record-birth-token,landing-receipt-survives-records-drift,lease-sweep-death-evidence,live-job-on-a-done-goal-unnoticed,machine-concurrency-governor,proof-groups-detect-hangs-by-progress-not-the-clock,steward-catchup-livelock,steward-revives-a-done-goal,stop-batch-strands-a-resumable-goal,suite-custody,token-spend-fence,watch-verb,watcher-repair-request-never-names-current,winddown-census-handoff-leak reason=priority-order from=1:9 to=1:8
-Integrity: sha256=e668cbd12e899812d81579f289e715dfd442123f95733e34de054f13524104f5
+- 2026-09-13T00:18:31Z 5AAN24CY4ZD2EPX12HGTS6NQ7F-m1b-30a7e141 claim actor=m1b+main-1789191336-90295-e4b24b targets=coordinator-wakes-on-events-not-polls
+Integrity: sha256=5224f9f70c4819eeb6ff579f12b1e51d9175f548c9e73a83146c3b1a45df94c8
