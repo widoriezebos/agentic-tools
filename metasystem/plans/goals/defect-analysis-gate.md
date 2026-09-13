@@ -3,18 +3,20 @@
 - State: claimed
 - Priority: 3
 - Sequence: 9
+- Risk: severity=2 novelty=2 exposure=2 accumulation=2 basis="severity 2: a gate that refuses a fix dispatch wrongly stalls a repair, one that admits without an analysis lets an unearned fix in; novelty 2: an analysis record on the goal and a challenge join through the existing register are new, the reproduction bar (two-bars Defect-Proof) and the admission boundary exist; exposure 2: every defect-fix dispatch; accumulation 2: the goal record's schema and the admission path"
+- Tier: 2
 - Intent: Wido's word via the paper seat 2026-09-02 (docs/paper/12-learning-systems.md 'How a bug becomes a fix', human-ratified, pushed 1320cbfa): the analysis of a defect must EARN the fix item. DONE means a defect-fix goal cannot open (and/or a defect-fix dispatch cannot admit) unless a CHALLENGED analysis is attached - fail-closed at a real boundary, not prose. The analysis record keeps observed apart from suspected and names a cause; the challenge scales with the four risk questions: low-risk = the reproduction PLUS one causal test (vary/remove the suspected cause, watch the failure follow); severe/unfamiliar/wide-reaching = a fresh cross-family critic attacks the diagnosis (rerun the reproduction, hunt other causes, test over/under-coverage). The surviving analysis attaches to the goal as evidence, the intent states the outcome (defect gone, reproduction as the counting observation), ruled-out causes travel with it. COMPOSITION (must be ONE mechanism, not two): two-bars-for-changes's Defect-Proof - the red-on-old, green-on-new reproduction against baseline and candidate trees - IS this ladder's reproduction bar; reuse it, do not reinvent. Distinct from the queued siblings: critique-always (mandatory critique of the BUILD), design-gate-at-dispatch (dispatch needs a design artifact), commit-goal-binding (commit links a goal) - this gate is about the ANALYSIS earning the item.
 - Origin: main
 - Next step: INTENT: machinery makes a diagnosis survive challenge before a fix item exists. CONSTRAINTS: fail-closed at goal intake or dispatch admission (or both) refusing a defect-fix item carrying no challenged analysis; the reproduction primitive is two-bars' Defect-Proof, joined not duplicated; the challenge join is a candidate for the existing validate critique-closed mechanism; a refusal names what is missing. FREEDOMS (design under critique): where the analysis record lives and its schema, how the challenge is recorded and joined, whether the boundary is intake/admission/both, how the low-risk causal test is proven. ROSTER (R-25): Fable designs, Sol critiques the design, Sol builds, Fable critiques the build; the feature takes the FULL ladder (design, adversarial critique to closure, build, code critique, closure, landing). SLICING: expect an arc - the analysis-record schema + reproduction-join as slice 1, the risk-scaled challenge gate as slice 2, the intake/admission enforcement as slice 3. Budget is Wido's word at claim.
 - OpenedAt: 2026-09-02T11:36:02Z
-- Revision: 13
+- Revision: 14
 - Pinned: m1b
 - Budget: elapsedLimit=3d attemptLimit=12 reservedJobMinutesLimit=720 activeJobLimit=2 reviewRoundLimit=3
 - BudgetExceptions: 0
-- Approved: by=human:Wido at=2026-09-06T06:53:37Z revision=4 opid=A35EHY2TGAWCCFA1Q1J0WZGS35-m1-a4f8999f authority=proven digest=25973739d6f21de31e3e9661d0da93b1328d8cab1b5995befe15a524ff704f5f
+- Approved: by=human:Wido at=2026-09-13T07:10:43Z revision=14 opid=23DDMV8DCJW21DABR4CF3DMN1F-m1b-30a7e141 authority=raise=23DDMV8DCJW21DABR4CF3DMN1F-m1b-30a7e141 digest=ba75848df89fb2ba5ecf6dfc6c047808aa4d9b81e4e54c6b4d3bb65cfeebebe1
 - Sliced: machine=m1b lineage=main-1789191336-90295-e4b24b revision=12 at=2026-09-13T06:34:01Z
-- Claimed: machine=m1b lineage=main-1789191336-90295-e4b24b at=2026-09-13T06:33:02Z revision=12 accountingRevision=12 episodeAt=2026-09-13T06:33:02Z episodeRevision=12
-- StopCapability: generation=12 revision=12 machine=m1b claimEpoch=2 fenceEpoch=0
+- Claimed: machine=m1b lineage=main-1789191336-90295-e4b24b at=2026-09-13T06:33:02Z revision=14 accountingRevision=12 episodeAt=2026-09-13T06:33:02Z episodeRevision=12
+- StopCapability: generation=14 revision=14 machine=m1b claimEpoch=2 fenceEpoch=0
 
 History:
 - 2026-09-02T11:36:02Z X2TBEZEYHEK83X4YNEE0GCHB7S-m0-c5dbf036 open actor=human:Wido targets=defect-analysis-gate
@@ -30,4 +32,5 @@ History:
 - 2026-09-12T06:06:11Z 0PAB77BV56GXT9YRE9H7MJXN11-m1e-c6925449 release actor=human:Wido targets=defect-analysis-gate displaced=m1b+main-1788680071-18713-e76d5d@2026-09-12T05:46:33Z
 - 2026-09-13T06:33:02Z 7VNBBK4DPPRZCGYVRDJ3MQ7ETW-m1b-30a7e141 claim actor=m1b+main-1789191336-90295-e4b24b targets=defect-analysis-gate
 - 2026-09-13T06:34:01Z ABJGC45TKRY7GW6NM1FM205Y4W-m1b-30a7e141 slice-start actor=m1b+main-1789191336-90295-e4b24b targets=defect-analysis-gate
-Integrity: sha256=897f50cad7aa3d8d37e877747df702a1ca717bc155cd2c8d0afdd54005617647
+- 2026-09-13T07:10:43Z 23DDMV8DCJW21DABR4CF3DMN1F-m1b-30a7e141 edit actor=m1b+main-1789191336-90295-e4b24b targets=defect-analysis-gate reason=Misclassified: from=0 to=2 evidence=root:implementer-873925bde8faae7cf849fd18
+Integrity: sha256=d3388478802bb01e7ba6c17e656533431b98a561cf47c8aa8976118514c10da6
