@@ -40,6 +40,20 @@ type ledgerAttentionBed struct {
 type attentionAuthorityReader struct{}
 
 func (attentionAuthorityReader) Read(pid int64) (humanauthority.Snapshot, error) {
+	if pid == 1 {
+		// The process-tree root, as a kernel answers it: launchd, root-owned,
+		// parent 0. The terminal walk continues to the root since
+		// hp-terminal-grade-for-stopping-acts (798ce60f); a fixture that
+		// answered parent 1 for pid 1 read as a cycle there.
+		return humanauthority.Snapshot{
+			Exact: identity.Exact{
+				Pid: 1, StartedAt: time.Unix(1, 0), Argv: []string{"/sbin/launchd"}, ArgvKnown: true,
+			},
+			Executable: "/sbin/launchd", ExecutableKnown: true,
+			OwnerUID: 0, OwnerKnown: true,
+			ParentPID: 0, ParentKnown: true, TerminalKnown: true,
+		}, nil
+	}
 	return humanauthority.Snapshot{
 		Exact: identity.Exact{
 			Pid: pid, StartedAt: time.Unix(pid, 0), Argv: []string{"attended-human-shell"}, ArgvKnown: true,
