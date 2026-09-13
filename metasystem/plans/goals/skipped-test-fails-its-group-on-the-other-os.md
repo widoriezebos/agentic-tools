@@ -7,11 +7,13 @@
 - Origin: main
 - Next step: m1c's lane (proof engine): read the skip reason from the go test json output, classify platform-gated skips (runtime.GOOS guards, build-tag absence) as expected omissions in the group record, keep other skips as failures, and print the reason on the TEST-GROUP line; Sol builds behind a fixture that plays one gated and one ungated skip, Opus critiques. Named cases from the join critic ha-surfacecrit2-20260910 (HAS-05, HAS-06, 2026-09-10): after the hp-terminal landing, the subtest 'Terminal app login is the session leader' of TestTerminalAppLoginAndTmuxSessionShapesEnroll in internal/humanauthority/authority_test.go still skips outside Darwin with a stale reason (the per-OS login program list it names was deleted; the check now stats the real /usr/bin/login as a root-owned write-protected file, which exists on Debian too), so the first Linux run under this goal retries it without its OS guard; and TestRootAncestorWithWithheldArgumentsHasReadableIdentityFacts in internal/identity/enumerate_test.go passes only under a root-owned withheld-argument ancestor such as Terminal.app's login, so runtime-owner-standard fails on any Linux seat and on a daemon or tmux-only ancestry on this Mac.
 - OpenedAt: 2026-09-10T09:59:25Z
-- Revision: 2
+- Revision: 3
+- Pinned: m1c
 - Budget: elapsedLimit=4h attemptLimit=6 reservedJobMinutesLimit=720 activeJobLimit=1 reviewRoundLimit=2
 - BudgetExceptions: 0
 
 History:
 - 2026-09-10T09:59:25Z YS9E1DBHFWFR7NZ4EY5JEJHZ27-m1-1701c13c open actor=m1+main-1788940932-18533-7fa6c2 targets=skipped-test-fails-its-group-on-the-other-os
 - 2026-09-10T10:31:40Z MXT39VVET2TP1XMMPQFVD95ZN1-m1-1701c13c edit actor=m1+main-1788940932-18533-7fa6c2 targets=skipped-test-fails-its-group-on-the-other-os
-Integrity: sha256=12bfdea1d6767bb86d8a4c4c68a73b5d197853c0df2947425837a542cf44de6b
+- 2026-09-13T06:40:13Z 42WAD1J3SW9FQ01MDSWFEJ8M4F-m1e-c6925449 set-pin actor=human:Wido targets=skipped-test-fails-its-group-on-the-other-os
+Integrity: sha256=a7aa8d41838fb3b170fb02eab09e31f037948983936231ef6b3e4fb8f3bd1f3c
