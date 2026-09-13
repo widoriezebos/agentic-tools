@@ -1,16 +1,17 @@
 # idle-every-runtime-enforcement
 
-- State: queued
+- State: parked
 - Priority: 2
 - Sequence: 13
 - Intent: Idle-with-backlog impossible on EVERY runtime (codex/devin seats, not only claude): the steward must ACTIVELY RE-ENGAGE an idle backlogged seat, not merely alarm - the watch-verb acting side. Split from idle-with-backlog-alarm 2026-09-02 (Wido chose fork (a): land the claude turn-exit gate now, scope every-runtime here). The claude case is handled by the landed turn-exit gate + steward escalation; THIS goal is the harder half: a runtime without a turn-block hook (codex, devin) needs the steward to prevent idle by re-engagement/restart, gated by marking-mode and Law 2 like all acting-side power. Codex critique F-AGNOSTIC-NOTIFY-ONLY-001/002 is the evidence.
 - Origin: main
 - Next step: CURRENT BASELINE 2026-09-07: idle-with-backlog-alarm already delivered the bounded three-refusal steward claim-and-continue path. Reuse it; unlimited hook blocking is not the contract and cannot replace an external owner. Remaining intent is runtime-independent activation/restart for idle or dead sessions and completion wakeups, including provider-limit waits. A runtime label alone does not prove hook support: use the capabilities established by host-runtime-setup. This goal consumes the watch-verb action/trial authority, while fleet-pull owns ordinary next-item selection. INTENT: no backlogged seat sits idle on any runtime, enforced by the steward not a per-runtime hook. CONSTRAINTS: the acting-side power (re-engage/restart) ships only through marking-mode trials and a Law 2 record, per the watch-verb design; composes with watch-verb, does not duplicate it. FREEDOMS: re-engage vs restart vs block; design under critique. Budget Wido's word at claim; likely joint-round per R-39-m0's third-stall clause. Back of queue behind the landed claude gate unless Wido prioritises.
 - OpenedAt: 2026-09-02T15:54:37Z
-- Revision: 19
+- Revision: 20
 - BlockedBy: watch-verb
 - Labels: headless-fleet, headless-recovery
 - BudgetExceptions: 0
+- Parked: by=human:Wido at=2026-09-13T08:23:32Z because=Not now (2026-09-13 backlog consolidation, Wido's word): Blocked on watch-verb (queued 1:19, human origin), whose action authority it consumes; part (3) of never-idle-ironclad's acceptance map; idle-with-backlog-alarm 35c9e4df landed the three-refusal claim-and-continue path; park until watch-verb lands, then design under marking-mode and Law 2.
 
 History:
 - 2026-09-02T15:54:37Z 71NN15T3QXQRZPWHV81DZ3WY0G-m0-c5dbf036 open actor=human:Wido targets=idle-every-runtime-enforcement
@@ -32,4 +33,5 @@ History:
 - 2026-09-13T06:44:41Z 59E2SS1PHG2JEY44B98S85XHVC-m1e-c6925449 set-priority actor=human:Wido targets=first-headless-run,fleet-channel-gateway,fleet-join-bootstrap,fleet-pull,gate-governance-records,headless-continuous-delivery-proof,headless-fleet-coordination-proof,idle-every-runtime-enforcement,metasystem-stop-escalation-proofs,mission-birth-baseline-from-dirty-worktree,never-idle-ironclad,recovery-rehearsal,recovery-to-good-state,repo-root-paths-ride-agent-commits-unjudged,role-context-composition,role-lane-packets,seat-mutual-awareness reason=priority-order subject=repo-root-paths-ride-agent-commits-unjudged from=2:16 to=2:15 requested-sequence=33
 - 2026-09-13T08:21:48Z NRD0NSKR47C7ESV46MD65VP4V0-m1-c6925449 done actor=human:Wido targets=commit-goal-binding,first-headless-run,fleet-channel-gateway,fleet-join-bootstrap,fleet-pull,gate-governance-records,headless-continuous-delivery-proof,headless-fleet-coordination-proof,idle-every-runtime-enforcement,landing-design-provenance,merge-stage-critic-close,mission-birth-baseline-from-dirty-worktree,never-idle-ironclad,recovery-rehearsal,recovery-to-good-state,role-context-composition,role-lane-packets,seat-mutual-awareness reason=priority-order from=2:15 to=2:14
 - 2026-09-13T08:23:10Z R328E6Y43B7EEREMEA8T0MVQWG-m1-c6925449 done actor=human:Wido targets=first-headless-run,fleet-channel-gateway,fleet-join-bootstrap,fleet-pull,headless-continuous-delivery-proof,headless-fleet-coordination-proof,idle-every-runtime-enforcement,mission-birth-baseline-from-dirty-worktree,never-idle-ironclad,recovery-rehearsal,recovery-to-good-state,role-lane-packets,seat-mutual-awareness reason=priority-order from=2:14 to=2:13
-Integrity: sha256=85c6fb905e0ea715e43537b1f150dd2c248e33977ef1d932c056f7a22350b16a
+- 2026-09-13T08:23:32Z FS9N13ZRK1B0TC0J6HTNA3SRWD-m1-c6925449 park actor=human:Wido targets=idle-every-runtime-enforcement reason=Not now (2026-09-13 backlog consolidation, Wido's word): Blocked on watch-verb (queued 1:19, human origin), whose action authority it consumes; part (3) of never-idle-ironclad's acceptance map; idle-with-backlog-alarm 35c9e4df landed the three-refusal claim-and-continue path; park until watch-verb lands, then design under marking-mode and Law 2.
+Integrity: sha256=8291f2743c24f455344e12175e968384525db4669da063975bd84465fee82fe5
