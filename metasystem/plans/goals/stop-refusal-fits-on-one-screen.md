@@ -9,15 +9,15 @@
 - Origin: main
 - Next step: RULED by Wido, 2026-09-13 evening: 'changing stop message is what we need to do; but WITHOUT introducing unwanted stopping again.' The design page's Decision 1 (close the third-refusal allowance and the delegate-job exemption, so a seat blocks on every attempt while work is claimable) is OUT of this landing and moves to seat-work-continues-past-the-runtime-stop-cap, which must land first: without an outer continuation, persistent blocking runs a seat into the runtime's own consecutive-block cap, which is the flaky loop we are not allowed to reintroduce. This landing is what the goal's DONE clause already says: not a change to what is judged, only to what is printed. The guarantee has two halves, both proven before landing: no intended change (trunk's stop-decision tests keep their expectations and none of the six named Go tests or the template-backlog fixture row is inverted, weakened or deleted) and no accidental change (a failure anywhere in the new presentation path -- the facts write, the report write, the mapper, a missing or skewed engine, the deadline parent -- can neither clear an established block nor create one). Design revision 4 records the scope cut; then the build round, an independent Opus read charged with proving no stop decision moved, the three beds on the Mac, the engine sections, and the landing.
 - OpenedAt: 2026-09-06T14:30:14Z
-- Revision: 90
+- Revision: 91
 - Pinned: m1c
-- Budget: elapsedLimit=1d attemptLimit=10 reservedJobMinutesLimit=1200 activeJobLimit=1 reviewRoundLimit=3
-- BudgetExceptions: 0
-- Approved: by=human:Wido at=2026-09-09T11:55:47Z revision=13 opid=4QJCZR39K3VWBGRCAAZ3DT9HEA-m1-c6925449 authority=proven digest=f34eb5076eb486ff58b6e2af66442a9d66304b18d5c89874afcd4ac88edb1846
+- Budget: elapsedLimit=3d attemptLimit=40 reservedJobMinutesLimit=1200 activeJobLimit=2 reviewRoundLimit=3
+- BudgetExceptions: 1
+- Approved: by=human:Wido at=2026-09-13T20:47:24Z revision=91 opid=7TNQNE8407AJD6R8Y2WYV7Y2F8-m1e-c6925449 authority=proven digest=a1479b3db51f4e5d9d25d25b0b8ff3f369d7785ab1f96c68c247104bb10223ea
 - Sliced: machine=m1 lineage=main-1788940932-18533-7fa6c2 revision=5 at=2026-09-09T09:11:17Z
 - AcceptedRisk: finding=OSR-08 chain=one-screen-crit3-20260909 by=Wido opid=4TDZJ12K9WGK59WRRT365G9ASH-m1-c6925449
-- Claimed: machine=m1c lineage=main-1789191340-90689-8975a9 at=2026-09-13T15:38:47Z revision=85 accountingRevision=85 episodeAt=2026-09-13T15:38:47Z episodeRevision=85
-- StopCapability: generation=85 revision=85 machine=m1c claimEpoch=5 fenceEpoch=0
+- Claimed: machine=m1c lineage=main-1789191340-90689-8975a9 at=2026-09-13T20:47:24Z revision=91 accountingRevision=91 episodeAt=2026-09-13T15:38:47Z episodeRevision=85
+- StopCapability: generation=91 revision=91 machine=m1c claimEpoch=1 fenceEpoch=0
 
 History:
 - 2026-09-06T14:30:14Z AE3TVHYT4WVWE623BDZZK3XWBK-m1-a4f8999f open actor=m1+main-1788594343-3833-fb64b9 targets=stop-refusal-fits-on-one-screen
@@ -110,4 +110,5 @@ History:
 - 2026-09-13T18:23:16Z PZ9C8WTAE1Q9ZMY232WYGTCENS-m1e-c6925449 done actor=human:Wido targets=actionable-metrics,chain-landing-carries-the-reviewed-diff,coordinator-context-stays-under-budget,coordinator-wakes-on-events-not-polls,critique-closes-on-folded-proof,dispatch-bases-chains-on-the-remote-tip,failed-job-attention,fixture-repo-copies-exclude-the-artifacts-store,fixture-stewards-outlive-their-suite,fixture-waits-name-their-producer,goal-abandoned-with-a-reason,human-authority-surface-runs-its-cmd-tests,human-goal-verbs-forgiving,human-wait-does-not-consume-goal-budget,job-record-birth-token,lease-sweep-death-evidence,live-job-on-a-done-goal-unnoticed,machine-concurrency-governor,metasystem-stop-escalation-proofs,metasystem-stop-fleet-form,new-elapsed-budgets-use-explicit-hours,proof-groups-detect-hangs-by-progress-not-the-clock,repo-root-paths-ride-agent-commits-unjudged,run-scoped-build-caches-have-a-janitor,skipped-test-fails-its-group-on-the-other-os,stop-batch-strands-a-resumable-goal,stop-refusal-fits-on-one-screen,token-spend-fence,watch-verb,watcher-repair-request-never-names-current,winddown-census-handoff-leak reason=priority-order from=1:31 to=1:30
 - 2026-09-13T18:23:23Z B62DMVD4JTW7AV40KDEETAV8T3-m1c-69c9e454 edit actor=m1c+main-1789191340-90689-8975a9 targets=stop-refusal-fits-on-one-screen
 - 2026-09-13T18:45:06Z 0Y6Y2TM3S9EYZ1V1T9XHXASQ5A-m1c-69c9e454 edit actor=m1c+main-1789191340-90689-8975a9 targets=stop-refusal-fits-on-one-screen
-Integrity: sha256=b8e575808c1241bb59ed776d55d24fcea68503d826887f494a5ce7b5577dd171
+- 2026-09-13T20:47:24Z 7TNQNE8407AJD6R8Y2WYV7Y2F8-m1e-c6925449 set-budget actor=human:Wido targets=stop-refusal-fits-on-one-screen displaced=m1c+main-1789191340-90689-8975a9@2026-09-13T15:38:47Z
+Integrity: sha256=05b1960ff4322ecf7bc69e44e50ca58ae6bc5c06beaaa28035c6910f48aaa2d3
