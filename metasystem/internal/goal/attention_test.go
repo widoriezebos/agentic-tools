@@ -16,6 +16,7 @@ import (
 
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/identity"
 	metarun "github.com/widoriezebos/agentic-tools/metasystem/internal/run"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/testutil"
 )
 
 func TestWaitGoalCursorHistory(t *testing.T) {
@@ -127,6 +128,7 @@ func TestWaitGoalFetchDeadline(t *testing.T) {
 	}
 	if binary := os.Getenv("METASYSTEM_WAIT_BINARY"); binary != "" {
 		t.Run("installed hanging git", func(t *testing.T) {
+			binary := testutil.InstalledWaitBinary(t, binary)
 			self := int64(os.Getpid())
 			exact, state, probeErr := (identity.KernelProber{}).Probe(self)
 			if probeErr != nil || state != identity.Alive {

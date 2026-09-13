@@ -1,7 +1,8 @@
 {
  "exempt": {
   "cmd/metasystem": "thin verb wiring exercised end to end by the shell fixtures",
-  "internal/refusal": "declarative refusal types, constants, and register data contain no executable production statements; completeness tests independently join every row"
+  "internal/refusal": "declarative refusal types, constants, and register data contain no executable production statements; completeness tests independently join every row",
+  "internal/testutil": "test-only subprocess installation support exercised by the importing packages' wait tests"
  },
  "floors": {
   "internal/acp": 88.7,

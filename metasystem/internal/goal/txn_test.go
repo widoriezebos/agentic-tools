@@ -14,6 +14,7 @@ import (
 
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/identity"
 	metarun "github.com/widoriezebos/agentic-tools/metasystem/internal/run"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/testutil"
 )
 
 func TestWaitGoalLandingAndHumanAct(t *testing.T) {
@@ -41,6 +42,7 @@ func TestWaitGoalLandingAndHumanAct(t *testing.T) {
 	}
 	if binary := os.Getenv("METASYSTEM_WAIT_BINARY"); binary != "" {
 		t.Run("installed two-clone ledger waits", func(t *testing.T) {
+			binary := testutil.InstalledWaitBinary(t, binary)
 			testInstalledGoalWaits(t, binary)
 		})
 	}

@@ -11,6 +11,7 @@ import (
 	"time"
 
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/identity"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/testutil"
 )
 
 // pairProber replays a btime step: the same live process, constant pair,
@@ -36,6 +37,7 @@ func (p restartProber) Probe(pid int64) (identity.Exact, identity.Liveness, erro
 func TestWaitRestartRecoveryReplay(t *testing.T) {
 	if binary := os.Getenv("METASYSTEM_WAIT_BINARY"); binary != "" {
 		t.Run("installed process death resumes from rows", func(t *testing.T) {
+			binary := testutil.InstalledWaitBinary(t, binary)
 			root := t.TempDir()
 			self := int64(os.Getpid())
 			exact, state, err := (identity.KernelProber{}).Probe(self)

@@ -17,6 +17,7 @@ import (
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/proofrun"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/report"
 	metarun "github.com/widoriezebos/agentic-tools/metasystem/internal/run"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/testutil"
 )
 
 type waitCommandProber struct {
@@ -282,6 +283,7 @@ func TestWaitInstalledRunCommand(t *testing.T) {
 	})
 	code, output, problem := 0, "", ""
 	if binary := os.Getenv("METASYSTEM_WAIT_BINARY"); binary != "" {
+		binary = testutil.InstalledWaitBinary(t, binary)
 		cmd := exec.Command(binary, "wait", "--root", root, "--run", "run-command", "--timeout", "1m", "--json")
 		data, commandErr := cmd.CombinedOutput()
 		output = string(data)
@@ -317,6 +319,7 @@ func TestWaitInstalledRunCommand(t *testing.T) {
 		t.Fatal(err)
 	}
 	if binary := os.Getenv("METASYSTEM_WAIT_BINARY"); binary != "" {
+		binary = testutil.InstalledWaitBinary(t, binary)
 		cmd := exec.Command(binary, "wait", "--root", root, "--job", "job-command", "--timeout", "1m", "--json")
 		data, commandErr := cmd.CombinedOutput()
 		if commandErr != nil || !strings.Contains(string(data), `"exitCode":0`) {
@@ -410,6 +413,7 @@ func TestWaitSessionStartPrintsPendingRows(t *testing.T) {
 		t.Fatalf("turn verdict code=%d output=%q stderr=%q display=%q", code, verdictOutput, problem, verdict.Display)
 	}
 	if binary := os.Getenv("METASYSTEM_WAIT_BINARY"); binary != "" {
+		binary = testutil.InstalledWaitBinary(t, binary)
 		if output, err := exec.Command("git", "-C", root, "init", "-q").CombinedOutput(); err != nil {
 			t.Fatalf("initialize hook fixture repository: %v %s", err, output)
 		}
