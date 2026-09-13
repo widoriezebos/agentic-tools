@@ -2,12 +2,12 @@
 
 - State: queued
 - Priority: 2
-- Sequence: 20
+- Sequence: 19
 - Intent: The recovery rehearsal: prove the system comes back from death - kill everything, restore from records alone, verify no invented state (program L16; runtime-accelerators-never-carry law: correctness survives on records alone)
 - Origin: human
 - Next step: INTENT: retain a bounded failure/recovery proof from records alone for the headless-fleet effort. CONSTRAINTS: use an isolated adopted repository/fleet and approved run budget, not live development processes. Independently interrupt a delegate, host/mission runner and steward/supervision owner mid-work; after supported restart, prove claim/obligation/run reconstruction or an explicit bounded refusal, preserved evidence and no duplicated accepted effect. Prove full human stop from active and partially failed states leaves no owned worker running and prevents resurrection until authorized restart. Reuse the actual host-runtime-setup and metasystem-stop-verb surfaces as they land; recovery-to-good-state owns partial-state repairs. Earlier probes may expose defects before every repair is done; this goal has no blanket blocker on its repair owners. Conclude only with retained evidence on the integrated final revisions. Fleet message replay and brain absence stay with headless-fleet-coordination-proof. FREEDOMS: fault injection and evidence harness; fixes go to existing or separate bounded goals.
 - OpenedAt: 2026-08-30T15:16:00Z
-- Revision: 19
+- Revision: 20
 - Labels: headless-fleet, headless-proof
 - BudgetExceptions: 0
 
@@ -31,4 +31,5 @@ History:
 - 2026-09-11T22:05:09Z AV2VQ526G6RR0PQX3DDQ1D7ABK-m1-c6925449 done actor=human:Wido targets=first-headless-run,fleet-channel-gateway,fleet-join-bootstrap,fleet-pull,headless-continuous-delivery-proof,headless-fleet-coordination-proof,metasystem-stop-escalation-proofs,mission-birth-baseline-from-dirty-worktree,never-idle-ironclad,recovery-rehearsal,recovery-to-good-state,role-liveness-watchdog,seat-mutual-awareness reason=priority-order from=2:23 to=2:22
 - 2026-09-11T22:07:23Z EGBE3T6927VE848FP9ZJW9QK7V-m1-c6925449 done actor=human:Wido targets=first-headless-run,fleet-channel-gateway,fleet-join-bootstrap,fleet-pull,headless-continuous-delivery-proof,headless-fleet-coordination-proof,idle-every-runtime-enforcement,metasystem-stop-escalation-proofs,mission-birth-baseline-from-dirty-worktree,never-idle-ironclad,recovery-rehearsal,recovery-to-good-state,role-context-composition,role-lane-packets,seat-mutual-awareness,two-bars-for-changes reason=priority-order from=2:22 to=2:21
 - 2026-09-11T22:09:00Z C3BMZ7DRFM4AWMATVMSXQZHBTQ-m1-c6925449 done actor=human:Wido targets=adoption-inventory-from-install-set,chain-landing-carries-the-reviewed-diff,commit-goal-binding,design-gate-at-dispatch,first-headless-run,fleet-channel-gateway,fleet-join-bootstrap,fleet-pull,gate-governance-records,headless-continuous-delivery-proof,headless-fleet-coordination-proof,hook-enrollment-per-checkout,human-approval-for-execution,idle-every-runtime-enforcement,landing-design-provenance,manifest-floor-at-dispatch,merge-stage-critic-close,metasystem-stop-escalation-proofs,mission-birth-baseline-from-dirty-worktree,never-idle-ironclad,one-approval-gate,recovery-rehearsal,recovery-to-good-state,repo-root-paths-ride-agent-commits-unjudged,role-context-composition,role-lane-packets,seat-mutual-awareness reason=priority-order from=2:21 to=2:20
-Integrity: sha256=4255ef45674c22d2e9b91cfd120283e092310aa4f62d44cade185678cf4c21ad
+- 2026-09-13T06:44:32Z VP6AD63TYG5F9F8NVDKDX85A61-m1e-c6925449 set-priority actor=human:Wido targets=chain-landing-carries-the-reviewed-diff,first-headless-run,fleet-channel-gateway,fleet-join-bootstrap,fleet-pull,gate-governance-records,headless-continuous-delivery-proof,headless-fleet-coordination-proof,idle-every-runtime-enforcement,metasystem-stop-escalation-proofs,mission-birth-baseline-from-dirty-worktree,never-idle-ironclad,recovery-rehearsal,recovery-to-good-state,repo-root-paths-ride-agent-commits-unjudged,role-context-composition,role-lane-packets,seat-mutual-awareness reason=priority-order subject=chain-landing-carries-the-reviewed-diff from=2:20 to=2:19 requested-sequence=32
+Integrity: sha256=cbddebfa8bb1353bf927a038a567815b25f18a03de1567f6e9b37e4bf4eceaa6

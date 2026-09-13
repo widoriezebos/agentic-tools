@@ -2,12 +2,12 @@
 
 - State: queued
 - Priority: 2
-- Sequence: 16
+- Sequence: 15
 - Intent: R-25-m1's model lanes encode into role-packets.json (the closed-packet recipe file is the enforcing surface): Fable designs, Sol critiques designs, Sol implements, Fable critiques implementations
 - Origin: human
 - Next step: Appetite: 3h remaining scope. Slice 1 DONE (landed c53db82b): design authored by Fable, critiqued by Sol (five findings folded, none refuted), revised, status awaiting re-critique. NEXT SLICE: Sol re-critique of the revision - 30 worker-minutes GRANTED by Wido 2026-08-31 evening, then implementation per the design's own slice plan. Note: both slice-1 job chains lawfully unclosed - defect tokened as design-critique-chain-binding. Concluding the whole goal is Wido's act (human origin)
 - OpenedAt: 2026-08-30T15:16:08Z
-- Revision: 21
+- Revision: 22
 - BudgetExceptions: 0
 
 History:
@@ -32,4 +32,5 @@ History:
 - 2026-09-11T22:00:17Z ZACQ95ADETGNC6PSNQESWF9MHH-m1-c6925449 done actor=human:Wido targets=adoption-inventory-from-install-set,chain-landing-carries-the-reviewed-diff,closing-read-follows-the-change-not-the-label,commit-goal-binding,design-gate-at-dispatch,first-headless-run,fleet-channel-gateway,fleet-join-bootstrap,fleet-pull,gate-governance-records,headless-continuous-delivery-proof,headless-fleet-coordination-proof,hook-enrollment-per-checkout,host-implementer-wall,human-approval-for-execution,idle-every-runtime-enforcement,landing-design-provenance,manifest-floor-at-dispatch,merge-stage-critic-close,metasystem-stop-escalation-proofs,mission-birth-baseline-from-dirty-worktree,never-idle-ironclad,one-approval-gate,recovery-rehearsal,recovery-to-good-state,repo-root-paths-ride-agent-commits-unjudged,role-context-composition,role-lane-packets,role-liveness-watchdog,seat-mutual-awareness,two-bars-for-changes reason=priority-order from=2:19 to=2:18
 - 2026-09-11T22:07:23Z EGBE3T6927VE848FP9ZJW9QK7V-m1-c6925449 done actor=human:Wido targets=first-headless-run,fleet-channel-gateway,fleet-join-bootstrap,fleet-pull,headless-continuous-delivery-proof,headless-fleet-coordination-proof,idle-every-runtime-enforcement,metasystem-stop-escalation-proofs,mission-birth-baseline-from-dirty-worktree,never-idle-ironclad,recovery-rehearsal,recovery-to-good-state,role-context-composition,role-lane-packets,seat-mutual-awareness,two-bars-for-changes reason=priority-order from=2:18 to=2:17
 - 2026-09-11T22:09:00Z C3BMZ7DRFM4AWMATVMSXQZHBTQ-m1-c6925449 done actor=human:Wido targets=adoption-inventory-from-install-set,chain-landing-carries-the-reviewed-diff,commit-goal-binding,design-gate-at-dispatch,first-headless-run,fleet-channel-gateway,fleet-join-bootstrap,fleet-pull,gate-governance-records,headless-continuous-delivery-proof,headless-fleet-coordination-proof,hook-enrollment-per-checkout,human-approval-for-execution,idle-every-runtime-enforcement,landing-design-provenance,manifest-floor-at-dispatch,merge-stage-critic-close,metasystem-stop-escalation-proofs,mission-birth-baseline-from-dirty-worktree,never-idle-ironclad,one-approval-gate,recovery-rehearsal,recovery-to-good-state,repo-root-paths-ride-agent-commits-unjudged,role-context-composition,role-lane-packets,seat-mutual-awareness reason=priority-order from=2:17 to=2:16
-Integrity: sha256=f43ce919a13b8b83596df0df4586a4a86892ff3226baf771194ee0793d16bc74
+- 2026-09-13T06:44:32Z VP6AD63TYG5F9F8NVDKDX85A61-m1e-c6925449 set-priority actor=human:Wido targets=chain-landing-carries-the-reviewed-diff,first-headless-run,fleet-channel-gateway,fleet-join-bootstrap,fleet-pull,gate-governance-records,headless-continuous-delivery-proof,headless-fleet-coordination-proof,idle-every-runtime-enforcement,metasystem-stop-escalation-proofs,mission-birth-baseline-from-dirty-worktree,never-idle-ironclad,recovery-rehearsal,recovery-to-good-state,repo-root-paths-ride-agent-commits-unjudged,role-context-composition,role-lane-packets,seat-mutual-awareness reason=priority-order subject=chain-landing-carries-the-reviewed-diff from=2:16 to=2:15 requested-sequence=32
+Integrity: sha256=d534ad7bb71a069447a5b80e97fa7e45d67039127e2ce3cc232a0b7e6d07af7b

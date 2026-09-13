@@ -1,15 +1,15 @@
 # chain-landing-carries-the-reviewed-diff
 
 - State: approved
-- Priority: 2
-- Sequence: 12
+- Priority: 1
+- Sequence: 32
 - Risk: severity=3 novelty=1 exposure=2 accumulation=1 basis="severity 3: a chain landing whose staged set does not contain the reviewed diff lands under the chain's message and register with a pass verdict, the landing law failing at its one job; novelty 1: one comparison of the staged tree against the chain's reviewed diff, both already on disk; exposure 2: every chain landing on every machine, but only when the seat stages the wrong set; accumulation 1: it does not compound"
 - Tier: 3
 - Intent: On 2026-09-07 00:25 CEST seat m1d landed commit 0b8d1bea with land.sh --chain hgvf-build1-20260906 --staged-only after its git apply of the chain's reviewed diff had FAILED on three files (main had moved under the chain); the staged set held only four dispositions records, yet the landing passed, took the chain's feature message and registered the chain as carried. The evaluator judged the staged tree on its own merits and never asked whether it contained the reviewed diff. DONE means: a chain landing compares the staged metasystem subtree against the chain's latest reviewed diff (artifacts/agents/<root>/rounds/<n>/diff.patch and review.json) and refuses with chain-diff-absent when any file the diff changes is unchanged in the staged set or absent from it; a landing fixture stages a records-only set against a real chain and proves the refusal; the error names the missing files and the round.
 - Origin: main
 - Next step: MECHANICAL, one chain: internal/landing (the chain stage of land.sh) reads the root's latest round diff, lists its changed paths, and refuses when the staged tree's blobs for those paths equal the base tree's; fixture in the landing fixture suite. Verify first on the 0b8d1bea case by replaying its staged set against the chain in a throwaway clone. || Absorbed 2026-09-11 from goal chain-landing-carries-unrelated-staged-plans: Fold into chain-landing-carries-the-reviewed-diff under the merged intent (both-ways binding of the staged set to the reviewed diff); keep the register-carriage rename rule in the refusal message.
 - OpenedAt: 2026-09-06T22:26:51Z
-- Revision: 15
+- Revision: 16
 - Labels: headless-fleet, headless-process
 - Pinned: m1c
 - Budget: elapsedLimit=1d attemptLimit=10 reservedJobMinutesLimit=1200 activeJobLimit=1 reviewRoundLimit=3
@@ -32,4 +32,5 @@ History:
 - 2026-09-11T22:09:00Z C3BMZ7DRFM4AWMATVMSXQZHBTQ-m1-c6925449 done actor=human:Wido targets=adoption-inventory-from-install-set,chain-landing-carries-the-reviewed-diff,commit-goal-binding,design-gate-at-dispatch,first-headless-run,fleet-channel-gateway,fleet-join-bootstrap,fleet-pull,gate-governance-records,headless-continuous-delivery-proof,headless-fleet-coordination-proof,hook-enrollment-per-checkout,human-approval-for-execution,idle-every-runtime-enforcement,landing-design-provenance,manifest-floor-at-dispatch,merge-stage-critic-close,metasystem-stop-escalation-proofs,mission-birth-baseline-from-dirty-worktree,never-idle-ironclad,one-approval-gate,recovery-rehearsal,recovery-to-good-state,repo-root-paths-ride-agent-commits-unjudged,role-context-composition,role-lane-packets,seat-mutual-awareness reason=priority-order from=2:13 to=2:12
 - 2026-09-13T06:40:33Z 7AFW4MD1YY7FHEY4RBG17ZFBFY-m1e-c6925449 set-pin actor=human:Wido targets=chain-landing-carries-the-reviewed-diff
 - 2026-09-13T06:40:39Z NVG6G0W0H3SN56JFDQCQ9Z1Z7G-m1e-c6925449 approve actor=human:Wido targets=chain-landing-carries-the-reviewed-diff
-Integrity: sha256=169b389d2e6ad764ecc71397a0b1de158277a68eec75ed2ec5bedf3ae96973b9
+- 2026-09-13T06:44:32Z VP6AD63TYG5F9F8NVDKDX85A61-m1e-c6925449 set-priority actor=human:Wido targets=chain-landing-carries-the-reviewed-diff,first-headless-run,fleet-channel-gateway,fleet-join-bootstrap,fleet-pull,gate-governance-records,headless-continuous-delivery-proof,headless-fleet-coordination-proof,idle-every-runtime-enforcement,metasystem-stop-escalation-proofs,mission-birth-baseline-from-dirty-worktree,never-idle-ironclad,recovery-rehearsal,recovery-to-good-state,repo-root-paths-ride-agent-commits-unjudged,role-context-composition,role-lane-packets,seat-mutual-awareness reason=priority-order subject=chain-landing-carries-the-reviewed-diff from=2:12 to=1:32 requested-sequence=32
+Integrity: sha256=19aaed93c71fc91d64715bef5259c000416c7840bbdb3578da113fe6fee11dca
