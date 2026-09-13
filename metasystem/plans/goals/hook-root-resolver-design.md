@@ -1,6 +1,6 @@
 # hook-root-resolver-design
 
-- State: claimed
+- State: approved
 - Priority: 1
 - Sequence: 2
 - Risk: severity=2 novelty=1 exposure=3 accumulation=2 basis="severity 2: the hook fails closed while wrong, but a wrong resolver on the deadline parent can record a refusal against the wrong world; novelty 1: the design exists at revision 5 with five rounds of critique, so what remains is a fold and a build; exposure 3: every nested checkout in the fleet; accumulation 2: the same root cause that produced successor A"
@@ -9,14 +9,13 @@
 - Origin: main
 - Next step: 2026-09-13 (m1c): claimed. The chain hrd-build1-20260906 (round-10 tree 653fcb1c on trunk 0cf5117a0, 12 files, about 1,000 lines) cannot be rebased as it stands: its files moved on trunk by thousands of lines since Sep 6 and its worktree was reused. Design revision 6 is on the page, so the build is what remains: the chain's own changes were three-way applied onto today's tip in a fresh worktree (eight files clean, four in conflict) and Codex Sol (gpt-5.6-sol) is resolving and finishing them against Decisions 1 to 4 with the case 7 and case 14 fixtures; then one Opus read, the seat's verification (hook and supervision beds, stateroot/up/steward/cmd packages, engine sections) and the landing under this goal.
 - OpenedAt: 2026-09-06T06:39:49Z
-- Revision: 62
+- Revision: 63
 - Pinned: m1c
 - Budget: elapsedLimit=1d attemptLimit=12 reservedJobMinutesLimit=1200 activeJobLimit=1 reviewRoundLimit=3
 - BudgetExceptions: 0
 - Approved: by=human:Wido at=2026-09-13T07:22:49Z revision=55 opid=XZA3290E1RGR8SK8PKFNAVKKKK-m1e-c6925449 authority=proven digest=803416cae1f6cc23de17e5095463c667244bf3187f06ab28d7a67a0f6e427139
 - Sliced: machine=m1 lineage=main-1788594343-3833-fb64b9 revision=4 at=2026-09-06T11:22:23Z
-- Claimed: machine=m1c lineage=main-1789191340-90689-8975a9 at=2026-09-13T08:27:20Z revision=62 accountingRevision=59 episodeAt=2026-09-13T07:27:28Z episodeRevision=59 idleSeconds=37
-- StopCapability: generation=62 revision=62 machine=m1c claimEpoch=5 fenceEpoch=0
+- Episode: machine=m1c lineage=main-1789191340-90689-8975a9 accountingRevision=59 episodeAt=2026-09-13T07:27:28Z episodeRevision=59 idleSeconds=37 released=2026-09-13T08:38:28Z
 
 History:
 - 2026-09-06T06:39:49Z X92B849FEPDB998FKY6C404SXZ-m1-a4f8999f open actor=m1+main-1788594343-3833-fb64b9 targets=hook-root-resolver-design
@@ -81,4 +80,5 @@ History:
 - 2026-09-13T07:32:25Z G9PCGB3V8TGN9T3GGDFPPPQ2M6-m1c-69c9e454 edit actor=m1c+main-1789191340-90689-8975a9 targets=hook-root-resolver-design
 - 2026-09-13T08:26:43Z 2F48S0061HMMMACEJB2XHRCF8R-m1c-69c9e454 release actor=m1c+main-1789191340-90689-8975a9 targets=hook-root-resolver-design
 - 2026-09-13T08:27:20Z 51AXE9FE825TVWD1NVFC91D4TD-m1c-69c9e454 claim actor=m1c+main-1789191340-90689-8975a9 targets=hook-root-resolver-design
-Integrity: sha256=88cf2ebbc8b9d28bed23e2dbcc54aab6bdf9603a892aff53794c0c6202b6411d
+- 2026-09-13T08:38:28Z B3H49Q1E2Q4C5B22MNKRRN5YZA-m1c-69c9e454 release actor=m1c+main-1789191340-90689-8975a9 targets=hook-root-resolver-design
+Integrity: sha256=5615e713f0ef12bf34e961538bf95eca4212f2205a5fe84fcdb710808131f9b2
