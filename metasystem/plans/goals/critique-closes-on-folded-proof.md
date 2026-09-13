@@ -1,6 +1,6 @@
 # critique-closes-on-folded-proof
 
-- State: approved
+- State: claimed
 - Priority: 1
 - Sequence: 9
 - Risk: severity=2 novelty=2 exposure=3 accumulation=1 basis="severity 2: a closure rule that is too loose lets a material finding land; novelty 2: fold-proven closure and the round-2 failsafe are new rules; exposure 3: every chain; accumulation 1: skills and dispatcher"
@@ -9,12 +9,13 @@
 - Origin: human
 - Next step: STATE 2026-09-13 16:30 local (m1e, Opus coordinator; design by Fable delegates): slice 0 landed 4fbd271c. Slice 1 part 1a-i (subjects computed before claim and published after it wins, SUBJECT_MISMATCH, the fold-time binding, the closure on the critic root) was built by Codex and carried onto the tip green; its Opus read found five material defects (records in the seat's scratch ccf-s1ai-opus-read.md: an undefined fixture helper; a closure written while a later round runs; close failing on non-clean rounds that closed before; a clean closure over deferred findings; a critic follow-up taking the root's original reviewed round instead of the current final work round, which the page's section 3 already settles). Codex fold round 2 is running (task-mtzsezf6-up0otj, worktree .claude/worktrees/ccf-s1ai-tip); then a second Opus read, landing, the dispatch bed through the engine. Parts 1a-ii and 1b follow from Fable briefs.
 - OpenedAt: 2026-09-11T15:45:22Z
-- Revision: 47
+- Revision: 48
 - Pinned: m1e
 - Budget: elapsedLimit=1d attemptLimit=10 reservedJobMinutesLimit=1200 activeJobLimit=1 reviewRoundLimit=3
 - BudgetExceptions: 0
 - Approved: by=human:Wido at=2026-09-11T20:33:44Z revision=15 opid=8BE27ZT80ZJ6JTWNQ3GZAERK8Y-m1-c6925449 authority=proven digest=cf4c80f3b42d74737238cccc4774f7900e36fd98d52c0bc36aec01bab9f27fbb
-- Episode: machine=m1e lineage=main-1789030447-51011-5722fc accountingRevision=31 episodeAt=2026-09-12T22:51:49Z episodeRevision=31 idleSeconds=0 released=2026-09-12T23:09:07Z
+- Claimed: machine=m1e lineage=main-1789030447-51011-5722fc at=2026-09-13T13:40:51Z revision=48 accountingRevision=31 episodeAt=2026-09-12T22:51:49Z episodeRevision=31 idleSeconds=52304
+- StopCapability: generation=48 revision=48 machine=m1e claimEpoch=1 fenceEpoch=0
 
 History:
 - 2026-09-11T15:45:22Z WKPXEN9CTZR44TMFZTQJE9X68Q-m1e-5083721b open actor=m1e+main-1789141490-27414-b9c0d2 targets=critique-closes-on-folded-proof
@@ -64,4 +65,5 @@ History:
 - 2026-09-13T10:09:19Z 7G9PVMWQ2AHZAMW4T0219A0JR3-m1e-892cdaec edit actor=m1e+main-1789030447-51011-5722fc targets=critique-closes-on-folded-proof
 - 2026-09-13T11:14:07Z YAJB05S8PKZ6577CKSH5KZ5FG3-m1e-892cdaec edit actor=m1e+main-1789030447-51011-5722fc targets=critique-closes-on-folded-proof
 - 2026-09-13T12:25:53Z TJ4Z44K8JZ4D62S7XQ4515S86M-m1e-892cdaec edit actor=m1e+main-1789030447-51011-5722fc targets=critique-closes-on-folded-proof
-Integrity: sha256=5d95b77e12ae83798573edbd792b324b878403ccc29dc8fd35b074f0a6cf59cc
+- 2026-09-13T13:40:51Z F5Z78RXK93SE5ZYNNYT89ETTZ9-m1e-892cdaec claim actor=m1e+main-1789030447-51011-5722fc targets=critique-closes-on-folded-proof
+Integrity: sha256=9b381dbf8f978e76cf963c59e15fd2b8cea379bc090b1f5e26c6b6c992563133
