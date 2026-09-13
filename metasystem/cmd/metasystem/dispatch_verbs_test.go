@@ -1,6 +1,8 @@
 package main
 
 import (
+	"bytes"
+	"crypto/sha256"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -112,6 +114,292 @@ func TestVerifyReferencesVerbExitsNineAndPrintsTheLine(t *testing.T) {
 	if code != 1 {
 		t.Fatalf("missing composition exit = %d, want 1", code)
 	}
+}
+
+func TestComposeRolePacketCommandEnforcesPacketCap(t *testing.T) {
+	const limitEnv = "METASYSTEM_DISPATCH_MAX_INLINE_INPUT_KB"
+	if original, present := os.LookupEnv(limitEnv); present {
+		t.Cleanup(func() { _ = os.Setenv(limitEnv, original) })
+	} else {
+		t.Cleanup(func() { _ = os.Unsetenv(limitEnv) })
+	}
+	if err := os.Unsetenv(limitEnv); err != nil {
+		t.Fatal(err)
+	}
+	sourceRoot, err := filepath.Abs(filepath.Join("..", ".."))
+	if err != nil {
+		t.Fatal(err)
+	}
+	newRoot := func(t *testing.T) string {
+		t.Helper()
+		root := t.TempDir()
+		copyFile := func(path string) {
+			t.Helper()
+			content, err := os.ReadFile(filepath.Join(sourceRoot, filepath.FromSlash(path)))
+			if err != nil {
+				t.Fatal(err)
+			}
+			destination := filepath.Join(root, filepath.FromSlash(path))
+			if err := os.MkdirAll(filepath.Dir(destination), 0o755); err != nil {
+				t.Fatal(err)
+			}
+			if err := os.WriteFile(destination, content, 0o644); err != nil {
+				t.Fatal(err)
+			}
+		}
+		for _, path := range []string{
+			"scripts/agents/role-packets.json",
+			"scripts/agents/roles/implementer.md",
+			"docs/orchestration.md",
+			"scripts/agents/schemas/implementer.schema.json",
+		} {
+			copyFile(path)
+		}
+		if err := os.WriteFile(filepath.Join(root, "metasystem.conf"), nil, 0o644); err != nil {
+			t.Fatal(err)
+		}
+		return root
+	}
+	digest := func(data []byte) string {
+		sum := sha256.Sum256(data)
+		return fmt.Sprintf("%x", sum)
+	}
+	readRecord := func(t *testing.T, path string) dispatchcore.CompositionRecord {
+		t.Helper()
+		data, err := os.ReadFile(path)
+		if err != nil {
+			t.Fatal(err)
+		}
+		var record dispatchcore.CompositionRecord
+		if err := json.Unmarshal(data, &record); err != nil {
+			t.Fatal(err)
+		}
+		return record
+	}
+	verifyPacket := func(t *testing.T, root, packetPath string, record dispatchcore.CompositionRecord, rawBySlot map[string][]byte, wantReferences []string) []byte {
+		t.Helper()
+		packet, err := os.ReadFile(packetPath)
+		if err != nil {
+			t.Fatal(err)
+		}
+		previousEnd := 0
+		for _, source := range record.Sources {
+			raw, ok := rawBySlot[source.Slot]
+			if !ok {
+				t.Fatalf("missing independent source bytes for %s", source.Slot)
+			}
+			if source.SourceDigest != digest(raw) || source.SourceBytes != len(raw) {
+				t.Fatalf("source %s lost raw provenance: %+v", source.Slot, source)
+			}
+			if source.StartByte != previousEnd || source.EndByte <= source.StartByte || source.EndByte > len(packet) || source.DeliveredDigest != digest(packet[source.StartByte:source.EndByte]) {
+				t.Fatalf("source %s has invalid delivered range or digest: %+v", source.Slot, source)
+			}
+			previousEnd = source.EndByte
+		}
+		if previousEnd != len(packet) || record.PacketDigest != digest(packet) {
+			t.Fatalf("packet provenance ends at %d of %d with digest %s", previousEnd, len(packet), record.PacketDigest)
+		}
+		if len(record.References) != len(wantReferences) {
+			t.Fatalf("references = %+v, want %v", record.References, wantReferences)
+		}
+		for index, slot := range wantReferences {
+			if record.References[index].Slot != slot {
+				t.Fatalf("reference %d = %s, want %s", index, record.References[index].Slot, slot)
+			}
+		}
+		return packet
+	}
+	promoteAndVerify := func(t *testing.T, root, stageDir, referenceDir, composition string, count int) {
+		t.Helper()
+		if err := os.MkdirAll(filepath.Dir(referenceDir), 0o755); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.Rename(stageDir, referenceDir); err != nil {
+			t.Fatal(err)
+		}
+		out, code := captureStdout(t, func() int {
+			return runDispatchVerifyReferences([]string{"--root", root, "--composition", composition})
+		})
+		want := fmt.Sprintf("references-verified count=%d", count)
+		if code != 0 || strings.TrimSpace(out) != want {
+			t.Fatalf("verify-references = exit %d, output %q; want %q", code, out, want)
+		}
+	}
+	generatedBodies := func(job string, round int64) map[string][]byte {
+		toolNotice := "Permission tool policy: read-write\nTool-name observation: exact\nTool names: (none; the fake runtime opens no model tool channel)\n"
+		runtimeNotice := fmt.Sprintf("Job-Id: %s\nRole: implementer\nRuntime: fake\nModel: fake-model\nRound: %d\nMission: none\nDestructive reach class: MECHANICAL\nBuilder effort tier: ordinary\nBuilder reasoning effort: medium\nIndependent critique required: false\nIndependent critique effort tier: none\nIndependent critique reasoning effort: none\nLive proof required: false\nContext classification: advisory. This broad-read runtime does not prove context isolation or independent examination.\n", job, round)
+		return map[string][]byte{"tool-names": []byte(toolNotice), "generated-runtime-notice": []byte(runtimeNotice)}
+	}
+	addFixedBodies := func(t *testing.T, root string, rawBySlot map[string][]byte) {
+		t.Helper()
+		for slot, path := range map[string]string{
+			"role-instructions": "scripts/agents/roles/implementer.md",
+			"required-skill":    "docs/orchestration.md",
+			"response-contract": "scripts/agents/schemas/implementer.schema.json",
+		} {
+			raw, err := os.ReadFile(filepath.Join(root, filepath.FromSlash(path)))
+			if err != nil {
+				t.Fatal(err)
+			}
+			rawBySlot[slot] = raw
+		}
+	}
+	composeArgs := func(root, job, brief, output, composition, stageDir, referenceDir string, round int64, continuations []string) []string {
+		args := []string{
+			"--root", root, "--role", "implementer", "--brief", brief, "--job", job,
+			"--runtime", "fake", "--model", "fake-model", "--tool-policy", "read-write",
+			"--round", strconv.FormatInt(round, 10), "--destructive-reach", "MECHANICAL",
+			"--output", output, "--composition", composition, "--stage-dir", stageDir, "--reference-dir", referenceDir,
+		}
+		for _, continuation := range continuations {
+			args = append(args, "--continuation", continuation)
+		}
+		return args
+	}
+	assertImpossible := func(t *testing.T, args []string, output, composition, stageDir string, capBytes int64) {
+		t.Helper()
+		out, code := captureStdout(t, func() int { return runDispatchComposeRolePacket(args) })
+		if code != 9 {
+			t.Fatalf("impossible packet exit = %d, want 9; output %q", code, out)
+		}
+		var refusal map[string]any
+		if err := json.Unmarshal([]byte(out), &refusal); err != nil {
+			t.Fatal(err)
+		}
+		if refusal["outcome"] != "REFUSED-INLINE-INPUT-LIMIT" || refusal["headline"] != "refused" || refusal["source"] != "dispatch.max-inline-input-kb" {
+			t.Fatalf("unexpected command refusal: %v", refusal)
+		}
+		detail, _ := refusal["detail"].(string)
+		var packetBytes, gotCap, overhead int64
+		if matched, err := fmt.Sscanf(detail, "role packet exceeds dispatch.max-inline-input-kb: %d bytes > %d bytes; fixed/reference overhead %d bytes", &packetBytes, &gotCap, &overhead); err != nil || matched != 3 || packetBytes <= gotCap || gotCap != capBytes || overhead <= 0 {
+			t.Fatalf("refusal detail does not carry measured counts: %q (%d, %v)", detail, matched, err)
+		}
+		if detail != fmt.Sprintf("role packet exceeds dispatch.max-inline-input-kb: %d bytes > %d bytes; fixed/reference overhead %d bytes", packetBytes, gotCap, overhead) || strings.Contains(detail, "pass a file reference") {
+			t.Fatalf("refusal detail has the wrong template: %q", detail)
+		}
+		for _, path := range []string{output, composition, stageDir, filepath.Join(stageDir, "task-direction.md")} {
+			if _, statErr := os.Stat(path); !os.IsNotExist(statErr) {
+				t.Fatalf("impossible command published %s", path)
+			}
+		}
+	}
+
+	t.Run("fresh", func(t *testing.T) {
+		root := newRoot(t)
+		briefBody := bytes.Repeat([]byte("b"), 16*1024)
+		brief := filepath.Join(root, "fresh-brief.md")
+		if err := os.WriteFile(brief, briefBody, 0o644); err != nil {
+			t.Fatal(err)
+		}
+		output := filepath.Join(root, "fresh-prompt.md")
+		composition := filepath.Join(root, "fresh-composition.json")
+		stageDir := filepath.Join(root, "record-locks", "fresh")
+		referenceDir := filepath.Join(root, "artifacts", "fresh", "rounds", "1", "staged")
+		args := composeArgs(root, "fresh", brief, output, composition, stageDir, referenceDir, 1, nil)
+		if code := runDispatchComposeRolePacket(args); code != 0 {
+			t.Fatalf("fresh composition exit = %d", code)
+		}
+		rawBySlot := generatedBodies("fresh", 1)
+		rawBySlot["task-direction"] = briefBody
+		addFixedBodies(t, root, rawBySlot)
+		record := readRecord(t, composition)
+		packet := verifyPacket(t, root, output, record, rawBySlot, []string{"task-direction"})
+		if len(packet) > 65536 {
+			t.Fatalf("fresh packet has %d bytes, cap is 65536", len(packet))
+		}
+		staged, err := os.ReadFile(filepath.Join(stageDir, "task-direction.md"))
+		if err != nil || !bytes.Equal(staged, briefBody) {
+			t.Fatalf("fresh command staged wrong task direction: %v", err)
+		}
+		promoteAndVerify(t, root, stageDir, referenceDir, composition, 1)
+
+		if err := os.WriteFile(filepath.Join(root, "metasystem.conf"), []byte("dispatch.max-inline-input-kb=1\n"), 0o644); err != nil {
+			t.Fatal(err)
+		}
+		lowOutput := filepath.Join(root, "fresh-low-prompt.md")
+		lowComposition := filepath.Join(root, "fresh-low-composition.json")
+		lowStage := filepath.Join(root, "record-locks", "fresh-low")
+		lowArgs := composeArgs(root, "fresh-low", brief, lowOutput, lowComposition, lowStage, filepath.Join(root, "artifacts", "fresh-low", "rounds", "1", "staged"), 1, nil)
+		assertImpossible(t, lowArgs, lowOutput, lowComposition, lowStage, 1024)
+	})
+
+	t.Run("continuations", func(t *testing.T) {
+		root := newRoot(t)
+		if err := os.WriteFile(filepath.Join(root, "metasystem.conf"), []byte("dispatch.max-inline-input-kb=24\n"), 0o644); err != nil {
+			t.Fatal(err)
+		}
+		fixed := map[string][]byte{
+			"role-instructions": bytes.Repeat([]byte("i"), 1024),
+			"required-skill":    bytes.Repeat([]byte("s"), 4096),
+			"response-contract": bytes.Repeat([]byte("c"), 1024),
+		}
+		for slot, path := range map[string]string{
+			"role-instructions": "scripts/agents/roles/implementer.md",
+			"required-skill":    "docs/orchestration.md",
+			"response-contract": "scripts/agents/schemas/implementer.schema.json",
+		} {
+			if err := os.WriteFile(filepath.Join(root, filepath.FromSlash(path)), fixed[slot], 0o644); err != nil {
+				t.Fatal(err)
+			}
+		}
+		taskBody := bytes.Repeat([]byte("t"), 8*1024)
+		brief := filepath.Join(root, "continuation-brief.md")
+		if err := os.WriteFile(brief, taskBody, 0o644); err != nil {
+			t.Fatal(err)
+		}
+		bodyFixtures := []struct {
+			slot string
+			raw  []byte
+		}{
+			{slot: "prior-brief", raw: bytes.Repeat([]byte("b"), 12*1024)},
+			{slot: "prior-return", raw: bytes.Repeat([]byte("r"), 16*1024)},
+			{slot: "critique-register", raw: bytes.Repeat([]byte("q"), 1024)},
+			{slot: "prior-worktree", raw: bytes.Repeat([]byte("w"), 1024)},
+		}
+		continuations := make([]string, 0, len(bodyFixtures))
+		rawBySlot := generatedBodies("round-two", 2)
+		rawBySlot["task-direction"] = taskBody
+		for slot, raw := range fixed {
+			rawBySlot[slot] = raw
+		}
+		for _, body := range bodyFixtures {
+			path := filepath.Join(root, body.slot+".md")
+			if err := os.WriteFile(path, body.raw, 0o644); err != nil {
+				t.Fatal(err)
+			}
+			continuations = append(continuations, body.slot+"="+path)
+			rawBySlot[body.slot] = body.raw
+		}
+		output := filepath.Join(root, "round-two-prompt.md")
+		composition := filepath.Join(root, "round-two-composition.json")
+		stageDir := filepath.Join(root, "record-locks", "round-two")
+		referenceDir := filepath.Join(root, "artifacts", "round-two", "rounds", "2", "staged")
+		args := composeArgs(root, "round-two", brief, output, composition, stageDir, referenceDir, 2, continuations)
+		if code := runDispatchComposeRolePacket(args); code != 0 {
+			t.Fatalf("round-two composition exit = %d", code)
+		}
+		record := readRecord(t, composition)
+		packet := verifyPacket(t, root, output, record, rawBySlot, []string{"prior-brief", "prior-return"})
+		if len(packet) > 24*1024 {
+			t.Fatalf("round-two packet has %d bytes, cap is %d", len(packet), 24*1024)
+		}
+		for _, slot := range []string{"prior-brief", "prior-return"} {
+			staged, err := os.ReadFile(filepath.Join(stageDir, slot+".md"))
+			if err != nil || !bytes.Equal(staged, rawBySlot[slot]) {
+				t.Fatalf("round-two command staged wrong %s: %v", slot, err)
+			}
+		}
+		promoteAndVerify(t, root, stageDir, referenceDir, composition, 2)
+
+		if err := os.WriteFile(filepath.Join(root, "metasystem.conf"), []byte("dispatch.max-inline-input-kb=1\n"), 0o644); err != nil {
+			t.Fatal(err)
+		}
+		lowOutput := filepath.Join(root, "round-two-low-prompt.md")
+		lowComposition := filepath.Join(root, "round-two-low-composition.json")
+		lowStage := filepath.Join(root, "record-locks", "round-two-low")
+		lowArgs := composeArgs(root, "round-two-low", brief, lowOutput, lowComposition, lowStage, filepath.Join(root, "artifacts", "round-two-low", "rounds", "2", "staged"), 2, continuations)
+		assertImpossible(t, lowArgs, lowOutput, lowComposition, lowStage, 1024)
+	})
 }
 
 func TestGoalRevisionAdmissionCommandMarksThenEnforcesWithExplicitDispatchContext(t *testing.T) {

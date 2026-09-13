@@ -6,6 +6,7 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"fmt"
+	"math"
 	"os"
 	"path/filepath"
 	"strconv"
@@ -163,6 +164,25 @@ func ReturnMarginMinutes(confPath string) (int64, error) {
 	return margin, nil
 }
 
+// InlineInputLimitBytes resolves the complete role-packet byte ceiling.
+func InlineInputLimitBytes(confPath string) (int64, error) {
+	value, err := capGet(confPath, "dispatch.max-inline-input-kb")
+	if err != nil {
+		return 0, err
+	}
+	if value == missingSentinel {
+		return 64 * 1024, nil
+	}
+	if !capMinPattern.MatchString(value) {
+		return 0, fmt.Errorf("dispatch.max-inline-input-kb must be a positive integer, got %q", value)
+	}
+	limitKiB, err := strconv.ParseInt(value, 10, 64)
+	if err != nil || limitKiB > math.MaxInt64/1024 {
+		return 0, fmt.Errorf("dispatch.max-inline-input-kb must be a positive integer no greater than %d, got %q", int64(math.MaxInt64/1024), value)
+	}
+	return limitKiB * 1024, nil
+}
+
 // returnBySentence is the one line a delegate gets about its wall-clock cap:
 // a function of the cap and the margin alone, never of the clock, so a
 // repeated operation composes the same bytes.
@@ -209,6 +229,10 @@ func ComposeRolePacket(p ComposeRolePacketParams) (CompositionRecord, error) {
 	if err := ValidateRuntimeHazardConfiguration(p.Root, p.Runtime, p.Model, p.DestructiveReach); err != nil {
 		return CompositionRecord{}, &CompositionRefusal{Code: "REFUSED-HAZARD-CONFIGURATION", Source: p.Runtime, Detail: err.Error()}
 	}
+	inlineLimit, err := InlineInputLimitBytes(filepath.Join(p.Root, "metasystem.conf"))
+	if err != nil {
+		return CompositionRecord{}, err
+	}
 
 	briefBytes, err := os.ReadFile(p.Brief)
 	if err != nil {
@@ -230,62 +254,23 @@ func ComposeRolePacket(p ComposeRolePacketParams) (CompositionRecord, error) {
 		References:  []CompositionReference{},
 	}
 
-	var packet bytes.Buffer
-	appendRange := func(slot, source string, raw, body []byte) {
-		heading := "# " + packetHeading(slot) + "\n\n"
-		delivered := append([]byte(heading), body...)
-		if len(delivered) == 0 || delivered[len(delivered)-1] != '\n' {
-			delivered = append(delivered, '\n')
-		}
-		delivered = append(delivered, '\n')
-		start := packet.Len()
-		packet.Write(delivered)
-		record.Sources = append(record.Sources, CompositionSource{
-			Slot: slot, Source: source, SourceDigest: digestBytes(raw), DeliveredDigest: digestBytes(delivered),
-			SourceBytes: len(raw), StartByte: start, EndByte: packet.Len(),
-		})
+	type plannedSection struct {
+		slot          string
+		source        string
+		purpose       string
+		raw           []byte
+		eligible      bool
+		referenced    bool
+		reference     CompositionReference
+		referenceBody []byte
+		stagePath     string
 	}
+	sections := []plannedSection{{slot: "task-direction", source: "caller:brief", purpose: "brief", raw: briefBytes, eligible: true}}
 	appendSource := func(slot, source string, raw []byte) {
-		appendRange(slot, source, raw, raw)
+		sections = append(sections, plannedSection{slot: slot, source: source, raw: raw})
 	}
-	appendBody := func(slot, source, purpose string, raw []byte) error {
-		if len(raw) <= MaxDirectiveBytes {
-			appendSource(slot, source, raw)
-			return nil
-		}
-		if p.StageDir == "" || p.ReferenceDir == "" {
-			return &CompositionRefusal{Code: "REFUSED-REFERENCE-PATH", Source: slot, Detail: "body over MaxDirectiveBytes and no stage or final reference directory"}
-		}
-		canonicalRoot := resolvePath(p.Root)
-		canonicalStage := resolvePath(p.StageDir)
-		if !pathWithin(canonicalStage, canonicalRoot) || canonicalStage == canonicalRoot {
-			return &CompositionRefusal{Code: "REFUSED-REFERENCE-PATH", Source: p.StageDir, Detail: "reference stage directory must be inside the control root"}
-		}
-		canonicalReference := resolvePath(p.ReferenceDir)
-		if !pathWithin(canonicalReference, canonicalRoot) || canonicalReference == canonicalRoot {
-			return &CompositionRefusal{Code: "REFUSED-REFERENCE-PATH", Source: p.ReferenceDir, Detail: "final reference directory must be inside the control root"}
-		}
-		if err := os.MkdirAll(canonicalStage, 0o755); err != nil {
-			return fmt.Errorf("create reference stage directory: %w", err)
-		}
-		stagePath := filepath.Join(canonicalStage, slot+".md")
-		if _, err := atomicfile.WriteText(stagePath, string(raw), ""); err != nil {
-			return fmt.Errorf("stage referenced body %s: %w", slot, err)
-		}
-		openPath := filepath.Join(canonicalReference, slot+".md")
-		rel, _ := filepath.Rel(canonicalRoot, openPath)
-		digest := digestBytes(raw)
-		record.References = append(record.References, CompositionReference{
-			Slot: slot, Purpose: purpose, Path: filepath.ToSlash(rel), OpenPath: openPath,
-			Digest: digest, Bytes: len(raw), Lifetime: "staged",
-		})
-		stanza := fmt.Sprintf("Referenced body: open %s (%d bytes, sha256 %s). Read it in bounded views; it is not inlined.\n", openPath, len(raw), digest)
-		appendRange(slot, source, raw, []byte(stanza))
-		return nil
-	}
-
-	if err := appendBody("task-direction", "caller:brief", "brief", briefBytes); err != nil {
-		return CompositionRecord{}, err
+	appendBody := func(slot, source, purpose string, raw []byte) {
+		sections = append(sections, plannedSection{slot: slot, source: source, purpose: purpose, raw: raw, eligible: true})
 	}
 	for _, source := range recipe.Sources {
 		content, readErr := readRecipeSource(p.Root, source)
@@ -331,18 +316,151 @@ func ComposeRolePacket(p ComposeRolePacketParams) (CompositionRecord, error) {
 		purpose := map[string]string{
 			"prior-brief": "brief", "prior-return": "return", "critique-register": "critique", "prior-worktree": "evidence",
 		}[continuation.Slot]
-		if err := appendBody(continuation.Slot, "engine:"+continuation.Slot, purpose, content); err != nil {
-			return CompositionRecord{}, err
+		appendBody(continuation.Slot, "engine:"+continuation.Slot, purpose, content)
+	}
+
+	canonicalRoot := resolvePath(p.Root)
+	canonicalStage := ""
+	canonicalReference := ""
+	referencePathsReady := false
+	prepareReferencePaths := func(slot string) error {
+		if referencePathsReady {
+			return nil
+		}
+		if p.StageDir == "" || p.ReferenceDir == "" {
+			return &CompositionRefusal{Code: "REFUSED-REFERENCE-PATH", Source: slot, Detail: "body requires staging and no stage or final reference directory was provided"}
+		}
+		canonicalStage = resolvePath(p.StageDir)
+		if !pathWithin(canonicalStage, canonicalRoot) || canonicalStage == canonicalRoot {
+			return &CompositionRefusal{Code: "REFUSED-REFERENCE-PATH", Source: p.StageDir, Detail: "reference stage directory must be inside the control root"}
+		}
+		canonicalReference = resolvePath(p.ReferenceDir)
+		if !pathWithin(canonicalReference, canonicalRoot) || canonicalReference == canonicalRoot {
+			return &CompositionRefusal{Code: "REFUSED-REFERENCE-PATH", Source: p.ReferenceDir, Detail: "final reference directory must be inside the control root"}
+		}
+		referencePathsReady = true
+		return nil
+	}
+	planReference := func(index int) error {
+		section := &sections[index]
+		if len(section.referenceBody) != 0 {
+			return nil
+		}
+		if err := prepareReferencePaths(section.slot); err != nil {
+			return err
+		}
+		openPath := filepath.Join(canonicalReference, section.slot+".md")
+		rel, err := filepath.Rel(canonicalRoot, openPath)
+		if err != nil {
+			return fmt.Errorf("resolve final reference path: %w", err)
+		}
+		digest := digestBytes(section.raw)
+		section.reference = CompositionReference{
+			Slot: section.slot, Purpose: section.purpose, Path: filepath.ToSlash(rel), OpenPath: openPath,
+			Digest: digest, Bytes: len(section.raw), Lifetime: "staged",
+		}
+		section.referenceBody = []byte(fmt.Sprintf("Referenced body: open %s (%d bytes, sha256 %s). Read it in bounded views; it is not inlined.\n", openPath, len(section.raw), digest))
+		section.stagePath = filepath.Join(canonicalStage, section.slot+".md")
+		return nil
+	}
+	renderSection := func(section plannedSection, referenced bool) []byte {
+		body := section.raw
+		if referenced {
+			body = section.referenceBody
+		}
+		var delivered bytes.Buffer
+		delivered.WriteString("# " + packetHeading(section.slot) + "\n\n")
+		delivered.Write(body)
+		if delivered.Len() == 0 || delivered.Bytes()[delivered.Len()-1] != '\n' {
+			delivered.WriteByte('\n')
+		}
+		delivered.WriteByte('\n')
+		return delivered.Bytes()
+	}
+	renderCandidate := func() ([]byte, []CompositionSource) {
+		var packet bytes.Buffer
+		sources := make([]CompositionSource, 0, len(sections))
+		for _, section := range sections {
+			delivered := renderSection(section, section.referenced)
+			start := packet.Len()
+			packet.Write(delivered)
+			sources = append(sources, CompositionSource{
+				Slot: section.slot, Source: section.source, SourceDigest: digestBytes(section.raw), DeliveredDigest: digestBytes(delivered),
+				SourceBytes: len(section.raw), StartByte: start, EndByte: packet.Len(),
+			})
+		}
+		return packet.Bytes(), sources
+	}
+
+	for index := range sections {
+		if sections[index].eligible && len(sections[index].raw) > MaxDirectiveBytes {
+			if err := planReference(index); err != nil {
+				return CompositionRecord{}, err
+			}
+			sections[index].referenced = true
 		}
 	}
-	record.PacketDigest = digestBytes(packet.Bytes())
+	packetBytes, sources := renderCandidate()
+	for int64(len(packetBytes)) > inlineLimit {
+		bestIndex := -1
+		bestSaving := 0
+		for index := range sections {
+			if !sections[index].eligible || sections[index].referenced {
+				continue
+			}
+			if err := planReference(index); err != nil {
+				return CompositionRecord{}, err
+			}
+			saving := len(renderSection(sections[index], false)) - len(renderSection(sections[index], true))
+			if saving > bestSaving {
+				bestIndex = index
+				bestSaving = saving
+			}
+		}
+		if bestIndex < 0 {
+			inlineEligibleBytes := 0
+			for _, section := range sections {
+				if section.eligible && !section.referenced {
+					inlineEligibleBytes += len(section.raw)
+				}
+			}
+			overhead := len(packetBytes) - inlineEligibleBytes
+			return CompositionRecord{}, &CompositionRefusal{
+				Code: "REFUSED-INLINE-INPUT-LIMIT", Source: "dispatch.max-inline-input-kb",
+				Detail: fmt.Sprintf("role packet exceeds dispatch.max-inline-input-kb: %d bytes > %d bytes; fixed/reference overhead %d bytes", len(packetBytes), inlineLimit, overhead),
+			}
+		}
+		sections[bestIndex].referenced = true
+		packetBytes, sources = renderCandidate()
+	}
+
+	record.Sources = sources
+	for _, section := range sections {
+		if section.referenced {
+			record.References = append(record.References, section.reference)
+		}
+	}
+	record.PacketDigest = digestBytes(packetBytes)
 
 	recordBytes, err := json.MarshalIndent(record, "", "  ")
 	if err != nil {
 		return CompositionRecord{}, err
 	}
 	recordBytes = append(recordBytes, '\n')
-	if _, err := atomicfile.WriteText(p.Output, packet.String(), ""); err != nil {
+	if len(record.References) != 0 {
+		if err := os.MkdirAll(canonicalStage, 0o755); err != nil {
+			return CompositionRecord{}, fmt.Errorf("create reference stage directory: %w", err)
+		}
+		for _, section := range sections {
+			if !section.referenced {
+				continue
+			}
+			if _, err := atomicfile.WriteText(section.stagePath, string(section.raw), ""); err != nil {
+				return CompositionRecord{}, fmt.Errorf("stage referenced body %s: %w", section.slot, err)
+			}
+		}
+	}
+	if _, err := atomicfile.WriteText(p.Output, string(packetBytes), ""); err != nil {
 		return CompositionRecord{}, fmt.Errorf("write composed role packet: %w", err)
 	}
 	if _, err := atomicfile.WriteText(p.CompositionOutput, string(recordBytes), ""); err != nil {

@@ -880,7 +880,49 @@ agent_fails() { # output name, expected text, command...
       tail -15 "$agent_supervision_repo/artifacts/agents/supervision/supervisor.log" >&2 2>/dev/null || true
     fi
     exit 1
-  }
+	}
+}
+
+composition_temporary_inventory() {
+	[[ -d "$agent_repo/artifacts/agents/record-locks" ]] || return 0
+	find "$agent_repo/artifacts/agents/record-locks" -maxdepth 1 \
+		\( -name 'composed-packet.*' -o -name 'composition.*' -o -name 'composed-staged.*' \
+		   -o -name 'follow-composed-packet.*' -o -name 'follow-composition.*' -o -name 'follow-composed-staged.*' \) \
+		-print 2>/dev/null | sort
+}
+
+assert_typed_inline_limit_refusal() { # output file, cap bytes
+	local output=$1 expected_cap=$2 refusal_json detail packet_bytes cap_bytes overhead
+	refusal_json=$(grep -F '"outcome":"REFUSED-INLINE-INPUT-LIMIT"' "$output") \
+		|| { echo "inline-limit refusal did not carry its typed outcome" >&2; cat "$output" >&2; return 1; }
+	[[ $(printf '%s\n' "$refusal_json" | wc -l | tr -d ' ') -eq 1 ]] \
+		|| { echo "inline-limit refusal did not contain exactly one JSON outcome" >&2; cat "$output" >&2; return 1; }
+	"$engine" util json-validate --value "$refusal_json" >/dev/null \
+		|| { echo "inline-limit refusal is not JSON" >&2; cat "$output" >&2; return 1; }
+	[[ "$("$engine" json get --value "$refusal_json" --field headline)" == refused \
+	   && "$("$engine" json get --value "$refusal_json" --field source)" == dispatch.max-inline-input-kb ]] \
+		|| { echo "inline-limit refusal lost its headline or source" >&2; cat "$output" >&2; return 1; }
+	detail=$("$engine" json get --value "$refusal_json" --field detail)
+	if [[ "$detail" =~ ^role\ packet\ exceeds\ dispatch\.max-inline-input-kb:\ ([0-9]+)\ bytes\ \>\ ([0-9]+)\ bytes\;\ fixed/reference\ overhead\ ([0-9]+)\ bytes$ ]]; then
+		packet_bytes=${BASH_REMATCH[1]}
+		cap_bytes=${BASH_REMATCH[2]}
+		overhead=${BASH_REMATCH[3]}
+	else
+		echo "inline-limit refusal detail has the wrong template: $detail" >&2
+		return 1
+	fi
+	(( cap_bytes == expected_cap && packet_bytes > cap_bytes && overhead == packet_bytes )) \
+		|| { echo "inline-limit refusal counts are inconsistent: packet=$packet_bytes cap=$cap_bytes overhead=$overhead" >&2; return 1; }
+	[[ "$detail" != *'pass a file reference'* ]] \
+		|| { echo "composition-time refusal carries the final shell check's advice" >&2; return 1; }
+}
+
+assert_packet_refusal_published_nothing() { # job id
+	local job=$1
+	[[ ! -e "$agent_repo/artifacts/agents/jobs/$job.json" \
+	   && ! -e "$agent_repo/artifacts/agents/jobs/$job.log" \
+	   && ! -e "$agent_repo/artifacts/agents/$job" ]] \
+		|| { echo "refused packet $job published a record, payload, staged body, or adapter log" >&2; return 1; }
 }
 
 run_tty_agent_fixture() { # fixture name, typed line, expected exit, command...
@@ -2261,16 +2303,35 @@ run_agent_fixture large-brief large-brief "$agent_dispatch" dispatch --role desi
   || { echo "large brief body was inlined in the prompt" >&2; exit 1; }
 cmp -s "$agent_repo/artifacts/agents/large-brief/brief.md" "$agent_repo/artifacts/agents/large-brief/rounds/1/staged/task-direction.md" \
   || { echo "staged task direction differs from the composed job brief" >&2; exit 1; }
-(( $(wc -c <"$agent_repo/artifacts/agents/large-brief/rounds/1/prompt.md") < 65536 )) \
-  || { echo "referenced large-brief prompt exceeds 65535 bytes" >&2; exit 1; }
-METASYSTEM_DISPATCH_MAX_INLINE_INPUT_KB=8 agent_fails packet-bound-still-refuses 'exceeds dispatch.max-inline-input-kb' \
-  "$agent_dispatch" dispatch --role design-critic --outputs "$fixture_declared_outputs" --design metasystem/scripts/agents/roles/design-critic.md --brief "$large_brief" --job-id packet-bound --wait
-[[ ! -e "$agent_repo/artifacts/agents/packet-bound" ]] \
-  || { echo "refused packet-bound dispatch published a job payload" >&2; exit 1; }
-METASYSTEM_DISPATCH_MAX_INLINE_INPUT_KB=8 agent_fails packet-bound-retry 'exceeds dispatch.max-inline-input-kb' \
-  "$agent_dispatch" dispatch --role design-critic --outputs "$fixture_declared_outputs" --design metasystem/scripts/agents/roles/design-critic.md --brief "$large_brief" --job-id packet-bound --wait
-[[ ! -e "$agent_repo/artifacts/agents/packet-bound" ]] \
-  || { echo "retried packet-bound dispatch published a job payload" >&2; exit 1; }
+(( $(wc -c <"$agent_repo/artifacts/agents/large-brief/rounds/1/prompt.md") <= 65536 )) \
+	|| { echo "referenced large-brief prompt exceeds 65536 bytes" >&2; exit 1; }
+packet_bound_temporaries_before=$(composition_temporary_inventory)
+if METASYSTEM_DISPATCH_MAX_INLINE_INPUT_KB=8 run_agent_fixture packet-bound-still-refuses packet-bound \
+	"$agent_dispatch" dispatch --role design-critic --outputs "$fixture_declared_outputs" --design metasystem/scripts/agents/roles/design-critic.md --brief "$large_brief" --job-id packet-bound --wait \
+	>"$agent_fixture/packet-bound-still-refuses.out" 2>&1; then
+	packet_bound_rc=0
+else
+	packet_bound_rc=$?
+fi
+[[ $packet_bound_rc -eq 9 ]] \
+	|| { echo "packet-bound-still-refuses exited $packet_bound_rc instead of 9" >&2; cat "$agent_fixture/packet-bound-still-refuses.out" >&2; exit 1; }
+assert_typed_inline_limit_refusal "$agent_fixture/packet-bound-still-refuses.out" 8192
+assert_packet_refusal_published_nothing packet-bound
+[[ "$(composition_temporary_inventory)" == "$packet_bound_temporaries_before" ]] \
+	|| { echo "packet-bound-still-refuses left composition temporaries" >&2; exit 1; }
+if METASYSTEM_DISPATCH_MAX_INLINE_INPUT_KB=8 run_agent_fixture packet-bound-retry packet-bound \
+	"$agent_dispatch" dispatch --role design-critic --outputs "$fixture_declared_outputs" --design metasystem/scripts/agents/roles/design-critic.md --brief "$large_brief" --job-id packet-bound --wait \
+	>"$agent_fixture/packet-bound-retry.out" 2>&1; then
+	packet_bound_retry_rc=0
+else
+	packet_bound_retry_rc=$?
+fi
+[[ $packet_bound_retry_rc -eq 9 ]] \
+	|| { echo "packet-bound-retry exited $packet_bound_retry_rc instead of 9" >&2; cat "$agent_fixture/packet-bound-retry.out" >&2; exit 1; }
+assert_typed_inline_limit_refusal "$agent_fixture/packet-bound-retry.out" 8192
+assert_packet_refusal_published_nothing packet-bound
+[[ "$(composition_temporary_inventory)" == "$packet_bound_temporaries_before" ]] \
+	|| { echo "packet-bound-retry left composition temporaries" >&2; exit 1; }
 
 METASYSTEM_FAKE_TAMPER_REFERENCE=1 agent_fails reference-mismatch '' \
   "$agent_dispatch" dispatch --role design-critic --outputs "$fixture_declared_outputs" --design metasystem/scripts/agents/roles/design-critic.md --brief "$large_brief" --job-id reference-mismatch --wait
@@ -2525,9 +2586,229 @@ EOF
 agent_fails escaping-write-root 'escapes the job worktree' "$agent_dispatch" dispatch --role implementer --brief "$code_brief" --job-id escaping-root --worktree --permissions "$custom_permissions"
 
 oversized="$agent_fixture/oversized.md"
-make_agent_brief "$oversized" design 'FAKE:oversized-input'
+make_agent_brief "$oversized" design 'FAKE:oversized-brief-is-referenced'
 head -c 70000 /dev/zero | tr '\0' x >>"$oversized"
-agent_fails oversized-input 'pass a file reference' "$agent_dispatch" dispatch --role design-critic --outputs "$fixture_declared_outputs" --design metasystem/scripts/agents/roles/design-critic.md --brief "$oversized" --job-id oversized
+if METASYSTEM_DISPATCH_MAX_INLINE_INPUT_KB=64 run_agent_fixture oversized-brief-is-referenced oversized \
+	"$agent_dispatch" dispatch --role design-critic --outputs "$fixture_declared_outputs" --design metasystem/scripts/agents/roles/design-critic.md --brief "$oversized" --job-id oversized --wait \
+	>"$agent_fixture/oversized-brief-is-referenced.out" 2>&1; then
+	oversized_rc=0
+else
+	oversized_rc=$?
+fi
+[[ $oversized_rc -eq 0 && "$(cd "$agent_repo" && scripts/agents/dispatch.sh status --job oversized)" == completed ]] \
+	|| { echo "oversized referenced brief did not complete" >&2; cat "$agent_fixture/oversized-brief-is-referenced.out" >&2; exit 1; }
+oversized_payload="$agent_repo/artifacts/agents/oversized"
+oversized_prompt="$oversized_payload/rounds/1/prompt.md"
+oversized_composition="$oversized_payload/rounds/1/composition.json"
+oversized_stage="$oversized_payload/rounds/1/staged/task-direction.md"
+oversized_saved_brief="$oversized_payload/brief.md"
+oversized_prompt_bytes=$(wc -c <"$oversized_prompt" | tr -d ' ')
+(( oversized_prompt_bytes <= 65536 )) \
+	|| { echo "oversized referenced prompt has $oversized_prompt_bytes bytes, over 65536" >&2; exit 1; }
+oversized_references=$("$engine" json get --file "$oversized_composition" --field references)
+oversized_reference_rows=$(json_elements "$oversized_references")
+oversized_reference_count=$(printf '%s\n' "$oversized_reference_rows" | awk 'NF { count++ } END { print count + 0 }')
+[[ $oversized_reference_count -eq 1 ]] \
+	|| { echo "oversized composition has $oversized_reference_count references instead of one" >&2; exit 1; }
+oversized_reference=$oversized_reference_rows
+oversized_open_path="$oversized_payload/rounds/1/staged/task-direction.md"
+[[ "$("$engine" json get --value "$oversized_reference" --field slot)" == task-direction \
+	&& "$("$engine" json get --value "$oversized_reference" --field purpose)" == brief \
+	&& "$("$engine" json get --value "$oversized_reference" --field path)" == artifacts/agents/oversized/rounds/1/staged/task-direction.md \
+	&& "$("$engine" json get --value "$oversized_reference" --field openPath)" == "$oversized_open_path" \
+	&& "$("$engine" json get --value "$oversized_reference" --field lifetime)" == staged ]] \
+	|| { echo "oversized composition did not retain the exact task-direction reference" >&2; exit 1; }
+cmp -s "$oversized_saved_brief" "$oversized_stage" \
+	|| { echo "oversized staged task direction differs from the augmented saved brief" >&2; exit 1; }
+oversized_brief_bytes=$(wc -c <"$oversized_saved_brief" | tr -d ' ')
+oversized_brief_digest=$("$engine" util sha256 --file "$oversized_saved_brief")
+[[ "$("$engine" json get --value "$oversized_reference" --field bytes)" == "$oversized_brief_bytes" \
+	&& "$("$engine" json get --value "$oversized_reference" --field digest)" == "$oversized_brief_digest" ]] \
+	|| { echo "oversized reference lost the augmented brief's bytes or digest" >&2; exit 1; }
+oversized_prompt_digest=$("$engine" util sha256 --file "$oversized_prompt")
+[[ "$("$engine" json get --file "$oversized_composition" --field packetDigest)" == "$oversized_prompt_digest" \
+	&& "$("$engine" json get --file "$agent_repo/artifacts/agents/jobs/oversized.json" --field inputHash)" == "$oversized_prompt_digest" ]] \
+	|| { echo "oversized prompt digest does not bind composition and job input" >&2; exit 1; }
+oversized_stanza="Referenced body: open $oversized_open_path ($oversized_brief_bytes bytes, sha256 $oversized_brief_digest). Read it in bounded views; it is not inlined."
+grep -Fxq "$oversized_stanza" "$oversized_prompt" \
+	|| { echo "oversized prompt lacks the exact final-path reference stanza" >&2; exit 1; }
+! grep -Fq 'xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx' "$oversized_prompt" \
+	|| { echo "oversized filler body was inlined" >&2; exit 1; }
+oversized_verify=$("$engine" job verify-references --root "$agent_repo" --composition "$oversized_composition")
+[[ "$oversized_verify" == 'references-verified count=1' ]] \
+	|| { echo "oversized final reference did not verify: $oversized_verify" >&2; exit 1; }
+! grep -Eq 'REFUSED-INLINE-INPUT-LIMIT|pass a file reference' "$agent_fixture/oversized-brief-is-referenced.out" \
+	|| { echo "oversized referenced success reported refusal text" >&2; cat "$agent_fixture/oversized-brief-is-referenced.out" >&2; exit 1; }
+
+packet_fixed_backup="$agent_fixture/design-critique-skill.before"
+(
+	packet_fixed_skill="$agent_repo/skills/design-critique/SKILL.md"
+	cp "$packet_fixed_skill" "$packet_fixed_backup"
+	trap 'cp "$packet_fixed_backup" "$packet_fixed_skill"' EXIT
+	packet_fixed_brief="$agent_fixture/packet-fixed-overhead.md"
+	make_agent_brief "$packet_fixed_brief" design 'FAKE:packet-fixed-overhead-refuses'
+	head -c 8193 /dev/zero | tr '\0' f >>"$packet_fixed_skill"
+	(( $(wc -c <"$packet_fixed_skill") > 8192 )) \
+		|| { echo "fixed recipe source does not exceed the 8192-byte cap" >&2; exit 1; }
+	packet_fixed_probe="$agent_fixture/packet-fixed-engine"
+	packet_fixed_marker="$agent_fixture/packet-fixed-marker"
+	cat >"$packet_fixed_probe" <<'PACKET_FIXED_ENGINE'
+#!/usr/bin/env bash
+set -euo pipefail
+if [[ ${1:-} == job && ${2:-} == compose-role-packet ]]; then
+	previous=
+	for argument in "$@"; do
+		if [[ $previous == --brief ]]; then
+			wc -c <"$argument" | tr -d ' ' >"${PACKET_FIXED_MARKER:?}.brief-bytes"
+			break
+		fi
+		previous=$argument
+	done
+fi
+exec "${PACKET_FIXED_REAL_ENGINE:?}" "$@"
+PACKET_FIXED_ENGINE
+	chmod +x "$packet_fixed_probe"
+	packet_fixed_temporaries_before=$(composition_temporary_inventory)
+	if PACKET_FIXED_REAL_ENGINE="$enrolled_engine" PACKET_FIXED_MARKER="$packet_fixed_marker" \
+		METASYSTEM_BIN="$packet_fixed_probe" METASYSTEM_DISPATCH_MAX_INLINE_INPUT_KB=8 \
+		run_agent_fixture packet-fixed-overhead-refuses packet-fixed-overhead \
+		"$agent_dispatch" dispatch --role design-critic --outputs "$fixture_declared_outputs" --design metasystem/scripts/agents/roles/design-critic.md \
+		--brief "$packet_fixed_brief" --job-id packet-fixed-overhead --wait \
+		>"$agent_fixture/packet-fixed-overhead-refuses.out" 2>&1; then
+		packet_fixed_rc=0
+	else
+		packet_fixed_rc=$?
+	fi
+	[[ $packet_fixed_rc -eq 9 ]] \
+		|| { echo "packet-fixed-overhead-refuses exited $packet_fixed_rc instead of 9" >&2; cat "$agent_fixture/packet-fixed-overhead-refuses.out" >&2; exit 1; }
+	[[ -s "$packet_fixed_marker.brief-bytes" && $(<"$packet_fixed_marker.brief-bytes") -lt 32768 ]] \
+		|| { echo "packet-fixed-overhead task direction was not below 32 KiB" >&2; exit 1; }
+	assert_typed_inline_limit_refusal "$agent_fixture/packet-fixed-overhead-refuses.out" 8192
+	assert_packet_refusal_published_nothing packet-fixed-overhead
+	[[ "$(composition_temporary_inventory)" == "$packet_fixed_temporaries_before" ]] \
+		|| { echo "packet-fixed-overhead-refuses left composition temporaries" >&2; exit 1; }
+)
+cmp -s "$packet_fixed_backup" "$agent_repo/skills/design-critique/SKILL.md" \
+	|| { echo "packet-fixed-overhead-refuses did not restore its fixed recipe source" >&2; exit 1; }
+
+packet_cap_forwarder="$agent_fixture/packet-cap-forwarder"
+cat >"$packet_cap_forwarder" <<'PACKET_CAP_FORWARDER'
+#!/usr/bin/env bash
+set -euo pipefail
+if [[ ${1:-} == job && ${2:-} == compose-role-packet ]]; then
+	if "${PACKET_CAP_REAL_ENGINE:?}" "$@"; then
+		compose_rc=0
+	else
+		compose_rc=$?
+	fi
+	printf '%s\n' "$compose_rc" >"${PACKET_CAP_MARKER:?}.compose-rc"
+	if (( compose_rc == 0 )); then
+		previous=
+		for argument in "$@"; do
+			if [[ $previous == --output ]]; then
+				wc -c <"$argument" | tr -d ' ' >"$PACKET_CAP_MARKER.packet-bytes"
+				break
+			fi
+			previous=$argument
+		done
+		touch "$PACKET_CAP_MARKER.composed"
+	fi
+	exit "$compose_rc"
+fi
+if [[ ${1:-} == config && ${2:-} == get && -e ${PACKET_CAP_MARKER:?}.composed ]]; then
+	previous=
+	for argument in "$@"; do
+		if [[ $previous == --key && $argument == dispatch.max-inline-input-kb ]]; then
+			printf '8\n'
+			exit 0
+		fi
+		previous=$argument
+	done
+fi
+exec "${PACKET_CAP_REAL_ENGINE:?}" "$@"
+PACKET_CAP_FORWARDER
+chmod +x "$packet_cap_forwarder"
+
+packet_final_dispatch_brief="$agent_fixture/packet-final-cap-dispatch.md"
+make_agent_brief "$packet_final_dispatch_brief" design 'FAKE:packet-final-cap-dispatch-refuses'
+packet_final_dispatch_marker="$agent_fixture/packet-final-dispatch-marker"
+rm -f "$packet_final_dispatch_marker".*
+packet_final_dispatch_temporaries_before=$(composition_temporary_inventory)
+if PACKET_CAP_REAL_ENGINE="$enrolled_engine" PACKET_CAP_MARKER="$packet_final_dispatch_marker" \
+	METASYSTEM_BIN="$packet_cap_forwarder" METASYSTEM_DISPATCH_MAX_INLINE_INPUT_KB=64 \
+	run_agent_fixture packet-final-cap-dispatch-refuses packet-final-cap-dispatch \
+	"$agent_dispatch" dispatch --role design-critic --outputs "$fixture_declared_outputs" --design metasystem/scripts/agents/roles/design-critic.md \
+	--brief "$packet_final_dispatch_brief" --job-id packet-final-cap-dispatch --wait \
+	>"$agent_fixture/packet-final-cap-dispatch-refuses.out" 2>&1; then
+	packet_final_dispatch_rc=0
+else
+	packet_final_dispatch_rc=$?
+fi
+[[ $packet_final_dispatch_rc -eq 1 \
+	&& "$(<"$packet_final_dispatch_marker.compose-rc")" == 0 \
+	&& -s "$packet_final_dispatch_marker.packet-bytes" ]] \
+	|| { echo "fresh final-cap guard did not follow successful composition with exit 1" >&2; cat "$agent_fixture/packet-final-cap-dispatch-refuses.out" >&2; exit 1; }
+packet_final_dispatch_bytes=$(<"$packet_final_dispatch_marker.packet-bytes")
+(( packet_final_dispatch_bytes > 8192 && packet_final_dispatch_bytes <= 65536 )) \
+	|| { echo "fresh final-cap composition had $packet_final_dispatch_bytes bytes, outside 8192 < bytes <= 65536" >&2; exit 1; }
+grep -Fxq 'inline input exceeds dispatch.max-inline-input-kb; pass a file reference in the brief' "$agent_fixture/packet-final-cap-dispatch-refuses.out" \
+	|| { echo "fresh final-cap guard lost its exact brief hint" >&2; cat "$agent_fixture/packet-final-cap-dispatch-refuses.out" >&2; exit 1; }
+! grep -Fq 'REFUSED-INLINE-INPUT-LIMIT' "$agent_fixture/packet-final-cap-dispatch-refuses.out" \
+	|| { echo "fresh final-cap guard was confused with composition refusal" >&2; exit 1; }
+assert_packet_refusal_published_nothing packet-final-cap-dispatch
+[[ "$(composition_temporary_inventory)" == "$packet_final_dispatch_temporaries_before" ]] \
+	|| { echo "fresh final-cap guard left composition temporaries" >&2; exit 1; }
+
+packet_final_parent_brief="$agent_fixture/packet-final-cap-parent.md"
+make_agent_brief "$packet_final_parent_brief" design 'FAKE:packet-final-cap-parent'
+run_agent_fixture packet-final-cap-parent packet-final-cap-parent "$agent_dispatch" dispatch \
+	--role design-critic --outputs "$fixture_declared_outputs" --design metasystem/scripts/agents/roles/design-critic.md \
+	--brief "$packet_final_parent_brief" --job-id packet-final-cap-parent --wait
+[[ "$(cd "$agent_repo" && scripts/agents/dispatch.sh status --job packet-final-cap-parent)" == completed ]] \
+	|| { echo "final-cap follow-up parent did not complete" >&2; exit 1; }
+packet_final_parent_before=$(
+	find "$agent_repo/artifacts/agents/packet-final-cap-parent" "$agent_repo/artifacts/agents/jobs/packet-final-cap-parent.json" "$agent_repo/artifacts/agents/jobs/packet-final-cap-parent.log" -type f -print \
+		| sort | while IFS= read -r packet_parent_file; do
+			printf '%s  %s\n' "$("$engine" util sha256 --file "$packet_parent_file")" "$packet_parent_file"
+		done
+)
+packet_final_follow_marker="$agent_fixture/packet-final-follow-marker"
+rm -f "$packet_final_follow_marker".*
+packet_final_follow_temporaries_before=$(composition_temporary_inventory)
+if PACKET_CAP_REAL_ENGINE="$enrolled_engine" PACKET_CAP_MARKER="$packet_final_follow_marker" \
+	METASYSTEM_BIN="$packet_cap_forwarder" METASYSTEM_DISPATCH_MAX_INLINE_INPUT_KB=64 \
+	run_agent_fixture packet-final-cap-follow-up-refuses packet-final-cap-parent-r2 \
+	"$agent_dispatch" follow-up --job packet-final-cap-parent --message "$follow_message" --wait \
+	>"$agent_fixture/packet-final-cap-follow-up-refuses.out" 2>&1; then
+	packet_final_follow_rc=0
+else
+	packet_final_follow_rc=$?
+fi
+[[ $packet_final_follow_rc -eq 1 \
+	&& "$(<"$packet_final_follow_marker.compose-rc")" == 0 \
+	&& -s "$packet_final_follow_marker.packet-bytes" ]] \
+	|| { echo "follow-up final-cap guard did not follow successful composition with exit 1" >&2; cat "$agent_fixture/packet-final-cap-follow-up-refuses.out" >&2; exit 1; }
+packet_final_follow_bytes=$(<"$packet_final_follow_marker.packet-bytes")
+(( packet_final_follow_bytes > 8192 && packet_final_follow_bytes <= 65536 )) \
+	|| { echo "follow-up final-cap composition had $packet_final_follow_bytes bytes, outside 8192 < bytes <= 65536" >&2; exit 1; }
+grep -Fxq 'inline input exceeds dispatch.max-inline-input-kb; pass a file reference in the message' "$agent_fixture/packet-final-cap-follow-up-refuses.out" \
+	|| { echo "follow-up final-cap guard lost its exact message hint" >&2; cat "$agent_fixture/packet-final-cap-follow-up-refuses.out" >&2; exit 1; }
+! grep -Fq 'REFUSED-INLINE-INPUT-LIMIT' "$agent_fixture/packet-final-cap-follow-up-refuses.out" \
+	|| { echo "follow-up final-cap guard was confused with composition refusal" >&2; exit 1; }
+[[ ! -e "$agent_repo/artifacts/agents/jobs/packet-final-cap-parent-r2.json" \
+	&& ! -e "$agent_repo/artifacts/agents/jobs/packet-final-cap-parent-r2.log" \
+	&& ! -e "$agent_repo/artifacts/agents/packet-final-cap-parent/rounds/2" ]] \
+	|| { echo "follow-up final-cap guard published a child record, promoted round, or adapter log" >&2; exit 1; }
+packet_final_parent_after=$(
+	find "$agent_repo/artifacts/agents/packet-final-cap-parent" "$agent_repo/artifacts/agents/jobs/packet-final-cap-parent.json" "$agent_repo/artifacts/agents/jobs/packet-final-cap-parent.log" -type f -print \
+		| sort | while IFS= read -r packet_parent_file; do
+			printf '%s  %s\n' "$("$engine" util sha256 --file "$packet_parent_file")" "$packet_parent_file"
+		done
+)
+[[ "$packet_final_parent_after" == "$packet_final_parent_before" ]] \
+	|| { echo "refused final-cap follow-up changed its completed parent" >&2; exit 1; }
+[[ "$(composition_temporary_inventory)" == "$packet_final_follow_temporaries_before" ]] \
+	|| { echo "follow-up final-cap guard left composition temporaries" >&2; exit 1; }
 
 # Reap owns process loss, absolute caps, group death, and terminal mirroring.
 process_loss="$agent_fixture/process-loss.md"

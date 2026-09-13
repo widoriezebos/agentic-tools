@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"reflect"
 	"sort"
 	"strings"
 	"testing"
@@ -16,6 +17,17 @@ func compositionRepoRoot(t *testing.T) string {
 	t.Helper()
 	root, err := filepath.Abs(filepath.Join("..", ".."))
 	if err != nil {
+		t.Fatal(err)
+	}
+	// Every caller composes against the real checkout, so an operator's
+	// exported cap would decide these results. Pin the configured cap for the
+	// whole test and restore whatever the environment had.
+	if original, present := os.LookupEnv("METASYSTEM_DISPATCH_MAX_INLINE_INPUT_KB"); present {
+		t.Cleanup(func() { _ = os.Setenv("METASYSTEM_DISPATCH_MAX_INLINE_INPUT_KB", original) })
+	} else {
+		t.Cleanup(func() { _ = os.Unsetenv("METASYSTEM_DISPATCH_MAX_INLINE_INPUT_KB") })
+	}
+	if err := os.Unsetenv("METASYSTEM_DISPATCH_MAX_INLINE_INPUT_KB"); err != nil {
 		t.Fatal(err)
 	}
 	return root
@@ -42,6 +54,880 @@ func compositionTemporaryStageDir(t *testing.T) string {
 	}
 	t.Cleanup(func() { os.RemoveAll(dir) })
 	return dir
+}
+
+func packetFitRoot(t *testing.T) string {
+	t.Helper()
+	sourceRoot := compositionRepoRoot(t)
+	root := t.TempDir()
+	copyFile := func(path string) {
+		t.Helper()
+		content, err := os.ReadFile(filepath.Join(sourceRoot, filepath.FromSlash(path)))
+		if err != nil {
+			t.Fatal(err)
+		}
+		destination := filepath.Join(root, filepath.FromSlash(path))
+		if err := os.MkdirAll(filepath.Dir(destination), 0o755); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(destination, content, 0o644); err != nil {
+			t.Fatal(err)
+		}
+	}
+	for _, path := range []string{
+		rolePacketTablePath,
+		"scripts/agents/roles/implementer.md",
+		"docs/orchestration.md",
+		"scripts/agents/schemas/implementer.schema.json",
+		"scripts/agents/roles/verifier.md",
+		"skills/verify/SKILL.md",
+		"scripts/agents/schemas/verifier.schema.json",
+	} {
+		copyFile(path)
+	}
+	if err := os.WriteFile(filepath.Join(root, "metasystem.conf"), nil, 0o644); err != nil {
+		t.Fatal(err)
+	}
+	return root
+}
+
+func assertPacketFitProvenance(t *testing.T, p ComposeRolePacketParams, record CompositionRecord, rawBySlot map[string][]byte) []byte {
+	t.Helper()
+	packet, err := os.ReadFile(p.Output)
+	if err != nil {
+		t.Fatal(err)
+	}
+	storedBytes, err := os.ReadFile(p.CompositionOutput)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var stored CompositionRecord
+	if err := json.Unmarshal(storedBytes, &stored); err != nil {
+		t.Fatal(err)
+	}
+	if !reflect.DeepEqual(stored, record) {
+		t.Fatalf("stored composition differs from returned record\nstored: %+v\nreturned: %+v", stored, record)
+	}
+
+	type expectedSource struct {
+		slot   string
+		source string
+		raw    []byte
+	}
+	_, _, recipe, err := readRolePacketRecipe(p.Root, p.Role)
+	if err != nil {
+		t.Fatal(err)
+	}
+	expected := []expectedSource{{slot: "task-direction", source: "caller:brief", raw: rawBySlot["task-direction"]}}
+	for _, recipeSource := range recipe.Sources {
+		raw, err := readRecipeSource(p.Root, recipeSource)
+		if err != nil {
+			t.Fatal(err)
+		}
+		expected = append(expected, expectedSource{slot: recipeSource.Slot, source: recipeSource.Path, raw: raw})
+	}
+	if recipe.ArtifactMember != "" {
+		expected = append(expected, expectedSource{slot: "artifact-member", source: rolePacketTablePath + "#" + p.Role + ".artifactMember", raw: []byte(recipe.ArtifactMember + "\n")})
+	}
+	toolNotice := fmt.Sprintf("Permission tool policy: %s\n", p.ToolPolicy)
+	if p.Runtime == "fake" {
+		toolNotice += "Tool-name observation: exact\nTool names: (none; the fake runtime opens no model tool channel)\n"
+	} else {
+		toolNotice += "Tool-name observation: unobserved\nTool names: UNOBSERVED; this broad-read launcher cannot prove the provider tool catalog, so this job is advisory.\n"
+	}
+	expected = append(expected, expectedSource{slot: "tool-names", source: "generated:tool-names", raw: []byte(toolNotice)})
+	configuration, err := ResolveHazardConfiguration(p.Root, p.DestructiveReach, p.GoalTier)
+	if err != nil {
+		t.Fatal(err)
+	}
+	identity := fmt.Sprintf("Job-Id: %s\nRole: %s\nRuntime: %s\nModel: %s\nRound: %d\nMission: %s\nDestructive reach class: %s\nBuilder effort tier: %s\nBuilder reasoning effort: %s\nIndependent critique required: %t\nIndependent critique effort tier: %s\nIndependent critique reasoning effort: %s\nLive proof required: %t\n",
+		p.JobID, p.Role, p.Runtime, p.Model, p.Round, emptyAsNone(p.Mission), p.DestructiveReach,
+		configuration.BuilderEffortTier, configuration.BuilderReasoningEffort,
+		configuration.IndependentCritiqueRequired, configuration.IndependentCritiqueEffortTier,
+		configuration.IndependentCritiqueReasoningEffort, configuration.LiveProofRequired)
+	runtimeNotice := identity + "Context classification: advisory. This broad-read runtime does not prove context isolation or independent examination.\n" + returnBySentence(p.CapMinutes, p.ReturnMarginMinutes, p.CapTruncated)
+	expected = append(expected, expectedSource{slot: "generated-runtime-notice", source: "generated:runtime-notice", raw: []byte(runtimeNotice)})
+	for _, continuation := range p.Continuations {
+		raw, ok := rawBySlot[continuation.Slot]
+		if !ok {
+			t.Fatalf("missing expected raw bytes for %s", continuation.Slot)
+		}
+		expected = append(expected, expectedSource{slot: continuation.Slot, source: "engine:" + continuation.Slot, raw: raw})
+	}
+	if len(record.Sources) != len(expected) {
+		t.Fatalf("source count = %d, want %d", len(record.Sources), len(expected))
+	}
+	previousEnd := 0
+	for index, want := range expected {
+		got := record.Sources[index]
+		if got.Slot != want.slot || got.Source != want.source || got.SourceDigest != digestBytes(want.raw) || got.SourceBytes != len(want.raw) {
+			t.Fatalf("source %d = %+v, want slot=%s source=%s bytes=%d digest=%s", index, got, want.slot, want.source, len(want.raw), digestBytes(want.raw))
+		}
+		if got.StartByte != previousEnd || got.EndByte <= got.StartByte || got.EndByte > len(packet) {
+			t.Fatalf("source %s has invalid range %d:%d after %d", got.Slot, got.StartByte, got.EndByte, previousEnd)
+		}
+		if got.DeliveredDigest != digestBytes(packet[got.StartByte:got.EndByte]) {
+			t.Fatalf("source %s delivered digest does not match its packet range", got.Slot)
+		}
+		previousEnd = got.EndByte
+	}
+	if previousEnd != len(packet) || record.PacketDigest != digestBytes(packet) {
+		t.Fatalf("packet provenance ends at %d of %d bytes with digest %s, want %s", previousEnd, len(packet), record.PacketDigest, digestBytes(packet))
+	}
+
+	references := make(map[string]CompositionReference, len(record.References))
+	for _, reference := range record.References {
+		if _, exists := references[reference.Slot]; exists {
+			t.Fatalf("duplicate reference for %s", reference.Slot)
+		}
+		references[reference.Slot] = reference
+	}
+	wantReferenceOrder := make([]string, 0, len(record.References))
+	canonicalRoot := resolvePath(p.Root)
+	canonicalReference := resolvePath(p.ReferenceDir)
+	canonicalStage := resolvePath(p.StageDir)
+	for index, want := range expected {
+		purpose := map[string]string{
+			"task-direction": "brief", "prior-brief": "brief", "prior-return": "return",
+			"critique-register": "critique", "prior-worktree": "evidence",
+		}[want.slot]
+		if purpose == "" {
+			continue
+		}
+		reference, referenced := references[want.slot]
+		stagePath := filepath.Join(canonicalStage, want.slot+".md")
+		if !referenced {
+			if _, statErr := os.Stat(stagePath); !os.IsNotExist(statErr) {
+				t.Fatalf("inline body %s has staged file %s", want.slot, stagePath)
+			}
+			continue
+		}
+		wantReferenceOrder = append(wantReferenceOrder, want.slot)
+		if record.References[len(wantReferenceOrder)-1].Slot != want.slot {
+			t.Fatalf("reference %d has slot %s, want packet-order slot %s", len(wantReferenceOrder)-1, record.References[len(wantReferenceOrder)-1].Slot, want.slot)
+		}
+		openPath := filepath.Join(canonicalReference, want.slot+".md")
+		rel, err := filepath.Rel(canonicalRoot, openPath)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if reference.Purpose != purpose || reference.Path != filepath.ToSlash(rel) || reference.OpenPath != openPath ||
+			reference.Digest != digestBytes(want.raw) || reference.Bytes != len(want.raw) || reference.Lifetime != "staged" {
+			t.Fatalf("reference for %s = %+v", want.slot, reference)
+		}
+		staged, err := os.ReadFile(stagePath)
+		if err != nil || !bytes.Equal(staged, want.raw) {
+			t.Fatalf("staged body %s does not match its source: %v", want.slot, err)
+		}
+		stanza := fmt.Sprintf("Referenced body: open %s (%d bytes, sha256 %s). Read it in bounded views; it is not inlined.\n", openPath, len(want.raw), digestBytes(want.raw))
+		delivered := record.Sources[index]
+		if !bytes.Contains(packet[delivered.StartByte:delivered.EndByte], []byte(stanza)) {
+			t.Fatalf("delivered range for %s lacks its exact final-path stanza", want.slot)
+		}
+	}
+	if len(wantReferenceOrder) != len(record.References) {
+		t.Fatalf("reference count = %d, want %d", len(record.References), len(wantReferenceOrder))
+	}
+	for index, slot := range wantReferenceOrder {
+		if record.References[index].Slot != slot {
+			t.Fatalf("reference %d slot = %s, want %s", index, record.References[index].Slot, slot)
+		}
+	}
+	if _, err := readCompositionForJob(p.CompositionOutput, p.JobID, p.Role, p.Runtime, p.Model, p.Mission, p.DestructiveReach, p.GoalTier, p.Round, int64(len(packet)), record.PacketDigest); err != nil {
+		t.Fatalf("final composition provenance was refused: %v", err)
+	}
+	return packet
+}
+
+func TestComposeRolePacketStagesBriefToFitPacketCap(t *testing.T) {
+	if original, present := os.LookupEnv("METASYSTEM_DISPATCH_MAX_INLINE_INPUT_KB"); present {
+		t.Cleanup(func() { _ = os.Setenv("METASYSTEM_DISPATCH_MAX_INLINE_INPUT_KB", original) })
+	} else {
+		t.Cleanup(func() { _ = os.Unsetenv("METASYSTEM_DISPATCH_MAX_INLINE_INPUT_KB") })
+	}
+	if err := os.Unsetenv("METASYSTEM_DISPATCH_MAX_INLINE_INPUT_KB"); err != nil {
+		t.Fatal(err)
+	}
+	root := packetFitRoot(t)
+	cases := []struct {
+		name string
+		body []byte
+	}{
+		{name: "sixteen-kibibytes", body: bytes.Repeat([]byte("b"), 16*1024)},
+		{name: "exact-bound-multibyte", body: bytes.Repeat([]byte("é"), MaxDirectiveBytes/2)},
+	}
+	for _, testCase := range cases {
+		t.Run(testCase.name, func(t *testing.T) {
+			brief := filepath.Join(root, testCase.name+"-brief.md")
+			if err := os.WriteFile(brief, testCase.body, 0o644); err != nil {
+				t.Fatal(err)
+			}
+			params := ComposeRolePacketParams{
+				Root: root, Role: "implementer", Brief: brief, JobID: testCase.name,
+				Runtime: "fake", Model: "fake-model", ToolPolicy: "read-write", Round: 1,
+				DestructiveReach: HazardMechanical,
+				Output:           filepath.Join(root, testCase.name+"-prompt.md"), CompositionOutput: filepath.Join(root, testCase.name+"-composition.json"),
+				StageDir: filepath.Join(root, "record-locks", testCase.name), ReferenceDir: filepath.Join(root, "artifacts", testCase.name, "rounds", "1", "staged"),
+			}
+			record, err := ComposeRolePacket(params)
+			if err != nil {
+				t.Fatal(err)
+			}
+			packet := assertPacketFitProvenance(t, params, record, map[string][]byte{"task-direction": testCase.body})
+			if len(record.References) != 1 || record.References[0].Slot != "task-direction" {
+				t.Fatal("the brief was not staged to fit the complete packet")
+			}
+			if len(packet) > 65536 {
+				t.Fatalf("packet has %d bytes, cap is 65536", len(packet))
+			}
+		})
+	}
+}
+
+func TestComposeRolePacketFitsCombinedContinuations(t *testing.T) {
+	if original, present := os.LookupEnv("METASYSTEM_DISPATCH_MAX_INLINE_INPUT_KB"); present {
+		t.Cleanup(func() { _ = os.Setenv("METASYSTEM_DISPATCH_MAX_INLINE_INPUT_KB", original) })
+	} else {
+		t.Cleanup(func() { _ = os.Unsetenv("METASYSTEM_DISPATCH_MAX_INLINE_INPUT_KB") })
+	}
+	if err := os.Unsetenv("METASYSTEM_DISPATCH_MAX_INLINE_INPUT_KB"); err != nil {
+		t.Fatal(err)
+	}
+	type bodyFixture struct {
+		slot string
+		raw  []byte
+	}
+	cases := []struct {
+		name       string
+		capKiB     int
+		fixedSizes [3]int
+		task       []byte
+		bodies     []bodyFixture
+		wantRefs   []string
+	}{
+		{
+			name: "repeated-selection", capKiB: 24, fixedSizes: [3]int{1024, 4096, 1024}, task: bytes.Repeat([]byte("t"), 8*1024),
+			bodies:   []bodyFixture{{slot: "prior-brief", raw: bytes.Repeat([]byte("b"), 12*1024)}, {slot: "prior-return", raw: bytes.Repeat([]byte("r"), 16*1024)}},
+			wantRefs: []string{"prior-brief", "prior-return"},
+		},
+		{
+			name: "saving-is-not-raw-length", capKiB: 8, fixedSizes: [3]int{256, 512, 256}, task: bytes.Repeat([]byte("t"), 4097),
+			bodies: []bodyFixture{{slot: "prior-brief", raw: bytes.Repeat([]byte("b"), 4096)}}, wantRefs: []string{"prior-brief"},
+		},
+		{
+			name: "equal-saving-prefers-packet-order", capKiB: 24, fixedSizes: [3]int{1024, 4096, 1024}, task: bytes.Repeat([]byte("t"), 12*1024),
+			bodies: []bodyFixture{{slot: "prior-worktree", raw: bytes.Repeat([]byte("w"), 12*1024)}}, wantRefs: []string{"task-direction"},
+		},
+	}
+	for _, testCase := range cases {
+		t.Run(testCase.name, func(t *testing.T) {
+			root := packetFitRoot(t)
+			if err := os.WriteFile(filepath.Join(root, "metasystem.conf"), []byte(fmt.Sprintf("dispatch.max-inline-input-kb=%d\n", testCase.capKiB)), 0o644); err != nil {
+				t.Fatal(err)
+			}
+			fixedPaths := []string{
+				"scripts/agents/roles/implementer.md",
+				"docs/orchestration.md",
+				"scripts/agents/schemas/implementer.schema.json",
+			}
+			for index, path := range fixedPaths {
+				if err := os.WriteFile(filepath.Join(root, filepath.FromSlash(path)), bytes.Repeat([]byte{byte('a' + index)}, testCase.fixedSizes[index]), 0o644); err != nil {
+					t.Fatal(err)
+				}
+			}
+			briefPath := filepath.Join(root, testCase.name+"-brief.md")
+			if err := os.WriteFile(briefPath, testCase.task, 0o644); err != nil {
+				t.Fatal(err)
+			}
+			rawBySlot := map[string][]byte{"task-direction": testCase.task}
+			continuations := make([]CompositionContinuation, 0, len(testCase.bodies))
+			for _, body := range testCase.bodies {
+				path := filepath.Join(root, testCase.name+"-"+body.slot+".md")
+				if err := os.WriteFile(path, body.raw, 0o644); err != nil {
+					t.Fatal(err)
+				}
+				continuations = append(continuations, CompositionContinuation{Slot: body.slot, Path: path})
+				rawBySlot[body.slot] = body.raw
+			}
+			referenceDir := filepath.Join(root, "artifacts", testCase.name, "rounds", "2", "staged")
+			params := ComposeRolePacketParams{
+				Root: root, Role: "implementer", Brief: briefPath, JobID: testCase.name,
+				Runtime: "fake", Model: "fake-model", ToolPolicy: "read-write", Round: 2,
+				DestructiveReach: HazardMechanical, Continuations: continuations,
+				Output: filepath.Join(root, testCase.name+"-prompt.md"), CompositionOutput: filepath.Join(root, testCase.name+"-composition.json"),
+				StageDir: filepath.Join(root, "record-locks", testCase.name+"-first"), ReferenceDir: referenceDir,
+			}
+
+			type renderedFixtureSection struct {
+				slot string
+				raw  []byte
+			}
+			fixtureSections := []renderedFixtureSection{{slot: "task-direction", raw: testCase.task}}
+			for index, slot := range []string{"role-instructions", "required-skill", "response-contract"} {
+				fixtureSections = append(fixtureSections, renderedFixtureSection{slot: slot, raw: bytes.Repeat([]byte{byte('a' + index)}, testCase.fixedSizes[index])})
+			}
+			toolNotice := []byte("Permission tool policy: read-write\nTool-name observation: exact\nTool names: (none; the fake runtime opens no model tool channel)\n")
+			fixtureSections = append(fixtureSections, renderedFixtureSection{slot: "tool-names", raw: toolNotice})
+			configuration, err := ResolveHazardConfiguration(root, HazardMechanical, 0)
+			if err != nil {
+				t.Fatal(err)
+			}
+			identity := fmt.Sprintf("Job-Id: %s\nRole: implementer\nRuntime: fake\nModel: fake-model\nRound: 2\nMission: none\nDestructive reach class: MECHANICAL\nBuilder effort tier: %s\nBuilder reasoning effort: %s\nIndependent critique required: %t\nIndependent critique effort tier: %s\nIndependent critique reasoning effort: %s\nLive proof required: %t\nContext classification: advisory. This broad-read runtime does not prove context isolation or independent examination.\n",
+				testCase.name, configuration.BuilderEffortTier, configuration.BuilderReasoningEffort,
+				configuration.IndependentCritiqueRequired, configuration.IndependentCritiqueEffortTier,
+				configuration.IndependentCritiqueReasoningEffort, configuration.LiveProofRequired)
+			fixtureSections = append(fixtureSections, renderedFixtureSection{slot: "generated-runtime-notice", raw: []byte(identity)})
+			for _, body := range testCase.bodies {
+				fixtureSections = append(fixtureSections, renderedFixtureSection(body))
+			}
+			render := func(referenceSlots map[string]bool) []byte {
+				t.Helper()
+				var packet bytes.Buffer
+				for _, section := range fixtureSections {
+					body := section.raw
+					if referenceSlots[section.slot] {
+						openPath := filepath.Join(referenceDir, section.slot+".md")
+						body = []byte(fmt.Sprintf("Referenced body: open %s (%d bytes, sha256 %s). Read it in bounded views; it is not inlined.\n", openPath, len(section.raw), digestBytes(section.raw)))
+					}
+					packet.WriteString("# " + packetHeading(section.slot) + "\n\n")
+					packet.Write(body)
+					if packet.Bytes()[packet.Len()-1] != '\n' {
+						packet.WriteByte('\n')
+					}
+					packet.WriteByte('\n')
+				}
+				return packet.Bytes()
+			}
+			sectionSize := func(slot string, raw []byte, referenced bool) int {
+				t.Helper()
+				body := raw
+				if referenced {
+					openPath := filepath.Join(referenceDir, slot+".md")
+					body = []byte(fmt.Sprintf("Referenced body: open %s (%d bytes, sha256 %s). Read it in bounded views; it is not inlined.\n", openPath, len(raw), digestBytes(raw)))
+				}
+				size := len("# "+packetHeading(slot)+"\n\n") + len(body) + 1
+				if len(body) == 0 || body[len(body)-1] != '\n' {
+					size++
+				}
+				return size
+			}
+			capBytes := int64(testCase.capKiB * 1024)
+			if int64(len(render(nil))) <= capBytes {
+				t.Fatal("fixture inline packet does not exceed its cap")
+			}
+			switch testCase.name {
+			case "repeated-selection":
+				if int64(len(render(map[string]bool{"prior-return": true}))) <= capBytes || int64(len(render(map[string]bool{"prior-brief": true, "prior-return": true}))) > capBytes {
+					t.Fatal("fixture does not require both continuation substitutions")
+				}
+			case "saving-is-not-raw-length":
+				taskSaving := sectionSize("task-direction", testCase.task, false) - sectionSize("task-direction", testCase.task, true)
+				priorSaving := sectionSize("prior-brief", testCase.bodies[0].raw, false) - sectionSize("prior-brief", testCase.bodies[0].raw, true)
+				if priorSaving <= taskSaving || int64(len(render(map[string]bool{"prior-brief": true}))) > capBytes {
+					t.Fatalf("fixture savings task=%d prior-brief=%d do not select the shorter body", taskSaving, priorSaving)
+				}
+			case "equal-saving-prefers-packet-order":
+				taskSaving := sectionSize("task-direction", testCase.task, false) - sectionSize("task-direction", testCase.task, true)
+				worktreeSaving := sectionSize("prior-worktree", testCase.bodies[0].raw, false) - sectionSize("prior-worktree", testCase.bodies[0].raw, true)
+				if taskSaving <= 0 || taskSaving != worktreeSaving || int64(len(render(map[string]bool{"task-direction": true}))) > capBytes {
+					t.Fatalf("fixture savings task=%d prior-worktree=%d do not establish an equal positive tie", taskSaving, worktreeSaving)
+				}
+			}
+
+			record, err := ComposeRolePacket(params)
+			if err != nil {
+				t.Fatal(err)
+			}
+			packet := assertPacketFitProvenance(t, params, record, rawBySlot)
+			if int64(len(packet)) > capBytes {
+				t.Fatalf("packet has %d bytes, cap is %d", len(packet), capBytes)
+			}
+			if len(record.References) != len(testCase.wantRefs) {
+				t.Fatalf("references = %+v, want %v", record.References, testCase.wantRefs)
+			}
+			for index, slot := range testCase.wantRefs {
+				if record.References[index].Slot != slot {
+					t.Fatalf("reference %d = %s, want %s", index, record.References[index].Slot, slot)
+				}
+			}
+
+			repeatedParams := params
+			repeatedParams.Output = filepath.Join(root, testCase.name+"-repeated-prompt.md")
+			repeatedParams.CompositionOutput = filepath.Join(root, testCase.name+"-repeated-composition.json")
+			repeatedParams.StageDir = filepath.Join(root, "record-locks", testCase.name+"-second")
+			repeated, err := ComposeRolePacket(repeatedParams)
+			if err != nil {
+				t.Fatal(err)
+			}
+			repeatedPacket := assertPacketFitProvenance(t, repeatedParams, repeated, rawBySlot)
+			if !bytes.Equal(packet, repeatedPacket) || !reflect.DeepEqual(record, repeated) {
+				t.Fatal("identical composition changed with a different temporary stage directory")
+			}
+		})
+	}
+}
+
+func TestComposeRolePacketHonorsConfiguredPacketCap(t *testing.T) {
+	const limitEnv = "METASYSTEM_DISPATCH_MAX_INLINE_INPUT_KB"
+	if original, present := os.LookupEnv(limitEnv); present {
+		t.Cleanup(func() { _ = os.Setenv(limitEnv, original) })
+	} else {
+		t.Cleanup(func() { _ = os.Unsetenv(limitEnv) })
+	}
+	if err := os.Unsetenv(limitEnv); err != nil {
+		t.Fatal(err)
+	}
+
+	t.Run("reader-resolution-and-validation", func(t *testing.T) {
+		dir := t.TempDir()
+		conf := filepath.Join(dir, "metasystem.conf")
+		if err := os.WriteFile(conf, nil, 0o644); err != nil {
+			t.Fatal(err)
+		}
+		if got, err := InlineInputLimitBytes(conf); err != nil || got != 65536 {
+			t.Fatalf("missing key = %d, %v; want 65536, nil", got, err)
+		}
+		if err := os.WriteFile(conf, []byte("dispatch.max-inline-input-kb=8\n"), 0o644); err != nil {
+			t.Fatal(err)
+		}
+		if got, err := InlineInputLimitBytes(conf); err != nil || got != 8192 {
+			t.Fatalf("configured key = %d, %v; want 8192, nil", got, err)
+		}
+		if err := os.WriteFile(conf+".local", []byte("dispatch.max-inline-input-kb=16\n"), 0o644); err != nil {
+			t.Fatal(err)
+		}
+		if got, err := InlineInputLimitBytes(conf); err != nil || got != 16384 {
+			t.Fatalf("local override = %d, %v; want 16384, nil", got, err)
+		}
+		t.Setenv(limitEnv, "32")
+		if got, err := InlineInputLimitBytes(conf); err != nil || got != 32768 {
+			t.Fatalf("environment override = %d, %v; want 32768, nil", got, err)
+		}
+		t.Setenv(limitEnv, "9007199254740991")
+		if got, err := InlineInputLimitBytes(conf); err != nil || got != int64(9223372036854774784) {
+			t.Fatalf("maximum value = %d, %v; want 9223372036854774784, nil", got, err)
+		}
+	})
+
+	invalidValues := []string{"0", "-1", "+64", "064", "1.5", "abc", "", "9007199254740992", "9223372036854775808", " 64", "64 "}
+	for _, value := range invalidValues {
+		name := "value-" + strings.NewReplacer(" ", "space", "+", "plus", "-", "minus", ".", "dot").Replace(value)
+		if value == "" {
+			name = "empty-value"
+		}
+		t.Run(name, func(t *testing.T) {
+			conf := filepath.Join(t.TempDir(), "metasystem.conf")
+			if err := os.WriteFile(conf, nil, 0o644); err != nil {
+				t.Fatal(err)
+			}
+			t.Setenv(limitEnv, value)
+			if _, err := InlineInputLimitBytes(conf); err == nil {
+				t.Fatalf("InlineInputLimitBytes accepted %q", value)
+			}
+		})
+	}
+
+	t.Run("duplicate-key", func(t *testing.T) {
+		if err := os.Unsetenv(limitEnv); err != nil {
+			t.Fatal(err)
+		}
+		conf := filepath.Join(t.TempDir(), "metasystem.conf")
+		if err := os.WriteFile(conf, []byte("dispatch.max-inline-input-kb=8\ndispatch.max-inline-input-kb=16\n"), 0o644); err != nil {
+			t.Fatal(err)
+		}
+		if _, err := InlineInputLimitBytes(conf); err == nil {
+			t.Fatal("duplicate key was accepted")
+		}
+	})
+	t.Run("unreadable-config", func(t *testing.T) {
+		if err := os.Unsetenv(limitEnv); err != nil {
+			t.Fatal(err)
+		}
+		conf := filepath.Join(t.TempDir(), "configuration-directory")
+		if err := os.Mkdir(conf, 0o755); err != nil {
+			t.Fatal(err)
+		}
+		if _, err := InlineInputLimitBytes(conf); err == nil {
+			t.Fatal("configuration read error was defaulted")
+		}
+	})
+
+	composeInvalid := func(t *testing.T, name string, prepare func(string)) {
+		t.Helper()
+		root := packetFitRoot(t)
+		prepare(root)
+		brief := filepath.Join(root, name+"-brief.md")
+		if err := os.WriteFile(brief, []byte("valid brief\n"), 0o644); err != nil {
+			t.Fatal(err)
+		}
+		params := ComposeRolePacketParams{
+			Root: root, Role: "verifier", Brief: brief, JobID: name, Runtime: "fake", Model: "fake-model",
+			ToolPolicy: "read-only", Round: 1, DestructiveReach: HazardMechanical,
+			Output: filepath.Join(root, name+"-prompt.md"), CompositionOutput: filepath.Join(root, name+"-composition.json"),
+			StageDir: filepath.Join(root, "record-locks", name), ReferenceDir: filepath.Join(root, "artifacts", name, "rounds", "1", "staged"),
+		}
+		if _, err := ComposeRolePacket(params); err == nil {
+			t.Fatal("composition accepted invalid inline-input configuration")
+		}
+		for _, path := range []string{params.Output, params.CompositionOutput, params.StageDir, filepath.Join(params.StageDir, "task-direction.md")} {
+			if _, statErr := os.Stat(path); !os.IsNotExist(statErr) {
+				t.Fatalf("invalid configuration published %s", path)
+			}
+		}
+	}
+	for _, value := range invalidValues {
+		value := value
+		name := "compose-invalid-" + strings.NewReplacer(" ", "space", "+", "plus", "-", "minus", ".", "dot").Replace(value)
+		if value == "" {
+			name = "compose-invalid-empty"
+		}
+		t.Run(name, func(t *testing.T) {
+			composeInvalid(t, name, func(string) { t.Setenv(limitEnv, value) })
+		})
+	}
+	t.Run("compose-duplicate-key", func(t *testing.T) {
+		if err := os.Unsetenv(limitEnv); err != nil {
+			t.Fatal(err)
+		}
+		composeInvalid(t, "compose-duplicate-key", func(root string) {
+			if err := os.WriteFile(filepath.Join(root, "metasystem.conf"), []byte("dispatch.max-inline-input-kb=8\ndispatch.max-inline-input-kb=16\n"), 0o644); err != nil {
+				t.Fatal(err)
+			}
+		})
+	})
+	t.Run("compose-unreadable-config", func(t *testing.T) {
+		if err := os.Unsetenv(limitEnv); err != nil {
+			t.Fatal(err)
+		}
+		composeInvalid(t, "compose-unreadable-config", func(root string) {
+			conf := filepath.Join(root, "metasystem.conf")
+			if err := os.Remove(conf); err != nil {
+				t.Fatal(err)
+			}
+			if err := os.Mkdir(conf, 0o755); err != nil {
+				t.Fatal(err)
+			}
+		})
+	})
+
+	t.Run("equality-one-byte-over-and-raised-cap", func(t *testing.T) {
+		if err := os.Unsetenv(limitEnv); err != nil {
+			t.Fatal(err)
+		}
+		root := packetFitRoot(t)
+		for _, path := range []string{"scripts/agents/roles/verifier.md", "skills/verify/SKILL.md", "scripts/agents/schemas/verifier.schema.json"} {
+			if err := os.WriteFile(filepath.Join(root, filepath.FromSlash(path)), []byte("x"), 0o644); err != nil {
+				t.Fatal(err)
+			}
+		}
+		conf := filepath.Join(root, "metasystem.conf")
+		if err := os.WriteFile(conf, []byte("dispatch.max-inline-input-kb=64\n"), 0o644); err != nil {
+			t.Fatal(err)
+		}
+		brief := filepath.Join(root, "configured-cap-brief.md")
+		if err := os.WriteFile(brief, []byte("x"), 0o644); err != nil {
+			t.Fatal(err)
+		}
+		base := ComposeRolePacketParams{
+			Root: root, Role: "verifier", Brief: brief, JobID: "configured-cap", Runtime: "fake", Model: "fake-model",
+			ToolPolicy: "read-only", Round: 1, DestructiveReach: HazardMechanical,
+			Output: filepath.Join(root, "baseline-prompt.md"), CompositionOutput: filepath.Join(root, "baseline-composition.json"),
+			StageDir: filepath.Join(root, "record-locks", "baseline"), ReferenceDir: filepath.Join(root, "artifacts", "configured-cap", "rounds", "1", "staged"),
+		}
+		baselineRecord, err := ComposeRolePacket(base)
+		if err != nil {
+			t.Fatal(err)
+		}
+		baseline := assertPacketFitProvenance(t, base, baselineRecord, map[string][]byte{"task-direction": []byte("x")})
+		fixedBytes := len(baseline) - 1
+		equalityLength := 8192 - fixedBytes
+		if equalityLength <= 0 || equalityLength > MaxDirectiveBytes {
+			t.Fatalf("fixture needs invalid equality brief length %d (fixed bytes %d)", equalityLength, fixedBytes)
+		}
+		if err := os.WriteFile(conf, []byte("dispatch.max-inline-input-kb=8\n"), 0o644); err != nil {
+			t.Fatal(err)
+		}
+		equalityBody := bytes.Repeat([]byte("e"), equalityLength)
+		if err := os.WriteFile(brief, equalityBody, 0o644); err != nil {
+			t.Fatal(err)
+		}
+		equality := base
+		equality.Output = filepath.Join(root, "equality-prompt.md")
+		equality.CompositionOutput = filepath.Join(root, "equality-composition.json")
+		equality.StageDir = filepath.Join(root, "record-locks", "equality")
+		equalityRecord, err := ComposeRolePacket(equality)
+		if err != nil {
+			t.Fatal(err)
+		}
+		equalityPacket := assertPacketFitProvenance(t, equality, equalityRecord, map[string][]byte{"task-direction": equalityBody})
+		if len(equalityPacket) != 8192 || len(equalityRecord.References) != 0 {
+			t.Fatalf("equality packet has %d bytes and %d references", len(equalityPacket), len(equalityRecord.References))
+		}
+
+		overBody := append(append([]byte(nil), equalityBody...), 'x')
+		if err := os.WriteFile(brief, overBody, 0o644); err != nil {
+			t.Fatal(err)
+		}
+		over := base
+		over.Output = filepath.Join(root, "over-prompt.md")
+		over.CompositionOutput = filepath.Join(root, "over-composition.json")
+		over.StageDir = filepath.Join(root, "record-locks", "over")
+		overRecord, err := ComposeRolePacket(over)
+		if err != nil {
+			t.Fatal(err)
+		}
+		overPacket := assertPacketFitProvenance(t, over, overRecord, map[string][]byte{"task-direction": overBody})
+		if len(overRecord.References) != 1 || overRecord.References[0].Slot != "task-direction" || len(overPacket) > 8192 {
+			t.Fatalf("one-byte-over packet has %d bytes and references %+v", len(overPacket), overRecord.References)
+		}
+
+		if err := os.WriteFile(conf, []byte("dispatch.max-inline-input-kb=16\n"), 0o644); err != nil {
+			t.Fatal(err)
+		}
+		raised := base
+		raised.Output = filepath.Join(root, "raised-prompt.md")
+		raised.CompositionOutput = filepath.Join(root, "raised-composition.json")
+		raised.StageDir = filepath.Join(root, "record-locks", "raised")
+		raisedRecord, err := ComposeRolePacket(raised)
+		if err != nil {
+			t.Fatal(err)
+		}
+		raisedPacket := assertPacketFitProvenance(t, raised, raisedRecord, map[string][]byte{"task-direction": overBody})
+		if len(raisedRecord.References) != 0 || len(raisedPacket) != 8193 {
+			t.Fatalf("raised-cap packet has %d bytes and references %+v", len(raisedPacket), raisedRecord.References)
+		}
+	})
+}
+
+func TestComposeRolePacketRefusesWhenFixedPartsCannotFit(t *testing.T) {
+	const limitEnv = "METASYSTEM_DISPATCH_MAX_INLINE_INPUT_KB"
+	if original, present := os.LookupEnv(limitEnv); present {
+		t.Cleanup(func() { _ = os.Setenv(limitEnv, original) })
+	} else {
+		t.Cleanup(func() { _ = os.Unsetenv(limitEnv) })
+	}
+	if err := os.Unsetenv(limitEnv); err != nil {
+		t.Fatal(err)
+	}
+
+	t.Run("impossible-fit-publishes-nothing", func(t *testing.T) {
+		root := packetFitRoot(t)
+		if err := os.WriteFile(filepath.Join(root, "metasystem.conf"), []byte("dispatch.max-inline-input-kb=1\n"), 0o644); err != nil {
+			t.Fatal(err)
+		}
+		fixedPaths := []string{"scripts/agents/roles/verifier.md", "skills/verify/SKILL.md", "scripts/agents/schemas/verifier.schema.json"}
+		fixedBodies := make([][]byte, len(fixedPaths))
+		for index, path := range fixedPaths {
+			fixedBodies[index] = bytes.Repeat([]byte{byte('a' + index)}, 2*1024)
+			if err := os.WriteFile(filepath.Join(root, filepath.FromSlash(path)), fixedBodies[index], 0o644); err != nil {
+				t.Fatal(err)
+			}
+		}
+		briefBody := bytes.Repeat([]byte("b"), 40*1024)
+		brief := filepath.Join(root, "impossible-brief.md")
+		if err := os.WriteFile(brief, briefBody, 0o644); err != nil {
+			t.Fatal(err)
+		}
+		continuationBody := []byte("r")
+		continuation := filepath.Join(root, "impossible-prior-return.md")
+		if err := os.WriteFile(continuation, continuationBody, 0o644); err != nil {
+			t.Fatal(err)
+		}
+		referenceDir := filepath.Join(root, "artifacts", "impossible", "rounds", "1", "staged")
+		params := ComposeRolePacketParams{
+			Root: root, Role: "verifier", Brief: brief, JobID: "impossible", Runtime: "fake", Model: "fake-model",
+			ToolPolicy: "read-only", Round: 1, DestructiveReach: HazardMechanical,
+			Output: filepath.Join(root, "impossible-prompt.md"), CompositionOutput: filepath.Join(root, "impossible-composition.json"),
+			StageDir: filepath.Join(root, "record-locks", "impossible"), ReferenceDir: referenceDir,
+			Continuations: []CompositionContinuation{{Slot: "prior-return", Path: continuation}},
+		}
+		canonicalReferenceDir := resolvePath(referenceDir)
+		configuration, err := ResolveHazardConfiguration(root, HazardMechanical, 0)
+		if err != nil {
+			t.Fatal(err)
+		}
+		toolNotice := []byte("Permission tool policy: read-only\nTool-name observation: exact\nTool names: (none; the fake runtime opens no model tool channel)\n")
+		identity := fmt.Sprintf("Job-Id: impossible\nRole: verifier\nRuntime: fake\nModel: fake-model\nRound: 1\nMission: none\nDestructive reach class: MECHANICAL\nBuilder effort tier: %s\nBuilder reasoning effort: %s\nIndependent critique required: %t\nIndependent critique effort tier: %s\nIndependent critique reasoning effort: %s\nLive proof required: %t\nContext classification: advisory. This broad-read runtime does not prove context isolation or independent examination.\n",
+			configuration.BuilderEffortTier, configuration.BuilderReasoningEffort,
+			configuration.IndependentCritiqueRequired, configuration.IndependentCritiqueEffortTier,
+			configuration.IndependentCritiqueReasoningEffort, configuration.LiveProofRequired)
+		type fixtureSection struct {
+			slot string
+			raw  []byte
+			ref  bool
+		}
+		sections := []fixtureSection{{slot: "task-direction", raw: briefBody, ref: true}}
+		for index, slot := range []string{"role-instructions", "required-skill", "response-contract"} {
+			sections = append(sections, fixtureSection{slot: slot, raw: fixedBodies[index]})
+		}
+		sections = append(sections,
+			fixtureSection{slot: "tool-names", raw: toolNotice},
+			fixtureSection{slot: "generated-runtime-notice", raw: []byte(identity)},
+			fixtureSection{slot: "prior-return", raw: continuationBody},
+		)
+		renderSection := func(section fixtureSection, referenced bool) []byte {
+			t.Helper()
+			body := section.raw
+			if referenced {
+				openPath := filepath.Join(canonicalReferenceDir, section.slot+".md")
+				body = []byte(fmt.Sprintf("Referenced body: open %s (%d bytes, sha256 %s). Read it in bounded views; it is not inlined.\n", openPath, len(section.raw), digestBytes(section.raw)))
+			}
+			var rendered bytes.Buffer
+			rendered.WriteString("# " + packetHeading(section.slot) + "\n\n")
+			rendered.Write(body)
+			if rendered.Bytes()[rendered.Len()-1] != '\n' {
+				rendered.WriteByte('\n')
+			}
+			rendered.WriteByte('\n')
+			return rendered.Bytes()
+		}
+		var smallest bytes.Buffer
+		for _, section := range sections {
+			smallest.Write(renderSection(section, section.ref))
+		}
+		inlineContinuation := renderSection(sections[len(sections)-1], false)
+		referencedContinuation := renderSection(sections[len(sections)-1], true)
+		if len(inlineContinuation)-len(referencedContinuation) > 0 {
+			t.Fatal("tiny continuation unexpectedly has a positive reference saving")
+		}
+		overhead := smallest.Len() - len(continuationBody)
+		wantDetail := fmt.Sprintf("role packet exceeds dispatch.max-inline-input-kb: %d bytes > 1024 bytes; fixed/reference overhead %d bytes", smallest.Len(), overhead)
+
+		assertRefusal := func(t *testing.T, p ComposeRolePacketParams) {
+			t.Helper()
+			_, err := ComposeRolePacket(p)
+			var refusal *CompositionRefusal
+			if !errors.As(err, &refusal) || refusal.Code != "REFUSED-INLINE-INPUT-LIMIT" || refusal.Source != "dispatch.max-inline-input-kb" {
+				t.Fatalf("impossible fit returned %T %v", err, err)
+			}
+			if refusal.Detail != wantDetail {
+				t.Fatalf("refusal detail = %q, want %q", refusal.Detail, wantDetail)
+			}
+			if strings.Contains(refusal.Detail, "pass a file reference") {
+				t.Fatalf("composition refusal carries obsolete advice: %q", refusal.Detail)
+			}
+		}
+		assertRefusal(t, params)
+		for _, path := range []string{params.Output, params.CompositionOutput, params.StageDir, filepath.Join(params.StageDir, "task-direction.md"), filepath.Join(params.StageDir, "prior-return.md")} {
+			if _, statErr := os.Stat(path); !os.IsNotExist(statErr) {
+				t.Fatalf("impossible fit published %s", path)
+			}
+		}
+
+		preexisting := params
+		preexisting.Output = filepath.Join(root, "preexisting-prompt.md")
+		preexisting.CompositionOutput = filepath.Join(root, "preexisting-composition.json")
+		preexisting.StageDir = filepath.Join(root, "record-locks", "preexisting")
+		if err := os.MkdirAll(preexisting.StageDir, 0o755); err != nil {
+			t.Fatal(err)
+		}
+		before := map[string][]byte{
+			preexisting.Output:                                       []byte("original packet\n"),
+			preexisting.CompositionOutput:                            []byte("original composition\n"),
+			filepath.Join(preexisting.StageDir, "task-direction.md"): []byte("original task stage\n"),
+			filepath.Join(preexisting.StageDir, "prior-return.md"):   []byte("original return stage\n"),
+		}
+		for path, content := range before {
+			if err := os.WriteFile(path, content, 0o644); err != nil {
+				t.Fatal(err)
+			}
+		}
+		assertRefusal(t, preexisting)
+		for path, content := range before {
+			after, err := os.ReadFile(path)
+			if err != nil || !bytes.Equal(after, content) {
+				t.Fatalf("refusal changed pre-existing %s: %v", path, err)
+			}
+		}
+	})
+
+	t.Run("reference-paths-are-validated-when-small-body-must-stage", func(t *testing.T) {
+		root := packetFitRoot(t)
+		if err := os.WriteFile(filepath.Join(root, "metasystem.conf"), []byte("dispatch.max-inline-input-kb=8\n"), 0o644); err != nil {
+			t.Fatal(err)
+		}
+		for index, path := range []string{"scripts/agents/roles/verifier.md", "skills/verify/SKILL.md", "scripts/agents/schemas/verifier.schema.json"} {
+			if err := os.WriteFile(filepath.Join(root, filepath.FromSlash(path)), bytes.Repeat([]byte{byte('a' + index)}, 2*1024), 0o644); err != nil {
+				t.Fatal(err)
+			}
+		}
+		brief := filepath.Join(root, "small-needs-stage.md")
+		if err := os.WriteFile(brief, bytes.Repeat([]byte("b"), 4*1024), 0o644); err != nil {
+			t.Fatal(err)
+		}
+		validStage := filepath.Join(root, "record-locks", "valid-stage")
+		validReference := filepath.Join(root, "artifacts", "small", "rounds", "1", "staged")
+		outside := filepath.Join(t.TempDir(), "outside")
+		escapeTarget := t.TempDir()
+		escapeStage := filepath.Join(root, "escape-stage")
+		if err := os.Symlink(escapeTarget, escapeStage); err != nil {
+			t.Skipf("cannot create escaping directory symlink: %v", err)
+		}
+		cases := []struct{ name, stage, reference string }{
+			{name: "missing-stage", stage: "", reference: validReference},
+			{name: "missing-reference", stage: validStage, reference: ""},
+			{name: "outside", stage: outside, reference: validReference},
+			{name: "root-itself", stage: validStage, reference: root},
+			{name: "escaping-symlink", stage: escapeStage, reference: validReference},
+		}
+		for _, testCase := range cases {
+			t.Run(testCase.name, func(t *testing.T) {
+				params := ComposeRolePacketParams{
+					Root: root, Role: "verifier", Brief: brief, JobID: "bad-path-" + testCase.name, Runtime: "fake", Model: "fake-model",
+					ToolPolicy: "read-only", Round: 1, DestructiveReach: HazardMechanical,
+					Output: filepath.Join(root, testCase.name+"-prompt.md"), CompositionOutput: filepath.Join(root, testCase.name+"-composition.json"),
+					StageDir: testCase.stage, ReferenceDir: testCase.reference,
+				}
+				_, err := ComposeRolePacket(params)
+				var refusal *CompositionRefusal
+				if !errors.As(err, &refusal) || refusal.Code != "REFUSED-REFERENCE-PATH" {
+					t.Fatalf("bad reference path returned %T %v", err, err)
+				}
+				for _, path := range []string{params.Output, params.CompositionOutput} {
+					if _, statErr := os.Stat(path); !os.IsNotExist(statErr) {
+						t.Fatalf("bad reference path published %s", path)
+					}
+				}
+				if params.StageDir != "" {
+					if _, statErr := os.Stat(filepath.Join(resolvePath(params.StageDir), "task-direction.md")); !os.IsNotExist(statErr) {
+						t.Fatalf("bad reference path staged task direction through %s", params.StageDir)
+					}
+				}
+			})
+		}
+	})
+
+	t.Run("late-validation-precedes-staging", func(t *testing.T) {
+		root := packetFitRoot(t)
+		if err := os.WriteFile(filepath.Join(root, "metasystem.conf"), []byte("dispatch.max-inline-input-kb=64\n"), 0o644); err != nil {
+			t.Fatal(err)
+		}
+		brief := filepath.Join(root, "late-brief.md")
+		if err := os.WriteFile(brief, bytes.Repeat([]byte("b"), 40*1024), 0o644); err != nil {
+			t.Fatal(err)
+		}
+		invalid := filepath.Join(root, "invalid-continuation.md")
+		if err := os.WriteFile(invalid, []byte{0xff}, 0o644); err != nil {
+			t.Fatal(err)
+		}
+		params := ComposeRolePacketParams{
+			Root: root, Role: "verifier", Brief: brief, JobID: "late-validation", Runtime: "fake", Model: "fake-model",
+			ToolPolicy: "read-only", Round: 1, DestructiveReach: HazardMechanical,
+			Output: filepath.Join(root, "late-prompt.md"), CompositionOutput: filepath.Join(root, "late-composition.json"),
+			StageDir: filepath.Join(root, "record-locks", "late"), ReferenceDir: filepath.Join(root, "artifacts", "late", "rounds", "1", "staged"),
+			Continuations: []CompositionContinuation{{Slot: "prior-return", Path: invalid}},
+		}
+		_, err := ComposeRolePacket(params)
+		var refusal *CompositionRefusal
+		if !errors.As(err, &refusal) || refusal.Code != "REFUSED-CONTEXT-SOURCE" {
+			t.Fatalf("late validation returned %T %v", err, err)
+		}
+		for _, path := range []string{params.Output, params.CompositionOutput, params.StageDir, filepath.Join(params.StageDir, "task-direction.md")} {
+			if _, statErr := os.Stat(path); !os.IsNotExist(statErr) {
+				t.Fatalf("late validation published %s", path)
+			}
+		}
+	})
 }
 
 func TestComposeRolePacketFollowsClosedRecipeAndRecordsEveryRange(t *testing.T) {
@@ -192,6 +1078,9 @@ func TestComposeRolePacketReferencesABriefOverMaxDirectiveBytes(t *testing.T) {
 	}
 	withoutStage, packetWithoutStage := composeExact("exact-without-stage", "")
 	withStage, packetWithStage := composeExact("exact-with-stage", compositionTemporaryStageDir(t))
+	if len(packetWithoutStage) > 65536 || len(packetWithStage) > 65536 {
+		t.Fatalf("exact-bound verifier packets have %d and %d bytes, cap is 65536", len(packetWithoutStage), len(packetWithStage))
+	}
 	if !bytes.Equal(packetWithoutStage, packetWithStage) || len(withoutStage.References) != 0 || len(withStage.References) != 0 {
 		t.Fatal("a body at MaxDirectiveBytes did not stay on the unchanged inline path")
 	}
