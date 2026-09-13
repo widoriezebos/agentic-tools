@@ -1,14 +1,15 @@
 # paid-proof-authorization
 
-- State: queued
+- State: parked
 - Priority: 3
 - Sequence: 34
 - Intent: Proofs that cost real money become first-class: cost-classed in the evidence table, runnable only under an explicit spend authorization at a declared cadence, recorded against their budget — the paid bench joins the covenant's rhythm instead of living on human memory (Wido 2026-08-25)
 - Origin: human
 - Next step: Appetite: half-day design. The driving case: morpheus's bench-full-run.sh (paid) with bench-cost-gate.sh beside it. Design questions: a cost class on evidence rows (free/metered/paid), the authorization shape (the mission fence machinery already authorizes delegate spend — extend that shape to proof spend rather than invent a second grammar), cadence + budget-row integration, and what the battery/guards may NEVER do (a paid proof can never be the battery; the free tier stays the rhythm). Queue: after cross-repo-guardrails.
 - OpenedAt: 2026-08-25T06:41:21Z
-- Revision: 78
+- Revision: 79
 - BudgetExceptions: 0
+- Parked: by=human:Wido at=2026-09-13T08:24:03Z because=Not now (2026-09-13 backlog consolidation, Wido's word): Not-now: no proof in this repository costs money; the driving case is morpheus's bench in another repository and it queues behind cross-repo-guardrails (slice1, 3:56); premise (no cost class on evidence rows) verified true 09-11; Wido's 08-25 study-area vision, unpark on his word.
 
 History:
 - 2026-08-25T06:41:21Z 802Q46SSG0K5GRFARGE73YXKSG-m1-bf243850 open actor=human:wido targets=paid-proof-authorization
@@ -89,4 +90,5 @@ History:
 - 2026-09-13T08:22:24Z TSR1R55W14V9FG2PK9ZTG9JSB0-m1-c6925449 done actor=human:Wido targets=app-doctrine,app-guardrail-custody,app-guardrail-program,continuous-self-improvement,counselor,cross-repo-guardrails,design-prohibition-is-role-scoped,effort-by-complexity-per-model,fixture-default-branch-assumption,goal-suite-sits-on-the-default-test-timeout,human-carried-landing,incident-proposal-drafting,integration-branch,land-verb-pruning,ledger-authentication,metasystem-way-patterns,missionrunner-terminate-flake,paid-proof-authorization,precedent-index,python3-kit-port,reconciliation-guards,registry-design-names-selection-rows,repo-flag-resolves-one-root,seam-eventstream-error-surface,standing-validation,watchdog-kill-observation-gap reason=priority-order from=3:37 to=3:36
 - 2026-09-13T08:22:31Z HEFP5WKYB8V4MWGW41R8JSH6VC-m1-c6925449 done actor=human:Wido targets=answer-archive,app-doctrine,app-guardrail-custody,app-guardrail-program,claude-delegate-scratch-cleanup,claude-denywrite-list-is-a-snapshot,continuous-self-improvement,counselor,cross-repo-guardrails,delegate-sandbox-cannot-run-the-beds,design-prohibition-is-role-scoped,effort-by-complexity-per-model,fable-effort-high,fixture-default-branch-assumption,follow-up-brief-cannot-cite-fresh-trunk-files,goal-suite-sits-on-the-default-test-timeout,hook-demands-what-landing-forbids,human-carried-landing,incident-proposal-drafting,integration-branch,land-verb-pruning,ledger-authentication,metasystem-way-patterns,missionrunner-terminate-flake,narrator-digests,paid-proof-authorization,precedent-index,python3-kit-port,reconciliation-guards,registry-design-names-selection-rows,repo-flag-resolves-one-root,runtime-limit-is-not-a-protocol-error,seam-declaration-convergence,shutdown-claims-more-than-it-stops,standing-validation,stop-message-truth,uncapped-delegate-fanout,watchdog-kill-observation-gap reason=priority-order from=3:36 to=3:35
 - 2026-09-13T08:22:58Z 6QJV3SGEV054J7AVXBA2JE4MBE-m1-c6925449 done actor=human:Wido targets=app-doctrine,app-guardrail-custody,app-guardrail-program,claude-delegate-scratch-cleanup,continuous-self-improvement,counselor,cross-repo-guardrails,design-prohibition-is-role-scoped,effort-by-complexity-per-model,fable-effort-high,fixture-default-branch-assumption,goal-suite-sits-on-the-default-test-timeout,human-carried-landing,incident-proposal-drafting,integration-branch,land-verb-pruning,ledger-authentication,metasystem-way-patterns,missionrunner-terminate-flake,paid-proof-authorization,precedent-index,python3-kit-port,reconciliation-guards,registry-design-names-selection-rows,repo-flag-resolves-one-root,seam-declaration-convergence,standing-validation,watchdog-kill-observation-gap reason=priority-order from=3:35 to=3:34
-Integrity: sha256=d1533815e8a00b915a49a44cf3f7132de7d5e879f3af2bed37bc7776a671be2c
+- 2026-09-13T08:24:03Z SS05FACH2YWXNTRD3N7CTE84SF-m1-c6925449 park actor=human:Wido targets=paid-proof-authorization reason=Not now (2026-09-13 backlog consolidation, Wido's word): Not-now: no proof in this repository costs money; the driving case is morpheus's bench in another repository and it queues behind cross-repo-guardrails (slice1, 3:56); premise (no cost class on evidence rows) verified true 09-11; Wido's 08-25 study-area vision, unpark on his word.
+Integrity: sha256=e767fa6fd07e05c4a2e149c781f170a544cdddbaf29dfa9a5fcefc70b25741c8
