@@ -7,13 +7,14 @@
 - Origin: main
 - Next step: 2026-09-13 08:3xZ m1b: WIDO'S LAND-OR-FOLD CALL, as promised at build fold-read cycle three. The build is complete and proved: Codex sol chain wait-member1-build-1 rounds 2-5 (round 1 gap-stopped on the brief), three harness Opus reads folded (10, 11, 8 material), round 5's proof green across the whole battery, the seat's fix of the last low finding (a matched event wins over a frontier change) tested. The rostered Opus code-critic at DESIGN-BEARING (job wait-member1-codecritic-1) then returned THREE material, all medium, open in its register: WVB-40 a resume with a new timeout after a stored result replays instead of renewing (the page's renewal rule); WVB-41 a landing wait never checks the landing destination against the ledger branch (in local mode a real landing never matches; the page asks for a named refusal at registration); WVB-42 the actionable check's report scan runs local Git without the wait's budget every ten seconds (0.3 s a cycle; the decision needs no Git). The seat's staged index (45 files, the six briefs, the page's row-2 correction) is ready in the m1b checkout; backup in the session scratchpad member1-wait-staged.diff. Options: FOLD (one Codex round on the three, ~1 h, then proof and a rostered read round 2 within the two-round box, then the landing) or LAND as is with the three as follow-up goals. Parked in Wido's name meanwhile; attempts used 9 of 14.
 - OpenedAt: 2026-09-13T02:05:04Z
-- Revision: 16
-- Budget: elapsedLimit=1d attemptLimit=14 reservedJobMinutesLimit=720 activeJobLimit=1 reviewRoundLimit=2
-- BudgetExceptions: 1
-- Approved: by=human:Wido at=2026-09-13T04:56:49Z revision=6 opid=WVYE8T88Y6TPQ75622FWQW4WC8-m1b-30a7e141 authority=proven digest=190a7ad169896d4190b7b05697035a9cd15747f4cf388623e6e1fdb627f52771
+- Revision: 17
+- Budget: elapsedLimit=1d attemptLimit=14 reservedJobMinutesLimit=720 activeJobLimit=1 reviewRoundLimit=3
+- BudgetExceptions: 2
+- NormApproval: approvedRef=R-109-m1e minutes=720 reviewRounds=3 goalRevision=16
+- Approved: by=human:Wido at=2026-09-13T08:41:27Z revision=17 opid=0GJS0PQ05HBYNJ0612VQF81DGV-m1e-c6925449 authority=proven digest=42695f94fceb534f7c3ca2f51f1c9104fb6b84e09f04c0208bf1f519b384eeb8
 - Sliced: machine=m1b lineage=main-1789191336-90295-e4b24b revision=3 at=2026-09-13T02:06:30Z
-- Claimed: machine=m1b lineage=main-1789191336-90295-e4b24b at=2026-09-13T08:29:53Z revision=16 accountingRevision=12 episodeAt=2026-09-13T07:23:39Z episodeRevision=12 idleSeconds=1838
-- StopCapability: generation=16 revision=16 machine=m1b claimEpoch=2 fenceEpoch=0
+- Claimed: machine=m1b lineage=main-1789191336-90295-e4b24b at=2026-09-13T08:41:27Z revision=17 accountingRevision=17 episodeAt=2026-09-13T07:23:39Z episodeRevision=12 idleSeconds=1838
+- StopCapability: generation=17 revision=17 machine=m1b claimEpoch=1 fenceEpoch=0
 
 History:
 - 2026-09-13T02:05:04Z XEGWW0F70SRXPGCJ6280FM4W68-m1b-30a7e141 open actor=m1b+main-1789191336-90295-e4b24b targets=wait-verb-returns-on-recorded-events,coordinator-wakes-on-events-not-polls
@@ -32,4 +33,5 @@ History:
 - 2026-09-13T07:51:39Z BMQGJZTFC1RZMZF10WGE4354WB-m1b-30a7e141 claim actor=m1b+main-1789191336-90295-e4b24b targets=wait-verb-returns-on-recorded-events
 - 2026-09-13T08:18:03Z G3DPNP55SMAQBZMXQDWGB5ABVH-m1b-30a7e141 release actor=m1b+main-1789191336-90295-e4b24b targets=wait-verb-returns-on-recorded-events
 - 2026-09-13T08:29:53Z KAX17WQC75CWABGXH0QEHP6PJQ-m1b-30a7e141 claim actor=m1b+main-1789191336-90295-e4b24b targets=wait-verb-returns-on-recorded-events
-Integrity: sha256=4053bfccd2fd1b470594e2e38fbb18d7779c5f08c1bc874cfed1af4d19deaa1b
+- 2026-09-13T08:41:27Z 0GJS0PQ05HBYNJ0612VQF81DGV-m1e-c6925449 set-budget actor=human:Wido targets=wait-verb-returns-on-recorded-events displaced=m1b+main-1789191336-90295-e4b24b@2026-09-13T08:29:53Z
+Integrity: sha256=510a69c80db8a2b8794d860977f15c39c311351c3670c8f8a2a6cee556817b06
