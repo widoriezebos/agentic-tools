@@ -7,11 +7,13 @@
 - Origin: main
 - Next step: Find the digest write in the steward tick that resolves its root from the --repo flag instead of the installation root (internal/steward/tick.go around the NarrateDigest call), fix the resolution, add the template-layout test, then a short chain: Sol builds, Opus critiques. || Absorbed 2026-09-11 from goal narrator-writes-its-digest-relative-to-cwd: Survivor: steward-narrates-beside-the-repo-root; it must absorb this goal's fixture and evidence: a narrator run with a foreign cwd or a repository-root --repo writes the digest only under the metasystem root, and the stray file voided a landing receipt on m1d (candidate moved after the committed delivery receipt).
 - OpenedAt: 2026-09-10T08:43:34Z
-- Revision: 2
+- Revision: 3
+- Pinned: m1b
 - Budget: elapsedLimit=4h attemptLimit=6 reservedJobMinutesLimit=720 activeJobLimit=1 reviewRoundLimit=2
 - BudgetExceptions: 0
 
 History:
 - 2026-09-10T08:43:34Z Z6F607MMCBXMPPD22WJ813C7EK-m1-1701c13c open actor=m1+main-1788940932-18533-7fa6c2 targets=steward-narrates-beside-the-repo-root
 - 2026-09-11T21:57:58Z ZVC9QEBA8929D7S60B09T9DY0C-m1-c6925449 edit actor=human:Wido targets=steward-narrates-beside-the-repo-root
-Integrity: sha256=bf1563b9ba26054dc4bead5067acc78dd33608d894a36545bc19380b31d0379f
+- 2026-09-13T06:42:01Z FQXX9GNBBVE5BHCHNR7RT6FZW4-m1e-c6925449 set-pin actor=human:Wido targets=steward-narrates-beside-the-repo-root
+Integrity: sha256=c4eeeefa79fc18d8cc01d4690a8e299978ef56623a9ec913e8d4e4685c9755a6
