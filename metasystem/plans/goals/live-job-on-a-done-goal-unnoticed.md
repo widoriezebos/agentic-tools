@@ -1,6 +1,6 @@
 # live-job-on-a-done-goal-unnoticed
 
-- State: queued
+- State: approved
 - Priority: 1
 - Sequence: 15
 - Risk: severity=2 novelty=1 exposure=2 accumulation=2 basis="severity 2: a delegate keeps spending on work that is finished and nothing says so; novelty 1: compare live job records against their goal's state on a path that already runs each tick; exposure 2: every seat whose steward ticks while a goal completes; accumulation 2: each occurrence burns a full job cap and recurs whenever a landing outlasts a tick"
@@ -9,10 +9,11 @@
 - Origin: main
 - Next step: read the steward tick's job survey and the health roles that already read artifacts/agents/jobs; the comparison is cheap because both facts are on disk. Decide whether the right voice is a health role, an escalation episode as failed-job-attention uses, or a narrator line, and say why in the design note. Do not conflate with failed-job-attention, which surfaces jobs that DIED; this is work continuing after its goal finished
 - OpenedAt: 2026-09-07T09:20:41Z
-- Revision: 79
+- Revision: 80
 - Pinned: m1b
 - Budget: elapsedLimit=4h attemptLimit=6 reservedJobMinutesLimit=720 activeJobLimit=1 reviewRoundLimit=2
 - BudgetExceptions: 0
+- Approved: by=human:Wido at=2026-09-13T06:41:36Z revision=80 opid=MYK5TQAW30KGZS7DJ7RK3ZYD94-m1e-c6925449 authority=proven digest=ab8aae3330dda766577ef990f4624ba55eabfd34174ddc191446092bcc557c55
 
 History:
 - 2026-09-07T09:20:41Z XZC6YNW7TDWJWHC8Y0BQRPHHER-m1b-c6925449 open actor=m1b+main-1788680071-18713-e76d5d targets=live-job-on-a-done-goal-unnoticed
@@ -94,4 +95,5 @@ History:
 - 2026-09-13T06:37:44Z 99P3BRXY1587W281SDZ1PFYSB0-m1e-c6925449 done actor=human:Wido targets=actionable-metrics,breach-clock-and-budget-honesty,coordinator-context-stays-under-budget,coordinator-wakes-on-events-not-polls,critique-closes-on-folded-proof,delegate-rounds-reuse-a-warm-gate,failed-job-attention,fixture-stewards-outlive-their-suite,goal-abandoned-with-a-reason,human-goal-verbs-forgiving,job-record-birth-token,landing-receipt-survives-records-drift,lease-sweep-death-evidence,live-job-on-a-done-goal-unnoticed,machine-concurrency-governor,steward-catchup-livelock,steward-revives-a-done-goal,stop-batch-strands-a-resumable-goal,suite-custody,token-spend-fence,watch-verb,watcher-repair-request-never-names-current,winddown-census-handoff-leak reason=priority-order from=1:17 to=1:16
 - 2026-09-13T06:37:52Z 0Z49HACVY4QBKH33QGX9X20769-m1e-c6925449 done actor=human:Wido targets=actionable-metrics,breach-clock-and-budget-honesty,coordinator-context-stays-under-budget,coordinator-wakes-on-events-not-polls,critique-closes-on-folded-proof,engine-runs-re-arm-themselves-on-a-landed-engine,failed-job-attention,fixture-stewards-outlive-their-suite,goal-abandoned-with-a-reason,human-goal-verbs-forgiving,job-record-birth-token,landing-receipt-survives-records-drift,lease-sweep-death-evidence,live-job-on-a-done-goal-unnoticed,machine-concurrency-governor,proof-groups-detect-hangs-by-progress-not-the-clock,small-change-lane,steward-catchup-livelock,steward-launches-resolve-their-model,steward-revives-a-done-goal,stop-batch-strands-a-resumable-goal,stop-hook-never-forces-an-empty-turn,suite-custody,token-spend-fence,watch-verb,watcher-repair-request-never-names-current,winddown-census-handoff-leak reason=priority-order from=1:16 to=1:15
 - 2026-09-13T06:41:30Z H9JZDGRBGSKP65ZJJDTS3ZMHX5-m1e-c6925449 set-pin actor=human:Wido targets=live-job-on-a-done-goal-unnoticed
-Integrity: sha256=d79c149acc541ef1b48c312e456f35d2e98e552127ef56980aba394373ca63a3
+- 2026-09-13T06:41:36Z MYK5TQAW30KGZS7DJ7RK3ZYD94-m1e-c6925449 approve actor=human:Wido targets=live-job-on-a-done-goal-unnoticed
+Integrity: sha256=88eb9237fa8c4b3d0829b4c968eb077fd9cf3ad16dfe5bbcbbcf4617602c76f9
