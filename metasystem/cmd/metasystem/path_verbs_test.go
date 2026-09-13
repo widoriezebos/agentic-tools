@@ -2,11 +2,51 @@ package main
 
 import (
 	"errors"
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/pathclass"
 )
+
+func TestPathStateRootVerbPrintsTheValidatedInstallation(t *testing.T) {
+	outer := t.TempDir()
+	installation := filepath.Join(outer, "metasystem")
+	if err := os.MkdirAll(filepath.Join(installation, "scripts", "agents"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.MkdirAll(filepath.Join(outer, "development"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(outer, "development", "metasystem-design.md"), []byte("design\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	out, code := captureStdout(t, func() int { return runPathStateRoot([]string{installation}) })
+	want, err := filepath.EvalSymlinks(installation)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if code != 0 || out != want+"\n" {
+		t.Fatalf("path state-root returned code=%d stdout=%q; want code=0 stdout=%q", code, out, want+"\n")
+	}
+}
+
+func TestPathStateRootVerbRefusesUsageAndInvalidCandidates(t *testing.T) {
+	stderr, code := captureStderr(t, func() int { return runPathStateRoot(nil) })
+	if code != 2 || !strings.Contains(stderr, "usage: metasystem path state-root") {
+		t.Fatalf("missing installation: code=%d stderr=%q", code, stderr)
+	}
+	stderr, code = captureStderr(t, func() int { return runPathStateRoot([]string{"one", "two"}) })
+	if code != 2 || !strings.Contains(stderr, "usage: metasystem path state-root") {
+		t.Fatalf("extra installation: code=%d stderr=%q", code, stderr)
+	}
+	stderr, code = captureStderr(t, func() int { return runPathStateRoot([]string{t.TempDir()}) })
+	if code != 1 || !strings.Contains(stderr, "not a metasystem installation") {
+		t.Fatalf("invalid installation: code=%d stderr=%q", code, stderr)
+	}
+}
 
 func TestPathClassVerbOneWordAndRefusalText(t *testing.T) {
 	original := resolvePathClass

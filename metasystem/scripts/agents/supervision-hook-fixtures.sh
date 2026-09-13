@@ -3,6 +3,13 @@ set -euo pipefail
 
 root=$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd -P)
 ms="${METASYSTEM_BIN:-$root/bin/metasystem}"
+# The engine under test may arrive read-only. Every staged copy of an engine is
+# a fresh writable file, so a later stub or a second copy replaces it cleanly.
+cp_engine() { # source destination
+  rm -f "$2"
+  cp "$1" "$2"
+  chmod 0755 "$2"
+}
 hook=$root/scripts/agents/supervision-hook.sh
 launcher=$root/scripts/enforcement/claude-code-hooks.json
 [[ -x "$ms" ]] \
@@ -83,7 +90,8 @@ trap cleanup EXIT
 
 missing_engine_evidence_ready() {
   ! grep -Fq '"decision":"block"' "$tmp/missing.out" \
-    && grep -Fq 'engine missing' "$tmp/missing.out"
+    && grep -Fq 'engine missing' "$tmp/missing.out" \
+    && grep -Fq 'degraded infrastructure' "$tmp/missing.out"
 }
 
 wait_for_missing_engine_evidence() { # hook process
@@ -125,6 +133,22 @@ wait_for_chat_line_evidence() { # hook process
 # pipe buffer of declarations. A membership reader must let the registry query
 # finish; a short-reading consumer can otherwise turn a valid match into the
 # producer's broken-pipe status under pipefail.
+line_root=$tmp/line-root
+mkdir -p "$line_root/scripts/agents" "$line_root/bin" "$line_root/plans"
+cp "$hook" "$line_root/scripts/agents/supervision-hook.sh"
+printf '%s\n' '#!/usr/bin/env bash' 'exit 0' >"$line_root/scripts/agents/evidence-gc.sh"
+chmod +x "$line_root/scripts/agents/evidence-gc.sh"
+cp_engine "$ms" "$line_root/bin/metasystem"
+printf '%s\n' 'metasystem.runtimes=none' >"$line_root/metasystem.conf"
+printf '# Goals\n\n## Goal-free: declared 2026-08-28T00:00:00Z by human over fixture\n' >"$line_root/plans/goals.md"
+git -C "$line_root" init -q -b main
+git -C "$line_root" config user.name fixture
+git -C "$line_root" config user.email fixture@example.invalid
+git -C "$line_root" add metasystem.conf plans/goals.md
+git -C "$line_root" commit -qm fixture
+printf '{"session_id":"line-fixture","cwd":"%s","hook_event_name":"Stop"}\n' "$line_root" >"$tmp/line-payload.json"
+hook_evidence=$line_root/artifacts/agents/steward/components/supervision-hook.json
+
 fixture_engine=$tmp/metasystem
 cat >"$fixture_engine" <<'SH'
 #!/usr/bin/env bash
@@ -144,7 +168,7 @@ chmod +x "$fixture_engine"
 printf '{"session_id":"fixture","cwd":"/","hook_event_name":"Stop"}\n' >"$tmp/payload.json"
 membership_rc=0
 METASYSTEM_BIN="$fixture_engine" METASYSTEM_RUNTIME_MEMBERSHIP_REAL_ENGINE="$ms" \
-  bash "$hook" claude stop <"$tmp/payload.json" \
+  bash "$line_root/scripts/agents/supervision-hook.sh" claude stop <"$tmp/payload.json" \
     >"$tmp/hook.out" 2>"$tmp/hook.err" || membership_rc=$?
 if [[ $membership_rc != 0 ]]; then
   echo "supervision hook runtime-membership fixture failed: a registered runtime was refused (exit $membership_rc)" >&2
@@ -153,10 +177,10 @@ if [[ $membership_rc != 0 ]]; then
 fi
 
 missing_rc=0
-METASYSTEM_BIN="$tmp/missing-engine" bash "$hook" claude stop <"$tmp/payload.json" \
+METASYSTEM_BIN="$tmp/missing-engine" bash "$line_root/scripts/agents/supervision-hook.sh" claude stop <"$tmp/payload.json" \
   >"$tmp/missing.out" 2>"$tmp/missing.err" &
 hook_process_pid=$!
-hook_process_path=$hook
+hook_process_path=$line_root/scripts/agents/supervision-hook.sh
 missing_evidence_wait_rc=0
 wait_for_missing_engine_evidence "$hook_process_pid" || missing_evidence_wait_rc=$?
 if (( missing_evidence_wait_rc == 2 )); then
@@ -187,7 +211,10 @@ git -C "$brain_repo" config user.name fixture
 git -C "$brain_repo" config user.email fixture@example.invalid
 git -C "$brain_repo" config metasystem.goal.machine brain-hook
 git -C "$brain_repo" remote add origin "$brain_origin"
-mkdir -p "$brain_repo/plans" "$brain_repo/scripts/agents" "$brain_repo/records/misc"
+mkdir -p "$brain_repo/bin" "$brain_repo/plans" "$brain_repo/scripts/agents" "$brain_repo/records/misc"
+cp_engine "$ms" "$brain_repo/bin/metasystem"
+cp "$hook" "$brain_repo/scripts/agents/supervision-hook.sh"
+cp "$root/scripts/agents/evidence-gc.sh" "$brain_repo/scripts/agents/evidence-gc.sh"
 cp "$root/scripts/agents/pre-commit-guard.sh" "$brain_repo/scripts/agents/"
 cp -R "$root/scripts/agents/adapters" "$brain_repo/scripts/agents/"
 cp "$root/records/misc/fleet-coordinator-brain-role-packet.md" "$brain_repo/records/misc/"
@@ -275,7 +302,8 @@ brain_fake_pid=
 printf '%s\n' '2026-09-07T00:00:00Z HIGHLIGHT — brain startup digest line (source: fixture startup)' \
   >"$brain_repo/records/narrator-digest.log"
 printf '{"session_id":"brain-start","cwd":"%s","source":"startup"}\n' "$brain_repo" >"$tmp/brain-start.json"
-run_brain_hook "$hook" "$tmp/brain-start.json" "$tmp/brain-start.out" "$tmp/brain-start.err"
+run_brain_hook "$brain_repo/scripts/agents/supervision-hook.sh" \
+  "$tmp/brain-start.json" "$tmp/brain-start.out" "$tmp/brain-start.err"
 [[ $(wc -l <"$tmp/brain-start.out" | tr -d ' ') -eq 1 ]] \
   || { echo "declared brain start emitted more than one object" >&2; cat "$tmp/brain-start.out" >&2; exit 1; }
 brain_context_sentinel=$("$ms" json get --file "$tmp/brain-start.out" --field hookSpecificOutput.additionalContext; printf x)
@@ -302,7 +330,7 @@ mkdir -p "$brain_template_repo/development" "$brain_template_root/bin" \
   "$brain_template_root/scripts/agents" "$brain_template_root/records/misc" \
   "$brain_template_root/artifacts/agents"
 printf '%s\n' '# Template fixture marker' >"$brain_template_repo/development/metasystem-design.md"
-cp "$ms" "$brain_template_root/bin/metasystem"
+cp_engine "$ms" "$brain_template_root/bin/metasystem"
 cp "$hook" "$brain_template_root/scripts/agents/supervision-hook.sh"
 cp -R "$root/scripts/agents/adapters" "$brain_template_root/scripts/agents/"
 cp "$brain_repo/metasystem.conf" "$brain_template_root/metasystem.conf"
@@ -394,7 +422,8 @@ fi
 printf '%s\n' '2026-09-07T00:01:00Z HIGHLIGHT — brain compact digest line (source: fixture compact)' \
   >>"$brain_repo/records/narrator-digest.log"
 printf '{"session_id":"brain-compact","cwd":"%s","source":"compact"}\n' "$brain_repo" >"$tmp/brain-compact.json"
-run_brain_hook "$hook" "$tmp/brain-compact.json" "$tmp/brain-compact.out" "$tmp/brain-compact.err"
+run_brain_hook "$brain_repo/scripts/agents/supervision-hook.sh" \
+  "$tmp/brain-compact.json" "$tmp/brain-compact.out" "$tmp/brain-compact.err"
 brain_compact_context=$("$ms" json get --file "$tmp/brain-compact.out" --field hookSpecificOutput.additionalContext)
 grep -Fq '# The brain seat: role packet and standing instruction' <<<"$brain_compact_context" \
   && grep -Fq 'brain compact digest line' <<<"$brain_compact_context" \
@@ -410,7 +439,8 @@ grep -Fq "\"matcher\": \"$brain_registry_matcher\"" "$root/scripts/enforcement/c
 METASYSTEM_SUPERVISION_REGISTRY_HOME=$brain_registry "$ms" brain withdraw --root "$brain_repo" \
   --by Wido --fixture-human-authority >/dev/null
 printf '{"session_id":"brain-undeclared","cwd":"%s","source":"startup"}\n' "$brain_repo" >"$tmp/brain-undeclared.json"
-run_brain_hook "$hook" "$tmp/brain-undeclared.json" "$tmp/brain-undeclared.out" "$tmp/brain-undeclared.err"
+run_brain_hook "$brain_repo/scripts/agents/supervision-hook.sh" \
+  "$tmp/brain-undeclared.json" "$tmp/brain-undeclared.out" "$tmp/brain-undeclared.err"
 if "$ms" json get --file "$tmp/brain-undeclared.out" --field hookSpecificOutput.additionalContext >/dev/null 2>&1; then
   echo "undeclared start carried brain context" >&2
   exit 1
@@ -419,22 +449,26 @@ grep -Eq 'brain startup digest line|brain compact digest line|The brain seat: ro
   && { echo "undeclared start leaked brain input text" >&2; exit 1; }
 
 printf '%s\n' '{broken' >"$brain_repo/artifacts/agents/brain.json"
-run_brain_hook "$hook" "$tmp/brain-start.json" "$tmp/brain-corrupt.out" "$tmp/brain-corrupt.err"
+run_brain_hook "$brain_repo/scripts/agents/supervision-hook.sh" \
+  "$tmp/brain-start.json" "$tmp/brain-corrupt.out" "$tmp/brain-corrupt.err"
 brain_corrupt_context=$("$ms" json get --file "$tmp/brain-corrupt.out" --field hookSpecificOutput.additionalContext)
 grep -Fq '## The standing instruction' <<<"$brain_corrupt_context" \
   && grep -Fq "this checkout's brain declaration is unreadable" <<<"$brain_corrupt_context" \
   || { echo "corrupt brain start omitted standing instruction or remedy" >&2; exit 1; }
 cp "$tmp/valid-brain.json" "$brain_repo/artifacts/agents/brain.json"
 "$ms" json set --file "$brain_repo/artifacts/agents/brain.json" --field ledger=ZZZZZZZZZZZZZZZZZZZZZZZZZZ
-run_brain_hook "$hook" "$tmp/brain-start.json" "$tmp/brain-wrong-ledger.out" "$tmp/brain-wrong-ledger.err"
+run_brain_hook "$brain_repo/scripts/agents/supervision-hook.sh" \
+  "$tmp/brain-start.json" "$tmp/brain-wrong-ledger.out" "$tmp/brain-wrong-ledger.err"
 brain_wrong_context=$("$ms" json get --file "$tmp/brain-wrong-ledger.out" --field hookSpecificOutput.additionalContext)
 grep -Fq 'not this checkout' <<<"$brain_wrong_context" \
   || { echo "wrong-ledger corrupt start omitted its reason" >&2; exit 1; }
 
 cp "$tmp/valid-brain.json" "$brain_repo/artifacts/agents/brain.json"
-printf '{}' | METASYSTEM_BIN="$tmp/does-not-exist" bash "$hook" claude start >"$tmp/brain-no-engine-declared.out"
+printf '{}' | METASYSTEM_BIN="$tmp/does-not-exist" \
+  bash "$brain_repo/scripts/agents/supervision-hook.sh" claude start >"$tmp/brain-no-engine-declared.out"
 rm "$brain_repo/artifacts/agents/brain.json"
-printf '{}' | METASYSTEM_BIN="$tmp/does-not-exist" bash "$hook" claude start >"$tmp/brain-no-engine-undeclared.out"
+printf '{}' | METASYSTEM_BIN="$tmp/does-not-exist" \
+  bash "$brain_repo/scripts/agents/supervision-hook.sh" claude start >"$tmp/brain-no-engine-undeclared.out"
 for no_engine in "$tmp/brain-no-engine-declared.out" "$tmp/brain-no-engine-undeclared.out"; do
   [[ $(wc -l <"$no_engine" | tr -d ' ') -eq 1 ]] \
     && grep -Fq 'Metasystem engine missing' "$no_engine" \
@@ -477,7 +511,7 @@ for failure_mode in exit sleep invalid; do
     METASYSTEM_BRAIN_FAILURE_MODE=$failure_mode METASYSTEM_SUPERVISION_REGISTRY_HOME=$brain_registry \
     METASYSTEM_BRAIN_FIXTURE_PID=$$ METASYSTEM_BRAIN_FIXTURE_STARTED=$brain_fixture_started \
     METASYSTEM_BRAIN_ARMING_LOG=$brain_arming_log \
-    bash "$hook" claude start <"$tmp/brain-start.json" \
+    bash "$brain_repo/scripts/agents/supervision-hook.sh" claude start <"$tmp/brain-start.json" \
       >"$tmp/brain-failure-$failure_mode.out" 2>"$tmp/brain-failure-$failure_mode.err"
   failure_out=$tmp/brain-failure-$failure_mode.out
   [[ $(wc -l <"$failure_out" | tr -d ' ') -eq 1 ]] \
@@ -491,20 +525,6 @@ for failure_mode in exit sleep invalid; do
   grep -Fxq "$failure_mode" "$brain_arming_log" \
     || { echo "brain boot $failure_mode failure skipped the supervision arming leg" >&2; exit 1; }
 done
-
-line_root=$tmp/line-root
-mkdir -p "$line_root/scripts/agents" "$line_root/bin" "$line_root/plans"
-cp "$hook" "$line_root/scripts/agents/supervision-hook.sh"
-printf '%s\n' '#!/usr/bin/env bash' 'exit 0' >"$line_root/scripts/agents/evidence-gc.sh"
-chmod +x "$line_root/scripts/agents/evidence-gc.sh"
-cp "$ms" "$line_root/bin/metasystem"
-printf '%s\n' 'metasystem.runtimes=none' >"$line_root/metasystem.conf"
-printf '# Goals\n\n## Goal-free: declared 2026-08-28T00:00:00Z by human over fixture\n' >"$line_root/plans/goals.md"
-git -C "$line_root" init -q -b main
-git -C "$line_root" config user.name fixture
-git -C "$line_root" config user.email fixture@example.invalid
-git -C "$line_root" add metasystem.conf plans/goals.md
-git -C "$line_root" commit -qm fixture
 
 # The open-work marker belongs to the verdict inputs rather than one runtime
 # session. Exercise it through the same commands the ordinary Stop worker and
@@ -606,8 +626,8 @@ done
 mkdir -p "$line_root/records"
 printf '%s\n' '2026-08-29T10:00:00Z HIGHLIGHT — A landing moved the repository storyline to commit abc123. (source: commit abc123)' \
   >"$line_root/records/narrator-digest.log"
-printf '{"session_id":"line-fixture","cwd":"%s","hook_event_name":"Stop"}\n' "$line_root" >"$tmp/line-payload.json"
-hook_evidence=$line_root/artifacts/agents/steward/components/supervision-hook.json
+
+line_log_start=$(wc -l <"$line_root/artifacts/agents/supervision/hooks.log")
 line_rc=0
 bash "$line_root/scripts/agents/supervision-hook.sh" claude stop <"$tmp/line-payload.json" \
   >"$tmp/line.out" 2>"$tmp/line.err" &
@@ -648,8 +668,8 @@ grep -Fq '"result": "OK"' "$hook_evidence" \
   || { echo "supervision hook chat-line fixture recorded no successful completion" >&2; exit 1; }
 grep -Fq '"outcome": "EMITTED"' "$hook_evidence" \
   || { echo "supervision hook chat-line fixture did not record EMITTED" >&2; exit 1; }
-grep -Eq 'stop response decision=[a-z]+ elapsed=[0-9]+s$' \
-  "$line_root/artifacts/agents/supervision/hooks.log" \
+sed -n "$((line_log_start + 1)),\$p" "$line_root/artifacts/agents/supervision/hooks.log" \
+  | grep -Eq 'stop response decision=[a-z]+ elapsed=[0-9]+s$' \
   || { echo "supervision hook chat-line fixture did not log its elapsed Stop response" >&2; exit 1; }
 grep -Eq '"lastStopElapsedSec": [0-9]+' "$hook_evidence" \
   || { echo "supervision hook chat-line fixture did not record its elapsed Stop seconds" >&2; exit 1; }
@@ -785,7 +805,7 @@ assert_failure_allows partial-output partial-output 'stop-hook-output-was-unread
 # and a later failure cannot erase the already-persisted fact.
 rearm_root=$tmp/rearm-root
 mkdir -p "$rearm_root/bin" "$rearm_root/plans" "$rearm_root/scripts/agents/adapters"
-cp "$ms" "$rearm_root/bin/metasystem"
+cp_engine "$ms" "$rearm_root/bin/metasystem"
 cp "$hook" "$rearm_root/scripts/agents/supervision-hook.sh"
 cp "$root/scripts/agents/adapters/fake.sh" "$rearm_root/scripts/agents/adapters/fake.sh"
 printf '%s\n' '#!/usr/bin/env bash' 'exit 0' >"$rearm_root/scripts/agents/evidence-gc.sh"
@@ -942,6 +962,102 @@ printf '%s\n' '{malformed' >"$line_root/artifacts/agents/turn-verdict-state.json
 assert_failure_allows unreadable-state none 'turn verdict state'
 rm -f "$line_root/artifacts/agents/turn-verdict-state.json"
 
+# A decoded session id may contain a newline. The deadline parent transports
+# it separately from the engine-owned state root, so payload text cannot become
+# the root for its infrastructure log or refusal record.
+coordinate_engine=$tmp/coordinate-engine
+cat >"$coordinate_engine" <<'SH'
+#!/usr/bin/env bash
+if [[ ${1:-} == steward && ${2:-} == hook-attempt ]]; then
+  hook_pid=
+  previous=
+  for argument in "$@"; do
+    if [[ $previous == --pid ]]; then
+      hook_pid=$argument
+      break
+    fi
+    previous=$argument
+  done
+  sleep 1
+  kill -KILL "$hook_pid"
+  exit 137
+fi
+exec "${METASYSTEM_COORDINATE_REAL_ENGINE:?}" "$@"
+SH
+chmod +x "$coordinate_engine"
+coordinate_injected_root=$tmp/deadline-session-injected-root
+mkdir -p "$coordinate_injected_root"
+printf '{"session_id":"deadline-coordinate\\u000a%s","cwd":"%s","hook_event_name":"Stop"}\n' \
+  "$coordinate_injected_root" "$line_root" >"$tmp/coordinate-payload.json"
+coordinate_log_start=$(wc -l <"$line_root/artifacts/agents/supervision/hooks.log")
+coordinate_rc=0
+METASYSTEM_BIN="$coordinate_engine" METASYSTEM_COORDINATE_REAL_ENGINE="$ms" \
+  bash "$line_root/scripts/agents/supervision-hook.sh" claude stop \
+    <"$tmp/coordinate-payload.json" >"$tmp/coordinate.out" 2>"$tmp/coordinate.err" || coordinate_rc=$?
+(( coordinate_rc == 0 )) \
+  || { echo "deadline coordinate fixture returned $coordinate_rc" >&2; cat "$tmp/coordinate.err" >&2; exit 1; }
+if grep -Fq '"decision":"block"' "$tmp/coordinate.out"; then
+  echo "deadline coordinate fixture blocked on an infrastructure failure" >&2
+  cat "$tmp/coordinate.out" >&2
+  exit 1
+fi
+grep -Fq 'stop-hook-output-was-unreadable' "$tmp/coordinate.out" \
+  || { echo "deadline coordinate fixture lost its degraded allowance" >&2; cat "$tmp/coordinate.out" >&2; exit 1; }
+sed -n "$((coordinate_log_start + 1)),\$p" "$line_root/artifacts/agents/supervision/hooks.log" \
+  | grep -Fq 'stop response outcome=invalid-worker-output-allow' \
+  || { echo "deadline coordinate fixture did not log under the installation" >&2; exit 1; }
+[[ ! -e "$coordinate_injected_root/artifacts" ]] \
+  || { echo "payload session text became the deadline state root" >&2; exit 1; }
+
+# When the worker fails before the resolver answers, the parent waits for the
+# ready marker instead of treating an answer still in flight as no checkout.
+slow_resolution_engine=$tmp/slow-resolution-engine
+cat >"$slow_resolution_engine" <<'SH'
+#!/usr/bin/env bash
+if [[ ${1:-} == path && ${2:-} == state-root ]]; then
+  sleep 2
+fi
+exec "${METASYSTEM_SLOW_RESOLUTION_REAL_ENGINE:?}" "$@"
+SH
+chmod +x "$slow_resolution_engine"
+printf '%s\n' '{broken' >"$tmp/slow-resolution-malformed.json"
+printf '{"session_id":"slow-resolution-runtime","cwd":"%s","hook_event_name":"Stop"}\n' \
+  "$line_root" >"$tmp/slow-resolution-runtime.json"
+for slow_resolution_case in malformed runtime; do
+  slow_resolution_log_start=$(wc -l <"$line_root/artifacts/agents/supervision/hooks.log")
+  slow_resolution_started=$SECONDS
+  slow_resolution_rc=0
+  if [[ $slow_resolution_case == malformed ]]; then
+    METASYSTEM_BIN="$slow_resolution_engine" METASYSTEM_SLOW_RESOLUTION_REAL_ENGINE="$ms" \
+      bash "$line_root/scripts/agents/supervision-hook.sh" claude stop \
+        <"$tmp/slow-resolution-malformed.json" \
+        >"$tmp/slow-resolution-$slow_resolution_case.out" \
+        2>"$tmp/slow-resolution-$slow_resolution_case.err" || slow_resolution_rc=$?
+  else
+    METASYSTEM_BIN="$slow_resolution_engine" METASYSTEM_SLOW_RESOLUTION_REAL_ENGINE="$ms" \
+      bash "$line_root/scripts/agents/supervision-hook.sh" fixture-unknown-runtime stop \
+        <"$tmp/slow-resolution-runtime.json" \
+        >"$tmp/slow-resolution-$slow_resolution_case.out" \
+        2>"$tmp/slow-resolution-$slow_resolution_case.err" || slow_resolution_rc=$?
+  fi
+  slow_resolution_elapsed=$((SECONDS - slow_resolution_started))
+  (( slow_resolution_rc == 0 )) \
+    || { echo "slow resolution $slow_resolution_case fixture returned $slow_resolution_rc" >&2; exit 1; }
+  (( slow_resolution_elapsed >= 1 && slow_resolution_elapsed < 10 )) \
+    || { echo "slow resolution $slow_resolution_case fixture did not wait only for the resolver: ${slow_resolution_elapsed}s" >&2; exit 1; }
+  if grep -Fq '"decision":"block"' "$tmp/slow-resolution-$slow_resolution_case.out"; then
+    echo "slow resolution $slow_resolution_case fixture blocked" >&2
+    cat "$tmp/slow-resolution-$slow_resolution_case.out" >&2
+    exit 1
+  fi
+  grep -Fq 'stop-hook-output-was-unreadable' "$tmp/slow-resolution-$slow_resolution_case.out" \
+    || { echo "slow resolution $slow_resolution_case fixture lost its degraded allowance" >&2; exit 1; }
+  sed -n "$((slow_resolution_log_start + 1)),\$p" \
+      "$line_root/artifacts/agents/supervision/hooks.log" \
+    | grep -Fq 'stop response outcome=invalid-worker-output-allow' \
+    || { echo "slow resolution $slow_resolution_case fixture did not log under the resolved installation" >&2; exit 1; }
+done
+
 kill_engine=$tmp/kill-engine
 cat >"$kill_engine" <<'SH'
 #!/usr/bin/env bash
@@ -1003,6 +1119,10 @@ grep -Fq '"outcome": "EMITTED"' "$hook_evidence" \
 deadline_engine=$tmp/deadline-engine
 cat >"$deadline_engine" <<'SH'
 #!/usr/bin/env bash
+if [[ ${METASYSTEM_DEADLINE_RECORD_FAILURE:-0} == 1 &&
+      ${1:-} == report && ${2:-} == stop-block ]]; then
+  exit 3
+fi
 if [[ ${1:-} == steward && ${2:-} == hook-attempt ]]; then
   "${METASYSTEM_DEADLINE_REAL_ENGINE:?}" "$@" || exit $?
   hook_parent=$PPID
@@ -1061,9 +1181,10 @@ grep -Fq 'occurrence 2' "$tmp/deadline-second.out" \
   && grep -Fq 'A human or steward must restore supervision outside this seat, then retry.' "$tmp/deadline-second.out" \
   || { echo "repeated deadline overrun omitted its cause, count, or remedy" >&2; cat "$tmp/deadline-second.out" >&2; exit 1; }
 
-# The deadline parent with no canonical engine at all (the installation's
-# bin/metasystem gone while the worker hangs): the record cannot be updated,
-# and the parent still prints its allowance itself, exit 0, one JSON object.
+# With the installation's canonical engine gone, neither the worker nor the
+# deadline parent may substitute an override engine for that world. The worker
+# returns the fixed missing-engine allowance, which the parent accepts exactly.
+deadline_noengine_log_before=$(wc -c <"$line_root/artifacts/agents/supervision/hooks.log" | tr -d '[:space:]')
 mv "$line_root/bin/metasystem" "$line_root/bin/metasystem.absent"
 deadline_noengine_rc=0
 METASYSTEM_BIN="$deadline_engine" METASYSTEM_DEADLINE_REAL_ENGINE="$ms" \
@@ -1074,50 +1195,75 @@ mv "$line_root/bin/metasystem.absent" "$line_root/bin/metasystem"
   || { echo "supervision hook deadline fixture without an engine exited $deadline_noengine_rc" >&2; cat "$tmp/deadline-noengine.err" >&2; exit 1; }
 [[ $(grep -c . "$tmp/deadline-noengine.out") -eq 1 ]] \
   || { echo "supervision hook deadline fixture without an engine did not print exactly one line" >&2; cat "$tmp/deadline-noengine.out" >&2; exit 1; }
-grep -Fq '"systemMessage":"' "$tmp/deadline-noengine.out" \
-  && grep -Fq 'could not update the stop-refusal record; stopping is allowed' "$tmp/deadline-noengine.out" \
-  && ! grep -Fq '"decision":"block"' "$tmp/deadline-noengine.out" \
-  || { echo "supervision hook deadline fixture without an engine did not allow with the record-failure notice" >&2; cat "$tmp/deadline-noengine.out" >&2; exit 1; }
-grep -Fq 'stop response outcome=deadline-expired-record-failure-allow' \
-  "$line_root/artifacts/agents/supervision/hooks.log" \
-  || { echo "supervision hook deadline fixture without an engine did not log its outcome" >&2; exit 1; }
+deadline_noengine_expected='{"systemMessage":"Metasystem engine missing; stopping is allowed with degraded infrastructure. Reinstall or rebuild bin/metasystem; the steward owns repair."}'
+[[ $(<"$tmp/deadline-noengine.out") == "$deadline_noengine_expected" ]] \
+  || { echo "supervision hook deadline fixture without an engine did not preserve the missing-engine allowance" >&2; cat "$tmp/deadline-noengine.out" >&2; exit 1; }
+deadline_noengine_log_after=$(wc -c <"$line_root/artifacts/agents/supervision/hooks.log" | tr -d '[:space:]')
+[[ "$deadline_noengine_log_after" == "$deadline_noengine_log_before" ]] \
+  || { echo "supervision hook deadline fixture without an engine logged a deadline outcome" >&2; exit 1; }
 
-# The engine updated the record but cannot carry the log-failure prefix
-# (its json verbs refuse) while the hook log itself is read-only (a
-# read-only directory still takes appends to an existing file): the parent
-# still prints exactly one JSON allowance, with the log failure in fixed text.
+# An engine that refuses the parent's response-composition json verbs, so a
+# notice can only come from the parent's fixed text.
 prefix_engine=$tmp/prefix-engine
 cat >"$prefix_engine" <<'SH'
 #!/usr/bin/env bash
-if [[ ${1:-} == json ]]; then
+if [[ ${1:-} == json && ${2:-} == get && " $* " == *' --value '* ]]; then
   exit 3
 fi
-exec "${METASYSTEM_PREFIX_REAL_ENGINE:?}" "$@"
+if [[ ${1:-} == json && ${2:-} == object ]]; then
+  exit 3
+fi
+exec "${METASYSTEM_PREFIX_DEADLINE_ENGINE:?}" "$@"
 SH
 chmod +x "$prefix_engine"
-# The bed's engine copy may be read-only (the proof builds it so): move it
-# aside instead of overwriting it in place.
-mv "$line_root/bin/metasystem" "$line_root/bin/metasystem.real"
-cat >"$line_root/bin/metasystem" <<SH
-#!/usr/bin/env bash
-METASYSTEM_PREFIX_REAL_ENGINE="$line_root/bin/metasystem.real" exec "$prefix_engine" "\$@"
-SH
-chmod +x "$line_root/bin/metasystem"
+
+# With a resolved installation and state root, failure of the record write is
+# still an allowance, and its notice does not depend on the engine: the
+# override keeps the worker hung, refuses the parent's record operation, and
+# refuses the json verbs the parent could otherwise build the notice with,
+# while leaving its resolver and hook log available.
+printf '{"session_id":"deadline-record-failure","cwd":"%s","hook_event_name":"Stop"}\n' \
+  "$line_root" >"$tmp/deadline-record-failure-payload.json"
+deadline_record_failure_log_start=$(wc -l <"$line_root/artifacts/agents/supervision/hooks.log")
+deadline_record_failure_rc=0
+METASYSTEM_BIN="$prefix_engine" METASYSTEM_PREFIX_DEADLINE_ENGINE="$deadline_engine" \
+  METASYSTEM_DEADLINE_REAL_ENGINE="$ms" METASYSTEM_DEADLINE_RECORD_FAILURE=1 \
+  bash "$line_root/scripts/agents/supervision-hook.sh" claude stop \
+    <"$tmp/deadline-record-failure-payload.json" \
+    >"$tmp/deadline-record-failure.out" 2>"$tmp/deadline-record-failure.err" \
+  || deadline_record_failure_rc=$?
+(( deadline_record_failure_rc == 0 )) \
+  || { echo "supervision hook deadline record-failure fixture exited $deadline_record_failure_rc" >&2; cat "$tmp/deadline-record-failure.err" >&2; exit 1; }
+[[ $(grep -c . "$tmp/deadline-record-failure.out") -eq 1 ]] \
+  || { echo "supervision hook deadline record-failure fixture did not print exactly one line" >&2; cat "$tmp/deadline-record-failure.out" >&2; exit 1; }
+deadline_record_failure_expected='{"systemMessage":"Metasystem could not update the stop-refusal record; stopping is allowed so record failure cannot recreate the refusal loop. Cause: stop deadline expired. Remedy: A human or steward must restore supervision outside this seat, then retry."}'
+[[ $(<"$tmp/deadline-record-failure.out") == "$deadline_record_failure_expected" ]] \
+  || { echo "supervision hook deadline record-failure fixture did not emit its fixed allowance" >&2; cat "$tmp/deadline-record-failure.out" >&2; exit 1; }
+sed -n "$((deadline_record_failure_log_start + 1)),\$p" \
+    "$line_root/artifacts/agents/supervision/hooks.log" \
+  | grep -Fq 'stop response outcome=deadline-expired-record-failure-allow' \
+  || { echo "supervision hook deadline record-failure fixture did not log its outcome" >&2; exit 1; }
+[[ ! -e "$line_root/artifacts/agents/supervision/stop-refusals/deadline-record-failure.json" ]] \
+  || { echo "supervision hook deadline record-failure fixture unexpectedly wrote its refusal record" >&2; exit 1; }
+
+# The engine updated the record but cannot carry the log-failure prefix
+# (its response-composition json verbs refuse) while the hook log itself is
+# read-only. Making only its directory read-only would still permit appends to
+# the existing file. The parent prints one allowance with a fixed-text fallback.
 chmod 0444 "$line_root/artifacts/agents/supervision/hooks.log"
 deadline_prefix_rc=0
-METASYSTEM_BIN="$deadline_engine" METASYSTEM_DEADLINE_REAL_ENGINE="$ms" \
+METASYSTEM_BIN="$prefix_engine" METASYSTEM_PREFIX_DEADLINE_ENGINE="$deadline_engine" \
+  METASYSTEM_DEADLINE_REAL_ENGINE="$ms" \
   bash "$line_root/scripts/agents/supervision-hook.sh" claude stop <"$tmp/line-payload.json" \
     >"$tmp/deadline-prefix.out" 2>"$tmp/deadline-prefix.err" || deadline_prefix_rc=$?
 chmod 0644 "$line_root/artifacts/agents/supervision/hooks.log"
-mv -f "$line_root/bin/metasystem.real" "$line_root/bin/metasystem"
 (( deadline_prefix_rc == 0 )) \
   || { echo "supervision hook deadline fixture with a refusing json engine exited $deadline_prefix_rc" >&2; cat "$tmp/deadline-prefix.err" >&2; exit 1; }
 [[ $(grep -c . "$tmp/deadline-prefix.out") -eq 1 ]] \
   || { echo "supervision hook deadline fixture with a refusing json engine did not print exactly one line" >&2; cat "$tmp/deadline-prefix.out" >&2; exit 1; }
-grep -Fq '"systemMessage":"' "$tmp/deadline-prefix.out" \
-  && grep -Fq 'could not be' "$tmp/deadline-prefix.out" \
-  && grep -Fq 'stop deadline expired' "$tmp/deadline-prefix.out" \
-  && ! grep -Fq '"decision":"block"' "$tmp/deadline-prefix.out" \
+# The fixed fallback still says the log failure above the deadline's own words.
+deadline_prefix_expected='{"systemMessage":"the infrastructure stop condition could not be appended to the hook log\nMetasystem Stop deadline expired before a turn verdict; stopping is allowed with degraded infrastructure. Cause: stop deadline expired. Remedy: A human or steward must restore supervision outside this seat, then retry."}'
+[[ $(<"$tmp/deadline-prefix.out") == "$deadline_prefix_expected" ]] \
   || { echo "supervision hook deadline fixture with a refusing json engine did not allow with one fixed notice" >&2; cat "$tmp/deadline-prefix.out" >&2; exit 1; }
 
 # A restricted host may prove that the worker still exists without exposing
@@ -1195,20 +1341,27 @@ METASYSTEM_BIN="$failure_engine" \
     || missing_template_rc=$?
 (( missing_template_rc == 0 )) \
   || { echo "missing template state fixture returned $missing_template_rc" >&2; exit 1; }
-# A missing template state root is an infrastructure condition: the stop
-# is allowed with the degraded notice, never blocked.
 if grep -Fq '"decision":"block"' "$tmp/missing-template.out"; then
-  echo "missing template state fixture blocked on an infrastructure condition" >&2; cat "$tmp/missing-template.out" >&2; exit 1
+  echo "missing template state fixture blocked on missing-engine infrastructure" >&2
+  cat "$tmp/missing-template.out" >&2
+  exit 1
 fi
-grep -Fq 'degraded infrastructure' "$tmp/missing-template.out" \
-  || { echo "missing template state fixture emitted no degraded allowance" >&2; cat "$tmp/missing-template.out" >&2; exit 1; }
+grep -Fq 'engine missing' "$tmp/missing-template.out" \
+  && grep -Fq 'degraded infrastructure' "$tmp/missing-template.out" \
+  || { echo "missing template state fixture did not use the missing-engine allowance" >&2; cat "$tmp/missing-template.out" >&2; exit 1; }
+if grep -Fq 'HEALTH unknown' "$tmp/missing-template.out"; then
+  echo "missing template state fixture returned a non-blocking health message" >&2
+  exit 1
+fi
+[[ ! -e "$missing_template_outer/artifacts" && ! -e "$missing_template_root/artifacts" ]] \
+  || { echo "missing template state fixture wrote through an unproven installation" >&2; exit 1; }
 
 nested_outer=$tmp/nested-root
 nested_root=$nested_outer/metasystem
 mkdir -p "$nested_outer/development" "$nested_root/bin" "$nested_root/scripts/agents/adapters"
 printf '%s\n' 'template marker' >"$nested_outer/development/metasystem-design.md"
 printf '%s\n' 'metasystem.runtimes=fake' >"$nested_root/metasystem.conf"
-cp "$ms" "$nested_root/bin/metasystem"
+cp_engine "$ms" "$nested_root/bin/metasystem"
 cp "$hook" "$nested_root/scripts/agents/supervision-hook.sh"
 cp "$root/scripts/agents/adapters/fake.sh" "$nested_root/scripts/agents/adapters/fake.sh"
 git -C "$nested_outer" init -q -b main
@@ -1266,7 +1419,7 @@ printf '%s\n' '# Goals' '' \
   '## Queued goal: template-backlog — Keep the template seat moving' \
   '- Origin: main' \
   '- Next step: Claim and dispatch the template backlog.' >"$template_root/plans/goals.md"
-cp "$ms" "$template_root/bin/metasystem"
+cp_engine "$ms" "$template_root/bin/metasystem"
 cp "$hook" "$template_root/scripts/agents/supervision-hook.sh"
 printf '%s\n' '#!/usr/bin/env bash' 'exit 0' >"$template_root/scripts/agents/evidence-gc.sh"
 chmod +x "$template_root/scripts/agents/evidence-gc.sh"

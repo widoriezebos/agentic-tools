@@ -4,11 +4,10 @@ import (
 	"flag"
 	"fmt"
 	"os"
-	"os/exec"
 	"path/filepath"
 	"strconv"
-	"strings"
 
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/stateroot"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/up"
 )
 
@@ -39,12 +38,11 @@ func upMetasystemRoot(explicit string) (string, error) {
 }
 
 func upRepositoryScope(supplied string) (string, error) {
-	command := exec.Command("git", "-C", supplied, "rev-parse", "--show-toplevel")
-	out, err := command.Output()
+	top, err := stateroot.RepositoryTop(supplied)
 	if err != nil {
 		return "", fmt.Errorf("--repo is not inside a git repository: %s", supplied)
 	}
-	return canonicalPath(strings.TrimSpace(string(out)))
+	return canonicalPath(top)
 }
 
 func upWaitScale() int {

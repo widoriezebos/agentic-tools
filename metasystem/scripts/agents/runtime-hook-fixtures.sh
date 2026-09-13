@@ -3,6 +3,13 @@ set -euo pipefail
 
 root=$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd -P)
 ms="${METASYSTEM_BIN:-$root/bin/metasystem}"
+# The engine under test may arrive read-only. Every staged copy of an engine is
+# a fresh writable file, so a later stub or a second copy replaces it cleanly.
+cp_engine() { # source destination
+  rm -f "$2"
+  cp "$1" "$2"
+  chmod 0755 "$2"
+}
 hook=$root/scripts/agents/supervision-hook.sh
 [[ -x "$ms" ]] || { echo "runtime hook fixture: proof engine is absent" >&2; exit 1; }
 source "$root/scripts/agents/fixture-budget.sh"
@@ -41,7 +48,10 @@ clean_git() {
 
 make_repo() { # repository
   local repo=$1
-  mkdir -p "$repo"
+  mkdir -p "$repo/bin" "$repo/scripts/agents"
+  cp_engine "$ms" "$repo/bin/metasystem"
+  cp "$hook" "$repo/scripts/agents/supervision-hook.sh"
+  chmod +x "$repo/bin/metasystem" "$repo/scripts/agents/supervision-hook.sh"
   clean_git init -q -b main "$repo"
   clean_git -C "$repo" config user.name fixture
   clean_git -C "$repo" config user.email fixture@example.invalid
@@ -158,7 +168,7 @@ TestImportedClaudeHookSkipsDevinOutsideExecutionRoster() {
     output=$(printf '{"session_id":"equal-session","cwd":"%s"}\n' "$repo" | \
       METASYSTEM_RUNTIME_HOOK_CALL_LOG="$tmp/all-host-calls.log" METASYSTEM_BIN="$engine" \
       RUNTIME_HOOK_REAL_ENGINE="$ms" RUNTIME_HOOK_IDENTITY_RUNTIME=devin RUNTIME_HOOK_DELAY=0 \
-      bash "$hook" claude "$event")
+      bash "$repo/scripts/agents/supervision-hook.sh" claude "$event")
     [[ -z "$output" ]] || { echo "imported Claude $event hook was not silent: $output" >&2; return 1; }
   done
   after=$(state_snapshot "$repo")
@@ -181,7 +191,7 @@ TestUnhintedLocalDelegateSkipsBeforeBrainEffects() {
     output=$(printf '{"session_id":"equal-session","cwd":"%s"}\n' "$repo" | \
       METASYSTEM_RUNTIME_HOOK_CALL_LOG="$tmp/unhinted-local-calls.log" METASYSTEM_BIN="$engine" \
       RUNTIME_HOOK_REAL_ENGINE="$ms" RUNTIME_HOOK_IDENTITY_RUNTIME=claude RUNTIME_HOOK_DELAY=0 \
-      bash "$hook" claude "$event")
+      bash "$repo/scripts/agents/supervision-hook.sh" claude "$event")
     [[ -z "$output" ]] || { echo "unhinted local delegate $event hook was not silent: $output" >&2; return 1; }
   done
   after=$(state_snapshot "$repo")
@@ -207,7 +217,7 @@ TestRuntimeHookGuardDelayStillEmitsOneStopVerdictWithinTimeout() {
   output=$(printf '{"session_id":"equal-session","cwd":"%s"}\n' "$repo" | \
     METASYSTEM_RUNTIME_HOOK_CALL_LOG="$tmp/delayed-calls.log" METASYSTEM_BIN="$engine" \
     RUNTIME_HOOK_REAL_ENGINE="$ms" RUNTIME_HOOK_IDENTITY_RUNTIME=devin RUNTIME_HOOK_DELAY=2 \
-    bash "$hook" claude stop)
+    bash "$repo/scripts/agents/supervision-hook.sh" claude stop)
   elapsed=$((SECONDS - started))
   [[ -z "$output" && "$elapsed" -lt 15 ]] \
     || { echo "delayed runtime guard did not finish as one silent Stop result in budget (elapsed ${elapsed}s): $output" >&2; return 1; }
@@ -221,6 +231,8 @@ prepare_registry() { # state/installation root
   make_repo "$registry"
   mkdir -p "$registry/bin"
   cp "$ms" "$registry/bin/metasystem-real"
+  # The engine under test may be read-only; replace the copy, never write through it.
+  rm -f "$registry/bin/metasystem"
   cat >"$registry/bin/metasystem" <<'SH'
 #!/usr/bin/env bash
 set -euo pipefail
@@ -278,7 +290,7 @@ TestConcurrentRuntimeChildrenAndDetachedCustodyIsolation() {
     METASYSTEM_BIN="$registry/bin/metasystem" \
       METASYSTEM_HOOK_DELEGATE_STATE_ROOT="$registry" \
       METASYSTEM_HOOK_DELEGATE_INSTALLATION_ROOT="$registry" \
-      METASYSTEM_HOOK_DELEGATE_JOB="$job" HOOK_ENTRY="$hook" \
+      METASYSTEM_HOOK_DELEGATE_JOB="$job" HOOK_ENTRY="$registry/scripts/agents/supervision-hook.sh" \
       HOOK_RUNTIME="$runtime" HOOK_WORKSPACE="$workspace" \
       METASYSTEM_RUNTIME_HOOK_CALL_LOG="$tmp/concurrent-hook-calls.log" \
       HOOK_TRACE="$tmp/concurrent-hook-trace.log" "$child" &
@@ -303,7 +315,7 @@ TestConcurrentRuntimeChildrenAndDetachedCustodyIsolation() {
   METASYSTEM_BIN="$registry/bin/metasystem" \
     METASYSTEM_HOOK_DELEGATE_STATE_ROOT="$registry" \
     METASYSTEM_HOOK_DELEGATE_INSTALLATION_ROOT="$registry" \
-    METASYSTEM_HOOK_DELEGATE_JOB=job-detached HOOK_ENTRY="$hook" \
+    METASYSTEM_HOOK_DELEGATE_JOB=job-detached HOOK_ENTRY="$registry/scripts/agents/supervision-hook.sh" \
     HOOK_RUNTIME=codex HOOK_WORKSPACE="$linked_one" HOOK_GATE="$gate" \
     METASYSTEM_RUNTIME_HOOK_CALL_LOG="$tmp/concurrent-hook-calls.log" \
     HOOK_TRACE="$tmp/detached-hook-trace.log" "$child" &
@@ -355,7 +367,7 @@ SH
       METASYSTEM_RUNTIME_HOOK_UP_LOG="$tmp/cold-up.log" METASYSTEM_BIN="$engine" \
       RUNTIME_HOOK_REAL_ENGINE="$ms" RUNTIME_HOOK_MAIN_PID="$$" \
       RUNTIME_HOOK_MAIN_STARTED="$("$ms" proc started-at --pid $$)" \
-      bash "$hook" claude start >/dev/null
+      bash "$output/scripts/agents/supervision-hook.sh" claude start >/dev/null
   done
   [[ $(wc -l <"$tmp/cold-up.log") -eq 2 ]] \
     || { echo "cold or mission host was suppressed instead of reaching enrollment" >&2; return 1; }
@@ -368,7 +380,7 @@ SH
       METASYSTEM_HOOK_DELEGATE_STATE_ROOT="$tmp/forged-registry" \
       METASYSTEM_HOOK_DELEGATE_INSTALLATION_ROOT="$tmp/forged-registry" \
       METASYSTEM_HOOK_DELEGATE_JOB=job-forged \
-      bash "$hook" claude start >/dev/null 2>&1; then
+      bash "$tmp/forged-registry/scripts/agents/supervision-hook.sh" claude start >/dev/null 2>&1; then
     echo "a forged delegate hint suppressed a fresh host" >&2
     return 1
   fi
@@ -413,7 +425,7 @@ printf 'repair child completed\n'
 SH
   chmod +x "$tmp/devin-shim/devin"
   PATH="$tmp/devin-shim:$PATH"
-  export PATH HOOK_ENTRY="$hook" HOOK_TRACE="$tmp/devin-repair-hook-trace.log"
+  export PATH HOOK_ENTRY="$registry/scripts/agents/supervision-hook.sh" HOOK_TRACE="$tmp/devin-repair-hook-trace.log"
   export METASYSTEM_RUNTIME_HOOK_CALL_LOG="$tmp/devin-repair-hook-calls.log"
   session_id=equal-session
   requested_model=fixture-model

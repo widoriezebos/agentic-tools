@@ -417,13 +417,37 @@ func TestWaitSessionStartPrintsPendingRows(t *testing.T) {
 		if output, err := exec.Command("git", "-C", root, "init", "-q").CombinedOutput(); err != nil {
 			t.Fatalf("initialize hook fixture repository: %v %s", err, output)
 		}
+		// The hook resolves state from its own installation, so the fixture's
+		// durable wait row, hook, and canonical engine belong to one world.
+		sourceHook, err := filepath.Abs(filepath.Join("..", "..", "scripts", "agents", "supervision-hook.sh"))
+		if err != nil {
+			t.Fatal(err)
+		}
+		hook := filepath.Join(root, "scripts", "agents", "supervision-hook.sh")
+		canonicalEngine := filepath.Join(root, "bin", "metasystem")
+		if err := os.MkdirAll(filepath.Dir(hook), 0o755); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.MkdirAll(filepath.Dir(canonicalEngine), 0o755); err != nil {
+			t.Fatal(err)
+		}
+		hookBytes, err := os.ReadFile(sourceHook)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(hook, hookBytes, 0o755); err != nil {
+			t.Fatal(err)
+		}
+		engineBytes, err := os.ReadFile(binary)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(canonicalEngine, engineBytes, 0o755); err != nil {
+			t.Fatal(err)
+		}
 		wrapper := filepath.Join(t.TempDir(), "metasystem-hook-engine")
 		wrapperSource := "#!/bin/sh\nif [ \"${1:-}\" = up ]; then printf '%s\\n' 'UP SUCCESS'; exit 0; fi\nexec \"${METASYSTEM_WAIT_REAL_ENGINE:?}\" \"$@\"\n"
 		if err := os.WriteFile(wrapper, []byte(wrapperSource), 0o755); err != nil {
-			t.Fatal(err)
-		}
-		hook, err := filepath.Abs(filepath.Join("..", "..", "scripts", "agents", "supervision-hook.sh"))
-		if err != nil {
 			t.Fatal(err)
 		}
 		command := exec.Command("bash", hook, "fake", "start")

@@ -310,6 +310,7 @@ func families() []family {
 			verbs: []verb{
 				{"owner", "print <ownership> <mode>: metasystem-generic, app-owned, runtime, or outside", runPathOwner},
 				{"class", "print the manifest class governing one path", runPathClass},
+				{"state-root", "validate and print one metasystem installation", runPathStateRoot},
 			},
 		},
 		{

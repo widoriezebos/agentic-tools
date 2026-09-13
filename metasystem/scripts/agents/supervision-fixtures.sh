@@ -39,13 +39,13 @@ if (( ! fixture_bed_child )); then
       "$fixture_bed_script" operator-layout
   else
     run_fixture_bed_scenarios supervision "supervision fixtures passed (S4-1 through S4-16 and engine re-arm)" \
-      "$fixture_bed_script" bed-death-self-test operator-layout census-lifecycle slow-census idle-hook rotation-log foreign-owner stop-hook-monitor \
+      "$fixture_bed_script" bed-death-self-test operator-layout nested-root census-lifecycle slow-census idle-hook rotation-log foreign-owner stop-hook-monitor \
       rearm-rebuild rearm-launch-fails rearm-provenance stop-everything seat-survives status-is-live stop-fence arm-again arm-refuses-survivor \
       wait-job-run wait-proof wait-ledger wait-restart wait-bounds
   fi
 fi
 case "$fixture_scenario" in
-  bed-death-self-test | operator-layout | census-lifecycle | slow-census | idle-hook | rotation-log | foreign-owner | stop-hook-monitor | \
+  bed-death-self-test | operator-layout | nested-root | census-lifecycle | slow-census | idle-hook | rotation-log | foreign-owner | stop-hook-monitor | \
     rearm-rebuild | rearm-launch-fails | rearm-provenance | stop-everything | seat-survives | status-is-live | stop-fence | arm-again | arm-refuses-survivor | \
     wait-job-run | wait-proof | wait-ledger | wait-restart | wait-bounds) ;;
   *) echo "supervision fixtures: unknown scenario: $fixture_scenario" >&2; exit 64 ;;
@@ -74,6 +74,13 @@ mkdir -p "$METASYSTEM_SUPERVISION_REGISTRY_HOME"
 
 ms="${METASYSTEM_BIN:-$source_root/bin/metasystem}"
 unset METASYSTEM_BIN
+# The engine under test may arrive read-only. Every staged copy of an engine is
+# a fresh writable file, so a later stub or a second copy replaces it cleanly.
+cp_engine() { # source destination
+  rm -f "$2"
+  cp "$1" "$2"
+  chmod 0755 "$2"
+}
 
 # Every hook-side `metasystem up` crosses this fixture-only auditor before the
 # checkout-local engine receives it. This gives the final isolation check the
@@ -235,7 +242,7 @@ assert_fixture_supervision_isolation() {
     done < <(find "$root/artifacts/agents/mains" -type f -name '*.json' -print0 2>/dev/null || true)
   done
   case "$fixture_scenario" in
-    census-lifecycle | idle-hook | stop-hook-monitor)
+    nested-root | census-lifecycle | idle-hook | stop-hook-monitor)
       (( direct_up_seen == 1 )) \
         || { echo "supervision fixture scenario $fixture_scenario did not audit its direct metasystem up bring-up" >&2; return 1; }
       ;;
@@ -607,6 +614,11 @@ cat >"$live_arm_driver" <<'SH'
 set -u
 engine=$1 arm=$2 repo=$3 session=$4 tag=$5 output=$6 status_file=$7 ready=$8 release=$9
 join_request=${10:-} join_output=${11:-} join_status_file=${12:-}
+request=$join_request
+request_status_file=$join_output
+request_done=$join_status_file
+request_running=
+[[ -z "$request" ]] || request_running=$request.running
 started=$("$engine" proc started-at --pid $$)
 "$arm" --repo "$repo" --session "$session" --pid $$ --start-time "$started" --tag "$tag" >"$output" 2>&1
 status=$?
@@ -614,7 +626,14 @@ printf '%s\n' "$status" >"$status_file"
 touch "$ready"
 (( status == 0 )) || exit "$status"
 while [[ ! -e "$release" ]]; do
-  if [[ -n "$join_request" && -e "$join_request" && ! -e "$join_status_file" ]]; then
+  # Requests run below the announced main so fixture calls exercise the
+  # production ancestry proof against that live process.
+  if [[ -n "$request" && -x "$request" ]] && mv "$request" "$request_running"; then
+    request_status=0
+    "$request_running" || request_status=$?
+    printf '%s\n' "$request_status" >"${request_status_file:?}"
+    touch "${request_done:?}"
+  elif [[ -n "$join_request" && -e "$join_request" && ! -e "$join_status_file" ]]; then
     "$arm" --repo "$repo" --session "$session" --pid $$ --start-time "$started" --tag "$tag" >"$join_output" 2>&1
     join_status=$?
     printf '%s\n' "$join_status" >"$join_status_file"
@@ -652,7 +671,7 @@ make_repo() { # destination
   # Stage the engine the way production ships it: an untracked build artifact
   # at <repo>/bin/metasystem, added after the base commit.
   mkdir -p "$repo/bin"
-  cp "$ms" "$repo/bin/metasystem"
+  cp_engine "$ms" "$repo/bin/metasystem"
   # Fixture setup supplies the standing human enrollment. Product arming is
   # then exercised only through its ambient, non-minting path.
   enroll_fixture_engine "$repo" "$repo/bin/metasystem"
@@ -816,6 +835,8 @@ git -C "$operator_scope" init -q -b main
 git -C "$operator_scope" add metasystem
 git -C "$operator_scope" -c user.name=metasystem -c user.email=metasystem.invalid commit -qm fixture
 fixture_harness_roots+=("$operator_harness")
+mkdir -p "$operator_harness/bin"
+cp_engine "$ms" "$operator_harness/bin/metasystem"
 operator_arm=$operator_harness/scripts/agents/arm-supervision.sh
 operator_engine=$operator_harness/bin/metasystem
 enroll_fixture_engine "$operator_harness" "$operator_engine"
@@ -937,6 +958,8 @@ printf '{"session_id":"operator-path","cwd":"%s","hook_event_name":"Stop"}\n' "$
       METASYSTEM_SUPERVISION_FIXTURE_ENGINE="$operator_engine" \
       scripts/agents/supervision-hook.sh fake stop) \
   >"$tmp/operator-hook.out"
+[[ ! -e "$operator_scope/artifacts" ]] \
+  || { echo "nested operator Stop duplicated state at the Git repository scope" >&2; exit 1; }
 if grep -Fq '$(git rev-parse --show-toplevel)/scripts/agents/supervision-hook.sh' \
     "$operator_harness"/scripts/enforcement/*hooks.json; then
   echo "nested operator hook configuration still resolves metasystem scripts from the Git toplevel" >&2
@@ -949,6 +972,535 @@ fi
 echo "nested ordinary operator supervision fixture passed" >&2
 [[ ! -e "$operator_harness/artifacts/agents/supervision/lock.d/owner.json" ]] \
   || { echo "operator sandbox carries the operator's supervision lock" >&2; exit 1; }
+fi
+
+if [[ "$fixture_scenario" == nested-root ]]; then
+nested_scope=$tmp/nested-root
+nested_installation=$nested_scope/metasystem
+nested_sibling=$nested_scope/development/sub
+mkdir -p "$nested_installation/scripts" "$nested_installation/plans" "$nested_sibling"
+cp -R "$source_root/scripts/agents" "$nested_installation/scripts/"
+cp "$source_root/scripts/watch-background-jobs.sh" "$nested_installation/scripts/"
+cp "$source_root/scripts/metasystem-config.sh" "$nested_installation/scripts/"
+mkdir -p "$nested_scope/development"
+: >"$nested_scope/development/metasystem-design.md"
+cp "$source_root/metasystem.conf" "$nested_installation/metasystem.conf"
+"$ms" config tailor --conf "$nested_installation/metasystem.conf" --runtimes fake \
+  --set evidence.root="$tmp/nested-evidence" \
+  --set role.default.model.fake=fake-model \
+  --set watch.interval-sec=1 \
+  --set census.log-max-bytes=350 >/dev/null
+cat >"$nested_installation/plans/stream.md" <<'FIXTURE'
+- In flight right now: nothing
+- Waiting on the human: nothing blocking
+- Next step: dispatch the nested runner
+FIXTURE
+git -C "$nested_scope" init -q -b main
+git -C "$nested_scope" add .
+git -C "$nested_scope" -c user.name=fixture -c user.email=fixture@example.invalid commit -qm fixture
+mkdir -p "$nested_installation/bin"
+cp_engine "$ms" "$nested_installation/bin/metasystem"
+enroll_fixture_engine "$nested_installation" "$nested_installation/bin/metasystem"
+fixture_harness_roots+=("$nested_installation")
+
+# Keep the announced holder alive from the sibling checkout while each Stop
+# reads the nested world's holder state.
+nested_arm_output_file=$tmp/nested-arm.out
+nested_arm_status_file=$tmp/nested-arm.status
+nested_arm_ready=$tmp/nested-arm.ready
+nested_arm_release=$tmp/nested-arm.release
+nested_holder_request=$tmp/nested-holder.request
+nested_holder_request_running=$nested_holder_request.running
+nested_holder_request_status=$tmp/nested-holder.status
+nested_holder_request_done=$tmp/nested-holder.done
+nested_holder_payload=$tmp/nested-holder-payload.json
+nested_override_output=$tmp/nested-override.out
+nested_override_engine=$tmp/pair-engine
+(
+  cd "$nested_sibling"
+  exec bash "$live_arm_driver" "$nested_installation/bin/metasystem" \
+    "$nested_installation/scripts/agents/arm-supervision.sh" "$nested_installation" \
+    nested-holder nested-holder "$nested_arm_output_file" "$nested_arm_status_file" \
+    "$nested_arm_ready" "$nested_arm_release" "$nested_holder_request" \
+    "$nested_holder_request_status" "$nested_holder_request_done"
+) &
+nested_main_pid=$!
+nested_main_start=$(process_started_at "$nested_main_pid")
+owned_pids+=("$nested_main_pid:$nested_main_start")
+wait_until "nested sibling arming" test -e "$nested_arm_ready"
+[[ $(cat "$nested_arm_status_file") == 0 ]] \
+  || { echo "nested sibling main did not arm the nested world" >&2; cat "$nested_arm_output_file" >&2; exit 1; }
+grep -Fq 'up outcome=armed authority=writer' "$nested_arm_output_file" \
+  || { echo "nested sibling main did not become the nested checkout holder" >&2; cat "$nested_arm_output_file" >&2; exit 1; }
+
+  assert_nested_block() { # output, sentinel, case name
+  local output sentinel case_name
+  output=$1
+  sentinel=$2
+  case_name=$3
+  grep -Fq '"decision":"block"' "$output" \
+    && grep -Fq "$sentinel" "$output" \
+      || { echo "$case_name did not block from the resolved nested world" >&2; cat "$output" >&2; exit 1; }
+  }
+
+  write_nested_plan_line() { # sentinel
+    printf '%s\n' \
+      '- In flight right now: nothing' \
+      '- Waiting on the human: nothing blocking' \
+      "- Next step: $1" >"$nested_installation/plans/stream.md"
+  }
+
+# Stage one Stop below the announced holder. Arguments after the output are
+# environment command words placed before the hook invocation.
+run_nested_holder_stop() { # session, cwd, hook, output, optional command words...
+  local session_id payload_cwd hook_path output staged argument request_status
+  session_id=$1
+  payload_cwd=$2
+  hook_path=$3
+  output=$4
+  shift 4
+  staged=$nested_holder_request.staged
+  printf '{"session_id":"%s","cwd":"%s","hook_event_name":"Stop"}\n' \
+    "$session_id" "$payload_cwd" >"$nested_holder_payload"
+  {
+    printf '%s\n' '#!/usr/bin/env bash' 'set -u'
+    printf 'command cat %q | METASYSTEM_FAKE_AGENT_ANCESTOR_PID=$PPID ' "$nested_holder_payload"
+    for argument in "$@"; do
+      printf '%q ' "$argument"
+    done
+    printf 'bash %q fake stop >%q\n' "$hook_path" "$output"
+  } >"$staged"
+  chmod +x "$staged"
+  mv "$staged" "$nested_holder_request"
+  wait_until "$session_id announced-holder Stop" test -e "$nested_holder_request_done"
+  request_status=$(cat "$nested_holder_request_status")
+  rm -f "$nested_holder_request_running" "$nested_holder_request_status" \
+    "$nested_holder_request_done" "$nested_holder_payload"
+  if (( request_status != 0 )); then
+    echo "$session_id Stop failed below the announced holder" >&2
+    [[ ! -e "$output" ]] || cat "$output" >&2
+  fi
+  return "$request_status"
+}
+
+fire_nested() { # hook, session, cwd, output
+  local hook_path session_id payload_cwd output
+  local command_words=()
+  hook_path=$1
+  session_id=$2
+  payload_cwd=$3
+  output=$4
+  command_words+=("METASYSTEM_BIN=$fixture_up_auditor")
+  command_words+=("METASYSTEM_SUPERVISION_FIXTURE_ENGINE=$nested_installation/bin/metasystem")
+  [[ -z ${GIT_DIR:-} ]] || command_words+=("GIT_DIR=$GIT_DIR")
+  [[ -z ${GIT_WORK_TREE:-} ]] || command_words+=("GIT_WORK_TREE=$GIT_WORK_TREE")
+  run_nested_holder_stop "$session_id" "$payload_cwd" "$hook_path" "$output" \
+    "${command_words[@]}"
+  }
+
+  nested_hook=$nested_installation/scripts/agents/supervision-hook.sh
+
+  # The first Stop comes from a distinct Git checkout nested beneath the
+  # wrapper. Payload cwd must not redirect evidence or the verdict into it.
+  nested_inner=$nested_scope/development/inner
+  mkdir -p "$nested_inner"
+  git -C "$nested_inner" init -q -b main
+  printf '%s\n' fixture >"$nested_inner/placeholder"
+  git -C "$nested_inner" add placeholder
+  git -C "$nested_inner" -c user.name=fixture -c user.email=fixture@example.invalid \
+    commit -qm fixture
+  write_nested_plan_line 'nested-freshness sentinel'
+  fire_nested "$nested_hook" nested-freshness "$nested_inner" "$tmp/nested-freshness.out"
+  assert_nested_block "$tmp/nested-freshness.out" 'nested-freshness sentinel' 'nested freshness Stop'
+  nested_component=$nested_installation/artifacts/agents/steward/components/supervision-hook.json
+  [[ -f "$nested_component" ]] \
+    || { echo "nested freshness Stop wrote no steward component record" >&2; exit 1; }
+  [[ $($ms json get --file "$nested_component" --field result) == OK ]] \
+    && [[ $($ms json get --file "$nested_component" --field outcome) == EMITTED ]] \
+    || { echo "nested freshness component record did not complete its emitted turn" >&2; cat "$nested_component" >&2; exit 1; }
+  [[ ! -e "$nested_scope/artifacts/agents/steward" && ! -e "$nested_inner/artifacts" ]] \
+    || { echo "nested freshness wrote its component record outside the installation" >&2; exit 1; }
+  nested_world=$("$nested_installation/bin/metasystem" path state-root "$nested_installation")
+  nested_health=$("$nested_installation/bin/metasystem" health --repo "$nested_world" \
+    --metasystem-root "$nested_installation" 2>&1 || true)
+  [[ "$nested_health" == *hook-freshness=alive* && "$nested_health" != *hook-freshness=dead* ]] \
+    || { echo "nested state-world health did not find live hook freshness" >&2; echo "$nested_health" >&2; exit 1; }
+
+  write_nested_plan_line 'nested-sibling sentinel'
+  fire_nested "$nested_hook" nested-sibling "$nested_sibling" "$tmp/nested-sibling.out"
+  assert_nested_block "$tmp/nested-sibling.out" 'nested-sibling sentinel' 'nested sibling Stop'
+  write_nested_plan_line 'nested-inside sentinel'
+  run_nested_holder_stop nested-inside "$nested_installation/scripts/agents" "$nested_hook" \
+    "$tmp/nested-inside.out" env -u METASYSTEM_BIN
+  assert_nested_block "$tmp/nested-inside.out" 'nested-inside sentinel' 'nested installation Stop'
+  [[ -s "$nested_installation/artifacts/agents/supervision/hooks.log" ]] \
+    || { echo "nested Stop firings left no trail in the state world" >&2; exit 1; }
+  [[ ! -e "$nested_scope/artifacts" ]] \
+    || { echo "nested Stop firings wrote state at the wrapper Git toplevel" >&2; exit 1; }
+
+nested_worktree=$tmp/nested-wt
+git -C "$nested_scope" worktree add -q "$nested_worktree" HEAD
+nested_worktree_installation=$nested_worktree/metasystem
+fixture_harness_roots+=("$nested_worktree_installation")
+cat >"$nested_installation/plans/stream.md" <<'FIXTURE'
+- In flight right now: nothing
+- Waiting on the human: nothing blocking
+- Next step: recover the primary sentinel
+FIXTURE
+nested_primary_log=$nested_installation/artifacts/agents/supervision/hooks.log
+nested_log_before=$(wc -c <"$nested_primary_log" | tr -d '[:space:]')
+fire_nested "$nested_worktree_installation/scripts/agents/supervision-hook.sh" nested-worktree \
+  "$nested_worktree" "$tmp/nested-worktree.out"
+assert_nested_block "$tmp/nested-worktree.out" 'recover the primary sentinel' 'linked-worktree Stop'
+nested_log_after=$(wc -c <"$nested_primary_log" | tr -d '[:space:]')
+  (( nested_log_after > nested_log_before )) \
+    || { echo "linked-worktree Stop did not append evidence in the primary" >&2; exit 1; }
+[[ ! -e "$nested_worktree_installation/bin" && ! -e "$nested_worktree_installation/artifacts" && \
+   ! -e "$nested_worktree/artifacts" ]] \
+  || { echo "linked-worktree Stop materialized sandbox engine or state" >&2; exit 1; }
+
+  write_nested_plan_line 'recover the steered sentinel'
+  nested_log_before=$(wc -c <"$nested_primary_log" | tr -d '[:space:]')
+GIT_DIR="$nested_scope/.git" GIT_WORK_TREE="$nested_worktree" \
+  fire_nested "$nested_worktree_installation/scripts/agents/supervision-hook.sh" nested-worktree-steered \
+    "$nested_worktree" "$tmp/nested-worktree-steered.out"
+  assert_nested_block "$tmp/nested-worktree-steered.out" 'recover the steered sentinel' 'Git-steered worktree Stop'
+nested_log_after=$(wc -c <"$nested_primary_log" | tr -d '[:space:]')
+(( nested_log_after > nested_log_before )) \
+  || { echo "Git-steered worktree Stop did not append evidence in the primary" >&2; exit 1; }
+if grep -Fq 'engine missing' "$tmp/nested-worktree-steered.out"; then
+  echo "Git steering hid the primary engine from the worktree hook" >&2
+  exit 1
+fi
+[[ ! -e "$nested_worktree_installation/bin" && ! -e "$nested_worktree_installation/artifacts" && \
+   ! -e "$nested_worktree/artifacts" ]] \
+  || { echo "Git-steered worktree Stop materialized sandbox engine or state" >&2; exit 1; }
+nested_scheduler=$(GIT_DIR="$nested_scope/.git" GIT_WORK_TREE="$nested_worktree" \
+  "$nested_installation/bin/metasystem" up --metasystem-root "$nested_installation" \
+    --repo "$nested_installation" --print-scheduler-entry)
+nested_scheduler_repo=$(sed -n "s/.* --repo '\([^']*\)' --recover-only --if-down$/\1/p" \
+  <<<"$nested_scheduler")
+# The engine prints canonical paths (on macOS /var is /private/var).
+[[ "$nested_scheduler_repo" == "$(cd "$nested_scope" && pwd -P)" ]] \
+  || { echo "Git steering changed the nested scheduler repository scope" >&2; echo "$nested_scheduler" >&2; exit 1; }
+
+  write_nested_plan_line 'nested-override sentinel'
+pair_engine=$nested_override_engine
+cat >"$pair_engine" <<'FIXTURE'
+#!/usr/bin/env bash
+exec "${METASYSTEM_PAIR_REAL_ENGINE:?}" "$@"
+FIXTURE
+  chmod +x "$pair_engine"
+  nested_override_log_start=$(wc -l <"$nested_primary_log")
+  run_nested_holder_stop nested-override "$nested_sibling" "$nested_hook" "$nested_override_output" \
+    "METASYSTEM_BIN=$nested_override_engine" "METASYSTEM_PAIR_REAL_ENGINE=$ms"
+  nested_log_before=$nested_log_after
+  nested_override_json=$(<"$nested_override_output")
+  nested_override_decision=$("$ms" json get --value "$nested_override_json" --field decision)
+  nested_override_reason=$("$ms" json get --value "$nested_override_json" --field reason)
+  nested_override_message=$("$ms" json get --value "$nested_override_json" --field systemMessage)
+  [[ "$nested_override_decision" == block \
+    && "$nested_override_reason" == *'nested-override sentinel'* \
+    && "$nested_override_message" == *'Cause: supervision arming failed'* \
+    && "$nested_override_json" != *'stop-hook-output-was-unreadable'* ]] \
+    || { echo "nested override Stop did not preserve its block with the disclosed arming failure" >&2; cat "$nested_override_output" >&2; exit 1; }
+  nested_log_after=$(wc -c <"$nested_primary_log" | tr -d '[:space:]')
+  (( nested_log_after > nested_log_before )) \
+    || { echo "nested override Stop did not append evidence in the resolved world" >&2; exit 1; }
+  nested_override_record=$nested_installation/artifacts/agents/supervision/stop-refusals/nested-override.json
+  [[ -f "$nested_override_record" \
+    && $("$ms" json get --file "$nested_override_record" --field sessionId) == nested-override ]] \
+    && grep -Fq '"cause": "supervision arming failed"' "$nested_override_record" \
+    || { echo "nested override Stop wrote no matching refusal record at the installation" >&2; exit 1; }
+  sed -n "$((nested_override_log_start + 1)),\$p" "$nested_primary_log" \
+    | grep -Fq 'stop-condition infrastructure supervision-arming-failed supervision-arming ' \
+    || { echo "nested override Stop omitted its infrastructure condition line" >&2; exit 1; }
+  [[ -f "$nested_installation/artifacts/agents/steward/components/supervision-hook.json" ]] \
+    || { echo "nested override Stop wrote no component record at the installation" >&2; exit 1; }
+  [[ ! -e "$nested_scope/artifacts" ]] \
+    || { echo "nested override Stop wrote evidence at the wrapper root" >&2; exit 1; }
+
+copied_dir=$nested_scope/development/sub/scripts/agents
+mkdir -p "$copied_dir"
+cp "$nested_hook" "$copied_dir/supervision-hook.sh"
+cp "$nested_installation/scripts/agents/evidence-gc.sh" "$copied_dir/evidence-gc.sh"
+ln -s "$nested_hook" "$copied_dir/hook-link.sh"
+copied_log_before=$(wc -c <"$nested_primary_log" | tr -d '[:space:]')
+  missing_engine_allowance='{"systemMessage":"Metasystem engine missing; stopping is allowed with degraded infrastructure. Reinstall or rebuild bin/metasystem; the steward owns repair."}'
+for copied_kind in copy link; do
+  copied_hook=$copied_dir/supervision-hook.sh
+  [[ "$copied_kind" != link ]] || copied_hook=$copied_dir/hook-link.sh
+  copied_session=candidate-$copied_kind-no-override
+  run_nested_holder_stop "$copied_session" "$nested_sibling" "$copied_hook" \
+    "$tmp/$copied_session.out" env -u METASYSTEM_BIN
+    [[ $(<"$tmp/$copied_session.out") == "$missing_engine_allowance" ]] \
+    || { echo "$copied_kind hook without an override was governed by pathname" >&2; exit 1; }
+  [[ ! -e "$nested_installation/artifacts/agents/supervision/stop-refusals/$copied_session.json" ]] \
+    || { echo "$copied_kind hook without an override wrote a refusal record" >&2; exit 1; }
+  copied_session=candidate-$copied_kind-override
+  run_nested_holder_stop "$copied_session" "$nested_sibling" "$copied_hook" \
+    "$tmp/$copied_session.out" "METASYSTEM_BIN=$nested_installation/bin/metasystem"
+    [[ $(<"$tmp/$copied_session.out") == "$missing_engine_allowance" ]] \
+    || { echo "$copied_kind hook override waived installation provenance" >&2; exit 1; }
+  [[ ! -e "$nested_installation/artifacts/agents/supervision/stop-refusals/$copied_session.json" ]] \
+    || { echo "$copied_kind hook override wrote a refusal record" >&2; exit 1; }
+done
+copied_log_after=$(wc -c <"$nested_primary_log" | tr -d '[:space:]')
+[[ "$copied_log_after" == "$copied_log_before" && ! -e "$nested_scope/development/artifacts" && \
+   ! -e "$nested_scope/development/sub/artifacts" ]] \
+  || { echo "unproven hook candidates wrote governed evidence" >&2; exit 1; }
+
+no_world=$tmp/no-world
+mkdir -p "$no_world/scripts/agents" "$no_world/bin"
+cp "$nested_hook" "$no_world/scripts/agents/supervision-hook.sh"
+cp "$nested_installation/scripts/agents/evidence-gc.sh" "$no_world/scripts/agents/evidence-gc.sh"
+cp -R "$nested_installation/scripts/agents/adapters" "$no_world/scripts/agents/adapters"
+  cp_engine "$ms" "$no_world/bin/metasystem"
+  printf '%s\n' 'metasystem.runtimes=fake' >"$no_world/metasystem.conf"
+  no_world_started=$SECONDS
+  printf '{"session_id":"no-world","cwd":"%s","hook_event_name":"Stop"}\n' "$no_world" \
+    | env -u METASYSTEM_BIN bash "$no_world/scripts/agents/supervision-hook.sh" fake stop >"$tmp/no-world.out"
+  no_world_elapsed=$((SECONDS - no_world_started))
+  (( no_world_elapsed < 10 )) \
+    || { echo "an installation outside Git spent ${no_world_elapsed}s waiting for a resolver it did not start" >&2; exit 1; }
+  [[ ! -e "$no_world/artifacts" ]] \
+    || { echo "an installation outside Git guessed a governed world" >&2; cat "$tmp/no-world.out" >&2; exit 1; }
+  grep -Fq 'stop-hook-output-was-unreadable' "$tmp/no-world.out" \
+    && grep -Fq 'the payload named no checkout' "$tmp/no-world.out" \
+    && ! grep -Fq '"decision":"block"' "$tmp/no-world.out" \
+    || { echo "an installation outside Git did not use the unreadable-output allowance" >&2; cat "$tmp/no-world.out" >&2; exit 1; }
+
+skew_root=$tmp/skew-root
+mkdir -p "$skew_root/scripts/agents" "$skew_root/bin" "$skew_root/plans"
+cp "$nested_hook" "$skew_root/scripts/agents/supervision-hook.sh"
+cp "$nested_installation/scripts/agents/evidence-gc.sh" "$skew_root/scripts/agents/evidence-gc.sh"
+cp -R "$nested_installation/scripts/agents/adapters" "$skew_root/scripts/agents/adapters"
+cp_engine "$ms" "$skew_root/bin/metasystem"
+printf '%s\n' 'metasystem.runtimes=fake' >"$skew_root/metasystem.conf"
+printf '%s\n' '- Next step: skew sentinel' >"$skew_root/plans/stream.md"
+git -C "$skew_root" init -q -b main
+export METASYSTEM_SKEW_REAL_ENGINE=$ms
+# The engine under test may be read-only; replace the copy, never write through it.
+rm -f "$skew_root/bin/metasystem"
+cat >"$skew_root/bin/metasystem" <<'FIXTURE'
+#!/usr/bin/env bash
+if [[ ${1:-} == path && ${2:-} == state-root ]]; then
+  if [[ ${METASYSTEM_SKEW_MALFORMED_ROOT:-0} == 1 ]]; then
+    printf '%s\n%s\n' "$3" 'second-root-line'
+    exit 0
+  fi
+  printf '%s\n' 'metasystem path: unknown verb "state-root"' >&2
+  exit 2
+fi
+exec "${METASYSTEM_SKEW_REAL_ENGINE:?}" "$@"
+FIXTURE
+chmod +x "$skew_root/bin/metasystem"
+run_nested_holder_stop engine-skew "$skew_root" \
+  "$skew_root/scripts/agents/supervision-hook.sh" "$tmp/engine-skew.out" \
+  env -u METASYSTEM_BIN "METASYSTEM_SKEW_REAL_ENGINE=$ms"
+run_nested_holder_stop engine-skew-malformed "$skew_root" \
+  "$skew_root/scripts/agents/supervision-hook.sh" "$tmp/engine-skew-malformed.out" \
+  env -u METASYSTEM_BIN "METASYSTEM_SKEW_REAL_ENGINE=$ms" METASYSTEM_SKEW_MALFORMED_ROOT=1
+for skew_output in "$tmp/engine-skew.out" "$tmp/engine-skew-malformed.out"; do
+  [[ $(grep -Fc 'does not answer path state-root' "$skew_output") == 1 \
+     && $(grep -Fc 'degraded infrastructure' "$skew_output") == 1 ]] \
+    || { echo "engine skew did not surface the hook-skew allowance exactly once" >&2; cat "$skew_output" >&2; exit 1; }
+  if grep -Eq '"decision":"block"|HEALTH unknown|stop-hook-output-was-unreadable' "$skew_output"; then
+    echo "engine-skew allowance was replaced or made blocking" >&2
+    cat "$skew_output" >&2
+    exit 1
+  fi
+done
+[[ ! -e "$skew_root/artifacts/agents/supervision/hooks.log" && \
+   ! -e "$skew_root/artifacts/agents/supervision/stop-refusals" ]] \
+  || { echo "engine-skew fixture wrote evidence without a resolved world" >&2; exit 1; }
+
+  for completion_case in nested-wt-parent nested-wt-parent-steered; do
+    completion_out=$tmp/$completion_case.out
+    write_nested_plan_line "$completion_case sentinel"
+  if [[ "$completion_case" == nested-wt-parent-steered ]]; then
+    run_nested_holder_stop "$completion_case" "$nested_worktree" \
+      "$nested_worktree_installation/scripts/agents/supervision-hook.sh" "$completion_out" \
+      env -u METASYSTEM_BIN "GIT_DIR=$nested_scope/.git" "GIT_WORK_TREE=$nested_worktree"
+  else
+    run_nested_holder_stop "$completion_case" "$nested_worktree" \
+      "$nested_worktree_installation/scripts/agents/supervision-hook.sh" "$completion_out" \
+      env -u METASYSTEM_BIN
+  fi
+    assert_nested_block "$completion_out" "$completion_case sentinel" "$completion_case"
+    if grep -Fq 'stop-hook-output-was-unreadable' "$completion_out"; then
+      echo "$completion_case used the parent's unreadable-output allowance" >&2
+    exit 1
+  fi
+done
+
+cp_engine "$skew_root/bin/metasystem" "$nested_installation/bin/metasystem"
+deadline_engine=$tmp/wt-deadline-engine
+cat >"$deadline_engine" <<'FIXTURE'
+#!/usr/bin/env bash
+if [[ ${1:-} == runtime && ${2:-} == list ]]; then
+  sleep 58
+fi
+if [[ ${1:-} == path && ${2:-} == state-root && ${METASYSTEM_SLOW_STATE_ROOT:-0} == 1 ]]; then
+  sleep 58
+fi
+exec "${METASYSTEM_WT_DEADLINE_REAL_ENGINE:?}" "$@"
+FIXTURE
+chmod +x "$deadline_engine"
+
+  run_nested_timeout() { # session, steering, slow state root, expected record root
+    local session_id steering slow_root expected_root output record started elapsed timeout_rc unexpected_record log_start
+  session_id=$1
+  steering=$2
+  slow_root=$3
+    expected_root=$4
+    output=$tmp/$session_id.out
+    log_start=$(wc -l <"$expected_root/artifacts/agents/supervision/hooks.log")
+  started=$SECONDS
+  timeout_rc=0
+  if [[ "$steering" == true ]]; then
+    run_nested_holder_stop "$session_id" "$nested_worktree" \
+      "$nested_worktree_installation/scripts/agents/supervision-hook.sh" "$output" \
+      "GIT_DIR=$nested_scope/.git" "GIT_WORK_TREE=$nested_worktree" \
+      "METASYSTEM_BIN=$deadline_engine" "METASYSTEM_WT_DEADLINE_REAL_ENGINE=$ms" \
+      "METASYSTEM_SLOW_STATE_ROOT=$slow_root" "METASYSTEM_SKEW_REAL_ENGINE=$ms" \
+      || timeout_rc=$?
+  else
+    run_nested_holder_stop "$session_id" "$nested_worktree" \
+      "$nested_worktree_installation/scripts/agents/supervision-hook.sh" "$output" \
+      "METASYSTEM_BIN=$deadline_engine" "METASYSTEM_WT_DEADLINE_REAL_ENGINE=$ms" \
+      "METASYSTEM_SLOW_STATE_ROOT=$slow_root" "METASYSTEM_SKEW_REAL_ENGINE=$ms" \
+      || timeout_rc=$?
+  fi
+  elapsed=$((SECONDS - started))
+  (( timeout_rc == 0 && elapsed < 60 )) \
+    || { echo "$session_id exceeded or failed the provider deadline: rc=$timeout_rc elapsed=${elapsed}s" >&2; exit 1; }
+  if grep -Fq '"decision":"block"' "$output"; then
+    echo "$session_id blocked on deadline infrastructure" >&2
+    cat "$output" >&2
+    exit 1
+  fi
+  record=$expected_root/artifacts/agents/supervision/stop-refusals/$session_id.json
+    if [[ "$slow_root" == 1 ]]; then
+      grep -Fq 'could not update the stop-refusal record; stopping is allowed' "$output" \
+        || { echo "$session_id did not emit the unresolved-root record-failure allowance" >&2; cat "$output" >&2; exit 1; }
+      unexpected_record=$(find "$nested_scope" "$nested_worktree" -type f \
+        -path "*/stop-refusals/$session_id.json" -print -quit)
+      [[ -z "$unexpected_record" ]] \
+        || { echo "$session_id guessed a refusal-record root after state-root timed out: $unexpected_record" >&2; exit 1; }
+  else
+    grep -Fq 'deadline expired before a turn verdict' "$output" \
+      || { echo "$session_id did not emit the degraded deadline notice" >&2; cat "$output" >&2; exit 1; }
+    if grep -Fq 'could not update the stop-refusal record' "$output"; then
+      echo "$session_id emitted the record-failure allowance after resolving its state world" >&2
+      exit 1
+    fi
+    [[ -f "$record" && $($ms json get --file "$record" --field sessionId) == "$session_id" ]] \
+      || { echo "$session_id wrote no refusal record at $expected_root" >&2; exit 1; }
+    sed -n "$((log_start + 1)),\$p" "$expected_root/artifacts/agents/supervision/hooks.log" \
+      | grep -Eq 'stop response outcome=deadline-expired-allow elapsed=5[0-9]s$' \
+      || { echo "$session_id left no deadline allowance trail line" >&2; exit 1; }
+  fi
+}
+
+run_nested_timeout nested-wt-parent-timeout false 0 "$nested_installation"
+run_nested_timeout nested-wt-parent-steered-timeout true 0 "$nested_installation"
+[[ ! -e "$nested_worktree_installation/artifacts" && ! -e "$nested_worktree/artifacts" && \
+   ! -e "$nested_scope/artifacts" ]] \
+  || { echo "resolved worktree deadlines wrote outside the primary state world" >&2; exit 1; }
+run_nested_timeout nested-wt-parent-timeout-slow-root false 1 "$nested_installation"
+run_nested_timeout nested-wt-parent-steered-timeout-slow-root true 1 "$nested_installation"
+  [[ ! -e "$nested_worktree_installation/artifacts" && ! -e "$nested_worktree/artifacts" && \
+     ! -e "$nested_scope/artifacts" ]] \
+    || { echo "unresolved worktree deadlines wrote outside the mapped installation" >&2; exit 1; }
+
+  cp_engine "$ms" "$nested_installation/bin/metasystem"
+
+  # The compiled authority accepts installations that the old shell marker
+  # test refused: an adopted installation below a marked repository, and a
+  # template installation whose configuration exists only in the local file.
+  nested_tools=$nested_scope/tools
+  mkdir -p "$nested_tools/bin" "$nested_tools/plans" "$nested_tools/scripts"
+  cp -R "$source_root/scripts/agents" "$nested_tools/scripts/"
+  cp_engine "$ms" "$nested_tools/bin/metasystem"
+  cp "$nested_installation/metasystem.conf" "$nested_tools/metasystem.conf"
+  printf '%s\n' \
+    '- In flight right now: nothing' \
+    '- Waiting on the human: nothing blocking' \
+    '- Next step: nested-tools sentinel' >"$nested_tools/plans/stream.md"
+  git -C "$nested_scope" add tools
+  git -C "$nested_scope" -c user.name=fixture -c user.email=fixture@example.invalid \
+    commit -qm 'add nested adopted installation'
+  fixture_harness_roots+=("$nested_tools")
+
+  nested_local_scope=$tmp/nested-local
+  nested_local_installation=$nested_local_scope/metasystem
+  mkdir -p "$nested_local_scope/development" "$nested_local_installation/bin" \
+    "$nested_local_installation/plans" "$nested_local_installation/scripts"
+  : >"$nested_local_scope/development/metasystem-design.md"
+  cp -R "$source_root/scripts/agents" "$nested_local_installation/scripts/"
+  cp_engine "$ms" "$nested_local_installation/bin/metasystem"
+  cp "$nested_installation/metasystem.conf" "$nested_local_installation/metasystem.conf.local"
+  printf '%s\n' \
+    '- In flight right now: nothing' \
+    '- Waiting on the human: nothing blocking' \
+    '- Next step: nested-local sentinel' >"$nested_local_installation/plans/stream.md"
+  git -C "$nested_local_scope" init -q -b main
+  git -C "$nested_local_scope" add development metasystem/scripts metasystem/plans \
+    metasystem/metasystem.conf.local
+  git -C "$nested_local_scope" -c user.name=fixture -c user.email=fixture@example.invalid \
+    commit -qm fixture
+  fixture_harness_roots+=("$nested_local_installation")
+
+  assert_compiled_installation_block() { # output, installation, scope, session, sentinel, case name
+    local output installation scope session_id sentinel case_name component refusal_record response decision reason system_message
+    output=$1
+    installation=$2
+    scope=$3
+    session_id=$4
+    sentinel=$5
+    case_name=$6
+    response=$(<"$output")
+    decision=$("$ms" json get --value "$response" --field decision)
+    reason=$("$ms" json get --value "$response" --field reason)
+    system_message=$("$ms" json get --value "$response" --field systemMessage)
+    [[ "$decision" == block \
+      && "$reason" == *"$sentinel"* \
+      && "$system_message" == *'Cause: supervision arming failed'* \
+      && "$response" != *'stop-hook-output-was-unreadable'* ]] \
+      || { echo "$case_name did not preserve its installation verdict beside the arming failure" >&2; cat "$output" >&2; exit 1; }
+    component=$installation/artifacts/agents/steward/components/supervision-hook.json
+    [[ -f "$component" ]] \
+      || { echo "$case_name wrote no component record at the installation" >&2; exit 1; }
+    refusal_record=$installation/artifacts/agents/supervision/stop-refusals/$session_id.json
+    [[ -f "$refusal_record" \
+      && $("$ms" json get --file "$refusal_record" --field sessionId) == "$session_id" ]] \
+      && grep -Fq '"cause": "supervision arming failed"' "$refusal_record" \
+      || { echo "$case_name wrote no matching refusal record at the installation" >&2; exit 1; }
+    grep -Fq 'stop-condition infrastructure supervision-arming-failed supervision-arming ' \
+      "$installation/artifacts/agents/supervision/hooks.log" \
+      || { echo "$case_name omitted its infrastructure condition line" >&2; exit 1; }
+    [[ ! -e "$scope/artifacts" ]] \
+      || { echo "$case_name wrote evidence at its containing repository" >&2; exit 1; }
+  }
+
+  run_nested_holder_stop nested-tools "$nested_tools" \
+    "$nested_tools/scripts/agents/supervision-hook.sh" "$tmp/nested-tools.out" env -u METASYSTEM_BIN
+  assert_compiled_installation_block "$tmp/nested-tools.out" "$nested_tools" \
+    "$nested_scope" nested-tools 'nested-tools sentinel' 'nested adopted installation Stop'
+
+  run_nested_holder_stop nested-local "$nested_local_installation" \
+    "$nested_local_installation/scripts/agents/supervision-hook.sh" "$tmp/nested-local.out" \
+    env -u METASYSTEM_BIN
+  assert_compiled_installation_block "$tmp/nested-local.out" "$nested_local_installation" \
+    "$nested_local_scope" nested-local 'nested-local sentinel' 'local-only template installation Stop'
+
+  touch "$nested_arm_release"
+  wait_for_child_exit "nested sibling main release" "$nested_main_pid"
+  assert_fixture_supervision_isolation
+  echo "nested root resolver, linked worktree, engine skew, deadline, compiled installation, and hook freshness fixtures passed" >&2
+fixture_child_completed=1
+exit 0
 fi
 
 if [[ "$fixture_scenario" != operator-layout ]]; then
@@ -2583,7 +3135,7 @@ idle_repo=$tmp/idle-hook
 mkdir -p "$idle_repo/artifacts/agents/jobs" "$idle_repo/artifacts/agents/supervision" "$idle_repo/plans" "$idle_repo/scripts" "$idle_repo/bin"
 cp -R "$source_root/scripts/agents" "$idle_repo/scripts/"
 cp "$source_root/metasystem.conf" "$idle_repo/"
-cp "$ms" "$idle_repo/bin/metasystem"
+cp_engine "$ms" "$idle_repo/bin/metasystem"
 # The hook refuses outside a git repository, correctly: it reports on a
 # repository's work. The sandbox must be one.
 git -C "$idle_repo" init -q -b main
@@ -2686,7 +3238,7 @@ cp "$source_root/scripts/agents/arm-supervision.sh" \
 # refuses for the wrong reason and the foreign-owner rule below is never
 # actually exercised.
 mkdir -p "$foreign/repo/metasystem/bin"
-cp "$ms" "$foreign/repo/metasystem/bin/metasystem"
+cp_engine "$ms" "$foreign/repo/metasystem/bin/metasystem"
 # The fixture-identity env rides this whole run; without a fake-mode
 # conf the engine now refuses THAT first (agnosticism B1's
 # leaked-fixture fence) and the foreign-owner rule below would never
@@ -2738,7 +3290,7 @@ cp -R "$source_root/scripts/agents/adapters" "$stop_root/scripts/agents/adapters
 # stop-block, identity, and lease helpers it used to need as .py files all
 # live inside it now.
 mkdir -p "$stop_root/bin"
-cp "$ms" "$stop_root/bin/metasystem"
+cp_engine "$ms" "$stop_root/bin/metasystem"
 # The fixture-identity env rides this run: the sandbox needs the
 # fake-mode conf or the engine's leaked-fixture fence (agnosticism B1)
 # refuses classification before the hook logic under test runs.
@@ -2758,6 +3310,10 @@ stop_payload=$(printf '{"session_id":"t","cwd":"%s","hook_event_name":"Stop"}' "
 stop_hook() {
   run_fixture_hook "$stop_root" bash "$stop_root/scripts/agents/supervision-hook.sh" fake stop
 }
+printf '%s\n' \
+  '- In flight right now: nothing' \
+  '- Waiting on the human: nothing blocking' \
+  '- Next step: dispatch the runner' >"$stop_root/plans/stream.md"
 first=$(printf '%s' "$stop_payload" | stop_hook)
 # The arming notice carries every up component line as up prints it, the
 # verified ones included; only a non-verified accepted-engine line says the
@@ -2768,12 +3324,22 @@ if printf '%s' "$first" | grep -F 'component=accepted-engine' | grep -Fqv 'outco
   exit 1
 fi
 printf '%s' "$first" | grep -q '"decision":"block"' \
+  && printf '%s' "$first" | grep -Fq 'dispatch the runner' \
   || { echo "the stop hook did not refuse a turn ending with open work" >&2; echo "$first" >&2; exit 1; }
 printf '%s' "$first" | grep -Fq 'HEALTH ' \
   || { echo "the stop hook emitted no one-line health verdict" >&2; echo "$first" >&2; exit 1; }
 second=$(printf '%s' "$stop_payload" | stop_hook)
 printf '%s' "$second" | grep -q '"decision":"block"' \
   && { echo "the stop hook refused the same open work twice, which is the loop the design forbids" >&2; exit 1; }
+printf '%s\n' \
+  '- In flight right now: nothing' \
+  '- Waiting on the human: nothing blocking' \
+  '- Next step: dispatch the deep runner' >"$stop_root/plans/stream.md"
+deep_payload=$(printf '{"session_id":"t-deep","cwd":"%s","hook_event_name":"Stop"}' "$stop_root/scripts/agents")
+deep=$(printf '%s' "$deep_payload" | stop_hook)
+printf '%s' "$deep" | grep -q '"decision":"block"' \
+  && printf '%s' "$deep" | grep -Fq 'dispatch the deep runner' \
+  || { echo "the deep Stop firing did not resolve the flat installation" >&2; echo "$deep" >&2; exit 1; }
 [[ -s "$stop_root/artifacts/agents/supervision/hooks.log" ]] \
   || { echo "the stop hook left no evidence that it ran" >&2; exit 1; }
 cat >"$stop_root/plans/stream.md" <<'FIXTURE'

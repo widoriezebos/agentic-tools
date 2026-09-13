@@ -12,9 +12,16 @@ import (
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/lease"
 )
 
+func upTestGit(t *testing.T, args ...string) *exec.Cmd {
+	t.Helper()
+	command := exec.Command("git", args...)
+	command.Env = []string{"HOME=" + os.Getenv("HOME"), "PATH=" + os.Getenv("PATH"), "TMPDIR=" + os.Getenv("TMPDIR")}
+	return command
+}
+
 func TestTopLevelUpPrintsButDoesNotInstallSchedulerEntry(t *testing.T) {
 	root := t.TempDir()
-	if out, err := exec.Command("git", "-C", root, "init", "-q").CombinedOutput(); err != nil {
+	if out, err := upTestGit(t, "-C", root, "init", "-q").CombinedOutput(); err != nil {
 		t.Fatalf("git init: %v: %s", err, out)
 	}
 	stdout, stderr, code := captureRelay(t, func() int {
@@ -78,7 +85,7 @@ func TestTopLevelUpKeepsTemplateStateSeparateFromGitScope(t *testing.T) {
 	if err := os.WriteFile(filepath.Join(metasystemRoot, "metasystem.conf"), []byte("metasystem.runtimes=fake\n"), 0o644); err != nil {
 		t.Fatal(err)
 	}
-	if out, err := exec.Command("git", "-C", appRoot, "init", "-q").CombinedOutput(); err != nil {
+	if out, err := upTestGit(t, "-C", appRoot, "init", "-q").CombinedOutput(); err != nil {
 		t.Fatalf("git init: %v: %s", err, out)
 	}
 
@@ -117,5 +124,40 @@ func TestTopLevelUpKeepsTemplateStateSeparateFromGitScope(t *testing.T) {
 	}
 	if _, err := os.Stat(gitScopeAnnouncement); err != nil {
 		t.Fatalf("template retirement touched the separate Git scope: %v", err)
+	}
+}
+
+func TestUpRepositoryScopeIgnoresGitSteeringEnvironment(t *testing.T) {
+	primary := t.TempDir()
+	if out, err := upTestGit(t, "-C", primary, "init", "-q", "-b", "main").CombinedOutput(); err != nil {
+		t.Fatalf("git init primary: %v: %s", err, out)
+	}
+	if err := os.WriteFile(filepath.Join(primary, "tracked"), []byte("fixture\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if out, err := upTestGit(t, "-C", primary, "add", "tracked").CombinedOutput(); err != nil {
+		t.Fatalf("git add: %v: %s", err, out)
+	}
+	commit := upTestGit(t, "-C", primary, "-c", "user.name=fixture", "-c", "user.email=fixture@example.invalid", "commit", "-qm", "fixture")
+	if out, err := commit.CombinedOutput(); err != nil {
+		t.Fatalf("git commit: %v: %s", err, out)
+	}
+	worktree := filepath.Join(t.TempDir(), "worktree")
+	if out, err := upTestGit(t, "-C", primary, "worktree", "add", "-q", worktree, "HEAD").CombinedOutput(); err != nil {
+		t.Fatalf("git worktree add: %v: %s", err, out)
+	}
+	t.Setenv("GIT_DIR", filepath.Join(primary, ".git"))
+	t.Setenv("GIT_WORK_TREE", worktree)
+
+	got, err := upRepositoryScope(primary)
+	if err != nil {
+		t.Fatal(err)
+	}
+	want, err := canonicalPath(primary)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got != want {
+		t.Fatalf("upRepositoryScope() with Git steering = %q; want %q", got, want)
 	}
 }

@@ -151,6 +151,91 @@ func TestRootForInstallationPropagatesAdoptedRepositoryFailure(t *testing.T) {
 	}
 }
 
+func TestRootForCandidateCanonicalizesAndValidatesTheInstallation(t *testing.T) {
+	outer := t.TempDir()
+	installation := filepath.Join(outer, "metasystem")
+	if err := os.MkdirAll(filepath.Join(installation, "scripts", "agents"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.MkdirAll(filepath.Join(outer, "development"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(outer, "development", "metasystem-design.md"), []byte("design\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	link := filepath.Join(t.TempDir(), "installation-link")
+	if err := os.Symlink(installation, link); err != nil {
+		t.Fatal(err)
+	}
+
+	got, err := RootForCandidate(link)
+	want, wantErr := filepath.EvalSymlinks(installation)
+	if wantErr != nil {
+		t.Fatal(wantErr)
+	}
+	if err != nil || got != want {
+		t.Fatalf("RootForCandidate() = %q, %v; want %q", got, err, want)
+	}
+}
+
+func TestRootForCandidateKeepsNestedAdoptedStateAtTheInstallation(t *testing.T) {
+	outer := t.TempDir()
+	installation := filepath.Join(outer, "vendor", "metasystem-runtime")
+	if err := os.MkdirAll(filepath.Join(installation, "scripts", "agents"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	priorTop := repositoryTop
+	repositoryTop = func(string) (string, error) {
+		t.Fatal("candidate state-root resolution must not replace the authenticated installation with its Git scope")
+		return "", errors.New("unexpected repository lookup")
+	}
+	t.Cleanup(func() { repositoryTop = priorTop })
+
+	got, err := RootForCandidate(installation)
+	want, wantErr := filepath.EvalSymlinks(installation)
+	if wantErr != nil {
+		t.Fatal(wantErr)
+	}
+	if err != nil || got != want {
+		t.Fatalf("RootForCandidate() = %q, %v; want installation %q", got, err, want)
+	}
+}
+
+func TestRootForCandidateRefusesAPathWithoutInstallationShape(t *testing.T) {
+	if _, err := RootForCandidate(t.TempDir()); err == nil || !strings.Contains(err.Error(), "not a metasystem installation") {
+		t.Fatalf("candidate without an installation shape was accepted: %v", err)
+	}
+}
+
+func TestRepositoryTopIgnoresGitSteeringEnvironment(t *testing.T) {
+	primary := t.TempDir()
+	initPrimary := exec.Command("git", "-C", primary, "init", "-q", "-b", "main")
+	initPrimary.Env = scrubGitSteering(os.Environ())
+	if output, err := initPrimary.CombinedOutput(); err != nil {
+		t.Fatalf("initialize primary repository: %v: %s", err, output)
+	}
+	poison := t.TempDir()
+	initPoison := exec.Command("git", "-C", poison, "init", "-q", "-b", "main")
+	initPoison.Env = scrubGitSteering(os.Environ())
+	if output, err := initPoison.CombinedOutput(); err != nil {
+		t.Fatalf("initialize poison repository: %v: %s", err, output)
+	}
+	t.Setenv("GIT_DIR", filepath.Join(poison, ".git"))
+	t.Setenv("GIT_WORK_TREE", poison)
+
+	got, err := RepositoryTop(primary)
+	if err != nil {
+		t.Fatal(err)
+	}
+	want, err := filepath.EvalSymlinks(primary)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got != want {
+		t.Fatalf("RepositoryTop() = %q; want %q", got, want)
+	}
+}
+
 func TestEvidenceRootMustBeConfiguredAndAbsolute(t *testing.T) {
 	installation, app := installFixture(t, false)
 	withRoots(t, installation, app)

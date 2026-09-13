@@ -212,6 +212,31 @@ func installationShape(root string) bool {
 	return confErr == nil && !conf.IsDir() && scriptsErr == nil && scripts.IsDir()
 }
 
+// RootForCandidate validates and canonicalizes an installation named by a caller.
+// The installation must carry the same shape required of the executable's
+// installation before callers use it as a state owner.
+func RootForCandidate(candidate string) (string, error) {
+	root, err := filepath.Abs(candidate)
+	if err != nil {
+		return "", fmt.Errorf("state root: locate installation: %w", err)
+	}
+	if resolved, resolveErr := filepath.EvalSymlinks(root); resolveErr == nil {
+		root = resolved
+	} else {
+		root = filepath.Clean(root)
+	}
+	if err := validateInstallationShape(root); err != nil {
+		return "", err
+	}
+	return root, nil
+}
+
+// RepositoryTop returns the Git toplevel containing path after removing Git
+// steering variables that could redirect repository discovery.
+func RepositoryTop(path string) (string, error) {
+	return repositoryTop(path)
+}
+
 // RelativeRoot returns the repository-relative directory owned by kind.
 // Readers of historical Git trees use this form because an absolute runtime
 // location has no meaning inside a commit.
@@ -250,12 +275,19 @@ func installationRoot() (string, error) {
 	if err != nil {
 		return "", fmt.Errorf("state root: locate installation: %w", err)
 	}
-	if _, confErr := os.Stat(filepath.Join(root, "metasystem.conf")); confErr != nil {
-		if info, scriptsErr := os.Stat(filepath.Join(root, "scripts", "agents")); scriptsErr != nil || !info.IsDir() {
-			return "", fmt.Errorf("state root: executable %q is not installed at <installation>/bin/metasystem", executable)
-		}
+	if err := validateInstallationShape(root); err != nil {
+		return "", fmt.Errorf("state root: executable %q is not installed at <installation>/bin/metasystem", executable)
 	}
 	return root, nil
+}
+
+func validateInstallationShape(root string) error {
+	if _, confErr := os.Stat(filepath.Join(root, "metasystem.conf")); confErr != nil {
+		if info, scriptsErr := os.Stat(filepath.Join(root, "scripts", "agents")); scriptsErr != nil || !info.IsDir() {
+			return fmt.Errorf("state root: %q is not a metasystem installation", root)
+		}
+	}
+	return nil
 }
 
 func templateMode(installationRoot string) bool {

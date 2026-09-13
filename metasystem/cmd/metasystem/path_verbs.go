@@ -11,6 +11,24 @@ import (
 
 var resolvePathClass = pathclass.ResolvePath
 
+func runPathStateRoot(args []string) int {
+	flags := flag.NewFlagSet("path state-root", flag.ContinueOnError)
+	if flags.Parse(args) != nil {
+		return 2
+	}
+	if flags.NArg() != 1 {
+		fmt.Fprintln(os.Stderr, "usage: metasystem path state-root <installation>")
+		return 2
+	}
+	root, err := stateroot.RootForCandidate(flags.Arg(0))
+	if err != nil {
+		fmt.Fprintln(os.Stderr, err)
+		return 1
+	}
+	fmt.Println(root)
+	return 0
+}
+
 func runPathOwner(args []string) int {
 	flags := flag.NewFlagSet("path owner", flag.ContinueOnError)
 	if flags.Parse(args) != nil {
