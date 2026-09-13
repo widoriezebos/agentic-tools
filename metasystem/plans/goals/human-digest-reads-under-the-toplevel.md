@@ -1,6 +1,6 @@
 # human-digest-reads-under-the-toplevel
 
-- State: approved
+- State: claimed
 - Priority: 1
 - Sequence: 37
 - Risk: severity=2 novelty=1 exposure=2 accumulation=1 basis="severity 2: the human never sees the highlights the narrator wrote for him, nothing wrong lands; novelty 1: one root argument; exposure 2: every template-layout seat's Stop; accumulation 1: one line, one fixture"
@@ -9,11 +9,13 @@
 - Origin: main
 - Next step: Tier 2, MECHANICAL: one root argument in scripts/agents/supervision-hook.sh (the Stop path's digest call) plus a fixture row in supervision-hook-fixtures.sh on a template-layout bed. Sol builds, Fable reviews, land. Coordinate with the brain chain brain-build1b-20260907 round 5, which fixes the same root for the brain's boot. SAME SHAPE, m1, 2026-09-09: the hook's health call has the same wrong root on a template-layout seat (health --hook-preview --repo "$repo" in scripts/agents/supervision-hook.sh reads supervision state under the repository root and reports the live steward dead). The one-root-argument fix this goal names should cover the health call and the digest call together; the truth side is recorded on stop-message-truth.
 - OpenedAt: 2026-09-07T06:12:28Z
-- Revision: 15
+- Revision: 16
 - Pinned: m1c
 - Budget: elapsedLimit=4h attemptLimit=6 reservedJobMinutesLimit=720 activeJobLimit=1 reviewRoundLimit=2
 - BudgetExceptions: 0
 - Approved: by=human:Wido at=2026-09-13T08:27:56Z revision=15 opid=Z43KPVR5M2Y87VWD1EHM6N7HTZ-m1e-c6925449 authority=proven digest=fa08f84972dd2a0e1ebb30d75405189333b32053ec44e8c904358ddfd5571f48
+- Claimed: machine=m1c lineage=main-1789191340-90689-8975a9 at=2026-09-13T08:38:32Z revision=16 accountingRevision=16 episodeAt=2026-09-13T08:38:32Z episodeRevision=16
+- StopCapability: generation=16 revision=16 machine=m1c claimEpoch=5 fenceEpoch=0
 
 History:
 - 2026-09-07T06:12:28Z PJEWRMGAEZWW5981RJDYFGT7MD-m1-a4f8999f open actor=m1+main-1788594343-3833-fb64b9 targets=human-digest-reads-under-the-toplevel
@@ -31,4 +33,5 @@ History:
 - 2026-09-13T07:25:28Z ME4Q9WYTAJN6JSFZT7DH7RWDNW-m1c-69c9e454 done actor=m1c+main-1789191340-90689-8975a9 targets=actionable-metrics,breach-clock-and-budget-honesty,chain-landing-carries-the-reviewed-diff,closing-read-and-receipt-in-parallel,coordinator-context-stays-under-budget,coordinator-wakes-on-events-not-polls,critique-closes-on-folded-proof,dispatch-bases-chains-on-the-remote-tip,failed-job-attention,fixture-repo-copies-exclude-the-artifacts-store,fixture-stewards-outlive-their-suite,fixture-waits-name-their-producer,goal-abandoned-with-a-reason,hook-root-resolver-design,human-authority-surface-runs-its-cmd-tests,human-digest-reads-under-the-toplevel,human-goal-verbs-forgiving,job-record-birth-token,landing-receipt-survives-records-drift,lease-sweep-death-evidence,live-job-on-a-done-goal-unnoticed,machine-concurrency-governor,proof-groups-detect-hangs-by-progress-not-the-clock,repo-root-paths-ride-agent-commits-unjudged,run-scoped-build-caches-have-a-janitor,skipped-test-fails-its-group-on-the-other-os,small-change-lane,steward-catchup-livelock,steward-launches-resolve-their-model,steward-narrates-beside-the-repo-root,steward-revives-a-done-goal,stop-batch-strands-a-resumable-goal,stop-hook-never-forces-an-empty-turn,stop-refusal-fits-on-one-screen,suite-custody,token-spend-fence,watch-verb,watcher-repair-request-never-names-current,winddown-census-handoff-leak
 - 2026-09-13T08:26:47Z 4MB0ZAKMT1FEYEDEJR3F1DJR9J-m1c-69c9e454 reopen actor=m1c+main-1789191340-90689-8975a9 targets=human-digest-reads-under-the-toplevel reason=priority-order from=1:2 to=1:37
 - 2026-09-13T08:27:56Z Z43KPVR5M2Y87VWD1EHM6N7HTZ-m1e-c6925449 approve actor=human:Wido targets=human-digest-reads-under-the-toplevel
-Integrity: sha256=afd664dd164ec5342488923774fe4a76b6913c45cd6310d1592f3e8457f29e84
+- 2026-09-13T08:38:32Z A7DNP43M2706H5KNJ1XZ53BQSA-m1c-69c9e454 claim actor=m1c+main-1789191340-90689-8975a9 targets=human-digest-reads-under-the-toplevel
+Integrity: sha256=b3f8ec2fea71e979c1f8974ba59a80c716a3f7bcf482e7565f59f138dfbda389
