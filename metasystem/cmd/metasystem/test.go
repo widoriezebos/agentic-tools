@@ -23,6 +23,7 @@ import (
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/gittree"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/goal"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/landing"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/output"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/proofrun"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/steward"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/testpolicy"
@@ -833,7 +834,7 @@ func runTestRun(args []string) int {
 			projection = proofrun.ReusedTestResult(template, attempts, identities, prepared.EffectiveContract)
 		}
 		if projection.Delivery.Sufficient {
-			if err := publishTestingResult(request.ResultPath, projection); err != nil {
+			if err := publishTestingResult(prepared.Installation, request.ResultPath, projection); err != nil {
 				fmt.Fprintln(os.Stderr, "metasystem test run:", err)
 				return 1
 			}
@@ -941,7 +942,7 @@ func runTestRun(args []string) int {
 				return 1
 			}
 		}
-		if err := publishTestingResult(request.ResultPath, *retained); err != nil {
+		if err := publishTestingResult(prepared.Installation, request.ResultPath, *retained); err != nil {
 			fmt.Fprintln(os.Stderr, "metasystem test run:", err)
 			return 1
 		}
@@ -1479,11 +1480,23 @@ func writePrivateJSON(path string, value any) error {
 	return atomicfile.WriteVolatile(path, string(data)+"\n")
 }
 
-func publishTestingResult(path string, result proofrun.TestResult) error {
+func publishTestingResult(root, path string, result proofrun.TestResult) error {
 	if path != "" {
 		return writeIdentityJSON(path, result)
 	}
-	printJSON(result)
+	encoded, err := json.Marshal(result)
+	if err != nil {
+		return err
+	}
+	if len(encoded) <= output.MaxInlineBytes {
+		fmt.Println(string(encoded))
+		return nil
+	}
+	reference, err := output.Spill(root, "test-run", "json", append(encoded, '\n'), time.Now().UTC())
+	if err != nil {
+		return err
+	}
+	printJSON(reference)
 	return nil
 }
 

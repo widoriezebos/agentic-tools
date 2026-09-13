@@ -407,6 +407,14 @@ func families() []family {
 			},
 		},
 		{
+			name:    "output",
+			summary: "bounded command output retained under the control root",
+			verbs: []verb{
+				{"spill", "retain a command output file and print its reference", runOutputSpill},
+				{"prune", "remove retained output files older than a duration", runOutputPrune},
+			},
+		},
+		{
 			name:    "hooks",
 			summary: "self-check that the repo runs under its own metasystem",
 			verbs: []verb{

@@ -277,13 +277,21 @@ run_step() { # name, command...
 
 fail_step() { # exit code
   local rc=$1
+  local retained retained_rc
   carry_stop_reason="step $step_name failed with exit $rc: $(tail -n 1 "$step_output" 2>/dev/null || true)"
   printf '!! STEP FAILED: %s (exit %s)\n' "$step_name" "$rc" >&2
+  retained=$("$ms" output spill --root "$root" --verb land --ext log --file "$step_output" 2>&1)
+  retained_rc=$?
   if [[ "$step_name" == "coverage delta for staged Go packages" ]]; then
     # Every failing package must reach the caller in one refusal.
     cat "$step_output" >&2
   else
     tail -n 40 "$step_output" >&2
+  fi
+  if (( retained_rc == 0 )); then
+    printf '%s\n' "$retained" >&2
+  else
+    printf 'land: full step log not retained: %s\n' "$retained" >&2
   fi
   exit "$rc"
 }

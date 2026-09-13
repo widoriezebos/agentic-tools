@@ -1557,6 +1557,11 @@ set -e
   || { echo "land step-failure fixture: fetch exit 73 became $failure_rc" >&2; sed -n '1,160p' "$failure_output" >&2; exit 1; }
 grep -Fq '!! STEP FAILED: fetch origin (exit 73)' "$failure_output"
 grep -Fq 'fixture fetch broke with exit 73' "$failure_output"
+grep -Fq 'output-reference verb=land' "$failure_output"
+failure_logs=("$leg_local"/artifacts/agents/output/land-*.log)
+[[ ${#failure_logs[@]} -eq 1 && -f "${failure_logs[0]}" ]] \
+  || { echo "land step-failure fixture: expected exactly one retained log, got ${#failure_logs[@]}" >&2; exit 1; }
+grep -Fq 'fixture fetch broke with exit 73' "${failure_logs[0]}"
 if grep -Fq '== STEP: rebase onto origin/main' "$failure_output" \
     || grep -Eq '^push( |$)' "$failure_log"; then
   echo "land step-failure fixture: the chain continued after fetch failed" >&2

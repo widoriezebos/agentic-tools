@@ -7,6 +7,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"reflect"
 	"strings"
 	"testing"
 	"time"
@@ -15,10 +16,76 @@ import (
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/goal"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/identity"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/landing"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/output"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/proofrun"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/steward"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/testpolicy"
 )
+
+func TestPublishTestingResultSpillsOverTheBound(t *testing.T) {
+	root := t.TempDir()
+	result := proofrun.TestResult{SchemaVersion: proofrun.TestResultSchemaVersion}
+	encoded, err := json.Marshal(result)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for len(encoded) <= output.MaxInlineBytes {
+		result.Groups = append(result.Groups, proofrun.GroupResult{ID: fmt.Sprintf("group-%d-%s", len(result.Groups), strings.Repeat("x", 512))})
+		encoded, err = json.Marshal(result)
+		if err != nil {
+			t.Fatal(err)
+		}
+	}
+	var publishErr error
+	stdout, _ := captureStdout(t, func() int {
+		publishErr = publishTestingResult(root, "", result)
+		return 0
+	})
+	if publishErr != nil {
+		t.Fatal(publishErr)
+	}
+	if strings.Count(stdout, "\n") != 1 || !strings.HasSuffix(stdout, "\n") {
+		t.Fatalf("spilled result stdout is not exactly one line: %q", stdout)
+	}
+	reference, ok := output.Detect([]byte(strings.TrimSuffix(stdout, "\n")))
+	if !ok {
+		t.Fatalf("spilled result did not print a reference: %q", stdout)
+	}
+	var decoded proofrun.TestResult
+	if err := readStrictJSON(reference.Path, &decoded); err != nil {
+		t.Fatal(err)
+	}
+	if !reflect.DeepEqual(decoded, result) {
+		t.Fatalf("spilled result changed during publication")
+	}
+	wantFile := append(append([]byte(nil), encoded...), '\n')
+	if got, err := os.ReadFile(reference.Path); err != nil || !reflect.DeepEqual(got, wantFile) {
+		t.Fatalf("spilled file bytes differ: bytes=%d want=%d err=%v", len(got), len(wantFile), err)
+	}
+}
+
+func TestPublishTestingResultUnderTheBoundIsUnchanged(t *testing.T) {
+	root := t.TempDir()
+	result := proofrun.TestResult{SchemaVersion: proofrun.TestResultSchemaVersion, AttemptID: "small"}
+	encoded, err := json.Marshal(result)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var publishErr error
+	stdout, _ := captureStdout(t, func() int {
+		publishErr = publishTestingResult(root, "", result)
+		return 0
+	})
+	if publishErr != nil {
+		t.Fatal(publishErr)
+	}
+	if want := string(encoded) + "\n"; stdout != want {
+		t.Fatalf("inline result stdout = %q, want %q", stdout, want)
+	}
+	if _, err := os.Stat(filepath.Join(root, filepath.FromSlash(output.Dir))); !os.IsNotExist(err) {
+		t.Fatalf("inline result created an output directory: %v", err)
+	}
+}
 
 func TestTrustedPolicyEngineIsRequiredWithoutBuildingDuringReadOnlySelection(t *testing.T) {
 	root := t.TempDir()
