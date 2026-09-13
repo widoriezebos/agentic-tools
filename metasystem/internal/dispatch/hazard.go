@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/config"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/readsubject"
 )
 
 // HazardClass is the closed configuration class carried by every delegated
@@ -341,9 +342,6 @@ func validateIndependentCritiqueReference(repoRoot, jobsDir string, rootRecord m
 	if role != "code-critic" && role != "design-critic" && role != "warden" {
 		return hazardClosureRefusal(hazardCritiqueClosureRefusal, fmt.Sprintf("independent-critique reference %q is not a critic job", ref))
 	}
-	if asString(critic["reviews"]) != finalState.job {
-		return hazardClosureRefusal(hazardCritiqueStaleRefusal, fmt.Sprintf("independent-critique job %q reviews %q instead of final work round %q", ref, asString(critic["reviews"]), finalState.job))
-	}
 	if parent, present := critic["parentJob"]; (present && parent != nil) || asString(critic["dispatchMode"]) != string(DispatchModeFresh) || asString(critic["resumedSessionId"]) != "" {
 		return hazardClosureRefusal(hazardCritiqueClosureRefusal, fmt.Sprintf("independent-critique job %q is not a fresh-context chain", ref))
 	}
@@ -364,9 +362,176 @@ func validateIndependentCritiqueReference(repoRoot, jobsDir string, rootRecord m
 	if proofErr != nil || !proven {
 		return hazardClosureRefusal(hazardCritiqueClosureRefusal, fmt.Sprintf("independent-critique job %q does not prove the required maximum critic effort", ref))
 	}
+	criticChain, err := chainMembers(jobsDir, ref)
+	if err != nil {
+		return hazardClosureRefusal(hazardCritiqueStaleRefusal, fmt.Sprintf("independent-critique closure for stamped root %q is unreadable: %v", ref, err))
+	}
+	criticRecords := make([]map[string]any, 0, len(criticChain))
+	for _, member := range criticChain {
+		criticRecords = append(criticRecords, member.record)
+	}
+	closure, closurePresent, closureErr := readsubject.ReadClosedClosure(filepath.Dir(jobsDir), critic, criticRecords)
+	if closureErr != nil {
+		return hazardClosureRefusal(hazardCritiqueStaleRefusal, fmt.Sprintf("independent-critique closure for stamped root %q is invalid: %v", ref, closureErr))
+	}
+	if closurePresent {
+		if closure.CriticRoot != ref {
+			return hazardClosureRefusal(hazardCritiqueStaleRefusal, fmt.Sprintf("independent-critique stamp %q does not equal closure root %q at round %d", ref, closure.CriticRoot, closure.Round))
+		}
+		if err := validateClosureProvingCritic(repoRoot, jobsDir, ref, role, closure.Round, criticChain, memberIDs, memberSessions, required); err != nil {
+			return err
+		}
+		terminalSubject, _, subjectPresent, subjectErr := liveReadSubject(loadCritiqueState(repoRoot), finalState.job)
+		if subjectErr != nil || !subjectPresent {
+			detail := "no review.json and diff.patch"
+			if subjectErr != nil {
+				detail = subjectErr.Error()
+			}
+			return hazardClosureRefusal(hazardCritiqueStaleRefusal, fmt.Sprintf("independent-critique closure root %q round %d has no readable live subject for terminal work round %q: %s", closure.CriticRoot, closure.Round, finalState.job, detail))
+		}
+		if closure.Subject.Kind != readsubject.SubjectLive || !closure.Subject.Equal(terminalSubject) {
+			return hazardClosureRefusal(hazardCritiqueStaleRefusal, fmt.Sprintf("independent-critique closure root %q round %d subject %s is not the live subject %s of terminal work round %q", closure.CriticRoot, closure.Round, closure.Subject.Digest(), terminalSubject.Digest(), finalState.job))
+		}
+		return nil
+	}
+	if asString(critic["reviews"]) != finalState.job {
+		return hazardClosureRefusal(hazardCritiqueStaleRefusal, fmt.Sprintf("independent-critique job %q reviews %q instead of final work round %q", ref, asString(critic["reviews"]), finalState.job))
+	}
 	endedAt, err := parseRecordTime(asString(critic["endedAt"]))
 	if err != nil || endedAt.Before(finalState.endedAt) {
 		return hazardClosureRefusal(hazardCritiqueStaleRefusal, fmt.Sprintf("independent-critique job %q did not end at or after final work round %q", ref, finalState.job))
+	}
+	return nil
+}
+
+func validateClosureProvingCritic(repoRoot, jobsDir, criticRoot, criticRole string, closureRound int64, criticChain []chainMember, implementationMemberIDs, implementationSessions map[string]bool, required ConfigurationObligations) error {
+	var proving *chainMember
+	for index := range criticChain {
+		round, ok := numInt(criticChain[index].record["round"])
+		if !ok || round != closureRound {
+			continue
+		}
+		if proving != nil {
+			return hazardClosureRefusal(hazardCritiqueStaleRefusal, fmt.Sprintf("independent-critique closure root %q has ambiguous proving-job selection at round %d", criticRoot, closureRound))
+		}
+		proving = &criticChain[index]
+	}
+	if proving == nil {
+		return hazardClosureRefusal(hazardCritiqueStaleRefusal, fmt.Sprintf("independent-critique closure root %q has no proving job at round %d", criticRoot, closureRound))
+	}
+	provingJob := asString(proving.record["jobId"])
+	prefix := fmt.Sprintf("independent-critique closure root %q proving job %q round %d", criticRoot, provingJob, closureRound)
+	if proving.path != filepath.Join(jobsDir, provingJob+".json") {
+		return hazardClosureRefusal(hazardCritiqueStaleRefusal, fmt.Sprintf("%s has record path %q instead of jobs/%s.json", prefix, proving.path, provingJob))
+	}
+	if !validJobID.MatchString(provingJob) || implementationMemberIDs[provingJob] {
+		return hazardClosureRefusal(hazardCritiqueStaleRefusal, fmt.Sprintf("%s is not distinct from the implementation chain", prefix))
+	}
+	if asString(proving.record["status"]) != "completed" {
+		return hazardClosureRefusal(hazardCritiqueStaleRefusal, fmt.Sprintf("%s has status %q instead of completed", prefix, asString(proving.record["status"])))
+	}
+	if asString(proving.record["role"]) != criticRole {
+		return hazardClosureRefusal(hazardCritiqueClosureRefusal, fmt.Sprintf("%s has role %q instead of root role %q", prefix, asString(proving.record["role"]), criticRole))
+	}
+	if provingJob == criticRoot {
+		return nil
+	}
+
+	byJob := make(map[string]*chainMember, len(criticChain))
+	for index := range criticChain {
+		job := asString(criticChain[index].record["jobId"])
+		if _, present := byJob[job]; present {
+			return hazardClosureRefusal(hazardCritiqueStaleRefusal, fmt.Sprintf("%s has ambiguous ancestry at member %q", prefix, job))
+		}
+		byJob[job] = &criticChain[index]
+	}
+	ancestry := []*chainMember{proving}
+	seen := map[string]bool{provingJob: true}
+	for child := proving; asString(child.record["jobId"]) != criticRoot; {
+		childJob := asString(child.record["jobId"])
+		parentJob, ok := child.record["parentJob"].(string)
+		if !ok || !validJobID.MatchString(parentJob) {
+			return hazardClosureRefusal(hazardCritiqueClosureRefusal, fmt.Sprintf("%s has ancestor %q with malformed parentJob", prefix, childJob))
+		}
+		parent, present := byJob[parentJob]
+		if !present {
+			return hazardClosureRefusal(hazardCritiqueClosureRefusal, fmt.Sprintf("%s has ancestor %q whose parentJob %q is missing", prefix, childJob, parentJob))
+		}
+		if seen[parentJob] {
+			return hazardClosureRefusal(hazardCritiqueClosureRefusal, fmt.Sprintf("%s has an ancestry cycle through %q", prefix, parentJob))
+		}
+		seen[parentJob] = true
+		ancestry = append(ancestry, parent)
+		child = parent
+	}
+
+	for index := len(ancestry) - 2; index >= 0; index-- {
+		child := ancestry[index]
+		parent := ancestry[index+1]
+		childJob := asString(child.record["jobId"])
+		parentJob := asString(parent.record["jobId"])
+		childRound, childRoundOK := numInt(child.record["round"])
+		parentRound, parentRoundOK := numInt(parent.record["round"])
+		if asString(child.record["role"]) != criticRole {
+			return hazardClosureRefusal(hazardCritiqueClosureRefusal, fmt.Sprintf("%s has ancestor %q whose role %q differs from root role %q", prefix, childJob, asString(child.record["role"]), criticRole))
+		}
+		childSession := asString(child.record["sessionId"])
+		if childSession == "" || implementationSessions[childSession] {
+			return hazardClosureRefusal(hazardCritiqueClosureRefusal, fmt.Sprintf("%s has ancestor %q with sessionId %q that is empty or belongs to the implementation chain", prefix, childJob, childSession))
+		}
+		if asString(child.record["parentJob"]) != parentJob || !childRoundOK || !parentRoundOK || childRound != parentRound+1 {
+			return hazardClosureRefusal(hazardCritiqueClosureRefusal, fmt.Sprintf("%s has ancestor %q whose parentJob/round does not immediately follow %q round %d", prefix, childJob, parentJob, parentRound))
+		}
+		if asString(child.record["dispatchMode"]) != string(DispatchModeFollowUp) {
+			return hazardClosureRefusal(hazardCritiqueClosureRefusal, fmt.Sprintf("%s has ancestor %q with dispatchMode %q instead of follow-up", prefix, childJob, asString(child.record["dispatchMode"])))
+		}
+		if asString(child.record["runtime"]) != asString(parent.record["runtime"]) {
+			return hazardClosureRefusal(hazardCritiqueClosureRefusal, fmt.Sprintf("%s has ancestor %q whose runtime %q differs from parent %q runtime %q", prefix, childJob, asString(child.record["runtime"]), parentJob, asString(parent.record["runtime"])))
+		}
+		parentSession := asString(parent.record["sessionId"])
+		resumedSession := asString(child.record["resumedSessionId"])
+		if resumedSession == "" || resumedSession != parentSession {
+			return hazardClosureRefusal(hazardCritiqueClosureRefusal, fmt.Sprintf("%s has ancestor %q whose resumedSessionId %q does not equal parent %q sessionId %q", prefix, childJob, resumedSession, parentJob, parentSession))
+		}
+		switch asString(child.record["resumeMode"]) {
+		case "resumed":
+			if childSession != resumedSession {
+				return hazardClosureRefusal(hazardCritiqueClosureRefusal, fmt.Sprintf("%s has ancestor %q whose sessionId %q does not equal resumedSessionId %q for resumeMode resumed", prefix, childJob, childSession, resumedSession))
+			}
+		case "fresh-context":
+			if childSession == resumedSession {
+				return hazardClosureRefusal(hazardCritiqueClosureRefusal, fmt.Sprintf("%s has ancestor %q whose sessionId equals resumedSessionId for resumeMode fresh-context", prefix, childJob))
+			}
+		default:
+			return hazardClosureRefusal(hazardCritiqueClosureRefusal, fmt.Sprintf("%s has ancestor %q with unsupported resumeMode %q", prefix, childJob, asString(child.record["resumeMode"])))
+		}
+	}
+
+	if detail := validateHazardEvidenceAdmissionProvenance(proving.record, provingJob); detail != "" {
+		return hazardClosureRefusal(hazardEvidenceProvenanceRefusal, fmt.Sprintf("%s: %s", prefix, detail))
+	}
+	configuration, ok := proving.record["configurationObligations"].(map[string]any)
+	if !ok || asString(configuration["builderEffortTier"]) != required.IndependentCritiqueEffortTier {
+		return hazardClosureRefusal(hazardCritiqueClosureRefusal, fmt.Sprintf("%s has configurationObligations.builderEffortTier %q instead of %q", prefix, asString(configuration["builderEffortTier"]), required.IndependentCritiqueEffortTier))
+	}
+	if asString(configuration["builderReasoningEffort"]) != required.IndependentCritiqueReasoningEffort {
+		return hazardClosureRefusal(hazardCritiqueClosureRefusal, fmt.Sprintf("%s has configurationObligations.builderReasoningEffort %q instead of %q", prefix, asString(configuration["builderReasoningEffort"]), required.IndependentCritiqueReasoningEffort))
+	}
+	if asString(proving.record["reasoningEffort"]) != required.IndependentCritiqueReasoningEffort {
+		return hazardClosureRefusal(hazardCritiqueClosureRefusal, fmt.Sprintf("%s has reasoningEffort %q instead of %q", prefix, asString(proving.record["reasoningEffort"]), required.IndependentCritiqueReasoningEffort))
+	}
+	runtimeName := asString(proving.record["runtime"])
+	requestedModel := asString(proving.record["requestedModel"])
+	if runtimeName == "" || requestedModel == "" {
+		return hazardClosureRefusal(hazardCritiqueClosureRefusal, fmt.Sprintf("%s has empty runtime/requestedModel %q/%q", prefix, runtimeName, requestedModel))
+	}
+	proven, proofErr := runtimeProvesMaximalExecution(repoRoot, runtimeName, requestedModel)
+	if proofErr != nil || !proven {
+		detail := "mapping does not admit this pair"
+		if proofErr != nil {
+			detail = proofErr.Error()
+		}
+		return hazardClosureRefusal(hazardCritiqueClosureRefusal, fmt.Sprintf("%s has runtime/requestedModel %q/%q that does not prove maximal execution: %s", prefix, runtimeName, requestedModel, detail))
 	}
 	return nil
 }
@@ -430,7 +595,11 @@ func validateHazardEvidenceAdmissionProvenance(record map[string]any, ref string
 	capability, ok := record["launchCapability"].(map[string]any)
 	expectedVerb := "dispatch"
 	if request.DispatchMode == DispatchModeFollowUp {
-		expectedVerb = "follow-up"
+		if asString(record["resumeMode"]) == "fresh-context" {
+			expectedVerb = "dispatch"
+		} else {
+			expectedVerb = "follow-up"
+		}
 	}
 	mintedAt, mintedErr := parseRecordTime(asString(capability["mintedAt"]))
 	consumedAt, consumedErr := parseRecordTime(asString(capability["consumedAt"]))

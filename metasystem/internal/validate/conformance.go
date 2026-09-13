@@ -19,6 +19,7 @@ import (
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/gittree"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/goal"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/pathclass"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/readsubject"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/runtimes"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/stateroot"
 )
@@ -1073,9 +1074,6 @@ func (r *conformanceRun) mergeCritique(recordPath, finalTree, configuredRuntime,
 			continue
 		}
 		if reviews, ok := record["reviews"].(string); ok && implementationIDs[reviews] {
-			if r.criticRoot != "" && jobID != r.criticRoot {
-				continue
-			}
 			criticIDs = append(criticIDs, jobID)
 		}
 	}
@@ -1090,6 +1088,13 @@ func (r *conformanceRun) mergeCritique(recordPath, finalTree, configuredRuntime,
 				"conformance failure: the code-critic role is unconfigured; set the exact key role.code-critic.runtime")
 		}
 		return r.out, r.errs, 1
+	}
+	selectedFound := r.criticRoot == ""
+	for _, criticID := range criticIDs {
+		selectedFound = selectedFound || criticID == r.criticRoot
+	}
+	if !selectedFound {
+		r.errs = append(r.errs, fmt.Sprintf("conformance failure: requested code-critic chain %s is absent from the implementation chain's reviewing roots", quoted(r.criticRoot)))
 	}
 
 	successorText := func(successorJob string) (string, error) {
@@ -1107,9 +1112,11 @@ func (r *conformanceRun) mergeCritique(recordPath, finalTree, configuredRuntime,
 	}
 	unionClasses := map[string]unionClassClaim{}
 	matchedTree := 0
+	selectedValid := r.criticRoot == ""
 	for _, criticID := range criticIDs {
 		criticRoot := records[criticID]
 		var failures []string
+		hardBeforeStale := false
 		var members []map[string]any
 		for jobID, record := range records {
 			if root, ok := chainRootIn(records, jobID); ok && root == criticID {
@@ -1119,6 +1126,26 @@ func (r *conformanceRun) mergeCritique(recordPath, finalTree, configuredRuntime,
 		if len(members) == 0 {
 			diagnostics = append(diagnostics, diagnostic{criticID, []string{"has no readable rounds"}})
 			continue
+		}
+		closure, closurePresent, closureErr := readsubject.ReadClosedClosure(
+			filepath.Join(r.root, "artifacts", "agents"), criticRoot, members,
+		)
+		if closureErr != nil {
+			failures = append(failures, fmt.Sprintf("closure is invalid: %v", closureErr))
+			hardBeforeStale = true
+		} else if closurePresent {
+			if closure.Subject.Kind != readsubject.SubjectLive {
+				failures = append(failures, fmt.Sprintf("closure root %s round %d has subject kind %s, not live", quoted(closure.CriticRoot), closure.Round, quoted(closure.Subject.Kind)))
+				hardBeforeStale = true
+			}
+			if closure.Subject.ImplementerRoot != r.rootJob {
+				failures = append(failures, fmt.Sprintf("closure root %s round %d names implementation root %s instead of %s", quoted(closure.CriticRoot), closure.Round, quoted(closure.Subject.ImplementerRoot), quoted(r.rootJob)))
+				hardBeforeStale = true
+			}
+			if reviewedRoot, ok := chainRootIn(records, closure.Subject.ReviewedMember); !ok || reviewedRoot != r.rootJob {
+				failures = append(failures, fmt.Sprintf("closure root %s round %d names reviewed member %s outside implementation root %s", quoted(closure.CriticRoot), closure.Round, quoted(closure.Subject.ReviewedMember), quoted(r.rootJob)))
+				hardBeforeStale = true
+			}
 		}
 		final := members[0]
 		finalScore := func(record map[string]any) float64 {
@@ -1182,54 +1209,49 @@ func (r *conformanceRun) mergeCritique(recordPath, finalTree, configuredRuntime,
 					materialIDs = append(materialIDs, "<unnamed>")
 				}
 			}
-			verdict := result["verdictMaterialCount"]
-			verdictZero := verdict == float64(0)
-			if len(materialIDs) > 0 || !verdictZero {
-				detail := "reported count " + quoted(verdict)
+			verdictCount, verdictReadable := jsonInteger(result["verdictMaterialCount"])
+			verdictZero := verdictReadable && verdictCount == 0
+			if len(materialIDs) > 0 || verdictCount > 0 {
+				detail := "reported count " + quoted(verdictCount)
 				if len(materialIDs) > 0 {
 					detail = strings.Join(materialIDs, ", ")
 				}
 				failures = append(failures, "final round still has material findings despite any dispositions: "+detail)
+				// An unreadable count alone never promotes: a root that failed,
+				// was cancelled or is still running has no return to read, and
+				// a matching current root must still be able to close. A named
+				// material finding in the return does promote.
+				hardBeforeStale = hardBeforeStale || verdictReadable || len(materialIDs) > 0
 			}
 			failures = append(failures, exhaustionDiscipline(criticRoot, records, r.rootJob, successorText, finalRound, materialIDs, verdictZero)...)
 		}
-
-		reviewedTree := result["reviewedTree"]
-		if reviewedTree != finalTree {
-			failures = append(failures, fmt.Sprintf(
-				"reviewed tree %s is stale; the implementer branch final committed tree is %s",
-				quoted(reviewedTree), quoted(finalTree)))
-			staleDiagnostics = append(staleDiagnostics, diagnostic{criticID, failures})
-			continue
-		}
-		matchedTree++
-
+		var register []any
 		if registerPresent {
-			register, ok := registerValue.([]any)
+			var ok bool
+			register, ok = registerValue.([]any)
 			if !ok {
 				failures = append(failures, "canonical finding register is malformed")
+				hardBeforeStale = true
 				register = nil
 			}
 			for index, raw := range register {
 				entry, ok := raw.(map[string]any)
 				if !ok {
 					failures = append(failures, fmt.Sprintf("canonical finding register entry %d is malformed", index))
+					hardBeforeStale = true
 					continue
 				}
 				status, _ := entry["status"].(string)
 				resolution, _ := entry["resolution"].(string)
 				rigorClass, _ := entry["rigorClass"].(string)
 				findingID, _ := entry["findingId"].(string)
-				if prior, present := unionClasses[findingID]; present && prior.class != rigorClass {
-					failures = append(failures, fmt.Sprintf("finding %s has conflicting rigor classes %s and %s on same-tree code-critic roots %s and %s", quoted(findingID), quoted(prior.class), quoted(rigorClass), quoted(prior.root), quoted(criticID)))
-				} else if findingID != "" {
-					unionClasses[findingID] = unionClassClaim{class: rigorClass, root: criticID}
-				}
 				if status == "open" || status == "disputed" {
 					failures = append(failures, fmt.Sprintf("canonical finding register has unresolved finding %s with status %s", quoted(entry["findingId"]), quoted(status)))
+					hardBeforeStale = true
 				}
 				if resolution == "out-of-scope" && (rigorClass == "severe" || rigorClass == "unproven") {
 					failures = append(failures, fmt.Sprintf("finding %s is %s and cannot be resolved out-of-scope", quoted(entry["findingId"]), rigorClass))
+					hardBeforeStale = true
 				}
 				if status == "deferred" || status == "accepted-risk" {
 					goalID, _ := criticRoot["goalId"].(string)
@@ -1248,6 +1270,7 @@ func (r *conformanceRun) mergeCritique(recordPath, finalTree, configuredRuntime,
 					}
 					if endpointErr != nil || projectionErr != nil || goalFile == nil {
 						failures = append(failures, fmt.Sprintf("%s finding %s has no readable matching goal record", status, quoted(entry["findingId"])))
+						hardBeforeStale = true
 						continue
 					}
 					opid, _ := entry["decisionOpid"].(string)
@@ -1263,8 +1286,40 @@ func (r *conformanceRun) mergeCritique(recordPath, finalTree, configuredRuntime,
 					}
 					if !matched {
 						failures = append(failures, fmt.Sprintf("%s finding %s lacks its matching goal line", status, quoted(findingID)))
+						hardBeforeStale = true
 					}
 				}
+			}
+		}
+
+		reviewedTree := result["reviewedTree"]
+		if closurePresent && closureErr == nil {
+			reviewedTree = closure.Subject.ReviewedProjectTree
+		}
+		if reviewedTree != finalTree {
+			failures = append(failures, fmt.Sprintf(
+				"reviewed tree %s is stale; the implementer branch final committed tree is %s",
+				quoted(reviewedTree), quoted(finalTree)))
+			if hardBeforeStale {
+				diagnostics = append(diagnostics, diagnostic{criticID, failures})
+			} else {
+				staleDiagnostics = append(staleDiagnostics, diagnostic{criticID, failures})
+			}
+			continue
+		}
+		matchedTree++
+
+		for _, raw := range register {
+			entry, ok := raw.(map[string]any)
+			if !ok {
+				continue
+			}
+			rigorClass, _ := entry["rigorClass"].(string)
+			findingID, _ := entry["findingId"].(string)
+			if prior, present := unionClasses[findingID]; present && prior.class != rigorClass {
+				failures = append(failures, fmt.Sprintf("finding %s has conflicting rigor classes %s and %s on same-tree code-critic roots %s and %s", quoted(findingID), quoted(prior.class), quoted(rigorClass), quoted(prior.root), quoted(criticID)))
+			} else if findingID != "" {
+				unionClasses[findingID] = unionClassClaim{class: rigorClass, root: criticID}
 			}
 		}
 
@@ -1283,6 +1338,9 @@ func (r *conformanceRun) mergeCritique(recordPath, finalTree, configuredRuntime,
 		}
 
 		if len(failures) == 0 {
+			if criticID == r.criticRoot {
+				selectedValid = true
+			}
 			if implementerModel == criticModel && independence == "session-only" {
 				r.out = append(r.out, fmt.Sprintf(
 					"merge critique accepted with independence=session-only recorded in gate evidence: implementer job %s and code-critic chain %s both use effective model %s; their sessions alone are independent; both agree on tree %s",
@@ -1304,7 +1362,10 @@ func (r *conformanceRun) mergeCritique(recordPath, finalTree, configuredRuntime,
 			r.errs = append(r.errs, fmt.Sprintf("conformance failure: code-critic chain %s: %s", entry.criticID, failure))
 		}
 	}
-	if matchedTree > 0 && len(diagnostics) == 0 {
+	if r.criticRoot != "" && !selectedValid {
+		r.errs = append(r.errs, fmt.Sprintf("conformance failure: requested code-critic chain %s is not valid and current", quoted(r.criticRoot)))
+	}
+	if matchedTree > 0 && len(diagnostics) == 0 && selectedValid {
 		return r.out, r.errs, 0
 	}
 	return r.out, r.errs, 1
