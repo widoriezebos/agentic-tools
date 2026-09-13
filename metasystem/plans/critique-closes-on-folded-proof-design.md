@@ -2,11 +2,11 @@
 
 - Owner: m1e (goal 16 of plans/delivery-efficiency-plan.md), claimed for the design. **Revision 3, 2026-09-13**, written on the seat (Fable) under Wido's lanes after his word on section 11 (option (a)): this page is narrowed to the rules he has ruled on, no read of a subject already read clean and the close on a prior clean read, design critique failing safe at round two, and the measure; the certification record (rule 1 of the DONE line) moves to goal certification-closes-a-folded-bounded-finding, opened in his name, whose page starts from the two read records of this one.
 - Goal and current status: designed, not built; revision 3 folds the round-2 amendments that apply to the kept rules (section 10).
-- In flight right now: a Fable design delegate converting slices 0 and 1 into fixture obligations and a Codex build brief (D81 exit; result to the seat's scratch, ccf-build-spec.md), started 2026-09-13 12:35 local.
+- In flight right now: Codex gpt-5.6-sol building slice 0 (section 9b, readers and types only) in a worktree; then an Opus read, the seat's integration and landing.
 - Decisions made (and who made them): Wido, R-97-m1e (both rules; escalation over a third round). Wido, R-60-m1 (stop at the first round with no material finding; findings that fail the artifact test are demoted). Wido, R-42-m0 (three rounds is the ceiling). Wido, D81 (2026-08-16: two prose budgets spent without convergence exit to implementation behind fixtures, never a third prose budget). Wido, 2026-09-13 ("I agree with all your proposals"): option (a) of section 11. The seat: the mechanisms of sections 3 to 5.
 - Waiting on the human: nothing.
 - Dead ends (do not retry without new evidence): a path-keyed boundary and a "restoration" equivalence on reversed hunks (revision 1); textual hunks as a certification unit (revision 2); both belong to the certification goal now. A read subject shared by design, live and commit critics (revision 2, refused: the three read different things).
-- Next step: in flight, by design: when the delegate returns, land its spec onto this page; then Codex gpt-5.6-sol builds slice 0 behind the fixtures, Opus reads the build, the seat lands. No revision 4 and no further prose read (D81; round 3 read: records/misc/critique-closes-on-folded-proof-design-critique-r3.md, eight material findings).
+- Next step: in flight, by design: the slice 0 build, its Opus read and landing; then slice 1 (section 9b rows S1-1 to S1-15) on Codex with an Opus read; slices 2 and 3 (findings F-2, F-7, F-8) get their own D81 conversion by a Fable delegate when slice 1 is landed.
 
 ## 1. What the audit found and what exists
 
@@ -85,6 +85,102 @@ Not in scope: the tier ladder, the code-critique round ceiling, the artifact tes
 1. The redundant-read refusal with its event, and the close on a prior read through the closure object consumed by every gate (section 3), rows 1 to 3.
 2. Design critique at round two (section 4), rows 4 and 6.
 3. The measure (section 5), row 5.
+
+## 9b. Build spec after round 3 (D81 exit, 2026-09-13)
+
+Written by a Fable design delegate from revision 3 and the three reads. Under D81 this section and the page are the spec; there is no revision 4. Where this section differs from section 3 (the closure on the critic root rather than the implementation root; the subject key without the boundary base), this section is the build decision.
+
+Spec: plans/critique-closes-on-folded-proof-design.md revision 3, sections 3 and 9, as amended below; the round-3 read is folded as fixtures, not a revision 4. Paths are relative to the metasystem module.
+
+### 1. Decisions taken for the build
+
+**F-1 closure shopping.** The closure lives on the critic root, not the implementation root: `closure: {criticRoot, round, subject, mechanism: "clean"}`, written by `CritiqueRegisterClose` (internal/dispatch/finding_register.go) when the unresolved set is empty, under the record lock, idempotent (absent: write; equal: unchanged; different: refuse by name, never overwrite). No shared slot, so no compare-and-set across chains and no join. Every gate already dereferences the stamp `independentCritiqueJobRef` to the critic root (`validateIndependentCritiqueReference` in hazard.go, `closedCriticReviewedTree` in internal/landing/observe.go); one shared reader `ReadClosure(root map[string]any) (Closure, bool, error)` serves all three. `mergeCritique` (internal/validate/conformance.go, line 1016 region) keeps its union over every critic root, so a second root with an open finding still fails merge. Concurrency is refused, not joined: `CritiqueReadAdmission` refuses `CONCURRENT_READ` when another same-role chain has an equal live subject and an unfolded, non-cancelled latest round. Commit subjects are exempt (HCL-09; the fixture `commit-subject-two` stands). Cut: the reservation store; the residual dispatcher race is bounded by the merge union.
+
+**F-3 subject not bound to the read.** The engine computes the subject from immutable artifacts and writes `rounds/N/subject.json` before launch. Live: `{kind: live, implementerRoot, reviewedProjectTree (from the reviewed member's review.json), diffDigest (sha256 of its diff.patch)}`, provenance `reviewedMember`. Design: `{kind: design, designPath, contentDigest (sha256 of the page bytes in the critic workspace at admission), declaredOutputsDigest}`, provenance `reviewedCommit`. Commit: `{kind: commit, commit, tree, diffDigest}`, provenance `parent`. Before launch, a live subject's reviewed `workspaceRoot` must exist and its project snapshot (`gittree.Workspace.Snapshot("HEAD")`, the projection `reviewStage` uses) must equal `reviewedProjectTree`, else `SUBJECT_MISMATCH` before any record. After the read, at fold, `critiqueSubjectForRound` compares the return's `reviewedTree` (live, commit) or `reviewedCommit` (design) with the persisted subject; a mismatch folds the round as unbound (a synthetic unproven finding beside `foldProtocolError`), never a clean read. The fake adapter (internal/adapter/fake.go) fills `reviewedTree` from `subject.json` when present. Cut: a detached materialization per critic and a post-return workspace check; `boundaryBaseProjectTree` leaves the key because the reviewed tree already names the bytes read, the diff the change judged, and a new review.json field would trip the immutable-review reuse rule.
+
+**F-4 the two prior-read cases.** Equality is over identity fields only; `reviewedMember`, `reviewedCommit` and `parent` are provenance. A no-op implementer follow-up therefore yields an equal live subject, and the hazard close accepts a closure whose subject equals the terminal work round's subject even when `reviews` names the earlier member and `endedAt` precedes it (the fresh-chain, distinct-session and effort checks stay). Closure ownership is uniform, on the critic root for every kind, so a standalone design chain closes at round 1 when its folded register is clean, and a follow-up on the unchanged page is `REDUNDANT_READ`. The round-2 rule is slice 2.
+
+**F-5 slice 0 activates behaviour.** Slice 0 is types and decoders only: readers accept absence, nothing is written, no schema or record whitelist changes, no refusal token appears. Cut from slice 0: the schema-5 validator (slice 2), the mirror source (slice 1), the metrics loader (slice 3). Subjects never enter model returns: the return's existing `reviewedTree` or `reviewedCommit` is the reference validated against `subject.json`, so schema v4 is untouched by both slices.
+
+**F-6 refusal durability.** `CritiqueReadAdmission` appends the event to `artifacts/agents/<prior clean critic root>/reads-refused.jsonl` under the finding-register lock by read-modify-write through `atomicfile.WriteText` (fsync and directory sync), releases the lock, and dispatch.sh calls `mirror_record <prior critic root>`; `mirrorSources` (internal/dispatch/mirror.go) carries `reads-refused.jsonl` from the payload directory when present. That root is terminal, so the manifest-keyed mirror is the idempotent transaction. On mirror failure the refusal stands, the event stays local, `mirror_fail` marks the record as today, and the next close, reap or `job mirror` carries it. Cut: an event-keyed mirror transaction; deduplication by id lives in the reader.
+
+**Deferred.** F-2 (obligations as proof, `goal discharge-review-obligation`): slice 2. F-7 (trajectory and tier enumeration in build.go and rebind): slice 2. F-8 (carried landings' original chain, internal/landing/carried.go): slice 3.
+
+Consequence: after slice 1 every follow-up onto a clean fake critic chain is refused, so `leg_happy_follow_up`, `resume-collision` and `close-race` in scripts/agents/dispatch-fixtures.sh must change the design page before following up. That is the rule biting, not a defect.
+
+### 2. Slice 0 fixture obligations
+
+Home internal/dispatch unless stated. Every row asserts absence is accepted or nothing new is emitted.
+
+| id | obligation | test | finding |
+| --- | --- | --- | --- |
+| S0-1 | Two subjects of different kinds are never equal; two live subjects differing only in `reviewedMember` are equal; differing in `reviewedProjectTree` or `diffDigest` are not | `TestReadSubjectEqualityIgnoresProvenance`, `TestReadSubjectKindsNeverEqual` | F-3, F-4 |
+| S0-2 | `readRoundSubject` on a round directory without subject.json returns present=false and no error; a malformed file is an error | `TestReadRoundSubjectAbsentOnOldRounds` | F-5 |
+| S0-3 | `ReadClosure` on a root record without `closure` returns present=false and no error; a closure with an unknown mechanism is an error | `TestReadClosureAbsentOnOldRoots` | F-5 |
+| S0-4 | `LoadReadRefusals` over a missing file returns an empty slice; two files carrying the same id yield one event; a malformed line is an error | `TestLoadReadRefusalsMissingAndDeduplicated` | F-6 |
+| S0-5 | Advancing and closing a register through the existing helpers (`writeCriticRound`, `setCriticSubject`) leaves the root record without a `closure` key, writes no subject.json and no reads-refused.jsonl | `TestSliceZeroEmitsNothing` | F-5 |
+| S0-6 | `validate conformance --stage review` writes review.json with exactly the keys diffArtifact, implementerJob, reviewedTree | `TestReviewStageWritesOnlyThreeFields` (internal/validate) | F-5 |
+| S0-7 | No new refusal token exists: `go test ./internal/refusal` passes with register.go untouched | existing HCL03 tests | F-5 |
+
+### 3. Slice 1 fixture obligations
+
+Shell legs live in scripts/agents/dispatch-fixtures.sh cluster c beside `leg_review_target_flag_runtime`.
+
+| id | obligation | test | finding |
+| --- | --- | --- | --- |
+| S1-1 | Dispatch writes rounds/1/subject.json of the right kind for a code critic on an implementer member, a commit subject and a design critic, before the record exists | shell leg `subject-persisted`; `TestComputeReadSubjectByKind` | F-3 |
+| S1-2 | A no-op implementer follow-up (same tree, same diff) computes an equal live subject; a changed tree computes a different one | `TestLiveSubjectFollowsTheChangeNotTheMember` | F-4 |
+| S1-3 | Reviewed worktree edited after its review: fresh critic dispatch refuses `SUBJECT_MISMATCH`, exit 11, no record, no payload | shell leg `subject-mismatch` | F-3 |
+| S1-4 | A return whose reviewedTree differs from subject.json folds as unbound: register gains a synthetic unproven finding; close refuses | `TestFoldRefusesUnboundReturn` | F-3 |
+| S1-5 | Follow-up onto a chain whose last folded round was clean refuses `REDUNDANT_READ` naming round, subject digest and rule, exit 11, no child record or payload | shell leg `redundant-follow-up` on `happy`; `TestReadAdmissionRefusesCleanSubject` | row 2 |
+| S1-6 | Fresh chain onto a live subject another chain read clean refuses `REDUNDANT_READ`; the same for a design page | shell leg `redundant-fresh` | row 2 |
+| S1-7 | A changed subject is dispatched: editing the page makes the design follow-up run; the three existing follow-up legs are updated to edit first | shell legs updated | row 2 |
+| S1-8 | Second same-role chain on an equal live subject while the first is unfolded refuses `CONCURRENT_READ`; `commit-subject-two` still runs | shell leg `concurrent-live`; `TestReadAdmissionExemptsCommitSubjects` | F-1 |
+| S1-9 | The event has a stable id, lands in reads-refused.jsonl under the prior critic root and in that chain's mirror manifest; with `.mirror-fail-once` the refusal still exits 11, the local event exists, and a later `job mirror` carries it | shell leg `refusal-durable`; `TestReadRefusalAppendUnderLock` | F-6 |
+| S1-10 | `CritiqueRegisterClose` writes the closure once on a clean root; a repeat is unchanged; a different closure refuses by name; a root with open findings gets none | `TestCloseWritesOneClosure` | F-1 |
+| S1-11 | Hazard close accepts a stamped critic whose closure subject equals the terminal work round's subject although `reviews` names the earlier member and `endedAt` precedes it; refuses when the closure is absent or its subject differs | `TestHazardCloseReadsClosureSubject` | row 3 |
+| S1-12 | Merge requires each closed critic root's closure subject tree to equal finalTree and still unions every root: a second root with an open finding fails merge | `TestMergeCritiqueClosureAndUnion` (internal/validate) | F-1 |
+| S1-13 | Landing selects the review whose reviewedTree equals the stamped closure's subject tree, falling back to today's order | `TestChainCertifiedOutputPrefersClosure` (internal/landing) | row 3 |
+| S1-14 | `REDUNDANT_READ`, `CONCURRENT_READ`, `SUBJECT_MISMATCH` are rowed in internal/refusal/register.go with real sites | existing HCL03 tests | hygiene |
+| S1-15 | A design chain folded clean at round 1 closes with closure round 1 | `TestDesignChainClosesAtRoundOne` | F-4 |
+
+### 4. Codex build brief, slice 0
+
+You are building slice 0 of goal critique-closes-on-folded-proof in a git worktree of the metasystem module: readers and types only, provably behaviour-free. No existing production file changes, nothing new is written to disk by production code, and no UPPER_SNAKE string literal appears in non-test Go under internal/dispatch (the refusal register test walks those literals). Do not commit.
+
+New files, package `dispatch`:
+
+- `internal/dispatch/read_subject.go`
+  - `type ReadSubjectKind string`; `const (SubjectLive ReadSubjectKind = "live"; SubjectDesign = "design"; SubjectCommit = "commit")`.
+  - `type ReadSubject struct { Kind ReadSubjectKind; ImplementerRoot, ReviewedMember, ReviewedProjectTree, DiffDigest string; DesignPath, ContentDigest, DeclaredOutputsDigest, ReviewedCommit string; Commit, Parent, Tree string }` with lowerCamel json tags and `omitempty` on every string.
+  - `func (s ReadSubject) Equal(o ReadSubject) bool`: kinds must match; live compares ImplementerRoot, ReviewedProjectTree, DiffDigest; design compares DesignPath, ContentDigest, DeclaredOutputsDigest; commit compares Commit, Tree, DiffDigest. Provenance fields never participate.
+  - `func (s ReadSubject) Digest() string`: sha256 hex over `canonicalJSON` of the identity tuple `[kind, fields in the order above]`.
+  - `func decodeReadSubject(value any) (ReadSubject, bool, error)`: nil or absent returns (zero, false, nil); a non-object or unknown kind is an error.
+  - `func readRoundSubject(agents, rootJob string, round int64) (ReadSubject, bool, error)`: reads `<agents>/<rootJob>/rounds/<round>/subject.json` through `readObject`; `os.IsNotExist` returns (zero, false, nil).
+- `internal/dispatch/closure.go`
+  - `const closureField = "closure"`; `type Closure struct { CriticRoot string; Round int64; Subject ReadSubject; Mechanism string }`.
+  - `func ReadClosure(root map[string]any) (Closure, bool, error)`: absent returns (zero, false, nil); Mechanism must be `"clean"` (slice 1 adds nothing else here; the certification goal adds `"certified"` later); Round must be a positive integer via `numInt`; CriticRoot must match `validJobID`.
+- `internal/dispatch/reads_refused.go`
+  - `type ReadRefusal struct { ID, Reason, Role, CriticRoot string; Round int64; Subject ReadSubject; RefusedAt string }`, lowerCamel json tags.
+  - `func LoadReadRefusals(paths ...string) ([]ReadRefusal, error)`: one JSON object per line, blank lines skipped, missing files skipped, malformed line is an error naming path and line, deduplicated by ID keeping the first, returned in first-seen order.
+
+Tests (section 2): `internal/dispatch/read_subject_test.go` holds S0-1 to S0-5; S0-5 uses `writeCriticRound`, `setCriticSubject`, `CritiqueRegisterAdvance` and `CritiqueRegisterClose` from finding_register_test.go, then asserts no `closure` key on the root record and no `subject.json` or `reads-refused.jsonl` in the payload. `internal/validate/conformance_review_shape_test.go` holds S0-6: after a review-stage run, unmarshal review.json into `map[string]any` and assert exactly three keys. Existing style: table tests, `t.Helper()`, package helpers for temp repos, no new utilities.
+
+Verification, in order, all green:
+
+```
+go build ./...
+go vet ./internal/dispatch ./internal/validate
+go test -race -count=1 ./internal/dispatch ./internal/validate ./internal/refusal
+scripts/agents/go-gate.sh --fast
+git status --porcelain   # only the five new files
+```
+
+Write `artifacts/reports/codex-ccf-slice0-result.md`: files added, test names with pass lines, the verification tail, and any point where the spec could not be followed literally. Do not commit; do not edit any existing file; do not touch plans/ or records/.
+
+### 5. Open questions for Wido
+
+none
 
 ## 10. Critique record
 
