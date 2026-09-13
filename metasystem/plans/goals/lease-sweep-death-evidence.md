@@ -1,6 +1,6 @@
 # lease-sweep-death-evidence
 
-- State: queued
+- State: approved
 - Priority: 1
 - Sequence: 22
 - Risk: severity=2 novelty=1 exposure=2 accumulation=1 basis="severity 2: a stale job stamped ended while its group still lives leaves a custody hole, nothing lands wrongly; novelty 1: the mechanism is designed and critiqued in plans/dispatch-cap-settlement-design.md section 1.9; exposure 2: every lease sweep on every seat; accumulation 1: one sweep path"
@@ -9,9 +9,11 @@
 - Origin: main
 - Next step: Appetite: 4h, full ladder. Split out of dispatch-cap-necessity on 2026-09-02 by m1b (R-4: residue demands a token). Mechanism already designed and critiqued: plans/dispatch-cap-settlement-design.md revision 4 section 1.9 - after a successful SIGTERM poll group absence every 50ms for 2s, re-prove ownership and SIGKILL, poll 2s, final absence check via the group-absence function exported in place from internal/supervise/arming.go (lease may import supervise: measured with go list, lease -> steward -> supervise); when the group survives, concludeStaleJob writes nothing, the sweep returns the named error, the takeover refuses its sweep stamp and the next claim, succession or up retries; the dispatch reap path stamps timeout under its own ladder once the cap expires. Test: no endedAt stamp while the group lives. A builder starts from that section.
 - OpenedAt: 2026-09-02T18:37:50Z
-- Revision: 86
+- Revision: 87
 - Pinned: m1b
+- Budget: elapsedLimit=4h attemptLimit=6 reservedJobMinutesLimit=720 activeJobLimit=1 reviewRoundLimit=2
 - BudgetExceptions: 0
+- Approved: by=human:Wido at=2026-09-13T06:42:19Z revision=87 opid=79AHQJTXJFWWEE31DQEK0ZPSW8-m1e-c6925449 authority=proven digest=885cc6b35d6e238a4580790e28506dc7ce395bea9e49d0e74452ab04f1adac3f
 
 History:
 - 2026-09-02T18:37:50Z DDVQT0QE5B3Z2VM0DBN9YSGE4X-m1b-fad3674e open actor=m1b+main-1788333346-60696-6a3256 targets=lease-sweep-death-evidence
@@ -100,4 +102,5 @@ History:
 - 2026-09-13T06:37:52Z 0Z49HACVY4QBKH33QGX9X20769-m1e-c6925449 done actor=human:Wido targets=actionable-metrics,breach-clock-and-budget-honesty,coordinator-context-stays-under-budget,coordinator-wakes-on-events-not-polls,critique-closes-on-folded-proof,engine-runs-re-arm-themselves-on-a-landed-engine,failed-job-attention,fixture-stewards-outlive-their-suite,goal-abandoned-with-a-reason,human-goal-verbs-forgiving,job-record-birth-token,landing-receipt-survives-records-drift,lease-sweep-death-evidence,live-job-on-a-done-goal-unnoticed,machine-concurrency-governor,proof-groups-detect-hangs-by-progress-not-the-clock,small-change-lane,steward-catchup-livelock,steward-launches-resolve-their-model,steward-revives-a-done-goal,stop-batch-strands-a-resumable-goal,stop-hook-never-forces-an-empty-turn,suite-custody,token-spend-fence,watch-verb,watcher-repair-request-never-names-current,winddown-census-handoff-leak reason=priority-order from=1:23 to=1:22
 - 2026-09-13T06:39:35Z W1SQN69BPGFAN0CYTQ4RNT30CR-m1e-892cdaec edit actor=m1e+main-1789030447-51011-5722fc targets=lease-sweep-death-evidence
 - 2026-09-13T06:42:13Z ZNKJXX3AYVEWJTHHQMCKN84ZYS-m1e-c6925449 set-pin actor=human:Wido targets=lease-sweep-death-evidence
-Integrity: sha256=e39c9e4a89a0d48840cc8bc25bdc7cc388eee8e46baf21469979639c175fe73d
+- 2026-09-13T06:42:19Z 79AHQJTXJFWWEE31DQEK0ZPSW8-m1e-c6925449 approve actor=human:Wido targets=lease-sweep-death-evidence
+Integrity: sha256=8d1d66c448eecc6d7ba306b3724f95c156da964a558aa1e8f71851180aacf14b
