@@ -7,10 +7,11 @@
 - Origin: main
 - Next step: m1b lands the design page (drafted), one rostered Codex sol design read at DESIGN-BEARING, then a Codex sol build in a worktree, an Opus read, a human commit.
 - OpenedAt: 2026-09-13T07:33:02Z
-- Revision: 3
+- Revision: 4
 - Budget: elapsedLimit=1d attemptLimit=10 reservedJobMinutesLimit=1200 activeJobLimit=1 reviewRoundLimit=3
 - BudgetExceptions: 0
 - Approved: by=human:Wido at=2026-09-13T07:33:06Z revision=2 opid=FFGKF0S19KMMHEQGBWCYDSMNY5-m1b-30a7e141 authority=proven digest=f4e2424715bc04c63c301ef8bda578724d344a8a7b8e940dcfbc9aba79d834b7
+- Sliced: machine=m1b lineage=main-1789191336-90295-e4b24b revision=3 at=2026-09-13T07:34:48Z
 - Claimed: machine=m1b lineage=main-1789191336-90295-e4b24b at=2026-09-13T07:33:09Z revision=3 accountingRevision=3 episodeAt=2026-09-13T07:33:09Z episodeRevision=3
 - StopCapability: generation=3 revision=3 machine=m1b claimEpoch=2 fenceEpoch=0
 
@@ -18,4 +19,5 @@ History:
 - 2026-09-13T07:33:02Z 5HG893JMDPRP75G97Y7F9VH7Z8-m1b-30a7e141 open actor=m1b+main-1789191336-90295-e4b24b targets=stop-decisions-record-deadline-evidence,stop-hook-never-forces-an-empty-turn
 - 2026-09-13T07:33:06Z FFGKF0S19KMMHEQGBWCYDSMNY5-m1b-30a7e141 approve actor=human:Wido targets=stop-decisions-record-deadline-evidence
 - 2026-09-13T07:33:09Z XQ7QJ39E7D41YY8VYERHA1QJS0-m1b-30a7e141 claim actor=m1b+main-1789191336-90295-e4b24b targets=stop-decisions-record-deadline-evidence
-Integrity: sha256=a2cc8bc197879ecbe44a9ce0bf0f7371954bae837ea6ebe29026dbc4c034d6df
+- 2026-09-13T07:34:48Z 1V6ZNPPCN7F28F6GZP8K8ZWF1B-m1b-30a7e141 slice-start actor=m1b+main-1789191336-90295-e4b24b targets=stop-decisions-record-deadline-evidence
+Integrity: sha256=35301af012c97b3e4d4c2173fe188e2cb09c5c6f5b7fc7bd10b76b94b1f7fb42
