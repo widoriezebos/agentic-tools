@@ -1,21 +1,27 @@
 # A goal that will never be worked, and why (goal goal-abandoned-with-a-reason)
 
-Revision: 4. Date: 2026-09-09. Design authoring job: `gawr-design5`, folding
+Revision: 5. Date: 2026-09-13. Design authoring job: `gawr-carry-debt-design`.
+This revision closes GAWR-C1-05, the finding that abandonment hides carry
+debt. Open carry words refuse abandonment. Open review obligations remain
+dischargeable in the archive. Human-carried review debt stays counted and
+gated. Sections 4 and 6 decide the behavior; section 13 names its fixtures.
+Every other revision-4 decision stands.
+
+Revision 4 was authored by `gawr-design5`, folding
 the round-3 read `metasystem/records/misc/goal-abandoned-with-a-reason-critique-r3.md`
 of revision 3 (`gawr-design4`, landed 81995968), which folded the round-2
 read of revision 2 (`gawr-design2`, landed 7ae27b7e) and, before it, the
 round-1 read of revision 1 (`gawr-design1`, landed 03f94dfc). The revision
-record at the end names each finding and what moved. Revision 3 was the last
-prose revision; this one is a targeted fold of its read, confined to the five
-findings, and the build starts from it. Every rule below that can be stated
-as a fixture that fails today is stated that way.
+record at the end names each finding and what moved. Revision 4 was a
+targeted fold of that read, confined to its five findings. Every rule below
+that can be stated as a fixture that fails today is stated that way.
 
 This page specifies the build; it implements nothing. Independent critique,
 dispositions, certification, the ledger and the receipt belong to the
 orchestrator. All paths are relative to the repository root. Symbols marked
 "new" do not exist in the tree yet. Line numbers carried over from revision 1
 were read at `96c6098b`; those revision 2 added were read at `cab73164`;
-every line number this revision adds (`commit.sh:31-54`, `:441`, `:583-600`,
+every line number revision 3 added (`commit.sh:31-54`, `:441`, `:583-600`,
 `observe.go:159-167`, `:276-280`, `:647-668`, `:831-836`, `:1032-1070`,
 `:1161-1183`, `tierone.go:20-40`, `txn.go:35`, `:46-61`, `:64`, `:347-373`,
 `reconcilepub.go:360-379`, `file.go:35`, `:433`, `:577-632`, `:1303-1424`,
@@ -37,6 +43,8 @@ Revision 4 read `land.sh:462-470`, `:497-505`, `:522-529`, `commit.sh:448-478`,
 where the same diff from 634ca2a2 over `metasystem/scripts/agents/`,
 `metasystem/internal/landing/`, `metasystem/internal/validate/` and
 `metasystem/internal/goal/` is empty.
+Revision 5 read the carry and review-debt symbols named in section 1 at
+`0d4c0c5fe264224a7c49cf3a67f6701e72dcd430`.
 
 The contract is the Intent of `metasystem/plans/goals/goal-abandoned-with-a-reason.md`:
 
@@ -93,6 +101,8 @@ the goal stays abandoned and a human opens a successor that the record's
 | Stop batch | `metasystem/internal/goal/stop.go:82` `stopBatchPath` (`artifacts/agents/goal-stops/<stopId>.json`, checkout-local), `:249` `VerifyStopBatchComplete` (binds goal, revision, fence epoch, capability generation, machine, claim epoch and reason; requires `COMPLETE`) | The only proof that the jobs of a stopped revision are gone. It is read only through `resume` (`:403`) today, and only on the checkout that holds the batch. |
 | Human proof is per checkout | `metasystem/internal/humanauthority/authority.go:141-146` `Proof.ValidFor(root)` compares the proof's observed root with the absolute, cleaned `root`; the proof is an in-process observation of that root's enrollment and process ancestry | A human's proof is valid for exactly one checkout. A verb that needs both the proof and a checkout-local file (the stop batch) can run only where both are: the claimant's checkout under its enrolled terminal (section 6). |
 | Done transition | `verbs.go:1106` `doneRequest` | Refuses open review obligations, foreign claims and parked goals for agents, human-origin goals for agents, and unfinished blockers; moves the file, compacts the departed priority, records displacement, acks displacements. |
+| Carry readers, read for revision 5 | `metasystem/internal/goal/verbs.go:3604` `CarryWordAt`, `:3625` `carryWords`, `:3686` `historyFiles`, `:3789` `CarryReservationAt`, `:3873` `CountCarries` | Read Live and Done. Moving a record to Abandoned hides its words, closers and counts unless these readers include that map. `doneCarryRefusal` at `:4030` refuses an open word and a landed commit whose ledger row is missing, even after expiry. |
+| Review debt, read for revision 5 | `metasystem/internal/goal/verbs.go:3939` `CarryDebtAt`, `:1732` `DischargeReviewObligation`, `:1780` `AcceptedRiskDecision`, `:1846` `AcceptedRiskDecisionOpID` | The debt gate and discharge read Live only. Accept-risk requires a claimed goal and discharges a matching human-carried obligation. Its receipt lookup reads Live and Done. Section 4 keeps those operations reachable on an abandoned record. |
 | Reopen | `verbs.go:1337` `reopenRequest` | From `Done` only; refuses decomposed parents and claimed dependents; clears conclusion, approval, budget and norm; keeps priority and appends its sequence; arc join rules; clears Goal-free. Reached through `trySyncMutation`'s `case "reopen"` (`metasystem/cmd/metasystem/goalsync_mutations.go:495-500`) with a request built by `syncReq`, no proof. |
 | Caller identity without proof | `goalsync_mutations.go:59` `syncReqClassified`: when a lineage is supplied by `--lineage` or `METASYSTEM_OWNER_LINEAGE` (`:71-74`) the enrolled-terminal proof branch (`:75-107`) is skipped, and `--by` becomes `Actor.Human` at `:117` | Any `r.Actor.Human != ""` guard is satisfied by an agent on a lineage-bearing checkout that passes `--by`. A human-only verb must take the proof, not the name. |
 | Human proof | `goalsync_mutations.go:599` `proveGoalHumanAuthority`, `:677` its use by `set-priority`, `:682` `syncReqWithProof`; `metasystem/internal/goal/order.go:59-65` `SetPriority` refuses without `Actor.Human` and without `proof.ValidFor(root)` | The enrolled-terminal proof pattern for a human-only verb, on both sides of the package boundary. |
@@ -179,8 +189,8 @@ step`, `OpenedAt`, `Priority` and `Sequence` (historical, exactly as on a done
 record), `Tier`, `Risk`, `Labels`, `Arc`, `Pinned`, `Budget`,
 `BudgetExceptions`, `NormApproval`, `Approved` (audit evidence, as the comment
 at `file.go:54` already says), `Sliced`, `Ratified`, `ReviewObligations`
-(open ones stay open and readable: the record shows the debts that were
-abandoned with the goal), `AcceptedRisks`, `BlockedBy` (an abandoned goal keeps
+(open ones stay open and dischargeable; human-carried debt stays counted
+and gated under section 4), `AcceptedRisks`, `BlockedBy` (an abandoned goal keeps
 its own prerequisites, finished or not), `History`, `LegacyNotes`.
 
 Fields removed by the act: `Claimed`, `Obligation`, `Parked`. `Concluded` is
@@ -318,10 +328,80 @@ Transaction refusals (in `abandonRequest.Mutate`, in this order):
     --carried, waive it with --waive %s=<reason>, or abandon it with --also %s".
     The refusal lists every uncovered dependent.
 11. `--waive` names a goal that is not a live dependent of A: refuse by name.
+12. Open carry authority. Check every goal in A, in sorted id order, before
+    changing any file. Use the transaction's code tip and time with trunk's
+    carry consumption and reservation readers. A proven, unexpired carry
+    word refuses when unconsumed or missing its anchor. A carried commit on
+    origin without its `carried` ledger row refuses even after expiry. An
+    open carrying reservation also refuses. Read errors refuse; they never
+    mean the word is closed. Repeat these checks on every transaction retry.
+
+    Name the goal, word and expiry: "goal %s has open carry word %s; finish
+    its landing, supersede it on a live goal with goal carry --supersede %s,
+    or let it expire at %s; then retry abandon". For a commit already on
+    origin, say "goal %s has carried commit %s without its ledger row;
+    close it with land.sh --carried %s, even if the word has expired; then
+    retry abandon". For an open reservation, name its seat and row: "carry
+    reservation %s on goal %s is in flight on %s; use goal carrying
+    --abandon %s on that seat or wait for its expiry; then retry abandon".
+    Closing a reservation alone does not close an unexpired word.
+
+    A refusal leaves the whole transaction unchanged, including `--also`
+    goals and dependent edges. An expired unused word or a word with a
+    durable closer passes. The carry gate still governs any superseding
+    word: unpaid review debt must be discharged or waived first. A lost
+    checkout can wait out an unused word; no stop-batch proof is needed.
+
+**Why refuse an open word.** Its landing authority must end, or its landed
+commit must be recorded, while the goal is still live. This keeps abandon's
+landing fence intact and gives an unused word a bounded exit through expiry.
+
+Here a carry word means trunk's permission to land one workspace past one
+named refusal. The `carried=` successor pointer in this page records where
+work went; setting it neither consumes that permission nor pays review debt.
 
 There is no refusal for open review obligations, for unfinished blockers of
 the abandoned goal, for parked state, for a foreign claim, or for human
 origin: the actor is the human.
+
+**Review debt survives abandonment.** Keep every open review obligation on
+its original record, with its finding, chain, artifact and test unchanged.
+Abandon is the exit for work that may never be finished; making its existing
+debt reachable in the archive preserves that exit without forgiving debt.
+The success message names each open obligation and says that it still needs
+discharge, even when `--carried` names a successor.
+
+`CarryDebtAt` includes Abandoned when looking for open human-carried review
+obligations. Keep its commit-ancestry check and its debt precedence. Such
+debt still refuses every further carry with `carry-debt-unpaid`.
+`CountCarries` includes Abandoned, so neither unpaid debt nor today's carried
+landing count falls merely because a goal moved. Section 5 names the other
+carry readers that must retain the archived evidence.
+
+`DischargeReviewObligation` reads Live, then Abandoned. On an abandoned
+record it keeps the current human-or-owning-pair authority check; with no
+claim, only the human branch can pass. The human runs
+`goal discharge-review-obligation --id <abandoned-goal> --finding <finding>
+--chain <chain> --by <human> --test <evidence>` against the original record.
+Evidence for an ordinary review obligation may come from its successor.
+For human-carried debt, the command keeps `ValidateHumanCarriedCritic`:
+`--test` must name a qualifying critic chain for the original carried
+commit. A successor pointer or its tests alone cannot discharge that debt.
+Matching and input checks stay unchanged. Write the discharged state, citation and usual
+revision/history event at `archivedPath`; do not reopen the goal or change
+its frozen stop authority.
+
+For a human-carried obligation that the human chooses to waive, extend
+`AcceptedRiskDecision` to Abandoned for `chain=human-carried` only. Keep its
+existing human proof, matching, reason and replay checks; the claimed-state
+requirement remains for live goals. The human runs `goal accept-risk --id
+<abandoned-goal> --finding <finding> --chain human-carried --by <human> --why
+<reason>`. Use the existing discharge form, `Test=accepted-risk:<opid>`, and
+append the accepted-risk record and history at `archivedPath`.
+`AcceptedRiskDecisionOpID` must find that archived receipt. Other chains gain
+no archived accept-risk path. A waiver changes no stop fence and claims no
+test passed. Reopen keeps any obligations still open. Neither a successor
+pointer nor abandoning the successor discharges or transfers an obligation.
 
 Effects, in one transaction (all files rendered from the same tip):
 
@@ -806,8 +886,26 @@ lands second re-bases those hunks; the repair route in its design gains the
 | 23 | `runGoalSplit` precheck (`goalsync_mutations.go:1128-1136`) | `Tree.Done[id]` decides "in the archive; nothing to split" versus "does not exist" | `Tree.Archived(id)`: an abandoned parent prints "goal %s is in the archive; there is nothing to split" (the same sentence; the archive is the archive). Without the change it prints "does not exist", the absent-not-completed degradation section 3 names. |
 | 24 | Split parent precheck (`split.go:229-234`) | `t.Done[parentID]`: `AlreadyApplied` when the opid landed, else "in the archive" | `t.Archived(parentID)` with the same two outcomes. Same degradation without it. |
 | 25 | Reconcile edit row (`reconcilepub.go:368-379`) | `t.Done[row.Id]` at `:371` decides the archive race ("archived on the fetched tip; the hand edit was made against a live goal") versus absence ("not live on the fetched tip"); the session's own `done` row is the one exemption (`session.archived`) | `t.Archived(row.Id)`: an abandoned record on the fetched tip conflicts with the archive sentence, exactly as a done one does. The exemption cannot apply, because reconcile never produces an abandoned record (row 18), so `session.archived` is never set by an abandon. Without the change the row reports "not live", the absent-not-completed degradation, and the hand edit's outcome is mapped wrongly. This is the third direct `Done` reader the revision-2 census missed; the census command in section 3 finds it. |
+| 26 | Carry evidence: `CarryWordAt`, `carryWords`, `historyFiles`, `CarryReservationAt`, `CountCarries` | Live and Done | Also Abandoned. Preserve word lookup, consumed/superseded results, reservation closure, open-word counts and carried-landing counts across archival. A durable `carried` row stays a closer when its record or the goal holding its replacement word is abandoned. No new landing authority is granted. |
+| 27 | Review debt: `CarryDebtAt`, `DischargeReviewObligation`, `AcceptedRiskDecision`, `AcceptedRiskDecisionOpID` | The gate and discharge read Live; accept-risk requires claimed; its receipt lookup also reads Done | Section 4: the debt gate also reads Abandoned. Discharge writes the original abandoned record under existing authority. Proven human accept-risk can waive its human-carried obligation, and the receipt remains findable. Open debt survives reopen and successor abandonment. |
 
 ## 6. Reopen from abandoned
+
+**When a successor is abandoned.** Being named by an older abandoned
+record's `Carried` field does not bar abandonment. Apply section 4 to the
+successor, including its carry-word refusal and all live dependent edges.
+Its own open review obligations stay on its archived record and remain
+reachable there. It satisfies no dependency and pays no predecessor's debt.
+
+An older abandoned record keeps its `Carried` field and all its history
+when the named successor is abandoned. The pointer records where work went;
+it promises neither a live successor forever nor completion. Do not clear
+it, follow it automatically, or replace it with the successor's successor.
+Validation checks that a successor is live when the human assigns it, as
+sections 4 and 6 already require, not on later reads of that historical
+pointer. A human may use section 6's proven `goal carry --to` act to name a
+new live successor on the older record. That appends history and leaves any
+review debt on the record that owns it.
 
 Two facts decide this section. First, `syncReqClassified` turns a caller's
 `--by` into `Actor.Human` without proof whenever a lineage is already at
@@ -1255,6 +1353,20 @@ behavior.
 
 Go tests, package `metasystem/internal/goal` unless noted; names are new.
 
+Revision 5 adds the fixtures below to existing files. They are obligations
+for the build, not tests run by this design-authoring job. Their first
+failure on this worktree is the missing abandon state and verb. The build
+must make them pass with the carry rules below.
+
+| Fixture and file | Decision proved |
+| --- | --- |
+| `TestAbandonRefusesOpenCarryWords` in `metasystem/internal/goal/carry_lifecycle_test.go` | Section 4, refusal 12. A proven unexpired word on the primary goal or any `--also` goal refuses without changing any record or edge. Cover a missing anchor, an open reservation, and a commit already on origin without its ledger row, including after expiry. Assert each remedy names its goal and word or reservation. Closing only a reservation still refuses an unused unexpired word. Expiry of an unused word, a durable supersede, or completion of the carried ledger row permits abandonment; no stop-batch proof is required. |
+| `TestAbandonKeepsReviewDebtReachable` in `metasystem/internal/goal/carry_lifecycle_test.go` | Section 4's archive rule. A recorded carried landing with one open human-carried obligation abandons successfully, including with a frozen stop fence. At the same code tip and time, `CarryDebtAt` still identifies the same debt, `CountCarries.Debt` stays 1, today's count stays 1, and a new carry refuses `carry-debt-unpaid`. Discharge on the archived id with the matching finding and chain records evidence, clears that debt and permits the next carry. Cover an ordinary review obligation too. Missing authority, a wrong finding or chain, and a blank citation change nothing. Reopen before discharge keeps the obligation open. |
+| `TestAbandonedCarriedReviewCanBeWaived` in `metasystem/internal/goal/carry_lifecycle_test.go` | Section 4's human exit when review will not be completed. Proven accept-risk on the abandoned id records the reason, discharges only the matching human-carried obligation and leaves its receipt discoverable. Debt then clears. Missing proof, a blank reason and another chain refuse without changes. Repeating the same act is idempotent. The goal stays abandoned and its frozen fence is byte-identical. |
+| `TestAbandonAllowsACarrySuccessor` in `metasystem/internal/goal/verbs_test.go` | Section 6's successor rule. An older abandoned goal names live successor S. S can be abandoned under the ordinary section-4 rules. Incoming `Carried` alone does not refuse. A live dependent of S still requires re-pointing, waiver or `--also`. S satisfies no dependency after abandonment. Its own open carried-review debt stays visible and unpaid. |
+| `TestAbandonLeavesEarlierSuccessorRecordsIntact` in `metasystem/internal/goal/verbs_test.go` | Section 6's older-record rule. Abandon A with successor S, then abandon S with successor T. A still names S, its bytes are unchanged, and the tree validates. A's review debt is unchanged. A proven later successor-recording carry can change A to T, with a new history line; no earlier line is rewritten and no debt moves or clears. |
+| `TestAbandonKeepsClosedCarryHistoryVisible` in `metasystem/internal/goal/carry_lifecycle_test.go` | Section 5, row 26. Supersede a word on one live goal with a word on another, then let the replacement expire and abandon both goals. Both words remain findable. The earlier word remains superseded, its durable closer remains readable, and no word re-enters the open cap. A separately recorded carried landing keeps its closed reservation and its daily count when its goal is abandoned. |
+
 | Canary | Untouched tree: fails at, because | After the build: proves |
 | --- | --- | --- |
 | `TestDepStateAnswersAbandonedFromTheAbandonedMap` (`verbs_test.go`) | Builds `TreeGoals` in memory with a `GoalFile{State: StateAbandoned}` placed in `Abandoned` and a live goal blocked by it. Compile failure: `TreeGoals` has no `Abandoned` field and `StateAbandoned` does not exist. | `depState == StateAbandoned` for the archived id, and `!= StateDone`; the same id placed in `Done` with State done still answers done. An implementation that never reads the new map cannot return `StateAbandoned`. |
@@ -1523,6 +1635,15 @@ unchanged. Abandoned is not a frontier category. Stop proofs are never
 rewritten.
 
 ## Revision record
+
+Revision 5 addresses **GAWR-C1-05 (high), abandonment hiding carry debt**.
+The author chooses refusal for open carry words and reachable archived debt
+for open review obligations. Section 4 supplies the human's next actions,
+including expiry, discharge and a proven waiver of human-carried review.
+Section 5 keeps carry readers and counters over archived evidence. Section 6
+allows a successor to be abandoned and keeps older successor pointers as
+history. Section 13 names one fixture for each decision and the existing file that
+will hold it. All other revision-4 decisions remain in force.
 
 Revision 4 folds the five findings of the round-3 read, every one accepted
 by the coordinator, and touches only what they name and the sentences that
