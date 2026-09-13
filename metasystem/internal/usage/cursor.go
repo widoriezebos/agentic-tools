@@ -312,13 +312,6 @@ func registerSession(stateRoot, runtime, session string, pid, pidStartedAt int64
 	}
 	defer unlockCallFile(lock)
 
-	type sessionRow struct {
-		Runtime      string    `json:"runtime"`
-		Session      string    `json:"session"`
-		PID          int64     `json:"pid"`
-		PIDStartedAt int64     `json:"pidStartedAt"`
-		FirstSeen    time.Time `json:"firstSeen"`
-	}
 	needsSeparator := false
 	observeCallOpen(path)
 	file, err := os.Open(path)
@@ -339,7 +332,7 @@ func registerSession(stateRoot, runtime, session string, pid, pidStartedAt int64
 		scanner := bufio.NewScanner(file)
 		scanner.Buffer(make([]byte, 0, 64*1024), maxCallLineBytes)
 		for scanner.Scan() {
-			var row sessionRow
+			var row CallRegistration
 			if json.Unmarshal(scanner.Bytes(), &row) == nil && row.Runtime == runtime && row.Session == session && row.PID == pid && row.PIDStartedAt == pidStartedAt {
 				file.Close()
 				return nil
@@ -356,7 +349,7 @@ func registerSession(stateRoot, runtime, session string, pid, pidStartedAt int64
 		return fmt.Errorf("cannot open session registry %s: %w", path, err)
 	}
 
-	row := sessionRow{Runtime: runtime, Session: session, PID: pid, PIDStartedAt: pidStartedAt, FirstSeen: time.Now().UTC()}
+	row := CallRegistration{Runtime: runtime, Session: session, PID: pid, PIDStartedAt: pidStartedAt, FirstSeen: time.Now().UTC()}
 	encoded, err := json.Marshal(row)
 	if err != nil {
 		return err

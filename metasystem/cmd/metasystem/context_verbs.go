@@ -4,6 +4,7 @@ import (
 	"flag"
 	"fmt"
 	"os"
+	"strings"
 	"time"
 
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/goal"
@@ -79,6 +80,40 @@ func runContextStatus(args []string) int {
 		fmt.Fprintln(os.Stderr, "metasystem context status:", readErr)
 		return 1
 	}
+	return 0
+}
+
+func runContextReport(args []string) int {
+	flags := flag.NewFlagSet("context report", flag.ContinueOnError)
+	root := flags.String("root", "", "installation or containing template root")
+	week := flags.String("week", "", "first UTC date in YYYY-MM-DD form")
+	if flags.Parse(args) != nil {
+		return 2
+	}
+	if *root == "" || *week == "" || flags.NArg() != 0 {
+		fmt.Fprintln(os.Stderr, "usage: metasystem context report --root ROOT --week YYYY-MM-DD")
+		return 2
+	}
+	weekStart, err := time.Parse("2006-01-02", *week)
+	if err != nil || weekStart.Format("2006-01-02") != *week {
+		fmt.Fprintln(os.Stderr, "metasystem context report: --week must be YYYY-MM-DD")
+		return 2
+	}
+	stateRoot, err := goal.ResolveStateRoot(*root)
+	if err != nil {
+		fmt.Fprintln(os.Stderr, "metasystem context report:", err)
+		return 1
+	}
+	callsPath, reportPath, report, err := steward.WriteContextReport(stateRoot, weekStart, time.Now().UTC())
+	if err != nil {
+		fmt.Fprintln(os.Stderr, "metasystem context report:", err)
+		return 1
+	}
+	verdict := "fail"
+	if report.Pass {
+		verdict = "pass"
+	}
+	fmt.Printf("calls=%s report=%s verdict=%s\n", callsPath, reportPath, strings.ToUpper(verdict))
 	return 0
 }
 

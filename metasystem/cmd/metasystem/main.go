@@ -424,6 +424,7 @@ func families() []family {
 			summary: "the coordinator's recorded provider-call context budget",
 			verbs: []verb{
 				{"status", "show the holder's current context-budget evidence", runContextStatus},
+				{"report", "publish one seven-day UTC context cohort", runContextReport},
 			},
 		},
 		{

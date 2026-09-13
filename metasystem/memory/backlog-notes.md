@@ -617,3 +617,34 @@ seat removed them by hand. Proposals: measure the composed packet before
 creating the worktree, or remove the worktree and branch on that refusal;
 and stage the brief by reference whenever the composed packet, not the
 brief alone, would exceed the inline limit.
+
+## The trunk's path-class manifest does not classify a tracked generated log (m1e, 2026-09-13)
+
+`go test ./internal/pathclass` fails on a clean checkout of origin/main:
+`TestRepositoryManifestClassifiesEveryTrackedPath` reports `tracked paths
+missing from path class manifest: repo:records/narrator-digest.log`
+(pathclass_test.go:299). The file became tracked in 0f936a2c on 2026-09-12
+("Parked work of the main checkout, recovered"), and no `repo:records/` row
+exists in scripts/agents/path-classes.txt, whose installation-relative twin is
+`install:records/ record`. So the full gate is red for every seat, while
+`--fast` stays green because it carries no package tests.
+
+Two candidate fixes, and the choice is not the finder's to make: untrack the
+file and ignore it, since it is generated and every seat has to check it out
+before landing; or add a `repo:records/` row, which changes what path class
+agent writes there fall under. The second touches authority, so it belongs to
+whoever owns the narrator digest and the path-class policy, not to a passer-by.
+Update the same evening: m1b hit this red on its own landing, because the red
+does block any landing whose proof selects the Go engine gate, and is landing
+the minimal unblock, one `repo:records/ record` row beside the existing
+`repo:development/ record`. That classifies an already-tracked path and changes
+nothing about what is tracked, so the open question is only whether a generated
+log every seat rewrites should be tracked at all, which is Wido's call.
+
+Also seen in the same sweep and now settled by m1c on a quiet box: `internal/goal`
+is not defective, it simply runs longer than Go's 10 minute default, 779 s on
+trunk and 1016 s on a candidate tree, both green under `-timeout 40m`. The 601 s
+failure was the default firing in
+TestAPersonsBudgetActsAndDoneDropTheKeptEpisode, wherever the clock happened to
+land. Any direct run of that package needs an explicit `-timeout 40m`, or the
+next reader will take a timeout for a hang.

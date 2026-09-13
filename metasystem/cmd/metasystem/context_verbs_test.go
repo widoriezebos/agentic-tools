@@ -1,6 +1,7 @@
 package main
 
 import (
+	"bytes"
 	"encoding/json"
 	"fmt"
 	"os"
@@ -11,6 +12,111 @@ import (
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/identity"
 	usagepkg "github.com/widoriezebos/agentic-tools/metasystem/internal/usage"
 )
+
+func TestContextReportVerbPublishesTheWeek(t *testing.T) {
+	root := contextCommandRoot(t)
+	transcript := writeContextCommandTranscript(t, root, "report", 120000, 1, true)
+	if _, err := usagepkg.LatestCall(root, "claude", "report", usagepkg.ReadOptions{
+		Capability: usagepkg.PerCall, Transcript: transcript,
+	}); err != nil {
+		t.Fatal(err)
+	}
+	if err := usagepkg.RegisterSession(root, "claude", "report", 701, 7001); err != nil {
+		t.Fatal(err)
+	}
+	code, output, problem := captureChannelOutput(t, func() int {
+		return dispatch([]string{"context", "report", "--root", root, "--week", "2026-09-13"})
+	})
+	if code != 0 || problem != "" || !strings.Contains(output, "verdict=PASS") ||
+		!strings.Contains(output, filepath.Join(root, "artifacts", "reports", "coordinator-context", "2026-09-13", "calls.jsonl")) ||
+		!strings.Contains(output, filepath.Join(root, "artifacts", "reports", "coordinator-context", "2026-09-13", "report.md")) {
+		t.Fatalf("report command = code %d stdout %q stderr %q", code, output, problem)
+	}
+
+	file, err := os.OpenFile(transcript, os.O_APPEND|os.O_WRONLY, 0o600)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := file.WriteString(contextCommandLine("over-ceiling", 200001, 2)); err != nil {
+		file.Close()
+		t.Fatal(err)
+	}
+	if err := file.Close(); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := usagepkg.LatestCall(root, "claude", "report", usagepkg.ReadOptions{
+		Capability: usagepkg.PerCall, Transcript: transcript,
+	}); err != nil {
+		t.Fatal(err)
+	}
+	code, output, problem = captureChannelOutput(t, func() int {
+		return runContextReport([]string{"--root", root, "--week", "2026-09-13"})
+	})
+	if code != 0 || problem != "" || !strings.Contains(output, "verdict=FAIL") {
+		t.Fatalf("measured FAIL command = code %d stdout %q stderr %q", code, output, problem)
+	}
+
+	for _, args := range [][]string{
+		{"--root", root},
+		{"--root", root, "--week", "2026-9-13"},
+		{"--root", root, "--week", "2026-02-30"},
+	} {
+		code, _, problem = captureChannelOutput(t, func() int { return runContextReport(args) })
+		if code != 2 || problem == "" {
+			t.Fatalf("bad arguments %v = code %d stderr %q", args, code, problem)
+		}
+	}
+}
+
+func TestContextReportPropagatesRecoveryError(t *testing.T) {
+	root := contextCommandRoot(t)
+	transcript := writeContextCommandTranscript(t, root, "report-error", 120000, 1, true)
+	if _, err := usagepkg.LatestCall(root, "claude", "report-error", usagepkg.ReadOptions{
+		Capability: usagepkg.PerCall, Transcript: transcript,
+	}); err != nil {
+		t.Fatal(err)
+	}
+	if err := usagepkg.RegisterSession(root, "claude", "report-error", 702, 7002); err != nil {
+		t.Fatal(err)
+	}
+	if code, _, problem := captureChannelOutput(t, func() int {
+		return runContextReport([]string{"--root", root, "--week", "2026-09-13"})
+	}); code != 0 || problem != "" {
+		t.Fatalf("seed report = code %d stderr %q", code, problem)
+	}
+	directory := filepath.Join(root, "artifacts", "reports", "coordinator-context", "2026-09-13")
+	callsPath := filepath.Join(directory, "calls.jsonl")
+	reportPath := filepath.Join(directory, "report.md")
+	callsBefore, err := os.ReadFile(callsPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	reportBefore, err := os.ReadFile(reportPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	cursorPath := usagepkg.CursorPath(root, "claude", "report-error")
+	samplesPath := usagepkg.SamplesPath(root, "claude", "report-error")
+	corrupt := []byte("{corrupt\n")
+	if err := os.WriteFile(cursorPath, corrupt, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	code, output, problem := captureChannelOutput(t, func() int {
+		return runContextReport([]string{"--root", root, "--week", "2026-09-13"})
+	})
+	if code != 1 || output != "" || !strings.Contains(problem, cursorPath) || !strings.Contains(problem, samplesPath) {
+		t.Fatalf("recovery command = code %d stdout %q stderr %q", code, output, problem)
+	}
+	if got, err := os.ReadFile(callsPath); err != nil || !bytes.Equal(got, callsBefore) {
+		t.Fatalf("calls changed after recovery error: err=%v", err)
+	}
+	if got, err := os.ReadFile(reportPath); err != nil || !bytes.Equal(got, reportBefore) {
+		t.Fatalf("report changed after recovery error: err=%v", err)
+	}
+	if got, err := os.ReadFile(cursorPath); err != nil || !bytes.Equal(got, corrupt) {
+		t.Fatalf("corrupt evidence changed: err=%v", err)
+	}
+}
 
 func TestContextStatusVerbPrintsTheRoleLine(t *testing.T) {
 	root := contextCommandRoot(t)
