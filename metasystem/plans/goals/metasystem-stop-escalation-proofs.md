@@ -2,14 +2,14 @@
 
 - State: approved
 - Priority: 1
-- Sequence: 38
+- Sequence: 37
 - Risk: severity=2 novelty=2 exposure=2 accumulation=1 basis="severity 2: an unproven escalation path means a stop that reports killed without evidence it killed; novelty 2: a held fake host and its readiness handshake do not exist yet; exposure 2: every seat that stops a checkout with a mission, a suite or an ignored signal in flight; accumulation 1: the scenarios are written once"
 - Tier: 2
 - Intent: Slice 1b of the stop verb: the escalation and per-family fixture scenarios that slice 1 deliberately left out, plus the fixture-only held fake host they need. Slice 1 (chain stopverb-build1, goal metasystem-stop-verb) builds and proves the human-visible contract with five scenarios; section 10 of plans/metasystem-stop-verb-design.md names the rest: arm-refuses-survivor, mission-stop with its ignore-TERM and host-ignores-TERM variants and its dead-runner live-turn case, proof-run-stop with its dead-watchdog case, slow-owner, crash-recovery, remote-job, ignored-signal and wrong-terminal. DONE means every one of those scenarios exists, passes outside a delegate sandbox, and would fail against the tree before it
 - Origin: main
 - Next step: Blocked until slice 1 lands. Then: specify the held fake host in scripts/agents/hosts/fake.sh (how a turn selects the held behaviour and how the fixture proves its signal handler is installed before stop runs; round 5 of the slice-1 chain stopped on exactly this and was right to), then write the scenarios in the beds section 10 assigns them, then one code critique. The orchestrator runs the supervision, mission and suite-progress beds outside the sandbox: a delegate sandbox cannot execute a freshly copied fixture engine (status 126) nor authenticate spawned process groups
 - OpenedAt: 2026-09-07T07:30:28Z
-- Revision: 21
+- Revision: 22
 - Pinned: m1b
 - Budget: elapsedLimit=4h attemptLimit=6 reservedJobMinutesLimit=720 activeJobLimit=1 reviewRoundLimit=2
 - BudgetExceptions: 0
@@ -37,4 +37,5 @@ History:
 - 2026-09-13T07:44:39Z A2HVZ4RDRF8G5WE1Y3ZFGSD52K-m1e-c6925449 approve actor=human:Wido targets=metasystem-stop-escalation-proofs
 - 2026-09-13T07:44:44Z TJ1TBGQ70A0PZH04C34J9P51C5-m1e-c6925449 set-priority actor=human:Wido targets=first-headless-run,fleet-channel-gateway,fleet-join-bootstrap,fleet-pull,headless-continuous-delivery-proof,headless-fleet-coordination-proof,metasystem-stop-escalation-proofs,mission-birth-baseline-from-dirty-worktree,never-idle-ironclad,recovery-rehearsal,seat-mutual-awareness reason=priority-order subject=metasystem-stop-escalation-proofs from=2:17 to=1:39 requested-sequence=39
 - 2026-09-13T08:18:55Z B5G9KBS61Q28BAQ0ETN1G2V4AY-m1-c6925449 done actor=human:Wido targets=actionable-metrics,breach-clock-and-budget-honesty,chain-landing-carries-the-reviewed-diff,closing-read-and-receipt-in-parallel,dispatch-bases-chains-on-the-remote-tip,failed-job-attention,fixture-repo-copies-exclude-the-artifacts-store,fixture-stewards-outlive-their-suite,fixture-waits-name-their-producer,human-authority-surface-runs-its-cmd-tests,human-goal-verbs-forgiving,human-wait-does-not-consume-goal-budget,job-record-birth-token,lease-sweep-death-evidence,live-job-on-a-done-goal-unnoticed,machine-concurrency-governor,metasystem-stop-escalation-proofs,metasystem-stop-fleet-form,new-elapsed-budgets-use-explicit-hours,repo-root-paths-ride-agent-commits-unjudged,run-scoped-build-caches-have-a-janitor,skipped-test-fails-its-group-on-the-other-os,steward-catchup-livelock,steward-revives-a-done-goal,stop-batch-strands-a-resumable-goal,stop-refusal-fits-on-one-screen,suite-custody,token-spend-fence,watch-verb,watcher-repair-request-never-names-current,winddown-census-handoff-leak reason=priority-order from=1:39 to=1:38
-Integrity: sha256=e2adc24058c1460fa1a336ccbbd30a798c19fc4b52dc6ecc8584ee756885fc1b
+- 2026-09-13T08:19:54Z J2760PA4M0G8M7F0NHSQVMX86Y-m1-c6925449 done actor=human:Wido targets=closing-read-and-receipt-in-parallel,dispatch-bases-chains-on-the-remote-tip,human-wait-does-not-consume-goal-budget,metasystem-stop-escalation-proofs,metasystem-stop-fleet-form,new-elapsed-budgets-use-explicit-hours,stop-refusal-fits-on-one-screen reason=priority-order from=1:38 to=1:37
+Integrity: sha256=bd1aea6ecbcd333725df4e65a305f2498117803dc7a80b5874f2d049fa516154
