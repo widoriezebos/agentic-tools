@@ -1716,7 +1716,11 @@ dispatch_job() {
     outputs_digest=$(sha256_file "$outputs")
     brief_with_outputs=$(mktemp "$record_locks/brief-outputs.XXXXXX")
     cat "$brief" > "$brief_with_outputs"
-    printf '\n## Declared Outputs\n\n- SHA-256 digest: %s\n' "$outputs_digest" >> "$brief_with_outputs"
+    # The digest is of the manifest, never of the design page: a critic that
+    # hashes the page against it stops on a false mismatch.
+    printf '\n## Declared Outputs\n\nThe design declares these output paths (the manifest; its SHA-256 digest follows). The design page itself is read at the path the brief names and carries no declared digest.\n\n' >> "$brief_with_outputs"
+    sed 's/^/- /' "$outputs" >> "$brief_with_outputs"
+    printf '\n- SHA-256 digest of this manifest: %s\n' "$outputs_digest" >> "$brief_with_outputs"
     brief=$brief_with_outputs
   fi
 
