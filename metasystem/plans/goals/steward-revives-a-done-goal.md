@@ -1,6 +1,6 @@
 # steward-revives-a-done-goal
 
-- State: queued
+- State: approved
 - Priority: 1
 - Sequence: 14
 - Risk: severity=3 novelty=2 exposure=2 accumulation=2 basis="severity 3: it spent real delegate money continuing a goal that was already done, and the job outlived the runner that spawned it by reparenting, so killing the steward did not stop the spend; novelty 2: the revival intent needs a liveness-and-state test it does not have; exposure 2: every seat whose steward ticks while a goal completes; accumulation 2: each occurrence burns a full job cap and the pattern repeats whenever a landing takes longer than a tick"
@@ -9,10 +9,11 @@
 - Origin: main
 - Next step: SECOND INCIDENT, on m1b's own claim, 2026-09-07 10:25Z, which widens this goal beyond the done-goal case: the steward revived goal metasystem-stop-verb WHILE ITS HOLDER WAS ACTIVELY WORKING IT. The seat was 20 minutes into an out-of-sandbox verification run (a package matrix and four fixture beds, no dispatch job in flight because the orchestrator runs those itself), and the steward read that as stalled. Receipt line landed with commit 6dbaefb0: 'steward revival: intent e0fd62ab4c2a2e32 revives metasystem-stop-verb via job steward-e0fd62ab4c2a2e32'. The job was real: role steward-continuation, runtime codex, pid 53323, cap 120 minutes, running 22 minutes before m1b noticed it in a stray receipts-log modification and cancelled it through delegate --cancel. Nothing surfaced it; it was found only because it dirtied the tree during a landing. So the live-holder refusal named in this goal's DONE is not a nicety: a seat doing the slow, honest part of its work (verification the sandbox cannot do) looks exactly like a stalled seat to the steward, and the duplicate worker it spawns can dispatch, edit or land against the same chain. Suggested test to add: a claimed goal whose holder has published no job for longer than the stall window but whose lease and session are alive is NOT revived. The detection half is goal live-job-on-a-done-goal-unnoticed.
 - OpenedAt: 2026-09-07T09:18:48Z
-- Revision: 80
+- Revision: 81
 - Pinned: m1b
 - Budget: elapsedLimit=1d attemptLimit=10 reservedJobMinutesLimit=1200 activeJobLimit=1 reviewRoundLimit=3
 - BudgetExceptions: 0
+- Approved: by=human:Wido at=2026-09-13T06:41:26Z revision=81 opid=8Q8V3RANKRXM9NBEXBF4DFTBST-m1e-c6925449 authority=proven digest=7ba928552ef5018d567ce146923db3dfaedbc068711b6661ee7e2937f61cdcc9
 
 History:
 - 2026-09-07T09:18:48Z WZJX6A2QTBA57ZRAPPEVQ25X3R-m1b-c6925449 open actor=m1b+main-1788680071-18713-e76d5d targets=steward-revives-a-done-goal
@@ -95,4 +96,5 @@ History:
 - 2026-09-13T06:37:44Z 99P3BRXY1587W281SDZ1PFYSB0-m1e-c6925449 done actor=human:Wido targets=actionable-metrics,breach-clock-and-budget-honesty,coordinator-context-stays-under-budget,coordinator-wakes-on-events-not-polls,critique-closes-on-folded-proof,delegate-rounds-reuse-a-warm-gate,failed-job-attention,fixture-stewards-outlive-their-suite,goal-abandoned-with-a-reason,human-goal-verbs-forgiving,job-record-birth-token,landing-receipt-survives-records-drift,lease-sweep-death-evidence,live-job-on-a-done-goal-unnoticed,machine-concurrency-governor,steward-catchup-livelock,steward-revives-a-done-goal,stop-batch-strands-a-resumable-goal,suite-custody,token-spend-fence,watch-verb,watcher-repair-request-never-names-current,winddown-census-handoff-leak reason=priority-order from=1:16 to=1:15
 - 2026-09-13T06:37:52Z 0Z49HACVY4QBKH33QGX9X20769-m1e-c6925449 done actor=human:Wido targets=actionable-metrics,breach-clock-and-budget-honesty,coordinator-context-stays-under-budget,coordinator-wakes-on-events-not-polls,critique-closes-on-folded-proof,engine-runs-re-arm-themselves-on-a-landed-engine,failed-job-attention,fixture-stewards-outlive-their-suite,goal-abandoned-with-a-reason,human-goal-verbs-forgiving,job-record-birth-token,landing-receipt-survives-records-drift,lease-sweep-death-evidence,live-job-on-a-done-goal-unnoticed,machine-concurrency-governor,proof-groups-detect-hangs-by-progress-not-the-clock,small-change-lane,steward-catchup-livelock,steward-launches-resolve-their-model,steward-revives-a-done-goal,stop-batch-strands-a-resumable-goal,stop-hook-never-forces-an-empty-turn,suite-custody,token-spend-fence,watch-verb,watcher-repair-request-never-names-current,winddown-census-handoff-leak reason=priority-order from=1:15 to=1:14
 - 2026-09-13T06:41:20Z YH99SVA5FB67AXZSTYP7T2P7GR-m1e-c6925449 set-pin actor=human:Wido targets=steward-revives-a-done-goal
-Integrity: sha256=4aa18c8762dbb68c0752a0249c565025a3062d09010e6ebe47074f37c5d43351
+- 2026-09-13T06:41:26Z 8Q8V3RANKRXM9NBEXBF4DFTBST-m1e-c6925449 approve actor=human:Wido targets=steward-revives-a-done-goal
+Integrity: sha256=20b2bae6447d350913ea2d77f1689d4548fe60288687d9f788a7e558457a1ed4
