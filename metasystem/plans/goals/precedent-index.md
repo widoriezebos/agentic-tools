@@ -1,14 +1,15 @@
 # precedent-index
 
-- State: queued
+- State: parked
 - Priority: 3
 - Sequence: 32
 - Intent: Rulings become citable law: a first-class precedent index the counselor cites at sittings, so settled questions are distinguished, not re-litigated (Wido 2026-08-25, common-law study area)
 - Origin: human
 - Next step: Appetite: 1d design-first. The legal insight redesigned: a ruling binds by its PRINCIPLE, not its circumstances, and the discipline is distinguishing a new case from an old precedent rather than re-arguing. Design questions: the record shape (principle, circumstances, who ruled, what it superseded), the app-owned home (seeded at inception from harvested design decisions; this repo's D-numbers are the template's own instance), the citing surfaces (the counselor's sitting and the dispatch delegate's intake ask 'is this the same case?'), and supersession (a precedent is overturned by a new ruling that names it, never silently). Queue: after reconciliation-guards.
 - OpenedAt: 2026-08-25T06:54:54Z
-- Revision: 79
+- Revision: 80
 - BudgetExceptions: 0
+- Parked: by=human:Wido at=2026-09-13T08:24:06Z because=Not now (2026-09-13 backlog consolidation, Wido's word): Not-now: rulings live in memory/rulings.md as an append-only table (R-107 and counting) and no counselor sitting exists to cite an index; queued after reconciliation-guards, itself deferred; Wido's 08-25 study-area vision, unpark on his word.
 
 History:
 - 2026-08-25T06:54:54Z TS4DNAJ8GP28TTJMNXX6NB1N04-m1-bf243850 open actor=human:wido targets=precedent-index
@@ -90,4 +91,5 @@ History:
 - 2026-09-13T08:22:24Z TSR1R55W14V9FG2PK9ZTG9JSB0-m1-c6925449 done actor=human:Wido targets=app-doctrine,app-guardrail-custody,app-guardrail-program,continuous-self-improvement,counselor,cross-repo-guardrails,design-prohibition-is-role-scoped,effort-by-complexity-per-model,fixture-default-branch-assumption,goal-suite-sits-on-the-default-test-timeout,human-carried-landing,incident-proposal-drafting,integration-branch,land-verb-pruning,ledger-authentication,metasystem-way-patterns,missionrunner-terminate-flake,paid-proof-authorization,precedent-index,python3-kit-port,reconciliation-guards,registry-design-names-selection-rows,repo-flag-resolves-one-root,seam-eventstream-error-surface,standing-validation,watchdog-kill-observation-gap reason=priority-order from=3:35 to=3:34
 - 2026-09-13T08:22:31Z HEFP5WKYB8V4MWGW41R8JSH6VC-m1-c6925449 done actor=human:Wido targets=answer-archive,app-doctrine,app-guardrail-custody,app-guardrail-program,claude-delegate-scratch-cleanup,claude-denywrite-list-is-a-snapshot,continuous-self-improvement,counselor,cross-repo-guardrails,delegate-sandbox-cannot-run-the-beds,design-prohibition-is-role-scoped,effort-by-complexity-per-model,fable-effort-high,fixture-default-branch-assumption,follow-up-brief-cannot-cite-fresh-trunk-files,goal-suite-sits-on-the-default-test-timeout,hook-demands-what-landing-forbids,human-carried-landing,incident-proposal-drafting,integration-branch,land-verb-pruning,ledger-authentication,metasystem-way-patterns,missionrunner-terminate-flake,narrator-digests,paid-proof-authorization,precedent-index,python3-kit-port,reconciliation-guards,registry-design-names-selection-rows,repo-flag-resolves-one-root,runtime-limit-is-not-a-protocol-error,seam-declaration-convergence,shutdown-claims-more-than-it-stops,standing-validation,stop-message-truth,uncapped-delegate-fanout,watchdog-kill-observation-gap reason=priority-order from=3:34 to=3:33
 - 2026-09-13T08:22:58Z 6QJV3SGEV054J7AVXBA2JE4MBE-m1-c6925449 done actor=human:Wido targets=app-doctrine,app-guardrail-custody,app-guardrail-program,claude-delegate-scratch-cleanup,continuous-self-improvement,counselor,cross-repo-guardrails,design-prohibition-is-role-scoped,effort-by-complexity-per-model,fable-effort-high,fixture-default-branch-assumption,goal-suite-sits-on-the-default-test-timeout,human-carried-landing,incident-proposal-drafting,integration-branch,land-verb-pruning,ledger-authentication,metasystem-way-patterns,missionrunner-terminate-flake,paid-proof-authorization,precedent-index,python3-kit-port,reconciliation-guards,registry-design-names-selection-rows,repo-flag-resolves-one-root,seam-declaration-convergence,standing-validation,watchdog-kill-observation-gap reason=priority-order from=3:33 to=3:32
-Integrity: sha256=28062bec374f6a2cefcf78feebbd61219a3426d37386a18d4903f1e1607bdb55
+- 2026-09-13T08:24:06Z DNHFHZ99AJYSMSCSKFDYCSMKFX-m1-c6925449 park actor=human:Wido targets=precedent-index reason=Not now (2026-09-13 backlog consolidation, Wido's word): Not-now: rulings live in memory/rulings.md as an append-only table (R-107 and counting) and no counselor sitting exists to cite an index; queued after reconciliation-guards, itself deferred; Wido's 08-25 study-area vision, unpark on his word.
+Integrity: sha256=d6bee01a86bfaacf39a914b259d239347c96aa19b1405e215050366f51b9fbfb
