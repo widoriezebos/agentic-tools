@@ -1,6 +1,6 @@
 # hook-root-resolver-design
 
-- State: claimed
+- State: approved
 - Priority: 1
 - Sequence: 2
 - Risk: severity=2 novelty=1 exposure=3 accumulation=2 basis="severity 2: the hook fails closed while wrong, but a wrong resolver on the deadline parent can record a refusal against the wrong world; novelty 1: the design exists at revision 5 with five rounds of critique, so what remains is a fold and a build; exposure 3: every nested checkout in the fleet; accumulation 2: the same root cause that produced successor A"
@@ -9,14 +9,13 @@
 - Origin: main
 - Next step: LANDED cc5cc163 (2026-09-13 15:25Z): the hook resolves its world through the engine's path state-root, linked worktrees map to their primary, the deadline parent runs one engine and never blocks on its own, missing engine and skew are degraded allowances, a seat-actionable block survives a disclosed infrastructure condition, and case 14 proves DONE from a nested checkout. Every seat rebuilds and re-arms before its next Stop. ONE FOLLOW-UP OPEN under this goal, for the design lane (now Codex Astra by Wido's word of this afternoon): on SessionStart a skewed engine is silent, so a declared brain seat in the rollout window gets no role context and no notice (the revision was cut short by the Fable limit); its revision, build, read and landing close this goal. Invariant on Wido's desk, recorded on the page: may a linked worktree ever own an independent steward world (the page and the landing proceed on no, the engine's rule).
 - OpenedAt: 2026-09-06T06:39:49Z
-- Revision: 73
+- Revision: 74
 - Pinned: m1c
 - Budget: elapsedLimit=1d attemptLimit=12 reservedJobMinutesLimit=1200 activeJobLimit=1 reviewRoundLimit=3
 - BudgetExceptions: 0
 - Approved: by=human:Wido at=2026-09-13T07:22:49Z revision=55 opid=XZA3290E1RGR8SK8PKFNAVKKKK-m1e-c6925449 authority=proven digest=803416cae1f6cc23de17e5095463c667244bf3187f06ab28d7a67a0f6e427139
 - Sliced: machine=m1 lineage=main-1788594343-3833-fb64b9 revision=4 at=2026-09-06T11:22:23Z
-- Claimed: machine=m1c lineage=main-1789191340-90689-8975a9 at=2026-09-13T09:15:15Z revision=64 accountingRevision=59 episodeAt=2026-09-13T07:27:28Z episodeRevision=59 idleSeconds=2244
-- StopCapability: generation=64 revision=64 machine=m1c claimEpoch=5 fenceEpoch=0
+- Episode: machine=m1c lineage=main-1789191340-90689-8975a9 accountingRevision=59 episodeAt=2026-09-13T07:27:28Z episodeRevision=59 idleSeconds=2244 released=2026-09-13T15:38:43Z
 
 History:
 - 2026-09-06T06:39:49Z X92B849FEPDB998FKY6C404SXZ-m1-a4f8999f open actor=m1+main-1788594343-3833-fb64b9 targets=hook-root-resolver-design
@@ -92,4 +91,5 @@ History:
 - 2026-09-13T13:49:58Z T4X9CAVTYHPA6EPV1QPV742PAM-m1c-69c9e454 edit actor=m1c+main-1789191340-90689-8975a9 targets=hook-root-resolver-design
 - 2026-09-13T14:23:34Z D6J60XZSFC2Q578V5Q3TMTYEBN-m1c-69c9e454 edit actor=m1c+main-1789191340-90689-8975a9 targets=hook-root-resolver-design
 - 2026-09-13T15:22:51Z Q4699BX1MWYHZB271MYF9G3YDM-m1c-69c9e454 edit actor=m1c+main-1789191340-90689-8975a9 targets=hook-root-resolver-design
-Integrity: sha256=b8541e33f62913c836ed6dcb707faa9566eea30bde43947052a9151256354b20
+- 2026-09-13T15:38:43Z EB22VN452JWX3M10TTFDBNQE37-m1c-69c9e454 release actor=m1c+main-1789191340-90689-8975a9 targets=hook-root-resolver-design
+Integrity: sha256=13326532ef081fbb21c4c2a3b054bc0668119e4066ecd5983cfd1dc537745517
