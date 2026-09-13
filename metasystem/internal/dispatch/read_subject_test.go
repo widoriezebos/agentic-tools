@@ -5,6 +5,8 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/readsubject"
 )
 
 func TestReadSubjectEqualityIgnoresProvenance(t *testing.T) {
@@ -77,14 +79,14 @@ func TestReadRoundSubjectAbsentOnOldRounds(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	subject, present, err := readRoundSubject(agents, "critic", 1)
+	subject, present, err := readsubject.ReadRoundSubject(agents, "critic", 1)
 	if err != nil || present || subject != (ReadSubject{}) {
 		t.Fatalf("absent subject = %+v, %v, %v; want zero, false, nil", subject, present, err)
 	}
 	if err := os.WriteFile(filepath.Join(roundDir, "subject.json"), []byte("not json\n"), 0o644); err != nil {
 		t.Fatal(err)
 	}
-	if _, _, err := readRoundSubject(agents, "critic", 1); err == nil {
+	if _, _, err := readsubject.ReadRoundSubject(agents, "critic", 1); err == nil {
 		t.Fatal("malformed subject.json was accepted")
 	}
 }
@@ -234,7 +236,7 @@ func TestReadRoundSubjectDecodesAValidFile(t *testing.T) {
 	if err := os.WriteFile(filepath.Join(dir, "subject.json"), []byte(`{"kind":"commit","commit":"k","parent":"p","tree":"t","diffDigest":"d"}`+"\n"), 0o644); err != nil {
 		t.Fatal(err)
 	}
-	subject, present, err := readRoundSubject(agents, "critic-root", 3)
+	subject, present, err := readsubject.ReadRoundSubject(agents, "critic-root", 3)
 	if err != nil || !present {
 		t.Fatalf("a valid subject.json was not read: present=%v err=%v", present, err)
 	}

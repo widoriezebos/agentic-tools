@@ -14,6 +14,7 @@ import (
 
 	critiqueModel "github.com/widoriezebos/agentic-tools/metasystem/internal/critique"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/goal"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/readsubject"
 	"golang.org/x/sys/unix"
 )
 
@@ -143,7 +144,7 @@ func CritiqueRegisterAdvance(repoRoot, rootJob, roundJob string) (outcome string
 				if subjectErr != nil {
 					return subjectErr
 				}
-				persisted, subjectPresent, readSubjectErr := readRoundSubject(state.agents, rootJob, round)
+				persisted, subjectPresent, readSubjectErr := readsubject.ReadRoundSubject(state.agents, rootJob, round)
 				if readSubjectErr != nil {
 					return fmt.Errorf("critique root record %s round %d has a malformed subject: %v", rootJob, round, readSubjectErr)
 				}
@@ -151,7 +152,7 @@ func CritiqueRegisterAdvance(repoRoot, rootJob, roundJob string) (outcome string
 				if subjectPresent {
 					root[findingRegisterSubjectDigestField] = persisted.Digest()
 				}
-				if subjectPresent && !returnBindsSubject(persisted, result) {
+				if subjectPresent && !readsubject.ReturnBindsSubject(persisted, result) {
 					advanced = foldUnboundReturn(register, role, roundJob, persisted, result)
 				} else {
 					var demotions []any
@@ -267,19 +268,6 @@ func foldProtocolError(register []registerFinding, role, roundJob string, roundR
 func syntheticProtocolFindingID(role, roundJob string) string {
 	sum := sha256.Sum256(canonicalJSON([]any{"protocol_error", role, roundJob}))
 	return "synthetic-" + hex.EncodeToString(sum[:])
-}
-
-func returnBindsSubject(subject ReadSubject, result map[string]any) bool {
-	switch subject.Kind {
-	case SubjectLive:
-		return asString(result["reviewedTree"]) == subject.ReviewedProjectTree
-	case SubjectCommit:
-		return asString(result["reviewedTree"]) == subject.Tree
-	case SubjectDesign:
-		return asString(result["reviewedCommit"]) == subject.ReviewedCommit
-	default:
-		return false
-	}
 }
 
 func foldUnboundReturn(register []registerFinding, role, roundJob string, subject ReadSubject, result map[string]any) []registerFinding {
@@ -592,10 +580,12 @@ func cleanClosure(state critiqueState, rootJob string, root map[string]any, regi
 	if foldedRound < 1 {
 		return Closure{}, false, nil
 	}
-	for _, finding := range register {
-		if finding.Status != "resolved" || finding.Resolution != "withdrawn" {
-			return Closure{}, false, nil
-		}
+	clean, err := readsubject.CleanRegister(encodeFindingRegister(register))
+	if err != nil {
+		return Closure{}, false, err
+	}
+	if !clean {
+		return Closure{}, false, nil
 	}
 	for jobID, record := range state.records {
 		round, ok := numInt(record["round"])
@@ -603,7 +593,7 @@ func cleanClosure(state critiqueState, rootJob string, root map[string]any, regi
 			return Closure{}, false, nil
 		}
 	}
-	subject, present, err := readRoundSubject(state.agents, rootJob, foldedRound)
+	subject, present, err := readsubject.ReadRoundSubject(state.agents, rootJob, foldedRound)
 	if err != nil {
 		return Closure{}, false, err
 	}
@@ -611,7 +601,7 @@ func cleanClosure(state critiqueState, rootJob string, root map[string]any, regi
 		return Closure{}, false, nil
 	}
 	want := Closure{CriticRoot: rootJob, Round: foldedRound, Subject: subject, Mechanism: "clean"}
-	existing, present, err := ReadClosure(root)
+	existing, present, err := readsubject.ReadClosure(root)
 	if err != nil {
 		return Closure{}, false, err
 	}
@@ -637,7 +627,7 @@ func cleanClosure(state critiqueState, rootJob string, root map[string]any, regi
 	if asString(result["jobId"]) != roundJob || !roundOK || returnedRound != foldedRound {
 		return Closure{}, false, nil
 	}
-	if !returnBindsSubject(subject, result) {
+	if !readsubject.ReturnBindsSubject(subject, result) {
 		return Closure{}, false, nil
 	}
 	foldedSubjectDigest := asString(root[findingRegisterSubjectDigestField])

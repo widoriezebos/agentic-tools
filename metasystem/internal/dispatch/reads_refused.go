@@ -5,6 +5,8 @@ import (
 	"encoding/json"
 	"fmt"
 	"os"
+
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/readsubject"
 )
 
 type ReadRefusal struct {
@@ -46,7 +48,7 @@ func LoadReadRefusals(paths ...string) ([]ReadRefusal, error) {
 				return nil, fmt.Errorf("%s line %d: %w", path, index+1, err)
 			}
 			if rawSubject, present := object["subject"]; present {
-				subject, _, err := decodeReadSubject(rawSubject)
+				subject, _, err := readsubject.DecodeReadSubject(rawSubject)
 				if err != nil {
 					return nil, fmt.Errorf("%s line %d: %w", path, index+1, err)
 				}
