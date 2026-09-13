@@ -1,6 +1,6 @@
 # small-change-lane
 
-- State: queued
+- State: approved
 - Priority: 1
 - Sequence: 2
 - Risk: severity=2 novelty=2 exposure=3 accumulation=2 basis="severity 2: a change the lane admits lands with an area receipt instead of the battery, so a wrong bound or a wrong surface map lets an under-proven change land, though the fast gate, the critic at tier 2 and 3, and the goal's DONE sentence still stand; novelty 2: an admission rule and a templated brief are new, the receipt, the critic and the tier boxes exist; exposure 3: every seat's small fixes on every machine; accumulation 2: each lane landing skips one battery, and a wrong bound compounds until the ten-landing review"
@@ -9,9 +9,11 @@
 - Origin: main
 - Next step: DESIGN REVISION 1 RETURNED (scl-design1, Fable, 597 lines; page saved in m1b's scratchpad, scl-design1.patch; unlandable until records can land). WIDO'S DECISIONS 2026-09-10 on its three open points: (1) proof depth follows the four risk answers, never the diff's size (kept the contract's rule; locality is goal blast-radius-beside-risk, later); (2) critique follows the TIER, not the class (goal critique-always re-scoped): the small lane's 'one bounded critique' becomes 'a critique when the tier is 2 or 3, none at tier 1', and the tier-1 direct-fix class is NOT retired: it is the low-risk lane, R-54-m1 stands; (3) the bounds are four files and eighty changed lines, measured on the computed diff at conformance review, a change over the bound moves to the ordinary ladder rather than failing, revisited after ten lane landings. Revision 2 folds these three into the page (sections 2, 3, 7 and the revision record) before read 1. Parked until the bootstrap members land.
 - OpenedAt: 2026-08-20T00:14:00Z
-- Revision: 86
+- Revision: 87
 - Pinned: m1c
+- Budget: elapsedLimit=4h attemptLimit=6 reservedJobMinutesLimit=720 activeJobLimit=1 reviewRoundLimit=2
 - BudgetExceptions: 0
+- Approved: by=human:Wido at=2026-09-13T06:39:47Z revision=87 opid=CN7803B10R9XXR02WQ5KYZ72K0-m1e-c6925449 authority=proven digest=ecd44a1c672142947999b59e4ebcb28c00674b3e56bcb948871f038f1cd4ce3e
 - Sliced: machine=m1b lineage=main-1788680071-18713-e76d5d revision=16 at=2026-09-10T07:25:39Z
 
 History:
@@ -101,4 +103,5 @@ History:
 - 2026-09-12T15:43:39Z 7VED87G6APJ5MWZRGHMHBYVEF8-m1-c6925449 set-priority actor=human:Wido targets=budget-extends-by-consumption-and-breach-parks,coordinator-context-stays-under-budget,coordinator-wakes-on-events-not-polls,critique-always,critique-closes-on-folded-proof,delegate-rounds-reuse-a-warm-gate,proof-attempts-settle-to-minutes-run,proof-groups-detect-hangs-by-progress-not-the-clock,small-change-lane,steward-launches-resolve-their-model,stop-hook-never-forces-an-empty-turn reason=priority-order subject=small-change-lane from=1:13 to=1:3 requested-sequence=3
 - 2026-09-12T17:15:40Z Z3B6P74Y7T7J632YQB12RN10EW-m1c-69c9e454 edit actor=m1c+main-1789191340-90689-8975a9 targets=small-change-lane
 - 2026-09-13T06:37:52Z 0Z49HACVY4QBKH33QGX9X20769-m1e-c6925449 done actor=human:Wido targets=actionable-metrics,breach-clock-and-budget-honesty,coordinator-context-stays-under-budget,coordinator-wakes-on-events-not-polls,critique-closes-on-folded-proof,engine-runs-re-arm-themselves-on-a-landed-engine,failed-job-attention,fixture-stewards-outlive-their-suite,goal-abandoned-with-a-reason,human-goal-verbs-forgiving,job-record-birth-token,landing-receipt-survives-records-drift,lease-sweep-death-evidence,live-job-on-a-done-goal-unnoticed,machine-concurrency-governor,proof-groups-detect-hangs-by-progress-not-the-clock,small-change-lane,steward-catchup-livelock,steward-launches-resolve-their-model,steward-revives-a-done-goal,stop-batch-strands-a-resumable-goal,stop-hook-never-forces-an-empty-turn,suite-custody,token-spend-fence,watch-verb,watcher-repair-request-never-names-current,winddown-census-handoff-leak reason=priority-order from=1:3 to=1:2
-Integrity: sha256=14ba80f70df544d15e2cdd142b1d414ffac88bf24cd23909979957bcde35645d
+- 2026-09-13T06:39:47Z CN7803B10R9XXR02WQ5KYZ72K0-m1e-c6925449 approve actor=human:Wido targets=small-change-lane
+Integrity: sha256=a632ba1b82fdf38e1824ca1432110350fbe4a79249828883f3898829fc8ec6d2
