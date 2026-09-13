@@ -1,6 +1,6 @@
 # metasystem-stop-escalation-proofs
 
-- State: queued
+- State: approved
 - Priority: 2
 - Sequence: 17
 - Risk: severity=2 novelty=2 exposure=2 accumulation=1 basis="severity 2: an unproven escalation path means a stop that reports killed without evidence it killed; novelty 2: a held fake host and its readiness handshake do not exist yet; exposure 2: every seat that stops a checkout with a mission, a suite or an ignored signal in flight; accumulation 1: the scenarios are written once"
@@ -9,10 +9,11 @@
 - Origin: main
 - Next step: Blocked until slice 1 lands. Then: specify the held fake host in scripts/agents/hosts/fake.sh (how a turn selects the held behaviour and how the fixture proves its signal handler is installed before stop runs; round 5 of the slice-1 chain stopped on exactly this and was right to), then write the scenarios in the beds section 10 assigns them, then one code critique. The orchestrator runs the supervision, mission and suite-progress beds outside the sandbox: a delegate sandbox cannot execute a freshly copied fixture engine (status 126) nor authenticate spawned process groups
 - OpenedAt: 2026-09-07T07:30:28Z
-- Revision: 18
+- Revision: 19
 - Pinned: m1b
 - Budget: elapsedLimit=4h attemptLimit=6 reservedJobMinutesLimit=720 activeJobLimit=1 reviewRoundLimit=2
 - BudgetExceptions: 0
+- Approved: by=human:Wido at=2026-09-13T07:44:39Z revision=19 opid=A2HVZ4RDRF8G5WE1Y3ZFGSD52K-m1e-c6925449 authority=proven digest=fa5ab2cdac3f5496cff3de38ea522bdfffc3ce8ca0a5a404c6f766f17146badf
 
 History:
 - 2026-09-07T07:30:28Z 9S47R8KRJBAWTSFQ1TJQDEMD2S-m1b-c6925449 open actor=m1b+main-1788680071-18713-e76d5d targets=metasystem-stop-escalation-proofs
@@ -33,4 +34,5 @@ History:
 - 2026-09-13T06:44:32Z VP6AD63TYG5F9F8NVDKDX85A61-m1e-c6925449 set-priority actor=human:Wido targets=chain-landing-carries-the-reviewed-diff,first-headless-run,fleet-channel-gateway,fleet-join-bootstrap,fleet-pull,gate-governance-records,headless-continuous-delivery-proof,headless-fleet-coordination-proof,idle-every-runtime-enforcement,metasystem-stop-escalation-proofs,mission-birth-baseline-from-dirty-worktree,never-idle-ironclad,recovery-rehearsal,recovery-to-good-state,repo-root-paths-ride-agent-commits-unjudged,role-context-composition,role-lane-packets,seat-mutual-awareness reason=priority-order subject=chain-landing-carries-the-reviewed-diff from=2:19 to=2:18 requested-sequence=32
 - 2026-09-13T06:44:41Z 59E2SS1PHG2JEY44B98S85XHVC-m1e-c6925449 set-priority actor=human:Wido targets=first-headless-run,fleet-channel-gateway,fleet-join-bootstrap,fleet-pull,gate-governance-records,headless-continuous-delivery-proof,headless-fleet-coordination-proof,idle-every-runtime-enforcement,metasystem-stop-escalation-proofs,mission-birth-baseline-from-dirty-worktree,never-idle-ironclad,recovery-rehearsal,recovery-to-good-state,repo-root-paths-ride-agent-commits-unjudged,role-context-composition,role-lane-packets,seat-mutual-awareness reason=priority-order subject=repo-root-paths-ride-agent-commits-unjudged from=2:18 to=2:17 requested-sequence=33
 - 2026-09-13T07:44:35Z 3HAZF996GTHDBJCZ5JEAFGPWCW-m1e-c6925449 set-pin actor=human:Wido targets=metasystem-stop-escalation-proofs
-Integrity: sha256=a7bcf7bf36f55e17c088f68b5571c3d3d9aac7f97e4fd1cd4595c5261a821518
+- 2026-09-13T07:44:39Z A2HVZ4RDRF8G5WE1Y3ZFGSD52K-m1e-c6925449 approve actor=human:Wido targets=metasystem-stop-escalation-proofs
+Integrity: sha256=dbcbde844ea3ed335ce701fd7ed547455d97091b359682edf46fb2a241d37b24
