@@ -9,7 +9,8 @@
 - Origin: main
 - Next step: Appetite: 4h, full ladder. Split out of dispatch-cap-necessity on 2026-09-02 by m1b (R-4: residue demands a token). Mechanism already designed and critiqued: plans/dispatch-cap-settlement-design.md revision 4 section 1.9 - after a successful SIGTERM poll group absence every 50ms for 2s, re-prove ownership and SIGKILL, poll 2s, final absence check via the group-absence function exported in place from internal/supervise/arming.go (lease may import supervise: measured with go list, lease -> steward -> supervise); when the group survives, concludeStaleJob writes nothing, the sweep returns the named error, the takeover refuses its sweep stamp and the next claim, succession or up retries; the dispatch reap path stamps timeout under its own ladder once the cap expires. Test: no endedAt stamp while the group lives. A builder starts from that section.
 - OpenedAt: 2026-09-02T18:37:50Z
-- Revision: 85
+- Revision: 86
+- Pinned: m1b
 - BudgetExceptions: 0
 
 History:
@@ -98,4 +99,5 @@ History:
 - 2026-09-13T06:37:44Z 99P3BRXY1587W281SDZ1PFYSB0-m1e-c6925449 done actor=human:Wido targets=actionable-metrics,breach-clock-and-budget-honesty,coordinator-context-stays-under-budget,coordinator-wakes-on-events-not-polls,critique-closes-on-folded-proof,delegate-rounds-reuse-a-warm-gate,failed-job-attention,fixture-stewards-outlive-their-suite,goal-abandoned-with-a-reason,human-goal-verbs-forgiving,job-record-birth-token,landing-receipt-survives-records-drift,lease-sweep-death-evidence,live-job-on-a-done-goal-unnoticed,machine-concurrency-governor,steward-catchup-livelock,steward-revives-a-done-goal,stop-batch-strands-a-resumable-goal,suite-custody,token-spend-fence,watch-verb,watcher-repair-request-never-names-current,winddown-census-handoff-leak reason=priority-order from=1:24 to=1:23
 - 2026-09-13T06:37:52Z 0Z49HACVY4QBKH33QGX9X20769-m1e-c6925449 done actor=human:Wido targets=actionable-metrics,breach-clock-and-budget-honesty,coordinator-context-stays-under-budget,coordinator-wakes-on-events-not-polls,critique-closes-on-folded-proof,engine-runs-re-arm-themselves-on-a-landed-engine,failed-job-attention,fixture-stewards-outlive-their-suite,goal-abandoned-with-a-reason,human-goal-verbs-forgiving,job-record-birth-token,landing-receipt-survives-records-drift,lease-sweep-death-evidence,live-job-on-a-done-goal-unnoticed,machine-concurrency-governor,proof-groups-detect-hangs-by-progress-not-the-clock,small-change-lane,steward-catchup-livelock,steward-launches-resolve-their-model,steward-revives-a-done-goal,stop-batch-strands-a-resumable-goal,stop-hook-never-forces-an-empty-turn,suite-custody,token-spend-fence,watch-verb,watcher-repair-request-never-names-current,winddown-census-handoff-leak reason=priority-order from=1:23 to=1:22
 - 2026-09-13T06:39:35Z W1SQN69BPGFAN0CYTQ4RNT30CR-m1e-892cdaec edit actor=m1e+main-1789030447-51011-5722fc targets=lease-sweep-death-evidence
-Integrity: sha256=b5368ed0382d6f4ad4480f5a878aad4fa1bcd807beb80a9751309ef6bb2d0d13
+- 2026-09-13T06:42:13Z ZNKJXX3AYVEWJTHHQMCKN84ZYS-m1e-c6925449 set-pin actor=human:Wido targets=lease-sweep-death-evidence
+Integrity: sha256=e39c9e4a89a0d48840cc8bc25bdc7cc388eee8e46baf21469979639c175fe73d
