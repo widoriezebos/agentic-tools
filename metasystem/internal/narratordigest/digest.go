@@ -261,6 +261,10 @@ func loadCursor(repoRoot, name string) (cursorRecord, error) {
 // firstCheckInLines bounds what a reader without a cursor is shown.
 const firstCheckInLines = 40
 
+// rewrittenLines bounds what a reader is shown when the story was rewritten
+// under its cursor, which a sync does routinely.
+const rewrittenLines = 1
+
 // recentTail returns the last n lines of data (all of it when it holds no
 // more than n lines).
 func recentTail(data []byte, n int) []byte {
@@ -325,15 +329,13 @@ func Pending(repoRoot string, names ...string) (PendingDigest, error) {
 		}
 	} else if stale {
 		// The story was rewritten under the cursor: the log is a tracked
-		// file, and a sync or a checkout of it replaces the bytes the
-		// cursor was taken against. That is not a reason to show the
-		// reader nothing forever; the reader gets the recent tail and the
-		// cursor then stands at the new end.
-		pending = recentTail(data, firstCheckInLines)
-		heading = "NARRATOR DIGEST, the story was rewritten since the last check-in (a sync or checkout of records/narrator-digest.log):\n"
-		if len(pending) != len(data) {
-			heading = fmt.Sprintf("NARRATOR DIGEST, the story was rewritten since the last check-in (a sync or checkout of records/narrator-digest.log); the last %d of %d lines:\n", firstCheckInLines, bytes.Count(data, []byte("\n")))
-		}
+		// file, and every sync or checkout of it replaces the bytes the
+		// cursor was taken against. That happens often, so the reader gets
+		// one line saying where the story stands, not a page of narration
+		// it has probably seen; the cursor then stands at the new end and
+		// the next check-in is incremental again. The file holds the rest.
+		pending = recentTail(data, rewrittenLines)
+		heading = fmt.Sprintf("NARRATOR DIGEST, the story was rewritten since the last check-in (a sync or checkout of records/narrator-digest.log); %d lines stand, the last one:\n", bytes.Count(data, []byte("\n")))
 	}
 	message := ""
 	if len(bytes.TrimSpace(pending)) != 0 {

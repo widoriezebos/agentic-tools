@@ -120,6 +120,10 @@ func TestPendingRecoversFromARewrittenStory(t *testing.T) {
 		!strings.Contains(rewritten.Message, "The landing shipped.") || rewritten.Cursor != int64(len(data)) {
 		t.Fatalf("a rewritten story did not recover with its tail: %+v %v", rewritten, err)
 	}
+	// A rewrite shows one line, never a page: a sync rewrites this file often.
+	if lines := strings.Count(strings.TrimSuffix(rewritten.Message, "\n"), "\n"); lines != 1 {
+		t.Fatalf("a rewritten story showed %d body lines, not one: %q", lines, rewritten.Message)
+	}
 	if err := Advance(root, rewritten.Cursor, rewritten.PrefixSHA256); err != nil {
 		t.Fatalf("advance after a rewrite: %v", err)
 	}
