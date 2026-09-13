@@ -7,11 +7,13 @@
 - Origin: main
 - Next step: After proof-groups-detect-hangs-by-progress-not-the-clock lands its supervisor: design one wait contract (producer pid, expected transition, failure signal) and the shell helper that implements it; migrate the beds one at a time, dispatch-fixtures.sh (forty-six deadlines) last. || Absorbed 2026-09-11 from goal dispatch-fixture-recollection-pass-budget: Survivor fixture-waits-name-their-producer; absorb: the dispatch scenario's recollection wait (scanSeq passes at dispatch-fixtures.sh:1003-1037) ends on the steward's recollection producer or its hang verdict, never on a fixed pass count; the silence failsafe stays. || Absorbed 2026-09-11 from goal supervision-fixture-census-window-fails-under-load: Merged intent: every shell fixture wait names the producer it waits on and ends only on that producer's transition, exit or hung verdict, so the stop-everything scenario waits for a fresh census verdict from the census writer before dispatching and a loaded host never refuses a receipt for a timing the candidate did no
 - OpenedAt: 2026-09-10T22:29:05Z
-- Revision: 2
+- Revision: 3
+- Pinned: m1c
 - Budget: elapsedLimit=4h attemptLimit=6 reservedJobMinutesLimit=720 activeJobLimit=1 reviewRoundLimit=2
 - BudgetExceptions: 0
 
 History:
 - 2026-09-10T22:29:05Z PM4QNHYAGETYRZ5V8J36YF6APB-m1-1701c13c open actor=m1+main-1788940932-18533-7fa6c2 targets=fixture-waits-name-their-producer
 - 2026-09-11T21:57:43Z ZYJDMNWGQVFJ10RWF9KWYTHWSH-m1-c6925449 edit actor=human:Wido targets=fixture-waits-name-their-producer
-Integrity: sha256=3625583575c9644e66701e051ee7c62ae727e8be33440066836cf6e44a016285
+- 2026-09-13T06:40:01Z S268CWZ4GEV4MPSRGC73HR1Z5Z-m1e-c6925449 set-pin actor=human:Wido targets=fixture-waits-name-their-producer
+Integrity: sha256=d9d8ad75bf81019bd080a7eb53a7422920e694bddcf923961ad5f690e0f31ae8
