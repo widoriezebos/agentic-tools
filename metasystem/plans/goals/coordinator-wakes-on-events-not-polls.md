@@ -1,6 +1,6 @@
 # coordinator-wakes-on-events-not-polls
 
-- State: claimed
+- State: parked
 - Priority: 1
 - Sequence: 7
 - Risk: severity=2 novelty=2 exposure=3 accumulation=2 basis="severity 2: a wait that never returns idles a seat; novelty 2: a wait verb over existing records is new; exposure 3: every seat; accumulation 2: touches the hook and the verbs"
@@ -9,15 +9,15 @@
 - Origin: human
 - Next step: 2026-09-13 afternoon m1b: design chain implementer-fa5b5830882bcf6ea864cdf6 CLOSED on cwe11-design-read-1 (CWE-11 resolved, nothing material; Wido's fourth read, run as a fresh chain within the three-chain limit, no accept-risk). Member 1 wait-verb-returns-on-recorded-events CONCLUDED (landed 57ba0586 and db8e9f36). Member 2 publication-owners-hint-the-waiter opens now as this goal's blocker (section 6 row 2); member 3 stop-gate-honours-a-registered-wait opens when member 2 is done (a seat's open takes one live goal to block). Clause 5 (the two whole-goal measurements) stays this goal's own after member 3. The superseded critic roots wait-design-read-3 (CWE-11) and the member's wait-member1-codecritic-1 and -r6c stay open: their registers do not learn a later chain's resolution (reported to m1e for critique-closes). || Absorbed 2026-09-13 by m1b from member 1's closing checks (defects of the wait mechanism, for a later member or a fix-forward under this lead): (a) `metasystem wait --goal ... --after <abbreviated commit>` answers 4 'accepted ledger history is not consecutive from the saved cursor', because waitLedgerChanges in internal/goal/attention.go compares the cursor text with rev-parse's full hash; resolve the cursor to the full commit at registration or refuse it with 67 (seen: --after 18f1dcef answered 4, the full hash answered 124). (b) Landings made by human commit from the enrolled terminal (every landing this week) carry no Goal-Item, Landing-Provenance or Landing-Provenance-Verdict trailer, so a landing wait never matches them: matchLandingMessage in internal/goal/attention.go needs all three, and only scripts/agents/commit.sh stamps them after its proof (it refuses them typed). Typed trailers on a hand landing would forge a proof that never ran; the fix belongs in the engine, a human landing stamped by the enrolled terminal with its own provenance form that the landing wait also matches. Until then wait on a human landing with --after <full hash> or the human-act event. (c) Replay of a saved human-act result answers 65 once about 30 to 35 accepted changes follow the act (20 to 40 minutes on a busy ledger, WVB-56), sooner than section 6's 'hours-old'; a later lawful prune makes replay answer 4 (design question for a Fable delegate: constant-cost replay by ancestry of the act commit). (d) TestWaitInstalledRunCommand's proof-attempt wait fails when the Go temp dir path has a doubled slash (WVB-58: the test's ControlRoot is uncleaned).
 - OpenedAt: 2026-09-11T15:45:15Z
-- Revision: 49
-- BlockedBy: wait-verb-returns-on-recorded-events
+- Revision: 50
+- BlockedBy: publication-owners-hint-the-waiter, wait-verb-returns-on-recorded-events
 - Pinned: m1b
 - Budget: elapsedLimit=1d attemptLimit=10 reservedJobMinutesLimit=1200 activeJobLimit=1 reviewRoundLimit=3
 - BudgetExceptions: 0
 - Approved: by=human:Wido at=2026-09-11T20:33:37Z revision=13 opid=SKG6KKD1D4X47D0F681RTY11AS-m1-c6925449 authority=proven digest=acfb9e16feb6090b3ad627c4c41225d9c946af808c6d672d570a86b07343c73f
 - Sliced: machine=m1b lineage=main-1789191336-90295-e4b24b revision=29 at=2026-09-13T00:19:49Z
-- Claimed: machine=m1b lineage=main-1789191336-90295-e4b24b at=2026-09-13T13:33:54Z revision=46 accountingRevision=29 episodeAt=2026-09-13T00:18:31Z episodeRevision=29 idleSeconds=41330
-- StopCapability: generation=46 revision=46 machine=m1b claimEpoch=2 fenceEpoch=0
+- Episode: machine=m1b lineage=main-1789191336-90295-e4b24b accountingRevision=29 episodeAt=2026-09-13T00:18:31Z episodeRevision=29 idleSeconds=41330 released=2026-09-13T13:41:26Z
+- Parked: by=m1b+main-1789191336-90295-e4b24b at=2026-09-13T13:41:26Z blocker=publication-owners-hint-the-waiter because=blocked by publication-owners-hint-the-waiter; returns when it is done
 
 History:
 - 2026-09-11T15:45:15Z HPJKBN0ZC1BZBK2M5KWKW0JP71-m1e-5083721b open actor=m1e+main-1789141490-27414-b9c0d2 targets=coordinator-wakes-on-events-not-polls
@@ -69,4 +69,5 @@ History:
 - 2026-09-13T13:33:58Z AVJ7V4Q3P9E0A8TG96VSCPYTDX-m1b-30a7e141 edit actor=m1b+main-1789191336-90295-e4b24b targets=coordinator-wakes-on-events-not-polls
 - 2026-09-13T13:36:56Z EQ43RSHC7B1WXSC3VR95FE13YX-m1b-30a7e141 edit actor=m1b+main-1789191336-90295-e4b24b targets=coordinator-wakes-on-events-not-polls
 - 2026-09-13T13:41:22Z WEE03Q9KGDPJJ82FKPBBZ1CE3Y-m1b-30a7e141 edit actor=m1b+main-1789191336-90295-e4b24b targets=coordinator-wakes-on-events-not-polls
-Integrity: sha256=fe12623fbac792920c0b823a51dcdd630f26bcfaabc143e566ebc46bebd581b7
+- 2026-09-13T13:41:26Z CNPC58KYDPJJ4N34NVWCYTBFN9-m1b-30a7e141 park actor=m1b+main-1789191336-90295-e4b24b targets=coordinator-wakes-on-events-not-polls reason=blocked by publication-owners-hint-the-waiter; returns when it is done
+Integrity: sha256=3483d8b618256f40078a1e285348c1a7e41ac227c1ca3b49c5a6ae0423cdad13
