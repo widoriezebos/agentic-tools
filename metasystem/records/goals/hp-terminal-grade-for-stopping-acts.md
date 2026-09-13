@@ -1,13 +1,14 @@
 # hp-terminal-grade-for-stopping-acts
 
-- State: queued
+- State: done
 - Risk: severity=2 novelty=2 exposure=3 accumulation=1 basis="severity 2: a wrong terminal grade lets an unenrolled human stop or park work, which halts and never grants; the agent exclusion stays; novelty 2: a second walk variant beside Prove; exposure 3: every seat's stop, park and release; accumulation 1: each act judged on its own"
 - Tier: 3
 - Intent: A human at any live terminal of the host, with no agent in the ancestry, can stop, park, release or unpark-without-approval, and session-stop, without an enrolled terminal: a second proof grade (the enrollment walk without the write), placed on those acts only, so no seat is ever wedged by a dead enrolled terminal. Design plans/human-proof-fits-the-act-design.md revision 2, sections "The two proofs" and the stopping rows of section 1.
 - Origin: main
 - Next step: LAND-READY, blocked by the receipt (2026-09-10 02:00Z, m1): chain hp-terminal-build1-20260909 rounds/14 (reviewed tree 01f26b23645901c0ee1d86effedbc9d1d4b4d4ef, twelfth critic hp-terminal-crit12-20260909: no material finding after 14 rounds; HPT-01..39 dispositions and all briefs untracked in the m1 checkout) is closed and its diff applies to main. Same receipt wall as dispatch-cap-necessity (section/gate-fence-fixtures refuses an engine-changing candidate under the enrolled engine). Land with run-landing.sh chain hp-terminal-build1-20260909 hp-terminal-grade-for-stopping-acts metasystem/artifacts/agents/hp-terminal-build1-20260909/rounds/14/diff.patch <msg> hp-terminal-crit12-20260909, then goal done. Delivered: ProveTerminal walks to the process-tree root through root-owned protected system images, the terminal grade on park/unpark/release/session stop incl. --arc forms, journal replay refuses named entries and passes typed outcomes through, proof-grades scenario runs end to end (allow path only on an agent-free bed). Notes for members: HPT-36 (proof-free verbs under the blanket replay refusal) on hp-recovery-grants-no-grade-to-unstamped-intents; HPT-39 (root not asserted as pid 1 in production) on the shared design.
+- Concluded: Concluded on Wido's word of 2026-09-13 ('finish and land the work'), carried by the m1e seat from the enrolled terminal. Landed 798ce60f by human commit: the certified chain hp-terminal-build1-20260909 (fourteen rounds, reviewed tree 01f26b23, the twelfth critic found nothing material) carried onto the tip by Codex gpt-5.6-sol against plans/human-proof-fits-the-act-design.md revision 2 and read by Opus, whose one material finding was folded (the terminal-grade walk no longer runs in front of the power-of-attorney dispatch). Delivered: ProveTerminal walks to the process-tree root through root-owned protected system images; the terminal grade on park, unpark-without-approval, release and session stop including their --arc forms, so a person at any live terminal with no agent in the ancestry performs the stopping acts without an enrolled terminal; the enrolled grade kept on every other human act; journal replay refuses named entries and passes typed outcomes through; a person lifting a non-human blocker park early takes the grade of the state restored. Proven by the goal-cli bed's proof-grades scenario and the rest of that bed green through the engine on 8f09577a (attempt proof-mtzky03b), after a fix-forward replaced the bed's perl setsid with the engine verb proc setsid. HPT-36 and HPT-39 stay with hp-recovery-grants-no-grade-to-unstamped-intents and the shared design, as the chain recorded.
 - OpenedAt: 2026-09-09T14:35:03Z
-- Revision: 37
+- Revision: 38
 - Labels: comfort
 - BudgetExceptions: 0
 - Sliced: machine=m1 lineage=main-1788940932-18533-7fa6c2 revision=3 at=2026-09-09T14:37:00Z
@@ -50,4 +51,5 @@ History:
 - 2026-09-10T07:16:53Z 9AHDV4EW716TZSSETNANTVFMXD-m1-1701c13c claim actor=m1+main-1788940932-18533-7fa6c2 targets=hp-terminal-grade-for-stopping-acts
 - 2026-09-10T07:21:06Z 1AQ5W2ZHSPE9NXNE7PC6NTV9E8-m1-1701c13c release actor=m1+main-1788940932-18533-7fa6c2 targets=hp-terminal-grade-for-stopping-acts
 - 2026-09-11T08:00:17Z FCQ5GGVGDKMDP30ZPD5MF5VYQY-m1-c6925449 unapprove actor=human:Wido targets=hp-terminal-grade-for-stopping-acts reason=Wido 2026-09-11: standing approval withdrawn to regain control of what is built next; re-approve deliberately
-Integrity: sha256=5694fc89feeb5e2c09f5747682cc03c230844299adb4b3a0db10ba4265701030
+- 2026-09-13T09:01:04Z TG2RPDW3EW9NH7TG6AYMGK7XFP-m1e-c6925449 done actor=human:Wido targets=hp-terminal-grade-for-stopping-acts
+Integrity: sha256=cdd00fe0f4697689304ff3705d61468f56a29a0884164beb2586af9784056447
