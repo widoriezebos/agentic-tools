@@ -1,20 +1,20 @@
 # stop-infrastructure-allows-the-seat-to-stop
 
-- State: parked
+- State: done
 - Risk: severity=2 novelty=1 exposure=3 accumulation=1 basis="severity 2: a stop allowed on a real work condition would hide work, a stop refused on infrastructure costs a forced turn; novelty 1: the classification and the hook's refusal sites exist, only the class and the outcome change; exposure 3: every stop of every seat; accumulation 1: one gate path"
 - Tier: 2
 - Intent: The first member of stop-hook-never-forces-an-empty-turn (its design page, section 7): the three recorded infrastructure causes of stop refusals (the narrator digest could not be read: 184; stop deadline expired: 117; supervision arming failed: about 95, five days) and every other infrastructure read failure never refuse a stop. DONE means: (1) every refusal site of the Stop hook and every fail-closed producer of the turn verdict carries a typed class (seat-actionable, infrastructure, idle-with-backlog) decided in the engine, never from rendered strings; (2) an infrastructure condition allows the stop with a degraded notice and one hook-log line, on its first occurrence and every one after, and the arming-failure line carries up's component outcome, detail and remedy as up prints them; (3) the Claude launcher's raw block on a nonzero hook exit is replaced by the same degraded notice; (4) an observed idle-with-backlog condition still refuses, counted as today, or uncounted with the refusal saying so when the count could not be spent, and the three-refusals handoff is untouched; (5) proven by the engine fixtures and the fake adapter replays the member's design page names, and by the next day of stop verdicts on the seats showing no infrastructure refusal. Umbrella clauses carried: 1 for infrastructure, 2 and 3; clause 4 preserved.
 - Origin: main
 - Next step: 2026-09-13 09:2xZ m1b: READY FOR WIDO'S CONCLUSION. Landed 529d8a649, fed9f5d9e, 286efe41e and aa0f35e06 (the critique briefs and the first day's field record). The third critic round (granted this morning) resolved SIC-06, SIC-07 and SIC-11; the critic root code-critic-be8b2b63d9cb8b7d32c2becf and the build chain are closed. DONE 1-4 landed; DONE 5 recorded for the first nine hours on the design page (51 stops, 13 refusals, all verdict decisions, no infrastructure refusal) and continues through the day. Parked in Wido's name until he concludes it; member 2 (stop-decisions-record-deadline-evidence, page drafted) opens after that.
+- Concluded: Concluded on Wido's word of 2026-09-13 morning ('finish and land the work ... you have the human terminal and my word'), carried by the m1e seat from the enrolled terminal; member 1 of the stop-hook umbrella, built by m1b. Landed 529d8a649 (an infrastructure read failure never refuses a stop: a failure inside the Stop hook or the turn verdict allows the stop under a degraded notice and one stop-condition line in artifacts/agents/supervision/hooks.log; seat-actionable and idle-with-backlog refusals block as before), fed9f5d9e (the deadline parent speaks without the engine; an unproven consumption is spent) and 286efe41e (one JSON object from the deadline parent's prefix fallback), the last two from the DESIGN-BEARING read of the first. The third review round, granted under R-109-m1e, resolved SIC-06, SIC-07 and SIC-11; the critic root and the build chain are closed; aa0f35e06 landed the three critique briefs and the DONE-5 field record: the first nine hours of stop verdicts on m1b, m1c and m1e after 529d8a649, 51 stops, 13 refusals, every one a verdict decision, no infrastructure refusal. Every seat rebuilt and re-armed by hand after each of the three landings (the hook file changes). This conclusion frees the umbrella stop-hook-never-forces-an-empty-turn for member 2, whose page is drafted.
 - OpenedAt: 2026-09-12T19:40:17Z
-- Revision: 22
+- Revision: 23
 - Budget: elapsedLimit=1d attemptLimit=20 reservedJobMinutesLimit=720 activeJobLimit=1 reviewRoundLimit=3
 - BudgetExtension: at=2026-09-12T21:24:40Z opid=5APN0CPX4JW6K2FMVKFY7HX15H-m1b-30a7e141 attemptLimit=8->14 reservedJobMinutesLimit=720->1440 evidence=receipt:proof-mtysl27k-8034dd789afac524@2026-09-12T19:43:10.877687Z
 - BudgetExceptions: 1
 - NormApproval: approvedRef=R-109-m1e minutes=720 reviewRounds=3 goalRevision=17
 - Approved: by=human:Wido at=2026-09-13T06:46:02Z revision=18 opid=TKFF3Q8842HR8NCASTVVDH5TNR-m1e-c6925449 authority=proven digest=b142da81cc0b9f25df284f2164e8865819e5906eaf251cf053a3d9eaf759896f
 - Sliced: machine=m1b lineage=main-1789191336-90295-e4b24b revision=3 at=2026-09-12T19:45:29Z
-- Parked: by=human:Wido at=2026-09-13T07:23:31Z because=ready for conclusion: four landings, register closed, DONE 5 recorded for nine hours; parked so no seat hook or steward claims it before Wido concludes
 
 History:
 - 2026-09-12T19:40:17Z 783B8M0P3AQKQZ3JK8BJNZT42S-m1b-30a7e141 open actor=m1b+main-1789191336-90295-e4b24b targets=stop-infrastructure-allows-the-seat-to-stop,stop-hook-never-forces-an-empty-turn
@@ -39,4 +39,5 @@ History:
 - 2026-09-13T07:23:24Z CE8ZQX788MA8F2ABJC2RQTFJXQ-m1b-30a7e141 edit actor=m1b+main-1789191336-90295-e4b24b targets=stop-infrastructure-allows-the-seat-to-stop
 - 2026-09-13T07:23:28Z P2QN6WC0J7MRWNDPV963F3TNJ2-m1b-30a7e141 release actor=m1b+main-1789191336-90295-e4b24b targets=stop-infrastructure-allows-the-seat-to-stop
 - 2026-09-13T07:23:31Z W7V65A5CS07N99SNNG6G5KNXQX-m1b-30a7e141 park actor=human:Wido targets=stop-infrastructure-allows-the-seat-to-stop reason=ready for conclusion: four landings, register closed, DONE 5 recorded for nine hours; parked so no seat hook or steward claims it before Wido concludes
-Integrity: sha256=20bf810327a11c8b4277697b69bedd3e5f1f519ecd09d1e28a381133ecfb570a
+- 2026-09-13T07:30:11Z 7NQ0RRGWBWDEYE8CPBCH62GC08-m1e-c6925449 done actor=human:Wido targets=stop-infrastructure-allows-the-seat-to-stop
+Integrity: sha256=155121aca7e881284c1f1810fba9671a98b480de9eb7247eba465b1254a19587
