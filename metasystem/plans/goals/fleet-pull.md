@@ -2,12 +2,12 @@
 
 - State: queued
 - Priority: 2
-- Sequence: 18
+- Sequence: 17
 - Intent: An idle machine picks up claimable shared-backlog work by itself: fleet liveness is the steward's duty, never a human's memory
 - Origin: main
 - Next step: RESIDUAL RESTORED by Wido 2026-09-07 during headless-fleet backlog reconciliation. The earlier merge into ledger-attention did not finish this intent: that delivered owner notices ledger changes and explicitly does not grant claims; idle-with-backlog-alarm adds only a repeated-Stop-triggered claim/continuation path. INTENT: a running headless node repeatedly selects eligible approved work, atomically claims it, starts a mission under that goal approval, observes its durable completion or lawful park, and selects the next eligible item without a supervising chat or a hook-triggered rescue. CONSTRAINTS: one repository and its shared ledger; reuse goal claim/release, missionrunner and steward ownership rather than add another scheduler or leader. Unapproved, blocked and foreign-pinned goals never execute; an empty queue is a durable wait that notices later approvals; stop and capacity limits remain authoritative; retries cannot duplicate a live claim or completed effect. one-approval-gate owns the goal-to-contract authority conversion; backlog-ordered-by-priority owns optional future ranking, not this loop. FREEDOMS: the smallest connection among existing owners and notification/wait mechanisms. Before implementation, settle transition ownership and crash/retry behavior against the original FP-R3-01..07 findings and current code; if the approved box cannot contain the result, split before claiming more scope. The independent consecutive-feature acceptance is headless-continuous-delivery-proof. No budget or execution approval is supplied by restoring this queued item.
 - OpenedAt: 2026-08-23T08:06:12Z
-- Revision: 34
+- Revision: 35
 - BlockedBy: one-approval-gate
 - Labels: headless-execution, headless-fleet
 - BudgetExceptions: 0
@@ -47,4 +47,5 @@ History:
 - 2026-09-13T06:44:41Z 59E2SS1PHG2JEY44B98S85XHVC-m1e-c6925449 set-priority actor=human:Wido targets=first-headless-run,fleet-channel-gateway,fleet-join-bootstrap,fleet-pull,gate-governance-records,headless-continuous-delivery-proof,headless-fleet-coordination-proof,idle-every-runtime-enforcement,metasystem-stop-escalation-proofs,mission-birth-baseline-from-dirty-worktree,never-idle-ironclad,recovery-rehearsal,recovery-to-good-state,repo-root-paths-ride-agent-commits-unjudged,role-context-composition,role-lane-packets,seat-mutual-awareness reason=priority-order subject=repo-root-paths-ride-agent-commits-unjudged from=2:21 to=2:20 requested-sequence=33
 - 2026-09-13T07:44:44Z TJ1TBGQ70A0PZH04C34J9P51C5-m1e-c6925449 set-priority actor=human:Wido targets=first-headless-run,fleet-channel-gateway,fleet-join-bootstrap,fleet-pull,headless-continuous-delivery-proof,headless-fleet-coordination-proof,metasystem-stop-escalation-proofs,mission-birth-baseline-from-dirty-worktree,never-idle-ironclad,recovery-rehearsal,seat-mutual-awareness reason=priority-order subject=metasystem-stop-escalation-proofs from=2:20 to=2:19 requested-sequence=39
 - 2026-09-13T08:21:48Z NRD0NSKR47C7ESV46MD65VP4V0-m1-c6925449 done actor=human:Wido targets=commit-goal-binding,first-headless-run,fleet-channel-gateway,fleet-join-bootstrap,fleet-pull,gate-governance-records,headless-continuous-delivery-proof,headless-fleet-coordination-proof,idle-every-runtime-enforcement,landing-design-provenance,merge-stage-critic-close,mission-birth-baseline-from-dirty-worktree,never-idle-ironclad,recovery-rehearsal,recovery-to-good-state,role-context-composition,role-lane-packets,seat-mutual-awareness reason=priority-order from=2:19 to=2:18
-Integrity: sha256=0e412eed492de223254e7478f6bd9718519ee0d2f89518c6a521320c22c91fe1
+- 2026-09-13T08:23:10Z R328E6Y43B7EEREMEA8T0MVQWG-m1-c6925449 done actor=human:Wido targets=first-headless-run,fleet-channel-gateway,fleet-join-bootstrap,fleet-pull,headless-continuous-delivery-proof,headless-fleet-coordination-proof,idle-every-runtime-enforcement,mission-birth-baseline-from-dirty-worktree,never-idle-ironclad,recovery-rehearsal,recovery-to-good-state,role-lane-packets,seat-mutual-awareness reason=priority-order from=2:18 to=2:17
+Integrity: sha256=909c9d24786b9f1ae315d191e6d5400247545f22d7f5d0c41468affdba4a2249
