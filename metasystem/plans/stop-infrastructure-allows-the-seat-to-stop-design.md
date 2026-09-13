@@ -170,7 +170,16 @@ Where it lives:
      recorded degraded-allow; the stop refused only on open work
      (seat-actionable, OPEN WORK 9), and the next stop at 22:48:48Z with
      the same signature was allowed. No infrastructure refusal.
-   - The day's tally continues here.
+   - 2026-09-13, midnight to 08:50 local, all three seats rebuilt at
+     529d8a649 or later (m1b 00:47, m1e 00:52, m1c on its sync; then
+     fed9f5d9e and 286efe41e): m1b 19 stops (15 allowed, 4 refused), m1c
+     18 stops (16 allowed, 2 refused), m1e 14 stops (7 allowed, 7
+     refused). Every `stop-condition` line on m1b (20) and m1c (26) reads
+     `infrastructure narrator-digest-could-not-be-read ... degraded-allow`;
+     m1e recorded no infrastructure condition. No deadline expiry and no
+     unreadable-output outcome on any seat. The 13 refusals were verdict
+     decisions (open work, idle backlog), none an infrastructure cause.
+     DONE clause 5 holds for the first nine hours.
 
 ## 6. Landing
 
