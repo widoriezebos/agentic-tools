@@ -1,0 +1,342 @@
+package landing
+
+import (
+	"bytes"
+	"os"
+	"os/exec"
+	"path/filepath"
+	"regexp"
+	"sort"
+	"strings"
+	"testing"
+
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/gittree"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/lease"
+)
+
+type advanceFixture struct {
+	t      *testing.T
+	root   string
+	peer   string
+	remote string
+}
+
+func newAdvanceFixture(t *testing.T) *advanceFixture {
+	t.Helper()
+	base := t.TempDir()
+	seed := filepath.Join(base, "seed")
+	remote := filepath.Join(base, "origin.git")
+	root := filepath.Join(base, "local")
+	peer := filepath.Join(base, "peer")
+	if err := os.MkdirAll(seed, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	runAdvanceGit(t, seed, "init", "-q", "-b", "main")
+	configureAdvanceGit(t, seed)
+	writeAdvanceFile(t, seed, ".gitignore", "artifacts/\n")
+	writeAdvanceFile(t, seed, ".gitattributes", "memory/receipts.log merge=union\nrecords/narrator-digest.log merge=union\n")
+	writeAdvanceFile(t, seed, "product.txt", "seed\n")
+	writeAdvanceFile(t, seed, "scripts/agents/go-gate.sh", "seed\n")
+	writeAdvanceFile(t, seed, "memory/receipts.log", "receipt=seed\n")
+	writeAdvanceFile(t, seed, "records/narrator-digest.log", "digest=seed\n")
+	runAdvanceGit(t, seed, "add", ".")
+	runAdvanceGit(t, seed, "commit", "-qm", "seed")
+	runAdvanceGit(t, base, "init", "--bare", "-q", remote)
+	runAdvanceGit(t, remote, "symbolic-ref", "HEAD", "refs/heads/main")
+	runAdvanceGit(t, seed, "remote", "add", "origin", remote)
+	runAdvanceGit(t, seed, "push", "-q", "-u", "origin", "main")
+	runAdvanceGit(t, base, "clone", "-q", remote, root)
+	runAdvanceGit(t, base, "clone", "-q", remote, peer)
+	configureAdvanceGit(t, root)
+	configureAdvanceGit(t, peer)
+	return &advanceFixture{t: t, root: root, peer: peer, remote: remote}
+}
+
+func configureAdvanceGit(t *testing.T, root string) {
+	t.Helper()
+	runAdvanceGit(t, root, "config", "user.name", "advance fixture")
+	runAdvanceGit(t, root, "config", "user.email", "advance@example.invalid")
+}
+
+func runAdvanceGit(t *testing.T, root string, args ...string) string {
+	t.Helper()
+	cmd := exec.Command("git", append([]string{"-C", root}, args...)...)
+	cmd.Env = gittree.ScrubbedEnviron()
+	out, err := cmd.CombinedOutput()
+	if err != nil {
+		t.Fatalf("git -C %s %v: %v\n%s", root, args, err, out)
+	}
+	return strings.TrimSpace(string(out))
+}
+
+func advanceGitOutput(t *testing.T, root string, args ...string) string {
+	t.Helper()
+	cmd := exec.Command("git", append([]string{"-C", root}, args...)...)
+	cmd.Env = gittree.ScrubbedEnviron()
+	out, err := cmd.CombinedOutput()
+	if err != nil {
+		t.Fatalf("git -C %s %v: %v\n%s", root, args, err, out)
+	}
+	return strings.TrimSuffix(string(out), "\n")
+}
+
+func writeAdvanceFile(t *testing.T, root, path, content string) {
+	t.Helper()
+	full := filepath.Join(root, filepath.FromSlash(path))
+	if err := os.MkdirAll(filepath.Dir(full), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(full, []byte(content), 0o644); err != nil {
+		t.Fatal(err)
+	}
+}
+
+func appendAdvanceFile(t *testing.T, root, path, content string) {
+	t.Helper()
+	appendReceiptFixtureFile(t, filepath.Join(root, filepath.FromSlash(path)), content)
+}
+
+func (f *advanceFixture) commitLocalLanding() string {
+	f.t.Helper()
+	appendAdvanceFile(f.t, f.root, "scripts/agents/go-gate.sh", "landing\n")
+	runAdvanceGit(f.t, f.root, "add", "--", "scripts/agents/go-gate.sh")
+	runAdvanceGit(f.t, f.root, "commit", "-qm", "landing")
+	return runAdvanceGit(f.t, f.root, "rev-parse", "HEAD")
+}
+
+func (f *advanceFixture) fetch() {
+	f.t.Helper()
+	runAdvanceGit(f.t, f.root, "fetch", "-q", "origin", "+refs/heads/main:refs/remotes/origin/main")
+}
+
+func (f *advanceFixture) assertOneWorktree() {
+	f.t.Helper()
+	if count := strings.Count(runAdvanceGit(f.t, f.root, "worktree", "list", "--porcelain"), "worktree "); count != 1 {
+		f.t.Fatalf("registered worktrees = %d, want one", count)
+	}
+}
+
+func TestAdvanceLeavesRegistersUntouched(t *testing.T) {
+	f := newAdvanceFixture(t)
+	appendAdvanceFile(t, f.peer, "product.txt", "peer\n")
+	runAdvanceGit(t, f.peer, "add", "--", "product.txt")
+	runAdvanceGit(t, f.peer, "commit", "-qm", "peer product")
+	runAdvanceGit(t, f.peer, "push", "-q", "origin", "main")
+	landing := f.commitLocalLanding()
+	appendAdvanceFile(t, f.root, "memory/receipts.log", "receipt=local\n")
+	appendAdvanceFile(t, f.root, "records/narrator-digest.log", "digest=local\n")
+	receiptsBefore, err := os.ReadFile(filepath.Join(f.root, "memory", "receipts.log"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	digestBefore, err := os.ReadFile(filepath.Join(f.root, "records", "narrator-digest.log"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	f.fetch()
+
+	var output bytes.Buffer
+	if err := Advance(f.root, "refs/remotes/origin/main", &output, &output); err != nil {
+		t.Fatal(err)
+	}
+	rebased := runAdvanceGit(t, f.root, "rev-parse", "HEAD")
+	if rebased == landing {
+		t.Fatal("advance did not move the landing commit")
+	}
+	for path, want := range map[string][]byte{
+		"memory/receipts.log":         receiptsBefore,
+		"records/narrator-digest.log": digestBefore,
+	} {
+		got, err := os.ReadFile(filepath.Join(f.root, filepath.FromSlash(path)))
+		if err != nil || !bytes.Equal(got, want) {
+			t.Fatalf("register %s changed: %q, error %v", path, got, err)
+		}
+	}
+	status := strings.Split(advanceGitOutput(t, f.root, "status", "--porcelain"), "\n")
+	sort.Strings(status)
+	wantStatus := []string{" M memory/receipts.log", " M records/narrator-digest.log"}
+	if strings.Join(status, "\n") != strings.Join(wantStatus, "\n") {
+		t.Fatalf("status = %q, want %q", status, wantStatus)
+	}
+	if got := runAdvanceGit(t, f.root, "stash", "list"); got != "" {
+		t.Fatalf("advance changed stash list: %s", got)
+	}
+	f.assertOneWorktree()
+	output.Reset()
+	if err := Advance(f.root, "refs/remotes/origin/main", &output, &output); err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(output.String(), "advance: up to date with refs/remotes/origin/main") {
+		t.Fatalf("second advance output = %q", output.String())
+	}
+}
+
+func TestAdvanceRefusesContendedRegister(t *testing.T) {
+	f := newAdvanceFixture(t)
+	appendAdvanceFile(t, f.peer, "records/narrator-digest.log", "digest=peer\n")
+	runAdvanceGit(t, f.peer, "add", "--", "records/narrator-digest.log")
+	runAdvanceGit(t, f.peer, "commit", "-qm", "peer digest")
+	runAdvanceGit(t, f.peer, "push", "-q", "origin", "main")
+	landing := f.commitLocalLanding()
+	appendAdvanceFile(t, f.root, "records/narrator-digest.log", "digest=local\n")
+	wantBytes, err := os.ReadFile(filepath.Join(f.root, "records", "narrator-digest.log"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	f.fetch()
+
+	err = Advance(f.root, "refs/remotes/origin/main", &bytes.Buffer{}, &bytes.Buffer{})
+	if err == nil || !strings.Contains(err.Error(), "advance refused: advance-register-contended: records/narrator-digest.log") ||
+		!regexp.MustCompile(`[0-9a-f]{40,64}`).MatchString(err.Error()) {
+		t.Fatalf("contended advance error = %v", err)
+	}
+	if got := runAdvanceGit(t, f.root, "rev-parse", "HEAD"); got != landing {
+		t.Fatalf("contended advance moved HEAD from %s to %s", landing, got)
+	}
+	gotBytes, err := os.ReadFile(filepath.Join(f.root, "records", "narrator-digest.log"))
+	if err != nil || !bytes.Equal(gotBytes, wantBytes) {
+		t.Fatalf("contended advance changed digest: %q, error %v", gotBytes, err)
+	}
+	if got := advanceGitOutput(t, f.root, "status", "--porcelain"); got != " M records/narrator-digest.log" {
+		t.Fatalf("contended status = %q", got)
+	}
+	f.assertOneWorktree()
+
+	runAdvanceGit(t, f.root, "add", "--", "records/narrator-digest.log")
+	runAdvanceGit(t, f.root, "commit", "-qm", "carry digest")
+	if err := Advance(f.root, "refs/remotes/origin/main", &bytes.Buffer{}, &bytes.Buffer{}); err != nil {
+		t.Fatalf("repair advance: %v", err)
+	}
+	if status := runAdvanceGit(t, f.root, "status", "--porcelain"); status != "" {
+		t.Fatalf("repair status = %q", status)
+	}
+	committed := runAdvanceGit(t, f.root, "show", "HEAD:records/narrator-digest.log")
+	lines := strings.Split(committed, "\n")
+	if len(lines) != 3 || lines[0] != "digest=seed" || countLine(lines, "digest=peer") != 1 || countLine(lines, "digest=local") != 1 {
+		t.Fatalf("repaired digest lines = %v", lines)
+	}
+}
+
+func TestAdvanceRefusals(t *testing.T) {
+	t.Run("unstaged drift", func(t *testing.T) {
+		f := newAdvanceFixture(t)
+		writeAdvanceFile(t, f.peer, "product.txt", "peer\n")
+		runAdvanceGit(t, f.peer, "add", "--", "product.txt")
+		runAdvanceGit(t, f.peer, "commit", "-qm", "peer")
+		runAdvanceGit(t, f.peer, "push", "-q", "origin", "main")
+		landing := f.commitLocalLanding()
+		writeAdvanceFile(t, f.root, "product.txt", "dirty\n")
+		f.fetch()
+		err := Advance(f.root, "refs/remotes/origin/main", &bytes.Buffer{}, &bytes.Buffer{})
+		assertAdvanceRefusal(t, err, "advance-unstaged-drift")
+		if got := runAdvanceGit(t, f.root, "rev-parse", "HEAD"); got != landing {
+			t.Fatalf("refusal moved HEAD to %s", got)
+		}
+		content, _ := os.ReadFile(filepath.Join(f.root, "product.txt"))
+		if string(content) != "dirty\n" {
+			t.Fatalf("refusal changed product to %q", content)
+		}
+	})
+
+	t.Run("rebase conflict", func(t *testing.T) {
+		f := newAdvanceFixture(t)
+		writeAdvanceFile(t, f.peer, "product.txt", "peer\n")
+		runAdvanceGit(t, f.peer, "add", "--", "product.txt")
+		runAdvanceGit(t, f.peer, "commit", "-qm", "peer")
+		runAdvanceGit(t, f.peer, "push", "-q", "origin", "main")
+		writeAdvanceFile(t, f.root, "product.txt", "landing\n")
+		runAdvanceGit(t, f.root, "add", "--", "product.txt")
+		runAdvanceGit(t, f.root, "commit", "-qm", "landing")
+		landing := runAdvanceGit(t, f.root, "rev-parse", "HEAD")
+		f.fetch()
+		err := Advance(f.root, "refs/remotes/origin/main", &bytes.Buffer{}, &bytes.Buffer{})
+		assertAdvanceRefusal(t, err, "advance-rebase-conflict")
+		if got := runAdvanceGit(t, f.root, "rev-parse", "HEAD"); got != landing {
+			t.Fatalf("conflict moved HEAD to %s", got)
+		}
+		f.assertOneWorktree()
+	})
+
+	t.Run("register removed", func(t *testing.T) {
+		f := newAdvanceFixture(t)
+		runAdvanceGit(t, f.peer, "rm", "-q", "--", "records/narrator-digest.log")
+		runAdvanceGit(t, f.peer, "commit", "-qm", "remove digest")
+		runAdvanceGit(t, f.peer, "push", "-q", "origin", "main")
+		f.commitLocalLanding()
+		appendAdvanceFile(t, f.root, "records/narrator-digest.log", "digest=local\n")
+		f.fetch()
+		err := Advance(f.root, "refs/remotes/origin/main", &bytes.Buffer{}, &bytes.Buffer{})
+		assertAdvanceRefusal(t, err, "advance-register-removed")
+	})
+
+	t.Run("staged path", func(t *testing.T) {
+		f := newAdvanceFixture(t)
+		writeAdvanceFile(t, f.root, "product.txt", "staged\n")
+		runAdvanceGit(t, f.root, "add", "--", "product.txt")
+		err := Advance(f.root, "refs/remotes/origin/main", &bytes.Buffer{}, &bytes.Buffer{})
+		assertAdvanceRefusal(t, err, "advance-index-not-empty")
+	})
+
+	t.Run("detached head", func(t *testing.T) {
+		f := newAdvanceFixture(t)
+		runAdvanceGit(t, f.root, "checkout", "-q", "--detach")
+		err := Advance(f.root, "refs/remotes/origin/main", &bytes.Buffer{}, &bytes.Buffer{})
+		assertAdvanceRefusal(t, err, "advance-not-on-branch")
+	})
+
+	t.Run("head moved", func(t *testing.T) {
+		f := newAdvanceFixture(t)
+		appendAdvanceFile(t, f.peer, "product.txt", "peer\n")
+		runAdvanceGit(t, f.peer, "add", "--", "product.txt")
+		runAdvanceGit(t, f.peer, "commit", "-qm", "peer")
+		runAdvanceGit(t, f.peer, "push", "-q", "origin", "main")
+		landing := f.commitLocalLanding()
+		f.fetch()
+		advanceBeforeSwap = func() {
+			runAdvanceGit(t, f.root, "commit", "--allow-empty", "-qm", "move head")
+		}
+		t.Cleanup(func() { advanceBeforeSwap = nil })
+		err := Advance(f.root, "refs/remotes/origin/main", &bytes.Buffer{}, &bytes.Buffer{})
+		assertAdvanceRefusal(t, err, "advance-head-moved")
+		if !strings.Contains(err.Error(), landing) {
+			t.Fatalf("head-moved refusal does not name landing commit %s: %v", landing, err)
+		}
+	})
+}
+
+func TestAdvanceRefusesWhenCheckoutLocked(t *testing.T) {
+	f := newAdvanceFixture(t)
+	head := runAdvanceGit(t, f.root, "rev-parse", "HEAD")
+	release, err := lease.LockBounded(lease.LockPath(f.root), "test-holder")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer release()
+	t.Setenv("METASYSTEM_LEASE_LOCK_WAIT_SEC", "0")
+	err = Advance(f.root, "refs/remotes/origin/main", &bytes.Buffer{}, &bytes.Buffer{})
+	assertAdvanceRefusal(t, err, "advance-checkout-locked")
+	if !strings.Contains(err.Error(), "another lease-gated operation holds it") {
+		t.Fatalf("lock refusal changed its existing text: %v", err)
+	}
+	if got := runAdvanceGit(t, f.root, "rev-parse", "HEAD"); got != head {
+		t.Fatalf("lock refusal moved HEAD to %s", got)
+	}
+	f.assertOneWorktree()
+}
+
+func assertAdvanceRefusal(t *testing.T, err error, code string) {
+	t.Helper()
+	if err == nil || !strings.Contains(err.Error(), "advance refused: "+code+":") {
+		t.Fatalf("advance error = %v, want %s", err, code)
+	}
+}
+
+func countLine(lines []string, want string) int {
+	count := 0
+	for _, line := range lines {
+		if line == want {
+			count++
+		}
+	}
+	return count
+}
