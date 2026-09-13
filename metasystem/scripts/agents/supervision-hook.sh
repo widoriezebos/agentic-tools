@@ -385,8 +385,10 @@ $deadline_message" 2>/dev/null) || deadline_prefixed=
       if [[ -n "$deadline_prefixed" ]]; then
         deadline_response=$deadline_prefixed
       else
-        printf '%s\n' "$deadline_response"
-        deadline_response=$(emit_fixed_json_notice "$deadline_log_failure")
+        # One object only: the fixed notice carries the log failure and the
+        # deadline's own fixed words instead of the record's text.
+        deadline_response=$(emit_fixed_json_notice "$deadline_log_failure" \
+          "$deadline_detail Cause: $deadline_cause. Remedy: $deadline_remedy")
       fi
     fi
     printf '%s\n' "$deadline_response"

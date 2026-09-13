@@ -161,7 +161,16 @@ Where it lives:
    `metasystem/internal/goal/turnverdict_idle_test.go` keep passing
    unchanged.
 7. The next day of stop verdicts on the seats shows no infrastructure
-   refusal (DONE clause 5), recorded here by the seat.
+   refusal (DONE clause 5), recorded here by the seat. Field record:
+   - 2026-09-12 21:39Z, m1b (the staged hook before the landing): a stop
+     with the narrator-digest condition, `stop-condition infrastructure
+     narrator-digest-could-not-be-read narrator 496 ... degraded-allow`,
+     decision allow.
+   - 2026-09-12 22:48:23Z, m1c (rebuilt at 529d8a649): the same condition
+     recorded degraded-allow; the stop refused only on open work
+     (seat-actionable, OPEN WORK 9), and the next stop at 22:48:48Z with
+     the same signature was allowed. No infrastructure refusal.
+   - The day's tally continues here.
 
 ## 6. Landing
 

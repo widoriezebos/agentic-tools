@@ -515,7 +515,11 @@ func (s *Store) consumeSessionStop(sessionId, mainId string) (SessionStop, bool,
 		return SessionStop{}, false, "", err
 	}
 	if err := removeSessionStop(sessionStopPath(s.Root, marker.SessionId)); err != nil {
-		return marker, true, "SESSION STOP authorization was consumed, but its marker file could not be removed; copied bytes remain blocked: " + err.Error(), nil
+		detail := "SESSION STOP authorization was consumed, but its marker file could not be removed; copied bytes remain blocked: " + err.Error()
+		if durabilityDetail != "" {
+			detail = durabilityDetail + "; " + detail
+		}
+		return marker, true, detail, nil
 	}
 	return marker, true, durabilityDetail, nil
 }

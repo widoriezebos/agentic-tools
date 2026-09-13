@@ -1022,6 +1022,44 @@ grep -Fq 'stop response outcome=deadline-expired-record-failure-allow' \
   "$line_root/artifacts/agents/supervision/hooks.log" \
   || { echo "supervision hook deadline fixture without an engine did not log its outcome" >&2; exit 1; }
 
+# The engine updated the record but cannot carry the log-failure prefix
+# (its json verbs refuse) while the hook log itself is read-only (a
+# read-only directory still takes appends to an existing file): the parent
+# still prints exactly one JSON allowance, with the log failure in fixed text.
+prefix_engine=$tmp/prefix-engine
+cat >"$prefix_engine" <<'SH'
+#!/usr/bin/env bash
+if [[ ${1:-} == json ]]; then
+  exit 3
+fi
+exec "${METASYSTEM_PREFIX_REAL_ENGINE:?}" "$@"
+SH
+chmod +x "$prefix_engine"
+# The bed's engine copy may be read-only (the proof builds it so): move it
+# aside instead of overwriting it in place.
+mv "$line_root/bin/metasystem" "$line_root/bin/metasystem.real"
+cat >"$line_root/bin/metasystem" <<SH
+#!/usr/bin/env bash
+METASYSTEM_PREFIX_REAL_ENGINE="$line_root/bin/metasystem.real" exec "$prefix_engine" "\$@"
+SH
+chmod +x "$line_root/bin/metasystem"
+chmod 0444 "$line_root/artifacts/agents/supervision/hooks.log"
+deadline_prefix_rc=0
+METASYSTEM_BIN="$deadline_engine" METASYSTEM_DEADLINE_REAL_ENGINE="$ms" \
+  bash "$line_root/scripts/agents/supervision-hook.sh" claude stop <"$tmp/line-payload.json" \
+    >"$tmp/deadline-prefix.out" 2>"$tmp/deadline-prefix.err" || deadline_prefix_rc=$?
+chmod 0644 "$line_root/artifacts/agents/supervision/hooks.log"
+mv -f "$line_root/bin/metasystem.real" "$line_root/bin/metasystem"
+(( deadline_prefix_rc == 0 )) \
+  || { echo "supervision hook deadline fixture with a refusing json engine exited $deadline_prefix_rc" >&2; cat "$tmp/deadline-prefix.err" >&2; exit 1; }
+[[ $(grep -c . "$tmp/deadline-prefix.out") -eq 1 ]] \
+  || { echo "supervision hook deadline fixture with a refusing json engine did not print exactly one line" >&2; cat "$tmp/deadline-prefix.out" >&2; exit 1; }
+grep -Fq '"systemMessage":"' "$tmp/deadline-prefix.out" \
+  && grep -Fq 'could not be' "$tmp/deadline-prefix.out" \
+  && grep -Fq 'stop deadline expired' "$tmp/deadline-prefix.out" \
+  && ! grep -Fq '"decision":"block"' "$tmp/deadline-prefix.out" \
+  || { echo "supervision hook deadline fixture with a refusing json engine did not allow with one fixed notice" >&2; cat "$tmp/deadline-prefix.out" >&2; exit 1; }
+
 # A restricted host may prove that the worker still exists without exposing
 # its command line. The parent must keep the Stop deadline but must not signal
 # or wait for a process whose ownership it cannot verify.
