@@ -55,6 +55,14 @@ func WorktreeDrift(root string, requireEmptyIndex bool) ([]DriftEntry, []string,
 
 func classifyDrift(workspace gittree.Workspace, prefix string, entry gittree.StatusEntry, requireEmptyIndex bool) (string, bool, error) {
 	if entry.Index == '?' && entry.Worktree == '?' {
+		// An untracked path outside the installation prefix is not the
+		// landing's drift: the rule this verb replaced listed untracked paths
+		// from the installation directory only (git ls-files --others there),
+		// and a prefixed layout keeps repository-scope state beside it.
+		// Tracked changes stay repository-wide, as git diff was.
+		if prefix != "" && !strings.HasPrefix(entry.Path, prefix) {
+			return "", false, nil
+		}
 		return "untracked", false, nil
 	}
 	if requireEmptyIndex {

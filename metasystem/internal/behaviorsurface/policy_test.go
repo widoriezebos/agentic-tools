@@ -423,3 +423,36 @@ func TestDirectoryNotationClassifiesAsItsPath(t *testing.T) {
 		t.Fatal("the filesystem root was accepted as a path")
 	}
 }
+
+// An adopted installation keeps its coordination state at the repository
+// top; a landing under a prefix judges neither that state nor the same
+// paths under the prefix, while other repository-top paths stay landing
+// content (the land bed's carried-prefixed leg, where the steward writes the
+// narrator digest at the state root during the landing).
+func TestLandingExcludesCoordinationStateAtTheRepositoryTop(t *testing.T) {
+	policy, err := Load()
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, test := range []struct {
+		path string
+		want bool
+	}{
+		{path: "records/narrator-digest.log", want: false},
+		{path: "memory/receipts.log", want: false},
+		{path: "plans/goals/x.md", want: false},
+		{path: "metasystem/records/narrator-digest.log", want: false},
+		{path: "metasystem/memory/receipts.log", want: false},
+		{path: "README.md", want: true},
+		{path: "development/notes.md", want: true},
+		{path: "metasystem/internal/landing/receipt.go", want: true},
+	} {
+		got, err := policy.Includes(Landing, test.path, "metasystem/")
+		if err != nil {
+			t.Fatalf("%s: %v", test.path, err)
+		}
+		if got != test.want {
+			t.Fatalf("Includes(Landing, %q, metasystem/) = %v, want %v", test.path, got, test.want)
+		}
+	}
+}

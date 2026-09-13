@@ -94,6 +94,7 @@ func families() []family {
 				{"signature-check", "verify an adapter's positive/lookalike signature contract", runCensusSignatureCheck},
 				{"find-ancestor", "walk up the process tree to the first agent-signature ancestor", runCensusFindAncestor},
 				{"acknowledge", "record one exact untracked pid as human-judged-harmless; the end-of-turn report then stays silent about it (KI-23)", runProcAcknowledge},
+				{"setsid", "run a command as the leader of a new session and exit with its status (proc setsid -- cmd args...)", runProcSetsid},
 			},
 		},
 		{

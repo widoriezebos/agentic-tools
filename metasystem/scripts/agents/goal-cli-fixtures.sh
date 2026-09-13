@@ -709,7 +709,7 @@ exec "$PROOF_GRADE_MS" goal release --root "$PROOF_GRADE_CLONE" --id ship-widget
 PROOF_GRADE_HEADLESS
   chmod +x "$proof_grade_headless_script"
   set +e
-  perl -MPOSIX -e 'POSIX::setsid() or die "setsid: $!"; exec @ARGV or die "exec: $!"' -- \
+  "$ms" proc setsid -- \
     /bin/bash "$proof_grade_headless_script" </dev/null >"$PROOF_GRADE_LOG_ROOT/headless.log" 2>&1
   proof_grade_headless_rc=$?
   set -e

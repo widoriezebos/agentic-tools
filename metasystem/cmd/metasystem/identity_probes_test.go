@@ -109,3 +109,14 @@ func TestGroupOwnedRecordedProofMismatchExitsIndeterminate(t *testing.T) {
 		t.Fatalf("recorded-proof mismatch exit=%d, want 3 (INDETERMINATE)", code)
 	}
 }
+
+func TestProcSetsidRefusesWithoutACommandAndAnAbsentOne(t *testing.T) {
+	// The exec path replaces the test process and is proven by the goal-cli
+	// bed's proof-grades scenario; only the refusals are checked here.
+	if got := runProcSetsid([]string{"--"}); got != 2 {
+		t.Fatalf("proc setsid without a command exit = %d, want 2", got)
+	}
+	if got := runProcSetsid([]string{"--", "/nonexistent/metasystem-no-such-command"}); got != 127 {
+		t.Fatalf("proc setsid with an absent command exit = %d, want 127", got)
+	}
+}

@@ -381,8 +381,22 @@ verify_checks() {
   fi
 }
 
+# landing_drift runs the engine's drift verb; an engine older than the verb
+# (the receipt-cutover bed pins one on purpose) answers 3, and the caller
+# keeps the rule the verb replaced.
+landing_drift() {
+  local out rc
+  out=$("$ms" landing drift --root "$root" "$@" 2>&1)
+  rc=$?
+  if (( rc != 0 && rc != 1 )) && printf '%s\n' "$out" | grep -q 'unknown verb "drift"'; then
+    return 3
+  fi
+  printf '%s\n' "$out"
+  return "$rc"
+}
+
 stage_changes() {
-  local drift drift_rc
+  local drift drift_rc untracked
   if (( ! staged_only )); then
     if (( ${#pathspecs[@]} == 0 )); then
       echo "land refused: name pathspecs or choose --staged-only" >&2
@@ -394,8 +408,21 @@ stage_changes() {
     echo "land refused: the caller-selected staging set is empty" >&2
     return 2
   fi
-  drift=$("$ms" landing drift --root "$root")
+  drift=$(landing_drift)
   drift_rc=$?
+  if (( drift_rc == 3 )); then
+    if ! git diff --quiet --; then
+      echo "land refused: unstaged changes remain after staging; transport requires a clean tree after commit" >&2
+      return 2
+    fi
+    untracked=$(git ls-files --others --exclude-standard) || return $?
+    if [[ -n "$untracked" ]]; then
+      echo "land refused: untracked paths remain after staging; transport requires a clean tree after commit" >&2
+      printf '  %s\n' "$untracked" >&2
+      return 2
+    fi
+    return 0
+  fi
   if (( drift_rc == 1 )); then
     if printf '%s\n' "$drift" | grep -Eq $'^(unstaged|register-not-append)\t'; then
       echo "land refused: unstaged changes remain after staging; transport requires a clean tree after commit" >&2
@@ -552,9 +579,18 @@ create_test_receipt() {
 }
 
 require_clean_after_commit() {
-  local drift drift_rc
-  drift=$("$ms" landing drift --root "$root" --require-empty-index)
+  local drift drift_rc status
+  drift=$(landing_drift --require-empty-index)
   drift_rc=$?
+  if (( drift_rc == 3 )); then
+    status=$(git status --porcelain --untracked-files=normal) || return $?
+    if [[ -n "$status" ]]; then
+      echo "land refused: commit succeeded but the tree is not clean, so transport will not start" >&2
+      printf '%s\n' "$status" >&2
+      return 1
+    fi
+    return 0
+  fi
   if (( drift_rc == 1 )); then
     echo "land refused: commit succeeded but the tree is not clean, so transport will not start" >&2
     printf '%s\n' "$drift" >&2
@@ -568,7 +604,15 @@ fetch_origin() {
 }
 
 rebase_origin() {
-  "$ms" landing advance --root "$root" --upstream "refs/remotes/origin/$branch"
+  local out rc
+  out=$("$ms" landing advance --root "$root" --upstream "refs/remotes/origin/$branch" 2>&1)
+  rc=$?
+  if (( rc != 0 )) && printf '%s\n' "$out" | grep -q 'unknown verb "advance"'; then
+    git rebase "refs/remotes/origin/$branch"
+    return $?
+  fi
+  [[ -z "$out" ]] || printf '%s\n' "$out"
+  return "$rc"
 }
 
 push_origin() {

@@ -287,7 +287,12 @@ func (p Policy) Includes(projection Projection, name, prefix string) (bool, erro
 			return false, nil
 		}
 		if cleanPrefix != "" && clean != cleanPrefix && !strings.HasPrefix(clean, cleanPrefix+"/") {
-			return true, nil
+			// A path outside the installation prefix is landing content,
+			// except the coordination state an adopted installation keeps at
+			// its state root, the repository top (stateroot.RootForInstallation):
+			// the ledger, the receipt ledger and the narrator digest live
+			// there, and a landing judges them nowhere.
+			return !matchesAny(p.CoordinationPaths, clean), nil
 		}
 	}
 	normalized, err := NormalizePath(name, prefix)
