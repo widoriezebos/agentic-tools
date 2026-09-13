@@ -1,11 +1,18 @@
 # A goal that will never be worked, and why (goal goal-abandoned-with-a-reason)
 
-Revision: 5. Date: 2026-09-13. Design authoring job: `gawr-carry-debt-design`.
-This revision closes GAWR-C1-05, the finding that abandonment hides carry
-debt. Open carry words refuse abandonment. Open review obligations remain
+Revision: 6. Date: 2026-09-13. Design authoring job: `gawr-counselor-design`.
+This revision addresses GAWR-C1-11, the finding that carried landings lose
+counselor ownership evidence when a goal is abandoned. Section 5 extends
+both ownership readers to Abandoned. Archived human-carried waivers still
+write their counselor line. Section 13 names the fixture.
+Every other revision-5 decision stands.
+
+Revision 5, authored by `gawr-carry-debt-design`, closed GAWR-C1-05, the
+finding that abandonment hides carry debt. Open carry words refuse
+abandonment. Open review obligations remain
 dischargeable in the archive. Human-carried review debt stays counted and
 gated. Sections 4 and 6 decide the behavior; section 13 names its fixtures.
-Every other revision-4 decision stands.
+It kept every other revision-4 decision.
 
 Revision 4 was authored by `gawr-design5`, folding
 the round-3 read `metasystem/records/misc/goal-abandoned-with-a-reason-critique-r3.md`
@@ -45,6 +52,8 @@ where the same diff from 634ca2a2 over `metasystem/scripts/agents/`,
 `metasystem/internal/goal/` is empty.
 Revision 5 read the carry and review-debt symbols named in section 1 at
 `0d4c0c5fe264224a7c49cf3a67f6701e72dcd430`.
+Revision 6 read the counselor ownership, writer and staging sites named in
+section 5 at `06dc9aef7789544d894926fae0684b7f1b9bf55f`.
 
 The contract is the Intent of `metasystem/plans/goals/goal-abandoned-with-a-reason.md`:
 
@@ -586,7 +595,7 @@ never consumed.
 introduces.** New verb `metasystem landing held --root <root> --base
 <commit> --commit <commit> --remote <name> --ref <refs/heads/...>`,
 implemented by `landing.Held(root, base, commit, remote, ref string)
-(HeldVerdict, error)` in a new `metasystem/internal/landing/held.go`.
+(HeldVerdict, error)` in a new file, `internal/landing/held.go`.
 `--base` is the fetched tip of the ref the caller is about to push above,
 `--commit` the tip it is about to push, and `--remote` and `--ref` name
 where. A push accepts any fast-forward, so every commit between the two
@@ -888,6 +897,45 @@ lands second re-bases those hunks; the repair route in its design gains the
 | 25 | Reconcile edit row (`reconcilepub.go:368-379`) | `t.Done[row.Id]` at `:371` decides the archive race ("archived on the fetched tip; the hand edit was made against a live goal") versus absence ("not live on the fetched tip"); the session's own `done` row is the one exemption (`session.archived`) | `t.Archived(row.Id)`: an abandoned record on the fetched tip conflicts with the archive sentence, exactly as a done one does. The exemption cannot apply, because reconcile never produces an abandoned record (row 18), so `session.archived` is never set by an abandon. Without the change the row reports "not live", the absent-not-completed degradation, and the hand edit's outcome is mapped wrongly. This is the third direct `Done` reader the revision-2 census missed; the census command in section 3 finds it. |
 | 26 | Carry evidence: `CarryWordAt`, `carryWords`, `historyFiles`, `CarryReservationAt`, `CountCarries` | Live and Done | Also Abandoned. Preserve word lookup, consumed/superseded results, reservation closure, open-word counts and carried-landing counts across archival. A durable `carried` row stays a closer when its record or the goal holding its replacement word is abandoned. No new landing authority is granted. |
 | 27 | Review debt: `CarryDebtAt`, `DischargeReviewObligation`, `AcceptedRiskDecision`, `AcceptedRiskDecisionOpID` | The gate and discharge read Live; accept-risk requires claimed; its receipt lookup also reads Done | Section 4: the debt gate also reads Abandoned. Discharge writes the original abandoned record under existing authority. Proven human accept-risk can waive its human-carried obligation, and the receipt remains findable. Open debt survives reopen and successor abandonment. |
+| 28 | Carried counselor ownership: `carriedLandingAppendError` in `metasystem/internal/landing/observe.go:229` | Matches each appended carried-landings line to a `carried` History row in Live or Done | Also read Abandoned in the supplied accepted ledger. An archived `carried` row still owns its line if the goal was abandoned before the line was committed. Keep the operation-id check and exact equality with `counselor.CarriedLandingLine`. Live and Done matching stays unchanged. |
+| 29 | Accepted-risk counselor ownership: `carriedAcceptedRiskAppendError` in `metasystem/internal/landing/observe.go:256` | Reads human-carried AcceptedRisks and matching `accept-risk` History in Live or Done | Also read both from Abandoned. The original goal's accepted-risk record and History row with the same operation id own the archived waiver's line. Keep the human-carried chain filter, finding-to-commit check and `counselor.ValidateCarriedAcceptedRiskLine`, including its comparison with the landed commit's trailers. Live and Done matching stays unchanged. |
+
+**An archived waiver still writes its counselor line.** After section 4's
+proven human accept-risk succeeds, `runGoalAcceptRiskWithAuthority` keeps
+the `counselor.AppendCarriedAcceptedRisk` call in
+`metasystem/cmd/metasystem/goalsync_mutations.go:800-805`. It uses the
+archived receipt's operation id from `AcceptedRiskDecisionOpID`. Keep the
+existing line format and idempotent append. The original abandoned goal
+owns the evidence. Neither a successor nor the goal of the later landing
+becomes its owner. The live goal's claimed-state requirement and all human
+proof, matching, reason and replay checks in section 4 stay unchanged.
+
+Rows 28 and 29 read evidence; they grant no landing authority on an
+abandoned goal. A later carried landing for another lawful live goal may
+include these lines. Do not require their owning goal or carry word to
+equal that later landing's goal or word. Keep the complete-line append-only
+check. Missing or unequal ownership evidence still refuses with
+`record-not-owned`, as does an unlisted counselor register. Ordinary
+held-goal register carriage stays unchanged. The checks run through
+`ValidateCarriedCandidatePaths` in
+`metasystem/internal/landing/carried.go:241` and the counselor branch in
+`metasystem/internal/landing/observe.go:177-184`.
+
+The staging path bounds when this failure occurs.
+`metasystem/scripts/agents/commit.sh:311` reads the existing index with
+`git write-tree`; it does not stage counselor registers.
+`metasystem/scripts/agents/land.sh:406-417` stages the caller's pathspecs or
+uses the caller's staged set. A register line reaches these readers only
+when the candidate appends it. An unstaged append to a tracked register may
+remain outside that candidate (`metasystem/internal/landing/drift.go:90-103`).
+The carried landing's own counselor line is written after its push:
+`metasystem/scripts/agents/land.sh:960-970` calls `goal carried`, whose
+confirmed row supplies the append in
+`metasystem/internal/counselor/register.go:196-204`. It can therefore ride a
+later landing. An archived waiver's line is written after abandonment by
+the command above. Selecting either pending line for a carried candidate
+must not lose ownership merely because its goal is now abandoned. No
+staging behavior changes.
 
 ## 6. Reopen from abandoned
 
@@ -1353,6 +1401,22 @@ behavior.
 
 Go tests, package `metasystem/internal/goal` unless noted; names are new.
 
+Revision 6 adds `TestAbandonedCounselorAppendsKeepOwnership` in the existing
+file `metasystem/internal/landing/hcl_carried_test.go`. It extends the setup
+of `TestHCL51CarriedCounselorAppendBelongsToItsRow`. Drive
+`ValidateCarriedCandidatePaths` with each register alone and both together.
+The candidate carries a pending line from an earlier carried landing and
+a human-carried waiver line made with `AppendCarriedAcceptedRisk` after its
+owner was abandoned. Only Abandoned holds their matching ledger evidence.
+Use a different live goal and carry word for the later landing. Both lines
+pass. Repeat with the evidence in Live and Done; their results stay the
+same. Remove the owning row, change a line's facts, or give the waiver a
+non-human-carried chain; each affected line refuses with `record-not-owned`.
+Rewriting an existing line still refuses as non-append-only. The current
+readers fail the abandoned cases with `record-not-owned` once the build
+provides the Abandoned map. This is a build obligation, not a fixture
+implemented or run by this design-authoring job.
+
 Revision 5 adds the fixtures below to existing files. They are obligations
 for the build, not tests run by this design-authoring job. Their first
 failure on this worktree is the missing abandon state and verb. The build
@@ -1635,6 +1699,15 @@ unchanged. Abandoned is not a frontier category. Stop proofs are never
 rewritten.
 
 ## Revision record
+
+Revision 6 addresses **GAWR-C1-11 (medium), archived counselor evidence
+losing ownership on carried landings**. Section 5 adds the two ownership
+readers to the table. Both retain abandoned evidence under their existing
+matching rules. Archived human-carried waivers still write counselor lines
+owned by the original goal. The staging trace shows why a pending line can
+reach a later carried candidate. Section 13 names
+`TestAbandonedCounselorAppendsKeepOwnership` and its existing test file.
+All other revision-5 decisions remain in force.
 
 Revision 5 addresses **GAWR-C1-05 (high), abandonment hiding carry debt**.
 The author chooses refusal for open carry words and reachable archived debt
