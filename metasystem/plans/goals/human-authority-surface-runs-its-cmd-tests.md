@@ -7,11 +7,13 @@
 - Origin: main
 - Next step: One bounded correction to metasystem/testing.json: add a go unit group (cwd metasystem, run pattern naming the tests in session_stop_test.go, goalsync_mutations_test.go and identity_probes_test.go) to the human-authority surface's standard list; Sol builds, Opus critiques, contract-only landing.
 - OpenedAt: 2026-09-10T08:53:23Z
-- Revision: 2
+- Revision: 3
+- Pinned: m1c
 - Budget: elapsedLimit=4h attemptLimit=6 reservedJobMinutesLimit=720 activeJobLimit=1 reviewRoundLimit=2
 - BudgetExceptions: 0
 
 History:
 - 2026-09-10T08:53:23Z 8SPKHVV8JBHARP5NM156PN6M80-m1-1701c13c open actor=m1+main-1788940932-18533-7fa6c2 targets=human-authority-surface-runs-its-cmd-tests
 - 2026-09-11T22:08:05Z A8CG7X839JY8JNEF1PZFVDGM0F-m1-c6925449 edit actor=human:Wido targets=human-authority-surface-runs-its-cmd-tests
-Integrity: sha256=05bf4f966969dd16e9af4da07bd7aab51a3c18c1db807edeac280d42638cbf7e
+- 2026-09-13T06:41:04Z WA47H064C0DTSV2PV13QYCAASN-m1e-c6925449 set-pin actor=human:Wido targets=human-authority-surface-runs-its-cmd-tests
+Integrity: sha256=4554b66adf225423c32a1b7bd824ec133557a9bed76957ddd89f27ea08827c6c
