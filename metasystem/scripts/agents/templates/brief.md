@@ -27,6 +27,8 @@ and leave everything you return in the worktree, uncommitted.
 
 <State non-goals, wall-clock and enforceable token budgets, and the critic round budget when applicable.>
 
+Request the smallest section you need, read a large file through a bounded view, and open a reference only through its path.
+
 # Expected Return
 
 <Name every required property from the role's return schema. Each evidence `command` is one command replayable verbatim from the declared workspace. The orchestrator may rerun commands individually and compare world-state observations; returned commands are never executed as a batch. Keep the settled `{command, observed, level}` evidence schema unchanged.>

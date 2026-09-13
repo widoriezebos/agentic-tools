@@ -5,6 +5,15 @@ source_root=$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd -P)
 fixture_root=$(mktemp -d "${TMPDIR:-/tmp}/metasystem-conformance-fixtures.XXXXXX")
 trap 'rm -rf "$fixture_root"' EXIT
 
+# Every delegate instruction surface carries the bounded-read sentence
+# (coordinator-context design, section 3).
+bounded_read='equest the smallest section you need, read a large file through a bounded view, and open a reference only through its path.'
+for instruction in scripts/agents/templates/brief.md scripts/agents/roles/design-critic.md \
+  scripts/agents/roles/code-critic.md scripts/agents/roles/implementer.md docs/orchestration.md; do
+  grep -Fq "$bounded_read" "$source_root/$instruction" \
+    || { echo "instruction file $instruction does not carry the bounded-read sentence" >&2; exit 1; }
+done
+
 controller=
 worktree=
 base_sha=

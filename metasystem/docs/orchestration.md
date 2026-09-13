@@ -18,7 +18,7 @@ These exemptions govern interactive work. Inside a mission the mission runner cr
 
 ## Delegation Contract
 
-Every delegation states the goal, the workspace it runs in, the inputs it may rely on, the expected return shape (facts, paths, diff, verdict), the acceptance criteria, a budget, and what to do at an unspecified gap: stop and report it, never fill it silently. The trust and certification rule below binds every return.
+Every delegation states the goal, the workspace it runs in, the inputs it may rely on, the expected return shape (facts, paths, diff, verdict), the acceptance criteria, a budget, and what to do at an unspecified gap: stop and report it, never fill it silently. The trust and certification rule below binds every return. A delegate reads within its context: request the smallest section you need, read a large file through a bounded view, and open a reference only through its path.
 
 ## The Collaboration Loop
 

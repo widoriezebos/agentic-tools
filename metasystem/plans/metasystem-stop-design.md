@@ -1,9 +1,9 @@
 # One word stops the metasystem: `metasystem stop`, `status` and `arm` (goal metasystem-stop-verb)
 
-- Status: design, revision 2, awaiting one critique
+- Status: superseded by plans/metasystem-stop-verb-design.md; the goal metasystem-stop-verb is done (a3131fbb)
 - Goal: metasystem-stop-verb (member of the arc verbs-match-intent; its
   slice 0 absorbs this page as the human page's three process verbs)
-- Next step: critique once, then build behind the fixtures in section 10
+- Next step: none. This revision was built through the verb design page and the goal concluded; no critique or build remains here
 
 Revision 2 folds the first critique's register in full. Wido's acceptance
 test stands: one intuitive word, omnipotent, honest about what it could
