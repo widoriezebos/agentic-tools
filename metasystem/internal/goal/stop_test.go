@@ -201,6 +201,361 @@ func TestBreachStopFenceAndHumanResumeAreOneWayTransactions(t *testing.T) {
 	}
 }
 
+func TestAbandonOfABreachStoppedClaimKeepsTheFenceFreesTheQuotaAndEnforcesTheDependencyRule(t *testing.T) {
+	_, root, _ := twoClones(t)
+	seedLedger(t, root)
+	configureAbandonFloorTest(t, strings.Repeat("a", 40))
+	floorReq := verbReq(root, "01J5X00000000000000001T000", "mac-a")
+	floorReq.Actor.Human = "Wido"
+	if result, err := EngineFloor(floorReq, strings.Repeat("a", 40), goalHumanProof(t, root, floorReq.Now)); err != nil || result.Outcome != OutcomeConfirmed {
+		t.Fatalf("engine floor: %+v %v", result, err)
+	}
+	if result, err := Open(verbReq(root, "01J5X00000000000000001T010", "mac-a"), "stop-me", "intent", "main", "next"); err != nil || result.Outcome != OutcomeConfirmed {
+		t.Fatalf("open stop-me: %+v %v", result, err)
+	}
+	claim := verbReq(root, "01J5X00000000000000001T020", "mac-a")
+	claim.ClaimEpoch = 9
+	budget := Budget{ElapsedLimit: "1m", AttemptLimit: 2, ReservedJobMinutesLimit: 20, ActiveJobLimit: 1}
+	if result, err := claimApprovedForTest(t, claim, "stop-me", budget); err != nil || result.Outcome != OutcomeConfirmed {
+		t.Fatalf("claim: %+v %v", result, err)
+	}
+	projection, err := Project(endpointFor(root), true, claim.Now)
+	if err != nil {
+		t.Fatal(err)
+	}
+	claimed := projection.Tree.Live["stop-me"]
+	closeRequest := CloseStopRequest{
+		VerbRequest: VerbRequest{Endpoint: endpointFor(root), Actor: Actor{Machine: "mac-a", Lineage: "goal-stop-custodian"}, Ulid: "01J5X00000000000000001T030", Now: claim.Now.Add(time.Minute), ClaimEpoch: 9},
+		GoalID:      "stop-me", StopID: "stop-stop-me-r2-f1", Reason: StopReasonElapsedLimit, Capability: *claimed.StopCapability,
+	}
+	if result, err := CloseStop(closeRequest); err != nil || result.Outcome != OutcomeConfirmed {
+		t.Fatalf("close stop: %+v %v", result, err)
+	}
+	projection, err = Project(endpointFor(root), true, closeRequest.Now)
+	if err != nil {
+		t.Fatal(err)
+	}
+	stopped := projection.Tree.Live["stop-me"]
+	capabilityBefore, fenceBefore := *stopped.StopCapability, *stopped.StopFence
+
+	wedge := []struct {
+		name string
+		run  func() (PublishResult, error)
+	}{
+		{"release", func() (PublishResult, error) {
+			return Release(verbReq(root, "01J5X00000000000000001T031", "mac-a"), "stop-me")
+		}},
+		{"done", func() (PublishResult, error) {
+			return Done(verbReq(root, "01J5X00000000000000001T032", "mac-a"), "stop-me", "must not bypass the stop batch")
+		}},
+		{"park", func() (PublishResult, error) {
+			return Park(verbReq(root, "01J5X00000000000000001T033", "mac-a"), "stop-me", "must not orphan the stop batch")
+		}},
+		{"set-budget", func() (PublishResult, error) {
+			request := verbReq(root, "01J5X00000000000000001T034", "mac-a")
+			request.Actor.Human = "Wido"
+			return SetBudgetApproved(request, "stop-me", budget, goalHumanProof(t, root, request.Now))
+		}},
+		{"steal", func() (PublishResult, error) {
+			request := verbReq(root, "01J5X00000000000000001T035", "mac-b")
+			request.Actor.Human = "Wido"
+			return Steal(request, "stop-me")
+		}},
+	}
+	for _, operation := range wedge {
+		result, operationErr := operation.run()
+		if operationErr != nil || result.Outcome != OutcomeRejected || !strings.Contains(result.Detail, "breach-stopped") || !strings.Contains(result.Detail, "only goal resume") {
+			t.Fatalf("%s crossed the breach-stop wedge: %+v %v", operation.name, result, operationErr)
+		}
+	}
+
+	for index, id := range []string{"dependent", "successor"} {
+		if result, err := Open(verbReq(root, []string{"01J5X00000000000000001T040", "01J5X00000000000000001T050"}[index], "mac-b"), id, "intent", "main", "next"); err != nil || result.Outcome != OutcomeConfirmed {
+			t.Fatalf("open %s: %+v %v", id, result, err)
+		}
+	}
+	blocked := []string{"stop-me"}
+	if result, err := Edit(verbReq(root, "01J5X00000000000000001T060", "mac-b"), "dependent", EditFields{Blocked: &blocked}); err != nil || result.Outcome != OutcomeConfirmed {
+		t.Fatalf("wire dependent: %+v %v", result, err)
+	}
+	approveDependent := verbReq(root, "01J5X00000000000000001T065", "mac-b")
+	approveDependent.Actor.Human = "Wido"
+	if result, err := Approve(approveDependent, []string{"dependent"}, nil, goalHumanProof(t, root, approveDependent.Now)); err != nil || result.Outcome != OutcomeConfirmed {
+		t.Fatalf("approve dependent: %+v %v", result, err)
+	}
+	abandonReq := verbReq(root, "01J5X00000000000000001T070", "mac-a")
+	abandonReq.Actor.Human = "Wido"
+	result, err := Abandon(abandonReq, "stop-me", AbandonSpec{Because: "stopped permanently"}, goalHumanProof(t, root, abandonReq.Now))
+	if err != nil || result.Outcome != OutcomeRejected || !strings.Contains(result.Detail, "goal dependent is blocked by stop-me") {
+		t.Fatalf("uncovered dependency did not refuse: %+v %v", result, err)
+	}
+	abandonReq.Ulid = "01J5X00000000000000001T080"
+	result, err = Abandon(abandonReq, "stop-me", AbandonSpec{Because: "stopped permanently", Carried: "successor"}, goalHumanProof(t, root, abandonReq.Now))
+	if err != nil || result.Outcome != OutcomeConfirmed {
+		t.Fatalf("carried abandon: %+v %v", result, err)
+	}
+	tree, err := loadTree(root, result.Tip)
+	if err != nil {
+		t.Fatal(err)
+	}
+	abandoned := tree.Abandoned["stop-me"]
+	if abandoned == nil || abandoned.State != StateAbandoned || abandoned.Claimed != nil || abandoned.StopCapability == nil || abandoned.StopFence == nil ||
+		*abandoned.StopCapability != capabilityBefore || *abandoned.StopFence != fenceBefore || abandoned.Abandoned == nil || abandoned.Abandoned.StopID != fenceBefore.StopID {
+		t.Fatalf("abandon did not preserve the frozen fence and clear the claim: %+v", abandoned)
+	}
+	if problems := ValidateTree(tree); len(problems) != 0 {
+		t.Fatalf("abandoned stopped tree is invalid: %v", problems)
+	}
+	if tree.Live["stop-me"] != nil {
+		t.Fatalf("abandoned goal remained in the live map and could reach budget projection: %+v", tree.Live["stop-me"])
+	}
+	admissionOutput, admissionErr := goalRevisionAdmissionCLI(root, "stop-me", capabilityBefore.Revision, abandonReq.Now)
+	if admissionErr == nil || !strings.Contains(admissionOutput, "not a claimed accepted goal") || strings.Contains(admissionOutput, "BUDGET_") {
+		t.Fatalf("dispatch admission did not stop before budget projection for the abandoned goal: output=%q err=%v", admissionOutput, admissionErr)
+	}
+	if got := tree.Live["dependent"].Blocked; len(got) != 1 || got[0] != "successor" {
+		t.Fatalf("dependent was not re-pointed: %v", got)
+	}
+	frontier, err := Next(Projection{Root: root, Tree: tree, Horizon: projection.Horizon}, "mac-a")
+	if err != nil || len(frontier.Blocked) != 1 || frontier.Blocked[0] != "dependent" {
+		t.Fatalf("dependent is not blocked on its live successor: %+v %v", frontier, err)
+	}
+
+	if result, err := Open(verbReq(root, "01J5X00000000000000001T090", "mac-a"), "fourth", "intent", "main", "next"); err != nil || result.Outcome != OutcomeConfirmed {
+		t.Fatalf("open fourth: %+v %v", result, err)
+	}
+	fourthClaim := verbReq(root, "01J5X00000000000000001T100", "mac-a")
+	if result, err := claimApprovedForTest(t, fourthClaim, "fourth", testBudget()); err != nil || result.Outcome != OutcomeConfirmed {
+		t.Fatalf("abandoned claim still consumed the machine quota: %+v %v", result, err)
+	}
+}
+
+func makeFencedAbandonedGoal(t *testing.T, root, goalID, ulidPrefix string) (*GoalFile, time.Time) {
+	t.Helper()
+	if result, err := Open(verbReq(root, ulidPrefix+"0", "mac-a"), goalID, "intent", "main", "next"); err != nil || result.Outcome != OutcomeConfirmed {
+		t.Fatalf("open %s: %+v %v", goalID, result, err)
+	}
+	claim := verbReq(root, ulidPrefix+"1", "mac-a")
+	claim.ClaimEpoch = 19
+	if result, err := claimApprovedForTest(t, claim, goalID, testBudget()); err != nil || result.Outcome != OutcomeConfirmed {
+		t.Fatalf("claim %s: %+v %v", goalID, result, err)
+	}
+	projection, err := Project(endpointFor(root), true, claim.Now)
+	if err != nil {
+		t.Fatal(err)
+	}
+	claimed := projection.Tree.Live[goalID]
+	closedAt := claim.Now.Add(time.Minute)
+	closeRequest := CloseStopRequest{
+		VerbRequest: VerbRequest{Endpoint: endpointFor(root), Actor: Actor{Machine: "mac-a", Lineage: "goal-stop-custodian"}, Ulid: ulidPrefix + "2", Now: closedAt, ClaimEpoch: 19},
+		GoalID:      goalID, StopID: "stop-" + goalID + "-r2-f1", Reason: StopReasonElapsedLimit, Capability: *claimed.StopCapability,
+	}
+	if result, err := CloseStop(closeRequest); err != nil || result.Outcome != OutcomeConfirmed {
+		t.Fatalf("close stop %s: %+v %v", goalID, result, err)
+	}
+	abandon := verbReq(root, ulidPrefix+"3", "mac-a")
+	abandon.Now = closedAt.Add(time.Minute)
+	abandon.Actor.Human = "Wido"
+	if result, err := Abandon(abandon, goalID, AbandonSpec{Because: "the stopped work will not resume"}, goalHumanProof(t, root, abandon.Now)); err != nil || result.Outcome != OutcomeConfirmed {
+		t.Fatalf("abandon %s: %+v %v", goalID, result, err)
+	}
+	projection, err = Project(endpointFor(root), true, abandon.Now)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return projection.Tree.Abandoned[goalID], abandon.Now
+}
+
+func stopBatchForAbandoned(t *testing.T, file *GoalFile, state StopBatchState, now time.Time) StopBatch {
+	t.Helper()
+	stamp := now.UTC().Format(time.RFC3339)
+	batch := StopBatch{
+		StopID: file.StopFence.StopID, GoalID: file.Id, GoalRevision: file.StopCapability.Revision,
+		FenceEpoch: file.StopFence.Epoch, CapabilityGeneration: file.StopCapability.Generation,
+		Machine: file.StopCapability.Machine, ClaimEpoch: file.StopCapability.ClaimEpoch,
+		Reason: file.StopFence.Reason, State: state, OpenedAt: stamp, UpdatedAt: stamp, Pass: 1,
+	}
+	if state == StopBatchComplete {
+		batch.CompletedAt = stamp
+	}
+	return batch
+}
+
+func TestReopenFromAbandonedRequiresTheStopBatchComplete(t *testing.T) {
+	_, root := oneClone(t)
+	seedLedger(t, root)
+	configureAbandonFloorTest(t, strings.Repeat("a", 40))
+	recordAbandonFloorTest(t, root, "01J5X000000000000000001S00")
+	abandoned, now := makeFencedAbandonedGoal(t, root, "fenced-reopen", "01J5X000000000000000001S1")
+	if abandoned == nil || abandoned.StopCapability == nil || abandoned.StopFence == nil {
+		t.Fatalf("fixture did not retain the frozen fence: %+v", abandoned)
+	}
+	revisionBefore := abandoned.Revision
+	reopen := verbReq(root, "01J5X000000000000000001S20", "mac-a")
+	reopen.Now = now.Add(time.Minute)
+	reopen.Actor.Human = "Wido"
+	proof := goalHumanProof(t, root, reopen.Now)
+	result, err := ReopenAbandoned(reopen, "fenced-reopen", proof)
+	if err != nil || result.Outcome != OutcomeRejected || !strings.Contains(result.Detail, "cannot prove stop batch "+abandoned.StopFence.StopID+" complete") {
+		t.Fatalf("missing batch refusal: %+v %v", result, err)
+	}
+	projection, _ := Project(endpointFor(root), true, reopen.Now)
+	if projection.Tree.Abandoned["fenced-reopen"].Revision != revisionBefore {
+		t.Fatal("missing batch refusal changed the record")
+	}
+
+	if err := WriteStopBatch(root, stopBatchForAbandoned(t, abandoned, StopBatchOpen, reopen.Now)); err != nil {
+		t.Fatal(err)
+	}
+	reopen.Ulid = "01J5X000000000000000001S30"
+	result, err = ReopenAbandoned(reopen, "fenced-reopen", proof)
+	if err != nil || result.Outcome != OutcomeRejected || !strings.Contains(result.Detail, "not COMPLETE") {
+		t.Fatalf("open batch refusal: %+v %v", result, err)
+	}
+	projection, _ = Project(endpointFor(root), true, reopen.Now)
+	if projection.Tree.Abandoned["fenced-reopen"].Revision != revisionBefore {
+		t.Fatal("non-complete batch refusal changed the record")
+	}
+
+	if err := WriteStopBatch(root, stopBatchForAbandoned(t, abandoned, StopBatchComplete, reopen.Now)); err != nil {
+		t.Fatal(err)
+	}
+	reopen.Ulid = "01J5X000000000000000001S40"
+	result, err = ReopenAbandoned(reopen, "fenced-reopen", proof)
+	if err != nil || result.Outcome != OutcomeConfirmed {
+		t.Fatalf("complete batch reopen: %+v %v", result, err)
+	}
+	tree, err := loadTree(root, result.Tip)
+	if err != nil {
+		t.Fatal(err)
+	}
+	file := tree.Live["fenced-reopen"]
+	var verbs []string
+	for _, line := range file.History {
+		if line.Verb == "breach-stop" || line.Verb == "abandon" || line.Verb == "reopen" {
+			verbs = append(verbs, line.Verb)
+		}
+	}
+	if strings.Join(verbs, ",") != "breach-stop,abandon,reopen" || file.History[len(file.History)-2].StopID != abandoned.StopFence.StopID {
+		t.Fatalf("stop, abandon, and reopen history did not survive in order: %+v", file.History)
+	}
+}
+
+func TestReopenFromAbandonedIsBoundToTheClaimantCheckoutAndCarriedRecovers(t *testing.T) {
+	_, rootA, rootB := twoClones(t)
+	seedLedger(t, rootA)
+	configureAbandonFloorTest(t, strings.Repeat("a", 40))
+	recordAbandonFloorTest(t, rootA, "01J5X000000000000000001T00")
+	for index, id := range []string{"successor-one", "successor-two"} {
+		ulid := []string{"01J5X000000000000000001T10", "01J5X000000000000000001T20"}[index]
+		if result, err := Open(verbReq(rootA, ulid, "mac-a"), id, "intent", "main", "next"); err != nil || result.Outcome != OutcomeConfirmed {
+			t.Fatalf("open %s: %+v %v", id, result, err)
+		}
+	}
+	abandoned, now := makeFencedAbandonedGoal(t, rootA, "lost-checkout-goal", "01J5X000000000000000001T3")
+	if err := WriteStopBatch(rootA, stopBatchForAbandoned(t, abandoned, StopBatchComplete, now)); err != nil {
+		t.Fatal(err)
+	}
+
+	reopenB := verbReq(rootB, "01J5X000000000000000001T40", "mac-b")
+	reopenB.Now = now.Add(time.Minute)
+	reopenB.Actor.Human = "Wido"
+	proofB := goalHumanProof(t, rootB, reopenB.Now)
+	result, err := ReopenAbandoned(reopenB, "lost-checkout-goal", proofB)
+	if err != nil || result.Outcome != OutcomeRejected || !strings.Contains(result.Detail, "cannot prove stop batch "+abandoned.StopFence.StopID+" complete") {
+		t.Fatalf("foreign checkout reopen did not refuse on its local batch: %+v %v", result, err)
+	}
+
+	carry := verbReq(rootB, "01J5X000000000000000001T50", "mac-b")
+	carry.Now = reopenB.Now.Add(time.Minute)
+	carry.Actor.Human = "Wido"
+	result, err = CarryAbandoned(carry, "lost-checkout-goal", "successor-one", proofB)
+	if err != nil || result.Outcome != OutcomeConfirmed {
+		t.Fatalf("first carry: %+v %v", result, err)
+	}
+	tree, err := loadTree(rootB, result.Tip)
+	if err != nil {
+		t.Fatal(err)
+	}
+	carried := tree.Abandoned["lost-checkout-goal"]
+	if carried.Abandoned.Carried != "successor-one" || carried.History[len(carried.History)-1].Verb != "carry" || carried.History[len(carried.History)-1].Carried != "successor-one" {
+		t.Fatalf("first carry did not bind its event: %+v", carried)
+	}
+	if _, problems := ParseFile(RenderFile(carried)); len(problems) != 0 {
+		t.Fatalf("first carried archive no longer parses: %v", problems)
+	}
+
+	carry.Ulid = "01J5X000000000000000001T60"
+	result, err = CarryAbandoned(carry, "lost-checkout-goal", "successor-two", proofB)
+	if err != nil || result.Outcome != OutcomeConfirmed {
+		t.Fatalf("second carry: %+v %v", result, err)
+	}
+	tree, _ = loadTree(rootB, result.Tip)
+	carried = tree.Abandoned["lost-checkout-goal"]
+	if carried.Abandoned.Carried != "successor-two" || carried.History[len(carried.History)-2].Carried != "successor-one" || carried.History[len(carried.History)-1].Carried != "successor-two" {
+		t.Fatalf("second carry did not replace the field and retain both events: %+v", carried.History)
+	}
+	if _, problems := ParseFile(RenderFile(carried)); len(problems) != 0 {
+		t.Fatalf("twice-carried archive no longer parses: %v", problems)
+	}
+
+	withoutHuman := carry
+	withoutHuman.Ulid = "01J5X000000000000000001T70"
+	withoutHuman.Actor.Human = ""
+	if _, err := CarryAbandoned(withoutHuman, "lost-checkout-goal", "successor-one", proofB); err == nil || err.Error() != "carry is a human act and names its human (--by)" {
+		t.Fatalf("carry without human refusal = %v", err)
+	}
+	if _, err := CarryAbandoned(carry, "lost-checkout-goal", "successor-one", nil); err == nil || err.Error() != "carry requires freshly observed enrolled-terminal human authority" {
+		t.Fatalf("carry without proof refusal = %v", err)
+	}
+	revisionBeforeRefusals := carried.Revision
+	for index, test := range []struct{ id, successor, want string }{
+		{"successor-one", "successor-two", "goal successor-one is live; carry records a successor on an abandoned goal only"},
+		{"lost-checkout-goal", "missing-successor", "carried must name a live successor"},
+	} {
+		request := carry
+		request.Ulid = []string{"01J5X000000000000000001T80", "01J5X000000000000000001T90"}[index]
+		result, err := CarryAbandoned(request, test.id, test.successor, proofB)
+		if err != nil || result.Outcome != OutcomeRejected || result.Detail != test.want {
+			t.Fatalf("carry refusal %d: %+v %v", index, result, err)
+		}
+	}
+	self := carry
+	self.Ulid = "01J5X000000000000000001TA0"
+	if _, err := CarryAbandoned(self, "lost-checkout-goal", "lost-checkout-goal", proofB); err == nil || err.Error() != "carried must name a live successor" {
+		t.Fatalf("carry to self refusal = %v", err)
+	}
+	projectionB, err := Project(endpointFor(rootB), true, carry.Now)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if projectionB.Tree.Abandoned["lost-checkout-goal"].Revision != revisionBeforeRefusals {
+		t.Fatal("a refused carry changed the abandoned record")
+	}
+
+	reopenA := verbReq(rootA, "01J5X000000000000000001TB0", "mac-a")
+	reopenA.Now = carry.Now.Add(time.Minute)
+	reopenA.Actor.Human = "Wido"
+	result, err = ReopenAbandoned(reopenA, "lost-checkout-goal", goalHumanProof(t, rootA, reopenA.Now))
+	if err != nil || result.Outcome != OutcomeConfirmed {
+		t.Fatalf("claimant checkout reopen: %+v %v", result, err)
+	}
+	tree, err = loadTree(rootA, result.Tip)
+	if err != nil {
+		t.Fatal(err)
+	}
+	reopened := tree.Live["lost-checkout-goal"]
+	if reopened == nil || len(reopened.History) < 5 || reopened.History[len(reopened.History)-3].Carried != "successor-one" || reopened.History[len(reopened.History)-2].Carried != "successor-two" || reopened.History[len(reopened.History)-1].Verb != "reopen" {
+		t.Fatalf("reopened goal lost its carry history: %+v", reopened)
+	}
+	if problems := ValidateTree(tree); len(problems) != 0 {
+		t.Fatalf("reopened carried tree does not validate: %v", problems)
+	}
+	if _, problems := ParseFile(RenderFile(reopened)); len(problems) != 0 {
+		t.Fatalf("reopened carried record does not parse: %v", problems)
+	}
+}
+
 func TestRelayedResumeIsBoundOncePerGoalPerRuling(t *testing.T) {
 	_, root, _ := twoClones(t)
 	seedLedger(t, root)

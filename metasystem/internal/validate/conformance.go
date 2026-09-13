@@ -1266,6 +1266,9 @@ func (r *conformanceRun) mergeCritique(recordPath, finalTree, configuredRuntime,
 						goalFile = projection.Tree.Live[goalID]
 						if goalFile == nil {
 							goalFile = projection.Tree.Done[goalID]
+							if goalFile == nil {
+								goalFile = projection.Tree.Abandoned[goalID]
+							}
 						}
 					}
 					if endpointErr != nil || projectionErr != nil || goalFile == nil {

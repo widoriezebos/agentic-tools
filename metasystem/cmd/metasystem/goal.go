@@ -416,6 +416,13 @@ func listSynced(root string, output goalListOutput, fetchFirst bool, requiredLab
 			done = append(done, goalDisplayRecord(f, output.History))
 		}
 	}
+	var abandoned []*goal.GoalFile
+	for _, id := range goal.SortedGoalIds(p.Tree.Abandoned) {
+		if f := p.Tree.Abandoned[id]; goal.MatchesLabels(f.Labels, requiredLabels) {
+			abandoned = append(abandoned, goalDisplayRecord(f, output.History))
+		}
+	}
+	grouped[goal.StateAbandoned] = abandoned
 	if !output.JSON {
 		grouped[goal.StateDone] = done
 		fmt.Print(goalListSummary(grouped, syncedListStates, p.Tip, p.Banners, output.Done, p.Horizon))
@@ -425,7 +432,7 @@ func listSynced(root string, output goalListOutput, fetchFirst bool, requiredLab
 		"root": root, "world": "synced", "tip": p.Tip, "banners": p.Banners,
 		"open":   open,
 		"queued": grouped[goal.StateQueued], "approved": grouped[goal.StateApproved], "claimed": grouped[goal.StateClaimed],
-		"parked": grouped[goal.StateParked], "done": done,
+		"parked": grouped[goal.StateParked], "done": done, "abandoned": abandoned,
 	}, output.Pretty)
 }
 
@@ -462,6 +469,9 @@ func runGoalShow(args []string) int {
 	state := "live"
 	if !live {
 		if f = p.Tree.Done[*id]; f == nil {
+			f = p.Tree.Abandoned[*id]
+		}
+		if f == nil {
 			fmt.Fprintf(os.Stderr, "no goal %q on the accepted tree (tip %s)\n", *id, p.Tip)
 			return 1
 		}

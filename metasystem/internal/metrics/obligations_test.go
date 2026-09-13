@@ -679,6 +679,36 @@ func TestO16AgeIgnoresWindowEventsDoNotAndGoalUsesWholeLifecycle(t *testing.T) {
 	}
 }
 
+func TestMetricsExcludeAbandonedFromConcludedAndDebt(t *testing.T) {
+	instant := time.Date(2026, 8, 31, 0, 0, 0, 0, time.UTC)
+	abandoned := &goal.GoalFile{
+		Id: "abandoned", State: goal.StateAbandoned, OpenedAt: "2026-07-01T00:00:00Z", Revision: 2,
+		History: []goal.HistoryLine{
+			{At: "2026-07-01T00:00:00Z", Verb: "open"},
+			{At: "2026-08-01T00:00:00Z", Verb: "abandon"},
+		},
+	}
+	queued := &goal.GoalFile{Id: "queued", State: goal.StateQueued, OpenedAt: "2026-08-01T00:00:00Z", Revision: 1}
+	w := world{
+		Goals: map[string]goalRecord{
+			"abandoned": {File: abandoned},
+			"queued":    {File: queued},
+		},
+		GoalCoverage: Coverage{Source: "goals", Found: 2},
+	}
+	if _, _, ok := concludedAt(abandoned); ok {
+		t.Fatal("an abandon event was treated as a done conclusion")
+	}
+	period := Period{Start: instant.AddDate(0, 0, -7), End: instant, Instant: instant}
+	row := computeDebt(w, period, "", thresholds{Debt: intMaximum{Value: 1}})
+	if strings.Contains(row.Value, "abandoned") || !strings.Contains(row.Value, "queued") {
+		t.Fatalf("debt age included abandoned or lost queued: %+v", row)
+	}
+	if len(row.Coverage) != 1 || row.Coverage[0].Usable != 1 {
+		t.Fatalf("abandoned counted as usable debt input: %+v", row.Coverage)
+	}
+}
+
 func TestO17InvalidThresholdsDisableWithoutFiring(t *testing.T) {
 	f := newFixtureRepo(t)
 	f.seedFullWorld()

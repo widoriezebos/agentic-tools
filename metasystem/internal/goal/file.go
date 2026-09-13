@@ -22,7 +22,7 @@ import (
 // GoalFile is one parsed goal file.
 type GoalFile struct {
 	Id       string
-	State    string // queued | approved | claimed | parked | done
+	State    string // queued | approved | claimed | parked | done | abandoned
 	Priority uint8  // 1 is highest, 3 is lowest; zero with Sequence zero is unranked
 	Sequence uint64 // one-based position within Priority; zero with Priority zero is unranked
 	Tier     uint8  // 1 | 2 | 3; zero is tolerated during the classification migration
@@ -79,10 +79,11 @@ type GoalFile struct {
 	// Episode keeps the accounting episode of a claim the own pair released
 	// or parked, so the pair's next claim continues the same box. It lives
 	// only on an unclaimed live goal.
-	Episode *EpisodeRecord
-	Parked  *ParkRecord
-	Legacy  []string // LegacyNotes: verbatim non-field prose from migration
-	History []HistoryLine
+	Episode   *EpisodeRecord
+	Parked    *ParkRecord
+	Abandoned *AbandonRecord
+	Legacy    []string // LegacyNotes: verbatim non-field prose from migration
+	History   []HistoryLine
 }
 
 // IsFencedClaim reports a breach-stopped claim that is waiting on a human
@@ -361,6 +362,19 @@ type ParkRecord struct {
 	Blocker string
 }
 
+// AbandonRecord binds the retained reason and frozen stop evidence to the
+// append-only History event that removed a goal from the live backlog.
+type AbandonRecord struct {
+	By        string
+	At        string
+	Revision  uint64
+	Opid      string
+	Displaced string
+	StopID    string
+	Carried   string
+	Because   string
+}
+
 // HistoryLine is one entry of the append-only History block, exactly
 // the design's grammar:
 //
@@ -376,6 +390,8 @@ type HistoryLine struct {
 	Actor               string // machine+lineage or human:<name>
 	Targets             []string
 	Displaced           string
+	StopID              string
+	Carried             string
 	Ack                 bool
 	Keep                int // -1 when absent; prune's root-record line only
 	AuthorityOutcome    string
@@ -440,16 +456,17 @@ func recordedRelayedAct(history HistoryLine) bool {
 
 // States, closed.
 const (
-	StateQueued   = "queued"
-	StateApproved = "approved"
-	StateClaimed  = "claimed"
-	StateParked   = "parked"
-	StateDone     = "done"
+	StateQueued    = "queued"
+	StateApproved  = "approved"
+	StateClaimed   = "claimed"
+	StateParked    = "parked"
+	StateDone      = "done"
+	StateAbandoned = "abandoned"
 )
 
 func validState(s string) bool {
 	switch s {
-	case StateQueued, StateApproved, StateClaimed, StateParked, StateDone:
+	case StateQueued, StateApproved, StateClaimed, StateParked, StateDone, StateAbandoned:
 		return true
 	}
 	return false
@@ -515,7 +532,7 @@ func ParseFile(data []byte) (*GoalFile, []Problem) {
 		addProblem("missing goal heading")
 	}
 	if !validState(f.State) {
-		addProblem("state %q is not one of queued|approved|claimed|parked|done", f.State)
+		addProblem("state %q is not one of queued|approved|claimed|parked|done|abandoned", f.State)
 	}
 	if f.Revision == 0 {
 		addProblem("missing or zero Revision")
@@ -552,7 +569,7 @@ func ParseFile(data []byte) (*GoalFile, []Problem) {
 	if f.State != StateClaimed && f.Claimed != nil {
 		addProblem("Claimed record on a %s goal", f.State)
 	}
-	if f.State != StateClaimed && (f.StopCapability != nil || f.StopFence != nil) {
+	if f.State != StateClaimed && f.State != StateAbandoned && (f.StopCapability != nil || f.StopFence != nil) {
 		addProblem("stop authority on a %s goal", f.State)
 	}
 	if f.Pinned != "" && !validPinnedNickname(f.Pinned) {
@@ -588,6 +605,17 @@ func ParseFile(data []byte) (*GoalFile, []Problem) {
 		if err := f.ValidateApprovalRecord(); err != nil {
 			addProblem("Approved: %v", err)
 		}
+	}
+	if f.Abandoned != nil {
+		if err := f.ValidateAbandonRecord(); err != nil {
+			addProblem("%v", err)
+		}
+	}
+	if f.State == StateAbandoned && f.Abandoned == nil {
+		addProblem("abandoned without an Abandoned record")
+	}
+	if f.State != StateAbandoned && f.Abandoned != nil {
+		addProblem("Abandoned record on a %s goal", f.State)
 	}
 	if f.State == StateApproved && f.Approved == nil {
 		addProblem("approved without an Approved record")
@@ -628,8 +656,19 @@ func ParseFile(data []byte) (*GoalFile, []Problem) {
 		capability := f.StopCapability
 		if capability.Generation == 0 || capability.Revision == 0 || capability.Machine == "" || capability.ClaimEpoch < 1 {
 			addProblem("StopCapability is incomplete")
-		} else if f.Claimed == nil || capability.Revision != f.Claimed.Revision || capability.Machine != f.Claimed.Machine {
+		} else if f.State != StateAbandoned && (f.Claimed == nil || capability.Revision != f.Claimed.Revision || capability.Machine != f.Claimed.Machine) {
 			addProblem("StopCapability contradicts the claim binding")
+		}
+	}
+	if f.State == StateAbandoned {
+		if f.StopCapability != nil && f.StopFence == nil {
+			addProblem("frozen stop capability without its fence")
+		}
+		if f.StopFence != nil && (f.Abandoned == nil || f.Abandoned.StopID != f.StopFence.StopID) {
+			addProblem("Abandoned stopId does not bind the frozen stop fence")
+		}
+		if f.Abandoned != nil && f.Abandoned.StopID != "" && f.StopFence == nil {
+			addProblem("Abandoned stopId without a frozen stop fence")
 		}
 	}
 	if f.StopFence != nil {
@@ -696,6 +735,10 @@ func ParseFile(data []byte) (*GoalFile, []Problem) {
 	if f.State == StateDone && f.Conclude == "" {
 		addProblem("done without Concluded")
 	}
+	if f.State == StateAbandoned && f.Conclude != "" {
+		addProblem("Concluded record on a abandoned goal")
+	}
+	validateAbandonHistory(f, addProblem)
 	return f, problems
 }
 
@@ -770,6 +813,62 @@ func (f *GoalFile) ValidateApprovalRecord() error {
 		return fmt.Errorf("digest does not match the approved intent and budget")
 	}
 	return nil
+}
+
+// ValidateAbandonRecord proves that the retained fields describe the exact
+// abandon event and, when carry events exist, the newest recorded successor.
+func (f *GoalFile) ValidateAbandonRecord() error {
+	if f == nil || f.Abandoned == nil {
+		return nil
+	}
+	a := f.Abandoned
+	if !strings.HasPrefix(a.By, "human:") || strings.TrimSpace(strings.TrimPrefix(a.By, "human:")) == "" {
+		return fmt.Errorf("abandoned by=%q does not name a human", a.By)
+	}
+	if strings.TrimSpace(a.Because) == "" {
+		return fmt.Errorf("abandoned without its because")
+	}
+	if !validStamp(a.At) || a.Revision == 0 || a.Revision > f.Revision || a.Revision > uint64(len(f.History)) || a.Opid == "" {
+		return fmt.Errorf("abandoned record has incomplete or out-of-range event coordinates")
+	}
+	event := f.History[a.Revision-1]
+	if event.Verb != "abandon" || event.At != a.At || event.Opid != a.Opid || event.Actor != a.By ||
+		len(event.Targets) == 0 || event.Targets[0] != f.Id || event.Displaced != a.Displaced ||
+		event.StopID != a.StopID || event.Reason != a.Because {
+		//lint:ignore ST1005 The capitalized validation problem is a specified external contract.
+		return fmt.Errorf("Abandoned record does not bind its abandon History event")
+	}
+	newestCarried := ""
+	for _, history := range f.History[a.Revision-1:] {
+		if history.Carried != "" {
+			newestCarried = history.Carried
+		}
+	}
+	if a.Carried != newestCarried {
+		//lint:ignore ST1005 The capitalized validation problem is a specified external contract.
+		return fmt.Errorf("Abandoned record does not bind its abandon History event")
+	}
+	return nil
+}
+
+func validateAbandonHistory(f *GoalFile, addProblem func(string, ...any)) {
+	abandonedAtLine := false
+	for _, history := range f.History {
+		if history.StopID != "" && history.Verb != "abandon" {
+			addProblem("%s line carries stopId=, which only an abandon or carry line may", history.Verb)
+		}
+		if history.Carried != "" && history.Verb != "abandon" && history.Verb != "carry" {
+			addProblem("%s line carries carried=, which only an abandon or carry line may", history.Verb)
+		}
+		if history.Verb == "carry" && history.Carried != "" && !abandonedAtLine {
+			addProblem("carry line on a goal that was not abandoned at that line")
+		}
+		if history.Verb == "abandon" && len(history.Targets) > 0 && history.Targets[0] == f.Id {
+			abandonedAtLine = true
+		} else if history.Verb == "reopen" {
+			abandonedAtLine = false
+		}
+	}
 }
 
 func misclassificationRaises(reason string) bool {
@@ -1265,6 +1364,20 @@ func parseFileField(f *GoalFile, field string, seen map[string]bool, addProblem 
 		}
 		because, displaced := splitParkTail(value)
 		f.Parked = &ParkRecord{By: rec["by"], At: rec["at"], Because: because, Displaced: displaced, Blocker: rec["blocker"]}
+	case "Abandoned":
+		rec, err := parseKVRecord(value, []string{"by", "at", "revision", "opid"}, []string{"displaced", "stopId", "carried"}, "because")
+		if err != nil {
+			addProblem("Abandoned: %v", err)
+			return
+		}
+		revision, revisionErr := strconv.ParseUint(rec["revision"], 10, 64)
+		if revisionErr != nil || revision == 0 {
+			addProblem("Abandoned has invalid revision")
+			return
+		}
+		because, displaced, stopID, carried := splitAbandonTail(value)
+		f.Abandoned = &AbandonRecord{By: rec["by"], At: rec["at"], Revision: revision, Opid: rec["opid"],
+			Displaced: displaced, StopID: stopID, Carried: carried, Because: because}
 	default:
 		addProblem("unknown field %q", key)
 	}
@@ -1412,6 +1525,34 @@ func splitParkTail(s string) (because, displaced string) {
 		}
 	}
 	return "", displaced
+}
+
+func splitAbandonTail(s string) (because, displaced, stopID, carried string) {
+	i := 0
+	for i < len(s) {
+		for i < len(s) && (s[i] == ' ' || s[i] == '\t') {
+			i++
+		}
+		if i >= len(s) {
+			break
+		}
+		start := i
+		for i < len(s) && s[i] != ' ' && s[i] != '\t' {
+			i++
+		}
+		token := s[start:i]
+		switch {
+		case strings.HasPrefix(token, "because="):
+			return s[start+len("because="):], displaced, stopID, carried
+		case strings.HasPrefix(token, "displaced="):
+			displaced = strings.TrimPrefix(token, "displaced=")
+		case strings.HasPrefix(token, "stopId="):
+			stopID = strings.TrimPrefix(token, "stopId=")
+		case strings.HasPrefix(token, "carried="):
+			carried = strings.TrimPrefix(token, "carried=")
+		}
+	}
+	return "", displaced, stopID, carried
 }
 
 // RenderFile writes the canonical bytes of a goal file, Integrity
@@ -1574,6 +1715,20 @@ func RenderFile(f *GoalFile) []byte {
 		line += " because=" + f.Parked.Because
 		b.WriteString(line + "\n")
 	}
+	if f.Abandoned != nil {
+		a := f.Abandoned
+		fmt.Fprintf(&b, "- Abandoned: by=%s at=%s revision=%d opid=%s", a.By, a.At, a.Revision, a.Opid)
+		if a.Displaced != "" {
+			fmt.Fprintf(&b, " displaced=%s", a.Displaced)
+		}
+		if a.StopID != "" {
+			fmt.Fprintf(&b, " stopId=%s", a.StopID)
+		}
+		if a.Carried != "" {
+			fmt.Fprintf(&b, " carried=%s", a.Carried)
+		}
+		fmt.Fprintf(&b, " because=%s\n", a.Because)
+	}
 	if len(f.Legacy) > 0 {
 		b.WriteString("\nLegacyNotes:\n")
 		for _, l := range f.Legacy {
@@ -1666,6 +1821,16 @@ func ParseHistoryLine(line string) (HistoryLine, error) {
 				return h, err
 			}
 			h.Displaced = strings.TrimPrefix(tok, "displaced=")
+		case strings.HasPrefix(tok, "stopId="):
+			if err := dup("stopId"); err != nil {
+				return h, err
+			}
+			h.StopID = strings.TrimPrefix(tok, "stopId=")
+		case strings.HasPrefix(tok, "carried="):
+			if err := dup("carried"); err != nil {
+				return h, err
+			}
+			h.Carried = strings.TrimPrefix(tok, "carried=")
 		case tok == "ack":
 			if err := dup("ack"); err != nil {
 				return h, err
@@ -1851,6 +2016,12 @@ func RenderHistoryLine(h HistoryLine) string {
 	}
 	if h.Displaced != "" {
 		b.WriteString(" displaced=" + h.Displaced)
+	}
+	if h.StopID != "" {
+		b.WriteString(" stopId=" + h.StopID)
+	}
+	if h.Carried != "" {
+		b.WriteString(" carried=" + h.Carried)
 	}
 	if h.Ack {
 		b.WriteString(" ack")

@@ -155,6 +155,13 @@ func MapDeltas(repoRoot, baseCommit string, snap *Snapshot) ([]MappedVerb, error
 						string(problem) == "StopCapability contradicts the claim binding") {
 					continue
 				}
+				// A hand-typed state change to abandoned has no mutation
+				// grammar. Let mapOneChange produce that precise state
+				// refusal rather than stopping one layer earlier because
+				// the human cannot also synthesize an Abandoned record.
+				if edited.State == StateAbandoned && string(problem) == "abandoned without an Abandoned record" {
+					continue
+				}
 				return nil, fmt.Errorf("%s: the hand edit carries a diagnostic the surface refuses: %s", d.Path, problem)
 			}
 			rows, err := mapOneChange(d.Path, baseFile, edited)

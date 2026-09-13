@@ -226,7 +226,7 @@ func splitRequest(r VerbRequest, parentID string, members []MemberDraft, ratific
 			if err != nil {
 				return nil, err
 			}
-			if archived := t.Done[parentID]; archived != nil {
+			if archived, found := t.Archived(parentID); found {
 				if opidLanded(archived, r) {
 					return nil, AlreadyApplied{}
 				}
@@ -346,7 +346,7 @@ func splitRequest(r VerbRequest, parentID string, members []MemberDraft, ratific
 				id := goalIDFromPath(change.Path)
 				if file := t.Live[id]; file != nil {
 					changes[index].Content = RenderFile(file)
-				} else if file := t.Done[id]; file != nil {
+				} else if file, found := t.Archived(id); found {
 					changes[index].Content = RenderFile(file)
 				}
 			}
@@ -405,7 +405,7 @@ func validateSplitMembers(t *TreeGoals, parentID string, members []MemberDraft) 
 			return fmt.Errorf("split draft repeats member id %s", member.ID)
 		}
 		memberSet[member.ID] = true
-		if t.Live[member.ID] != nil || t.Done[member.ID] != nil {
+		if t.Exists(member.ID) {
 			return fmt.Errorf("split member id %s collides with an existing goal", member.ID)
 		}
 		if retired, ok := rootDecomposed(t.Root, member.ID); ok {
@@ -423,14 +423,22 @@ func validateSplitMembers(t *TreeGoals, parentID string, members []MemberDraft) 
 			arcUsers = append(arcUsers, id)
 		}
 	}
+	for id, goal := range t.Abandoned {
+		if id != parentID && goal.Arc == parentID {
+			arcUsers = append(arcUsers, id)
+		}
+	}
 	if len(arcUsers) > 0 {
 		sort.Strings(arcUsers)
 		return fmt.Errorf("arc %s is already in use by %s; a split arc must be born empty", parentID, strings.Join(arcUsers, ", "))
 	}
 	for _, member := range members {
 		for _, blocker := range member.Blocked {
-			if !memberSet[blocker] && t.Live[blocker] == nil && t.Done[blocker] == nil {
+			if !memberSet[blocker] && !t.Exists(blocker) {
 				return fmt.Errorf("split member %s BlockedBy names a goal that does not exist: %s", member.ID, blocker)
+			}
+			if !memberSet[blocker] && t.Abandoned[blocker] != nil {
+				return fmt.Errorf("%s: blocked by abandoned goal %s; re-point, waive with a reason, or abandon it too", member.ID, blocker)
 			}
 		}
 	}

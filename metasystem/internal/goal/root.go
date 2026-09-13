@@ -376,6 +376,15 @@ func ParseRoot(data []byte) (*RootRecord, []Problem) {
 		}
 		seenAttorney[entry.ID] = true
 	}
+	for _, history := range r.History {
+		if history.Verb != "engine-floor" {
+			continue
+		}
+		words := strings.Fields(history.Reason)
+		if !strings.HasPrefix(history.Actor, "human:") || strings.TrimPrefix(history.Actor, "human:") == "" || len(words) == 0 || !hexCommit(words[0]) {
+			addProblem("engine-floor line without a commit")
+		}
+	}
 	return r, problems
 }
 
@@ -426,6 +435,18 @@ func ulidShaped(s string) bool {
 // hexDigest admits a 64-character lowercase sha256 hex literal.
 func hexDigest(s string) bool {
 	if len(s) != 64 {
+		return false
+	}
+	for _, r := range s {
+		if (r < '0' || r > '9') && (r < 'a' || r > 'f') {
+			return false
+		}
+	}
+	return true
+}
+
+func hexCommit(s string) bool {
+	if len(s) != 40 {
 		return false
 	}
 	for _, r := range s {

@@ -150,6 +150,30 @@ func TestPriorityReconcile(t *testing.T) {
 	})
 }
 
+func TestReconcileEditRowSeesAnAbandonedArchive(t *testing.T) {
+	baseIntent := "before"
+	newIntent := "after"
+	row := MappedVerb{
+		Verb: "edit", Id: "raced", BaseState: StateQueued,
+		Base: EditFields{Intent: &baseIntent}, Fields: EditFields{Intent: &newIntent},
+	}
+	request := verbReq(t.TempDir(), "01J5X00000000000000001R000", "mac-a")
+	for _, test := range []struct {
+		name string
+		tree *TreeGoals
+	}{
+		{"abandoned", &TreeGoals{Live: map[string]*GoalFile{}, Done: map[string]*GoalFile{}, Abandoned: map[string]*GoalFile{"raced": {Id: "raced", State: StateAbandoned}}}},
+		{"done", &TreeGoals{Live: map[string]*GoalFile{}, Done: map[string]*GoalFile{"raced": {Id: "raced", State: StateDone}}, Abandoned: map[string]*GoalFile{}}},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			_, err := applyRow(test.tree, request, row, newReplaySession())
+			if err == nil || !strings.Contains(err.Error(), "archived on the fetched tip; the hand edit was made against a live goal") || strings.Contains(err.Error(), "not live on the fetched tip") {
+				t.Fatalf("archive race was classified incorrectly: %v", err)
+			}
+		})
+	}
+}
+
 func priorityReconcileBed(t *testing.T, live, done []*GoalFile) (string, string) {
 	t.Helper()
 	_, root := oneClone(t)

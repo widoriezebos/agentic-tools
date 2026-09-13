@@ -578,6 +578,9 @@ func ackDisplacements(t *TreeGoals, r VerbRequest, changes []Change) []Change {
 	for _, id := range sortedGoalIds(t.Done) {
 		collect(t.Done[id])
 	}
+	for _, id := range sortedGoalIds(t.Abandoned) {
+		collect(t.Abandoned[id])
+	}
 	if len(markers) == 0 {
 		return changes
 	}
@@ -659,7 +662,10 @@ func opidLanded(f *GoalFile, r VerbRequest) bool {
 func livePath(id string) string { return goalsPrefix + id + ".md" }
 func donePath(id string) string { return recordsGoalsPrefix + id + ".md" }
 func archivedPath(t *TreeGoals, id string) string {
-	return doneLocation(t, id)
+	if _, ok := t.Done[id]; ok {
+		return doneLocation(t, id)
+	}
+	return abandonedLocation(t, id)
 }
 
 // Open adds a tier-3 queued goal for in-package callers that predate the
@@ -784,7 +790,7 @@ func openRequest(r VerbRequest, id, intent, origin, nextStep, blocks string, tie
 				}
 				return nil, LostToCompetitor{Winner: lastOpid(f)}
 			}
-			if _, archived := t.Done[id]; archived {
+			if _, archived := t.Archived(id); archived {
 				return nil, fmt.Errorf("goal %s is in the archive; reopen is the explicit exception", id)
 			}
 			f := &GoalFile{
@@ -1741,6 +1747,11 @@ func DischargeReviewObligation(r VerbRequest, id, finding, chain, by, citation s
 				return nil, err
 			}
 			f := t.Live[id]
+			archived := false
+			if f == nil {
+				f = t.Abandoned[id]
+				archived = f != nil
+			}
 			if f == nil {
 				return nil, fmt.Errorf("goal %s is not live", id)
 			}
@@ -1757,7 +1768,11 @@ func DischargeReviewObligation(r VerbRequest, id, finding, chain, by, citation s
 			f.ReviewObligations[match].State = "discharged"
 			f.ReviewObligations[match].Test = citation
 			touch(f, r, "discharge-review-obligation", []string{id})
-			return []Change{{Path: livePath(id), Content: RenderFile(f)}}, nil
+			path := livePath(id)
+			if archived {
+				path = archivedPath(t, id)
+			}
+			return []Change{{Path: path, Content: RenderFile(f)}}, nil
 		}, Validate: func(commit string) error { return ValidateCommit(r.Endpoint.Root, commit) }})
 }
 
@@ -1793,13 +1808,18 @@ func AcceptedRiskDecision(r VerbRequest, id, finding, chain, by, why string, pro
 				return nil, err
 			}
 			f := t.Live[id]
+			archived := false
+			if f == nil && chain == HumanCarriedChain {
+				f = t.Abandoned[id]
+				archived = f != nil
+			}
 			if f == nil {
 				return nil, fmt.Errorf("goal %s is not live", id)
 			}
 			if opidLanded(f, r) {
 				return nil, AlreadyApplied{}
 			}
-			if f.State != StateClaimed {
+			if !archived && f.State != StateClaimed {
 				return nil, fmt.Errorf("goal %s is not claimed", id)
 			}
 			for _, existing := range f.AcceptedRisks {
@@ -1839,7 +1859,11 @@ func AcceptedRiskDecision(r VerbRequest, id, finding, chain, by, why string, pro
 			}
 			touch(f, r, "accept-risk", []string{id})
 			f.History[len(f.History)-1].Reason = why
-			return []Change{{Path: livePath(id), Content: RenderFile(f)}}, nil
+			path := livePath(id)
+			if archived {
+				path = archivedPath(t, id)
+			}
+			return []Change{{Path: path, Content: RenderFile(f)}}, nil
 		}, Validate: func(commit string) error { return ValidateCommit(r.Endpoint.Root, commit) }})
 }
 
@@ -1857,6 +1881,9 @@ func AcceptedRiskDecisionOpID(repoRoot, id, finding, chain string, now time.Time
 		file = projection.Tree.Live[id]
 		if file == nil {
 			file = projection.Tree.Done[id]
+			if file == nil {
+				file = projection.Tree.Abandoned[id]
+			}
 		}
 	}
 	if file == nil {
@@ -1885,7 +1912,7 @@ func doneRequest(r VerbRequest, id, conclusion string) PublishRequest {
 			if err != nil {
 				return nil, err
 			}
-			if f, archived := t.Done[id]; archived {
+			if f, archived := t.Archived(id); archived {
 				if opidLanded(f, r) {
 					return nil, AlreadyApplied{}
 				}
@@ -1969,8 +1996,11 @@ func depState(t *TreeGoals, id string) string {
 	if f, ok := t.Live[id]; ok {
 		return f.State
 	}
-	if _, ok := t.Done[id]; ok {
-		return StateDone
+	if f, ok := t.Done[id]; ok {
+		return f.State
+	}
+	if f, ok := t.Abandoned[id]; ok {
+		return f.State
 	}
 	return ""
 }
@@ -2214,6 +2244,158 @@ func unparkRequest(r VerbRequest, id, verified string) PublishRequest {
 // to the live set as queued. Goal-free clears when it was declared.
 func Reopen(r VerbRequest, id string) (PublishResult, error) {
 	return Publish(r.Endpoint, reopenRequest(r, id))
+}
+
+// ReopenAbandoned returns an abandoned goal to the live queue only after the
+// enrolled human proves any frozen stop batch complete at this checkout.
+func ReopenAbandoned(r VerbRequest, id string, proof *humanauthority.Proof) (PublishResult, error) {
+	if r.Actor.Human == "" {
+		return PublishResult{}, fmt.Errorf("reopen from abandoned is a human act and names its human (--by)")
+	}
+	if proof == nil || !proof.ValidFor(r.Endpoint.Root) {
+		return PublishResult{}, fmt.Errorf("reopen from abandoned requires freshly observed enrolled-terminal human authority")
+	}
+	return Publish(r.Endpoint, reopenAbandonedRequest(r, id))
+}
+
+func reopenAbandonedRequest(r VerbRequest, id string) PublishRequest {
+	return PublishRequest{
+		Opid: r.opid(), Machine: r.Actor.Machine, Lineage: r.Actor.Lineage,
+		Intent:  Intent{Verb: "reopen", Targets: []string{id}, Args: intentArgs(r, map[string]string{"from": "abandoned"})},
+		Message: "goal reopen " + id,
+		Mutate: func(tip string) ([]Change, error) {
+			t, err := loadTree(r.Endpoint.Root, tip)
+			if err != nil {
+				return nil, err
+			}
+			if f, live := t.Live[id]; live {
+				if opidLanded(f, r) {
+					return nil, AlreadyApplied{}
+				}
+				return nil, LostToCompetitor{Winner: lastOpid(f)}
+			}
+			f, abandoned := t.Abandoned[id]
+			if !abandoned {
+				return nil, fmt.Errorf("goal %s is not abandoned; reopen --id names a done goal or an abandoned one", id)
+			}
+			if _, decomposed := rootDecomposed(t.Root, id); decomposed {
+				return nil, fmt.Errorf("goal %s was decomposed into arc %s; a decomposed parent never returns — reopen or claim its member goals, or open a new goal under a new id", id, id)
+			}
+			for _, liveID := range sortedGoalIds(t.Live) {
+				dependent := t.Live[liveID]
+				if dependent.State != StateClaimed {
+					continue
+				}
+				for _, blocker := range dependent.Blocked {
+					if blocker == id {
+						return nil, fmt.Errorf("goal %s cannot reopen: %s is claimed and depends on it staying done", id, liveID)
+					}
+				}
+			}
+			if f.StopFence != nil {
+				if err := VerifyStopBatchComplete(r.Endpoint.Root, id, *f.StopCapability, *f.StopFence); err != nil {
+					return nil, fmt.Errorf("goal %s stays abandoned: %v; advance stop batch %s on the checkout that holds it (metasystem job stop-batch ...), or open a successor goal and carry the work there", id, err, f.StopFence.StopID)
+				}
+			}
+
+			beforeRank := rankOf(f)
+			archivePath := archivedPath(t, id)
+			f.State = StateQueued
+			f.Abandoned = nil
+			f.StopCapability = nil
+			f.StopFence = nil
+			f.Approved = nil
+			f.Budget = nil
+			f.NormApproval = nil
+			f.Conclude = ""
+			f.Parked = nil
+			f.Priority = 0
+			f.Sequence = 0
+			if f.Arc != "" {
+				standing := classifyArcJoin(t, f.Arc, id, r.Actor)
+				switch {
+				case standing.count == 0:
+				case standing.allParked:
+					parked := standing.newestParked.Parked
+					f.State = StateParked
+					f.Parked = &ParkRecord{By: parked.By, At: parked.At, Because: parked.Because}
+				case standing.ownClaimed != nil:
+					return nil, fmt.Errorf("goal %s reopens queued; joining a claimed arc no longer manufactures approval or a claim", id)
+				}
+			}
+			touch(f, r, "reopen", []string{id})
+			if afterRank := rankOf(f); afterRank != beforeRank {
+				mergePriorityEvent(f, r, "reopen", []string{id}, beforeRank, afterRank)
+			}
+			delete(t.Abandoned, id)
+			t.Live[id] = f
+			changes := []Change{
+				{Path: archivePath, Delete: true},
+				{Path: livePath(id), Content: RenderFile(f)},
+			}
+			if t.Root != nil && t.Root.Free != nil {
+				t.Root.Free = nil
+				t.Root.Revision++
+				t.Root.History = append(t.Root.History, HistoryLine{
+					At: r.stamp(), Opid: r.opid(), Verb: "reopen",
+					Actor: r.Actor.historyActor(), Targets: []string{id}, Keep: -1,
+				})
+				changes = append(changes, Change{Path: goalsPrefix + "backlog.md", Content: RenderRoot(t.Root)})
+			}
+			return ackDisplacements(t, r, changes), nil
+		},
+		Validate: func(commit string) error { return ValidateCommit(r.Endpoint.Root, commit) },
+	}
+}
+
+// Carry records the live successor that holds an abandoned goal's work. The
+// abandoned file remains archived and every earlier successor stays in its
+// append-only history.
+func CarryAbandoned(r VerbRequest, id, successor string, proof *humanauthority.Proof) (PublishResult, error) {
+	if r.Actor.Human == "" {
+		return PublishResult{}, fmt.Errorf("carry is a human act and names its human (--by)")
+	}
+	if proof == nil || !proof.ValidFor(r.Endpoint.Root) {
+		return PublishResult{}, fmt.Errorf("carry requires freshly observed enrolled-terminal human authority")
+	}
+	if !validId(id) || !validId(successor) || id == successor {
+		return PublishResult{}, fmt.Errorf("carried must name a live successor")
+	}
+	return Publish(r.Endpoint, carryAbandonedRequest(r, id, successor))
+}
+
+func carryAbandonedRequest(r VerbRequest, id, successor string) PublishRequest {
+	return PublishRequest{
+		Opid: r.opid(), Machine: r.Actor.Machine, Lineage: r.Actor.Lineage,
+		Intent:  Intent{Verb: "carry", Targets: []string{id}, Args: intentArgs(r, map[string]string{"to": successor})},
+		Message: "goal carry " + id + " -> " + successor,
+		Mutate: func(tip string) ([]Change, error) {
+			t, err := loadTree(r.Endpoint.Root, tip)
+			if err != nil {
+				return nil, err
+			}
+			if t.Live[id] != nil {
+				return nil, fmt.Errorf("goal %s is live; carry records a successor on an abandoned goal only", id)
+			}
+			f := t.Abandoned[id]
+			if f == nil {
+				return nil, fmt.Errorf("goal %s is not abandoned", id)
+			}
+			if opidLanded(f, r) {
+				return nil, AlreadyApplied{}
+			}
+			if successor == id || t.Live[successor] == nil {
+				return nil, fmt.Errorf("carried must name a live successor")
+			}
+			f.Abandoned.Carried = successor
+			touch(f, r, "carry", []string{id})
+			line := &f.History[len(f.History)-1]
+			line.Carried = successor
+			line.Reason = "carried to " + successor
+			return []Change{{Path: archivedPath(t, id), Content: RenderFile(f)}}, nil
+		},
+		Validate: func(commit string) error { return ValidateCommit(r.Endpoint.Root, commit) },
+	}
 }
 
 // reopenRequest builds the verb's complete transaction request — the
@@ -2734,6 +2916,11 @@ func pruneRequest(r VerbRequest, keep int) PublishRequest {
 			}
 			for _, id := range sortedGoalIds(t.Live) {
 				for _, dep := range t.Live[id].Blocked {
+					walk(dep)
+				}
+			}
+			for _, id := range sortedGoalIds(t.Abandoned) {
+				for _, dep := range t.Abandoned[id].Blocked {
 					walk(dep)
 				}
 			}
@@ -3610,6 +3797,9 @@ func CarryWordAt(tree *TreeGoals, goalID, opid string) (CarryWord, error) {
 		file = tree.Done[goalID]
 	}
 	if file == nil {
+		file = tree.Abandoned[goalID]
+	}
+	if file == nil {
 		return CarryWord{}, fmt.Errorf("goal %s is absent", goalID)
 	}
 	for _, history := range file.History {
@@ -3643,6 +3833,7 @@ func carryWords(tree *TreeGoals) []CarryWord {
 	}
 	collect(tree.Live)
 	collect(tree.Done)
+	collect(tree.Abandoned)
 	return words
 }
 
@@ -3684,11 +3875,14 @@ func CarryableName(root, name string) bool {
 }
 
 func historyFiles(tree *TreeGoals) map[string]*GoalFile {
-	files := make(map[string]*GoalFile, len(tree.Live)+len(tree.Done))
+	files := make(map[string]*GoalFile, len(tree.Live)+len(tree.Done)+len(tree.Abandoned))
 	for id, file := range tree.Live {
 		files[id] = file
 	}
 	for id, file := range tree.Done {
+		files[id] = file
+	}
+	for id, file := range tree.Abandoned {
 		files[id] = file
 	}
 	return files
@@ -3791,6 +3985,9 @@ func CarryReservationAt(tree *TreeGoals, goalID, ref string, now time.Time) Carr
 	if file == nil {
 		file = tree.Done[goalID]
 	}
+	if file == nil {
+		file = tree.Abandoned[goalID]
+	}
 	rows := carryingRows(file, ref)
 	var opening HistoryLine
 	for _, row := range rows {
@@ -3872,7 +4069,7 @@ func LandedCarryCount(file *GoalFile) int {
 
 func CountCarries(root string, tree *TreeGoals, codeTip string, now time.Time) (CarryCounts, error) {
 	counts := CarryCounts{}
-	for _, collection := range []map[string]*GoalFile{tree.Live, tree.Done} {
+	for _, collection := range []map[string]*GoalFile{tree.Live, tree.Done, tree.Abandoned} {
 		for _, file := range collection {
 			seenReservations := map[string]bool{}
 			for _, history := range file.History {
@@ -3911,23 +4108,25 @@ func CountCarries(root string, tree *TreeGoals, codeTip string, now time.Time) (
 }
 
 func openCarryingDebt(tree *TreeGoals, exceptRef string, now time.Time) (CarryDebt, bool) {
-	for _, id := range sortedGoalIds(tree.Live) {
-		file := tree.Live[id]
-		seen := map[string]bool{}
-		for _, history := range file.History {
-			if history.Verb != "carrying" || history.ApprovedRef == "" || seen[history.ApprovedRef] || history.ApprovedRef == exceptRef {
-				continue
-			}
-			seen[history.ApprovedRef] = true
-			reservation := CarryReservationAt(tree, id, history.ApprovedRef, now)
-			if reservation.State == "open" {
-				seat, _ := OpidMachine(reservation.History.Opid)
-				expires := regexp.MustCompile(`(^|\s)expires=([^\s]+)`).FindStringSubmatch(reservation.History.Reason)
-				detail := ""
-				if len(expires) == 3 {
-					detail = expires[2]
+	for _, files := range []map[string]*GoalFile{tree.Live, tree.Abandoned} {
+		for _, id := range sortedGoalIds(files) {
+			file := files[id]
+			seen := map[string]bool{}
+			for _, history := range file.History {
+				if history.Verb != "carrying" || history.ApprovedRef == "" || seen[history.ApprovedRef] || history.ApprovedRef == exceptRef {
+					continue
 				}
-				return CarryDebt{Kind: "inflight", Goal: id, ID: reservation.History.Opid, Detail: "seat=" + seat + " expires=" + detail}, true
+				seen[history.ApprovedRef] = true
+				reservation := CarryReservationAt(tree, id, history.ApprovedRef, now)
+				if reservation.State == "open" {
+					seat, _ := OpidMachine(reservation.History.Opid)
+					expires := regexp.MustCompile(`(^|\s)expires=([^\s]+)`).FindStringSubmatch(reservation.History.Reason)
+					detail := ""
+					if len(expires) == 3 {
+						detail = expires[2]
+					}
+					return CarryDebt{Kind: "inflight", Goal: id, ID: reservation.History.Opid, Detail: "seat=" + seat + " expires=" + detail}, true
+				}
 			}
 		}
 	}
@@ -3937,18 +4136,20 @@ func openCarryingDebt(tree *TreeGoals, exceptRef string, now time.Time) (CarryDe
 // CarryDebtAt finds reviewed-late, in-flight, and landed-without-a-row debt
 // in that order.
 func CarryDebtAt(root string, tree *TreeGoals, base, exceptRef string, now time.Time) (CarryDebt, bool, error) {
-	for _, id := range sortedGoalIds(tree.Live) {
-		for _, obligation := range tree.Live[id].ReviewObligations {
-			if obligation.Chain != HumanCarriedChain || obligation.State != "open" || !strings.HasPrefix(obligation.Artifact, "commit:") {
-				continue
-			}
-			commit := strings.TrimPrefix(obligation.Artifact, "commit:")
-			ancestor, err := IsAncestor(root, commit, base)
-			if err != nil {
-				return CarryDebt{}, false, err
-			}
-			if ancestor {
-				return CarryDebt{Kind: "obligation", Goal: id, ID: obligation.Finding, Detail: obligation.Artifact}, true, nil
+	for _, files := range []map[string]*GoalFile{tree.Live, tree.Abandoned} {
+		for _, id := range sortedGoalIds(files) {
+			for _, obligation := range files[id].ReviewObligations {
+				if obligation.Chain != HumanCarriedChain || obligation.State != "open" || !strings.HasPrefix(obligation.Artifact, "commit:") {
+					continue
+				}
+				commit := strings.TrimPrefix(obligation.Artifact, "commit:")
+				ancestor, err := IsAncestor(root, commit, base)
+				if err != nil {
+					return CarryDebt{}, false, err
+				}
+				if ancestor {
+					return CarryDebt{Kind: "obligation", Goal: id, ID: obligation.Finding, Detail: obligation.Artifact}, true, nil
+				}
 			}
 		}
 	}

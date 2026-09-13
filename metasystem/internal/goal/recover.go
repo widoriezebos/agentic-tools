@@ -409,6 +409,8 @@ func requestForEntry(e Endpoint, entry Entry) (PublishRequest, error) {
 		return PublishRequest{}, fmt.Errorf("%s is proof-bearing and cannot be replayed from journal text; re-run it from the human authority boundary and close this entry by hand", in.Verb)
 	case "set-priority":
 		return PublishRequest{}, fmt.Errorf("set-priority is proof-bearing and cannot be replayed from journal text; re-run it from the enrolled terminal")
+	case "abandon", "engine-floor", "carry":
+		return PublishRequest{}, fmt.Errorf("%s is proof-bearing and cannot be replayed from journal text; re-run it from the enrolled terminal", in.Verb)
 	case "split":
 		members, err := ParseMemberDraft([]byte(in.Args["members"]), target)
 		if err != nil {
@@ -446,6 +448,9 @@ func requestForEntry(e Endpoint, entry Entry) (PublishRequest, error) {
 		}
 		return unparkRequest(r, target, ""), nil
 	case "reopen":
+		if in.Args["from"] == "abandoned" {
+			return PublishRequest{}, fmt.Errorf("reopen is proof-bearing and cannot be replayed from journal text; re-run it from the enrolled terminal")
+		}
 		return reopenRequest(r, target), nil
 	case "edit":
 		fields := EditFields{Why: in.Args["why"], Evidence: in.Args["evidence"]}

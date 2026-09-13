@@ -162,6 +162,11 @@ func recordedHumanApproval(repoRoot, ref, goalID string) (recordedSliceApproval,
 			return approval, nil
 		}
 	}
+	for _, file := range projection.Tree.Abandoned {
+		if approval, found := contains(file); found {
+			return approval, nil
+		}
+	}
 	return recordedSliceApproval{}, nil
 }
 

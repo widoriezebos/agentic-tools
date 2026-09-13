@@ -89,6 +89,11 @@ func RecordedNormApproval(repoRoot string, tree *TreeGoals, ref, goalID string) 
 			return minutes, rounds, revision, true, proven, nil
 		}
 	}
+	for _, file := range tree.Abandoned {
+		if minutes, rounds, revision, exists, proven := contains(file); exists {
+			return minutes, rounds, revision, true, proven, nil
+		}
+	}
 	return 0, 0, 0, false, false, nil
 }
 

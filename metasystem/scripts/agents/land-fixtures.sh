@@ -1427,7 +1427,7 @@ git -C "$build_top" config user.name fixture
 git -C "$build_top" config user.email fixture@example.invalid
 git -C "$build_top" add .
 git -C "$build_top" commit -qm 'clean nested build source'
-clean_stamp=$(git -C "$build_top" rev-parse --short HEAD)
+clean_stamp=$(git -C "$build_top" rev-parse HEAD)
 clean_engine=$tmp/clean-engine
 dirty_engine=$tmp/dirty-engine
 bash "$build_root/scripts/agents/go-build.sh" --out "$clean_engine" >/dev/null

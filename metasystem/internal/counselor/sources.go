@@ -542,6 +542,9 @@ func loadGoalEvents(root string) ([]GoalEventObservation, []Limitation) {
 		for _, file := range tree.Done {
 			addHistory(file.History)
 		}
+		for _, file := range tree.Abandoned {
+			addHistory(file.History)
+		}
 	}
 	events := make([]GoalEventObservation, 0, len(candidates))
 	unmapped := 0

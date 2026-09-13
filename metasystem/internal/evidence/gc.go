@@ -499,7 +499,8 @@ func (s goalRevisionState) keepsSpendingFact(record map[string]any) bool {
 	}
 	file := s.tree.Live[goalID]
 	if file == nil {
-		return s.tree.Done[goalID] == nil
+		_, archived := s.tree.Archived(goalID)
+		return !archived
 	}
 	if file.State != goal.StateClaimed || file.Claimed == nil {
 		return false

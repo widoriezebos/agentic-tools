@@ -23,14 +23,41 @@ import (
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/stateroot"
 )
 
-// TreeGoals is one tree's parsed live ledger and concluded-goal records.
+// TreeGoals is one tree's parsed live ledger and archived goal records.
 type TreeGoals struct {
 	Root *RootRecord
 	// Live and Done are keyed by goal id; placement is recorded at
 	// parse so the placement/State agreement rule can name both.
-	Live      map[string]*GoalFile
-	Done      map[string]*GoalFile
-	DonePaths map[string]string
+	Live           map[string]*GoalFile
+	Done           map[string]*GoalFile
+	DonePaths      map[string]string
+	Abandoned      map[string]*GoalFile
+	AbandonedPaths map[string]string
+}
+
+// Archived returns an archived record without assigning completion semantics
+// to records that left the live set for another reason.
+func (t *TreeGoals) Archived(id string) (*GoalFile, bool) {
+	if t == nil {
+		return nil, false
+	}
+	if file, ok := t.Done[id]; ok {
+		return file, true
+	}
+	file, ok := t.Abandoned[id]
+	return file, ok
+}
+
+// Exists reports whether an id is present anywhere in the ledger.
+func (t *TreeGoals) Exists(id string) bool {
+	if t == nil {
+		return false
+	}
+	if _, ok := t.Live[id]; ok {
+		return true
+	}
+	_, ok := t.Archived(id)
+	return ok
 }
 
 var (
@@ -61,7 +88,10 @@ func relativeStateRoot(kind stateroot.Kind) string {
 // repository-relative path. Every problem names its file; a tree
 // with problems is refused whole.
 func ParseTreeFiles(files map[string][]byte) (*TreeGoals, []Problem) {
-	t := &TreeGoals{Live: map[string]*GoalFile{}, Done: map[string]*GoalFile{}, DonePaths: map[string]string{}}
+	t := &TreeGoals{
+		Live: map[string]*GoalFile{}, Done: map[string]*GoalFile{}, DonePaths: map[string]string{},
+		Abandoned: map[string]*GoalFile{}, AbandonedPaths: map[string]string{},
+	}
 	var problems []Problem
 	addf := func(format string, args ...any) {
 		problems = append(problems, Problem(fmt.Sprintf(format, args...)))
@@ -71,9 +101,9 @@ func ParseTreeFiles(files map[string][]byte) (*TreeGoals, []Problem) {
 		if strings.HasPrefix(p, recordsGoalsPrefix) {
 			rel := strings.TrimPrefix(p, recordsGoalsPrefix)
 			if strings.HasSuffix(rel, ".md") && !strings.Contains(rel, "/") {
-				parseDoneAt(t, p, data, addf)
+				parseArchivedAt(t, p, data, addf)
 			} else {
-				addf("%s: not a concluded goal record", p)
+				addf("%s: not an archived goal record", p)
 			}
 			continue
 		}
@@ -94,7 +124,7 @@ func ParseTreeFiles(files map[string][]byte) (*TreeGoals, []Problem) {
 			// historical git trees carry plans/goals/done immutably,
 			// and one uniform parser reads every tree in history.
 			// Engine WRITES never target this prefix.
-			parseDoneAt(t, p, data, addf)
+			parseArchivedAt(t, p, data, addf)
 		case strings.HasSuffix(rel, ".md") && !strings.Contains(rel, "/"):
 			f, ok := parseGoalAt(p, data, addf)
 			if ok {
@@ -110,17 +140,29 @@ func ParseTreeFiles(files map[string][]byte) (*TreeGoals, []Problem) {
 	return t, problems
 }
 
-func parseDoneAt(t *TreeGoals, p string, data []byte, addf func(string, ...any)) {
+func parseArchivedAt(t *TreeGoals, p string, data []byte, addf func(string, ...any)) {
 	f, ok := parseGoalAt(p, data, addf)
 	if !ok {
 		return
 	}
-	if prior, exists := t.DonePaths[f.Id]; exists {
+	if prior := t.DonePaths[f.Id]; prior != "" {
 		addf("%s: goal %s is also present at %s", p, f.Id, prior)
 		return
 	}
-	t.Done[f.Id] = f
-	t.DonePaths[f.Id] = p
+	if prior := t.AbandonedPaths[f.Id]; prior != "" {
+		addf("%s: goal %s is also present at %s", p, f.Id, prior)
+		return
+	}
+	switch f.State {
+	case StateDone:
+		t.Done[f.Id] = f
+		t.DonePaths[f.Id] = p
+	case StateAbandoned:
+		t.Abandoned[f.Id] = f
+		t.AbandonedPaths[f.Id] = p
+	default:
+		addf("%s: State %s inside the archive", p, f.State)
+	}
 }
 
 func parseGoalAt(p string, data []byte, addf func(string, ...any)) (*GoalFile, bool) {
@@ -170,8 +212,17 @@ func ValidateTree(t *TreeGoals) []Problem {
 	//.
 	for _, id := range sortedGoalIds(t.Live) {
 		f := t.Live[id]
-		if f.State == StateDone {
-			addf("%s%s.md: State done outside the archive", goalsPrefix, id)
+		if f.State == StateDone || f.State == StateAbandoned {
+			addf("%s%s.md: State %s outside the archive", goalsPrefix, id, f.State)
+		}
+	}
+	for _, id := range sortedGoalIds(t.Abandoned) {
+		f := t.Abandoned[id]
+		where := abandonedLocation(t, id)
+		if strings.HasPrefix(where, legacyDonePrefix) {
+			addf("%s: abandoned record in the read-only legacy archive", where)
+		} else if f.State != StateAbandoned {
+			addf("%s: State %s inside the archive", where, f.State)
 		}
 	}
 	for _, id := range sortedGoalIds(t.Done) {
@@ -220,6 +271,14 @@ func ValidateTree(t *TreeGoals) []Problem {
 		if _, both := t.Done[id]; both {
 			addf("%s%s.md: also present in the archive", goalsPrefix, id)
 		}
+		if _, both := t.Abandoned[id]; both {
+			addf("%s%s.md: also present in the archive", goalsPrefix, id)
+		}
+	}
+	for _, id := range sortedGoalIds(t.Done) {
+		if _, both := t.Abandoned[id]; both {
+			addf("%s: also present at %s", doneLocation(t, id), abandonedLocation(t, id))
+		}
 	}
 	if t.Root != nil {
 		for _, entry := range t.Root.Decomposed {
@@ -229,17 +288,16 @@ func ValidateTree(t *TreeGoals) []Problem {
 		}
 	}
 
-	exists := func(id string) bool {
-		_, live := t.Live[id]
-		_, done := t.Done[id]
-		return live || done
-	}
+	exists := t.Exists
 	stateOf := func(id string) string {
 		if f, ok := t.Live[id]; ok {
 			return f.State
 		}
-		if _, ok := t.Done[id]; ok {
-			return StateDone
+		if f, ok := t.Done[id]; ok {
+			return f.State
+		}
+		if f, ok := t.Abandoned[id]; ok {
+			return f.State
 		}
 		return ""
 	}
@@ -266,6 +324,13 @@ func ValidateTree(t *TreeGoals) []Problem {
 				f.NormApproval.ReviewRounds, f.Budget.ReviewRoundLimit)
 		}
 	})
+	for _, id := range sortedGoalIds(t.Live) {
+		for _, dep := range t.Live[id].Blocked {
+			if stateOf(dep) == StateAbandoned {
+				addf("%s%s.md: blocked by abandoned goal %s; re-point, waive with a reason, or abandon it too", goalsPrefix, id, dep)
+			}
+		}
+	}
 	// Acyclicity over the COMPOSED blocked graph (live and done
 	// edges together): a cycle anywhere wedges the frontier.
 	if cycle := findCycle(t); cycle != "" {
@@ -397,11 +462,21 @@ func forAll(t *TreeGoals, visit func(where string, f *GoalFile)) {
 	for _, id := range sortedGoalIds(t.Done) {
 		visit(doneLocation(t, id), t.Done[id])
 	}
+	for _, id := range sortedGoalIds(t.Abandoned) {
+		visit(abandonedLocation(t, id), t.Abandoned[id])
+	}
 }
 
 func doneLocation(t *TreeGoals, id string) string {
 	if t.DonePaths != nil && t.DonePaths[id] != "" {
 		return t.DonePaths[id]
+	}
+	return recordsGoalsPrefix + id + ".md"
+}
+
+func abandonedLocation(t *TreeGoals, id string) string {
+	if t.AbandonedPaths != nil && t.AbandonedPaths[id] != "" {
+		return t.AbandonedPaths[id]
 	}
 	return recordsGoalsPrefix + id + ".md"
 }
@@ -419,6 +494,9 @@ func findCycle(t *TreeGoals) string {
 		collect(f)
 	}
 	for _, f := range t.Done {
+		collect(f)
+	}
+	for _, f := range t.Abandoned {
 		collect(f)
 	}
 	const (

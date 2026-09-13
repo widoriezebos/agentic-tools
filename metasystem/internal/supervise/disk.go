@@ -171,6 +171,24 @@ func (c *DiskCheckout) StateNamesSelf() (bool, error) {
 	return owner.Pid == c.Self.Pid && owner.PidStartedAt == c.Self.StartedAtSec && owner.InstanceTag == c.SelfTag, nil
 }
 
+// EngineBuild reads the engine identity published by this checkout's
+// supervision owner. Absence, malformed state, and an empty identity are
+// errors because none can establish compatibility with a fleet floor.
+func (c *DiskCheckout) EngineBuild() (string, error) {
+	content, err := os.ReadFile(c.statePath())
+	if err != nil {
+		return "", err
+	}
+	var document stateDocument
+	if err := json.Unmarshal(content, &document); err != nil {
+		return "", err
+	}
+	if document.EngineBuild == "" {
+		return "", fmt.Errorf("supervision state has no engineBuild")
+	}
+	return document.EngineBuild, nil
+}
+
 // PublishState writes state.json atomically, FENCED: the
 // lock's owner file is re-read immediately before the rename, and a
 // lock that no longer names this owner aborts the publication — the

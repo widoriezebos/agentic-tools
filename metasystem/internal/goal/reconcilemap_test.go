@@ -59,6 +59,42 @@ func TestHandEditsMapToTheSmallestVerbSet(t *testing.T) {
 	}
 }
 
+func TestHandEditToAbandonedHasNoReconcileGrammar(t *testing.T) {
+	t.Run("live state change", func(t *testing.T) {
+		root, tip := reconcileBed(t)
+		editFile(t, root, livePath("editable"), func(file *GoalFile) {
+			file.State = StateAbandoned
+		})
+		snapshot, err := CaptureSnapshot(root)
+		if err != nil {
+			t.Fatal(err)
+		}
+		_, err = MapDeltas(root, tip, snapshot)
+		if err == nil || !strings.Contains(err.Error(), "the state change queued to abandoned has no hand-edit grammar") {
+			t.Fatalf("hand state change reached the wrong refusal: %v", err)
+		}
+	})
+
+	t.Run("new archive file", func(t *testing.T) {
+		root, tip := reconcileBed(t)
+		path := filepath.Join(root, filepath.FromSlash(recordsGoalsPrefix+"hand-abandoned.md"))
+		if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(path, abandonedFixtureBytes("hand-abandoned"), 0o644); err != nil {
+			t.Fatal(err)
+		}
+		snapshot, err := CaptureSnapshot(root)
+		if err != nil {
+			t.Fatal(err)
+		}
+		_, err = MapDeltas(root, tip, snapshot)
+		if err == nil || !strings.Contains(err.Error(), "hand-creating archive entries is unmappable; done is a verb") {
+			t.Fatalf("hand-created archive reached the wrong refusal: %v", err)
+		}
+	})
+}
+
 func TestGeneratedFieldTamperRefusesByFileAndField(t *testing.T) {
 	a, tip := reconcileBed(t)
 	editFile(t, a, goalsPrefix+"editable.md", func(f *GoalFile) {

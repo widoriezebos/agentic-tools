@@ -21,7 +21,7 @@ func TestGoalListSummaryKeepsLargeHistoriesOutAndOrdersEachBucket(t *testing.T) 
 		t.Fatalf("summary code=%d bytes=%d includesHistory=%v", code, len(output), strings.Contains(output, "history payload"))
 	}
 	tip := strings.TrimSpace(goalSyncMutationGit(t, root, "rev-parse", "HEAD"))
-	if !strings.HasPrefix(output, "claimed=1 approved=1 queued=5 parked=1 done=1 tip="+tip+"\n") {
+	if !strings.HasPrefix(output, "claimed=1 approved=1 queued=5 parked=1 done=1 abandoned=0 tip="+tip+"\n") {
 		t.Fatalf("summary lacks bucket counts or accepted tip: %s", output)
 	}
 	var rows []string
@@ -71,16 +71,16 @@ func TestGoalListJSONKeepsItsShapeAndRequiresHistoryFlag(t *testing.T) {
 		if code != 0 || json.Unmarshal([]byte(output), &envelope) != nil {
 			t.Fatalf("%v did not emit JSON: code=%d bytes=%d", flags, code, len(output))
 		}
-		if len(envelope) != 10 {
+		if len(envelope) != 11 {
 			t.Fatalf("JSON envelope keys changed: %v", reflect.ValueOf(envelope).MapKeys())
 		}
-		for _, key := range []string{"root", "world", "tip", "banners", "open", "queued", "approved", "claimed", "parked", "done"} {
+		for _, key := range []string{"root", "world", "tip", "banners", "open", "queued", "approved", "claimed", "parked", "done", "abandoned"} {
 			if _, ok := envelope[key]; !ok {
 				t.Fatalf("JSON envelope lost %s", key)
 			}
 		}
 		withHistory := flags[len(flags)-1] == "--history"
-		counts := map[string]int{"open": 8, "queued": 5, "approved": 1, "claimed": 1, "parked": 1, "done": 1}
+		counts := map[string]int{"open": 8, "queued": 5, "approved": 1, "claimed": 1, "parked": 1, "done": 1, "abandoned": 0}
 		for bucket, count := range counts {
 			var records []map[string]json.RawMessage
 			if err := json.Unmarshal(envelope[bucket], &records); err != nil || len(records) != count {
@@ -94,6 +94,9 @@ func TestGoalListJSONKeepsItsShapeAndRequiresHistoryFlag(t *testing.T) {
 				file := projection.Tree.Live[id]
 				if bucket == "done" {
 					file = projection.Tree.Done[id]
+				}
+				if bucket == "abandoned" {
+					file = projection.Tree.Abandoned[id]
 				}
 				data, err := json.Marshal(file)
 				if err != nil {

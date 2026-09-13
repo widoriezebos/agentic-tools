@@ -101,6 +101,152 @@ func TestHCL51CarriedCounselorAppendBelongsToItsRow(t *testing.T) {
 	})
 }
 
+func TestAbandonedCounselorAppendsKeepOwnership(t *testing.T) {
+	type ownershipFixture struct {
+		fixture     *observeFixture
+		params      ObserveParams
+		tree        *goal.TreeGoals
+		owner       *goal.GoalFile
+		carriedLine counselor.CarriedLanding
+	}
+	newFixture := func(t *testing.T, carriedLine, riskLine bool) ownershipFixture {
+		t.Helper()
+		fixture := newObserveFixture(t)
+		fixture.git("commit", "--allow-empty", "-qm", "earlier carried landing",
+			"--trailer", "Carry: earlier-word", "--trailer", "Carried-By: human:Wido",
+			"--trailer", "Carried-Tree: workspace="+strings.Repeat("1", 40)+" project="+strings.Repeat("2", 40),
+			"--trailer", "Carried-Past: missing-declaration", "--trailer", "Carried-Battery: green",
+			"--trailer", "Carried-Judge: base tree="+strings.Repeat("3", 40)+" sha256="+strings.Repeat("4", 64),
+			"--trailer", "Carried-Ledger: "+strings.Repeat("5", 40),
+			"--trailer", "Landing-Provenance: carried opid=earlier-word")
+		commit := fixture.git("rev-parse", "HEAD")
+		carried := goal.HistoryLine{
+			At: "2026-09-13T10:00:00Z", Opid: "01ARZ3NDEKTSV4RRFFQ69G5FAV-seat-a-1a2b3c4d",
+			Verb: "carried", Actor: "seat-a+lineage", Targets: []string{"owner"}, Keep: -1,
+			ApprovedRef: "01ARZ3NDEKTSV4RRFFQ69G5FAU-seat-a-1a2b3c4d",
+			Reason: "landed commit=" + strings.Repeat("6", 40) + " workspace=" + strings.Repeat("7", 40) +
+				" project=" + strings.Repeat("8", 40) + " past=missing-declaration battery=green missing=- failing=- judge=base" +
+				" judgeTree=" + strings.Repeat("9", 40) + " judgeDigest=" + strings.Repeat("a", 64) +
+				" liveFailure=- ledger=" + strings.Repeat("b", 40) + " by=human:Wido",
+		}
+		encodedCarried, err := counselor.CarriedLandingLine(carried)
+		if err != nil {
+			t.Fatal(err)
+		}
+		acceptedAt := time.Date(2026, 9, 13, 10, 5, 0, 0, time.UTC)
+		acceptOpID := "01ARZ3NDEKTSV4RRFFQ69G5FAT-seat-a-1a2b3c4d"
+		finding := "carried:" + commit
+		why := "the bounded carried risk is accepted"
+		accepted := goal.HistoryLine{At: acceptedAt.Format(time.RFC3339), Opid: acceptOpID, Verb: "accept-risk", Actor: "seat-a+lineage", Targets: []string{"owner"}, Keep: -1, Reason: why}
+		owner := &goal.GoalFile{
+			Id: "owner", State: goal.StateAbandoned, History: []goal.HistoryLine{carried, accepted},
+			AcceptedRisks: []goal.AcceptedRiskRecord{{Finding: finding, Chain: goal.HumanCarriedChain, By: "Wido", Opid: acceptOpID}},
+		}
+		laterWord := goal.HistoryLine{
+			At: "2026-09-13T11:00:00Z", Opid: "01ARZ3NDEKTSV4RRFFQ69G5FAS-seat-b-2b3c4d5e", Verb: "carry",
+			Actor: "seat-b+lineage", Targets: []string{"later"}, Keep: -1, ApprovedRef: "later-word",
+			Reason: "workspace=" + strings.Repeat("c", 40) + " past=missing-declaration expires=2026-09-13T12:00:00Z why=fixture by=human:Wido",
+		}
+		tree := &goal.TreeGoals{
+			Root: &goal.RootRecord{FormatVersion: "2"},
+			Live: map[string]*goal.GoalFile{"later": {Id: "later", State: goal.StateClaimed, History: []goal.HistoryLine{laterWord}}},
+			Done: map[string]*goal.GoalFile{}, Abandoned: map[string]*goal.GoalFile{"owner": owner},
+		}
+		if carriedLine {
+			encoded, marshalErr := json.Marshal(encodedCarried)
+			if marshalErr != nil {
+				t.Fatal(marshalErr)
+			}
+			fixture.write("records/counselor/carried-landings.jsonl", string(encoded)+"\n")
+		}
+		if riskLine {
+			if err := counselor.AppendCarriedAcceptedRisk(fixture.root, counselor.CarriedAcceptedRiskAppend{
+				Goal: owner.Id, Finding: finding, By: "Wido", Why: why, OpID: acceptOpID, Commit: commit, RecordedAt: acceptedAt,
+			}); err != nil {
+				t.Fatal(err)
+			}
+		}
+		return ownershipFixture{
+			fixture: fixture, params: ObserveParams{RepoRoot: fixture.root, CandidateTree: fixture.tree(), Carried: "later-word"},
+			tree: tree, owner: owner, carriedLine: encodedCarried,
+		}
+	}
+	wantCode := func(t *testing.T, got error, code string) {
+		t.Helper()
+		if carriageRefusalCode(got) != code {
+			t.Fatalf("carried candidate error = %v; want %s", got, code)
+		}
+	}
+
+	for _, test := range []struct {
+		name          string
+		carried, risk bool
+	}{{"carried register alone", true, false}, {"accepted-risk register alone", false, true}, {"both registers", true, true}} {
+		t.Run(test.name, func(t *testing.T) {
+			fixture := newFixture(t, test.carried, test.risk)
+			if err := ValidateCarriedCandidatePaths(fixture.params, fixture.tree); err != nil {
+				t.Fatalf("abandoned owner refused: %v", err)
+			}
+		})
+	}
+
+	for _, state := range []string{"live", "done", "abandoned"} {
+		t.Run("ownership in "+state, func(t *testing.T) {
+			fixture := newFixture(t, true, true)
+			delete(fixture.tree.Abandoned, fixture.owner.Id)
+			switch state {
+			case "live":
+				fixture.owner.State = goal.StateClaimed
+				fixture.tree.Live[fixture.owner.Id] = fixture.owner
+			case "done":
+				fixture.owner.State = goal.StateDone
+				fixture.tree.Done[fixture.owner.Id] = fixture.owner
+			case "abandoned":
+				fixture.owner.State = goal.StateAbandoned
+				fixture.tree.Abandoned[fixture.owner.Id] = fixture.owner
+			}
+			if err := ValidateCarriedCandidatePaths(fixture.params, fixture.tree); err != nil {
+				t.Fatalf("%s owner refused: %v", state, err)
+			}
+		})
+	}
+
+	t.Run("missing carried row", func(t *testing.T) {
+		fixture := newFixture(t, true, false)
+		fixture.owner.History = fixture.owner.History[1:]
+		wantCode(t, ValidateCarriedCandidatePaths(fixture.params, fixture.tree), "record-not-owned")
+	})
+	t.Run("changed carried facts", func(t *testing.T) {
+		fixture := newFixture(t, true, false)
+		fixture.carriedLine.Goal = "later"
+		encoded, err := json.Marshal(fixture.carriedLine)
+		if err != nil {
+			t.Fatal(err)
+		}
+		fixture.fixture.write("records/counselor/carried-landings.jsonl", string(encoded)+"\n")
+		fixture.params.CandidateTree = fixture.fixture.tree()
+		wantCode(t, ValidateCarriedCandidatePaths(fixture.params, fixture.tree), "record-not-owned")
+	})
+	t.Run("non-human-carried waiver", func(t *testing.T) {
+		fixture := newFixture(t, false, true)
+		fixture.owner.AcceptedRisks[0].Chain = "critic-chain"
+		wantCode(t, ValidateCarriedCandidatePaths(fixture.params, fixture.tree), "record-not-owned")
+	})
+	t.Run("existing line is rewritten", func(t *testing.T) {
+		fixture := newFixture(t, true, false)
+		fixture.fixture.git("add", "records/counselor/carried-landings.jsonl")
+		fixture.fixture.git("commit", "-qm", "existing counselor line")
+		fixture.carriedLine.Goal = "later"
+		encoded, err := json.Marshal(fixture.carriedLine)
+		if err != nil {
+			t.Fatal(err)
+		}
+		fixture.fixture.write("records/counselor/carried-landings.jsonl", string(encoded)+"\n")
+		fixture.params.CandidateTree = fixture.fixture.tree()
+		wantCode(t, ValidateCarriedCandidatePaths(fixture.params, fixture.tree), "register-carriage-not-append-only")
+	})
+}
+
 func TestHCL58BaseJudgeFenceOwners(t *testing.T) {
 	paths := []string{
 		"internal/landing/probe.txt", "internal/goal/probe.txt", "internal/proofrun/probe.txt",

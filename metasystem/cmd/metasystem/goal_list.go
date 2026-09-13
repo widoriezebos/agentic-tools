@@ -59,6 +59,9 @@ func goalListSummary(grouped map[string][]*goal.GoalFile, states []string, tip s
 	if !includeDone {
 		fmt.Fprintf(&summary, "done=%d ", len(grouped[goal.StateDone]))
 	}
+	if _, syncedArchive := grouped[goal.StateAbandoned]; syncedArchive {
+		fmt.Fprintf(&summary, "abandoned=%d ", len(grouped[goal.StateAbandoned]))
+	}
 	fmt.Fprintf(&summary, "tip=%s\n", tip)
 	footer := func() string {
 		return fmt.Sprintf("... %d more; run with --json > file for the records\n", remaining)

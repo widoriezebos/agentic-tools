@@ -401,10 +401,43 @@ func recordedProcessAlive(prober identity.Prober, ref activityProcessRef) bool {
 
 type backlogJobRecord struct {
 	JobId  string `json:"jobId"`
+	GoalID string `json:"goalId"`
 	Status string `json:"status"`
 	activityProcessRef
 	Creator          *activityProcessRef  `json:"creatorLiveness"`
 	CustodyProcesses []activityProcessRef `json:"custodyProcesses"`
+}
+
+func nonTerminalGoalJobs(root string, goals map[string]bool) ([]string, error) {
+	paths, err := filepath.Glob(filepath.Join(root, "artifacts", "agents", "jobs", "*.json"))
+	if err != nil {
+		return nil, err
+	}
+	var jobs []string
+	for _, path := range paths {
+		data, err := os.ReadFile(path)
+		if err != nil {
+			return nil, fmt.Errorf("%s: %w", filepath.Base(path), err)
+		}
+		var record backlogJobRecord
+		if err := json.Unmarshal(data, &record); err != nil {
+			return nil, fmt.Errorf("%s is malformed: %w", filepath.Base(path), err)
+		}
+		if !goals[record.GoalID] {
+			continue
+		}
+		switch record.Status {
+		case "completed", "failed", "cancelled", "timeout":
+			continue
+		}
+		id := record.JobId
+		if id == "" {
+			id = strings.TrimSuffix(filepath.Base(path), filepath.Ext(path))
+		}
+		jobs = append(jobs, id)
+	}
+	sort.Strings(jobs)
+	return jobs, nil
 }
 
 func liveJobRecord(prober identity.Prober, record backlogJobRecord) bool {

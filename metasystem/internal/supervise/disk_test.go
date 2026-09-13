@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 	"time"
 
@@ -159,6 +160,44 @@ func TestDiskStateOwnershipReportsMissingMalformedAndForeignState(t *testing.T) 
 	owned, err := checkout.StateNamesSelf()
 	if err != nil || owned {
 		t.Fatalf("foreign state was reported as owned: owned=%v err=%v", owned, err)
+	}
+}
+
+func TestDiskCheckoutEngineBuildReadsPublishedState(t *testing.T) {
+	checkout, _ := diskCheckout(t)
+	if _, err := checkout.EngineBuild(); err == nil {
+		t.Fatal("missing supervision state returned an engine build")
+	}
+	if err := os.WriteFile(checkout.statePath(), []byte("{"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := checkout.EngineBuild(); err == nil {
+		t.Fatal("malformed supervision state returned an engine build")
+	}
+	for _, test := range []struct {
+		name  string
+		build string
+		ok    bool
+	}{
+		{name: "empty", build: "", ok: false},
+		{name: "published", build: strings.Repeat("a", 40), ok: true},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			data, err := json.Marshal(stateDocument{EngineBuild: test.build})
+			if err != nil {
+				t.Fatal(err)
+			}
+			if err := os.WriteFile(checkout.statePath(), data, 0o600); err != nil {
+				t.Fatal(err)
+			}
+			got, err := checkout.EngineBuild()
+			if test.ok && (err != nil || got != test.build) {
+				t.Fatalf("EngineBuild = %q, %v; want %q", got, err, test.build)
+			}
+			if !test.ok && err == nil {
+				t.Fatalf("empty engine build was accepted as %q", got)
+			}
+		})
 	}
 }
 

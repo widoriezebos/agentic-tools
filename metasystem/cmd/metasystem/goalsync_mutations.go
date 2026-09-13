@@ -26,8 +26,10 @@ import (
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/goal"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/goalrevision"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/humanauthority"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/identity"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/landing"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/lease"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/supervise"
 )
 
 func printCarryMutation(res goal.PublishResult, detail string, err error) int {
@@ -52,6 +54,15 @@ func printCarryMutation(res goal.PublishResult, detail string, err error) int {
 }
 
 func runGoalCarry(args []string) int {
+	for _, arg := range args {
+		if arg == "--to" || strings.HasPrefix(arg, "--to=") {
+			return runGoalCarryAbandoned(args)
+		}
+	}
+	return runGoalCarryLanding(args)
+}
+
+func runGoalCarryLanding(args []string) int {
 	flags := flag.NewFlagSet("goal carry", flag.ContinueOnError)
 	root := flags.String("root", ".", "checkout root")
 	id := flags.String("id", "", "goal id")
@@ -649,7 +660,7 @@ func parseSyncFlags(name string, args []string) (*syncFlags, bool) {
 		fs.StringVar(&f.temporaryWord, "temporary-human-word", "", "recorded relayed words presented as the human's; provenance is not verified; resumes TEMPORARILY")
 		fs.StringVar(&f.reviewBy, "review-by", "", "recorded re-approval date supplied with the relay (required with --temporary-human-word)")
 	}
-	if name == "approve" || name == "set-budget" || name == "accept-risk" || name == "open" || name == "edit" || name == "grant" || name == "revoke" || name == "park" {
+	if name == "approve" || name == "set-budget" || name == "accept-risk" || name == "open" || name == "edit" || name == "grant" || name == "revoke" || name == "park" || name == "reopen" {
 		fs.BoolVar(&f.fixtureHumanAuthority, "fixture-human-authority", false, "fixture-only enrolled-human proof; accepted only for an exact fake-runtime root")
 	}
 	fs.Var(&f.labels, "label", "label token (repeatable)")
@@ -872,6 +883,45 @@ func trySyncMutation(name string, args []string) (int, bool) {
 	if !converted(f.root) {
 		return 0, false
 	}
+	if name == "reopen" {
+		if f.id == "" {
+			fmt.Fprintln(os.Stderr, "goal reopen needs --id")
+			return 2, true
+		}
+		endpoint, endpointErr := goal.ResolveEndpoint(f.root)
+		if endpointErr != nil {
+			fmt.Fprintln(os.Stderr, endpointErr)
+			return 1, true
+		}
+		now, nowErr := goalCommandNow(f.root)
+		if nowErr != nil {
+			fmt.Fprintln(os.Stderr, nowErr)
+			return 1, true
+		}
+		projection, projectErr := goal.Project(endpoint, false, now)
+		if projectErr != nil {
+			fmt.Fprintln(os.Stderr, projectErr)
+			return 1, true
+		}
+		if projection.Tree.Abandoned[f.id] != nil {
+			if f.by == "" {
+				fmt.Fprintln(os.Stderr, "goal reopen from abandoned needs --by at the enrolled terminal")
+				return 2, true
+			}
+			proof, proofErr := proveGoalHumanAuthority("reopen", f, proveEnrolledGoalHumanAuthority)
+			if proofErr != nil {
+				fmt.Fprintln(os.Stderr, proofErr)
+				return 1, true
+			}
+			provenRequest, requestErr := syncReqWithProof("reopen", f.root, f.by, f.lineage, &proof)
+			if requestErr != nil {
+				fmt.Fprintln(os.Stderr, requestErr)
+				return 1, true
+			}
+			res, runErr := goal.ReopenAbandoned(provenRequest, f.id, &proof)
+			return printSyncResult(res, runErr), true
+		}
+	}
 	var req goal.VerbRequest
 	var err error
 	// A stopping act by a person takes the terminal grade (the enrollment
@@ -991,9 +1041,6 @@ func trySyncMutation(name string, args []string) (int, bool) {
 		code := printSyncResult(res, err)
 		return reportAfterConfirmedDone(code, f.root, f.id, os.Stderr), true
 	case "reopen":
-		if !need(f.id, "id") {
-			return 2, true
-		}
 		res, err := goal.Reopen(req, f.id)
 		return printSyncResult(res, err), true
 	case "prune":
@@ -1125,6 +1172,121 @@ func proveEnrolledGoalHumanAuthority(root string, pid int64, reader humanauthori
 
 func runGoalSetPriority(args []string) int {
 	return runGoalSetPriorityWithAuthority(args, proveEnrolledGoalHumanAuthority)
+}
+
+func configureAbandonFleetFloor() {
+	goal.ConfigureAbandonFleetFloor(
+		func() string { return supervise.BuildStamp },
+		func(floor string, isAncestor func(a, b string) (bool, error), now time.Time) ([]string, error) {
+			return supervise.EngineFloorProblems(floor, isAncestor, identity.KernelProber{}, now)
+		},
+	)
+}
+
+func runGoalAbandon(args []string) int {
+	flags := flag.NewFlagSet("goal abandon", flag.ContinueOnError)
+	root := flags.String("root", ".", "checkout root")
+	id := flags.String("id", "", "goal id")
+	by := flags.String("by", "", "the directing human")
+	because := flags.String("because", "", "one-line reason the goal will not be worked")
+	carried := flags.String("carried", "", "live successor goal")
+	lineage := flags.String("lineage", "", "this coordinator's lineage")
+	fixtureAuthority := flags.Bool("fixture-human-authority", false, "fixture-only enrolled-human proof; accepted only for an exact fake-runtime root")
+	var waive, also repeatedStrings
+	flags.Var(&waive, "waive", "dependent=reason (repeatable)")
+	flags.Var(&also, "also", "live dependent to abandon in the same transaction (repeatable)")
+	if flags.Parse(args) != nil {
+		return 2
+	}
+	if flags.NArg() != 0 {
+		fmt.Fprintln(os.Stderr, "goal abandon takes no positional arguments")
+		return 2
+	}
+	if !converted(*root) {
+		fmt.Fprintln(os.Stderr, "goal abandon works only with the synced backlog; migrate this checkout first")
+		return 1
+	}
+	shared := &syncFlags{root: *root, id: *id, by: *by, lineage: *lineage, fixtureHumanAuthority: *fixtureAuthority}
+	proof, err := proveGoalHumanAuthority("abandon", shared, proveEnrolledGoalHumanAuthority)
+	if err != nil {
+		fmt.Fprintln(os.Stderr, err)
+		return 1
+	}
+	request, err := syncReqWithProof("abandon", *root, *by, *lineage, &proof)
+	if err != nil {
+		fmt.Fprintln(os.Stderr, err)
+		return 1
+	}
+	configureAbandonFleetFloor()
+	result, err := goal.Abandon(request, *id, goal.AbandonSpec{Because: *because, Carried: *carried, Waive: waive, Also: also}, &proof)
+	return printSyncResult(result, err)
+}
+
+func runGoalCarryAbandoned(args []string) int {
+	flags := flag.NewFlagSet("goal carry", flag.ContinueOnError)
+	root := flags.String("root", ".", "checkout root")
+	id := flags.String("id", "", "abandoned goal id")
+	successor := flags.String("to", "", "live successor goal")
+	by := flags.String("by", "", "the directing human")
+	lineage := flags.String("lineage", "", "this coordinator's lineage")
+	fixtureAuthority := flags.Bool("fixture-human-authority", false, "fixture-only enrolled-human proof; accepted only for an exact fake-runtime root")
+	if flags.Parse(args) != nil {
+		return 2
+	}
+	if flags.NArg() != 0 {
+		fmt.Fprintln(os.Stderr, "goal carry takes no positional arguments")
+		return 2
+	}
+	if !converted(*root) {
+		fmt.Fprintln(os.Stderr, "goal carry works only with the synced backlog; migrate this checkout first")
+		return 1
+	}
+	shared := &syncFlags{root: *root, id: *id, by: *by, lineage: *lineage, fixtureHumanAuthority: *fixtureAuthority}
+	proof, err := proveGoalHumanAuthority("carry", shared, proveEnrolledGoalHumanAuthority)
+	if err != nil {
+		fmt.Fprintln(os.Stderr, err)
+		return 1
+	}
+	request, err := syncReqWithProof("carry", *root, *by, *lineage, &proof)
+	if err != nil {
+		fmt.Fprintln(os.Stderr, err)
+		return 1
+	}
+	result, err := goal.CarryAbandoned(request, *id, *successor, &proof)
+	return printSyncResult(result, err)
+}
+
+func runGoalEngineFloor(args []string) int {
+	flags := flag.NewFlagSet("goal engine-floor", flag.ContinueOnError)
+	root := flags.String("root", ".", "checkout root")
+	commit := flags.String("commit", "", "40-character lowercase engine commit")
+	by := flags.String("by", "", "the directing human")
+	lineage := flags.String("lineage", "", "this coordinator's lineage")
+	fixtureAuthority := flags.Bool("fixture-human-authority", false, "fixture-only enrolled-human proof; accepted only for an exact fake-runtime root")
+	if flags.Parse(args) != nil {
+		return 2
+	}
+	if flags.NArg() != 0 {
+		fmt.Fprintln(os.Stderr, "goal engine-floor takes no positional arguments")
+		return 2
+	}
+	if !converted(*root) {
+		fmt.Fprintln(os.Stderr, "goal engine-floor works only with the synced backlog; migrate this checkout first")
+		return 1
+	}
+	shared := &syncFlags{root: *root, by: *by, lineage: *lineage, fixtureHumanAuthority: *fixtureAuthority}
+	proof, err := proveGoalHumanAuthority("engine-floor", shared, proveEnrolledGoalHumanAuthority)
+	if err != nil {
+		fmt.Fprintln(os.Stderr, err)
+		return 1
+	}
+	request, err := syncReqWithProof("engine-floor", *root, *by, *lineage, &proof)
+	if err != nil {
+		fmt.Fprintln(os.Stderr, err)
+		return 1
+	}
+	result, err := goal.EngineFloor(request, *commit, &proof)
+	return printSyncResult(result, err)
 }
 
 func runGoalSetPriorityWithAuthority(args []string, prove goalAuthorityProver) int {
@@ -1858,7 +2020,7 @@ func runGoalSplit(args []string) int {
 	}
 	parent := projection.Tree.Live[f.id]
 	if parent == nil {
-		if projection.Tree.Done[f.id] != nil {
+		if _, archived := projection.Tree.Archived(f.id); archived {
 			fmt.Fprintf(os.Stderr, "goal %s is in the archive; there is nothing to split\n", f.id)
 		} else {
 			fmt.Fprintf(os.Stderr, "goal %s does not exist\n", f.id)

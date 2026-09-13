@@ -6,6 +6,8 @@ import (
 	"strings"
 	"testing"
 	"time"
+
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/humanauthority"
 )
 
 // carryBed opens and claims one goal on a remote-backed ledger and returns the
@@ -402,6 +404,464 @@ func TestCarryReadersAndJournalGuards(t *testing.T) {
 	if _, err := TakeOverForCompletion(root, entryOpid); err == nil || !strings.Contains(err.Error(), "is terminal") {
 		t.Fatalf("takeover of a terminal entry = %v", err)
 	}
+}
+
+func openCarryWordForAbandonTest(t *testing.T, base time.Time) (root, other string, human VerbRequest, proof *humanauthority.Proof, word CarryArgs, ref string) {
+	t.Helper()
+	root, other, human = carryBed(t, base)
+	configureAbandonFloorTest(t, strings.Repeat("a", 40))
+	recordAbandonFloorTest(t, root, "01J5X00000000000000000D000")
+	proof = testHumanAuthority(t, root, base)
+	word = CarryArgs{
+		Goal: "g", Workspace: strings.Repeat("a", 40), Past: "missing-declaration",
+		Why: "the bounded exception remains necessary", Expires: base.Add(2 * time.Hour), RaiseFormat: true,
+	}
+	request := carryVerb(human, "01J5X00000000000000000D010", 1)
+	result, err := Carry(request, word, proof)
+	if err != nil || result.Outcome != OutcomeConfirmed {
+		t.Fatalf("open carry word: %+v %v", result, err)
+	}
+	return root, other, human, proof, word, request.opid()
+}
+
+func TestAbandonRefusesOpenCarryWords(t *testing.T) {
+	base := time.Date(2026, 9, 13, 9, 0, 0, 0, time.UTC)
+	t.Run("missing anchor", func(t *testing.T) {
+		_, root := oneClone(t)
+		seedLedger(t, root)
+		ref := "01ARZ3NDEKTSV4RRFFQ69G5FAZ-mac-a-1a2b3c4d"
+		tree, file := hclCarryTree("g", ref, base.Add(time.Hour))
+		tree.Abandoned = map[string]*GoalFile{}
+		err := abandonCarryRefusal(root, tree, "HEAD", "g", file, base)
+		if err == nil || !strings.Contains(err.Error(), "goal g has open carry word "+ref) || !strings.Contains(err.Error(), "let it expire at "+base.Add(time.Hour).Format(time.RFC3339)) {
+			t.Fatalf("missing-anchor refusal = %v", err)
+		}
+	})
+	t.Run("unused word and expiry", func(t *testing.T) {
+		root, _, human, _, word, ref := openCarryWordForAbandonTest(t, base)
+		before, beforeTip := acceptedTree(t, root, base.Add(2*time.Minute))
+		request := carryVerb(human, "01J5X00000000000000000D020", 2)
+		result, err := Abandon(request, "g", AbandonSpec{Because: "the work is obsolete"}, goalHumanProof(t, root, request.Now))
+		if err != nil || result.Outcome != OutcomeRejected {
+			t.Fatalf("abandon with open word: %+v %v", result, err)
+		}
+		want := "goal g has open carry word " + ref
+		if !strings.Contains(result.Detail, want) || !strings.Contains(result.Detail, "goal carry --supersede "+ref) || !strings.Contains(result.Detail, word.Expires.Format(time.RFC3339)) {
+			t.Fatalf("open-word refusal = %q", result.Detail)
+		}
+		after, afterTip := acceptedTree(t, root, request.Now)
+		if beforeTip != afterTip || after.Live["g"] == nil || after.Abandoned["g"] != nil || string(RenderFile(before.Live["g"])) != string(RenderFile(after.Live["g"])) {
+			t.Fatal("open-word refusal changed the goal tree")
+		}
+
+		expired := carryVerb(human, "01J5X00000000000000000D021", 121)
+		expired.Now = word.Expires
+		if result, err := Abandon(expired, "g", AbandonSpec{Because: "the unused word expired"}, goalHumanProof(t, root, expired.Now)); err != nil || result.Outcome != OutcomeConfirmed {
+			t.Fatalf("abandon after word expiry: %+v %v", result, err)
+		}
+	})
+
+	t.Run("open and closed reservation", func(t *testing.T) {
+		root, _, human, _, _, ref := openCarryWordForAbandonTest(t, base)
+		seat := carryVerb(human, "01J5X00000000000000000D030", 2)
+		seat.Actor.Human = ""
+		args := CarryingArgs{Goal: "g", ApprovedRef: ref, Workspace: strings.Repeat("a", 40), Project: strings.Repeat("b", 40)}
+		result, row, err := Carrying(seat, args)
+		if err != nil || result.Outcome != OutcomeConfirmed {
+			t.Fatalf("open reservation: %+v %q %v", result, row, err)
+		}
+		request := carryVerb(human, "01J5X00000000000000000D031", 3)
+		result, err = Abandon(request, "g", AbandonSpec{Because: "the work is obsolete"}, goalHumanProof(t, root, request.Now))
+		if err != nil || result.Outcome != OutcomeRejected || !strings.Contains(result.Detail, "carry reservation "+row+" on goal g is in flight on mac-a") || !strings.Contains(result.Detail, "goal carrying --abandon "+row) {
+			t.Fatalf("reservation refusal: %+v %v", result, err)
+		}
+		closeRequest := carryVerb(seat, "01J5X00000000000000000D032", 4)
+		if result, err := AbandonCarrying(closeRequest, "g", row, "the candidate was withdrawn"); err != nil || result.Outcome != OutcomeConfirmed {
+			t.Fatalf("close reservation: %+v %v", result, err)
+		}
+		request = carryVerb(human, "01J5X00000000000000000D033", 5)
+		result, err = Abandon(request, "g", AbandonSpec{Because: "the work is obsolete"}, goalHumanProof(t, root, request.Now))
+		if err != nil || result.Outcome != OutcomeRejected || !strings.Contains(result.Detail, "goal g has open carry word "+ref) {
+			t.Fatalf("closed reservation hid open word: %+v %v", result, err)
+		}
+	})
+
+	t.Run("carried commit without ledger row", func(t *testing.T) {
+		root, other, human, _, word, ref := openCarryWordForAbandonTest(t, base)
+		mustGit(t, other, "pull", "-q", "origin", "main")
+		if err := os.WriteFile(filepath.Join(other, "unrecorded-carry.txt"), []byte("carried\n"), 0o644); err != nil {
+			t.Fatal(err)
+		}
+		mustGit(t, other, "add", "unrecorded-carry.txt")
+		mustGit(t, other, "commit", "-qm", "unrecorded carried change", "-m", "Carry: "+ref)
+		commit := mustGit(t, other, "rev-parse", "HEAD")
+		mustGit(t, other, "push", "-q", "origin", "main")
+		request := carryVerb(human, "01J5X00000000000000000D040", 121)
+		request.Now = word.Expires.Add(time.Minute)
+		result, err := Abandon(request, "g", AbandonSpec{Because: "the landing will not continue"}, goalHumanProof(t, root, request.Now))
+		if err != nil || result.Outcome != OutcomeRejected || !strings.Contains(result.Detail, "goal g has carried commit "+commit+" without its ledger row") || !strings.Contains(result.Detail, "land.sh --carried "+ref) {
+			t.Fatalf("unrecorded carried commit refusal: %+v %v", result, err)
+		}
+	})
+
+	t.Run("also target is atomic", func(t *testing.T) {
+		root, _, human := carryBed(t, base)
+		configureAbandonFloorTest(t, strings.Repeat("a", 40))
+		recordAbandonFloorTest(t, root, "01J5X00000000000000000D050")
+		open := carryVerb(human, "01J5X00000000000000000D051", 1)
+		if result, err := Open(open, "child", "Carry the dependent.", OriginHuman, "Land it."); err != nil || result.Outcome != OutcomeConfirmed {
+			t.Fatalf("open child: %+v %v", result, err)
+		}
+		claim := verbReq(root, "01J5X00000000000000000D052", "mac-b")
+		claim.Now = base.Add(2 * time.Minute)
+		if result, err := claimApprovedForTest(t, claim, "child", testBudget()); err != nil || result.Outcome != OutcomeConfirmed {
+			t.Fatalf("claim child: %+v %v", result, err)
+		}
+		proof := testHumanAuthority(t, root, base)
+		carryRequest := verbReq(root, "01J5X00000000000000000D053", "mac-b")
+		carryRequest.Now = base.Add(3 * time.Minute)
+		carryRequest.Actor.Human = "wido"
+		args := CarryArgs{Goal: "child", Workspace: strings.Repeat("c", 40), Past: "missing-declaration", Why: "the child needs the exception", Expires: base.Add(time.Hour), RaiseFormat: true}
+		if result, err := Carry(carryRequest, args, proof); err != nil || result.Outcome != OutcomeConfirmed {
+			t.Fatalf("carry child: %+v %v", result, err)
+		}
+		release := carryVerb(claim, "01J5X00000000000000000D054", 4)
+		if result, err := Release(release, "child"); err != nil || result.Outcome != OutcomeConfirmed {
+			t.Fatalf("release child: %+v %v", result, err)
+		}
+		blocked := []string{"g"}
+		if result, err := Edit(carryVerb(human, "01J5X00000000000000000D055", 5), "child", EditFields{Blocked: &blocked}); err != nil || result.Outcome != OutcomeConfirmed {
+			t.Fatalf("block child: %+v %v", result, err)
+		}
+		before, tip := acceptedTree(t, root, base.Add(5*time.Minute))
+		request := carryVerb(human, "01J5X00000000000000000D056", 6)
+		result, err := Abandon(request, "g", AbandonSpec{Because: "both goals are obsolete", Also: []string{"child"}}, goalHumanProof(t, root, request.Now))
+		if err != nil || result.Outcome != OutcomeRejected || !strings.Contains(result.Detail, "goal child has open carry word "+carryRequest.opid()) {
+			t.Fatalf("also carry refusal: %+v %v", result, err)
+		}
+		after, afterTip := acceptedTree(t, root, request.Now)
+		if tip != afterTip || after.Live["g"] == nil || after.Live["child"] == nil || !contains(after.Live["child"].Blocked, "g") || string(RenderFile(before.Live["child"])) != string(RenderFile(after.Live["child"])) {
+			t.Fatal("--also refusal changed a goal or dependent edge")
+		}
+	})
+}
+
+func landedCarryForAbandonTest(t *testing.T, base time.Time) (root string, human VerbRequest, proof *humanauthority.Proof, ref, commit, ordinaryFinding string) {
+	t.Helper()
+	root, other, human, proof, word, ref := openCarryWordForAbandonTest(t, base)
+	reservationRequest := carryVerb(human, "01J5X00000000000000000D059", 2)
+	reservationRequest.Actor.Human = ""
+	reservationArgs := CarryingArgs{Goal: "g", ApprovedRef: ref, Workspace: word.Workspace, Project: strings.Repeat("b", 40)}
+	reservationResult, reservation, reservationErr := Carrying(reservationRequest, reservationArgs)
+	if reservationErr != nil || reservationResult.Outcome != OutcomeConfirmed {
+		t.Fatalf("open carrying reservation: %+v %q %v", reservationResult, reservation, reservationErr)
+	}
+	_, ledger := acceptedTree(t, root, base.Add(3*time.Minute))
+	mustGit(t, other, "pull", "-q", "origin", "main")
+	if err := os.WriteFile(filepath.Join(other, "recorded-carry.txt"), []byte("carried\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	mustGit(t, other, "add", "recorded-carry.txt")
+	mustGit(t, other, "commit", "-qm", "recorded carried change", "-m", "Carry: "+ref)
+	commit = mustGit(t, other, "rev-parse", "HEAD")
+	mustGit(t, other, "push", "-q", "origin", "main")
+	previous := carriedCounselorAppend
+	t.Cleanup(func() { carriedCounselorAppend = previous })
+	BindCarriedCounselorAppend(func(string, string, HistoryLine, time.Time) error { return nil })
+	seat := carryVerb(human, "01J5X00000000000000000D060", 5)
+	seat.Actor.Human = ""
+	args := CarriedArgs{
+		Goal: "g", ApprovedRef: ref, Carrying: reservation, Commit: commit, Project: strings.Repeat("b", 40), Workspace: word.Workspace,
+		Past: word.Past, Battery: "green", Judge: "base", JudgeDigest: strings.Repeat("d", 64), Ledger: ledger, By: "human:wido",
+	}
+	if result, err := CarriedFromCommit(seat, args); err != nil || result.Outcome != OutcomeConfirmed {
+		t.Fatalf("record carried landing: %+v %v", result, err)
+	}
+	ordinaryFinding = "ordinary-review"
+	deferRequest := carryVerb(seat, "01J5X00000000000000000D061", 6)
+	if result, err := DeferFindings(deferRequest, "g", []ReviewObligation{{Finding: ordinaryFinding, Chain: "critic-chain", Artifact: "commit:" + commit, Test: "pending"}}); err != nil || result.Outcome != OutcomeConfirmed {
+		t.Fatalf("defer ordinary review: %+v %v", result, err)
+	}
+	return root, human, proof, ref, commit, ordinaryFinding
+}
+
+func freezeCarriedGoalForAbandonTest(t *testing.T, root string, now time.Time, ulid string) string {
+	t.Helper()
+	tree, _ := acceptedTree(t, root, now)
+	file := tree.Live["g"]
+	if file == nil || file.StopCapability == nil {
+		t.Fatalf("carried goal has no stop capability: %+v", file)
+	}
+	request := CloseStopRequest{
+		VerbRequest: VerbRequest{Endpoint: endpointFor(root), Actor: Actor{Machine: "mac-a", Lineage: "goal-stop-custodian"}, Ulid: ulid, Now: now, ClaimEpoch: file.StopCapability.ClaimEpoch},
+		GoalID:      "g", StopID: "stop-g-carried-review", Reason: StopReasonElapsedLimit, Capability: *file.StopCapability,
+	}
+	if result, err := CloseStop(request); err != nil || result.Outcome != OutcomeConfirmed {
+		t.Fatalf("freeze carried goal: %+v %v", result, err)
+	}
+	tree, _ = acceptedTree(t, root, now)
+	return renderedStopFenceLines(tree.Live["g"])
+}
+
+func renderedStopFenceLines(file *GoalFile) string {
+	var lines []string
+	for _, line := range strings.Split(string(RenderFile(file)), "\n") {
+		if strings.HasPrefix(line, "- StopCapability:") || strings.HasPrefix(line, "- StopFence:") {
+			lines = append(lines, line)
+		}
+	}
+	return strings.Join(lines, "\n")
+}
+
+func openNextCarryGoalForAbandonTest(t *testing.T, root string, now time.Time) {
+	t.Helper()
+	open := verbReq(root, "01J5X00000000000000000D062", "mac-b")
+	open.Now = now
+	open.Actor.Human = "wido"
+	if result, err := Open(open, "next-carry", "Carry after the archived review debt is paid.", OriginHuman, "Issue the next carry word."); err != nil || result.Outcome != OutcomeConfirmed {
+		t.Fatalf("open next carry goal: %+v %v", result, err)
+	}
+	claim := verbReq(root, "01J5X00000000000000000D063", "mac-b")
+	claim.Now = now.Add(time.Minute)
+	if result, err := claimApprovedForTest(t, claim, "next-carry", testBudget()); err != nil || result.Outcome != OutcomeConfirmed {
+		t.Fatalf("claim next carry goal: %+v %v", result, err)
+	}
+}
+
+func TestAbandonKeepsReviewDebtReachable(t *testing.T) {
+	base := time.Date(2026, 9, 13, 11, 0, 0, 0, time.UTC)
+	root, human, proof, _, commit, ordinaryFinding := landedCarryForAbandonTest(t, base)
+	openNextCarryGoalForAbandonTest(t, root, base.Add(13*time.Minute))
+	fenceBefore := freezeCarriedGoalForAbandonTest(t, root, base.Add(15*time.Minute), "01J5X00000000000000000D064")
+	if fenceBefore == "" {
+		t.Fatal("frozen carried goal rendered no stop fence lines")
+	}
+	request := carryVerb(human, "01J5X00000000000000000D070", 15)
+	result, err := Abandon(request, "g", AbandonSpec{Because: "the carried work will not continue"}, goalHumanProof(t, root, request.Now))
+	if err != nil || result.Outcome != OutcomeConfirmed || !strings.Contains(result.Detail, "finding=carried:"+commit+" chain=human-carried; it still needs discharge") || !strings.Contains(result.Detail, "finding="+ordinaryFinding+" chain=critic-chain; it still needs discharge") {
+		t.Fatalf("abandon with review debt: %+v %v", result, err)
+	}
+	tree, tip := acceptedTree(t, root, request.Now)
+	if got := renderedStopFenceLines(tree.Abandoned["g"]); got != fenceBefore {
+		t.Fatalf("abandon changed frozen stop fence lines:\nbefore: %s\nafter:  %s", fenceBefore, got)
+	}
+	if debt, found, err := CarryDebtAt(root, tree, tip, "", request.Now); err != nil || !found || debt.Kind != "obligation" || debt.Goal != "g" || debt.ID != "carried:"+commit {
+		t.Fatalf("archived carry debt = %+v %v %v", debt, found, err)
+	}
+	if counts, err := CountCarries(root, tree, tip, request.Now); err != nil || counts.Today != 1 || counts.Debt != 1 {
+		t.Fatalf("archived carry counts = %+v %v", counts, err)
+	}
+	carryArgs := CarryArgs{Goal: "next-carry", Workspace: strings.Repeat("e", 40), Past: "missing-declaration", Why: "the archived carry debt is now the only gate", Expires: request.Now.Add(2 * time.Hour)}
+	blockedCarry := verbReq(root, "01J5X00000000000000000D065", "mac-b")
+	blockedCarry.Now = request.Now
+	blockedCarry.Actor.Human = "wido"
+	if _, err := Carry(blockedCarry, carryArgs, proof); err == nil {
+		t.Fatal("new carry passed while archived human-carried debt was open")
+	} else {
+		requireCarryAsk(t, err, "carry-debt-unpaid")
+	}
+
+	before := string(RenderFile(tree.Abandoned["g"]))
+	foreign := carryVerb(human, "01J5X00000000000000000D071", 16)
+	foreign.Actor.Human = ""
+	if result, err := DischargeReviewObligation(foreign, "g", "carried:"+commit, HumanCarriedChain, "mac-a", "critic-root"); err != nil || result.Outcome != OutcomeRejected || !strings.Contains(result.Detail, "requires the human") {
+		t.Fatalf("archived discharge without human: %+v %v", result, err)
+	}
+	wrongChain := carryVerb(human, "01J5X00000000000000000D072", 17)
+	if result, err := DischargeReviewObligation(wrongChain, "g", "carried:"+commit, "wrong-chain", "wido", "critic-root"); err != nil || result.Outcome != OutcomeRejected || !strings.Contains(result.Detail, "no such obligation") {
+		t.Fatalf("archived discharge with wrong chain: %+v %v", result, err)
+	}
+	wrong := carryVerb(human, "01J5X00000000000000000D073", 18)
+	if result, err := DischargeReviewObligation(wrong, "g", "wrong", HumanCarriedChain, "wido", "critic-root"); err != nil || result.Outcome != OutcomeRejected || !strings.Contains(result.Detail, "no such obligation") {
+		t.Fatalf("archived discharge with wrong finding: %+v %v", result, err)
+	}
+	if _, err := DischargeReviewObligation(wrong, "g", "carried:"+commit, HumanCarriedChain, "wido", " "); err == nil {
+		t.Fatal("archived discharge accepted a blank citation")
+	}
+	tree, _ = acceptedTree(t, root, wrong.Now)
+	if got := string(RenderFile(tree.Abandoned["g"])); got != before {
+		t.Fatal("a refused archived discharge changed the record")
+	}
+
+	archived := tree.Abandoned["g"]
+	stamp := wrong.Now.UTC().Format(time.RFC3339)
+	if err := WriteStopBatch(root, StopBatch{
+		StopID: archived.StopFence.StopID, GoalID: archived.Id, GoalRevision: archived.StopCapability.Revision,
+		FenceEpoch: archived.StopFence.Epoch, CapabilityGeneration: archived.StopCapability.Generation,
+		Machine: archived.StopCapability.Machine, ClaimEpoch: archived.StopCapability.ClaimEpoch,
+		Reason: archived.StopFence.Reason, State: StopBatchComplete, OpenedAt: stamp, UpdatedAt: stamp, CompletedAt: stamp, Pass: 1,
+	}); err != nil {
+		t.Fatalf("complete frozen stop batch: %v", err)
+	}
+	reopen := carryVerb(human, "01J5X00000000000000000D074", 19)
+	if result, err := ReopenAbandoned(reopen, "g", goalHumanProof(t, root, reopen.Now)); err != nil || result.Outcome != OutcomeConfirmed {
+		t.Fatalf("reopen with debt: %+v %v", result, err)
+	}
+	tree, _ = acceptedTree(t, root, reopen.Now)
+	if match, err := reviewObligationMatch(tree.Live["g"].ReviewObligations, "carried:"+commit, HumanCarriedChain); err != nil || tree.Live["g"].ReviewObligations[match].State != "open" {
+		t.Fatalf("reopen cleared debt: %v", err)
+	}
+	reabandon := carryVerb(human, "01J5X00000000000000000D075", 20)
+	if result, err := Abandon(reabandon, "g", AbandonSpec{Because: "the work remains obsolete"}, goalHumanProof(t, root, reabandon.Now)); err != nil || result.Outcome != OutcomeConfirmed {
+		t.Fatalf("re-abandon with closed carry: %+v %v", result, err)
+	}
+
+	discharge := carryVerb(human, "01J5X00000000000000000D076", 21)
+	if result, err := DischargeReviewObligation(discharge, "g", "carried:"+commit, HumanCarriedChain, "wido", "critic-root"); err != nil || result.Outcome != OutcomeConfirmed {
+		t.Fatalf("discharge archived carried review: %+v %v", result, err)
+	}
+	tree, _ = acceptedTree(t, root, discharge.Now)
+	carriedMatch, matchErr := reviewObligationMatch(tree.Abandoned["g"].ReviewObligations, "carried:"+commit, HumanCarriedChain)
+	if matchErr != nil || tree.Abandoned["g"].ReviewObligations[carriedMatch].State != "discharged" || tree.Abandoned["g"].ReviewObligations[carriedMatch].Test != "critic-root" {
+		t.Fatalf("archived discharge evidence = %+v %v", tree.Abandoned["g"].ReviewObligations, matchErr)
+	}
+	allowedCarry := verbReq(root, "01J5X00000000000000000D077", "mac-b")
+	allowedCarry.Now = discharge.Now.Add(time.Minute)
+	allowedCarry.Actor.Human = "wido"
+	carryArgs.Expires = allowedCarry.Now.Add(2 * time.Hour)
+	if result, err := Carry(allowedCarry, carryArgs, proof); err != nil || result.Outcome != OutcomeConfirmed {
+		t.Fatalf("next carry after archived debt discharge: %+v %v", result, err)
+	}
+	ordinary := carryVerb(human, "01J5X00000000000000000D078", 23)
+	if result, err := DischargeReviewObligation(ordinary, "g", ordinaryFinding, "critic-chain", "wido", "successor:test"); err != nil || result.Outcome != OutcomeConfirmed {
+		t.Fatalf("discharge archived ordinary review: %+v %v", result, err)
+	}
+	tree, tip = acceptedTree(t, root, ordinary.Now)
+	if debt, found, err := CarryDebtAt(root, tree, tip, "", ordinary.Now); err != nil || found {
+		t.Fatalf("debt after discharge = %+v %v %v", debt, found, err)
+	}
+}
+
+func TestAbandonedCarriedReviewCanBeWaived(t *testing.T) {
+	base := time.Date(2026, 9, 13, 13, 0, 0, 0, time.UTC)
+	root, human, _, _, commit, ordinaryFinding := landedCarryForAbandonTest(t, base)
+	fenceBefore := freezeCarriedGoalForAbandonTest(t, root, base.Add(13*time.Minute), "01J5X00000000000000000D079")
+	if fenceBefore == "" {
+		t.Fatal("frozen carried goal rendered no stop fence lines")
+	}
+	abandon := carryVerb(human, "01J5X00000000000000000D080", 13)
+	if result, err := Abandon(abandon, "g", AbandonSpec{Because: "the review will not be completed"}, goalHumanProof(t, root, abandon.Now)); err != nil || result.Outcome != OutcomeConfirmed {
+		t.Fatalf("abandon: %+v %v", result, err)
+	}
+	tree, _ := acceptedTree(t, root, abandon.Now)
+	before := string(RenderFile(tree.Abandoned["g"]))
+	if got := renderedStopFenceLines(tree.Abandoned["g"]); got != fenceBefore {
+		t.Fatalf("abandon changed frozen stop fence lines:\nbefore: %s\nafter:  %s", fenceBefore, got)
+	}
+	waive := carryVerb(human, "01J5X00000000000000000D081", 14)
+	if _, err := AcceptedRiskDecision(waive, "g", "carried:"+commit, HumanCarriedChain, "wido", "the bounded delivery risk is accepted", nil); err == nil {
+		t.Fatal("archived waiver accepted no proof")
+	}
+	if _, err := AcceptedRiskDecision(waive, "g", "carried:"+commit, HumanCarriedChain, "wido", " ", goalHumanProof(t, root, waive.Now)); err == nil {
+		t.Fatal("archived waiver accepted a blank reason")
+	}
+	if result, err := AcceptedRiskDecision(waive, "g", ordinaryFinding, "critic-chain", "wido", "the ordinary review is waived", goalHumanProof(t, root, waive.Now)); err != nil || result.Outcome != OutcomeRejected || !strings.Contains(result.Detail, "not live") {
+		t.Fatalf("archived waiver accepted another chain: %+v %v", result, err)
+	}
+	tree, _ = acceptedTree(t, root, waive.Now)
+	if got := string(RenderFile(tree.Abandoned["g"])); got != before {
+		t.Fatal("refused archived waiver changed the record")
+	}
+
+	accept := carryVerb(human, "01J5X00000000000000000D082", 15)
+	result, err := AcceptedRiskDecision(accept, "g", "carried:"+commit, HumanCarriedChain, "wido", "the bounded delivery risk is accepted", goalHumanProof(t, root, accept.Now))
+	if err != nil || result.Outcome != OutcomeConfirmed {
+		t.Fatalf("archived waiver: %+v %v", result, err)
+	}
+	if result, err := AcceptedRiskDecision(accept, "g", "carried:"+commit, HumanCarriedChain, "wido", "the bounded delivery risk is accepted", goalHumanProof(t, root, accept.Now)); err != nil || result.Outcome != OutcomeConfirmed || result.Detail != "idempotent" {
+		t.Fatalf("archived waiver replay: %+v %v", result, err)
+	}
+	if opid, err := AcceptedRiskDecisionOpID(root, "g", "carried:"+commit, HumanCarriedChain, accept.Now); err != nil || opid != accept.opid() {
+		t.Fatalf("archived waiver receipt = %q %v", opid, err)
+	}
+	tree, tip := acceptedTree(t, root, accept.Now)
+	file := tree.Abandoned["g"]
+	match, matchErr := reviewObligationMatch(file.ReviewObligations, "carried:"+commit, HumanCarriedChain)
+	ordinaryMatch, ordinaryErr := reviewObligationMatch(file.ReviewObligations, ordinaryFinding, "critic-chain")
+	if matchErr != nil || ordinaryErr != nil || file.ReviewObligations[match].State != "discharged" || file.ReviewObligations[match].Test != "accepted-risk:"+accept.opid() || file.ReviewObligations[ordinaryMatch].State != "open" || file.State != StateAbandoned {
+		t.Fatalf("archived waived obligation = %+v %v", file.ReviewObligations, matchErr)
+	}
+	if got := renderedStopFenceLines(file); got != fenceBefore {
+		t.Fatalf("archived waiver changed frozen stop fence lines:\nbefore: %s\nafter:  %s", fenceBefore, got)
+	}
+	if debt, found, err := CarryDebtAt(root, tree, tip, "", accept.Now); err != nil || found {
+		t.Fatalf("waived debt remains = %+v %v %v", debt, found, err)
+	}
+}
+
+func TestAbandonKeepsClosedCarryHistoryVisible(t *testing.T) {
+	base := time.Date(2026, 9, 13, 15, 0, 0, 0, time.UTC)
+	root, human, _, ref, commit, _ := landedCarryForAbandonTest(t, base)
+	abandon := carryVerb(human, "01J5X00000000000000000D090", 7)
+	if result, err := Abandon(abandon, "g", AbandonSpec{Because: "retain the carried history"}, goalHumanProof(t, root, abandon.Now)); err != nil || result.Outcome != OutcomeConfirmed {
+		t.Fatalf("abandon carried goal: %+v %v", result, err)
+	}
+	tree, tip := acceptedTree(t, root, abandon.Now)
+	word, err := CarryWordAt(tree, "g", ref)
+	if err != nil || word.History.Opid != ref {
+		t.Fatalf("archived word = %+v %v", word, err)
+	}
+	if consumption, err := CarryConsumptionAt(root, tree, tip, word); err != nil || consumption.Kind != "ledger" {
+		t.Fatalf("archived word closer = %+v %v", consumption, err)
+	}
+	if reservation := CarryReservationAt(tree, "g", ref, abandon.Now); reservation.State != "closed" {
+		t.Fatalf("archived reservation state = %+v", reservation)
+	}
+	if counts, err := CountCarries(root, tree, tip, abandon.Now); err != nil || counts.Today != 1 || counts.Debt != 1 || counts.Open != 0 || counts.Inflight != 0 {
+		t.Fatalf("archived history counts = %+v %v (commit %s)", counts, err, commit)
+	}
+
+	t.Run("superseded words stay closed", func(t *testing.T) {
+		root, _, human := carryBed(t, base.Add(3*time.Hour))
+		configureAbandonFloorTest(t, strings.Repeat("a", 40))
+		recordAbandonFloorTest(t, root, "01J5X00000000000000000D0A0")
+		proof := testHumanAuthority(t, root, base.Add(3*time.Hour))
+		firstRequest := carryVerb(human, "01J5X00000000000000000D0A1", 1)
+		firstArgs := CarryArgs{Goal: "g", Workspace: strings.Repeat("e", 40), Past: "missing-declaration", Why: "first bounded word", Expires: base.Add(5 * time.Hour), RaiseFormat: true}
+		if result, err := Carry(firstRequest, firstArgs, proof); err != nil || result.Outcome != OutcomeConfirmed {
+			t.Fatalf("first word: %+v %v", result, err)
+		}
+		open := verbReq(root, "01J5X00000000000000000D0A2", "mac-b")
+		open.Now = base.Add(3*time.Hour + 2*time.Minute)
+		open.Actor.Human = "wido"
+		if result, err := Open(open, "replacement", "Hold the replacement word.", OriginHuman, "Use it or let it expire."); err != nil || result.Outcome != OutcomeConfirmed {
+			t.Fatalf("open replacement: %+v %v", result, err)
+		}
+		claim := verbReq(root, "01J5X00000000000000000D0A3", "mac-b")
+		claim.Now = base.Add(3*time.Hour + 3*time.Minute)
+		if result, err := claimApprovedForTest(t, claim, "replacement", testBudget()); err != nil || result.Outcome != OutcomeConfirmed {
+			t.Fatalf("claim replacement: %+v %v", result, err)
+		}
+		secondRequest := verbReq(root, "01J5X00000000000000000D0A4", "mac-b")
+		secondRequest.Now = base.Add(3*time.Hour + 4*time.Minute)
+		secondRequest.Actor.Human = "wido"
+		secondArgs := CarryArgs{Goal: "replacement", Workspace: strings.Repeat("f", 40), Past: "missing-declaration", Why: "replacement bounded word", Expires: base.Add(6 * time.Hour), Supersede: firstRequest.opid(), Transfer: true}
+		if result, err := Carry(secondRequest, secondArgs, proof); err != nil || result.Outcome != OutcomeConfirmed {
+			t.Fatalf("replacement word: %+v %v", result, err)
+		}
+		abandonFirst := carryVerb(human, "01J5X00000000000000000D0A5", 6)
+		if result, err := Abandon(abandonFirst, "g", AbandonSpec{Because: "the first word was superseded"}, goalHumanProof(t, root, abandonFirst.Now)); err != nil || result.Outcome != OutcomeConfirmed {
+			t.Fatalf("abandon superseded word goal: %+v %v", result, err)
+		}
+		abandonSecond := verbReq(root, "01J5X00000000000000000D0A6", "mac-b")
+		abandonSecond.Now = secondArgs.Expires
+		abandonSecond.Actor.Human = "wido"
+		if result, err := Abandon(abandonSecond, "replacement", AbandonSpec{Because: "the replacement expired unused"}, goalHumanProof(t, root, abandonSecond.Now)); err != nil || result.Outcome != OutcomeConfirmed {
+			t.Fatalf("abandon replacement: %+v %v", result, err)
+		}
+		tree, tip := acceptedTree(t, root, abandonSecond.Now)
+		first, firstErr := CarryWordAt(tree, "g", firstRequest.opid())
+		second, secondErr := CarryWordAt(tree, "replacement", secondRequest.opid())
+		if firstErr != nil || secondErr != nil || first.History.Opid == "" || second.History.Opid == "" {
+			t.Fatalf("archived superseded words = %+v/%v %+v/%v", first, firstErr, second, secondErr)
+		}
+		if consumption, err := CarryConsumptionAt(root, tree, tip, first); err != nil || consumption.Kind != "superseded" || consumption.ID != secondRequest.opid() {
+			t.Fatalf("archived supersede closer = %+v %v", consumption, err)
+		}
+		if counts, err := CountCarries(root, tree, tip, abandonSecond.Now); err != nil || counts.Open != 0 {
+			t.Fatalf("archived superseded words reopened the cap: %+v %v", counts, err)
+		}
+	})
 }
 
 func TestDeclareFreeAndLabelDelta(t *testing.T) {

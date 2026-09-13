@@ -8,8 +8,121 @@ import (
 	"testing"
 	"time"
 
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/fixtureauth"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/humanauthority"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/retrodebt"
 )
+
+func TestDepStateAnswersAbandonedFromTheAbandonedMap(t *testing.T) {
+	tree := &TreeGoals{
+		Live: map[string]*GoalFile{}, Done: map[string]*GoalFile{"finished": {Id: "finished", State: StateDone}},
+		Abandoned: map[string]*GoalFile{"stopped": {Id: "stopped", State: StateAbandoned}},
+	}
+	if got := depState(tree, "stopped"); got != StateAbandoned || got == StateDone {
+		t.Fatalf("depState(stopped) = %q, want abandoned and never done", got)
+	}
+	if got := depState(tree, "finished"); got != StateDone {
+		t.Fatalf("depState(finished) = %q, want done", got)
+	}
+}
+
+func TestAbandonAllowsACarrySuccessor(t *testing.T) {
+	_, root := oneClone(t)
+	seedLedger(t, root)
+	configureAbandonFloorTest(t, strings.Repeat("a", 40))
+	recordAbandonFloorTest(t, root, "01J5X00000000000000000E000")
+	for index, id := range []string{"older", "successor", "dependent"} {
+		request := verbReq(root, []string{"01J5X00000000000000000E010", "01J5X00000000000000000E011", "01J5X00000000000000000E012"}[index], "mac-a")
+		request.Actor.Human = "Wido"
+		if result, err := Open(request, id, "Keep the successor rule explicit.", OriginHuman, "Resolve it."); err != nil || result.Outcome != OutcomeConfirmed {
+			t.Fatalf("open %s: %+v %v", id, result, err)
+		}
+	}
+	blocked := []string{"successor"}
+	if result, err := Edit(verbReq(root, "01J5X00000000000000000E013", "mac-a"), "dependent", EditFields{Blocked: &blocked}); err != nil || result.Outcome != OutcomeConfirmed {
+		t.Fatalf("block dependent: %+v %v", result, err)
+	}
+	claim := verbReq(root, "01J5X00000000000000000E017", "mac-a")
+	if result, err := claimApprovedForTest(t, claim, "successor", testBudget()); err != nil || result.Outcome != OutcomeConfirmed {
+		t.Fatalf("claim successor: %+v %v", result, err)
+	}
+	_, debtCommit := acceptedTree(t, root, claim.Now)
+	deferRequest := verbReq(root, "01J5X00000000000000000E018", "mac-a")
+	if result, err := DeferFindings(deferRequest, "successor", []ReviewObligation{{Finding: "carried:" + debtCommit, Chain: HumanCarriedChain, Artifact: "commit:" + debtCommit, Test: "pending"}}); err != nil || result.Outcome != OutcomeConfirmed {
+		t.Fatalf("defer successor carry debt: %+v %v", result, err)
+	}
+	first := verbReq(root, "01J5X00000000000000000E014", "mac-a")
+	first.Actor.Human = "Wido"
+	if result, err := Abandon(first, "older", AbandonSpec{Because: "the work moved", Carried: "successor"}, goalHumanProof(t, root, first.Now)); err != nil || result.Outcome != OutcomeConfirmed {
+		t.Fatalf("abandon older goal: %+v %v", result, err)
+	}
+	refuse := verbReq(root, "01J5X00000000000000000E015", "mac-a")
+	refuse.Actor.Human = "Wido"
+	if result, err := Abandon(refuse, "successor", AbandonSpec{Because: "the successor also stopped"}, goalHumanProof(t, root, refuse.Now)); err != nil || result.Outcome != OutcomeRejected || !strings.Contains(result.Detail, "goal dependent is blocked by successor") {
+		t.Fatalf("successor ignored live dependent: %+v %v", result, err)
+	}
+	second := verbReq(root, "01J5X00000000000000000E016", "mac-a")
+	second.Actor.Human = "Wido"
+	if result, err := Abandon(second, "successor", AbandonSpec{Because: "the successor also stopped", Waive: []string{"dependent=the successor no longer applies"}}, goalHumanProof(t, root, second.Now)); err != nil || result.Outcome != OutcomeConfirmed {
+		t.Fatalf("abandon carry successor: %+v %v", result, err)
+	}
+	tree, tip := acceptedTree(t, root, second.Now)
+	if tree.Abandoned["older"].Abandoned.Carried != "successor" || depState(tree, "successor") != StateAbandoned || contains(tree.Live["dependent"].Blocked, "successor") {
+		t.Fatalf("successor abandonment = older:%+v successor:%s dependent:%v", tree.Abandoned["older"].Abandoned, depState(tree, "successor"), tree.Live["dependent"].Blocked)
+	}
+	if debt, found, err := CarryDebtAt(root, tree, tip, "", second.Now); err != nil || !found || debt.Goal != "successor" || debt.ID != "carried:"+debtCommit {
+		t.Fatalf("successor debt after abandonment = %+v %v %v", debt, found, err)
+	}
+}
+
+func TestAbandonLeavesEarlierSuccessorRecordsIntact(t *testing.T) {
+	_, root := oneClone(t)
+	seedLedger(t, root)
+	configureAbandonFloorTest(t, strings.Repeat("a", 40))
+	recordAbandonFloorTest(t, root, "01J5X00000000000000000E100")
+	for index, id := range []string{"older", "successor", "later"} {
+		request := verbReq(root, []string{"01J5X00000000000000000E110", "01J5X00000000000000000E111", "01J5X00000000000000000E112"}[index], "mac-a")
+		request.Actor.Human = "Wido"
+		if result, err := Open(request, id, "Keep successor records append-only.", OriginHuman, "Resolve it."); err != nil || result.Outcome != OutcomeConfirmed {
+			t.Fatalf("open %s: %+v %v", id, result, err)
+		}
+	}
+	first := verbReq(root, "01J5X00000000000000000E113", "mac-a")
+	first.Actor.Human = "Wido"
+	if result, err := Abandon(first, "older", AbandonSpec{Because: "the work moved first", Carried: "successor"}, goalHumanProof(t, root, first.Now)); err != nil || result.Outcome != OutcomeConfirmed {
+		t.Fatalf("abandon older: %+v %v", result, err)
+	}
+	tree, _ := acceptedTree(t, root, first.Now)
+	before := string(RenderFile(tree.Abandoned["older"]))
+	second := verbReq(root, "01J5X00000000000000000E114", "mac-a")
+	second.Actor.Human = "Wido"
+	if result, err := Abandon(second, "successor", AbandonSpec{Because: "the work moved again", Carried: "later"}, goalHumanProof(t, root, second.Now)); err != nil || result.Outcome != OutcomeConfirmed {
+		t.Fatalf("abandon successor: %+v %v", result, err)
+	}
+	tree, _ = acceptedTree(t, root, second.Now)
+	if got := string(RenderFile(tree.Abandoned["older"])); got != before || tree.Abandoned["older"].Abandoned.Carried != "successor" {
+		t.Fatal("abandoning the successor rewrote the earlier abandoned record")
+	}
+	carry := verbReq(root, "01J5X00000000000000000E115", "mac-a")
+	carry.Actor.Human = "Wido"
+	if result, err := CarryAbandoned(carry, "older", "later", goalHumanProof(t, root, carry.Now)); err != nil || result.Outcome != OutcomeConfirmed {
+		t.Fatalf("record later successor: %+v %v", result, err)
+	}
+	tree, _ = acceptedTree(t, root, carry.Now)
+	file := tree.Abandoned["older"]
+	if file.Abandoned.Carried != "later" || len(file.History) < 2 || file.History[len(file.History)-1].Verb != "carry" || file.History[len(file.History)-1].Carried != "later" {
+		t.Fatalf("later successor record = %+v history=%+v", file.Abandoned, file.History)
+	}
+	foundOriginal := false
+	for _, history := range file.History {
+		if history.Verb == "abandon" && history.Carried == "successor" && history.Reason == "the work moved first" {
+			foundOriginal = true
+		}
+	}
+	if !foundOriginal {
+		t.Fatal("recording a later successor rewrote the original abandon line")
+	}
+}
 
 func testBudget() Budget {
 	return Budget{ElapsedLimit: "4h", AttemptLimit: 4, ReservedJobMinutesLimit: 240, ActiveJobLimit: 2}
@@ -23,6 +136,19 @@ func verbReq(root, ulid, machine string) VerbRequest {
 		Now:        time.Date(2026, 8, 20, 22, 0, 0, 0, time.UTC),
 		ClaimEpoch: 1,
 	}
+}
+
+func goalHumanProof(t *testing.T, root string, now time.Time) *humanauthority.Proof {
+	t.Helper()
+	authorization, err := fixtureauth.New(root)
+	if err != nil {
+		t.Fatal(err)
+	}
+	proof, err := humanauthority.FixtureGoalProof(root, authorization.GoalHumanAuthority(), now)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return &proof
 }
 
 // seedLedger publishes a root record so the verbs act on a lawful
@@ -39,6 +165,39 @@ func seedLedger(t *testing.T, root string) {
 	})
 	if err != nil || res.Outcome != OutcomeConfirmed {
 		t.Fatalf("seed: %+v %v", res, err)
+	}
+}
+
+func TestEngineFloorIsAProvenHumanRootHistoryLine(t *testing.T) {
+	_, root := oneClone(t)
+	seedLedger(t, root)
+	req := verbReq(root, "01J5X000000000000000000EF0", "mac-a")
+	req.Actor.Human = "Wido"
+	commit := strings.Repeat("a", 40)
+	before, err := Project(endpointFor(root), false, req.Now)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := EngineFloor(req, commit, nil); err == nil || err.Error() != "engine-floor requires freshly observed enrolled-terminal human authority" {
+		t.Fatalf("engine-floor without proof = %v", err)
+	}
+	result, err := EngineFloor(req, commit, goalHumanProof(t, root, req.Now))
+	if err != nil || result.Outcome != OutcomeConfirmed {
+		t.Fatalf("engine-floor: %+v %v", result, err)
+	}
+	tree, err := loadTree(root, result.Tip)
+	if err != nil {
+		t.Fatal(err)
+	}
+	line := tree.Root.History[len(tree.Root.History)-1]
+	if line.Verb != "engine-floor" || line.Actor != "human:Wido" || line.Reason != commit+" every enrolled seat runs this engine or newer" {
+		t.Fatalf("wrong engine-floor history line: %+v", line)
+	}
+	if tree.Root.Revision != before.Tree.Root.Revision+1 {
+		t.Fatalf("root revision = %d, want %d", tree.Root.Revision, before.Tree.Root.Revision+1)
+	}
+	if parsed, problems := ParseRoot(RenderRoot(tree.Root)); parsed == nil || len(problems) != 0 {
+		t.Fatalf("published root does not parse clean: root=%+v problems=%v", parsed, problems)
 	}
 }
 
@@ -834,6 +993,71 @@ func TestReopenGuardsClaimedDependents(t *testing.T) {
 	}
 }
 
+func TestReopenFromAbandonedIsProvenHumanUnrankedUnapprovedAndKeepsTheEvent(t *testing.T) {
+	_, root := oneClone(t)
+	seedLedger(t, root)
+	configureAbandonFloorTest(t, strings.Repeat("a", 40))
+	recordAbandonFloorTest(t, root, "01J5X000000000000000001R00")
+	for index, id := range []string{"reopen-abandoned", "reopen-successor"} {
+		ulid := []string{"01J5X000000000000000001R10", "01J5X000000000000000001R20"}[index]
+		if result, err := Open(verbReq(root, ulid, "mac-a"), id, "intent", "main", "next"); err != nil || result.Outcome != OutcomeConfirmed {
+			t.Fatalf("open %s: %+v %v", id, result, err)
+		}
+	}
+	approveGoalForTest(t, verbReq(root, "01J5X000000000000000001R30", "mac-a"), "reopen-abandoned", testBudget())
+	abandon := verbReq(root, "01J5X000000000000000001R40", "mac-a")
+	abandon.Actor.Human = "Wido"
+	if result, err := Abandon(abandon, "reopen-abandoned", AbandonSpec{Because: "the work moved", Carried: "reopen-successor"}, goalHumanProof(t, root, abandon.Now)); err != nil || result.Outcome != OutcomeConfirmed {
+		t.Fatalf("abandon: %+v %v", result, err)
+	}
+
+	if result, err := Reopen(verbReq(root, "01J5X000000000000000001R50", "mac-a"), "reopen-abandoned"); err != nil || result.Outcome != OutcomeRejected || !strings.Contains(result.Detail, "not in the archive") {
+		t.Fatalf("done reopen path accepted an abandoned goal: %+v %v", result, err)
+	}
+	request := verbReq(root, "01J5X000000000000000001R60", "mac-a")
+	if _, err := ReopenAbandoned(request, "reopen-abandoned", nil); err == nil || err.Error() != "reopen from abandoned is a human act and names its human (--by)" {
+		t.Fatalf("missing human refusal = %v", err)
+	}
+	request.Actor.Human = "Wido"
+	if _, err := ReopenAbandoned(request, "reopen-abandoned", nil); err == nil || err.Error() != "reopen from abandoned requires freshly observed enrolled-terminal human authority" {
+		t.Fatalf("missing proof refusal = %v", err)
+	}
+	result, err := ReopenAbandoned(request, "reopen-abandoned", goalHumanProof(t, root, request.Now))
+	if err != nil || result.Outcome != OutcomeConfirmed {
+		t.Fatalf("reopen abandoned: %+v %v", result, err)
+	}
+	tree, err := loadTree(root, result.Tip)
+	if err != nil {
+		t.Fatal(err)
+	}
+	reopened := tree.Live["reopen-abandoned"]
+	if reopened == nil || tree.Abandoned["reopen-abandoned"] != nil || reopened.State != StateQueued || reopened.Priority != 0 || reopened.Sequence != 0 || reopened.Approved != nil || reopened.Budget != nil || reopened.NormApproval != nil || reopened.Abandoned != nil || reopened.StopFence != nil || reopened.StopCapability != nil {
+		t.Fatalf("reopened abandoned goal retained terminal or ranked state: %+v", reopened)
+	}
+	if len(reopened.History) < 4 {
+		t.Fatalf("reopened history is incomplete: %+v", reopened.History)
+	}
+	abandonLine := reopened.History[len(reopened.History)-2]
+	reopenLine := reopened.History[len(reopened.History)-1]
+	if abandonLine.Verb != "abandon" || abandonLine.Carried != "reopen-successor" || abandonLine.Reason != "the work moved" || reopenLine.Verb != "reopen" {
+		t.Fatalf("abandon and reopen events did not survive in order: abandon=%+v reopen=%+v", abandonLine, reopenLine)
+	}
+
+	claim := verbReq(root, "01J5X000000000000000001R70", "mac-a")
+	claim.ClaimEpoch = 17
+	if result, err := claimApprovedForTest(t, claim, "reopen-abandoned", testBudget()); err != nil || result.Outcome != OutcomeConfirmed {
+		t.Fatalf("fresh claim: %+v %v", result, err)
+	}
+	projected, err := Project(endpointFor(root), true, claim.Now)
+	if err != nil {
+		t.Fatal(err)
+	}
+	fresh := projected.Tree.Live["reopen-abandoned"]
+	if fresh.StopCapability == nil || fresh.StopCapability.Revision != fresh.Claimed.Revision || fresh.StopCapability.ClaimEpoch != 17 {
+		t.Fatalf("fresh claim did not mint fresh stop authority: %+v", fresh)
+	}
+}
+
 func TestDeclareFreeExclusivityAndRenewal(t *testing.T) {
 	_, a, _ := twoClones(t)
 	seedLedger(t, a)
@@ -981,6 +1205,56 @@ func TestPruneKeepsTheClosureAndTheNewest(t *testing.T) {
 	res2, err := Prune(verbReq(a, "01J5X00000000000000000A050", "mac-a"), 0)
 	if err != nil || res2.Outcome != OutcomeConfirmed || res2.Detail != "idempotent" {
 		t.Fatalf("the prune replay classifies idempotent: %+v %v", res2, err)
+	}
+}
+
+func TestPruneRetainsAbandonedGoalsAndTheirPrerequisitesOutsideKeep(t *testing.T) {
+	_, root := oneClone(t)
+	seedLedger(t, root)
+	configureAbandonFloorTest(t, strings.Repeat("a", 40))
+	recordAbandonFloorTest(t, root, "01J5X0000000000000000000A0")
+	archive := func(ulid, id string, blocked []string) {
+		t.Helper()
+		if result, err := Open(verbReq(root, ulid, "mac-a"), id, "intent", "main", "next"); err != nil || result.Outcome != OutcomeConfirmed {
+			t.Fatalf("open %s: %+v %v", id, result, err)
+		}
+		if blocked != nil {
+			if result, err := Edit(verbReq(root, ulid[:len(ulid)-1]+"E", "mac-a"), id, EditFields{Blocked: &blocked}); err != nil || result.Outcome != OutcomeConfirmed {
+				t.Fatalf("block %s: %+v %v", id, result, err)
+			}
+		}
+		if result, err := Done(verbReq(root, ulid[:len(ulid)-1]+"D", "mac-a"), id, "done"); err != nil || result.Outcome != OutcomeConfirmed {
+			t.Fatalf("done %s: %+v %v", id, result, err)
+		}
+	}
+	archive("01J5X00000000000000001P000", "oldest-prerequisite", nil)
+	archive("01J5X00000000000000001P010", "direct-prerequisite", []string{"oldest-prerequisite"})
+	archive("01J5X00000000000000001P020", "unrelated-done", nil)
+	if result, err := Open(verbReq(root, "01J5X00000000000000001P030", "mac-a"), "abandoned-goal", "intent", "main", "next"); err != nil || result.Outcome != OutcomeConfirmed {
+		t.Fatalf("open abandoned goal: %+v %v", result, err)
+	}
+	blocked := []string{"direct-prerequisite"}
+	if result, err := Edit(verbReq(root, "01J5X00000000000000001P040", "mac-a"), "abandoned-goal", EditFields{Blocked: &blocked}); err != nil || result.Outcome != OutcomeConfirmed {
+		t.Fatalf("block abandoned goal: %+v %v", result, err)
+	}
+	abandonReq := verbReq(root, "01J5X00000000000000001P050", "mac-a")
+	abandonReq.Actor.Human = "Wido"
+	if result, err := Abandon(abandonReq, "abandoned-goal", AbandonSpec{Because: "cancelled"}, goalHumanProof(t, root, abandonReq.Now)); err != nil || result.Outcome != OutcomeConfirmed {
+		t.Fatalf("abandon: %+v %v", result, err)
+	}
+	result, err := Prune(verbReq(root, "01J5X00000000000000001P060", "mac-a"), 0)
+	if err != nil || result.Outcome != OutcomeConfirmed {
+		t.Fatalf("prune: %+v %v", result, err)
+	}
+	tree, err := loadTree(root, result.Tip)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if tree.Abandoned["abandoned-goal"] == nil || tree.Done["direct-prerequisite"] == nil || tree.Done["oldest-prerequisite"] == nil {
+		t.Fatalf("abandoned closure was pruned: abandoned=%v done=%v", sortedGoalIds(tree.Abandoned), sortedGoalIds(tree.Done))
+	}
+	if tree.Done["unrelated-done"] != nil {
+		t.Fatal("an unrelated done goal survived keep=0")
 	}
 }
 

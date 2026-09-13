@@ -147,7 +147,7 @@ func Reconcile(r VerbRequest) (ReconcileResult, error) {
 				id := goalIDFromPath(c.Path)
 				if f, live := t.Live[id]; live {
 					changes[i].Content = RenderFile(f)
-				} else if f, done := t.Done[id]; done {
+				} else if f, archived := t.Archived(id); archived {
 					changes[i].Content = RenderFile(f)
 				}
 			}
@@ -236,7 +236,7 @@ func applyRow(t *TreeGoals, r VerbRequest, row MappedVerb, session *replaySessio
 		if _, exists := t.Live[row.Id]; exists {
 			return nil, conflict("state", "the goal already exists on the fetched tip")
 		}
-		if _, archived := t.Done[row.Id]; archived {
+		if _, archived := t.Archived(row.Id); archived {
 			return nil, conflict("state", "the goal is archived on the fetched tip; reopen is a verb")
 		}
 		f := &GoalFile{Id: row.Id, State: StateQueued, OpenedAt: r.stamp(), Revision: 0}
@@ -377,7 +377,7 @@ func applyRow(t *TreeGoals, r VerbRequest, row MappedVerb, session *replaySessio
 		f, exists := t.Live[row.Id]
 		archived := false
 		if !exists {
-			if df, inDone := t.Done[row.Id]; inDone {
+			if df, inDone := t.Archived(row.Id); inDone {
 				if !session.archived[row.Id] {
 					return nil, conflict("state", "archived on the fetched tip; the hand edit was made against a live goal")
 				}

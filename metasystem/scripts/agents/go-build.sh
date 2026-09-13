@@ -57,7 +57,7 @@ fi
 if [[ -n "${METASYSTEM_BUILD_STAMP:-}" ]]; then
   commit=$METASYSTEM_BUILD_STAMP
 else
-  commit=$(git -C "$root" rev-parse --short HEAD 2>/dev/null || echo unknown)
+  commit=$(git -C "$root" rev-parse HEAD 2>/dev/null || echo unknown)
   if [[ "$commit" != unknown ]]; then
     engine_prefix=$(git -C "$root" rev-parse --show-prefix)
     engine_prefix=${engine_prefix%/}

@@ -219,6 +219,54 @@ func TestClassifiersAreClosedAndAuditable(t *testing.T) {
 	}
 }
 
+func TestAbandonEventsNeverCountAsDone(t *testing.T) {
+	root := t.TempDir()
+	mustGit(t, root, "init", "-q")
+	mustGit(t, root, "config", "user.name", "Fixture")
+	mustGit(t, root, "config", "user.email", "fixture@example.invalid")
+	mustGit(t, root, "config", "commit.gpgsign", "false")
+	rootRecord := &goal.RootRecord{
+		Identity: "01J5X000000000000000000000", FormatVersion: "1", SyncMode: goal.SyncLocal, Revision: 1,
+		History: []goal.HistoryLine{{
+			At: "2026-08-10T00:00:00Z", Opid: "01J5X00000000000000000C000-m1-11111111", Verb: "engine-floor",
+			Actor: "human:Wido", Reason: strings.Repeat("a", 40) + " every enrolled seat runs this engine or newer", Keep: -1,
+		}},
+	}
+	done := &goal.GoalFile{
+		Id: "done", State: goal.StateDone, Intent: "done", Origin: goal.OriginMain, Conclude: "done", OpenedAt: "2026-08-11T00:00:00Z", Revision: 2,
+		History: []goal.HistoryLine{
+			{At: "2026-08-11T00:00:00Z", Opid: "01J5X00000000000000000C010-m1-11111111", Verb: "open", Actor: "m1+fixture", Targets: []string{"done"}, Keep: -1},
+			{At: "2026-08-12T00:00:00Z", Opid: "01J5X00000000000000000C020-m1-11111111", Verb: "done", Actor: "m1+fixture", Targets: []string{"done"}, Keep: -1},
+		},
+	}
+	abandoned := &goal.GoalFile{
+		Id: "abandoned", State: goal.StateAbandoned, Intent: "abandoned", Origin: goal.OriginMain, OpenedAt: "2026-08-11T01:00:00Z", Revision: 4,
+		History: []goal.HistoryLine{
+			{At: "2026-08-11T01:00:00Z", Opid: "01J5X00000000000000000C030-m1-11111111", Verb: "open", Actor: "m1+fixture", Targets: []string{"abandoned"}, Keep: -1},
+			{At: "2026-08-11T02:00:00Z", Opid: "01J5X00000000000000000C035-m1-11111111", Verb: "edit", Actor: "m1+fixture", Targets: []string{"abandoned"}, Keep: -1},
+			{At: "2026-08-11T03:00:00Z", Opid: "01J5X00000000000000000C037-m1-11111111", Verb: "claim", Actor: "m1+fixture", Targets: []string{"abandoned"}, Keep: -1},
+			{At: "2026-08-12T01:00:00Z", Opid: "01J5X00000000000000000C040-m1-11111111", Verb: "abandon", Actor: "human:Wido", Targets: []string{"abandoned"}, Reason: "cancelled", Keep: -1},
+		},
+		Abandoned: &goal.AbandonRecord{By: "human:Wido", At: "2026-08-12T01:00:00Z", Revision: 4, Opid: "01J5X00000000000000000C040-m1-11111111", Because: "cancelled"},
+	}
+	writeFixture(t, filepath.Join(root, "plans", "goals", "backlog.md"), goal.RenderRoot(rootRecord))
+	writeFixture(t, filepath.Join(root, "records", "goals", "done.md"), goal.RenderFile(done))
+	writeFixture(t, filepath.Join(root, "records", "goals", "abandoned.md"), goal.RenderFile(abandoned))
+	mustGit(t, root, "add", ".")
+	mustGitAt(t, root, "2026-08-13T00:00:00Z", "commit", "-q", "-m", "goal records")
+
+	events, limitations := loadGoalEvents(root)
+	brief := Compute(RecordSet{GoalEvents: events}, time.Date(2026, 8, 25, 12, 0, 0, 0, time.UTC))
+	counts := brief.ProcessVsProduct.Windows[0].GoalEvents
+	if counts != (GoalVerbCounts{Open: 2, Edit: 1, Claim: 1, Done: 1}) {
+		t.Fatalf("abandoned record history was not read without counting abandon as done: %+v", counts)
+	}
+	exclusions, found := findLimitation(limitations, "Goal-event exclusions")
+	if !found || !strings.Contains(exclusions.Detail, "2 unique retained goal operations") {
+		t.Fatalf("abandon and engine-floor were not named as exclusions: %+v", limitations)
+	}
+}
+
 type failingWriter struct{}
 
 func (failingWriter) Write([]byte) (int, error) { return 0, errors.New("closed") }

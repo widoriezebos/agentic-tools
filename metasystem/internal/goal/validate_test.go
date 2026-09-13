@@ -1,6 +1,7 @@
 package goal
 
 import (
+	"reflect"
 	"strings"
 	"testing"
 )
@@ -102,6 +103,52 @@ func TestPlacementAndStateMustAgree(t *testing.T) {
 	misfiled := vGoal("misfiled", StateQueued)
 	files = vTree(vRoot(), nil, []*GoalFile{misfiled})
 	expectProblem(t, problemsOf(files), "inside the archive")
+}
+
+func abandonedFixtureBytes(id string, blocked ...string) []byte {
+	f := vGoal(id, "abandoned")
+	f.Blocked = blocked
+	f.Revision = 2
+	f.History = append(f.History, HistoryLine{
+		At: "2026-08-20T11:00:00Z", Opid: "01J5X0000000000000000000C0-mac-a-1a2b3c4d",
+		Verb: "abandon", Actor: "human:Wido", Targets: []string{id}, Keep: -1,
+		Reason: "the pursuit has stopped",
+	})
+	raw := string(RenderFile(f))
+	raw = strings.Replace(raw, "- OpenedAt:", "- Abandoned: by=human:Wido at=2026-08-20T11:00:00Z revision=2 opid=01J5X0000000000000000000C0-mac-a-1a2b3c4d because=the pursuit has stopped\n- OpenedAt:", 1)
+	return []byte(withFreshIntegrity(raw))
+}
+
+func TestArchivedAbandonedRecordParsesIntoItsOwnMap(t *testing.T) {
+	files := vTree(vRoot(), nil, nil)
+	files[recordsGoalsPrefix+"x.md"] = abandonedFixtureBytes("x")
+	tree, problems := ParseTreeFiles(files)
+	if len(problems) != 0 {
+		t.Fatalf("a valid abandoned archive record must parse: %v", problems)
+	}
+	field := reflect.ValueOf(tree).Elem().FieldByName("Abandoned")
+	if !field.IsValid() || field.IsNil() || !field.MapIndex(reflect.ValueOf("x")).IsValid() {
+		t.Fatalf("abandoned record was not routed to its own map: %#v", tree)
+	}
+	if tree.Done["x"] != nil {
+		t.Fatal("an abandoned record must not enter the done map")
+	}
+}
+
+func TestValidateTreeRefusesALiveGoalBlockedByAnAbandonedGoal(t *testing.T) {
+	files := vTree(vRoot(), []*GoalFile{func() *GoalFile {
+		f := vGoal("dependent", StateQueued)
+		f.Blocked = []string{"abandoned-blocker"}
+		return f
+	}()}, nil)
+	files[recordsGoalsPrefix+"abandoned-blocker.md"] = abandonedFixtureBytes("abandoned-blocker")
+	expectProblem(t, problemsOf(files), "plans/goals/dependent.md: blocked by abandoned goal abandoned-blocker; re-point, waive with a reason, or abandon it too")
+
+	done := vGoal("done-dependent", StateDone)
+	done.Blocked = []string{"abandoned-blocker"}
+	files = vTree(vRoot(), nil, []*GoalFile{done})
+	files[recordsGoalsPrefix+"abandoned-blocker.md"] = abandonedFixtureBytes("abandoned-blocker")
+	expectProblem(t, problemsOf(files), "done while blocker abandoned-blocker is not done")
 }
 
 func TestMissingRootRecordRefuses(t *testing.T) {

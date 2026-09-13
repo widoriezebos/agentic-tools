@@ -21,12 +21,13 @@ source "$fixture_bed_root/scripts/agents/fixture-bed-scenarios.sh"
 if (( ! fixture_bed_child )); then
   fixture_bed_script=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd -P)/$(basename "${BASH_SOURCE[0]}")
   run_fixture_bed_scenarios goal-cli "goal CLI fixtures: PASSED" \
-	"$fixture_bed_script" migration-recovery human-lineage risk-basis labels-and-filtering structured-budget scope-bounds archive-and-prune classification-sweep \
+	"$fixture_bed_script" migration-recovery human-lineage risk-basis labels-and-filtering structured-budget scope-bounds archive-and-prune classification-sweep abandoned-with-a-reason \
 		brain-claim-refuses brain-human-word-refuses brain-classification-fails brain-stop-seeded brain-stop-corrupt brain-status-line wrong-terminal \
 		carry-word carried-record carried-discharge seat-blocker power-of-attorney landing-slot budget-extension proof-grades
 fi
 case "$fixture_scenario" in
 	migration-recovery | human-lineage | risk-basis | labels-and-filtering | structured-budget | scope-bounds | archive-and-prune | classification-sweep | \
+		abandoned-with-a-reason | \
 		brain-claim-refuses | brain-human-word-refuses | brain-classification-fails | brain-stop-seeded | brain-stop-corrupt | brain-status-line | wrong-terminal | \
 		carry-word | carried-record | carried-discharge | seat-blocker | power-of-attorney | landing-slot | budget-extension | proof-grades) ;;
   *) echo "goal CLI fixtures: unknown scenario: $fixture_scenario" >&2; exit 64 ;;
@@ -950,6 +951,106 @@ prepare_brain_stop_bed() {
   declare_brain_fixture
 }
 
+if [[ "$fixture_scenario" == abandoned-with-a-reason ]]; then
+  "$ms" goal release --root "$clone" --id ship-widget >/dev/null
+  export METASYSTEM_SUPERVISION_REGISTRY_HOME="$tmp/abandon-registry"
+  mkdir -p "$METASYSTEM_SUPERVISION_REGISTRY_HOME"
+  export METASYSTEM_GOAL_NOW=2026-08-20T00:00:00Z
+  "$ms" goal open --root "$clone" --id abandon-b --origin human \
+    --intent "Stay blocked until the abandoned work is re-pointed." --next "Wait for the successor." \
+    --risk severity=1,novelty=1,exposure=1,accumulation=1 --basis "abandon fixture" >/dev/null
+  approve_fixture_goal abandon-b --budget box
+  "$ms" goal claim --root "$clone" --id abandon-b >/dev/null
+  "$ms" goal open --root "$clone" --id abandon-a --origin main --blocks abandon-b \
+    --intent "Retire work that no longer belongs in the backlog." --next "Prove abandonment." \
+    --risk severity=1,novelty=1,exposure=1,accumulation=1 --basis "abandon fixture" >/dev/null
+  "$ms" goal edit --root "$clone" --id abandon-a --tier 1 \
+    --risk severity=1,novelty=1,exposure=1,accumulation=1 --basis "abandon fixture member" >/dev/null
+  approve_fixture_goal abandon-a \
+    --elapsed-limit 1m --attempt-limit 2 --reserved-job-minutes-limit 20 --active-job-limit 1 --review-round-limit 0
+  "$ms" goal claim --root "$clone" --id abandon-a >/dev/null
+  export METASYSTEM_GOAL_NOW=2026-08-20T00:02:00Z
+  "$ms" job breach-stop --root "$clone" --goal abandon-a --revision 4 >"$tmp/abandon-stop.json"
+  if release_refusal=$("$ms" goal release --root "$clone" --id abandon-a 2>&1); then
+    echo "release cleared a breach-stopped claim" >&2; exit 1
+  fi
+  grep -q 'only goal resume may clear its launch fence' <<<"$release_refusal" \
+    || { echo "release did not preserve the launch fence: $release_refusal" >&2; exit 1; }
+
+  if floor_refusal=$("$ms" goal abandon --root "$clone" --id abandon-a --by Wido --because fixture --fixture-human-authority 2>&1); then
+    echo "abandon succeeded without an engine floor" >&2; exit 1
+  fi
+  grep -q 'ledger has no record that the fleet runs it' <<<"$floor_refusal" \
+    || { echo "abandon did not name the missing fleet floor: $floor_refusal" >&2; exit 1; }
+  engine_status=$("$ms" supervise status --repo "$clone")
+  engine_stamp=$("$ms" json get --value "$engine_status" --field engineBuild)
+  if [[ "$engine_stamp" =~ ^dev-([0-9a-f]{40})-dirty$ ]]; then
+    engine_commit=${BASH_REMATCH[1]}
+  elif [[ "$engine_stamp" =~ ^[0-9a-f]{40}$ ]]; then
+    engine_commit=$engine_stamp
+  else
+    echo "fixture binary has no source-linked build stamp: $engine_stamp" >&2; exit 1
+  fi
+  git -C "$clone" fetch -q "$(git -C "$root" rev-parse --show-toplevel)" "$engine_commit"
+  "$ms" goal engine-floor --root "$clone" --commit "$engine_commit" --by Wido --fixture-human-authority >/dev/null
+  if dependent_refusal=$("$ms" goal abandon --root "$clone" --id abandon-a --by Wido --because fixture --fixture-human-authority 2>&1); then
+    echo "abandon succeeded with an uncovered dependent" >&2; exit 1
+  fi
+  grep -q 'goal abandon-b is blocked by abandon-a' <<<"$dependent_refusal" \
+    || { echo "abandon did not name the uncovered dependent: $dependent_refusal" >&2; exit 1; }
+
+  "$ms" goal open --root "$clone" --id abandon-successor --origin human \
+    --intent "Carry the still-live constraint." --next "Complete the successor." \
+    --risk severity=1,novelty=1,exposure=1,accumulation=1 --basis "abandon fixture" >/dev/null
+	done_before=$("$ms" goal list --root "$clone" | sed -n '1s/.* done=\([0-9][0-9]*\) .*/\1/p')
+  "$ms" goal abandon --root "$clone" --id abandon-a --by Wido --because fixture \
+    --carried abandon-successor --fixture-human-authority >/dev/null
+  abandon_tip=$(git -C "$origin" rev-parse main)
+  git -C "$clone" cat-file -p "$abandon_tip:records/goals/abandon-a.md" >"$tmp/abandon-a.md"
+  grep -q '^- State: abandoned$' "$tmp/abandon-a.md" \
+    && grep -q '^- Abandoned: by=human:Wido .*stopId=.* carried=abandon-successor because=fixture$' "$tmp/abandon-a.md" \
+    && grep -q '^- StopFence:' "$tmp/abandon-a.md" \
+    || { echo "the abandoned stopped record is incomplete" >&2; cat "$tmp/abandon-a.md" >&2; exit 1; }
+  if git -C "$clone" cat-file -e "$abandon_tip:plans/goals/abandon-a.md" 2>/dev/null; then
+    echo "the abandoned goal remained in the live path" >&2; exit 1
+  fi
+	summary=$("$ms" goal list --root "$clone")
+	grep -q "^.* done=$done_before abandoned=1 tip=" <<<"$summary" \
+		|| { echo "listing conflated done and abandoned: $summary" >&2; exit 1; }
+	listing=$("$ms" goal list --root "$clone" --json)
+  abandoned_json=$("$ms" json get --value "$listing" --field abandoned)
+  done_json=$("$ms" json get --value "$listing" --field done)
+  [[ "$abandoned_json" == *'"Id":"abandon-a"'* && "$done_json" != *'"Id":"abandon-a"'* ]] \
+    || { echo "JSON listing omitted or conflated the abandoned id: $listing" >&2; exit 1; }
+  next=$("$ms" goal next --root "$clone")
+  [[ "$next" != "next ready goal: abandon-a" && "$next" != "next ready goal: abandon-b" ]] \
+    || { echo "goal next offered abandoned or blocked work: $next" >&2; exit 1; }
+  shown=$("$ms" goal show --root "$clone" --id abandon-a)
+  [[ "$shown" == *'"Because":"fixture"'* ]] \
+    || { echo "goal show omitted the abandon reason: $shown" >&2; exit 1; }
+  cat >"$tmp/abandon-split.md" <<'DRAFT'
+# split abandon-a
+
+## member abandon-a-one
+- Intent: First impossible split member.
+- Next step: Never run.
+
+## member abandon-a-two
+- Intent: Second impossible split member.
+- Next step: Never run.
+DRAFT
+  if split_refusal=$("$ms" goal split --root "$clone" --id abandon-a --members "$tmp/abandon-split.md" 2>&1); then
+    echo "an abandoned goal split" >&2; exit 1
+  fi
+  grep -q 'in the archive; there is nothing to split' <<<"$split_refusal" \
+    || { echo "split did not recognize the abandoned archive: $split_refusal" >&2; exit 1; }
+  "$ms" goal prune --root "$clone" --keep 0 >/dev/null
+  prune_tip=$(git -C "$origin" rev-parse main)
+  git -C "$clone" cat-file -e "$prune_tip:records/goals/abandon-a.md"
+  unset METASYSTEM_GOAL_NOW
+  exit 0
+fi
+
 if [[ "$fixture_scenario" == brain-stop-seeded ]]; then
   prepare_brain_stop_bed
   for stop in 1 2 3; do
@@ -1768,7 +1869,7 @@ git -C "$clone" push -q origin HEAD:main
 legacy_tip=$(git -C "$clone" rev-parse HEAD)
 git -C "$clone" update-ref refs/metasystem/goals/accepted "$legacy_tip"
 dual_list=$("$ms" goal list --root "$clone")
-grep -q ' done=3 tip=' <<<"$dual_list" \
+grep -q ' done=3 abandoned=0 tip=' <<<"$dual_list" \
   || { echo "the dual-location soak reader did not count both conclusions: $dual_list" >&2; exit 1; }
 dual_show=$("$ms" goal show --root "$clone" --id archive-roundtrip)
 grep -q '"where":"archived"' <<<"$dual_show" \

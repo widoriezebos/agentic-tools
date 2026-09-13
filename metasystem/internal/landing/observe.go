@@ -230,7 +230,7 @@ func carriedCounselorAppendLines(workspace gittree.Workspace, baseTree, candidat
 func carriedLandingAppendError(lines []string, ledgerTree *goal.TreeGoals) error {
 	rows := map[string]goal.HistoryLine{}
 	if ledgerTree != nil {
-		for _, files := range []map[string]*goal.GoalFile{ledgerTree.Live, ledgerTree.Done} {
+		for _, files := range []map[string]*goal.GoalFile{ledgerTree.Live, ledgerTree.Done, ledgerTree.Abandoned} {
 			for _, file := range files {
 				for _, row := range file.History {
 					if row.Verb == "carried" {
@@ -257,7 +257,7 @@ func carriedLandingAppendError(lines []string, ledgerTree *goal.TreeGoals) error
 func carriedAcceptedRiskAppendError(root string, lines []string, ledgerTree *goal.TreeGoals) error {
 	var rows []counselor.CarriedAcceptedRiskAppend
 	if ledgerTree != nil {
-		for _, files := range []map[string]*goal.GoalFile{ledgerTree.Live, ledgerTree.Done} {
+		for _, files := range []map[string]*goal.GoalFile{ledgerTree.Live, ledgerTree.Done, ledgerTree.Abandoned} {
 			for _, file := range files {
 				for _, risk := range file.AcceptedRisks {
 					if risk.Chain != goal.HumanCarriedChain {

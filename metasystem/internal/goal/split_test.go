@@ -317,6 +317,40 @@ func TestDeadAbsentSliceStartAbandonsWithoutMarkingGoal(t *testing.T) {
 	}
 }
 
+func TestSplitPrechecksReadTheArchive(t *testing.T) {
+	_, root := oneClone(t)
+	seedLedger(t, root)
+	configureAbandonFloorTest(t, strings.Repeat("a", 40))
+	recordAbandonFloorTest(t, root, "01J5X0000000000000000000A0")
+	if result, err := Open(verbReq(root, "01J5X00000000000000001S000", "mac-a"), "split-parent", "intent", "main", "next"); err != nil || result.Outcome != OutcomeConfirmed {
+		t.Fatalf("open: %+v %v", result, err)
+	}
+	abandonReq := verbReq(root, "01J5X00000000000000001S010", "mac-a")
+	abandonReq.Actor.Human = "Wido"
+	abandoned, err := Abandon(abandonReq, "split-parent", AbandonSpec{Because: "do not split"}, goalHumanProof(t, root, abandonReq.Now))
+	if err != nil || abandoned.Outcome != OutcomeConfirmed {
+		t.Fatalf("abandon: %+v %v", abandoned, err)
+	}
+	members := []MemberDraft{{ID: "member-one", Intent: "one", NextStep: "go"}, {ID: "member-two", Intent: "two", NextStep: "go"}}
+	request, err := splitRequest(verbReq(root, "01J5X00000000000000001S020", "mac-a"), "split-parent", members, SplitRatification{}, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := request.Mutate(abandoned.Tip); err == nil || err.Error() != "goal split-parent is in the archive; there is nothing to split" {
+		t.Fatalf("abandoned archive precheck: %v", err)
+	}
+
+	idempotent, err := splitRequest(abandonReq, "split-parent", members, SplitRatification{}, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := idempotent.Mutate(abandoned.Tip); err == nil {
+		t.Fatal("an operation already present in the abandoned record was not idempotent")
+	} else if _, ok := err.(AlreadyApplied); !ok {
+		t.Fatalf("landed operation returned %T: %v", err, err)
+	}
+}
+
 func TestGoalNormRefusesAndPublishesStrictApproval(t *testing.T) {
 	_, root := oneClone(t)
 	seedLedger(t, root)

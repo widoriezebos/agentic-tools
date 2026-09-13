@@ -621,7 +621,7 @@ func computeDebt(w world, period Period, goalID string, limits thresholds) metri
 			continue
 		}
 		file := w.Goals[id].File
-		if file.State == goal.StateDone {
+		if file.State == goal.StateDone || file.State == goal.StateAbandoned {
 			continue
 		}
 		usable++

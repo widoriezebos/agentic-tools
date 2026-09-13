@@ -73,6 +73,9 @@ func ComposeStatusReport(c ReportConfig) (string, string, error) {
 		for id := range p.Tree.Done {
 			features[id] = featureName(id)
 		}
+		for id := range p.Tree.Abandoned {
+			features[id] = featureName(id)
+		}
 		frontier, frontierErr := goal.Next(p, c.Machine)
 		if frontierErr != nil {
 			backlog = []string{"Backlog order: unavailable — " + statusLineText(frontierErr.Error())}

@@ -88,6 +88,32 @@ func TestRootRefusalsAreNamed(t *testing.T) {
 	}
 }
 
+func TestEngineFloorHistoryLineCarriesAHumanAndCommit(t *testing.T) {
+	for _, test := range []struct {
+		name   string
+		actor  string
+		reason string
+		want   bool
+	}{
+		{name: "non-human actor", actor: "mac-a+lin-1", reason: strings.Repeat("a", 40) + " every enrolled seat runs this engine or newer", want: true},
+		{name: "missing commit", actor: "human:Wido", reason: "dev every enrolled seat runs this engine or newer", want: true},
+		{name: "human with commit", actor: "human:Wido", reason: strings.Repeat("a", 40) + " every enrolled seat runs this engine or newer"},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			r := rootGolden()
+			r.Revision++
+			r.History = append(r.History, HistoryLine{
+				At: "2026-09-09T12:00:00Z", Opid: "01J5X0000000000000000000EF-mac-a-1a2b3c4d", Verb: "engine-floor",
+				Actor: test.actor, Reason: test.reason, Keep: -1,
+			})
+			_, problems := ParseRoot(RenderRoot(r))
+			if got := problemsContain(problems, "engine-floor line without a commit"); got != test.want {
+				t.Fatalf("problem present = %v, want %v: %v", got, test.want, problems)
+			}
+		})
+	}
+}
+
 func problemsContain(problems []Problem, substr string) bool {
 	for _, p := range problems {
 		if strings.Contains(string(p), substr) {

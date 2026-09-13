@@ -157,6 +157,58 @@ func TestPriorityIdleProjection(t *testing.T) {
 	}
 }
 
+func TestNextAndIdleRefusalIgnoreAnAbandonedGoal(t *testing.T) {
+	_, root := oneClone(t)
+	seedLedger(t, root)
+	mustGit(t, root, "config", "metasystem.goal.machine", "bed-m1")
+	configureAbandonFloorTest(t, strings.Repeat("a", 40))
+	recordAbandonFloorTest(t, root, "01J5X0000000000000000000A0")
+	if result, err := Open(verbReq(root, "01J5X00000000000000000J000", "bed-m1"), "only-work", "intent", "main", "next"); err != nil || result.Outcome != OutcomeConfirmed {
+		t.Fatalf("open: %+v %v", result, err)
+	}
+	approveReq := verbReq(root, "01J5X00000000000000000J010", "bed-m1")
+	approveReq.Actor.Human = "Wido"
+	if result, err := Approve(approveReq, []string{"only-work"}, nil, goalHumanProof(t, root, approveReq.Now)); err != nil || result.Outcome != OutcomeConfirmed {
+		t.Fatalf("approve: %+v %v", result, err)
+	}
+	work, err := ReadClaimableBudgetedWork(root, time.Now())
+	if err != nil || len(work.Claimable) != 1 || work.Claimable[0] != "only-work" {
+		t.Fatalf("approved control was not idle backlog: work=%+v err=%v", work, err)
+	}
+	control := Verdict{}
+	(&Store{}).enforceIdleBacklog(&control, &work, nil, &sessionState{}, "session", "main", TurnVerdictOptions{})
+	if !control.IdleRefusal {
+		t.Fatalf("control did not produce an idle refusal: %+v", control)
+	}
+
+	abandonReq := verbReq(root, "01J5X00000000000000000J020", "bed-m1")
+	abandonReq.Actor.Human = "Wido"
+	result, err := Abandon(abandonReq, "only-work", AbandonSpec{Because: "cancelled"}, goalHumanProof(t, root, abandonReq.Now))
+	if err != nil || result.Outcome != OutcomeConfirmed {
+		t.Fatalf("abandon: %+v %v", result, err)
+	}
+	work, err = ReadClaimableBudgetedWork(root, time.Now())
+	if err != nil || len(work.Claimable) != 0 || work.Queued != 0 {
+		t.Fatalf("abandoned work remained claimable or queued: work=%+v err=%v", work, err)
+	}
+	projection, err := Project(endpointFor(root), false, time.Now())
+	if err != nil {
+		t.Fatal(err)
+	}
+	frontier, err := Next(projection, "bed-m1")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(frontier.Claimed)+len(frontier.Ready)+len(frontier.Blocked)+len(frontier.Awaiting)+len(frontier.Refused) != 0 {
+		t.Fatalf("abandoned goal remained in next: %+v", frontier)
+	}
+	verdict := Verdict{}
+	(&Store{}).enforceIdleBacklog(&verdict, &work, nil, &sessionState{}, "session", "main", TurnVerdictOptions{})
+	if verdict.IdleRefusal || verdict.ShouldBlock {
+		t.Fatalf("abandoned-only tree still triggered idle refusal: %+v", verdict)
+	}
+}
+
 func TestRefusedBacklogIsReportedWithoutBlocking(t *testing.T) {
 	refused := budgetedQueuedGoal("refused-backlog", "2026-08-23T00:00:00Z")
 	refused.Budget.ReservedJobMinutesLimit = 2400

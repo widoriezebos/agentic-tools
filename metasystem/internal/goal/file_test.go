@@ -2,6 +2,7 @@ package goal
 
 import (
 	"fmt"
+	"slices"
 	"strings"
 	"testing"
 )
@@ -338,6 +339,171 @@ func TestGoldenArchivedFileCarriesExplicitDoneState(t *testing.T) {
 	}
 	if parsed.State != StateDone || parsed.Conclude == "" {
 		t.Fatalf("archived file must carry State: done and Concluded, got %+v", parsed)
+	}
+}
+
+func TestAbandonRecordMustBindItsEvent(t *testing.T) {
+	fixture := func() *GoalFile {
+		file := vGoal("bound-abandon", StateAbandoned)
+		file.Revision = 2
+		file.History = append(file.History, HistoryLine{
+			At: "2026-08-20T11:00:00Z", Opid: "01J5X0000000000000000000C0-mac-a-1a2b3c4d",
+			Verb: "abandon", Actor: "human:Wido", Targets: []string{"bound-abandon"}, Keep: -1,
+			Reason: "the pursuit has stopped",
+		})
+		file.Abandoned = &AbandonRecord{
+			By: "human:Wido", At: "2026-08-20T11:00:00Z", Revision: 2,
+			Opid: "01J5X0000000000000000000C0-mac-a-1a2b3c4d", Because: "the pursuit has stopped",
+		}
+		return file
+	}
+	for _, test := range []struct {
+		name   string
+		mutate func(*GoalFile)
+	}{
+		{name: "human", mutate: func(file *GoalFile) { file.Abandoned.By = "human:Else" }},
+		{name: "timestamp", mutate: func(file *GoalFile) { file.Abandoned.At = "2026-08-20T11:01:00Z" }},
+		{name: "operation", mutate: func(file *GoalFile) { file.Abandoned.Opid = "01J5X0000000000000000000C1-mac-a-1a2b3c4d" }},
+		{name: "revision points to the wrong verb", mutate: func(file *GoalFile) { file.Abandoned.Revision = 1 }},
+		{name: "displaced", mutate: func(file *GoalFile) { file.History[1].Displaced = "mac-b+lin-2@2026-08-20T11:00:00Z" }},
+		{name: "stop identifier", mutate: func(file *GoalFile) { file.History[1].StopID = "stop-fixture" }},
+		{name: "carried successor", mutate: func(file *GoalFile) { file.History[1].Carried = "successor" }},
+		{name: "reason", mutate: func(file *GoalFile) { file.Abandoned.Because = "a different reason" }},
+		{name: "first target", mutate: func(file *GoalFile) { file.History[1].Targets = []string{"survivor", "bound-abandon"} }},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			file := fixture()
+			test.mutate(file)
+			_, problems := ParseFile(RenderFile(file))
+			if len(problems) != 1 || !problemsContain(problems, "Abandoned record does not bind its abandon History event") {
+				t.Fatalf("mismatch did not produce exactly the binding problem: %v", problems)
+			}
+		})
+	}
+
+	carriedFixture := func(successors ...string) *GoalFile {
+		file := fixture()
+		for index, successor := range successors {
+			file.History = append(file.History, HistoryLine{
+				At:   fmt.Sprintf("2026-08-20T11:%02d:00Z", index+1),
+				Opid: fmt.Sprintf("01J5X0000000000000000000D%d-mac-a-1a2b3c4d", index),
+				Verb: "carry", Actor: "human:Wido", Targets: []string{"bound-abandon"},
+				Carried: successor, Keep: -1, Reason: "successor corrected",
+			})
+		}
+		file.Revision = uint64(len(file.History))
+		if len(successors) != 0 {
+			file.Abandoned.Carried = successors[len(successors)-1]
+		}
+		return file
+	}
+	for _, test := range []struct {
+		name string
+		file *GoalFile
+		want string
+	}{
+		{name: "one later carry binds", file: carriedFixture("successor-one")},
+		{name: "newest of two later carries binds", file: carriedFixture("successor-one", "successor-two")},
+		{name: "a carried field without a line refuses", file: func() *GoalFile {
+			file := fixture()
+			file.Abandoned.Carried = "unrecorded-successor"
+			return file
+		}(), want: "Abandoned record does not bind its abandon History event"},
+		{name: "a carry before this abandonment is ignored", file: func() *GoalFile {
+			file := fixture()
+			currentAbandon := file.History[1]
+			file.History = append(file.History[:1],
+				HistoryLine{At: "2026-08-20T10:00:00Z", Opid: "01J5X0000000000000000000E0-mac-a-1a2b3c4d", Verb: "abandon", Actor: "human:Wido", Targets: []string{"bound-abandon"}, Keep: -1, Reason: "earlier abandonment"},
+				HistoryLine{At: "2026-08-20T10:10:00Z", Opid: "01J5X0000000000000000000E1-mac-a-1a2b3c4d", Verb: "carry", Actor: "human:Wido", Targets: []string{"bound-abandon"}, Carried: "old-successor", Keep: -1, Reason: "earlier successor"},
+				HistoryLine{At: "2026-08-20T10:20:00Z", Opid: "01J5X0000000000000000000E2-mac-a-1a2b3c4d", Verb: "reopen", Actor: "human:Wido", Targets: []string{"bound-abandon"}, Keep: -1},
+				currentAbandon,
+			)
+			file.Revision = uint64(len(file.History))
+			file.Abandoned.Revision = file.Revision
+			file.Abandoned.Carried = "old-successor"
+			return file
+		}(), want: "Abandoned record does not bind its abandon History event"},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			_, problems := ParseFile(RenderFile(test.file))
+			if test.want == "" && len(problems) != 0 {
+				t.Fatalf("valid binding refused: %v", problems)
+			}
+			if test.want != "" && !problemsContain(problems, test.want) {
+				t.Fatalf("missing %q in %v", test.want, problems)
+			}
+		})
+	}
+}
+
+func TestHistoryKeysStopIdAndCarriedOnlyOnAbandonLines(t *testing.T) {
+	base := vGoal("history-keys", StateQueued)
+	base.Revision = 2
+	base.History = append(base.History, HistoryLine{
+		At: "2026-08-20T11:00:00Z", Opid: "01J5X0000000000000000000C0-mac-a-1a2b3c4d",
+		Verb: "claim", Actor: "mac-a+lin-1", Targets: []string{"history-keys"}, Keep: -1,
+		Reason: "fixture",
+	})
+	raw := strings.Replace(string(RenderFile(base)), " reason=fixture", " stopId=stop-fixture reason=fixture", 1)
+	_, problems := ParseFile([]byte(withFreshIntegrity(raw)))
+	if !problemsContain(problems, "claim line carries stopId=, which only an abandon or carry line may") {
+		t.Fatalf("stopId on claim did not get the verb-specific problem: %v", problems)
+	}
+
+	base.History[1].Verb = "done"
+	raw = strings.Replace(string(RenderFile(base)), " reason=fixture", " carried=successor reason=fixture", 1)
+	_, problems = ParseFile([]byte(withFreshIntegrity(raw)))
+	if !problemsContain(problems, "done line carries carried=, which only an abandon or carry line may") {
+		t.Fatalf("carried on done did not get the verb-specific problem: %v", problems)
+	}
+
+	base.History[1].Verb = "carry"
+	raw = strings.Replace(string(RenderFile(base)), " reason=fixture", " carried=successor reason=fixture", 1)
+	_, problems = ParseFile([]byte(withFreshIntegrity(raw)))
+	if !problemsContain(problems, "carry line on a goal that was not abandoned at that line") {
+		t.Fatalf("carry on a never-abandoned goal was accepted: %v", problems)
+	}
+
+	reopened := string(abandonedFixtureBytes("history-keys"))
+	reopened = strings.Replace(reopened, " reason=the pursuit has stopped", " carried=successor reason=the pursuit has stopped", 1)
+	reopened = strings.Replace(reopened, "\nIntegrity:", "\n- 2026-08-20T12:00:00Z 01J5X0000000000000000000C1-mac-a-1a2b3c4d reopen actor=human:Wido targets=history-keys\nIntegrity:", 1)
+	reopened = strings.Replace(reopened, "- Revision: 2", "- Revision: 3", 1)
+	reopened = strings.Replace(reopened, "- State: abandoned", "- State: queued", 1)
+	reopened = strings.Replace(reopened, "- Abandoned: by=human:Wido at=2026-08-20T11:00:00Z revision=2 opid=01J5X0000000000000000000C0-mac-a-1a2b3c4d because=the pursuit has stopped\n", "", 1)
+	_, problems = ParseFile([]byte(withFreshIntegrity(reopened)))
+	if len(problems) != 0 {
+		t.Fatalf("a reopened record must keep its lawful carried abandon line: %v", problems)
+	}
+
+	historyProblems := func(file *GoalFile) []string {
+		var result []string
+		validateAbandonHistory(file, func(format string, args ...any) {
+			result = append(result, fmt.Sprintf(format, args...))
+		})
+		return result
+	}
+	ownAbandon := HistoryLine{Verb: "abandon", Targets: []string{"history-keys"}, StopID: "stop-fixture", Carried: "successor"}
+	for _, test := range []struct {
+		name    string
+		history []HistoryLine
+		want    string
+	}{
+		{name: "abandon may carry both keys", history: []HistoryLine{ownAbandon}},
+		{name: "carry after own abandon is valid", history: []HistoryLine{ownAbandon, {Verb: "carry", Carried: "successor-two"}}},
+		{name: "carry after reopen refuses", history: []HistoryLine{ownAbandon, {Verb: "reopen"}, {Verb: "carry", Carried: "successor-two"}}, want: "carry line on a goal that was not abandoned at that line"},
+		{name: "survivor compaction is not its own abandon", history: []HistoryLine{{Verb: "abandon", Targets: []string{"departed", "history-keys"}}, {Verb: "carry", Carried: "successor"}}, want: "carry line on a goal that was not abandoned at that line"},
+		{name: "current state does not invalidate an earlier carry", history: []HistoryLine{ownAbandon, {Verb: "carry", Carried: "successor-two"}, {Verb: "reopen"}}},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			file := &GoalFile{Id: "history-keys", History: test.history}
+			got := historyProblems(file)
+			if test.want == "" && len(got) != 0 {
+				t.Fatalf("lawful history refused: %v", got)
+			}
+			if test.want != "" && !slices.Contains(got, test.want) {
+				t.Fatalf("missing %q in %v", test.want, got)
+			}
+		})
 	}
 }
 

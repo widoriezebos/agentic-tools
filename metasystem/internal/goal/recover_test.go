@@ -1,6 +1,7 @@
 package goal
 
 import (
+	"errors"
 	"fmt"
 	"reflect"
 	"strings"
@@ -235,6 +236,59 @@ func TestRecoveryClosesUnrebuildableVerbsByName(t *testing.T) {
 	entry, err := ReadEntry(a, opid)
 	if err != nil || entry.Phase != PhaseTerminal || entry.Outcome != OutcomeRejected {
 		t.Fatalf("the entry closes rejected, never wedges: %+v %v", entry, err)
+	}
+}
+
+func TestRecoveryRefusesToReplayAbandonEngineFloorAndAbandonedReopen(t *testing.T) {
+	endpoint := endpointFor(t.TempDir())
+	for index, test := range []struct {
+		verb string
+		args map[string]string
+	}{
+		{verb: "abandon", args: map[string]string{}},
+		{verb: "engine-floor", args: map[string]string{}},
+		{verb: "carry", args: map[string]string{"to": "successor"}},
+		{verb: "reopen", args: map[string]string{"from": "abandoned"}},
+	} {
+		t.Run(test.verb, func(t *testing.T) {
+			ulid := fmt.Sprintf("01J5X00000000000000001Q0%d0", index)
+			entry := Entry{
+				Opid: Opid(ulid, "mac-a", "lin-1"), Machine: "mac-a", Lineage: "lin-1",
+				Intent: Intent{Verb: test.verb, Targets: []string{"target"}, Args: test.args},
+			}
+			_, err := requestForEntry(endpoint, entry)
+			want := test.verb + " is proof-bearing and cannot be replayed from journal text; re-run it from the enrolled terminal"
+			if err == nil || err.Error() != want {
+				t.Fatalf("recovery refusal = %v, want %q", err, want)
+			}
+		})
+	}
+
+	_, root := oneClone(t)
+	seedLedger(t, root)
+	if result, err := Open(verbReq(root, "01J5X00000000000000001Q100", "mac-a"), "normal-reopen", "intent", "main", "next"); err != nil || result.Outcome != OutcomeConfirmed {
+		t.Fatalf("open: %+v %v", result, err)
+	}
+	if result, err := Done(verbReq(root, "01J5X00000000000000001Q110", "mac-a"), "normal-reopen", "done"); err != nil || result.Outcome != OutcomeConfirmed {
+		t.Fatalf("done: %+v %v", result, err)
+	}
+	reopen := verbReq(root, "01J5X00000000000000001Q120", "mac-a")
+	result, err := Reopen(reopen, "normal-reopen")
+	if err != nil || result.Outcome != OutcomeConfirmed {
+		t.Fatalf("ordinary reopen: %+v %v", result, err)
+	}
+	entry, err := ReadEntry(root, reopen.opid())
+	if err != nil {
+		t.Fatal(err)
+	}
+	rebuilt, err := requestForEntry(endpointFor(root), entry)
+	if err != nil {
+		t.Fatalf("ordinary reopen did not rebuild: %v", err)
+	}
+	_, err = rebuilt.Mutate(result.Tip)
+	var already AlreadyApplied
+	if !errors.As(err, &already) {
+		t.Fatalf("landed ordinary reopen was not confirmed by its operation id: %v", err)
 	}
 }
 

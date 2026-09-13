@@ -218,6 +218,30 @@ func TestPrunesMirroredRecordsPastTheGraceWindow(t *testing.T) {
 	}
 }
 
+func TestKeepsSpendingFactTreatsAbandonedLikeDone(t *testing.T) {
+	state := goalRevisionState{tree: &goal.TreeGoals{
+		Live: map[string]*goal.GoalFile{
+			"claimed": {Id: "claimed", State: goal.StateClaimed, Claimed: &goal.ClaimRecord{Revision: 4}},
+		},
+		Done: map[string]*goal.GoalFile{"done": {Id: "done", State: goal.StateDone}},
+		Abandoned: map[string]*goal.GoalFile{
+			"abandoned": {Id: "abandoned", State: goal.StateAbandoned},
+		},
+	}}
+	if state.keepsSpendingFact(map[string]any{"goalId": "abandoned", "goalRevision": float64(2)}) {
+		t.Fatal("a terminal abandoned goal retained spending evidence as if it were unknown")
+	}
+	if state.keepsSpendingFact(map[string]any{"goalId": "done", "goalRevision": float64(2)}) {
+		t.Fatal("a terminal done goal retained spending evidence")
+	}
+	if !state.keepsSpendingFact(map[string]any{"goalId": "pruned", "goalRevision": float64(2)}) {
+		t.Fatal("a pruned unknown goal lost its spending evidence")
+	}
+	if !state.keepsSpendingFact(map[string]any{"goalId": "claimed", "goalRevision": float64(4)}) {
+		t.Fatal("the current claimed revision lost its spending evidence")
+	}
+}
+
 func TestGCKeepsCurrentGoalRevisionSpendingAndProjection(t *testing.T) {
 	freezeClock(t)
 	root, evidenceRoot, _, jobs := checkout(t)

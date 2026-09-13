@@ -51,6 +51,10 @@ func TestO12BothGoalDoneRoutesRequestTheGoalReport(t *testing.T) {
 
 	t.Run("legacy mutation", func(t *testing.T) {
 		root := t.TempDir()
+		// A test temporary directory may live below a worktree's Git metadata.
+		// Make the legacy fixture's repository boundary explicit so Git cannot
+		// discover an unrelated parent while the command enrolls its guard.
+		metricsVerbGit(t, root, "init", "-q", "-b", "main")
 		writeMetricsFixtureGuard(t, root)
 		store := &goal.Store{Root: root}
 		caller := goal.Caller{Class: "HUMAN"}
