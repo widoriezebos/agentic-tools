@@ -1,15 +1,16 @@
 # incident-proposal-drafting
 
-- State: queued
+- State: parked
 - Priority: 3
 - Sequence: 30
 - Intent: The metasystem notices problematic behavior the human would notice — custody violations, dead suites, process-lost jobs, repeated refusals — and DRAFTS remediation proposals brought to the human for discussion (Wido 2026-08-24: detection alone is not enough; drafted proposals must reach my attention)
 - Origin: human
 - Next step: Appetite: 3h, after suite-outcomes-as-steward-incidents (its detection layer). The steward's incident stream gains a drafting step: each incident class maps to a proposal template (evidence links, suspected cause, candidate remedy, proposed appetite) written to a proposals queue the stop message and goal next surface for ratification — mechanizing the bank-finding/open-item/propose-appetite loop the dispatch delegate runs by hand today. Acceptance: replay 2026-08-24's collateral (killed critic, orphaned gate, battery-vs-dispatch clash) and each produces a drafted proposal awaiting the human, unprompted.
 - OpenedAt: 2026-08-24T13:26:02Z
-- Revision: 80
+- Revision: 81
 - Labels: custody
 - BudgetExceptions: 0
+- Parked: by=human:Wido at=2026-09-13T08:23:35Z because=Not now (2026-09-13 backlog consolidation, Wido's word): Wido 2026-08-24; its detection layer suite-outcomes-as-steward-incidents was absorbed into program goal 3 (hung-proof-attempts-end-at-their-deadline) on 2026-09-11, so the incident stream it would draft from is still forming; no new ask since; revive when that stream exists; 3h appetite.
 
 History:
 - 2026-08-24T13:26:02Z XMTWKC4DZHNXCRZ95K08WRDMYS-m2-bc1be9cb open actor=human:wido targets=incident-proposal-drafting
@@ -92,4 +93,5 @@ History:
 - 2026-09-13T08:22:24Z TSR1R55W14V9FG2PK9ZTG9JSB0-m1-c6925449 done actor=human:Wido targets=app-doctrine,app-guardrail-custody,app-guardrail-program,continuous-self-improvement,counselor,cross-repo-guardrails,design-prohibition-is-role-scoped,effort-by-complexity-per-model,fixture-default-branch-assumption,goal-suite-sits-on-the-default-test-timeout,human-carried-landing,incident-proposal-drafting,integration-branch,land-verb-pruning,ledger-authentication,metasystem-way-patterns,missionrunner-terminate-flake,paid-proof-authorization,precedent-index,python3-kit-port,reconciliation-guards,registry-design-names-selection-rows,repo-flag-resolves-one-root,seam-eventstream-error-surface,standing-validation,watchdog-kill-observation-gap reason=priority-order from=3:33 to=3:32
 - 2026-09-13T08:22:31Z HEFP5WKYB8V4MWGW41R8JSH6VC-m1-c6925449 done actor=human:Wido targets=answer-archive,app-doctrine,app-guardrail-custody,app-guardrail-program,claude-delegate-scratch-cleanup,claude-denywrite-list-is-a-snapshot,continuous-self-improvement,counselor,cross-repo-guardrails,delegate-sandbox-cannot-run-the-beds,design-prohibition-is-role-scoped,effort-by-complexity-per-model,fable-effort-high,fixture-default-branch-assumption,follow-up-brief-cannot-cite-fresh-trunk-files,goal-suite-sits-on-the-default-test-timeout,hook-demands-what-landing-forbids,human-carried-landing,incident-proposal-drafting,integration-branch,land-verb-pruning,ledger-authentication,metasystem-way-patterns,missionrunner-terminate-flake,narrator-digests,paid-proof-authorization,precedent-index,python3-kit-port,reconciliation-guards,registry-design-names-selection-rows,repo-flag-resolves-one-root,runtime-limit-is-not-a-protocol-error,seam-declaration-convergence,shutdown-claims-more-than-it-stops,standing-validation,stop-message-truth,uncapped-delegate-fanout,watchdog-kill-observation-gap reason=priority-order from=3:32 to=3:31
 - 2026-09-13T08:22:58Z 6QJV3SGEV054J7AVXBA2JE4MBE-m1-c6925449 done actor=human:Wido targets=app-doctrine,app-guardrail-custody,app-guardrail-program,claude-delegate-scratch-cleanup,continuous-self-improvement,counselor,cross-repo-guardrails,design-prohibition-is-role-scoped,effort-by-complexity-per-model,fable-effort-high,fixture-default-branch-assumption,goal-suite-sits-on-the-default-test-timeout,human-carried-landing,incident-proposal-drafting,integration-branch,land-verb-pruning,ledger-authentication,metasystem-way-patterns,missionrunner-terminate-flake,paid-proof-authorization,precedent-index,python3-kit-port,reconciliation-guards,registry-design-names-selection-rows,repo-flag-resolves-one-root,seam-declaration-convergence,standing-validation,watchdog-kill-observation-gap reason=priority-order from=3:31 to=3:30
-Integrity: sha256=063b036940e5937dc1d92f61a0ec332b125ade4ca9a7a33db8f69ebe5fd26bc0
+- 2026-09-13T08:23:35Z 7DRCS9DRJTQGNGD5WMPESSV9Z3-m1-c6925449 park actor=human:Wido targets=incident-proposal-drafting reason=Not now (2026-09-13 backlog consolidation, Wido's word): Wido 2026-08-24; its detection layer suite-outcomes-as-steward-incidents was absorbed into program goal 3 (hung-proof-attempts-end-at-their-deadline) on 2026-09-11, so the incident stream it would draft from is still forming; no new ask since; revive when that stream exists; 3h appetite.
+Integrity: sha256=adf47ac405c762ed86f801dd6288b81977f8c1a475a637fa2c98cb5b7cb518e2
