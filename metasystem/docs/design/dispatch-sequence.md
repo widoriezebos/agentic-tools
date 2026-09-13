@@ -47,7 +47,7 @@ Entry authority is two-layered:
   the child command.
 - Internal entry points each declare a write mode at the router
   (d.sh:1460-1490): `__record-create` and `__record-setup` are
-  holder-only, `__record-cas` is record-writer, `__handshake`,
+  holder-only, `__record-cas` and `__critique-close` are record-writer, `__handshake`,
   `__protocol-error`, and `__register-custody` are adapter-writer,
   `__reap-held` and `__launch` are holder-only. The verdict is the
   engine's: `internal_authority` (d.sh:202-213) runs `lease classify`
@@ -315,8 +315,13 @@ as a new session rather than resumed (d.sh:1130-1141).
 member first (a reap mirrors only its own job's round; follow-up
 rounds otherwise reach the close unmirrored, d.sh:1210-1218), then
 lets `job close-check` (CloseCheck, close.go:13) decide: every record
-terminal, evidence durable, exhaustions resolved. The chainClosed flag
-lands as a self-edge CAS on the root. Mirroring itself
+terminal, evidence durable, exhaustions resolved. For design-critic,
+code-critic and warden roots the flag lands through `__critique-close`
+(`job critique-close`, CritiqueChainClose in close.go): under the
+finding-register and record locks it repeats CloseCheck, derives any
+clean closure, and writes the closure and chainClosed in one record
+write, so a refused close leaves neither. Every other root keeps the
+self-edge CAS. Mirroring itself
 (d.sh:655-684) stamps ONLY the job that was actually mirrored —
 stamping the whole chain from one job's mirror once wrote durability
 claims for evidence that never landed, and the close then refused a

@@ -2868,6 +2868,39 @@ fi
 
 if dispatch_cluster c; then
 leg_review_target_flag_runtime
+
+flag_runtime_subject="$agent_repo/artifacts/agents/flag-runtime/rounds/1/subject.json"
+review_target_review="$agent_repo/artifacts/agents/review-target/rounds/1/review.json"
+review_target_tree=$("$engine" json get --file "$review_target_review" --field reviewedTree)
+[[ "$("$engine" json get --file "$flag_runtime_subject" --field kind)" == live \
+   && "$("$engine" json get --file "$flag_runtime_subject" --field implementerRoot)" == review-target \
+   && "$("$engine" json get --file "$flag_runtime_subject" --field reviewedProjectTree)" == "$review_target_tree" \
+   && "$("$engine" json get --file "$agent_repo/artifacts/agents/flag-runtime/rounds/1/return.json" --field reviewedTree)" == "$review_target_tree" ]] \
+  || { echo "the live critic subject was not persisted and bound to its return" >&2; exit 1; }
+commit_subject_json="$commit_subject_round/subject.json"
+[[ "$("$engine" json get --file "$commit_subject_json" --field kind)" == commit \
+   && "$("$engine" json get --file "$commit_subject_json" --field tree)" == "$commit_subject_tree" ]] \
+  || { echo "the commit critic subject was not persisted with its reviewed tree" >&2; exit 1; }
+echo "subject-persisted dispatch fixture passed"
+
+printf 'workspace changed after review\n' >>"$review_target_root/metasystem/review-target.txt"
+set +e
+run_agent_fixture_captured subject-mismatch subject-mismatch "$agent_fixture/subject-mismatch.out" \
+  "$agent_dispatch" dispatch --role code-critic --brief "$code_brief" --reviews review-target \
+    --runtime fake --job-id subject-mismatch --wait
+subject_mismatch_rc=$?
+set -e
+# The reviewed file is an uncommitted conformance input, so restore its exact
+# reviewed bytes directly before the later warden reads the same subject.
+printf 'review target subject\n' >"$review_target_root/metasystem/review-target.txt"
+[[ "$subject_mismatch_rc" -eq 11 ]] \
+  && grep -Fq 'SUBJECT_MISMATCH' "$agent_fixture/subject-mismatch.out" \
+  && [[ ! -e "$agent_repo/artifacts/agents/jobs/subject-mismatch.json" \
+       && ! -d "$agent_repo/artifacts/agents/subject-mismatch" \
+       && -z "$(find "$agent_repo/artifacts/agents/record-locks" -maxdepth 1 -name 'subject.*' -print -quit)" ]] \
+  || { echo "the changed reviewed workspace did not refuse before record and payload creation" >&2; cat "$agent_fixture/subject-mismatch.out" >&2; exit 1; }
+echo "subject-mismatch dispatch fixture passed"
+
 make_follow_message
 # Follow-ups are child records under one serialized, explicitly closed chain.
 
@@ -3341,6 +3374,14 @@ agent_fails closed-follow-up 'job chain is closed' "$agent_dispatch" follow-up -
 
 # A close racing a follow-up cannot land between its open check and child creation.
 run_agent_fixture close-race close-race "$agent_dispatch" dispatch --role design-critic --outputs "$fixture_declared_outputs" --design metasystem/scripts/agents/roles/design-critic.md --brief "$happy_brief" --job-id close-race --wait
+close_race_record="$agent_repo/artifacts/agents/jobs/close-race.json"
+close_race_workspace=$("$engine" json get --file "$close_race_record" --field workspaceRoot)
+close_race_subject="$agent_repo/artifacts/agents/close-race/rounds/1/subject.json"
+close_race_content_digest=$("$engine" util sha256 --file "$close_race_workspace/metasystem/scripts/agents/roles/design-critic.md")
+[[ "$("$engine" json get --file "$close_race_subject" --field kind)" == design \
+   && "$("$engine" json get --file "$close_race_subject" --field designPath)" == metasystem/scripts/agents/roles/design-critic.md \
+   && "$("$engine" json get --file "$close_race_subject" --field contentDigest)" == "$close_race_content_digest" ]] \
+  || { echo "the design critic subject was not persisted from its reviewed workspace" >&2; exit 1; }
 close_rc="$agent_fixture/close-race.close"; follow_rc="$agent_fixture/close-race.follow"
 wait_for_agent_census_fresh close-race-follow
 (set +e; cd "$agent_repo"; scripts/agents/dispatch.sh close --job close-race >/dev/null 2>&1; printf '%s\n' "$?" >"$close_rc") & close_pid=$!

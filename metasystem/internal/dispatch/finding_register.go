@@ -19,8 +19,16 @@ import (
 
 const findingRegisterField = "findingRegister"
 const findingRegisterRoundField = "findingRegisterRound"
+const findingRegisterSubjectDigestField = "findingRegisterSubjectDigest"
 const reviewRoundLimitField = "reviewRoundLimit"
 const criticRoundsConsumedField = "criticRoundsConsumed"
+
+func init() {
+	// These fields are written only by the locked finding-register owner.
+	// Register them here so generic record transitions cannot pre-seed proof.
+	dedicatedMetadataFields[closureField] = true
+	dedicatedMetadataFields[findingRegisterSubjectDigestField] = true
+}
 
 type registerFinding struct {
 	FindingID      string
@@ -135,21 +143,33 @@ func CritiqueRegisterAdvance(repoRoot, rootJob, roundJob string) (outcome string
 				if subjectErr != nil {
 					return subjectErr
 				}
-				var demotions []any
-				advanced, demotions, registerErr = foldCritiqueFindings(register, role, roundJob, findings, result["rigor"], subject, round)
-				if registerErr != nil {
-					return registerErr
+				persisted, subjectPresent, readSubjectErr := readRoundSubject(state.agents, rootJob, round)
+				if readSubjectErr != nil {
+					return fmt.Errorf("critique root record %s round %d has a malformed subject: %v", rootJob, round, readSubjectErr)
 				}
-				if len(demotions) > 0 {
-					current := []any{}
-					if value, present := root["demotions"]; present {
-						var ok bool
-						current, ok = value.([]any)
-						if !ok {
-							return fmt.Errorf("critique root record %s has malformed demotions", rootJob)
-						}
+				delete(root, findingRegisterSubjectDigestField)
+				if subjectPresent {
+					root[findingRegisterSubjectDigestField] = persisted.Digest()
+				}
+				if subjectPresent && !returnBindsSubject(persisted, result) {
+					advanced = foldUnboundReturn(register, role, roundJob, persisted, result)
+				} else {
+					var demotions []any
+					advanced, demotions, registerErr = foldCritiqueFindings(register, role, roundJob, findings, result["rigor"], subject, round)
+					if registerErr != nil {
+						return registerErr
 					}
-					root["demotions"] = append(current, demotions...)
+					if len(demotions) > 0 {
+						current := []any{}
+						if value, present := root["demotions"]; present {
+							var ok bool
+							current, ok = value.([]any)
+							if !ok {
+								return fmt.Errorf("critique root record %s has malformed demotions", rootJob)
+							}
+						}
+						root["demotions"] = append(current, demotions...)
+					}
 				}
 			}
 			if conflictErr := refuseCrossRootClassConflict(state, rootJob, advanced); conflictErr != nil {
@@ -246,6 +266,44 @@ func foldProtocolError(register []registerFinding, role, roundJob string, roundR
 
 func syntheticProtocolFindingID(role, roundJob string) string {
 	sum := sha256.Sum256(canonicalJSON([]any{"protocol_error", role, roundJob}))
+	return "synthetic-" + hex.EncodeToString(sum[:])
+}
+
+func returnBindsSubject(subject ReadSubject, result map[string]any) bool {
+	switch subject.Kind {
+	case SubjectLive:
+		return asString(result["reviewedTree"]) == subject.ReviewedProjectTree
+	case SubjectCommit:
+		return asString(result["reviewedTree"]) == subject.Tree
+	case SubjectDesign:
+		return asString(result["reviewedCommit"]) == subject.ReviewedCommit
+	default:
+		return false
+	}
+}
+
+func foldUnboundReturn(register []registerFinding, role, roundJob string, subject ReadSubject, result map[string]any) []registerFinding {
+	advanced := append([]registerFinding(nil), register...)
+	id := syntheticUnboundFindingID(role, roundJob)
+	for _, finding := range advanced {
+		if finding.FindingID == id {
+			return advanced
+		}
+	}
+	advanced = append(advanced, registerFinding{
+		FindingID: id, Critic: roundJob, RigorClass: critiqueModel.Unproven,
+		Status: "open", Title: "critic return is not bound to the persisted read subject",
+		FactsDigest: digestJSON(nil),
+		EvidenceDigest: digestJSON(map[string]any{
+			"subjectDigest": subject.Digest(), "reviewedTree": result["reviewedTree"], "reviewedCommit": result["reviewedCommit"],
+		}),
+		Multiplicity: 1,
+	})
+	return advanced
+}
+
+func syntheticUnboundFindingID(role, roundJob string) string {
+	sum := sha256.Sum256(canonicalJSON([]any{"unbound_return", role, roundJob}))
 	return "synthetic-" + hex.EncodeToString(sum[:])
 }
 
@@ -524,6 +582,95 @@ func CritiqueRegisterClose(repoRoot, rootJob string) (string, error) {
 		})
 		return outcome, err
 	})
+}
+
+func cleanClosure(state critiqueState, rootJob string, root map[string]any, register []registerFinding) (Closure, bool, error) {
+	foldedRound, err := findingRegisterRound(root, len(register))
+	if err != nil {
+		return Closure{}, false, err
+	}
+	if foldedRound < 1 {
+		return Closure{}, false, nil
+	}
+	for _, finding := range register {
+		if finding.Status != "resolved" || finding.Resolution != "withdrawn" {
+			return Closure{}, false, nil
+		}
+	}
+	for jobID, record := range state.records {
+		round, ok := numInt(record["round"])
+		if ok && round > foldedRound && state.chainRoot(jobID) == rootJob {
+			return Closure{}, false, nil
+		}
+	}
+	subject, present, err := readRoundSubject(state.agents, rootJob, foldedRound)
+	if err != nil {
+		return Closure{}, false, err
+	}
+	if !present {
+		return Closure{}, false, nil
+	}
+	want := Closure{CriticRoot: rootJob, Round: foldedRound, Subject: subject, Mechanism: "clean"}
+	existing, present, err := ReadClosure(root)
+	if err != nil {
+		return Closure{}, false, err
+	}
+	if present {
+		if existing.CriticRoot == want.CriticRoot && existing.Round == want.Round && existing.Mechanism == want.Mechanism && existing.Subject.Equal(want.Subject) {
+			return want, false, nil
+		}
+		return Closure{}, false, fmt.Errorf("critic root %s already carries closure round %d subject %s; refusing to replace it with round %d subject %s", rootJob, existing.Round, existing.Subject.Digest(), want.Round, want.Subject.Digest())
+	}
+	roundJob, roundRecord, err := critiqueRecordForRound(state, rootJob, foldedRound)
+	if err != nil {
+		return Closure{}, false, err
+	}
+	if asString(roundRecord["status"]) != "completed" {
+		return Closure{}, false, nil
+	}
+	resultPath := filepath.Join(state.agents, rootJob, "rounds", fmt.Sprint(foldedRound), "return.json")
+	result, err := readObject(resultPath)
+	if err != nil {
+		return Closure{}, false, fmt.Errorf("critique return for job %s is unreadable while closing: %v", roundJob, err)
+	}
+	returnedRound, roundOK := numInt(result["round"])
+	if asString(result["jobId"]) != roundJob || !roundOK || returnedRound != foldedRound {
+		return Closure{}, false, nil
+	}
+	if !returnBindsSubject(subject, result) {
+		return Closure{}, false, nil
+	}
+	foldedSubjectDigest := asString(root[findingRegisterSubjectDigestField])
+	if foldedSubjectDigest == "" || subject.Digest() != foldedSubjectDigest {
+		return Closure{}, false, fmt.Errorf("critic root %s round %d closure subject %s is not the folded subject %s", rootJob, foldedRound, subject.Digest(), foldedSubjectDigest)
+	}
+	return want, true, nil
+}
+
+func critiqueRecordForRound(state critiqueState, rootJob string, round int64) (string, map[string]any, error) {
+	var roundJob string
+	var roundRecord map[string]any
+	for jobID, record := range state.records {
+		candidateRound, ok := numInt(record["round"])
+		if !ok || candidateRound != round || state.chainRoot(jobID) != rootJob {
+			continue
+		}
+		if roundRecord != nil {
+			return "", nil, fmt.Errorf("critic root %s carries multiple records for folded round %d", rootJob, round)
+		}
+		roundJob, roundRecord = jobID, record
+	}
+	if roundRecord == nil {
+		return "", nil, fmt.Errorf("critic root %s has no record for folded round %d", rootJob, round)
+	}
+	return roundJob, roundRecord, nil
+}
+
+func encodeClosure(closure Closure) map[string]any {
+	data, _ := json.Marshal(closure)
+	var encoded map[string]any
+	_ = json.Unmarshal(data, &encoded)
+	return encoded
 }
 
 func deterministicULID(value string) string {

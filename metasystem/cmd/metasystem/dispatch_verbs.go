@@ -1780,6 +1780,21 @@ func runDispatchCritiqueRegisterClose(args []string) int {
 	return 0
 }
 
+func runDispatchCritiqueClose(args []string) int {
+	if refuseRepeatedFlags("job critique-close", args) {
+		return 2
+	}
+	flags := flag.NewFlagSet("job critique-close", flag.ContinueOnError)
+	repo := flags.String("repo", ".", "checkout root")
+	rootJob := flags.String("root-job", "", "critic root")
+	runnerClosed := flags.Bool("runner-closed", false, "mark the runner closed")
+	if flags.Parse(args) != nil || flags.NArg() != 0 || *rootJob == "" {
+		fmt.Fprintln(os.Stderr, "job critique-close: --root-job is required")
+		return 2
+	}
+	return recordExit(dispatchcore.CritiqueChainClose(*repo, *rootJob, *runnerClosed))
+}
+
 func runDispatchCritiqueBudgetRebind(args []string) int {
 	flags := flag.NewFlagSet("job critique-budget-rebind", flag.ContinueOnError)
 	repo := flags.String("repo", ".", "checkout root")
@@ -1793,6 +1808,39 @@ func runDispatchCritiqueBudgetRebind(args []string) int {
 		return recordExit(err)
 	}
 	fmt.Println(outcome)
+	return 0
+}
+
+func runDispatchReadSubject(args []string) int {
+	flags := flag.NewFlagSet("job read-subject", flag.ContinueOnError)
+	repo := flags.String("repo", ".", "checkout root")
+	role := flags.String("role", "", "critic role")
+	reviews := flags.String("reviews", "", "reviewed implementer job or commit")
+	workspace := flags.String("workspace", "", "reviewed workspace")
+	design := flags.String("design", "", "reviewed design path")
+	outputs := flags.String("outputs", "", "declared outputs file")
+	rootJob := flags.String("root-job", "", "critic root for a follow-up")
+	output := flags.String("output", "", "subject output file")
+	if flags.Parse(args) != nil || flags.NArg() != 0 {
+		return 2
+	}
+	subject, present, err := dispatchcore.ComputeReadSubject(dispatchcore.ReadSubjectRequest{
+		RepoRoot: *repo, Role: *role, Reviews: *reviews, Workspace: *workspace,
+		Design: *design, DeclaredOutputs: *outputs, RootJob: *rootJob,
+	})
+	if err != nil {
+		return recordExit(err)
+	}
+	if !present {
+		fmt.Println("absent")
+		return 0
+	}
+	if *output != "" {
+		if err := dispatchcore.WriteReadSubject(*output, subject); err != nil {
+			return recordExit(err)
+		}
+	}
+	fmt.Println("present")
 	return 0
 }
 

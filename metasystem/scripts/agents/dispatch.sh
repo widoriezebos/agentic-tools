@@ -85,6 +85,7 @@ exit_cleanup_job=
 exit_cleanup_chain=
 exit_cleanup_authorization=
 exit_cleanup_message=
+exit_cleanup_subject=
 exit_cleanup_continuation=
 exit_cleanup_prompt=
 exit_cleanup_composition=
@@ -1393,7 +1394,7 @@ dispatch_job() {
   local overridden=false mission_data mission lease mission_turn canonical model_key cap_resolution tiers_present=false escalation_required=0
   local cost_direction= approval_name= approved_at= approved_ref= roster_json=
   local permission_name permission_json permission_digest tool_policy snapshot_json snapshot_path fallbacks signal handshake_budget resume_cap input_bytes input_hash payload round_dir record_json launch_mode goal_revision=0 goal_tier=0 goal_width= goal_binding goal_machine= goal_claim_epoch= proposed_cap=0 reservation_claim_epoch=
-  local occupancy_preparation claim_output claim_outcome claim_rc=0 launch_capability= creation_claim= cap operation_brief_hash prompt_temp composition_temp stage_temp composition_output composition_rc=0 preflight_output preflight_outcome preflight_rc=0 replay_operation=0 destructive_reach= reasoning_effort= authority_base=
+  local occupancy_preparation claim_output claim_outcome claim_rc=0 launch_capability= creation_claim= cap operation_brief_hash prompt_temp composition_temp stage_temp composition_output composition_rc=0 preflight_output preflight_outcome preflight_rc=0 replay_operation=0 destructive_reach= reasoning_effort= authority_base= subject_temp= subject_output= subject_rc=0
   local -a product_root_args=() composition_source_args=()
 	local brain_fence_rc=0
 	brain_outcome=$(brain_fence_outcome dispatch) || brain_fence_rc=$?
@@ -1642,7 +1643,7 @@ dispatch_job() {
   exit_cleanup_job=$job
   exit_cleanup_chain=$job
   exit_cleanup_authorization=
-  trap 'code=$?; if (( code != 0 )); then fail_setup_husk "$exit_cleanup_job"; release_unpublished_authorization "$exit_cleanup_authorization"; fi; cleanup_creation_claim; cleanup_composition_temporaries; release_cap_authority_lock; release_exit_lifecycle; release_goal_revision_lock; release_chain_lock "$exit_cleanup_chain"; checkout_execution_guard_release || true' EXIT
+  trap 'code=$?; if (( code != 0 )); then fail_setup_husk "$exit_cleanup_job"; release_unpublished_authorization "$exit_cleanup_authorization"; fi; cleanup_creation_claim; cleanup_composition_temporaries; cleanup_subject_temp; release_cap_authority_lock; release_exit_lifecycle; release_goal_revision_lock; release_chain_lock "$exit_cleanup_chain"; checkout_execution_guard_release || true' EXIT
   # A payload without a reservation belongs to another operation. A payload
   # beside a reservation is resolved by claim-launch as the same operation.
   [[ -e "$jobs/$job.json" || ! -e "$agents/$job" ]] \
@@ -1691,6 +1692,16 @@ dispatch_job() {
     design_check=$design
     [[ "$design_check" = /* ]] || design_check="$workspace/$design_check"
     [[ -f "$design_check" ]] || die 2 "design-critic --design file does not exist in the reviewed workspace: $design"
+  fi
+  if is_review_role "$role"; then
+    subject_temp=$(mktemp "$record_locks/subject.XXXXXX")
+    exit_cleanup_subject=$subject_temp
+    set +e
+    subject_output=$("$ms" job read-subject --repo "$root" --role "$role" --reviews "$reviews" \
+      --workspace "$workspace" --design "$design" --outputs "$outputs" --output "$subject_temp" 2>&1)
+    subject_rc=$?
+    set -e
+    (( subject_rc == 0 )) || die "$subject_rc" "$subject_output"
   fi
   if [[ "$role" == implementer && -n "$goal" ]]; then
     local brief_with_gate
@@ -1863,6 +1874,10 @@ dispatch_job() {
   release_cap_authority_lock
 
   mkdir -p "$round_dir"
+  [[ -z "$subject_temp" || ! -s "$subject_temp" ]] || mv "$subject_temp" "$round_dir/subject.json"
+  [[ -z "$subject_temp" ]] || rm -f -- "$subject_temp"
+  subject_temp=
+  exit_cleanup_subject=
   if [[ "$role" == code-critic && "$reviews" =~ ^commit:[0-9a-f]{40}$ ]]; then
     local reviewed_commit=${reviews#commit:}
     git -C "$root" diff --binary --full-index "$reviewed_commit^" "$reviewed_commit" >"$round_dir/diff.patch" \
@@ -2042,6 +2057,11 @@ cleanup_follow_up_message() {
   exit_cleanup_message=
   [[ -z "${exit_cleanup_continuation:-}" ]] || rm -f -- "$exit_cleanup_continuation"
   exit_cleanup_continuation=
+}
+
+cleanup_subject_temp() {
+  [[ -z "${exit_cleanup_subject:-}" ]] || rm -f -- "$exit_cleanup_subject"
+  exit_cleanup_subject=
 }
 
 append_critique_open_ids() { # source message, output message, critic root
@@ -2306,7 +2326,7 @@ prepend_follow_up_rebase_paragraph() { # source, output, rebased from, rebased t
 follow_up() {
   local job= message= wait=0 root_id latest status error session role runtime model model_key workspace reviewed_commit round child payload round_dir cap_resolution permission_json permission_digest tool_policy snapshot_json snapshot_path fallbacks signal handshake_budget resume_cap record_json mission mission_data lease mission_turn goal reviews=
   local resume_mode=resumed adapter_verb=follow-up delivery_content parent_round launch_mode goal_revision=0 goal_tier=0 goal_width= goal_binding goal_machine= goal_claim_epoch= proposed_cap=0 reservation_claim_epoch= approved_ref= operation_override= operation_id operation_parent operation_brief_hash standing_child_record= destructive_reach=
-  local occupancy_preparation claim_output claim_outcome claim_rc=0 launch_capability= creation_claim= cap resumed_for_claim input_bytes input_hash prompt_temp composition_temp stage_temp composition_output composition_rc=0 preflight_output preflight_outcome preflight_rc=0 replay_operation=0
+  local occupancy_preparation claim_output claim_outcome claim_rc=0 launch_capability= creation_claim= cap resumed_for_claim input_bytes input_hash prompt_temp composition_temp stage_temp composition_output composition_rc=0 preflight_output preflight_outcome preflight_rc=0 replay_operation=0 subject_temp= subject_output= subject_rc=0
   local repeated_follow_up=0 parent_job fresh_context_temp= worktree_path= trunk_commit= rebase_plan= plan_rebase=false behind=0 unmerged_json= authority_message=
   local rebased_from= rebased_to= rebase_failure= rebase_message_temp= previous_message_temp= root_launch_mode=
   local continuation= continuation_role= continuation_launch= continuation_workspace= continuation_temp= cap_truncated=
@@ -2344,7 +2364,7 @@ follow_up() {
   # runs, and under set -u the trap dies on the expansion before releasing
   # anything (the Linux cap-authority leak, go-production-grade Phase 1).
   exit_cleanup_chain=$root_id
-  trap 'cleanup_composition_temporaries; cleanup_follow_up_message; release_goal_revision_lock; release_chain_lock "$exit_cleanup_chain"' EXIT
+  trap 'cleanup_composition_temporaries; cleanup_subject_temp; cleanup_follow_up_message; release_goal_revision_lock; release_chain_lock "$exit_cleanup_chain"' EXIT
   [[ "$(json_field "$jobs/$root_id.json" chainClosed 2>/dev/null || true)" != true ]] || die 1 "job chain is closed"
   latest=$(latest_chain_record "$root_id") || die 1 "cannot find the newest chain record"
   status=$(json_field "$latest" status); error=$(json_field "$latest" error 2>/dev/null || true)
@@ -2588,11 +2608,21 @@ follow_up() {
     set -e
     (( exhaustion_rc == 0 )) || die "$exhaustion_rc" "$exhaustion_outcome"
   fi
+  if is_review_role "$role" && (( repeated_follow_up == 0 )); then
+    subject_temp=$(mktemp "$record_locks/subject.XXXXXX")
+    exit_cleanup_subject=$subject_temp
+    set +e
+    subject_output=$("$ms" job read-subject --repo "$root" --role "$role" --root-job "$root_id" \
+      --workspace "$workspace" --output "$subject_temp" 2>&1)
+    subject_rc=$?
+    set -e
+    (( subject_rc == 0 )) || die "$subject_rc" "$subject_output"
+  fi
   mkdir -p "$record_locks"
   exit_cleanup_job=$child
   exit_cleanup_chain=$root_id
   exit_cleanup_authorization=
-  trap 'code=$?; if (( code != 0 )); then fail_setup_husk "$exit_cleanup_job"; release_unpublished_authorization "$exit_cleanup_authorization"; fi; cleanup_creation_claim; cleanup_composition_temporaries; cleanup_follow_up_message; release_cap_authority_lock; release_exit_lifecycle; release_goal_revision_lock; release_chain_lock "$exit_cleanup_chain"' EXIT
+  trap 'code=$?; if (( code != 0 )); then fail_setup_husk "$exit_cleanup_job"; release_unpublished_authorization "$exit_cleanup_authorization"; fi; cleanup_creation_claim; cleanup_composition_temporaries; cleanup_subject_temp; cleanup_follow_up_message; release_cap_authority_lock; release_exit_lifecycle; release_goal_revision_lock; release_chain_lock "$exit_cleanup_chain"' EXIT
   permission_json=$(mktemp "$record_locks/follow-permissions.XXXXXX")
   json_field "$latest" permissions.requested >"$permission_json"
   permission_digest=$(sha256_file "$permission_json")
@@ -2768,6 +2798,10 @@ follow_up() {
   release_cap_authority_lock
 
   mkdir -p "$round_dir"
+  [[ -z "$subject_temp" || ! -s "$subject_temp" ]] || mv "$subject_temp" "$round_dir/subject.json"
+  [[ -z "$subject_temp" ]] || rm -f -- "$subject_temp"
+  subject_temp=
+  exit_cleanup_subject=
   if [[ -n "$fresh_context_temp" ]]; then
     delivery_content="$round_dir/fresh-context.md"
     mv "$fresh_context_temp" "$delivery_content"
@@ -2870,7 +2904,7 @@ cancel_job() {
 }
 
 close_chain() {
-	local job= root_id root_record status patch runner_closed=false reconcile_evidence= brain_fence_rc=0
+	local job= root_id root_record role status patch runner_closed=false reconcile_evidence= brain_fence_rc=0
 	brain_outcome=$(brain_fence_outcome close) || brain_fence_rc=$?
 	if (( brain_fence_rc == 0 )); then
 		record_delegate_outcome_raw "$brain_outcome"
@@ -2914,20 +2948,29 @@ close_chain() {
     | while IFS='|' read -r chain_job chain_status; do
       mirror_record "$chain_job" || true
     done
-  if [[ "$(json_field "$jobs/$root_id.json" role 2>/dev/null || true)" == design-critic || "$(json_field "$jobs/$root_id.json" role 2>/dev/null || true)" == code-critic || "$(json_field "$jobs/$root_id.json" role 2>/dev/null || true)" == warden ]]; then
+  role=$(json_field "$jobs/$root_id.json" role 2>/dev/null || true)
+  if [[ "$role" == design-critic || "$role" == code-critic || "$role" == warden ]]; then
     "$ms" job critique-register-close --repo "$root" --root-job "$root_id"
   fi
   "$ms" job close-check --repo "$root" --root "$root_id"
-  status=$(json_field "$root_record" status)
-  patch=$(mktemp "$record_locks/close.XXXXXX")
-  if [[ "$runner_closed" == true ]]; then
-    printf '{"chainClosed":true,"runnerClosed":true}\n' >"$patch"
+  if [[ "$role" == design-critic || "$role" == code-critic || "$role" == warden ]]; then
+    if [[ "$runner_closed" == true ]]; then
+      lease_run_held "$current_claim_epoch" "$0" __critique-close --root-job "$root_id" --runner-closed
+    else
+      lease_run_held "$current_claim_epoch" "$0" __critique-close --root-job "$root_id"
+    fi
   else
-    printf '{"chainClosed":true}\n' >"$patch"
+    status=$(json_field "$root_record" status)
+    patch=$(mktemp "$record_locks/close.XXXXXX")
+    if [[ "$runner_closed" == true ]]; then
+      printf '{"chainClosed":true,"runnerClosed":true}\n' >"$patch"
+    else
+      printf '{"chainClosed":true}\n' >"$patch"
+    fi
+    lease_run_held "$current_claim_epoch" "$0" __record-cas --job "$root_id" \
+      --expect "$status" --status "$status" --patch "$patch"
+    rm -f "$patch"
   fi
-  lease_run_held "$current_claim_epoch" "$0" __record-cas --job "$root_id" \
-    --expect "$status" --status "$status" --patch "$patch"
-  rm -f "$patch"
   remove_chain_build_cache "$root_id"
   release_chain_lock "$root_id"; trap - EXIT
 }
@@ -3315,6 +3358,11 @@ case "$command" in
     [[ ${1:-} == --job && $# -ge 2 ]] || exit 2
     internal_authority record-writer "$2"
     "$ms" job record-cas --root "$root" "$@"
+    ;;
+  __critique-close)
+    [[ ${1:-} == --root-job && $# -ge 2 ]] || exit 2
+    internal_authority record-writer "$2"
+    "$ms" job critique-close --repo "$root" "$@"
     ;;
   __protocol-error)
     [[ ${1:-} == --job && $# -ge 2 ]] || exit 2

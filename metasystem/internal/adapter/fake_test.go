@@ -127,6 +127,35 @@ func TestWriteFakeReturnPerRole(t *testing.T) {
 	}
 }
 
+func TestWriteFakeReturnReadsSubjectTree(t *testing.T) {
+	zeros := strings.Repeat("0", 40)
+	for _, test := range []struct {
+		name, role, subject, want string
+	}{
+		{"live", "code-critic", `{"kind":"live","reviewedProjectTree":"live-tree"}`, "live-tree"},
+		{"commit", "warden", `{"kind":"commit","tree":"commit-tree"}`, "commit-tree"},
+		{"absent", "code-critic", "", zeros},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			dir := t.TempDir()
+			record := filepath.Join(dir, "job.json")
+			prompt := filepath.Join(dir, "prompt.md")
+			output := filepath.Join(dir, "return.json")
+			writeFile(t, record, `{"jobId":"critic","round":1,"role":"`+test.role+`","sessionId":"session","requestedModel":"model","effectiveModel":"model"}`)
+			writeFile(t, prompt, "Working Mode: implement\n")
+			if test.subject != "" {
+				writeFile(t, filepath.Join(dir, "subject.json"), test.subject+"\n")
+			}
+			if err := WriteFakeReturn(record, prompt, output); err != nil {
+				t.Fatal(err)
+			}
+			if got := readJSONFile(t, output)["reviewedTree"]; got != test.want {
+				t.Fatalf("reviewedTree = %v, want %q", got, test.want)
+			}
+		})
+	}
+}
+
 func TestWriteFakeReturnDesignCriticReviewsHead(t *testing.T) {
 	workspace := t.TempDir()
 	git := func(args ...string) {

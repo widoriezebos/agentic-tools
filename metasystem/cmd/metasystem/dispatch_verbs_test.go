@@ -528,6 +528,17 @@ func TestDispatchCritiqueAdvanceVerbsPath(t *testing.T) {
 	if code := runDispatchCritiqueOpenFindingIDs([]string{"--repo", repo}); code != 2 {
 		t.Fatalf("open finding identifiers usage error exit=%d, want 2", code)
 	}
+	if code := runDispatchCritiqueClose([]string{"--repo", repo}); code != 2 {
+		t.Fatalf("critic chain close usage error exit=%d, want 2", code)
+	}
+	for _, args := range [][]string{
+		{"--repo", repo, "--root-job", "authorized", "--root-job", "redirected"},
+		{"--repo", repo, "--root-job", "authorized", "--repo", t.TempDir()},
+	} {
+		if code := runDispatchCritiqueClose(args); code != 2 {
+			t.Fatalf("critic chain close repeated authority flag %v exit=%d, want 2", args, code)
+		}
+	}
 }
 
 func TestDispatchCritiqueRegisterCloseKeepsRegisterlessCompatibility(t *testing.T) {

@@ -1,6 +1,7 @@
 package adapter
 
 import (
+	"encoding/json"
 	"fmt"
 	"net"
 	"os"
@@ -88,7 +89,22 @@ func WriteFakeReturn(recordPath, promptPath, outputPath string) error {
 			}
 			value["reviewedCommit"] = commit
 		} else {
-			value["reviewedTree"] = strings.Repeat("0", 40)
+			reviewedTree := strings.Repeat("0", 40)
+			data, readErr := os.ReadFile(filepath.Join(filepath.Dir(promptPath), "subject.json"))
+			var subject struct {
+				Kind                string `json:"kind"`
+				ReviewedProjectTree string `json:"reviewedProjectTree"`
+				Tree                string `json:"tree"`
+			}
+			if readErr == nil && json.Unmarshal(data, &subject) == nil {
+				switch subject.Kind {
+				case "live":
+					reviewedTree = subject.ReviewedProjectTree
+				case "commit":
+					reviewedTree = subject.Tree
+				}
+			}
+			value["reviewedTree"] = reviewedTree
 		}
 	case "implementer":
 		value["riskiestPart"] = "fake boundary"

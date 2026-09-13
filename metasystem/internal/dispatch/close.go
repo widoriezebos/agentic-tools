@@ -210,3 +210,50 @@ func CloseCheck(repoRoot, root string) error {
 	}
 	return nil
 }
+
+// CritiqueChainClose closes a critic chain and records any clean closure in
+// the same root-record write. The dispatcher holds the chain lock around this
+// operation, while these locks keep register and record owners serialized.
+func CritiqueChainClose(repoRoot, rootJob string, runnerClosed bool) error {
+	_, err := withFindingRegisterLock(repoRoot, func() (string, error) {
+		closeErr := withRecordSessionLock(repoRoot, rootJob, func(recordPath string, transaction *SessionIndexTransaction) error {
+			root, err := readObject(recordPath)
+			if err != nil {
+				return err
+			}
+			role := asString(root["role"])
+			if role != "design-critic" && role != "code-critic" && role != "warden" {
+				return fmt.Errorf("job %s is not a critic chain root", rootJob)
+			}
+			if err := CloseCheck(repoRoot, rootJob); err != nil {
+				return err
+			}
+			if closed, _ := root["chainClosed"].(bool); closed {
+				return nil
+			}
+
+			state := loadCritiqueState(repoRoot)
+			register, _, err := critiqueFindingRegister(root)
+			if err != nil {
+				return err
+			}
+			closure, writeClosure, err := cleanClosure(state, rootJob, root, register)
+			if err != nil {
+				return err
+			}
+			if writeClosure {
+				root[closureField] = encodeClosure(closure)
+			}
+			root["chainClosed"] = true
+			if runnerClosed {
+				root["runnerClosed"] = true
+			}
+			if err := writeRecord(recordPath, root); err != nil {
+				return err
+			}
+			return transaction.syncRecord(rootJob, root)
+		})
+		return "", closeErr
+	})
+	return err
+}
