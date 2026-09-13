@@ -9,7 +9,8 @@
 - Origin: main
 - Next step: Blocked until slice 1 lands. Then: specify the held fake host in scripts/agents/hosts/fake.sh (how a turn selects the held behaviour and how the fixture proves its signal handler is installed before stop runs; round 5 of the slice-1 chain stopped on exactly this and was right to), then write the scenarios in the beds section 10 assigns them, then one code critique. The orchestrator runs the supervision, mission and suite-progress beds outside the sandbox: a delegate sandbox cannot execute a freshly copied fixture engine (status 126) nor authenticate spawned process groups
 - OpenedAt: 2026-09-07T07:30:28Z
-- Revision: 17
+- Revision: 18
+- Pinned: m1b
 - Budget: elapsedLimit=4h attemptLimit=6 reservedJobMinutesLimit=720 activeJobLimit=1 reviewRoundLimit=2
 - BudgetExceptions: 0
 
@@ -31,4 +32,5 @@ History:
 - 2026-09-11T22:09:00Z C3BMZ7DRFM4AWMATVMSXQZHBTQ-m1-c6925449 done actor=human:Wido targets=adoption-inventory-from-install-set,chain-landing-carries-the-reviewed-diff,commit-goal-binding,design-gate-at-dispatch,first-headless-run,fleet-channel-gateway,fleet-join-bootstrap,fleet-pull,gate-governance-records,headless-continuous-delivery-proof,headless-fleet-coordination-proof,hook-enrollment-per-checkout,human-approval-for-execution,idle-every-runtime-enforcement,landing-design-provenance,manifest-floor-at-dispatch,merge-stage-critic-close,metasystem-stop-escalation-proofs,mission-birth-baseline-from-dirty-worktree,never-idle-ironclad,one-approval-gate,recovery-rehearsal,recovery-to-good-state,repo-root-paths-ride-agent-commits-unjudged,role-context-composition,role-lane-packets,seat-mutual-awareness reason=priority-order from=2:20 to=2:19
 - 2026-09-13T06:44:32Z VP6AD63TYG5F9F8NVDKDX85A61-m1e-c6925449 set-priority actor=human:Wido targets=chain-landing-carries-the-reviewed-diff,first-headless-run,fleet-channel-gateway,fleet-join-bootstrap,fleet-pull,gate-governance-records,headless-continuous-delivery-proof,headless-fleet-coordination-proof,idle-every-runtime-enforcement,metasystem-stop-escalation-proofs,mission-birth-baseline-from-dirty-worktree,never-idle-ironclad,recovery-rehearsal,recovery-to-good-state,repo-root-paths-ride-agent-commits-unjudged,role-context-composition,role-lane-packets,seat-mutual-awareness reason=priority-order subject=chain-landing-carries-the-reviewed-diff from=2:19 to=2:18 requested-sequence=32
 - 2026-09-13T06:44:41Z 59E2SS1PHG2JEY44B98S85XHVC-m1e-c6925449 set-priority actor=human:Wido targets=first-headless-run,fleet-channel-gateway,fleet-join-bootstrap,fleet-pull,gate-governance-records,headless-continuous-delivery-proof,headless-fleet-coordination-proof,idle-every-runtime-enforcement,metasystem-stop-escalation-proofs,mission-birth-baseline-from-dirty-worktree,never-idle-ironclad,recovery-rehearsal,recovery-to-good-state,repo-root-paths-ride-agent-commits-unjudged,role-context-composition,role-lane-packets,seat-mutual-awareness reason=priority-order subject=repo-root-paths-ride-agent-commits-unjudged from=2:18 to=2:17 requested-sequence=33
-Integrity: sha256=8c42bbcccd62753a89c5b494660d397bbd7737b8a1a6ee3279c4bef0c3654a70
+- 2026-09-13T07:44:35Z 3HAZF996GTHDBJCZ5JEAFGPWCW-m1e-c6925449 set-pin actor=human:Wido targets=metasystem-stop-escalation-proofs
+Integrity: sha256=a7bcf7bf36f55e17c088f68b5571c3d3d9aac7f97e4fd1cd4595c5261a821518
