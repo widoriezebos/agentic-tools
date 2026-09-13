@@ -2,11 +2,11 @@
 
 - Owner: m1e (goal 15 of plans/delivery-efficiency-plan.md). **Revision 3, 2026-09-13**, written on the seat (Fable) under Wido's lanes; revision 2 (5b5e917b) was read by Codex gpt-5.6-sol (records/misc/coordinator-context-design-critique-r2.md, six material findings, rework required) and this revision folds all six with Wido's two answers of 2026-09-13 (section 10).
 - Goal and current status: slice 1 landed 644960b4 (the ledger projections). Revision 3 is the design for slices 1b, 2 and 3; not built.
-- In flight right now: this revision, then its Codex read (round 3), then slice 1b on Codex with an Opus read.
+- In flight right now: a Fable design delegate converting slice 1b into an obligation matrix and a Codex build brief (D81 exit; result to the seat's scratch, ccb-build-spec.md), started 2026-09-13 12:35 local.
 - Decisions made (and who made them): Wido, 2026-09-13 ("I agree with all your proposals"): (1) DONE is read as by construction where the engine owns the surface and by instruction and measurement elsewhere, the week's ceiling breach failing the goal; (2) exclusivity at the handoff by an observed predecessor death before the continuation launches, no ownership epoch. The seat: the mechanisms of sections 2 to 5 and 7.
 - Waiting on the human: nothing.
 - Dead ends (do not retry without new evidence): filtering only `goal list`; smaller summaries without a session boundary; a Claude-only hook; automatic compaction; reading lifetime usage totals as the size of one prompt; a second transcript parser; a transfer id with acknowledgements (a record of overlap, not exclusion); a mutable state file at a fixed path (revision 2, refused: a delayed continuation reads a later handoff); a session-stop authorization as an exit primitive (revision 2, refused: it ends no harness); calling retrospective detection "bounded by construction" (revision 2, refused; settled by Wido's reading).
-- Next step: the round-3 Codex read of this revision; fold; then slice 1b on Codex with an Opus read; slices 2 and 3 after their gates (section 8).
+- Next step: in flight, by design: when the delegate returns, land its matrix onto this page; then Codex gpt-5.6-sol builds slice 1b behind it, Opus reads the build, the seat lands. No revision 4 and no further prose read (D81; round 3 read: records/misc/coordinator-context-design-critique-r3.md, eight material findings).
 
 ## 0. The contract this revision builds to
 

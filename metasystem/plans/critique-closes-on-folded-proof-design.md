@@ -2,11 +2,11 @@
 
 - Owner: m1e (goal 16 of plans/delivery-efficiency-plan.md), claimed for the design. **Revision 3, 2026-09-13**, written on the seat (Fable) under Wido's lanes after his word on section 11 (option (a)): this page is narrowed to the rules he has ruled on, no read of a subject already read clean and the close on a prior clean read, design critique failing safe at round two, and the measure; the certification record (rule 1 of the DONE line) moves to goal certification-closes-a-folded-bounded-finding, opened in his name, whose page starts from the two read records of this one.
 - Goal and current status: designed, not built; revision 3 folds the round-2 amendments that apply to the kept rules (section 10).
-- In flight right now: this revision, then its Codex read (round 3, on the narrowed page), then slice 0 on Codex with an Opus read.
+- In flight right now: a Fable design delegate converting slices 0 and 1 into fixture obligations and a Codex build brief (D81 exit; result to the seat's scratch, ccf-build-spec.md), started 2026-09-13 12:35 local.
 - Decisions made (and who made them): Wido, R-97-m1e (both rules; escalation over a third round). Wido, R-60-m1 (stop at the first round with no material finding; findings that fail the artifact test are demoted). Wido, R-42-m0 (three rounds is the ceiling). Wido, D81 (2026-08-16: two prose budgets spent without convergence exit to implementation behind fixtures, never a third prose budget). Wido, 2026-09-13 ("I agree with all your proposals"): option (a) of section 11. The seat: the mechanisms of sections 3 to 5.
 - Waiting on the human: nothing.
 - Dead ends (do not retry without new evidence): a path-keyed boundary and a "restoration" equivalence on reversed hunks (revision 1); textual hunks as a certification unit (revision 2); both belong to the certification goal now. A read subject shared by design, live and commit critics (revision 2, refused: the three read different things).
-- Next step: the round-3 Codex read of this narrowed revision; fold; then slice 0 on Codex with an Opus read.
+- Next step: in flight, by design: when the delegate returns, land its spec onto this page; then Codex gpt-5.6-sol builds slice 0 behind the fixtures, Opus reads the build, the seat lands. No revision 4 and no further prose read (D81; round 3 read: records/misc/critique-closes-on-folded-proof-design-critique-r3.md, eight material findings).
 
 ## 1. What the audit found and what exists
 
