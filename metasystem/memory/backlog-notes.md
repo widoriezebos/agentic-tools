@@ -578,3 +578,42 @@ directory through the chain root (`adapter root-job`) in both paths and
 add a round-2 recollection fixture; once that lands, admitting a
 process-lost round that ran and returned nothing as a continuation is the
 same one-line rule goal 21 adds for a capped round.
+
+## A critic root superseded by a fresh root can never close (m1b, 2026-09-13)
+
+When a finding raised by one critic chain root is resolved by a fresh
+critic root, because the first root's round budget was spent, the
+implementer chain closes with `--reconcile-evidence <fresh root>`, but the
+superseded root cannot close: each root keeps its own finding register,
+and a later root's resolution never reaches it. `dispatch.sh close --job
+<superseded root>` answers, for example:
+
+    finding WVB-55 artifact=metasystem/internal/run/waiter.go is unproven and blocks close; next: goal accept-risk --finding <id> --chain <root> --by <human> --why, or raise the goal budget and run job critique-budget-rebind
+
+Live cases: wait-member1-codecritic-1 holds WVB-48 (resolved by
+wait-member1-codecritic-r6c); wait-member1-codecritic-r6c holds WVB-55
+(resolved by wait-member1-codecritic-r8); wait-design-read-3 holds CWE-11
+(resolved by cwe11-design-read-1, "is severe and blocks close"). The fresh
+roots and both implementer chains are closed. Recording an accepted risk
+for a fixed finding would misstate the record, so the roots stay open.
+Proposal (needs a design pass; related to critique-closes-on-folded-proof,
+whose closure record the fix would likely read): a superseded root closes
+as reconciled when every open finding in its register was returned under
+its own identifier with `material: false` by a later root of the same goal
+whose own chain closed clean, the closure naming that root. It blocks the
+conclusion of coordinator-wakes-on-events-not-polls if open critic roots
+block `goal done`; a seat holding that goal then opens it as the blocker.
+
+## A dispatch refused after its worktree exists leaks the worktree (m1b, 2026-09-13)
+
+`metasystem delegate --role implementer` refused twice with "inline input
+exceeds dispatch.max-inline-input-kb; pass a file reference in the brief"
+(the composed Claude implementer packet was 65 to 68 KB, of which about 53
+KB is the fixed role instructions, while a brief under 32 KiB is never
+staged by reference). Each refusal came after the job worktree and its
+branch were created (artifacts/agents/worktrees/member2-design-fold2-fable-b
+and -c, branches agent/<job>) and left both behind with no job record. The
+seat removed them by hand. Proposals: measure the composed packet before
+creating the worktree, or remove the worktree and branch on that refusal;
+and stage the brief by reference whenever the composed packet, not the
+brief alone, would exceed the inline limit.
