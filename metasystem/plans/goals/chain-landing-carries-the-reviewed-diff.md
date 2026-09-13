@@ -9,8 +9,9 @@
 - Origin: main
 - Next step: MECHANICAL, one chain: internal/landing (the chain stage of land.sh) reads the root's latest round diff, lists its changed paths, and refuses when the staged tree's blobs for those paths equal the base tree's; fixture in the landing fixture suite. Verify first on the 0b8d1bea case by replaying its staged set against the chain in a throwaway clone. || Absorbed 2026-09-11 from goal chain-landing-carries-unrelated-staged-plans: Fold into chain-landing-carries-the-reviewed-diff under the merged intent (both-ways binding of the staged set to the reviewed diff); keep the register-carriage rename rule in the refusal message.
 - OpenedAt: 2026-09-06T22:26:51Z
-- Revision: 13
+- Revision: 14
 - Labels: headless-fleet, headless-process
+- Pinned: m1c
 - Budget: elapsedLimit=1d attemptLimit=10 reservedJobMinutesLimit=1200 activeJobLimit=1 reviewRoundLimit=3
 - BudgetExceptions: 0
 
@@ -28,4 +29,5 @@ History:
 - 2026-09-11T21:57:25Z RM0V7T7THS4YCBYNC1Z0DEX8VH-m1-c6925449 edit actor=human:Wido targets=chain-landing-carries-the-reviewed-diff
 - 2026-09-11T22:00:17Z ZACQ95ADETGNC6PSNQESWF9MHH-m1-c6925449 done actor=human:Wido targets=adoption-inventory-from-install-set,chain-landing-carries-the-reviewed-diff,closing-read-follows-the-change-not-the-label,commit-goal-binding,design-gate-at-dispatch,first-headless-run,fleet-channel-gateway,fleet-join-bootstrap,fleet-pull,gate-governance-records,headless-continuous-delivery-proof,headless-fleet-coordination-proof,hook-enrollment-per-checkout,host-implementer-wall,human-approval-for-execution,idle-every-runtime-enforcement,landing-design-provenance,manifest-floor-at-dispatch,merge-stage-critic-close,metasystem-stop-escalation-proofs,mission-birth-baseline-from-dirty-worktree,never-idle-ironclad,one-approval-gate,recovery-rehearsal,recovery-to-good-state,repo-root-paths-ride-agent-commits-unjudged,role-context-composition,role-lane-packets,role-liveness-watchdog,seat-mutual-awareness,two-bars-for-changes reason=priority-order from=2:14 to=2:13
 - 2026-09-11T22:09:00Z C3BMZ7DRFM4AWMATVMSXQZHBTQ-m1-c6925449 done actor=human:Wido targets=adoption-inventory-from-install-set,chain-landing-carries-the-reviewed-diff,commit-goal-binding,design-gate-at-dispatch,first-headless-run,fleet-channel-gateway,fleet-join-bootstrap,fleet-pull,gate-governance-records,headless-continuous-delivery-proof,headless-fleet-coordination-proof,hook-enrollment-per-checkout,human-approval-for-execution,idle-every-runtime-enforcement,landing-design-provenance,manifest-floor-at-dispatch,merge-stage-critic-close,metasystem-stop-escalation-proofs,mission-birth-baseline-from-dirty-worktree,never-idle-ironclad,one-approval-gate,recovery-rehearsal,recovery-to-good-state,repo-root-paths-ride-agent-commits-unjudged,role-context-composition,role-lane-packets,seat-mutual-awareness reason=priority-order from=2:13 to=2:12
-Integrity: sha256=85085d39ed61dcb3d3ecbfa342323aacedf1b21a274abb1b2798d2f3060f21f6
+- 2026-09-13T06:40:33Z 7AFW4MD1YY7FHEY4RBG17ZFBFY-m1e-c6925449 set-pin actor=human:Wido targets=chain-landing-carries-the-reviewed-diff
+Integrity: sha256=4d1bb6aae7145b1a111f54fb1e0c5e0ca6ed97f1e0e78c89878ab73de72f9c8e
