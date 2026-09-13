@@ -88,7 +88,7 @@ func TestPendingCursorLeavesEventsAppendedDuringDelivery(t *testing.T) {
 	}
 }
 
-func TestPendingRefusesAChangedDeliveredPrefix(t *testing.T) {
+func TestPendingRecoversFromARewrittenStory(t *testing.T) {
 	root := t.TempDir()
 	now := time.Date(2026, 8, 29, 10, 0, 0, 0, time.UTC)
 	if err := Append(root, []Entry{{
@@ -112,8 +112,41 @@ func TestPendingRefusesAChangedDeliveredPrefix(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	if _, err := Pending(root); err == nil || !strings.Contains(err.Error(), "changed before the last check-in cursor") {
-		t.Fatalf("changed delivered prefix was accepted: %v", err)
+	// The story was rewritten under the cursor (a sync or a checkout of the
+	// tracked log): the reader is shown the recent tail, never nothing, and
+	// the cursor parks at the new end.
+	rewritten, err := Pending(root)
+	if err != nil || !strings.HasPrefix(rewritten.Message, "NARRATOR DIGEST, the story was rewritten since the last check-in") ||
+		!strings.Contains(rewritten.Message, "The landing shipped.") || rewritten.Cursor != int64(len(data)) {
+		t.Fatalf("a rewritten story did not recover with its tail: %+v %v", rewritten, err)
+	}
+	if err := Advance(root, rewritten.Cursor, rewritten.PrefixSHA256); err != nil {
+		t.Fatalf("advance after a rewrite: %v", err)
+	}
+	if again, err := Pending(root); err != nil || again.Message != "" {
+		t.Fatalf("the check-in after a rewrite was not incremental: %+v %v", again, err)
+	}
+	// The story shrank below the cursor (a checkout to the committed log):
+	// the same recovery, and the advance to a smaller cursor is accepted.
+	if err := os.WriteFile(Path(root), data[:len(data)/2], 0o644); err != nil {
+		t.Fatal(err)
+	}
+	shrunk, err := Pending(root)
+	if err != nil || shrunk.Cursor != int64(len(data)/2) || !strings.HasPrefix(shrunk.Message, "NARRATOR DIGEST, the story was rewritten") {
+		t.Fatalf("a shrunk story did not recover: %+v %v", shrunk, err)
+	}
+	if err := Advance(root, shrunk.Cursor, shrunk.PrefixSHA256); err != nil {
+		t.Fatalf("advance to the shrunk end: %v", err)
+	}
+	// A fresh cursor still refuses a valid pair that points backwards, and
+	// a negative cursor is refused, never sliced.
+	half := data[:len(data)/2]
+	quarter := half[:len(half)/2]
+	if err := Advance(root, int64(len(quarter)), digest(quarter)); err == nil {
+		t.Fatal("a backward advance against a fresh cursor was accepted")
+	}
+	if err := Advance(root, -1, digest(nil)); err == nil {
+		t.Fatal("a negative cursor was accepted")
 	}
 }
 
@@ -240,7 +273,7 @@ func TestTemplateToplevelResolvesToTheInstallationDigest(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if !strings.HasPrefix(Path(adopted), resolvedAdopted+string(filepath.Separator)) {
+	if !strings.HasPrefix(Path(adopted), resolvedAdopted+string(filepath.Separator)) && !strings.HasPrefix(Path(adopted), adopted+string(filepath.Separator)) {
 		t.Fatalf("an adopted installation's digest moved: %q", Path(adopted))
 	}
 }
@@ -297,5 +330,41 @@ func TestFirstCheckInShowsTheRecentTailAndParksTheCursorAtTheEnd(t *testing.T) {
 	}
 	if brief, err := Pending(short); err != nil || !strings.HasPrefix(brief.Message, "NARRATOR DIGEST since last check-in:\n") || !strings.Contains(brief.Message, "line 1 ") {
 		t.Fatalf("a short story was not shown whole: %+v %v", brief, err)
+	}
+}
+
+// A vendored installation inside another repository keeps its digest and
+// its cursor under itself; nothing is written at the Git repository scope.
+func TestVendoredInstallationKeepsItsOwnDigest(t *testing.T) {
+	scope := t.TempDir()
+	vendored := filepath.Join(scope, "vendor", "metasystem")
+	if err := os.MkdirAll(filepath.Join(vendored, "scripts", "agents"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(vendored, "metasystem.conf"), []byte("metasystem.runtimes=fake\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if output, err := exec.Command("git", "-C", scope, "init", "-q").CombinedOutput(); err != nil {
+		t.Fatalf("git init: %v: %s", err, output)
+	}
+	now := time.Date(2026, 9, 13, 9, 0, 0, 0, time.UTC)
+	if err := Append(vendored, []Entry{{Kind: "highlight", Text: "vendored line", SourceType: "fixture", SourceID: "v"}}, now); err != nil {
+		t.Fatal(err)
+	}
+	pending, err := Pending(vendored)
+	if err != nil || !strings.Contains(pending.Message, "vendored line") {
+		t.Fatalf("the vendored installation did not read its own digest: %+v %v", pending, err)
+	}
+	if err := Advance(vendored, pending.Cursor, pending.PrefixSHA256); err != nil {
+		t.Fatal(err)
+	}
+	for _, stray := range []string{filepath.Join(scope, "records"), filepath.Join(scope, "artifacts")} {
+		if _, err := os.Stat(stray); !os.IsNotExist(err) {
+			t.Fatalf("control state appeared at the repository scope: %s (%v)", stray, err)
+		}
+	}
+	resolved, _ := filepath.EvalSymlinks(vendored)
+	if !strings.HasPrefix(Path(vendored), resolved+string(filepath.Separator)) && !strings.HasPrefix(Path(vendored), vendored+string(filepath.Separator)) {
+		t.Fatalf("the vendored digest moved: %q", Path(vendored))
 	}
 }

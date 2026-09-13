@@ -57,22 +57,18 @@ func stateDirectory(kind stateroot.Kind) string {
 	return filepath.FromSlash(relative)
 }
 
-// digestRoot maps any repository path a caller passes (the git toplevel of
-// a template checkout, the installation itself, or a path below either) to
-// the root whose records/ owns the digest: the installation in the template
-// layout, the repository top for an adopted one. The steward's writes and
-// the Stop hook's reads then meet in one file. A path the layout resolver
-// cannot place is used as given.
+// digestRoot maps the git toplevel of a template checkout (or a path below
+// it) to the installation that owns the digest, so the steward's writes and
+// the Stop hook's reads meet in one file. Every other root is used as the
+// caller gave it: an adopted or vendored installation keeps its own
+// records/ and artifacts/, and never spills control state at the Git
+// repository scope above it.
 func digestRoot(repoRoot string) string {
 	layout, err := stateroot.ResolveLayout(repoRoot)
-	if err != nil || layout.InstallationRoot == "" {
+	if err != nil || !layout.Template || layout.InstallationRoot == "" {
 		return repoRoot
 	}
-	root, err := stateroot.RootForInstallation(layout.InstallationRoot)
-	if err != nil || root == "" {
-		return layout.InstallationRoot
-	}
-	return root
+	return layout.InstallationRoot
 }
 
 func Path(repoRoot string) string {
@@ -285,6 +281,13 @@ func recentTail(data []byte, n int) []byte {
 	return data
 }
 
+// cursorStale reports whether the story no longer holds the prefix the
+// cursor was taken against: the cursor lies beyond the end, or the bytes
+// before it hash differently.
+func cursorStale(cursor cursorRecord, data []byte) bool {
+	return cursor.Cursor > int64(len(data)) || digest(data[:cursor.Cursor]) != cursor.PrefixSHA256
+}
+
 // Pending returns the digest bytes after the last emitted check-in cursor.
 func Pending(repoRoot string, names ...string) (PendingDigest, error) {
 	name, err := cursorName(names)
@@ -306,10 +309,11 @@ func Pending(repoRoot string, names ...string) (PendingDigest, error) {
 	if err != nil {
 		return PendingDigest{}, err
 	}
-	if cursor.Cursor > int64(len(data)) || digest(data[:cursor.Cursor]) != cursor.PrefixSHA256 {
-		return PendingDigest{}, fmt.Errorf("narrator digest changed before the last check-in cursor")
+	stale := cursorStale(cursor, data)
+	var pending []byte
+	if !stale {
+		pending = data[cursor.Cursor:]
 	}
-	pending := data[cursor.Cursor:]
 	heading := "NARRATOR DIGEST since last check-in:\n"
 	if _, statErr := os.Stat(CursorPath(repoRoot, name)); os.IsNotExist(statErr) {
 		// A first check-in has no "since": the reader gets the recent tail
@@ -318,6 +322,17 @@ func Pending(repoRoot string, names ...string) (PendingDigest, error) {
 		if tail := recentTail(pending, firstCheckInLines); len(tail) != len(pending) {
 			pending = tail
 			heading = fmt.Sprintf("NARRATOR DIGEST, first check-in (the last %d of %d lines; the rest is in records/narrator-digest.log):\n", firstCheckInLines, bytes.Count(data, []byte("\n")))
+		}
+	} else if stale {
+		// The story was rewritten under the cursor: the log is a tracked
+		// file, and a sync or a checkout of it replaces the bytes the
+		// cursor was taken against. That is not a reason to show the
+		// reader nothing forever; the reader gets the recent tail and the
+		// cursor then stands at the new end.
+		pending = recentTail(data, firstCheckInLines)
+		heading = "NARRATOR DIGEST, the story was rewritten since the last check-in (a sync or checkout of records/narrator-digest.log):\n"
+		if len(pending) != len(data) {
+			heading = fmt.Sprintf("NARRATOR DIGEST, the story was rewritten since the last check-in (a sync or checkout of records/narrator-digest.log); the last %d of %d lines:\n", firstCheckInLines, bytes.Count(data, []byte("\n")))
 		}
 	}
 	message := ""
@@ -346,7 +361,7 @@ func Advance(repoRoot string, cursor int64, prefixSHA256 string, names ...string
 	if err != nil {
 		return err
 	}
-	if cursor < current.Cursor || cursor > int64(len(data)) || len(prefixSHA256) != 64 || digest(data[:cursor]) != prefixSHA256 {
+	if cursor < 0 || (cursor < current.Cursor && !cursorStale(current, data)) || cursor > int64(len(data)) || len(prefixSHA256) != 64 || digest(data[:cursor]) != prefixSHA256 {
 		return fmt.Errorf("narrator digest cursor advance does not name the emitted prefix")
 	}
 	record := cursorRecord{Schema: 1, Cursor: cursor, PrefixSHA256: prefixSHA256}
