@@ -7,11 +7,12 @@
 - Origin: main
 - Next step: INTENT: machinery makes a diagnosis survive challenge before a fix item exists. CONSTRAINTS: fail-closed at goal intake or dispatch admission (or both) refusing a defect-fix item carrying no challenged analysis; the reproduction primitive is two-bars' Defect-Proof, joined not duplicated; the challenge join is a candidate for the existing validate critique-closed mechanism; a refusal names what is missing. FREEDOMS (design under critique): where the analysis record lives and its schema, how the challenge is recorded and joined, whether the boundary is intake/admission/both, how the low-risk causal test is proven. ROSTER (R-25): Fable designs, Sol critiques the design, Sol builds, Fable critiques the build; the feature takes the FULL ladder (design, adversarial critique to closure, build, code critique, closure, landing). SLICING: expect an arc - the analysis-record schema + reproduction-join as slice 1, the risk-scaled challenge gate as slice 2, the intake/admission enforcement as slice 3. Budget is Wido's word at claim.
 - OpenedAt: 2026-09-02T11:36:02Z
-- Revision: 12
+- Revision: 13
 - Pinned: m1b
 - Budget: elapsedLimit=3d attemptLimit=12 reservedJobMinutesLimit=720 activeJobLimit=2 reviewRoundLimit=3
 - BudgetExceptions: 0
 - Approved: by=human:Wido at=2026-09-06T06:53:37Z revision=4 opid=A35EHY2TGAWCCFA1Q1J0WZGS35-m1-a4f8999f authority=proven digest=25973739d6f21de31e3e9661d0da93b1328d8cab1b5995befe15a524ff704f5f
+- Sliced: machine=m1b lineage=main-1789191336-90295-e4b24b revision=12 at=2026-09-13T06:34:01Z
 - Claimed: machine=m1b lineage=main-1789191336-90295-e4b24b at=2026-09-13T06:33:02Z revision=12 accountingRevision=12 episodeAt=2026-09-13T06:33:02Z episodeRevision=12
 - StopCapability: generation=12 revision=12 machine=m1b claimEpoch=2 fenceEpoch=0
 
@@ -28,4 +29,5 @@ History:
 - 2026-09-12T05:46:33Z EG0HF3HRZ255GCNQ8DZCNRP6G6-m1b-c6925449 claim actor=m1b+main-1788680071-18713-e76d5d targets=defect-analysis-gate
 - 2026-09-12T06:06:11Z 0PAB77BV56GXT9YRE9H7MJXN11-m1e-c6925449 release actor=human:Wido targets=defect-analysis-gate displaced=m1b+main-1788680071-18713-e76d5d@2026-09-12T05:46:33Z
 - 2026-09-13T06:33:02Z 7VNBBK4DPPRZCGYVRDJ3MQ7ETW-m1b-30a7e141 claim actor=m1b+main-1789191336-90295-e4b24b targets=defect-analysis-gate
-Integrity: sha256=7fa1e605ee3239436024ae91cec99fea0584acbb1be1e677ba7d7e89c84018f3
+- 2026-09-13T06:34:01Z ABJGC45TKRY7GW6NM1FM205Y4W-m1b-30a7e141 slice-start actor=m1b+main-1789191336-90295-e4b24b targets=defect-analysis-gate
+Integrity: sha256=897f50cad7aa3d8d37e877747df702a1ca717bc155cd2c8d0afdd54005617647
