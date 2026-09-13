@@ -1035,3 +1035,36 @@ reset --keep`; LRD-02 removed the `merge=union` pin; LRD-03 chose the
 version-1 read and the crossover procedure; LRD-04 split the drift rule
 into two per-mode tables; LRD-05 gave the shell refusal canary a real
 staged candidate and receipt.
+
+## Carry onto the tip and landing (2026-09-13)
+
+The certified change of chain implementer-b76a0ddc11f73e99fa195d84 (two
+rounds, closed clean on two reads on 2026-09-10) no longer applied to the
+tip three days later: five files conflicted (gittree/detached.go and its
+test, landing/receipt.go, registers.go and its test), the rest applied
+clean. On Wido's word of 2026-09-13 ("finish and land the work") the carry
+was built by Codex gpt-5.6-sol in a worktree against this page (record:
+the carry result in the seat's scratch, summarised here) and read by Opus.
+Tip fits kept: the detached commit worktree takes the tip's unique
+basename and the repository-wide worktree-administration lock around
+`git worktree add`; the filtered command receipt is schema 3 beside the
+tip's schema 2 (testing-contract receipts with candidate-engine identity);
+`PublishCommittedReceipt` keeps the tip's accepted-index-tree argument;
+the land bed's chain candidates stage the receipt line the tip's landing
+boundary requires (1c7c0b6b).
+
+The Opus read of the carry found two material findings from one
+resolution and both are folded: the carry had pointed `appendOnlyRegisters`
+at the tip's four-element set (the two counselor registers included) and
+narrowed the Decision 1 pin to two of the four, which would have let an
+uncarried change to a counselor register pass the carriage gate without a
+held goal and let `landing drift` tolerate an append that commit.sh still
+refuses. The declaration is the design's two registers again (the receipt
+ledger and the narrator digest), the landing rules read only those, the
+counselor rows a carried landing may append to are their own explicit set
+(`counselorRegisters`, the carried path's rule unchanged), and
+`WorkspaceExclusions()` composes the same seven paths as before through
+`ledgerPaths`. The pin test carries its original name and iterates every
+declared register. Verified on the tip: the six affected packages under
+the race detector, the fast gate, and the land and static-reproof beds
+through the engine after landing (recorded on the goal).

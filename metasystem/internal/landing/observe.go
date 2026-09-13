@@ -175,7 +175,7 @@ func candidatePathPolicy(params ObserveParams, ledgerTree *goal.TreeGoals) error
 			continue
 		}
 		if params.Carried != "" && strings.HasPrefix(changedPath, "records/counselor/") {
-			if !containsString(appendOnlyRegisters, changedPath) {
+			if !containsString(counselorRegisters, changedPath) {
 				return &carriageError{code: "record-not-owned", err: fmt.Errorf("record %s is not owned by the carried landing", changedPath)}
 			}
 			if err := carriedCounselorCarriageError(workspace, baseTree, params.CandidateTree, changedPath, ledgerTree); err != nil {
@@ -967,13 +967,13 @@ func recordCarriageError(workspace gittree.Workspace, baseTree, candidateTree st
 	_, present := candidateEntries[changedPath]
 	held := goalID != ""
 
-	switch changedPath {
-	case "memory/rulings.md":
+	switch {
+	case changedPath == "memory/rulings.md":
 		if err := addRulingRowsOnly(workspace, baseTree, candidateTree); err != nil {
 			return &carriageError{code: "register-carriage-not-append-only", err: err}
 		}
 		return nil
-	case "memory/receipts.log", "records/narrator-digest.log":
+	case isAppendOnlyRegister(changedPath):
 		if err := appendOnly(workspace, baseTree, candidateTree, changedPath); err != nil {
 			return &carriageError{code: "register-carriage-not-append-only", err: err}
 		}

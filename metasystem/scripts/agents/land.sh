@@ -382,7 +382,7 @@ verify_checks() {
 }
 
 stage_changes() {
-  local untracked
+  local drift drift_rc
   if (( ! staged_only )); then
     if (( ${#pathspecs[@]} == 0 )); then
       echo "land refused: name pathspecs or choose --staged-only" >&2
@@ -394,16 +394,20 @@ stage_changes() {
     echo "land refused: the caller-selected staging set is empty" >&2
     return 2
   fi
-  if ! git diff --quiet --; then
-    echo "land refused: unstaged changes remain after staging; transport requires a clean tree after commit" >&2
+  drift=$("$ms" landing drift --root "$root")
+  drift_rc=$?
+  if (( drift_rc == 1 )); then
+    if printf '%s\n' "$drift" | grep -Eq $'^(unstaged|register-not-append)\t'; then
+      echo "land refused: unstaged changes remain after staging; transport requires a clean tree after commit" >&2
+    else
+      echo "land refused: untracked paths remain after staging; transport requires a clean tree after commit" >&2
+    fi
+    while IFS= read -r line; do
+      printf '  %s\n' "$line" >&2
+    done <<<"$drift"
     return 2
   fi
-  untracked=$(git ls-files --others --exclude-standard) || return $?
-  if [[ -n "$untracked" ]]; then
-    echo "land refused: untracked paths remain after staging; transport requires a clean tree after commit" >&2
-    printf '  %s\n' "$untracked" >&2
-    return 2
-  fi
+  (( drift_rc == 0 )) || return "$drift_rc"
 }
 
 commit_changes() {
@@ -548,13 +552,15 @@ create_test_receipt() {
 }
 
 require_clean_after_commit() {
-  local status
-  status=$(git status --porcelain --untracked-files=normal) || return $?
-  if [[ -n "$status" ]]; then
+  local drift drift_rc
+  drift=$("$ms" landing drift --root "$root" --require-empty-index)
+  drift_rc=$?
+  if (( drift_rc == 1 )); then
     echo "land refused: commit succeeded but the tree is not clean, so transport will not start" >&2
-    printf '%s\n' "$status" >&2
+    printf '%s\n' "$drift" >&2
     return 1
   fi
+  (( drift_rc == 0 )) || return "$drift_rc"
 }
 
 fetch_origin() {
@@ -562,7 +568,7 @@ fetch_origin() {
 }
 
 rebase_origin() {
-  git rebase "refs/remotes/origin/$branch"
+  "$ms" landing advance --root "$root" --upstream "refs/remotes/origin/$branch"
 }
 
 push_origin() {

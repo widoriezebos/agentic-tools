@@ -74,6 +74,15 @@ var Rows = []Row{
 	{Code: "TEST_CONTRACT_INVALID", Owner: "cmd/metasystem", Site: "runtime_setup.go:63", Shape: Question},
 	{Code: "TEST_POLICY_COVERAGE_FLOOR_LOWERED", Owner: "cmd/metasystem", Site: "test.go:355", Shape: Question},
 
+	{Code: "advance-checkout-locked", Owner: "internal/landing", Site: "advance.go:36", Shape: Agent, Override: "wait, then fetch, advance, push", Commands: 3},
+	{Code: "advance-not-on-branch", Owner: "internal/landing", Site: "advance.go:46", Shape: Agent, Override: "git switch <branch>; fetch, advance, push", Commands: 4},
+	{Code: "advance-index-not-empty", Owner: "internal/landing", Site: "advance.go:64", Shape: Agent, Override: "land or unstage the staged paths; fetch, advance, push", Commands: 4},
+	{Code: "advance-rebase-conflict", Owner: "internal/landing", Site: "advance.go:90", Shape: Agent, Override: "carry dirty registers first, then git rebase in the real checkout and resolve; push", Commands: 4},
+	{Code: "advance-unstaged-drift", Owner: "internal/landing", Site: "advance.go:180", Shape: Agent, Override: "land or restore the named path; fetch, advance, push", Commands: 4},
+	{Code: "advance-register-removed", Owner: "internal/landing", Site: "advance.go:175", Shape: Agent, Override: "restore the register from the upstream by hand; fetch, advance, push", Commands: 4},
+	{Code: "advance-register-contended", Owner: "internal/landing", Site: "advance.go:185", Shape: Agent, Override: "land.sh --direct-fix register-carriage <registers>", Commands: 1},
+	{Code: "advance-head-moved", Owner: "internal/landing", Site: "advance.go:204", Shape: Agent, Override: "read git reflog <branch>; fetch, advance, push", Commands: 4},
+
 	{Code: "malformed-candidate-tree", Owner: "internal/landing", Site: "observe.go:76", Shape: Question},
 	{Code: "candidate-tree-unreadable", Owner: "internal/landing", Site: "observe.go:80", Shape: Question},
 	{Code: "evaluator-unavailable", Owner: "scripts/agents", Site: "commit.sh:458", Shape: Agent, Override: "land.sh --carried", Commands: 1},

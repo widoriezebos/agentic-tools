@@ -303,6 +303,49 @@ func canonicalValidatorEnvironment() []string {
 	return append(environment, "GOFLAGS=-mod=readonly", "METASYSTEM_GATE_FROZEN_TOOLCHAIN=1")
 }
 
+func runLandingDrift(args []string) int {
+	flags := flag.NewFlagSet("landing drift", flag.ContinueOnError)
+	root := flags.String("root", "", "project checkout root")
+	requireEmptyIndex := flags.Bool("require-empty-index", false, "refuse every staged entry")
+	if flags.Parse(args) != nil || flags.NArg() != 0 {
+		return 2
+	}
+	drift, tolerated, err := landing.WorktreeDrift(*root, *requireEmptyIndex)
+	if err != nil {
+		fmt.Fprintln(os.Stderr, err)
+		return 2
+	}
+	for _, path := range tolerated {
+		fmt.Fprintf(os.Stderr, "tolerated register append: %s\n", path)
+	}
+	for _, entry := range drift {
+		fmt.Printf("%s\t%c%c\t%s\n", entry.Kind, entry.Index, entry.Worktree, entry.Path)
+	}
+	if len(drift) != 0 {
+		return 1
+	}
+	return 0
+}
+
+func runLandingAdvance(args []string) int {
+	flags := flag.NewFlagSet("landing advance", flag.ContinueOnError)
+	root := flags.String("root", "", "project checkout root")
+	upstream := flags.String("upstream", "", "upstream commit or ref")
+	if flags.Parse(args) != nil || flags.NArg() != 0 || *root == "" || *upstream == "" {
+		return 2
+	}
+	err := landing.Advance(*root, *upstream, os.Stdout, os.Stderr)
+	if err == nil {
+		return 0
+	}
+	fmt.Fprintln(os.Stderr, err)
+	var refusal interface{ IsAdvanceRefusal() }
+	if errors.As(err, &refusal) {
+		return 1
+	}
+	return 2
+}
+
 func runLandingPark(args []string) int {
 	flags := flag.NewFlagSet("landing park", flag.ContinueOnError)
 	root := flags.String("root", "", "integration project root")

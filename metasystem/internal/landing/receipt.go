@@ -12,6 +12,7 @@ import (
 	"path/filepath"
 	"reflect"
 	"runtime"
+	"slices"
 	"sort"
 	"strconv"
 	"strings"
@@ -30,8 +31,11 @@ const (
 	receiptBoundDefaultMinutes = 40
 )
 
-// TestReceipt records the command result together with the four tree
-// observations that bind its execution to one candidate.
+// TestReceipt records evidence and tree observations for one candidate.
+// Version 1 command receipts use raw worktree observations, version 2
+// testing-contract receipts use their input-relevant posture, and version 3
+// command receipts filter append-only registers. Index observations are exact
+// in every version.
 type TestReceipt struct {
 	SchemaVersion                int                        `json:"schemaVersion"`
 	Tree                         string                     `json:"tree"`
@@ -48,6 +52,7 @@ type TestReceipt struct {
 	CandidateEngineBuildIdentity string                     `json:"candidateEngineBuildIdentity,omitempty"`
 	Workspace                    *TestReceiptProjection     `json:"workspace,omitempty"`
 	Testing                      *proofrun.TestResult       `json:"testing,omitempty"`
+	WorktreeProjection           *TestReceiptProjection     `json:"worktreeProjection,omitempty"`
 }
 
 type TestReceiptProof struct {
@@ -77,6 +82,7 @@ type ReceiptPreparation struct {
 	root, tree, command string
 	detached            *gittree.DetachedWorktree
 	candidate           gittree.Workspace
+	identity            string
 	indexBefore         string
 	worktreeBefore      string
 	closed              bool
@@ -93,11 +99,15 @@ func PrepareTestReceipt(root, tree, command string) (*ReceiptPreparation, error)
 	if _, err := workspace.Diff(tree, tree); err != nil {
 		return nil, fmt.Errorf("candidate tree is unreadable: %w", err)
 	}
+	identity, err := receiptIdentity(workspace, tree)
+	if err != nil {
+		return nil, err
+	}
 	indexBefore, worktreeBefore, err := receiptPosture(workspace)
 	if err != nil {
 		return nil, err
 	}
-	if indexBefore != tree || worktreeBefore != tree {
+	if indexBefore != tree || worktreeBefore != identity {
 		return nil, fmt.Errorf("test receipt refused: supplied tree %s differs from the real index tree %s or working-tree projection %s", tree, indexBefore, worktreeBefore)
 	}
 	detached, err := workspace.NewDetachedWorktree(tree)
@@ -106,13 +116,13 @@ func PrepareTestReceipt(root, tree, command string) (*ReceiptPreparation, error)
 	}
 	candidate := detached.Workspace()
 	candidateIndex, candidateWorktree, err := receiptPosture(candidate)
-	if err != nil || candidateIndex != tree || candidateWorktree != tree {
+	if err != nil || candidateIndex != tree || candidateWorktree != identity {
 		_ = detached.Close()
 		return nil, fmt.Errorf("test receipt refused: isolated candidate differs from supplied tree %s", tree)
 	}
 	evidenceTimeout, evidenceMax := receiptEvidenceLimits(root)
 	return &ReceiptPreparation{root: root, tree: tree, command: command, detached: detached,
-		candidate: candidate, indexBefore: candidateIndex, worktreeBefore: candidateWorktree,
+		candidate: candidate, identity: identity, indexBefore: candidateIndex, worktreeBefore: candidateWorktree,
 		evidenceTimeout: evidenceTimeout, evidenceMax: evidenceMax}, nil
 }
 
@@ -158,10 +168,10 @@ func (preparation *ReceiptPreparation) Complete(attempt proofrun.Attempt, comple
 		return TestReceipt{}, fmt.Errorf("receipt candidate is no longer open")
 	}
 	indexAfter, worktreeAfter, err := receiptPosture(preparation.candidate)
-	if err != nil || indexAfter != preparation.tree || worktreeAfter != preparation.tree {
+	if err != nil || indexAfter != preparation.tree || worktreeAfter != preparation.identity {
 		changed := []string(nil)
 		if err == nil {
-			changed, _ = preparation.candidate.ChangedPaths(preparation.tree, worktreeAfter)
+			changed, _ = preparation.candidate.ChangedPaths(preparation.identity, worktreeAfter)
 		}
 		return TestReceipt{}, fmt.Errorf("test receipt refused: the candidate changed while the command ran (index=%s worktree=%s expected=%s paths=%v cause=%v)",
 			indexAfter, worktreeAfter, preparation.tree, changed, err)
@@ -169,11 +179,12 @@ func (preparation *ReceiptPreparation) Complete(attempt proofrun.Attempt, comple
 	if err := preparation.Close(); err != nil {
 		return TestReceipt{}, fmt.Errorf("cleanup isolated candidate: %w", err)
 	}
-	receipt := TestReceipt{SchemaVersion: 1, Tree: preparation.tree, Command: preparation.command, ExitStatus: 0,
+	receipt := TestReceipt{SchemaVersion: 3, Tree: preparation.tree, Command: preparation.command, ExitStatus: 0,
 		Time: completedAt.UTC().Format(time.RFC3339Nano), Binding: TestReceiptBinding{IndexTreeBefore: preparation.indexBefore,
 			WorktreeTreeBefore: preparation.worktreeBefore, IndexTreeAfter: indexAfter, WorktreeTreeAfter: worktreeAfter},
 		Proof: &TestReceiptProof{SchemaVersion: 1, ControlRoot: attempt.ControlRoot, GoalID: attempt.GoalID,
-			AccountingRevision: attempt.AccountingRevision, AttemptID: attempt.AttemptID, Deadline: attempt.Deadline}}
+			AccountingRevision: attempt.AccountingRevision, AttemptID: attempt.AttemptID, Deadline: attempt.Deadline},
+		WorktreeProjection: &TestReceiptProjection{Excludes: AppendOnlyRegisters(), Tree: preparation.identity}}
 	if attempt.PendingCoverage != nil && attempt.PendingCoverage.Evidence != nil {
 		coverage := *attempt.PendingCoverage.Evidence
 		receipt.Coverage = &coverage
@@ -200,6 +211,9 @@ func PublishCommittedReceipt(root, attemptID, acceptedIndexTree string) (TestRec
 	}
 	if version.SchemaVersion == 2 {
 		receipt, decodeErr := decodeCommittedTestingReceipt(payload)
+		if decodeErr == nil && receipt.WorktreeProjection != nil {
+			return TestReceipt{}, fmt.Errorf("test receipt mixes schema versions")
+		}
 		if decodeErr == nil {
 			decodeErr = validateTestReceiptWorkspace(root, receipt)
 		}
@@ -226,13 +240,27 @@ func PublishCommittedReceipt(root, attemptID, acceptedIndexTree string) (TestRec
 	if err := decoder.Decode(&receipt); err != nil {
 		return TestReceipt{}, fmt.Errorf("committed delivery receipt is malformed: %w", err)
 	}
+	if (receipt.SchemaVersion == 1 && receipt.WorktreeProjection != nil) ||
+		(receipt.SchemaVersion == 3 && receipt.WorktreeProjection == nil) {
+		return TestReceipt{}, fmt.Errorf("test receipt mixes schema versions")
+	}
 	if err := decoder.Decode(&struct{}{}); err != io.EOF || receipt.Proof == nil || receipt.Proof.AttemptID != attempt.AttemptID ||
 		receipt.Proof.ControlRoot != root || receipt.Proof.GoalID != attempt.GoalID || receipt.Proof.AccountingRevision != attempt.AccountingRevision ||
 		receipt.Proof.Deadline != attempt.Deadline {
 		return TestReceipt{}, fmt.Errorf("committed delivery receipt contradicts its proof attempt")
 	}
-	indexTree, worktreeTree, postureErr := receiptPosture(gittree.Workspace{Dir: root})
-	if postureErr != nil || indexTree != acceptedIndexTree || worktreeTree != receipt.Tree {
+	workspace := gittree.Workspace{Dir: root}
+	indexTree, worktreeTree, postureErr := rawReceiptPosture(workspace)
+	expectedWorktree := receipt.Tree
+	if receipt.SchemaVersion == 3 {
+		expectedWorktree, err = validateVersionThreeReceipt(workspace, receipt)
+		if err != nil {
+			return TestReceipt{}, err
+		}
+		indexTree, worktreeTree, postureErr = receiptPosture(workspace)
+	}
+	if (receipt.SchemaVersion != 1 && receipt.SchemaVersion != 3) || postureErr != nil ||
+		indexTree != acceptedIndexTree || worktreeTree != expectedWorktree {
 		return TestReceipt{}, fmt.Errorf("candidate moved after the committed delivery receipt")
 	}
 	if err := atomicfile.WriteVolatile(TestReceiptPath(root, receipt.Tree), string(payload)+"\n"); err != nil {
@@ -267,11 +295,15 @@ func CreateTestReceipt(root, tree, command string, stdout, stderr io.Writer) (re
 	if _, err := workspace.Diff(tree, tree); err != nil {
 		return receipt, fmt.Errorf("candidate tree is unreadable: %w", err)
 	}
+	identity, err := receiptIdentity(workspace, tree)
+	if err != nil {
+		return receipt, err
+	}
 	indexBefore, worktreeBefore, err := receiptPosture(workspace)
 	if err != nil {
 		return receipt, err
 	}
-	if indexBefore != tree || worktreeBefore != tree {
+	if indexBefore != tree || worktreeBefore != identity {
 		return receipt, fmt.Errorf("test receipt refused: supplied tree %s differs from the real index tree %s or working-tree projection %s", tree, indexBefore, worktreeBefore)
 	}
 	if err := receiptInterrupted(interrupts); err != nil {
@@ -297,7 +329,7 @@ func CreateTestReceipt(root, tree, command string, stdout, stderr io.Writer) (re
 	if err != nil {
 		return receipt, fmt.Errorf("verify isolated candidate: %w", err)
 	}
-	if candidateIndexBefore != tree || candidateWorktreeBefore != tree {
+	if candidateIndexBefore != tree || candidateWorktreeBefore != identity {
 		return receipt, fmt.Errorf("test receipt refused: isolated candidate differs from supplied tree %s", tree)
 	}
 
@@ -323,7 +355,7 @@ func CreateTestReceipt(root, tree, command string, stdout, stderr io.Writer) (re
 	if err != nil {
 		return receipt, err
 	}
-	if candidateIndexAfter != tree || candidateWorktreeAfter != tree {
+	if candidateIndexAfter != tree || candidateWorktreeAfter != identity {
 		return receipt, fmt.Errorf("test receipt refused: the candidate changed while the command ran")
 	}
 	if err := detached.Close(); err != nil {
@@ -334,7 +366,7 @@ func CreateTestReceipt(root, tree, command string, stdout, stderr io.Writer) (re
 	}
 
 	receipt = TestReceipt{
-		SchemaVersion: 1,
+		SchemaVersion: 3,
 		Tree:          tree,
 		Command:       command,
 		ExitStatus:    exitStatus,
@@ -342,6 +374,10 @@ func CreateTestReceipt(root, tree, command string, stdout, stderr io.Writer) (re
 		Binding: TestReceiptBinding{
 			IndexTreeBefore: candidateIndexBefore, WorktreeTreeBefore: candidateWorktreeBefore,
 			IndexTreeAfter: candidateIndexAfter, WorktreeTreeAfter: candidateWorktreeAfter,
+		},
+		WorktreeProjection: &TestReceiptProjection{
+			Excludes: AppendOnlyRegisters(),
+			Tree:     identity,
 		},
 	}
 	encoded, err := json.MarshalIndent(receipt, "", "  ")
@@ -438,7 +474,23 @@ func receiptCommandBound(confPath string) boundedexec.Bound {
 	return boundedexec.FixedBound(time.Duration(minutes)*time.Minute, receiptBoundKey)
 }
 
+// receiptPosture returns the exact index tree and the working-tree snapshot
+// with append-only registers removed.
 func receiptPosture(workspace gittree.Workspace) (string, string, error) {
+	indexTree, worktreeTree, err := rawReceiptPosture(workspace)
+	if err != nil {
+		return "", "", err
+	}
+	projection, err := workspace.FilterTree(worktreeTree, appendOnlyRegisters)
+	if err != nil {
+		return "", "", fmt.Errorf("filter working-tree projection: %w", err)
+	}
+	return indexTree, projection, nil
+}
+
+// rawReceiptPosture returns the exact index and working-tree observations
+// required by version 1 command receipts.
+func rawReceiptPosture(workspace gittree.Workspace) (string, string, error) {
 	indexTree, err := workspace.StagedTree()
 	if err != nil {
 		return "", "", fmt.Errorf("read real index tree: %w", err)
@@ -522,6 +574,16 @@ func testingIdentityDifferences(current, receipt proofrun.TestResult) []string {
 	return ids
 }
 
+// receiptIdentity returns the candidate tree with append-only registers
+// removed, which is the identity of a filtered working-tree projection.
+func receiptIdentity(workspace gittree.Workspace, tree string) (string, error) {
+	identity, err := workspace.FilterTree(tree, appendOnlyRegisters)
+	if err != nil {
+		return "", fmt.Errorf("filter candidate tree: %w", err)
+	}
+	return identity, nil
+}
+
 func readTestReceipt(params ObserveParams) (TestReceipt, error) {
 	if params.TestReceipt == "" {
 		return TestReceipt{}, fmt.Errorf("tier-1 requires --test-receipt")
@@ -561,6 +623,9 @@ func readTestReceipt(params ObserveParams) (TestReceipt, error) {
 		return TestReceipt{}, fmt.Errorf("test receipt must be %s", expected)
 	}
 	if receipt.SchemaVersion == 2 {
+		if receipt.WorktreeProjection != nil {
+			return TestReceipt{}, fmt.Errorf("test receipt mixes schema versions")
+		}
 		if receipt.ProvedTree == "" || receipt.Testing == nil || receipt.ExitStatus != 0 || receipt.Command != "" || receipt.Proof != nil || receipt.Coverage != nil {
 			return TestReceipt{}, fmt.Errorf("schema-2 test receipt has incomplete or legacy evidence")
 		}
@@ -630,7 +695,7 @@ func readTestReceipt(params ObserveParams) (TestReceipt, error) {
 		}
 		return receipt, nil
 	}
-	if receipt.SchemaVersion != 1 || receipt.Tree != params.CandidateTree || receipt.Command == "" || receipt.ExitStatus != 0 {
+	if (receipt.SchemaVersion != 1 && receipt.SchemaVersion != 3) || receipt.Tree != params.CandidateTree || receipt.Command == "" || receipt.ExitStatus != 0 {
 		return TestReceipt{}, fmt.Errorf("test receipt does not record a successful command for the candidate tree")
 	}
 	if receipt.Proof != nil {
@@ -664,19 +729,56 @@ func readTestReceipt(params ObserveParams) (TestReceipt, error) {
 	if _, err := time.Parse(time.RFC3339Nano, receipt.Time); err != nil {
 		return TestReceipt{}, fmt.Errorf("test receipt time is malformed")
 	}
-	for _, observed := range []string{
-		receipt.Binding.IndexTreeBefore,
-		receipt.Binding.WorktreeTreeBefore,
-		receipt.Binding.IndexTreeAfter,
-		receipt.Binding.WorktreeTreeAfter,
-	} {
-		if observed != params.CandidateTree {
-			return TestReceipt{}, fmt.Errorf("test receipt binding does not equal the candidate tree")
+	workspace := gittree.Workspace{Dir: params.RepoRoot}
+	expectedWorktree := params.CandidateTree
+	if receipt.SchemaVersion == 1 {
+		if receipt.WorktreeProjection != nil {
+			return TestReceipt{}, fmt.Errorf("test receipt mixes schema versions")
 		}
+		for _, observed := range []string{
+			receipt.Binding.IndexTreeBefore,
+			receipt.Binding.WorktreeTreeBefore,
+			receipt.Binding.IndexTreeAfter,
+			receipt.Binding.WorktreeTreeAfter,
+		} {
+			if observed != params.CandidateTree {
+				return TestReceipt{}, fmt.Errorf("test receipt binding does not equal the candidate tree")
+			}
+		}
+	} else {
+		identity, err := validateVersionThreeReceipt(workspace, receipt)
+		if err != nil {
+			return TestReceipt{}, err
+		}
+		expectedWorktree = identity
 	}
-	indexTree, worktreeTree, err := receiptPosture(gittree.Workspace{Dir: params.RepoRoot})
-	if err != nil || indexTree != params.CandidateTree || worktreeTree != params.CandidateTree {
+	indexTree, worktreeTree, err := rawReceiptPosture(workspace)
+	if receipt.SchemaVersion == 3 {
+		indexTree, worktreeTree, err = receiptPosture(workspace)
+	}
+	if err != nil || indexTree != params.CandidateTree || worktreeTree != expectedWorktree {
 		return TestReceipt{}, fmt.Errorf("the index or working tree moved after the test receipt was created")
 	}
 	return receipt, nil
+}
+
+func validateVersionThreeReceipt(workspace gittree.Workspace, receipt TestReceipt) (string, error) {
+	if receipt.WorktreeProjection == nil {
+		return "", fmt.Errorf("test receipt mixes schema versions")
+	}
+	if !slices.Equal(receipt.WorktreeProjection.Excludes, appendOnlyRegisters) {
+		return "", fmt.Errorf("test receipt excludes a different register set than this engine")
+	}
+	identity, err := receiptIdentity(workspace, receipt.Tree)
+	if err != nil {
+		return "", err
+	}
+	if receipt.Binding.IndexTreeBefore != receipt.Tree ||
+		receipt.Binding.IndexTreeAfter != receipt.Tree ||
+		receipt.Binding.WorktreeTreeBefore != identity ||
+		receipt.Binding.WorktreeTreeAfter != identity ||
+		receipt.WorktreeProjection.Tree != identity {
+		return "", fmt.Errorf("test receipt binding does not equal the candidate tree")
+	}
+	return identity, nil
 }

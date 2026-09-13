@@ -311,7 +311,7 @@ case "$1 $2" in
     fi ;;
   "behavior-surface select")
     while IFS= read -r -d '' path; do
-      case "$path" in artifacts/*|bin/*|plans/goals/*|plans/goals.md|plans/goals-accepted.json|memory/receipts.log|metasystem.conf.local) ;;
+      case "$path" in artifacts/*|bin/*|plans/goals/*|plans/goals.md|plans/goals-accepted.json|memory/receipts.log|records/narrator-digest.log|metasystem.conf.local) ;;
         *) printf '%s\0' "$path" ;;
       esac
     done ;;
@@ -327,7 +327,7 @@ set -euo pipefail
 case "$1 $2" in
   "behavior-surface select")
     while IFS= read -r -d '' path; do
-      case "$path" in artifacts/*|bin/*|plans/goals/*|plans/goals.md|plans/goals-accepted.json|memory/receipts.log|metasystem.conf.local) ;;
+      case "$path" in artifacts/*|bin/*|plans/goals/*|plans/goals.md|plans/goals-accepted.json|memory/receipts.log|records/narrator-digest.log|metasystem.conf.local) ;;
         *) printf '%s\0' "$path" ;;
       esac
     done ;;
@@ -482,7 +482,7 @@ case "$1 $2" in
     esac ;;
   "behavior-surface select")
     while IFS= read -r -d '' path; do
-      case "$path" in artifacts/*|bin/*|plans/goals/*|plans/goals.md|plans/goals-accepted.json|memory/receipts.log|metasystem.conf.local) ;;
+      case "$path" in artifacts/*|bin/*|plans/goals/*|plans/goals.md|plans/goals-accepted.json|memory/receipts.log|records/narrator-digest.log|metasystem.conf.local) ;;
         *) printf '%s\0' "$path" ;;
       esac
     done ;;

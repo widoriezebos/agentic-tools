@@ -373,11 +373,15 @@ JSON
       >"$leg_seed/memory/receipts.log"
   fi
   if [[ "$fixture_scenario" == full-width-chain ]]; then
-    mkdir -p "$leg_seed/memory"
+    mkdir -p "$leg_seed/memory" "$leg_seed/records"
     cp "$root/scripts/agents/path-classes.txt" "$leg_seed/scripts/agents/path-classes.txt"
     cp "$root/scripts/agents/landing-classes.json" "$leg_seed/scripts/agents/landing-classes.json"
     cp "$root/scripts/agents/landing-promotion.json" "$leg_seed/scripts/agents/landing-promotion.json"
     cp "$root/memory/rulings.md" "$leg_seed/memory/rulings.md"
+    printf 'receipt=seed\n' >"$leg_seed/memory/receipts.log"
+    printf 'digest=seed\n' >"$leg_seed/records/narrator-digest.log"
+    printf 'memory/receipts.log merge=union\nrecords/narrator-digest.log merge=union\n' \
+      >"$leg_seed/.gitattributes"
     for battery_script in go-gate.sh dispatch-fixtures.sh goal-cli-fixtures.sh; do
       printf '#!/usr/bin/env bash\nexit 0\n' >"$leg_seed/scripts/agents/$battery_script"
       chmod +x "$leg_seed/scripts/agents/$battery_script"
@@ -510,7 +514,8 @@ BACKLOG
     git -C "$leg_seed" add -- metasystem.conf testing.json plans/goals/backlog.md memory/rulings.md
   fi
   if [[ "$fixture_scenario" == full-width-chain ]]; then
-    git -C "$leg_seed" add -- memory/rulings.md
+    git -C "$leg_seed" add -- .gitattributes memory/rulings.md \
+      memory/receipts.log records/narrator-digest.log
   fi
   [[ "$fixture_scenario" != receipt-line ]] || git -C "$leg_seed" add -- memory/receipts.log
   git -C "$leg_seed" commit -qm seed
@@ -1748,6 +1753,13 @@ tier_one_tree=$(git -C "$leg_local" rev-parse HEAD^{tree})
 for binding_field in indexTreeBefore worktreeTreeBefore indexTreeAfter worktreeTreeAfter; do
   [[ $("$source_engine" json get --file "$tier_one_receipt" --field "binding.$binding_field") == "$tier_one_tree" ]]
 done
+tier_one_projection_tree=$("$source_engine" json get --file "$tier_one_receipt" --field worktreeProjection.tree)
+for binding_field in indexTreeBefore indexTreeAfter; do
+  [[ $("$source_engine" json get --file "$tier_one_receipt" --field "binding.$binding_field") == "$tier_one_tree" ]]
+done
+for binding_field in worktreeTreeBefore worktreeTreeAfter; do
+  [[ $("$source_engine" json get --file "$tier_one_receipt" --field "binding.$binding_field") == "$tier_one_projection_tree" ]]
+done
 echo "land tier-one fixture passed"
 fi
 
@@ -1801,7 +1813,9 @@ full_chain_other_tree=$(git -C "$leg_local" rev-parse HEAD^{tree})
 full_chain_other_receipt=artifacts/agents/landing/receipts/$full_chain_other_tree.json
 
 printf '# full-width candidate\n' >>"$leg_local/scripts/agents/go-gate.sh"
-git -C "$leg_local" add -- scripts/agents/go-gate.sh
+full_chain_receipt_line_1='2|2026-09-12T00:00:00Z|RECEIPT|type=implement|outcome=shipped|skills=verify|verify=clean|corrections=0|stop_loss=no|delegate=none|goal=fx|built_by=coordinator|critique_waived=none|waiver_stream=none|note=full-width-candidate-one'
+printf '%s\n' "$full_chain_receipt_line_1" >>"$leg_local/memory/receipts.log"
+git -C "$leg_local" add -- scripts/agents/go-gate.sh memory/receipts.log
 full_chain_candidate=$(git -C "$leg_local" write-tree)
 mkdir -p "$leg_local/artifacts/agents/jobs" \
   "$leg_local/artifacts/agents/full-chain/rounds/1"
@@ -1921,6 +1935,193 @@ git -C "$leg_local" show -s --format=%B HEAD \
 git -C "$leg_local" show -s --format=%B HEAD \
   | grep -Fq 'Landing-Provenance: chain=full-chain change='
 [[ $(git -C "$leg_local" rev-parse HEAD) == $(git --git-dir="$leg_remote" rev-parse refs/heads/main) ]]
+
+printf '# full-width candidate two\n' >>"$leg_local/scripts/agents/go-gate.sh"
+full_chain_receipt_line_2='3|2026-09-12T00:00:01Z|RECEIPT|type=implement|outcome=shipped|skills=verify|verify=clean|corrections=0|stop_loss=no|delegate=none|goal=fx|built_by=coordinator|critique_waived=none|waiver_stream=none|note=full-width-candidate-two'
+printf '%s\n' "$full_chain_receipt_line_2" >>"$leg_local/memory/receipts.log"
+git -C "$leg_local" add -- scripts/agents/go-gate.sh memory/receipts.log
+full_chain_candidate_2=$(git -C "$leg_local" write-tree)
+mkdir -p "$leg_local/artifacts/agents/jobs" \
+  "$leg_local/artifacts/agents/full-chain-2/rounds/1"
+cat >"$leg_local/artifacts/agents/jobs/full-chain-2.json" <<'JSON'
+{
+  "jobId": "full-chain-2",
+  "goalId": null,
+  "parentJob": null,
+  "role": "implementer",
+  "round": 1,
+  "goalTier": 2,
+  "gateWidth": "full",
+  "destructiveReach": "DESIGN-BEARING",
+  "chainClosed": true
+}
+JSON
+git -C "$leg_local" diff --cached --binary --full-index --no-ext-diff --no-textconv -- \
+  >"$leg_local/artifacts/agents/full-chain-2/rounds/1/diff.patch"
+cat >"$leg_local/artifacts/agents/full-chain-2/rounds/1/review.json" <<JSON
+{
+  "diffArtifact": "diff.patch",
+  "implementerJob": "full-chain-2",
+  "reviewedTree": "$full_chain_candidate_2"
+}
+JSON
+(
+  cd "$leg_local"
+  "$source_engine" landing test-receipt --root . \
+    --tree "$full_chain_candidate_2" --command "$full_battery_command" --goal fx --cap-min 1
+) >/dev/null
+full_chain_receipt_2=artifacts/agents/landing/receipts/$full_chain_candidate_2.json
+
+full_chain_second_base=$(git -C "$leg_local" rev-parse HEAD)
+full_chain_drift_output=$leg_root/non-register-drift.out
+printf 'payload=drift\n' >>"$leg_local/payload.txt"
+set +e
+(
+  cd "$leg_local"
+  bash scripts/agents/land.sh -m "$full_chain_message" --chain full-chain-2 \
+    --test-receipt "$full_chain_receipt_2" --staged-only --skip-transport
+) >"$full_chain_drift_output" 2>&1
+full_chain_drift_rc=$?
+set -e
+[[ $full_chain_drift_rc == 2 ]] || {
+  echo "land full-width-chain fixture: non-register drift exited $full_chain_drift_rc, want 2" >&2
+  sed -n '1,180p' "$full_chain_drift_output" >&2
+  exit 1
+}
+grep -Fqx 'land refused: unstaged changes remain after staging; transport requires a clean tree after commit' \
+  "$full_chain_drift_output"
+grep -Fq $'unstaged\t M\tpayload.txt' "$full_chain_drift_output"
+if grep -Fq '== STEP: commit' "$full_chain_drift_output"; then
+  echo "land full-width-chain fixture: non-register drift reached commit" >&2
+  exit 1
+fi
+[[ $(git -C "$leg_local" rev-parse HEAD) == "$full_chain_second_base" ]]
+git -C "$leg_local" checkout -- payload.txt
+[[ -f "$leg_local/$full_chain_receipt_2" ]]
+
+git -C "$leg_peer" pull --ff-only origin main
+printf 'payload=peer\n' >>"$leg_peer/payload.txt"
+git -C "$leg_peer" add -- payload.txt
+git -C "$leg_peer" commit -qm 'peer payload change'
+git -C "$leg_peer" push -q origin main
+printf 'digest=drift\n' >>"$leg_local/records/narrator-digest.log"
+printf 'sentinel stash\n' >>"$leg_local/plans/existing.md"
+git -C "$leg_local" stash push -q -m sentinel -- plans/existing.md
+full_chain_stash=$(git -C "$leg_local" rev-parse 'stash@{0}')
+full_chain_bg_log=$leg_root/bg.log
+full_chain_bg_expected=$leg_root/receipts.expected
+full_chain_passing_output=$leg_root/register-drift-passing.out
+: >"$full_chain_bg_log"
+appender_pid=
+trap 'kill "$appender_pid" 2>/dev/null' EXIT
+(
+  appender_deadline=$((SECONDS + 60))
+  appender_stop=0
+  appender_count=0
+  trap 'appender_stop=1' TERM
+  while (( ! appender_stop && SECONDS < appender_deadline )); do
+    appender_count=$((appender_count + 1))
+    appender_line=receipt=bg-$appender_count
+    printf '%s\n' "$appender_line" >>"$leg_local/memory/receipts.log"
+    printf '%s\n' "$appender_line" >>"$full_chain_bg_log"
+    sleep 0.01
+  done
+) &
+appender_pid=$!
+set +e
+(
+  cd "$leg_local"
+  bash scripts/agents/land.sh -m "$full_chain_message" --chain full-chain-2 \
+    --test-receipt "$full_chain_receipt_2" --staged-only --skip-transport
+) >"$full_chain_passing_output" 2>&1
+full_chain_passing_rc=$?
+kill -TERM "$appender_pid" 2>/dev/null
+wait "$appender_pid"
+set -e
+trap 'rm -rf "$tmp"' EXIT
+[[ $full_chain_passing_rc == 0 ]] || {
+  echo "land full-width-chain fixture: register drift landing exited $full_chain_passing_rc, want 0" >&2
+  sed -n '1,240p' "$full_chain_passing_output" >&2
+  exit 1
+}
+[[ $(git -C "$leg_local" rev-parse HEAD) == $(git --git-dir="$leg_remote" rev-parse refs/heads/main) ]]
+[[ $(git -C "$leg_local" show HEAD:payload.txt) == $'seed\npayload=peer' ]]
+[[ $(git -C "$leg_local" show HEAD:memory/receipts.log) == "$(printf 'receipt=seed\n%s\n%s' "$full_chain_receipt_line_1" "$full_chain_receipt_line_2")" ]]
+[[ $(git -C "$leg_local" show HEAD:records/narrator-digest.log) == 'digest=seed' ]]
+[[ $(<"$leg_local/records/narrator-digest.log") == $'digest=seed\ndigest=drift' ]]
+{
+  printf 'receipt=seed\n'
+  printf '%s\n' "$full_chain_receipt_line_1" "$full_chain_receipt_line_2"
+  cat "$full_chain_bg_log"
+} >"$full_chain_bg_expected"
+cmp -s "$leg_local/memory/receipts.log" "$full_chain_bg_expected"
+[[ $(git -C "$leg_local" status --porcelain) == $' M memory/receipts.log\n M records/narrator-digest.log' ]]
+[[ $(git -C "$leg_local" stash list | wc -l | tr -d ' ') == 1 ]]
+[[ $(git -C "$leg_local" rev-parse 'stash@{0}') == "$full_chain_stash" ]]
+[[ $(git -C "$leg_local" worktree list | wc -l | tr -d ' ') == 1 ]]
+
+git -C "$leg_peer" pull --ff-only origin main
+printf 'digest=peer\n' >>"$leg_peer/records/narrator-digest.log"
+git -C "$leg_peer" add -- records/narrator-digest.log
+git -C "$leg_peer" commit -qm 'peer digest change'
+git -C "$leg_peer" push -q origin main
+full_chain_contended_origin=$(git --git-dir="$leg_remote" rev-parse refs/heads/main)
+full_chain_contended_message=$leg_root/contended-message.txt
+full_chain_contended_output=$leg_root/contended.out
+full_chain_digest_before=$leg_root/digest.before
+printf 'fixture carries receipts before a contended digest\n' >"$full_chain_contended_message"
+cp "$leg_local/records/narrator-digest.log" "$full_chain_digest_before"
+set +e
+(
+  cd "$leg_local"
+  bash scripts/agents/land.sh -m "$full_chain_contended_message" \
+    --direct-fix register-carriage --skip-transport -- memory/receipts.log
+) >"$full_chain_contended_output" 2>&1
+full_chain_contended_rc=$?
+set -e
+[[ $full_chain_contended_rc != 0 ]] || {
+  echo "land full-width-chain fixture: contended register unexpectedly landed" >&2
+  exit 1
+}
+grep -Fq '== STEP: commit' "$full_chain_contended_output"
+grep -Fq '== STEP: rebase onto origin/main' "$full_chain_contended_output"
+grep -Eq '^advance refused: advance-register-contended: records/narrator-digest.log.*[0-9a-f]{40,64}' \
+  "$full_chain_contended_output"
+[[ $(git -C "$leg_local" log -1 --format=%s) == 'fixture carries receipts before a contended digest' ]]
+[[ $(git --git-dir="$leg_remote" rev-parse refs/heads/main) == "$full_chain_contended_origin" ]]
+cmp -s "$leg_local/records/narrator-digest.log" "$full_chain_digest_before"
+[[ $(git -C "$leg_local" status --porcelain) == ' M records/narrator-digest.log' ]]
+[[ $(git -C "$leg_local" worktree list | wc -l | tr -d ' ') == 1 ]]
+[[ $(git -C "$leg_local" stash list | wc -l | tr -d ' ') == 1 ]]
+[[ $(git -C "$leg_local" rev-parse 'stash@{0}') == "$full_chain_stash" ]]
+
+full_chain_repair_message=$leg_root/repair-message.txt
+full_chain_repair_output=$leg_root/repair.out
+full_chain_committed_digest=$leg_root/digest.committed
+full_chain_committed_receipts=$leg_root/receipts.committed
+printf 'fixture carries the contended digest\n' >"$full_chain_repair_message"
+(
+  cd "$leg_local"
+  bash scripts/agents/land.sh -m "$full_chain_repair_message" \
+    --direct-fix register-carriage --skip-transport -- records/narrator-digest.log
+) >"$full_chain_repair_output" 2>&1 || {
+  echo "land full-width-chain fixture: contended register repair failed" >&2
+  sed -n '1,260p' "$full_chain_repair_output" >&2
+  exit 1
+}
+[[ $(git -C "$leg_local" rev-parse HEAD) == $(git --git-dir="$leg_remote" rev-parse refs/heads/main) ]]
+git -C "$leg_local" show HEAD:records/narrator-digest.log >"$full_chain_committed_digest"
+[[ $(wc -l <"$full_chain_committed_digest" | tr -d ' ') == 3 ]]
+[[ $(sed -n '1p' "$full_chain_committed_digest") == 'digest=seed' ]]
+[[ $(grep -Fxc 'digest=peer' "$full_chain_committed_digest") == 1 ]]
+[[ $(grep -Fxc 'digest=drift' "$full_chain_committed_digest") == 1 ]]
+git -C "$leg_local" show HEAD~1:memory/receipts.log >"$full_chain_committed_receipts"
+cmp -s "$full_chain_committed_receipts" "$full_chain_bg_expected"
+[[ -z $(git -C "$leg_local" status --porcelain) ]]
+cmp -s "$leg_local/records/narrator-digest.log" "$full_chain_committed_digest"
+[[ $(git -C "$leg_local" worktree list | wc -l | tr -d ' ') == 1 ]]
+[[ $(git -C "$leg_local" stash list | wc -l | tr -d ' ') == 1 ]]
+[[ $(git -C "$leg_local" rev-parse 'stash@{0}') == "$full_chain_stash" ]]
 echo "land full-width-chain fixture passed"
 fi
 

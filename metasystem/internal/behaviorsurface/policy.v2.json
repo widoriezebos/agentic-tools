@@ -32,7 +32,8 @@
     "plans/goals/**",
     "plans/goals.md",
     "plans/goals-accepted.json",
-    "memory/receipts.log"
+    "memory/receipts.log",
+    "records/narrator-digest.log"
   ],
   "repositoryOperationalDataPaths": [
     "artifacts/**",

@@ -257,3 +257,44 @@ func TestWorktreeAdministrationIsOneLockPerRepository(t *testing.T) {
 		t.Fatalf("releasing twice is not idempotent: %v", err)
 	}
 }
+
+func TestDetachedCommitWorktreeConflictingRebaseCleansUp(t *testing.T) {
+	f, ws := nestedFixture(t)
+	base := f.headOID()
+	f.git("checkout", "-qb", "upstream")
+	f.write("ws/app.txt", "upstream\n")
+	f.git("add", "--", "ws/app.txt")
+	f.commit("upstream")
+	upstream := f.headOID()
+	f.git("checkout", "-q", "main")
+	if got := f.headOID(); got != base {
+		t.Fatalf("main moved from base %s to %s", base, got)
+	}
+	f.write("ws/app.txt", "landing\n")
+	f.git("add", "--", "ws/app.txt")
+	f.commit("landing")
+	landing := f.headOID()
+
+	detached, err := ws.NewDetachedCommitWorktree(landing)
+	if err != nil {
+		t.Fatal(err)
+	}
+	result, err := detached.Rebase(upstream)
+	if err != nil {
+		_ = detached.Close()
+		t.Fatal(err)
+	}
+	if !result.Conflicted || result.Output == "" || result.Head != "" {
+		_ = detached.Close()
+		t.Fatalf("conflicting rebase = %+v", result)
+	}
+	if err := detached.Close(); err != nil {
+		t.Fatal(err)
+	}
+	if got := f.headOID(); got != landing {
+		t.Fatalf("private rebase moved real branch from %s to %s", landing, got)
+	}
+	if count := strings.Count(f.git("worktree", "list", "--porcelain"), "worktree "); count != 1 {
+		t.Fatalf("private rebase left %d registered worktrees", count)
+	}
+}

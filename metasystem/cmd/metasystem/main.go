@@ -130,6 +130,8 @@ func families() []family {
 			name:    "landing",
 			summary: "classify and record the two bars for a prospective landing",
 			verbs: []verb{
+				{"advance", "rebase a landing commit without moving dirty registers", runLandingAdvance},
+				{"drift", "classify worktree changes tolerated during landing", runLandingDrift},
 				{"observe", "emit a provenance verdict for the prospective project tree", runLandingObserve},
 				{"carry-status", "report a carried word, consumption, reservation, intent, and counselor state", runLandingCarryStatus},
 				{"workspace", "print the delivery workspace projection of a whole-project tree", runLandingWorkspace},

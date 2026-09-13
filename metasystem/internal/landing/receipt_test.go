@@ -2,6 +2,7 @@ package landing
 
 import (
 	"bytes"
+	"encoding/json"
 	"io"
 	"os"
 	"os/exec"
@@ -10,8 +11,180 @@ import (
 	"testing"
 	"time"
 
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/behaviorsurface"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/gittree"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/proofrun"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/testpolicy"
 )
+
+func TestReadTestReceiptSurvivesRegisterAppendAfterReceipt(t *testing.T) {
+	for _, register := range []string{"records/narrator-digest.log", "memory/receipts.log"} {
+		t.Run(register, func(t *testing.T) {
+			f := newObserveFixture(t)
+			f.write("product.txt", "candidate\n")
+			f.git("add", "--", "product.txt")
+			candidate, err := (gittree.Workspace{Dir: f.root}).StagedTree()
+			if err != nil {
+				t.Fatal(err)
+			}
+			if _, err := CreateTestReceipt(f.root, candidate, "true", io.Discard, io.Discard); err != nil {
+				t.Fatal(err)
+			}
+			appendReceiptFixtureFile(t, filepath.Join(f.root, register), "after-receipt\n")
+
+			if _, err := readTestReceipt(ObserveParams{
+				RepoRoot: f.root, CandidateTree: candidate, TestReceipt: TestReceiptPath(f.root, candidate),
+			}); err != nil {
+				t.Fatalf("receipt rejected append to %s: %v", register, err)
+			}
+		})
+	}
+}
+
+func TestReadTestReceiptRefusesNonRegisterDrift(t *testing.T) {
+	t.Run("unstaged product", func(t *testing.T) {
+		f := newObserveFixture(t)
+		f.write("product.txt", "candidate\n")
+		f.git("add", "--", "product.txt")
+		candidate, err := (gittree.Workspace{Dir: f.root}).StagedTree()
+		if err != nil {
+			t.Fatal(err)
+		}
+		if _, err := CreateTestReceipt(f.root, candidate, "true", io.Discard, io.Discard); err != nil {
+			t.Fatal(err)
+		}
+		appendReceiptFixtureFile(t, filepath.Join(f.root, "product.txt"), "after-receipt\n")
+
+		_, err = readTestReceipt(ObserveParams{
+			RepoRoot: f.root, CandidateTree: candidate, TestReceipt: TestReceiptPath(f.root, candidate),
+		})
+		if err == nil || !strings.Contains(err.Error(), "the index or working tree moved after the test receipt was created") {
+			t.Fatalf("non-register drift error = %v", err)
+		}
+	})
+
+	t.Run("staged register append", func(t *testing.T) {
+		f := newObserveFixture(t)
+		f.write("product.txt", "candidate\n")
+		f.git("add", "--", "product.txt")
+		candidate, err := (gittree.Workspace{Dir: f.root}).StagedTree()
+		if err != nil {
+			t.Fatal(err)
+		}
+		if _, err := CreateTestReceipt(f.root, candidate, "true", io.Discard, io.Discard); err != nil {
+			t.Fatal(err)
+		}
+		appendReceiptFixtureFile(t, filepath.Join(f.root, "memory", "receipts.log"), "after-receipt\n")
+		f.git("add", "--", "memory/receipts.log")
+
+		_, err = readTestReceipt(ObserveParams{
+			RepoRoot: f.root, CandidateTree: candidate, TestReceipt: TestReceiptPath(f.root, candidate),
+		})
+		if err == nil || !strings.Contains(err.Error(), "the index or working tree moved after the test receipt was created") {
+			t.Fatalf("staged register drift error = %v", err)
+		}
+	})
+}
+
+func TestReadSchemaTwoTestingReceiptSurvivesRegisterAppend(t *testing.T) {
+	f := newObserveFixture(t)
+	f.write("metasystem.conf", "testing.contract=testing.json\ndispatch.cap-max=120\n")
+	f.git("add", ".", "../development/metasystem-design.md")
+	projectRoot, err := (gittree.Workspace{Dir: f.root}).TopLevel()
+	if err != nil {
+		t.Fatal(err)
+	}
+	tree, err := (gittree.Workspace{Dir: projectRoot}).StagedTree()
+	if err != nil {
+		t.Fatal(err)
+	}
+	subtree, err := (gittree.Workspace{Dir: f.root}).TreeOf(tree)
+	if err != nil {
+		t.Fatal(err)
+	}
+	head := f.git("rev-parse", "HEAD")
+	identity, err := proofrun.BuildProofIdentity(
+		f.root,
+		filepath.Join(f.root, "metasystem.conf"),
+		"selected",
+		"testing",
+		nil,
+		behaviorsurface.SupportedVersion,
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	launcher, err := proofrun.CurrentProcessIdentity(nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	now := time.Now().UTC()
+	attempt, _, err := proofrun.ReserveLocked(proofrun.AdmissionRequest{
+		ControlRoot: f.root, ExecutionRoot: f.root, GoalID: "goal", GoalRevision: 2,
+		AccountingRevision: 2, ReservedMinutes: 5, Identity: identity, Launcher: launcher, Now: now,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	zero := 0
+	digest := strings.Repeat("a", 64)
+	result := proofrun.TestResult{
+		SchemaVersion: proofrun.TestResultSchemaVersion, CandidateEngineIdentityVersion: proofrun.CandidateEngineIdentitySchemaVersion,
+		AttemptID: attempt.AttemptID,
+		Purpose:   testpolicy.PurposeDelivery, RequestedMode: testpolicy.ModeAuto,
+		RequiredMode: testpolicy.ModeStandard, ExecutedMode: testpolicy.ModeStandard,
+		ProjectRoot: projectRoot, BaseCommit: head, CandidateTree: tree, PolicyBaseCommit: head,
+		ContractDigest: digest, BaseContractDigest: digest, PolicyEngineDigest: digest,
+		CandidateEngineDigest: strings.Repeat("e", 64), CandidateEngineBuildIdentity: strings.Repeat("f", 40),
+		BehaviorPolicyDigest: digest, PlanDigest: digest,
+		RequiredGroups: []string{"application"}, SelectedGroups: []string{"application"},
+		LaunchCounts: proofrun.LaunchCounts{Test: 1, CountsComplete: true},
+		StartedAt:    now.Add(-time.Second).Format(time.RFC3339Nano),
+		Cost:         proofrun.TestCost{DeclaredTargetMS: 1},
+		Groups: []proofrun.GroupResult{{
+			ID: "application", Kind: "unit", Obligations: []string{"behavior"}, InputDigest: digest,
+			InputManifest: []string{"source/**"}, ExecutionIdentity: digest, CWD: ".",
+			ToolIdentities: map[string]string{}, Status: "passed", NativeLaunched: true,
+			NativeExitStatus: &zero, CollectionComplete: true, ReportDigests: map[string]string{},
+		}},
+	}
+	result.RecomputeDelivery()
+	completedAt := now.Add(time.Second)
+	prepared, payload, err := PrepareTestingReceiptPayload(f.root, tree, result, completedAt)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := proofrun.FinalizeAttemptWithTestResultLocked(
+		f.root, attempt.AttemptID, proofrun.TerminalSuccess, 0, "fixture", payload, prepared.Testing, completedAt,
+	); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := PublishCommittedReceipt(f.root, attempt.AttemptID, tree); err != nil {
+		t.Fatal(err)
+	}
+	appendReceiptFixtureFile(t, filepath.Join(f.root, "records", "narrator-digest.log"), "after-receipt\n")
+
+	if _, err := readTestReceipt(ObserveParams{
+		RepoRoot: f.root, CandidateTree: subtree, TestReceipt: TestReceiptPath(f.root, tree),
+	}); err != nil {
+		t.Fatalf("schema-2 testing receipt rejected register append: %v", err)
+	}
+}
+
+func appendReceiptFixtureFile(t *testing.T, path, content string) {
+	t.Helper()
+	file, err := os.OpenFile(path, os.O_APPEND|os.O_WRONLY, 0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := file.WriteString(content); err != nil {
+		_ = file.Close()
+		t.Fatal(err)
+	}
+	if err := file.Close(); err != nil {
+		t.Fatal(err)
+	}
+}
 
 func TestCreateTestReceiptIgnoresLiveWorkspaceMotion(t *testing.T) {
 	f := newObserveFixture(t)
@@ -38,11 +211,16 @@ func TestCreateTestReceiptIgnoresLiveWorkspaceMotion(t *testing.T) {
 	if receipt.ExitStatus != 0 {
 		t.Fatalf("receipt exit status = %d, want zero", receipt.ExitStatus)
 	}
-	wantBinding := TestReceiptBinding{
-		IndexTreeBefore: candidate, WorktreeTreeBefore: candidate,
-		IndexTreeAfter: candidate, WorktreeTreeAfter: candidate,
+	identity, err := receiptIdentity(gittree.Workspace{Dir: f.root}, candidate)
+	if err != nil {
+		t.Fatal(err)
 	}
-	if receipt.Tree != candidate || receipt.Binding != wantBinding {
+	wantBinding := TestReceiptBinding{
+		IndexTreeBefore: candidate, WorktreeTreeBefore: identity,
+		IndexTreeAfter: candidate, WorktreeTreeAfter: identity,
+	}
+	if receipt.SchemaVersion != 3 || receipt.Tree != candidate || receipt.Binding != wantBinding ||
+		receipt.WorktreeProjection == nil || receipt.WorktreeProjection.Tree != identity {
 		t.Fatalf("receipt = %+v, want tree and all bindings %s", receipt, candidate)
 	}
 	digest, err := os.ReadFile(filepath.Join(f.root, "records", "narrator-digest.log"))
@@ -54,6 +232,164 @@ func TestCreateTestReceiptIgnoresLiveWorkspaceMotion(t *testing.T) {
 	}
 	if got := f.git("worktree", "list", "--porcelain"); got != worktreesBefore {
 		t.Fatalf("temporary receipt worktree remained after success:\n%s", got)
+	}
+	if _, err := readTestReceipt(ObserveParams{
+		RepoRoot: f.root, CandidateTree: candidate, TestReceipt: TestReceiptPath(f.root, candidate),
+	}); err != nil {
+		t.Fatalf("receipt rejected live register motion: %v", err)
+	}
+}
+
+func TestCreateTestReceiptToleratesCandidateRegisterAppend(t *testing.T) {
+	f := newObserveFixture(t)
+	candidate, err := (gittree.Workspace{Dir: f.root}).StagedTree()
+	if err != nil {
+		t.Fatal(err)
+	}
+	receipt, err := CreateTestReceipt(
+		f.root,
+		candidate,
+		`printf '%s\n' 'digest=during-battery' >> records/narrator-digest.log`,
+		io.Discard,
+		io.Discard,
+	)
+	if err != nil {
+		t.Fatalf("candidate register append refused: %v", err)
+	}
+	identity, err := receiptIdentity(gittree.Workspace{Dir: f.root}, candidate)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if receipt.Binding.IndexTreeAfter != candidate || receipt.Binding.WorktreeTreeAfter != identity {
+		t.Fatalf("receipt bindings = %+v, want exact index %s and projection %s", receipt.Binding, candidate, identity)
+	}
+}
+
+func TestReadTestReceiptVersions(t *testing.T) {
+	tests := []struct {
+		name       string
+		version    int
+		binding    func(candidate, identity string) TestReceiptBinding
+		projection func(identity string) *TestReceiptProjection
+		wantError  string
+	}{
+		{
+			name: "version 1", version: 1,
+			binding: exactReceiptBinding,
+		},
+		{
+			name: "version 1 with filtered bindings", version: 1,
+			binding:   filteredReceiptBinding,
+			wantError: "test receipt binding does not equal the candidate tree",
+		},
+		{
+			name: "version 3 with raw worktree bindings", version: 3,
+			binding: exactReceiptBinding,
+			projection: func(identity string) *TestReceiptProjection {
+				return &TestReceiptProjection{Excludes: AppendOnlyRegisters(), Tree: identity}
+			},
+			wantError: "test receipt binding does not equal the candidate tree",
+		},
+		{
+			name: "version 1 with projection", version: 1,
+			binding: exactReceiptBinding,
+			projection: func(identity string) *TestReceiptProjection {
+				return &TestReceiptProjection{Excludes: AppendOnlyRegisters(), Tree: identity}
+			},
+			wantError: "test receipt mixes schema versions",
+		},
+		{
+			name: "version 2 with projection", version: 2,
+			binding: exactReceiptBinding,
+			projection: func(identity string) *TestReceiptProjection {
+				return &TestReceiptProjection{Excludes: AppendOnlyRegisters(), Tree: identity}
+			},
+			wantError: "test receipt mixes schema versions",
+		},
+		{
+			name: "version 3 without projection", version: 3,
+			binding:   filteredReceiptBinding,
+			wantError: "test receipt mixes schema versions",
+		},
+		{
+			name: "version 3 with different register set", version: 3,
+			binding: filteredReceiptBinding,
+			projection: func(identity string) *TestReceiptProjection {
+				return &TestReceiptProjection{Excludes: AppendOnlyRegisters()[:1], Tree: identity}
+			},
+			wantError: "test receipt excludes a different register set than this engine",
+		},
+		{
+			name: "unsupported version", version: 4,
+			binding:   exactReceiptBinding,
+			wantError: "test receipt does not record a successful command for the candidate tree",
+		},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			f := newObserveFixture(t)
+			f.write("product.txt", "candidate\n")
+			f.git("add", "--", "product.txt")
+			candidate, err := (gittree.Workspace{Dir: f.root}).StagedTree()
+			if err != nil {
+				t.Fatal(err)
+			}
+			identity, err := receiptIdentity(gittree.Workspace{Dir: f.root}, candidate)
+			if err != nil {
+				t.Fatal(err)
+			}
+			receipt := TestReceipt{
+				SchemaVersion: test.version,
+				Tree:          candidate,
+				Command:       "true",
+				Time:          "2026-09-09T00:00:00Z",
+				Binding:       test.binding(candidate, identity),
+			}
+			if test.projection != nil {
+				receipt.WorktreeProjection = test.projection(identity)
+			}
+			writeTestReceiptFixture(t, f.root, candidate, receipt)
+
+			_, err = readTestReceipt(ObserveParams{
+				RepoRoot: f.root, CandidateTree: candidate, TestReceipt: TestReceiptPath(f.root, candidate),
+			})
+			if test.wantError == "" && err != nil {
+				t.Fatalf("receipt refused: %v", err)
+			}
+			if test.wantError != "" && (err == nil || !strings.Contains(err.Error(), test.wantError)) {
+				t.Fatalf("receipt error = %v, want %q", err, test.wantError)
+			}
+		})
+	}
+}
+
+func exactReceiptBinding(candidate, _ string) TestReceiptBinding {
+	return TestReceiptBinding{
+		IndexTreeBefore: candidate, WorktreeTreeBefore: candidate,
+		IndexTreeAfter: candidate, WorktreeTreeAfter: candidate,
+	}
+}
+
+func filteredReceiptBinding(candidate, identity string) TestReceiptBinding {
+	return TestReceiptBinding{
+		IndexTreeBefore: candidate, WorktreeTreeBefore: identity,
+		IndexTreeAfter: candidate, WorktreeTreeAfter: identity,
+	}
+}
+
+func writeTestReceiptFixture(t *testing.T, root, candidate string, receipt TestReceipt) {
+	t.Helper()
+	data, err := json.Marshal(receipt)
+	if err != nil {
+		t.Fatal(err)
+	}
+	path := TestReceiptPath(root, candidate)
+	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(path, append(data, '\n'), 0o644); err != nil {
+		t.Fatal(err)
 	}
 }
 
@@ -131,7 +467,11 @@ func TestCreateTestReceiptChecksOutWholeTreeAtRepositoryRoot(t *testing.T) {
 	if err != nil {
 		t.Fatalf("receipt against repository-root candidate: %v", err)
 	}
-	if receipt.Tree != candidate || receipt.Binding.IndexTreeAfter != candidate || receipt.Binding.WorktreeTreeAfter != candidate {
+	identity, err := receiptIdentity(gittree.Workspace{Dir: f.root}, candidate)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if receipt.Tree != candidate || receipt.Binding.IndexTreeAfter != candidate || receipt.Binding.WorktreeTreeAfter != identity {
 		t.Fatalf("receipt = %+v, want candidate %s", receipt, candidate)
 	}
 }

@@ -127,6 +127,120 @@ func (w Workspace) NewDetachedWorktree(tree string) (_ *DetachedWorktree, err er
 	return detached, nil
 }
 
+// NewDetachedCommitWorktree checks out commit in a temporary linked
+// worktree, preserving the caller's workspace-relative root.
+func (w Workspace) NewDetachedCommitWorktree(commit string) (_ *DetachedWorktree, err error) {
+	if !treeID.MatchString(commit) {
+		return nil, fmt.Errorf("gittree detached worktree: %q is not a commit id", commit)
+	}
+	top, err := w.topLevel()
+	if err != nil {
+		return nil, err
+	}
+	prefix, err := w.treePrefix()
+	if err != nil {
+		return nil, err
+	}
+	rawParent, err := os.MkdirTemp("", "metasystem-landing-advance.")
+	if err != nil {
+		return nil, fmt.Errorf("gittree detached worktree: %w", err)
+	}
+	parent, err := filepath.Abs(rawParent)
+	if err == nil {
+		parent, err = filepath.EvalSymlinks(parent)
+	}
+	if err != nil {
+		cleanupErr := os.RemoveAll(rawParent)
+		if cleanupErr != nil {
+			cleanupErr = fmt.Errorf("remove temporary worktree directory: %w", cleanupErr)
+		}
+		return nil, errors.Join(fmt.Errorf("gittree detached worktree: resolve temporary directory: %w", err), cleanupErr)
+	}
+	detached := &DetachedWorktree{
+		control: Workspace{Dir: top},
+		parent:  parent,
+		top:     filepath.Join(parent, "worktree-"+strings.TrimPrefix(filepath.Base(parent), "metasystem-landing-advance.")),
+	}
+	defer func() {
+		if err != nil {
+			err = errors.Join(err, detached.Close())
+		}
+	}()
+
+	admin, err := detached.control.lockWorktreeAdmin(true)
+	if err != nil {
+		return nil, err
+	}
+	stdout, stderr, code, probeErr := detached.control.gitProbe(top, nil, nil,
+		"worktree", "add", "--detach", detached.top, commit)
+	releaseErr := admin.release()
+	if probeErr != nil {
+		return nil, errors.Join(probeErr, releaseErr)
+	}
+	if code != 0 {
+		return nil, errors.Join(fmt.Errorf("gittree detached worktree: add: %w", answerErr("worktree add", stderr, stdout)), releaseErr)
+	}
+	if releaseErr != nil {
+		return nil, releaseErr
+	}
+	detached.registered = true
+	detached.root = detached.top
+	if prefix != "" {
+		detached.root = filepath.Join(detached.top, filepath.FromSlash(strings.TrimSuffix(prefix, "/")))
+	}
+	return detached, nil
+}
+
+// RebaseResult is the typed outcome of rebasing a detached worktree.
+type RebaseResult struct {
+	Head       string
+	Conflicted bool
+	Output     string
+}
+
+// Rebase rebases this detached worktree and aborts before returning a
+// conflicted answer.
+func (d *DetachedWorktree) Rebase(upstream string) (RebaseResult, error) {
+	workspace := Workspace{Dir: d.root}
+	stdout, stderr, code, err := workspace.gitProbe(d.top, nil, nil, "rebase", upstream)
+	if err != nil {
+		return RebaseResult{}, err
+	}
+	if code != 0 {
+		result := RebaseResult{Conflicted: true, Output: combinedProbeOutput(stderr, stdout)}
+		abortOut, abortErrOut, abortCode, abortErr := workspace.gitProbe(d.top, nil, nil, "rebase", "--abort")
+		if abortErr != nil {
+			return result, errors.Join(fmt.Errorf("git rebase conflicted: %s", result.Output), abortErr)
+		}
+		if abortCode != 0 {
+			return result, errors.Join(
+				fmt.Errorf("git rebase conflicted: %s", result.Output),
+				answerErr("rebase --abort", abortErrOut, abortOut),
+			)
+		}
+		return result, nil
+	}
+	head, unborn, err := workspace.HeadCommit()
+	if err != nil {
+		return RebaseResult{}, err
+	}
+	if unborn {
+		return RebaseResult{}, fmt.Errorf("gittree detached worktree: rebase left HEAD unborn")
+	}
+	return RebaseResult{Head: head}, nil
+}
+
+func combinedProbeOutput(stderr, stdout string) string {
+	parts := []string{}
+	if detail := strings.TrimSpace(stderr); detail != "" {
+		parts = append(parts, detail)
+	}
+	if detail := strings.TrimSpace(stdout); detail != "" {
+		parts = append(parts, detail)
+	}
+	return strings.Join(parts, "\n")
+}
+
 // worktreeAdminLock serializes git's worktree administration in one
 // repository. `git worktree add` writes .git/worktrees/<name> in steps (the
 // directory first, commondir and gitdir after it), and a second add that

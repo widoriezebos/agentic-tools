@@ -61,6 +61,9 @@ func leasePaths(root string) Paths {
 	}
 }
 
+// LockPath returns the checkout mutation lock path.
+func LockPath(root string) string { return leasePaths(root).Lock }
+
 // clock is the time source, overridable in tests.
 var clock = time.Now
 

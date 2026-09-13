@@ -12,7 +12,30 @@ import (
 // the register every code landing appends to (landing receipt-line).
 const receiptLedgerPath = "memory/receipts.log"
 
-var appendOnlyRegisters = []string{receiptLedgerPath, "records/counselor/accepted-risk-register.jsonl", "records/counselor/carried-landings.jsonl", "records/narrator-digest.log"}
+// appendOnlyRegisters names the tracked registers that background writers
+// and turn-boundary hooks append to at times a landing does not control:
+// the receipt ledger and the narrator digest, the two the design declares
+// (plans/landing-receipt-survives-records-drift-design.md, Decision 1). The
+// landing rules read this set: the carriage case, the receipt's worktree
+// projection, drift and advance. The counselor registers are not in it:
+// they are coordination state excluded from the delivery workspace through
+// ledgerPaths below, and a change to them keeps its held-goal rule at the
+// carriage gate. Paths are workspace-relative, the landing package's one
+// path space.
+var appendOnlyRegisters = []string{
+	receiptLedgerPath,
+	"records/narrator-digest.log",
+}
+
+// counselorRegisters are the counselor rows a carried landing may append
+// to, each line owned by its carried row (candidatePathPolicy in observe.go).
+// They are coordination state, excluded from the delivery workspace through
+// ledgerPaths below, and not append-only registers of the landing rules: an
+// uncarried change to them keeps the held-goal rule at the carriage gate.
+var counselorRegisters = []string{
+	"records/counselor/accepted-risk-register.jsonl",
+	"records/counselor/carried-landings.jsonl",
+}
 
 var ledgerPaths = []string{
 	"plans/goals",
@@ -20,6 +43,20 @@ var ledgerPaths = []string{
 	"plans/goals.md",
 	"records/counselor",
 	"records/goals",
+}
+
+// AppendOnlyRegisters returns a copy for callers outside the package.
+func AppendOnlyRegisters() []string {
+	return append([]string(nil), appendOnlyRegisters...)
+}
+
+func isAppendOnlyRegister(path string) bool {
+	for _, register := range appendOnlyRegisters {
+		if path == register {
+			return true
+		}
+	}
+	return false
 }
 
 // WorkspaceExclusions returns the paths written as shared coordination state,

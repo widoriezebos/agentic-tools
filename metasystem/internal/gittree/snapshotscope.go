@@ -32,6 +32,13 @@ type RunFailure struct {
 	Err error
 }
 
+// StatusEntry is one porcelain-v1 status record at repository scope.
+type StatusEntry struct {
+	Index    byte
+	Worktree byte
+	Path     string
+}
+
 func (f *RunFailure) Error() string { return fmt.Sprintf("git %s could not run: %v", f.Op, f.Err) }
 func (f *RunFailure) Unwrap() error { return f.Err }
 
@@ -68,6 +75,77 @@ func answerErr(op, stderr, stdout string) error {
 		detail = strings.TrimSpace(stdout)
 	}
 	return fmt.Errorf("git %s: %s", op, detail)
+}
+
+// Status returns repository-toplevel status records without rename records.
+func (w Workspace) Status() ([]StatusEntry, error) {
+	top, err := w.topLevel()
+	if err != nil {
+		return nil, err
+	}
+	stdout, stderr, code, err := w.gitProbe(top, nil, nil,
+		"status", "--porcelain=v1", "-z", "--no-renames", "--untracked-files=normal")
+	if err != nil {
+		return nil, err
+	}
+	if code != 0 {
+		return nil, answerErr("status --porcelain=v1", stderr, stdout)
+	}
+	entries := []StatusEntry{}
+	for _, record := range strings.Split(stdout, "\x00") {
+		if record == "" {
+			continue
+		}
+		if len(record) < 4 || record[2] != ' ' || record[3:] == "" {
+			return nil, fmt.Errorf("gittree status: unparseable porcelain record %q", record)
+		}
+		entries = append(entries, StatusEntry{Index: record[0], Worktree: record[1], Path: record[3:]})
+	}
+	return entries, nil
+}
+
+// IsAncestor reports whether ancestor is reachable from descendant.
+func (w Workspace) IsAncestor(ancestor, descendant string) (bool, error) {
+	stdout, stderr, code, err := w.gitProbe(w.Dir, nil, nil, "merge-base", "--is-ancestor", ancestor, descendant)
+	if err != nil {
+		return false, err
+	}
+	switch code {
+	case 0:
+		return true, nil
+	case 1:
+		return false, nil
+	default:
+		return false, answerErr("merge-base --is-ancestor", stderr, stdout)
+	}
+}
+
+// ResetKeepResult describes git reset --keep without collapsing a refusal
+// into an execution failure.
+type ResetKeepResult struct {
+	Moved  bool
+	Output string
+}
+
+// ResetKeep advances the real branch, index and changed paths only when git
+// can keep every dirty path intact.
+func (w Workspace) ResetKeep(commit string) (ResetKeepResult, error) {
+	top, err := w.topLevel()
+	if err != nil {
+		return ResetKeepResult{}, err
+	}
+	stdout, stderr, code, err := w.gitProbe(top, nil, nil, "reset", "--keep", commit)
+	if err != nil {
+		return ResetKeepResult{}, err
+	}
+	if code == 0 {
+		return ResetKeepResult{Moved: true}, nil
+	}
+	output := strings.TrimSpace(stderr)
+	if output == "" {
+		output = strings.TrimSpace(stdout)
+	}
+	return ResetKeepResult{Output: output}, nil
 }
 
 // HeadCommit resolves the commit HEAD names. unborn=true is a

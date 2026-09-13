@@ -111,6 +111,60 @@ func TestSymbolicHeadDetachedAnswers(t *testing.T) {
 	}
 }
 
+func TestStatusUsesRepositoryTopLevelPathSpace(t *testing.T) {
+	f, ws := nestedFixture(t)
+	f.write("ws/app.txt", "dirty\n")
+	f.write("sibling/new.txt", "untracked\n")
+
+	entries, err := ws.Status()
+	if err != nil {
+		t.Fatal(err)
+	}
+	got := map[string]StatusEntry{}
+	for _, entry := range entries {
+		got[entry.Path] = entry
+	}
+	if entry := got["ws/app.txt"]; entry.Index != ' ' || entry.Worktree != 'M' {
+		t.Fatalf("nested workspace status = %+v, want unstaged modification", entry)
+	}
+	if entry := got["sibling/new.txt"]; entry.Index != '?' || entry.Worktree != '?' {
+		t.Fatalf("sibling status = %+v, want untracked", entry)
+	}
+}
+
+func TestIsAncestorAndResetKeep(t *testing.T) {
+	f, ws := nestedFixture(t)
+	base := f.headOID()
+	f.git("checkout", "-qb", "target")
+	f.write("ws/app.txt", "target\n")
+	f.git("add", "--", "ws/app.txt")
+	f.commit("target")
+	target := f.headOID()
+	f.git("checkout", "-q", "main")
+	f.write("ws/app.txt", "dirty\n")
+
+	if ancestor, err := ws.IsAncestor(base, target); err != nil || !ancestor {
+		t.Fatalf("base ancestor of target = %v, error %v", ancestor, err)
+	}
+	if ancestor, err := ws.IsAncestor(target, base); err != nil || ancestor {
+		t.Fatalf("target ancestor of base = %v, error %v", ancestor, err)
+	}
+	result, err := ws.ResetKeep(target)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if result.Moved || result.Output == "" {
+		t.Fatalf("reset over dirty changed path = %+v, want a typed refusal", result)
+	}
+	if got := f.headOID(); got != base {
+		t.Fatalf("refused reset moved branch from %s to %s", base, got)
+	}
+	content, err := os.ReadFile(filepath.Join(f.w.Dir, "ws", "app.txt"))
+	if err != nil || string(content) != "dirty\n" {
+		t.Fatalf("refused reset changed dirty bytes: %q, error %v", content, err)
+	}
+}
+
 func TestRefMapCoversEveryNamespace(t *testing.T) {
 	f := newTreeFixture(t)
 	head := f.headOID()

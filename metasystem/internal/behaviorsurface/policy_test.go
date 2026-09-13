@@ -105,6 +105,7 @@ func TestPolicyClassesAndProjectionBoundaries(t *testing.T) {
 		{"artifacts/agents/job.json", Coordination, false, false, false},
 		{"plans/goals.md", Tailored, false, false, false},
 		{"memory/receipts.log", Tailored, false, false, false},
+		{"records/narrator-digest.log", Coordination, false, false, false},
 		{"metasystem.conf", Tailored, false, true, false},
 		{"testing.json", Tailored, false, true, false},
 		{".agents/skills/verify/SKILL.md", Tailored, false, true, false},
