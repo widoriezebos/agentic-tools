@@ -2,14 +2,14 @@
 
 - State: queued
 - Priority: 2
-- Sequence: 18
+- Sequence: 17
 - Risk: severity=2 novelty=1 exposure=2 accumulation=1 basis="severity 2: a stale birth wedges a headless resume with a drift refusal an operator has to decode; novelty 1: the wall preflight already encodes the clean-or-sealed rule for start; exposure 2: every mission birth on a live checkout; accumulation 1: one refusal, one fixture"
 - Tier: 2
 - Intent: mission state-init accepts a baseline computed from the WORKTREE projection (gittree Snapshot seeds from HEAD then add -A), so a mission born on a dirty checkout records dirty files in its baseline; any later change to those files before resume (a landing appending the narrator digest, a pull, an edit) shows as drift and the resume refuses. Found 2026-09-06 preparing the first headless run on m1: the born baseline fb2ebfae83 included three long-dirty files and stayed valid only while nothing moved. Decide: birth refuses a dirty worktree unless the contract seals it (the wall preflight already knows this rule for start), or birth and resume are one act so the window is zero. Build behind a fixture: state-init on a dirty scratch checkout refuses naming the dirty paths; state-init on a clean one succeeds; the sealed-baseline path still admits.
 - Origin: main
 - Next step: Read internal/mission/snapshotscope.go VerifyBaselineIsLive and internal/missionrunner/wall.go admittedBaseline; the fix is one refusal in state-init plus a fixture in the mission fixtures. Sol builds behind the fixture, Fable reviews, land. Blocks a clean headless retry only in that the operator must birth immediately before resume until it lands.
 - OpenedAt: 2026-09-06T21:22:42Z
-- Revision: 18
+- Revision: 19
 - Budget: elapsedLimit=4h attemptLimit=6 reservedJobMinutesLimit=720 activeJobLimit=1 reviewRoundLimit=2
 - BudgetExceptions: 0
 
@@ -32,4 +32,5 @@ History:
 - 2026-09-13T06:44:32Z VP6AD63TYG5F9F8NVDKDX85A61-m1e-c6925449 set-priority actor=human:Wido targets=chain-landing-carries-the-reviewed-diff,first-headless-run,fleet-channel-gateway,fleet-join-bootstrap,fleet-pull,gate-governance-records,headless-continuous-delivery-proof,headless-fleet-coordination-proof,idle-every-runtime-enforcement,metasystem-stop-escalation-proofs,mission-birth-baseline-from-dirty-worktree,never-idle-ironclad,recovery-rehearsal,recovery-to-good-state,repo-root-paths-ride-agent-commits-unjudged,role-context-composition,role-lane-packets,seat-mutual-awareness reason=priority-order subject=chain-landing-carries-the-reviewed-diff from=2:21 to=2:20 requested-sequence=32
 - 2026-09-13T06:44:41Z 59E2SS1PHG2JEY44B98S85XHVC-m1e-c6925449 set-priority actor=human:Wido targets=first-headless-run,fleet-channel-gateway,fleet-join-bootstrap,fleet-pull,gate-governance-records,headless-continuous-delivery-proof,headless-fleet-coordination-proof,idle-every-runtime-enforcement,metasystem-stop-escalation-proofs,mission-birth-baseline-from-dirty-worktree,never-idle-ironclad,recovery-rehearsal,recovery-to-good-state,repo-root-paths-ride-agent-commits-unjudged,role-context-composition,role-lane-packets,seat-mutual-awareness reason=priority-order subject=repo-root-paths-ride-agent-commits-unjudged from=2:20 to=2:19 requested-sequence=33
 - 2026-09-13T07:44:44Z TJ1TBGQ70A0PZH04C34J9P51C5-m1e-c6925449 set-priority actor=human:Wido targets=first-headless-run,fleet-channel-gateway,fleet-join-bootstrap,fleet-pull,headless-continuous-delivery-proof,headless-fleet-coordination-proof,metasystem-stop-escalation-proofs,mission-birth-baseline-from-dirty-worktree,never-idle-ironclad,recovery-rehearsal,seat-mutual-awareness reason=priority-order subject=metasystem-stop-escalation-proofs from=2:19 to=2:18 requested-sequence=39
-Integrity: sha256=cc72b4d1d88d49f91de2b9d33dcadccbe1515d59440d9475d1a2d306adfa1049
+- 2026-09-13T08:21:48Z NRD0NSKR47C7ESV46MD65VP4V0-m1-c6925449 done actor=human:Wido targets=commit-goal-binding,first-headless-run,fleet-channel-gateway,fleet-join-bootstrap,fleet-pull,gate-governance-records,headless-continuous-delivery-proof,headless-fleet-coordination-proof,idle-every-runtime-enforcement,landing-design-provenance,merge-stage-critic-close,mission-birth-baseline-from-dirty-worktree,never-idle-ironclad,recovery-rehearsal,recovery-to-good-state,role-context-composition,role-lane-packets,seat-mutual-awareness reason=priority-order from=2:18 to=2:17
+Integrity: sha256=b26d8fcb8cf8628fd97b6c07c7a79559b7dc3694df2d2eae08fb7875d1d493fb

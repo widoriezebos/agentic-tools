@@ -2,12 +2,12 @@
 
 - State: queued
 - Priority: 2
-- Sequence: 14
+- Sequence: 13
 - Intent: R-25-m1's model lanes encode into role-packets.json (the closed-packet recipe file is the enforcing surface): Fable designs, Sol critiques designs, Sol implements, Fable critiques implementations
 - Origin: human
 - Next step: Appetite: 3h remaining scope. Slice 1 DONE (landed c53db82b): design authored by Fable, critiqued by Sol (five findings folded, none refuted), revised, status awaiting re-critique. NEXT SLICE: Sol re-critique of the revision - 30 worker-minutes GRANTED by Wido 2026-08-31 evening, then implementation per the design's own slice plan. Note: both slice-1 job chains lawfully unclosed - defect tokened as design-critique-chain-binding. Concluding the whole goal is Wido's act (human origin)
 - OpenedAt: 2026-08-30T15:16:08Z
-- Revision: 23
+- Revision: 24
 - BudgetExceptions: 0
 
 History:
@@ -34,4 +34,5 @@ History:
 - 2026-09-11T22:09:00Z C3BMZ7DRFM4AWMATVMSXQZHBTQ-m1-c6925449 done actor=human:Wido targets=adoption-inventory-from-install-set,chain-landing-carries-the-reviewed-diff,commit-goal-binding,design-gate-at-dispatch,first-headless-run,fleet-channel-gateway,fleet-join-bootstrap,fleet-pull,gate-governance-records,headless-continuous-delivery-proof,headless-fleet-coordination-proof,hook-enrollment-per-checkout,human-approval-for-execution,idle-every-runtime-enforcement,landing-design-provenance,manifest-floor-at-dispatch,merge-stage-critic-close,metasystem-stop-escalation-proofs,mission-birth-baseline-from-dirty-worktree,never-idle-ironclad,one-approval-gate,recovery-rehearsal,recovery-to-good-state,repo-root-paths-ride-agent-commits-unjudged,role-context-composition,role-lane-packets,seat-mutual-awareness reason=priority-order from=2:17 to=2:16
 - 2026-09-13T06:44:32Z VP6AD63TYG5F9F8NVDKDX85A61-m1e-c6925449 set-priority actor=human:Wido targets=chain-landing-carries-the-reviewed-diff,first-headless-run,fleet-channel-gateway,fleet-join-bootstrap,fleet-pull,gate-governance-records,headless-continuous-delivery-proof,headless-fleet-coordination-proof,idle-every-runtime-enforcement,metasystem-stop-escalation-proofs,mission-birth-baseline-from-dirty-worktree,never-idle-ironclad,recovery-rehearsal,recovery-to-good-state,repo-root-paths-ride-agent-commits-unjudged,role-context-composition,role-lane-packets,seat-mutual-awareness reason=priority-order subject=chain-landing-carries-the-reviewed-diff from=2:16 to=2:15 requested-sequence=32
 - 2026-09-13T06:44:41Z 59E2SS1PHG2JEY44B98S85XHVC-m1e-c6925449 set-priority actor=human:Wido targets=first-headless-run,fleet-channel-gateway,fleet-join-bootstrap,fleet-pull,gate-governance-records,headless-continuous-delivery-proof,headless-fleet-coordination-proof,idle-every-runtime-enforcement,metasystem-stop-escalation-proofs,mission-birth-baseline-from-dirty-worktree,never-idle-ironclad,recovery-rehearsal,recovery-to-good-state,repo-root-paths-ride-agent-commits-unjudged,role-context-composition,role-lane-packets,seat-mutual-awareness reason=priority-order subject=repo-root-paths-ride-agent-commits-unjudged from=2:15 to=2:14 requested-sequence=33
-Integrity: sha256=ae414ac452df9e6d425ed96c5b54213a8c81780b179afdfe1e2d2978347f9631
+- 2026-09-13T08:21:48Z NRD0NSKR47C7ESV46MD65VP4V0-m1-c6925449 done actor=human:Wido targets=commit-goal-binding,first-headless-run,fleet-channel-gateway,fleet-join-bootstrap,fleet-pull,gate-governance-records,headless-continuous-delivery-proof,headless-fleet-coordination-proof,idle-every-runtime-enforcement,landing-design-provenance,merge-stage-critic-close,mission-birth-baseline-from-dirty-worktree,never-idle-ironclad,recovery-rehearsal,recovery-to-good-state,role-context-composition,role-lane-packets,seat-mutual-awareness reason=priority-order from=2:14 to=2:13
+Integrity: sha256=731f72bcb450f98be2a4265a4a8ab5e56eb8560e2d7894b454036c0f8f37d0b4

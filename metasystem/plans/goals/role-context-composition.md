@@ -2,12 +2,12 @@
 
 - State: queued
 - Priority: 2
-- Sequence: 13
+- Sequence: 12
 - Intent: Each role's context is COMPOSED from the memory it is allowed to see, never inherited ambiently - leaking extra memory pollutes or poisons the role (Wido 2026-08-28); paper ch.8 is the law: per-role views of one authoritative record, and a fresh mind is the only fresh perspective
 - Origin: human
 - Next step: Appetite: 4h — design first (no build): read docs/paper/08-memory-and-coordination.md; inventory every channel that injects context today (CLAUDE.md/MEMORY.md auto-load, wow.md, AGENTS.md, coordinator-written briefs, dispatch env); map paper ch.8's builder/examiner/custodian/auditor visibility table onto our real roles (builder codex, critic codex, coordinator, steward, narrator); design the mechanism that composes a role's context FROM an allowlist (what memory kinds each role may read, who owns the table, how delegate L13 enforces it at brief-assembly time, how violations are refused not discouraged); the fresh-mind law must be mechanical: a critic never receives the builder's path. Design critiqued by codex, then to Wido before any build.
 - OpenedAt: 2026-08-28T16:13:07Z
-- Revision: 19
+- Revision: 20
 - BudgetExceptions: 0
 
 History:
@@ -30,4 +30,5 @@ History:
 - 2026-09-11T22:09:00Z C3BMZ7DRFM4AWMATVMSXQZHBTQ-m1-c6925449 done actor=human:Wido targets=adoption-inventory-from-install-set,chain-landing-carries-the-reviewed-diff,commit-goal-binding,design-gate-at-dispatch,first-headless-run,fleet-channel-gateway,fleet-join-bootstrap,fleet-pull,gate-governance-records,headless-continuous-delivery-proof,headless-fleet-coordination-proof,hook-enrollment-per-checkout,human-approval-for-execution,idle-every-runtime-enforcement,landing-design-provenance,manifest-floor-at-dispatch,merge-stage-critic-close,metasystem-stop-escalation-proofs,mission-birth-baseline-from-dirty-worktree,never-idle-ironclad,one-approval-gate,recovery-rehearsal,recovery-to-good-state,repo-root-paths-ride-agent-commits-unjudged,role-context-composition,role-lane-packets,seat-mutual-awareness reason=priority-order from=2:16 to=2:15
 - 2026-09-13T06:44:32Z VP6AD63TYG5F9F8NVDKDX85A61-m1e-c6925449 set-priority actor=human:Wido targets=chain-landing-carries-the-reviewed-diff,first-headless-run,fleet-channel-gateway,fleet-join-bootstrap,fleet-pull,gate-governance-records,headless-continuous-delivery-proof,headless-fleet-coordination-proof,idle-every-runtime-enforcement,metasystem-stop-escalation-proofs,mission-birth-baseline-from-dirty-worktree,never-idle-ironclad,recovery-rehearsal,recovery-to-good-state,repo-root-paths-ride-agent-commits-unjudged,role-context-composition,role-lane-packets,seat-mutual-awareness reason=priority-order subject=chain-landing-carries-the-reviewed-diff from=2:15 to=2:14 requested-sequence=32
 - 2026-09-13T06:44:41Z 59E2SS1PHG2JEY44B98S85XHVC-m1e-c6925449 set-priority actor=human:Wido targets=first-headless-run,fleet-channel-gateway,fleet-join-bootstrap,fleet-pull,gate-governance-records,headless-continuous-delivery-proof,headless-fleet-coordination-proof,idle-every-runtime-enforcement,metasystem-stop-escalation-proofs,mission-birth-baseline-from-dirty-worktree,never-idle-ironclad,recovery-rehearsal,recovery-to-good-state,repo-root-paths-ride-agent-commits-unjudged,role-context-composition,role-lane-packets,seat-mutual-awareness reason=priority-order subject=repo-root-paths-ride-agent-commits-unjudged from=2:14 to=2:13 requested-sequence=33
-Integrity: sha256=743a6f17d41c31592f0ef93b8783773106a0dba4fa3a29a141439a962756ed91
+- 2026-09-13T08:21:48Z NRD0NSKR47C7ESV46MD65VP4V0-m1-c6925449 done actor=human:Wido targets=commit-goal-binding,first-headless-run,fleet-channel-gateway,fleet-join-bootstrap,fleet-pull,gate-governance-records,headless-continuous-delivery-proof,headless-fleet-coordination-proof,idle-every-runtime-enforcement,landing-design-provenance,merge-stage-critic-close,mission-birth-baseline-from-dirty-worktree,never-idle-ironclad,recovery-rehearsal,recovery-to-good-state,role-context-composition,role-lane-packets,seat-mutual-awareness reason=priority-order from=2:13 to=2:12
+Integrity: sha256=34d08a0b9746b6a25875aefeba78bbb5c8429405064af4cb1b0dfc8ea5e5a944
