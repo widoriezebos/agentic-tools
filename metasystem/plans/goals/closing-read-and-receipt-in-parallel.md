@@ -7,11 +7,13 @@
 - Origin: main
 - Next step: Tier 1, MECHANICAL: one doc paragraph, one check in land.sh, one fixture. Interim practice on m1b from 2026-09-10 12:00: the coordinator runs both in parallel. | FIRST ATTEMPT 2026-09-10 12:55Z (m1b, chain rbce-build1): the receipt's proof reservation goes through EvaluateGoalRevisionAdmission with the goal's activeJobLimit, so with the closing read live the receipt is refused 'proof reservation refused for goal ... revision N' (cmd/metasystem/proof_run.go:533). Worked around with set-budget --active-job-limit 2 in Wido's name. DONE additionally means: a proof reservation for a candidate whose critic read is live is admitted beside it (the read and the proof are the two halves of one certification), without the human raising the active-job limit.
 - OpenedAt: 2026-09-10T08:45:30Z
-- Revision: 2
+- Revision: 3
+- Pinned: m1c
 - Budget: elapsedLimit=4h attemptLimit=6 reservedJobMinutesLimit=720 activeJobLimit=1 reviewRoundLimit=2
 - BudgetExceptions: 0
 
 History:
 - 2026-09-10T08:45:30Z 291A0WATNK558JY5QZKZ0FK1GR-m1b-c6925449 open actor=m1b+main-1788680071-18713-e76d5d targets=closing-read-and-receipt-in-parallel
 - 2026-09-10T09:12:09Z RVMTAWZFVHY5ZEFP1ZBRVYT3BR-m1b-c6925449 edit actor=m1b+main-1788680071-18713-e76d5d targets=closing-read-and-receipt-in-parallel
-Integrity: sha256=22ce29134ad42363b736fef91f04d7d5f0fe7ebefb84f10eee8a68d27a20e9f2
+- 2026-09-13T06:40:54Z KT84MZ5D0GTTRZF5Q0K1R9TVPM-m1e-c6925449 set-pin actor=human:Wido targets=closing-read-and-receipt-in-parallel
+Integrity: sha256=a52fffe1d525d64b2baf3f37f5911f85d072a50c08317d42b0f47e915dc12a5d
