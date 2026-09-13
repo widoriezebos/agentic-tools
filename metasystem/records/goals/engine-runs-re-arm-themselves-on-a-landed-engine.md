@@ -1,6 +1,6 @@
 # engine-runs-re-arm-themselves-on-a-landed-engine
 
-- State: parked
+- State: done
 - Priority: 1
 - Sequence: 2
 - Risk: severity=2 novelty=1 exposure=3 accumulation=1 basis="severity 2: a run admitted against a stale or unlanded engine proves the wrong binary; novelty 1: the projection comparison, the landed-build resolver and the re-arm verb exist; exposure 3: every engine-driven run on every seat after any seat lands engine code; accumulation 1: one admission path"
@@ -8,12 +8,12 @@
 - Intent: An engine-driven run (metasystem test run: a landing receipt, a cadence run, a diagnostic) refuses with TEST_POLICY_ENGINE_REQUIRED whenever the enrolled engine of the checkout is behind the fetched tip in its ENGINE projection, which with three seats landing engine code happens between most runs: on 2026-09-12 every engine-driven run on m1e first cost a person a reset to origin/main, a rebuild and a re-arm (memory/fixture-beds-run-through-the-engine). A landed engine is trusted by its landing; the seat re-doing by hand what the landing already proved is the tax, and it is the first prerequisite for landing through receipts again instead of human commits (Wido, 2026-09-12). DONE means: (1) a run whose enrolled engine is behind origin/main by landed commits only rebuilds the engine from the fetched tip and re-arms the enrollment itself (the same path metasystem up --repo takes, under the same authority and the same witnesses), records that it did so in the attempt, and runs; (2) a run whose checkout is dirty in an engine input, or whose tip is not an ancestor of origin/main, still refuses with the same typed reason naming the two commits and the one command; (3) a fixture proves both on the fake ledger with a fake landing; (4) the next day of receipts and diagnostics on this seat shows no manual reset, rebuild or re-arm between runs. RUNTIME INDEPENDENCE (plan principle 0): the mechanism lives in the Go engine and the ledger, never in one runtime; it holds for every seat whatever runtime it hosts.
 - Origin: human
 - Next step: 2026-09-12 m1b: landed 67c6c5579 (design plans/engine-runs-re-arm-on-a-landed-engine-design.md, one design read, one Codex code read, three fixtures, delivery proof). DONE 1 to 3 are met; DONE 4 is the next day of engine-driven runs on the seats, which the seat records on the page's section 6 before the goal is concluded (origin human: Wido concludes). Every seat rebuilds and re-arms by hand once more after 67c6c5579; from then on test run does it.
+- Concluded: Concluded on Wido's word of 2026-09-13 morning ('Do all of these for me now yourself'), carried by the m1e seat from the enrolled terminal. Landed 67c6c5579 by m1b (design plans/engine-runs-re-arm-on-a-landed-engine-design.md, one design read, one Codex code read, three fixtures, delivery proof); DONE 1 to 3 met at landing; DONE 4, the next day of engine-driven runs, is on the page's section 6: on 2026-09-12 17:20Z m1b's prove-round found the enrolled engine behind the landed tip by landed commits only, fast-forwarded, rebuilt, re-armed (generation 97 to 98) and restarted itself (proof-mtynioca, sufficient, 47 groups); the same day m1e's diagnostic on 47df130d re-armed itself (generation 59) and restarted; every engine-driven run on the seats since has run on the landed engine, and hand re-arms were needed only for hook-file landings, which the mechanism does not cover by design (section 3).
 - OpenedAt: 2026-09-12T15:43:23Z
-- Revision: 7
+- Revision: 8
 - Budget: elapsedLimit=4h attemptLimit=6 reservedJobMinutesLimit=720 activeJobLimit=1 reviewRoundLimit=2
 - BudgetExceptions: 0
 - Approved: by=human:Wido at=2026-09-12T15:43:32Z revision=3 opid=AX3Q277E04ZP8501F67754C72M-m1-c6925449 authority=proven digest=8579343d41e5a5c9b65d55e9fe41d9f4ce6c3af3e6a7f2d6241328ab270ed0d1
-- Parked: by=human:Wido at=2026-09-12T21:13:06Z because=built and measured (see the next-step); waiting on Wido conclusion, origin human; parked so no seat counts it as idle backlog
 
 History:
 - 2026-09-12T15:43:23Z 4TSFK59B6Y85KDYSANGF7A36MW-m1-c6925449 open actor=human:Wido targets=engine-runs-re-arm-themselves-on-a-landed-engine
@@ -23,4 +23,5 @@ History:
 - 2026-09-12T16:57:13Z NAKH9P2PJKB4QXY52YQH5NJ2G0-m1b-30a7e141 edit actor=m1b+main-1789191336-90295-e4b24b targets=engine-runs-re-arm-themselves-on-a-landed-engine
 - 2026-09-12T17:00:13Z Y7HWYRPF4BMPM0DCFVNK8PJQA4-m1b-30a7e141 release actor=m1b+main-1789191336-90295-e4b24b targets=engine-runs-re-arm-themselves-on-a-landed-engine
 - 2026-09-12T21:13:06Z 5D909FX6PJBYDR1X6C9QKQEDJ9-m1b-c6925449 park actor=human:Wido targets=engine-runs-re-arm-themselves-on-a-landed-engine reason=built and measured (see the next-step); waiting on Wido conclusion, origin human; parked so no seat counts it as idle backlog
-Integrity: sha256=39a511f5f5bd9fb85738597823d683fb442003b3dc27fb1bfbe58ab41231b660
+- 2026-09-13T06:37:52Z 0Z49HACVY4QBKH33QGX9X20769-m1e-c6925449 done actor=human:Wido targets=actionable-metrics,breach-clock-and-budget-honesty,coordinator-context-stays-under-budget,coordinator-wakes-on-events-not-polls,critique-closes-on-folded-proof,engine-runs-re-arm-themselves-on-a-landed-engine,failed-job-attention,fixture-stewards-outlive-their-suite,goal-abandoned-with-a-reason,human-goal-verbs-forgiving,job-record-birth-token,landing-receipt-survives-records-drift,lease-sweep-death-evidence,live-job-on-a-done-goal-unnoticed,machine-concurrency-governor,proof-groups-detect-hangs-by-progress-not-the-clock,small-change-lane,steward-catchup-livelock,steward-launches-resolve-their-model,steward-revives-a-done-goal,stop-batch-strands-a-resumable-goal,stop-hook-never-forces-an-empty-turn,suite-custody,token-spend-fence,watch-verb,watcher-repair-request-never-names-current,winddown-census-handoff-leak
+Integrity: sha256=6f5c07eee7156833dc41ef8a943b931e95aa7e64112c23ba6bf6f98e4e906b0a
