@@ -29,6 +29,7 @@ func init() {
 	// Register them here so generic record transitions cannot pre-seed proof.
 	dedicatedMetadataFields[closureField] = true
 	dedicatedMetadataFields[findingRegisterSubjectDigestField] = true
+	dedicatedMetadataFields[cleanReadRoundsField] = true
 }
 
 type registerFinding struct {
@@ -115,8 +116,17 @@ func CritiqueRegisterAdvance(repoRoot, rootJob, roundJob string) (outcome string
 			if round != foldedRound+1 {
 				return refuse(3, "critique register round %d cannot advance before round %d has been folded", round, foldedRound+1)
 			}
+			state.records[rootJob] = root
+			_, historyPresent := root[cleanReadRoundsField]
+			cleanReads, historyErr := cleanReadsForRoot(state, rootJob, root)
+			if historyErr != nil {
+				return historyErr
+			}
 
 			advanced := register
+			var completedSubject ReadSubject
+			completedSubjectPresent := false
+			completedSubjectBound := false
 			if cancelledRound {
 				// Neutral fold: the round number advances so the chain
 				// unwedges, the register's findings and caps are
@@ -150,9 +160,15 @@ func CritiqueRegisterAdvance(repoRoot, rootJob, roundJob string) (outcome string
 				}
 				delete(root, findingRegisterSubjectDigestField)
 				if subjectPresent {
+					if validationErr := validateReadSubjectForRole(role, persisted); validationErr != nil {
+						return fmt.Errorf("critique root record %s round %d has a malformed subject: %v", rootJob, round, validationErr)
+					}
 					root[findingRegisterSubjectDigestField] = persisted.Digest()
 				}
-				if subjectPresent && !readsubject.ReturnBindsSubject(persisted, result) {
+				completedSubject = persisted
+				completedSubjectPresent = subjectPresent
+				completedSubjectBound = subjectPresent && readsubject.ReturnBindsSubject(persisted, result)
+				if subjectPresent && !completedSubjectBound {
 					advanced = foldUnboundReturn(register, role, roundJob, persisted, result)
 				} else {
 					var demotions []any
@@ -186,8 +202,23 @@ func CritiqueRegisterAdvance(repoRoot, rootJob, roundJob string) (outcome string
 			root[reviewRoundLimitField] = accounting.limit
 			root[criticRoundsConsumedField] = accounting.consumed
 			after := encodeFindingRegister(advanced)
+			if completedSubjectPresent && completedSubjectBound {
+				clean, cleanErr := readsubject.CleanRegister(after)
+				if cleanErr != nil {
+					return fmt.Errorf("cannot validate folded clean read at round %d: %v", round, cleanErr)
+				}
+				if clean {
+					cleanReads, historyErr = appendCleanRead(cleanReads, CleanReadRound{Round: round, Subject: completedSubject})
+					if historyErr != nil {
+						return historyErr
+					}
+				}
+			}
 			root[findingRegisterField] = after
 			root[findingRegisterRoundField] = round
+			if historyPresent || len(cleanReads) > 0 {
+				root[cleanReadRoundsField] = encodeCleanReadRounds(cleanReads)
+			}
 			if writeErr := writeRecord(recordPath, root); writeErr != nil {
 				return writeErr
 			}
@@ -637,6 +668,15 @@ func cleanClosure(state critiqueState, rootJob string, root map[string]any, regi
 	return want, true, nil
 }
 
+type missingCritiqueRoundRecordError struct {
+	rootJob string
+	round   int64
+}
+
+func (e *missingCritiqueRoundRecordError) Error() string {
+	return fmt.Sprintf("critic root %s has no record for folded round %d", e.rootJob, e.round)
+}
+
 func critiqueRecordForRound(state critiqueState, rootJob string, round int64) (string, map[string]any, error) {
 	var roundJob string
 	var roundRecord map[string]any
@@ -651,7 +691,7 @@ func critiqueRecordForRound(state critiqueState, rootJob string, round int64) (s
 		roundJob, roundRecord = jobID, record
 	}
 	if roundRecord == nil {
-		return "", nil, fmt.Errorf("critic root %s has no record for folded round %d", rootJob, round)
+		return "", nil, &missingCritiqueRoundRecordError{rootJob: rootJob, round: round}
 	}
 	return roundJob, roundRecord, nil
 }

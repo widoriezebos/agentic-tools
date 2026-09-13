@@ -72,6 +72,8 @@ var Rows = []Row{
 	{Code: "slice-approval-refused", Owner: "internal/dispatch", Site: "claim.go:251", Shape: Agent, Override: "goal approve", Commands: 1},
 	{Code: "REFERENCE_MISMATCH", Owner: "internal/dispatch", Site: "references.go:19", Shape: Agent, Override: "delegate (a fresh composition)", Commands: 1},
 	{Code: "SUBJECT_MISMATCH", Owner: "internal/dispatch", Site: "read_subject_compute.go:242", Shape: Agent, Override: "dispatch.sh follow-up on the implementer, validate conformance --stage review --job <that round>, dispatch the critic again", Commands: 3},
+	{Code: "CONCURRENT_READ", Owner: "internal/dispatch", Site: "read_admission.go:197", Shape: Agent, Override: "dispatch.sh cancel --job <outstanding critic round>, then dispatch the critic again", Commands: 2},
+	{Code: "REDUNDANT_READ", Owner: "internal/dispatch", Site: "read_admission.go:223", Shape: Agent, Override: "dispatch.sh close --job <prior critic root>", Commands: 1},
 	{Code: "TEST_POLICY_ENGINE_REQUIRED", Owner: "cmd/metasystem", Site: "test.go:300", Shape: Agent, Override: "steward arm", Commands: 1},
 	{Code: "TEST_CONTRACT_REQUIRED", Owner: "internal/testpolicy", Site: "contract.go:137", Shape: Question},
 	{Code: "TEST_CONTRACT_INVALID", Owner: "cmd/metasystem", Site: "runtime_setup.go:63", Shape: Question},

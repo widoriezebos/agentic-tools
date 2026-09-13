@@ -98,8 +98,8 @@ func Mirror(repoRoot, checkout, evidence, rootJob, job, resultPath string) error
 }
 
 // mirrorSources gathers what this job's mirror carries: the record, its
-// log, the chain brief on round one, the round's artifacts in sorted
-// order, and the capability snapshot when present.
+// log, the chain-level read refusals, the chain brief on round one, the
+// round's artifacts in sorted order, and the capability snapshot when present.
 func mirrorSources(agents, payload, repoRoot, recordPath, job string, record map[string]any) ([]mirrorSource, error) {
 	round, ok := numString(record["round"])
 	if !ok {
@@ -109,6 +109,10 @@ func mirrorSources(agents, payload, repoRoot, recordPath, job string, record map
 	log := filepath.Join(agents, "jobs", job+".log")
 	if fileExists(log) {
 		sources = append(sources, mirrorSource{log, filepath.Join("jobs", job+".log")})
+	}
+	readRefusals := filepath.Join(payload, "reads-refused.jsonl")
+	if fileExists(readRefusals) {
+		sources = append(sources, mirrorSource{readRefusals, "reads-refused.jsonl"})
 	}
 	if roundValue, ok := numFloat(record["round"]); ok && roundValue == 1 && fileExists(filepath.Join(payload, "brief.md")) {
 		sources = append(sources, mirrorSource{filepath.Join(payload, "brief.md"), "brief.md"})
