@@ -2,12 +2,12 @@
 
 - State: queued
 - Priority: 3
-- Sequence: 7
+- Sequence: 6
 - Intent: goal resume hands the claim to the RESUMING machine, which is the wrong default for the handover case it will most often serve: m3 resumed alert-escalation-channel on Wido's relayed word so that m0b could build it, and the resume re-claimed the goal to m3 (revision 21) - the same wedge under a new name - until m3 noticed and released. Found 2026-09-01 by m3 executing a directed cross-machine resume
 - Origin: main
 - Next step: Appetite: 2h. Design question first (Fable lane): should resume take an explicit claim disposition - claim-to-me, release-to-queue, or claim-to-<machine> - rather than defaulting to the resumer? The handover case (one machine clears a fence so ANOTHER can work) is at least as common as the self-resume case, and the current default silently produces a blocked successor. Whatever is chosen, the verb must SAY what it did to the claim in its typed outcome; m3's report is the specimen. Then implement (Sol) with a fixture proving both dispositions and the typed statement
 - OpenedAt: 2026-09-01T12:44:34Z
-- Revision: 5
+- Revision: 6
 - BudgetExceptions: 0
 
 History:
@@ -16,4 +16,5 @@ History:
 - 2026-09-06T06:53:37Z A35EHY2TGAWCCFA1Q1J0WZGS35-m1-a4f8999f approve actor=human:Wido targets=resume-reclaims-on-handover reason=sweep
 - 2026-09-08T15:59:29Z N4892V7GJXTB532E59RY5TYE5M-m1-7cd0bd60 set-priority actor=human:Wido targets=resume-reclaims-on-handover reason=priority-order subject=resume-reclaims-on-handover from=unranked to=3:7 requested-sequence=7
 - 2026-09-11T08:02:41Z 4CSE65RT60WKW3TR3XVFGDF5MP-m1-c6925449 unapprove actor=human:Wido targets=resume-reclaims-on-handover reason=Wido 2026-09-11: standing approval withdrawn to regain control of what is built next; re-approve deliberately
-Integrity: sha256=c8940ddd40a9530ef896749a59b7edd22087aeef95364919087e98dfe13cd7ce
+- 2026-09-13T08:19:03Z CSQ5ADFKGC0RCY6RXRSVZ9E89W-m1-c6925449 done actor=human:Wido targets=answer-archive,app-doctrine,app-guardrail-custody,app-guardrail-program,brief-authority-preflight,claude-delegate-scratch-cleanup,claude-denywrite-list-is-a-snapshot,claude-network-allow-does-not-allow,conformance-runtime-state-litter,continuous-self-improvement,counselor,cross-repo-guardrails,defect-analysis-gate,delegate-sandbox-cannot-run-the-beds,design-prohibition-is-role-scoped,edit-tier-remedy-names-a-refused-command,effort-by-complexity-per-model,empty-brief-admitted,fable-effort-high,fixture-default-branch-assumption,fixture-enrollment-notes,follow-up-brief-cannot-cite-fresh-trunk-files,follow-up-rebase-drop-failure-names-hash,gap-rule-deletes-built-work,goal-by-flag-doubles-human-prefix,goal-done-flags-do-not-match-the-verb-table,goal-suite-sits-on-the-default-test-timeout,hook-demands-what-landing-forbids,host-health-role,human-carried-landing,incident-proposal-drafting,integration-branch,land-verb-pruning,landing-refusal-names-the-record-rule,ledger-authentication,malformed-return-field-loses-the-round,metasystem-way-patterns,missionrunner-terminate-flake,narrator-digests,norm-approval-reads-a-file-the-ledger-does-not-carry,paid-proof-authorization,precedent-index,python3-kit-port,reconciliation-guards,registry-design-names-selection-rows,repo-flag-resolves-one-root,resume-reclaims-on-handover,runtime-limit-is-not-a-protocol-error,same-process-succession,seam-declaration-convergence,seam-eventstream-error-surface,shutdown-claims-more-than-it-stops,standing-validation,steward-owned-execution,stop-message-truth,uncapped-delegate-fanout,verbs-match-intent,vm-epoch-identity-drift,watchdog-kill-observation-gap reason=priority-order from=3:7 to=3:6
+Integrity: sha256=294d75b6fc6209ae1eb41291e9e1e6c58e9122c774e82a0e45288cb128486dd7

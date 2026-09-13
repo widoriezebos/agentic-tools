@@ -2,18 +2,19 @@
 
 - State: queued
 - Priority: 3
-- Sequence: 4
+- Sequence: 3
 - Risk: severity=1 novelty=1 exposure=3 accumulation=2 basis="severity 1: nothing breaks, the caller just cannot conclude a goal until it reads the source; novelty 1: the fix is text or generation, and the live flag sets are already there to read; exposure 3: every caller of the goal verbs on every machine reads that table; accumulation 2: each drifted verb costs its next caller the same discovery, and nothing detects the drift"
 - Tier: 3
 - Intent: The goal verb table and the goal verbs disagree about how a goal concludes, and the mismatch costs a caller several refused attempts before it can record anything. 'metasystem goal' prints 'done  conclude the Current goal; requires --then or --and-none', but in the synced world the done verb takes --id and --conclude and defines neither --then nor --and-none (cmd/metasystem/goalsync_mutations.go case "done"; the --then and --and-none pair lives only in the legacy runGoalDone in cmd/metasystem/goal.go). A caller following the printed table gets 'flag provided but not defined: -and-none' followed by the whole flag dump, twice, before finding --conclude by reading the source. Seen 2026-09-07 on m1d concluding fixture-review-by-date-expired. DONE means the verb table describes the verbs the running world actually offers, and a wrong flag refuses with the accepted form named rather than a flag dump; if the legacy and synced verbs must differ, the table says which world it is describing.
 - Origin: main
 - Next step: Read the two done implementations against the table text in cmd/metasystem/goal.go, decide whether the table is generated from the live verb set or hand-written, and make the printed contract match what the synced world accepts. The same check is worth running across every verb the table describes, since done is unlikely to be the only one that drifted.
 - OpenedAt: 2026-09-07T09:17:29Z
-- Revision: 2
+- Revision: 3
 - Budget: elapsedLimit=1d attemptLimit=10 reservedJobMinutesLimit=1200 activeJobLimit=1 reviewRoundLimit=3
 - BudgetExceptions: 0
 
 History:
 - 2026-09-07T09:17:29Z MS5AAXKR20WCANBGFXR2J2X6JC-m1d-25755dc0 open actor=m1d+main-1788764558-63534-a15b0d targets=goal-done-flags-do-not-match-the-verb-table
 - 2026-09-08T15:59:19Z 1K715AJSMCCG3497W9FSF0018P-m1-7cd0bd60 set-priority actor=human:Wido targets=goal-done-flags-do-not-match-the-verb-table reason=priority-order subject=goal-done-flags-do-not-match-the-verb-table from=unranked to=3:4 requested-sequence=4
-Integrity: sha256=fc6f58b73fc133dab0f809327d3c4d28494fa6a3a584cb4dd58a41812d629fec
+- 2026-09-13T08:19:03Z CSQ5ADFKGC0RCY6RXRSVZ9E89W-m1-c6925449 done actor=human:Wido targets=answer-archive,app-doctrine,app-guardrail-custody,app-guardrail-program,brief-authority-preflight,claude-delegate-scratch-cleanup,claude-denywrite-list-is-a-snapshot,claude-network-allow-does-not-allow,conformance-runtime-state-litter,continuous-self-improvement,counselor,cross-repo-guardrails,defect-analysis-gate,delegate-sandbox-cannot-run-the-beds,design-prohibition-is-role-scoped,edit-tier-remedy-names-a-refused-command,effort-by-complexity-per-model,empty-brief-admitted,fable-effort-high,fixture-default-branch-assumption,fixture-enrollment-notes,follow-up-brief-cannot-cite-fresh-trunk-files,follow-up-rebase-drop-failure-names-hash,gap-rule-deletes-built-work,goal-by-flag-doubles-human-prefix,goal-done-flags-do-not-match-the-verb-table,goal-suite-sits-on-the-default-test-timeout,hook-demands-what-landing-forbids,host-health-role,human-carried-landing,incident-proposal-drafting,integration-branch,land-verb-pruning,landing-refusal-names-the-record-rule,ledger-authentication,malformed-return-field-loses-the-round,metasystem-way-patterns,missionrunner-terminate-flake,narrator-digests,norm-approval-reads-a-file-the-ledger-does-not-carry,paid-proof-authorization,precedent-index,python3-kit-port,reconciliation-guards,registry-design-names-selection-rows,repo-flag-resolves-one-root,resume-reclaims-on-handover,runtime-limit-is-not-a-protocol-error,same-process-succession,seam-declaration-convergence,seam-eventstream-error-surface,shutdown-claims-more-than-it-stops,standing-validation,steward-owned-execution,stop-message-truth,uncapped-delegate-fanout,verbs-match-intent,vm-epoch-identity-drift,watchdog-kill-observation-gap reason=priority-order from=3:4 to=3:3
+Integrity: sha256=6161dfe0819a74a6b61bc04228856a87d354775b17e2741c181987861bb63687
