@@ -2,11 +2,11 @@
 
 - Owner: m1e (goal 15 of plans/delivery-efficiency-plan.md). **Revision 3, 2026-09-13**, written on the seat (Fable) under Wido's lanes; revision 2 (5b5e917b) was read by Codex gpt-5.6-sol (records/misc/coordinator-context-design-critique-r2.md, six material findings, rework required) and this revision folds all six with Wido's two answers of 2026-09-13 (section 10).
 - Goal and current status: slice 1 landed 644960b4 (the ledger projections). Revision 3 is the design for slices 1b, 2 and 3; not built.
-- In flight right now: a Fable design delegate converting slice 1b into an obligation matrix and a Codex build brief (D81 exit; result to the seat's scratch, ccb-build-spec.md), started 2026-09-13 12:35 local.
+- In flight right now: Codex gpt-5.6-sol building slice 1b-i (section 8b, the spill contract) in a worktree; then an Opus read, the seat's integration and landing.
 - Decisions made (and who made them): Wido, 2026-09-13 ("I agree with all your proposals"): (1) DONE is read as by construction where the engine owns the surface and by instruction and measurement elsewhere, the week's ceiling breach failing the goal; (2) exclusivity at the handoff by an observed predecessor death before the continuation launches, no ownership epoch. The seat: the mechanisms of sections 2 to 5 and 7.
 - Waiting on the human: nothing.
 - Dead ends (do not retry without new evidence): filtering only `goal list`; smaller summaries without a session boundary; a Claude-only hook; automatic compaction; reading lifetime usage totals as the size of one prompt; a second transcript parser; a transfer id with acknowledgements (a record of overlap, not exclusion); a mutable state file at a fixed path (revision 2, refused: a delayed continuation reads a later handoff); a session-stop authorization as an exit primitive (revision 2, refused: it ends no harness); calling retrospective detection "bounded by construction" (revision 2, refused; settled by Wido's reading).
-- Next step: in flight, by design: when the delegate returns, land its matrix onto this page; then Codex gpt-5.6-sol builds slice 1b behind it, Opus reads the build, the seat lands. No revision 4 and no further prose read (D81; round 3 read: records/misc/coordinator-context-design-critique-r3.md, eight material findings).
+- Next step: in flight, by design: the slice 1b-i build, its Opus read and landing; then slice 1b-ii (section 8b rows 07 to 12) on Codex; slices 2 and 3 get their own D81 conversion by a Fable delegate when 1b is landed.
 
 ## 0. The contract this revision builds to
 
@@ -90,6 +90,115 @@ One seven-day UTC window after slice 3 lands. The cohort is the recorded samples
 ## 9. Risks, self-grade, reject condition
 
 Risks: a runtime that reports per adapter invocation, read as per call, would fabricate a figure (refused: `unknown`); path references can hide a missing file (verification before every launch and at the handoff write); a fresh session loses cache warmth and orients again (the week's report records handoffs beside the prompt sizes); the engine cannot see a call the harness does not record (the cohort is the recorded samples and the report says so); an interactive predecessor that never exits keeps its handoff staged forever (the tick says so each round and the turn verdict prints the allowance; the seat is not two coordinators, it is one that has not left). Self-grade: every mechanism is labelled by construction or by measurement per Wido's reading; the six round-2 findings each have a mechanism in sections 2 to 5 and 7; the reject condition: reject this revision if a mechanism is claimed by construction where the engine does not own the surface, if a per-invocation figure is presented as a call, if a `seatHandoff` intent can launch beside a live predecessor, if a reference can be dereferenced without verification before a launch, or if the week's pass can be met by samples the report does not cover.
+
+## 8b. Build spec after round 3 (D81 exit, 2026-09-13)
+
+Written by a Fable design delegate from revision 3 and the three reads; the coordinator corrected one verification line (the fixture harness ignores an ambient scenario variable; the land bed runs through the engine after integration). Under D81 this section and the page are the spec; there is no revision 4.
+
+Page: plans/coordinator-context-stays-under-budget-design.md revision 3, sections 2, 3 and 8. Reads: records/misc/coordinator-context-design-critique-r1/r2/r3.md. Under D81 the page is the spec; what follows fixes the round-3 findings as build decisions and named fixtures. No revision 4.
+
+Slice 1b is two independent halves and is split: **1b-i** is section 2 (the spill contract, its two producers, the prune verb); **1b-ii** is section 3 (the typed reference, `references[]`, pre-invocation verification, the instruction change). Only 1b-i is briefed below.
+
+### 1. Decisions taken for the build
+
+**F-1 (critical, verification boundary and open path; slice 1b-ii).** The critic is right: `scripts/agents/hosts/*.sh` never see a job; the launch path is `scripts/agents/adapters/<runtime>.sh` `supervise` over `runtime-common.sh`, and each adapter does `cd "$workspace"` before its exec (claude.sh:144-158, codex.sh:156, devin.sh:338/556) while the prompt lives under the control root at `$round_dir/prompt.md`, so a control-root-relative spelling opened from the worktree is a different file. Decision: `internal/dispatch.CompositionReference{Slot, Purpose, Path (control-root-relative, recorded), OpenPath (absolute under the control root), Digest, Bytes, Lifetime}`; the packet's slot section carries one line naming `OpenPath`; a new `runtime-common.sh` function `verify_references_before_launch` runs `metasystem job verify-references --root "$root" --composition "$round_dir/composition.json"` immediately before the exec in claude.sh, codex.sh, devin.sh (inline in fake.sh, which does not source runtime-common), re-reading every `OpenPath` against digest and byte count; a mismatch prints `REFERENCE_MISMATCH path=... expected=... found=...` and the adapter calls `fail_pending "reference_mismatch:<path>" launch`. Cut: cross-host staging (no rostered runtime opens files on another host; the over-limit copy is staged under the round dir, lifetime `staged`); re-verification before a same-session repair turn; a mission-host reference contract.
+
+**F-4 (high, spill envelope compatibility; slice 1b-i).** Consumers of the no-path `test run` stdout, from the code: none parse it as a `TestResult`. `landing test-receipt` passes `--result` and reads the file (landing_verbs.go:161-181); `job prove-round` reads the exit status only (prove_round.go:100-107); `land-fixtures.sh` greps text (lines 749-758, 1099); `commit.sh:740-764` parses `test verify --json`, a different verb, untouched. The in-repo Go readers use `readStrictJSON` (unknown fields refused), so an envelope fed to one fails loudly. Decision, the smallest contract: at or under `MaxInlineBytes` the stdout bytes are identical to today (a named fixture); above it the one printed line is the reference envelope, discriminated by its first key `"outputMode":"file"` plus `schemaVersion` and detectable by `output.Detect`; `--result` is the resolver for machine consumers and is untouched. No new flag (an opt-in flag would make an engine-owned surface bounded by instruction, against Wido's decision 1), no resolver verb, no `test verify` change. Cut from 1b's completeness claim: the Stop-hook line reprinting the newest reference; the producer prints it and the hook line moves to slice 2. The landing script keeps its forty-line tail and full coverage-delta text and always retains the failed step's log through the same spill owner.
+
+**F-6 (medium, two inline limits; slice 1b-ii).** Two named limits with different surfaces: `internal/dispatch.MaxDirectiveBytes = 32 * 1024`, fixed, applied per body (the task direction and each continuation slot) inside `ComposeRolePacket`: a body over it is staged and referenced, at or under it is inlined exactly as today (so existing packets and the grammar-freeze tests do not move); `dispatch.max-inline-input-kb` (default 64, metasystem.conf:58) stays the configured bound on the whole composed packet, enforced unchanged by `enforce_inline_input_limit` in dispatch.sh after composition. `internal/output.MaxInlineBytes` bounds one verb emission and is a third, separate name; dispatch does not import it. The interaction fixture: a 40 KiB brief is referenced and the packet is accepted; a small brief whose recipe sources exceed the packet bound is still refused.
+
+**F-8 (medium, obligation matrix).** Section 2 below; every material finding of the slice has a row with an owner and a test.
+
+Deferred, one line each: F-2 (Codex sample identity and marker predicates, owner `internal/usage`) to slice 2; F-3 (cursor persistence and locking for `LatestCall`) to slice 2; F-5 (pending-handoff lifecycle) to slice 3; F-7 (nonce state retention) to slice 3.
+
+### 2. Slice 1b obligation matrix
+
+| id | obligation (observable) | severity | owner | test | discharges |
+|---|---|---|---|---|---|
+| CCB-1b-01 | `test run` without `--result` whose JSON exceeds 32 KiB prints exactly one line, the reference envelope; the named file holds the exact JSON plus newline; `bytes` and `digest` match the file | high | cmd/metasystem/test.go `publishTestingResult`; internal/output `Spill` | Go `TestPublishTestingResultSpillsOverTheBound` | F-4, R2-5 |
+| CCB-1b-02 | at or under 32 KiB the stdout bytes equal today's `printJSON` output and no file is written; `--result` writes the file as today and prints nothing | high | test.go `publishTestingResult` | Go `TestPublishTestingResultUnderTheBoundIsUnchanged` | F-4 (old-shape fixture) |
+| CCB-1b-03 | `Detect` returns true only for `outputMode=file`, `schemaVersion=1`; a TestResult document returns false | high | internal/output `Detect` | Go `TestDetectDistinguishesTheEnvelopeFromATestResult` | F-4 |
+| CCB-1b-04 | concurrent spills of one verb take distinct names; an existing name is never overwritten (O_EXCL, fresh nonce, retry) | medium | internal/output `Spill` | Go `TestSpillNamesAreUniqueAndNeverOverwrite` | R2-5 |
+| CCB-1b-05 | after a failed landing step the full step log exists at `artifacts/agents/output/land-*.log` when land.sh has exited, the forty-line tail still prints, and stderr carries the reference line naming the copy | high | scripts/agents/land.sh `fail_step`; cmd/metasystem `output spill` | land-fixtures.sh `step-failure` leg, new assertions | F-4, R2-5 |
+| CCB-1b-06 | `output prune --older-than 7d` removes only regular files in the output directory older than the window, reports each, follows no symlink | medium | internal/output `Prune`; cmd/metasystem/output_verbs.go | Go `TestPruneRemovesOnlyFilesOlderThanTheWindow`, `TestOutputPruneVerbReportsEachRemoval` | section 2 retention |
+| CCB-1b-07 | the adapter refuses the launch when a referenced file's digest or byte count differs from the composition record or is unreadable, naming the path; the job record fails pending with `reference_mismatch:<path>` | critical | cmd/metasystem `job verify-references`; runtime-common.sh `verify_references_before_launch`; the four adapters | Go `TestVerifyReferencesRefusesAChangedFileByName`; dispatch-fixtures.sh leg `reference-mismatch-refuses-launch` (fake runtime) | F-1, R2-6 |
+| CCB-1b-08 | the `OpenPath` in the packet is the absolute control-root path that was verified; a different file at the same relative path under the workspace is neither verified nor named | critical | composition.go `ComposeRolePacket`; `job verify-references` | Go `TestVerifyReferencesOpensTheControlRootCopyNotTheWorkspaceCopy` | F-1 |
+| CCB-1b-09 | a brief over `MaxDirectiveBytes` composes with a reference, a staged copy of equal digest under the round dir, and no body in the packet; at or under it the packet bytes are unchanged | high | composition.go `ComposeRolePacket` | Go `TestComposeRolePacketReferencesABriefOverMaxDirectiveBytes` | F-6, R2-6 |
+| CCB-1b-10 | a 40 KiB brief dispatches (referenced, packet under `dispatch.max-inline-input-kb`); the packet bound still refuses an oversized composed packet | medium | dispatch.sh `enforce_inline_input_limit` (unchanged) | dispatch-fixtures.sh leg `large-brief-is-referenced-not-refused` | F-6 |
+| CCB-1b-11 | a reference path outside the control root, or a symlink escaping it, refuses at composition | high | composition.go | Go `TestComposeRolePacketRefusesAReferenceOutsideTheRoot` | R2-6 |
+| CCB-1b-12 | brief.md, the three role contracts and docs/orchestration.md carry the bounded-read sentence | low | scripts/agents/templates/brief.md, roles/*.md, docs/orchestration.md | grep leg in conformance-fixtures.sh | section 3 instruction |
+
+Rows 01 to 06 are 1b-i; 07 to 12 are 1b-ii.
+
+### 3. Codex build brief, slice 1b-i
+
+Worktree of github.com/widoriezebos/agentic-tools/metasystem at main. Do not commit. No decisions are left; a gap stops the build and is reported in the result file. Write the result to `artifacts/reports/codex-ccb-slice1b-result.md` (what changed, test output, gaps).
+
+### Files
+
+**New package `internal/output` (output.go, output_test.go).**
+
+```go
+const MaxInlineBytes = 32 * 1024
+const Dir = "artifacts/agents/output" // under the control root
+
+type Reference struct {
+    OutputMode    string `json:"outputMode"`    // "file"
+    SchemaVersion int    `json:"schemaVersion"` // 1
+    Verb          string `json:"verb"`
+    Path          string `json:"path"`   // absolute
+    Bytes         int    `json:"bytes"`
+    Digest        string `json:"digest"` // "sha256:<hex>"
+    Format        string `json:"format"` // "json" or "text"
+}
+
+var randomNonce = func() (string, error) // 8 hex chars from crypto/rand; a var so a test can force a collision
+
+func Spill(root, verb, ext string, data []byte, now time.Time) (Reference, error)
+func Detect(data []byte) (Reference, bool)
+func (r Reference) Line() string
+func Prune(root string, olderThan time.Duration, now time.Time) ([]string, error)
+```
+
+`Spill`: `root` must be absolute; `verb` matches `^[a-z][a-z0-9-]{0,31}$`; `ext` is `json`, `log` or `txt` (`json` gives format `json`, the others `text`). It creates `Dir` (0o700) and writes `<verb>-<now in UTC, layout 2006-01-02T15-04-05.000000000Z>-<pid>-<nonce>.<ext>` with `os.OpenFile(O_WRONLY|O_CREATE|O_EXCL, 0o600)`; on `EEXIST` it takes a fresh nonce, at most eight times, then errors. `Bytes` is `len(data)`, `Digest` the sha256 of `data`. `Detect` decodes only the top-level keys and returns true when `outputMode == "file"` and `schemaVersion == 1`. `Line()` is one text line: `output-reference verb=<verb> path=<path> bytes=<n> sha256=<hex> format=<f>`. `Prune` lists `Dir` with `Lstat`, removes regular files whose mtime is before `now - olderThan`, skips symlinks and directories, returns the removed absolute paths sorted; a missing `Dir` returns nil, nil.
+
+**cmd/metasystem/test.go.** Change `publishTestingResult(path string, result proofrun.TestResult) error` to `publishTestingResult(root, path string, result proofrun.TestResult) error`; the two callers (lines 836 and 944) pass `prepared.Installation`. Body: with a path, `writeIdentityJSON` as today. Without one, `encoded, err := json.Marshal(result)`; if `len(encoded) <= output.MaxInlineBytes` print `string(encoded)` with `fmt.Println` (byte-identical to `printJSON`); else `ref, err := output.Spill(root, "test-run", "json", append(encoded, '\n'), time.Now().UTC())` and `printJSON(ref)`. Nothing else in the file changes; `test verify`, `test worker` and `printTestingSummary` stay as they are.
+
+**New cmd/metasystem/output_verbs.go**, registered in main.go as a top-level group `output` beside `janitor`:
+
+- `output spill --root ROOT --verb VERB --ext EXT --file FILE [--json]`: reads FILE, calls `Spill` unconditionally (the shell caller decided), prints `ref.Line()` or the JSON with `--json`; exit 2 on usage, 1 on failure.
+- `output prune --root ROOT [--older-than 7d]` (default `7d`; accept Go durations and an integer with `d`): prints `pruned <path>` per removal; exit 0.
+
+`--root` goes through `filepath.Abs`.
+
+**scripts/agents/land.sh `fail_step`** (lines 278-289). New body order: set `carry_stop_reason` as today; print `!! STEP FAILED`; call `retained=$("$ms" output spill --root "$root" --verb land --ext log --file "$step_output" 2>&1)` and keep its exit status; print the tail (the `cat` branch for the coverage-delta step stays); then print `$retained` to stderr when the spill succeeded, else `land: full step log not retained: $retained`; then `exit "$rc"`. The EXIT trap is untouched: the copy exists before it runs. The push-retry tail at line 1157 is not a failure and is untouched.
+
+**scripts/agents/land-fixtures.sh, `step-failure` leg** (lines 1527-1566), after the existing assertions: `grep -Fq 'output-reference verb=land' "$failure_output"`; exactly one file matches `"$leg_local"/artifacts/agents/output/land-*.log`; it contains `fixture fetch broke with exit 73`. No new scenario is registered.
+
+### Tests
+
+- `internal/output/output_test.go`: `TestSpillWritesTheBytesAndReturnsAVerifiedReference` (file bytes equal `data`, digest and size match, path is under `root/artifacts/agents/output`); `TestSpillNamesAreUniqueAndNeverOverwrite` (override `randomNonce` to return one fixed value twice then fresh values: the second spill with the same `now` retries and lands on a distinct name; the first file's bytes are unchanged; then 32 goroutines spilling one verb produce 32 files); `TestDetectDistinguishesTheEnvelopeFromATestResult`; `TestPruneRemovesOnlyFilesOlderThanTheWindow` (an old regular file is removed; a fresh file, a subdirectory and a symlink to an old file outside the directory survive, and the symlink target survives).
+- `cmd/metasystem/test_test.go`: `TestPublishTestingResultSpillsOverTheBound` (a `TestResult` with enough groups to exceed 32 KiB; capture stdout with `os.Pipe` as `channel_verbs_test.go` does; exactly one line; `output.Detect` is true; the file decodes through `readStrictJSON` to a result equal to the input); `TestPublishTestingResultUnderTheBoundIsUnchanged` (stdout equals `json.Marshal(result)` plus newline; `artifacts/agents/output` does not exist afterwards).
+- `cmd/metasystem/output_verbs_test.go`: `TestOutputSpillVerbPrintsTheTextLine`; `TestOutputPruneVerbReportsEachRemoval`.
+
+### Verification, in this order
+
+```
+go build ./...
+go vet ./internal/output/ ./cmd/metasystem/
+go test -race -count=1 ./internal/output/
+go test -race -count=1 ./cmd/metasystem/ -run 'PublishTestingResult|OutputSpill|OutputPrune'
+go test -race -count=1 ./cmd/metasystem/
+bash -n scripts/agents/land.sh scripts/agents/land-fixtures.sh
+# the land bed (including the step-failure leg) runs through the engine on the seat after integration; do not run fixture beds here
+scripts/agents/go-gate.sh --fast
+```
+
+Do not edit testing.json unless the gate reports the new package unowned; then add `metasystem/internal/output/**` to the `testing-policy` group's paths and say so in the result file. Do not touch `hosts/*.sh`, `composition.go`, `dispatch.sh`, `test verify`, or any role or template text: those are 1b-ii. Do not commit.
+
+### 4. Open questions for Wido
+
+None.
 
 ## 10. Critique record
 
