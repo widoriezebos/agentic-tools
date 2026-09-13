@@ -1,6 +1,6 @@
 # critique-closes-on-folded-proof
 
-- State: claimed
+- State: approved
 - Priority: 1
 - Sequence: 7
 - Risk: severity=2 novelty=2 exposure=3 accumulation=1 basis="severity 2: a closure rule that is too loose lets a material finding land; novelty 2: fold-proven closure and the round-2 failsafe are new rules; exposure 3: every chain; accumulation 1: skills and dispatcher"
@@ -9,13 +9,12 @@
 - Origin: human
 - Next step: STATE 2026-09-13 19:20Z (m1e, Opus coordinator; design by a Codex gpt-6-astra delegate): slice 0 landed 4fbd271c; part 1a-i landed 20eecaf0; section 9c landed 9ffb9560 with its D4 scope amendment 9c.10 in 8e92a796; part 1a-ii is complete (unit a 1bbbfe78 internal/readsubject and the closure gate; unit b 8e92a796 the hazard close and merge gate; unit c 971c7496 landing and recertification binding the reviewed patch and the bar (a) wording). Six independent Opus reads across the three units found seven material findings, all folded, including a merge wedge on a dead critic root and a proof that restated itself instead of driving the last gate; records under records/misc/critique-closes-slice1a-*. Every unit passed the packages, the fast gate and the land, conformance and dispatcher beds through the engine. Next: part 1b in two units from artifacts/reports/codex-ccf-slice1b-brief.md (REDUNDANT_READ and CONCURRENT_READ admission, durable events, three follow-up legs), same lane.
 - OpenedAt: 2026-09-11T15:45:22Z
-- Revision: 54
+- Revision: 55
 - Pinned: m1e
 - Budget: elapsedLimit=1d attemptLimit=10 reservedJobMinutesLimit=1200 activeJobLimit=1 reviewRoundLimit=3
 - BudgetExceptions: 0
 - Approved: by=human:Wido at=2026-09-11T20:33:44Z revision=15 opid=8BE27ZT80ZJ6JTWNQ3GZAERK8Y-m1-c6925449 authority=proven digest=cf4c80f3b42d74737238cccc4774f7900e36fd98d52c0bc36aec01bab9f27fbb
-- Claimed: machine=m1e lineage=main-1789030447-51011-5722fc at=2026-09-13T13:40:51Z revision=48 accountingRevision=31 episodeAt=2026-09-12T22:51:49Z episodeRevision=31 idleSeconds=52304
-- StopCapability: generation=48 revision=48 machine=m1e claimEpoch=1 fenceEpoch=0
+- Episode: machine=m1e lineage=main-1789030447-51011-5722fc accountingRevision=31 episodeAt=2026-09-12T22:51:49Z episodeRevision=31 idleSeconds=52304 released=2026-09-13T22:36:53Z
 
 History:
 - 2026-09-11T15:45:22Z WKPXEN9CTZR44TMFZTQJE9X68Q-m1e-5083721b open actor=m1e+main-1789141490-27414-b9c0d2 targets=critique-closes-on-folded-proof
@@ -72,4 +71,5 @@ History:
 - 2026-09-13T16:18:43Z BD22W5QRK75BN1AJMC30A1SBDD-m1e-892cdaec edit actor=m1e+main-1789030447-51011-5722fc targets=critique-closes-on-folded-proof
 - 2026-09-13T18:23:16Z PZ9C8WTAE1Q9ZMY232WYGTCENS-m1e-c6925449 done actor=human:Wido targets=actionable-metrics,chain-landing-carries-the-reviewed-diff,coordinator-context-stays-under-budget,coordinator-wakes-on-events-not-polls,critique-closes-on-folded-proof,dispatch-bases-chains-on-the-remote-tip,failed-job-attention,fixture-repo-copies-exclude-the-artifacts-store,fixture-stewards-outlive-their-suite,fixture-waits-name-their-producer,goal-abandoned-with-a-reason,human-authority-surface-runs-its-cmd-tests,human-goal-verbs-forgiving,human-wait-does-not-consume-goal-budget,job-record-birth-token,lease-sweep-death-evidence,live-job-on-a-done-goal-unnoticed,machine-concurrency-governor,metasystem-stop-escalation-proofs,metasystem-stop-fleet-form,new-elapsed-budgets-use-explicit-hours,proof-groups-detect-hangs-by-progress-not-the-clock,repo-root-paths-ride-agent-commits-unjudged,run-scoped-build-caches-have-a-janitor,skipped-test-fails-its-group-on-the-other-os,stop-batch-strands-a-resumable-goal,stop-refusal-fits-on-one-screen,token-spend-fence,watch-verb,watcher-repair-request-never-names-current,winddown-census-handoff-leak reason=priority-order from=1:8 to=1:7
 - 2026-09-13T19:19:16Z QZJSQ6YSAB41BY4JC4Z8QZBBQ5-m1e-892cdaec edit actor=m1e+main-1789030447-51011-5722fc targets=critique-closes-on-folded-proof
-Integrity: sha256=73aae1e0f842ca20352b4004d6ef1ae5c8c810787f47d07a0783f07176ed0fae
+- 2026-09-13T22:36:53Z WKJ5ZNJ2W8CGX0W86MYDBQB969-m1e-892cdaec release actor=m1e+main-1789030447-51011-5722fc targets=critique-closes-on-folded-proof
+Integrity: sha256=2a4ea8a896dfce4860d9b1a3542de931ccb2aa8ed841921c42c5dd972ac68225
