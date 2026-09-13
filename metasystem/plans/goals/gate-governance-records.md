@@ -1,14 +1,15 @@
 # gate-governance-records
 
-- State: queued
+- State: parked
 - Priority: 2
 - Sequence: 11
 - Intent: The fix wave's three new refusal gates (dispatch design gate, commit-goal binding, change-class gate) are being built without the discipline every other enforced rule carries: no owner, review date, known-bad fixture, appeal route, or broken-check response declared, and no marking-mode trial before refusal power - the exact shape by which a guard against ceremony-free coding becomes unowned ceremony itself. DONE means: every gate from this fix wave ships with a governance record naming owner, review date, known-bad fixture, appeal route, and broken-check response, and receives refusal power only after a marking-mode trial with recorded false-alarm bounds.
 - Origin: main
 - Next step: INTENT: govern the new gates like every enforced rule. CONSTRAINTS: follow the existing rule-governance shape used for enforced rules (the seat-governance record and the R-row register pattern with class/due/event columns); the dated-records watch (internal/steward/ruling_sweep.go) must flag an overdue gate review - extend its parse only if the record rides memory/rulings.md rows, never a second watch. FREEDOMS: whether records ride one file or per-gate rows; trial length and false-alarm bounds are per-gate judgment recorded in each record. TEST SHAPE: each gate's known-bad fixture refuses; an overdue review date raises a flag.
 - OpenedAt: 2026-09-01T13:20:51Z
-- Revision: 19
+- Revision: 20
 - BudgetExceptions: 0
+- Parked: by=human:Wido at=2026-09-13T08:23:25Z because=Not now (2026-09-13 backlog consolidation, Wido's word): Two of the three gates (design-gate-at-dispatch 2:7, commit-goal-binding 2:11) are unbuilt, so the records would govern nothing yet; revisit when both land and write the change-class gate's record with them; R-60-m1 (alert before enforce) is the shape; the ruling sweep must flag an overdue review.
 
 History:
 - 2026-09-01T13:20:51Z KXNWNMA2TJPZ62GB3H4B03YR3V-m0-c5dbf036 open actor=human:Wido targets=gate-governance-records
@@ -30,4 +31,5 @@ History:
 - 2026-09-13T06:44:32Z VP6AD63TYG5F9F8NVDKDX85A61-m1e-c6925449 set-priority actor=human:Wido targets=chain-landing-carries-the-reviewed-diff,first-headless-run,fleet-channel-gateway,fleet-join-bootstrap,fleet-pull,gate-governance-records,headless-continuous-delivery-proof,headless-fleet-coordination-proof,idle-every-runtime-enforcement,metasystem-stop-escalation-proofs,mission-birth-baseline-from-dirty-worktree,never-idle-ironclad,recovery-rehearsal,recovery-to-good-state,repo-root-paths-ride-agent-commits-unjudged,role-context-composition,role-lane-packets,seat-mutual-awareness reason=priority-order subject=chain-landing-carries-the-reviewed-diff from=2:14 to=2:13 requested-sequence=32
 - 2026-09-13T06:44:41Z 59E2SS1PHG2JEY44B98S85XHVC-m1e-c6925449 set-priority actor=human:Wido targets=first-headless-run,fleet-channel-gateway,fleet-join-bootstrap,fleet-pull,gate-governance-records,headless-continuous-delivery-proof,headless-fleet-coordination-proof,idle-every-runtime-enforcement,metasystem-stop-escalation-proofs,mission-birth-baseline-from-dirty-worktree,never-idle-ironclad,recovery-rehearsal,recovery-to-good-state,repo-root-paths-ride-agent-commits-unjudged,role-context-composition,role-lane-packets,seat-mutual-awareness reason=priority-order subject=repo-root-paths-ride-agent-commits-unjudged from=2:13 to=2:12 requested-sequence=33
 - 2026-09-13T08:21:48Z NRD0NSKR47C7ESV46MD65VP4V0-m1-c6925449 done actor=human:Wido targets=commit-goal-binding,first-headless-run,fleet-channel-gateway,fleet-join-bootstrap,fleet-pull,gate-governance-records,headless-continuous-delivery-proof,headless-fleet-coordination-proof,idle-every-runtime-enforcement,landing-design-provenance,merge-stage-critic-close,mission-birth-baseline-from-dirty-worktree,never-idle-ironclad,recovery-rehearsal,recovery-to-good-state,role-context-composition,role-lane-packets,seat-mutual-awareness reason=priority-order from=2:12 to=2:11
-Integrity: sha256=179cc225f2faa5b39aa60e79bd69dd9fa80dd4969e5570a5013f5f1df9b57c78
+- 2026-09-13T08:23:25Z V7VVWSCJQNR5KWGQNTAYY96VM2-m1-c6925449 park actor=human:Wido targets=gate-governance-records reason=Not now (2026-09-13 backlog consolidation, Wido's word): Two of the three gates (design-gate-at-dispatch 2:7, commit-goal-binding 2:11) are unbuilt, so the records would govern nothing yet; revisit when both land and write the change-class gate's record with them; R-60-m1 (alert before enforce) is the shape; the ruling sweep must flag an overdue review.
+Integrity: sha256=7357cc4a7301c4884154f3c2c73ed3f51b2d81feb60f7721b38fb8c07bcfd3bd
