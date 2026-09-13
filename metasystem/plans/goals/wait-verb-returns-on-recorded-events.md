@@ -1,19 +1,20 @@
 # wait-verb-returns-on-recorded-events
 
-- State: approved
+- State: claimed
 - Risk: severity=2 novelty=2 exposure=3 accumulation=2 basis="severity 2: a wait that never returns idles a seat, a wait that returns early spends a model turn; novelty 2: a wait verb over the existing job, run, attempt and ledger records is new, the records are not; exposure 3: every seat's waiting; accumulation 2: the waiter record, the four source readers, the adapter answer and the verbs"
 - Tier: 2
 - Intent: Member 1 of coordinator-wakes-on-events-not-polls (its design page plans/coordinator-wakes-on-events-not-polls-design.md, sections 2, 5 and 6). DONE means: the installed commands metasystem wait --job, --run, --attempt and --goal (landing and human-act, the answer wait keyed by question and taking its cursor from the question record) return on the recorded event or the bounded deadline with the typed exits of section 2; every adapter's wait-delivery operation answers blocking and the row records it, so no temporary fallback is needed; the version-2 waiter row and its by-id pointer exist; a restart recovers from the rows alone through --resume, with session start printing the WAITING commands where a start hook exists. This member owns the parent's DONE clauses 1 and 4 and clause 2's adapter operation. Fixtures: TestWaitJobTerminals, TestWaitRunTerminalsAndDeadline, TestWaitAdapterBlocking, TestWaitAttemptRequiresCommittedTerminal, TestWaitAttemptAfterDrain, TestWaitGoalLandingAndHumanAct, TestWaitGoalCursorHistory, TestWaitChannelAnswer, TestWaitRestartRecoveryReplay, TestWaitLockClockAndFetchBounds, TestWaitGoalFetchDeadline; bed legs wait-job-run, wait-proof, wait-ledger, wait-restart, wait-bounds.
 - Origin: main
 - Next step: 2026-09-13 11:2xZ m1b: WVB-40/41/42 resolved by the second rostered read; WVB-48 (a renewal's floor) fixed by the seat in the chain worktree with a test; Wido's third-round token recorded by m1e (R-109-m1e). The fresh DESIGN-BEARING read over round 6 verifies WVB-48; then the landing once m1e's trunk fix-forward is on origin (the land bed's two legs, the goal-cli bed's banned perl, brain-land-refuses).
 - OpenedAt: 2026-09-13T02:05:04Z
-- Revision: 19
+- Revision: 20
 - Budget: elapsedLimit=1d attemptLimit=14 reservedJobMinutesLimit=720 activeJobLimit=1 reviewRoundLimit=3
 - BudgetExceptions: 2
 - NormApproval: approvedRef=R-109-m1e minutes=720 reviewRounds=3 goalRevision=16
 - Approved: by=human:Wido at=2026-09-13T08:41:27Z revision=17 opid=0GJS0PQ05HBYNJ0612VQF81DGV-m1e-c6925449 authority=proven digest=42695f94fceb534f7c3ca2f51f1c9104fb6b84e09f04c0208bf1f519b384eeb8
 - Sliced: machine=m1b lineage=main-1789191336-90295-e4b24b revision=3 at=2026-09-13T02:06:30Z
-- Episode: machine=m1b lineage=main-1789191336-90295-e4b24b accountingRevision=17 episodeAt=2026-09-13T07:23:39Z episodeRevision=12 idleSeconds=1838 released=2026-09-13T08:44:24Z
+- Claimed: machine=m1b lineage=main-1789191336-90295-e4b24b at=2026-09-13T08:44:27Z revision=20 accountingRevision=17 episodeAt=2026-09-13T07:23:39Z episodeRevision=12 idleSeconds=1841
+- StopCapability: generation=20 revision=20 machine=m1b claimEpoch=2 fenceEpoch=0
 
 History:
 - 2026-09-13T02:05:04Z XEGWW0F70SRXPGCJ6280FM4W68-m1b-30a7e141 open actor=m1b+main-1789191336-90295-e4b24b targets=wait-verb-returns-on-recorded-events,coordinator-wakes-on-events-not-polls
@@ -35,4 +36,5 @@ History:
 - 2026-09-13T08:41:27Z 0GJS0PQ05HBYNJ0612VQF81DGV-m1e-c6925449 set-budget actor=human:Wido targets=wait-verb-returns-on-recorded-events displaced=m1b+main-1789191336-90295-e4b24b@2026-09-13T08:29:53Z
 - 2026-09-13T08:43:33Z M15R4Y7X35N20R2FN4A23QSWJJ-m1b-30a7e141 edit actor=m1b+main-1789191336-90295-e4b24b targets=wait-verb-returns-on-recorded-events
 - 2026-09-13T08:44:24Z PA3QHZQJWR22CVRX2PF3295FG7-m1b-30a7e141 release actor=m1b+main-1789191336-90295-e4b24b targets=wait-verb-returns-on-recorded-events
-Integrity: sha256=fce9ae7f6f44ef36545989057da039e48c66a1a49740f32c229d60adf935f368
+- 2026-09-13T08:44:27Z 0ZBV40GGADSMPC5QKPXRYTEF5S-m1b-30a7e141 claim actor=m1b+main-1789191336-90295-e4b24b targets=wait-verb-returns-on-recorded-events
+Integrity: sha256=acd0ad9bb1de8b22759b2e1ddea7265266b15ec29ef3ea9b4c9022302a785a05
