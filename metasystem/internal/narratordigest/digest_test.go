@@ -3,6 +3,8 @@ package narratordigest
 import (
 	"bytes"
 	"os"
+	"os/exec"
+	"path/filepath"
 	"strconv"
 	"strings"
 	"testing"
@@ -170,5 +172,130 @@ func TestNamedBrainCursorLeavesHumanCursorUntouched(t *testing.T) {
 	humanPending, err := Pending(root)
 	if err != nil || !strings.Contains(humanPending.Message, "brain sees this line") {
 		t.Fatalf("human default cursor did not retain its independent pending log: %+v %v", humanPending, err)
+	}
+}
+
+// A template checkout keeps the installation in its metasystem directory. A
+// caller that names the git toplevel (the Stop hook's repository scope, the
+// steward armed with --repo <checkout>) must reach the same digest, cursor
+// and lock as one that names the installation, or the steward writes one
+// digest and the hook reads another.
+func TestTemplateToplevelResolvesToTheInstallationDigest(t *testing.T) {
+	toplevel := t.TempDir()
+	installation := filepath.Join(toplevel, "metasystem")
+	for _, directory := range []string{filepath.Join(toplevel, "development"), filepath.Join(installation, "scripts", "agents")} {
+		if err := os.MkdirAll(directory, 0o755); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if err := os.WriteFile(filepath.Join(toplevel, "development", "metasystem-design.md"), []byte("# template\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(installation, "metasystem.conf"), []byte("metasystem.runtimes=fake\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if output, err := exec.Command("git", "-C", toplevel, "init", "-q").CombinedOutput(); err != nil {
+		t.Fatalf("git init: %v: %s", err, output)
+	}
+	if Path(toplevel) != Path(installation) || CursorPath(toplevel) != CursorPath(installation) {
+		t.Fatalf("toplevel and installation name different digest files: %q vs %q", Path(toplevel), Path(installation))
+	}
+	resolvedInstallation, err := filepath.EvalSymlinks(installation)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.HasPrefix(Path(toplevel), resolvedInstallation+string(filepath.Separator)) {
+		t.Fatalf("the digest does not live under the installation: %q", Path(toplevel))
+	}
+	now := time.Date(2026, 9, 13, 8, 0, 0, 0, time.UTC)
+	if err := Append(toplevel, []Entry{{Kind: "highlight", Text: "A landing moved the repository storyline to commit abc123.", SourceType: "commit", SourceID: "abc123"}}, now); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := os.Stat(filepath.Join(toplevel, "records", "narrator-digest.log")); !os.IsNotExist(err) {
+		t.Fatalf("a digest was written beside the repository root: %v", err)
+	}
+	pending, err := Pending(installation)
+	if err != nil || !strings.Contains(pending.Message, "commit abc123") {
+		t.Fatalf("the installation did not see the toplevel caller's entry: %+v %v", pending, err)
+	}
+	if err := Advance(toplevel, pending.Cursor, pending.PrefixSHA256); err != nil {
+		t.Fatalf("advance through the toplevel: %v", err)
+	}
+	if after, err := Pending(installation); err != nil || after.Message != "" {
+		t.Fatalf("the cursor advanced through the toplevel was not the installation's: %+v %v", after, err)
+	}
+
+	// An adopted installation (no template marker) is its own root.
+	adopted := t.TempDir()
+	if err := os.MkdirAll(filepath.Join(adopted, "scripts", "agents"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(adopted, "metasystem.conf"), []byte("metasystem.runtimes=fake\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if output, err := exec.Command("git", "-C", adopted, "init", "-q").CombinedOutput(); err != nil {
+		t.Fatalf("git init adopted: %v: %s", err, output)
+	}
+	resolvedAdopted, err := filepath.EvalSymlinks(adopted)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.HasPrefix(Path(adopted), resolvedAdopted+string(filepath.Separator)) {
+		t.Fatalf("an adopted installation's digest moved: %q", Path(adopted))
+	}
+}
+
+// A plain directory that is neither an installation nor inside a repository
+// keeps every existing caller working: it resolves to itself.
+func TestBareDirectoryResolvesToItself(t *testing.T) {
+	bare := t.TempDir()
+	resolved, err := filepath.EvalSymlinks(bare)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.HasPrefix(Path(bare), resolved+string(filepath.Separator)) && !strings.HasPrefix(Path(bare), bare+string(filepath.Separator)) {
+		t.Fatalf("a bare directory's digest moved: %q", Path(bare))
+	}
+}
+
+// A reader with no cursor is shown the recent tail, never the whole story,
+// and its cursor then stands at the end; a short story is shown whole.
+func TestFirstCheckInShowsTheRecentTailAndParksTheCursorAtTheEnd(t *testing.T) {
+	root := t.TempDir()
+	now := time.Date(2026, 9, 13, 8, 0, 0, 0, time.UTC)
+	var entries []Entry
+	for i := 1; i <= 60; i++ {
+		entries = append(entries, Entry{Kind: "highlight", Text: "line " + strconv.Itoa(i), SourceType: "fixture", SourceID: strconv.Itoa(i)})
+	}
+	if err := Append(root, entries, now); err != nil {
+		t.Fatal(err)
+	}
+	data, err := os.ReadFile(Path(root))
+	if err != nil {
+		t.Fatal(err)
+	}
+	pending, err := Pending(root)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if strings.Contains(pending.Message, "line 20 ") || !strings.Contains(pending.Message, "line 21 ") || !strings.Contains(pending.Message, "line 60 ") ||
+		!strings.HasPrefix(pending.Message, "NARRATOR DIGEST, first check-in (the last 40 of 60 lines") {
+		t.Fatalf("first check-in did not show the last forty lines: %q", pending.Message[:200])
+	}
+	if pending.Cursor != int64(len(data)) {
+		t.Fatalf("first check-in cursor %d is not the end of the story %d", pending.Cursor, len(data))
+	}
+	if err := Advance(root, pending.Cursor, pending.PrefixSHA256); err != nil {
+		t.Fatalf("advance after the first check-in: %v", err)
+	}
+	if again, err := Pending(root); err != nil || again.Message != "" {
+		t.Fatalf("the second check-in was not incremental: %+v %v", again, err)
+	}
+	short := t.TempDir()
+	if err := Append(short, entries[:3], now); err != nil {
+		t.Fatal(err)
+	}
+	if brief, err := Pending(short); err != nil || !strings.HasPrefix(brief.Message, "NARRATOR DIGEST since last check-in:\n") || !strings.Contains(brief.Message, "line 1 ") {
+		t.Fatalf("a short story was not shown whole: %+v %v", brief, err)
 	}
 }

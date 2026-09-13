@@ -57,8 +57,26 @@ func stateDirectory(kind stateroot.Kind) string {
 	return filepath.FromSlash(relative)
 }
 
+// digestRoot maps any repository path a caller passes (the git toplevel of
+// a template checkout, the installation itself, or a path below either) to
+// the root whose records/ owns the digest: the installation in the template
+// layout, the repository top for an adopted one. The steward's writes and
+// the Stop hook's reads then meet in one file. A path the layout resolver
+// cannot place is used as given.
+func digestRoot(repoRoot string) string {
+	layout, err := stateroot.ResolveLayout(repoRoot)
+	if err != nil || layout.InstallationRoot == "" {
+		return repoRoot
+	}
+	root, err := stateroot.RootForInstallation(layout.InstallationRoot)
+	if err != nil || root == "" {
+		return layout.InstallationRoot
+	}
+	return root
+}
+
 func Path(repoRoot string) string {
-	return filepath.Join(repoRoot, stateDirectory(stateroot.Records), "narrator-digest.log")
+	return filepath.Join(digestRoot(repoRoot), stateDirectory(stateroot.Records), "narrator-digest.log")
 }
 
 var cursorNameRE = regexp.MustCompile(`^[a-z][a-z0-9-]{0,31}$`)
@@ -84,11 +102,11 @@ func CursorPath(repoRoot string, names ...string) string {
 	if name == "human" {
 		base = "narrator-digest-cursor.json"
 	}
-	return filepath.Join(repoRoot, stateDirectory(stateroot.Steward), base)
+	return filepath.Join(digestRoot(repoRoot), stateDirectory(stateroot.Steward), base)
 }
 
 func lockPath(repoRoot string) string {
-	return filepath.Join(repoRoot, stateDirectory(stateroot.Steward), "narrator-digest.flock")
+	return filepath.Join(digestRoot(repoRoot), stateDirectory(stateroot.Steward), "narrator-digest.flock")
 }
 
 type digestLock struct{ file *os.File }
@@ -161,7 +179,7 @@ func Append(repoRoot string, entries []Entry, now time.Time) error {
 	if body == string(existing) {
 		return nil
 	}
-	durable, err := atomicfile.WriteText(path, body, repoRoot)
+	durable, err := atomicfile.WriteText(path, body, digestRoot(repoRoot))
 	if err != nil {
 		return err
 	}
@@ -206,7 +224,7 @@ func AppendPayload(repoRoot string, payload Payload, now time.Time) error {
 	if payload.Body[len(payload.Body)-1] != '\n' {
 		body = append(body, '\n')
 	}
-	durable, err := atomicfile.WriteText(path, string(body), repoRoot)
+	durable, err := atomicfile.WriteText(path, string(body), digestRoot(repoRoot))
 	if err != nil {
 		return err
 	}
@@ -244,6 +262,29 @@ func loadCursor(repoRoot, name string) (cursorRecord, error) {
 	return cursor, nil
 }
 
+// firstCheckInLines bounds what a reader without a cursor is shown.
+const firstCheckInLines = 40
+
+// recentTail returns the last n lines of data (all of it when it holds no
+// more than n lines).
+func recentTail(data []byte, n int) []byte {
+	if n <= 0 {
+		return data
+	}
+	end := len(data)
+	trimmed := bytes.TrimRight(data, "\n")
+	seen := 0
+	for i := len(trimmed) - 1; i >= 0; i-- {
+		if trimmed[i] == '\n' {
+			seen++
+			if seen == n {
+				return data[i+1 : end]
+			}
+		}
+	}
+	return data
+}
+
 // Pending returns the digest bytes after the last emitted check-in cursor.
 func Pending(repoRoot string, names ...string) (PendingDigest, error) {
 	name, err := cursorName(names)
@@ -269,9 +310,19 @@ func Pending(repoRoot string, names ...string) (PendingDigest, error) {
 		return PendingDigest{}, fmt.Errorf("narrator digest changed before the last check-in cursor")
 	}
 	pending := data[cursor.Cursor:]
+	heading := "NARRATOR DIGEST since last check-in:\n"
+	if _, statErr := os.Stat(CursorPath(repoRoot, name)); os.IsNotExist(statErr) {
+		// A first check-in has no "since": the reader gets the recent tail
+		// of the story, never its whole history, and the cursor then
+		// stands at the end.
+		if tail := recentTail(pending, firstCheckInLines); len(tail) != len(pending) {
+			pending = tail
+			heading = fmt.Sprintf("NARRATOR DIGEST, first check-in (the last %d of %d lines; the rest is in records/narrator-digest.log):\n", firstCheckInLines, bytes.Count(data, []byte("\n")))
+		}
+	}
 	message := ""
 	if len(bytes.TrimSpace(pending)) != 0 {
-		message = "NARRATOR DIGEST since last check-in:\n" + string(pending)
+		message = heading + string(pending)
 	}
 	return PendingDigest{Message: message, Cursor: int64(len(data)), PrefixSHA256: digest(data)}, nil
 }
@@ -303,7 +354,7 @@ func Advance(repoRoot string, cursor int64, prefixSHA256 string, names ...string
 	if err != nil {
 		return err
 	}
-	durable, err := atomicfile.WriteText(CursorPath(repoRoot, name), string(encoded)+"\n", repoRoot)
+	durable, err := atomicfile.WriteText(CursorPath(repoRoot, name), string(encoded)+"\n", digestRoot(repoRoot))
 	if err != nil {
 		return err
 	}

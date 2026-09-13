@@ -347,7 +347,7 @@ if [[ "$event" == stop && "${METASYSTEM_STOP_DEADLINE_PARENT:-}" != "$PPID" ]]; 
   deadline_elapsed_sec=$((deadline_now_epoch - deadline_started_epoch))
   (( deadline_elapsed_sec >= 0 )) || deadline_elapsed_sec=0
   if [[ -n "${deadline_repo:-}" && -x "$deadline_canonical" ]]; then
-    "$deadline_canonical" steward hook-expire --repo "$deadline_repo" \
+    "$deadline_canonical" steward hook-expire --repo "${deadline_open_work_root:-$deadline_repo}" \
       --elapsed-sec "$deadline_elapsed_sec" >/dev/null 2>&1 || true
   fi
   if [[ "$deadline_published" == true ]]; then
@@ -817,7 +817,7 @@ if [[ "$event" == stop ]]; then
     record_stop_failure "turn evidence could not be prepared" turn-evidence
   else
     hook_attempt_rc=0
-    hook_attempt=$("$ms" steward hook-attempt --repo "$repo" --pid "$$" --turn-key "$turn_key" 2>/dev/null) || hook_attempt_rc=$?
+    hook_attempt=$("$ms" steward hook-attempt --repo "$state_root" --pid "$$" --turn-key "$turn_key" 2>/dev/null) || hook_attempt_rc=$?
     if (( hook_attempt_rc != 0 )) || [[ -z "$hook_attempt" ]]; then
       hook_evidence_failure="HEALTH unknown — hook-freshness=unknown (attempt evidence could not be recorded)"
       record_stop_failure "attempt evidence could not be recorded" turn-evidence
@@ -912,13 +912,13 @@ $up_failure_result"
     record_stop_failure "supervision arming failed" supervision-arming
   fi
   health_rc=0
-  health_line=$("$ms" health --hook-preview --repo "$repo" --metasystem-root "$harness_root" 2>/dev/null) || health_rc=$?
+  health_line=$("$ms" health --hook-preview --repo "$state_root" --metasystem-root "$harness_root" 2>/dev/null) || health_rc=$?
   if (( health_rc > 2 )) || [[ -z "$health_line" ]]; then
     health_line="HEALTH unknown — hook-freshness=unknown (the health engine returned no verdict)"
     record_stop_failure "the health engine returned no verdict" health
   fi
   digest_rc=0
-  digest_json=$("$ms" steward digest-pending --repo "$repo" 2>&1) || digest_rc=$?
+  digest_json=$("$ms" steward digest-pending --repo "$state_root" 2>&1) || digest_rc=$?
   if (( digest_rc == 0 )); then
     digest_message_rc=0
     digest_cursor_rc=0
@@ -967,21 +967,21 @@ emit_stop_payload() { # response
   response_file=$(mktemp "${TMPDIR:-/tmp}/metasystem-supervision-response.XXXXXX") || response_file_rc=$?
   if (( response_file_rc != 0 )) || [[ -z "$response_file" ]]; then
     command printf '%s\n' "$response" || true
-    complete_stop_attempt --repo "$repo" --generation "$hook_generation" \
+    complete_stop_attempt --repo "$state_root" --generation "$hook_generation" \
       --attempt "$hook_attempt_seq" --result ERROR --outcome PAYLOAD_STAGE_FAILED \
       || true
     return 0
   fi
   if ! printf '%s\n' "$response" >"$response_file"; then
     command printf '%s\n' "$response" || true
-    complete_stop_attempt --repo "$repo" --generation "$hook_generation" \
+    complete_stop_attempt --repo "$state_root" --generation "$hook_generation" \
       --attempt "$hook_attempt_seq" --result ERROR --outcome PAYLOAD_STAGE_FAILED \
       || true
     rm -f "$response_file"
     return 0
   fi
   if ! command printf '%s\n' "$response"; then
-    complete_stop_attempt --repo "$repo" --generation "$hook_generation" \
+    complete_stop_attempt --repo "$state_root" --generation "$hook_generation" \
       --attempt "$hook_attempt_seq" --result ERROR --outcome EMISSION_FAILED \
       --health-line "$health_line" --payload-file "$response_file" \
       || true
@@ -989,12 +989,12 @@ emit_stop_payload() { # response
     return 0
   fi
   if [[ -n "$digest_message" && "$digest_cursor" =~ ^[0-9]+$ && "$digest_prefix" =~ ^[0-9a-f]{64}$ ]]; then
-    if ! "$ms" steward digest-advance --repo "$repo" --cursor "$digest_cursor" \
+    if ! "$ms" steward digest-advance --repo "$state_root" --cursor "$digest_cursor" \
       --prefix-sha256 "$digest_prefix" >/dev/null 2>&1; then
       echo "supervision hook: emitted the narrator digest but could not advance its check-in cursor" >&2
     fi
   fi
-  if ! complete_stop_attempt --repo "$repo" --generation "$hook_generation" \
+  if ! complete_stop_attempt --repo "$state_root" --generation "$hook_generation" \
       --attempt "$hook_attempt_seq" --result OK --outcome EMITTED \
       --health-line "$health_line" --payload-file "$response_file"; then
     echo "supervision hook: emitted the health line but could not record completion" >&2

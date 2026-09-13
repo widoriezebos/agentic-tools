@@ -331,6 +331,66 @@ brain_template_context=$("$ms" json get --file "$tmp/brain-template.out" --field
   && grep -Fq 'template-layout brain digest line' <<<"$brain_template_context" \
   || { echo "template-layout start omitted the event name, packet, or installation digest" >&2; cat "$tmp/brain-template.out" >&2; exit 1; }
 
+# The Stop path on the same template layout: the hook's repository scope is
+# the git toplevel, but the human digest, its cursor and the health facts
+# live in the installation. A toplevel caller must read the installation's
+# digest (never a stray records/ beside the repository root) and the health
+# line must come from the installation's configuration.
+printf '%s\n' '2026-09-07T00:00:45Z HIGHLIGHT — template-layout stop digest line (source: fixture template stop)' \
+  >>"$brain_template_root/records/narrator-digest.log"
+printf '{"session_id":"brain-template-stop","cwd":"%s","hook_event_name":"Stop"}\n' "$brain_template_repo" \
+  >"$tmp/template-stop.json"
+# The bed's template installation is never armed, so the Stop refuses; the
+# digest read and the health facts are what this row proves.
+template_stop_evidence_ready() {
+  grep -Fq 'NARRATOR DIGEST since last check-in' "$tmp/template-stop.out" \
+    && grep -Fq 'template-layout stop digest line' "$tmp/template-stop.out"
+}
+wait_for_template_stop_evidence() { # hook process
+  local hook_pid=$1 deadline=$((SECONDS + hook_evidence_cap))
+  until template_stop_evidence_ready; do
+    if ! kill -0 "$hook_pid" 2>/dev/null; then
+      template_stop_evidence_ready && return 0
+      return 1
+    fi
+    (( SECONDS < deadline )) \
+      || { echo "template-layout stop made no expected evidence before the ${hook_evidence_cap}s hang failsafe" >&2; return 2; }
+    sleep "$METASYSTEM_FIXTURE_POLL_INTERVAL_SEC"
+  done
+}
+bash "$brain_template_root/scripts/agents/supervision-hook.sh" claude stop <"$tmp/template-stop.json" \
+  >"$tmp/template-stop.out" 2>"$tmp/template-stop.err" &
+hook_process_pid=$!
+hook_process_path=$brain_template_root/scripts/agents/supervision-hook.sh
+template_stop_wait_rc=0
+wait_for_template_stop_evidence "$hook_process_pid" || template_stop_wait_rc=$?
+if (( template_stop_wait_rc == 2 )); then
+  stop_hook_process
+  exit 1
+fi
+wait "$hook_process_pid" || true
+hook_process_pid=
+hook_process_path=
+template_stop_evidence_ready \
+  || { echo "template-layout stop did not deliver the installation's digest" >&2; cat "$tmp/template-stop.out" "$tmp/template-stop.err" >&2; exit 1; }
+# The health line reads the turn evidence the hook just wrote: the bed's
+# first turn is pending with no prior completion, a later one is alive.
+grep -Eq 'hook-freshness=(alive|unknown \(turn generation [0-9]+ is pending)' "$tmp/template-stop.out" \
+  && ! grep -Fq 'no hook turn generation is recorded' "$tmp/template-stop.out" \
+  || { echo "template-layout stop recorded its turn beside the repository root: the health line does not see it" >&2; cat "$tmp/template-stop.out" >&2; exit 1; }
+[[ -f "$brain_template_root/artifacts/agents/steward/narrator-digest-cursor.json" ]] \
+  || { echo "template-layout stop did not advance the installation's human digest cursor" >&2; exit 1; }
+! grep -Fq 'narrator digest could not be read' "$tmp/template-stop.out" \
+  && ! grep -Fq 'NARRATOR DIGEST unavailable' "$tmp/template-stop.out" \
+  && ! grep -Fq 'HEALTH unknown' "$tmp/template-stop.out" \
+  && ! grep -Fq 'metasystem.conf: no such file' "$tmp/template-stop.out" \
+  || { echo "template-layout stop read the digest or the health facts beside the repository root" >&2; cat "$tmp/template-stop.out" >&2; exit 1; }
+[[ ! -e "$brain_template_repo/records/narrator-digest.log" && ! -e "$brain_template_repo/artifacts/agents/steward/narrator-digest-cursor.json" ]] \
+  || { echo "template-layout stop left digest state beside the repository root" >&2; exit 1; }
+if [[ -e "$brain_template_repo/artifacts/agents/steward/narrator-digest.flock" ]]; then
+  echo "template-layout stop took its digest lock beside the repository root" >&2; exit 1
+fi
+
 printf '%s\n' '2026-09-07T00:01:00Z HIGHLIGHT — brain compact digest line (source: fixture compact)' \
   >>"$brain_repo/records/narrator-digest.log"
 printf '{"session_id":"brain-compact","cwd":"%s","source":"compact"}\n' "$brain_repo" >"$tmp/brain-compact.json"
