@@ -2,11 +2,11 @@
 
 - Owner: m1e (goal 15 of plans/delivery-efficiency-plan.md). **Revision 3, 2026-09-13**, written on the seat (Fable) under Wido's lanes; revision 2 (5b5e917b) was read by Codex gpt-5.6-sol (records/misc/coordinator-context-design-critique-r2.md, six material findings, rework required) and this revision folds all six with Wido's two answers of 2026-09-13 (section 10).
 - Goal and current status: slice 1 landed 644960b4 (the ledger projections). Revision 3 is the design for slices 1b, 2 and 3; not built.
-- In flight right now: Codex gpt-5.6-sol building slice 1b-i (section 8b, the spill contract) in a worktree; then an Opus read, the seat's integration and landing.
+- In flight right now: slice 1b-ii part 1 (section 8b rows CCB-1b-07 to 11: over-limit bodies staged and referenced, verification by the adapters before launch) in its Codex fold round 2 after an Opus read with four material findings (staging before the claim wins, a refused follow-up touching a running round's staged files, the merge conformance reader, a fixture comparison); worktree .claude/worktrees/ccb-1bii-tip.
 - Decisions made (and who made them): Wido, 2026-09-13 ("I agree with all your proposals"): (1) DONE is read as by construction where the engine owns the surface and by instruction and measurement elsewhere, the week's ceiling breach failing the goal; (2) exclusivity at the handoff by an observed predecessor death before the continuation launches, no ownership epoch. The seat: the mechanisms of sections 2 to 5 and 7.
 - Waiting on the human: nothing.
 - Dead ends (do not retry without new evidence): filtering only `goal list`; smaller summaries without a session boundary; a Claude-only hook; automatic compaction; reading lifetime usage totals as the size of one prompt; a second transcript parser; a transfer id with acknowledgements (a record of overlap, not exclusion); a mutable state file at a fixed path (revision 2, refused: a delayed continuation reads a later handoff); a session-stop authorization as an exit primitive (revision 2, refused: it ends no harness); calling retrospective detection "bounded by construction" (revision 2, refused; settled by Wido's reading).
-- Next step: in flight, by design: the slice 1b-i build, its Opus read and landing; then slice 1b-ii (section 8b rows 07 to 12) on Codex; slices 2 and 3 get their own D81 conversion by a Fable delegate when 1b is landed.
+- Next step: in flight, by design: the fold round, a second Opus read, landing and the dispatch bed through the engine; then part 2 (row 12, the bounded-read instruction text); slices 2 and 3 get their own D81 conversion by a Fable delegate. Slice 1b-i landed 349ac583 and is verified through the engine.
 
 ## 0. The contract this revision builds to
 
