@@ -1,6 +1,6 @@
 # hook-root-resolver-design
 
-- State: claimed
+- State: approved
 - Priority: 1
 - Sequence: 2
 - Risk: severity=2 novelty=1 exposure=3 accumulation=2 basis="severity 2: the hook fails closed while wrong, but a wrong resolver on the deadline parent can record a refusal against the wrong world; novelty 1: the design exists at revision 5 with five rounds of critique, so what remains is a fold and a build; exposure 3: every nested checkout in the fleet; accumulation 2: the same root cause that produced successor A"
@@ -9,14 +9,13 @@
 - Origin: main
 - Next step: 2026-09-13 (m1c): claimed. The chain hrd-build1-20260906 (round-10 tree 653fcb1c on trunk 0cf5117a0, 12 files, about 1,000 lines) cannot be rebased as it stands: its files moved on trunk by thousands of lines since Sep 6 and its worktree was reused. Design revision 6 is on the page, so the build is what remains: the chain's own changes were three-way applied onto today's tip in a fresh worktree (eight files clean, four in conflict) and Codex Sol (gpt-5.6-sol) is resolving and finishing them against Decisions 1 to 4 with the case 7 and case 14 fixtures; then one Opus read, the seat's verification (hook and supervision beds, stateroot/up/steward/cmd packages, engine sections) and the landing under this goal.
 - OpenedAt: 2026-09-06T06:39:49Z
-- Revision: 60
+- Revision: 61
 - Pinned: m1c
 - Budget: elapsedLimit=1d attemptLimit=12 reservedJobMinutesLimit=1200 activeJobLimit=1 reviewRoundLimit=3
 - BudgetExceptions: 0
 - Approved: by=human:Wido at=2026-09-13T07:22:49Z revision=55 opid=XZA3290E1RGR8SK8PKFNAVKKKK-m1e-c6925449 authority=proven digest=803416cae1f6cc23de17e5095463c667244bf3187f06ab28d7a67a0f6e427139
 - Sliced: machine=m1 lineage=main-1788594343-3833-fb64b9 revision=4 at=2026-09-06T11:22:23Z
-- Claimed: machine=m1c lineage=main-1789191340-90689-8975a9 at=2026-09-13T07:27:28Z revision=59 accountingRevision=59 episodeAt=2026-09-13T07:27:28Z episodeRevision=59
-- StopCapability: generation=59 revision=59 machine=m1c claimEpoch=5 fenceEpoch=0
+- Episode: machine=m1c lineage=main-1789191340-90689-8975a9 accountingRevision=59 episodeAt=2026-09-13T07:27:28Z episodeRevision=59 idleSeconds=0 released=2026-09-13T08:26:43Z
 
 History:
 - 2026-09-06T06:39:49Z X92B849FEPDB998FKY6C404SXZ-m1-a4f8999f open actor=m1+main-1788594343-3833-fb64b9 targets=hook-root-resolver-design
@@ -79,4 +78,5 @@ History:
 - 2026-09-13T07:25:36Z 802C6XFBCS0ASF0SB1RZFD7221-m1c-69c9e454 done actor=m1c+main-1789191340-90689-8975a9 targets=actionable-metrics,breach-clock-and-budget-honesty,chain-landing-carries-the-reviewed-diff,closing-read-and-receipt-in-parallel,coordinator-context-stays-under-budget,coordinator-wakes-on-events-not-polls,critique-closes-on-folded-proof,dispatch-bases-chains-on-the-remote-tip,failed-job-attention,fixture-repo-copies-exclude-the-artifacts-store,fixture-stewards-outlive-their-suite,fixture-waits-name-their-producer,goal-abandoned-with-a-reason,hook-root-resolver-design,human-authority-surface-runs-its-cmd-tests,human-goal-verbs-forgiving,job-record-birth-token,landing-receipt-survives-records-drift,lease-sweep-death-evidence,live-job-on-a-done-goal-unnoticed,machine-concurrency-governor,proof-groups-detect-hangs-by-progress-not-the-clock,repo-root-paths-ride-agent-commits-unjudged,run-scoped-build-caches-have-a-janitor,skipped-test-fails-its-group-on-the-other-os,small-change-lane,steward-catchup-livelock,steward-launches-resolve-their-model,steward-narrates-beside-the-repo-root,steward-revives-a-done-goal,stop-batch-strands-a-resumable-goal,stop-hook-never-forces-an-empty-turn,stop-refusal-fits-on-one-screen,suite-custody,token-spend-fence,watch-verb,watcher-repair-request-never-names-current,winddown-census-handoff-leak reason=priority-order from=1:3 to=1:2
 - 2026-09-13T07:27:28Z RQSX9MDVBEED7FRE84M6XQMVY0-m1c-69c9e454 claim actor=m1c+main-1789191340-90689-8975a9 targets=hook-root-resolver-design
 - 2026-09-13T07:32:25Z G9PCGB3V8TGN9T3GGDFPPPQ2M6-m1c-69c9e454 edit actor=m1c+main-1789191340-90689-8975a9 targets=hook-root-resolver-design
-Integrity: sha256=8c2e606c8b7ca6707977410d95d7132c684295a61355e7b006a618e82ab763e0
+- 2026-09-13T08:26:43Z 2F48S0061HMMMACEJB2XHRCF8R-m1c-69c9e454 release actor=m1c+main-1789191340-90689-8975a9 targets=hook-root-resolver-design
+Integrity: sha256=a362ac6a10aab33ca3c11cc201e7789e20b8620e6d64392791d59e26fe9427b2
