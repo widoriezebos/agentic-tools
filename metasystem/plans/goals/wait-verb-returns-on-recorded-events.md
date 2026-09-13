@@ -5,9 +5,9 @@
 - Tier: 2
 - Intent: Member 1 of coordinator-wakes-on-events-not-polls (its design page plans/coordinator-wakes-on-events-not-polls-design.md, sections 2, 5 and 6). DONE means: the installed commands metasystem wait --job, --run, --attempt and --goal (landing and human-act, the answer wait keyed by question and taking its cursor from the question record) return on the recorded event or the bounded deadline with the typed exits of section 2; every adapter's wait-delivery operation answers blocking and the row records it, so no temporary fallback is needed; the version-2 waiter row and its by-id pointer exist; a restart recovers from the rows alone through --resume, with session start printing the WAITING commands where a start hook exists. This member owns the parent's DONE clauses 1 and 4 and clause 2's adapter operation. Fixtures: TestWaitJobTerminals, TestWaitRunTerminalsAndDeadline, TestWaitAdapterBlocking, TestWaitAttemptRequiresCommittedTerminal, TestWaitAttemptAfterDrain, TestWaitGoalLandingAndHumanAct, TestWaitGoalCursorHistory, TestWaitChannelAnswer, TestWaitRestartRecoveryReplay, TestWaitLockClockAndFetchBounds, TestWaitGoalFetchDeadline; bed legs wait-job-run, wait-proof, wait-ledger, wait-restart, wait-bounds.
 - Origin: main
-- Next step: 2026-09-13 m1b: the fourth rostered read (wait-member1-codecritic-r6c-r2) resolved WVB-52 and found WVB-55 (medium): replaying a saved result re-reads from the original cursor and answers exit 4 after a late human act. Codex round 7 (wait-member1-build-1-r7, brief plans/wait-verb-returns-on-recorded-events-fold6-brief.md) folds it; the seat proves the round. Waiting on the human for the next step after the proof: this is the fourth fold-read cycle and the granted review rounds (3, R-109-m1e) are spent, so land on the proof and fix forward, or grant one more read of round 7.
+- Next step: 2026-09-13 m1b: WVB-55 folded by Codex round 7 (replay checks saved evidence from the event's own commit; unreadable evidence answers 65). Delivery proof GREEN on the staged candidate (proof-mtzmawaw-59e13f9a8e72e493, tree 9b240cad on 91dce8aa). A harness Opus read of round 7's delta runs (not a rostered round). Waiting on the human: land on the green proof and fix forward, or grant a fifth rostered read of round 7 (the granted rounds, 3 on R-109-m1e, are spent). The candidate is staged in the m1b checkout; the land message is drafted.
 - OpenedAt: 2026-09-13T02:05:04Z
-- Revision: 21
+- Revision: 22
 - Budget: elapsedLimit=1d attemptLimit=14 reservedJobMinutesLimit=720 activeJobLimit=1 reviewRoundLimit=3
 - BudgetExceptions: 2
 - NormApproval: approvedRef=R-109-m1e minutes=720 reviewRounds=3 goalRevision=16
@@ -38,4 +38,5 @@ History:
 - 2026-09-13T08:44:24Z PA3QHZQJWR22CVRX2PF3295FG7-m1b-30a7e141 release actor=m1b+main-1789191336-90295-e4b24b targets=wait-verb-returns-on-recorded-events
 - 2026-09-13T08:44:27Z 0ZBV40GGADSMPC5QKPXRYTEF5S-m1b-30a7e141 claim actor=m1b+main-1789191336-90295-e4b24b targets=wait-verb-returns-on-recorded-events
 - 2026-09-13T09:26:23Z 0CX7EGG3674MKQK0CDZ32Y43NM-m1b-30a7e141 edit actor=m1b+main-1789191336-90295-e4b24b targets=wait-verb-returns-on-recorded-events
-Integrity: sha256=06f54de8fabec9a8c3ac9bf7cb87859991f901f5287c0e06b539c71b754f9607
+- 2026-09-13T09:49:28Z WMW72GYTGHACTF5M3V3XKCEAN3-m1b-30a7e141 edit actor=m1b+main-1789191336-90295-e4b24b targets=wait-verb-returns-on-recorded-events
+Integrity: sha256=1add9f4b0b49d40e03af122d8c8cac5b6a4f5cdfc909d9d9c19cae81ce036cb2
