@@ -1,6 +1,6 @@
 # proof-groups-detect-hangs-by-progress-not-the-clock
 
-- State: claimed
+- State: approved
 - Priority: 1
 - Sequence: 6
 - Risk: severity=2 novelty=2 exposure=3 accumulation=1 basis="severity 2: a correct candidate is refused, or a truly hung group runs longer before it is caught, nothing granted or destroyed; novelty 2: progress-based supervision of a child is new in the adapter, the event stream and process accounting exist; exposure 3: every landing receipt on every seat; accumulation 1: one adapter and one runner, no compounding"
@@ -9,14 +9,13 @@
 - Origin: main
 - Next step: WAITING ON TIME (2026-09-13 13:30Z, m1e): the day of receipts runs through 18:20Z; then the seat reads every proof receipt since landing and, if none ended by the clock, concludes in Wido's name. The claim stays held because the seat uses it for engine diagnostics of the in-flight efficiency slices.
 - OpenedAt: 2026-09-10T13:40:12Z
-- Revision: 63
+- Revision: 64
 - Pinned: m1e
 - Budget: elapsedLimit=1d attemptLimit=10 reservedJobMinutesLimit=1200 activeJobLimit=1 reviewRoundLimit=3
 - BudgetExceptions: 3
 - Approved: by=human:Wido at=2026-09-11T20:33:30Z revision=34 opid=AV0G4X9FGVS3XSS6M166D5GC52-m1-c6925449 authority=proven digest=88700e7b9e1366f253d4db4c72a6f55004c57ad7f113616274c1f176a72bf535
 - Sliced: machine=m1 lineage=main-1788940932-18533-7fa6c2 revision=5 at=2026-09-10T14:14:54Z
-- Claimed: machine=m1e lineage=main-1789030447-51011-5722fc at=2026-09-13T08:54:07Z revision=61 accountingRevision=46 episodeAt=2026-09-12T16:03:55Z episodeRevision=46 idleSeconds=51448
-- StopCapability: generation=61 revision=61 machine=m1e claimEpoch=1 fenceEpoch=0
+- Episode: machine=m1e lineage=main-1789030447-51011-5722fc accountingRevision=46 episodeAt=2026-09-12T16:03:55Z episodeRevision=46 idleSeconds=51448 released=2026-09-13T13:40:48Z
 
 History:
 - 2026-09-10T13:40:12Z 9E6AJGS1CME0CPWS26NAGGCS5J-m1-1701c13c open actor=m1+main-1788940932-18533-7fa6c2 targets=proof-groups-detect-hangs-by-progress-not-the-clock
@@ -82,4 +81,5 @@ History:
 - 2026-09-13T08:54:07Z SK4M8NE8FGF30BY1GYEG3X72YN-m1e-892cdaec claim actor=m1e+main-1789030447-51011-5722fc targets=proof-groups-detect-hangs-by-progress-not-the-clock
 - 2026-09-13T09:01:29Z D25KSDVG7CDM9ZHF0TXWZBQ4G4-m1e-892cdaec edit actor=m1e+main-1789030447-51011-5722fc targets=proof-groups-detect-hangs-by-progress-not-the-clock
 - 2026-09-13T13:14:03Z QZZDK8JV4GCP9ARGNY6VTT69BW-m1e-892cdaec edit actor=m1e+main-1789030447-51011-5722fc targets=proof-groups-detect-hangs-by-progress-not-the-clock
-Integrity: sha256=68447509e77a3c02c6b95f7c6d040dcbbff2af7e07f1068f3347f54d48fabec2
+- 2026-09-13T13:40:48Z ZS143ZF9S4K44Y8301ZXXPBTWW-m1e-892cdaec release actor=m1e+main-1789030447-51011-5722fc targets=proof-groups-detect-hangs-by-progress-not-the-clock
+Integrity: sha256=33bada1914508afc24a47cd48be12aa9dd6b1db9f7da5813e56a474a3ec68cbd
