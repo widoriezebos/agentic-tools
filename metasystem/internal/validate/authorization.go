@@ -17,7 +17,6 @@ import (
 	"os"
 	"path/filepath"
 	"sort"
-	"strconv"
 	"strings"
 
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/atomicfile"
@@ -313,22 +312,8 @@ func (r *conformanceRun) wardenReviewFailures(finalTree string) []string {
 		if len(materialIDs) > 0 || !verdictZero {
 			failures = append(failures, fmt.Sprintf("warden chain %s still reports material findings", wardenID))
 		}
-		successorText := func(successorJob string) (string, bool) {
-			record, present := records[successorJob]
-			if !present {
-				return "", false
-			}
-			round, ok := record["round"].(float64)
-			if !ok || round != float64(int64(round)) {
-				return "", false
-			}
-			prompt := filepath.Join(r.root, "artifacts", "agents", r.rootJob,
-				"rounds", strconv.FormatInt(int64(round), 10), "prompt.md")
-			data, err := os.ReadFile(prompt)
-			if err != nil {
-				return "", false
-			}
-			return string(data), true
+		successorText := func(successorJob string) (string, error) {
+			return r.successorTaskDirection(records, successorJob)
 		}
 		failures = append(failures, exhaustionDiscipline(wardenRoot, records, r.rootJob, successorText, final["round"], materialIDs, verdictZero)...)
 		if reviewed, _ := result["reviewedTree"].(string); reviewed != finalTree {

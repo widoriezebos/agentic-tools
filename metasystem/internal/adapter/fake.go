@@ -118,19 +118,37 @@ func WriteFakeReturn(recordPath, promptPath, outputPath string) error {
 	return atomicWriteJSON(outputPath, value)
 }
 
-// workingMode reads the prompt's "Working Mode:" header, defaulting to
-// implement when the prompt does not carry one.
+// workingMode reads the prompt's "Working Mode:" header. A referenced task
+// direction moves that header into the staged body beside the prompt.
 func workingMode(promptPath string) (string, error) {
 	data, err := os.ReadFile(promptPath)
 	if err != nil {
 		return "", err
 	}
-	for _, line := range strings.Split(string(data), "\n") {
-		if rest, found := strings.CutPrefix(line, "Working Mode:"); found {
-			return strings.TrimSpace(rest), nil
-		}
+	if mode, found := workingModeFrom(data); found {
+		return mode, nil
+	}
+	stagedPath := filepath.Join(filepath.Dir(promptPath), "staged", "task-direction.md")
+	data, err = os.ReadFile(stagedPath)
+	if os.IsNotExist(err) {
+		return "implement", nil
+	}
+	if err != nil {
+		return "", err
+	}
+	if mode, found := workingModeFrom(data); found {
+		return mode, nil
 	}
 	return "implement", nil
+}
+
+func workingModeFrom(data []byte) (string, bool) {
+	for _, line := range strings.Split(string(data), "\n") {
+		if rest, found := strings.CutPrefix(line, "Working Mode:"); found {
+			return strings.TrimSpace(rest), true
+		}
+	}
+	return "", false
 }
 
 // gitHead is the commit the design-critic role reports as

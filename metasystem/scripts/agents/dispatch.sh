@@ -86,6 +86,9 @@ exit_cleanup_chain=
 exit_cleanup_authorization=
 exit_cleanup_message=
 exit_cleanup_continuation=
+exit_cleanup_prompt=
+exit_cleanup_composition=
+exit_cleanup_stage=
 exit_cleanup_lifecycle=
 exit_cleanup_creation_claim=
 wind_down_escalated_to_kill=0
@@ -143,6 +146,15 @@ close_creation_claim() { # exact claim path returned by claim-launch
 
 cleanup_creation_claim() {
   close_creation_claim "${exit_cleanup_creation_claim:-}" >/dev/null 2>&1 || true
+}
+
+cleanup_composition_temporaries() {
+  [[ -z "${exit_cleanup_prompt:-}" ]] || rm -f -- "$exit_cleanup_prompt"
+  [[ -z "${exit_cleanup_composition:-}" ]] || rm -f -- "$exit_cleanup_composition"
+  [[ -z "${exit_cleanup_stage:-}" ]] || rm -rf -- "$exit_cleanup_stage"
+  exit_cleanup_prompt=
+  exit_cleanup_composition=
+  exit_cleanup_stage=
 }
 
 die() {
@@ -1381,7 +1393,7 @@ dispatch_job() {
   local overridden=false mission_data mission lease mission_turn canonical model_key cap_resolution tiers_present=false escalation_required=0
   local cost_direction= approval_name= approved_at= approved_ref= roster_json=
   local permission_name permission_json permission_digest tool_policy snapshot_json snapshot_path fallbacks signal handshake_budget resume_cap input_bytes input_hash payload round_dir record_json launch_mode goal_revision=0 goal_tier=0 goal_width= goal_binding goal_machine= goal_claim_epoch= proposed_cap=0 reservation_claim_epoch=
-  local occupancy_preparation claim_output claim_outcome claim_rc=0 launch_capability= creation_claim= cap operation_brief_hash prompt_temp composition_temp composition_output composition_rc=0 preflight_output preflight_outcome preflight_rc=0 replay_operation=0 destructive_reach= reasoning_effort= authority_base=
+  local occupancy_preparation claim_output claim_outcome claim_rc=0 launch_capability= creation_claim= cap operation_brief_hash prompt_temp composition_temp stage_temp composition_output composition_rc=0 preflight_output preflight_outcome preflight_rc=0 replay_operation=0 destructive_reach= reasoning_effort= authority_base=
   local -a product_root_args=() composition_source_args=()
 	local brain_fence_rc=0
 	brain_outcome=$(brain_fence_outcome dispatch) || brain_fence_rc=$?
@@ -1630,7 +1642,7 @@ dispatch_job() {
   exit_cleanup_job=$job
   exit_cleanup_chain=$job
   exit_cleanup_authorization=
-  trap 'code=$?; if (( code != 0 )); then fail_setup_husk "$exit_cleanup_job"; release_unpublished_authorization "$exit_cleanup_authorization"; fi; cleanup_creation_claim; release_cap_authority_lock; release_exit_lifecycle; release_goal_revision_lock; release_chain_lock "$exit_cleanup_chain"; checkout_execution_guard_release || true' EXIT
+  trap 'code=$?; if (( code != 0 )); then fail_setup_husk "$exit_cleanup_job"; release_unpublished_authorization "$exit_cleanup_authorization"; fi; cleanup_creation_claim; cleanup_composition_temporaries; release_cap_authority_lock; release_exit_lifecycle; release_goal_revision_lock; release_chain_lock "$exit_cleanup_chain"; checkout_execution_guard_release || true' EXIT
   # A payload without a reservation belongs to another operation. A payload
   # beside a reservation is resolved by claim-launch as the same operation.
   [[ -e "$jobs/$job.json" || ! -e "$agents/$job" ]] \
@@ -1756,11 +1768,16 @@ dispatch_job() {
   [[ -z "$cap_truncated" || "$cap_truncated" == null ]] || cap_compose_args+=(--cap-truncated)
   prompt_temp=$(mktemp "$record_locks/composed-packet.XXXXXX")
   composition_temp=$(mktemp "$record_locks/composition.XXXXXX")
+  stage_temp=$(mktemp -d "$record_locks/composed-staged.XXXXXX")
+  exit_cleanup_prompt=$prompt_temp
+  exit_cleanup_composition=$composition_temp
+  exit_cleanup_stage=$stage_temp
   set +e
   composition_output=$("$ms" job compose-role-packet --root "$root" --role "$role" --brief "$brief" \
     --job "$job" --runtime "$runtime" --model "$model" --tool-policy "$tool_policy" --round 1 --mission "$mission" \
     --destructive-reach "$destructive_reach" --goal-tier "$goal_tier" \
     --output "$prompt_temp" --composition "$composition_temp" \
+    --stage-dir "$stage_temp" --reference-dir "$round_dir/staged" \
     "${cap_compose_args[@]}" \
     "${composition_source_args[@]+"${composition_source_args[@]}"}")
   composition_rc=$?
@@ -1768,6 +1785,11 @@ dispatch_job() {
   if (( composition_rc != 0 )); then
     [[ -z "$composition_output" ]] || { record_delegate_outcome_raw "$composition_output"; printf '%s\n' "$composition_output"; }
     return "$composition_rc"
+  fi
+  if [[ -z "$(find "$stage_temp" -mindepth 1 -maxdepth 1 -print -quit)" ]]; then
+    rmdir "$stage_temp"
+    stage_temp=
+    exit_cleanup_stage=
   fi
   input_bytes=$(enforce_inline_input_limit "$prompt_temp" brief)
   input_hash=$(sha256_file "$prompt_temp")
@@ -1849,8 +1871,17 @@ dispatch_job() {
       || die 1 "code-critic commit subject has no readable tree: $reviews"
   fi
   cp "$brief" "$payload/brief.md"
+  if [[ -n "$stage_temp" ]]; then
+    mv "$stage_temp" "$round_dir/staged"
+    stage_temp=
+    exit_cleanup_stage=
+  fi
   mv "$prompt_temp" "$round_dir/prompt.md"
+  prompt_temp=
+  exit_cleanup_prompt=
   mv "$composition_temp" "$round_dir/composition.json"
+  composition_temp=
+  exit_cleanup_composition=
 
   record_json=$(mktemp "$record_locks/record.XXXXXX")
   reasoning_effort=$(json_field "$round_dir/composition.json" configurationObligations.builderReasoningEffort)
@@ -2275,7 +2306,7 @@ prepend_follow_up_rebase_paragraph() { # source, output, rebased from, rebased t
 follow_up() {
   local job= message= wait=0 root_id latest status error session role runtime model model_key workspace reviewed_commit round child payload round_dir cap_resolution permission_json permission_digest tool_policy snapshot_json snapshot_path fallbacks signal handshake_budget resume_cap record_json mission mission_data lease mission_turn goal reviews=
   local resume_mode=resumed adapter_verb=follow-up delivery_content parent_round launch_mode goal_revision=0 goal_tier=0 goal_width= goal_binding goal_machine= goal_claim_epoch= proposed_cap=0 reservation_claim_epoch= approved_ref= operation_override= operation_id operation_parent operation_brief_hash standing_child_record= destructive_reach=
-  local occupancy_preparation claim_output claim_outcome claim_rc=0 launch_capability= creation_claim= cap resumed_for_claim input_bytes input_hash prompt_temp composition_temp composition_output composition_rc=0 preflight_output preflight_outcome preflight_rc=0 replay_operation=0
+  local occupancy_preparation claim_output claim_outcome claim_rc=0 launch_capability= creation_claim= cap resumed_for_claim input_bytes input_hash prompt_temp composition_temp stage_temp composition_output composition_rc=0 preflight_output preflight_outcome preflight_rc=0 replay_operation=0
   local repeated_follow_up=0 parent_job fresh_context_temp= worktree_path= trunk_commit= rebase_plan= plan_rebase=false behind=0 unmerged_json= authority_message=
   local rebased_from= rebased_to= rebase_failure= rebase_message_temp= previous_message_temp= root_launch_mode=
   local continuation= continuation_role= continuation_launch= continuation_workspace= continuation_temp= cap_truncated=
@@ -2313,7 +2344,7 @@ follow_up() {
   # runs, and under set -u the trap dies on the expansion before releasing
   # anything (the Linux cap-authority leak, go-production-grade Phase 1).
   exit_cleanup_chain=$root_id
-  trap 'cleanup_follow_up_message; release_goal_revision_lock; release_chain_lock "$exit_cleanup_chain"' EXIT
+  trap 'cleanup_composition_temporaries; cleanup_follow_up_message; release_goal_revision_lock; release_chain_lock "$exit_cleanup_chain"' EXIT
   [[ "$(json_field "$jobs/$root_id.json" chainClosed 2>/dev/null || true)" != true ]] || die 1 "job chain is closed"
   latest=$(latest_chain_record "$root_id") || die 1 "cannot find the newest chain record"
   status=$(json_field "$latest" status); error=$(json_field "$latest" error 2>/dev/null || true)
@@ -2561,7 +2592,7 @@ follow_up() {
   exit_cleanup_job=$child
   exit_cleanup_chain=$root_id
   exit_cleanup_authorization=
-  trap 'code=$?; if (( code != 0 )); then fail_setup_husk "$exit_cleanup_job"; release_unpublished_authorization "$exit_cleanup_authorization"; fi; cleanup_creation_claim; cleanup_follow_up_message; release_cap_authority_lock; release_exit_lifecycle; release_goal_revision_lock; release_chain_lock "$exit_cleanup_chain"' EXIT
+  trap 'code=$?; if (( code != 0 )); then fail_setup_husk "$exit_cleanup_job"; release_unpublished_authorization "$exit_cleanup_authorization"; fi; cleanup_creation_claim; cleanup_composition_temporaries; cleanup_follow_up_message; release_cap_authority_lock; release_exit_lifecycle; release_goal_revision_lock; release_chain_lock "$exit_cleanup_chain"' EXIT
   permission_json=$(mktemp "$record_locks/follow-permissions.XXXXXX")
   json_field "$latest" permissions.requested >"$permission_json"
   permission_digest=$(sha256_file "$permission_json")
@@ -2639,11 +2670,16 @@ follow_up() {
   [[ -z "$cap_truncated" || "$cap_truncated" == null ]] || cap_compose_args+=(--cap-truncated)
   prompt_temp=$(mktemp "$record_locks/follow-composed-packet.XXXXXX")
   composition_temp=$(mktemp "$record_locks/follow-composition.XXXXXX")
+  stage_temp=$(mktemp -d "$record_locks/follow-composed-staged.XXXXXX")
+  exit_cleanup_prompt=$prompt_temp
+  exit_cleanup_composition=$composition_temp
+  exit_cleanup_stage=$stage_temp
   set +e
   composition_output=$("$ms" job compose-role-packet --root "$root" --role "$role" --brief "$delivery_content" \
     --job "$child" --runtime "$runtime" --model "$model" --tool-policy "$tool_policy" --round "$round" --mission "$mission" \
     --destructive-reach "$destructive_reach" --goal-tier "$goal_tier" \
     --output "$prompt_temp" --composition "$composition_temp" \
+    --stage-dir "$stage_temp" --reference-dir "$round_dir/staged" \
     "${cap_compose_args[@]}" \
     "${continuation_args[@]+"${continuation_args[@]}"}")
   composition_rc=$?
@@ -2651,6 +2687,11 @@ follow_up() {
   if (( composition_rc != 0 )); then
     [[ -z "$composition_output" ]] || { record_delegate_outcome_raw "$composition_output"; printf '%s\n' "$composition_output"; }
     return "$composition_rc"
+  fi
+  if [[ -z "$(find "$stage_temp" -mindepth 1 -maxdepth 1 -print -quit)" ]]; then
+    rmdir "$stage_temp"
+    stage_temp=
+    exit_cleanup_stage=
   fi
   input_bytes=$(enforce_inline_input_limit "$prompt_temp" message)
   input_hash=$(sha256_file "$prompt_temp")
@@ -2737,8 +2778,17 @@ follow_up() {
     continuation_temp=
     exit_cleanup_continuation=
   fi
+  if [[ -n "$stage_temp" ]]; then
+    mv "$stage_temp" "$round_dir/staged"
+    stage_temp=
+    exit_cleanup_stage=
+  fi
   mv "$prompt_temp" "$round_dir/prompt.md"
+  prompt_temp=
+  exit_cleanup_prompt=
   mv "$composition_temp" "$round_dir/composition.json"
+  composition_temp=
+  exit_cleanup_composition=
 
   record_json=$(mktemp "$record_locks/follow-record.XXXXXX")
   if [[ -n "$rebased_to" ]]; then

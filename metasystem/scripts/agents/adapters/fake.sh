@@ -59,10 +59,30 @@ parse_supervisor_args() {
   [[ -n "$job" && -n "$gate" && -n "$instance_tag" && -n "$launch_capability" ]] || { usage; exit 2; }
 }
 
-behavior_present() { grep -Fqi "FAKE:$1" "$prompt"; }
+# Markers are read from the round's prompt and, when a body over the directive
+# limit was staged, from its staged task direction: the prompt then carries
+# only the reference stanza.
+behavior_sources() {
+  printf '%s\n' "$prompt"
+  [[ -f "${round_dir:-}/staged/task-direction.md" ]] && printf '%s\n' "$round_dir/staged/task-direction.md"
+  return 0
+}
+
+behavior_present() {
+  local source
+  while IFS= read -r source; do
+    grep -Fqi "FAKE:$1" "$source" && return 0
+  done < <(behavior_sources)
+  return 1
+}
 
 behavior_value() { # behavior name
-  sed -n "s|^[[:space:]]*FAKE:$1=||p" "$prompt" | head -1
+  local source value
+  while IFS= read -r source; do
+    value=$(sed -n "s|^[[:space:]]*FAKE:$1=||p" "$source" | head -1)
+    [[ -n "$value" ]] && { printf '%s\n' "$value"; return 0; }
+  done < <(behavior_sources)
+  return 0
 }
 
 fake_guarded_write() { # permissions JSON, target path
@@ -208,6 +228,21 @@ supervise() { # verb and remaining args
   [[ "$verb" == follow-up ]] && session=$(field "$record" sessionId)
   behavior_present missing-session-id && session=
   signal=$(field "$record" sessionEstablishedSignal)
+  if [[ -n "${METASYSTEM_FAKE_TAMPER_REFERENCE:-}" && -f "$round_dir/staged/task-direction.md" ]]; then
+    printf 'tampered\n' >>"$round_dir/staged/task-direction.md"
+  fi
+  set +e
+  reference_report=$("$ms" job verify-references --root "$root" --composition "$round_dir/composition.json" 2>>"$log")
+  reference_status=$?
+  set -e
+  if (( reference_status != 0 )); then
+    printf '%s\n' "$reference_report" | tee -a "$log" >&2
+    reference_path=$(printf '%s\n' "$reference_report" | sed -n 's/^REFERENCE_MISMATCH path=\([^ ]*\) .*/\1/p' | head -1)
+    patch="$round_dir/reference-mismatch.json"
+    "$ms" adapter result-patch --output "$patch" --error "reference_mismatch:${reference_path:-composition}" --phase launch --usage ""
+    "$dispatch" __record-cas --job "$job" --expect pending --status failed --patch "$patch" || true
+    exit 1
+  fi
   "$dispatch" __handshake --job "$job" --session "$session" --turn "fake-turn-$round" \
     --model "$(field "$record" requestedModel)" --effective "$effective" --signal "$signal" || exit 1
   if ! behavior_present no-event-stream; then

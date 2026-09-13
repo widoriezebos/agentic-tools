@@ -1,8 +1,10 @@
 package dispatch
 
 import (
+	"bytes"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"os"
 	"path/filepath"
 	"sort"
@@ -17,6 +19,29 @@ func compositionRepoRoot(t *testing.T) string {
 		t.Fatal(err)
 	}
 	return root
+}
+
+func compositionStageDir(t *testing.T) string {
+	t.Helper()
+	root := compositionRepoRoot(t)
+	testRoot := filepath.Join(root, "artifacts", "agents", "test-"+t.Name())
+	t.Cleanup(func() { os.RemoveAll(testRoot) })
+	return filepath.Join(testRoot, "rounds", "1", "staged")
+}
+
+func compositionTemporaryStageDir(t *testing.T) string {
+	t.Helper()
+	root := compositionRepoRoot(t)
+	parent := filepath.Join(root, "artifacts", "agents", "record-locks")
+	if err := os.MkdirAll(parent, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	dir, err := os.MkdirTemp(parent, "composition-test.")
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { os.RemoveAll(dir) })
+	return dir
 }
 
 func TestComposeRolePacketFollowsClosedRecipeAndRecordsEveryRange(t *testing.T) {
@@ -74,6 +99,154 @@ func TestComposeRolePacketFollowsClosedRecipeAndRecordsEveryRange(t *testing.T) 
 	stored, err := os.ReadFile(composition)
 	if err != nil || !json.Valid(stored) {
 		t.Fatalf("composition record is not stored JSON: %v", err)
+	}
+}
+
+func TestComposeRolePacketReferencesABriefOverMaxDirectiveBytes(t *testing.T) {
+	root := compositionRepoRoot(t)
+	temp := t.TempDir()
+	briefPath := filepath.Join(temp, "brief.md")
+	brief := bytes.Repeat([]byte("b"), 40*1024)
+	if err := os.WriteFile(briefPath, brief, 0o644); err != nil {
+		t.Fatal(err)
+	}
+	prompt := filepath.Join(temp, "prompt.md")
+	composition := filepath.Join(temp, "composition.json")
+	stageDir := compositionTemporaryStageDir(t)
+	referenceDir := compositionStageDir(t)
+	record, err := ComposeRolePacket(ComposeRolePacketParams{
+		Root: root, Role: "verifier", Brief: briefPath, JobID: "large-brief", Runtime: "fake",
+		Model: "fake-model", ToolPolicy: "read-only", Round: 1, DestructiveReach: HazardMechanical,
+		Output: prompt, CompositionOutput: composition, StageDir: stageDir, ReferenceDir: referenceDir,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(record.References) != 1 {
+		t.Fatalf("reference count = %d, want 1", len(record.References))
+	}
+	reference := record.References[0]
+	if reference.Slot != "task-direction" || reference.Purpose != "brief" || reference.Lifetime != "staged" ||
+		reference.Bytes != len(brief) || reference.Digest != digestBytes(brief) {
+		t.Fatalf("unexpected task-direction reference: %+v", reference)
+	}
+	if !filepath.IsAbs(reference.OpenPath) || filepath.Join(root, filepath.FromSlash(reference.Path)) != reference.OpenPath {
+		t.Fatalf("reference paths do not bind the control-root copy: %+v", reference)
+	}
+	if reference.OpenPath != filepath.Join(referenceDir, "task-direction.md") {
+		t.Fatalf("reference names %s, want final round path under %s", reference.OpenPath, referenceDir)
+	}
+	staged, err := os.ReadFile(filepath.Join(stageDir, "task-direction.md"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !bytes.Equal(staged, brief) {
+		t.Fatal("staged task direction differs from the brief")
+	}
+	packet, err := os.ReadFile(prompt)
+	if err != nil {
+		t.Fatal(err)
+	}
+	stanza := fmt.Sprintf("Referenced body: open %s (%d bytes, sha256 %s). Read it in bounded views; it is not inlined.\n", reference.OpenPath, len(brief), digestBytes(brief))
+	if !bytes.Contains(packet, []byte(stanza)) || bytes.Contains(packet, brief) {
+		t.Fatal("packet did not replace the large brief with its reference stanza")
+	}
+	if record.Sources[0].SourceDigest != digestBytes(brief) || record.Sources[0].SourceBytes != len(brief) {
+		t.Fatalf("task-direction source lost the referenced body's identity: %+v", record.Sources[0])
+	}
+	previousEnd := 0
+	for _, source := range record.Sources {
+		if source.StartByte != previousEnd || source.EndByte > len(packet) || digestBytes(packet[source.StartByte:source.EndByte]) != source.DeliveredDigest {
+			t.Fatalf("source %s does not tile its packet range", source.Slot)
+		}
+		previousEnd = source.EndByte
+	}
+	if previousEnd != len(packet) {
+		t.Fatalf("source ranges end at %d, packet has %d bytes", previousEnd, len(packet))
+	}
+	if _, err := readCompositionForJob(composition, "large-brief", "verifier", "fake", "fake-model", "", HazardMechanical, 0, 1, int64(len(packet)), record.PacketDigest); err != nil {
+		t.Fatalf("composition with a reference was refused: %v", err)
+	}
+
+	exact := bytes.Repeat([]byte("e"), MaxDirectiveBytes)
+	if err := os.WriteFile(briefPath, exact, 0o644); err != nil {
+		t.Fatal(err)
+	}
+	composeExact := func(name, stageDir string) (CompositionRecord, []byte) {
+		t.Helper()
+		promptPath := filepath.Join(temp, name+".md")
+		recordPath := filepath.Join(temp, name+".json")
+		record, err := ComposeRolePacket(ComposeRolePacketParams{
+			Root: root, Role: "verifier", Brief: briefPath, JobID: "exact-brief", Runtime: "fake",
+			Model: "fake-model", ToolPolicy: "read-only", Round: 1, DestructiveReach: HazardMechanical,
+			Output: promptPath, CompositionOutput: recordPath, StageDir: stageDir, ReferenceDir: compositionStageDir(t),
+		})
+		if err != nil {
+			t.Fatal(err)
+		}
+		packet, err := os.ReadFile(promptPath)
+		if err != nil {
+			t.Fatal(err)
+		}
+		return record, packet
+	}
+	withoutStage, packetWithoutStage := composeExact("exact-without-stage", "")
+	withStage, packetWithStage := composeExact("exact-with-stage", compositionTemporaryStageDir(t))
+	if !bytes.Equal(packetWithoutStage, packetWithStage) || len(withoutStage.References) != 0 || len(withStage.References) != 0 {
+		t.Fatal("a body at MaxDirectiveBytes did not stay on the unchanged inline path")
+	}
+}
+
+func TestComposeRolePacketRefusesAReferenceOutsideTheRoot(t *testing.T) {
+	root := compositionRepoRoot(t)
+	temp := t.TempDir()
+	brief := filepath.Join(temp, "brief.md")
+	if err := os.WriteFile(brief, bytes.Repeat([]byte("b"), 40*1024), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	compose := func(name, stageDir, referenceDir string) *CompositionRefusal {
+		t.Helper()
+		prompt := filepath.Join(temp, name+".md")
+		composition := filepath.Join(temp, name+".json")
+		_, err := ComposeRolePacket(ComposeRolePacketParams{
+			Root: root, Role: "verifier", Brief: brief, JobID: name, Runtime: "fake",
+			Model: "fake-model", ToolPolicy: "read-only", Round: 1, DestructiveReach: HazardMechanical,
+			Output: prompt, CompositionOutput: composition, StageDir: stageDir, ReferenceDir: referenceDir,
+		})
+		var refusal *CompositionRefusal
+		if !errors.As(err, &refusal) || refusal.Code != "REFUSED-REFERENCE-PATH" {
+			t.Fatalf("composition result = %T %v", err, err)
+		}
+		for _, path := range []string{prompt, composition} {
+			if _, statErr := os.Stat(path); !os.IsNotExist(statErr) {
+				t.Fatalf("refused composition wrote %s", path)
+			}
+		}
+		return refusal
+	}
+	outside := filepath.Join(t.TempDir(), "staged")
+	finalDir := compositionStageDir(t)
+	if refusal := compose("outside", outside, finalDir); refusal.Source != outside {
+		t.Fatalf("outside refusal source = %q, want %q", refusal.Source, outside)
+	}
+	symlinkStage := compositionStageDir(t)
+	if err := os.MkdirAll(filepath.Dir(symlinkStage), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	symlinkTarget := t.TempDir()
+	if err := os.Symlink(symlinkTarget, symlinkStage); err != nil {
+		t.Skipf("cannot create stage-directory symlink: %v", err)
+	}
+	if refusal := compose("symlink", symlinkStage, finalDir); refusal.Source != symlinkStage {
+		t.Fatalf("symlink refusal source = %q, want %q", refusal.Source, symlinkStage)
+	}
+	if refusal := compose("missing-stage", "", finalDir); refusal.Source != "task-direction" {
+		t.Fatalf("missing-stage refusal source = %q, want task-direction", refusal.Source)
+	}
+	validStage := compositionTemporaryStageDir(t)
+	outsideFinal := filepath.Join(t.TempDir(), "final")
+	if refusal := compose("outside-final", validStage, outsideFinal); refusal.Source != outsideFinal {
+		t.Fatalf("outside final refusal source = %q, want %q", refusal.Source, outsideFinal)
 	}
 }
 
@@ -144,6 +317,18 @@ func TestJobRecordRejectsExpandedOrDishonestComposition(t *testing.T) {
 	}
 	if _, err := readCompositionForJob(composition, "verify-a", "verifier", "fake", "fake-model", "", HazardMechanical, 0, 1, int64(len(packet)), record.PacketDigest); err == nil || !strings.Contains(err.Error(), "expanded") {
 		t.Fatalf("expanded composition result = %v", err)
+	}
+	delete(expanded, "undeclaredContext")
+	firstSource := expanded["sources"].([]any)[0].(map[string]any)
+	relativeReference := filepath.ToSlash(filepath.Join("artifacts", "agents", "test-dishonest", "staged", "task-direction.md"))
+	expanded["references"] = []any{map[string]any{
+		"slot": "task-direction", "purpose": "brief", "path": relativeReference,
+		"openPath": filepath.Join(root, filepath.FromSlash(relativeReference)),
+		"digest":   strings.Repeat("0", 64), "bytes": firstSource["sourceBytes"], "lifetime": "staged",
+	}}
+	writeRecord(composition, expanded)
+	if _, err := readCompositionForJob(composition, "verify-a", "verifier", "fake", "fake-model", "", HazardMechanical, 0, 1, int64(len(packet)), record.PacketDigest); err == nil || !strings.Contains(err.Error(), "unbound") {
+		t.Fatalf("dishonest reference result = %v", err)
 	}
 }
 

@@ -149,6 +149,7 @@ supervise() { # dispatch|follow-up and supervisor args
   # pid, which custody registration depends on.
   local -a job_git_env=()
   while IFS= read -r assignment; do job_git_env+=("$assignment"); done < <(job_git_quarantine_env "$workspace")
+  verify_references_before_launch || return 1
   mark_cli_prefork || { fail_pending prefork_marker handshake; return 1; }
   # The chain's build cache: the sandbox cannot write the user's Go cache,
   # and a delegate left to itself sets a cold one per round (the deep dive's

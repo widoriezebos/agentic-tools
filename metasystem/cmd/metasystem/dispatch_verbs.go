@@ -73,6 +73,8 @@ func runDispatchComposeRolePacket(args []string) int {
 	goalTier := flags.Uint("goal-tier", 0, "claimed-revision goal tier")
 	output := flags.String("output", "", "assembled packet output")
 	composition := flags.String("composition", "", "composition record output")
+	stageDir := flags.String("stage-dir", "", "temporary directory under the control root for bodies over MaxDirectiveBytes")
+	referenceDir := flags.String("reference-dir", "", "final directory named by staged body references")
 	validateOnly := flags.Bool("validate-only", false, "validate asserted sources without reading or writing a packet")
 	capMinutes := flags.Int64("cap-min", 0, "the round's authorized cap in minutes, when resolved before composition (adds the return-by sentence)")
 	returnMargin := flags.Int64("return-margin-min", -1, "minutes before the cap by which the return is due (default dispatch.return-margin-min, 10)")
@@ -130,7 +132,7 @@ func runDispatchComposeRolePacket(args []string) int {
 	_, err := dispatchcore.ComposeRolePacket(dispatchcore.ComposeRolePacketParams{
 		Root: *root, Role: *role, Brief: *brief, JobID: *job, Runtime: *runtimeName,
 		Model: *model, ToolPolicy: *toolPolicy, Round: *round, Mission: *mission, DestructiveReach: dispatchcore.HazardClass(*destructiveReach), GoalTier: uint8(*goalTier), Output: *output,
-		CompositionOutput: *composition, ExtraSources: sources, Continuations: continuationInputs,
+		CompositionOutput: *composition, StageDir: *stageDir, ReferenceDir: *referenceDir, ExtraSources: sources, Continuations: continuationInputs,
 		CapMinutes: *capMinutes, ReturnMarginMinutes: margin, CapTruncated: *capTruncated,
 	})
 	if err == nil {
@@ -143,6 +145,47 @@ func runDispatchComposeRolePacket(args []string) int {
 	}
 	fmt.Fprintln(os.Stderr, err)
 	return 1
+}
+
+func runDispatchVerifyReferences(args []string) int {
+	flags := flag.NewFlagSet("job verify-references", flag.ContinueOnError)
+	root := flags.String("root", "", "control root")
+	composition := flags.String("composition", "", "composition record")
+	if flags.Parse(args) != nil {
+		return 2
+	}
+	if flags.NArg() != 0 || *root == "" || *composition == "" {
+		fmt.Fprintln(os.Stderr, "job verify-references: --root and --composition are required")
+		return 2
+	}
+	absRoot, err := filepath.Abs(*root)
+	if err != nil {
+		fmt.Fprintln(os.Stderr, err)
+		return 1
+	}
+	mismatches, err := dispatchcore.VerifyReferences(absRoot, *composition)
+	if err != nil {
+		fmt.Fprintln(os.Stderr, err)
+		return 1
+	}
+	if len(mismatches) != 0 {
+		for _, mismatch := range mismatches {
+			fmt.Println(mismatch.Line())
+		}
+		return 9
+	}
+	data, err := os.ReadFile(*composition)
+	if err != nil {
+		fmt.Fprintln(os.Stderr, err)
+		return 1
+	}
+	var record dispatchcore.CompositionRecord
+	if err := json.Unmarshal(data, &record); err != nil {
+		fmt.Fprintln(os.Stderr, err)
+		return 1
+	}
+	fmt.Printf("references-verified count=%d\n", len(record.References))
+	return 0
 }
 
 func runDispatchOperationID(args []string) int {

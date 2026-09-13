@@ -140,6 +140,7 @@ supervise() { # dispatch|follow-up and supervisor args
   while IFS= read -r -d '' token; do command+=("$token"); done <"$command_file"
   (( ${#command[@]} > 0 )) || { fail_pending runtime_error handshake; return 1; }
 
+  verify_references_before_launch || return 1
   mark_cli_prefork || { fail_pending prefork_marker handshake; return 1; }
   (
     cd "$workspace"

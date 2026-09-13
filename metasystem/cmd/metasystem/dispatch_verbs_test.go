@@ -51,6 +51,69 @@ func TestComposeRolePacketCommandCarriesGoalTier(t *testing.T) {
 	}
 }
 
+func TestVerifyReferencesVerbExitsNineAndPrintsTheLine(t *testing.T) {
+	root, err := filepath.Abs(filepath.Join("..", ".."))
+	if err != nil {
+		t.Fatal(err)
+	}
+	testRoot := filepath.Join(root, "artifacts", "agents", "test-"+t.Name())
+	t.Cleanup(func() { os.RemoveAll(testRoot) })
+	stageDir := filepath.Join(testRoot, "record-locks", "staged")
+	referenceDir := filepath.Join(testRoot, "rounds", "1", "staged")
+	temp := t.TempDir()
+	brief := filepath.Join(temp, "brief.md")
+	if err := os.WriteFile(brief, []byte(strings.Repeat("b", 40*1024)), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	composition := filepath.Join(temp, "composition.json")
+	code := runDispatchComposeRolePacket([]string{
+		"--root", root, "--role", "verifier", "--brief", brief,
+		"--job", "verify-references", "--runtime", "fake", "--model", "fake-model",
+		"--tool-policy", "read-only", "--round", "1", "--destructive-reach", "MECHANICAL",
+		"--output", filepath.Join(temp, "prompt.md"), "--composition", composition,
+		"--stage-dir", stageDir, "--reference-dir", referenceDir,
+	})
+	if code != 0 {
+		t.Fatalf("compose-role-packet exit = %d", code)
+	}
+	if err := os.MkdirAll(filepath.Dir(referenceDir), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Rename(stageDir, referenceDir); err != nil {
+		t.Fatal(err)
+	}
+	out, code := captureStdout(t, func() int {
+		return runDispatchVerifyReferences([]string{"--root", root, "--composition", composition})
+	})
+	if code != 0 || strings.TrimSpace(out) != "references-verified count=1" {
+		t.Fatalf("verified command = exit %d, output %q", code, out)
+	}
+	staged := filepath.Join(referenceDir, "task-direction.md")
+	handle, err := os.OpenFile(staged, os.O_APPEND|os.O_WRONLY, 0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := handle.WriteString("tampered\n"); err != nil {
+		handle.Close()
+		t.Fatal(err)
+	}
+	if err := handle.Close(); err != nil {
+		t.Fatal(err)
+	}
+	out, code = captureStdout(t, func() int {
+		return runDispatchVerifyReferences([]string{"--root", root, "--composition", composition})
+	})
+	if code != 9 || strings.Count(strings.TrimSpace(out), "\n") != 0 || !strings.HasPrefix(out, "REFERENCE_"+"MISMATCH path=") {
+		t.Fatalf("mismatch command = exit %d, output %q", code, out)
+	}
+	_, code = captureStderr(t, func() int {
+		return runDispatchVerifyReferences([]string{"--root", root, "--composition", filepath.Join(temp, "missing.json")})
+	})
+	if code != 1 {
+		t.Fatalf("missing composition exit = %d, want 1", code)
+	}
+}
+
 func TestGoalRevisionAdmissionCommandMarksThenEnforcesWithExplicitDispatchContext(t *testing.T) {
 	root := syncedClaimedGoalFixture(t)
 	amendSyncedGoalFixture(t, root, "breach-stop capable admission fixture", func(file *goal.GoalFile) {

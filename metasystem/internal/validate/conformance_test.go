@@ -10,6 +10,7 @@ import (
 	"strings"
 	"testing"
 
+	dispatchcore "github.com/widoriezebos/agentic-tools/metasystem/internal/dispatch"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/gittree"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/pathclass"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/runtimes"
@@ -92,6 +93,76 @@ func (f *conformanceFixture) writeFollowUp() {
 	prompt := filepath.Join(f.controller, "artifacts", "agents", "impl", "rounds", "2")
 	os.MkdirAll(prompt, 0o755)
 	os.WriteFile(filepath.Join(prompt, "prompt.md"), []byte("Implementer follow-up enumerates F-9.\n"), 0o644)
+}
+
+func (f *conformanceFixture) writeReferencedFollowUp() string {
+	f.t.Helper()
+	message := bytes.Repeat([]byte("bounded context for the follow-up\n"), dispatchcore.MaxDirectiveBytes/32+1)
+	message = append(message, []byte("Implementer follow-up enumerates F-9.\n")...)
+	if len(message) <= dispatchcore.MaxDirectiveBytes {
+		f.t.Fatalf("referenced follow-up has only %d bytes", len(message))
+	}
+	f.writeJSON("artifacts/agents/jobs/impl-r2.json", map[string]any{
+		"jobId": "impl-r2", "role": "implementer", "round": 2, "parentJob": "impl",
+		"status": "completed", "effectiveModel": "shared-model",
+	})
+	relative := filepath.ToSlash(filepath.Join("artifacts", "agents", "impl", "rounds", "2", "staged", "task-direction.md"))
+	openPath := filepath.Join(f.controller, filepath.FromSlash(relative))
+	if err := os.MkdirAll(filepath.Dir(openPath), 0o755); err != nil {
+		f.t.Fatal(err)
+	}
+	if err := os.WriteFile(openPath, message, 0o644); err != nil {
+		f.t.Fatal(err)
+	}
+	digest := sha256Bytes(message)
+	f.writeJSON("artifacts/agents/impl/rounds/2/composition.json", map[string]any{
+		"references": []any{map[string]any{
+			"slot": "task-direction", "purpose": "brief", "path": relative, "openPath": openPath,
+			"digest": digest, "bytes": len(message), "lifetime": "staged",
+		}},
+	})
+	prompt := fmt.Sprintf("# Task Direction\n\nReferenced body: open %s (%d bytes, sha256 %s).\n", openPath, len(message), digest)
+	if err := os.WriteFile(filepath.Join(filepath.Dir(openPath), "..", "prompt.md"), []byte(prompt), 0o644); err != nil {
+		f.t.Fatal(err)
+	}
+	return openPath
+}
+
+func referencedExhaustionFixture(t *testing.T) (*conformanceRun, map[string]map[string]any, map[string]any, string) {
+	t.Helper()
+	f := newConformanceFixture(t)
+	f.writeImplementer("", "source.txt")
+	staged := f.writeReferencedFollowUp()
+	run := &conformanceRun{root: f.controller, rootJob: "impl"}
+	records := run.loadConformanceRecords()
+	critic := map[string]any{"critiqueExhaustions": []any{map[string]any{
+		"round": float64(1), "openFindingIds": []any{"F-9"}, "successorJobId": "impl-r2",
+	}}}
+	return run, records, critic, staged
+}
+
+func TestExhaustionDisciplineReadsReferencedSuccessorTaskDirection(t *testing.T) {
+	run, records, critic, _ := referencedExhaustionFixture(t)
+	failures := exhaustionDiscipline(critic, records, "impl", func(job string) (string, error) {
+		return run.successorTaskDirection(records, job)
+	}, float64(2), nil, true)
+	if len(failures) != 0 {
+		t.Fatalf("referenced successor task direction was refused: %v", failures)
+	}
+}
+
+func TestExhaustionDisciplineRefusesChangedReferencedSuccessorTaskDirection(t *testing.T) {
+	run, records, critic, staged := referencedExhaustionFixture(t)
+	if err := os.WriteFile(staged, []byte("changed after composition\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	failures := exhaustionDiscipline(critic, records, "impl", func(job string) (string, error) {
+		return run.successorTaskDirection(records, job)
+	}, float64(2), nil, true)
+	joined := strings.Join(failures, "\n")
+	if !strings.Contains(joined, "task-direction reference REFERENCE_MISMATCH path=artifacts/agents/impl/rounds/2/staged/task-direction.md") {
+		t.Fatalf("changed task-direction reference refusal = %v", failures)
+	}
 }
 
 func (f *conformanceFixture) writeCritic(tree, materialID, exhaustion, model string) {

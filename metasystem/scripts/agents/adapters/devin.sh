@@ -335,6 +335,7 @@ supervise_acp() { # dispatch|follow-up and supervisor args
   # argv0 devin-delegate-acp: the census signature distinguishes THIS
   # delegate-side server from the host CLI's internal raw `devin acp`
   # helper (issue #12) — the binary ignores argv0, the classifier reads it.
+  verify_references_before_launch || { acp_fifo_cleanup; return 1; }
   mark_cli_prefork || { acp_fifo_cleanup; fail_pending prefork_marker handshake; return 1; }
   ( cd "$workspace" && while IFS= read -r a; do export "${a?}"; done < <(job_git_quarantine_env "$workspace"); exec -a devin-delegate-acp "$(command -v devin)" acp >"$server_out" <"$server_in" 2>>"$log" ) &
   server_pid=$!
@@ -568,6 +569,7 @@ supervise() { # dispatch|follow-up and supervisor args
     command+=(-r "$requested_session")
   fi
 
+  verify_references_before_launch || return 1
   mark_cli_prefork || { fail_pending prefork_marker handshake; return 1; }
   (
     cd "$workspace"

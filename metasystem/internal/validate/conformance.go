@@ -15,6 +15,7 @@ import (
 
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/boundedexec"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/config"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/dispatch"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/gittree"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/goal"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/pathclass"
@@ -909,13 +910,62 @@ func enumerates(text, findingID string) bool {
 	}
 }
 
+func (r *conformanceRun) successorTaskDirection(records map[string]map[string]any, successorJob string) (string, error) {
+	record, present := records[successorJob]
+	if !present {
+		return "", fmt.Errorf("job record is missing")
+	}
+	round, ok := record["round"].(float64)
+	if !ok || round != float64(int64(round)) {
+		return "", fmt.Errorf("job record has no valid round")
+	}
+	roundDir := filepath.Join(r.root, "artifacts", "agents", r.rootJob,
+		"rounds", strconv.FormatInt(int64(round), 10))
+	promptPath := filepath.Join(roundDir, "prompt.md")
+	prompt, err := os.ReadFile(promptPath)
+	if err != nil {
+		return "", fmt.Errorf("prompt %s is unreadable: %v", promptPath, err)
+	}
+	compositionPath := filepath.Join(roundDir, "composition.json")
+	compositionBytes, err := os.ReadFile(compositionPath)
+	if os.IsNotExist(err) {
+		return string(prompt), nil
+	}
+	if err != nil {
+		return "", fmt.Errorf("composition %s is unreadable: %v", compositionPath, err)
+	}
+	var composition dispatch.CompositionRecord
+	if err := json.Unmarshal(compositionBytes, &composition); err != nil {
+		return "", fmt.Errorf("composition %s is invalid: %v", compositionPath, err)
+	}
+	var taskDirection *dispatch.CompositionReference
+	for index := range composition.References {
+		reference := &composition.References[index]
+		if reference.Slot != "task-direction" {
+			continue
+		}
+		if taskDirection != nil {
+			return "", fmt.Errorf("composition %s has duplicate task-direction references", compositionPath)
+		}
+		taskDirection = reference
+	}
+	if taskDirection == nil {
+		return string(prompt), nil
+	}
+	data, mismatch := dispatch.ReadVerifiedReference(r.root, *taskDirection)
+	if mismatch != nil {
+		return "", fmt.Errorf("task-direction reference %s", mismatch.Line())
+	}
+	return string(data), nil
+}
+
 // exhaustionDiscipline judges a review chain's critiqueExhaustions
 // block — ONE discipline for every reviewing role, critic and warden
 // alike: at most one exhaustion, exact shape, a valid round, unique
 // open finding ids, a successor implementer follow-up in the reviewed
-// chain whose prompt enumerates every open finding, and no exhaustion
+// chain whose verified task direction enumerates every open finding, and no exhaustion
 // standing at the final round with material findings open.
-func exhaustionDiscipline(chainRoot map[string]any, records map[string]map[string]any, reviewedRootJob string, successorText func(string) (string, bool), finalRound any, materialIDs []string, verdictZero bool) []string {
+func exhaustionDiscipline(chainRoot map[string]any, records map[string]map[string]any, reviewedRootJob string, successorText func(string) (string, error), finalRound any, materialIDs []string, verdictZero bool) []string {
 	var failures []string
 	exhaustions, exhaustionsIsList := chainRoot["critiqueExhaustions"].([]any)
 	if chainRoot["critiqueExhaustions"] != nil && !exhaustionsIsList {
@@ -982,10 +1032,14 @@ func exhaustionDiscipline(chainRoot map[string]any, records map[string]map[strin
 				"successor job %s is not an implementer follow-up in the reviewed implementation chain", quoted(successor)))
 			continue
 		}
-		text, textOK := successorText(successor)
+		text, textErr := successorText(successor)
+		if textErr != nil {
+			failures = append(failures, fmt.Sprintf(
+				"successor job %s task direction cannot be read: %v", quoted(successor), textErr))
+		}
 		var missing []string
 		for _, findingID := range openIDs {
-			if !textOK || !enumerates(text, findingID) {
+			if textErr == nil && !enumerates(text, findingID) {
 				missing = append(missing, findingID)
 			}
 		}
@@ -1038,22 +1092,8 @@ func (r *conformanceRun) mergeCritique(recordPath, finalTree, configuredRuntime,
 		return r.out, r.errs, 1
 	}
 
-	successorText := func(successorJob string) (string, bool) {
-		record, present := records[successorJob]
-		if !present {
-			return "", false
-		}
-		round, ok := record["round"].(float64)
-		if !ok || round != float64(int64(round)) {
-			return "", false
-		}
-		prompt := filepath.Join(r.root, "artifacts", "agents", r.rootJob,
-			"rounds", strconv.FormatInt(int64(round), 10), "prompt.md")
-		data, err := os.ReadFile(prompt)
-		if err != nil {
-			return "", false
-		}
-		return string(data), true
+	successorText := func(successorJob string) (string, error) {
+		return r.successorTaskDirection(records, successorJob)
 	}
 
 	type diagnostic struct {

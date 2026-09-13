@@ -961,6 +961,7 @@ func readCompositionForJob(path, job, role, runtimeName, model, mission string, 
 		"model": true, "round": true, "mission": true, "recipe": true,
 		"recipeDigest": true, "packetDigest": true, "contextProof": true,
 		"toolSurface": true, "machineSlotAdmission": true, "sources": true,
+		"references":       true,
 		"destructiveReach": true, "configurationObligations": true,
 	}
 	if len(record) != len(allowedRecordFields) {
@@ -1033,6 +1034,48 @@ func readCompositionForJob(path, job, role, runtimeName, model, mission string, 
 			return nil, fmt.Errorf("composition source %d has invalid identity, digests, or byte range", index)
 		}
 		previousEnd = end
+	}
+	references, ok := record["references"].([]any)
+	if !ok {
+		return nil, fmt.Errorf("composition references must be an array")
+	}
+	for index, raw := range references {
+		reference, objectOK := raw.(map[string]any)
+		valid := objectOK && len(reference) == 7
+		for _, field := range []string{"slot", "purpose", "path", "openPath", "digest", "bytes", "lifetime"} {
+			if _, present := reference[field]; !present {
+				valid = false
+			}
+		}
+		path := asString(reference["path"])
+		for _, segment := range strings.Split(path, "/") {
+			if segment == ".." {
+				valid = false
+			}
+		}
+		openPath := asString(reference["openPath"])
+		digest := asString(reference["digest"])
+		bytes, bytesOK := numInt(reference["bytes"])
+		lifetime := asString(reference["lifetime"])
+		if path == "" || filepath.IsAbs(path) || !filepath.IsAbs(openPath) ||
+			!strings.HasSuffix(filepath.ToSlash(openPath), "/"+path) ||
+			!incarnationRe.MatchString(digest) || !bytesOK || bytes <= 0 ||
+			(lifetime != "staged" && lifetime != "immutable") || asString(reference["purpose"]) == "" {
+			valid = false
+		}
+		bound := false
+		for _, rawSource := range sources {
+			source, _ := rawSource.(map[string]any)
+			sourceBytes, sourceBytesOK := numInt(source["sourceBytes"])
+			if asString(source["slot"]) == asString(reference["slot"]) &&
+				asString(source["sourceDigest"]) == digest && sourceBytesOK && sourceBytes == bytes {
+				bound = true
+				break
+			}
+		}
+		if !valid || !bound {
+			return nil, fmt.Errorf("composition reference %d is invalid or unbound", index)
+		}
 	}
 	first, _ := sources[0].(map[string]any)
 	toolIndex := -1

@@ -17,6 +17,8 @@ import (
 
 const rolePacketTablePath = "scripts/agents/role-packets.json"
 
+const MaxDirectiveBytes = 32 * 1024
+
 // CompositionRefusal is a typed brief-assembly refusal. The source is kept
 // separate from the explanation so callers never decide from prose.
 type CompositionRefusal struct {
@@ -56,6 +58,16 @@ type CompositionSource struct {
 	EndByte         int    `json:"endByte"`
 }
 
+type CompositionReference struct {
+	Slot     string `json:"slot"`
+	Purpose  string `json:"purpose"`
+	Path     string `json:"path"`
+	OpenPath string `json:"openPath"`
+	Digest   string `json:"digest"`
+	Bytes    int    `json:"bytes"`
+	Lifetime string `json:"lifetime"`
+}
+
 // CompositionRecord is the packet provenance stored inside the job record
 // and beside the delivered prompt.
 type CompositionRecord struct {
@@ -75,6 +87,7 @@ type CompositionRecord struct {
 	ToolSurface              ToolSurfaceProof         `json:"toolSurface"`
 	MachineSlot              MachineSlotAdmission     `json:"machineSlotAdmission"`
 	Sources                  []CompositionSource      `json:"sources"`
+	References               []CompositionReference   `json:"references"`
 }
 
 // ContextProof states the current broad-read limitation without presenting a
@@ -115,6 +128,8 @@ type ComposeRolePacketParams struct {
 	GoalTier          uint8
 	Output            string
 	CompositionOutput string
+	StageDir          string
+	ReferenceDir      string
 	ToolPolicy        string
 	ExtraSources      []string
 	Continuations     []CompositionContinuation
@@ -212,12 +227,13 @@ func ComposeRolePacket(p ComposeRolePacketParams) (CompositionRecord, error) {
 			Classification: "advisory", ProofState: "no-leak-not-proven", ReasonCode: "BROAD-READ-RUNTIME",
 		},
 		MachineSlot: MachineSlotAdmission{Outcome: "DEFERRED", OwnerGoal: "machine-concurrency-governor"},
+		References:  []CompositionReference{},
 	}
 
 	var packet bytes.Buffer
-	appendSource := func(slot, source string, raw []byte) {
+	appendRange := func(slot, source string, raw, body []byte) {
 		heading := "# " + packetHeading(slot) + "\n\n"
-		delivered := append([]byte(heading), raw...)
+		delivered := append([]byte(heading), body...)
 		if len(delivered) == 0 || delivered[len(delivered)-1] != '\n' {
 			delivered = append(delivered, '\n')
 		}
@@ -229,8 +245,48 @@ func ComposeRolePacket(p ComposeRolePacketParams) (CompositionRecord, error) {
 			SourceBytes: len(raw), StartByte: start, EndByte: packet.Len(),
 		})
 	}
+	appendSource := func(slot, source string, raw []byte) {
+		appendRange(slot, source, raw, raw)
+	}
+	appendBody := func(slot, source, purpose string, raw []byte) error {
+		if len(raw) <= MaxDirectiveBytes {
+			appendSource(slot, source, raw)
+			return nil
+		}
+		if p.StageDir == "" || p.ReferenceDir == "" {
+			return &CompositionRefusal{Code: "REFUSED-REFERENCE-PATH", Source: slot, Detail: "body over MaxDirectiveBytes and no stage or final reference directory"}
+		}
+		canonicalRoot := resolvePath(p.Root)
+		canonicalStage := resolvePath(p.StageDir)
+		if !pathWithin(canonicalStage, canonicalRoot) || canonicalStage == canonicalRoot {
+			return &CompositionRefusal{Code: "REFUSED-REFERENCE-PATH", Source: p.StageDir, Detail: "reference stage directory must be inside the control root"}
+		}
+		canonicalReference := resolvePath(p.ReferenceDir)
+		if !pathWithin(canonicalReference, canonicalRoot) || canonicalReference == canonicalRoot {
+			return &CompositionRefusal{Code: "REFUSED-REFERENCE-PATH", Source: p.ReferenceDir, Detail: "final reference directory must be inside the control root"}
+		}
+		if err := os.MkdirAll(canonicalStage, 0o755); err != nil {
+			return fmt.Errorf("create reference stage directory: %w", err)
+		}
+		stagePath := filepath.Join(canonicalStage, slot+".md")
+		if _, err := atomicfile.WriteText(stagePath, string(raw), ""); err != nil {
+			return fmt.Errorf("stage referenced body %s: %w", slot, err)
+		}
+		openPath := filepath.Join(canonicalReference, slot+".md")
+		rel, _ := filepath.Rel(canonicalRoot, openPath)
+		digest := digestBytes(raw)
+		record.References = append(record.References, CompositionReference{
+			Slot: slot, Purpose: purpose, Path: filepath.ToSlash(rel), OpenPath: openPath,
+			Digest: digest, Bytes: len(raw), Lifetime: "staged",
+		})
+		stanza := fmt.Sprintf("Referenced body: open %s (%d bytes, sha256 %s). Read it in bounded views; it is not inlined.\n", openPath, len(raw), digest)
+		appendRange(slot, source, raw, []byte(stanza))
+		return nil
+	}
 
-	appendSource("task-direction", "caller:brief", briefBytes)
+	if err := appendBody("task-direction", "caller:brief", "brief", briefBytes); err != nil {
+		return CompositionRecord{}, err
+	}
 	for _, source := range recipe.Sources {
 		content, readErr := readRecipeSource(p.Root, source)
 		if readErr != nil {
@@ -272,7 +328,12 @@ func ComposeRolePacket(p ComposeRolePacketParams) (CompositionRecord, error) {
 		if !utf8.Valid(content) {
 			return CompositionRecord{}, &CompositionRefusal{Code: "REFUSED-CONTEXT-SOURCE", Source: continuation.Path, Detail: fmt.Sprintf("role packet continuation %q is not valid UTF-8", continuation.Slot)}
 		}
-		appendSource(continuation.Slot, "engine:"+continuation.Slot, content)
+		purpose := map[string]string{
+			"prior-brief": "brief", "prior-return": "return", "critique-register": "critique", "prior-worktree": "evidence",
+		}[continuation.Slot]
+		if err := appendBody(continuation.Slot, "engine:"+continuation.Slot, purpose, content); err != nil {
+			return CompositionRecord{}, err
+		}
 	}
 	record.PacketDigest = digestBytes(packet.Bytes())
 

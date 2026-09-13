@@ -969,6 +969,12 @@ make_agent_brief() { # output, mode, optional marker/value lines...
   for line in "$@"; do printf '\n%s\n' "$line" >>"$output"; done
 }
 
+make_large_agent_brief() { # output
+  local output=$1
+  make_agent_brief "$output" design
+  (set +o pipefail; yes 'filler line for the forty kibibyte referenced brief' | head -c 40960) >>"$output"
+}
+
 wait_for_agent_status() { # job, expected
   local job=$1 expected=$2 observed= started=$SECONDS deadline=$((SECONDS + agent_status_cap_sec)) elapsed
   while (( SECONDS < deadline )); do
@@ -2244,6 +2250,35 @@ agent_fails missing-session '' "$agent_dispatch" dispatch --role design-critic -
 grep -Fq 'handshake_missing_session_id' "$agent_repo/artifacts/agents/jobs/missing-session.json" \
   || { echo "missing session id did not fail the strong handshake" >&2; exit 1; }
 
+large_brief="$agent_fixture/large-brief.md"
+make_large_agent_brief "$large_brief"
+run_agent_fixture large-brief large-brief "$agent_dispatch" dispatch --role design-critic --outputs "$fixture_declared_outputs" --design metasystem/scripts/agents/roles/design-critic.md --brief "$large_brief" --job-id large-brief --wait
+[[ "$(cd "$agent_repo" && scripts/agents/dispatch.sh status --job large-brief)" == completed ]] \
+  || { echo "large referenced brief did not complete" >&2; exit 1; }
+[[ "$("$engine" json get --file "$agent_repo/artifacts/agents/large-brief/rounds/1/composition.json" --field references)" == *task-direction* ]] \
+  || { echo "large brief composition did not record the task-direction reference" >&2; exit 1; }
+! grep -Fq 'filler line for the forty' "$agent_repo/artifacts/agents/large-brief/rounds/1/prompt.md" \
+  || { echo "large brief body was inlined in the prompt" >&2; exit 1; }
+cmp -s "$agent_repo/artifacts/agents/large-brief/brief.md" "$agent_repo/artifacts/agents/large-brief/rounds/1/staged/task-direction.md" \
+  || { echo "staged task direction differs from the composed job brief" >&2; exit 1; }
+(( $(wc -c <"$agent_repo/artifacts/agents/large-brief/rounds/1/prompt.md") < 65536 )) \
+  || { echo "referenced large-brief prompt exceeds 65535 bytes" >&2; exit 1; }
+METASYSTEM_DISPATCH_MAX_INLINE_INPUT_KB=8 agent_fails packet-bound-still-refuses 'exceeds dispatch.max-inline-input-kb' \
+  "$agent_dispatch" dispatch --role design-critic --outputs "$fixture_declared_outputs" --design metasystem/scripts/agents/roles/design-critic.md --brief "$large_brief" --job-id packet-bound --wait
+[[ ! -e "$agent_repo/artifacts/agents/packet-bound" ]] \
+  || { echo "refused packet-bound dispatch published a job payload" >&2; exit 1; }
+METASYSTEM_DISPATCH_MAX_INLINE_INPUT_KB=8 agent_fails packet-bound-retry 'exceeds dispatch.max-inline-input-kb' \
+  "$agent_dispatch" dispatch --role design-critic --outputs "$fixture_declared_outputs" --design metasystem/scripts/agents/roles/design-critic.md --brief "$large_brief" --job-id packet-bound --wait
+[[ ! -e "$agent_repo/artifacts/agents/packet-bound" ]] \
+  || { echo "retried packet-bound dispatch published a job payload" >&2; exit 1; }
+
+METASYSTEM_FAKE_TAMPER_REFERENCE=1 agent_fails reference-mismatch '' \
+  "$agent_dispatch" dispatch --role design-critic --outputs "$fixture_declared_outputs" --design metasystem/scripts/agents/roles/design-critic.md --brief "$large_brief" --job-id reference-mismatch --wait
+grep -Fq 'reference_mismatch:artifacts/agents/reference-mismatch/rounds/1/staged/task-direction.md' "$agent_repo/artifacts/agents/jobs/reference-mismatch.json" \
+  || { echo "reference mismatch did not fail the pending job with its staged path" >&2; exit 1; }
+grep -Fq 'REFERENCE_MISMATCH path=' "$agent_repo/artifacts/agents/jobs/reference-mismatch.log" \
+  || { echo "reference mismatch line was not retained in the job log" >&2; exit 1; }
+
 fi
 
 if dispatch_cluster b; then
@@ -2929,14 +2964,21 @@ echo "cap-warden terminal exhaustion fixture passed"
 # wrapper publishes round two, the second wrapper must claim that same round;
 # it must not turn a live round two into either a chain-lock refusal or round
 # three.
+repeat_follow_release="$agent_fixture/repeat-follow-release"
+touch "$repeat_follow_release"
 repeat_follow_brief="$agent_fixture/repeat-follow-brief.md"
-make_agent_brief "$repeat_follow_brief" design
+make_agent_brief "$repeat_follow_brief" design "FAKE:custodial-critique=$repeat_follow_release"
 run_agent_fixture repeat-follow-parent repeat-follow "$agent_dispatch" dispatch \
   --role design-critic --outputs "$fixture_declared_outputs" --design metasystem/scripts/agents/roles/design-critic.md \
   --brief "$repeat_follow_brief" --job-id repeat-follow --wait
-repeat_follow_release="$agent_fixture/repeat-follow-release"
+rm -f "$repeat_follow_release"
 repeat_follow_message="$agent_fixture/repeat-follow-message.md"
 cp "$agent_repo/scripts/agents/templates/follow-up.md" "$repeat_follow_message"
+(set +o pipefail; yes 'filler line for the forty kibibyte referenced follow-up' | head -c 40960) >>"$repeat_follow_message"
+# The marker rides in the follow-up message, which is staged as round two's
+# task direction; the fake adapter reads markers there too, so round two holds
+# until the release file returns and the refused follow-up below meets a live
+# round.
 printf '\nFAKE:custodial-critique=%s\n' "$repeat_follow_release" >>"$repeat_follow_message"
 cap_lock_fixture_acquire repeat-follow
 wait_for_agent_census_fresh repeat-follow-first
@@ -2964,6 +3006,17 @@ grep -Eq '"outcome":"(BOUND|IN-PROGRESS)"' "$agent_fixture/repeat-follow-second.
 [[ -f "$agent_repo/artifacts/agents/jobs/repeat-follow-r2.json" \
    && ! -e "$agent_repo/artifacts/agents/jobs/repeat-follow-r3.json" ]] \
   || { echo "the repeated follow-up did not stay on its claimed round" >&2; exit 1; }
+repeat_follow_stage="$agent_repo/artifacts/agents/repeat-follow/rounds/2/staged/task-direction.md"
+repeat_follow_stage_before="$agent_fixture/repeat-follow-stage-before.md"
+cp "$repeat_follow_stage" "$repeat_follow_stage_before"
+repeat_follow_changed="$agent_fixture/repeat-follow-changed-message.md"
+cp "$repeat_follow_message" "$repeat_follow_changed"
+printf '\nThis changes the running follow-up input.\n' >>"$repeat_follow_changed"
+repeat_follow_operation=$("$engine" json get --file "$agent_repo/artifacts/agents/jobs/repeat-follow-r2.json" --field operationId)
+agent_fails repeat-follow-input-mismatch 'REFUSED-OPID-MISMATCH' \
+  "$agent_dispatch" follow-up --job repeat-follow --message "$repeat_follow_changed" --operation-id "$repeat_follow_operation"
+cmp -s "$repeat_follow_stage_before" "$repeat_follow_stage" \
+  || { echo "a refused follow-up changed the running round's staged task direction" >&2; exit 1; }
 touch "$repeat_follow_release"
 wait_for_agent_status repeat-follow-r2 completed
 

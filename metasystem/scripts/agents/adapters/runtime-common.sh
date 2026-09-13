@@ -155,6 +155,19 @@ fail_if_effective_wider_before_launch() {
   }
 }
 
+verify_references_before_launch() {
+  local report status first
+  set +e
+  report=$("$ms" job verify-references --root "$root" --composition "$round_dir/composition.json" 2>>"$log")
+  status=$?
+  set -e
+  (( status != 0 )) || return 0
+  printf '%s\n' "$report" | tee -a "$log" >&2
+  first=$(printf '%s\n' "$report" | sed -n 's/^REFERENCE_MISMATCH path=\([^ ]*\) .*/\1/p' | head -1)
+  fail_pending "reference_mismatch:${first:-composition}" launch
+  return 1
+}
+
 record_handshake() { # session, turn, effective model
   local session=$1 turn=${2:-} model=${3:-$requested_model} signal
   [[ -n "$session" ]] || return 1

@@ -70,6 +70,7 @@ var Rows = []Row{
 	{Code: "SLICE_CAP_REFUSED", Owner: "internal/dispatch", Site: "slice.go:63", Shape: Agent, Override: "goal approve or goal set-budget, then --approved-ref", Commands: 2},
 	{Code: "SLICE_START_UNRECORDED", Owner: "internal/dispatch", Site: "claim.go:366", Shape: Agent, Override: "goal recover", Commands: 1},
 	{Code: "slice-approval-refused", Owner: "internal/dispatch", Site: "claim.go:251", Shape: Agent, Override: "goal approve", Commands: 1},
+	{Code: "REFERENCE_MISMATCH", Owner: "internal/dispatch", Site: "references.go:19", Shape: Agent, Override: "delegate (a fresh composition)", Commands: 1},
 	{Code: "TEST_POLICY_ENGINE_REQUIRED", Owner: "cmd/metasystem", Site: "test.go:300", Shape: Agent, Override: "steward arm", Commands: 1},
 	{Code: "TEST_CONTRACT_REQUIRED", Owner: "internal/testpolicy", Site: "contract.go:137", Shape: Question},
 	{Code: "TEST_CONTRACT_INVALID", Owner: "cmd/metasystem", Site: "runtime_setup.go:63", Shape: Question},

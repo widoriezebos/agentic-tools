@@ -89,6 +89,20 @@ func TestWriteFakeReturnDefaultsModeWithoutHeader(t *testing.T) {
 	}
 }
 
+func TestWorkingModeReadsTheStagedTaskDirection(t *testing.T) {
+	round := t.TempDir()
+	prompt := filepath.Join(round, "prompt.md")
+	writeFile(t, prompt, "# Task Direction\n\nReferenced body.\n")
+	writeFile(t, filepath.Join(round, "staged", "task-direction.md"), "Working Mode: design\n")
+	mode, err := workingMode(prompt)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if mode != "design" {
+		t.Fatalf("working mode = %q, want design", mode)
+	}
+}
+
 func TestWriteFakeReturnPerRole(t *testing.T) {
 	code := fakeReturnFixture(t, "code-critic", "", "Working Mode: implement\n")
 	if code["schemaVersion"] != float64(3) || code["reviewedTree"] != strings.Repeat("0", 40) || code["verdictMaterialCount"] != float64(0) {

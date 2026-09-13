@@ -147,6 +147,7 @@ func families() []family {
 			summary: "the delegate-job domain: records, chains, locks, caps, snapshots, authority",
 			verbs: []verb{
 				{"compose-role-packet", "assemble a role's closed packet and provenance record", runDispatchComposeRolePacket},
+				{"verify-references", "re-read every referenced file against the composition record before a launch", runDispatchVerifyReferences},
 				{"operation-id", "derive the v2 default delegate operation identity", runDispatchOperationID},
 				{"record-create", "reserve a job by writing its pending-setup record", runDispatchRecordCreate},
 				{"record-setup", "complete a reservation into the full pending record", runDispatchRecordSetup},
