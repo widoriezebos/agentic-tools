@@ -7,10 +7,11 @@
 - Origin: main
 - Next step: m1b briefs the Codex sol build in a worktree (plans/wait-verb-returns-on-recorded-events-build-brief.md); the seat proves each round with job prove-round, Opus reads at DESIGN-BEARING, a human commit.
 - OpenedAt: 2026-09-13T02:05:04Z
-- Revision: 3
+- Revision: 4
 - Budget: elapsedLimit=4h attemptLimit=6 reservedJobMinutesLimit=720 activeJobLimit=1 reviewRoundLimit=2
 - BudgetExceptions: 0
 - Approved: by=human:Wido at=2026-09-13T02:05:08Z revision=2 opid=8WK1PQA7N99089FGP62NHTYBN7-m1b-30a7e141 authority=proven digest=4836e76a6c0658b776107cf1bf5bd658f82176d33fbd3389f1cc7e2a589ada36
+- Sliced: machine=m1b lineage=main-1789191336-90295-e4b24b revision=3 at=2026-09-13T02:06:30Z
 - Claimed: machine=m1b lineage=main-1789191336-90295-e4b24b at=2026-09-13T02:05:12Z revision=3 accountingRevision=3 episodeAt=2026-09-13T02:05:12Z episodeRevision=3
 - StopCapability: generation=3 revision=3 machine=m1b claimEpoch=2 fenceEpoch=0
 
@@ -18,4 +19,5 @@ History:
 - 2026-09-13T02:05:04Z XEGWW0F70SRXPGCJ6280FM4W68-m1b-30a7e141 open actor=m1b+main-1789191336-90295-e4b24b targets=wait-verb-returns-on-recorded-events,coordinator-wakes-on-events-not-polls
 - 2026-09-13T02:05:08Z 8WK1PQA7N99089FGP62NHTYBN7-m1b-30a7e141 approve actor=human:Wido targets=wait-verb-returns-on-recorded-events
 - 2026-09-13T02:05:12Z M34T4BMJZ8PEPPW074BPBVW1PM-m1b-30a7e141 claim actor=m1b+main-1789191336-90295-e4b24b targets=wait-verb-returns-on-recorded-events
-Integrity: sha256=1731578ffed9b4679fcae4c122ed8dce16fbc53226ef0e88d136777d71256370
+- 2026-09-13T02:06:30Z Q4N2HD7ENDBKVMB6VKJJ4ZQKQ5-m1b-30a7e141 slice-start actor=m1b+main-1789191336-90295-e4b24b targets=wait-verb-returns-on-recorded-events
+Integrity: sha256=8e41ded5e67500918a5f57281ed404cad95795bd4d248c83b0e289b6df102a11
