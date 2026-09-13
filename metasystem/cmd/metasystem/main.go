@@ -391,6 +391,7 @@ func families() []family {
 				{"instruction-file", "a runtime's instruction-bearing filename", runRuntimeInstructionFile},
 				{"session-env", "a runtime's project-dir environment variable", runRuntimeSessionEnv},
 				{"start-context", "a runtime's session-start context field, byte bound, and lifecycle sources", runRuntimeStartContext},
+				{"context-sample", "a runtime's context sample granularity and main-process observability", runRuntimeContextSample},
 				{"acp-expectation", "a runtime's expected ACP transport declaration as JSON", runRuntimeACPExpectation},
 			},
 		},

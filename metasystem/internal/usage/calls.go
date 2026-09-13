@@ -71,20 +71,22 @@ type ReadOptions struct {
 }
 
 type Reading struct {
-	Capability Capability
-	Latest     *CallSample
-	Reason     string
-	NewSamples int
-	NewMarkers int
-	Cursor     CursorState
+	Capability     Capability
+	Latest         *CallSample
+	Reason         string
+	NewSamples     int
+	NewMarkers     int
+	PreviousReadAt time.Time
+	Cursor         CursorState
 }
 
 var (
 	runtimeNamePattern = regexp.MustCompile(`^[a-z][a-z0-9-]{0,31}$`)
 	sessionNamePattern = regexp.MustCompile(`^[A-Za-z0-9._-]{1,128}$`)
 
-	callBytesRead func(int)
-	callFileOpens func(string)
+	callBytesRead   func(int)
+	callFileOpens   func(string)
+	callJSONDecodes func()
 )
 
 func LatestCall(stateRoot, runtime, session string, opts ReadOptions) (Reading, error) {
@@ -128,14 +130,15 @@ func LatestCall(stateRoot, runtime, session string, opts ReadOptions) (Reading, 
 	tokenCounts := 0
 	usageRecords := 0
 	reading, err := readUnderCursor(stateRoot, runtime, session, path, func(line []byte, _ int64) (*CallSample, *Marker, bool) {
-		kind, tokenCount := codexRecordKind(line)
+		raw := decodeCallLine(line)
+		kind, tokenCount := codexRecordKind(raw)
 		if kind == "token_usage_record" {
 			usageRecords++
 		}
 		if tokenCount {
 			tokenCounts++
 		}
-		sample, marker := parseCodexLine(line, runtime, session)
+		sample, marker := parseCodexRecord(raw, runtime, session)
 		return sample, marker, false
 	}, opts)
 	if err != nil {

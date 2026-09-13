@@ -199,6 +199,15 @@ func runRuntimeStartContext(args []string) int {
 	return 0
 }
 
+func runRuntimeContextSample(args []string) int {
+	declaration, code := runtimeArg(args, "context-sample")
+	if code != 0 {
+		return code
+	}
+	fmt.Printf("sample=%s main-observable=%t\n", declaration.ContextSample, declaration.MainObservable)
+	return 0
+}
+
 func runRuntimeRegistration(args []string) int {
 	declaration, code := runtimeArg(args, "registration")
 	if code != 0 {

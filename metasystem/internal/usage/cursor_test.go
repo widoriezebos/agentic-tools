@@ -45,6 +45,124 @@ func TestUnchangedTranscriptReadsNothingAndReturnsTheLatest(t *testing.T) {
 	}
 }
 
+func TestUnchangedEmptyTranscriptDoesNotRepublishCursor(t *testing.T) {
+	originalWriter := writeCallCursor
+	t.Cleanup(func() { writeCallCursor = originalWriter })
+
+	for _, nonempty := range []bool{false, true} {
+		name := "empty"
+		if nonempty {
+			name = "nonempty"
+		}
+		t.Run(name, func(t *testing.T) {
+			stateRoot := t.TempDir()
+			transcript := filepath.Join(t.TempDir(), "transcript.jsonl")
+			if nonempty {
+				writeCallRows(t, transcript, claudeAssistant("only", 1, 0, 0, false, "2026-09-13T14:00:00Z"))
+			} else if err := os.WriteFile(transcript, nil, 0o644); err != nil {
+				t.Fatal(err)
+			}
+			opts := ReadOptions{Capability: PerCall, Transcript: transcript}
+			first, err := LatestCall(stateRoot, "claude", "unchanged-"+name, opts)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if first.Cursor.SchemaVersion != 2 {
+				t.Fatalf("first read did not establish a valid cursor: %#v", first.Cursor)
+			}
+
+			bytesRead := 0
+			transcriptOpens := 0
+			cursorWrites := 0
+			previousBytes := callBytesRead
+			previousOpens := callFileOpens
+			callBytesRead = func(count int) { bytesRead += count }
+			callFileOpens = func(path string) {
+				if path == transcript {
+					transcriptOpens++
+				}
+			}
+			writeCallCursor = func(path string, value any) error {
+				cursorWrites++
+				return originalWriter(path, value)
+			}
+			defer func() {
+				callBytesRead = previousBytes
+				callFileOpens = previousOpens
+				writeCallCursor = originalWriter
+			}()
+
+			second, err := LatestCall(stateRoot, "claude", "unchanged-"+name, opts)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if bytesRead != 0 || transcriptOpens != 0 || cursorWrites != 0 {
+				t.Fatalf("unchanged read used bytes=%d transcript-opens=%d cursor-writes=%d", bytesRead, transcriptOpens, cursorWrites)
+			}
+			if second.NewSamples != 0 || second.NewMarkers != 0 {
+				t.Fatalf("unchanged read added samples=%d markers=%d", second.NewSamples, second.NewMarkers)
+			}
+		})
+	}
+}
+
+func TestLatestCallReturnsThePreviousReadTime(t *testing.T) {
+	stateRoot := t.TempDir()
+	transcript := filepath.Join(t.TempDir(), "transcript.jsonl")
+	writeCallRows(t, transcript, claudeAssistant("first", 1, 0, 0, false, "2026-09-13T14:00:00Z"))
+	session := "previous-read-at"
+	firstAt := time.Date(2026, 9, 13, 14, 1, 0, 0, time.UTC)
+	secondAt := firstAt.Add(time.Minute)
+	thirdAt := secondAt.Add(time.Minute)
+	opts := ReadOptions{Capability: PerCall, Transcript: transcript, Now: firstAt}
+
+	first, err := LatestCall(stateRoot, "claude", session, opts)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !first.PreviousReadAt.IsZero() || !first.Cursor.LastReadAt.Equal(firstAt) {
+		t.Fatalf("first reading times previous=%s current=%s", first.PreviousReadAt, first.Cursor.LastReadAt)
+	}
+
+	opts.Now = secondAt
+	unchanged, err := LatestCall(stateRoot, "claude", session, opts)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !unchanged.PreviousReadAt.Equal(firstAt) || !unchanged.Cursor.LastReadAt.Equal(firstAt) {
+		t.Fatalf("unchanged reading times previous=%s current=%s", unchanged.PreviousReadAt, unchanged.Cursor.LastReadAt)
+	}
+
+	appendCallTestRow(t, transcript, claudeAssistant("second", 2, 0, 0, false, "2026-09-13T14:02:00Z"))
+	appended, err := LatestCall(stateRoot, "claude", session, opts)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !appended.PreviousReadAt.Equal(firstAt) || !appended.Cursor.LastReadAt.Equal(secondAt) {
+		t.Fatalf("appended reading times previous=%s current=%s", appended.PreviousReadAt, appended.Cursor.LastReadAt)
+	}
+
+	replacement := filepath.Join(t.TempDir(), "replacement.jsonl")
+	writeCallRows(t, replacement, claudeAssistant("replacement", 3, 0, 0, false, "2026-09-13T14:03:00Z"))
+	opts.Transcript = replacement
+	opts.Now = thirdAt
+	restarted, err := LatestCall(stateRoot, "claude", session, opts)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !restarted.PreviousReadAt.Equal(secondAt) || !restarted.Cursor.LastReadAt.Equal(thirdAt) {
+		t.Fatalf("restarted reading times previous=%s current=%s", restarted.PreviousReadAt, restarted.Cursor.LastReadAt)
+	}
+
+	unsupported, err := LatestCall(t.TempDir(), "devin", "unsupported", ReadOptions{Capability: PerInvocation, Now: thirdAt})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !unsupported.PreviousReadAt.IsZero() {
+		t.Fatalf("unsupported capability returned previous read time %s", unsupported.PreviousReadAt)
+	}
+}
+
 func TestRotatedTranscriptRestartsTheCursor(t *testing.T) {
 	stateRoot := t.TempDir()
 	transcript := filepath.Join(t.TempDir(), "transcript.jsonl")

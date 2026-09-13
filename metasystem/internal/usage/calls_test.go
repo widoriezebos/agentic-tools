@@ -84,6 +84,53 @@ func TestLatestCallKeysCodexSamplesByResponseID(t *testing.T) {
 	}
 }
 
+func TestCodexReaderDecodesEachLineOnce(t *testing.T) {
+	stateRoot := t.TempDir()
+	transcript := filepath.Join(t.TempDir(), "rollout.jsonl")
+	complete := []string{
+		codexUsage("R1", 100, 80, 0, 11, "2026-09-13T11:00:00Z"),
+		codexUsage("R1", 101, 81, 0, 12, "2026-09-13T11:01:00Z"),
+		`{"type":"event_msg","payload":{"type":"token_count"}}`,
+		`{"type":"compacted","timestamp":"2026-09-13T11:02:00Z","ordinal":13}`,
+		`{"type":"session_meta"}`,
+		`not json`,
+	}
+	prefix := strings.Join(complete, "\n") + "\n"
+	unfinished := `{"type":"session_meta"`
+	if err := os.WriteFile(transcript, []byte(prefix+unfinished), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	decodes := 0
+	previous := callJSONDecodes
+	callJSONDecodes = func() { decodes++ }
+	t.Cleanup(func() { callJSONDecodes = previous })
+
+	opts := ReadOptions{Capability: PerCall, Transcript: transcript}
+	first, err := LatestCall(stateRoot, "codex", "one-decode", opts)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if decodes != len(complete) {
+		t.Fatalf("complete-line decodes = %d, want %d", decodes, len(complete))
+	}
+	if first.NewSamples != 1 || first.NewMarkers != 1 || first.Latest == nil || first.Latest.InvocationID != "R1" {
+		t.Fatalf("first reading = %#v", first)
+	}
+
+	appendCallTestBytes(t, transcript, []byte("}\n"))
+	second, err := LatestCall(stateRoot, "codex", "one-decode", opts)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if decodes != len(complete)+1 {
+		t.Fatalf("decodes after completing the split tail = %d, want %d", decodes, len(complete)+1)
+	}
+	if second.NewSamples != 0 || second.NewMarkers != 0 {
+		t.Fatalf("completed irrelevant tail added samples=%d markers=%d", second.NewSamples, second.NewMarkers)
+	}
+}
+
 func TestCodexRolloutWithoutUsageRecordsIsUnknown(t *testing.T) {
 	stateRoot := t.TempDir()
 	home := t.TempDir()

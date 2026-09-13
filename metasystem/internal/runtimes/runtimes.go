@@ -68,6 +68,11 @@ type Declaration struct {
 	StartContextEventName string
 	StartContextBytes     int
 	StartContextSources   []string
+	// ContextSample declares the granularity of context evidence available
+	// for this runtime. MainObservable states whether the runtime's main
+	// process can be observed by the local supervisor.
+	ContextSample  string
+	MainObservable bool
 	// InstructionFile is the runtime's instruction-bearing filename at
 	// a repository root.
 	InstructionFile string
@@ -175,6 +180,8 @@ var declarations = []Declaration{
 	{
 		Name: "codex", HasAdapter: true, HasHostLauncher: true,
 		Adoptable: true, TailoringPriority: 1,
+		ContextSample:            "per-call",
+		MainObservable:           true,
 		SignatureVectors:         SignatureVectors{Positive: "codex", Lookalike: "metasystem-codex-lookalike"},
 		CommonLifecycleAdapter:   true,
 		CollisionRoots:           []string{".agents"},
@@ -189,6 +196,8 @@ var declarations = []Declaration{
 	{
 		Name: "devin", HasAdapter: true, HasHostLauncher: true,
 		Adoptable: true, TailoringPriority: 2,
+		ContextSample:  "per-invocation",
+		MainObservable: false,
 		// The lookalike IS the host CLI's internal ACP helper (issue
 		// #12): the vector pins the exclusion that keeps a Devin-hosted
 		// orchestrator classified MAIN.
@@ -228,6 +237,8 @@ var declarations = []Declaration{
 	{
 		Name: "claude", HasAdapter: true, HasHostLauncher: true,
 		Adoptable: true, AdoptionDefault: true, TailoringPriority: 3,
+		ContextSample:            "per-call",
+		MainObservable:           true,
 		SignatureVectors:         SignatureVectors{Positive: "claude", Lookalike: "metasystem-claude-lookalike"},
 		CommonLifecycleAdapter:   true,
 		CollisionRoots:           []string{".claude"},
@@ -248,6 +259,8 @@ var declarations = []Declaration{
 	{
 		Name: "fake", HasAdapter: true, HasHostLauncher: true,
 		TailoringPriority: 4, SynthesizedModel: "fake-model",
+		ContextSample:    "none",
+		MainObservable:   true,
 		InstructionFile:  "AGENTS.md",
 		SignatureVectors: SignatureVectors{Positive: "metasystem-fake-agent", Lookalike: "metasystem-fake-lookalike"},
 		// The fixture harness's own declared gap: the unverified-network
@@ -409,6 +422,13 @@ func Validate() []string {
 	defaults := 0
 	lastPriority := 0
 	for _, d := range declarations {
+		switch d.ContextSample {
+		case "per-call", "per-invocation", "none":
+		case "":
+			add("%s: context sample must be declared", d.Name)
+		default:
+			add("%s: context sample %q is outside the known values", d.Name, d.ContextSample)
+		}
 		if !nameRe.MatchString(d.Name) {
 			add("runtime name %q violates the shell-safe grammar", d.Name)
 		}

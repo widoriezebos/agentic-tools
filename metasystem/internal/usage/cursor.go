@@ -47,6 +47,10 @@ func readUnderCursor(stateRoot, runtime, session, path string, parse lineParser,
 	if err := reconcileCallRows(samplesPath, cursor, loaded); err != nil {
 		return Reading{}, fmt.Errorf("cannot reconcile call cursor %s with samples %s: %w", cursorPath, samplesPath, err)
 	}
+	previousReadAt := time.Time{}
+	if loaded {
+		previousReadAt = cursor.LastReadAt
+	}
 	if !loaded {
 		cursor = freshCallCursor(runtime, session, path)
 	}
@@ -63,8 +67,10 @@ func readUnderCursor(stateRoot, runtime, session, path string, parse lineParser,
 		return Reading{}, fmt.Errorf("cannot read file identity for call stream %s", path)
 	}
 	dev, inode := uint64(stat.Dev), uint64(stat.Ino)
-	if loaded && cursor.Path == path && cursor.Dev == dev && cursor.Inode == inode && info.Size() == cursor.Offset && cursor.Offset > 0 {
-		return readingFromCursor(opts.Capability, cursor, 0, 0), nil
+	if loaded && cursor.Path == path && cursor.Dev == dev && cursor.Inode == inode && info.Size() == cursor.Offset {
+		reading := readingFromCursor(opts.Capability, cursor, 0, 0)
+		reading.PreviousReadAt = previousReadAt
+		return reading, nil
 	}
 
 	restarted := ""
@@ -177,7 +183,9 @@ func readUnderCursor(stateRoot, runtime, session, path string, parse lineParser,
 	if err := writeCallCursor(cursorPath, cursor); err != nil {
 		return Reading{}, fmt.Errorf("cannot write call cursor %s: %w", cursorPath, err)
 	}
-	return readingFromCursor(opts.Capability, cursor, newSamples, newMarkers), nil
+	reading := readingFromCursor(opts.Capability, cursor, newSamples, newMarkers)
+	reading.PreviousReadAt = previousReadAt
+	return reading, nil
 }
 
 func Calls(stateRoot, runtime, session string, since time.Time) ([]CallSample, []Marker, error) {

@@ -101,7 +101,10 @@ func codexRolloutReadReason(path string, err error) string {
 }
 
 func parseCodexLine(line []byte, runtime, session string) (sample *CallSample, marker *Marker) {
-	raw := decodeCallLine(line)
+	return parseCodexRecord(decodeCallLine(line), runtime, session)
+}
+
+func parseCodexRecord(raw map[string]any, runtime, session string) (sample *CallSample, marker *Marker) {
 	if raw == nil {
 		return nil, nil
 	}
@@ -157,8 +160,7 @@ func parseCodexLine(line []byte, runtime, session string) (sample *CallSample, m
 	}
 }
 
-func codexRecordKind(line []byte) (kind string, tokenCount bool) {
-	raw := decodeCallLine(line)
+func codexRecordKind(raw map[string]any) (kind string, tokenCount bool) {
 	if raw == nil {
 		return "", false
 	}
@@ -171,6 +173,9 @@ func codexRecordKind(line []byte) (kind string, tokenCount bool) {
 }
 
 func decodeCallLine(line []byte) map[string]any {
+	if callJSONDecodes != nil {
+		callJSONDecodes()
+	}
 	var raw map[string]any
 	decoder := json.NewDecoder(bytes.NewReader(line))
 	decoder.UseNumber()

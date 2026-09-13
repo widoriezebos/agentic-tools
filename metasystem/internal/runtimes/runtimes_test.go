@@ -43,6 +43,45 @@ func TestDeclarationInvariants(t *testing.T) {
 	}
 }
 
+func TestEveryDeclarationDeclaresContextSample(t *testing.T) {
+	want := map[string]struct {
+		sample         string
+		mainObservable bool
+	}{
+		"claude": {sample: "per-call", mainObservable: true},
+		"codex":  {sample: "per-call", mainObservable: true},
+		"devin":  {sample: "per-invocation", mainObservable: false},
+		"fake":   {sample: "none", mainObservable: true},
+	}
+	for _, declaration := range All() {
+		expected, ok := want[declaration.Name]
+		if !ok {
+			t.Fatalf("runtime %s has no expected context capability", declaration.Name)
+		}
+		if declaration.ContextSample != expected.sample || declaration.MainObservable != expected.mainObservable {
+			t.Fatalf("runtime %s context capability = %q/%t, want %q/%t", declaration.Name,
+				declaration.ContextSample, declaration.MainObservable, expected.sample, expected.mainObservable)
+		}
+	}
+
+	saved := declarations
+	t.Cleanup(func() { declarations = saved })
+	for _, invalid := range []string{"", "per-turn"} {
+		declarations = All()
+		declarations[0].ContextSample = invalid
+		problems := Validate()
+		found := false
+		for _, problem := range problems {
+			if strings.Contains(problem, "context sample") {
+				found = true
+			}
+		}
+		if !found {
+			t.Fatalf("validator accepted context sample %q: %v", invalid, problems)
+		}
+	}
+}
+
 // The pinned policy facts: tailoring precedence codex > devin > claude
 // > fake, fake never outranking a real runtime, claude the one adoption
 // default, fake never adoptable, the fake-model synthesis value.
