@@ -1,11 +1,17 @@
 # A goal that will never be worked, and why (goal goal-abandoned-with-a-reason)
 
-Revision: 6. Date: 2026-09-13. Design authoring job: `gawr-counselor-design`.
-This revision addresses GAWR-C1-11, the finding that carried landings lose
-counselor ownership evidence when a goal is abandoned. Section 5 extends
+Revision: 7. Date: 2026-09-13. Design authoring job: `gawr-cutover-design`.
+This revision closes the receipt-cutover promotion-record gap. Section 10a
+defines record versions, keeps the old engine's pin and defines the refusal
+and recovery when readers disagree. Section 13 extends `receipt-cutover`.
+Every other revision-6 decision stands.
+
+Revision 6, authored by `gawr-counselor-design`, addressed GAWR-C1-11, the
+finding that carried landings lose counselor ownership evidence when a goal
+is abandoned. Section 5 extends
 both ownership readers to Abandoned. Archived human-carried waivers still
 write their counselor line. Section 13 names the fixture.
-Every other revision-5 decision stands.
+It kept every other revision-5 decision.
 
 Revision 5, authored by `gawr-carry-debt-design`, closed GAWR-C1-05, the
 finding that abandonment hides carry debt. Open carry words refuse
@@ -1327,6 +1333,76 @@ The order:
 There is no compatibility shim and no feature flag. Hand-editing a record to
 `abandoned` on an old engine is refused by reconcile on every engine.
 
+## 10a. Landing-promotion compatibility at receipt cutover
+
+**Grounding.** At this worktree's `87ce9217`,
+`metasystem/internal/landing/promotion.go` reads the promotion record from
+the landing base. It accepts only version 1 and known, unique refusal codes.
+It rejects unknown fields and trailing JSON too. The reader at the fixture's
+pin, `6bc19ba1c`, has those same rules. Adding section 4a's three observation
+codes to a version-1 record therefore makes that record unreadable to the
+pin. `metasystem/scripts/agents/land-fixtures.sh` currently copies the
+working tree's policy into its seed. Its claim already uses the pinned
+writer's grammar. Its promotion record needs the same historical boundary.
+
+**Decision: the versioned record owns compatibility.** The reader in
+`metasystem/internal/landing/promotion.go` enforces the version's vocabulary.
+Version 1 keeps the fields and complete code vocabulary that `6bc19ba1c`
+accepts. Version 2 has the same fields. Its vocabulary adds exactly
+`goal-binding-missing`, `goal-binding-mismatch` and `goal-revision-moved`.
+`metasystem/scripts/agents/landing-promotion.json` becomes version 2. It
+retains every existing refusal entry and adds those three. Section 4a's
+goal checks and their enforcement stay intact.
+
+The compatibility window for this rollout is versions 1 and 2. Every
+version-2 reader must also accept valid version-1 records with their original
+meaning. Version-1 readers accept version 1 only. The build must not remove
+version-1 support. No reader accepts a version above its supported maximum.
+It refuses the whole record, even for an otherwise valid landing. It also
+refuses invalid JSON, unknown fields, missing required data, trailing
+JSON, duplicate codes or a code outside that version's vocabulary. Knowing
+a version-2 code does not make that code valid in a version-1 record.
+
+The landing base still owns the policy. A candidate cannot substitute its
+own record, strip codes or select a more permissive judge. A newer judge's
+passing observation does not override the selected older judge's refusal.
+This rule changes no human-carried authority or human-commit exemption.
+Section 10's fleet floor still gates the new goal grammar separately.
+
+**What the seat sees.** Keep the existing refusal code for older readers:
+`promotion-record-malformed`. A completed `landing observe` exits 0 and
+returns `mode=refuse` with
+`verdictTrailer=would-refuse code=promotion-record-malformed`. Exit 0 means
+the observation ran; it does not permit a commit. The ordinary agent path
+in `metasystem/scripts/agents/commit.sh` exits 1 before committing. A landing
+through `metasystem/scripts/agents/land.sh` propagates that failure and
+pushes nothing. The staged work remains. The first stderr line stays:
+
+> agent commit refused: the landing promotion record is malformed (would-refuse code=promotion-record-malformed)
+
+Replace that case's repair line with:
+
+> The landing judge may be older than this policy. A human must rebuild and re-arm it from the landed policy commit or a descendant, then retry. If that judge supports the record version, repair the record through a reviewed implementation chain.
+
+The human checks the base record's version and the selected judge's build.
+For a version mismatch, the human rebuilds and re-arms that judge from the
+landed version-2 engine or a descendant. The seat then retries through the
+ordinary receipt checks. A malformed supported record needs the reviewed
+repair instead. Neither remedy edits a receipt or downgrades live policy.
+
+**The pin stays `6bc19ba1c`.** Only the receipt-cutover seed takes its entire
+promotion record from that pinned source, before the seed commit and either
+receipt. Both clones share those exact version-1 bytes. Keep the current
+claim compatibility setup. Keep current policy in all other scenarios.
+The pinned engine still produces and reads the old receipt and supplies the
+deciding landing observation. The candidate engine is newer. Replacing that
+observation with the candidate's would erase the cross-engine proof.
+
+This models a seat landing newer work while its base still has version-1
+policy. Once version 2 is on the base, that old judge must refuse until it
+upgrades. The fixture's historical seed is not a production downgrade or a
+promise that every old engine can judge every future policy.
+
 ## 11. Doc amendment
 
 `metasystem/docs/backlog-mechanism.md`, section "The drop rule", becomes two
@@ -1400,6 +1476,30 @@ rest fail at the boundary named. After the build they pin the reader's
 behavior.
 
 Go tests, package `metasystem/internal/goal` unless noted; names are new.
+
+Revision 7 extends the existing `receipt-cutover` scenario in
+`metasystem/scripts/agents/land-fixtures.sh`. It proves section 10a:
+
+- Assert the seed record equals the version-1 record from `6bc19ba1c`.
+  Keep the real pinned engine as the deciding observer. Its exact old
+  receipt still lands, with `mode=observe` and `pass bar=a`.
+- Keep both existing negative checks. The old reader rejects the newer
+  receipt with `chain-test-receipt-refused`. Its own receipt cannot cross
+  the ledger move. Keep their tree, receipt-shape and remote-tip assertions.
+- In a separate disposable base, install the full version-2 policy. For an
+  otherwise valid landing, the pinned reader returns section 10a's refusing
+  observation; the new reader accepts the policy. Drive the ordinary commit
+  wrapper with the old judge selected. Assert exit 1, the refusal and repair
+  lines, unchanged HEAD and remote tip, and retained staged bytes. This arm
+  must use the real wrapper, not the fixture stub's exit 83.
+- With the new reader and version-2 base, trigger each of the three goal
+  observation failures. Each keeps its specific code and `mode=refuse`.
+  Put a version-2-only code in version 1, then try version 3. Both readers
+  refuse each record. Candidate-side policy changes cannot alter the
+  base's decision.
+
+These are build obligations. This design job writes or runs no fixture.
+The orchestrator supplies the shared testing proof, including this scenario.
 
 Revision 6 adds `TestAbandonedCounselorAppendsKeepOwnership` in the existing
 file `metasystem/internal/landing/hcl_carried_test.go`. It extends the setup
@@ -1699,6 +1799,14 @@ unchanged. Abandoned is not a frontier category. Stop proofs are never
 rewritten.
 
 ## Revision record
+
+Revision 7 closes **the receipt-cutover promotion-record compatibility gap**.
+Section 10a makes the record version authoritative. New readers accept
+versions 1 and 2. Older readers refuse newer policy and the wrapper names
+the upgrade or reviewed repair. The receipt-cutover pin stays `6bc19ba1c`;
+its seed policy comes from that same source. Section 13 extends the existing
+scenario to prove the lawful old-engine landing and the version refusal.
+All other revision-6 decisions remain in force.
 
 Revision 6 addresses **GAWR-C1-11 (medium), archived counselor evidence
 losing ownership on carried landings**. Section 5 adds the two ownership
