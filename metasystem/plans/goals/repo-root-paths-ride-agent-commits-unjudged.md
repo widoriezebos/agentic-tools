@@ -1,6 +1,6 @@
 # repo-root-paths-ride-agent-commits-unjudged
 
-- State: queued
+- State: approved
 - Priority: 2
 - Sequence: 13
 - Risk: severity=3 novelty=1 exposure=2 accumulation=2 basis="severity 3: an unjudged behavior change (a hook timeout, a runtime registration) can land under a pass verdict, which is the landing law failing at its one job; novelty 1: one enumeration at a scope that already exists elsewhere (the conformance review does it); exposure 2: every agent landing from a nested checkout, which is all of them today, but only when someone stages a repository-root path; accumulation 2: every such ride is silent, so a wrong one is found only by its effect"
@@ -9,9 +9,11 @@
 - Origin: main
 - Next step: MECHANICAL, one chain: the landing evaluator (internal/landing, observe.go) enumerates changed paths at the repository level between the base tree and the settled index tree, and refuses with repo-root-path-unjudged when any changed path lies outside the installation prefix while a prefix exists; commit.sh passes the whole-repository settled tree alongside the prefix tree so the evaluator can see both; a landing fixture stages a repository-root file and proves the refusal; docs name the human path for such files. Verify first that the ride is real: stage a one-byte change to a repository-root file in a throwaway clone and run the commit wrapper under an agent identity; if it refuses already, record where and close this as not-a-defect.
 - OpenedAt: 2026-09-06T08:52:29Z
-- Revision: 16
+- Revision: 17
 - Pinned: m1c
+- Budget: elapsedLimit=1d attemptLimit=10 reservedJobMinutesLimit=1200 activeJobLimit=1 reviewRoundLimit=3
 - BudgetExceptions: 0
+- Approved: by=human:Wido at=2026-09-13T06:40:50Z revision=17 opid=7617GGFRPN4FHKBDE7GKCD77PB-m1e-c6925449 authority=proven digest=427030a06cae6b132998505407fa77382ff1a8cc75b30fff9d8da98ffbe307c6
 
 History:
 - 2026-09-06T08:52:29Z XZGKDTQRQ4MY68GSRH291EXKNW-m1d-62183579 open actor=m1d+main-1788683763-71870-f7f607 targets=repo-root-paths-ride-agent-commits-unjudged
@@ -30,4 +32,5 @@ History:
 - 2026-09-11T22:00:17Z ZACQ95ADETGNC6PSNQESWF9MHH-m1-c6925449 done actor=human:Wido targets=adoption-inventory-from-install-set,chain-landing-carries-the-reviewed-diff,closing-read-follows-the-change-not-the-label,commit-goal-binding,design-gate-at-dispatch,first-headless-run,fleet-channel-gateway,fleet-join-bootstrap,fleet-pull,gate-governance-records,headless-continuous-delivery-proof,headless-fleet-coordination-proof,hook-enrollment-per-checkout,host-implementer-wall,human-approval-for-execution,idle-every-runtime-enforcement,landing-design-provenance,manifest-floor-at-dispatch,merge-stage-critic-close,metasystem-stop-escalation-proofs,mission-birth-baseline-from-dirty-worktree,never-idle-ironclad,one-approval-gate,recovery-rehearsal,recovery-to-good-state,repo-root-paths-ride-agent-commits-unjudged,role-context-composition,role-lane-packets,role-liveness-watchdog,seat-mutual-awareness,two-bars-for-changes reason=priority-order from=2:15 to=2:14
 - 2026-09-11T22:09:00Z C3BMZ7DRFM4AWMATVMSXQZHBTQ-m1-c6925449 done actor=human:Wido targets=adoption-inventory-from-install-set,chain-landing-carries-the-reviewed-diff,commit-goal-binding,design-gate-at-dispatch,first-headless-run,fleet-channel-gateway,fleet-join-bootstrap,fleet-pull,gate-governance-records,headless-continuous-delivery-proof,headless-fleet-coordination-proof,hook-enrollment-per-checkout,human-approval-for-execution,idle-every-runtime-enforcement,landing-design-provenance,manifest-floor-at-dispatch,merge-stage-critic-close,metasystem-stop-escalation-proofs,mission-birth-baseline-from-dirty-worktree,never-idle-ironclad,one-approval-gate,recovery-rehearsal,recovery-to-good-state,repo-root-paths-ride-agent-commits-unjudged,role-context-composition,role-lane-packets,seat-mutual-awareness reason=priority-order from=2:14 to=2:13
 - 2026-09-13T06:40:43Z FR53602X7GZ61P9F744DWE7YSR-m1e-c6925449 set-pin actor=human:Wido targets=repo-root-paths-ride-agent-commits-unjudged
-Integrity: sha256=85d9de808e3d68bd994827fc524f6f753bb936b56218065304c108d5c6ecb52d
+- 2026-09-13T06:40:50Z 7617GGFRPN4FHKBDE7GKCD77PB-m1e-c6925449 approve actor=human:Wido targets=repo-root-paths-ride-agent-commits-unjudged
+Integrity: sha256=892e1dfb1e129889ba0be0778b61bbc16308f97eff16e5a568291b34b615596a
