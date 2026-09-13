@@ -6,9 +6,12 @@
 - MigrationEpoch: 2026-08-20T00:00:00Z
 - ManifestDigest: d82032bee818c2d82e6a95e6f1b75347499b88ee8b68c4d20a0f3c94d00ba320
 - MigrationMode: manifest
-- Revision: 47
+- Revision: 48
 - ApprovalGate: since=2026-09-03T14:16:24Z opid=JY54AQT8101VK9353WT9FQYGA9-m0-c5dbf036
 - FleetEnrollment: at=2026-09-06T06:37:21Z machine=m1 generation=1 opid=CMNCRETKYCB18MFZNYFSZJPXQY-m1-a4f8999f
+
+PowerOfAttorney:
+- W20E4BC5BSZHCWG3DF5SNGM812-m1e-c6925449 by=human:Wido tiers=1 verbs=approve,set-budget,unpark since=2026-09-13T06:38:47Z expires=2026-09-19
 
 History:
 - 2026-08-22T06:30:55Z BXWE9NXAWCGCTR3MFCE8GDC4P5-widos-m5-pro-bf243850 migrate actor=human:wido
@@ -65,4 +68,5 @@ History:
 - 2026-09-12T17:15:40Z Z3B6P74Y7T7J632YQB12RN10EW-m1c-69c9e454 ack actor=m1c+main-1789191340-90689-8975a9 targets=capped-round-continues-instead-of-restarting displaced=m1c+main-1789191340-90689-8975a9@2026-09-12T15:09:31Z ack
 - 2026-09-12T22:48:37Z JC8W18D9FYMHQBMPYA25415TD9-m1b-30a7e141 ack actor=m1b+main-1789191336-90295-e4b24b targets=stop-infrastructure-allows-the-seat-to-stop displaced=m1b+main-1789191336-90295-e4b24b@2026-09-12T19:41:20Z ack
 - 2026-09-12T22:51:49Z FTAD9PC8KSDC6PF0WFKRQPYB9F-m1e-892cdaec ack actor=m1e+main-1789030447-51011-5722fc targets=critique-always displaced=m1e+main-1789030447-51011-5722fc@2026-09-12T21:50:58Z ack
-Integrity: sha256=c5eeed1b61f8365058edd817a0eae259f7b5ae9890ad4bfa6b99231f090825e9
+- 2026-09-13T06:38:47Z W20E4BC5BSZHCWG3DF5SNGM812-m1e-c6925449 grant actor=human:Wido reason=tiers=1 verbs=approve,set-budget,unpark expires=2026-09-19
+Integrity: sha256=f824a8957bd05e54698390c52167f343682ac8eefe2eb4780d8bc734c913f82f
