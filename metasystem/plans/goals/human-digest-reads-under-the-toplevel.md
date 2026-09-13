@@ -1,6 +1,6 @@
 # human-digest-reads-under-the-toplevel
 
-- State: approved
+- State: claimed
 - Priority: 1
 - Sequence: 2
 - Risk: severity=2 novelty=1 exposure=2 accumulation=1 basis="severity 2: the human never sees the highlights the narrator wrote for him, nothing wrong lands; novelty 1: one root argument; exposure 2: every template-layout seat's Stop; accumulation 1: one line, one fixture"
@@ -9,11 +9,13 @@
 - Origin: main
 - Next step: Tier 2, MECHANICAL: one root argument in scripts/agents/supervision-hook.sh (the Stop path's digest call) plus a fixture row in supervision-hook-fixtures.sh on a template-layout bed. Sol builds, Fable reviews, land. Coordinate with the brain chain brain-build1b-20260907 round 5, which fixes the same root for the brain's boot. SAME SHAPE, m1, 2026-09-09: the hook's health call has the same wrong root on a template-layout seat (health --hook-preview --repo "$repo" in scripts/agents/supervision-hook.sh reads supervision state under the repository root and reports the live steward dead). The one-root-argument fix this goal names should cover the health call and the digest call together; the truth side is recorded on stop-message-truth.
 - OpenedAt: 2026-09-07T06:12:28Z
-- Revision: 11
+- Revision: 12
 - Pinned: m1c
 - Budget: elapsedLimit=4h attemptLimit=6 reservedJobMinutesLimit=720 activeJobLimit=1 reviewRoundLimit=2
 - BudgetExceptions: 0
 - Approved: by=human:Wido at=2026-09-13T06:44:57Z revision=10 opid=C2JSQHT0QGXXFT2H1B6D4WT30R-m1e-c6925449 authority=proven digest=fa08f84972dd2a0e1ebb30d75405189333b32053ec44e8c904358ddfd5571f48
+- Claimed: machine=m1c lineage=main-1789191340-90689-8975a9 at=2026-09-13T06:46:50Z revision=12 accountingRevision=12 episodeAt=2026-09-13T06:46:50Z episodeRevision=12
+- StopCapability: generation=12 revision=12 machine=m1c claimEpoch=5 fenceEpoch=0
 
 History:
 - 2026-09-07T06:12:28Z PJEWRMGAEZWW5981RJDYFGT7MD-m1-a4f8999f open actor=m1+main-1788594343-3833-fb64b9 targets=human-digest-reads-under-the-toplevel
@@ -27,4 +29,5 @@ History:
 - 2026-09-13T06:44:52Z ET4SEGYTN60J5MD6P9N7RPWK5J-m1e-c6925449 set-pin actor=human:Wido targets=human-digest-reads-under-the-toplevel
 - 2026-09-13T06:44:57Z C2JSQHT0QGXXFT2H1B6D4WT30R-m1e-c6925449 approve actor=human:Wido targets=human-digest-reads-under-the-toplevel
 - 2026-09-13T06:45:07Z 9ABTDJCSZXFHSKS0HQTMQDT73P-m1e-c6925449 set-priority actor=human:Wido targets=actionable-metrics,alert-escalation-channel,answer-archive,app-doctrine,app-guardrail-custody,app-guardrail-program,breach-clock-and-budget-honesty,brief-authority-preflight,chain-landing-carries-the-reviewed-diff,channel-tells-me-when-something-lands,claude-delegate-scratch-cleanup,claude-denywrite-list-is-a-snapshot,claude-network-allow-does-not-allow,closing-read-and-receipt-in-parallel,conformance-runtime-state-litter,continuous-self-improvement,coordinator-context-stays-under-budget,coordinator-wakes-on-events-not-polls,counselor,critique-closes-on-folded-proof,cross-repo-guardrails,delegate-sandbox-cannot-run-the-beds,design-prohibition-is-role-scoped,dispatch-bases-chains-on-the-remote-tip,effort-by-complexity-per-model,empty-brief-admitted,fable-effort-high,failed-job-attention,fixture-default-branch-assumption,fixture-enrollment-notes,fixture-repo-copies-exclude-the-artifacts-store,fixture-stewards-outlive-their-suite,fixture-waits-name-their-producer,follow-up-brief-cannot-cite-fresh-trunk-files,follow-up-rebase-drop-failure-names-hash,gap-rule-deletes-built-work,goal-abandoned-with-a-reason,goal-suite-sits-on-the-default-test-timeout,hook-demands-what-landing-forbids,hook-root-resolver-design,human-carried-landing,human-digest-reads-under-the-toplevel,human-goal-verbs-forgiving,incident-proposal-drafting,integration-branch,job-record-birth-token,land-verb-pruning,landing-receipt-survives-records-drift,landing-refusal-names-the-record-rule,lease-sweep-death-evidence,ledger-authentication,live-job-on-a-done-goal-unnoticed,machine-concurrency-governor,malformed-return-field-loses-the-round,metasystem-way-patterns,missionrunner-terminate-flake,narrator-digests,paid-proof-authorization,precedent-index,proof-groups-detect-hangs-by-progress-not-the-clock,python3-kit-port,reconciliation-guards,registry-design-names-selection-rows,repo-flag-resolves-one-root,repo-root-paths-ride-agent-commits-unjudged,run-scoped-build-caches-have-a-janitor,runtime-limit-is-not-a-protocol-error,seam-declaration-convergence,seam-eventstream-error-surface,skipped-test-fails-its-group-on-the-other-os,small-change-lane,standing-validation,steward-catchup-livelock,steward-launches-resolve-their-model,steward-revives-a-done-goal,stop-batch-strands-a-resumable-goal,stop-hook-never-forces-an-empty-turn,stop-refusal-fits-on-one-screen,suite-custody,token-spend-fence,uncapped-delegate-fanout,watch-verb,watchdog-kill-observation-gap,watcher-repair-request-never-names-current,winddown-census-handoff-leak reason=priority-order subject=human-digest-reads-under-the-toplevel from=3:17 to=1:2 requested-sequence=2
-Integrity: sha256=0fd2b3ca7870f47628c4a2b2905f1e78ab91f6677e689315bfa789efb395186a
+- 2026-09-13T06:46:50Z 85WNMEGZTZW1G2BRM9070THZMP-m1c-69c9e454 claim actor=m1c+main-1789191340-90689-8975a9 targets=human-digest-reads-under-the-toplevel
+Integrity: sha256=e79082b4eefa313fc4a20e964bc4c60c782d9d1eab8cbd685a27eda9dd124eda
