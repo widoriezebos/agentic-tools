@@ -73,6 +73,7 @@ var healthRoleOrder = []HealthRole{
 	RoleSessionMain,
 	RoleHookFreshness,
 	RoleStopHookDuration,
+	RoleContext,
 	RoleLedgerAttention,
 	RoleClaimedGoalBudget,
 	RoleClaimedGoalDelivery,
@@ -185,18 +186,7 @@ func (v HealthVerdict) ExitCode() int {
 func (v HealthVerdict) Line() string {
 	items := make([]string, 0, len(v.Roles))
 	for _, role := range v.Roles {
-		item := fmt.Sprintf("%s=%s", role.Role, role.Status)
-		if role.Reason != "" {
-			item += " (" + role.Reason
-			if role.Remedy != "" {
-				item += "; remedy: " + role.Remedy
-			}
-			item += ")"
-		}
-		if role.ConsecutiveFailures > 0 {
-			item += fmt.Sprintf(" [failure %d/%d; %s]", role.ConsecutiveFailures, healthFailureLimit, strings.ToLower(strings.ReplaceAll(role.FailureEscalation, "_", " ")))
-		}
-		items = append(items, item)
+		items = append(items, role.Line())
 	}
 	prefix := "HEALTH "
 	if v.Stopped {
@@ -211,6 +201,23 @@ func (v HealthVerdict) Line() string {
 		}
 	}
 	return prefix + v.Aggregate + " — " + strings.Join(items, "; ")
+}
+
+// Line is the shared one-role rendering used by health and focused status
+// commands.
+func (v RoleVerdict) Line() string {
+	item := fmt.Sprintf("%s=%s", v.Role, v.Status)
+	if v.Reason != "" {
+		item += " (" + v.Reason
+		if v.Remedy != "" {
+			item += "; remedy: " + v.Remedy
+		}
+		item += ")"
+	}
+	if v.ConsecutiveFailures > 0 {
+		item += fmt.Sprintf(" [failure %d/%d; %s]", v.ConsecutiveFailures, healthFailureLimit, strings.ToLower(strings.ReplaceAll(v.FailureEscalation, "_", " ")))
+	}
+	return item
 }
 
 // ObserveHealth evaluates every role and durably advances exactly one
@@ -356,6 +363,7 @@ func evaluateHealthRoles(repoRoot, metasystemRoot string, now time.Time, prober 
 		timed(func() RoleVerdict { return checkSessionMain(repoRoot, prober) }),
 		timed(func() RoleVerdict { return checkHookFreshnessAt(repoRoot, now, currentHookAttempt) }),
 		timed(func() RoleVerdict { return checkStopHookDuration(repoRoot) }),
+		timed(func() RoleVerdict { return checkContextBudget(repoRoot, metasystemRoot, now, prober) }),
 		timed(func() RoleVerdict { return checkLedgerAttention(repoRoot, now) }),
 		timed(func() RoleVerdict { return checkClaimedGoalBudgets(repoRoot, now) }),
 		timed(func() RoleVerdict { return checkClaimedGoalDelivery(repoRoot, now) }),

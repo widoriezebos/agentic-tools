@@ -4,6 +4,7 @@ import (
 	"bufio"
 	"bytes"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"os"
@@ -16,6 +17,26 @@ import (
 )
 
 const maxCallLineBytes = 32 * 1024 * 1024
+
+// CursorBusyError reports that a caller requiring an immediate answer could
+// not acquire the session cursor lock.
+type CursorBusyError struct {
+	Path string
+}
+
+func (e *CursorBusyError) Error() string {
+	return fmt.Sprintf("call cursor is busy: %s", e.Path)
+}
+
+// SessionRegistryBusyError reports that an immediate registration could not
+// acquire the shared session-registry lock.
+type SessionRegistryBusyError struct {
+	Path string
+}
+
+func (e *SessionRegistryBusyError) Error() string {
+	return fmt.Sprintf("call session registry is busy: %s", e.Path)
+}
 
 type lineParser func(line []byte, ordinal int64) (*CallSample, *Marker, bool)
 
@@ -32,7 +53,14 @@ type markerRow struct {
 var writeCallCursor = atomicWriteJSON
 
 func readUnderCursor(stateRoot, runtime, session, path string, parse lineParser, opts ReadOptions) (Reading, error) {
-	lock, err := lockCallFile(CursorPath(stateRoot, runtime, session) + ".lock")
+	lockPath := CursorPath(stateRoot, runtime, session) + ".lock"
+	var lock *os.File
+	var err error
+	if opts.NonBlocking {
+		lock, err = tryLockCallFile(lockPath)
+	} else {
+		lock, err = lockCallFile(lockPath)
+	}
 	if err != nil {
 		return Reading{}, err
 	}
@@ -253,11 +281,32 @@ func Calls(stateRoot, runtime, session string, since time.Time) ([]CallSample, [
 }
 
 func RegisterSession(stateRoot, runtime, session string, pid, pidStartedAt int64) error {
+	return registerSession(stateRoot, runtime, session, pid, pidStartedAt, false)
+}
+
+// RegisterSessionNonBlocking records a session only when the registry lock is
+// immediately available.
+func RegisterSessionNonBlocking(stateRoot, runtime, session string, pid, pidStartedAt int64) error {
+	return registerSession(stateRoot, runtime, session, pid, pidStartedAt, true)
+}
+
+func registerSession(stateRoot, runtime, session string, pid, pidStartedAt int64, nonBlocking bool) error {
 	if err := validateCallLocation(stateRoot, runtime); err != nil {
 		return err
 	}
 	path := filepath.Join(stateRoot, "artifacts", "agents", "context", "sessions.jsonl")
-	lock, err := lockCallFile(path + ".lock")
+	lockPath := path + ".lock"
+	var lock *os.File
+	var err error
+	if nonBlocking {
+		lock, err = tryLockCallFile(lockPath)
+		var busy *CursorBusyError
+		if errors.As(err, &busy) {
+			return &SessionRegistryBusyError{Path: busy.Path}
+		}
+	} else {
+		lock, err = lockCallFile(lockPath)
+	}
 	if err != nil {
 		return err
 	}
@@ -547,6 +596,14 @@ func withoutSidechainCount(source string) string {
 }
 
 func lockCallFile(path string) (*os.File, error) {
+	return lockCallFileWithFlags(path, unix.LOCK_EX)
+}
+
+func tryLockCallFile(path string) (*os.File, error) {
+	return lockCallFileWithFlags(path, unix.LOCK_EX|unix.LOCK_NB)
+}
+
+func lockCallFileWithFlags(path string, flags int) (*os.File, error) {
 	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
 		return nil, err
 	}
@@ -555,8 +612,11 @@ func lockCallFile(path string) (*os.File, error) {
 	if err != nil {
 		return nil, err
 	}
-	if err := unix.Flock(int(lock.Fd()), unix.LOCK_EX); err != nil {
+	if err := unix.Flock(int(lock.Fd()), flags); err != nil {
 		lock.Close()
+		if flags&unix.LOCK_NB != 0 && (errors.Is(err, unix.EWOULDBLOCK) || errors.Is(err, unix.EAGAIN)) {
+			return nil, &CursorBusyError{Path: path}
+		}
 		return nil, err
 	}
 	return lock, nil

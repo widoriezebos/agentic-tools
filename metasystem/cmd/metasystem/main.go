@@ -420,6 +420,13 @@ func families() []family {
 			},
 		},
 		{
+			name:    "context",
+			summary: "the coordinator's recorded provider-call context budget",
+			verbs: []verb{
+				{"status", "show the holder's current context-budget evidence", runContextStatus},
+			},
+		},
+		{
 			name:    "hooks",
 			summary: "self-check that the repo runs under its own metasystem",
 			verbs: []verb{

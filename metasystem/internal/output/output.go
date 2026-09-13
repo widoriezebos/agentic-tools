@@ -42,6 +42,34 @@ var randomNonce = func() (string, error) {
 	return hex.EncodeToString(bytes), nil
 }
 
+// NewestSince returns the newest regular spill written strictly after since.
+// Spill discovery is an optional status hint, so an unavailable directory
+// produces no result instead of making the caller's primary check fail.
+func NewestSince(root string, since time.Time) (path string, bytes int64, ok bool) {
+	directory := filepath.Join(root, filepath.FromSlash(Dir))
+	entries, err := os.ReadDir(directory)
+	if err != nil {
+		return "", 0, false
+	}
+	var newest time.Time
+	var newestName string
+	for _, entry := range entries {
+		candidate := filepath.Join(directory, entry.Name())
+		info, err := os.Lstat(candidate)
+		if err != nil || !info.Mode().IsRegular() || !info.ModTime().After(since) {
+			continue
+		}
+		if newestName == "" || info.ModTime().After(newest) ||
+			(info.ModTime().Equal(newest) && entry.Name() < newestName) {
+			newest = info.ModTime()
+			newestName = entry.Name()
+			path = candidate
+			bytes = info.Size()
+		}
+	}
+	return path, bytes, newestName != ""
+}
+
 func Spill(root, verb, ext string, data []byte, now time.Time) (Reference, error) {
 	if !filepath.IsAbs(root) {
 		return Reference{}, fmt.Errorf("output root must be absolute: %s", root)

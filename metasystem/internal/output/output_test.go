@@ -120,6 +120,70 @@ func TestDetectDistinguishesTheEnvelopeFromATestResult(t *testing.T) {
 	}
 }
 
+func TestNewestSinceReturnsOnlyANewerRegularFile(t *testing.T) {
+	root := t.TempDir()
+	directory := filepath.Join(root, filepath.FromSlash(Dir))
+	if err := os.MkdirAll(directory, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	since := time.Date(2026, 9, 13, 10, 0, 0, 0, time.UTC)
+	writeAt := func(name, contents string, at time.Time) string {
+		t.Helper()
+		path := filepath.Join(directory, name)
+		if err := os.WriteFile(path, []byte(contents), 0o600); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.Chtimes(path, at, at); err != nil {
+			t.Fatal(err)
+		}
+		return path
+	}
+	writeAt("older.log", "old", since.Add(-time.Second))
+	writeAt("equal.log", "equal", since)
+	tieZulu := writeAt("zulu.log", "zulu", since.Add(time.Minute))
+	tieAlpha := writeAt("alpha.log", "alpha", since.Add(time.Minute))
+	newest := writeAt("newest.log", "newest contents", since.Add(2*time.Minute))
+	oldDirectory := filepath.Join(directory, "directory.log")
+	if err := os.Mkdir(oldDirectory, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Chtimes(oldDirectory, since.Add(3*time.Minute), since.Add(3*time.Minute)); err != nil {
+		t.Fatal(err)
+	}
+	link := filepath.Join(directory, "symlink.log")
+	if err := os.Symlink(newest, link); err != nil {
+		t.Fatal(err)
+	}
+
+	path, bytes, ok := NewestSince(root, since)
+	if !ok || path != newest || bytes != int64(len("newest contents")) {
+		t.Fatalf("newest spill = path %q bytes %d ok %t, want %q", path, bytes, ok, newest)
+	}
+	if err := os.Remove(newest); err != nil {
+		t.Fatal(err)
+	}
+	path, _, ok = NewestSince(root, since)
+	if !ok || path != tieAlpha || path == tieZulu {
+		t.Fatalf("lexical tie winner = path %q ok %t, want %q", path, ok, tieAlpha)
+	}
+	if _, _, ok := NewestSince(root, since.Add(4*time.Minute)); ok {
+		t.Fatal("a directory, symlink, equal file, or older file was returned")
+	}
+	if _, _, ok := NewestSince(t.TempDir(), time.Time{}); ok {
+		t.Fatal("a missing output directory returned a spill")
+	}
+	unreadableRoot := t.TempDir()
+	if err := os.MkdirAll(filepath.Join(unreadableRoot, "artifacts", "agents"), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(unreadableRoot, filepath.FromSlash(Dir)), []byte("not a directory"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if _, _, ok := NewestSince(unreadableRoot, time.Time{}); ok {
+		t.Fatal("an unreadable output directory returned a spill")
+	}
+}
+
 func TestPruneRemovesOnlyFilesOlderThanTheWindow(t *testing.T) {
 	root := t.TempDir()
 	dir := filepath.Join(root, filepath.FromSlash(Dir))

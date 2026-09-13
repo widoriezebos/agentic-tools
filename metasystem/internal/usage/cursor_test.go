@@ -12,6 +12,8 @@ import (
 	"syscall"
 	"testing"
 	"time"
+
+	"golang.org/x/sys/unix"
 )
 
 func TestUnchangedTranscriptReadsNothingAndReturnsTheLatest(t *testing.T) {
@@ -42,6 +44,91 @@ func TestUnchangedTranscriptReadsNothingAndReturnsTheLatest(t *testing.T) {
 	}
 	if second.NewSamples != 0 || second.NewMarkers != 0 {
 		t.Fatalf("second read added samples=%d markers=%d", second.NewSamples, second.NewMarkers)
+	}
+}
+
+func TestLatestCallNonBlockingReturnsBusy(t *testing.T) {
+	stateRoot := t.TempDir()
+	transcript := filepath.Join(t.TempDir(), "transcript.jsonl")
+	writeCallRows(t, transcript, claudeAssistant("busy", 40, 2, 3, false, "2026-09-13T14:00:00Z"))
+	lockPath := CursorPath(stateRoot, "claude", "busy") + ".lock"
+	if err := os.MkdirAll(filepath.Dir(lockPath), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	lock, err := os.OpenFile(lockPath, os.O_CREATE|os.O_RDWR, 0o600)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer lock.Close()
+	if err := unix.Flock(int(lock.Fd()), unix.LOCK_EX|unix.LOCK_NB); err != nil {
+		t.Fatal(err)
+	}
+	locked := true
+	release := func() {
+		if locked {
+			_ = unix.Flock(int(lock.Fd()), unix.LOCK_UN)
+			locked = false
+		}
+	}
+	defer release()
+
+	done := make(chan error, 1)
+	go func() {
+		_, readErr := LatestCall(stateRoot, "claude", "busy", ReadOptions{
+			Capability: PerCall, Transcript: transcript, NonBlocking: true,
+		})
+		done <- readErr
+	}()
+	select {
+	case readErr := <-done:
+		var busy *CursorBusyError
+		if !errors.As(readErr, &busy) || busy.Path != lockPath {
+			t.Fatalf("contended non-blocking read = %v", readErr)
+		}
+	case <-time.After(time.Second):
+		release()
+		<-done
+		t.Fatal("non-blocking call read waited on the cursor lock")
+	}
+}
+
+func TestRegisterSessionNonBlockingReturnsBusy(t *testing.T) {
+	stateRoot := t.TempDir()
+	lockPath := filepath.Join(stateRoot, "artifacts", "agents", "context", "sessions.jsonl.lock")
+	if err := os.MkdirAll(filepath.Dir(lockPath), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	lock, err := os.OpenFile(lockPath, os.O_CREATE|os.O_RDWR, 0o600)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer lock.Close()
+	if err := unix.Flock(int(lock.Fd()), unix.LOCK_EX|unix.LOCK_NB); err != nil {
+		t.Fatal(err)
+	}
+	locked := true
+	release := func() {
+		if locked {
+			_ = unix.Flock(int(lock.Fd()), unix.LOCK_UN)
+			locked = false
+		}
+	}
+	defer release()
+
+	done := make(chan error, 1)
+	go func() {
+		done <- RegisterSessionNonBlocking(stateRoot, "claude", "busy", 10, 20)
+	}()
+	select {
+	case registerErr := <-done:
+		var busy *SessionRegistryBusyError
+		if !errors.As(registerErr, &busy) || busy.Path != lockPath {
+			t.Fatalf("contended non-blocking registration = %v", registerErr)
+		}
+	case <-time.After(time.Second):
+		release()
+		<-done
+		t.Fatal("non-blocking session registration waited on the registry lock")
 	}
 }
 

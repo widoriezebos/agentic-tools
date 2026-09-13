@@ -68,6 +68,7 @@ type ReadOptions struct {
 	Toplevel     string
 	Installation string
 	Now          time.Time
+	NonBlocking  bool
 }
 
 type Reading struct {

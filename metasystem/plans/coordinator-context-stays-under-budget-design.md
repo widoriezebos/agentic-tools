@@ -6,7 +6,7 @@
 - Decisions made (and who made them): Wido, 2026-09-13 ("I agree with all your proposals"): (1) DONE is read as by construction where the engine owns the surface and by instruction and measurement elsewhere, the week's ceiling breach failing the goal; (2) exclusivity at the handoff by an observed predecessor death before the continuation launches, no ownership epoch. The seat: the mechanisms of sections 2 to 5 and 7.
 - Waiting on the human: nothing.
 - Dead ends (do not retry without new evidence): filtering only `goal list`; smaller summaries without a session boundary; a Claude-only hook; automatic compaction; reading lifetime usage totals as the size of one prompt; a second transcript parser; a transfer id with acknowledgements (a record of overlap, not exclusion); a mutable state file at a fixed path (revision 2, refused: a delayed continuation reads a later handoff); a session-stop authorization as an exit primitive (revision 2, refused: it ends no harness); calling retrospective detection "bounded by construction" (revision 2, refused; settled by Wido's reading).
-- Next step: in flight (2026-09-13 17:30Z): slice 2a landed 6f853a32 and the packet-fit follow-up landed fa66fd79. Slice 2b part A (the reader integration contract) lands with this line. Next: parts B, C and D of artifacts/reports/codex-ccb-slice2b-brief-v2.md, each built by Codex gpt-5.6-sol, read once by Opus and verified by the seat, then slice 3. Open for Wido: 8c.7, whether a held handoff expires; the build takes no limit until he answers.
+- Next step: slice 2b part B lands with this line, carrying section 8c.11. Next: part C (discovery and the week report) and part D (fixtures and the duration proof) of artifacts/reports/codex-ccb-slice2b-brief-v2.md, each built by Codex gpt-5.6-sol, read once by Opus, verified by the seat, and landed; then slice 3, the nonce-bound handoff. Landed so far: slice 1 644960b4, slice 1b-i 349ac583, slice 1b-ii 4ddb6997 and b9fcccb0, slice 2a 6f853a32, the packet-fit follow-up fa66fd79, slice 2b part A 06dc9aef. Open for Wido: 8c.7, whether a held handoff expires; the build takes no limit until he answers.
 
 ## 0. The contract this revision builds to
 
@@ -476,6 +476,86 @@ bin/metasystem test run --root "$PWD" --purpose diagnostic \
 ```
 
 Exact diagnostic groups are accepted at `cmd/metasystem/test.go:156` and `cmd/metasystem/test.go:173`. Inspect retained structured results for both groups and complete the seat's required delivery selection. Do not edit `testing.json`, skip these legs or lower a coverage floor. The design delegate ran no runtime beds. Implementation and runtime proof remain pending. Open design questions for this amendment: none.
+
+### 11. Transcript override amendment after the part B read (2026-09-13)
+
+**Decision 11.1: choose (b). Every transcript override uses a private, disposable cursor and samples store. Part B must change before landing.**
+
+No, part B is not safe to land with only its other four material findings folded. Fold this amendment too. After findings F-1 through F-4 and the part B obligations below pass review and focused verification, this scope question no longer blocks a part B landing. Part C and D keep their assigned report and runtime proof. This is a design decision, not certification that those fixes work.
+
+Paths are relative to `metasystem/`. Evidence was checked by reading code, not by running it. This design checkout is at `9106b52819de28b6de2f0a986325edf4da0935ce`. Its two part B source files are absent. I read them in the builder checkout, `/Users/wido/LocalStorage/GitHub/agentic-tools-m1e/.claude/worktrees/ccb-s2b/metasystem`, identified by the review at `artifacts/reports/opus-read-part-b.md:3`. Citations to `internal/steward/context.go` and command files refer to that working tree. Usage citations refer to this design checkout. Its `cursor.go` and `calls.go` match the builder copies byte for byte.
+
+I read section 8c from `origin/main` at the same commit. That version ends its amendments at subsection 9 and row CCB-2-36 (`plans/coordinator-context-stays-under-budget-design.md:429`, `plans/coordinator-context-stays-under-budget-design.md:460`). The retained subsection 10 adds rows through CCB-2-47 (`artifacts/reports/ccb-8c10-slice2b-amendment.md:81`). New rows therefore start at CCB-2-48. This section amends D2-2, D2-8, subsection 10.5 and the part B brief's explicit permission for inferred-session overrides (`artifacts/reports/codex-ccb-slice2b-brief-v2.md:124`).
+
+**Reason from the code.**
+
+The command passes the override with either an explicit pair or empty identity fields (`cmd/metasystem/context_verbs.go:63`). `ContextBudgetLine` resolves the identity, registers an inferred holder, and passes the real state root and override to `usage.LatestCall` (`internal/steward/context.go:58`, `internal/steward/context.go:75`, `internal/steward/context.go:88`). Explicit identity only bypasses holder selection (`internal/steward/context.go:116`). It does not select another evidence store.
+
+Cursor and samples filenames depend on state root, runtime and session (`internal/usage/calls.go:162`, `internal/usage/calls.go:166`). A changed transcript path creates a fresh cursor while retaining `SamplesBytes` (`internal/usage/cursor.go:78`). The fresh cursor clears `Seen`, offset and latest sample (`internal/usage/cursor.go:332`). Each unseen call and every marker is appended, then the new boundary is published (`internal/usage/cursor.go:125`, `internal/usage/cursor.go:135`, `internal/usage/cursor.go:178`). Reading the real path afterwards repeats that restart and seeks from zero (`internal/usage/cursor.go:78`, `internal/usage/cursor.go:101`). These are committed duplicates, not an unfinished suffix that recovery can discard.
+
+An empty override leaves no latest sample and produces `unknown (no call recorded yet)` (`internal/usage/cursor.go:529`). The role treats that reason as alive (`internal/steward/context.go:218`, `internal/steward/context.go:252`). The command prints that result (`cmd/metasystem/context_verbs.go:66`). The next health evaluation reads the real source through empty options (`internal/steward/context.go:107`). Thus the misleading status and forced replay are distinct problems. The command does not permanently replace health's source selection.
+
+Requiring an explicit pair alone would still allow the holder's own pair. Refusing the current holder's pair would also leave diagnostic rows in another session's evidence. `Calls` returns every committed sample row without checking whether a status override supplied it (`internal/usage/cursor.go:235`). Isolation protects all sessions without a holder-comparison race. Subsection 10.1's report deduplication remains useful for genuine restarts, but it cannot protect the live cursor or exclude an override's distinct call ids (`artifacts/reports/ccb-8c10-slice2b-amendment.md:11`, `artifacts/reports/ccb-8c10-slice2b-amendment.md:13`).
+
+**Decision 11.2: `ContextBudgetLine` owns the isolation boundary.**
+
+Keep the flag syntax. Both inferred and explicit sessions may use `--transcript PATH`. An explicit pair equal to the holder's pair is allowed. Every nonempty override is diagnostic, even when PATH equals the normally derived path. An explicitly supplied empty `--transcript` value is a usage error, exit 2. Detect flag presence with `FlagSet.Visit`; an omitted flag remains an ordinary live read.
+
+Implement this sequence in `internal/steward/context.go`:
+
+1. Resolve identity and capability against the real roots. Preserve the existing explicit-pair and no-holder contracts, with the corrections for F-2 and F-3. If identity cannot be resolved, return its diagnostic or error. Never substitute another session.
+2. Branch on `opts.Transcript != ""` before registration or any usage-store access. The override branch must not register a session, read or reconcile a live cursor or samples log, acquire either live evidence lock, or publish health state. Do not copy live state into the private store. Do not save and restore the live cursor.
+3. For an override read, create a fresh root with `os.MkdirTemp("", "metasystem-context-diagnostic-")`. Pass only this root as `LatestCall`'s `stateRoot`. Keep runtime, session, capability, transcript path and clock as selected. Keep the real installation root in `ReadOptions.Installation`. Source discovery needs no derived git toplevel when the path is supplied, since both readers return that path first (`internal/usage/calls_claude.go:14`, `internal/usage/calls_codex.go:12`).
+4. Reuse `usage.LatestCall` and its parser, cursor and commit protocol. Give every invocation its own temporary directory. There is no diagnostic cache or persistent diagnostic registry. Remove the directory on success, unknown and error returns, after the reader has released its private lock. Allocation, read or cleanup errors propagate to an unknown role and CLI exit 1. Preserve both read and cleanup errors when both occur. Never fall back to the real state root. Interrupted-process residue stays outside the live evidence directories and is never discovered as cohort evidence.
+5. A diagnostic reading's counters and cursor summary describe that disposable read. Its `PreviousReadAt` is zero. Skip the live newest-spill hint. Without an override, continue normal registration, persistent sampling and spill lookup. The present registration and spill calls are at `internal/steward/context.go:75` and `internal/steward/context.go:101`.
+
+The exact API changes for this amendment are:
+
+```go
+// Add in internal/steward/context.go.
+func readContextTranscriptOverride(runtime, session string,
+    opts usage.ReadOptions) (usage.Reading, error)
+
+// Add the diagnostic argument to the existing private verdict helper.
+func contextVerdict(reading usage.Reading, installationRoot string,
+    diagnostic bool) RoleVerdict
+
+// Add to cmd/metasystem/context_verbs.go's contextStatusOutput.
+Diagnostic bool `json:"diagnostic"`
+```
+
+The first helper owns temporary allocation, the one `LatestCall` call and cleanup. Keep `ContextOptions`, `usage.ReadOptions`, `usage.LatestCall` and persisted schemas unchanged. This amendment needs no change to `ContextBudgetLine`'s public signature. It does not constrain a prober argument required by the separate F-2 fix. The present signatures and fields are at `internal/steward/context.go:26`, `internal/steward/context.go:56`, `internal/usage/calls.go:64` and `internal/usage/calls.go:92`.
+
+**Decision 11.3: label the diagnostic result on both output forms.**
+
+Set JSON `diagnostic` to true for an override and false otherwise. Preserve the bounded `reading` projection. Prefix every override role reason, including early unknown and error returns, with exactly `diagnostic transcript override; `. Text still uses `RoleVerdict.Line()`. JSON carries that same role.
+
+Use the shared threshold comparison. An empty diagnostic may remain alive with its precise no-call reason. It describes the supplied file. For diagnostics, the over-bound suffix is only `; over the bound`. Set the remedy to `metasystem context status --root <installation>`, without an override, so the next action checks live evidence. Do not recommend a live handoff from diagnostic input. Keep the dead threshold and `NoAutomaticRemedy` value. No diagnostic verdict enters health observation. Ordinary health wording and remedies remain unchanged. Today the threshold branches recommend handoff directly (`internal/steward/context.go:233`, `internal/steward/context.go:241`); the new helper argument selects the diagnostic wording without duplicating those comparisons.
+
+**Obligation edits and additions.** Each proof below is a Go test with signature `func TestName(t *testing.T)`. All are pending implementation and execution. Rows 48 through 52 belong to part B. Row 53 belongs to part C.
+
+| id | obligation and failure before the change | severity | owner and test file | proof | source |
+| --- | --- | --- | --- | --- | --- |
+| CCB-2-48 | For Claude and Codex, a valid override returns its sample while preserving all live cursor, samples and registry bytes and file presence. Cover inferred identity, explicit holder identity, another explicit session, and an override equal to the real path. A fresh inferred diagnostic creates no live evidence directory. Today the real root reaches the reader and inferred registration (`internal/steward/context.go:75`, `internal/steward/context.go:88`). | high | `ContextBudgetLine`; `internal/steward/context_test.go` | `TestContextTranscriptOverrideUsesPrivateEvidence` | 11.1, 11.2 |
+| CCB-2-49 | Seed a normal holder read at 210,001 tokens. Read an empty override, a copied transcript and a file with distinct calls and a compaction. After each, the unchanged normal evaluation remains dead at 210,001, emits zero new samples and markers, and preserves the original cursor and log. Append one real call and require exactly one new committed call. Today path restarts clear the cursor and replay calls and markers (`internal/usage/cursor.go:78`, `internal/usage/cursor.go:125`, `internal/usage/cursor.go:135`). | high | `ContextBudgetLine`; `internal/steward/context_test.go` | `TestContextTranscriptOverridePreservesTheNextHealthRead` | 11.1, 11.2 |
+| CCB-2-50 | A valid override succeeds without touching damaged or busy live evidence. Cover an uncommitted suffix, a corrupt cursor beside a nonempty log, a short log, and directories occupying the live cursor and registry lock paths. Preserve those bytes and paths. Today registration can fail before the read, and live reconciliation can refuse or truncate a suffix (`internal/steward/context.go:76`, `internal/usage/cursor.go:35`, `internal/usage/cursor.go:47`, `internal/usage/cursor.go:460`). | high | `ContextBudgetLine`; `internal/steward/context_test.go` | `TestContextTranscriptOverrideIgnoresLiveStoreFailures` | 11.2 |
+| CCB-2-51 | Observe a unique private root for each helper call. Prove cleanup after a sample, empty source and nonregular-source error. Inject allocation and cleanup failures with narrow package-local filesystem seams. Require returned errors and no live fallback. Preserve a reader error when cleanup also fails. Today an override writes persistent evidence under the caller's root instead (`internal/steward/context.go:88`, `internal/usage/cursor.go:178`). | medium | `readContextTranscriptOverride`; `internal/steward/context_test.go` | `TestContextTranscriptOverrideDisposesPrivateCursor` | 11.2 |
+| CCB-2-52 | Text and JSON identify diagnostics and agree on the role. Cover empty, over-bound and over-ceiling files, an early identity error, a read error, and explicit empty-flag rejection. Successful diagnostic readings exit 0; operational errors exit 1; empty flag exits 2. Keep Seen and Tail absent. Today output lacks the diagnostic field and prefix, accepts an empty flag, and recommends handoff from override input (`cmd/metasystem/context_verbs.go:15`, `cmd/metasystem/context_verbs.go:43`, `cmd/metasystem/context_verbs.go:48`, `internal/steward/context.go:233`). | medium | status projection and diagnostic verdict; `cmd/metasystem/context_verbs_test.go`, `internal/steward/context_test.go` | `TestContextStatusLabelsTranscriptDiagnostics` | 11.3; extends CCB-2-15 |
+| CCB-2-53 | Build the week from normally recorded evidence. Run an inferred override containing a distinct 210,001-token call and compaction, then an override for an otherwise absent explicit session. The report's cohort, reset count, compactions and pass line must match the baseline. With today's status path those rows enter committed evidence and distinct ids survive deduplication (`internal/steward/context.go:88`, `internal/usage/cursor.go:129`, `internal/usage/cursor.go:136`). | high | week report integration; `internal/steward/contextreport_test.go` | `TestContextReportExcludesTranscriptDiagnostics` | 11.1, 11.2; extends CCB-2-17 |
+
+Retain ordinary status coverage while changing its fixtures. The existing command test requires inferred overrides to register a holder and create a cursor in the installation (`cmd/metasystem/context_verbs_test.go:25`, `cmd/metasystem/context_verbs_test.go:92`). Move those persistence assertions to a normal read using a derived fixture path. Likewise, keep CCB-2-45's corrupt-cursor, short-log and registry-error proofs on normal reads. Their current fixtures use overrides (`cmd/metasystem/context_verbs_test.go:135`, `cmd/metasystem/context_verbs_test.go:200`). Isolation must not erase coverage for genuine live evidence errors.
+
+**Landing and later proof.**
+
+Part B owns the fix and rows 48 through 52. Its builder runs the focused steward and command tests, including existing normal-read tests. The seat reviews the concrete change with the other four findings. Do not defer isolation to report normalization or the duration measurement.
+
+Part C retains CCB-2-37 and CCB-2-38 for real source restarts and adds row 53. Part D extends the existing `TestContextStopFitsDurationBudget`, CCB-2-46: after warming each runtime, run an empty override and a distinct-call override, then drive the real Stop hook again. Require the original live verdict, unchanged committed counts and the existing duration limits. Include all new functional test names in CCB-2-47's `context-standard` selection. These extend the assigned part D proof (`artifacts/reports/codex-ccb-slice2b-brief-v2.md:218`, `artifacts/reports/codex-ccb-slice2b-brief-v2.md:224`, `artifacts/reports/codex-ccb-slice2b-brief-v2.md:230`). A diagnostic itself may parse its whole supplied file; it must not force the next Stop to do so.
+
+No code or runtime test was run for this amendment. No tracked file was edited and no commit was made. Existing polluted evidence is not repaired or deleted by this decision. Report normalization and conflict refusal remain governed by subsection 10.1.
+
+**Open questions for Wido**
+
+None for this amendment. The delegated scope decision is sufficient. It preserves the flag and isolates its effects without changing the context ceiling, Stop budget or retained evidence policy.
 
 ## 10. Critique record
 
