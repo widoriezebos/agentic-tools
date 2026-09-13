@@ -1,6 +1,6 @@
 # defect-analysis-gate
 
-- State: claimed
+- State: approved
 - Priority: 3
 - Sequence: 9
 - Risk: severity=2 novelty=2 exposure=2 accumulation=2 basis="severity 2: a gate that refuses a fix dispatch wrongly stalls a repair, one that admits without an analysis lets an unearned fix in; novelty 2: an analysis record on the goal and a challenge join through the existing register are new, the reproduction bar (two-bars Defect-Proof) and the admission boundary exist; exposure 2: every defect-fix dispatch; accumulation 2: the goal record's schema and the admission path"
@@ -9,14 +9,13 @@
 - Origin: main
 - Next step: 2026-09-13 09:2xZ m1b: design page LANDED (plans/defect-analysis-gate-design.md, a Codex draft on the seat's brief: the analysis record on the goal, the Defect-Proof join, the risk-scaled challenge through the finding register, the fail-closed gate at dispatch admission; three members in section 6). The seat held this goal only because the stop gate's idle rule demanded a claim; it is not in Wido's queue for m1b, so the claim is released. Next act for whoever takes it: the rostered Codex design read at DESIGN-BEARING on the landed page (--design metasystem/plans/defect-analysis-gate-design.md --outputs <manifest>), fold, then open member 1 of section 6. Risk answers recorded by the seat (tier 2) with the draft chain as evidence.
 - OpenedAt: 2026-09-02T11:36:02Z
-- Revision: 15
+- Revision: 16
 - Pinned: m1b
 - Budget: elapsedLimit=3d attemptLimit=12 reservedJobMinutesLimit=720 activeJobLimit=2 reviewRoundLimit=3
 - BudgetExceptions: 0
 - Approved: by=human:Wido at=2026-09-13T07:10:43Z revision=14 opid=23DDMV8DCJW21DABR4CF3DMN1F-m1b-30a7e141 authority=raise=23DDMV8DCJW21DABR4CF3DMN1F-m1b-30a7e141 digest=ba75848df89fb2ba5ecf6dfc6c047808aa4d9b81e4e54c6b4d3bb65cfeebebe1
 - Sliced: machine=m1b lineage=main-1789191336-90295-e4b24b revision=12 at=2026-09-13T06:34:01Z
-- Claimed: machine=m1b lineage=main-1789191336-90295-e4b24b at=2026-09-13T06:33:02Z revision=14 accountingRevision=12 episodeAt=2026-09-13T06:33:02Z episodeRevision=12
-- StopCapability: generation=14 revision=14 machine=m1b claimEpoch=2 fenceEpoch=0
+- Episode: machine=m1b lineage=main-1789191336-90295-e4b24b accountingRevision=12 episodeAt=2026-09-13T06:33:02Z episodeRevision=12 idleSeconds=0 released=2026-09-13T07:17:23Z
 
 History:
 - 2026-09-02T11:36:02Z X2TBEZEYHEK83X4YNEE0GCHB7S-m0-c5dbf036 open actor=human:Wido targets=defect-analysis-gate
@@ -34,4 +33,5 @@ History:
 - 2026-09-13T06:34:01Z ABJGC45TKRY7GW6NM1FM205Y4W-m1b-30a7e141 slice-start actor=m1b+main-1789191336-90295-e4b24b targets=defect-analysis-gate
 - 2026-09-13T07:10:43Z 23DDMV8DCJW21DABR4CF3DMN1F-m1b-30a7e141 edit actor=m1b+main-1789191336-90295-e4b24b targets=defect-analysis-gate reason=Misclassified: from=0 to=2 evidence=root:implementer-873925bde8faae7cf849fd18
 - 2026-09-13T07:17:19Z 5BQB02S2273HYDMCJBCD8YH4RM-m1b-30a7e141 edit actor=m1b+main-1789191336-90295-e4b24b targets=defect-analysis-gate
-Integrity: sha256=156f68cfbdc86087186fe7e98deb4a659e13ca91978f86b693e8e980c730e576
+- 2026-09-13T07:17:23Z 4037Q8ZXYNA6DN8S7ATGKE9QND-m1b-30a7e141 release actor=m1b+main-1789191336-90295-e4b24b targets=defect-analysis-gate
+Integrity: sha256=16766b698808d8d645b5c1f2a34dae95db1f275cc456f46db5386e81f12bcc9c
