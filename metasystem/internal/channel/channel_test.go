@@ -171,13 +171,18 @@ func TestCredentialIsTokenIdentity(t *testing.T) {
 func TestAskWritesRecordBeforePosting(t *testing.T) {
 	root := t.TempDir()
 	p := &testProvider{}
+	cursor := strings.Repeat("a", 40)
 	p.beforePost = func() {
 		matches, _ := filepath.Glob(filepath.Join(root, "artifacts", "agents", "channel", "questions", "*.json"))
 		if len(matches) != 1 {
 			t.Fatalf("post preceded durable record: %v", matches)
 		}
+		recorded, err := ReadQuestion(root, strings.TrimSuffix(filepath.Base(matches[0]), ".json"))
+		if err != nil || recorded.LedgerCursor != cursor {
+			t.Fatalf("post preceded durable ledger cursor: question=%+v err=%v", recorded, err)
+		}
 	}
-	_, err := Ask(AskRequest{RepoRoot: root, Goal: "g", Kind: "other", Machine: "m", Facts: []string{"fact"}, Provider: p, Now: time.Unix(1, 0)})
+	_, err := Ask(AskRequest{RepoRoot: root, Goal: "g", Kind: "other", Machine: "m", Facts: []string{"fact"}, Provider: p, Now: time.Unix(1, 0), LedgerCursor: cursor})
 	if err != nil {
 		t.Fatal(err)
 	}

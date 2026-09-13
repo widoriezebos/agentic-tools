@@ -1,14 +1,283 @@
 package goal
 
 import (
+	"bytes"
+	"context"
 	"fmt"
 	"os"
 	"os/exec"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"testing"
 	"time"
+
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/identity"
+	metarun "github.com/widoriezebos/agentic-tools/metasystem/internal/run"
 )
+
+func TestWaitGoalLandingAndHumanAct(t *testing.T) {
+	repo := t.TempDir()
+	mustGit(t, repo, "init", "-q", "-b", "main")
+	if err := os.WriteFile(filepath.Join(repo, "README.md"), []byte("seed\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	mustGit(t, repo, "add", "README.md")
+	mustGit(t, repo, "commit", "-qm", "seed")
+	change := strings.Repeat("a", 64)
+	mustGit(t, repo, "commit", "--allow-empty", "-qm", "land wait fixture", "--trailer", "Goal-Item: goal-a", "--trailer", "Landing-Provenance: chain=root-job change="+change, "--trailer", "Landing-Provenance-Verdict: pass bar=a")
+	tip := mustGit(t, repo, "rev-parse", "HEAD")
+	matched, provenance, err := landingAt(context.Background(), repo, tip, "goal-a", "root-job")
+	if err != nil || !matched || provenance != "chain=root-job change="+change {
+		t.Fatalf("landing match=%t provenance=%q err=%v", matched, provenance, err)
+	}
+	if matched, _, _ := landingAt(context.Background(), repo, tip, "goal-a", "other-chain"); matched {
+		t.Fatal("landing from another chain matched")
+	}
+	human := HistoryLine{Actor: "human:wido", Verb: "deny"}
+	channel := HistoryLine{Actor: "human:wido", Verb: "answer", AuthorityOutcome: AuthorityOutcomeAuthenticatedChannelWord, Question: "question-a"}
+	if !acceptedHumanAct(human) || !acceptedHumanAct(channel) || channel.Question != "question-a" {
+		t.Fatal("accepted human history predicates did not retain the actual act")
+	}
+	if binary := os.Getenv("METASYSTEM_WAIT_BINARY"); binary != "" {
+		t.Run("installed two-clone ledger waits", func(t *testing.T) {
+			testInstalledGoalWaits(t, binary)
+		})
+	}
+
+	_, publisher, waiterClone := twoClones(t)
+	seedLedger(t, publisher)
+	mustGit(t, waiterClone, "config", "metasystem.goal.machine", "mac-waiter")
+	open := func(id, ulid string) string {
+		t.Helper()
+		result, err := Open(verbReq(publisher, ulid, "mac-a"), id, "Wait fixture.", "main", "Wait for the recorded event.")
+		if err != nil || result.Outcome != OutcomeConfirmed {
+			t.Fatalf("open %s: %+v %v", id, result, err)
+		}
+		mustGit(t, waiterClone, "fetch", "-q", "origin")
+		mustGit(t, waiterClone, "update-ref", AcceptedRef, result.Tip)
+		return result.Tip
+	}
+	answer := func(id, question, ulid string) string {
+		t.Helper()
+		request := verbReq(publisher, ulid, "mac-a")
+		result, err := Answer(request, id, question, "yes", "", AnswerProof{Provider: "fake", User: "wido", Ref: "thread/message", Step: 1})
+		if err != nil || result.Outcome != OutcomeConfirmed {
+			t.Fatalf("answer %s/%s: %+v %v", id, question, result, err)
+		}
+		return result.Tip
+	}
+	answerCursor := open("answer-at-entry", "01J5X0000000000000000000X1")
+	answerTip := answer("answer-at-entry", "question-entry", "01J5X0000000000000000000X2")
+	answerTree := mustGit(t, publisher, "show", "-s", "--format=%T", answerTip)
+	withoutTrailer := exec.Command("git", "-C", publisher, "-c", "user.name=t", "-c", "user.email=t@t", "commit-tree", answerTree, "-p", answerCursor, "-m", "accepted answer without a transaction trailer")
+	withoutTrailer.Env = environWithoutGitSteering()
+	replacementBytes, replacementErr := withoutTrailer.CombinedOutput()
+	if replacementErr != nil {
+		t.Fatalf("replace answer commit: %v %s", replacementErr, replacementBytes)
+	}
+	replacementTip := strings.TrimSpace(string(replacementBytes))
+	mustGit(t, publisher, "push", "-q", "--force", "origin", replacementTip+":refs/heads/main")
+	mustGit(t, publisher, "update-ref", AcceptedRef, replacementTip)
+	answerSelector := metarun.WaitSelector{Kind: "goal", TargetID: "answer-at-entry", GoalID: "answer-at-entry", Event: "human-act", Verb: "answer", Question: "question-entry", After: answerCursor}
+	answerObservation, err := ObserveLedger(context.Background(), waiterClone, answerSelector, metarun.WaiterTarget{}, answerCursor)
+	if err != nil || answerObservation.Pending || answerObservation.ExitCode != metarun.ExitGreen {
+		t.Fatalf("answer recorded before registration was missed: %+v %v", answerObservation, err)
+	}
+
+	wrongCursor := open("wrong-then-right", "01J5X0000000000000000000X3")
+	_ = answer("wrong-then-right", "question-wrong", "01J5X0000000000000000000X4")
+	rightSelector := metarun.WaitSelector{Kind: "goal", TargetID: "wrong-then-right", GoalID: "wrong-then-right", Event: "human-act", Verb: "answer", Question: "question-right", After: wrongCursor}
+	wrongObservation, err := ObserveLedger(context.Background(), waiterClone, rightSelector, metarun.WaiterTarget{}, wrongCursor)
+	if err != nil || !wrongObservation.Pending {
+		t.Fatalf("wrong question ended the wait: %+v %v", wrongObservation, err)
+	}
+	_ = answer("wrong-then-right", "question-right", "01J5X0000000000000000000X5")
+	rightObservation, err := ObserveLedger(context.Background(), waiterClone, rightSelector, wrongObservation.Incarnation, wrongObservation.LedgerTip)
+	if err != nil || rightObservation.Pending || rightObservation.ExitCode != metarun.ExitGreen {
+		t.Fatalf("right question did not end the wait: %+v %v", rightObservation, err)
+	}
+
+	landingCursor := open("landing-at-entry", "01J5X0000000000000000000X6")
+	parent := mustGit(t, publisher, "rev-parse", "origin/main")
+	tree := mustGit(t, publisher, "show", "-s", "--format=%T", parent)
+	landingMessage := "land wait fixture\n\nGoal-Item: landing-at-entry\nLanding-Provenance: chain=root-job change=" + strings.Repeat("b", 64) + "\nLanding-Provenance-Verdict: pass fixture\n"
+	commit := exec.Command("git", "-C", publisher, "-c", "user.name=t", "-c", "user.email=t@t", "commit-tree", tree, "-p", parent)
+	commit.Env = environWithoutGitSteering()
+	commit.Stdin = strings.NewReader(landingMessage)
+	landingBytes, commitErr := commit.CombinedOutput()
+	if commitErr != nil {
+		t.Fatalf("commit landing: %v %s", commitErr, landingBytes)
+	}
+	landingTip := strings.TrimSpace(string(landingBytes))
+	mustGit(t, publisher, "push", "-q", "origin", landingTip+":refs/heads/main")
+	landingSelector := metarun.WaitSelector{Kind: "goal", TargetID: "landing-at-entry", GoalID: "landing-at-entry", Event: "landing", Chain: "root-job", After: landingCursor}
+	landingObservation, err := ObserveLedger(context.Background(), waiterClone, landingSelector, metarun.WaiterTarget{}, landingCursor)
+	if err != nil || landingObservation.Pending || landingObservation.ExitCode != metarun.ExitGreen {
+		t.Fatalf("landing recorded before registration was missed: %+v %v", landingObservation, err)
+	}
+	mustGit(t, waiterClone, "commit", "--allow-empty", "-qm", "local-only non-event")
+	localSelector := metarun.WaitSelector{Kind: "goal", TargetID: "landing-at-entry", GoalID: "landing-at-entry", Event: "human-act", Verb: "edit", After: landingTip}
+	localObservation, err := ObserveLedger(context.Background(), waiterClone, localSelector, metarun.WaiterTarget{}, landingTip)
+	if err != nil || !localObservation.Pending {
+		t.Fatalf("local-only commit affected the wait: %+v %v", localObservation, err)
+	}
+	next := "agent edit is not human authority"
+	editResult, err := Edit(verbReq(publisher, "01J5X0000000000000000000X7", "mac-a"), "landing-at-entry", EditFields{NextStep: &next})
+	if err != nil || editResult.Outcome != OutcomeConfirmed {
+		t.Fatalf("agent edit: %+v %v", editResult, err)
+	}
+	wrongAuthority, err := ObserveLedger(context.Background(), waiterClone, localSelector, metarun.WaiterTarget{}, landingTip)
+	if err != nil || !wrongAuthority.Pending {
+		t.Fatalf("non-human authority ended the wait: %+v %v", wrongAuthority, err)
+	}
+	mustGit(t, publisher, "push", "-q", "--force", "origin", landingTip+":refs/heads/main")
+	rewindSelector := localSelector
+	rewindSelector.After = editResult.Tip
+	rewind, err := ObserveLedger(context.Background(), waiterClone, rewindSelector, metarun.WaiterTarget{}, editResult.Tip)
+	if err != nil || rewind.ExitCode != metarun.ExitNoRecord || !strings.Contains(rewind.Reason, "rewound") {
+		t.Fatalf("rewind source failure = %+v %v", rewind, err)
+	}
+}
+
+type installedGoalWaitResult struct {
+	output string
+	err    error
+}
+
+type installedGoalWaitProcess struct {
+	command *exec.Cmd
+	done    chan installedGoalWaitResult
+}
+
+func startInstalledGoalWait(t *testing.T, binary, root string, args ...string) *installedGoalWaitProcess {
+	t.Helper()
+	allArgs := append([]string{"wait", "--root", root}, args...)
+	command := exec.Command(binary, allArgs...)
+	var output bytes.Buffer
+	command.Stdout, command.Stderr = &output, &output
+	if err := command.Start(); err != nil {
+		t.Fatal(err)
+	}
+	process := &installedGoalWaitProcess{command: command, done: make(chan installedGoalWaitResult, 1)}
+	go func() {
+		err := command.Wait()
+		process.done <- installedGoalWaitResult{output: output.String(), err: err}
+	}()
+	t.Cleanup(func() {
+		if command.ProcessState == nil {
+			_ = command.Process.Kill()
+			<-process.done
+		}
+	})
+	return process
+}
+
+func waitForInstalledGoalRow(t *testing.T, root, lineage, target string, process *installedGoalWaitProcess) metarun.Waiter {
+	t.Helper()
+	deadline := time.Now().Add(20 * time.Second)
+	for time.Now().Before(deadline) {
+		select {
+		case result := <-process.done:
+			t.Fatalf("installed goal waiter exited before it became pending: err=%v output=%s", result.err, result.output)
+		default:
+		}
+		rows, failures := metarun.PendingWaitersForLineages(root, []string{lineage})
+		if len(failures) != 0 {
+			t.Fatalf("read installed goal waiter: %v", failures)
+		}
+		for _, row := range rows {
+			if row.TargetID == target {
+				return row
+			}
+		}
+		time.Sleep(25 * time.Millisecond)
+	}
+	_ = process.command.Process.Kill()
+	<-process.done
+	t.Fatalf("installed goal waiter for %s did not become pending within 20 seconds", target)
+	return metarun.Waiter{}
+}
+
+func awaitInstalledGoalWait(t *testing.T, process *installedGoalWaitProcess, wantExit int) string {
+	t.Helper()
+	select {
+	case result := <-process.done:
+		exit := 0
+		if result.err != nil {
+			status, ok := result.err.(*exec.ExitError)
+			if !ok {
+				t.Fatalf("installed goal waiter failed without an exit status: %v output=%s", result.err, result.output)
+			}
+			exit = status.ExitCode()
+		}
+		if exit != wantExit {
+			t.Fatalf("installed goal waiter exit=%d want=%d output=%s", exit, wantExit, result.output)
+		}
+		return result.output
+	case <-time.After(25 * time.Second):
+		_ = process.command.Process.Kill()
+		<-process.done
+		t.Fatal("installed goal waiter exceeded its 25-second completion ceiling")
+		return ""
+	}
+}
+
+func testInstalledGoalWaits(t *testing.T, binary string) {
+	_, publisher, waiterClone := twoClones(t)
+	seedLedger(t, publisher)
+	mustGit(t, waiterClone, "config", "metasystem.goal.machine", "mac-waiter")
+	self := int64(os.Getpid())
+	exact, state, err := (identity.KernelProber{}).Probe(self)
+	if err != nil || state != identity.Alive {
+		t.Fatalf("current process identity=%+v state=%s err=%v", exact, state, err)
+	}
+	const lineage = "installed-ledger-lineage"
+	announce := exec.Command(binary, "lease", "announce", "--root", waiterClone, "--session", "installed-ledger-session", "--pid", strconv.FormatInt(self, 10), "--start", strconv.FormatInt(exact.StartedAt.Unix(), 10), "--start-ticks", strconv.FormatInt(exact.StartTicks, 10), "--boot-id", exact.BootID, "--tag", "installed-ledger-test", "--runtime", "fake", "--owner-lineage", lineage)
+	if output, announceErr := announce.CombinedOutput(); announceErr != nil {
+		t.Fatalf("announce installed ledger holder: %v %s", announceErr, output)
+	}
+	syncCursor := func(tip string) {
+		t.Helper()
+		mustGit(t, waiterClone, "fetch", "-q", "origin")
+		mustGit(t, waiterClone, "update-ref", AcceptedRef, tip)
+	}
+	openGoal := func(id, ulid string) string {
+		t.Helper()
+		result, openErr := Open(verbReq(publisher, ulid, "mac-a"), id, "Installed ledger wait target.", "main", "Wait for a recorded event.")
+		if openErr != nil || result.Outcome != OutcomeConfirmed {
+			t.Fatalf("open installed wait target %s: %+v %v", id, result, openErr)
+		}
+		return result.Tip
+	}
+
+	actionTarget := "installed-actionable-target"
+	actionCursor := openGoal(actionTarget, "01J5X0000000000000000000Y1")
+	syncCursor(actionCursor)
+	actionWait := startInstalledGoalWait(t, binary, waiterClone, "--goal", actionTarget, "--event", "human-act", "--verb", "deny", "--after", actionCursor, "--timeout", "1m", "--json")
+	_ = waitForInstalledGoalRow(t, waiterClone, lineage, actionTarget, actionWait)
+	// Reaching pending is the bounded proof that an unchanged frontier did
+	// not end registration before the newly-ready goal is published.
+	ready := "installed-newly-ready"
+	_ = openGoal(ready, "01J5X0000000000000000000Y2")
+	approveGoalForTest(t, verbReq(publisher, "01J5X0000000000000000000Y3", "mac-a"), ready, testBudget())
+	if output := awaitInstalledGoalWait(t, actionWait, 6); !strings.Contains(output, "became claimable") {
+		t.Fatalf("installed actionable result omitted the changed frontier: %s", output)
+	}
+
+	answerTarget := "installed-answer-target"
+	answerCursor := openGoal(answerTarget, "01J5X0000000000000000000Y4")
+	syncCursor(answerCursor)
+	answerWait := startInstalledGoalWait(t, binary, waiterClone, "--goal", answerTarget, "--event", "human-act", "--verb", "answer", "--question", "installed-question", "--after", answerCursor, "--timeout", "1m", "--json")
+	_ = waitForInstalledGoalRow(t, waiterClone, lineage, answerTarget, answerWait)
+	answerResult, answerErr := Answer(verbReq(publisher, "01J5X0000000000000000000Y5", "mac-a"), answerTarget, "installed-question", "continue", "", AnswerProof{Provider: "fake", User: "wido", Ref: "thread/installed", Step: 1})
+	if answerErr != nil || answerResult.Outcome != OutcomeConfirmed {
+		t.Fatalf("publish installed answer: %+v %v", answerResult, answerErr)
+	}
+	if output := awaitInstalledGoalWait(t, answerWait, metarun.ExitGreen); !strings.Contains(output, `"exitCode":0`) {
+		t.Fatalf("installed answer result was not green: %s", output)
+	}
+}
 
 // mustGit runs git in dir or fails the test with the full output.
 func mustGit(t *testing.T, dir string, args ...string) string {

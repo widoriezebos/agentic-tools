@@ -12,6 +12,22 @@ adapter_common_init() { # runtime
   jobs="$agents/jobs"
 }
 
+wait_delivery() {
+  local wait_id= nonce= deadline= session=
+  while (($#)); do
+    case "$1" in
+      --wait-id) [[ $# -ge 2 ]] || return 2; wait_id=$2; shift 2 ;;
+      --nonce) [[ $# -ge 2 ]] || return 2; nonce=$2; shift 2 ;;
+      --deadline) [[ $# -ge 2 ]] || return 2; deadline=$2; shift 2 ;;
+      --session) [[ $# -ge 2 ]] || return 2; session=$2; shift 2 ;;
+      *) return 2 ;;
+    esac
+  done
+  [[ -n "$wait_id" && -n "$nonce" && -n "$session" &&
+     "$deadline" =~ ^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}(\.[0-9]+)?Z$ ]] || return 2
+  printf '%s\n' blocking
+}
+
 field() { # json file, dotted field
   "$ms" json get --file "$1" --field "$2"
 }

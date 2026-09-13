@@ -524,8 +524,9 @@ func families() []family {
 		},
 		{
 			name:    "session",
-			summary: "the announced main session's human-only stop authority",
+			summary: "the announced main session's restart orientation and human-only stop authority",
 			verbs: []verb{
+				{"start", "print durable wait recovery commands for this holder session", runSessionStart},
 				{"stop", "human-only: authorize one quiet stop for the current announced main session", runSessionStop},
 				{"end", "retire any unused quiet-stop authorization for one ended session (internal)", runSessionEnd},
 			},
@@ -691,6 +692,9 @@ func dispatch(args []string) int {
 	if args[0] == "watch" {
 		return runWatch(args[1:])
 	}
+	if args[0] == "wait" {
+		return runWait(args[1:])
+	}
 	if args[0] == "delegate" {
 		return runDelegate(args[1:])
 	}
@@ -727,6 +731,7 @@ func usage() {
 	fmt.Fprintln(os.Stderr, "       metasystem health acknowledge-alert --episode <id> [--repo <checkout>]")
 	fmt.Fprintln(os.Stderr, "       metasystem watch [--root <checkout>] [--json]")
 	fmt.Fprintln(os.Stderr, "       metasystem watch --job <id> [--root <checkout>] [--poll-ms <milliseconds>]")
+	fmt.Fprintln(os.Stderr, "       metasystem wait (--job <id>|--run <id>|--attempt <id>|--goal <id>|--resume <wait-id>) [--timeout <duration>] [--json]")
 	fmt.Fprintln(os.Stderr, "       metasystem delegate --role <role> --brief <file> --goal <id|none-explicit> --destructive-reach <class> [--op <id>]")
 	fmt.Fprintln(os.Stderr, "       metasystem delegate --follow-up <job> --brief <file>")
 	fmt.Fprintln(os.Stderr, "       metasystem delegate --cancel <job>")

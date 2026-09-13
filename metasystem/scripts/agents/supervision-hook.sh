@@ -1371,6 +1371,16 @@ if output=$(METASYSTEM_AGENT_RUNTIME="$runtime" "$ms" up --metasystem-root "$har
   if [[ "$up_aggregate" == *" re-armed="* ]]; then
     surface_json "Metasystem re-armed the rebuilt engine: $up_aggregate"
   fi
+  waiting_lines_rc=0
+  waiting_lines=$("$ms" session start --root "$state_root" --session "$session" 2>&1) || waiting_lines_rc=$?
+  if (( waiting_lines_rc == 0 )) && [[ -n "$waiting_lines" ]]; then
+    collect_start_notice "$waiting_lines"
+  elif (( waiting_lines_rc == 64 )); then
+    : # A non-holder session has no recovery rows to advertise.
+  elif (( waiting_lines_rc != 0 )); then
+    waiting_lines=${waiting_lines//$'\n'/'; '}
+    collect_start_notice "Metasystem could not read durable wait recovery rows for this session: $waiting_lines"
+  fi
   emit_start_payload
   exit 0
 fi

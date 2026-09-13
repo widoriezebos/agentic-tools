@@ -40,12 +40,14 @@ if (( ! fixture_bed_child )); then
   else
     run_fixture_bed_scenarios supervision "supervision fixtures passed (S4-1 through S4-16 and engine re-arm)" \
       "$fixture_bed_script" bed-death-self-test operator-layout census-lifecycle slow-census idle-hook rotation-log foreign-owner stop-hook-monitor \
-      rearm-rebuild rearm-launch-fails rearm-provenance stop-everything seat-survives status-is-live stop-fence arm-again arm-refuses-survivor
+      rearm-rebuild rearm-launch-fails rearm-provenance stop-everything seat-survives status-is-live stop-fence arm-again arm-refuses-survivor \
+      wait-job-run wait-proof wait-ledger wait-restart wait-bounds
   fi
 fi
 case "$fixture_scenario" in
   bed-death-self-test | operator-layout | census-lifecycle | slow-census | idle-hook | rotation-log | foreign-owner | stop-hook-monitor | \
-    rearm-rebuild | rearm-launch-fails | rearm-provenance | stop-everything | seat-survives | status-is-live | stop-fence | arm-again | arm-refuses-survivor) ;;
+    rearm-rebuild | rearm-launch-fails | rearm-provenance | stop-everything | seat-survives | status-is-live | stop-fence | arm-again | arm-refuses-survivor | \
+    wait-job-run | wait-proof | wait-ledger | wait-restart | wait-bounds) ;;
   *) echo "supervision fixtures: unknown scenario: $fixture_scenario" >&2; exit 64 ;;
 esac
 
@@ -548,6 +550,42 @@ harness_fixture_warn_if_engine_stale "$source_root"
 harness_fixture_budget_init "$source_root"
 fixture_ceiling_sec=$(harness_fixture_cap supervision-wait)
 [[ -x "$ms" ]] || { echo "supervision fixtures: binary absent; run the go gate first" >&2; exit 1; }
+
+# The wait bed legs launch their Go-owned assertions in this existing
+# process-isolated bed. Shell selects the contract slice and interprets no
+# waiter result of its own.
+case "$fixture_scenario" in
+  wait-job-run)
+    (cd "$source_root" && METASYSTEM_WAIT_BINARY="$ms" go test ./internal/adapter ./internal/dispatch ./internal/run ./cmd/metasystem -run 'TestWait(AdapterBlocking|JobTerminals|RunTerminalsAndDeadline|InstalledRunCommand)$' -count=1)
+    fixture_child_completed=1
+    assert_fixture_supervision_isolation
+    exit 0
+    ;;
+  wait-proof)
+    (cd "$source_root" && METASYSTEM_WAIT_BINARY="$ms" go test ./internal/proofrun ./cmd/metasystem -run 'TestWait(AttemptRequiresCommittedTerminal|AttemptAfterDrain|InstalledRunCommand)$' -count=1)
+    fixture_child_completed=1
+    assert_fixture_supervision_isolation
+    exit 0
+    ;;
+  wait-ledger)
+    (cd "$source_root" && METASYSTEM_WAIT_BINARY="$ms" go test ./internal/goal ./cmd/metasystem -run 'TestWait(GoalLandingAndHumanAct|GoalCursorHistory|ChannelAnswer)$' -count=1)
+    fixture_child_completed=1
+    assert_fixture_supervision_isolation
+    exit 0
+    ;;
+  wait-restart)
+    (cd "$source_root" && METASYSTEM_WAIT_BINARY="$ms" go test ./internal/run ./internal/report ./cmd/metasystem -run 'TestWait(RestartRecoveryReplay|LeaseTakeoverRepairsAndResumes|SessionStartPrintsPendingRows)$|TestWaitingLinesUseDurableResumeCommand$' -count=1)
+    fixture_child_completed=1
+    assert_fixture_supervision_isolation
+    exit 0
+    ;;
+  wait-bounds)
+    (cd "$source_root" && METASYSTEM_WAIT_BINARY="$ms" go test ./internal/run ./internal/goal -run 'TestWait(LockClockAndFetchBounds|GoalFetchDeadline)$' -count=1)
+    fixture_child_completed=1
+    assert_fixture_supervision_isolation
+    exit 0
+    ;;
+esac
 
 enroll_fixture_engine() { # repository state root, engine path
   local state_root=$1 engine=$2 digest identity_dir

@@ -115,6 +115,9 @@ func containsContiguousFields(text, token string) bool {
 // Answer records an authenticated channel reply and its next-step marker in
 // the same goal transaction. Replaying its operation identifier is a no-op.
 func Answer(r VerbRequest, id, qid, text, wants string, proof AnswerProof) (PublishResult, error) {
+	if strings.TrimSpace(qid) == "" {
+		return PublishResult{}, fmt.Errorf("answer requires the question identifier it answers")
+	}
 	if proof.Provider == "" || proof.User == "" || proof.Ref == "" || proof.Step < 1 || strings.TrimSpace(text) == "" {
 		return PublishResult{}, fmt.Errorf("answer requires complete authenticated channel proof and text")
 	}
@@ -168,6 +171,7 @@ func answerGoalChange(t *TreeGoals, id, qid, text, reason, opid, at string, proo
 		ChannelUser:      proof.User,
 		ChannelRef:       proof.Ref,
 		ChannelStep:      proof.Step,
+		Question:         qid,
 		Reason:           reason,
 	})
 	return Change{Path: livePath(id), Content: RenderFile(f)}, nil

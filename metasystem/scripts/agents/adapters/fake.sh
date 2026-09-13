@@ -18,6 +18,7 @@ Usage:
   scripts/agents/adapters/fake.sh cancel --job <job-id>
   scripts/agents/adapters/fake.sh selftest
   scripts/agents/adapters/fake.sh local-config-paths
+  scripts/agents/adapters/fake.sh wait-delivery --wait-id ID --nonce NONCE --deadline RFC3339-UTC --session SESSION-ID
 
 The simulator reads FAKE:<behavior> markers from the assembled prompt.
 Supported behaviors include malformed-return, missing-session-id,
@@ -347,6 +348,21 @@ command=${1:-}
 [[ -n "$command" ]] || { usage; exit 2; }
 shift
 case "$command" in
+  wait-delivery)
+    wait_id= nonce= deadline= session=
+    while (($#)); do
+      case "$1" in
+        --wait-id) [[ $# -ge 2 ]] || exit 2; wait_id=$2; shift 2 ;;
+        --nonce) [[ $# -ge 2 ]] || exit 2; nonce=$2; shift 2 ;;
+        --deadline) [[ $# -ge 2 ]] || exit 2; deadline=$2; shift 2 ;;
+        --session) [[ $# -ge 2 ]] || exit 2; session=$2; shift 2 ;;
+        *) exit 2 ;;
+      esac
+    done
+    [[ -n "$wait_id" && -n "$nonce" && -n "$session" &&
+       "$deadline" =~ ^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}(\.[0-9]+)?Z$ ]] || exit 2
+    printf '%s\n' blocking
+    ;;
   output-stream)
     [[ ${1:-} == --round-dir && $# -eq 2 && $2 == /* ]] || { usage; exit 2; }
     printf '%s/events.jsonl\n' "${2%/}"

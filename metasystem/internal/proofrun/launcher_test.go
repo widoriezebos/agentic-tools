@@ -2,11 +2,13 @@ package proofrun
 
 import (
 	"bytes"
+	"context"
 	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"strings"
 	"sync"
@@ -14,8 +16,54 @@ import (
 	"time"
 
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/identity"
+	metarun "github.com/widoriezebos/agentic-tools/metasystem/internal/run"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/stopfence"
 )
+
+func TestWaitAttemptAfterDrain(t *testing.T) {
+	root, proofIdentity := proofAttemptFixture(t, "wait-after-drain")
+	launcher, err := CurrentProcessIdentity(nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	now := time.Now().UTC()
+	attempt, _, err := ReserveLocked(AdmissionRequest{ControlRoot: root, ExecutionRoot: root, GoalID: "goal-a", GoalRevision: 2, AccountingRevision: 2, ReservedMinutes: 2, Identity: proofIdentity, Launcher: launcher, Now: now})
+	if err != nil {
+		t.Fatal(err)
+	}
+	worker := exec.Command("sleep", "60")
+	if err := worker.Start(); err != nil {
+		t.Fatal(err)
+	}
+	workerPID := worker.Process.Pid
+	t.Cleanup(func() {
+		if worker.ProcessState == nil {
+			_ = worker.Process.Kill()
+			_ = worker.Wait()
+		}
+	})
+	if err := worker.Process.Kill(); err != nil {
+		t.Fatal(err)
+	}
+	if err := worker.Wait(); err == nil {
+		t.Fatal("fixture worker unexpectedly exited successfully after it was killed")
+	}
+	if exact, state, probeErr := (identity.KernelProber{}).Probe(int64(workerPID)); probeErr != nil || state != identity.Dead {
+		t.Fatalf("fixture worker %d was not proven dead before terminal publication: identity=%+v state=%s err=%v", workerPID, exact, state, probeErr)
+	}
+	selector := metarun.WaitSelector{Kind: "attempt", TargetID: attempt.AttemptID}
+	observation, err := ObserveAttempt(context.Background(), root, selector, metarun.WaiterTarget{}, "")
+	if err != nil || !observation.Pending {
+		t.Fatalf("a drained worker without a published terminal concluded the attempt: %+v err=%v", observation, err)
+	}
+	if _, err := FinalizeAttempt(root, attempt.AttemptID, TerminalSuccess, 0, "proof committed after drain", nil, now.Add(time.Minute)); err != nil {
+		t.Fatal(err)
+	}
+	observation, err = ObserveAttempt(context.Background(), root, selector, metarun.WaiterTarget{}, "")
+	if err != nil || observation.Pending || observation.ExitCode != metarun.ExitGreen {
+		t.Fatalf("committed post-drain terminal = %+v err=%v", observation, err)
+	}
+}
 
 type testCreationClaim struct {
 	mu     sync.Mutex

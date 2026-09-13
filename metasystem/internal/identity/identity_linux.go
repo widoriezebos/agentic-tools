@@ -18,6 +18,29 @@ import (
 // /proc/<pid>/stat paired with the kernel boot ID, plus argv from cmdline.
 type KernelProber struct{}
 
+// BootClock returns the current boot identifier and elapsed time on that
+// boot. Wait deadlines pair this clock with UTC so a wall-clock step cannot
+// silently lengthen a registered wait.
+func BootClock() (string, time.Duration, error) {
+	id, err := bootID()
+	if err != nil {
+		return "", 0, err
+	}
+	raw, err := os.ReadFile("/proc/uptime")
+	if err != nil {
+		return "", 0, fmt.Errorf("identity: read /proc/uptime: %w", err)
+	}
+	fields := strings.Fields(string(raw))
+	if len(fields) == 0 {
+		return "", 0, fmt.Errorf("identity: /proc/uptime is empty")
+	}
+	seconds, err := strconv.ParseFloat(fields[0], 64)
+	if err != nil || seconds < 0 {
+		return "", 0, fmt.Errorf("identity: invalid /proc/uptime value %q", fields[0])
+	}
+	return id, time.Duration(seconds * float64(time.Second)), nil
+}
+
 // userHZ is the userspace ABI clock-tick constant. It is 100 on all
 // mainstream Linux architectures and independent of the kernel's internal
 // CONFIG_HZ; there is no cgo-free sysconf, so it is named here rather than

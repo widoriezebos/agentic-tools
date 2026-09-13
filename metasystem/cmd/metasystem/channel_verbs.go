@@ -17,6 +17,7 @@ import (
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/channel/phase"
 	channelTelegram "github.com/widoriezebos/agentic-tools/metasystem/internal/channel/telegram"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/goal"
+	metarun "github.com/widoriezebos/agentic-tools/metasystem/internal/run"
 )
 
 func channelIdentity(root string) (string, string, error) {
@@ -166,7 +167,15 @@ func runChannelAsk(args []string) int {
 		return 1
 	}
 	defer cancel()
-	q, e := channel.Ask(channel.AskRequest{Context: ctx, RepoRoot: *root, Goal: *id, Kind: *kind, Machine: machine, Lineage: lineage, Facts: facts, Options: opts, Recommendation: *recommend, Wants: *wants, Budget: proposedBudget, Provider: l.Provider, Destination: l.Destination, Now: time.Now()})
+	ledgerCursor, cursorExists, cursorErr := goal.AcceptedLedgerTip(*root)
+	if cursorErr != nil {
+		fmt.Fprintln(os.Stderr, "channel ask could not read the accepted ledger cursor:", cursorErr)
+		return 1
+	}
+	if !cursorExists {
+		ledgerCursor = ""
+	}
+	q, e := channel.Ask(channel.AskRequest{Context: ctx, RepoRoot: *root, Goal: *id, Kind: *kind, Machine: machine, Lineage: lineage, Facts: facts, Options: opts, Recommendation: *recommend, Wants: *wants, Budget: proposedBudget, Provider: l.Provider, Destination: l.Destination, Now: time.Now(), LedgerCursor: ledgerCursor})
 	if e != nil {
 		fmt.Fprintln(os.Stderr, e)
 		return 1
@@ -196,50 +205,107 @@ func channelQuestionFlags(name string, args []string) (string, string, bool) {
 	}
 	return *root, *id, true
 }
+
+var channelWaitCommand = runWaitWithPoll
+
 func runChannelWait(args []string) int {
 	f := flag.NewFlagSet("channel wait", flag.ContinueOnError)
 	root := f.String("root", ".", "repository root")
 	id := f.String("question", "", "question id")
-	timeout := f.Int("timeout", 0, "timeout in minutes")
-	pollSeconds := f.Int("poll-seconds", 30, "channel poll interval in seconds (0 disables polling)")
-	if f.Parse(args) != nil || *id == "" {
+	resume := f.String("resume", "", "durable channel wait identifier")
+	after := f.String("after", "", "accepted ledger cursor (required for legacy question records)")
+	timeoutMinutes := f.Int("timeout", 0, "timeout in minutes (default 24 hours)")
+	pollSeconds := f.Int("poll-seconds", 30, "channel provider poll interval in seconds (0 disables polling)")
+	if f.Parse(args) != nil || f.NArg() != 0 || (*id == "") == (*resume == "") || *timeoutMinutes < 0 || *timeoutMinutes > 24*60 || *pollSeconds < 0 {
 		return 2
 	}
-	deadline := time.Time{}
-	if *timeout > 0 {
-		deadline = time.Now().Add(time.Duration(*timeout) * time.Minute)
+	questionID := *id
+	if *resume != "" {
+		stateRoot, resolveErr := goal.ResolveStateRoot(*root)
+		if resolveErr != nil {
+			fmt.Fprintln(os.Stderr, resolveErr)
+			return 65
+		}
+		row, _, rowErr := metarun.FindWaiterByID(stateRoot, *resume)
+		if rowErr != nil {
+			fmt.Fprintln(os.Stderr, "channel wait cannot read its durable registration:", rowErr)
+			return 4
+		}
+		if row.Selector.Poll != "channel" {
+			fmt.Fprintln(os.Stderr, "channel wait cannot resume a wait that has no channel poll selector")
+			return 67
+		}
+		questionID = row.Selector.Question
+	}
+	q, err := channel.ReadQuestion(*root, questionID)
+	if err != nil {
+		fmt.Fprintln(os.Stderr, err)
+		return 1
+	}
+	cursor := ""
+	if *resume == "" {
+		cursor = *after
+		if cursor == "" {
+			cursor = q.LedgerCursor
+		}
+		if cursor == "" {
+			fmt.Fprintln(os.Stderr, "channel wait: this legacy question has no ledgerCursor; pass --after with the accepted cursor recorded before the question")
+			return 67
+		}
+	} else if *after != "" {
+		fmt.Fprintln(os.Stderr, "channel wait --resume accepts no replacement ledger cursor")
+		return 67
+	}
+	loaded, err := phase.Load(*root, true)
+	if err != nil {
+		fmt.Fprintln(os.Stderr, "channel wait provider is unavailable:", err)
+		return 1
+	}
+	if loaded.Provider == nil {
+		fmt.Fprintln(os.Stderr, "channel wait requires a configured channel provider")
+		return 1
+	}
+	machine, lineage, err := channelIdentity(*root)
+	if err != nil {
+		fmt.Fprintln(os.Stderr, err)
+		return 1
 	}
 	nextPoll := time.Time{}
-	for {
-		q, err := channel.ReadQuestion(*root, *id)
-		if err != nil {
-			fmt.Fprintln(os.Stderr, err)
-			return 1
+	poll := func(ctx context.Context) error {
+		now := time.Now()
+		if *pollSeconds == 0 || (!nextPoll.IsZero() && now.Before(nextPoll)) {
+			return errChannelPollNotDue
 		}
-		if q.Answer != nil {
-			fmt.Println(q.Answer.Text)
-			return 0
-		}
-		if *pollSeconds > 0 && (nextPoll.IsZero() || !time.Now().Before(nextPoll)) {
-			ctx, cancel, err := channelPollContext(*root)
-			if err != nil {
-				fmt.Fprintln(os.Stderr, err)
-				return 1
-			}
-			_, err = phase.Run(ctx, *root)
-			cancel()
-			nextPoll = time.Now().Add(time.Duration(*pollSeconds) * time.Second)
-			if err != nil {
-				fmt.Fprintln(os.Stderr, err)
-			}
-			continue
-		}
-		if !deadline.IsZero() && time.Now().After(deadline) {
-			fmt.Fprintln(os.Stderr, "channel wait timed out")
-			return 1
-		}
-		time.Sleep(200 * time.Millisecond)
+		nextPoll = now.Add(time.Duration(*pollSeconds) * time.Second)
+		_, pollErr := channel.Poll(ctx, channel.PollConfig{
+			RepoRoot: *root, Destination: "fleet", ProviderName: loaded.Adapter,
+			HumanUserID: loaded.HumanUserID, TOTPSecret: loaded.TOTPSecret,
+			Machine: machine, Lineage: lineage, Provider: loaded.Provider,
+			DestinationConfig: loaded.Destination, Now: time.Now(), MaxDispositions: 5,
+		})
+		return pollErr
 	}
+	waitArgs := []string{"--root", *root}
+	if *resume != "" {
+		waitArgs = append(waitArgs, "--resume", *resume)
+	} else {
+		waitArgs = append(waitArgs, "--goal", q.Goal, "--event", "human-act", "--verb", "answer", "--question", q.ID, "--after", cursor)
+	}
+	if *timeoutMinutes > 0 {
+		waitArgs = append(waitArgs, "--timeout", (time.Duration(*timeoutMinutes) * time.Minute).String())
+	} else if *resume == "" {
+		waitArgs = append(waitArgs, "--timeout", (24 * time.Hour).String())
+	}
+	code := channelWaitCommand(waitArgs, poll)
+	if code == 0 {
+		answered, readErr := channel.ReadQuestion(*root, q.ID)
+		if readErr != nil || answered.Answer == nil {
+			fmt.Fprintln(os.Stderr, "channel wait matched an answer act but its accepted answer text is unavailable")
+			return 1
+		}
+		fmt.Println(answered.Answer.Text)
+	}
+	return code
 }
 func runChannelPoll(args []string) int {
 	f := flag.NewFlagSet("channel poll", flag.ContinueOnError)

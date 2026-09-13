@@ -55,6 +55,7 @@ type Question struct {
 	Answer         *Answer      `json:"answer"`
 	Rejected       []Rejection  `json:"rejected"`
 	FactsDigest    string       `json:"factsDigest"`
+	LedgerCursor   string       `json:"ledgerCursor,omitempty"`
 }
 
 type AskRequest struct {
@@ -67,6 +68,7 @@ type AskRequest struct {
 	Provider                               Provider
 	Destination                            DestinationConfig
 	Now                                    time.Time
+	LedgerCursor                           string
 }
 
 const (
@@ -226,7 +228,7 @@ func Ask(r AskRequest) (Question, error) {
 	if err != nil {
 		return Question{}, err
 	}
-	q := Question{ID: id, Goal: r.Goal, Kind: r.Kind, Machine: r.Machine, OpenedAt: r.Now.UTC(), Facts: r.Facts, Options: r.Options, Recommendation: r.Recommendation, Wants: r.Wants, Budget: r.Budget, State: "open", FactsDigest: digest}
+	q := Question{ID: id, Goal: r.Goal, Kind: r.Kind, Machine: r.Machine, OpenedAt: r.Now.UTC(), Facts: r.Facts, Options: r.Options, Recommendation: r.Recommendation, Wants: r.Wants, Budget: r.Budget, State: "open", FactsDigest: digest, LedgerCursor: r.LedgerCursor}
 	if err = validateQuestionBudget(q); err != nil {
 		return Question{}, err
 	}

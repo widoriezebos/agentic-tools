@@ -1,6 +1,7 @@
 package proofrun
 
 import (
+	"context"
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
@@ -13,8 +14,34 @@ import (
 
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/behaviorsurface"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/config"
+	metarun "github.com/widoriezebos/agentic-tools/metasystem/internal/run"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/testpolicy"
 )
+
+func TestWaitAttemptRequiresCommittedTerminal(t *testing.T) {
+	root, proofIdentity := proofAttemptFixture(t, "wait-terminal")
+	launcher, err := CurrentProcessIdentity(nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	now := time.Now().UTC()
+	attempt, _, err := ReserveLocked(AdmissionRequest{ControlRoot: root, ExecutionRoot: root, GoalID: "goal-a", GoalRevision: 2, AccountingRevision: 2, ReservedMinutes: 2, Identity: proofIdentity, Launcher: launcher, Now: now})
+	if err != nil {
+		t.Fatal(err)
+	}
+	selector := metarun.WaitSelector{Kind: "attempt", TargetID: attempt.AttemptID}
+	pending, err := ObserveAttempt(context.Background(), root, selector, metarun.WaiterTarget{}, "")
+	if err != nil || !pending.Pending || pending.Incarnation.ProofDigest != proofIdentity.IdentityDigest {
+		t.Fatalf("pending attempt observation = %+v err=%v", pending, err)
+	}
+	if _, err := FinalizeAttempt(root, attempt.AttemptID, TerminalCancelled, 130, "cancelled by owner", nil, now.Add(time.Minute)); err != nil {
+		t.Fatal(err)
+	}
+	terminal, err := ObserveAttempt(context.Background(), root, selector, pending.Incarnation, "")
+	if err != nil || terminal.Pending || terminal.ExitCode != metarun.ExitLaunchFailed || terminal.TerminalStamp == "" {
+		t.Fatalf("terminal attempt observation = %+v err=%v", terminal, err)
+	}
+}
 
 func TestProofRepeatDecisionProtocol(t *testing.T) {
 	root, identity := proofAttemptFixture(t, "repeat")

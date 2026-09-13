@@ -1,11 +1,37 @@
 package adapter
 
 import (
+	"context"
 	"os"
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 )
+
+func TestWaitAdapterBlocking(t *testing.T) {
+	deadline := time.Date(2026, 9, 13, 12, 0, 0, 0, time.UTC)
+	for _, runtime := range []string{"claude", "codex", "devin", "fake"} {
+		t.Run(runtime, func(t *testing.T) {
+			adapterPath, err := filepath.Abs(filepath.Join("..", "..", "scripts", "agents", "adapters", runtime+".sh"))
+			if err != nil {
+				t.Fatal(err)
+			}
+			answer, err := DeliverWait(context.Background(), adapterPath, WaitDeliveryRequest{
+				WaitID:   "0123456789abcdef0123456789abcdef",
+				Nonce:    "fedcba9876543210fedcba9876543210",
+				Deadline: deadline,
+				Session:  "session-1",
+			})
+			if err != nil {
+				t.Fatal(err)
+			}
+			if answer != "blocking" {
+				t.Fatalf("answer = %q, want blocking", answer)
+			}
+		})
+	}
+}
 
 // --- version parse ---
 

@@ -389,6 +389,7 @@ type HistoryLine struct {
 	ChannelContext      string
 	ChannelStep         int64
 	ApprovedRef         string
+	Question            string
 	Reason              string
 }
 
@@ -1737,6 +1738,14 @@ func ParseHistoryLine(line string) (HistoryLine, error) {
 				return h, err
 			}
 			h.ApprovedRef = strings.TrimPrefix(tok, "approvedRef=")
+		case strings.HasPrefix(tok, "question="):
+			if err := dup("question"); err != nil {
+				return h, err
+			}
+			h.Question = strings.TrimPrefix(tok, "question=")
+			if h.Question == "" {
+				return h, fmt.Errorf("question= wants a non-empty question identifier")
+			}
 		default:
 			return h, fmt.Errorf("unknown History key %q", tok)
 		}
@@ -1792,6 +1801,9 @@ func ParseHistoryLine(line string) (HistoryLine, error) {
 	}
 	if h.ApprovedRef != "" && h.Verb != "resume" && h.Verb != "set-obligation" && h.Verb != "carrying" && h.Verb != "carried" {
 		return h, fmt.Errorf("approvedRef= is only valid on resume, set-obligation, carrying, and carried history")
+	}
+	if h.Verb != "answer" && h.Question != "" {
+		return h, fmt.Errorf("question= is only valid on answer history")
 	}
 	if h.Verb == "carry" && h.AuthorityOutcome == AuthorityOutcomeHumanAuthorityProven {
 		if len(h.Targets) != 1 {
@@ -1866,6 +1878,9 @@ func RenderHistoryLine(h HistoryLine) string {
 	}
 	if h.ApprovedRef != "" {
 		b.WriteString(" approvedRef=" + h.ApprovedRef)
+	}
+	if h.Question != "" {
+		b.WriteString(" question=" + h.Question)
 	}
 	if h.Reason != "" {
 		b.WriteString(" reason=" + h.Reason)

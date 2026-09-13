@@ -102,6 +102,9 @@ func TestAnswerRecordsAuthenticatedChannelWordOnce(t *testing.T) {
 	}
 	req := verbReq(root, "01J5X0000000000000000000E1", "mac-a")
 	complete := AnswerProof{Provider: "slack", User: "UWIDO", Ref: "1/2", Step: 42}
+	if _, err := Answer(req, "answered", "", "yes", "", complete); err == nil || !strings.Contains(err.Error(), "question identifier") {
+		t.Fatalf("answer without a question identifier was not refused: %v", err)
+	}
 	if _, err := Answer(req, "answered", "q", "yes", "", AnswerProof{}); err == nil {
 		t.Fatal("incomplete proof was accepted")
 	}
@@ -129,7 +132,7 @@ func TestAnswerRecordsAuthenticatedChannelWordOnce(t *testing.T) {
 		t.Fatalf("answer history count = %d", len(answers))
 	}
 	history := answers[0]
-	if history.Actor != "human:wido" || history.AuthorityOutcome != AuthorityOutcomeAuthenticatedChannelWord || history.ChannelProvider != complete.Provider || history.ChannelUser != complete.User || history.ChannelRef != complete.Ref || history.ChannelStep != complete.Step || history.Reason != "yes "+wants || !strings.Contains(file.NextStep, "ANSWERED q: yes") {
+	if history.Actor != "human:wido" || history.AuthorityOutcome != AuthorityOutcomeAuthenticatedChannelWord || history.ChannelProvider != complete.Provider || history.ChannelUser != complete.User || history.ChannelRef != complete.Ref || history.ChannelStep != complete.Step || history.Question != "q" || history.Reason != "yes "+wants || !strings.Contains(file.NextStep, "ANSWERED q: yes") {
 		t.Fatalf("recorded answer or marker is incomplete: history=%+v next=%q", history, file.NextStep)
 	}
 }

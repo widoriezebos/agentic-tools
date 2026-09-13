@@ -1,7 +1,9 @@
 package dispatch
 
 import (
+	"context"
 	"encoding/json"
+	"fmt"
 	"os"
 	"path/filepath"
 	"time"
@@ -53,8 +55,12 @@ func JobWatch(root, jobId string, caller run.Caller, poll time.Duration) int {
 }
 
 type jobStatus struct {
-	Status    string `json:"status"`
-	StartedAt string `json:"startedAt"`
+	JobID       string `json:"jobId"`
+	OperationID string `json:"operationId"`
+	Round       int64  `json:"round"`
+	Status      string `json:"status"`
+	StartedAt   string `json:"startedAt"`
+	EndedAt     string `json:"endedAt"`
 }
 
 func readJobStatus(root, jobId string) (jobStatus, bool) {
@@ -67,4 +73,56 @@ func readJobStatus(root, jobId string) (jobStatus, bool) {
 		return jobStatus{}, false
 	}
 	return record, true
+}
+
+// ObserveJob reads the job through its record owner and translates only a
+// durable job status. The reservation operation identifier exists during
+// setup; the waiter adopts round and start only after running makes them an
+// immutable incarnation, so identifier reuse cannot satisfy an older wait.
+func ObserveJob(ctx context.Context, root, jobID string, pinned run.WaiterTarget, _ string) (run.SourceObservation, error) {
+	select {
+	case <-ctx.Done():
+		return run.SourceObservation{}, ctx.Err()
+	default:
+	}
+	record, ok := readJobStatus(root, jobID)
+	if !ok {
+		return run.SourceObservation{ExitCode: run.ExitNoRecord, Reason: "the job record is missing or invalid", Outcome: "invalid-source"}, nil
+	}
+	if record.JobID != "" && record.JobID != jobID {
+		return run.SourceObservation{ExitCode: run.ExitNoRecord, Reason: "the job record identifies another job", Outcome: "invalid-source"}, nil
+	}
+	if record.OperationID == "" {
+		return run.SourceObservation{ExitCode: run.ExitNoRecord, Reason: "the job record lacks its reservation operation identifier", Outcome: "invalid-source"}, nil
+	}
+	if record.Status == "pending-setup" {
+		incarnation := run.WaiterTarget{OperationID: record.OperationID}
+		return run.SourceObservation{Pending: true, Incarnation: incarnation, Outcome: record.Status, Evidence: "job:" + jobID + ":" + record.OperationID + ":pending-setup"}, nil
+	}
+	preRunning := pinned.OperationID == record.OperationID && pinned.Round == 0 && pinned.StartedAt == "" && record.Status != "running"
+	if !preRunning && (record.Round < 1 || record.StartedAt == "") {
+		return run.SourceObservation{ExitCode: run.ExitNoRecord, Reason: "the job record lacks its round or start stamp", Outcome: "invalid-source"}, nil
+	}
+	incarnation := run.WaiterTarget{OperationID: record.OperationID, Round: record.Round, StartedAt: record.StartedAt}
+	if preRunning {
+		incarnation = pinned
+	}
+	evidence := fmt.Sprintf("job:%s:%s:r%d:%s", jobID, record.OperationID, record.Round, record.StartedAt)
+	observation := run.SourceObservation{Pending: true, Incarnation: incarnation, Outcome: record.Status, Evidence: evidence}
+	switch record.Status {
+	case "pending", "running":
+		return observation, nil
+	case "completed":
+		observation.Pending, observation.ExitCode, observation.Reason = false, run.ExitGreen, "job completed"
+	case "failed":
+		observation.Pending, observation.ExitCode, observation.Reason = false, run.ExitRed, "job failed"
+	case "timeout":
+		observation.Pending, observation.ExitCode, observation.Reason = false, run.ExitEndedUnknown, "job reached its target timeout"
+	case "cancelled":
+		observation.Pending, observation.ExitCode, observation.Reason = false, run.ExitLaunchFailed, "job was cancelled"
+	default:
+		observation.Pending, observation.ExitCode, observation.Reason, observation.Outcome = false, run.ExitNoRecord, "the job record has an unknown status", "invalid-source"
+	}
+	observation.TerminalStamp = record.EndedAt
+	return observation, nil
 }

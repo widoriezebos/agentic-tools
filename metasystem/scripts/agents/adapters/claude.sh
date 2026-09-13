@@ -18,6 +18,7 @@ Usage:
   scripts/agents/adapters/claude.sh cancel --job <job-id>
   scripts/agents/adapters/claude.sh selftest
   scripts/agents/adapters/claude.sh local-config-paths
+  scripts/agents/adapters/claude.sh wait-delivery --wait-id ID --nonce NONCE --deadline RFC3339-UTC --session SESSION-ID
 USAGE
 }
 
@@ -199,6 +200,7 @@ shift
 adapter_enforcement_map='{"writeRoots":"mapped","readRoots":"mapped","network":"mapped"}'
 
 case "$command_name" in
+  wait-delivery) wait_delivery "$@" ;;
   output-stream)
     [[ ${1:-} == --round-dir && $# -eq 2 && $2 == /* ]] || { usage; exit 2; }
     printf '%s/claude-stream.jsonl\n' "${2%/}"

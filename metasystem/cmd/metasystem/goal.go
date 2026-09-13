@@ -572,6 +572,17 @@ func runGoalNext(args []string) int {
 		fmt.Fprintln(os.Stderr, err)
 		return 1
 	}
+	if stateRoot, rootErr := goal.ResolveStateRoot(*root); rootErr == nil {
+		if waiting, waitErr := report.CurrentWaitingLines(stateRoot); waitErr == nil {
+			for _, line := range waiting {
+				fmt.Println(line)
+			}
+		} else {
+			fmt.Fprintln(os.Stderr, "durable wait recovery rows could not be read:", waitErr)
+		}
+	} else {
+		fmt.Fprintln(os.Stderr, "durable wait recovery rows could not be read:", rootErr)
+	}
 	machineProvided := false
 	flags.Visit(func(flag *flag.Flag) {
 		if flag.Name == "machine" {
@@ -669,6 +680,19 @@ func runReportTurnVerdict(args []string) int {
 	if err != nil {
 		fmt.Fprintln(os.Stderr, err)
 		return 1
+	}
+	if stateRoot != "" {
+		waiting, waitErr := report.CurrentWaitingLines(stateRoot)
+		if waitErr != nil {
+			waiting = []string{"durable wait recovery rows could not be read: " + waitErr.Error()}
+		}
+		if len(waiting) > 0 {
+			prefix := strings.Join(waiting, "\n")
+			if verdict.Display != "" {
+				prefix += "\n" + verdict.Display
+			}
+			verdict.Display = prefix
+		}
 	}
 	data, err := json.Marshal(verdict)
 	if err != nil {

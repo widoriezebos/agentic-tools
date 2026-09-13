@@ -101,8 +101,8 @@ Check the landing destination against that endpoint at registration. A different
 If a rewind or missing history prevents proving the cursor relationship, return a named source failure. Never replace the cursor with now.
 
 The engine rechecks pending sources every ten seconds, without printing progress or invoking a model.
-Each observation of a human-act wait also checks whether another goal is claimable. As soon as one becomes claimable,
-the waiter clears pending and returns 6 (actionable work), so the seat takes the turn to claim it without a forced turn while pending.
+Each observation of a human-act wait also compares the claimable goals with the set saved at registration.
+When a goal becomes claimable that was not in the set saved at registration (or a saved one changes revision), the waiter clears pending and returns 6 (actionable work), so the seat takes the turn to claim it without a forced turn while pending. Backlog that already existed at registration never ends the wait.
 All reads, fetches, hint writes and lock acquisition take the remaining wait budget; no wait lock spans a source read.
 Fetch work has a ten-second ceiling plus the existing five-second transport cleanup allowance, both reserved inside the deadline.
 Make local-mode and validation Git calls bounded too; bounding only the remote fetch leaves a hidden unbounded path.
@@ -138,7 +138,7 @@ It checks the current source at Stop too. A landing wait must also join the goal
 | Row | Condition | Stop decision |
 | --- | --- | --- |
 | 1 | A valid job, run, attempt or landing wait joins the seat's claimed goal. | It is work in flight. It has exactly the effect a live delegate job has today on the unwatched-work join, on open work with the saved signature, and on the idle-with-backlog refusal and its counter. This page adds no counter rule of its own. |
-| 2 | A valid human-act wait covers its goal. | It suppresses only open work with the saved signature and that goal's waiting-on-human condition. It never exempts idle-with-backlog. As soon as another goal becomes claimable, the waiter clears pending and returns 6 (actionable work). The seat takes the turn to claim it; no forced turn happens while the wait is pending. Channel wait follows this row. |
+| 2 | A valid human-act wait covers its goal. | It suppresses only open work with the saved signature and that goal's waiting-on-human condition. It never exempts idle-with-backlog. Registration saves the set of claimable goals as it stands (ids and revisions); when a goal becomes claimable that was not in that set, or a saved one changes revision, the waiter clears pending and returns 6 (actionable work), and the seat takes the turn to claim it. Backlog that already existed at registration never ends the wait; the seat meets it at its next turn end under the idle rule. No forced turn happens while the wait is pending. Channel wait follows this row. |
 | 3 | A wait fails any eligibility check. | It changes nothing. Today's decisions apply. |
 | 4 | Open work has a different signature from the saved one. | It is never suppressed. The wait returns 6 on its next observation so the seat takes the turn; the stop gate then decides as today. |
 | 5 | Every row above. | Fences, human stop authority, warnings and degraded-input behaviour remain unchanged. |
@@ -163,6 +163,8 @@ Uncertain liveness returns 66. Prefer the current owner's row; copy a proven pre
 First replay a saved terminal result after checking its source evidence. Otherwise an expired plain resume returns 124.
 Only explicit renewal registers another bounded period. With time left, reread from the original cursor before blocking.
 Old pipes, task handles, notifications and transcripts are unnecessary. A deleted registration requires the caller's original cursor for a new goal wait; a missing cursor is an error, never an inferred new baseline.
+
+Wido's constraint of 2026-09-13 (carried by m1c): the wakeup problem is solved outside the agent and the same way for every runtime. The decision when a seat must wake (an approval or pin for it, a landing, a delegate return, a proof end) belongs to the Go steward and the records; the blocking wait keeps a seat inside one tool call instead of idle; only the delivery of a nudge to an already idle session is per runtime, through its adapter (Claude's session socket, Codex's app-server, Devin's API). No runtime-side scheduler, cron or harness facility carries any of it.
 
 ## 3. What does not change
 
@@ -240,6 +242,7 @@ The installed verb works after member one. Member two's wrappers call that worki
 | publication-owners-hint-the-waiter | The job transition owner, attempt terminal commit and confirmed ledger publication each hint after their durable write. Dropped or false hints change no result. Wrappers call member one's working verb and preserve the current exit mappings of job watch, run watch and delegate --wait. This owns clause 2's publication hints and compatibility. | The hint portions of fixture row 4, TestWaitHintsOnlyTriggerReads and TestWaitCompatibilityMappings; bed legs wait-native-hint, wait-no-native and wait-compatibility for those assertions. |
 | stop-gate-honours-a-registered-wait | The stop table holds on fake and Claude, with the existing live-job counter effects and human-act return 6. The delivery contract conformance test passes against the blocking operation already installed by member one. This owns clause 3 and clause 2's delivery conformance. It changes only the stop gate and the contract document, with their tests. | Both stop tests and TestWaitDeliveryContract; bed legs wait-stop-fake and wait-stop-claude, plus the delivery cases of wait-native-hint and wait-no-native. |
 
+Member one's build fixed three details the page left open: the adapter operation is `wait-delivery --wait-id ID --nonce NONCE --deadline RFC3339-UTC --session SESSION-ID`, printing one line `blocking` (exit 0) or declining with exit 2; `channel ask` saves the ledger cursor as `ledgerCursor` in the question record; the accepted answer act's History row carries a `question` field (an engine built before that landing cannot read a goal file with such a row: every seat rebuilds). TestWaitChannelAnswer covers the cursor, the poll and the translation; the installed two-clone sequence for answers lives in TestWaitGoalLandingAndHumanAct. Two bounded limits stay for later members: registration and resume still project every accepted change since their cursor floor in one observation (hours-old cursors on a busy ledger return 65), and landing detection walks first parents only.
 Clause 5 remains this parent's own DONE clause. After the third member lands, run wait-whole-goal-claude and wait-whole-goal-codex.
 The first member changes the waiter and readers in `metasystem/internal/run/waiter.go`, `metasystem/internal/dispatch/watch.go`, `metasystem/internal/proofrun/attempt.go` and `metasystem/internal/goal/attention.go`. It wires verbs and records-based startup discovery in
 `metasystem/cmd/metasystem/main.go`, `metasystem/cmd/metasystem/run.go`, `metasystem/cmd/metasystem/goal.go`, `metasystem/cmd/metasystem/channel_verbs.go`, `metasystem/internal/report` and `metasystem/internal/host`.

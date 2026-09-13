@@ -18,6 +18,7 @@ Usage:
   scripts/agents/adapters/codex.sh cancel --job <job-id>
   scripts/agents/adapters/codex.sh selftest
   scripts/agents/adapters/codex.sh local-config-paths
+  scripts/agents/adapters/codex.sh wait-delivery --wait-id ID --nonce NONCE --deadline RFC3339-UTC --session SESSION-ID
 USAGE
 }
 
@@ -190,6 +191,7 @@ shift
 adapter_enforcement_map='{"writeRoots":"mapped","readRoots":"notEnforced","network":"mapped"}'
 
 case "$command_name" in
+  wait-delivery) wait_delivery "$@" ;;
   output-stream)
     [[ ${1:-} == --round-dir && $# -eq 2 && $2 == /* ]] || { usage; exit 2; }
     printf '%s/events.jsonl\n' "${2%/}"

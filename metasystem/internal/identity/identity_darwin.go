@@ -17,6 +17,33 @@ import (
 // kern.proc.pid at microsecond resolution and argv from kern.procargs2.
 type KernelProber struct{}
 
+// BootClock returns the current boot identifier and monotonic elapsed time on
+// that boot. Darwin exposes the boot instant rather than a stable UUID, so the
+// canonical seconds-and-microseconds pair is the boot identity.
+func BootClock() (string, time.Duration, error) {
+	var monotonic unix.Timespec
+	if err := unix.ClockGettime(unix.CLOCK_MONOTONIC_RAW, &monotonic); err != nil {
+		return "", 0, fmt.Errorf("identity: read monotonic boot clock: %w", err)
+	}
+	elapsed := time.Duration(monotonic.Nano())
+	if elapsed < 0 {
+		return "", 0, fmt.Errorf("identity: monotonic boot clock is implausible")
+	}
+	boot, err := unix.SysctlTimeval("kern.boottime")
+	if err == nil && boot.Sec > 0 && boot.Usec >= 0 {
+		return fmt.Sprintf("%d.%06d", boot.Sec, boot.Usec), elapsed, nil
+	}
+	// Sandboxed runtimes may deny kern.boottime while still allowing the
+	// monotonic clock. A minute-bucketed boot estimate stays stable across
+	// processes; a correction large enough to change that estimate invalidates
+	// a pending wait instead of extending it.
+	estimatedBoot := time.Now().UTC().Add(-elapsed).Truncate(time.Minute)
+	if estimatedBoot.Unix() <= 0 {
+		return "", 0, fmt.Errorf("identity: kern.boottime is implausible")
+	}
+	return "estimated-" + estimatedBoot.Format("20060102T1504Z"), elapsed, nil
+}
+
 // kinfoProc's layout: extern_proc begins the struct, and its first
 // field (inside the p_un union) is p_starttime, a struct timeval
 // { tv_sec int64; tv_usec int32; pad int32 } on 64-bit darwin.

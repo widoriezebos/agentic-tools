@@ -19,6 +19,7 @@ import (
 	channelFake "github.com/widoriezebos/agentic-tools/metasystem/internal/channel/fake"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/config"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/goal"
+	metarun "github.com/widoriezebos/agentic-tools/metasystem/internal/run"
 )
 
 func captureChannelOutput(t *testing.T, run func() int) (int, string, string) {
@@ -86,8 +87,8 @@ func TestConfigurationIndependentChannelVerbs(t *testing.T) {
 	if code, _, problem := captureChannelOutput(t, func() int { return runChannelShow([]string{"--root", root, "--question", q.ID}) }); code != 0 {
 		t.Fatal(problem)
 	}
-	if code, out, problem := captureChannelOutput(t, func() int { return runChannelWait([]string{"--root", root, "--question", q.ID}) }); code != 0 || strings.TrimSpace(out) != "yes" {
-		t.Fatal(code, out, problem)
+	if code, _, problem := captureChannelOutput(t, func() int { return runChannelWait([]string{"--root", root, "--question", q.ID}) }); code != 67 || !strings.Contains(problem, "no ledgerCursor") {
+		t.Fatalf("legacy cursor-less question was not refused: code=%d stderr=%q", code, problem)
 	}
 	if code, out, problem := captureChannelOutput(t, func() int { return runChannelFakeCode([]string{"--secret", "JBSWY3DPEHPK3PXP", "--at", "59"}) }); code != 0 || strings.TrimSpace(out) == "" {
 		t.Fatal(code, out, problem)
@@ -95,6 +96,130 @@ func TestConfigurationIndependentChannelVerbs(t *testing.T) {
 	if _, err := os.Stat(filepath.Join(root, "metasystem.conf")); !os.IsNotExist(err) {
 		t.Fatal("configuration-independent verbs created or required metasystem.conf")
 	}
+}
+
+func TestWaitChannelAnswer(t *testing.T) {
+	root := t.TempDir()
+	runReceiptGit(t, root, "init", "-q", "-b", "main")
+	runReceiptGit(t, root, "config", "metasystem.goal.machine", "m")
+	fakeDir, _ := commandFakeBed(t)
+	if err := os.WriteFile(filepath.Join(root, "metasystem.conf"), []byte("channel.destination.fleet.adapter=fake\nchannel.destination.fleet.fake.dir="+fakeDir+"\nchannel.human.slack.user-id=human-a\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(root, "metasystem.conf.local"), []byte("channel.human.totp-secret=JBSWY3DPEHPK3PXP\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("METASYSTEM_OWNER_LINEAGE", "lineage-a")
+	questionA, err := channel.Ask(channel.AskRequest{RepoRoot: root, Goal: "goal-a", Kind: "other", Machine: "m", Facts: []string{"first"}, LedgerCursor: strings.Repeat("a", 40)})
+	if err != nil {
+		t.Fatal(err)
+	}
+	questionB, err := channel.Ask(channel.AskRequest{RepoRoot: root, Goal: "goal-a", Kind: "other", Machine: "m", Facts: []string{"second"}, LedgerCursor: strings.Repeat("b", 40)})
+	if err != nil {
+		t.Fatal(err)
+	}
+	original := channelWaitCommand
+	defer func() { channelWaitCommand = original }()
+	var received []string
+	channelWaitCommand = func(args []string, poll func(context.Context) error) int {
+		if poll == nil {
+			t.Fatal("channel wait did not carry its provider poll into the wait cycle")
+		}
+		received = append([]string(nil), args...)
+		return 23
+	}
+	code, _, problem := captureChannelOutput(t, func() int {
+		return runChannelWait([]string{"--root", root, "--question", questionA.ID, "--timeout", "60", "--poll-seconds", "7"})
+	})
+	if code != 23 || problem != "" {
+		t.Fatalf("translated wait code=%d stderr=%q", code, problem)
+	}
+	joined := strings.Join(received, "\x00")
+	for _, required := range []string{"--goal\x00goal-a", "--event\x00human-act", "--verb\x00answer", "--question\x00" + questionA.ID, "--after\x00" + strings.Repeat("a", 40)} {
+		if !strings.Contains(joined, required) {
+			t.Fatalf("translated answer wait lacks %q: %v", required, received)
+		}
+	}
+	if strings.Contains(joined, questionB.ID) || strings.Contains(joined, strings.Repeat("b", 40)) {
+		t.Fatalf("the other question leaked into the selector: %v", received)
+	}
+	if !strings.Contains(joined, "--timeout\x001h0m0s") {
+		t.Fatalf("the integer-minute channel timeout was not translated to the wait deadline: %v", received)
+	}
+	legacy, err := channel.Ask(channel.AskRequest{RepoRoot: root, Goal: "goal-a", Kind: "other", Machine: "m", Facts: []string{"legacy"}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	code, _, problem = captureChannelOutput(t, func() int { return runChannelWait([]string{"--root", root, "--question", legacy.ID}) })
+	if code != 67 || !strings.Contains(problem, "no ledgerCursor") {
+		t.Fatalf("legacy question code=%d stderr=%q", code, problem)
+	}
+	code, _, problem = captureChannelOutput(t, func() int {
+		return runChannelWait([]string{"--root", root, "--question", legacy.ID, "--after", strings.Repeat("c", 40)})
+	})
+	if code != 23 || problem != "" || !strings.Contains(strings.Join(received, "\x00"), "--after\x00"+strings.Repeat("c", 40)) {
+		t.Fatalf("explicit legacy cursor was not translated: code=%d args=%v stderr=%q", code, received, problem)
+	}
+	channelWaitCommand = func(args []string, poll func(context.Context) error) int {
+		answered, readErr := channel.ReadQuestion(root, questionA.ID)
+		if readErr != nil {
+			t.Fatal(readErr)
+		}
+		answered.Answer = &channel.Answer{Text: "accepted answer text", Phase: "matched"}
+		body, marshalErr := json.Marshal(answered)
+		if marshalErr != nil {
+			t.Fatal(marshalErr)
+		}
+		if writeErr := os.WriteFile(filepath.Join(root, "artifacts", "agents", "channel", "questions", questionA.ID+".json"), body, 0o600); writeErr != nil {
+			t.Fatal(writeErr)
+		}
+		return 0
+	}
+	code, out, problem := captureChannelOutput(t, func() int { return runChannelWait([]string{"--root", root, "--question", questionA.ID}) })
+	if code != 0 || problem != "" || !strings.Contains(out, "accepted answer text") {
+		t.Fatalf("accepted answer output code=%d stdout=%q stderr=%q", code, out, problem)
+	}
+	waitID := strings.Repeat("e", 32)
+	channelRow := metarun.Waiter{
+		SchemaVersion: 2, WaitID: waitID, Nonce: strings.Repeat("f", 32), Kind: "goal", TargetID: "goal-a", OwnerDigest: "owner-a", State: "pending",
+		Selector: metarun.WaitSelector{Kind: "goal", TargetID: "goal-a", GoalID: "goal-a", Event: "human-act", Verb: "answer", Question: questionA.ID, After: strings.Repeat("a", 40), Poll: "channel"},
+	}
+	if err := os.MkdirAll(metarun.WaitersDir(root), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	rowBody, err := json.Marshal(channelRow)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(metarun.WaiterPath(root, channelRow.Kind, channelRow.TargetID, channelRow.OwnerDigest), rowBody, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	channelWaitCommand = func(args []string, poll func(context.Context) error) int {
+		if poll == nil || !strings.Contains(strings.Join(args, "\x00"), "--resume\x00"+waitID) {
+			t.Fatalf("channel resume did not restore its provider poll and durable selector: args=%v poll-present=%t", args, poll != nil)
+		}
+		return 0
+	}
+	code, out, problem = captureChannelOutput(t, func() int { return runChannelWait([]string{"--root", root, "--resume", waitID}) })
+	if code != 0 || problem != "" || strings.TrimSpace(out) != "accepted answer text" {
+		t.Fatalf("channel resume code=%d stdout=%q stderr=%q", code, out, problem)
+	}
+
+	unconfigured := t.TempDir()
+	questionC, err := channel.Ask(channel.AskRequest{RepoRoot: unconfigured, Goal: "goal-a", Kind: "other", Machine: "m", Facts: []string{"unconfigured"}, LedgerCursor: strings.Repeat("d", 40)})
+	if err != nil {
+		t.Fatal(err)
+	}
+	called := false
+	channelWaitCommand = func([]string, func(context.Context) error) int { called = true; return 0 }
+	code, _, problem = captureChannelOutput(t, func() int { return runChannelWait([]string{"--root", unconfigured, "--question", questionC.ID}) })
+	if code != 1 || called || !strings.Contains(problem, "requires a configured channel provider") {
+		t.Fatalf("unconfigured provider code=%d called=%t stderr=%q", code, called, problem)
+	}
+
+	// The installed two-clone answer sequence is exercised by
+	// TestWaitGoalLandingAndHumanAct; this command test owns question routing,
+	// compatibility flags, provider polling, and accepted answer output.
 }
 
 func commandFakeBed(t *testing.T) (string, string) {

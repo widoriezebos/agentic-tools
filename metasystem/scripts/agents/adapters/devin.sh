@@ -18,6 +18,7 @@ Usage:
   scripts/agents/adapters/devin.sh cancel --job <job-id>
   scripts/agents/adapters/devin.sh selftest
   scripts/agents/adapters/devin.sh local-config-paths
+  scripts/agents/adapters/devin.sh wait-delivery --wait-id ID --nonce NONCE --deadline RFC3339-UTC --session SESSION-ID
 USAGE
 }
 
@@ -768,6 +769,7 @@ shift
 adapter_enforcement_map='{"writeRoots":"notEnforced","readRoots":"notEnforced","network":"notEnforced"}'
 
 case "$command_name" in
+  wait-delivery) wait_delivery "$@" ;;
   output-stream)
     [[ ${1:-} == --round-dir && $# -eq 2 && $2 == /* ]] || { usage; exit 2; }
     transport=$(devin_transport) || { echo "devin transport refused: $transport" >&2; exit 1; }

@@ -2,6 +2,7 @@ package proofrun
 
 import (
 	"bytes"
+	"context"
 	"crypto/rand"
 	"crypto/sha256"
 	"encoding/binary"
@@ -25,6 +26,7 @@ import (
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/config"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/hostload"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/identity"
+	metarun "github.com/widoriezebos/agentic-tools/metasystem/internal/run"
 )
 
 const (
@@ -305,6 +307,49 @@ func ReadAttempt(root, id string) (Attempt, error) {
 		return Attempt{}, fmt.Errorf("read proof attempt %s: %w", id, err)
 	}
 	return attempt, nil
+}
+
+// ObserveAttempt returns only a validated committed attempt terminal. Worker
+// death, logs, and a nil Terminal remain pending facts.
+func ObserveAttempt(ctx context.Context, root string, selector metarun.WaitSelector, _ metarun.WaiterTarget, _ string) (metarun.SourceObservation, error) {
+	select {
+	case <-ctx.Done():
+		return metarun.SourceObservation{}, ctx.Err()
+	default:
+	}
+	attempt, err := ReadAttempt(root, selector.TargetID)
+	if err != nil {
+		return metarun.SourceObservation{ExitCode: metarun.ExitNoRecord, Reason: "the proof attempt record is missing or invalid", Outcome: "invalid-source"}, nil
+	}
+	if attempt.AttemptID != selector.TargetID {
+		return metarun.SourceObservation{ExitCode: metarun.ExitNoRecord, Reason: "the proof attempt record identifies another attempt", Outcome: "invalid-source"}, nil
+	}
+	incarnation := metarun.WaiterTarget{ProofDigest: attempt.ProofIdentity.IdentityDigest}
+	evidence := fmt.Sprintf("attempt:%s:%s", attempt.AttemptID, attempt.ProofIdentity.IdentityDigest)
+	observation := metarun.SourceObservation{Pending: true, Incarnation: incarnation, Outcome: "pending", Evidence: evidence}
+	if attempt.Terminal == nil {
+		return observation, nil
+	}
+	observation.Pending = false
+	observation.TerminalStamp = attempt.EndedAt
+	observation.Outcome = attempt.Terminal.Result
+	observation.Reason = attempt.Terminal.Reason
+	if observation.Reason == "" {
+		observation.Reason = "proof attempt ended " + attempt.Terminal.Result
+	}
+	switch attempt.Terminal.Result {
+	case TerminalSuccess:
+		observation.ExitCode = metarun.ExitGreen
+	case TerminalFailed:
+		observation.ExitCode = metarun.ExitRed
+	case TerminalCancelled:
+		observation.ExitCode = metarun.ExitLaunchFailed
+	case TerminalUnknown:
+		observation.ExitCode = metarun.ExitEndedUnknown
+	default:
+		observation.ExitCode, observation.Outcome, observation.Reason = metarun.ExitNoRecord, "invalid-source", "the proof attempt terminal is invalid"
+	}
+	return observation, nil
 }
 
 func ReadAttempts(root string) ([]Attempt, error) {

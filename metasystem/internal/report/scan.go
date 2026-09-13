@@ -1,6 +1,7 @@
 package report
 
 import (
+	"context"
 	"crypto/sha256"
 	"encoding/json"
 	"fmt"
@@ -17,6 +18,106 @@ import (
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/missionstate"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/run"
 )
+
+type openWorkPlanReader func(string) ([]byte, error)
+type openWorkDirectoryReader func(string) ([]os.DirEntry, error)
+
+var readOpenWorkPlan openWorkPlanReader = os.ReadFile
+var readOpenWorkDirectory openWorkDirectoryReader = os.ReadDir
+
+func openWorkPlanPaths(ctx context.Context, root string) ([]string, error) {
+	type result struct {
+		entries []os.DirEntry
+		err     error
+	}
+	done := make(chan result, 1)
+	reader := readOpenWorkDirectory
+	go func() {
+		entries, err := reader(filepath.Join(root, "plans"))
+		done <- result{entries: entries, err: err}
+	}()
+	select {
+	case <-ctx.Done():
+		return nil, ctx.Err()
+	case answer := <-done:
+		if os.IsNotExist(answer.err) {
+			return nil, nil
+		}
+		if answer.err != nil {
+			return nil, answer.err
+		}
+		paths := make([]string, 0, len(answer.entries))
+		for _, entry := range answer.entries {
+			name := entry.Name()
+			if entry.IsDir() || filepath.Ext(name) != ".md" || name == "README.md" || name == "goals.md" {
+				continue
+			}
+			paths = append(paths, filepath.Join(root, "plans", name))
+		}
+		sort.Strings(paths)
+		return paths, nil
+	}
+}
+
+func readOpenWorkPlanContext(ctx context.Context, path string) ([]byte, error) {
+	type result struct {
+		data []byte
+		err  error
+	}
+	done := make(chan result, 1)
+	reader := readOpenWorkPlan
+	go func() {
+		data, err := reader(path)
+		done <- result{data: data, err: err}
+	}()
+	select {
+	case <-ctx.Done():
+		return nil, ctx.Err()
+	case answer := <-done:
+		return answer.data, answer.err
+	}
+}
+
+// OpenWorkSignature reads only the plan fields that make up the stop gate's
+// open-work digest. It deliberately does not scan jobs, runs, the ledger, or
+// any other report input, so a wait-cycle check never starts a Git process.
+func OpenWorkSignature(ctx context.Context, root string) (string, error) {
+	if !filepath.IsAbs(root) {
+		absolute, err := filepath.Abs(root)
+		if err != nil {
+			return "", fmt.Errorf("resolve open-work root: %w", err)
+		}
+		root = absolute
+	}
+	root = filepath.Clean(root)
+	result := goal.ScanResult{}
+	plans, err := openWorkPlanPaths(ctx, root)
+	if err != nil {
+		return "", fmt.Errorf("list open-work plans: %w", err)
+	}
+	for _, plan := range plans {
+		if err := ctx.Err(); err != nil {
+			return "", err
+		}
+		text, err := readOpenWorkPlanContext(ctx, plan)
+		if err != nil {
+			return "", fmt.Errorf("read open-work plan %s: %w", plan, err)
+		}
+		if waiting, ok := planField(string(text), "Waiting on the human"); ok && waiting != "" && !unblockedField.MatchString(waiting) {
+			continue
+		}
+		step, ok := planField(string(text), "Next step")
+		if !ok || step == "" || settledStep.MatchString(step) || templateValue.MatchString(step) {
+			continue
+		}
+		line := fmt.Sprintf("OPEN-WORK %s: %s", relName(root, plan), step)
+		result.Open = append(result.Open, goal.Item{
+			Kind: "plan", Id: relName(root, plan), Detail: clipDetail(line), FullDetail: line,
+			LineDigest: fmt.Sprintf("%x", sha256.Sum256([]byte(line))),
+		})
+	}
+	return result.OpenWorkSignature(), nil
+}
 
 // Scan fills the verdict's input contract (goal.ScanResult — report
 // imports goal, the declared edge; the verdict never imports report).

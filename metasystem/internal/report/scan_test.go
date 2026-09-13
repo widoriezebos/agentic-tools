@@ -1,6 +1,7 @@
 package report
 
 import (
+	"context"
 	"encoding/json"
 	"errors"
 	"os"
@@ -245,6 +246,38 @@ func TestScanPlansClassification(t *testing.T) {
 		if strings.Contains(item.Detail, "goals.md") {
 			t.Fatalf("the ledger leaked into the plan scan: %+v", item)
 		}
+	}
+}
+
+func TestWaitOpenWorkSignatureReadsOnlyPlanStepsUnderContext(t *testing.T) {
+	root := t.TempDir()
+	writeFile(t, root, "plans/active.md", "# P\n- Next step: Do the thing.\n- Waiting on the human: none\n")
+	writeFile(t, root, "plans/waiting.md", "# P\n- Next step: Later.\n- Waiting on the human: a ruling\n")
+	want := Scan(root).OpenWorkSignature()
+	got, err := OpenWorkSignature(context.Background(), root)
+	if err != nil || got != want || got == "" {
+		t.Fatalf("plan-only signature=%q want=%q err=%v", got, want, err)
+	}
+	realReader := readOpenWorkPlan
+	t.Cleanup(func() { readOpenWorkPlan = realReader })
+	reads := 0
+	release := make(chan struct{})
+	finished := make(chan struct{})
+	readOpenWorkPlan = func(_ string) ([]byte, error) {
+		defer close(finished)
+		reads++
+		<-release
+		return nil, nil
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), 20*time.Millisecond)
+	defer cancel()
+	started := time.Now()
+	_, err = OpenWorkSignature(ctx, root)
+	elapsed := time.Since(started)
+	close(release)
+	<-finished
+	if !errors.Is(err, context.DeadlineExceeded) || elapsed > time.Second || reads != 1 {
+		t.Fatalf("slow plan reader err=%v elapsed=%s reads=%d", err, elapsed, reads)
 	}
 }
 
