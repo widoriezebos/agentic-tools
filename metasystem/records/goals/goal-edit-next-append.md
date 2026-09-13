@@ -1,13 +1,14 @@
 # goal-edit-next-append
 
-- State: queued
+- State: done
 - Priority: 3
 - Sequence: 2
 - Intent: goal edit --next replaces a goal's whole next step, and the seat composes the replacement by reading its LOCAL goal file, which lags the accepted tree until the next pull; on 2026-09-02 m1 edited codex-handshake-budget-load-fragile minutes after opening it, the local file did not exist yet, the read returned empty, and the ladder text was silently replaced by one measurement sentence (restored by hand two edits later). A ledger verb that lets a stale read erase a record is a robustness defect (R-33: robustness gain, under 4h). DONE means: goal edit gains an append form for the next step (or a --next-append flag) so a seat adds a fact without retyping the step, and edit refuses when the local goal file is behind the accepted tip for that goal, naming the pull that fixes it.
 - Origin: main
 - Next step: SURVEYED, NOT STARTED, released 2026-09-07 02:05Z (m1c stops here on Wido's word). What the survey found for whoever resumes: goal edit is runGoalEdit in cmd/metasystem/goalsync_mutations.go (line 1227, runSyncOnly('edit', ...)) and goal.Edit in internal/goal/verbs.go line 1418; the next step is one whole field on the goal file, and the seat composes the replacement text itself, so a stale local read yields an empty base and the ladder text is lost. The append form therefore belongs in the VERB (a --next-append flag that reads the accepted tree's current NextStep, not the local file, and appends), plus a refusal when the local goal file is behind the accepted tip. Fixture home: scripts/agents/goal-cli-fixtures.sh has the edit legs at lines 350-372 (label add/remove, no-op revision bump, contradictory refusal); add the empty-read overwrite replay beside them. Tier 2 per R-54-m1: one Sol build, one Fable review, land with --chain.
+- Concluded: Absorbed into goal:hp-resume-takes-its-budget-from-the-ledger in the 2026-09-13 backlog consolidation on Wido's word; goal edit gains --next-append reading the accepted tree, refuses stale local. Its clause is appended to that goal's next step.
 - OpenedAt: 2026-09-02T16:27:54Z
-- Revision: 9
+- Revision: 10
 - Labels: robustness
 - BudgetExceptions: 0
 
@@ -21,4 +22,5 @@ History:
 - 2026-09-07T05:26:13Z VE3SK83H4ER6AMJBQ51DWMW82D-m1c-7cd0bd60 release actor=m1c+main-1788680061-17829-64951c targets=goal-edit-next-append
 - 2026-09-08T15:59:12Z 6S9HJVH79W52EZ37E0K1G7WQKD-m1-7cd0bd60 set-priority actor=human:Wido targets=goal-edit-next-append reason=priority-order subject=goal-edit-next-append from=unranked to=3:2 requested-sequence=2
 - 2026-09-11T07:59:25Z 0XR51NQ5DV73DHW00N4F2BBAKR-m1-c6925449 unapprove actor=human:Wido targets=goal-edit-next-append reason=Wido 2026-09-11: standing approval withdrawn to regain control of what is built next; re-approve deliberately
-Integrity: sha256=794cbb1cf7ca58bd1866819a31ac110f221eb47eb949a818a8be6b7f42a6bd0d
+- 2026-09-13T08:19:19Z GZRJHDGPH0ED7MZS2MM3JFEPFM-m1-c6925449 done actor=human:Wido targets=answer-archive,app-doctrine,app-guardrail-custody,app-guardrail-program,brief-authority-preflight,claude-delegate-scratch-cleanup,claude-denywrite-list-is-a-snapshot,claude-network-allow-does-not-allow,conformance-runtime-state-litter,continuous-self-improvement,counselor,cross-repo-guardrails,defect-analysis-gate,delegate-sandbox-cannot-run-the-beds,design-prohibition-is-role-scoped,edit-tier-remedy-names-a-refused-command,effort-by-complexity-per-model,empty-brief-admitted,fable-effort-high,fixture-default-branch-assumption,fixture-enrollment-notes,follow-up-brief-cannot-cite-fresh-trunk-files,follow-up-rebase-drop-failure-names-hash,gap-rule-deletes-built-work,goal-edit-next-append,goal-suite-sits-on-the-default-test-timeout,hook-demands-what-landing-forbids,host-health-role,human-carried-landing,incident-proposal-drafting,integration-branch,land-verb-pruning,landing-refusal-names-the-record-rule,ledger-authentication,malformed-return-field-loses-the-round,metasystem-way-patterns,missionrunner-terminate-flake,narrator-digests,norm-approval-reads-a-file-the-ledger-does-not-carry,paid-proof-authorization,precedent-index,python3-kit-port,reconciliation-guards,registry-design-names-selection-rows,repo-flag-resolves-one-root,resume-reclaims-on-handover,runtime-limit-is-not-a-protocol-error,same-process-succession,seam-declaration-convergence,seam-eventstream-error-surface,shutdown-claims-more-than-it-stops,standing-validation,steward-owned-execution,stop-message-truth,uncapped-delegate-fanout,verbs-match-intent,vm-epoch-identity-drift,watchdog-kill-observation-gap
+Integrity: sha256=a21e9b2848161730e1d83905e939086f45bc5ad09500c05bb229a7ff48d60efd
