@@ -1,15 +1,15 @@
 # metasystem-stop-escalation-proofs
 
 - State: approved
-- Priority: 2
-- Sequence: 17
+- Priority: 1
+- Sequence: 39
 - Risk: severity=2 novelty=2 exposure=2 accumulation=1 basis="severity 2: an unproven escalation path means a stop that reports killed without evidence it killed; novelty 2: a held fake host and its readiness handshake do not exist yet; exposure 2: every seat that stops a checkout with a mission, a suite or an ignored signal in flight; accumulation 1: the scenarios are written once"
 - Tier: 2
 - Intent: Slice 1b of the stop verb: the escalation and per-family fixture scenarios that slice 1 deliberately left out, plus the fixture-only held fake host they need. Slice 1 (chain stopverb-build1, goal metasystem-stop-verb) builds and proves the human-visible contract with five scenarios; section 10 of plans/metasystem-stop-verb-design.md names the rest: arm-refuses-survivor, mission-stop with its ignore-TERM and host-ignores-TERM variants and its dead-runner live-turn case, proof-run-stop with its dead-watchdog case, slow-owner, crash-recovery, remote-job, ignored-signal and wrong-terminal. DONE means every one of those scenarios exists, passes outside a delegate sandbox, and would fail against the tree before it
 - Origin: main
 - Next step: Blocked until slice 1 lands. Then: specify the held fake host in scripts/agents/hosts/fake.sh (how a turn selects the held behaviour and how the fixture proves its signal handler is installed before stop runs; round 5 of the slice-1 chain stopped on exactly this and was right to), then write the scenarios in the beds section 10 assigns them, then one code critique. The orchestrator runs the supervision, mission and suite-progress beds outside the sandbox: a delegate sandbox cannot execute a freshly copied fixture engine (status 126) nor authenticate spawned process groups
 - OpenedAt: 2026-09-07T07:30:28Z
-- Revision: 19
+- Revision: 20
 - Pinned: m1b
 - Budget: elapsedLimit=4h attemptLimit=6 reservedJobMinutesLimit=720 activeJobLimit=1 reviewRoundLimit=2
 - BudgetExceptions: 0
@@ -35,4 +35,5 @@ History:
 - 2026-09-13T06:44:41Z 59E2SS1PHG2JEY44B98S85XHVC-m1e-c6925449 set-priority actor=human:Wido targets=first-headless-run,fleet-channel-gateway,fleet-join-bootstrap,fleet-pull,gate-governance-records,headless-continuous-delivery-proof,headless-fleet-coordination-proof,idle-every-runtime-enforcement,metasystem-stop-escalation-proofs,mission-birth-baseline-from-dirty-worktree,never-idle-ironclad,recovery-rehearsal,recovery-to-good-state,repo-root-paths-ride-agent-commits-unjudged,role-context-composition,role-lane-packets,seat-mutual-awareness reason=priority-order subject=repo-root-paths-ride-agent-commits-unjudged from=2:18 to=2:17 requested-sequence=33
 - 2026-09-13T07:44:35Z 3HAZF996GTHDBJCZ5JEAFGPWCW-m1e-c6925449 set-pin actor=human:Wido targets=metasystem-stop-escalation-proofs
 - 2026-09-13T07:44:39Z A2HVZ4RDRF8G5WE1Y3ZFGSD52K-m1e-c6925449 approve actor=human:Wido targets=metasystem-stop-escalation-proofs
-Integrity: sha256=dbcbde844ea3ed335ce701fd7ed547455d97091b359682edf46fb2a241d37b24
+- 2026-09-13T07:44:44Z TJ1TBGQ70A0PZH04C34J9P51C5-m1e-c6925449 set-priority actor=human:Wido targets=first-headless-run,fleet-channel-gateway,fleet-join-bootstrap,fleet-pull,headless-continuous-delivery-proof,headless-fleet-coordination-proof,metasystem-stop-escalation-proofs,mission-birth-baseline-from-dirty-worktree,never-idle-ironclad,recovery-rehearsal,seat-mutual-awareness reason=priority-order subject=metasystem-stop-escalation-proofs from=2:17 to=1:39 requested-sequence=39
+Integrity: sha256=af0445bf0803f629624e4b4ea6d1d6f07afa316643181840e3d97f962b505118
