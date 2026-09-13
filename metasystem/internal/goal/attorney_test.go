@@ -351,6 +351,7 @@ func TestUnparkUnderPowerOfAttorney(t *testing.T) {
 	human := attorneyReq(root, 40, "mac-a")
 	human.Actor.Human = "Wido"
 	proof := testHumanAuthority(t, root, human.Now)
+	human.Authority = proof
 	expires := human.Now.AddDate(0, 0, 5).Format("2006-01-02")
 	lifting, err := Grant(human, proof, []uint8{1, 2}, []string{"unpark"}, expires)
 	if err != nil || lifting.Outcome != OutcomeConfirmed {

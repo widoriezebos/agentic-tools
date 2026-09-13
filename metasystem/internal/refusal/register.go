@@ -33,13 +33,14 @@ type Shell struct {
 type Defect struct{ Code, Why string }
 
 var Rows = []Row{
-	{Code: "AGENT_IN_AUTHORITY_CHAIN", Owner: "internal/humanauthority", Site: "authority.go:29", Shape: Identity},
-	{Code: "ANCESTRY_CHANGED", Owner: "internal/humanauthority", Site: "authority.go:32", Shape: Identity},
-	{Code: "ANCESTRY_CYCLE", Owner: "internal/humanauthority", Site: "authority.go:35", Shape: Identity},
-	{Code: "ANCESTRY_UNREADABLE", Owner: "internal/humanauthority", Site: "authority.go:31", Shape: Identity},
-	{Code: "ARGV_UNREADABLE", Owner: "internal/humanauthority", Site: "authority.go:33", Shape: Identity},
-	{Code: "PROCESS_REUSED", Owner: "internal/humanauthority", Site: "authority.go:34", Shape: Identity},
-	{Code: "TERMINAL_NOT_REACHED", Owner: "internal/humanauthority", Site: "authority.go:30", Shape: Identity},
+	{Code: "AGENT_IN_AUTHORITY_CHAIN", Owner: "internal/humanauthority", Site: "authority.go:31", Shape: Identity},
+	{Code: "ANCESTRY_CHANGED", Owner: "internal/humanauthority", Site: "authority.go:35", Shape: Identity},
+	{Code: "ANCESTRY_CYCLE", Owner: "internal/humanauthority", Site: "authority.go:38", Shape: Identity},
+	{Code: "ANCESTRY_UNREADABLE", Owner: "internal/humanauthority", Site: "authority.go:34", Shape: Identity},
+	{Code: "ARGV_UNREADABLE", Owner: "internal/humanauthority", Site: "authority.go:36", Shape: Identity},
+	{Code: "PROCESS_REUSED", Owner: "internal/humanauthority", Site: "authority.go:37", Shape: Identity},
+	{Code: "TERMINAL_NOT_ENROLLED", Owner: "internal/humanauthority", Site: "authority.go:33", Shape: Identity},
+	{Code: "TERMINAL_NOT_REACHED", Owner: "internal/humanauthority", Site: "authority.go:32", Shape: Identity},
 
 	{Code: "BRAIN_REFUSED", Owner: "internal/brain", Site: "brain.go:420", Shape: Agent, Override: "brain withdraw", Commands: 1},
 

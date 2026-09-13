@@ -337,6 +337,7 @@ func TestParksDropOrKeepTheEpisodeByWhoParks(t *testing.T) {
 	// unapprove and by approve with a tuple.
 	unparkHuman := landingReq(a, "01J5X00000000000000000NP06", "mac-a", parkAt.Add(41*time.Minute))
 	unparkHuman.Actor.Human = "Wido"
+	unparkHuman.Authority = testHumanAuthority(t, a, unparkHuman.Now)
 	if res, err := Unpark(unparkHuman, "paused"); err != nil || res.Outcome != OutcomeConfirmed {
 		t.Fatalf("human unpark: %+v %v", res, err)
 	}

@@ -374,17 +374,36 @@ func syncReq(verb, root, by, lineageFlag string) (goal.VerbRequest, error) {
 	return syncReqWithProof(verb, root, by, lineageFlag, nil)
 }
 
-var proveSyncReqHumanAuthority = humanauthority.Prove
+func syncStoppingReq(verb, root, by, lineageFlag string) (goal.VerbRequest, error) {
+	return syncStoppingReqWithProof(verb, root, by, lineageFlag, nil)
+}
+
+func syncStoppingReqWithProof(verb, root, by, lineageFlag string, observedProof *humanauthority.Proof) (goal.VerbRequest, error) {
+	classification, classifyErr := brainHumanWordClassification(verb, root, by, observedProof)
+	if classifyErr != nil {
+		return goal.VerbRequest{}, classifyErr
+	}
+	return syncReqClassifiedWithTerminalGrade(root, by, lineageFlag, observedProof, classification, true)
+}
+
+var (
+	proveSyncReqHumanAuthority    = humanauthority.Prove
+	proveSyncReqTerminalAuthority = humanauthority.ProveTerminal
+)
 
 func terminalEnrollmentLineage(enrollment humanauthority.Enrollment) string {
-	terminalID := []byte(enrollment.TerminalID)
+	return terminalAuthorityLineage(enrollment.TerminalID, enrollment.Generation)
+}
+
+func terminalAuthorityLineage(observedTerminalID string, generation uint64) string {
+	terminalID := []byte(observedTerminalID)
 	for index, character := range terminalID {
 		if !('A' <= character && character <= 'Z') && !('a' <= character && character <= 'z') &&
 			!('0' <= character && character <= '9') && character != '-' {
 			terminalID[index] = '-'
 		}
 	}
-	return fmt.Sprintf("terminal-%s-%d", terminalID, enrollment.Generation)
+	return fmt.Sprintf("terminal-%s-%d", terminalID, generation)
 }
 
 func syncReqWithProof(verb, root, by, lineageFlag string, observedProof *humanauthority.Proof) (goal.VerbRequest, error) {
@@ -396,6 +415,10 @@ func syncReqWithProof(verb, root, by, lineageFlag string, observedProof *humanau
 }
 
 func syncReqClassified(root, by, lineageFlag string, observedProof *humanauthority.Proof, classification lease.ClassifyResult) (goal.VerbRequest, error) {
+	return syncReqClassifiedWithTerminalGrade(root, by, lineageFlag, observedProof, classification, false)
+}
+
+func syncReqClassifiedWithTerminalGrade(root, by, lineageFlag string, observedProof *humanauthority.Proof, classification lease.ClassifyResult, allowTerminal bool) (goal.VerbRequest, error) {
 	if err := ensureGuardEnrolled(root); err != nil {
 		return goal.VerbRequest{}, err
 	}
@@ -407,6 +430,32 @@ func syncReqClassified(root, by, lineageFlag string, observedProof *humanauthori
 	if err != nil {
 		return goal.VerbRequest{}, err
 	}
+	authority := observedProof
+	if allowTerminal && by != "" && authority == nil {
+		now, nowErr := goalCommandNow(root)
+		if nowErr != nil {
+			return goal.VerbRequest{}, nowErr
+		}
+		fullProof, fullErr := proveSyncReqHumanAuthority(root, int64(os.Getppid()), nil, now)
+		if fullErr == nil && fullProof.ValidFor(root) {
+			authority = &fullProof
+		} else {
+			if fullProof.Outcome != humanauthority.OutcomeTerminalMissing && fullProof.Outcome != humanauthority.OutcomeNotEnrolled {
+				if fullErr == nil {
+					fullErr = fmt.Errorf("proof outcome %s was not a valid enrolled-grade proof", fullProof.Outcome)
+				}
+				return goal.VerbRequest{}, fmt.Errorf("a human stopping act could not prove enrolled human ancestry: %w", fullErr)
+			}
+			terminalProof, terminalErr := proveSyncReqTerminalAuthority(root, int64(os.Getppid()), nil, now)
+			if terminalErr != nil {
+				return goal.VerbRequest{}, fmt.Errorf("a human stopping act could not prove terminal human ancestry: %w", terminalErr)
+			}
+			if !terminalProof.TerminalValidFor(root) || terminalProof.AuthorityGrade() != humanauthority.GradeTerminal {
+				return goal.VerbRequest{}, fmt.Errorf("a human stopping act did not produce a valid terminal-grade proof")
+			}
+			authority = &terminalProof
+		}
+	}
 	lineage := lineageFlag
 	if lineage == "" {
 		lineage = os.Getenv("METASYSTEM_OWNER_LINEAGE")
@@ -415,6 +464,15 @@ func syncReqClassified(root, by, lineageFlag string, observedProof *humanauthori
 		if by == "" {
 			return goal.VerbRequest{}, fmt.Errorf("mutations carry their coordinator's identity: export METASYSTEM_OWNER_LINEAGE or pass --lineage")
 		}
+		if allowTerminal && authority != nil && authority.TerminalValidFor(root) {
+			terminalID := authority.ObservedTerminalID()
+			if terminalID == "" {
+				return goal.VerbRequest{}, fmt.Errorf("a human stopping act did not retain its observed terminal identity")
+			}
+			lineage = terminalAuthorityLineage(terminalID, authority.TerminalGeneration)
+		}
+	}
+	if lineage == "" {
 		enrollment, err := humanauthority.ReadEnrollment(root)
 		if err != nil {
 			return goal.VerbRequest{}, fmt.Errorf("a human act derives its lineage from the enrolled terminal, and this checkout has none: run metasystem goal enroll-terminal here once, or pass --lineage: %w", err)
@@ -425,8 +483,8 @@ func syncReqClassified(root, by, lineageFlag string, observedProof *humanauthori
 		}
 		proof := humanauthority.Proof{}
 		var proofErr error
-		if observedProof != nil {
-			proof = *observedProof
+		if authority != nil {
+			proof = *authority
 		} else {
 			proof, proofErr = proveSyncReqHumanAuthority(root, int64(os.Getppid()), nil, now)
 		}
@@ -443,6 +501,7 @@ func syncReqClassified(root, by, lineageFlag string, observedProof *humanauthori
 			return goal.VerbRequest{}, fmt.Errorf("a human act derives its lineage only at the enrolled terminal: this shell does not descend from it (%s); run the act at the terminal, or pass --lineage", humanauthority.OutcomeChanged)
 		}
 		lineage = terminalEnrollmentLineage(enrollment)
+		authority = &proof
 	}
 	ulid, err := goalUlid()
 	if err != nil {
@@ -454,7 +513,7 @@ func syncReqClassified(root, by, lineageFlag string, observedProof *humanauthori
 	}
 	req := goal.VerbRequest{
 		Endpoint: e, Actor: goal.Actor{Machine: machine, Lineage: lineage, Human: by},
-		Ulid: ulid, Now: now, CallerClass: classification.Class,
+		Authority: authority, Ulid: ulid, Now: now, CallerClass: classification.Class,
 	}
 	if classification.ClaimEpoch != nil && (classification.Holder || by != "" || classification.Class == lease.ClassHuman) {
 		req.ClaimEpoch = *classification.ClaimEpoch
@@ -590,7 +649,7 @@ func parseSyncFlags(name string, args []string) (*syncFlags, bool) {
 		fs.StringVar(&f.temporaryWord, "temporary-human-word", "", "recorded relayed words presented as the human's; provenance is not verified; resumes TEMPORARILY")
 		fs.StringVar(&f.reviewBy, "review-by", "", "recorded re-approval date supplied with the relay (required with --temporary-human-word)")
 	}
-	if name == "approve" || name == "set-budget" || name == "accept-risk" || name == "open" || name == "edit" || name == "grant" || name == "revoke" {
+	if name == "approve" || name == "set-budget" || name == "accept-risk" || name == "open" || name == "edit" || name == "grant" || name == "revoke" || name == "park" {
 		fs.BoolVar(&f.fixtureHumanAuthority, "fixture-human-authority", false, "fixture-only enrolled-human proof; accepted only for an exact fake-runtime root")
 	}
 	fs.Var(&f.labels, "label", "label token (repeatable)")
@@ -813,7 +872,27 @@ func trySyncMutation(name string, args []string) (int, bool) {
 	if !converted(f.root) {
 		return 0, false
 	}
-	req, err := syncReq(name, f.root, f.by, f.lineage)
+	var req goal.VerbRequest
+	var err error
+	// A stopping act by a person takes the terminal grade (the enrollment
+	// walk without the write). An unpark under a power of attorney is the
+	// seat's own act and takes no proof: it is dispatched below to
+	// runGoalUnderAttorney, whose refusals (a --by beside --under, a proof
+	// beside it) must be reached, so the walk is not run in front of it.
+	if (name == "park" || name == "unpark") && f.under == "" {
+		var proof *humanauthority.Proof
+		if f.fixtureHumanAuthority {
+			observed, proofErr := proveFixtureGoalAuthority(name, f)
+			if proofErr != nil {
+				fmt.Fprintln(os.Stderr, proofErr)
+				return 1, true
+			}
+			proof = &observed
+		}
+		req, err = syncStoppingReqWithProof(name, f.root, f.by, f.lineage, proof)
+	} else {
+		req, err = syncReq(name, f.root, f.by, f.lineage)
+	}
 	if err != nil {
 		fmt.Fprintln(os.Stderr, err)
 		return 1, true
@@ -985,7 +1064,11 @@ func runSyncOnly(name string, run func(req goal.VerbRequest, f *syncFlags) (goal
 				return 2
 			}
 		}
-		req, err := syncReq(name, f.root, f.by, f.lineage)
+		requestBuilder := syncReq
+		if name == "release" {
+			requestBuilder = syncStoppingReq
+		}
+		req, err := requestBuilder(name, f.root, f.by, f.lineage)
 		if err != nil {
 			fmt.Fprintln(os.Stderr, err)
 			return 1

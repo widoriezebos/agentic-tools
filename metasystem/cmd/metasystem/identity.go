@@ -6,6 +6,8 @@ import (
 	"fmt"
 	"os"
 
+	"golang.org/x/sys/unix"
+
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/identity"
 )
 
@@ -61,6 +63,14 @@ func runIdentityProbe(args []string) int {
 		result["startTicks"] = exact.StartTicks
 		result["bootId"] = exact.BootID
 		result["argv"] = exact.Argv
+		terminalID, terminalKnown := identity.ControllingTerminalIdentity(*pid)
+		result["terminalKnown"] = terminalKnown
+		result["terminalId"] = terminalID
+		if sessionLeader, sessionErr := unix.Getsid(int(*pid)); sessionErr == nil {
+			result["sessionLeaderPid"] = sessionLeader
+		} else {
+			result["sessionLeaderError"] = sessionErr.Error()
+		}
 	}
 	encoded, marshalErr := json.Marshal(result)
 	if marshalErr != nil {

@@ -225,7 +225,7 @@ func (s *Store) currentSessionLifecycle(sessionId, mainId string, lease sessionS
 	return sessionStopLifecycleToken(*matched)
 }
 
-// WriteSessionStop validates an enrolled-terminal ancestry proof before it
+// WriteSessionStop validates an agent-free terminal ancestry proof before it
 // persists an authorization. This in-process boundary does not authenticate
 // the caller that obtained the proof: code deliberately supplying another
 // process's valid proof is the same trust class as code forging marker bytes,
@@ -242,8 +242,8 @@ func (s *Store) WriteSessionStop(marker SessionStop, proof humanauthority.Proof)
 		return SessionStop{}, fmt.Errorf("session stop requires an announced session id")
 	}
 	marker.SessionId = NormalizeSession(marker.SessionId)
-	if !proof.ValidFor(s.Root) {
-		return SessionStop{}, fmt.Errorf("session stop requires a fresh enrolled-terminal human-classification proof")
+	if !proof.TerminalValidFor(s.Root) {
+		return SessionStop{}, fmt.Errorf("session stop requires a fresh terminal human-classification proof")
 	}
 	if _, err := parseISO(marker.WrittenAt); err != nil || proof.CheckedAt.UTC().Format("2006-01-02T15:04:05Z07:00") != marker.WrittenAt {
 		return SessionStop{}, fmt.Errorf("session stop human-classification proof does not match the authorization time")

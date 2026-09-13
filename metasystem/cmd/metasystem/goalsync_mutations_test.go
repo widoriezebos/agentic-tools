@@ -7,6 +7,7 @@ import (
 	"os/exec"
 	"path/filepath"
 	"reflect"
+	"runtime"
 	"strings"
 	"testing"
 	"time"
@@ -25,14 +26,22 @@ type goalSyncEnrollmentReader struct {
 	terminalID string
 }
 
+func commandAuthoritySystemRootSnapshot() humanauthority.Snapshot {
+	executable := "/sbin/init"
+	if runtime.GOOS == "darwin" {
+		executable = "/sbin/launchd"
+	}
+	return humanauthority.Snapshot{
+		Exact:      identity.Exact{Pid: 1, StartedAt: time.Unix(1, 0), ArgvKnown: false},
+		Executable: executable, ExecutableKnown: true,
+		OwnerUID: 0, OwnerKnown: true,
+		ParentPID: 0, ParentKnown: true, TerminalID: "", TerminalKnown: true,
+	}
+}
+
 func (r goalSyncEnrollmentReader) Read(pid int64) (humanauthority.Snapshot, error) {
 	if pid == 1 {
-		return humanauthority.Snapshot{
-			Exact:      identity.Exact{Pid: 1, StartedAt: time.Unix(1, 0), Argv: []string{"fixture-init"}, ArgvKnown: true},
-			Executable: "/fixture/init", ExecutableKnown: true,
-			OwnerUID: 0, OwnerKnown: true,
-			ParentPID: 1, ParentKnown: true, TerminalID: r.terminalID, TerminalKnown: true,
-		}, nil
+		return commandAuthoritySystemRootSnapshot(), nil
 	}
 	if pid != r.exact.Pid {
 		return humanauthority.Snapshot{}, fmt.Errorf("unexpected enrollment fixture pid %d", pid)
@@ -51,7 +60,7 @@ func (r goalSyncEnrollmentReader) SessionLeader(int64) (int64, error) {
 	return r.exact.Pid, nil
 }
 
-func enrollGoalSyncTerminal(t *testing.T, root, terminalID string) (humanauthority.Enrollment, goalSyncEnrollmentReader) {
+func goalSyncTerminalReader(t *testing.T, root, terminalID string) goalSyncEnrollmentReader {
 	t.Helper()
 	adapters := filepath.Join(root, "scripts", "agents", "adapters")
 	if err := os.MkdirAll(adapters, 0o755); err != nil {
@@ -65,8 +74,13 @@ func enrollGoalSyncTerminal(t *testing.T, root, terminalID string) (humanauthori
 	if err != nil || state != identity.Alive {
 		t.Fatalf("probe enrollment fixture process: state=%s err=%v", state, err)
 	}
-	reader := goalSyncEnrollmentReader{exact: exact, terminalID: terminalID}
-	enrollment, err := humanauthority.Enroll(root, exact.Pid, reader, time.Date(2026, 9, 6, 8, 0, 0, 0, time.UTC))
+	return goalSyncEnrollmentReader{exact: exact, terminalID: terminalID}
+}
+
+func enrollGoalSyncTerminal(t *testing.T, root, terminalID string) (humanauthority.Enrollment, goalSyncEnrollmentReader) {
+	t.Helper()
+	reader := goalSyncTerminalReader(t, root, terminalID)
+	enrollment, err := humanauthority.Enroll(root, reader.exact.Pid, reader, time.Date(2026, 9, 6, 8, 0, 0, 0, time.UTC))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -76,10 +90,17 @@ func enrollGoalSyncTerminal(t *testing.T, root, terminalID string) (humanauthori
 func proveSyncReqWithReader(t *testing.T, reader goalSyncEnrollmentReader) {
 	t.Helper()
 	original := proveSyncReqHumanAuthority
+	originalTerminal := proveSyncReqTerminalAuthority
 	proveSyncReqHumanAuthority = func(root string, _ int64, _ humanauthority.Reader, now time.Time) (humanauthority.Proof, error) {
 		return humanauthority.Prove(root, reader.exact.Pid, reader, now)
 	}
-	t.Cleanup(func() { proveSyncReqHumanAuthority = original })
+	proveSyncReqTerminalAuthority = func(root string, _ int64, _ humanauthority.Reader, now time.Time) (humanauthority.Proof, error) {
+		return humanauthority.ProveTerminal(root, reader.exact.Pid, reader, now)
+	}
+	t.Cleanup(func() {
+		proveSyncReqHumanAuthority = original
+		proveSyncReqTerminalAuthority = originalTerminal
+	})
 }
 
 func TestSyncReqLineage(t *testing.T) {
@@ -142,6 +163,151 @@ func TestSyncReqLineage(t *testing.T) {
 			t.Fatalf("agent refusal = %v, want %q", err, agentRefusal)
 		}
 	})
+}
+
+func TestStoppingRequestFallsBackToTerminalGrade(t *testing.T) {
+	root := syncedClaimedGoalFixture(t)
+	t.Setenv("METASYSTEM_OWNER_LINEAGE", "")
+	t.Setenv("METASYSTEM_GOAL_NOW", "2026-09-09T10:00:00Z")
+	reader := goalSyncTerminalReader(t, root, "ttys:fixture_02")
+	proveSyncReqWithReader(t, reader)
+
+	request, err := syncStoppingReq("release", root, "Wido", "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if request.Authority == nil || request.Authority.AuthorityGrade() != humanauthority.GradeTerminal ||
+		!request.Authority.TerminalValidFor(root) || request.Authority.ValidFor(root) {
+		t.Fatalf("stopping request did not carry terminal-grade authority: %+v", request.Authority)
+	}
+	if request.Actor.Lineage != "terminal-ttys-fixture-02-0" {
+		t.Fatalf("terminal-grade lineage = %q", request.Actor.Lineage)
+	}
+
+	explicit, err := syncStoppingReq("release", root, "Wido", "named-lineage")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if explicit.Actor.Lineage != "named-lineage" || explicit.Authority == nil ||
+		explicit.Authority.AuthorityGrade() != humanauthority.GradeTerminal {
+		t.Fatalf("explicit lineage bypassed terminal proof: actor=%+v proof=%+v", explicit.Actor, explicit.Authority)
+	}
+}
+
+func TestStoppingRequestCarriesEnrolledGradeWithoutFallingBack(t *testing.T) {
+	root := syncedClaimedGoalFixture(t)
+	t.Setenv("METASYSTEM_OWNER_LINEAGE", "")
+	t.Setenv("METASYSTEM_GOAL_NOW", "2026-09-09T10:00:00Z")
+	_, reader := enrollGoalSyncTerminal(t, root, "ttys:fixture_03")
+	original := proveSyncReqHumanAuthority
+	originalTerminal := proveSyncReqTerminalAuthority
+	terminalCalls := 0
+	proveSyncReqHumanAuthority = func(root string, _ int64, _ humanauthority.Reader, now time.Time) (humanauthority.Proof, error) {
+		return humanauthority.Prove(root, reader.exact.Pid, reader, now)
+	}
+	proveSyncReqTerminalAuthority = func(string, int64, humanauthority.Reader, time.Time) (humanauthority.Proof, error) {
+		terminalCalls++
+		return humanauthority.Proof{}, fmt.Errorf("terminal fallback must not run")
+	}
+	t.Cleanup(func() {
+		proveSyncReqHumanAuthority = original
+		proveSyncReqTerminalAuthority = originalTerminal
+	})
+
+	request, err := syncStoppingReq("park", root, "Wido", "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if terminalCalls != 0 || request.Authority == nil || !request.Authority.ValidFor(root) ||
+		request.Authority.AuthorityGrade() != humanauthority.GradeEnrolled {
+		t.Fatalf("enrolled stopping request used the fallback or lost proof: calls=%d proof=%+v", terminalCalls, request.Authority)
+	}
+	if request.Actor.Lineage != "terminal-ttys-fixture-03-1" {
+		t.Fatalf("enrolled proof lineage = %q", request.Actor.Lineage)
+	}
+}
+
+func TestParkAcceptsFixtureHumanAuthorityAtTheCommandEdge(t *testing.T) {
+	root := syncedClaimedGoalFixture(t)
+	amendSyncedGoalFixture(t, root, "human-origin park fixture", func(file *goal.GoalFile) {
+		file.Origin = goal.OriginHuman
+	})
+	t.Setenv("METASYSTEM_OWNER_LINEAGE", "m1")
+	t.Setenv("METASYSTEM_GOAL_NOW", "2026-09-09T10:00:00Z")
+
+	var stdout string
+	stderr, code := captureStderr(t, func() int {
+		var innerCode int
+		stdout, innerCode = captureStdout(t, func() int {
+			return runGoalPark([]string{
+				"--root", root, "--id", "standing-validation", "--because", "fixture human pause",
+				"--by", "Wido", "--fixture-human-authority",
+			})
+		})
+		return innerCode
+	})
+	if code != 0 || !strings.Contains(stdout, `"outcome":"confirmed"`) {
+		t.Fatalf("fixture human park did not carry its proof through the stopping command edge: code=%d stdout=%q stderr=%q", code, stdout, stderr)
+	}
+}
+
+func TestArcStoppingCommandsFallBackToTerminalGrade(t *testing.T) {
+	tests := []struct {
+		name    string
+		prepare func(*testing.T, string)
+		run     func([]string) int
+		args    []string
+	}{
+		{
+			name: "release",
+			run:  runGoalRelease,
+			args: []string{"--id", "standing-validation", "--by", "Wido", "--arc", "fixture-arc"},
+		},
+		{
+			name: "park",
+			run:  runGoalPark,
+			args: []string{"--id", "standing-validation", "--because", "operator pause", "--by", "Wido", "--arc", "fixture-arc"},
+		},
+		{
+			name: "unpark",
+			prepare: func(t *testing.T, root string) {
+				amendSyncedGoalFixture(t, root, "parked arc stopping fixture", func(file *goal.GoalFile) {
+					file.State = goal.StateParked
+					file.Revision++
+					file.Budget = nil
+					file.Approved = nil
+					file.Claimed = nil
+					file.Parked = &goal.ParkRecord{By: "human:Wido", At: "2026-09-09T09:00:00Z", Because: "operator pause"}
+				})
+			},
+			run:  runGoalUnpark,
+			args: []string{"--id", "standing-validation", "--by", "Wido", "--arc", "fixture-arc"},
+		},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			root := syncedClaimedGoalFixture(t)
+			if test.prepare != nil {
+				test.prepare(t, root)
+			}
+			t.Setenv("METASYSTEM_OWNER_LINEAGE", "")
+			t.Setenv("METASYSTEM_GOAL_NOW", "2026-09-09T10:00:00Z")
+			reader := goalSyncTerminalReader(t, root, "ttys:fixture_arc")
+			proveSyncReqWithReader(t, reader)
+
+			args := append([]string{"--root", root}, test.args...)
+			var stdout string
+			stderr, code := captureStderr(t, func() int {
+				var innerCode int
+				stdout, innerCode = captureStdout(t, func() int { return test.run(args) })
+				return innerCode
+			})
+			if code != 0 || !strings.Contains(stdout, `"outcome":"confirmed"`) {
+				t.Fatalf("arc %s did not use terminal-grade authority: code=%d stdout=%q stderr=%q", test.name, code, stdout, stderr)
+			}
+		})
+	}
 }
 
 func TestGoalClassifySweepEmptyListingInstallsTierLawAndClosesDispatch(t *testing.T) {

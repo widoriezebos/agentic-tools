@@ -139,12 +139,7 @@ func (r sessionStopCommandAuthorityReader) Read(pid int64) (humanauthority.Snaps
 			ParentPID: 1, ParentKnown: true, TerminalID: "tty-session-stop", TerminalKnown: true,
 		}, nil
 	}
-	return humanauthority.Snapshot{
-		Exact:      identity.Exact{Pid: 1, StartedAt: time.Unix(1, 0), Argv: []string{"fixture-init"}, ArgvKnown: true},
-		Executable: "/fixture/init", ExecutableKnown: true,
-		OwnerUID: 0, OwnerKnown: true,
-		ParentPID: 1, ParentKnown: true, TerminalID: "tty-session-stop", TerminalKnown: true,
-	}, nil
+	return commandAuthoritySystemRootSnapshot(), nil
 }
 
 func (r sessionStopCommandAuthorityReader) SessionLeader(int64) (int64, error) {
@@ -166,12 +161,12 @@ func sessionStopCommandProof(t *testing.T, root string, now time.Time) humanauth
 		t.Fatalf("probe command fixture process: %v %v", state, err)
 	}
 	reader := sessionStopCommandAuthorityReader{pid: exact.Pid, exact: exact}
-	if _, err := humanauthority.Enroll(root, exact.Pid, reader, now); err != nil {
-		t.Fatal(err)
-	}
-	proof, err := humanauthority.Prove(root, exact.Pid, reader, now)
+	proof, err := humanauthority.ProveTerminal(root, exact.Pid, reader, now)
 	if err != nil {
 		t.Fatal(err)
+	}
+	if proof.AuthorityGrade() != humanauthority.GradeTerminal || !proof.TerminalValidFor(root) || proof.ValidFor(root) {
+		t.Fatalf("session stop proof has the wrong grade: %+v", proof)
 	}
 	return proof
 }

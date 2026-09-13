@@ -409,7 +409,7 @@ func ClassifyAt(root, metasystemRoot string, caller int64) (Classification, erro
 	stewardBinaries := verifiedStewardBinaries(root)
 	seen := map[int64]bool{caller: true}
 	current, ok := ParentPid(caller)
-	for ok && !seen[current] {
+	for ok && current > 0 && !seen[current] {
 		seen[current] = true
 		if ann := authenticatedAnnouncement(current, records, probe); ann != nil {
 			return Classification{Class: ClassMain, MainId: ann.MainId, Announcement: ann}, nil

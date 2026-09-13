@@ -20,12 +20,12 @@ var (
 	classifySessionStopView   = classifyVerbCaller
 	sessionStopNow            = time.Now
 	proveSessionStopHuman     = func(root string, pid int64, now time.Time) (humanauthority.Proof, error) {
-		proof, err := humanauthority.Prove(root, pid, nil, now)
+		proof, err := humanauthority.ProveTerminal(root, pid, nil, now)
 		if err != nil {
 			return humanauthority.Proof{}, err
 		}
-		if !proof.ValidFor(root) {
-			return humanauthority.Proof{}, fmt.Errorf("enrolled-terminal human authority was not proven")
+		if !proof.TerminalValidFor(root) {
+			return humanauthority.Proof{}, fmt.Errorf("terminal human authority was not proven")
 		}
 		return proof, nil
 	}

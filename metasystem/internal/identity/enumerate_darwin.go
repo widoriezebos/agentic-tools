@@ -106,9 +106,9 @@ func ProcessCwd(pid int64) (string, bool) {
 }
 
 // ParentPid returns a process's parent pid from its kern.proc.pid entry. The
-// returned bool is false when the process is gone or when the parent is not a
-// real distinct ancestor — ppid <= 0 or ppid == pid — so the caller stops its
-// ancestry walk where there is no distinct live ancestor.
+// returned bool is false only when the process is gone or the kernel does not
+// disclose its parent. A reported parent of zero or the process itself is the
+// known top of the process tree and is normalized to parent zero with ok true.
 func ParentPid(pid int64) (int64, bool) {
 	if pid < 1 {
 		return 0, false
@@ -118,7 +118,10 @@ func ParentPid(pid int64) (int64, bool) {
 		return 0, false
 	}
 	ppid := int64(kinfo.Eproc.Ppid)
-	if ppid <= 0 || ppid == pid {
+	if ppid == 0 || ppid == pid {
+		return 0, true
+	}
+	if ppid < 0 {
 		return 0, false
 	}
 	return ppid, true

@@ -46,18 +46,20 @@ func ProcessCwd(pid int64) (string, bool) {
 
 // ParentPid returns a process's parent pid from /proc/<pid>/stat field 4,
 // parsed with the same last-parenthesis rule as the prober. The returned
-// bool is false when the pid cannot be read or when the parent is not a
-// real distinct ancestor — ppid <= 0 or ppid == pid — so the caller stops
-// its ancestry walk where there is no distinct live ancestor. Pid 1 has
-// ppid 0, which correctly returns false.
+// bool is false only when the pid cannot be read or the kernel does not
+// disclose its parent. A reported parent of zero or the process itself is the
+// known top of the process tree and is normalized to parent zero with ok true.
 func ParentPid(pid int64) (int64, bool) {
 	stat, err := os.ReadFile(fmt.Sprintf("/proc/%d/stat", pid))
 	if err != nil {
 		return 0, false
 	}
 	_, ppid, err := parseProcStat(string(stat))
-	if err != nil || ppid <= 0 || ppid == pid {
+	if err != nil || ppid < 0 {
 		return 0, false
+	}
+	if ppid == 0 || ppid == pid {
+		return 0, true
 	}
 	return ppid, true
 }

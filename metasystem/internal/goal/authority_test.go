@@ -1,10 +1,13 @@
 package goal
 
 import (
+	"errors"
 	"fmt"
 	"strings"
 	"testing"
 	"time"
+
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/humanauthority"
 )
 
 // The transition-authority fold (review r1, F12/F13): claim is
@@ -13,6 +16,118 @@ import (
 // adopts the arc's standing state, set-arc composes under the
 // membership matrix, prune's closure seeds from keep survivors, and
 // arc members remain independently claimable.
+
+func TestByWithoutProofIsRefusedForStoppingRows(t *testing.T) {
+	root := t.TempDir()
+	now := time.Date(2026, 9, 9, 10, 0, 0, 0, time.UTC)
+	request := VerbRequest{Endpoint: Endpoint{Root: root}, Actor: Actor{Human: "Wido"}}
+	rows := []struct {
+		row   humanAuthorityRow
+		grade string
+	}{
+		{humanAuthorityRow{Verb: "release", Name: "foreign release", Missing: "foreign release requires --by"}, humanauthority.GradeTerminal},
+		{humanAuthorityRow{Verb: "park", Name: "park of another pair's claim", Missing: "foreign park requires --by"}, humanauthority.GradeTerminal},
+		{humanAuthorityRow{Verb: "unpark", Name: "unpark of a human park to queued", Missing: "human unpark requires --by"}, humanauthority.GradeTerminal},
+		{humanAuthorityRow{Verb: "unpark", Name: "unpark of a human park to approved", Missing: "human unpark requires --by"}, humanauthority.GradeEnrolled},
+	}
+	for _, test := range rows {
+		err := request.requireHuman(test.row, test.grade)
+		var gradeErr GradeRefused
+		var required humanAuthorityRequired
+		if err == nil || errors.As(err, &gradeErr) || !errors.As(err, &required) || required.row != test.row || required.grade != test.grade || strings.Contains(err.Error(), "TERMINAL_") {
+			t.Fatalf("%s accepted a human name without proof or returned a coded refusal: %v", test.row.Name, err)
+		}
+	}
+
+	request.Authority = testTerminalAuthority(t, root, now)
+	for _, test := range rows[:3] {
+		if err := request.requireHuman(test.row, test.grade); err != nil {
+			t.Fatalf("terminal proof refused %s: %v", test.row.Name, err)
+		}
+	}
+	err := request.requireHuman(rows[3].row, rows[3].grade)
+	var gradeErr GradeRefused
+	if !errors.As(err, &gradeErr) || gradeErr.Needed != humanauthority.GradeEnrolled || gradeErr.Got != humanauthority.GradeTerminal {
+		t.Fatalf("enrolled row did not return the typed grade refusal: %#v", err)
+	}
+	if !strings.Contains(err.Error(), "needs enrolled-grade human authority") || strings.Contains(err.Error(), "TERMINAL_") {
+		t.Fatalf("typed grade refusal text is not a plain sentence: %v", err)
+	}
+
+	request.Authority = testHumanAuthority(t, root, now)
+	for _, test := range rows {
+		if err := request.requireHuman(test.row, test.grade); err != nil {
+			t.Fatalf("enrolled proof refused %s: %v", test.row.Name, err)
+		}
+	}
+}
+
+func TestArcStoppingRowsRejectHumanNameWithoutProof(t *testing.T) {
+	_, a, b := twoClones(t)
+	seedLedger(t, a)
+	arcBed(t, a, "authority-arc", "ap", "AP")
+
+	release := verbReq(b, "01J5X00000000000000000AP10", "mac-b")
+	release.Actor.Human = "Wido"
+	result, err := ReleaseArc(release, "ap-one")
+	if err != nil || result.Outcome != OutcomeRejected || !strings.Contains(result.Detail, "no human authority proof accompanied it") {
+		t.Fatalf("arc release accepted --by without proof: result=%+v err=%v", result, err)
+	}
+
+	park := verbReq(b, "01J5X00000000000000000AP20", "mac-b")
+	park.Actor.Human = "Wido"
+	result, err = ParkArc(park, "ap-one", "operator pause")
+	if err != nil || result.Outcome != OutcomeRejected || !strings.Contains(result.Detail, "no human authority proof accompanied it") {
+		t.Fatalf("arc park accepted --by without proof: result=%+v err=%v", result, err)
+	}
+
+	provenPark := verbReq(b, "01J5X00000000000000000AP30", "mac-b")
+	provenPark.Actor.Human = "Wido"
+	provenPark.Authority = testTerminalAuthority(t, b, provenPark.Now)
+	result, err = ParkArc(provenPark, "ap-one", "operator pause")
+	if err != nil || result.Outcome != OutcomeConfirmed {
+		t.Fatalf("proof-bearing arc park failed to prepare unpark: result=%+v err=%v", result, err)
+	}
+
+	unpark := verbReq(b, "01J5X00000000000000000AP40", "mac-b")
+	unpark.Actor.Human = "Wido"
+	result, err = UnparkArc(unpark, "ap-one")
+	if err != nil || result.Outcome != OutcomeRejected || !strings.Contains(result.Detail, "no human authority proof accompanied it") {
+		t.Fatalf("arc unpark accepted --by without proof: result=%+v err=%v", result, err)
+	}
+}
+
+func TestUnparkGradeFollowsTheStandingApproval(t *testing.T) {
+	_, root := oneClone(t)
+	seedLedger(t, root)
+	open := verbReq(root, "01J5X0000000000000000000B0", "human")
+	if result, err := Open(open, "approved-pause", "Pause approved work.", OriginMain, "Resume it."); err != nil || result.Outcome != OutcomeConfirmed {
+		t.Fatalf("open: %+v %v", result, err)
+	}
+	approveGoalForTest(t, open, "approved-pause", testBudget())
+
+	park := verbReq(root, "01J5X0000000000000000000B1", "human")
+	park.Actor.Human = "wido"
+	park.Authority = testTerminalAuthority(t, root, park.Now)
+	if result, err := Park(park, "approved-pause", "operator pause"); err != nil || result.Outcome != OutcomeConfirmed {
+		t.Fatalf("park: %+v %v", result, err)
+	}
+
+	terminal := verbReq(root, "01J5X0000000000000000000B2", "human")
+	terminal.Actor.Human = "wido"
+	terminal.Authority = testTerminalAuthority(t, root, terminal.Now)
+	result, err := Unpark(terminal, "approved-pause")
+	if err != nil || result.Outcome != OutcomeRejected || !strings.Contains(result.Detail, "needs enrolled-grade human authority") {
+		t.Fatalf("terminal proof restored approved work: %+v %v", result, err)
+	}
+
+	enrolled := verbReq(root, "01J5X0000000000000000000B3", "human")
+	enrolled.Actor.Human = "wido"
+	enrolled.Authority = testHumanAuthority(t, root, enrolled.Now)
+	if result, err := Unpark(enrolled, "approved-pause"); err != nil || result.Outcome != OutcomeConfirmed {
+		t.Fatalf("enrolled proof did not restore approved work: %+v %v", result, err)
+	}
+}
 
 func TestClaimIsAgentOnlyAndPairKeyed(t *testing.T) {
 	_, a, _ := twoClones(t)
@@ -78,6 +193,7 @@ func TestHumanOriginGoalsAreHumanReserved(t *testing.T) {
 	// can.
 	humanReq := verbReq(a, "01J5X00000000000000000HG30", "mac-a")
 	humanReq.Actor.Human = "wido"
+	humanReq.Authority = testTerminalAuthority(t, a, humanReq.Now)
 	if res, err := Park(humanReq, "human-owned", "on hold"); err != nil || res.Outcome != OutcomeConfirmed {
 		t.Fatalf("human park: %+v %v", res, err)
 	}
@@ -87,6 +203,7 @@ func TestHumanOriginGoalsAreHumanReserved(t *testing.T) {
 	}
 	humanUnpark := verbReq(a, "01J5X00000000000000000HG50", "mac-a")
 	humanUnpark.Actor.Human = "wido"
+	humanUnpark.Authority = testTerminalAuthority(t, a, humanUnpark.Now)
 	if res, err := Unpark(humanUnpark, "human-owned"); err != nil || res.Outcome != OutcomeConfirmed {
 		t.Fatalf("human unpark: %+v %v", res, err)
 	}
@@ -417,7 +534,7 @@ func TestValidatorAllowsIndependentArcMembers(t *testing.T) {
 	}
 }
 
-func TestMixedArcCascadesMoveOnlyEligibleMembers(t *testing.T) {
+func TestForeignClaimMakesTheWholeMixedArcCascadeAHumanAct(t *testing.T) {
 	_, a, b := twoClones(t)
 	seedLedger(t, a)
 	for index, id := range []string{"mixed-one", "mixed-two", "mixed-parked"} {
@@ -445,17 +562,15 @@ func TestMixedArcCascadesMoveOnlyEligibleMembers(t *testing.T) {
 		t.Fatalf("pin unrelated sibling: %+v %v", res, err)
 	}
 
-	// Releasing A skips B's independent claim instead of refusing the
-	// operation on a sibling A does not own.
-	if res, err := ReleaseArc(verbReq(a, "01J5X00000000000000000MC70", "mac-a"), "mixed-one"); err != nil || res.Outcome != OutcomeConfirmed {
-		t.Fatalf("mixed release: %+v %v", res, err)
+	// A foreign claim makes the whole mixed-arc cascade a human act rather
+	// than letting the caller partially release the arc.
+	if res, err := ReleaseArc(verbReq(a, "01J5X00000000000000000MC70", "mac-a"), "mixed-one"); err != nil || res.Outcome != OutcomeRejected || !strings.Contains(res.Detail, "foreign release is a human act") {
+		t.Fatalf("mixed release did not refuse the foreign member: %+v %v", res, err)
 	}
 	tree, err := loadTree(a, mustGit(t, a, "rev-parse", "origin/main"))
-	if err != nil || tree.Live["mixed-one"].State != StateApproved || tree.Live["mixed-two"].Claimed == nil || tree.Live["mixed-two"].Claimed.Machine != "mac-b" {
-		t.Fatalf("release moved a foreign sibling: %+v %v", tree, err)
-	}
-	if res, err := Claim(verbReq(a, "01J5X00000000000000000MC80", "mac-a"), "mixed-one"); err != nil || res.Outcome != OutcomeConfirmed {
-		t.Fatalf("reclaim A: %+v %v", res, err)
+	if err != nil || tree.Live["mixed-one"].Claimed == nil || tree.Live["mixed-one"].Claimed.Machine != "mac-a" ||
+		tree.Live["mixed-two"].Claimed == nil || tree.Live["mixed-two"].Claimed.Machine != "mac-b" {
+		t.Fatalf("refused release changed an arc member: %+v %v", tree, err)
 	}
 
 	// Steal follows B's pair only. The independently claimed A member and
@@ -474,6 +589,7 @@ func TestMixedArcCascadesMoveOnlyEligibleMembers(t *testing.T) {
 	// its actual marker, so the acknowledgment fold sees two pairs.
 	humanPark := verbReq(a, "01J5X00000000000000000MCA0", "mac-h")
 	humanPark.Actor.Human = "wido"
+	humanPark.Authority = testTerminalAuthority(t, a, humanPark.Now)
 	if res, err := ParkArc(humanPark, "mixed-one", "whole planning group pause"); err != nil || res.Outcome != OutcomeConfirmed {
 		t.Fatalf("multi-pair park: %+v %v", res, err)
 	}
@@ -494,6 +610,7 @@ func TestMixedArcCascadesMoveOnlyEligibleMembers(t *testing.T) {
 
 	humanUnpark := verbReq(a, "01J5X00000000000000000MCB0", "mac-h")
 	humanUnpark.Actor.Human = "wido"
+	humanUnpark.Authority = testHumanAuthority(t, a, humanUnpark.Now)
 	if res, err := UnparkArc(humanUnpark, "mixed-one"); err != nil || res.Outcome != OutcomeConfirmed {
 		t.Fatalf("human unpark: %+v %v", res, err)
 	}

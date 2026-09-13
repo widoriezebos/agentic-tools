@@ -15,14 +15,18 @@ type goalAuthorityReader struct{}
 
 func (goalAuthorityReader) Read(pid int64) (humanauthority.Snapshot, error) {
 	parent := int64(10)
+	terminal := "tty-test"
 	if pid == 10 {
 		parent = 1
+	} else if pid == 1 {
+		parent = 0
+		terminal = ""
 	}
 	return humanauthority.Snapshot{
 		Exact:      identity.Exact{Pid: pid, StartedAt: time.Unix(pid*10, 0), Argv: []string{"human-shell"}, ArgvKnown: true},
 		Executable: "/fixture/human-shell", ExecutableKnown: true,
 		OwnerUID: 501, OwnerKnown: true,
-		ParentPID: parent, ParentKnown: true, TerminalID: "tty-test", TerminalKnown: true,
+		ParentPID: parent, ParentKnown: true, TerminalID: terminal, TerminalKnown: true,
 	}, nil
 }
 
@@ -43,6 +47,23 @@ func testHumanAuthority(t *testing.T, root string, now time.Time) *humanauthorit
 		t.Fatal(err)
 	}
 	proof, err := humanauthority.Prove(root, 20, reader, now)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return &proof
+}
+
+func testTerminalAuthority(t *testing.T, root string, now time.Time) *humanauthority.Proof {
+	t.Helper()
+	directory := filepath.Join(root, "scripts", "agents", "adapters")
+	if err := os.MkdirAll(directory, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	script := "#!/bin/sh\n[ \"$1\" = signature ] && printf '%s\\n' 'match never-a-human-shell'\n"
+	if err := os.WriteFile(filepath.Join(directory, "authority-test.sh"), []byte(script), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	proof, err := humanauthority.ProveTerminal(root, 20, goalAuthorityReader{}, now)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -113,7 +134,7 @@ func TestBreachStopFenceAndHumanResumeAreOneWayTransactions(t *testing.T) {
 	journalResume := p.Tree.Live["stop-me"]
 	entry, err := ReadEntry(root, resumeJournalOpid)
 	if err != nil || entry.Outcome != OutcomeRejected || journalResume.StopFence == nil || len(reports) == 0 ||
-		!strings.Contains(reports[len(reports)-1].Detail, "enrolled terminal") {
+		!strings.Contains(reports[len(reports)-1].Detail, "cannot be replayed from journal text") {
 		t.Fatalf("dead-owner resume journal crossed the human boundary: goal=%+v entry=%+v reports=%+v err=%v", journalResume, entry, reports, err)
 	}
 	park := verbReq(root, "01J5X00000000000000000S025", "mac-a")

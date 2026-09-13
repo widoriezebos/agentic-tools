@@ -36,6 +36,13 @@ func TestParentPidMatchesGetppid(t *testing.T) {
 	}
 }
 
+func TestParentPidReportsProcessTreeRootAsKnownNone(t *testing.T) {
+	parent, ok := ParentPid(1)
+	if !ok || parent != 0 {
+		t.Fatalf("ParentPid(process-tree root) = (%d, %v), want (0, true)", parent, ok)
+	}
+}
+
 func TestProcessOwnerAnswersForLiveAndDeadProcesses(t *testing.T) {
 	owner, ok := ProcessOwner(int64(os.Getpid()))
 	if !ok || owner != uint32(os.Geteuid()) {

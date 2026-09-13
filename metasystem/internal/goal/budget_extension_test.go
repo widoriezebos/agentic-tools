@@ -231,7 +231,9 @@ func TestBudgetExtensionMarkerSurvivesHumanActsStealAndSplit(t *testing.T) {
 	if file := assertMarker(unapproved.Tip, false); file.Budget != nil || file.Approved != nil {
 		t.Fatalf("unapprove retained approval state: %+v", file)
 	}
-	unparked, err := Unpark(act("01J5X00000000000000000EY04", 4, true), "earned-raise")
+	unpark := act("01J5X00000000000000000EY04", 4, true)
+	unpark.Authority = testTerminalAuthority(t, root, unpark.Now)
+	unparked, err := Unpark(unpark, "earned-raise")
 	if err != nil || unparked.Outcome != OutcomeConfirmed {
 		t.Fatalf("unpark: %+v %v", unparked, err)
 	}

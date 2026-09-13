@@ -2,7 +2,10 @@
 set -euo pipefail
 
 fixture_bed_root=$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd -P)
+fixture_bed_ms="${METASYSTEM_BIN:-$fixture_bed_root/bin/metasystem}"
+[[ -x "$fixture_bed_ms" ]] || { echo "goal-cli fixtures: bin/metasystem is not built" >&2; exit 1; }
 source "$fixture_bed_root/scripts/agents/fixture-budget.sh"
+harness_fixture_budget_init "$fixture_bed_root"
 fixture_bed_child=0
 fixture_scenario=
 if fixture_scenario=$(harness_fixture_bed_child_scenario goal-cli "$@"); then
@@ -19,13 +22,13 @@ if (( ! fixture_bed_child )); then
   fixture_bed_script=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd -P)/$(basename "${BASH_SOURCE[0]}")
   run_fixture_bed_scenarios goal-cli "goal CLI fixtures: PASSED" \
 	"$fixture_bed_script" migration-recovery human-lineage risk-basis labels-and-filtering structured-budget scope-bounds archive-and-prune classification-sweep \
-	brain-claim-refuses brain-human-word-refuses brain-classification-fails brain-stop-seeded brain-stop-corrupt brain-status-line wrong-terminal \
-	carry-word carried-record carried-discharge seat-blocker power-of-attorney landing-slot budget-extension
+		brain-claim-refuses brain-human-word-refuses brain-classification-fails brain-stop-seeded brain-stop-corrupt brain-status-line wrong-terminal \
+		carry-word carried-record carried-discharge seat-blocker power-of-attorney landing-slot budget-extension proof-grades
 fi
 case "$fixture_scenario" in
 	migration-recovery | human-lineage | risk-basis | labels-and-filtering | structured-budget | scope-bounds | archive-and-prune | classification-sweep | \
-	brain-claim-refuses | brain-human-word-refuses | brain-classification-fails | brain-stop-seeded | brain-stop-corrupt | brain-status-line | wrong-terminal | \
-	carry-word | carried-record | carried-discharge | seat-blocker | power-of-attorney | landing-slot | budget-extension) ;;
+		brain-claim-refuses | brain-human-word-refuses | brain-classification-fails | brain-stop-seeded | brain-stop-corrupt | brain-status-line | wrong-terminal | \
+		carry-word | carried-record | carried-discharge | seat-blocker | power-of-attorney | landing-slot | budget-extension | proof-grades) ;;
   *) echo "goal CLI fixtures: unknown scenario: $fixture_scenario" >&2; exit 64 ;;
 esac
 
@@ -38,14 +41,124 @@ esac
 
 root=$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd -P)
 source "$root/scripts/agents/fixture-budget.sh"
-harness_fixture_warn_if_engine_stale "$root"
-ms="${METASYSTEM_BIN:-$root/bin/metasystem}"
-[[ -x "$ms" ]] || { echo "goal-cli fixtures: bin/metasystem is not built" >&2; exit 1; }
+ms=$fixture_bed_ms
 tmp=$(mktemp -d "${TMPDIR:-/tmp}/metasystem-goal-cli.XXXXXX")
 brain_fake_server_pid=
 brain_fake_server_dir=
+proof_grade_holder_pid=
+proof_grade_holder_pid_file=
+proof_grade_holder_start=
+proof_grade_holder_command=
+proof_grade_holder_session_pid=
+proof_grade_holder_session_start=
+proof_grade_holder_keeper_pid=
+proof_grade_holder_keeper_start=
 cleanup() {
-  local status=$? keep command
+  local status=$? keep command current_start cleanup_cap cleanup_started holder_unproven_cleanup= keeper_cleanup= session_cleanup=
+  if [[ -n "$proof_grade_holder_keeper_pid" && -n "$proof_grade_holder_keeper_start" ]]; then
+    current_start=$("$ms" proc started-at --pid "$proof_grade_holder_keeper_pid" 2>/dev/null || true)
+    if [[ -n "$current_start" && "$current_start" == "$proof_grade_holder_keeper_start" ]]; then
+      kill -TERM "$proof_grade_holder_keeper_pid" 2>/dev/null || true
+      keeper_cleanup=yes
+    elif [[ -z "$current_start" ]]; then
+      keeper_cleanup=yes
+    elif [[ -n "$current_start" ]]; then
+      echo "goal CLI fixture could not prove ownership of proof-grade input keeper pid $proof_grade_holder_keeper_pid" >&2
+      status=1
+    fi
+  fi
+  if [[ -n "$proof_grade_holder_session_pid" && -n "$proof_grade_holder_session_start" ]]; then
+    current_start=$("$ms" proc started-at --pid "$proof_grade_holder_session_pid" 2>/dev/null || true)
+    if [[ -n "$current_start" && "$current_start" == "$proof_grade_holder_session_start" ]]; then
+      kill -TERM "$proof_grade_holder_session_pid" 2>/dev/null || true
+      session_cleanup=yes
+    elif [[ -z "$current_start" ]]; then
+      session_cleanup=yes
+    else
+      echo "goal CLI fixture could not prove ownership of proof-grade terminal session pid $proof_grade_holder_session_pid" >&2
+      status=1
+    fi
+  fi
+  if [[ -z "$proof_grade_holder_pid" && -n "$proof_grade_holder_pid_file" && -s "$proof_grade_holder_pid_file" ]]; then
+    proof_grade_holder_pid=$(cat "$proof_grade_holder_pid_file")
+    if [[ ! "$proof_grade_holder_pid" =~ ^[0-9]+$ ]]; then
+      echo "goal CLI fixture found an invalid proof-grade holder pid in $proof_grade_holder_pid_file" >&2
+      proof_grade_holder_pid=
+      status=1
+    fi
+  fi
+  if [[ -n "$proof_grade_holder_pid" && -n "$proof_grade_holder_start" ]]; then
+    current_start=$("$ms" proc started-at --pid "$proof_grade_holder_pid" 2>/dev/null || true)
+    if [[ -n "$current_start" && "$current_start" == "$proof_grade_holder_start" ]]; then
+      kill -TERM "$proof_grade_holder_pid" 2>/dev/null || true
+    elif [[ -n "$current_start" ]]; then
+      echo "goal CLI fixture could not prove ownership of proof-grade holder pid $proof_grade_holder_pid" >&2
+      status=1
+    fi
+    cleanup_cap=$(harness_fixture_cap mission-process-wait)
+    cleanup_started=$(date +%s)
+    while [[ "$("$ms" proc started-at --pid "$proof_grade_holder_pid" 2>/dev/null || true)" == "$proof_grade_holder_start" ]] &&
+        (( $(date +%s) - cleanup_started < cleanup_cap )); do
+      sleep 0.1
+    done
+    if [[ "$("$ms" proc started-at --pid "$proof_grade_holder_pid" 2>/dev/null || true)" == "$proof_grade_holder_start" ]]; then
+      echo "proof-grade holder did not exit within ${cleanup_cap}s after termination" >&2
+      status=1
+      kill -KILL "$proof_grade_holder_pid" 2>/dev/null || true
+    fi
+  elif [[ -n "$proof_grade_holder_pid" ]]; then
+    command=$(ps -p "$proof_grade_holder_pid" -o command= 2>/dev/null || true)
+    if [[ "$command" == *metasystem-fake-agent* ]]; then
+      kill -TERM "$proof_grade_holder_pid" 2>/dev/null || true
+      holder_unproven_cleanup=yes
+    elif [[ -n "$command" ]]; then
+      echo "goal CLI fixture could not prove ownership of unrecorded proof-grade holder pid $proof_grade_holder_pid" >&2
+      status=1
+    fi
+  fi
+  if [[ -n "$holder_unproven_cleanup" ]]; then
+    cleanup_cap=$(harness_fixture_cap mission-process-wait)
+    cleanup_started=$(date +%s)
+    command=$(ps -p "$proof_grade_holder_pid" -o command= 2>/dev/null || true)
+    while [[ "$command" == *metasystem-fake-agent* ]] &&
+        (( $(date +%s) - cleanup_started < cleanup_cap )); do
+      sleep 0.1
+      command=$(ps -p "$proof_grade_holder_pid" -o command= 2>/dev/null || true)
+    done
+    if [[ "$command" == *metasystem-fake-agent* ]]; then
+      echo "unrecorded proof-grade holder did not exit within ${cleanup_cap}s after termination" >&2
+      status=1
+      kill -KILL "$proof_grade_holder_pid" 2>/dev/null || true
+    fi
+  fi
+  if [[ -n "$keeper_cleanup" ]]; then
+    cleanup_cap=$(harness_fixture_cap mission-process-wait)
+    cleanup_started=$(date +%s)
+    while [[ "$("$ms" proc started-at --pid "$proof_grade_holder_keeper_pid" 2>/dev/null || true)" == "$proof_grade_holder_keeper_start" ]] &&
+        (( $(date +%s) - cleanup_started < cleanup_cap )); do
+      sleep 0.1
+    done
+    if [[ "$("$ms" proc started-at --pid "$proof_grade_holder_keeper_pid" 2>/dev/null || true)" == "$proof_grade_holder_keeper_start" ]]; then
+      echo "proof-grade input keeper did not exit within ${cleanup_cap}s after termination" >&2
+      status=1
+      kill -KILL "$proof_grade_holder_keeper_pid" 2>/dev/null || true
+    fi
+    wait "$proof_grade_holder_keeper_pid" 2>/dev/null || true
+  fi
+  if [[ -n "$session_cleanup" ]]; then
+    cleanup_cap=$(harness_fixture_cap mission-process-wait)
+    cleanup_started=$(date +%s)
+    while [[ "$("$ms" proc started-at --pid "$proof_grade_holder_session_pid" 2>/dev/null || true)" == "$proof_grade_holder_session_start" ]] &&
+        (( $(date +%s) - cleanup_started < cleanup_cap )); do
+      sleep 0.1
+    done
+    if [[ "$("$ms" proc started-at --pid "$proof_grade_holder_session_pid" 2>/dev/null || true)" == "$proof_grade_holder_session_start" ]]; then
+      echo "proof-grade terminal session did not exit within ${cleanup_cap}s after termination" >&2
+      status=1
+      kill -KILL "$proof_grade_holder_session_pid" 2>/dev/null || true
+    fi
+    wait "$proof_grade_holder_session_pid" 2>/dev/null || true
+  fi
   if [[ -n "$brain_fake_server_pid" ]]; then
     command=$(ps -p "$brain_fake_server_pid" -o command= 2>/dev/null || true)
     if [[ "$command" == *"$brain_fake_server_dir"* ]]; then
@@ -120,7 +233,7 @@ git -C "$clone" push -q origin main
 # This suite is intentionally headless. Enroll its shell as the exact fake
 # checkout holder so claim-bearing goal fixtures carry a real claim epoch.
 fixture_start=$("$ms" proc started-at --pid "$$")
-if [[ "$fixture_scenario" != wrong-terminal ]]; then
+if [[ "$fixture_scenario" != wrong-terminal && "$fixture_scenario" != proof-grades ]]; then
   "$ms" lease announce --root "$clone" --session goal-cli-fixture \
     --pid "$$" --start "$fixture_start" --tag goal-cli-fixture \
     --runtime fake --owner-lineage fixture-lineage >/dev/null
@@ -452,6 +565,345 @@ if [[ "$fixture_scenario" == carried-discharge ]]; then
   [[ -s "$register" && $(wc -l <"$register" | tr -d ' ') -eq 1 ]] \
     || { echo "accepted-risk counselor register was not append-once" >&2; exit 1; }
   echo "carried-discharge passed"
+  exit 0
+fi
+
+if [[ "$fixture_scenario" == proof-grades ]]; then
+  proof_grade_arc_origin=$tmp/proof-grade-arc-origin.git
+  proof_grade_arc_clone=$tmp/proof-grade-arc-clone
+  git clone -q --bare "$origin" "$proof_grade_arc_origin"
+  git clone -q -b main "$proof_grade_arc_origin" "$proof_grade_arc_clone"
+  git -C "$proof_grade_arc_clone" config metasystem.goal.machine fixture-arc-machine
+
+  proof_grade_bed_view=$("$ms" lease classify --root "$clone" --metasystem-root "$root" --caller-pid "$$")
+  proof_grade_bed_class=$("$ms" json get --value "$proof_grade_bed_view" --field class)
+  case "$proof_grade_bed_class" in
+    HUMAN | DELEGATE) ;;
+    *) echo "proof-grade fixture bed classified $proof_grade_bed_class, not HUMAN or DELEGATE" >&2; exit 1 ;;
+  esac
+  export PROOF_GRADE_BED_CLASS=$proof_grade_bed_class
+
+  # The holder is a signed fake-runtime sibling, never an ancestor of the
+  # pseudo-terminal shell. The clone keeps every real runtime signature so
+  # the agent assertions exercise the same signature set as production.
+  proof_grade_holder_command=$tmp/metasystem-fake-agent
+  cat >"$proof_grade_holder_command" <<'PROOF_GRADE_HOLDER_COMMAND'
+#!/bin/bash
+exec -a metasystem-fake-agent /bin/sleep "$1"
+PROOF_GRADE_HOLDER_COMMAND
+  chmod +x "$proof_grade_holder_command"
+  proof_grade_holder_pid_file=$tmp/proof-grade-holder.pid
+  proof_grade_holder_script=$tmp/proof-grade-holder.sh
+  cat >"$proof_grade_holder_script" <<'PROOF_GRADE_HOLDER'
+#!/usr/bin/env bash
+set -euo pipefail
+trap '' HUP
+printf '%s\n' "$$" >"$PROOF_GRADE_HOLDER_PID_FILE"
+exec "$PROOF_GRADE_HOLDER_COMMAND" 300
+PROOF_GRADE_HOLDER
+  chmod +x "$proof_grade_holder_script"
+  export PROOF_GRADE_HOLDER_COMMAND=$proof_grade_holder_command
+  export PROOF_GRADE_HOLDER_PID_FILE=$proof_grade_holder_pid_file
+  proof_grade_holder_keeper_pid_file=$tmp/proof-grade-input-keeper.pid
+  proof_grade_holder_keeper_script=$tmp/proof-grade-input-keeper.sh
+  cat >"$proof_grade_holder_keeper_script" <<'PROOF_GRADE_KEEPER'
+#!/usr/bin/env bash
+set -euo pipefail
+printf '%s\n' "$$" >"$PROOF_GRADE_KEEPER_PID_FILE"
+exec -a proof-grade-input-keeper /bin/sleep 600
+PROOF_GRADE_KEEPER
+  chmod +x "$proof_grade_holder_keeper_script"
+  export PROOF_GRADE_KEEPER_PID_FILE=$proof_grade_holder_keeper_pid_file
+  case "$(uname -s)" in
+    Darwin) /bin/bash "$proof_grade_holder_keeper_script" | /usr/bin/script -q /dev/null /bin/bash "$proof_grade_holder_script" >"$tmp/proof-grade-holder.log" 2>&1 & ;;
+    Linux) /bin/bash "$proof_grade_holder_keeper_script" | /usr/bin/script -q --return -c "exec /bin/bash '$proof_grade_holder_script'" /dev/null >"$tmp/proof-grade-holder.log" 2>&1 & ;;
+    *) echo "proof-grade fixture needs a platform with the script pseudo-terminal utility" >&2; exit 1 ;;
+  esac
+  proof_grade_holder_session_pid=$!
+  proof_grade_holder_session_start=$("$ms" proc started-at --pid "$proof_grade_holder_session_pid" 2>/dev/null || true)
+  [[ -n "$proof_grade_holder_session_start" ]] || {
+    echo "proof-grade terminal session is not alive with a proven start time" >&2
+    cat "$tmp/proof-grade-holder.log" >&2
+    exit 1
+  }
+  proof_grade_holder_wait_cap=$(harness_fixture_cap mission-process-wait)
+  proof_grade_holder_wait_started=$(date +%s)
+  while [[ ! -s "$proof_grade_holder_keeper_pid_file" ]] &&
+      kill -0 "$proof_grade_holder_session_pid" 2>/dev/null &&
+      (( $(date +%s) - proof_grade_holder_wait_started < proof_grade_holder_wait_cap )); do
+    sleep 0.1
+  done
+  [[ -s "$proof_grade_holder_keeper_pid_file" ]] || {
+    echo "proof-grade input keeper did not start within ${proof_grade_holder_wait_cap}s" >&2
+    cat "$tmp/proof-grade-holder.log" >&2
+    exit 1
+  }
+  proof_grade_holder_keeper_pid=$(cat "$proof_grade_holder_keeper_pid_file")
+  proof_grade_holder_keeper_start=$("$ms" proc started-at --pid "$proof_grade_holder_keeper_pid" 2>/dev/null || true)
+  [[ -n "$proof_grade_holder_keeper_start" ]] || {
+    echo "proof-grade input keeper is not alive with a proven start time" >&2
+    cat "$tmp/proof-grade-holder.log" >&2
+    exit 1
+  }
+  while [[ ! -s "$proof_grade_holder_pid_file" ]] &&
+      kill -0 "$proof_grade_holder_session_pid" 2>/dev/null &&
+      (( $(date +%s) - proof_grade_holder_wait_started < proof_grade_holder_wait_cap )); do
+    sleep 0.1
+  done
+  [[ -s "$proof_grade_holder_pid_file" ]] || {
+    echo "proof-grade holder did not start within ${proof_grade_holder_wait_cap}s" >&2
+    cat "$tmp/proof-grade-holder.log" >&2
+    exit 1
+  }
+  proof_grade_holder_pid=$(cat "$proof_grade_holder_pid_file")
+  proof_grade_holder_ready=
+  while (( $(date +%s) - proof_grade_holder_wait_started < proof_grade_holder_wait_cap )); do
+    proof_grade_holder_start=$("$ms" proc started-at --pid "$proof_grade_holder_pid" 2>/dev/null || true)
+    proof_grade_holder_probe=$("$ms" proc probe --pid "$proof_grade_holder_pid" 2>/dev/null || true)
+    proof_grade_holder_liveness=$("$ms" json get --value "$proof_grade_holder_probe" --field liveness 2>/dev/null || true)
+    proof_grade_holder_terminal=$("$ms" json get --value "$proof_grade_holder_probe" --field terminalId --default "" 2>/dev/null || true)
+    proof_grade_holder_terminal_known=$("$ms" json get --value "$proof_grade_holder_probe" --field terminalKnown 2>/dev/null || true)
+    proof_grade_holder_session_leader=$("$ms" json get --value "$proof_grade_holder_probe" --field sessionLeaderPid --default 0 2>/dev/null || true)
+    if [[ -n "$proof_grade_holder_start" && "$proof_grade_holder_liveness" == alive &&
+        "$proof_grade_holder_terminal_known" == true && -n "$proof_grade_holder_terminal" &&
+        "$proof_grade_holder_session_leader" == "$proof_grade_holder_pid" &&
+        "$proof_grade_holder_probe" == *metasystem-fake-agent* ]]; then
+      proof_grade_holder_ready=yes
+      break
+    fi
+    sleep 0.1
+  done
+  if [[ -z "$proof_grade_holder_ready" ]]; then
+    echo "proof-grade holder is not the live leader of its own controlling-terminal session: $proof_grade_holder_probe" >&2
+    cat "$tmp/proof-grade-holder.log" >&2
+    exit 1
+  fi
+  "$ms" lease announce --root "$clone" --session proof-grade-holder \
+    --pid "$proof_grade_holder_pid" --start "$proof_grade_holder_start" \
+    --tag proof-grade-holder --runtime fake --owner-lineage proof-grade-holder >/dev/null
+  mkdir -p "$tmp/agent-shell"
+  cat >"$tmp/agent-shell/metasystem-fake-agent" <<'PROOF_GRADE_AGENT_SHELL'
+#!/bin/bash
+exec -a metasystem-fake-agent /bin/bash "$@"
+PROOF_GRADE_AGENT_SHELL
+  chmod +x "$tmp/agent-shell/metasystem-fake-agent"
+  export PROOF_GRADE_MS=$ms
+  export PROOF_GRADE_CLONE=$clone
+  export PROOF_GRADE_ARC_CLONE=$proof_grade_arc_clone
+  export PROOF_GRADE_AGENT_SHELL=$tmp/agent-shell/metasystem-fake-agent
+  export PROOF_GRADE_LOG_ROOT=$tmp/proof-grades
+  export PROOF_GRADE_SCENARIO_LOG=$tmp/proof-grades/scenario.log
+  export PROOF_GRADE_STATUS=$tmp/proof-grades/status
+  mkdir -p "$PROOF_GRADE_LOG_ROOT"
+
+  proof_grade_headless_script=$tmp/proof-grade-headless.sh
+  cat >"$proof_grade_headless_script" <<'PROOF_GRADE_HEADLESS'
+#!/usr/bin/env bash
+set -euo pipefail
+headless_tty=$(ps -p "$$" -o tty= | tr -d '[:space:]')
+case "$headless_tty" in
+  "" | "?" | "??" | "-") ;;
+  *) echo "headless fixture process unexpectedly has terminal $headless_tty" >&2; exit 1 ;;
+esac
+exec "$PROOF_GRADE_MS" goal release --root "$PROOF_GRADE_CLONE" --id ship-widget --by Wido
+PROOF_GRADE_HEADLESS
+  chmod +x "$proof_grade_headless_script"
+  set +e
+  perl -MPOSIX -e 'POSIX::setsid() or die "setsid: $!"; exec @ARGV or die "exec: $!"' -- \
+    /bin/bash "$proof_grade_headless_script" </dev/null >"$PROOF_GRADE_LOG_ROOT/headless.log" 2>&1
+  proof_grade_headless_rc=$?
+  set -e
+  if [[ $proof_grade_headless_rc -eq 0 ]] ||
+      ! grep -q 'TERMINAL_NOT_REACHED' "$PROOF_GRADE_LOG_ROOT/headless.log"; then
+    echo "headless human-word caller did not receive the terminal-not-reached refusal" >&2
+    cat "$PROOF_GRADE_LOG_ROOT/headless.log" >&2
+    exit 1
+  fi
+
+  proof_grade_script=$tmp/proof-grade-human.sh
+  cat >"$proof_grade_script" <<'PROOF_GRADES'
+#!/usr/bin/env bash
+set -euo pipefail
+unset METASYSTEM_OWNER_LINEAGE
+: >"$PROOF_GRADE_SCENARIO_LOG"
+exec >>"$PROOF_GRADE_SCENARIO_LOG" 2>&1
+proof_grade_finish() {
+  local status=$?
+  printf '%s\n' "$status" >"$PROOF_GRADE_STATUS"
+  if [[ $status -ne 0 && ! -s "$PROOF_GRADE_SCENARIO_LOG" ]]; then
+    printf 'proof-grade assertions failed before producing a diagnostic\n' >>"$PROOF_GRADE_SCENARIO_LOG"
+  fi
+}
+trap proof_grade_finish EXIT
+printf 'proof-grade assertions started\n'
+
+agent_refuses() { # label, expected refusal, command...
+  local label=$1 expected=$2 rc
+  shift 2
+  set +e
+  "$PROOF_GRADE_AGENT_SHELL" -c '"$@"; rc=$?; exit "$rc"' agent-shell "$@" \
+    >"$PROOF_GRADE_LOG_ROOT/$label.log" 2>&1
+  rc=$?
+  set -e
+  if [[ $rc -eq 0 ]]; then
+    echo "agent shell was allowed to $label" >&2
+    cat "$PROOF_GRADE_LOG_ROOT/$label.log" >&2
+    exit 1
+  fi
+  if ! grep -Eq "$expected" "$PROOF_GRADE_LOG_ROOT/$label.log"; then
+    echo "agent shell $label failed without its exact authority refusal" >&2
+    cat "$PROOF_GRADE_LOG_ROOT/$label.log" >&2
+    exit 1
+  fi
+}
+
+human_runs() { # label, command...
+  local label=$1
+  shift
+  if ! "$@" >"$PROOF_GRADE_LOG_ROOT/$label.log" 2>&1; then
+    echo "unenrolled human terminal could not $label" >&2
+    cat "$PROOF_GRADE_LOG_ROOT/$label.log" >&2
+    exit 1
+  fi
+}
+
+human_refuses() { # label, expected refusal, command...
+  local label=$1 expected=$2 rc
+  shift 2
+  set +e
+  "$@" >"$PROOF_GRADE_LOG_ROOT/$label.log" 2>&1
+  rc=$?
+  set -e
+  if [[ $rc -eq 0 ]]; then
+    echo "agent-descended terminal was allowed to $label" >&2
+    cat "$PROOF_GRADE_LOG_ROOT/$label.log" >&2
+    exit 1
+  fi
+  if ! grep -Eq "$expected" "$PROOF_GRADE_LOG_ROOT/$label.log"; then
+    echo "agent-descended terminal $label failed without its exact authority refusal" >&2
+    cat "$PROOF_GRADE_LOG_ROOT/$label.log" >&2
+    exit 1
+  fi
+}
+
+authority_refusal='AGENT_IN_AUTHORITY_CHAIN: [[:alnum:]_-]+'
+agent_refuses release "$authority_refusal" "$PROOF_GRADE_MS" goal release --root "$PROOF_GRADE_CLONE" \
+  --id ship-widget --by Wido --lineage agent-shell
+agent_refuses park "$authority_refusal" "$PROOF_GRADE_MS" goal park --root "$PROOF_GRADE_CLONE" \
+  --id ship-widget --because "agent stop" --by Wido --lineage agent-shell
+agent_refuses release-arc "$authority_refusal" "$PROOF_GRADE_MS" goal release --root "$PROOF_GRADE_ARC_CLONE" \
+  --id ship-widget --by Wido --lineage agent-shell --arc proof-grade
+agent_refuses park-arc "$authority_refusal" "$PROOF_GRADE_MS" goal park --root "$PROOF_GRADE_ARC_CLONE" \
+  --id ship-widget --because "agent arc stop" --by Wido --lineage agent-shell --arc proof-grade
+agent_refuses unpark-arc "$authority_refusal" "$PROOF_GRADE_MS" goal unpark --root "$PROOF_GRADE_ARC_CLONE" \
+  --id ship-widget --by Wido --lineage agent-shell --arc proof-grade
+agent_refuses approve "$authority_refusal" "$PROOF_GRADE_MS" goal approve --root "$PROOF_GRADE_CLONE" \
+  --id fix-docs --budget box --by Wido --lineage agent-shell
+agent_refuses session-stop 'caller classifies DELEGATE' "$PROOF_GRADE_MS" session stop --root "$PROOF_GRADE_CLONE" --by Wido
+
+if [[ "$PROOF_GRADE_BED_CLASS" == HUMAN ]]; then
+  human_runs release "$PROOF_GRADE_MS" goal release --root "$PROOF_GRADE_CLONE" \
+    --id ship-widget --by Wido
+  human_runs park "$PROOF_GRADE_MS" goal park --root "$PROOF_GRADE_CLONE" \
+    --id ship-widget --because "human stop" --by Wido
+  agent_refuses unpark "$authority_refusal" "$PROOF_GRADE_MS" goal unpark --root "$PROOF_GRADE_CLONE" \
+    --id ship-widget --by Wido --lineage agent-shell
+  human_runs unpark-to-queued "$PROOF_GRADE_MS" goal unpark --root "$PROOF_GRADE_CLONE" \
+    --id ship-widget --by Wido
+  human_runs release-arc "$PROOF_GRADE_MS" goal release --root "$PROOF_GRADE_ARC_CLONE" \
+    --id ship-widget --by Wido --arc proof-grade
+  human_runs park-arc "$PROOF_GRADE_MS" goal park --root "$PROOF_GRADE_ARC_CLONE" \
+    --id ship-widget --because "human arc stop" --by Wido --arc proof-grade
+  human_runs unpark-arc-to-queued "$PROOF_GRADE_MS" goal unpark --root "$PROOF_GRADE_ARC_CLONE" \
+    --id ship-widget --by Wido --arc proof-grade
+
+  release_journal=
+  for journal in "$PROOF_GRADE_CLONE"/artifacts/agents/goal-transactions/*.json; do
+    [[ -f "$journal" ]] || continue
+    if grep -q '"verb": "release"' "$journal" && grep -q '"lineage": "terminal-.*-0"' "$journal"; then
+      release_journal=$journal
+      break
+    fi
+  done
+  [[ -n "$release_journal" ]] || {
+    echo "the human release journal did not record its derived terminal-grade lineage" >&2
+    exit 1
+  }
+  derived_terminal_lineage=$(sed -n 's/^[[:space:]]*"lineage": "\(terminal-[^"]*-0\)",*$/\1/p' "$release_journal")
+  [[ -n "$derived_terminal_lineage" ]] || {
+    echo "the human release journal carried no terminal-<id>-0 lineage" >&2
+    exit 1
+  }
+  for verb in release park unpark; do
+    recorded=
+    for journal in "$PROOF_GRADE_CLONE"/artifacts/agents/goal-transactions/*.json; do
+      [[ -f "$journal" ]] || continue
+      if grep -q "\"verb\": \"$verb\"" "$journal" &&
+          grep -q "\"lineage\": \"$derived_terminal_lineage\"" "$journal"; then
+        recorded=yes
+        break
+      fi
+    done
+    [[ -n "$recorded" ]] || {
+      echo "the human $verb journal did not record derived lineage $derived_terminal_lineage" >&2
+      exit 1
+    }
+  done
+
+  set +e
+  "$PROOF_GRADE_MS" goal approve --root "$PROOF_GRADE_CLONE" --id fix-docs \
+    --budget box --by Wido >"$PROOF_GRADE_LOG_ROOT/approve-human.log" 2>&1
+  approve_rc=$?
+  set -e
+  if [[ $approve_rc -eq 0 ]] || ! grep -q 'TERMINAL_NOT_ENROLLED' "$PROOF_GRADE_LOG_ROOT/approve-human.log"; then
+    echo "unenrolled human approval did not name its enrolled-grade refusal" >&2
+    cat "$PROOF_GRADE_LOG_ROOT/approve-human.log" >&2
+    exit 1
+  fi
+
+  human_runs session-stop "$PROOF_GRADE_MS" session stop --root "$PROOF_GRADE_CLONE" --by Wido
+else
+  printf "proof-grade allow path was not proven in this agent-descended bed; prove it at an agent-free terminal or in the steward's scheduled run\n"
+  human_refuses release-human "$authority_refusal" "$PROOF_GRADE_MS" goal release --root "$PROOF_GRADE_CLONE" \
+    --id ship-widget --by Wido
+  human_refuses park-human "$authority_refusal" "$PROOF_GRADE_MS" goal park --root "$PROOF_GRADE_CLONE" \
+    --id ship-widget --because "human stop" --by Wido
+  human_refuses release-arc-human "$authority_refusal" "$PROOF_GRADE_MS" goal release --root "$PROOF_GRADE_ARC_CLONE" \
+    --id ship-widget --by Wido --arc proof-grade
+  human_refuses park-arc-human "$authority_refusal" "$PROOF_GRADE_MS" goal park --root "$PROOF_GRADE_ARC_CLONE" \
+    --id ship-widget --because "human arc stop" --by Wido --arc proof-grade
+  human_refuses unpark-arc-human "$authority_refusal" "$PROOF_GRADE_MS" goal unpark --root "$PROOF_GRADE_ARC_CLONE" \
+    --id ship-widget --by Wido --arc proof-grade
+  agent_refuses unpark "$authority_refusal" "$PROOF_GRADE_MS" goal unpark --root "$PROOF_GRADE_CLONE" \
+    --id perf-pass --by Wido --lineage agent-shell
+  human_refuses unpark-to-queued "$authority_refusal" "$PROOF_GRADE_MS" goal unpark --root "$PROOF_GRADE_CLONE" \
+    --id perf-pass --by Wido
+  human_refuses approve-human "$authority_refusal" "$PROOF_GRADE_MS" goal approve --root "$PROOF_GRADE_CLONE" \
+    --id fix-docs --budget box --by Wido
+  human_refuses session-stop-human 'caller classifies DELEGATE' "$PROOF_GRADE_MS" session stop \
+    --root "$PROOF_GRADE_CLONE" --by Wido
+fi
+PROOF_GRADES
+  chmod +x "$proof_grade_script"
+  set +e
+  case "$(uname -s)" in
+    Darwin) /usr/bin/script -q /dev/null /bin/bash "$proof_grade_script" >"$tmp/proof-grade-assertions.pty.log" 2>&1 ;;
+    Linux) /usr/bin/script -q --return -c "exec /bin/bash '$proof_grade_script'" /dev/null >"$tmp/proof-grade-assertions.pty.log" 2>&1 ;;
+    *) echo "proof-grade fixture needs a platform with the script pseudo-terminal utility" >&2; exit 1 ;;
+  esac
+  proof_grade_script_rc=$?
+  set -e
+  proof_grade_reported_rc=
+  [[ -f "$PROOF_GRADE_STATUS" ]] && proof_grade_reported_rc=$(cat "$PROOF_GRADE_STATUS")
+  if [[ $proof_grade_script_rc -ne 0 || ! "$proof_grade_reported_rc" =~ ^[0-9]+$ || "$proof_grade_reported_rc" -ne 0 ]]; then
+    if [[ ! -s "$PROOF_GRADE_SCENARIO_LOG" ]]; then
+      echo "proof-grade assertion failure produced no scenario diagnostic" >&2
+      cat "$tmp/proof-grade-assertions.pty.log" >&2
+      exit 1
+    fi
+    cat "$PROOF_GRADE_SCENARIO_LOG" >&2
+    exit 1
+  fi
   exit 0
 fi
 
@@ -980,7 +1432,7 @@ empty_next=$("$ms" goal next --root "$clone" --label absent)
 "$ms" goal open --root "$clone" --id machine-only --origin human \
 	--intent "Parked matching work is not claimable." --next "Wait for it to be unparked." \
 	--risk severity=1,novelty=1,exposure=1,accumulation=1 --basis "machine-scoped empty fixture" --label machine-only >/dev/null
-"$ms" goal park --root "$clone" --id machine-only --by Wido --because "Keep the matching goal unavailable." >/dev/null
+"$ms" goal park --root "$clone" --id machine-only --by Wido --because "Keep the matching goal unavailable." --fixture-human-authority >/dev/null
 machine_empty=$("$ms" goal next --root "$clone" --machine fixture-machine --label machine-only)
 [[ "$machine_empty" == "no claimable goal for machine fixture-machine; no matching eligible work" ]] \
   || { echo "the machine-scoped empty candidate message is not distinct: $machine_empty" >&2; exit 1; }
@@ -1558,7 +2010,7 @@ grep -q "seat's own act" <<<"$by_out" \
 # The attorney unpark (R-105-m1e): a seat under an entry naming unpark lifts
 # a park a person recorded on a tier-1 goal, saying what it verified; an
 # entry without the verb, a tier-2 goal and a blocker park refuse.
-"$ms" goal park --root "$clone" --id poa-late --by Wido --because "wait for the vendor's 1.2 release" >/dev/null
+"$ms" goal park --root "$clone" --id poa-late --by Wido --because "wait for the vendor's 1.2 release" --fixture-human-authority >/dev/null
 if noverb_out=$("$ms" goal unpark --root "$clone" --id poa-late --under "$entry" --verified "1.2 is on the vendor's page" 2>&1); then
   echo "an entry without unpark lifted a person's park: $noverb_out" >&2; exit 1
 fi
@@ -1600,7 +2052,7 @@ grep -q " unpark actor=fixture-machine+fixture-lineage targets=poa-late authorit
   || { echo "the attorney unpark's history line does not carry the entry and what was verified" >&2; cat "$tmp/poa-late.md" >&2; exit 1; }
 # poa-medium is tier 2 (approved under the tiers 1,2 entry above): the
 # ruling grants the unpark for tier-1 goals only, whatever the entry covers.
-"$ms" goal park --root "$clone" --id poa-medium --by Wido --because "the person pauses a tier-2 goal" >/dev/null
+"$ms" goal park --root "$clone" --id poa-medium --by Wido --because "the person pauses a tier-2 goal" --fixture-human-authority >/dev/null
 if tier_lift=$("$ms" goal unpark --root "$clone" --id poa-medium --under "$lift" --verified "it holds" 2>&1); then
   echo "a tier-2 person park was lifted under attorney: $tier_lift" >&2; exit 1
 fi

@@ -10,6 +10,7 @@ package goal
 // stops blocking this clone the moment recovery classifies it.
 
 import (
+	"errors"
 	"fmt"
 	"strconv"
 	"strings"
@@ -99,7 +100,7 @@ func RecoverWithPolicy(e Endpoint, policy SensitiveRecoveryPolicy) ([]RecoveryRe
 			}
 			report.Detail = "belief corrected to confirmed-late"
 		case ActionComplete:
-			if entry.Intent.Verb == "slice-start" {
+			if entry.Intent.Verb == "slice-start" && entry.Intent.Args["by"] == "" {
 				if err := MarkTerminal(e.Root, entry.Opid, OutcomeAbandoned, "slice-start owner died before its postcondition landed; dispatch never acquired reservation authority"); err != nil {
 					return reports, err
 				}
@@ -134,14 +135,20 @@ func RecoverWithPolicy(e Endpoint, policy SensitiveRecoveryPolicy) ([]RecoveryRe
 	return reports, nil
 }
 
-// completeFromIntent finishes a dead owner's operation: take over
-// the entry, rebuild the mutation from the stored intent, and run
-// the same transaction loop the living use. The rebuilt push
-// resolves identically to the delayed one — same opid, same intent.
+// completeFromIntent takes over a dead owner's operation. A stored human name
+// closes rejected because journal text is never an authority credential;
+// otherwise recovery rebuilds the mutation and runs the same transaction loop
+// the living use with the original opid and intent.
 func completeFromIntent(e Endpoint, entry Entry, policy SensitiveRecoveryPolicy) (string, error) {
 	taken, err := TakeOver(e.Root, entry.Opid)
 	if err != nil {
 		return "", err
+	}
+	// A stored human name records who intended the act; it cannot become the
+	// credential that authorizes replay as that person.
+	journaledHuman := taken.Intent.Args["by"] != ""
+	if journaledHuman && !hasConditionalRecoveryHumanBoundary(taken.Intent.Verb) {
+		return refuseJournaledHumanIntent(e, taken, recoveryHumanBoundaryDetail(taken.Intent.Verb, nil))
 	}
 	if taken.Intent.Verb == "resume" {
 		detail := "human authority cannot be recovered from journal text; rerun goal resume from the enrolled terminal"
@@ -191,6 +198,9 @@ func completeFromIntent(e Endpoint, entry Entry, policy SensitiveRecoveryPolicy)
 		defer release()
 	}
 	if rebuildErr != nil {
+		if journaledHuman {
+			return refuseJournaledHumanIntent(e, taken, recoveryHumanBoundaryDetail(taken.Intent.Verb, nil))
+		}
 		// A verb recovery cannot rebuild generically terminalizes
 		// toward its own re-runnable entry point, named — never a
 		// silent wedge (the pushed block clears).
@@ -200,11 +210,64 @@ func completeFromIntent(e Endpoint, entry Entry, policy SensitiveRecoveryPolicy)
 		CleanupRefs(e, entry.Opid)
 		return "not rebuildable: " + rebuildErr.Error(), nil
 	}
+	req = recoveryHumanBoundaryRequest(req, journaledHuman)
 	res, err := runTransaction(e, req)
 	if err != nil {
 		return "", err
 	}
 	return "completed from the stored intent: " + string(res.Outcome), nil
+}
+
+// recoveryHumanBoundaryRequest leaves ordinary replay unchanged. For the
+// three stopping verbs, it translates the real verb's conditional human-proof
+// requirement and rejects every stored human name with the journal-specific
+// fresh-boundary remedy.
+func recoveryHumanBoundaryRequest(req PublishRequest, journaledHuman bool) PublishRequest {
+	if !hasConditionalRecoveryHumanBoundary(req.Intent.Verb) {
+		return req
+	}
+	mutate := req.Mutate
+	verb := req.Intent.Verb
+	req.Mutate = func(tip string) ([]Change, error) {
+		changes, err := mutate(tip)
+		if err != nil {
+			var required humanAuthorityRequired
+			if errors.As(err, &required) {
+				return nil, errors.New(recoveryHumanBoundaryDetail(verb, &required))
+			}
+			return changes, err
+		}
+		if journaledHuman {
+			return nil, errors.New(recoveryHumanBoundaryDetail(verb, nil))
+		}
+		return changes, err
+	}
+	return req
+}
+
+func refuseJournaledHumanIntent(e Endpoint, entry Entry, detail string) (string, error) {
+	if err := MarkTerminal(e.Root, entry.Opid, OutcomeRejected, detail); err != nil {
+		return "", err
+	}
+	CleanupRefs(e, entry.Opid)
+	return "escalation required: " + detail, nil
+}
+
+func hasConditionalRecoveryHumanBoundary(verb string) bool {
+	switch verb {
+	case "park", "unpark", "release":
+		return true
+	default:
+		return false
+	}
+}
+
+func recoveryHumanBoundaryDetail(verb string, required *humanAuthorityRequired) string {
+	detail := fmt.Sprintf("%s is proof-bearing and cannot be replayed from journal text; re-run it from the human authority boundary", verb)
+	if required != nil {
+		detail += fmt.Sprintf(" because %s requires %s-grade human authority", required.row.Name, required.grade)
+	}
+	return detail
 }
 
 // requestForEntry rebuilds the COMPLETE verb request from the

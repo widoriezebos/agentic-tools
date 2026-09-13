@@ -194,8 +194,11 @@ func (a Actor) historyActor() string {
 type VerbRequest struct {
 	Endpoint Endpoint
 	Actor    Actor
-	Ulid     string // caller-minted; the opid derives from it
-	Now      time.Time
+	// Authority is the fresh in-process human proof carried by --by. A human
+	// name without this proof never authorizes a human-reserved transition.
+	Authority *humanauthority.Proof
+	Ulid      string // caller-minted; the opid derives from it
+	Now       time.Time
 	// ApprovedRef names a recorded human exception for verbs that admit an
 	// over-norm goal budget. Other verbs reject the flag at the command edge.
 	ApprovedRef string
@@ -211,6 +214,56 @@ type VerbRequest struct {
 	// accepted tree and checked again inside the transaction. The act stays
 	// the seat's own: no human actor, no proof.
 	Attorney *PowerOfAttorneyEntry
+}
+
+type humanAuthorityRow struct {
+	Verb    string
+	Name    string
+	Missing string
+}
+
+// humanAuthorityRequired identifies the conditional point where a verb's
+// current goal state requires a human proof. Its text remains the live verb's
+// refusal; recovery uses the type to substitute its journal-specific remedy.
+type humanAuthorityRequired struct {
+	row    humanAuthorityRow
+	grade  string
+	detail string
+}
+
+func (e humanAuthorityRequired) Error() string { return e.detail }
+
+// GradeRefused reports a valid human proof whose grade is lower than the
+// transition requires.
+type GradeRefused struct {
+	Verb   string
+	Row    string
+	Needed string
+	Got    string
+}
+
+func (e GradeRefused) Error() string {
+	return fmt.Sprintf("goal %s: %s needs %s-grade human authority, but this proof carries the %s grade", e.Verb, e.Row, e.Needed, e.Got)
+}
+
+func (r VerbRequest) requireHuman(row humanAuthorityRow, grade string) error {
+	if r.Actor.Human == "" {
+		return humanAuthorityRequired{row: row, grade: grade, detail: row.Missing}
+	}
+	if r.Authority == nil {
+		return humanAuthorityRequired{row: row, grade: grade, detail: fmt.Sprintf("goal %s: --by named %s for %s, but no human authority proof accompanied it", row.Verb, r.Actor.Human, row.Name)}
+	}
+	got := r.Authority.AuthorityGrade()
+	if grade == humanauthority.GradeTerminal && r.Authority.TerminalValidFor(r.Endpoint.Root) {
+		return nil
+	}
+	if grade == humanauthority.GradeEnrolled && r.Authority.ValidFor(r.Endpoint.Root) {
+		return nil
+	}
+	if r.Authority.TerminalValidFor(r.Endpoint.Root) && got == humanauthority.GradeTerminal && grade == humanauthority.GradeEnrolled {
+		return GradeRefused{Verb: row.Verb, Row: row.Name, Needed: grade, Got: got}
+	}
+	return fmt.Errorf("goal %s: the human authority proof for %s is not valid for this checkout", row.Verb, row.Name)
 }
 
 func (r VerbRequest) opid() string {
@@ -554,11 +607,9 @@ func ackDisplacements(t *TreeGoals, r VerbRequest, changes []Change) []Change {
 	return append(changes, rendered)
 }
 
-// intentArgs stamps the directing human into every journaled
-// intent: recovery reconstructs authority from the
-// stored args, and a live human-directed verb that omitted by= was
-// replayed as an AGENT — refused by its own gates or written with
-// machine attribution.
+// intentArgs records the directing human's name in journaled intent as
+// attribution only. Recovery refuses to replay a named entry and never carries
+// the stored name into a reconstructed actor.
 func intentArgs(r VerbRequest, args map[string]string) map[string]string {
 	if r.Actor.Human == "" && r.ApprovedRef == "" {
 		return args
@@ -1510,8 +1561,11 @@ func releaseRequest(r VerbRequest, id string) PublishRequest {
 			if f.State != StateClaimed || f.Claimed == nil {
 				return nil, fmt.Errorf("goal %s is %s, not claimed", id, f.State)
 			}
-			if !ownPair(f.Claimed, r.Actor) && r.Actor.Human == "" {
-				return nil, fmt.Errorf("goal %s is claimed by %s+%s; a foreign release is a human act (steal has its own verb)", id, f.Claimed.Machine, f.Claimed.Lineage)
+			if !ownPair(f.Claimed, r.Actor) {
+				missing := fmt.Sprintf("goal %s is claimed by %s+%s; a foreign release is a human act (steal has its own verb)", id, f.Claimed.Machine, f.Claimed.Lineage)
+				if err := r.requireHuman(humanAuthorityRow{Verb: "release", Name: "foreign release", Missing: missing}, humanauthority.GradeTerminal); err != nil {
+					return nil, err
+				}
 			}
 			displaced := ""
 			if !ownPair(f.Claimed, r.Actor) {
@@ -1966,13 +2020,19 @@ func parkRequest(r VerbRequest, id, because string) PublishRequest {
 			if f.State != StateQueued && f.State != StateApproved && f.State != StateClaimed {
 				return nil, fmt.Errorf("goal %s is %s; only queued, approved, or claimed goals park", id, f.State)
 			}
-			if f.Origin == OriginHuman && r.Actor.Human == "" {
-				return nil, fmt.Errorf("goal %s was opened by the human; an agent cannot silently remove a standing human reservation (park is a human act here)", id)
+			if f.Origin == OriginHuman {
+				missing := fmt.Sprintf("goal %s was opened by the human; an agent cannot silently remove a standing human reservation (park is a human act here)", id)
+				if err := r.requireHuman(humanAuthorityRow{Verb: "park", Name: "park of a human-origin goal", Missing: missing}, humanauthority.GradeTerminal); err != nil {
+					return nil, err
+				}
 			}
 			displaced := ""
 			if f.State == StateClaimed && f.Claimed != nil {
-				if !ownPair(f.Claimed, r.Actor) && r.Actor.Human == "" {
-					return nil, fmt.Errorf("goal %s is claimed by %s+%s; parking another's claim is a human act", id, f.Claimed.Machine, f.Claimed.Lineage)
+				if !ownPair(f.Claimed, r.Actor) {
+					missing := fmt.Sprintf("goal %s is claimed by %s+%s; parking another's claim is a human act", id, f.Claimed.Machine, f.Claimed.Lineage)
+					if err := r.requireHuman(humanAuthorityRow{Verb: "park", Name: "park of another pair's claim", Missing: missing}, humanauthority.GradeTerminal); err != nil {
+						return nil, err
+					}
 				}
 				if !ownPair(f.Claimed, r.Actor) {
 					displaced = pairMarker(f.Claimed)
@@ -2082,15 +2142,40 @@ func unparkRequest(r VerbRequest, id, verified string) PublishRequest {
 			// A human's park is a standing reservation an agent cannot
 			// silently lift (the table's human-origin-park row); under a
 			// power of attorney the seat lifts it and says what it verified.
-			if f.Parked != nil && strings.HasPrefix(f.Parked.By, "human:") && r.Actor.Human == "" && r.Attorney == nil {
-				return nil, fmt.Errorf("goal %s was parked by %s; lifting a human's pause is a human act, or the seat's under a power of attorney that names unpark (goal unpark --under <entry> --verified <what holds now>)", id, f.Parked.By)
+			humanPark := f.Parked != nil && strings.HasPrefix(f.Parked.By, "human:")
+			if humanPark && r.Attorney == nil {
+				grade := humanauthority.GradeTerminal
+				rowName := "unpark of a human park to queued"
+				if f.Approved != nil {
+					grade = humanauthority.GradeEnrolled
+					rowName = "unpark of a human park to approved"
+				}
+				missing := fmt.Sprintf("goal %s was parked by %s; lifting a human's pause is a human act, or the seat's under a power of attorney that names unpark (goal unpark --under <entry> --verified <what holds now>)", id, f.Parked.By)
+				if err := r.requireHuman(humanAuthorityRow{Verb: "unpark", Name: rowName, Missing: missing}, grade); err != nil {
+					return nil, err
+				}
 			}
 			// A blocker's park lifts by itself when every blocker is done
 			// (R-93-m1e); an agent cannot lift it earlier, a human can.
-			if f.Parked != nil && f.Parked.Blocker != "" && r.Actor.Human == "" {
+			if f.Parked != nil && f.Parked.Blocker != "" {
 				for _, dep := range f.Blocked {
-					if depState(t, dep) != StateDone {
-						return nil, fmt.Errorf("goal %s is parked behind %s, which is not done; it returns by itself when every blocker is done (R-93-m1e), and lifting it earlier is a human act", id, dep)
+					if depState(t, dep) == StateDone {
+						continue
+					}
+					missing := fmt.Sprintf("goal %s is parked behind %s, which is not done; it returns by itself when every blocker is done (R-93-m1e), and lifting it earlier is a human act", id, dep)
+					if r.Actor.Human == "" {
+						return nil, fmt.Errorf("%s", missing)
+					}
+					if !humanPark {
+						grade := humanauthority.GradeTerminal
+						rowName := "early unpark of a blocker park to queued"
+						if f.Approved != nil {
+							grade = humanauthority.GradeEnrolled
+							rowName = "early unpark of a blocker park to approved"
+						}
+						if err := r.requireHuman(humanAuthorityRow{Verb: "unpark", Name: rowName, Missing: missing}, grade); err != nil {
+							return nil, err
+						}
 					}
 				}
 			}
@@ -2862,8 +2947,9 @@ func claimArcRequest(r VerbRequest, id string, supplied *Budget) PublishRequest 
 	}
 }
 
-// ReleaseArc releases the members movable by this actor and skips independent
-// claims belonging to other pairs (a human may still release them explicitly).
+// ReleaseArc releases the members movable by this actor. Releasing an
+// independent claim belonging to another pair requires human authority for
+// the whole cascade.
 func ReleaseArc(r VerbRequest, id string) (PublishResult, error) {
 	return Publish(r.Endpoint, releaseArcRequest(r, id))
 }
@@ -2897,8 +2983,11 @@ func releaseArcRequest(r VerbRequest, id string) PublishRequest {
 				if m.State != StateClaimed || m.Claimed == nil {
 					continue // queued or parked members ride along untouched
 				}
-				if !ownPair(m.Claimed, r.Actor) && r.Actor.Human == "" {
-					continue // another pair's independently claimed member is not movable
+				if !ownPair(m.Claimed, r.Actor) {
+					missing := fmt.Sprintf("goal %s is claimed by %s+%s; a foreign release is a human act (steal has its own verb)", m.Id, m.Claimed.Machine, m.Claimed.Lineage)
+					if err := r.requireHuman(humanAuthorityRow{Verb: "release", Name: "foreign release", Missing: missing}, humanauthority.GradeTerminal); err != nil {
+						return nil, err
+					}
 				}
 				displaced := ""
 				if !ownPair(m.Claimed, r.Actor) {
@@ -2921,10 +3010,10 @@ func releaseArcRequest(r VerbRequest, id string) PublishRequest {
 	}
 }
 
-// ParkArc pauses every member the caller may move. Independently held or
-// human-reserved members are skipped for an agent. A human may displace
-// several pairs; each touched member carries its own pair marker so the
-// acknowledgment fold emits one line per distinct pair.
+// ParkArc pauses every member in the arc. Human-reserved members require
+// human authority for the whole cascade. A human may displace several pairs;
+// each touched member carries its own pair marker so the acknowledgment fold
+// emits one line per distinct pair.
 func ParkArc(r VerbRequest, id, because string) (PublishResult, error) {
 	if strings.TrimSpace(because) == "" {
 		return PublishResult{}, fmt.Errorf("park needs its reason — a pause without a why is a stall in disguise")
@@ -2963,11 +3052,17 @@ func parkArcRequest(r VerbRequest, id, because string) PublishRequest {
 				if m.State == StateParked {
 					continue // already parked members ride along
 				}
-				if r.Actor.Human == "" && m.Origin == OriginHuman {
-					continue // an agent cannot move the human's standing reservation
+				if m.Origin == OriginHuman {
+					missing := fmt.Sprintf("goal %s was opened by the human; an agent cannot silently remove a standing human reservation (park is a human act here)", m.Id)
+					if err := r.requireHuman(humanAuthorityRow{Verb: "park", Name: "park of a human-origin goal", Missing: missing}, humanauthority.GradeTerminal); err != nil {
+						return nil, err
+					}
 				}
-				if r.Actor.Human == "" && m.State == StateClaimed && m.Claimed != nil && !ownPair(m.Claimed, r.Actor) {
-					continue // another pair's claim is not movable by this agent
+				if m.State == StateClaimed && m.Claimed != nil && !ownPair(m.Claimed, r.Actor) {
+					missing := fmt.Sprintf("goal %s is claimed by %s+%s; parking another's claim is a human act", m.Id, m.Claimed.Machine, m.Claimed.Lineage)
+					if err := r.requireHuman(humanAuthorityRow{Verb: "park", Name: "park of another pair's claim", Missing: missing}, humanauthority.GradeTerminal); err != nil {
+						return nil, err
+					}
 				}
 				if m.State != StateQueued && m.State != StateApproved && m.State != StateClaimed {
 					return nil, fmt.Errorf("arc member %s is %s; only queued, approved, or claimed goals park", m.Id, m.State)
@@ -3002,8 +3097,9 @@ func parkArcRequest(r VerbRequest, id, because string) PublishRequest {
 	}
 }
 
-// UnparkArc restores every parked member the caller may move and skips all
-// other states; an agent also skips parks carrying human authority.
+// UnparkArc restores every parked member and skips all other states. A park
+// carrying human authority requires the matching authority grade for the
+// whole cascade.
 func UnparkArc(r VerbRequest, id string) (PublishResult, error) {
 	return Publish(r.Endpoint, unparkArcRequest(r, id))
 }
@@ -3037,8 +3133,17 @@ func unparkArcRequest(r VerbRequest, id string) PublishRequest {
 				if m.State != StateParked {
 					continue
 				}
-				if m.Parked != nil && strings.HasPrefix(m.Parked.By, "human:") && r.Actor.Human == "" {
-					continue // a human pause is not movable by this agent
+				if m.Parked != nil && strings.HasPrefix(m.Parked.By, "human:") {
+					grade := humanauthority.GradeTerminal
+					rowName := "unpark of a human park to queued"
+					if m.Approved != nil {
+						grade = humanauthority.GradeEnrolled
+						rowName = "unpark of a human park to approved"
+					}
+					missing := fmt.Sprintf("goal %s was parked by %s; lifting a human's pause is a human act", m.Id, m.Parked.By)
+					if err := r.requireHuman(humanAuthorityRow{Verb: "unpark", Name: rowName, Missing: missing}, grade); err != nil {
+						return nil, err
+					}
 				}
 				m.State = restingState(m)
 				m.Parked = nil

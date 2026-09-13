@@ -797,7 +797,7 @@ func TestPriorityRecovery(t *testing.T) {
 		found := false
 		for _, report := range reports {
 			if report.Opid == opid {
-				found = report.Action == ActionComplete && strings.Contains(report.Detail, "enrolled terminal")
+				found = report.Action == ActionComplete && strings.Contains(report.Detail, "cannot be replayed from journal text")
 			}
 		}
 		if !found {

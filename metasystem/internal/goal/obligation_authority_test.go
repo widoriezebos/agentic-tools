@@ -43,6 +43,7 @@ func enrollObligationHuman(t *testing.T, root string) *obligationAuthorityReader
 		t.Fatal(err)
 	}
 	reader := &obligationAuthorityReader{snapshots: map[int64]humanauthority.Snapshot{
+		1:  obligationAuthoritySnapshot(1, 0, []string{"host-root"}),
 		10: obligationAuthoritySnapshot(10, 1, []string{"terminal"}),
 		20: obligationAuthoritySnapshot(20, 10, []string{"shell"}),
 		30: obligationAuthoritySnapshot(30, 20, []string{"human-command"}),

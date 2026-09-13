@@ -6,6 +6,8 @@ import (
 	"strings"
 	"testing"
 	"time"
+
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/humanauthority"
 )
 
 // strandEntry journals an operation as a dead foreign owner left it.
@@ -218,7 +220,7 @@ func TestRecoveryClosesUnrebuildableVerbsByName(t *testing.T) {
 	seedLedger(t, a)
 	opid := Opid("01J5X00000000000000000Q050", "mac-a", "lin-1")
 	strandEntry(t, a, opid, PhaseCreated, Intent{Verb: "reconcile", Targets: []string{"x"},
-		Args: map[string]string{"by": "wido", "rows": "1"}})
+		Args: map[string]string{"rows": "1"}})
 	reports, err := Recover(endpointFor(a))
 	if err != nil {
 		t.Fatal(err)
@@ -242,11 +244,12 @@ func TestRecoveryRebuildsParkAndEdit(t *testing.T) {
 	if res, err := Open(verbReq(a, "01J5X00000000000000000Q100", "mac-a"), "target", "Work.", "main", "Go."); err != nil || res.Outcome != OutcomeConfirmed {
 		t.Fatalf("open: %+v %v", res, err)
 	}
-	// A dead owner's park, with its reason in the stored intent.
+	// A dead owner's park of a main-origin, never-claimed goal needs no human
+	// proof, so recovery carries its reason through the real verb.
 	parkOpid := Opid("01J5X00000000000000000Q110", "mac-a", "lin-1")
 	strandEntry(t, a, parkOpid, PhaseCreated, Intent{
 		Verb: "park", Targets: []string{"target"},
-		Args: map[string]string{"because": "recovered pause", "by": "wido"},
+		Args: map[string]string{"because": "recovered pause"},
 	})
 	if _, err := Recover(endpointFor(a)); err != nil {
 		t.Fatal(err)
@@ -260,15 +263,10 @@ func TestRecoveryRebuildsParkAndEdit(t *testing.T) {
 		t.Fatalf("the recovered park carries its reason: %+v", parked.Parked)
 	}
 
-	// A dead owner's edit, deltas in the stored intent feeding recovery.
-	// The park above was a HUMAN act, so lifting it is one too — the
-	// rebuild runs the REAL verb, which enforces exactly that.
-	// The by= arg here is what a live human-directed unpark
-	// journals itself (intentArgs stamps it), so
-	// this stranded shape is the real crash shape, not a fabrication.
+	// The machine-authored park needs no human proof to lift, so its stranded
+	// unpark also replays before the ordinary edit.
 	unparkOpid := Opid("01J5X00000000000000000Q120", "mac-a", "lin-1")
-	strandEntry(t, a, unparkOpid, PhaseCreated, Intent{Verb: "unpark", Targets: []string{"target"},
-		Args: map[string]string{"by": "wido"}})
+	strandEntry(t, a, unparkOpid, PhaseCreated, Intent{Verb: "unpark", Targets: []string{"target"}})
 	if _, err := Recover(endpointFor(a)); err != nil {
 		t.Fatal(err)
 	}
@@ -299,9 +297,221 @@ func TestRecoveryRebuildsParkAndEdit(t *testing.T) {
 		}
 		return false
 	}
-	if !carries(edited, editOpid) || !carries(edited, unparkOpid) {
-		t.Fatal("each recovery carries its original opid")
+	if !carries(edited, parkOpid) || !carries(edited, unparkOpid) || !carries(edited, editOpid) {
+		t.Fatal("each replayable recovery carries its original opid")
 	}
+}
+
+func TestRecoveryReplaysOwnReleaseAndRefusesHumanRequiredStoppingActs(t *testing.T) {
+	_, root, _ := twoClones(t)
+	seedLedger(t, root)
+
+	// A dead pair's own release remains machine-authorized and heals the claim.
+	if res, err := Open(verbReq(root, "01J5X00000000000000000Q140", "mac-a"), "own-release", "Release after a crash.", OriginMain, "Continue."); err != nil || res.Outcome != OutcomeConfirmed {
+		t.Fatalf("open own release: %+v %v", res, err)
+	}
+	claimReq := verbReq(root, "01J5X00000000000000000Q141", "mac-a")
+	if res, err := claimApprovedForTest(t, claimReq, "own-release", testBudget()); err != nil || res.Outcome != OutcomeConfirmed {
+		t.Fatalf("claim own release: %+v %v", res, err)
+	}
+	releaseOpid := Opid("01J5X00000000000000000Q142", "mac-a", "lin-1")
+	strandEntry(t, root, releaseOpid, PhaseCreated, Intent{Verb: "release", Targets: []string{"own-release"}})
+	if _, err := Recover(endpointFor(root)); err != nil {
+		t.Fatal(err)
+	}
+	projection, err := Project(endpointFor(root), true, time.Now())
+	if err != nil {
+		t.Fatal(err)
+	}
+	released := projection.Tree.Live["own-release"]
+	releaseEntry, err := ReadEntry(root, releaseOpid)
+	if err != nil || released == nil || released.Claimed != nil || releaseEntry.Outcome != OutcomeConfirmed {
+		t.Fatalf("the dead pair's own release did not heal: goal=%+v entry=%+v err=%v", released, releaseEntry, err)
+	}
+
+	// A stored human name is evidence of intent, not authority to create a
+	// human-attributed park.
+	if res, err := Open(verbReq(root, "01J5X00000000000000000Q151", "mac-a"), "recovered-human-park", "Recover the admitted human park.", OriginMain, "Wait."); err != nil || res.Outcome != OutcomeConfirmed {
+		t.Fatalf("open recovered human park: %+v %v", res, err)
+	}
+	recoveredHumanParkTip := mustGit(t, root, "rev-parse", "origin/main")
+	recoveredHumanParkOpid := Opid("01J5X00000000000000000Q152", "mac-a", "lin-1")
+	strandEntry(t, root, recoveredHumanParkOpid, PhaseCreated, Intent{Verb: "park", Targets: []string{"recovered-human-park"}, Args: map[string]string{"because": "human pause", "by": "Wido"}})
+	reports, err := Recover(endpointFor(root))
+	if err != nil {
+		t.Fatal(err)
+	}
+	recoveredHumanParkEntry, err := ReadEntry(root, recoveredHumanParkOpid)
+	wantHumanParkRefusal := "park is proof-bearing and cannot be replayed from journal text; re-run it from the human authority boundary"
+	if err != nil || recoveredHumanParkEntry.Phase != PhaseTerminal || recoveredHumanParkEntry.Outcome != OutcomeRejected || recoveredHumanParkEntry.Evidence != wantHumanParkRefusal {
+		t.Fatalf("journaled human park did not close rejected: entry=%+v err=%v reports=%+v", recoveredHumanParkEntry, err, reports)
+	}
+	if afterTip := mustGit(t, root, "rev-parse", "origin/main"); afterTip != recoveredHumanParkTip {
+		t.Fatalf("journaled human park wrote to the goal branch: before=%s after=%s", recoveredHumanParkTip, afterTip)
+	}
+	projection, err = Project(endpointFor(root), true, time.Now())
+	if err != nil {
+		t.Fatal(err)
+	}
+	recoveredHumanPark := projection.Tree.Live["recovered-human-park"]
+	if recoveredHumanPark == nil || recoveredHumanPark.State != StateQueued || recoveredHumanPark.Parked != nil {
+		t.Fatalf("journaled human park changed the goal: %+v", recoveredHumanPark)
+	}
+
+	assertHumanBoundaryRefusal := func(opid, verb, row, grade, beforeTip string) {
+		t.Helper()
+		reports, recoverErr := Recover(endpointFor(root))
+		if recoverErr != nil {
+			t.Fatal(recoverErr)
+		}
+		entry, readErr := ReadEntry(root, opid)
+		want := fmt.Sprintf("%s is proof-bearing and cannot be replayed from journal text; re-run it from the human authority boundary because %s requires %s-grade human authority", verb, row, grade)
+		if readErr != nil || entry.Phase != PhaseTerminal || entry.Outcome != OutcomeRejected || entry.Evidence != want {
+			t.Fatalf("%s did not close with the fresh human-boundary remedy: entry=%+v err=%v reports=%+v", verb, entry, readErr, reports)
+		}
+		if afterTip := mustGit(t, root, "rev-parse", "origin/main"); afterTip != beforeTip {
+			t.Fatalf("refused %s changed the goal branch: before=%s after=%s", verb, beforeTip, afterTip)
+		}
+	}
+
+	// A foreign release requires the human and leaves the other pair's claim.
+	if res, err := Open(verbReq(root, "01J5X00000000000000000Q143", "mac-a"), "foreign-release", "Keep the foreign claim.", OriginMain, "Continue."); err != nil || res.Outcome != OutcomeConfirmed {
+		t.Fatalf("open foreign release: %+v %v", res, err)
+	}
+	foreignClaim := verbReq(root, "01J5X00000000000000000Q144", "mac-b")
+	if res, err := claimApprovedForTest(t, foreignClaim, "foreign-release", testBudget()); err != nil || res.Outcome != OutcomeConfirmed {
+		t.Fatalf("claim foreign release: %+v %v", res, err)
+	}
+	foreignTip := mustGit(t, root, "rev-parse", "origin/main")
+	foreignOpid := Opid("01J5X00000000000000000Q145", "mac-a", "lin-1")
+	strandEntry(t, root, foreignOpid, PhaseCreated, Intent{Verb: "release", Targets: []string{"foreign-release"}, Args: map[string]string{"by": "Wido"}})
+	assertHumanBoundaryRefusal(foreignOpid, "release", "foreign release", humanauthority.GradeTerminal, foreignTip)
+	projection, err = Project(endpointFor(root), true, time.Now())
+	if err != nil {
+		t.Fatal(err)
+	}
+	foreignGoal := projection.Tree.Live["foreign-release"]
+	if foreignGoal == nil || foreignGoal.Claimed == nil || foreignGoal.Claimed.Machine != "mac-b" {
+		t.Fatalf("refused foreign release changed its claim: %+v", foreignGoal)
+	}
+
+	// A human-origin goal retains its standing reservation when journal replay
+	// cannot carry a fresh human proof.
+	if res, err := Open(verbReq(root, "01J5X00000000000000000Q146", "mac-a"), "human-origin", "Human-reserved work.", OriginHuman, "Wait."); err != nil || res.Outcome != OutcomeConfirmed {
+		t.Fatalf("open human-origin goal: %+v %v", res, err)
+	}
+	humanOriginTip := mustGit(t, root, "rev-parse", "origin/main")
+	humanOriginOpid := Opid("01J5X00000000000000000Q147", "mac-a", "lin-1")
+	strandEntry(t, root, humanOriginOpid, PhaseCreated, Intent{Verb: "park", Targets: []string{"human-origin"}, Args: map[string]string{"because": "journal pause", "by": "Wido"}})
+	assertHumanBoundaryRefusal(humanOriginOpid, "park", "park of a human-origin goal", humanauthority.GradeTerminal, humanOriginTip)
+	projection, err = Project(endpointFor(root), true, time.Now())
+	if err != nil {
+		t.Fatal(err)
+	}
+	humanOrigin := projection.Tree.Live["human-origin"]
+	if humanOrigin == nil || humanOrigin.State != StateQueued || humanOrigin.Parked != nil {
+		t.Fatalf("refused human-origin park changed the goal: %+v", humanOrigin)
+	}
+
+	// A human's live park remains in force when an authority-free journal
+	// unpark tries to lift it.
+	if res, err := Open(verbReq(root, "01J5X00000000000000000Q148", "mac-a"), "human-park", "Keep the human pause.", OriginMain, "Wait."); err != nil || res.Outcome != OutcomeConfirmed {
+		t.Fatalf("open human-park goal: %+v %v", res, err)
+	}
+	humanPark := verbReq(root, "01J5X00000000000000000Q149", "mac-a")
+	humanPark.Actor.Human = "Wido"
+	humanPark.Authority = testTerminalAuthority(t, root, humanPark.Now)
+	if res, err := Park(humanPark, "human-park", "human pause"); err != nil || res.Outcome != OutcomeConfirmed {
+		t.Fatalf("record human park: %+v %v", res, err)
+	}
+	humanParkTip := mustGit(t, root, "rev-parse", "origin/main")
+	unparkOpid := Opid("01J5X00000000000000000Q150", "mac-a", "lin-1")
+	strandEntry(t, root, unparkOpid, PhaseCreated, Intent{Verb: "unpark", Targets: []string{"human-park"}, Args: map[string]string{"by": "Wido"}})
+	assertHumanBoundaryRefusal(unparkOpid, "unpark", "unpark of a human park to queued", humanauthority.GradeTerminal, humanParkTip)
+	projection, err = Project(endpointFor(root), true, time.Now())
+	if err != nil {
+		t.Fatal(err)
+	}
+	humanParked := projection.Tree.Live["human-park"]
+	if humanParked == nil || humanParked.State != StateParked || humanParked.Parked == nil || humanParked.Parked.By != "human:Wido" {
+		t.Fatalf("refused unpark changed the human's park: %+v", humanParked)
+	}
+}
+
+func TestRecoveryNamedStoppingIntentsPreserveTypedOutcomes(t *testing.T) {
+	t.Run("already applied park confirms", func(t *testing.T) {
+		_, root, _ := twoClones(t)
+		seedLedger(t, root)
+		if res, err := Open(verbReq(root, "01J5X00000000000000000Q154", "mac-a"), "landed-human-park", "The delayed human park.", OriginMain, "Wait."); err != nil || res.Outcome != OutcomeConfirmed {
+			t.Fatalf("open: %+v %v", res, err)
+		}
+		park := verbReq(root, "01J5X00000000000000000Q155", "mac-a")
+		park.Actor.Human = "Wido"
+		park.Authority = testTerminalAuthority(t, root, park.Now)
+		if res, err := Park(park, "landed-human-park", "human pause"); err != nil || res.Outcome != OutcomeConfirmed {
+			t.Fatalf("land the human park: %+v %v", res, err)
+		}
+		entry, err := ReadEntry(root, park.opid())
+		if err != nil {
+			t.Fatal(err)
+		}
+		entry.Phase = PhaseCreated
+		entry.FetchedOid = ""
+		entry.TxnCommit = ""
+		entry.ExpectedOldTip = ""
+		entry.Attempts = 0
+		entry.Deadline = ""
+		entry.Outcome = ""
+		entry.Evidence = ""
+		entry.TerminalAt = ""
+		if err := writeEntry(root, entry); err != nil {
+			t.Fatal(err)
+		}
+		beforeTip := mustGit(t, root, "rev-parse", "origin/main")
+		detail, err := completeFromIntent(endpointFor(root), entry, nil)
+		if err != nil || !strings.Contains(detail, "confirmed") {
+			t.Fatalf("recovery did not preserve already-applied: detail=%q err=%v", detail, err)
+		}
+		terminal, err := ReadEntry(root, park.opid())
+		if err != nil || terminal.Outcome != OutcomeConfirmed || !strings.Contains(terminal.Evidence, "already applied") {
+			t.Fatalf("already-applied park did not close confirmed: entry=%+v err=%v", terminal, err)
+		}
+		if afterTip := mustGit(t, root, "rev-parse", "origin/main"); afterTip != beforeTip {
+			t.Fatalf("already-applied recovery wrote a second park: before=%s after=%s", beforeTip, afterTip)
+		}
+	})
+
+	t.Run("release lost to competitor stays lost", func(t *testing.T) {
+		_, root, _ := twoClones(t)
+		seedLedger(t, root)
+		opid := Opid("01J5X00000000000000000Q156", "mac-a", "lin-1")
+		strandEntry(t, root, opid, PhaseCreated, Intent{Verb: "release", Targets: []string{"lost-release"}, Args: map[string]string{"by": "Wido"}})
+		entry, err := TakeOver(root, opid)
+		if err != nil {
+			t.Fatal(err)
+		}
+		req, err := requestForEntry(endpointFor(root), entry)
+		if err != nil {
+			t.Fatal(err)
+		}
+		winner := "01J5X00000000000000000Q157-mac-b-lin-2"
+		req.Mutate = func(string) ([]Change, error) {
+			return nil, LostToCompetitor{Winner: winner}
+		}
+		req = recoveryHumanBoundaryRequest(req, entry.Intent.Args["by"] != "")
+		beforeTip := mustGit(t, root, "rev-parse", "origin/main")
+		result, err := runTransaction(endpointFor(root), req)
+		if err != nil || result.Outcome != OutcomeLost || !strings.Contains(result.Detail, winner) {
+			t.Fatalf("recovery did not preserve lost-to-competitor: result=%+v err=%v", result, err)
+		}
+		terminal, err := ReadEntry(root, opid)
+		if err != nil || terminal.Outcome != OutcomeLost || terminal.Evidence != "winner: "+winner {
+			t.Fatalf("lost release did not keep its typed outcome: entry=%+v err=%v", terminal, err)
+		}
+		if afterTip := mustGit(t, root, "rev-parse", "origin/main"); afterTip != beforeTip {
+			t.Fatalf("lost release changed the goal branch: before=%s after=%s", beforeTip, afterTip)
+		}
+	})
 }
 
 func TestRecoveryConfirmsASightedPushWithoutRebuilding(t *testing.T) {
@@ -440,8 +650,8 @@ func TestRecoveryRunsTheRealVerbSemanticsAcrossAnArc(t *testing.T) {
 		t.Fatalf("the recovered arc claim did not close with the approval remedy: %+v %v", claimEntry, err)
 	}
 
-	// A dead owner's STEAL from the other machine cannot replay. The
-	// journal's by string is intent evidence, not human authority.
+	// A dead owner's STEAL from the other machine cannot replay. The journal's
+	// by string makes the act proof-bearing but is not human authority.
 	stealOpid := Opid("01J5X00000000000000000Q170", "mac-b", "lin-1")
 	strandEntryAt(t, b, stealOpid, "mac-b", PhaseCreated, Intent{
 		Verb: "steal", Targets: []string{"rv-one"},
@@ -463,8 +673,9 @@ func TestRecoveryRunsTheRealVerbSemanticsAcrossAnArc(t *testing.T) {
 	if err != nil || entry.Outcome != OutcomeRejected {
 		t.Fatalf("the unauthorized steal journal did not close rejected: entry=%+v err=%v reports=%+v", entry, err, reports)
 	}
-	if !strings.Contains(entry.Evidence, "human authority cannot be recovered") || !strings.Contains(entry.Evidence, "--approved-ref again") {
-		t.Fatalf("over-norm steal recovery did not direct a fresh authenticated rerun: %+v", entry)
+	wantStealRefusal := "steal is proof-bearing and cannot be replayed from journal text; re-run it from the human authority boundary"
+	if entry.Evidence != wantStealRefusal {
+		t.Fatalf("steal recovery did not direct a fresh human-boundary rerun: %+v", entry)
 	}
 }
 
@@ -500,43 +711,40 @@ func TestRecoveryRefusesAStrandedOriginRewrite(t *testing.T) {
 	}
 }
 
-func TestRecoveryNeverPromotesAHumanStringFromJournaledIntent(t *testing.T) {
+func TestRecoveryRefusesJournaledHumanDone(t *testing.T) {
 	_, a, _ := twoClones(t)
 	seedLedger(t, a)
-	if res, err := Open(verbReq(a, "01J5X00000000000000000Q300", "mac-a"), "hand-held", "Work.", "main", "Go."); err != nil || res.Outcome != OutcomeConfirmed {
+	if res, err := Open(verbReq(a, "01J5X00000000000000000Q300", "mac-a"), "hand-held", "Work.", OriginMain, "Go."); err != nil || res.Outcome != OutcomeConfirmed {
 		t.Fatalf("open: %+v %v", res, err)
 	}
 	parkReq := verbReq(a, "01J5X00000000000000000Q310", "mac-a")
-	parkReq.Actor.Human = "wido"
 	if res, err := Park(parkReq, "hand-held", "waiting on review"); err != nil || res.Outcome != OutcomeConfirmed {
 		t.Fatalf("park: %+v %v", res, err)
 	}
-	// The stranded intent is exactly what the live verb journals. The
-	// by field is deliberately retained in it, but recovery must not
-	// convert that string into Actor.Human.
-	editReq := verbReq(a, "01J5X00000000000000000Q320", "mac-a")
-	editReq.Actor.Human = "wido"
-	next := "Recovered by the human's own hand."
-	labels := []string{"recovered", "custody"}
-	liveReq, err := editRequest(editReq, "hand-held", EditFields{NextStep: &next, Labels: &labels})
+	doneReq := verbReq(a, "01J5X00000000000000000Q320", "mac-a")
+	doneReq.Actor.Human = "Wido"
+	storedDone := doneRequest(doneReq, "hand-held", "Journal text must not conclude this goal.")
+	beforeTip := mustGit(t, a, "rev-parse", "origin/main")
+	strandEntryAt(t, a, storedDone.Opid, "mac-a", PhaseCreated, storedDone.Intent)
+	reports, err := Recover(endpointFor(a))
 	if err != nil {
 		t.Fatal(err)
 	}
-	strandEntryAt(t, a, liveReq.Opid, "mac-a", PhaseCreated, liveReq.Intent)
-	if _, err := Recover(endpointFor(a)); err != nil {
-		t.Fatal(err)
+	entry, err := ReadEntry(a, storedDone.Opid)
+	want := "done is proof-bearing and cannot be replayed from journal text; re-run it from the human authority boundary"
+	if err != nil || entry.Phase != PhaseTerminal || entry.Outcome != OutcomeRejected || entry.Evidence != want {
+		t.Fatalf("journaled human done did not close rejected: entry=%+v err=%v reports=%+v", entry, err, reports)
+	}
+	if afterTip := mustGit(t, a, "rev-parse", "origin/main"); afterTip != beforeTip {
+		t.Fatalf("journaled human done wrote to the goal branch: before=%s after=%s", beforeTip, afterTip)
 	}
 	p, err := Project(endpointFor(a), true, time.Now())
 	if err != nil {
 		t.Fatal(err)
 	}
 	f := p.Tree.Live["hand-held"]
-	if f == nil || f.NextStep == next || len(f.Labels) != 0 {
-		t.Fatalf("journal text authorized a human-only edit: %+v", f)
-	}
-	entry, err := ReadEntry(a, liveReq.Opid)
-	if err != nil || entry.Outcome != OutcomeRejected {
-		t.Fatalf("the human-shaped journal did not close rejected: entry=%+v err=%v", entry, err)
+	if f == nil || f.State != StateParked || p.Tree.Done["hand-held"] != nil {
+		t.Fatalf("journaled human done changed the goal: live=%+v done=%+v", f, p.Tree.Done["hand-held"])
 	}
 }
 
@@ -590,7 +798,7 @@ func TestRecoveryCompletesMainSplitAndRejectsHumanOrDoctoredDrafts(t *testing.T)
 		if readErr != nil || projectErr != nil || entry.Outcome != OutcomeRejected || projection.Tree.Live["recover-human-split"] == nil || projection.Tree.Done["recover-human-split"] != nil {
 			t.Fatalf("human journal text changed the parent: entry=%+v reports=%+v read=%v project=%v", entry, reports, readErr, projectErr)
 		}
-		if !strings.Contains(entry.Evidence, "human split ratification cannot be recovered") {
+		if entry.Evidence != "split is proof-bearing and cannot be replayed from journal text; re-run it from the human authority boundary" {
 			t.Fatalf("human recovery did not name the fresh-authority remedy: %+v", entry)
 		}
 	})

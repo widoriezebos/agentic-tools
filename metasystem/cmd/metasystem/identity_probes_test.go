@@ -1,6 +1,7 @@
 package main
 
 import (
+	"encoding/json"
 	"errors"
 	"fmt"
 	"os"
@@ -14,6 +15,23 @@ import (
 
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/janitor"
 )
+
+func TestProcessProbeReportsTerminalAndSessionLeader(t *testing.T) {
+	output, code := captureStdout(t, func() int {
+		return runIdentityProbe([]string{"--pid", fmt.Sprint(os.Getpid())})
+	})
+	var observed struct {
+		Liveness           string `json:"liveness"`
+		TerminalKnown      bool   `json:"terminalKnown"`
+		TerminalID         string `json:"terminalId"`
+		SessionLeaderPID   int64  `json:"sessionLeaderPid"`
+		SessionLeaderError string `json:"sessionLeaderError"`
+	}
+	if err := json.Unmarshal([]byte(output), &observed); err != nil || code != 0 ||
+		observed.Liveness != "alive" || !observed.TerminalKnown || observed.SessionLeaderPID < 1 || observed.SessionLeaderError != "" {
+		t.Fatalf("process probe did not report its live terminal session: code=%d output=%s error=%v", code, output, err)
+	}
+}
 
 func absentProcessGroup(t *testing.T) int64 {
 	t.Helper()

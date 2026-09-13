@@ -676,6 +676,7 @@ func TestReleaseIsOwnerOrHuman(t *testing.T) {
 	// B under a human can.
 	humanReq := verbReq(b, "01J5X0000000000000000000DC", "mac-b")
 	humanReq.Actor.Human = "wido"
+	humanReq.Authority = testTerminalAuthority(t, b, humanReq.Now)
 	res, err := Release(humanReq, "held")
 	if err != nil || res.Outcome != OutcomeConfirmed {
 		t.Fatalf("a human-directed foreign release proceeds: %+v %v", res, err)
@@ -763,6 +764,7 @@ func TestParkUnparkCycle(t *testing.T) {
 	}
 	humanReq := verbReq(b, "01J5X0000000000000000000E6", "mac-b")
 	humanReq.Actor.Human = "wido"
+	humanReq.Authority = testTerminalAuthority(t, b, humanReq.Now)
 	resH, err := Park(humanReq, "pausable", "operator stop")
 	if err != nil || resH.Outcome != OutcomeConfirmed {
 		t.Fatalf("the human park proceeds: %+v %v", resH, err)
@@ -1150,6 +1152,7 @@ func TestParkCascadePinsOneAcknowledgment(t *testing.T) {
 	// displaced pair is recorded ONCE and rides each touched line.
 	humanReq := verbReq(b, "01J5X00000000000000000C210", "mac-b")
 	humanReq.Actor.Human = "wido"
+	humanReq.Authority = testTerminalAuthority(t, b, humanReq.Now)
 	res, err := ParkArc(humanReq, "casc-one", "operator hold")
 	if err != nil || res.Outcome != OutcomeConfirmed {
 		t.Fatalf("human park cascade: %+v %v", res, err)
@@ -1171,11 +1174,10 @@ func TestParkCascadePinsOneAcknowledgment(t *testing.T) {
 	if len(pairs) != 1 {
 		t.Fatalf("ONE displaced pair across the cascade (R10-M06): %v", pairs)
 	}
-	// The displaced agent skips every human-parked member, so the cascade
-	// is an explicit no-op rather than a refusal that blocks other members.
+	// The displaced agent cannot lift a human park through the cascade.
 	res, err = UnparkArc(verbReq(a, "01J5X00000000000000000C215", "mac-a"), "casc-one")
-	if err != nil || res.Outcome != OutcomeAbandoned || !strings.Contains(res.Detail, "nothing to move") {
-		t.Fatalf("an agent skips human-parked members: %+v %v", res, err)
+	if err != nil || res.Outcome != OutcomeRejected || !strings.Contains(res.Detail, "lifting a human's pause is a human act") {
+		t.Fatalf("an agent cannot unpark human-parked members: %+v %v", res, err)
 	}
 	// The displaced pair's next History-appending publication
 	// piggybacks ONE automatic root-record ack line answering the
@@ -1220,6 +1222,7 @@ func TestParkCascadePinsOneAcknowledgment(t *testing.T) {
 	// The human lifts the pause; the whole arc restores.
 	humanUnpark := verbReq(a, "01J5X00000000000000000C220", "mac-a")
 	humanUnpark.Actor.Human = "wido"
+	humanUnpark.Authority = testHumanAuthority(t, a, humanUnpark.Now)
 	res, err = UnparkArc(humanUnpark, "casc-one")
 	if err != nil || res.Outcome != OutcomeConfirmed {
 		t.Fatalf("unpark cascade: %+v %v", res, err)
