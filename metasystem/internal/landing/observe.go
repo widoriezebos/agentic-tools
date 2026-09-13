@@ -23,6 +23,7 @@ import (
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/goal"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/pathclass"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/proofrun"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/readsubject"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/stateroot"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/validate"
 )
@@ -434,7 +435,9 @@ func observeChain(params ObserveParams, change string) (observation Observation)
 	} else {
 		output, outputErr := chainCertifiedOutput(params.RepoRoot, params.Chain, record)
 		if outputErr != nil {
-			return wouldRefuse("chain-output-unreadable", provenance)
+			observation := wouldRefuse("chain-output-unreadable", provenance)
+			observation.Detail = outputErr.Error()
+			return observation
 		}
 		certifiedDigest, extraPaths, err = bindCertifiedChange(params.RepoRoot, params.CandidateTree, output)
 		if err != nil {
@@ -546,9 +549,9 @@ type certifiedOutput struct {
 // chainCertifiedOutput follows conformance's real storage seam. A root-id
 // invocation writes the current review under rounds/1 even after follow-up
 // rounds, while a follow-up-id invocation writes under rounds/N. Every
-// parseable review is considered; the closed critic's reviewedTree is the
-// strongest selector, the terminal implementer job is next, and the numeric
-// round is only the deterministic fallback. A single review needs no guess.
+// parseable review is considered. A validated closure selects by immutable
+// tree and patch identity. Historical records without a closure retain the
+// stamped return, terminal implementer, and numeric-round fallback order.
 func chainCertifiedOutput(root, chain string, rootRecord map[string]any) (certifiedOutput, error) {
 	roundsRoot := filepath.Join(root, "artifacts", "agents", chain, "rounds")
 	entries, err := os.ReadDir(roundsRoot)
@@ -595,10 +598,35 @@ func chainCertifiedOutput(root, chain string, rootRecord map[string]any) (certif
 	if len(outputs) == 0 {
 		return certifiedOutput{}, fmt.Errorf("chain has no parseable conformance output")
 	}
+	closure, closurePresent, err := stampedCriticClosure(root, rootRecord)
+	if err != nil {
+		return certifiedOutput{}, err
+	}
+	if closurePresent {
+		if closure.Subject.Kind != readsubject.SubjectLive {
+			return certifiedOutput{}, fmt.Errorf("critic closure subject kind %q is not live", closure.Subject.Kind)
+		}
+		if closure.Subject.ImplementerRoot != chain {
+			return certifiedOutput{}, fmt.Errorf("critic closure names implementation root %q instead of %q", closure.Subject.ImplementerRoot, chain)
+		}
+		sort.Slice(outputs, func(i, j int) bool { return outputs[i].round < outputs[j].round })
+		for _, output := range outputs {
+			if output.reviewedTree == closure.Subject.ReviewedProjectTree &&
+				landingPatchDigest(output.patch) == closure.Subject.DiffDigest {
+				return output, nil
+			}
+		}
+		return certifiedOutput{}, fmt.Errorf("critic closure identity tree %s patch %s does not match a conformance output",
+			closure.Subject.ReviewedProjectTree, closure.Subject.DiffDigest)
+	}
 	if len(outputs) == 1 {
 		return outputs[0], nil
 	}
-	if reviewedTree := closedCriticReviewedTree(root, rootRecord); reviewedTree != "" {
+	reviewedTree, reviewedTreePresent, err := closedCriticReviewedTree(root, rootRecord)
+	if err != nil {
+		return certifiedOutput{}, err
+	}
+	if reviewedTreePresent {
 		for _, output := range outputs {
 			if output.reviewedTree == reviewedTree {
 				return output, nil
@@ -616,36 +644,94 @@ func chainCertifiedOutput(root, chain string, rootRecord map[string]any) (certif
 	return outputs[0], nil
 }
 
-func closedCriticReviewedTree(root string, rootRecord map[string]any) string {
-	critic, _ := rootRecord["independentCritiqueJobRef"].(string)
-	if !landingID.MatchString(critic) {
-		return ""
+func landingPatchDigest(patch []byte) string {
+	sum := sha256.Sum256(patch)
+	return fmt.Sprintf("%x", sum)
+}
+
+func stampedCriticClosure(root string, rootRecord map[string]any) (readsubject.Closure, bool, error) {
+	critic, criticRecord, members, present, err := stampedCriticChain(root, rootRecord)
+	if err != nil || !present {
+		return readsubject.Closure{}, false, err
 	}
-	data, err := os.ReadFile(filepath.Join(root, "artifacts", "agents", "jobs", critic+".json"))
+	closure, closurePresent, err := readsubject.ReadClosedClosure(
+		filepath.Join(root, "artifacts", "agents"), criticRecord, members,
+	)
 	if err != nil {
-		return ""
+		return closure, closurePresent, fmt.Errorf("stamped critic %s closure is invalid: %w", critic, err)
 	}
-	var record map[string]any
-	if json.Unmarshal(data, &record) != nil || record["jobId"] != critic || record["status"] != "completed" {
-		return ""
+	return closure, closurePresent, nil
+}
+
+func stampedCriticChain(root string, rootRecord map[string]any) (string, map[string]any, []map[string]any, bool, error) {
+	value, present := rootRecord["independentCritiqueJobRef"]
+	if !present {
+		return "", nil, nil, false, nil
+	}
+	critic, ok := value.(string)
+	if !ok || !landingID.MatchString(critic) {
+		return "", nil, nil, false, fmt.Errorf("independent critique reference %#v is malformed", value)
+	}
+	paths, err := filepath.Glob(filepath.Join(root, "artifacts", "agents", "jobs", "*.json"))
+	if err != nil {
+		return "", nil, nil, false, err
+	}
+	records := map[string]map[string]any{}
+	for _, recordPath := range paths {
+		data, readErr := os.ReadFile(recordPath)
+		if readErr != nil {
+			continue
+		}
+		var record map[string]any
+		if json.Unmarshal(data, &record) != nil {
+			continue
+		}
+		id, _ := record["jobId"].(string)
+		if landingID.MatchString(id) && filepath.Base(recordPath) == id+".json" {
+			records[id] = record
+		}
+	}
+	criticRecord, ok := records[critic]
+	if !ok {
+		return "", nil, nil, false, fmt.Errorf("independent critique record %s is unreadable", critic)
+	}
+	var members []map[string]any
+	for id, record := range records {
+		if lineageRoot(records, id) == critic {
+			members = append(members, record)
+		}
+	}
+	return critic, criticRecord, members, true, nil
+}
+
+func closedCriticReviewedTree(root string, rootRecord map[string]any) (string, bool, error) {
+	critic, record, _, present, err := stampedCriticChain(root, rootRecord)
+	if err != nil || !present {
+		return "", false, err
+	}
+	if record["jobId"] != critic {
+		return "", false, fmt.Errorf("independent critique record %s has another job identifier", critic)
+	}
+	if record["status"] != "completed" {
+		return "", false, nil
 	}
 	round, ok := jsonInteger(record["round"])
 	if !ok || round < 1 {
-		return ""
+		return "", false, fmt.Errorf("independent critique record %s has an invalid round", critic)
 	}
-	data, err = os.ReadFile(filepath.Join(root, "artifacts", "agents", critic, "rounds", strconv.Itoa(round), "return.json"))
+	data, err := os.ReadFile(filepath.Join(root, "artifacts", "agents", critic, "rounds", strconv.Itoa(round), "return.json"))
 	if err != nil {
-		return ""
+		return "", false, fmt.Errorf("independent critique return for %s is unreadable: %w", critic, err)
 	}
 	var result map[string]any
-	if json.Unmarshal(data, &result) != nil {
-		return ""
+	if err := json.Unmarshal(data, &result); err != nil {
+		return "", false, fmt.Errorf("independent critique return for %s is malformed: %w", critic, err)
 	}
 	reviewed, _ := result["reviewedTree"].(string)
 	if !treeOID.MatchString(reviewed) {
-		return ""
+		return "", false, fmt.Errorf("independent critique return for %s has no reviewed tree", critic)
 	}
-	return reviewed
+	return reviewed, true, nil
 }
 
 func terminalImplementerJob(root, chain string) string {

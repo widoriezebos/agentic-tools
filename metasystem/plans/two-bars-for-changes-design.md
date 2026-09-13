@@ -224,6 +224,10 @@ refusal:
    bar (b) class, declare it. Hazard-class CLOSURE minimums are
    unchanged — landing-check imposes its own requirement at its own
    boundary; it does not rewrite `requiredConfigurationByHazard`.
+   A prior clean read authorizes bar (a) only through the stamped critic
+   root's validated closure, bound to the last critic round and the selected
+   review's tree and patch; historical reads and lawful non-clean decisions
+   retain their existing requirements.
 3. **Candidate facts come from the CLOSE-TIME SEAL, write-once and
    close-owned (TB-LP-R1-04, -17, -22; TB-LP-R2B-02).** Closing gains
    three named obligations: (i) close-check verifies `review.json` is

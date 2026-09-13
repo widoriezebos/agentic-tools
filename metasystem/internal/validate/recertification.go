@@ -20,6 +20,7 @@ import (
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/config"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/dispatch"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/gittree"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/readsubject"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/wiredoc"
 )
 
@@ -356,16 +357,53 @@ func (r *conformanceRun) selectOriginalCertification() (originalCertification, e
 	if !ok || criticRecord["role"] != "code-critic" || criticRecord["parentJob"] != nil || criticRecord["chainClosed"] != true {
 		return originalCertification{}, fmt.Errorf("referenced code-critic chain is not closed")
 	}
-	expectedImplementer, _ := criticRecord["reviews"].(string)
-	if expectedImplementer == "" || expectedImplementer != r.job {
-		return originalCertification{}, fmt.Errorf("requested implementer job %s differs from the critic's expected implementer job %s", r.job, expectedImplementer)
+	var criticMembers []map[string]any
+	for id, record := range records {
+		if root, rooted := chainRootIn(records, id); rooted && root == criticRoot {
+			criticMembers = append(criticMembers, record)
+		}
 	}
-	_, terminal, round, err := terminalMember(records, criticRoot)
+	closure, closurePresent, err := readsubject.ReadClosedClosure(
+		filepath.Join(r.root, "artifacts", "agents"), criticRecord, criticMembers,
+	)
 	if err != nil {
-		return originalCertification{}, fmt.Errorf("referenced code-critic terminal round is not completed: %w", err)
+		return originalCertification{}, fmt.Errorf("referenced code-critic closure is invalid: %w", err)
 	}
-	if terminal["status"] != "completed" {
-		return originalCertification{}, fmt.Errorf("referenced code-critic terminal round is not completed")
+	round := 0
+	reviewed := ""
+	if closurePresent {
+		if closure.Subject.Kind != readsubject.SubjectLive {
+			return originalCertification{}, fmt.Errorf("referenced code-critic closure subject kind %s is not live", closure.Subject.Kind)
+		}
+		if closure.Subject.ImplementerRoot != r.rootJob {
+			return originalCertification{}, fmt.Errorf("referenced code-critic closure names implementation root %s instead of %s", closure.Subject.ImplementerRoot, r.rootJob)
+		}
+		requestedRoot, requestedRooted := chainRootIn(records, r.job)
+		if !requestedRooted || requestedRoot != r.rootJob {
+			return originalCertification{}, fmt.Errorf("requested implementer job %s is outside implementation chain %s", r.job, r.rootJob)
+		}
+		reviewedRoot, reviewedRooted := chainRootIn(records, closure.Subject.ReviewedMember)
+		if !reviewedRooted || reviewedRoot != r.rootJob {
+			return originalCertification{}, fmt.Errorf("referenced code-critic closure reviewed member %s is outside implementation chain %s", closure.Subject.ReviewedMember, r.rootJob)
+		}
+		if closure.Round > int64(^uint(0)>>1) {
+			return originalCertification{}, fmt.Errorf("referenced code-critic closure round is too large")
+		}
+		round = int(closure.Round)
+		reviewed = closure.Subject.ReviewedProjectTree
+	} else {
+		expectedImplementer, _ := criticRecord["reviews"].(string)
+		if expectedImplementer == "" || expectedImplementer != r.job {
+			return originalCertification{}, fmt.Errorf("requested implementer job %s differs from the critic's expected implementer job %s", r.job, expectedImplementer)
+		}
+		_, terminal, terminalRound, terminalErr := terminalMember(records, criticRoot)
+		if terminalErr != nil {
+			return originalCertification{}, fmt.Errorf("referenced code-critic terminal round is not completed: %w", terminalErr)
+		}
+		if terminal["status"] != "completed" {
+			return originalCertification{}, fmt.Errorf("referenced code-critic terminal round is not completed")
+		}
+		round = terminalRound
 	}
 	criticPath := filepath.Join(r.root, "artifacts", "agents", criticRoot, "rounds", strconv.Itoa(round), "return.json")
 	criticBytes, _, err := fileDigest(criticPath)
@@ -376,7 +414,13 @@ func (r *conformanceRun) selectOriginalCertification() (originalCertification, e
 	if err := json.Unmarshal(criticBytes, &criticReturn); err != nil {
 		return originalCertification{}, fmt.Errorf("critic return is malformed: %w", err)
 	}
-	reviewed, _ := criticReturn["reviewedTree"].(string)
+	returnedTree, _ := criticReturn["reviewedTree"].(string)
+	if closurePresent && returnedTree != reviewed {
+		return originalCertification{}, fmt.Errorf("critic return tree %s differs from closure tree %s", returnedTree, reviewed)
+	}
+	if !closurePresent {
+		reviewed = returnedTree
+	}
 	if !recertificationTreeOID.MatchString(reviewed) {
 		return originalCertification{}, fmt.Errorf("critic return has no reviewed tree")
 	}
@@ -418,9 +462,15 @@ func (r *conformanceRun) selectOriginalCertification() (originalCertification, e
 		if err != nil {
 			continue
 		}
+		if closurePresent && sha256Bytes(patch) != closure.Subject.DiffDigest {
+			continue
+		}
 		candidates = append(candidates, candidate{round, reviewPath, reviewBytes, patchPath, patch})
 	}
 	if len(candidates) == 0 {
+		if closurePresent {
+			return originalCertification{}, fmt.Errorf("requested implementer job %s has no review joined to closure subject tree %s and patch %s", r.job, reviewed, closure.Subject.DiffDigest)
+		}
 		return originalCertification{}, fmt.Errorf("requested implementer job %s has no review joined to critic tree %s", r.job, reviewed)
 	}
 	sort.Slice(candidates, func(i, j int) bool { return candidates[i].round < candidates[j].round })
