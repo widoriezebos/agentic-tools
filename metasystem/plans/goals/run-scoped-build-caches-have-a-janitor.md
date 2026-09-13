@@ -7,12 +7,14 @@
 - Origin: human
 - Next step: INTENT: no run-scoped cache or worktree outlives its run by more than the idle window, on any seat. CONSTRAINTS: liveness is process reference (argv or open file) plus idle mtime, never age in days (a one-day cut freed nothing on 2026-09-11; a two-hour idle cut was safe mid-suite because Go bumps a used entry mtime at most hourly); the janitor own argv must not carry run paths (a reaper killed the 2026-09-11 sweep with SIGTERM when its argv listed 485 run directories, a path-free Python sweep survived); never touch another seat session scratch; after deleting landing worktrees run git worktree prune. FREEDOMS: janitor as a steward tick, a scheduled job, or a run-exit hook; the idle window value; whether writers register directories or the janitor discovers them by name. This is the first concrete member of the parked umbrella disk-hygiene (backlog-notes item 19); the umbrella stays parked. ROSTER: Sol implements, Fable critiques (R-25). Tier 2, full gate width. || Absorbed 2026-09-11 from goal disk-hygiene: Merged intent: every run-scoped byte the metasystem writes (build caches, worktrees, scratch directories, fixture beds, evidence snapshots) has a declared lifecycle enforced by one janitor once its run ends or idles, with headroom checks in the suite and provision paths, and a fixture proves a leaked directory of a dea
 - OpenedAt: 2026-09-11T10:28:10Z
-- Revision: 2
+- Revision: 3
 - Labels: robustness
+- Pinned: m1c
 - Budget: elapsedLimit=4h attemptLimit=6 reservedJobMinutesLimit=720 activeJobLimit=1 reviewRoundLimit=2
 - BudgetExceptions: 0
 
 History:
 - 2026-09-11T10:28:10Z R3S86XJGMCDM5N5R7AQWWBDSQT-m1-c6925449 open actor=m1+main-1788680071-18713-e76d5d targets=run-scoped-build-caches-have-a-janitor
 - 2026-09-11T21:57:39Z SXTX0PCJGMFFZNFXHJ42NV6HA5-m1-c6925449 edit actor=human:Wido targets=run-scoped-build-caches-have-a-janitor
-Integrity: sha256=fd034d6ffb55f6e16d4606152489acedd819496e758a538fc307c4fbcf561c71
+- 2026-09-13T06:39:51Z 1VQM6N3XRNPEE0836Z8WRP9KS8-m1e-c6925449 set-pin actor=human:Wido targets=run-scoped-build-caches-have-a-janitor
+Integrity: sha256=720d4d1911d08b4260fa441ba48db75d09e627d34ce6f6912077b3b128d97e64
