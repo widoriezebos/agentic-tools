@@ -1,6 +1,6 @@
 # receipt-admission-caps-concurrent-batteries
 
-- State: approved
+- State: claimed
 - Priority: 1
 - Sequence: 1
 - Risk: severity=2 novelty=2 exposure=3 accumulation=1 basis="severity 2: a wrong cap starves landings or lets batteries collide as today; novelty 2: attempt reservations exist per checkout but nothing is host-wide; exposure 3: every receipt on every seat; accumulation 1: the battery content is unchanged"
@@ -9,12 +9,13 @@
 - Origin: human
 - Next step: STATE 2026-09-12 (m1e): slice 1, the attribution, landed 0c621e4b after one independent critique (six material findings folded: the label only on a failed terminal; top-level launchers outside the attempt's family; a launcher counts as load only with the box at half its cores; the patience filing after the commit and never fatal; no fabricated start sample; the re-arm scope named). Verified through the engine on the landed tip: attempt proof-mtykoip9 carries load.start and load.end (load 8.0 to 9.5 on 18 cores, no other launchers, overlapKnown). Every root a new engine writes to must run an engine at or after 0c621e4b (older engines refuse a record with the load block). Next: a week of records, then the cap question of plans/receipt-admission-attribution-design.md section 4 to Wido (R-92-m1e, R-107-m1e); the seat moves to engine-runs-re-arm-themselves-on-a-landed-engine (1:2).
 - OpenedAt: 2026-09-11T15:44:50Z
-- Revision: 18
+- Revision: 19
 - Pinned: m1e
 - Budget: elapsedLimit=1d attemptLimit=10 reservedJobMinutesLimit=1200 activeJobLimit=1 reviewRoundLimit=3
 - BudgetExceptions: 0
 - Approved: by=human:Wido at=2026-09-11T20:32:56Z revision=11 opid=HNYC0AM7335NZ9RHE7RAB3N61K-m1-c6925449 authority=proven digest=43d1bc530ae6606ca2a5937c4719b1017143a7f249e4da9fb1b5c4b6da160d7c
-- Episode: machine=m1e lineage=main-1789030447-51011-5722fc accountingRevision=13 episodeAt=2026-09-12T15:19:34Z episodeRevision=13 idleSeconds=26157 released=2026-09-13T06:47:28Z
+- Claimed: machine=m1e lineage=main-1789030447-51011-5722fc at=2026-09-14T01:22:19Z revision=19 accountingRevision=13 episodeAt=2026-09-12T15:19:34Z episodeRevision=13 idleSeconds=93048
+- StopCapability: generation=19 revision=19 machine=m1e claimEpoch=1 fenceEpoch=0
 
 History:
 - 2026-09-11T15:44:50Z ATQJYESKCTSPAS92AEEAW0TKS3-m1e-5083721b open actor=m1e+main-1789141490-27414-b9c0d2 targets=receipt-admission-caps-concurrent-batteries
@@ -35,4 +36,5 @@ History:
 - 2026-09-12T16:03:34Z XJWMJGRJM0GM1VVGMGGRC3F4MP-m1e-892cdaec release actor=m1e+main-1789030447-51011-5722fc targets=receipt-admission-caps-concurrent-batteries
 - 2026-09-12T23:19:31Z AXJQJ624WCDS68MPZSZZTWBR2R-m1e-892cdaec claim actor=m1e+main-1789030447-51011-5722fc targets=receipt-admission-caps-concurrent-batteries
 - 2026-09-13T06:47:28Z 0S4MK2Y3A8CBMCF8BA773AMZXE-m1e-892cdaec release actor=m1e+main-1789030447-51011-5722fc targets=receipt-admission-caps-concurrent-batteries
-Integrity: sha256=6870018f579085c24a7776cddecd9c49141881b3434604c605c29c5a8ed8cbca
+- 2026-09-14T01:22:19Z PH1T0615VPVDYVTWTC9WTKZTD9-m1e-892cdaec claim actor=m1e+main-1789030447-51011-5722fc targets=receipt-admission-caps-concurrent-batteries
+Integrity: sha256=274277495bc998648c1634f7fa222940b3917acf05a66accb461da1a052073fb
