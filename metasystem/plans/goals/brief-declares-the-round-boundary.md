@@ -1,6 +1,6 @@
 # brief-declares-the-round-boundary
 
-- State: queued
+- State: approved
 - Priority: 1
 - Sequence: 7
 - Risk: severity=2 novelty=2 exposure=3 accumulation=2 basis="severity 2: a wrong boundary refuses a legitimate round or admits an unrelated one, both recoverable by a brief edit; novelty 2: a new brief header and a new conformance check, but both sit beside existing preflight and boundary code; exposure 3: every implementer chain on every runtime; accumulation 2: each undetected drift costs a read plus a fold round and the rounds compound across a program."
@@ -9,13 +9,15 @@
 - Origin: human
 - Next step: Design first on the design lane (Codex gpt-6-astra): the two header forms, the path-match rule (repository-relative, the same dialect conformance already projects), the ceiling's count (git numstat over the merge-base diff, binary files excluded), the typed violation names, and where the seat reads the violation before dispatching a critic. Then build (Codex gpt-5.6-sol) behind the four fixtures in DONE, Opus read, seat lands. Cheap practice until it lands: the coordinator counts changed lines and lists untracked files on every return before spending a read. Opened at Wido's word 2026-09-14 in the delivery-efficiency program, next after coordinator-context-stays-under-budget.
 - OpenedAt: 2026-09-14T15:28:36Z
-- Revision: 3
+- Revision: 4
 - Pinned: m1e
-- Budget: elapsedLimit=4h attemptLimit=6 reservedJobMinutesLimit=720 activeJobLimit=1 reviewRoundLimit=2
+- Budget: elapsedLimit=1d attemptLimit=10 reservedJobMinutesLimit=720 activeJobLimit=1 reviewRoundLimit=2
 - BudgetExceptions: 0
+- Approved: by=human:Wido at=2026-09-14T15:30:46Z revision=4 opid=3HTZ3RYJ6783ZGP6BCKRGKQZXN-m1e-c6925449 authority=proven digest=62b713cabfa16e685174e1c86975f82c1ab657462844e5102cc0a110359a0d6c
 
 History:
 - 2026-09-14T15:28:36Z 8AZ0ZXR3DM2PT1EVT97Y1F7WYA-m1e-c6925449 open actor=human:Wido targets=brief-declares-the-round-boundary
 - 2026-09-14T15:29:55Z Q6S0HF8R32AQRFZA1N4HH0S107-m1e-c6925449 set-priority actor=human:Wido targets=actionable-metrics,brief-declares-the-round-boundary,chain-landing-carries-the-reviewed-diff,critique-closes-on-folded-proof,dispatch-bases-chains-on-the-remote-tip,failed-job-attention,fixture-repo-copies-exclude-the-artifacts-store,fixture-stewards-outlive-their-suite,fixture-waits-name-their-producer,human-authority-surface-runs-its-cmd-tests,human-goal-verbs-forgiving,human-wait-does-not-consume-goal-budget,job-record-birth-token,lease-sweep-death-evidence,live-job-on-a-done-goal-unnoticed,machine-concurrency-governor,metasystem-stop-escalation-proofs,metasystem-stop-fleet-form,new-elapsed-budgets-use-explicit-hours,repo-root-paths-ride-agent-commits-unjudged,run-scoped-build-caches-have-a-janitor,skipped-test-fails-its-group-on-the-other-os,stop-batch-strands-a-resumable-goal,token-spend-fence,watch-verb,watcher-repair-request-never-names-current,winddown-census-handoff-leak reason=priority-order subject=brief-declares-the-round-boundary from=unranked to=1:7 requested-sequence=7
 - 2026-09-14T15:30:30Z 4R7Q8B34D391SE0FZ8BCKEAT6V-m1e-c6925449 set-pin actor=human:Wido targets=brief-declares-the-round-boundary
-Integrity: sha256=582c37fb19ec19a0c3286f94b1117f6ca43d60954bcdb4693d69ff9c1392b9e6
+- 2026-09-14T15:30:46Z 3HTZ3RYJ6783ZGP6BCKRGKQZXN-m1e-c6925449 approve actor=human:Wido targets=brief-declares-the-round-boundary
+Integrity: sha256=94a9acad4d96c6c775f29229eaf4da7dabc6930116778c784499ea219d2612b9
