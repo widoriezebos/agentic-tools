@@ -67,6 +67,9 @@ func readUnderCursor(stateRoot, runtime, session, path string, parse lineParser,
 	defer unlockCallFile(lock)
 
 	cursorPath := CursorPath(stateRoot, runtime, session)
+	if err := recoverCallRetirement(stateRoot, cursorPath); err != nil {
+		return Reading{}, err
+	}
 	samplesPath := SamplesPath(stateRoot, runtime, session)
 	cursor, loaded, err := loadCallCursor(cursorPath, runtime, session)
 	if err != nil {
@@ -229,13 +232,16 @@ func Calls(stateRoot, runtime, session string, since time.Time) ([]CallSample, [
 }
 
 func callsUnderMaintenance(stateRoot, runtime, session string, since time.Time) ([]CallSample, []Marker, error) {
-	lock, err := lockCallFile(CursorPath(stateRoot, runtime, session) + ".lock")
+	cursorPath := CursorPath(stateRoot, runtime, session)
+	lock, err := lockCallFile(cursorPath + ".lock")
 	if err != nil {
 		return nil, nil, err
 	}
 	defer unlockCallFile(lock)
 
-	cursorPath := CursorPath(stateRoot, runtime, session)
+	if err := recoverCallRetirement(stateRoot, cursorPath); err != nil {
+		return nil, nil, err
+	}
 	path := SamplesPath(stateRoot, runtime, session)
 	cursor, loaded, err := loadCallCursor(cursorPath, runtime, session)
 	if err != nil {

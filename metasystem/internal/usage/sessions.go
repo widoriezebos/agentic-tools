@@ -69,6 +69,11 @@ func callSessionsUnderMaintenance(stateRoot string) ([]CallSession, error) {
 		if err != nil {
 			return nil, fmt.Errorf("cannot lock call session pair cursor=%s samples=%s: %w", cursorPath, samplesPath, err)
 		}
+		recoverErr := recoverCallRetirement(stateRoot, cursorPath)
+		if recoverErr != nil {
+			unlockCallFile(lock)
+			return nil, recoverErr
+		}
 		session, present, inspectErr := inspectCallSessionPair(stateRoot, cursorPath, samplesPath)
 		unlockCallFile(lock)
 		if inspectErr != nil {
@@ -97,6 +102,16 @@ func collectCallStoreStems(directory, extension string, stems map[string]bool) e
 	}
 	for _, entry := range entries {
 		name := entry.Name()
+		if extension == ".json" && strings.HasSuffix(name, ".json.retiring.json") {
+			stem := strings.TrimSuffix(name, ".json.retiring.json")
+			if callStorePathHasValidCursor(filepath.Join(directory, name)) {
+				stem = strings.TrimSuffix(name, ".json")
+			}
+			if stem != "" {
+				stems[stem] = true
+			}
+			continue
+		}
 		if !strings.HasSuffix(name, extension) {
 			continue
 		}

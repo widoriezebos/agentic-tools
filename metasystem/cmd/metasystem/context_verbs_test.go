@@ -71,6 +71,40 @@ func TestContextReportVerbPublishesTheWeek(t *testing.T) {
 	}
 }
 
+func TestContextReportVerbRefusesRetiredEvidence(t *testing.T) {
+	root := contextCommandRoot(t)
+	retentionPath := filepath.Join(root, "artifacts", "agents", "context", "retention.json")
+	if err := os.MkdirAll(filepath.Dir(retentionPath), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(retentionPath, []byte("{\"schemaVersion\":1,\"retainedSince\":\"2026-09-14T00:00:00Z\"}\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	directory := filepath.Join(root, "artifacts", "reports", "coordinator-context", "2026-09-13")
+	if err := os.MkdirAll(directory, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	callsPath, reportPath := filepath.Join(directory, "calls.jsonl"), filepath.Join(directory, "report.md")
+	if err := os.WriteFile(callsPath, []byte("prior calls\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(reportPath, []byte("prior report\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	code, output, problem := captureChannelOutput(t, func() int {
+		return runContextReport([]string{"--root", root, "--week", "2026-09-13"})
+	})
+	if code != 9 || output != "" || problem != "CONTEXT_EVIDENCE_RETIRED requested=2026-09-13 retained-since=2026-09-14\n" {
+		t.Fatalf("retired report command = code %d stdout %q stderr %q", code, output, problem)
+	}
+	for path, want := range map[string]string{callsPath: "prior calls\n", reportPath: "prior report\n"} {
+		if got, err := os.ReadFile(path); err != nil || string(got) != want {
+			t.Fatalf("retired report changed %s: got %q err=%v", path, got, err)
+		}
+	}
+}
+
 func TestContextReportPropagatesRecoveryError(t *testing.T) {
 	root := contextCommandRoot(t)
 	transcript := writeContextCommandTranscript(t, root, "report-error", 120000, 1, true)

@@ -48,6 +48,17 @@ type contextCallExport struct {
 	At           time.Time `json:"at"`
 }
 
+// ContextEvidenceRetiredError reports that a requested report would require
+// raw call evidence which has already crossed the retained-history boundary.
+type ContextEvidenceRetiredError struct {
+	WeekStart     time.Time
+	RetainedSince time.Time
+}
+
+func (e *ContextEvidenceRetiredError) Error() string {
+	return fmt.Sprintf("CONTEXT_EVIDENCE_RETIRED requested=%s retained-since=%s", e.WeekStart.Format("2006-01-02"), e.RetainedSince.Format("2006-01-02"))
+}
+
 var (
 	lookupContextReportRuntime = runtimes.Lookup
 	readContextCallEvidence    = usage.ReadCallEvidence
@@ -73,6 +84,9 @@ func WriteContextReport(stateRoot string, weekStart, now time.Time) (
 	evidence, err := readContextCallEvidence(stateRoot)
 	if err != nil {
 		return callsPath, reportPath, ContextReport{}, err
+	}
+	if weekStart.Before(evidence.RetainedSince) {
+		return callsPath, reportPath, ContextReport{}, &ContextEvidenceRetiredError{WeekStart: weekStart, RetainedSince: evidence.RetainedSince}
 	}
 	sessions := evidence.Sessions
 	registrations := evidence.Registrations

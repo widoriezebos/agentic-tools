@@ -42,6 +42,13 @@ func ReadCallEvidence(stateRoot string) (CallEvidence, error) {
 		return CallEvidence{}, err
 	}
 	defer unlockCallFile(maintenance)
+	if _, err := recoverAllCallRetirements(stateRoot); err != nil {
+		return CallEvidence{}, err
+	}
+	retention, err := readCallRetention(stateRoot)
+	if err != nil {
+		return CallEvidence{}, err
+	}
 
 	registrations, _, err := callRegistrationsUnderMaintenance(stateRoot)
 	if err != nil {
@@ -55,7 +62,7 @@ func ReadCallEvidence(stateRoot string) (CallEvidence, error) {
 	}
 	observeCallEvidenceSnapshotStep("sessions")
 
-	evidence := CallEvidence{Sessions: sessions, Registrations: registrations}
+	evidence := CallEvidence{Sessions: sessions, Registrations: registrations, RetainedSince: retention.RetainedSince}
 	for _, session := range sessions {
 		samples, markers, readErr := callsUnderMaintenance(stateRoot, session.Runtime, session.Session, time.Time{})
 		if readErr != nil {

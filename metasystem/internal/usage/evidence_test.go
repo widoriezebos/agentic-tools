@@ -225,3 +225,98 @@ func TestCallRetentionPreservesNonBlockingReads(t *testing.T) {
 		}
 	}
 }
+
+func TestCallEvidenceSnapshotBlocksPruneAtEveryBoundary(t *testing.T) {
+	for _, boundary := range []struct {
+		name       string
+		step       string
+		occurrence int
+	}{
+		{"registry snapshot", "registrations", 1},
+		{"session discovery", "sessions", 1},
+		{"first committed rows", "rows", 1},
+		{"second committed rows", "rows", 2},
+	} {
+		t.Run(boundary.name, func(t *testing.T) {
+			root := t.TempDir()
+			before := retirementTestCutoff()
+			old := before.Add(-4 * time.Hour)
+			for _, session := range []string{"first", "second"} {
+				seedRetirementCall(t, root, session, old)
+				setRetirementPairTimes(t, root, "claude", session, old, old)
+			}
+
+			paused := make(chan struct{})
+			release := make(chan struct{})
+			seen := 0
+			previousStep := callEvidenceSnapshotStep
+			callEvidenceSnapshotStep = func(step string) {
+				if step == boundary.step {
+					seen++
+					if seen == boundary.occurrence {
+						close(paused)
+						<-release
+					}
+				}
+			}
+			t.Cleanup(func() { callEvidenceSnapshotStep = previousStep })
+			type evidenceResult struct {
+				evidence CallEvidence
+				err      error
+			}
+			evidenceDone := make(chan evidenceResult, 1)
+			go func() {
+				evidence, err := ReadCallEvidence(root)
+				evidenceDone <- evidenceResult{evidence: evidence, err: err}
+			}()
+			select {
+			case <-paused:
+			case <-time.After(5 * time.Second):
+				close(release)
+				t.Fatalf("evidence read did not reach %s occurrence %d", boundary.step, boundary.occurrence)
+			}
+
+			pruneAttempted := make(chan struct{})
+			var attemptOnce sync.Once
+			previousOpen := callFileOpens
+			callFileOpens = func(path string) {
+				if path == callMaintenancePath(root) {
+					attemptOnce.Do(func() { close(pruneAttempted) })
+				}
+			}
+			t.Cleanup(func() { callFileOpens = previousOpen })
+			type pruneResult struct {
+				removed int
+				err     error
+			}
+			pruneDone := make(chan pruneResult, 1)
+			go func() {
+				removed, err := PruneCallSessions(root, before)
+				pruneDone <- pruneResult{removed: removed, err: err}
+			}()
+			select {
+			case <-pruneAttempted:
+			case <-time.After(5 * time.Second):
+				close(release)
+				t.Fatal("prune did not attempt the maintenance lock")
+			}
+			select {
+			case result := <-pruneDone:
+				close(release)
+				t.Fatalf("prune crossed %s: %+v", boundary.name, result)
+			default:
+			}
+			close(release)
+			evidence := <-evidenceDone
+			if evidence.err != nil || len(evidence.evidence.Samples) != 2 {
+				t.Fatalf("evidence at %s = %+v err=%v", boundary.name, evidence.evidence, evidence.err)
+			}
+			pruned := <-pruneDone
+			if pruned.err != nil || pruned.removed != 2 {
+				t.Fatalf("prune after %s removed=%d err=%v", boundary.name, pruned.removed, pruned.err)
+			}
+			callEvidenceSnapshotStep = previousStep
+			callFileOpens = previousOpen
+		})
+	}
+}

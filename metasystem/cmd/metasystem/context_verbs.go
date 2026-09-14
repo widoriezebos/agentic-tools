@@ -1,6 +1,7 @@
 package main
 
 import (
+	"errors"
 	"flag"
 	"fmt"
 	"os"
@@ -106,6 +107,11 @@ func runContextReport(args []string) int {
 	}
 	callsPath, reportPath, report, err := steward.WriteContextReport(stateRoot, weekStart, time.Now().UTC())
 	if err != nil {
+		var retired *steward.ContextEvidenceRetiredError
+		if errors.As(err, &retired) {
+			fmt.Fprintln(os.Stderr, retired.Error())
+			return 9
+		}
 		fmt.Fprintln(os.Stderr, "metasystem context report:", err)
 		return 1
 	}

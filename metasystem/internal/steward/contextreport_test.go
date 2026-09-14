@@ -6,6 +6,7 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -136,6 +137,168 @@ func TestContextReportUsesOneEvidenceSnapshot(t *testing.T) {
 	}
 	if reads != 1 || !report.Pass || report.Samples != 1 || report.Max != 100000 {
 		t.Fatalf("snapshot reads=%d report=%+v", reads, report)
+	}
+}
+
+func TestContextPrunePreservesRetainedWeek(t *testing.T) {
+	for _, scenario := range []string{"passing", "failing", "empty"} {
+		t.Run(scenario, func(t *testing.T) {
+			weekStart, now := contextReportRetirableWeek()
+			root := t.TempDir()
+			if scenario != "empty" {
+				fixture := seedContextReportBaselineAt(t, weekStart, now)
+				root, weekStart, now = fixture.root, fixture.weekStart, fixture.now
+				if scenario == "failing" {
+					reportTestAppend(t, fixture.transcripts["claude/claude-main"], reportClaudeMarker(weekStart.Add(time.Hour)))
+					seedContextReportRead(t, root, "claude", "claude-main", fixture.transcripts["claude/claude-main"])
+				}
+			}
+			oldAt := weekStart.Add(-14 * 24 * time.Hour)
+			seedContextReportSession(t, root, "claude", "retired-old", reportClaudeCall("retired-old", 90000, oldAt))
+			appendContextReportRegistration(t, root, usage.CallRegistration{
+				Runtime: "claude", Session: "retired-old", PID: 909, PIDStartedAt: 9009, FirstSeen: oldAt,
+			})
+			appendContextReportRegistration(t, root, usage.CallRegistration{
+				Runtime: "claude", Session: "registry-only", PID: 910, PIDStartedAt: 9010, FirstSeen: oldAt,
+			})
+			setContextReportPairTimes(t, root, "claude", "retired-old", oldAt)
+
+			callsPath, reportPath, before, err := WriteContextReport(root, weekStart, now)
+			if err != nil {
+				t.Fatal(err)
+			}
+			callsBytes, reportBytes := reportTestRead(t, callsPath), reportTestRead(t, reportPath)
+			removed, err := usage.PruneCallSessions(root, weekStart)
+			if err != nil || removed != 1 {
+				t.Fatalf("prune removed=%d err=%v", removed, err)
+			}
+			_, _, after, err := WriteContextReport(root, weekStart, now)
+			if err != nil || !reflect.DeepEqual(after, before) {
+				t.Fatalf("retained report before=%+v after=%+v err=%v", before, after, err)
+			}
+			if !bytes.Equal(reportTestRead(t, callsPath), callsBytes) || !bytes.Equal(reportTestRead(t, reportPath), reportBytes) {
+				t.Fatal("retained report bytes changed after pruning out-of-window evidence")
+			}
+		})
+	}
+}
+
+func TestContextPrunePreservesResetPrefix(t *testing.T) {
+	weekStart, now := contextReportRetirableWeek()
+	root := t.TempDir()
+	oldAt := weekStart.Add(-14 * 24 * time.Hour)
+	seedContextReportSession(t, root, "claude", "predecessor", reportClaudeCall("predecessor", 90000, oldAt))
+	seedContextReportSession(t, root, "claude", "current", reportClaudeCall("current", 100000, weekStart.Add(time.Hour)))
+	appendContextReportRegistration(t, root, usage.CallRegistration{Runtime: "claude", Session: "predecessor", PID: 77, PIDStartedAt: 777, FirstSeen: oldAt})
+	appendContextReportRegistration(t, root, usage.CallRegistration{Runtime: "claude", Session: "current", PID: 77, PIDStartedAt: 777, FirstSeen: weekStart.Add(time.Minute)})
+	setContextReportPairTimes(t, root, "claude", "predecessor", oldAt)
+	_, _, before, err := WriteContextReport(root, weekStart, now)
+	if err != nil || before.Resets != 1 {
+		t.Fatalf("report before prune=%+v err=%v", before, err)
+	}
+	if removed, err := usage.PruneCallSessions(root, weekStart); err != nil || removed != 1 {
+		t.Fatalf("prune removed=%d err=%v", removed, err)
+	}
+	_, _, after, err := WriteContextReport(root, weekStart, now)
+	if err != nil || after.Resets != 1 {
+		t.Fatalf("report after prune=%+v err=%v", after, err)
+	}
+}
+
+func TestContextReportSerializesWithPrune(t *testing.T) {
+	fixture := seedHistoricalContextReportBaseline(t)
+	for _, session := range []struct{ runtime, name string }{{"claude", "claude-main"}, {"codex", "codex-main"}} {
+		setContextReportPairTimes(t, fixture.root, session.runtime, session.name, fixture.weekStart.Add(-time.Hour))
+	}
+	snapshotReady := make(chan struct{})
+	releaseSnapshot := make(chan struct{})
+	originalRead := readContextCallEvidence
+	readContextCallEvidence = func(root string) (usage.CallEvidence, error) {
+		evidence, err := originalRead(root)
+		close(snapshotReady)
+		<-releaseSnapshot
+		return evidence, err
+	}
+	t.Cleanup(func() { readContextCallEvidence = originalRead })
+	type reportResult struct {
+		report ContextReport
+		err    error
+	}
+	reportDone := make(chan reportResult, 1)
+	go func() {
+		_, _, report, err := WriteContextReport(fixture.root, fixture.weekStart, fixture.now)
+		reportDone <- reportResult{report: report, err: err}
+	}()
+	select {
+	case <-snapshotReady:
+	case <-time.After(5 * time.Second):
+		close(releaseSnapshot)
+		t.Fatal("report did not finish its evidence snapshot")
+	}
+	if removed, err := usage.PruneCallSessions(fixture.root, fixture.weekStart.AddDate(0, 0, 7)); err != nil || removed != 2 {
+		close(releaseSnapshot)
+		t.Fatalf("concurrent prune removed=%d err=%v", removed, err)
+	}
+	close(releaseSnapshot)
+	result := <-reportDone
+	if result.err != nil || result.report.Samples != 25 || !result.report.Pass {
+		t.Fatalf("snapshotted report=%+v err=%v", result.report, result.err)
+	}
+}
+
+func TestContextReportRefusesRetiredEvidenceWithoutPublishing(t *testing.T) {
+	fixture := seedHistoricalContextReportBaseline(t)
+	callsPath, reportPath, _, err := WriteContextReport(fixture.root, fixture.weekStart, fixture.now)
+	if err != nil {
+		t.Fatal(err)
+	}
+	callsBefore, reportBefore := reportTestRead(t, callsPath), reportTestRead(t, reportPath)
+	for _, session := range []struct{ runtime, name string }{{"claude", "claude-main"}, {"codex", "codex-main"}} {
+		setContextReportPairTimes(t, fixture.root, session.runtime, session.name, fixture.weekStart.Add(-time.Hour))
+	}
+	retainedSince := fixture.weekStart.AddDate(0, 0, 7)
+	if removed, err := usage.PruneCallSessions(fixture.root, retainedSince); err != nil || removed != 2 {
+		t.Fatalf("prune removed=%d err=%v", removed, err)
+	}
+	_, _, _, err = WriteContextReport(fixture.root, fixture.weekStart, fixture.now)
+	var retired *ContextEvidenceRetiredError
+	if !errors.As(err, &retired) || !retired.WeekStart.Equal(fixture.weekStart) || !retired.RetainedSince.Equal(retainedSince) {
+		t.Fatalf("retired evidence error=%v", err)
+	}
+	if !bytes.Equal(reportTestRead(t, callsPath), callsBefore) || !bytes.Equal(reportTestRead(t, reportPath), reportBefore) {
+		t.Fatal("retired report request changed previously published evidence")
+	}
+}
+
+func TestContextPrunePreservesUnassignableEvidence(t *testing.T) {
+	weekStart, _ := contextReportRetirableWeek()
+	root := t.TempDir()
+	oldAt := weekStart.Add(-14 * 24 * time.Hour)
+	seedContextReportSession(t, root, "claude", "undated", reportClaudeCallWithTimestamp("undated", 10, ""))
+	seedContextReportSession(t, root, "claude", "unknown-source", reportClaudeCall("unknown-source", 10, oldAt))
+	samplesPath := usage.SamplesPath(root, "claude", "unknown-source")
+	data := bytes.ReplaceAll(reportTestRead(t, samplesPath), []byte("claude-transcript"), []byte("bogus--transcript"))
+	if err := os.WriteFile(samplesPath, data, 0o644); err != nil {
+		t.Fatal(err)
+	}
+	seedContextReportSession(t, root, "claude", "unregistered", reportClaudeCall("unregistered", 10, oldAt))
+	seedContextReportSession(t, root, "claude", "conflict", reportClaudeCall("same-call", 10, oldAt))
+	secondConflict := filepath.Join(t.TempDir(), "conflict-copy.jsonl")
+	reportTestWrite(t, secondConflict, reportClaudeCall("same-call", 11, oldAt))
+	seedContextReportRead(t, root, "claude", "conflict", secondConflict)
+	for _, session := range []string{"undated", "unknown-source", "conflict"} {
+		appendContextReportRegistration(t, root, usage.CallRegistration{Runtime: "claude", Session: session, PID: 50, PIDStartedAt: 500, FirstSeen: oldAt})
+	}
+	for _, session := range []string{"undated", "unknown-source", "unregistered", "conflict"} {
+		setContextReportPairTimes(t, root, "claude", session, oldAt)
+	}
+	if removed, err := usage.PruneCallSessions(root, weekStart); err != nil || removed != 0 {
+		t.Fatalf("unassignable prune removed=%d err=%v", removed, err)
+	}
+	for _, session := range []string{"undated", "unknown-source", "unregistered", "conflict"} {
+		if _, err := os.Stat(usage.CursorPath(root, "claude", session)); err != nil {
+			t.Fatalf("unassignable cursor %s was removed: %v", session, err)
+		}
 	}
 }
 
@@ -530,6 +693,17 @@ type contextReportFixture struct {
 func seedContextReportBaseline(t *testing.T) contextReportFixture {
 	t.Helper()
 	weekStart, now := contextReportTestWeek()
+	return seedContextReportBaselineAt(t, weekStart, now)
+}
+
+func seedHistoricalContextReportBaseline(t *testing.T) contextReportFixture {
+	t.Helper()
+	weekStart, _ := contextReportRetirableWeek()
+	return seedContextReportBaselineAt(t, weekStart, weekStart.Add(12*time.Hour))
+}
+
+func seedContextReportBaselineAt(t *testing.T, weekStart, now time.Time) contextReportFixture {
+	t.Helper()
 	root := t.TempDir()
 	var claude strings.Builder
 	for index := 0; index < 20; index++ {
@@ -542,12 +716,12 @@ func seedContextReportBaseline(t *testing.T) contextReportFixture {
 		codex.WriteString(reportCodexCall(fmt.Sprintf("codex-%02d", index), 120000, weekStart.Add(time.Duration(index+30)*time.Minute), int64(index+1)))
 	}
 	codexPath := seedContextReportSession(t, root, "codex", "codex-main", codex.String())
-	if err := usage.RegisterSession(root, "claude", "claude-main", 101, 1001); err != nil {
-		t.Fatal(err)
-	}
-	if err := usage.RegisterSession(root, "codex", "codex-main", 102, 1002); err != nil {
-		t.Fatal(err)
-	}
+	appendContextReportRegistration(t, root, usage.CallRegistration{
+		Runtime: "claude", Session: "claude-main", PID: 101, PIDStartedAt: 1001, FirstSeen: weekStart.Add(time.Minute),
+	})
+	appendContextReportRegistration(t, root, usage.CallRegistration{
+		Runtime: "codex", Session: "codex-main", PID: 102, PIDStartedAt: 1002, FirstSeen: weekStart.Add(time.Minute),
+	})
 	return contextReportFixture{
 		root: root, weekStart: weekStart, now: now,
 		transcripts: map[string]string{"claude/claude-main": claudePath, "codex/codex-main": codexPath},
@@ -565,6 +739,12 @@ func assertContextReportBaseline(t *testing.T, report ContextReport) {
 func contextReportTestWeek() (time.Time, time.Time) {
 	current := time.Now().UTC()
 	start := time.Date(current.Year(), current.Month(), current.Day(), 0, 0, 0, 0, time.UTC)
+	return start, start.Add(12 * time.Hour)
+}
+
+func contextReportRetirableWeek() (time.Time, time.Time) {
+	start, _ := contextReportTestWeek()
+	start = start.AddDate(0, 0, -22)
 	return start, start.Add(12 * time.Hour)
 }
 
@@ -621,6 +801,36 @@ func writeContextReportJob(t *testing.T, root, id, status, errorText, refusal st
 	}
 	path := filepath.Join(root, "artifacts", "agents", "jobs", id+".json")
 	reportTestWrite(t, path, string(data)+"\n")
+}
+
+func appendContextReportRegistration(t *testing.T, root string, row usage.CallRegistration) {
+	t.Helper()
+	data, err := json.Marshal(row)
+	if err != nil {
+		t.Fatal(err)
+	}
+	path := filepath.Join(root, "artifacts", "agents", "context", "sessions.jsonl")
+	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	file, err := os.OpenFile(path, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0o644)
+	if err != nil {
+		t.Fatal(err)
+	}
+	_, writeErr := file.Write(append(data, '\n'))
+	closeErr := file.Close()
+	if writeErr != nil || closeErr != nil {
+		t.Fatalf("registration write=%v close=%v", writeErr, closeErr)
+	}
+}
+
+func setContextReportPairTimes(t *testing.T, root, runtimeName, session string, at time.Time) {
+	t.Helper()
+	for _, path := range []string{usage.CursorPath(root, runtimeName, session), usage.SamplesPath(root, runtimeName, session)} {
+		if err := os.Chtimes(path, at, at); err != nil {
+			t.Fatal(err)
+		}
+	}
 }
 
 func contextReportHasFailure(report ContextReport, part string) bool {
