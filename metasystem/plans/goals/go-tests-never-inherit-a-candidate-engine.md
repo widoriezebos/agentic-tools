@@ -1,6 +1,6 @@
 # go-tests-never-inherit-a-candidate-engine
 
-- State: claimed
+- State: approved
 - Priority: 1
 - Sequence: 11
 - Risk: severity=2 novelty=1 exposure=2 accumulation=2 basis="severity 2: false failures that read as real guard defects; novelty 1: environment hygiene; exposure 2: any seat running beds and packages in one shell; accumulation 2: each occurrence costs a diagnosis"
@@ -9,12 +9,11 @@
 - Origin: human
 - Next step: Sanitize the engine-selection environment in the shared test helpers and the guard's test path; add the hostile-inheritance proof.
 - OpenedAt: 2026-09-14T16:16:39Z
-- Revision: 8
+- Revision: 9
 - Budget: elapsedLimit=4h attemptLimit=6 reservedJobMinutesLimit=720 activeJobLimit=1 reviewRoundLimit=2
 - BudgetExceptions: 0
 - Approved: by=human:Wido at=2026-09-14T18:54:42Z revision=2 opid=1FVG0RPDDCS253V6D1FVHN0PXJ-m1e-c6925449 authority=proven digest=01c88816aa05e9379310fc5e7cf396643079963790219c3b366e2fd7c7cb0cc6
-- Claimed: machine=m1c lineage=main-1789191340-90689-8975a9 at=2026-09-14T21:28:54Z revision=8 accountingRevision=8 episodeAt=2026-09-14T21:28:54Z episodeRevision=8
-- StopCapability: generation=8 revision=8 machine=m1c claimEpoch=5 fenceEpoch=0
+- Episode: machine=m1c lineage=main-1789191340-90689-8975a9 accountingRevision=8 episodeAt=2026-09-14T21:28:54Z episodeRevision=8 idleSeconds=0 released=2026-09-14T21:31:01Z
 
 History:
 - 2026-09-14T16:16:39Z B3R2EK7S895J6G3ZMQCF8FYTZE-m1e-c6925449 open actor=human:Wido targets=go-tests-never-inherit-a-candidate-engine
@@ -25,4 +24,5 @@ History:
 - 2026-09-14T20:23:28Z YRZBJ7EYJN1MJFEMV7ABC630PV-m1e-c6925449 set-priority actor=human:Wido targets=beds-report-every-failure,beds-run-under-the-oldest-supported-bash,brief-declares-the-round-boundary,builder-proves-each-rule-by-mutation,coordinator-context-stays-under-budget,coordinator-wakes-on-events-not-polls,critique-closes-on-folded-proof,cross-cutting-change-inventories-its-readers,delegate-sandbox-runs-the-beds,every-verb-resolves-repo-to-an-absolute-root,go-tests-never-inherit-a-candidate-engine,hook-root-resolver-design,moved-effects-are-inventoried-in-the-design,receipt-admission-caps-concurrent-batteries,registered-wait-matches-the-runtime-session,round-proof-feeds-the-next-brief,small-change-lane,stop-hook-never-forces-an-empty-turn reason=priority-order subject=round-proof-feeds-the-next-brief from=1:13 to=1:12 requested-sequence=18
 - 2026-09-14T20:25:05Z SAPG45A387KCJW142RD41ZS95M-m1e-c6925449 set-priority actor=human:Wido targets=beds-report-every-failure,beds-run-under-the-oldest-supported-bash,critique-closes-on-folded-proof,cross-cutting-change-inventories-its-readers,degraded-stop-forms-have-one-source,delegate-sandbox-runs-the-beds,every-round-gets-an-independent-read,every-verb-resolves-repo-to-an-absolute-root,failures-show-observed-against-expected,go-tests-never-inherit-a-candidate-engine,member-size-gate,moved-effects-are-inventoried-in-the-design,registered-wait-matches-the-runtime-session,round-proof-feeds-the-next-brief,stop-response-carries-a-structured-report-reference,testing-surfaces-declare-their-mirror,tests-never-wait-on-wall-time reason=priority-order subject=cross-cutting-change-inventories-its-readers from=1:12 to=1:11 requested-sequence=25
 - 2026-09-14T21:28:54Z MGDJ8D64C2HFM8D319GS2YNYGQ-m1c-69c9e454 claim actor=m1c+main-1789191340-90689-8975a9 targets=go-tests-never-inherit-a-candidate-engine
-Integrity: sha256=23ee4704e5e7f9b07a306785d3eb0f072c938dd843020e904f83b0a961e167f3
+- 2026-09-14T21:31:01Z 4M8HP8W34EDKDF207ANE5YA8WB-m1c-69c9e454 release actor=m1c+main-1789191340-90689-8975a9 targets=go-tests-never-inherit-a-candidate-engine
+Integrity: sha256=1652de0e7917a9681408c6149bb9a4228748ca8c3fa7f4f2175bdc96861ee246
