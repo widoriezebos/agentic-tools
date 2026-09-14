@@ -57,8 +57,16 @@ Each goal's intent on the ledger carries its DONE line, evidence and proof; this
 | 19 | small-change-lane | C | adopted from m1b; DONE written; needs Wido's classification before approval | 0 | ceremony |
 | 20 | land-ready-work-lands-without-a-claim-slot | C | new; narrowed to the slot and the accounting episode | 3 | ceremony |
 | 21 | capped-round-continues-instead-of-restarting | C | adopted | 3 | verification (delegate) |
+| 22 | delegate-sandbox-runs-the-beds | D | new 2026-09-14, from the stop-decisions build: the delegate could not run the beds it changed | 2 | delegate loop |
+| 23 | round-proof-feeds-the-next-brief | D | new 2026-09-14: the seat was a relay between bed and brief for fifteen rounds | 3 | delegate loop |
+| 24 | beds-report-every-failure | D | new 2026-09-14: one assertion per run, and twice a silent exit | 2 | delegate loop |
+| 25 | stop-response-carries-a-structured-report-reference | D | new 2026-09-14: two wording changes landed mid-build, one broke delivery matching | 2 | delegate loop |
+| 26 | moved-effects-are-inventoried-in-the-design | D | new 2026-09-14: half the build's defects were a moved effect with no new owner | 2 | delegate loop |
+| 27 | member-size-gate | D | new 2026-09-14: twenty-two files and nineteen rounds in one member | 2 | delegate loop |
 
 Dependencies that matter: 7 before 8 (settlement before self-extension). 9 carries its own narrow retry reuse and lands before 10, which widens identity. 3 and 11 share one liveness contract: 3 owns dead-launcher and orphan reconciliation, 11 owns elapsed-time patience; neither releases capacity on the clock. 11 before 12 (same engine). 14 and 15 are independent. 17 before 18 before 19: the lane is defined by tier and its read by critique-always. 20 changes no receipt acceptance; record-only tip moves stay with landing-receipt-survives-records-drift, which is land-ready on m1e and should land before 20.
+
+Phase D, the delegate loop, was added on 2026-09-14 from the stop-decisions-record-deadline-evidence build, which took nineteen rounds for one member: every bed-visible defect cost a round trip through the seat because the delegate could not run the beds, three rounds repaired the previous round's own blind change, and the beds report one failure per run. Wido's word the same day: these are efficiency improvements, added to this program and done with priority. Order: 22 first, because it removes the blindness that causes the rest; 23 next, because it removes the seat from the loop; 24 and 25 are independent; 26 and 27 are gates that stop the next oversized member before it is built.
 
 ## 4. Rules for m1e while executing
 
