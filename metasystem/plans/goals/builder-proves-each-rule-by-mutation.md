@@ -9,11 +9,13 @@
 - Origin: human
 - Next step: Design first on the design lane (Codex gpt-6-astra): the mutation entry's shape in the version-2 implementer return (internal/returnschema), the conformance check's owner (internal/validate/conformance.go beside the boundary check), what 'the named test exists' means (a Go test function or a fixture leg name found in the candidate tree), and the exact sentence added to scripts/agents/roles/implementer.md. Then build (Codex gpt-5.6-sol) behind the four fixtures in DONE, Opus read, seat lands. Interim practice: every build brief the seat writes carries the rule verbatim ('for every rule you add, a test that fails when that rule alone is removed; run it before you return'). Opened at Wido's word 2026-09-14 in the delivery-efficiency program, after brief-declares-the-round-boundary.
 - OpenedAt: 2026-09-14T15:28:42Z
-- Revision: 2
+- Revision: 3
+- Pinned: m1e
 - Budget: elapsedLimit=4h attemptLimit=6 reservedJobMinutesLimit=720 activeJobLimit=1 reviewRoundLimit=2
 - BudgetExceptions: 0
 
 History:
 - 2026-09-14T15:28:42Z J85P9F1DR0QA84M57E0VKV1613-m1e-c6925449 open actor=human:Wido targets=builder-proves-each-rule-by-mutation
 - 2026-09-14T15:30:02Z G0D5QQDQDDJZANH2YR26JVFPR9-m1e-c6925449 set-priority actor=human:Wido targets=actionable-metrics,builder-proves-each-rule-by-mutation,chain-landing-carries-the-reviewed-diff,critique-closes-on-folded-proof,dispatch-bases-chains-on-the-remote-tip,failed-job-attention,fixture-repo-copies-exclude-the-artifacts-store,fixture-stewards-outlive-their-suite,fixture-waits-name-their-producer,human-authority-surface-runs-its-cmd-tests,human-goal-verbs-forgiving,human-wait-does-not-consume-goal-budget,job-record-birth-token,lease-sweep-death-evidence,live-job-on-a-done-goal-unnoticed,machine-concurrency-governor,metasystem-stop-escalation-proofs,metasystem-stop-fleet-form,new-elapsed-budgets-use-explicit-hours,repo-root-paths-ride-agent-commits-unjudged,run-scoped-build-caches-have-a-janitor,skipped-test-fails-its-group-on-the-other-os,stop-batch-strands-a-resumable-goal,token-spend-fence,watch-verb,watcher-repair-request-never-names-current,winddown-census-handoff-leak reason=priority-order subject=builder-proves-each-rule-by-mutation from=unranked to=1:8 requested-sequence=8
-Integrity: sha256=7e38e33e8b46ba73a9c2490f881447f79504c5c0b408e997e8303742e5e4a13c
+- 2026-09-14T15:30:34Z SAD29XYFKAX81YETSTQF1N2M8P-m1e-c6925449 set-pin actor=human:Wido targets=builder-proves-each-rule-by-mutation
+Integrity: sha256=7df87b5001cc8c01653c81281b657ac2e22bb9d7513a0018b24c49ca4a6d64c2
