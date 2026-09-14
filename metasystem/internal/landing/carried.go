@@ -171,7 +171,7 @@ func observeCarried(params ObserveParams) Observation {
 	if err != nil {
 		return carriedRefusal("goal-item-not-held", fmt.Sprintf("goal %s cannot be proven held; use goal steal after repairing the base tree", params.Goal), provenance)
 	}
-	if err := heldGoalError(workspace, baseTree, params.Goal, params.Actor); err != nil {
+	if err := heldGoalError(workspace, baseTree, params.Goal, params.Actor, 0); err != nil {
 		return carriedRefusal("goal-item-not-held", fmt.Sprintf("%s; use goal steal", err), provenance)
 	}
 	word, err := goal.CarryWordAt(projection.Tree, params.Goal, params.Carried)
@@ -266,6 +266,7 @@ func observeCarried(params ObserveParams) Observation {
 	provenance += " " + ordinaryObservation.Provenance
 	return Observation{SchemaVersion: 1, Mode: "observe", Bar: BarCarried, Verdict: "pass", Code: "human-carried", Provenance: provenance,
 		VerdictTrailer: "pass bar=d carried=" + word.Past + " base=" + ordinaryObservation.VerdictTrailer,
+		GoalRevision:   file.Claimed.Revision,
 		Detail:         fmt.Sprintf("sufficient=%t missing=%v failing=%v uncovered=%v discrepancies=%v", result.Delivery.Sufficient, result.Delivery.MissingGroups, result.Delivery.FailingGroups, result.Delivery.UncoveredObligations, result.Delivery.Discrepancies)}
 }
 

@@ -12,6 +12,8 @@ import (
 
 const promotionRecordPath = "scripts/agents/landing-promotion.json"
 
+const promotionRecordMaxVersion = 2
+
 var errPromotionBaseUnreadable = errors.New("landing promotion base tree is unreadable")
 
 type promotionRecord struct {
@@ -69,18 +71,33 @@ func loadPromotionAtTree(root, baseTree string) (map[string]bool, bool, error) {
 	if err := rejectPromotionTrailingJSON(decoder); err != nil {
 		return nil, true, err
 	}
-	if record.SchemaVersion != 1 || record.RefuseCodes == nil {
+	if record.SchemaVersion < 1 || record.SchemaVersion > promotionRecordMaxVersion || record.RefuseCodes == nil {
 		return nil, true, fmt.Errorf("landing promotion record is malformed")
 	}
 
 	refuseCodes := make(map[string]bool, len(record.RefuseCodes))
 	for _, code := range record.RefuseCodes {
-		if !knownRefusalCode(code) || refuseCodes[code] {
+		if !knownPromotionRefusalCode(record.SchemaVersion, code) || refuseCodes[code] {
 			return nil, true, fmt.Errorf("landing promotion record contains an unknown or duplicate verdict code")
 		}
 		refuseCodes[code] = true
 	}
 	return refuseCodes, true, nil
+}
+
+// knownPromotionRefusalCode keeps each persisted schema version's vocabulary
+// stable so an older record cannot silently acquire a newer policy meaning.
+func knownPromotionRefusalCode(version int, code string) bool {
+	if !knownRefusalCode(code) {
+		return false
+	}
+	if version == 1 {
+		switch code {
+		case "goal-binding-missing", "goal-binding-mismatch", "goal-revision-moved":
+			return false
+		}
+	}
+	return version == 1 || version == 2
 }
 
 func rejectPromotionTrailingJSON(decoder *json.Decoder) error {
@@ -108,6 +125,9 @@ func knownRefusalCode(code string) bool {
 		"runtime-path-refused",
 		"exact-revert-record-refused",
 		"goal-item-not-held",
+		"goal-revision-moved",
+		"goal-binding-missing",
+		"goal-binding-mismatch",
 		"record-not-owned",
 		"malformed-chain-id",
 		"chain-record-unreadable",

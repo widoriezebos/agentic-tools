@@ -13,6 +13,9 @@ source_engine=$root/bin/metasystem
 # Every leg creates standalone repositories. Their object writes stay local;
 # inherited object-store steering must not leak into fixtures.
 unset GIT_OBJECT_DIRECTORY GIT_ALTERNATE_OBJECT_DIRECTORIES
+# Each scenario declares its own actor. A delegate running this public bed is
+# not the actor of the disposable repositories' otherwise-human legs.
+unset METASYSTEM_OWNER_LINEAGE
 
 source "$root/scripts/agents/fixture-budget.sh"
 source "$root/scripts/agents/fixture-bed-scenarios.sh"
@@ -27,12 +30,12 @@ fi
 unset METASYSTEM_FIXTURE_SCENARIO
 if (( ! fixture_bed_child )); then
   fixture_bed_script=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd -P)/$(basename "${BASH_SOURCE[0]}")
-  run_fixture_bed_scenarios land "land fixtures passed (26 isolated legs)" \
+  run_fixture_bed_scenarios land "land fixtures passed (27 isolated legs)" \
     "$fixture_bed_script" push-retry step-failure new-plan goal receipt-line tier-one full-width-chain build-stamp \
     brain-land-refuses brain-absent-node-proceeds ledger-move-lands records-move-lands \
     input-move-refuses receipt-cutover carried-fresh carried-prefixed carried-second carried-red-battery \
     carried-intent-failure carried-crash-local carried-asks carried-ledger-path carried-crash \
-    carried-two-seat carried-debt-abandoned carried-debt-expired
+    carried-two-seat carried-debt-abandoned carried-debt-expired abandonment-refuses-every-push-route
 fi
 
 tmp=$(mktemp -d "${TMPDIR:-/tmp}/metasystem-land.XXXXXX")
@@ -271,31 +274,54 @@ if [[ -n "${LAND_FIXTURE_TIER_ONE_LOG:-}" ]]; then
     "$direct_fix" "$root_job" "$test_receipt" >"$LAND_FIXTURE_TIER_ONE_LOG"
   [[ -f "$test_receipt" ]] || exit 82
 fi
-if [[ -n "$chain" ]]; then
+if [[ -n "$root_job" && ! -f "$root/artifacts/agents/jobs/$root_job.json" ]]; then
+  fixture_goal_revision=$("$root/bin/metasystem" job goal-revision --root "$root" --goal "$goal")
+  mkdir -p "$root/artifacts/agents/jobs"
+  cat >"$root/artifacts/agents/jobs/$root_job.json" <<JSON
+{"jobId":"$root_job","parentJob":null,"role":"implementer","goalId":"$goal","goalRevision":$fixture_goal_revision,"goalTier":1,"gateWidth":"area"}
+JSON
+fi
+if [[ -n "$chain" || -n "$direct_fix" ]]; then
   candidate_tree=$(git -C "$root" write-tree)
   prefix=$(git -C "$root" rev-parse --show-prefix)
   if [[ -n "$prefix" ]]; then
     candidate_tree=$(git -C "$root" rev-parse "$candidate_tree:${prefix%/}")
   fi
-  landing_args=(landing observe --root "$root" --tree "$candidate_tree" --chain "$chain")
+  landing_args=(landing observe --root "$root" --tree "$candidate_tree")
+  [[ -z "$chain" ]] || landing_args+=(--chain "$chain")
+  [[ -z "$direct_fix" ]] || landing_args+=(--direct-fix "$direct_fix")
   [[ -z "$goal" ]] || landing_args+=(--goal "$goal")
+  [[ -z "$root_job" ]] || landing_args+=(--root-job "$root_job")
   [[ -z "$test_receipt" ]] || landing_args+=(--test-receipt "$test_receipt")
   machine_nickname=$(git -C "$root" config --get metasystem.goal.machine)
   landing_args+=(--actor "${machine_nickname}+${METASYSTEM_OWNER_LINEAGE:-human}")
   landing_observation=$("$root/bin/metasystem" "${landing_args[@]}")
   landing_provenance=$("$root/bin/metasystem" json get --value "$landing_observation" --field provenance)
   landing_verdict=$("$root/bin/metasystem" json get --value "$landing_observation" --field verdictTrailer)
-  [[ "$landing_verdict" == "pass bar=a" ]] || {
+  landing_goal_revision=$("$root/bin/metasystem" json get --value "$landing_observation" --field goalRevision --default "")
+  if [[ -z "$landing_goal_revision" && -n "$goal" && -n "${LAND_FIXTURE_LEGACY_GOAL_REVISION:-}" ]]; then
+    # The receipt-cutover pin predates GoalRevision in observations. Its
+    # existing goal-revision query supplies only the trailer value; the pinned
+    # observation still owns the landing decision.
+    landing_goal_revision=$("$root/bin/metasystem" job goal-revision --root "$root" --goal "$goal")
+  fi
+  [[ "$landing_verdict" == pass\ * ]] || {
     echo "land fixture commit refused: $landing_verdict" >&2
     exit 83
   }
   commit_args+=(--trailer "Landing-Provenance: $landing_provenance")
   commit_args+=(--trailer "Landing-Provenance-Verdict: $landing_verdict")
+  [[ ! "$landing_goal_revision" =~ ^[1-9][0-9]*$ ]] \
+    || commit_args+=(--trailer "Goal-Revision: $landing_goal_revision")
   if [[ -n "${LAND_FIXTURE_CHAIN_LOG:-}" ]]; then
     printf 'chain=%s\ntestReceipt=%s\nverdict=%s\n' \
       "$chain" "$test_receipt" "$landing_verdict" >"$LAND_FIXTURE_CHAIN_LOG"
   fi
 fi
+machine_nickname=$(git -C "$root" config --get metasystem.goal.machine)
+landing_actor="${machine_nickname}+${METASYSTEM_OWNER_LINEAGE:-human}"
+commit_args+=(--trailer "Machine: $landing_actor")
+[[ -z "$goal" ]] || commit_args+=(--trailer "Goal-Item: $goal")
 git commit "${commit_args[@]}"
 git show --no-renames --numstat -z --format= HEAD \
   | "$root/bin/metasystem" gate weight-add --root "$root" \
@@ -319,11 +345,24 @@ cp $carried_fixture_engine_q "\$3"
 chmod +x "\$3"
 SH
 	fi
+  if [[ "$fixture_scenario" == tier-one ]]; then
+    mkdir -p "$leg_seed/memory"
+    cp "$root/scripts/agents/path-classes.txt" "$leg_seed/scripts/agents/path-classes.txt"
+    cp "$root/scripts/agents/landing-classes.json" "$leg_seed/scripts/agents/landing-classes.json"
+    cp "$root/scripts/agents/landing-promotion.json" "$leg_seed/scripts/agents/landing-promotion.json"
+    cp "$root/memory/rulings.md" "$leg_seed/memory/rulings.md"
+  fi
   if is_workspace_receipt_scenario; then
     mkdir -p "$leg_seed/memory"
     cp "$root/scripts/agents/path-classes.txt" "$leg_seed/scripts/agents/path-classes.txt"
     cp "$root/scripts/agents/landing-classes.json" "$leg_seed/scripts/agents/landing-classes.json"
     cp "$root/scripts/agents/landing-promotion.json" "$leg_seed/scripts/agents/landing-promotion.json"
+    if [[ "$fixture_scenario" == receipt-cutover ]]; then
+      # The historical reader and writer meet the exact policy record from
+      # their pinned source; version 2 is exercised on a separate base below.
+      cp "$cutover_old_source/metasystem/scripts/agents/landing-promotion.json" \
+        "$leg_seed/scripts/agents/landing-promotion.json"
+    fi
     cp "$root/memory/rulings.md" "$leg_seed/memory/rulings.md"
     cat >"$leg_seed/scripts/agents/go-build.sh" <<'SH'
 #!/usr/bin/env bash
@@ -423,7 +462,7 @@ CONF
 
 History:
 BACKLOG
-    if is_carried_scenario; then
+    if [[ "$fixture_scenario" == tier-one || "$fixture_scenario" == full-width-chain ]] || is_carried_scenario; then
       conf_edit "$leg_seed/plans/goals/backlog.md" replace-line-first \
         '^- SyncMode: local$' '- SyncMode: remote'
     fi
@@ -482,6 +521,8 @@ JSON
 
 History:
 BACKLOG
+    conf_edit "$leg_seed/plans/goals/backlog.md" replace-line-first \
+      '^- SyncMode: local$' '- SyncMode: remote'
     receipt_root_digest=$("$source_engine" util sha256 --file "$leg_seed/plans/goals/backlog.md")
     printf 'Integrity: sha256=%s\n' "$receipt_root_digest" >>"$leg_seed/plans/goals/backlog.md"
   fi
@@ -489,15 +530,10 @@ BACKLOG
   git -C "$leg_seed_repo" symbolic-ref HEAD refs/heads/main
   git -C "$leg_seed" config user.name fixture
   git -C "$leg_seed" config user.email fixture@example.invalid
+  git -C "$leg_seed" config metasystem.goal.machine fixture-machine
   if [[ "$fixture_scenario" == tier-one || "$fixture_scenario" == full-width-chain ]] || is_workspace_receipt_scenario || is_carried_scenario; then
-    if is_carried_scenario; then
-      git -C "$leg_seed" config goal.sync-remote origin
-      git -C "$leg_seed" config goal.sync-branch refs/heads/main
-    else
-      git -C "$leg_seed" config goal.sync-remote local
-      git -C "$leg_seed" config goal.sync-branch refs/heads/metasystem/goals
-    fi
-    git -C "$leg_seed" config metasystem.goal.machine fixture-machine
+    git -C "$leg_seed" config goal.sync-remote origin
+    git -C "$leg_seed" config goal.sync-branch refs/heads/main
   fi
   git -C "$leg_seed" add -- scripts payload.txt plans/existing.md .gitignore
   if ! is_workspace_receipt_scenario; then
@@ -506,6 +542,7 @@ BACKLOG
   if [[ "$fixture_scenario" == tier-one || "$fixture_scenario" == full-width-chain ]] || is_carried_scenario; then
     git -C "$leg_seed" add -- metasystem.conf plans/goals/backlog.md
   fi
+  [[ "$fixture_scenario" != tier-one ]] || git -C "$leg_seed" add -- memory/rulings.md
   if is_carried_scenario; then
     git -C "$leg_seed" add -- testing.json memory/rulings.md
     [[ "$fixture_scenario" != carried-red-battery ]] || git -C "$leg_seed" add -- fixture-red
@@ -519,7 +556,7 @@ BACKLOG
   fi
   [[ "$fixture_scenario" != receipt-line ]] || git -C "$leg_seed" add -- memory/receipts.log
   git -C "$leg_seed" commit -qm seed
-  if is_carried_scenario; then
+  if [[ "$fixture_scenario" == tier-one || "$fixture_scenario" == full-width-chain ]] || is_workspace_receipt_scenario || is_carried_scenario; then
     git init --bare -q "$leg_remote"
     git --git-dir="$leg_remote" symbolic-ref HEAD refs/heads/main
     git -C "$leg_seed" remote add origin "$leg_remote"
@@ -581,7 +618,9 @@ BACKLOG
     git -C "$leg_seed" -c core.hooksPath=/dev/null commit -qm 'install carried fixture engine'
     git -C "$leg_seed" push -q origin main
   fi
-  if ! is_carried_scenario; then
+  if [[ "$fixture_scenario" == tier-one || "$fixture_scenario" == full-width-chain ]] || is_workspace_receipt_scenario; then
+    git -C "$leg_seed" push -q origin main
+  elif ! is_carried_scenario; then
     git init --bare -q "$leg_remote"
     git --git-dir="$leg_remote" symbolic-ref HEAD refs/heads/main
     git -C "$leg_seed" remote add origin "$leg_remote"
@@ -593,10 +632,10 @@ BACKLOG
   git -C "$leg_local" config user.email fixture-local@example.invalid
   git -C "$leg_peer" config user.name fixture-peer
   git -C "$leg_peer" config user.email fixture-peer@example.invalid
+  git -C "$leg_local" config metasystem.goal.machine fixture-machine
   if [[ "$fixture_scenario" == tier-one || "$fixture_scenario" == full-width-chain ]] || is_workspace_receipt_scenario || is_carried_scenario; then
     git -C "$leg_local" config goal.sync-remote local
     git -C "$leg_local" config goal.sync-branch refs/heads/metasystem/goals
-    git -C "$leg_local" config metasystem.goal.machine fixture-machine
     git -C "$leg_local" update-ref refs/heads/metasystem/goals origin/main
     git -C "$leg_local" update-ref refs/metasystem/goals/accepted origin/main
     git -C "$leg_local" config metasystem.steward.landing-ref refs/remotes/origin/main
@@ -607,7 +646,7 @@ BACKLOG
     git -C "$leg_peer" update-ref refs/heads/metasystem/goals origin/main
     git -C "$leg_peer" update-ref refs/metasystem/goals/accepted origin/main
   fi
-  if is_carried_scenario; then
+  if [[ "$fixture_scenario" == tier-one || "$fixture_scenario" == full-width-chain ]] || is_workspace_receipt_scenario || is_carried_scenario; then
     git -C "$leg_local" config goal.sync-remote origin
     git -C "$leg_local" config goal.sync-branch refs/heads/main
     git -C "$leg_peer" config goal.sync-remote origin
@@ -1173,7 +1212,7 @@ take_fixture_receipt() { # engine, checkout, output log
 }
 
 publish_peer_ledger_move() { # optional peer checkout
-  local checkout=${1:-$leg_peer} engine peer_start goal_base accepted_base
+  local checkout=${1:-$leg_peer} engine peer_start goal_base accepted_base sync_remote
   engine=$checkout/bin/metasystem
   git -C "$checkout" fetch -q origin
   git -C "$checkout" reset -q --hard origin/main
@@ -1197,7 +1236,10 @@ publish_peer_ledger_move() { # optional peer checkout
       --basis "This disposable fixture writes one isolated goal ledger commit." >/dev/null
   receipt_env_run "$engine" lease retire --root "$checkout" --session land-receipt-fixture-peer \
     --pid "$$" --start "$peer_start" >/dev/null
-  git -C "$checkout" push -q origin refs/heads/metasystem/goals:refs/heads/main
+  sync_remote=$(git -C "$checkout" config --get goal.sync-remote || true)
+  if [[ "$sync_remote" != origin ]]; then
+    git -C "$checkout" push -q origin refs/heads/metasystem/goals:refs/heads/main
+  fi
 }
 
 publish_peer_records_move() {
@@ -1216,8 +1258,10 @@ publish_peer_input_move() {
 }
 
 run_fixture_landing() { # checkout, message, chain, receipt, output, chain log
-  local checkout=$1 message=$2 chain=$3 receipt=$4 output=$5 chain_log=$6
+  local checkout=$1 message=$2 chain=$3 receipt=$4 output=$5 chain_log=$6 legacy_goal_revision=
+  [[ "$fixture_scenario" != receipt-cutover ]] || legacy_goal_revision=1
   receipt_checkout_env_run "$checkout" env LAND_FIXTURE_CHAIN_LOG="$chain_log" \
+    LAND_FIXTURE_LEGACY_GOAL_REVISION="$legacy_goal_revision" \
     bash "$checkout/scripts/agents/land.sh" -m "$message" --chain "$chain" --goal fx \
       --test-receipt "$receipt" --staged-only --skip-transport >"$output" 2>&1
 }
@@ -1260,6 +1304,18 @@ make_brain_source_leg() { # name
   mkdir -p "$leg_seed/bin"
   cp "$root/scripts/agents/land.sh" "$leg_seed/scripts/agents/land.sh"
   cp "$root/scripts/agents/commit.sh" "$leg_seed/scripts/agents/commit.sh"
+  cp "$root/cmd/metasystem/landing_verbs.go" "$leg_seed/cmd/metasystem/landing_verbs.go"
+  cp "$root/cmd/metasystem/landing_verbs_test.go" "$leg_seed/cmd/metasystem/landing_verbs_test.go"
+  cp "$root/cmd/metasystem/main.go" "$leg_seed/cmd/metasystem/main.go"
+  cp "$root/internal/landing/observe.go" "$leg_seed/internal/landing/observe.go"
+  cp "$root/internal/landing/carried.go" "$leg_seed/internal/landing/carried.go"
+  cp "$root/internal/landing/tierone.go" "$leg_seed/internal/landing/tierone.go"
+  cp "$root/internal/landing/promotion.go" "$leg_seed/internal/landing/promotion.go"
+  cp "$root/internal/landing/held.go" "$leg_seed/internal/landing/held.go"
+  cp "$root/internal/landing/observe_test.go" "$leg_seed/internal/landing/observe_test.go"
+  cp "$root/internal/landing/held_test.go" "$leg_seed/internal/landing/held_test.go"
+  cp "$root/internal/refusal/register.go" "$leg_seed/internal/refusal/register.go"
+  cp "$root/scripts/agents/landing-promotion.json" "$leg_seed/scripts/agents/landing-promotion.json"
   cp "$source_engine" "$leg_seed/bin/metasystem"
   rm -rf "$leg_seed/plans/goals"
   rm -f "$leg_seed/plans/goals.md" "$leg_seed/plans/goals-accepted.json"
@@ -1315,10 +1371,25 @@ MANIFEST
   git -C "$leg_local" fetch -q origin
   git -C "$leg_local" reset -q --hard origin/main
   git -C "$leg_local" update-ref refs/metasystem/goals/accepted origin/main
-  METASYSTEM_OWNER_LINEAGE=fixture-lineage "$source_engine" goal release --root "$leg_local" --id ship-widget >/dev/null
+  if [[ "$fixture_scenario" == brain-absent-node-proceeds ]]; then
+    METASYSTEM_OWNER_LINEAGE=fixture-lineage "$source_engine" goal done --root "$leg_local" \
+      --id ship-widget --conclude "Fixture empties the ledger for a Goal-free node landing." >/dev/null
+  else
+    METASYSTEM_OWNER_LINEAGE=fixture-lineage "$source_engine" goal release --root "$leg_local" --id ship-widget >/dev/null
+  fi
   git -C "$leg_local" fetch -q origin
   git -C "$leg_local" reset -q --hard origin/main
   git -C "$leg_local" update-ref refs/metasystem/goals/accepted origin/main
+  if [[ "$fixture_scenario" == brain-absent-node-proceeds ]]; then
+    plans_world=$(find "$leg_local/plans" -maxdepth 1 -type f -name '*.md' ! -name goals.md \
+      -exec basename {} \; | LC_ALL=C sort)
+    free_digest=$(printf '%s' "$plans_world" | "$source_engine" util sha256)
+    METASYSTEM_OWNER_LINEAGE=fixture-lineage "$source_engine" goal declare-free --root "$leg_local" \
+      --digest "$free_digest" >/dev/null
+    git -C "$leg_local" fetch -q origin
+    git -C "$leg_local" reset -q --hard origin/main
+    git -C "$leg_local" update-ref refs/metasystem/goals/accepted origin/main
+  fi
 }
 
 declare_fixture_brain_temporarily() { # checkout
@@ -1343,6 +1414,581 @@ assert_land_brain_refusal() { # root, expected, command...
     exit 1
   }
 }
+
+prepare_abandonment_landing_leg() { # name
+  local name=$1 saved_config engine_status engine_stamp engine_commit source_top
+  make_brain_source_leg "$name"
+  engine_status=$("$source_engine" supervise status --repo "$leg_local")
+  engine_stamp=$("$source_engine" json get --value "$engine_status" --field engineBuild)
+  if [[ "$engine_stamp" =~ ^dev-([0-9a-f]{40})-dirty$ ]]; then
+    engine_commit=${BASH_REMATCH[1]}
+  elif [[ "$engine_stamp" =~ ^[0-9a-f]{40}$ ]]; then
+    engine_commit=$engine_stamp
+  else
+    echo "brain land fixture binary has no source-linked build stamp: $engine_stamp" >&2
+    exit 1
+  fi
+  source_top=$(git -C "$root" rev-parse --show-toplevel)
+  git -C "$leg_local" fetch -q "$source_top" "$engine_commit"
+  saved_config=$leg_root/metasystem.conf.engine-floor
+  cp "$leg_local/metasystem.conf" "$saved_config"
+  printf '%s\n' 'metasystem.runtimes=fake' >"$leg_local/metasystem.conf"
+  METASYSTEM_OWNER_LINEAGE=fixture-lineage "$source_engine" goal engine-floor --root "$leg_local" --commit "$engine_commit" \
+    --by Wido --fixture-human-authority >/dev/null
+  mv "$saved_config" "$leg_local/metasystem.conf"
+  git clone -q "$leg_remote" "$leg_peer"
+  git -C "$leg_peer" config user.name fixture-peer
+  git -C "$leg_peer" config user.email fixture-peer@example.invalid
+  git -C "$leg_peer" config metasystem.goal.machine brain-leg
+  git -C "$leg_peer" fetch -q "$source_top" "$engine_commit"
+  git -C "$leg_peer" fetch -q origin
+  git -C "$leg_peer" reset -q --hard origin/main
+  git -C "$leg_peer" update-ref refs/metasystem/goals/accepted origin/main
+  saved_config=$leg_root/metasystem.conf.approve
+  cp "$leg_local/metasystem.conf" "$saved_config"
+  printf '%s\n' 'metasystem.runtimes=fake' >"$leg_local/metasystem.conf"
+  "$source_engine" goal approve --root "$leg_local" --id ship-widget --by Wido \
+    --lineage fixture-lineage --elapsed-limit 4h --attempt-limit 4 \
+    --reserved-job-minutes-limit 4 --active-job-limit 1 --review-round-limit 0 \
+    --fixture-human-authority >/dev/null
+  mv "$saved_config" "$leg_local/metasystem.conf"
+  METASYSTEM_OWNER_LINEAGE=fixture-lineage "$source_engine" goal claim \
+    --root "$leg_local" --id ship-widget --lineage fixture-lineage >/dev/null
+  git -C "$leg_local" fetch -q origin
+  git -C "$leg_local" reset -q --hard origin/main
+  git -C "$leg_local" update-ref refs/metasystem/goals/accepted origin/main
+  leg_lease=$("$source_engine" lease require-holder --root "$leg_local" --caller-pid "$$")
+  leg_claim_epoch=$("$source_engine" json get --value "$leg_lease" --field claimEpoch)
+  [[ "$leg_claim_epoch" =~ ^[1-9][0-9]*$ ]] || { echo "brain land fixture has no numeric claim epoch" >&2; exit 1; }
+  git -C "$leg_peer" fetch -q origin
+  git -C "$leg_peer" reset -q --hard origin/main
+  git -C "$leg_peer" update-ref refs/metasystem/goals/accepted origin/main
+}
+
+# Keep the parent-state transition in one helper because every route must
+# publish the same abandonment from its peer clone.
+move_goal_out_of_claimed_state() { # checkout
+  local checkout=$1 saved_config=$1/metasystem.conf.abandon-fixture status
+  cp "$checkout/metasystem.conf" "$saved_config"
+  printf '%s\n' 'metasystem.runtimes=fake' >"$checkout/metasystem.conf"
+  if METASYSTEM_OWNER_LINEAGE=fixture-lineage "$source_engine" goal abandon \
+      --root "$checkout" --id ship-widget --by Wido --because fixture \
+      --fixture-human-authority >/dev/null; then
+    status=0
+  else
+    status=$?
+  fi
+  mv "$saved_config" "$checkout/metasystem.conf"
+  return "$status"
+}
+
+if [[ "$fixture_scenario" == abandonment-refuses-every-push-route ]]; then
+  prepare_abandonment_landing_leg abandonment-normal
+  normal_output=$leg_root/normal.out
+  normal_message=$leg_root/normal-message.txt
+  normal_bin=$leg_root/normal-bin
+  normal_trigger=$leg_root/normal-trigger
+  normal_pushes=$leg_root/normal-pushes
+  normal_record=records/misc/abandonment-normal.md
+  mkdir -p "$normal_bin" "$leg_local/records/misc"
+  printf '%s\n' "normal route checks the fetched parent" >"$leg_local/$normal_record"
+  printf '%s\n' "fixture checks the normal held route" >"$normal_message"
+  cat >"$normal_bin/git" <<'SH'
+#!/usr/bin/env bash
+set -euo pipefail
+if [[ ${1:-} == fetch && ! -e "$LAND_FIXTURE_TRIGGER" ]]; then
+  touch "$LAND_FIXTURE_TRIGGER"
+  move_goal_out_of_claimed_state "$LAND_FIXTURE_PEER"
+fi
+if [[ ${1:-} == push ]] && [[ " $* " == *" origin "* ]]; then
+  echo attempt >>"$LAND_FIXTURE_PUSHES"
+fi
+exec "$LAND_FIXTURE_REAL_GIT" "$@"
+SH
+  chmod +x "$normal_bin/git"
+  export -f move_goal_out_of_claimed_state
+  export source_engine
+  set +e
+  (
+    cd "$leg_local"
+    env PATH="$normal_bin:$PATH" LAND_FIXTURE_REAL_GIT="$real_git" \
+      LAND_FIXTURE_TRIGGER="$normal_trigger" LAND_FIXTURE_PEER="$leg_peer" \
+      LAND_FIXTURE_PUSHES="$normal_pushes" METASYSTEM_OWNER_LINEAGE=fixture-lineage \
+      bash scripts/agents/land.sh -m "$normal_message" --skip-transport \
+        --goal ship-widget --direct-fix register-carriage "$normal_record"
+  ) >"$normal_output" 2>&1
+  normal_rc=$?
+  set -e
+  grep -Fq '== STEP: rebase onto origin/main' "$normal_output" || {
+    echo "abandonment normal route did not reach rebase" >&2
+    sed -n '1,220p' "$normal_output" >&2
+    exit 1
+  }
+  grep -Fq '== STEP: goal held at the rebased base' "$normal_output" || {
+    echo "abandonment normal route did not run held" >&2
+    sed -n '1,220p' "$normal_output" >&2
+    exit 1
+  }
+  [[ $normal_rc -ne 0 ]] || { echo "abandonment normal route unexpectedly landed" >&2; exit 1; }
+  grep -Fq 'held refused: goal-item-not-held:' "$normal_output"
+  grep -Fq 'goal ship-widget is abandoned at ' "$normal_output"
+  [[ ! -s "$normal_pushes" ]] || { echo "abandonment normal route reached push" >&2; exit 1; }
+  normal_commit=$(git -C "$leg_local" rev-parse HEAD)
+  if git -C "$leg_remote" merge-base --is-ancestor "$normal_commit" refs/heads/main 2>/dev/null; then
+    echo "abandonment normal route reached origin" >&2
+    exit 1
+  fi
+
+  prepare_abandonment_landing_leg abandonment-retry
+  retry_output=$leg_root/retry.out
+  retry_message=$leg_root/retry-message.txt
+  retry_bin=$leg_root/retry-bin
+  retry_trigger=$leg_root/retry-trigger
+  retry_pushes=$leg_root/retry-pushes
+  retry_record=records/misc/abandonment-retry.md
+  mkdir -p "$retry_bin" "$leg_local/records/misc"
+  printf '%s\n' "retry route checks the newly fetched parent" >"$leg_local/$retry_record"
+  printf '%s\n' "fixture checks the retry held route" >"$retry_message"
+  cat >"$retry_bin/git" <<'SH'
+#!/usr/bin/env bash
+set -euo pipefail
+if [[ ${1:-} == push ]] && [[ " $* " == *" origin "* ]]; then
+  echo attempt >>"$LAND_FIXTURE_PUSHES"
+  if [[ ! -e "$LAND_FIXTURE_TRIGGER" ]]; then
+    touch "$LAND_FIXTURE_TRIGGER"
+    move_goal_out_of_claimed_state "$LAND_FIXTURE_PEER"
+  fi
+fi
+exec "$LAND_FIXTURE_REAL_GIT" "$@"
+SH
+  chmod +x "$retry_bin/git"
+  set +e
+  (
+    cd "$leg_local"
+    env PATH="$retry_bin:$PATH" LAND_FIXTURE_REAL_GIT="$real_git" \
+      LAND_FIXTURE_TRIGGER="$retry_trigger" LAND_FIXTURE_PEER="$leg_peer" \
+      LAND_FIXTURE_PUSHES="$retry_pushes" METASYSTEM_OWNER_LINEAGE=fixture-lineage \
+      bash scripts/agents/land.sh -m "$retry_message" --skip-transport \
+        --goal ship-widget --direct-fix register-carriage "$retry_record"
+  ) >"$retry_output" 2>&1
+  retry_rc=$?
+  set -e
+  [[ $retry_rc -ne 0 ]] || { echo "abandonment retry route unexpectedly landed" >&2; exit 1; }
+  grep -Fq '== STEP: push origin (attempt 1 of 3)' "$retry_output" || {
+    echo "abandonment retry route did not reach its first push:" >&2
+    sed -n '1,220p' "$retry_output" >&2
+    exit 1
+  }
+  grep -Fq '== STEP: fetch origin after push attempt 1' "$retry_output"
+  grep -Fq '== STEP: rebase onto origin/main after push attempt 1' "$retry_output"
+  grep -Fq '== STEP: goal held at the rebased base' "$retry_output"
+  grep -Fq 'held refused: goal-item-not-held:' "$retry_output"
+  grep -Fq 'goal ship-widget is abandoned at ' "$retry_output"
+  [[ $(wc -l <"$retry_pushes" | tr -d ' ') == 1 ]] || { echo "abandonment retry route made more than one push attempt" >&2; exit 1; }
+
+  prepare_abandonment_landing_leg abandonment-wrapper
+  wrapper_message=$leg_root/wrapper-message.txt
+  wrapper_record=records/misc/abandonment-wrapper.md
+  mkdir -p "$leg_local/records/misc"
+  printf '%s\n' "wrapper refusals" >"$leg_local/$wrapper_record"
+  git -C "$leg_local" add "$wrapper_record"
+  wrapper_before=$(git -C "$leg_local" rev-parse HEAD)
+  set +e
+  wrapper_typed=$(cd "$leg_local" && METASYSTEM_OWNER_LINEAGE=fixture-lineage \
+    bash scripts/agents/commit.sh -m x --trailer 'Machine: forged+human' 2>&1)
+  wrapper_typed_rc=$?
+  set -e
+  [[ $wrapper_typed_rc == 2 && "$wrapper_typed" == *"commit refused: Machine is stamped by the wrapper, never typed"* \
+    && $(git -C "$leg_local" rev-parse HEAD) == "$wrapper_before" ]] || {
+    echo "typed Machine trailer did not refuse without committing: rc=$wrapper_typed_rc output=$wrapper_typed" >&2
+    exit 1
+  }
+  set +e
+  wrapper_lineage=$(cd "$leg_local" && env -u METASYSTEM_OWNER_LINEAGE bash scripts/agents/commit.sh -m x 2>&1)
+  wrapper_lineage_rc=$?
+  set -e
+  [[ $wrapper_lineage_rc == 2 && "$wrapper_lineage" == *"agent commit refused: the lease holder has a claim epoch but no owner lineage; export METASYSTEM_OWNER_LINEAGE in the seat's shell"* ]] || {
+    echo "empty owner lineage did not refuse the agent commit: rc=$wrapper_lineage_rc output=$wrapper_lineage" >&2
+    exit 1
+  }
+  git -C "$leg_local" reset -q
+  printf '%s\n' "wrapper missing goal" >"$wrapper_message"
+  set +e
+  (
+    cd "$leg_local"
+    METASYSTEM_OWNER_LINEAGE=fixture-lineage bash scripts/agents/land.sh -m "$wrapper_message" \
+      --skip-transport --direct-fix register-carriage "$wrapper_record"
+  ) >"$leg_root/wrapper-missing-goal.out" 2>&1
+  wrapper_missing_rc=$?
+  set -e
+  [[ $wrapper_missing_rc -ne 0 ]] || { echo "goal-less agent landing unexpectedly committed" >&2; exit 1; }
+  grep -Fq 'agent commit refused: this landing names no goal and the ledger is not Goal-free' "$leg_root/wrapper-missing-goal.out" || {
+    echo "goal-less agent landing did not report goal-binding-missing:" >&2
+    cat "$leg_root/wrapper-missing-goal.out" >&2
+    exit 1
+  }
+
+  prepare_abandonment_landing_leg abandonment-commit-push-range
+  commit_push_record=records/misc/abandonment-commit-push-range.md
+  commit_push_output=$leg_root/commit-push-range.out
+  commit_push_bin=$leg_root/commit-push-range-bin
+  commit_push_trigger=$leg_root/commit-push-range-trigger
+  commit_push_pushes=$leg_root/commit-push-range-pushes
+  commit_push_local_root=$(cd "$leg_local" && pwd -P)
+  commit_push_peer_root=$(cd "$leg_peer" && pwd -P)
+  mkdir -p "$commit_push_bin" "$leg_local/records/misc"
+  printf '%s\n' "commit push range" >"$leg_local/$commit_push_record"
+  git -C "$leg_local" add "$commit_push_record"
+  cat >"$commit_push_bin/git" <<'SH'
+#!/usr/bin/env bash
+set -euo pipefail
+fixture_git_command=${1:-}
+[[ "$fixture_git_command" != -C ]] || fixture_git_command=${3:-}
+if [[ $(pwd -P) == "$LAND_FIXTURE_LOCAL" && "$fixture_git_command" == fetch \
+  && ! -e "$LAND_FIXTURE_TRIGGER" ]]; then
+  touch "$LAND_FIXTURE_TRIGGER"
+  move_goal_out_of_claimed_state "$LAND_FIXTURE_PEER"
+fi
+if [[ $(pwd -P) == "$LAND_FIXTURE_LOCAL" && "$fixture_git_command" == push \
+  && " $* " == *" origin "* && " $* " != *" $LAND_FIXTURE_PEER_ROOT "* ]]; then
+  echo attempt >>"$LAND_FIXTURE_PUSHES"
+fi
+exec "$LAND_FIXTURE_REAL_GIT" "$@"
+SH
+  chmod +x "$commit_push_bin/git"
+  set +e
+  (
+    cd "$leg_local"
+    env PATH="$commit_push_bin:$PATH" LAND_FIXTURE_REAL_GIT="$real_git" \
+      LAND_FIXTURE_TRIGGER="$commit_push_trigger" LAND_FIXTURE_PEER="$leg_peer" \
+      LAND_FIXTURE_LOCAL="$commit_push_local_root" LAND_FIXTURE_PEER_ROOT="$commit_push_peer_root" \
+      LAND_FIXTURE_PUSHES="$commit_push_pushes" METASYSTEM_OWNER_LINEAGE=fixture-lineage \
+      bash scripts/agents/commit.sh __lease-held "$leg_claim_epoch" --push --goal ship-widget \
+        --direct-fix register-carriage -m "commit push checks fetched origin"
+  ) >"$commit_push_output" 2>&1
+  commit_push_rc=$?
+  set -e
+  [[ $commit_push_rc == 1 ]] || { echo "commit --push range refusal exited $commit_push_rc" >&2; sed -n '1,180p' "$commit_push_output" >&2; exit 1; }
+  grep -Fq 'held refused: range-not-linear:' "$commit_push_output"
+  [[ ! -s "$commit_push_pushes" ]] || {
+    echo "commit --push ran git push after held refused:" >&2
+    cat "$commit_push_pushes" >&2
+    exit 1
+  }
+  commit_push_local=$(git -C "$leg_local" rev-parse HEAD)
+  git -C "$leg_local" show -s --format=%B "$commit_push_local" | grep -Fxq 'Goal-Item: ship-widget'
+  if git -C "$leg_remote" merge-base --is-ancestor "$commit_push_local" refs/heads/main 2>/dev/null; then
+    echo "commit --push range-refused commit reached origin" >&2
+    exit 1
+  fi
+
+  prepare_abandonment_landing_leg abandonment-commit-push-rejected
+  rejected_record=records/misc/abandonment-commit-push-rejected.md
+  rejected_output=$leg_root/commit-push-rejected.out
+  rejected_bin=$leg_root/commit-push-rejected-bin
+  rejected_trigger=$leg_root/commit-push-rejected-trigger
+  rejected_pushes=$leg_root/commit-push-rejected-pushes
+  rejected_local_root=$(cd "$leg_local" && pwd -P)
+  rejected_peer_root=$(cd "$leg_peer" && pwd -P)
+  mkdir -p "$rejected_bin" "$leg_local/records/misc"
+  printf '%s\n' "commit push rejected" >"$leg_local/$rejected_record"
+  git -C "$leg_local" add "$rejected_record"
+  cat >"$rejected_bin/git" <<'SH'
+#!/usr/bin/env bash
+set -euo pipefail
+fixture_git_command=${1:-}
+[[ "$fixture_git_command" != -C ]] || fixture_git_command=${3:-}
+if [[ $(pwd -P) == "$LAND_FIXTURE_LOCAL" && "$fixture_git_command" == push \
+  && " $* " == *" origin "* && " $* " != *" $LAND_FIXTURE_PEER_ROOT "* ]]; then
+  echo attempt >>"$LAND_FIXTURE_PUSHES"
+  if [[ ! -e "$LAND_FIXTURE_TRIGGER" ]]; then
+    touch "$LAND_FIXTURE_TRIGGER"
+    printf '%s\n' "peer advances after held" >"$LAND_FIXTURE_PEER/peer-after-held.txt"
+    "$LAND_FIXTURE_REAL_GIT" -C "$LAND_FIXTURE_PEER" add peer-after-held.txt
+    "$LAND_FIXTURE_REAL_GIT" -C "$LAND_FIXTURE_PEER" commit -qm "peer advances after held"
+    "$LAND_FIXTURE_REAL_GIT" -C "$LAND_FIXTURE_PEER" push -q origin main
+  fi
+fi
+exec "$LAND_FIXTURE_REAL_GIT" "$@"
+SH
+  chmod +x "$rejected_bin/git"
+  set +e
+  (
+    cd "$leg_local"
+    env PATH="$rejected_bin:$PATH" LAND_FIXTURE_REAL_GIT="$real_git" \
+      LAND_FIXTURE_TRIGGER="$rejected_trigger" LAND_FIXTURE_PEER="$leg_peer" \
+      LAND_FIXTURE_LOCAL="$rejected_local_root" LAND_FIXTURE_PEER_ROOT="$rejected_peer_root" \
+      LAND_FIXTURE_PUSHES="$rejected_pushes" METASYSTEM_OWNER_LINEAGE=fixture-lineage \
+      bash scripts/agents/commit.sh __lease-held "$leg_claim_epoch" --push --goal ship-widget \
+        --direct-fix register-carriage -m "commit push remains non-fast-forward"
+  ) >"$rejected_output" 2>&1
+  rejected_rc=$?
+  set -e
+  [[ $rejected_rc == 1 ]] || { echo "commit --push rejection exited $rejected_rc" >&2; sed -n '1,180p' "$rejected_output" >&2; exit 1; }
+  grep -Fq 'held: ok 1 commit(s)' "$rejected_output"
+  grep -Fq '[rejected]' "$rejected_output"
+  grep -Fq 'landing push failed at origin; the commit stands locally' "$rejected_output"
+
+  prepare_abandonment_landing_leg abandonment-stack
+  stack_l1_record=records/misc/abandonment-stack-l1.md
+  stack_message=$leg_root/stack-message.txt
+  stack_output=$leg_root/stack.out
+  stack_pushes=$leg_root/stack-pushes
+  mkdir -p "$leg_local/records/misc"
+  printf '%s\n' "lower lawful commit" >"$leg_local/$stack_l1_record"
+  git -C "$leg_local" add "$stack_l1_record"
+  (
+    cd "$leg_local"
+    METASYSTEM_OWNER_LINEAGE=fixture-lineage bash scripts/agents/commit.sh \
+      --goal ship-widget --direct-fix register-carriage -m "lower lawful commit"
+  ) >"$leg_root/stack-l1.out" 2>&1
+  move_goal_out_of_claimed_state "$leg_peer"
+  METASYSTEM_OWNER_LINEAGE=fixture-lineage "$source_engine" goal open --root "$leg_local" \
+    --id ship-gadget --origin human --intent "Ship the second fixture gadget." --next "Land its record." \
+    --risk severity=1,novelty=1,exposure=1,accumulation=1 --basis "The fixture is local and disposable." >/dev/null
+  saved_stack_config=$leg_root/metasystem.conf.stack-approve
+  cp "$leg_local/metasystem.conf" "$saved_stack_config"
+  printf '%s\n' 'metasystem.runtimes=fake' >"$leg_local/metasystem.conf"
+  "$source_engine" goal approve --root "$leg_local" --id ship-gadget --by Wido \
+    --lineage fixture-lineage --elapsed-limit 4h --attempt-limit 4 \
+    --reserved-job-minutes-limit 4 --active-job-limit 1 --review-round-limit 0 \
+    --fixture-human-authority >/dev/null
+  mv "$saved_stack_config" "$leg_local/metasystem.conf"
+  METASYSTEM_OWNER_LINEAGE=fixture-lineage "$source_engine" goal claim \
+    --root "$leg_local" --id ship-gadget --lineage fixture-lineage >/dev/null
+  git -C "$leg_local" fetch -q origin
+  git -C "$leg_local" rebase refs/remotes/origin/main
+  stack_l1=$(git -C "$leg_local" rev-parse HEAD)
+  stack_l2_record=records/misc/abandonment-stack-l2.md
+  printf '%s\n' "upper lawful commit" >"$leg_local/$stack_l2_record"
+  printf '%s\n' "fixture checks every commit in the stack" >"$stack_message"
+  set +e
+  (
+    cd "$leg_local"
+    METASYSTEM_OWNER_LINEAGE=fixture-lineage bash scripts/agents/land.sh -m "$stack_message" \
+      --skip-transport --goal ship-gadget --direct-fix register-carriage "$stack_l2_record"
+  ) >"$stack_output" 2>&1
+  stack_rc=$?
+  set -e
+  [[ $stack_rc -ne 0 ]] || { echo "two-commit stack unexpectedly landed" >&2; exit 1; }
+  grep -Fq "held refused: goal-item-not-held: $stack_l1: goal ship-widget is abandoned at " "$stack_output"
+  [[ ! -s "$stack_pushes" ]] || { echo "two-commit stack reached push" >&2; exit 1; }
+
+  prepare_abandonment_landing_leg abandonment-positive
+  positive_record=records/misc/abandonment-positive.md
+  positive_message=$leg_root/positive-message.txt
+  positive_output=$leg_root/positive.out
+  mkdir -p "$leg_local/records/misc"
+  printf '%s\n' "positive held route" >"$leg_local/$positive_record"
+  printf '%s\n' "fixture positive control" >"$positive_message"
+  (
+    cd "$leg_local"
+    METASYSTEM_OWNER_LINEAGE=fixture-lineage bash scripts/agents/land.sh -m "$positive_message" \
+      --skip-transport --goal ship-widget --direct-fix register-carriage "$positive_record"
+  ) >"$positive_output" 2>&1
+  positive_commit=$(git -C "$leg_local" rev-parse HEAD)
+  grep -Fq 'held: ok 1 commit(s) above ' "$positive_output" || {
+    echo "positive control did not report the held pass:" >&2
+    sed -n '1,220p' "$positive_output" >&2
+    exit 1
+  }
+  [[ "$positive_commit" == $(git --git-dir="$leg_remote" rev-parse refs/heads/main) ]]
+  positive_message_text=$(git -C "$leg_local" show -s --format=%B HEAD)
+  [[ $(grep -Fxc 'Machine: brain-leg+fixture-lineage' <<<"$positive_message_text") == 1 ]]
+  [[ $(grep -Fxc 'Goal-Item: ship-widget' <<<"$positive_message_text") == 1 ]]
+  [[ $(LC_ALL=C grep -Ec '^Goal-Revision: [1-9][0-9]*$' <<<"$positive_message_text") == 1 ]]
+
+  # The recertified route is seeded below so it retains the exact conformance
+  # records and both the pre-push success and parent-moved refusal controls.
+  prepare_abandonment_landing_leg abandonment-recertified
+  recert_root=abandonment-recertified-root
+  recert_critic=abandonment-recertified-critic
+  recert_chain=$leg_root/chain
+  recert_path=records/misc/abandonment-recertified.md
+  recert_local_root=$(cd "$leg_local" && pwd -P)
+  recert_base=$(git -C "$leg_local" rev-parse HEAD)
+  recert_goal_revision=$(sed -n 's/^- Claimed: .* revision=\([1-9][0-9]*\).*/\1/p' "$leg_local/plans/goals/ship-widget.md")
+  [[ -n "$recert_goal_revision" ]] || { echo "recertification fixture could not read the held revision" >&2; exit 1; }
+  git -C "$leg_local" worktree add -q -b "$recert_root" "$recert_chain" HEAD
+  mkdir -p "$recert_chain/records/misc" "$leg_local/artifacts/agents/jobs" \
+    "$leg_local/artifacts/agents/$recert_root/rounds/1"
+  printf '%s\n' "recertified chain change" >"$recert_chain/$recert_path"
+  cat >"$leg_local/artifacts/agents/jobs/$recert_root.json" <<JSON
+{"jobId":"$recert_root","role":"implementer","round":1,"parentJob":null,"workspaceRoot":"$recert_chain","baseSha":"$recert_base","status":"completed","goalId":"ship-widget","goalRevision":$recert_goal_revision,"operationId":"$recert_root-reservation","capMin":1,"effectiveModel":"implementer-model","destructiveReach":"DESIGN-BEARING","chainClosed":true,"gateWidth":"area","independentCritiqueJobRef":"$recert_critic","reviewRoundLimit":3,"criticRoundsConsumed":3}
+JSON
+  cat >"$leg_local/artifacts/agents/$recert_root/rounds/1/return.json" <<JSON
+{"jobId":"$recert_root","round":1,"diffBoundary":["$recert_path"]}
+JSON
+  "$source_engine" validate conformance --root "$leg_local" --stage review --job "$recert_root" >"$leg_root/recert-review.out"
+  recert_reviewed=$("$source_engine" json get --file "$leg_local/artifacts/agents/$recert_root/rounds/1/review.json" --field reviewedTree)
+  mkdir -p "$leg_local/artifacts/agents/$recert_critic/rounds/1"
+  cat >"$leg_local/artifacts/agents/jobs/$recert_critic.json" <<JSON
+{"jobId":"$recert_critic","role":"code-critic","round":1,"parentJob":null,"goalId":null,"reviews":"$recert_root","status":"completed","effectiveModel":"critic-model","chainClosed":true,"findingRegister":[],"findingRegisterRound":1,"reviewRoundLimit":3,"criticRoundsConsumed":3}
+JSON
+  cat >"$leg_local/artifacts/agents/$recert_critic/rounds/1/return.json" <<JSON
+{"jobId":"$recert_critic","round":1,"reviewedTree":"$recert_reviewed","findings":[],"verdictMaterialCount":0}
+JSON
+  printf '%s\n' "recertification base move" >"$leg_peer/recert-base.txt"
+  git -C "$leg_peer" add recert-base.txt
+  git -C "$leg_peer" commit -qm "move recertification base"
+  git -C "$leg_peer" push -q origin main
+  git -C "$leg_local" fetch -q origin
+  git -C "$leg_local" merge -q --ff-only origin/main
+  git -C "$leg_local" update-ref refs/metasystem/goals/accepted origin/main
+  recert_target=$(git -C "$leg_local" rev-parse HEAD)
+  git -C "$leg_peer" update-ref refs/metasystem/goals/accepted origin/main
+  recert_source_refusal='chain-recertification-source-changed detail=worktree-posture: source project/whole snapshot is neither original R/A nor retry M/T'
+  set +e
+  "$source_engine" validate conformance --root "$leg_local" --stage recertify \
+    --job "$recert_root" --test-command "grep -q 'recertified chain change' $recert_path" \
+    >"$leg_root/recertify.out" 2>&1
+  recertify_rc=$?
+  set -e
+  if (( recertify_rc != 0 )); then
+    if grep -Fqx "$recert_source_refusal" "$leg_root/recertify.out"; then
+      echo "SKIPPED recertified route"
+      echo "$recert_source_refusal"
+      echo "abandonment-refuses-every-push-route passed with recertified route skipped"
+      exit 0
+    fi
+    cat "$leg_root/recertify.out" >&2
+    exit "$recertify_rc"
+  fi
+  recert_record=$(find "$leg_local/artifacts/agents/landing/recertifications/$recert_root" -name record.json -type f -print -quit)
+  recert_relative=${recert_record#"$leg_local/"}
+  recert_merged_ref=$("$source_engine" json get --file "$recert_record" --field mergedAnchorRef)
+  mkdir -p "$leg_local/${recert_path%/*}"
+  git -C "$leg_local" show "$recert_merged_ref:$recert_path" >"$leg_local/$recert_path"
+  git -C "$leg_local" add "$recert_path"
+  recert_candidate_tree=$(git -C "$leg_local" write-tree)
+  set +e
+  (
+    cd "$leg_local"
+    "$source_engine" landing test-receipt --root . --tree "$recert_candidate_tree" \
+      --command "grep -q 'recertified chain change' $recert_path" --goal ship-widget --cap-min 1
+  ) >"$leg_root/recert-receipt.out" 2>&1
+  recert_receipt_rc=$?
+  set -e
+  if (( recert_receipt_rc != 0 )); then
+    echo "recertified route could not create its candidate receipt:" >&2
+    cat "$leg_root/recert-receipt.out" >&2
+    exit 1
+  fi
+  git -C "$leg_local" reset -q
+  recert_receipt="$recert_local_root/artifacts/agents/landing/receipts/$recert_candidate_tree.json"
+  recert_message=$leg_root/recert-message.txt
+  recert_output=$leg_root/recert.out
+  recert_bin=$leg_root/recert-bin
+  recert_trigger=$leg_root/recert-trigger
+  recert_pushes=$leg_root/recert-pushes
+  mkdir -p "$recert_bin"
+  printf '%s\n' "fixture checks the recertified held route" >"$recert_message"
+  cat >"$recert_bin/git" <<'SH'
+#!/usr/bin/env bash
+set -euo pipefail
+if [[ ${1:-} == push ]] && [[ " $* " == *" origin "* ]]; then
+  echo attempt >>"$LAND_FIXTURE_PUSHES"
+  if [[ ! -e "$LAND_FIXTURE_TRIGGER" ]]; then
+    touch "$LAND_FIXTURE_TRIGGER"
+    move_goal_out_of_claimed_state "$LAND_FIXTURE_PEER"
+  fi
+fi
+exec "$LAND_FIXTURE_REAL_GIT" "$@"
+SH
+  chmod +x "$recert_bin/git"
+  set +e
+  (
+    cd "$leg_local"
+    env PATH="$recert_bin:$PATH" LAND_FIXTURE_REAL_GIT="$real_git" \
+      LAND_FIXTURE_TRIGGER="$recert_trigger" LAND_FIXTURE_PEER="$leg_peer" \
+      LAND_FIXTURE_PUSHES="$recert_pushes" METASYSTEM_OWNER_LINEAGE=fixture-lineage \
+      bash scripts/agents/land.sh -m "$recert_message" --skip-transport \
+        --chain "$recert_root" --goal ship-widget --recertification "$recert_relative" \
+        --test-receipt "$recert_receipt" "$recert_path"
+  ) >"$recert_output" 2>&1
+  recert_rc=$?
+  set -e
+  [[ $recert_rc -ne 0 ]] || { echo "raced recertified route unexpectedly landed" >&2; exit 1; }
+  recert_held_line=$(grep -n '== STEP: goal held at the rebased base' "$recert_output" | head -1 | cut -d: -f1 || true)
+  recert_push_line=$(grep -n '== STEP: push recertified commit to origin (single attempt)' "$recert_output" | head -1 | cut -d: -f1 || true)
+  if [[ -z "$recert_held_line" || -z "$recert_push_line" || $recert_held_line -ge $recert_push_line ]] \
+    || ! grep -Fq "held: ok 1 commit(s) above ${recert_target:0:12}" "$recert_output" \
+    || ! grep -Fq '[rejected]' "$recert_output" \
+    || ! grep -Fq 'PARKED' "$recert_output" \
+    || ! grep -Fq 'chain-recertification-target-moved' "$recert_output" \
+    || [[ $(wc -l <"$recert_pushes" | tr -d ' ') != 1 ]]; then
+    echo "raced recertified route did not satisfy the held-before-push refusal contract:" >&2
+    sed -n '1,260p' "$recert_output" >&2
+    echo "recertification record:" >&2
+    cat "$recert_record" >&2
+    echo "testing receipt:" >&2
+    cat "$recert_receipt" >&2
+    exit 1
+  fi
+
+  git -C "$leg_local" fetch -q origin
+  git -C "$leg_local" reset -q --hard origin/main
+  git -C "$leg_local" update-ref refs/metasystem/goals/accepted origin/main
+  set +e
+  "$source_engine" validate conformance --root "$leg_local" --stage recertify \
+    --job "$recert_root" --test-command "grep -q 'recertified chain change' $recert_path" \
+    >"$leg_root/recertify-moved.out" 2>&1
+  recertify_moved_rc=$?
+  set -e
+  if (( recertify_moved_rc != 0 )); then
+    if grep -Fqx "$recert_source_refusal" "$leg_root/recertify-moved.out"; then
+      echo "SKIPPED recertified moved-goal route"
+      echo "$recert_source_refusal"
+      echo "abandonment-refuses-every-push-route passed with recertified moved-goal route skipped"
+      exit 0
+    fi
+    cat "$leg_root/recertify-moved.out" >&2
+    exit "$recertify_moved_rc"
+  fi
+  moved_record=$(find "$leg_local/artifacts/agents/landing/recertifications/$recert_root" -name record.json -type f -print | sort | tail -1)
+  moved_relative=${moved_record#"$leg_local/"}
+  moved_merged_ref=$("$source_engine" json get --file "$moved_record" --field mergedAnchorRef)
+  mkdir -p "$leg_local/${recert_path%/*}"
+  git -C "$leg_local" show "$moved_merged_ref:$recert_path" >"$leg_local/$recert_path"
+  git -C "$leg_local" add "$recert_path"
+  moved_candidate_tree=$(git -C "$leg_local" write-tree)
+  set +e
+  (
+    cd "$leg_local"
+    "$source_engine" landing test-receipt --root . --tree "$moved_candidate_tree" \
+      --command "grep -q 'recertified chain change' $recert_path" --goal ship-widget --cap-min 1
+  ) >"$leg_root/recert-moved-receipt.out" 2>&1
+  moved_receipt_rc=$?
+  set -e
+  if (( moved_receipt_rc != 0 )); then
+    echo "moved-goal recertification could not create its candidate receipt:" >&2
+    cat "$leg_root/recert-moved-receipt.out" >&2
+    exit 1
+  fi
+  git -C "$leg_local" reset -q
+  moved_receipt="$recert_local_root/artifacts/agents/landing/receipts/$moved_candidate_tree.json"
+  : >"$recert_pushes"
+  set +e
+  (
+    cd "$leg_local"
+    METASYSTEM_OWNER_LINEAGE=fixture-lineage bash scripts/agents/land.sh -m "$recert_message" \
+      --skip-transport --chain "$recert_root" --goal ship-widget \
+      --recertification "$moved_relative" --test-receipt "$moved_receipt" "$recert_path"
+  ) >"$leg_root/recert-moved.out" 2>&1
+  recert_moved_rc=$?
+  set -e
+  [[ $recert_moved_rc -ne 0 ]] || { echo "recertification above abandoned goal unexpectedly committed" >&2; exit 1; }
+  if ! grep -Fq 'PARKED' "$leg_root/recert-moved.out" \
+    || ! grep -Fq 'goal-item-not-held' "$leg_root/recert-moved.out" \
+    || [[ -s "$recert_pushes" ]]; then
+    echo "recertification above the moved goal did not park before push:" >&2
+    sed -n '1,260p' "$leg_root/recert-moved.out" >&2
+    exit 1
+  fi
+
+  echo "abandonment-refuses-every-push-route passed"
+  exit 0
+fi
 
 if [[ "$fixture_scenario" == brain-land-refuses ]]; then
   make_brain_source_leg brain-land
@@ -1398,6 +2044,11 @@ if [[ "$fixture_scenario" == brain-absent-node-proceeds ]]; then
 	printf '%s\n' "absent node landing" >"$leg_root/node-message.txt"
 	METASYSTEM_OWNER_LINEAGE=fixture-lineage bash "$node/scripts/agents/land.sh" -m "$leg_root/node-message.txt" \
 		--skip-transport --direct-fix register-carriage "$node_record" >/dev/null
+	node_message=$(git -C "$node" show -s --format=%B HEAD)
+	grep -Eq '^Landing-Provenance: .* goal-free$' <<<"$node_message" || {
+    echo "undeclared node landing did not carry Goal-free provenance" >&2
+    exit 1
+  }
 	[[ $(git --git-dir="$leg_remote" show "main:$node_record") == "node landing" ]] || {
     echo "undeclared node did not land and push while its peer was the brain" >&2
     exit 1
@@ -1737,7 +2388,7 @@ printf 'tier-one landing\n' >"$leg_local/payload.txt"
 printf 'fixture creates a tree-bound tier-one receipt\n' >"$tier_one_message"
 (
   cd "$leg_local"
-  LAND_FIXTURE_TIER_ONE_LOG="$tier_one_log" \
+  METASYSTEM_OWNER_LINEAGE=land-receipt-fixture LAND_FIXTURE_TIER_ONE_LOG="$tier_one_log" \
     bash scripts/agents/land.sh -m "$tier_one_message" --goal fx \
       --direct-fix tier-1 --root-job tier-one-root \
       --tests "test \"\$(cat payload.txt)\" = tier-one\\ landing" \
@@ -1774,6 +2425,7 @@ fi
 if [[ "$fixture_scenario" == full-width-chain ]]; then
 clear_independent_fixture_context
 make_leg full-width-chain
+export METASYSTEM_OWNER_LINEAGE=land-receipt-fixture
 full_chain_message=$leg_root/message.txt
 full_chain_missing_output=$leg_root/missing-receipt.out
 full_chain_usage_output=$leg_root/usage-refusal.out
@@ -1790,7 +2442,7 @@ full_chain_base=$(git -C "$leg_local" rev-parse HEAD)
 set +e
 (
   cd "$leg_local"
-  bash scripts/agents/land.sh -m "$full_chain_message" --chain full-chain \
+  bash scripts/agents/land.sh -m "$full_chain_message" --chain full-chain --goal fx \
     --tests true --test-receipt receipt.json --staged-only --skip-transport
 ) >"$full_chain_usage_output" 2>&1
 full_chain_usage_rc=$?
@@ -1850,7 +2502,7 @@ JSON
 set +e
 (
   cd "$leg_local"
-  bash scripts/agents/land.sh -m "$full_chain_message" --chain full-chain \
+  bash scripts/agents/land.sh -m "$full_chain_message" --chain full-chain --goal fx \
     --staged-only --skip-transport
 ) >"$full_chain_missing_output" 2>&1
 full_chain_missing_rc=$?
@@ -1875,7 +2527,7 @@ printf 'testing.contract=testing.json\n' >>"$leg_local/metasystem.conf"
 set +e
 (
   cd "$leg_local"
-  bash scripts/agents/land.sh -m "$full_chain_message" --chain full-chain \
+  bash scripts/agents/land.sh -m "$full_chain_message" --chain full-chain --goal fx \
     --staged-only --skip-transport
 ) >"$full_chain_missing_output" 2>&1
 full_chain_schema2_rc=$?
@@ -1894,7 +2546,7 @@ grep -Fqx "land refused: chain full-chain requires sufficient schema-2 testing e
 set +e
 (
   cd "$leg_local"
-  bash scripts/agents/land.sh -m "$full_chain_message" --chain full-chain \
+  bash scripts/agents/land.sh -m "$full_chain_message" --chain full-chain --goal fx \
     --test-receipt "$full_chain_other_receipt" --staged-only --skip-transport
 ) >"$full_chain_mismatch_output" 2>&1
 full_chain_mismatch_rc=$?
@@ -1921,7 +2573,7 @@ full_chain_receipt=artifacts/agents/landing/receipts/$full_chain_candidate.json
 (
   cd "$leg_local"
   LAND_FIXTURE_CHAIN_LOG="$full_chain_log" \
-    bash scripts/agents/land.sh -m "$full_chain_message" --chain full-chain \
+    bash scripts/agents/land.sh -m "$full_chain_message" --chain full-chain --goal fx \
       --test-receipt "$full_chain_receipt" --staged-only --skip-transport
 ) >"$full_chain_landing_output" 2>&1 || {
   echo "land full-width-chain fixture: matching receipt did not land" >&2
@@ -1983,7 +2635,7 @@ printf 'payload=drift\n' >>"$leg_local/payload.txt"
 set +e
 (
   cd "$leg_local"
-  bash scripts/agents/land.sh -m "$full_chain_message" --chain full-chain-2 \
+  bash scripts/agents/land.sh -m "$full_chain_message" --chain full-chain-2 --goal fx \
     --test-receipt "$full_chain_receipt_2" --staged-only --skip-transport
 ) >"$full_chain_drift_output" 2>&1
 full_chain_drift_rc=$?
@@ -2036,7 +2688,7 @@ appender_pid=$!
 set +e
 (
   cd "$leg_local"
-  bash scripts/agents/land.sh -m "$full_chain_message" --chain full-chain-2 \
+  bash scripts/agents/land.sh -m "$full_chain_message" --chain full-chain-2 --goal fx \
     --test-receipt "$full_chain_receipt_2" --staged-only --skip-transport
 ) >"$full_chain_passing_output" 2>&1
 full_chain_passing_rc=$?
@@ -2080,7 +2732,7 @@ set +e
 (
   cd "$leg_local"
   bash scripts/agents/land.sh -m "$full_chain_contended_message" \
-    --direct-fix register-carriage --skip-transport -- memory/receipts.log
+    --goal fx --direct-fix register-carriage --skip-transport -- memory/receipts.log
 ) >"$full_chain_contended_output" 2>&1
 full_chain_contended_rc=$?
 set -e
@@ -2089,7 +2741,11 @@ set -e
   exit 1
 }
 grep -Fq '== STEP: commit' "$full_chain_contended_output"
-grep -Fq '== STEP: rebase onto origin/main' "$full_chain_contended_output"
+grep -Fq '== STEP: rebase onto origin/main' "$full_chain_contended_output" || {
+  echo "land full-width-chain fixture: contended register did not reach rebase" >&2
+  sed -n '1,240p' "$full_chain_contended_output" >&2
+  exit 1
+}
 grep -Eq '^advance refused: advance-register-contended: records/narrator-digest.log.*[0-9a-f]{40,64}' \
   "$full_chain_contended_output"
 [[ $(git -C "$leg_local" log -1 --format=%s) == 'fixture carries receipts before a contended digest' ]]
@@ -2108,7 +2764,7 @@ printf 'fixture carries the contended digest\n' >"$full_chain_repair_message"
 (
   cd "$leg_local"
   bash scripts/agents/land.sh -m "$full_chain_repair_message" \
-    --direct-fix register-carriage --skip-transport -- records/narrator-digest.log
+    --goal fx --direct-fix register-carriage --skip-transport -- records/narrator-digest.log
 ) >"$full_chain_repair_output" 2>&1 || {
   echo "land full-width-chain fixture: contended register repair failed" >&2
   sed -n '1,260p' "$full_chain_repair_output" >&2
@@ -2312,6 +2968,11 @@ METASYSTEM_BUILD_STAMP=receipt-cutover-seed-claim \
 make_leg receipt-cutover
 cutover_old_engine=$leg_root/old-engine
 cutover_moved_remote=$leg_root/moved-origin.git
+cmp -s "$leg_seed/scripts/agents/landing-promotion.json" \
+  "$cutover_old_source/metasystem/scripts/agents/landing-promotion.json" || {
+  echo "land receipt-cutover fixture: the seed does not carry the pinned version-one promotion record" >&2
+  exit 1
+}
 
 # Trunk's claimed record gained the elapsed-budget episode binding after the
 # pinned reader. Project only those optional keys away so this fixture still
@@ -2351,6 +3012,25 @@ METASYSTEM_BUILD_STAMP="$receipt_seed_build_stamp" \
   bash "$cutover_old_source/metasystem/scripts/agents/go-build.sh" --out "$cutover_old_engine" >/dev/null
 install_cutover_engine "$leg_local" "$cutover_old_engine"
 install_cutover_engine "$leg_peer" "$leg_root/engine"
+# Keep the pinned reader and receipt verbs in charge while routing only the
+# section-4a held check (and its diagnostic output family) to the new engine.
+# Install this selector before enrollment so its digest remains stable.
+cutover_old_router=$leg_local/bin/metasystem-pinned
+cutover_held_router=$leg_local/bin/metasystem-held
+cp "$cutover_old_engine" "$cutover_old_router"
+cp "$leg_root/engine" "$cutover_held_router"
+chmod +x "$cutover_old_router" "$cutover_held_router"
+printf -v cutover_old_engine_q '%q' "$cutover_old_router"
+printf -v cutover_held_engine_q '%q' "$cutover_held_router"
+cat >"$leg_local/bin/metasystem" <<SH
+#!/usr/bin/env bash
+set -euo pipefail
+if [[ "\${1:-}" == landing && "\${2:-}" == held ]] || [[ "\${1:-}" == output ]]; then
+  exec $cutover_held_engine_q "\$@"
+fi
+exec $cutover_old_engine_q "\$@"
+SH
+chmod +x "$leg_local/bin/metasystem"
 [[ $(git -C "$leg_local" rev-parse HEAD) == "$receipt_seed_build_stamp" ]]
 [[ $(git -C "$leg_peer" rev-parse HEAD) == "$receipt_seed_build_stamp" ]]
 git -C "$leg_local" check-ignore -q bin/metasystem
@@ -2417,6 +3097,189 @@ cutover_refusal=$(receipt_checkout_env_run "$leg_local" "$leg_local/bin/metasyst
 stop_receipt_runner
 stop_receipt_runner
 
+# Version 2 is a new landing base, not a candidate-side policy substitution.
+# The old and new readers judge the same otherwise-valid staged record there,
+# and the real wrapper proves that the selected old judge owns the refusal.
+cutover_policy_remote=$leg_root/policy-origin.git
+cutover_policy_seed=$leg_root/policy-seed
+cutover_policy_old=$leg_root/policy-old
+cutover_policy_new=$leg_root/policy-new
+git clone -q --bare "$cutover_moved_remote" "$cutover_policy_remote"
+git clone -q "$cutover_policy_remote" "$cutover_policy_seed"
+git -C "$cutover_policy_seed" config user.name fixture-cutover-policy
+git -C "$cutover_policy_seed" config user.email fixture-cutover-policy@example.invalid
+cp "$root/scripts/agents/landing-promotion.json" \
+  "$cutover_policy_seed/scripts/agents/landing-promotion.json"
+cp "$root/scripts/agents/commit.sh" "$cutover_policy_seed/scripts/agents/commit.sh"
+chmod +x "$cutover_policy_seed/scripts/agents/commit.sh"
+git -C "$cutover_policy_seed" add -- scripts/agents/landing-promotion.json scripts/agents/commit.sh
+git -C "$cutover_policy_seed" commit -qm 'install version two landing promotion policy'
+git -C "$cutover_policy_seed" push -q origin main
+cutover_policy_base=$(git -C "$cutover_policy_seed" rev-parse HEAD)
+[[ $("$source_engine" json get --file "$cutover_policy_seed/scripts/agents/landing-promotion.json" \
+  --field schemaVersion) == 2 ]]
+git clone -q "$cutover_policy_remote" "$cutover_policy_old"
+git clone -q "$cutover_policy_remote" "$cutover_policy_new"
+for cutover_checkout in "$cutover_policy_old" "$cutover_policy_new"; do
+  git -C "$cutover_checkout" config user.name fixture-cutover-policy
+  git -C "$cutover_checkout" config user.email fixture-cutover-policy@example.invalid
+  git -C "$cutover_checkout" config metasystem.goal.machine fixture-machine
+  git -C "$cutover_checkout" config goal.sync-remote origin
+  git -C "$cutover_checkout" config goal.sync-branch refs/heads/main
+  git -C "$cutover_checkout" update-ref refs/heads/metasystem/goals origin/main
+  git -C "$cutover_checkout" update-ref refs/metasystem/goals/accepted origin/main
+done
+cutover_policy_old_engine=$leg_root/policy-old-engine
+cutover_policy_new_engine=$leg_root/policy-new-engine
+METASYSTEM_BUILD_STAMP="$cutover_policy_base" \
+  bash "$cutover_old_source/metasystem/scripts/agents/go-build.sh" --out "$cutover_policy_old_engine" >/dev/null
+METASYSTEM_BUILD_STAMP="$cutover_policy_base" \
+  bash "$root/scripts/agents/go-build.sh" --out "$cutover_policy_new_engine" >/dev/null
+install_cutover_engine "$cutover_policy_old" "$cutover_policy_old_engine"
+install_cutover_engine "$cutover_policy_new" "$cutover_policy_new_engine"
+
+arm_receipt_runner "$cutover_policy_old" "$cutover_policy_old/bin/metasystem"
+mkdir -p "$cutover_policy_old/records/misc"
+printf 'promotion policy compatibility\n' >"$cutover_policy_old/records/misc/promotion-policy.md"
+git -C "$cutover_policy_old" add -- records/misc/promotion-policy.md
+cutover_policy_tree=$(git -C "$cutover_policy_old" write-tree)
+take_fixture_receipt "$cutover_policy_old/bin/metasystem" "$cutover_policy_old" \
+  "$leg_root/policy-old-receipt.out"
+cutover_policy_receipt=$fixture_receipt_path
+# The runner's ignored narrator cursor is runtime state. The real commit
+# wrapper correctly refuses it as an unrecorded landing input, so remove that
+# disposable cursor before exercising the policy-version refusal.
+rm -f "$cutover_policy_old/records/narrator-digest.log"
+cutover_policy_new_accept=$(receipt_checkout_env_run "$cutover_policy_old" \
+  "$cutover_policy_new_engine" landing observe --root "$cutover_policy_old" \
+  --tree "$cutover_policy_tree" --direct-fix register-carriage --goal fx \
+  --actor fixture-machine+land-receipt-fixture)
+[[ $("$source_engine" json get --value "$cutover_policy_new_accept" --field mode) == observe ]]
+[[ $("$source_engine" json get --value "$cutover_policy_new_accept" --field verdictTrailer) == 'pass bar=b' ]]
+
+cutover_policy_before=$(git -C "$cutover_policy_old" rev-parse HEAD)
+cutover_policy_remote_before=$(git --git-dir="$cutover_policy_remote" rev-parse refs/heads/main)
+cutover_policy_patch_before=$(git -C "$cutover_policy_old" diff --cached --binary -- records/misc/promotion-policy.md)
+cutover_policy_wrapper_out=$leg_root/policy-wrapper.out
+cutover_policy_agent_start=$(receipt_env_run "$cutover_policy_old/bin/metasystem" proc started-at --pid "$$")
+receipt_env_run "$cutover_policy_old/bin/metasystem" lease announce --root "$cutover_policy_old" \
+  --session land-receipt-policy-agent --pid "$$" --start "$cutover_policy_agent_start" \
+  --tag land-receipt-policy-agent --runtime fake --owner-lineage land-receipt-fixture >/dev/null
+if receipt_checkout_env_run "$cutover_policy_old" env METASYSTEM_OWNER_LINEAGE=land-receipt-fixture \
+    bash "$cutover_policy_old/scripts/agents/commit.sh" --goal fx \
+      --direct-fix register-carriage -m 'version two policy waits for its judge' \
+      >"$cutover_policy_wrapper_out" 2>&1; then
+  cutover_policy_wrapper_rc=0
+else
+  cutover_policy_wrapper_rc=$?
+fi
+receipt_env_run "$cutover_policy_old/bin/metasystem" lease retire --root "$cutover_policy_old" \
+  --session land-receipt-policy-agent --pid "$$" --start "$cutover_policy_agent_start" >/dev/null
+[[ $cutover_policy_wrapper_rc -eq 1 ]] || {
+  echo "land receipt-cutover fixture: old judge did not refuse version two through the real wrapper" >&2
+  sed -n '1,260p' "$cutover_policy_wrapper_out" >&2
+  exit 1
+}
+grep -Fq 'agent commit refused: the landing promotion record is malformed (would-refuse code=promotion-record-malformed)' \
+  "$cutover_policy_wrapper_out" || {
+  echo "land receipt-cutover fixture: real wrapper did not print the promotion-record refusal" >&2
+  sed -n '1,260p' "$cutover_policy_wrapper_out" >&2
+  exit 1
+}
+grep -Fq 'The landing judge may be older than this policy. A human must rebuild and re-arm it from the landed policy commit or a descendant, then retry. If that judge supports the record version, repair the record through a reviewed implementation chain.' \
+  "$cutover_policy_wrapper_out" || {
+  echo "land receipt-cutover fixture: real wrapper did not print the promotion-record repair" >&2
+  sed -n '1,260p' "$cutover_policy_wrapper_out" >&2
+  exit 1
+}
+[[ $(git -C "$cutover_policy_old" rev-parse HEAD) == "$cutover_policy_before" ]]
+[[ $(git --git-dir="$cutover_policy_remote" rev-parse refs/heads/main) == "$cutover_policy_remote_before" ]]
+[[ $(git -C "$cutover_policy_old" diff --cached --binary -- records/misc/promotion-policy.md) == "$cutover_policy_patch_before" ]]
+stop_receipt_runner
+
+# The new reader keeps the three goal failures distinct on the version-two
+# base. Its own receipt lets the revision-moved arm reach the held-goal check.
+arm_receipt_runner "$cutover_policy_new" "$cutover_policy_new/bin/metasystem"
+mkdir -p "$cutover_policy_new/records/misc"
+printf 'promotion policy compatibility\n' >"$cutover_policy_new/records/misc/promotion-policy.md"
+git -C "$cutover_policy_new" add -- records/misc/promotion-policy.md
+cutover_policy_new_tree=$(git -C "$cutover_policy_new" write-tree)
+prepare_receipt_chain "$cutover_policy_new" cutover-policy-revision "$cutover_policy_new_tree"
+take_fixture_receipt "$cutover_policy_new/bin/metasystem" "$cutover_policy_new" \
+  "$leg_root/policy-new-receipt.out"
+cutover_policy_new_receipt=$fixture_receipt_path
+
+cutover_goal_missing=$(receipt_checkout_env_run "$cutover_policy_new" \
+  "$cutover_policy_new/bin/metasystem" landing observe --root "$cutover_policy_new" \
+  --tree "$cutover_policy_new_tree" --direct-fix register-carriage \
+  --actor fixture-machine+land-receipt-fixture)
+[[ $("$source_engine" json get --value "$cutover_goal_missing" --field mode) == refuse ]]
+[[ $("$source_engine" json get --value "$cutover_goal_missing" --field code) == goal-binding-missing ]]
+
+cat >"$cutover_policy_new/artifacts/agents/jobs/cutover-policy-mismatch.json" <<'JSON'
+{"jobId":"cutover-policy-mismatch","parentJob":null,"role":"implementer","goalId":"other-goal","goalRevision":1}
+JSON
+cutover_goal_mismatch=$(receipt_checkout_env_run "$cutover_policy_new" \
+  "$cutover_policy_new/bin/metasystem" landing observe --root "$cutover_policy_new" \
+  --tree "$cutover_policy_new_tree" --chain cutover-policy-mismatch --goal fx \
+  --actor fixture-machine+land-receipt-fixture)
+[[ $("$source_engine" json get --value "$cutover_goal_mismatch" --field mode) == refuse ]]
+[[ $("$source_engine" json get --value "$cutover_goal_mismatch" --field code) == goal-binding-mismatch ]]
+
+conf_edit "$cutover_policy_new/artifacts/agents/jobs/cutover-policy-revision.json" replace-line-first \
+  '^  "goalId": null,$' '  "goalId": "fx",'
+conf_edit "$cutover_policy_new/artifacts/agents/jobs/cutover-policy-revision.json" insert-after-first \
+  '^  "goalId": "fx",$' '  "goalRevision": 2,'
+cutover_goal_revision=$(receipt_checkout_env_run "$cutover_policy_new" \
+  "$cutover_policy_new/bin/metasystem" landing observe --root "$cutover_policy_new" \
+  --tree "$cutover_policy_new_tree" --chain cutover-policy-revision --goal fx \
+  --actor fixture-machine+land-receipt-fixture --test-receipt "$cutover_policy_new_receipt")
+[[ $("$source_engine" json get --value "$cutover_goal_revision" --field mode) == refuse ]]
+[[ $("$source_engine" json get --value "$cutover_goal_revision" --field code) == goal-revision-moved ]]
+stop_receipt_runner
+
+# A version-two-only code is invalid in version 1, and version 3 is above both
+# readers' maxima. Each reader refuses the whole record in both cases.
+cutover_policy_invalid=$leg_root/policy-invalid
+git clone -q "$cutover_policy_remote" "$cutover_policy_invalid"
+git -C "$cutover_policy_invalid" config user.name fixture-cutover-invalid
+git -C "$cutover_policy_invalid" config user.email fixture-cutover-invalid@example.invalid
+printf '{"schemaVersion":1,"refuseCodes":["goal-binding-missing"]}\n' \
+  >"$cutover_policy_invalid/scripts/agents/landing-promotion.json"
+git -C "$cutover_policy_invalid" add -- scripts/agents/landing-promotion.json
+git -C "$cutover_policy_invalid" commit -qm 'install invalid version one promotion vocabulary'
+for cutover_reader in "$cutover_policy_old_engine" "$cutover_policy_new_engine"; do
+  cutover_invalid_observation=$("$cutover_reader" landing observe --root "$cutover_policy_invalid" \
+    --tree "$(git -C "$cutover_policy_invalid" rev-parse HEAD^{tree})" --direct-fix register-carriage \
+    --goal fx --actor fixture-machine+land-receipt-fixture)
+  [[ $("$source_engine" json get --value "$cutover_invalid_observation" --field mode) == refuse ]]
+  [[ $("$source_engine" json get --value "$cutover_invalid_observation" --field code) == promotion-record-malformed ]]
+done
+conf_edit "$cutover_policy_invalid/scripts/agents/landing-promotion.json" replace-literal \
+  '"schemaVersion":1' '"schemaVersion":3'
+git -C "$cutover_policy_invalid" add -- scripts/agents/landing-promotion.json
+git -C "$cutover_policy_invalid" commit -qm 'install unsupported promotion policy version'
+for cutover_reader in "$cutover_policy_old_engine" "$cutover_policy_new_engine"; do
+  cutover_invalid_observation=$("$cutover_reader" landing observe --root "$cutover_policy_invalid" \
+    --tree "$(git -C "$cutover_policy_invalid" rev-parse HEAD^{tree})" --direct-fix register-carriage \
+    --goal fx --actor fixture-machine+land-receipt-fixture)
+  [[ $("$source_engine" json get --value "$cutover_invalid_observation" --field mode) == refuse ]]
+  [[ $("$source_engine" json get --value "$cutover_invalid_observation" --field code) == promotion-record-malformed ]]
+done
+
+cutover_policy_candidate=$leg_root/policy-candidate
+git clone -q "$cutover_policy_remote" "$cutover_policy_candidate"
+printf '{"schemaVersion":1,"refuseCodes":[]}\n' \
+  >"$cutover_policy_candidate/scripts/agents/landing-promotion.json"
+printf 'candidate cannot strip base policy\n' >"$cutover_policy_candidate/product.txt"
+git -C "$cutover_policy_candidate" add -- scripts/agents/landing-promotion.json product.txt
+cutover_candidate_policy_tree=$(git -C "$cutover_policy_candidate" write-tree)
+cutover_candidate_policy_observation=$("$cutover_policy_new_engine" landing observe \
+  --root "$cutover_policy_candidate" --tree "$cutover_candidate_policy_tree" \
+  --actor fixture-machine+land-receipt-fixture)
+[[ $("$source_engine" json get --value "$cutover_candidate_policy_observation" --field mode) == refuse ]]
+[[ $("$source_engine" json get --value "$cutover_candidate_policy_observation" --field code) == missing-declaration ]]
+
 leg_local=$leg_root/moved
 cutover_moved_peer=$leg_root/moved-peer
 git clone -q "$cutover_moved_remote" "$leg_local"
@@ -2425,14 +3288,14 @@ git -C "$leg_local" config user.name fixture-cutover-moved
 git -C "$leg_local" config user.email fixture-cutover-moved@example.invalid
 git -C "$cutover_moved_peer" config user.name fixture-cutover-moved-peer
 git -C "$cutover_moved_peer" config user.email fixture-cutover-moved-peer@example.invalid
-git -C "$leg_local" config goal.sync-remote local
-git -C "$leg_local" config goal.sync-branch refs/heads/metasystem/goals
+git -C "$leg_local" config goal.sync-remote origin
+git -C "$leg_local" config goal.sync-branch refs/heads/main
 git -C "$leg_local" config metasystem.goal.machine fixture-machine
 git -C "$leg_local" config metasystem.steward.landing-ref refs/remotes/origin/main
 git -C "$leg_local" update-ref refs/heads/metasystem/goals origin/main
 git -C "$leg_local" update-ref refs/metasystem/goals/accepted origin/main
-git -C "$cutover_moved_peer" config goal.sync-remote local
-git -C "$cutover_moved_peer" config goal.sync-branch refs/heads/metasystem/goals
+git -C "$cutover_moved_peer" config goal.sync-remote origin
+git -C "$cutover_moved_peer" config goal.sync-branch refs/heads/main
 git -C "$cutover_moved_peer" config metasystem.goal.machine fixture-peer
 git -C "$cutover_moved_peer" config metasystem.steward.landing-ref refs/remotes/origin/main
 git -C "$cutover_moved_peer" update-ref refs/heads/metasystem/goals origin/main

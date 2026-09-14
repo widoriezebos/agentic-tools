@@ -99,6 +99,13 @@ var Rows = []Row{
 	{Code: "runtime-path-refused", Owner: "internal/landing", Site: "observe.go:591", Shape: Agent, Override: "land.sh --carried", Commands: 1},
 	{Code: "exact-revert-record-refused", Owner: "internal/landing", Site: "observe.go:1082", Shape: Agent, Override: "land.sh --carried", Commands: 1},
 	{Code: "goal-item-not-held", Owner: "internal/landing", Site: "observe.go:617", Shape: Agent, Override: "goal steal", Commands: 1},
+	{Code: "goal-binding-missing", Owner: "internal/landing", Site: "observe.go:358", Shape: Agent, Override: "a human commit is sovereign; re-dispatch under the current claim", Commands: 1},
+	{Code: "goal-binding-mismatch", Owner: "internal/landing", Site: "observe.go:362", Shape: Agent, Override: "a human commit is sovereign; re-dispatch under the current claim", Commands: 1},
+	{Code: "goal-revision-moved", Owner: "internal/landing", Site: "observe.go:1104", Shape: Agent, Override: "a human commit is sovereign; re-dispatch under the current claim", Commands: 1},
+	{Code: "goal-revision-unbound", Owner: "internal/landing", Site: "held.go:177", Shape: Agent, Override: "a human commit is sovereign; re-dispatch under the current claim", Commands: 1},
+	{Code: "machine-trailer-malformed", Owner: "internal/landing", Site: "held.go:90", Shape: Agent, Override: "a human commit is sovereign; re-dispatch under the current claim", Commands: 1},
+	{Code: "endpoint-mismatch", Owner: "internal/landing", Site: "held.go:124", Shape: Agent, Override: "a human commit is sovereign; re-dispatch under the current claim", Commands: 1},
+	{Code: "range-not-linear", Owner: "internal/landing", Site: "held.go:237", Shape: Agent, Override: "rebase onto the fetched tip, or land through land.sh", Commands: 1},
 	{Code: "record-not-owned", Owner: "internal/landing", Site: "observe.go:660", Shape: Agent, Override: "goal claim of the owning goal", Commands: 1},
 	{Code: "malformed-chain-id", Owner: "internal/landing", Site: "observe.go:123", Shape: Agent, Override: "land.sh --carried", Commands: 1},
 	{Code: "chain-record-unreadable", Owner: "internal/landing", Site: "observe.go:129", Shape: Agent, Override: "land.sh --carried", Commands: 1},
@@ -249,6 +256,14 @@ var ShellRows = []Shell{
 	{Script: "land.sh", Line: "840", Prose: "word <opid> expired; issue a fresh goal carry", Override: "goal carry"},
 	{Script: "land.sh", Line: "841", Prose: "carry word <opid> is missing on goal <goal>; fetch the ledger", Override: "goal fetch"},
 	{Script: "commit.sh", Line: "602", Prose: "no live or base judge decided; rebuild and arm an engine at a good commit with steward arm", Override: "steward arm"},
+	{Script: "commit.sh", Line: "222", Prose: "commit refused: Machine is stamped by the wrapper, never typed", Override: "land.sh --carried"},
+	{Script: "commit.sh", Line: "56", Prose: "agent commit refused: the lease holder has a claim epoch but no owner lineage; export METASYSTEM_OWNER_LINEAGE in the seat's shell", Override: "land.sh --carried"},
+	{Script: "commit.sh", Line: "728", Prose: "agent commit refused: the Goal-Item's claim revision moved since this chain was dispatched ($landing_verdict)", Override: "land.sh --carried"},
+	{Script: "commit.sh", Line: "732", Prose: "agent commit refused: this landing names no goal and the ledger is not Goal-free ($landing_verdict)", Override: "land.sh --carried"},
+	{Script: "commit.sh", Line: "736", Prose: "agent commit refused: the chain was dispatched under a different goal than --goal names ($landing_verdict)", Override: "land.sh --carried"},
+	{Script: "commit.sh", Line: "951", Prose: "landing push refused: origin could not be fetched; the commit stands locally", Override: "land.sh --carried"},
+	{Script: "commit.sh", Line: "930", Prose: "agent commit refused: the final commit message did not contain exactly one byte-exact Goal-Item stamped by --goal; the commit was rolled back; expected exactly one Machine trailer, found $postcondition_count", Override: "land.sh --carried"},
+	{Script: "commit.sh", Line: "932", Prose: "agent commit refused: the final commit message did not contain exactly one byte-exact Goal-Item stamped by --goal; the commit was rolled back; expected exactly one Goal-Revision trailer, found $postcondition_count", Override: "land.sh --carried"},
 }
 
 var Defects = []Defect{

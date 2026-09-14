@@ -172,7 +172,7 @@ func (f *observeFixture) prepareTierOne(gateWidth string) string {
 	f.git("commit", "-qm", "prepare tier-one goal")
 	record := map[string]any{
 		"jobId": "tier-one-root", "parentJob": nil, "role": "implementer",
-		"goalId": "tier-one", "goalTier": 1,
+		"goalId": "tier-one", "goalRevision": 1, "goalTier": 1,
 	}
 	if gateWidth != "" {
 		record["gateWidth"] = gateWidth
@@ -712,6 +712,20 @@ func TestObserveTierOneDirectFixBoundsAndReceipt(t *testing.T) {
 		}
 	})
 
+	t.Run("missing goal", func(t *testing.T) {
+		f := newObserveFixture(t)
+		f.prepareTierOne("area")
+		f.write("docs/constant.txt", "change\n")
+		f.git("add", "docs/constant.txt")
+		candidate, receipt := f.tierOneReceipt("true")
+		params := tierOneParams(f, candidate, receipt)
+		params.Goal = ""
+		got := Observe(params)
+		if got.Bar != BarRefusal || got.Code != "tier1-declaration-refused" || got.Mode != "refuse" {
+			t.Fatalf("missing tier-1 goal classified as %+v", got)
+		}
+	})
+
 	for name, mutate := range map[string]func(map[string]any){
 		"wrong goal":      func(record map[string]any) { record["goalId"] = "other" },
 		"wrong tier":      func(record map[string]any) { record["goalTier"] = 2 },
@@ -723,7 +737,7 @@ func TestObserveTierOneDirectFixBoundsAndReceipt(t *testing.T) {
 			f.prepareTierOne("area")
 			record := map[string]any{
 				"jobId": "tier-one-root", "parentJob": nil, "role": "implementer",
-				"goalId": "tier-one", "goalTier": 1, "gateWidth": "area",
+				"goalId": "tier-one", "goalRevision": 1, "goalTier": 1, "gateWidth": "area",
 			}
 			mutate(record)
 			f.writeChainRecord("tier-one-root", record)
@@ -731,7 +745,11 @@ func TestObserveTierOneDirectFixBoundsAndReceipt(t *testing.T) {
 			f.git("add", "docs/constant.txt")
 			candidate, receipt := f.tierOneReceipt("true")
 			got := Observe(tierOneParams(f, candidate, receipt))
-			if got.Code != "tier1-root-refused" || got.Mode != "refuse" {
+			wantCode := "tier1-root-refused"
+			if name == "wrong goal" {
+				wantCode = "goal-binding-mismatch"
+			}
+			if got.Code != wantCode || got.Mode != "refuse" {
 				t.Fatalf("invalid tier-1 root classified as %+v", got)
 			}
 		})
@@ -1097,8 +1115,12 @@ func TestObserveRecordSemantics(t *testing.T) {
 
 	t.Run("handoffs belong to their seat after creation", func(t *testing.T) {
 		f := newObserveFixture(t)
+		f.writeBytes("plans/goals/backlog.md", goal.RenderRoot(&goal.RootRecord{
+			Identity: "01ARZ3NDEKTSV4RRFFQ69G5FAV", FormatVersion: "1", SyncMode: goal.SyncRemote, Revision: 1,
+			Free: &goal.FreeRecord{Declared: "2026-09-03T08:00:00Z", Origin: "human", Digest: strings.Repeat("a", 64)},
+		}))
 		f.write("plans/handoff-m9-x.md", "base\n")
-		f.git("add", "plans/handoff-m9-x.md")
+		f.git("add", "plans/handoff-m9-x.md", "plans/goals/backlog.md")
 		f.git("commit", "-qm", "handoff base")
 		f.write("plans/handoff-m9-x.md", "modified\n")
 		got := Observe(ObserveParams{RepoRoot: f.root, CandidateTree: f.tree(), DirectFix: "register-carriage", Actor: "m9+L1"})
@@ -1243,14 +1265,41 @@ func TestObservePromotionRecordIsStrictAndAbsentMeansObserve(t *testing.T) {
 	})
 
 	malformed := map[string]string{
-		"unparseable":    "{\n",
-		"unknown field":  `{"schemaVersion":1,"refuseCodes":[],"extra":true}` + "\n",
-		"unknown code":   `{"schemaVersion":1,"refuseCodes":["not-a-verdict"]}` + "\n",
-		"duplicate code": `{"schemaVersion":1,"refuseCodes":["missing-declaration","missing-declaration"]}` + "\n",
-		"missing codes":  `{"schemaVersion":1}` + "\n",
-		"wrong schema":   `{"schemaVersion":2,"refuseCodes":[]}` + "\n",
-		"trailing JSON":  `{"schemaVersion":1,"refuseCodes":[]} {}` + "\n",
+		"unparseable":                     "{\n",
+		"unknown field":                   `{"schemaVersion":1,"refuseCodes":[],"extra":true}` + "\n",
+		"unknown code":                    `{"schemaVersion":1,"refuseCodes":["not-a-verdict"]}` + "\n",
+		"duplicate code":                  `{"schemaVersion":1,"refuseCodes":["missing-declaration","missing-declaration"]}` + "\n",
+		"missing codes":                   `{"schemaVersion":1}` + "\n",
+		"version two code in version one": `{"schemaVersion":1,"refuseCodes":["goal-binding-missing"]}` + "\n",
+		"unsupported schema":              `{"schemaVersion":3,"refuseCodes":[]}` + "\n",
+		"trailing JSON":                   `{"schemaVersion":1,"refuseCodes":[]} {}` + "\n",
 	}
+
+	t.Run("version one keeps its original vocabulary", func(t *testing.T) {
+		f := newObserveFixture(t)
+		f.write(promotionRecordPath, `{"schemaVersion":1,"refuseCodes":["missing-declaration"]}`+"\n")
+		f.git("add", promotionRecordPath)
+		f.git("commit", "-qm", "install version one promotion policy")
+		f.write("product.txt", "undeclared under version one\n")
+		got := Observe(ObserveParams{RepoRoot: f.root, CandidateTree: f.tree()})
+		if got.Mode != "refuse" || got.Code != "missing-declaration" {
+			t.Fatalf("version one promotion policy classified as %+v", got)
+		}
+	})
+
+	t.Run("version two adds the goal binding vocabulary", func(t *testing.T) {
+		f := newObserveFixture(t)
+		f.write(promotionRecordPath, `{"schemaVersion":2,"refuseCodes":["goal-binding-missing","goal-binding-mismatch","goal-revision-moved"]}`+"\n")
+		f.git("add", promotionRecordPath)
+		f.git("commit", "-qm", "install version two promotion policy")
+		codes, present, err := loadPromotionAtTree(f.root, "")
+		if err != nil {
+			t.Fatal(err)
+		}
+		if !present || len(codes) != 3 || !codes["goal-binding-missing"] || !codes["goal-binding-mismatch"] || !codes["goal-revision-moved"] {
+			t.Fatalf("version two promotion vocabulary loaded as %#v, present=%v", codes, present)
+		}
+	})
 	for name, content := range malformed {
 		t.Run(name, func(t *testing.T) {
 			f := newObserveFixture(t)
@@ -1396,4 +1445,147 @@ func TestObserveChainCarriesAnAppendedReceiptLedger(t *testing.T) {
 	if got.Code != "chain-has-uncarried-paths" {
 		t.Fatalf("chain landing that rewrites the receipt ledger classified as %+v", got)
 	}
+}
+
+func TestObservationBindsTheChainRootsGoalAndRevision(t *testing.T) {
+	f := newObserveFixture(t)
+	f.writeHeldGoalAtRevision("ship-widget", "m9", "L1", 3)
+	f.git("add", "plans/goals/ship-widget.md")
+	f.git("commit", "-qm", "claim fixture goal")
+	f.write("internal/x.go", "package internal\n")
+	candidate := f.tree()
+	record := map[string]any{
+		"jobId": "goal-chain", "parentJob": nil, "role": "implementer", "round": 1,
+		"destructiveReach": "DESIGN-BEARING", "chainClosed": true,
+		"goalId": "ship-widget", "goalRevision": 3,
+	}
+	f.writeChainRecord("goal-chain", record)
+	f.writeChainReview("goal-chain", 1, "goal-chain", candidate)
+
+	params := ObserveParams{RepoRoot: f.root, CandidateTree: candidate, Chain: "goal-chain", Goal: "ship-widget", Actor: "m9+L1"}
+	got := Observe(params)
+	if got.Code != "closed-chain" || got.GoalRevision != 3 {
+		t.Fatalf("matching goal-bound chain classified as %+v", got)
+	}
+
+	missing := params
+	missing.Goal = ""
+	if got := Observe(missing); got.Code != "goal-binding-missing" || got.Verdict != "would-refuse" {
+		t.Fatalf("goal-bound chain without --goal classified as %+v", got)
+	}
+	mismatch := params
+	mismatch.Goal = "ship-gadget"
+	if got := Observe(mismatch); got.Code != "goal-binding-mismatch" || got.Verdict != "would-refuse" {
+		t.Fatalf("goal-bound chain under another goal classified as %+v", got)
+	}
+
+	f.writeHeldGoalAtRevision("ship-widget", "m9", "L1", 4)
+	f.git("add", "plans/goals/ship-widget.md")
+	f.git("commit", "-qm", "move fixture claim revision")
+	f.write("internal/x.go", "package internal // moved\n")
+	movedCandidate := f.tree()
+	f.writeChainReview("goal-chain", 1, "goal-chain", movedCandidate)
+	params.CandidateTree = movedCandidate
+	if got := Observe(params); got.Code != "goal-revision-moved" || got.Verdict != "would-refuse" {
+		t.Fatalf("chain at an old claim revision classified as %+v", got)
+	}
+
+	delete(record, "goalRevision")
+	f.writeChainRecord("goal-chain", record)
+	if got := Observe(params); got.Code != "chain-record-malformed" || got.Verdict != "would-refuse" {
+		t.Fatalf("goal-bound chain without a positive revision classified as %+v", got)
+	}
+
+	goalFreeRoot := map[string]any{}
+	for key, value := range record {
+		goalFreeRoot[key] = value
+	}
+	goalFreeRoot["goalId"] = nil
+	f.writeChainRecord("goal-chain", goalFreeRoot)
+	params.Goal = "ship-widget"
+	if got := Observe(params); got.Code != "closed-chain" || got.GoalRevision != 4 {
+		t.Fatalf("goal-free root with a currently held --goal classified as %+v", got)
+	}
+
+	carriage := newObserveFixture(t)
+	carriage.writeHeldGoalAtRevision("ship-widget", "m9", "L1", 4)
+	carriage.git("add", "plans/goals/ship-widget.md")
+	carriage.git("commit", "-qm", "claim carriage goal")
+	carriage.write("records/misc/fixture.md", "fixture\n")
+	got = Observe(ObserveParams{RepoRoot: carriage.root, CandidateTree: carriage.tree(), DirectFix: "register-carriage", Goal: "ship-widget", Actor: "m9+L1"})
+	if got.Code != "register-carriage" || got.GoalRevision != 4 {
+		t.Fatalf("register carriage did not bind the base claim revision: %+v", got)
+	}
+
+	tierOne := newObserveFixture(t)
+	tierOne.prepareTierOne("area")
+	tierOne.write("docs/constant.txt", "change\n")
+	tierOne.git("add", "docs/constant.txt")
+	tierCandidate, receipt := tierOne.tierOneReceipt("true")
+	tierOne.writeChainRecord("tier-one-root", map[string]any{
+		"jobId": "tier-one-root", "parentJob": nil, "role": "implementer",
+		"goalId": "other-goal", "goalRevision": 1, "goalTier": 1, "gateWidth": "area",
+	})
+	if got := Observe(tierOneParams(tierOne, tierCandidate, receipt)); got.Code != "goal-binding-mismatch" || got.Mode != "refuse" {
+		t.Fatalf("tier-one root under another goal classified as %+v", got)
+	}
+}
+
+func TestObservationRequiresAGoalFromANonHumanActor(t *testing.T) {
+	nonFree := newObserveFixture(t)
+	nonFree.write("records/misc/fixture.md", "fixture\n")
+	params := ObserveParams{RepoRoot: nonFree.root, CandidateTree: nonFree.tree(), DirectFix: "register-carriage", Actor: "m9+lineage"}
+	if got := Observe(params); got.Code != "goal-binding-missing" || got.Verdict != "would-refuse" {
+		t.Fatalf("goal-less agent landing on an ordinary ledger classified as %+v", got)
+	}
+
+	free := newObserveFixture(t)
+	free.writeBytes("plans/goals/backlog.md", goal.RenderRoot(&goal.RootRecord{
+		Identity: "01ARZ3NDEKTSV4RRFFQ69G5FAV", FormatVersion: "1", SyncMode: goal.SyncRemote, Revision: 1,
+		Free: &goal.FreeRecord{Declared: "2026-09-03T08:00:00Z", Origin: "human", Digest: strings.Repeat("a", 64)},
+	}))
+	free.git("add", "plans/goals/backlog.md")
+	free.git("commit", "-qm", "declare fixture ledger goal-free")
+	free.write("records/misc/fixture.md", "fixture\n")
+	params.RepoRoot, params.CandidateTree = free.root, free.tree()
+	if got := Observe(params); got.Code != "register-carriage" || !strings.Contains(got.Provenance, " goal-free") {
+		t.Fatalf("goal-less agent landing on a Goal-free ledger classified as %+v", got)
+	}
+
+	params.Actor = "m9+human"
+	params.RepoRoot, params.CandidateTree = nonFree.root, nonFree.tree()
+	if got := Observe(params); got.Code != "goal-binding-missing" || got.Verdict != "would-refuse" {
+		t.Fatalf("human observation did not record the would-refuse verdict: %+v", got)
+	}
+
+	free.write("internal/x.go", "package internal\n")
+	chainCandidate := free.tree()
+	free.writeChainRecord("goal-chain", map[string]any{
+		"jobId": "goal-chain", "parentJob": nil, "role": "implementer", "round": 1,
+		"destructiveReach": "DESIGN-BEARING", "chainClosed": true,
+		"goalId": "ship-widget", "goalRevision": 3,
+	})
+	free.writeChainReview("goal-chain", 1, "goal-chain", chainCandidate)
+	if got := Observe(ObserveParams{RepoRoot: free.root, CandidateTree: chainCandidate, Chain: "goal-chain", Actor: "m9+lineage"}); got.Code != "goal-binding-missing" {
+		t.Fatalf("Goal-free ledger overrode a goal-bound chain root: %+v", got)
+	}
+}
+
+func (f *observeFixture) writeHeldGoalAtRevision(id, machine, lineage string, revision uint64) {
+	f.t.Helper()
+	history := make([]goal.HistoryLine, revision)
+	for index := range history {
+		at := fmt.Sprintf("2026-09-03T08:%02d:00Z", index)
+		history[index] = goal.HistoryLine{
+			At: at, Opid: fmt.Sprintf("01ARZ3NDEKTSV4RRFFQ69G5FAW-%s-%08x", machine, index+1),
+			Verb: "edit", Actor: machine + "+" + lineage, Targets: []string{id}, Keep: -1,
+		}
+	}
+	history[revision-1].Verb = "claim"
+	f.writeBytes(filepath.Join("plans", "goals", id+".md"), goal.RenderFile(&goal.GoalFile{
+		Id: id, State: goal.StateClaimed, Intent: "Fixture ownership.", Origin: goal.OriginMain,
+		NextStep: "Exercise landing binding.", OpenedAt: "2026-09-03T08:00:00Z", Revision: revision,
+		Claimed: &goal.ClaimRecord{Machine: machine, Lineage: lineage, At: history[revision-1].At, Revision: revision, AccountingRevision: revision},
+		History: history,
+	}))
 }

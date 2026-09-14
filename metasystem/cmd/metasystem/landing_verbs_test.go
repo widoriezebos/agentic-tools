@@ -555,8 +555,10 @@ observation=$("$root/bin/metasystem" landing observe --root "$root" --tree "$tre
 verdict=$("$root/bin/metasystem" json get --value "$observation" --field verdictTrailer)
 [[ "$verdict" == "pass bar=a" ]] || { printf '%s\n' "$observation" >&2; exit 83; }
 provenance=$("$root/bin/metasystem" json get --value "$observation" --field provenance)
+revision=$("$root/bin/metasystem" json get --value "$observation" --field goalRevision)
 git commit "${commit_args[@]}" --trailer "Landing-Provenance: $provenance" \
-  --trailer "Landing-Provenance-Verdict: $verdict"
+  --trailer "Landing-Provenance-Verdict: $verdict" --trailer "Machine: $actor" \
+  --trailer "Goal-Item: $goal" --trailer "Goal-Revision: $revision"
 `)
 	if err := os.Chmod(filepath.Join(root, "scripts", "agents", "commit.sh"), 0o755); err != nil {
 		t.Fatal(err)

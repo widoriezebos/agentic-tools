@@ -12,6 +12,7 @@ import (
 
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/boundedexec"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/gittree"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/goal"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/validate"
 )
 
@@ -30,8 +31,30 @@ func fullReceiptCommandAccepted(receipt TestReceipt) bool {
 
 func observeTierOne(params ObserveParams, change string) Observation {
 	provenance := "direct-fix class=tier-1 change=" + change
-	if !landingID.MatchString(params.RootJob) || !landingID.MatchString(params.Goal) {
+	if !landingID.MatchString(params.RootJob) || (params.Goal != "" && !landingID.MatchString(params.Goal)) {
 		return refuse("tier1-declaration-refused", provenance)
+	}
+	gateWidth, record, err := tierOneRootGateWidth(params)
+	if err != nil {
+		return refuse("tier1-root-refused", provenance)
+	}
+	boundGoal, boundRevision, goalBound, bindingErr := chainRecordGoalBinding(record)
+	if bindingErr != nil {
+		result := refuse("chain-record-malformed", provenance)
+		result.Detail = bindingErr.Error()
+		return result
+	}
+	if goalBound {
+		if params.Goal == "" {
+			result := refuse("goal-binding-missing", provenance)
+			result.Detail = fmt.Sprintf("chain %s was dispatched under goal %s; this landing names no goal", params.RootJob, boundGoal)
+			return result
+		}
+		if params.Goal != boundGoal {
+			result := refuse("goal-binding-mismatch", provenance)
+			result.Detail = fmt.Sprintf("chain %s was dispatched under goal %s, not %s", params.RootJob, boundGoal, params.Goal)
+			return result
+		}
 	}
 	workspace := gittree.Workspace{Dir: params.RepoRoot}
 	baseTree, err := workspace.HeadTree()
@@ -42,16 +65,25 @@ func observeTierOne(params ObserveParams, change string) Observation {
 	if err != nil {
 		return refuse("tier1-policy-unreadable", provenance)
 	}
-	held, err := heldGoal(workspace, baseTree, params.Goal, params.Actor)
-	if err != nil {
-		return refuse(carriageRefusalCode(err), provenance)
+	goalFree := false
+	if params.Goal == "" && params.Actor != "" {
+		if !goalFreeAt(workspace, baseTree) {
+			result := refuse("goal-binding-missing", provenance)
+			result.Detail = "agent landings are goal work: name the held goal with --goal, or the ledger must be declared Goal-free"
+			return result
+		}
+		provenance += " goal-free"
+		goalFree = true
 	}
-	if held.Tier != 1 {
-		return refuse(fmt.Sprintf("tier1-goal-tier-%d-refused", held.Tier), provenance)
-	}
-	gateWidth, err := tierOneRootGateWidth(params)
-	if err != nil {
-		return refuse("tier1-root-refused", provenance)
+	var held *goal.GoalFile
+	if !goalFree {
+		held, err = heldGoal(workspace, baseTree, params.Goal, params.Actor, boundRevision)
+		if err != nil {
+			return refuse(carriageRefusalCode(err), provenance)
+		}
+		if held.Tier != 1 {
+			return refuse(fmt.Sprintf("tier1-goal-tier-%d-refused", held.Tier), provenance)
+		}
 	}
 	provenance = fmt.Sprintf("direct-fix class=tier-1 root-job=%s goal=%s change=%s", params.RootJob, params.Goal, change)
 	paths, err := workspace.ChangedPaths(baseTree, params.CandidateTree)
@@ -98,35 +130,39 @@ func observeTierOne(params ObserveParams, change string) Observation {
 	if gateWidth == "full" && !fullReceiptCommandAccepted(receipt) {
 		return refuse("tier1-full-gate-refused", provenance)
 	}
-	return pass(BarDirectFix, "tier-1", provenance)
+	result := pass(BarDirectFix, "tier-1", provenance)
+	if held != nil {
+		result.GoalRevision = held.Claimed.Revision
+	}
+	return result
 }
 
-func tierOneRootGateWidth(params ObserveParams) (string, error) {
+func tierOneRootGateWidth(params ObserveParams) (string, map[string]any, error) {
 	if !landingID.MatchString(params.RootJob) {
-		return "", fmt.Errorf("root job id is malformed")
+		return "", nil, fmt.Errorf("root job id is malformed")
 	}
 	data, err := os.ReadFile(filepath.Join(params.RepoRoot, "artifacts", "agents", "jobs", params.RootJob+".json"))
 	if err != nil {
-		return "", err
+		return "", nil, err
 	}
 	var record map[string]any
 	if json.Unmarshal(data, &record) != nil || record["jobId"] != params.RootJob || record["parentJob"] != nil ||
-		record["role"] != "implementer" || record["goalId"] != params.Goal {
-		return "", fmt.Errorf("root job does not identify the goal's root implementer")
+		record["role"] != "implementer" {
+		return "", nil, fmt.Errorf("root job does not identify a root implementer")
 	}
 	tier, ok := jsonInteger(record["goalTier"])
 	if !ok || tier != 1 {
-		return "", fmt.Errorf("root job is not tier 1")
+		return "", nil, fmt.Errorf("root job is not tier 1")
 	}
 	width, present := record["gateWidth"]
 	if !present {
-		return "area", nil
+		return "area", record, nil
 	}
 	text, ok := width.(string)
 	if !ok || (text != "area" && text != "full") {
-		return "", fmt.Errorf("root job gateWidth must be area or full")
+		return "", nil, fmt.Errorf("root job gateWidth must be area or full")
 	}
-	return text, nil
+	return text, record, nil
 }
 
 func tierOneDiffMetric(root string, workspace gittree.Workspace, baseTree, candidateTree string, paths []string) (int, error) {

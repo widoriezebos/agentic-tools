@@ -62,6 +62,7 @@ repo:development/devin-selftest.md behavior
 
 # Repository-relative records, consulted only in template mode.
 repo:development/ record
+repo:records/ record
 
 # Ownership rows are exact files beneath install:plans/ and are initially empty.
 

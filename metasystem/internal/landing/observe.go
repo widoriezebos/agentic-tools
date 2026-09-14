@@ -78,6 +78,7 @@ type Observation struct {
 	Unclassified   []string `json:"unclassified,omitempty"`
 	Refusal        string   `json:"refusal,omitempty"`
 	Detail         string   `json:"detail,omitempty"`
+	GoalRevision   uint64   `json:"goalRevision,omitempty"`
 	promotionTree  string
 	frozenTarget   string
 }
@@ -322,9 +323,14 @@ func changeDigest(root, candidateTree string) (string, error) {
 
 func observeChain(params ObserveParams, change string) (observation Observation) {
 	frozenTargetCommit, frozenTargetTree := "", ""
+	var observedGoalRevision uint64
+	goalFree := false
 	defer func() {
 		observation.promotionTree = frozenTargetTree
 		observation.frozenTarget = frozenTargetCommit
+		if observation.Mode == "observe" && observedGoalRevision > 0 {
+			observation.GoalRevision = observedGoalRevision
+		}
 	}()
 	provenance := "invalid change=" + change
 	if !landingID.MatchString(params.Chain) {
@@ -339,6 +345,24 @@ func observeChain(params ObserveParams, change string) (observation Observation)
 	var record map[string]any
 	if json.Unmarshal(data, &record) != nil || record["jobId"] != params.Chain || record["parentJob"] != nil {
 		return wouldRefuse("chain-record-malformed", provenance)
+	}
+	boundGoal, boundRevision, goalBound, bindingErr := chainRecordGoalBinding(record)
+	if bindingErr != nil {
+		result := wouldRefuse("chain-record-malformed", provenance)
+		result.Detail = bindingErr.Error()
+		return result
+	}
+	if goalBound {
+		switch {
+		case params.Goal == "":
+			result := wouldRefuse("goal-binding-missing", provenance)
+			result.Detail = fmt.Sprintf("chain %s was dispatched under goal %s; this landing names no goal", params.Chain, boundGoal)
+			return result
+		case params.Goal != boundGoal:
+			result := wouldRefuse("goal-binding-mismatch", provenance)
+			result.Detail = fmt.Sprintf("chain %s was dispatched under goal %s, not %s", params.Chain, boundGoal, params.Goal)
+			return result
+		}
 	}
 	if record["role"] != "implementer" {
 		return wouldRefuse("chain-not-implementation", provenance)
@@ -453,6 +477,15 @@ func observeChain(params ObserveParams, change string) (observation Observation)
 			return wouldRefuse("register-carriage-policy-unreadable", provenance)
 		}
 	}
+	if params.Goal == "" && params.Actor != "" {
+		if !goalFreeAt(workspace, baseTree) {
+			result := wouldRefuse("goal-binding-missing", provenance)
+			result.Detail = "agent landings are goal work: name the held goal with --goal, or the ledger must be declared Goal-free"
+			return result
+		}
+		goalFree = true
+		provenance += " goal-free"
+	}
 	classes, err := loadPathClasses(workspace, baseTree)
 	if err != nil {
 		return wouldRefuse(carriageRefusalCode(err), provenance)
@@ -471,9 +504,11 @@ func observeChain(params ObserveParams, change string) (observation Observation)
 		}
 	}
 	if params.Goal != "" {
-		if err := heldGoalError(workspace, baseTree, params.Goal, params.Actor); err != nil {
+		held, err := heldGoal(workspace, baseTree, params.Goal, params.Actor, boundRevision)
+		if err != nil {
 			return wouldRefuseFromCarriage(err, provenance)
 		}
+		observedGoalRevision = held.Claimed.Revision
 	}
 	if classErr := chainClassError(resolved, changedPaths); classErr != nil {
 		return wouldRefuseFromCarriage(classErr, provenance)
@@ -487,7 +522,10 @@ func observeChain(params ObserveParams, change string) (observation Observation)
 	}
 	if params.DirectFix == "register-carriage" {
 		provenance = fmt.Sprintf("chain=%s direct-fix class=register-carriage change=%s certified-change=%s", params.Chain, change, certifiedDigest)
-		if err := registerCarriage(params.RepoRoot, params.CandidateTree, extraPaths, params.Goal, params.Actor); err != nil {
+		if goalFree {
+			provenance += " goal-free"
+		}
+		if _, err := registerCarriage(params.RepoRoot, params.CandidateTree, extraPaths, params.Goal, params.Actor, 0); err != nil {
 			return wouldRefuseFromCarriage(err, provenance)
 		}
 		if frozenTargetCommit != "" && recertifiedTargetMoved(workspace, frozenTargetCommit) {
@@ -799,6 +837,31 @@ func jsonInteger(value any) (int, bool) {
 	}
 }
 
+func chainRecordGoalBinding(record map[string]any) (string, uint64, bool, error) {
+	value, present := record["goalId"]
+	if !present || value == nil {
+		return "", 0, false, nil
+	}
+	goalID, ok := value.(string)
+	if !ok || goalID == "" || !landingID.MatchString(goalID) {
+		return "", 0, false, fmt.Errorf("goal-bound chain root has a malformed goalId")
+	}
+	revision, ok := jsonInteger(record["goalRevision"])
+	if !ok || revision < 1 {
+		return "", 0, false, fmt.Errorf("goal-bound chain root has no positive goalRevision")
+	}
+	return goalID, uint64(revision), true, nil
+}
+
+func goalFreeAt(workspace gittree.Workspace, tree string) bool {
+	data, present, err := workspace.FileAt(tree, "plans/goals/backlog.md")
+	if err != nil || !present {
+		return false
+	}
+	record, problems := goal.ParseRoot(data)
+	return len(problems) == 0 && record.Free != nil
+}
+
 // bindCertifiedChange applies the certified patch to the landing's current
 // base, then compares canonical change digests over exactly the certified
 // paths. Unrelated base movement and bundled carriage paths are outside that
@@ -903,6 +966,9 @@ func carriageRefusalCode(err error) string {
 func wouldRefuseFromCarriage(err error, provenance string) Observation {
 	observation := wouldRefuse(carriageRefusalCode(err), provenance)
 	var carriage *carriageError
+	if errors.As(err, &carriage) {
+		observation.Detail = carriage.Error()
+	}
 	if errors.As(err, &carriage) && len(carriage.unclassified) > 0 {
 		observation.Unclassified = append([]string(nil), carriage.unclassified...)
 		lines := make([]string, 0, len(carriage.unclassified))
@@ -927,37 +993,39 @@ type landingClassManifest struct {
 	} `json:"classes"`
 }
 
-func registerCarriage(root, candidateTree string, changedPaths []string, goalID, actor string) error {
+func registerCarriage(root, candidateTree string, changedPaths []string, goalID, actor string, want uint64) (*goal.GoalFile, error) {
 	workspace := gittree.Workspace{Dir: root}
 	baseTree, err := workspace.HeadTree()
 	if err != nil {
-		return err
+		return nil, err
 	}
 	classes, err := loadPathClasses(workspace, baseTree)
 	if err != nil {
-		return err
+		return nil, err
 	}
 	resolved, err := resolvePathClasses(workspace, classes, changedPaths)
 	if err != nil {
-		return &carriageError{code: "register-carriage-policy-unreadable", err: err}
+		return nil, &carriageError{code: "register-carriage-policy-unreadable", err: err}
 	}
 	if err := behaviorResolvedError(resolved, changedPaths); err != nil {
-		return err
+		return nil, err
 	}
+	var held *goal.GoalFile
 	if goalID != "" {
-		if err := heldGoalError(workspace, baseTree, goalID, actor); err != nil {
-			return err
+		held, err = heldGoal(workspace, baseTree, goalID, actor, want)
+		if err != nil {
+			return nil, err
 		}
 	}
 	if err := nonBehaviorClassError(resolved, changedPaths, false); err != nil {
-		return err
+		return nil, err
 	}
 	for _, changedPath := range changedPaths {
 		if err := recordCarriageError(workspace, baseTree, candidateTree, classes, changedPath, goalID, actor); err != nil {
-			return err
+			return nil, err
 		}
 	}
-	return nil
+	return held, nil
 }
 
 func resolvePathClasses(workspace gittree.Workspace, classes *pathclass.Manifest, changedPaths []string) (map[string]pathclass.Class, error) {
@@ -1022,7 +1090,7 @@ func nonBehaviorClassError(resolved map[string]pathclass.Class, changedPaths []s
 	return nil
 }
 
-func heldGoal(workspace gittree.Workspace, baseTree, goalID, actor string) (*goal.GoalFile, error) {
+func heldGoal(workspace gittree.Workspace, baseTree, goalID, actor string, want uint64) (*goal.GoalFile, error) {
 	data, present, err := workspace.FileAt(baseTree, "plans/goals/"+goalID+".md")
 	if err != nil || !present {
 		return nil, &carriageError{code: "goal-item-not-held", err: fmt.Errorf("goal item %s is not held by %s", goalID, actor)}
@@ -1032,11 +1100,14 @@ func heldGoal(workspace gittree.Workspace, baseTree, goalID, actor string) (*goa
 		actor != file.Claimed.Machine+"+"+file.Claimed.Lineage {
 		return nil, &carriageError{code: "goal-item-not-held", err: fmt.Errorf("goal item %s is not held by %s", goalID, actor)}
 	}
+	if want != 0 && file.Claimed.Revision != want {
+		return nil, &carriageError{code: "goal-revision-moved", err: fmt.Errorf("goal item %s is claimed at revision %d; this landing was dispatched under revision %d", goalID, file.Claimed.Revision, want)}
+	}
 	return file, nil
 }
 
-func heldGoalError(workspace gittree.Workspace, baseTree, goalID, actor string) error {
-	_, err := heldGoal(workspace, baseTree, goalID, actor)
+func heldGoalError(workspace gittree.Workspace, baseTree, goalID, actor string, want uint64) error {
+	_, err := heldGoal(workspace, baseTree, goalID, actor, want)
 	return err
 }
 
@@ -1325,10 +1396,23 @@ func observeDirectFix(params ObserveParams, change string) Observation {
 		if err != nil {
 			return wouldRefuse("register-carriage-policy-unreadable", provenance)
 		}
-		if err := registerCarriage(params.RepoRoot, params.CandidateTree, paths, params.Goal, params.Actor); err != nil {
+		if params.Goal == "" && params.Actor != "" {
+			if !goalFreeAt(workspace, baseTree) {
+				result := wouldRefuse("goal-binding-missing", provenance)
+				result.Detail = "agent landings are goal work: name the held goal with --goal, or the ledger must be declared Goal-free"
+				return result
+			}
+			provenance += " goal-free"
+		}
+		held, err := registerCarriage(params.RepoRoot, params.CandidateTree, paths, params.Goal, params.Actor, 0)
+		if err != nil {
 			return wouldRefuseFromCarriage(err, provenance)
 		}
-		return pass(BarDirectFix, "register-carriage", provenance)
+		result := pass(BarDirectFix, "register-carriage", provenance)
+		if held != nil {
+			result.GoalRevision = held.Claimed.Revision
+		}
+		return result
 	case "exact-revert":
 		provenance := "direct-fix class=exact-revert change=" + change
 		if !treeOID.MatchString(params.RevertOf) {
@@ -1340,11 +1424,33 @@ func observeDirectFix(params ObserveParams, change string) Observation {
 		if err != nil || classErr != nil {
 			return wouldRefuse("direct-fix-policy-unreadable", provenance)
 		}
+		var held *goal.GoalFile
+		goalFree := false
+		if params.Goal == "" && params.Actor != "" {
+			if !goalFreeAt(workspace, baseTree) {
+				result := wouldRefuse("goal-binding-missing", provenance)
+				result.Detail = "agent landings are goal work: name the held goal with --goal, or the ledger must be declared Goal-free"
+				return result
+			}
+			goalFree = true
+		} else if params.Goal != "" {
+			held, err = heldGoal(workspace, baseTree, params.Goal, params.Actor, 0)
+			if err != nil {
+				return wouldRefuseFromCarriage(err, provenance)
+			}
+		}
 		provenance = fmt.Sprintf("direct-fix class=exact-revert revert-of=%s change=%s", params.RevertOf, change)
+		if goalFree {
+			provenance += " goal-free"
+		}
 		if err := exactRevert(params.RepoRoot, params.CandidateTree, params.RevertOf, classes, params.Goal, params.Actor); err != nil {
 			return wouldRefuseFromExactRevert(err, provenance)
 		}
-		return pass(BarDirectFix, "exact-revert", provenance)
+		result := pass(BarDirectFix, "exact-revert", provenance)
+		if held != nil {
+			result.GoalRevision = held.Claimed.Revision
+		}
+		return result
 	case "tier-1":
 		return observeTierOne(params, change)
 	default:
@@ -1455,7 +1561,7 @@ func exactRevertPolicyError(workspace gittree.Workspace, baseTree string, classe
 		return err
 	}
 	if goalID != "" {
-		if err := heldGoalError(workspace, baseTree, goalID, actor); err != nil {
+		if err := heldGoalError(workspace, baseTree, goalID, actor, 0); err != nil {
 			var carriage *carriageError
 			if errors.As(err, &carriage) {
 				return &exactRevertError{code: carriage.code, err: carriage.err}

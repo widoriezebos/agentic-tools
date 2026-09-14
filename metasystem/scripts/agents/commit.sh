@@ -52,6 +52,10 @@ else
   [[ "$expected_epoch" == human ]] || exit 2
   "$ms" lease require-holder --root "$root" --caller-pid "$$" >/dev/null
 fi
+if (( agent_commit )) && [[ -z "${METASYSTEM_OWNER_LINEAGE:-}" ]]; then
+  echo "agent commit refused: the lease holder has a claim epoch but no owner lineage; export METASYSTEM_OWNER_LINEAGE in the seat's shell" >&2
+  exit 2
+fi
 
 push_after=0
 if [[ ${1:-} == --push ]]; then
@@ -193,6 +197,10 @@ message_has_carried_item() { # message text
   LC_ALL=C grep -Eq '^(Carry|Carried-By|Carried-Tree|Carried-Past|Carried-Battery|Carried-Judge|Carried-Ledger):' <<<"$1"
 }
 
+message_has_machine() { # message text
+  LC_ALL=C grep -Eiq '^Machine:' <<<"$1"
+}
+
 scan_commit_message_inputs() {
   local index=0 arg value
   while (( index < ${#commit_args[@]} )); do
@@ -206,14 +214,18 @@ scan_commit_message_inputs() {
         value=${commit_args[index+1]}
         case "$arg" in
           -m|--message|--trailer)
-		    if message_has_carried_item "$value"; then
-		      echo "commit refused: Goal-Item and carried trailers are stamped by the wrapper, never typed" >&2
-		      return 1
-		    fi
-		    if message_has_goal_item "$value"; then
-		      echo "commit refused: Goal-Item and carried trailers are stamped by the wrapper, never typed" >&2
-		      return 2
-		    fi
+            if message_has_carried_item "$value"; then
+              echo "commit refused: Goal-Item and carried trailers are stamped by the wrapper, never typed" >&2
+              return 1
+            fi
+            if message_has_machine "$value"; then
+              echo "commit refused: Machine is stamped by the wrapper, never typed" >&2
+              return 2
+            fi
+            if message_has_goal_item "$value"; then
+              echo "commit refused: Goal-Item and carried trailers are stamped by the wrapper, never typed" >&2
+              return 2
+            fi
             ;;
           -F|--file)
             if [[ "$value" == - ]]; then
@@ -224,14 +236,18 @@ scan_commit_message_inputs() {
               echo "commit refused: commit message file is not readable: $value" >&2
               return 2
             fi
-		    if message_has_carried_item "$(<"$value")"; then
-		      echo "commit refused: Goal-Item and carried trailers are stamped by the wrapper, never typed" >&2
-		      return 1
-		    fi
-		    if message_has_goal_item "$(<"$value")"; then
-		      echo "commit refused: Goal-Item and carried trailers are stamped by the wrapper, never typed" >&2
-		      return 2
-		    fi
+            if message_has_carried_item "$(<"$value")"; then
+              echo "commit refused: Goal-Item and carried trailers are stamped by the wrapper, never typed" >&2
+              return 1
+            fi
+            if message_has_machine "$(<"$value")"; then
+              echo "commit refused: Machine is stamped by the wrapper, never typed" >&2
+              return 2
+            fi
+            if message_has_goal_item "$(<"$value")"; then
+              echo "commit refused: Goal-Item and carried trailers are stamped by the wrapper, never typed" >&2
+              return 2
+            fi
             ;;
           *)
             echo "commit refused: $arg is an unscannable commit message source" >&2
@@ -242,14 +258,18 @@ scan_commit_message_inputs() {
         ;;
       --message=*|--trailer=*)
         value=${arg#*=}
-		if message_has_carried_item "$value"; then
-		  echo "commit refused: Goal-Item and carried trailers are stamped by the wrapper, never typed" >&2
-		  return 1
-		fi
-		if message_has_goal_item "$value"; then
-		  echo "commit refused: Goal-Item and carried trailers are stamped by the wrapper, never typed" >&2
-		  return 2
-		fi
+        if message_has_carried_item "$value"; then
+          echo "commit refused: Goal-Item and carried trailers are stamped by the wrapper, never typed" >&2
+          return 1
+        fi
+        if message_has_machine "$value"; then
+          echo "commit refused: Machine is stamped by the wrapper, never typed" >&2
+          return 2
+        fi
+        if message_has_goal_item "$value"; then
+          echo "commit refused: Goal-Item and carried trailers are stamped by the wrapper, never typed" >&2
+          return 2
+        fi
         index=$((index + 1))
         ;;
       --file=*)
@@ -262,14 +282,18 @@ scan_commit_message_inputs() {
           echo "commit refused: commit message file is not readable: $value" >&2
           return 2
         fi
-		if message_has_carried_item "$(<"$value")"; then
-		  echo "commit refused: Goal-Item and carried trailers are stamped by the wrapper, never typed" >&2
-		  return 1
-		fi
-		if message_has_goal_item "$(<"$value")"; then
-		  echo "commit refused: Goal-Item and carried trailers are stamped by the wrapper, never typed" >&2
-		  return 2
-		fi
+        if message_has_carried_item "$(<"$value")"; then
+          echo "commit refused: Goal-Item and carried trailers are stamped by the wrapper, never typed" >&2
+          return 1
+        fi
+        if message_has_machine "$(<"$value")"; then
+          echo "commit refused: Machine is stamped by the wrapper, never typed" >&2
+          return 2
+        fi
+        if message_has_goal_item "$(<"$value")"; then
+          echo "commit refused: Goal-Item and carried trailers are stamped by the wrapper, never typed" >&2
+          return 2
+        fi
         index=$((index + 1))
         ;;
       --reuse-message=*|--reedit-message=*|--template=*|--squash=*|--fixup=*|--amend)
@@ -584,6 +608,7 @@ landing_code="evaluator-unavailable"
 landing_mode="refuse"
 landing_observation=
 landing_refusal=
+landing_goal_revision=
 judge=$policy_engine
 judge_mode=
 judge_tree=
@@ -597,6 +622,7 @@ read_landing_observation() { # JSON reader
   observed_code=$("$reader" json get --value "$landing_observation" --field code 2>/dev/null || true)
   observed_mode=$("$reader" json get --value "$landing_observation" --field mode 2>/dev/null || true)
   observed_refusal=$("$reader" json get --value "$landing_observation" --field refusal --default "" 2>/dev/null || true)
+  observed_goal_revision=$("$reader" json get --value "$landing_observation" --field goalRevision --default "" 2>/dev/null || true)
   if [[ -n "$observed_provenance" && -n "$observed_verdict" && -n "$observed_code" \
     && ( "$observed_mode" == observe || "$observed_mode" == refuse ) ]]; then
     landing_provenance=$observed_provenance
@@ -604,6 +630,9 @@ read_landing_observation() { # JSON reader
     landing_code=$observed_code
     landing_mode=$observed_mode
     landing_refusal=$observed_refusal
+    if [[ "$observed_goal_revision" =~ ^[1-9][0-9]*$ ]]; then
+      landing_goal_revision=$observed_goal_revision
+    fi
     return 0
   fi
   return 1
@@ -672,7 +701,7 @@ if (( agent_commit )) && [[ "$landing_mode" == refuse ]]; then
       ;;
     promotion-record-malformed)
       echo "agent commit refused: the landing promotion record is malformed ($landing_verdict)" >&2
-      landing_repair="a human must repair the landing promotion record before an agent retries"
+      landing_repair="The landing judge may be older than this policy. A human must rebuild and re-arm it from the landed policy commit or a descendant, then retry. If that judge supports the record version, repair the record through a reviewed implementation chain."
       ;;
     path-unclassified)
       echo "agent commit refused: the landing contains an unclassified path ($landing_verdict)" >&2
@@ -694,6 +723,18 @@ if (( agent_commit )) && [[ "$landing_mode" == refuse ]]; then
     goal-item-not-held)
       echo "agent commit refused: the Goal-Item is not held by this machine and lineage ($landing_verdict)" >&2
       landing_repair="use a goal claimed by this machine and lineage"
+      ;;
+    goal-revision-moved)
+      echo "agent commit refused: the Goal-Item's claim revision moved since this chain was dispatched ($landing_verdict)" >&2
+      landing_repair="the work belongs to a claim that no longer exists; re-dispatch under the current claim, or abandon the work"
+      ;;
+    goal-binding-missing)
+      echo "agent commit refused: this landing names no goal and the ledger is not Goal-free ($landing_verdict)" >&2
+      landing_repair="name the held goal with --goal <id>; a goal-bound chain lands under the goal it was dispatched for"
+      ;;
+    goal-binding-mismatch)
+      echo "agent commit refused: the chain was dispatched under a different goal than --goal names ($landing_verdict)" >&2
+      landing_repair="land the chain under the goal it was dispatched for"
       ;;
     record-not-owned)
       echo "agent commit refused: the staged record is not owned by this landing ($landing_verdict)" >&2
@@ -806,13 +847,39 @@ if [[ -n "$landing_carried" ]]; then
     --trailer "Carried-Ledger: $landing_ledger_tip"
   )
 fi
+if [[ -n "$landing_goal" && "$landing_verdict" == pass\ * && -n "$landing_goal_revision" ]]; then
+  commit_trailers+=(--trailer "Goal-Revision: $landing_goal_revision")
+fi
 git -C "$root" commit "${commit_trailers[@]}" "${commit_args[@]}"
 landed_tree=$(git -C "$root" rev-parse HEAD^{tree})
 landed_message=$(git -C "$root" log -1 --format=%B)
 goal_item_count=$(LC_ALL=C grep -Eic '^Goal-Item:' <<<"$landed_message" || true)
 exact_goal_item_count=0
+machine_count=$(LC_ALL=C grep -Eic '^Machine:' <<<"$landed_message" || true)
+exact_machine_count=$(grep -Fxc -- "Machine: $landing_actor" <<<"$landed_message" || true)
+goal_revision_count=$(LC_ALL=C grep -Eic '^Goal-Revision:' <<<"$landed_message" || true)
+exact_goal_revision_count=0
+expect_goal_revision=0
 if [[ -n "$landing_goal" ]]; then
   exact_goal_item_count=$(grep -Fxc -- "Goal-Item: $landing_goal" <<<"$landed_message" || true)
+fi
+if [[ -n "$landing_goal" && "$landing_verdict" == pass\ * ]]; then
+  expect_goal_revision=1
+  if [[ -n "$landing_goal_revision" ]]; then
+    exact_goal_revision_count=$(grep -Fxc -- "Goal-Revision: $landing_goal_revision" <<<"$landed_message" || true)
+  fi
+fi
+postcondition_trailer=
+postcondition_count=0
+if (( machine_count != 1 || exact_machine_count != 1 )); then
+  postcondition_trailer=Machine
+  postcondition_count=$machine_count
+elif (( expect_goal_revision )) && (( goal_revision_count != 1 || exact_goal_revision_count != 1 )); then
+  postcondition_trailer=Goal-Revision
+  postcondition_count=$goal_revision_count
+elif (( ! expect_goal_revision )) && (( goal_revision_count != 0 )); then
+  postcondition_trailer=Goal-Revision
+  postcondition_count=$goal_revision_count
 fi
 carried_postcondition=0
 carried_postcondition_detail=
@@ -850,7 +917,7 @@ else
     fi
   done
 fi
-if [[ "$landed_tree" != "$proved_tree" || ( -n "$landing_goal" && ( $goal_item_count -ne 1 || $exact_goal_item_count -ne 1 ) ) || ( -z "$landing_goal" && $goal_item_count -ne 0 ) || $carried_postcondition -ne 0 ]]; then
+if [[ "$landed_tree" != "$proved_tree" || -n "$postcondition_trailer" || ( -n "$landing_goal" && ( $goal_item_count -ne 1 || $exact_goal_item_count -ne 1 ) ) || ( -z "$landing_goal" && $goal_item_count -ne 0 ) || $carried_postcondition -ne 0 ]]; then
   if [[ -n "$proved_head" ]]; then
     git -C "$root" reset --soft "$proved_head"
   else
@@ -858,6 +925,12 @@ if [[ "$landed_tree" != "$proved_tree" || ( -n "$landing_goal" && ( $goal_item_c
   fi
   if [[ "$landed_tree" != "$proved_tree" ]]; then
     echo "agent commit refused: the commit recorded a tree the static re-proof never judged (content selection beyond the index); the commit was rolled back — stage the exact bytes and commit them plainly" >&2
+  elif [[ -n "$postcondition_trailer" ]]; then
+    if [[ "$postcondition_trailer" == Machine ]]; then
+      echo "agent commit refused: the final commit message did not contain exactly one byte-exact Goal-Item stamped by --goal; the commit was rolled back; expected exactly one Machine trailer, found $postcondition_count" >&2
+    else
+      echo "agent commit refused: the final commit message did not contain exactly one byte-exact Goal-Item stamped by --goal; the commit was rolled back; expected exactly one Goal-Revision trailer, found $postcondition_count" >&2
+    fi
   elif (( carried_postcondition )); then
     echo "agent commit refused: the final commit message failed the carried-trailer postcondition ($carried_postcondition_detail); the commit was rolled back" >&2
   else
@@ -874,6 +947,12 @@ if (( push_after )); then
     echo "landing push refused: HEAD is not on a branch" >&2
     exit 1
   }
+  git -C "$root" fetch --quiet origin "+refs/heads/$branch:refs/remotes/origin/$branch" || {
+    echo "landing push refused: origin could not be fetched; the commit stands locally" >&2
+    exit 1
+  }
+  "$policy_engine" landing held --root "$root" --base "refs/remotes/origin/$branch" \
+    --commit HEAD --remote origin --ref "refs/heads/$branch" || exit 1
   git -C "$root" push origin "$branch" || {
     echo "landing push failed at origin; the commit stands locally — resolve and push both remotes" >&2
     exit 1

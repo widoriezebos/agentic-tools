@@ -216,9 +216,20 @@ and a hand park may drop one only because the park itself does.
 
 ## The drop rule
 
-A backlog item earns its place from current behavior or current
-pain; losing that, it concludes with a record cheap to reopen from.
-History is preserved in the conclusion note, never in a queue slot.
+**The want evaporated.** The behavior or pain that justified the item is
+gone. Conclude it: `goal done --concluded "<what changed so this is no
+longer wanted>"`. Done means the ledger's promise is discharged, and this
+case discharges it honestly.
+
+**The want survives; the pursuit stops.** The item is still wanted but will
+not be worked: the record is wedged, the work moved to a successor, or the
+cost is no longer worth it. Abandon it: `goal abandon --id <goal> --by
+<human> --because "<why>" [--carried <successor>]`. An abandoned goal leaves
+the live set, carries its reason forever, satisfies no dependency, is never
+pruned, and a human can reopen it into the queue unranked and unapproved.
+Never conclude such a goal: a conclusion that says the work was not done
+corrupts every count of completed work. Never park it: parked means resume
+later.
 
 ## Pinning a goal to a machine
 
@@ -291,6 +302,9 @@ landing as the conclusion. The narrator goal owns the file's shape;
 every concluder writes in it. Mechanically: append the chapter at
 the end of the file — never anchor an edit on existing prose, which
 wraps across lines and fails silently.
+
+An abandoned goal writes no journey chapter; its reason on the record is its
+story.
 
 How a chapter is written (Wido's standard, 2026-08-23): the journey
 is for a casual reader who has never seen this repository. Every

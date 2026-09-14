@@ -623,6 +623,13 @@ rebase_origin() {
   return "$rc"
 }
 
+held_check() {
+  local base="refs/remotes/origin/$branch"
+  [[ -z "$landing_recertification" ]] || base=$recert_target
+  "$ms" landing held --root "$root" --base "$base" --commit HEAD \
+    --remote origin --ref "refs/heads/$branch"
+}
+
 push_origin() {
   LC_ALL=C git push --porcelain origin "refs/heads/$branch:refs/heads/$branch"
 }
@@ -954,6 +961,7 @@ print_carried_advisory() { # commit
 
 finish_carried_publication() {
   local commit=$1
+  run_required_step "goal held at the rebased base" held_check
   create_carried_intent "$commit"
 	print_carried_advisory "$commit"
   fixture_pause before-push
@@ -1130,6 +1138,14 @@ else
   run_required_step "verify clean after commit" require_clean_after_commit
 fi
 if [[ -n "$landing_recertification" ]]; then
+  run_step "goal held at the rebased base" held_check
+  held_rc=$?
+  if (( held_rc != 0 )); then
+    held_detail=$(tail -n 1 "$step_output")
+    printf '%s\n' "$held_detail" >&2
+    park_recertified chain-recertification-target-moved "$held_detail"
+  fi
+  cat "$step_output"
   run_step "verify shared testing proof before recertified push" verify_current_testing_proof
   proof_rc=$?
   if (( proof_rc != 0 )); then
@@ -1141,6 +1157,7 @@ if [[ -n "$landing_recertification" ]]; then
   if (( push_rc != 0 )); then
     if push_was_moving_origin_rejection; then
       push_detail=$(tail -n 1 "$step_output")
+      cat "$step_output" >&2
       park_recertified chain-recertification-target-moved "$push_detail"
     fi
     fail_step "$push_rc"
@@ -1148,6 +1165,8 @@ if [[ -n "$landing_recertification" ]]; then
 else
   run_required_step "fetch origin" fetch_origin
   run_required_step "rebase onto origin/$branch" rebase_origin
+  run_required_step "goal held at the rebased base" held_check
+  cat "$step_output"
   run_required_step "verify shared testing proof after rebase" verify_current_testing_proof
 
   push_attempt=1
@@ -1167,6 +1186,8 @@ else
       "$((push_attempt + 1))" "$push_limit"
     run_required_step "fetch origin after push attempt $push_attempt" fetch_origin
     run_required_step "rebase onto origin/$branch after push attempt $push_attempt" rebase_origin
+    run_required_step "goal held at the rebased base" held_check
+    cat "$step_output"
     run_required_step "verify shared testing proof after retry rebase" verify_current_testing_proof
     push_attempt=$((push_attempt + 1))
   done

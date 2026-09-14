@@ -57,6 +57,13 @@ SH
   fixture_git() {
     env -i PATH="$PATH" HOME="${HOME:-/tmp}" TMPDIR="${TMPDIR:-/tmp}" git -C "$fixture" "$@"
   }
+  goal_bound_fixture_commit() { # installation root, wrapper arguments
+    local installation=$1
+    shift
+    env -i PATH="$PATH" HOME="${HOME:-/tmp}" TMPDIR="${TMPDIR:-/tmp}" \
+      METASYSTEM_OWNER_LINEAGE=human \
+      "$installation/scripts/agents/commit.sh" __lease-held 1 --goal fx "$@"
+  }
   fixture_git init -q -b main
   fixture_git config user.name fixture
   fixture_git config user.email fixture@example.invalid
@@ -87,8 +94,7 @@ SH
   expected_provenance=$("$real_engine" json get --value "$observation" --field provenance)
   expected_verdict=$("$real_engine" json get --value "$observation" --field verdictTrailer)
   expected_mode=$("$real_engine" json get --value "$observation" --field mode)
-  env -i PATH="$PATH" HOME="${HOME:-/tmp}" TMPDIR="${TMPDIR:-/tmp}" \
-    "$fixture/scripts/agents/commit.sh" __lease-held 1 -q -m "absent promotion observes"
+  goal_bound_fixture_commit "$fixture" -q -m "absent promotion observes"
   message=$(fixture_git log -1 --format=%B)
 
   grep -Fqx "Landing-Provenance: $expected_provenance" <<<"$message" \
@@ -110,13 +116,15 @@ SH
   vendored_fixture="$tmp/vendored-observer"
   vendored_install="$vendored_fixture/metasystem"
   mkdir -p "$vendored_install/scripts/agents" "$vendored_install/scripts" \
-    "$vendored_install/bin" "$vendored_install/artifacts/agents/mains" "$vendored_install/memory"
+    "$vendored_install/bin" "$vendored_install/artifacts/agents/mains" "$vendored_install/memory" \
+    "$vendored_install/plans/goals"
   cp "$wrapper" "$vendored_install/scripts/agents/commit.sh"
   cp "$root/scripts/agents/coverage-delta.sh" "$vendored_install/scripts/agents/coverage-delta.sh"
   cp "$root/scripts/agents/landing-classes.json" "$vendored_install/scripts/agents/landing-classes.json"
   cp "$root/scripts/agents/path-classes.txt" "$vendored_install/scripts/agents/path-classes.txt"
   cp "$root/scripts/agents/landing-promotion.json" "$vendored_install/scripts/agents/landing-promotion.json"
   cp "$root/memory/rulings.md" "$vendored_install/memory/rulings.md"
+  cp "$fixture/plans/goals/fx.md" "$vendored_install/plans/goals/fx.md"
   cp "$fixture/bin/metasystem" "$vendored_install/bin/metasystem"
   cp "$fixture/scripts/audit-metasystem.sh" "$vendored_install/scripts/audit-metasystem.sh"
   cp "$fixture/scripts/agents/go-gate.sh" "$vendored_install/scripts/agents/go-gate.sh"
@@ -134,8 +142,7 @@ SH
   printf 'after\n' >"$vendored_install/README"
   vendored_git add metasystem/README
   set +e
-  unclassified=$(env -i PATH="$PATH" HOME="${HOME:-/tmp}" TMPDIR="${TMPDIR:-/tmp}" \
-    "$vendored_install/scripts/agents/commit.sh" __lease-held 1 --direct-fix register-carriage \
+  unclassified=$(goal_bound_fixture_commit "$vendored_install" --direct-fix register-carriage \
     -m "unclassified path must name its base policy" 2>&1)
   status=$?
   set -e
@@ -144,8 +151,7 @@ SH
     || { echo "TestRealCommitWrapperStampsParseableObservation: unclassified refusal lost its base-manifest detail: $unclassified" >&2; exit 1; }
 
   set +e
-  refusal=$(env -i PATH="$PATH" HOME="${HOME:-/tmp}" TMPDIR="${TMPDIR:-/tmp}" \
-    "$fixture/scripts/agents/commit.sh" __lease-held 1 -m "promoted missing must refuse" 2>&1)
+  refusal=$(goal_bound_fixture_commit "$fixture" -m "promoted missing must refuse" 2>&1)
   status=$?
   set -e
   [[ $status -ne 0 ]] \
@@ -158,8 +164,7 @@ SH
   grep -Fq 'fix the Change-Class classification' <<<"$refusal"
 
   set +e
-  orphan=$(env -i PATH="$PATH" HOME="${HOME:-/tmp}" TMPDIR="${TMPDIR:-/tmp}" \
-    "$fixture/scripts/agents/commit.sh" __lease-held 1 \
+  orphan=$(goal_bound_fixture_commit "$fixture" \
     --revert-of 0000000000000000000000000000000000000000 \
     -m "orphaned revert parameter must refuse" 2>&1)
   status=$?
@@ -169,8 +174,7 @@ SH
     && "$orphan" == *"fix the Change-Class classification"* ]] \
     || { echo "TestRealCommitWrapperStampsParseableObservation: orphaned revert parameter did not refuse as a conflict: $orphan" >&2; exit 1; }
 
-  env -i PATH="$PATH" HOME="${HOME:-/tmp}" TMPDIR="${TMPDIR:-/tmp}" \
-    "$fixture/scripts/agents/commit.sh" __lease-held 1 --chain fixture-chain -q -m "chain verdict remains observe"
+  goal_bound_fixture_commit "$fixture" --chain fixture-chain -q -m "chain verdict remains observe"
   chain_message=$(fixture_git log -1 --format=%B)
   grep -Fq 'Landing-Provenance-Verdict: would-refuse code=chain-record-unreadable' <<<"$chain_message" \
     || { echo "TestRealCommitWrapperStampsParseableObservation: unpromoted chain verdict did not land" >&2; exit 1; }
@@ -178,8 +182,7 @@ SH
   printf 'promoted conflict\n' >"$fixture/README"
   fixture_git add README
   set +e
-  conflict=$(env -i PATH="$PATH" HOME="${HOME:-/tmp}" TMPDIR="${TMPDIR:-/tmp}" \
-    "$fixture/scripts/agents/commit.sh" __lease-held 1 --chain fixture-chain \
+  conflict=$(goal_bound_fixture_commit "$fixture" --chain fixture-chain \
     --direct-fix exact-revert -m "conflict must refuse" 2>&1)
   status=$?
   set -e
@@ -193,8 +196,7 @@ SH
   printf 'floor change\n' >"$fixture/internal/floor.txt"
   fixture_git add internal/floor.txt
   set +e
-  floor_refusal=$(env -i PATH="$PATH" HOME="${HOME:-/tmp}" TMPDIR="${TMPDIR:-/tmp}" \
-    "$fixture/scripts/agents/commit.sh" __lease-held 1 --direct-fix register-carriage \
+  floor_refusal=$(goal_bound_fixture_commit "$fixture" --direct-fix register-carriage \
     -m "promoted behavior floor must refuse" 2>&1)
   status=$?
   set -e
@@ -205,9 +207,7 @@ SH
 
   printf 'held record\n' >"$fixture/plans/fx-design.md"
   fixture_git add plans/fx-design.md
-  env -i PATH="$PATH" HOME="${HOME:-/tmp}" TMPDIR="${TMPDIR:-/tmp}" \
-    "$fixture/scripts/agents/commit.sh" __lease-held 1 --goal fx \
-    --direct-fix register-carriage -q -m "held goal carries record"
+  goal_bound_fixture_commit "$fixture" --direct-fix register-carriage -q -m "held goal carries record"
   record_message=$(fixture_git log -1 --format=%B)
   grep -Fq 'Landing-Provenance-Verdict: pass bar=b' <<<"$record_message" \
     || { echo "TestRealCommitWrapperStampsParseableObservation: held goal record did not pass the promoted floor" >&2; exit 1; }
@@ -218,13 +218,13 @@ SH
   printf 'malformed policy agent change\n' >"$fixture/README"
   fixture_git add README
   set +e
-  malformed=$(env -i PATH="$PATH" HOME="${HOME:-/tmp}" TMPDIR="${TMPDIR:-/tmp}" \
-    "$fixture/scripts/agents/commit.sh" __lease-held 1 --direct-fix register-carriage \
+  malformed=$(goal_bound_fixture_commit "$fixture" --direct-fix register-carriage \
     -m "malformed policy must refuse agent" 2>&1)
   status=$?
   set -e
   [[ $status -ne 0 && "$malformed" == *"would-refuse code=promotion-record-malformed"* \
-    && "$malformed" == *"README"* && "$malformed" == *"a human must repair the landing promotion record"* ]] \
+    && "$malformed" == *"README"* \
+    && "$malformed" == *"The landing judge may be older than this policy. A human must rebuild and re-arm it from the landed policy commit or a descendant, then retry. If that judge supports the record version, repair the record through a reviewed implementation chain."* ]] \
     || { echo "TestRealCommitWrapperStampsParseableObservation: malformed policy did not fail closed: $malformed" >&2; exit 1; }
 
   env -i PATH="$PATH" HOME="${HOME:-/tmp}" TMPDIR="${TMPDIR:-/tmp}" \
@@ -421,7 +421,7 @@ printf 'evaluator unavailable\n' >>"$fixture_root/README"
 git -C "$fixture_root" add README
 before_failure=$(git -C "$fixture_root" rev-parse HEAD)
 set +e
-evaluator_failure=$(STATIC_REPROOF_EVALUATOR_FAIL=1 \
+evaluator_failure=$(METASYSTEM_OWNER_LINEAGE=fixture-lineage STATIC_REPROOF_EVALUATOR_FAIL=1 \
   "$fixture_root/scripts/agents/commit.sh" __lease-held 1 -m "must refuse unavailable evaluator" 2>&1)
 status=$?
 set -e
@@ -448,7 +448,7 @@ printf 'unreadable landing base\n' >>"$fixture_root/README"
 git -C "$fixture_root" add README
 before_failure=$(git -C "$fixture_root" rev-parse HEAD)
 set +e
-base_failure=$(STATIC_REPROOF_BASE_UNREADABLE=1 \
+base_failure=$(METASYSTEM_OWNER_LINEAGE=fixture-lineage STATIC_REPROOF_BASE_UNREADABLE=1 \
   "$fixture_root/scripts/agents/commit.sh" __lease-held 1 -m "must refuse unreadable base" 2>&1)
 status=$?
 set -e
@@ -586,6 +586,11 @@ env -u GIT_OBJECT_DIRECTORY -u GIT_ALTERNATE_OBJECT_DIRECTORIES git init -q --ba
 env -u GIT_OBJECT_DIRECTORY -u GIT_ALTERNATE_OBJECT_DIRECTORIES git init -q --bare -b main "$transport_bare"
 git -C "$fixture_root" remote add origin "$origin_bare"
 git -C "$fixture_root" remote add transport "$transport_bare"
+# The push wrapper fetches and judges the range above origin/main. Seed both
+# remotes at the already-proved parent so this leg introduces exactly one
+# commit to each remote.
+git -C "$fixture_root" push -q origin refs/heads/main:refs/heads/main
+git -C "$fixture_root" push -q transport refs/heads/main:refs/heads/main
 printf 'landed\n' >"$fixture_root/internal/red/landed.txt"
 git -C "$fixture_root" add internal/red/landed.txt
 "$fixture_root/scripts/agents/commit.sh" __lease-held human --push -q -m "push lands both remotes" \

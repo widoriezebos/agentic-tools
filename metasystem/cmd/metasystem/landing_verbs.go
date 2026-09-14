@@ -119,6 +119,51 @@ func runLandingWorkspace(args []string) int {
 	return 0
 }
 
+func runLandingHeld(args []string) int {
+	flags := flag.NewFlagSet("landing held", flag.ContinueOnError)
+	root := flags.String("root", "", "project checkout root")
+	base := flags.String("base", "", "fetched commit below the pushed range")
+	commit := flags.String("commit", "", "tip commit to push")
+	remote := flags.String("remote", "", "remote receiving the push")
+	ref := flags.String("ref", "", "fully qualified branch receiving the push")
+	if flags.Parse(args) != nil || flags.NArg() != 0 || *root == "" || *base == "" || *commit == "" || *remote == "" || *ref == "" {
+		return 2
+	}
+	verdict, err := landing.Held(*root, *base, *commit, *remote, *ref)
+	if err != nil {
+		fmt.Fprintln(os.Stderr, "held: unreadable:", err)
+		return 2
+	}
+	for _, warning := range verdict.Warnings {
+		fmt.Fprintln(os.Stderr, warning)
+	}
+	switch verdict.Outcome {
+	case "nothing-to-push":
+		fmt.Println("held: nothing to push")
+	case "goal-free":
+		fmt.Println("held: goal-free ledger")
+	case "ok":
+		fmt.Printf("held: ok %d commit(s) above %s\n", verdict.Commits, shortLandingID(verdict.Base))
+	case "refused":
+		if verdict.Refusal != nil {
+			fmt.Fprintf(os.Stderr, "held refused: %s: %s: %s\n", verdict.Refusal.Code, verdict.Refusal.Commit, verdict.Refusal.Detail)
+		}
+	case "unreadable":
+		// Held has already supplied the precise unreadable line in Warnings.
+	default:
+		fmt.Fprintln(os.Stderr, "held: unreadable: unknown verdict")
+		return 2
+	}
+	return verdict.ExitCode
+}
+
+func shortLandingID(id string) string {
+	if len(id) <= 12 {
+		return id
+	}
+	return id[:12]
+}
+
 func runLandingTestReceipt(args []string) (status int) {
 	flags := flag.NewFlagSet("landing test-receipt", flag.ContinueOnError)
 	root := flags.String("root", "", "project checkout root")
