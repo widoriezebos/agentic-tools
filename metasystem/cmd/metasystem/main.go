@@ -206,6 +206,7 @@ func families() []family {
 				{"critique-close", "close a critic chain: closure and chainClosed in one record write; reached only through dispatch.sh close", runDispatchCritiqueClose},
 				{"critique-budget-rebind", "copy the goal review-round limit onto a critic root", runDispatchCritiqueBudgetRebind},
 				{"read-subject", "compute and persist a critic round's read subject before launch", runDispatchReadSubject},
+				{"critique-read-admission", "admit a computed critic read before publishing its job", runDispatchCritiqueReadAdmission},
 				{"critique-exhaustion-advance", "atomically advance register-backed critique exhaustion", runDispatchCritiqueExhaustionAdvance},
 				{"cap-resolution", "write a cap-resolution record", runDispatchCapResolution},
 				{"resolve-cap", "resolve the non-mission cap chain or refuse an unsigned mission cap", runDispatchResolveCap},

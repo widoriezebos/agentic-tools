@@ -829,6 +829,205 @@ func TestDispatchCritiqueAdvanceVerbsPath(t *testing.T) {
 	}
 }
 
+func TestDispatchCritiqueReadAdmissionResult(t *testing.T) {
+	subject := dispatchcore.ReadSubject{
+		Kind:                dispatchcore.SubjectLive,
+		ImplementerRoot:     "implementer",
+		ReviewedMember:      "implementer",
+		ReviewedProjectTree: strings.Repeat("a", 40),
+		DiffDigest:          strings.Repeat("b", 64),
+	}
+
+	readResult := func(t *testing.T, path string) dispatchcore.ReadAdmissionResult {
+		t.Helper()
+		data, err := os.ReadFile(path)
+		if err != nil {
+			t.Fatal(err)
+		}
+		var result dispatchcore.ReadAdmissionResult
+		if err := json.Unmarshal(data, &result); err != nil {
+			t.Fatal(err)
+		}
+		return result
+	}
+	writeSubject := func(t *testing.T, dir string, value dispatchcore.ReadSubject) string {
+		t.Helper()
+		return writeTemp(t, dir, "subject.json", value)
+	}
+	seedScope := func(t *testing.T, repo string) string {
+		t.Helper()
+		jobs := filepath.Join(repo, "artifacts", "agents", "jobs")
+		if err := os.MkdirAll(jobs, 0o755); err != nil {
+			t.Fatal(err)
+		}
+		writeTemp(t, jobs, "implementer.json", map[string]any{
+			"jobId": "implementer", "role": "implementer", "round": 1,
+			"parentJob": nil, "status": "completed",
+		})
+		return jobs
+	}
+	seedRead := func(t *testing.T, repo, root, status string, clean bool) {
+		t.Helper()
+		jobs := seedScope(t, repo)
+		record := map[string]any{
+			"jobId": root, "role": "code-critic", "round": 1,
+			"parentJob": nil, "status": status, "reviews": "implementer",
+			"findingRegister": []any{}, "findingRegisterRound": 0,
+		}
+		if clean {
+			record["findingRegisterRound"] = 1
+			record["findingRegisterSubjectDigest"] = subject.Digest()
+			record["cleanReadRounds"] = []any{map[string]any{"round": 1, "subject": subject}}
+		}
+		writeTemp(t, jobs, root+".json", record)
+		roundDir := filepath.Join(repo, "artifacts", "agents", root, "rounds", "1")
+		if err := os.MkdirAll(roundDir, 0o755); err != nil {
+			t.Fatal(err)
+		}
+		writeTemp(t, roundDir, "subject.json", subject)
+		writeTemp(t, roundDir, "return.json", map[string]any{
+			"schemaVersion": 3, "jobId": root, "round": 1,
+			"reviewedTree": subject.ReviewedProjectTree,
+			"findings":     []any{}, "rigor": []any{},
+		})
+	}
+	run := func(t *testing.T, repo, role, rootJob, round, subjectFile, resultFile string) (string, int) {
+		t.Helper()
+		return captureStderr(t, func() int {
+			return runDispatchCritiqueReadAdmission([]string{
+				"--repo", repo, "--role", role, "--root-job", rootJob,
+				"--round", round, "--subject-file", subjectFile, "--result", resultFile,
+			})
+		})
+	}
+
+	t.Run("admitted", func(t *testing.T) {
+		repo := t.TempDir()
+		subjectFile := writeSubject(t, t.TempDir(), subject)
+		resultFile := filepath.Join(t.TempDir(), "result.json")
+		stderr, code := run(t, repo, "code-critic", "candidate", "1", subjectFile, resultFile)
+		result := readResult(t, resultFile)
+		if code != 0 || stderr != "" || result.Decision != "ADMITTED" || result.SubjectDigest != subject.Digest() {
+			t.Fatalf("admitted command = exit %d stderr %q result %+v", code, stderr, result)
+		}
+	})
+
+	t.Run("redundant", func(t *testing.T) {
+		repo := t.TempDir()
+		seedRead(t, repo, "prior", "completed", true)
+		resultFile := filepath.Join(t.TempDir(), "result.json")
+		stderr, code := run(t, repo, "code-critic", "candidate", "1", writeSubject(t, t.TempDir(), subject), resultFile)
+		result := readResult(t, resultFile)
+		if code != 11 || !strings.Contains(stderr, "REDUNDANT_READ") || result.Decision != "REDUNDANT_READ" ||
+			result.CriticRoot != "prior" || result.Round != 1 || result.EventID == "" || !result.EventRecorded || !result.EventDurable {
+			t.Fatalf("redundant command = exit %d stderr %q result %+v", code, stderr, result)
+		}
+		events, err := dispatchcore.LoadReadRefusals(filepath.Join(repo, "artifacts", "agents", "prior", "reads-refused.jsonl"))
+		if err != nil || len(events) != 1 || events[0].ID != result.EventID {
+			t.Fatalf("recorded event = %+v, %v; result id %q", events, err, result.EventID)
+		}
+	})
+
+	t.Run("concurrent", func(t *testing.T) {
+		repo := t.TempDir()
+		seedRead(t, repo, "outstanding", "running", false)
+		resultFile := filepath.Join(t.TempDir(), "result.json")
+		stderr, code := run(t, repo, "code-critic", "candidate", "1", writeSubject(t, t.TempDir(), subject), resultFile)
+		result := readResult(t, resultFile)
+		if code != 11 || !strings.Contains(stderr, "CONCURRENT_READ") || result.Decision != "CONCURRENT_READ" ||
+			result.CriticRoot != "outstanding" || result.Round != 1 || result.EventRecorded || result.EventID != "" {
+			t.Fatalf("concurrent command = exit %d stderr %q result %+v", code, stderr, result)
+		}
+	})
+
+	t.Run("event-write-failure", func(t *testing.T) {
+		repo := t.TempDir()
+		seedRead(t, repo, "prior", "completed", true)
+		refusalPath := filepath.Join(repo, "artifacts", "agents", "prior", "reads-refused.jsonl")
+		if err := os.Mkdir(refusalPath, 0o755); err != nil {
+			t.Fatal(err)
+		}
+		resultFile := filepath.Join(t.TempDir(), "result.json")
+		stderr, code := run(t, repo, "code-critic", "candidate", "1", writeSubject(t, t.TempDir(), subject), resultFile)
+		result := readResult(t, resultFile)
+		if code != 11 || !strings.Contains(stderr, "refusal event was not recorded") || result.Decision != "REDUNDANT_READ" ||
+			result.EventID == "" || result.EventRecorded || result.EventDurable {
+			t.Fatalf("event failure command = exit %d stderr %q result %+v", code, stderr, result)
+		}
+	})
+
+	t.Run("malformed-input", func(t *testing.T) {
+		for name, input := range map[string]string{
+			"malformed-json":    "{",
+			"malformed-subject": `{"kind":"live"}`,
+		} {
+			t.Run(name, func(t *testing.T) {
+				inputPath := filepath.Join(t.TempDir(), "subject.json")
+				if err := os.WriteFile(inputPath, []byte(input), 0o644); err != nil {
+					t.Fatal(err)
+				}
+				resultFile := filepath.Join(t.TempDir(), "result.json")
+				_, code := run(t, t.TempDir(), "code-critic", "candidate", "1", inputPath, resultFile)
+				_ = readResult(t, resultFile)
+				if code == 0 {
+					t.Fatal("malformed subject was admitted")
+				}
+			})
+		}
+	})
+
+	t.Run("strict-flags-and-coordinates", func(t *testing.T) {
+		repo := t.TempDir()
+		subjectFile := writeSubject(t, t.TempDir(), subject)
+		resultFile := filepath.Join(t.TempDir(), "result.json")
+		base := []string{"--repo", repo, "--role", "code-critic", "--root-job", "candidate", "--round", "1", "--subject-file", subjectFile, "--result", resultFile}
+		for flagName, value := range map[string]string{
+			"repo": repo, "role": "code-critic", "root-job": "redirected",
+			"round": "2", "subject-file": subjectFile, "result": filepath.Join(t.TempDir(), "other.json"),
+		} {
+			t.Run("repeated-"+flagName, func(t *testing.T) {
+				args := append(append([]string{}, base...), "--"+flagName, value)
+				if _, code := captureStderr(t, func() int { return runDispatchCritiqueReadAdmission(args) }); code != 2 {
+					t.Fatalf("exit = %d, want 2", code)
+				}
+			})
+		}
+		if _, code := captureStderr(t, func() int {
+			return runDispatchCritiqueReadAdmission(append(append([]string{}, base...), "extra"))
+		}); code != 2 {
+			t.Fatalf("positional argument exit = %d, want 2", code)
+		}
+		for name, values := range map[string][3]string{
+			"invalid-id":    {"code-critic", "Bad_ID", "1"},
+			"invalid-round": {"code-critic", "candidate", "0"},
+			"role-mismatch": {"design-critic", "candidate", "1"},
+		} {
+			t.Run(name, func(t *testing.T) {
+				path := filepath.Join(t.TempDir(), "result.json")
+				_, code := run(t, repo, values[0], values[1], values[2], subjectFile, path)
+				_ = readResult(t, path)
+				if code == 0 {
+					t.Fatal("invalid request was admitted")
+				}
+			})
+		}
+	})
+
+	t.Run("unreadable-subject-and-result-failure", func(t *testing.T) {
+		resultFile := filepath.Join(t.TempDir(), "result.json")
+		_, code := run(t, t.TempDir(), "code-critic", "candidate", "1", filepath.Join(t.TempDir(), "missing.json"), resultFile)
+		_ = readResult(t, resultFile)
+		if code == 0 {
+			t.Fatal("unreadable subject was admitted")
+		}
+		resultDir := t.TempDir()
+		_, code = run(t, t.TempDir(), "code-critic", "candidate", "1", writeSubject(t, t.TempDir(), subject), resultDir)
+		if code == 0 {
+			t.Fatal("result-file failure admitted the read")
+		}
+	})
+}
+
 func TestDispatchCritiqueRegisterCloseKeepsRegisterlessCompatibility(t *testing.T) {
 	repo := t.TempDir()
 	jobs := filepath.Join(repo, "artifacts", "agents", "jobs")

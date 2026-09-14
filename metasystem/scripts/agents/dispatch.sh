@@ -86,6 +86,7 @@ exit_cleanup_chain=
 exit_cleanup_authorization=
 exit_cleanup_message=
 exit_cleanup_subject=
+exit_cleanup_admission_result=
 exit_cleanup_continuation=
 exit_cleanup_prompt=
 exit_cleanup_composition=
@@ -1702,6 +1703,9 @@ dispatch_job() {
     subject_rc=$?
     set -e
     (( subject_rc == 0 )) || die "$subject_rc" "$subject_output"
+    if [[ -s "$subject_temp" ]]; then
+      admit_critique_read "$role" "$job" 1 "$subject_temp"
+    fi
   fi
   if [[ "$role" == implementer && -n "$goal" ]]; then
     local brief_with_gate
@@ -2062,6 +2066,38 @@ cleanup_follow_up_message() {
 cleanup_subject_temp() {
   [[ -z "${exit_cleanup_subject:-}" ]] || rm -f -- "$exit_cleanup_subject"
   exit_cleanup_subject=
+  [[ -z "${exit_cleanup_admission_result:-}" ]] || rm -f -- "$exit_cleanup_admission_result"
+  exit_cleanup_admission_result=
+}
+
+admit_critique_read() { # role, requesting root, round, private subject file
+  local role=$1 requesting_root=$2 round=$3 subject_file=$4 output rc=0 decision prior_root event_recorded
+  exit_cleanup_admission_result=$(mktemp "$record_locks/read-admission.XXXXXX")
+  set +e
+  output=$(lease_run_held "$current_claim_epoch" "$0" __critique-read-admission \
+    --role "$role" --root-job "$requesting_root" --round "$round" \
+    --subject-file "$subject_file" --result "$exit_cleanup_admission_result" 2>&1)
+  rc=$?
+  set -e
+  if (( rc == 0 )); then
+    decision=$(json_field "$exit_cleanup_admission_result" decision 2>/dev/null || true)
+    [[ "$decision" == ADMITTED ]] \
+      || die 1 "critique read admission returned success without an ADMITTED result"
+    rm -f -- "$exit_cleanup_admission_result"
+    exit_cleanup_admission_result=
+    return 0
+  fi
+  if (( rc == 11 )) && [[ -s "$exit_cleanup_admission_result" ]]; then
+    decision=$(json_field "$exit_cleanup_admission_result" decision 2>/dev/null || true)
+    if [[ "$decision" == REDUNDANT_READ ]]; then
+      prior_root=$(json_field "$exit_cleanup_admission_result" criticRoot 2>/dev/null || true)
+      event_recorded=$(json_field "$exit_cleanup_admission_result" eventRecorded 2>/dev/null || true)
+      if [[ "$event_recorded" == true && -n "$prior_root" ]]; then
+        mirror_record "$prior_root" || true
+      fi
+    fi
+  fi
+  die "$rc" "${output:-critique read admission failed without a diagnostic}"
 }
 
 append_critique_open_ids() { # source message, output message, critic root
@@ -2599,15 +2635,6 @@ follow_up() {
     message=$exit_cleanup_message
     [[ -z "$previous_message_temp" ]] || rm -f -- "$previous_message_temp"
   fi
-  if (( repeated_follow_up == 0 )) \
-      && [[ "$role" == implementer || "$role" == design-critic || "$role" == code-critic || "$role" == warden ]]; then
-    set +e
-    exhaustion_outcome=$(lease_run_held "$current_claim_epoch" "$0" __critique-exhaustion-advance \
-      --root-job "$root_id" --role "$role" --message "$message" --successor "$child" 2>&1)
-    exhaustion_rc=$?
-    set -e
-    (( exhaustion_rc == 0 )) || die "$exhaustion_rc" "$exhaustion_outcome"
-  fi
   if is_review_role "$role" && (( repeated_follow_up == 0 )); then
     subject_temp=$(mktemp "$record_locks/subject.XXXXXX")
     exit_cleanup_subject=$subject_temp
@@ -2617,6 +2644,16 @@ follow_up() {
     subject_rc=$?
     set -e
     (( subject_rc == 0 )) || die "$subject_rc" "$subject_output"
+    [[ ! -s "$subject_temp" ]] || admit_critique_read "$role" "$root_id" "$round" "$subject_temp"
+  fi
+  if (( repeated_follow_up == 0 )) \
+      && [[ "$role" == implementer || "$role" == design-critic || "$role" == code-critic || "$role" == warden ]]; then
+    set +e
+    exhaustion_outcome=$(lease_run_held "$current_claim_epoch" "$0" __critique-exhaustion-advance \
+      --root-job "$root_id" --role "$role" --message "$message" --successor "$child" 2>&1)
+    exhaustion_rc=$?
+    set -e
+    (( exhaustion_rc == 0 )) || die "$exhaustion_rc" "$exhaustion_outcome"
   fi
   mkdir -p "$record_locks"
   exit_cleanup_job=$child
@@ -3375,6 +3412,7 @@ case "$command" in
     "$ms" job repair-claim --root "$root" "$@"
     ;;
   __critique-register-advance) internal_critique_mutation critique-register-advance "$@" ;;
+  __critique-read-admission) internal_critique_mutation critique-read-admission "$@" ;;
   __critique-exhaustion-advance) internal_critique_mutation critique-exhaustion-advance "$@" ;;
   __review-reference-reconcile) internal_critique_mutation review-reference-reconcile "$@" ;;
   __launch) internal_launch "$@" ;;

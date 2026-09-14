@@ -1565,6 +1565,9 @@ grep -Fq "extended once at 2000-01-01T00:07:00Z; a further raise is a person's s
   || { echo "the structured admission refusal created a job record" >&2; exit 1; }
 budget_follow_message="$agent_fixture/structured-budget-follow-up.md"
 cp "$budget_dispatch_repo/scripts/agents/templates/follow-up.md" "$budget_follow_message"
+# Admission runs before budget accounting. Give this follow-up a genuinely
+# changed subject so the fixture reaches the budget refusal it is testing.
+printf '\nBudget follow-up fixture revision.\n' >>"$budget_dispatch_repo/metasystem/scripts/agents/roles/design-critic.md"
 (
   agent_repo=$budget_dispatch_repo
   agent_dispatch="$budget_dispatch_repo/scripts/agents/dispatch.sh"
@@ -1735,8 +1738,25 @@ timeout_brief="$agent_fixture/timeout.md"
 make_agent_brief "$timeout_brief" design 'FAKE:timeout'
 }
 
+design_page_changed_digest=
+change_design_page_after_round_one() { # critic root, case label
+  local critic_root=$1 label=$2 record subject workspace design_path before
+  record="$agent_repo/artifacts/agents/jobs/$critic_root.json"
+  subject="$agent_repo/artifacts/agents/$critic_root/rounds/1/subject.json"
+  workspace=$("$engine" json get --file "$record" --field workspaceRoot)
+  design_path=$("$engine" json get --file "$subject" --field designPath)
+  before=$("$engine" json get --file "$subject" --field contentDigest)
+  printf '\nFixture design revision for %s.\n' "$label" >>"$workspace/$design_path"
+  design_page_changed_digest=$("$engine" util sha256 --file "$workspace/$design_path")
+  [[ -n "$before" && "$design_page_changed_digest" != "$before" ]] \
+    || { echo "$label did not change the reviewed design page" >&2; exit 1; }
+}
+
 leg_happy_follow_up() {
+  change_design_page_after_round_one happy happy-follow-up
   run_agent_fixture happy-follow-up happy-r2 "$agent_dispatch" follow-up --job happy --message "$follow_message" --wait
+  [[ "$("$engine" json get --file "$agent_repo/artifacts/agents/happy/rounds/2/subject.json" --field contentDigest)" == "$design_page_changed_digest" ]] \
+    || { echo "the happy follow-up did not publish the changed design subject" >&2; exit 1; }
   # The composed packet tells every round its cap and asks for its return
   # before the margin (conf cap 120, margin 10).
   grep -Fq 'write your return by minute 110, naming what is left' "$agent_repo/artifacts/agents/happy/rounds/2/prompt.md" \
@@ -1949,8 +1969,21 @@ cp "$good_agent_conf" "$agent_repo/metasystem.conf"
   --set cap.min.fake.fake-source=30
 alias_brief="$agent_fixture/model-alias.md"
 make_agent_brief "$alias_brief" design
+alias_roster_design=metasystem/fixture-admission/model-alias-roster.md
+alias_override_design=metasystem/fixture-admission/model-alias-override.md
+review_default_design=metasystem/fixture-admission/review-default.md
+review_worktree_design=metasystem/fixture-admission/review-worktree.md
+mkdir -p "$agent_repo/metasystem/fixture-admission"
+printf '# Model alias roster fixture\n' >"$agent_repo/$alias_roster_design"
+printf '# Model alias override fixture\n' >"$agent_repo/$alias_override_design"
+printf '# Review default fixture\n' >"$agent_repo/$review_default_design"
+printf '# Review worktree fixture\n' >"$agent_repo/$review_worktree_design"
+git -C "$agent_repo" add -- "$alias_roster_design" "$alias_override_design" \
+  "$review_default_design" "$review_worktree_design"
+git -C "$agent_repo" -c core.hooksPath=/dev/null -c user.name=metasystem -c user.email=metasystem@example.invalid \
+  commit -qm 'add isolated dispatcher admission fixture designs'
 run_agent_fixture model-alias-roster model-alias-roster "$agent_dispatch" dispatch \
-  --role design-critic --outputs "$fixture_declared_outputs" --design metasystem/scripts/agents/roles/design-critic.md \
+  --role design-critic --outputs "$fixture_declared_outputs" --design "$alias_roster_design" \
   --brief "$alias_brief" --job-id model-alias-roster --wait
 alias_roster_record="$agent_repo/artifacts/agents/jobs/model-alias-roster.json"
 [[ "$("$engine" json get --file "$alias_roster_record" --field composition.model)" == fake-model \
@@ -1966,7 +1999,7 @@ alias_roster_record="$agent_repo/artifacts/agents/jobs/model-alias-roster.json"
 "$engine" config tailor --conf "$agent_repo/metasystem.conf" --runtimes fake \
   --set role.design-critic.model.fake=fake-model
 run_agent_fixture model-alias-override model-alias-override "$agent_dispatch" dispatch \
-  --role design-critic --outputs "$fixture_declared_outputs" --design metasystem/scripts/agents/roles/design-critic.md \
+  --role design-critic --outputs "$fixture_declared_outputs" --design "$alias_override_design" \
   --brief "$alias_brief" --job-id model-alias-override --model fake-source --wait
 alias_override_record="$agent_repo/artifacts/agents/jobs/model-alias-override.json"
 [[ "$("$engine" json get --file "$alias_override_record" --field composition.model)" == fake-model \
@@ -1984,6 +2017,7 @@ alias_override_record="$agent_repo/artifacts/agents/jobs/model-alias-override.js
 json_replace_field "$alias_override_record" requestedModel '"fake-source"'
 json_replace_field "$alias_override_record" aliasedFrom null
 json_replace_field "$alias_override_record" rosterAliasedFrom null
+change_design_page_after_round_one model-alias-override fma-r2-followup-canonical-relay
 alias_follow_message="$agent_fixture/model-alias-follow.md"
 cp "$agent_repo/scripts/agents/templates/follow-up.md" "$alias_follow_message"
 run_agent_fixture fma-r2-followup-canonical-relay model-alias-override-r2 "$agent_dispatch" follow-up \
@@ -2078,7 +2112,7 @@ conf_edit "$agent_repo/metasystem.conf" replace-line-first \
 review_default_brief="$agent_fixture/review-default.md"
 make_agent_brief "$review_default_brief" design
 run_agent_fixture review-default review-default "$agent_dispatch" dispatch \
-  --role design-critic --outputs "$fixture_declared_outputs" --design metasystem/scripts/agents/roles/design-critic.md \
+  --role design-critic --outputs "$fixture_declared_outputs" --design "$review_default_design" \
   --brief "$review_default_brief" --job-id review-default --wait
 review_default_record="$agent_repo/artifacts/agents/jobs/review-default.json"
 review_default_root=$("$engine" json get --file "$review_default_record" --field workspaceRoot)
@@ -2090,6 +2124,10 @@ review_default_effective="$agent_repo/artifacts/agents/review-default/rounds/1/e
 
 review_follow_message="$agent_fixture/review-follow.md"
 cp "$agent_repo/scripts/agents/templates/follow-up.md" "$review_follow_message"
+printf '\nReview default follow-up revision.\n' >>"$agent_repo/$review_default_design"
+git -C "$agent_repo" add -- "$review_default_design"
+git -C "$agent_repo" -c core.hooksPath=/dev/null -c user.name=metasystem -c user.email=metasystem@example.invalid \
+  commit -qm 'change review default follow-up subject'
 run_agent_fixture review-default-follow-up review-default-r2 "$agent_dispatch" follow-up \
   --job review-default --message "$review_follow_message" --wait
 review_follow_effective="$agent_repo/artifacts/agents/review-default/rounds/2/effective-permissions.json"
@@ -2119,7 +2157,7 @@ for process_field in pid pidStartedAt pgid custodyProcesses ownershipProof; do
 done
 
 run_agent_fixture review-worktree review-worktree "$agent_dispatch" dispatch \
-  --role design-critic --outputs "$fixture_declared_outputs" --design metasystem/scripts/agents/roles/design-critic.md \
+  --role design-critic --outputs "$fixture_declared_outputs" --design "$review_worktree_design" \
   --brief "$review_default_brief" --job-id review-worktree --worktree --wait
 review_worktree_record="$agent_repo/artifacts/agents/jobs/review-worktree.json"
 review_worktree_root=$("$engine" json get --file "$review_worktree_record" --field workspaceRoot)
@@ -2766,6 +2804,7 @@ run_agent_fixture packet-final-cap-parent packet-final-cap-parent "$agent_dispat
 	--brief "$packet_final_parent_brief" --job-id packet-final-cap-parent --wait
 [[ "$(cd "$agent_repo" && scripts/agents/dispatch.sh status --job packet-final-cap-parent)" == completed ]] \
 	|| { echo "final-cap follow-up parent did not complete" >&2; exit 1; }
+change_design_page_after_round_one packet-final-cap-parent packet-final-cap-follow-up
 packet_final_parent_before=$(
 	find "$agent_repo/artifacts/agents/packet-final-cap-parent" "$agent_repo/artifacts/agents/jobs/packet-final-cap-parent.json" "$agent_repo/artifacts/agents/jobs/packet-final-cap-parent.log" -type f -print \
 		| sort | while IFS= read -r packet_parent_file; do
@@ -3050,7 +3089,10 @@ done < <(json_elements "$("$engine" json get --file "$mirror_home/manifest.json"
 
 # The follow-up legs read jobs this cluster made (happy, default-role,
 # malformed-return, cancelled, timed, process-loss).
+change_design_page_after_round_one happy happy-follow-up
 run_agent_fixture happy-follow-up happy-r2 "$agent_dispatch" follow-up --job happy --message "$follow_message" --wait
+[[ "$("$engine" json get --file "$agent_repo/artifacts/agents/happy/rounds/2/subject.json" --field contentDigest)" == "$design_page_changed_digest" ]] \
+  || { echo "the happy follow-up did not publish the changed design subject" >&2; exit 1; }
 [[ -d "$agent_repo/artifacts/agents/happy/rounds/1" && -d "$agent_repo/artifacts/agents/happy/rounds/2" ]] \
   || { echo "follow-up did not preserve round 1 and create round 2" >&2; exit 1; }
 happy_child="$agent_repo/artifacts/agents/jobs/happy-r2.json"
@@ -3185,6 +3227,225 @@ echo "subject-mismatch dispatch fixture passed"
 make_follow_message
 # Follow-ups are child records under one serialized, explicitly closed chain.
 
+assert_read_refusal() { # case, exit, code, prior root, candidate job, forbidden payload
+  local case_name=$1 actual_rc=$2 code=$3 prior_root=$4 candidate=$5 forbidden_payload=$6 output
+  output="$agent_fixture/$case_name.out"
+  [[ "$actual_rc" -eq 11 ]] \
+    && grep -Fq "$code" "$output" \
+    && grep -Fq "critic root $prior_root" "$output" \
+    && grep -Fq 'round 1' "$output" \
+    && grep -Eq '[0-9a-f]{64}' "$output" \
+    || { echo "$case_name did not return the complete $code refusal" >&2; cat "$output" >&2; exit 1; }
+  [[ ! -e "$agent_repo/artifacts/agents/jobs/$candidate.json" \
+     && ! -e "$agent_repo/artifacts/agents/$candidate" \
+     && ! -e "$forbidden_payload" ]] \
+    || { echo "$case_name created a candidate record, payload, or child round" >&2; exit 1; }
+  [[ -z "$(find "$agent_repo/artifacts/agents/record-locks" -maxdepth 1 \
+      \( -name 'subject.*' -o -name 'read-admission.*' \) -print -quit)" ]] \
+    || { echo "$case_name left a private subject or admission result behind" >&2; exit 1; }
+  [[ -z "$(find "$agent_repo/artifacts/agents/supervision/creating" -maxdepth 1 -type f -print -quit 2>/dev/null)" ]] \
+    || { echo "$case_name left a process-creation claim behind" >&2; exit 1; }
+  if grep -R -Eq -- "\"jobId\"[[:space:]]*:[[:space:]]*\"$candidate\"" "$agent_repo/artifacts/agents/capabilities" 2>/dev/null; then
+    echo "$case_name allocated a launch authorization for the refused job" >&2
+    exit 1
+  fi
+}
+
+# A completed clean design read refuses its unchanged successor before the
+# review budget or round namespace advances. Changing the actual recorded page
+# then produces a distinct subject and the child completes normally.
+mkdir -p "$agent_repo/metasystem/fixture-admission"
+redundant_follow_page=metasystem/fixture-admission/redundant-follow-up.md
+printf '# Redundant follow-up design\n' >"$agent_repo/$redundant_follow_page"
+git -C "$agent_repo" add -- "$redundant_follow_page"
+git -C "$agent_repo" -c core.hooksPath=/dev/null -c user.name=metasystem -c user.email=metasystem@example.invalid \
+  commit -qm 'add redundant follow-up fixture design'
+redundant_follow_commit=$(git -C "$agent_repo" rev-parse HEAD)
+redundant_follow_brief="$agent_fixture/redundant-follow-up.md"
+make_agent_brief "$redundant_follow_brief" design
+run_agent_fixture redundant-follow-up-root redundant-follow-up "$agent_dispatch" dispatch \
+  --role design-critic --outputs "$fixture_declared_outputs" --design "$redundant_follow_page" \
+  --brief "$redundant_follow_brief" --job-id redundant-follow-up --wait
+redundant_follow_workspace=$("$engine" json get --file "$agent_repo/artifacts/agents/jobs/redundant-follow-up.json" --field workspaceRoot)
+[[ "$(git -C "$agent_repo" cat-file -t "$redundant_follow_commit:$redundant_follow_page")" == blob \
+   && "$("$engine" json get --file "$agent_repo/artifacts/agents/redundant-follow-up/rounds/1/subject.json" --field reviewedCommit)" == "$redundant_follow_commit" \
+   && "$("$engine" json get --file "$agent_repo/artifacts/agents/redundant-follow-up/rounds/1/return.json" --field reviewedCommit)" == "$redundant_follow_commit" ]] \
+  || { echo "redundant-follow-up did not review the commit containing its design page" >&2; exit 1; }
+"$engine" job critique-register-advance --repo "$agent_repo" \
+  --root-job redundant-follow-up --round-job redundant-follow-up >/dev/null
+redundant_follow_record="$agent_repo/artifacts/agents/jobs/redundant-follow-up.json"
+redundant_follow_consumed=$("$engine" json get --file "$redundant_follow_record" --field criticRoundsConsumed)
+redundant_follow_exhaustions=$("$engine" json get --file "$redundant_follow_record" --field critiqueExhaustions)
+redundant_follow_subject=$("$engine" json get --file "$agent_repo/artifacts/agents/redundant-follow-up/rounds/1/subject.json" --field contentDigest)
+redundant_follow_subject_file_hash=$("$engine" util sha256 --file "$agent_repo/artifacts/agents/redundant-follow-up/rounds/1/subject.json")
+redundant_follow_return_file_hash=$("$engine" util sha256 --file "$agent_repo/artifacts/agents/redundant-follow-up/rounds/1/return.json")
+redundant_follow_caps_before=$(find "$agent_repo/artifacts/agents/capabilities" -type f -print | sort)
+set +e
+run_agent_fixture_captured redundant-follow-up redundant-follow-up-r2 "$agent_fixture/redundant-follow-up.out" \
+  "$agent_dispatch" follow-up --job redundant-follow-up --message "$follow_message" --wait
+redundant_follow_rc=$?
+set -e
+assert_read_refusal redundant-follow-up "$redundant_follow_rc" REDUNDANT_READ redundant-follow-up \
+  redundant-follow-up-r2 "$agent_repo/artifacts/agents/redundant-follow-up/rounds/2"
+[[ "$("$engine" json get --file "$redundant_follow_record" --field criticRoundsConsumed)" == "$redundant_follow_consumed" \
+   && "$("$engine" json get --file "$redundant_follow_record" --field critiqueExhaustions)" == "$redundant_follow_exhaustions" \
+   && "$("$engine" util sha256 --file "$agent_repo/artifacts/agents/redundant-follow-up/rounds/1/subject.json")" == "$redundant_follow_subject_file_hash" \
+   && "$("$engine" util sha256 --file "$agent_repo/artifacts/agents/redundant-follow-up/rounds/1/return.json")" == "$redundant_follow_return_file_hash" \
+   && "$(find "$agent_repo/artifacts/agents/capabilities" -type f -print | sort)" == "$redundant_follow_caps_before" ]] \
+  || { echo "the redundant follow-up spent exhaustion or launch authorization" >&2; exit 1; }
+printf '\nChanged design content.\n' >>"$redundant_follow_workspace/$redundant_follow_page"
+redundant_follow_changed=$("$engine" util sha256 --file "$redundant_follow_workspace/$redundant_follow_page")
+[[ "$redundant_follow_changed" != "$redundant_follow_subject" ]] \
+  || { echo "changed-design-follow-up did not change the page digest" >&2; exit 1; }
+run_agent_fixture changed-design-follow-up redundant-follow-up-r2 "$agent_dispatch" follow-up \
+  --job redundant-follow-up --message "$follow_message" --wait
+[[ "$("$engine" json get --file "$agent_repo/artifacts/agents/redundant-follow-up/rounds/2/subject.json" --field contentDigest)" == "$redundant_follow_changed" \
+   && "$("$engine" json get --file "$agent_repo/artifacts/agents/redundant-follow-up/rounds/2/subject.json" --field reviewedCommit)" == "$redundant_follow_commit" \
+   && "$("$engine" json get --file "$agent_repo/artifacts/agents/redundant-follow-up/rounds/2/return.json" --field reviewedCommit)" == "$redundant_follow_commit" \
+   && "$("$engine" json get --file "$agent_repo/artifacts/agents/jobs/redundant-follow-up-r2.json" --field status)" == completed ]] \
+  || { echo "changed-design-follow-up did not complete over the changed subject" >&2; exit 1; }
+echo "redundant-follow-up and changed-design-follow-up fixtures passed"
+
+# One live target exercises both unfolded states. A running read blocks until
+# lawful cancellation; a completed read still blocks until its fold, after
+# which the same request becomes a durable redundant-read refusal.
+concurrent_target_brief="$agent_fixture/concurrent-target.md"
+make_agent_brief "$concurrent_target_brief" implement
+run_agent_fixture concurrent-target concurrent-target "$agent_dispatch" dispatch \
+  --role implementer --brief "$concurrent_target_brief" --job-id concurrent-target --worktree --wait
+concurrent_target_root=$("$engine" json get --file "$agent_repo/artifacts/agents/jobs/concurrent-target.json" --field workspaceRoot)
+printf 'concurrent target subject\n' >"$concurrent_target_root/metasystem/concurrent-target.txt"
+json_replace_field "$agent_repo/artifacts/agents/concurrent-target/rounds/1/return.json" \
+  diffBoundary '["metasystem/concurrent-target.txt"]'
+"$agent_repo/bin/metasystem" validate conformance --root "$agent_repo" --stage review --job concurrent-target
+concurrent_running_brief="$agent_fixture/concurrent-running.md"
+make_agent_brief "$concurrent_running_brief" implement 'FAKE:concurrent-turn'
+run_agent_fixture_captured concurrent-running concurrent-running /dev/null "$agent_dispatch" dispatch \
+  --role code-critic --brief "$concurrent_running_brief" --reviews concurrent-target \
+  --runtime fake --job-id concurrent-running --worktree
+concurrent_running_workspace=$("$engine" json get --file "$agent_repo/artifacts/agents/jobs/concurrent-running.json" --field workspaceRoot)
+[[ -d "$concurrent_running_workspace" ]] \
+  && git -C "$agent_repo" show-ref --verify --quiet refs/heads/agent/concurrent-running \
+  || { echo "concurrent-running did not establish its live workspace and branch" >&2; exit 1; }
+concurrent_caps_before=$(find "$agent_repo/artifacts/agents/capabilities" -type f -print | sort)
+set +e
+run_agent_fixture_captured concurrent-live concurrent-live "$agent_fixture/concurrent-live.out" "$agent_dispatch" dispatch \
+  --role code-critic --brief "$code_brief" --reviews concurrent-target --runtime fake --job-id concurrent-live --wait
+concurrent_live_rc=$?
+set -e
+assert_read_refusal concurrent-live "$concurrent_live_rc" CONCURRENT_READ concurrent-running concurrent-live \
+  "$agent_repo/artifacts/agents/concurrent-live/rounds/1"
+[[ "$(find "$agent_repo/artifacts/agents/capabilities" -type f -print | sort)" == "$concurrent_caps_before" ]] \
+  || { echo "concurrent-live allocated launch authorization" >&2; exit 1; }
+run_agent_fixture concurrent-running-cancel concurrent-running "$agent_dispatch" cancel --job concurrent-running
+run_agent_fixture concurrent-completed-root concurrent-completed "$agent_dispatch" dispatch \
+  --role code-critic --brief "$code_brief" --reviews concurrent-target --runtime fake --job-id concurrent-completed --wait
+set +e
+run_agent_fixture_captured concurrent-completed concurrent-completed-candidate "$agent_fixture/concurrent-completed.out" "$agent_dispatch" dispatch \
+  --role code-critic --brief "$code_brief" --reviews concurrent-target --runtime fake --job-id concurrent-completed-candidate --wait
+concurrent_completed_rc=$?
+set -e
+assert_read_refusal concurrent-completed "$concurrent_completed_rc" CONCURRENT_READ concurrent-completed \
+  concurrent-completed-candidate "$agent_repo/artifacts/agents/concurrent-completed-candidate/rounds/1"
+"$engine" job critique-register-advance --repo "$agent_repo" \
+  --root-job concurrent-completed --round-job concurrent-completed >/dev/null
+set +e
+run_agent_fixture_captured redundant-live-fresh redundant-live-fresh "$agent_fixture/redundant-live-fresh.out" "$agent_dispatch" dispatch \
+  --role code-critic --brief "$code_brief" --reviews concurrent-target --runtime fake --job-id redundant-live-fresh --wait
+redundant_live_rc=$?
+set -e
+assert_read_refusal redundant-live-fresh "$redundant_live_rc" REDUNDANT_READ concurrent-completed \
+  redundant-live-fresh "$agent_repo/artifacts/agents/redundant-live-fresh/rounds/1"
+[[ -s "$agent_repo/artifacts/agents/concurrent-completed/reads-refused.jsonl" \
+   && ! -e "$agent_repo/artifacts/agents/redundant-live-fresh/reads-refused.jsonl" \
+   && ! -e "$agent_repo/artifacts/agents/concurrent-target/reads-refused.jsonl" ]] \
+  || { echo "the live redundant event was not anchored only on the prior critic root" >&2; exit 1; }
+echo "concurrent-live and redundant live fresh fixtures passed"
+
+# Design reuse has the design path as its scope and anchors the event on the
+# prior critic root, never on the proposed root.
+redundant_design_page=metasystem/fixture-admission/redundant-fresh-design.md
+printf '# Redundant fresh design\n' >"$agent_repo/$redundant_design_page"
+git -C "$agent_repo" add -- "$redundant_design_page"
+git -C "$agent_repo" -c core.hooksPath=/dev/null -c user.name=metasystem -c user.email=metasystem@example.invalid \
+  commit -qm 'add redundant fresh design fixture'
+redundant_design_commit=$(git -C "$agent_repo" rev-parse HEAD)
+run_agent_fixture redundant-design-root redundant-design-root "$agent_dispatch" dispatch \
+  --role design-critic --outputs "$fixture_declared_outputs" --design "$redundant_design_page" \
+  --brief "$happy_brief" --job-id redundant-design-root --wait
+[[ "$(git -C "$agent_repo" cat-file -t "$redundant_design_commit:$redundant_design_page")" == blob \
+   && "$("$engine" json get --file "$agent_repo/artifacts/agents/redundant-design-root/rounds/1/subject.json" --field reviewedCommit)" == "$redundant_design_commit" \
+   && "$("$engine" json get --file "$agent_repo/artifacts/agents/redundant-design-root/rounds/1/return.json" --field reviewedCommit)" == "$redundant_design_commit" ]] \
+  || { echo "redundant-design-root did not review the commit containing its design page" >&2; exit 1; }
+"$engine" job critique-register-advance --repo "$agent_repo" \
+  --root-job redundant-design-root --round-job redundant-design-root >/dev/null
+set +e
+run_agent_fixture_captured redundant-design-fresh redundant-design-fresh "$agent_fixture/redundant-design-fresh.out" "$agent_dispatch" dispatch \
+  --role design-critic --outputs "$fixture_declared_outputs" --design "$redundant_design_page" \
+  --brief "$happy_brief" --job-id redundant-design-fresh --wait
+redundant_design_rc=$?
+set -e
+assert_read_refusal redundant-design-fresh "$redundant_design_rc" REDUNDANT_READ redundant-design-root \
+  redundant-design-fresh "$agent_repo/artifacts/agents/redundant-design-fresh/rounds/1"
+[[ -s "$agent_repo/artifacts/agents/redundant-design-root/reads-refused.jsonl" \
+   && ! -e "$agent_repo/artifacts/agents/redundant-design-fresh/reads-refused.jsonl" ]] \
+  || { echo "the design redundant event was not anchored only on the prior critic root" >&2; exit 1; }
+echo "redundant fresh design fixture passed"
+
+# A redundant refusal remains exit 11 when its immediate mirror fails. The
+# local event is intact, and the ordinary mirror verb repairs the manifest.
+durable_page=metasystem/fixture-admission/refusal-durable.md
+printf '# Refusal durability design\n' >"$agent_repo/$durable_page"
+git -C "$agent_repo" add -- "$durable_page"
+git -C "$agent_repo" -c core.hooksPath=/dev/null -c user.name=metasystem -c user.email=metasystem@example.invalid \
+  commit -qm 'add refusal durability fixture design'
+durable_commit=$(git -C "$agent_repo" rev-parse HEAD)
+run_agent_fixture refusal-durable-root refusal-durable-root "$agent_dispatch" dispatch \
+  --role design-critic --outputs "$fixture_declared_outputs" --design "$durable_page" \
+  --brief "$happy_brief" --job-id refusal-durable-root --wait
+[[ "$(git -C "$agent_repo" cat-file -t "$durable_commit:$durable_page")" == blob \
+   && "$("$engine" json get --file "$agent_repo/artifacts/agents/refusal-durable-root/rounds/1/subject.json" --field reviewedCommit)" == "$durable_commit" \
+   && "$("$engine" json get --file "$agent_repo/artifacts/agents/refusal-durable-root/rounds/1/return.json" --field reviewedCommit)" == "$durable_commit" ]] \
+  || { echo "refusal-durable-root did not review the commit containing its design page" >&2; exit 1; }
+"$engine" job critique-register-advance --repo "$agent_repo" \
+  --root-job refusal-durable-root --round-job refusal-durable-root >/dev/null
+touch "$agent_repo/artifacts/agents/refusal-durable-root/.mirror-fail-once"
+set +e
+run_agent_fixture_captured refusal-durable refusal-durable-candidate "$agent_fixture/refusal-durable.out" "$agent_dispatch" dispatch \
+  --role design-critic --outputs "$fixture_declared_outputs" --design "$durable_page" \
+  --brief "$happy_brief" --job-id refusal-durable-candidate --wait
+refusal_durable_rc=$?
+set -e
+assert_read_refusal refusal-durable "$refusal_durable_rc" REDUNDANT_READ refusal-durable-root \
+  refusal-durable-candidate "$agent_repo/artifacts/agents/refusal-durable-candidate/rounds/1"
+local_refusals="$agent_repo/artifacts/agents/refusal-durable-root/reads-refused.jsonl"
+[[ -s "$local_refusals" \
+   && -f "$agent_repo/artifacts/agents/refusal-durable-root/.mirror-failed" \
+   && "$(grep -c '^' "$local_refusals")" -eq 1 ]] \
+  && grep -Fq 'cannot mirror refusal-durable-root' "$agent_fixture/refusal-durable.out" \
+  || { echo "refusal-durable lost the local event or scripted mirror failure" >&2; cat "$agent_fixture/refusal-durable.out" >&2; exit 1; }
+refusal_mirror_result="$agent_fixture/refusal-durable-mirror.json"
+refusal_evidence=$("$agent_config" get --key evidence.root)
+"$engine" job mirror --repo "$agent_repo" --checkout "$agent_repo" --evidence "$refusal_evidence" \
+  --root-job refusal-durable-root --job refusal-durable-root --result "$refusal_mirror_result"
+refusal_mirror_home=$("$engine" json get --file "$refusal_mirror_result" --field path)
+mirrored_refusals="$refusal_mirror_home/reads-refused.jsonl"
+refusal_file_hash=$("$engine" util sha256 --file "$local_refusals")
+refusal_manifest_hash=
+while IFS= read -r refusal_member; do
+  [[ "$refusal_member" == '"reads-refused.jsonl":'* ]] || continue
+  refusal_manifest_item=${refusal_member#*\":}
+  refusal_manifest_hash=$("$engine" json get --value "$refusal_manifest_item" --field sha256)
+done < <(json_elements "$("$engine" json get --file "$refusal_mirror_home/manifest.json" --field files)")
+[[ -n "$refusal_manifest_hash" && "$refusal_file_hash" == "$refusal_manifest_hash" \
+   && "$refusal_file_hash" == "$("$engine" util sha256 --file "$mirrored_refusals")" ]] \
+  || { echo "refusal-durable mirror manifest does not bind the refusal file" >&2; exit 1; }
+local_event_id=$("$engine" json get --value "$(cat "$local_refusals")" --field id)
+mirror_event_id=$("$engine" json get --value "$(cat "$mirrored_refusals")" --field id)
+[[ -n "$local_event_id" && "$local_event_id" == "$mirror_event_id" ]] \
+  || { echo "local plus mirror did not resolve to one refusal event id" >&2; exit 1; }
+echo "refusal-durable fixture passed"
+
 # Exhaustion precedes successor reservation. Build one severe code-critic
 # chain through its terminal third round and prove the refusal leaves no
 # fourth-round record or payload. Terminal exhaustion has no successor-reopen
@@ -3235,6 +3496,18 @@ set -e
   && grep -Fq 'control-plane write requires the authenticated lease holder' \
     "$agent_fixture/unauthorized-critique-mutation.out" \
   || { echo "a delegate-shaped caller reached the internal critique mutation" >&2; cat "$agent_fixture/unauthorized-critique-mutation.out" >&2; exit 1; }
+set +e
+(
+  exec -a codex bash -c '"$1" __critique-read-admission --root-job flag-runtime --role code-critic --round 4 --subject-file "$2" --result "$3"; code=$?; exit "$code"' \
+    _ "$agent_dispatch" "$flag_runtime_subject" "$agent_fixture/unauthorized-read-admission.json"
+) >"$agent_fixture/unauthorized-read-admission.out" 2>&1
+unauthorized_read_admission_rc=$?
+set -e
+[[ "$unauthorized_read_admission_rc" -ne 0 ]] \
+  && grep -Fq 'control-plane write requires the authenticated lease holder' \
+    "$agent_fixture/unauthorized-read-admission.out" \
+  && [[ ! -e "$agent_fixture/unauthorized-read-admission.json" ]] \
+  || { echo "a delegate-shaped caller reached critique read admission" >&2; cat "$agent_fixture/unauthorized-read-admission.out" >&2; exit 1; }
 
 # Wardens consume the same severe finding cap as code critics: round three
 # refuses a critic-owned fourth round before creating its record or payload.
@@ -3285,6 +3558,7 @@ make_agent_brief "$repeat_follow_brief" design "FAKE:custodial-critique=$repeat_
 run_agent_fixture repeat-follow-parent repeat-follow "$agent_dispatch" dispatch \
   --role design-critic --outputs "$fixture_declared_outputs" --design metasystem/scripts/agents/roles/design-critic.md \
   --brief "$repeat_follow_brief" --job-id repeat-follow --wait
+change_design_page_after_round_one repeat-follow repeated-follow-up
 rm -f "$repeat_follow_release"
 repeat_follow_message="$agent_fixture/repeat-follow-message.md"
 cp "$agent_repo/scripts/agents/templates/follow-up.md" "$repeat_follow_message"
@@ -3629,6 +3903,8 @@ make_timeout_brief
 resume_root="$agent_fixture/resume-root.md"
 make_agent_brief "$resume_root" design
 run_agent_fixture resume-root resume-root "$agent_dispatch" dispatch --role design-critic --outputs "$fixture_declared_outputs" --design metasystem/scripts/agents/roles/design-critic.md --brief "$resume_root" --job-id resume-root --wait
+resume_root_digest=$("$engine" json get --file "$agent_repo/artifacts/agents/resume-root/rounds/1/subject.json" --field contentDigest)
+change_design_page_after_round_one resume-root resume-collision
 resume_collision="$agent_fixture/resume-collision.md"
 cp "$follow_message" "$resume_collision"
 printf '\nFAKE:resume-collision\n' >>"$resume_collision"
@@ -3639,6 +3915,9 @@ set -e
 [[ $resume_status -eq 3 ]] || { echo "resume collision did not map to failed" >&2; exit 1; }
 grep -Fq 'resume_collision' "$agent_repo/artifacts/agents/jobs/resume-root-r2.json" \
   || { echo "resume collision did not retain its named error" >&2; exit 1; }
+[[ "$("$engine" json get --file "$agent_repo/artifacts/agents/resume-root/rounds/2/subject.json" --field contentDigest)" == "$design_page_changed_digest" \
+   && "$design_page_changed_digest" != "$resume_root_digest" ]] \
+  || { echo "resume collision did not run over the changed design page" >&2; exit 1; }
 
 active_brief="$agent_fixture/active.md"
 make_agent_brief "$active_brief" design 'FAKE:concurrent-turn'
@@ -3654,15 +3933,29 @@ run_agent_fixture happy-close happy "$agent_dispatch" close --job happy
 agent_fails closed-follow-up 'job chain is closed' "$agent_dispatch" follow-up --job happy --message "$follow_message"
 
 # A close racing a follow-up cannot land between its open check and child creation.
-run_agent_fixture close-race close-race "$agent_dispatch" dispatch --role design-critic --outputs "$fixture_declared_outputs" --design metasystem/scripts/agents/roles/design-critic.md --brief "$happy_brief" --job-id close-race --wait
+# Keep the race on its own design path: its final clean fold remains reusable
+# proof and must not make later scenarios over the shared role page redundant.
+close_race_page=metasystem/fixture-admission/close-race.md
+mkdir -p "$agent_repo/metasystem/fixture-admission"
+printf '# Close/follow-up race design\n' >"$agent_repo/$close_race_page"
+git -C "$agent_repo" add -- "$close_race_page"
+git -C "$agent_repo" -c core.hooksPath=/dev/null -c user.name=metasystem -c user.email=metasystem@example.invalid \
+  commit -qm 'add close race fixture design'
+close_race_commit=$(git -C "$agent_repo" rev-parse HEAD)
+run_agent_fixture close-race close-race "$agent_dispatch" dispatch --role design-critic --outputs "$fixture_declared_outputs" --design "$close_race_page" --brief "$happy_brief" --job-id close-race --wait
 close_race_record="$agent_repo/artifacts/agents/jobs/close-race.json"
 close_race_workspace=$("$engine" json get --file "$close_race_record" --field workspaceRoot)
 close_race_subject="$agent_repo/artifacts/agents/close-race/rounds/1/subject.json"
-close_race_content_digest=$("$engine" util sha256 --file "$close_race_workspace/metasystem/scripts/agents/roles/design-critic.md")
-[[ "$("$engine" json get --file "$close_race_subject" --field kind)" == design \
-   && "$("$engine" json get --file "$close_race_subject" --field designPath)" == metasystem/scripts/agents/roles/design-critic.md \
-   && "$("$engine" json get --file "$close_race_subject" --field contentDigest)" == "$close_race_content_digest" ]] \
+close_race_content_digest=$("$engine" util sha256 --file "$close_race_workspace/$close_race_page")
+[[ "$(git -C "$agent_repo" cat-file -t "$close_race_commit:$close_race_page")" == blob \
+   && "$("$engine" json get --file "$close_race_subject" --field kind)" == design \
+   && "$("$engine" json get --file "$close_race_subject" --field designPath)" == "$close_race_page" \
+   && "$("$engine" json get --file "$close_race_subject" --field contentDigest)" == "$close_race_content_digest" \
+   && "$("$engine" json get --file "$close_race_subject" --field reviewedCommit)" == "$close_race_commit" \
+   && "$("$engine" json get --file "$agent_repo/artifacts/agents/close-race/rounds/1/return.json" --field reviewedCommit)" == "$close_race_commit" ]] \
   || { echo "the design critic subject was not persisted from its reviewed workspace" >&2; exit 1; }
+close_race_round_one_digest=$("$engine" json get --file "$close_race_subject" --field contentDigest)
+change_design_page_after_round_one close-race close-race
 close_rc="$agent_fixture/close-race.close"; follow_rc="$agent_fixture/close-race.follow"
 wait_for_agent_census_fresh close-race-follow
 (set +e; cd "$agent_repo"; scripts/agents/dispatch.sh close --job close-race >/dev/null 2>&1; printf '%s\n' "$?" >"$close_rc") & close_pid=$!
@@ -3674,6 +3967,12 @@ close_won=$(cat "$close_rc"); follow_won=$(cat "$follow_rc")
   || { echo "close/follow-up race did not serialize to one winner" >&2; exit 1; }
 if [[ "$follow_won" == 0 ]]; then
   wait_for_agent_status close-race-r2 completed
+  [[ "$("$engine" json get --file "$agent_repo/artifacts/agents/close-race/rounds/2/subject.json" --field designPath)" == "$close_race_page" \
+     && "$("$engine" json get --file "$agent_repo/artifacts/agents/close-race/rounds/2/subject.json" --field contentDigest)" == "$design_page_changed_digest" \
+     && "$("$engine" json get --file "$agent_repo/artifacts/agents/close-race/rounds/2/subject.json" --field reviewedCommit)" == "$close_race_commit" \
+     && "$("$engine" json get --file "$agent_repo/artifacts/agents/close-race/rounds/2/return.json" --field reviewedCommit)" == "$close_race_commit" \
+     && "$design_page_changed_digest" != "$close_race_round_one_digest" ]] \
+    || { echo "the winning close-race follow-up did not read the changed design page" >&2; exit 1; }
   "$engine" job critique-register-advance --repo "$agent_repo" \
     --root-job close-race --round-job close-race-r2 >/dev/null
   run_agent_fixture close-race-follow-winner-close close-race \
@@ -4066,8 +4365,21 @@ export METASYSTEM_FAKE_PROCESS_IDENTITY_FILE="$mission_identity"
 run_agent_fixture envelope-model-override envelope-model-override env METASYSTEM_MISSION_TURN=mission-alpha-t1-fixture "$agent_dispatch" dispatch \
   --role design-critic --outputs "$fixture_declared_outputs" --design metasystem/scripts/agents/roles/design-critic.md \
   --brief "$happy_brief" --model fake-escalated --job-id envelope-model-override --mission mission-alpha --stream main --wait
+# The earlier flag-runtime critic is deliberately complete but unfolded. Give
+# the envelope check its own conformant implementation subject so admission
+# does not mask the signed runtime override being tested.
+envelope_runtime_target_brief="$agent_fixture/envelope-runtime-target.md"
+make_agent_brief "$envelope_runtime_target_brief" implement
+run_agent_fixture envelope-runtime-target envelope-runtime-target "$agent_dispatch" dispatch \
+  --role implementer --brief "$envelope_runtime_target_brief" --job-id envelope-runtime-target --worktree --wait
+envelope_runtime_target_root=$("$engine" json get \
+  --file "$agent_repo/artifacts/agents/jobs/envelope-runtime-target.json" --field workspaceRoot)
+printf 'envelope runtime subject\n' >"$envelope_runtime_target_root/metasystem/envelope-runtime-target.txt"
+json_replace_field "$agent_repo/artifacts/agents/envelope-runtime-target/rounds/1/return.json" \
+  diffBoundary '["metasystem/envelope-runtime-target.txt"]'
+"$agent_repo/bin/metasystem" validate conformance --root "$agent_repo" --stage review --job envelope-runtime-target
 run_agent_fixture envelope-runtime-override envelope-runtime-override env METASYSTEM_MISSION_TURN=mission-alpha-t1-fixture "$agent_dispatch" dispatch \
-  --role code-critic --brief "$code_brief" --reviews review-target --runtime fake --job-id envelope-runtime-override --mission mission-alpha --stream main --wait
+  --role code-critic --brief "$code_brief" --reviews envelope-runtime-target --runtime fake --job-id envelope-runtime-override --mission mission-alpha --stream main --wait
 agent_fails envelope-runtime-implied-model 'add fake:fake-implied-model to a signed envelope.dispatch-allow' \
   env METASYSTEM_MISSION_TURN=mission-alpha-t1-fixture "$agent_dispatch" dispatch --role investigator --brief "$investigator_brief" --runtime fake --job-id envelope-runtime-implied --mission mission-alpha --stream main
 run_agent_fixture mission-explicit mission-explicit env METASYSTEM_MISSION_TURN=mission-alpha-t1-fixture "$agent_dispatch" dispatch --role design-critic --outputs "$fixture_declared_outputs" --design metasystem/scripts/agents/roles/design-critic.md --brief "$happy_brief" --job-id mission-explicit --mission mission-alpha --stream main --wait

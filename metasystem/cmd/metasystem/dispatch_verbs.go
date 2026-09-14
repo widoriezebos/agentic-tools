@@ -19,6 +19,7 @@ import (
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/goal"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/identity"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/janitor"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/readsubject"
 	"golang.org/x/sys/unix"
 )
 
@@ -1842,6 +1843,55 @@ func runDispatchReadSubject(args []string) int {
 	}
 	fmt.Println("present")
 	return 0
+}
+
+func runDispatchCritiqueReadAdmission(args []string) int {
+	if refuseRepeatedFlags("job critique-read-admission", args) {
+		return 2
+	}
+	flags := flag.NewFlagSet("job critique-read-admission", flag.ContinueOnError)
+	repo := flags.String("repo", "", "checkout root")
+	role := flags.String("role", "", "critic role")
+	rootJob := flags.String("root-job", "", "requesting critic root job id")
+	round := flags.Int64("round", 0, "proposed critic round")
+	subjectFile := flags.String("subject-file", "", "private computed read subject")
+	resultFile := flags.String("result", "", "structured admission result")
+	if flags.Parse(args) != nil || flags.NArg() != 0 {
+		return 2
+	}
+	if *repo == "" || *role == "" || *rootJob == "" || *subjectFile == "" || *resultFile == "" {
+		fmt.Fprintln(os.Stderr, "job critique-read-admission: --repo, --role, --root-job, --round, --subject-file, and --result are required")
+		return 2
+	}
+
+	result := dispatchcore.ReadAdmissionResult{}
+	var admissionErr error
+	data, err := os.ReadFile(*subjectFile)
+	if err != nil {
+		admissionErr = fmt.Errorf("read critique subject from %s: %w", *subjectFile, err)
+	} else {
+		var raw any
+		if err := json.Unmarshal(data, &raw); err != nil {
+			admissionErr = fmt.Errorf("decode critique subject from %s: %w", *subjectFile, err)
+		} else {
+			subject, present, err := readsubject.DecodeReadSubject(raw)
+			if err != nil {
+				admissionErr = fmt.Errorf("decode critique subject from %s: %w", *subjectFile, err)
+			} else if !present {
+				admissionErr = fmt.Errorf("critique subject file %s contains no subject", *subjectFile)
+			} else {
+				result, admissionErr = dispatchcore.CritiqueReadAdmission(*repo, *role, *rootJob, *round, subject)
+			}
+		}
+	}
+	encoded, err := json.MarshalIndent(result, "", "  ")
+	if err == nil {
+		err = os.WriteFile(*resultFile, append(encoded, '\n'), 0o600)
+	}
+	if err != nil {
+		return recordExit(fmt.Errorf("write critique read admission result to %s: %w", *resultFile, err))
+	}
+	return recordExit(admissionErr)
 }
 
 func runDispatchCritiqueExhaustionAdvance(args []string) int {
