@@ -49,11 +49,46 @@ hook=$root/scripts/agents/supervision-hook.sh
 launcher=$root/scripts/enforcement/claude-code-hooks.json
 [[ -x "$ms" ]] \
   || { echo "supervision hook fixture: binary absent; run the go gate first" >&2; exit 1; }
+source "$root/scripts/agents/fixture-budget.sh"
+source "$root/scripts/agents/fixture-stop-report.sh"
+source "$root/scripts/agents/fixture-bed-scenarios.sh"
+fixture_bed_child=0
+fixture_scenario=
+if fixture_scenario=$(harness_fixture_bed_child_scenario supervision-hook "$@"); then
+  fixture_bed_child=1
+else
+  fixture_bed_child_rc=$?
+  [[ $fixture_bed_child_rc -eq 1 ]] || exit "$fixture_bed_child_rc"
+fi
+unset METASYSTEM_FIXTURE_SCENARIO
+if (( ! fixture_bed_child )); then
+  fixture_bed_script=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd -P)/$(basename "${BASH_SOURCE[0]}")
+  run_fixture_bed_scenarios supervision-hook "supervision hook fixtures passed" \
+    "$fixture_bed_script" launcher-fallback start-exit-audit runtime-and-missing-engine brain-lifecycle \
+    open-work-and-presentation handoff-stop-claude handoff-stop-codex handoff-stop-foreign stop-failure-paths \
+    rearm-notices repeated-infrastructure worker-interruption deadline-expiry \
+    deadline-missing-engine deadline-record-failure deadline-log-failure \
+    deadline-restricted-process installation-and-session-lifecycle
+fi
+case "$fixture_scenario" in
+  launcher-fallback | start-exit-audit | runtime-and-missing-engine | brain-lifecycle | open-work-and-presentation | \
+    handoff-stop-claude | handoff-stop-codex | handoff-stop-foreign | stop-failure-paths | rearm-notices | repeated-infrastructure | \
+    worker-interruption | deadline-expiry | deadline-missing-engine | deadline-record-failure | \
+    deadline-log-failure | deadline-restricted-process | installation-and-session-lifecycle) ;;
+  *) echo "supervision hook fixtures: unknown scenario: $fixture_scenario" >&2; exit 64 ;;
+esac
+harness_fixture_bed_leg "$fixture_scenario"
+
+if [[ "$fixture_scenario" == start-exit-audit ]]; then
+harness_fixture_bed_leg start-exit-audit
 env -u METASYSTEM_BIN GOCACHE="${GOCACHE:-/tmp/metasystem-hook-start-go-cache}" \
   go test -count=1 ./internal/audit \
     -run '^(TestEngineSkewStartFixtureOnBash32|TestHookStartDeclaredOutcomeMatrixOnBash32|TestHookStartContextOutcomeShapesOnBash32|TestHookStartBuiltinJSONEncoderOnBash32|TestHookStartIntentionalFullPathFixturesOnBash32|TestHookStartFailureBranchFixturesOnBash32|TestHookStartPostPreparationFixturesOnBash32|TestHookStartExitTrapReportsUnexpectedTerminationOnBash32|TestHookStartSignalsUseOwnedStatusesOnBash32|TestHookStartLastResortUsesStderrWhenStdoutIsClosed|TestHookStartBash32ArrayCanaryCoversEmptyAndPopulatedValues)$'
-source "$root/scripts/agents/fixture-budget.sh"
-source "$root/scripts/agents/fixture-stop-report.sh"
+exit 0
+fi
+
+if [[ "$fixture_scenario" == launcher-fallback ]]; then
+harness_fixture_bed_leg shipped-launcher-fallback
 grep -Fq 'hook-bootstrap-failed' "$launcher" \
   && grep -Fq 'Status unavailable' "$launcher" \
   && ! grep -Fq 'Stop hook launcher failed before a safe verdict; stopping is refused' "$launcher" \
@@ -74,6 +109,8 @@ launcher_expected='{"systemMessage":"Task unknown; Stop allowed; needs supervisi
 [[ "$launcher_out" == "$launcher_expected" ]] \
   && ! grep -Fq '"decision":"block"' <<<"$launcher_out" \
   || { echo "the shipped Claude Stop launcher did not allow with a degraded notice on a bootstrap failure: $launcher_out" >&2; exit 1; }
+exit 0
+fi
 harness_fixture_budget_init "$root"
 hook_evidence_cap=$(harness_fixture_cap supervision-hook-evidence)
 
@@ -207,6 +244,8 @@ exec "${METASYSTEM_RUNTIME_MEMBERSHIP_REAL_ENGINE:?}" "$@"
 SH
 chmod +x "$fixture_engine"
 
+if [[ "$fixture_scenario" == runtime-and-missing-engine ]]; then
+harness_fixture_bed_leg runtime-registry-membership
 printf '{"session_id":"fixture","cwd":"/","hook_event_name":"Stop"}\n' >"$tmp/payload.json"
 membership_rc=0
 METASYSTEM_BIN="$fixture_engine" METASYSTEM_RUNTIME_MEMBERSHIP_REAL_ENGINE="$ms" \
@@ -218,6 +257,7 @@ if [[ $membership_rc != 0 ]]; then
   exit 1
 fi
 
+harness_fixture_bed_leg missing-engine-allowance
 missing_rc=0
 METASYSTEM_BIN="$tmp/missing-engine" bash "$line_root/scripts/agents/supervision-hook.sh" claude stop <"$tmp/payload.json" \
   >"$tmp/missing.out" 2>"$tmp/missing.err" &
@@ -240,9 +280,13 @@ if grep -Fq '"decision":"block"' "$tmp/missing.out"; then
 fi
 [[ $(<"$tmp/missing.out") == "$missing_engine_expected" ]] \
   || { echo "supervision hook missing-engine fixture did not emit its fixed allowance" >&2; cat "$tmp/missing.out" >&2; exit 1; }
+exit 0
+fi
 
+if [[ "$fixture_scenario" == brain-lifecycle ]]; then
 # Brain SessionStart: build one declared adopted-style checkout, let the real
 # engine decide the role, and keep the hook a one-object relay.
+harness_fixture_bed_leg brain-session-start
 brain_origin=$tmp/brain-origin.git
 brain_repo=$tmp/brain-repo
 brain_registry=$tmp/brain-registry
@@ -385,6 +429,7 @@ grep -Fq '# The brain seat: role packet and standing instruction' <<<"$brain_con
 
 # Template layout: the repository is the git toplevel while its metasystem
 # directory owns the engine, state, role packet, and narrator digest.
+harness_fixture_bed_leg brain-template-start
 brain_template_repo=$tmp/brain-template-repo
 brain_template_root=$brain_template_repo/metasystem
 mkdir -p "$brain_template_repo/development" "$brain_template_root/bin" \
@@ -451,6 +496,7 @@ wait_for_template_stop_evidence() { # hook process, output label
     sleep "$METASYSTEM_FIXTURE_POLL_INTERVAL_SEC"
   done
 }
+harness_fixture_bed_leg brain-template-stop-claude
 template_stop_output=$tmp/template-stop.out
 template_stop_runtime=claude
 template_stop_session=brain-template-stop
@@ -498,6 +544,7 @@ printf '%s\n' '2026-09-07T00:00:50Z HIGHLIGHT — template-layout Codex stop dig
   >>"$brain_template_root/records/narrator-digest.log"
 printf '{"session_id":"brain-template-stop-codex","cwd":"%s","hook_event_name":"Stop"}\n' "$brain_template_repo" \
   >"$tmp/template-stop-codex.json"
+harness_fixture_bed_leg brain-template-stop-codex
 template_stop_output=$tmp/template-stop-codex.out
 template_stop_runtime=codex
 template_stop_session=brain-template-stop-codex
@@ -521,6 +568,7 @@ template_stop_evidence_ready \
 grep -Fq 'context-budget=' <<<"$template_stop_report" \
   || { echo "template-layout Codex Stop omitted the context-budget role" >&2; cat "$tmp/template-stop-codex.out" >&2; exit 1; }
 
+harness_fixture_bed_leg brain-compact-context
 printf '%s\n' '2026-09-07T00:01:00Z HIGHLIGHT — brain compact digest line (source: fixture compact)' \
   >>"$brain_repo/records/narrator-digest.log"
 printf '{"session_id":"brain-compact","cwd":"%s","source":"compact"}\n' "$brain_repo" >"$tmp/brain-compact.json"
@@ -538,6 +586,7 @@ brain_registry_matcher=${brain_registry_sources//,/|}
 grep -Fq "\"matcher\": \"$brain_registry_matcher\"" "$root/scripts/enforcement/claude-code-hooks.json" \
   || { echo "shipped compact matcher differs from registry sources" >&2; exit 1; }
 
+harness_fixture_bed_leg brain-withdrawal
 METASYSTEM_SUPERVISION_REGISTRY_HOME=$brain_registry "$ms" brain withdraw --root "$brain_repo" \
   --by Wido --fixture-human-authority >/dev/null
 printf '{"session_id":"brain-undeclared","cwd":"%s","source":"startup"}\n' "$brain_repo" >"$tmp/brain-undeclared.json"
@@ -550,6 +599,7 @@ fi
 grep -Eq 'brain startup digest line|brain compact digest line|The brain seat: role packet' "$tmp/brain-undeclared.out" \
   && { echo "undeclared start leaked brain input text" >&2; exit 1; }
 
+harness_fixture_bed_leg brain-corrupt-ledger
 printf '%s\n' '{broken' >"$brain_repo/artifacts/agents/brain.json"
 run_brain_hook "$brain_repo/scripts/agents/supervision-hook.sh" \
   "$tmp/brain-start.json" "$tmp/brain-corrupt.out" "$tmp/brain-corrupt.err"
@@ -566,6 +616,7 @@ grep -Fq 'not this checkout' <<<"$brain_wrong_context" \
   || { echo "wrong-ledger corrupt start omitted its reason" >&2; exit 1; }
 
 cp "$tmp/valid-brain.json" "$brain_repo/artifacts/agents/brain.json"
+harness_fixture_bed_leg brain-missing-engine
 printf '{}' | METASYSTEM_BIN="$tmp/does-not-exist" \
   bash "$brain_repo/scripts/agents/supervision-hook.sh" claude start >"$tmp/brain-no-engine-declared.out"
 rm "$brain_repo/artifacts/agents/brain.json"
@@ -583,6 +634,7 @@ done
 cp "$tmp/valid-brain.json" "$brain_repo/artifacts/agents/brain.json"
 printf '%s\n' '2026-09-07T00:02:00Z LOWLIGHT — unadvanced failure digest (source: fixture failure)' \
   >>"$brain_repo/records/narrator-digest.log"
+harness_fixture_bed_leg brain-boot-failure
 brain_cursor_before=$(shasum -a 256 "$brain_repo/artifacts/agents/steward/narrator-digest-brain-cursor.json" | cut -d' ' -f1)
 brain_failure_engine=$tmp/brain-failure-engine
 cat >"$brain_failure_engine" <<'BRAIN_FAILURE_ENGINE'
@@ -627,10 +679,14 @@ for failure_mode in exit sleep invalid; do
   grep -Fxq "$failure_mode" "$brain_arming_log" \
     || { echo "brain boot $failure_mode failure skipped the supervision arming leg" >&2; exit 1; }
 done
+exit 0
+fi
 
+if [[ "$fixture_scenario" == open-work-and-presentation ]]; then
 # The open-work marker belongs to the verdict inputs rather than one runtime
 # session. Exercise it through the same commands the ordinary Stop worker and
 # deadline parent call so either path preserves the once-only refusal.
+harness_fixture_bed_leg open-work-marker
 open_work_root=$tmp/open-work-root
 mkdir -p "$open_work_root/plans" "$open_work_root/artifacts/agents/jobs"
 printf '%s\n' 'metasystem.runtimes=none' >"$open_work_root/metasystem.conf"
@@ -712,6 +768,9 @@ template_open_display=$("$ms" json get --value "$template_open_verdict" --field 
   || { echo "the plan placeholder was not classified as template-unfilled" >&2; echo "$template_open_verdict" >&2; exit 1; }
 
 mkdir -p "$line_root/artifacts/agents/runs"
+mkdir -p "$line_root/artifacts/agents/supervision"
+[[ -e "$line_root/artifacts/agents/supervision/hooks.log" ]] \
+  || : >"$line_root/artifacts/agents/supervision/hooks.log"
 printf '%s\n' '- Next step: Complete the bounded refusal fixture' '- Waiting on the human: none' \
   '- In flight right now: none' >"$line_root/plans/bounded.md"
 for run_number in $(seq 1 200); do
@@ -820,6 +879,8 @@ exec "${METASYSTEM_STOP_NAME_REAL_ENGINE:?}" "$@"
 SH
 chmod +x "$name_engine"
 
+fi
+
 stop_task_name_report_facts() { # report text
   awk '
     $0 == "## Original turn verdict and frozen judgment" { section = 1; next }
@@ -842,6 +903,8 @@ handoff_stop_judgment_display() { # leg, installation, report text
   printf '%s\n' "$display"
 }
 
+if [[ "$fixture_scenario" == open-work-and-presentation ]]; then
+harness_fixture_bed_leg stop-task-name
 printf '{"session_id":"stop-task-name-block","cwd":"%s","hook_event_name":"Stop"}\n' "$line_root" \
   >"$tmp/stop-task-name-block.json"
 METASYSTEM_BIN="$name_engine" METASYSTEM_STOP_NAME_REAL_ENGINE="$line_root/bin/metasystem" \
@@ -889,7 +952,9 @@ name_allow_facts=$(stop_task_name_report_facts "$name_allow_report")
   || { echo "STOP-TASK-NAME-HOOK allowance report lost the complete dated intent" >&2; exit 1; }
 [[ $(grep -Fc 'adapter stop-output' "$name_trace") -eq 2 ]] \
   || { echo "STOP-TASK-NAME-HOOK did not invoke the runtime mapper once per outcome" >&2; exit 1; }
+fi
 
+if [[ "$fixture_scenario" == handoff-stop-* ]]; then
 # A recorded handoff reaches the real Stop hook through the command handler.
 # Each runtime-shaped runner is the isolated, still-live predecessor while it
 # stages the handoff and invokes the hook. Details are read only after the
@@ -1034,10 +1099,21 @@ HANDOFF_STOP_ENGINE
   echo "$leg passed"
 }
 
-run_handoff_stop_leg handoff-stop-allows-claude claude false
-run_handoff_stop_leg handoff-stop-allows-codex codex false
-run_handoff_stop_leg handoff-stop-foreign-session claude true
+if [[ "$fixture_scenario" == handoff-stop-claude ]]; then
+  harness_fixture_bed_leg handoff-stop-allows-claude
+  run_handoff_stop_leg handoff-stop-allows-claude claude false
+elif [[ "$fixture_scenario" == handoff-stop-codex ]]; then
+  harness_fixture_bed_leg handoff-stop-allows-codex
+  run_handoff_stop_leg handoff-stop-allows-codex codex false
+else
+  harness_fixture_bed_leg handoff-stop-foreign-session
+  run_handoff_stop_leg handoff-stop-foreign-session claude true
+fi
+exit 0
+fi
 
+if [[ "$fixture_scenario" == open-work-and-presentation ]]; then
+harness_fixture_bed_leg old-engine-compatibility
 compat_root=$tmp/compat-root
 cp -R "$line_root" "$compat_root"
 compat_evidence=$compat_root/artifacts/agents/steward/components/supervision-hook.json
@@ -1075,6 +1151,7 @@ if grep -Fq '"lastStopElapsedSec"' "$compat_evidence"; then
   exit 1
 fi
 
+harness_fixture_bed_leg second-digest-check-in
 printf '{"session_id":"line-fixture-two","cwd":"%s","hook_event_name":"Stop"}\n' "$line_root" >"$tmp/line-payload-two.json"
 bash "$line_root/scripts/agents/supervision-hook.sh" claude stop <"$tmp/line-payload-two.json" \
   >"$tmp/line-two.out" 2>"$tmp/line-two.err" \
@@ -1088,6 +1165,7 @@ fi
 
 # A read-only advisor skips the seat judgment, but still publishes the one-line
 # pointer and immutable report before delivery cursors can advance.
+harness_fixture_bed_leg advisor-delivery
 printf '%s\n' '2026-08-29T10:01:00Z HIGHLIGHT — advisor delivery digest line (source: fixture advisor)' \
   >>"$line_root/records/narrator-digest.log"
 advisor_cursor="$line_root/artifacts/agents/steward/narrator-digest-cursor.json"
@@ -1146,7 +1224,12 @@ advisor_cursor_after=$(shasum -a 256 "$advisor_cursor" | cut -d' ' -f1)
 grep -Fq 'lease protocol-advance' "$tmp/advisor-protocol.log" \
   && grep -Fq -- '--counts {"unreported":1}' "$tmp/advisor-protocol.log" \
   || { echo "read-only advisor delivery did not advance holder protocol evidence" >&2; exit 1; }
+exit 0
+fi
 
+if [[ "$fixture_scenario" == stop-failure-paths || "$fixture_scenario" == rearm-notices || \
+      "$fixture_scenario" == repeated-infrastructure || "$fixture_scenario" == worker-interruption || \
+      "$fixture_scenario" == deadline-* || "$fixture_scenario" == installation-and-session-lifecycle ]]; then
 failure_engine=$tmp/failure-engine
 cat >"$failure_engine" <<'SH'
 #!/usr/bin/env bash
@@ -1234,6 +1317,7 @@ chmod +x "$failure_engine"
 
 assert_failure_allows() { # fixture name, injected step, detail surface, expected text
   local fixture_name=$1 failure_step=$2 detail_surface=$3 expected=$4 failure_rc=0 report
+  harness_fixture_bed_leg "pre-verdict-$fixture_name"
   METASYSTEM_BIN="$failure_engine" \
     METASYSTEM_STOP_FAILURE_REAL_ENGINE="$line_root/bin/metasystem" \
     METASYSTEM_STOP_FAILURE_STEP="$failure_step" \
@@ -1256,6 +1340,8 @@ assert_failure_allows() { # fixture name, injected step, detail surface, expecte
   fi
 }
 
+if [[ "$fixture_scenario" == stop-failure-paths ]]; then
+
 # An uncaught early command error is converted by the deadline parent, while
 # captured pre-verdict failures and unreadable verdict output all allow the
 # Stop with their degraded diagnostic.
@@ -1266,10 +1352,14 @@ assert_failure_allows hook-attempt hook-attempt report 'attempt evidence could n
 assert_failure_allows turn-verdict turn-verdict fixed "$status_unavailable_allowance"
 assert_failure_allows malformed-verdict malformed-verdict fixed "$status_unavailable_allowance"
 assert_failure_allows partial-output partial-output fixed "$unreadable_stop_allowance"
+exit 0
+fi
 
+if [[ "$fixture_scenario" == rearm-notices ]]; then
 # A re-arm notice is keyed from the aggregate line on both hook entry paths.
 # Successful session start emits it, Stop carries it beside either verdict,
 # and a later failure cannot erase the already-persisted fact.
+harness_fixture_bed_leg rearm-session-start
 rearm_root=$tmp/rearm-root
 mkdir -p "$rearm_root/bin" "$rearm_root/plans" "$rearm_root/scripts/agents/adapters"
 cp_engine "$ms" "$rearm_root/bin/metasystem"
@@ -1309,6 +1399,7 @@ run_rearm_hook rearm-success start "$tmp/rearm-start-payload.json" \
 grep -Fq 'Metasystem re-armed the rebuilt engine:' "$tmp/rearm-start.out" \
   || { echo "successful SessionStart hid the re-arm notice" >&2; cat "$tmp/rearm-start.out" >&2; exit 1; }
 
+harness_fixture_bed_leg rearm-session-start-failure
 run_rearm_hook rearm-failure start "$tmp/rearm-start-payload.json" \
     "$tmp/rearm-start-failure.out" "$tmp/rearm-start-failure.err" \
   || { echo "failed re-arm SessionStart fixture failed" >&2; cat "$tmp/rearm-start-failure.err" >&2; exit 1; }
@@ -1316,6 +1407,7 @@ grep -Fq 'Metasystem supervision arming failed:' "$tmp/rearm-start-failure.out" 
   && grep -Fq 'Metasystem re-armed the rebuilt engine:' "$tmp/rearm-start-failure.out" \
   || { echo "failed SessionStart did not surface both the failure and re-arm notice" >&2; cat "$tmp/rearm-start-failure.out" >&2; exit 1; }
 
+harness_fixture_bed_leg rearm-stop-success
 printf '{"session_id":"rearm-stop","cwd":"%s","hook_event_name":"Stop"}\n' "$rearm_root" \
   >"$tmp/rearm-stop-payload.json"
 run_rearm_hook rearm-success stop "$tmp/rearm-stop-payload.json" \
@@ -1326,6 +1418,7 @@ rearm_stop_report=$(fixture_stop_status_report "$tmp/rearm-stop.out" "$rearm_roo
 grep -Fq 'Metasystem re-armed the rebuilt engine:' <<<"$rearm_stop_report" \
   || { echo "Stop hid the successful re-arm notice" >&2; cat "$tmp/rearm-stop.out" >&2; exit 1; }
 
+harness_fixture_bed_leg rearm-stop-failure
 printf '{"session_id":"rearm-failure","cwd":"%s","hook_event_name":"Stop"}\n' "$rearm_root" \
   >"$tmp/rearm-failure-payload.json"
 run_rearm_hook rearm-failure stop "$tmp/rearm-failure-payload.json" \
@@ -1336,12 +1429,22 @@ rearm_failure_report=$(fixture_stop_status_report "$tmp/rearm-failure.out" "$rea
 grep -Fq 'supervision arming failed' <<<"$rearm_failure_report" \
   && grep -Fq 'Metasystem re-armed the rebuilt engine:' <<<"$rearm_failure_report" \
   || { echo "failed Stop did not surface both the failure and re-arm notice" >&2; cat "$tmp/rearm-failure.out" >&2; exit 1; }
+harness_fixture_bed_leg rearm-absence
+bash "$line_root/scripts/agents/supervision-hook.sh" claude stop <"$tmp/line-payload.json" \
+  >"$tmp/no-rearm-baseline.out" 2>"$tmp/no-rearm-baseline.err" \
+  || { echo "a hook run without the aggregate key failed" >&2; exit 1; }
+line_report=$(fixture_stop_status_report "$tmp/no-rearm-baseline.out" "$line_root" claude line-fixture) \
+  || { echo "a hook run without the aggregate key exposed no identity-bound report" >&2; exit 1; }
 if grep -Fq 'Metasystem re-armed the rebuilt engine:' <<<"$line_report"; then
   echo "a hook run without the aggregate key invented a re-arm notice" >&2
   exit 1
 fi
+exit 0
+fi
 
+if [[ "$fixture_scenario" == repeated-infrastructure ]]; then
 # Infrastructure failures allow on every occurrence and retain their evidence.
+harness_fixture_bed_leg repeated-arming-failure
 printf '{"session_id":"external-failure","cwd":"%s","hook_event_name":"Stop"}\n' "$line_root" \
   >"$tmp/external-failure-payload.json"
 for occurrence in 1 2; do
@@ -1374,6 +1477,7 @@ grep -Fq 'stop-condition infrastructure supervision-arming-failed supervision-ar
 
 # Frozen-facts diagnostics include a per-attempt path, but refusal occurrence
 # identity remains the stable failure cause rather than that dynamic detail.
+harness_fixture_bed_leg repeated-missing-facts
 printf '{"session_id":"missing-facts","cwd":"%s","hook_event_name":"Stop"}\n' "$line_root" \
   >"$tmp/missing-facts-payload.json"
 for occurrence in 1 2; do
@@ -1395,6 +1499,7 @@ missing_facts_record=$line_root/artifacts/agents/supervision/stop-refusals/missi
   && grep -Fq '"count": 2' "$missing_facts_record" \
   || { echo "dynamic facts diagnostics split the stable refusal occurrence" >&2; cat "$missing_facts_record" >&2; exit 1; }
 
+harness_fixture_bed_leg health-failure
 METASYSTEM_BIN="$failure_engine" \
   METASYSTEM_STOP_FAILURE_REAL_ENGINE="$line_root/bin/metasystem" \
   METASYSTEM_STOP_FAILURE_STEP=health-failure \
@@ -1413,6 +1518,7 @@ if grep -Fq '"decision":"block"' "$tmp/different-cause.out" || ! grep -Fq 'healt
   echo "a health infrastructure cause did not allow with its notice" >&2; cat "$tmp/different-cause.out" >&2; exit 1
 fi
 
+harness_fixture_bed_leg narrator-failure
 METASYSTEM_BIN="$failure_engine" \
   METASYSTEM_STOP_FAILURE_REAL_ENGINE="$line_root/bin/metasystem" \
   METASYSTEM_STOP_FAILURE_STEP=narrator-failure \
@@ -1429,6 +1535,7 @@ grep -Fq 'narrator digest could not be read' <<<"$narrator_failure_report" \
   && grep -Fq 'stop-condition infrastructure narrator-digest-could-not-be-read narrator ' "$line_root/artifacts/agents/supervision/hooks.log" \
   || { echo "narrator failure lost its notice or hook-log line" >&2; exit 1; }
 
+harness_fixture_bed_leg fresh-session-refusal
 printf '{"session_id":"external-failure-fresh","cwd":"%s","hook_event_name":"Stop"}\n' "$line_root" \
   >"$tmp/external-failure-fresh-payload.json"
 METASYSTEM_BIN="$failure_engine" \
@@ -1445,6 +1552,7 @@ arming_record=$line_root/artifacts/agents/supervision/stop-refusals/external-fai
   && [[ $($line_root/bin/metasystem json get --file "$arming_record" --field sessionId) == external-failure ]] \
   || { echo "external refusal record omitted its schema or session" >&2; cat "$arming_record" >&2; exit 1; }
 
+harness_fixture_bed_leg unreadable-refusal-record
 printf '{"session_id":"broken-refusal-record","cwd":"%s","hook_event_name":"Stop"}\n' "$line_root" \
   >"$tmp/broken-refusal-payload.json"
 broken_refusal_record=$line_root/artifacts/agents/supervision/stop-refusals/broken-refusal-record.json
@@ -1469,6 +1577,7 @@ grep -Fq 'stop-refusal record failure' <<<"$broken_refusal_report" \
 
 # The verdict owns its state-file decoding. A present but unreadable state file
 # must return its structured uncertainty block through the real hook.
+harness_fixture_bed_leg unreadable-verdict-state
 printf '%s\n' '{malformed' >"$line_root/artifacts/agents/turn-verdict-state.json"
 assert_failure_allows unreadable-state none report 'turn verdict state'
 rm -f "$line_root/artifacts/agents/turn-verdict-state.json"
@@ -1476,6 +1585,7 @@ rm -f "$line_root/artifacts/agents/turn-verdict-state.json"
 # A decoded session id may contain a newline. The deadline parent transports
 # it separately from the engine-owned state root, so payload text cannot become
 # the root for its infrastructure log or refusal record.
+harness_fixture_bed_leg newline-session-coordinate
 coordinate_engine=$tmp/coordinate-engine
 cat >"$coordinate_engine" <<'SH'
 #!/usr/bin/env bash
@@ -1521,6 +1631,7 @@ sed -n "$((coordinate_log_start + 1)),\$p" "$line_root/artifacts/agents/supervis
 
 # When the worker fails before the resolver answers, the parent waits for the
 # ready marker instead of treating an answer still in flight as no checkout.
+harness_fixture_bed_leg slow-resolution
 slow_resolution_engine=$tmp/slow-resolution-engine
 cat >"$slow_resolution_engine" <<'SH'
 #!/usr/bin/env bash
@@ -1567,6 +1678,14 @@ for slow_resolution_case in malformed runtime; do
     || { echo "slow resolution $slow_resolution_case fixture did not log under the resolved installation" >&2; exit 1; }
 done
 
+exit 0
+fi
+
+if [[ "$fixture_scenario" == worker-interruption ]]; then
+# A worker killed mid-attempt is an infrastructure condition: the stop is
+# allowed with the degraded notice naming the cause, never blocked. Its action
+# and retained-history assertions share this scenario root.
+harness_fixture_bed_leg killed-attempt-history
 kill_engine=$tmp/kill-engine
 cat >"$kill_engine" <<'SH'
 #!/usr/bin/env bash
@@ -1597,8 +1716,6 @@ killed_rc=$?
 set -e
 [[ "$killed_rc" -eq 0 ]] \
   || { echo "supervision hook kill fixture did not convert the worker failure to a provider response" >&2; exit 1; }
-# A worker killed mid-attempt is an infrastructure condition: the stop is
-# allowed with the degraded notice naming the cause, never blocked.
 killed_expected='{"systemMessage":"Task unknown; Stop allowed; needs supervision repair; stop-hook-output-was-unreadable. The steward must restore supervision. Status unavailable."}'
 [[ $(<"$tmp/killed.out") == "$killed_expected" ]] \
   || { echo "supervision hook kill fixture did not emit its fixed degraded allowance" >&2; cat "$tmp/killed.out" >&2; exit 1; }
@@ -1624,11 +1741,20 @@ grep -Fq 'hook-freshness=dead' <<<"$after_kill_report" \
   || { echo "the next hook line did not judge the prior interrupted turn" >&2; exit 1; }
 grep -Fq '"outcome": "EMITTED"' "$hook_evidence" \
   || { echo "the post-kill hook turn did not complete its own emission" >&2; exit 1; }
+exit 0
+fi
 
+if [[ "$fixture_scenario" == deadline-* ]]; then
 # Delaying the return from the recorded hook attempt proves that pre-verdict
 # work and the verdict share one end-to-end Stop budget. The wrapper finishes
 # on its own shortly after the deadline, so the fixture leaves no long-running
 # process and the parent can close the exact attempt it stopped.
+harness_fixture_bed_leg deadline-primary-log-baseline
+bash "$line_root/scripts/agents/supervision-hook.sh" claude stop <"$tmp/line-payload.json" \
+  >"$tmp/deadline-baseline.out" 2>"$tmp/deadline-baseline.err" \
+  || { echo "supervision hook deadline baseline Stop failed" >&2; cat "$tmp/deadline-baseline.err" >&2; exit 1; }
+[[ -s "$line_root/artifacts/agents/supervision/hooks.log" ]] \
+  || { echo "supervision hook deadline baseline Stop did not create its hook log" >&2; exit 1; }
 deadline_engine=$tmp/deadline-engine
 cat >"$deadline_engine" <<'SH'
 #!/usr/bin/env bash
@@ -1652,6 +1778,9 @@ fi
 exec "${METASYSTEM_DEADLINE_REAL_ENGINE:?}" "$@"
 SH
 chmod +x "$deadline_engine"
+deadline_expected='{"systemMessage":"Task unknown; Stop allowed; needs supervision repair; stop deadline expired. The steward must restore supervision. Status unavailable."}'
+if [[ "$fixture_scenario" == deadline-expiry ]]; then
+harness_fixture_bed_leg deadline-expiry-and-repeat
 deadline_started=$SECONDS
 deadline_rc=0
 METASYSTEM_BIN="$deadline_engine" METASYSTEM_DEADLINE_REAL_ENGINE="$ms" \
@@ -1662,7 +1791,6 @@ deadline_elapsed=$((SECONDS - deadline_started))
   || { echo "supervision hook deadline fixture did not exit successfully: $deadline_rc" >&2; exit 1; }
 (( deadline_elapsed < 60 )) \
   || { echo "supervision hook deadline fixture exceeded the provider's sixty-second budget: ${deadline_elapsed}s" >&2; exit 1; }
-deadline_expected='{"systemMessage":"Task unknown; Stop allowed; needs supervision repair; stop deadline expired. The steward must restore supervision. Status unavailable."}'
 [[ $(<"$tmp/deadline.out") == "$deadline_expected" ]] \
   || { echo "supervision hook deadline fixture did not emit its fixed degraded timeout" >&2; cat "$tmp/deadline.out" >&2; exit 1; }
 if grep -Fq '"decision":"block"' "$tmp/deadline.out"; then
@@ -1694,10 +1822,14 @@ deadline_record="$line_root/artifacts/agents/supervision/stop-refusals/line-fixt
 grep -Fq '"cause": "stop deadline expired"' "$deadline_record" \
   && grep -Fq '"count": 2' "$deadline_record" \
   || { echo "repeated deadline overrun lost its recorded cause or occurrence count" >&2; cat "$deadline_record" >&2; exit 1; }
+exit 0
+fi
 
 # With the installation's canonical engine gone, neither the worker nor the
 # deadline parent may substitute an override engine for that world. The worker
 # returns the fixed missing-engine allowance, which the parent accepts exactly.
+if [[ "$fixture_scenario" == deadline-missing-engine ]]; then
+harness_fixture_bed_leg deadline-missing-engine
 deadline_noengine_log_before=$(wc -c <"$line_root/artifacts/agents/supervision/hooks.log" | tr -d '[:space:]')
 mv "$line_root/bin/metasystem" "$line_root/bin/metasystem.absent"
 deadline_noengine_rc=0
@@ -1715,9 +1847,12 @@ deadline_noengine_expected='{"systemMessage":"Task unknown; Stop allowed; needs 
 deadline_noengine_log_after=$(wc -c <"$line_root/artifacts/agents/supervision/hooks.log" | tr -d '[:space:]')
 [[ "$deadline_noengine_log_after" == "$deadline_noengine_log_before" ]] \
   || { echo "supervision hook deadline fixture without an engine logged a deadline outcome" >&2; exit 1; }
+exit 0
+fi
 
 # An engine that refuses the parent's response-composition json verbs, so a
 # notice can only come from the parent's fixed text.
+if [[ "$fixture_scenario" == deadline-record-failure || "$fixture_scenario" == deadline-log-failure ]]; then
 prefix_engine=$tmp/prefix-engine
 cat >"$prefix_engine" <<'SH'
 #!/usr/bin/env bash
@@ -1730,12 +1865,15 @@ fi
 exec "${METASYSTEM_PREFIX_DEADLINE_ENGINE:?}" "$@"
 SH
 chmod +x "$prefix_engine"
+fi
 
 # With a resolved installation and state root, failure of the record write is
 # still an allowance, and its notice does not depend on the engine: the
 # override keeps the worker hung, refuses the parent's record operation, and
 # refuses the json verbs the parent could otherwise build the notice with,
 # while leaving its resolver and hook log available.
+if [[ "$fixture_scenario" == deadline-record-failure ]]; then
+harness_fixture_bed_leg deadline-record-failure
 printf '{"session_id":"deadline-record-failure","cwd":"%s","hook_event_name":"Stop"}\n' \
   "$line_root" >"$tmp/deadline-record-failure-payload.json"
 deadline_record_failure_log_start=$(wc -l <"$line_root/artifacts/agents/supervision/hooks.log")
@@ -1759,11 +1897,15 @@ sed -n "$((deadline_record_failure_log_start + 1)),\$p" \
   || { echo "supervision hook deadline record-failure fixture did not log its outcome" >&2; exit 1; }
 [[ ! -e "$line_root/artifacts/agents/supervision/stop-refusals/deadline-record-failure.json" ]] \
   || { echo "supervision hook deadline record-failure fixture unexpectedly wrote its refusal record" >&2; exit 1; }
+exit 0
+fi
 
 # The engine updated the record but cannot carry the log-failure prefix
 # (its response-composition json verbs refuse) while the hook log itself is
 # read-only. Making only its directory read-only would still permit appends to
 # the existing file. The parent prints one allowance with a fixed-text fallback.
+if [[ "$fixture_scenario" == deadline-log-failure ]]; then
+harness_fixture_bed_leg deadline-condition-log-failure
 chmod 0444 "$line_root/artifacts/agents/supervision/hooks.log"
 deadline_prefix_rc=0
 METASYSTEM_BIN="$prefix_engine" METASYSTEM_PREFIX_DEADLINE_ENGINE="$deadline_engine" \
@@ -1779,10 +1921,14 @@ chmod 0644 "$line_root/artifacts/agents/supervision/hooks.log"
 deadline_prefix_expected='{"systemMessage":"Task unknown; Stop allowed; needs supervision repair; stop deadline expired; condition log failed. The steward must restore supervision. Status unavailable."}'
 [[ $(<"$tmp/deadline-prefix.out") == "$deadline_prefix_expected" ]] \
   || { echo "supervision hook deadline fixture with a refusing json engine did not allow with one fixed notice" >&2; cat "$tmp/deadline-prefix.out" >&2; exit 1; }
+exit 0
+fi
 
 # A restricted host may prove that the worker still exists without exposing
 # its command line. The parent must keep the Stop deadline but must not signal
 # or wait for a process whose ownership it cannot verify.
+if [[ "$fixture_scenario" == deadline-restricted-process ]]; then
+harness_fixture_bed_leg deadline-unverifiable-worker
 empty_ps_dir=$tmp/empty-ps-shim
 empty_ps_deadline_root=$tmp/empty-ps-deadline
 mkdir -p "$empty_ps_dir" "$empty_ps_deadline_root"
@@ -1837,7 +1983,13 @@ hook_process_path=
 grep -Fq 'supervision hook: emitted the health line but could not record completion' \
   "${empty_ps_deadline_dirs[0]}/stderr" \
   || { echo "empty-ps supervision hook deadline fixture did not prove the unsignalled worker continued after the parent returned" >&2; cat "${empty_ps_deadline_dirs[0]}/stderr" >&2; exit 1; }
+exit 0
+fi
+fi
+fi
 
+if [[ "$fixture_scenario" == installation-and-session-lifecycle ]]; then
+harness_fixture_bed_leg missing-template-installation
 missing_template_outer=$tmp/missing-template-root
 missing_template_root=$missing_template_outer/metasystem
 mkdir -p "$missing_template_outer/development" "$missing_template_root/scripts/agents"
@@ -1868,6 +2020,7 @@ fi
 [[ ! -e "$missing_template_outer/artifacts" && ! -e "$missing_template_root/artifacts" ]] \
   || { echo "missing template state fixture wrote through an unproven installation" >&2; exit 1; }
 
+harness_fixture_bed_leg nested-installation-ancestry
 nested_outer=$tmp/nested-root
 nested_root=$nested_outer/metasystem
 mkdir -p "$nested_outer/development" "$nested_root/bin" "$nested_root/scripts/agents/adapters"
@@ -1916,6 +2069,7 @@ fi
 [[ -s "$tmp/nested-up.log" ]] \
   || { echo "nested installation ancestor fixture did not reach arming" >&2; exit 1; }
 
+harness_fixture_bed_leg template-bounded-backlog
 template_outer=$tmp/template-root
 template_root=$template_outer/metasystem
 mkdir -p "$template_outer/development" "$template_root/bin" "$template_root/plans" \
@@ -2115,6 +2269,7 @@ template_intent=$(find "$template_root/artifacts/agents/steward/intents" -type f
 # SessionEnd spends an unused authorization before announcement retirement.
 # The wrapper deliberately leaves the announcement in place, reproducing the
 # failed-retirement path without allowing the marker to reach a later Stop.
+harness_fixture_bed_leg template-session-end-no-replay
 template_marker_path=$template_root/artifacts/agents/session-stops/$template_session.json
 printf \
   '{"schemaVersion":3,"authorizationId":"cccccccccccccccccccccccccccccccc","sessionId":"%s","holderMainId":"%s","claimEpoch":%s,"by":"Wido","writtenAt":"2000-01-01T00:00:00Z","expiresAt":"2099-01-01T00:00:00Z","human":{"pid":%s,"pidStartedAt":%s%s},"humanAuthorityProof":"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa","sessionLifecycle":"%s"}\n' \
@@ -2154,6 +2309,7 @@ grep -Fq 'cannot replay' <<<"$template_replay_report" \
 # A holder classification may omit its optional presentation projection. The
 # seat remains a healthy holder; missing machine, lineage, or claim epoch in
 # that view must not create a supervision failure or refusal record.
+harness_fixture_bed_leg template-holder-optional-projection
 template_holder_quiet_session=template-holder-optional-projection
 printf '{"session_id":"%s","cwd":"%s","hook_event_name":"Stop"}\n' \
   "$template_holder_quiet_session" "$template_outer" >"$tmp/template-holder-quiet-payload.json"
@@ -2175,3 +2331,5 @@ sed -n "$((template_holder_quiet_log_start + 1)),\$p" \
 [[ ! -s "$osascript_calls" ]] \
   || { echo "supervision hook fixture invoked osascript" >&2; cat "$osascript_calls" >&2; exit 1; }
 echo "supervision hook launcher allowance, runtime membership, degraded pre-verdict handling, re-arm visibility, infrastructure condition records, verdict and partial-output errors, unreadable state, narrator digest delivery, current-turn freshness, killed-attempt history, emission evidence, end-to-end deadline allowance, missing-engine allowance, nested installation ancestry, bounded template backlog escalation, template holder-state, and SessionEnd no-replay fixtures passed"
+exit 0
+fi

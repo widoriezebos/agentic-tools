@@ -43,18 +43,22 @@ if (( ! fixture_bed_child )); then
       wait_stop_real_runtime+=(wait-stop-claude)
     fi
     run_fixture_bed_scenarios supervision "supervision fixtures passed (S4-1 through S4-16 and engine re-arm)" \
-      "$fixture_bed_script" archive-file-extraction early-reader-pipefail bed-death-self-test operator-layout nested-root census-lifecycle slow-census idle-hook rotation-log foreign-owner stop-hook-monitor \
+      "$fixture_bed_script" archive-file-extraction early-reader-pipefail bed-death-self-test operator-layout \
+      nested-holder-state nested-worktree nested-override nested-candidate-hooks nested-no-world \
+      nested-engine-skew nested-worktree-completion nested-worktree-deadlines nested-compiled-installations \
+      census-lifecycle slow-census idle-hook rotation-log foreign-owner stop-hook-monitor \
       rearm-rebuild rearm-launch-fails rearm-provenance stop-everything seat-survives status-is-live stop-fence arm-again arm-refuses-survivor \
       wait-job-run wait-proof wait-ledger wait-restart wait-bounds wait-native-hint wait-no-native wait-compatibility wait-stop-fake \
       ${wait_stop_real_runtime[@]+"${wait_stop_real_runtime[@]}"}
   fi
 fi
 case "$fixture_scenario" in
-  archive-file-extraction | early-reader-pipefail | bed-death-self-test | operator-layout | nested-root | census-lifecycle | slow-census | idle-hook | rotation-log | foreign-owner | stop-hook-monitor | \
+  archive-file-extraction | early-reader-pipefail | bed-death-self-test | operator-layout | nested-holder-state | nested-worktree | nested-override | nested-candidate-hooks | nested-no-world | nested-engine-skew | nested-worktree-completion | nested-worktree-deadlines | nested-compiled-installations | census-lifecycle | slow-census | idle-hook | rotation-log | foreign-owner | stop-hook-monitor | \
     rearm-rebuild | rearm-launch-fails | rearm-provenance | stop-everything | seat-survives | status-is-live | stop-fence | arm-again | arm-refuses-survivor | \
     wait-job-run | wait-proof | wait-ledger | wait-restart | wait-bounds | wait-native-hint | wait-no-native | wait-compatibility | wait-stop-fake | wait-stop-claude) ;;
   *) echo "supervision fixtures: unknown scenario: $fixture_scenario" >&2; exit 64 ;;
 esac
+harness_fixture_bed_leg "$fixture_scenario"
 
 # Focused fixtures for section 3.11. Every wait in this file goes through a
 # named ceiling so a broken supervisor fails loudly instead of hanging (IL-1).
@@ -248,7 +252,7 @@ assert_fixture_supervision_isolation() {
     done < <(find "$root/artifacts/agents/mains" -type f -name '*.json' -print0 2>/dev/null || true)
   done
   case "$fixture_scenario" in
-    nested-root | census-lifecycle | idle-hook | stop-hook-monitor)
+    nested-* | census-lifecycle | idle-hook | stop-hook-monitor)
       (( direct_up_seen == 1 )) \
         || { echo "supervision fixture scenario $fixture_scenario did not audit its direct metasystem up bring-up" >&2; return 1; }
       ;;
@@ -1133,7 +1137,8 @@ echo "nested ordinary operator supervision fixture passed" >&2
   || { echo "operator sandbox carries the operator's supervision lock" >&2; exit 1; }
 fi
 
-if [[ "$fixture_scenario" == nested-root ]]; then
+if [[ "$fixture_scenario" == nested-* ]]; then
+harness_fixture_bed_leg nested-holder-setup
 nested_scope=$tmp/nested-root
 nested_installation=$nested_scope/metasystem
 nested_sibling=$nested_scope/development/sub
@@ -1261,7 +1266,21 @@ fire_nested() { # hook, session, cwd, output
   }
 
   nested_hook=$nested_installation/scripts/agents/supervision-hook.sh
+  nested_primary_log=$nested_installation/artifacts/agents/supervision/hooks.log
 
+  # Later legs compare the primary hook log before and after their own Stop.
+  # Seed it through a real holder-owned Stop so absence can never masquerade
+  # as an empty log in an independently executed child.
+  harness_fixture_bed_leg nested-primary-log-baseline
+  write_nested_plan_line 'nested baseline sentinel'
+  fire_nested "$nested_hook" nested-baseline "$nested_sibling" "$tmp/nested-baseline.out"
+  assert_nested_block "$tmp/nested-baseline.out" nested-baseline \
+    'nested baseline sentinel' 'nested baseline Stop'
+  [[ -s "$nested_primary_log" ]] \
+    || { echo "nested baseline Stop did not create the primary hook log" >&2; exit 1; }
+
+if [[ "$fixture_scenario" == nested-holder-state ]]; then
+  harness_fixture_bed_leg nested-holder-state
   # The first Stop comes from a distinct Git checkout nested beneath the
   # wrapper. Payload cwd must not redirect evidence or the verdict into it.
   nested_inner=$nested_scope/development/inner
@@ -1299,17 +1318,22 @@ fire_nested() { # hook, session, cwd, output
     || { echo "nested Stop firings left no trail in the state world" >&2; exit 1; }
   [[ ! -e "$nested_scope/artifacts" ]] \
     || { echo "nested Stop firings wrote state at the wrapper Git toplevel" >&2; exit 1; }
+fi
 
+if [[ "$fixture_scenario" == nested-worktree || "$fixture_scenario" == nested-worktree-completion || \
+      "$fixture_scenario" == nested-worktree-deadlines ]]; then
 nested_worktree=$tmp/nested-wt
 git -C "$nested_scope" worktree add -q "$nested_worktree" HEAD
 nested_worktree_installation=$nested_worktree/metasystem
 fixture_harness_roots+=("$nested_worktree_installation")
+fi
+if [[ "$fixture_scenario" == nested-worktree ]]; then
+  harness_fixture_bed_leg nested-worktree
 cat >"$nested_installation/plans/stream.md" <<'FIXTURE'
 - In flight right now: nothing
 - Waiting on the human: nothing blocking
 - Next step: recover the primary sentinel
 FIXTURE
-nested_primary_log=$nested_installation/artifacts/agents/supervision/hooks.log
 nested_log_before=$(wc -c <"$nested_primary_log" | tr -d '[:space:]')
 fire_nested "$nested_worktree_installation/scripts/agents/supervision-hook.sh" nested-worktree \
   "$nested_worktree" "$tmp/nested-worktree.out"
@@ -1348,7 +1372,10 @@ nested_scheduler_repo=$(sed -n "s/.* --repo '\([^']*\)' --recover-only --if-down
 # The engine prints canonical paths (on macOS /var is /private/var).
 [[ "$nested_scheduler_repo" == "$(cd "$nested_scope" && pwd -P)" ]] \
   || { echo "Git steering changed the nested scheduler repository scope" >&2; echo "$nested_scheduler" >&2; exit 1; }
+fi
 
+if [[ "$fixture_scenario" == nested-override ]]; then
+  harness_fixture_bed_leg nested-override
   write_nested_plan_line 'nested-override sentinel'
 pair_engine=$nested_override_engine
 cat >"$pair_engine" <<'FIXTURE'
@@ -1357,9 +1384,9 @@ exec "${METASYSTEM_PAIR_REAL_ENGINE:?}" "$@"
 FIXTURE
   chmod +x "$pair_engine"
   nested_override_log_start=$(wc -l <"$nested_primary_log")
+  nested_log_before=$(wc -c <"$nested_primary_log" | tr -d '[:space:]')
   run_nested_holder_stop nested-override "$nested_sibling" "$nested_hook" "$nested_override_output" \
     "METASYSTEM_BIN=$nested_override_engine" "METASYSTEM_PAIR_REAL_ENGINE=$ms"
-  nested_log_before=$nested_log_after
   nested_override_json=$(<"$nested_override_output")
   nested_override_decision=$("$ms" json get --value "$nested_override_json" --field decision)
   nested_override_report=$(fixture_stop_status_report \
@@ -1387,7 +1414,10 @@ FIXTURE
     || { echo "nested override Stop wrote no component record at the installation" >&2; exit 1; }
   [[ ! -e "$nested_scope/artifacts" ]] \
     || { echo "nested override Stop wrote evidence at the wrapper root" >&2; exit 1; }
+fi
 
+if [[ "$fixture_scenario" == nested-candidate-hooks ]]; then
+  harness_fixture_bed_leg nested-candidate-hooks
 copied_dir=$nested_scope/development/sub/scripts/agents
 mkdir -p "$copied_dir"
 cp "$nested_hook" "$copied_dir/supervision-hook.sh"
@@ -1417,7 +1447,10 @@ copied_log_after=$(wc -c <"$nested_primary_log" | tr -d '[:space:]')
 [[ "$copied_log_after" == "$copied_log_before" && ! -e "$nested_scope/development/artifacts" && \
    ! -e "$nested_scope/development/sub/artifacts" ]] \
   || { echo "unproven hook candidates wrote governed evidence" >&2; exit 1; }
+fi
 
+if [[ "$fixture_scenario" == nested-no-world ]]; then
+  harness_fixture_bed_leg nested-no-world
 no_world=$tmp/no-world
 mkdir -p "$no_world/scripts/agents" "$no_world/bin"
 cp "$nested_hook" "$no_world/scripts/agents/supervision-hook.sh"
@@ -1437,7 +1470,9 @@ cp -R "$nested_installation/scripts/agents/adapters" "$no_world/scripts/agents/a
   [[ $(<"$tmp/no-world.out") == "$no_world_expected" ]] \
     && ! grep -Fq '"decision":"block"' "$tmp/no-world.out" \
     || { echo "an installation outside Git did not use the unreadable-output allowance" >&2; cat "$tmp/no-world.out" >&2; exit 1; }
+fi
 
+if [[ "$fixture_scenario" == nested-engine-skew || "$fixture_scenario" == nested-worktree-deadlines ]]; then
 skew_root=$tmp/skew-root
 mkdir -p "$skew_root/scripts/agents" "$skew_root/bin" "$skew_root/plans"
 cp "$nested_hook" "$skew_root/scripts/agents/supervision-hook.sh"
@@ -1463,6 +1498,9 @@ fi
 exec "${METASYSTEM_SKEW_REAL_ENGINE:?}" "$@"
 FIXTURE
 chmod +x "$skew_root/bin/metasystem"
+fi
+if [[ "$fixture_scenario" == nested-engine-skew ]]; then
+  harness_fixture_bed_leg nested-engine-skew
 run_nested_holder_stop engine-skew "$skew_root" \
   "$skew_root/scripts/agents/supervision-hook.sh" "$tmp/engine-skew.out" \
   env -u METASYSTEM_BIN "METASYSTEM_SKEW_REAL_ENGINE=$ms"
@@ -1482,7 +1520,10 @@ done
 [[ ! -e "$skew_root/artifacts/agents/supervision/hooks.log" && \
    ! -e "$skew_root/artifacts/agents/supervision/stop-refusals" ]] \
   || { echo "engine-skew fixture wrote evidence without a resolved world" >&2; exit 1; }
+fi
 
+if [[ "$fixture_scenario" == nested-worktree-completion ]]; then
+  harness_fixture_bed_leg nested-worktree-completion
   for completion_case in nested-wt-parent nested-wt-parent-steered; do
     completion_out=$tmp/$completion_case.out
     write_nested_plan_line "$completion_case sentinel"
@@ -1501,7 +1542,10 @@ done
     exit 1
   fi
 done
+fi
 
+if [[ "$fixture_scenario" == nested-worktree-deadlines ]]; then
+  harness_fixture_bed_leg nested-worktree-deadlines
 cp_engine "$skew_root/bin/metasystem" "$nested_installation/bin/metasystem"
 deadline_engine=$tmp/wt-deadline-engine
 cat >"$deadline_engine" <<'FIXTURE'
@@ -1596,7 +1640,10 @@ run_nested_timeout nested-wt-parent-steered-timeout-slow-root true 1 "$nested_in
     || { echo "unresolved worktree deadlines wrote outside the mapped installation" >&2; exit 1; }
 
   cp_engine "$ms" "$nested_installation/bin/metasystem"
+fi
 
+if [[ "$fixture_scenario" == nested-compiled-installations ]]; then
+  harness_fixture_bed_leg nested-compiled-installations
   # The compiled authority accepts installations that the old shell marker
   # test refused: an adopted installation below a marked repository, and a
   # template installation whose configuration exists only in the local file.
@@ -1676,6 +1723,7 @@ run_nested_timeout nested-wt-parent-steered-timeout-slow-root true 1 "$nested_in
     env -u METASYSTEM_BIN
   assert_compiled_installation_block "$tmp/nested-local.out" "$nested_local_installation" \
     "$nested_local_scope" nested-local 'nested-local sentinel' 'local-only template installation Stop'
+fi
 
   touch "$nested_arm_release"
   wait_for_child_exit "nested sibling main release" "$nested_main_pid"

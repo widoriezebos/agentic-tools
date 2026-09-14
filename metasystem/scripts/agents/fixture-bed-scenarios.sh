@@ -129,7 +129,12 @@ run_fixture_bed_scenarios() { # bed name, success line, script, scenario names..
       capability=$("$fixture_bed_mint_capability" "$log_root" "$queued_at" "$scenario")
       echo "$bed fixture scenario started: $scenario" >&2
       set -m
-      "$script" --fixture-bed-child "$scenario" "$capability" </dev/null >"$log" 2>&1 &
+      METASYSTEM_FIXTURE_BED=$bed \
+        METASYSTEM_FIXTURE_SCENARIO_NAME=$scenario \
+        METASYSTEM_FIXTURE_LEG_FILE=$log.leg \
+        METASYSTEM_FIXTURE_FAILURE_MARKER=$log.failure \
+        "$script" --fixture-bed-child "$scenario" "$capability" \
+        </dev/null >"$log" 2>&1 &
       live_pids+=("$!")
       set +m
       live_names+=("$scenario")
@@ -156,6 +161,16 @@ run_fixture_bed_scenarios() { # bed name, success line, script, scenario names..
         wait "${live_pids[$slot]}"
         rc=$?
         set -e
+      fi
+      if (( rc != 0 )) && [[ ! -d "$log.failure" ]]; then
+        leg=unnamed
+        if [[ -f "$log.leg" ]] && IFS= read -r recorded_leg <"$log.leg"; then
+          [[ -z "$recorded_leg" ]] || leg=$recorded_leg
+        fi
+        if mkdir "$log.failure" 2>/dev/null; then
+          printf '%s fixture scenario %s failed while serving leg %s with status %s\n' \
+            "$bed" "$scenario" "$leg" "$rc" >>"$log"
+        fi
       fi
       cat "$log"
       scenario_elapsed=$((SECONDS - live_started[slot]))

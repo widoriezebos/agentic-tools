@@ -159,6 +159,35 @@ harness_fixture_bed_mint_capability() { # private directory, index, scenario
 	printf '%s\n' "$capability"
 }
 
+# A scenario names the leg it is about to serve so an ERR inherited by a
+# command substitution can identify the exact fixture boundary. Bash 3.2 does
+# not expose a proven command line for every top-level compound or explicit
+# exit, so the guard deliberately reports no source line. The marker is a
+# directory because mkdir gives the child and its subshells one atomic winner.
+harness_fixture_bed_leg_failure() { # exit status
+	local status=$1
+	case $- in
+		*e*) ;;
+		*) return "$status" ;;
+	esac
+	if mkdir "${METASYSTEM_FIXTURE_FAILURE_MARKER:?}" 2>/dev/null; then
+		printf '%s fixture scenario %s failed while serving leg %s with status %s\n' \
+			"${METASYSTEM_FIXTURE_BED:?}" "${METASYSTEM_FIXTURE_SCENARIO_NAME:?}" \
+			"${harness_fixture_bed_leg_name:?}" "$status" >&2
+	fi
+	return "$status"
+}
+
+harness_fixture_bed_leg() { # leg name
+	[[ $# -eq 1 && -n "$1" ]] || {
+		echo "fixture bed leg name is required" >&2
+		return 64
+	}
+	harness_fixture_bed_leg_name=$1
+	printf '%s\n' "$harness_fixture_bed_leg_name" >"${METASYSTEM_FIXTURE_LEG_FILE:?}"
+	trap 'harness_fixture_bed_leg_failure "$?"' ERR
+}
+
 harness_dispatch_fixture_bed_mint_capability() { # private directory, index, scenario, immutable engine
 	local directory=$1 index=$2 scenario=$3 engine=$4 capability digest stamp
 	capability=$(mktemp "$directory/$index.capability.XXXXXX") || return 1
