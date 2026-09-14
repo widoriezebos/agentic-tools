@@ -9,10 +9,11 @@
 - Origin: human
 - Next step: Split the two long scripts into scenarios under the existing fixture-bed-child mechanism; add the no-silent-exit guard; then the fixture.
 - OpenedAt: 2026-09-14T15:32:10Z
-- Revision: 9
+- Revision: 10
 - Budget: elapsedLimit=1h attemptLimit=3 reservedJobMinutesLimit=360 activeJobLimit=1 reviewRoundLimit=0
 - BudgetExceptions: 0
 - Approved: by=human:Wido at=2026-09-14T18:53:53Z revision=3 opid=RBTEN3WHYJ3128AK912MKQ38KA-m1e-c6925449 authority=proven digest=413873527168fec4171fc1c19a78ea3040ffd8a3b75dc49cf668c6938f841f0a
+- Sliced: machine=m1b lineage=main-1789191336-90295-e4b24b revision=9 at=2026-09-14T20:28:26Z
 - Claimed: machine=m1b lineage=main-1789191336-90295-e4b24b at=2026-09-14T20:26:40Z revision=9 accountingRevision=9 episodeAt=2026-09-14T20:26:40Z episodeRevision=9
 - StopCapability: generation=9 revision=9 machine=m1b claimEpoch=2 fenceEpoch=0
 
@@ -26,4 +27,5 @@ History:
 - 2026-09-14T20:23:28Z YRZBJ7EYJN1MJFEMV7ABC630PV-m1e-c6925449 set-priority actor=human:Wido targets=beds-report-every-failure,beds-run-under-the-oldest-supported-bash,brief-declares-the-round-boundary,builder-proves-each-rule-by-mutation,coordinator-context-stays-under-budget,coordinator-wakes-on-events-not-polls,critique-closes-on-folded-proof,cross-cutting-change-inventories-its-readers,delegate-sandbox-runs-the-beds,every-verb-resolves-repo-to-an-absolute-root,go-tests-never-inherit-a-candidate-engine,hook-root-resolver-design,moved-effects-are-inventoried-in-the-design,receipt-admission-caps-concurrent-batteries,registered-wait-matches-the-runtime-session,round-proof-feeds-the-next-brief,small-change-lane,stop-hook-never-forces-an-empty-turn reason=priority-order subject=round-proof-feeds-the-next-brief from=1:12 to=1:11 requested-sequence=18
 - 2026-09-14T20:25:05Z SAPG45A387KCJW142RD41ZS95M-m1e-c6925449 set-priority actor=human:Wido targets=beds-report-every-failure,beds-run-under-the-oldest-supported-bash,critique-closes-on-folded-proof,cross-cutting-change-inventories-its-readers,degraded-stop-forms-have-one-source,delegate-sandbox-runs-the-beds,every-round-gets-an-independent-read,every-verb-resolves-repo-to-an-absolute-root,failures-show-observed-against-expected,go-tests-never-inherit-a-candidate-engine,member-size-gate,moved-effects-are-inventoried-in-the-design,registered-wait-matches-the-runtime-session,round-proof-feeds-the-next-brief,stop-response-carries-a-structured-report-reference,testing-surfaces-declare-their-mirror,tests-never-wait-on-wall-time reason=priority-order subject=cross-cutting-change-inventories-its-readers from=1:11 to=1:10 requested-sequence=25
 - 2026-09-14T20:26:40Z EBFXH4S276DM75GS4VR73Z7RC2-m1b-30a7e141 claim actor=m1b+main-1789191336-90295-e4b24b targets=beds-report-every-failure
-Integrity: sha256=bddbcce7568381a4ec9481f3a050f3f3d08061fc904392056448f727a28dd4ec
+- 2026-09-14T20:28:26Z 0DKG8TPJY3HJJT1ETAFQP13J23-m1b-30a7e141 slice-start actor=m1b+main-1789191336-90295-e4b24b targets=beds-report-every-failure
+Integrity: sha256=6aaca976c690290beb4d4ea8caa984c120c080f4a9de4cabea83d82696234bf7
