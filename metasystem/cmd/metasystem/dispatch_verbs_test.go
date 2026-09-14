@@ -5,7 +5,6 @@ import (
 	"crypto/sha256"
 	"encoding/json"
 	"fmt"
-	"io"
 	"os"
 	"path/filepath"
 	"strconv"
@@ -622,17 +621,8 @@ func writeTemp(t *testing.T, dir, name string, value any) string {
 // captureStdout runs fn with stdout redirected and returns what it printed.
 func captureStdout(t *testing.T, fn func() int) (string, int) {
 	t.Helper()
-	original := os.Stdout
-	read, write, err := os.Pipe()
-	if err != nil {
-		t.Fatalf("pipe: %v", err)
-	}
-	os.Stdout = write
-	code := fn()
-	write.Close()
-	os.Stdout = original
-	out, _ := io.ReadAll(read)
-	return string(out), code
+	code, stdout, _ := captureCommandOutput(t, true, false, fn)
+	return stdout, code
 }
 
 func TestResolveModelAliasVerb(t *testing.T) {

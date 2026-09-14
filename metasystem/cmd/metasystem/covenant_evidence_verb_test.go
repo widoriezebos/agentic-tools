@@ -6,7 +6,6 @@ package main
 
 import (
 	"encoding/json"
-	"io"
 	"os"
 	"path/filepath"
 	"strings"
@@ -161,17 +160,8 @@ func TestCovenantEvidenceVerbRefusals(t *testing.T) {
 // captureStderr mirrors captureStdout for the refusal channel.
 func captureStderr(t *testing.T, fn func() int) (string, int) {
 	t.Helper()
-	original := os.Stderr
-	read, write, err := os.Pipe()
-	if err != nil {
-		t.Fatalf("pipe: %v", err)
-	}
-	os.Stderr = write
-	code := fn()
-	write.Close()
-	os.Stderr = original
-	out, _ := io.ReadAll(read)
-	return string(out), code
+	code, _, stderr := captureCommandOutput(t, false, true, fn)
+	return stderr, code
 }
 
 func TestCovenantEvidenceProseCarriesOrphanText(t *testing.T) {

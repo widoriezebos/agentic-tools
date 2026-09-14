@@ -4,7 +4,6 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
-	"io"
 	"net/http"
 	"net/http/httptest"
 	"os"
@@ -24,25 +23,7 @@ import (
 
 func captureChannelOutput(t *testing.T, run func() int) (int, string, string) {
 	t.Helper()
-	outR, outW, err := os.Pipe()
-	if err != nil {
-		t.Fatal(err)
-	}
-	errR, errW, err := os.Pipe()
-	if err != nil {
-		t.Fatal(err)
-	}
-	oldOut, oldErr := os.Stdout, os.Stderr
-	os.Stdout, os.Stderr = outW, errW
-	code := run()
-	os.Stdout, os.Stderr = oldOut, oldErr
-	_ = outW.Close()
-	_ = errW.Close()
-	out, _ := io.ReadAll(outR)
-	problem, _ := io.ReadAll(errR)
-	_ = outR.Close()
-	_ = errR.Close()
-	return code, string(out), string(problem)
+	return captureCommandOutput(t, true, true, run)
 }
 
 func TestHCL12KindCarryRequiresWants(t *testing.T) {

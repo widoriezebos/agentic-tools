@@ -2,7 +2,6 @@ package main
 
 import (
 	"fmt"
-	"io"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -15,20 +14,8 @@ import (
 
 func captureMissionStderr(t *testing.T, run func() int) (string, int) {
 	t.Helper()
-	original := os.Stderr
-	read, write, err := os.Pipe()
-	if err != nil {
-		t.Fatal(err)
-	}
-	os.Stderr = write
-	code := run()
-	_ = write.Close()
-	os.Stderr = original
-	output, err := io.ReadAll(read)
-	if err != nil {
-		t.Fatal(err)
-	}
-	return string(output), code
+	code, _, stderr := captureCommandOutput(t, false, true, run)
+	return stderr, code
 }
 
 func missionFenceFixture(t *testing.T, terminal bool) string {

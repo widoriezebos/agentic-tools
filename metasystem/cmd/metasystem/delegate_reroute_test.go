@@ -11,7 +11,6 @@ package main
 
 import (
 	"encoding/json"
-	"io"
 	"io/fs"
 	"os"
 	"path/filepath"
@@ -26,23 +25,8 @@ import (
 // captureRelay runs a relay with stdout AND stderr captured.
 func captureRelay(t *testing.T, fn func() int) (stdout, stderr string, code int) {
 	t.Helper()
-	origOut, origErr := os.Stdout, os.Stderr
-	outR, outW, err := os.Pipe()
-	if err != nil {
-		t.Fatal(err)
-	}
-	errR, errW, err := os.Pipe()
-	if err != nil {
-		t.Fatal(err)
-	}
-	os.Stdout, os.Stderr = outW, errW
-	code = fn()
-	outW.Close()
-	errW.Close()
-	os.Stdout, os.Stderr = origOut, origErr
-	outBytes, _ := io.ReadAll(outR)
-	errBytes, _ := io.ReadAll(errR)
-	return string(outBytes), string(errBytes), code
+	code, stdout, stderr = captureCommandOutput(t, true, true, fn)
+	return stdout, stderr, code
 }
 
 func writeReroute(t *testing.T, path, content string) {

@@ -1,11 +1,10 @@
 package main
 
 import (
-	"bytes"
-	"github.com/widoriezebos/agentic-tools/metasystem/internal/runtimes"
-	"os"
 	"strings"
 	"testing"
+
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/runtimes"
 )
 
 // The runtime family's pinned contract — exit codes 0/1/2, empty
@@ -13,15 +12,8 @@ import (
 // shape.
 func TestRuntimeVerbContract(t *testing.T) {
 	capture := func(f func([]string) int, args []string) (int, string) {
-		old := os.Stdout
-		r, w, _ := os.Pipe()
-		os.Stdout = w
-		code := f(args)
-		w.Close()
-		os.Stdout = old
-		var buf bytes.Buffer
-		buf.ReadFrom(r)
-		return code, buf.String()
+		code, stdout, _ := captureCommandOutput(t, true, false, func() int { return f(args) })
+		return code, stdout
 	}
 	rows := []struct {
 		name   string
