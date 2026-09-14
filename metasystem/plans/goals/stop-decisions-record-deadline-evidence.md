@@ -7,13 +7,13 @@
 - Origin: main
 - Next step: 2026-09-14 m1b: build round 28 in flight. Round 27 verified outside the delegate sandbox on the commit before 0995650b: a malformed but staged payload now reaches the worker and answers the fixed unreadable-output allowance. The hook bed reaches line 1765 of 2264: the expired-deadline route delivers its allowance and logs its trail and condition lines but never completes the steward hook attempt (the component record stays ATTEMPTING; the tip writes DEADLINE_EXPIRED with the elapsed seconds). Round 28 fixes that, sweeps the component completion every delivered route owes, and carries the chain onto trunk, where M1e's 0995650b (the Stop allowance under a recorded handoff) now conflicts with it in internal/goal/turnverdict.go; its handoff tests and the TestReportTurnVerdict tests must still pass. Landed around this chain today: the command-package capture fix 1f5adda9 (unblocks the wait scenarios) and M1c's archive-to-file slice 9bc768c0; M1c's grep-pipe slice for supervision-fixtures.sh is still to land, so stop-hook-monitor and nested-root's override check stay red for scheduler reasons until then. Then the rostered Opus read (brief refreshed), the delivery proof and the landing.
 - OpenedAt: 2026-09-13T07:33:02Z
-- Revision: 31
-- Budget: elapsedLimit=2d attemptLimit=42 reservedJobMinutesLimit=1200 activeJobLimit=1 reviewRoundLimit=3
-- BudgetExceptions: 3
-- Approved: by=human:Wido at=2026-09-14T16:47:25Z revision=27 opid=MHRQ4V49VF8E71RDWZTW4GC17M-m1b-c6925449 authority=proven digest=cf7a9b57e9452c56ee9397937c5c988e1a0e6278a7e04b334c13c16d18748232
+- Revision: 32
+- Budget: elapsedLimit=3d attemptLimit=42 reservedJobMinutesLimit=1200 activeJobLimit=2 reviewRoundLimit=3
+- BudgetExceptions: 4
+- Approved: by=human:Wido at=2026-09-14T18:58:48Z revision=32 opid=JJT6EGZ39GCQ9E5R6V479MSK5T-m1b-c6925449 authority=proven digest=cd1ad8edf8b1c33b188efca55fffa9f6d63a3ec551747e3bf829ded7d2eb060d
 - Sliced: machine=m1b lineage=main-1789191336-90295-e4b24b revision=3 at=2026-09-13T07:34:48Z
-- Claimed: machine=m1b lineage=main-1789191336-90295-e4b24b at=2026-09-14T16:47:25Z revision=27 accountingRevision=27 episodeAt=2026-09-13T07:33:09Z episodeRevision=3 idleSeconds=77491
-- StopCapability: generation=27 revision=27 machine=m1b claimEpoch=2 fenceEpoch=0
+- Claimed: machine=m1b lineage=main-1789191336-90295-e4b24b at=2026-09-14T18:58:48Z revision=32 accountingRevision=32 episodeAt=2026-09-13T07:33:09Z episodeRevision=3 idleSeconds=77491
+- StopCapability: generation=32 revision=32 machine=m1b claimEpoch=2 fenceEpoch=0
 
 History:
 - 2026-09-13T07:33:02Z 5HG893JMDPRP75G97Y7F9VH7Z8-m1b-30a7e141 open actor=m1b+main-1789191336-90295-e4b24b targets=stop-decisions-record-deadline-evidence,stop-hook-never-forces-an-empty-turn
@@ -47,4 +47,5 @@ History:
 - 2026-09-14T17:52:16Z XQF94GBQN2N5W4B0R9XJ4SE997-m1b-30a7e141 edit actor=m1b+main-1789191336-90295-e4b24b targets=stop-decisions-record-deadline-evidence
 - 2026-09-14T18:18:41Z 7D2YWE2AYB75R9PGNZG0Y6M4DF-m1b-30a7e141 edit actor=m1b+main-1789191336-90295-e4b24b targets=stop-decisions-record-deadline-evidence
 - 2026-09-14T18:46:32Z JR9RS219NEG06B46VBNF1RPTK1-m1b-30a7e141 edit actor=m1b+main-1789191336-90295-e4b24b targets=stop-decisions-record-deadline-evidence
-Integrity: sha256=05e3a60b343a7dfac7750b41a0c2374b813950b8146a28e31077dfede6da5afe
+- 2026-09-14T18:58:48Z JJT6EGZ39GCQ9E5R6V479MSK5T-m1b-c6925449 set-budget actor=human:Wido targets=stop-decisions-record-deadline-evidence displaced=m1b+main-1789191336-90295-e4b24b@2026-09-14T16:47:25Z
+Integrity: sha256=38330847e9d12485c149c401539a6abd963ac7f3e2029992e0983cd871b57f48
