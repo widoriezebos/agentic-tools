@@ -7,9 +7,9 @@
 - Tier: 1
 - Intent: Delivery-efficiency phase D, delegate loop. The long sequential beds, the supervision hook bed and the supervision bed's nested-root scenario, run as independent scenarios so that one run reports every failing assertion rather than stopping at the first, and no bed can exit without a message: an assertion whose helper fails inside a command substitution under strict mode still prints the leg it was serving. Why: the hook bed advanced one assertion per build round, and twice it exited with a bare status and no text because a JSON read failed inside a substitution. DONE: against a tree with several known defects one run reports all of them; a fixture injects a failing JSON read inside a substitution and the bed names the leg. every mechanism in this goal lives in the Go engine, the ledger verbs and the adapter contract, never in one runtime; it is proven on at least two runtimes.
 - Origin: human
-- Next step: Split the two long scripts into scenarios under the existing fixture-bed-child mechanism; add the no-silent-exit guard; then the fixture.
+- Next step: 2026-09-14 m1b: build job m1b-bref2-1789417701 in flight (brief plans/beds-report-every-failure-build-brief.md): the hook bed moves to the scenario harness as bed supervision-hook, nested-root is split where its legs are independent, one no-silent-exit line per failed child (bed, scenario, leg, line, status; no report file, so failures-show-observed-against-expected keeps the record shape), and two harness fixture scenarios. Trunk baseline at 0b8d9d62, run by the seat outside the sandbox: the hook bed passes in 388 seconds, sequential; the supervision bed passes in 264 seconds, of which nested-root alone takes 263, so the split should shorten both. Seat verification after return: bash 3.2 syntax, no assertion message lost, dependency ratchet, harness fixture, both beds in full, then three injected product breakages that one hook-bed run must report together. Budget raised to 4h and 6 attempts on Wido's word in the m1b pane.
 - OpenedAt: 2026-09-14T15:32:10Z
-- Revision: 11
+- Revision: 12
 - Budget: elapsedLimit=4h attemptLimit=6 reservedJobMinutesLimit=360 activeJobLimit=1 reviewRoundLimit=0
 - BudgetExceptions: 1
 - Approved: by=human:Wido at=2026-09-14T20:31:42Z revision=11 opid=RJF52HXA2TFNW98KVBGSFB7Q17-m1b-c6925449 authority=proven digest=25d29876eb7c9740150775117e3322ee95b3a7d8923ff9b4d25cfa6ee7396729
@@ -29,4 +29,5 @@ History:
 - 2026-09-14T20:26:40Z EBFXH4S276DM75GS4VR73Z7RC2-m1b-30a7e141 claim actor=m1b+main-1789191336-90295-e4b24b targets=beds-report-every-failure
 - 2026-09-14T20:28:26Z 0DKG8TPJY3HJJT1ETAFQP13J23-m1b-30a7e141 slice-start actor=m1b+main-1789191336-90295-e4b24b targets=beds-report-every-failure
 - 2026-09-14T20:31:42Z RJF52HXA2TFNW98KVBGSFB7Q17-m1b-c6925449 set-budget actor=human:Wido targets=beds-report-every-failure displaced=m1b+main-1789191336-90295-e4b24b@2026-09-14T20:26:40Z
-Integrity: sha256=b50bb94bd6a7a0d3ccce3b18064ef41d7afc53c08e768d860c8ebc4b1f320db0
+- 2026-09-14T20:40:12Z ESAW8Z92TP4653ZQNG8S2C9GZM-m1b-30a7e141 edit actor=m1b+main-1789191336-90295-e4b24b targets=beds-report-every-failure
+Integrity: sha256=ef9855d728539d995033fdfbf20d8cd54ec481146cdc022191b1c2242ecb668e
