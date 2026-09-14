@@ -1,7 +1,7 @@
 # stop-decisions-record-deadline-evidence: build design
 
-Revision: 3 (2026-09-14), following design fold 2 at 327c6da6.
-This revision decides optional evidence and engine compatibility. Other decisions stand.
+Revision: 4 (2026-09-14), following revision 3 at 78f40168.
+This revision decides the two hook-bed fixtures that reached the retired shell parent. Other decisions stand.
 
 Member two of `metasystem/plans/stop-hook-never-forces-an-empty-turn-design.md`.
 Two reads are spent. This page decides the eight remaining findings
@@ -191,6 +191,40 @@ human cursor with the cursor and prefix hash frozen with that report. No deliver
 The template-layout report and cursor assertions in `metasystem/scripts/agents/supervision-hook-fixtures.sh` stand.
 Remove the `deadline-emitted` marker protocol entirely.
 
+### The record write that fails, and the worker after the cutoff
+
+Two landed hook-bed fixtures reached the shell parent's verbs and file layout.
+Both guarantees stand. Their faults and evidence follow the Go parent.
+
+A record write failure at the deadline still allows, says so in one line, and
+logs its own outcome. The parent completes the decision in its own process, so
+a stub engine refusing `report stop-block` injects nothing; that stub retires.
+The fault is a record path the parent cannot write. The bed makes
+`artifacts/agents/supervision/stop-refusals` under the fixture's state root
+read-only for the one Stop and restores it after. Prepare then cannot create
+that session's lock or record, completion returns recorded false with the error,
+the allowance ends `; stop deadline expired; record update failed.`, the log line
+reads `stop response outcome=deadline-expired-record-failure-allow`, and no record
+exists for the session. The hook log and the invocation directory are siblings and
+stay writable, so the outcome line and the retained selection still land.
+This proof stays in the shell bed as StopDeadlineRecordWriteRefused. The Go tests
+of the notice bytes and the outcome name stand; only the bed reaches the real
+record owner through the real shell.
+
+The parent starts the worker as its own direct child and holds its handle, so
+ownership is never in doubt and `ps` is never consulted. At the freeze cutoff,
+when the worker has not returned, the parent ends that child through the handle.
+That is the one signal the cutoff table allows. The worker's own children are not
+signalled: an engine call still running inside the worker finishes on its own, and
+its late result cannot change the selection. The reader is told once, on the
+parent's stderr, in the fixed form
+`stop deadline: worker <pid> ended at the freeze cutoff; its children were not signalled`.
+Nothing the worker wrote to its own stderr before the cutoff is forwarded, because
+children it left behind may still hold its pipes. The other evidence is what the
+parent already leaves: the outcome line, the retained `stop-deadline-expired`
+incident, and the expired hook attempt. No worker directory is left under TMPDIR;
+worker output lives in the parent's memory. StopDeadlineEndsOnlyItsDirectWorker proves this.
+
 Completion records class, outcome, reason, command, countState, completedBy
 and completedAt. Class remains infrastructure, seat-actionable or idle-with-backlog.
 Outcome is block or allow. Command stays empty until clearing commands land.
@@ -316,6 +350,8 @@ Hook beds launch the shell and Go parent with owned, bounded fake children.
 | SDE-08: TestUndeliveredIncidentRetention | `metasystem/internal/report/stopblock_test.go` | Advance fake time past thirty days with an undelivered incident, a pending append and an unacknowledged log-only incident. Recover their union once by ID. Acknowledged history prunes after seven days; v1 history uses the original upgradedAt. Retention removes no log bytes. |
 | SDE-04 retained: TestStopDecisionPersistsBeforeEmission | New `cmd/metasystem/stopdecision_test.go` | Fault before rename, after rename during directory sync, and in append. Observe false with error, unproven, and true as appropriate before provider output; preserve a known block through persistence failures. |
 | Hook bed: StopDeadlineRecordRecovery | `metasystem/scripts/agents/supervision-hook-fixtures.sh` | Launch the Go tests above as plumbing. Drive missing handoff, unreadable worker output, frozen block plus expiry, stalled lock and append failure through the actual shell. Observe one provider JSON response and recoverable parent incidents. |
+| Hook bed: StopDeadlineRecordWriteRefused | `metasystem/scripts/agents/supervision-hook-fixtures.sh` | Hang the worker in hook-attempt with the deadline engine stub; make the state root's `stop-refusals` directory read-only for this Stop and restore it after. Observe the record-failure allowance, its outcome line and no record for the session. Replaces the fixture that stubbed `report stop-block`; that stub branch and `METASYSTEM_DEADLINE_RECORD_FAILURE` retire. |
+| Hook bed: StopDeadlineEndsOnlyItsDirectWorker | `metasystem/scripts/agents/supervision-hook-fixtures.sh` | Hang the worker in hook-attempt with a stub that records its own pid and waits for a fixture release file, not for its parent. After the parent returns: the plain deadline allowance and outcome line, the fixed stderr line with the worker pid, that pid gone, the stub pid alive; then release the stub and end it by that pid on every exit path. Replaces the empty-ps fixture; its `ps` shim, `TMPDIR` override, `metasystem-stop-deadline` worker directory and `left running, command line unverifiable` line retire. |
 
 Add TestDeferredRefusalEffectsRequireReceipt in
 `metasystem/internal/goal/turnverdict_test.go` for missing, mismatched and replayed receipts, including session eviction.
