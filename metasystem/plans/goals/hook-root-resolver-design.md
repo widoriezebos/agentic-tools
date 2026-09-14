@@ -2,14 +2,14 @@
 
 - State: claimed
 - Priority: 1
-- Sequence: 4
+- Sequence: 3
 - Risk: severity=2 novelty=1 exposure=3 accumulation=2 basis="severity 2: the hook fails closed while wrong, but a wrong resolver on the deadline parent can record a refusal against the wrong world; novelty 1: the design exists at revision 5 with five rounds of critique, so what remains is a fold and a build; exposure 3: every nested checkout in the fleet; accumulation 2: the same root cause that produced successor A"
 - Tier: 3
 - Intent: The full root resolution the accepted hook-root design prescribes: revision 6 of plans/supervision-hook-root-design.md folding the three round-5 findings in records/misc/hook-root-critique-r5.md (the deadline parent splits engines under a METASYSTEM_BIN override; the old-engine fixture cannot prove its skew block; the shipped template-marker block is a second state-root authority), then the consumer sweep of every remaining $repo site in the hook (steward, health, lease, report turn-verdict) and the deadline parent, with the fixtures Decision 3 names. DONE as the parent's: the hook resolves the metasystem project root deterministically on nested checkouts, its turn evidence lands, and hook-freshness goes alive, proven by a fixture running the hook from a nested layout. Successor B of supervision-hook-wrong-root, decomposed on Wido's word 2026-09-06; five critique rounds and revisions 1-5 are landed under the parent
 - Origin: main
 - Next step: 2026-09-14 m1c: revision 10 of plans/supervision-hook-root-design.md is closed in scratchpad g12/wt12 and now decides a mechanism, not a notice. start_finish in scripts/agents/supervision-hook.sh owns every start-path exit and requires a fixed cause-and-remedy notice or a validated intentional reason; an EXIT trap reports unexpected termination including an accidental exit 0; a last-resort output uses builtin printf with no engine, JSON tooling or temporary storage; AuditHookStartExits refuses bare exits, trap replacement, ignored errors, dynamic bypasses, redirected finalizer output and undeclared outcomes in the fast and full gates, with mutation tests; fixtures cover engine-skew-start and every other branch. Six silent branches are mapped. A Codex Sol build is running with two constraints written into its brief from today's failures: every new construct proven under macOS /bin/bash 3.2, and the member kept small - if the read-only brain preparation and delayed bookkeeping refactor is large it becomes the next slice rather than growing this one. Then the hook and supervision beds on the Mac and the landing. Related, not merged: diagnostics-never-swallowed owns proof and fixture diagnostics and shares the audit machinery.
 - OpenedAt: 2026-09-06T06:39:49Z
-- Revision: 80
+- Revision: 81
 - Pinned: m1c
 - Budget: elapsedLimit=1d attemptLimit=12 reservedJobMinutesLimit=1200 activeJobLimit=1 reviewRoundLimit=3
 - BudgetExceptions: 0
@@ -99,4 +99,5 @@ History:
 - 2026-09-14T16:18:59Z 3GNJK34Z9Z8X30JHH36QB86A98-m1c-69c9e454 edit actor=m1c+main-1789191340-90689-8975a9 targets=hook-root-resolver-design
 - 2026-09-14T16:28:42Z XCZPZZ0J16E5NBFRSTR97ETYY0-m1c-69c9e454 edit actor=m1c+main-1789191340-90689-8975a9 targets=hook-root-resolver-design
 - 2026-09-14T16:47:03Z NT0TAA0S46VSDPW7S27RKWZXEK-m1c-69c9e454 edit actor=m1c+main-1789191340-90689-8975a9 targets=hook-root-resolver-design
-Integrity: sha256=b03ff7bae68ef3d6d859f4eaff3bc64406d28a60148ad2dec42c66df8d0168e2
+- 2026-09-14T20:23:16Z PYKFCR65M35Q3XKFW4WZKDHPAZ-m1e-c6925449 set-priority actor=human:Wido targets=beds-report-every-failure,beds-run-under-the-oldest-supported-bash,brief-declares-the-round-boundary,builder-proves-each-rule-by-mutation,coordinator-context-stays-under-budget,coordinator-wakes-on-events-not-polls,critique-closes-on-folded-proof,cross-cutting-change-inventories-its-readers,delegate-sandbox-runs-the-beds,every-verb-resolves-repo-to-an-absolute-root,go-tests-never-inherit-a-candidate-engine,hook-root-resolver-design,moved-effects-are-inventoried-in-the-design,receipt-admission-caps-concurrent-batteries,registered-wait-matches-the-runtime-session,round-proof-feeds-the-next-brief,small-change-lane,stop-hook-never-forces-an-empty-turn reason=priority-order subject=delegate-sandbox-runs-the-beds from=1:4 to=1:3 requested-sequence=18
+Integrity: sha256=21cae93067f747a0a39acd3e6f257029ac2cf02e0ec5cdd824d25672c253f148
