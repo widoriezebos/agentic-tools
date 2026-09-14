@@ -7,13 +7,13 @@
 - Origin: main
 - Next step: 2026-09-14 m1b: build round 22 in flight. Round 21 fixed the strict-mode empty-array abort on the corrupt-refusal-record path and audited every array expansion in the hook; verified outside the delegate sandbox on a clean worktree of the tip: supervision and landing beds pass end to end, the hook bed reaches line 1552 of 2263, and the corrupt-record leg now publishes an identity-bound report but the parent appends a third console line ('The Stop decision could not be recorded; delivery is unconfirmed.') which breaks the landed two-line contract the bed's reader enforces; round 22 carries the unrecorded state inside the report and the task line instead and sweeps every response-appending site in the parent. Also found today: a one-second wall-clock hang guard in TestStopParentAbsoluteCutoffs flaked under load on unchanged code (now goal tests-never-wait-on-wall-time, phase D row 31). Thirty build defects found by the beds and fixed since round 6. Then the rostered Opus read, the delivery proof and the landing.
 - OpenedAt: 2026-09-13T07:33:02Z
-- Revision: 26
-- Budget: elapsedLimit=2d attemptLimit=40 reservedJobMinutesLimit=1200 activeJobLimit=1 reviewRoundLimit=3
-- BudgetExceptions: 2
-- Approved: by=human:Wido at=2026-09-14T16:45:56Z revision=26 opid=6ETXP2P0HG2ZX57HGR0HG55PN9-m1e-c6925449 authority=proven digest=c8ae71b116247990c3e416650c43ee81dd48f0664d4222b2b84685714d53213c
+- Revision: 27
+- Budget: elapsedLimit=2d attemptLimit=42 reservedJobMinutesLimit=1200 activeJobLimit=1 reviewRoundLimit=3
+- BudgetExceptions: 3
+- Approved: by=human:Wido at=2026-09-14T16:47:25Z revision=27 opid=MHRQ4V49VF8E71RDWZTW4GC17M-m1b-c6925449 authority=proven digest=cf7a9b57e9452c56ee9397937c5c988e1a0e6278a7e04b334c13c16d18748232
 - Sliced: machine=m1b lineage=main-1789191336-90295-e4b24b revision=3 at=2026-09-13T07:34:48Z
-- Claimed: machine=m1b lineage=main-1789191336-90295-e4b24b at=2026-09-14T16:45:56Z revision=26 accountingRevision=26 episodeAt=2026-09-13T07:33:09Z episodeRevision=3 idleSeconds=77491
-- StopCapability: generation=26 revision=26 machine=m1b claimEpoch=1 fenceEpoch=0
+- Claimed: machine=m1b lineage=main-1789191336-90295-e4b24b at=2026-09-14T16:47:25Z revision=27 accountingRevision=27 episodeAt=2026-09-13T07:33:09Z episodeRevision=3 idleSeconds=77491
+- StopCapability: generation=27 revision=27 machine=m1b claimEpoch=2 fenceEpoch=0
 
 History:
 - 2026-09-13T07:33:02Z 5HG893JMDPRP75G97Y7F9VH7Z8-m1b-30a7e141 open actor=m1b+main-1789191336-90295-e4b24b targets=stop-decisions-record-deadline-evidence,stop-hook-never-forces-an-empty-turn
@@ -42,4 +42,5 @@ History:
 - 2026-09-14T15:51:43Z DNW9DG3GFQWSWFFM8Y2PWG9HAT-m1b-30a7e141 edit actor=m1b+main-1789191336-90295-e4b24b targets=stop-decisions-record-deadline-evidence
 - 2026-09-14T16:25:57Z MQTKM6XNVEPNEY7J98EMK3VN26-m1b-30a7e141 edit actor=m1b+main-1789191336-90295-e4b24b targets=stop-decisions-record-deadline-evidence
 - 2026-09-14T16:45:56Z 6ETXP2P0HG2ZX57HGR0HG55PN9-m1e-c6925449 set-budget actor=human:Wido targets=stop-decisions-record-deadline-evidence displaced=m1b+main-1789191336-90295-e4b24b@2026-09-14T06:48:31Z
-Integrity: sha256=850d20274deb16852001628fcbe8ab88f4e27c71159ea0c59f2660838a0d9af8
+- 2026-09-14T16:47:25Z MHRQ4V49VF8E71RDWZTW4GC17M-m1b-c6925449 set-budget actor=human:Wido targets=stop-decisions-record-deadline-evidence displaced=m1b+main-1789191336-90295-e4b24b@2026-09-14T16:45:56Z
+Integrity: sha256=6edbe8e83bdbb526fb65c43ed3a6b90619a989b21ff73f3f55ca47c7848d5eda
