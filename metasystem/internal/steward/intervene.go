@@ -39,6 +39,8 @@ type Intent struct {
 	Model        string `json:"model"`
 	JobId        string `json:"jobId"`
 	Reason       string `json:"reason,omitempty"`
+	// Handoff binds a seat handoff to its immutable state and predecessor.
+	Handoff *HandoffBinding `json:"handoff,omitempty"`
 	// ClaimNeeded distinguishes an unclaimed target from the seat's existing
 	// claim, preventing the steward from violating the one-claim-per-machine
 	// quota by claiming again.
