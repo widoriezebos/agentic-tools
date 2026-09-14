@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"sync"
 	"testing"
@@ -677,6 +678,168 @@ func TestInfrastructureVerdictNeverBlocks(t *testing.T) {
 		verdict, err := store.TurnVerdict(ScanResult{}, "status-write", "", "")
 		assertInfrastructure(t, verdict, err, "status-write", "fixture status failure")
 	})
+}
+
+func TestTurnVerdictAllowsTheStopUnderARecordedHandoff(t *testing.T) {
+	openWork := ScanResult{Open: []Item{openItem("plans/handoff.md next: continue this session")}}
+
+	t.Run("same session precedes open work", func(t *testing.T) {
+		store := testStore(t)
+		var lookedUp string
+		verdict, err := store.TurnVerdict(openWork, "handoff-session", "", "main-1", TurnVerdictOptions{
+			HandoffRecorded: func(session string) (string, bool, error) {
+				lookedUp = session
+				return "handoff-nonce", session == "handoff-session", nil
+			},
+		})
+		if err != nil {
+			t.Fatal(err)
+		}
+		if lookedUp != "handoff-session" {
+			t.Fatalf("handoff lookup used session %q", lookedUp)
+		}
+		if verdict.SchemaVersion != 1 || verdict.ShouldBlock || verdict.BlockSource != nil || verdict.Class != "seat-actionable" ||
+			verdict.LedgerStatus != "ok" || verdict.Display != "handoff recorded: handoff-nonce; end this session" {
+			t.Fatalf("same-session handoff verdict = %#v", verdict)
+		}
+	})
+
+	t.Run("closed checkout keeps precedence", func(t *testing.T) {
+		store := testStore(t)
+		if err := stopfence.Write(store.Root, stopfence.Record{
+			State: stopfence.StateClosed, Phase: stopfence.PhaseStopped, Generation: 1,
+			ChangedAt: "2026-09-14T00:00:00Z", Checkout: store.Root,
+			By: stopfence.Actor{Verb: "stop", Process: stopfence.Process{Pid: 71, PidStartedAt: 70}},
+		}); err != nil {
+			t.Fatal(err)
+		}
+		lookedUp := false
+		verdict, err := store.TurnVerdict(openWork, "handoff-session", "", "main-1", TurnVerdictOptions{
+			HandoffRecorded: func(string) (string, bool, error) {
+				lookedUp = true
+				return "handoff-nonce", true, nil
+			},
+		})
+		if err != nil {
+			t.Fatal(err)
+		}
+		if lookedUp || verdict.ShouldBlock || verdict.LedgerStatus != "stopped" ||
+			strings.Contains(verdict.Display, "handoff recorded") {
+			t.Fatalf("closed-checkout precedence changed: lookedUp=%t verdict=%#v", lookedUp, verdict)
+		}
+	})
+
+	t.Run("foreign session gives no allowance", func(t *testing.T) {
+		store := testStore(t)
+		verdict, err := store.TurnVerdict(openWork, "current-session", "", "main-1", TurnVerdictOptions{
+			HandoffRecorded: func(session string) (string, bool, error) {
+				if session == "foreign-session" {
+					return "foreign-nonce", true, nil
+				}
+				return "", false, nil
+			},
+		})
+		if err != nil || !verdict.ShouldBlock || verdict.BlockSource == nil || *verdict.BlockSource != "open-work" {
+			t.Fatalf("foreign handoff changed the current session: %#v %v", verdict, err)
+		}
+	})
+
+	for _, state := range []struct {
+		name  string
+		nonce string
+	}{
+		{name: "cancelled", nonce: "cancelled-nonce"},
+		{name: "consumed", nonce: "consumed-nonce"},
+		{name: "absent"},
+	} {
+		t.Run(state.name+" handoff gives no allowance", func(t *testing.T) {
+			store := testStore(t)
+			verdict, err := store.TurnVerdict(openWork, "handoff-session", "", "main-1", TurnVerdictOptions{
+				HandoffRecorded: func(string) (string, bool, error) { return state.nonce, false, nil },
+			})
+			if err != nil || !verdict.ShouldBlock || verdict.BlockSource == nil || *verdict.BlockSource != "open-work" {
+				t.Fatalf("%s handoff changed the verdict: %#v %v", state.name, verdict, err)
+			}
+		})
+	}
+
+	t.Run("unreadable handoff is infrastructure failure", func(t *testing.T) {
+		store := testStore(t)
+		verdict, err := store.TurnVerdict(openWork, "handoff-session", "", "main-1", TurnVerdictOptions{
+			HandoffRecorded: func(string) (string, bool, error) {
+				return "", false, fmt.Errorf("fixture handoff read failed")
+			},
+		})
+		if err != nil || verdict.ShouldBlock || verdict.Class != "infrastructure" ||
+			verdict.LedgerStatus != "degraded" || verdict.Component != "handoff-record" ||
+			verdict.CauseCode != "handoff-record" || verdict.Display != "handoff record: fixture handoff read failed" {
+			t.Fatalf("unreadable handoff verdict = %#v %v", verdict, err)
+		}
+	})
+
+	t.Run("nil seam gives no allowance", func(t *testing.T) {
+		store := testStore(t)
+		verdict, err := store.TurnVerdict(openWork, "handoff-session", "", "main-1")
+		if err != nil || !verdict.ShouldBlock || verdict.BlockSource == nil || *verdict.BlockSource != "open-work" {
+			t.Fatalf("nil handoff seam changed the verdict: %#v %v", verdict, err)
+		}
+	})
+
+	t.Run("command supplies steward lookup", func(t *testing.T) {
+		_, testFile, _, ok := runtime.Caller(0)
+		if !ok {
+			t.Fatal("turn-verdict test source path is unavailable")
+		}
+		commandSource, err := os.ReadFile(filepath.Join(filepath.Dir(testFile), "..", "..", "cmd", "metasystem", "goal.go"))
+		if err != nil {
+			t.Fatal(err)
+		}
+		source := string(commandSource)
+		if !strings.Contains(source, "options.HandoffRecorded = func(session string) (string, bool, error)") ||
+			!strings.Contains(source, "return steward.LiveHandoffForSession(stateRoot, session)") {
+			t.Fatal("runReportTurnVerdict does not supply the state-root-scoped steward handoff lookup")
+		}
+	})
+}
+
+func TestHandoffAllowanceCarriesFrozenFacts(t *testing.T) {
+	store := testStore(t)
+	scan := ScanResult{Open: []Item{{
+		Kind: "plan", Id: "handoff-plan", Detail: "plans/handoff.md next: continue this session",
+		RequestedAction: "continue this session", OwnerMainId: "main-1",
+	}}}
+	verdict, err := store.TurnVerdict(scan, "handoff-session", "", "main-1", TurnVerdictOptions{
+		HandoffRecorded: func(string) (string, bool, error) { return "handoff-nonce", true, nil },
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if verdict.Facts == nil {
+		t.Fatal("handoff allowance has no frozen facts")
+	}
+	facts := verdict.Facts
+	if facts.SchemaVersion != 1 || facts.Identity.Installation != store.Root ||
+		facts.Identity.Session != "handoff-session" || facts.Identity.MainId != "main-1" ||
+		facts.Identity.ObservedAt != store.nowISO() {
+		t.Fatalf("handoff identity facts = %#v", facts.Identity)
+	}
+	if facts.Verdict.SchemaVersion != verdict.SchemaVersion || facts.Verdict.Class != verdict.Class ||
+		facts.Verdict.ShouldBlock != verdict.ShouldBlock || facts.Verdict.LedgerStatus != verdict.LedgerStatus ||
+		facts.Verdict.Display != verdict.Display || facts.FullDisplay != verdict.Display {
+		t.Fatalf("handoff verdict facts = %#v; verdict = %#v", facts.Verdict, verdict)
+	}
+	if len(facts.Scan.Open) != 1 || facts.Scan.Open[0].Id != "handoff-plan" {
+		t.Fatalf("handoff scan facts = %#v", facts.Scan)
+	}
+	if facts.Work.ReadSucceeded || facts.Work.Selection != "unknown" || facts.Ownership.State != "unknown" {
+		t.Fatalf("handoff allowance fabricated a ledger read: work=%#v ownership=%#v", facts.Work, facts.Ownership)
+	}
+	if facts.Refusal.HumanStopConsumed {
+		t.Fatalf("handoff allowance consumed a human stop: %#v", facts.Refusal)
+	}
+	if len(facts.Actions) != 0 {
+		t.Fatalf("handoff allowance offered an action to continue this session: %#v", facts.Actions)
+	}
 }
 
 func TestInfrastructurePersistenceFailurePreservesSeatActionableRefusal(t *testing.T) {

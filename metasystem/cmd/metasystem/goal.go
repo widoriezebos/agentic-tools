@@ -707,6 +707,9 @@ func runReportTurnVerdict(args []string) int {
 	if rootErr != nil {
 		options.SeatActorProblem = "the seat state root could not be resolved: " + rootErr.Error()
 	} else {
+		options.HandoffRecorded = func(session string) (string, bool, error) {
+			return steward.LiveHandoffForSession(stateRoot, session)
+		}
 		store.PrepareIdleContinuation = prepareSeatIdleContinuation(stateRoot)
 		store.RecordIdleIncident = recordSeatIdleIncident(stateRoot, now)
 		store.RaiseIdleAlarm = raiseSeatIdleAlarm(stateRoot)

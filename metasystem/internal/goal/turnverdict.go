@@ -202,6 +202,7 @@ type TurnVerdictOptions struct {
 	SeatActor        Actor
 	SeatClaimEpoch   int64
 	SeatActorProblem string
+	HandoffRecorded  func(session string) (nonce string, live bool, err error)
 }
 
 type registeredWait struct {
@@ -388,6 +389,27 @@ func (s *Store) TurnVerdict(scan ScanResult, sessionId, watchdogDigest, mainId s
 			ClaimableBudgetedWork{}, false, nil, stopped, stopped.Display, stamp, options, false)
 		stopped.Facts.Actions = []TurnAction{}
 		return stopped, nil
+	}
+	if options.HandoffRecorded != nil {
+		nonce, live, handoffErr := options.HandoffRecorded(sessionId)
+		if handoffErr != nil {
+			return infrastructureVerdict("handoff-record", handoffErr), nil
+		}
+		if live {
+			display := "handoff recorded: " + nonce + "; end this session"
+			allowed := Verdict{
+				SchemaVersion: 1,
+				Class:         "seat-actionable",
+				ShouldBlock:   false,
+				LedgerStatus:  "ok",
+				Display:       display,
+			}
+			stamp := &sessionState{LastTouched: s.nowISO()}
+			allowed.Facts = freezeTurnVerdictFacts(s.Root, sessionId, mainId, scan,
+				ClaimableBudgetedWork{}, false, nil, allowed, display, stamp, options, false)
+			allowed.Facts.Actions = []TurnAction{}
+			return allowed, nil
+		}
 	}
 
 	result, err := s.withLock(func() (Result, error) {
@@ -872,6 +894,7 @@ func (failure infrastructureFailure) Error() string {
 var infrastructureProducerPrefixes = map[string]string{
 	"state-root": "state root", "goal-fence": "goal fence", "verdict-state": "turn verdict state",
 	"verdict-state-lock": "turn verdict state lock", "status-write": "status write", "session-stop-marker": "session stop marker",
+	"handoff-record": "handoff record",
 }
 
 func infrastructureVerdict(component string, err error) Verdict {
