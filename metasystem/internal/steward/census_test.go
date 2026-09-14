@@ -16,8 +16,8 @@ func TestOwnedLiveProcessesCountAsLive(t *testing.T) {
 		{Class: "CUSTODY"}, {Class: "ANNOUNCED"},
 	}}
 	w := workersFromVerdict(v)
-	if w.Live != 2 || !w.CensusComplete || w.Untracked != 0 {
-		t.Fatalf("custody and announced are live under a complete scan: %+v", w)
+	if w.Live != 2 || w.LiveSeatMains != 1 || !w.CensusComplete || w.Untracked != 0 {
+		t.Fatalf("custody is adoptable work and an announced main is a live seat holder: %+v", w)
 	}
 }
 
@@ -95,9 +95,9 @@ func TestRecordedRunnersAndRunsCountAsWorkers(t *testing.T) {
 	if err := os.WriteFile(filepath.Join(root, "artifacts/agents/runs/torn.json"), []byte("{"), 0o644); err != nil {
 		t.Fatal(err)
 	}
-	live, unprovable := supplementWorkers(root)
-	if live != 1 {
-		t.Fatalf("the live monitored run must count as a worker: live=%d", live)
+	live, liveSeatMains, unprovable := supplementWorkers(root)
+	if live != 1 || liveSeatMains != 0 {
+		t.Fatalf("the live monitored run must count as adoptable work: live=%d liveSeatMains=%d", live, liveSeatMains)
 	}
 	if unprovable != 1 {
 		t.Fatalf("the torn record must block the proof: unprovable=%d", unprovable)
@@ -124,9 +124,9 @@ func TestDrainingRunWithDeadLeaderBlocksTheProof(t *testing.T) {
 	if err := os.WriteFile(filepath.Join(dir, "drain.json"), rec, 0o644); err != nil {
 		t.Fatal(err)
 	}
-	live, unprovable := supplementWorkers(root)
-	if live != 0 || unprovable != 1 {
-		t.Fatalf("a draining record's timestamps are not a terminal proof: live=%d unprovable=%d", live, unprovable)
+	live, liveSeatMains, unprovable := supplementWorkers(root)
+	if live != 0 || liveSeatMains != 0 || unprovable != 1 {
+		t.Fatalf("a draining record's timestamps are not a terminal proof: live=%d liveSeatMains=%d unprovable=%d", live, liveSeatMains, unprovable)
 	}
 }
 
@@ -148,8 +148,34 @@ func TestClosedRunWithDeadLeaderDoesNotBlockTheProof(t *testing.T) {
 	if err := os.WriteFile(filepath.Join(dir, "closed.json"), rec, 0o644); err != nil {
 		t.Fatal(err)
 	}
-	live, unprovable := supplementWorkers(root)
-	if live != 0 || unprovable != 0 {
-		t.Fatalf("a green run is closed; its dead leader proves nothing open: live=%d unprovable=%d", live, unprovable)
+	live, liveSeatMains, unprovable := supplementWorkers(root)
+	if live != 0 || liveSeatMains != 0 || unprovable != 0 {
+		t.Fatalf("a green run is closed; its dead leader proves nothing open: live=%d liveSeatMains=%d unprovable=%d", live, liveSeatMains, unprovable)
+	}
+}
+
+func TestRecordedLiveMainCountsAsASeatHolder(t *testing.T) {
+	root := t.TempDir()
+	dir := filepath.Join(root, "artifacts/agents/mains")
+	if err := os.MkdirAll(dir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	self := int64(os.Getpid())
+	exact, state, err := identity.KernelProber{}.Probe(self)
+	if err != nil || state != identity.Alive {
+		t.Fatalf("the test process identity is unavailable: %v %s", err, state)
+	}
+	record, err := json.Marshal(map[string]any{
+		"pid": self, "pidStartedAt": exact.StartedAt.Unix(),
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(dir, "live-main.json"), record, 0o644); err != nil {
+		t.Fatal(err)
+	}
+	live, liveSeatMains, unprovable := supplementWorkers(root)
+	if live != 1 || liveSeatMains != 1 || unprovable != 0 {
+		t.Fatalf("the live main must be the one non-displaceable seat holder: live=%d liveSeatMains=%d unprovable=%d", live, liveSeatMains, unprovable)
 	}
 }

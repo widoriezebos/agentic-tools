@@ -31,9 +31,10 @@ var recordStores = []string{
 // rules already settled.
 
 // supplementWorkers probes every recorded pid the runtime census
-// cannot see. Live adds workers; malformed records and failed
-// probes add unprovables — unknown dominates dead at this layer too.
-func supplementWorkers(repoRoot string) (live, unprovable int) {
+// cannot see. Live adds workers, live mains are identified separately,
+// and malformed records or failed probes add unprovables — unknown
+// dominates dead at this layer too.
+func supplementWorkers(repoRoot string) (live, liveSeatMains, unprovable int) {
 	for _, store := range recordStores {
 		dir := filepath.Join(repoRoot, store)
 		entries, err := os.ReadDir(dir)
@@ -114,7 +115,10 @@ func supplementWorkers(repoRoot string) (live, unprovable int) {
 				continue
 			}
 			live++
+			if store == "artifacts/agents/mains" {
+				liveSeatMains++
+			}
 		}
 	}
-	return live, unprovable
+	return live, liveSeatMains, unprovable
 }

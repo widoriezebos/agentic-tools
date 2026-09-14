@@ -26,6 +26,9 @@ const notifyTimeout = 15 * time.Second
 var notifyPlatformOS = runtime.GOOS
 var notifyCommandContext = exec.CommandContext
 
+var deliverNotification = Deliver
+var handoffDeliveryAfterSnapshot = func() {}
+
 type notifyKind int
 
 const (
@@ -128,22 +131,75 @@ func DeliverPending(repoRoot string) (int, error) {
 			}
 			continue
 		}
-		if err := Deliver(repoRoot, n.Message); err != nil {
-			return delivered, err
+		if strings.HasPrefix(n.Nonce, "handoff-") {
+			handoffDeliveryAfterSnapshot()
+			wasDelivered, err := deliverPendingHandoff(repoRoot, n)
+			if err != nil {
+				return delivered, err
+			}
+			if wasDelivered {
+				delivered++
+			}
+			continue
 		}
-		// The intent acknowledges FIRST: a crash between these two
-		// writes then repeats a delivery (benign) instead of
-		// stranding an undelivered-looking intent with no pending
-		// message (a permanent suppression).
-		if err := markIntentNotified(repoRoot, n.Nonce); err != nil {
-			return delivered, err
-		}
-		if err := MarkDelivered(repoRoot, n.Nonce); err != nil {
+		if err := deliverPendingNotification(repoRoot, n); err != nil {
 			return delivered, err
 		}
 		delivered++
 	}
 	return delivered, nil
+}
+
+func deliverPendingHandoff(repoRoot string, snapshot PendingNotification) (bool, error) {
+	authorized, err := handoffNoticeIsAuthorized(repoRoot, snapshot.Nonce)
+	if err != nil {
+		return false, err
+	}
+	if !authorized {
+		if err := clearPendingNotification(repoRoot, snapshot.Nonce); err != nil {
+			return false, fmt.Errorf("stale handoff notice %s could not be retired: %w", snapshot.Nonce, err)
+		}
+		return false, nil
+	}
+	if err := deliverPendingNotification(repoRoot, snapshot); err != nil {
+		return false, err
+	}
+	return true, nil
+}
+
+func handoffNoticeIsAuthorized(repoRoot, noticeNonce string) (bool, error) {
+	nonce := strings.TrimPrefix(noticeNonce, "handoff-")
+	live, err := LiveIntents(repoRoot)
+	if err != nil {
+		return false, err
+	}
+	for _, intent := range live {
+		if intent.Nonce != nonce {
+			continue
+		}
+		if intent.Reason != seatHandoffReason || intent.Handoff == nil {
+			return false, fmt.Errorf("pending handoff notice %s does not name a live bound seatHandoff intent", noticeNonce)
+		}
+		return true, nil
+	}
+	return false, nil
+}
+
+func deliverPendingNotification(repoRoot string, n PendingNotification) error {
+	if err := deliverNotification(repoRoot, n.Message); err != nil {
+		return err
+	}
+	// The intent acknowledges FIRST: a crash between these two
+	// writes then repeats a delivery (benign) instead of
+	// stranding an undelivered-looking intent with no pending
+	// message (a permanent suppression).
+	if err := markIntentNotified(repoRoot, n.Nonce); err != nil {
+		return err
+	}
+	if err := MarkDelivered(repoRoot, n.Nonce); err != nil {
+		return err
+	}
+	return nil
 }
 
 // markIntentNotified flips the live intent matching a delivered

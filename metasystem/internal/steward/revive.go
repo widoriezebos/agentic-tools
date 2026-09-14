@@ -27,9 +27,12 @@ type SeatIdleClaimSeam func(Intent) error
 // ReviveOutcome says what happened, for the report and the receipt.
 type ReviveOutcome struct {
 	Launched bool
+	Held     bool
 	Escalate bool
 	Reason   string
 }
+
+var revivalNow = time.Now
 
 // PrepareIntent mints the durable record under the lock and captures the
 // enrollment fence. It performs no notification and no launch.
@@ -116,6 +119,9 @@ func CompleteRevival(repoRoot string, cfg TickConfig, census WorkerCensus, nonce
 	if err != nil {
 		return ReviveOutcome{}, err
 	}
+	if d.Action == ActHold {
+		return holdHandoff(repoRoot, *it, d.Reason)
+	}
 	if d.Action != ActRevive {
 		if err := CancelIntent(repoRoot, it.Nonce, "the world changed before launch: "+d.Reason); err != nil {
 			return ReviveOutcome{}, err
@@ -130,6 +136,10 @@ func CompleteRevival(repoRoot string, cfg TickConfig, census WorkerCensus, nonce
 	// accepts.
 	if _, standing := outage.StandingAt(repoRoot, time.Now()); standing {
 		reason := "the model provider is overloaded; holding revival until the provider recovers"
+		if it.Reason == seatHandoffReason {
+			reason = fmt.Sprintf("handoff %s held after predecessor pid %d was observed dead because the model provider became overloaded before launch", it.Nonce, it.Handoff.Predecessor.Pid)
+			return holdHandoff(repoRoot, *it, reason)
+		}
 		if err := CancelIntent(repoRoot, it.Nonce, reason); err != nil {
 			return ReviveOutcome{}, err
 		}
@@ -154,6 +164,11 @@ func CompleteRevival(repoRoot string, cfg TickConfig, census WorkerCensus, nonce
 			return ReviveOutcome{Reason: reason + "; the human idle alarm was queued"}, nil
 		}
 	}
+	if it.Reason == seatHandoffReason {
+		if err := clearPendingNotification(repoRoot, handoffNoticeNonce(it.Nonce)); err != nil {
+			return ReviveOutcome{}, fmt.Errorf("handoff %s launch refused because its hold notice could not be cleared: %w", it.Nonce, err)
+		}
+	}
 	consumed, err := ConsumeIntent(repoRoot, it.Nonce)
 	if err != nil {
 		return ReviveOutcome{}, err
@@ -172,6 +187,18 @@ func CompleteRevival(repoRoot string, cfg TickConfig, census WorkerCensus, nonce
 		return ReviveOutcome{}, err
 	}
 	return ReviveOutcome{Launched: true, Reason: "continuation dispatched for " + consumed.Goal}, nil
+}
+
+func holdHandoff(repoRoot string, intent Intent, reason string) (ReviveOutcome, error) {
+	if intent.Reason != seatHandoffReason || intent.Handoff == nil {
+		return ReviveOutcome{}, fmt.Errorf("only a bound seatHandoff intent can be held")
+	}
+	if err := QueueNotification(repoRoot, PendingNotification{
+		Nonce: handoffNoticeNonce(intent.Nonce), Message: "steward: " + reason,
+	}); err != nil {
+		return ReviveOutcome{}, err
+	}
+	return ReviveOutcome{Held: true, Reason: reason}, nil
 }
 
 func claimSeatIdleGoal(repoRoot string, intent Intent) error {
@@ -212,7 +239,7 @@ func decideForRevival(repoRoot string, cfg TickConfig, census WorkerCensus, ev E
 		return Decision{}, "", err
 	}
 	workers := Workers{}
-	if work == WorkOwned {
+	if work == WorkOwned || intent.Reason == seatHandoffReason {
 		w, err := census.Workers(repoRoot)
 		if err != nil {
 			w = Workers{Unprovable: 1}
@@ -239,7 +266,8 @@ func decideForRevival(repoRoot string, cfg TickConfig, census WorkerCensus, ev E
 			others++
 		}
 	}
-	_, providerOutage := outage.StandingAt(repoRoot, time.Now())
+	now := revivalNow()
+	_, providerOutage := outage.StandingAt(repoRoot, now)
 	decision := Decide(Snapshot{
 		Work:               work,
 		Workers:            workers,
@@ -250,13 +278,16 @@ func decideForRevival(repoRoot string, cfg TickConfig, census WorkerCensus, ev E
 		ActiveContinuation: others > 0,
 		ProviderOutage:     providerOutage,
 	})
+	if intent.Reason == seatHandoffReason {
+		return decideForHandoff(repoRoot, cfg, workers, ev, intent, others, providerOutage, workReason, now)
+	}
 	if intent.Reason != "seatIdle" {
 		return decision, workReason, nil
 	}
 	// A seatIdle intent is the seat's explicit handoff: the main is expected
 	// to remain alive. Re-check the exact held claim or claimable target and
 	// every safety guard, then bypass only the ordinary live-main suppression.
-	shared, err := goal.ReadClaimableBudgetedWork(repoRoot, time.Now())
+	shared, err := goal.ReadClaimableBudgetedWork(repoRoot, now)
 	if err != nil {
 		return Decision{VerdictDegraded, ActNotify, "seatIdle claim could not be re-read: " + err.Error()}, workReason, nil
 	}

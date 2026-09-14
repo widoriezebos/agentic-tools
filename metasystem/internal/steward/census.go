@@ -42,8 +42,9 @@ func (c RuntimeWorkerCensus) Workers(repoRoot string) (Workers, error) {
 	w := workersFromVerdict(verdict)
 	// The runtime census sees runtime-shaped processes; runners,
 	// monitored runs, and gates keep records it never reads.
-	extraLive, extraUnprovable := supplementWorkers(repoRoot)
+	extraLive, extraLiveSeatMains, extraUnprovable := supplementWorkers(repoRoot)
 	w.Live += extraLive
+	w.LiveSeatMains += extraLiveSeatMains
 	w.Unprovable += extraUnprovable
 	return w, nil
 }
@@ -66,8 +67,11 @@ func workersFromVerdict(v census.Verdict) Workers {
 	}
 	for _, item := range v.Inventory {
 		switch item.Class {
-		case "CUSTODY", "ANNOUNCED":
+		case "CUSTODY":
 			w.Live++
+		case "ANNOUNCED":
+			w.Live++
+			w.LiveSeatMains++
 		case "UNTRACKED":
 			w.Untracked++
 		default:

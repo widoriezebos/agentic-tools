@@ -100,10 +100,27 @@ func CancelIntent(repoRoot, nonce, reason string) error {
 		return err
 	}
 	target := filepath.Join(cancelledDir(repoRoot), nonce+".json")
-	if err := os.WriteFile(target+".tmp", out, 0o644); err != nil {
-		return err
+	tombstoneErr := os.WriteFile(target+".tmp", out, 0o644)
+	if tombstoneErr == nil {
+		tombstoneErr = os.Rename(target+".tmp", target)
 	}
-	return os.Rename(target+".tmp", target)
+	var noticeErr error
+	if it.Handoff != nil {
+		noticeErr = clearPendingNotification(repoRoot, handoffNoticeNonce(nonce))
+	}
+	switch {
+	case tombstoneErr != nil && noticeErr != nil:
+		return fmt.Errorf("intent %s authorization was cancelled, but its tombstone failed (%v) and its handoff notice could not be cleared (%v)", nonce, tombstoneErr, noticeErr)
+	case tombstoneErr != nil:
+		if it.Handoff != nil {
+			return fmt.Errorf("intent %s authorization was cancelled, but its tombstone failed: %w", nonce, tombstoneErr)
+		}
+		return tombstoneErr
+	case noticeErr != nil:
+		return fmt.Errorf("intent %s was cancelled, but its handoff notice could not be cleared: %w", nonce, noticeErr)
+	default:
+		return nil
+	}
 }
 
 // MintIntent writes the record durably. Nothing may launch before
@@ -366,4 +383,16 @@ func PendingNotifications(repoRoot string) ([]PendingNotification, error) {
 // MarkDelivered removes a delivered notification from the queue.
 func MarkDelivered(repoRoot, nonce string) error {
 	return os.Remove(filepath.Join(pendingDir(repoRoot), nonce+".json"))
+}
+
+func handoffNoticeNonce(nonce string) string {
+	return "handoff-" + nonce
+}
+
+func clearPendingNotification(repoRoot, nonce string) error {
+	err := MarkDelivered(repoRoot, nonce)
+	if os.IsNotExist(err) {
+		return nil
+	}
+	return err
 }

@@ -27,6 +27,7 @@ type Action string
 const (
 	ActNone   Action = "none"
 	ActNotify Action = "notify"
+	ActHold   Action = "hold"
 	ActRevive Action = "revive" // silent unless the downstream repair fails
 )
 
@@ -47,6 +48,10 @@ type Workers struct {
 	// Live counts identities proven alive by the clock-step-immune
 	// process identity. A live gate or runner counts here.
 	Live int
+	// LiveSeatMains is the subset of Live belonging to announced seat
+	// mains. A handoff may adopt delegate and monitored work, but it must
+	// never displace another live seat main.
+	LiveSeatMains int
 	// Untracked counts live processes nobody can account for; they
 	// prevent a death proof.
 	Untracked int
