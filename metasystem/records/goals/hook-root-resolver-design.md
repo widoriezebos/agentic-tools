@@ -1,6 +1,6 @@
 # hook-root-resolver-design
 
-- State: claimed
+- State: done
 - Priority: 1
 - Sequence: 2
 - Risk: severity=2 novelty=1 exposure=3 accumulation=2 basis="severity 2: the hook fails closed while wrong, but a wrong resolver on the deadline parent can record a refusal against the wrong world; novelty 1: the design exists at revision 5 with five rounds of critique, so what remains is a fold and a build; exposure 3: every nested checkout in the fleet; accumulation 2: the same root cause that produced successor A"
@@ -8,15 +8,14 @@
 - Intent: The full root resolution the accepted hook-root design prescribes: revision 6 of plans/supervision-hook-root-design.md folding the three round-5 findings in records/misc/hook-root-critique-r5.md (the deadline parent splits engines under a METASYSTEM_BIN override; the old-engine fixture cannot prove its skew block; the shipped template-marker block is a second state-root authority), then the consumer sweep of every remaining $repo site in the hook (steward, health, lease, report turn-verdict) and the deadline parent, with the fixtures Decision 3 names. DONE as the parent's: the hook resolves the metasystem project root deterministically on nested checkouts, its turn evidence lands, and hook-freshness goes alive, proven by a fixture running the hook from a nested layout. Successor B of supervision-hook-wrong-root, decomposed on Wido's word 2026-09-06; five critique rounds and revisions 1-5 are landed under the parent
 - Origin: main
 - Next step: 2026-09-14 23:00 m1c: landing tree g12/land10 carries revision 10's build plus fix round 11 (testing.json residual and context-budget gain hook-start-audit-standard; the gate audits every tree with wow.md or the audit source and says 'not applicable' in script-only fixtures). testpolicy green in land10. Running: build, vet, audit, fast gate, focused packages, adopt and witness-gate beds, full cmd package; an independent Opus read of the fix delta. Then land with g12/message-hookroot10.txt and conclude.
+- Concluded: Landed 157fac92 (2026-09-14). SessionStart cannot fail silently: start_finish owns every start exit, traps route accidental exits to unexpected-termination, and a last-resort object covers a failed render. metasystem audit hook-start-exits refuses bypasses; validate-metasystem.sh always runs it and the gates run it in every installation. Design revision 10 by Codex Astra; builds by Codex Sol; an Opus read folded in fix round 12. The adopt bed was not run on the candidate (it needs a goal-bound proof and is red on trunk for another reason). The trunk red found on the way landed separately as 28c70154. The goal breached its one-day elapsed limit at 20:48Z during landing verification and was resumed with its budget unchanged only to record this.
 - OpenedAt: 2026-09-06T06:39:49Z
-- Revision: 85
+- Revision: 86
 - Pinned: m1c
 - Budget: elapsedLimit=1d attemptLimit=12 reservedJobMinutesLimit=1200 activeJobLimit=1 reviewRoundLimit=3
 - BudgetExceptions: 0
 - Approved: by=human:Wido at=2026-09-13T07:22:49Z revision=55 opid=XZA3290E1RGR8SK8PKFNAVKKKK-m1e-c6925449 authority=proven digest=803416cae1f6cc23de17e5095463c667244bf3187f06ab28d7a67a0f6e427139
 - Sliced: machine=m1 lineage=main-1788594343-3833-fb64b9 revision=4 at=2026-09-06T11:22:23Z
-- Claimed: machine=m1c lineage=main-1789191340-90689-8975a9 at=2026-09-14T21:31:08Z revision=85 accountingRevision=85 episodeAt=2026-09-14T21:31:08Z episodeRevision=85
-- StopCapability: generation=85 revision=85 machine=m1c claimEpoch=5 fenceEpoch=0
 
 History:
 - 2026-09-06T06:39:49Z X92B849FEPDB998FKY6C404SXZ-m1-a4f8999f open actor=m1+main-1788594343-3833-fb64b9 targets=hook-root-resolver-design
@@ -104,4 +103,5 @@ History:
 - 2026-09-14T20:48:32Z 2YABW068N23AN8KTQFM9WMEK3W-m1c-43182c96 breach-stop actor=m1c+goal-stop-custodian targets=hook-root-resolver-design
 - 2026-09-14T20:56:09Z QSBX3EMVYYAR4AHF374S2FEG7P-m1c-69c9e454 edit actor=m1c+main-1789191340-90689-8975a9 targets=hook-root-resolver-design
 - 2026-09-14T21:31:08Z H14S245NYXH71GRBQ0EVXD23T8-m1e-c6925449 resume actor=human:Wido targets=hook-root-resolver-design
-Integrity: sha256=143f052e3f065ab77427fbf10a9e0b669ab6319edd8388f9a81442aeca8afd48
+- 2026-09-14T21:31:15Z 4QG276GJ7YWS32BR5W7S156GKJ-m1e-c6925449 done actor=human:Wido targets=actionable-metrics,beds-report-every-failure,beds-run-under-the-oldest-supported-bash,brief-declares-the-round-boundary,builder-proves-each-rule-by-mutation,chain-landing-carries-the-reviewed-diff,coordinator-context-stays-under-budget,coordinator-wakes-on-events-not-polls,critique-closes-on-folded-proof,cross-cutting-change-inventories-its-readers,deep-sections-cannot-stay-red-unseen,degraded-stop-forms-have-one-source,delegate-sandbox-runs-the-beds,dispatch-bases-chains-on-the-remote-tip,every-round-gets-an-independent-read,every-verb-resolves-repo-to-an-absolute-root,failed-job-attention,failures-show-observed-against-expected,fixture-repo-copies-exclude-the-artifacts-store,fixture-stewards-outlive-their-suite,fixture-waits-name-their-producer,go-tests-never-inherit-a-candidate-engine,hook-root-resolver-design,human-authority-surface-runs-its-cmd-tests,human-goal-verbs-forgiving,human-wait-does-not-consume-goal-budget,job-record-birth-token,lease-sweep-death-evidence,live-job-on-a-done-goal-unnoticed,machine-concurrency-governor,member-size-gate,metasystem-stop-escalation-proofs,metasystem-stop-fleet-form,moved-effects-are-inventoried-in-the-design,new-elapsed-budgets-use-explicit-hours,pipelines-never-lose-a-truncated-producer,registered-wait-matches-the-runtime-session,repo-root-paths-ride-agent-commits-unjudged,round-proof-feeds-the-next-brief,run-scoped-build-caches-have-a-janitor,skipped-test-fails-its-group-on-the-other-os,small-change-lane,stop-batch-strands-a-resumable-goal,stop-capability-follows-the-lease-epoch,stop-decision-surface-is-a-gate,stop-hook-never-forces-an-empty-turn,stop-response-carries-a-structured-report-reference,testing-surfaces-declare-their-mirror,tests-never-wait-on-wall-time,token-spend-fence,trunk-versus-candidate-is-a-verification-step,watch-verb,watcher-repair-request-never-names-current,winddown-census-handoff-leak displaced=m1c+main-1789191340-90689-8975a9@2026-09-14T21:31:08Z
+Integrity: sha256=40a6c818fd716f6f848816d1de354212075cc697bd365304bff49c597251fa01
