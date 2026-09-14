@@ -6,7 +6,7 @@
 - Decisions made (and who made them): Wido, R-97-m1e (both rules; escalation over a third round). Wido, R-60-m1 (stop at the first round with no material finding; findings that fail the artifact test are demoted). Wido, R-42-m0 (three rounds is the ceiling). Wido, D81 (2026-08-16: two prose budgets spent without convergence exit to implementation behind fixtures, never a third prose budget). Wido, 2026-09-13 ("I agree with all your proposals"): option (a) of section 11. The seat: the mechanisms of sections 3 to 5.
 - Waiting on the human: nothing.
 - Dead ends (do not retry without new evidence): a path-keyed boundary and a "restoration" equivalence on reversed hunks (revision 1); textual hunks as a certification unit (revision 2); both belong to the certification goal now. A read subject shared by design, live and commit critics (revision 2, refused: the three read different things).
-- Next step: part 1b is complete once unit 1b-ii lands with this line: admission is now called from the fresh and follow-up dispatch paths under holder-only authority, the follow-up folds before spending exhaustion, and a published redundant event is mirrored from its prior root. Next is the refused-workspace cleanup of section 9c.12, as its own unit, then the goal's own proof and conclusion. Landed: slice 0 4fbd271c, part 1a-i 20eecaf0, units 1a-ii-a 1bbbfe78, 1a-ii-b 8e92a796 and 1a-ii-c 971c7496, and unit 1b-i 876e089b.
+- Next step: the goal's implementation is landed through part 1b (slice 0 4fbd271c, part 1a-i 20eecaf0, units 1a-ii-a 1bbbfe78, 1a-ii-b 8e92a796, 1a-ii-c 971c7496, unit 1b-i 876e089b, unit 1b-ii c96700f2). Section 9c.12, the refused-workspace cleanup, is designed and parked after two attempts, with the seat note in that section naming exactly what a third must start from. What remains for the goal itself is its own proof under section 8 and then its conclusion.
 
 ## 1. What the audit found and what exists
 
@@ -338,6 +338,31 @@ None. This settles the delegated D4 scope question while preserving the required
 Proposed receipt: design | critique-closes-on-folded-proof | settle D4 proving-round independence after unit-b F-2 | code read; implementation and runtime proof remain with unit b.
 
 ### 12. Refused dispatch and its workspace (2026-09-14)
+
+**Seat note, 2026-09-14 03:20, parked after a second attempt.** This rule is
+designed and not built, and the seat is parking the build rather than trying a
+third time in one night. Attempt one, inside unit 1b-ii, was withdrawn: it added
+a creation tuple, an ownership marker, a cleanup owner rechecking pid and
+chain-lock tag, ref deletion and a move of quarantine publication, and three
+dispatcher clusters went red. Attempt two, as its own unit, passed the packages,
+the fast gate and all three beds, and its independent read still refused it with
+five material findings (record
+records/misc/critique-closes-refused-workspace-cleanup-read.md). The worst was
+not a bug in the rule but a hazard the rule never asked for: cleanup rewrote the
+repository-wide `objects/info/alternates` file, which twelve sibling checkouts
+share, under a lock that is per checkout, while a sibling on the older engine
+still appends to it without any lock. Dropping an entry there breaks exactly
+what the entry exists for. The attempt also inverted step 3 and step 5, left
+B-8's named leg unwritten, and armed cleanup only for critic roles although the
+leak that motivated B-9 was an implementer's.
+
+What the next attempt must start from: this section as written, nothing more.
+Do not touch `objects/info/alternates` at all. Do not add an engine verb. Remove
+only the worktree and branch that this refused attempt itself created, prove
+ownership from the live chain lock and the branch the attempt made, and write
+B-8's named leg. Until then a refused fresh dispatch leaves its workspace
+behind and its identical retry refuses until that workspace is removed by hand,
+which is the cost the seat is accepting for now.
 
 **Decision: (b). Remove the fresh workspace and branch owned by the refused attempt.** Seat note, 2026-09-14: this was attempted inside unit 1b-ii and withdrawn. The implementation reached far beyond this section (a creation tuple, an ownership marker, a cleanup owner rechecking pid and chain-lock tag, ref deletion, and a move of quarantine publication) and three dispatcher clusters went red. The diagnosis showed those reds came from the admission call meeting fixture legs that reused an unchanged subject, not from the cleanup, but the machinery was out of proportion to the rule, so the seat landed unit 1b-ii without it and carries this section as its own follow-up unit. The refusal keeps its exit code and evidence either way; the cost of not having it is that a refused fresh dispatch leaves a workspace behind and its identical retry refuses until that workspace is removed by hand. Accept F-2, the refusal that consumes the retry's workspace, as a material design defect. Extend B-5's cleanup contract. The refusal must retain its original exit code and evidence.
 
