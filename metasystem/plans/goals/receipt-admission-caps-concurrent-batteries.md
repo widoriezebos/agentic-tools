@@ -1,6 +1,6 @@
 # receipt-admission-caps-concurrent-batteries
 
-- State: claimed
+- State: approved
 - Priority: 1
 - Sequence: 1
 - Risk: severity=2 novelty=2 exposure=3 accumulation=1 basis="severity 2: a wrong cap starves landings or lets batteries collide as today; novelty 2: attempt reservations exist per checkout but nothing is host-wide; exposure 3: every receipt on every seat; accumulation 1: the battery content is unchanged"
@@ -9,13 +9,12 @@
 - Origin: human
 - Next step: STATE 2026-09-14 02:30Z (m1e): the seat holds this claim so its diagnostics have a goal; slice 1, the attribution, remains landed at 0c621e4b and the cap question waits for a week of records and then Wido (R-92-m1e, R-107-m1e). Elapsed limit raised to 3d in Wido's name under R-109-m1e so the beds could run; the other four limits are unchanged. Examined the canonical tip at bd7a6cbc: the seat's own coordinator-context slice 2b part D.
 - OpenedAt: 2026-09-11T15:44:50Z
-- Revision: 22
+- Revision: 23
 - Pinned: m1e
 - Budget: elapsedLimit=3d attemptLimit=10 reservedJobMinutesLimit=1200 activeJobLimit=1 reviewRoundLimit=3
 - BudgetExceptions: 1
 - Approved: by=human:Wido at=2026-09-14T01:22:51Z revision=20 opid=JFF7CHKFT8T3JDFTW1C1RP9C3J-m1e-c6925449 authority=proven digest=f4ab93e0fde20312c3c270be1681ee6b5c2b0a9cf24b96d0e5e7182f32eaca7d
-- Claimed: machine=m1e lineage=main-1789030447-51011-5722fc at=2026-09-14T01:22:51Z revision=20 accountingRevision=20 episodeAt=2026-09-12T15:19:34Z episodeRevision=13 idleSeconds=93048
-- StopCapability: generation=20 revision=20 machine=m1e claimEpoch=1 fenceEpoch=0
+- Episode: machine=m1e lineage=main-1789030447-51011-5722fc accountingRevision=20 episodeAt=2026-09-12T15:19:34Z episodeRevision=13 idleSeconds=93048 released=2026-09-14T03:21:27Z
 
 History:
 - 2026-09-11T15:44:50Z ATQJYESKCTSPAS92AEEAW0TKS3-m1e-5083721b open actor=m1e+main-1789141490-27414-b9c0d2 targets=receipt-admission-caps-concurrent-batteries
@@ -40,4 +39,5 @@ History:
 - 2026-09-14T01:22:51Z JFF7CHKFT8T3JDFTW1C1RP9C3J-m1e-c6925449 set-budget actor=human:Wido targets=receipt-admission-caps-concurrent-batteries displaced=m1e+main-1789030447-51011-5722fc@2026-09-14T01:22:19Z
 - 2026-09-14T02:14:03Z MNBZ2D4GPE3BVNXB8BVYJE9AAK-m1e-892cdaec edit actor=m1e+main-1789030447-51011-5722fc targets=receipt-admission-caps-concurrent-batteries
 - 2026-09-14T02:16:53Z E8NPDPM4078K40NAWCAKBYCKB3-m1e-892cdaec edit actor=m1e+main-1789030447-51011-5722fc targets=receipt-admission-caps-concurrent-batteries
-Integrity: sha256=9d718653c09a618fdb69e117a0af18f2914472b649c4fc074ba7c5dab28026f3
+- 2026-09-14T03:21:27Z Z6WX6KS54D2244KNBJ2HABQQ00-m1e-892cdaec release actor=m1e+main-1789030447-51011-5722fc targets=receipt-admission-caps-concurrent-batteries
+Integrity: sha256=67031f1c21d96cfadf15fb38e6582c0e2f5688b99006087e5389a6bb97d8b202
