@@ -7,13 +7,13 @@
 - Origin: main
 - Next step: 2026-09-13 ~16:15 local m1b: the findings of the second read landed f389cf1d (plans/stop-decisions-record-deadline-evidence-design-read2-findings.md) with the design brief plans/stop-decisions-record-deadline-evidence-design-fold2-brief.md. The Fable design delegate failed at launch on the Fable usage limit (429); per Wido's word that design is Fable's, the brief waits for the reset and goes to no other model (an astra dispatch was cancelled). On the reset: dispatch it as --role implementer with Working Mode design (the local roster routes it to claude-fable-5-1), land the page, close the design chain, then the Codex sol build in a worktree with an Opus read.
 - OpenedAt: 2026-09-13T07:33:02Z
-- Revision: 16
-- Budget: elapsedLimit=1d attemptLimit=10 reservedJobMinutesLimit=1200 activeJobLimit=1 reviewRoundLimit=3
-- BudgetExceptions: 0
-- Approved: by=human:Wido at=2026-09-13T07:33:06Z revision=2 opid=FFGKF0S19KMMHEQGBWCYDSMNY5-m1b-30a7e141 authority=proven digest=f4e2424715bc04c63c301ef8bda578724d344a8a7b8e940dcfbc9aba79d834b7
+- Revision: 17
+- Budget: elapsedLimit=2d attemptLimit=25 reservedJobMinutesLimit=1200 activeJobLimit=1 reviewRoundLimit=3
+- BudgetExceptions: 1
+- Approved: by=human:Wido at=2026-09-14T06:48:31Z revision=17 opid=2K0ZJW6YE9CJAFH2MVVZCMTRPE-m1b-30a7e141 authority=proven digest=9f80757bf29c8f6d0cdaa2a0eca69fff56b0d2a8093c417e535d6fa01b8fee85
 - Sliced: machine=m1b lineage=main-1789191336-90295-e4b24b revision=3 at=2026-09-13T07:34:48Z
-- Claimed: machine=m1b lineage=main-1789191336-90295-e4b24b at=2026-09-14T06:14:02Z revision=16 accountingRevision=3 episodeAt=2026-09-13T07:33:09Z episodeRevision=3 idleSeconds=77491
-- StopCapability: generation=16 revision=16 machine=m1b claimEpoch=2 fenceEpoch=0
+- Claimed: machine=m1b lineage=main-1789191336-90295-e4b24b at=2026-09-14T06:48:31Z revision=17 accountingRevision=17 episodeAt=2026-09-13T07:33:09Z episodeRevision=3 idleSeconds=77491
+- StopCapability: generation=17 revision=17 machine=m1b claimEpoch=2 fenceEpoch=0
 
 History:
 - 2026-09-13T07:33:02Z 5HG893JMDPRP75G97Y7F9VH7Z8-m1b-30a7e141 open actor=m1b+main-1789191336-90295-e4b24b targets=stop-decisions-record-deadline-evidence,stop-hook-never-forces-an-empty-turn
@@ -32,4 +32,5 @@ History:
 - 2026-09-13T14:05:51Z 77M1J9DE68N6883F98DD4KXB3S-m1b-30a7e141 edit actor=m1b+main-1789191336-90295-e4b24b targets=stop-decisions-record-deadline-evidence
 - 2026-09-13T14:05:54Z JVZN3MCVBNA7XH02Y9BDXQX1KV-m1b-30a7e141 release actor=m1b+main-1789191336-90295-e4b24b targets=stop-decisions-record-deadline-evidence
 - 2026-09-14T06:14:02Z 3E2BN9AGJ0FB2XWN2K33YA1ZW1-m1b-30a7e141 claim actor=m1b+main-1789191336-90295-e4b24b targets=stop-decisions-record-deadline-evidence
-Integrity: sha256=7bd122db5539f021381fcabd348358948c6577ed2319dce02eb7e0dffc88bcf5
+- 2026-09-14T06:48:31Z 2K0ZJW6YE9CJAFH2MVVZCMTRPE-m1b-30a7e141 set-budget actor=human:Wido targets=stop-decisions-record-deadline-evidence
+Integrity: sha256=865e3331c3f498a4d0ee3d04073bae379ba730ca3b6c9b9059621d906223626e
