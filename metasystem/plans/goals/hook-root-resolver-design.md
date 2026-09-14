@@ -9,15 +9,14 @@
 - Origin: main
 - Next step: 2026-09-14 23:00 m1c: landing tree g12/land10 carries revision 10's build plus fix round 11 (testing.json residual and context-budget gain hook-start-audit-standard; the gate audits every tree with wow.md or the audit source and says 'not applicable' in script-only fixtures). testpolicy green in land10. Running: build, vet, audit, fast gate, focused packages, adopt and witness-gate beds, full cmd package; an independent Opus read of the fix delta. Then land with g12/message-hookroot10.txt and conclude.
 - OpenedAt: 2026-09-06T06:39:49Z
-- Revision: 84
+- Revision: 85
 - Pinned: m1c
 - Budget: elapsedLimit=1d attemptLimit=12 reservedJobMinutesLimit=1200 activeJobLimit=1 reviewRoundLimit=3
 - BudgetExceptions: 0
 - Approved: by=human:Wido at=2026-09-13T07:22:49Z revision=55 opid=XZA3290E1RGR8SK8PKFNAVKKKK-m1e-c6925449 authority=proven digest=803416cae1f6cc23de17e5095463c667244bf3187f06ab28d7a67a0f6e427139
 - Sliced: machine=m1 lineage=main-1788594343-3833-fb64b9 revision=4 at=2026-09-06T11:22:23Z
-- Claimed: machine=m1c lineage=main-1789191340-90689-8975a9 at=2026-09-14T16:18:00Z revision=77 accountingRevision=59 episodeAt=2026-09-13T07:27:28Z episodeRevision=59 idleSeconds=91001
-- StopCapability: generation=77 revision=77 machine=m1c claimEpoch=5 fenceEpoch=1
-- StopFence: stopId=stop-hook-root-resolver-design-r77-f1 revision=77 epoch=1 capabilityGeneration=77 closedAt=2026-09-14T20:48:32Z reason=ELAPSED_LIMIT
+- Claimed: machine=m1c lineage=main-1789191340-90689-8975a9 at=2026-09-14T21:31:08Z revision=85 accountingRevision=85 episodeAt=2026-09-14T21:31:08Z episodeRevision=85
+- StopCapability: generation=85 revision=85 machine=m1c claimEpoch=5 fenceEpoch=0
 
 History:
 - 2026-09-06T06:39:49Z X92B849FEPDB998FKY6C404SXZ-m1-a4f8999f open actor=m1+main-1788594343-3833-fb64b9 targets=hook-root-resolver-design
@@ -104,4 +103,5 @@ History:
 - 2026-09-14T20:23:28Z YRZBJ7EYJN1MJFEMV7ABC630PV-m1e-c6925449 set-priority actor=human:Wido targets=beds-report-every-failure,beds-run-under-the-oldest-supported-bash,brief-declares-the-round-boundary,builder-proves-each-rule-by-mutation,coordinator-context-stays-under-budget,coordinator-wakes-on-events-not-polls,critique-closes-on-folded-proof,cross-cutting-change-inventories-its-readers,delegate-sandbox-runs-the-beds,every-verb-resolves-repo-to-an-absolute-root,go-tests-never-inherit-a-candidate-engine,hook-root-resolver-design,moved-effects-are-inventoried-in-the-design,receipt-admission-caps-concurrent-batteries,registered-wait-matches-the-runtime-session,round-proof-feeds-the-next-brief,small-change-lane,stop-hook-never-forces-an-empty-turn reason=priority-order subject=round-proof-feeds-the-next-brief from=1:3 to=1:2 requested-sequence=18
 - 2026-09-14T20:48:32Z 2YABW068N23AN8KTQFM9WMEK3W-m1c-43182c96 breach-stop actor=m1c+goal-stop-custodian targets=hook-root-resolver-design
 - 2026-09-14T20:56:09Z QSBX3EMVYYAR4AHF374S2FEG7P-m1c-69c9e454 edit actor=m1c+main-1789191340-90689-8975a9 targets=hook-root-resolver-design
-Integrity: sha256=21e037ce9a583fa81dc72805d9b5617c657ed7bb2ab840195faf7234cfe12fad
+- 2026-09-14T21:31:08Z H14S245NYXH71GRBQ0EVXD23T8-m1e-c6925449 resume actor=human:Wido targets=hook-root-resolver-design
+Integrity: sha256=143f052e3f065ab77427fbf10a9e0b669ab6319edd8388f9a81442aeca8afd48
