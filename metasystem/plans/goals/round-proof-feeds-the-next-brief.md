@@ -1,6 +1,6 @@
 # round-proof-feeds-the-next-brief
 
-- State: queued
+- State: approved
 - Priority: 1
 - Sequence: 2
 - Risk: severity=2 novelty=2 exposure=2 accumulation=2 basis="severity 2: a wrong findings file could refuse a legitimate follow-up or let a failing bed through; novelty 2: the round proof gains an output the dispatcher reads; exposure 2: every follow-up round; accumulation 2: later rounds build on the recorded findings"
@@ -9,12 +9,14 @@
 - Origin: human
 - Next step: Design page first: the findings record beside the round (every failing assertion with the bed's own words, the leg, and the kept evidence path), written by the round proof; the follow-up brief composed by the engine from that record by default, with the seat's brief supplying only judgment (a design question, a scope change, a decision) rather than restating failures; a follow-up dispatch refused when its brief neither cites the record nor states the findings are cleared. Why the extra step: even with the record, a seat that must write every brief stays a relay; the stop-decisions build had the seat copy bed output into twenty-one briefs by hand. Then build.
 - OpenedAt: 2026-09-14T15:32:06Z
-- Revision: 3
+- Revision: 4
 - Budget: elapsedLimit=4h attemptLimit=6 reservedJobMinutesLimit=720 activeJobLimit=1 reviewRoundLimit=2
 - BudgetExceptions: 0
+- Approved: by=human:Wido at=2026-09-14T18:53:47Z revision=4 opid=9S7XQRE59A5G7THACHB1R88XKE-m1e-c6925449 authority=proven digest=cfc497d7d4a0764301bf24ab6eae1b3ca0cbb5200e8c8c8dc0b735f5e138f1db
 
 History:
 - 2026-09-14T15:32:06Z HBZ6CGVD976G3XCTXEECV20PEX-m1e-c6925449 open actor=human:Wido targets=round-proof-feeds-the-next-brief
 - 2026-09-14T15:32:48Z A5G62JFP5PEK9VZ16E2SP4YNNV-m1e-c6925449 set-priority actor=human:Wido targets=actionable-metrics,brief-declares-the-round-boundary,builder-proves-each-rule-by-mutation,chain-landing-carries-the-reviewed-diff,coordinator-context-stays-under-budget,coordinator-wakes-on-events-not-polls,critique-closes-on-folded-proof,cross-cutting-change-inventories-its-readers,dispatch-bases-chains-on-the-remote-tip,failed-job-attention,fixture-repo-copies-exclude-the-artifacts-store,fixture-stewards-outlive-their-suite,fixture-waits-name-their-producer,hook-root-resolver-design,human-authority-surface-runs-its-cmd-tests,human-goal-verbs-forgiving,human-wait-does-not-consume-goal-budget,job-record-birth-token,lease-sweep-death-evidence,live-job-on-a-done-goal-unnoticed,machine-concurrency-governor,metasystem-stop-escalation-proofs,metasystem-stop-fleet-form,new-elapsed-budgets-use-explicit-hours,receipt-admission-caps-concurrent-batteries,repo-root-paths-ride-agent-commits-unjudged,round-proof-feeds-the-next-brief,run-scoped-build-caches-have-a-janitor,skipped-test-fails-its-group-on-the-other-os,small-change-lane,stop-batch-strands-a-resumable-goal,stop-hook-never-forces-an-empty-turn,token-spend-fence,watch-verb,watcher-repair-request-never-names-current,winddown-census-handoff-leak reason=priority-order subject=round-proof-feeds-the-next-brief from=unranked to=1:2 requested-sequence=2
 - 2026-09-14T16:17:16Z D236B7FEF3M8DPRBCGFGFS9JQ9-m1b-30a7e141 edit actor=m1b+main-1789191336-90295-e4b24b targets=round-proof-feeds-the-next-brief
-Integrity: sha256=6d28ce5bb70a09876291a0291b858db1cd6e86cec86b91361319824bedc937b1
+- 2026-09-14T18:53:47Z 9S7XQRE59A5G7THACHB1R88XKE-m1e-c6925449 approve actor=human:Wido targets=round-proof-feeds-the-next-brief
+Integrity: sha256=ea5fd3cbcaff54a24026f9971f31d9ddc037445615c87d6707fa8f0316a465ec
