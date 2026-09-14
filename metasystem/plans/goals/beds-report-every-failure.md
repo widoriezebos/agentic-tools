@@ -9,13 +9,13 @@
 - Origin: human
 - Next step: Split the two long scripts into scenarios under the existing fixture-bed-child mechanism; add the no-silent-exit guard; then the fixture.
 - OpenedAt: 2026-09-14T15:32:10Z
-- Revision: 10
-- Budget: elapsedLimit=1h attemptLimit=3 reservedJobMinutesLimit=360 activeJobLimit=1 reviewRoundLimit=0
-- BudgetExceptions: 0
-- Approved: by=human:Wido at=2026-09-14T18:53:53Z revision=3 opid=RBTEN3WHYJ3128AK912MKQ38KA-m1e-c6925449 authority=proven digest=413873527168fec4171fc1c19a78ea3040ffd8a3b75dc49cf668c6938f841f0a
+- Revision: 11
+- Budget: elapsedLimit=4h attemptLimit=6 reservedJobMinutesLimit=360 activeJobLimit=1 reviewRoundLimit=0
+- BudgetExceptions: 1
+- Approved: by=human:Wido at=2026-09-14T20:31:42Z revision=11 opid=RJF52HXA2TFNW98KVBGSFB7Q17-m1b-c6925449 authority=proven digest=25d29876eb7c9740150775117e3322ee95b3a7d8923ff9b4d25cfa6ee7396729
 - Sliced: machine=m1b lineage=main-1789191336-90295-e4b24b revision=9 at=2026-09-14T20:28:26Z
-- Claimed: machine=m1b lineage=main-1789191336-90295-e4b24b at=2026-09-14T20:26:40Z revision=9 accountingRevision=9 episodeAt=2026-09-14T20:26:40Z episodeRevision=9
-- StopCapability: generation=9 revision=9 machine=m1b claimEpoch=2 fenceEpoch=0
+- Claimed: machine=m1b lineage=main-1789191336-90295-e4b24b at=2026-09-14T20:31:42Z revision=11 accountingRevision=11 episodeAt=2026-09-14T20:26:40Z episodeRevision=9
+- StopCapability: generation=11 revision=11 machine=m1b claimEpoch=2 fenceEpoch=0
 
 History:
 - 2026-09-14T15:32:10Z DEFJFFQ7HWC4XRVD6HM7S9CP7M-m1e-c6925449 open actor=human:Wido targets=beds-report-every-failure
@@ -28,4 +28,5 @@ History:
 - 2026-09-14T20:25:05Z SAPG45A387KCJW142RD41ZS95M-m1e-c6925449 set-priority actor=human:Wido targets=beds-report-every-failure,beds-run-under-the-oldest-supported-bash,critique-closes-on-folded-proof,cross-cutting-change-inventories-its-readers,degraded-stop-forms-have-one-source,delegate-sandbox-runs-the-beds,every-round-gets-an-independent-read,every-verb-resolves-repo-to-an-absolute-root,failures-show-observed-against-expected,go-tests-never-inherit-a-candidate-engine,member-size-gate,moved-effects-are-inventoried-in-the-design,registered-wait-matches-the-runtime-session,round-proof-feeds-the-next-brief,stop-response-carries-a-structured-report-reference,testing-surfaces-declare-their-mirror,tests-never-wait-on-wall-time reason=priority-order subject=cross-cutting-change-inventories-its-readers from=1:11 to=1:10 requested-sequence=25
 - 2026-09-14T20:26:40Z EBFXH4S276DM75GS4VR73Z7RC2-m1b-30a7e141 claim actor=m1b+main-1789191336-90295-e4b24b targets=beds-report-every-failure
 - 2026-09-14T20:28:26Z 0DKG8TPJY3HJJT1ETAFQP13J23-m1b-30a7e141 slice-start actor=m1b+main-1789191336-90295-e4b24b targets=beds-report-every-failure
-Integrity: sha256=6aaca976c690290beb4d4ea8caa984c120c080f4a9de4cabea83d82696234bf7
+- 2026-09-14T20:31:42Z RJF52HXA2TFNW98KVBGSFB7Q17-m1b-c6925449 set-budget actor=human:Wido targets=beds-report-every-failure displaced=m1b+main-1789191336-90295-e4b24b@2026-09-14T20:26:40Z
+Integrity: sha256=b50bb94bd6a7a0d3ccce3b18064ef41d7afc53c08e768d860c8ebc4b1f320db0
