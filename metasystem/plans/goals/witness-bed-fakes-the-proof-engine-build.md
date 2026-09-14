@@ -1,6 +1,6 @@
 # witness-bed-fakes-the-proof-engine-build
 
-- State: approved
+- State: claimed
 - Priority: 1
 - Sequence: 55
 - Risk: severity=2 novelty=1 exposure=2 accumulation=2 basis="severity 2: three witness-gate scenarios are red on trunk, so a deep landing proof fails for a reason the change did not cause; novelty 1: a fixture stub lacks one command the gate runs; exposure 2: every landing whose surfaces require a deep proof; accumulation 2: a red bed on trunk hides new reds in the same scenarios"
@@ -9,13 +9,16 @@
 - Origin: human
 - Next step: Build: give the bed's fake go the proof-engine build from go-gate.sh:85 without weakening any scenario; run the whole witness bed on trunk; carry into hook-root-resolver-design's landing if its proof runs deep.
 - OpenedAt: 2026-09-14T21:09:59Z
-- Revision: 3
+- Revision: 4
 - Budget: elapsedLimit=1h attemptLimit=3 reservedJobMinutesLimit=360 activeJobLimit=1 reviewRoundLimit=0
 - BudgetExceptions: 0
 - Approved: by=human:Wido at=2026-09-14T21:10:05Z revision=2 opid=KXSCXAPYNC8WY4NZPA56P9NGMN-m1e-c6925449 authority=proven digest=2370fc94eda0ff3e868f9372087c82c3d07e7f8fa681b3f2270f0a6a0bf612e3
+- Claimed: machine=m1c lineage=main-1789191340-90689-8975a9 at=2026-09-14T21:11:33Z revision=4 accountingRevision=4 episodeAt=2026-09-14T21:11:33Z episodeRevision=4
+- StopCapability: generation=4 revision=4 machine=m1c claimEpoch=5 fenceEpoch=0
 
 History:
 - 2026-09-14T21:09:59Z WW3A9EYAZFBE9YHJ98151BXPJM-m1e-c6925449 open actor=human:Wido targets=witness-bed-fakes-the-proof-engine-build reason=TierOverride: derived=2 set=1 why=Opened by m1c in Wido's name under R-110-m1e: a trunk red found while verifying hook-root-resolver-design's landing tree.
 - 2026-09-14T21:10:05Z KXSCXAPYNC8WY4NZPA56P9NGMN-m1e-c6925449 approve actor=human:Wido targets=witness-bed-fakes-the-proof-engine-build
 - 2026-09-14T21:10:12Z JN15NQ6KEQXM2CCY1KXTCZKBMV-m1e-c6925449 set-priority actor=human:Wido targets=witness-bed-fakes-the-proof-engine-build reason=priority-order subject=witness-bed-fakes-the-proof-engine-build from=unranked to=1:55 requested-sequence=append
-Integrity: sha256=8f5044161f265896e76ea5319c038430034d96fea51ff5b8a4b512e14992b3c8
+- 2026-09-14T21:11:33Z KG8FXMKYC911S5H1QRTWGWYESW-m1c-69c9e454 claim actor=m1c+main-1789191340-90689-8975a9 targets=witness-bed-fakes-the-proof-engine-build
+Integrity: sha256=6b42dd0c2633557f68121a6d354eebe5c3a9258491e2867a2c7ca9fec6436eaa
