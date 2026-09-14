@@ -1,6 +1,6 @@
 # go-tests-never-inherit-a-candidate-engine
 
-- State: approved
+- State: claimed
 - Priority: 1
 - Sequence: 10
 - Risk: severity=2 novelty=1 exposure=2 accumulation=2 basis="severity 2: false failures that read as real guard defects; novelty 1: environment hygiene; exposure 2: any seat running beds and packages in one shell; accumulation 2: each occurrence costs a diagnosis"
@@ -9,11 +9,12 @@
 - Origin: human
 - Next step: Sanitize the engine-selection environment in the shared test helpers and the guard's test path; add the hostile-inheritance proof.
 - OpenedAt: 2026-09-14T16:16:39Z
-- Revision: 10
+- Revision: 11
 - Budget: elapsedLimit=4h attemptLimit=6 reservedJobMinutesLimit=720 activeJobLimit=1 reviewRoundLimit=2
 - BudgetExceptions: 0
 - Approved: by=human:Wido at=2026-09-14T18:54:42Z revision=2 opid=1FVG0RPDDCS253V6D1FVHN0PXJ-m1e-c6925449 authority=proven digest=01c88816aa05e9379310fc5e7cf396643079963790219c3b366e2fd7c7cb0cc6
-- Episode: machine=m1c lineage=main-1789191340-90689-8975a9 accountingRevision=8 episodeAt=2026-09-14T21:28:54Z episodeRevision=8 idleSeconds=0 released=2026-09-14T21:31:01Z
+- Claimed: machine=m1c lineage=main-1789191340-90689-8975a9 at=2026-09-14T21:31:26Z revision=11 accountingRevision=8 episodeAt=2026-09-14T21:28:54Z episodeRevision=8 idleSeconds=25
+- StopCapability: generation=11 revision=11 machine=m1c claimEpoch=5 fenceEpoch=0
 
 History:
 - 2026-09-14T16:16:39Z B3R2EK7S895J6G3ZMQCF8FYTZE-m1e-c6925449 open actor=human:Wido targets=go-tests-never-inherit-a-candidate-engine
@@ -26,4 +27,5 @@ History:
 - 2026-09-14T21:28:54Z MGDJ8D64C2HFM8D319GS2YNYGQ-m1c-69c9e454 claim actor=m1c+main-1789191340-90689-8975a9 targets=go-tests-never-inherit-a-candidate-engine
 - 2026-09-14T21:31:01Z 4M8HP8W34EDKDF207ANE5YA8WB-m1c-69c9e454 release actor=m1c+main-1789191340-90689-8975a9 targets=go-tests-never-inherit-a-candidate-engine
 - 2026-09-14T21:31:15Z 4QG276GJ7YWS32BR5W7S156GKJ-m1e-c6925449 done actor=human:Wido targets=actionable-metrics,beds-report-every-failure,beds-run-under-the-oldest-supported-bash,brief-declares-the-round-boundary,builder-proves-each-rule-by-mutation,chain-landing-carries-the-reviewed-diff,coordinator-context-stays-under-budget,coordinator-wakes-on-events-not-polls,critique-closes-on-folded-proof,cross-cutting-change-inventories-its-readers,deep-sections-cannot-stay-red-unseen,degraded-stop-forms-have-one-source,delegate-sandbox-runs-the-beds,dispatch-bases-chains-on-the-remote-tip,every-round-gets-an-independent-read,every-verb-resolves-repo-to-an-absolute-root,failed-job-attention,failures-show-observed-against-expected,fixture-repo-copies-exclude-the-artifacts-store,fixture-stewards-outlive-their-suite,fixture-waits-name-their-producer,go-tests-never-inherit-a-candidate-engine,hook-root-resolver-design,human-authority-surface-runs-its-cmd-tests,human-goal-verbs-forgiving,human-wait-does-not-consume-goal-budget,job-record-birth-token,lease-sweep-death-evidence,live-job-on-a-done-goal-unnoticed,machine-concurrency-governor,member-size-gate,metasystem-stop-escalation-proofs,metasystem-stop-fleet-form,moved-effects-are-inventoried-in-the-design,new-elapsed-budgets-use-explicit-hours,pipelines-never-lose-a-truncated-producer,registered-wait-matches-the-runtime-session,repo-root-paths-ride-agent-commits-unjudged,round-proof-feeds-the-next-brief,run-scoped-build-caches-have-a-janitor,skipped-test-fails-its-group-on-the-other-os,small-change-lane,stop-batch-strands-a-resumable-goal,stop-capability-follows-the-lease-epoch,stop-decision-surface-is-a-gate,stop-hook-never-forces-an-empty-turn,stop-response-carries-a-structured-report-reference,testing-surfaces-declare-their-mirror,tests-never-wait-on-wall-time,token-spend-fence,trunk-versus-candidate-is-a-verification-step,watch-verb,watcher-repair-request-never-names-current,winddown-census-handoff-leak reason=priority-order from=1:11 to=1:10
-Integrity: sha256=ad92d3162c201c0dae7d6f5930b2ae8497e9485257e6a17ac9633d440907dd35
+- 2026-09-14T21:31:26Z B58FC7PFZK47RCQSBJMT1ZHJQ1-m1c-69c9e454 claim actor=m1c+main-1789191340-90689-8975a9 targets=go-tests-never-inherit-a-candidate-engine
+Integrity: sha256=16eacef3192bb0a480db0af6704d72fd8df8c0f99e205f9fc30737a74b36f877
