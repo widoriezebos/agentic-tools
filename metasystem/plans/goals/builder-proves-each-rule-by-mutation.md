@@ -1,0 +1,16 @@
+# builder-proves-each-rule-by-mutation
+
+- State: queued
+- Risk: severity=2 novelty=2 exposure=3 accumulation=2 basis="severity 2: a false mutation entry lets an unproved rule reach the read, which is today's state, and a strict check refuses a return until the builder adds the test; novelty 2: a new return field and a new conformance check beside the existing return schema and conformance; exposure 3: every implementer chain; accumulation 2: every unproved rule that reaches the read costs a read and a fold round."
+- Tier: 2
+- Intent: Every rule a build adds has a test that fails when that rule alone is removed, proved by the builder before it returns, not discovered by the read. Today no contract asks for it: the implementer role (scripts/agents/roles/implementer.md) and the code-critique skill require named passing tests but never that a test fails without the rule; the reads of 2026-09-13 and 14 ran mutation batteries only because the seat asked, and found 22 rules with no failing test in one unit (coordinator-context-stays-under-budget slice 3 unit C), three survivors of 29 mutations in unit B2, and unproved rules in three landed units, each costing a fold round. DONE means: the implementer return carries, per acceptance row, a mutation entry naming the rule's location (path and line or symbol), the test that fails when that rule alone is removed, and the observed failure line; the implementer role text and the build brief require it; conformance at review stage refuses a return whose acceptance rows lack a mutation entry, or whose named test does not exist in the candidate tree, naming the row or the test; the code critic's own battery becomes a spot check of the builder's claims. Fixtures prove: a return without a mutation entry for a row is refused naming the row; a return naming a test absent from the tree is refused naming the test; a complete return is admitted; a return for a brief with no acceptance rows is admitted unchanged.
+- Origin: human
+- Next step: Design first on the design lane (Codex gpt-6-astra): the mutation entry's shape in the version-2 implementer return (internal/returnschema), the conformance check's owner (internal/validate/conformance.go beside the boundary check), what 'the named test exists' means (a Go test function or a fixture leg name found in the candidate tree), and the exact sentence added to scripts/agents/roles/implementer.md. Then build (Codex gpt-5.6-sol) behind the four fixtures in DONE, Opus read, seat lands. Interim practice: every build brief the seat writes carries the rule verbatim ('for every rule you add, a test that fails when that rule alone is removed; run it before you return'). Opened at Wido's word 2026-09-14 in the delivery-efficiency program, after brief-declares-the-round-boundary.
+- OpenedAt: 2026-09-14T15:28:42Z
+- Revision: 1
+- Budget: elapsedLimit=4h attemptLimit=6 reservedJobMinutesLimit=720 activeJobLimit=1 reviewRoundLimit=2
+- BudgetExceptions: 0
+
+History:
+- 2026-09-14T15:28:42Z J85P9F1DR0QA84M57E0VKV1613-m1e-c6925449 open actor=human:Wido targets=builder-proves-each-rule-by-mutation
+Integrity: sha256=707472171b2dd297de9127b1dca2f09724417725386f4855fd4353e11528b863
