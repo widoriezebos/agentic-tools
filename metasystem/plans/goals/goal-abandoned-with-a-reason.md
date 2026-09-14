@@ -9,14 +9,13 @@
 - Origin: main
 - Next step: 2026-09-13 evening m1b: SLICES 1 AND 2 LANDED 345d809c (51 files; the certified chain of 2026-09-10 carried onto trunk over rounds 6 to 11, design revisions 5 and 6 built, four DESIGN-BEARING Opus reads, the last with nothing material; delivery proof on the staged index, 47 groups). Build chain gawr-build1 and critic root gawr-carry1-read4b closed. Seat verification outside the delegate sandbox: internal/goal 1059 s, internal/landing 114 s, goal-cli 22 scenarios (its carried-record and carried-discharge failures reproduce on unmodified trunk inside an agent session). NEXT: chain gawr-build3, the landing side (slice 3, 14 files, six conflicted paths against trunk: landing_verbs.go, main.go, observe_test.go, refusal/register.go, commit.sh, land-fixtures.sh): carry it the same way (Codex sol round, then a DESIGN-BEARING read, the seat's delivery proof, a human commit), then the design page's doc slice and the done-for-abandon switch, then the rollout (every seat rebuilds and re-arms; goal engine-floor from the enrolled terminal; the two specimens).
 - OpenedAt: 2026-09-09T07:35:51Z
-- Revision: 112
-- Budget: elapsedLimit=3d attemptLimit=25 reservedJobMinutesLimit=2400 activeJobLimit=1 reviewRoundLimit=3
-- BudgetExceptions: 1
-- NormApproval: approvedRef=R-109-m1e minutes=2400 reviewRounds=3 goalRevision=101
-- Approved: by=human:Wido at=2026-09-13T06:48:15Z revision=102 opid=95CA2VS52PSS81D2XCZ6H71KVV-m1e-c6925449 authority=proven digest=e97ed2288c4608382acbba10ad935cb30acf8c8c9c0564a79b923eb1cdde2261
+- Revision: 113
+- Budget: elapsedLimit=3d attemptLimit=40 reservedJobMinutesLimit=1200 activeJobLimit=1 reviewRoundLimit=3
+- BudgetExceptions: 2
+- Approved: by=human:Wido at=2026-09-14T01:21:19Z revision=113 opid=5TGRXNYX34KAN8W2CZM4MJJ51Z-m1b-30a7e141 authority=proven digest=e9451e581faa08aeed995704a46f6207803640d8f8cef9c456d43d91c24d8fe3
 - Sliced: machine=m1b lineage=main-1788680071-18713-e76d5d revision=5 at=2026-09-09T15:15:59Z
-- Claimed: machine=m1b lineage=main-1789191336-90295-e4b24b at=2026-09-13T14:06:24Z revision=107 accountingRevision=107 episodeAt=2026-09-13T14:06:24Z episodeRevision=107
-- StopCapability: generation=107 revision=107 machine=m1b claimEpoch=2 fenceEpoch=0
+- Claimed: machine=m1b lineage=main-1789191336-90295-e4b24b at=2026-09-14T01:21:19Z revision=113 accountingRevision=113 episodeAt=2026-09-13T14:06:24Z episodeRevision=107
+- StopCapability: generation=113 revision=113 machine=m1b claimEpoch=2 fenceEpoch=0
 
 History:
 - 2026-09-09T07:35:51Z CD1FD0A7Q0S3NMWB4C52P9Q39V-m1b-c6925449 open actor=m1b+main-1788680071-18713-e76d5d targets=goal-abandoned-with-a-reason
@@ -131,4 +130,5 @@ History:
 - 2026-09-13T16:45:24Z RTWD3TDHMHG2X6YAS3ARQ86MPB-m1b-30a7e141 edit actor=m1b+main-1789191336-90295-e4b24b targets=goal-abandoned-with-a-reason
 - 2026-09-13T18:23:16Z PZ9C8WTAE1Q9ZMY232WYGTCENS-m1e-c6925449 done actor=human:Wido targets=actionable-metrics,chain-landing-carries-the-reviewed-diff,coordinator-context-stays-under-budget,coordinator-wakes-on-events-not-polls,critique-closes-on-folded-proof,dispatch-bases-chains-on-the-remote-tip,failed-job-attention,fixture-repo-copies-exclude-the-artifacts-store,fixture-stewards-outlive-their-suite,fixture-waits-name-their-producer,goal-abandoned-with-a-reason,human-authority-surface-runs-its-cmd-tests,human-goal-verbs-forgiving,human-wait-does-not-consume-goal-budget,job-record-birth-token,lease-sweep-death-evidence,live-job-on-a-done-goal-unnoticed,machine-concurrency-governor,metasystem-stop-escalation-proofs,metasystem-stop-fleet-form,new-elapsed-budgets-use-explicit-hours,proof-groups-detect-hangs-by-progress-not-the-clock,repo-root-paths-ride-agent-commits-unjudged,run-scoped-build-caches-have-a-janitor,skipped-test-fails-its-group-on-the-other-os,stop-batch-strands-a-resumable-goal,stop-refusal-fits-on-one-screen,token-spend-fence,watch-verb,watcher-repair-request-never-names-current,winddown-census-handoff-leak reason=priority-order from=1:9 to=1:8
 - 2026-09-13T19:39:49Z 0QFRBAQM1J17HE1XCHZM6ZMCQD-m1b-30a7e141 edit actor=m1b+main-1789191336-90295-e4b24b targets=goal-abandoned-with-a-reason
-Integrity: sha256=3dc5cb64d0bf8d6a165451f6169906800e6a5b11c641b5a61129f35e6a00b5e6
+- 2026-09-14T01:21:19Z 5TGRXNYX34KAN8W2CZM4MJJ51Z-m1b-30a7e141 set-budget actor=human:Wido targets=goal-abandoned-with-a-reason
+Integrity: sha256=8eb6eac5365bd4ca0eda84bcd2383b65a831d4edf858e50617dfb78850d67aa4
