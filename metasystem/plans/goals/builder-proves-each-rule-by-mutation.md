@@ -1,6 +1,6 @@
 # builder-proves-each-rule-by-mutation
 
-- State: queued
+- State: approved
 - Priority: 1
 - Sequence: 8
 - Risk: severity=2 novelty=2 exposure=3 accumulation=2 basis="severity 2: a false mutation entry lets an unproved rule reach the read, which is today's state, and a strict check refuses a return until the builder adds the test; novelty 2: a new return field and a new conformance check beside the existing return schema and conformance; exposure 3: every implementer chain; accumulation 2: every unproved rule that reaches the read costs a read and a fold round."
@@ -9,13 +9,15 @@
 - Origin: human
 - Next step: Design first on the design lane (Codex gpt-6-astra): the mutation entry's shape in the version-2 implementer return (internal/returnschema), the conformance check's owner (internal/validate/conformance.go beside the boundary check), what 'the named test exists' means (a Go test function or a fixture leg name found in the candidate tree), and the exact sentence added to scripts/agents/roles/implementer.md. Then build (Codex gpt-5.6-sol) behind the four fixtures in DONE, Opus read, seat lands. Interim practice: every build brief the seat writes carries the rule verbatim ('for every rule you add, a test that fails when that rule alone is removed; run it before you return'). Opened at Wido's word 2026-09-14 in the delivery-efficiency program, after brief-declares-the-round-boundary.
 - OpenedAt: 2026-09-14T15:28:42Z
-- Revision: 3
+- Revision: 4
 - Pinned: m1e
-- Budget: elapsedLimit=4h attemptLimit=6 reservedJobMinutesLimit=720 activeJobLimit=1 reviewRoundLimit=2
+- Budget: elapsedLimit=1d attemptLimit=10 reservedJobMinutesLimit=720 activeJobLimit=1 reviewRoundLimit=2
 - BudgetExceptions: 0
+- Approved: by=human:Wido at=2026-09-14T15:30:52Z revision=4 opid=0H5VRZ2B98K4E57GXEB3H3FW2Z-m1e-c6925449 authority=proven digest=60e64dcdf83482c45d182a7e6103fcad2c5708073b910041bf266261a40ebd7e
 
 History:
 - 2026-09-14T15:28:42Z J85P9F1DR0QA84M57E0VKV1613-m1e-c6925449 open actor=human:Wido targets=builder-proves-each-rule-by-mutation
 - 2026-09-14T15:30:02Z G0D5QQDQDDJZANH2YR26JVFPR9-m1e-c6925449 set-priority actor=human:Wido targets=actionable-metrics,builder-proves-each-rule-by-mutation,chain-landing-carries-the-reviewed-diff,critique-closes-on-folded-proof,dispatch-bases-chains-on-the-remote-tip,failed-job-attention,fixture-repo-copies-exclude-the-artifacts-store,fixture-stewards-outlive-their-suite,fixture-waits-name-their-producer,human-authority-surface-runs-its-cmd-tests,human-goal-verbs-forgiving,human-wait-does-not-consume-goal-budget,job-record-birth-token,lease-sweep-death-evidence,live-job-on-a-done-goal-unnoticed,machine-concurrency-governor,metasystem-stop-escalation-proofs,metasystem-stop-fleet-form,new-elapsed-budgets-use-explicit-hours,repo-root-paths-ride-agent-commits-unjudged,run-scoped-build-caches-have-a-janitor,skipped-test-fails-its-group-on-the-other-os,stop-batch-strands-a-resumable-goal,token-spend-fence,watch-verb,watcher-repair-request-never-names-current,winddown-census-handoff-leak reason=priority-order subject=builder-proves-each-rule-by-mutation from=unranked to=1:8 requested-sequence=8
 - 2026-09-14T15:30:34Z SAD29XYFKAX81YETSTQF1N2M8P-m1e-c6925449 set-pin actor=human:Wido targets=builder-proves-each-rule-by-mutation
-Integrity: sha256=7df87b5001cc8c01653c81281b657ac2e22bb9d7513a0018b24c49ca4a6d64c2
+- 2026-09-14T15:30:52Z 0H5VRZ2B98K4E57GXEB3H3FW2Z-m1e-c6925449 approve actor=human:Wido targets=builder-proves-each-rule-by-mutation
+Integrity: sha256=24f42d52fea7cafcd24b9b3037f1938f4a107d61eba1f2d7c2e4325fa8d884af
