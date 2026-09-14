@@ -1,6 +1,6 @@
 # tests-never-wait-on-wall-time
 
-- State: queued
+- State: approved
 - Priority: 2
 - Sequence: 29
 - Risk: severity=2 novelty=1 exposure=3 accumulation=1 basis="severity 2: a wall-clock guard that flakes under load turns a green tree red and a red tree green at random, and a flake reported as green hides a defect; novelty 1: a source-level check and a rerun rule in the existing gate; exposure 3: every Go test in every package; accumulation 1: nothing builds on the rule itself"
@@ -9,11 +9,13 @@
 - Origin: human
 - Next step: Design page: the forbidden constructs, the source check, the rerun record and its fixture; then build.
 - OpenedAt: 2026-09-14T16:17:21Z
-- Revision: 2
+- Revision: 3
 - Budget: elapsedLimit=4h attemptLimit=6 reservedJobMinutesLimit=720 activeJobLimit=1 reviewRoundLimit=2
 - BudgetExceptions: 0
+- Approved: by=human:Wido at=2026-09-14T18:54:18Z revision=3 opid=R6K59WYRSQ0VKNA03P3ZW9R9YJ-m1e-c6925449 authority=proven digest=0c51567678d94b5076e5895a0141492324419794dcbfb555f5e4c9b685d50924
 
 History:
 - 2026-09-14T16:17:21Z BB2BF7NWX7DTTDZNB10KRZFY7P-m1e-c6925449 open actor=human:Wido targets=tests-never-wait-on-wall-time
 - 2026-09-14T16:17:26Z 5ZQ3VSK1JRJ8V7E25FFYYW5T0K-m1e-c6925449 set-priority actor=human:Wido targets=tests-never-wait-on-wall-time reason=priority-order subject=tests-never-wait-on-wall-time from=unranked to=2:29 requested-sequence=append
-Integrity: sha256=8478daab2d39be0d181b12b20fccafd3ea2ba12f1f193c27572f1ea346d1ebe4
+- 2026-09-14T18:54:18Z R6K59WYRSQ0VKNA03P3ZW9R9YJ-m1e-c6925449 approve actor=human:Wido targets=tests-never-wait-on-wall-time
+Integrity: sha256=342f215d69727321e6c6a95efa259ab4518526d87e4ad69547da6e219f7d7035
