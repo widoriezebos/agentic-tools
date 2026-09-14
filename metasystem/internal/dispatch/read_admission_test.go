@@ -619,6 +619,54 @@ func TestReadAdmissionRefusesCleanSubject(t *testing.T) {
 	}
 }
 
+func TestReadAdmissionDirectsClosedLiveRootToImplementationClose(t *testing.T) {
+	subject := admissionLiveSubject("implementer", "implementer", "a", "1")
+
+	t.Run("validated closed live root", func(t *testing.T) {
+		repo := t.TempDir()
+		seedProvenCleanRead(t, repo, "critic", "code-critic", 1, subject, true)
+		closeReadyCriticChain(t, repo, "critic", "critic")
+		if err := CritiqueChainClose(repo, "critic", false); err != nil {
+			t.Fatal(err)
+		}
+		result, err := CritiqueReadAdmission(repo, "code-critic", "candidate", 1, subject)
+		assertReadRefusal(t, result, err, redundantReadRefusal, "critic", 1)
+		for _, text := range []string{
+			"next: dispatch.sh close --job implementer --reconcile-evidence critic",
+			"completion still checks terminal coverage and required evidence",
+		} {
+			if !strings.Contains(err.Error(), text) {
+				t.Fatalf("closed-root recovery %q does not contain %q", err, text)
+			}
+		}
+	})
+
+	t.Run("open clean root", func(t *testing.T) {
+		repo := t.TempDir()
+		seedProvenCleanRead(t, repo, "critic", "code-critic", 1, subject, true)
+		closeReadyCriticChain(t, repo, "critic", "critic")
+		result, err := CritiqueReadAdmission(repo, "code-critic", "candidate", 1, subject)
+		assertReadRefusal(t, result, err, redundantReadRefusal, "critic", 1)
+		if !strings.Contains(err.Error(), "next: dispatch.sh close --job critic") || strings.Contains(err.Error(), "--reconcile-evidence") {
+			t.Fatalf("open-root recovery changed: %v", err)
+		}
+	})
+
+	t.Run("historical read superseded by later round", func(t *testing.T) {
+		repo := t.TempDir()
+		seedProvenCleanRead(t, repo, "critic", "code-critic", 1, subject, true)
+		writeJSONFile(t, filepath.Join(repo, "artifacts", "agents", "jobs"), "critic-r2.json", map[string]any{
+			"jobId": "critic-r2", "role": "code-critic", "round": 2,
+			"parentJob": "critic", "status": "completed", "reviews": "implementer",
+		})
+		result, err := CritiqueReadAdmission(repo, "code-critic", "candidate", 1, subject)
+		assertReadRefusal(t, result, err, redundantReadRefusal, "critic", 1)
+		if !strings.Contains(err.Error(), "later round 2") || strings.Contains(err.Error(), "--reconcile-evidence") {
+			t.Fatalf("historical recovery changed: %v", err)
+		}
+	})
+}
+
 func TestReadAdmissionChecksScopeAndRole(t *testing.T) {
 	t.Run("scope-and-role", func(t *testing.T) {
 		repo := t.TempDir()

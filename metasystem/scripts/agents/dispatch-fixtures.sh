@@ -3446,6 +3446,85 @@ mirror_event_id=$("$engine" json get --value "$(cat "$mirrored_refusals")" --fie
   || { echo "local plus mirror did not resolve to one refusal event id" >&2; exit 1; }
 echo "refusal-durable fixture passed"
 
+# A critic root may start on an earlier implementation member while its
+# follow-ups read the later work. The validated clean closure on round three
+# is the authority for repairing the implementation pointer; the critic's
+# immutable reviews fields keep naming the original member.
+follow_up_read_closes_terminal_work() { # evidence form, prior stamp form
+  local evidence_form=$1 prior_stamp=$2 prefix="follow-up-close-$1-$2"
+  local implementation="${prefix}-work" implementation_r2="${prefix}-work-r2" implementation_r3="${prefix}-work-r3"
+  local critic="${prefix}-critic" critic_r2="${prefix}-critic-r2" critic_r3="${prefix}-critic-r3"
+  local target="metasystem/${prefix}.txt" implementation_brief="$agent_fixture/${prefix}-implementation.md"
+  local critic_brief="$agent_fixture/${prefix}-critic.md" candidate="${prefix}-redundant"
+  local workspace record evidence_job refusal_rc mirror_path previous_hazard
+
+  previous_hazard=$METASYSTEM_DISPATCH_FIXTURE_HAZARD
+  export METASYSTEM_DISPATCH_FIXTURE_HAZARD=DESIGN-BEARING
+  make_agent_brief "$implementation_brief" implement
+  make_agent_brief "$critic_brief" implement
+
+  run_agent_fixture "${prefix}-work-root" "$implementation" "$agent_dispatch" dispatch \
+    --role implementer --brief "$implementation_brief" --job-id "$implementation" --worktree --wait
+  workspace=$("$engine" json get --file "$agent_repo/artifacts/agents/jobs/$implementation.json" --field workspaceRoot)
+  printf 'work round one\n' >"$workspace/$target"
+  json_replace_field "$agent_repo/artifacts/agents/$implementation/rounds/1/return.json" diffBoundary "[\"$target\"]"
+  "$engine" validate conformance --root "$agent_repo" --stage review --job "$implementation"
+
+  run_agent_fixture "${prefix}-critic-root" "$critic" "$agent_dispatch" dispatch \
+    --role code-critic --brief "$critic_brief" --reviews "$implementation" --runtime fake --job-id "$critic" --wait
+  "$engine" job critique-register-advance --repo "$agent_repo" --root-job "$critic" --round-job "$critic" >/dev/null
+
+  printf 'work round two\n' >>"$workspace/$target"
+  run_agent_fixture "${prefix}-work-round-two" "$implementation_r2" "$agent_dispatch" follow-up \
+    --job "$implementation" --message "$follow_message" --wait
+  json_replace_field "$agent_repo/artifacts/agents/$implementation/rounds/2/return.json" diffBoundary "[\"$target\"]"
+  "$engine" validate conformance --root "$agent_repo" --stage review --job "$implementation_r2"
+  run_agent_fixture "${prefix}-critic-round-two" "$critic_r2" "$agent_dispatch" follow-up \
+    --job "$critic" --message "$follow_message" --wait
+  "$engine" job critique-register-advance --repo "$agent_repo" --root-job "$critic" --round-job "$critic_r2" >/dev/null
+
+  printf 'work round three\n' >>"$workspace/$target"
+  run_agent_fixture "${prefix}-work-round-three" "$implementation_r3" "$agent_dispatch" follow-up \
+    --job "$implementation_r2" --message "$follow_message" --wait
+  json_replace_field "$agent_repo/artifacts/agents/$implementation/rounds/3/return.json" diffBoundary "[\"$target\"]"
+  "$engine" validate conformance --root "$agent_repo" --stage review --job "$implementation_r3"
+  run_agent_fixture "${prefix}-critic-round-three" "$critic_r3" "$agent_dispatch" follow-up \
+    --job "$critic_r2" --message "$follow_message" --wait
+  "$engine" job critique-register-advance --repo "$agent_repo" --root-job "$critic" --round-job "$critic_r3" >/dev/null
+  run_agent_fixture "${prefix}-critic-close" "$critic" "$agent_dispatch" close --job "$critic"
+
+  set +e
+  run_agent_fixture_captured "${prefix}-redundant" "$candidate" "$agent_fixture/${prefix}-redundant.out" \
+    "$agent_dispatch" dispatch --role code-critic --brief "$critic_brief" --reviews "$implementation_r3" \
+      --runtime fake --job-id "$candidate" --wait
+  refusal_rc=$?
+  set -e
+
+  record="$agent_repo/artifacts/agents/jobs/$implementation.json"
+  if [[ "$prior_stamp" == missing ]]; then
+    json_remove_field "$record" independentCritiqueJobRef
+  else
+    json_replace_field "$record" independentCritiqueJobRef '"older-critic"'
+  fi
+  evidence_job=$critic
+  [[ "$evidence_form" == root ]] || evidence_job=$critic_r3
+  run_agent_fixture "${prefix}-implementation-close" "$implementation" "$agent_dispatch" \
+    close --job "$implementation" --reconcile-evidence "$evidence_job"
+
+  env -u METASYSTEM_BIN \
+    METASYSTEM_FOLLOWUP_CLOSE_FIXTURE_REPO="$agent_repo" \
+    METASYSTEM_FOLLOWUP_CLOSE_FIXTURE_PREFIX="$prefix" \
+    METASYSTEM_FOLLOWUP_CLOSE_EVIDENCE_FORM="$evidence_form" \
+    METASYSTEM_FOLLOWUP_CLOSE_REFUSAL_OUTPUT="$agent_fixture/${prefix}-redundant.out" \
+    METASYSTEM_FOLLOWUP_CLOSE_REFUSAL_CODE="$refusal_rc" \
+    go test ./cmd/metasystem -run '^TestDispatchFollowUpReadClosesTerminalWork$' -count=1
+  echo "follow-up-read-closes-terminal-work $evidence_form/$prior_stamp passed"
+  export METASYSTEM_DISPATCH_FIXTURE_HAZARD=$previous_hazard
+}
+
+follow_up_read_closes_terminal_work root missing
+follow_up_read_closes_terminal_work child incorrect
+
 # Exhaustion precedes successor reservation. Build one severe code-critic
 # chain through its terminal third round and prove the refusal leaves no
 # fourth-round record or payload. Terminal exhaustion has no successor-reopen

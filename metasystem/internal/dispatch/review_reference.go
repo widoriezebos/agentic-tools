@@ -7,6 +7,8 @@ import (
 	"path/filepath"
 	"strings"
 	"time"
+
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/readsubject"
 )
 
 // ValidateHumanCarriedCritic proves that a cited critic root completed a
@@ -105,6 +107,7 @@ func ReconcileReviewReference(repoRoot, rootJob, evidenceJob string) error {
 		return fmt.Errorf("a commit subject carries no chain pointer; the obligation on the goal is its record")
 	}
 	designCritic := asString(evidence["role"]) == "design-critic"
+	liveCritic := asString(evidence["role"]) == "code-critic" || asString(evidence["role"]) == "warden"
 	criticReferenceJob := evidenceJob
 	var criticRootRecord map[string]any
 	if field == independentCritiqueReferenceField {
@@ -143,6 +146,17 @@ func ReconcileReviewReference(repoRoot, rootJob, evidenceJob string) error {
 		if err := requireDesignCritiqueTiming(criticReferenceJob, criticRootRecord, final); err != nil {
 			return err
 		}
+	} else if liveCritic {
+		handled, err := reconcileClosedLiveCritique(repoRoot, state, rootJob, evidenceJob, evidence, final)
+		if err != nil {
+			return err
+		}
+		if handled {
+			return nil
+		}
+		if reviews != final.job {
+			return fmt.Errorf("review evidence job %s reviews %s instead of terminal work round %s", evidenceJob, reviews, final.job)
+		}
 	} else if reviews != final.job {
 		return fmt.Errorf("review evidence job %s reviews %s instead of terminal work round %s", evidenceJob, reviews, final.job)
 	}
@@ -153,6 +167,78 @@ func ReconcileReviewReference(repoRoot, rootJob, evidenceJob string) error {
 		return nil
 	}
 	return stampDesignCriticReviews(repoRoot, criticReferenceJob, reviews)
+}
+
+func reconcileClosedLiveCritique(repoRoot string, state critiqueState, reviewedRoot, suppliedJob string, evidence map[string]any, final hazardFinalWorkState) (bool, error) {
+	criticRoot := state.chainRoot(suppliedJob)
+	if criticRoot == "" {
+		return false, fmt.Errorf("review evidence job %s has no valid critic chain root", suppliedJob)
+	}
+	root := state.records[criticRoot]
+	criticMembers, err := chainMembers(filepath.Join(state.agents, "jobs"), criticRoot)
+	if err != nil || len(criticMembers) == 0 {
+		return false, reviewClosureBindingError(suppliedJob, criticRoot, root, "critic chain membership is unreadable")
+	}
+	members := make([]map[string]any, 0, len(criticMembers))
+	for _, member := range criticMembers {
+		members = append(members, member.record)
+	}
+	closure, present, err := readsubject.ReadClosedClosure(state.agents, root, members)
+	if err != nil {
+		return false, reviewClosureBindingError(suppliedJob, criticRoot, root, err.Error())
+	}
+	if !present {
+		return false, nil
+	}
+	role := asString(evidence["role"])
+	if asString(root["status"]) != "completed" {
+		return false, reviewClosureBindingError(suppliedJob, criticRoot, root, "critic root is not completed")
+	}
+	if rootRole := asString(root["role"]); rootRole != role {
+		return false, reviewClosureBindingError(suppliedJob, criticRoot, root, fmt.Sprintf("critic root role %q does not equal supplied member role %q", rootRole, role))
+	}
+	rootReviews := asString(root["reviews"])
+	reviewed, reviewedPresent := state.records[rootReviews]
+	if !reviewedPresent || asString(reviewed["role"]) != "implementer" {
+		return false, reviewClosureBindingError(suppliedJob, criticRoot, root, fmt.Sprintf("critic root reviews binding %q does not name an implementer", rootReviews))
+	}
+	boundRoot := state.chainRoot(rootReviews)
+	if boundRoot != reviewedRoot || boundRoot == criticRoot {
+		return false, reviewClosureBindingError(suppliedJob, criticRoot, root, fmt.Sprintf("critic root reviews binding %q belongs to implementation chain %q instead of requested distinct chain %q", rootReviews, boundRoot, reviewedRoot))
+	}
+	if closure.Subject.Kind != readsubject.SubjectLive {
+		return false, reviewClosureBindingError(suppliedJob, criticRoot, root, fmt.Sprintf("closure subject kind %q is not live", closure.Subject.Kind))
+	}
+	terminalSubject, _, subjectPresent, subjectErr := liveReadSubject(state, final.job)
+	if subjectErr != nil || !subjectPresent {
+		detail := "terminal work subject has no review.json and diff.patch"
+		if subjectErr != nil {
+			detail = subjectErr.Error()
+		}
+		return false, reviewClosureBindingError(suppliedJob, criticRoot, root, fmt.Sprintf("closure subject cannot bind terminal work round %s: %s", final.job, detail))
+	}
+	if !closure.Subject.Equal(terminalSubject) {
+		return false, reviewClosureBindingError(suppliedJob, criticRoot, root, fmt.Sprintf("closure subject %s does not equal terminal work round %s subject %s", closure.Subject.Digest(), final.job, terminalSubject.Digest()))
+	}
+	if err := stampReviewReference(repoRoot, state, criticRoot, final.job, independentCritiqueReferenceField, reviewedRoot); err != nil {
+		return false, reviewClosureBindingError(suppliedJob, criticRoot, root, fmt.Sprintf("canonical critic-root stamp failed: %v", err))
+	}
+	return true, nil
+}
+
+func reviewClosureBindingError(suppliedJob, criticRoot string, root map[string]any, detail string) error {
+	round := "unknown"
+	if closure, ok := root[closureField].(map[string]any); ok {
+		if value, valid := numInt(closure["round"]); valid {
+			round = fmt.Sprint(value)
+		}
+	}
+	if round == "unknown" {
+		if value, valid := numInt(root[findingRegisterRoundField]); valid {
+			round = fmt.Sprint(value)
+		}
+	}
+	return fmt.Errorf("review evidence job %s resolves to critic root %s closure round %s with invalid terminal-subject binding: %s", suppliedJob, criticRoot, round, detail)
 }
 
 func reviewReferenceBinding(evidenceJob string, evidence map[string]any) (field, reviews string, err error) {

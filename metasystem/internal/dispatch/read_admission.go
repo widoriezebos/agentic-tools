@@ -44,6 +44,7 @@ type cleanReadCandidate struct {
 	read        CleanReadRound
 	latestRound int64
 	closeable   bool
+	closedLive  bool
 }
 
 // CritiqueReadAdmission decides whether a computed subject still needs a
@@ -107,9 +108,10 @@ func CritiqueReadAdmission(repoRoot, role, rootJob string, round int64, subject 
 				if latestErr != nil {
 					return "", latestErr
 				}
+				closeable, closedLive := cleanReadCloseState(repoRoot, state, criticRoot, root, latestEqual.Round, latest)
 				redundant = append(redundant, cleanReadCandidate{
 					root: criticRoot, read: *latestEqual, latestRound: latest,
-					closeable: cleanReadCanClose(repoRoot, state, criticRoot, root, latestEqual.Round, latest),
+					closeable: closeable, closedLive: closedLive,
 				})
 			}
 		}
@@ -211,7 +213,9 @@ func CritiqueReadAdmission(repoRoot, role, rootJob string, round int64, subject 
 
 func redundantReadError(result ReadAdmissionResult, prior cleanReadCandidate, detail string) error {
 	next := fmt.Sprintf("next: dispatch.sh close --job %s", prior.root)
-	if prior.latestRound > prior.read.Round {
+	if prior.closedLive {
+		next = fmt.Sprintf("next: dispatch.sh close --job %s --reconcile-evidence %s; completion still checks terminal coverage and required evidence", prior.read.Subject.ImplementerRoot, prior.root)
+	} else if prior.latestRound > prior.read.Round {
 		next = fmt.Sprintf("critic root %s now has later round %d, so clean read round %d cannot close that newer state; resolve and fold the later work before dispatching another equal read", prior.root, prior.latestRound, prior.read.Round)
 	} else if !prior.closeable {
 		next = fmt.Sprintf("critic root %s cannot presently close from read round %d; inspect its current closure and fold evidence before dispatching another equal read", prior.root, prior.read.Round)
@@ -514,25 +518,25 @@ func validCriticReadStatus(status string) bool {
 	}
 }
 
-func cleanReadCanClose(repoRoot string, state critiqueState, rootJob string, root map[string]any, readRound, latestRound int64) bool {
+func cleanReadCloseState(repoRoot string, state critiqueState, rootJob string, root map[string]any, readRound, latestRound int64) (closeable, closedLive bool) {
 	if readRound != latestRound {
-		return false
+		return false, false
 	}
 	register, present, err := critiqueFindingRegister(root)
 	if err != nil || !present {
-		return false
+		return false, false
 	}
 	foldedRound, err := findingRegisterRound(root, len(register))
 	if err != nil || foldedRound != readRound {
-		return false
+		return false, false
 	}
 	clean, err := readsubject.CleanRegister(root[findingRegisterField])
 	if err != nil || !clean {
-		return false
+		return false, false
 	}
 	if _, closurePresent := root[closureField]; !closurePresent {
 		closed, _ := root["chainClosed"].(bool)
-		return !closed && CloseCheck(repoRoot, rootJob) == nil
+		return !closed && CloseCheck(repoRoot, rootJob) == nil, false
 	}
 	members := make([]map[string]any, 0)
 	for jobID, record := range state.records {
@@ -540,8 +544,9 @@ func cleanReadCanClose(repoRoot string, state critiqueState, rootJob string, roo
 			members = append(members, record)
 		}
 	}
-	_, present, err = readsubject.ReadClosedClosure(state.agents, root, members)
-	return present && err == nil
+	closure, present, err := readsubject.ReadClosedClosure(state.agents, root, members)
+	valid := present && err == nil
+	return valid, valid && closure.Subject.Kind == readsubject.SubjectLive
 }
 
 func appendCleanRead(rounds []CleanReadRound, next CleanReadRound) ([]CleanReadRound, error) {
