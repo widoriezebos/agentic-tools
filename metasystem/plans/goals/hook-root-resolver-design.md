@@ -9,14 +9,15 @@
 - Origin: main
 - Next step: 2026-09-14 m1c: revision 10 of plans/supervision-hook-root-design.md is closed in scratchpad g12/wt12 and now decides a mechanism, not a notice. start_finish in scripts/agents/supervision-hook.sh owns every start-path exit and requires a fixed cause-and-remedy notice or a validated intentional reason; an EXIT trap reports unexpected termination including an accidental exit 0; a last-resort output uses builtin printf with no engine, JSON tooling or temporary storage; AuditHookStartExits refuses bare exits, trap replacement, ignored errors, dynamic bypasses, redirected finalizer output and undeclared outcomes in the fast and full gates, with mutation tests; fixtures cover engine-skew-start and every other branch. Six silent branches are mapped. A Codex Sol build is running with two constraints written into its brief from today's failures: every new construct proven under macOS /bin/bash 3.2, and the member kept small - if the read-only brain preparation and delayed bookkeeping refactor is large it becomes the next slice rather than growing this one. Then the hook and supervision beds on the Mac and the landing. Related, not merged: diagnostics-never-swallowed owns proof and fixture diagnostics and shares the audit machinery.
 - OpenedAt: 2026-09-06T06:39:49Z
-- Revision: 82
+- Revision: 83
 - Pinned: m1c
 - Budget: elapsedLimit=1d attemptLimit=12 reservedJobMinutesLimit=1200 activeJobLimit=1 reviewRoundLimit=3
 - BudgetExceptions: 0
 - Approved: by=human:Wido at=2026-09-13T07:22:49Z revision=55 opid=XZA3290E1RGR8SK8PKFNAVKKKK-m1e-c6925449 authority=proven digest=803416cae1f6cc23de17e5095463c667244bf3187f06ab28d7a67a0f6e427139
 - Sliced: machine=m1 lineage=main-1788594343-3833-fb64b9 revision=4 at=2026-09-06T11:22:23Z
 - Claimed: machine=m1c lineage=main-1789191340-90689-8975a9 at=2026-09-14T16:18:00Z revision=77 accountingRevision=59 episodeAt=2026-09-13T07:27:28Z episodeRevision=59 idleSeconds=91001
-- StopCapability: generation=77 revision=77 machine=m1c claimEpoch=5 fenceEpoch=0
+- StopCapability: generation=77 revision=77 machine=m1c claimEpoch=5 fenceEpoch=1
+- StopFence: stopId=stop-hook-root-resolver-design-r77-f1 revision=77 epoch=1 capabilityGeneration=77 closedAt=2026-09-14T20:48:32Z reason=ELAPSED_LIMIT
 
 History:
 - 2026-09-06T06:39:49Z X92B849FEPDB998FKY6C404SXZ-m1-a4f8999f open actor=m1+main-1788594343-3833-fb64b9 targets=hook-root-resolver-design
@@ -101,4 +102,5 @@ History:
 - 2026-09-14T16:47:03Z NT0TAA0S46VSDPW7S27RKWZXEK-m1c-69c9e454 edit actor=m1c+main-1789191340-90689-8975a9 targets=hook-root-resolver-design
 - 2026-09-14T20:23:16Z PYKFCR65M35Q3XKFW4WZKDHPAZ-m1e-c6925449 set-priority actor=human:Wido targets=beds-report-every-failure,beds-run-under-the-oldest-supported-bash,brief-declares-the-round-boundary,builder-proves-each-rule-by-mutation,coordinator-context-stays-under-budget,coordinator-wakes-on-events-not-polls,critique-closes-on-folded-proof,cross-cutting-change-inventories-its-readers,delegate-sandbox-runs-the-beds,every-verb-resolves-repo-to-an-absolute-root,go-tests-never-inherit-a-candidate-engine,hook-root-resolver-design,moved-effects-are-inventoried-in-the-design,receipt-admission-caps-concurrent-batteries,registered-wait-matches-the-runtime-session,round-proof-feeds-the-next-brief,small-change-lane,stop-hook-never-forces-an-empty-turn reason=priority-order subject=delegate-sandbox-runs-the-beds from=1:4 to=1:3 requested-sequence=18
 - 2026-09-14T20:23:28Z YRZBJ7EYJN1MJFEMV7ABC630PV-m1e-c6925449 set-priority actor=human:Wido targets=beds-report-every-failure,beds-run-under-the-oldest-supported-bash,brief-declares-the-round-boundary,builder-proves-each-rule-by-mutation,coordinator-context-stays-under-budget,coordinator-wakes-on-events-not-polls,critique-closes-on-folded-proof,cross-cutting-change-inventories-its-readers,delegate-sandbox-runs-the-beds,every-verb-resolves-repo-to-an-absolute-root,go-tests-never-inherit-a-candidate-engine,hook-root-resolver-design,moved-effects-are-inventoried-in-the-design,receipt-admission-caps-concurrent-batteries,registered-wait-matches-the-runtime-session,round-proof-feeds-the-next-brief,small-change-lane,stop-hook-never-forces-an-empty-turn reason=priority-order subject=round-proof-feeds-the-next-brief from=1:3 to=1:2 requested-sequence=18
-Integrity: sha256=118bbb914842b673aaeffac676f4a3f935e3be178070d105bb1f9b5ffd44591f
+- 2026-09-14T20:48:32Z 2YABW068N23AN8KTQFM9WMEK3W-m1c-43182c96 breach-stop actor=m1c+goal-stop-custodian targets=hook-root-resolver-design
+Integrity: sha256=d0b605dab7c43417b9b3cfa0a9c9200e896ca14535530c8b88d4471619139581
