@@ -18,7 +18,7 @@ source "$fixture_bed_root/scripts/agents/fixture-bed-scenarios.sh"
 if (( ! fixture_bed_child )); then
   fixture_bed_script=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd -P)/$(basename "${BASH_SOURCE[0]}")
   run_fixture_bed_scenarios health \
-    "health fixtures: direct rc 0/1/2, eleven asserted healthy roles, silent first-failure history, configured and fixture-local escalated episode delivery, dedup, acknowledgment, and healthy clear PASSED" \
+    "health fixtures: direct rc 0/1/2, twelve asserted healthy roles, silent first-failure history, configured and fixture-local escalated episode delivery, dedup, acknowledgment, and healthy clear PASSED" \
     "$fixture_bed_script" direct-verdicts narrator-recovery alert-episode fixture-notification
 fi
 case "$fixture_scenario" in
@@ -293,7 +293,7 @@ wait_for_pid_exit() { # name, pid
 runner_pid=$(read_runner_pid)
 [[ -n "$runner_pid" ]] || fail "initial arm recorded no runner pid"
 wait_for_healthy healthy || fail "armed repository did not become healthy"
-for role in steward-runner supervision-owner repo-watcher census-freshness narrator-freshness session-main hook-freshness stop-hook-duration claimed-goal-appetite nonterminal-jobs capability-snapshots; do
+for role in steward-runner supervision-owner repo-watcher census-freshness narrator-freshness session-main hook-freshness stop-hook-duration context-budget claimed-goal-appetite nonterminal-jobs capability-snapshots; do
   grep -Fq "$role=alive" "$tmp/healthy.out" || fail "healthy line omitted $role"
 done
 grep -Fq 'stop-hook-duration=alive (the last Stop carried no measurement)' "$tmp/healthy.out" \

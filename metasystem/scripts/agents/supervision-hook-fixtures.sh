@@ -238,13 +238,14 @@ git -C "$brain_repo" add plans scripts records metasystem.conf
 git -C "$brain_repo" commit -qm 'brain hook legacy ledger'
 git -C "$brain_repo" push -q origin main
 brain_fixture_started=$("$ms" proc started-at --pid "$$")
-# Positive brain starts can run beneath a different real host. Present the
-# fixture shell's exact identity as Claude and forward every other verb.
+# Positive brain hooks can run beneath a different real host. Present the
+# fixture process's exact declared runtime and forward every other verb.
 brain_identity_engine=$tmp/brain-identity-engine
 cat >"$brain_identity_engine" <<'BRAIN_IDENTITY_ENGINE'
 #!/usr/bin/env bash
 if [[ ${1:-} == proc && ${2:-} == find-ancestor ]]; then
-  printf '{"runtime":"claude","pid":%s,"pidStartedAt":%s}\n' "${METASYSTEM_BRAIN_FIXTURE_PID:?}" "${METASYSTEM_BRAIN_FIXTURE_STARTED:?}"
+  printf '{"runtime":"%s","pid":%s,"pidStartedAt":%s}\n' \
+    "${METASYSTEM_BRAIN_FIXTURE_RUNTIME:?}" "${METASYSTEM_BRAIN_FIXTURE_PID:?}" "${METASYSTEM_BRAIN_FIXTURE_STARTED:?}"
   exit 0
 fi
 exec "${METASYSTEM_BRAIN_REAL_ENGINE:?}" "$@"
@@ -255,8 +256,24 @@ run_brain_hook() { # hook, payload, stdout, stderr, optional real engine
   local real_engine="${5:-$ms}"
   METASYSTEM_BIN=$brain_identity_engine METASYSTEM_BRAIN_REAL_ENGINE=$real_engine \
     METASYSTEM_BRAIN_FIXTURE_PID=$$ METASYSTEM_BRAIN_FIXTURE_STARTED=$brain_fixture_started \
+    METASYSTEM_BRAIN_FIXTURE_RUNTIME=claude \
     METASYSTEM_SUPERVISION_REGISTRY_HOME=$brain_registry \
     bash "$brain_hook" claude start <"$brain_payload" >"$brain_stdout" 2>"$brain_stderr"
+}
+run_brain_stop() { # runtime, hook, payload, stdout, stderr, real engine
+  local runtime=$1 brain_hook=$2 brain_payload=$3 brain_stdout=$4 brain_stderr=$5 real_engine=$6
+  exec bash -c '
+    set -euo pipefail
+    runtime=$1; brain_hook=$2; brain_payload=$3; brain_stdout=$4; brain_stderr=$5
+    real_engine=$6; identity_engine=$7; registry=$8
+    fixture_started=$("$real_engine" proc started-at --pid "$$")
+    METASYSTEM_BIN=$identity_engine METASYSTEM_BRAIN_REAL_ENGINE=$real_engine \
+      METASYSTEM_BRAIN_FIXTURE_PID=$$ METASYSTEM_BRAIN_FIXTURE_STARTED=$fixture_started \
+      METASYSTEM_BRAIN_FIXTURE_RUNTIME=$runtime \
+      METASYSTEM_SUPERVISION_REGISTRY_HOME=$registry \
+      bash "$brain_hook" "$runtime" stop <"$brain_payload" >"$brain_stdout" 2>"$brain_stderr"
+  ' brain-stop "$runtime" "$brain_hook" "$brain_payload" "$brain_stdout" "$brain_stderr" \
+    "$real_engine" "$brain_identity_engine" "$brain_registry"
 }
 "$ms" lease announce --root "$brain_repo" --session brain-hook-fixture --pid "$$" \
   --start "$brain_fixture_started" --tag brain-hook-fixture --runtime claude --owner-lineage fixture-lineage >/dev/null
@@ -376,30 +393,35 @@ printf '{"session_id":"brain-template-stop","cwd":"%s","hook_event_name":"Stop"}
 # supervision repair; the digest read and the health facts are what this row
 # proves.
 template_stop_evidence_ready() {
-  [[ -s "$tmp/template-stop.out" ]] \
+  [[ -s "$template_stop_output" ]] \
     && template_stop_report=$(fixture_stop_status_report \
-      "$tmp/template-stop.out" "$brain_template_root" claude brain-template-stop) \
+      "$template_stop_output" "$brain_template_root" "$template_stop_runtime" "$template_stop_session") \
     && grep -Fq 'NARRATOR DIGEST since last check-in' <<<"$template_stop_report" \
-    && grep -Fq 'template-layout stop digest line' <<<"$template_stop_report"
+    && grep -Fq "$template_stop_digest" <<<"$template_stop_report"
 }
-wait_for_template_stop_evidence() { # hook process
-  local hook_pid=$1 deadline=$((SECONDS + hook_evidence_cap))
+wait_for_template_stop_evidence() { # hook process, output label
+  local hook_pid=$1 output_label=$2 deadline=$((SECONDS + hook_evidence_cap))
   until template_stop_evidence_ready; do
     if ! kill -0 "$hook_pid" 2>/dev/null; then
       template_stop_evidence_ready && return 0
       return 1
     fi
     (( SECONDS < deadline )) \
-      || { echo "template-layout stop made no expected evidence before the ${hook_evidence_cap}s hang failsafe" >&2; return 2; }
+      || { echo "template-layout $output_label stop made no expected evidence before the ${hook_evidence_cap}s hang failsafe" >&2; return 2; }
     sleep "$METASYSTEM_FIXTURE_POLL_INTERVAL_SEC"
   done
 }
-bash "$brain_template_root/scripts/agents/supervision-hook.sh" claude stop <"$tmp/template-stop.json" \
-  >"$tmp/template-stop.out" 2>"$tmp/template-stop.err" &
+template_stop_output=$tmp/template-stop.out
+template_stop_runtime=claude
+template_stop_session=brain-template-stop
+template_stop_digest='template-layout stop digest line'
+run_brain_stop claude "$brain_template_root/scripts/agents/supervision-hook.sh" \
+  "$tmp/template-stop.json" "$tmp/template-stop.out" "$tmp/template-stop.err" \
+  "$brain_template_root/bin/metasystem" &
 hook_process_pid=$!
 hook_process_path=$brain_template_root/scripts/agents/supervision-hook.sh
 template_stop_wait_rc=0
-wait_for_template_stop_evidence "$hook_process_pid" || template_stop_wait_rc=$?
+wait_for_template_stop_evidence "$hook_process_pid" claude || template_stop_wait_rc=$?
 if (( template_stop_wait_rc == 2 )); then
   stop_hook_process
   exit 1
@@ -409,6 +431,8 @@ hook_process_pid=
 hook_process_path=
 template_stop_evidence_ready \
   || { echo "template-layout stop did not deliver the installation's digest" >&2; cat "$tmp/template-stop.out" "$tmp/template-stop.err" >&2; exit 1; }
+grep -Fq 'context-budget=' <<<"$template_stop_report" \
+  || { echo "template-layout Claude Stop omitted the context-budget role" >&2; cat "$tmp/template-stop.out" >&2; exit 1; }
 # The health line reads the turn evidence the hook just wrote: the bed's
 # first turn is pending with no prior completion, a later one is alive.
 grep -Eq 'hook-freshness=(alive|unknown \(turn generation [0-9]+ is pending)' <<<"$template_stop_report" \
@@ -426,6 +450,36 @@ grep -Eq 'hook-freshness=(alive|unknown \(turn generation [0-9]+ is pending)' <<
 if [[ -e "$brain_template_repo/artifacts/agents/steward/narrator-digest.flock" ]]; then
   echo "template-layout stop took its digest lock beside the repository root" >&2; exit 1
 fi
+
+# Codex reaches the same production Stop path and must carry the same health
+# role. A fresh digest line makes the existing bounded evidence wait observe
+# this invocation rather than the completed Claude leg above.
+printf '%s\n' '2026-09-07T00:00:50Z HIGHLIGHT — template-layout Codex stop digest line (source: fixture template stop)' \
+  >>"$brain_template_root/records/narrator-digest.log"
+printf '{"session_id":"brain-template-stop-codex","cwd":"%s","hook_event_name":"Stop"}\n' "$brain_template_repo" \
+  >"$tmp/template-stop-codex.json"
+template_stop_output=$tmp/template-stop-codex.out
+template_stop_runtime=codex
+template_stop_session=brain-template-stop-codex
+template_stop_digest='template-layout Codex stop digest line'
+run_brain_stop codex "$brain_template_root/scripts/agents/supervision-hook.sh" \
+  "$tmp/template-stop-codex.json" "$tmp/template-stop-codex.out" "$tmp/template-stop-codex.err" \
+  "$brain_template_root/bin/metasystem" &
+hook_process_pid=$!
+hook_process_path=$brain_template_root/scripts/agents/supervision-hook.sh
+template_stop_wait_rc=0
+wait_for_template_stop_evidence "$hook_process_pid" codex || template_stop_wait_rc=$?
+if (( template_stop_wait_rc == 2 )); then
+  stop_hook_process
+  exit 1
+fi
+wait "$hook_process_pid" || true
+hook_process_pid=
+hook_process_path=
+template_stop_evidence_ready \
+  || { echo "template-layout Codex Stop did not deliver the installation's digest" >&2; cat "$tmp/template-stop-codex.out" "$tmp/template-stop-codex.err" >&2; exit 1; }
+grep -Fq 'context-budget=' <<<"$template_stop_report" \
+  || { echo "template-layout Codex Stop omitted the context-budget role" >&2; cat "$tmp/template-stop-codex.out" >&2; exit 1; }
 
 printf '%s\n' '2026-09-07T00:01:00Z HIGHLIGHT — brain compact digest line (source: fixture compact)' \
   >>"$brain_repo/records/narrator-digest.log"
@@ -1672,6 +1726,8 @@ template_human_report=$(fixture_stop_status_report \
   || { echo "template attended-human Stop exposed no identity-bound report" >&2; exit 1; }
 grep -Fq 'SESSION STOP authorized once by Wido' <<<"$template_human_report" \
   || { echo "template attended-human authorization did not reach the nested state root" >&2; cat "$tmp/template-human.out" >&2; exit 1; }
+grep -Fq 'context-budget=' <<<"$template_human_report" \
+  || { echo "template allowed Stop omitted the context-budget role" >&2; cat "$tmp/template-human.out" >&2; exit 1; }
 [[ ! -e "$template_root/artifacts/agents/session-stops/$template_session.json" ]] \
   || { echo "template attended-human authorization was not consumed" >&2; exit 1; }
 [[ -f "$template_root/artifacts/agents/turn-verdict-state.json" ]] \
@@ -1698,6 +1754,8 @@ grep -Fq '"decision":"block"' "$tmp/template-agent.out" \
   && grep -Fq 'IDLE WITH BACKLOG' <<<"$template_agent_report" \
   && grep -Fq 'template-backlog' <<<"$template_agent_report" \
   || { echo "template honest agent was allowed to leave claimable backlog" >&2; cat "$tmp/template-agent.out" >&2; exit 1; }
+grep -Fq 'context-budget=' <<<"$template_agent_report" \
+  || { echo "template blocked Stop omitted the context-budget role" >&2; cat "$tmp/template-agent.out" >&2; exit 1; }
 if grep -Fq 'This refusal does not repeat for the same work' <<<"$template_agent_report"; then
   echo "the counted idle refusal retained the false open-work promise" >&2
   cat "$tmp/template-agent.out" >&2

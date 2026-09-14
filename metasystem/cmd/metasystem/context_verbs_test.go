@@ -5,11 +5,14 @@ import (
 	"encoding/json"
 	"fmt"
 	"os"
+	"os/exec"
 	"path/filepath"
+	"reflect"
 	"strings"
 	"testing"
 
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/identity"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/testpolicy"
 	usagepkg "github.com/widoriezebos/agentic-tools/metasystem/internal/usage"
 )
 
@@ -416,6 +419,192 @@ func TestContextStatusPropagatesEvidenceErrors(t *testing.T) {
 			t.Fatalf("registry failure still published a cursor: %v", err)
 		}
 	})
+}
+
+func TestContextTestingContractSelectsProof(t *testing.T) {
+	data, err := os.ReadFile("../../testing.json")
+	if err != nil {
+		t.Fatal(err)
+	}
+	contract, err := testpolicy.Decode(data)
+	if err != nil {
+		t.Fatal(err)
+	}
+	groups := make(map[string]testpolicy.Group, len(contract.Groups))
+	for _, group := range contract.Groups {
+		groups[group.ID] = group
+	}
+	surfaces := make(map[string]testpolicy.Surface, len(contract.Surfaces))
+	for _, surface := range contract.Surfaces {
+		surfaces[surface.ID] = surface
+	}
+	contextSurface, ok := surfaces["context-budget"]
+	if !ok {
+		t.Fatal("context-budget surface is absent")
+	}
+	fallbackSurface, ok := surfaces[contract.Fallback]
+	if !ok {
+		t.Fatalf("fallback surface %q is absent", contract.Fallback)
+	}
+	if !reflect.DeepEqual(contextSurface.Standard, fallbackSurface.Standard) ||
+		!reflect.DeepEqual(contextSurface.Deep, fallbackSurface.Deep) ||
+		!reflect.DeepEqual(contextSurface.Critical, fallbackSurface.Critical) ||
+		!reflect.DeepEqual(contextSurface.Risk, fallbackSurface.Risk) {
+		t.Fatalf("context-budget lowers the fallback breadth: context=%+v fallback=%+v", contextSurface, fallbackSurface)
+	}
+	standard, ok := groups["context-standard"]
+	if !ok {
+		t.Fatal("context-standard group is absent")
+	}
+	foundations, ok := groups["context-foundations-standard"]
+	if !ok {
+		t.Fatal("context-foundations-standard group is absent")
+	}
+	allFoundations, foundationNames, err := testpolicy.GoTests(foundations)
+	if err != nil || !allFoundations || len(foundationNames) != 0 ||
+		!reflect.DeepEqual(foundations.Packages, []string{"internal/usage", "internal/output", "internal/runtimes"}) {
+		t.Fatalf("context-foundations-standard does not run all three foundation packages: group=%+v all=%t names=%v err=%v",
+			foundations, allFoundations, foundationNames, err)
+	}
+	cost, ok := groups["context-stop-cost"]
+	if !ok {
+		t.Fatal("context-stop-cost group is absent")
+	}
+	if cost.Env["METASYSTEM_CONTEXT_COST_PROOF"] != "1" {
+		t.Fatalf("context-stop-cost does not enable its explicit proof: %+v", cost.Env)
+	}
+	all, names, err := testpolicy.GoTests(standard)
+	if err != nil || all || len(names) == 0 {
+		t.Fatalf("context-standard named tests = all %t names %v err %v", all, names, err)
+	}
+	wantedTests := []string{
+		"TestCodexReaderDecodesEachLineOnce", "TestUnchangedEmptyTranscriptDoesNotRepublishCursor",
+		"TestLatestCallReturnsThePreviousReadTime", "TestLatestCallNonBlockingReturnsBusy",
+		"TestRegisterSessionNonBlockingReturnsBusy", "TestEveryDeclarationDeclaresContextSample",
+		"TestRuntimeContextSampleVerb", "TestRoleContextRendersBoundCeilingAndUnknowns",
+		"TestHealthLineCarriesContextBudget", "TestRoleContextNamesTheNewestSpill",
+		"TestContextBudgetDoesNotAttributeUsageToAStaleHolder", "TestContextHolderResolutionSkipsForeignMalformedAnnouncements",
+		"TestContextBudgetReturnsBusyUnknownWithoutWaiting", "TestContextBudgetReturnsRegistryBusyUnknownWithoutWaiting",
+		"TestNewestSinceReturnsOnlyANewerRegularFile", "TestContextStatusVerbPrintsTheRoleLine",
+		"TestContextStatusExitCodesForReadableUnknownAndCeilingBreach",
+		"TestContextStatusJSONOmitsCursorHistory", "TestContextStatusPropagatesEvidenceErrors",
+		"TestContextTranscriptOverrideUsesPrivateEvidence", "TestContextTranscriptOverridePreservesTheNextHealthRead",
+		"TestContextTranscriptOverrideIgnoresLiveStoreFailures", "TestContextTranscriptOverrideDisposesPrivateCursor",
+		"TestContextStatusLabelsTranscriptDiagnostics", "TestCallRegistrationsReadsStrictSnapshot",
+		"TestCallSessionsDiscoversPairsWithoutReadingSamples", "TestContextReportVerbPublishesTheWeek",
+		"TestContextReportComputesTheWeek", "TestContextReportPropagatesRecoveryError",
+		"TestContextReportDeduplicatesTranscriptReplays", "TestContextReportHandlesFallbackAndConflictingIdentities",
+		"TestContextReportWindowAndCoverage", "TestContextReportExcludesTranscriptDiagnostics",
+		"TestContextCostRoleFromHealthLine",
+		"TestContextTestingContractSelectsProof",
+	}
+	for _, name := range wantedTests {
+		if !containsString(names, name) {
+			t.Errorf("context-standard omitted %s", name)
+		}
+	}
+	if containsString(names, "TestContextStopFitsDurationBudget") {
+		t.Fatal("context-standard enables the large duration proof")
+	}
+	all, costNames, err := testpolicy.GoTests(cost)
+	if err != nil || all || len(costNames) != 1 || costNames[0] != "TestContextStopFitsDurationBudget" {
+		t.Fatalf("context-stop-cost tests = all %t names %v err %v", all, costNames, err)
+	}
+
+	for _, changed := range []string{
+		"metasystem/internal/usage/cursor.go",
+		"metasystem/internal/steward/context.go",
+		"metasystem/scripts/agents/health-fixtures.sh",
+		"metasystem/scripts/agents/supervision-hook-fixtures.sh",
+	} {
+		standardPlan, err := testpolicy.Select(contract, testpolicy.SelectionRequest{
+			ChangedPaths: []string{changed}, RequestedMode: testpolicy.ModeStandard, Purpose: testpolicy.PurposeDiagnostic,
+		})
+		if err != nil {
+			t.Fatalf("standard selection for %s: %v", changed, err)
+		}
+		if !containsString(standardPlan.SelectedGroups, "context-standard") ||
+			!containsString(standardPlan.SelectedGroups, "context-foundations-standard") ||
+			!containsString(standardPlan.SelectedGroups, "section/supervision-and-census-fixtures") ||
+			containsString(standardPlan.SelectedGroups, "context-stop-cost") {
+			t.Fatalf("standard context selection for %s = %+v", changed, standardPlan)
+		}
+		deepPlan, err := testpolicy.Select(contract, testpolicy.SelectionRequest{
+			ChangedPaths: []string{changed}, RequestedMode: testpolicy.ModeDeep, Purpose: testpolicy.PurposeDiagnostic,
+		})
+		if err != nil {
+			t.Fatalf("deep selection for %s: %v", changed, err)
+		}
+		for _, group := range []string{"context-standard", "context-foundations-standard", "section/supervision-and-census-fixtures", "context-stop-cost"} {
+			if !containsString(deepPlan.SelectedGroups, group) {
+				t.Errorf("deep context selection for %s omitted %s: %+v", changed, group, deepPlan)
+			}
+		}
+	}
+	usagePlan, err := testpolicy.Select(contract, testpolicy.SelectionRequest{
+		ChangedPaths: []string{"metasystem/internal/usage/cursor.go"}, RequestedMode: testpolicy.ModeAuto, Purpose: testpolicy.PurposeDiagnostic,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	fallbackPlan, err := testpolicy.Select(contract, testpolicy.SelectionRequest{
+		ChangedPaths: []string{"metasystem/residual-selection-probe"}, RequestedMode: testpolicy.ModeAuto, Purpose: testpolicy.PurposeDiagnostic,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if usagePlan.ExecutedMode != fallbackPlan.ExecutedMode || !reflect.DeepEqual(usagePlan.SelectedGroups, fallbackPlan.SelectedGroups) {
+		t.Fatalf("internal/usage selection lowers the fallback plan: usage=%+v fallback=%+v", usagePlan, fallbackPlan)
+	}
+	t.Logf("internal/usage auto selection: %d surface-specific groups plus %d always-run canaries",
+		len(usagePlan.SelectedGroups)-len(contract.Always.Canary), len(contract.Always.Canary))
+
+	validateSource, err := os.ReadFile("../../scripts/validate-metasystem.sh")
+	if err != nil {
+		t.Fatal(err)
+	}
+	start := strings.Index(string(validateSource), "supervision_and_census_section() {")
+	if start < 0 {
+		t.Fatal("supervision and census section plumbing is not recognizable")
+	}
+	endMarker := "\nif section_selected supervisor-fingerprint-heal-harness"
+	endOffset := strings.Index(string(validateSource[start:]), endMarker)
+	if endOffset < 0 {
+		t.Fatal("supervision and census section plumbing is not recognizable")
+	}
+	sectionBlock := string(validateSource[start : start+endOffset])
+	fixtureRoot := t.TempDir()
+	logPath := filepath.Join(fixtureRoot, "order.log")
+	for _, name := range []string{"runtime-hook-fixtures.sh", "supervision-hook-fixtures.sh", "health-fixtures.sh", "supervision-fixtures.sh"} {
+		path := filepath.Join(fixtureRoot, "scripts", "agents", name)
+		if err := os.MkdirAll(filepath.Dir(path), 0o700); err != nil {
+			t.Fatal(err)
+		}
+		body := fmt.Sprintf("#!/usr/bin/env bash\nprintf '%%s\\n' %q >>\"${CONTEXT_SECTION_RECORD:?}\"\n", name)
+		if err := os.WriteFile(path, []byte(body), 0o700); err != nil {
+			t.Fatal(err)
+		}
+	}
+	driver := `set -euo pipefail
+section_selected() { [[ "$1" == supervision-and-census-fixtures ]]; }
+delegate_process_section() { return 0; }
+delivery_contract_skip() { return 1; }
+run_section() { shift 2; "$@"; }
+` + sectionBlock
+	command := exec.Command("bash", "-c", driver)
+	command.Dir = fixtureRoot
+	command.Env = append(os.Environ(), "CONTEXT_SECTION_RECORD="+logPath)
+	if output, err := command.CombinedOutput(); err != nil {
+		t.Fatalf("recording section driver failed: %v\n%s", err, output)
+	}
+	order, err := os.ReadFile(logPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	wantOrder := "runtime-hook-fixtures.sh\nsupervision-hook-fixtures.sh\nsupervision-fixtures.sh\nhealth-fixtures.sh\n"
+	if string(order) != wantOrder {
+		t.Fatalf("supervision and census fixture order = %q, want %q", order, wantOrder)
+	}
 }
 
 func contextCommandRoot(t *testing.T) string {

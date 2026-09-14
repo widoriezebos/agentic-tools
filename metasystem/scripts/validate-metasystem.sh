@@ -1048,6 +1048,7 @@ supervision_and_census_section() {
   scripts/agents/runtime-hook-fixtures.sh
   scripts/agents/supervision-hook-fixtures.sh
   scripts/agents/supervision-fixtures.sh
+  scripts/agents/health-fixtures.sh
 }
 if section_selected supervision-and-census-fixtures \
   && delegate_process_section "supervision and census fixtures" \
