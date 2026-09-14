@@ -431,6 +431,9 @@ func families() []family {
 			verbs: []verb{
 				{"status", "show the holder's current context-budget evidence", runContextStatus},
 				{"report", "publish one seven-day UTC context cohort", runContextReport},
+				{"handoff", "record or cancel an immutable coordinator handoff", runContextHandoff},
+				{"verify", "verify an immutable coordinator handoff", runContextVerify},
+				{"prune", "retire old coordinator context evidence", runContextPrune},
 			},
 		},
 		{

@@ -10,8 +10,11 @@ import (
 	"reflect"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/identity"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/lease"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/steward"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/testpolicy"
 	usagepkg "github.com/widoriezebos/agentic-tools/metasystem/internal/usage"
 )
@@ -639,6 +642,203 @@ run_section() { shift 2; "$@"; }
 	if string(order) != wantOrder {
 		t.Fatalf("supervision and census fixture order = %q, want %q", order, wantOrder)
 	}
+}
+
+func TestContextHandoffVerb(t *testing.T) {
+	container, root := contextHandoffCommandRoot(t)
+	useContextHandoffIdentity(t, root)
+	contextMust(t, os.WriteFile(filepath.Join(root, "proof.txt"), []byte("bounded proof\n"), 0o644))
+	code, output, problem := captureContextVerb(t, dispatch, "context", "handoff", "--root", container, "--scratch", "purpose=proof,path=proof.txt,required=true", "--scratch", "purpose=second,path=proof.txt,required=false")
+	if code != 0 || problem != "" || !strings.HasPrefix(output, "handoff recorded: ") || !strings.Contains(output, " state=") || !strings.Contains(output, " sha256=") {
+		t.Fatalf("text handoff = code %d stdout %q stderr %q", code, output, problem)
+	}
+	fields := strings.Fields(output)
+	first := contextHandoffRecord{fields[2], strings.TrimPrefix(fields[3], "state="), strings.TrimPrefix(fields[4], "sha256=")}
+	stateData, err := os.ReadFile(first.state)
+	var state steward.HandoffState
+	if err != nil || json.Unmarshal(stateData, &state) != nil || len(state.Scratch) != 2 || !state.Scratch[0].Required || state.Scratch[1].Required || state.Seat.Machine != "m-test" || state.Seat.Runtime != "fake" || state.Seat.Session != "seat-session" || state.Seat.MainID != "main-context" || state.Seat.Tag != "main-tag" || state.Seat.Identity.StartTicks != 700 || state.Seat.Identity.BootID != "boot-fixture" {
+		t.Fatalf("captured command state = %+v err=%v", state, err)
+	}
+	_, err = steward.ConsumeIntent(root, first.nonce)
+	contextMust(t, err)
+	jobID := "steward-" + first.nonce
+	job, _ := json.Marshal(map[string]any{"jobId": jobID, "goalId": "goal-a", "role": "implementer", "status": "running", "phase": "work", "mainId": "delegate-main", "runtime": "fake", "sessionId": "delegate-session", "instanceTag": "delegate-tag", "pid": 4343, "pidStartedAt": 101})
+	writeTestingFixtureFile(t, filepath.Join(root, "artifacts", "agents", "jobs", jobID+".json"), job, 0o644)
+	classifyContextHandoffCaller = func(string, string, int64) (lease.Classification, error) {
+		return lease.Classification{Class: lease.ClassDelegate, Pid: 4343}, nil
+	}
+	code, output, problem = captureContextVerb(t, runContextHandoff, "--root", container, "--json")
+	var projection map[string]any
+	if err := json.Unmarshal([]byte(output), &projection); err != nil || code != 0 || problem != "" || len(projection) != 4 || projection["nonce"] == "" || projection["statePath"] == "" ||
+		projection["digest"] == "" || projection["intentPath"] == "" || strings.Contains(output, "disposable") {
+		t.Fatalf("JSON handoff = code %d stdout %q stderr %q", code, output, problem)
+	}
+	code, _, problem = captureContextVerb(t, runContextHandoff, "--root", container, "--scratch", "purpose=required,path=missing\nfile,required=true")
+	if code != 9 || !strings.HasPrefix(problem, "HANDOFF_REFERENCE ") || strings.Count(problem, "\n") != 1 {
+		t.Fatalf("refused handoff = code %d stderr %q", code, problem)
+	}
+	hookContextHandoffDelegate = func(string, string, string, int64) (lease.HookDelegateResult, error) {
+		return lease.HookDelegateResult{}, nil
+	}
+	code, _, problem = captureContextVerb(t, runContextHandoff, "--root", container)
+	if code != 9 || !strings.HasPrefix(problem, "HANDOFF_NOT_HOLDER") {
+		t.Fatalf("wrong delegate = code %d stderr %q", code, problem)
+	}
+}
+
+func TestContextVerifyAndCancel(t *testing.T) {
+	container, root := contextHandoffCommandRoot(t)
+	useContextHandoffIdentity(t, root)
+	first := recordContextHandoff(t, container)
+	code, output, problem := captureContextVerb(t, dispatch, "context", "verify", "--root", container, "--nonce", first.nonce)
+	if code != 0 || output != "ok sha256="+first.digest+"\n" || problem != "" {
+		t.Fatalf("verify = code %d stdout %q stderr %q", code, output, problem)
+	}
+	code, output, problem = captureContextVerb(t, runContextHandoff, "--root", container, "--cancel", first.nonce)
+	if code != 0 || output != "handoff cancelled: "+first.nonce+"\n" || problem != "" {
+		t.Fatalf("cancel = code %d stdout %q stderr %q", code, output, problem)
+	}
+	second := recordContextHandoff(t, container)
+	_, err := steward.ConsumeIntent(root, second.nonce)
+	contextMust(t, err)
+	contextMust(t, os.WriteFile(second.state, []byte("{}\n"), 0o644))
+	code, _, problem = captureContextVerb(t, runContextVerify, "--root", container, "--nonce", second.nonce)
+	if code != 9 || !strings.HasPrefix(problem, "HANDOFF_STATE_MISMATCH ") {
+		t.Fatalf("drifted verify = code %d stderr %q", code, problem)
+	}
+	code, _, problem = captureContextVerb(t, runContextHandoff, "--root", container, "--cancel", second.nonce)
+	if code != 9 || !strings.HasPrefix(problem, "HANDOFF_NOT_LIVE ") {
+		t.Fatalf("consumed cancel = code %d stderr %q", code, problem)
+	}
+}
+
+func TestContextPruneVerb(t *testing.T) {
+	container, root := contextHandoffCommandRoot(t)
+	useContextHandoffIdentity(t, root)
+	record := recordContextHandoff(t, container)
+	if code, _, problem := captureContextVerb(t, runContextHandoff, "--root", container, "--cancel", record.nonce); code != 0 || problem != "" {
+		t.Fatalf("cancel before prune = code %d stderr %q", code, problem)
+	}
+	contextMust(t, os.Chtimes(record.state, time.Now().Add(-15*24*time.Hour), time.Now().Add(-15*24*time.Hour)))
+	code, output, problem := captureContextVerb(t, dispatch, "context", "prune", "--root", container)
+	if code != 0 || problem != "" || output != "pruned call-sessions=0\npruned handoff="+filepath.Dir(record.state)+"\n" {
+		t.Fatalf("prune = code %d stdout %q stderr %q", code, output, problem)
+	}
+	code, output, problem = captureContextVerb(t, runContextPrune, "--root", container, "--older-than", "14d")
+	if code != 0 || output != "pruned call-sessions=0\n" || problem != "" {
+		t.Fatalf("day duration = code %d stdout %q stderr %q", code, output, problem)
+	}
+	code, output, problem = captureContextVerb(t, runContextPrune, "--root", container, "--older-than", "336h")
+	if code != 0 || output != "pruned call-sessions=0\n" || problem != "" {
+		t.Fatalf("Go duration = code %d stdout %q stderr %q", code, output, problem)
+	}
+	contextMust(t, os.MkdirAll(filepath.Join(root, "artifacts", "agents", "context", "handoffs", "malformed"), 0o755))
+	code, output, problem = captureContextVerb(t, runContextPrune, "--root", container, "--older-than", "14d")
+	if code != 1 || output != "pruned call-sessions=0\n" || !strings.Contains(problem, "malformed nonce") {
+		t.Fatalf("partial prune = code %d stdout %q stderr %q", code, output, problem)
+	}
+}
+
+func TestContextVerbUsage(t *testing.T) {
+	root := contextCommandRoot(t)
+	for _, test := range []struct {
+		run  func([]string) int
+		args []string
+	}{
+		{runContextVerify, []string{"--root", root}},
+		{runContextVerify, []string{"--nonce", "0000000000000000"}},
+		{runContextHandoff, nil},
+		{runContextHandoff, []string{"--root", root, "extra"}},
+		{runContextPrune, []string{"--root", root, "extra"}},
+		{runContextPrune, nil},
+		{runContextHandoff, []string{"--root", root, "--scratch", "purpose=p,path=x,foo=bar"}},
+		{runContextHandoff, []string{"--root", root, "--scratch", "purpose=p,path=x,required=1"}},
+		{runContextHandoff, []string{"--root", root, "--scratch", "purpose=p,path=x,required="}},
+		{runContextHandoff, []string{"--root", root, "--scratch", "purpose=,purpose=p,path=x"}},
+		{runContextHandoff, []string{"--root", root, "--cancel", "0000000000000000", "--scratch", "purpose=p,path=x"}},
+		{runContextHandoff, []string{"--root", root, "--cancel="}},
+		{runContextPrune, []string{"--root", root, "--older-than", "0"}},
+		{runContextPrune, []string{"--root", root, "--older-than", "-1h"}},
+		{runContextPrune, []string{"--root", root, "--older-than", "106752d"}},
+		{runContextPrune, []string{"--root", root, "--older-than", "999999999999999999999d"}},
+	} {
+		code, _, problem := captureContextVerb(t, test.run, test.args...)
+		if code != 2 || !(strings.HasPrefix(problem, "usage: metasystem context ") || strings.Contains(problem, "--scratch must be")) {
+			t.Fatalf("args %q = code %d stderr %q", test.args, code, problem)
+		}
+	}
+}
+
+type contextHandoffRecord struct{ nonce, state, digest string }
+
+func recordContextHandoff(t *testing.T, root string) contextHandoffRecord {
+	t.Helper()
+	code, output, problem := captureContextVerb(t, runContextHandoff, "--root", root)
+	fields := strings.Fields(output)
+	if code != 0 || problem != "" || len(fields) != 5 {
+		t.Fatalf("record handoff = code %d stdout %q stderr %q", code, output, problem)
+	}
+	return contextHandoffRecord{fields[2], strings.TrimPrefix(fields[3], "state="), strings.TrimPrefix(fields[4], "sha256=")}
+}
+
+func captureContextVerb(t *testing.T, run func([]string) int, args ...string) (int, string, string) {
+	t.Helper()
+	return captureChannelOutput(t, func() int { return run(args) })
+}
+
+func contextHandoffCommandRoot(t *testing.T) (string, string) {
+	t.Helper()
+	container := t.TempDir()
+	root := filepath.Join(container, "metasystem")
+	writeTestingFixtureFile(t, filepath.Join(container, "development", "metasystem-design.md"), []byte("template\n"), 0o644)
+	contextMust(t, os.MkdirAll(root, 0o755))
+	seedClaimLaunchGoal(t, root)
+	goalSyncMutationGit(t, root, "config", "metasystem.goal.machine", "m-test")
+	files := map[string]string{
+		"metasystem.conf": "metasystem.runtimes=fake\nrole.steward-continuation.runtime=fake\nrole.steward-continuation.model.fake=fixture\n",
+		"scripts/agents/roles/steward-continuation.md":                "# Role\n",
+		"scripts/agents/roles/steward-continuation.requirements.json": "{\"required\":[]}\n",
+		"scripts/agents/schemas/steward-continuation.schema.json":     "{\"type\":\"object\"}\n",
+		"scripts/agents/permissions/workspace.json":                   "{\"write\":[\"workspace\"]}\n",
+		"memory/receipts.log":                                         "",
+	}
+	for relative, body := range files {
+		writeTestingFixtureFile(t, filepath.Join(root, filepath.FromSlash(relative)), []byte(body), 0o644)
+	}
+	canonicalRoot, err := filepath.EvalSymlinks(root)
+	contextMust(t, err)
+	contextMust(t, steward.MintIdentity(steward.RepoIdentityPath(root), steward.InstallIdentity{
+		RepoIdentity: canonicalRoot, Generation: 1, InstallPath: "/bin/true", MintedAt: time.Now().UTC().Format(time.RFC3339),
+	}))
+	return container, root
+}
+
+func contextMust(t *testing.T, err error) {
+	if err != nil {
+		t.Fatal(err)
+	}
+}
+
+func useContextHandoffIdentity(t *testing.T, root string) {
+	t.Helper()
+	oldClassify, oldHolder, oldHook := classifyContextHandoffCaller, currentContextHandoffHolder, hookContextHandoffDelegate
+	classifyContextHandoffCaller = func(stateRoot, installation string, _ int64) (lease.Classification, error) {
+		if stateRoot != root || installation != root {
+			t.Fatalf("handoff classified roots (%q, %q), want %q", stateRoot, installation, root)
+		}
+		announcement := &lease.Announcement{SessionId: "seat-session", MainId: "main-context", Pid: 4242,
+			PidStartedAt: 100, PidStartTicks: 700, BootID: "boot-fixture", Runtime: "fake", InstanceTag: "main-tag"}
+		return lease.Classification{Class: lease.ClassMain, MainId: announcement.MainId, Announcement: announcement}, nil
+	}
+	currentContextHandoffHolder = func(string) (lease.CurrentHolderView, error) {
+		return lease.CurrentHolderView{MainId: "main-context", SessionId: "seat-session"}, nil
+	}
+	hookContextHandoffDelegate = func(_, _ string, jobID string, _ int64) (lease.HookDelegateResult, error) {
+		return lease.HookDelegateResult{Delegate: true, JobID: jobID}, nil
+	}
+	t.Cleanup(func() {
+		classifyContextHandoffCaller, currentContextHandoffHolder, hookContextHandoffDelegate = oldClassify, oldHolder, oldHook
+	})
 }
 
 func contextCommandRoot(t *testing.T) string {
