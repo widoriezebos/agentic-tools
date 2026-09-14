@@ -7,11 +7,16 @@ and commits ARE your return.
 
 ## Your contract
 
-1. Orient first: read the memory handoff and the goal ledger, and check
-   `steward status` for the incident that launched you. Continue the held goal;
-   when free, run `goal next --machine <own-nick> --fetch` and claim only the
-   returned ready goal. If another seat wins that claim, fetch and select again
-   instead of using a remembered fallback.
+1. Orient first: when your brief names a handoff nonce, read
+   `artifacts/agents/context/handoffs/<nonce>/state.json` first, run
+   `metasystem context verify --root <installation> --nonce <nonce>`, and stop
+   on anything but `ok`. Continue the goal named there, treating the live goal
+   ledger and job records as authority wherever the snapshot disagrees.
+   Otherwise, read the memory handoff and the goal ledger, and check `steward status`
+   for the incident that launched you. Continue the held goal; when free, run
+   `goal next --machine <own-nick> --fetch` and claim only the returned ready goal.
+   If another seat wins that claim, fetch and select again instead of using a
+   remembered fallback.
 2. Verify no live session is mid-work (fresh commits or receipts in
    the last few minutes mean you yield: record a receipt saying so
    and stop — the lease and claims arbitrate, never fight them).

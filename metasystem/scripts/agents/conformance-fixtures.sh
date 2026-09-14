@@ -13,6 +13,52 @@ for instruction in scripts/agents/templates/brief.md scripts/agents/roles/design
   grep -Fq "$bounded_read" "$source_root/$instruction" \
     || { echo "instruction file $instruction does not carry the bounded-read sentence" >&2; exit 1; }
 done
+grep -Fq 'metasystem context verify --root' "$source_root/scripts/agents/roles/steward-continuation.md" \
+  || { echo "steward-continuation role does not verify a named context handoff" >&2; exit 1; }
+grep -Fq 'metasystem context handoff --root' "$source_root/docs/orchestration.md" \
+  || { echo "orchestration instructions do not hand off a context over the bound" >&2; exit 1; }
+
+assert_context_testing_contract() {
+  local contract=$source_root/testing.json context_group context_inputs context_packages
+  local context_surface context_standard conformance_group conformance_inputs
+  local name group
+  context_group=$(grep -F '"id":"context-standard"' "$contract")
+  context_inputs=${context_group#*\"inputs\":[}; context_inputs=${context_inputs%%],\"outputs\"*}
+  context_packages=${context_group#*\"packages\":[}; context_packages=${context_packages%%],\"tests\"*}
+  grep -Fq '"metasystem/docs/orchestration.md"' <<<"$context_inputs" \
+    || { echo "context-standard inputs omit docs/orchestration.md" >&2; return 1; }
+  grep -Fq '"internal/goal"' <<<"$context_packages" \
+    || { echo "context-standard packages omit internal/goal" >&2; return 1; }
+  for name in \
+    TestHandoffWritesAVerifiedStateFile TestHandoffManifestPreservesOverflow TestHandoffRefusals \
+    TestHandoffRetriesNonceCollisionWithoutOverwriting TestHandoffCleansDirectoryPublicationFailure \
+    TestHandoffPublicationIsExclusiveAndReverified TestLiveHandoffUsesNoExpiryClock \
+    TestLiveHandoffReadDoesNotWaitOrWrite TestHandoffAcceptsOnlyTheActiveContinuation \
+    TestHandoffIgnoresConcurrentUnrelatedRecords TestSecondHandoffSupersedesTheFirst \
+    TestConcurrentHandoffsDoNotCross TestCancelHandoffReportsItsExactPartialOutcome \
+    TestVerifyHandoffStateUsesExactLifecycleRecord TestHandoffRejectsInvalidLiveAuthority \
+    TestContextPruneKeepsLiveHandoffs TestContextPruneSerializesWithConsumption \
+    TestContextPruneStopsOnUsageError TestContextPruneDefaultAgeComposesWithUsageFloor \
+    TestContextPruneRefusesRedirectedHandoffTrees TestContextPruneRechecksBeforeRemoval \
+    TestContextPruneReportsRemovalBeforeSyncFailure TestContextPruneRetainsDamageAndRefusesBadBounds \
+    TestHandoffAndDiagnosticsHaveSeparateLifetimes TestTurnVerdictAllowsTheStopUnderARecordedHandoff \
+    TestHandoffAllowanceCarriesFrozenFacts TestContextHandoffVerb TestContextVerifyAndCancel \
+    TestContextPruneVerb TestContextVerbUsage; do
+    grep -Fq "\"$name\"" <<<"$context_group" \
+      || { echo "context-standard tests omit $name" >&2; return 1; }
+  done
+  context_surface=$(grep -F '"id":"context-budget"' "$contract")
+  context_standard=${context_surface#*\"standard\":[}; context_standard=${context_standard%%],\"deep\"*}
+  for group in context-standard context-foundations-standard section/supervision-and-census-fixtures section/conformance-fixtures; do
+    grep -Fq "\"$group\"" <<<"$context_standard" \
+      || { echo "context-budget standard selection omits $group" >&2; return 1; }
+  done
+  conformance_group=$(grep -F '"id":"section/conformance-fixtures"' "$contract")
+  conformance_inputs=${conformance_group#*\"inputs\":[}; conformance_inputs=${conformance_inputs%%],\"outputs\"*}
+  grep -Fq '"metasystem/docs/orchestration.md"' <<<"$conformance_inputs" \
+    || { echo "conformance fixture inputs omit docs/orchestration.md" >&2; return 1; }
+}
+assert_context_testing_contract
 
 controller=
 worktree=

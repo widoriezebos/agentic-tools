@@ -789,6 +789,19 @@ stop_task_name_report_facts() { # report text
   ' <<<"$1"
 }
 
+handoff_stop_judgment_display() { # leg, installation, report text
+  local leg=$1 installation=$2 report=$3 judgment display
+  if ! judgment=$(stop_task_name_report_facts "$report") || [[ -z $judgment ]]; then
+    echo "$leg failed during the judgment step: Stop report omitted the judgment JSON section" >&2
+    return 1
+  fi
+  if ! display=$($installation/bin/metasystem json get --value "$judgment" --field verdict.display); then
+    echo "$leg failed during the judgment step: could not read verdict.display from judgment JSON" >&2
+    return 1
+  fi
+  printf '%s\n' "$display"
+}
+
 printf '{"session_id":"stop-task-name-block","cwd":"%s","hook_event_name":"Stop"}\n' "$line_root" \
   >"$tmp/stop-task-name-block.json"
 METASYSTEM_BIN="$name_engine" METASYSTEM_STOP_NAME_REAL_ENGINE="$line_root/bin/metasystem" \
@@ -836,6 +849,154 @@ name_allow_facts=$(stop_task_name_report_facts "$name_allow_report")
   || { echo "STOP-TASK-NAME-HOOK allowance report lost the complete dated intent" >&2; exit 1; }
 [[ $(grep -Fc 'adapter stop-output' "$name_trace") -eq 2 ]] \
   || { echo "STOP-TASK-NAME-HOOK did not invoke the runtime mapper once per outcome" >&2; exit 1; }
+
+# A recorded handoff reaches the real Stop hook through the command handler.
+# Each runtime-shaped runner is the isolated, still-live predecessor while it
+# stages the handoff and invokes the hook. Details are read only after the
+# provider response identifies and authenticates its immutable report.
+handoff_stop_runner=$tmp/handoff-stop-runner
+cat >"$handoff_stop_runner" <<'HANDOFF_STOP_RUNNER'
+#!/usr/bin/env bash
+set -euo pipefail
+installation=$1 runtime=$2 session=$3 tag=$4 handoff_file=$5 stop_output=$6
+stop_error=$7 forwarding_engine=$8 manifest=$9 foreign=${10}
+engine=$installation/bin/metasystem
+stage=claim
+report_failed_stage() {
+  local status=$?
+  (( status == 0 )) || echo "$tag failed during the $stage step" >&2
+}
+trap report_failed_stage EXIT
+export METASYSTEM_OWNER_LINEAGE=$tag
+started=$($engine proc started-at --pid $$)
+ancestor=$($engine proc find-ancestor --repo "$installation" --pid $$ --runtime "$runtime")
+[[ $($engine json get --value "$ancestor" --field pid) == $$ \
+  && $($engine json get --value "$ancestor" --field runtime) == "$runtime" ]]
+$engine lease announce --root "$installation" --session "$session" --pid $$ \
+  --start "$started" --tag "$tag" --runtime "$runtime" --owner-lineage "$tag" >/dev/null
+source_digest=$($engine goal source-digest --root "$installation")
+$engine goal migrate --root "$installation" --source-digest "$source_digest" \
+  --manifest "$manifest" --by Wido >/dev/null
+git -C "$installation" fetch -q origin
+git -C "$installation" reset -q --hard origin/main
+git -C "$installation" update-ref refs/metasystem/goals/accepted origin/main
+$engine goal release --root "$installation" --id handoff-fixture >/dev/null
+printf '%s\n' 'metasystem.runtimes=fake' \
+  "role.steward-continuation.runtime=$runtime" \
+  "role.steward-continuation.model.$runtime=fixture" >"$installation/metasystem.conf"
+$engine goal approve --root "$installation" --id handoff-fixture --by Wido \
+  --elapsed-limit 8h --attempt-limit 10 --reserved-job-minutes-limit 1200 \
+  --active-job-limit 1 --review-round-limit 3 --fixture-human-authority >/dev/null
+printf '%s\n' "metasystem.runtimes=$runtime" \
+  "role.steward-continuation.runtime=$runtime" \
+  "role.steward-continuation.model.$runtime=fixture" >"$installation/metasystem.conf"
+$engine goal claim --root "$installation" --id handoff-fixture >/dev/null
+stage=handoff
+$engine context handoff --root "$installation" >"$handoff_file"
+stop_session=$session
+[[ $foreign != true ]] || stop_session=$session-foreign
+stage=Stop
+stop_payload=${stop_output}.payload
+printf '{"session_id":"%s","cwd":"%s","hook_event_name":"Stop"}\n' \
+  "$stop_session" "$installation" >"$stop_payload"
+METASYSTEM_BIN="$forwarding_engine" METASYSTEM_HANDOFF_STOP_REAL_ENGINE="$engine" \
+  bash "$installation/scripts/agents/supervision-hook.sh" "$runtime" stop <"$stop_payload" \
+    >"$stop_output" 2>"$stop_error"
+trap - EXIT
+HANDOFF_STOP_RUNNER
+chmod +x "$handoff_stop_runner"
+
+run_handoff_stop_leg() { # leg, runtime, foreign session
+  local leg=$1 runtime=$2 foreign=$3 installation=$tmp/$1 root_digest identity_root
+  local origin=$tmp/$1-origin.git session=$1-session tag=$1-predecessor
+  local handoff_file=$tmp/$1-handoff.out stop_output=$tmp/$1-stop.out stop_error=$tmp/$1-stop.err
+  local forwarding_engine=$tmp/$1-engine manifest=$tmp/$1-migration.md ledger source_digest
+  local handoff_line nonce stop_session report display
+
+  git init -q -b main --bare "$origin"
+  git init -q -b main "$installation"
+  git -C "$installation" config user.name fixture
+  git -C "$installation" config user.email fixture@example.invalid
+  git -C "$installation" config metasystem.goal.machine handoff-fixture
+  git -C "$installation" remote add origin "$origin"
+  mkdir -p "$installation/bin" "$installation/plans" "$installation/memory" \
+    "$installation/scripts/agents/roles" "$installation/scripts/agents/schemas" \
+    "$installation/scripts/agents/permissions" "$installation/artifacts/agents/steward"
+  cp_engine "$ms" "$installation/bin/metasystem"
+  cp "$hook" "$installation/scripts/agents/supervision-hook.sh"
+  cp "$root/scripts/agents/pre-commit-guard.sh" "$installation/scripts/agents/"
+  cp -R "$root/scripts/agents/adapters" "$installation/scripts/agents/"
+  cp "$root/scripts/agents/roles/steward-continuation.md" "$installation/scripts/agents/roles/"
+  cp "$root/scripts/agents/roles/steward-continuation.requirements.json" "$installation/scripts/agents/roles/"
+  cp "$root/scripts/agents/schemas/steward-continuation.schema.json" "$installation/scripts/agents/schemas/"
+  cp "$root/scripts/agents/permissions/workspace.json" "$installation/scripts/agents/permissions/"
+  printf '%s\n' '#!/usr/bin/env bash' 'exit 0' >"$installation/scripts/agents/evidence-gc.sh"
+  chmod +x "$installation/scripts/agents/evidence-gc.sh"
+  printf '%s\n' "metasystem.runtimes=$runtime" \
+    "role.steward-continuation.runtime=$runtime" \
+    "role.steward-continuation.model.$runtime=fixture" >"$installation/metasystem.conf"
+  printf '%s\n' 'artifacts/' 'memory/receipts.log' >"$installation/.gitignore"
+  : >"$installation/memory/receipts.log"
+  printf '%s\n' '# Goals' '' \
+    '## Current goal: handoff-fixture — Exercise the handoff Stop allowance' \
+    '- Origin: human' \
+    '- Next step: Continue the fixture handoff.' >"$installation/plans/goals.md"
+  ledger=$(command cat "$installation/plans/goals.md" && printf x); ledger=${ledger%x}
+  source_digest=$($installation/bin/metasystem util sha256 --file "$installation/plans/goals.md")
+  $installation/bin/metasystem json object ledger="$ledger" sha256="$source_digest" \
+    >"$installation/plans/goals-accepted.json"
+  $installation/bin/metasystem json set --file "$installation/plans/goals-accepted.json" --int schemaVersion=1
+  git -C "$installation" add .gitignore metasystem.conf plans scripts
+  git -C "$installation" commit -qm 'handoff Stop fixture'
+  git -C "$installation" push -qu origin main
+  root_digest=$($installation/bin/metasystem util sha256 --file "$installation/bin/metasystem")
+  identity_root=$(cd "$installation" && pwd -P)
+  printf '{"repoIdentity":"%s","generation":1,"installPath":"%s/bin/metasystem","installDigest":"sha256:%s","mintedAt":"1970-01-01T00:00:00Z","enrollment":"fixture"}\n' \
+    "$identity_root" "$identity_root" "$root_digest" >"$installation/artifacts/agents/steward/identity.json"
+  chmod 0600 "$installation/artifacts/agents/steward/identity.json"
+  printf '%s\n' '# Queue amendments' '' 'MIGRATION_EPOCH: 2026-09-14T00:00:00Z' \
+    "REVIEWED_SOURCE_SHA256: $source_digest" >"$manifest"
+  cat >"$forwarding_engine" <<'HANDOFF_STOP_ENGINE'
+#!/usr/bin/env bash
+if [[ ${1:-} == up ]]; then exit 0; fi
+exec "${METASYSTEM_HANDOFF_STOP_REAL_ENGINE:?}" "$@"
+HANDOFF_STOP_ENGINE
+  chmod +x "$forwarding_engine"
+
+  if ! (exec -a "$runtime" bash "$handoff_stop_runner" "$installation" "$runtime" \
+      "$session" "$tag" "$handoff_file" "$stop_output" "$stop_error" \
+      "$forwarding_engine" "$manifest" "$foreign"); then
+    echo "$leg failed to stage a live handoff and drive the real Stop hook" >&2
+    cat "$stop_error" >&2 2>/dev/null || true
+    exit 1
+  fi
+  handoff_line=$(<"$handoff_file")
+  nonce=${handoff_line#handoff recorded: }; nonce=${nonce%% *}
+  [[ "$nonce" =~ ^[0-9a-f]{16}$ ]] \
+    || { echo "$leg did not record a valid handoff nonce: $handoff_line" >&2; exit 1; }
+  stop_session=$session
+  [[ $foreign != true ]] || stop_session=$session-foreign
+  report=$(fixture_stop_status_report "$stop_output" "$installation" "$runtime" "$stop_session") \
+    || { echo "$leg exposed no identity-bound Stop report" >&2; exit 1; }
+  display=$(handoff_stop_judgment_display "$leg" "$installation" "$report") || exit 1
+  grep -Fq 'context-budget=' <<<"$report" \
+    || { echo "$leg report omitted the context-budget role" >&2; exit 1; }
+  if [[ $foreign == true ]]; then
+    [[ $($installation/bin/metasystem json get --file "$stop_output" --field decision) == block \
+      && "$display" != *'handoff recorded:'* ]] \
+      || { echo "$leg received the matching session handoff allowance" >&2; exit 1; }
+  else
+    ! $installation/bin/metasystem json get --file "$stop_output" --field decision >/dev/null 2>&1 \
+      && [[ $($installation/bin/metasystem json get --file "$stop_output" --field systemMessage) == *'; Stop allowed;'* ]] \
+      && [[ "$display" == "handoff recorded: $nonce; end this session" ]] \
+      || { echo "$leg judgment display omitted the exact handoff allowance" >&2; exit 1; }
+  fi
+  echo "$leg passed"
+}
+
+run_handoff_stop_leg handoff-stop-allows-claude claude false
+run_handoff_stop_leg handoff-stop-allows-codex codex false
+run_handoff_stop_leg handoff-stop-foreign-session claude true
 
 compat_root=$tmp/compat-root
 cp -R "$line_root" "$compat_root"
