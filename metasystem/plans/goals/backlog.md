@@ -6,7 +6,7 @@
 - MigrationEpoch: 2026-08-20T00:00:00Z
 - ManifestDigest: d82032bee818c2d82e6a95e6f1b75347499b88ee8b68c4d20a0f3c94d00ba320
 - MigrationMode: manifest
-- Revision: 60
+- Revision: 61
 - ApprovalGate: since=2026-09-03T14:16:24Z opid=JY54AQT8101VK9353WT9FQYGA9-m0-c5dbf036
 - FleetEnrollment: at=2026-09-06T06:37:21Z machine=m1 generation=1 opid=CMNCRETKYCB18MFZNYFSZJPXQY-m1-a4f8999f
 
@@ -83,4 +83,5 @@ History:
 - 2026-09-14T17:04:20Z JN9BSG8SSNCZT03FEBHAQZQQF1-m1b-30a7e141 ack actor=m1b+main-1789191336-90295-e4b24b targets=stop-decisions-record-deadline-evidence displaced=m1b+main-1789191336-90295-e4b24b@2026-09-14T16:45:56Z ack
 - 2026-09-14T19:01:21Z V14JQ0XATFB25HZXXYCFQJEVE1-m1b-30a7e141 ack actor=m1b+main-1789191336-90295-e4b24b targets=stop-decisions-record-deadline-evidence displaced=m1b+main-1789191336-90295-e4b24b@2026-09-14T16:47:25Z ack
 - 2026-09-14T20:40:12Z ESAW8Z92TP4653ZQNG8S2C9GZM-m1b-30a7e141 ack actor=m1b+main-1789191336-90295-e4b24b targets=beds-report-every-failure displaced=m1b+main-1789191336-90295-e4b24b@2026-09-14T20:26:40Z ack
-Integrity: sha256=0e9ea75647c4073a97ebd77a4d420ca15bf7449664ac8010e1cc142547e76e94
+- 2026-09-14T21:28:54Z MGDJ8D64C2HFM8D319GS2YNYGQ-m1c-69c9e454 ack actor=m1c+main-1789191340-90689-8975a9 targets=witness-bed-fakes-the-proof-engine-build displaced=m1c+main-1789191340-90689-8975a9@2026-09-14T21:11:33Z ack
+Integrity: sha256=e9cef22348803f6c24b0f5c85c931e667d20249f6a3247963da99715d4096bb4
