@@ -2,14 +2,14 @@
 
 - State: approved
 - Priority: 1
-- Sequence: 58
+- Sequence: 24
 - Risk: severity=2 novelty=2 exposure=2 accumulation=1 basis="severity 2: a deep section stays red and can hide new adoption regressions; novelty 2: the cause is not yet known; exposure 2: every run of the adoption deep section; accumulation 1: one scenario"
 - Tier: 2
 - Intent: The adoption bed's filled-delivery scenario fails on unmodified trunk 68682486 (a harness-tracked control by m1b on 2026-09-15) and was already red at a20afc40 on 2026-09-14. Inside the scenario, TestAdoptionComparisonSelectedScenarios in cmd/metasystem fails after about 197 seconds. The cause is not yet diagnosed. DONE: the cause is named with its evidence; filled-delivery passes on trunk under the harness; a regression leg or test pins the cause.
 - Origin: human
 - Next step: Diagnose first. Run scripts/adopt-fixtures.sh with only filled-delivery, as a harness child outside a delegate sandbox. Read the TestAdoptionComparisonSelectedScenarios failure from the go test JSON output and name the selected scenario that fails. Then fix and prove. Free for the next seat by sequence.
 - OpenedAt: 2026-09-14T22:33:47Z
-- Revision: 4
+- Revision: 5
 - Budget: elapsedLimit=4h attemptLimit=6 reservedJobMinutesLimit=720 activeJobLimit=1 reviewRoundLimit=2
 - BudgetExceptions: 0
 - Approved: by=human:Wido at=2026-09-14T22:33:53Z revision=2 opid=PGHNY12PPRGKMRHB15B4KM5YY6-m1e-c6925449 authority=proven digest=4a27ced1b369d158cb8476c9d15ee7c5ea76a4d028e293e89553c5cd6af5601a
@@ -19,4 +19,5 @@ History:
 - 2026-09-14T22:33:53Z PGHNY12PPRGKMRHB15B4KM5YY6-m1e-c6925449 approve actor=human:Wido targets=adoption-filled-delivery-passes-on-trunk
 - 2026-09-14T22:33:59Z B0Q2QE3DQTFR5FBNXG9FHYAMTX-m1e-c6925449 set-priority actor=human:Wido targets=adoption-filled-delivery-passes-on-trunk reason=priority-order subject=adoption-filled-delivery-passes-on-trunk from=unranked to=1:59 requested-sequence=append
 - 2026-09-14T22:34:14Z SDWD5654D9FBS63BPH7BR2VX44-m1e-c6925449 done actor=human:Wido targets=adoption-filled-delivery-passes-on-trunk,brain-actor-seam-lists-the-wait-caller,land-bed-reads-build-stamps-without-a-broken-pipe reason=priority-order from=1:59 to=1:58
-Integrity: sha256=3ff3f0c425c2412c666247407853c470f8ffc1656801198f11ea3f5b8ab73e57
+- 2026-09-14T22:39:43Z DWD8JJ0ENZ3TMR723J4TKFYNQG-m1e-c6925449 set-priority actor=human:Wido targets=actionable-metrics,adoption-filled-delivery-passes-on-trunk,chain-landing-carries-the-reviewed-diff,cross-cutting-change-inventories-its-readers,degraded-stop-forms-have-one-source,dispatch-bases-chains-on-the-remote-tip,failed-job-attention,fixture-repo-copies-exclude-the-artifacts-store,fixture-stewards-outlive-their-suite,fixture-waits-name-their-producer,human-authority-surface-runs-its-cmd-tests,human-goal-verbs-forgiving,human-wait-does-not-consume-goal-budget,job-record-birth-token,lease-sweep-death-evidence,live-job-on-a-done-goal-unnoticed,machine-concurrency-governor,member-size-gate,metasystem-stop-escalation-proofs,metasystem-stop-fleet-form,new-elapsed-budgets-use-explicit-hours,pipelines-never-lose-a-truncated-producer,repo-root-paths-ride-agent-commits-unjudged,run-scoped-build-caches-have-a-janitor,session-start-relays-the-durable-wait-line,skipped-test-fails-its-group-on-the-other-os,stop-batch-strands-a-resumable-goal,stop-capability-follows-the-lease-epoch,stop-decision-surface-is-a-gate,testing-surfaces-declare-their-mirror,token-spend-fence,trunk-versus-candidate-is-a-verification-step,watch-verb,watcher-repair-request-never-names-current,winddown-census-handoff-leak reason=priority-order subject=adoption-filled-delivery-passes-on-trunk from=1:58 to=1:24 requested-sequence=24
+Integrity: sha256=4a094a07bcd3b9818f07aad6cbc93b6e5c4484f0075c6cc6df1214b5a16245a5
