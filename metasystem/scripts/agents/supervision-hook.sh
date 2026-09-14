@@ -1,16 +1,421 @@
 #!/usr/bin/env bash
+
+runtime=${1-}
+event=${2-}
+
+# SessionStart owns its outcome before it asks the filesystem, Git, an engine,
+# or temporary storage for anything. These values use shell builtins only, so
+# the EXIT trap can always explain an ordinary runtime failure.
+start_boundary_active=false
+start_terminal_complete=false
+start_finishing=false
+start_published=false
+start_arming_started=false
+start_signal_status=143
+start_deferred_signal_status=0
+start_payload=
+start_boot_dir=
+start_boot_pid=
+start_prepared_context=
+start_notices=
+start_context_kind=none
+start_context_payload=
+start_context_field=
+start_context_event=
+start_context_shape_ready=false
+start_ready_to_arm=false
+start_arming_rearmed=false
+start_arming_status=0
+start_wait_recovery_status=0
+start_deferred_identity_read=false
+start_brain_arming_failed=false
+start_brain_delivery=false
+start_brain_declaration_sha=
+start_brain_digest_emitted=false
+start_brain_digest_cursor=
+start_brain_digest_prefix=
+start_last_resort='{"systemMessage":"Metasystem SessionStart could not produce its response: role context delivery is unconfirmed; a declared brain may be uninstructed. Rebuild bin/metasystem with scripts/agents/go-build.sh, then start a new session."}'
+start_bookkeeping_notice='Metasystem SessionStart published its response but could not finish delivery bookkeeping. Repair supervision from the owning installation, then start a new session; context may repeat.'
+start_holder_context_notice="Metasystem supervision could not identify the immediate $runtime agent process; arming was refused."
+
+start_json_escape() { # text; result in start_escaped
+  local LC_ALL=C input=${1-} output= character code encoded
+  while [[ -n "$input" ]]; do
+    character=${input:0:1}
+    input=${input:1}
+    case "$character" in
+      '"') output=$output'\"' ;;
+      '\') output=$output'\\' ;;
+      $'\b') output=$output'\b' ;;
+      $'\f') output=$output'\f' ;;
+      $'\n') output=$output'\n' ;;
+      $'\r') output=$output'\r' ;;
+      $'\t') output=$output'\t' ;;
+      *)
+        builtin printf -v code '%d' "'$character"
+        if (( code < 0 )); then
+          code=$((code + 256))
+        fi
+        if (( code < 32 )); then
+          builtin printf -v encoded '\\u%04x' "$code"
+          output=$output$encoded
+        else
+          output=$output$character
+        fi
+        ;;
+    esac
+  done
+  start_escaped=$output
+}
+
+start_cleanup() {
+  local failed=false
+  if [[ -n "${start_boot_pid:-}" ]]; then
+    if builtin kill -0 "$start_boot_pid" 2>/dev/null; then
+      builtin kill -TERM "$start_boot_pid" 2>/dev/null || failed=true
+      if builtin kill -0 "$start_boot_pid" 2>/dev/null; then
+        builtin kill -KILL "$start_boot_pid" 2>/dev/null || failed=true
+      fi
+    fi
+    builtin wait "$start_boot_pid" 2>/dev/null || :
+    start_boot_pid=
+  fi
+  if [[ -n "${start_boot_dir:-}" ]]; then
+    if ! command rm -f "$start_boot_dir/stdout" "$start_boot_dir/stderr" 2>/dev/null; then
+      failed=true
+    fi
+    if ! command rmdir "$start_boot_dir" 2>/dev/null; then
+      failed=true
+    fi
+    start_boot_dir=
+  fi
+  if [[ -n "${start_payload:-}" ]]; then
+    if ! command rm -f "$start_payload" 2>/dev/null; then
+      failed=true
+    fi
+    start_payload=
+  fi
+  [[ "$failed" == false ]]
+}
+
+start_notice_json() { # catalog key; result in start_notice and start_notice_status
+  local key=${1-}
+  start_notice_status=0
+  case "$key" in
+    engine-missing)
+      start_notice='{"systemMessage":"Metasystem engine missing: this session received no role context; if this checkout is a declared brain it is uninstructed until the engine is rebuilt: run scripts/agents/go-build.sh, then start a new session"}' ;;
+    engine-skew)
+      start_notice='{"systemMessage":"Metasystem engine does not answer path state-root: this session received no role context; if this checkout is a declared brain it is uninstructed. Rebuild bin/metasystem with scripts/agents/go-build.sh, then start a new session."}' ;;
+    installation-directory)
+      start_notice='{"systemMessage":"Metasystem SessionStart could not locate its installation directory: this session received no role context; if this checkout is a declared brain it is uninstructed. Restore access to the installed hook and its parent directories. Then start a new session."}' ;;
+    checkout-identification)
+      start_notice='{"systemMessage":"Metasystem SessionStart could not identify the checkout and its primary installation: this session received no role context; if this checkout is a declared brain it is uninstructed. Restore Git and access to the checkout and its primary metasystem installation. Then start a new session."}' ;;
+    resolved-directory)
+      start_notice='{"systemMessage":"Metasystem SessionStart could not open the resolved installation directory: this session received no role context; if this checkout is a declared brain it is uninstructed. Restore access to the installation directory returned by the engine. Then start a new session."}' ;;
+    installation-validation)
+      start_notice='{"systemMessage":"Metasystem SessionStart could not validate the metasystem installation: this session received no role context; if this checkout is a declared brain it is uninstructed. Restore a complete, readable metasystem installation and rebuild bin/metasystem with scripts/agents/go-build.sh. Then start a new session."}' ;;
+    payload-storage)
+      start_notice='{"systemMessage":"Metasystem SessionStart could not stage its input: this session received no role context; if this checkout is a declared brain it is uninstructed. Restore writable temporary storage and free space. Then start a new session."}' ;;
+    boot-storage)
+      start_notice='{"systemMessage":"Metasystem SessionStart could not stage brain context: this session received no role context; if this checkout is a declared brain it is uninstructed. Restore writable temporary storage and free space. Then start a new session."}' ;;
+    start-preparation)
+      start_notice='{"systemMessage":"Metasystem SessionStart could not prepare the session identity and context: this session received no role context; if this checkout is a declared brain it is uninstructed. Restore the installed shell tools and rebuild bin/metasystem with scripts/agents/go-build.sh. Then start a new session."}' ;;
+    response-rendering|unexpected-termination)
+      start_notice=$start_last_resort ;;
+    payload-read)
+      start_notice='{"systemMessage":"Metasystem SessionStart could not read its session input: this session received no role context; if this checkout is a declared brain it is uninstructed. Repair the SessionStart hook input and rebuild bin/metasystem with scripts/agents/go-build.sh. Then start a new session."}' ;;
+    pending-read)
+      start_notice='{"systemMessage":"Metasystem SessionStart could not read pending steward incidents: this session received no role context; if this checkout is a declared brain it is uninstructed. Restore access to the steward incident records and repair unreadable records. Then start a new session."}' ;;
+    holder-read)
+      start_notice='{"systemMessage":"Metasystem SessionStart could not read checkout holder identity: this session received no role context; if this checkout is a declared brain it is uninstructed. Restore readable checkout custody records and restart the owning runtime. Then start a new session."}' ;;
+    invocation-invalid)
+      start_notice_status=2
+      start_notice='{"systemMessage":"Metasystem SessionStart could not accept the runtime invocation: this session received no role context; if this checkout is a declared brain it is uninstructed. Repair the installed hook registration. Then start a new session."}' ;;
+    runtime-unregistered)
+      start_notice_status=2
+      start_notice='{"systemMessage":"Metasystem SessionStart could not find the runtime in its registry: this session received no role context; if this checkout is a declared brain it is uninstructed. Repair the installed hook registration. Then start a new session."}' ;;
+    runtime-registry)
+      start_notice='{"systemMessage":"Metasystem SessionStart could not read the runtime registry: this session received no role context; if this checkout is a declared brain it is uninstructed. Rebuild bin/metasystem with scripts/agents/go-build.sh and restore the installed runtime declarations. Then start a new session."}' ;;
+    context-contract)
+      start_notice='{"systemMessage":"Metasystem SessionStart could not read the runtime context contract: this session received no role context; if this checkout is a declared brain it is uninstructed. Rebuild bin/metasystem with scripts/agents/go-build.sh and restore the installed runtime declarations. Then start a new session."}' ;;
+    custody-unreadable)
+      start_notice_status=1
+      start_notice='{"systemMessage":"Metasystem SessionStart could not authenticate delegate custody: this session received no role context; if this checkout is a declared brain it is uninstructed. Restore the recorded delegate custody and restart through its launcher. Then start a new session."}' ;;
+    process-identity)
+      start_notice='{"systemMessage":"Metasystem SessionStart could not identify the owning runtime process: this session received no role context; if this checkout is a declared brain it is uninstructed. Restart through the installed runtime launcher. Then start a new session."}' ;;
+    brain-boot)
+      start_notice='{"systemMessage":"Metasystem brain boot failed: this session received no role context; if this checkout is a declared brain it is uninstructed. Run metasystem brain boot --root <checkout> --repo <checkout> by hand and rebuild if it fails. Then start a new session."}' ;;
+    brain-timeout)
+      start_notice='{"systemMessage":"Metasystem brain boot failed (timeout): this session received no role context; if this checkout is a declared brain it is uninstructed. Run metasystem brain boot --root <checkout> --repo <checkout> by hand and rebuild if it fails. Then start a new session."}' ;;
+    arming)
+      start_notice='{"systemMessage":"Metasystem supervision arming failed: this session received no role context; if this checkout is a declared brain it is uninstructed. Repair supervision from the owning installation and run metasystem up there. Then start a new session."}' ;;
+    wait-recovery)
+      start_notice='{"systemMessage":"Metasystem SessionStart could not read durable wait recovery rows: this session received no role context; if this checkout is a declared brain it is uninstructed. Repair supervision from the owning installation and run metasystem up there. Then start a new session."}' ;;
+    temporary-cleanup)
+      start_notice='{"systemMessage":"Metasystem SessionStart could not remove its temporary files: this session received no role context; if this checkout is a declared brain it is uninstructed. Restore temporary-directory access and remove leftover metasystem hook temporary files. Then start a new session."}' ;;
+    interrupted)
+      start_notice_status=$start_signal_status
+      start_notice='{"systemMessage":"Metasystem SessionStart could not finish because it was interrupted: this session received no role context; if this checkout is a declared brain it is uninstructed. Restore the runtime session. Then start a new session."}' ;;
+    *) return 1 ;;
+  esac
+}
+
+start_append_notice_text() { # JSON object, fixed JSON-safe text; result in start_notice
+  local object=$1 text=$2
+  start_notice=${object%\"\}}'\n'"$text"'"}'
+}
+
+start_build_response() { # completion reason; result in start_response
+  local reason=$1 rendered_tail
+  case "$reason" in
+    context-ready)
+      [[ -n "$start_prepared_context" && "$start_context_kind" == channel &&
+          "$start_context_shape_ready" == true && -n "$start_context_field" &&
+          -n "$start_context_event" && -n "$start_context_payload" ]] || return 1 ;;
+    screen-context-ready)
+      [[ -z "$start_prepared_context" && "$start_context_kind" == screen && -n "$start_notices" ]] || return 1 ;;
+    notices-ready)
+      [[ -z "$start_prepared_context" && "$start_context_kind" == none && -n "$start_notices" ]] || return 1 ;;
+    healthy-no-context)
+      [[ -z "$start_prepared_context" && "$start_context_kind" == none && -z "$start_notices" ]] || return 1
+      start_response='{}'
+      return 0 ;;
+    *) return 1 ;;
+  esac
+  if [[ -n "$start_notices" ]]; then
+    start_json_escape "$start_notices"
+    if [[ -n "$start_prepared_context" ]]; then
+      rendered_tail=${start_prepared_context#\{}
+      start_response='{"systemMessage":"'"$start_escaped"'",'"$rendered_tail"
+    else
+      start_response='{"systemMessage":"'"$start_escaped"'"}'
+    fi
+  else
+    start_response=$start_prepared_context
+  fi
+  [[ -n "$start_response" ]]
+}
+
+start_emergency() {
+  builtin trap - EXIT HUP INT TERM
+  if [[ "${start_published:-false}" == true ]]; then
+    start_cleanup || :
+    builtin printf '%s\n' "$start_bookkeeping_notice" >&2 || :
+    start_terminal_complete=true
+    builtin exit 1
+  fi
+  if [[ -w /dev/fd/1 ]] && builtin printf '%s\n' "$start_last_resort" 2>/dev/null; then
+    start_terminal_complete=true
+    builtin exit 0
+  fi
+  builtin printf '%s\n' "$start_last_resort" >&2 || :
+  start_terminal_complete=true
+  builtin exit 74
+}
+
+start_finish() { # notice <catalog-key> | intentional <declared-reason>
+  local family=${1-} key=${2-} response= status=0 skip_line= cleanup_complete=false
+  if [[ "${start_finishing:-false}" == true ]]; then
+    start_emergency
+  fi
+  start_finishing=true
+  start_deferred_signal_status=0
+  builtin trap 'start_defer_signal 129' HUP
+  builtin trap 'start_defer_signal 130' INT
+  builtin trap 'start_defer_signal 143' TERM
+
+  if [[ "${start_published:-false}" == true ]]; then
+    start_cleanup || :
+    builtin printf '%s\n' "$start_bookkeeping_notice" >&2 || :
+    start_terminal_complete=true
+    builtin trap - EXIT HUP INT TERM
+    builtin exit 1
+  fi
+
+  case "$family" in
+    notice)
+      if [[ ( "$key" == brain-boot || "$key" == brain-timeout ) && "$start_ready_to_arm" == true &&
+            "$start_deferred_identity_read" != true && "${identity_pid:-}" =~ ^[1-9][0-9]*$ &&
+            "${identity_started:-}" =~ ^[1-9][0-9]*$ ]]; then
+        start_capture arming up_output arming-after-brain start_up "$runtime" "$session" "$identity_pid" "$identity_started"
+      fi
+      if ! start_notice_json "$key"; then
+        start_emergency
+      fi
+      response=$start_notice
+      status=$start_notice_status
+      if [[ ( "$key" == brain-boot || "$key" == brain-timeout ) && "$start_brain_arming_failed" == true ]]; then
+        start_append_notice_text "$response" 'Metasystem supervision arming failed: repair supervision from the owning installation and run metasystem up there.'
+        response=$start_notice
+      fi
+      if [[ ( "$key" == arming || "$key" == brain-boot || "$key" == brain-timeout ) && "$start_arming_rearmed" == true ]]; then
+        start_append_notice_text "$response" 'Metasystem re-armed the rebuilt engine: the engine reported a completed re-arm before the later failure.'
+        response=$start_notice
+      fi
+      if ! start_cleanup; then
+        if [[ "$key" != temporary-cleanup && "$response" != "$start_last_resort" ]]; then
+          start_append_notice_text "$response" 'Metasystem SessionStart also could not remove its temporary files. Restore temporary-directory access and remove leftover metasystem hook temporary files.'
+          response=$start_notice
+        fi
+      fi
+      cleanup_complete=true
+      if [[ "$start_arming_started" == true && "$response" != "$start_last_resort" ]]; then
+        start_append_notice_text "$response" 'Supervision may have been partly initialized.'
+        response=$start_notice
+      fi
+      ;;
+    intentional)
+      case "$key" in
+        authenticated-delegate)
+          skip_line='Metasystem SessionStart intentionally skipped: authenticated delegate; its launcher owns context.' ;;
+        foreign-runtime)
+          skip_line='Metasystem SessionStart intentionally skipped: another runtime owns this process.' ;;
+        context-ready|screen-context-ready|notices-ready|healthy-no-context)
+          if ! start_build_response "$key"; then
+            start_emergency
+          fi
+          response=$start_response ;;
+        *) start_emergency ;;
+      esac
+      ;;
+    *) start_emergency ;;
+  esac
+
+  if [[ -n "$skip_line" ]]; then
+    if ! start_cleanup; then
+      start_emergency
+    fi
+  fi
+
+  if (( start_deferred_signal_status != 0 )); then
+    start_signal_status=$start_deferred_signal_status
+    start_deferred_signal_status=0
+    if ! start_notice_json interrupted; then
+      start_emergency
+    fi
+    response=$start_notice
+    status=$start_notice_status
+    family=notice
+    key=interrupted
+    skip_line=
+    if [[ "$start_arming_started" == true ]]; then
+      start_append_notice_text "$response" 'Supervision may have been partly initialized.'
+      response=$start_notice
+    fi
+  fi
+
+  if [[ -n "$skip_line" ]]; then
+    if ! builtin printf '%s\n' "$skip_line" >&2; then
+      if builtin printf '%s\n' "$start_last_resort"; then
+        start_terminal_complete=true
+        builtin trap - EXIT HUP INT TERM
+        builtin exit 74
+      fi
+      start_emergency
+    fi
+    start_published=true
+    builtin trap 'start_signal 129' HUP
+    builtin trap 'start_signal 130' INT
+    builtin trap 'start_signal 143' TERM
+    if (( start_deferred_signal_status != 0 )); then
+      start_cleanup || :
+      builtin printf '%s\n' "$start_bookkeeping_notice" >&2 || :
+      start_terminal_complete=true
+      builtin trap - EXIT HUP INT TERM
+      builtin exit 1
+    fi
+    start_terminal_complete=true
+    builtin trap - EXIT HUP INT TERM
+    builtin exit 0
+  fi
+
+  if [[ ! -w /dev/fd/1 ]] || ! builtin printf '%s\n' "$response" 2>/dev/null; then
+    builtin printf '%s\n' "$start_last_resort" >&2 || :
+    start_terminal_complete=true
+    builtin trap - EXIT HUP INT TERM
+    builtin exit 74
+  fi
+  start_published=true
+  builtin trap 'start_signal 129' HUP
+  builtin trap 'start_signal 130' INT
+  builtin trap 'start_signal 143' TERM
+  if (( start_deferred_signal_status != 0 )); then
+    start_cleanup || :
+    builtin printf '%s\n' "$start_bookkeeping_notice" >&2 || :
+    start_terminal_complete=true
+    builtin trap - EXIT HUP INT TERM
+    builtin exit 1
+  fi
+
+  if [[ "$family" == intentional && "$start_brain_delivery" == true ]]; then
+    if [[ "$start_brain_digest_emitted" == true ]]; then
+      if ! "$ms" brain start-delivered --root "$repo" --repo "$repo" \
+          --declaration-sha256 "$start_brain_declaration_sha" \
+          --digest-cursor "$start_brain_digest_cursor" \
+          --digest-prefix-sha256 "$start_brain_digest_prefix" >/dev/null 2>&1; then
+        builtin printf '%s\n' "$start_bookkeeping_notice" >&2 || :
+        status=1
+      fi
+    elif ! "$ms" brain start-delivered --root "$repo" --repo "$repo" \
+        --declaration-sha256 "$start_brain_declaration_sha" >/dev/null 2>&1; then
+      builtin printf '%s\n' "$start_bookkeeping_notice" >&2 || :
+      status=1
+    fi
+  fi
+  if [[ "$cleanup_complete" != true ]] && ! start_cleanup; then
+    if (( status == 0 )); then
+      builtin printf '%s\n' "$start_bookkeeping_notice" >&2 || :
+    fi
+    status=1
+  fi
+  start_terminal_complete=true
+  builtin trap - EXIT HUP INT TERM
+  builtin exit "$status"
+}
+
+start_exit_trap() {
+  local actual_status=${1-1}
+  : "$actual_status"
+  if [[ "${start_terminal_complete:-false}" != true ]]; then
+    start_finish notice unexpected-termination
+  fi
+}
+
+start_signal() {
+  start_signal_status=$1
+  if [[ "${start_published:-false}" == true ]]; then
+    start_finish notice interrupted
+  fi
+  start_finish notice interrupted
+}
+
+start_defer_signal() {
+  start_deferred_signal_status=$1
+}
+
+if [[ "$event" == start ]]; then
+  start_boundary_active=true
+  builtin trap 'start_exit_trap "$?"' EXIT
+  builtin trap 'start_signal 129' HUP
+  builtin trap 'start_signal 130' INT
+  builtin trap 'start_signal 143' TERM
+fi
+
 set -euo pipefail
 
-# Resolution order is part of the hook boundary: (1) malformed event and
-# runtime names are rejected without an engine; (2) the physical installation
+# Resolution order is part of the hook boundary: (1) SessionStart initializes
+# one termination and publication owner before every fallible operation; other
+# malformed event and runtime names are rejected without an engine; (2) the physical installation
 # is mapped to its primary counterpart when it is a linked worktree, using Git
 # common-directory identity with inherited Git steering removed, and every
 # identification failure is benign rather than a guess; (3) that installation's
 # own engine must exist even when an override runs the turn, and a missing
-# engine allows a Stop under a fixed degraded notice; (4) an unregistered
+# engine allows a Stop under a fixed degraded notice and reports missing role
+# context on SessionStart; (4) an unregistered
 # runtime exits 2; (5) the running engine validates that installation through
 # path state-root, whose exit-1 refusal is benign while any other failure allows
-# a Stop under a fixed engine-and-hook-skew notice; (6) the Stop-deadline parent
+# a Stop under a fixed engine-and-hook-skew notice and reports missing role
+# context on SessionStart; (6) the Stop-deadline parent
 # uses the same resolver and one engine for session parsing, installation
 # validation, response validation, and refusal records, and never blocks on its
 # own; (7) every state consumer uses the one world named repo, without deriving
@@ -18,10 +423,6 @@ set -euo pipefail
 # shape remains open to newly registered runtimes. The recovery-only scheduler
 # entry is operator-owned and can be printed with `metasystem up
 # --print-scheduler-entry`; this hook never installs host state.
-runtime=${1:-}
-event=${2:-}
-[[ "$runtime" =~ ^[a-z][a-z0-9-]{0,31}$ ]] || exit 2
-case "$event" in start|receipt|stop|end) ;; *) exit 2 ;; esac
 
 # The deadline parent's own notices never depend on an engine: the engine
 # is the thing most likely to be missing, crashed or mid-replacement when the
@@ -39,9 +440,6 @@ emit_raw_stop_allowance() { # optional fixed prefix line (plain text, no quotes 
 raw_missing_engine_stop='{"systemMessage":"Task unknown; Stop allowed; needs supervision repair; engine missing. Rebuild bin/metasystem. Status unavailable."}'
 raw_engine_skew_stop='{"systemMessage":"Task unknown; Stop allowed; needs supervision repair; engine does not answer path state-root. Rebuild bin/metasystem. Status unavailable."}'
 internal_skip_result='METASYSTEM_INTERNAL_HOOK_SKIP_V1'
-
-script_dir=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd -P) || exit 0
-harness_root=$(cd "$script_dir/../.." && pwd -P) || exit 0
 
 # Git steering inherited from another repository must not redirect checkout
 # identification. The compiled state-root authority removes the same names.
@@ -89,6 +487,542 @@ hook_world_installation() {
 hook_root_is_one_line() {
   [[ -n "$1" && "$1" != *$'\n'* && "$1" != *$'\r'* ]]
 }
+
+start_physical_directory() {
+  builtin cd -- "$1" 2>/dev/null && builtin pwd -P
+}
+
+start_capture() { # failure key, destination, policy, argv
+  local failure_key=$1 destination=$2 policy=$3 captured= capture_status=0
+  shift 3
+  if [[ "$policy" == arming || "$policy" == arming-after-brain ]]; then
+    start_arming_started=true
+  fi
+  if [[ "$policy" == arming || "$policy" == arming-after-brain || "$policy" == wait-recovery ]]; then
+    captured=$(builtin trap - EXIT HUP INT TERM; "$@" 2>&1) && capture_status=0 || capture_status=$?
+  elif captured=$(builtin trap - EXIT HUP INT TERM; "$@"); then
+    capture_status=0
+  else
+    capture_status=$?
+  fi
+  case "$policy" in
+    required)
+      if (( capture_status != 0 )); then
+        start_finish notice "$failure_key"
+      fi
+      ;;
+    required-nonempty)
+      if (( capture_status != 0 )) || [[ -z "$captured" ]]; then
+        start_finish notice "$failure_key"
+      fi
+      ;;
+    shell-required)
+      if (( capture_status != 0 )) || [[ "$captured" != *x ]]; then
+        start_finish notice "$failure_key"
+      fi
+      captured=${captured%x}
+      ;;
+    shell-required-nonempty)
+      if (( capture_status != 0 )) || [[ "$captured" != *x ]]; then
+        start_finish notice "$failure_key"
+      fi
+      captured=${captured%x}
+      if [[ -z "$captured" ]]; then
+        start_finish notice "$failure_key"
+      fi
+      ;;
+    identity-optional)
+      if (( capture_status != 0 )); then
+        start_deferred_identity_read=true
+        captured=
+      fi
+      ;;
+    identity-required)
+      if (( capture_status != 0 )); then
+        start_deferred_identity_read=true
+        captured=
+      fi
+      ;;
+    identity-required-nonempty)
+      if (( capture_status != 0 )) || [[ -z "$captured" ]]; then
+        start_deferred_identity_read=true
+        captured=
+      fi
+      ;;
+    identity-shell-required)
+      if (( capture_status != 0 )) || [[ "$captured" != *x ]]; then
+        start_deferred_identity_read=true
+        captured=
+      else
+        captured=${captured%x}
+      fi
+      ;;
+    arming)
+      start_arming_status=$capture_status
+      if [[ "$captured" == *' re-armed='* ]]; then
+        start_arming_rearmed=true
+      fi
+      ;;
+    arming-after-brain)
+      if [[ "$captured" == *' re-armed='* ]]; then
+        start_arming_rearmed=true
+      fi
+      if (( capture_status != 0 )); then
+        start_brain_arming_failed=true
+      fi
+      ;;
+    one-line)
+      if (( capture_status != 0 )) || ! hook_root_is_one_line "$captured"; then
+        start_finish notice "$failure_key"
+      fi
+      ;;
+    state-root)
+      if (( capture_status == 1 )); then
+        start_finish notice installation-validation
+      elif (( capture_status != 0 )) || ! hook_root_is_one_line "$captured"; then
+        start_finish notice engine-skew
+      fi
+      ;;
+    json-optional-field)
+      if (( capture_status == 3 )); then
+        captured=
+      elif (( capture_status != 0 )) || [[ "$captured" != *x ]]; then
+        start_finish notice "$failure_key"
+      else
+        captured=${captured%x}
+      fi
+      ;;
+    delegate-custody)
+      if (( capture_status == 3 )); then
+        captured=false
+      elif (( capture_status != 0 )) ||
+          ! [[ "$captured" =~ ^\{\"delegate\":true,\"jobId\":\"[a-z0-9][a-z0-9-]*\",\"matchedPid\":[1-9][0-9]*,\"comparisonMode\":\"(darwin-microseconds|linux-ticks-boot-id|legacy-seconds)\"\}$ ]]; then
+        start_finish notice "$failure_key"
+      else
+        captured=true
+      fi
+      ;;
+    context-channel)
+      if (( capture_status == 1 )); then
+        captured=
+      elif (( capture_status != 0 )); then
+        start_finish notice "$failure_key"
+      fi
+      ;;
+    wait-recovery)
+      start_wait_recovery_status=$capture_status
+      if (( capture_status == 64 )); then
+        captured=
+      fi
+      ;;
+    allow-empty)
+      if (( capture_status != 0 )); then
+        start_finish notice "$failure_key"
+      fi
+      ;;
+    *) start_finish notice unexpected-termination ;;
+  esac
+  builtin printf -v "$destination" '%s' "$captured"
+}
+
+start_stage_payload() {
+  if ! command cat >"$start_payload"; then
+    start_finish notice payload-storage
+  fi
+}
+
+start_hash_text() {
+  builtin printf '%s' "$1" | "$ms" util sha256
+}
+
+start_json_value_with_sentinel() {
+  "$@" && builtin printf x
+}
+
+collect_start_notice() {
+  if [[ -n "$start_notices" ]]; then
+    start_notices=$start_notices$'\n'$1
+  else
+    start_notices=$1
+  fi
+}
+
+start_finish_prepared() {
+  if [[ "$start_context_kind" == channel ]]; then
+    start_finish intentional context-ready
+  elif [[ "$start_context_kind" == screen ]]; then
+    start_finish intentional screen-context-ready
+  elif [[ -n "$start_notices" ]]; then
+    start_finish intentional notices-ready
+  else
+    start_finish intentional healthy-no-context
+  fi
+}
+
+start_prepare_context_object() {
+  local rest key leaf event_object rendered probe event_field event_probe
+  start_prepared_context=
+  start_context_shape_ready=false
+  [[ -n "$start_context_payload" && -n "$start_context_field" ]] || return 0
+  if [[ "$start_context_kind" != channel || -z "$start_context_event" ]]; then
+    start_finish notice response-rendering
+  fi
+  rest=$start_context_field
+  key=${rest##*.}
+  start_capture response-rendering leaf required-nonempty "$ms" json object "$key=$start_context_payload"
+  rest=${rest%.*}
+  if [[ -n "$start_context_event" ]]; then
+    start_capture response-rendering event_object required-nonempty "$ms" json object "hookEventName=$start_context_event"
+    leaf=${leaf%\}},${event_object#\{}
+  fi
+  while [[ -n "$rest" ]]; do
+    key=${rest##*.}
+    leaf="{\"$key\":$leaf}"
+    [[ "$rest" == *.* ]] || break
+    rest=${rest%.*}
+  done
+  rendered=$leaf
+  start_capture response-rendering probe shell-required start_json_value_with_sentinel \
+    "$ms" json get --value "$rendered" --field "$start_context_field" --shell-safe
+  if [[ "$probe" != "$start_context_payload" ]]; then
+    start_finish notice response-rendering
+  fi
+  event_field=${start_context_field%.*}.hookEventName
+  start_capture response-rendering event_probe shell-required start_json_value_with_sentinel \
+    "$ms" json get --value "$rendered" --field "$event_field" --shell-safe
+  if [[ "$event_probe" != "$start_context_event" ]]; then
+    start_finish notice response-rendering
+  fi
+  start_prepared_context=$rendered
+  start_context_shape_ready=true
+}
+
+start_preserve_boot_stderr() {
+  if [[ -s "$start_boot_dir/stderr" ]]; then
+    if ! command cat "$start_boot_dir/stderr" >&2; then
+      builtin printf '%s\n' 'Metasystem SessionStart could not relay the brain boot diagnostic.' >&2 || :
+    fi
+  fi
+}
+
+start_stop_boot_child() {
+  local command_line=
+  start_capture brain-timeout command_line allow-empty ps -p "$start_boot_pid" -o command=
+  if [[ "$command_line" != *"$ms"* ]]; then
+    start_finish notice brain-timeout
+  fi
+  if ! builtin kill -TERM "$start_boot_pid" 2>/dev/null; then
+    start_finish notice brain-timeout
+  fi
+}
+
+start_prepare_brain() {
+  local boot_out boot_err boot_status=0 boot_timeout=false boot_started
+  local declared unknown state bytes sections_valid section section_state
+  start_capture boot-storage start_boot_dir required-nonempty command mktemp -d "${TMPDIR:-/tmp}/metasystem-brain-boot-hook.XXXXXX"
+  boot_out=$start_boot_dir/stdout
+  boot_err=$start_boot_dir/stderr
+  "$ms" brain boot --read-only --root "$repo" --repo "$repo" --bytes "$start_context_bytes" \
+    --deadline-ms "$start_brain_deadline_ms" >"$boot_out" 2>"$boot_err" &
+  start_boot_pid=$!
+  boot_started=$SECONDS
+  while builtin kill -0 "$start_boot_pid" 2>/dev/null && (( SECONDS - boot_started < start_brain_wait_sec )); do
+    if ! command sleep 0.05; then
+      start_finish notice brain-boot
+    fi
+  done
+  if builtin kill -0 "$start_boot_pid" 2>/dev/null; then
+    boot_timeout=true
+    start_stop_boot_child
+    if ! command sleep 0.2; then
+      start_finish notice brain-timeout
+    fi
+    if builtin kill -0 "$start_boot_pid" 2>/dev/null; then
+      if ! builtin kill -KILL "$start_boot_pid" 2>/dev/null; then
+        start_finish notice brain-timeout
+      fi
+    fi
+  fi
+  builtin wait "$start_boot_pid" || boot_status=$?
+  start_boot_pid=
+  if [[ "$boot_timeout" == true ]]; then
+    start_preserve_boot_stderr
+    start_finish notice brain-timeout
+  elif (( boot_status != 0 )) || [[ ! -s "$boot_out" ]]; then
+    start_preserve_boot_stderr
+    start_finish notice brain-boot
+  fi
+
+  start_capture brain-boot declared required "$ms" json get --file "$boot_out" --field declared
+  if [[ "$declared" == false ]]; then
+    start_capture brain-boot unknown required "$ms" json strip --file "$boot_out" --key declared
+    if [[ "$unknown" != '{}' ]]; then
+      start_finish notice brain-boot
+    fi
+    start_context_kind=none
+    return 0
+  fi
+  if [[ "$declared" != true ]]; then
+    start_finish notice brain-boot
+  fi
+  start_capture brain-boot unknown required "$ms" json strip --file "$boot_out" --key declared --key state \
+    --key payload --key bytes --key sections --key digestEmitted --key digestCursor \
+    --key digestPrefixSha256 --key declarationSha256
+  if [[ "$unknown" != '{}' ]]; then
+    start_finish notice brain-boot
+  fi
+  start_capture brain-boot state shell-required start_json_value_with_sentinel \
+    "$ms" json get --file "$boot_out" --field state --shell-safe
+  start_capture brain-boot bytes required "$ms" json get --file "$boot_out" --field bytes
+  start_capture brain-boot start_brain_digest_emitted required "$ms" json get --file "$boot_out" --field digestEmitted
+  start_capture brain-boot start_brain_digest_cursor required "$ms" json get --file "$boot_out" --field digestCursor
+  start_capture brain-boot start_brain_digest_prefix json-optional-field start_json_value_with_sentinel \
+    "$ms" json get --file "$boot_out" --field digestPrefixSha256 --shell-safe
+  start_capture brain-boot start_brain_declaration_sha json-optional-field start_json_value_with_sentinel \
+    "$ms" json get --file "$boot_out" --field declarationSha256 --shell-safe
+  start_capture brain-boot start_context_payload shell-required-nonempty start_json_value_with_sentinel \
+    "$ms" json get --file "$boot_out" --field payload --shell-safe
+  sections_valid=true
+  for section in asks held fleet digest; do
+    start_capture brain-boot section_state shell-required start_json_value_with_sentinel \
+      "$ms" json get --file "$boot_out" --field "sections.$section" --shell-safe
+    case "$section_state" in complete|cut|skipped|error) ;; *) sections_valid=false ;; esac
+  done
+  if [[ ( "$state" != declared && "$state" != corrupt ) || ! "$bytes" =~ ^[0-9]+$ ||
+        ( "$start_brain_digest_emitted" != true && "$start_brain_digest_emitted" != false ) ||
+        ! "$start_brain_digest_cursor" =~ ^[0-9]+$ || "$sections_valid" != true ||
+        -z "$start_context_payload" ]]; then
+    start_finish notice brain-boot
+  fi
+  if [[ "$start_brain_digest_emitted" == true && ! "$start_brain_digest_prefix" =~ ^[0-9a-f]{64}$ ]]; then
+    start_finish notice brain-boot
+  fi
+  if [[ "$state" == declared ]]; then
+    if ! [[ "$start_brain_declaration_sha" =~ ^[0-9a-f]{64}$ ]]; then
+      start_finish notice brain-boot
+    fi
+    start_brain_delivery=true
+  else
+    if [[ -n "$start_brain_declaration_sha" ]]; then
+      start_finish notice brain-boot
+    fi
+  fi
+  if [[ -n "$start_context_field" ]]; then
+    start_context_kind=channel
+  else
+    start_context_kind=screen
+    start_notices='this runtime has no session-context channel; the packet reached the screen only'
+    collect_start_notice "$start_context_payload"
+    if (( ${#start_notices} > 2048 )); then
+      start_notices=${start_notices:0:2048}
+    fi
+    start_context_payload=
+  fi
+}
+
+start_main() {
+  local source_path source_parent registered_runtimes delegate_result repo_result payload_probe session
+  local identity identity_runtime identity_pid identity_started parent_view parent_class parent_runtime
+  local process_identity_failed=false
+  local start_context_decl start_context_rc start_context_sources pending_line
+  local up_output up_aggregate waiting_lines hash_result
+
+  if ! [[ "$runtime" =~ ^[a-z][a-z0-9-]{0,31}$ ]]; then
+    start_finish notice invocation-invalid
+  fi
+
+  delegate_state_hint=${METASYSTEM_HOOK_DELEGATE_STATE_ROOT:-}
+  delegate_installation_hint=${METASYSTEM_HOOK_DELEGATE_INSTALLATION_ROOT:-}
+  delegate_job_hint=${METASYSTEM_HOOK_DELEGATE_JOB:-}
+  if [[ -n "$delegate_state_hint$delegate_installation_hint$delegate_job_hint" ]]; then
+    if [[ -z "$delegate_state_hint" || -z "$delegate_installation_hint" || -z "$delegate_job_hint" ||
+          ! -x "$delegate_installation_hint/bin/metasystem" ]]; then
+      start_finish notice custody-unreadable
+    fi
+    start_capture custody-unreadable delegate_result delegate-custody \
+      "$delegate_installation_hint/bin/metasystem" lease hook-delegate \
+      --root "$delegate_state_hint" --metasystem-root "$delegate_installation_hint" \
+      --job "$delegate_job_hint" --caller-pid "$PPID"
+    if [[ "$delegate_result" == true ]]; then
+      start_finish intentional authenticated-delegate
+    fi
+  fi
+
+  source_path=${BASH_SOURCE[0]}
+  case "$source_path" in
+    */*) source_parent=${source_path%/*} ;;
+    *) source_parent=. ;;
+  esac
+  start_capture installation-directory script_dir required-nonempty start_physical_directory "$source_parent"
+  start_capture installation-directory harness_root required-nonempty start_physical_directory "$script_dir/../.."
+  start_capture checkout-identification world_installation required-nonempty hook_world_installation
+  canonical=$world_installation/bin/metasystem
+  ms=${METASYSTEM_BIN:-$canonical}
+  if [[ ! -x "$canonical" || ! -x "$ms" ]]; then
+    start_finish notice engine-missing
+  fi
+  start_capture runtime-registry registered_runtimes required-nonempty "$ms" runtime list
+  case $'\n'$registered_runtimes$'\n' in
+    *$'\n'$runtime$'\n'*) ;;
+    *) start_finish notice runtime-unregistered ;;
+  esac
+
+  start_capture payload-storage start_payload required-nonempty command mktemp "${TMPDIR:-/tmp}/metasystem-supervision-hook.XXXXXX"
+  start_stage_payload
+  start_capture engine-skew repo_result state-root "$ms" path state-root "$world_installation"
+  start_capture resolved-directory repo required-nonempty start_physical_directory "$repo_result"
+
+  start_capture payload-read payload_probe required "$ms" json strip --file "$start_payload" --key __metasystem_shape_probe
+  : "$payload_probe"
+  start_capture payload-read session shell-required start_json_value_with_sentinel \
+    "$ms" json get --file "$start_payload" --field session_id --default '' --shell-safe
+  [[ -n "$session" ]] || session="session-$PPID"
+  if ! [[ "$session" =~ ^[A-Za-z0-9._-]{1,128}$ ]]; then
+    start_capture start-preparation hash_result required-nonempty start_hash_text "$session"
+    session=$hash_result
+  fi
+
+  start_capture custody-unreadable delegate_result delegate-custody "$ms" lease hook-delegate \
+    --root "$repo" --metasystem-root "$world_installation" --caller-pid "$PPID"
+  if [[ "$delegate_result" == true ]]; then
+    start_finish intentional authenticated-delegate
+  fi
+
+  if [[ "$runtime" == fake ]]; then
+    start_capture process-identity identity identity-optional "$ms" proc find-ancestor \
+      --repo "$world_installation" --pid "$PPID" --runtime fake
+  else
+    start_capture process-identity identity identity-optional "$ms" proc find-ancestor \
+      --repo "$world_installation" --pid "$PPID" --all-hosts
+  fi
+  identity_pid=
+  identity_started=
+  if [[ -n "$identity" ]]; then
+    start_capture process-identity identity_runtime identity-shell-required start_json_value_with_sentinel \
+      "$ms" json get --value "$identity" --field runtime --shell-safe
+    if [[ "$start_deferred_identity_read" != true && "$identity_runtime" != "$runtime" ]]; then
+      start_finish intentional foreign-runtime
+    fi
+    if [[ "$start_deferred_identity_read" != true ]]; then
+      start_capture process-identity identity_pid identity-required "$ms" json get --value "$identity" --field pid
+      start_capture process-identity identity_started identity-required "$ms" json get --value "$identity" --field pidStartedAt
+    fi
+    if ! [[ "$identity_pid" =~ ^[1-9][0-9]*$ && "$identity_started" =~ ^[1-9][0-9]*$ ]]; then
+      start_deferred_identity_read=true
+      identity_pid=
+      identity_started=
+    fi
+  else
+    process_identity_failed=$start_deferred_identity_read
+    start_deferred_identity_read=false
+    start_capture holder-read parent_view identity-required-nonempty "$ms" lease classify \
+      --root "$repo" --metasystem-root "$world_installation" --caller-pid "$PPID"
+    if [[ "$start_deferred_identity_read" != true ]]; then
+      start_capture holder-read parent_class identity-shell-required start_json_value_with_sentinel \
+        "$ms" json get --value "$parent_view" --field class --shell-safe
+    fi
+    if [[ "$start_deferred_identity_read" != true ]]; then
+      if [[ "$parent_class" != MAIN ]]; then
+        start_deferred_identity_read=true
+      fi
+    fi
+    if [[ "$start_deferred_identity_read" != true ]]; then
+      start_capture holder-read parent_runtime identity-shell-required start_json_value_with_sentinel \
+        "$ms" json get --value "$parent_view" --field announcement.runtime --shell-safe
+    fi
+    if [[ "$start_deferred_identity_read" != true ]]; then
+      if [[ "$parent_runtime" != "$runtime" ]]; then
+        start_finish intentional foreign-runtime
+      fi
+      start_capture holder-read identity_pid identity-required "$ms" json get --value "$parent_view" --field announcement.pid
+      start_capture holder-read identity_started identity-required "$ms" json get --value "$parent_view" --field announcement.pidStartedAt
+    fi
+    if [[ "$start_deferred_identity_read" != true ]] &&
+        ! [[ "$identity_pid" =~ ^[1-9][0-9]*$ && "$identity_started" =~ ^[1-9][0-9]*$ ]]; then
+      start_deferred_identity_read=true
+    fi
+    if [[ "$process_identity_failed" == true ]]; then
+      start_deferred_identity_read=true
+    fi
+  fi
+
+  start_capture context-contract start_context_decl context-channel "$ms" runtime start-context "$runtime"
+  start_context_field=
+  start_context_event=
+  start_context_bytes=2048
+  if [[ -n "$start_context_decl" ]]; then
+    start_context_field=${start_context_decl#field=}
+    start_context_field=${start_context_field%% event=*}
+    start_context_event=${start_context_decl#* event=}
+    start_context_event=${start_context_event%% bytes=*}
+    start_context_bytes=${start_context_decl#* bytes=}
+    start_context_bytes=${start_context_bytes%% sources=*}
+    start_context_sources=${start_context_decl#* sources=}
+    if ! [[ "$start_context_field" =~ ^[A-Za-z][A-Za-z0-9]*(\.[A-Za-z][A-Za-z0-9]*)+$ &&
+          "$start_context_event" =~ ^[A-Za-z][A-Za-z0-9]{0,63}$ &&
+          "$start_context_bytes" =~ ^[0-9]+$ && "$start_context_bytes" -ge 2048 &&
+          -n "$start_context_sources" ]]; then
+      start_finish notice context-contract
+    fi
+  fi
+
+  start_capture pending-read pending_line allow-empty "$ms" steward pending --repo "$repo"
+  [[ -z "$pending_line" ]] || collect_start_notice "Steward incidents pending: $pending_line"
+
+  start_brain_deadline_ms=${METASYSTEM_BRAIN_BOOT_DEADLINE_MS:-5000}
+  [[ "$start_brain_deadline_ms" =~ ^[1-9][0-9]*$ ]] || start_brain_deadline_ms=5000
+  start_brain_wait_sec=$((start_brain_deadline_ms / 1000 + 3))
+  start_ready_to_arm=true
+  start_prepare_brain
+  start_prepare_context_object
+
+  if [[ "$start_deferred_identity_read" == true ]]; then
+    collect_start_notice "$start_holder_context_notice"
+    start_finish_prepared
+  fi
+
+  start_capture arming up_output arming start_up "$runtime" "$session" "$identity_pid" "$identity_started"
+  up_aggregate=${up_output##*$'\n'}
+  if (( start_arming_status != 0 )); then
+    collect_start_notice "Metasystem supervision arming failed: $up_aggregate"
+    if [[ "$up_aggregate" == *' re-armed='* ]]; then
+      collect_start_notice "Metasystem re-armed the rebuilt engine: $up_aggregate"
+    fi
+    start_finish_prepared
+  fi
+  if [[ "$up_aggregate" == *' re-armed='* ]]; then
+    collect_start_notice "Metasystem re-armed the rebuilt engine: $up_aggregate"
+  fi
+  start_capture wait-recovery waiting_lines wait-recovery "$ms" session start --root "$repo" --session "$session"
+  if (( start_wait_recovery_status == 0 )); then
+    [[ -z "$waiting_lines" ]] || collect_start_notice "$waiting_lines"
+  elif (( start_wait_recovery_status != 64 )); then
+    waiting_lines=${waiting_lines//$'\n'/'; '}
+    collect_start_notice "Metasystem could not read durable wait recovery rows for this session: $waiting_lines"
+  else
+    : # A non-holder session has no recovery rows to advertise.
+  fi
+  start_finish_prepared
+}
+
+start_up() {
+  local start_runtime=$1 start_session=$2 start_pid=$3 start_started=$4
+  METASYSTEM_AGENT_RUNTIME="$start_runtime" "$ms" up --metasystem-root "$world_installation" \
+    --repo "$repo" --session "$start_session" --pid "$start_pid" --start-time "$start_started" \
+    --tag "${tag:-$start_runtime:$start_pid}"
+}
+
+if [[ "$event" == start ]]; then
+  start_main
+  start_finish notice unexpected-termination
+fi
+# SessionStart cannot pass this dispatcher.
+
+[[ "$runtime" =~ ^[a-z][a-z0-9-]{0,31}$ ]] || exit 2
+case "$event" in receipt|stop|end) ;; *) exit 2 ;; esac
+
+script_dir=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd -P) || exit 0
+harness_root=$(cd "$script_dir/../.." && pwd -P) || exit 0
 
 # Claude Code marks a repeated Stop hook with stop_hook_active. The verdict
 # uses that evidence in its bounded three-refusal counter and attempts the

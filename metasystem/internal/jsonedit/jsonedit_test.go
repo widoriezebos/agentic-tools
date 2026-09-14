@@ -42,6 +42,35 @@ func TestGetWireSpellings(t *testing.T) {
 	}
 }
 
+func TestGetShellStringKeepsTextAndRefusesLossyValues(t *testing.T) {
+	fallback := "fallback"
+	for _, test := range []struct {
+		name    string
+		content string
+		field   string
+		def     *string
+		want    string
+		ok      bool
+	}{
+		{"utf8 and controls", `{"outer":{"value":"héllo\n\t"}}`, "outer.value", nil, "héllo\n\t", true},
+		{"absent default", `{}`, "value", &fallback, "fallback", true},
+		{"null default", `{"value":null}`, "value", &fallback, "fallback", true},
+		{"number", `{"value":12}`, "value", nil, "", false},
+		{"boolean", `{"value":true}`, "value", nil, "", false},
+		{"object", `{"value":{}}`, "value", nil, "", false},
+		{"non-object traversal with default", `{"outer":7}`, "outer.value", &fallback, "", false},
+		{"nul", `{"value":"a\u0000b"}`, "value", nil, "", false},
+		{"invalid json", `{`, "value", nil, "", false},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			got, ok := GetShellString([]byte(test.content), test.field, test.def)
+			if got != test.want || ok != test.ok {
+				t.Fatalf("GetShellString() = (%q, %v), want (%q, %v)", got, ok, test.want, test.ok)
+			}
+		})
+	}
+}
+
 func TestSetFieldsEditsAndClassifies(t *testing.T) {
 	object, err := SetFields([]byte(`{"keep":true}`), []string{"name=x"}, []string{"count=42"})
 	if err != nil {

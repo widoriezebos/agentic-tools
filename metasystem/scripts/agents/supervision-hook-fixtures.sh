@@ -1,4 +1,39 @@
 #!/usr/bin/env bash
+
+# The start-exit audit joins this executed bed to the hook's outcome catalog.
+# Each label is exercised by the start-boundary matrix below.
+# hook-start-case: engine-missing
+# hook-start-case: engine-skew-start outcome=engine-skew
+# hook-start-case: installation-directory
+# hook-start-case: checkout-identification
+# hook-start-case: resolved-directory
+# hook-start-case: installation-validation
+# hook-start-case: payload-storage
+# hook-start-case: boot-storage
+# hook-start-case: start-preparation
+# hook-start-case: response-rendering
+# hook-start-case: payload-read
+# hook-start-case: pending-read
+# hook-start-case: holder-read
+# hook-start-case: invocation-invalid
+# hook-start-case: runtime-unregistered
+# hook-start-case: runtime-registry
+# hook-start-case: context-contract
+# hook-start-case: custody-unreadable
+# hook-start-case: process-identity
+# hook-start-case: brain-boot
+# hook-start-case: brain-timeout
+# hook-start-case: arming
+# hook-start-case: wait-recovery
+# hook-start-case: temporary-cleanup
+# hook-start-case: interrupted
+# hook-start-case: unexpected-termination
+# hook-start-case: authenticated-delegate
+# hook-start-case: foreign-runtime
+# hook-start-case: context-ready
+# hook-start-case: screen-context-ready
+# hook-start-case: notices-ready
+# hook-start-case: healthy-no-context
 set -euo pipefail
 
 root=$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd -P)
@@ -14,6 +49,9 @@ hook=$root/scripts/agents/supervision-hook.sh
 launcher=$root/scripts/enforcement/claude-code-hooks.json
 [[ -x "$ms" ]] \
   || { echo "supervision hook fixture: binary absent; run the go gate first" >&2; exit 1; }
+env -u METASYSTEM_BIN GOCACHE="${GOCACHE:-/tmp/metasystem-hook-start-go-cache}" \
+  go test -count=1 ./internal/audit \
+    -run '^(TestEngineSkewStartFixtureOnBash32|TestHookStartDeclaredOutcomeMatrixOnBash32|TestHookStartContextOutcomeShapesOnBash32|TestHookStartBuiltinJSONEncoderOnBash32|TestHookStartIntentionalFullPathFixturesOnBash32|TestHookStartFailureBranchFixturesOnBash32|TestHookStartPostPreparationFixturesOnBash32|TestHookStartExitTrapReportsUnexpectedTerminationOnBash32|TestHookStartSignalsUseOwnedStatusesOnBash32|TestHookStartLastResortUsesStderrWhenStdoutIsClosed|TestHookStartBash32ArrayCanaryCoversEmptyAndPopulatedValues)$'
 source "$root/scripts/agents/fixture-budget.sh"
 source "$root/scripts/agents/fixture-stop-report.sh"
 grep -Fq 'hook-bootstrap-failed' "$launcher" \
@@ -253,7 +291,9 @@ BRAIN_IDENTITY_ENGINE
 chmod +x "$brain_identity_engine"
 run_brain_hook() { # hook, payload, stdout, stderr, optional real engine
   local brain_hook=$1 brain_payload=$2 brain_stdout=$3 brain_stderr=$4
-  local real_engine="${5:-$ms}"
+  local brain_installation real_engine
+  brain_installation=$(cd "$(dirname "$brain_hook")/../.." && pwd -P)
+  real_engine="${5:-$brain_installation/bin/metasystem}"
   METASYSTEM_BIN=$brain_identity_engine METASYSTEM_BRAIN_REAL_ENGINE=$real_engine \
     METASYSTEM_BRAIN_FIXTURE_PID=$$ METASYSTEM_BRAIN_FIXTURE_STARTED=$brain_fixture_started \
     METASYSTEM_BRAIN_FIXTURE_RUNTIME=claude \

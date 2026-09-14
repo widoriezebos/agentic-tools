@@ -13,6 +13,7 @@ import (
 	"fmt"
 	"strconv"
 	"strings"
+	"unicode/utf8"
 )
 
 // ErrUsage marks a caller mistake (malformed KEY=VALUE, non-integer --int):
@@ -26,6 +27,68 @@ func (e usageError) Error() string      { return e.msg }
 func (usageError) Is(target error) bool { return target == ErrUsage }
 func usagef(format string, args ...any) error {
 	return usageError{msg: fmt.Sprintf(format, args...)}
+}
+
+// GetShellString resolves a string field for a shell variable. Unlike Get, it
+// refuses numbers, booleans, objects, invalid UTF-8 and NUL because Bash would
+// otherwise change the value before the caller could validate it. A nil value
+// or absent field uses def when one was supplied.
+func GetShellString(content []byte, field string, def *string) (string, bool) {
+	if !utf8.Valid(content) {
+		return "", false
+	}
+	var current any
+	if err := json.Unmarshal(content, &current); err != nil {
+		return "", false
+	}
+	for _, key := range strings.Split(field, ".") {
+		object, isObject := current.(map[string]any)
+		if !isObject {
+			return "", false
+		}
+		value, present := object[key]
+		if !present || value == nil {
+			if def != nil {
+				return validShellString(*def)
+			}
+			return "", false
+		}
+		current = value
+	}
+	value, isString := current.(string)
+	if !isString {
+		return "", false
+	}
+	return validShellString(value)
+}
+
+func validShellString(value string) (string, bool) {
+	if !utf8.ValidString(value) || strings.ContainsRune(value, '\x00') {
+		return "", false
+	}
+	return value, true
+}
+
+// FieldAbsent reports only a structurally absent object key. Malformed JSON
+// and traversal through a scalar are not absence: shell callers must map them
+// to a read failure instead of silently taking an optional-field default.
+func FieldAbsent(content []byte, field string) bool {
+	var current any
+	if err := json.Unmarshal(content, &current); err != nil {
+		return false
+	}
+	for _, key := range strings.Split(field, ".") {
+		object, isObject := current.(map[string]any)
+		if !isObject {
+			return false
+		}
+		value, present := object[key]
+		if !present {
+			return true
+		}
+		current = value
+	}
+	return false
 }
 
 // SetFields applies top-level edits to a decoded JSON object: --field pairs

@@ -186,13 +186,52 @@ esac
 	command.Dir = root
 	command.Env = append(filteredCoverageScriptEnvironment(), "FAST_GATE_BUILD_COUNT="+count,
 		"METASYSTEM_BUILD_STAMP=fixture", "PATH="+filepath.Join(root, "helpers")+string(os.PathListSeparator)+os.Getenv("PATH"))
-	if diagnostic, err := command.CombinedOutput(); err != nil {
+	diagnostic, err := command.CombinedOutput()
+	if err != nil {
 		t.Fatalf("focused fast gate failed: %v\n%s", err, diagnostic)
+	}
+	if count := strings.Count(string(diagnostic), "SessionStart exit audit not applicable to this script fixture"); count != 1 {
+		t.Fatalf("partial gate fixture reported the SessionStart audit scope %d times, want 1:\n%s", count, diagnostic)
 	}
 	builds, countErr := os.ReadFile(count)
 	engine, engineErr := os.ReadFile(output)
 	if countErr != nil || strings.TrimSpace(string(builds)) != "1" || engineErr != nil || string(engine) != "one collected engine\n" {
 		t.Fatalf("fast gate builds=%q countErr=%v engine=%q engineErr=%v", builds, countErr, engine, engineErr)
+	}
+
+	// Any wow.md filesystem entry makes this an installation. A dangling
+	// marker must therefore attempt the candidate audit and fail rather than
+	// reclassifying corruption as a script-only fixture.
+	if err := os.Symlink("missing-wow-target", filepath.Join(root, "wow.md")); err != nil {
+		t.Fatal(err)
+	}
+	governedOutput := filepath.Join(root, "governed-proof-engine")
+	governed := exec.Command("bash", filepath.Join(root, "scripts", "agents", "go-gate.sh"), "--fast", "--proof-out", governedOutput)
+	governed.Dir = root
+	governed.Env = append(filteredCoverageScriptEnvironment(), "FAST_GATE_BUILD_COUNT="+count,
+		"METASYSTEM_BUILD_STAMP=fixture", "PATH="+filepath.Join(root, "helpers")+string(os.PathListSeparator)+os.Getenv("PATH"))
+	governedDiagnostic, governedErr := governed.CombinedOutput()
+	if governedErr == nil || !strings.Contains(string(governedDiagnostic), "SessionStart exit audit failed") {
+		t.Fatalf("dangling installation marker did not fail through the candidate SessionStart audit: %v\n%s", governedErr, governedDiagnostic)
+	}
+
+	if err := os.Remove(filepath.Join(root, "wow.md")); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.MkdirAll(filepath.Join(root, "internal", "audit"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Symlink("missing-hookstartexits-target", filepath.Join(root, "internal", "audit", "hookstartexits.go")); err != nil {
+		t.Fatal(err)
+	}
+	auditSignalOutput := filepath.Join(root, "audit-signal-proof-engine")
+	auditSignal := exec.Command("bash", filepath.Join(root, "scripts", "agents", "go-gate.sh"), "--fast", "--proof-out", auditSignalOutput)
+	auditSignal.Dir = root
+	auditSignal.Env = append(filteredCoverageScriptEnvironment(), "FAST_GATE_BUILD_COUNT="+count,
+		"METASYSTEM_BUILD_STAMP=fixture", "PATH="+filepath.Join(root, "helpers")+string(os.PathListSeparator)+os.Getenv("PATH"))
+	auditSignalDiagnostic, auditSignalErr := auditSignal.CombinedOutput()
+	if auditSignalErr == nil || !strings.Contains(string(auditSignalDiagnostic), "SessionStart exit audit failed") {
+		t.Fatalf("dangling audit-source signal did not fail through the candidate SessionStart audit: %v\n%s", auditSignalErr, auditSignalDiagnostic)
 	}
 }
 
@@ -204,10 +243,11 @@ func TestGoGateWorkerContextsReachOwnedStageBoundary(t *testing.T) {
 		wantStatus          int
 		want                string
 		wantBegins          int
+		wantAuditSkip       int
 	}{
-		{name: "legitimate legacy worker", worker: 0, eligibility: 97, wantStatus: 1, want: "gofmt itself failed (status 79)"},
-		{name: "authenticated foreign descendant", attempt: "proof-parent", worker: 0, eligibility: 3, wantStatus: 1, want: "gofmt itself failed (status 79)"},
-		{name: "eligible gate refuses before measurement", attempt: "proof-parent", worker: 0, eligibility: 0, wantStatus: 1, want: "gofmt itself failed (status 79)"},
+		{name: "legitimate legacy worker", worker: 0, eligibility: 97, wantStatus: 1, want: "gofmt itself failed (status 79)", wantAuditSkip: 1},
+		{name: "authenticated foreign descendant", attempt: "proof-parent", worker: 0, eligibility: 3, wantStatus: 1, want: "gofmt itself failed (status 79)", wantAuditSkip: 1},
+		{name: "eligible gate refuses before measurement", attempt: "proof-parent", worker: 0, eligibility: 0, wantStatus: 1, want: "gofmt itself failed (status 79)", wantAuditSkip: 1},
 		{name: "invalid custody", attempt: "proof-forged", worker: 3, eligibility: 3, launchStatus: ExitAdmissionRefused, wantStatus: ExitAdmissionRefused},
 	} {
 		t.Run(test.name, func(t *testing.T) {
@@ -244,6 +284,9 @@ func TestGoGateWorkerContextsReachOwnedStageBoundary(t *testing.T) {
 			exit, ok := err.(*exec.ExitError)
 			if !ok || exit.ExitCode() != test.wantStatus || test.want != "" && !strings.Contains(string(output), test.want) {
 				t.Fatalf("worker boundary exit=%v want status=%d diagnostic=%q output:\n%s", err, test.wantStatus, test.want, output)
+			}
+			if count := strings.Count(string(output), "SessionStart exit audit not applicable to this script fixture"); count != test.wantAuditSkip {
+				t.Fatalf("worker boundary reported the SessionStart audit scope %d times, want %d; output:\n%s", count, test.wantAuditSkip, output)
 			}
 			begins := 0
 			if raw, readErr := os.ReadFile(beginCount); readErr == nil {

@@ -2,6 +2,7 @@ package main
 
 import (
 	"bytes"
+	"crypto/sha256"
 	"encoding/json"
 	"errors"
 	"flag"
@@ -47,6 +48,7 @@ type brainBootOutput struct {
 	DigestEmitted      bool              `json:"digestEmitted"`
 	DigestCursor       int64             `json:"digestCursor"`
 	DigestPrefixSHA256 string            `json:"digestPrefixSha256"`
+	DeclarationSHA256  string            `json:"declarationSha256,omitempty"`
 }
 
 var newBrainBootInputsCommand = func(executable string, args ...string) *exec.Cmd {
@@ -59,6 +61,7 @@ func runBrainBootCommand(args []string) int {
 	repo := flags.String("repo", ".", "checkout containing the role packet")
 	bound := flags.Int("bytes", 10000, "maximum payload bytes")
 	deadlineMS := flags.Int("deadline-ms", 5000, "hard deadline in milliseconds")
+	readOnly := flags.Bool("read-only", false, "compose context without recording delivery")
 	if flags.Parse(args) != nil {
 		return 2
 	}
@@ -70,7 +73,7 @@ func runBrainBootCommand(args []string) int {
 		fmt.Fprintln(os.Stderr, "brain boot: --deadline-ms must be positive")
 		return 2
 	}
-	output, err := composeBrainBoot(*root, *repo, *bound, *deadlineMS)
+	output, err := composeBrainBootMode(*root, *repo, *bound, *deadlineMS, *readOnly)
 	if err != nil {
 		fmt.Fprintln(os.Stderr, "brain boot:", err)
 		return 1
@@ -84,6 +87,10 @@ func runBrainBootCommand(args []string) int {
 }
 
 func composeBrainBoot(root, repo string, bound, deadlineMS int) (brainBootOutput, error) {
+	return composeBrainBootMode(root, repo, bound, deadlineMS, false)
+}
+
+func composeBrainBootMode(root, repo string, bound, deadlineMS int, readOnly bool) (brainBootOutput, error) {
 	started := time.Now()
 	state, phaseOne := brain.PhaseOne(root, repo, goal.ExistingLedgerIdentity(root), bound)
 	if state.State == brain.Undeclared {
@@ -201,7 +208,15 @@ func composeBrainBoot(root, repo string, bound, deadlineMS int) (brainBootOutput
 	if len(payload) > bound {
 		return brainBootOutput{}, fmt.Errorf("composed payload is %d bytes over a %d-byte bound", len(payload), bound)
 	}
-	if state.State == brain.Declared {
+	declarationSHA := ""
+	if state.State == brain.Declared && readOnly {
+		encoded, err := json.Marshal(*state.Record)
+		if err != nil {
+			return brainBootOutput{}, fmt.Errorf("encode brain declaration: %w", err)
+		}
+		declarationSHA = fmt.Sprintf("%x", sha256.Sum256(encoded))
+	}
+	if state.State == brain.Declared && !readOnly {
 		if err := brain.WriteStatus(root, *state.Record, time.Now().UTC()); err != nil {
 			return brainBootOutput{}, fmt.Errorf("write brain status: %w", err)
 		}
@@ -212,6 +227,7 @@ func composeBrainBoot(root, repo string, bound, deadlineMS int) (brainBootOutput
 	return brainBootOutput{
 		Declared: true, State: state.State, Payload: payload, Bytes: len(payload), Sections: states,
 		DigestEmitted: digestEmitted, DigestCursor: digest.Cursor, DigestPrefixSHA256: digest.PrefixSHA256,
+		DeclarationSHA256: declarationSHA,
 	}, nil
 }
 
@@ -513,6 +529,49 @@ func runBrainDigestAdvance(args []string) int {
 	if err := narratordigest.Advance(*repo, *cursor, *prefix, "brain"); err != nil {
 		fmt.Fprintln(os.Stderr, "brain digest-advance:", err)
 		return 1
+	}
+	return 0
+}
+
+func runBrainStartDelivered(args []string) int {
+	flags := flag.NewFlagSet("brain start-delivered", flag.ContinueOnError)
+	root := flags.String("root", "", "checkout state root")
+	repo := flags.String("repo", "", "checkout containing the digest")
+	declarationSHA := flags.String("declaration-sha256", "", "declaration observed by read-only boot")
+	digestCursor := flags.Int64("digest-cursor", -1, "emitted digest cursor")
+	digestPrefix := flags.String("digest-prefix-sha256", "", "emitted digest prefix digest")
+	if flags.Parse(args) != nil || *root == "" || *repo == "" || *declarationSHA == "" {
+		fmt.Fprintln(os.Stderr, "brain start-delivered needs --root, --repo, and --declaration-sha256")
+		return 2
+	}
+	if (*digestCursor >= 0) != (*digestPrefix != "") {
+		fmt.Fprintln(os.Stderr, "brain start-delivered needs both digest delivery arguments or neither")
+		return 2
+	}
+	state := brain.Read(*root, goal.ExistingLedgerIdentity(*root))
+	if state.State != brain.Declared || state.Record == nil {
+		fmt.Fprintln(os.Stderr, "brain start-delivered: the delivered declaration is no longer current")
+		return 1
+	}
+	encoded, err := json.Marshal(*state.Record)
+	if err != nil {
+		fmt.Fprintln(os.Stderr, "brain start-delivered:", err)
+		return 1
+	}
+	currentSHA := fmt.Sprintf("%x", sha256.Sum256(encoded))
+	if currentSHA != *declarationSHA {
+		fmt.Fprintln(os.Stderr, "brain start-delivered: the declaration changed before delivery acknowledgment")
+		return 1
+	}
+	if err := brain.WriteStatus(*root, *state.Record, time.Now().UTC()); err != nil {
+		fmt.Fprintln(os.Stderr, "brain start-delivered: write brain status:", err)
+		return 1
+	}
+	if *digestCursor >= 0 {
+		if err := narratordigest.Advance(*repo, *digestCursor, *digestPrefix, "brain"); err != nil {
+			fmt.Fprintln(os.Stderr, "brain start-delivered: advance brain digest:", err)
+			return 1
+		}
 	}
 	return 0
 }

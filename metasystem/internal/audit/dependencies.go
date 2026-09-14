@@ -99,7 +99,7 @@ var shellControlWords = map[string]bool{
 	"while": true,
 }
 
-var shellCommandPrefixes = map[string]bool{"command": true, "env": true, "exec": true}
+var shellCommandPrefixes = map[string]bool{"builtin": true, "command": true, "env": true, "exec": true}
 
 func shellPrefixOptionTakesOperand(prefix, option string) bool {
 	return (prefix == "env" && option == "-u") || (prefix == "exec" && option == "-a")
@@ -110,10 +110,20 @@ type shellCommand struct {
 	Line int
 }
 
+type shellScanIssue struct {
+	Line   int
+	Detail string
+}
+
 func shellCommands(source string) []shellCommand {
+	commands, _ := shellScan(source)
+	return commands
+}
+
+func shellScan(source string) ([]shellCommand, []shellScanIssue) {
 	scanner := shellWordScanner{source: source, line: 1}
 	scanner.scan(0)
-	return scanner.commands
+	return scanner.commands, scanner.issues
 }
 
 func shellCommandWords(source string) []string {
@@ -130,6 +140,7 @@ type shellWordScanner struct {
 	position int
 	line     int
 	commands []shellCommand
+	issues   []shellScanIssue
 }
 
 func (scanner *shellWordScanner) scan(terminator byte) {
@@ -163,6 +174,7 @@ func (scanner *shellWordScanner) scan(terminator byte) {
 			return
 		}
 		if shellCommandPrefixes[value] {
+			scanner.commands = append(scanner.commands, shellCommand{Word: value, Line: line})
 			commandPrefix = value
 			return
 		}
@@ -270,6 +282,9 @@ func (scanner *shellWordScanner) scan(terminator byte) {
 		}
 	}
 	finishWord()
+	if terminator != 0 {
+		scanner.issues = append(scanner.issues, shellScanIssue{Line: scanner.line, Detail: fmt.Sprintf("unterminated %q construct", string(terminator))})
+	}
 }
 
 func (scanner *shellWordScanner) copyQuoted(word *strings.Builder, quote byte, substitutions bool) {
@@ -311,6 +326,7 @@ func (scanner *shellWordScanner) copyQuoted(word *strings.Builder, quote byte, s
 		}
 		scanner.position++
 	}
+	scanner.issues = append(scanner.issues, shellScanIssue{Line: scanner.line, Detail: fmt.Sprintf("unterminated %q quote", string(quote))})
 }
 
 func (scanner *shellWordScanner) skipArithmetic() {
@@ -359,6 +375,8 @@ func (scanner *shellWordScanner) skipArithmetic() {
 	}
 	if scanner.position < len(scanner.source) && scanner.source[scanner.position] == ')' {
 		scanner.position++
+	} else if depth > 0 {
+		scanner.issues = append(scanner.issues, shellScanIssue{Line: scanner.line, Detail: "unterminated arithmetic substitution"})
 	}
 }
 

@@ -145,6 +145,23 @@ assert_filled_target_delivery() {
     || { echo "adopt: filled target did not run the go gate" >&2; exit 1; }
   grep -Fq 'covenant evidence gate passed' "$tmp/adopt-filled.out" \
     || { echo "adopt: the covenant evidence gate did not fire in the green run" >&2; exit 1; }
+  # Adoption ships the complete SessionStart proof surface. Removing any one
+  # member must red the installed target rather than reclassifying it as a
+  # script-only fixture; the Go audit's table test covers the other members.
+  local hook_assertion="$tgt/internal/audit/hookstartexits_test.go"
+  local hook_assertion_backup="$tmp/hookstartexits-test.$$.go"
+  [[ -f "$tgt/wow.md" && -f "$tgt/scripts/agents/supervision-hook.sh" \
+    && -f "$tgt/scripts/agents/supervision-hook-fixtures.sh" && -f "$hook_assertion" ]] \
+    || { echo "adopt: installed target omitted the SessionStart audit surface" >&2; exit 1; }
+  mv "$hook_assertion" "$hook_assertion_backup"
+  if "$tgt/bin/metasystem" audit hook-start-exits --root "$tgt" >"$tmp/adopt-hook-audit-red.out" 2>&1; then
+    mv "$hook_assertion_backup" "$hook_assertion"
+    echo "adopt: SessionStart audit passed without its assertion source" >&2
+    exit 1
+  fi
+  mv "$hook_assertion_backup" "$hook_assertion"
+  grep -Fq "hook start exit audit could not read $hook_assertion" "$tmp/adopt-hook-audit-red.out" \
+    || { echo "adopt: SessionStart audit refusal did not name its missing assertion source" >&2; exit 1; }
   # The red half: remove exactly the one criterion/proof pair the
   # covenant cites and the same validation must refuse, NAMING the
   # missing pair — then the table restores byte-for-byte so the later

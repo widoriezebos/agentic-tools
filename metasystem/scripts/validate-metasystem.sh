@@ -920,6 +920,10 @@ if section_selected gate-fail-open-tripwire \
 fi
 
 static_contract_audits_section() {
+# The same candidate engine used by the suite audits every SessionStart exit
+# before any fixture can make a missing outcome look like an empty success.
+"$root/bin/metasystem" audit hook-start-exits --root "$root"
+
 # Validate every skill present, including project-added and moved optional
 # skills, so this script holds in adopted repositories as well as the template.
 scripts/agents/validate-skill-inventory.sh "$root"

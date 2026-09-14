@@ -50,6 +50,7 @@ func families() []family {
 				{"fence", "report whether a guarded act is refused", runBrainFence},
 				{"boot", "compose the declared brain's bounded standing context", runBrainBoot},
 				{"boot-inputs", "read optional brain boot inputs in the bounded child (internal)", runBrainBootInputs},
+				{"start-delivered", "record a read-only brain packet after SessionStart publication (internal)", runBrainStartDelivered},
 				{"digest-advance", "advance the brain's narrator digest cursor after context emission (internal)", runBrainDigestAdvance},
 			},
 		},
@@ -292,6 +293,7 @@ func families() []family {
 			verbs: []verb{
 				{"coverage-ratchet", "judge go test -cover output against the checked-in per-package floors", runAuditCoverageRatchet},
 				{"dependency-ratchet", "refuse undeclared executable interpreter dependencies in shell sources", runAuditDependencyRatchet},
+				{"hook-start-exits", "refuse SessionStart paths around the outcome owner", runAuditHookStartExits},
 				{"metasystem", "instruction-asset audit: required files, outside references, placeholders, word budgets", runAuditMetasystem},
 			},
 		},

@@ -511,6 +511,24 @@ if ! bash scripts/agents/go-build.sh --out "$gate_build_scratch" >/dev/null 2>&1
   rm -f "$gate_build_scratch"
   gate_build_scratch=
 fi
+gate_hook_start_scope=script-fixture
+# wow.md marks both template and adopted installations. The audit source is a
+# second positive signal so deleting the marker cannot downgrade a damaged
+# installation to a fixture. This script is also copied alone into focused
+# gate and witness fixtures; those partial trees own neither signal nor a
+# SessionStart hook. A dangling signal still requires the audit.
+if [[ -e "$root/wow.md" || -L "$root/wow.md" \
+  || -e "$root/internal/audit/hookstartexits.go" || -L "$root/internal/audit/hookstartexits.go" ]]; then
+  gate_hook_start_scope=installation
+fi
+if [[ -n "$gate_build_scratch" && "$gate_hook_start_scope" == installation ]]; then
+  gate_hook_start_out=$("$gate_build_scratch" audit hook-start-exits --root "$root" 2>&1) \
+    || gate_static_reds+=("SessionStart exit audit failed:
+$gate_hook_start_out")
+fi
+if [[ "$gate_hook_start_scope" == script-fixture ]]; then
+  echo "go gate: SessionStart exit audit not applicable to this script fixture"
+fi
 
 if (( ${#gate_static_reds[@]} )); then
   echo "go gate: ${#gate_static_reds[@]} static check(s) red — the complete block:" >&2
@@ -537,7 +555,11 @@ if [[ "$gate_fast" == 1 ]]; then
   mv -f "$gate_build_publish" "$gate_build_target"
   rm -f "$gate_build_scratch"
   gate_build_scratch=
-  echo "go gate: fast mode passed (gofmt, vet, staticcheck, refusal register, build); the full gate remains the landing requirement"
+  if [[ "$gate_hook_start_scope" == installation ]]; then
+    echo "go gate: fast mode passed (gofmt, vet, staticcheck, refusal register, SessionStart exit audit, build); the full gate remains the landing requirement"
+  else
+    echo "go gate: fast mode passed (gofmt, vet, staticcheck, refusal register, build); the full gate remains the landing requirement"
+  fi
   exit 0
 fi
 

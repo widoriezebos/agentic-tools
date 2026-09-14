@@ -80,6 +80,7 @@ func runJSONGet(args []string) int {
 	value := flags.String("value", "", "JSON string to read (instead of --file)")
 	field := flags.String("field", "", "dotted field path (a.b.c)")
 	def := flags.String("default", "", "value to print when the field is missing or null (exit 0)")
+	shellSafe := flags.Bool("shell-safe", false, "require a UTF-8 string without NUL for shell capture")
 	if flags.Parse(args) != nil {
 		return 2
 	}
@@ -101,8 +102,22 @@ func runJSONGet(args []string) int {
 		}
 		content = read
 	}
-	out, ok := jsonedit.Get(content, *field, defValue)
+	var out string
+	var ok bool
+	if *shellSafe {
+		out, ok = jsonedit.GetShellString(content, *field, defValue)
+	} else {
+		out, ok = jsonedit.Get(content, *field, defValue)
+	}
 	if !ok {
+		if *shellSafe {
+			if _, present := jsonedit.Get(content, *field, nil); present {
+				return 1
+			}
+			if !jsonedit.FieldAbsent(content, *field) {
+				return 1
+			}
+		}
 		// A default makes a structurally absent path resolvable while malformed
 		// JSON remains an error. The first lookup already accepted present null,
 		// so this probe preserves the distinction shell callers need.
@@ -112,7 +127,11 @@ func runJSONGet(args []string) int {
 		}
 		return 1
 	}
-	fmt.Println(out)
+	if *shellSafe {
+		fmt.Print(out)
+	} else {
+		fmt.Println(out)
+	}
 	return 0
 }
 

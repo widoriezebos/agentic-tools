@@ -1,7 +1,7 @@
 # Design: the supervision hook resolves the metasystem world, not the outer repository
 
 Goal: supervision-hook-wrong-root (plans/goals/supervision-hook-wrong-root.md,
-revision 9); since the 2026-09-06 split, the design's remaining scope is
+revision 10); since the 2026-09-06 split, the design's remaining scope is
 goal hook-root-resolver-design (member B), member A having landed as
 43c3d3c08. Author: implementer delegate under dispatch by
 m0b+main-1788250419-3170380-8a1fb3. **Revision 3, 2026-09-02**: folds all five
@@ -293,6 +293,38 @@ the landing table, the consistency pass and the reject condition. The
 hook at 3a6353c3 is c905ca8d's plus ten lines at 1372-1381 (the start
 path's `session start --root "$state_root"`), so every hook line cited by
 revisions 7 and 8 holds and the sweep gains that one site.
+
+**Revision 10, 2026-09-14:** re-based onto trunk after 0d4c0c5f, then
+extended from one notice to a SessionStart mechanism. The uncommitted
+revision 10 in scratchpad g10, wt6 was written against 0d4c0c5f; this page
+carries it onto g12, wt12 at HEAD 26fa52b5. Every source citation introduced
+by revision 10 was re-read at that HEAD; paths are relative to
+`metasystem/`. Earlier revision citations remain historical.
+
+The first re-base added a fixed notice for engine skew and recorded the
+other silent start failures. That was an instance fix. Wido's direction on
+2026-09-14 is the reason it now covers the class: "I am really looking for
+structural and future-proof solutions to these problems as part of the
+meta-system. So not temporary fixes, but structural fixes."
+**Every SessionStart termination now belongs to `start_finish`: it must
+carry a fixed cause/remedy notice or an explicitly justified intentional
+outcome. An EXIT trap catches accidental termination, and a source audit
+plus fault fixtures refuses a new path around the owner.** Engine skew is
+one declared outcome. The other five failure families are in scope, not
+parked gaps. Startup and compaction share the mechanism.
+
+Decisions 1-2 define the literals, boundary, preparation/publication order,
+all failure mappings, last-resort output and enforcement. Decision 3 names
+the fixture for every outcome. The stale enrollment/arming reject sentence
+is corrected under trunk's repair/report contract. All trunk Stop
+presentation amendments remain whole; the new boundary applies to start,
+not to Stop, receipt or end. `diagnostics-never-swallowed` retains the
+proof/validation/fixture diagnostic helper; the relationship is stated in
+Decision 2 so the builds share audit machinery rather than duplicate it.
+No new human decision is needed for this mechanism. Revision 8's
+linked-worktree ownership question remains with Wido, and the page proceeds
+on the landed primary-owned rule. This is design only: the mechanism,
+source check and fixtures are specified, not implemented or run.
 
 ## The defect, restated against the code
 
@@ -761,7 +793,14 @@ shape (Decision 2); the block below is shown with revision 7's comments
 and the identity test of the linked-worktree rule, and the worker's own
 resolution block it replaces sits at c905ca8d lines 423-425 (engine),
 456-463 (missing engine), 464-472 (registry), 474-481 (payload), 487-503
-(cwd, session-env and toplevel) and 508-517 (the shell marker block):
+(cwd, session-env and toplevel) and 508-517 (the shell marker block).
+**Revision 10:** the inline sketch below preserves the resolver's
+non-start behavior. Its start arms illustrate calls to the new owner;
+Decision 2's isolated `start_main`, guarded preparation and single
+`start_finish` termination replace all bare start exits in this sketch.
+The missing-engine text remains the shipped notice (26fa52b5
+`scripts/agents/supervision-hook.sh:509`); skew remains the branch at
+543-551. Neither start notice is printed directly at its call site:
 
 ```bash
 script_dir=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd -P)
@@ -822,6 +861,8 @@ ms="${METASYSTEM_BIN:-$canonical}"
 if [[ ! -x "$canonical" || ! -x "$ms" ]]; then
   if [[ "$event" == stop ]]; then
     printf '%s\n' "$raw_missing_engine_stop"
+  elif [[ "$event" == start ]]; then
+    start_finish notice engine-missing
   fi
   exit 0
 fi
@@ -839,6 +880,8 @@ fi
 # empty, or a newline or carriage return inside it, is a broken engine
 # and the same skew allowance — the parent applies the identical rule to
 # its own resolver's answer (revision 8).
+# On start, print the fixed missing-context notice before exiting.
+# It supplies no role context and names no state world.
 repo_rc=0
 repo=$("$ms" path state-root "$world_installation" 2>/dev/null) || repo_rc=$?
 if (( repo_rc == 1 )); then
@@ -846,6 +889,8 @@ if (( repo_rc == 1 )); then
 elif (( repo_rc != 0 )) || [[ -z "$repo" || "$repo" == *$'\n'* || "$repo" == *$'\r'* ]]; then
   if [[ "$event" == stop ]]; then
     printf '%s\n' "$raw_engine_skew_stop"
+  elif [[ "$event" == start ]]; then
+    start_finish notice engine-skew
   fi
   exit 0
 fi
@@ -867,6 +912,39 @@ withdraws that sentence**: the parent validates the skew literal through
 its structured path, because a worker that emitted it had both
 executables and so does its parent; the fallback stays as shipped
 (Decision 1, parent subsection; Decision 2).
+
+**Revision 10, current literals (26fa52b5).** The older Stop strings above
+are history. Keep the shipped Stop literals at
+`scripts/agents/supervision-hook.sh:39-40` byte-for-byte: missing engine
+says `Task unknown; Stop allowed; needs supervision repair; engine missing.
+Rebuild bin/metasystem. Status unavailable.`, and skew says `Task unknown;
+Stop allowed; needs supervision repair; engine does not answer path
+state-root. Rebuild bin/metasystem. Status unavailable.` Each is the sole
+`systemMessage` of its fixed JSON object. This revision changes neither
+Stop literal nor the later report-bearing Stop presentation.
+
+Define `raw_engine_skew_start` beside those literals, with these exact bytes:
+
+```json
+{"systemMessage":"Metasystem engine does not answer path state-root: this session received no role context; if this checkout is a declared brain it is uninstructed. Rebuild bin/metasystem with scripts/agents/go-build.sh, then start a new session."}
+```
+
+The cause and rebuild target match the current degraded skew Stop form;
+the `Metasystem engine ...:` opening, missing-context warning, conditional
+brain warning and new-session remedy parallel the shipped missing-engine
+start notice (509), which keeps its bytes. A start has no turn verdict or
+Stop report to describe, so it makes no task, Stop-outcome or status claim.
+The conditional is necessary: without the engine's state-root answer,
+the hook cannot safely inspect a brain declaration. The worker prints the
+literal through `start_finish notice engine-skew`, without engine JSON
+verbs. Decision 2 replaces the later `emit_start_payload` (683-720),
+separating preparation from publication and digest advancement. The object
+contains no `decision`, `reason` or `hookSpecificOutput`. The missing-engine
+catalog entry is exactly the shipped one-line `systemMessage`:
+
+```json
+{"systemMessage":"Metasystem engine missing: this session received no role context; if this checkout is a declared brain it is uninstructed until the engine is rebuilt: run scripts/agents/go-build.sh, then start a new session"}
+```
 
 ### The Stop-deadline parent (folds SHR-R4-DEADLINE-PARENT-01)
 
@@ -1296,7 +1374,7 @@ row.
 | Linked delegate worktree of the fleet checkout (tracked files only, or with a builder's engine; no steward identity in the sandbox) | `<worktree>/metasystem` | mapped to `<primary>/metasystem` **before** engine work; the primary's engine answers: the primary installation |
 | Linked worktree whose sandbox carries an `identity.json` (fixture-written, copied or stale — the engine never mints one there, `runner.go:578-589,594-609`) | `<worktree>/metasystem` | mapped to `<primary>/metasystem` like every linked worktree; the file is not consulted (revision 8 withdraws revision 7's exception) |
 | Hook copy or terminal hook symlink inside some repository, no engine at the candidate — with or without `METASYSTEM_BIN` | anywhere | the missing-engine degraded ALLOWANCE on stop (c905ca8d line 32), exit 0; no world, no writes (revisions 5 and 7) |
-| Governed installation whose engine predates this design | any supported layout | the engine/hook-skew degraded ALLOWANCE on stop, exit 0, naming the rebuild (Decision 2, revision 7) |
+| Governed installation whose engine predates this design | any supported layout | the engine/hook-skew degraded ALLOWANCE on stop, exit 0, naming the rebuild (Decision 2, revision 7); on start, the fixed notice that no role context was received and a declared brain is uninstructed, exit 0 (revision 10) |
 | Governed installation whose own engine predates this design, under a `METASYSTEM_BIN` override that is a rebuilt engine (the fleet's daily post-landing state) | any supported layout | the override answers for the installation in the worker AND in the parent: the verdict path runs, and because the override is not the enrolled engine, `up` refuses it and the refusal is disclosed as `Cause: supervision arming failed` in the `systemMessage` — beside the verdict's block when there is one, or as the allowance when there is nothing to block on (revision 9's precedence); the refusal record and the stop-condition line land under the installation; on timeout the record lands under the state world through the override (revisions 6, 7 and 9; Decision 4 `up` row) |
 | Adopted installation (not named `metasystem`) inside a repository that also carries `development/metasystem-design.md` | `<repo>/<anything-else>` | the engine answers: the installation itself; today's shell marker block refuses this world with exit 1 on Stop (c905ca8d 511-513) and is deleted (revisions 6 and 7; case 16) |
 | Template installation with `.local`-only configuration (no `metasystem.conf`) | `<wrapper>/metasystem` | the engine answers: the installation (the shape gate accepts `scripts/agents`); today's shell marker block refuses it and is deleted (revisions 6 and 7; case 16) |
@@ -1346,6 +1424,14 @@ benign") is preserved: the mapping uses no temporary files, the
 missing-engine allowance is a literal `printf`, and payload staging still
 happens only after the engine exists.
 
+**Revision 10:** header items (3) and (5) also name the fixed start notices
+for missing engine and skew, and a new start-boundary item requires every
+start termination to use `start_finish` with a fixed notice or declared
+intentional reason. The shipped header at 26fa52b5
+`scripts/agents/supervision-hook.sh:9-13` names only the Stop outcomes.
+Decision 2 makes all start failures visible and defines the source gate;
+no earlier "benign silence" clause grants a start exception.
+
 ## Decision 2 — failure shape (folds SHR-R2-ENGINE-SKEW-01 and SHR-R2-WORKTREE-FALLBACK-01)
 
 The hook runs under `set -euo pipefail` (`supervision-hook.sh:2`), so an
@@ -1388,8 +1474,10 @@ emission is the new literal `raw_engine_skew_stop` of the same shape
 missing-engine fixture is kept as-is and an old-engine fixture (case 7,
 re-pinned) asserts the block. "Visible" in the sentences above now means
 "blocks and names itself", which is strictly stronger than the one-line
-report revision 2 argued for. On start and end events both outcomes stay
-silent exit 0, as today.
+report revision 2 argued for. Revision 5 also said both outcomes stay
+silent on start and end. **Revision 10 withdraws the start clause:** the
+missing-engine notice already ships, and skew must have a start notice
+too. End remains silent exit 0.
 
 **The contract moved again, and revision 7 follows it (folds the read's
 M1).** Goal stop-infrastructure-allows-the-seat-to-stop landed on 2026-09-13
@@ -1435,6 +1523,356 @@ means "allows and names itself in the notice", and the skew emission is a
 path's second predicate (decision and reason absent, a string
 `systemMessage`; c905ca8d 240-241).
 
+### SessionStart has one termination owner (revision 10)
+
+**A hook failure must never be indistinguishable from a hook that ran and
+had nothing to say.** The old inventory is replaced by the following
+binding mechanism, covering all six families. It does not infer that an
+unresolved installation is ungoverned, or that a failed read was empty.
+
+**Location and entry.** `start_finish` and its fixed outcome catalog live
+inline in `scripts/agents/supervision-hook.sh`, before the first fallible
+operation. They cannot be sourced from another file: locating that file is
+itself one of the failures they must report. Read the two positional
+arguments with shell defaults, initialize the boundary with builtins, and
+install the start-only EXIT/HUP/INT/TERM traps before runtime validation,
+`set -euo pipefail`, directory discovery, `date`, temporary storage or engine
+calls. At 26fa52b5 the first directory calls are 43-44, the date is 468,
+and runtime validation is 23-24; all move behind this boundary for start.
+Invalid event names remain the existing non-start invocation refusal.
+
+Isolate start orchestration in `start_main`, invoked as a plain command in
+the current shell, never under `if`, `!`, `&&`, `||`, a pipeline or command
+substitution that changes `errexit` or loses boundary state. The non-start
+body is an explicitly separate dispatcher arm. Common resolver/read
+functions return results and status to their caller, never terminate the
+hook. There is one resolver, unchanged in authority: the start caller maps
+its failures to notices while the non-start caller keeps its existing
+mappings. The old inline worker sketch and failure map on this page remain
+binding for non-start; this subsection supersedes their bare exits for
+start. No start path may fall through into the Stop/end/receipt body.
+Immediately after the plain `start_main` invocation, its dispatcher arm
+calls `start_finish notice unexpected-termination`: even a mistaken
+successful return cannot escape into unrelated work before EXIT runs.
+
+**Contract.** `start_finish` is non-returning and owns the only shell `exit`
+reachable from start, the only write of a start response to stdout, trap
+disarming, temporary-file cleanup and post-delivery bookkeeping. Its
+required first argument is one of two families, with a literal catalog key:
+
+- `notice <cause-key>`: the catalog owns the exact fixed message, remedy
+  and exit status; callers cannot pass raw engine text, an empty message,
+  an arbitrary status or a success flag. Before publication, a failure
+  discards prepared context and emits exactly one JSON object with only
+  `systemMessage`. Infrastructure notices exit 0; explicitly invalid
+  invocation/registry membership exits 2, custody refusal exits 1, and
+  caught HUP/INT/TERM exits 129/130/143 after its notice. These statuses are
+  catalog data, not caller choices.
+- `intentional <reason-key>`: this explicitly justifies why no failure
+  notice is due. True skip reasons are `authenticated-delegate` and
+  `foreign-runtime`; each emits no stdout and the fixed stderr line
+  `Metasystem SessionStart intentionally skipped: authenticated delegate;
+  its launcher owns context.` or `Metasystem SessionStart intentionally
+  skipped: another runtime owns this process.` respectively, then exits 0.
+  The same family has successful completion reasons `context-ready`,
+  `screen-context-ready`, `notices-ready` and `healthy-no-context`: these
+  publish the fully prepared relay object, or exactly `{}` plus newline
+  for the last reason, then exit 0. These are declared successful outcomes,
+  not claims that processing was skipped. Payload/notice presence must
+  agree with the reason. An undeclared brain alone does not authorize an
+  early skip of arming or wait recovery.
+
+An unknown/missing key, wrong payload shape, inconsistent completion reason
+or accidental fall-through selects the last-resort notice, never silence.
+Only the helper may set the terminal state. It seals delivery only after a
+successful stdout write (or the declared skip's stderr write); no caller
+can set a "done" flag before work runs. Its EXIT trap receives the actual
+exit status but never treats even exit 0 as proof of completion. If the
+helper has not completed, the trap calls it with `unexpected-termination`.
+No ERR-trap-only design: Bash's conditional/substitution rules make that
+insufficient. Re-entry while finishing uses the built-in emergency path,
+not recursion through a failed renderer or engine. The owned cleanup trap
+replaces the start use of today's payload trap (531); cleanup cannot
+replace the outcome trap or cancel publication by failing first.
+
+All external commands on the start path run through a thin, in-process
+`start_capture` operation boundary: literal failure key, destination,
+named status policy and external argv. Stdout/status are captured and
+checked before dependent work; stderr is inherited until an already
+available temporary capture is deliberately used. Capture itself cannot
+require temporary storage before installation discovery or the
+missing-engine check. It calls
+`start_finish` in the main shell on failure, never from inside its command
+substitution. It owns no diagnostic text. Status-to-meaning policies are
+named (`json-optional-field`, `delegate-custody`, `context-channel`,
+`wait-recovery`), not a caller-supplied "ignore errors" list. A child may
+exit or crash; it cannot seal the hook's outcome. The wrapper clears the
+parent's outcome traps only inside its capture subshell; a child exit
+returns to the main-shell status check and never prints a parent fallback
+into captured command output. Its brain-boot operation retains the
+existing bounded child wait and verified-PID termination (hook 764-789),
+using shell `SECONDS`, with `brain-timeout` as the deadline result.
+Captured child stderr
+is preserved to the caller's stderr on failure before temporary cleanup;
+the fixed stdout notice remains available even if that capture fails.
+The helper initializes all boundary state locally, disregarding inherited
+environment flags. Its operation wrapper marks that arming has begun
+immediately before invoking `up`; no caller may forge publication or
+arming state, and the audit checks these assignments' ownership.
+Pure shell helpers return status; callers guard them through the same
+explicit failure mapping. No start-side `|| true`, unchecked substitution,
+empty-result-as-success rule or `record_stop_failure` replaces this check.
+
+### Fixed messages and the six failure families (revision 10)
+
+The fixed missing-engine start notice and `raw_engine_skew_start` in
+Decision 1 keep their exact bytes. Every other pre-publication cause in
+the table expands the following fixed template, where C and R are literal
+catalog strings, never runtime interpolation:
+
+`Metasystem SessionStart could not C: this session received no role context;
+if this checkout is a declared brain it is uninstructed. R Then start a
+new session.`
+
+The actual message is one line, with single spaces at these prose wraps.
+It is serialized as the sole `systemMessage` of one JSON object followed
+by one newline. A schema-backed task, Stop outcome or report is never
+claimed. No arbitrary stderr, path, source value or declaration contents
+enter these notices. The cause describes the operation that failed;
+without a reliable root the conditional brain warning is the strongest
+honest statement. All six families exit 0 with their notice and no context.
+
+| Family and catalog keys | Trigger at 26fa52b5 | Exact C and R, or existing literal | Why this is honest |
+| --- | --- | --- | --- |
+| 1. `engine-skew` | Resolver nonzero except 1, empty success or embedded newline/carriage return; hook 543-551 | Exact `raw_engine_skew_start` in Decision 1 | Names the unavailable verb and rebuild, without guessing a world. |
+| 2. `installation-directory`, `checkout-identification`, `resolved-directory` | Initial directory normalization (43-44); every identification/mapping return at 67-84 consumed at 502; final `repo` normalization (553) | C respectively: `locate its installation directory`, `identify the checkout and its primary installation`, `open the resolved installation directory`. R respectively: `Restore access to the installed hook and its parent directories.`, `Restore Git and access to the checkout and its primary metasystem installation.`, `Restore access to the installation directory returned by the engine.` | Missing Git/`env`, malformed identity, unsupported common directory, vanished primary, toplevel/containment failures and missing counterpart all fail visibly. An unsupported layout is not authenticated evidence for a quiet skip. |
+| 3. `installation-validation` | Resolver exit 1 (544-546) | C: `validate the metasystem installation`. R: `Restore a complete, readable metasystem installation and rebuild bin/metasystem with scripts/agents/go-build.sh.` | `path_verbs.go:23-26` maps every `RootForCandidate` error to 1; `stateroot.go:218-231,284-290` includes filesystem shape checks. Report inability to validate, not absence of governance; no new engine exit-code distinction or shell shape authority is needed. |
+| 4. `payload-storage`, `boot-storage`, `start-preparation` | Payload `mktemp`/`cat` (523, 532); boot `mktemp`/diagnostic write (755, 762); date, hash, byte count/truncation, slug (468, 563-565, 831-833, 927) | C respectively: `stage its input`, `stage brain context`, `prepare the session identity and context`. R for storage: `Restore writable temporary storage and free space.` R for preparation: `Restore the installed shell tools and rebuild bin/metasystem with scripts/agents/go-build.sh.` | A local resource/helper failure does not establish an empty payload or absent role. Remove the Stop-only date from start entirely; remaining preparation operations are checked. |
+| 5. `response-rendering` | Failed/empty/malformed normal JSON rendering (687, 694, 697), including loss of prepared notices | The exact last-resort object below | No renderer is trusted to report its own failure; delivery is unconfirmed. |
+| 6. `payload-read`, `pending-read`, `holder-read` | Suppressed payload read (539-555), pending query (1491-1492), holder/fallback classification and its fields (649-667, 878-894) | C respectively: `read its session input`, `read pending steward incidents`, `read checkout holder identity`. R respectively: `Repair the SessionStart hook input and rebuild bin/metasystem with scripts/agents/go-build.sh.`, `Restore access to the steward incident records and repair unreadable records.`, `Restore readable checkout custody records and restart the owning runtime.` | Nonzero/malformed input is not an empty set or a healthy non-holder. These reads move into preparation, and no start failure is stored only in a Stop-only accumulator. |
+
+Known absence is a checked continuation result, not a blanket exception:
+`json get` exit 3 means an absent field, while unreadable/malformed input is
+1 (`cmd/metasystem/json.go:96-116`); valid absent/null/empty optional
+`session_id` keeps `session-$PPID`, but invalid JSON, unreadable input or a
+non-string supplied session id fails `payload-read`. Validate the payload
+as an object before reading it. `steward pending` exits 0 for a real empty
+set and nonzero on read failure (`steward_verbs.go:776-797`; its store
+already distinguishes missing from unreadable, `internal/steward/
+intervene.go:354-380`). `lease hook-delegate` exit 3 means not a delegate,
+0 requires a valid true result, and every other result fails custody
+(`cmd/metasystem/lease.go:88-110`). `runtime start-context` exit 1 means no
+context channel only after successful registry membership; malformed
+success or any other failure is `context-contract` (`runtime_verbs.go:
+187-199`). `session start` exit 64 is `non-holder-no-recovery`, a reason to
+omit recovery rows while completing the rest of start, never a reason to
+discard prepared context (hook 1534-1535; `wait_verb.go:357-386`).
+
+Every other start outcome also uses the owner:
+
+| Catalog key / outcome | Fixed notice through the C/R template, or declared completion |
+| --- | --- |
+| `engine-missing` | Existing missing-engine literal, exit 0; no change to its text. |
+| `invocation-invalid` / `runtime-unregistered` | C: `accept the runtime invocation` / `find the runtime in its registry`. R: `Repair the installed hook registration.` Exit 2. |
+| `runtime-registry` / `context-contract` | C: `read the runtime registry` / `read the runtime context contract`. R: `Rebuild bin/metasystem with scripts/agents/go-build.sh and restore the installed runtime declarations.` Exit 0. |
+| `custody-unreadable` | C: `authenticate delegate custody`. R: `Restore the recorded delegate custody and restart through its launcher.` Exit 1. Incomplete hints, untrusted hint result and unreadable local custody are all refusals, not skips (hook 481-499, 601-608). |
+| `process-identity` | C: `identify the owning runtime process`. R: `Restart through the installed runtime launcher.` Exit 0; no fabricated holder. |
+| `brain-boot` / `brain-timeout` | C: `prepare brain role context` / `finish brain context within its deadline`. R: `Run metasystem brain boot by hand from the owning installation and repair the reported failure.` Exit 0. Existing corrupt/partial brain packets that the engine validly returns remain context, with their engine-owned warnings; a failed boot is not such a packet. |
+| `arming` / `wait-recovery` | C: `arm supervision` / `read durable wait recovery rows`. R: `Repair supervision from the owning installation and run metasystem up there.` Exit 0. Append the fixed sentence `Supervision may have been partly initialized.` These failures can follow state-changing `up`; never promise rollback. |
+| `temporary-cleanup` | C: `remove its temporary files`. R: `Restore temporary-directory access and remove leftover metasystem hook temporary files.` Before publication, retain the primary cause and append this second fixed notice in the same field; after publication report it on stderr with status 1. |
+| `interrupted` | C: `finish because it was interrupted`. R: `Restore the runtime session.` Status 129, 130 or 143 according to the caught signal; after publication use the bookkeeping notice below instead of claiming no context. |
+| `unexpected-termination` or invalid helper use | Last-resort object below; the trap supplies this even after an accidental exit 0. |
+| Authenticated delegate / foreign runtime | `intentional authenticated-delegate` / `intentional foreign-runtime`, only on successful authenticated evidence; the exact skip lines above are observable on stderr. |
+| Successful start | `intentional context-ready`, `screen-context-ready`, `notices-ready` or `healthy-no-context`, after all required operations passed or returned declared absence. The engine remains the sole owner of role content; preserve the current packet, screen-only warning, incident text and wait rows. |
+
+### Preparation, publication and the last resort (revision 10)
+
+The unchanged-state fixtures require a real ordering change, not a stub
+that hides writes. All six failure families are resolved while start is
+preparing: locate/validate the world and engine, read/validate input and
+custody, do hash/slug work, read holder and pending state, prepare brain
+context, and render/validate the context and initial notices **before
+`up`, brain status publication or digest advancement**. Each fault discards
+all preparation. Temporary captures stay outside every state world.
+
+Today `brain boot` writes `brain-status.json` before returning its packet
+(`cmd/metasystem/brain_boot.go:204-207`), and its optional-input reader
+already uses temporary section files (96-105, 312-348). Add a hook-owned
+`brain boot --read-only` mode to the existing command, sharing the same
+composition and deadlines, omitting only the status write. No duplicate
+brain composer, alternate root, copied mutable world or new transaction
+store. Existing manual `brain boot` keeps its behavior. Add
+`brain start-delivered` beside `brain digest-advance`: after publication it
+re-reads the declaration and requires the `declarationSha256` returned only
+by read-only boot (SHA-256 of the engine's canonical validated declaration
+encoding) to match, writes status
+through `brain.WriteStatus`, and advances only the emitted brain digest
+cursor using the existing prefix check. An undeclared/corrupt packet
+carries no status-write authorization; a changed declaration refuses
+bookkeeping. The read-only output and delivery arguments are an internal
+hook/engine contract, covered by the same skew/boot-failure handling when
+one side is older. `start-delivered` cannot run on notice or skip outcomes.
+
+Normal engine JSON work is preparation too. Replace the engine-dependent
+calls inside today's final `emit_start_payload` with prepared context JSON
+and one builtin-only final assembly in `start_finish`. Late successful
+`up`/wait text is escaped by a total shell string encoder owned there:
+quotes, backslashes and every representable control byte are escaped;
+UTF-8 from the engine is preserved. It uses Bash builtins and in-memory
+strings, never another `json object`, file, `wc`, `head`, `date` or engine
+call. The existing Go JSON decoder used to export prepared text to Bash
+gets `json get --shell-safe`: it refuses decoded NUL or invalid UTF-8
+before writing text, rather than losing bytes in a shell variable. Its
+nonzero result maps to the caller's declared read/rendering notice;
+manual JSON callers keep their current behavior. Keep the runtime's byte bound and screen-only
+limit; enforce them before stateful work. The final assembler cannot turn
+an engine outage after arming into a rendering dependency. Its encoding
+is boundary plumbing, with byte-level Go tests, not a second role-policy
+owner. New fallible preparation cannot be placed after arming just to
+escape the unchanged-state obligation.
+
+After preparation, preserve `up` followed by the holder-checked
+`session start` read, then publish the assembled response. Do not move the
+wait read ahead of `up`: its current-holder test would omit newly acquired
+holder recovery (`cmd/metasystem/wait_verb.go:369-385`). The six mapped
+preparation failures leave durable state unchanged; an `up` failure,
+cancellation during arming or post-publication bookkeeping failure may
+leave partial state and must say so. Any pre-publication notice selected
+after arming began also appends the fixed sentence `Supervision may have
+been partly initialized.` No shell
+helper can roll back an already armed watchdog, and this design adds no
+false transaction promise.
+After successful stdout publication, `start_finish` performs guarded
+`brain start-delivered` and cleanup, then exits. Failures after publication
+produce no second stdout object and no false "no role context" claim:
+the exact stderr notice is `Metasystem SessionStart published its response
+but could not finish delivery bookkeeping. Repair supervision from the
+owning installation, then start a new session; context may repeat.`
+Exit 1. Output already published is not withdrawn, and a failed status or
+digest write is not treated as acknowledged. Partial status/arming state
+is retained for repair; never advance the human digest cursor.
+
+**Last resort, exact output:**
+
+```json
+{"systemMessage":"Metasystem SessionStart could not produce its response: role context delivery is unconfirmed; a declared brain may be uninstructed. Rebuild bin/metasystem with scripts/agents/go-build.sh, then start a new session."}
+```
+
+This literal is initialized at entry and printed with `builtin printf`
+by `start_finish`. Fixed notice rendering needs no engine, JSON utility,
+Git, temporary directory or sourced helper at all. A failed, empty or
+malformed normal renderer is discarded before stdout, and the helper uses
+this object. If a named notice cannot be selected, the same fallback
+applies. The emergency path does not consult the outcome catalog, parse
+JSON or allocate a temporary file, and it cannot recurse. If stdout itself
+is unwritable, attempt the same literal on stderr and exit 74; do not claim
+a successful delivery. If the required skip reason cannot reach stderr,
+emit the last resort on stdout and exit 74 instead of sealing a quiet skip.
+Catchable termination goes through the helper;
+SIGKILL, a shell parse failure before initialization, a dead host or both
+output channels being lost cannot be made observable by that same process.
+The source/syntax gate covers parse defects; the guarantee is ordinary
+start control flow with a running shell and an available output channel.
+
+### Enforcement and diagnostic ownership (revision 10)
+
+**Both a static gate and exhaustive declared-outcome fixtures are required.**
+An EXIT trap alone makes a bypass visible at runtime but still permits it
+to ship; a fixture list alone misses the seventh branch.
+
+The Go source audit is `AuditHookStartExits` in
+`internal/audit/hookstartexits.go`, exposed as `metasystem audit
+hook-start-exits --root <installation>`. It reads the full
+`scripts/agents/supervision-hook.sh`, including common callees; it does not
+search only the textual `if event == start` blocks. Reuse and extend the
+existing command-position scanner (`internal/audit/dependencies.go:
+96-116,128-273`), not a grep for the word `exit` and not a new parser
+dependency. Its current word list is insufficient for this proof: retain
+function/command boundaries, prefixes, redirections, substitutions and
+literal argument identity, and report unclassifiable executable syntax
+rather than silently omitting it. Inert comments and strings are not
+commands. Statically identify the exclusive non-start dispatcher arm;
+all common and newly added functions are audited unless their exclusion
+from start is proved. No line-number, function-prefix or comment waiver.
+
+The audit refuses, with source line and violated invariant:
+
+1. Any start-reachable `exit` outside `start_finish`, `exec` replacement,
+   `eval`, `source`/`.` or dynamic shell/function dispatch that can bypass
+   the owner, including escaped/quoted command names, `builtin`/`command`
+   prefixes and command substitutions. Engine/tool argv is allowed only
+   through the checked capture boundary, not as dynamic parent-shell code.
+2. Missing/late/overwritten EXIT or signal traps, a caller changing the
+   terminal flag, start falling into the non-start body, or invoking
+   `start_main`/`start_finish` in a subshell, conditional or pipeline that
+   captures its response or suppresses failure semantics. Direct stdout
+   writes/redirections around the boundary are refused.
+3. A terminating `return`/fall-through from `start_main`, an unknown or
+   nonliteral outcome/reason key, a failure passed to an intentional-skip
+   policy, a new external call or fallible substitution without the
+   `start_capture` status/shape mapping, and `|| true`/discarded status in
+   the audited path. Internal helper returns are allowed only when their
+   caller consumes the status. Declared absence policies are finite and
+   tested; arbitrary accepted-code lists are refused.
+4. A catalog outcome with no discriminating fixture, an emitted object
+   inconsistent with the key, or a new failure family left outside the
+   preparation/state boundary. The catalog in the hook is the single
+   machine-readable inventory; fixture case labels are joined against it,
+   not a second hand-maintained allowance list. Adding a label without its
+   injected failure and expected terminal assertion does not satisfy the
+   join. Syntax it cannot safely audit is a red, naming the construct to
+   make explicit; it is never assumed to be outside start.
+
+**Fix-round-11 amendment made at landing (revision 10):** the gate scope
+below narrows "unconditionally" to complete installations while preserving
+the second signal that makes damaged installations fail closed. Run the
+audit unconditionally in the existing collected static phase of
+`scripts/agents/go-gate.sh` (26fa52b5 480-520), using the just-built
+candidate engine before that phase may pass, in fast and full modes; if
+build/audit execution fails, that is a reported red, not a skipped check.
+Here "unconditionally" means every metasystem installation: `wow.md` is
+the shipped installation marker in both the template and adopted payload,
+and `internal/audit/hookstartexits.go` is a second positive signal so
+deleting the marker cannot downgrade damaged source to a fixture. The
+production gate is also copied alone into deliberately partial Go and
+witness fixtures; a root with neither filesystem entry is not an
+installation and does not run this audit. Treat a symlink, including a
+dangling one, as an entry so corruption cannot turn the audit off. Once
+either signal exists, a missing or unreadable hook, shell fixture bed or Go
+assertion source is a red; removing the audit source itself makes the
+candidate build red. Adoption ships all three audit inputs (`adopt.sh`'s
+source payload includes `internal/`), and its fixture removes the assertion
+source once to prove the installed audit fails closed. The validator accepts
+only complete installations and therefore has no partial-tree exception.
+The exception is necessary because gate fixtures that copy `go-gate.sh`
+alone are not installations.
+Also call the same audit in `static-contract-audits`
+(`scripts/validate-metasystem.sh:922-925,1035-1036`). `bash -n` remains in
+`shell-and-dependency-audits` (1084-1085); it alone does not enforce exit
+ownership. Add the hook, audit and fixture inputs to the shared testing
+selection so changing any one selects the source audit and start matrix;
+`fast-static-build` already observes `scripts/**` (`testing.json:32`).
+The audit's own tests insert bypasses into an otherwise accepted script
+and must make the gate red before any expensive fixture run. Fixtures
+also bypass the static gate deliberately on disposable script copies to
+prove the EXIT trap itself: accidental exit 0, exit 1, failed command,
+failed substitution and top-level return cannot yield silent success.
+
+**Cross-reference, not merger.** Goal
+[`diagnostics-never-swallowed`](goals/diagnostics-never-swallowed.md)
+(26fa52b5 lines 6-8) owns complete failure-block reporting and captured-log
+retention for proof, validation and fixture paths, including their Bash
+assertion discipline. This page owns the production SessionStart protocol
+and its termination boundary. Its future shared fixture diagnostic helper
+prints a failing audit/fixture's captured block and preserves that output;
+it must not be copied into a new hook-specific test helper. `start_finish`
+cannot source that fixture helper or print a proof transcript into the
+provider's JSON channel. Share `internal/audit`'s command scanner and
+failure-reporting conventions; keep these distinct protocol owners. A
+later extension of the broader goal reuses this start audit for this hook,
+not a second hook-exit checker or another generic runtime exit helper.
+Neither goal's completion is claimed by editing the other's page.
+
 **Precedence when one Stop carries both (revision 9).** A Stop can record
 an infrastructure condition (`supervision arming failed`, a health engine
 with no verdict, a digest that could not be read — every
@@ -1477,7 +1915,10 @@ currently installed pre-fix engine on m0b: `metasystem path: unknown verb
 so old it lacks the whole `path` family also exits non-{0,1} through the
 top-level dispatcher, landing in the same skew branch.
 
-The complete failure map:
+The complete resolver/Stop failure map follows. **Revision 10:** every
+silent row here has the start-specific notice mapping in the six-family
+table above; on start it is never an authorization to exit silently. The
+non-start outcomes in this historical map are unchanged.
 
 | Operation | Failure | Mapped outcome |
 | --- | --- | --- |
@@ -1487,9 +1928,9 @@ The complete failure map:
 | `primary_top` / `wt_top` physical normalization | directory vanished or unreadable | each is `$(cd -- ... 2>/dev/null && pwd -P) || exit 0` |
 | containment `case` | installation not at or below its worktree toplevel | silent exit 0 |
 | primary counterpart shape check | no `scripts/agents` directory there | silent exit 0 |
-| engine executable test at the world: `-x "$canonical"` AND `-x "$ms"` | no engine at `<installation>/bin/metasystem`, or an override that is not executable | **the shipped missing-engine degraded ALLOWANCE on stop** (`raw_missing_engine_stop`, c905ca8d 32), exit 0 — revision 5 wrote "BLOCK" against the contract then shipped; 529d8a64 changed the literal and revision 7 follows it; the candidate's own engine is required whether or not `METASYSTEM_BIN` is set (SHR-R4-COPIED-HOOK-OVERRIDE-01) |
+| engine executable test at the world: `-x "$canonical"` AND `-x "$ms"` | no engine at `<installation>/bin/metasystem`, or an override that is not executable | **the shipped missing-engine degraded ALLOWANCE on stop** (`raw_missing_engine_stop`, c905ca8d 32), exit 0 — revision 5 wrote "BLOCK" against the contract then shipped; 529d8a64 changed the literal and revision 7 follows it; the candidate's own engine is required whether or not `METASYSTEM_BIN` is set (SHR-R4-COPIED-HOOK-OVERRIDE-01). On start, the shipped fixed `systemMessage` warns of missing role context and an uninstructed declared brain, then names the rebuild and new session (26fa52b5 `scripts/agents/supervision-hook.sh:505-511`); exit 0. End and receipt stay silent |
 | `path state-root "$world_installation"`, exit 1 | the verb's own refusal: `$world_installation` fails the shape gate (no `metasystem.conf` and no `scripts/agents` directory) | worker silent exit 0; on stop the parent's unreadable-output allowance (c905ca8d 248-251), whose stop-condition line lands under `$deadline_repo` when the parent's own resolver answered and is said in the notice otherwise |
-| `path state-root "$world_installation"`, any other nonzero exit, or exit 0 with an answer that is empty or not exactly one line (a newline or carriage return inside it; revision 8, the design read's M5) | verb absent from an older engine (verified exit 2), family absent, a usage refusal (exit 2), or a broken answer — including a broken override that prints a directory name carrying a line break, which the worker must not `cd` into and judge | **the engine/hook-skew degraded ALLOWANCE on stop** (`raw_engine_skew_stop`, a literal `printf` of the same shape as the missing-engine allowance, naming the rebuild), exit 0 (SHR-R4-FAIL-CLOSED-REGRESSION-01 as re-read under 529d8a64, revision 7); the worker and the parent apply the one-line rule identically, so no world the parent would reject is ever judged by the worker |
+| `path state-root "$world_installation"`, any other nonzero exit, or exit 0 with an answer that is empty or not exactly one line (a newline or carriage return inside it; revision 8, the design read's M5) | verb absent from an older engine (verified exit 2), family absent, a usage refusal (exit 2), or a broken answer — including a broken override that prints a directory name carrying a line break, which the worker must not `cd` into and judge | **the engine/hook-skew degraded ALLOWANCE on stop** (`raw_engine_skew_stop`, a literal `printf` of the same shape as the missing-engine allowance, naming the rebuild), exit 0 (SHR-R4-FAIL-CLOSED-REGRESSION-01 as re-read under 529d8a64, revision 7); the worker and the parent apply the one-line rule identically, so no world the parent would reject is ever judged by the worker. **On start, one fixed `raw_engine_skew_start` notice, then exit 0** (revision 10). No role context, brain boot, `up`, wait rows or durable writes; no guessed root. End and receipt stay silent |
 | final `repo` physical normalization | directory vanished or unreadable | worker silent exit 0; on stop the parent's unreadable-output allowance |
 | evidence-trail `mkdir -p "$supervision_dir"` (HEAD 580, reachable with a write-denied primary from a sandboxed worktree session) | permission denied | gains `2>/dev/null || true`; the appends that follow already carry their own guards (HEAD 582, 613-614, 640-641); at c905ca8d the sites are 962-965 and 1129-1135, and 1129's `mkdir` already reports its failure through `hook_log_failure` |
 | parent: `hook_world_installation` (SHR-R4-DEADLINE-PARENT-01) | any identification or mapping failure | `deadline_engine` and `deadline_canonical` empty; completion takes the no-validator fallback (c905ca8d 244-247) and otherwise the unreadable-output allowance (248-251), timeout takes the record-failure notice (396-404) — the shipped shape for an unresolvable world; no block |
@@ -1507,8 +1948,10 @@ conversion unchanged — it is the fail-closed floor beneath every silent
 row — and the "exactly two fixed outputs" sentence below counts the
 worker's own emissions. **Revision 7:** on c905ca8d that floor is the
 unreadable-output allowance (248-251), not a block; every silent row
-above inherits it, and the count of the worker's own emissions is
-unchanged at two.
+above inherits it, and the count of the worker's own Stop emissions is
+unchanged at two. Revision 10 gives start its own single termination
+owner and fixed outcome catalog, including skew and missing engine;
+no start outcome involves the Stop parent.
 
 How the parent sees the two literals (revision 6): the missing-engine
 literal is emitted by a worker with no `deadline_engine` counterpart in
@@ -1549,6 +1992,12 @@ governed world allows the Stop under a notice that names itself and the
 rebuild. The one new output is the skew allowance, on the same channel, in
 the same shape, and under the same stop-only condition as the missing-engine
 allowance (c905ca8d 456-463).
+
+**Revision 10 extends visibility to every start exit:** `start_finish`
+selects a catalog notice or a declared intentional outcome. Skew is one
+instance; the earlier one-new-output limit no longer applies to start.
+The two current Stop allowances and the already shipped missing-engine
+start notice keep their bytes.
 
 ## Decision 3 — fixtures (folds SHR-R2-WORKTREE-ENGINE-01, SHR-R2-ENGINE-SKEW-01, SHR-R2-INSTALL-01; pins the worktree and fallback rules)
 
@@ -1811,6 +2260,124 @@ New scenario `nested-root` (template-mode nested; models the fleet):
   missing-engine literal, as the critic showed, and is withdrawn — the
   fallback no longer accepts the skew literal (Decision 1), so there is
   nothing left to pin there.
+  **Revision 10 retains `engine-skew-start` and adds the complete start
+  matrix below.** Keep the shipped Stop case and exact current allowance
+  assertion (26fa52b5 `scripts/agents/supervision-fixtures.sh:1368-1411`).
+  The start fixtures belong beside the staged brain rows in
+  `scripts/agents/supervision-hook-fixtures.sh` (startup 323-344, compact
+  484-499, missing engine 528-541). Their implementation and assertions
+  belong in Go, with the existing shell bed acting as their launcher.
+  Every failure key and intentional reason in the hook catalog must have
+  an executed case; the audit joins those case labels to that catalog.
+
+  `engine-skew-start` uses its own executable staged engine and a
+  `METASYSTEM_BIN` case-7 stub that records every invocation, refuses
+  exactly `path state-root` with `metasystem path: unknown verb
+  "state-root"` on stderr and exit 2, and forwards every other verb
+  (the current stub with malformed mode off, supervision fixtures
+  1380-1391). Clear inherited delegate-hint variables for non-delegate
+  cases (hook 481-499). Invoke the staged hook directly: `run_brain_hook`
+  overwrites `METASYSTEM_BIN` (hook fixtures 254-261). The trace reaches
+  `runtime list`, then the refused resolver, then stops: no payload JSON
+  read, role contract, boot, `up`, waits or delivery acknowledgment. Keep
+  the four startup/compact × declared/undeclared firings, each with a
+  distinct session. Add malformed resolver successes (empty, embedded LF
+  and CR) to exercise the same catalog key. Exact output remains Decision
+  1's skew literal and one trailing newline, exit 0.
+
+  **Common assertions for every preparation-failure row below:** inject
+  the fault through a command shim, a real corrupt/unreadable fixture input
+  or a one-operation substitution in a disposable hook copy; never replace
+  `start_finish`, the trap or its emitter to make the main branch pass.
+  No production fault-injection flags. Where a platform's permissions
+  cannot force failure, use the deterministic operation substitution and
+  retain the ordinary integration firing too. Exercise both lifecycle
+  sources and declared/undeclared brains. Assert status 0, exact expanded
+  catalog JSON plus one newline, no `decision`/`reason`/context fields and
+  no extra stdout. Snapshot the entire staged installation's durable
+  artifacts plus brain declaration, both digest cursors, brain status,
+  hook log, refusal records and wait/lease records: bytes and presence
+  stay unchanged from before invocation. Also check primary/sandbox roots
+  and external fixture registry state; diagnostic captures live elsewhere.
+  The trace must show no `up`, `brain start-delivered`, ordinary mutating
+  `brain boot`, ledger mutation or digest advance. Read-only brain
+  preparation may run on later faults and must itself satisfy the snapshot.
+  These are full-path assertions, not snapshots taken only after a write.
+
+  | Fixture row | Injected failure / discriminating assertion | Exact expected outcome |
+  | --- | --- | --- |
+  | `engine-skew-start` | Case-7 refusal, empty/LF/CR success; trace ends at resolver | `engine-skew` notice; common status/state assertions |
+  | `start-installation-directory` | Fail each initial `cd`/`pwd` separately | `installation-directory` notice; no Git/engine reached |
+  | `start-checkout-identification` | Git/`env` absent or failed, malformed identities, common-dir basename, inaccessible primary, failed toplevel query/normalization, containment, missing counterpart; each subcase executes | `checkout-identification` notice; no engine or guessed root |
+  | `start-resolved-directory` | Engine returns a one-line directory that disappears before normalization | `resolved-directory` notice; no state consumer reached |
+  | `start-installation-validation` | Case-7-style exit-1 stub; also real `RootForCandidate` shape/read refusal after mapping | `installation-validation` notice; a refusal cannot become an intentional skip |
+  | `start-preparation-storage` | Fail payload `mktemp` and write, boot `mktemp` and diagnostic write independently | `payload-storage` or `boot-storage` respectively; notice survives unavailable TMPDIR |
+  | `start-preparation-tools` | Fail session hash, slug, byte sizing/truncation independently; missing `date` is a positive canary proving start no longer calls it | Faults: `start-preparation`; removed date: same successful result as control, no date invocation |
+  | `start-response-rendering` | Fail each normal engine JSON renderer, including a success status with empty/malformed output; seed a real declared-brain status/cursor before read-only boot | Exact last-resort object; old design would have altered status before failing, new snapshot stays equal |
+  | `start-payload-read` | Unreadable capture, malformed JSON, non-object JSON, unreadable session field | `payload-read`; valid missing/null/empty session separately uses the fallback and completes normally |
+  | `start-pending-read` | Failing pending query and malformed pending record; missing store and empty set are success controls | `pending-read`; never a healthy empty result on error |
+  | `start-holder-read` | Fail main/fallback `lease classify`, return malformed holder data or fail each required field read | `holder-read`; successful false holder is a separate continuation control |
+
+  Complete coverage also drives `engine-missing`, invalid runtime syntax,
+  unregistered runtime, registry failure, incomplete/unreadable custody,
+  unresolved process identity, malformed start-context contract, brain boot
+  failure and timeout. Each asserts its exact catalog object and declared
+  status (0, 1 or 2), plus the same no-state-change snapshot because these
+  faults precede arming. Preserve real successful startup/compact context,
+  undeclared/corrupt declarations, screen-only delivery and wait recovery;
+  assert each successful completion key and that only delivered brain
+  content can advance its brain cursor. No test infers failure visibility
+  merely from a nonzero exit.
+
+  True skip rows authenticate a delegate and a foreign runtime using the
+  existing custody/ancestry fixtures: status 0, empty stdout, exactly the
+  catalog skip line on stderr, and all durable state unchanged. Negative
+  twins with missing, forged or unreadable custody get the refusal notice
+  instead. `non-holder-no-recovery` asserts that code 64 omits wait rows
+  but retains the complete role packet and final completion reason. A
+  healthy start with no context or notices yields exactly `{}` and the
+  `healthy-no-context` completion; it is not an early failure escape.
+
+  `start-unexpected-exit` mutates a disposable script at a reachable
+  preparation point to bare exit 0, exit 1, return, failed command and failed
+  substitution: each is rejected by the static audit; deliberately running
+  the copies anyway must emit the last resort and preserve state. The
+  top-level EXIT guard must observe a prematurely returning `start_main`
+  as incomplete, not run the non-start branch. Signal rows interrupt
+  preparation with HUP/INT/TERM, assert the exact interrupted notice and
+  129/130/143, and preserve state. Entry faults occur before engine/TMPDIR
+  setup so initialization order is tested. `start-emitter-fallback` forces
+  normal preparation rendering to fail and makes engine/JSON tooling
+  unavailable: exactly the literal still reaches stdout. Its stdout-closed
+  variant expects the same literal on stderr and status 74, no acknowledgment.
+
+  `start-post-preparation` covers partial failure explicitly. Make `up`
+  fail before writing and again after a controlled fixture write; both
+  emit the `arming` notice with its fixed partial-initialization sentence,
+  never context or a digest acknowledgment. Fail wait recovery after
+  successful arming: exact `wait-recovery` notice, retain arming evidence,
+  no brain status/digest delivery writes. Failed cleanup before publication
+  preserves the primary notice and appends the exact cleanup notice in its
+  sole field. Failed acknowledgment, changed declaration or cleanup after
+  successful publication yields one original stdout object, exact delivery
+  bookkeeping stderr and exit 1, never a second object; brain/human cursor
+  and status assertions name which writes were reached. A caught signal
+  after arming carries the partial-state sentence, and after publication
+  uses the bookkeeping notice. These rows do not falsify the six-family
+  unchanged-state guarantee by silently moving their snapshots later.
+
+  `hook-start-exit-audit` unit tests reject each bypass in Decision 2:
+  nested/common-helper exits, quoted/escaped/prefixed exits, exec/eval/source,
+  trap replacement, early done-flag assignment, hidden helper redirection,
+  unconsumed return/status, conditional/subshell dispatch, ignored errors,
+  undeclared skip keys and missing fixture coverage. Negative source cases
+  are never shipped. Positive cases keep strings/comments containing
+  "exit", normal whitespace/quoting, legitimate helper returns, every
+  intentional reason and Stop-only exits accepted. Run source and outcome
+  tests on stock Bash 3.2 and Bash 5; explicitly guarded assertions must
+  fail their Go case independently of Bash `errexit`. Gate/audit failures
+  print their whole diagnostic block and retain captures under the
+  `diagnostics-never-swallowed` owner. All rows remain specified, not run.
 - **Case 8, session `nested-worktree-steered` (SHR-R3-GIT-STEERING-01
   pin)** — case 4 repeated with the exact steering the critic used
   exported into the hook's environment: `GIT_DIR=$scope/.git
@@ -2464,7 +3031,7 @@ narrator digest's root mapping (c7397a09), taken as trunk has it.
 | 7. verb answer and transport (m1, m2, m3) | Decision 1 verb contract and pairing rule; parent subsection; Decision 4 `up`, collector and operator-layout rows; the sweep re-cited | `RootForCandidate` returns the validated installation; `$repo == $world_installation`; the collector at `$world_installation`; two resolution files and a one-line root | the operator-layout scenario; case 9's record location; the deadline newline regression row in the hook-fixtures bed |
 | 8. landing order and docs (m7, m8) | "Landing and documentation" below | the landing note and the one docs paragraph | the note's text; the paragraph's text |
 
-## Landing and documentation (revision 7)
+## Landing and documentation (revision 10)
 
 **The landing note (the read's m7; the three states of the design read's
 M4).** The hook calls a verb the enrolled engines of every seat lack until
@@ -2476,11 +3043,18 @@ the seat has not synced; it runs the cwd-and-marker hook, never calls
 every Stop ends in the skew allowance (the seat can stop, the notice names
 the rebuild, nothing is recorded for that turn), and so does every Stop of
 a delegate worktree created from the new trunk, because it maps to the
-primary and calls the primary's old engine; (3) *new hook, rebuilt and
+primary and calls the primary's old engine. **Revision 10:** each
+SessionStart in state (2), including compaction, prints the fixed skew
+start notice and exits before role context, arming and wait recovery.
+The seat must rebuild and start a new session to receive its context;
+the notice itself does not instruct a declared brain. The same exit owner
+now reports every preparation failure and requires a reason for every
+intentional outcome. This also covers the upgrade from trunk 26fa52b5's
+silent start branches; (3) *new hook, rebuilt and
 re-armed primary* — governed behaviour. The instruction, in order: sync,
 rebuild `bin/metasystem` (`scripts/agents/go-build.sh` or the seat's build
-recipe) BEFORE the first Stop, then re-arm once by hand as the three
-stop-infrastructure landings already required ("Every seat rebuilds and
+recipe) before the first SessionStart or Stop, then re-arm once by hand
+as the three stop-infrastructure landings already required ("Every seat rebuilds and
 re-arms once by hand after this lands", 529d8a64 and fed9f5d9e). Delegates
 need no engine build of their own — they run the primary's — but a
 worktree in flight that carries the OLD tracked hook keeps state (1) until
@@ -2491,7 +3065,9 @@ at the installation's own `bin/metasystem`, or its Stops report
 `supervision arming failed` (Decision 4). Had point 1 gone the other way
 (skew as a block), state (2) would have been a seat that cannot stop until
 it rebuilds — the reason the order matters is the same under both readings,
-and the cost of forgetting it is what the reading decides.
+and the cost of forgetting it is what the reading decides. If a start
+notice was already emitted, start a new session after rebuilding and
+re-arming; rebuilding alone does not inject context into that session.
 
 **The one docs paragraph (the read's m8).** The port added a paragraph to
 `docs/orchestration.md` (in the launched-run list, after the `metasystem up`
@@ -2510,7 +3086,16 @@ and the two outcomes a seat can meet on a Stop from this resolution are
 both degraded allowances, never refusals: "Metasystem engine missing" when
 the installation has no engine, and "Metasystem engine and hook are out of
 step" when the engine predates the verb — each names the rebuild, and the
-steward owns repair. The word "unarmed" does not appear; "governed" is
+steward owns repair. Revision 10 adds: on SessionStart, missing engine
+and skew each print one notice that no role context was received and a
+declared brain is uninstructed. Each tells the seat to rebuild and start
+a new session; neither runs brain boot, arming or wait recovery. Every
+other start termination uses the same inline owner with a declared fixed
+notice or intentional reason; source audits and fault fixtures enforce
+that boundary, and an engine-independent fallback reports unexpected
+termination or rendering failure. For the current Stop wording use
+Decision 1's 26fa52b5 literals, not the historical
+labels quoted in this paragraph. The word "unarmed" does not appear; "governed" is
 used only for a world the engine has armed.
 
 ## Consistency pass
@@ -2656,6 +3241,29 @@ now 1, 2, 4, 8, 9, 10, 12, 14, 16 — case 9 and case 16 block, with the
 `systemMessage` disclosure, which the table's row 2 does not enumerate
 because it lists the cases whose sentinel earns a block, and those two
 earn it the same way.
+
+Revision 10's mechanism replaces its earlier one-notice decision and gap
+inventory. Source was re-read at trunk 26fa52b5; all six failure families,
+intentional outcomes, rendering/termination fallback, preparation and
+publication order, fixture rows, gate selection and cross-goal ownership
+now refer to the one `start_finish` contract. The current Stop literals
+and all trunk Stop-presentation amendments are preserved. The corrected
+reject condition still requires disclosure of arming failure under the
+current repair/report contract. Only this design page changed; verification
+is source/diff checking and `git diff --check`, not a claim that the new
+runtime or audit ran.
+
+The implementation proof remains open. Each high obligation has a concrete
+owner and proof target; this design edit does not mark runtime delivery done:
+
+| Obligation id | Severity | Design source | Required behavior | Owner | Code proof | Test proof | Runtime proof | Status | Next action |
+| --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
+| SHR-R10-EXIT-OWNER | HIGH | Decision 2 entry/contract | All start termination and stdout through one reasoned owner, with initialized EXIT fallback | Inline `start_finish` in `scripts/agents/supervision-hook.sh` | Target: initialization, isolated start dispatcher, `start_capture`, finalizer/traps | `hook-start-exit-audit`, `start-unexpected-exit`, true/false skip rows | Pending full staged-hook runs on Bash 3.2 and 5 | PARTIAL | Implement boundary and prove no bypass |
+| SHR-R10-START-SKEW-01 | HIGH | Decision 1 literal; Decision 2 family 1 | Existing fixed skew notice is one catalog outcome | `start_finish` catalog | Target: current resolver 543-551 routed to owner | `engine-skew-start`, four lifecycle/declaration combinations and malformed answers | Pending exact output/trace/state snapshots | PARTIAL | Route skew through owner and run row |
+| SHR-R10-START-FAILURES | HIGH | Decision 2 families 2-6 | Every preparation failure becomes its fixed notice and leaves durable state unchanged | `start_main` preparation | Target: directory/validation/storage/read/render sites enumerated above | Every `start-*` preparation row in Decision 3 | Pending discriminating faults plus absence controls | PARTIAL | Implement mappings with no suppressed errors |
+| SHR-R10-DELIVERY | HIGH | Decision 2 preparation/publication | No premature brain status/cursor write; later partial state is disclosed | Existing brain/JSON command owners plus hook finalizer | Target: `brain_boot.go` read-only mode and `brain start-delivered`; `json.go` shell-safe decoding; builtin final assembly | `start-response-rendering`, NUL/UTF-8 decoder and encoder byte tests, successful brain starts, `start-post-preparation` | Pending snapshots and exact single-publication evidence | PARTIAL | Defer bookkeeping and prove failure boundaries |
+| SHR-R10-FALLBACK | HIGH | Decision 2 last resort | Failed rendering/termination remains visible without engine or storage | Inline finalizer emergency literal | Target: builtin output, no recursion, channel failure status | `start-emitter-fallback`, entry fault/signal rows | Pending no-engine/TMPDIR and closed-stdout runs | PARTIAL | Prove independent final output |
+| SHR-R10-ENFORCEMENT | HIGH | Decision 2 enforcement | Future unowned exits, swallowed errors and undeclared outcomes cannot pass a gate | `internal/audit` and existing gate callers | Target: `AuditHookStartExits`, candidate-engine static stage, shared testing selection | `hook-start-exit-audit`, catalog/case join and gate-selection tests | Pending mutated-source gate reds before fixture execution | PARTIAL | Implement audit using existing scanner and wire both gates |
 
 ## Self-grade
 
@@ -2843,7 +3451,9 @@ incident record and drain for repeated infrastructure allowances belong to
 member stop-incidents-reach-the-steward, not yet landed (the
 stop-infrastructure design, section 3, "What does not change"); until that
 member lands the per-Stop notice is the only visibility, and this design
-adds none (revision 8, the design read's m1); (s) *revised by revision 8*:
+adds none (revision 8, the design read's m1; revision 10 adds the
+SessionStart termination mechanism, still without a new durable incident
+store for early failures); (s) *revised by revision 8*:
 cases 1-3 pin rather than discriminate on the fleet layout; case 14 now
 discriminates through its inner-checkout cwd; the two `$repo` read sites
 (watchdog, pending) have no fixture of their own — their wrong root on
@@ -2968,8 +3578,11 @@ can be its record); any `up` path that arms or re-arms a world from an
 engine that is not the enrolled one because `METASYSTEM_BIN` named it (the
 M4 widening); any fixture in any bed that fires the checkout's own hook on
 any event, or asserts a block on a plan line an earlier firing already
-marked, or expects a block from a world that is not enrolled and armed (the
-M2 and M3 exposures); and any hook path on which `$repo` and
+marked, or expects a block from a world whose arming fails without also
+asserting the disclosed arming failure under the current Stop repair/report
+contract (the M2 and M3 exposures; revision 10 corrects the stale arming
+precondition to agree with Decision 3's fixture rule 2 and cases 9 and 16);
+and any hook path on which `$repo` and
 `$world_installation` differ after the verb answered, or on which the
 verb's answer is a git toplevel rather than the validated installation
 (the m1 split). **Revision 9 adds:** any Stop on which a recorded
@@ -2983,3 +3596,19 @@ sole public field is not the exact two-line completion/task pair, whose
 allowance line merely labels a status instead of instructing the seat to read
 and continue lawful work, whose read token is not a permanently reserved
 exact alias, or whose folded infrastructure/receipt notice adds a third line.
+
+**Revision 10 adds:** any start-reachable terminating path, including
+implicit shell failure, that can end without `start_finish` and its fixed
+cause/remedy notice or authenticated/validated intentional reason; any
+failure disguised as an intentional skip or ordinary empty result; any
+notice renderer dependent on the engine, JSON tools or temporary storage;
+any source audit that omits common/new callees, permits an exit bypass or
+treats unclassifiable syntax as safe; any catalog outcome without its
+executed fault/intentional fixture; any of the six preparation-failure
+families that changes durable state or runs arming after its failure; any
+undelivered packet that advances a digest or writes brain status; any
+post-publication failure that disappears, claims no context was emitted,
+or writes a second stdout object. The skew notice retains its exact bytes
+and early stop in the new mechanism. The old two-fixed-outputs count is
+Stop-only; start has the declared catalog and emergency fallback. All
+preceding Stop-presentation reject conditions remain intact.

@@ -121,3 +121,25 @@ func runAuditDependencyRatchet(args []string) int {
 	fmt.Println("dependency ratchet passed")
 	return 0
 }
+
+func runAuditHookStartExits(args []string) int {
+	flags := flag.NewFlagSet("audit hook-start-exits", flag.ContinueOnError)
+	root := flags.String("root", ".", "metasystem installation to audit")
+	if flags.Parse(args) != nil || flags.NArg() != 0 {
+		fmt.Fprintln(os.Stderr, "usage: metasystem audit hook-start-exits [--root INSTALLATION]")
+		return 2
+	}
+	findings, err := audit.AuditHookStartExits(*root)
+	if err != nil {
+		fmt.Fprintln(os.Stderr, err)
+		return 1
+	}
+	for _, finding := range findings {
+		fmt.Fprintln(os.Stderr, "hook start exit audit: "+finding.String())
+	}
+	if len(findings) != 0 {
+		return 1
+	}
+	fmt.Println("hook start exit audit passed")
+	return 0
+}
