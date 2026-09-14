@@ -368,35 +368,10 @@ empty for an unknown contract such as Devin. Reuse its existing
 `InstructionFile` to find the instruction entrypoint; do not duplicate it
 in a Stop declaration. `internal/adapter` owns the actual envelope mapping
 and validation. A declaration is an expectation, never installation evidence.
-
-Put observed delivery in **`capabilities.stopDelivery` in the existing
-dated adapter capability snapshot**, written by
-`internal/adapter/snapshot.go:WriteCapabilitySnapshot`. Reuse the snapshot's
-`runtime`, `cliVersion`, `configHash`, `configKeyHashes`, `capturedAt` and
-exclusive dated sequence. No second registry or evidence file format.
-The new object has `schemaVersion:1`; strings `envelope`
-(`shared-reason-v1` or `unverified`), `blockField`, `blockValue`,
-`blockTextField`, `allowTextField` (the four literals above for that envelope);
-`humanVisibleFields` (string array); `duplicateBehavior` (`single`,
-`duplicate`, `unknown`); `reportReadRoute` (`standing-instruction-and-command`
-or `unknown`); `instructionHash`, `trustProbe`, `observationArtifact`
-(SHA-256 of the loaded instruction bytes, trust-probe evidence reference,
-and the real-host observation artifact respectively; empty if unobserved);
-`launchBinary` and `seatCommandBinary` (resolved absolute paths, empty if
-unobserved); `continuationLimit` (positive integer or null); and `level`
-(`unobserved`, `emitted`, `observed`). A null limit means unknown, never
-unlimited. Unknown mapping uses empty field strings and an empty visible
-field array. The probe records actual host/config/instruction and locator
-evidence; the static expectation must never prefill an observation.
-
-`emitted` proves only the installed invocation and envelope. `observed`
-requires every applicable STOP-HOST display/control/read/trust/cap observation
-in the referenced artifact and matching installed hashes. It proves only
-the finite contract, even with a known cap. A changed host version,
-configuration or instruction hash invalidates reuse of the observation.
-Missing or stale evidence leaves delivery unobserved/degraded, not silently
-conforming. Unsupported mapping returns an explicit error to the existing
-degraded path, not a guessed Devin envelope.
+`ExpectedStopDelivery` and `MapStopOutput` are the whole adapter mapping seam;
+capability snapshots carry no Stop-delivery field or conformance claim.
+Unsupported mapping returns an explicit error to the existing degraded path,
+not a guessed Devin envelope.
 
 | Runtime | Envelope/control and human fields | Duplication and report-read route | Installation/trust and continuation limit | Evidence limit for revision 7 |
 | --- | --- | --- | --- | --- |
@@ -743,8 +718,9 @@ that short hashes happen not to collide.
 resolves to exactly one immutable report in its bound installation while
 that report is retained. An expired, incomplete, unreadable or damaged
 binding fails with no report output. It never returns another report.
-The guarantee is installation-local and depends on the verified executable
-binding below; a token alone does not identify an installation globally.
+The guarantee is installation-local. The caller must invoke the intended
+installation's executable; a token alone does not identify an installation
+globally.
 
 The CLI retains required `--id` and optional `--root`. It accepts either an
 exact alias of 1 through 32 lowercase hex digits or the legacy exact
@@ -771,59 +747,17 @@ to the canonical filename. Compare the full marker to the presentation's
 identity and verify the complete report digest at mapping/completion.
 Shortening the command removes none of these verification checks.
 
-**Provider launch binding:** `scripts/agents/hosts/host-common.sh` owns the
-shared child-environment plumbing used at the existing Claude, Codex and
-Devin launch boundaries. Resolve and validate the installation before
-launch, require its real `bin/metasystem`, and prepend that installation's
-absolute `bin` directory to the provider child's inherited PATH:
-`PATH="<resolved-installation>/bin:<inherited-PATH>"` (omit the colon when
-the inherited PATH is empty). Pass it as an environment entry, never shell
-evaluation of an interpolated string. Resolve the provider executable to
-its absolute path before this prepend. Do not substitute `METASYSTEM_BIN`
-or hook-payload roots for the validated installation. Every claimed launch
-route must use this binding, including resumed turns; a direct interactive
-provider launch may use the same per-process `env PATH=... <absolute-provider>`
-form documented by setup. A route that does not establish it remains
-unverified. Inherited PATH is only a launch prerequisite: if the provider's
-actual command tool changes it, STOP-HOST must detect that lost binding.
-
-**Read-only probe:** extend `runtime setup` with optional
-`--stop-status-id <id>`, legal only with `--check`. The exact probe is
-`<installation>/bin/metasystem runtime setup --repo <checkout> --runtimes
-<runtime> --check --stop-status-id <id>` (one command with shell-quoted
-absolute paths). `internal/hostsetup` adds `StopStatusID` to its options.
-It checks registration as today, resolves `metasystem` from the caller's
-actual PATH without fixing that PATH, follows symlinks, and requires the
-resolved binary to equal the target installation's real binary before
-executing it. Then run the printed `report stop-status --id <id>` argv and
-validate the returned exact report identity. It must not use `--root` to
-mask a wrong binding. Success is exit 0 with a `STOP_LOCATOR_READY` row
-naming the resolved binary and ID; a missing/wrong executable or unreadable/
-mismatched report is exit 1 with stderr diagnosis; invalid flags/ID or the
-new flag without `--check` is exit 2 before checks. No probe writes files,
-snapshots, reports, counters or configuration, fires a hook, launches a
-provider, or changes the environment. Ordinary `--check` without an ID
-retains registration-check semantics and makes no report-read claim.
-
-Run that probe inside the provider's actual command environment, using an
-already-published report, from nested and external cwd and through a
-symlinked launch binary. Run the **printed command** too; match the exact
-Markdown bytes. Store this observed binding with the dated adapter evidence,
-not in the declaration or inside the read-only probe. A wrong binary or
-missing command is degraded locator delivery, even when the report exists.
-
-**Human-shell guarantee is explicitly narrowed:** setup never edits a
-human's shell profile, rc file, aliases, functions or global PATH. The
-36-to-67-byte bare command is guaranteed only in a verified provider command
-environment or a human shell already passing the same probe. A fresh or
-unbound human shell is not covered. Setup diagnostics and the report give
-the shell-quoted absolute recovery command
+**Executable scope:** setup never edits a human's shell profile, rc file,
+aliases, functions or global PATH. The 36-to-67-byte bare command assumes the
+caller's PATH already resolves `metasystem` to the intended installation. A
+fresh or differently bound shell is not covered. The report gives the
+shell-quoted absolute recovery command
 `<installation>/bin/metasystem report stop-status --id <id> --root <installation>`
 and the full report path; adding `--root` to an unavailable bare executable
 is insufficient. This recovery text is outside the bounded Stop notice.
 Retain Decision 2's bounds; do not insert arbitrarily deep absolute paths
-into it or claim automatic human-shell installation. No profile mutation
-or further human authorization is part of this build.
+into it or claim automatic shell installation. No profile mutation or setup
+probe is part of this build.
 
 Successful `stop-status` prints the exact Markdown to stdout, no stderr,
 exit 0; invalid ID/flags exit 2, missing/expired/unreadable/root mismatch exit
@@ -1090,7 +1024,7 @@ digest and additionally carries the exact short alias used in the command.
 Mapper and completion resolve the alias, then compare that canonical target
 and full marker against their externally retained evidence. Do not compare
 a short alias to `sessionKey + "-" + attempt` or make a canonical filename
-from it. The setup probe and fixture reader use the same lookup contract.
+from it. The fixture reader uses the same lookup contract.
 Put the existing identity/lookup code and alias reservation in the small
 `internal/stopreport` storage package. `internal/report` already imports
 steward, so steward cannot import report to reuse its lookup. Both import
@@ -1217,16 +1151,14 @@ The table below carries revision 4's remaining proof obligations whole.
 | STOP-PRESERVATION / TestMismatchedSessionStopMarkerDoesNotGateIdleEscalation | Keep `internal/goal/turnverdict_idle_test.go:338-370` unchanged in outcome: attempt 3 allows and `prepared == 1` across its three calls. Retain the mismatched main's display-only SESSION STOP authorization marker and prepared intent detail in the report. The marker neither authorizes the allowance nor gates escalation; the existing bound releases it. |
 | STOP-PRESERVATION / TestReportTurnVerdictHeldClaimWritesRealSeatIdleIntent | Keep `cmd/metasystem/session_stop_test.go:258-371` unchanged in outcome: exit 0 throughout, attempts 1/2 block and attempt 3 allows. Retain `--stop-hook-active` and exactly one real persisted intent across those three calls: reason `seatIdle`, goal `held`, `claimNeeded=false`, machine `bed-m1`, lineage `main-1` and current holder's claim epoch. |
 | STOP-ALLOWANCE-LINE: retained work | Third-refusal release shows the held task or `No task in flight; next: <title>` with `Stop allowed`. A delegate exemption shows the owned delegate task with `Stop allowed`. Both require revision 7's read/continue imperative; neither adds a blanket work claim. Neither alone adds an intervention phrase; failed escalation adds the typed repair phrase and full report remedy, with the decision phrase only for required human repair. Decode both sole fields, check the pair bounds and retained work in the report; neither creates a forced continuation. |
-| STOP-DELIVERY-SNAPSHOT: expectation versus observation | `internal/adapter/snapshot_test.go` and runtime/installation tests assert that Stop-specific registry data is only ExpectedStopDelivery and reuses existing InstructionFile, with no installation evidence. A dated snapshot retains the outer host version/configuration/time and capabilities.stopDelivery's instruction hash, launch/seat binary, artifact and achieved level. Missing observations remain unknown; changed version/config/instruction invalidates observed reuse. A declaration alone cannot pass the conformance gate. |
 | STOP-FACTS-WRITER-FAILURE: completed judgment survives | Add `TestReportTurnVerdictFactsWriteFailurePreservesCompletedVerdict` in `cmd/metasystem/session_stop_test.go` and a hook integration row with this identifier. Inject the auxiliary writer failure after a real judgment: one scan/judgment/refusal spend, exit 0, byte-identical existing Verdict JSON plus newline on stdout, diagnostic only on stderr, facts path absent with no partial/stale publication. Hook consumes stdout once, keeps shouldBlock/source, emits only reason with repair/Status unavailable, no bogus pointer, no delivery-cursor advancement. Repeat for a completed allowance without creating a continuation. |
 | STOP-HEALTH-JSON: CLI forms | Unflagged and text previews remain byte-identical; JSON decodes to v1 with all role reasons/remedies and matching line/exitCode. Assert one evaluation, no observation/alert writes, stopped/spend/unknown cases and invalid format handling. |
 | STOP-INTERVENTION-RETRO-ONLY: negative | In the health preview and presenter, supply only ordinary agent-actionable retro debt: status dead, NoAutomaticRemedy true, full retro/receipt remedy; both classifications and both derived flags are false. Neither intervention phrase appears; the report retains the debt and exact action. Control stays at the supplied verdict. |
 | STOP-INTERVENTION-SPEND-ONLY: negative | Supply an otherwise healthy preview with an alive spend crossing and nonempty ceiling-change remedy; both classifications and both derived flags are false. Neither intervention phrase appears, and the crossing/remedy remain report attention. An independent typed human-required fact in a paired case turns on only the decision phrase; spend itself remains report-only. |
 | STOP-INTERVENTION-TYPED: positive and rejection | Exercise neither flag, decision only, repair only and both; assert exact phrases and order. Reject missing/wrong-type v1 booleans and missing/duplicate health intervention roles. Changing only remedy text, NoAutomaticRemedy or generic health status cannot change a producer-supplied classification. Required human-only repair remains classified as both with its restrictions in the report. |
 | Summary correctness | Alive/dead/unknown and stopped health, alive spend crossing, other-seat/unattributed pages, 11 claimable goals, explicit green continuation and no-continuation history. Counts derive from facts, and every action retains its complete command or honest manual step. |
-| STOP-LOCATOR: bounds and lookup | Newlines, controls, Unicode at byte 200 and long titles; deep installation, nested/external cwd, symlink launch, wrong/missing executable binding, identical sessions under different installations. Run the **printed command** and match exact Markdown and identity before emission; reject invalid IDs/escapes. Assert the command is complete, line 2 stays within 256 bytes, and the whole pair satisfies Decision 2. |
-| STOP-LAUNCH-BINDING: read-only setup probe | In `internal/hostsetup/setup_test.go`, `cmd/metasystem/runtime_setup_test.go` and host launch tests, prove each claimed start/resume route gives the child the validated installation/bin prefix and keeps provider argv intact. Run `--check --stop-status-id` under that actual command environment with a known report from nested/external cwd and a symlinked executable. Assert correct identity/exit 0; wrong/missing binary and missing report exit 1; invalid flags/ID exit 2. Compare profile, rc, configuration, report, snapshot and control-state bytes before/after the probe: no writes. A separate unbound human shell is explicitly unsupported and receives the absolute recovery command in setup diagnostics, never an over-bound Stop line. |
-| STOP-HOST: conformance prerequisite | For each claimed runtime/version/config/instruction hash, observe effective trusted hooks, total human transcript, block-to-exact-report-read-to-action in the provider's actual command environment, and an allowance with its imperative and no forced continuation. Revision 7 carries allowance-read/action evidence or an explicit host opportunity limit, and both instruction carriers. Keep missing-report and continuation-cap observations. A real host is required; an adapter harness cannot discharge this row. Store the evidence in the dated snapshot. Report the finite range honestly; continuation beyond it belongs to seat-work-continues-past-the-runtime-stop-cap. |
+| STOP-LOCATOR: bounds and lookup | Newlines, controls, Unicode at byte 200 and long titles; deep installation and identical sessions under different installations. Run the **printed command** in an environment already resolving the intended executable and match exact Markdown and identity before emission; reject invalid IDs/escapes. Assert the command is complete, line 2 stays within 256 bytes, and the whole pair satisfies Decision 2. |
+| STOP-HOST: conformance prerequisite | For each claimed runtime/version/config/instruction hash, observe effective trusted hooks, total human transcript, block-to-exact-report-read-to-action in the provider's actual command environment, and an allowance with its imperative and no forced continuation. Revision 7 carries allowance-read/action evidence or an explicit host opportunity limit, and both instruction carriers. Keep missing-report and continuation-cap observations. A real host is required; an adapter harness cannot discharge this row. Report the finite range honestly; continuation beyond it belongs to seat-work-continues-past-the-runtime-stop-cap. |
 | Storage and races | Concurrent Stops in one session, same session ID under different runtimes/installations, hostile session text, report write/rename/durability failure, failed stdout, retention boundary, stalled completion after published block. Verify exact report-to-payload identity, no cross-session replacement, unchanged control, no false `EMITTED`, no cursor advancement after lost delivery. |
 | Degraded fallback | Engine missing/skew, launcher failure, invalid/partial worker output, unresolved root, timeout, record failure, log failure and combined failures. One bounded line, truthful unavailable status where needed, original allowance and recorded causes unchanged. Pair an arming/report failure with a real seat-actionable block and prove it remains blocking. |
 
@@ -1362,12 +1294,12 @@ corresponding implementation claim; none is claimed run by this design.
 | STOP-ALIAS | HIGH | Decision 5 | Shortest free exact alias; one immutable target; never reuse; full identity and digest retained | internal/stopreport; report publisher; adapter/steward consumers | Exclusive reservation, atomic binding, strict lookup and canonical verification | STOP-SHORT-ID, UNIQUE, BINDING | Run exact commands before/after concurrent publication and expiry | PARTIAL | Build alias publication/lookup in the shared storage owner |
 | STOP-TWO-LINE-TOTAL | HIGH | Decisions 2, 7 | Normal first/second/pair bounds 144/256/401; no third notice in actual Stop display | report, adapter, hook and installed registrations | Pair validation and complete emission inventory | STOP-TWO-LINES, STOP-NOTICES, STOP-READ-HOOK | Count actual host transcript across all registrations | PARTIAL | Build pair and remove obsolete installed receipt producer |
 | STOP-TASK-NAME | HIGH | Decision 4, revision 5 | Name the selected work from its goal ID or whole fallback label; prose stays in the report body; preserve precedence, shortening and control | internal/report | stoppresentation.go: stopTitle, availableTitle, compactStopLine, renderStopReport | STOP-TASK-NAME-GOAL, JOB-RUN, PRECEDENCE, FALLBACK, BOUNDS and HOOK rows above | Read the decoded hook line and the exact report reached by its complete command with the dated-intent specimen | PARTIAL | Preserve the landed name picker and literal names/headings; update only line-2 formatting |
-| STOP-LINE | HIGH | Decisions 2-3 | Two bounded lines in the sole visible field, no extra Stop notice | report and adapter | stop-present, MapStopOutput, runtime capability, all registrations | STOP-RUNTIME-MAP, STOP-LOCATOR, STOP-ALLOWANCE-LINE | Observe total actual host display | MISSING | Extend the landed mapping to the pair; prove actual host behavior |
+| STOP-LINE | HIGH | Decisions 2-3 | Two bounded lines in the sole visible field, no extra Stop notice | report and adapter | stop-present, MapStopOutput, runtime declaration, all registrations | STOP-RUNTIME-MAP, STOP-LOCATOR, STOP-ALLOWANCE-LINE | Observe total actual host display | MISSING | Extend the landed mapping to the pair; prove actual host behavior |
 | STOP-PRESERVATION | CRITICAL | Decision 1; headline proof | Every Stop decision and source equal trunk's for the same input; presentation failure creates or clears no block | goal, goal CLI, report, adapter and hook | Retained enforceIdleBacklog/escalateIdleBacklog; facts writer, mapper/fallback and both parent validators | Six unchanged Go control tests and template-backlog decisions; STOP-PRESERVATION-IDLE, STOP-FACTS-WRITER-FAILURE, STOP-INFRA-DISCLOSURE and degraded cases | Reproducible paired trunk/candidate table with raw verdict, source and native payload for every matrix case | MISSING | Preserve policy, build presentation and prove equality before acceptance |
 | STOP-FACTS | HIGH | Decisions 4, 6 | One uncut frozen judgment and explicit health schema; auxiliary write failure preserves completed control | goal, report scanner and health CLI | goal.go facts-file projection/writer; scan.go; steward_verbs.go | STOP-REPORT-INPUT, STOP-FACTS-WRITER-FAILURE, STOP-HEALTH-JSON | Inspect report tails and actions; observe preserved block after failed auxiliary write | MISSING | Preserve uncut facts and the exact stdout/stderr/exit contract |
 | STOP-INTERVENTION | HIGH | Decisions 2, 4, 6 | Only typed required action/repair facts add the respective phrase; spend and ordinary retro debt remain report-only | goal/report fact producers, steward health and hook boundary; report aggregates | Classified fact projection, HookHealthPreview.interventions, stop-present | STOP-INTERVENTION-RETRO-ONLY, STOP-INTERVENTION-SPEND-ONLY, STOP-INTERVENTION-TYPED | Inspect actual line-2 flags and matching report actions | MISSING | Preserve producer classifications and combination without text/status inference |
-| STOP-DETAIL | HIGH | Decisions 4-5, 7 | Matching readable report and truthful delivery evidence within verified command environments | report, hostsetup, host launch plumbing and steward | stop-status, host-common.sh child PATH, runtime setup --check probe, CompleteHookAttempt | STOP-LOCATOR, STOP-LAUNCH-BINDING, storage/race/cursor cases | Read printed command from the actual provider command tool; separately classify human-shell binding | MISSING | Publish and verify lookup before emission; never mutate shell profiles |
-| STOP-HOST | CRITICAL | Decision 3 | Runtime may claim only observed finite control/display/read behavior | adapter conformance; runtimes owns static expectation only | ExpectedStopDelivery, adapter mapping, snapshot.go capabilities.stopDelivery, canonical read instruction and runtime entrypoints | STOP-RUNTIME-MAP, STOP-DELIVERY-SNAPSHOT, STOP-LAUNCH-BINDING; installed-config checks | Per-runtime trusted firing and report-read/action observation tied to version/config/instruction | MISSING | Record dated installation evidence before upgrading a runtime's claim |
+| STOP-DETAIL | HIGH | Decisions 4-5, 7 | Matching readable report within the intended installation | report, stopreport and steward | stop-status, strict storage lookup, CompleteHookAttempt | STOP-LOCATOR and storage/race/cursor cases | Run the printed command with the intended installation's executable | MISSING | Publish and verify lookup before emission; never mutate shell profiles |
+| STOP-HOST | CRITICAL | Decision 3 | Runtime may claim only observed finite control/display/read behavior | adapter conformance; runtimes owns static expectation only | ExpectedStopDelivery, adapter mapping, canonical read instruction and runtime entrypoints | STOP-RUNTIME-MAP and installed-config checks | Per-runtime trusted firing and report-read/action observation tied to version/config/instruction | MISSING | Observe a runtime before upgrading its claim |
 | STOP-FAILURE | HIGH | Decisions 3-4, 7; STOP-PRESERVATION | Degraded causes survive; presentation failure neither clears nor creates a block; sole line flags repair | hook and report | Parent, composer and launcher fallbacks; preserved condition/refusal writers | STOP-INFRA-DISCLOSURE, STOP-FACTS-WRITER-FAILURE and all degraded rows | Controlled combined block/arming failure, missing-engine and deadline firings | MISSING | Preserve precedence, records and degraded literals during the pair cutover |
 
 ## Build list
@@ -1386,8 +1318,8 @@ The earlier landed implementation is the baseline, not a new whole-bed job.
 3. Build STOP-ALIAS in the shared storage owner. Keep canonical filenames,
    full identity and legacy reads. Prove shortest-prefix reservation,
    concurrent uniqueness, permanent non-reuse, corruption and expiry.
-   No extra retries or timeout allowance. Keep launch binding, read-only
-   setup probing and the narrow human-shell guarantee.
+   No extra retries or timeout allowance. Keep the narrow executable-scope
+   guarantee.
 4. Build STOP-TWO-LINE-TOTAL and folded STOP-READ-INSTRUCTION together.
    Cut over presentation v2, mapper, completion verifier, fixture reader,
    deadline validators and generated installations together. Keep the
@@ -1476,14 +1408,13 @@ decision. Keep third-refusal release, failed intent and delegate exemption.
 Transfer persistent blocking and its escalation-once state to the already
 opened continuation goal, whose mechanism must land before allowance closure.
 Retain immutable full reports, full identity, typed interventions, exact
-health projection, launch binding, degraded forms and real-host proof.
-Revision 7 supersedes only the display/lookup portions stated above.
+health projection, degraded forms and real-host proof. The display and lookup
+contract remains as stated above.
 
 **Revisions 1 to 3 — superseded.** Their control inversions and unbounded
-continuation claims are not build authority. Revision 3's six accepted
-findings remain covered: full preservation-test inventory; public-field
-supersession with logs/refusal evidence kept; dated adapter observations;
-completed-judgment writer-failure behavior; launch binding without shell
-profile edits; and typed intervention classification with negative retro
-and spend fixtures. The whole transferred continuation obligation remains
+continuation claims are not build authority. Revision 3's remaining accepted
+findings stay covered: full preservation-test inventory; public-field
+supersession with logs/refusal evidence kept; completed-judgment writer-failure
+behavior; and typed intervention classification with negative retro and spend
+fixtures. The whole transferred continuation obligation remains
 above. No old pre-build status authorizes rebuilding or weakening it.

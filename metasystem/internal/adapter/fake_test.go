@@ -330,10 +330,6 @@ func TestWriteFakeCapabilitySnapshotProfiles(t *testing.T) {
 	if capabilities["resume"] != true || capabilities["sessionEstablishedTimeoutSec"] != float64(6) {
 		t.Fatalf("current profile must enable capabilities: %v", capabilities)
 	}
-	stopDelivery := capabilities["stopDelivery"].(map[string]any)
-	if stopDelivery["envelope"] != "shared-reason-v1" || stopDelivery["level"] != "unobserved" || stopDelivery["instructionHash"] != "" {
-		t.Fatalf("fake Stop delivery expectation became host evidence: %v", stopDelivery)
-	}
 	envelope := got["envelopeEnforcement"].(map[string]any)
 	if envelope["writeRoots"] != "mapped" || envelope["readRoots"] != "notEnforced" || envelope["network"] != "mapped" {
 		t.Fatalf("unexpected enforcement declaration %v", envelope)

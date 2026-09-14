@@ -52,29 +52,9 @@ host_parse_start_turn() { # "$@" — sets the six start-turn variables
 }
 
 host_require_cli() { # CLI binary that must exist (skipped when empty — the fake host)
-  host_provider_binary= host_installation_bin= host_child_path=
-  if [[ -n "$1" ]]; then
-    local found installation expected inherited_path=${PATH:-}
-    found=$(command -v "$1") || {
-      echo "$1 CLI is not installed" >&2
-      exit 3
-    }
-    host_provider_binary="$(cd "$(dirname "$found")" && pwd -P)/$(basename "$found")"
-    installation=$("$ms" path state-root "$root") || {
-      echo "$host_runtime host could not validate its metasystem installation" >&2
-      exit 3
-    }
-    host_installation_bin=$(cd "$installation/bin" && pwd -P) || {
-      echo "$host_runtime host installation has no readable bin directory" >&2
-      exit 3
-    }
-    expected="$host_installation_bin/metasystem"
-    [[ -x "$expected" ]] || {
-      echo "$host_runtime host installation has no executable bin/metasystem" >&2
-      exit 3
-    }
-    host_child_path=$host_installation_bin
-    [[ -z "$inherited_path" ]] || host_child_path+=":$inherited_path"
+  if [[ -n "$1" ]] && ! command -v "$1" >/dev/null 2>&1; then
+    echo "$1 CLI is not installed" >&2
+    exit 3
   fi
   wait_for_start_gate || exit 3
 }

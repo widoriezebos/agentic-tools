@@ -45,9 +45,9 @@ recovery route, not evidence that the host displayed or enforced the notice.
 
 ## Conformance table (the DISTRIBUTION, not any installation)
 
-The registry carries only the candidate expectation. Installation and host
-observation live in dated `capabilities.stopDelivery` snapshots; no runtime
-below is upgraded by this source change alone.
+The registry carries only the candidate expectation. Capability snapshots do
+not carry Stop-delivery conformance evidence, and no runtime below is upgraded
+by this source change alone.
 
 | Runtime | State | Evidence |
 | --- | --- | --- |

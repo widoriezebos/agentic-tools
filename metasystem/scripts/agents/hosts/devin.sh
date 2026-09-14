@@ -112,7 +112,7 @@ if [[ "$host_transport" == acp ]]; then
   trap acp_fifo_cleanup EXIT
   # argv0 devin-host-acp: the census signature distinguishes the HOST's
   # server child from both the raw CLI helper and the delegate-side server.
-  ( cd "$root" && PATH="$host_child_path" exec -a devin-host-acp "$host_provider_binary" acp >"$server_out" <"$server_in" 2>>"$log" ) &
+  ( cd "$root" && exec -a devin-host-acp "$(command -v devin)" acp >"$server_out" <"$server_in" 2>>"$log" ) &
   acp_server_pid=$!
   acp_turn_args=(
     acp turn --server-out "$server_out" --server-in "$server_in"
@@ -154,7 +154,7 @@ if [[ "$host_transport" == acp ]]; then
 fi
 
 devin_command=(
-  "$host_provider_binary" -p
+  devin -p
   --prompt-file "$devin_prompt"
   --respect-workspace-trust false
   --model "$model"
@@ -167,7 +167,7 @@ devin_command=(
 set +e
 (
   cd "$root"
-  env PATH="$host_child_path" "${devin_command[@]}" >"$raw" 2>"$log"
+  "${devin_command[@]}" >"$raw" 2>"$log"
 )
 cli_status=$?
 set -e

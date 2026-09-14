@@ -705,9 +705,6 @@ mkdir -p "$host_bin" "$host_turn"
 cat >"$host_bin/claude" <<'CLAUDE'
 #!/usr/bin/env bash
 set -euo pipefail
-# This fixture-only capture path observes provider argv[0]; it is not a
-# runtime status or refusal code.
-printf '%s\n' "$0" >"${FAKE_CLAUDE_ARGV0_FILE:?}"
 cat >/dev/null
 if [[ ${FAKE_CLAUDE_SESSION:-} == none ]]; then
   printf '{"result":"{}","usage":{"input_tokens":1,"output_tokens":1}}\n'
@@ -721,7 +718,7 @@ printf '{"missionId":"host-session","turnId":"host-session-t1-aaaa","cycle":1,"m
   >"$host_turn/turn.json"
 printf 'host adapter session fixture prompt\n' >"$host_turn/prompt.md"
 
-FAKE_CLAUDE_SESSION=rotated-session FAKE_CLAUDE_ARGV0_FILE="$host_fixture/claude-argv0" PATH="$host_bin:$PATH" \
+FAKE_CLAUDE_SESSION=rotated-session PATH="$host_bin:$PATH" \
   "$root/scripts/agents/hosts/claude.sh" start-turn --mission host-session \
   --turn-id host-session-t1-aaaa --prompt "$host_turn/prompt.md" \
   --result "$host_turn/result.json" --instance-tag fixture-host-session-tag \
@@ -730,11 +727,8 @@ FAKE_CLAUDE_SESSION=rotated-session FAKE_CLAUDE_ARGV0_FILE="$host_fixture/claude
   || { echo "a rotated session did not stay outcome completed" >&2; cat "$host_turn/result.json" >&2; exit 1; }
 [[ "$("$root/bin/metasystem" json get --file "$host_turn/result.json" --field sessionId)" == rotated-session ]] \
   || { echo "the result envelope did not report the rotated session" >&2; cat "$host_turn/result.json" >&2; exit 1; }
-[[ "$(<"$host_fixture/claude-argv0")" == "$(cd "$host_bin" && pwd -P)/claude" ]] \
-  || { echo "the host did not invoke the provider by its exact executable path" >&2; exit 1; }
-
 set +e
-FAKE_CLAUDE_SESSION=none FAKE_CLAUDE_ARGV0_FILE="$host_fixture/claude-argv0" PATH="$host_bin:$PATH" \
+FAKE_CLAUDE_SESSION=none PATH="$host_bin:$PATH" \
   "$root/scripts/agents/hosts/claude.sh" start-turn --mission host-session \
   --turn-id host-session-t1-aaaa --prompt "$host_turn/prompt.md" \
   --result "$host_turn/result-missing.json" --instance-tag fixture-host-session-tag \
@@ -748,7 +742,7 @@ set -e
   || { echo "a missing session did not report unresumable with a null session" >&2; cat "$host_turn/result-missing.json" >&2; exit 1; }
 
 set +e
-FAKE_CLAUDE_SESSION=rotated-session FAKE_CLAUDE_ARGV0_FILE="$host_fixture/claude-argv0" PATH="$host_bin:$PATH" \
+FAKE_CLAUDE_SESSION=rotated-session PATH="$host_bin:$PATH" \
   METASYSTEM_HOST_START_GATE="$host_fixture/never-released" \
   METASYSTEM_HOST_START_GATE_TIMEOUT_SEC=1 \
   "$root/scripts/agents/hosts/claude.sh" start-turn --mission host-session \

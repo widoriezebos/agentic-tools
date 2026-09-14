@@ -9,7 +9,6 @@ import (
 
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/config"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/hostsetup"
-	"github.com/widoriezebos/agentic-tools/metasystem/internal/report"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/testpolicy"
 )
 
@@ -19,23 +18,12 @@ func runRuntimeSetup(args []string) int {
 	runtimeCSV := flags.String("runtimes", "", "comma-separated adoptable hosts (default: all)")
 	copySkills := flags.Bool("copy-skills", false, "copy skill trees instead of creating relative links")
 	check := flags.Bool("check", false, "validate readiness without writing")
-	stopStatusID := flags.String("stop-status-id", "", "read one exact Stop report through the caller's PATH (check mode only)")
 	if flags.Parse(args) != nil {
 		return 2
 	}
 	if *repo == "" || len(flags.Args()) != 0 {
-		fmt.Fprintln(os.Stderr, "usage: metasystem runtime setup --repo PATH [--runtimes CSV] [--copy-skills] [--check] [--stop-status-id ID]")
+		fmt.Fprintln(os.Stderr, "usage: metasystem runtime setup --repo PATH [--runtimes CSV] [--copy-skills] [--check]")
 		return 2
-	}
-	if *stopStatusID != "" {
-		if !*check {
-			fmt.Fprintln(os.Stderr, "runtime setup: --stop-status-id requires --check")
-			return 2
-		}
-		if err := report.ValidateStopStatusID(*stopStatusID); err != nil {
-			fmt.Fprintln(os.Stderr, "runtime setup:", err)
-			return 2
-		}
 	}
 	var selected []string
 	provided := false
@@ -51,7 +39,7 @@ func runRuntimeSetup(args []string) int {
 		}
 		selected = strings.Split(*runtimeCSV, ",")
 	}
-	result, err := hostsetup.Setup(hostsetup.Options{RepositoryPath: *repo, Runtimes: selected, CopySkills: *copySkills, Check: *check, StopStatusID: *stopStatusID})
+	result, err := hostsetup.Setup(hostsetup.Options{RepositoryPath: *repo, Runtimes: selected, CopySkills: *copySkills, Check: *check})
 	if err != nil {
 		fmt.Fprintln(os.Stderr, err)
 		return 1
@@ -64,9 +52,6 @@ func runRuntimeSetup(args []string) int {
 	for _, changed := range result.Changed {
 		absolute := filepath.Join(result.Layout.RepositoryRoot, filepath.FromSlash(changed))
 		fmt.Printf("INSTALLED %s\n", absolute)
-	}
-	if result.StopStatusID != "" {
-		fmt.Printf("STOP_LOCATOR_READY binary=%s id=%s\n", result.StopLocatorBinary, result.StopStatusID)
 	}
 	confPath := filepath.Join(result.Layout.InstallationRoot, "metasystem.conf")
 	contractRel, present, lookupErr := config.ConfLookup(confPath, "testing.contract")

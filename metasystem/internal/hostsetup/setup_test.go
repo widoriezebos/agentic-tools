@@ -11,8 +11,6 @@ import (
 	"strconv"
 	"strings"
 	"testing"
-
-	"github.com/widoriezebos/agentic-tools/metasystem/internal/report"
 )
 
 func hostFixture(t *testing.T, nested bool) (repo, installation string) {
@@ -786,57 +784,5 @@ func TestSetupPreservesExistingInstructionAndConfigurationModes(t *testing.T) {
 		if err != nil || info.Mode().Perm() != want {
 			t.Fatalf("%s mode = %v, %v; want %o", path, info, err, want)
 		}
-	}
-}
-
-func TestSetupStopStatusProbeUsesTheBoundInstallationBinaryWithoutWrites(t *testing.T) {
-	if _, err := Setup(Options{RepositoryPath: filepath.Join(t.TempDir(), "must-not-exist"), StopStatusID: strings.Repeat("a", 64) + "-" + strings.Repeat("b", 32)}); err == nil || !strings.Contains(err.Error(), "requires check mode") {
-		t.Fatalf("Stop locator outside check mode was accepted: %v", err)
-	}
-	repo, installation := hostFixture(t, true)
-	if _, err := Setup(Options{RepositoryPath: repo, Runtimes: []string{"claude", "codex"}}); err != nil {
-		t.Fatal(err)
-	}
-	installation, _ = filepath.EvalSymlinks(installation)
-	sessionKey := report.StopSessionKey("claude", "locator-session")
-	id := sessionKey + "-" + strings.Repeat("a", 32)
-	reportPath := filepath.Join(installation, "artifacts", "agents", "supervision", "stop-verdicts", id+".md")
-	identity := report.StopIdentity{Installation: installation, Runtime: "claude", Session: "locator-session", SessionKey: sessionKey, Attempt: strings.Repeat("a", 32), ObservedAt: "2026-09-13T12:00:00Z"}
-	identityJSON, _ := json.Marshal(identity)
-	writeHostFile(t, reportPath, "# locator\n\n<!-- metasystem-stop-report-v1 "+string(identityJSON)+" -->\n", 0o644)
-	binary := filepath.Join(installation, "bin", "metasystem")
-	quotedReport := "'" + strings.ReplaceAll(reportPath, "'", "'\"'\"'") + "'"
-	writeHostFile(t, binary, "#!/bin/sh\nexec cat "+quotedReport+"\n", 0o755)
-
-	symlinkDir := t.TempDir()
-	if err := os.Symlink(binary, filepath.Join(symlinkDir, "metasystem")); err != nil {
-		t.Fatal(err)
-	}
-	t.Setenv("PATH", symlinkDir+":"+os.Getenv("PATH"))
-	beforeConfig, _ := os.ReadFile(filepath.Join(repo, ".claude", "settings.json"))
-	beforeReport, _ := os.ReadFile(reportPath)
-	nested := filepath.Join(repo, "application", "nested")
-	if err := os.MkdirAll(nested, 0o755); err != nil {
-		t.Fatal(err)
-	}
-	result, err := Setup(Options{RepositoryPath: nested, Runtimes: []string{"claude", "codex"}, Check: true, StopStatusID: id})
-	if err != nil {
-		t.Fatal(err)
-	}
-	wantBinary, _ := filepath.EvalSymlinks(binary)
-	if result.StopLocatorBinary != wantBinary || result.StopStatusID != id {
-		t.Fatalf("locator probe result = %+v", result)
-	}
-	afterConfig, _ := os.ReadFile(filepath.Join(repo, ".claude", "settings.json"))
-	afterReport, _ := os.ReadFile(reportPath)
-	if !bytes.Equal(beforeConfig, afterConfig) || !bytes.Equal(beforeReport, afterReport) {
-		t.Fatal("read-only locator probe changed configuration or report bytes")
-	}
-
-	wrongDir := t.TempDir()
-	writeHostFile(t, filepath.Join(wrongDir, "metasystem"), "#!/bin/sh\nexit 1\n", 0o755)
-	t.Setenv("PATH", wrongDir+":"+os.Getenv("PATH"))
-	if _, err := Setup(Options{RepositoryPath: repo, Runtimes: []string{"claude", "codex"}, Check: true, StopStatusID: id}); err == nil || !strings.Contains(err.Error(), "PATH resolves metasystem") {
-		t.Fatalf("wrong PATH binding passed: %v", err)
 	}
 }

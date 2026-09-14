@@ -86,25 +86,7 @@ probe() {
       "gracefulCancel": false,
       "hooks": true,
       "protocolServer": true,
-      "nativeBudget": false,
-      "stopDelivery": {
-        "schemaVersion": 1,
-        "envelope": "unverified",
-        "blockField": "",
-        "blockValue": "",
-        "blockTextField": "",
-        "allowTextField": "",
-        "humanVisibleFields": [],
-        "duplicateBehavior": "unknown",
-        "reportReadRoute": "unknown",
-        "instructionHash": "",
-        "trustProbe": "",
-        "observationArtifact": "",
-        "launchBinary": "",
-        "seatCommandBinary": "",
-        "continuationLimit": null,
-        "level": "unobserved"
-      }
+      "nativeBudget": false
     }' \
     '{"unverified": ["readRoots", "writeRoots", "network"]}' \
     "$adapter_enforcement_map" \

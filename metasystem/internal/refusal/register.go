@@ -222,7 +222,6 @@ var Exclusions = []Exclusion{
 	{Pattern: "TEST_CONTRACT_READY", Reason: "a runtime setup test-contract readiness status rather than a refusal"},
 	{Pattern: "PROVIDER_TRUST", Reason: "a runtime setup provider-trust status rather than a refusal"},
 	{Pattern: "LIFECYCLE_OBSERVED", Reason: "a runtime setup lifecycle-observation status rather than a refusal"},
-	{Pattern: "STOP_LOCATOR_READY", Reason: "the successful read-only runtime setup stop-report locator probe rather than a refusal"},
 	{Pattern: "creator-identity-unreadable", Reason: "a census or custody evidence code rather than a refusal returned to a caller"},
 	{Pattern: "custody-entry-malformed", Reason: "a census or custody evidence code rather than a refusal returned to a caller"},
 	{Pattern: "group-membership-unreadable", Reason: "a census or custody evidence code rather than a refusal returned to a caller"},

@@ -38,11 +38,10 @@ fi
 claude_command=()
 while IFS= read -r -d '' token; do claude_command+=("$token"); done <"$command_file"
 (( ${#claude_command[@]} > 0 )) || { echo "claude host argv assembly failed" >&2; exit 3; }
-claude_command[0]=$host_provider_binary
 set +e
 (
   cd "$root"
-  env PATH="$host_child_path" "${claude_command[@]}" <"$prompt" >"$provider_result" 2>"$log"
+  "${claude_command[@]}" <"$prompt" >"$provider_result" 2>"$log"
 )
 cli_status=$?
 set -e
