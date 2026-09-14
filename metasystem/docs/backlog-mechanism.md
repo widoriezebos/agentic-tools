@@ -217,9 +217,9 @@ and a hand park may drop one only because the park itself does.
 ## The drop rule
 
 **The want evaporated.** The behavior or pain that justified the item is
-gone. Conclude it: `goal done --concluded "<what changed so this is no
-longer wanted>"`. Done means the ledger's promise is discharged, and this
-case discharges it honestly.
+gone. Conclude it: `goal done --id <goal> --conclude "<what changed so
+this is no longer wanted>"`. Done means the ledger's promise is
+discharged, and this case discharges it honestly.
 
 **The want survives; the pursuit stops.** The item is still wanted but will
 not be worked: the record is wedged, the work moved to a successor, or the
