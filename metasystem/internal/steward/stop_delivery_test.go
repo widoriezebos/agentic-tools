@@ -26,10 +26,10 @@ func hookDeliveryFixture(t *testing.T, root, sessionKey, attempt, healthSection,
 		t.Fatal(err)
 	}
 	command := "metasystem report stop-status --id " + reservation.Alias
-	visible := "Just completed: unknown for this turn.\nNo task in flight; Stop allowed; Read, then continue lawful work before stopping: " + command
+	visible := "Just completed: unknown for this turn.\nNo task in flight; Stop allowed; Report: " + command
 	payload := fmt.Sprintf(`{"systemMessage":%q}`, visible)
 	if blocked {
-		visible = "Just completed: unknown for this turn.\nTask: test; Stop blocked; Read: " + command
+		visible = "Just completed: unknown for this turn.\nTask: test; Stop blocked; Do not stop. Run this command; read and act on its report: " + command
 		payload = fmt.Sprintf(`{"decision":"block","reason":%q}`, visible)
 	}
 	report := fmt.Sprintf("# Task: test; Stop blocked\n\n<!-- metasystem-stop-report-v1 {\"installation\":%q,\"runtime\":\"claude\",\"session\":\"s\",\"sessionKey\":%q,\"attempt\":%q,\"mainId\":\"m\",\"machine\":\"bed\",\"lineage\":\"lineage\",\"observedAt\":\"2026-09-13T12:00:00Z\",\"claimEpoch\":1} -->\n\n## Console text\n\n```text\n%s\n```\n\n## Health\n\n```json\n{\"line\":%q}\n```\n\n%s", root, sessionKey, attempt, visible, healthSection, extra)
@@ -70,6 +70,54 @@ func TestCompleteHookAttemptBindsPayloadToExactReportHealthSection(t *testing.T)
 	}
 	if _, err := CompleteHookAttemptWithDelivery(root, attempt.Generation, attempt.AttemptSeq, ComponentOK, "EMITTED", health, payload, delivery, nil, now.Add(3*time.Second)); err == nil || !strings.Contains(err.Error(), "health snapshot") {
 		t.Fatalf("an arbitrary health string outside the typed section proved delivery: %v", err)
+	}
+}
+
+func TestVerifyHookDeliveryRejectsOutcomeSpecificSuffixDrift(t *testing.T) {
+	for _, test := range []struct {
+		name, replacement string
+		blocked           bool
+	}{
+		{name: "old block suffix", blocked: true, replacement: "; Read: "},
+		{name: "allowance suffix on block", blocked: true, replacement: "; Report: "},
+		{name: "old allowance suffix", replacement: "; Read, then continue lawful work before stopping: "},
+		{name: "block suffix on allowance", replacement: "; Do not stop. Run this command; read and act on its report: "},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			root, err := filepath.EvalSymlinks(t.TempDir())
+			if err != nil {
+				t.Fatal(err)
+			}
+			health := "HEALTH healthy — runner=alive"
+			payload, delivery := hookDeliveryFixture(t, root, stopreport.SessionKey("claude", "s"), strings.Repeat("e", 32), health, "", test.blocked)
+			current := "; Report: "
+			if test.blocked {
+				current = "; Do not stop. Run this command; read and act on its report: "
+			}
+			payload = strings.Replace(payload, current, test.replacement, 1)
+			if err := verifyHookDelivery(root, payload, health, delivery); err == nil {
+				t.Fatal("delivery verifier accepted an outcome-specific suffix mismatch")
+			}
+		})
+	}
+}
+
+func TestVerifyHookDeliveryRejectsPayloadOutcomeMismatch(t *testing.T) {
+	for _, blocked := range []bool{false, true} {
+		root, err := filepath.EvalSymlinks(t.TempDir())
+		if err != nil {
+			t.Fatal(err)
+		}
+		health := "HEALTH healthy — runner=alive"
+		payload, delivery := hookDeliveryFixture(t, root, stopreport.SessionKey("claude", "s"), strings.Repeat("f", 32), health, "", blocked)
+		if blocked {
+			payload = strings.Replace(payload, "; Stop blocked;", "; Stop allowed;", 1)
+		} else {
+			payload = strings.Replace(payload, "; Stop allowed;", "; Stop blocked;", 1)
+		}
+		if err := verifyHookDelivery(root, payload, health, delivery); err == nil {
+			t.Fatalf("delivery verifier accepted blocked=%t with the opposite visible outcome", blocked)
+		}
 	}
 }
 

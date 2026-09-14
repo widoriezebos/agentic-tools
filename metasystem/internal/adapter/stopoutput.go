@@ -54,19 +54,27 @@ func MapStopOutput(runtime, inputPath, outputPath string) error {
 			bytes.HasPrefix(lines[1], []byte("No task in flight;"))) {
 		return fmt.Errorf("stop presentation does not contain the required completion and task lines")
 	}
-	outcome := "; Stop allowed;"
-	imperative := "; Read, then continue lawful work before stopping: "
+	outcome := "Stop allowed"
+	reportSuffix := "; Report: "
 	if presentation.Control.ShouldBlock {
-		outcome = "; Stop blocked;"
-		imperative = "; Read: "
+		outcome = "Stop blocked"
+		reportSuffix = "; Do not stop. Run this command; read and act on its report: "
 	}
-	if !bytes.Contains(lines[1], []byte(outcome)) ||
-		presentation.Control.ShouldBlock != (presentation.Control.BlockSource != nil) {
+	if presentation.Control.ShouldBlock != (presentation.Control.BlockSource != nil) {
 		return fmt.Errorf("stop presentation line or block source does not match its decision")
+	}
+	intervention := ""
+	switch {
+	case presentation.NeedsYourDecision && presentation.NeedsSupervisionRepair:
+		intervention = "; needs your decision and supervision repair"
+	case presentation.NeedsYourDecision:
+		intervention = "; needs your decision"
+	case presentation.NeedsSupervisionRepair:
+		intervention = "; needs supervision repair"
 	}
 	wantCommand := "metasystem report stop-status --id " + presentation.Report.Alias
 	if presentation.Report.Id == "" || presentation.Report.Alias == "" || presentation.Report.ReadCommand != wantCommand ||
-		!bytes.HasSuffix(lines[1], []byte(imperative+wantCommand)) {
+		!bytes.HasSuffix(lines[1], []byte("; "+outcome+intervention+reportSuffix+wantCommand)) {
 		return fmt.Errorf("stop presentation report reference is inconsistent")
 	}
 	reportBytes, identity, err := report.ReadStopStatus(presentation.Identity.Installation, presentation.Report.Alias)

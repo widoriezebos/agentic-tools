@@ -31,6 +31,7 @@ const (
 	StopCompletionLineByteLimit   = 144
 	StopTaskLineByteLimit         = 256
 	StopHumanLineByteLimit        = 401
+	stopTaskLineTargetByteLimit   = 240
 	stopReportRetentionCount      = 20
 	stopReportRetentionAge        = 24 * time.Hour
 )
@@ -1037,10 +1038,10 @@ func opaqueHexTaskKey(value string) bool {
 
 func compactStopLine(title, kind string, blocked, decision, repair bool, readCommand string) string {
 	outcome := "Stop allowed"
-	imperative := "; Read, then continue lawful work before stopping: "
+	reportSuffix := "; Report: "
 	if blocked {
 		outcome = "Stop blocked"
-		imperative = "; Read: "
+		reportSuffix = "; Do not stop. Run this command; read and act on its report: "
 	}
 	intervention := ""
 	switch {
@@ -1060,8 +1061,8 @@ func compactStopLine(title, kind string, blocked, decision, repair bool, readCom
 	case "unknown":
 		prefix = "Task unknown"
 	}
-	suffix := "; " + outcome + intervention + imperative + readCommand
-	available := StopTaskLineByteLimit - len(suffix)
+	suffix := "; " + outcome + intervention + reportSuffix + readCommand
+	available := stopTaskLineTargetByteLimit - len(suffix)
 	if kind == "task" {
 		available -= len("Task: ")
 	} else if kind == "next" {

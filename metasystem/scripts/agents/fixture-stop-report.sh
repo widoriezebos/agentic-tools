@@ -44,11 +44,11 @@ fixture_stop_status_report() ( # provider payload file or JSON, installed root, 
   (( $(printf '%s' "$line" | wc -c | tr -d ' ') <= 401 )) || return 1
 
   if [[ "$decision" == block ]]; then
-    [[ "$line_two" == *'; Stop blocked;'* && "$line_two" == *'; Read: metasystem report stop-status --id '* ]] || return 1
-    command=${line_two##*; Read: }
+    [[ "$line_two" == *'; Stop blocked;'* && "$line_two" != *'; Stop allowed;'* && "$line_two" == *'; Do not stop. Run this command; read and act on its report: metasystem report stop-status --id '* && "$line_two" != *'; Report: '* ]] || return 1
+    command=${line_two##*; Do not stop. Run this command; read and act on its report: }
   else
-    [[ "$line_two" == *'; Stop allowed;'* && "$line_two" == *'; Read, then continue lawful work before stopping: metasystem report stop-status --id '* ]] || return 1
-    command=${line_two##*; Read, then continue lawful work before stopping: }
+    [[ "$line_two" == *'; Stop allowed;'* && "$line_two" != *'; Stop blocked;'* && "$line_two" == *'; Report: metasystem report stop-status --id '* && "$line_two" != *'; Do not stop. Run this command;'* ]] || return 1
+    command=${line_two##*; Report: }
   fi
   read -r command_name report_verb status_verb id_flag report_alias extra <<<"$command"
   [[ "$command_name" == metasystem && "$report_verb" == report && "$status_verb" == stop-status &&

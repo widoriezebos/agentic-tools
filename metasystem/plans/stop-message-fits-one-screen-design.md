@@ -1,11 +1,55 @@
-# Design revision 7: two useful Stop lines and an exact short report command
+# Design revision 9: blocked feedback instructs; allowed status informs
 
 Goal: [stop-refusal-fits-on-one-screen](goals/stop-refusal-fits-on-one-screen.md).
-Design only. **Revision 7, 2026-09-14; one consolidated build brief.**
-Revision 6 was unbuilt. It is superseded and folded into this revision.
-Revisions 4 and 5 landed. Trunk `b643f423` also landed the always-loaded
-report-read instruction. Preserve it and build the Stop imperative here.
-Both carriers are required. Neither may be removed as redundant.
+Design only. **Revision 9, 2026-09-14; re-applied after `094f836b`.**
+Revision 7 is landed in the supplied trunk baseline `113b3bcf`; its
+completion line, report storage, short alias, naming, intervention and
+Stop-control contracts remain the baseline. Revision 9 changes only the
+report-bearing line-2 text, its name budget, exact-text consumers and proof
+obligations. The AGENTS.md carrier landed in `b643f423` stays byte-identical.
+The standing instruction and blocked feedback serve different delivery
+paths; neither is redundant. Revision 9's code is already applied and
+uncommitted in this worktree. Only this design page is edited by this lane,
+and it remains uncommitted.
+No code, fixture, ledger, receipt or other instruction file is edited.
+
+Wido's ruling for this revision, verbatim:
+
+> "Have this line designed and critiqued. Especially for its effectiveness across agents like Claude, Codex and Devin. This needs to be the strongest instruction to the agent it can be. Agents must always act on it."
+
+Accept Sol's runtime result as established: on a blocked Stop, Claude and
+current Codex deliver `reason` as continuation feedback to the model. On
+an allowed Stop, `systemMessage` is human display after the agent's final
+response; it never enters model input and schedules no further inference.
+Devin has no report-bearing Stop mapping, so this line is absent there.
+These are delivery facts, not wording hypotheses to retest until green.
+
+The final blocked imperative is **Do not stop. Run this command; read and
+act on its report:** followed by the exact bare command. Its behavioral
+target is an agent tool call, report consumption and the applicable seat
+action within existing authority in the resumed blocked path. An allowance
+instead prints **Report:** plus that command for the human. There is no
+post-allowance agent-action requirement on that message: it cannot carry one.
+
+On an allowance, the always-loaded standing instruction from `b643f423`
+is the **only carrier that reaches the model**, not belt-and-braces. It can
+govern work before finalization and at a later independently supplied
+opportunity; it cannot reveal a report ID printed only after finalization
+or create the missing opportunity. A seat allowed to stop with work remaining
+cannot be compelled by any Stop text. A line-only allowance therefore cannot
+meet revision 8's requirement, however persuasive its wording.
+
+Wido's invariant is: **a seat stops only when there is genuinely no way to
+continue; when it truly cannot continue it must not burn tokens. A registered
+wait is not idleness.** The mechanism and its “always” guarantee belong to
+[coordinator-wakes-on-events-not-polls](goals/coordinator-wakes-on-events-not-polls.md)
+together with
+[seat-work-continues-past-the-runtime-stop-cap](goals/seat-work-continues-past-the-runtime-stop-cap.md).
+Wido joined these two goals as one program on **2026-09-14** under that
+invariant. The first owns registered event waits, quiet pending time and wake/recovery;
+the second owns continued work after a session ends or its Stop cap releases
+it. Decision 3 and the transferred obligations below state their proof.
+This presentation correction neither implements nor discharges that guarantee.
 
 Wido's restatement this morning supersedes the earlier one-line wording:
 
@@ -19,8 +63,9 @@ Stop says: Task: stop refusal fits on one screen; Stop allowed; needs your decis
 ```
 
 The first line will say what completed. The second will name current or
-selected next work, retain the Stop outcome, and instruct the seat to read
-and act. The short command is an exact reserved alias, not an unchecked
+selected next work and retain the Stop outcome. On a block it instructs the
+seat to read and act; on an allowance it gives the human the report command.
+The short command is an exact reserved alias, not an unchecked
 abbreviation. Details and ancillary notices go into the same report.
 The two-line count covers everything these installed Stop hooks show the
 human. It is not a count of fields in one JSON object.
@@ -33,42 +78,49 @@ scope still bind. The separate goal
 2026-09-13, owns continuation beyond the provider's Stop cap. It must land
 and prove its outer mechanism before closing the two allowances as its own
 final item. This page grants no claim, rearm, repair or human-stop override.
-No third goal or human decision is needed. No third design critique round.
+No third goal or renewed human decision is needed. Decision 2b records the
+supplied independent critique and every disposition; no subagent is used.
 
-## Grounding at HEAD and current trunk
+## Grounding and accepted runtime evidence
 
-The worktree HEAD is `b64a485e0212f3152da07dbb659a56af33660cb1`.
-Current local trunk is `refs/heads/main` at
-`b643f4237379a12f402de0b463f57a7e7a08ffc0`. Before editing, this lane fetched
-both requested trunk blobs with read-only `git show refs/heads/main:<path>`:
-this page and `metasystem/AGENTS.md`. It read the entire trunk page and its
-diff from HEAD. No ref, index or checkout was moved; no remote freshness
-claim is made beyond that current trunk ref. All source paths below are
-relative to `metasystem/`. The grounding table cites re-read HEAD lines
-unless explicitly labelled trunk. Other citations in the retained clauses
-are historical anchors from their earlier revision, unless listed here. The cited Stop implementation is unchanged
-between these two commits. The supplied console observation is evidence
-from the brief, not a locally reproduced host run.
+This reapplication is written against the page after `094f836b`, at
+worktree HEAD `113b3bcf`. Read-only Git inspection confirmed the starting
+page equals the post-removal trunk blob and the original revision 9
+remains available in the unmerged blobs. The revision-9 code is already
+applied and uncommitted; the index marks this page unmerged. This lane
+changes only its working-file text and leaves the index and refs alone.
 
-| Owner and lines re-read | What the design uses or preserves |
+The table retains the original revision's repository fact pass as
+historical grounding, except for the current formatter/consumer rows
+updated below. This lane re-read the standing instruction, formatter,
+mapper, completion consumer, two mechanism goals and removal diff.
+All source paths below are relative to `metasystem/`. No provider
+session was launched. The accepted Claude/current-Codex channel split
+and missing Devin mapping are supplied evidence from Sol's runtime
+investigation, reaffirmed in this brief; this lane did not repeat that
+investigation. Older line anchors remain historical host/source facts,
+not fresh installation evidence.
+
+| Owner and lines re-read | Established repository fact |
 | --- | --- |
-| Trunk `AGENTS.md:34-36`; trunk `plans/goals/stop-refusal-fits-on-one-screen.md:8-10` | The standing rule already requires reading on both outcomes and following lawful seat actions. The goal permits only a printing change. |
-| `internal/report/stoppresentation.go:847-905,921-968,984-1036` | Job, run, held and selected-work precedence; goal-slug naming; stopped, empty and unknown states. The current formatter still emits `status:` with the full identifier. |
-| `internal/goal/turnfacts.go:31-59,88-112,174-263`; `internal/goal/turnverdict.go:176-201,296-324` | Frozen actions and main-ID ownership exist. The verdict state has a last-touch time and a green cursor, but neither is a portable runtime turn-start record. Do not mutate either to format completion. |
-| `internal/report/scan.go:182-190,362-440`; `internal/dispatch/jobrecord.go:51-65,98-114`; `internal/dispatch/record.go:36-65`; `internal/run/run.go:173-220` | Existing job and run records identify their owner and work. Jobs have `endedAt`; successful jobs are `completed`. Runs have generation, nonce and terminal sequence; success is `green`. A run's `endedAt` marks draining entry, not successful terminalization. Read these as presentation evidence without changing scanner membership or Stop policy. |
-| `internal/receipt/receipt.go:30-43,149-158,201-211`; `internal/goal/file.go:378-410` | Task receipts have optional goal/builder fields, but no required seat/session/turn identity. Goal history can attribute a human conclusion. Neither a global latest receipt nor a conclusion proves this seat completed work this turn. |
-| `internal/report/stoppresentation.go:574-675,1263-1368` | Immutable report publication, per-session lock, rotation and strict full-ID lookup already exist. The report marker binds full identity. Decision 5 extracts shared storage for aliases; no global latest-report lookup. |
-| `internal/adapter/stopoutput.go:45-80`; `internal/steward/component_evidence.go:450-489`; `scripts/agents/fixture-stop-report.sh:24-61` | Mapper, completion verifier and fixture reader currently assume one line, `status:` and a full ID. All must move together while retaining identity, digest and sole-field checks. |
-| `scripts/agents/supervision-hook.sh:722-731,916-925,999-1002,1148-1250,1291-1312,1440-1476,1479-1542` | Complete `surface_json` inventory and reachability. Receipt already has a collected Stop path. Some calls only construct captured JSON; direct later notices follow Stop's unconditional exit. Decision 7 assigns every site. |
-| `scripts/enforcement/claude-code-hooks.json:16-25`; `scripts/agents/supervision-hook.sh:35-40,108-123,276-305,1015-1023` | Trunk's Claude template has one Stop registration. A stale installed receipt registration can still explain the supplied extra notice. Engine-free and retained-decision failures are fixed one-line forms. |
-| `internal/goal/turnverdict.go:577-607,686-738` | The delegate exemption and third-refusal allowance remain. Failed preparation still releases when no earlier branch blocks. Presentation cannot change that source or any side effect. |
-| `internal/report/stoppresentation_test.go:169-216,501-551,767-834,930-977`; `scripts/agents/supervision-hook-fixtures.sh:790-828` | Landed presenter/name/allowance/storage tests and hook pair are the extension seams. This revision names additional proofs; it does not claim they ran. |
+| `AGENTS.md:36` | The standing rule already requires the exact command, read and authorized action on both outcomes, plus recovery on read failure. |
+| `internal/report/stoppresentation.go:1039-1093` | The applied formatter uses the exact revision-9 blocked imperative and allowed `Report:` suffix. It reserves the suffix before cutting only the name against 240; the validity cap stays 256. |
+| `internal/adapter/stopoutput.go:21-94` | Claude/Codex mapping validates the two lines and outcome-specific suffix, alias, full identity and digest. It emits only decision/block plus reason, or only systemMessage. An empty ExpectedStopDelivery is an error. |
+| `internal/steward/component_evidence.go:450-508`; `scripts/agents/fixture-stop-report.sh:24-61` | The applied completion consumer and fixture reader recognize the revision-9 suffixes. The fixture executes the resolved installation binary itself; that is harness lookup evidence, not an agent choosing to run the bare command. |
+| `internal/runtimes/runtimes.go:184-266` | Codex: AGENTS.md, shared-reason-v1, no start-context field. Devin: AGENTS.md, no Stop mapping or start-context field. Claude: CLAUDE.md, shared-reason-v1, 10,000-byte SessionStart additionalContext on startup/resume/clear/compact. These are declarations. |
+| `scripts/enforcement/claude-code-hooks.json:16-28`, `scripts/enforcement/codex-hooks.json:17-27`, `scripts/enforcement/devin-hooks.json:16-26`; `scripts/agents/supervision-hook.sh:1017-1083` | Each template invokes the shared Stop hook. It invokes the mapper and preserves the retained decision on mapping failure. For Devin this currently reaches a generic reason/systemMessage unavailable fallback, not the designed report line; provider acceptance of that fallback is unproved. |
+| `internal/adapter/claude.go:309-311,352-416`; `scripts/agents/adapters/claude.sh:137-178` | Claude host has Bash and a JSON return schema. Delegate settings/tool lists differ: a noncritic read-only role has no Bash. Delegates use stream-json and can resume; host uses blocking JSON. |
+| `internal/adapter/codex.go:47-113`; `scripts/agents/adapters/codex.sh:115-176` | Codex fresh exec/resume use output-schema, approval_policy=never and envelope sandbox settings. Resumes inherit thread context/cwd/config with per-turn overrides. JSONL is captured evidence, not an inbound Stop message. |
+| `internal/adapter/devin.go:299-323`; `scripts/agents/adapters/devin.sh:291-375,527-599`; `internal/acp/turn.go:246-249`; `internal/adapter/devinacp.go:20-27` | Devin prompt appends an exact JSON-only reply instruction and named output-file/final-message instructions. Legacy uses prompt-file; ACP sends a text block via session/prompt. ACP read-only/runtime-default modes are ask/accept-edits. Neither transport supplies a verified Stop feedback mapping. |
+| `scripts/agents/adapters/runtime-common.sh:60-86`; `scripts/agents/supervision-hook.sh:478-498` | Authenticated subordinate delegates intentionally skip governed Stop. Their successful returns cannot prove parent-seat Stop effectiveness; do not remove this exemption to obtain test coverage. |
+| `internal/report/stoppresentation_test.go:686-905`; `internal/adapter/stopoutput_test.go`; `internal/steward/stop_delivery_test.go`; `scripts/agents/supervision-hook-fixtures.sh` | Applied fixtures pin the revision-9 outcome-specific strings and 240-byte specimens. Equality proves selected bytes, never their persuasive force. This lane did not run them. |
+| `plans/goals/coordinator-wakes-on-events-not-polls.md:8-10`; `plans/goals/seat-work-continues-past-the-runtime-stop-cap.md:6-8` | Wido joined the goals on 2026-09-14 under the continue-when-possible, quiet-when-blocked invariant. The first owns registered waits and event recovery; the second owns continuation outside a stopped or capped session. Neither record establishes the complete invariant as shipped. |
 
-The older revisions' provider-document observations are historical only.
-They do not certify this installation. The real-host gate below remains
-necessary. The existing body carries the landed contracts whole except
-where revision 7 explicitly changes display, completion evidence or lookup.
-Statements about pre-build status in the revision record are historical.
+Provider-system-prompt habits below are explicit failure hypotheses, not
+claims to have read those prompts. Historical provider-document claims,
+including a Claude consecutive-block limit of eight, do not establish the
+limit or text visibility on any installation today. Real-host observations
+must identify runtime, model, version, transport and configuration.
 
 ## Decisions
 
@@ -117,12 +169,12 @@ The seat's short report summary must describe the preserved branch:
 | Observed branch | Report wording |
 | --- | --- |
 | Unchanged readable backlog, attempts 1 and 2 | `refusal N of 3 for this unchanged backlog; at 3 request steward continuation and allow Stop unless another branch blocks`. Follow with the selected action and other-goal count. |
-| Attempt 3 or later | `refusal N reached the bound of 3 for this unchanged backlog`. Retain the actual intent/incident/alarm result. End with `Stop is allowed; read the report and continue lawful work before stopping` on an allowance; otherwise `another turn-verdict branch remains blocking this stop`. |
+| Attempt 3 or later | `refusal N reached the bound of 3 for this unchanged backlog`. Retain the actual intent/incident/alarm result. End with `Stop is allowed; this notice schedules no further agent turn` on an allowance; otherwise `another turn-verdict branch remains blocking this stop`. Keep the selected seat action in the report's action section. |
 | Delegate exemption | `delegate work is in flight; claimable backlog remains`, when both facts exist. The report still names the selected work and delegate state. |
 
-Keep "of 3" and the conditional Stop outcome. Revision 7 replaces the
-prediction "the turn will end": an allowance permits stopping, but the
-seat must first read and act on lawful remaining work. This is a wording
+Keep "of 3" and the conditional Stop outcome. An allowance permits stopping;
+its notice cannot make the seat first read a newly published report. The
+standing instruction governs any live model opportunity. This is a wording
 correction only. Do not substitute revision 3's unbounded refusal wording.
 A prepared intent proves a request, not a completed handoff or an actual
 continuation. Replace the old promise that the steward will continue the goal with the request wording
@@ -148,26 +200,40 @@ Block:
 
 ```text
 Just completed: <completion>.
-Task: <name>; Stop blocked; Read: metasystem report stop-status --id <short-id>
+Task: <name>; Stop blocked; Do not stop. Run this command; read and act on its report: metasystem report stop-status --id <short-id>
 ```
 
 Allowance:
 
 ```text
 Just completed: <completion>.
-Task: <name>; Stop allowed; Read, then continue lawful work before stopping: metasystem report stop-status --id <short-id>
+Task: <name>; Stop allowed; Report: metasystem report stop-status --id <short-id>
 ```
 
-`Read` means run that complete command and read the returned report.
-For a block the report supplies the action. For an allowance the line
-explicitly requires reading and continuing lawful work before stopping.
-The word `lawful` preserves human stops, authority, true waits and action
-restrictions. It makes no claim that all allowances have work. If there is
-no lawful action, the seat may end its turn after the read. A held goal is
-continued without another claim. A free seat fetches and claims only the
-ready goal returned by `goal next`. A delegate exemption retains its owned
-work; the seat follows its watch/wait action. A prepared intent is not a
-completed handoff. No new continuation field or extra turn is forced.
+On a block, `Do not stop.` is a flat prohibition on abandoning the current
+blocked action. `Run this command` names an immediate tool action and its
+object. `read and act on its report` requires consuming that command's
+returned report and carrying out the applicable action for this seat, in
+that order. The command is the next work action, before unrelated work or
+finalization; a higher-priority preamble or necessary tool plumbing is fine.
+A command quotation, successful lookup by the harness or a promise is not
+agent action. Decision 2b defends every element and its limits.
+
+On an allowance, `Report:` labels the human's read command. It makes no
+promise that the already-finalized agent will read or continue. The standing
+instruction is the sole model carrier on this path. It cannot consume an
+unseen fresh report; later recovery depends on an ordinary independent
+opportunity or the separately owned continuation mechanism.
+
+The report does not create authority. Its seat-action section identifies
+current work and carries existing human-only, wait, budget and role limits;
+background and other-seat facts are not orders for this reader. A held goal
+continues without another claim; a free seat uses `goal next` and claims only
+its returned ready goal. A real wait or human stop must be respected.
+`Do not stop.` never overrides those restrictions or orders an endless
+self-read. The parent-seat delegate exemption retains its watch/wait action;
+a prepared intent is not a completed handoff. No continuation field,
+acknowledgment turn, new authority or changed Stop decision is added.
 
 Line 2 retains the exact task prefix and naming rule from Decision 4:
 `Task: <name>` for in-flight work; `No task in flight; next: <name>` for
@@ -185,14 +251,43 @@ it. Neither retained allowance alone adds a flag. Failed intent preparation
 or failed supervision evidence adds repair; human-required repair adds both.
 Ordinary retro debt and a spend suggestion remain report-only.
 
-Reserve the entire line-2 prefix, outcome, intervention, imperative and
-command before shortening only its chosen name at a UTF-8 boundary.
-The short identifier is never clipped. With a maximum 32-byte alias and
-both flags, the name budgets are 117 bytes for a held block, 98 for a next
-block, 74 for a held allowance and 55 for a next allowance. The source name
-still has its 100-byte limit. With a one-byte alias these budgets are 148,
-129, 105 and 86 bytes respectively. The report heading keeps the full name.
-No ellipsis, model-written summary or intent fragment replaces it.
+Reserve the entire line-2 prefix, outcome, intervention, outcome-specific
+suffix and command before shortening only its chosen name at a UTF-8
+boundary. The short identifier is never clipped. **The formatter targets
+240 bytes for report-bearing line 2, leaving 16 bytes below the unchanged
+256-byte validity cap.** Use 240 in `compactStopLine`'s name calculation;
+keep `StopTaskLineByteLimit`, mapper/completion validity limits and the
+144/256/401 wire contract unchanged. Headroom is a formatting choice, not
+a new reason to reject otherwise valid input or change Stop. Degraded
+forms retain their existing 256-byte limit and bytes. The shorter wording
+alone would not fix zero headroom: the old formatter would fill the saved
+space with more name bytes.
+
+The blocked suffix, including its leading `; ` and final `: `, is **61
+ASCII bytes** before the command, down from 81. The allowed `; Report: `
+suffix is **10 bytes**. At the 240-byte target the available name bytes are:
+
+| Outcome / intervention | Held name, 1-byte / 32-byte alias | Next name, 1-byte / 32-byte alias |
+| --- | --- | --- |
+| Block / none | 123 / 92 | 104 / 73 |
+| Block / decision | 102 / 71 | 83 / 52 |
+| Block / repair | 97 / 66 | 78 / 47 |
+| Block / decision and repair | 79 / 48 | 60 / 29 |
+| Allow / none | 174 / 143 | 155 / 124 |
+| Allow / decision | 153 / 122 | 134 / 103 |
+| Allow / repair | 148 / 117 | 129 / 98 |
+| Allow / decision and repair | 130 / 99 | 111 / 80 |
+
+These are available bytes, still subject to the source-name maximum of
+100 and the existing UTF-8-boundary cut/trailing-space trim. Even the
+worst case retains the whole 21-byte `task name unavailable` fallback.
+The report heading keeps the full name. No ellipsis, model-written summary
+or intent fragment replaces it. For the 32-byte name `stop refusal fits on
+one screen` and a one-byte alias, ordinary line 2 is 148 bytes on block
+and 97 on allow. Current formatting produces a pair of at most 385 bytes
+using the 144-byte line-1 cap and LF; the maximum current completion form
+is 137 bytes, so its pair is at most 378. The validity bounds remain
+144/256/401. The 16 reserved bytes are not permission to add another notice.
 
 Line 1 uses one of these exact substitutions for `<completion>`:
 
@@ -319,11 +414,74 @@ time goes backwards or ownership changes, report completion as unknown.
 These display comparisons never change Stop control, refusal counts,
 protocol advancement or the existing delivery-evidence conditions.
 
+### 2b. Why these words; critique dispositions
+
+The blocked line is an instruction in an actual continuation channel on
+Claude and current Codex. Strong wording can matter there. It remains a
+behavioral hypothesis until an agent acts; no adjective or punctuation
+can guarantee obedience. The allowed line has a different audience and
+therefore a different suffix.
+
+| Element | Decision and reason |
+| --- | --- |
+| `Do not stop.` | Put the flat prohibition first, as its own sentence. It directly addresses the attempted blocked termination. Revision 8 buried the condition in `before ending this turn`; no extra enforcement came from that clause. The prohibition binds the current report/action sequence, subject to higher-priority instructions and genuine wait/human restrictions, not all future stopping. |
+| No `Agent:` label | Remove it. The imperative already addresses the reader in the model's continuation feedback. `Agent:` spent seven bytes and resembled the surrounding `Task:` metadata; there is no evidence it improved actor selection. The human decision flag remains a fact whose full owner/action is in the report. |
+| `Run this command;` | Name the action and its object immediately. `run now` left the object until the far end of the line. `this command` points to the sole complete command after the final colon. The imperative and sequence make it the next work action; adding `now` repeats that order. |
+| `read and act on its report:` | Require both consumption and action on the returned report. `its` binds that report to this command, not a global latest file or remembered report. `act on` is a direct order without revision 8's `as authorized`, which could invite abstention while waiting for the report to grant authority. The report's leading seat-action section selects the applicable action; existing authority and restrictions still apply. The report cannot grant permission by fiat. |
+| Final colon-space and bare command last | Keep one exact five-token command, ending in its whole reserved alias, without quotes, backticks, trailing punctuation or prose. It has an explicit start delimiter and end-of-line delimiter and can be copied without extra arguments. No new command grammar or lookup behavior is introduced. |
+| Allowed `Report:` | A deliberate human-facing label. Its job is to locate the report after an allowed Stop, not to schedule or direct model action. Removing a fictitious agent imperative also restores useful name space. The unchanged standing instruction is the only model carrier on this path. |
+| Typography and authority | Ordinary English suffices to express the order. Reject all-caps MUST, fake system-role tags, threatened punishment and unconditional obedience to every report detail. They neither create a model opportunity nor change the provider's instruction hierarchy. No empirical claim that this is the optimal wording. |
+
+**Cold blocked input.** A fresh live model with only the blocked second
+line, its normal provider instructions and an execution tool can identify
+the command, returned object and required sequence. The report supplies the
+full task identity, seat action and restrictions. It must not assume the
+old report's ownership merely because it can read it. The command environment
+must already be bound to the right installation; a short alias has no global
+meaning. Test cold comprehension separately from native blocked delivery.
+A model handed an allowed notice as a new prompt has received an artificial
+opportunity the native allowed path does not have; that is not an allowance
+success and is not a required effectiveness trial.
+
+On a denied command, wrong binding, expired alias or unreadable report,
+record the failure and retain any established block and authority limits.
+The loaded standing instruction supplies `goal next` recovery; an isolated
+line-only reader cannot reconstruct an unseen recovery command. An attempted
+read with honest failure/recovery is distinct from successful report action.
+The report's frozen `Console text` is a quotation of the notice, not a new
+Stop event. Recursive reads of it are failure, not continued useful work.
+
+**Sol's revision-8 verdict: not ready to build; five material findings.**
+This fold accepts the supplied runtime result rather than re-arguing it.
+The supplied summary has no critic IDs or `return.json` path; the five
+`R9-SOL-*` IDs below are local join keys for its five subject findings,
+not purported original IDs. The table covers that supplied summary; it
+is not a claim that a canonical critique register was mechanically closed.
+No new critic round, subagent, ledger entry or acceptance-risk action is run.
+
+| Finding id | Disposition | Reasoning and evidence | Amendment |
+| --- | --- | --- | --- |
+| R9-SOL-1: allowed feedback cannot cause action | Accept, material | Sol's established runtime result: the final response precedes allowed systemMessage; it is human-only and no inference follows. Revision 8 required an impossible post-allowance sequence while preserving that path. | Narrow the contract in the header and Decisions 1-3. Print `Report:` on allow; identify b643f423 as the only model carrier and remove post-allowance effectiveness requirements throughout proof/build rows. |
+| R9-SOL-2: weak or ambiguous phrases on the blocked path | Accept, material | `Agent:` resembles metadata; `run now` postpones the object; `act as authorized` can solicit a new grant; the subordinate turn-end clause weakens the prohibition. These affect the literal instruction an implementer emits. | Decision 2's exact blocked suffix and the element-by-element table above; authority remains in existing instructions and the report's seat-action restrictions. Cold/native behavioral rows can expose abstention or overreach; literal rows cannot assess force. |
+| R9-SOL-3: 256 bytes leaves zero headroom | Accept, material | Revision 8's realistic next/both-flags/32-byte-alias line is exactly 256. Shortening its suffix without changing the name budget would still fill the cap. | Keep the 256-byte validator cap; format report-bearing line 2 to 240. Block suffix falls from 81 to 61 bytes, worst name grows from 25 to 29 bytes, and 16 bytes stay reserved. Pin independent block and allow boundary specimens. |
+| R9-SOL-4: exact-string fixtures cannot judge weak wording | Accept, material | The fixtures compare chosen bytes, and the helper executes the command because the harness tells it to. Either passes with weak words if expected bytes match. | Each changed proof row below names what can fail and what it cannot establish. Native blocked tests require the model's own command and a report-only canary action; allowance tests observe display/finalization only. No compliance claim from serialization, parser success or harness lookup. |
+| R9-SOL-5: Devin has no report-bearing delivery | Accept, material | The runtime declaration has no Stop mapping; mapper rejection does not deliver the designed line. Legacy prompt-file and ACP session/prompt are ordinary prompt transports. | Mark native Devin Stop support unsupported in Decision 3, runtime rows and STOP-HOST. Optional prompt-only evidence stays separate. This build adds no mapping and cannot claim native Devin effectiveness. |
+| R9-WIDO-1: place the “always” invariant at its real owners | Accept, required correction | Continuing whenever lawful work is possible and spending no model tokens when it is not requires scheduling plus registered waits. A Stop sentence supplies neither. | Defer the guarantee explicitly to coordinator-wakes-on-events-not-polls together with seat-work-continues-past-the-runtime-stop-cap, including the pending-wait boundary and their measurements below. |
+| R9-REMAINING-1: tool, trust and return-route limits | Accept, retained limitation | Hook configuration, tool denial, schema/final-file instructions, actual compaction and session exemptions affect observations. One provider route cannot certify another. | Pin each claimed Claude/Codex route and context; preserve authenticated subordinate skips; record all blocked delivery/action failures without retrying them out of the denominator. |
+| R9-REMAINING-2: authority, unavailable reads and self-read loops | Accept, retained limitation | A report carries human-only actions, waits and other-seat/background facts as well as a quotation of its notice. Fetch success alone proves neither correct selection nor consumption. | Keep explicit work, wait/human restriction, read-failure and Console-text cases. Observe the applicable action or quiet, not report recursion, borrowed ownership or invented repair authority. |
+| R9-REMAINING-3: obtain obedience by adding a forced turn or stronger block | Reject as a remedy in this page | It changes preserved Stop control and still cannot deliver a Devin mapping by wording. The user already assigned continuation to two existing goals. | No acknowledgment, policy change, guessed mapping, polling loop or extra human decision. The continuation owner supplies any later opportunity and its evidence. |
+
+Revision 8's six author findings are retained in the revision record with
+updated dispositions. They were a self-review, not Sol's independent round.
+The supplied material findings change the contract and tests; they are not
+all mechanical wording choices. This fold therefore does not invoke a
+fixture-only exit or call an invariant proved by exact-string tests.
+
 ### 3. Runtime mapping and the conformance prerequisite
 
 `internal/report` owns compact status, detailed report and reference from
 one judgment. `internal/adapter.MapStopOutput` owns host serialization,
-invoked by the shared hook through the new `metasystem adapter stop-output
+invoked by the shared hook through the landed `metasystem adapter stop-output
 --runtime <runtime> --input-file <presentation.json> --output-file <payload.json>`.
 The CLI writes no stdout; the hook validates and emits the file once.
 The mapper never judges or spends a refusal. All three enforcement templates
@@ -356,14 +514,15 @@ guidance from Decision 7. The replacement reject condition is absence of
 that classified flag, required report detail when publication succeeds,
 log or refusal evidence; absence of a block's `systemMessage` is required.
 
-Use these same shared-channel shapes for the documented Codex candidate.
+Use these same shared-channel shapes for current Codex, whose blocked
+continuation and allowed human-display behavior are accepted above.
 No private Stop field is assumed for any runtime. Detailed seat actions and
 diagnostics stay in the file. Do not classify an extra field as private
-without actual host observation; Claude additional context also continues
-the conversation and cannot solve allowance delivery.
+without actual host observation. No extra context field or forced
+continuation is authorized as an allowance-delivery workaround here.
 
-`runtimes.Declaration` remains a **static distribution registry**. Add only
-`ExpectedStopDelivery string`: `shared-reason-v1` for Claude/Codex candidates,
+`runtimes.Declaration` remains a **static distribution registry**. Preserve
+its existing `ExpectedStopDelivery string`: `shared-reason-v1` for Claude/Codex candidates,
 empty for an unknown contract such as Devin. Reuse its existing
 `InstructionFile` to find the instruction entrypoint; do not duplicate it
 in a Stop declaration. `internal/adapter` owns the actual envelope mapping
@@ -373,84 +532,172 @@ capability snapshots carry no Stop-delivery field or conformance claim.
 Unsupported mapping returns an explicit error to the existing degraded path,
 not a guessed Devin envelope.
 
-| Runtime | Envelope/control and human fields | Duplication and report-read route | Installation/trust and continuation limit | Evidence limit for revision 7 |
-| --- | --- | --- | --- | --- |
-| Claude | Candidate shapes above; block reason and allowance systemMessage are public | Two populated visible fields produce two notices; landed standing rule plus Stop imperative required | Inspect effective Stop registrations, generated launcher and loaded CLAUDE.md; fire block and allow; documented cap 8 | Existing hook emission only; revision-7 two-line/read behavior unobserved; absolute no-stop claim contradicted by cap |
-| Codex | Documented decision/block plus reason continuation; systemMessage public; same compact shapes proposed | Treat reason as shared; inspect actual warning/prompt display for duplicates; landed AGENTS.md rule plus Stop imperative required | Project and exact hook definition must be trusted; inspect effective `/hooks` definition/hash and fire both outcomes; continuation limit unknown | Declared only; new mapping, trusted firing, report read and cap behavior unobserved |
-| Devin | Accepted Stop envelope, blocking field and public fields unknown | Duplication and native continuation/read route unknown | Inspect effective installation and provider trust mechanism, then observe; limit unknown | Declared only; no conforming mapping may be claimed |
+**Runtime-by-runtime delivery.** Sol's runtime result supplied for this
+fold settles the Claude/current-Codex channel split. Source inspection
+still cannot prove a particular installed hook fired or a model obeyed.
+CLI output, exported transcripts and ACP journals are evidence outputs,
+not automatically inbound instructions. Version/configuration-specific
+observations pin deployment support; they do not reopen the known allowance
+path as a speculative way to instruct a model after finalization.
 
-**Two required carriers, folded from revision 6.** The always-loaded rule
-already exists at trunk `b643f423`, `AGENTS.md:36`. Its exact text is:
+| Runtime and route | Blocked path | Allowed path and scope of claim |
+| --- | --- | --- |
+| Claude, native host / interactive installation | `reason` becomes continuation feedback the model receives. The new imperative can cause a tool action; tool access, trusted installed hooks, model behavior and the continuation cap still matter. Observe a claimed JSON-host or interactive route in its actual context. | `systemMessage` is human display after final response, with no next inference. `Report:` is a locator for the human. Only the already-loaded standing rule reaches the model; no allowed-message action claim. CLAUDE.md must lead to that canonical rule. |
+| Current Codex, exec / exec resume / interactive installation | `reason` becomes continuation feedback the model receives. Pin the claimed route, output schema, sandbox and approval settings and observe its shell action. Resumption or a JSONL transcript alone proves neither instruction loading nor compaction. | Human-only systemMessage; the final response already exists and no inference is scheduled. AGENTS.md is the sole model carrier here. A later exec/resume opportunity has an external cause and cannot be attributed to the allowed message. |
+| Devin, legacy prompt-file | No report-bearing native Stop mapping. The shared hook's generic retained-decision fallback is not this line. Native blocked effectiveness is unsupported. | No designed report line on allowance either. AGENTS.md can carry standing behavior when actually loaded, but neither it nor dangerous permission mode creates a report-bearing Stop route. A prompt-file trial is prompt-only wording evidence; the named final-file/JSON-only return instructions must be recorded if present. |
+| Devin, ACP | No report-bearing native Stop mapping. session/prompt sends ordinary task text; response updates and stopReason do not establish Stop feedback. Native blocked effectiveness is unsupported. | The line is absent. ACP support, its ask/accept-edits tool grades and legacy observations cannot certify it. An independently sent prompt is a new opportunity with its own cause, not an allowed Stop inference. |
+
+Devin is an explicit support gap, not a small compliance probability and
+not a blocked test that can be passed by typing the line into a prompt.
+Do not implement a native mapping or change permissions in this correction.
+No cross-runtime or universal Stop-effectiveness claim can include it.
+
+**Two carriers with unequal reach.** Keep the exact standing rule at
+AGENTS.md:36, landed in b643f423:
 
 > On every governed Stop, blocked or allowed, run the exact printed `metasystem report stop-status --id ...` command and read the report before ending the turn or taking the next work action; follow its seat action within existing authority. If the report is unavailable, keep any established block, report the read failure and recover current work through `goal next`; never infer that no work remains.
 
-Keep that canonical instruction. Generated CLAUDE.md and other runtime
-entrypoints must load it. Decision 2's Stop imperatives are the second
-carrier and remain to be built. Both carriers exist in this contract;
-the standing carrier is landed and the Stop carrier is specified here.
-Neither may be removed as redundant. Compaction or different always-loaded
-instructions can lose the rule. The delivered Stop text must itself
-instruct the seat. Its small budget cannot carry every authority and
-recovery rule, so the standing carrier is still needed too. Neither
-source-file presence nor intended hook delivery proves actual host loading.
+Generated CLAUDE.md/AGENTS.md pointers must actually load that rule;
+file presence alone is insufficient. On a blocked Claude/Codex Stop, both
+that rule and the reason instruction can reach the live model. Cold blocked
+trials deliberately omit the rule to assess the line independently; production
+keeps it. On an allowance, the standing rule is **not belt-and-braces: it is
+the only carrier that reaches the model**. The printed line reaches the
+human. If the agent has already ended, neither carrier supplies a further
+inference. In particular, the standing rule cannot make it know a newly
+minted report ID it has never received. This page preserves the rule's
+bytes without pretending its timing demand is enforceable on that path.
 
-> On every governed Stop, blocked or allowed, run the exact printed
-> `metasystem report stop-status --id ...` command and read the report before
-> ending the turn or taking the next work action; follow its seat action
-> within existing authority. If the report is unavailable, keep any
-> established block, report the read failure and recover current work through
-> `goal next`; never infer that no work remains.
+The model must use any available lawful opportunity under its standing
+instructions. A later wake or resume can enable recovery, but needs its own
+mechanism and delivery of the required state. A seat allowed to stop with
+work remaining cannot be compelled by any Stop text. A future instruction
+migration, if its owner needs one for that mechanism, is not authorized as
+part of this page's build list.
 
-This supersedes the old blocked-only trigger and deliberate allowance-read
-deferral. It requires no new adapter continuation, acknowledgment turn or
-Stop decision. If the host closes the turn before the seat can act on an
-allowance, record that delivery limit and read at the next ordinary
-opportunity. Do not describe that as a successful before-stop read. Actual
-continuation beyond the host's behavior remains the separate goal's duty.
+**What an effectiveness observation can falsify.** STOP-HOST separates
+native blocked behavior, allowed human display/finalization, standing-rule
+behavior and prompt-only comprehension. Keep their observations separate.
+Record runtime/model/version, transport/launch route, config and trusted
+hook definitions, loaded instruction bytes/hash, exact revision-9 text,
+argv/exit, report identity/digest, returned tool text, final response timing
+and observed action/state. Record provider prompt contents as unknown when
+inaccessible; do not invent them. An old text observation cannot certify
+this wording.
 
-Instructions request a read; they do not mechanically prove it. Before a
-runtime may claim this delivery contract, pin host version and effective
-configuration, observe its human transcript with all registered hooks,
-prove the locator works from the seat's actual cwd, and observe a blocked
-seat read that exact report and perform its named action. For an allowance
-with a lawful next step, observe the report read and action when the host
-permits it, or record the host's inability to deliver that opportunity.
-The allowance envelope still creates no forced continuation. A stub adapter
-harness proves only serialization. The gate also records trust/disabled-hook behavior, read
-failure, control precedence with other hooks, and the continuation cap.
-Source tests cannot replace this gate.
+For each claimed Claude/Codex native route, predeclare the isolated trials,
+spend/time bound and a stop on the first failed expectation. Cover a loaded blocked
+work case, an actual post-compaction blocked work case, a genuine wait or
+human-restricted action, an unavailable report, and the full 240-byte blocked
+specimen. Attempt each declared scenario once unless the stop condition
+fires; do not repeat failures until green. Preserve planned/executed/skipped counts and
+reasons if a stop condition fires. The harmless work canary must be authorized,
+with its unique target and action present only in the report, unavailable
+from the prompt, previous context or another report. Tool denial and absence
+of a usable blocked continuation count as failures of that claimed route,
+not omissions from the denominator. Actual session load/resume alone is
+not evidence of compaction. Keep action, fault-handling, display and
+prompt-only totals separate: an unreadable report can satisfy its expected
+fault-handling result but never become a successful report-action trial.
 
-**Implementable now:** compact Claude/Codex candidate envelopes, complete
-reports and lookup, and both instruction carriers, with every goal-engine
-and hook Stop decision preserved. None is shipped by this page.
-**Not enforceable from inside the current Stop hook:** an absolute guarantee
-that the runtime never stops. The host stops honouring the hook after a
-fixed number of consecutive no-progress blocks (Claude's documented limit
-is eight). A higher finite cap does not establish that guarantee. Unknown judgment,
-untrusted hooks and report-read failures also preclude a full-contract claim.
+A native blocked success has three observable steps:
 
-**Ordering under Wido's evening ruling, 2026-09-13:** build the console and
-delivery milestone now with both allowances preserved. The separate goal
-**seat-work-continues-past-the-runtime-stop-cap**, opened in his name today,
-owns the continued-work invariant and all its obligations, including
-STOP-CONTROL and STOP-ABSOLUTE. Its outer mechanism must land and be proved
-before that goal's own final build item closes the two allowances.
-This is not a third goal or an unassigned follow-up.
+1. The real installed hook fires, emits the single human pair and supplies
+   that blocked line as continuation feedback. Retain the inbound event if
+   exposed; otherwise distinguish the supplied runtime channel fact from
+   installation delivery inferred from subsequent behavior.
+2. The **model itself** invokes the exact five-token command as its next
+   work action in the bound command environment. A helper executing it,
+   quoting it, promising it or asking the human to run it fails this step.
+3. The tool returns the exact report, and the model performs the report-only
+   applicable seat action before unrelated work or finalization. Observe
+   the canary result, not merely the model's assurance. In the restriction
+   case observe the authorized wait/quiet or human-stop behavior and no
+   unauthorized claim, repair or rearm. Reading successfully without the
+   required action, acting on another seat's work, or recursively reading
+   the report's Console-text quotation is failure.
 
-That goal owns continuation outside the provider's turn loop, human-stop
-authority, no duplicate claims, budgets and failure recovery. It must also
-account for unknown judgment, disabled/untrusted hooks and unavailable
-guidance without treating them as proof that work is absent. The full
-transfer is recorded below the fixtures. This build neither implements nor
-discharges it. No renewed human decision or third design read is needed.
-Codex/Devin still need their named conformance evidence; silence never
-upgrades them. All future claims must state the supported continuation range.
+Read failure is a distinct fault result, never a successful report-action
+trial. In its fault scenario require an attempted read, truthful failure,
+retained control/authority and the standing rule's available recovery.
+A cold line-only trial can expose that recovery command as unavailable;
+record the limit rather than claiming full recovery or inventing a command.
+An actionable report may legitimately lead to a registered wait; that is
+successful handling, not a duty to issue repeated model polls.
+
+For the native allowance observation, cover ordinary empty work, retained
+third-refusal work and parent-seat delegate work. Require the exact allowed
+pair in the sole systemMessage and unchanged control, with no additional
+model inference or tool call scheduled by the notice. Observe the final
+response before the notice and the absence of inbound model delivery using
+the host's lifecycle events where exposed; otherwise mark the local trace
+limit and cite the accepted runtime result. A separate user prompt or
+resumption must not be smuggled into this case. This test can fail on wrong
+text, duplicate notices, changed control or a new forced turn. Passing it
+proves allowed display and lifecycle preservation, **not agent compliance**.
+If retained work remains unattended after allowance, record that as the
+known continuation gap owned by the two mechanism goals, not as evidence
+that a stronger allowed sentence is required.
+
+An observation of the standing rule uses an independently available live
+opportunity with the rule loaded and a known readable report. Verify the
+model's actual read and report-specific authorized action or recovery, and
+record how that report/command became available. This can fail on inaction,
+wrong report or overreach. It proves only behavior at that opportunity; it
+cannot prove a read of the newly emitted allowed report before its existence,
+or substitute for the future continuation mechanism.
+
+A fresh prompt-only blocked trial and a deliberately isolated post-compaction
+trial can assess the line without repository instructions. Feed only exact
+line 2 with ordinary provider instructions/tools, without a warm-up or
+hidden harness action. Label them wording evidence. They cannot discharge
+native Stop delivery for Claude/Codex, and optional separate Devin legacy
+or ACP trials cannot change its unsupported native status. Native tests
+retain real schema/final-file instructions; prompt-only tests record whether
+those constraints are present. Never infer native allowance effectiveness
+from a line manually placed in session/prompt.
+
+Hook `OK/EMITTED` continues to mean published/reference-emitted,
+not read or acted on. Native effectiveness requires the applicable
+display and blocked-action observations for the pinned supported route,
+plus standing-rule loading/read-route evidence. Keep those results
+separate; none means allowed-message action, Devin support or an
+unlimited continuation guarantee. A failed required blocked trial leaves
+the claimed behavior unproved; allowance display success cannot
+compensate. Finite zero-failure behavior supports only “all N observed
+blocked trials on this pinned route succeeded.” This lane ran none and
+certifies no runtime effectiveness.
+
+**Where the “always” guarantee lives.** Wido's invariant combines continued
+lawful work with quiet when continuation is genuinely impossible. A registered
+wait is not idleness. Wido joined the two existing goals on 2026-09-14 under this invariant.
+Their owners are:
+
+| Owner | Mechanism and falsifiable obligation |
+| --- | --- |
+| coordinator-wakes-on-events-not-polls | Own registered waits for job, proof, landing and human events; return on an event or bounded deadline, recover missed events/restarts from records, and ensure a pending registered wait does not cause empty model turns. Its goal's measurements are fewer than four model wake-ups per pending hour, pending prompt tokens below five percent of the seat's day, and event-to-resume latency below 60 seconds, on whole-goal sessions across two runtimes. Those are that goal's declared measurable targets, not evidence this page has run. |
+| seat-work-continues-past-the-runtime-stop-cap | Own work continuation outside a stopped/capped provider session through the Go steward and adapter contract. Provide the later live opportunity and required current state, under spend/budget bounds, a human off-switch, visible records and no duplicate claims or restart spin. Prove a real seat's work continues past its cap, plus a second runtime, and that absence of lawful work enters quiet registered waiting. |
+
+The continuation owner consumes the wait owner's determination of an eligible
+pending wait; backlog presence alone must not force empty turns while that
+wait lawfully applies. Conversely, a stale or invalid wait must not strand
+work that can continue. Each owner must prove its side and their integration;
+a Stop label and an exact-text fixture prove neither. Disabled/untrusted
+hooks, unknown judgment and unavailable guidance remain unknown work, not
+permission to conclude nothing is possible.
+
+Under Wido's September 13 ordering, land this presentation correction with
+both allowances preserved. The continuation mechanism must land and be
+proved before its own final item changes them, respecting the wait contract.
+The whole transfer below remains assigned to these existing goals; no third
+goal or fresh human decision is needed. This page does not certify the
+“always” guarantee or spend tokens on model polling to simulate it.
 
 ### 4. One versioned, uncut presentation input
 
-The v1 interfaces below have landed. Revision 7 extends only the internal
-presentation input/result to v2 for completion and the two-line text; the
-frozen judgment remains v1. Preserve these existing field and failure contracts.
+Revision 7 landed the internal presentation input/result v2 for completion
+and the two-line text; the frozen judgment remains v1. Revision 9 changes
+no wire version or field. Preserve these existing field and failure contracts.
 `cmd/metasystem/goal.go` already supports `--facts-file <judgment.json>`
 on the existing `report turn-verdict` invocation. It performs its scan and locked judgment once, captures the
 projection described below before any display bound, and atomically writes
@@ -979,11 +1226,11 @@ defeat the host's continuation cap. This is the milestone limit accepted in
 Decision 3 and carried by the separate continuation goal; it never clears
 an established block or permits a second human notice.
 
-Revision 7 keeps every unavailable form above byte-for-byte unchanged.
+Revision 9 keeps every landed unavailable form above byte-for-byte unchanged.
 A one-line degraded status is within “at most two lines”. It carries no
 completion assertion and no invented report command. The report-bearing
-forms have the imperative; a missing report cannot have one with a bogus
-locator. Alias failure uses this same retained-decision fallback. Alias publication or lookup failure leaves delivery cursors unchanged.
+forms have the outcome-specific suffix; a missing report cannot have
+a bogus locator. Alias failure uses this same retained-decision fallback. Alias publication or lookup failure leaves delivery cursors unchanged.
 Completion collection/comparison never writes a cursor. If a valid report
 explicitly records unknown completion, its successful delivery uses the
 existing digest/protocol conditions; unknown completion adds no new gate.
@@ -1005,19 +1252,25 @@ lookup binding. It records availability, not reading.
 On report/emission failure leave that cursor unchanged. Protocol advancement
 has the same delivery condition. Do not add a turn to acknowledge an allowance.
 
-**Revision 7 cutover, including revision 6's unbuilt work:** the presenter,
-mapper, steward completion verifier and shared fixture reader change
-together. Validate the complete decoded pair, the outcome-specific
-imperative, the exact alias command, the canonical full identity and digest,
-and byte equality with the two console lines frozen in the report.
-The internal result remains one `humanLine` string; it contains one LF.
-Update the report's console-text representation to a two-line literal block
-so both lines can be compared exactly. Never accept arbitrary text before
-an ID, a clipped command, `status:` as a newly emitted form, or an allowance
-whose imperative does not require continuing lawful work. Legacy reports
-stay readable by their old full IDs; no immutable report is rewritten.
-A stale consumer's rejection takes the retained-decision fallback and is
-recorded as degraded delivery. It cannot clear a block or claim success.
+**Revision 9 cutover:** change the existing presenter, mapper, steward
+completion verifier and shared fixture reader together. Validate the complete
+decoded pair, actual outcome and flags, Decision 2's blocked imperative or
+allowed `Report:` suffix as appropriate, the exact bare alias command,
+canonical identity, digest and byte equality with frozen Console text.
+The presenter reserves 16 bytes under the cap by targeting 240 for line 2;
+consumers retain the 256-byte validity cap. Do not reject input merely for
+using that reserved space. Keep presentation v2 and existing small consumers;
+no shared policy framework or new parsing path is needed.
+
+Reject newly emitted `status:`, `Read:`, revision 7's allowance suffix,
+revision 8's shared suffix, partial/mismatched outcome-specific suffixes,
+delimited/trailed commands or a changed outcome. A block with `Report:` or
+an allowance with the blocked instruction fails the exact-text contract.
+Such rejection proves different bytes, not that a rejected synonym would
+be behaviorally weak. Legacy immutable reports stay readable unchanged.
+A stale consumer takes the retained-decision fallback and marks delivery
+degraded; it cannot clear a block or claim successful delivery. Emission
+and cursor evidence still proves availability only, never action.
 
 `HookDeliveryReference` keeps the full canonical ID, path and expected
 digest and additionally carries the exact short alias used in the command.
@@ -1083,28 +1336,93 @@ states an outcome that remains true while its display string changes, the
 name stays and the string moves. All control, cause, remedy and evidence
 assertions remain. No row may pass merely because it found any JSON.
 
-Revision 7 adds or extends these focused fixtures. Revision 6's six
-instruction obligations are folded here, not pending as a separate build.
+Revision 9 revises the STOP-READ fixtures below; completion, alias and
+other landed rows are preservation requirements, not a second build.
+The exact block/allow and boundary specimens immediately below are new
+literal obligations; this lane creates no fixtures.
 Expected strings are literal examples from this page; do not generate
 expectations with production formatting or lookup. No whole fixture bed
 is requested by this design.
 
-| Proof row and fixture | Required observation |
-| --- | --- |
-| STOP-TWO-LINES — `TestStopTwoLineStatusBounds` in `internal/report/stoppresentation_test.go` | Exact first and second lines for block/allow and all task states and flags. One LF; line bounds 144/256; pair bound 401 including LF. Exercise maximum 32-byte alias and actual shortening budgets 117/98/74/55, plus a one-byte alias, long valid names and a Unicode cut. Assert complete outcome, imperative and command and uncut heading. Reject third lines, blank extra lines, CR, controls, U+2028/U+2029 and invalid UTF-8 at presenter/mapper boundaries. Existing one-line unavailable forms stay byte-identical and within 256. |
-| STOP-COMPLETED — `TestStopCompletionUsesNewOwnedTerminalRecords` in `internal/report/stoppresentation_test.go` | Literal delegate-return and run-passed forms. An active record becomes completed/green, and another is created and finishes between observations. Choose latest ended job, then highest-sequence run only if no new job; pin equal-time/ID ties. A repeated Stop says `none recorded this turn`. Report retains all completions, original sources and baseline identity. A green run that entered draining before the baseline is still new by terminal identity. No landing or goal-done claim. |
-| STOP-COMPLETED-UNKNOWN — `TestStopCompletionRejectsUnprovedAttribution` in the same file | First use, legacy baseline, removed baseline, changed main/session/runtime/installation, conflicting parent-seat identity, corrupt/future baseline, missing/ill-typed record or timestamp produce `unknown for this turn`. Other-seat jobs on the same goal/machine never supply either line. Child runtime/session differences alone do not reject an owned delegate. Receipt/check success, a human conclusion, disappearance, failed/cancelled/timed-out jobs and red/unknown runs never prove success. Concurrent/stale observation tests pin honest intervals without touching control/cursors. |
-| STOP-COMPLETED-CAPTURE — `TestReportTurnVerdictCompletionCapturePreservesVerdict` in `cmd/metasystem/session_stop_test.go` | The existing scan captures all job/run presentation evidence once without adding terminal jobs to judgment arrays. Sidecar writer failure preserves completed stdout/exit/control and leaves no partial/stale sidecar. Hook still publishes its usable report with completion unknown and typed repair. Compare policy inputs and every state write to the baseline; no new judgment, refusal spend or cursor. |
-| STOP-SHORT-ID — `TestStopAliasReservesShortestFreePrefix` in `internal/stopreport` tests | With attempt `15fd2d40fae99afd9756ffd62c6903a7`, reserve `1`; with `1` occupied reserve `15`; with both occupied reserve `15f`. Assert the complete 36/37/38-byte printed commands. Reserve every shorter prefix to exercise a 32-byte alias and its 67-byte command. All occupied through 32 and full-ID collision use publication failure with retained control. |
-| STOP-SHORT-ID-UNIQUE — `TestStopAliasIsExactAndNeverReassigned` in `internal/stopreport` tests, plus command tests | Deterministic concurrent sessions/attempts sharing prefixes get distinct exclusive reservations. Both `1` and `15` resolve only their original canonical reports. Add later reports that make the raw prefix ambiguous: old commands remain exact. Prune the first report, leave its reservation and create another matching attempt: the old command fails expired and never selects the new report. Crash before/after each publication step leaves no alias that resolves to wrong/partial bytes. Orphan reservations are not reused. |
-| STOP-SHORT-ID-BINDING — `TestStopAliasRetainsFullIdentityVerification` in storage, adapter and completion tests | Alias substitution, duplicate keys/targets, wrong alias/name, invalid canonical ID, symlink/escape, wrong installation/runtime/session/session key/attempt and modified digest fail with no report output or successful delivery claim. A damaged ambiguous reservation fails; it never guesses or auto-extends a printed token. Identical sessions/tokens across installations stay isolated. Legacy exact full IDs still read unchanged old reports. Printed alias command, canonical path, full marker and retained digest must all agree. |
-| STOP-NOTICES — `stop-notices-two-line-total` focused row in `scripts/agents/supervision-hook-fixtures.sh` | Invoke the actual effective Stop registrations with retro due and with receipt-check error. Count all decoded visible text across every emitted object and hook registration, not just the final payload. Exactly one pair, no third notice; retro stays in report, error adds repair to line 2. Check stale/duplicate receipt registration detection and generated removal. Exercise each captured composer branch and unavailable verdict; separately prove start/end notices still run and cannot be reached from Stop. |
-| STOP-READ-IMPERATIVE — `TestStopReadImperativeByOutcome` in presenter tests | Require `; Read: ` on block and `; Read, then continue lawful work before stopping: ` on allowance, no `status:`. Compare the complete decoded pair and every flag combination. Full report actions, control and identity remain equal. |
-| STOP-READ-ALLOWANCE — extend `TestStopAllowanceLineRetainsThirdRefusalAndDelegateWork` and `TestPresentStopStoppedJudgmentIsAnOrdinaryAllowance` | Third-refusal held/next work, failed preparation, delegate exemption, empty work, unknown work and stopped ledger retain their actual control and task prefix. Every report-bearing allowance gets the same read/continue imperative. It grants no claim, repair, rearm or human-stop override and forces no new turn. Retain exact report steps and restrictions. |
-| STOP-READ-BOUNDS — `TestStopReadImperativeBounds` | Companion to STOP-TWO-LINES: reserve the complete longer allowance imperative and 32-byte alias before cutting the task name. Pin a next-name allowance with both flags at 256 bytes and a maximum first line within 144; assert the pair's 401-byte bound. A shorter alias frees title bytes; it cannot change the chosen name or report identity. |
-| STOP-READ-BINDING — affected `internal/adapter/stopoutput_test.go` and `internal/steward/component_evidence_test.go` cases | Accept only the correct pair/imperative/alias for the retained outcome. Reject a bare label, old allowance imperative, wrong outcome's imperative, truncated command, substituted alias or altered console-text block in the report. Preserve full-ID, marker/digest checks and block/allow fallback with no cursor advance. |
-| STOP-READ-HOOK — extend STOP-TASK-NAME-HOOK at `scripts/agents/supervision-hook-fixtures.sh:790-828` | Drive both outcomes through the invoked presenter and mapper. The shared `fixture_stop_status_report` decodes two lines, validates bounds, runs the exact alias command, and compares full canonical identity/digest and all report bytes. Keep literal slug names, dated intent, mapper count, block source and delivery evidence. Repeat missing-report/alias/mapper failures with unchanged degraded output. |
-| STOP-READ-TWO-CARRIERS — installed-instruction checks and STOP-HOST | Assert trunk's canonical rule and actual loaded entrypoint/hash cover both outcomes, reading and lawful action. Run line fixtures without loading any instruction file. Real-host evidence must show both the rule and the imperative delivered, the exact report read, and lawful action on block and allowance. Record no-opportunity allowances as a delivery limit, not a pass. Neither carrier alone satisfies this row. |
+| Proof row and fixture | Required observation | What can fail; what a pass cannot establish |
+| --- | --- | --- |
+| STOP-TWO-LINES — `TestStopTwoLineStatusBounds` in `internal/report/stoppresentation_test.go` | Exact pairs for each outcome, task state and flags. Formatter target 240 for line 2; validity limits 144/256/401. Maximum-alias combined-flag name budgets: block 48 held / 29 next, allow 99 held / 80 next. Include 1-byte alias, long valid names and Unicode cuts. Assert whole outcome, correct suffix, command and uncut heading; reject extra LF, CR, controls, Unicode separators and invalid UTF-8. Preserve degraded literals at 256. | Detects byte, line, Unicode and shortening regressions; cannot prove a human saw the pair or a model acted. |
+| STOP-COMPLETED — `TestStopCompletionUsesNewOwnedTerminalRecords` in `internal/report/stoppresentation_test.go` | Literal delegate-return and run-passed forms. An active record becomes completed/green, and another is created and finishes between observations. Choose latest ended job, then highest-sequence run only if no new job; pin equal-time/ID ties. A repeated Stop says `none recorded this turn`. Report retains all completions, original sources and baseline identity. A green run that entered draining before the baseline is still new by terminal identity. No landing or goal-done claim. | Detects wrong source/state/completion selection in controlled records; cannot certify a delegate answer, landing or goal completion. |
+| STOP-COMPLETED-UNKNOWN — `TestStopCompletionRejectsUnprovedAttribution` in the same file | First use, legacy baseline, removed baseline, changed main/session/runtime/installation, conflicting parent-seat identity, corrupt/future baseline, missing/ill-typed record or timestamp produce `unknown for this turn`. Other-seat jobs on the same goal/machine never supply either line. Child runtime/session differences alone do not reject an owned delegate. Receipt/check success, a human conclusion, disappearance, failed/cancelled/timed-out jobs and red/unknown runs never prove success. Concurrent/stale observation tests pin honest intervals without touching control/cursors. | Detects unsupported attribution and missing-evidence handling; cannot recover absent facts or certify agent obedience. |
+| STOP-COMPLETED-CAPTURE — `TestReportTurnVerdictCompletionCapturePreservesVerdict` in `cmd/metasystem/session_stop_test.go` | The existing scan captures all job/run presentation evidence once without adding terminal jobs to judgment arrays. Sidecar writer failure preserves completed stdout/exit/control and leaves no partial/stale sidecar. Hook still publishes its usable report with completion unknown and typed repair. Compare policy inputs and every state write to the baseline; no new judgment, refusal spend or cursor. | Detects changes to captured evidence, control and writes in injected cases; cannot prove all production failure timings. |
+| STOP-SHORT-ID — `TestStopAliasReservesShortestFreePrefix` in `internal/stopreport` tests | With attempt `15fd2d40fae99afd9756ffd62c6903a7`, reserve `1`; with `1` occupied reserve `15`; with both occupied reserve `15f`. Assert the complete 36/37/38-byte printed commands. Reserve every shorter prefix to exercise a 32-byte alias and its 67-byte command. All occupied through 32 and full-ID collision use publication failure with retained control. | Detects incorrect alias lengths/reservations and exhaustion handling; cannot prove the model runs the printed command. |
+| STOP-SHORT-ID-UNIQUE — `TestStopAliasIsExactAndNeverReassigned` in `internal/stopreport` tests, plus command tests | Deterministic concurrent sessions/attempts sharing prefixes get distinct exclusive reservations. Both `1` and `15` resolve only their original canonical reports. Add later reports that make the raw prefix ambiguous: old commands remain exact. Prune the first report, leave its reservation and create another matching attempt: the old command fails expired and never selects the new report. Crash before/after each publication step leaves no alias that resolves to wrong/partial bytes. Orphan reservations are not reused. | Detects retargeting, unsafe reuse and publication races in controlled schedules; cannot prove model consumption. |
+| STOP-SHORT-ID-BINDING — `TestStopAliasRetainsFullIdentityVerification` in storage, adapter and completion tests | Alias substitution, duplicate keys/targets, wrong alias/name, invalid canonical ID, symlink/escape, wrong installation/runtime/session/session key/attempt and modified digest fail with no report output or successful delivery claim. A damaged ambiguous reservation fails; it never guesses or auto-extends a printed token. Identical sessions/tokens across installations stay isolated. Legacy exact full IDs still read unchanged old reports. Printed alias command, canonical path, full marker and retained digest must all agree. | Detects wrong identity/digest/binding acceptance; cannot prove the actual provider tool environment uses that binding. |
+| STOP-NOTICES — `stop-notices-two-line-total` focused row in `scripts/agents/supervision-hook-fixtures.sh` | Invoke the actual effective Stop registrations with retro due and with receipt-check error. Count all decoded visible text across every emitted object and hook registration, not just the final payload. Exactly one pair, no third notice; retro stays in report, error adds repair to line 2. Check stale/duplicate receipt registration detection and generated removal. Exercise each captured composer branch and unavailable verdict; separately prove start/end notices still run and cannot be reached from Stop. | Detects extra emitted notices in the exercised registrations; actual human display still needs a native host and this says nothing about action. |
+| STOP-READ-IMPERATIVE — `TestStopReadImperativeByOutcome` | Literal full decoded pairs on both outcomes and all four flag combinations: 61-byte blocked suffix, 10-byte allowed suffix. Retain actions, source and identity; expectations come from this page, not compactStopLine. | Fails on wrong bytes or changed facts. A weak imperative that matches the literal passes; this row cannot judge instruction strength. |
+| STOP-READ-BLOCK-EXACT — `TestStopReadImperativeByOutcome/block-exact` | The block specimen below with alias a equals the result, report Console text and sole native reason; decision=block and original source remain. | Detects rendering/report/envelope disagreement. Cannot prove native delivery, execution, consumption or action. |
+| STOP-READ-ALLOW-EXACT — `TestStopReadImperativeByOutcome/allow-exact` | The allowance specimen below with alias 2 equals the result, Console text and sole systemMessage; no decision/reason or new continuation field. | Detects wrong allowed bytes/shape. Cannot prove post-allowance action; that action opportunity does not exist. A fake-host test also cannot prove native finalization timing. |
+| STOP-READ-ALLOWANCE — `TestStopAllowanceLineRetainsThirdRefusalAndDelegateWork`, `TestPresentStopStoppedJudgmentIsAnOrdinaryAllowance` | Third-refusal held/next work, failed preparation, parent-seat delegate exemption, empty/unknown work and stopped ledger preserve control/task prefixes and allowed Report suffix. Keep exact report actions/restrictions and absence of new claim/repair/rearm/turn side effects. | Detects wrong status, report facts or control in tested cases. Preserved work in a report does not prove the finalized agent received or performed it. |
+| STOP-READ-BOUNDS — `TestStopReadImperativeBounds/longest-realistic-next-both-flags` | Pin the 100-byte source name and distinct 240-byte block/allow specimens below with a 32-byte alias. Repeat held/next, all flags, 1/32-byte aliases, valid Unicode and the full fallback. Assert 16-byte reserve, whole suffix/command and uncut heading. Separately retain the validity check at 256 and rejection at 257; 241-256 alone is not invalid. | Fails on arithmetic, headroom, clipping or validator-cap regressions. Cannot tell whether a model attends to the longest line; the native longest-line canary can. |
+| STOP-READ-BINDING — `TestMapStopOutputRejectsNonImperativeOrUnboundAlias`, steward delivery tests | Accept the correct suffix per outcome. Reject old suffixes, partial instruction, swapped suffix/outcome, changed alias/command, quoting/trailing text or Console-text mismatch. Retain identity/digest and unchanged control/cursors on failure. | Detects contract/parser/binding skew and false emission success. Does not evaluate persuasive force or prove agent lookup. Rejection of a synonym is byte validation only. |
+| STOP-READ-HOOK — affected STOP-TASK-NAME-HOOK row | Drive both outcomes through the actual presenter/mapper. Update fixture_stop_status_report for both exact suffixes and the five-token command, retaining outcome, bounds, identity/digest and report bytes. Preserve flags, mapper count, source and degraded cases. | Detects disagreement among real code consumers and failed harness lookup. The helper runs the command by construction; its success cannot count as the model choosing to run it. |
+| STOP-READ-TWO-CARRIERS — installed-instruction checks plus STOP-HOST | Preserve b643f423 rule bytes and generated entrypoint reachability. In native observations retain loaded instruction evidence; blocked reason carries the line, allowance carries human Report text only. | File/hash checks detect deletion or drift, not actual loading. Native loading evidence proves availability to the model, not obedience; a formatter without AGENTS.md has no model context to test. |
+| STOP-READ-STANDING — separate live-opportunity observation | With the rule actually loaded, provide an already-available identity-bound report at an independently caused live opportunity. Observe model read, report-only action or truthful recovery and record how the command reached it. | Fails on inaction, wrong report or overreach. A pass proves only that opportunity; it cannot prove the same allowed Stop's unseen newly minted report was read before finalization or that a later wake is guaranteed. |
+| STOP-READ-COLD — isolated blocked prompt trials | Exact blocked line 2 as sole task input in fresh and actually compacted contexts, ordinary provider instructions/tools, no repository rule or warm-up. Model runs the exact command, consumes report and performs the hidden canary. Include restrictions, missing report and Console quotation. | Can falsify comprehension, action, authority or recursion behavior. Pass is prompt-only wording evidence; it cannot establish native delivery, an allowance opportunity or universal obedience. No cold allowed effectiveness row remains. |
+| STOP-READ-CLAUDE — native STOP-HOST evidence | Observe blocked reason-to-command-to-report-only-action under the named loaded/compacted/restriction/failure/longest-line scenarios. Separately observe allowed human pair after final response and no notice-triggered inference. Pin host/interactive route, trust, tools, cap and counts. | The blocked canary can fail despite exact emitted bytes. The allowed leg can fail on display/control/lifecycle changes; its success is not model compliance. Evidence covers only the pinned route and executed trials. |
+| STOP-READ-CODEX — native STOP-HOST evidence | Independently pin exec, exec resume and any claimed interactive route with actual hooks, shell tools, sandbox and schema return. Apply the same separated blocked canary and allowed finalization/display observations; record actual compaction. | Can expose route-specific loss of delivery/action or changed allowed lifecycle. Claude results, a JSONL file or a successful prompt-only trial cannot pass this row. No allowed-message action claim. |
+| STOP-READ-DEVIN-LEGACY — unsupported native route | Assert mapper returns no declared Stop mapping and degraded emission does not contain the designed report-bearing line. Optional bounded prompt-file blocked-wording trial records tool and final-file constraints separately. | Deterministic rejection proves missing repository mapping. A prompt-only canary can fail or succeed as wording evidence; neither result supplies native Stop support. No successful native leg can be claimed in this build. |
+| STOP-READ-DEVIN-ACP — unsupported native route | Keep missing mapping explicit. If a prompt-only trial is useful, send the blocked line through session/prompt with actual ask/accept-edits tools and observe report action independently of legacy. | Can expose prompt-route/tool limitations. ACP responses/stopReason and a passing canary cannot establish a report-bearing Stop mapping or allowed continuation. Native effectiveness remains unsupported. |
+
+Every retained deterministic row below has the same evidence boundary:
+its literal text or controlled state assertion can detect a different
+output/state from the declared contract, never weak wording that emits the
+expected bytes. Rows for ownership, alias lifetime, control preservation,
+health and unavailable data establish those named properties only in their
+exercised inputs. STOP-HOST is the native observation exception, with the
+separate blocked, allowance and standing scopes just specified. No harness
+read or “no AGENTS.md” formatter row proves obedience.
+
+The exact baseline pair for STOP-READ-BLOCK-EXACT is:
+
+```text
+Just completed: unknown for this turn.
+Task: stop refusal fits on one screen; Stop blocked; Do not stop. Run this command; read and act on its report: metasystem report stop-status --id a
+```
+
+The exact baseline pair for STOP-READ-ALLOW-EXACT is:
+
+```text
+Just completed: unknown for this turn.
+Task: stop refusal fits on one screen; Stop allowed; Report: metasystem report stop-status --id 2
+```
+
+Use isolated publication inputs whose attempt begins with the specified
+alias and has no competing reservation. These are literal expected output,
+not instructions to reuse issued aliases. The blocked second line is 148
+bytes; the allowed second line is 97. The first line is 38 bytes, yielding
+187- and 136-byte pairs respectively, including one LF.
+
+For STOP-READ-BOUNDS the full accepted source name is exactly 100 bytes:
+`preserve stop report instructions across claude codex and devin after
+compaction and session restart` (one space between words, no LF).
+Use its hyphen-separated goal slug as the source. Reserve every shorter
+prefix so the alias is exactly 32 lowercase a characters. With the next
+prefix and both intervention booleans, the block is exactly 240 bytes:
+
+```text
+No task in flight; next: preserve stop report instruct; Stop blocked; needs your decision and supervision repair; Do not stop. Run this command; read and act on its report: metasystem report stop-status --id aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
+```
+
+The corresponding allowance is also exactly 240 bytes, with its own suffix
+and independently calculated 80-byte name:
+
+```text
+No task in flight; next: preserve stop report instructions across claude codex and devin after compaction; Stop allowed; needs your decision and supervision repair; Report: metasystem report stop-status --id aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
+```
+
+The blocked next name is 29 bytes; its held-name budget is 48. Allowed held
+name budget is 99. Pin the actual literal shortened names after the existing
+UTF-8/trailing-space cut as well as these budgets; neither outcome may
+borrow the other's suffix. The immutable report heading retains all 100
+name bytes. Each specimen leaves 16 bytes under the cap. The longest
+current completion form is 137 bytes, so a pair with either full second
+line is 378 bytes. Keep decision-only, repair-only and no-flag cases too.
 
 Revision 5 added the following naming rows in
 `internal/report/stoppresentation_test.go`, plus the named hook row. The
@@ -1114,8 +1432,8 @@ at lines 93-129 accepts any text after `Task: `, while
 `fixture-stop-report.sh:24-43` checks the envelope, bound and locator only.
 These are historical anchors from the revision 5 grounding. Those rows
 have landed. Preserve their naming contracts; only their literal imperative
-suffixes and resulting line-2 name budgets change in revision 7; add the
-completion line independently.
+suffixes and resulting line-2 name budgets change in revision 9. Preserve
+the landed completion line independently.
 
 Each naming row must assert the **exact task text before the outcome and
 exact first heading line**, chosen from its input and this decision. Do not
@@ -1150,7 +1468,7 @@ The table below carries revision 4's remaining proof obligations whole.
 | STOP-PRESERVATION-IDLE: unchanged decisions | Pair attempts 1, 2, 3, 4 and later against trunk, including successful/failed preparation, independent blocks, live/pending-setup delegates and lost counter. Preserve each source, count/reset, intent/incident/alarm call and authorization result. Do not add an escalation attempt/result slot or assert once-only escalation across later Stops. |
 | STOP-PRESERVATION / TestMismatchedSessionStopMarkerDoesNotGateIdleEscalation | Keep `internal/goal/turnverdict_idle_test.go:338-370` unchanged in outcome: attempt 3 allows and `prepared == 1` across its three calls. Retain the mismatched main's display-only SESSION STOP authorization marker and prepared intent detail in the report. The marker neither authorizes the allowance nor gates escalation; the existing bound releases it. |
 | STOP-PRESERVATION / TestReportTurnVerdictHeldClaimWritesRealSeatIdleIntent | Keep `cmd/metasystem/session_stop_test.go:258-371` unchanged in outcome: exit 0 throughout, attempts 1/2 block and attempt 3 allows. Retain `--stop-hook-active` and exactly one real persisted intent across those three calls: reason `seatIdle`, goal `held`, `claimNeeded=false`, machine `bed-m1`, lineage `main-1` and current holder's claim epoch. |
-| STOP-ALLOWANCE-LINE: retained work | Third-refusal release shows the held task or `No task in flight; next: <title>` with `Stop allowed`. A delegate exemption shows the owned delegate task with `Stop allowed`. Both require revision 7's read/continue imperative; neither adds a blanket work claim. Neither alone adds an intervention phrase; failed escalation adds the typed repair phrase and full report remedy, with the decision phrase only for required human repair. Decode both sole fields, check the pair bounds and retained work in the report; neither creates a forced continuation. |
+| STOP-ALLOWANCE-LINE: retained work | Third-refusal release shows the held task or `No task in flight; next: <title>` with `Stop allowed`. A delegate exemption shows the owned delegate task with `Stop allowed`. Both use revision 9's human Report locator; the standing rule is their only model carrier, and no post-notice action is claimed. Neither alone adds an intervention phrase; failed escalation adds the typed repair phrase and full report remedy, with the decision phrase only for required human repair. Decode both sole fields, check the pair bounds and retained work in the report; neither creates a forced continuation. |
 | STOP-FACTS-WRITER-FAILURE: completed judgment survives | Add `TestReportTurnVerdictFactsWriteFailurePreservesCompletedVerdict` in `cmd/metasystem/session_stop_test.go` and a hook integration row with this identifier. Inject the auxiliary writer failure after a real judgment: one scan/judgment/refusal spend, exit 0, byte-identical existing Verdict JSON plus newline on stdout, diagnostic only on stderr, facts path absent with no partial/stale publication. Hook consumes stdout once, keeps shouldBlock/source, emits only reason with repair/Status unavailable, no bogus pointer, no delivery-cursor advancement. Repeat for a completed allowance without creating a continuation. |
 | STOP-HEALTH-JSON: CLI forms | Unflagged and text previews remain byte-identical; JSON decodes to v1 with all role reasons/remedies and matching line/exitCode. Assert one evaluation, no observation/alert writes, stopped/spend/unknown cases and invalid format handling. |
 | STOP-INTERVENTION-RETRO-ONLY: negative | In the health preview and presenter, supply only ordinary agent-actionable retro debt: status dead, NoAutomaticRemedy true, full retro/receipt remedy; both classifications and both derived flags are false. Neither intervention phrase appears; the report retains the debt and exact action. Control stays at the supplied verdict. |
@@ -1158,13 +1476,13 @@ The table below carries revision 4's remaining proof obligations whole.
 | STOP-INTERVENTION-TYPED: positive and rejection | Exercise neither flag, decision only, repair only and both; assert exact phrases and order. Reject missing/wrong-type v1 booleans and missing/duplicate health intervention roles. Changing only remedy text, NoAutomaticRemedy or generic health status cannot change a producer-supplied classification. Required human-only repair remains classified as both with its restrictions in the report. |
 | Summary correctness | Alive/dead/unknown and stopped health, alive spend crossing, other-seat/unattributed pages, 11 claimable goals, explicit green continuation and no-continuation history. Counts derive from facts, and every action retains its complete command or honest manual step. |
 | STOP-LOCATOR: bounds and lookup | Newlines, controls, Unicode at byte 200 and long titles; deep installation and identical sessions under different installations. Run the **printed command** in an environment already resolving the intended executable and match exact Markdown and identity before emission; reject invalid IDs/escapes. Assert the command is complete, line 2 stays within 256 bytes, and the whole pair satisfies Decision 2. |
-| STOP-HOST: conformance prerequisite | For each claimed runtime/version/config/instruction hash, observe effective trusted hooks, total human transcript, block-to-exact-report-read-to-action in the provider's actual command environment, and an allowance with its imperative and no forced continuation. Revision 7 carries allowance-read/action evidence or an explicit host opportunity limit, and both instruction carriers. Keep missing-report and continuation-cap observations. A real host is required; an adapter harness cannot discharge this row. Report the finite range honestly; continuation beyond it belongs to seat-work-continues-past-the-runtime-stop-cap. |
+| STOP-HOST: conformance prerequisite | On each pinned supported Claude/Codex route, observe actual trusted hook display, the blocked model-command/report/action sequence and separately the allowed human Report locator after final response with no scheduled inference. Keep loaded-rule, missing-report, compaction and cap evidence and exact trial totals. Allowed display success cannot establish action. Devin native mapping remains unsupported; prompt-only evidence cannot pass it. The two mechanism goals own continuation and quiet registered waiting. |
 | Storage and races | Concurrent Stops in one session, same session ID under different runtimes/installations, hostile session text, report write/rename/durability failure, failed stdout, retention boundary, stalled completion after published block. Verify exact report-to-payload identity, no cross-session replacement, unchanged control, no false `EMITTED`, no cursor advancement after lost delivery. |
 | Degraded fallback | Engine missing/skew, launcher failure, invalid/partial worker output, unresolved root, timeout, record failure, log failure and combined failures. One bounded line, truthful unavailable status where needed, original allowance and recorded causes unchanged. Pair an arming/report failure with a real seat-actionable block and prove it remains blocking. |
 
 Historical revision-4 fixture anchors are retained below. Their behaviors
 remain obligations; line numbers in this historical inventory are not
-revision-7 HEAD citations. Revision 7's current seams are cited above:
+fresh revision-9 citations. The relevant current seams are cited above:
 
 | Bed and anchors | Assertions retained or relocated |
 | --- | --- |
@@ -1222,16 +1540,28 @@ tests. New red-before/pass-after obligations above name presenter, mapper,
 health CLI, control preservation and cwd-independent read surfaces; none
 was run by this design lane.
 
-**Transferred obligations, owned by seat-work-continues-past-the-runtime-stop-cap:**
-the continued-work invariant moves whole, with STOP-CONTROL, STOP-CLAIMABLE
-and STOP-ABSOLUTE. That goal was opened in Wido's name on 2026-09-13
+**Transferred “always” guarantee: two existing mechanism owners.**
+coordinator-wakes-on-events-not-polls owns registered event waits, their
+pending Stop-gate behavior and wake/recovery evidence. A registered wait
+is not idleness, and genuinely impossible continuation must not burn model
+tokens. Its declared bounded deadline/recovery targets in Decision 3 are
+not permission for repeated model polling. No wait implementation or ledger
+change is made here.
+
+seat-work-continues-past-the-runtime-stop-cap owns the continued-work side,
+with STOP-CONTROL, STOP-CLAIMABLE and STOP-ABSOLUTE, integrated with that wait
+contract. That goal was opened in Wido's name on 2026-09-13
 (`plans/goals/seat-work-continues-past-the-runtime-stop-cap.md:6-15`).
 It first lands and proves the outer mechanism, bounded by spend and budgets,
 visible in records, stopped by one human command, with no duplicate claims
 or restarts into a loop. A seat with no lawful work records its wait and
-goes quiet. Proof covers at least two runtimes and a real seat whose work
-continues after reaching this host's cap. No finite hook-repeat fixture
-discharges STOP-ABSOLUTE.
+goes quiet through the registered-wait mechanism. Proof covers at least
+two runtimes and a real seat whose work continues after reaching this host's
+cap; wait integration also needs no-empty-turn, event/deadline return and
+missed-event/restart recovery observations. A seat stranded after allowance
+with possible work fails continuation; a seat polled while an eligible wait
+is pending fails quiet. No finite hook-repeat or wording fixture discharges
+STOP-ABSOLUTE. This page promises neither mechanism is complete.
 
 **Closing the allowances is that goal's own final build item**, after that
 mechanism lands and its proof passes. This page leaves no closure work for
@@ -1242,15 +1572,23 @@ rewrite the record.
 STOP-CONTROL remains CRITICAL in that goal, owned by the goal engine and
 hook at `enforceIdleBacklog`, `escalateIdleBacklog`, the locked session
 Stop-state and both parent validators. It is outside this build's matrix.
-Its full contract follows: after a fresh successful judgment for a
-claim-owning seat, nonempty `Claimable` keeps
-`ShouldBlock=true` on every engine attempt unless applicable human
-session-stop authorization is consumed. Keep human stop-fence authority.
+Its transferred control contract applies to a claim-owning seat with a
+fresh successful judgment and work it can lawfully continue. Nonempty
+`Claimable` keeps `ShouldBlock=true` on those engine attempts unless
+applicable human session-stop authorization is consumed. **The earlier
+unqualified “every attempt” clause must respect the wait owner's eligible
+registered-wait result:** backlog presence alone cannot force an empty
+model turn while that wait lawfully applies. The wait owner determines
+eligibility and recovery; it must not suppress independent actionable work
+with a stale or invalid registration. Keep human stop-fence authority.
 Never infer authorization from a report, timeout, delegate, intent or alarm.
-Remove the parent-seat delegate exemption there, without a new capacity
+Replace the blanket parent-seat delegate exemption there only after the
+outer mechanism is proved. Delegate presence alone is not a registered wait;
+retain the wait owner's legitimate quiet path and do not invent a capacity
 exemption. Authenticated subordinate delegate skips stay distinct. No
 advisor/brain presentation exit overrides a successfully observed nonempty
-claimable list for a claim-owning seat. Keep independent block precedence
+claimable list for a claim-owning seat that can lawfully continue under the
+wait contract above. Keep independent block precedence
 and its exact source/action; otherwise use `idle-backlog` with the selected
 goal and normal next/claim instruction. Keep count/reset and lost-counter
 evidence. Unknown judgment, unreadable ledgers, engine/deadline allowances,
@@ -1281,15 +1619,16 @@ result and actual host continuation are separate observations. The later
 item changes the bounded-refusal wording only when its new behavior is true.
 All these are future obligations; none authorizes a Stop change in this build.
 
-The first four rows below assess revision 7's unbuilt delta. The remaining
-rows retain the landed obligations as preservation requirements. Their
-historical pre-build statuses are not a recertification or a request to
-rebuild the whole milestone. All named proofs must be satisfied before the
-corresponding implementation claim; none is claimed run by this design.
+Only STOP-READ-INSTRUCTION (including the 240-byte formatter target) and
+the corrected per-channel evidence portion of STOP-HOST assess revision 9's
+delta. All other rows and their historical
+proof statuses are retained baseline obligations from the landed design;
+they neither order a rebuild nor certify runtime conformance. This design
+lane does not invent missing implementation evidence or discharge rows.
 
 | Obligation id | Severity | Design source | Required behavior | Owner | Code proof | Test proof | Runtime proof | Status | Next action |
 | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
-| STOP-READ-INSTRUCTION | HIGH | Decisions 2-3, 7, revision 7; revision 6 folded | Exact two-outcome imperatives and landed standing rule both required; allowance reads and continues lawful work | internal/report; adapter; steward verifier; canonical AGENTS.md/runtime loading | Formatter and exact-command consumers | All six STOP-READ rows | Observe both carriers and exact report read/action on both outcomes; state host limits | PARTIAL | Build imperative in the same cutover; preserve landed AGENTS.md |
+| STOP-READ-INSTRUCTION | HIGH | Decisions 2, 2b, 3, 7; revision 9 | Blocked imperative and allowed human locator match their channels; standing carrier unchanged; formatter 240 with 256 validity cap | internal/report; adapter; steward verifier; installed-instruction owner | compactStopLine; MapStopOutput; verifyHookDelivery; fixture_stop_status_report | STOP-READ-IMPERATIVE, BLOCK-EXACT, ALLOW-EXACT, ALLOWANCE, BOUNDS, BINDING, HOOK, TWO-CARRIERS | STOP-READ-COLD assesses blocked wording; STOP-HOST owns native action evidence; no allowed-message action requirement | PARTIAL | Change the two suffixes, formatter name budget and exact-text consumers; retain b643f423 |
 | STOP-COMPLETION | HIGH | Decision 2a | Attribute only new owned terminal successes; honest none/unknown; no changed judgment inputs | report collection/presentation; goal CLI sidecar boundary | Completion observation, baseline comparison and frozen report | STOP-COMPLETED, UNKNOWN, CAPTURE | Inspect same-seat report sequence and literal first lines | PARTIAL | Build display projection and prove no decision/state change |
 | STOP-ALIAS | HIGH | Decision 5 | Shortest free exact alias; one immutable target; never reuse; full identity and digest retained | internal/stopreport; report publisher; adapter/steward consumers | Exclusive reservation, atomic binding, strict lookup and canonical verification | STOP-SHORT-ID, UNIQUE, BINDING | Run exact commands before/after concurrent publication and expiry | PARTIAL | Build alias publication/lookup in the shared storage owner |
 | STOP-TWO-LINE-TOTAL | HIGH | Decisions 2, 7 | Normal first/second/pair bounds 144/256/401; no third notice in actual Stop display | report, adapter, hook and installed registrations | Pair validation and complete emission inventory | STOP-TWO-LINES, STOP-NOTICES, STOP-READ-HOOK | Count actual host transcript across all registrations | PARTIAL | Build pair and remove obsolete installed receipt producer |
@@ -1299,52 +1638,149 @@ corresponding implementation claim; none is claimed run by this design.
 | STOP-FACTS | HIGH | Decisions 4, 6 | One uncut frozen judgment and explicit health schema; auxiliary write failure preserves completed control | goal, report scanner and health CLI | goal.go facts-file projection/writer; scan.go; steward_verbs.go | STOP-REPORT-INPUT, STOP-FACTS-WRITER-FAILURE, STOP-HEALTH-JSON | Inspect report tails and actions; observe preserved block after failed auxiliary write | MISSING | Preserve uncut facts and the exact stdout/stderr/exit contract |
 | STOP-INTERVENTION | HIGH | Decisions 2, 4, 6 | Only typed required action/repair facts add the respective phrase; spend and ordinary retro debt remain report-only | goal/report fact producers, steward health and hook boundary; report aggregates | Classified fact projection, HookHealthPreview.interventions, stop-present | STOP-INTERVENTION-RETRO-ONLY, STOP-INTERVENTION-SPEND-ONLY, STOP-INTERVENTION-TYPED | Inspect actual line-2 flags and matching report actions | MISSING | Preserve producer classifications and combination without text/status inference |
 | STOP-DETAIL | HIGH | Decisions 4-5, 7 | Matching readable report within the intended installation | report, stopreport and steward | stop-status, strict storage lookup, CompleteHookAttempt | STOP-LOCATOR and storage/race/cursor cases | Run the printed command with the intended installation's executable | MISSING | Publish and verify lookup before emission; never mutate shell profiles |
-| STOP-HOST | CRITICAL | Decision 3 | Runtime may claim only observed finite control/display/read behavior | adapter conformance; runtimes owns static expectation only | ExpectedStopDelivery, adapter mapping, canonical read instruction and runtime entrypoints | STOP-RUNTIME-MAP and installed-config checks | Per-runtime trusted firing and report-read/action observation tied to version/config/instruction | MISSING | Observe a runtime before upgrading its claim |
+| STOP-HOST | CRITICAL | Decision 3; revision 9 | On pinned supported routes, blocked model read/action; allowed human display with no scheduled inference; distinguish standing and prompt-only observations | adapter conformance and native-host evidence owner; runtime registry declares expectation only | ExpectedStopDelivery, MapStopOutput, canonical read instruction and runtime entrypoints; no new mapping or continuation | STOP-RUNTIME-MAP, STOP-READ-TWO-CARRIERS and installed-config checks; deterministic assertions do not prove obedience | STOP-READ-CLAUDE, CODEX and STANDING with model/version/text/config/instruction and trial counts; COLD is separate; Devin native unsupported | MISSING | Obtain falsifiable blocked canaries and separate allowed lifecycle observations; defer the always guarantee to both mechanism goals |
 | STOP-FAILURE | HIGH | Decisions 3-4, 7; STOP-PRESERVATION | Degraded causes survive; presentation failure neither clears nor creates a block; sole line flags repair | hook and report | Parent, composer and launcher fallbacks; preserved condition/refusal writers | STOP-INFRA-DISCLOSURE, STOP-FACTS-WRITER-FAILURE and all degraded rows | Controlled combined block/arming failure, missing-engine and deadline firings | MISSING | Preserve precedence, records and degraded literals during the pair cutover |
 
 ## Build list
 
-Only revision 7 is the next build. Revision 6 has no separate pending item.
-The earlier landed implementation is the baseline, not a new whole-bed job.
+Revision 9's presentation correction is already applied and uncommitted
+in this worktree. The list below retains its implementation and proof
+contract for the build owner; it does not authorize this design lane to
+change or rerun code or fixtures. Revision 7 is landed; the broader decisions
+retain its contracts. The correction changes text, name budgeting and
+exact-text consumers, without Stop policy, schema, alias-store, host-turn,
+ledger or instruction-file changes.
 
-1. Preserve STOP-PRESERVATION first: retain every outcome, source, count,
-   authorization, escalation side effect, engine/deadline fallback and
-   subordinate skip. Keep the six named tests and template-backlog decisions.
-   Use focused paired baseline/candidate observations for changed paths.
-2. Build STOP-COMPLETION from the existing record reads and a separate
-   presentation sidecar. Do not change live scan membership, frozen
-   judgment schema or state writes. Compare frozen observations in reports;
-   prove success attribution, first use, repetition, failures and ownership.
-3. Build STOP-ALIAS in the shared storage owner. Keep canonical filenames,
-   full identity and legacy reads. Prove shortest-prefix reservation,
-   concurrent uniqueness, permanent non-reuse, corruption and expiry.
-   No extra retries or timeout allowance. Keep the narrow executable-scope
-   guarantee.
-4. Build STOP-TWO-LINE-TOTAL and folded STOP-READ-INSTRUCTION together.
-   Cut over presentation v2, mapper, completion verifier, fixture reader,
-   deadline validators and generated installations together. Keep the
-   canonical AGENTS.md:36 instruction landed by b643f423. Change the report's
-   console-text block and full-reference metadata consumers together.
-5. Apply the entire Decision 7 emission inventory. Inspect effective hook
-   registrations, not only source templates. Move receipt notices and
-   captured infrastructure detail into the report and fold only typed flags
-   into line 2. Retain non-Stop notices, degraded literals, logs, refusal
-   evidence and delivery-dependent digest/protocol advancement. Update the
-   previously named public-rendering documentation owners in the build;
-   this design lane edits none of them.
-6. Run the named focused Go cases and affected hook rows. Read the computed
-   code diff for preserved decisions; perform required implementation
-   code-critique and end-to-end verification. Do not rerun whole fixture
-   beds solely for this design correction. STOP-HOST remains a separate
-   real observation for each claimed installation/runtime/version: both
-   carriers, total human lines, exact report read and action on an allowance
-   with remaining work. If the host affords no action opportunity, record
-   that limit; no claim of a reliable observed allowance loop. Continuation
-   beyond the provider cap retains its existing separate goal and ordering.
+1. Preserve STOP-PRESERVATION and the exact b643f423 standing rule. Freeze
+   baseline decisions/sources and existing degraded/silent forms; their
+   control assertions stay. The two carriers have the distinct reach in
+   Decision 3, not a shared promise of post-allowance action.
+2. For STOP-READ-INSTRUCTION, replace the blocked and allowed suffixes with
+   Decision 2's two literals in compactStopLine and its exact-text consumers:
+   MapStopOutput, verifyHookDelivery and fixture_stop_status_report. Calculate
+   available name bytes against 240, retaining the 256-byte validity cap.
+   Preserve complete command, outcome, typed flags and report heading; update
+   frozen Console text through its presenter. Old immutable reports stay.
+   The report's allowance summary uses Decision 1's truthful lifecycle text.
+3. Add/update only the named focused literal, headroom, binding and affected
+   hook cases. Preserve completion, alias, control, digest/cursor and failure
+   assertions. Use literal independent expectations. These checks establish
+   bytes/state, not persuasion. Verify the changed implementation path and
+   obtain implementation code-critique before certification; this design
+   requests no whole fixture bed merely for wording.
+4. For STOP-HOST, observe native blocked command/report/canary action and
+   separately allowed human display/finalization on each claimed supported
+   Claude/Codex route. Record loaded standing-rule evidence and any separate
+   cold comprehension result with its actual scope. Apply the bounded trial
+   contract in Decision 3; absent evidence leaves effectiveness unverified.
+   Devin remains unsupported for native Stop. Neither serialized output,
+   a harness read nor a fresh manual prompt can substitute for native proof.
+
+The design reapplication is complete; the already-applied implementation
+and any outstanding native behavioral proof remain with their owners. This
+lane does not certify the code. It does not convert Sol's revision-8 verdict
+into a claimed passing independent revision-9 review or completed runtime
+acceptance. No further wording choice, new goal or renewed permission is
+left for Wido. The “always” requirement is explicitly deferred to the two
+existing mechanism goals; neither this line nor its fixtures can discharge
+it. Their already-authorized work and any eventual human-reserved goal
+conclusion remain with those owners. Nothing in this design lane requests
+that conclusion or alters a ledger.
 
 ## Revision record
 
-**Revision 7, 2026-09-14:** Wido's morning restatement changes the target
+**Revision 9, 2026-09-14 — design only, uncommitted; written against the
+page after `094f836b`, at trunk `113b3bcf`.** Re-apply the original revision-9
+decisions to the post-removal page. The runtime delivery snapshot and its
+validator, adapter payloads and fake value remain removed, as do the Stop
+locator probe, its setup options, child PATH wiring and launch-binding proof
+obligations. References to those subjects in the original revision are
+dropped; no replacement snapshot, conformance levels or probe is required.
+The code is already applied and belongs to the build lane.
+
+The supplied Sol critique remains folded: accept that blocked reason
+reaches Claude/current Codex as
+continuation feedback, allowed systemMessage is human-only after final
+response with no inference, and Devin has no report-bearing Stop mapping.
+Revision 8 claimed the line must cause run/read/action on every exposure,
+including an allowance and a session without the standing rule. Those
+runtimes cannot support that requirement. Its acknowledgment of a missing
+opportunity did not fix its impossible acceptance test; calling that case
+an effectiveness failure left the build with no way to satisfy DONE.
+
+Choose the blocked text `Do not stop. Run this command; read and act on its
+report: ` plus the exact bare command. Remove Agent metadata, name the run
+object immediately, use a direct action imperative without inviting a new
+authority grant, and lead with the flat prohibition. On allow choose
+`Report: ` for the human. The unchanged b643f423 standing instruction is
+that path's only model carrier, not an extra precaution; it cannot see a
+report ID first printed after the model finalized or schedule a later turn.
+An allowed seat with remaining work cannot be compelled by Stop text.
+
+Defer Wido's “always” guarantee explicitly to coordinator-wakes-on-events-not-polls
+and seat-work-continues-past-the-runtime-stop-cap, joined by Wido on
+2026-09-14 under his invariant. Their combined obligation
+is to continue when possible, respect eligible registered waits, go quiet
+when continuation is genuinely impossible, and wake/recover through records
+and the steward/adapter mechanism. A registered wait is not idleness. This
+page neither builds nor claims completion of those mechanisms.
+
+Fix zero headroom by formatting report-bearing line 2 to 240 while keeping
+the 256-byte validity cap. The blocked suffix is 61 bytes rather than 81;
+allowed Report suffix is 10. Worst next/both-flags/32-byte-alias name budgets
+are 29 and 80, and literal realistic specimens each use 240 bytes, leaving
+16 bytes. Retain the whole 21-byte fallback, complete aliases, uncut report
+headings, 144/256/401 validity limits and every Stop decision/source.
+
+Each changed fixture row states what its assertion can detect and cannot
+prove. Literal rows fail on different bytes, never weak wording that matches;
+harness lookup proves lookup, never model choice. A blocked effectiveness
+claim requires a native model command, returned exact report and observed
+report-only canary action that could fail despite perfect emitted bytes.
+Allow observations prove human display and no new inference only. Standing
+and cold prompt-only observations retain their limited scopes. Native Devin
+support stays absent. All supplied findings and remaining concerns have
+explicit dispositions in Decision 2b; their local IDs do not claim a
+canonical critique-register closure.
+
+Completion check: the requested page states observable per-channel contracts,
+formatter/consumer and mechanism owners, precise text/budget choices, fault
+behavior and falsifiable proof obligations. Verification for this reapplication is
+read-only source/goal inspection, computed page-diff review, independent
+UTF-8 byte calculations, static document checks and absence checks for all
+five forbidden identifiers from the brief. No code test, fixture,
+hook or native model trial ran. Only this page changed; no code, ledger,
+fixture, receipt or instruction file was written, no subagent was spawned,
+no git command changed the tree or refs, and no commit was made. Behavioral
+and mechanism proof remains unverified; design completion is not runtime DONE.
+
+**Revision 8, 2026-09-14 — superseded, unbuilt:** chose one 81-byte suffix
+`Agent: run now; read the report and act as authorized before ending this
+turn: ` for both outcomes. It required action before ending even on an
+allowance and without AGENTS.md, while preserving an allowed path with no
+model input/opportunity and a missing Devin mapping. These were impossible
+behavioral requirements, not unresolved choices of stronger wording.
+Its realistic longest line was exactly 256 bytes with no headroom. Its
+literal fixtures could pin that selection but could not fail for persuasive
+weakness. Revision 9 replaces those contracts, specimens and evidence claims.
+
+The six historical author findings remain accounted for; these are distinct
+from Sol's five independent material findings:
+
+| Author finding | Revision-9 disposition |
+| --- | --- |
+| R8-1: a louder label permits skimming | Accept, amended: remove Agent and use immediate command-object instruction on blocked feedback; allowed Report is intentionally metadata for the human. |
+| R8-2: allowance can terminate before inference | Accept, corrected from possibility to established channel behavior: no post-allowance effectiveness leg; standing rule is the only model carrier. |
+| R8-3: obeying a whole report grants too much | Accept, retained: applicable seat action and existing restrictions govern; work/wait/human-only canaries must expose overreach. |
+| R8-4: stronger words erase the name | Accept, revised: 240-byte target with 16 bytes reserved and explicit per-outcome name budgets; uncut heading retained. |
+| R8-5: add a blocking acknowledgment | Refute as a remedy in this page, retained: forbidden control change; continuation and eligible quiet belong to the existing mechanism goals. |
+| R8-6: no-AGENTS string equality proves cold behavior | Accept, sharpened: deterministic rows prove bytes; fresh blocked prompt behavior remains distinct from native Stop delivery, and allowed prompt injection creates an artificial opportunity. |
+
+Revision 7 and earlier records below are historical. Their allowance
+imperatives, symmetric-carrier descriptions and before-turn-end claims
+are superseded by revision 9; they are not alternate build instructions.
+
+**Revision 7, 2026-09-14 — landed; historical design record:** Wido's morning restatement changes the target
 from one task/status line to at most two useful lines: what just completed
 and current or selected next work. It also makes the human's total visible
 count authoritative and rejects the 97-character hex identifier. The

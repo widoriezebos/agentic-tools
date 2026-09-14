@@ -476,11 +476,14 @@ func verifyHookDelivery(repoRoot, payload, healthLine string, delivery HookDeliv
 		}
 	}
 	wantCommand := "metasystem report stop-status --id " + delivery.Alias
-	wantSuffix := "; Read, then continue lawful work before stopping: " + wantCommand
+	wantOutcome := "; Stop allowed;"
+	wrongOutcome := "; Stop blocked;"
+	wantSuffix := "; Report: " + wantCommand
 	if blocked {
-		wantSuffix = "; Read: " + wantCommand
+		wantOutcome, wrongOutcome = wrongOutcome, wantOutcome
+		wantSuffix = "; Do not stop. Run this command; read and act on its report: " + wantCommand
 	}
-	if visible == "" || !strings.HasSuffix(visible, wantSuffix) || !validHookHumanLine(visible) {
+	if visible == "" || !strings.Contains(visible, wantOutcome) || strings.Contains(visible, wrongOutcome) || !strings.HasSuffix(visible, wantSuffix) || !validHookHumanLine(visible) {
 		return fmt.Errorf("hook completion payload does not name its exact Stop report")
 	}
 	reportBytes, identity, resolution, err := stopreport.Read(delivery.Installation, delivery.Alias)

@@ -800,7 +800,7 @@ name_block_completion=${name_block_line%%$'\n'*}
 name_block_task=${name_block_line#*$'\n'}
 [[ "$name_block_completion" == 'Just completed: unknown for this turn.' ]] \
   && [[ "${name_block_task%%; Stop blocked*}" == 'Task: stop refusal fits on one screen' ]] \
-  && [[ "$name_block_task" == 'Task: stop refusal fits on one screen; Stop blocked; needs your decision and supervision repair; Read: metasystem report stop-status --id '* ]] \
+  && [[ "$name_block_task" == 'Task: stop refusal fits on one screen; Stop blocked; needs your decision and supervision repair; Do not stop. Run this command; read and act on its report: metasystem report stop-status --id '* ]] \
   || { echo "STOP-TASK-NAME-HOOK block did not carry the completion line, exact slug name and both intervention flags" >&2; cat "$tmp/stop-task-name-block.out" >&2; exit 1; }
 name_block_report=$(fixture_stop_status_report \
   "$tmp/stop-task-name-block.out" "$line_root" claude stop-task-name-block) \
@@ -823,8 +823,8 @@ name_allow_completion=${name_allow_line%%$'\n'*}
 name_allow_task=${name_allow_line#*$'\n'}
 [[ "$name_allow_completion" == 'Just completed: unknown for this turn.' ]] \
   && [[ "${name_allow_task%%; Stop allowed*}" == 'Task: stop refusal fits on one screen' ]] \
-  && [[ "$name_allow_task" == 'Task: stop refusal fits on one screen; Stop allowed; needs supervision repair; Read, then continue lawful work before stopping: metasystem report stop-status --id '* ]] \
-  || { echo "STOP-TASK-NAME-HOOK allowance did not carry the completion line, exact slug name, repair flag and continuation imperative" >&2; cat "$tmp/stop-task-name-allow.out" >&2; exit 1; }
+  && [[ "$name_allow_task" == 'Task: stop refusal fits on one screen; Stop allowed; needs supervision repair; Report: metasystem report stop-status --id '* ]] \
+  || { echo "STOP-TASK-NAME-HOOK allowance did not carry the completion line, exact slug name, repair flag and human report locator" >&2; cat "$tmp/stop-task-name-allow.out" >&2; exit 1; }
 name_allow_report=$(fixture_stop_status_report \
   "$tmp/stop-task-name-allow.out" "$line_root" claude stop-task-name-allow) \
   || { echo "STOP-TASK-NAME-HOOK allowance exposed no identity-bound report" >&2; exit 1; }

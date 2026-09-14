@@ -106,6 +106,13 @@ func TestMapStopOutputUsesOnePublicFieldAndExactReport(t *testing.T) {
 						!strings.HasSuffix(line, "--id "+presentationResult.Report.Alias) {
 						t.Fatalf("mapped human field does not use its exact alias: %#v (%v)", payload, readErr)
 					}
+					wantLine := "Just completed: unknown for this turn.\nNo task in flight; Stop allowed; Report: metasystem report stop-status --id " + presentationResult.Report.Alias
+					if test.blocked {
+						wantLine = "Just completed: unknown for this turn.\nNo task in flight; Stop blocked; Do not stop. Run this command; read and act on its report: metasystem report stop-status --id " + presentationResult.Report.Alias
+					}
+					if line != wantLine {
+						t.Fatalf("mapped human field = %q, want %q", line, wantLine)
+					}
 					if test.blocked && payload["decision"] != "block" {
 						t.Fatalf("mapped block = %#v", payload)
 					}
@@ -173,23 +180,59 @@ func TestMapStopOutputRejectsDecisionOrRequiredBooleanChangedAfterPresentation(t
 	if err := MapStopOutput("codex", presentationPath, filepath.Join(t.TempDir(), "missing-bool.json")); err == nil || !strings.Contains(err.Error(), "required boolean needsSupervisionRepair") {
 		t.Fatalf("missing required presentation boolean was accepted: %v", err)
 	}
+
+	_, presentationPath = stopOutputFixture(t, "codex", false, strings.Repeat("a", 32))
+	data, _ = os.ReadFile(presentationPath)
+	if err := json.Unmarshal(data, &raw); err != nil {
+		t.Fatal(err)
+	}
+	raw["needsYourDecision"] = true
+	data, _ = json.Marshal(raw)
+	if err := os.WriteFile(presentationPath, data, 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := MapStopOutput("codex", presentationPath, filepath.Join(t.TempDir(), "changed-flag.json")); err == nil || !strings.Contains(err.Error(), "report reference is inconsistent") {
+		t.Fatalf("changed intervention flag was accepted without matching text: %v", err)
+	}
 }
 
 func TestMapStopOutputRejectsNonImperativeOrUnboundAlias(t *testing.T) {
 	for _, test := range []struct {
-		name   string
-		change func(*report.StopPresentationResult)
+		name    string
+		blocked bool
+		change  func(*report.StopPresentationResult)
 	}{
-		{name: "bare status label", change: func(value *report.StopPresentationResult) {
-			value.HumanLine = strings.Replace(value.HumanLine, "; Read: ", "; status: ", 1)
+		{name: "old block suffix", blocked: true, change: func(value *report.StopPresentationResult) {
+			value.HumanLine = strings.Replace(value.HumanLine, "; Do not stop. Run this command; read and act on its report: ", "; Read: ", 1)
 		}},
-		{name: "wrong allowance imperative", change: func(value *report.StopPresentationResult) {
-			value.HumanLine = strings.Replace(value.HumanLine, "; Read, then continue lawful work before stopping: ", "; Read: ", 1)
+		{name: "old allowance suffix", change: func(value *report.StopPresentationResult) {
+			value.HumanLine = strings.Replace(value.HumanLine, "; Report: ", "; Read, then continue lawful work before stopping: ", 1)
 		}},
-		{name: "truncated command", change: func(value *report.StopPresentationResult) {
+		{name: "status label", blocked: true, change: func(value *report.StopPresentationResult) {
+			value.HumanLine = strings.Replace(value.HumanLine, "; Do not stop. Run this command; read and act on its report: ", "; status: ", 1)
+		}},
+		{name: "partial block instruction", blocked: true, change: func(value *report.StopPresentationResult) {
+			value.HumanLine = strings.Replace(value.HumanLine, "; Do not stop. Run this command; read and act on its report: ", "; Run this command; read and act on its report: ", 1)
+		}},
+		{name: "block suffix on allowance", change: func(value *report.StopPresentationResult) {
+			value.HumanLine = strings.Replace(value.HumanLine, "; Report: ", "; Do not stop. Run this command; read and act on its report: ", 1)
+		}},
+		{name: "allowance suffix on block", blocked: true, change: func(value *report.StopPresentationResult) {
+			value.HumanLine = strings.Replace(value.HumanLine, "; Do not stop. Run this command; read and act on its report: ", "; Report: ", 1)
+		}},
+		{name: "changed outcome", blocked: true, change: func(value *report.StopPresentationResult) {
+			value.HumanLine = strings.Replace(value.HumanLine, "; Stop blocked;", "; Stop allowed;", 1)
+		}},
+		{name: "truncated command", blocked: true, change: func(value *report.StopPresentationResult) {
 			value.HumanLine = strings.TrimSuffix(value.HumanLine, value.Report.Alias)
 		}},
-		{name: "substituted alias", change: func(value *report.StopPresentationResult) {
+		{name: "quoted command", blocked: true, change: func(value *report.StopPresentationResult) {
+			value.HumanLine = strings.Replace(value.HumanLine, value.Report.ReadCommand, "`"+value.Report.ReadCommand+"`", 1)
+		}},
+		{name: "trailing text", change: func(value *report.StopPresentationResult) {
+			value.HumanLine += " now"
+		}},
+		{name: "substituted alias", blocked: true, change: func(value *report.StopPresentationResult) {
 			old := value.Report.Alias
 			value.Report.Alias = "f"
 			value.Report.ReadCommand = "metasystem report stop-status --id f"
@@ -197,8 +240,7 @@ func TestMapStopOutputRejectsNonImperativeOrUnboundAlias(t *testing.T) {
 		}},
 	} {
 		t.Run(test.name, func(t *testing.T) {
-			blocked := test.name != "wrong allowance imperative"
-			_, presentationPath := stopOutputFixture(t, "codex", blocked, strings.Repeat("c", 32))
+			_, presentationPath := stopOutputFixture(t, "codex", test.blocked, strings.Repeat("c", 32))
 			data, err := os.ReadFile(presentationPath)
 			if err != nil {
 				t.Fatal(err)

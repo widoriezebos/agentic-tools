@@ -235,14 +235,14 @@ hook_report_alias=1
 hook_report_dir=$repo/artifacts/agents/supervision/stop-verdicts
 hook_report_path=$hook_report_dir/$hook_report_id.md
 mkdir -p "$hook_report_dir"
-hook_visible=$(printf 'Just completed: unknown for this turn.\nNo task in flight; Stop allowed; Read, then continue lawful work before stopping: metasystem report stop-status --id %s' "$hook_report_alias")
+hook_visible=$(printf 'Just completed: unknown for this turn.\nNo task in flight; Stop allowed; Report: metasystem report stop-status --id %s' "$hook_report_alias")
 printf '# Health fixture\n\n<!-- metasystem-stop-report-v1 {"installation":"%s","runtime":"fake","session":"health-fixture","sessionKey":"%s","attempt":"%s"} -->\n\n## Console text\n\n```text\n%s\n```\n\n## Health\n\n```json\n{"line":"HEALTH fixture"}\n```\n' \
   "$repo" "$hook_report_key" "$hook_report_attempt" "$hook_visible" >"$hook_report_path"
 hook_report_sha=$("$ms" util sha256 <"$hook_report_path")
 mkdir -p "$hook_report_dir/aliases"
 printf '{"schemaVersion":1,"state":"published","alias":"%s","reportId":"%s","sha256":"%s"}\n' \
   "$hook_report_alias" "$hook_report_id" "$hook_report_sha" >"$hook_report_dir/aliases/$hook_report_alias.json"
-printf '{"systemMessage":"Just completed: unknown for this turn.\\nNo task in flight; Stop allowed; Read, then continue lawful work before stopping: metasystem report stop-status --id %s"}\n' "$hook_report_alias" >"$tmp/hook-response.json"
+printf '{"systemMessage":"Just completed: unknown for this turn.\\nNo task in flight; Stop allowed; Report: metasystem report stop-status --id %s"}\n' "$hook_report_alias" >"$tmp/hook-response.json"
 "$ms" steward hook-complete --repo "$repo" --generation "$hook_generation" --attempt "$hook_attempt_seq" \
   --result OK --outcome EMITTED --health-line 'HEALTH fixture' --payload-file "$tmp/hook-response.json" \
   --installation "$repo" --report-id "$hook_report_id" --report-alias "$hook_report_alias" --report-path "$hook_report_path" --report-sha256 "$hook_report_sha" \
