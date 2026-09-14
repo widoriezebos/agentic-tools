@@ -174,6 +174,7 @@ func runStewardHookComplete(args []string) int {
 	payloadFile := flags.String("payload-file", "", "file containing the emitted payload")
 	reportPath := flags.String("report-path", "", "exact immutable Stop report path")
 	reportID := flags.String("report-id", "", "exact immutable Stop report id")
+	reportAlias := flags.String("report-alias", "", "exact short Stop report alias used by the payload")
 	reportSHA := flags.String("report-sha256", "", "sha256 of the immutable Stop report")
 	installation := flags.String("installation", "", "installation bound to the report lookup")
 	elapsedSec := flags.Int64("elapsed-sec", 0, "whole seconds elapsed since the Stop deadline parent started")
@@ -203,12 +204,12 @@ func runStewardHookComplete(args []string) int {
 			return 1
 		}
 	}
-	if *result == string(steward.ComponentOK) && (*healthLine == "" || *payloadFile == "" || *reportPath == "" || *reportID == "" || *reportSHA == "" || *installation == "") {
+	if *result == string(steward.ComponentOK) && (*healthLine == "" || *payloadFile == "" || *reportPath == "" || *reportID == "" || *reportAlias == "" || *reportSHA == "" || *installation == "") {
 		fmt.Fprintln(os.Stderr, "steward hook-complete: OK requires health, payload, and exact Stop report reference flags")
 		return 2
 	}
 	_, err := steward.CompleteHookAttemptWithDelivery(*repo, *generation, *attempt, steward.ComponentResult(*result),
-		*outcome, *healthLine, string(payload), steward.HookDeliveryReference{Installation: *installation, ID: *reportID, Path: *reportPath, SHA256: *reportSHA}, stopElapsedSec, time.Now())
+		*outcome, *healthLine, string(payload), steward.HookDeliveryReference{Installation: *installation, ID: *reportID, Alias: *reportAlias, Path: *reportPath, SHA256: *reportSHA}, stopElapsedSec, time.Now())
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "steward hook-complete: %v\n", err)
 		return 1

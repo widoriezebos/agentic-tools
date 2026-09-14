@@ -41,11 +41,16 @@ func stopOutputFixture(t *testing.T, runtime string, blocked bool, attempt strin
 		Actions: []goal.TurnAction{},
 	}
 	input := report.StopPresentationInput{
-		SchemaVersion: 1,
+		SchemaVersion: report.StopPresentationSchemaVersion,
 		Identity:      report.StopIdentity{Installation: root, Runtime: runtime, Session: "session", SessionKey: report.StopSessionKey(runtime, "session"), Attempt: attempt, ObservedAt: "2026-09-13T12:00:00Z"},
 		Judgment:      facts,
 		Control:       report.StopControl{ShouldBlock: blocked, BlockSource: blockSource, Class: verdict.Class, JudgmentAvailable: true},
-		Notices:       []report.StopNotice{},
+		CompletionObservation: &report.StopCompletionObservation{
+			SchemaVersion: report.StopCompletionObservationSchemaVersion,
+			Identity:      report.StopCompletionIdentity{Installation: root, Session: "session"},
+			CollectedAt:   "2026-09-13T12:00:00Z", Records: []report.StopCompletionRecord{}, Unavailable: []string{},
+		},
+		Notices: []report.StopNotice{},
 		Unavailable: []report.StopUnavailable{
 			{Section: "health"}, {Section: "digest"}, {Section: "receipt"}, {Section: "arming"},
 		},
@@ -92,8 +97,14 @@ func TestMapStopOutputUsesOnePublicFieldAndExactReport(t *testing.T) {
 						t.Fatalf("mapped payload = %s: %v", data, err)
 					}
 					line, ok := payload[test.field].(string)
-					if !ok || !strings.HasSuffix(line, "-"+strings.Repeat(test.name[:1], 32)) {
+					if !ok || strings.Count(line, "\n") != 1 {
 						t.Fatalf("mapped human field = %#v", payload)
+					}
+					var presentationResult report.StopPresentationResult
+					presentationBytes, readErr := os.ReadFile(presentation)
+					if readErr != nil || json.Unmarshal(presentationBytes, &presentationResult) != nil ||
+						!strings.HasSuffix(line, "--id "+presentationResult.Report.Alias) {
+						t.Fatalf("mapped human field does not use its exact alias: %#v (%v)", payload, readErr)
 					}
 					if test.blocked && payload["decision"] != "block" {
 						t.Fatalf("mapped block = %#v", payload)
@@ -145,7 +156,7 @@ func TestMapStopOutputRejectsDecisionOrRequiredBooleanChangedAfterPresentation(t
 		t.Fatal(err)
 	}
 	output := filepath.Join(t.TempDir(), "provider.json")
-	if err := MapStopOutput("codex", presentationPath, output); err == nil || !strings.Contains(err.Error(), "immutable report") {
+	if err := MapStopOutput("codex", presentationPath, output); err == nil || !strings.Contains(err.Error(), "report reference is inconsistent") {
 		t.Fatalf("decision changed after presentation was accepted: %v", err)
 	}
 
@@ -161,5 +172,49 @@ func TestMapStopOutputRejectsDecisionOrRequiredBooleanChangedAfterPresentation(t
 	}
 	if err := MapStopOutput("codex", presentationPath, filepath.Join(t.TempDir(), "missing-bool.json")); err == nil || !strings.Contains(err.Error(), "required boolean needsSupervisionRepair") {
 		t.Fatalf("missing required presentation boolean was accepted: %v", err)
+	}
+}
+
+func TestMapStopOutputRejectsNonImperativeOrUnboundAlias(t *testing.T) {
+	for _, test := range []struct {
+		name   string
+		change func(*report.StopPresentationResult)
+	}{
+		{name: "bare status label", change: func(value *report.StopPresentationResult) {
+			value.HumanLine = strings.Replace(value.HumanLine, "; Read: ", "; status: ", 1)
+		}},
+		{name: "wrong allowance imperative", change: func(value *report.StopPresentationResult) {
+			value.HumanLine = strings.Replace(value.HumanLine, "; Read, then continue lawful work before stopping: ", "; Read: ", 1)
+		}},
+		{name: "truncated command", change: func(value *report.StopPresentationResult) {
+			value.HumanLine = strings.TrimSuffix(value.HumanLine, value.Report.Alias)
+		}},
+		{name: "substituted alias", change: func(value *report.StopPresentationResult) {
+			old := value.Report.Alias
+			value.Report.Alias = "f"
+			value.Report.ReadCommand = "metasystem report stop-status --id f"
+			value.HumanLine = strings.TrimSuffix(value.HumanLine, old) + "f"
+		}},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			blocked := test.name != "wrong allowance imperative"
+			_, presentationPath := stopOutputFixture(t, "codex", blocked, strings.Repeat("c", 32))
+			data, err := os.ReadFile(presentationPath)
+			if err != nil {
+				t.Fatal(err)
+			}
+			var presentation report.StopPresentationResult
+			if err := json.Unmarshal(data, &presentation); err != nil {
+				t.Fatal(err)
+			}
+			test.change(&presentation)
+			changed, _ := json.Marshal(presentation)
+			if err := os.WriteFile(presentationPath, changed, 0o600); err != nil {
+				t.Fatal(err)
+			}
+			if err := MapStopOutput("codex", presentationPath, filepath.Join(t.TempDir(), "provider.json")); err == nil {
+				t.Fatal("invalid read binding was accepted")
+			}
+		})
 	}
 }

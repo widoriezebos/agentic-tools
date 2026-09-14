@@ -2876,9 +2876,13 @@ class rule (lines 40-60); the builder's report (codex-report-r3, item 2);
 and the preserved output `nested-override.out` in the suite-failures
 directory named in the record, read whole. Residual risk added: (u) the
 The later Stop-presentation contract supersedes only this paragraph's public
-field: a block has no `systemMessage`. Its bounded `reason` carries the typed
-repair flag, while the immutable report, refusal record, stop-condition line
-and component record carry the complete infrastructure facts. All earlier
+field: a block has no `systemMessage`. Its bounded `reason` contains exactly
+two logical lines: the newly observed owned completion, then the task,
+outcome, typed repair flag and exact reserved-alias read command. An allowance
+uses the same pair in its sole `systemMessage`, with `Read, then continue
+lawful work before stopping:` on line 2. The immutable report, refusal record,
+stop-condition line and component record carry the complete infrastructure
+facts. No ancillary Stop notice may become a third line. All earlier
 historical passages on a block-side `systemMessage` are read through that
 supersession; their control precedence and durable evidence remain binding.
 
@@ -2974,4 +2978,8 @@ seat-actionable block omits the `needs supervision repair` flag, its
 published report detail, the hook log or the refusal record, or includes a
 `systemMessage`, or any fixture that
 asserts an allowance where the world's plan line is unseen (the precedence
-of Decision 2 inverted in either direction).
+of Decision 2 inverted in either direction); any report-bearing Stop whose
+sole public field is not the exact two-line completion/task pair, whose
+allowance line merely labels a status instead of instructing the seat to read
+and continue lawful work, whose read token is not a permanently reserved
+exact alias, or whose folded infrastructure/receipt notice adds a third line.

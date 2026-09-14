@@ -10,7 +10,6 @@ import (
 	"io"
 	"os"
 	"path/filepath"
-	"regexp"
 	"strings"
 	"time"
 	"unicode"
@@ -20,6 +19,7 @@ import (
 
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/atomicfile"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/identity"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/stopreport"
 )
 
 // ComponentResult says whether one completed attempt produced all of its
@@ -91,6 +91,7 @@ type HookExpireConflictError struct {
 type HookDeliveryReference struct {
 	Installation string
 	ID           string
+	Alias        string
 	Path         string
 	SHA256       string
 }
@@ -448,7 +449,7 @@ func completeHookAttempt(repoRoot string, generation int, attemptSeq int64, resu
 }
 
 func verifyHookDelivery(repoRoot, payload, healthLine string, delivery HookDeliveryReference) error {
-	if delivery.Installation == "" || !regexp.MustCompile(`^[0-9a-f]{64}-[0-9a-f]{32}$`).MatchString(delivery.ID) || delivery.Path == "" || !validEvidenceDigest(delivery.SHA256) {
+	if delivery.Installation == "" || stopreport.ValidateFullID(delivery.ID) != nil || stopreport.ValidateID(delivery.Alias) != nil || strings.Contains(delivery.Alias, "-") || delivery.Path == "" || !validEvidenceDigest(delivery.SHA256) {
 		return fmt.Errorf("hook completion requires an exact Stop report reference")
 	}
 	wantPath := filepath.Join(delivery.Installation, "artifacts", "agents", "supervision", "stop-verdicts", delivery.ID+".md")
@@ -461,7 +462,9 @@ func verifyHookDelivery(repoRoot, payload, healthLine string, delivery HookDeliv
 		return fmt.Errorf("hook completion payload is not one JSON object")
 	}
 	visible := ""
+	blocked := false
 	if object["decision"] == "block" {
+		blocked = true
 		visible, _ = object["reason"].(string)
 		if len(object) != 2 {
 			return fmt.Errorf("hook completion block payload has extra fields")
@@ -472,37 +475,24 @@ func verifyHookDelivery(repoRoot, payload, healthLine string, delivery HookDeliv
 			return fmt.Errorf("hook completion allowance payload has extra fields")
 		}
 	}
-	wantCommand := "metasystem report stop-status --id " + delivery.ID
-	if visible == "" || !strings.HasSuffix(visible, "; status: "+wantCommand) || !validHookHumanLine(visible) {
+	wantCommand := "metasystem report stop-status --id " + delivery.Alias
+	wantSuffix := "; Read, then continue lawful work before stopping: " + wantCommand
+	if blocked {
+		wantSuffix = "; Read: " + wantCommand
+	}
+	if visible == "" || !strings.HasSuffix(visible, wantSuffix) || !validHookHumanLine(visible) {
 		return fmt.Errorf("hook completion payload does not name its exact Stop report")
 	}
-	info, err := os.Lstat(wantPath)
-	if err != nil || !info.Mode().IsRegular() || info.Mode()&os.ModeSymlink != 0 {
-		return fmt.Errorf("hook completion Stop report is unavailable")
-	}
-	reportBytes, err := os.ReadFile(wantPath)
+	reportBytes, identity, resolution, err := stopreport.Read(delivery.Installation, delivery.Alias)
 	if err != nil {
 		return fmt.Errorf("hook completion cannot read Stop report: %w", err)
 	}
 	digest := sha256.Sum256(reportBytes)
-	if hex.EncodeToString(digest[:]) != delivery.SHA256 {
-		return fmt.Errorf("hook completion Stop report digest does not match")
+	if hex.EncodeToString(digest[:]) != delivery.SHA256 || resolution.ID != delivery.ID || resolution.Alias != delivery.Alias || resolution.Path != wantPath || identity.Installation != delivery.Installation || identity.SessionKey+"-"+identity.Attempt != delivery.ID {
+		return fmt.Errorf("hook completion Stop report identity, alias, path, or digest does not match")
 	}
-	marker := "\n<!-- metasystem-stop-report-v1 "
-	start := strings.Index(string(reportBytes), marker)
-	endMarker := " -->"
-	if start < 0 {
-		return fmt.Errorf("hook completion Stop report identity is missing")
-	}
-	identityText := string(reportBytes)[start+len(marker):]
-	end := strings.Index(identityText, endMarker)
-	var identity struct {
-		Installation string `json:"installation"`
-		SessionKey   string `json:"sessionKey"`
-		Attempt      string `json:"attempt"`
-	}
-	if end < 0 || json.Unmarshal([]byte(identityText[:end]), &identity) != nil || identity.Installation != delivery.Installation || identity.SessionKey+"-"+identity.Attempt != delivery.ID {
-		return fmt.Errorf("hook completion Stop report identity does not match")
+	if !bytes.Contains(reportBytes, []byte("## Console text\n\n```text\n"+visible+"\n```\n")) {
+		return fmt.Errorf("hook completion payload does not match the report's console text")
 	}
 	if strings.TrimSpace(healthLine) == "" || stopReportHealthLine(reportBytes) != healthLine {
 		return fmt.Errorf("hook completion Stop report does not contain its health snapshot")
@@ -511,12 +501,22 @@ func verifyHookDelivery(repoRoot, payload, healthLine string, delivery HookDeliv
 }
 
 func validHookHumanLine(line string) bool {
-	if len(line) > 256 || !utf8.ValidString(line) || strings.ContainsAny(line, "\r\n") {
+	if len(line) > 401 || !utf8.ValidString(line) || strings.Contains(line, "\r") || strings.Count(line, "\n") != 1 {
 		return false
 	}
-	for _, r := range line {
-		if unicode.IsControl(r) || r == '\u2028' || r == '\u2029' {
-			return false
+	lines := strings.SplitN(line, "\n", 2)
+	if len(lines[0]) == 0 || len(lines[0]) > 144 || len(lines[1]) == 0 || len(lines[1]) > 256 {
+		return false
+	}
+	if !strings.HasPrefix(lines[0], "Just completed: ") || !strings.HasSuffix(lines[0], ".") ||
+		!(strings.HasPrefix(lines[1], "Task: ") || strings.HasPrefix(lines[1], "Task unknown;") || strings.HasPrefix(lines[1], "No task in flight;")) {
+		return false
+	}
+	for _, logical := range lines {
+		for _, r := range logical {
+			if unicode.IsControl(r) || r == '\u2028' || r == '\u2029' {
+				return false
+			}
 		}
 	}
 	return true

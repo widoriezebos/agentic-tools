@@ -49,6 +49,7 @@ func runReportStopInput(args []string) int {
 	advisor := flags.Bool("advisor", false, "compose the judgment-free read-only advisor allowance")
 	verdict := flags.String("verdict-file", "", "retained turn verdict JSON")
 	facts := flags.String("facts-file", "", "frozen judgment facts JSON")
+	completion := flags.String("completion-file", "", "presentation-only completion observation JSON")
 	health := flags.String("health-file", "", "health preview JSON")
 	digest := flags.String("digest-file", "", "pending digest bytes")
 	digestPrefix := flags.String("digest-cursor-prefix", "", "pending digest cursor prefix")
@@ -71,7 +72,7 @@ func runReportStopInput(args []string) int {
 	err := report.ComposeStopPresentationInput(report.StopPresentationCollection{
 		Root: *root, Runtime: *runtime, Session: *session, Attempt: *attempt, MainID: *mainID,
 		Machine: *machine, Lineage: *lineage, ClaimEpoch: *claimEpoch, Advisor: *advisor,
-		VerdictFile: *verdict, FactsFile: *facts, HealthFile: *health,
+		VerdictFile: *verdict, FactsFile: *facts, CompletionFile: *completion, HealthFile: *health,
 		DigestFile: *digest, DigestCursorPrefix: *digestPrefix,
 		ReceiptFile: *receipt, ReceiptStderrFile: *receiptStderr, ReceiptExit: *receiptExit,
 		ArmingFile: *arming, ArmingStderrFile: *armingStderr, ArmingExit: *armingExit,
@@ -91,7 +92,7 @@ func runReportStopInput(args []string) int {
 
 func runReportStopStatus(args []string) int {
 	flags := flag.NewFlagSet("report stop-status", flag.ContinueOnError)
-	id := flags.String("id", "", "exact immutable Stop report id")
+	id := flags.String("id", "", "exact short Stop report alias or legacy full id")
 	root := flags.String("root", "", "explicit metasystem installation")
 	if flags.Parse(args) != nil {
 		return 2

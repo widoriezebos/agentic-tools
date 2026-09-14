@@ -657,23 +657,34 @@ func runReportTurnVerdict(args []string) int {
 	mainId := flags.String("main-id", "", "the caller main identity for the unwatched-work rule")
 	stopHookActive := flags.Bool("stop-hook-active", false, "the runtime is repeating a Stop hook that previously blocked")
 	factsFile := flags.String("facts-file", "", "fresh absolute path for the frozen judgment facts")
+	completionFile := flags.String("completion-file", "", "fresh absolute path for the presentation-only completion observation")
 	if flags.Parse(args) != nil {
 		return 2
 	}
-	if *factsFile != "" {
-		if !filepath.IsAbs(*factsFile) {
-			fmt.Fprintln(os.Stderr, "report turn-verdict: --facts-file must be absolute")
+	for _, output := range []struct {
+		name string
+		path string
+	}{{"--facts-file", *factsFile}, {"--completion-file", *completionFile}} {
+		if output.path == "" {
+			continue
+		}
+		if !filepath.IsAbs(output.path) {
+			fmt.Fprintf(os.Stderr, "report turn-verdict: %s must be absolute\n", output.name)
 			return 2
 		}
-		if _, err := os.Lstat(*factsFile); err == nil {
-			fmt.Fprintln(os.Stderr, "report turn-verdict: --facts-file must not already exist")
+		if _, err := os.Lstat(output.path); err == nil {
+			fmt.Fprintf(os.Stderr, "report turn-verdict: %s must not already exist\n", output.name)
 			return 2
 		} else if !os.IsNotExist(err) {
-			fmt.Fprintln(os.Stderr, "report turn-verdict: cannot inspect --facts-file:", err)
+			fmt.Fprintf(os.Stderr, "report turn-verdict: cannot inspect %s: %v\n", output.name, err)
 			return 2
 		}
 	}
-	scan := report.Scan(*root)
+	if *factsFile != "" && filepath.Clean(*factsFile) == filepath.Clean(*completionFile) {
+		fmt.Fprintln(os.Stderr, "report turn-verdict: --facts-file and --completion-file must differ")
+		return 2
+	}
+	scan, completionCapture := report.ScanWithCompletion(*root)
 	now, err := goalCommandNow(*root)
 	if err != nil {
 		fmt.Fprintln(os.Stderr, err)
@@ -749,11 +760,36 @@ func runReportTurnVerdict(args []string) int {
 			}
 		}
 	}
+	if *completionFile != "" {
+		completionRoot := *root
+		completionSession := goal.NormalizeSession(*session)
+		if verdict.Facts != nil {
+			completionRoot = verdict.Facts.Identity.Installation
+			completionSession = verdict.Facts.Identity.Session
+		} else if absolute, resolveErr := filepath.Abs(completionRoot); resolveErr == nil {
+			completionRoot = filepath.Clean(absolute)
+			if physical, physicalErr := filepath.EvalSymlinks(completionRoot); physicalErr == nil {
+				completionRoot = physical
+			}
+		}
+		observation := report.BindStopCompletion(completionCapture, completionRoot, completionSession, *mainId, now)
+		if completion, marshalErr := json.Marshal(observation); marshalErr != nil {
+			fmt.Fprintln(os.Stderr, "report turn-verdict: completion observation could not be rendered:", marshalErr)
+		} else if durable, writeErr := turnVerdictCompletionWriter(*completionFile, string(completion)+"\n", ""); writeErr != nil || !durable {
+			_ = os.Remove(*completionFile)
+			if writeErr != nil {
+				fmt.Fprintln(os.Stderr, "report turn-verdict: completion observation could not be written:", writeErr)
+			} else {
+				fmt.Fprintln(os.Stderr, "report turn-verdict: completion observation could not be written: crash durability is unknown")
+			}
+		}
+	}
 	fmt.Println(string(data))
 	return 0
 }
 
 var turnVerdictFactsWriter = atomicfile.WriteText
+var turnVerdictCompletionWriter = atomicfile.WriteText
 
 func resolveSeatIdleActor(root, mainID string) func() (goal.Actor, int64, error) {
 	return func() (goal.Actor, int64, error) {

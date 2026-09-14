@@ -743,17 +743,18 @@ if [[ ${1:-} == adapter && ${2:-} == stop-output ]]; then
   printf '%s\n' 'adapter stop-output' >>"${METASYSTEM_STOP_NAME_TRACE:?}"
 fi
 if [[ ${1:-} == report && ${2:-} == turn-verdict ]]; then
-  facts_path= root= session= main_id= previous=
+  facts_path= completion_path= root= session= main_id= previous=
   for argument in "$@"; do
     case "$previous" in
       --facts-file) facts_path=$argument ;;
+      --completion-file) completion_path=$argument ;;
       --root) root=$argument ;;
       --session) session=$argument ;;
       --main-id) main_id=$argument ;;
     esac
     previous=$argument
   done
-  [[ -n "$facts_path" && -n "$root" && -n "$session" ]] || exit 2
+  [[ -n "$facts_path" && -n "$completion_path" && -n "$root" && -n "$session" ]] || exit 2
   dated_intent=${METASYSTEM_STOP_NAME_INTENT:?}
   should_block=${METASYSTEM_STOP_NAME_BLOCK:?}
   block_source=null
@@ -769,6 +770,8 @@ if [[ ${1:-} == report && ${2:-} == turn-verdict ]]; then
   cat >"$facts_path" <<JSON
 {"schemaVersion":1,"identity":{"installation":"$root","session":"$session","mainId":"$main_id","observedAt":"2026-09-14T12:00:00Z"},"verdict":{"schemaVersion":1,"class":"seat-actionable","shouldBlock":$should_block,"blockSource":$block_source,"openWork":[],"openWorkSignature":"","goal":null,"ledgerStatus":"ok","diagnostics":[],"display":"frozen task-name fixture","surfaceWatchdog":false,"idleRefusal":false,"countSpent":false,"brainStatusDue":false},"fullDisplay":"frozen task-name fixture","scan":{"open":[],"templateUnfilled":[],"openWorkWarnings":[],"waitingOnHuman":[],"stalePlans":[],"busy":[],"questions":[],"drafts":[],"unreadable":[],"jobs":[],"runs":[],"runUnreadable":[]},"work":{"readSucceeded":true,"claimed":[{"id":"stop-refusal-fits-on-one-screen","intent":"$dated_intent","nextStep":"finish the naming proof","revision":"5"}],"landing":[],"claimable":[],"selected":{"id":"stop-refusal-fits-on-one-screen","intent":"$dated_intent","nextStep":"finish the naming proof","revision":"5"},"selection":"held","refused":[],"inFlight":[],"nonTerminalJobs":[],"queued":0,"goalFree":false},"ownership":{"state":"owned","goalId":"stop-refusal-fits-on-one-screen","evidence":"frozen holder join"},"actions":[{"kind":"continue-goal","targetId":"stop-refusal-fits-on-one-screen","instruction":"finish the naming proof","command":"","owner":"seat","restriction":"","humanRequired":$human_required,"supervisionRepair":$supervision_repair}],"refusal":{"class":"seat-actionable","causeCode":"","component":"","detail":"frozen task-name fixture","remedy":"","blockSource":"$refusal_block_source","occurrence":0,"countSpent":false,"idleRefusal":false,"humanStopConsumed":false,"humanRequired":false,"supervisionRepair":false,"escalation":{"intentId":"","incidentId":"","alarmDetail":"","detail":"","intentPrepared":false,"humanRequired":false,"supervisionRepair":false}}}
 JSON
+  printf '{"schemaVersion":1,"identity":{"installation":"%s","session":"%s","mainId":"%s"},"collectedAt":"2026-09-14T12:00:00Z","records":[],"unavailable":[]}\n' \
+    "$root" "$session" "$main_id" >"$completion_path"
   printf '{"schemaVersion":1,"class":"seat-actionable","shouldBlock":%s,"blockSource":%s,"openWork":[],"openWorkSignature":"","goal":null,"ledgerStatus":"ok","diagnostics":[],"display":"frozen task-name fixture","surfaceWatchdog":false,"idleRefusal":false,"countSpent":false,"brainStatusDue":false}\n' \
     "$should_block" "$block_source"
   exit 0
@@ -793,9 +796,12 @@ METASYSTEM_BIN="$name_engine" METASYSTEM_STOP_NAME_REAL_ENGINE="$line_root/bin/m
   bash "$line_root/scripts/agents/supervision-hook.sh" claude stop \
     <"$tmp/stop-task-name-block.json" >"$tmp/stop-task-name-block.out" 2>"$tmp/stop-task-name-block.err"
 name_block_line=$("$ms" json get --file "$tmp/stop-task-name-block.out" --field reason)
-[[ "${name_block_line%%; Stop blocked*}" == 'Task: stop refusal fits on one screen' ]] \
-  && [[ "$name_block_line" == 'Task: stop refusal fits on one screen; Stop blocked; needs your decision and supervision repair; status: '* ]] \
-  || { echo "STOP-TASK-NAME-HOOK block did not carry the exact slug name and both intervention flags" >&2; cat "$tmp/stop-task-name-block.out" >&2; exit 1; }
+name_block_completion=${name_block_line%%$'\n'*}
+name_block_task=${name_block_line#*$'\n'}
+[[ "$name_block_completion" == 'Just completed: unknown for this turn.' ]] \
+  && [[ "${name_block_task%%; Stop blocked*}" == 'Task: stop refusal fits on one screen' ]] \
+  && [[ "$name_block_task" == 'Task: stop refusal fits on one screen; Stop blocked; needs your decision and supervision repair; Read: metasystem report stop-status --id '* ]] \
+  || { echo "STOP-TASK-NAME-HOOK block did not carry the completion line, exact slug name and both intervention flags" >&2; cat "$tmp/stop-task-name-block.out" >&2; exit 1; }
 name_block_report=$(fixture_stop_status_report \
   "$tmp/stop-task-name-block.out" "$line_root" claude stop-task-name-block) \
   || { echo "STOP-TASK-NAME-HOOK block exposed no identity-bound report" >&2; exit 1; }
@@ -813,8 +819,12 @@ METASYSTEM_BIN="$name_engine" METASYSTEM_STOP_NAME_REAL_ENGINE="$line_root/bin/m
   bash "$line_root/scripts/agents/supervision-hook.sh" claude stop \
     <"$tmp/stop-task-name-allow.json" >"$tmp/stop-task-name-allow.out" 2>"$tmp/stop-task-name-allow.err"
 name_allow_line=$("$ms" json get --file "$tmp/stop-task-name-allow.out" --field systemMessage)
-[[ "${name_allow_line%%; Stop allowed*}" == 'Task: stop refusal fits on one screen' ]] \
-  || { echo "STOP-TASK-NAME-HOOK allowance did not carry the exact slug name" >&2; cat "$tmp/stop-task-name-allow.out" >&2; exit 1; }
+name_allow_completion=${name_allow_line%%$'\n'*}
+name_allow_task=${name_allow_line#*$'\n'}
+[[ "$name_allow_completion" == 'Just completed: unknown for this turn.' ]] \
+  && [[ "${name_allow_task%%; Stop allowed*}" == 'Task: stop refusal fits on one screen' ]] \
+  && [[ "$name_allow_task" == 'Task: stop refusal fits on one screen; Stop allowed; needs supervision repair; Read, then continue lawful work before stopping: metasystem report stop-status --id '* ]] \
+  || { echo "STOP-TASK-NAME-HOOK allowance did not carry the completion line, exact slug name, repair flag and continuation imperative" >&2; cat "$tmp/stop-task-name-allow.out" >&2; exit 1; }
 name_allow_report=$(fixture_stop_status_report \
   "$tmp/stop-task-name-allow.out" "$line_root" claude stop-task-name-allow) \
   || { echo "STOP-TASK-NAME-HOOK allowance exposed no identity-bound report" >&2; exit 1; }

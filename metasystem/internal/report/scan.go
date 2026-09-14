@@ -131,6 +131,14 @@ func Scan(root string) goal.ScanResult {
 	return scanWithProber(root, identity.KernelProber{})
 }
 
+// ScanWithCompletion performs the ordinary judgment scan and captures the
+// separate presentation-only terminal record observation from those same
+// record reads. The returned capture is not part of ScanResult.
+func ScanWithCompletion(root string) (goal.ScanResult, StopCompletionCapture) {
+	root = resolveRepo(root)
+	return scanWithProberAndStatusesAndCompletion(root, identity.KernelProber{}, inFlightStatuses(root))
+}
+
 // ScanForBrainDeclaration applies the brain's full in-flight set before a
 // declaration exists, so quiescence cannot overlook a pending-setup job.
 func ScanForBrainDeclaration(root string) goal.ScanResult {
@@ -144,7 +152,13 @@ func scanWithProber(root string, prober identity.Prober) goal.ScanResult {
 }
 
 func scanWithProberAndStatuses(root string, prober identity.Prober, statuses map[string]bool) goal.ScanResult {
+	scan, _ := scanWithProberAndStatusesAndCompletion(root, prober, statuses)
+	return scan
+}
+
+func scanWithProberAndStatusesAndCompletion(root string, prober identity.Prober, statuses map[string]bool) (goal.ScanResult, StopCompletionCapture) {
 	var result goal.ScanResult
+	completion := StopCompletionCapture{Records: []StopCompletionRecord{}, Unavailable: []string{}}
 	goalIntents := readGoalIntents(root)
 
 	// Busy, three classes, all file facts.
@@ -183,11 +197,14 @@ func scanWithProberAndStatuses(root string, prober identity.Prober, statuses map
 	// unwatched rule, run facts for warnings + the green cursor, and the
 	// run readers' own failure channel. Live runs also join Busy so the
 	// STILL WORKING sentence names them.
-	result.Jobs = jobFacts(root, prober, statuses, goalIntents)
-	runFacts, runBusy, runUnreadable := runFactsFor(root, prober)
+	result.Jobs, completion.Records, completion.Unavailable = jobFacts(root, prober, statuses, goalIntents)
+	runFacts, runBusy, runUnreadable, runCompletion, runCompletionUnavailable := runFactsFor(root, prober)
 	result.Runs = runFacts
 	result.Busy = append(result.Busy, runBusy...)
 	result.RunUnreadable = runUnreadable
+	completion.Records = append(completion.Records, runCompletion...)
+	completion.Unavailable = append(completion.Unavailable, runUnreadable...)
+	completion.Unavailable = append(completion.Unavailable, runCompletionUnavailable...)
 
 	questions, questionUnreadable := channel.WalkOpenQuestions(root)
 	for _, question := range questions {
@@ -208,7 +225,7 @@ func scanWithProberAndStatuses(root string, prober identity.Prober, statuses map
 	if info, err := os.Stat(filepath.Join(root, "plans")); err == nil && info.IsDir() {
 		result = scanPlans(root, result, statuses)
 	}
-	return result
+	return result, completion
 }
 
 func scanDrafts(root string, result goal.ScanResult) goal.ScanResult {
@@ -360,13 +377,20 @@ func clipDetail(s string) string {
 }
 
 // jobFacts reads the delegate job records' monitor-relevant slice.
-func jobFacts(root string, prober identity.Prober, statuses map[string]bool, goalIntents map[string]string) []goal.JobFact {
+func jobFacts(root string, prober identity.Prober, statuses map[string]bool, goalIntents map[string]string) ([]goal.JobFact, []StopCompletionRecord, []string) {
 	var facts []goal.JobFact
-	paths, _ := filepath.Glob(filepath.Join(root, "artifacts", "agents", "jobs", "*.json"))
+	var completion []StopCompletionRecord
+	var unavailable []string
+	dir := filepath.Join(root, "artifacts", "agents", "jobs")
+	paths, globErr := filepath.Glob(filepath.Join(dir, "*.json"))
+	if globErr != nil {
+		return []goal.JobFact{}, []StopCompletionRecord{}, []string{dir + ": " + globErr.Error()}
+	}
 	for _, path := range paths {
 		data, err := os.ReadFile(path)
 		if err != nil {
-			continue // busyJobs already surfaced it
+			unavailable = append(unavailable, relName(root, path)+": "+err.Error())
+			continue // busyJobs also surfaces it to the judgment
 		}
 		var record struct {
 			JobId     string  `json:"jobId"`
@@ -377,9 +401,7 @@ func jobFacts(root string, prober identity.Prober, statuses map[string]bool, goa
 			GoalId    string  `json:"goalId"`
 		}
 		if json.Unmarshal(data, &record) != nil {
-			continue
-		}
-		if !statuses[record.Status] {
+			unavailable = append(unavailable, relName(root, path)+": unparsable job record")
 			continue
 		}
 		if record.JobId == "" {
@@ -393,21 +415,63 @@ func jobFacts(root string, prober identity.Prober, statuses map[string]bool, goa
 		if title == "" {
 			title = normalizeRoleTitle(record.Role)
 		}
+		sourcePath := relName(root, path)
+		sourceDigest := fmt.Sprintf("%x", sha256.Sum256(data))
+		var completionRecord struct {
+			JobId        string  `json:"jobId"`
+			OperationId  string  `json:"operationId"`
+			MainId       *string `json:"mainId"`
+			MachineId    string  `json:"machineId"`
+			OwnerLineage string  `json:"ownerLineage"`
+			ClaimEpoch   *int64  `json:"claimEpoch"`
+			StartedAt    string  `json:"startedAt"`
+			EndedAt      string  `json:"endedAt"`
+			Status       string  `json:"status"`
+			Role         string  `json:"role"`
+			GoalId       string  `json:"goalId"`
+		}
+		if json.Unmarshal(data, &completionRecord) != nil {
+			unavailable = append(unavailable, sourcePath+": completion fields are ill-typed")
+		} else {
+			if completionRecord.JobId == "" {
+				completionRecord.JobId = strings.TrimSuffix(filepath.Base(path), ".json")
+			}
+			completionMainId := ""
+			if completionRecord.MainId != nil {
+				completionMainId = *completionRecord.MainId
+			}
+			claimEpoch := int64(0)
+			if completionRecord.ClaimEpoch != nil {
+				claimEpoch = *completionRecord.ClaimEpoch
+			}
+			completion = append(completion, StopCompletionRecord{
+				Kind: "job", Id: completionRecord.JobId, GoalId: completionRecord.GoalId, MainId: completionMainId, Machine: completionRecord.MachineId,
+				Lineage: completionRecord.OwnerLineage, ClaimEpoch: claimEpoch, Status: completionRecord.Status, OperationId: completionRecord.OperationId,
+				StartedAt: completionRecord.StartedAt, EndedAt: completionRecord.EndedAt, Title: title, Role: completionRecord.Role,
+				SourcePath: sourcePath, SourceDigest: sourceDigest, Ownership: "unknown",
+			})
+		}
+		if !statuses[record.Status] {
+			continue
+		}
 		facts = append(facts, goal.JobFact{
 			Id: record.JobId, MainId: mainId, StartedAt: record.StartedAt, Status: record.Status,
-			Title: title, Role: record.Role, GoalId: record.GoalId, SourcePath: relName(root, path),
-			SourceDigest: fmt.Sprintf("%x", sha256.Sum256(data)), Ownership: "unknown",
+			Title: title, Role: record.Role, GoalId: record.GoalId, SourcePath: sourcePath,
+			SourceDigest: sourceDigest, Ownership: "unknown",
 			WaiterLive: run.LiveWaiter(root, prober, "job", record.JobId, mainId,
 				run.WaiterTarget{StartedAt: record.StartedAt}),
 		})
 	}
-	return facts
+	if facts == nil {
+		facts = []goal.JobFact{}
+	}
+	return facts, completion, unavailable
 }
 
 // runFactsFor reads run records into typed facts, Busy items for live
 // runs, and the run readers' failure channel — including the attestation
 // facts behind Supervised.
-func runFactsFor(root string, prober identity.Prober) ([]goal.RunFact, []goal.Item, []string) {
+func runFactsFor(root string, prober identity.Prober) ([]goal.RunFact, []goal.Item, []string, []StopCompletionRecord, []string) {
 	store := &run.Store{Root: root}
 	records, unreadable := store.List()
 	attested, attestErr := readRunsPass(root, prober)
@@ -416,6 +480,8 @@ func runFactsFor(root string, prober identity.Prober) ([]goal.RunFact, []goal.It
 	}
 	var facts []goal.RunFact
 	var busy []goal.Item
+	var completion []StopCompletionRecord
+	var completionUnavailable []string
 	for _, record := range records {
 		fact := goal.RunFact{
 			Id: record.RunId, Generation: record.Generation, Nonce: record.LaunchNonce,
@@ -433,11 +499,32 @@ func runFactsFor(root string, prober identity.Prober) ([]goal.RunFact, []goal.It
 		if fact.SourcePath != "" {
 			if data, err := os.ReadFile(filepath.Join(root, filepath.FromSlash(fact.SourcePath))); err == nil {
 				fact.SourceDigest = fmt.Sprintf("%x", sha256.Sum256(data))
+			} else {
+				completionUnavailable = append(completionUnavailable, fact.SourcePath+": completion source could not be retained: "+err.Error())
 			}
 		}
 		if record.TerminalSeq != nil {
 			fact.TerminalSeq = *record.TerminalSeq
 		}
+		endedAt := ""
+		if record.EndedAt != nil {
+			endedAt = *record.EndedAt
+		}
+		lineage := ""
+		if record.OwnerLineage != nil {
+			lineage = *record.OwnerLineage
+		}
+		claimEpoch := int64(0)
+		if record.ClaimEpoch != nil {
+			claimEpoch = *record.ClaimEpoch
+		}
+		completion = append(completion, StopCompletionRecord{
+			Kind: "run", Id: record.RunId, GoalId: record.GoalId, MainId: fact.MainId, Lineage: lineage,
+			ClaimEpoch: claimEpoch, Status: record.Status, StartedAt: record.StartedAt, EndedAt: endedAt,
+			Generation: record.Generation, Nonce: record.LaunchNonce, TerminalSeq: fact.TerminalSeq,
+			Title: record.Display, Role: record.Kind, SourcePath: fact.SourcePath, SourceDigest: fact.SourceDigest,
+			Ownership: "unknown",
+		})
 		if record.Pid != nil && record.PidStartedAt != nil {
 			switch identity.AliveRef(prober, identity.Ref{Pid: *record.Pid, StartedAtSec: *record.PidStartedAt}) {
 			case identity.Alive:
@@ -461,7 +548,10 @@ func runFactsFor(root string, prober identity.Prober) ([]goal.RunFact, []goal.It
 				RequestedAction: record.Display})
 		}
 	}
-	return facts, busy, unreadable
+	if facts == nil {
+		facts = []goal.RunFact{}
+	}
+	return facts, busy, unreadable, completion, completionUnavailable
 }
 
 func normalizeRoleTitle(role string) string {

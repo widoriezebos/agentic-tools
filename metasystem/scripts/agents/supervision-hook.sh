@@ -1050,7 +1050,7 @@ present_stop_payload() { # retained shouldBlock, optional judgment-free advisor 
   if [[ "$advisor_mode" == true ]]; then
     stop_input_args+=(--advisor)
   else
-    stop_input_args+=(--verdict-file "$verdict_file" --facts-file "$facts_file")
+    stop_input_args+=(--verdict-file "$verdict_file" --facts-file "$facts_file" --completion-file "$completion_file")
   fi
   stop_input_args+=(--health-file "$health_capture" \
     --digest-file "$digest_capture" --digest-cursor-prefix "$digest_prefix" \
@@ -1134,12 +1134,13 @@ emit_stop_payload() { # response
     return 0
   fi
   report_id=$("$ms" json get --file "$presentation_file" --field report.id 2>/dev/null || true)
+  report_alias=$("$ms" json get --file "$presentation_file" --field report.alias 2>/dev/null || true)
   report_path=$("$ms" json get --file "$presentation_file" --field report.path 2>/dev/null || true)
   report_sha=$("$ms" json get --file "$presentation_file" --field report.sha256 2>/dev/null || true)
   if ! complete_stop_attempt --repo "$repo" --generation "$hook_generation" \
       --attempt "$hook_attempt_seq" --result OK --outcome EMITTED \
       --health-line "$health_line" --payload-file "$response_file" \
-      --installation "$repo" --report-id "$report_id" --report-path "$report_path" --report-sha256 "$report_sha"; then
+      --installation "$repo" --report-id "$report_id" --report-alias "$report_alias" --report-path "$report_path" --report-sha256 "$report_sha"; then
     echo "supervision hook: emitted the health line but could not record completion" >&2
   fi
   rm -f "$response_file"
@@ -1348,16 +1349,22 @@ $hook_log_failure"
   verdict_stderr=$(mktemp "${TMPDIR:-/tmp}/metasystem-verdict-err.XXXXXX")
   verdict_file=$stop_work_dir/verdict.json
   facts_file=$stop_work_dir/facts.json
+  completion_file=$stop_work_dir/completion.json
   verdict_readable=false
   degraded_line=
+  completion_failure=
   if verdict=$("$ms" report turn-verdict --root "$repo" \
       --session "$session" --watchdog-surfaced "$watchdog_digest" \
       --main-id "$main_id" --stop-hook-active="$stop_hook_active" \
-      --facts-file "$facts_file" 2>"$verdict_stderr"); then
+      --facts-file "$facts_file" --completion-file "$completion_file" 2>"$verdict_stderr"); then
     printf '%s\n' "$verdict" >"$verdict_file"
     if [[ ! -s "$facts_file" ]]; then
       facts_failure=$(tail -1 "$verdict_stderr" 2>/dev/null || true)
       record_stop_failure "the frozen judgment facts were unavailable" judgment-facts
+    fi
+    if [[ ! -s "$completion_file" ]]; then
+      completion_failure=$(tail -1 "$verdict_stderr" 2>/dev/null || true)
+      record_stop_failure "the completion observation was unavailable" completion-observation
     fi
     rm -f "$verdict_stderr"
     should_block_rc=0
@@ -1441,6 +1448,7 @@ $display"
     [[ -z "$up_notice" ]] || extras=$(printf '%s%s%s' "$extras" "${extras:+$'\n'}" "$up_notice")
     [[ -z "$hook_evidence_failure" ]] || extras=$(printf '%s%s%s' "$extras" "${extras:+$'\n'}" "$hook_evidence_failure")
     [[ -z "$facts_failure" ]] || extras=$(printf '%s%s%s' "$extras" "${extras:+$'\n'}" "$facts_failure")
+    [[ -z "$completion_failure" ]] || extras=$(printf '%s%s%s' "$extras" "${extras:+$'\n'}" "$completion_failure")
     [[ "$surface_watchdog" != true || -z "$watchdog_text" ]] || extras=$(printf '%s%s%s' "$extras" "${extras:+$'\n'}" "$watchdog_text")
     [[ -z "$protocol_message" ]] || extras=$(printf '%s%s%s' "$extras" "${extras:+$'\n'}" "$protocol_message")
     [[ -z "$brain_post_failure" ]] || extras=$(printf '%s%s%s' "$extras" "${extras:+$'\n'}" "$brain_post_failure")

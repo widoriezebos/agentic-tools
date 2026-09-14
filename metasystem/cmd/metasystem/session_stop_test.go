@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"reflect"
 	"strings"
 	"testing"
 	"time"
@@ -14,6 +15,7 @@ import (
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/humanauthority"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/identity"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/lease"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/report"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/steward"
 )
 
@@ -442,4 +444,104 @@ func TestReportTurnVerdictFactsWriteFailurePreservesCompletedVerdict(t *testing.
 		t.Fatalf("completed allowance exited %d: stdout=%q stderr=%q", code, stdout, stderr)
 	}
 	assertWire(stdout, stderr, allowFacts, false)
+}
+
+func TestReportTurnVerdictCompletionCapturePreservesVerdict(t *testing.T) {
+	original := turnVerdictCompletionWriter
+	t.Cleanup(func() { turnVerdictCompletionWriter = original })
+	t.Setenv("METASYSTEM_GATES_RUNNING", "1")
+	t.Setenv("METASYSTEM_GOAL_NOW", "2026-09-14T12:00:00Z")
+
+	root := sessionStopBed(t)
+	if err := os.WriteFile(filepath.Join(root, "metasystem.conf"), []byte("metasystem.runtimes=fake\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	jobDir := filepath.Join(root, "artifacts", "agents", "jobs")
+	if err := os.MkdirAll(jobDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	job := `{"jobId":"returned","operationId":"operation-returned","mainId":"main-completion","machineId":"bed-m1","ownerLineage":"lineage-completion","claimEpoch":7,"startedAt":"2026-09-14T10:00:00Z","endedAt":"2026-09-14T10:01:00Z","status":"completed","role":"implementer","goalId":"waiting"}`
+	if err := os.WriteFile(filepath.Join(jobDir, "returned.json"), []byte(job), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	completionPath := filepath.Join(t.TempDir(), "completion.json")
+	factsPath := filepath.Join(t.TempDir(), "facts.json")
+	args := []string{"--root", root, "--session", "completion-capture", "--main-id", "main-completion", "--facts-file", factsPath, "--completion-file", completionPath}
+	stdout, code := captureStdout(t, func() int { return runReportTurnVerdict(args) })
+	if code != 0 {
+		t.Fatalf("completion capture exited %d: %s", code, stdout)
+	}
+	var facts goal.TurnVerdictFacts
+	factsBytes, err := os.ReadFile(factsPath)
+	if err != nil || json.Unmarshal(factsBytes, &facts) != nil {
+		t.Fatal(err)
+	}
+	if len(facts.Scan.Jobs) != 0 {
+		t.Fatalf("terminal completion changed judgment scan membership: %+v", facts.Scan.Jobs)
+	}
+	data, err := os.ReadFile(completionPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var observation report.StopCompletionObservation
+	if err := json.Unmarshal(data, &observation); err != nil {
+		t.Fatal(err)
+	}
+	if len(observation.Records) != 1 || observation.Records[0].Id != "returned" || observation.Records[0].Ownership != "owned" ||
+		observation.Identity.Installation != root || observation.Identity.Session != "completion-capture" || observation.Identity.MainId != "main-completion" {
+		t.Fatalf("completion observation = %+v", observation)
+	}
+
+	snapshot := func() map[string]string {
+		t.Helper()
+		got := map[string]string{}
+		for _, base := range []string{filepath.Join(root, "plans"), filepath.Join(root, "artifacts")} {
+			_ = filepath.WalkDir(base, func(path string, entry os.DirEntry, walkErr error) error {
+				if walkErr != nil || entry.IsDir() {
+					return walkErr
+				}
+				bytes, readErr := os.ReadFile(path)
+				if readErr != nil {
+					return readErr
+				}
+				got[path] = string(bytes)
+				return nil
+			})
+		}
+		return got
+	}
+	failedPath := filepath.Join(t.TempDir(), "failed-completion.json")
+	failedFactsPath := filepath.Join(t.TempDir(), "failed-facts.json")
+	var atWriter map[string]string
+	turnVerdictCompletionWriter = func(string, string, string) (bool, error) {
+		atWriter = snapshot()
+		return false, errors.New("injected completion failure")
+	}
+	var failedStdout string
+	stderr, failedCode := captureStderr(t, func() int {
+		failedStdout, code = captureStdout(t, func() int {
+			return runReportTurnVerdict([]string{"--root", root, "--session", "completion-capture", "--main-id", "main-completion", "--facts-file", failedFactsPath, "--completion-file", failedPath})
+		})
+		return code
+	})
+	failedFactsBytes, factsErr := os.ReadFile(failedFactsPath)
+	var failedFacts goal.TurnVerdictFacts
+	if factsErr != nil || json.Unmarshal(failedFactsBytes, &failedFacts) != nil {
+		t.Fatalf("read failed-invocation facts: %v", factsErr)
+	}
+	wantStdoutBytes, marshalErr := json.Marshal(failedFacts.Verdict)
+	if marshalErr != nil {
+		t.Fatal(marshalErr)
+	}
+	wantStdout := string(wantStdoutBytes) + "\n"
+	if failedCode != 0 || failedStdout != wantStdout || !strings.Contains(stderr, "completion observation could not be written: injected completion failure") {
+		t.Fatalf("sidecar failure changed its completed verdict: code=%d stdout=%q want=%q stderr=%q", failedCode, failedStdout, wantStdout, stderr)
+	}
+	if _, err := os.Lstat(failedPath); !os.IsNotExist(err) {
+		t.Fatalf("failed completion publication left a sidecar: %v", err)
+	}
+	after := snapshot()
+	if atWriter == nil || !reflect.DeepEqual(atWriter, after) {
+		t.Fatalf("completion sidecar failure changed state after the completed judgment: at-writer=%v after=%v", atWriter, after)
+	}
 }

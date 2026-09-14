@@ -23,34 +23,25 @@ import (
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/goal"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/stateroot"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/steward"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/stopreport"
 )
 
 const (
-	StopPresentationSchemaVersion = 1
-	StopHumanLineByteLimit        = 256
+	StopPresentationSchemaVersion = 2
+	StopCompletionLineByteLimit   = 144
+	StopTaskLineByteLimit         = 256
+	StopHumanLineByteLimit        = 401
 	stopReportRetentionCount      = 20
 	stopReportRetentionAge        = 24 * time.Hour
 )
 
-var stopStatusIDPattern = regexp.MustCompile(`^([0-9a-f]{64})-([0-9a-f]{32})$`)
 var stopArmingComponentPattern = regexp.MustCompile(`^component=([^ ]+) outcome=([^ ]+)(?: detail=("(?:\\.|[^"\\])*"))?(?: remedy=("(?:\\.|[^"\\])*"))?$`)
 
 // stopPresentationLockWait leaves the Stop worker a bounded failure path when
 // an overlapping presenter is wedged. Tests shorten it to prove the timeout.
 var stopPresentationLockWait = 100 * time.Millisecond
 
-type StopIdentity struct {
-	Installation string `json:"installation"`
-	Runtime      string `json:"runtime"`
-	Session      string `json:"session"`
-	SessionKey   string `json:"sessionKey"`
-	Attempt      string `json:"attempt"`
-	MainId       string `json:"mainId"`
-	Machine      string `json:"machine"`
-	Lineage      string `json:"lineage"`
-	ObservedAt   string `json:"observedAt"`
-	ClaimEpoch   int64  `json:"claimEpoch"`
-}
+type StopIdentity = stopreport.Identity
 
 type StopControl struct {
 	ShouldBlock       bool    `json:"shouldBlock"`
@@ -119,20 +110,22 @@ type StopUnavailable struct {
 }
 
 type StopPresentationInput struct {
-	SchemaVersion int                        `json:"schemaVersion"`
-	Identity      StopIdentity               `json:"identity"`
-	Judgment      *goal.TurnVerdictFacts     `json:"judgment"`
-	Control       StopControl                `json:"control"`
-	Health        *steward.HookHealthPreview `json:"health"`
-	Digest        *StopDigest                `json:"digest"`
-	Receipt       *StopCommandResult         `json:"receipt"`
-	Arming        *StopArmingResult          `json:"arming"`
-	Notices       []StopNotice               `json:"notices"`
-	Unavailable   []StopUnavailable          `json:"unavailable"`
+	SchemaVersion         int                        `json:"schemaVersion"`
+	Identity              StopIdentity               `json:"identity"`
+	Judgment              *goal.TurnVerdictFacts     `json:"judgment"`
+	Control               StopControl                `json:"control"`
+	CompletionObservation *StopCompletionObservation `json:"completionObservation"`
+	Health                *steward.HookHealthPreview `json:"health"`
+	Digest                *StopDigest                `json:"digest"`
+	Receipt               *StopCommandResult         `json:"receipt"`
+	Arming                *StopArmingResult          `json:"arming"`
+	Notices               []StopNotice               `json:"notices"`
+	Unavailable           []StopUnavailable          `json:"unavailable"`
 }
 
 type StopReportReference struct {
 	Id          string `json:"id"`
+	Alias       string `json:"alias"`
 	Path        string `json:"path"`
 	ReadCommand string `json:"readCommand"`
 	SHA256      string `json:"sha256"`
@@ -152,16 +145,16 @@ type StopPresentationResult struct {
 // hook records each producer once and this composer only joins those bytes; it
 // never repeats the turn judgment or health evaluation.
 type StopPresentationCollection struct {
-	Root, Runtime, Session, Attempt, MainID string
-	Machine, Lineage                        string
-	ClaimEpoch                              int64
-	Advisor                                 bool
-	VerdictFile, FactsFile, HealthFile      string
-	DigestFile, DigestCursorPrefix          string
-	ReceiptFile, ReceiptStderrFile          string
-	ArmingFile, ArmingStderrFile            string
-	ReceiptExit, ArmingExit                 int
-	NoticeFile, FailureFile, OutputFile     string
+	Root, Runtime, Session, Attempt, MainID            string
+	Machine, Lineage                                   string
+	ClaimEpoch                                         int64
+	Advisor                                            bool
+	VerdictFile, FactsFile, CompletionFile, HealthFile string
+	DigestFile, DigestCursorPrefix                     string
+	ReceiptFile, ReceiptStderrFile                     string
+	ArmingFile, ArmingStderrFile                       string
+	ReceiptExit, ArmingExit                            int
+	NoticeFile, FailureFile, OutputFile                string
 }
 
 type StopPresentationValidationError struct{ Message string }
@@ -169,14 +162,12 @@ type StopPresentationValidationError struct{ Message string }
 func (e StopPresentationValidationError) Error() string { return e.Message }
 
 func StopSessionKey(runtime, session string) string {
-	encoded, _ := json.Marshal([]string{runtime, session})
-	digest := sha256.Sum256(encoded)
-	return hex.EncodeToString(digest[:])
+	return stopreport.SessionKey(runtime, session)
 }
 
 func ValidateStopStatusID(id string) error {
-	if !stopStatusIDPattern.MatchString(id) {
-		return StopPresentationValidationError{Message: "stop status id must be 64 lowercase hexadecimal characters, a hyphen, and 32 lowercase hexadecimal characters"}
+	if err := stopreport.ValidateID(id); err != nil {
+		return StopPresentationValidationError{Message: err.Error()}
 	}
 	return nil
 }
@@ -195,6 +186,9 @@ func ComposeStopPresentationInput(collection StopPresentationCollection, now tim
 	}
 	if collection.Advisor && collection.FactsFile != "" {
 		return StopPresentationValidationError{Message: "advisor Stop collection cannot include judgment facts"}
+	}
+	if collection.Advisor && collection.CompletionFile != "" {
+		return StopPresentationValidationError{Message: "advisor Stop collection cannot include a completion observation"}
 	}
 	readOptional := func(path string) ([]byte, error) {
 		if path == "" {
@@ -258,6 +252,21 @@ func ComposeStopPresentationInput(collection StopPresentationCollection, now tim
 	} else if !collection.Advisor {
 		input.Unavailable = append(input.Unavailable, StopUnavailable{Section: "judgment-facts", Cause: "the frozen judgment facts were unavailable", Remedy: "The steward must restore supervision", Owner: "steward", SupervisionRepair: true})
 	}
+	if !collection.Advisor && collection.CompletionFile != "" {
+		observation, readErr := completionObservationFile(collection.CompletionFile)
+		if readErr == nil {
+			input.CompletionObservation = &observation
+		}
+		if readErr != nil || input.CompletionObservation == nil {
+			input.Unavailable = append(input.Unavailable, StopUnavailable{Section: "completion-observation", Cause: "the completion observation was unavailable", Remedy: "The steward must restore supervision", Owner: "steward", SupervisionRepair: true})
+		} else if len(input.CompletionObservation.Unavailable) > 0 {
+			input.Unavailable = append(input.Unavailable, StopUnavailable{Section: "completion-observation", Cause: strings.Join(input.CompletionObservation.Unavailable, "; "), Remedy: "The steward must restore supervision", Owner: "steward", SupervisionRepair: true})
+		}
+	} else if !collection.Advisor {
+		input.Unavailable = append(input.Unavailable, StopUnavailable{Section: "completion-observation", Cause: "the completion observation was unavailable", Remedy: "The steward must restore supervision", Owner: "steward", SupervisionRepair: true})
+	} else {
+		input.Unavailable = append(input.Unavailable, StopUnavailable{Section: "completion-observation", Cause: "the read-only advisor has no owned completion observation", Owner: "seat"})
+	}
 	if collection.HealthFile != "" {
 		healthBytes, readErr := readOptional(collection.HealthFile)
 		if readErr == nil {
@@ -299,6 +308,10 @@ func ComposeStopPresentationInput(collection StopPresentationCollection, now tim
 	input.Receipt, _ = commandResult(collection.ReceiptFile, collection.ReceiptStderrFile, collection.ReceiptExit)
 	if input.Receipt == nil {
 		input.Unavailable = append(input.Unavailable, StopUnavailable{Section: "receipt", Cause: "the receipt check was unavailable", Remedy: "The steward must restore supervision", Owner: "steward", SupervisionRepair: true})
+	} else if input.Receipt.ExitCode == 1 {
+		input.Notices = append(input.Notices, StopNotice{Source: "receipt", Class: "retro-debt", Detail: "Metasystem retro due", Remedy: "run scripts/receipt.sh check for details, then skills/retro; after completing the retro, record its receipt", Owner: "seat"})
+	} else if input.Receipt.ExitCode != 0 {
+		input.Notices = append(input.Notices, StopNotice{Source: "receipt", Class: "infrastructure", CauseCode: "receipt-check-error", Component: "receipt", Detail: "Metasystem receipt check errored", Remedy: "run scripts/receipt.sh check to see why", Owner: "steward", SupervisionRepair: true})
 	}
 	if data, readErr := readOptional(collection.ArmingFile); collection.ArmingFile != "" && readErr == nil {
 		stderr, stderrErr := readOptional(collection.ArmingStderrFile)
@@ -457,6 +470,21 @@ func validateRequiredStopBooleans(data []byte) error {
 	if err := require(control, "shouldBlock", "judgmentAvailable"); err != nil {
 		return err
 	}
+	completionValue, completionPresent := raw["completionObservation"]
+	if !completionPresent {
+		return StopPresentationValidationError{Message: "invalid Stop presentation input: completionObservation is missing"}
+	}
+	if completionValue != nil {
+		completion, err := requireObject(raw, "completionObservation")
+		if err != nil {
+			return err
+		}
+		for _, field := range []string{"records", "unavailable"} {
+			if err := requireArray(completion, field); err != nil {
+				return err
+			}
+		}
+	}
 	for _, field := range []string{"notices", "unavailable"} {
 		items, err := objectArray(raw, field)
 		if err != nil {
@@ -596,24 +624,9 @@ func PresentStop(root, inputPath, outputPath string, now time.Time) (StopPresent
 	}
 	decision, repair := stopInterventions(input)
 	reportID := input.Identity.SessionKey + "-" + input.Identity.Attempt
-	readCommand := "metasystem report stop-status --id " + reportID
-	title, titleKind, _ := stopTitle(input)
-	humanLine := compactStopLine(title, titleKind, input.Control.ShouldBlock, decision, repair, readCommand)
-	if len(humanLine) > StopHumanLineByteLimit || !validStopHumanLine(humanLine) {
-		return StopPresentationResult{}, fmt.Errorf("compact Stop line violates its byte or line contract")
-	}
-
-	result := StopPresentationResult{
-		SchemaVersion: StopPresentationSchemaVersion, Identity: input.Identity, Control: input.Control,
-		HumanLine: humanLine, NeedsYourDecision: decision, NeedsSupervisionRepair: repair,
-	}
-	reportDir := filepath.Join(resolvedRoot, "artifacts", "agents", "supervision", "stop-verdicts")
-	if err := os.MkdirAll(reportDir, 0o755); err != nil {
-		return StopPresentationResult{}, fmt.Errorf("prepare Stop report directory: %w", err)
-	}
-	resolvedReportDir, err := filepath.EvalSymlinks(reportDir)
-	if err != nil || filepath.Clean(resolvedReportDir) != filepath.Clean(reportDir) {
-		return StopPresentationResult{}, fmt.Errorf("stop report directory must not contain symlinks")
+	reportDir, err := stopreport.ReportDir(resolvedRoot)
+	if err != nil {
+		return StopPresentationResult{}, err
 	}
 	lockPath := filepath.Join(reportDir, input.Identity.SessionKey+".present.lock")
 	lockFD, err := unix.Open(lockPath, unix.O_CREAT|unix.O_RDWR|unix.O_CLOEXEC|unix.O_NOFOLLOW, 0o600)
@@ -640,7 +653,24 @@ func PresentStop(root, inputPath, outputPath string, now time.Time) (StopPresent
 	} else if !os.IsNotExist(err) {
 		return StopPresentationResult{}, fmt.Errorf("inspect Stop report path: %w", err)
 	}
-	markdown, err := renderStopReport(input, humanLine, decision, repair)
+	reservation, err := stopreport.ReserveShortestAlias(resolvedRoot, reportID)
+	if err != nil {
+		return StopPresentationResult{}, fmt.Errorf("reserve Stop report alias: %w", err)
+	}
+	completion := deriveStopCompletion(input, reportDir)
+	firstLine := completionLine(completion)
+	readCommand := "metasystem report stop-status --id " + reservation.Alias
+	title, titleKind, _ := stopTitle(input)
+	secondLine := compactStopLine(title, titleKind, input.Control.ShouldBlock, decision, repair, readCommand)
+	humanLine := firstLine + "\n" + secondLine
+	if err := ValidateStopHumanLine(humanLine); err != nil {
+		return StopPresentationResult{}, fmt.Errorf("compact Stop lines violate their byte or line contract: %w", err)
+	}
+	result := StopPresentationResult{
+		SchemaVersion: StopPresentationSchemaVersion, Identity: input.Identity, Control: input.Control,
+		HumanLine: humanLine, NeedsYourDecision: decision, NeedsSupervisionRepair: repair,
+	}
+	markdown, err := renderStopReport(input, humanLine, completion, decision, repair)
 	if err != nil {
 		return StopPresentationResult{}, err
 	}
@@ -652,7 +682,18 @@ func PresentStop(root, inputPath, outputPath string, now time.Time) (StopPresent
 		return StopPresentationResult{}, fmt.Errorf("publish Stop report: crash durability is unknown")
 	}
 	digest := sha256.Sum256(markdown)
-	result.Report = StopReportReference{Id: reportID, Path: reportPath, ReadCommand: readCommand, SHA256: hex.EncodeToString(digest[:])}
+	reportSHA := hex.EncodeToString(digest[:])
+	if err := stopreport.PublishAlias(reservation, reportSHA); err != nil {
+		return StopPresentationResult{}, err
+	}
+	verified, verifiedIdentity, resolution, err := stopreport.Read(resolvedRoot, reservation.Alias)
+	if err != nil || verifiedIdentity != input.Identity || resolution.ID != reportID || resolution.Path != reportPath || !bytes.Equal(verified, markdown) {
+		if err == nil {
+			err = fmt.Errorf("reserved Stop report alias did not resolve to its published report")
+		}
+		return StopPresentationResult{}, fmt.Errorf("verify Stop report alias: %w", err)
+	}
+	result.Report = StopReportReference{Id: reportID, Alias: reservation.Alias, Path: reportPath, ReadCommand: readCommand, SHA256: reportSHA}
 	encoded, err := json.Marshal(result)
 	if err != nil {
 		return StopPresentationResult{}, err
@@ -727,6 +768,7 @@ func validateStopPresentationInput(root string, input StopPresentationInput) err
 		section string
 	}{
 		{input.Judgment == nil, "judgment-facts"},
+		{input.CompletionObservation == nil, "completion-observation"},
 		{input.Health == nil, "health"},
 		{input.Digest == nil, "digest"},
 		{input.Receipt == nil, "receipt"},
@@ -759,6 +801,18 @@ func validateStopPresentationInput(root string, input StopPresentationInput) err
 			input.Judgment.Work.InFlight == nil || input.Judgment.Work.NonTerminalJobs == nil ||
 			input.Judgment.Actions == nil {
 			return invalid("frozen judgment arrays must be present")
+		}
+	}
+	if input.CompletionObservation != nil {
+		observation := input.CompletionObservation
+		if observation.SchemaVersion != StopCompletionObservationSchemaVersion || observation.Records == nil || observation.Unavailable == nil {
+			return invalid("unsupported completion observation schema or missing arrays")
+		}
+		if observation.Identity.Installation != root || observation.Identity.Session != input.Identity.Session || observation.Identity.MainId != input.Identity.MainId {
+			return invalid("completion observation identity does not match Stop identity")
+		}
+		if collectedAt, err := time.Parse(time.RFC3339Nano, observation.CollectedAt); err != nil || collectedAt.Location() != time.UTC {
+			return invalid("completion observation collectedAt is not UTC RFC3339Nano")
 		}
 	}
 	if input.Health != nil {
@@ -983,8 +1037,10 @@ func opaqueHexTaskKey(value string) bool {
 
 func compactStopLine(title, kind string, blocked, decision, repair bool, readCommand string) string {
 	outcome := "Stop allowed"
+	imperative := "; Read, then continue lawful work before stopping: "
 	if blocked {
 		outcome = "Stop blocked"
+		imperative = "; Read: "
 	}
 	intervention := ""
 	switch {
@@ -1004,8 +1060,8 @@ func compactStopLine(title, kind string, blocked, decision, repair bool, readCom
 	case "unknown":
 		prefix = "Task unknown"
 	}
-	suffix := "; " + outcome + intervention + "; status: " + readCommand
-	available := StopHumanLineByteLimit - len(suffix)
+	suffix := "; " + outcome + intervention + imperative + readCommand
+	available := StopTaskLineByteLimit - len(suffix)
 	if kind == "task" {
 		available -= len("Task: ")
 	} else if kind == "next" {
@@ -1053,8 +1109,8 @@ func normalizeCompactText(value string) string {
 	return strings.TrimSpace(out.String())
 }
 
-func validStopHumanLine(line string) bool {
-	if !utf8.ValidString(line) || strings.ContainsAny(line, "\r\n") {
+func validStopLogicalLine(line string) bool {
+	if line == "" || !utf8.ValidString(line) || strings.ContainsAny(line, "\r\n") {
 		return false
 	}
 	for _, r := range line {
@@ -1067,15 +1123,25 @@ func validStopHumanLine(line string) bool {
 
 func ValidateStopHumanLine(line string) error {
 	if len(line) > StopHumanLineByteLimit {
-		return fmt.Errorf("stop human line exceeds %d UTF-8 bytes", StopHumanLineByteLimit)
+		return fmt.Errorf("stop human lines exceed %d UTF-8 bytes including their LF", StopHumanLineByteLimit)
 	}
-	if !validStopHumanLine(line) {
-		return fmt.Errorf("stop human line must be one valid UTF-8 logical line without controls")
+	if strings.Count(line, "\n") != 1 {
+		return fmt.Errorf("stop human text must contain exactly two logical lines")
+	}
+	lines := strings.SplitN(line, "\n", 2)
+	if len(lines[0]) > StopCompletionLineByteLimit {
+		return fmt.Errorf("stop completion line exceeds %d UTF-8 bytes", StopCompletionLineByteLimit)
+	}
+	if len(lines[1]) > StopTaskLineByteLimit {
+		return fmt.Errorf("stop task line exceeds %d UTF-8 bytes", StopTaskLineByteLimit)
+	}
+	if !validStopLogicalLine(lines[0]) || !validStopLogicalLine(lines[1]) {
+		return fmt.Errorf("stop human text must be two valid UTF-8 logical lines without controls")
 	}
 	return nil
 }
 
-func renderStopReport(input StopPresentationInput, humanLine string, decision, repair bool) ([]byte, error) {
+func renderStopReport(input StopPresentationInput, humanLine string, completion StopCompletion, decision, repair bool) ([]byte, error) {
 	outcome := "Stop allowed"
 	if input.Control.ShouldBlock {
 		outcome = "Stop blocked"
@@ -1128,7 +1194,15 @@ func renderStopReport(input StopPresentationInput, humanLine string, decision, r
 	if input.Control.BlockSource != nil {
 		blockSource = *input.Control.BlockSource
 	}
-	fmt.Fprintf(&report, "- Console line: `%s`\n- Block source: %s\n- Task naming: %s.\n", humanLine, blockSource, namingSummary)
+	fmt.Fprintf(&report, "- Block source: %s\n- Task naming: %s.\n", blockSource, namingSummary)
+	switch completion.State {
+	case "observed":
+		fmt.Fprintf(&report, "- Completion: newly observed successful terminal work since %s; baseline report %s.\n", completion.IntervalStart, completion.BaselineReportId)
+	case "none":
+		fmt.Fprintf(&report, "- Completion: no new recorded successful terminal work since %s; baseline report %s.\n", completion.IntervalStart, completion.BaselineReportId)
+	default:
+		report.WriteString("- Completion: unknown for this turn because there is no complete usable previous observation for this exact seat interval.\n")
+	}
 	if input.Judgment != nil {
 		fmt.Fprintf(&report, "- Claimable goals: %d; queued goals: %d; non-terminal jobs: %d.\n", len(input.Judgment.Work.Claimable), input.Judgment.Work.Queued, len(input.Judgment.Work.NonTerminalJobs))
 		writeBacklogSummary(&report, input.Judgment)
@@ -1165,11 +1239,12 @@ func renderStopReport(input StopPresentationInput, humanLine string, decision, r
 		}
 	}
 	report.WriteString("\n")
+	fmt.Fprintf(&report, "## Console text\n\n```text\n%s\n```\n\n", humanLine)
 	sections := []struct {
 		name  string
 		value any
 	}{
-		{"Retained Stop control", input.Control}, {"Original turn verdict and frozen judgment", input.Judgment}, {"Health", input.Health}, {"Pending digest", input.Digest},
+		{"Retained Stop control", input.Control}, {"Completion observation", input.CompletionObservation}, {"Completion", completion}, {"Original turn verdict and frozen judgment", input.Judgment}, {"Health", input.Health}, {"Pending digest", input.Digest},
 		{"Receipt", input.Receipt}, {"Supervision arming", input.Arming}, {"Notices", input.Notices}, {"Unavailable observations", input.Unavailable},
 	}
 	for _, section := range sections {
@@ -1315,57 +1390,8 @@ func ReadStopStatus(root, id string) ([]byte, StopIdentity, error) {
 	if err != nil {
 		return nil, StopIdentity{}, err
 	}
-	dir := filepath.Join(resolvedRoot, "artifacts", "agents", "supervision", "stop-verdicts")
-	path := filepath.Join(dir, id+".md")
-	info, err := os.Lstat(path)
-	if err != nil {
-		return nil, StopIdentity{}, fmt.Errorf("read Stop report %s: %w", id, err)
-	}
-	if !info.Mode().IsRegular() || info.Mode()&os.ModeSymlink != 0 {
-		return nil, StopIdentity{}, fmt.Errorf("stop report %s is not a regular file", id)
-	}
-	resolvedDir, err := filepath.EvalSymlinks(dir)
-	if err != nil {
-		return nil, StopIdentity{}, fmt.Errorf("resolve Stop report directory: %w", err)
-	}
-	if filepath.Clean(resolvedDir) != filepath.Clean(dir) {
-		return nil, StopIdentity{}, fmt.Errorf("stop report directory must not be a symlink")
-	}
-	resolvedPath, err := filepath.EvalSymlinks(path)
-	if err != nil || filepath.Dir(resolvedPath) != resolvedDir {
-		return nil, StopIdentity{}, fmt.Errorf("stop report %s escapes its report directory", id)
-	}
-	data, err := os.ReadFile(resolvedPath)
-	if err != nil {
-		return nil, StopIdentity{}, fmt.Errorf("read Stop report %s: %w", id, err)
-	}
-	identity, err := reportIdentity(data)
-	if err != nil {
-		return nil, StopIdentity{}, fmt.Errorf("read Stop report %s: %w", id, err)
-	}
-	match := stopStatusIDPattern.FindStringSubmatch(id)
-	if identity.Installation != resolvedRoot || identity.SessionKey != match[1] || identity.Attempt != match[2] || identity.SessionKey != StopSessionKey(identity.Runtime, identity.Session) {
-		return nil, StopIdentity{}, fmt.Errorf("stop report %s identity does not match its installation or filename", id)
-	}
-	return data, identity, nil
-}
-
-func reportIdentity(data []byte) (StopIdentity, error) {
-	const marker = "\n<!-- metasystem-stop-report-v1 "
-	start := bytes.Index(data, []byte(marker))
-	if start < 0 {
-		return StopIdentity{}, fmt.Errorf("missing metasystem-stop-report-v1 identity")
-	}
-	start += len(marker)
-	end := bytes.Index(data[start:], []byte(" -->"))
-	if end < 0 {
-		return StopIdentity{}, fmt.Errorf("malformed metasystem-stop-report-v1 identity")
-	}
-	var identity StopIdentity
-	if err := json.Unmarshal(data[start:start+end], &identity); err != nil {
-		return StopIdentity{}, fmt.Errorf("malformed metasystem-stop-report-v1 identity: %w", err)
-	}
-	return identity, nil
+	data, identity, _, err := stopreport.Read(resolvedRoot, id)
+	return data, identity, err
 }
 
 func AbsoluteStopStatusCommand(root, id string) string {

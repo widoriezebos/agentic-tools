@@ -68,10 +68,16 @@ func stopPresentationFixture(root, attempt string, shouldBlock bool) StopPresent
 	digestText := "complete digest line\n"
 	digestHash := sha256.Sum256([]byte(digestText))
 	return StopPresentationInput{
-		SchemaVersion: 1,
+		SchemaVersion: StopPresentationSchemaVersion,
 		Identity: StopIdentity{Installation: root, Runtime: "claude", Session: session, SessionKey: StopSessionKey("claude", session), Attempt: attempt,
 			MainId: "main-->one", Machine: "bed-m1", Lineage: "lineage-1", ObservedAt: observed, ClaimEpoch: 7},
-		Judgment: judgment, Control: control, Health: &health,
+		Judgment: judgment, Control: control,
+		CompletionObservation: &StopCompletionObservation{
+			SchemaVersion: StopCompletionObservationSchemaVersion,
+			Identity:      StopCompletionIdentity{Installation: root, Session: session, MainId: "main-->one"},
+			CollectedAt:   observed, Records: []StopCompletionRecord{}, Unavailable: []string{},
+		},
+		Health:  &health,
 		Digest:  &StopDigest{Mode: "pending", Text: digestText, SourcePath: "records/narrator-digest.log", CursorPrefix: strings.Repeat("a", 64), SHA256: fmt.Sprintf("%x", digestHash)},
 		Receipt: &StopCommandResult{ExitCode: 0, Stdout: "receipt current\n"},
 		Arming:  &StopArmingResult{ExitCode: 0, Stdout: "up healthy\n", Components: []StopArmingComponent{}, Aggregate: "up healthy"},
@@ -117,11 +123,15 @@ func presentStopTaskName(t *testing.T, input StopPresentationInput, wantTask, wa
 	if err != nil {
 		t.Fatal(err)
 	}
-	wantLine := wantTask + "; " + wantOutcome + "; status: metasystem report stop-status --id " + input.Identity.SessionKey + "-" + input.Identity.Attempt
+	imperative := "; Read, then continue lawful work before stopping: "
+	if input.Control.ShouldBlock {
+		imperative = "; Read: "
+	}
+	wantLine := "Just completed: unknown for this turn.\n" + wantTask + "; " + wantOutcome + imperative + "metasystem report stop-status --id " + input.Identity.Attempt[:1]
 	if result.HumanLine != wantLine {
 		t.Fatalf("human line = %q, want %q", result.HumanLine, wantLine)
 	}
-	if len(result.HumanLine) > StopHumanLineByteLimit || !utf8.ValidString(result.HumanLine) || strings.ContainsAny(result.HumanLine, "\r\n") {
+	if err := ValidateStopHumanLine(result.HumanLine); err != nil {
 		t.Fatalf("human line violates its wire contract: bytes=%d %q", len(result.HumanLine), result.HumanLine)
 	}
 	if result.Control.ShouldBlock != input.Control.ShouldBlock || !sameStringPointer(result.Control.BlockSource, input.Control.BlockSource) {
@@ -166,7 +176,7 @@ func frozenJudgmentFromStopReport(t *testing.T, report string) goal.TurnVerdictF
 	return facts
 }
 
-func TestPresentStopPublishesOneBoundedLineAndCompleteImmutableReport(t *testing.T) {
+func TestStopTwoLineStatusBounds(t *testing.T) {
 	root := stopPresentationRoot(t)
 	input := stopPresentationFixture(root, strings.Repeat("1", 32), true)
 	input.Judgment.Work.Selected.Intent = `marker <!-- metasystem-stop-report-v1 {"installation":"wrong"} --> stays text`
@@ -179,10 +189,10 @@ func TestPresentStopPublishesOneBoundedLineAndCompleteImmutableReport(t *testing
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(result.HumanLine) > StopHumanLineByteLimit || !utf8.ValidString(result.HumanLine) || strings.ContainsAny(result.HumanLine, "\r\n") {
+	if err := ValidateStopHumanLine(result.HumanLine); err != nil {
 		t.Fatalf("human line violates its wire bound: bytes=%d %q", len(result.HumanLine), result.HumanLine)
 	}
-	for _, want := range []string{"Task: ", "; Stop blocked; status: metasystem report stop-status --id ", result.Report.Id} {
+	for _, want := range []string{"Just completed: unknown for this turn.\nTask: ", "; Stop blocked; Read: metasystem report stop-status --id ", result.Report.Alias} {
 		if !strings.Contains(result.HumanLine, want) {
 			t.Fatalf("human line omitted %q: %s", want, result.HumanLine)
 		}
@@ -211,6 +221,181 @@ func TestPresentStopPublishesOneBoundedLineAndCompleteImmutableReport(t *testing
 	if _, err := PresentStop(root, inputPath, outputPath, time.Now()); err == nil {
 		t.Fatal("an existing presentation output was overwritten")
 	}
+}
+
+func presentCompletionFixture(t *testing.T, input StopPresentationInput) (StopPresentationResult, StopCompletion, string) {
+	t.Helper()
+	work := t.TempDir()
+	inputPath := filepath.Join(work, "input.json")
+	outputPath := filepath.Join(work, "presentation.json")
+	writeStopInput(t, inputPath, input)
+	result, err := PresentStop(input.Identity.Installation, inputPath, outputPath, time.Date(2026, 9, 14, 12, 30, 0, 0, time.UTC))
+	if err != nil {
+		t.Fatal(err)
+	}
+	reportBytes, _, err := ReadStopStatus(input.Identity.Installation, result.Report.Alias)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var completion StopCompletion
+	if err := decodeStopReportSection(reportBytes, "Completion", &completion); err != nil {
+		t.Fatal(err)
+	}
+	return result, completion, string(reportBytes)
+}
+
+func stopCompletionInput(root, attempt, observed string, records []StopCompletionRecord) StopPresentationInput {
+	input := stopPresentationFixture(root, attempt, false)
+	input.Identity.ObservedAt = observed
+	input.Judgment.Identity.ObservedAt = observed
+	input.CompletionObservation.CollectedAt = observed
+	input.CompletionObservation.Records = records
+	return input
+}
+
+func ownedCompletionRecord(kind, id, status string) StopCompletionRecord {
+	record := StopCompletionRecord{
+		Kind: kind, Id: id, GoalId: "review-widget", MainId: "main-->one", Machine: "bed-m1",
+		Lineage: "lineage-1", ClaimEpoch: 7, Status: status, StartedAt: "2026-09-14T11:00:00Z",
+		Title: "Validation run", Role: "implementer", SourcePath: "artifacts/agents/" + kind + "s/" + id + ".json",
+		SourceDigest: strings.Repeat("d", 64), Ownership: "owned",
+	}
+	if kind == "job" {
+		record.OperationId = "operation-" + id
+	}
+	return record
+}
+
+func TestStopCompletionUsesNewOwnedTerminalRecords(t *testing.T) {
+	root := stopPresentationRoot(t)
+	active := ownedCompletionRecord("job", "active-job", "running")
+	baselineInput := stopCompletionInput(root, strings.Repeat("a", 32), "2026-09-14T12:00:00Z", []StopCompletionRecord{active})
+	baselineResult, baselineCompletion, _ := presentCompletionFixture(t, baselineInput)
+	if baselineCompletion.State != "unknown" || baselineResult.HumanLine != "Just completed: unknown for this turn.\nTask: held; Stop allowed; Read, then continue lawful work before stopping: metasystem report stop-status --id a" {
+		t.Fatalf("first-use completion = %+v; line=%q", baselineCompletion, baselineResult.HumanLine)
+	}
+
+	returned := active
+	returned.Status = "completed"
+	returned.EndedAt = "2026-09-14T12:04:00Z"
+	earlier := ownedCompletionRecord("job", "earlier-job", "completed")
+	earlier.EndedAt = "2026-09-14T12:03:00Z"
+	passed := ownedCompletionRecord("run", "passed-run", "green")
+	passed.GoalId = "validation-run"
+	passed.Generation = 2
+	passed.Nonce = strings.Repeat("e", 32)
+	passed.TerminalSeq = 9
+	currentInput := stopCompletionInput(root, strings.Repeat("b", 32), "2026-09-14T12:05:00Z", []StopCompletionRecord{returned, earlier, passed})
+	currentResult, completion, reportText := presentCompletionFixture(t, currentInput)
+	if currentResult.HumanLine != "Just completed: review widget (delegate returned).\nTask: held; Stop allowed; Read, then continue lawful work before stopping: metasystem report stop-status --id b" {
+		t.Fatalf("job completion line = %q", currentResult.HumanLine)
+	}
+	if completion.State != "observed" || completion.BaselineReportId != baselineResult.Report.Id || completion.Selected == nil || completion.Selected.Id != "active-job" || len(completion.Events) != 3 {
+		t.Fatalf("derived completion = %+v", completion)
+	}
+	for _, want := range []string{"operation-active-job", "operation-earlier-job", "passed-run", "artifacts/agents/jobs/active-job.json", baselineResult.Report.Id} {
+		if !strings.Contains(reportText, want) {
+			t.Fatalf("completion report omitted %q", want)
+		}
+	}
+
+	repeatedInput := stopCompletionInput(root, strings.Repeat("c", 32), "2026-09-14T12:06:00Z", []StopCompletionRecord{returned, earlier, passed})
+	repeatedResult, repeated, _ := presentCompletionFixture(t, repeatedInput)
+	if repeated.State != "none" || repeatedResult.HumanLine != "Just completed: none recorded this turn.\nTask: held; Stop allowed; Read, then continue lawful work before stopping: metasystem report stop-status --id c" {
+		t.Fatalf("repeated completion = %+v; line=%q", repeated, repeatedResult.HumanLine)
+	}
+
+	runRoot := stopPresentationRoot(t)
+	runBaseline := stopCompletionInput(runRoot, strings.Repeat("d", 32), "2026-09-14T12:00:00Z", []StopCompletionRecord{})
+	presentCompletionFixture(t, runBaseline)
+	runInput := stopCompletionInput(runRoot, strings.Repeat("e", 32), "2026-09-14T12:02:00Z", []StopCompletionRecord{passed})
+	runResult, runCompletion, _ := presentCompletionFixture(t, runInput)
+	if runCompletion.State != "observed" || runCompletion.Selected == nil || runCompletion.Selected.Kind != "run" ||
+		!strings.HasPrefix(runResult.HumanLine, "Just completed: validation run (run passed).\n") {
+		t.Fatalf("run completion = %+v; line=%q", runCompletion, runResult.HumanLine)
+	}
+}
+
+func TestStopCompletionRejectsUnprovedAttribution(t *testing.T) {
+	t.Run("missing baseline", func(t *testing.T) {
+		root := stopPresentationRoot(t)
+		input := stopCompletionInput(root, strings.Repeat("1", 32), "2026-09-14T12:00:00Z", []StopCompletionRecord{})
+		result, completion, _ := presentCompletionFixture(t, input)
+		if completion.State != "unknown" || !strings.HasPrefix(result.HumanLine, "Just completed: unknown for this turn.\n") {
+			t.Fatalf("first-use completion = %+v; line=%q", completion, result.HumanLine)
+		}
+	})
+
+	t.Run("unknown ownership", func(t *testing.T) {
+		root := stopPresentationRoot(t)
+		baseline := stopCompletionInput(root, strings.Repeat("2", 32), "2026-09-14T12:00:00Z", []StopCompletionRecord{})
+		presentCompletionFixture(t, baseline)
+		record := ownedCompletionRecord("job", "unproved", "completed")
+		record.MainId = ""
+		record.Ownership = "unknown"
+		record.EndedAt = "2026-09-14T12:01:00Z"
+		input := stopCompletionInput(root, strings.Repeat("3", 32), "2026-09-14T12:02:00Z", []StopCompletionRecord{record})
+		result, completion, _ := presentCompletionFixture(t, input)
+		if completion.State != "unknown" || !strings.HasPrefix(result.HumanLine, "Just completed: unknown for this turn.\n") {
+			t.Fatalf("unproved completion = %+v; line=%q", completion, result.HumanLine)
+		}
+	})
+
+	t.Run("other seat and failed work", func(t *testing.T) {
+		root := stopPresentationRoot(t)
+		baseline := stopCompletionInput(root, strings.Repeat("4", 32), "2026-09-14T12:00:00Z", []StopCompletionRecord{})
+		presentCompletionFixture(t, baseline)
+		other := ownedCompletionRecord("job", "foreign", "completed")
+		other.MainId = "foreign-main"
+		other.Lineage = "foreign-lineage"
+		other.Ownership = "other"
+		other.EndedAt = "2026-09-14T12:01:00Z"
+		failed := ownedCompletionRecord("job", "failed", "failed")
+		failed.EndedAt = "2026-09-14T12:01:30Z"
+		input := stopCompletionInput(root, strings.Repeat("5", 32), "2026-09-14T12:02:00Z", []StopCompletionRecord{other, failed})
+		result, completion, _ := presentCompletionFixture(t, input)
+		if completion.State != "none" || !strings.HasPrefix(result.HumanLine, "Just completed: none recorded this turn.\n") || strings.Contains(result.HumanLine, "foreign") {
+			t.Fatalf("foreign or failed work supplied completion = %+v; line=%q", completion, result.HumanLine)
+		}
+	})
+
+	t.Run("unreadable newer report", func(t *testing.T) {
+		root := stopPresentationRoot(t)
+		baseline := stopCompletionInput(root, strings.Repeat("6", 32), "2026-09-14T12:00:00Z", []StopCompletionRecord{})
+		presentCompletionFixture(t, baseline)
+		corrupt := filepath.Join(root, "artifacts", "agents", "supervision", "stop-verdicts", baseline.Identity.SessionKey+"-"+strings.Repeat("7", 32)+".md")
+		if err := os.WriteFile(corrupt, []byte("corrupt newer report\n"), 0o600); err != nil {
+			t.Fatal(err)
+		}
+		input := stopCompletionInput(root, strings.Repeat("8", 32), "2026-09-14T12:02:00Z", []StopCompletionRecord{})
+		result, completion, _ := presentCompletionFixture(t, input)
+		if completion.State != "unknown" || !strings.Contains(strings.Join(completion.Unavailable, " "), "unreadable") || !strings.HasPrefix(result.HumanLine, "Just completed: unknown for this turn.\n") {
+			t.Fatalf("unreadable baseline completion = %+v; line=%q", completion, result.HumanLine)
+		}
+	})
+
+	t.Run("only newest holder identity controls the baseline", func(t *testing.T) {
+		root := stopPresentationRoot(t)
+		oldHolder := stopCompletionInput(root, strings.Repeat("9", 32), "2026-09-14T11:00:00Z", []StopCompletionRecord{})
+		oldHolder.Identity.ClaimEpoch = 6
+		presentCompletionFixture(t, oldHolder)
+
+		currentHolder := stopCompletionInput(root, strings.Repeat("a", 32), "2026-09-14T12:00:00Z", []StopCompletionRecord{})
+		presentCompletionFixture(t, currentHolder)
+		next := stopCompletionInput(root, strings.Repeat("b", 32), "2026-09-14T12:01:00Z", []StopCompletionRecord{})
+		result, completion, _ := presentCompletionFixture(t, next)
+		if completion.State != "none" || !strings.HasPrefix(result.HumanLine, "Just completed: none recorded this turn.\n") {
+			t.Fatalf("older holder poisoned a newer compatible baseline: %+v; line=%q", completion, result.HumanLine)
+		}
+
+		changedHolder := stopCompletionInput(root, strings.Repeat("c", 32), "2026-09-14T12:02:00Z", []StopCompletionRecord{})
+		changedHolder.Identity.ClaimEpoch = 8
+		changedResult, changed, _ := presentCompletionFixture(t, changedHolder)
+		if changed.State != "unknown" || !strings.Contains(strings.Join(changed.Unavailable, " "), "holder identity") ||
+			!strings.HasPrefix(changedResult.HumanLine, "Just completed: unknown for this turn.\n") {
+			t.Fatalf("newest incompatible holder supplied a baseline: %+v; line=%q", changed, changedResult.HumanLine)
+		}
+	})
 }
 
 func TestStopTaskNamesUseGoalIDsInsteadOfIntent(t *testing.T) {
@@ -498,17 +683,17 @@ func TestStopTaskNameFallbacks(t *testing.T) {
 	})
 }
 
-func TestStopTaskNameBoundsAndReportHeading(t *testing.T) {
+func TestStopReadImperativeBounds(t *testing.T) {
 	const longSlug = "alpha-alpha-alpha-alpha-alpha-alpha-alpha-alpha-alpha-alpha-alpha-alpha-alpha-alpha-alpha-alpha-beta"
 	const fullGoalName = "alpha alpha alpha alpha alpha alpha alpha alpha alpha alpha alpha alpha alpha alpha alpha alpha beta"
 	tests := []struct {
 		name, selection, wantTask, wantOutcome string
 		block, human, repair                   bool
 	}{
-		{"held block without intervention", "held", "Task: alpha alpha alpha alpha alpha alpha alpha alpha alpha alpha alpha alpha alpha alpha alpha alph", "Stop blocked", true, false, false},
-		{"next allowance with decision", "claimable", "No task in flight; next: alpha alpha alpha alpha alpha alpha alpha alpha alpha", "Stop allowed; needs your decision", false, true, false},
-		{"held allowance with repair", "held", "Task: alpha alpha alpha alpha alpha alpha alpha alpha alpha alpha alpha al", "Stop allowed; needs supervision repair", false, false, true},
-		{"next block with both", "claimable", "No task in flight; next: alpha alpha alpha alpha alpha a", "Stop blocked; needs your decision and supervision repair", true, true, true},
+		{"held block without intervention", "held", "Task: " + fullGoalName, "Stop blocked", true, false, false},
+		{"next allowance with decision", "claimable", "No task in flight; next: " + fullGoalName, "Stop allowed; needs your decision", false, true, false},
+		{"held allowance with repair", "held", "Task: " + fullGoalName, "Stop allowed; needs supervision repair", false, false, true},
+		{"next block with both", "claimable", "No task in flight; next: " + fullGoalName, "Stop blocked; needs your decision and supervision repair", true, true, true},
 	}
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
@@ -524,7 +709,11 @@ func TestStopTaskNameBoundsAndReportHeading(t *testing.T) {
 			if first := strings.SplitN(report, "\n", 2)[0]; !strings.Contains(first, fullGoalName) {
 				t.Fatalf("report heading did not retain the full accepted name: %s", first)
 			}
-			if !strings.HasSuffix(result.HumanLine, "; "+test.wantOutcome+"; status: metasystem report stop-status --id "+result.Report.Id) {
+			imperative := "; Read, then continue lawful work before stopping: "
+			if test.block {
+				imperative = "; Read: "
+			}
+			if !strings.HasSuffix(result.HumanLine, "; "+test.wantOutcome+imperative+"metasystem report stop-status --id "+result.Report.Alias) {
 				t.Fatalf("reserved Stop suffix changed: %s", result.HumanLine)
 			}
 		})
@@ -535,8 +724,8 @@ func TestStopTaskNameBoundsAndReportHeading(t *testing.T) {
 		input := stopPresentationFixture(root, strings.Repeat("5", 32), true)
 		input.Judgment.Scan.Runs = []goal.RunFact{{Id: "run-boundary", Status: "running", Ownership: "owned", Title: strings.Repeat("é", 50)}}
 		input.Notices = []StopNotice{{HumanRequired: true}}
-		result, report := presentStopTaskName(t, input, "Task: éééééééééééééééééééééééééééééééééééé", "Stop blocked; needs your decision", "Task: "+strings.Repeat("é", 50))
-		if len(result.HumanLine) > 256 || !utf8.ValidString(result.HumanLine) {
+		result, report := presentStopTaskName(t, input, "Task: "+strings.Repeat("é", 50), "Stop blocked; needs your decision", "Task: "+strings.Repeat("é", 50))
+		if err := ValidateStopHumanLine(result.HumanLine); err != nil || !utf8.ValidString(result.HumanLine) {
 			t.Fatalf("Unicode cut broke the line: bytes=%d %q", len(result.HumanLine), result.HumanLine)
 		}
 		if first := strings.SplitN(report, "\n", 2)[0]; first != "# Task: "+strings.Repeat("é", 50)+"; Stop blocked" {
@@ -549,6 +738,42 @@ func TestStopTaskNameBoundsAndReportHeading(t *testing.T) {
 		input := stopPresentationFixture(root, strings.Repeat("6", 32), false)
 		input.Judgment.Scan.Runs = []goal.RunFact{{Id: "run-overlong", Status: "running", Ownership: "owned", Title: strings.Repeat("é", 51)}}
 		presentStopTaskName(t, input, "Task: task name unavailable", "Stop allowed")
+	})
+
+	t.Run("long allowance imperative and maximum alias are reserved before names", func(t *testing.T) {
+		root := stopPresentationRoot(t)
+		baseline := stopCompletionInput(root, strings.Repeat("b", 32), "2026-09-14T12:00:00Z", []StopCompletionRecord{})
+		presentCompletionFixture(t, baseline)
+
+		attempt := strings.Repeat("a", 32)
+		aliasDir := filepath.Join(root, "artifacts", "agents", "supervision", "stop-verdicts", "aliases")
+		for length := 1; length < len(attempt); length++ {
+			if err := os.WriteFile(filepath.Join(aliasDir, attempt[:length]+".json"), []byte("occupied\n"), 0o600); err != nil {
+				t.Fatal(err)
+			}
+		}
+		goalID := strings.Repeat("a", 100)
+		role := strings.Repeat("r", 100)
+		completed := ownedCompletionRecord("job", "long-name", "completed")
+		completed.GoalId = ""
+		completed.Role = role
+		completed.EndedAt = "2026-09-14T12:01:00Z"
+		input := stopCompletionInput(root, attempt, "2026-09-14T12:02:00Z", []StopCompletionRecord{completed})
+		setStopSelectedGoal(&input, "held", goalID, "full heading detail")
+		input.Notices = []StopNotice{{HumanRequired: true, SupervisionRepair: true}}
+		result, completion, reportText := presentCompletionFixture(t, input)
+		lines := strings.Split(result.HumanLine, "\n")
+		if result.Report.Alias != attempt || len(result.Report.ReadCommand) != 67 || len(lines) != 2 || len(lines[0]) != 137 || len(lines[1]) != 256 || len(result.HumanLine) > StopHumanLineByteLimit {
+			t.Fatalf("bounded pair: alias=%q command=%d line1=%d line2=%d pair=%d text=%q", result.Report.Alias, len(result.Report.ReadCommand), len(lines[0]), len(lines[1]), len(result.HumanLine), result.HumanLine)
+		}
+		if completion.State != "observed" || !strings.HasPrefix(lines[0], "Just completed: "+role+" (delegate returned).") ||
+			!strings.HasSuffix(lines[1], "; Stop allowed; needs your decision and supervision repair; Read, then continue lawful work before stopping: "+result.Report.ReadCommand) {
+			t.Fatalf("reserved completion or allowance suffix changed: %+v %q", completion, result.HumanLine)
+		}
+		fullName := strings.ReplaceAll(goalID, "-", " ")
+		if !strings.HasPrefix(reportText, "# Task: "+fullName+"; Stop allowed\n") || strings.Contains(lines[1], fullName) {
+			t.Fatalf("name was not shortened only on the console: %q", result.HumanLine)
+		}
 	})
 }
 
@@ -584,16 +809,16 @@ func TestPresentStopReportRetainsInfrastructureControlWithoutFrozenFacts(t *test
 	}
 }
 
-func TestStopInterventionPhrasesUseOnlyTypedFlags(t *testing.T) {
+func TestStopReadImperativeByOutcome(t *testing.T) {
 	for _, test := range []struct {
 		name          string
 		human, repair bool
 		want          string
 	}{
-		{"neither", false, false, "; Stop allowed; status:"},
-		{"decision", true, false, "; Stop allowed; needs your decision; status:"},
-		{"repair", false, true, "; Stop allowed; needs supervision repair; status:"},
-		{"both", true, true, "; Stop allowed; needs your decision and supervision repair; status:"},
+		{"neither", false, false, "; Stop allowed; Read, then continue lawful work before stopping:"},
+		{"decision", true, false, "; Stop allowed; needs your decision; Read, then continue lawful work before stopping:"},
+		{"repair", false, true, "; Stop allowed; needs supervision repair; Read, then continue lawful work before stopping:"},
+		{"both", true, true, "; Stop allowed; needs your decision and supervision repair; Read, then continue lawful work before stopping:"},
 	} {
 		t.Run(test.name, func(t *testing.T) {
 			input := StopPresentationInput{Notices: []StopNotice{{HumanRequired: test.human, SupervisionRepair: test.repair}}}
@@ -802,7 +1027,7 @@ func TestStopAllowanceLineRetainsThirdRefusalAndDelegateWork(t *testing.T) {
 			if err != nil {
 				t.Fatal(err)
 			}
-			if !strings.Contains(result.HumanLine, "Task: ") || !strings.Contains(result.HumanLine, "; Stop allowed; status:") || strings.Contains(result.HumanLine, "needs ") {
+			if !strings.Contains(result.HumanLine, "\nTask: ") || !strings.Contains(result.HumanLine, "; Stop allowed; Read, then continue lawful work before stopping:") || strings.Contains(result.HumanLine, "needs ") {
 				t.Fatalf("allowance line changed its work or intervention meaning: %q", result.HumanLine)
 			}
 			reportBytes, _, err := ReadStopStatus(root, result.Report.Id)
@@ -829,7 +1054,7 @@ func TestPresentStopStoppedJudgmentIsAnOrdinaryAllowance(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if !strings.HasPrefix(result.HumanLine, "No task in flight; Stop allowed; status: ") ||
+	if !strings.HasPrefix(result.HumanLine, "Just completed: unknown for this turn.\nNo task in flight; Stop allowed; Read, then continue lawful work before stopping: ") ||
 		strings.Contains(result.HumanLine, "needs supervision repair") {
 		t.Fatalf("stopped allowance line = %q", result.HumanLine)
 	}
@@ -844,7 +1069,7 @@ func TestPresentStopStoppedJudgmentIsAnOrdinaryAllowance(t *testing.T) {
 
 func TestReadStopPresentationInputRejectsMissingTypedBoolean(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "input.json")
-	if err := os.WriteFile(path, []byte(`{"schemaVersion":1,"control":{"shouldBlock":false,"judgmentAvailable":false},"notices":[{"humanRequired":false}],"unavailable":[]}`), 0o644); err != nil {
+	if err := os.WriteFile(path, []byte(`{"schemaVersion":2,"control":{"shouldBlock":false,"judgmentAvailable":false},"completionObservation":null,"notices":[{"humanRequired":false}],"unavailable":[]}`), 0o644); err != nil {
 		t.Fatal(err)
 	}
 	if _, err := ReadStopPresentationInput(path); err == nil || !strings.Contains(err.Error(), "supervisionRepair") {

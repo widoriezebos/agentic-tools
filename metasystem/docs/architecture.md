@@ -138,6 +138,7 @@ One line per package; the package doc is the full story.
 | `report` | turn-end report decisions plus the improvement-mode frontier ledger |
 | `returnschema` | versioned role-return schema materialization |
 | `stateroot` | mode-aware directories for application state, derived from the installed engine and repository |
+| `stopreport` | immutable Stop-report identity, exact short-alias reservation, publication binding, and verified lookup |
 | `supervise` | the supervision owner lifecycle: watcher, reaper, breaker, wind-down |
 | `turn` | the vocabulary of a mission turn |
 | `up` | the session-start arming transaction and its typed aggregate outcome |

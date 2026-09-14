@@ -43,9 +43,10 @@ a rendered string:
 - **infrastructure**: a read or write of the hook's or the verdict's own
   state failed (every `record_stop_failure` site above, the deadline, every
   `failClosedTurnVerdict` producer, the session-stop marker's read and
-  consume, the launcher's bootstrap). The stop is ALLOWED. The sole compact
-  human line says `needs supervision repair`; the immutable report names the
-  condition, owner and remedy, one line is appended to the hook log, and
+  consume, the launcher's bootstrap). The stop is ALLOWED. The task line in
+  the report-bearing two-line pair says `needs supervision repair`; the
+  immutable report names the condition, owner and remedy, one line is
+  appended to the hook log, and
   nothing else happens: no seen marker, no counter, no ALL CLEAR, no
   authorization.
   This holds on the first occurrence and every one after; the
@@ -64,10 +65,11 @@ Where it lives:
 
 - `report stop-block` gains `--class` (`infrastructure` or
   `seat-actionable`); the infrastructure class returns the allowance and
-  writes the log line; the presenter carries its typed repair flag in the
-  sole `systemMessage`. The seat class keeps today's block in the sole
-  `reason` field; when infrastructure also failed, that reason carries the
-  repair flag and the report carries the complete notice.
+  writes the log line; the presenter carries its typed repair flag on line 2
+  of the sole two-line `systemMessage`. The seat class keeps today's block in
+  the sole `reason` field; when infrastructure also failed, line 2 of that
+  two-line reason carries the repair flag and the report carries the complete
+  notice. Neither outcome emits a third line.
   The hook passes `--class infrastructure` at line 943 for every
   `record_stop_failure` cause and at the deadline path; the deadline's own
   record-failure branch already allows and is kept, and its notice is

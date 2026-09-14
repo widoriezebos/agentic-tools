@@ -48,20 +48,28 @@ func MapStopOutput(runtime, inputPath, outputPath string) error {
 	if err := report.ValidateStopHumanLine(presentation.HumanLine); err != nil {
 		return err
 	}
+	lines := bytes.Split([]byte(presentation.HumanLine), []byte("\n"))
+	if len(lines) != 2 || !bytes.HasPrefix(lines[0], []byte("Just completed: ")) || !bytes.HasSuffix(lines[0], []byte(".")) ||
+		!(bytes.HasPrefix(lines[1], []byte("Task: ")) || bytes.HasPrefix(lines[1], []byte("Task unknown;")) ||
+			bytes.HasPrefix(lines[1], []byte("No task in flight;"))) {
+		return fmt.Errorf("stop presentation does not contain the required completion and task lines")
+	}
 	outcome := "; Stop allowed;"
+	imperative := "; Read, then continue lawful work before stopping: "
 	if presentation.Control.ShouldBlock {
 		outcome = "; Stop blocked;"
+		imperative = "; Read: "
 	}
-	if !bytes.Contains([]byte(presentation.HumanLine), []byte(outcome)) ||
+	if !bytes.Contains(lines[1], []byte(outcome)) ||
 		presentation.Control.ShouldBlock != (presentation.Control.BlockSource != nil) {
 		return fmt.Errorf("stop presentation line or block source does not match its decision")
 	}
-	wantCommand := "metasystem report stop-status --id " + presentation.Report.Id
-	if presentation.Report.Id == "" || presentation.Report.ReadCommand != wantCommand ||
-		!bytes.HasSuffix([]byte(presentation.HumanLine), []byte("; status: "+wantCommand)) {
+	wantCommand := "metasystem report stop-status --id " + presentation.Report.Alias
+	if presentation.Report.Id == "" || presentation.Report.Alias == "" || presentation.Report.ReadCommand != wantCommand ||
+		!bytes.HasSuffix(lines[1], []byte(imperative+wantCommand)) {
 		return fmt.Errorf("stop presentation report reference is inconsistent")
 	}
-	reportBytes, identity, err := report.ReadStopStatus(presentation.Identity.Installation, presentation.Report.Id)
+	reportBytes, identity, err := report.ReadStopStatus(presentation.Identity.Installation, presentation.Report.Alias)
 	if err != nil {
 		return fmt.Errorf("verify Stop presentation report: %w", err)
 	}
@@ -69,7 +77,7 @@ func MapStopOutput(runtime, inputPath, outputPath string) error {
 	if identity != presentation.Identity || hex.EncodeToString(digest[:]) != presentation.Report.SHA256 || presentation.Report.Path != filepath.Join(presentation.Identity.Installation, "artifacts", "agents", "supervision", "stop-verdicts", presentation.Report.Id+".md") {
 		return fmt.Errorf("stop presentation report identity, path, or digest is inconsistent")
 	}
-	if !bytes.Contains(reportBytes, []byte("- Console line: `"+presentation.HumanLine+"`\n")) {
+	if !bytes.Contains(reportBytes, []byte("## Console text\n\n```text\n"+presentation.HumanLine+"\n```\n")) {
 		return fmt.Errorf("stop presentation line does not match its immutable report")
 	}
 	payload := map[string]any{}

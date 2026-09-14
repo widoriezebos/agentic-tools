@@ -11,13 +11,20 @@ automation differs, and the table below says so in public
 
 An adapter conforms when its runtime's turn end preserves the engine's
 `shouldBlock` and `blockSource`, publishes one immutable report from the
-frozen judgment, and emits one compact human line of at most 256 UTF-8 bytes.
+frozen judgment, and emits exactly two logical human lines in one native
+field. The first says what newly recorded owned work completed and is at most
+144 UTF-8 bytes. The second names the task state, outcome and exact report
+command and is at most 256 bytes; the pair is at most 401 bytes including its
+one LF.
 For the `shared-reason-v1` candidate envelope a block is exactly
 `{"decision":"block","reason":"<line>"}` and an allowance is exactly
 `{"systemMessage":"<line>"}`. A block must not also carry
-`systemMessage`; the compact line flags a required human decision or
+`systemMessage`; the task line flags a required human decision or
 supervision repair, and the report retains every cause, owner, remedy and
-seat action. Presentation failure cannot create or clear a block.
+seat action. The command uses a permanently reserved exact short alias while
+the report retains and verifies its full identity and digest. Presentation
+failure cannot create or clear a block and retains the established one-line
+degraded form.
 
 Conformance also requires dated evidence for the actual host version,
 effective configuration and instruction bytes, trusted hook firing, total
@@ -31,9 +38,10 @@ stale observations remain unobserved.
 On a blocked Stop, the instruction entrypoint requires the seat to run the
 exact `metasystem report stop-status --id ...` command before another work
 action or Stop. A free seat then uses `goal next --machine <own-nick>
---fetch`; a held seat continues without another claim. An allowed Stop adds
-no report-read turn. This instruction is a recovery route, not evidence that
-the host displayed or enforced the notice.
+--fetch`; a held seat continues without another claim. On an allowed
+report-bearing Stop, the task line itself says `Read, then continue lawful
+work before stopping:` before the same exact command. This instruction is a
+recovery route, not evidence that the host displayed or enforced the notice.
 
 ## Conformance table (the DISTRIBUTION, not any installation)
 
