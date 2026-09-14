@@ -2,14 +2,14 @@
 
 - State: approved
 - Priority: 1
-- Sequence: 43
+- Sequence: 44
 - Risk: severity=3 novelty=2 exposure=3 accumulation=2 basis="severity 3: an undeclared Stop-decision change is how the loop broke; novelty 2: the extraction exists as a script, the gate integration and declaration are new; exposure 3: every landing that touches the Stop path; accumulation 2: each undetected inversion compounds across seats"
 - Tier: 3
 - Intent: A change that moves a Stop decision must say so, enforced by the machinery. On 2026-09-13 a build quietly closed the third-refusal release and the delegate-job exemption; it was caught only by a scratchpad script (decision-surface.sh) that extracts every assertion naming a Stop decision and diffs it against trunk. That guard lives outside the repository, so no other seat has it and nothing enforces it. DONE: the check runs in the gate; a change moving any assertion that names a Stop decision is refused unless the landing declares the moved assertions and the goal permitting the change; additions are reported, removals and changes refused without that declaration.
 - Origin: human
 - Next step: Port the extraction into the gate as a Go check over the Go test files and fixture beds that assert Stop decisions, with a declaration format the landing carries; prove it refuses the 2026-09-13 inversion and admits member 3's purely additive lines.
 - OpenedAt: 2026-09-14T16:16:14Z
-- Revision: 3
+- Revision: 4
 - Budget: elapsedLimit=1d attemptLimit=10 reservedJobMinutesLimit=1200 activeJobLimit=1 reviewRoundLimit=3
 - BudgetExceptions: 0
 - Approved: by=human:Wido at=2026-09-14T18:54:24Z revision=2 opid=90XPDEVA986F5HF56X2C2EXQY8-m1e-c6925449 authority=proven digest=3ddae773a96ecaaab5e32b5b9d04e0536a88604b28d2deb5669b392cc93c3c39
@@ -18,4 +18,5 @@ History:
 - 2026-09-14T16:16:14Z 9JVA7KASJX29BAW3B4B45ZN96E-m1e-c6925449 open actor=human:Wido targets=stop-decision-surface-is-a-gate
 - 2026-09-14T18:54:24Z 90XPDEVA986F5HF56X2C2EXQY8-m1e-c6925449 approve actor=human:Wido targets=stop-decision-surface-is-a-gate
 - 2026-09-14T18:55:36Z CB8H78GBQTGSXH5G1D34Z61WZ0-m1e-c6925449 set-priority actor=human:Wido targets=stop-decision-surface-is-a-gate reason=priority-order subject=stop-decision-surface-is-a-gate from=unranked to=1:43 requested-sequence=append
-Integrity: sha256=41c0612e7e3d5d72e30f37abe62e94924eb79115a86b8d2842fdf369fde7823e
+- 2026-09-14T20:22:09Z TQTMZ5742QPZ3TZX9KHQ3FQJ10-m1e-c6925449 set-priority actor=human:Wido targets=actionable-metrics,beds-run-under-the-oldest-supported-bash,chain-landing-carries-the-reviewed-diff,degraded-stop-forms-have-one-source,dispatch-bases-chains-on-the-remote-tip,failed-job-attention,fixture-repo-copies-exclude-the-artifacts-store,fixture-stewards-outlive-their-suite,fixture-waits-name-their-producer,go-tests-never-inherit-a-candidate-engine,human-authority-surface-runs-its-cmd-tests,human-goal-verbs-forgiving,human-wait-does-not-consume-goal-budget,job-record-birth-token,lease-sweep-death-evidence,live-job-on-a-done-goal-unnoticed,machine-concurrency-governor,member-size-gate,metasystem-stop-escalation-proofs,metasystem-stop-fleet-form,moved-effects-are-inventoried-in-the-design,new-elapsed-budgets-use-explicit-hours,repo-root-paths-ride-agent-commits-unjudged,run-scoped-build-caches-have-a-janitor,skipped-test-fails-its-group-on-the-other-os,stop-batch-strands-a-resumable-goal,stop-decision-surface-is-a-gate,stop-response-carries-a-structured-report-reference,tests-never-wait-on-wall-time,token-spend-fence,watch-verb,watcher-repair-request-never-names-current,winddown-census-handoff-leak reason=priority-order subject=go-tests-never-inherit-a-candidate-engine from=1:43 to=1:44 requested-sequence=14
+Integrity: sha256=30ec7e04e14f2d3cc9369392250c171fa0b91f72e59a60b92966f1db47ac4b16

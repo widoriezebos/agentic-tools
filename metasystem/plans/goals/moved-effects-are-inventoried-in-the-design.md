@@ -2,14 +2,14 @@
 
 - State: approved
 - Priority: 1
-- Sequence: 40
+- Sequence: 41
 - Risk: severity=1 novelty=1 exposure=2 accumulation=1 basis="severity 1: a missing inventory delays a build, it does not break a landed one; novelty 1: a packet clause and a check; exposure 2: every design-bearing goal that moves an owner; accumulation 1: nothing builds on the list itself"
 - Tier: 1
 - Intent: Delivery-efficiency phase D, delegate loop. A design page that moves responsibilities from one owner to another lists every moved effect and its new owner, and the design critic's packet checks that list against the code the page names; a page that moves an owner without the inventory yields a material finding and is not built. Why: half the twenty-five defects of the stop-decisions build were an effect that moved from the worker to the parent and was never re-owned; the sweep that finally listed them belonged in the page. DONE: the critic packet carries the check; a fixture page that moves an owner without the list yields a material finding; the stop-decisions page's sweep is recorded as the first inventory. every mechanism in this goal lives in the Go engine, the ledger verbs and the adapter contract, never in one runtime; it is proven on at least two runtimes.
 - Origin: human
 - Next step: Write the packet clause and the fixture page; then the check.
 - OpenedAt: 2026-09-14T15:32:16Z
-- Revision: 6
+- Revision: 7
 - Budget: elapsedLimit=1h attemptLimit=3 reservedJobMinutesLimit=360 activeJobLimit=1 reviewRoundLimit=0
 - BudgetExceptions: 0
 - Approved: by=human:Wido at=2026-09-14T18:54:05Z revision=3 opid=AH7E99KZ0E5C78EM6TNPBK4J6F-m1e-c6925449 authority=proven digest=e3bc82ec89ab1c1cb0b15ebb16f7e36ccd171e2d1e5eba1b597024bea6b5b4ed
@@ -21,4 +21,5 @@ History:
 - 2026-09-14T18:55:06Z 06MJDKF84EX14KGAWXVX0X07F0-m1e-c6925449 set-priority actor=human:Wido targets=beds-report-every-failure,moved-effects-are-inventoried-in-the-design,tests-never-wait-on-wall-time reason=priority-order subject=beds-report-every-failure from=2:28 to=2:27 requested-sequence=append
 - 2026-09-14T18:55:12Z DYW3JAF6W3RQ7JH2RE5HVHR43E-m1e-c6925449 set-priority actor=human:Wido targets=member-size-gate,moved-effects-are-inventoried-in-the-design,stop-response-carries-a-structured-report-reference,tests-never-wait-on-wall-time reason=priority-order subject=stop-response-carries-a-structured-report-reference from=2:27 to=2:26 requested-sequence=append
 - 2026-09-14T18:55:18Z R5PDTYFWAHD43QH8H344CW0MW4-m1e-c6925449 set-priority actor=human:Wido targets=moved-effects-are-inventoried-in-the-design,tests-never-wait-on-wall-time reason=priority-order subject=moved-effects-are-inventoried-in-the-design from=2:26 to=1:40 requested-sequence=append
-Integrity: sha256=351661efca0630e0a464be8eca4d80101bf943482e4653e6cf2728be5d9bab48
+- 2026-09-14T20:22:09Z TQTMZ5742QPZ3TZX9KHQ3FQJ10-m1e-c6925449 set-priority actor=human:Wido targets=actionable-metrics,beds-run-under-the-oldest-supported-bash,chain-landing-carries-the-reviewed-diff,degraded-stop-forms-have-one-source,dispatch-bases-chains-on-the-remote-tip,failed-job-attention,fixture-repo-copies-exclude-the-artifacts-store,fixture-stewards-outlive-their-suite,fixture-waits-name-their-producer,go-tests-never-inherit-a-candidate-engine,human-authority-surface-runs-its-cmd-tests,human-goal-verbs-forgiving,human-wait-does-not-consume-goal-budget,job-record-birth-token,lease-sweep-death-evidence,live-job-on-a-done-goal-unnoticed,machine-concurrency-governor,member-size-gate,metasystem-stop-escalation-proofs,metasystem-stop-fleet-form,moved-effects-are-inventoried-in-the-design,new-elapsed-budgets-use-explicit-hours,repo-root-paths-ride-agent-commits-unjudged,run-scoped-build-caches-have-a-janitor,skipped-test-fails-its-group-on-the-other-os,stop-batch-strands-a-resumable-goal,stop-decision-surface-is-a-gate,stop-response-carries-a-structured-report-reference,tests-never-wait-on-wall-time,token-spend-fence,watch-verb,watcher-repair-request-never-names-current,winddown-census-handoff-leak reason=priority-order subject=go-tests-never-inherit-a-candidate-engine from=1:40 to=1:41 requested-sequence=14
+Integrity: sha256=f1bf8c0dd423ecdd41c5ca0c6422d561dede102583490f921cc10d028d3122aa

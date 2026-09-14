@@ -2,14 +2,14 @@
 
 - State: approved
 - Priority: 1
-- Sequence: 44
+- Sequence: 45
 - Risk: severity=2 novelty=1 exposure=3 accumulation=2 basis="severity 2: a bed that cannot start hides every scenario in it; novelty 1: a known portability class; exposure 3: every bed on every Mac seat; accumulation 2: each new array risks it again"
 - Tier: 2
 - Intent: Fixture beds must run on the oldest shell a supported machine ships. On 2026-09-14 a new supervision bed expanded an empty array under set -u; macOS ships bash 3.2, which rejects that, so the whole bed died in the second it started while the build's sandbox, on a newer bash, saw nothing. The same class recurs whenever a bed adds an array. DONE: the gate parses and exercises every fixture bed's risky constructs under /bin/bash 3.2 semantics and refuses a bed that would fail there, naming the file and line.
 - Origin: human
 - Next step: Add a gate check that runs bash -n under the oldest supported bash and a static scan for empty-array expansion under set -u and other 3.2-incompatible constructs; prove it catches the 2026-09-14 line-45 defect.
 - OpenedAt: 2026-09-14T16:16:20Z
-- Revision: 3
+- Revision: 4
 - Budget: elapsedLimit=4h attemptLimit=6 reservedJobMinutesLimit=720 activeJobLimit=1 reviewRoundLimit=2
 - BudgetExceptions: 0
 - Approved: by=human:Wido at=2026-09-14T18:54:30Z revision=2 opid=EJSD1FG33MKT5NRH95HQJ5XSQD-m1e-c6925449 authority=proven digest=37322810b14872d2df18353f03628f0f19340493c8c98660a7cc2900065de837
@@ -18,4 +18,5 @@ History:
 - 2026-09-14T16:16:20Z 0R2JYA4MM81F6BQDPSSP9KEJBH-m1e-c6925449 open actor=human:Wido targets=beds-run-under-the-oldest-supported-bash
 - 2026-09-14T18:54:30Z EJSD1FG33MKT5NRH95HQJ5XSQD-m1e-c6925449 approve actor=human:Wido targets=beds-run-under-the-oldest-supported-bash
 - 2026-09-14T18:55:42Z XETCQPPDC6FAY7CX58WER560W4-m1e-c6925449 set-priority actor=human:Wido targets=beds-run-under-the-oldest-supported-bash reason=priority-order subject=beds-run-under-the-oldest-supported-bash from=unranked to=1:44 requested-sequence=append
-Integrity: sha256=ab0fdea8d3f939e66d5326bd0a5b1eadf42264f70e1bcc9d0bd78ce4d95394cb
+- 2026-09-14T20:22:09Z TQTMZ5742QPZ3TZX9KHQ3FQJ10-m1e-c6925449 set-priority actor=human:Wido targets=actionable-metrics,beds-run-under-the-oldest-supported-bash,chain-landing-carries-the-reviewed-diff,degraded-stop-forms-have-one-source,dispatch-bases-chains-on-the-remote-tip,failed-job-attention,fixture-repo-copies-exclude-the-artifacts-store,fixture-stewards-outlive-their-suite,fixture-waits-name-their-producer,go-tests-never-inherit-a-candidate-engine,human-authority-surface-runs-its-cmd-tests,human-goal-verbs-forgiving,human-wait-does-not-consume-goal-budget,job-record-birth-token,lease-sweep-death-evidence,live-job-on-a-done-goal-unnoticed,machine-concurrency-governor,member-size-gate,metasystem-stop-escalation-proofs,metasystem-stop-fleet-form,moved-effects-are-inventoried-in-the-design,new-elapsed-budgets-use-explicit-hours,repo-root-paths-ride-agent-commits-unjudged,run-scoped-build-caches-have-a-janitor,skipped-test-fails-its-group-on-the-other-os,stop-batch-strands-a-resumable-goal,stop-decision-surface-is-a-gate,stop-response-carries-a-structured-report-reference,tests-never-wait-on-wall-time,token-spend-fence,watch-verb,watcher-repair-request-never-names-current,winddown-census-handoff-leak reason=priority-order subject=go-tests-never-inherit-a-candidate-engine from=1:44 to=1:45 requested-sequence=14
+Integrity: sha256=1cfc7034269ba2bfaf0409392bddbce0e1eb895c7449ba5f80e7ddf5d649ea4e
