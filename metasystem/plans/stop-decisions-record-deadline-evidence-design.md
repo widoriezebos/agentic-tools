@@ -1,5 +1,8 @@
 # stop-decisions-record-deadline-evidence: build design
 
+Revision: 3 (2026-09-14), following design fold 2 at 327c6da6.
+This revision decides optional evidence and engine compatibility. Other decisions stand.
+
 Member two of `metasystem/plans/stop-hook-never-forces-an-empty-turn-design.md`.
 Two reads are spent. This page decides the eight remaining findings
 from `metasystem/plans/stop-decisions-record-deadline-evidence-design-read2-findings.md`.
@@ -122,6 +125,21 @@ deferred effects and a ready provider response. Hash its stored bytes with SHA-2
 Cache a valid fallback rendering of each proposal before accepting it, so a
 stalled later formatter cannot erase a known block. Cache arming separately.
 
+### Optional health and narrator evidence: excluded from the record
+
+The decision record carries the arming envelope alone as optional evidence.
+Its accepted DONE requires the full up result. Separate readers retain the other facts.
+Do not collect health or narrator attachments for the record or frozen selection.
+Health stays absent from the provider response. Section 5 preserves narrator report delivery.
+Absent, late or unreadable attachments cannot change the decision, add an incident or delay emission.
+They receive no acknowledgement. Omission proves no health delivery; hook-complete keeps its proof checks.
+The reader loses the attached health and narrator snapshots for this decision.
+Current health is read by `health --repo ROOT` in `metasystem/cmd/metasystem/steward_verbs.go`.
+That fresh reading cannot reconstruct health at the earlier Stop.
+Narrator history stays in `metasystem/records/narrator-digest.log`; `steward digest-pending --repo ROOT` reads
+pending text without moving its cursor, through `metasystem/internal/narratordigest/digest.go`.
+No later member or goal adds these attachments. That needs a separate accepted design.
+
 ## 5. Delivery and the last seconds: SDE-01 and SDE-11 accepted
 
 Replace worker completion with a proposal. The goal owner evaluates on a copy
@@ -138,6 +156,12 @@ lives in new `internal/report/stopdeadline.go`; command composition supplies
 goal callbacks so the goal package acquires no dependency on report.
 The shell replaces its existing deadline block with this command, retaining
 the fixed engine-missing allowance when no parent engine can start.
+If the engine lacks `report stop-decision`, emit the fixed degraded allowance:
+It says "Metasystem engine and hook are out of step" and names rebuilding `metasystem/bin/metasystem`.
+No worker starts. Supported attempts complete in the parent process, without the elapsed-flag retry.
+Replace that retry fixture with StopEngineSkewAllowance in `metasystem/scripts/agents/supervision-hook-fixtures.sh`.
+It refuses the new verb and proves one allowance names the skew and rebuild, with no worker, retry or claimed completion.
+
 T is outer hook entry. Freeze E = T + 60 seconds there, before payload, Git or
 resolver work. Pass its UTC epoch-second value explicitly to the Go parent.
 Map the remaining time to a monotonic timer; engine startup never resets E.
@@ -148,7 +172,7 @@ Proven foreign-runtime and delegate skips still exit silently without a decision
 
 | Absolute cutoff | Allowed work and required parent action |
 | --- | --- |
-| Before E minus 3 seconds (T + 57) | Worker publishes a work proposal before optional arming, health and narrator collection. It may attach newer arming snapshots. Parent validates and caches complete proposals as they arrive. No refusal effects are spent. |
+| Before E minus 3 seconds (T + 57) | Worker publishes a work proposal before optional arming collection. It may attach newer arming snapshots. Parent validates and caches complete proposals as they arrive. No refusal effects are spent. |
 | At E minus 3 seconds (T + 57) | Parent cancels optional work without waiting and stops accepting worker results. In-flight evidence writes may finish; they spend nothing without a matching receipt. Parent freezes the latest validated proposal, or an infrastructure allowance if none exists. An observed block stays a block through recording failures. Expiry or unreadable output adds its parent incident. |
 | By E minus 2 seconds (T + 58) | Parent stops waiting for every read, lock, completion write, append and formatter. Record locks get at most 100 milliseconds within this interval, not a fresh relative allowance. A held worker lock cannot extend it. Unfinished persistence is labelled unproven; a known failure is labelled unrecorded. |
 | At E minus 1 second (T + 59), latest | Parent starts writing its single, fully buffered response. It uses the frozen decision and cached evidence. No cleanup, resolver join, hook-expire or new engine call precedes that write. |
@@ -161,6 +185,10 @@ immediately; it gets no new budget. Late results cannot replace a selection.
 The selected decision is immutable even if its persistence task finishes late.
 Move hook-complete and narrator cursor advancement from worker output to parent
 delivery bookkeeping. Captured child stdout must not claim an emitted generation.
+Only narrator attachments are excluded. The Stop report keeps delivering the pending digest.
+After its matching emission receipt, the parent calls `narratordigest.Advance` for the installation's
+human cursor with the cursor and prefix hash frozen with that report. No delivered digest means no advance.
+The template-layout report and cursor assertions in `metasystem/scripts/agents/supervision-hook-fixtures.sh` stand.
 Remove the `deadline-emitted` marker protocol entirely.
 
 Completion records class, outcome, reason, command, countState, completedBy
@@ -283,6 +311,7 @@ Hook beds launch the shell and Go parent with owned, bounded fake children.
 | SDE-05: TestParentIncidentSurvivesCompletedDecision | `metasystem/internal/report/stopblock_test.go` | Complete a worker-sourced block, then retry completion with each parent cause twice. Decision bytes stay unchanged; each parent incident has count one. Fail the incident update and recover its retained intent without changing the block. |
 | SDE-06: TestStopDecisionInterfaceInputs | New `cmd/metasystem/stopdecision_test.go` | Exercise every declared verb. Missing descriptor, mismatched token/root, incomplete flag groups and trailing JSON fail explicitly. Absent arming is accepted as incomplete. No test supplies hidden deadline environment variables. |
 | SDE-06: TestArmingDetailSurvivesStop | `metasystem/cmd/metasystem/up_test.go` | Capture ENROLLMENT_DRIFT and failed component output. Compare sidecar, stored episode and Stop presentation lines byte for byte. Interrupt between components; only published components survive and complete is false. |
+| Optional evidence: TestStopDecisionCarriesArmingOnly | New `cmd/metasystem/stopdecision_test.go` | Keep a pending narrator entry and health evidence in their existing stores. Try absent, late and unreadable optional attachments. The record and frozen selection carry only arming evidence beside the decision. No extra incident, delay or attachment acknowledgement appears. Separate readers still expose their facts. Stop report delivery and its cursor follow section 5. |
 | SDE-07: TestDecisionAppendCrashWindows | `metasystem/internal/report/stopblock_test.go` | Inject death after intent save, after record completion before append, midway through append, and after full append before acknowledgement. Restart repair twice. One complete decision line remains; a relay repairs a missing line. Concurrent emitters cannot interleave bytes. |
 | SDE-08: TestUndeliveredIncidentRetention | `metasystem/internal/report/stopblock_test.go` | Advance fake time past thirty days with an undelivered incident, a pending append and an unacknowledged log-only incident. Recover their union once by ID. Acknowledged history prunes after seven days; v1 history uses the original upgradedAt. Retention removes no log bytes. |
 | SDE-04 retained: TestStopDecisionPersistsBeforeEmission | New `cmd/metasystem/stopdecision_test.go` | Fault before rename, after rename during directory sync, and in append. Observe false with error, unproven, and true as appropriate before provider output; preserve a known block through persistence failures. |
