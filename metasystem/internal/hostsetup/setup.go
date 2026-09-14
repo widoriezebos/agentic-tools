@@ -8,11 +8,13 @@ import (
 	"fmt"
 	"io/fs"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"sort"
 	"strings"
 
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/hooks"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/report"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/runtimes"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/stateroot"
 )
@@ -27,12 +29,15 @@ type Options struct {
 	Runtimes       []string
 	CopySkills     bool
 	Check          bool
+	StopStatusID   string
 }
 
 type Result struct {
-	Layout   stateroot.Layout
-	Runtimes []string
-	Changed  []string
+	Layout            stateroot.Layout
+	Runtimes          []string
+	Changed           []string
+	StopLocatorBinary string
+	StopStatusID      string
 }
 
 type actionKind int
@@ -53,6 +58,9 @@ type action struct {
 // Setup validates every selected input and destination before publishing any
 // entry. Check mode uses the same plan and refuses when a write is required.
 func Setup(options Options) (Result, error) {
+	if options.StopStatusID != "" && !options.Check {
+		return Result{}, fmt.Errorf("host setup: Stop status probe requires check mode")
+	}
 	layout, err := stateroot.ResolveLayout(options.RepositoryPath)
 	if err != nil {
 		return Result{}, err
@@ -74,6 +82,14 @@ func Setup(options Options) (Result, error) {
 		if len(actions) != 0 {
 			return result, fmt.Errorf("host setup check: %d registration path(s) require setup", len(actions))
 		}
+		if options.StopStatusID != "" {
+			binary, err := probeStopStatus(layout, options.StopStatusID)
+			if err != nil {
+				return result, err
+			}
+			result.StopLocatorBinary = binary
+			result.StopStatusID = options.StopStatusID
+		}
 		return result, nil
 	}
 	for _, item := range actions {
@@ -82,6 +98,49 @@ func Setup(options Options) (Result, error) {
 		}
 	}
 	return result, nil
+}
+
+var hostSetupLookPath = exec.LookPath
+var hostSetupCommand = exec.Command
+
+func probeStopStatus(layout stateroot.Layout, id string) (string, error) {
+	if err := report.ValidateStopStatusID(id); err != nil {
+		return "", err
+	}
+	wantBinary, err := filepath.EvalSymlinks(filepath.Join(layout.InstallationRoot, "bin", "metasystem"))
+	if err != nil {
+		return "", fmt.Errorf("STOP_LOCATOR_UNAVAILABLE: target engine is unavailable: %w; recovery: %s", err, report.AbsoluteStopStatusCommand(layout.InstallationRoot, id))
+	}
+	found, err := hostSetupLookPath("metasystem")
+	if err != nil {
+		return "", fmt.Errorf("STOP_LOCATOR_UNAVAILABLE: metasystem is missing from PATH: %w; recovery: %s", err, report.AbsoluteStopStatusCommand(layout.InstallationRoot, id))
+	}
+	found, err = filepath.Abs(found)
+	if err != nil {
+		return "", fmt.Errorf("STOP_LOCATOR_UNAVAILABLE: make PATH engine absolute: %w; recovery: %s", err, report.AbsoluteStopStatusCommand(layout.InstallationRoot, id))
+	}
+	found, err = filepath.EvalSymlinks(found)
+	if err != nil {
+		return "", fmt.Errorf("STOP_LOCATOR_UNAVAILABLE: resolve PATH engine: %w; recovery: %s", err, report.AbsoluteStopStatusCommand(layout.InstallationRoot, id))
+	}
+	if found != wantBinary {
+		return "", fmt.Errorf("STOP_LOCATOR_UNAVAILABLE: PATH resolves metasystem to %s, not %s; recovery: %s", found, wantBinary, report.AbsoluteStopStatusCommand(layout.InstallationRoot, id))
+	}
+	command := hostSetupCommand(found, "report", "stop-status", "--id", id)
+	var stderr bytes.Buffer
+	command.Stderr = &stderr
+	stdout, err := command.Output()
+	if err != nil {
+		return "", fmt.Errorf("STOP_LOCATOR_UNAVAILABLE: printed command failed: %v: %s; recovery: %s", err, strings.TrimSpace(stderr.String()), report.AbsoluteStopStatusCommand(layout.InstallationRoot, id))
+	}
+	want, identity, err := report.ReadStopStatus(layout.InstallationRoot, id)
+	if err != nil {
+		return "", fmt.Errorf("STOP_LOCATOR_UNAVAILABLE: report identity is invalid: %w; recovery: %s", err, report.AbsoluteStopStatusCommand(layout.InstallationRoot, id))
+	}
+	if identity.Installation != layout.InstallationRoot || !bytes.Equal(stdout, want) {
+		return "", fmt.Errorf("STOP_LOCATOR_UNAVAILABLE: printed command returned a different report; recovery: %s", report.AbsoluteStopStatusCommand(layout.InstallationRoot, id))
+	}
+	return found, nil
 }
 
 func selectedRuntimes(requested []string) ([]string, error) {

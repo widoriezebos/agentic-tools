@@ -521,7 +521,16 @@ emit_contract_snapshot() { # runtime, enforcement-map JSON
   # path runs against deterministic dummy facts in a throwaway dir, and
   # the constructed bytes are printed. No schema field is invented; the
   # shape the suite decodes IS the shape probes write.
-  local contract_runtime=$1 enforcement=$2 contract_dir snapshot
+  local contract_runtime=$1 enforcement=$2 contract_dir snapshot stop_delivery capabilities
+  case "$contract_runtime" in
+    claude|codex)
+      stop_delivery='{"schemaVersion":1,"envelope":"shared-reason-v1","blockField":"decision","blockValue":"block","blockTextField":"reason","allowTextField":"systemMessage","humanVisibleFields":["reason","systemMessage"],"duplicateBehavior":"unknown","reportReadRoute":"unknown","instructionHash":"","trustProbe":"","observationArtifact":"","launchBinary":"","seatCommandBinary":"","continuationLimit":null,"level":"unobserved"}'
+      ;;
+    *)
+      stop_delivery='{"schemaVersion":1,"envelope":"unverified","blockField":"","blockValue":"","blockTextField":"","allowTextField":"","humanVisibleFields":[],"duplicateBehavior":"unknown","reportReadRoute":"unknown","instructionHash":"","trustProbe":"","observationArtifact":"","launchBinary":"","seatCommandBinary":"","continuationLimit":null,"level":"unobserved"}'
+      ;;
+  esac
+  capabilities=$(printf '{"sessionEstablishedTimeoutSec":1,"stopDelivery":%s}' "$stop_delivery")
   contract_dir=$(mktemp -d "${TMPDIR:-/tmp}/metasystem-contract.XXXXXX")
   "$ms" adapter capability-snapshot \
     --dir "$contract_dir" \
@@ -529,7 +538,7 @@ emit_contract_snapshot() { # runtime, enforcement-map JSON
     --version "0.0.0-contract" \
     --config-hash "contract0" \
     --transports '[]' \
-    --capabilities '{"sessionEstablishedTimeoutSec":1}' \
+    --capabilities "$capabilities" \
     --permissions '{"unverified":[]}' \
     --envelope-enforcement "$enforcement" \
     --config-key-hashes '{}' >/dev/null

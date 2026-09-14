@@ -10,6 +10,17 @@ import (
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/run"
 )
 
+func TestCurrentWaitingLinesOnAnInstallationWithoutALease(t *testing.T) {
+	// A template or local-only installation has no checkout lease. It owns no
+	// waiter rows, so orientation prints nothing there and reports no failure;
+	// a Stop in such an installation keeps its own verdict.
+	root := t.TempDir()
+	lines, err := CurrentWaitingLines(root)
+	if err != nil || len(lines) != 0 {
+		t.Fatalf("an installation without a lease reported lines=%v err=%v", lines, err)
+	}
+}
+
 func TestWaitingLinesUseDurableResumeCommand(t *testing.T) {
 	root := t.TempDir()
 	row := run.Waiter{SchemaVersion: 2, WaitID: "0123456789abcdef0123456789abcdef", Nonce: "fedcba9876543210fedcba9876543210", Kind: "goal", TargetID: "goal-a", OwnerLineage: "lineage-a", State: "pending", Deadline: "2026-09-14T12:00:00Z"}

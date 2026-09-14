@@ -197,6 +197,25 @@ func TestEnvelopeEnforcementPinned(t *testing.T) {
 	}
 }
 
+func TestStopDeliveryRegistryIsOnlyAStaticExpectation(t *testing.T) {
+	for name, want := range map[string]string{
+		"claude": "shared-reason-v1",
+		"codex":  "shared-reason-v1",
+		"devin":  "",
+		// fake exercises the shared mapper in repository fixtures; this is
+		// not evidence about any installed provider host.
+		"fake": "shared-reason-v1",
+	} {
+		declaration, _ := Lookup(name)
+		if declaration.ExpectedStopDelivery != want {
+			t.Fatalf("%s Stop delivery expectation = %q, want %q", name, declaration.ExpectedStopDelivery, want)
+		}
+		if declaration.InstructionFile == "" {
+			t.Fatalf("%s lost its existing instruction entrypoint", name)
+		}
+	}
+}
+
 func contains(s, sub string) bool { return strings.Contains(s, sub) }
 
 // The C2 declaration surfaces: filters, vectors, collision roots —

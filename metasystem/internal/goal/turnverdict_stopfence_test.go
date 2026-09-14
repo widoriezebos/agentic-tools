@@ -50,6 +50,11 @@ func TestTurnVerdictDoesNotBlockAndDescribesTheDurableStopPhase(t *testing.T) {
 			if verdict.ShouldBlock || verdict.LedgerStatus != "stopped" || verdict.Display != test.want(root) {
 				t.Fatalf("%s verdict = %#v", test.name, verdict)
 			}
+			if verdict.Facts == nil || verdict.Facts.Verdict.LedgerStatus != "stopped" ||
+				verdict.Facts.FullDisplay != test.want(root) || verdict.Facts.Work.ReadSucceeded ||
+				verdict.Facts.Work.Selection != "unknown" || len(verdict.Facts.Actions) != 0 {
+				t.Fatalf("%s stopped presentation facts = %#v", test.name, verdict.Facts)
+			}
 		})
 	}
 }

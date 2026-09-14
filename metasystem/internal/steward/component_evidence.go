@@ -1,15 +1,20 @@
 package steward
 
 import (
+	"bytes"
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"fmt"
+	"io"
 	"os"
 	"path/filepath"
+	"regexp"
 	"strings"
 	"time"
+	"unicode"
+	"unicode/utf8"
 
 	"golang.org/x/sys/unix"
 
@@ -78,6 +83,16 @@ const componentAttemptHistoryLimit = 100
 type HookExpireConflictError struct {
 	Result  ComponentResult
 	Outcome string
+}
+
+// HookDeliveryReference is the immutable report retained before a Stop
+// payload was emitted. Completion re-reads it instead of trusting arbitrary
+// bytes in the provider envelope.
+type HookDeliveryReference struct {
+	Installation string
+	ID           string
+	Path         string
+	SHA256       string
 }
 
 // ComponentEvidenceBusyError means a health reader exhausted its bounded
@@ -399,6 +414,17 @@ func CompleteComponentAttempt(repoRoot, component string, generation int, attemp
 // CompleteHookAttempt binds hook success to the exact payload already emitted.
 // Client rendering is outside the hook's evidence boundary.
 func CompleteHookAttempt(repoRoot string, generation int, attemptSeq int64, result ComponentResult, outcome, healthLine, payload string, stopElapsedSec *int64, now time.Time) (ComponentEvidence, error) {
+	return completeHookAttempt(repoRoot, generation, attemptSeq, result, outcome, healthLine, payload, nil, stopElapsedSec, now)
+}
+
+// CompleteHookAttemptWithDelivery verifies the exact report named by the
+// payload before recording OK/EMITTED. Failure evidence remains recordable
+// without a report reference.
+func CompleteHookAttemptWithDelivery(repoRoot string, generation int, attemptSeq int64, result ComponentResult, outcome, healthLine, payload string, delivery HookDeliveryReference, stopElapsedSec *int64, now time.Time) (ComponentEvidence, error) {
+	return completeHookAttempt(repoRoot, generation, attemptSeq, result, outcome, healthLine, payload, &delivery, stopElapsedSec, now)
+}
+
+func completeHookAttempt(repoRoot string, generation int, attemptSeq int64, result ComponentResult, outcome, healthLine, payload string, delivery *HookDeliveryReference, stopElapsedSec *int64, now time.Time) (ComponentEvidence, error) {
 	if stopElapsedSec != nil && *stopElapsedSec < 0 {
 		return ComponentEvidence{}, fmt.Errorf("hook completion stop elapsed seconds must be non-negative")
 	}
@@ -408,13 +434,112 @@ func CompleteHookAttempt(repoRoot string, generation int, attemptSeq int64, resu
 	if result != ComponentOK && outcome == "EMITTED" {
 		return ComponentEvidence{}, fmt.Errorf("a failed hook completion cannot claim emission")
 	}
-	if result == ComponentOK && (strings.TrimSpace(healthLine) == "" || !hookPayloadContainsHealthLine(payload, healthLine)) {
+	if result == ComponentOK && delivery != nil {
+		if err := verifyHookDelivery(repoRoot, payload, healthLine, *delivery); err != nil {
+			return ComponentEvidence{}, err
+		}
+	} else if result == ComponentOK && (strings.TrimSpace(healthLine) == "" || !hookPayloadContainsHealthLine(payload, healthLine)) {
 		return ComponentEvidence{}, fmt.Errorf("hook completion payload does not contain its health line")
 	}
 	if strings.Contains(payload, "DISPLAYED") || outcome == "DISPLAYED" {
 		return ComponentEvidence{}, fmt.Errorf("the hook cannot claim client display")
 	}
 	return completeComponentAttempt(repoRoot, "supervision-hook", generation, attemptSeq, result, outcome, payload, stopElapsedSec, now)
+}
+
+func verifyHookDelivery(repoRoot, payload, healthLine string, delivery HookDeliveryReference) error {
+	if delivery.Installation == "" || !regexp.MustCompile(`^[0-9a-f]{64}-[0-9a-f]{32}$`).MatchString(delivery.ID) || delivery.Path == "" || !validEvidenceDigest(delivery.SHA256) {
+		return fmt.Errorf("hook completion requires an exact Stop report reference")
+	}
+	wantPath := filepath.Join(delivery.Installation, "artifacts", "agents", "supervision", "stop-verdicts", delivery.ID+".md")
+	if filepath.Clean(delivery.Installation) != filepath.Clean(repoRoot) || filepath.Clean(delivery.Path) != wantPath {
+		return fmt.Errorf("hook completion Stop report path does not match its installation and id")
+	}
+	var object map[string]any
+	decoder := json.NewDecoder(strings.NewReader(payload))
+	if err := decoder.Decode(&object); err != nil || decoder.Decode(&struct{}{}) != io.EOF {
+		return fmt.Errorf("hook completion payload is not one JSON object")
+	}
+	visible := ""
+	if object["decision"] == "block" {
+		visible, _ = object["reason"].(string)
+		if len(object) != 2 {
+			return fmt.Errorf("hook completion block payload has extra fields")
+		}
+	} else {
+		visible, _ = object["systemMessage"].(string)
+		if len(object) != 1 {
+			return fmt.Errorf("hook completion allowance payload has extra fields")
+		}
+	}
+	wantCommand := "metasystem report stop-status --id " + delivery.ID
+	if visible == "" || !strings.HasSuffix(visible, "; status: "+wantCommand) || !validHookHumanLine(visible) {
+		return fmt.Errorf("hook completion payload does not name its exact Stop report")
+	}
+	info, err := os.Lstat(wantPath)
+	if err != nil || !info.Mode().IsRegular() || info.Mode()&os.ModeSymlink != 0 {
+		return fmt.Errorf("hook completion Stop report is unavailable")
+	}
+	reportBytes, err := os.ReadFile(wantPath)
+	if err != nil {
+		return fmt.Errorf("hook completion cannot read Stop report: %w", err)
+	}
+	digest := sha256.Sum256(reportBytes)
+	if hex.EncodeToString(digest[:]) != delivery.SHA256 {
+		return fmt.Errorf("hook completion Stop report digest does not match")
+	}
+	marker := "\n<!-- metasystem-stop-report-v1 "
+	start := strings.Index(string(reportBytes), marker)
+	endMarker := " -->"
+	if start < 0 {
+		return fmt.Errorf("hook completion Stop report identity is missing")
+	}
+	identityText := string(reportBytes)[start+len(marker):]
+	end := strings.Index(identityText, endMarker)
+	var identity struct {
+		Installation string `json:"installation"`
+		SessionKey   string `json:"sessionKey"`
+		Attempt      string `json:"attempt"`
+	}
+	if end < 0 || json.Unmarshal([]byte(identityText[:end]), &identity) != nil || identity.Installation != delivery.Installation || identity.SessionKey+"-"+identity.Attempt != delivery.ID {
+		return fmt.Errorf("hook completion Stop report identity does not match")
+	}
+	if strings.TrimSpace(healthLine) == "" || stopReportHealthLine(reportBytes) != healthLine {
+		return fmt.Errorf("hook completion Stop report does not contain its health snapshot")
+	}
+	return nil
+}
+
+func validHookHumanLine(line string) bool {
+	if len(line) > 256 || !utf8.ValidString(line) || strings.ContainsAny(line, "\r\n") {
+		return false
+	}
+	for _, r := range line {
+		if unicode.IsControl(r) || r == '\u2028' || r == '\u2029' {
+			return false
+		}
+	}
+	return true
+}
+
+func stopReportHealthLine(reportBytes []byte) string {
+	const marker = "## Health\n\n```json\n"
+	start := bytes.Index(reportBytes, []byte(marker))
+	if start < 0 {
+		return ""
+	}
+	section := reportBytes[start+len(marker):]
+	end := bytes.Index(section, []byte("\n```"))
+	if end < 0 {
+		return ""
+	}
+	var health struct {
+		Line string `json:"line"`
+	}
+	if json.Unmarshal(section[:end], &health) != nil {
+		return ""
+	}
+	return health.Line
 }
 
 func hookPayloadContainsHealthLine(payload, healthLine string) bool {

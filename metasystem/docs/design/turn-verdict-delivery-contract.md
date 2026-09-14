@@ -9,40 +9,47 @@ automation differs, and the table below says so in public
 
 ## What conformance means
 
-An adapter conforms when its runtime's turn end:
+An adapter conforms when its runtime's turn end preserves the engine's
+`shouldBlock` and `blockSource`, publishes one immutable report from the
+frozen judgment, and emits one compact human line of at most 256 UTF-8 bytes.
+For the `shared-reason-v1` candidate envelope a block is exactly
+`{"decision":"block","reason":"<line>"}` and an allowance is exactly
+`{"systemMessage":"<line>"}`. A block must not also carry
+`systemMessage`; the compact line flags a required human decision or
+supervision repair, and the report retains every cause, owner, remedy and
+seat action. Presentation failure cannot create or clear a block.
 
-1. invokes `report turn-verdict --root <checkout> --session <safe id>
-   --watchdog-surfaced <digest|empty>` (the shipped
-   `scripts/agents/supervision-hook.sh` does this for every runtime it
-   serves);
-2. honors `shouldBlock` through its runtime's own refusal mechanism,
-   with `display` transported into the block reason byte-verbatim;
-3. transports `display` into its non-blocking channel verbatim when not
-   blocking;
-4. never suppresses the degraded path: a nonzero verb exit surfaces the
-   hook's fixed message ("turn-verdict unavailable: ..."), never
-   silence, and never an all-clear the verb did not produce.
+Conformance also requires dated evidence for the actual host version,
+effective configuration and instruction bytes, trusted hook firing, total
+human transcript, exact report lookup from the seat's command environment,
+both block and allowance behavior, and the finite continuation limit. A
+source fixture or static declaration proves emission shape only. Missing or
+stale observations remain unobserved.
 
 ## The universal fallback (no hooks required)
 
-Any runtime's orchestrator can read the same information by
-instruction: `goal next` prints the one orientation line. AGENTS.md
-instructs every main to read it at turn end. Under exchangeability this
-is the same verdict on the only transport every runtime has — plain
-command output.
+On a blocked Stop, the instruction entrypoint requires the seat to run the
+exact `metasystem report stop-status --id ...` command before another work
+action or Stop. A free seat then uses `goal next --machine <own-nick>
+--fetch`; a held seat continues without another claim. An allowed Stop adds
+no report-read turn. This instruction is a recovery route, not evidence that
+the host displayed or enforced the notice.
 
 ## Conformance table (the DISTRIBUTION, not any installation)
 
-States: declared (a shipped Stop config exists) / installed (the config
-is wired by adoption) / observed (hooks seen firing live, by date) /
-blocking-capable (a live block observed, by date). Rows carry only
-evidenced states; upgrades are recorded here with their dates.
+The registry carries only the candidate expectation. Installation and host
+observation live in dated `capabilities.stopDelivery` snapshots; no runtime
+below is upgraded by this source change alone.
 
 | Runtime | State | Evidence |
 | --- | --- | --- |
-| claude | installed; fixture-proven EMISSION | scripts/enforcement/claude-code-hooks.json wires the hook; the supervision fixture proves the hook emits decision:block; hooks observed firing live (2026-08, this repository) |
-| codex | declared | scripts/enforcement/codex-hooks.json ships; live observation pending (backlog item 16's audit upgrades this row) |
-| devin | declared | scripts/enforcement/devin-hooks.json ships; live observation pending (backlog item 16's audit upgrades this row) |
+| claude | candidate `shared-reason-v1`; unobserved | Shipped mapping and fixtures do not yet prove the new compact transcript, report read, trust state, or eight-block continuation boundary on a real host. |
+| codex | candidate `shared-reason-v1`; unobserved | Shipped mapping exists; effective hook trust, transcript, report read, duplication and continuation limit still require a real-host observation. |
+| devin | mapping unknown; unobserved | The Stop envelope, public fields, report-read route and continuation limit remain unknown; no conforming mapping is claimed. |
+
+The fake runtime carries the shared mapping only so repository fixtures can
+exercise the complete seam. It is a synthetic harness, not host-conformance
+evidence.
 
 Which runtimes THIS checkout installed is answerable from
 metasystem.conf and is not this table's job. The instruction audit

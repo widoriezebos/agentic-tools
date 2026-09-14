@@ -77,6 +77,7 @@ var Rows = []Row{
 	{Code: "TEST_POLICY_ENGINE_REQUIRED", Owner: "cmd/metasystem", Site: "test.go:300", Shape: Agent, Override: "steward arm", Commands: 1},
 	{Code: "TEST_CONTRACT_REQUIRED", Owner: "internal/testpolicy", Site: "contract.go:137", Shape: Question},
 	{Code: "TEST_CONTRACT_INVALID", Owner: "cmd/metasystem", Site: "runtime_setup.go:63", Shape: Question},
+	{Code: "STOP_LOCATOR_UNAVAILABLE", Owner: "internal/hostsetup", Site: "setup.go:112", Shape: Question},
 	{Code: "TEST_POLICY_COVERAGE_FLOOR_LOWERED", Owner: "cmd/metasystem", Site: "test.go:355", Shape: Question},
 
 	{Code: "advance-checkout-locked", Owner: "internal/landing", Site: "advance.go:36", Shape: Agent, Override: "wait, then fetch, advance, push", Commands: 3},
@@ -213,6 +214,7 @@ var Exclusions = []Exclusion{
 	{Pattern: "TEST_CONTRACT_READY", Reason: "a runtime setup test-contract readiness status rather than a refusal"},
 	{Pattern: "PROVIDER_TRUST", Reason: "a runtime setup provider-trust status rather than a refusal"},
 	{Pattern: "LIFECYCLE_OBSERVED", Reason: "a runtime setup lifecycle-observation status rather than a refusal"},
+	{Pattern: "STOP_LOCATOR_READY", Reason: "the successful read-only runtime setup stop-report locator probe rather than a refusal"},
 	{Pattern: "creator-identity-unreadable", Reason: "a census or custody evidence code rather than a refusal returned to a caller"},
 	{Pattern: "custody-entry-malformed", Reason: "a census or custody evidence code rather than a refusal returned to a caller"},
 	{Pattern: "group-membership-unreadable", Reason: "a census or custody evidence code rather than a refusal returned to a caller"},

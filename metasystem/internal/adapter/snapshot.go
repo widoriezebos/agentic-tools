@@ -1,6 +1,7 @@
 package adapter
 
 import (
+	"encoding/json"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -53,6 +54,9 @@ func WriteCapabilitySnapshot(dir, runtime, version, configHash, transports, capa
 	if !validKeyHashes(keyHashesValue) {
 		return "", fmt.Errorf("configuration key hashes must map dotted paths to SHA-256 hashes")
 	}
+	if err := validateStopDeliveryCapability(capabilitiesValue); err != nil {
+		return "", err
+	}
 
 	if err := os.MkdirAll(dir, 0o755); err != nil {
 		return "", err
@@ -80,6 +84,134 @@ func WriteCapabilitySnapshot(dir, runtime, version, configHash, transports, capa
 		return "", err
 	}
 	return path, nil
+}
+
+func validateStopDeliveryCapability(capabilities any) error {
+	object, ok := capabilities.(map[string]any)
+	if !ok {
+		return fmt.Errorf("capabilities must be a JSON object")
+	}
+	raw, present := object["stopDelivery"]
+	if !present {
+		return nil
+	}
+	delivery, ok := raw.(map[string]any)
+	if !ok {
+		return fmt.Errorf("capabilities.stopDelivery must be an object")
+	}
+	required := []string{"schemaVersion", "envelope", "blockField", "blockValue", "blockTextField", "allowTextField", "humanVisibleFields", "duplicateBehavior", "reportReadRoute", "instructionHash", "trustProbe", "observationArtifact", "launchBinary", "seatCommandBinary", "continuationLimit", "level"}
+	if len(delivery) != len(required) {
+		return fmt.Errorf("capabilities.stopDelivery must contain exactly the version 1 fields")
+	}
+	for _, field := range required {
+		if _, ok := delivery[field]; !ok {
+			return fmt.Errorf("capabilities.stopDelivery is missing %s", field)
+		}
+	}
+	version, ok := delivery["schemaVersion"].(json.Number)
+	if !ok || version.String() != "1" {
+		return fmt.Errorf("capabilities.stopDelivery.schemaVersion must be 1")
+	}
+	stringField := func(name string) (string, bool) { value, ok := delivery[name].(string); return value, ok }
+	for _, field := range []string{"envelope", "blockField", "blockValue", "blockTextField", "allowTextField", "duplicateBehavior", "reportReadRoute", "instructionHash", "trustProbe", "observationArtifact", "launchBinary", "seatCommandBinary", "level"} {
+		if _, ok := stringField(field); !ok {
+			return fmt.Errorf("capabilities.stopDelivery.%s must be a string", field)
+		}
+	}
+	envelope, _ := stringField("envelope")
+	blockField, _ := stringField("blockField")
+	blockValue, _ := stringField("blockValue")
+	blockText, _ := stringField("blockTextField")
+	allowText, _ := stringField("allowTextField")
+	visibleRaw, ok := delivery["humanVisibleFields"].([]any)
+	if !ok {
+		return fmt.Errorf("capabilities.stopDelivery.humanVisibleFields must be a string array")
+	}
+	visible := make([]string, 0, len(visibleRaw))
+	for _, raw := range visibleRaw {
+		value, ok := raw.(string)
+		if !ok {
+			return fmt.Errorf("capabilities.stopDelivery.humanVisibleFields must be a string array")
+		}
+		visible = append(visible, value)
+	}
+	if envelope == "shared-reason-v1" {
+		if blockField != "decision" || blockValue != "block" || blockText != "reason" || allowText != "systemMessage" {
+			return fmt.Errorf("capabilities.stopDelivery shared-reason-v1 fields do not match the envelope")
+		}
+		if len(visible) != 2 || visible[0] != "reason" || visible[1] != "systemMessage" {
+			return fmt.Errorf("capabilities.stopDelivery shared-reason-v1 visible fields must be reason and systemMessage")
+		}
+	} else if envelope == "unverified" {
+		if blockField != "" || blockValue != "" || blockText != "" || allowText != "" || len(visible) != 0 {
+			return fmt.Errorf("capabilities.stopDelivery unverified envelope must leave fields and visible fields empty")
+		}
+	} else {
+		return fmt.Errorf("capabilities.stopDelivery.envelope must be shared-reason-v1 or unverified")
+	}
+	duplicate, _ := stringField("duplicateBehavior")
+	if duplicate != "single" && duplicate != "duplicate" && duplicate != "unknown" {
+		return fmt.Errorf("capabilities.stopDelivery.duplicateBehavior is invalid")
+	}
+	readRoute, _ := stringField("reportReadRoute")
+	if readRoute != "standing-instruction-and-command" && readRoute != "unknown" {
+		return fmt.Errorf("capabilities.stopDelivery.reportReadRoute is invalid")
+	}
+	instructionHash, _ := stringField("instructionHash")
+	if instructionHash != "" && !keyHashRe.MatchString(instructionHash) {
+		return fmt.Errorf("capabilities.stopDelivery.instructionHash must be empty or SHA-256")
+	}
+	for _, field := range []string{"launchBinary", "seatCommandBinary"} {
+		value, _ := stringField(field)
+		if value != "" && !filepath.IsAbs(value) {
+			return fmt.Errorf("capabilities.stopDelivery.%s must be empty or absolute", field)
+		}
+	}
+	if limit := delivery["continuationLimit"]; limit != nil {
+		number, ok := limit.(json.Number)
+		parsed, err := strconv.Atoi(number.String())
+		if !ok || err != nil || parsed < 1 {
+			return fmt.Errorf("capabilities.stopDelivery.continuationLimit must be null or a positive integer")
+		}
+	}
+	level, _ := stringField("level")
+	if level != "unobserved" && level != "emitted" && level != "observed" {
+		return fmt.Errorf("capabilities.stopDelivery.level is invalid")
+	}
+	trust, _ := stringField("trustProbe")
+	artifact, _ := stringField("observationArtifact")
+	launch, _ := stringField("launchBinary")
+	seat, _ := stringField("seatCommandBinary")
+	if level == "unobserved" && (instructionHash != "" || trust != "" || artifact != "" || launch != "" || seat != "" || duplicate != "unknown" || readRoute != "unknown") {
+		return fmt.Errorf("capabilities.stopDelivery unobserved level must not claim installation or observation evidence")
+	}
+	if level == "emitted" && (envelope == "unverified" || instructionHash == "" || artifact == "" || launch == "" || seat == "") {
+		return fmt.Errorf("capabilities.stopDelivery emitted level lacks installed emission evidence")
+	}
+	if level == "observed" {
+		if envelope == "unverified" || instructionHash == "" || trust == "" || artifact == "" || launch == "" || seat == "" || duplicate == "unknown" || readRoute == "unknown" {
+			return fmt.Errorf("capabilities.stopDelivery observed level lacks observation evidence")
+		}
+	}
+	return nil
+}
+
+func unobservedStopDeliveryCapability(envelope string) map[string]any {
+	delivery := map[string]any{
+		"schemaVersion": 1, "envelope": envelope,
+		"blockField": "", "blockValue": "", "blockTextField": "", "allowTextField": "",
+		"humanVisibleFields": []any{}, "duplicateBehavior": "unknown", "reportReadRoute": "unknown",
+		"instructionHash": "", "trustProbe": "", "observationArtifact": "", "launchBinary": "", "seatCommandBinary": "",
+		"continuationLimit": nil, "level": "unobserved",
+	}
+	if envelope == "shared-reason-v1" {
+		delivery["blockField"] = "decision"
+		delivery["blockValue"] = "block"
+		delivery["blockTextField"] = "reason"
+		delivery["allowTextField"] = "systemMessage"
+		delivery["humanVisibleFields"] = []any{"reason", "systemMessage"}
+	}
+	return delivery
 }
 
 // nextSequence is one past the highest three-digit sequence already written for

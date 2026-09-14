@@ -294,6 +294,7 @@ func WriteFakeCapabilitySnapshot(dir, profile string, ageDays, handshakeSec int)
 			"protocolServer":               enabled,
 			"nativeBudget":                 enabled,
 			"sessionEstablishedTimeoutSec": handshakeSec,
+			"stopDelivery":                 unobservedStopDeliveryCapability("shared-reason-v1"),
 		},
 		"permissions": map[string]any{"unverified": unverified},
 		"envelopeEnforcement": map[string]any{

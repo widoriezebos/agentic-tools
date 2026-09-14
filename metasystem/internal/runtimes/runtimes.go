@@ -76,6 +76,10 @@ type Declaration struct {
 	// InstructionFile is the runtime's instruction-bearing filename at
 	// a repository root.
 	InstructionFile string
+	// ExpectedStopDelivery names the candidate Stop envelope distributed for
+	// this runtime. It is an expectation only; dated capability snapshots own
+	// installation and observation evidence.
+	ExpectedStopDelivery string
 	// RegistrationDirs is the adopted-repository directory view (the
 	// `runtime dirs` verb; source of config validation's presence checks).
 	// Registration rows own installation behavior and tests pin this view to
@@ -186,6 +190,7 @@ var declarations = []Declaration{
 		CommonLifecycleAdapter:   true,
 		CollisionRoots:           []string{".agents"},
 		InstructionFile:          "AGENTS.md",
+		ExpectedStopDelivery:     "shared-reason-v1",
 		RegistrationDirs:         []string{".agents/skills"},
 		ShippedEnforcementConfig: "codex-hooks.json",
 		ExpectedEnvelopeEnforcement: map[string]Enforcement{
@@ -244,6 +249,7 @@ var declarations = []Declaration{
 		CollisionRoots:           []string{".claude"},
 		SessionEnv:               "CLAUDE_PROJECT_DIR",
 		InstructionFile:          "CLAUDE.md",
+		ExpectedStopDelivery:     "shared-reason-v1",
 		RegistrationDirs:         []string{".claude/skills", ".claude/agents"},
 		ShippedEnforcementConfig: "claude-code-hooks.json",
 		StartContextField:        "hookSpecificOutput.additionalContext",
@@ -259,10 +265,11 @@ var declarations = []Declaration{
 	{
 		Name: "fake", HasAdapter: true, HasHostLauncher: true,
 		TailoringPriority: 4, SynthesizedModel: "fake-model",
-		ContextSample:    "none",
-		MainObservable:   true,
-		InstructionFile:  "AGENTS.md",
-		SignatureVectors: SignatureVectors{Positive: "metasystem-fake-agent", Lookalike: "metasystem-fake-lookalike"},
+		ContextSample:        "none",
+		MainObservable:       true,
+		InstructionFile:      "AGENTS.md",
+		ExpectedStopDelivery: "shared-reason-v1",
+		SignatureVectors:     SignatureVectors{Positive: "metasystem-fake-agent", Lookalike: "metasystem-fake-lookalike"},
 		// The fixture harness's own declared gap: the unverified-network
 		// profile reports network unverified, and the waiver machinery's
 		// fixtures exercise exactly this residual.

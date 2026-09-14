@@ -2,6 +2,7 @@ package main
 
 import (
 	"encoding/json"
+	"errors"
 	"flag"
 	"fmt"
 	"os"
@@ -9,6 +10,111 @@ import (
 
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/report"
 )
+
+func runReportStopPresent(args []string) int {
+	flags := flag.NewFlagSet("report stop-present", flag.ContinueOnError)
+	root := flags.String("root", "", "resolved metasystem installation")
+	input := flags.String("input-file", "", "Stop presentation input JSON")
+	output := flags.String("output-file", "", "fresh Stop presentation result JSON")
+	if flags.Parse(args) != nil {
+		return 2
+	}
+	if *root == "" || *input == "" || *output == "" || len(flags.Args()) != 0 {
+		fmt.Fprintln(os.Stderr, "usage: metasystem report stop-present --root INSTALLATION --input-file FILE --output-file FILE")
+		return 2
+	}
+	_, err := report.PresentStop(*root, *input, *output, time.Now())
+	if err == nil {
+		return 0
+	}
+	var validation report.StopPresentationValidationError
+	if errors.As(err, &validation) {
+		fmt.Fprintln(os.Stderr, "report stop-present:", err)
+		return 2
+	}
+	fmt.Fprintln(os.Stderr, "report stop-present:", err)
+	return 1
+}
+
+func runReportStopInput(args []string) int {
+	flags := flag.NewFlagSet("report stop-input", flag.ContinueOnError)
+	root := flags.String("root", "", "resolved metasystem installation")
+	runtime := flags.String("runtime", "", "runtime name")
+	session := flags.String("session", "", "runtime session")
+	attempt := flags.String("attempt", "", "fresh 16-byte hexadecimal attempt")
+	mainID := flags.String("main-id", "", "resolved main id")
+	machine := flags.String("machine", "", "resolved machine")
+	lineage := flags.String("lineage", "", "resolved lineage")
+	claimEpoch := flags.Int64("claim-epoch", 0, "resolved holder claim epoch")
+	advisor := flags.Bool("advisor", false, "compose the judgment-free read-only advisor allowance")
+	verdict := flags.String("verdict-file", "", "retained turn verdict JSON")
+	facts := flags.String("facts-file", "", "frozen judgment facts JSON")
+	health := flags.String("health-file", "", "health preview JSON")
+	digest := flags.String("digest-file", "", "pending digest bytes")
+	digestPrefix := flags.String("digest-cursor-prefix", "", "pending digest cursor prefix")
+	receipt := flags.String("receipt-file", "", "receipt result bytes")
+	receiptStderr := flags.String("receipt-stderr-file", "", "receipt diagnostic bytes")
+	receiptExit := flags.Int("receipt-exit", 0, "receipt command exit")
+	arming := flags.String("arming-file", "", "arming result bytes")
+	armingStderr := flags.String("arming-stderr-file", "", "arming diagnostic bytes")
+	armingExit := flags.Int("arming-exit", 0, "arming command exit")
+	notice := flags.String("notice-file", "", "collected non-control notices")
+	failure := flags.String("failure-file", "", "collected unavailable diagnostics")
+	output := flags.String("output-file", "", "fresh Stop presentation input JSON")
+	if flags.Parse(args) != nil {
+		return 2
+	}
+	if *root == "" || *runtime == "" || *session == "" || *attempt == "" || *output == "" || *advisor == (*verdict != "") || len(flags.Args()) != 0 {
+		fmt.Fprintln(os.Stderr, "usage: metasystem report stop-input --root INSTALLATION --runtime RUNTIME --session SESSION --attempt HEX (--verdict-file FILE | --advisor) --output-file FILE [captured files]")
+		return 2
+	}
+	err := report.ComposeStopPresentationInput(report.StopPresentationCollection{
+		Root: *root, Runtime: *runtime, Session: *session, Attempt: *attempt, MainID: *mainID,
+		Machine: *machine, Lineage: *lineage, ClaimEpoch: *claimEpoch, Advisor: *advisor,
+		VerdictFile: *verdict, FactsFile: *facts, HealthFile: *health,
+		DigestFile: *digest, DigestCursorPrefix: *digestPrefix,
+		ReceiptFile: *receipt, ReceiptStderrFile: *receiptStderr, ReceiptExit: *receiptExit,
+		ArmingFile: *arming, ArmingStderrFile: *armingStderr, ArmingExit: *armingExit,
+		NoticeFile: *notice, FailureFile: *failure, OutputFile: *output,
+	}, time.Now())
+	if err == nil {
+		return 0
+	}
+	var validation report.StopPresentationValidationError
+	if errors.As(err, &validation) {
+		fmt.Fprintln(os.Stderr, "report stop-input:", err)
+		return 2
+	}
+	fmt.Fprintln(os.Stderr, "report stop-input:", err)
+	return 1
+}
+
+func runReportStopStatus(args []string) int {
+	flags := flag.NewFlagSet("report stop-status", flag.ContinueOnError)
+	id := flags.String("id", "", "exact immutable Stop report id")
+	root := flags.String("root", "", "explicit metasystem installation")
+	if flags.Parse(args) != nil {
+		return 2
+	}
+	if *id == "" || len(flags.Args()) != 0 {
+		fmt.Fprintln(os.Stderr, "usage: metasystem report stop-status --id ID [--root INSTALLATION]")
+		return 2
+	}
+	if err := report.ValidateStopStatusID(*id); err != nil {
+		fmt.Fprintln(os.Stderr, "report stop-status:", err)
+		return 2
+	}
+	data, _, err := report.ReadStopStatus(*root, *id)
+	if err != nil {
+		fmt.Fprintln(os.Stderr, "report stop-status:", err)
+		return 1
+	}
+	if _, err := os.Stdout.Write(data); err != nil {
+		fmt.Fprintln(os.Stderr, "report stop-status:", err)
+		return 1
+	}
+	return 0
+}
 
 // runReportStopBlock prints the stop-hook block decision, leading with any caller
 // detail given as the sole positional argument.

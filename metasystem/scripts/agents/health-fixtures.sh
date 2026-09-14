@@ -228,9 +228,19 @@ printf '{"component":"repo-watcher","generation":1,"pid":%s,"pidStartedAt":%s,"s
 hook_attempt=$("$ms" steward hook-attempt --repo "$repo" --pid "$$" --turn-key health-fixture) || fail "hook attempt could not be recorded"
 hook_generation=$("$ms" json get --value "$hook_attempt" --field generation) || fail "hook generation unreadable"
 hook_attempt_seq=$("$ms" json get --value "$hook_attempt" --field attemptSeq) || fail "hook attempt sequence unreadable"
-printf '%s\n' '{"systemMessage":"HEALTH fixture"}' >"$tmp/hook-response.json"
+hook_report_key=$(printf '%s' '["fake","health-fixture"]' | "$ms" util sha256)
+hook_report_attempt=11111111111111111111111111111111
+hook_report_id=$hook_report_key-$hook_report_attempt
+hook_report_dir=$repo/artifacts/agents/supervision/stop-verdicts
+hook_report_path=$hook_report_dir/$hook_report_id.md
+mkdir -p "$hook_report_dir"
+printf '# Health fixture\n\n<!-- metasystem-stop-report-v1 {"installation":"%s","runtime":"fake","session":"health-fixture","sessionKey":"%s","attempt":"%s"} -->\n\n## Health\n\n```json\n{"line":"HEALTH fixture"}\n```\n' \
+  "$repo" "$hook_report_key" "$hook_report_attempt" >"$hook_report_path"
+hook_report_sha=$("$ms" util sha256 <"$hook_report_path")
+printf '{"systemMessage":"Task unknown; Stop allowed; status: metasystem report stop-status --id %s"}\n' "$hook_report_id" >"$tmp/hook-response.json"
 "$ms" steward hook-complete --repo "$repo" --generation "$hook_generation" --attempt "$hook_attempt_seq" \
   --result OK --outcome EMITTED --health-line 'HEALTH fixture' --payload-file "$tmp/hook-response.json" \
+  --installation "$repo" --report-id "$hook_report_id" --report-path "$hook_report_path" --report-sha256 "$hook_report_sha" \
   || fail "hook completion could not be recorded"
 
 run_health() {

@@ -42,6 +42,9 @@ func stewardCensusFor(repo string) steward.WorkerCensus {
 	}
 }
 
+var stewardHealthNow = time.Now
+var stewardPreviewHealthAt = steward.PreviewHealthAt
+
 // runStewardHealth prints every role on one line and returns the aggregate
 // health code: zero healthy, one when any role is dead, two when unknown is
 // the worst result.
@@ -50,7 +53,16 @@ func runStewardHealth(args []string) int {
 	repo := flags.String("repo", "", "checkout root")
 	metasystemRoot := flags.String("metasystem-root", "", "installed metasystem root (defaults to checkout root)")
 	hookPreview := flags.Bool("hook-preview", false, "render current hook facts without advancing the tick-owned alert breaker (internal)")
+	format := flags.String("format", "text", "health output format: text or json")
 	if flags.Parse(args) != nil {
+		return 2
+	}
+	if *format != "text" && *format != "json" {
+		fmt.Fprintln(os.Stderr, "health: --format must be text or json")
+		return 2
+	}
+	if *format == "json" && !*hookPreview {
+		fmt.Fprintln(os.Stderr, "health: --format=json requires --hook-preview")
 		return 2
 	}
 	if *repo == "" {
@@ -61,8 +73,15 @@ func runStewardHealth(args []string) int {
 		*metasystemRoot = *repo
 	}
 	if *hookPreview {
-		verdict := steward.PreviewHealthAt(*repo, *metasystemRoot, time.Now(), nil)
-		fmt.Println(verdict.Line())
+		verdict := stewardPreviewHealthAt(*repo, *metasystemRoot, stewardHealthNow(), nil)
+		if *format == "json" {
+			if err := json.NewEncoder(os.Stdout).Encode(steward.NewHookHealthPreview(verdict)); err != nil {
+				fmt.Fprintln(os.Stderr, "health: encode hook preview:", err)
+				return 2
+			}
+		} else {
+			fmt.Println(verdict.Line())
+		}
 		return verdict.ExitCode()
 	}
 	verdict, err := steward.ObserveHealth(*repo, time.Now(), nil)
@@ -153,6 +172,10 @@ func runStewardHookComplete(args []string) int {
 	outcome := flags.String("outcome", "", "completion outcome")
 	healthLine := flags.String("health-line", "", "health verdict carried by the payload")
 	payloadFile := flags.String("payload-file", "", "file containing the emitted payload")
+	reportPath := flags.String("report-path", "", "exact immutable Stop report path")
+	reportID := flags.String("report-id", "", "exact immutable Stop report id")
+	reportSHA := flags.String("report-sha256", "", "sha256 of the immutable Stop report")
+	installation := flags.String("installation", "", "installation bound to the report lookup")
 	elapsedSec := flags.Int64("elapsed-sec", 0, "whole seconds elapsed since the Stop deadline parent started")
 	if flags.Parse(args) != nil {
 		return 2
@@ -180,12 +203,13 @@ func runStewardHookComplete(args []string) int {
 			return 1
 		}
 	}
-	if *result == string(steward.ComponentOK) && (*healthLine == "" || *payloadFile == "") {
-		fmt.Fprintln(os.Stderr, "steward hook-complete: OK requires --health-line and --payload-file")
+	if *result == string(steward.ComponentOK) && (*healthLine == "" || *payloadFile == "" || *reportPath == "" || *reportID == "" || *reportSHA == "" || *installation == "") {
+		fmt.Fprintln(os.Stderr, "steward hook-complete: OK requires health, payload, and exact Stop report reference flags")
 		return 2
 	}
-	if _, err := steward.CompleteHookAttempt(*repo, *generation, *attempt, steward.ComponentResult(*result),
-		*outcome, *healthLine, string(payload), stopElapsedSec, time.Now()); err != nil {
+	_, err := steward.CompleteHookAttemptWithDelivery(*repo, *generation, *attempt, steward.ComponentResult(*result),
+		*outcome, *healthLine, string(payload), steward.HookDeliveryReference{Installation: *installation, ID: *reportID, Path: *reportPath, SHA256: *reportSHA}, stopElapsedSec, time.Now())
+	if err != nil {
 		fmt.Fprintf(os.Stderr, "steward hook-complete: %v\n", err)
 		return 1
 	}

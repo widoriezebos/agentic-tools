@@ -43,10 +43,11 @@ a rendered string:
 - **infrastructure**: a read or write of the hook's or the verdict's own
   state failed (every `record_stop_failure` site above, the deadline, every
   `failClosedTurnVerdict` producer, the session-stop marker's read and
-  consume, the launcher's bootstrap). The stop is ALLOWED. The response
-  carries a degraded notice naming the condition and its owner (the steward
-  or a person), one line is appended to the hook log, and nothing else
-  happens: no seen marker, no counter, no ALL CLEAR, no authorization.
+  consume, the launcher's bootstrap). The stop is ALLOWED. The sole compact
+  human line says `needs supervision repair`; the immutable report names the
+  condition, owner and remedy, one line is appended to the hook log, and
+  nothing else happens: no seen marker, no counter, no ALL CLEAR, no
+  authorization.
   This holds on the first occurrence and every one after; the
   first-occurrence block of `report stop-block` goes.
 - **seat-actionable**: the turn verdict's own findings (owned work with no
@@ -62,8 +63,11 @@ a rendered string:
 Where it lives:
 
 - `report stop-block` gains `--class` (`infrastructure` or
-  `seat-actionable`); the infrastructure class returns the allowance with
-  the notice and writes the log line; the seat class keeps today's block.
+  `seat-actionable`); the infrastructure class returns the allowance and
+  writes the log line; the presenter carries its typed repair flag in the
+  sole `systemMessage`. The seat class keeps today's block in the sole
+  `reason` field; when infrastructure also failed, that reason carries the
+  repair flag and the report carries the complete notice.
   The hook passes `--class infrastructure` at line 943 for every
   `record_stop_failure` cause and at the deadline path; the deadline's own
   record-failure branch already allows and is kept, and its notice is
@@ -78,7 +82,8 @@ Where it lives:
   detail, never an all-clear. The idle branch is
   evaluated before the verdict-state write, and a failed write returns the
   idle block with `CountSpent` false and the same class field set to
-  `idle-with-backlog`.
+  `idle-with-backlog`. Its full diagnostic moves to the report; the compact
+  public line does not expose another field.
 - The arming-failure notice carries the failed components exactly as
   `metasystem up` prints them (its `Components` lines with outcome, detail
   and remedy, then the aggregate), never the bare "supervision arming
@@ -91,8 +96,8 @@ Where it lives:
   allowances (worker output unreadable, deadline expired) append theirs
   too. The append's exit is checked; a failed append is said in the notice.
 - The launcher's fallback becomes a degraded allowance: on a nonzero hook
-  exit it prints a systemMessage that names the failure as the hook's own
-  and points at the steward, and never a block. The installed Stop line
+  exit it prints one bounded `systemMessage` with `needs supervision repair`,
+  a fixed cause and fixed unavailable remedy, and never a block. The installed Stop line
   the seats run is not the template: `metasystem/internal/hooks/setup.go`
   renders it. The renderer carries the template's fallback tail through
   byte for byte instead of composing one, and recognizes the retired block

@@ -11,6 +11,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/atomicfile"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/authority"
 	dispatchpkg "github.com/widoriezebos/agentic-tools/metasystem/internal/dispatch"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/fixtureauth"
@@ -655,8 +656,22 @@ func runReportTurnVerdict(args []string) int {
 	watchdog := flags.String("watchdog-surfaced", "", "sha256 of this turn's watchdog report (empty clears)")
 	mainId := flags.String("main-id", "", "the caller main identity for the unwatched-work rule")
 	stopHookActive := flags.Bool("stop-hook-active", false, "the runtime is repeating a Stop hook that previously blocked")
+	factsFile := flags.String("facts-file", "", "fresh absolute path for the frozen judgment facts")
 	if flags.Parse(args) != nil {
 		return 2
+	}
+	if *factsFile != "" {
+		if !filepath.IsAbs(*factsFile) {
+			fmt.Fprintln(os.Stderr, "report turn-verdict: --facts-file must be absolute")
+			return 2
+		}
+		if _, err := os.Lstat(*factsFile); err == nil {
+			fmt.Fprintln(os.Stderr, "report turn-verdict: --facts-file must not already exist")
+			return 2
+		} else if !os.IsNotExist(err) {
+			fmt.Fprintln(os.Stderr, "report turn-verdict: cannot inspect --facts-file:", err)
+			return 2
+		}
 	}
 	scan := report.Scan(*root)
 	now, err := goalCommandNow(*root)
@@ -697,21 +712,48 @@ func runReportTurnVerdict(args []string) int {
 			waiting = []string{"durable wait recovery rows could not be read: " + waitErr.Error()}
 		}
 		if len(waiting) > 0 {
-			prefix := strings.Join(waiting, "\n")
+			waitingPrefix := strings.Join(waiting, "\n")
+			prefix := waitingPrefix
 			if verdict.Display != "" {
 				prefix += "\n" + verdict.Display
 			}
 			verdict.Display = prefix
+			if verdict.Facts != nil {
+				full := waitingPrefix
+				if verdict.Facts.FullDisplay != "" {
+					full += "\n" + verdict.Facts.FullDisplay
+				}
+				verdict.Facts.FullDisplay = full
+			}
 		}
+	}
+	if verdict.Facts != nil {
+		verdict.Facts.Verdict = verdict
 	}
 	data, err := json.Marshal(verdict)
 	if err != nil {
 		fmt.Fprintln(os.Stderr, err)
 		return 1
 	}
+	if *factsFile != "" {
+		if verdict.Facts == nil {
+			fmt.Fprintln(os.Stderr, "report turn-verdict: frozen facts are unavailable for this judgment")
+		} else if facts, marshalErr := json.Marshal(verdict.Facts); marshalErr != nil {
+			fmt.Fprintln(os.Stderr, "report turn-verdict: frozen facts could not be rendered:", marshalErr)
+		} else if durable, writeErr := turnVerdictFactsWriter(*factsFile, string(facts)+"\n", ""); writeErr != nil || !durable {
+			_ = os.Remove(*factsFile)
+			if writeErr != nil {
+				fmt.Fprintln(os.Stderr, "report turn-verdict: frozen facts could not be written:", writeErr)
+			} else {
+				fmt.Fprintln(os.Stderr, "report turn-verdict: frozen facts could not be written: crash durability is unknown")
+			}
+		}
+	}
 	fmt.Println(string(data))
 	return 0
 }
+
+var turnVerdictFactsWriter = atomicfile.WriteText
 
 func resolveSeatIdleActor(root, mainID string) func() (goal.Actor, int64, error) {
 	return func() (goal.Actor, int64, error) {

@@ -1,11 +1,14 @@
 package main
 
 import (
+	"encoding/json"
 	"os"
 	"os/exec"
 	"path/filepath"
 	"strings"
 	"testing"
+
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/report"
 )
 
 func setupCLIFixture(t *testing.T) (repo, installation string) {
@@ -49,8 +52,8 @@ func setupCLIWrite(t *testing.T, path, content string, mode os.FileMode) {
 	}
 }
 
-const cliClaudeHooks = `{"hooks":{"SessionStart":[{"matcher":"startup|resume|clear|compact","hooks":[{"type":"command","command":"bash scripts/agents/supervision-hook.sh claude start","timeout":15}]}],"Stop":[{"hooks":[{"type":"command","command":"bash scripts/agents/supervision-hook.sh claude receipt"},{"type":"command","command":"(bash scripts/agents/supervision-hook.sh claude stop) || printf '%s\\n' '{\"systemMessage\":\"Metasystem Stop hook launcher failed in its own infrastructure; stopping is allowed with degraded supervision. Cause: hook-bootstrap-failed. Component: hook-launcher. The steward owns repair.\"}'","timeout":60}]}],"SessionEnd":[{"hooks":[{"type":"command","command":"bash scripts/agents/supervision-hook.sh claude end","timeout":3}]}]}}`
-const cliCodexHooks = `{"hooks":{"SessionStart":[{"matcher":"startup|resume|clear|compact","hooks":[{"type":"command","command":"bash scripts/agents/supervision-hook.sh codex start","timeout":15}]}],"Stop":[{"hooks":[{"type":"command","command":"bash scripts/agents/supervision-hook.sh codex stop","timeout":60}]}],"SessionEnd":[{"hooks":[{"type":"command","command":"bash scripts/agents/supervision-hook.sh codex end","timeout":3}]}]}}`
+const cliClaudeHooks = `{"hooks":{"SessionStart":[{"matcher":"startup|resume|clear|compact","hooks":[{"type":"command","command":"bash scripts/agents/supervision-hook.sh claude start","timeout":15}]}],"Stop":[{"hooks":[{"type":"command","command":"(bash scripts/agents/supervision-hook.sh claude stop) || printf '%s\\n' '{\"systemMessage\":\"Task unknown; Stop allowed; needs supervision repair; hook-bootstrap-failed. The steward must restore supervision. Status unavailable.\"}'","timeout":60}]}],"SessionEnd":[{"hooks":[{"type":"command","command":"bash scripts/agents/supervision-hook.sh claude end","timeout":3}]}]}}`
+const cliCodexHooks = `{"hooks":{"SessionStart":[{"matcher":"startup|resume|clear|compact","hooks":[{"type":"command","command":"bash scripts/agents/supervision-hook.sh codex start","timeout":15}]}],"Stop":[{"hooks":[{"type":"command","command":"(bash scripts/agents/supervision-hook.sh codex stop) || printf '%s\\n' '{\"systemMessage\":\"Task unknown; Stop allowed; needs supervision repair; hook-bootstrap-failed. The steward must restore supervision. Status unavailable.\"}'","timeout":60}]}],"SessionEnd":[{"hooks":[{"type":"command","command":"bash scripts/agents/supervision-hook.sh codex end","timeout":3}]}]}}`
 const cliDevinHooks = `{"hooks":{"SessionStart":[{"hooks":[{"type":"command","command":"bash scripts/agents/supervision-hook.sh devin start","timeout":15}]}],"Stop":[{"hooks":[{"type":"command","command":"bash scripts/agents/supervision-hook.sh devin stop","timeout":60}]}],"SessionEnd":[{"hooks":[{"type":"command","command":"bash scripts/agents/supervision-hook.sh devin end","timeout":3}]}]}}`
 
 func TestRuntimeSetupCLIConfiguresAllByDefaultChecksAndSelectsNone(t *testing.T) {
@@ -87,6 +90,49 @@ func TestRuntimeSetupCLIRejectsUnknownInputAndPendingCheck(t *testing.T) {
 	}
 	if _, code := captureStdout(t, func() int { return runRuntimeSetup([]string{"--repo", repo, "--check"}) }); code != 1 {
 		t.Fatalf("pending check exit = %d, want 1", code)
+	}
+}
+
+func TestRuntimeSetupCLIStopStatusProbeRequiresCheckAndReportsBinding(t *testing.T) {
+	missing := filepath.Join(t.TempDir(), "must-not-exist")
+	id := strings.Repeat("a", 64) + "-" + strings.Repeat("b", 32)
+	for _, args := range [][]string{
+		{"--repo", missing, "--stop-status-id", id},
+		{"--repo", missing, "--check", "--stop-status-id", "invalid"},
+	} {
+		stdout, stderr, code := captureRelay(t, func() int { return runRuntimeSetup(args) })
+		if code != 2 || stdout != "" || stderr == "" {
+			t.Fatalf("invalid locator flags = code %d stdout %q stderr %q", code, stdout, stderr)
+		}
+	}
+	if _, err := os.Stat(missing); !os.IsNotExist(err) {
+		t.Fatalf("invalid locator flags touched the repository: %v", err)
+	}
+
+	repo, installation := setupCLIFixture(t)
+	if _, code := captureStdout(t, func() int { return runRuntimeSetup([]string{"--repo", repo, "--runtimes", "claude"}) }); code != 0 {
+		t.Fatalf("setup exit = %d", code)
+	}
+	installation, _ = filepath.EvalSymlinks(installation)
+	sessionKey := report.StopSessionKey("claude", "cli-locator")
+	id = sessionKey + "-" + strings.Repeat("c", 32)
+	identity := report.StopIdentity{Installation: installation, Runtime: "claude", Session: "cli-locator", SessionKey: sessionKey, Attempt: strings.Repeat("c", 32), ObservedAt: "2026-09-13T12:00:00Z"}
+	identityJSON, _ := json.Marshal(identity)
+	reportPath := filepath.Join(installation, "artifacts", "agents", "supervision", "stop-verdicts", id+".md")
+	setupCLIWrite(t, reportPath, "# locator\n\n<!-- metasystem-stop-report-v1 "+string(identityJSON)+" -->\n", 0o644)
+	binary := filepath.Join(installation, "bin", "metasystem")
+	quotedReport := "'" + strings.ReplaceAll(reportPath, "'", "'\"'\"'") + "'"
+	setupCLIWrite(t, binary, "#!/bin/sh\nexec cat "+quotedReport+"\n", 0o755)
+	t.Setenv("PATH", filepath.Dir(binary)+":"+os.Getenv("PATH"))
+	nested := filepath.Join(repo, "application")
+	if err := os.MkdirAll(nested, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	stdout, stderr, code := captureRelay(t, func() int {
+		return runRuntimeSetup([]string{"--repo", nested, "--runtimes", "claude", "--check", "--stop-status-id", id})
+	})
+	if code != 0 || stderr != "" || !strings.Contains(stdout, "STOP_LOCATOR_READY binary="+binary+" id="+id) {
+		t.Fatalf("locator probe = code %d stdout %q stderr %q", code, stdout, stderr)
 	}
 }
 

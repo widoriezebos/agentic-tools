@@ -56,6 +56,7 @@ esac
 
 source_root=$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd -P)
 source "$source_root/scripts/agents/fixture-budget.sh"
+source "$source_root/scripts/agents/fixture-stop-report.sh"
 
 tmp=$(mktemp -d)
 owned_pids=()
@@ -1033,13 +1034,16 @@ wait_until "nested sibling arming" test -e "$nested_arm_ready"
 grep -Fq 'up outcome=armed authority=writer' "$nested_arm_output_file" \
   || { echo "nested sibling main did not become the nested checkout holder" >&2; cat "$nested_arm_output_file" >&2; exit 1; }
 
-  assert_nested_block() { # output, sentinel, case name
-  local output sentinel case_name
+  assert_nested_block() { # output, session, sentinel, case name
+  local output session_id sentinel case_name report
   output=$1
-  sentinel=$2
-  case_name=$3
+  session_id=$2
+  sentinel=$3
+  case_name=$4
+  report=$(fixture_stop_status_report "$output" "$nested_installation" fake "$session_id") \
+    || { echo "$case_name did not expose its identity-bound Stop report" >&2; cat "$output" >&2; exit 1; }
   grep -Fq '"decision":"block"' "$output" \
-    && grep -Fq "$sentinel" "$output" \
+    && grep -Fq "$sentinel" <<<"$report" \
       || { echo "$case_name did not block from the resolved nested world" >&2; cat "$output" >&2; exit 1; }
   }
 
@@ -1111,7 +1115,7 @@ fire_nested() { # hook, session, cwd, output
     commit -qm fixture
   write_nested_plan_line 'nested-freshness sentinel'
   fire_nested "$nested_hook" nested-freshness "$nested_inner" "$tmp/nested-freshness.out"
-  assert_nested_block "$tmp/nested-freshness.out" 'nested-freshness sentinel' 'nested freshness Stop'
+  assert_nested_block "$tmp/nested-freshness.out" nested-freshness 'nested-freshness sentinel' 'nested freshness Stop'
   nested_component=$nested_installation/artifacts/agents/steward/components/supervision-hook.json
   [[ -f "$nested_component" ]] \
     || { echo "nested freshness Stop wrote no steward component record" >&2; exit 1; }
@@ -1128,11 +1132,11 @@ fire_nested() { # hook, session, cwd, output
 
   write_nested_plan_line 'nested-sibling sentinel'
   fire_nested "$nested_hook" nested-sibling "$nested_sibling" "$tmp/nested-sibling.out"
-  assert_nested_block "$tmp/nested-sibling.out" 'nested-sibling sentinel' 'nested sibling Stop'
+  assert_nested_block "$tmp/nested-sibling.out" nested-sibling 'nested-sibling sentinel' 'nested sibling Stop'
   write_nested_plan_line 'nested-inside sentinel'
   run_nested_holder_stop nested-inside "$nested_installation/scripts/agents" "$nested_hook" \
     "$tmp/nested-inside.out" env -u METASYSTEM_BIN
-  assert_nested_block "$tmp/nested-inside.out" 'nested-inside sentinel' 'nested installation Stop'
+  assert_nested_block "$tmp/nested-inside.out" nested-inside 'nested-inside sentinel' 'nested installation Stop'
   [[ -s "$nested_installation/artifacts/agents/supervision/hooks.log" ]] \
     || { echo "nested Stop firings left no trail in the state world" >&2; exit 1; }
   [[ ! -e "$nested_scope/artifacts" ]] \
@@ -1151,7 +1155,7 @@ nested_primary_log=$nested_installation/artifacts/agents/supervision/hooks.log
 nested_log_before=$(wc -c <"$nested_primary_log" | tr -d '[:space:]')
 fire_nested "$nested_worktree_installation/scripts/agents/supervision-hook.sh" nested-worktree \
   "$nested_worktree" "$tmp/nested-worktree.out"
-assert_nested_block "$tmp/nested-worktree.out" 'recover the primary sentinel' 'linked-worktree Stop'
+assert_nested_block "$tmp/nested-worktree.out" nested-worktree 'recover the primary sentinel' 'linked-worktree Stop'
 nested_log_after=$(wc -c <"$nested_primary_log" | tr -d '[:space:]')
   (( nested_log_after > nested_log_before )) \
     || { echo "linked-worktree Stop did not append evidence in the primary" >&2; exit 1; }
@@ -1164,11 +1168,14 @@ nested_log_after=$(wc -c <"$nested_primary_log" | tr -d '[:space:]')
 GIT_DIR="$nested_scope/.git" GIT_WORK_TREE="$nested_worktree" \
   fire_nested "$nested_worktree_installation/scripts/agents/supervision-hook.sh" nested-worktree-steered \
     "$nested_worktree" "$tmp/nested-worktree-steered.out"
-  assert_nested_block "$tmp/nested-worktree-steered.out" 'recover the steered sentinel' 'Git-steered worktree Stop'
+  assert_nested_block "$tmp/nested-worktree-steered.out" nested-worktree-steered 'recover the steered sentinel' 'Git-steered worktree Stop'
 nested_log_after=$(wc -c <"$nested_primary_log" | tr -d '[:space:]')
 (( nested_log_after > nested_log_before )) \
   || { echo "Git-steered worktree Stop did not append evidence in the primary" >&2; exit 1; }
-if grep -Fq 'engine missing' "$tmp/nested-worktree-steered.out"; then
+nested_worktree_steered_report=$(fixture_stop_status_report \
+  "$tmp/nested-worktree-steered.out" "$nested_installation" fake nested-worktree-steered) \
+  || { echo "Git-steered worktree Stop did not expose its identity-bound report" >&2; exit 1; }
+if grep -Fq 'engine missing' <<<"$nested_worktree_steered_report"; then
   echo "Git steering hid the primary engine from the worktree hook" >&2
   exit 1
 fi
@@ -1197,12 +1204,14 @@ FIXTURE
   nested_log_before=$nested_log_after
   nested_override_json=$(<"$nested_override_output")
   nested_override_decision=$("$ms" json get --value "$nested_override_json" --field decision)
-  nested_override_reason=$("$ms" json get --value "$nested_override_json" --field reason)
-  nested_override_message=$("$ms" json get --value "$nested_override_json" --field systemMessage)
+  nested_override_report=$(fixture_stop_status_report \
+    "$nested_override_output" "$nested_installation" fake nested-override) \
+    || { echo "nested override Stop exposed no identity-bound report" >&2; cat "$nested_override_output" >&2; exit 1; }
   [[ "$nested_override_decision" == block \
-    && "$nested_override_reason" == *'nested-override sentinel'* \
-    && "$nested_override_message" == *'Cause: supervision arming failed'* \
+    && "$nested_override_report" == *'nested-override sentinel'* \
     && "$nested_override_json" != *'stop-hook-output-was-unreadable'* ]] \
+    && grep -Fqx -- '- unavailable hook: supervision arming failed Remedy: The steward must restore supervision. Owner: steward.' \
+      <<<"$nested_override_report" \
     || { echo "nested override Stop did not preserve its block with the disclosed arming failure" >&2; cat "$nested_override_output" >&2; exit 1; }
   nested_log_after=$(wc -c <"$nested_primary_log" | tr -d '[:space:]')
   (( nested_log_after > nested_log_before )) \
@@ -1226,7 +1235,7 @@ cp "$nested_hook" "$copied_dir/supervision-hook.sh"
 cp "$nested_installation/scripts/agents/evidence-gc.sh" "$copied_dir/evidence-gc.sh"
 ln -s "$nested_hook" "$copied_dir/hook-link.sh"
 copied_log_before=$(wc -c <"$nested_primary_log" | tr -d '[:space:]')
-  missing_engine_allowance='{"systemMessage":"Metasystem engine missing; stopping is allowed with degraded infrastructure. Reinstall or rebuild bin/metasystem; the steward owns repair."}'
+  missing_engine_allowance='{"systemMessage":"Task unknown; Stop allowed; needs supervision repair; engine missing. Rebuild bin/metasystem. Status unavailable."}'
 for copied_kind in copy link; do
   copied_hook=$copied_dir/supervision-hook.sh
   [[ "$copied_kind" != link ]] || copied_hook=$copied_dir/hook-link.sh
@@ -1265,8 +1274,8 @@ cp -R "$nested_installation/scripts/agents/adapters" "$no_world/scripts/agents/a
     || { echo "an installation outside Git spent ${no_world_elapsed}s waiting for a resolver it did not start" >&2; exit 1; }
   [[ ! -e "$no_world/artifacts" ]] \
     || { echo "an installation outside Git guessed a governed world" >&2; cat "$tmp/no-world.out" >&2; exit 1; }
-  grep -Fq 'stop-hook-output-was-unreadable' "$tmp/no-world.out" \
-    && grep -Fq 'the payload named no checkout' "$tmp/no-world.out" \
+  no_world_expected='{"systemMessage":"Task unknown; Stop allowed; needs supervision repair; stop-hook-output-was-unreadable; condition log failed; no resolved checkout. The steward must restore supervision. Status unavailable."}'
+  [[ $(<"$tmp/no-world.out") == "$no_world_expected" ]] \
     && ! grep -Fq '"decision":"block"' "$tmp/no-world.out" \
     || { echo "an installation outside Git did not use the unreadable-output allowance" >&2; cat "$tmp/no-world.out" >&2; exit 1; }
 
@@ -1301,10 +1310,10 @@ run_nested_holder_stop engine-skew "$skew_root" \
 run_nested_holder_stop engine-skew-malformed "$skew_root" \
   "$skew_root/scripts/agents/supervision-hook.sh" "$tmp/engine-skew-malformed.out" \
   env -u METASYSTEM_BIN "METASYSTEM_SKEW_REAL_ENGINE=$ms" METASYSTEM_SKEW_MALFORMED_ROOT=1
+engine_skew_expected='{"systemMessage":"Task unknown; Stop allowed; needs supervision repair; engine does not answer path state-root. Rebuild bin/metasystem. Status unavailable."}'
 for skew_output in "$tmp/engine-skew.out" "$tmp/engine-skew-malformed.out"; do
-  [[ $(grep -Fc 'does not answer path state-root' "$skew_output") == 1 \
-     && $(grep -Fc 'degraded infrastructure' "$skew_output") == 1 ]] \
-    || { echo "engine skew did not surface the hook-skew allowance exactly once" >&2; cat "$skew_output" >&2; exit 1; }
+  [[ $(<"$skew_output") == "$engine_skew_expected" ]] \
+    || { echo "engine skew did not emit its fixed hook-skew allowance" >&2; cat "$skew_output" >&2; exit 1; }
   if grep -Eq '"decision":"block"|HEALTH unknown|stop-hook-output-was-unreadable' "$skew_output"; then
     echo "engine-skew allowance was replaced or made blocking" >&2
     cat "$skew_output" >&2
@@ -1327,7 +1336,7 @@ done
       "$nested_worktree_installation/scripts/agents/supervision-hook.sh" "$completion_out" \
       env -u METASYSTEM_BIN
   fi
-    assert_nested_block "$completion_out" "$completion_case sentinel" "$completion_case"
+    assert_nested_block "$completion_out" "$completion_case" "$completion_case sentinel" "$completion_case"
     if grep -Fq 'stop-hook-output-was-unreadable' "$completion_out"; then
       echo "$completion_case used the parent's unreadable-output allowance" >&2
     exit 1
@@ -1382,16 +1391,17 @@ chmod +x "$deadline_engine"
   fi
   record=$expected_root/artifacts/agents/supervision/stop-refusals/$session_id.json
     if [[ "$slow_root" == 1 ]]; then
-      grep -Fq 'could not update the stop-refusal record; stopping is allowed' "$output" \
-        || { echo "$session_id did not emit the unresolved-root record-failure allowance" >&2; cat "$output" >&2; exit 1; }
+      unresolved_record_expected='{"systemMessage":"Task unknown; Stop allowed; needs supervision repair; stop deadline expired; record update failed; condition log failed; no resolved checkout. The steward must restore supervision. Status unavailable."}'
+      [[ $(<"$output") == "$unresolved_record_expected" ]] \
+        || { echo "$session_id did not emit the fixed unresolved-root record-failure allowance" >&2; cat "$output" >&2; exit 1; }
       unexpected_record=$(find "$nested_scope" "$nested_worktree" -type f \
         -path "*/stop-refusals/$session_id.json" -print -quit)
       [[ -z "$unexpected_record" ]] \
         || { echo "$session_id guessed a refusal-record root after state-root timed out: $unexpected_record" >&2; exit 1; }
   else
-    grep -Fq 'deadline expired before a turn verdict' "$output" \
+    grep -Fq 'Stop allowed; needs supervision repair; stop deadline expired.' "$output" \
       || { echo "$session_id did not emit the degraded deadline notice" >&2; cat "$output" >&2; exit 1; }
-    if grep -Fq 'could not update the stop-refusal record' "$output"; then
+    if grep -Fq 'record update failed' "$output"; then
       echo "$session_id emitted the record-failure allowance after resolving its state world" >&2
       exit 1
     fi
@@ -1453,7 +1463,7 @@ run_nested_timeout nested-wt-parent-steered-timeout-slow-root true 1 "$nested_in
   fixture_harness_roots+=("$nested_local_installation")
 
   assert_compiled_installation_block() { # output, installation, scope, session, sentinel, case name
-    local output installation scope session_id sentinel case_name component refusal_record response decision reason system_message
+    local output installation scope session_id sentinel case_name component refusal_record response decision report
     output=$1
     installation=$2
     scope=$3
@@ -1462,12 +1472,13 @@ run_nested_timeout nested-wt-parent-steered-timeout-slow-root true 1 "$nested_in
     case_name=$6
     response=$(<"$output")
     decision=$("$ms" json get --value "$response" --field decision)
-    reason=$("$ms" json get --value "$response" --field reason)
-    system_message=$("$ms" json get --value "$response" --field systemMessage)
+    report=$(fixture_stop_status_report "$output" "$installation" fake "$session_id") \
+      || { echo "$case_name did not expose its identity-bound Stop report" >&2; cat "$output" >&2; exit 1; }
     [[ "$decision" == block \
-      && "$reason" == *"$sentinel"* \
-      && "$system_message" == *'Cause: supervision arming failed'* \
-      && "$response" != *'stop-hook-output-was-unreadable'* ]] \
+      && "$report" == *"$sentinel"* \
+      && "$report" != *'stop-hook-output-was-unreadable'* ]] \
+      && grep -Fqx -- '- unavailable hook: supervision arming failed Remedy: The steward must restore supervision. Owner: steward.' \
+        <<<"$report" \
       || { echo "$case_name did not preserve its installation verdict beside the arming failure" >&2; cat "$output" >&2; exit 1; }
     component=$installation/artifacts/agents/steward/components/supervision-hook.json
     [[ -f "$component" ]] \
@@ -1861,8 +1872,10 @@ if [[ "$fixture_scenario" == seat-survives ]]; then
       >"$tmp/seat-survives.hook"
   [[ "$(json_field "$tmp/seat-survives.hook" decision allow)" == allow ]] \
     || { echo "the stopped checkout blocked its bed main at turn end" >&2; cat "$tmp/seat-survives.hook" >&2; exit 1; }
-  grep -Fq "Metasystem is stopped for this checkout; start again with metasystem arm --repo $repo." "$tmp/seat-survives.hook" \
-    || { echo "the stopped checkout's hook omitted the stopped outcome" >&2; cat "$tmp/seat-survives.hook" >&2; exit 1; }
+  seat_survives_report=$(fixture_stop_status_report "$tmp/seat-survives.hook" "$repo" fake "$acceptance_main_session") \
+    || { echo "the stopped checkout emitted no bounded readable status report" >&2; cat "$tmp/seat-survives.hook" >&2; exit 1; }
+  grep -Fq "the metasystem is stopped for $repo" <<<"$seat_survives_report" \
+    || { echo "the stopped checkout's report omitted the stopped outcome" >&2; printf '%s\n' "$seat_survives_report" >&2; exit 1; }
   assert_fixture_supervision_isolation
   fixture_child_completed=1
   exit 0
@@ -2022,8 +2035,10 @@ FAKE_AGENT
       >"$tmp/stop-fence.hook"
   [[ "$(json_field "$tmp/stop-fence.hook" decision allow)" == allow ]] \
     || { echo "the closed-fence stop hook did not return allow" >&2; cat "$tmp/stop-fence.hook" >&2; exit 1; }
-  grep -Fq "Metasystem is stopped for this checkout; start again with metasystem arm --repo $repo." "$tmp/stop-fence.hook" \
-    || { echo "the closed-fence stop hook omitted the stopped outcome" >&2; cat "$tmp/stop-fence.hook" >&2; exit 1; }
+  stop_fence_report=$(fixture_stop_status_report "$tmp/stop-fence.hook" "$repo" fake "$acceptance_main_session") \
+    || { echo "the closed-fence stop hook emitted no bounded readable status report" >&2; cat "$tmp/stop-fence.hook" >&2; exit 1; }
+  grep -Fq "the metasystem is stopped for $repo" <<<"$stop_fence_report" \
+    || { echo "the closed-fence stop report omitted the stopped outcome" >&2; printf '%s\n' "$stop_fence_report" >&2; exit 1; }
 
   transition=$repo/artifacts/agents/supervision/transition.json
   cp "$transition" "$tmp/stop-fence.completed-transition.json"
@@ -2045,8 +2060,10 @@ FAKE_AGENT
     | METASYSTEM_FAKE_AGENT_ANCESTOR_PID=$acceptance_main_pid \
       run_fixture_hook "$repo" "$repo/scripts/agents/supervision-hook.sh" fake stop \
       >"$tmp/stop-fence-incomplete.hook"
-  grep -Fq "Metasystem stop incomplete for $repo since $fence_changed by $fence_by_verb pid $fence_by_pid; 1 unresolved entries from the last stop; run: metasystem stop --repo $repo." "$tmp/stop-fence-incomplete.hook" \
-    || { echo "the closed-fence stop hook hid the incomplete phase or its stop remedy" >&2; cat "$tmp/stop-fence-incomplete.hook" >&2; exit 1; }
+  stop_fence_incomplete_report=$(fixture_stop_status_report "$tmp/stop-fence-incomplete.hook" "$repo" fake "$acceptance_main_session") \
+    || { echo "the incomplete stop emitted no bounded readable status report" >&2; cat "$tmp/stop-fence-incomplete.hook" >&2; exit 1; }
+  grep -Fq "stop incomplete for $repo since $fence_changed by $fence_by_verb pid $fence_by_pid; 1 unresolved entries from the last stop; run: metasystem stop --repo $repo" <<<"$stop_fence_incomplete_report" \
+    || { echo "the closed-fence stop report hid the incomplete phase or its stop remedy" >&2; printf '%s\n' "$stop_fence_incomplete_report" >&2; exit 1; }
 
   sed 's/"phase": "stopped"/"phase": "stopping"/' \
     "$tmp/stop-fence.completed-transition.json" >"$transition"
@@ -2054,8 +2071,10 @@ FAKE_AGENT
     | METASYSTEM_FAKE_AGENT_ANCESTOR_PID=$acceptance_main_pid \
       run_fixture_hook "$repo" "$repo/scripts/agents/supervision-hook.sh" fake stop \
       >"$tmp/stop-fence-unfinished.hook"
-  grep -Fq "Metasystem stop unfinished for $repo since $fence_changed by $fence_by_verb pid $fence_by_pid; run: metasystem stop --repo $repo." "$tmp/stop-fence-unfinished.hook" \
-    || { echo "the closed-fence stop hook hid the unfinished phase or its stop remedy" >&2; cat "$tmp/stop-fence-unfinished.hook" >&2; exit 1; }
+  stop_fence_unfinished_report=$(fixture_stop_status_report "$tmp/stop-fence-unfinished.hook" "$repo" fake "$acceptance_main_session") \
+    || { echo "the unfinished stop emitted no bounded readable status report" >&2; cat "$tmp/stop-fence-unfinished.hook" >&2; exit 1; }
+  grep -Fq "stop unfinished for $repo since $fence_changed by $fence_by_verb pid $fence_by_pid; run: metasystem stop --repo $repo" <<<"$stop_fence_unfinished_report" \
+    || { echo "the closed-fence stop report hid the unfinished phase or its stop remedy" >&2; printf '%s\n' "$stop_fence_unfinished_report" >&2; exit 1; }
   cp "$tmp/stop-fence.completed-transition.json" "$transition"
 
   for path in \
@@ -3033,8 +3052,11 @@ printf '{"session_id":"stale-surface","cwd":"%s","hook_event_name":"Stop"}\n' "$
   | METASYSTEM_FAKE_AGENT_ANCESTOR_PID=$$ \
     run_fixture_hook "$gate_repo" \
       "$gate_repo/scripts/agents/supervision-hook.sh" fake stop >"$tmp/stale-surface.out"
-if grep -Fq 'code changed since arming' "$tmp/stale-surface.out"; then
-  grep -Fq 'owner' "$tmp/stale-surface.out" && grep -Fq 'not running' "$tmp/stale-surface.out" \
+stale_surface_report=$(fixture_stop_status_report \
+  "$tmp/stale-surface.out" "$gate_repo" fake stale-surface) \
+  || { echo "S4-3/S4-4: end-turn hook exposed no identity-bound Stop report" >&2; cat "$tmp/stale-surface.out" >&2; exit 1; }
+if grep -Fq 'code changed since arming' <<<"$stale_surface_report"; then
+  grep -Fq 'owner' <<<"$stale_surface_report" && grep -Fq 'not running' <<<"$stale_surface_report" \
     || { echo "S4-4: end-turn hook hid a dead supervision owner" >&2; exit 1; }
 else
   # Stop now runs up before rendering. A live owner may repair the deliberately
@@ -3121,7 +3143,9 @@ printf '{"session_id":"surface","cwd":"%s","hook_event_name":"Stop"}\n' "$repo" 
   | METASYSTEM_FAKE_AGENT_ANCESTOR_PID=$$ \
     run_fixture_hook "$repo" \
       "$repo/scripts/agents/supervision-hook.sh" fake stop >"$tmp/surface.out"
-grep -q 'UNTRACKED' "$tmp/surface.out" || { echo "end-of-turn hook hid UNTRACKED" >&2; exit 1; }
+surface_report=$(fixture_stop_status_report "$tmp/surface.out" "$repo" fake surface) \
+  || { echo "end-of-turn hook exposed no identity-bound Stop report" >&2; cat "$tmp/surface.out" >&2; exit 1; }
+grep -q 'UNTRACKED' <<<"$surface_report" || { echo "end-of-turn report hid UNTRACKED" >&2; exit 1; }
 fi
 
 if [[ "$fixture_scenario" == idle-hook ]]; then
@@ -3315,19 +3339,21 @@ printf '%s\n' \
   '- Waiting on the human: nothing blocking' \
   '- Next step: dispatch the runner' >"$stop_root/plans/stream.md"
 first=$(printf '%s' "$stop_payload" | stop_hook)
+first_report=$(fixture_stop_status_report "$first" "$stop_root" fake t) \
+  || { echo "the first Stop did not expose a bounded readable report" >&2; echo "$first" >&2; exit 1; }
 # The arming notice carries every up component line as up prints it, the
 # verified ones included; only a non-verified accepted-engine line says the
 # fixture-supplied engine was rejected.
-if printf '%s' "$first" | grep -F 'component=accepted-engine' | grep -Fqv 'outcome=verified'; then
+if printf '%s' "$first_report" | grep -F 'component=accepted-engine' | grep -Fqv 'outcome=verified'; then
   echo "the Stop payload failed after the fixture supplied the enrolled engine" >&2
   echo "$first" >&2
   exit 1
 fi
 printf '%s' "$first" | grep -q '"decision":"block"' \
-  && printf '%s' "$first" | grep -Fq 'dispatch the runner' \
+  && printf '%s' "$first_report" | grep -Fq 'dispatch the runner' \
   || { echo "the stop hook did not refuse a turn ending with open work" >&2; echo "$first" >&2; exit 1; }
-printf '%s' "$first" | grep -Fq 'HEALTH ' \
-  || { echo "the stop hook emitted no one-line health verdict" >&2; echo "$first" >&2; exit 1; }
+printf '%s' "$first_report" | grep -Fq '## Health' \
+  || { echo "the stop report omitted health evidence" >&2; echo "$first_report" >&2; exit 1; }
 second=$(printf '%s' "$stop_payload" | stop_hook)
 printf '%s' "$second" | grep -q '"decision":"block"' \
   && { echo "the stop hook refused the same open work twice, which is the loop the design forbids" >&2; exit 1; }
@@ -3337,8 +3363,10 @@ printf '%s\n' \
   '- Next step: dispatch the deep runner' >"$stop_root/plans/stream.md"
 deep_payload=$(printf '{"session_id":"t-deep","cwd":"%s","hook_event_name":"Stop"}' "$stop_root/scripts/agents")
 deep=$(printf '%s' "$deep_payload" | stop_hook)
+deep_report=$(fixture_stop_status_report "$deep" "$stop_root" fake t-deep) \
+  || { echo "the deep Stop did not expose a bounded readable report" >&2; echo "$deep" >&2; exit 1; }
 printf '%s' "$deep" | grep -q '"decision":"block"' \
-  && printf '%s' "$deep" | grep -Fq 'dispatch the deep runner' \
+  && printf '%s' "$deep_report" | grep -Fq 'dispatch the deep runner' \
   || { echo "the deep Stop firing did not resolve the flat installation" >&2; echo "$deep" >&2; exit 1; }
 [[ -s "$stop_root/artifacts/agents/supervision/hooks.log" ]] \
   || { echo "the stop hook left no evidence that it ran" >&2; exit 1; }
@@ -3352,10 +3380,9 @@ printf '%s' "$settled" | grep -q '"decision":"block"' \
   && { echo "the stop hook refused a turn with no open work" >&2; exit 1; }
 
 # S4-15: the goal thread through the same hook (goal-system GOAL-04/05).
-# (a) Byte-identity: the block reason carries the verdict display
-# verbatim — the first refusal above named the open step exactly.
-printf '%s' "$first" | grep -Fq 'OPEN WORK (1)' \
-  || { echo "the block reason does not carry the verdict display" >&2; echo "$first" >&2; exit 1; }
+# (a) The compact block points to a report that retains the verdict display.
+printf '%s' "$first_report" | grep -Fq 'OPEN WORK (1)' \
+  || { echo "the Stop report does not carry the verdict display" >&2; echo "$first_report" >&2; exit 1; }
 # (b) End to end, unseeded: with work settled, opening a goal makes the
 # NEXT turn end block once pointing at the goal's next step — the
 # incident's fix observed through the real hook.
@@ -3363,32 +3390,41 @@ printf '%s' "$first" | grep -Fq 'OPEN WORK (1)' \
 # holder-only command is its descendant, so no ambient seat or suite ancestor
 # can become the sandbox's main identity.
 "$stop_root/bin/metasystem" goal open --root "$stop_root" \
-	--id fixture-goal --intent "Prove goal delivery" --next "Advance the fixture goal." >/dev/null
+  --id fixture-goal --intent "Prove goal delivery" --next "Advance the fixture goal." >/dev/null
 goal_block=$(printf '%s' "$stop_payload" | stop_hook)
+goal_block_report=$(fixture_stop_status_report "$goal_block" "$stop_root" fake t) \
+  || { echo "the goal Stop did not expose a bounded readable report" >&2; echo "$goal_block" >&2; exit 1; }
 printf '%s' "$goal_block" | grep -q '"decision":"block"' \
-  && printf '%s' "$goal_block" | grep -Fq 'Advance the fixture goal.' \
+  && printf '%s' "$goal_block_report" | grep -Fq 'Advance the fixture goal.' \
   || { echo "a current goal did not reach the turn end through the hook" >&2; echo "$goal_block" >&2; exit 1; }
 goal_again=$(printf '%s' "$stop_payload" | stop_hook)
 printf '%s' "$goal_again" | grep -q '"decision":"block"' \
   && { echo "the same goal revision blocked twice" >&2; exit 1; }
-printf '%s' "$goal_again" | grep -Fq 'NOTHING LEFT TO WORK ON' \
-  || { echo "the spent goal revision did not read as the all-clear naming the goal" >&2; echo "$goal_again" >&2; exit 1; }
+goal_again_report=$(fixture_stop_status_report "$goal_again" "$stop_root" fake t) \
+  || { echo "the repeated goal Stop did not expose a bounded readable report" >&2; echo "$goal_again" >&2; exit 1; }
+printf '%s' "$goal_again_report" | grep -Fq 'NOTHING LEFT TO WORK ON' \
+  || { echo "the spent goal revision report did not retain the all-clear" >&2; echo "$goal_again_report" >&2; exit 1; }
 # (c) Session hygiene at the hook boundary: a path-shaped session id never
 # reaches the state file.
 evil_payload=$(printf '{"session_id":"../../evil","cwd":"%s","hook_event_name":"Stop"}' "$stop_root")
 printf '%s' "$evil_payload" | stop_hook >/dev/null
 grep -q '\.\./' "$stop_root/artifacts/agents/turn-verdict-state.json" \
   && { echo "a path-shaped session id reached the verdict state" >&2; exit 1; }
-# (d) The degraded path: a verdict whose own state cannot be read yields
-# the hook's fixed degraded message with the detail, allows the stop, and
-# never composes an all-clear.
+# (d) The degraded path: a verdict whose own state cannot be read allows the
+# stop and publishes the unavailable control cause in its identity-bound
+# report, never composing an all-clear.
 chmod 0500 "$stop_root/artifacts/agents"
 degraded=$(printf '%s' "$stop_payload" | stop_hook)
 chmod 0755 "$stop_root/artifacts/agents"
-printf '%s' "$degraded" | grep -Fq 'turn-verdict degraded:' \
-  && printf '%s' "$degraded" | grep -Fq 'turn verdict state:' \
+degraded_report=$(fixture_stop_status_report "$degraded" "$stop_root" fake t) \
+  || { echo "the unreadable-verdict Stop exposed no identity-bound report" >&2; echo "$degraded" >&2; exit 1; }
+grep -Fq '"class": "infrastructure"' <<<"$degraded_report" \
+  && grep -Fq '"causeCode": "turn-verdict-state"' <<<"$degraded_report" \
+  && grep -Fq '"judgmentAvailable": true' <<<"$degraded_report" \
+  && grep -Fq '"cause": "the frozen judgment facts were unavailable"' <<<"$degraded_report" \
+  && grep -Fq '; Stop allowed; needs supervision repair; status: metasystem report stop-status --id ' <<<"$degraded" \
   && ! printf '%s' "$degraded" | grep -q '"decision":"block"' \
-  || { echo "an unreadable verdict state did not surface the fixed degraded message as an allowance" >&2; echo "$degraded" >&2; exit 1; }
+  || { echo "an unreadable verdict state did not publish its cause under a report-backed allowance" >&2; echo "$degraded" >&2; exit 1; }
 printf '%s' "$degraded" | grep -Fq 'NOTHING LEFT' \
   && { echo "the degraded path composed with an all-clear it cannot vouch for" >&2; exit 1; }
 
@@ -3400,8 +3436,10 @@ printf '%s' "$degraded" | grep -Fq 'NOTHING LEFT' \
   --kind custom --display "the fixture run" --log fix-run.log \
   --expect-green "proceed to checkpoint seven" -- /bin/sleep 2 >/dev/null
 mon1=$(printf '%s' "$stop_payload" | stop_hook)
+mon1_report=$(fixture_stop_status_report "$mon1" "$stop_root" fake t) \
+  || { echo "the unwatched-run Stop did not expose a bounded readable report" >&2; echo "$mon1" >&2; exit 1; }
 printf '%s' "$mon1" | grep -q '"decision":"block"' \
-  && printf '%s' "$mon1" | grep -Fq 'unwatched' \
+  && printf '%s' "$mon1_report" | grep -Fq 'unwatched' \
   || { echo "an unwatched run did not block the turn end" >&2; echo "$mon1" >&2; exit 1; }
 mon2=$(printf '%s' "$stop_payload" | stop_hook)
 printf '%s' "$mon2" | grep -q '"decision":"block"' \
@@ -3414,12 +3452,13 @@ mon_watch_pid=$!
 mon3=
 mon_watch_live() {
   mon3=$(printf '%s' "$stop_payload" | stop_hook)
-  printf '%s' "$mon3" | grep -Fq 'STILL WORKING'
+  mon3_report=$(fixture_stop_status_report "$mon3" "$stop_root" fake t) || return 1
+  printf '%s' "$mon3_report" | grep -Fq 'STILL WORKING'
 }
 wait_until "S4-16 live watch reads STILL WORKING" mon_watch_live \
   || { echo "a live watched run did not read STILL WORKING" >&2; echo "$mon3" >&2; exit 1; }
-printf '%s' "$mon3" | grep -Fq 'run fixture-run' \
-  || { echo "a live watched run did not name itself" >&2; echo "$mon3" >&2; exit 1; }
+printf '%s' "$mon3_report" | grep -Fq 'run fixture-run' \
+  || { echo "a live watched run did not name itself" >&2; echo "$mon3_report" >&2; exit 1; }
 # The run ends when its command does, and the wrapper's exit sidecar is
 # that fact; conclusion waits for the sidecar, not for the two seconds
 # the command sleeps.
@@ -3432,11 +3471,15 @@ wait "$mon_watch_pid" || mon_watch_rc=$?
 (( mon_watch_rc == 0 )) \
   || { echo "the run watch did not exit green (rc=$mon_watch_rc)" >&2; exit 1; }
 mon4=$(printf '%s' "$stop_payload" | stop_hook)
-printf '%s' "$mon4" | grep -Fq 'finished green' \
-  && printf '%s' "$mon4" | grep -Fq 'proceed to checkpoint seven' \
-  || { echo "the green continuation did not surface" >&2; echo "$mon4" >&2; exit 1; }
+mon4_report=$(fixture_stop_status_report "$mon4" "$stop_root" fake t) \
+  || { echo "the concluded-run Stop did not expose a bounded readable report" >&2; echo "$mon4" >&2; exit 1; }
+printf '%s' "$mon4_report" | grep -Fq 'finished green' \
+  && printf '%s' "$mon4_report" | grep -Fq 'proceed to checkpoint seven' \
+  || { echo "the green continuation did not surface" >&2; echo "$mon4_report" >&2; exit 1; }
 mon5=$(printf '%s' "$stop_payload" | stop_hook)
-printf '%s' "$mon5" | grep -Fq 'finished green' \
+mon5_report=$(fixture_stop_status_report "$mon5" "$stop_root" fake t) \
+  || { echo "the repeated concluded-run Stop did not expose a bounded readable report" >&2; echo "$mon5" >&2; exit 1; }
+printf '%s' "$mon5_report" | grep -Fq 'finished green' \
   && { echo "the green surfaced twice" >&2; exit 1; }
 # The final probe succeeds by finding no duplicate, so end the scenario with
 # an explicit successful status rather than the probe's expected false result.

@@ -37,13 +37,14 @@ else
 fi
 build_codex_command "$adapter_verb" "$model" "$root" "$schema" "$raw" \
   --permissions "$permissions" "$resume_session"
+codex_cli_command[0]=$host_provider_binary
 
 set +e
 (
   # `codex exec resume` takes no -C. Entering the workspace before invocation
   # keeps resumed turns inside the same boundary as first turns.
   cd "$root"
-  "${codex_cli_command[@]}" <"$prompt" >"$events" 2>>"$log"
+  env PATH="$host_child_path" "${codex_cli_command[@]}" <"$prompt" >"$events" 2>>"$log"
 )
 cli_status=$?
 set -e

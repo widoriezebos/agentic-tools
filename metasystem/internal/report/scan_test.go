@@ -10,11 +10,26 @@ import (
 	"strings"
 	"testing"
 	"time"
+	"unicode/utf8"
 
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/brain"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/goal"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/identity"
 )
+
+func TestClipDetailKeepsValidUTF8AtTheByteBoundary(t *testing.T) {
+	full := strings.Repeat("a", 199) + "é" + " complete detail"
+	clipped := clipDetail(full)
+	if len(clipped) > 200 || !utf8.ValidString(clipped) || clipped != strings.Repeat("a", 199) {
+		t.Fatalf("byte-safe clip = bytes %d %q", len(clipped), clipped)
+	}
+
+	invalidBeforeBoundary := strings.Repeat("a", 40) + string([]byte{0xff}) + strings.Repeat("b", 200)
+	clipped = clipDetail(invalidBeforeBoundary)
+	if clipped != invalidBeforeBoundary[:200] {
+		t.Fatalf("an earlier invalid byte moved the clip boundary: bytes=%d", len(clipped))
+	}
+}
 
 type scanProber struct {
 	verdicts map[int64]identity.Liveness

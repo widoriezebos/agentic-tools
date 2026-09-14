@@ -199,6 +199,7 @@ type ClaimableBudgetedWork struct {
 	NonTerminalJobs []string
 	Queued          int
 	GoalFree        bool
+	GoalFacts       map[string]GoalFacts
 	fencedClaims    []*GoalFile
 	landingClaims   []*GoalFile
 }
@@ -321,10 +322,17 @@ func readClaimableBudgetedWork(root string, now time.Time, prober identity.Probe
 		return ClaimableBudgetedWork{}, err
 	}
 	work := ClaimableBudgetedWork{
-		Claimed:  append([]string(nil), frontier.Claimed...),
-		Landing:  append([]string(nil), frontier.Landing...),
-		Refused:  append([]AdmissionRefusal(nil), frontier.Refused...),
-		GoalFree: projection.Tree.Root != nil && projection.Tree.Root.Free != nil,
+		Claimed:   append([]string(nil), frontier.Claimed...),
+		Landing:   append([]string(nil), frontier.Landing...),
+		Refused:   append([]AdmissionRefusal(nil), frontier.Refused...),
+		GoalFree:  projection.Tree.Root != nil && projection.Tree.Root.Free != nil,
+		GoalFacts: map[string]GoalFacts{},
+	}
+	for id, file := range projection.Tree.Live {
+		if file == nil {
+			continue
+		}
+		work.GoalFacts[id] = GoalFacts{Id: id, Intent: file.Intent, NextStep: file.NextStep, Revision: fmt.Sprint(file.Revision)}
 	}
 	for _, id := range frontier.Fenced {
 		if file := projection.Tree.Live[id]; file != nil {
@@ -365,13 +373,15 @@ func readLegacyClaimableWork(root string, prober identity.Prober) (ClaimableBudg
 	if len(problems) > 0 {
 		return ClaimableBudgetedWork{}, fmt.Errorf("legacy goal ledger has %d parse problems", len(problems))
 	}
-	work := ClaimableBudgetedWork{GoalFree: ledger.Free != nil, Queued: len(ledger.Queued)}
+	work := ClaimableBudgetedWork{GoalFree: ledger.Free != nil, Queued: len(ledger.Queued), GoalFacts: map[string]GoalFacts{}}
 	for _, queued := range ledger.Queued {
 		work.Claimable = append(work.Claimable, queued.Id)
+		work.GoalFacts[queued.Id] = GoalFacts{Id: queued.Id, Intent: queued.Intent, NextStep: queued.NextStep}
 	}
 	legacyClaim := ledger.Current != nil
 	if legacyClaim {
 		work.Claimed = append(work.Claimed, ledger.Current.Id)
+		work.GoalFacts[ledger.Current.Id] = GoalFacts{Id: ledger.Current.Id, Intent: ledger.Current.Intent, NextStep: ledger.Current.NextStep, Revision: ledger.Revision()}
 	}
 	work.InFlight, work.NonTerminalJobs, err = readLiveBacklogActivity(root, nil, legacyClaim, prober)
 	if err != nil {
@@ -548,8 +558,8 @@ func readLiveBacklogActivity(root string, claimLineages map[string]string, legac
 // AdmissionRefusal records a goal the claim gate would refuse, with the
 // gate's own cause. It is a fact about the goal, never about the machine.
 type AdmissionRefusal struct {
-	GoalID string
-	Cause  string
+	GoalID string `json:"goalId"`
+	Cause  string `json:"cause"`
 }
 
 // NextVerdict is the complete ordered frontier read by backlog health,

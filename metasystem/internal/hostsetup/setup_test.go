@@ -11,7 +11,8 @@ import (
 	"strconv"
 	"strings"
 	"testing"
-	"time"
+
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/report"
 )
 
 func hostFixture(t *testing.T, nested bool) (repo, installation string) {
@@ -66,8 +67,8 @@ func writeHostFile(t *testing.T, path, content string, mode os.FileMode) {
 	}
 }
 
-const claudeHooks = `{"hooks":{"SessionStart":[{"matcher":"startup|resume|clear|compact","hooks":[{"type":"command","command":"bash scripts/agents/supervision-hook.sh claude start","timeout":15}]}],"Stop":[{"hooks":[{"type":"command","command":"bash scripts/agents/supervision-hook.sh claude receipt"},{"type":"command","command":"(bash scripts/agents/supervision-hook.sh claude stop) || printf '%s\\n' '{\"systemMessage\":\"Metasystem Stop hook launcher failed in its own infrastructure; stopping is allowed with degraded supervision. Cause: hook-bootstrap-failed. Component: hook-launcher. The steward owns repair.\"}'","timeout":60}]}],"SessionEnd":[{"hooks":[{"type":"command","command":"bash scripts/agents/supervision-hook.sh claude end","timeout":3}]}]}}`
-const codexHooks = `{"hooks":{"SessionStart":[{"matcher":"startup|resume|clear|compact","hooks":[{"type":"command","command":"bash scripts/agents/supervision-hook.sh codex start","timeout":15}]}],"Stop":[{"hooks":[{"type":"command","command":"bash scripts/agents/supervision-hook.sh codex stop","timeout":60}]}],"SessionEnd":[{"hooks":[{"type":"command","command":"bash scripts/agents/supervision-hook.sh codex end","timeout":3}]}]}}`
+const claudeHooks = `{"hooks":{"SessionStart":[{"matcher":"startup|resume|clear|compact","hooks":[{"type":"command","command":"bash scripts/agents/supervision-hook.sh claude start","timeout":15}]}],"Stop":[{"hooks":[{"type":"command","command":"(bash scripts/agents/supervision-hook.sh claude stop) || printf '%s\\n' '{\"systemMessage\":\"Task unknown; Stop allowed; needs supervision repair; hook-bootstrap-failed. The steward must restore supervision. Status unavailable.\"}'","timeout":60}]}],"SessionEnd":[{"hooks":[{"type":"command","command":"bash scripts/agents/supervision-hook.sh claude end","timeout":3}]}]}}`
+const codexHooks = `{"hooks":{"SessionStart":[{"matcher":"startup|resume|clear|compact","hooks":[{"type":"command","command":"bash scripts/agents/supervision-hook.sh codex start","timeout":15}]}],"Stop":[{"hooks":[{"type":"command","command":"(bash scripts/agents/supervision-hook.sh codex stop) || printf '%s\\n' '{\"systemMessage\":\"Task unknown; Stop allowed; needs supervision repair; hook-bootstrap-failed. The steward must restore supervision. Status unavailable.\"}'","timeout":60}]}],"SessionEnd":[{"hooks":[{"type":"command","command":"bash scripts/agents/supervision-hook.sh codex end","timeout":3}]}]}}`
 const devinHooks = `{"hooks":{"SessionStart":[{"hooks":[{"type":"command","command":"bash scripts/agents/supervision-hook.sh devin start","timeout":15}]}],"Stop":[{"hooks":[{"type":"command","command":"bash scripts/agents/supervision-hook.sh devin stop","timeout":60}]}],"SessionEnd":[{"hooks":[{"type":"command","command":"bash scripts/agents/supervision-hook.sh devin end","timeout":3}]}]}}`
 
 func TestSetupNestedDefaultsAllPreservesUnrelatedStateModesAndIsIdempotent(t *testing.T) {
@@ -388,7 +389,7 @@ func TestGeneratedFreshNonGitLifecycleNoopsOnlyBeforeHandlerInvocation(t *testin
 	for _, groups := range settings.Hooks {
 		for _, group := range groups {
 			for _, handler := range group.Hooks {
-				for _, action := range []string{"start", "receipt", "stop", "end"} {
+				for _, action := range []string{"start", "stop", "end"} {
 					if strings.Contains(handler.Command, "supervision-hook.sh claude "+action) {
 						commands[action] = handler.Command
 					}
@@ -396,7 +397,7 @@ func TestGeneratedFreshNonGitLifecycleNoopsOnlyBeforeHandlerInvocation(t *testin
 			}
 		}
 	}
-	for _, action := range []string{"start", "receipt", "stop", "end"} {
+	for _, action := range []string{"start", "stop", "end"} {
 		if commands[action] == "" {
 			t.Fatalf("fresh settings omitted %s command", action)
 		}
@@ -422,11 +423,11 @@ func TestGeneratedFreshNonGitLifecycleNoopsOnlyBeforeHandlerInvocation(t *testin
 			SystemMessage string `json:"systemMessage"`
 		}
 		if err := json.Unmarshal(bytes.TrimSpace(stdout), &verdict); err != nil || verdict.Decision != "" ||
-			!strings.Contains(verdict.SystemMessage, "hook-bootstrap-failed") || !strings.Contains(verdict.SystemMessage, "stopping is allowed") {
+			!strings.Contains(verdict.SystemMessage, "hook-bootstrap-failed") || !strings.Contains(verdict.SystemMessage, "Stop allowed") {
 			t.Fatalf("Stop output is not a degraded JSON allowance: %q, %v", stdout, err)
 		}
 	}
-	for _, action := range []string{"start", "receipt", "end"} {
+	for _, action := range []string{"start", "end"} {
 		stdout, stderr, err := run(commands[action])
 		if err != nil || len(stdout) != 0 || len(stderr) != 0 {
 			t.Fatalf("fresh non-Git %s = stdout %q, stderr %q, error %v; want quiet success", action, stdout, stderr, err)
@@ -461,7 +462,7 @@ func TestGeneratedFreshNonGitLifecycleNoopsOnlyBeforeHandlerInvocation(t *testin
 	if output, err := init.CombinedOutput(); err != nil {
 		t.Fatalf("git init: %v: %s", err, output)
 	}
-	for _, action := range []string{"start", "receipt", "end"} {
+	for _, action := range []string{"start", "end"} {
 		_ = os.Remove(capture)
 		stdout, stderr, err := run(commands[action])
 		exit, ok := err.(*exec.ExitError)
@@ -517,106 +518,22 @@ func TestGeneratedShippedClaudeStopLauncherAllowsDegradedOutsideGit(t *testing.T
 	// The installed line is the one seats run: a launcher that fails in its
 	// own bootstrap allows the stop under a degraded notice and never blocks.
 	if verdict.Decision != "" || verdict.Reason != "" ||
-		!strings.Contains(verdict.SystemMessage, "hook-bootstrap-failed") || !strings.Contains(verdict.SystemMessage, "stopping is allowed") {
+		!strings.Contains(verdict.SystemMessage, "hook-bootstrap-failed") || !strings.Contains(verdict.SystemMessage, "Stop allowed") {
 		t.Fatalf("generated Stop launcher verdict = %#v", verdict)
 	}
 }
 
-func TestGeneratedShippedClaudeReceiptCommandUsesPortableRootAndRealDecision(t *testing.T) {
-	root := hostSetupModuleRoot(t)
-	repo, installation := hostFixture(t, true)
-	copyHostSourceFile(t, root, "metasystem.conf", filepath.Join(installation, "metasystem.conf"), 0o644)
-	copyHostSourceFile(t, root, "scripts/enforcement/claude-code-hooks.json", filepath.Join(installation, "scripts", "enforcement", "claude-code-hooks.json"), 0o644)
-	copyHostSourceFile(t, root, "scripts/agents/supervision-hook.sh", filepath.Join(installation, "scripts", "agents", "supervision-hook.sh"), 0o755)
-	copyHostSourceFile(t, root, "scripts/receipt.sh", filepath.Join(installation, "scripts", "receipt.sh"), 0o755)
-	realEngine := filepath.Join(installation, "bin", "metasystem")
-	if err := os.MkdirAll(filepath.Dir(realEngine), 0o755); err != nil {
-		t.Fatal(err)
-	}
-	build := exec.Command("go", "build", "-o", realEngine, "./cmd/metasystem")
-	build.Dir = root
-	build.Env = os.Environ()
-	if output, err := build.CombinedOutput(); err != nil {
-		t.Fatalf("build fixture engine from current source: %v: %s", err, output)
-	}
+func TestGeneratedShippedClaudeStopHasNoSeparateReceiptHandler(t *testing.T) {
+	repo, _ := hostFixture(t, true)
 	if _, err := Setup(Options{RepositoryPath: repo, Runtimes: []string{"claude"}}); err != nil {
 		t.Fatal(err)
 	}
-	receiptCommands := generatedClaudeCommands(t, filepath.Join(repo, ".claude", "settings.json"), "receipt")
-	if len(receiptCommands) != 1 {
-		t.Fatalf("generated shipped settings contain %d Claude receipt commands; want one", len(receiptCommands))
+	settings := filepath.Join(repo, ".claude", "settings.json")
+	if commands := generatedClaudeCommands(t, settings, "receipt"); len(commands) != 0 {
+		t.Fatalf("generated shipped settings contain %d separate Claude receipt commands; want none", len(commands))
 	}
-
-	wrapper := filepath.Join(t.TempDir(), "identity engine")
-	writeHostFile(t, wrapper, "#!/usr/bin/env bash\nexec \"$HOSTSETUP_TEST_BINARY\" -test.run '^TestHostSetupIdentityEngineHelper$' -- \"$@\"\n", 0o755)
-	testBinary, err := filepath.Abs(os.Args[0])
-	if err != nil {
-		t.Fatal(err)
-	}
-	nested := filepath.Join(repo, "application", "nested")
-	if err := os.MkdirAll(nested, 0o755); err != nil {
-		t.Fatal(err)
-	}
-	payload := fmt.Sprintf(`{"cwd":%q,"session_id":"hostsetup-receipt-fixture"}`, nested) + "\n"
-	run := func() (stdout, stderr string, err error) {
-		command := exec.Command("bash", "-c", receiptCommands[0])
-		command.Dir = nested
-		command.Env = append(hostSetupCleanEnvironment(),
-			"METASYSTEM_BIN="+wrapper,
-			"HOSTSETUP_TEST_BINARY="+testBinary,
-			"HOSTSETUP_IDENTITY_HELPER=1",
-			"HOSTSETUP_REAL_ENGINE="+realEngine,
-		)
-		command.Stdin = strings.NewReader(payload)
-		var out, diagnostic bytes.Buffer
-		command.Stdout = &out
-		command.Stderr = &diagnostic
-		err = command.Run()
-		return out.String(), diagnostic.String(), err
-	}
-	ledger := filepath.Join(installation, "memory", "receipts.log")
-	writeHostFile(t, ledger, "1|1970-01-01T00:00:01Z|RECEIPT|type=implement|outcome=shipped|skills=none|verify=clean|corrections=0|stop_loss=no|note=aged\n", 0o644)
-	stdout, stderr, err := run()
-	if err != nil || stderr != "" {
-		t.Fatalf("due receipt command = stdout %q, stderr %q, error %v", stdout, stderr, err)
-	}
-	if message := generatedSystemMessage(t, stdout); !strings.Contains(message, "retro due") {
-		t.Fatalf("due receipt command message = %q", message)
-	}
-	now := time.Now().UTC()
-	recent := fmt.Sprintf("%d|%s|RETRO|note=fixture\n", now.Unix(), now.Format(time.RFC3339))
-	file, err := os.OpenFile(ledger, os.O_APPEND|os.O_WRONLY, 0o644)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if _, err := file.WriteString(recent); err != nil {
-		file.Close()
-		t.Fatal(err)
-	}
-	if err := file.Close(); err != nil {
-		t.Fatal(err)
-	}
-	stdout, stderr, err = run()
-	if err != nil || stdout != "" || stderr != "" {
-		t.Fatalf("recent receipt command = stdout %q, stderr %q, error %v; want quiet success", stdout, stderr, err)
-	}
-	writeHostFile(t, ledger, "garbage\n", 0o644)
-	stdout, stderr, err = run()
-	if err != nil || stderr != "" {
-		t.Fatalf("corrupt receipt command = stdout %q, stderr %q, error %v", stdout, stderr, err)
-	}
-	message := generatedSystemMessage(t, stdout)
-	if !strings.Contains(message, "errored") || strings.Contains(message, "retro due") {
-		t.Fatalf("corrupt receipt command message = %q", message)
-	}
-
-	missing := installation + ".missing"
-	if err := os.Rename(installation, missing); err != nil {
-		t.Fatal(err)
-	}
-	stdout, stderr, err = run()
-	if err == nil || stdout != "" || stderr == "" {
-		t.Fatalf("missing selected installation = stdout %q, stderr %q, error %v; want an ordinary launcher error", stdout, stderr, err)
+	if commands := generatedClaudeCommands(t, settings, "stop"); len(commands) != 1 {
+		t.Fatalf("generated shipped settings contain %d Claude Stop commands; want one", len(commands))
 	}
 }
 
@@ -685,17 +602,6 @@ func generatedClaudeCommands(t *testing.T, settingsPath, action string) []string
 		}
 	}
 	return commands
-}
-
-func generatedSystemMessage(t *testing.T, output string) string {
-	t.Helper()
-	var response struct {
-		SystemMessage string `json:"systemMessage"`
-	}
-	if err := json.Unmarshal([]byte(strings.TrimSpace(output)), &response); err != nil || response.SystemMessage == "" {
-		t.Fatalf("hook output is not one systemMessage JSON object: %q, %v", output, err)
-	}
-	return response.SystemMessage
 }
 
 func hostSetupModuleRoot(t *testing.T) string {
@@ -880,5 +786,57 @@ func TestSetupPreservesExistingInstructionAndConfigurationModes(t *testing.T) {
 		if err != nil || info.Mode().Perm() != want {
 			t.Fatalf("%s mode = %v, %v; want %o", path, info, err, want)
 		}
+	}
+}
+
+func TestSetupStopStatusProbeUsesTheBoundInstallationBinaryWithoutWrites(t *testing.T) {
+	if _, err := Setup(Options{RepositoryPath: filepath.Join(t.TempDir(), "must-not-exist"), StopStatusID: strings.Repeat("a", 64) + "-" + strings.Repeat("b", 32)}); err == nil || !strings.Contains(err.Error(), "requires check mode") {
+		t.Fatalf("Stop locator outside check mode was accepted: %v", err)
+	}
+	repo, installation := hostFixture(t, true)
+	if _, err := Setup(Options{RepositoryPath: repo, Runtimes: []string{"claude", "codex"}}); err != nil {
+		t.Fatal(err)
+	}
+	installation, _ = filepath.EvalSymlinks(installation)
+	sessionKey := report.StopSessionKey("claude", "locator-session")
+	id := sessionKey + "-" + strings.Repeat("a", 32)
+	reportPath := filepath.Join(installation, "artifacts", "agents", "supervision", "stop-verdicts", id+".md")
+	identity := report.StopIdentity{Installation: installation, Runtime: "claude", Session: "locator-session", SessionKey: sessionKey, Attempt: strings.Repeat("a", 32), ObservedAt: "2026-09-13T12:00:00Z"}
+	identityJSON, _ := json.Marshal(identity)
+	writeHostFile(t, reportPath, "# locator\n\n<!-- metasystem-stop-report-v1 "+string(identityJSON)+" -->\n", 0o644)
+	binary := filepath.Join(installation, "bin", "metasystem")
+	quotedReport := "'" + strings.ReplaceAll(reportPath, "'", "'\"'\"'") + "'"
+	writeHostFile(t, binary, "#!/bin/sh\nexec cat "+quotedReport+"\n", 0o755)
+
+	symlinkDir := t.TempDir()
+	if err := os.Symlink(binary, filepath.Join(symlinkDir, "metasystem")); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("PATH", symlinkDir+":"+os.Getenv("PATH"))
+	beforeConfig, _ := os.ReadFile(filepath.Join(repo, ".claude", "settings.json"))
+	beforeReport, _ := os.ReadFile(reportPath)
+	nested := filepath.Join(repo, "application", "nested")
+	if err := os.MkdirAll(nested, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	result, err := Setup(Options{RepositoryPath: nested, Runtimes: []string{"claude", "codex"}, Check: true, StopStatusID: id})
+	if err != nil {
+		t.Fatal(err)
+	}
+	wantBinary, _ := filepath.EvalSymlinks(binary)
+	if result.StopLocatorBinary != wantBinary || result.StopStatusID != id {
+		t.Fatalf("locator probe result = %+v", result)
+	}
+	afterConfig, _ := os.ReadFile(filepath.Join(repo, ".claude", "settings.json"))
+	afterReport, _ := os.ReadFile(reportPath)
+	if !bytes.Equal(beforeConfig, afterConfig) || !bytes.Equal(beforeReport, afterReport) {
+		t.Fatal("read-only locator probe changed configuration or report bytes")
+	}
+
+	wrongDir := t.TempDir()
+	writeHostFile(t, filepath.Join(wrongDir, "metasystem"), "#!/bin/sh\nexit 1\n", 0o755)
+	t.Setenv("PATH", wrongDir+":"+os.Getenv("PATH"))
+	if _, err := Setup(Options{RepositoryPath: repo, Runtimes: []string{"claude", "codex"}, Check: true, StopStatusID: id}); err == nil || !strings.Contains(err.Error(), "PATH resolves metasystem") {
+		t.Fatalf("wrong PATH binding passed: %v", err)
 	}
 }

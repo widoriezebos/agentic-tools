@@ -1,5 +1,5 @@
 {
-  "_comment": "Claude Code project hooks: session start arms repository supervision, Stop surfaces UNTRACKED/stale-supervisor state and the receipt cadence, and SessionEnd retires this session's announcement.",
+  "_comment": "Claude Code project hooks: session start arms repository supervision, Stop emits one compact status line backed by an immutable report, and SessionEnd retires this session's announcement.",
   "hooks": {
     "SessionStart": [
       {
@@ -18,11 +18,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "bash scripts/agents/supervision-hook.sh claude receipt"
-          },
-          {
-            "type": "command",
-            "command": "(bash scripts/agents/supervision-hook.sh claude stop) || printf '%s\\n' '{\"systemMessage\":\"Metasystem Stop hook launcher failed in its own infrastructure; stopping is allowed with degraded supervision. Cause: hook-bootstrap-failed. Component: hook-launcher. The steward owns repair.\"}'",
+            "command": "(bash scripts/agents/supervision-hook.sh claude stop) || printf '%s\\n' '{\"systemMessage\":\"Task unknown; Stop allowed; needs supervision repair; hook-bootstrap-failed. The steward must restore supervision. Status unavailable.\"}'",
             "timeout": 60
           }
         ]

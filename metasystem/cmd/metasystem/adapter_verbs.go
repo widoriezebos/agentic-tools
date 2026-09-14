@@ -10,6 +10,25 @@ import (
 	usagepkg "github.com/widoriezebos/agentic-tools/metasystem/internal/usage"
 )
 
+func runAdapterStopOutput(args []string) int {
+	flags := flag.NewFlagSet("adapter stop-output", flag.ContinueOnError)
+	runtime := flags.String("runtime", "", "runtime name")
+	input := flags.String("input-file", "", "Stop presentation result JSON")
+	output := flags.String("output-file", "", "fresh runtime payload JSON")
+	if flags.Parse(args) != nil {
+		return 2
+	}
+	if *runtime == "" || *input == "" || *output == "" || len(flags.Args()) != 0 {
+		fmt.Fprintln(os.Stderr, "usage: metasystem adapter stop-output --runtime RUNTIME --input-file FILE --output-file FILE")
+		return 2
+	}
+	if err := adapter.MapStopOutput(*runtime, *input, *output); err != nil {
+		fmt.Fprintln(os.Stderr, "adapter stop-output:", err)
+		return 1
+	}
+	return 0
+}
+
 // The adapter family is the shared lifecycle plumbing (internal/adapter) every
 // runtime adapter calls from runtime-common.sh: the job root-ancestor walk, the
 // effective-permissions materialize/bound/compare handshake, the compare-and-

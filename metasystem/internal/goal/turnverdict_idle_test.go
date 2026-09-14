@@ -299,7 +299,7 @@ func TestIdleBacklogBlocksTwiceThenDefersClaimAndPreparesStewardContinuation(t *
 		if err != nil || !verdict.ShouldBlock || !verdict.IdleRefusal || verdict.BlockSource == nil || *verdict.BlockSource != "idle-backlog" ||
 			!strings.Contains(verdict.Display, "waiting") ||
 			!strings.Contains(verdict.Display, fmt.Sprintf("refusal %d of 3 for this unchanged backlog", stop)) ||
-			!strings.Contains(verdict.Display, "at 3 the steward claims if needed and continues the seat's goal") {
+			!strings.Contains(verdict.Display, "at 3 request steward continuation and allow Stop unless another branch blocks") {
 			t.Fatalf("unchanged stop %d must block on claimable backlog: %+v %v", stop, verdict, err)
 		}
 	}

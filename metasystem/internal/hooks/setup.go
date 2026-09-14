@@ -24,6 +24,7 @@ var launcherFallback = regexp.MustCompile(`^\((.*)\)\s*\|\|\s*(\S.*)$`)
 // still carry a launcher rendered with it; it is recognized as this
 // installation's so setup replaces it.
 const legacyBlockFallback = `printf '%s\n' '{"decision":"block","reason":"Metasystem Stop hook launcher failed before a safe verdict; stopping is refused."}'`
+const legacyDegradedFallback = `printf '%s\n' '{"systemMessage":"Metasystem Stop hook launcher failed in its own infrastructure; stopping is allowed with degraded supervision. Cause: hook-bootstrap-failed. Component: hook-launcher. The steward owns repair."}'`
 
 func shippedFallback(command string) string {
 	match := launcherFallback.FindStringSubmatch(command)
@@ -323,6 +324,7 @@ func knownLegacyCommands(runtime, installationRel string, registrationAtInstalla
 	}
 	if runtime == "claude" {
 		known[renderGitRequiredCommand(runtime, "stop", installationRel, legacyBlockFallback)] = true
+		known[renderGitRequiredCommand(runtime, "stop", installationRel, legacyDegradedFallback)] = true
 	}
 	legacyDirectory := `$CLAUDE_PROJECT_DIR`
 	if !registrationAtInstallation {
@@ -339,6 +341,7 @@ func knownLegacyCommands(runtime, installationRel string, registrationAtInstalla
 	}
 	if runtime == "claude" {
 		known[`(cd "`+legacyDirectory+`" && bash scripts/agents/supervision-hook.sh claude stop) || `+legacyBlockFallback] = true
+		known[`(cd "`+legacyDirectory+`" && bash scripts/agents/supervision-hook.sh claude stop) || `+legacyDegradedFallback] = true
 		for _, noun := range []string{"Metasystem", "Harness"} {
 			known[`if ! cd "`+legacyDirectory+`" 2>/dev/null; then echo '{"systemMessage":"`+noun+` hook could not resolve the project directory (CLAUDE_PROJECT_DIR)."}'; else bash scripts/receipt.sh check >/dev/null 2>&1; rc=$?; if [ "$rc" -eq 1 ]; then echo '{"systemMessage":"`+noun+` retro due: run scripts/receipt.sh check for details, then skills/retro."}'; elif [ "$rc" -ne 0 ]; then echo '{"systemMessage":"`+noun+` receipt check errored; run scripts/receipt.sh check to see why."}'; fi; fi`] = true
 		}

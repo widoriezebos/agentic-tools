@@ -6,8 +6,8 @@ import (
 	"testing"
 )
 
-const codexShipped = `{"hooks":{"SessionStart":[{"matcher":"startup|resume|clear|compact","hooks":[{"type":"command","command":"bash scripts/agents/supervision-hook.sh codex start","timeout":15}]}],"Stop":[{"hooks":[{"type":"command","command":"bash scripts/agents/supervision-hook.sh codex stop","timeout":60}]}],"SessionEnd":[{"hooks":[{"type":"command","command":"bash scripts/agents/supervision-hook.sh codex end","timeout":3}]}]}}`
-const claudeShipped = `{"hooks":{"SessionStart":[{"matcher":"startup|resume|clear|compact","hooks":[{"type":"command","command":"bash scripts/agents/supervision-hook.sh claude start","timeout":15}]}],"Stop":[{"hooks":[{"type":"command","command":"bash scripts/agents/supervision-hook.sh claude receipt"},{"type":"command","command":"(bash scripts/agents/supervision-hook.sh claude stop) || printf '%s\\n' '{\"systemMessage\":\"Metasystem Stop hook launcher failed in its own infrastructure; stopping is allowed with degraded supervision. Cause: hook-bootstrap-failed. Component: hook-launcher. The steward owns repair.\"}'","timeout":60}]}],"SessionEnd":[{"hooks":[{"type":"command","command":"bash scripts/agents/supervision-hook.sh claude end","timeout":3}]}]}}`
+const codexShipped = `{"hooks":{"SessionStart":[{"matcher":"startup|resume|clear|compact","hooks":[{"type":"command","command":"bash scripts/agents/supervision-hook.sh codex start","timeout":15}]}],"Stop":[{"hooks":[{"type":"command","command":"(bash scripts/agents/supervision-hook.sh codex stop) || printf '%s\\n' '{\"systemMessage\":\"Task unknown; Stop allowed; needs supervision repair; hook-bootstrap-failed. The steward must restore supervision. Status unavailable.\"}'","timeout":60}]}],"SessionEnd":[{"hooks":[{"type":"command","command":"bash scripts/agents/supervision-hook.sh codex end","timeout":3}]}]}}`
+const claudeShipped = `{"hooks":{"SessionStart":[{"matcher":"startup|resume|clear|compact","hooks":[{"type":"command","command":"bash scripts/agents/supervision-hook.sh claude start","timeout":15}]}],"Stop":[{"hooks":[{"type":"command","command":"(bash scripts/agents/supervision-hook.sh claude stop) || printf '%s\\n' '{\"systemMessage\":\"Task unknown; Stop allowed; needs supervision repair; hook-bootstrap-failed. The steward must restore supervision. Status unavailable.\"}'","timeout":60}]}],"SessionEnd":[{"hooks":[{"type":"command","command":"bash scripts/agents/supervision-hook.sh claude end","timeout":3}]}]}}`
 const devinShipped = `{"hooks":{"SessionStart":[{"hooks":[{"type":"command","command":"bash scripts/agents/supervision-hook.sh devin start","timeout":15}]}],"Stop":[{"hooks":[{"type":"command","command":"bash scripts/agents/supervision-hook.sh devin stop","timeout":60}]}],"SessionEnd":[{"hooks":[{"type":"command","command":"bash scripts/agents/supervision-hook.sh devin end","timeout":3}]}]}}`
 
 func TestMergeSplitsOwnedHandlerFromForeignSiblingWhenMatcherChanges(t *testing.T) {
@@ -141,7 +141,7 @@ func TestCheckSettingsAcceptsEmptyDevinNonToolMatcher(t *testing.T) {
 	}
 }
 
-func TestClaudeMergePreservesReceiptNoticeAndDegradedStop(t *testing.T) {
+func TestClaudeMergeConsolidatesReceiptIntoTheOneDegradedStop(t *testing.T) {
 	live := []byte(`{"hooks":{"Stop":[{"hooks":[{"type":"command","command":"if ! cd \"$CLAUDE_PROJECT_DIR/metasystem\" 2>/dev/null; then echo '{\"systemMessage\":\"Harness hook could not resolve the project directory (CLAUDE_PROJECT_DIR).\"}'; else bash scripts/receipt.sh check >/dev/null 2>&1; rc=$?; if [ \"$rc\" -eq 1 ]; then echo '{\"systemMessage\":\"Harness retro due: run scripts/receipt.sh check for details, then skills/retro.\"}'; elif [ \"$rc\" -ne 0 ]; then echo '{\"systemMessage\":\"Harness receipt check errored; run scripts/receipt.sh check to see why.\"}'; fi; fi"},{"type":"command","command":"cd \"$CLAUDE_PROJECT_DIR/metasystem\" && bash scripts/agents/supervision-hook.sh claude stop","timeout":60}]}]}}`)
 	merged, err := MergeSettings(live, []byte(claudeShipped), "claude", "metasystem", false)
 	if err != nil {
@@ -151,9 +151,9 @@ func TestClaudeMergePreservesReceiptNoticeAndDegradedStop(t *testing.T) {
 		t.Fatal(err)
 	}
 	text := string(merged)
-	if strings.Count(text, "supervision-hook.sh claude receipt") != 1 || strings.Count(text, "supervision-hook.sh claude stop") != 1 ||
+	if strings.Count(text, "supervision-hook.sh claude receipt") != 0 || strings.Count(text, "supervision-hook.sh claude stop") != 1 ||
 		!strings.Contains(text, `hook-bootstrap-failed`) || strings.Contains(text, `\"decision\":\"block\"`) {
-		t.Fatalf("Claude receipt or degraded Stop fallback was lost: %s", text)
+		t.Fatalf("Claude Stop was not consolidated to one degraded-capable handler: %s", text)
 	}
 }
 
@@ -175,7 +175,7 @@ func TestClaudeMergeReplacesTheBlockFallbackLauncher(t *testing.T) {
 		t.Fatal(err)
 	}
 	text := string(merged)
-	want := renderGitRequiredCommand("claude", "stop", "metasystem", shippedFallback(`(bash scripts/agents/supervision-hook.sh claude stop) || printf '%s\n' '{"systemMessage":"Metasystem Stop hook launcher failed in its own infrastructure; stopping is allowed with degraded supervision. Cause: hook-bootstrap-failed. Component: hook-launcher. The steward owns repair."}'`))
+	want := renderGitRequiredCommand("claude", "stop", "metasystem", shippedFallback(`(bash scripts/agents/supervision-hook.sh claude stop) || printf '%s\n' '{"systemMessage":"Task unknown; Stop allowed; needs supervision repair; hook-bootstrap-failed. The steward must restore supervision. Status unavailable."}'`))
 	if strings.Count(text, "supervision-hook.sh claude stop") != 1 || strings.Contains(text, `\"decision\":\"block\"`) || !strings.Contains(text, jsonString(t, want)) {
 		t.Fatalf("the block fallback launcher was not replaced by the shipped degraded one: %s", text)
 	}
@@ -205,7 +205,7 @@ func TestClaudeMergeMigratesActualLegacyAdoptedRootReceipt(t *testing.T) {
 			t.Fatalf("legacy adopted-root migration lost %q: %s", fragment, text)
 		}
 	}
-	if strings.Contains(text, `cd \"$CLAUDE_PROJECT_DIR\"`) || strings.Contains(text, `\"decision\":\"block\"`) || strings.Count(text, "supervision-hook.sh claude receipt") != 1 {
+	if strings.Contains(text, `cd \"$CLAUDE_PROJECT_DIR\"`) || strings.Contains(text, `\"decision\":\"block\"`) || strings.Count(text, "supervision-hook.sh claude receipt") != 0 {
 		t.Fatalf("legacy adopted-root handlers were not replaced exactly once: %s", text)
 	}
 }

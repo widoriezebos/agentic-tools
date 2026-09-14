@@ -223,6 +223,7 @@ func families() []family {
 			name:    "adapter",
 			summary: "shared runtime-adapter plumbing: permissions, patches, snapshots",
 			verbs: []verb{
+				{"stop-output", "map one Stop presentation to a runtime envelope", runAdapterStopOutput},
 				{"root-job", "print a job's root ancestor by walking parentJob", runAdapterRootJob},
 				{"effective-init", "materialize the effective permissions from a job record", runAdapterEffectiveInit},
 				{"effective-workspace", "pin the effective writeRoots to the resolved workspace", runAdapterEffectiveWorkspace},
@@ -335,6 +336,9 @@ func families() []family {
 			name:    "report",
 			summary: "turn-end report decisions",
 			verbs: []verb{
+				{"stop-input", "compose one Stop presentation input from captured files", runReportStopInput},
+				{"stop-present", "publish one immutable Stop report and its compact presentation", runReportStopPresent},
+				{"stop-status", "read one exact immutable Stop report", runReportStopStatus},
 				{"stop-block", "print the stop-hook block that refuses to end a turn with idle open work", runReportStopBlock},
 				{"turn-verdict", "the one structured turn-end decision: scan, goal, block-once state", runReportTurnVerdict},
 				{"open-work", "report plans with an unblocked next step and no job in flight", runReportOpenWork},

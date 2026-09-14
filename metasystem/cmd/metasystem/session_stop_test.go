@@ -2,6 +2,7 @@ package main
 
 import (
 	"encoding/json"
+	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -368,4 +369,77 @@ func TestReportTurnVerdictHeldClaimWritesRealSeatIdleIntent(t *testing.T) {
 		intent.SeatActor.Lineage != "main-1" || intent.SeatClaimEpoch != holder.ClaimEpoch {
 		t.Fatalf("the command-layer intent lost the held goal or seat authority: %+v", intent)
 	}
+}
+
+func TestReportTurnVerdictFactsWriteFailurePreservesCompletedVerdict(t *testing.T) {
+	original := turnVerdictFactsWriter
+	t.Cleanup(func() { turnVerdictFactsWriter = original })
+
+	invoke := func(root, session, factsPath string) (string, string, int) {
+		var stdout string
+		stderr, code := captureStderr(t, func() int {
+			var inner int
+			stdout, inner = captureStdout(t, func() int {
+				return runReportTurnVerdict([]string{"--root", root, "--session", session, "--facts-file", factsPath})
+			})
+			return inner
+		})
+		return stdout, stderr, code
+	}
+	assertWire := func(stdout, stderr, factsPath string, wantBlock bool) {
+		t.Helper()
+		if !strings.Contains(stderr, "frozen facts could not be written: injected auxiliary failure") {
+			t.Fatalf("writer failure diagnostic = %q", stderr)
+		}
+		if _, err := os.Lstat(factsPath); !os.IsNotExist(err) {
+			t.Fatalf("failed auxiliary publication left bytes at %s: %v", factsPath, err)
+		}
+		var object map[string]any
+		if err := json.Unmarshal([]byte(stdout), &object); err != nil {
+			t.Fatalf("completed verdict stdout is not JSON: %q: %v", stdout, err)
+		}
+		var typed goal.Verdict
+		if err := json.Unmarshal([]byte(stdout), &typed); err != nil {
+			t.Fatal(err)
+		}
+		canonical, err := json.Marshal(typed)
+		if err != nil || string(canonical)+"\n" != stdout {
+			t.Fatalf("completed verdict wire changed: %q: %v", stdout, err)
+		}
+		if blocked, ok := object["shouldBlock"].(bool); !ok || blocked != wantBlock {
+			t.Fatalf("completed verdict lost its control result: %v", object)
+		}
+		if wantBlock && object["blockSource"] != "idle-backlog" {
+			t.Fatalf("completed block lost its source: %v", object)
+		}
+		if !wantBlock && object["blockSource"] != nil {
+			t.Fatalf("completed allowance gained a source: %v", object)
+		}
+	}
+
+	turnVerdictFactsWriter = func(string, string, string) (bool, error) {
+		return false, errors.New("injected auxiliary failure")
+	}
+	blockRoot := sessionStopBed(t)
+	blockFacts := filepath.Join(t.TempDir(), "block-facts.json")
+	stdout, stderr, code := invoke(blockRoot, "facts-writer-block", blockFacts)
+	if code != 0 {
+		t.Fatalf("completed block exited %d: stdout=%q stderr=%q", code, stdout, stderr)
+	}
+	assertWire(stdout, stderr, blockFacts, true)
+
+	allowRoot := sessionStopBed(t)
+	for attempt := 1; attempt < 3; attempt++ {
+		if output, runCode := captureStdout(t, func() int {
+			return runReportTurnVerdict([]string{"--root", allowRoot, "--session", "facts-writer-allow"})
+		}); runCode != 0 {
+			t.Fatalf("allowance setup attempt %d exited %d: %s", attempt, runCode, output)
+		}
+	}
+	allowFacts := filepath.Join(t.TempDir(), "allow-facts.json")
+	stdout, stderr, code = invoke(allowRoot, "facts-writer-allow", allowFacts)
+	if code != 0 {
+		t.Fatalf("completed allowance exited %d: stdout=%q stderr=%q", code, stdout, stderr)
+	}
+	assertWire(stdout, stderr, allowFacts, false)
 }

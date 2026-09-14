@@ -10,6 +10,7 @@ import (
 	"sort"
 	"strings"
 	"time"
+	"unicode/utf8"
 
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/channel"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/gaterun"
@@ -144,14 +145,16 @@ func scanWithProber(root string, prober identity.Prober) goal.ScanResult {
 
 func scanWithProberAndStatuses(root string, prober identity.Prober, statuses map[string]bool) goal.ScanResult {
 	var result goal.ScanResult
+	goalIntents := readGoalIntents(root)
 
 	// Busy, three classes, all file facts.
-	jobItems, jobUnreadable := busyJobs(root, statuses)
+	jobItems, jobUnreadable := busyJobs(root, statuses, goalIntents)
 	result.Busy = append(result.Busy, jobItems...)
 	if len(jobItems) == 0 {
 		for _, rootJob := range openChainsInFlight(readJobRecords(root)) {
 			result.Busy = append(result.Busy, goal.Item{
 				Kind: "job", Id: rootJob, Detail: clipDetail(fmt.Sprintf("open delegate chain %s [non-terminal]", rootJob)),
+				FullDetail: fmt.Sprintf("open delegate chain %s [non-terminal]", rootJob),
 			})
 		}
 	}
@@ -159,9 +162,10 @@ func scanWithProberAndStatuses(root string, prober identity.Prober, statuses map
 
 	gates := gaterun.Survey(root)
 	for _, marker := range gates.Live {
+		full := fmt.Sprintf("gate %s [pid %d]", marker.Gate, marker.Pid)
 		result.Busy = append(result.Busy, goal.Item{
 			Kind: "gate", Id: marker.Gate,
-			Detail: clipDetail(fmt.Sprintf("gate %s [pid %d]", marker.Gate, marker.Pid)),
+			Detail: clipDetail(full), FullDetail: full,
 		})
 	}
 	result.Unreadable = append(result.Unreadable, gates.Unreadable...)
@@ -171,7 +175,7 @@ func scanWithProberAndStatuses(root string, prober identity.Prober, statuses map
 
 	missions := missionstate.Survey(root, prober)
 	for _, runner := range missions.ActiveMissions() {
-		result.Busy = append(result.Busy, goal.Item{Kind: "mission", Id: runner.MissionId, Detail: clipDetail(runner.Detail)})
+		result.Busy = append(result.Busy, goal.Item{Kind: "mission", Id: runner.MissionId, Detail: clipDetail(runner.Detail), FullDetail: runner.Detail})
 	}
 	result.Unreadable = append(result.Unreadable, missions.Unreadable...)
 
@@ -179,7 +183,7 @@ func scanWithProberAndStatuses(root string, prober identity.Prober, statuses map
 	// unwatched rule, run facts for warnings + the green cursor, and the
 	// run readers' own failure channel. Live runs also join Busy so the
 	// STILL WORKING sentence names them.
-	result.Jobs = jobFacts(root, prober, statuses)
+	result.Jobs = jobFacts(root, prober, statuses, goalIntents)
 	runFacts, runBusy, runUnreadable := runFactsFor(root, prober)
 	result.Runs = runFacts
 	result.Busy = append(result.Busy, runBusy...)
@@ -187,10 +191,11 @@ func scanWithProberAndStatuses(root string, prober identity.Prober, statuses map
 
 	questions, questionUnreadable := channel.WalkOpenQuestions(root)
 	for _, question := range questions {
+		full := fmt.Sprintf("%s goal %s %s from %s since %s: %s", question.ID, question.Goal,
+			question.Kind, question.Machine, question.OpenedAt.UTC().Format(time.RFC3339), question.Wants)
 		result.Questions = append(result.Questions, goal.Item{
 			Kind: "question", Id: question.ID,
-			Detail: clipDetail(fmt.Sprintf("%s goal %s %s from %s since %s: %s", question.ID, question.Goal,
-				question.Kind, question.Machine, question.OpenedAt.UTC().Format(time.RFC3339), question.Wants)),
+			Detail: clipDetail(full), FullDetail: full, RequestedAction: question.Wants, HumanRequired: true,
 		})
 	}
 	for _, detail := range questionUnreadable {
@@ -237,7 +242,8 @@ func scanDrafts(root string, result goal.ScanResult) goal.ScanResult {
 			}
 		}
 		if openedHere {
-			result.Drafts = append(result.Drafts, goal.Item{Kind: "draft", Id: id, Detail: clipDetail(item.NextStep)})
+			result.Drafts = append(result.Drafts, goal.Item{Kind: "draft", Id: id, Detail: clipDetail(item.NextStep), FullDetail: item.NextStep,
+				SourcePath: filepath.ToSlash(filepath.Join("plans", "goals", id+".md"))})
 		}
 	}
 	sort.Slice(result.Drafts, func(i, j int) bool { return result.Drafts[i].Id < result.Drafts[j].Id })
@@ -247,7 +253,7 @@ func scanDrafts(root string, result goal.ScanResult) goal.ScanResult {
 // scanPlans classifies every plan stream.
 func scanPlans(root string, result goal.ScanResult, statuses map[string]bool) goal.ScanResult {
 	for _, line := range stalePlansWithStatuses(root, statuses) {
-		result.StalePlans = append(result.StalePlans, goal.Item{Kind: "plan", Id: line, Detail: clipDetail(line)})
+		result.StalePlans = append(result.StalePlans, goal.Item{Kind: "plan", Id: line, Detail: clipDetail(line), FullDetail: line})
 	}
 	for _, plan := range planFiles(root) {
 		text, err := os.ReadFile(plan)
@@ -257,8 +263,10 @@ func scanPlans(root string, result goal.ScanResult, statuses map[string]bool) go
 		}
 		name := relName(root, plan)
 		if waiting, ok := planField(string(text), "Waiting on the human"); ok && waiting != "" && !unblockedField.MatchString(waiting) {
+			full := fmt.Sprintf("%s waits on the human: %s", name, waiting)
 			result.WaitingOnHuman = append(result.WaitingOnHuman, goal.Item{
-				Kind: "plan", Id: name, Detail: clipDetail(fmt.Sprintf("%s waits on the human: %s", name, waiting)),
+				Kind: "plan", Id: name, Detail: clipDetail(full), FullDetail: full, SourcePath: name,
+				RequestedAction: waiting, HumanRequired: true,
 			})
 			continue
 		}
@@ -267,14 +275,16 @@ func scanPlans(root string, result goal.ScanResult, statuses map[string]bool) go
 			continue
 		}
 		if templateValue.MatchString(step) {
+			full := fmt.Sprintf("TEMPLATE-UNFILLED %s: %s", name, step)
 			result.TemplateUnfilled = append(result.TemplateUnfilled, goal.Item{
-				Kind: "plan", Id: name, Detail: clipDetail(fmt.Sprintf("TEMPLATE-UNFILLED %s: %s", name, step)),
+				Kind: "plan", Id: name, Detail: clipDetail(full), FullDetail: full, SourcePath: name,
+				RequestedAction: step,
 			})
 			continue
 		}
 		line := fmt.Sprintf("OPEN-WORK %s: %s", name, step)
 		result.Open = append(result.Open, goal.Item{
-			Kind: "plan", Id: name, Detail: clipDetail(line), FullDetail: line,
+			Kind: "plan", Id: name, Detail: clipDetail(line), FullDetail: line, SourcePath: name, RequestedAction: step,
 			LineDigest: fmt.Sprintf("%x", sha256.Sum256([]byte(line))),
 		})
 	}
@@ -282,7 +292,7 @@ func scanPlans(root string, result goal.ScanResult, statuses map[string]bool) go
 }
 
 // busyJobs reads the checkout's delegate job records, surfacing failures.
-func busyJobs(root string, statuses map[string]bool) ([]goal.Item, []string) {
+func busyJobs(root string, statuses map[string]bool, goalIntents map[string]string) ([]goal.Item, []string) {
 	var items []goal.Item
 	var unreadable []string
 	dir := filepath.Join(root, "artifacts", "agents", "jobs")
@@ -297,10 +307,12 @@ func busyJobs(root string, statuses map[string]bool) ([]goal.Item, []string) {
 			continue
 		}
 		var record struct {
-			JobId   string `json:"jobId"`
-			Role    string `json:"role"`
-			Runtime string `json:"runtime"`
-			Status  string `json:"status"`
+			JobId   string  `json:"jobId"`
+			Role    string  `json:"role"`
+			Runtime string  `json:"runtime"`
+			Status  string  `json:"status"`
+			MainId  *string `json:"mainId"`
+			GoalId  string  `json:"goalId"`
 		}
 		if json.Unmarshal(data, &record) != nil {
 			unreadable = append(unreadable, path+": unparsable job record")
@@ -318,9 +330,19 @@ func busyJobs(root string, statuses map[string]bool) ([]goal.Item, []string) {
 		if record.Runtime == "" {
 			record.Runtime = "?"
 		}
+		full := fmt.Sprintf("%s %s [%s, %s]", record.Role, record.JobId, record.Status, record.Runtime)
+		ownerMainID := ""
+		if record.MainId != nil {
+			ownerMainID = *record.MainId
+		}
+		title := goalIntents[record.GoalId]
+		if title == "" {
+			title = normalizeRoleTitle(record.Role)
+		}
 		items = append(items, goal.Item{
 			Kind: "job", Id: record.JobId,
-			Detail: clipDetail(fmt.Sprintf("%s %s [%s, %s]", record.Role, record.JobId, record.Status, record.Runtime)),
+			Detail: clipDetail(full), FullDetail: full, SourcePath: relName(root, path), OwnerMainId: ownerMainID,
+			RequestedAction: title,
 		})
 	}
 	return items, unreadable
@@ -330,11 +352,15 @@ func clipDetail(s string) string {
 	if len(s) <= 200 {
 		return s
 	}
-	return s[:200]
+	end := 200
+	for end > 0 && !utf8.RuneStart(s[end]) {
+		end--
+	}
+	return s[:end]
 }
 
 // jobFacts reads the delegate job records' monitor-relevant slice.
-func jobFacts(root string, prober identity.Prober, statuses map[string]bool) []goal.JobFact {
+func jobFacts(root string, prober identity.Prober, statuses map[string]bool, goalIntents map[string]string) []goal.JobFact {
 	var facts []goal.JobFact
 	paths, _ := filepath.Glob(filepath.Join(root, "artifacts", "agents", "jobs", "*.json"))
 	for _, path := range paths {
@@ -347,6 +373,8 @@ func jobFacts(root string, prober identity.Prober, statuses map[string]bool) []g
 			MainId    *string `json:"mainId"`
 			StartedAt string  `json:"startedAt"`
 			Status    string  `json:"status"`
+			Role      string  `json:"role"`
+			GoalId    string  `json:"goalId"`
 		}
 		if json.Unmarshal(data, &record) != nil {
 			continue
@@ -361,8 +389,14 @@ func jobFacts(root string, prober identity.Prober, statuses map[string]bool) []g
 		if record.MainId != nil {
 			mainId = *record.MainId
 		}
+		title := goalIntents[record.GoalId]
+		if title == "" {
+			title = normalizeRoleTitle(record.Role)
+		}
 		facts = append(facts, goal.JobFact{
 			Id: record.JobId, MainId: mainId, StartedAt: record.StartedAt, Status: record.Status,
+			Title: title, Role: record.Role, GoalId: record.GoalId, SourcePath: relName(root, path),
+			SourceDigest: fmt.Sprintf("%x", sha256.Sum256(data)), Ownership: "unknown",
 			WaiterLive: run.LiveWaiter(root, prober, "job", record.JobId, mainId,
 				run.WaiterTarget{StartedAt: record.StartedAt}),
 		})
@@ -389,9 +423,17 @@ func runFactsFor(root string, prober identity.Prober) ([]goal.RunFact, []goal.It
 			Hung:        record.HungSince != nil,
 			ExpectGreen: record.Expect.Green, ExpectRed: record.Expect.Red,
 			ExpectHung: record.Expect.Hung, ExpectUnknown: record.Expect.Unknown,
+			Title: record.Display, Role: record.Kind, GoalId: record.GoalId, StartedAt: record.StartedAt,
+			SourcePath: filepath.ToSlash(filepath.Join("artifacts", "agents", "runs", record.RunId+".json")),
+			Ownership:  "unknown",
 		}
 		if record.MainId != nil {
 			fact.MainId = *record.MainId
+		}
+		if fact.SourcePath != "" {
+			if data, err := os.ReadFile(filepath.Join(root, filepath.FromSlash(fact.SourcePath))); err == nil {
+				fact.SourceDigest = fmt.Sprintf("%x", sha256.Sum256(data))
+			}
 		}
 		if record.TerminalSeq != nil {
 			fact.TerminalSeq = *record.TerminalSeq
@@ -413,11 +455,35 @@ func runFactsFor(root string, prober identity.Prober) ([]goal.RunFact, []goal.It
 		facts = append(facts, fact)
 		switch record.Status {
 		case run.StatusLaunching, run.StatusRunning, run.StatusDraining:
+			full := fmt.Sprintf("run %s [%s] %s", record.RunId, record.Status, record.Display)
 			busy = append(busy, goal.Item{Kind: "run", Id: record.RunId,
-				Detail: clipDetail(fmt.Sprintf("run %s [%s] %s", record.RunId, record.Status, record.Display))})
+				Detail: clipDetail(full), FullDetail: full, SourcePath: fact.SourcePath, OwnerMainId: fact.MainId,
+				RequestedAction: record.Display})
 		}
 	}
 	return facts, busy, unreadable
+}
+
+func normalizeRoleTitle(role string) string {
+	return strings.TrimSpace(strings.NewReplacer("-", " ", "_", " ").Replace(role))
+}
+
+func readGoalIntents(root string) map[string]string {
+	intents := map[string]string{}
+	endpoint, err := goal.ResolveEndpoint(root)
+	if err != nil {
+		return intents
+	}
+	projection, err := goal.Project(endpoint, false, time.Now().UTC())
+	if err != nil || projection.Tree == nil {
+		return intents
+	}
+	for id, item := range projection.Tree.Live {
+		if item != nil {
+			intents[id] = item.Intent
+		}
+	}
+	return intents
 }
 
 // readRunsPass loads the watcher's attestation: the set of lifecycle

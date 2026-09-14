@@ -76,7 +76,25 @@ probe() {
       "gracefulCancel": true,
       "hooks": true,
       "protocolServer": true,
-      "nativeBudget": false
+      "nativeBudget": false,
+      "stopDelivery": {
+        "schemaVersion": 1,
+        "envelope": "shared-reason-v1",
+        "blockField": "decision",
+        "blockValue": "block",
+        "blockTextField": "reason",
+        "allowTextField": "systemMessage",
+        "humanVisibleFields": ["reason", "systemMessage"],
+        "duplicateBehavior": "unknown",
+        "reportReadRoute": "unknown",
+        "instructionHash": "",
+        "trustProbe": "",
+        "observationArtifact": "",
+        "launchBinary": "",
+        "seatCommandBinary": "",
+        "continuationLimit": null,
+        "level": "unobserved"
+      }
     }' \
     '{"unverified": []}' \
     "$adapter_enforcement_map" \

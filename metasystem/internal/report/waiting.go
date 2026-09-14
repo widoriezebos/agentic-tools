@@ -29,6 +29,12 @@ func WaitingLines(root, ownerLineage string) ([]string, error) {
 // CurrentWaitingLines resolves the checkout's current holder before exposing
 // predecessor rows; another seat's rows are never offered for takeover.
 func CurrentWaitingLines(root string) ([]string, error) {
+	// An installation with no checkout lease holds no seat, so it owns no
+	// waiter rows: orientation there is silence, not a read failure. A
+	// template or local-only installation reaches its Stop this way.
+	if _, statErr := os.Stat(filepath.Join(root, "artifacts", "agents", "mains", "worktree-lease.json")); os.IsNotExist(statErr) {
+		return nil, nil
+	}
 	holder, err := lease.CurrentHolder(root)
 	if err != nil {
 		return nil, err

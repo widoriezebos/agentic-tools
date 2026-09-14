@@ -84,6 +84,16 @@ var healthRoleOrder = []HealthRole{
 	RoleCapabilitySnapshots,
 }
 
+// KnownHealthRole reports whether role belongs to the closed health schema.
+func KnownHealthRole(role HealthRole) bool {
+	for _, known := range healthRoleOrder {
+		if role == known {
+			return true
+		}
+	}
+	return false
+}
+
 // RoleVerdict is one total role judgment and the exact command that repairs a
 // non-alive result with the surface available today.
 type RoleVerdict struct {
@@ -134,6 +144,51 @@ type HealthVerdict struct {
 	FindingDigest  string                 `json:"findingDigest"`
 	State          HealthObservationState `json:"-"`
 	Spend          SpendObservation       `json:"-"`
+}
+
+// HookHealthPreview is the versioned, read-only health projection consumed by
+// Stop presentation. Intervention classifications are separate from the
+// ordinary verdict so display metadata cannot change health policy.
+type HookHealthPreview struct {
+	SchemaVersion int                  `json:"schemaVersion"`
+	ExitCode      int                  `json:"exitCode"`
+	Line          string               `json:"line"`
+	Interventions []HealthIntervention `json:"interventions"`
+	Verdict       HealthVerdict        `json:"verdict"`
+}
+
+type HealthIntervention struct {
+	Role              HealthRole `json:"role"`
+	HumanRequired     bool       `json:"humanRequired"`
+	SupervisionRepair bool       `json:"supervisionRepair"`
+	Owner             string     `json:"owner"`
+	Restriction       string     `json:"restriction"`
+}
+
+// NewHookHealthPreview derives both representations from one health
+// evaluation. Each role is classified explicitly; a remedy, dead status, or
+// no-automatic-remedy marker alone never turns into an intervention.
+func NewHookHealthPreview(verdict HealthVerdict) HookHealthPreview {
+	interventions := make([]HealthIntervention, 0, len(verdict.Roles))
+	for _, role := range verdict.Roles {
+		item := HealthIntervention{Role: role.Role}
+		switch role.Role {
+		case RoleStewardRunner, RoleSupervisionOwner, RoleRepoWatcher,
+			RoleCensusFreshness, RoleNarratorFreshness, RoleSessionMain,
+			RoleHookFreshness, RoleStopHookDuration, RoleCapabilitySnapshots:
+			// Unknown means the check could not establish either health or
+			// failure. Only an established machinery failure requests repair.
+			if role.Status == HealthDead {
+				item.SupervisionRepair = true
+				item.Owner = "steward"
+			}
+		}
+		interventions = append(interventions, item)
+	}
+	return HookHealthPreview{
+		SchemaVersion: 1, ExitCode: verdict.ExitCode(), Line: verdict.Line(),
+		Interventions: interventions, Verdict: verdict,
+	}
 }
 
 // SpendCrossing is one independently alertable ceiling multiple.

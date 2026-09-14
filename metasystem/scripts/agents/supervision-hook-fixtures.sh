@@ -15,8 +15,9 @@ launcher=$root/scripts/enforcement/claude-code-hooks.json
 [[ -x "$ms" ]] \
   || { echo "supervision hook fixture: binary absent; run the go gate first" >&2; exit 1; }
 source "$root/scripts/agents/fixture-budget.sh"
+source "$root/scripts/agents/fixture-stop-report.sh"
 grep -Fq 'hook-bootstrap-failed' "$launcher" \
-  && grep -Fq 'hook-launcher' "$launcher" \
+  && grep -Fq 'Status unavailable' "$launcher" \
   && ! grep -Fq 'Stop hook launcher failed before a safe verdict; stopping is refused' "$launcher" \
   || { echo "Claude Stop launcher fallback is not a degraded allowance" >&2; exit 1; }
 # The shipped Stop launcher line itself, run where the hook cannot bootstrap
@@ -31,7 +32,8 @@ launcher_bed=$(mktemp -d "${TMPDIR:-/tmp}/metasystem-launcher-fixture.XXXXXX")
 launcher_out=$(cd "$launcher_bed" && bash -c "$launcher_stop" 2>/dev/null) \
   || { echo "the shipped Claude Stop launcher exited nonzero on a bootstrap failure" >&2; exit 1; }
 rm -rf "$launcher_bed"
-grep -Fq '"systemMessage"' <<<"$launcher_out" && grep -Fq 'hook-bootstrap-failed' <<<"$launcher_out" \
+launcher_expected='{"systemMessage":"Task unknown; Stop allowed; needs supervision repair; hook-bootstrap-failed. The steward must restore supervision. Status unavailable."}'
+[[ "$launcher_out" == "$launcher_expected" ]] \
   && ! grep -Fq '"decision":"block"' <<<"$launcher_out" \
   || { echo "the shipped Claude Stop launcher did not allow with a degraded notice on a bootstrap failure: $launcher_out" >&2; exit 1; }
 harness_fixture_budget_init "$root"
@@ -52,6 +54,7 @@ hook_process_pid=
 hook_process_path=
 brain_fake_pid=
 brain_fake_path=
+missing_engine_expected='{"systemMessage":"Task unknown; Stop allowed; needs supervision repair; engine missing. Rebuild bin/metasystem. Status unavailable."}'
 stop_hook_process() {
   local command stop_deadline
   [[ -n "$hook_process_pid" ]] || return 0
@@ -90,8 +93,7 @@ trap cleanup EXIT
 
 missing_engine_evidence_ready() {
   ! grep -Fq '"decision":"block"' "$tmp/missing.out" \
-    && grep -Fq 'engine missing' "$tmp/missing.out" \
-    && grep -Fq 'degraded infrastructure' "$tmp/missing.out"
+    && [[ -f "$tmp/missing.out" && $(<"$tmp/missing.out") == "$missing_engine_expected" ]]
 }
 
 wait_for_missing_engine_evidence() { # hook process
@@ -109,9 +111,11 @@ wait_for_missing_engine_evidence() { # hook process
 
 chat_line_evidence_ready() {
   [[ -f "$hook_evidence" ]] \
-    && grep -Fq 'HEALTH ' "$tmp/line.out" \
-    && grep -Fq 'NARRATOR DIGEST since last check-in' "$tmp/line.out" \
-    && grep -Fq 'A landing moved the repository storyline to commit abc123' "$tmp/line.out" \
+    && [[ -s "$tmp/line.out" ]] \
+    && line_report=$(fixture_stop_status_report "$tmp/line.out" "$line_root" claude line-fixture) \
+    && grep -Fq 'HEALTH ' <<<"$line_report" \
+    && grep -Fq 'NARRATOR DIGEST since last check-in' <<<"$line_report" \
+    && grep -Fq 'A landing moved the repository storyline to commit abc123' <<<"$line_report" \
     && grep -Fq '"result": "OK"' "$hook_evidence" \
     && grep -Fq '"outcome": "EMITTED"' "$hook_evidence"
 }
@@ -196,8 +200,8 @@ grep -Fq 'HEALTH unknown' "$tmp/missing.out" \
 if grep -Fq '"decision":"block"' "$tmp/missing.out"; then
   echo "supervision hook missing-engine infrastructure blocked" >&2; exit 1
 fi
-grep -Fq 'engine missing' "$tmp/missing.out" \
-  || { echo "supervision hook missing-engine fixture omitted its remedy" >&2; exit 1; }
+[[ $(<"$tmp/missing.out") == "$missing_engine_expected" ]] \
+  || { echo "supervision hook missing-engine fixture did not emit its fixed allowance" >&2; cat "$tmp/missing.out" >&2; exit 1; }
 
 # Brain SessionStart: build one declared adopted-style checkout, let the real
 # engine decide the role, and keep the hook a one-object relay.
@@ -240,8 +244,8 @@ brain_identity_engine=$tmp/brain-identity-engine
 cat >"$brain_identity_engine" <<'BRAIN_IDENTITY_ENGINE'
 #!/usr/bin/env bash
 if [[ ${1:-} == proc && ${2:-} == find-ancestor ]]; then
-	printf '{"runtime":"claude","pid":%s,"pidStartedAt":%s}\n' "${METASYSTEM_BRAIN_FIXTURE_PID:?}" "${METASYSTEM_BRAIN_FIXTURE_STARTED:?}"
-	exit 0
+  printf '{"runtime":"claude","pid":%s,"pidStartedAt":%s}\n' "${METASYSTEM_BRAIN_FIXTURE_PID:?}" "${METASYSTEM_BRAIN_FIXTURE_STARTED:?}"
+  exit 0
 fi
 exec "${METASYSTEM_BRAIN_REAL_ENGINE:?}" "$@"
 BRAIN_IDENTITY_ENGINE
@@ -368,11 +372,15 @@ printf '%s\n' '2026-09-07T00:00:45Z HIGHLIGHT — template-layout stop digest li
   >>"$brain_template_root/records/narrator-digest.log"
 printf '{"session_id":"brain-template-stop","cwd":"%s","hook_event_name":"Stop"}\n' "$brain_template_repo" \
   >"$tmp/template-stop.json"
-# The bed's template installation is never armed, so the Stop refuses; the
-# digest read and the health facts are what this row proves.
+# The bed's template installation is never armed, so the report marks the
+# supervision repair; the digest read and the health facts are what this row
+# proves.
 template_stop_evidence_ready() {
-  grep -Fq 'NARRATOR DIGEST since last check-in' "$tmp/template-stop.out" \
-    && grep -Fq 'template-layout stop digest line' "$tmp/template-stop.out"
+  [[ -s "$tmp/template-stop.out" ]] \
+    && template_stop_report=$(fixture_stop_status_report \
+      "$tmp/template-stop.out" "$brain_template_root" claude brain-template-stop) \
+    && grep -Fq 'NARRATOR DIGEST since last check-in' <<<"$template_stop_report" \
+    && grep -Fq 'template-layout stop digest line' <<<"$template_stop_report"
 }
 wait_for_template_stop_evidence() { # hook process
   local hook_pid=$1 deadline=$((SECONDS + hook_evidence_cap))
@@ -403,15 +411,15 @@ template_stop_evidence_ready \
   || { echo "template-layout stop did not deliver the installation's digest" >&2; cat "$tmp/template-stop.out" "$tmp/template-stop.err" >&2; exit 1; }
 # The health line reads the turn evidence the hook just wrote: the bed's
 # first turn is pending with no prior completion, a later one is alive.
-grep -Eq 'hook-freshness=(alive|unknown \(turn generation [0-9]+ is pending)' "$tmp/template-stop.out" \
-  && ! grep -Fq 'no hook turn generation is recorded' "$tmp/template-stop.out" \
+grep -Eq 'hook-freshness=(alive|unknown \(turn generation [0-9]+ is pending)' <<<"$template_stop_report" \
+  && ! grep -Fq 'no hook turn generation is recorded' <<<"$template_stop_report" \
   || { echo "template-layout stop recorded its turn beside the repository root: the health line does not see it" >&2; cat "$tmp/template-stop.out" >&2; exit 1; }
 [[ -f "$brain_template_root/artifacts/agents/steward/narrator-digest-cursor.json" ]] \
   || { echo "template-layout stop did not advance the installation's human digest cursor" >&2; exit 1; }
-! grep -Fq 'narrator digest could not be read' "$tmp/template-stop.out" \
-  && ! grep -Fq 'NARRATOR DIGEST unavailable' "$tmp/template-stop.out" \
-  && ! grep -Fq 'HEALTH unknown' "$tmp/template-stop.out" \
-  && ! grep -Fq 'metasystem.conf: no such file' "$tmp/template-stop.out" \
+! grep -Fq 'narrator digest could not be read' <<<"$template_stop_report" \
+  && ! grep -Fq 'NARRATOR DIGEST unavailable' <<<"$template_stop_report" \
+  && ! grep -Fq 'HEALTH unknown' <<<"$template_stop_report" \
+  && ! grep -Fq 'metasystem.conf: no such file' <<<"$template_stop_report" \
   || { echo "template-layout stop read the digest or the health facts beside the repository root" >&2; cat "$tmp/template-stop.out" >&2; exit 1; }
 [[ ! -e "$brain_template_repo/records/narrator-digest.log" && ! -e "$brain_template_repo/artifacts/agents/steward/narrator-digest-cursor.json" ]] \
   || { echo "template-layout stop left digest state beside the repository root" >&2; exit 1; }
@@ -491,15 +499,15 @@ if [[ ${1:-} == brain && ${2:-} == boot ]]; then
     sleep) sleep 4; exit 0 ;;
     invalid) echo 'not json'; exit 0 ;;
   esac
-	fi
+  fi
 if [[ ${1:-} == proc && ${2:-} == find-ancestor ]]; then
-	printf '{"runtime":"claude","pid":%s,"pidStartedAt":%s}\n' "${METASYSTEM_BRAIN_FIXTURE_PID:?}" "${METASYSTEM_BRAIN_FIXTURE_STARTED:?}"
-	exit 0
+  printf '{"runtime":"claude","pid":%s,"pidStartedAt":%s}\n' "${METASYSTEM_BRAIN_FIXTURE_PID:?}" "${METASYSTEM_BRAIN_FIXTURE_STARTED:?}"
+  exit 0
 fi
 if [[ ${1:-} == up ]]; then
-	printf '%s\n' "${METASYSTEM_BRAIN_FAILURE_MODE:?}" >>"${METASYSTEM_BRAIN_ARMING_LOG:?}"
-	printf '%s\n' 'UP aggregate=SUCCESS'
-	exit 0
+  printf '%s\n' "${METASYSTEM_BRAIN_FAILURE_MODE:?}" >>"${METASYSTEM_BRAIN_ARMING_LOG:?}"
+  printf '%s\n' 'UP aggregate=SUCCESS'
+  exit 0
 fi
 exec "${METASYSTEM_BRAIN_REAL_ENGINE:?}" "$@"
 BRAIN_FAILURE_ENGINE
@@ -613,14 +621,14 @@ mkdir -p "$line_root/artifacts/agents/runs"
 printf '%s\n' '- Next step: Complete the bounded refusal fixture' '- Waiting on the human: none' \
   '- In flight right now: none' >"$line_root/plans/bounded.md"
 for run_number in $(seq 1 200); do
-	run_offset=$((run_number - 1))
-	start_minute=$((run_offset / 60))
-	start_second=$((run_offset % 60))
-	end_offset=$((run_offset + 300))
-	end_minute=$((end_offset / 60))
-	end_second=$((end_offset % 60))
-	printf '{"schemaVersion":1,"runId":"bounded-run-%03d","kind":"suite","display":"bounded refusal fixture","custody":"wrapped","generation":1,"pid":null,"pidStartedAt":null,"pgid":null,"launchNonce":"efefefefefefefefefefefefefefefef","log":"/tmp/bounded-refusal.log","startedAt":"2026-08-01T10:%02d:%02dZ","sessionId":"bounded-fixture","goalId":"","staleAfterMin":30,"windDownMin":10,"endedAt":"2026-08-01T10:%02d:%02dZ","terminalSeq":%d,"evidence":{"mode":"exit-sidecar"},"expect":{"green":"","red":"inspect the full verdict","hung":"","unknown":""},"status":"red","acked":false}\n' \
-		"$run_number" "$start_minute" "$start_second" "$end_minute" "$end_second" "$run_number" >"$line_root/artifacts/agents/runs/bounded-run-$(printf '%03d' "$run_number").json"
+  run_offset=$((run_number - 1))
+  start_minute=$((run_offset / 60))
+  start_second=$((run_offset % 60))
+  end_offset=$((run_offset + 300))
+  end_minute=$((end_offset / 60))
+  end_second=$((end_offset % 60))
+  printf '{"schemaVersion":1,"runId":"bounded-run-%03d","kind":"suite","display":"bounded refusal fixture","custody":"wrapped","generation":1,"pid":null,"pidStartedAt":null,"pgid":null,"launchNonce":"efefefefefefefefefefefefefefefef","log":"/tmp/bounded-refusal.log","startedAt":"2026-08-01T10:%02d:%02dZ","sessionId":"bounded-fixture","goalId":"","staleAfterMin":30,"windDownMin":10,"endedAt":"2026-08-01T10:%02d:%02dZ","terminalSeq":%d,"evidence":{"mode":"exit-sidecar"},"expect":{"green":"","red":"inspect the full verdict","hung":"","unknown":""},"status":"red","acked":false}\n' \
+    "$run_number" "$start_minute" "$start_second" "$end_minute" "$end_second" "$run_number" >"$line_root/artifacts/agents/runs/bounded-run-$(printf '%03d' "$run_number").json"
 done
 
 mkdir -p "$line_root/records"
@@ -643,24 +651,20 @@ wait "$hook_process_pid" || line_rc=$?
 hook_process_pid=
 hook_process_path=
 [[ "$line_rc" -eq 0 ]] || { echo "supervision hook chat-line fixture returned $line_rc" >&2; exit 1; }
-grep -Fq 'HEALTH ' "$tmp/line.out" \
+grep -Fq 'HEALTH ' <<<"$line_report" \
   || { echo "supervision hook chat-line fixture emitted no health verdict" >&2; exit 1; }
-grep -Fq 'NARRATOR DIGEST since last check-in' "$tmp/line.out" \
+grep -Fq 'NARRATOR DIGEST since last check-in' <<<"$line_report" \
   || { echo "supervision hook chat-line fixture omitted the pending narrator digest" >&2; exit 1; }
-grep -Fq 'A landing moved the repository storyline to commit abc123' "$tmp/line.out" \
+grep -Fq 'A landing moved the repository storyline to commit abc123' <<<"$line_report" \
   || { echo "supervision hook chat-line fixture omitted the digest event" >&2; exit 1; }
-line_reason=$("$ms" json get --value "$(tail -1 "$tmp/line.out")" --field reason)
-line_reason_runes=$(printf '%s' "$line_reason" | wc -m | tr -d ' ')
-(( line_reason_runes <= 4000 )) \
-  || { echo "supervision hook reason has $line_reason_runes characters, above the 4000-rune bound" >&2; exit 1; }
-[[ $line_reason == *"stop-verdicts/line-fixture.txt"* ]] \
+[[ $line_report == *"stop-verdicts/line-fixture.txt"* ]] \
   && [[ -f "$line_root/artifacts/agents/supervision/stop-verdicts/line-fixture.txt" ]] \
-  || { echo "bounded hook reason did not name its full stop-verdicts artifact" >&2; cat "$tmp/line.out" >&2; exit 1; }
-[[ $line_reason == *"200 runs went red, oldest bounded-run-001"* ]] \
-  || { echo "bounded hook reason omitted the two-hundred-run red summary" >&2; cat "$tmp/line.out" >&2; exit 1; }
+  || { echo "bounded Stop report did not name its full stop-verdicts artifact" >&2; cat "$tmp/line.out" >&2; exit 1; }
+[[ $line_report == *"200 runs went red, oldest bounded-run-001"* ]] \
+  || { echo "bounded Stop report omitted the two-hundred-run red summary" >&2; cat "$tmp/line.out" >&2; exit 1; }
 grep -Fq 'bounded-run-200' "$line_root/artifacts/agents/supervision/stop-verdicts/line-fixture.txt" \
   || { echo "full stop-verdicts artifact omitted bounded-run-200" >&2; exit 1; }
-if grep -Fq 'hook-freshness=dead' "$tmp/line.out"; then
+if grep -Fq 'hook-freshness=dead' <<<"$line_report"; then
   echo "supervision hook chat-line fixture judged its own current attempt dead" >&2
   exit 1
 fi
@@ -715,10 +719,73 @@ printf '{"session_id":"line-fixture-two","cwd":"%s","hook_event_name":"Stop"}\n'
 bash "$line_root/scripts/agents/supervision-hook.sh" claude stop <"$tmp/line-payload-two.json" \
   >"$tmp/line-two.out" 2>"$tmp/line-two.err" \
   || { echo "supervision hook second digest check-in failed" >&2; exit 1; }
-if grep -Fq 'A landing moved the repository storyline to commit abc123' "$tmp/line-two.out"; then
+line_two_report=$(fixture_stop_status_report "$tmp/line-two.out" "$line_root" claude line-fixture-two) \
+  || { echo "supervision hook second digest check-in exposed no identity-bound report" >&2; exit 1; }
+if grep -Fq 'A landing moved the repository storyline to commit abc123' <<<"$line_two_report"; then
   echo "supervision hook repeated a digest after its check-in cursor advanced" >&2
   exit 1
 fi
+
+# A read-only advisor skips the seat judgment, but still publishes the one-line
+# pointer and immutable report before delivery cursors can advance.
+printf '%s\n' '2026-08-29T10:01:00Z HIGHLIGHT — advisor delivery digest line (source: fixture advisor)' \
+  >>"$line_root/records/narrator-digest.log"
+advisor_cursor="$line_root/artifacts/agents/steward/narrator-digest-cursor.json"
+advisor_cursor_before=$(shasum -a 256 "$advisor_cursor" | cut -d' ' -f1)
+advisor_identity_started=$("$ms" proc started-at --pid $$)
+advisor_engine=$tmp/advisor-engine
+cat >"$advisor_engine" <<'SH'
+#!/usr/bin/env bash
+if [[ ${1:-} == proc && ${2:-} == find-ancestor ]]; then
+  printf '{"runtime":"claude","pid":%s,"pidStartedAt":%s}\n' \
+    "${METASYSTEM_ADVISOR_PID:?}" "${METASYSTEM_ADVISOR_STARTED:?}"
+  exit 0
+fi
+if [[ ${1:-} == lease && ${2:-} == classify ]]; then
+  printf '%s\n' '{"class":"MAIN","holder":false,"mainId":"advisor-main","announcement":{"ownerLineage":"advisor-lineage"}}'
+  exit 0
+fi
+if [[ ${1:-} == lease && ${2:-} == renew ]]; then
+  exit 0
+fi
+if [[ ${1:-} == lease && ${2:-} == protocol-growth ]]; then
+  printf '%s\n' '{"message":"advisor protocol guidance","counts":{"unreported":1}}'
+  exit 0
+fi
+if [[ ${1:-} == lease && ${2:-} == protocol-advance ]]; then
+  printf '%s\n' "$*" >"${METASYSTEM_ADVISOR_PROTOCOL_LOG:?}"
+  exit 0
+fi
+if [[ ${1:-} == up ]]; then
+  printf '%s\n' 'component=checkout-lease outcome=advisor' 'up outcome=advisor authority=read-only'
+  exit 0
+fi
+exec "${METASYSTEM_ADVISOR_REAL_ENGINE:?}" "$@"
+SH
+chmod +x "$advisor_engine"
+printf '{"session_id":"advisor-delivery","cwd":"%s","hook_event_name":"Stop"}\n' \
+  "$line_root" >"$tmp/advisor-payload.json"
+METASYSTEM_BIN="$advisor_engine" METASYSTEM_ADVISOR_REAL_ENGINE="$ms" \
+  METASYSTEM_ADVISOR_PID=$$ METASYSTEM_ADVISOR_STARTED="$advisor_identity_started" \
+  METASYSTEM_ADVISOR_PROTOCOL_LOG="$tmp/advisor-protocol.log" \
+  bash "$line_root/scripts/agents/supervision-hook.sh" claude stop \
+    <"$tmp/advisor-payload.json" >"$tmp/advisor.out" 2>"$tmp/advisor.err" \
+  || { echo "read-only advisor Stop did not return successfully" >&2; cat "$tmp/advisor.err" >&2; exit 1; }
+advisor_report=$(fixture_stop_status_report "$tmp/advisor.out" "$line_root" claude advisor-delivery) \
+  || { echo "read-only advisor Stop exposed no identity-bound report" >&2; cat "$tmp/advisor.out" >&2; exit 1; }
+grep -Fq 'OWNED-ELSEWHERE' <<<"$advisor_report" \
+  && grep -Fq 'advisor delivery digest line' <<<"$advisor_report" \
+  && grep -Fq 'advisor protocol guidance' <<<"$advisor_report" \
+  || { echo "read-only advisor report omitted its ownership guidance, digest, or protocol notice" >&2; exit 1; }
+advisor_cursor_after=$(shasum -a 256 "$advisor_cursor" | cut -d' ' -f1)
+[[ "$advisor_cursor_after" != "$advisor_cursor_before" ]] \
+  || { echo "read-only advisor delivery did not advance its digest cursor" >&2; exit 1; }
+[[ $("$ms" json get --file "$hook_evidence" --field result) == OK \
+  && $("$ms" json get --file "$hook_evidence" --field outcome) == EMITTED ]] \
+  || { echo "read-only advisor delivery was recorded as unavailable" >&2; exit 1; }
+grep -Fq 'lease protocol-advance' "$tmp/advisor-protocol.log" \
+  && grep -Fq -- '--counts {"unreported":1}' "$tmp/advisor-protocol.log" \
+  || { echo "read-only advisor delivery did not advance holder protocol evidence" >&2; exit 1; }
 
 failure_engine=$tmp/failure-engine
 cat >"$failure_engine" <<'SH'
@@ -763,6 +830,36 @@ if [[ $step == malformed-verdict && ${1:-} == report && ${2:-} == turn-verdict ]
   printf '%s\n' '{"shouldBlock":false}'
   exit 0
 fi
+if [[ $step == missing-facts && ${1:-} == report && ${2:-} == turn-verdict ]]; then
+  facts_path=
+  previous=
+  for argument in "$@"; do
+    if [[ $previous == --facts-file ]]; then
+      facts_path=$argument
+      break
+    fi
+    previous=$argument
+  done
+  [[ -n $facts_path ]] || exit 2
+  "${METASYSTEM_STOP_FAILURE_REAL_ENGINE:?}" "$@" || exit $?
+  rm -f "$facts_path"
+  printf 'fixture removed frozen facts at %s\n' "$facts_path" >&2
+  exit 0
+fi
+if [[ $step == partial-output && ${1:-} == adapter && ${2:-} == stop-output ]]; then
+  partial_output_file=
+  partial_previous=
+  for partial_argument in "$@"; do
+    if [[ $partial_previous == --output-file ]]; then
+      partial_output_file=$partial_argument
+      break
+    fi
+    partial_previous=$partial_argument
+  done
+  [[ -n $partial_output_file ]] || exit 2
+  printf '%s' '{"systemMessage":' >"$partial_output_file"
+  exit 0
+fi
 if [[ $step == partial-output && ${1:-} == json && ${2:-} == object ]]; then
   printf '%s' '{"systemMessage":'
   exit 0
@@ -775,8 +872,8 @@ exec "${METASYSTEM_STOP_FAILURE_REAL_ENGINE:?}" "$@"
 SH
 chmod +x "$failure_engine"
 
-assert_failure_allows() { # fixture name, injected step, expected reason fragment
-  local fixture_name=$1 failure_step=$2 reason_fragment=$3 failure_rc=0
+assert_failure_allows() { # fixture name, injected step, detail surface, expected text
+  local fixture_name=$1 failure_step=$2 detail_surface=$3 expected=$4 failure_rc=0 report
   METASYSTEM_BIN="$failure_engine" \
     METASYSTEM_STOP_FAILURE_REAL_ENGINE="$line_root/bin/metasystem" \
     METASYSTEM_STOP_FAILURE_STEP="$failure_step" \
@@ -787,18 +884,28 @@ assert_failure_allows() { # fixture name, injected step, expected reason fragmen
   if grep -Fq '"decision":"block"' "$tmp/failure-$fixture_name.out"; then
     echo "supervision hook $fixture_name infrastructure failure blocked" >&2; cat "$tmp/failure-$fixture_name.out" >&2; exit 1
   fi
-  grep -Fq "$reason_fragment" "$tmp/failure-$fixture_name.out" \
-    || { echo "supervision hook $fixture_name failure fixture omitted its reason" >&2; cat "$tmp/failure-$fixture_name.out" >&2; exit 1; }
+  if [[ "$detail_surface" == report ]]; then
+    report=$(fixture_stop_status_report \
+      "$tmp/failure-$fixture_name.out" "$line_root" claude line-fixture) \
+      || { echo "supervision hook $fixture_name exposed no identity-bound report" >&2; exit 1; }
+    grep -Fq "$expected" <<<"$report" \
+      || { echo "supervision hook $fixture_name report omitted its reason" >&2; cat "$tmp/failure-$fixture_name.out" >&2; exit 1; }
+  else
+    [[ $(<"$tmp/failure-$fixture_name.out") == "$expected" ]] \
+      || { echo "supervision hook $fixture_name did not emit its fixed degraded notice" >&2; cat "$tmp/failure-$fixture_name.out" >&2; exit 1; }
+  fi
 }
 
 # An uncaught early command error is converted by the deadline parent, while
 # captured pre-verdict failures and unreadable verdict output all allow the
 # Stop with their degraded diagnostic.
-assert_failure_allows runtime-list runtime-list 'Stop hook output was unreadable'
-assert_failure_allows hook-attempt hook-attempt 'attempt evidence could not be recorded'
-assert_failure_allows turn-verdict turn-verdict 'turn-verdict unavailable'
-assert_failure_allows malformed-verdict malformed-verdict 'turn verdict was unreadable'
-assert_failure_allows partial-output partial-output 'stop-hook-output-was-unreadable'
+unreadable_stop_allowance='{"systemMessage":"Task unknown; Stop allowed; needs supervision repair; stop-hook-output-was-unreadable. The steward must restore supervision. Status unavailable."}'
+status_unavailable_allowance='{"systemMessage":"Task unknown; Stop allowed; needs supervision repair; Status unavailable."}'
+assert_failure_allows runtime-list runtime-list fixed "$unreadable_stop_allowance"
+assert_failure_allows hook-attempt hook-attempt report 'attempt evidence could not be recorded'
+assert_failure_allows turn-verdict turn-verdict fixed "$status_unavailable_allowance"
+assert_failure_allows malformed-verdict malformed-verdict fixed "$status_unavailable_allowance"
+assert_failure_allows partial-output partial-output fixed "$unreadable_stop_allowance"
 
 # A re-arm notice is keyed from the aggregate line on both hook entry paths.
 # Successful session start emits it, Stop carries it beside either verdict,
@@ -854,7 +961,9 @@ printf '{"session_id":"rearm-stop","cwd":"%s","hook_event_name":"Stop"}\n' "$rea
 run_rearm_hook rearm-success stop "$tmp/rearm-stop-payload.json" \
     "$tmp/rearm-stop.out" "$tmp/rearm-stop.err" \
   || { echo "successful re-arm Stop fixture failed" >&2; cat "$tmp/rearm-stop.err" >&2; exit 1; }
-grep -Fq 'Metasystem re-armed the rebuilt engine:' "$tmp/rearm-stop.out" \
+rearm_stop_report=$(fixture_stop_status_report "$tmp/rearm-stop.out" "$rearm_root" fake rearm-stop) \
+  || { echo "successful re-arm Stop exposed no identity-bound report" >&2; cat "$tmp/rearm-stop.out" >&2; exit 1; }
+grep -Fq 'Metasystem re-armed the rebuilt engine:' <<<"$rearm_stop_report" \
   || { echo "Stop hid the successful re-arm notice" >&2; cat "$tmp/rearm-stop.out" >&2; exit 1; }
 
 printf '{"session_id":"rearm-failure","cwd":"%s","hook_event_name":"Stop"}\n' "$rearm_root" \
@@ -862,10 +971,12 @@ printf '{"session_id":"rearm-failure","cwd":"%s","hook_event_name":"Stop"}\n' "$
 run_rearm_hook rearm-failure stop "$tmp/rearm-failure-payload.json" \
     "$tmp/rearm-failure.out" "$tmp/rearm-failure.err" \
   || { echo "failed re-arm Stop fixture failed" >&2; cat "$tmp/rearm-failure.err" >&2; exit 1; }
-grep -Fq 'supervision arming failed' "$tmp/rearm-failure.out" \
-  && grep -Fq 'Metasystem re-armed the rebuilt engine:' "$tmp/rearm-failure.out" \
+rearm_failure_report=$(fixture_stop_status_report "$tmp/rearm-failure.out" "$rearm_root" fake rearm-failure) \
+  || { echo "failed re-arm Stop exposed no identity-bound report" >&2; cat "$tmp/rearm-failure.out" >&2; exit 1; }
+grep -Fq 'supervision arming failed' <<<"$rearm_failure_report" \
+  && grep -Fq 'Metasystem re-armed the rebuilt engine:' <<<"$rearm_failure_report" \
   || { echo "failed Stop did not surface both the failure and re-arm notice" >&2; cat "$tmp/rearm-failure.out" >&2; exit 1; }
-if grep -Fq 'Metasystem re-armed the rebuilt engine:' "$tmp/line.out"; then
+if grep -Fq 'Metasystem re-armed the rebuilt engine:' <<<"$line_report"; then
   echo "a hook run without the aggregate key invented a re-arm notice" >&2
   exit 1
 fi
@@ -884,26 +995,60 @@ done
 if grep -Fq '"decision":"block"' "$tmp/arming-1.out" || grep -Fq '"decision":"block"' "$tmp/arming-2.out"; then
   echo "arming infrastructure failure blocked" >&2; exit 1
 fi
-grep -Fq 'occurrence 2' "$tmp/arming-2.out" \
-  && grep -Fq 'supervision arming failed' "$tmp/arming-2.out" \
-  && grep -Fq "ENROLLMENT_DRIFT: run 'metasystem steward restart' from an agent-free terminal" "$tmp/arming-2.out" \
+arming_1_report=$(fixture_stop_status_report "$tmp/arming-1.out" "$line_root" claude external-failure) \
+  || { echo "first arming failure exposed no identity-bound report" >&2; exit 1; }
+arming_2_report=$(fixture_stop_status_report "$tmp/arming-2.out" "$line_root" claude external-failure) \
+  || { echo "second arming failure exposed no identity-bound report" >&2; exit 1; }
+grep -Fq 'occurrence 2' <<<"$arming_2_report" \
+  && grep -Fq 'supervision arming failed' <<<"$arming_2_report" \
+  && grep -Fq "ENROLLMENT_DRIFT: run 'metasystem steward restart' from an agent-free terminal" <<<"$arming_2_report" \
   || { echo "repeated arming failure omitted its cause, count, or exact remedy" >&2; cat "$tmp/arming-2.out" >&2; exit 1; }
-# The notice is a JSON string: read it decoded, the quotes inside the
-# component line are escaped on the wire.
-arming_notice=$("$ms" json get --file "$tmp/arming-1.out" --field systemMessage)
-grep -Fq 'component=steward-runner outcome=failed detail="ENROLLMENT_DRIFT" remedy="run metasystem steward restart from an agent-free terminal"' <<<"$arming_notice" \
-  && grep -Fq 'up outcome=' <<<"$arming_notice" \
+# The report retains the command output as JSON; the quotes inside the
+# component line are escaped there.
+grep -Fq 'component=steward-runner outcome=failed detail=\"ENROLLMENT_DRIFT\" remedy=\"run metasystem steward restart from an agent-free terminal\"' <<<"$arming_1_report" \
+  && grep -Fq 'up outcome=' <<<"$arming_1_report" \
   || { echo "arming failure lost its component detail, remedy, or aggregate" >&2; cat "$tmp/arming-1.out" >&2; exit 1; }
 grep -Fq 'stop-condition infrastructure supervision-arming-failed supervision-arming ' \
   "$line_root/artifacts/agents/supervision/hooks.log" \
   || { echo "arming failure omitted its infrastructure hook-log line" >&2; exit 1; }
 
+# Frozen-facts diagnostics include a per-attempt path, but refusal occurrence
+# identity remains the stable failure cause rather than that dynamic detail.
+printf '{"session_id":"missing-facts","cwd":"%s","hook_event_name":"Stop"}\n' "$line_root" \
+  >"$tmp/missing-facts-payload.json"
+for occurrence in 1 2; do
+  METASYSTEM_BIN="$failure_engine" \
+    METASYSTEM_STOP_FAILURE_REAL_ENGINE="$line_root/bin/metasystem" \
+    METASYSTEM_STOP_FAILURE_STEP=missing-facts \
+    bash "$line_root/scripts/agents/supervision-hook.sh" claude stop \
+      <"$tmp/missing-facts-payload.json" \
+      >"$tmp/missing-facts-$occurrence.out" 2>"$tmp/missing-facts-$occurrence.err" \
+    || { echo "supervision hook missing-facts occurrence $occurrence failed" >&2; exit 1; }
+  missing_facts_report=$(fixture_stop_status_report \
+    "$tmp/missing-facts-$occurrence.out" "$line_root" claude missing-facts) \
+    || { echo "missing-facts occurrence $occurrence exposed no identity-bound report" >&2; exit 1; }
+  grep -Fq 'fixture removed frozen facts at ' <<<"$missing_facts_report" \
+    || { echo "missing-facts occurrence $occurrence dropped its dynamic diagnostic notice" >&2; exit 1; }
+done
+missing_facts_record=$line_root/artifacts/agents/supervision/stop-refusals/missing-facts.json
+[[ $(grep -Fc '"cause": "the frozen judgment facts were unavailable"' "$missing_facts_record") -eq 1 ]] \
+  && grep -Fq '"count": 2' "$missing_facts_record" \
+  || { echo "dynamic facts diagnostics split the stable refusal occurrence" >&2; cat "$missing_facts_record" >&2; exit 1; }
+
 METASYSTEM_BIN="$failure_engine" \
   METASYSTEM_STOP_FAILURE_REAL_ENGINE="$line_root/bin/metasystem" \
   METASYSTEM_STOP_FAILURE_STEP=health-failure \
   bash "$line_root/scripts/agents/supervision-hook.sh" claude stop \
-    <"$tmp/external-failure-payload.json" >"$tmp/different-cause.out" 2>"$tmp/different-cause.err" \
+    <"$tmp/external-failure-payload.json" >"$tmp/different-cause.payload" 2>"$tmp/different-cause.err" \
   || { echo "supervision hook different-cause fixture failed" >&2; exit 1; }
+different_cause_report=$(fixture_stop_status_report \
+  "$tmp/different-cause.payload" "$line_root" claude external-failure) \
+  || { echo "health infrastructure cause exposed no identity-bound report" >&2; exit 1; }
+# This assertion view contains only the payload's control field followed by
+# the identity-bound report. Detail cannot pass from the payload surface.
+"$ms" json strip --file "$tmp/different-cause.payload" --key reason --key systemMessage \
+  >"$tmp/different-cause.out"
+printf '%s\n' "$different_cause_report" >>"$tmp/different-cause.out"
 if grep -Fq '"decision":"block"' "$tmp/different-cause.out" || ! grep -Fq 'health engine returned no verdict' "$tmp/different-cause.out"; then
   echo "a health infrastructure cause did not allow with its notice" >&2; cat "$tmp/different-cause.out" >&2; exit 1
 fi
@@ -917,7 +1062,10 @@ METASYSTEM_BIN="$failure_engine" \
 if grep -Fq '"decision":"block"' "$tmp/narrator-failure.out"; then
   echo "narrator infrastructure failure blocked" >&2; exit 1
 fi
-grep -Fq 'narrator digest could not be read' "$tmp/narrator-failure.out" \
+narrator_failure_report=$(fixture_stop_status_report \
+  "$tmp/narrator-failure.out" "$line_root" claude external-failure) \
+  || { echo "narrator failure exposed no identity-bound report" >&2; exit 1; }
+grep -Fq 'narrator digest could not be read' <<<"$narrator_failure_report" \
   && grep -Fq 'stop-condition infrastructure narrator-digest-could-not-be-read narrator ' "$line_root/artifacts/agents/supervision/hooks.log" \
   || { echo "narrator failure lost its notice or hook-log line" >&2; exit 1; }
 
@@ -953,13 +1101,16 @@ if grep -Fq '"decision":"block"' "$tmp/broken-refusal.out"; then
   cat "$tmp/broken-refusal.out" >&2
   exit 1
 fi
-grep -Fq 'stop-refusal record failure' "$tmp/broken-refusal.out" \
+broken_refusal_report=$(fixture_stop_status_report \
+  "$tmp/broken-refusal.out" "$line_root" claude broken-refusal-record) \
+  || { echo "an unreadable refusal record exposed no identity-bound report" >&2; exit 1; }
+grep -Fq 'stop-refusal record failure' <<<"$broken_refusal_report" \
   || { echo "an unreadable refusal record was not surfaced" >&2; cat "$tmp/broken-refusal.out" >&2; exit 1; }
 
 # The verdict owns its state-file decoding. A present but unreadable state file
 # must return its structured uncertainty block through the real hook.
 printf '%s\n' '{malformed' >"$line_root/artifacts/agents/turn-verdict-state.json"
-assert_failure_allows unreadable-state none 'turn verdict state'
+assert_failure_allows unreadable-state none report 'turn verdict state'
 rm -f "$line_root/artifacts/agents/turn-verdict-state.json"
 
 # A decoded session id may contain a newline. The deadline parent transports
@@ -996,13 +1147,12 @@ METASYSTEM_BIN="$coordinate_engine" METASYSTEM_COORDINATE_REAL_ENGINE="$ms" \
     <"$tmp/coordinate-payload.json" >"$tmp/coordinate.out" 2>"$tmp/coordinate.err" || coordinate_rc=$?
 (( coordinate_rc == 0 )) \
   || { echo "deadline coordinate fixture returned $coordinate_rc" >&2; cat "$tmp/coordinate.err" >&2; exit 1; }
+coordinate_expected='{"systemMessage":"Task unknown; Stop allowed; needs supervision repair; stop-hook-output-was-unreadable. The steward must restore supervision. Status unavailable."}'
+[[ $(<"$tmp/coordinate.out") == "$coordinate_expected" ]] \
+  || { echo "deadline coordinate fixture lost its fixed degraded allowance" >&2; cat "$tmp/coordinate.out" >&2; exit 1; }
 if grep -Fq '"decision":"block"' "$tmp/coordinate.out"; then
-  echo "deadline coordinate fixture blocked on an infrastructure failure" >&2
-  cat "$tmp/coordinate.out" >&2
-  exit 1
+  echo "deadline coordinate fixture blocked after its worker was killed" >&2; exit 1
 fi
-grep -Fq 'stop-hook-output-was-unreadable' "$tmp/coordinate.out" \
-  || { echo "deadline coordinate fixture lost its degraded allowance" >&2; cat "$tmp/coordinate.out" >&2; exit 1; }
 sed -n "$((coordinate_log_start + 1)),\$p" "$line_root/artifacts/agents/supervision/hooks.log" \
   | grep -Fq 'stop response outcome=invalid-worker-output-allow' \
   || { echo "deadline coordinate fixture did not log under the installation" >&2; exit 1; }
@@ -1023,6 +1173,7 @@ chmod +x "$slow_resolution_engine"
 printf '%s\n' '{broken' >"$tmp/slow-resolution-malformed.json"
 printf '{"session_id":"slow-resolution-runtime","cwd":"%s","hook_event_name":"Stop"}\n' \
   "$line_root" >"$tmp/slow-resolution-runtime.json"
+slow_resolution_expected='{"systemMessage":"Task unknown; Stop allowed; needs supervision repair; stop-hook-output-was-unreadable. The steward must restore supervision. Status unavailable."}'
 for slow_resolution_case in malformed runtime; do
   slow_resolution_log_start=$(wc -l <"$line_root/artifacts/agents/supervision/hooks.log")
   slow_resolution_started=$SECONDS
@@ -1045,13 +1196,11 @@ for slow_resolution_case in malformed runtime; do
     || { echo "slow resolution $slow_resolution_case fixture returned $slow_resolution_rc" >&2; exit 1; }
   (( slow_resolution_elapsed >= 1 && slow_resolution_elapsed < 10 )) \
     || { echo "slow resolution $slow_resolution_case fixture did not wait only for the resolver: ${slow_resolution_elapsed}s" >&2; exit 1; }
+  [[ $(<"$tmp/slow-resolution-$slow_resolution_case.out") == "$slow_resolution_expected" ]] \
+    || { echo "slow resolution $slow_resolution_case fixture lost its fixed degraded allowance" >&2; cat "$tmp/slow-resolution-$slow_resolution_case.out" >&2; exit 1; }
   if grep -Fq '"decision":"block"' "$tmp/slow-resolution-$slow_resolution_case.out"; then
-    echo "slow resolution $slow_resolution_case fixture blocked" >&2
-    cat "$tmp/slow-resolution-$slow_resolution_case.out" >&2
-    exit 1
+    echo "slow resolution $slow_resolution_case fixture blocked on invalid worker output" >&2; exit 1
   fi
-  grep -Fq 'stop-hook-output-was-unreadable' "$tmp/slow-resolution-$slow_resolution_case.out" \
-    || { echo "slow resolution $slow_resolution_case fixture lost its degraded allowance" >&2; exit 1; }
   sed -n "$((slow_resolution_log_start + 1)),\$p" \
       "$line_root/artifacts/agents/supervision/hooks.log" \
     | grep -Fq 'stop response outcome=invalid-worker-output-allow' \
@@ -1090,11 +1239,12 @@ set -e
   || { echo "supervision hook kill fixture did not convert the worker failure to a provider response" >&2; exit 1; }
 # A worker killed mid-attempt is an infrastructure condition: the stop is
 # allowed with the degraded notice naming the cause, never blocked.
+killed_expected='{"systemMessage":"Task unknown; Stop allowed; needs supervision repair; stop-hook-output-was-unreadable. The steward must restore supervision. Status unavailable."}'
+[[ $(<"$tmp/killed.out") == "$killed_expected" ]] \
+  || { echo "supervision hook kill fixture did not emit its fixed degraded allowance" >&2; cat "$tmp/killed.out" >&2; exit 1; }
 if grep -Fq '"decision":"block"' "$tmp/killed.out"; then
-  echo "supervision hook kill fixture blocked on an infrastructure condition" >&2; cat "$tmp/killed.out" >&2; exit 1
+  echo "supervision hook kill fixture blocked on infrastructure" >&2; exit 1
 fi
-grep -Fq 'stop-hook-output-was-unreadable' "$tmp/killed.out" \
-  || { echo "supervision hook kill fixture emitted no degraded allowance naming its cause" >&2; cat "$tmp/killed.out" >&2; exit 1; }
 grep -Fq 'stop-condition infrastructure stop-hook-output-was-unreadable stop-worker ' \
     "$line_root/artifacts/agents/supervision/hooks.log" \
   || { echo "supervision hook kill fixture left no stop-condition line in the hook log" >&2; exit 1; }
@@ -1107,7 +1257,10 @@ bash "$line_root/scripts/agents/supervision-hook.sh" claude stop <"$tmp/after-ki
   || { echo "supervision hook could not run after an interrupted attempt" >&2; exit 1; }
 grep -Fq 'INTERRUPTED_BY_NEXT_TURN' "$hook_evidence" \
   || { echo "the next hook turn erased the killed attempt instead of retaining failed history" >&2; exit 1; }
-grep -Fq 'hook-freshness=dead' "$tmp/after-kill.out" \
+after_kill_report=$(fixture_stop_status_report \
+  "$tmp/after-kill.out" "$line_root" claude after-kill-fixture) \
+  || { echo "the next hook turn exposed no identity-bound report" >&2; exit 1; }
+grep -Fq 'hook-freshness=dead' <<<"$after_kill_report" \
   || { echo "the next hook line did not judge the prior interrupted turn" >&2; exit 1; }
 grep -Fq '"outcome": "EMITTED"' "$hook_evidence" \
   || { echo "the post-kill hook turn did not complete its own emission" >&2; exit 1; }
@@ -1149,11 +1302,12 @@ deadline_elapsed=$((SECONDS - deadline_started))
   || { echo "supervision hook deadline fixture did not exit successfully: $deadline_rc" >&2; exit 1; }
 (( deadline_elapsed < 60 )) \
   || { echo "supervision hook deadline fixture exceeded the provider's sixty-second budget: ${deadline_elapsed}s" >&2; exit 1; }
+deadline_expected='{"systemMessage":"Task unknown; Stop allowed; needs supervision repair; stop deadline expired. The steward must restore supervision. Status unavailable."}'
+[[ $(<"$tmp/deadline.out") == "$deadline_expected" ]] \
+  || { echo "supervision hook deadline fixture did not emit its fixed degraded timeout" >&2; cat "$tmp/deadline.out" >&2; exit 1; }
 if grep -Fq '"decision":"block"' "$tmp/deadline.out"; then
-  echo "supervision hook deadline infrastructure blocked" >&2; cat "$tmp/deadline.out" >&2; exit 1
+  echo "supervision hook deadline fixture blocked on infrastructure" >&2; exit 1
 fi
-grep -Fq 'deadline expired before a turn verdict' "$tmp/deadline.out" \
-  || { echo "supervision hook deadline fixture did not name its degraded timeout" >&2; cat "$tmp/deadline.out" >&2; exit 1; }
 grep -Eq 'stop response outcome=deadline-expired-allow elapsed=5[0-9]s$' \
   "$line_root/artifacts/agents/supervision/hooks.log" \
   || { echo "supervision hook deadline fixture did not log its elapsed deadline refusal" >&2; exit 1; }
@@ -1171,15 +1325,15 @@ METASYSTEM_BIN="$deadline_engine" METASYSTEM_DEADLINE_REAL_ENGINE="$ms" \
     >"$tmp/deadline-second.out" 2>"$tmp/deadline-second.err" || deadline_second_rc=$?
 (( deadline_second_rc == 0 )) \
   || { echo "second supervision hook deadline fixture returned $deadline_second_rc" >&2; exit 1; }
+[[ $(<"$tmp/deadline-second.out") == "$deadline_expected" ]] \
+  || { echo "repeated deadline overrun did not emit its fixed degraded timeout" >&2; cat "$tmp/deadline-second.out" >&2; exit 1; }
 if grep -Fq '"decision":"block"' "$tmp/deadline-second.out"; then
-  echo "repeated deadline overrun blocked the same session again" >&2
-  cat "$tmp/deadline-second.out" >&2
-  exit 1
+  echo "repeated deadline overrun blocked on infrastructure" >&2; exit 1
 fi
-grep -Fq 'occurrence 2' "$tmp/deadline-second.out" \
-  && grep -Fq 'stop deadline expired' "$tmp/deadline-second.out" \
-  && grep -Fq 'A human or steward must restore supervision outside this seat, then retry.' "$tmp/deadline-second.out" \
-  || { echo "repeated deadline overrun omitted its cause, count, or remedy" >&2; cat "$tmp/deadline-second.out" >&2; exit 1; }
+deadline_record="$line_root/artifacts/agents/supervision/stop-refusals/line-fixture.json"
+grep -Fq '"cause": "stop deadline expired"' "$deadline_record" \
+  && grep -Fq '"count": 2' "$deadline_record" \
+  || { echo "repeated deadline overrun lost its recorded cause or occurrence count" >&2; cat "$deadline_record" >&2; exit 1; }
 
 # With the installation's canonical engine gone, neither the worker nor the
 # deadline parent may substitute an override engine for that world. The worker
@@ -1195,7 +1349,7 @@ mv "$line_root/bin/metasystem.absent" "$line_root/bin/metasystem"
   || { echo "supervision hook deadline fixture without an engine exited $deadline_noengine_rc" >&2; cat "$tmp/deadline-noengine.err" >&2; exit 1; }
 [[ $(grep -c . "$tmp/deadline-noengine.out") -eq 1 ]] \
   || { echo "supervision hook deadline fixture without an engine did not print exactly one line" >&2; cat "$tmp/deadline-noengine.out" >&2; exit 1; }
-deadline_noengine_expected='{"systemMessage":"Metasystem engine missing; stopping is allowed with degraded infrastructure. Reinstall or rebuild bin/metasystem; the steward owns repair."}'
+deadline_noengine_expected='{"systemMessage":"Task unknown; Stop allowed; needs supervision repair; engine missing. Rebuild bin/metasystem. Status unavailable."}'
 [[ $(<"$tmp/deadline-noengine.out") == "$deadline_noengine_expected" ]] \
   || { echo "supervision hook deadline fixture without an engine did not preserve the missing-engine allowance" >&2; cat "$tmp/deadline-noengine.out" >&2; exit 1; }
 deadline_noengine_log_after=$(wc -c <"$line_root/artifacts/agents/supervision/hooks.log" | tr -d '[:space:]')
@@ -1236,7 +1390,7 @@ METASYSTEM_BIN="$prefix_engine" METASYSTEM_PREFIX_DEADLINE_ENGINE="$deadline_eng
   || { echo "supervision hook deadline record-failure fixture exited $deadline_record_failure_rc" >&2; cat "$tmp/deadline-record-failure.err" >&2; exit 1; }
 [[ $(grep -c . "$tmp/deadline-record-failure.out") -eq 1 ]] \
   || { echo "supervision hook deadline record-failure fixture did not print exactly one line" >&2; cat "$tmp/deadline-record-failure.out" >&2; exit 1; }
-deadline_record_failure_expected='{"systemMessage":"Metasystem could not update the stop-refusal record; stopping is allowed so record failure cannot recreate the refusal loop. Cause: stop deadline expired. Remedy: A human or steward must restore supervision outside this seat, then retry."}'
+deadline_record_failure_expected='{"systemMessage":"Task unknown; Stop allowed; needs supervision repair; stop deadline expired; record update failed. The steward must restore supervision. Status unavailable."}'
 [[ $(<"$tmp/deadline-record-failure.out") == "$deadline_record_failure_expected" ]] \
   || { echo "supervision hook deadline record-failure fixture did not emit its fixed allowance" >&2; cat "$tmp/deadline-record-failure.out" >&2; exit 1; }
 sed -n "$((deadline_record_failure_log_start + 1)),\$p" \
@@ -1261,8 +1415,8 @@ chmod 0644 "$line_root/artifacts/agents/supervision/hooks.log"
   || { echo "supervision hook deadline fixture with a refusing json engine exited $deadline_prefix_rc" >&2; cat "$tmp/deadline-prefix.err" >&2; exit 1; }
 [[ $(grep -c . "$tmp/deadline-prefix.out") -eq 1 ]] \
   || { echo "supervision hook deadline fixture with a refusing json engine did not print exactly one line" >&2; cat "$tmp/deadline-prefix.out" >&2; exit 1; }
-# The fixed fallback still says the log failure above the deadline's own words.
-deadline_prefix_expected='{"systemMessage":"the infrastructure stop condition could not be appended to the hook log\nMetasystem Stop deadline expired before a turn verdict; stopping is allowed with degraded infrastructure. Cause: stop deadline expired. Remedy: A human or steward must restore supervision outside this seat, then retry."}'
+# The fixed fallback retains the log failure as a qualifier on the one line.
+deadline_prefix_expected='{"systemMessage":"Task unknown; Stop allowed; needs supervision repair; stop deadline expired; condition log failed. The steward must restore supervision. Status unavailable."}'
 [[ $(<"$tmp/deadline-prefix.out") == "$deadline_prefix_expected" ]] \
   || { echo "supervision hook deadline fixture with a refusing json engine did not allow with one fixed notice" >&2; cat "$tmp/deadline-prefix.out" >&2; exit 1; }
 
@@ -1292,11 +1446,11 @@ empty_ps_elapsed=$((SECONDS - empty_ps_started))
   || { echo "empty-ps supervision hook deadline fixture returned $empty_ps_rc" >&2; exit 1; }
 (( empty_ps_elapsed < 60 )) \
   || { echo "empty-ps supervision hook deadline fixture exceeded the provider's sixty-second budget: ${empty_ps_elapsed}s" >&2; exit 1; }
+[[ $(<"$tmp/empty-ps-deadline.out") == "$deadline_expected" ]] \
+  || { echo "empty-ps supervision hook deadline fixture did not emit its fixed degraded timeout" >&2; cat "$tmp/empty-ps-deadline.out" >&2; exit 1; }
 if grep -Fq '"decision":"block"' "$tmp/empty-ps-deadline.out"; then
-  echo "empty-ps supervision hook deadline infrastructure blocked" >&2; cat "$tmp/empty-ps-deadline.out" >&2; exit 1
+  echo "empty-ps supervision hook deadline fixture blocked on infrastructure" >&2; exit 1
 fi
-grep -Fq 'deadline expired before a turn verdict' "$tmp/empty-ps-deadline.out" \
-  || { echo "empty-ps supervision hook deadline fixture did not name its degraded timeout" >&2; cat "$tmp/empty-ps-deadline.out" >&2; exit 1; }
 sed -n "$((empty_ps_log_start + 1)),\$p" "$line_root/artifacts/agents/supervision/hooks.log" \
   | grep -Fq 'stop response outcome=deadline-expired-allow' \
   || { echo "empty-ps supervision hook deadline fixture did not log its deadline refusal" >&2; exit 1; }
@@ -1341,14 +1495,12 @@ METASYSTEM_BIN="$failure_engine" \
     || missing_template_rc=$?
 (( missing_template_rc == 0 )) \
   || { echo "missing template state fixture returned $missing_template_rc" >&2; exit 1; }
-if grep -Fq '"decision":"block"' "$tmp/missing-template.out"; then
-  echo "missing template state fixture blocked on missing-engine infrastructure" >&2
-  cat "$tmp/missing-template.out" >&2
-  exit 1
-fi
-grep -Fq 'engine missing' "$tmp/missing-template.out" \
-  && grep -Fq 'degraded infrastructure' "$tmp/missing-template.out" \
+missing_template_expected='{"systemMessage":"Task unknown; Stop allowed; needs supervision repair; engine missing. Rebuild bin/metasystem. Status unavailable."}'
+[[ $(<"$tmp/missing-template.out") == "$missing_template_expected" ]] \
   || { echo "missing template state fixture did not use the missing-engine allowance" >&2; cat "$tmp/missing-template.out" >&2; exit 1; }
+if grep -Fq '"decision":"block"' "$tmp/missing-template.out"; then
+  echo "missing template state fixture blocked on infrastructure" >&2; exit 1
+fi
 if grep -Fq 'HEALTH unknown' "$tmp/missing-template.out"; then
   echo "missing template state fixture returned a non-blocking health message" >&2
   exit 1
@@ -1491,6 +1643,10 @@ if [[ ${1:-} == proc && ${2:-} == find-ancestor ]]; then
     "${METASYSTEM_TEMPLATE_MAIN_PID:?}" "${METASYSTEM_TEMPLATE_MAIN_STARTED:?}"
   exit 0
 fi
+if [[ ${METASYSTEM_TEMPLATE_CLASSIFY_WITHOUT_EPOCH:-} == 1 && ${1:-} == lease && ${2:-} == classify ]]; then
+  printf '{"class":"HOLDER","holder":true,"mainId":"%s"}\n' "${METASYSTEM_TEMPLATE_MAIN_ID:?}"
+  exit 0
+fi
 exec "${METASYSTEM_TEMPLATE_REAL_ENGINE:?}" "$@"
 SH
 chmod +x "$template_engine"
@@ -1511,7 +1667,10 @@ if grep -Fq '"decision":"block"' "$tmp/template-human.out"; then
   cat "$tmp/template-human.out" >&2
   exit 1
 fi
-grep -Fq 'SESSION STOP authorized once by Wido' "$tmp/template-human.out" \
+template_human_report=$(fixture_stop_status_report \
+  "$tmp/template-human.out" "$template_root" claude "$template_session") \
+  || { echo "template attended-human Stop exposed no identity-bound report" >&2; exit 1; }
+grep -Fq 'SESSION STOP authorized once by Wido' <<<"$template_human_report" \
   || { echo "template attended-human authorization did not reach the nested state root" >&2; cat "$tmp/template-human.out" >&2; exit 1; }
 [[ ! -e "$template_root/artifacts/agents/session-stops/$template_session.json" ]] \
   || { echo "template attended-human authorization was not consumed" >&2; exit 1; }
@@ -1532,11 +1691,14 @@ METASYSTEM_BIN="$template_engine" METASYSTEM_TEMPLATE_REAL_ENGINE="$template_roo
     >"$tmp/template-agent.out" 2>"$tmp/template-agent.err" || template_agent_rc=$?
 (( template_agent_rc == 0 )) \
   || { echo "template honest-agent Stop returned $template_agent_rc" >&2; cat "$tmp/template-agent.err" >&2; exit 1; }
+template_agent_report=$(fixture_stop_status_report \
+  "$tmp/template-agent.out" "$template_root" claude "$template_session") \
+  || { echo "template honest-agent Stop exposed no identity-bound report" >&2; exit 1; }
 grep -Fq '"decision":"block"' "$tmp/template-agent.out" \
-  && grep -Fq 'IDLE WITH BACKLOG' "$tmp/template-agent.out" \
-  && grep -Fq 'template-backlog' "$tmp/template-agent.out" \
+  && grep -Fq 'IDLE WITH BACKLOG' <<<"$template_agent_report" \
+  && grep -Fq 'template-backlog' <<<"$template_agent_report" \
   || { echo "template honest agent was allowed to leave claimable backlog" >&2; cat "$tmp/template-agent.out" >&2; exit 1; }
-if grep -Fq 'This refusal does not repeat for the same work' "$tmp/template-agent.out"; then
+if grep -Fq 'This refusal does not repeat for the same work' <<<"$template_agent_report"; then
   echo "the counted idle refusal retained the false open-work promise" >&2
   cat "$tmp/template-agent.out" >&2
   exit 1
@@ -1548,9 +1710,12 @@ METASYSTEM_BIN="$template_engine" METASYSTEM_TEMPLATE_REAL_ENGINE="$template_roo
   bash "$template_root/scripts/agents/supervision-hook.sh" claude stop <"$tmp/template-repeat-payload.json" \
     >"$tmp/template-agent-repeat.out" 2>"$tmp/template-agent-repeat.err" \
   || { echo "template repeated open-work Stop returned an error" >&2; exit 1; }
+template_agent_repeat_report=$(fixture_stop_status_report \
+  "$tmp/template-agent-repeat.out" "$template_root" claude "$template_session") \
+  || { echo "template repeated open-work Stop exposed no identity-bound report" >&2; exit 1; }
 grep -Fq '"decision":"block"' "$tmp/template-agent-repeat.out" \
-  && grep -Fq 'refusal 2 of 3' "$tmp/template-agent-repeat.out" \
-  && grep -Fq 'stop_hook_active=true' "$tmp/template-agent-repeat.out" \
+  && grep -Fq 'refusal 2 of 3' <<<"$template_agent_repeat_report" \
+  && grep -Fq 'stop_hook_active=true' <<<"$template_agent_repeat_report" \
   || { echo "the second seat-owned refusal was not counted" >&2; cat "$tmp/template-agent-repeat.out" >&2; exit 1; }
 grep -Fq -- '--stop-hook-active=true' "$tmp/template-report.log" \
   || { echo "the Stop hook did not pass stop_hook_active to turn-verdict" >&2; cat "$tmp/template-report.log" >&2; exit 1; }
@@ -1566,11 +1731,14 @@ if grep -Fq '"decision":"block"' "$tmp/template-agent-third.out"; then
   cat "$tmp/template-agent-third.out" >&2
   exit 1
 fi
-grep -Fq 'reached the bound of 3' "$tmp/template-agent-third.out" \
-  && grep -Fq 'selected goal template-backlog and deferred its claim' "$tmp/template-agent-third.out" \
-  && grep -Fq 'prepared steward continuation intent' "$tmp/template-agent-third.out" \
-  && grep -Fq 'the turn will end' "$tmp/template-agent-third.out" \
-  && grep -Fq 'stop_hook_active=true' "$tmp/template-agent-third.out" \
+template_agent_third_report=$(fixture_stop_status_report \
+  "$tmp/template-agent-third.out" "$template_root" claude "$template_session") \
+  || { echo "template third open-work Stop exposed no identity-bound report" >&2; exit 1; }
+grep -Fq 'reached the bound of 3' <<<"$template_agent_third_report" \
+  && grep -Fq 'selected goal template-backlog and deferred its claim' <<<"$template_agent_third_report" \
+  && grep -Fq 'prepared steward continuation intent' <<<"$template_agent_third_report" \
+  && grep -Fq 'the turn will end' <<<"$template_agent_third_report" \
+  && grep -Fq 'stop_hook_active=true' <<<"$template_agent_third_report" \
   || { echo "the third refusal did not explain its bounded escalation" >&2; cat "$tmp/template-agent-third.out" >&2; exit 1; }
 template_intent=$(find "$template_root/artifacts/agents/steward/intents" -type f -name '*.json' -print -quit)
 [[ -n "$template_intent" ]] \
@@ -1607,14 +1775,38 @@ METASYSTEM_BIN="$template_engine" METASYSTEM_TEMPLATE_REAL_ENGINE="$template_roo
   bash "$template_root/scripts/agents/supervision-hook.sh" claude stop <"$tmp/template-payload.json" \
     >"$tmp/template-replay.out" 2>"$tmp/template-replay.err" \
   || { echo "template replay check failed to return a Stop decision" >&2; cat "$tmp/template-replay.err" >&2; exit 1; }
-if grep -Fq 'SESSION STOP authorized once' "$tmp/template-replay.out"; then
+template_replay_report=$(fixture_stop_status_report \
+  "$tmp/template-replay.out" "$template_root" claude "$template_session") \
+  || { echo "template replay Stop exposed no identity-bound report" >&2; exit 1; }
+if grep -Fq 'SESSION STOP authorized once' <<<"$template_replay_report"; then
   echo "template SessionEnd marker authorized a later Stop" >&2
   cat "$tmp/template-replay.out" >&2
   exit 1
 fi
-grep -Fq 'cannot replay' "$tmp/template-replay.out" \
-  && grep -Fq 'reached the bound of 3' "$tmp/template-replay.out" \
+grep -Fq 'cannot replay' <<<"$template_replay_report" \
+  && grep -Fq 'reached the bound of 3' <<<"$template_replay_report" \
   || { echo "template SessionEnd no-replay evidence was lost beside the bounded idle escalation" >&2; cat "$tmp/template-replay.out" >&2; exit 1; }
+
+# A holder classification may omit its optional presentation projection. The
+# seat remains a healthy holder; missing machine, lineage, or claim epoch in
+# that view must not create a supervision failure or refusal record.
+template_holder_quiet_session=template-holder-optional-projection
+printf '{"session_id":"%s","cwd":"%s","hook_event_name":"Stop"}\n' \
+  "$template_holder_quiet_session" "$template_outer" >"$tmp/template-holder-quiet-payload.json"
+template_holder_quiet_log_start=$(wc -l <"$template_root/artifacts/agents/supervision/hooks.log")
+METASYSTEM_BIN="$template_engine" METASYSTEM_TEMPLATE_REAL_ENGINE="$template_root/bin/metasystem" \
+  METASYSTEM_TEMPLATE_MAIN_PID="$template_pid" METASYSTEM_TEMPLATE_MAIN_STARTED="$template_pid_started" \
+  METASYSTEM_TEMPLATE_MAIN_ID="$template_main" METASYSTEM_TEMPLATE_CLASSIFY_WITHOUT_EPOCH=1 \
+  bash "$template_root/scripts/agents/supervision-hook.sh" claude stop \
+    <"$tmp/template-holder-quiet-payload.json" \
+    >"$tmp/template-holder-quiet.out" 2>"$tmp/template-holder-quiet.err" \
+  || { echo "healthy holder projection Stop returned an error" >&2; cat "$tmp/template-holder-quiet.err" >&2; exit 1; }
+sed -n "$((template_holder_quiet_log_start + 1)),\$p" \
+    "$template_root/artifacts/agents/supervision/hooks.log" \
+  | grep -Fq 'checkout-holder-presentation-identity-was-incomplete checkout-holder' \
+  && { echo "a healthy holder's optional presentation projection requested supervision repair" >&2; exit 1; }
+[[ ! -e "$template_root/artifacts/agents/supervision/stop-refusals/$template_holder_quiet_session.json" ]] \
+  || { echo "a healthy holder's optional presentation projection wrote a refusal record" >&2; exit 1; }
 
 [[ ! -s "$osascript_calls" ]] \
   || { echo "supervision hook fixture invoked osascript" >&2; cat "$osascript_calls" >&2; exit 1; }

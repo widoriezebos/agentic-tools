@@ -24,63 +24,83 @@ import (
 // Item is one classified scanner fact. Busy items carry the bounded
 // display detail the hook renders verbatim (≤200 bytes at construction).
 type Item struct {
-	Kind              string // job | mission | gate | plan
-	Id                string
-	Detail            string
-	FullDetail        string
-	LineDigest        string
-	PreviouslyRefused bool
+	Kind              string `json:"kind"` // job | mission | gate | plan
+	Id                string `json:"id"`
+	Detail            string `json:"detail"`
+	FullDetail        string `json:"fullDetail"`
+	LineDigest        string `json:"lineDigest"`
+	SourcePath        string `json:"sourcePath"`
+	OwnerMainId       string `json:"ownerMainId"`
+	RequestedAction   string `json:"requestedAction"`
+	PreviouslyRefused bool   `json:"previouslyRefused"`
+	HumanRequired     bool   `json:"humanRequired"`
 }
 
 // ScanResult is the verdict's input contract, produced by the scanner.
 type ScanResult struct {
-	Open             []Item
-	TemplateUnfilled []Item
-	OpenWorkWarnings []string
-	WaitingOnHuman   []Item
-	StalePlans       []Item
-	Busy             []Item
-	Questions        []Item
-	Drafts           []Item
+	Open             []Item   `json:"open"`
+	TemplateUnfilled []Item   `json:"templateUnfilled"`
+	OpenWorkWarnings []string `json:"openWorkWarnings"`
+	WaitingOnHuman   []Item   `json:"waitingOnHuman"`
+	StalePlans       []Item   `json:"stalePlans"`
+	Busy             []Item   `json:"busy"`
+	Questions        []Item   `json:"questions"`
+	Drafts           []Item   `json:"drafts"`
 	// Unreadable lists every input the scanner could not read — plans,
 	// records, markers, enumeration failures, indeterminate runner
 	// liveness. Non-empty Unreadable vetoes BOTH the all-clear and any
 	// goal block: nothing can be asserted over unread inputs.
-	Unreadable []string
+	Unreadable []string `json:"unreadable"`
 	// Jobs and Runs are the monitor facility's typed facts:
 	// the unwatched rule, the run warnings, and the green cursor
 	// consume these, never the display-shaped Busy items.
-	Jobs []JobFact
-	Runs []RunFact
+	Jobs []JobFact `json:"jobs"`
+	Runs []RunFact `json:"runs"`
 	// RunUnreadable is the run readers' own failure channel — surfaced
 	// OUTSIDE the ladder so Busy can never hide it, and it freezes the
 	// green cursor (the cursor rides only proven-green scans).
-	RunUnreadable []string
+	RunUnreadable []string `json:"runUnreadable"`
 }
 
 // JobFact is one delegate job's monitor-relevant slice.
 type JobFact struct {
-	Id         string
-	MainId     string
-	StartedAt  string
-	Status     string
-	WaiterLive bool
+	Id           string `json:"id"`
+	MainId       string `json:"mainId"`
+	StartedAt    string `json:"startedAt"`
+	Status       string `json:"status"`
+	WaiterLive   bool   `json:"waiterLive"`
+	Title        string `json:"title"`
+	Role         string `json:"role"`
+	GoalId       string `json:"goalId"`
+	SourcePath   string `json:"sourcePath"`
+	SourceDigest string `json:"sourceDigest"`
+	Ownership    string `json:"ownership"`
 }
 
 // RunFact is one run record's monitor-relevant slice.
 type RunFact struct {
-	Id                                                string
-	MainId                                            string
-	Generation                                        int
-	Nonce                                             string
-	Status                                            string
-	ProbeState                                        string // alive | dead | unknown | ""
-	TerminalSeq                                       int64
-	Supervised                                        bool
-	WaiterLive                                        bool
-	Acked                                             bool
-	Hung                                              bool
-	ExpectGreen, ExpectRed, ExpectHung, ExpectUnknown string
+	Id            string `json:"id"`
+	MainId        string `json:"mainId"`
+	Generation    int    `json:"generation"`
+	Nonce         string `json:"nonce"`
+	Status        string `json:"status"`
+	ProbeState    string `json:"probeState"` // alive | dead | unknown | ""
+	TerminalSeq   int64  `json:"terminalSeq"`
+	Supervised    bool   `json:"supervised"`
+	WaiterLive    bool   `json:"waiterLive"`
+	Acked         bool   `json:"acked"`
+	Hung          bool   `json:"hung"`
+	ExpectGreen   string `json:"expectGreen"`
+	ExpectRed     string `json:"expectRed"`
+	ExpectHung    string `json:"expectHung"`
+	ExpectUnknown string `json:"expectUnknown"`
+	Title         string `json:"title"`
+	Role          string `json:"role"`
+	GoalId        string `json:"goalId"`
+	StartedAt     string `json:"startedAt"`
+	SourcePath    string `json:"sourcePath"`
+	SourceDigest  string `json:"sourceDigest"`
+	Ownership     string `json:"ownership"`
 }
 
 // OpenWorkSignature keys the open-work block-once slot: the sorted open
@@ -139,7 +159,9 @@ type Verdict struct {
 	CountSpent  bool `json:"countSpent"`
 	// BrainStatusDue asks the Stop hook to carry the visibility line. Posting
 	// is plumbing after this verdict and never changes the stop decision.
-	BrainStatusDue bool `json:"brainStatusDue"`
+	BrainStatusDue bool              `json:"brainStatusDue"`
+	Facts          *TurnVerdictFacts `json:"-"`
+	escalation     *TurnEscalationFacts
 }
 
 // The Stop-state file: capped, pruned, flocked — the caps bound Stop
@@ -253,13 +275,22 @@ func (s *Store) TurnVerdict(scan ScanResult, sessionId, watchdogDigest, mainId s
 		if commandErr != nil {
 			return infrastructureVerdict("goal-fence", commandErr), nil
 		}
-		return Verdict{
+		stopped := Verdict{
 			SchemaVersion: 1,
 			Class:         "seat-actionable",
 			ShouldBlock:   false,
 			LedgerStatus:  "stopped",
 			Display:       description + "; run: " + command,
-		}, nil
+		}
+		// A closed checkout is still a completed judgment. Freeze its known
+		// stop state for presentation instead of making the hook report an
+		// auxiliary facts failure. Goal work remains unknown because the stop
+		// fence deliberately returns before reading the ledger.
+		stamp := &sessionState{LastTouched: s.nowISO()}
+		stopped.Facts = freezeTurnVerdictFacts(s.Root, sessionId, mainId, scan,
+			ClaimableBudgetedWork{}, false, nil, stopped, stopped.Display, stamp, options, false)
+		stopped.Facts.Actions = []TurnAction{}
+		return stopped, nil
 	}
 
 	result, err := s.withLock(func() (Result, error) {
@@ -269,7 +300,8 @@ func (s *Store) TurnVerdict(scan ScanResult, sessionId, watchdogDigest, mainId s
 		}
 		var work ClaimableBudgetedWork
 		var workErr error
-		if !humanAuthorized && !brainSeat {
+		workRead := !humanAuthorized && !brainSeat
+		if workRead {
 			work, workErr = readClaimableBudgetedWork(s.Root, s.now(), s.prober())
 		}
 		state, err := s.loadVerdictState()
@@ -323,6 +355,7 @@ func (s *Store) TurnVerdict(scan ScanResult, sessionId, watchdogDigest, mainId s
 				return Result{}, infrastructureFailure{"verdict-state", err}
 			}
 		}
+		humanStopConsumed := false
 		if humanAuthorized && verdictStateSaved && !verdictPersistenceFailed {
 			marker, consumed, consumeDetail, err := consumeSessionStopForVerdict(s, sessionId, mainId)
 			if err != nil && !verdict.ShouldBlock {
@@ -347,6 +380,7 @@ func (s *Store) TurnVerdict(scan ScanResult, sessionId, watchdogDigest, mainId s
 				verdict.Display = strings.TrimSpace(verdict.Display + "\n" + consumeDetail)
 				fullDisplay = strings.TrimSpace(fullDisplay + "\n" + consumeDetail)
 			} else {
+				humanStopConsumed = true
 				if consumeDetail != "" {
 					verdict.Diagnostics = append(verdict.Diagnostics, consumeDetail)
 					verdict.Display = strings.TrimSpace(verdict.Display + "\n" + consumeDetail)
@@ -372,6 +406,7 @@ func (s *Store) TurnVerdict(scan ScanResult, sessionId, watchdogDigest, mainId s
 			fileLine = "Full turn verdict was written to " + artifactPath + ", but its crash durability is unknown"
 		}
 		verdict.Display = renderTurnVerdict(verdict, brainLines, runLines, greens, fileLine)
+		verdict.Facts = freezeTurnVerdictFacts(s.Root, sessionId, mainId, scan, work, workRead, workErr, verdict, fullDisplay, session, options, humanStopConsumed)
 		return Result{}, nil
 	})
 	_ = result
@@ -569,7 +604,7 @@ func (s *Store) enforceIdleBacklog(verdict *Verdict, work *ClaimableBudgetedWork
 	verdict.ShouldBlock = true
 	source := "idle-backlog"
 	verdict.BlockSource = &source
-	countText := fmt.Sprintf("refusal %d of 3 for this unchanged backlog; at 3 the steward claims if needed and continues the seat's goal", session.IdleBlocks)
+	countText := fmt.Sprintf("refusal %d of 3 for this unchanged backlog; at 3 request steward continuation and allow Stop unless another branch blocks", session.IdleBlocks)
 	verdict.Display = strings.TrimSpace(verdict.Display + "\n" + fmt.Sprintf(
 		"IDLE WITH BACKLOG: %d claimable goals await a live claim or job: %s; %s; stop_hook_active=%t; an attended human may run `metasystem session stop --by <name>`",
 		len(work.Claimable), idleBacklogNames(*work), countText, options.StopHookActive))
@@ -601,10 +636,12 @@ func idleBacklogDigest(work ClaimableBudgetedWork) string {
 }
 
 func (s *Store) escalateIdleBacklog(verdict *Verdict, session *sessionState, sessionID, mainID, goalID string, claimNeeded, blockedBeforeIdle bool, options TurnVerdictOptions, unavailable string) {
+	escalationRepair := unavailable != ""
 	if unavailable == "" && s.ResolveIdleSeat != nil {
 		actor, epoch, err := s.ResolveIdleSeat()
 		if err != nil {
 			options.SeatActorProblem = err.Error()
+			escalationRepair = true
 		} else {
 			options.SeatActor = actor
 			options.SeatClaimEpoch = epoch
@@ -632,8 +669,10 @@ func (s *Store) escalateIdleBacklog(verdict *Verdict, session *sessionState, ses
 		options.SeatActor.Machine != "" && options.SeatActor.Lineage != "" && options.SeatClaimEpoch > 0 {
 		if s.PrepareIdleContinuation == nil {
 			event.IntentDetail = "the steward continuation preparation seam is unavailable"
+			escalationRepair = true
 		} else if nonce, err := s.PrepareIdleContinuation(event); err != nil {
 			event.IntentDetail = err.Error()
+			escalationRepair = true
 		} else {
 			event.IntentID = nonce
 			event.IntentPrepared = true
@@ -641,22 +680,29 @@ func (s *Store) escalateIdleBacklog(verdict *Verdict, session *sessionState, ses
 		}
 	} else {
 		event.IntentDetail = "no steward continuation intent was prepared because its goal and seat actor could not be established"
+		escalationRepair = true
 	}
 
 	incidentDetail := ""
+	incidentID := ""
 	if s.RecordIdleIncident == nil {
 		incidentDetail = "the steward incident recorder is unavailable"
+		escalationRepair = true
 	} else if id, err := s.RecordIdleIncident(event); err != nil {
 		incidentDetail = "the steward incident could not be recorded: " + err.Error()
+		escalationRepair = true
 	} else {
+		incidentID = id
 		incidentDetail = "recorded steward alert episode " + id
 	}
 	alarmDetail := "the human idle alarm was not raised because the steward intent was prepared"
 	if !event.IntentPrepared {
 		if s.RaiseIdleAlarm == nil {
 			alarmDetail = "the human idle alarm could not be queued because its steward seam is unavailable"
+			escalationRepair = true
 		} else if err := s.RaiseIdleAlarm(event); err != nil {
 			alarmDetail = "the human idle alarm could not be queued: " + err.Error()
+			escalationRepair = true
 		} else {
 			alarmDetail = "queued the steward's existing human idle alarm because a steward intent could not be prepared"
 		}
@@ -690,6 +736,14 @@ func (s *Store) escalateIdleBacklog(verdict *Verdict, session *sessionState, ses
 		detail += "; the turn will end"
 	}
 	detail += fmt.Sprintf("; stop_hook_active=%t", options.StopHookActive)
+	verdict.escalation = &TurnEscalationFacts{
+		IntentId:          event.IntentID,
+		IncidentId:        incidentID,
+		AlarmDetail:       alarmDetail,
+		Detail:            detail,
+		IntentPrepared:    event.IntentPrepared,
+		SupervisionRepair: escalationRepair,
+	}
 	verdict.Display = strings.TrimSpace(verdict.Display + "\n" + detail)
 }
 

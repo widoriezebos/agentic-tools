@@ -270,12 +270,14 @@ fresh sentinel and then required no block. Trunk implements one
 precedence and the preserved Mac output shows it (`artifacts/agents/
 suite-failures/20260913T121447Z-supervision-12059/nested-override.out`:
 `"decision":"block"` with the reason quoting `nested-override sentinel` and
-a `systemMessage` whose second line is `Cause: supervision arming failed`).
+the arming failure recorded alongside it).
 **The decision: a seat-actionable finding keeps its block when an
 infrastructure condition is present; the infrastructure condition never
-suppresses a block and never creates one — it is disclosed in the
-`systemMessage`, logged as a stop-condition line, and counted in the
-stop-refusal record; an infrastructure condition alone is the allowance.**
+suppresses a block and never creates one — it is disclosed by the compact
+reason's `needs supervision repair` flag and the report's leading repair
+detail, logged as a stop-condition line, and counted in the stop-refusal
+record; an infrastructure condition alone is the allowance. A block has no
+`systemMessage`.**
 That is the landed rule of the stop-infrastructure page ("seat-actionable
 ... block as today") as `compose_failed_stop` implements it
 (`supervision-hook.sh:1005-1104` at 3a6353c3: `external_stop_json`
@@ -2873,11 +2875,12 @@ against c905ca8d (ten inserted lines at 1372-1381, nothing else);
 class rule (lines 40-60); the builder's report (codex-report-r3, item 2);
 and the preserved output `nested-override.out` in the suite-failures
 directory named in the record, read whole. Residual risk added: (u) the
-`systemMessage` of a block that carries an infrastructure notice is bounded
-and trimmed (`BoundSystemMessage`, `boundSystemMessageWithTail`), so the
-verdict detail and the health line can be cut in the response; the
-refusal record, the stop-condition line and the component record carry
-the durable facts, and the fixtures assert those, not the trimmed tail.
+The later Stop-presentation contract supersedes only this paragraph's public
+field: a block has no `systemMessage`. Its bounded `reason` carries the typed
+repair flag, while the immutable report, refusal record, stop-condition line
+and component record carry the complete infrastructure facts. All earlier
+historical passages on a block-side `systemMessage` are read through that
+supersession; their control precedence and durable evidence remain binding.
 
 **Reject condition — reject this design if any of the following is
 shown:** a state-writing engine verb reachable from this hook whose world
@@ -2967,7 +2970,8 @@ M2 and M3 exposures); and any hook path on which `$repo` and
 verb's answer is a git toplevel rather than the validated installation
 (the m1 split). **Revision 9 adds:** any Stop on which a recorded
 infrastructure condition suppresses a seat-actionable block, or on which a
-seat-actionable block hides the infrastructure condition from the
-`systemMessage`, the hook log or the refusal record, or any fixture that
+seat-actionable block omits the `needs supervision repair` flag, its
+published report detail, the hook log or the refusal record, or includes a
+`systemMessage`, or any fixture that
 asserts an allowance where the world's plan line is unseen (the precedence
 of Decision 2 inverted in either direction).
