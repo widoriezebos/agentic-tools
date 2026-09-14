@@ -9,11 +9,13 @@
 - Origin: human
 - Next step: Design first on the design lane (Codex gpt-6-astra): the two header forms, the path-match rule (repository-relative, the same dialect conformance already projects), the ceiling's count (git numstat over the merge-base diff, binary files excluded), the typed violation names, and where the seat reads the violation before dispatching a critic. Then build (Codex gpt-5.6-sol) behind the four fixtures in DONE, Opus read, seat lands. Cheap practice until it lands: the coordinator counts changed lines and lists untracked files on every return before spending a read. Opened at Wido's word 2026-09-14 in the delivery-efficiency program, next after coordinator-context-stays-under-budget.
 - OpenedAt: 2026-09-14T15:28:36Z
-- Revision: 2
+- Revision: 3
+- Pinned: m1e
 - Budget: elapsedLimit=4h attemptLimit=6 reservedJobMinutesLimit=720 activeJobLimit=1 reviewRoundLimit=2
 - BudgetExceptions: 0
 
 History:
 - 2026-09-14T15:28:36Z 8AZ0ZXR3DM2PT1EVT97Y1F7WYA-m1e-c6925449 open actor=human:Wido targets=brief-declares-the-round-boundary
 - 2026-09-14T15:29:55Z Q6S0HF8R32AQRFZA1N4HH0S107-m1e-c6925449 set-priority actor=human:Wido targets=actionable-metrics,brief-declares-the-round-boundary,chain-landing-carries-the-reviewed-diff,critique-closes-on-folded-proof,dispatch-bases-chains-on-the-remote-tip,failed-job-attention,fixture-repo-copies-exclude-the-artifacts-store,fixture-stewards-outlive-their-suite,fixture-waits-name-their-producer,human-authority-surface-runs-its-cmd-tests,human-goal-verbs-forgiving,human-wait-does-not-consume-goal-budget,job-record-birth-token,lease-sweep-death-evidence,live-job-on-a-done-goal-unnoticed,machine-concurrency-governor,metasystem-stop-escalation-proofs,metasystem-stop-fleet-form,new-elapsed-budgets-use-explicit-hours,repo-root-paths-ride-agent-commits-unjudged,run-scoped-build-caches-have-a-janitor,skipped-test-fails-its-group-on-the-other-os,stop-batch-strands-a-resumable-goal,token-spend-fence,watch-verb,watcher-repair-request-never-names-current,winddown-census-handoff-leak reason=priority-order subject=brief-declares-the-round-boundary from=unranked to=1:7 requested-sequence=7
-Integrity: sha256=0ce711f3b4ab86c85e74df2139b8ab06e2c205e6007d00779b7908eb6d84a5a4
+- 2026-09-14T15:30:30Z 4R7Q8B34D391SE0FZ8BCKEAT6V-m1e-c6925449 set-pin actor=human:Wido targets=brief-declares-the-round-boundary
+Integrity: sha256=582c37fb19ec19a0c3286f94b1117f6ca43d60954bcdb4693d69ff9c1392b9e6
