@@ -6,7 +6,7 @@
 - MigrationEpoch: 2026-08-20T00:00:00Z
 - ManifestDigest: d82032bee818c2d82e6a95e6f1b75347499b88ee8b68c4d20a0f3c94d00ba320
 - MigrationMode: manifest
-- Revision: 58
+- Revision: 59
 - ApprovalGate: since=2026-09-03T14:16:24Z opid=JY54AQT8101VK9353WT9FQYGA9-m0-c5dbf036
 - FleetEnrollment: at=2026-09-06T06:37:21Z machine=m1 generation=1 opid=CMNCRETKYCB18MFZNYFSZJPXQY-m1-a4f8999f
 
@@ -81,4 +81,5 @@ History:
 - 2026-09-14T16:18:00Z DSCY6YR357JHJXBFN1GE6BJ4BW-m1c-69c9e454 ack actor=m1c+main-1789191340-90689-8975a9 targets=stop-gate-honours-a-registered-wait displaced=m1c+main-1789191340-90689-8975a9@2026-09-14T14:11:03Z ack
 - 2026-09-14T17:04:20Z JN9BSG8SSNCZT03FEBHAQZQQF1-m1b-30a7e141 ack actor=m1b+main-1789191336-90295-e4b24b targets=stop-decisions-record-deadline-evidence displaced=m1b+main-1789191336-90295-e4b24b@2026-09-14T06:48:31Z ack
 - 2026-09-14T17:04:20Z JN9BSG8SSNCZT03FEBHAQZQQF1-m1b-30a7e141 ack actor=m1b+main-1789191336-90295-e4b24b targets=stop-decisions-record-deadline-evidence displaced=m1b+main-1789191336-90295-e4b24b@2026-09-14T16:45:56Z ack
-Integrity: sha256=d39a46c25605afc553f1e13f479083d39e05b3430e6f690abe5f9e99498104fa
+- 2026-09-14T19:01:21Z V14JQ0XATFB25HZXXYCFQJEVE1-m1b-30a7e141 ack actor=m1b+main-1789191336-90295-e4b24b targets=stop-decisions-record-deadline-evidence displaced=m1b+main-1789191336-90295-e4b24b@2026-09-14T16:47:25Z ack
+Integrity: sha256=c338daa235e68cc5fe56d790c5346af57f97a7aea889b5f4f73c13f8f1f60b98
