@@ -101,16 +101,17 @@ start_main() {
   start_capture holder-read parent_view identity-required-nonempty tool verb
   if [[ "$start_deferred_identity_read" == true ]]; then
     collect_start_notice "$start_holder_context_notice"
-    start_finish_prepared
-  fi
-  start_capture arming up_output arming start_up "$runtime" "$session" "$identity_pid" "$identity_started"
-  up_aggregate=${up_output##*$'\n'}
-  if (( start_arming_status != 0 )); then
-    collect_start_notice "Metasystem supervision arming failed: $up_aggregate"
-    if [[ "$up_aggregate" == *' re-armed='* ]]; then
+  else
+    start_capture arming up_output arming start_up "$runtime" "$session" "$identity_pid" "$identity_started"
+    up_aggregate=${up_output##*$'\n'}
+    if (( start_arming_status != 0 )); then
+      collect_start_notice "Metasystem supervision arming failed: $up_aggregate"
+      if [[ "$up_aggregate" == *' re-armed='* ]]; then
+        collect_start_notice "Metasystem re-armed the rebuilt engine: $up_aggregate"
+      fi
+    elif [[ "$up_aggregate" == *' re-armed='* ]]; then
       collect_start_notice "Metasystem re-armed the rebuilt engine: $up_aggregate"
     fi
-    start_finish_prepared
   fi
   start_capture wait-recovery waiting_lines wait-recovery "$ms" session start --root "$repo" --session "$session"
   if (( start_wait_recovery_status == 0 )); then
@@ -158,6 +159,8 @@ func completeHookStartFixtureAssertions() string {
 		"func TestHookStartIntentionalFullPathFixturesOnBash32() {",
 		`mode: "context-arming-failure"`,
 		`mode: "context-holder-read"`,
+		`mode: "context-process-identity"`,
+		`strings.Contains(traceText, "\nup ") || !strings.Contains(traceText, "\nsession start ")`,
 		"assertFullPathContextObject(t, stdout)",
 		"if status != statuses[key] || stdout != notices[key] || stderr != expected {}",
 	}
@@ -396,6 +399,11 @@ func TestAuditHookStartExitsRejectsPostContextFailureBypasses(t *testing.T) {
 				`collect_start_notice "Metasystem supervision arming failed: $up_aggregate"`,
 				`: "$up_aggregate"`, 1)
 		}, "post-context arming and wait-recovery failures must become notices"},
+		{"arming failure skips wait recovery", func(s string) string {
+			return strings.Replace(s,
+				`      collect_start_notice "Metasystem supervision arming failed: $up_aggregate"`,
+				"      collect_start_notice \"Metasystem supervision arming failed: $up_aggregate\"\n      start_finish_prepared", 1)
+		}, "post-context arming and wait-recovery failures must become notices"},
 		{"re-arm evidence swallowed", func(s string) string {
 			return strings.Replace(s,
 				`collect_start_notice "Metasystem re-armed the rebuilt engine: $up_aggregate"`,
@@ -423,7 +431,10 @@ func TestAuditHookStartExitsRejectsPostContextFailureBypasses(t *testing.T) {
 		}, "may clear identity-read failure only while preserving a failed process lookup"},
 		{"identity-read context swallowed", func(s string) string {
 			return strings.Replace(s, `collect_start_notice "$start_holder_context_notice"`, `: "$start_holder_context_notice"`, 1)
-		}, "identity-read failure must be recorded, prepared with brain context"},
+		}, "identity-read failure must skip arming but preserve holder-checked wait recovery"},
+		{"identity-read wait recovery skipped", func(s string) string {
+			return strings.Replace(s, `    collect_start_notice "$start_holder_context_notice"`, "    collect_start_notice \"$start_holder_context_notice\"\n    start_finish_prepared", 1)
+		}, "identity-read failure must skip arming but preserve holder-checked wait recovery"},
 		{"identity deferral policy reused", func(s string) string {
 			return strings.Replace(s, "start_capture payload-read payload_probe required", "start_capture payload-read payload_probe identity-required", 1)
 		}, "identity deferral is reserved for start_main"},
@@ -436,14 +447,33 @@ func TestAuditHookStartExitsRejectsPostContextFailureBypasses(t *testing.T) {
 }
 
 func TestAuditHookStartExitsRejectsMissingFullPathContextShapeProof(t *testing.T) {
-	assertions := strings.Replace(completeHookStartFixtureAssertions(), `mode: "context-arming-failure"`, "", 1)
-	findings := auditHookStartSource("scripts/agents/supervision-hook.sh", acceptedHookStartSource(), completeHookStartFixtureLabels(), assertions)
+	for _, test := range []struct {
+		name, required string
+	}{
+		{"arming failure context case", `mode: "context-arming-failure"`},
+		{"process identity recovery case", `mode: "context-process-identity"`},
+		{"session start trace assertion", `strings.Contains(traceText, "\nup ") || !strings.Contains(traceText, "\nsession start ")`},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			assertions := strings.Replace(completeHookStartFixtureAssertions(), test.required, "", 1)
+			findings := auditHookStartSource("scripts/agents/supervision-hook.sh", acceptedHookStartSource(), completeHookStartFixtureLabels(), assertions)
+			for _, finding := range findings {
+				if finding.Invariant == "start fixture coverage" && finding.Detail == "declared outcome matrix must execute and assert status, stdout, and stderr" {
+					return
+				}
+			}
+			t.Fatalf("missing fixture-coverage finding after deleting %q: %#v", test.required, findings)
+		})
+	}
+	if t.Failed() {
+		return
+	}
+	findings := auditHookStartSource("scripts/agents/supervision-hook.sh", acceptedHookStartSource(), completeHookStartFixtureLabels(), completeHookStartFixtureAssertions())
 	for _, finding := range findings {
 		if finding.Invariant == "start fixture coverage" {
-			return
+			t.Fatalf("complete full-path proof was rejected: %#v", findings)
 		}
 	}
-	t.Fatalf("missing fixture-coverage finding: %#v", findings)
 }
 
 func TestAuditHookStartExitsRejectsFixtureLabelWithoutTerminalAssertion(t *testing.T) {
@@ -729,26 +759,26 @@ exit 91
 
 func TestHookStartIntentionalFullPathFixturesOnBash32(t *testing.T) {
 	tests := []struct {
-		mode, stdout, stderr                string
-		context, acknowledged               bool
-		stopsBeforeArming, stopsAfterArming bool
+		mode, stdout, stderr  string
+		context, acknowledged bool
+		skipsArming           bool
 	}{
 		{mode: "healthy", stdout: "{}\n"},
 		{mode: "notices", stdout: `{"systemMessage":"Steward incidents pending: incident"}` + "\n"},
 		{mode: "context", stdout: `{"hookSpecificOutput":{"additionalContext":"role packet","hookEventName":"SessionStart"}}` + "\n", context: true, acknowledged: true},
 		{mode: "context-trailing-newline", stdout: `{"hookSpecificOutput":{"additionalContext":"role packet\n","hookEventName":"SessionStart"}}` + "\n", context: true, acknowledged: true},
-		{mode: "context-arming-failure", stdout: `{"systemMessage":"Metasystem supervision arming failed: up outcome=ENROLLMENT_DRIFT component=accepted-engine remedy=\"restart fixture\"","hookSpecificOutput":{"additionalContext":"role packet","hookEventName":"SessionStart"}}` + "\n", context: true, acknowledged: true, stopsAfterArming: true},
-		{mode: "context-arming-rearmed", stdout: `{"systemMessage":"Metasystem supervision arming failed: up outcome=failed re-armed=\"generation=9 previous=8\" component=steward-runner\nMetasystem re-armed the rebuilt engine: up outcome=failed re-armed=\"generation=9 previous=8\" component=steward-runner","hookSpecificOutput":{"additionalContext":"role packet","hookEventName":"SessionStart"}}` + "\n", context: true, acknowledged: true, stopsAfterArming: true},
+		{mode: "context-arming-failure", stdout: `{"systemMessage":"Metasystem supervision arming failed: up outcome=ENROLLMENT_DRIFT component=accepted-engine remedy=\"restart fixture\"\nWAIT RECOVERY fixture row","hookSpecificOutput":{"additionalContext":"role packet","hookEventName":"SessionStart"}}` + "\n", context: true, acknowledged: true},
+		{mode: "context-arming-rearmed", stdout: `{"systemMessage":"Metasystem supervision arming failed: up outcome=failed re-armed=\"generation=9 previous=8\" component=steward-runner\nMetasystem re-armed the rebuilt engine: up outcome=failed re-armed=\"generation=9 previous=8\" component=steward-runner","hookSpecificOutput":{"additionalContext":"role packet","hookEventName":"SessionStart"}}` + "\n", context: true, acknowledged: true},
 		{mode: "context-pending", stdout: `{"systemMessage":"Steward incidents pending: incident","hookSpecificOutput":{"additionalContext":"role packet","hookEventName":"SessionStart"}}` + "\n", context: true, acknowledged: true},
-		{mode: "context-holder-read", stdout: `{"systemMessage":"Metasystem supervision could not identify the immediate claude agent process; arming was refused.","hookSpecificOutput":{"additionalContext":"role packet","hookEventName":"SessionStart"}}` + "\n", context: true, acknowledged: true, stopsBeforeArming: true},
-		{mode: "context-process-identity", stdout: `{"systemMessage":"Metasystem supervision could not identify the immediate claude agent process; arming was refused.","hookSpecificOutput":{"additionalContext":"role packet","hookEventName":"SessionStart"}}` + "\n", context: true, acknowledged: true, stopsBeforeArming: true},
+		{mode: "context-holder-read", stdout: `{"systemMessage":"Metasystem supervision could not identify the immediate claude agent process; arming was refused.","hookSpecificOutput":{"additionalContext":"role packet","hookEventName":"SessionStart"}}` + "\n", context: true, acknowledged: true, skipsArming: true},
+		{mode: "context-process-identity", stdout: `{"systemMessage":"Metasystem supervision could not identify the immediate claude agent process; arming was refused.\nWAIT RECOVERY fixture row","hookSpecificOutput":{"additionalContext":"role packet","hookEventName":"SessionStart"}}` + "\n", context: true, acknowledged: true, skipsArming: true},
 		{mode: "context-wait-failure", stdout: `{"systemMessage":"Metasystem could not read durable wait recovery rows for this session: first failure; second failure","hookSpecificOutput":{"additionalContext":"role packet","hookEventName":"SessionStart"}}` + "\n", context: true, acknowledged: true},
 		{mode: "context-wait-rows", stdout: `{"systemMessage":"WAIT RECOVERY fixture row","hookSpecificOutput":{"additionalContext":"role packet","hookEventName":"SessionStart"}}` + "\n", context: true, acknowledged: true},
 		{mode: "context-digest", stdout: `{"hookSpecificOutput":{"additionalContext":"role packet\nNARRATOR DIGEST warning","hookEventName":"SessionStart"}}` + "\n", context: true, acknowledged: true},
 		{mode: "context-corrupt", stdout: `{"hookSpecificOutput":{"additionalContext":"BRAIN SEAT warning\nrole packet","hookEventName":"SessionStart"}}` + "\n", context: true},
 		{mode: "screen", stdout: `{"systemMessage":"this runtime has no session-context channel; the packet reached the screen only\nrole packet"}` + "\n"},
-		{mode: "screen-holder-read", stdout: `{"systemMessage":"this runtime has no session-context channel; the packet reached the screen only\nrole packet\nMetasystem supervision could not identify the immediate claude agent process; arming was refused."}` + "\n", acknowledged: true, stopsBeforeArming: true},
-		{mode: "screen-arming-failure", stdout: `{"systemMessage":"this runtime has no session-context channel; the packet reached the screen only\nrole packet\nMetasystem supervision arming failed: up outcome=failed component=accepted-engine"}` + "\n", stopsAfterArming: true},
+		{mode: "screen-holder-read", stdout: `{"systemMessage":"this runtime has no session-context channel; the packet reached the screen only\nrole packet\nMetasystem supervision could not identify the immediate claude agent process; arming was refused."}` + "\n", acknowledged: true, skipsArming: true},
+		{mode: "screen-arming-failure", stdout: `{"systemMessage":"this runtime has no session-context channel; the packet reached the screen only\nrole packet\nMetasystem supervision arming failed: up outcome=failed component=accepted-engine"}` + "\n"},
 		{mode: "rearm-success", stdout: `{"systemMessage":"Metasystem re-armed the rebuilt engine: up outcome=armed authority=writer re-armed=\"generation=9 previous=8\""}` + "\n"},
 		{mode: "delegate", stderr: "Metasystem SessionStart intentionally skipped: authenticated delegate; its launcher owns context.\n"},
 		{mode: "foreign", stderr: "Metasystem SessionStart intentionally skipped: another runtime owns this process.\n"},
@@ -785,13 +815,9 @@ func TestHookStartIntentionalFullPathFixturesOnBash32(t *testing.T) {
 				if strings.Contains(traceText, "brain boot") || strings.Contains(traceText, " up ") {
 					t.Fatalf("foreign skip continued into role preparation: %s", traceText)
 				}
-			} else if test.stopsBeforeArming {
-				if strings.Contains(traceText, "\nup ") || strings.Contains(traceText, "\nsession start ") {
-					t.Fatalf("identity failure continued into arming or wait recovery: %s", traceText)
-				}
-			} else if test.stopsAfterArming {
-				if !strings.Contains(traceText, "\nup ") || strings.Contains(traceText, "\nsession start ") {
-					t.Fatalf("arming failure did not stop before wait recovery: %s", traceText)
+			} else if test.skipsArming {
+				if strings.Contains(traceText, "\nup ") || !strings.Contains(traceText, "\nsession start ") {
+					t.Fatalf("identity failure did not skip arming and preserve wait recovery: %s", traceText)
 				}
 			} else {
 				if !strings.Contains(traceText, "\nup ") || !strings.Contains(traceText, "\nsession start ") {
@@ -1159,7 +1185,7 @@ if [[ ${1-} == session && ${2-} == start ]]; then
     printf '%s\n' 'second failure' >&2
     exit 7
   fi
-  [[ $mode != context-wait-rows ]] || { printf '%s\n' 'WAIT RECOVERY fixture row'; exit 0; }
+  [[ $mode != context-wait-rows && $mode != context-process-identity && $mode != context-arming-failure ]] || { printf '%s\n' 'WAIT RECOVERY fixture row'; exit 0; }
   exit 64
 fi
 if [[ ${1-} == brain && ${2-} == start-delivered ]]; then

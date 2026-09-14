@@ -458,7 +458,10 @@ func TestWaitSessionStartPrintsPendingRows(t *testing.T) {
 			t.Fatalf("initialize hook fixture repository: %v %s", err, output)
 		}
 		// The hook resolves state from its own installation, so the fixture's
-		// durable wait row, hook, and canonical engine belong to one world.
+		// durable wait row, hook, and canonical engine belong to one world. The
+		// synthetic runtime intentionally has neither a staged signature adapter
+		// nor a start-context channel; the announced holder must still recover its
+		// durable wait row through the hook's system message.
 		sourceHook, err := filepath.Abs(filepath.Join("..", "..", "scripts", "agents", "supervision-hook.sh"))
 		if err != nil {
 			t.Fatal(err)
@@ -511,6 +514,26 @@ func TestWaitSessionStartPrintsPendingRows(t *testing.T) {
 		if nonHolderErr != nil || strings.Contains(string(nonHolderOutput), "WAITING attempt attempt-a") || strings.Contains(string(nonHolderOutput), "could not read durable wait recovery rows") {
 			t.Fatalf("session-start hook treated a non-holder as a wait-row read failure: err=%v output=%s", nonHolderErr, nonHolderOutput)
 		}
+		t.Run("hook without lease omits recovery failure notice", func(t *testing.T) {
+			leasePath := filepath.Join(root, "artifacts", "agents", "mains", "worktree-lease.json")
+			leaseBytes, err := os.ReadFile(leasePath)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if err := os.Remove(leasePath); err != nil {
+				t.Fatal(err)
+			}
+			withoutLease := exec.Command("bash", hook, "fake", "start")
+			withoutLease.Env = append(append([]string(nil), commandEnvironment...), "METASYSTEM_BIN="+wrapper, "METASYSTEM_WAIT_REAL_ENGINE="+binary)
+			withoutLease.Stdin = strings.NewReader(`{"session_id":"session-new","cwd":"` + root + `","source":"startup"}`)
+			withoutLeaseOutput, withoutLeaseErr := withoutLease.CombinedOutput()
+			if err := os.WriteFile(leasePath, leaseBytes, 0o600); err != nil {
+				t.Fatal(err)
+			}
+			if withoutLeaseErr != nil || strings.Contains(string(withoutLeaseOutput), "Metasystem could not read durable wait recovery rows") {
+				t.Fatalf("session-start hook treated an absent lease as a wait-row read failure: err=%v output=%s", withoutLeaseErr, withoutLeaseOutput)
+			}
+		})
 	}
 	row.State = "ready"
 	data, _ = json.Marshal(row)
@@ -533,6 +556,15 @@ func TestWaitSessionStartPrintsPendingRows(t *testing.T) {
 		return runSessionStart([]string{"--root", root, "--session", "another-session"})
 	}); code != metarun.ExitWaiterBusy {
 		t.Fatalf("another session received this holder's recovery rows: exit=%d", code)
+	}
+}
+
+func TestWaitSessionStartWithoutLeaseReturnsBusy(t *testing.T) {
+	code, output, problem := captureChannelOutput(t, func() int {
+		return runSessionStart([]string{"--root", t.TempDir(), "--session", "session-without-lease"})
+	})
+	if code != metarun.ExitWaiterBusy || output != "" || problem != "" {
+		t.Fatalf("session start without lease code=%d output=%q stderr=%q", code, output, problem)
 	}
 }
 

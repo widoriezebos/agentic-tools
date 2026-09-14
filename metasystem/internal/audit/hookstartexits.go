@@ -145,12 +145,13 @@ func auditHookStartSource(path, source, fixtures, fixtureAssertions string) []Ho
 	armingCapture := `start_capture arming up_output arming start_up "$runtime" "$session" "$identity_pid" "$identity_started"`
 	waitCapture := `start_capture wait-recovery waiting_lines wait-recovery "$ms" session start --root "$repo" --session "$session"`
 	armingFailureHandling := "if (( start_arming_status != 0 )); then\n" +
-		"    collect_start_notice \"Metasystem supervision arming failed: $up_aggregate\"\n" +
-		"    if [[ \"$up_aggregate\" == *' re-armed='* ]]; then\n" +
+		"      collect_start_notice \"Metasystem supervision arming failed: $up_aggregate\"\n" +
+		"      if [[ \"$up_aggregate\" == *' re-armed='* ]]; then\n" +
+		"        collect_start_notice \"Metasystem re-armed the rebuilt engine: $up_aggregate\"\n" +
+		"      fi\n" +
+		"    elif [[ \"$up_aggregate\" == *' re-armed='* ]]; then\n" +
 		"      collect_start_notice \"Metasystem re-armed the rebuilt engine: $up_aggregate\"\n" +
-		"    fi\n" +
-		"    start_finish_prepared\n" +
-		"  fi"
+		"    fi"
 	waitFailureHandling := "elif (( start_wait_recovery_status != 64 )); then\n" +
 		"    waiting_lines=${waiting_lines//$'\\n'/'; '}\n" +
 		"    collect_start_notice \"Metasystem could not read durable wait recovery rows for this session: $waiting_lines\""
@@ -165,21 +166,25 @@ func auditHookStartSource(path, source, fixtures, fixtureAssertions string) []Ho
 		"    start_finish intentional healthy-no-context\n" +
 		"  fi\n" +
 		"}"
+	preparedCallAt := strings.LastIndex(prefix, "\n  start_finish_prepared\n")
+	waitCaptureAt := strings.Index(prefix, waitCapture)
 	if !strings.Contains(prefix, postContextCapture) || countTrimmedLine(prefixLines, armingCapture) != 1 ||
 		countTrimmedLine(prefixLines, waitCapture) != 1 || !strings.Contains(prefix, armingFailureHandling) ||
-		!strings.Contains(prefix, waitFailureHandling) || !strings.Contains(prefix, preparedPublisher) {
+		!strings.Contains(prefix, waitFailureHandling) || !strings.Contains(prefix, preparedPublisher) ||
+		countTrimmedLine(prefixLines, "start_finish_prepared") != 1 || preparedCallAt < waitCaptureAt {
 		add(dispatch, "start post-context status", "post-context arming and wait-recovery failures must become notices before prepared-context publication")
 	}
 	identityStateInitialization := lineContaining(prefixLines, "start_deferred_identity_read=false")
 	identityFailureHandling := "if [[ \"$start_deferred_identity_read\" == true ]]; then\n" +
 		"    collect_start_notice \"$start_holder_context_notice\"\n" +
-		"    start_finish_prepared\n" +
-		"  fi"
+		"  else\n" +
+		"    " + armingCapture
 	identityFailureAt := strings.Index(prefix, identityFailureHandling)
 	armingCaptureAt := strings.Index(prefix, armingCapture)
 	if identityStateInitialization == 0 || identityFailureAt < 0 || armingCaptureAt < 0 || identityFailureAt > armingCaptureAt ||
+		waitCaptureAt < armingCaptureAt || preparedCallAt < waitCaptureAt ||
 		!strings.Contains(prefix, `"$start_deferred_identity_read" != true && "${identity_pid:-}" =~ ^[1-9][0-9]*$`) {
-		add(1, "start deferred identity result", "identity-read failure must be recorded, prepared with brain context, and published before arming without an authenticated identity")
+		add(1, "start deferred identity result", "identity-read failure must skip arming but preserve holder-checked wait recovery before publishing prepared context")
 	}
 	wantDispatcher := "if [[ \"$event\" == start ]]; then\n  start_main\n  start_finish notice unexpected-termination\nfi\n" + hookStartBoundary
 	if !strings.Contains(prefix+"\n"+hookStartBoundary, wantDispatcher) {
@@ -373,6 +378,8 @@ func auditHookStartSource(path, source, fixtures, fixtureAssertions string) []Ho
 		!strings.Contains(fixtureAssertions, "func TestHookStartIntentionalFullPathFixturesOnBash32") ||
 		!strings.Contains(fixtureAssertions, `mode: "context-arming-failure"`) ||
 		!strings.Contains(fixtureAssertions, `mode: "context-holder-read"`) ||
+		!strings.Contains(fixtureAssertions, `mode: "context-process-identity"`) ||
+		!strings.Contains(fixtureAssertions, `strings.Contains(traceText, "\nup ") || !strings.Contains(traceText, "\nsession start ")`) ||
 		!strings.Contains(fixtureAssertions, "assertFullPathContextObject(t, stdout)") ||
 		!strings.Contains(fixtureAssertions, "status != statuses[key]") ||
 		!strings.Contains(fixtureAssertions, "stdout != notices[key]") ||

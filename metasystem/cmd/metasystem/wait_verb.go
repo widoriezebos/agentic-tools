@@ -368,6 +368,9 @@ func runSessionStart(args []string) int {
 	}
 	holder, err := lease.CurrentHolder(stateRoot)
 	if err != nil {
+		if errors.Is(err, lease.ErrLeaseAbsent) {
+			return metarun.ExitWaiterBusy
+		}
 		fmt.Fprintln(os.Stderr, err)
 		return metarun.ExitWaiterIO
 	}

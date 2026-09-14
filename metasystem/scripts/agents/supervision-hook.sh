@@ -978,21 +978,21 @@ start_main() {
 
   if [[ "$start_deferred_identity_read" == true ]]; then
     collect_start_notice "$start_holder_context_notice"
-    start_finish_prepared
-  fi
-
-  start_capture arming up_output arming start_up "$runtime" "$session" "$identity_pid" "$identity_started"
-  up_aggregate=${up_output##*$'\n'}
-  if (( start_arming_status != 0 )); then
-    collect_start_notice "Metasystem supervision arming failed: $up_aggregate"
-    if [[ "$up_aggregate" == *' re-armed='* ]]; then
+  else
+    start_capture arming up_output arming start_up "$runtime" "$session" "$identity_pid" "$identity_started"
+    up_aggregate=${up_output##*$'\n'}
+    if (( start_arming_status != 0 )); then
+      collect_start_notice "Metasystem supervision arming failed: $up_aggregate"
+      if [[ "$up_aggregate" == *' re-armed='* ]]; then
+        collect_start_notice "Metasystem re-armed the rebuilt engine: $up_aggregate"
+      fi
+    elif [[ "$up_aggregate" == *' re-armed='* ]]; then
       collect_start_notice "Metasystem re-armed the rebuilt engine: $up_aggregate"
     fi
-    start_finish_prepared
   fi
-  if [[ "$up_aggregate" == *' re-armed='* ]]; then
-    collect_start_notice "Metasystem re-armed the rebuilt engine: $up_aggregate"
-  fi
+  # A revived session may already hold the checkout when process discovery or
+  # arming is unavailable. The session-start verb matches this session identifier
+  # against the holder's announced session before returning durable wait rows.
   start_capture wait-recovery waiting_lines wait-recovery "$ms" session start --root "$repo" --session "$session"
   if (( start_wait_recovery_status == 0 )); then
     [[ -z "$waiting_lines" ]] || collect_start_notice "$waiting_lines"

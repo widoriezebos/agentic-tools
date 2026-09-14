@@ -2,6 +2,7 @@ package lease
 
 import (
 	"encoding/json"
+	"errors"
 	"fmt"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/atomicfile"
 	"os"
@@ -10,6 +11,9 @@ import (
 	"strings"
 	"time"
 )
+
+// ErrLeaseAbsent reports that no session currently holds the checkout.
+var ErrLeaseAbsent = errors.New("checkout lease is absent; start or arm an agent main first")
 
 // Takeover records one seizure of the lease from a dead holder — kept as an
 // audit trail on the lease itself.
@@ -81,7 +85,7 @@ func loadLease(root string, required bool) (*Lease, error) {
 	data, err := os.ReadFile(path)
 	if os.IsNotExist(err) {
 		if required {
-			return nil, fmt.Errorf("checkout lease is absent; start or arm an agent main first")
+			return nil, ErrLeaseAbsent
 		}
 		return nil, nil
 	}
