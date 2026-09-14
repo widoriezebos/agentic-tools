@@ -1,6 +1,6 @@
 # beds-report-every-failure
 
-- State: claimed
+- State: approved
 - Priority: 1
 - Sequence: 9
 - Risk: severity=1 novelty=1 exposure=2 accumulation=1 basis="severity 1: a bed that reports more is safer, not riskier; novelty 1: the supervision bed already runs most legs as independent scenarios; exposure 2: every proof that runs the beds; accumulation 1: nothing builds on the report format"
@@ -9,13 +9,12 @@
 - Origin: human
 - Next step: LANDED cb989792 (2026-09-15, human commit through land.sh). Waiting for Wido to mark the goal done, which is a human-only verb. DONE evidence, all gathered by the seat outside the sandbox under /bin/bash 3.2: with three product defects applied together, one hook-bed run failed exactly four scenarios and passed 14, each failure naming its leg; the harness fixture proves the guard line for a failing JSON read inside a substitution and for an explicit exit, and that one run collects two failures beside a pass. Hook bed 18 of 18 in 168 seconds (388 sequential). Supervision bed 36 of 37. Deep diagnostic proof of the candidate: 45 of 51 groups passed. Each red was checked against unmodified trunk and each has an owner goal: session-start-relays-the-durable-wait-line, brain-actor-seam-lists-the-wait-caller (landed 96c2fe64), dispatch-bed-preamble-check-survives-a-large-prompt, land-bed-reads-build-stamps-without-a-broken-pipe, adoption-filled-delivery-passes-on-trunk and suite-progress-bed-runs-on-trunk; dispatch-e is load. Built in 4 rounds, jobs m1b-bref2-1789417701 to -r4.
 - OpenedAt: 2026-09-14T15:32:10Z
-- Revision: 19
+- Revision: 20
 - Budget: elapsedLimit=4h attemptLimit=6 reservedJobMinutesLimit=360 activeJobLimit=1 reviewRoundLimit=0
 - BudgetExceptions: 1
 - Approved: by=human:Wido at=2026-09-14T20:31:42Z revision=11 opid=RJF52HXA2TFNW98KVBGSFB7Q17-m1b-c6925449 authority=proven digest=25d29876eb7c9740150775117e3322ee95b3a7d8923ff9b4d25cfa6ee7396729
 - Sliced: machine=m1b lineage=main-1789191336-90295-e4b24b revision=9 at=2026-09-14T20:28:26Z
-- Claimed: machine=m1b lineage=main-1789191336-90295-e4b24b at=2026-09-14T20:31:42Z revision=11 accountingRevision=11 episodeAt=2026-09-14T20:26:40Z episodeRevision=9
-- StopCapability: generation=11 revision=11 machine=m1b claimEpoch=2 fenceEpoch=0
+- Episode: machine=m1b lineage=main-1789191336-90295-e4b24b accountingRevision=11 episodeAt=2026-09-14T20:26:40Z episodeRevision=9 idleSeconds=0 released=2026-09-14T22:39:24Z
 
 History:
 - 2026-09-14T15:32:10Z DEFJFFQ7HWC4XRVD6HM7S9CP7M-m1e-c6925449 open actor=human:Wido targets=beds-report-every-failure
@@ -37,4 +36,5 @@ History:
 - 2026-09-14T21:57:50Z VCTK1QNJ1QZ3PTEK2VFMC84246-m1b-30a7e141 edit actor=m1b+main-1789191336-90295-e4b24b targets=beds-report-every-failure
 - 2026-09-14T22:06:07Z Z4AJQT6K1FYA3SGH4Q46MSQTPD-m1b-30a7e141 edit actor=m1b+main-1789191336-90295-e4b24b targets=beds-report-every-failure
 - 2026-09-14T22:36:53Z N87JVXQNJND73TMDC48JNVEZRW-m1b-30a7e141 edit actor=m1b+main-1789191336-90295-e4b24b targets=beds-report-every-failure
-Integrity: sha256=137da38df8aa5c0c4fb62968cf6a5537c54f58d5f57ab4551966aff09fbbf54c
+- 2026-09-14T22:39:24Z N862QYMDTEYHS315ZQPZHP2X8H-m1b-30a7e141 release actor=m1b+main-1789191336-90295-e4b24b targets=beds-report-every-failure
+Integrity: sha256=5e0edc54181a481d13c6ea27c0733e30e90cbfd889365272f75b3fff4f4481b0
