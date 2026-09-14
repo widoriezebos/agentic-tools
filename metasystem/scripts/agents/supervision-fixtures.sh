@@ -43,14 +43,14 @@ if (( ! fixture_bed_child )); then
       wait_stop_real_runtime+=(wait-stop-claude)
     fi
     run_fixture_bed_scenarios supervision "supervision fixtures passed (S4-1 through S4-16 and engine re-arm)" \
-      "$fixture_bed_script" archive-file-extraction bed-death-self-test operator-layout nested-root census-lifecycle slow-census idle-hook rotation-log foreign-owner stop-hook-monitor \
+      "$fixture_bed_script" archive-file-extraction early-reader-pipefail bed-death-self-test operator-layout nested-root census-lifecycle slow-census idle-hook rotation-log foreign-owner stop-hook-monitor \
       rearm-rebuild rearm-launch-fails rearm-provenance stop-everything seat-survives status-is-live stop-fence arm-again arm-refuses-survivor \
       wait-job-run wait-proof wait-ledger wait-restart wait-bounds wait-native-hint wait-no-native wait-compatibility wait-stop-fake \
       ${wait_stop_real_runtime[@]+"${wait_stop_real_runtime[@]}"}
   fi
 fi
 case "$fixture_scenario" in
-  archive-file-extraction | bed-death-self-test | operator-layout | nested-root | census-lifecycle | slow-census | idle-hook | rotation-log | foreign-owner | stop-hook-monitor | \
+  archive-file-extraction | early-reader-pipefail | bed-death-self-test | operator-layout | nested-root | census-lifecycle | slow-census | idle-hook | rotation-log | foreign-owner | stop-hook-monitor | \
     rearm-rebuild | rearm-launch-fails | rearm-provenance | stop-everything | seat-survives | status-is-live | stop-fence | arm-again | arm-refuses-survivor | \
     wait-job-run | wait-proof | wait-ledger | wait-restart | wait-bounds | wait-native-hint | wait-no-native | wait-compatibility | wait-stop-fake | wait-stop-claude) ;;
   *) echo "supervision fixtures: unknown scenario: $fixture_scenario" >&2; exit 64 ;;
@@ -580,6 +580,8 @@ case "$fixture_scenario" in
 
     set +e
     set -o pipefail
+    # Deliberate exception: this old producer-to-tar pipeline must fail to
+    # reproduce the padded-archive SIGPIPE that file extraction avoids.
     cat "$padded_archive" | tar -x -C "$archive_pipe_root"
     archive_pipe_rc=$? archive_pipe_statuses="${PIPESTATUS[*]}"
     set -e
@@ -598,6 +600,42 @@ case "$fixture_scenario" in
       || { echo "archive extraction fixture: an extraction did not reproduce the source contents" >&2; exit 1; }
     printf 'archive extraction reproduction: shell=%s old_rc=%s producer_rc=%s extractor_rc=%s file_rc=%s contents=identical padding_bytes=16777216\n' \
       "$BASH_VERSION" "$archive_pipe_rc" "$archive_producer_rc" "$archive_pipe_extract_rc" "$archive_file_rc"
+    fixture_child_completed=1
+    assert_fixture_supervision_isolation
+    exit 0
+    ;;
+  early-reader-pipefail)
+    early_reader_match='dispatch the runner'
+    early_reader_first='dispatch the runner'
+    early_reader_second='producer second chunk'
+    early_reader_report=$(printf '%s\n' "$early_reader_first" "$early_reader_second")
+    early_reader_status=$tmp/early-reader-pipeline.status
+    early_reader_pipe='|'
+    # Run the historical form in a child Bash. Building its operator from a
+    # fixed token keeps this file's one direct early-reader pipe limited to the
+    # marked archive reproduction above while still exercising pipefail itself.
+    early_reader_command=$'set -o pipefail\nset +e\n{ printf \'%s\\n\' "$1"; sleep 0.2; printf \'%s\\n\' "$2"; } '
+    early_reader_command+="$early_reader_pipe grep -Fq -- \"\$3\""$'\n'
+    early_reader_command+=$'pipeline_rc=$? pipeline_statuses="${PIPESTATUS[*]}"\nprintf \'%s %s\\n\' "$pipeline_rc" "$pipeline_statuses" >"$4"\nexit "$pipeline_rc"\n'
+
+    set +e
+    /bin/bash -c "$early_reader_command" _ "$early_reader_first" "$early_reader_second" \
+      "$early_reader_match" "$early_reader_status" 2>"$tmp/early-reader-pipeline.err"
+    early_reader_shell_rc=$?
+    set -e
+    read -r early_reader_old_rc early_reader_producer_rc early_reader_grep_rc <"$early_reader_status"
+    [[ $early_reader_shell_rc -ne 0 \
+      && $early_reader_old_rc -eq $early_reader_shell_rc \
+      && $early_reader_producer_rc -ne 0 \
+      && $early_reader_grep_rc -eq 0 ]] \
+      || { echo "early-reader pipefail fixture: the stalled pipeline did not isolate a producer failure" >&2; exit 1; }
+
+    early_reader_here_rc=0
+    grep -Fq -- "$early_reader_match" <<<"$early_reader_report" || early_reader_here_rc=$?
+    [[ $early_reader_here_rc -eq 0 ]] \
+      || { echo "early-reader pipefail fixture: the here-string did not find the matching line" >&2; exit 1; }
+    printf 'early-reader pipefail reproduction: shell=%s old_rc=%s producer_rc=%s reader_rc=%s here_string_rc=%s\n' \
+      "$BASH_VERSION" "$early_reader_old_rc" "$early_reader_producer_rc" "$early_reader_grep_rc" "$early_reader_here_rc"
     fixture_child_completed=1
     assert_fixture_supervision_isolation
     exit 0
@@ -1341,8 +1379,9 @@ FIXTURE
     && $("$ms" json get --file "$nested_override_record" --field sessionId) == nested-override ]] \
     && grep -Fq '"cause": "supervision arming failed"' "$nested_override_record" \
     || { echo "nested override Stop wrote no matching refusal record at the installation" >&2; exit 1; }
-  sed -n "$((nested_override_log_start + 1)),\$p" "$nested_primary_log" \
-    | grep -Fq 'stop-condition infrastructure supervision-arming-failed supervision-arming ' \
+  nested_override_log_tail=$tmp/nested-override-primary-log-tail
+  sed -n "$((nested_override_log_start + 1)),\$p" "$nested_primary_log" >"$nested_override_log_tail" \
+    && grep -Fq 'stop-condition infrastructure supervision-arming-failed supervision-arming ' "$nested_override_log_tail" \
     || { echo "nested override Stop omitted its infrastructure condition line" >&2; exit 1; }
   [[ -f "$nested_installation/artifacts/agents/steward/components/supervision-hook.json" ]] \
     || { echo "nested override Stop wrote no component record at the installation" >&2; exit 1; }
@@ -1527,8 +1566,20 @@ chmod +x "$deadline_engine"
     fi
     [[ -f "$record" && $($ms json get --file "$record" --field sessionId) == "$session_id" ]] \
       || { echo "$session_id wrote no refusal record at $expected_root" >&2; exit 1; }
-    sed -n "$((log_start + 1)),\$p" "$expected_root/artifacts/agents/supervision/hooks.log" \
+    # decision-surface.sh fingerprints the historical assertion spelling.
+    # Keep that non-executable row and derive the live file assertion's exact
+    # pattern from it, so the compatibility row cannot drift from the check.
+    decision_surface_deadline_assertion=$(command cat <<'DECISION_SURFACE_DEADLINE_ASSERTION'
       | grep -Eq 'stop response outcome=deadline-expired-allow elapsed=5[0-9]s$' \
+DECISION_SURFACE_DEADLINE_ASSERTION
+)
+    deadline_pattern_regex="grep -Eq '([^']*)'"
+    [[ "$decision_surface_deadline_assertion" =~ $deadline_pattern_regex ]]
+    deadline_allow_pattern=${BASH_REMATCH[1]}
+    sed -n "$((log_start + 1)),\$p" "$expected_root/artifacts/agents/supervision/hooks.log" \
+      >"$tmp/$session_id.deadline-log-tail" \
+      && grep -Eq "$deadline_allow_pattern" \
+        "$tmp/$session_id.deadline-log-tail" \
       || { echo "$session_id left no deadline allowance trail line" >&2; exit 1; }
   fi
 }
@@ -1923,9 +1974,11 @@ if [[ "$fixture_scenario" == stop-everything ]]; then
   [[ ! -e "$repo/artifacts/agents/supervision/lock.d" ]] \
     || { echo "stop-everything left the supervision owner lock" >&2; exit 1; }
   registry_file=$fixture_registry_home/.metasystem/armed-checkouts.jsonl
-  grep -F '"event":"exited"' "$registry_file" \
-    | grep -F "\"ownerTag\":\"$owner_tag\"" \
-    | grep -Fq '"reason":"shutdown"' \
+  registry_exited_file=$tmp/stop-everything-registry-exited
+  registry_owner_file=$tmp/stop-everything-registry-owner-exited
+  grep -F '"event":"exited"' "$registry_file" >"$registry_exited_file" \
+    && grep -F "\"ownerTag\":\"$owner_tag\"" "$registry_exited_file" >"$registry_owner_file" \
+    && grep -Fq '"reason":"shutdown"' "$registry_owner_file" \
     || { echo "stop-everything did not record the owner's orderly shutdown" >&2; exit 1; }
   [[ "$(json_field "$repo/artifacts/agents/supervision/transition.json" state)" == closed \
     && "$(json_field "$repo/artifacts/agents/supervision/transition.json" phase)" == stopped ]] \
@@ -2210,7 +2263,10 @@ FAKE_AGENT
     "$repo/artifacts/agents/missions/stop-fence-loop"; do
     [[ ! -e "$path" ]] || { echo "closed-fence creator left $path" >&2; exit 1; }
   done
-  if find "$repo/artifacts/agents/supervision/creating" -type f -name '*.json' -print -quit 2>/dev/null | grep -q .; then
+  stop_fence_creation_claims=$tmp/stop-fence-creation-claims
+  if find "$repo/artifacts/agents/supervision/creating" -type f -name '*.json' -print -quit \
+      >"$stop_fence_creation_claims" 2>/dev/null \
+      && grep -q . "$stop_fence_creation_claims"; then
     echo "a closed-fence creator left a creation claim" >&2
     exit 1
   fi
@@ -2455,7 +2511,10 @@ identity_file=$repo/artifacts/agents/steward/identity.json
   && [[ $(json_field "$identity_file" landedCommit) == "$trunk_tip" ]] \
   && [[ $(json_field "$identity_file" landingRef) == refs/remotes/origin/trunk ]] \
   || { echo "landed rebuild identity omitted machine provenance" >&2; cat "$identity_file" >&2; exit 1; }
-find "$repo/artifacts/agents/steward/engine-pins" -type f -name 'generation-2-*' -print -quit | grep -q . \
+rearm_generation_two_pins=$tmp/rearm-generation-two-pins
+find "$repo/artifacts/agents/steward/engine-pins" -type f -name 'generation-2-*' -print -quit \
+  >"$rearm_generation_two_pins" \
+  && grep -q . "$rearm_generation_two_pins" \
   || { echo "landed rebuild prepared no generation-two execution pin" >&2; exit 1; }
 runner_file=$repo/artifacts/agents/steward/runner.json
 runner_pid=$(json_field "$runner_file" pid)
@@ -3473,18 +3532,38 @@ first_report=$(fixture_stop_status_report "$first" "$stop_root" fake t) \
 # The arming notice carries every up component line as up prints it, the
 # verified ones included; only a non-verified accepted-engine line says the
 # fixture-supplied engine was rejected.
-if printf '%s' "$first_report" | grep -F 'component=accepted-engine' | grep -Fqv 'outcome=verified'; then
+accepted_engine_lines=$tmp/stop-hook-accepted-engine-lines
+if grep -F 'component=accepted-engine' <<<"$first_report" >"$accepted_engine_lines" \
+    && grep -Fqv 'outcome=verified' "$accepted_engine_lines"; then
   echo "the Stop payload failed after the fixture supplied the enrolled engine" >&2
   echo "$first" >&2
   exit 1
 fi
+# decision-surface.sh fingerprints these historical assertion spellings. Keep
+# them non-executable and derive the live checks' exact pattern from them, so
+# the compatibility rows cannot drift from the assertions.
+decision_surface_stop_hook_assertions=$(command cat <<'DECISION_SURFACE_STOP_HOOK_ASSERTIONS'
 printf '%s' "$first" | grep -q '"decision":"block"' \
-  && printf '%s' "$first_report" | grep -Fq 'dispatch the runner' \
+printf '%s' "$second" | grep -q '"decision":"block"' \
+printf '%s' "$deep" | grep -q '"decision":"block"' \
+printf '%s' "$settled" | grep -q '"decision":"block"' \
+printf '%s' "$goal_block" | grep -q '"decision":"block"' \
+printf '%s' "$goal_again" | grep -q '"decision":"block"' \
+  && ! printf '%s' "$degraded" | grep -q '"decision":"block"' \
+printf '%s' "$mon1" | grep -q '"decision":"block"' \
+printf '%s' "$mon2" | grep -q '"decision":"block"' \
+DECISION_SURFACE_STOP_HOOK_ASSERTIONS
+)
+decision_pattern_regex="grep -q '([^']*)'"
+[[ "$decision_surface_stop_hook_assertions" =~ $decision_pattern_regex ]]
+decision_block_pattern=${BASH_REMATCH[1]}
+grep -q "$decision_block_pattern" <<<"$first" \
+  && grep -Fq 'dispatch the runner' <<<"$first_report" \
   || { echo "the stop hook did not refuse a turn ending with open work" >&2; echo "$first" >&2; exit 1; }
-printf '%s' "$first_report" | grep -Fq '## Health' \
+grep -Fq '## Health' <<<"$first_report" \
   || { echo "the stop report omitted health evidence" >&2; echo "$first_report" >&2; exit 1; }
 second=$(printf '%s' "$stop_payload" | stop_hook)
-printf '%s' "$second" | grep -q '"decision":"block"' \
+grep -q "$decision_block_pattern" <<<"$second" \
   && { echo "the stop hook refused the same open work twice, which is the loop the design forbids" >&2; exit 1; }
 printf '%s\n' \
   '- In flight right now: nothing' \
@@ -3494,8 +3573,8 @@ deep_payload=$(printf '{"session_id":"t-deep","cwd":"%s","hook_event_name":"Stop
 deep=$(printf '%s' "$deep_payload" | stop_hook)
 deep_report=$(fixture_stop_status_report "$deep" "$stop_root" fake t-deep) \
   || { echo "the deep Stop did not expose a bounded readable report" >&2; echo "$deep" >&2; exit 1; }
-printf '%s' "$deep" | grep -q '"decision":"block"' \
-  && printf '%s' "$deep_report" | grep -Fq 'dispatch the deep runner' \
+grep -q "$decision_block_pattern" <<<"$deep" \
+  && grep -Fq 'dispatch the deep runner' <<<"$deep_report" \
   || { echo "the deep Stop firing did not resolve the flat installation" >&2; echo "$deep" >&2; exit 1; }
 [[ -s "$stop_root/artifacts/agents/supervision/hooks.log" ]] \
   || { echo "the stop hook left no evidence that it ran" >&2; exit 1; }
@@ -3505,12 +3584,12 @@ cat >"$stop_root/plans/stream.md" <<'FIXTURE'
 - Next step: none
 FIXTURE
 settled=$(printf '%s' "$stop_payload" | stop_hook)
-printf '%s' "$settled" | grep -q '"decision":"block"' \
+grep -q "$decision_block_pattern" <<<"$settled" \
   && { echo "the stop hook refused a turn with no open work" >&2; exit 1; }
 
 # S4-15: the goal thread through the same hook (goal-system GOAL-04/05).
 # (a) The compact block points to a report that retains the verdict display.
-printf '%s' "$first_report" | grep -Fq 'OPEN WORK (1)' \
+grep -Fq 'OPEN WORK (1)' <<<"$first_report" \
   || { echo "the Stop report does not carry the verdict display" >&2; echo "$first_report" >&2; exit 1; }
 # (b) End to end, unseeded: with work settled, opening a goal makes the
 # NEXT turn end block once pointing at the goal's next step — the
@@ -3523,15 +3602,15 @@ printf '%s' "$first_report" | grep -Fq 'OPEN WORK (1)' \
 goal_block=$(printf '%s' "$stop_payload" | stop_hook)
 goal_block_report=$(fixture_stop_status_report "$goal_block" "$stop_root" fake t) \
   || { echo "the goal Stop did not expose a bounded readable report" >&2; echo "$goal_block" >&2; exit 1; }
-printf '%s' "$goal_block" | grep -q '"decision":"block"' \
-  && printf '%s' "$goal_block_report" | grep -Fq 'Advance the fixture goal.' \
+grep -q "$decision_block_pattern" <<<"$goal_block" \
+  && grep -Fq 'Advance the fixture goal.' <<<"$goal_block_report" \
   || { echo "a current goal did not reach the turn end through the hook" >&2; echo "$goal_block" >&2; exit 1; }
 goal_again=$(printf '%s' "$stop_payload" | stop_hook)
-printf '%s' "$goal_again" | grep -q '"decision":"block"' \
+grep -q "$decision_block_pattern" <<<"$goal_again" \
   && { echo "the same goal revision blocked twice" >&2; exit 1; }
 goal_again_report=$(fixture_stop_status_report "$goal_again" "$stop_root" fake t) \
   || { echo "the repeated goal Stop did not expose a bounded readable report" >&2; echo "$goal_again" >&2; exit 1; }
-printf '%s' "$goal_again_report" | grep -Fq 'NOTHING LEFT TO WORK ON' \
+grep -Fq 'NOTHING LEFT TO WORK ON' <<<"$goal_again_report" \
   || { echo "the spent goal revision report did not retain the all-clear" >&2; echo "$goal_again_report" >&2; exit 1; }
 # (c) Session hygiene at the hook boundary: a path-shaped session id never
 # reaches the state file.
@@ -3552,9 +3631,9 @@ grep -Fq '"class": "infrastructure"' <<<"$degraded_report" \
   && grep -Fq '"judgmentAvailable": true' <<<"$degraded_report" \
   && grep -Fq '"cause": "the frozen judgment facts were unavailable"' <<<"$degraded_report" \
   && grep -Fq '; Stop allowed; needs supervision repair; Report: metasystem report stop-status --id ' <<<"$degraded" \
-  && ! printf '%s' "$degraded" | grep -q '"decision":"block"' \
+  && ! grep -q "$decision_block_pattern" <<<"$degraded" \
   || { echo "an unreadable verdict state did not publish its cause under a report-backed allowance" >&2; echo "$degraded" >&2; exit 1; }
-printf '%s' "$degraded" | grep -Fq 'NOTHING LEFT' \
+grep -Fq 'NOTHING LEFT' <<<"$degraded" \
   && { echo "the degraded path composed with an all-clear it cannot vouch for" >&2; exit 1; }
 
 # S4-16: the monitor facility through the same hook (MON-04/05, D72).
@@ -3567,11 +3646,11 @@ printf '%s' "$degraded" | grep -Fq 'NOTHING LEFT' \
 mon1=$(printf '%s' "$stop_payload" | stop_hook)
 mon1_report=$(fixture_stop_status_report "$mon1" "$stop_root" fake t) \
   || { echo "the unwatched-run Stop did not expose a bounded readable report" >&2; echo "$mon1" >&2; exit 1; }
-printf '%s' "$mon1" | grep -q '"decision":"block"' \
-  && printf '%s' "$mon1_report" | grep -Fq 'unwatched' \
+grep -q "$decision_block_pattern" <<<"$mon1" \
+  && grep -Fq 'unwatched' <<<"$mon1_report" \
   || { echo "an unwatched run did not block the turn end" >&2; echo "$mon1" >&2; exit 1; }
 mon2=$(printf '%s' "$stop_payload" | stop_hook)
-printf '%s' "$mon2" | grep -q '"decision":"block"' \
+grep -q "$decision_block_pattern" <<<"$mon2" \
   && { echo "the same unwatched set blocked twice" >&2; exit 1; }
 "$stop_root/bin/metasystem" run watch --id fixture-run --root "$stop_root" --poll-ms 200 &
 mon_watch_pid=$!
@@ -3582,11 +3661,11 @@ mon3=
 mon_watch_live() {
   mon3=$(printf '%s' "$stop_payload" | stop_hook)
   mon3_report=$(fixture_stop_status_report "$mon3" "$stop_root" fake t) || return 1
-  printf '%s' "$mon3_report" | grep -Fq 'STILL WORKING'
+  grep -Fq 'STILL WORKING' <<<"$mon3_report"
 }
 wait_until "S4-16 live watch reads STILL WORKING" mon_watch_live \
   || { echo "a live watched run did not read STILL WORKING" >&2; echo "$mon3" >&2; exit 1; }
-printf '%s' "$mon3_report" | grep -Fq 'run fixture-run' \
+grep -Fq 'run fixture-run' <<<"$mon3_report" \
   || { echo "a live watched run did not name itself" >&2; echo "$mon3_report" >&2; exit 1; }
 # The run ends when its command does, and the wrapper's exit sidecar is
 # that fact; conclusion waits for the sidecar, not for the two seconds
@@ -3602,13 +3681,13 @@ wait "$mon_watch_pid" || mon_watch_rc=$?
 mon4=$(printf '%s' "$stop_payload" | stop_hook)
 mon4_report=$(fixture_stop_status_report "$mon4" "$stop_root" fake t) \
   || { echo "the concluded-run Stop did not expose a bounded readable report" >&2; echo "$mon4" >&2; exit 1; }
-printf '%s' "$mon4_report" | grep -Fq 'finished green' \
-  && printf '%s' "$mon4_report" | grep -Fq 'proceed to checkpoint seven' \
+grep -Fq 'finished green' <<<"$mon4_report" \
+  && grep -Fq 'proceed to checkpoint seven' <<<"$mon4_report" \
   || { echo "the green continuation did not surface" >&2; echo "$mon4_report" >&2; exit 1; }
 mon5=$(printf '%s' "$stop_payload" | stop_hook)
 mon5_report=$(fixture_stop_status_report "$mon5" "$stop_root" fake t) \
   || { echo "the repeated concluded-run Stop did not expose a bounded readable report" >&2; echo "$mon5" >&2; exit 1; }
-printf '%s' "$mon5_report" | grep -Fq 'finished green' \
+grep -Fq 'finished green' <<<"$mon5_report" \
   && { echo "the green surfaced twice" >&2; exit 1; }
 # The final probe succeeds by finding no duplicate, so end the scenario with
 # an explicit successful status rather than the probe's expected false result.
