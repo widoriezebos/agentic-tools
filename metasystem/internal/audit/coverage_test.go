@@ -210,11 +210,43 @@ func TestAuditMetasystemRefusals(t *testing.T) {
 			t.Fatalf("allow-placeholders did not tolerate: %v", result.Violations)
 		}
 	})
-	t.Run("word budget", func(t *testing.T) {
+	t.Run("word budget override", func(t *testing.T) {
 		root := build(t)
 		result, _ := AuditMetasystem(root, AuditOptions{MaxAlwaysLoadedWords: 3})
 		if len(result.Violations) != 1 || !strings.Contains(result.Violations[0], "exceed 3 words") {
 			t.Fatalf("budget breach not caught: %v", result.Violations)
+		}
+	})
+	t.Run("default word budget", func(t *testing.T) {
+		root := build(t)
+		doctrine := "programs start with `goal open`; at turn end read `goal next`\n"
+		doctrineWords := len(strings.Fields(doctrine))
+		if err := os.WriteFile(filepath.Join(root, "AGENTS.md"), []byte(doctrine), 0o644); err != nil {
+			t.Fatal(err)
+		}
+		writeTotal := func(total int) {
+			t.Helper()
+			if err := os.WriteFile(filepath.Join(root, "wow.md"), []byte(strings.Repeat("word ", total-doctrineWords)), 0o644); err != nil {
+				t.Fatal(err)
+			}
+		}
+
+		writeTotal(1500)
+		result, err := AuditMetasystem(root, AuditOptions{})
+		if err != nil || len(result.Violations) != 0 {
+			t.Fatalf("default budget refused its bound: %v %v", err, result.Violations)
+		}
+		if report := strings.Join(result.Report, "\n"); !strings.Contains(report, "Always-loaded words") || !strings.Contains(report, "1500 total") {
+			t.Fatalf("word-count table missing at the bound:\n%s", report)
+		}
+
+		writeTotal(1501)
+		result, err = AuditMetasystem(root, AuditOptions{})
+		if err != nil || len(result.Violations) != 1 || !strings.Contains(result.Violations[0], "exceed 1500 words") {
+			t.Fatalf("default budget overrun not caught: %v %v", err, result.Violations)
+		}
+		if report := strings.Join(result.Report, "\n"); !strings.Contains(report, "Always-loaded words") || !strings.Contains(report, "1501 total") {
+			t.Fatalf("word-count table missing on refusal:\n%s", report)
 		}
 	})
 }

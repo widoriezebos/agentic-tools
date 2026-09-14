@@ -63,7 +63,7 @@ type AuditResult struct {
 
 // AuditOptions mirror the shim's environment knobs.
 type AuditOptions struct {
-	MaxAlwaysLoadedWords int  // 0 means the 1400 default
+	MaxAlwaysLoadedWords int  // 0 means the 1500 default
 	AllowPlaceholders    bool // adopt.sh's structural pass, pre-fill
 }
 
@@ -162,7 +162,7 @@ func AuditMetasystem(root string, opts AuditOptions) (*AuditResult, error) {
 
 	maxWords := opts.MaxAlwaysLoadedWords
 	if maxWords == 0 {
-		maxWords = 1400
+		maxWords = 1500
 	}
 	if alwaysWords > maxWords {
 		result.Violations = append(result.Violations,

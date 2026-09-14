@@ -71,7 +71,7 @@ func runAuditCoverageRatchet(args []string) int {
 func runAuditMetasystem(args []string) int {
 	flags := flag.NewFlagSet("audit metasystem", flag.ContinueOnError)
 	root := flags.String("root", ".", "checkout root to audit")
-	maxWords := flags.Int("max-always-loaded-words", 0, "always-loaded word budget (0 = 1400)")
+	maxWords := flags.Int("max-always-loaded-words", 0, "always-loaded word budget (0 = 1500)")
 	allowPlaceholders := flags.Bool("allow-placeholders", false, "tolerate template placeholders (adopt.sh's structural pass)")
 	if flags.Parse(args) != nil {
 		return 2

@@ -281,14 +281,12 @@ The following is a **new instruction to install**, not a claim about today's
 AGENTS.md. Add it to the canonical contract's turn-end instruction and make
 the generated CLAUDE.md/other runtime instruction entrypoint load that owner:
 
-> On a blocked Stop, run the exact `metasystem report stop-status --id ...`
-> command in the notice and read its report before the next work action or
-> another Stop. Follow its seat action within your existing authority. If
-> it is unavailable, keep any established block, report the read failure,
-> and use `goal next` to recover current work; never infer that no work
-> remains. An allowed Stop adds no report-read turn; the file is available
-> for the next ordinary turn. A free seat fetches and claims the ready goal;
-> a held goal is continued without another claim.
+> On every governed Stop, blocked or allowed, run the exact printed
+> `metasystem report stop-status --id ...` command and read the report before
+> ending the turn or taking the next work action; follow its seat action
+> within existing authority. If the report is unavailable, keep any
+> established block, report the read failure and recover current work through
+> `goal next`; never infer that no work remains.
 
 Instructions request a read; they do not mechanically prove it. Before a
 runtime may claim this delivery contract, pin host version and effective
