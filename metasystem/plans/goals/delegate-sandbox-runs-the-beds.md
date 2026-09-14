@@ -1,6 +1,6 @@
 # delegate-sandbox-runs-the-beds
 
-- State: queued
+- State: approved
 - Priority: 1
 - Sequence: 1
 - Risk: severity=2 novelty=1 exposure=3 accumulation=1 basis="severity 2: a wrong temporary directory breaks every delegate build, but the change is one adapter setting with a fixture; novelty 1: moving a temporary directory; exposure 3: every dispatch on every runtime; accumulation 1: nothing downstream reads the directory"
@@ -9,13 +9,15 @@
 - Origin: human
 - Next step: Design page first, and it must make the sandbox a declared contract, not a fixed environment: the adapter probe answers what the delegate's sandbox allows (temporary-directory isolation outside the worktree's git directory; process inspection of its own tree; process-group control), each bed declares the capabilities it needs in its header, and the dispatcher assigns every bed the round's diff touches either to the delegate's return (when the sandbox declares what the bed needs) or to the seat's round proof (when it does not), recording the assignment beside the round. The implementer packet requires the assigned beds and full-package Go runs in the return; the return validator refuses a package reported green from a selection naming only the round's own tests. Evidence from stop-decisions round 20 (2026-09-14): pointing TMPDIR outside the worktree ran the hook bed in the Codex sandbox through its Go stage, then it stopped where a fixture needs ps, which the sandbox denies; the supervision bed lost sixteen scenarios to process-group and scratch-repository limits. Then build.
 - OpenedAt: 2026-09-14T15:31:22Z
-- Revision: 4
+- Revision: 5
 - Budget: elapsedLimit=4h attemptLimit=6 reservedJobMinutesLimit=720 activeJobLimit=1 reviewRoundLimit=2
 - BudgetExceptions: 0
+- Approved: by=human:Wido at=2026-09-14T18:53:20Z revision=5 opid=558DTTTRJMS3ET1W4ZME6RNJHZ-m1e-c6925449 authority=proven digest=e131859ea1e70fcfa6641c005869c04f3685f1066322b135853b3f5be85827cc
 
 History:
 - 2026-09-14T15:31:22Z NRM60XBC3CTEMVXAVZ14G5514K-m1e-c6925449 open actor=human:Wido targets=delegate-sandbox-runs-the-beds
 - 2026-09-14T15:32:22Z 08EJFDPT7HYH4K6YHYBWYXWJ9J-m1e-c6925449 set-priority actor=human:Wido targets=actionable-metrics,brief-declares-the-round-boundary,builder-proves-each-rule-by-mutation,chain-landing-carries-the-reviewed-diff,coordinator-context-stays-under-budget,coordinator-wakes-on-events-not-polls,critique-closes-on-folded-proof,cross-cutting-change-inventories-its-readers,delegate-sandbox-runs-the-beds,dispatch-bases-chains-on-the-remote-tip,failed-job-attention,fixture-repo-copies-exclude-the-artifacts-store,fixture-stewards-outlive-their-suite,fixture-waits-name-their-producer,hook-root-resolver-design,human-authority-surface-runs-its-cmd-tests,human-goal-verbs-forgiving,human-wait-does-not-consume-goal-budget,job-record-birth-token,lease-sweep-death-evidence,live-job-on-a-done-goal-unnoticed,machine-concurrency-governor,metasystem-stop-escalation-proofs,metasystem-stop-fleet-form,new-elapsed-budgets-use-explicit-hours,receipt-admission-caps-concurrent-batteries,repo-root-paths-ride-agent-commits-unjudged,run-scoped-build-caches-have-a-janitor,skipped-test-fails-its-group-on-the-other-os,small-change-lane,stop-batch-strands-a-resumable-goal,stop-hook-never-forces-an-empty-turn,token-spend-fence,watch-verb,watcher-repair-request-never-names-current,winddown-census-handoff-leak reason=priority-order subject=delegate-sandbox-runs-the-beds from=unranked to=1:1 requested-sequence=1
 - 2026-09-14T15:42:36Z 1KVPAQR5N98GDBCKXD6SBT0N60-m1b-30a7e141 edit actor=m1b+main-1789191336-90295-e4b24b targets=delegate-sandbox-runs-the-beds
 - 2026-09-14T16:17:11Z BQY6NYF2XHGY2X5BGJ6556TPRZ-m1b-30a7e141 edit actor=m1b+main-1789191336-90295-e4b24b targets=delegate-sandbox-runs-the-beds
-Integrity: sha256=cb9f8405efcfa32474336fda65a576652318d5c5ff4b759b44df49a1960cb2dd
+- 2026-09-14T18:53:20Z 558DTTTRJMS3ET1W4ZME6RNJHZ-m1e-c6925449 approve actor=human:Wido targets=delegate-sandbox-runs-the-beds
+Integrity: sha256=3d08d7187998744f3f44b012f453bbbb1932d5ebaa3d1c7b81ca150e20bc0924
