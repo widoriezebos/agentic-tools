@@ -1,22 +1,22 @@
 # brief-declares-the-round-boundary
 
-- Owner: m1e (goal 28 of plans/delivery-efficiency-plan.md). **Revision 1, 2026-09-14**, designed by a Codex gpt-6-astra delegate at the seat's brief after Wido's word of the same day; the seat integrated the page unchanged and critiques it next.
-- Goal and current status: the brief carries optional Boundary and Ceiling headers; conformance at review stage refuses a candidate outside them before a read is spent; six builder units of at most 400 changed lines each, in order, each with its own Boundary, Ceiling, Non-goals and the proof rule. Nothing built yet.
-- In flight right now: revision 1 under its first critique read (Codex gpt-5.6-sol, design critic); the fold and unit 1 follow.
-- Decisions made (and who made them): Wido, 2026-09-14: scope drift and unproved rules are fixed upstream in the brief and the builder's return, not by coordinator checks or the read; units are at most 400 changed lines. Wido, R-93-m1e and R-97-m1e still bind this goal's critique rounds. The design delegate: the bounded diff is the whole candidate against its merge-base with the target checkout; each round's headers apply independently; Boundary is output permission, not cited authority; absent headers keep today's behaviour.
-- Waiting on the human: nothing. The one open policy choice, a default Ceiling for briefs that omit it, is proposed at 400 in the last section and needs no answer to build.
-- Dead ends (do not retry without new evidence): none yet.
-- Next step: revision 1 lands with this line, so the critique read has a landed subject; the read's material findings fold into revision 2, then unit 1 (parse the optional headers at admission) is briefed to Codex gpt-5.6-sol with its own Boundary, Ceiling and proof rule, read by Opus, landed by the seat, and units 2 to 6 follow in order.
+- Owner: m1e (goal 28 of plans/delivery-efficiency-plan.md). **Revision 2, 2026-09-14**, folded by the Codex gpt-6-astra design delegate from critique round 1 (records/misc/brief-declares-the-round-boundary-critique-r1.md, eight material findings, all accepted) under two seat rulings; the seat integrated the page and edits only this header block.
+- Goal and current status: the brief carries a paired Boundary and Ceiling or neither; review-stage conformance refuses a candidate outside them before a read is spent; nine builder units of at most 400 changed lines each (1a, 1b, 2, 3, 4a, 4b, 4c, 6a, 6b), in order, each with its own Boundary, Ceiling, Non-goals and the proof rule, and a complete rule-to-witness table. Nothing built yet.
+- In flight right now: revision 2 under critique round 2 (Codex gpt-5.6-sol, design critic), the last round inside this tier-2 goal's review budget; a clean round closes the design, a material round folds once more and then escalates under R-97-m1e.
+- Decisions made (and who made them): Wido, 2026-09-14: scope drift and unproved rules are fixed upstream in the brief and the builder's return; units are at most 400 changed lines. The seat, 2026-09-14, on critique round 1: both headers or neither, a partial pair refuses naming the missing header; every remove-one witness lives in the unit that owns its production rule. The design delegate: the bounded diff is the whole merge-base candidate; the supplied round's authored brief binds; one candidate snapshot; one byte-preserving path identity shared by Boundary members and authority citations; trailing-slash declarations are literal directory prefixes.
+- Waiting on the human: nothing. Headerless briefs keep today's behaviour; a default Ceiling would change DONE and is not proposed.
+- Dead ends (do not retry without new evidence): partial-header admission; matching projected declarations against unprojected repository paths; an empty projected prefix matching sibling paths; a test-only unit that must mutate another unit's production rule; slot-only selection of a referenced brief.
+- Next step: revision 2 lands with this line, so critique round 2 has a landed subject; on a clean round, unit 1a (parse the paired headers) is briefed to Codex gpt-5.6-sol with its own Boundary, Ceiling and proof rule, read by Opus, landed by the seat, and the remaining units follow in the stated order.
 
-The seat must run review conformance before dispatching a code critic. The brief supplies the outer path and size limits. The implementer's return still supplies the exact changed-file declaration. Both checks must pass.
+The seat runs review conformance before dispatching a code critic. The brief supplies the outer path and size limits. The return still declares the concrete changed paths. Both checks must pass.
 
-This is a design proposal, checked by reading code at `b594392e`. No implementation or runtime proof is claimed. The contract is the DONE sentence in `plans/goals/brief-declares-the-round-boundary.md:8`. All source citations below are relative to `metasystem/`. Paths in builder Boundary headers are relative to the Git repository root and therefore include `metasystem/`.
+This is a design proposal. The fact pass began at `91f097429f138cf51d427d2666fba4958899047e`. The shared checkout advanced during the pass. Cited source locations were checked against the final checkout at `bf59fd0d699c13e3f606d808434238c77fa70d8a`, including the moved refusal-register and testing-group lines. The DONE contract is `plans/goals/brief-declares-the-round-boundary.md:8`. All source citations below are relative to `metasystem/`. Boundary values are relative to the Git repository root, so this repository's builder headers include `metasystem/`. Test names without a current source citation are proposed tests.
 
-The most important decision is the diff being bounded. It is the whole returned candidate against its merge-base with the seat's target checkout. It is not the work since the builder's last commit or last return. This follows the existing base selection in `internal/validate/conformance.go:232-241` and review projection in `internal/validate/conformance.go:368-390`.
+The bounded diff covers the entire returned candidate against its merge-base with the target checkout. Current base selection already uses that merge-base (`internal/validate/conformance.go:232-241`). A follow-up does not reset the diff to its own starting commit.
 
 ## Header contract
 
-An implementer brief may begin with:
+An implementer brief may carry:
 
 ```text
 Working Mode: implement
@@ -24,20 +24,27 @@ Boundary: ["metasystem/internal/dispatch/brief.go", "metasystem/internal/validat
 Ceiling: 400
 ```
 
-Use one physical line per header. Recognize the exact, case-sensitive prefix at column zero, as `BriefMode` does for `Working Mode:` today (`internal/dispatch/brief.go:41-55`). Trim whitespace around the value. Do not scan other packet slots for headers. A quoted or fenced example with a column-zero header inside the authored brief still counts as a header, just as it does for Working Mode today (`internal/dispatch/brief.go:47-53`). Documentation examples should indent their header lines when embedded in a real brief.
+Recognize each exact, case-sensitive prefix at column zero. Use one physical line per header and trim whitespace around its value. Do not trim decoded path members. Scan the authored task direction only. Fences do not change header recognition: a column-zero header inside a fence is live. A header with leading space, tab, or `>` is not live. Working Mode currently uses column-zero scanning and value trimming (`internal/dispatch/brief.go:47-53`).
 
-`Boundary:` is a JSON array of strings. JSON gives paths containing spaces, commas, tabs, quotes, or newlines an unambiguous spelling. `[]` explicitly allows no changed paths. An absent header has no boundary check. These states must remain distinct. A present but empty value, `null`, a non-array value, a non-string member, or a duplicate Boundary header refuses preflight. Duplicate path entries are harmless and may be deduplicated.
+A brief carries both Boundary and Ceiling or neither. Neither means no new path or size check. Exactly one means `BRIEF_BOUNDS_INVALID` naming the missing header:
 
-`Ceiling:` is an unsigned decimal spelling of a nonnegative signed 64-bit integer. Leading zeroes are accepted. Zero permits no added or deleted text lines. A sign, decimal point, unit suffix, placeholder, overflow, empty value, or duplicate Ceiling header refuses preflight. Compare with `>`, so equality passes.
+```text
+BRIEF_BOUNDS_INVALID: Ceiling: required with Boundary
+BRIEF_BOUNDS_INVALID: Boundary: required with Ceiling
+```
 
-With neither header, run neither new check. With only Boundary, run only the new path check. With only Ceiling, run only the new size check. Working Mode remains required at initial dispatch. No implicit maximum is introduced. This preserves the optional-header contract in `plans/goals/brief-declares-the-round-boundary.md:8` without changing the mandatory mode rule in `internal/dispatch/brief.go:52-55`.
+Check duplicate occurrences first, Boundary then Ceiling. Next check pairing. Next validate Boundary, then Ceiling. This gives a deterministic error when several inputs are wrong.
 
-The parser belongs in `internal/dispatch/brief.go`:
+Boundary is a JSON array of strings. `[]` is a valid deny-all boundary. Reject an empty value, `null`, a non-array, a non-string member, trailing JSON data, or a duplicate header. Duplicate members are harmless. Keep the decoded array; matching needs no deduplication step.
+
+Ceiling is one or more ASCII decimal digits representing a value from 0 through 9223372036854775807. Leading zeroes are valid. Reject signs, fractions, units, placeholders, overflow, empty values, and duplicate headers. Zero permits no added or deleted text lines. Equality passes.
+
+Add these definitions beside Working Mode in `internal/dispatch/brief.go`:
 
 ```go
 type BriefBounds struct {
-    Boundary []string // nil means absent; a non-nil empty slice means deny all
-    Ceiling *int64    // nil means absent
+    Boundary []string
+    Ceiling  *int64
 }
 type BriefBoundsRefusal struct { Header, Detail string }
 func (e *BriefBoundsRefusal) Error() string
@@ -45,337 +52,452 @@ func ParseBriefBounds(data []byte) (BriefBounds, error)
 func ReadBriefBounds(briefPath string) (BriefBounds, error)
 ```
 
-Use `BRIEF_BOUNDS_INVALID: <Header>: <detail>` for syntax refusals. Fix the detail strings as `header occurs more than once`, `expected a JSON array of paths`, `invalid path or pattern <JSON string>`, and `expected a nonnegative decimal integer no greater than 9223372036854775807`. Preserve the existing mode diagnostic for a missing or malformed Working Mode. `BriefMode` calls the bounds parser after its mode validation. `ValidateBriefAuthority` calls it without requiring a mode, covering the authority-only path used by follow-ups. The CLI already returns dispatch errors through `recordExit` and keeps mode text on stdout (`cmd/metasystem/dispatch_verbs.go:2014-2027`). Change the shell's generic failure suffix to mention brief headers, so it does not describe a Ceiling refusal as a missing mode (`scripts/agents/dispatch.sh:1542`).
+Successful parsing returns either `nil, nil` fields for absence, or a non-nil Boundary slice and non-nil Ceiling. A non-nil empty slice remains distinct from absence. Do not return a successful partial state.
+
+Render parser errors as `BRIEF_BOUNDS_INVALID: <Header>: <detail>`. Besides the pairing details above, use `header occurs more than once`, `expected a JSON array of paths`, `invalid path or pattern <JSON string>`, and `expected a nonnegative decimal integer no greater than 9223372036854775807`.
+
+BriefMode validates its existing Working Mode rule, then calls the bounds parser. ValidateBriefAuthority calls the same parser without requiring Working Mode. This covers the authority-only follow-up route. Current CLI admission checks authority before mode when both are requested; retain that order (`cmd/metasystem/dispatch_verbs.go:2014-2027`). Do not promise a missing-mode diagnostic takes precedence over an authority or bounds error on that route. Mode-only admission keeps its existing mode refusal (`internal/dispatch/brief.go:41-55`).
+
+Change the initial shell failure suffix to `brief headers are invalid; Working Mode must be filled and Boundary and Ceiling must appear together`. The current suffix names only Working Mode (`scripts/agents/dispatch.sh:1542`). Parsing stays in Go.
 
 ## Paths and matching
 
-Boundary declarations use the repository-relative dialect already projected by `conformanceRun.projectDeclaration`. In a nested installation a declaration must start with the literal installation prefix and `/`. Strip that prefix exactly once. A bare `internal/a.go` does not name `metasystem/internal/a.go`. A doubled prefix names a genuinely nested path. At a repository-root installation no prefix is stripped. Those are the current projection rules in `internal/validate/conformance.go:276-293`.
+Use one path identity throughout this feature: the repository-relative string after JSON decoding, with slash separators and all member bytes preserved. Do not clean paths, fold case, trim member whitespace, resolve symlinks, or replace backslashes. Thus a space, comma, quote, tab, or newline inside a filename remains part of that filename. JSON provides a one-line spelling for those characters.
 
-The new match rule is:
+Reject empty or absolute declarations, NUL, and empty, `.`, or `..` slash components. Only the final empty component of a trailing-slash directory is allowed. Syntax validation has two exclusive branches:
 
-1. A declaration ending in `/` is a literal directory prefix. After projection, `internal/validate/` matches every changed path beginning with that exact prefix. It does not match `internal/validator.go`. Preserve this directory interpretation when projection produces an empty string: `metasystem/` names the whole installed project and matches every project path. No filesystem existence check is involved, so a new directory and a deleted directory work. Glob characters in a trailing-slash declaration are literal directory-name characters; directory prefixes are not glob expansion.
-2. A declaration with no glob metacharacters and no trailing slash matches one exact path.
-3. Otherwise use Go's slash-based `path.Match` against the whole projected changed path. `*` matches within one path component; `?`, character classes, and backslash escapes have their `path.Match` meanings. `**` has no recursive meaning. Use a trailing-slash directory declaration for arbitrary depth. There is no shell expansion, Git pathspec magic, brace expansion, negation, or filesystem traversal.
-4. Reject absolute paths, empty paths, NUL, and empty, `.` or `..` slash components, allowing only the final empty component that spells a directory. Validate glob syntax with `path.Match`. Require a literal project prefix before matching in a nested installation. An unmatched pattern is lawful and authorizes nothing.
+1. A declaration ending in `/` is a literal directory prefix. Validate its components, then stop. Do **not** call `path.Match` to validate it. All glob characters and backslashes in this branch are literal. For example, `metasystem/a[/` is valid and permits descendants of the literal directory `a[`.
+2. Every other declaration is a `path.Match` pattern. Validate its syntax with that function, then use it against the whole changed path. An ordinary filename matches exactly. `*` stays within one component; `?`, classes, and backslash escapes use Go's slash-based pattern grammar. `**` has no recursive meaning. There is no shell expansion, Git pathspec expansion, brace expansion, or negation.
 
-Directory and glob matching are new behavior. Today's `diffBoundary` comparison uses exact membership in a map after projection; it does not expand directories or globs (`internal/validate/conformance.go:798-810`). Do not change that return dialect. A builder must still list concrete touched paths.
+An unmatched pattern is valid and allows nothing. No declaration needs to exist on disk. A directory prefix includes arbitrary descendant depth and respects its final slash: `internal/validate/` cannot match `internal/validator.go`.
 
-Add `func briefBoundaryMatches(declaration, changedPath string) bool` in `internal/validate/brief_bounds.go`. Project declarations with the existing `projectDeclaration`, then use this matcher. Do not move prefix policy into the CLI or shell. A declaration outside the installation refuses as `BRIEF_BOUNDS_INVALID: Boundary: <existing projectDeclaration diagnostic>`. Syntax is admitted by dispatch; installation scope is judged by conformance, which already derives the installation prefix (`internal/validate/conformance.go:242-246`).
+Perform nested projection inside `conformanceRun.briefBoundsViolations`, before calling `briefBoundaryMatches`:
 
-Boundary is output permission, not cited authority. Teach `extractBriefAuthorityPaths` to treat a recognized Boundary line as output-only. A path also cited as an input elsewhere must still exist. This layers on its existing input/output accounting, where an input citation wins (`internal/dispatch/brief.go:155-167`). It prevents a new allowed file from being rejected by `ValidateBriefAuthority`'s committed-tree existence check (`internal/dispatch/brief.go:83-104`). Do not exempt the same path from genuine input citations, and do not require directories or globs to exist at admission.
+1. For each declaration, remember whether it ended in `/` before projection. Call `r.projectDeclaration` once. An outside-project declaration returns a typed `BriefBoundsRefusal` with Header `Boundary` and the existing projection diagnostic. Current projection requires the literal installation prefix and strips it exactly once (`internal/validate/conformance.go:284-293`).
+2. For each changed repository path, first test the raw prefix `r.installPrefix + "/"` when the installation is nested. A sibling fails immediately. Add its original repository spelling to the Boundary offenders without calling the matcher.
+3. Only after that guard, call `r.installationPath(repositoryPath)`. Match that project-relative path against the projected declarations. At a root installation both projections are identities.
+4. A trailing-slash declaration equal to `metasystem/` projects to the empty string with its directory flag still true. It permits every **inside-project** path. The prior sibling guard prevents it from permitting a sibling. A declaration `metasystem/metasystem/a.go` projects to `metasystem/a.go`, with one prefix retained.
+5. Keep original repository strings for diagnostics. Pass project paths to the existing cumulative return check.
+
+Make `installationPath` a literal, single-prefix removal for Git paths. Today it also replaces backslashes and trims slashes (`internal/validate/conformance.go:88-95`). That would corrupt the identity promised above. Its only current call is waiver classification over repository paths (`internal/validate/conformance.go:97-107`). Keep that caller and its waiver policy. Test ordinary and unusual Git spellings at this shared helper, plus the existing nested waiver guard.
+
+Use `briefBoundaryMatches(projectDeclaration, projectPath string, directory bool) bool` in `internal/validate/brief_bounds.go`. The explicit directory flag keeps whole-project declarations unambiguous. Current return matching uses exact map membership (`internal/validate/conformance.go:798-810`). Keep directories and patterns out of that return dialect.
+
+Authority extraction shares the decoded identity. A live Boundary line contributes no input citations. Skip the whole line, so neither its member nor a fragment can become an input. Do not use Boundary permission to suppress a citation on another line. Existing input use wins over output use (`internal/dispatch/brief.go:155-167`).
+
+Recognize an inert example by this exact lexical form: one or more leading ASCII spaces or tabs followed immediately by `Boundary:` or `Ceiling:`. Skip that entire line in authority extraction and ignore it in bounds parsing. This does not set output permission or suppress input use on another line. Examples in templates use this indented form. Fences alone are insufficient. A `>` quote is not this exemption; indent the example instead. The current extractor scans all lines without a fence state (`internal/dispatch/brief.go:128-160`).
+
+For a brief with a valid pair, extend authority token extraction on other lines as follows. Recognize complete single-backtick path spans and complete JSON string literals before the old token scanner. JSON escapes are decoded with the same string decoding as Boundary members. Backtick contents are literal, except that a complete JSON string inside the span is decoded. Use JSON escapes for embedded newlines. Preserve spaces, commas, quotes, tabs, and backslashes. Consume the whole recognized span before scanning the rest of the line, so it cannot also emit fragments.
+
+Apply the existing directory eligibility rule to a structured citation's decoded first components. Also recognize a structured citation equal to a decoded concrete Boundary member, including a repository-root filename or a file under a new directory. This makes a separately cited exact member an input even when its parent is absent. Directory and pattern declarations themselves remain output-only. Keep the old scanner for ordinary unquoted citations and headerless prose. It currently restricts tokens and directory eligibility (`internal/dispatch/brief.go:13-24`, `internal/dispatch/brief.go:141-154`). Do not claim arbitrary unquoted prose containing whitespace is an unambiguous path citation.
+
+Use the existing input/output accounting after decoding. Input spans on Workspace output lines or after Create retain those existing output classifications; an ordinary input citation elsewhere wins. The committed-tree and runtime-artifact lookup owners stay unchanged (`internal/dispatch/brief.go:83-104`). Special-character tests must assert the full `MissingPaths` string, then commit the exact file and prove admission. A fragments-only assertion is insufficient.
+
+Named witnesses for these decisions include `TestBriefBoundaryNestedPathProjection`, `TestBriefBoundaryWholeProjectExcludesSibling`, `TestInstallationPathPreservesGitIdentity`, `TestBriefBoundsTrailingSlashIsLiteral`, `TestBriefAuthoritySpecialCharacterInput`, and `TestBriefAuthorityIndentedBoundsExampleIsInert`. Their independent cases are listed in the rule table.
 
 ## Which brief binds a round
 
-Use the seat-authored task direction of the supplied implementer job. The dispatcher already composes both initial briefs and follow-up messages as the `task-direction` slot (`internal/dispatch/composition.go:268`, `scripts/agents/dispatch.sh:2771-2777`). It records source byte ranges and digests (`internal/dispatch/composition.go:380-390`) and persists each round's prompt and composition (`scripts/agents/dispatch.sh:1924-1929`, `scripts/agents/dispatch.sh:2883-2888`). Reuse that evidence. Do not add a job field, a return field, a second brief snapshot, or a new artifact schema.
+Use the seat-authored task direction of the supplied implementer job. Current composition stores it as source `caller:brief` in slot `task-direction` (`internal/dispatch/composition.go:268`). Delivered source ranges and digests are recorded (`internal/dispatch/composition.go:380-390`). Initial and follow-up prompts and compositions are persisted per round (`scripts/agents/dispatch.sh:1924-1929`, `scripts/agents/dispatch.sh:2883-2888`).
 
-Add `func (r *conformanceRun) reviewBriefBounds() (dispatch.BriefBounds, error)` in `internal/validate/brief_bounds_source.go`:
+Add `func (r *conformanceRun) reviewBriefBounds() (dispatch.BriefBounds, error)` in `internal/validate/brief_bounds_source.go`. Resolve `r.rootJob` and `r.roundText` from the supplied job. Do not select the latest round in the chain.
 
-- Resolve only the supplied job's round. Do not choose the numerically latest round in the chain.
-- When `composition.json` exists, require exactly one source with slot `task-direction` and source `caller:brief`. Read only its delivered byte range from `prompt.md`. Validate the range and its DeliveredDigest before parsing that section. The section includes a generated heading and blank lines, which do not look like either new header; its boundaries are defined by the existing renderer (`internal/dispatch/composition.go:368-390`).
-- If task-direction is referenced, require one corresponding reference and read it through `dispatch.ReadVerifiedReference`. Do not parse the reference stub. That function checks location, regular-file status, byte count, and digest (`internal/dispatch/references.go:22-49`).
-- For a legacy root round without composition, read `artifacts/agents/<rootJob>/brief.md`. Initial dispatch already stores this copy (`scripts/agents/dispatch.sh:1918`). A legacy follow-up without composition uses its `prompt.md`, matching the existing legacy task-direction fallback (`internal/validate/conformance.go:925-934`). If both legacy inputs are absent, treat the historical record as having no headers. Other read failures and malformed present metadata refuse. No present but unreadable source is converted into an unbounded brief.
-- Parse through `dispatch.ParseBriefBounds`. Do not interpret headers found in prior-brief, prior-return, critic instructions, or the implementer's return. The existing successor reader returns the entire composed prompt when the task is inline, so it cannot be reused unchanged for this decision (`internal/validate/conformance.go:942-954`). Leave that reader's exhaustion behavior alone.
+When the round's `composition.json` exists:
 
-Each round's headers apply independently. A headerless follow-up has today's behavior. There is no hidden inheritance, union of brief boundaries, addition of ceilings, or automatic reset to a default. This is the literal optional-header contract. The seat must repeat Boundary and Ceiling in every bounded correction brief. Its values describe the entire candidate still awaiting landing, including earlier rounds. A focused follow-up Boundary that omits an earlier still-changed file refuses that candidate. A deliberate scope amendment is a new seat-authored brief for the new round, never an edit of old round evidence.
+- Require readable, valid metadata for that job and round and exactly one `task-direction` source whose Source is `caller:brief`. Require a valid range within `prompt.md` and verify its DeliveredDigest before using it.
+- If a task-direction reference exists, require exactly one. Join it to the selected source by **slot, digest, and byte count**: Reference.Slot equals Source.Slot, Reference.Digest equals Source.SourceDigest, and Reference.Bytes equals Source.SourceBytes. The slot comparison is the reference selector itself; do not add a redundant second slot comparison that cannot have an independent remove-one witness. Also require a nonempty repository-relative Path without parent components, an absolute OpenPath, and OpenPath's slash spelling ending in `"/" + Path`. These are the existing binding facts in `internal/dispatch/build.go:1050-1077`.
+- Then call `dispatch.ReadVerifiedReference(r.root, reference)`. It checks root containment, regular-file status, actual bytes, and digest (`internal/dispatch/references.go:24-49`). It does not perform the source join or the Path/OpenPath binding. The bounds reader must do those checks before the call.
+- With no task-direction reference, require an inline source body that matches SourceBytes and SourceDigest. The renderer uses `# Task Direction\n\n`, the raw body, a newline if needed, and one final newline (`internal/dispatch/composition.go:366-390`, `internal/dispatch/composition.go:555-562`). Recover the body by that envelope and SourceBytes, check its digest, and verify the envelope. Parse only the recovered body. A missing reference must not let a reference stub masquerade as a headerless inline brief.
+- With a reference, parse only the verified body. Do not parse the stub or any other slot.
 
-This choice needs to be explicit because the current return check unions immutable declarations across rounds (`internal/validate/conformance.go:754-817`), while a cap continuation inherits a worktree and is told to declare its predecessor's changes too (`internal/dispatch/capcontinuation.go:22-28`, `internal/dispatch/capcontinuation.go:89`). Update the cap paragraph to distinguish the predecessor's missing return declaration from the brief's allowed paths, and to tell the builder that the current brief's limits cover the whole candidate. It must not promise that adding a path to diffBoundary grants permission.
+Use the existing SHA-256 helper for byte comparisons (`internal/validate/recertification.go:115-118`). Validate only the evidence needed for this source selection; do not create another full job admission validator or change the composition schema.
+
+For a legacy round with no composition, select the root's `brief.md` if the supplied job is the root. Otherwise select that round's `prompt.md`. Call `dispatch.ReadBriefBounds` on that selected file. Initial dispatch stores the root copy (`scripts/agents/dispatch.sh:1918`); the existing successor reader has the legacy prompt fallback (`internal/validate/conformance.go:925-934`). If the selected legacy file is absent, return unbounded. An unreadable present file, malformed present composition, invalid source, or broken reference refuses. Do not fall back from bad present evidence to legacy evidence.
+
+Preserve `BriefBoundsRefusal` from parsing. Wrap other source failures at review as `BRIEF_BOUNDS_UNREADABLE`. Keep the exhaustion reader unchanged; its inline branch currently returns the whole prompt (`internal/validate/conformance.go:942-960`).
+
+Each round stands alone. A headerless follow-up is unbounded. A partial follow-up refuses. Do not inherit a prior pair, union brief boundaries, or add ceilings. A bounded correction brief repeats both headers for the whole still-unlanded candidate. If it omits an earlier changed file or lowers Ceiling below the cumulative count, review refuses. A scope amendment uses a new round's brief.
+
+Return declarations remain cumulative (`internal/validate/conformance.go:754-817`). Cap continuation currently tells the builder to declare the predecessor's changes too (`internal/dispatch/capcontinuation.go:22-28`, `internal/dispatch/capcontinuation.go:89`). Clarify that this is the return's concrete declaration and that the current brief's pair governs the whole candidate. Adding a path to diffBoundary grants no permission.
 
 ## Exact diff and line count
 
-Let `T` be the invoking target checkout's `HEAD^{commit}`. Let `B` be `git merge-base T HEAD`, resolved in the implementer worktree. This is already `r.boundaryBase`, not `r.baseSha` (`internal/validate/conformance.go:232-241`). Let `R` be one repository-level `gittree.Workspace.Snapshot("HEAD")` of the returned worktree. Derive the project reviewed tree from that same tree through `r.projectWorkspace().TreeOf(R)`. `TreeOf` peels the installation subtree; Snapshot uses an isolated index and includes working-tree changes (`internal/gittree/gittree.go:199-228`, `internal/gittree/gittree.go:246-255`).
+Let T be the target checkout's HEAD commit. Let B be its merge-base with the implementer worktree's HEAD. Current conformance stores B as `r.boundaryBase` (`internal/validate/conformance.go:232-241`).
 
-The bounded diff is the repository tree of `B` to `R`. It includes committed changes since B, staged and unstaged edits, deletions, and untracked unignored files. Ignored untracked files stay out; tracked ignored files stay in. Mode changes, symlinks, and gitlinks remain changed paths. These are the snapshot semantics already documented in `internal/gittree/gittree.go:246-254`. Snapshot once, then use those fixed tree IDs for paths, numstat, and the project patch. This also keeps the count and reviewedTree on the same candidate. Today's review takes separate project and repository snapshots (`internal/validate/conformance.go:368-376`); replace those two calls with the one repository snapshot and subtree derivation in the enforcement unit.
+Capture one repository-level `gittree.Workspace{Dir: r.workspace}.Snapshot("HEAD")` as R. Derive the project tree with `r.projectWorkspace().TreeOf(R)`. Use B's repository tree and R for repository paths and numstat. Use B's project tree and R's project subtree for the canonical patch, project paths, and reviewedTree.
 
-Add this tree primitive in `internal/gittree/numstat.go`:
+TreeOf can peel the installation subtree from a supplied tree (`internal/gittree/gittree.go:199-228`). Snapshot seeds an isolated index from HEAD and runs add -A (`internal/gittree/gittree.go:236-276`). Its candidate therefore includes committed changes since B, then the current working-tree contents of tracked and untracked unignored files. A staged version superseded by an unstaged edit is not counted twice. Tracked ignored files remain included. Mode, symlink, gitlink, and binary changes remain changed paths. Retain these existing snapshot semantics.
+
+Replace review's current two Snapshot calls (`internal/validate/conformance.go:368-376`) with the single repository snapshot for both bounded and headerless review. No second candidate capture may supply any review fact.
+
+Add in `internal/gittree/numstat.go`:
 
 ```go
 func (w Workspace) ChangedLines(fromTree, toTree string) (int64, error)
 func changedLinesFromNumstat(data []byte) (int64, error)
 ```
 
-Run through the existing bounded, environment-scrubbed `Workspace.git` runner:
+Use Workspace.git to run:
 
 ```text
 git diff --numstat -z --no-renames --no-ext-diff --no-textconv --no-color --ignore-submodules=none <repository-tree-of-B> <R> --
 ```
 
-Parse NUL records. Split each record at its first two tabs only. Add the decimal additions and deletions with checked 64-bit arithmetic. Skip precisely `-\t-` binary rows. Reject any other malformed row or arithmetic overflow. Never turn an execution error or an uncountable row into zero. Renames count as deletion plus addition, consistent with `Workspace.Diff` and `ChangedPaths` (`internal/gittree/gittree.go:357-376`). Paths with tabs or newlines cannot corrupt the count. Boundary still covers binary paths even though Ceiling excludes their contents.
+The runner already pins configuration, scrubs Git steering variables, and bounds execution (`internal/gittree/gittree.go:90-99`, `internal/gittree/gittree.go:121-141`). Do not add another production Git runner.
 
-The addition-plus-deletion precedent is the prose waiver's numstat sum (`internal/validate/conformance.go:617-631`). Its rejection of binaries belongs to that waiver and stays unchanged (`internal/validate/conformance.go:632-637`). The new ChangedLines function serves this new check; do not refactor the waiver in this goal. The tier-1 landing class also stays unchanged: its separate contract requires MaxFiles 3 and MaxChangedLines 40 (`internal/landing/observe.go:1286-1290`). A Ceiling of 400 grants no tier-1 waiver.
+Parse complete NUL-terminated records, splitting only at the first two tabs. An empty output means zero. Require a nonempty pathname and two nonnegative decimal counts, or exactly `-\t-` for a binary row. Skip only that binary row form. Add both counts with checked int64 arithmetic. Reject incomplete records, malformed counts, and overflow. A Git failure is an error, never zero.
+
+Renames count as deletion plus addition. This follows the existing no-renames diff and path operations (`internal/gittree/gittree.go:362-376`). Binary contents cost zero text lines, while their paths remain bounded. Count only when a valid pair is present. A headerless review makes no numstat call.
+
+The prose waiver separately sums lines and refuses binary or uncountable input (`internal/validate/conformance.go:617-637`). Tier 1 separately limits delivery to three files and 40 changed lines (`internal/landing/observe.go:1286-1290`). Change neither policy.
 
 ## Review enforcement and refusal text
 
-Add two concrete error types in `internal/validate/brief_bounds.go`:
+Add in `internal/validate/brief_bounds.go`:
 
 ```go
 type BriefBoundaryViolation struct {
     Paths []string
     ChangedLines int64
 }
-func (e *BriefBoundaryViolation) Error() string
 type BriefCeilingViolation struct {
     Paths []string
     ChangedLines, Ceiling int64
 }
+func (e *BriefBoundaryViolation) Error() string
 func (e *BriefCeilingViolation) Error() string
 func (r *conformanceRun) briefBoundsViolations(
     bounds dispatch.BriefBounds, repositoryPaths []string, changedLines int64,
 ) ([]error, error)
 ```
 
-The second return is a malformed declaration or other inability to evaluate, rather than a limit violation. Keep a typed dispatch parser error intact until the CLI rendering boundary. Use the following exact stderr forms, including the existing conformance prefix:
+The second return reports inability to evaluate, including a malformed projected declaration. Preserve concrete parser and violation types until rendering. Exact stderr examples are:
 
 ```text
 conformance failure: BRIEF_BOUNDARY_EXCEEDED: changed paths outside Boundary: ["extra.txt"]; changedLines=1 additions plus deletions
 conformance failure: BRIEF_CEILING_EXCEEDED: changedLines=3 exceeds Ceiling=2 additions plus deletions; changedPaths=["source.txt"]
 ```
 
-For the boundary violation, Paths contains every changed repository path that matches no declaration. For the ceiling violation, Paths contains every changed repository path in the counted candidate, including binary paths with zero text contribution. Sort and deduplicate each list, then JSON-encode it without truncation. The count is the total candidate count, not just the out-of-bound files' subtotal. Report both violations when both fail, Boundary first. Inability to read the brief uses `conformance failure: BRIEF_BOUNDS_UNREADABLE: <detail>`. Inability to count uses `conformance failure: BRIEF_LINES_UNREADABLE: <detail>`. These return exit 1 and produce no success artifact.
+Boundary.Paths includes every actual repository path outside the brief. Ceiling.Paths includes every changed repository path, including binary paths. Both carry the total text count for the repository candidate. Sort and deduplicate diagnostic arrays, encode as JSON, and never truncate. If both checks fail, report Boundary first and Ceiling second. Existing project and cumulative policy diagnostics follow.
 
-Place this in `reviewStage`, after snapshot and path computation and before `diff.patch` or `review.json` is written. Keep `cumulativeBoundaryViolations(projectPaths)` as the exact-file declaration check. Its current call is at `internal/validate/conformance.go:392`; artifact writes follow at `internal/validate/conformance.go:421-425`.
+Read bounds before evaluation. Compute paths and the count from the fixed trees, then collect policy failures before either success artifact is written. For bounded review, a sibling yields both the typed Boundary failure and the existing project-fence failure. It also contributes to the candidate count. The whole-project declaration cannot hide it. Keep the existing cumulative check over project paths, including its protected plans and control-plane rules (`internal/validate/conformance.go:700-725`, `internal/validate/conformance.go:798-817`).
 
-For a bounded brief, collect the repository-wide path set from the same base and R using `Workspace.ChangedPaths`. Run the new outer checks and the existing project and control-plane checks, then report all applicable policy violations. Move the existing outside-project early policy return into this collected refusal path so a sibling path cannot hide other offending paths or their count. A failure to compute facts still stops immediately. With neither header, keep the existing outside-project refusal ordering and avoid the extra numstat call. The existing project fence currently returns before the declared-boundary check (`internal/validate/conformance.go:377-392`); preserving its policy while collecting its diagnostic is the only precedence change.
+For headerless review, preserve the existing outside-project-first refusal and existing immutable-evidence precedence. Current outside-project refusal precedes the cumulative check (`internal/validate/conformance.go:377-400`). The count branch is absent on this path.
 
-Count when either header is present, because a Boundary refusal must also name the count. The extra count is diagnostic when Ceiling is absent; it does not create a size limit. Pass repository paths to the new check and project paths to the old one. A repository path outside the installation is both outside any valid brief declaration and prohibited by the existing project fence. A broad Boundary never overrides trusted plans or control-plane protection (`internal/validate/conformance.go:700-717`).
+Use `conformance failure: BRIEF_BOUNDS_UNREADABLE: <detail>` for source failures and `conformance failure: BRIEF_LINES_UNREADABLE: <detail>` for count failures. Parser errors retain `BRIEF_BOUNDS_INVALID`. Stop immediately when facts cannot be computed. These failures return exit 1 and write no new success artifacts. Do not fabricate a count to complete a policy message.
 
-Do not compare the two declaration sets for containment. A wider diffBoundary with only permitted actual changes passes this new check. A narrower Boundary refuses actual changed paths even when the implementer declared them. A declared-but-unchanged outside path does not by itself refuse. No diffBoundary-versus-Boundary refusal occurs before computing the diff. The existing wrong-prefix refusal for a return declaration still applies independently (`internal/validate/conformance.go:798-803`).
+Evaluate actual changed paths. Do not require diffBoundary to be contained in Boundary. An unchanged extra return declaration is harmless if its existing dialect is valid. An actual changed path inside Boundary must still appear in the cumulative concrete return declaration. An actual changed path outside Boundary refuses even if the return declares it.
 
-The successful review artifact retains exactly `diffArtifact`, `implementerJob`, and `reviewedTree`; both the writer and a focused test enforce that shape today (`internal/validate/conformance.go:403-407`, `internal/validate/conformance_review_shape_test.go:10-32`). Do not put violations into a successful review.json. Do not overwrite earlier evidence. An identical successful repeat reuses the existing bytes (`internal/validate/conformance.go:413-419`). If a later bounded invocation violates a limit while old review evidence exists, print the typed limit violations plus the existing immutable-review diagnostic and leave both artifacts untouched. Headerless invocations retain their existing immutable-review behavior (`internal/validate/conformance.go:361-365`, `internal/validate/conformance.go:393-400`).
+Successful review.json keeps exactly diffArtifact, implementerJob, and reviewedTree. Current writing and shape tests establish that contract (`internal/validate/conformance.go:403-407`, `internal/validate/conformance_review_shape_test.go:10-32`). Identical repeat review reuses existing bytes (`internal/validate/conformance.go:413-419`). On a bounded failure with prior evidence, emit the typed failure before the existing immutable-review diagnostic and preserve both files. The old generic failure closure currently masks new failure detail when a review exists (`internal/validate/conformance.go:361-365`); bounded failures need an explicit path around that masking. Successful changed evidence still refuses overwrite.
 
-Register the new refusal codes in `internal/refusal/register.go`. The parser and unreadable-input codes use the existing Question classification precedent for `BRIEF_AUTHORITY_REFUSED` (`internal/refusal/register.go:69`). Limit violations use Agent with the remedy `dispatch.sh follow-up with a corrected brief or candidate, then validate conformance --stage review`, Commands 2. The register requires agent refusals to name a remedy or a known defect (`internal/refusal/register_test.go:71-86`). This is a diagnostic remedy, not a new approval flow.
+Register `BRIEF_BOUNDS_INVALID`, `BRIEF_BOUNDS_UNREADABLE`, and `BRIEF_LINES_UNREADABLE` as Question. `BRIEF_AUTHORITY_REFUSED` is the existing precedent (`internal/refusal/register.go:80`). Register the two exceeded codes as Agent with remedy `dispatch.sh follow-up with a corrected brief or candidate, then validate conformance --stage review` and Commands 2. Agent rows need a remedy or named defect (`internal/refusal/register_test.go:71-86`). No new approval step is introduced.
 
 ## The seat's pre-read step
 
-From the merge-target installation, after the builder has returned:
+From the merge-target installation, after the builder returns, run:
 
 ```sh
 metasystem validate conformance --stage review --job <returned-implementer-job>
 ```
 
-The seat reads stderr and the exit code before dispatching the critic. Exit 0 admits the candidate to the read. Exit 1 stops that dispatch and returns the named violations to the builder. Exit 2 is a CLI usage error to repair at the seat. These codes already belong to the verb (`cmd/metasystem/validate_verbs.go:276-299`, `cmd/metasystem/validate_verbs.go:343-352`). The command must run from the target checkout, not the implementer worktree (`internal/validate/conformance.go:227-230`).
+Read stderr and the exit code before dispatching the critic. Exit 0 permits that read. Exit 1 stops it and returns the violations for correction. Exit 2 means repair the seat's command. The CLI already relays these outcomes (`cmd/metasystem/validate_verbs.go:276-299`, `cmd/metasystem/validate_verbs.go:343-352`). Conformance refuses invocation from the implementer checkout (`internal/validate/conformance.go:227-230`).
 
-Yes, the seat can run it alone today. Review resolves an implementer record, return, workspace, and base, then branches directly into reviewStage without resolving a critic (`internal/validate/conformance.go:139-193`, `internal/validate/conformance.go:214-249`). The fixture already calls review before constructing any critic (`scripts/agents/conformance-fixtures.sh:175-179`). No new verb, flag, stage, or critic placeholder is needed.
+Review resolves the implementer and enters reviewStage without a critic record (`internal/validate/conformance.go:139-193`, `internal/validate/conformance.go:214-249`). The existing fixture does the same (`scripts/agents/conformance-fixtures.sh:175-179`). No critic placeholder is needed.
 
-Update `docs/orchestration.md` at the implementation-to-critique step and `skills/code-critique/SKILL.md` at Layer 1. They currently put implementation before critic dispatch, and the skill tells the reader to run conformance (`docs/orchestration.md:36-42`, `skills/code-critique/SKILL.md:27-31`). Require the seat to obtain exit 0 first. The critic reads the resulting canonical diff and may rerun the same command, which is idempotent for identical evidence. It still checks non-goals, intent, proof quality, and unrelated behavior inside allowed files. Mechanical bounds cannot judge those semantic questions.
+Place this binding sentence in both `docs/orchestration.md` at implementation-to-critique and `skills/code-critique/SKILL.md` at Layer 1:
 
-This is an enforced review gate with an explicit seat ordering rule. It does not add a second diff generator or claim that every critic launch is newly fenced in dispatch. Missing review artifacts can currently yield no read subject instead of a dispatch error (`internal/dispatch/read_subject_compute.go:24-26`, `internal/dispatch/read_subject_compute.go:134-146`). Changing that separate admission contract is outside this goal. The seat uses this command before spending the read, as DONE requires.
+> Before dispatching a code critic, the seat must run `metasystem validate conformance --stage review --job <returned-implementer-job>` from the merge-target installation, read stderr, and obtain exit 0; exit 1 returns the violations for correction, and exit 2 requires fixing the command.
+
+Those current instruction sites are `docs/orchestration.md:36-42` and `skills/code-critique/SKILL.md:25-31`. Replace the skill's claim that review checks only return declarations. Keep the critic's semantic review of acceptance criteria, non-goals, unrelated work, and proof. The critic consumes the canonical patch and reviewedTree and can rerun identical review.
+
+`TestBriefBoundsSeatOrderingInstructions` reads each named section independently and requires that command, actor, ordering, and exit mapping. Its remove-one runs delete the binding sentence from one owner at a time. This proves the shipped instruction exists. It does not prove that an arbitrary seat obeyed it. The seat's actual pre-read command result is the execution evidence.
+
+This design adds no automatic critic-launch gate. Missing review artifacts currently return an absent read subject in some cases (`internal/dispatch/read_subject_compute.go:24-26`, `internal/dispatch/read_subject_compute.go:134-146`). Keep that separate admission behavior.
 
 ## Reader inventory and seams
 
 | Current reader or writer | Decision and reason |
 | --- | --- |
-| `BriefMode`, `internal/dispatch/brief.go:41-55` | Changes. Validate optional bounds after the unchanged required mode rule. |
-| `ValidateBriefAuthority` and `extractBriefAuthorityPaths`, `internal/dispatch/brief.go:62-104`, `internal/dispatch/brief.go:121-171` | Changes. Validate optional syntax in authority-only admission; Boundary lines are outputs, while a separate input citation still wins. |
-| `runDispatchBriefMode`, `cmd/metasystem/dispatch_verbs.go:1993-2027` | Left alone because its existing error and stdout relay suffices. Add focused CLI tests through this verb. |
-| `brief_mode`, `brief_authority`, initial and follow-up call sites, `scripts/agents/dispatch.sh:858-864`, `scripts/agents/dispatch.sh:1542`, `scripts/agents/dispatch.sh:1655`, `scripts/agents/dispatch.sh:2643` | Changes only to the misleading initial failure suffix. Keep shell parsing absent. Both admission paths reach the Go parser. |
-| `ComposeRolePacket` source records and references, `internal/dispatch/composition.go:268`, `internal/dispatch/composition.go:380-390` | Left alone because they already preserve the current round's task direction. The new conformance reader consumes them. |
-| `successorTaskDirection`, `internal/validate/conformance.go:914-960` | Left alone because it owns exhaustion evidence, including its legacy full-prompt fallback. New bounds use the specific source range. |
-| `missionStream`, `internal/validate/conformance.go:827` | Left alone because it reads the root brief for stream accounting, not the current round's allowed changes. |
-| `workingMode` and `workingModeFrom` in the fake adapter, `internal/adapter/fake.go:137-167` | Left alone because they derive return mode, not admission scope. Fake return production at `internal/adapter/fake.go:111` keeps its empty exact-path declaration. |
-| Brief and follow-up templates, `scripts/agents/templates/brief.md:1`, `scripts/agents/templates/brief.md:36`, `scripts/agents/templates/follow-up.md:1-18` | Changes. Explain optional headers near Working Mode and explicitly repeat cumulative limits in bounded follow-ups. Use indented examples, not live unfilled optional placeholders that would break mode-only callers. |
-| Template mode consumers, `scripts/agents/fingerprint-harness.sh:187`, `scripts/agents/adapters/fake.sh:449-453`, `internal/adapter/selftestrun.go:135`, `internal/steward/stage.go:102`, `internal/steward/stage.go:155` | Left alone because missing new headers remains lawful. Their mode rewriting or emission stays valid. |
-| `scripts/validate-metasystem.sh:1618` and return-schema checks at `scripts/validate-metasystem.sh:1967-2010` | Left alone because mandatory headers and return schemas do not change. New headers are optional. |
-| `projectDeclaration` and `cumulativeBoundaryViolations`, `internal/validate/conformance.go:284-293`, `internal/validate/conformance.go:724-819` | Left alone as policy owners. The review-stage caller adds the outer check; existing exact declarations still apply. |
-| `reviewStage`, `internal/validate/conformance.go:355-428` | Changes. One frozen repository snapshot supplies the project view, new bounds, and existing diff. Refusals occur before success artifacts. |
-| `runValidateConformance`, `cmd/metasystem/validate_verbs.go:280-352` | Changes only to help text. Keep verb, flags, output relay, and exit codes. |
-| Recertification boundary consumers, `internal/validate/recertification.go:809`, `internal/validate/recertification.go:1182` | Left alone because this goal limits review candidates, not the size of later target-side recertification. Do not broaden the shared cumulative-declaration helper. |
-| `CapContinuationText`, `internal/dispatch/capcontinuation.go:26`, `internal/dispatch/capcontinuation.go:89` | Changes its wording and matching test. The return still lists the whole chain; that list grants no extra brief scope. |
-| `followUpChainPaths`, `internal/dispatch/followup_rebase.go:123-149` | Left alone because concrete return paths identify possible rebase overlap. Permission patterns would be the wrong input for that decision. |
-| `requireDesignCritiquePairing`, `internal/dispatch/review_reference.go:313-325` | Left alone because it requires one exact returned design artifact. An allowed directory does not replace that identity. |
-| `returnChecker.checkDiffBoundary`, `internal/validate/returncomplete.go:239-302` | Left alone because it checks and normalizes return path spelling. It neither owns the brief nor computes its diff. |
-| `TestAdjudicateTurnRepairsBareImplementerDiffBoundaryAtAcceptance`, `internal/adapter/adjudicate_test.go:205-260` | Left alone because acceptance-time path repair still precedes conformance. Rerun the adapter package as a seam check; do not extend this test into another diff owner. |
-| Implementer role and schema, `scripts/agents/roles/implementer.md:3-13`, `scripts/agents/schemas/implementer.schema.json:7`, `scripts/agents/schemas/implementer.schema.json:38` | Role prose changes to explain allowed scope versus actual declarations. Schema stays unchanged because diffBoundary remains an array of concrete paths. |
-| `role-packets.json`, `scripts/agents/role-packets.json:40-43`, `scripts/agents/role-packets.json:54-59` | Left alone because it already selects the critic skill and implementer orchestration guidance. Edit those selected owners, not the recipe. |
-| Code-critique skill, `skills/code-critique/SKILL.md:29-31` | Changes. Seat checks mechanical bounds before dispatch; critic retains semantic conformance and defect review. |
-| Prose waiver and tier-1 landing class, `internal/validate/conformance.go:617-637`, `internal/landing/observe.go:1286-1290` | Left alone because these are distinct waiver and landing contracts. Passing the new outer limits grants neither. |
+| BriefMode and authority extraction, `internal/dispatch/brief.go:41-104`, `internal/dispatch/brief.go:121-171` | Change admission and bounded citation handling. Mode and existing input precedence remain. |
+| Brief-mode CLI, `cmd/metasystem/dispatch_verbs.go:1993-2027` | Keep flags, mode stdout, and authority-only behavior; test the new errors through this relay. |
+| Shell preflight, `scripts/agents/dispatch.sh:858-864`, `scripts/agents/dispatch.sh:1542`, `scripts/agents/dispatch.sh:1655`, `scripts/agents/dispatch.sh:2643` | Change the initial suffix. Initial and follow-up routes use Go; add no shell parser. |
+| Composition production, `internal/dispatch/composition.go:268`, `internal/dispatch/composition.go:358-390` | Keep source and reference format. Consume it with explicit binding checks. |
+| Composition admission, `internal/dispatch/build.go:1042-1077`, `internal/dispatch/build.go:1099-1103` | Keep the existing admission validator. Its source/reference facts also bind review's narrow reader. |
+| Successor task direction and mission stream, `internal/validate/conformance.go:914-960`, `internal/validate/conformance.go:827-839` | Leave exhaustion and stream policy alone. Neither chooses review bounds. |
+| Review and projection, `internal/validate/conformance.go:88-107`, `internal/validate/conformance.go:276-428` | Change literal path projection, candidate capture, and bounded review evaluation in their owning units. Keep the project fence. |
+| Cumulative return check and recertification, `internal/validate/conformance.go:724-819`, `internal/validate/recertification.go:809`, `internal/validate/recertification.go:1182` | Keep exact declarations and recertification policy. New brief limits enter reviewStage only. |
+| Follow-up overlap and design pairing, `internal/dispatch/followup_rebase.go:123-149`, `internal/dispatch/review_reference.go:313-325` | Leave concrete return path readers unchanged. A permission pattern cannot replace a changed file or an exact design identity. |
+| Return normalization, `internal/validate/returncomplete.go:239-302` | Leave spelling repair unchanged. It does not own permission or the actual diff. |
+| Cap paragraph, `internal/dispatch/capcontinuation.go:89` | Clarify cumulative candidate bounds and concrete return declarations. |
+| Implementer role and schema, `scripts/agents/roles/implementer.md:3-13`, `scripts/agents/schemas/implementer.schema.json:7`, `scripts/agents/schemas/implementer.schema.json:38` | Clarify the role text. Preserve schema and concrete diffBoundary. |
+| Brief and follow-up templates, `scripts/agents/templates/brief.md:1-36`, `scripts/agents/templates/follow-up.md:1-18` | Explain paired optional headers, inert examples, and repeating the whole candidate's limits. |
+| Selected instruction owners, `scripts/agents/role-packets.json:40-43`, `scripts/agents/role-packets.json:54-59` | Keep the recipe. Update the instruction documents it already selects. |
+| Fake adapter, `internal/adapter/fake.go:109-112`, `internal/adapter/fake.go:137-167` | Leave simulated returns and mode discovery alone. Admission owns bounds. |
+| Fake reference discovery and tamper hook, `scripts/agents/adapters/fake.sh:62-67`, `scripts/agents/adapters/fake.sh:231-236` | Leave alone. They read or alter reference evidence for fixtures, not header semantics. |
+| Template mode emitters, `scripts/agents/fingerprint-harness.sh:187`, `scripts/agents/adapters/fake.sh:449-453`, `internal/adapter/selftestrun.go:135`, `internal/steward/stage.go:102`, `internal/steward/stage.go:155` | Leave alone. Mode-only callers remain valid; templates get no live optional placeholders. |
+| Static header and return audits, `scripts/validate-metasystem.sh:1614-1630`, `scripts/validate-metasystem.sh:1967-2010` | Leave existing mandatory header and return tests alone. New Go tests cover the added instruction contract. |
+| Review CLI help, `cmd/metasystem/validate_verbs.go:280-352` | Explain the paired limits and pre-read use. Preserve flags and output relay. |
+| Waiver and tier-1 limits, `internal/validate/conformance.go:617-637`, `internal/landing/observe.go:1286-1290` | Keep independent policy. Broad Boundary does not grant a waiver. |
+
+The later member-size goal owns pre-build file counts (`plans/goals/member-size-gate.md:8`). A directory or glob here can cover many files, so it is not a concrete member inventory. The later reader-inventory goal owns Readers and Layers on (`plans/goals/cross-cutting-change-inventories-its-readers.md:8-10`). Boundary stays output permission. These are seam dispositions, not additional mechanisms in this goal.
 
 ## Exact fixture legs
 
-Extend `scripts/agents/conformance-fixtures.sh`, group id `section/conformance-fixtures` in `testing.json:74`. The bed already has `new_case`, `write_implementer`, and an exit-1-plus-message assertion (`scripts/agents/conformance-fixtures.sh:38-64`, `scripts/agents/conformance-fixtures.sh:73-96`, `scripts/agents/conformance-fixtures.sh:153-169`). Use those helpers. Each leg starts in a fresh case and runs the real public conformance verb without creating a critic. The fixture's top-level layout correctly uses unprefixed repository paths.
+Extend the existing `section/conformance-fixtures` group (`testing.json:75`). Its `new_case`, `write_implementer`, and `expect_failure` helpers already provide isolated worktrees, root briefs, and exit-1 assertions (`scripts/agents/conformance-fixtures.sh:38-96`, `scripts/agents/conformance-fixtures.sh:153-169`).
 
-| Leg name | Exact candidate and headers | Required result |
+Each row below uses a fresh case. Use the real public verb. Create no critic. Apply bounded headers to the frozen root brief after write_implementer writes its default. The fixture uses a root installation, so its repository paths are unprefixed.
+
+| Leg | Candidate and brief | Required result |
 | --- | --- | --- |
-| `brief-boundary-unlisted` | Add untracked `extra.txt` containing `extra\n`. Return diffBoundary `["extra.txt"]`. Frozen root brief: Boundary `["source.txt"]`, Ceiling `10`. | Exit 1 with the exact Boundary violation above, including `extra.txt` and changedLines 1. Neither success artifact exists. A broad self-declaration must not mask the brief violation. |
-| `brief-ceiling-exceeded` | Append `one\ntwo\nthree\n` to source.txt. Declare source.txt. Boundary `["source.txt"]`, Ceiling `2`. | Exit 1 with the exact Ceiling violation above, count 3 and source.txt. Neither success artifact exists. |
-| `brief-both-admitted` | Append `one\ntwo\n` to source.txt. Declare source.txt. Boundary `["source.txt"]`, Ceiling `2`. | Exit 0, nonempty diff.patch, three-field review.json, and emitted reviewedTree matching the project snapshot. Equality is admitted. |
-| `brief-no-headers` | Use the bed's ordinary Working Mode brief with neither new header. Append 401 numbered lines to source.txt and add untracked extra.txt with one line. Declare both concrete paths. | Exit 0 despite 402 changed lines. In a fresh companion case leave extra.txt undeclared and require today's cumulative-boundary refusal. Optional headers must neither impose a default nor remove the old check. |
+| `brief-boundary-unlisted` | Add untracked extra.txt containing `extra\n`. Declare extra.txt in the return. Boundary `["source.txt"]`, Ceiling 10. | Review exits 1 with the exact Boundary example above. No diff.patch or review.json. |
+| `brief-ceiling-exceeded` | Append three lines to source.txt. Declare source.txt. Boundary `["source.txt"]`, Ceiling 2. | Review exits 1 with the exact Ceiling example above and count 3. No success artifacts. |
+| `brief-both-admitted` | Append two lines to source.txt. Declare source.txt. Boundary `["source.txt"]`, Ceiling 2. | Exit 0 with both artifacts, exactly three review fields, and the correct project tree. |
+| `brief-no-headers` | Append 401 lines to source.txt and add a one-line extra.txt. Declare both. Neither header. | Exit 0 despite 402 changed lines. |
+| `brief-no-headers-undeclared` | Repeat the preceding candidate in a fresh case, declaring only source.txt. | Today's cumulative-boundary refusal names extra.txt. |
+| `brief-missing-ceiling` | A Working Mode brief with Boundary `["source.txt"]` only. | Public `job brief-mode` exits 1 with `BRIEF_BOUNDS_INVALID: Ceiling: required with Boundary`. No implementer or critic is dispatched. |
+| `brief-missing-boundary` | A Working Mode brief with Ceiling 2 only. | Public `job brief-mode` exits 1 with `BRIEF_BOUNDS_INVALID: Boundary: required with Ceiling`. No implementer or critic is dispatched. |
 
-The four legs use the existing legacy root-brief path. Add Go tests with real composition for both inline and referenced current briefs, so fixture convenience cannot hide a broken production reader. Do not add another fixture bed, group id, runner, or testing policy. The existing section already launches this bed through the engine (`scripts/validate-metasystem.sh:1129-1131`).
+These are seven executions: four DONE outcomes, the headerless guard, and both partial-pair refusals. The partial-pair Go test is `TestBriefBoundsRejectsPartialHeaders`, with Boundary-only and Ceiling-only cases; `TestDispatchBriefBoundsAdmission` proves both public admission routes refuse too.
+
+Use real composed inline and referenced inputs in Go source-reader tests. Do not let legacy fixture convenience stand in for those tests. The existing section runs the bed through the engine (`scripts/validate-metasystem.sh:1129-1131`). Add no bed, runner, testing group, or test policy.
 
 ## Builder units and ordered proof
 
-Land units 1 through 6 in order. Unit 1 lands first. Every unit is a fresh implementation chain based on the preceding landed unit. Do not accumulate several units in one unlanded candidate and then call its combined diff a 400-line unit. Ceiling measures additions plus deletions, including tests and documentation. Each unit has a hard maximum of 400; the estimates below are planning allocations, not permission to exceed it. The seat owns integration receipts outside the builder's returned patch. If a unit does not fit, return the gap and a proposed split before writing outside its Boundary.
+Land in this order: **1a, 1b, 2, 3, 4a, 4b, 4c, 6a, 6b**. The old test-only unit 5 is removed. Its review witnesses live in units 4b and 4c; its public CLI witness lives in 6b. Each unit owns the production behavior its remove-one runs change.
 
-Every builder runs no fixture bed and never exports METASYSTEM_BIN for a Go run. Keep the provided GOCACHE, GOTMPDIR, and STATICCHECK_CACHE. Run focused Go tests and the fast gate only. The seat runs the beds through its enrolled engine on the returned candidate. This follows the existing builder/seat proof split (`internal/dispatch/build.go:1126`, `docs/orchestration.md:172`) and the fast gate's edit-loop role (`scripts/agents/go-gate.sh:97-99`). No builder commits.
+Each unit starts a fresh implementation chain from the preceding landed unit. Its 400-line ceiling includes additions plus deletions in production, tests, scripts, and prose. Do not combine several unlanded units into one supposedly small candidate. The allocations below are estimates with headroom. If an allocation cannot fit, stop and propose another split before exceeding 400 or touching an unlisted path. The seat owns integration receipts outside the returned builder patch.
 
-For each unit, run the named negative tests once with just the corresponding rule removed, restore that rule, and run them again. Do not leave a removed rule in the return. Then run these commands in order from `metasystem/`, substituting the exact package and script sets listed for the unit:
+Before enforcement lands in 4c, the seat measures the candidate manually. Afterwards it also uses the paired brief gate. The builder never commits, executes fixture beds, exports METASYSTEM_BIN for a Go run, or changes the provided GOCACHE, GOTMPDIR, or STATICCHECK_CACHE. The builder/seat proof split and cache rules are already stated in `internal/dispatch/build.go:1126` and `docs/orchestration.md:172`.
+
+For each row assigned to a unit below, run its named focused test with only that rule disabled. Keep the mutation inside that unit's Boundary. Observe the specified assertion fail, restore the rule, and observe the test pass. A compile failure is not a witness. A broader mutation that disables another refusal is not a witness. Use an existing guard test when it directly detects the removed integration rule; do not mutate an untouched dependency outside the unit. Instruction witnesses remove only the specified sentence from an instruction file inside that unit.
+
+Report rule id, mutated file, exact command, observed assertion failure, and restored pass. No mutation remains in the return. Then, from `metasystem/`, run this order with the package and shell lists given per unit:
 
 ```sh
 go build ./...
-go vet <touched packages>
-go test -race -count=1 <touched packages>
-bash -n <touched scripts>
+go vet <unit packages>
+go test -race -count=1 <unit packages>
+bash -n <unit shell files>
 scripts/agents/go-gate.sh --fast
 ```
 
-Skip only the bash command when no shell script changed, and report that as not applicable. Include the focused mutation witness, command, and observed failure for each new rule in the builder return. Do not run a fixture script as a substitute for these commands.
+Omit bash only for units with no shell files. The fast gate is an edit-loop check, not landing proof (`scripts/agents/go-gate.sh:97-103`). The seat runs the risk-selected public testing plan on the candidate and retains the result.
 
-### Unit 1: Parse optional headers at admission
+### Unit 1a: Parse the paired headers
 
 ```text
 Working Mode: implement
-Boundary: ["metasystem/internal/dispatch/brief.go", "metasystem/internal/dispatch/brief_bounds_test.go", "metasystem/internal/dispatch/brief_authority_test.go", "metasystem/cmd/metasystem/dispatch_brief_bounds_test.go", "metasystem/scripts/agents/dispatch.sh", "metasystem/internal/refusal/register.go"]
+Boundary: ["metasystem/internal/dispatch/brief.go", "metasystem/internal/dispatch/brief_bounds_test.go", "metasystem/internal/refusal/register.go", "metasystem/internal/refusal/brief_bounds_register_test.go"]
 Ceiling: 400
-Non-goals: no diff computation, review enforcement, return-schema change, new flags, fixture execution, or commits.
+Non-goals: no authority lexer change, review wiring, shell change, schema change, fixture execution, or commits.
 for every rule you add, a test that fails when that rule alone is removed; run it before you return
 ```
 
-Allocate about 130 production lines, 230 test lines, and 20 plumbing/register lines. Add BriefBounds, BriefBoundsRefusal, ParseBriefBounds, and ReadBriefBounds with the signatures above. Wire BriefMode and ValidateBriefAuthority. Mark Boundary lines output-only. Change only the shell failure suffix. Register BRIEF_BOUNDS_INVALID.
+Allocate 130 production, 180 test, and 25 register/test lines, total 335. Add the parser and reader, pair invariant, path syntax, BriefMode call, and invalid-header register row. Own H1-H7 and the invalid-code case of D1 below. Packages: `./internal/dispatch ./internal/refusal`. Shell files: none.
 
-`TestBriefBoundsPresence` proves absence, each single header, both, empty-array deny-all, and Ceiling zero. `TestBriefBoundsSyntax` has independently failing rows for duplicate headers, wrong JSON shape, bad path components, bad glob syntax, invalid integer forms, and overflow. `TestBriefBoundsPreservesWorkingMode` keeps the existing required mode behavior. `TestBriefAuthorityBoundaryIsOutput` admits a new named file. `TestBriefAuthorityBoundaryInputStillRequired` separately refuses it when cited as an input. `TestDispatchBriefBoundsAdmission` calls the public verb function for normal and authority-only modes and proves that a malformed Ceiling cannot reach an exit-0 admission, while a valid mode is still the only stdout value.
+### Unit 1b: Preserve authority identity through admission
 
-Run in this order:
-
-```sh
-go build ./...
-go vet ./internal/dispatch ./internal/refusal ./cmd/metasystem
-go test -race -count=1 ./internal/dispatch ./internal/refusal ./cmd/metasystem
-bash -n scripts/agents/dispatch.sh
-scripts/agents/go-gate.sh --fast
+```text
+Working Mode: implement
+Boundary: ["metasystem/internal/dispatch/brief.go", "metasystem/internal/dispatch/brief_authority_test.go", "metasystem/cmd/metasystem/dispatch_verbs.go", "metasystem/cmd/metasystem/dispatch_brief_bounds_test.go", "metasystem/scripts/agents/dispatch.sh"]
+Ceiling: 400
+Non-goals: no parser-policy redesign, diff calculation, review enforcement, new CLI flags, fixture execution, or commits.
+for every rule you add, a test that fails when that rule alone is removed; run it before you return
 ```
 
-### Unit 2: Count changed lines on fixed trees
+Allocate 110 production, 230 test, and 10 shell lines, total 350. Add the authority parser call, live and inert line handling, structured path spans, and shell suffix. Own A1-A5 and H8. Keep the CLI relay unless a minimal correction is required by its named test. Packages: `./internal/dispatch ./cmd/metasystem`. Shell: `scripts/agents/dispatch.sh`.
+
+### Unit 2: Count fixed-tree text changes
 
 ```text
 Working Mode: implement
 Boundary: ["metasystem/internal/gittree/numstat.go", "metasystem/internal/gittree/numstat_test.go"]
 Ceiling: 400
-Non-goals: no snapshot policy change, conformance wiring, waiver refactor, fixture execution, or commits.
+Non-goals: no snapshot-policy change, conformance wiring, waiver refactor, second Git runner, fixture execution, or commits.
 for every rule you add, a test that fails when that rule alone is removed; run it before you return
 ```
 
-Allocate about 80 production and 220 test lines. Implement Workspace.ChangedLines and changedLinesFromNumstat with the signatures above, using Workspace.git. Do not introduce a second Git runner.
+Allocate 80 production and 250 test lines, total 330. Own N1-N5. Use Workspace.git. Packages: `./internal/gittree`. Shell files: none.
 
-`TestChangedLinesAddsAndDeletes` proves replacement costs two lines. `TestChangedLinesExcludesBinary` proves binary contents add zero beside countable text. `TestChangedLinesRenameCountsBothEndpoints` proves rename detection cannot reduce the budget. `TestChangedLinesOddFilenames` proves tabs and newlines do not split rows. `TestChangedLinesRejectsMalformedAndOverflow` proves unexpected rows and arithmetic overflow fail instead of disappearing. `TestChangedLinesUsesSuppliedTrees` changes the working tree after capture and proves the count remains tied to the supplied trees. `TestChangedLinesGitFailure` proves an invalid tree is an error. Include a nested installation case and a diff-driver configuration case using the existing runner's isolation.
-
-Run in this order. No bash input.
-
-```sh
-go build ./...
-go vet ./internal/gittree
-go test -race -count=1 ./internal/gittree
-scripts/agents/go-gate.sh --fast
-```
-
-### Unit 3: Read only the current round's authored bounds
+### Unit 3: Bind the supplied round's source
 
 ```text
 Working Mode: implement
-Boundary: ["metasystem/internal/validate/brief_bounds_source.go", "metasystem/internal/validate/brief_bounds_source_test.go", "metasystem/internal/refusal/register.go"]
+Boundary: ["metasystem/internal/validate/brief_bounds_source.go", "metasystem/internal/validate/brief_bounds_source_test.go"]
 Ceiling: 400
-Non-goals: no limit enforcement, new artifact schema, new snapshot, changed exhaustion reader, fixture execution, or commits.
+Non-goals: no review enforcement, new artifact schema, full composition-admission rewrite, exhaustion-reader change, fixture execution, or commits.
 for every rule you add, a test that fails when that rule alone is removed; run it before you return
 ```
 
-Allocate about 110 production and 250 test lines. Implement reviewBriefBounds. Reuse dispatch.CompositionRecord, source metadata, ReadVerifiedReference, and ParseBriefBounds. Register BRIEF_BOUNDS_UNREADABLE. This is a small preparatory landing; it does not claim enforcement until unit 4.
+Allocate 125 production and 245 test lines, total 370. Own S1-S6. Use table-driven corrupt-source cases and small real ComposeRolePacket fixtures with their required recipe inputs copied into temporary fixture roots. Do not use the exhaustion fixture's reduced composition object as production evidence. It currently writes only references (`internal/validate/conformance_test.go:118-123`). Packages: `./internal/validate`. Shell files: none.
 
-`TestReviewBriefBoundsInlineSourceOnly` places conflicting headers in prior-brief and role text and proves only current task-direction is read. `TestReviewBriefBoundsReferencedSource` composes an oversized brief and proves headers are read from the verified body. `TestReviewBriefBoundsRejectsCorruptSource` independently checks invalid byte ranges, duplicate/missing task source, bad delivered digest, duplicate reference, and changed referenced bytes. `TestReviewBriefBoundsLegacy` covers root brief, old follow-up prompt, and absent legacy input. `TestReviewBriefBoundsReadFailure` distinguishes absent legacy input from an unreadable present input. `TestReviewBriefBoundsRoundIsolation` proves that a headerless current round stays unbounded, a single current header activates only its own check, and a later round cannot replace the supplied job's brief.
-
-Run in this order. No bash input.
-
-```sh
-go build ./...
-go vet ./internal/validate ./internal/refusal
-go test -race -count=1 ./internal/validate ./internal/refusal
-scripts/agents/go-gate.sh --fast
-```
-
-### Unit 4: Enforce the outer boundary at review
+### Unit 4a: Match projected paths and build typed violations
 
 ```text
 Working Mode: implement
-Boundary: ["metasystem/internal/validate/brief_bounds.go", "metasystem/internal/validate/conformance.go", "metasystem/internal/validate/brief_bounds_test.go", "metasystem/internal/validate/conformance_brief_bounds_test.go", "metasystem/internal/refusal/register.go"]
+Boundary: ["metasystem/internal/validate/brief_bounds.go", "metasystem/internal/validate/brief_bounds_test.go", "metasystem/internal/validate/conformance.go", "metasystem/internal/refusal/register.go", "metasystem/internal/refusal/brief_bounds_register_test.go"]
 Ceiling: 400
-Non-goals: no merge-stage or recertification policy change, new CLI mode, new success-artifact fields, fixture execution, or commits.
+Non-goals: no review-stage wiring, changed waiver policy, recertification change, schema change, fixture execution, or commits.
 for every rule you add, a test that fails when that rule alone is removed; run it before you return
 ```
 
-Allocate about 145 production and 230 test lines. Implement the two violation types, briefBoundaryMatches, and briefBoundsViolations. Wire reviewBriefBounds and ChangedLines into reviewStage. Derive project reviewedTree from the single repository snapshot. Keep the existing cumulative return check. Collect bounded-policy failures before the success-artifact write. Register the two limit codes and BRIEF_LINES_UNREADABLE.
+Allocate 115 production, 225 test, and 25 register/test lines, total 365. Own P1-P5, V1-V3, and D1's two exceeded-code cases. Change only installationPath in conformance.go. Register the two exceeded codes when their types land. Packages: `./internal/validate ./internal/refusal`. Shell files: none.
 
-`TestBriefBoundaryMatching` separately proves exact paths, directory component boundaries, literal directory-prefix handling, single-component globs, empty-array deny-all, unmatched patterns, and case sensitivity. `TestBriefBoundaryProjection` proves top-level paths, required nested prefix, the whole-project directory, and exactly one prefix strip. `TestReviewBriefBoundaryOuter` changes two undeclared-by-brief paths while declaring both in diffBoundary; it requires both sorted names and their total count. `TestReviewBriefCeiling` checks below, equal, above, and zero. `TestReviewBriefChecksAreIndependent` proves Boundary-only has no size cap, Ceiling-only has no new path restriction, both failing prints both types, and neither keeps the old check. `TestReviewBriefDeclarationIsNotPermission` admits a declared-but-unchanged outside path, refuses actual outside work, and keeps an undeclared actual path refused even inside Boundary. Use table rows and the existing newConformanceFixture to stay within the ceiling.
-
-Run in this order. No bash input.
-
-```sh
-go build ./...
-go vet ./internal/validate ./internal/refusal
-go test -race -count=1 ./internal/validate ./internal/refusal
-scripts/agents/go-gate.sh --fast
-```
-
-### Unit 5: Prove lifecycle and snapshot seams
+### Unit 4b: Capture one review candidate and prove its seams
 
 ```text
 Working Mode: implement
-Boundary: ["metasystem/internal/validate/conformance_brief_bounds_seams_test.go", "metasystem/cmd/metasystem/conformance_brief_bounds_test.go"]
+Boundary: ["metasystem/internal/validate/conformance.go", "metasystem/internal/validate/conformance_brief_snapshot_test.go", "metasystem/internal/validate/conformance_brief_git_test.go"]
 Ceiling: 400
-Non-goals: no production rules, fixture-bed execution, new runner, schema changes, or commits.
+Non-goals: no bounds enforcement yet, changed snapshot contents, production test hooks, new Git runner, fixture execution, or commits.
 for every rule you add, a test that fails when that rule alone is removed; run it before you return
 ```
 
-Allocate at most 360 test lines. This unit independently strengthens the runtime proof of unit 4 without expanding its production patch. Use the existing Go conformance fixture (`internal/validate/conformance_test.go:48-85`) and the command package's public verb entrypoint.
+Allocate 60 production and 310 test/helper lines, total 370. Own C1-C3. Rewire review to one repository snapshot and its project subtree. Reuse the existing real-worktree fixture (`internal/validate/conformance_test.go:48-85`).
 
-`TestReviewBriefUsesMergeBaseCandidate` mixes a committed change, an unstaged replacement, a deletion, and an untracked file, then moves target HEAD without changing the merge-base. Assert the exact additions-plus-deletions count. `TestReviewBriefNestedWholeRepository` proves a sibling path is named in the typed refusal and cannot disappear through project projection. `TestReviewBriefBinaryPathStillBounded` proves binary exclusion does not exempt its path. `TestReviewBriefProtectedPathsStillRefuse` permits plans and the control-plane spelling in Boundary and proves existing protection wins. `TestReviewBriefFollowUpCountsEarlierChanges` supplies a later brief with a smaller Ceiling and proves prior candidate changes still count. `TestReviewBriefLeavesEvidenceImmutable` proves no artifacts on first refusal, exact three-field output on success, identical reuse, and typed refusal without overwrite after a changed candidate. `TestConformanceBriefCLIWithoutCritic` proves exit 0/1 and exact stderr through the public review verb with no critic record; malformed CLI use stays exit 2.
+Add a test-only Git interposer in Go. A temporary shell shim may only exec the Go helper process. Resolve real Git before setting PATH. The helper forwards arguments and records operations for the chosen worktree. After the first successful write-tree, it preserves that stdout and changes the fixture worktree before returning it. A second Snapshot is therefore observable, even if all its contents would otherwise match. The helper also supports refusing only numstat for unit 4c. No production hook is added.
 
-Run in this order. The second test command is the named unchanged-reader seam check. No bash input.
+Packages: `./internal/validate`. Shell files: none in the returned patch.
 
-```sh
-go build ./...
-go vet ./internal/validate ./cmd/metasystem
-go test -race -count=1 ./internal/validate ./cmd/metasystem
-go test -race -count=1 ./internal/adapter ./internal/dispatch ./internal/gittree
-scripts/agents/go-gate.sh --fast
-```
-
-### Unit 6: Add the four bed legs and document seat ordering
+### Unit 4c: Enforce limits before writing evidence
 
 ```text
 Working Mode: implement
-Boundary: ["metasystem/scripts/agents/conformance-fixtures.sh", "metasystem/scripts/agents/templates/brief.md", "metasystem/scripts/agents/templates/follow-up.md", "metasystem/scripts/agents/roles/implementer.md", "metasystem/skills/code-critique/SKILL.md", "metasystem/docs/orchestration.md", "metasystem/internal/dispatch/capcontinuation.go", "metasystem/internal/dispatch/capcontinuation_test.go", "metasystem/cmd/metasystem/validate_verbs.go"]
+Boundary: ["metasystem/internal/validate/conformance.go", "metasystem/internal/validate/conformance_brief_bounds_test.go", "metasystem/internal/refusal/register.go", "metasystem/internal/refusal/brief_bounds_register_test.go"]
 Ceiling: 400
-Non-goals: no new fixture bed or testing.json group, no role-packet recipe or return-schema change, no automatic critic-launch gate, fixture execution by the builder, or commits.
+Non-goals: no new path dialect, merge or recertification policy change, extra success fields, fixture execution, or commits.
 for every rule you add, a test that fails when that rule alone is removed; run it before you return
 ```
 
-Allocate about 110 fixture-plumbing lines, 150 documentation/help changed lines, and 60 cap-message/test changed lines. Add the four exact legs above using existing shell helpers; all new decision logic stays in Go. Update only the named instruction owners, template examples, conformance help text, and cap paragraph. Extend `TestCapContinuationTextTellsTheFactAndWhatTheWorktreeHolds` (`internal/dispatch/capcontinuation_test.go:55-76`) so removing the clarification fails its paragraph assertion. The runtime rule witnesses remain the Go tests from units 1 through 5; do not manufacture prose-mirroring Go tests for every documentation sentence.
+Allocate 85 production, 285 test, and 20 register/test lines, total 390. Own E1-E7 and D1's two unreadable-code cases. Integrate the source reader, fixed-tree count, typed checks, collected bounded diagnostics, and immutable evidence behavior. Reuse unit 4b's interposer without changing it. All mutation targets for these integration rules are in conformance.go. Packages: `./internal/validate ./internal/refusal`. Shell files: none.
 
-Run in this order:
+### Unit 6a: Publish the seat and builder instructions
 
-```sh
-go build ./...
-go vet ./internal/dispatch ./cmd/metasystem
-go test -race -count=1 ./internal/dispatch ./cmd/metasystem
-bash -n scripts/agents/conformance-fixtures.sh
-scripts/agents/go-gate.sh --fast
+```text
+Working Mode: implement
+Boundary: ["metasystem/scripts/agents/templates/brief.md", "metasystem/scripts/agents/templates/follow-up.md", "metasystem/scripts/agents/roles/implementer.md", "metasystem/skills/code-critique/SKILL.md", "metasystem/docs/orchestration.md", "metasystem/internal/dispatch/capcontinuation.go", "metasystem/internal/dispatch/capcontinuation_test.go", "metasystem/internal/dispatch/brief_bounds_instructions_test.go"]
+Ceiling: 400
+Non-goals: no automatic critic-launch gate, new mandatory default, role-packet or schema change, fixture execution, or commits.
+for every rule you add, a test that fails when that rule alone is removed; run it before you return
 ```
 
-The builder syntax-checks this bed but does not execute it. The seat runs `section/conformance-fixtures` through the engine and reads all four leg outcomes before accepting the goal's runtime proof. It also runs the risk-selected dispatch bed through `section/dispatcher-adapter-and-mission-runner-fixtures`, whose group is already declared in `testing.json:95`, to cover the shell preflight relay. Use the engine's public testing selection and retained results, not a direct fixture invocation or an exported replacement binary.
+Allocate 125 instruction changed lines, 15 cap-message lines, and 180 test lines, total 320. Own W1-W4. Use the pre-read sentence above in both seat instruction owners. Use these short sentences for the remaining instruction witnesses:
+
+- Both templates: "Declare Boundary and Ceiling together, or omit both; a single header refuses admission." Each carries an indented, paired example.
+- Follow-up template: "Repeat both headers in each bounded follow-up; they cover every change still awaiting landing, including earlier rounds."
+- Implementer role: "Boundary and Ceiling limit the whole candidate; diffBoundary lists concrete changed paths and grants no extra permission."
+- Critic skill: "The critic still checks acceptance criteria, non-goals, unrelated work, and the quality of the proof inside the permitted files."
+- Cap paragraph: "The predecessor wrote no return diffBoundary. The current brief's Boundary and Ceiling, when present, cover the whole candidate; diffBoundary grants no extra permission." Retain its requirement to list every changed path of the chain.
+
+Extend the current cap paragraph test (`internal/dispatch/capcontinuation_test.go:55-76`). Packages: `./internal/dispatch`. Shell files: none.
+
+### Unit 6b: Prove the public verbs and existing bed
+
+```text
+Working Mode: implement
+Boundary: ["metasystem/scripts/agents/conformance-fixtures.sh", "metasystem/cmd/metasystem/validate_verbs.go", "metasystem/cmd/metasystem/conformance_brief_bounds_test.go"]
+Ceiling: 400
+Non-goals: no new fixture bed or testing group, underlying limit-rule changes, extra CLI flags, builder fixture execution, or commits.
+for every rule you add, a test that fails when that rule alone is removed; run it before you return
+```
+
+Allocate 120 fixture-plumbing lines, 15 help lines, and 210 Go test lines, total 345. Own W5-W6. Add the seven legs above and public-verb tests without a critic. Add this help sentence: "Review also enforces the current brief's paired Boundary and Ceiling before a code read; omitting both keeps the existing checks." The Go CLI test lives with the permitted CLI relay and help source. It does not mutate a limit rule in validate.
+
+Packages: `./cmd/metasystem`. Shell: `scripts/agents/conformance-fixtures.sh`. Also run the unchanged-reader seam command `go test -race -count=1 ./internal/adapter ./internal/dispatch ./internal/gittree` after the unit package test and before bash and the fast gate.
+
+The builder syntax-checks the bed. The seat executes `section/conformance-fixtures` and reads all seven outcomes, then the risk-selected dispatch proof including `section/dispatcher-adapter-and-mission-runner-fixtures` (`testing.json:96`). The seat uses its enrolled engine and retained structured results.
+
+### Complete rule-to-witness table
+
+Each slash case below is a separately named subtest and a separate remove-one run when it encodes a distinct rule. Positive admission cases detect removal of an allowance or an overbroad refusal. Refusal cases detect removal of a guard. Existing dependencies stay intact while the owning unit's integration rule is removed. Table rows cover the feature's rules, including its instruction surfaces; historical facts and explicit non-goals add no new rule.
+
+| Rule id and rule | Owning unit and mutation target | Test that fails when only that rule is removed |
+| --- | --- | --- |
+| H1: exact case, column zero, one physical line, trimming of values, live fenced headers | 1a, brief.go scanner | `TestBriefBoundsHeaderRecognition/case`, `/column`, `/physical-line`, `/trim`, `/fence`. Assert parsed values as well as refusals. |
+| H2: both or neither; no successful partial pair | 1a, pair check | `TestBriefBoundsRejectsPartialHeaders/boundary-only` and `/ceiling-only` require the exact missing-header error; `TestBriefBoundsPresence/neither` and `/both` guard both allowed forms. |
+| H3: empty array differs from absence; duplicate members allowed | 1a, array decoding | `TestBriefBoundsPresence/empty-array` asserts non-nil empty Boundary; `/duplicates` admits repeated members. |
+| H4: Boundary JSON shape and duplicate-header refusal | 1a, parser checks | `TestBriefBoundsSyntax/empty`, `/null`, `/object`, `/nonstring`, `/trailing-json`, `/duplicate-boundary` assert their typed error. |
+| H5: decimal Ceiling grammar, int64 range, zero and leading zeroes | 1a, number parsing | `TestBriefBoundsCeilingSyntax/sign`, `/fraction`, `/suffix`, `/placeholder`, `/empty`, `/overflow`, `/duplicate`, `/zero`, `/leading-zeroes`, `/maximum`. |
+| H6: component validation; directory branch bypasses glob validation; other declarations validate glob syntax | 1a, path syntax | `TestBriefBoundsPathSyntax/absolute`, `/empty`, `/nul`, `/empty-component`, `/dot`, `/parent`, `/member-whitespace`; the last case preserves leading and trailing member spaces; `TestBriefBoundsTrailingSlashIsLiteral` admits `metasystem/a[/` and refuses `metasystem/a[`. |
+| H7: deterministic parser errors; required mode preserved; readable-file wrapper; bounds run after valid mode | 1a, parser/BriefMode/ReadBriefBounds | `TestBriefBoundsErrorPrecedence`; `TestBriefBoundsPreservesWorkingMode`; `TestReadBriefBounds/read` and `/missing`; `TestBriefModeRejectsInvalidBounds`. Compare exact error text and use errors.As. |
+| H8: public normal and authority-only admission relay bounds; mode stdout remains mode only; suffix describes bounds | 1b, authority call and CLI/shell relay | `TestDispatchBriefBoundsAdmission/normal`, `/authority-only`, `/mode-stdout`, `/authority-before-mode`; `TestDispatchBriefBoundsFailureSuffix` checks the shell's failure suffix. |
+| A1: Boundary permission alone performs no authority existence lookup or fragment lookup | 1b, live-line exclusion | `TestBriefAuthorityBoundaryIsOutput/file`, `/directory`, `/glob`, `/special-name` admit absent outputs. |
+| A2: exact indented example is inert, even with missing or placeholder paths; no exemption leaks to other lines | 1b, inert-line exclusion | `TestBriefAuthorityIndentedBoundsExampleIsInert/spaces`, `/tabs`, `/headerless`, `/separate-input`; the last case must still refuse the cited input. |
+| A3: structured special-character inputs share decoded identity and emit no fragments | 1b, span decoder | `TestBriefAuthoritySpecialCharacterInput/space`, `/comma`, `/quote`, `/tab`, `/newline`, `/backslash`. Exercise JSON strings and backticks where representable. Each case asserts the full missing path, then admission after committing that exact file. |
+| A4: separate input wins, including a root file and a member under an absent directory | 1b, decoded identity eligibility and input accounting | `TestBriefAuthorityBoundaryInputStillRequired/ordinary`, `/root-file`, `/new-directory`, `/output-then-input`, `/input-then-output`. |
+| A5: preserve old unquoted, Workspace/Create, and artifact lookup behavior; no structured reinterpretation of ordinary headerless prose | 1b, bounded lexer branch | `TestBriefAuthorityBoundedCitationCompatibility/unquoted`, `/workspace`, `/create`, `/artifact`, `/headerless`. Use the current lookup owner, not a new file probe. |
+| N1: additions plus deletions; empty diff zero; only binary rows excluded | 2, numstat parser | `TestChangedLinesAddsAndDeletes`, `TestChangedLinesEmpty`, `TestChangedLinesExcludesBinary`. |
+| N2: NUL records and first-two-tab split; nonempty path; malformed and overflow errors | 2, numstat parser | `TestChangedLinesOddFilenames`; `TestChangedLinesRejectsMalformedAndOverflow/missing-nul`, `/missing-path`, `/count`, `/mixed-binary`, `/overflow`. |
+| N3: rename delete/add endpoints; all supplied trees and nested workspace path space | 2, ChangedLines invocation | `TestChangedLinesRenameCountsBothEndpoints`; `TestChangedLinesUsesSuppliedTrees/root` and `/nested`, with a later worktree edit that must not alter the count. |
+| N4: use the declared Git command pins for external diff, text conversion, color, and submodules | 2, ChangedLines flags | `TestChangedLinesCommandPins` records Git argv through a temporary Go helper and requires each declared pin independently. `TestChangedLinesHostileDiffConfig` also checks real counts under hostile configuration. Removing a pin fails the invocation assertion even when Git would produce the same numstat without it. |
+| N5: Git failure propagates through the existing runner | 2, error return | `TestChangedLinesGitFailure` requires an error for an invalid tree, never zero success. |
+| S1: supplied job and round select the source; only caller:brief task-direction; no other packet slot | 3, source selector | `TestReviewBriefBoundsInlineSourceOnly`; `TestReviewBriefBoundsRoundIsolation/current`, `/later`, `/headerless-follow-up`, `/partial-follow-up`; `TestReviewBriefBoundsRejectsCorruptSource/job`, `/round`, `/missing-source`, `/duplicate-source`, `/wrong-source`. |
+| S2: delivered range and digest must bind the selected prompt section | 3, range checks | `TestReviewBriefBoundsRejectsCorruptSource/range` and `/delivered-digest`. |
+| S3: inline source bytes, digest, and envelope bind the body; missing reference cannot parse a stub | 3, inline extraction | `TestReviewBriefBoundsInlineIdentity/bytes`, `/digest`, `/envelope`, `/missing-reference`, `/no-final-newline`. |
+| S4: exactly one reference joined by slot, digest, byte count and Path/OpenPath | 3, reference selection and join | `TestReviewBriefBoundsRejectsUnboundReference/slot`, `/digest`, `/bytes`, `/path`, `/duplicate`. Slot case supplies only a differently slotted reference with otherwise matching source identity and fails when the slot selector alone is removed. Digest case uses a different, valid, self-consistent referenced body. Byte case changes only the source byte count. |
+| S5: referenced bytes must pass root, regular-file, length, and digest verification | 3, ReadVerifiedReference call | `TestReviewBriefBoundsReferencedSource`; `TestReviewBriefBoundsRejectsCorruptReference/escape`, `/nonregular`, `/bytes`, `/digest`. Nonregular uses a symlink to a valid body inside the root, so a plain read would succeed. Removing only the verification call must admit a bad body and fail its test. |
+| S6: selected legacy root/follow-up fallbacks; absent differs from unreadable; bad present composition cannot fall back; typed syntax preserved | 3, fallback and error returns | `TestReviewBriefBoundsLegacy/root`, `/follow-up`, `/absent`; `TestReviewBriefBoundsReadFailure/present` and `/composition`; `TestReviewBriefBoundsPreservesSyntaxType`. |
+| P1: nested declarations require prefix and strip once; root declarations are unchanged | 4a, projectDeclaration integration | `TestBriefBoundaryNestedPathProjection/root`, `/nested`, `/missing-prefix`, `/double-prefix`. |
+| P2: guard siblings before installationPath; whole-project directory matches only inside | 4a, raw-path guard and directory flag | `TestBriefBoundaryWholeProjectExcludesSibling` feeds both an inside path and a sibling and requires only the sibling in Boundary.Paths. |
+| P3: installationPath preserves all Git filename bytes and removes exactly one literal prefix | 4a, installationPath | `TestInstallationPathPreservesGitIdentity/root`, `/nested`, `/backslash`, `/whitespace`, `/double-prefix`; rerun `TestNestedWaiverProtectsProjectPlans` as the existing caller guard (`internal/validate/nested_conformance_test.go:229`). |
+| P4: exact case, directory depth and component edge, literal glob characters in directories, whole-path patterns, no recursive **, unmatched pattern | 4a, matcher | `TestBriefBoundaryMatching/exact`, `/case`, `/directory-depth`, `/directory-edge`, `/literal-bracket-directory`, `/glob`, `/double-star`, `/unmatched`, `/escaped-metacharacter`. |
+| P5: empty boundary denies all actual paths, including binary paths | 4a, unmatched-path collection | `TestBriefBoundaryMatching/empty` and `TestBriefBoundaryBinaryPathStillBounded`. |
+| V1: typed boundary error carries all offending repository paths and the total count | 4a, boundary construction | `TestBriefBoundaryViolationFields` uses errors.As and checks the complete fields, including a permitted file's text contribution. |
+| V2: Ceiling compares with > and carries all changed paths | 4a, ceiling predicate/construction | `TestBriefCeilingViolation/below`, `/equal`, `/above`, `/zero`, `/binary-path` require exact fields. |
+| V3: exact JSON diagnostics, sorting, deduplication, complete long list, Boundary before Ceiling | 4a, error formatting and violation order | `TestBriefBoundsViolationDiagnostics/json-escaping`, `/sorted-unique`, `/full-list`, `/both-order` compare complete output; full-list uses 257 paths including odd characters. |
+| C1: one candidate Snapshot supplies every tree and patch | 4b, review capture | `TestReviewBriefSingleSnapshot` mutates after the first write-tree, requires exactly one snapshot, and checks the returned project tree and patch against that first captured repository tree. Two snapshots fail by count even without drift. |
+| C2: merge-base remains the full candidate base; project output derives from the repository snapshot | 4b, review tree wiring | `TestReviewBriefUsesMergeBaseCandidate` separates baseSha, merge-base, and current HEAD, advances target on a disjoint branch, and checks the complete patch and repository path set; `TestNestedReviewStageSpeaksProjectSpace` is the existing guard (`internal/validate/nested_conformance_test.go:44-101`). |
+| C3: preserve candidate contents and the real index through the new snapshot wiring | 4b, repository Snapshot call | `TestReviewBriefSnapshotMembership` includes committed, staged-then-unstaged, deleted, untracked, ignored, tracked-ignored, mode, symlink, and gitlink cases and compares the real index before/after. |
+| E1: valid pair invokes source, paths, count and both limits before writes; partial or malformed bounds refuse | 4c, review integration | `TestReviewBriefBoundsEnforced/boundary`, `/ceiling`, `/both-admitted`, `/partial`, `/invalid` assert outcomes and absence of both artifacts on refusal. |
+| E2: headerless path skips numstat and preserves old fence, declaration and immutable precedence | 4c, pair branch | `TestReviewBriefHeaderlessSkipsNumstat` makes the interposer fail on any numstat and asserts zero such calls; `TestReviewBriefHeaderlessCompatibility/fence`, `/declaration`, `/immutable` compare old diagnostics. |
+| E3: sibling, every outside path, and total count survive collected diagnostics | 4c, collected refusal path | `TestReviewBriefNestedWholeRepository` permits `metasystem/`, changes an inside file and a sibling, and requires typed Boundary plus the project fence and the repository-wide count; `TestReviewBriefBothViolationOrder` asserts exact Boundary/Ceiling order through review. |
+| E4: counted and reviewed trees remain identical; earlier rounds still count | 4c, ChangedLines arguments and current-round integration | `TestReviewBriefCountUsesCapturedTree` reuses the post-capture edit interposer; `TestReviewBriefFollowUpCountsEarlierChanges/ceiling` and `/boundary` prove a smaller current pair refuses the earlier candidate work. |
+| E5: permission cannot replace concrete declarations or protected paths; unchanged declarations do not cost permission | 4c, retained cumulative call | `TestReviewBriefDeclarationIsNotPermission/unchanged`, `/actual-outside`, `/undeclared-inside`; `TestReviewBriefProtectedPathsStillRefuse/plans` and `/control-plane`. Mutate the retained call, not its earlier policy owner. |
+| E6: source and count failures have exact review wrappers; typed parser failure remains named; no artifacts | 4c, failure rendering | `TestReviewBriefUnreadableWrappers/source` uses a directory as the source file; `/lines` fails only numstat; `/syntax` supplies a partial pair. Compare full stderr prefixes and artifact absence. |
+| E7: bounded refusal preserves prior evidence and reveals typed reason; success has three fields; identical success reuses bytes | 4c, bounded failure and artifact branch | `TestReviewBriefLeavesEvidenceImmutable/first-refusal`, `/success-shape`, `/identical`, `/later-boundary`, `/later-ceiling`, `/later-source-error`. Check exact diagnostics and unchanged bytes. |
+| D1: every new refusal code has the stated classification and remedy | 1a, 4a, 4c, each owning its register rows | `TestBriefBoundsRefusalRegistration` gains only the owning unit's code cases at that landing. Remove that row or change its Shape/Override/Commands to fail. Existing `TestHCL03EveryCodeRowed` also checks coverage (`internal/refusal/register_test.go:20-40`). |
+| W1: seat command, actor, ordering, and exit mapping appear in both instruction owners | 6a, orchestration and code-critique text | `TestBriefBoundsSeatOrderingInstructions/orchestration` and `/code-critique`. Delete the binding sentence from one owner per run. |
+| W2: templates teach pair-or-neither, inert examples, and whole-candidate follow-up repetition without live placeholders | 6a, both templates | `TestBriefBoundsTemplateInstructions/pair`, `/follow-up-cumulative`, `/example`. Each file is checked independently; run the parser/authority extractor over its examples and assert the instruction sentence is present. |
+| W3: role distinguishes allowed scope from concrete return declaration; critic retains semantic review | 6a, implementer role and critic skill | `TestBriefBoundsRoleInstructions/permission` and `/semantic-review` check the short normative sentences in their owning sections. |
+| W4: cap paragraph names predecessor's missing return declaration and current whole-candidate limits | 6a, capcontinuation.go | Extend `TestCapContinuationTextTellsTheFactAndWhatTheWorktreeHolds`. Removing either clarification fails its corresponding paragraph assertion. |
+| W5: public review relay needs no critic, preserves 0/1/2, exact stderr, and help for paired limits | 6b, validate_verbs.go | `TestConformanceBriefCLIWithoutCritic/admit`, `/refuse`, `/usage`; `TestConformanceBriefBoundsHelp`. Remove only the relevant CLI relay or help clause for the witness. |
+| W6: all seven fixture legs invoke the intended public verb and retain their required assertions | 6b, conformance-fixtures.sh | `TestConformanceBriefFixtureLegs` checks each named shell block for its verb, fixture data, expected status, and refusal/artifact assertions. Removing one leg or its key assertion fails. The seat then executes the real bed; this static witness alone is not runtime proof. |
+
+The single-snapshot and no-numstat tests observe operations, not just final admission. The unbound-reference test supplies a valid alternative file so file verification alone cannot make it pass. The special-character tests check exact full identities. These are deliberate counterexamples to the missing witnesses in round 1.
+
+## Critique record
+
+| Finding id | Disposition | Reasoning and evidence | Amendment |
+| --- | --- | --- | --- |
+| BDRB-R1-01 | accepted | Declarations and changed paths currently use different spaces (`internal/validate/conformance.go:284-293`, `internal/gittree/gittree.go:372-386`). | Guard siblings, then call installationPath before matching; preserve the whole-project directory flag; P1-P3 and E3 name the witnesses. |
+| BDRB-R1-02 | accepted | The seat binds both-or-neither to DONE (`plans/goals/brief-declares-the-round-boundary.md:8`). | Partial pairs refuse naming the missing header; H2/H8 and both missing-header fixture legs prove it. |
+| BDRB-R1-03 | accepted | The old unit 5 could not mutate review production inside its test-only Boundary. | Remove unit 5; move its witnesses to production-owning units 4b, 4c, and 6b, each capped at 400 lines. |
+| BDRB-R1-04 | accepted | The old named tests did not observe all stated rules. | Add the complete rule table, operation-observing snapshot/count tests, exact diagnostic tests, and instruction witnesses in their owning units. |
+| BDRB-R1-05 | accepted | ReadVerifiedReference does not join source metadata (`internal/dispatch/references.go:24-49`); admission already does (`internal/dispatch/build.go:1066-1077`). | Require slot, digest, byte-count and path binding; add TestReviewBriefBoundsRejectsUnboundReference. |
+| BDRB-R1-06 | accepted | Current extraction scans indented lines as ordinary authority (`internal/dispatch/brief.go:128-160`). | Define the inert indented-header form and skip only its own line; add TestBriefAuthorityIndentedBoundsExampleIsInert. |
+| BDRB-R1-07 | accepted | Current token grammar cannot preserve special-character members (`internal/dispatch/brief.go:13-18`). | Share decoded byte identity, consume structured citations without fragments, retain separate input use, and add TestBriefAuthoritySpecialCharacterInput. |
+| BDRB-R1-08 | accepted | Current exact return matching supplies no directory/glob precedent (`internal/validate/conformance.go:798-810`). | Trailing-slash declarations are literal and bypass glob validation; TestBriefBoundsTrailingSlashIsLiteral fixes the accepted and refused examples. |
+| BDRB-R1-N01 | noted, non-material | The omitted admission and fake reference readers were checked (`internal/dispatch/build.go:1099-1103`, `scripts/agents/adapters/fake.sh:67`, `scripts/agents/adapters/fake.sh:231-236`). | No separate production change; the binding change belongs to R1-05, and the inventory records these seams. |
+| BDRB-R1-N02 | noted, non-material | The old four outcomes included a fifth isolated guard case (`scripts/agents/conformance-fixtures.sh:38-64`). | No separate behavior change; the table now names seven executions after the required pair-refusal additions. |
+
+All eight material identifiers have accepted dispositions and named amendments. Both non-material identifiers are retained. No finding is refuted by restating revision 1. This fold does not declare critique closure or consume another review round.
 
 ## Completion obligations and remaining choice
 
 | Obligation id | Severity | Design source | Required behavior | Owner | Code proof | Test proof | Runtime proof | Status | Next action |
 | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
-| BDRB-1 | HIGH | Header contract | Optional headers preserve legacy briefs and refuse malformed declarations | dispatch | brief.go | Unit 1 parser, authority, and CLI tests | Existing dispatch bed | PARTIAL | Build unit 1; run seat proof |
-| BDRB-2 | HIGH | Which brief binds a round | The current authored brief supplies the bounds | validate | reviewBriefBounds | Unit 3 source and round-isolation tests | Real composed inputs in Go tests | PARTIAL | Build unit 3; prove both source forms |
-| BDRB-3 | HIGH | Review enforcement | Refuse every actual outside path before a read | validate | reviewStage, briefBoundsViolations | Units 4 and 5 path/projection/protection tests | brief-boundary-unlisted | PARTIAL | Build units 4 and 5; run bed leg |
-| BDRB-4 | HIGH | Exact diff and line count | Count the exact merge-base candidate with binary exclusion | gittree and validate | ChangedLines and reviewStage | Unit 2 plus unit 5 snapshot tests | brief-ceiling-exceeded | PARTIAL | Build units 2, 4, and 5; run bed leg |
-| BDRB-5 | HIGH | Reader inventory and seams | Keep old checks and proof ownership | validate | reviewStage | Independence, declaration, and immutability tests | brief-both-admitted and brief-no-headers | PARTIAL | Build units 4 and 5; run bed legs |
-| BDRB-6 | HIGH | Seat's pre-read step | Obtain exit 0 before critic dispatch | orchestration and conformance CLI | Existing review verb, updated seat rule | CLI without critic test | All four legs have no critic | PARTIAL | Build units 5 and 6; run seat proof |
+| BDRB-1 | HIGH | Header contract; Paths and matching | Paired syntax, exact identity, inert examples, and legacy admission | dispatch | brief.go | H1-H8, A1-A5 | Missing-header legs and public admission Go tests | PARTIAL | Build 1a/1b and retain mutation evidence |
+| BDRB-2 | HIGH | Which brief binds a round | Supplied current source binds the pair | validate | brief_bounds_source.go | S1-S6 | Real composed inline and referenced fixtures | PARTIAL | Build 3 and verify source joins |
+| BDRB-3 | HIGH | Paths and matching; Review enforcement | Refuse every actual outside path with its count | validate | brief_bounds.go and reviewStage | P1-P5, V1-V3, E1/E3/E5 | brief-boundary-unlisted | PARTIAL | Build 4a/4c and run seat bed |
+| BDRB-4 | HIGH | Exact diff and line count | One full merge-base candidate; binary-excluding text count | gittree and validate | ChangedLines and reviewStage | N1-N5, C1-C3, E2/E4 | brief-ceiling-exceeded | PARTIAL | Build 2/4b/4c and inspect operation witnesses |
+| BDRB-5 | HIGH | Review enforcement and refusal text | Preserve prior policy and evidence; diagnose bad inputs | validate and refusal | reviewStage and refusal register | E2/E5/E6/E7, D1 | Both-admitted and both headerless legs | PARTIAL | Build 4c and retain exact error/artifact results |
+| BDRB-6 | HIGH | The seat's pre-read step | Seat obtains exit 0 before critic dispatch | orchestration and CLI | instruction owners and existing review verb | W1-W6 | Seat command result before the read; seven bed outcomes | PARTIAL | Build 6a/6b and execute seat proof |
 
-All high obligations have owners, code targets, and tests. None is marked implemented or proved by this design. Bad headers refuse before launch. Git and source-read failures refuse before success artifacts. The existing bounded Git runner supplies timeout handling (`internal/validate/conformance.go:70-78`, `internal/gittree/gittree.go:121-141`). Retry uses the same immutable inputs; correction requires a new round after a successful review has been recorded. No dependency, public return schema, or externally published API changes.
+No open question belongs to Wido. A default for missing headers would change DONE and is not proposed here.
 
-Wido's only policy choice is a future default for briefs that omit Ceiling. Recommend 400 changed lines if he later chooses mandatory default enforcement. It matches his unit-size rule and makes an omitted line no broader than an explicit unit brief. That would change the current DONE compatibility promise, so it is not included here. With no further decision, absent Ceiling stays unlimited and all six builder briefs explicitly say Ceiling: 400. No answer is needed to build this design.
+Design verification: re-read the goal, both input reports, the current implementation and instruction owners, referenced tests, and fixture registration. Joined all eight material finding ids to the dispositions above. Checked each proposed rule's mutation target against its unit Boundary and each planned allocation against 400. No implementation test, Go gate, fixture bed, or mutation experiment was run for this document-only deliverable. All runtime obligations remain PARTIAL.
 
-Design verification performed: read the goal's DONE sentence, the required source paths, the CLI and snapshot owners, the current tests, the fixture bed, and testing.json. Implementation tests, Go gates, and fixture beds were not run because this deliverable changes no runtime code. The seat must obtain those proofs on the built candidate. The current task writes only this report and makes no commit or tracked-file edit.
+Failure behavior is explicit: malformed headers refuse admission; unreadable or unbound evidence and failed counting refuse review; policy failures name every offending path and the total count; prior success artifacts stay unchanged. Existing Git execution timeouts remain owned by the bounded runner (`internal/gittree/gittree.go:128-141`). The remaining implementation risk is fitting the planned tests and production changes within each hard ceiling; a builder must split before exceeding it.
 
-Proposed receipt for the integrating seat: `DESIGN brief-declares-the-round-boundary: specified optional brief bounds, pre-read conformance refusals, exact merge-base numstat counting, reader seams, four existing-bed legs, and six separately landing units capped at 400 changed lines; evidence=read; runtime-proof=pending`.
+This delegate writes only `artifacts/reports/bdrb-design-r2.md`. The seat owns landing the replacement, updating proof status, and any receipt.
+
+Proposed receipt for the integrating seat: `DESIGN brief-declares-the-round-boundary revision 2: accepted all eight material findings; paired headers, exact path projection and authority identity, bound source references, complete mutation witnesses, and nine separately landing units capped at 400 changed lines; evidence=read; runtime-proof=pending`.
