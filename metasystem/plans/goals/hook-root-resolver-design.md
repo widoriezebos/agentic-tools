@@ -1,6 +1,6 @@
 # hook-root-resolver-design
 
-- State: approved
+- State: claimed
 - Priority: 1
 - Sequence: 4
 - Risk: severity=2 novelty=1 exposure=3 accumulation=2 basis="severity 2: the hook fails closed while wrong, but a wrong resolver on the deadline parent can record a refusal against the wrong world; novelty 1: the design exists at revision 5 with five rounds of critique, so what remains is a fold and a build; exposure 3: every nested checkout in the fleet; accumulation 2: the same root cause that produced successor A"
@@ -9,13 +9,14 @@
 - Origin: main
 - Next step: LANDED cc5cc163 (2026-09-13 15:25Z): the hook resolves its world through the engine's path state-root, linked worktrees map to their primary, the deadline parent runs one engine and never blocks on its own, missing engine and skew are degraded allowances, a seat-actionable block survives a disclosed infrastructure condition, and case 14 proves DONE from a nested checkout. Every seat rebuilds and re-arms before its next Stop. ONE FOLLOW-UP OPEN under this goal, for the design lane (now Codex Astra by Wido's word of this afternoon): on SessionStart a skewed engine is silent, so a declared brain seat in the rollout window gets no role context and no notice (the revision was cut short by the Fable limit); its revision, build, read and landing close this goal. Invariant on Wido's desk, recorded on the page: may a linked worktree ever own an independent steward world (the page and the landing proceed on no, the engine's rule).
 - OpenedAt: 2026-09-06T06:39:49Z
-- Revision: 76
+- Revision: 77
 - Pinned: m1c
 - Budget: elapsedLimit=1d attemptLimit=12 reservedJobMinutesLimit=1200 activeJobLimit=1 reviewRoundLimit=3
 - BudgetExceptions: 0
 - Approved: by=human:Wido at=2026-09-13T07:22:49Z revision=55 opid=XZA3290E1RGR8SK8PKFNAVKKKK-m1e-c6925449 authority=proven digest=803416cae1f6cc23de17e5095463c667244bf3187f06ab28d7a67a0f6e427139
 - Sliced: machine=m1 lineage=main-1788594343-3833-fb64b9 revision=4 at=2026-09-06T11:22:23Z
-- Episode: machine=m1c lineage=main-1789191340-90689-8975a9 accountingRevision=59 episodeAt=2026-09-13T07:27:28Z episodeRevision=59 idleSeconds=2244 released=2026-09-13T15:38:43Z
+- Claimed: machine=m1c lineage=main-1789191340-90689-8975a9 at=2026-09-14T16:18:00Z revision=77 accountingRevision=59 episodeAt=2026-09-13T07:27:28Z episodeRevision=59 idleSeconds=91001
+- StopCapability: generation=77 revision=77 machine=m1c claimEpoch=5 fenceEpoch=0
 
 History:
 - 2026-09-06T06:39:49Z X92B849FEPDB998FKY6C404SXZ-m1-a4f8999f open actor=m1+main-1788594343-3833-fb64b9 targets=hook-root-resolver-design
@@ -94,4 +95,5 @@ History:
 - 2026-09-13T15:38:43Z EB22VN452JWX3M10TTFDBNQE37-m1c-69c9e454 release actor=m1c+main-1789191340-90689-8975a9 targets=hook-root-resolver-design
 - 2026-09-14T15:32:22Z 08EJFDPT7HYH4K6YHYBWYXWJ9J-m1e-c6925449 set-priority actor=human:Wido targets=actionable-metrics,brief-declares-the-round-boundary,builder-proves-each-rule-by-mutation,chain-landing-carries-the-reviewed-diff,coordinator-context-stays-under-budget,coordinator-wakes-on-events-not-polls,critique-closes-on-folded-proof,cross-cutting-change-inventories-its-readers,delegate-sandbox-runs-the-beds,dispatch-bases-chains-on-the-remote-tip,failed-job-attention,fixture-repo-copies-exclude-the-artifacts-store,fixture-stewards-outlive-their-suite,fixture-waits-name-their-producer,hook-root-resolver-design,human-authority-surface-runs-its-cmd-tests,human-goal-verbs-forgiving,human-wait-does-not-consume-goal-budget,job-record-birth-token,lease-sweep-death-evidence,live-job-on-a-done-goal-unnoticed,machine-concurrency-governor,metasystem-stop-escalation-proofs,metasystem-stop-fleet-form,new-elapsed-budgets-use-explicit-hours,receipt-admission-caps-concurrent-batteries,repo-root-paths-ride-agent-commits-unjudged,run-scoped-build-caches-have-a-janitor,skipped-test-fails-its-group-on-the-other-os,small-change-lane,stop-batch-strands-a-resumable-goal,stop-hook-never-forces-an-empty-turn,token-spend-fence,watch-verb,watcher-repair-request-never-names-current,winddown-census-handoff-leak reason=priority-order subject=delegate-sandbox-runs-the-beds from=1:2 to=1:3 requested-sequence=1
 - 2026-09-14T15:32:48Z A5G62JFP5PEK9VZ16E2SP4YNNV-m1e-c6925449 set-priority actor=human:Wido targets=actionable-metrics,brief-declares-the-round-boundary,builder-proves-each-rule-by-mutation,chain-landing-carries-the-reviewed-diff,coordinator-context-stays-under-budget,coordinator-wakes-on-events-not-polls,critique-closes-on-folded-proof,cross-cutting-change-inventories-its-readers,dispatch-bases-chains-on-the-remote-tip,failed-job-attention,fixture-repo-copies-exclude-the-artifacts-store,fixture-stewards-outlive-their-suite,fixture-waits-name-their-producer,hook-root-resolver-design,human-authority-surface-runs-its-cmd-tests,human-goal-verbs-forgiving,human-wait-does-not-consume-goal-budget,job-record-birth-token,lease-sweep-death-evidence,live-job-on-a-done-goal-unnoticed,machine-concurrency-governor,metasystem-stop-escalation-proofs,metasystem-stop-fleet-form,new-elapsed-budgets-use-explicit-hours,receipt-admission-caps-concurrent-batteries,repo-root-paths-ride-agent-commits-unjudged,round-proof-feeds-the-next-brief,run-scoped-build-caches-have-a-janitor,skipped-test-fails-its-group-on-the-other-os,small-change-lane,stop-batch-strands-a-resumable-goal,stop-hook-never-forces-an-empty-turn,token-spend-fence,watch-verb,watcher-repair-request-never-names-current,winddown-census-handoff-leak reason=priority-order subject=round-proof-feeds-the-next-brief from=1:3 to=1:4 requested-sequence=2
-Integrity: sha256=2366df51320961fb6c4a11b74f0d980cfa3cdd9b9c77e6ce021ac22e05933d8f
+- 2026-09-14T16:18:00Z DSCY6YR357JHJXBFN1GE6BJ4BW-m1c-69c9e454 claim actor=m1c+main-1789191340-90689-8975a9 targets=hook-root-resolver-design
+Integrity: sha256=4da92e703caec02b53e1a723498ba91c34959615dcffc6f164b69da4a64688fb

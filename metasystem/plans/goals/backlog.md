@@ -6,7 +6,7 @@
 - MigrationEpoch: 2026-08-20T00:00:00Z
 - ManifestDigest: d82032bee818c2d82e6a95e6f1b75347499b88ee8b68c4d20a0f3c94d00ba320
 - MigrationMode: manifest
-- Revision: 56
+- Revision: 57
 - ApprovalGate: since=2026-09-03T14:16:24Z opid=JY54AQT8101VK9353WT9FQYGA9-m0-c5dbf036
 - FleetEnrollment: at=2026-09-06T06:37:21Z machine=m1 generation=1 opid=CMNCRETKYCB18MFZNYFSZJPXQY-m1-a4f8999f
 
@@ -78,4 +78,5 @@ History:
 - 2026-09-14T02:14:03Z MNBZ2D4GPE3BVNXB8BVYJE9AAK-m1e-892cdaec ack actor=m1e+main-1789030447-51011-5722fc targets=receipt-admission-caps-concurrent-batteries displaced=m1e+main-1789030447-51011-5722fc@2026-09-14T01:22:19Z ack
 - 2026-09-14T03:22:01Z FSV7Y77NMFWJN3XB3AJZ07Z6SY-m1e-892cdaec ack actor=m1e+main-1789030447-51011-5722fc targets=coordinator-context-stays-under-budget displaced=m1e+main-1789030447-51011-5722fc@2026-09-14T03:21:33Z ack
 - 2026-09-14T06:09:25Z NTSAP4M2ES3MYB38KSYHMN1MET-m1b-c6925449 engine-floor actor=human:Wido reason=e35aef8ad7599bea7b0fc3d0d53652fb0b533d77 every enrolled seat runs this engine or newer
-Integrity: sha256=88ba4d6ceeb5dfe152ac72cdd3e09ad3cb651b56ce71436f975ae7a62cf783fe
+- 2026-09-14T16:18:00Z DSCY6YR357JHJXBFN1GE6BJ4BW-m1c-69c9e454 ack actor=m1c+main-1789191340-90689-8975a9 targets=stop-gate-honours-a-registered-wait displaced=m1c+main-1789191340-90689-8975a9@2026-09-14T14:11:03Z ack
+Integrity: sha256=3b5fa37a090a238582a923711ef6d56fcd19af882665cf32b3a052eaedda399d
