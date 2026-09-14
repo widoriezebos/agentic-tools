@@ -63,10 +63,15 @@ Each goal's intent on the ledger carries its DONE line, evidence and proof; this
 | 25 | stop-response-carries-a-structured-report-reference | D | new 2026-09-14: two wording changes landed mid-build, one broke delivery matching | 2 | delegate loop |
 | 26 | moved-effects-are-inventoried-in-the-design | D | new 2026-09-14: half the build's defects were a moved effect with no new owner | 2 | delegate loop |
 | 27 | member-size-gate | D | new 2026-09-14: twenty-two files and nineteen rounds in one member | 2 | delegate loop |
+| 28 | brief-declares-the-round-boundary | C | new 2026-09-14 at Wido's word after slice 3 unit C of goal 15: the brief declares paths and a line ceiling, conformance refuses outside them before a read is spent; bounds the round where goal 27 bounds the member | 2 | ceremony |
+| 29 | builder-proves-each-rule-by-mutation | C | new 2026-09-14: for every rule a test that fails when that rule alone is removed, carried in the builder's return, checked by conformance | 2 | verification |
+| 30 | cross-cutting-change-inventories-its-readers | C | adopted 2026-09-14; the seam direction ('Layers on:') added, one declaration with 'Readers:' | 3 | ceremony |
 
 Dependencies that matter: 7 before 8 (settlement before self-extension). 9 carries its own narrow retry reuse and lands before 10, which widens identity. 3 and 11 share one liveness contract: 3 owns dead-launcher and orphan reconciliation, 11 owns elapsed-time patience; neither releases capacity on the clock. 11 before 12 (same engine). 14 and 15 are independent. 17 before 18 before 19: the lane is defined by tier and its read by critique-always. 20 changes no receipt acceptance; record-only tip moves stay with landing-receipt-survives-records-drift, which is land-ready on m1e and should land before 20.
 
 Phase D, the delegate loop, was added on 2026-09-14 from the stop-decisions-record-deadline-evidence build, which took nineteen rounds for one member: every bed-visible defect cost a round trip through the seat because the delegate could not run the beds, three rounds repaired the previous round's own blind change, and the beds report one failure per run. Wido's word the same day: these are efficiency improvements, added to this program and done with priority. Order: 22 first, because it removes the blindness that causes the rest; 23 next, because it removes the seat from the loop; 24 and 25 are independent; 26 and 27 are gates that stop the next oversized member before it is built.
+
+Added 2026-09-14 (Wido, after the unit C read of goal 15): goals 28 to 30 were ranked directly after coordinator-context-stays-under-budget, because the loop's cost had moved to builder scope drift and rules shipped without a failing test, both caught last by a paid read; 28 and 29 move the checks to the brief and the builder's return, 30 makes the design name the seam it layers on. Goal 27 (member-size-gate) bounds a member before its build; goal 28 bounds the round's diff after it.
 
 ## 4. Rules for m1e while executing
 
