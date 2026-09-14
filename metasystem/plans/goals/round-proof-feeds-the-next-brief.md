@@ -1,16 +1,19 @@
 # round-proof-feeds-the-next-brief
 
 - State: queued
+- Priority: 1
+- Sequence: 2
 - Risk: severity=2 novelty=2 exposure=2 accumulation=2 basis="severity 2: a wrong findings file could refuse a legitimate follow-up or let a failing bed through; novelty 2: the round proof gains an output the dispatcher reads; exposure 2: every follow-up round; accumulation 2: later rounds build on the recorded findings"
 - Tier: 2
 - Intent: Delivery-efficiency phase D, delegate loop. After a round returns, the seat's round proof runs the beds the round's diff touches and records every failing assertion, with the bed's own words, in a findings file beside the round. A follow-up dispatch whose brief neither cites that file nor states that its findings are cleared is refused, so the seat stops copying bed output into briefs by hand and the delegate reads the failures the proof observed. Why: for fifteen rounds of the stop-decisions build the seat was a relay between the bed and the brief. DONE: a fixture round with a failing bed produces the findings file; a follow-up brief that ignores it is refused naming the file; a follow-up that cites it proceeds; a round with green beds produces an empty file and the follow-up proceeds. every mechanism in this goal lives in the Go engine, the ledger verbs and the adapter contract, never in one runtime; it is proven on at least two runtimes.
 - Origin: human
 - Next step: Design page: the findings record, its location beside the round, the dispatch check and the fixture; then build.
 - OpenedAt: 2026-09-14T15:32:06Z
-- Revision: 1
+- Revision: 2
 - Budget: elapsedLimit=4h attemptLimit=6 reservedJobMinutesLimit=720 activeJobLimit=1 reviewRoundLimit=2
 - BudgetExceptions: 0
 
 History:
 - 2026-09-14T15:32:06Z HBZ6CGVD976G3XCTXEECV20PEX-m1e-c6925449 open actor=human:Wido targets=round-proof-feeds-the-next-brief
-Integrity: sha256=1408e4ba442f4a3791412cc0eb236f34630190781475365c400b2c812f4dab84
+- 2026-09-14T15:32:48Z A5G62JFP5PEK9VZ16E2SP4YNNV-m1e-c6925449 set-priority actor=human:Wido targets=actionable-metrics,brief-declares-the-round-boundary,builder-proves-each-rule-by-mutation,chain-landing-carries-the-reviewed-diff,coordinator-context-stays-under-budget,coordinator-wakes-on-events-not-polls,critique-closes-on-folded-proof,cross-cutting-change-inventories-its-readers,dispatch-bases-chains-on-the-remote-tip,failed-job-attention,fixture-repo-copies-exclude-the-artifacts-store,fixture-stewards-outlive-their-suite,fixture-waits-name-their-producer,hook-root-resolver-design,human-authority-surface-runs-its-cmd-tests,human-goal-verbs-forgiving,human-wait-does-not-consume-goal-budget,job-record-birth-token,lease-sweep-death-evidence,live-job-on-a-done-goal-unnoticed,machine-concurrency-governor,metasystem-stop-escalation-proofs,metasystem-stop-fleet-form,new-elapsed-budgets-use-explicit-hours,receipt-admission-caps-concurrent-batteries,repo-root-paths-ride-agent-commits-unjudged,round-proof-feeds-the-next-brief,run-scoped-build-caches-have-a-janitor,skipped-test-fails-its-group-on-the-other-os,small-change-lane,stop-batch-strands-a-resumable-goal,stop-hook-never-forces-an-empty-turn,token-spend-fence,watch-verb,watcher-repair-request-never-names-current,winddown-census-handoff-leak reason=priority-order subject=round-proof-feeds-the-next-brief from=unranked to=1:2 requested-sequence=2
+Integrity: sha256=900631c940c937ee8a24c33c5cdae9df19356303ad280e40006a31fbabd913d7
