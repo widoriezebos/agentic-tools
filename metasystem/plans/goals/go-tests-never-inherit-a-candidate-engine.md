@@ -1,6 +1,6 @@
 # go-tests-never-inherit-a-candidate-engine
 
-- State: approved
+- State: claimed
 - Priority: 1
 - Sequence: 10
 - Risk: severity=2 novelty=1 exposure=2 accumulation=2 basis="severity 2: false failures that read as real guard defects; novelty 1: environment hygiene; exposure 2: any seat running beds and packages in one shell; accumulation 2: each occurrence costs a diagnosis"
@@ -9,11 +9,12 @@
 - Origin: human
 - Next step: 2026-09-15 00:35 m1c (handoff b51182f96c086845 recorded; this session continues until it stops). GOAL 11: fix round 2 in flight, Codex task-mu1sxlg5-w8k7z7 in /private/tmp/claude-501/-Users-wido-LocalStorage-GitHub-agentic-tools-m1c/96f72de7-79c7-496c-b717-141b91e84b81/scratchpad/g12/wt19, brief codex-brief-go-tests-env-r2.md (Opus read found behaviorsurface, audit and missionrunner still leak; no refusing check; proof survives deleting METASYSTEM_BIN; drop builder receipt). When it returns: rerun each F-1 case under its hostile variable, the proof mutations, changed packages, go-gate --fast; land by hact land.sh with a seat-written receipt; goal.sh done. REGRESSION session-start-relays-the-durable-wait-line: fix BUILT in /private/tmp/claude-501/-Users-wido-LocalStorage-GitHub-agentic-tools-m1c/96f72de7-79c7-496c-b717-141b91e84b81/scratchpad/g12/wt20 (cause: 157fac92's start path called start_finish_prepared at supervision-hook.sh:981/991 before the wait-recovery session start at :996 when identity or arming failed; fix always reaches the holder-authenticated session start first; audit requires one wait capture before the finaliser). Running: Opus read of wt20 and the supervision-hook plus supervision beds on wt20 (log /private/tmp/claude-501/-Users-wido-LocalStorage-GitHub-agentic-tools-m1c/96f72de7-79c7-496c-b717-141b91e84b81/scratchpad/g12/wt20-beds.log). Message drafted at /private/tmp/claude-501/-Users-wido-LocalStorage-GitHub-agentic-tools-m1c/96f72de7-79c7-496c-b717-141b91e84b81/scratchpad/g12/message-wait-line.txt (fill VERIFIED_PLACEHOLDER). To land it: release goal 11, claim the regression goal, land, conclude, re-claim goal 11 (one live claim per machine). REGISTERED-WAIT: Fable fold round 4 of /private/tmp/claude-501/-Users-wido-LocalStorage-GitHub-agentic-tools-m1c/96f72de7-79c7-496c-b717-141b91e84b81/scratchpad/g12/wt17 page running (critique round 3 at /private/tmp/claude-501/-Users-wido-LocalStorage-GitHub-agentic-tools-m1c/96f72de7-79c7-496c-b717-141b91e84b81/scratchpad/g12/critique-regwait-r3.md), releasing members A and B1 to build first. Job results: ~/.claude/plugins/data/codex-openai-codex/state/*/jobs/<task>.json result.rawOutput.
 - OpenedAt: 2026-09-14T16:16:39Z
-- Revision: 15
+- Revision: 16
 - Budget: elapsedLimit=4h attemptLimit=6 reservedJobMinutesLimit=720 activeJobLimit=1 reviewRoundLimit=2
 - BudgetExceptions: 0
 - Approved: by=human:Wido at=2026-09-14T18:54:42Z revision=2 opid=1FVG0RPDDCS253V6D1FVHN0PXJ-m1e-c6925449 authority=proven digest=01c88816aa05e9379310fc5e7cf396643079963790219c3b366e2fd7c7cb0cc6
-- Episode: machine=m1c lineage=main-1789191340-90689-8975a9 accountingRevision=8 episodeAt=2026-09-14T21:28:54Z episodeRevision=8 idleSeconds=25 released=2026-09-14T22:33:14Z
+- Claimed: machine=m1c lineage=main-1789191340-90689-8975a9 at=2026-09-14T22:34:25Z revision=16 accountingRevision=8 episodeAt=2026-09-14T21:28:54Z episodeRevision=8 idleSeconds=96
+- StopCapability: generation=16 revision=16 machine=m1c claimEpoch=5 fenceEpoch=0
 
 History:
 - 2026-09-14T16:16:39Z B3R2EK7S895J6G3ZMQCF8FYTZE-m1e-c6925449 open actor=human:Wido targets=go-tests-never-inherit-a-candidate-engine
@@ -31,4 +32,5 @@ History:
 - 2026-09-14T22:16:14Z G1MQXBAHEGVSKWM58NW9E4FZQZ-m1c-69c9e454 edit actor=m1c+main-1789191340-90689-8975a9 targets=go-tests-never-inherit-a-candidate-engine
 - 2026-09-14T22:21:07Z 79G57ET2E8YTVJ8NV71PDV2B73-m1c-69c9e454 edit actor=m1c+main-1789191340-90689-8975a9 targets=go-tests-never-inherit-a-candidate-engine
 - 2026-09-14T22:33:14Z B6RQNKA8S16Y58P5Y2E2GZT40M-m1c-69c9e454 release actor=m1c+main-1789191340-90689-8975a9 targets=go-tests-never-inherit-a-candidate-engine
-Integrity: sha256=ac2936542eed41294c2dd540aba7e5e36f651f5ea694e709d176c92089b01462
+- 2026-09-14T22:34:25Z H6GZTQRDWAVT3FQ4CDHFKZSHMY-m1c-69c9e454 claim actor=m1c+main-1789191340-90689-8975a9 targets=go-tests-never-inherit-a-candidate-engine
+Integrity: sha256=0607e8b5337058ab647a6aa7f770d36e098ba7be896b3820ae5f828ba12603b6
