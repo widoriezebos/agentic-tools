@@ -78,6 +78,7 @@ var Rows = []Row{
 	{Code: "ADMISSION_CLOSED_ELAPSED", Owner: "internal/dispatch", Site: "budget.go:34", Shape: Agent, Override: "goal resume", Commands: 1},
 	{Code: "ELAPSED_BREACH", Owner: "internal/dispatch", Site: "budget.go:35", Shape: Agent, Override: "goal resume", Commands: 1},
 	{Code: "BRIEF_AUTHORITY_REFUSED", Owner: "internal/dispatch", Site: "brief.go:34", Shape: Question},
+	{Code: "BRIEF_BOUNDS_INVALID", Owner: "internal/dispatch", Site: "brief.go:68", Shape: Question},
 	{Code: "OBLIGATION_REFUSED", Owner: "internal/dispatch", Site: "governed.go:89", Shape: Agent, Override: "goal set-obligation", Commands: 1},
 	{Code: "SLICE_CAP_REFUSED", Owner: "internal/dispatch", Site: "slice.go:63", Shape: Agent, Override: "goal approve or goal set-budget, then --approved-ref", Commands: 2},
 	{Code: "SLICE_START_UNRECORDED", Owner: "internal/dispatch", Site: "claim.go:366", Shape: Agent, Override: "goal recover", Commands: 1},

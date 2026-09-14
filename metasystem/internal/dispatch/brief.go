@@ -1,11 +1,14 @@
 package dispatch
 
 import (
+	"encoding/json"
 	"fmt"
 	"os"
+	"path"
 	"path/filepath"
 	"regexp"
 	"sort"
+	"strconv"
 	"strings"
 	"time"
 )
@@ -53,6 +56,190 @@ func BriefMode(briefPath string) (string, error) {
 		return "", silentRefusal(1)
 	}
 	return values[0], nil
+}
+
+type BriefBounds struct {
+	Boundary []string
+	Ceiling  *int64
+}
+type BriefBoundsRefusal struct{ Header, Detail string }
+
+func (e *BriefBoundsRefusal) Error() string {
+	return fmt.Sprintf("BRIEF_BOUNDS_INVALID: %s: %s", e.Header, e.Detail)
+}
+
+type BriefAdmission struct {
+	Bytes  []byte
+	Bounds BriefBounds
+	Mode   string
+}
+type briefHeaders struct{ mode, boundary, ceiling []string }
+
+const briefCeilingDetail = "expected a nonnegative decimal integer no greater than 9223372036854775807"
+
+func scanBriefHeaders(data []byte) briefHeaders {
+	var headers briefHeaders
+	for _, line := range strings.Split(string(data), "\n") {
+		switch {
+		case strings.HasPrefix(line, "Working Mode:"):
+			headers.mode = append(headers.mode, strings.TrimSpace(strings.TrimPrefix(line, "Working Mode:")))
+		case strings.HasPrefix(line, "Boundary:"):
+			headers.boundary = append(headers.boundary, strings.TrimSpace(strings.TrimPrefix(line, "Boundary:")))
+		case strings.HasPrefix(line, "Ceiling:"):
+			headers.ceiling = append(headers.ceiling, strings.TrimSpace(strings.TrimPrefix(line, "Ceiling:")))
+		}
+	}
+	return headers
+}
+func briefModeFromHeaders(headers briefHeaders) (string, error) {
+	if len(headers.mode) != 1 || headers.mode[0] == "" || strings.HasPrefix(headers.mode[0], "<") {
+		return "", silentRefusal(1)
+	}
+	return headers.mode[0], nil
+}
+func BriefModeOnly(briefPath string) (string, error) {
+	return BriefMode(briefPath)
+}
+func ReadBriefAdmission(briefPath, installPrefix string, requireMode bool, authority func([]byte, BriefBounds) error) (BriefAdmission, error) {
+	data, err := os.ReadFile(briefPath)
+	if err != nil {
+		if authority == nil {
+			return BriefAdmission{}, silentRefusal(1)
+		}
+		return BriefAdmission{}, fmt.Errorf("brief authority admission cannot read brief: %w", err)
+	}
+	return admitBriefBytes(data, installPrefix, requireMode, authority)
+}
+func admitBriefBytes(data []byte, installPrefix string, requireMode bool, authority func([]byte, BriefBounds) error) (BriefAdmission, error) {
+	headers := scanBriefHeaders(data)
+	mode, modeErr := briefModeFromHeaders(headers)
+	if requireMode && authority == nil && modeErr != nil {
+		return BriefAdmission{}, modeErr
+	}
+	bounds, err := parseBriefBounds(headers, installPrefix)
+	if err != nil {
+		return BriefAdmission{}, err
+	}
+	if authority != nil {
+		if err := authority(data, bounds); err != nil {
+			return BriefAdmission{}, err
+		}
+	}
+	if requireMode && modeErr != nil {
+		return BriefAdmission{}, modeErr
+	}
+	return BriefAdmission{Bytes: data, Bounds: bounds, Mode: mode}, nil
+}
+func ParseBriefBounds(data []byte, installPrefix string) (BriefBounds, error) {
+	return parseBriefBounds(scanBriefHeaders(data), installPrefix)
+}
+func parseBriefBounds(headers briefHeaders, installPrefix string) (BriefBounds, error) {
+	if len(headers.boundary) > 1 {
+		return BriefBounds{}, boundsRefusal("Boundary", "header occurs more than once")
+	}
+	if len(headers.ceiling) > 1 {
+		return BriefBounds{}, boundsRefusal("Ceiling", "header occurs more than once")
+	}
+	if err := validateBriefBoundsPair(len(headers.boundary) == 1, len(headers.ceiling) == 1); err != nil {
+		return BriefBounds{}, err
+	}
+	if len(headers.boundary) == 0 {
+		return BriefBounds{}, nil
+	}
+	var boundary []string
+	if err := json.Unmarshal([]byte(headers.boundary[0]), &boundary); err != nil || boundary == nil {
+		return BriefBounds{}, boundsRefusal("Boundary", "expected a JSON array of paths")
+	}
+	if err := validateBriefInstallPrefix(installPrefix); err != nil {
+		return BriefBounds{}, err
+	}
+	for _, member := range boundary {
+		if err := validateBriefMember(member); err != nil {
+			return BriefBounds{}, err
+		}
+		projected, directory, err := ProjectBriefBoundary(member, installPrefix)
+		if err != nil {
+			return BriefBounds{}, err
+		}
+		if !directory && briefBoundaryIsPattern(projected) {
+			if _, err := path.Match(projected, ""); err != nil {
+				return BriefBounds{}, invalidBriefMember(member)
+			}
+		}
+	}
+	ceilingText := headers.ceiling[0]
+	if ceilingText == "" || strings.IndexFunc(ceilingText, func(r rune) bool { return r < '0' || r > '9' }) >= 0 {
+		return BriefBounds{}, boundsRefusal("Ceiling", briefCeilingDetail)
+	}
+	ceiling, err := strconv.ParseInt(ceilingText, 10, 64)
+	if err != nil {
+		return BriefBounds{}, boundsRefusal("Ceiling", briefCeilingDetail)
+	}
+	return BriefBounds{Boundary: boundary, Ceiling: &ceiling}, nil
+}
+func ValidateBriefBounds(bounds BriefBounds) error {
+	if err := validateBriefBoundsPair(bounds.Boundary != nil, bounds.Ceiling != nil); err != nil {
+		return err
+	}
+	for _, member := range bounds.Boundary {
+		if err := validateBriefMember(member); err != nil {
+			return err
+		}
+	}
+	if bounds.Ceiling != nil && *bounds.Ceiling < 0 {
+		return boundsRefusal("Ceiling", briefCeilingDetail)
+	}
+	return nil
+}
+func validateBriefBoundsPair(boundary, ceiling bool) error {
+	if boundary == ceiling {
+		return nil
+	}
+	if boundary {
+		return boundsRefusal("Ceiling", "required with Boundary")
+	}
+	return boundsRefusal("Boundary", "required with Ceiling")
+}
+func ProjectBriefBoundary(member, installPrefix string) (string, bool, error) {
+	if err := validateBriefInstallPrefix(installPrefix); err != nil {
+		return "", false, err
+	}
+	directory := strings.HasSuffix(member, "/")
+	if installPrefix == "" {
+		return member, directory, nil
+	}
+	prefix := installPrefix + "/"
+	if !strings.HasPrefix(member, prefix) {
+		return "", false, invalidBriefMember(member)
+	}
+	return strings.TrimPrefix(member, prefix), directory, nil
+}
+func validateBriefInstallPrefix(installPrefix string) error {
+	if strings.ContainsAny(installPrefix, "*?[]\\") {
+		return boundsRefusal("Boundary", "installation prefix contains unsupported pattern bytes")
+	}
+	return nil
+}
+func validateBriefMember(member string) error {
+	directory := strings.HasSuffix(member, "/")
+	if member == "" || path.IsAbs(member) || strings.ContainsRune(member, 0) {
+		return invalidBriefMember(member)
+	}
+	parts := strings.Split(member, "/")
+	for i, part := range parts {
+		if part == "." || part == ".." || (part == "" && !(directory && i == len(parts)-1)) {
+			return invalidBriefMember(member)
+		}
+	}
+	return nil
+}
+func briefBoundaryIsPattern(member string) bool { return strings.ContainsAny(member, "*?[]\\") }
+func invalidBriefMember(member string) error {
+	encoded, _ := json.Marshal(member)
+	return boundsRefusal("Boundary", "invalid path or pattern "+string(encoded))
+}
+func boundsRefusal(header, detail string) error {
+	return &BriefBoundsRefusal{Header: header, Detail: detail}
 }
 
 // ValidateBriefAuthority checks explicit repository paths against the exact
