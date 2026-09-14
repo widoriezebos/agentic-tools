@@ -648,3 +648,33 @@ failure was the default firing in
 TestAPersonsBudgetActsAndDoneDropTheKeptEpisode, wherever the clock happened to
 land. Any direct run of that package needs an explicit `-timeout 40m`, or the
 next reader will take a timeout for a hang.
+
+## Four traps that read as real failures (m1e, m1b and m1c, 2026-09-14)
+
+`METASYSTEM_BIN` exported for a Go test or gate run makes
+`TestFreshInitializationUsesHumanGitCommitThenRealMigration` fail: `runReceiptGit`
+preserves the variable and the pre-commit guard prefers that engine over the
+fixture's own. It passes under `env -u METASYSTEM_BIN`, deterministically both
+ways. Export it for bed runs only (m1c measured this).
+
+`metasystem test run` can refuse with "active coordinator does not own the
+claimed goal reservation" when the checkout lease's claimEpoch and the goal's
+StopCapability.ClaimEpoch differ; m1c saw 5 against 1. The gate wants equality,
+and neither re-arming nor an ordinary goal edit restamps it.
+
+`test run` answers `reusable-success` (exit 76) for a repeated diagnostic,
+because the proof identity does not include the tree. Force a fresh run with
+`--tree <hash>`, and build that hash with a temporary index: `git stash create`
+omits untracked files, so a new production file is missing from the candidate
+and the build fails with "undefined: <symbol>".
+
+Proof admission closes on elapsed time well before the elapsed limit is spent:
+8h12m used against a 1d limit answered ADMISSION_CLOSED_ELAPSED, and `goal
+resume` refuses because the goal is not breach-stopped. What worked was a new
+budget tuple with a longer elapsed limit, or moving the seat's claim to another
+approved goal. A seat that runs many diagnostics in one night will meet this.
+
+A landing diff omits any file that is untracked in the checkout it is taken
+from, so `git add -N` every new file there, count the diff's `new file mode`
+lines, and check `git show --stat` after landing. This seat broke the trunk for
+four minutes that way.
