@@ -1,6 +1,6 @@
 # coordinator-context-stays-under-budget
 
-- State: claimed
+- State: approved
 - Priority: 1
 - Sequence: 6
 - Risk: severity=2 novelty=2 exposure=3 accumulation=1 basis="severity 2: an over-bounded output hides evidence the seat needs; novelty 2: bounded verb output is a new discipline; exposure 3: every seat's every turn; accumulation 1: verbs and docs"
@@ -9,13 +9,12 @@
 - Origin: human
 - Next step: STATE 2026-09-13 16:45Z (m1e, Opus coordinator; design by a Codex gpt-6-astra delegate): slices 1, 1b-i, 1b-ii and 2a are landed (644960b4, 349ac583, 4ddb6997, b9fcccb0, 6f853a32). Slice 2a carries the per-call readers with a committed evidence boundary in the cursor; one Opus read, no material finding (records/misc/coordinator-context-slice2a-code-read.md). Next: slice 2b (RoleContext, the runtime capability, context status and report) from artifacts/reports/codex-ccb-slice2b-brief.md, whose brief needs an Astra refresh for the amended committed-evidence rule of CCB-2-17 and for three items the 2a read routed forward (a transcript path change re-appends a generation; context prune must retire a cursor and its samples log together; the Codex reader decodes each line twice and its seen-id set is about 425 KB on the largest rollout here). In parallel the packet-fit follow-up (rows CCB-2-28 to CCB-2-32) has an Astra brief in worktree ccb-pktfit, waiting on one fixture decision: a dispatch-fixtures leg expects a 70,000-byte brief to be refused, which the new rule would stage instead. Then slice 3. Open for Wido: 8c.7, whether a held handoff expires.
 - OpenedAt: 2026-09-11T15:45:19Z
-- Revision: 54
+- Revision: 55
 - Pinned: m1e
 - Budget: elapsedLimit=1d attemptLimit=10 reservedJobMinutesLimit=1200 activeJobLimit=1 reviewRoundLimit=3
 - BudgetExceptions: 0
 - Approved: by=human:Wido at=2026-09-11T20:33:41Z revision=13 opid=5E536DZV81YW62T1T2FFBA1YNC-m1-c6925449 authority=proven digest=c2091d088534cc7439a99fa65e62c9775d5f123680cef44e6e1953282c59f419
-- Claimed: machine=m1e lineage=main-1789030447-51011-5722fc at=2026-09-13T22:38:22Z revision=54 accountingRevision=27 episodeAt=2026-09-12T18:02:19Z episodeRevision=27 idleSeconds=91314
-- StopCapability: generation=54 revision=54 machine=m1e claimEpoch=1 fenceEpoch=0
+- Episode: machine=m1e lineage=main-1789030447-51011-5722fc accountingRevision=27 episodeAt=2026-09-12T18:02:19Z episodeRevision=27 idleSeconds=91314 released=2026-09-14T01:22:15Z
 
 History:
 - 2026-09-11T15:45:19Z 5F6TSCSSSW5B4H5JVZDBKEWHPE-m1e-5083721b open actor=m1e+main-1789141490-27414-b9c0d2 targets=coordinator-context-stays-under-budget
@@ -72,4 +71,5 @@ History:
 - 2026-09-13T16:18:48Z Q4NQBYENHNKZMN6TDJD324EXEZ-m1e-c6925449 edit actor=human:Wido targets=coordinator-context-stays-under-budget
 - 2026-09-13T18:23:16Z PZ9C8WTAE1Q9ZMY232WYGTCENS-m1e-c6925449 done actor=human:Wido targets=actionable-metrics,chain-landing-carries-the-reviewed-diff,coordinator-context-stays-under-budget,coordinator-wakes-on-events-not-polls,critique-closes-on-folded-proof,dispatch-bases-chains-on-the-remote-tip,failed-job-attention,fixture-repo-copies-exclude-the-artifacts-store,fixture-stewards-outlive-their-suite,fixture-waits-name-their-producer,goal-abandoned-with-a-reason,human-authority-surface-runs-its-cmd-tests,human-goal-verbs-forgiving,human-wait-does-not-consume-goal-budget,job-record-birth-token,lease-sweep-death-evidence,live-job-on-a-done-goal-unnoticed,machine-concurrency-governor,metasystem-stop-escalation-proofs,metasystem-stop-fleet-form,new-elapsed-budgets-use-explicit-hours,proof-groups-detect-hangs-by-progress-not-the-clock,repo-root-paths-ride-agent-commits-unjudged,run-scoped-build-caches-have-a-janitor,skipped-test-fails-its-group-on-the-other-os,stop-batch-strands-a-resumable-goal,stop-refusal-fits-on-one-screen,token-spend-fence,watch-verb,watcher-repair-request-never-names-current,winddown-census-handoff-leak reason=priority-order from=1:7 to=1:6
 - 2026-09-13T22:38:22Z E343DBJKY03Y1DXE8NQ7M0F677-m1e-892cdaec claim actor=m1e+main-1789030447-51011-5722fc targets=coordinator-context-stays-under-budget
-Integrity: sha256=1aa42af71b57c9ca83c21265d9a7b7f70f96b204ceaff25ae40feef7736fc1e0
+- 2026-09-14T01:22:15Z 5GW8GDCRXCW8MKKFGXVQS15GMD-m1e-892cdaec release actor=m1e+main-1789030447-51011-5722fc targets=coordinator-context-stays-under-budget
+Integrity: sha256=bd6d410501f0e5438c1d7bf9403e95a7b7636ab678818354a2aa2ecb9a645312
