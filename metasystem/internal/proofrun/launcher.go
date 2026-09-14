@@ -16,6 +16,7 @@ import (
 	"time"
 
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/identity"
+	metarun "github.com/widoriezebos/agentic-tools/metasystem/internal/run"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/stopfence"
 )
 
@@ -56,6 +57,7 @@ type LaunchOptions struct {
 	Signal             func(int, syscall.Signal) error
 	PrepareSuccess     func(CompletionContext) (json.RawMessage, error)
 	CommitTerminal     func(CompletionContext, json.RawMessage) error
+	HintTerminal       func(string, string)
 	BeforeProcessDone  func(CompletionContext) error
 }
 
@@ -489,6 +491,13 @@ func LaunchSuite(options LaunchOptions) int {
 			fmt.Fprintln(combinedErr, "suite launcher: commit terminal proof result:", err)
 			return 1
 		}
+		hintTerminal := options.HintTerminal
+		if hintTerminal == nil {
+			hintTerminal = func(root, attemptID string) {
+				_, _ = metarun.NotifyWaiters(root, metarun.WaitHint{Kind: "attempt", TargetID: attemptID})
+			}
+		}
+		hintTerminal(controlRoot, options.AttemptID)
 	}
 	if options.BeforeProcessDone != nil {
 		if err := options.BeforeProcessDone(completion); err != nil {

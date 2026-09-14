@@ -201,6 +201,7 @@ type WaitOptions struct {
 	Now                   func() time.Time
 	BootClock             func() (string, time.Duration, error)
 	Sleep                 func(context.Context, time.Duration) error
+	OpenHintReceiver      OpenHintReceiver
 }
 
 // WaitersDir is the one namespace for job and run waiters alike.
@@ -649,9 +650,7 @@ func (s *Store) finishV2(ctx context.Context, rowPath string, row Waiter, option
 	if err != nil {
 		return waitResult(row, ExitWaiterIO, "failed", "wait result could not be durably recorded: "+err.Error(), "storage-failure", "", row.LastCheckedTip, "", now)
 	}
-	if updated.HintPath != "" {
-		_ = os.Remove(updated.HintPath)
-	}
+	removeWaiterHint(rowPath, updated)
 	return result
 }
 
@@ -676,11 +675,12 @@ func adoptsPendingSetupTarget(pinned, observed WaiterTarget, outcome string) boo
 		observed.Round > 0 && observed.StartedAt != "" && outcome == "running"
 }
 
-func (s *Store) waitLoop(ctx context.Context, rowPath string, row Waiter, options WaitOptions) WaitResult {
+func (s *Store) waitLoop(ctx context.Context, rowPath string, row Waiter, options WaitOptions, receiver HintReceiver) WaitResult {
 	deadline, err := time.Parse(time.RFC3339Nano, row.Deadline)
 	if err != nil {
 		return s.finishV2(ctx, rowPath, row, options, ExitNoRecord, "failed", "waiter deadline is invalid", "invalid-source", "", "", "")
 	}
+	var lastHintRead time.Time
 	for {
 		if err := ctx.Err(); err != nil {
 			return s.finishV2(context.Background(), rowPath, row, options, ExitInterrupted, "interrupted", "wait command was interrupted", "interrupted", "", row.LastCheckedTip, "")
@@ -774,6 +774,36 @@ func (s *Store) waitLoop(ctx context.Context, rowPath string, row Waiter, option
 		if pause <= 0 {
 			continue
 		}
+		if receiver != nil {
+			hintWaitStarted := options.Now()
+			hinted, hintErr := receiver.Wait(ctx, pause)
+			if hintErr == nil && hinted {
+				if earliest := lastHintRead.Add(time.Second); !lastHintRead.IsZero() && options.Now().Before(earliest) {
+					if err := options.Sleep(ctx, earliest.Sub(options.Now())); err != nil {
+						return s.finishV2(context.Background(), rowPath, row, options, ExitInterrupted, "interrupted", "wait command was interrupted", "interrupted", "", row.LastCheckedTip, "")
+					}
+				}
+				lastHintRead = options.Now()
+				continue
+			}
+			if hintErr == nil {
+				continue
+			}
+			_ = receiver.Close()
+			removeWaiterHint(rowPath, row)
+			updated, persistErr := s.persistV2(ctx, rowPath, row.Nonce, deadline, options, func(current *Waiter) {
+				current.HintPath = ""
+				current.Accelerator = "unavailable"
+			})
+			if persistErr == nil {
+				row = updated
+			}
+			receiver = nil
+			pause -= options.Now().Sub(hintWaitStarted)
+			if pause <= 0 {
+				continue
+			}
+		}
 		if err := options.Sleep(ctx, pause); err != nil {
 			return s.finishV2(context.Background(), rowPath, row, options, ExitInterrupted, "interrupted", "wait command was interrupted", "interrupted", "", row.LastCheckedTip, "")
 		}
@@ -860,6 +890,20 @@ func (s *Store) Wait(ctx context.Context, request WaitRequest, options WaitOptio
 		OpenWorkSignature: request.OpenWorkSignature, State: "registering", Accelerator: "unavailable",
 		ClaimableGoals: initial.ClaimableGoals, LastPollAt: initial.PollAt, LastPollError: initial.PollError,
 	}
+	var receiver HintReceiver
+	if options.OpenHintReceiver != nil {
+		row.HintPath = waiterHintPath(rowPath, nonce)
+		if opened, openErr := options.OpenHintReceiver(row.HintPath, waitID, nonce); openErr == nil {
+			receiver = opened
+			row.Accelerator = "fifo"
+		} else {
+			row.HintPath = ""
+		}
+	}
+	if receiver != nil {
+		defer receiver.Close()
+		defer os.Remove(waiterHintPath(rowPath, nonce))
+	}
 	if !initial.ClaimableRead && options.Claimable != nil && request.Selector.Kind == "goal" && request.Selector.Event == "human-act" {
 		claimCtx, cancel := context.WithTimeout(ctx, minDuration(10*time.Second, deadline.Sub(options.Now())))
 		row.ClaimableGoals, err = options.Claimable(claimCtx, row)
@@ -877,6 +921,7 @@ func (s *Store) Wait(ctx context.Context, request WaitRequest, options WaitOptio
 			if err := existingWaitRefuses(s.prober(), existing); err != nil {
 				return err
 			}
+			removeWaiterHint(rowPath, existing)
 			removeV2Pointer(s.Root, existing)
 		} else if !os.IsNotExist(readErr) {
 			data, legacyErr := os.ReadFile(rowPath)
@@ -928,7 +973,7 @@ func (s *Store) Wait(ctx context.Context, request WaitRequest, options WaitOptio
 	if !initial.Pending {
 		return s.finishV2(ctx, rowPath, row, options, initial.ExitCode, "ready", initial.Reason, initial.Outcome, initial.Evidence, initial.LedgerTip, initial.TerminalStamp)
 	}
-	return s.waitLoop(ctx, rowPath, row, options)
+	return s.waitLoop(ctx, rowPath, row, options, receiver)
 }
 
 func findWaiterByID(root, waitID string) (Waiter, string, bool, error) {
@@ -1195,6 +1240,20 @@ func (s *Store) renewSavedWait(ctx context.Context, rowPath string, row Waiter, 
 	}
 	newOwnerDigest := OwnerDigest(owner.MainId)
 	newPath := WaiterPath(s.Root, row.Kind, row.TargetID, newOwnerDigest)
+	var receiver HintReceiver
+	newHintPath := ""
+	if options.OpenHintReceiver != nil {
+		newHintPath = waiterHintPath(newPath, newNonce)
+		if opened, openErr := options.OpenHintReceiver(newHintPath, row.WaitID, newNonce); openErr == nil {
+			receiver = opened
+		} else {
+			newHintPath = ""
+		}
+	}
+	if receiver != nil {
+		defer receiver.Close()
+		defer os.Remove(newHintPath)
+	}
 	oldNonce := row.Nonce
 	savedResult := *row.Result
 	err := withWaiterLockBounded(ctx, s.Root, deadline, options.Now, options.Sleep, func() error {
@@ -1207,6 +1266,7 @@ func (s *Store) renewSavedWait(ctx context.Context, rowPath string, row Waiter, 
 				if refusal := existingWaitRefuses(s.prober(), successor); refusal != nil {
 					return refusal
 				}
+				removeWaiterHint(newPath, successor)
 				removeV2Pointer(s.Root, successor)
 			} else if !os.IsNotExist(successorErr) {
 				return fmt.Errorf("the successor's waiter row is unreadable")
@@ -1231,10 +1291,11 @@ func (s *Store) renewSavedWait(ctx context.Context, rowPath string, row Waiter, 
 		current.ClaimableGoals = initial.ClaimableGoals
 		current.LastPollAt, current.LastPollError = initial.PollAt, initial.PollError
 		current.ResumedBy = &ResumeIdentity{Session: owner.SessionId, Pid: exact.Pid, PidStartedAt: exact.StartedAt.Unix(), PidStartedAtMicro: processMicrosecondIdentity(exact), PidStartTicks: exact.StartTicks, BootID: exact.BootID}
-		if current.HintPath != "" {
-			_ = os.Remove(current.HintPath)
+		removeWaiterHint(rowPath, current)
+		current.HintPath, current.Accelerator = newHintPath, "unavailable"
+		if receiver != nil {
+			current.Accelerator = "fifo"
 		}
-		current.HintPath, current.Accelerator = "", "unavailable"
 		if writeErr := writeV2Waiter(newPath, current); writeErr != nil {
 			return writeErr
 		}
@@ -1284,7 +1345,7 @@ func (s *Store) renewSavedWait(ctx context.Context, rowPath string, row Waiter, 
 	if !initial.Pending {
 		return s.finishV2(ctx, newPath, row, options, initial.ExitCode, "ready", initial.Reason, initial.Outcome, initial.Evidence, initial.LedgerTip, initial.TerminalStamp)
 	}
-	return s.waitLoop(ctx, newPath, row, options)
+	return s.waitLoop(ctx, newPath, row, options, receiver)
 }
 
 // ResumeWait replays a retained result or takes over a dead waiter from its
@@ -1356,6 +1417,20 @@ func (s *Store) ResumeWait(ctx context.Context, waitID string, owner Caller, run
 	}
 	newOwnerDigest := OwnerDigest(owner.MainId)
 	newPath := WaiterPath(s.Root, row.Kind, row.TargetID, newOwnerDigest)
+	var receiver HintReceiver
+	newHintPath := ""
+	if options.OpenHintReceiver != nil {
+		newHintPath = waiterHintPath(newPath, newNonce)
+		if opened, openErr := options.OpenHintReceiver(newHintPath, row.WaitID, newNonce); openErr == nil {
+			receiver = opened
+		} else {
+			newHintPath = ""
+		}
+	}
+	if receiver != nil {
+		defer receiver.Close()
+		defer os.Remove(newHintPath)
+	}
 	if options.Deliver == nil {
 		return waitResult(row, ExitWaiterBusy, "failed", "the runtime has no wait-delivery operation", "ineligible-registration", "", row.LastCheckedTip, "", now)
 	}
@@ -1393,15 +1468,17 @@ func (s *Store) ResumeWait(ctx context.Context, waitID string, owner Caller, run
 		current.BootDeadlineNanos, current.DeadlineBootID = row.BootDeadlineNanos, row.DeadlineBootID
 		current.Delivery = answer
 		current.ResumedBy = &ResumeIdentity{Session: owner.SessionId, Pid: exact.Pid, PidStartedAt: exact.StartedAt.Unix(), PidStartedAtMicro: processMicrosecondIdentity(exact), PidStartTicks: exact.StartTicks, BootID: exact.BootID}
-		if current.HintPath != "" {
-			_ = os.Remove(current.HintPath)
+		removeWaiterHint(rowPath, current)
+		current.HintPath, current.Accelerator = newHintPath, "unavailable"
+		if receiver != nil {
+			current.Accelerator = "fifo"
 		}
-		current.HintPath, current.Accelerator = "", "unavailable"
 		if newPath != rowPath {
 			if successor, successorErr := readV2Waiter(newPath); successorErr == nil {
 				if refusal := existingWaitRefuses(s.prober(), successor); refusal != nil {
 					return refusal
 				}
+				removeWaiterHint(newPath, successor)
 				removeV2Pointer(s.Root, successor)
 			} else if !os.IsNotExist(successorErr) {
 				data, readErr := os.ReadFile(newPath)
@@ -1444,7 +1521,7 @@ func (s *Store) ResumeWait(ctx context.Context, waitID string, owner Caller, run
 		}
 		return waitResult(row, code, "failed", "wait could not be resumed: "+err.Error(), outcome, "", row.LastCheckedTip, "", now)
 	}
-	return s.waitLoop(ctx, newPath, row, options)
+	return s.waitLoop(ctx, newPath, row, options, receiver)
 }
 
 // PendingWaiters returns only schema-2 pending rows; legacy watch rows cannot

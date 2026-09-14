@@ -398,6 +398,38 @@ func TestPublishLandsWithParentAndTrailer(t *testing.T) {
 	}
 }
 
+func TestConfirmedPublicationHintsAfterCanonicalWrite(t *testing.T) {
+	origin, clone := oneClone(t)
+	e := endpointFor(clone)
+	hinted := false
+	res, err := Publish(e, PublishRequest{
+		Opid: "op-hint", Machine: "mac-a", Lineage: "l1",
+		Intent:  Intent{Verb: "edit", Targets: []string{"goal-a"}},
+		Message: "goal edit goal-a",
+		Mutate: func(string) ([]Change, error) {
+			return []Change{goalChange("goal-a", "# goal-a\nState: queued\n")}, nil
+		},
+		HintConfirmed: func(root string, targets []string) {
+			if root != clone || strings.Join(targets, ",") != "goal-a" {
+				t.Fatalf("hint target root=%q targets=%v", root, targets)
+			}
+			tip := mustGit(t, origin, "rev-parse", "refs/heads/main")
+			present, trailerErr := TrailerPresent(e, tip, "op-hint")
+			if trailerErr != nil || !present {
+				t.Fatalf("hint preceded confirmed canonical publication: tip=%s present=%t err=%v", tip, present, trailerErr)
+			}
+			entry, entryErr := ReadEntry(clone, "op-hint")
+			if entryErr != nil || entry.Phase != PhasePushed {
+				t.Fatalf("hint moved or preceded the publication boundary: entry=%+v err=%v", entry, entryErr)
+			}
+			hinted = true
+		},
+	})
+	if err != nil || res.Outcome != OutcomeConfirmed || !hinted {
+		t.Fatalf("result=%+v err=%v hinted=%t", res, err, hinted)
+	}
+}
+
 func TestSameTargetRaceExactlyOneWins(t *testing.T) {
 	_, a, b := twoClones(t)
 

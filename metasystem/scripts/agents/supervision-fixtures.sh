@@ -41,13 +41,13 @@ if (( ! fixture_bed_child )); then
     run_fixture_bed_scenarios supervision "supervision fixtures passed (S4-1 through S4-16 and engine re-arm)" \
       "$fixture_bed_script" bed-death-self-test operator-layout nested-root census-lifecycle slow-census idle-hook rotation-log foreign-owner stop-hook-monitor \
       rearm-rebuild rearm-launch-fails rearm-provenance stop-everything seat-survives status-is-live stop-fence arm-again arm-refuses-survivor \
-      wait-job-run wait-proof wait-ledger wait-restart wait-bounds
+      wait-job-run wait-proof wait-ledger wait-restart wait-bounds wait-native-hint wait-no-native wait-compatibility
   fi
 fi
 case "$fixture_scenario" in
   bed-death-self-test | operator-layout | nested-root | census-lifecycle | slow-census | idle-hook | rotation-log | foreign-owner | stop-hook-monitor | \
     rearm-rebuild | rearm-launch-fails | rearm-provenance | stop-everything | seat-survives | status-is-live | stop-fence | arm-again | arm-refuses-survivor | \
-    wait-job-run | wait-proof | wait-ledger | wait-restart | wait-bounds) ;;
+    wait-job-run | wait-proof | wait-ledger | wait-restart | wait-bounds | wait-native-hint | wait-no-native | wait-compatibility) ;;
   *) echo "supervision fixtures: unknown scenario: $fixture_scenario" >&2; exit 64 ;;
 esac
 
@@ -589,6 +589,24 @@ case "$fixture_scenario" in
     ;;
   wait-bounds)
     (cd "$source_root" && METASYSTEM_WAIT_BINARY="$ms" go test ./internal/run ./internal/goal -run 'TestWait(LockClockAndFetchBounds|GoalFetchDeadline)$' -count=1)
+    fixture_child_completed=1
+    assert_fixture_supervision_isolation
+    exit 0
+    ;;
+  wait-native-hint)
+    (cd "$source_root" && GOCACHE="${GOCACHE:-/tmp/metasystem-gocache}" go test ./internal/run ./internal/dispatch ./internal/proofrun ./internal/goal -run 'Test(WaitFIFOHintDelivery|JobTransitionsHintAfterDurableWrite|ProofTerminalHintsAfterDurableCommit|ConfirmedPublicationHintsAfterCanonicalWrite)$' -count=1)
+    fixture_child_completed=1
+    assert_fixture_supervision_isolation
+    exit 0
+    ;;
+  wait-no-native)
+    (cd "$source_root" && GOCACHE="${GOCACHE:-/tmp/metasystem-gocache}" go test ./internal/run -run '^TestWaitHintsOnlyTriggerReads$' -count=1)
+    fixture_child_completed=1
+    assert_fixture_supervision_isolation
+    exit 0
+    ;;
+  wait-compatibility)
+    (cd "$source_root" && GOCACHE="${GOCACHE:-/tmp/metasystem-gocache}" go test ./cmd/metasystem -run '^TestWaitCompatibilityMappings$' -count=1)
     fixture_child_completed=1
     assert_fixture_supervision_isolation
     exit 0

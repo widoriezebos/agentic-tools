@@ -246,13 +246,40 @@ func runRunWatch(args []string) int {
 	if flags.Parse(args) != nil {
 		return 2
 	}
-	caller, err := runCaller(*root, *callerPid, "")
-	if err != nil {
-		fmt.Fprintln(os.Stderr, err)
-		return run.ExitWaiterUnknown
+	_ = pollMs // retained for command-line compatibility; wait owns its cadence.
+	if flags.NArg() != 0 {
+		return 2
 	}
-	store := runStore(*root)
-	return store.Watch(*id, caller, time.Duration(*pollMs)*time.Millisecond, os.Stdout)
+	if *id == "" {
+		fmt.Fprintln(os.Stdout, "run  no-record rc=4 log=")
+		return run.ExitNoRecord
+	}
+	pid := *callerPid
+	if pid == 0 {
+		pid = int64(os.Getppid())
+	}
+	printer := func(result run.WaitResult, _ bool) {
+		if result.ExitCode < run.ExitGreen || result.ExitCode > run.ExitNoRecord {
+			return
+		}
+		outcome := result.SourceOutcome
+		switch outcome {
+		case run.StatusGreen, run.StatusRed, run.StatusEndedUnknown, run.StatusLaunchFailed:
+		case "target-replaced":
+		default:
+			if result.TargetIncarnation == (run.WaiterTarget{}) {
+				outcome = "no-record"
+			} else {
+				outcome = "record-vanished"
+			}
+		}
+		logPath := ""
+		if record, readErr := runStore(*root).Read(*id); readErr == nil && record != nil {
+			logPath = record.Log
+		}
+		fmt.Fprintf(os.Stdout, "run %s %s rc=%d log=%s\n", *id, outcome, result.ExitCode, logPath)
+	}
+	return compatibilityWaitCommand([]string{"--root", *root, "--run", *id}, nil, pid, printer)
 }
 
 func runRunRegister(args []string) int {
@@ -440,16 +467,26 @@ func runJobWatchVerb(args []string) int {
 	if flags.Parse(args) != nil {
 		return 2
 	}
-	caller, err := runCaller(*root, *callerPid, "")
-	if err != nil {
-		fmt.Fprintln(os.Stderr, err)
-		return run.ExitWaiterUnknown
+	if flags.NArg() != 0 {
+		return 2
+	}
+	if *job == "" {
+		return run.ExitNoRecord
 	}
 	poll := time.Duration(*pollMs) * time.Millisecond
+	if poll <= 0 {
+		poll = 2 * time.Second
+	}
 	stopProgress := startSuiteProgressPrinter(*progressRoot, poll, os.Stderr)
 	defer stopProgress()
-	return dispatchcore.JobWatch(*root, *job, caller, poll)
+	pid := *callerPid
+	if pid == 0 {
+		pid = int64(os.Getppid())
+	}
+	return compatibilityWaitCommand([]string{"--root", *root, "--job", *job}, nil, pid, func(run.WaitResult, bool) {})
 }
+
+var compatibilityWaitCommand = runWaitCommand
 
 // The run package's flight-recorder wiring: component "run", this
 // process's identity, one emitter for verbs and watcher alike.

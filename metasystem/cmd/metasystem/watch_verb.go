@@ -10,9 +10,9 @@ import (
 	watchsurface "github.com/widoriezebos/agentic-tools/metasystem/internal/watch"
 )
 
-// runWatch keeps the established delegate-job waiter available as
-// `metasystem watch --job ...`; without --job it emits a zero-write snapshot
-// of verdicts already persisted by their owning producers.
+// runWatch keeps the established delegate-job syntax as a compatibility
+// wrapper over the installed wait verb; without --job it emits a zero-write
+// snapshot of verdicts already persisted by their owning producers.
 func runWatch(args []string) int {
 	if requestsJobWait(args) {
 		return runJobWatchVerb(args)

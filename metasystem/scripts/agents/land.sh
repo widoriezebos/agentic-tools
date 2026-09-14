@@ -62,6 +62,10 @@ landing_recertification=
 landing_carried=
 pathspecs=()
 
+hint_landing_waiters() {
+  [[ -z "$landing_goal" ]] || "$ms" wait notify --root "$root" --goal "$landing_goal" >/dev/null 2>&1 || true
+}
+
 while (( $# )); do
   case "$1" in
     -m)
@@ -973,6 +977,7 @@ finish_carried_publication() {
     fi
     fail_step "$push_rc"
   fi
+  hint_landing_waiters
   carry_abandon_armed=0
   fixture_pause after-push
   run_required_step "complete carried goal record" "$ms" goal carried --root "$root" --entry "$carried_entry"
@@ -1162,6 +1167,7 @@ if [[ -n "$landing_recertification" ]]; then
     fi
     fail_step "$push_rc"
   fi
+  hint_landing_waiters
 else
   run_required_step "fetch origin" fetch_origin
   run_required_step "rebase onto origin/$branch" rebase_origin
@@ -1191,6 +1197,7 @@ else
     run_required_step "verify shared testing proof after retry rebase" verify_current_testing_proof
     push_attempt=$((push_attempt + 1))
   done
+  hint_landing_waiters
 fi
 
 if (( ! skip_transport )); then

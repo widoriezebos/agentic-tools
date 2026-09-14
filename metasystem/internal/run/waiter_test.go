@@ -63,6 +63,191 @@ func (p waitTestProber) Probe(pid int64) (identity.Exact, identity.Liveness, err
 	return identity.Exact{Pid: pid, StartedAt: time.Unix(5000, 0), StartTicks: 77, BootID: "boot-test"}, identity.Alive, nil
 }
 
+type scriptedWaitHint struct {
+	now       *time.Time
+	boot      *time.Duration
+	waitID    string
+	nonce     string
+	actions   []scriptedHintAction
+	onTimeout func()
+}
+
+type scriptedHintAction struct {
+	waitID      string
+	nonce       string
+	makeDurable func()
+}
+
+func (hint *scriptedWaitHint) Wait(_ context.Context, duration time.Duration) (bool, error) {
+	for len(hint.actions) > 0 {
+		action := hint.actions[0]
+		hint.actions = hint.actions[1:]
+		if action.waitID != hint.waitID || action.nonce != hint.nonce {
+			continue
+		}
+		if action.makeDurable != nil {
+			action.makeDurable()
+		}
+		return true, nil
+	}
+	*hint.now = hint.now.Add(duration)
+	*hint.boot += duration
+	if hint.onTimeout != nil {
+		hint.onTimeout()
+	}
+	return false, nil
+}
+
+func (*scriptedWaitHint) Close() error { return nil }
+
+func TestWaitHintsOnlyTriggerReads(t *testing.T) {
+	run := func(t *testing.T, mode string) (WaitResult, []time.Time) {
+		t.Helper()
+		root := t.TempDir()
+		now := time.Date(2026, 9, 14, 10, 0, 0, 0, time.UTC)
+		boot := time.Hour
+		durable := false
+		deliveries := 0
+		var readAt []time.Time
+		options := WaitOptions{
+			Now:       func() time.Time { return now },
+			BootClock: func() (string, time.Duration, error) { return "boot-test", boot, nil },
+			Sleep: func(_ context.Context, duration time.Duration) error {
+				now = now.Add(duration)
+				boot += duration
+				if mode == "dropped" {
+					durable = true
+				}
+				return nil
+			},
+			Deliver: func(context.Context, string, string, time.Time, string) (string, bool, error) {
+				deliveries++
+				return "blocking", false, nil
+			},
+			Observe: func(context.Context, WaitSelector, WaiterTarget, string) (SourceObservation, error) {
+				readAt = append(readAt, now)
+				observation := SourceObservation{Pending: !durable, Incarnation: WaiterTarget{Generation: 1, LaunchNonce: "n"}, Outcome: "running", Evidence: "run:r:g1"}
+				if durable {
+					observation.ExitCode, observation.Outcome, observation.Reason = ExitGreen, "green", "the durable record is green"
+				}
+				return observation, nil
+			},
+		}
+		options.OpenHintReceiver = func(_ string, waitID, nonce string) (HintReceiver, error) {
+			if mode == "dropped" {
+				return nil, os.ErrNotExist
+			}
+			hint := &scriptedWaitHint{now: &now, boot: &boot, waitID: waitID, nonce: nonce, onTimeout: func() { durable = true }}
+			switch mode {
+			case "false-then-durable":
+				hint.actions = []scriptedHintAction{
+					// These matching notifications are queued as soon as the
+					// receiver opens, before the registration is published.
+					{waitID: waitID, nonce: nonce},
+					{waitID: waitID, nonce: nonce},
+					{waitID: waitID, nonce: nonce, makeDurable: func() { durable = true }},
+				}
+			case "hostile":
+				hint.actions = []scriptedHintAction{{waitID: waitID, nonce: "wrong-nonce"}}
+			}
+			return hint, nil
+		}
+		result := (&Store{Root: root, Prober: waitTestProber{live: true}}).Wait(context.Background(), WaitRequest{
+			Selector: WaitSelector{Kind: "run", TargetID: "r"}, Owner: mainCaller, RuntimeSession: "runtime-1", Timeout: time.Minute,
+		}, options)
+		row, _, err := LoadWaiterByID(root, result.WaitID)
+		if err != nil {
+			t.Fatal(err)
+		}
+		wantAccelerator := "fifo"
+		if mode == "dropped" {
+			wantAccelerator = "unavailable"
+		}
+		if row.Accelerator != wantAccelerator {
+			t.Fatalf("accelerator = %q, want %q", row.Accelerator, wantAccelerator)
+		}
+		if deliveries != 1 {
+			t.Fatalf("hint path caused %d wait deliveries, want one foreground delivery", deliveries)
+		}
+		return result, readAt
+	}
+
+	falseHintResult, falseHintReads := run(t, "false-then-durable")
+	if falseHintResult.ExitCode != ExitGreen || len(falseHintReads) != 5 {
+		t.Fatalf("false hint changed the outcome instead of triggering a read: result=%+v reads=%v", falseHintResult, falseHintReads)
+	}
+	if falseHintReads[2] != falseHintReads[1] || falseHintReads[3].Sub(falseHintReads[2]) < time.Second || falseHintReads[4].Sub(falseHintReads[3]) < time.Second {
+		t.Fatalf("hint reads were not immediate then rate-limited: %v", falseHintReads)
+	}
+
+	hostileResult, hostileReads := run(t, "hostile")
+	if hostileResult.ExitCode != ExitGreen || len(hostileReads) != 3 || hostileReads[2].Sub(hostileReads[1]) != 10*time.Second {
+		t.Fatalf("wrong-nonce hint affected the durable result: result=%+v reads=%v", hostileResult, hostileReads)
+	}
+
+	droppedResult, droppedReads := run(t, "dropped")
+	if droppedResult.ExitCode != ExitGreen || droppedResult.SourceEvidence != falseHintResult.SourceEvidence || len(droppedReads) != 3 || droppedReads[2].Sub(droppedReads[1]) != 10*time.Second {
+		t.Fatalf("dropped hint changed more than latency: result=%+v reads=%v", droppedResult, droppedReads)
+	}
+}
+
+func TestWaitFIFOHintDelivery(t *testing.T) {
+	root := t.TempDir()
+	if err := os.MkdirAll(WaitersDir(root), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	waitID := "0123456789abcdef0123456789abcdef"
+	nonce := "abcdef0123456789abcdef0123456789"
+	rowPath := WaiterPath(root, "job", "job-a", "owner-a")
+	hintPath := waiterHintPath(rowPath, nonce)
+	receiver, err := OpenFIFOHintReceiver(hintPath, waitID, nonce)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer receiver.Close()
+	defer os.Remove(hintPath)
+	row := Waiter{SchemaVersion: 2, WaitID: waitID, Nonce: nonce, Kind: "job", TargetID: "job-a", OwnerDigest: "owner-a", State: "pending", Accelerator: "fifo", HintPath: hintPath}
+	if err := writeV2Waiter(rowPath, row); err != nil {
+		t.Fatal(err)
+	}
+	forgedPath := WaiterPath(root, "job", "job-a", "owner-b")
+	if err := writeV2Waiter(forgedPath, Waiter{SchemaVersion: 2, WaitID: waitID, Nonce: nonce, Kind: "job", TargetID: "job-a", OwnerDigest: "owner-b", State: "pending", Accelerator: "fifo", HintPath: hintPath}); err != nil {
+		t.Fatal(err)
+	}
+	writer, err := unix.Open(hintPath, unix.O_WRONLY|unix.O_NONBLOCK|unix.O_CLOEXEC|unix.O_NOFOLLOW, 0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := unix.Write(writer, []byte(waitID+" wrong-nonce\n")); err != nil {
+		t.Fatal(err)
+	}
+	_ = unix.Close(writer)
+	delivery, err := NotifyWaiters(root, WaitHint{Kind: "job", TargetID: "job-a"})
+	if err != nil || delivery.Matched != 2 || delivery.Delivered != 1 {
+		t.Fatalf("delivery=%+v err=%v", delivery, err)
+	}
+	hinted, err := receiver.Wait(context.Background(), time.Second)
+	if err != nil || !hinted {
+		t.Fatalf("valid nonce did not survive the preceding forged hint: hinted=%t err=%v", hinted, err)
+	}
+	row.State = "ready"
+	if err := writeV2Waiter(rowPath, row); err != nil {
+		t.Fatal(err)
+	}
+	forged, err := readV2Waiter(forgedPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	forged.State = "ready"
+	if err := writeV2Waiter(forgedPath, forged); err != nil {
+		t.Fatal(err)
+	}
+	late, err := NotifyWaiters(root, WaitHint{Kind: "job", TargetID: "job-a"})
+	if err != nil || late.Matched != 0 || late.Delivered != 0 {
+		t.Fatalf("late hint reached a terminal registration: delivery=%+v err=%v", late, err)
+	}
+}
+
 func TestWaitRunTerminalsAndDeadline(t *testing.T) {
 	terminalCases := []struct {
 		name string

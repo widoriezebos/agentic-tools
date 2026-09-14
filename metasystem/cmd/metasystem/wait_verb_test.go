@@ -366,6 +366,44 @@ func TestWaitInstalledRunCommand(t *testing.T) {
 	}
 }
 
+func TestWaitNotifyCommand(t *testing.T) {
+	root := t.TempDir()
+	if err := os.MkdirAll(metarun.WaitersDir(root), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	waitID := strings.Repeat("a", 32)
+	nonce := strings.Repeat("b", 32)
+	rowPath := metarun.WaiterPath(root, "job", "notify-job", "owner")
+	hintPath := rowPath + "." + nonce + ".hint"
+	receiver, err := metarun.OpenFIFOHintReceiver(hintPath, waitID, nonce)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer receiver.Close()
+	defer os.Remove(hintPath)
+	row := metarun.Waiter{SchemaVersion: 2, WaitID: waitID, Nonce: nonce, Kind: "job", TargetID: "notify-job", OwnerDigest: "owner", State: "pending", Accelerator: "fifo", HintPath: hintPath}
+	encoded, err := json.Marshal(row)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(rowPath, encoded, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	output, code := captureStdout(t, func() int {
+		return runWait([]string{"notify", "--root", root, "--job", "notify-job"})
+	})
+	if code != 0 || !strings.Contains(output, "matched=1 delivered=1") {
+		t.Fatalf("notify code=%d output=%q", code, output)
+	}
+	hinted, err := receiver.Wait(context.Background(), time.Second)
+	if err != nil || !hinted {
+		t.Fatalf("notify did not reach the private FIFO: hinted=%t err=%v", hinted, err)
+	}
+	if code := runWait([]string{"notify", "--job", "one", "--goal", "two"}); code != metarun.ExitInvalidWait {
+		t.Fatalf("ambiguous notify exit=%d", code)
+	}
+}
+
 func TestWaitSessionStartPrintsPendingRows(t *testing.T) {
 	root := t.TempDir()
 	self := int64(os.Getpid())

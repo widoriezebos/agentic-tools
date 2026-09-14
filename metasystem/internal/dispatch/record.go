@@ -26,12 +26,17 @@ import (
 
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/atomicfile"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/progress"
+	metarun "github.com/widoriezebos/agentic-tools/metasystem/internal/run"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/wiredoc"
 	"golang.org/x/sys/unix"
 )
 
 var validJobID = regexp.MustCompile(`^[a-z0-9][a-z0-9-]*$`)
 var validCommitReview = regexp.MustCompile(`^commit:[0-9a-f]{40}$`)
+
+var notifyJobWaiters = func(root, job string) {
+	_, _ = metarun.NotifyWaiters(root, metarun.WaitHint{Kind: "job", TargetID: job})
+}
 
 // The lawful status graph. A record may only move along these edges; a
 // self-edge (target == current) is a metadata update that carries no
@@ -327,7 +332,8 @@ func recordCreateLocked(root, job string, record map[string]any, occupancy Sessi
 // pending-setup and the new record keeps the same job id, claim epoch, and
 // main id. This is the create/setup handshake that makes reservation atomic.
 func RecordSetup(root, job, sourcePath string) error {
-	return withRecordSessionLock(root, job, func(recordPath string, transaction *SessionIndexTransaction) error {
+	wroteTransition := false
+	err := withRecordSessionLock(root, job, func(recordPath string, transaction *SessionIndexTransaction) error {
 		current, err := readObject(recordPath)
 		if err != nil {
 			return refuse(1, "cannot complete setup for job record %s: %v", job, err)
@@ -380,8 +386,13 @@ func RecordSetup(root, job, sourcePath string) error {
 		if err := writeRecord(recordPath, record); err != nil {
 			return err
 		}
+		wroteTransition = true
 		return transaction.syncRecord(job, record)
 	})
+	if wroteTransition {
+		notifyJobWaiters(root, job)
+	}
+	return err
 }
 
 func captureProgressLaunch(record map[string]any) error {
@@ -432,7 +443,8 @@ func recordProductRoots(value any) ([]string, error) {
 // idempotent: a record already failed with this exact violation is left
 // untouched. The job must be pending or running to accept the stamp.
 func RecordProtocolError(root, job, expect, violation, violationFile string) error {
-	return withRecordLock(root, job, func(recordPath string) error {
+	wroteTransition := false
+	err := withRecordLock(root, job, func(recordPath string) error {
 		record, err := readObject(recordPath)
 		if err != nil {
 			return refuse(1, "cannot record protocol error for %s: %v", job, err)
@@ -474,8 +486,16 @@ func RecordProtocolError(root, job, expect, violation, violationFile string) err
 		if isFalsy(record["endedAt"]) {
 			record["endedAt"] = now
 		}
-		return writeRecord(recordPath, record)
+		if err := writeRecord(recordPath, record); err != nil {
+			return err
+		}
+		wroteTransition = true
+		return nil
 	})
+	if wroteTransition {
+		notifyJobWaiters(root, job)
+	}
+	return err
 }
 
 // RecordCAS is the compare-and-swap at the heart of the lifecycle: it applies
@@ -487,6 +507,7 @@ func RecordProtocolError(root, job, expect, violation, violationFile string) err
 //
 // The returned observed string is non-empty only on a lost compare.
 func RecordCAS(root, job, expect, target, patchPath string) (observed string, err error) {
+	wroteTransition := false
 	err = withRecordSessionLock(root, job, func(recordPath string, transaction *SessionIndexTransaction) error {
 		record, readErr := readObject(recordPath)
 		if readErr != nil {
@@ -561,11 +582,15 @@ func RecordCAS(root, job, expect, target, patchPath string) (observed string, er
 		if err := writeRecord(recordPath, record); err != nil {
 			return err
 		}
+		wroteTransition = !metadataUpdate
 		// The occupancy index hears every status transition in the same
 		// locked breath; key-less records took the plain record lock and
 		// carry a disabled transaction (ported: the wip's indexed CAS).
 		return transaction.syncRecord(job, record)
 	})
+	if wroteTransition {
+		notifyJobWaiters(root, job)
+	}
 	return observed, err
 }
 

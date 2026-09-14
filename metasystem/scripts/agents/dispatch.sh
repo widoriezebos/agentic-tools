@@ -1100,9 +1100,8 @@ await_handshake() { # job, maximum session-established seconds, dispatch claim e
   return 1
 }
 
-wait_for_job() { # job
+wait_for_job_legacy() { # job; mixed-version fallback
   local job=$1 record="$jobs/$1.json" status
-  touch "$heartbeats/$job.waiting"
   while true; do
     [[ -f "$record" ]] || return 5
     status=$(json_field "$record" status 2>/dev/null || true)
@@ -1123,6 +1122,33 @@ wait_for_job() { # job
       *) return 5 ;;
     esac
   done
+}
+
+wait_for_job() { # job
+  local job=$1 output wait_rc
+  touch "$heartbeats/$job.waiting"
+  set +e
+  output=$("$ms" wait --root "$root" --job "$job" 2>&1)
+  wait_rc=$?
+  set -e
+  if (( wait_rc == 2 )) && grep -Fq 'unknown family "wait"' <<<"$output"; then
+    wait_for_job_legacy "$job"
+    return $?
+  fi
+  case "$wait_rc" in
+    0|1|2|3)
+      lease_run_held "$current_claim_epoch" "$0" __reap-held --job "$job" \
+        || return 3
+      case "$wait_rc" in
+        0) return 0 ;;
+        1) return 3 ;;
+        2) return 4 ;;
+        3) return 8 ;;
+      esac
+      ;;
+    4) return 5 ;;
+    *) printf '%s\n' "$output" >&2; return "$wait_rc" ;;
+  esac
 }
 
 aggregate_chain_usage() { # root id

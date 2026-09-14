@@ -129,6 +129,38 @@ func TestRecordSetupCompletesReservation(t *testing.T) {
 	}
 }
 
+func TestJobTransitionsHintAfterDurableWrite(t *testing.T) {
+	root := sandbox(t)
+	createPending(t, root, "job-a")
+	original := notifyJobWaiters
+	defer func() { notifyJobWaiters = original }()
+	var hintedStatuses []string
+	notifyJobWaiters = func(hintRoot, job string) {
+		if hintRoot != root || job != "job-a" {
+			t.Fatalf("hint target = %s %s", hintRoot, job)
+		}
+		hintedStatuses = append(hintedStatuses, asString(readRecord(t, root, job)["status"]))
+	}
+
+	setupPending(t, root, "job-a")
+	runPatch := writeJSON(t, filepath.Join(t.TempDir(), "run.json"), map[string]any{
+		"sessionId": "sess-1", "phase": "running", "error": nil,
+	})
+	if _, err := RecordCAS(root, "job-a", "pending", "running", runPatch); err != nil {
+		t.Fatal(err)
+	}
+	metadataPatch := writeJSON(t, filepath.Join(t.TempDir(), "metadata.json"), map[string]any{"phase": "running"})
+	if _, err := RecordCAS(root, "job-a", "running", "running", metadataPatch); err != nil {
+		t.Fatal(err)
+	}
+	if err := RecordProtocolError(root, "job-a", "running", "invalid proof envelope", ""); err != nil {
+		t.Fatal(err)
+	}
+	if got, want := strings.Join(hintedStatuses, ","), "pending,running,failed"; got != want {
+		t.Fatalf("durable states visible at hints = %q, want %q", got, want)
+	}
+}
+
 func TestRecordSetupRefusesEpochMismatch(t *testing.T) {
 	root := sandbox(t)
 	createPending(t, root, "job-a")

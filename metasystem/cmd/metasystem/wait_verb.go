@@ -59,10 +59,17 @@ var waitAdapterPathForRuntime = func(root, runtimeName string) (string, error) {
 }
 
 func runWait(args []string) int {
+	if len(args) > 0 && args[0] == "notify" {
+		return runWaitNotify(args[1:])
+	}
 	return runWaitWithPoll(args, nil)
 }
 
 func runWaitWithPoll(args []string, poll func(context.Context) error) int {
+	return runWaitCommand(args, poll, waitCallerPID(), printWaitResult)
+}
+
+func runWaitCommand(args []string, poll func(context.Context) error, callerPID int64, printResult func(metarun.WaitResult, bool)) int {
 	flags := flag.NewFlagSet("wait", flag.ContinueOnError)
 	root := flags.String("root", ".", "checkout or installation state root")
 	job := flags.String("job", "", "delegate job identifier")
@@ -134,7 +141,7 @@ func runWaitWithPoll(args []string, poll func(context.Context) error) int {
 		fmt.Fprintln(os.Stderr, err)
 		return metarun.ExitWaiterIO
 	}
-	view, err := classifyVerbCaller(stateRoot, waitCallerPID())
+	view, err := classifyVerbCaller(stateRoot, callerPID)
 	if err != nil {
 		fmt.Fprintln(os.Stderr, "wait caller identity is uncertain:", err)
 		return metarun.ExitWaiterUnknown
@@ -156,7 +163,7 @@ func runWaitWithPoll(args []string, poll func(context.Context) error) int {
 		row, _, loadErr := metarun.FindWaiterByID(stateRoot, *resume)
 		if loadErr != nil {
 			result := metarun.WaitResult{SchemaVersion: 2, WaitID: *resume, ExitCode: metarun.ExitNoRecord, Reason: loadErr.Error(), SourceOutcome: "missing-registration", ReturnedAt: time.Now().UTC().Format(time.RFC3339Nano)}
-			printWaitResult(result, *jsonOutput)
+			printResult(result, *jsonOutput)
 			return result.ExitCode
 		}
 		resumeRow = row
@@ -214,8 +221,46 @@ func runWaitWithPoll(args []string, poll func(context.Context) error) int {
 			result = store.Wait(ctx, metarun.WaitRequest{Selector: selector, Owner: owner, RuntimeSession: runtimeSession, Timeout: *timeout, OpenWorkSignature: openWorkSignature}, options)
 		}
 	}
-	printWaitResult(result, *jsonOutput)
+	printResult(result, *jsonOutput)
 	return result.ExitCode
+}
+
+func runWaitNotify(args []string) int {
+	flags := flag.NewFlagSet("wait notify", flag.ContinueOnError)
+	root := flags.String("root", ".", "checkout or installation state root")
+	job := flags.String("job", "", "delegate job identifier")
+	attempt := flags.String("attempt", "", "proof attempt identifier")
+	goalID := flags.String("goal", "", "goal identifier")
+	if flags.Parse(args) != nil || flags.NArg() != 0 {
+		return metarun.ExitInvalidWait
+	}
+	selector := metarun.WaitHint{}
+	for _, candidate := range []struct{ kind, value string }{{"job", *job}, {"attempt", *attempt}, {"goal", *goalID}} {
+		if candidate.value == "" {
+			continue
+		}
+		if selector.Kind != "" {
+			fmt.Fprintln(os.Stderr, "wait notify requires exactly one of --job, --attempt, or --goal")
+			return metarun.ExitInvalidWait
+		}
+		selector = metarun.WaitHint{Kind: candidate.kind, TargetID: candidate.value}
+	}
+	if selector.Kind == "" {
+		fmt.Fprintln(os.Stderr, "wait notify requires exactly one of --job, --attempt, or --goal")
+		return metarun.ExitInvalidWait
+	}
+	stateRoot, err := goal.ResolveStateRoot(*root)
+	if err != nil {
+		fmt.Fprintln(os.Stderr, err)
+		return metarun.ExitWaiterIO
+	}
+	delivery, err := metarun.NotifyWaiters(stateRoot, selector)
+	if err != nil {
+		fmt.Fprintln(os.Stderr, err)
+		return metarun.ExitInvalidWait
+	}
+	fmt.Printf("wait hints matched=%d delivered=%d\n", delivery.Matched, delivery.Delivered)
+	return 0
 }
 
 func waitOptions(root string, selector metarun.WaitSelector, owner metarun.Caller, runtimeName string, poll func(context.Context) error) (metarun.WaitOptions, error) {
@@ -250,7 +295,8 @@ func waitOptions(root string, selector metarun.WaitSelector, owner metarun.Calle
 		return observation, observeErr
 	}
 	return metarun.WaitOptions{
-		Observe: observe,
+		Observe:          observe,
+		OpenHintReceiver: metarun.OpenFIFOHintReceiver,
 		OpenWorkSignature: func(ctx context.Context) (string, error) {
 			return waitOpenWorkSignature(ctx, root)
 		},

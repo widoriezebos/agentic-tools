@@ -42,15 +42,17 @@ done
 
 dispatch="$root/scripts/agents/dispatch.sh"
 
-# WC-3: both terminal collection and live reaping in --wait re-enter through
-# the lease-held verb; no bare reap remains in the wait loop.
-wait_body=$(awk '/^wait_for_job\(\)/{flag=1} /^aggregate_chain_usage\(\)/{flag=0} flag' "$dispatch")
-[[ $(grep -o 'lease_run_held' <<<"$wait_body" | wc -l | tr -d ' ') -eq 2 ]] \
-  || { echo "authority regression: wait loop does not re-enter the lease-held verb exactly twice" >&2; exit 1; }
+# WC-3: native wait re-enters once for terminal collection; the mixed-version
+# fallback retains the old live and terminal reaping. Neither path reaps bare.
+wait_body=$(awk '/^wait_for_job_legacy\(\)/{flag=1} /^aggregate_chain_usage\(\)/{flag=0} flag' "$dispatch")
+[[ $(grep -o 'lease_run_held' <<<"$wait_body" | wc -l | tr -d ' ') -eq 3 ]] \
+  || { echo "authority regression: native and fallback wait paths lost their three lease-held re-entries" >&2; exit 1; }
 grep -Fq '__reap-held' <<<"$wait_body" \
-  || { echo "authority regression: wait loop lost its lease-held reap re-entry" >&2; exit 1; }
+  || { echo "authority regression: wait paths lost their lease-held reap re-entry" >&2; exit 1; }
+grep -Fq 'unknown family "wait"' <<<"$wait_body" \
+  || { echo "authority regression: wait lost its mixed-version fallback" >&2; exit 1; }
 if grep -Fq 'reap_one "$job"' <<<"$wait_body"; then
-  echo "authority regression: a bare reap returned to the wait loop" >&2
+  echo "authority regression: a bare reap returned to a wait path" >&2
   exit 1
 fi
 

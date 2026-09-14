@@ -290,6 +290,59 @@ while [[ ! -e "$done_path" ]]; do sleep 0.01; done
 	}
 }
 
+func TestProofTerminalHintsAfterDurableCommit(t *testing.T) {
+	executionRoot, proofIdentity := proofAttemptFixture(t, "terminal-hint")
+	controlRoot := t.TempDir()
+	launcher, err := CurrentProcessIdentity(nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	now := time.Now().UTC()
+	attempt, _, err := ReserveLocked(AdmissionRequest{
+		ControlRoot: controlRoot, ExecutionRoot: executionRoot, GoalID: "goal-a", GoalRevision: 2,
+		AccountingRevision: 2, ReservedMinutes: 2, Identity: proofIdentity, Launcher: launcher, Now: now,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	watchdog := filepath.Join(t.TempDir(), "watchdog.sh")
+	writeExecutable(t, watchdog, `#!/usr/bin/env bash
+done_path=
+while (($#)); do
+  if [[ "$1" == --done ]]; then done_path=$2; shift 2; else shift; fi
+done
+while [[ ! -e "$done_path" ]]; do sleep 0.01; done
+`)
+	claim := &testCreationClaim{}
+	hinted := false
+	result := LaunchSuite(LaunchOptions{
+		Suite: "terminal-hint", Root: executionRoot, ControlRoot: controlRoot, AttemptID: attempt.AttemptID,
+		Deadline: now.Add(2 * time.Minute), ConfPath: filepath.Join(executionRoot, "metasystem.conf"),
+		ProgressPath: filepath.Join(controlRoot, "progress.jsonl"), LogPath: filepath.Join(controlRoot, "suite.log"),
+		Banner: "durable terminal hint", Silence: time.Second, SectionCap: time.Second, EvidenceTimeout: time.Second, EvidenceMax: 1024,
+		Poll: 10 * time.Millisecond, TermGrace: time.Second, KillGrace: time.Second,
+		WatchdogExecutable: watchdog, Command: []string{"bash", "-c", "echo controlled-proof-body"},
+		FenceReader: func(string) (stopfence.Record, error) {
+			return stopfence.Record{State: stopfence.StateOpen, Phase: stopfence.PhaseArmed, Generation: 4}, nil
+		},
+		ClaimCreator: func(string, string, int64, identity.Ref) (CreationClaim, error) { return claim, nil },
+		CommitTerminal: func(completion CompletionContext, receipt json.RawMessage) error {
+			_, commitErr := FinalizeAttempt(controlRoot, attempt.AttemptID, TerminalSuccess, completion.ExitStatus, "fixture terminal", receipt, completion.CompletedAt)
+			return commitErr
+		},
+		HintTerminal: func(hintRoot, attemptID string) {
+			terminal, readErr := ReadAttempt(hintRoot, attemptID)
+			if readErr != nil || terminal.Terminal == nil || terminal.Terminal.Result != TerminalSuccess {
+				t.Fatalf("hint preceded durable terminal: attempt=%+v err=%v", terminal, readErr)
+			}
+			hinted = true
+		},
+	})
+	if result != 0 || !hinted {
+		t.Fatalf("result=%d hinted=%t", result, hinted)
+	}
+}
+
 func TestProofCancellationBeforeChildCreationStartsNoChild(t *testing.T) {
 	root, proofIdentity := proofAttemptFixture(t, "cancel-before-child")
 	launcher, err := CurrentProcessIdentity(nil)
