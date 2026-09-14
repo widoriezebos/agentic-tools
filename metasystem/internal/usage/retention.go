@@ -24,6 +24,8 @@ const (
 	callRetentionSchema     = 1
 	callRetentionWindowDays = 14
 	callRetentionWindow     = callRetentionWindowDays * 24 * time.Hour
+	// CallRetentionWindow is the minimum age the usage store may retire.
+	CallRetentionWindow = callRetentionWindow
 )
 
 type callRetention struct {

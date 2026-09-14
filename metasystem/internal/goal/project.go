@@ -202,11 +202,21 @@ type ClaimableBudgetedWork struct {
 	GoalFacts       map[string]GoalFacts
 	fencedClaims    []*GoalFile
 	landingClaims   []*GoalFile
+	ownedClaims     map[string]*GoalFile
 }
 
 // LandingClaims returns this machine's claims waiting to land (goal
 // land-ready): live work for the landing, never the seat's working claim.
 func (w ClaimableBudgetedWork) LandingClaims() []*GoalFile { return w.landingClaims }
+
+// OwnedClaim returns the exact accepted goal record used to compute this
+// claimable-work snapshot. Callers that need claim provenance must not join a
+// later projection to these claim ids because the accepted revision can move
+// between the two reads.
+func (w ClaimableBudgetedWork) OwnedClaim(id string) (*GoalFile, bool) {
+	file, ok := w.ownedClaims[id]
+	return file, ok
+}
 
 func (w ClaimableBudgetedWork) HasInFlight() bool { return len(w.InFlight) > 0 }
 
@@ -326,7 +336,7 @@ func readClaimableBudgetedWork(root string, now time.Time, prober identity.Probe
 		Landing:   append([]string(nil), frontier.Landing...),
 		Refused:   append([]AdmissionRefusal(nil), frontier.Refused...),
 		GoalFree:  projection.Tree.Root != nil && projection.Tree.Root.Free != nil,
-		GoalFacts: map[string]GoalFacts{},
+		GoalFacts: map[string]GoalFacts{}, ownedClaims: map[string]*GoalFile{},
 	}
 	for id, file := range projection.Tree.Live {
 		if file == nil {
@@ -350,6 +360,7 @@ func readClaimableBudgetedWork(root string, now time.Time, prober identity.Probe
 	for _, id := range append(append([]string(nil), frontier.Claimed...), frontier.Landing...) {
 		if file := projection.Tree.Live[id]; file != nil && file.Claimed != nil {
 			claimLineages[id] = file.Claimed.Lineage
+			work.ownedClaims[id] = file
 		}
 	}
 	work.Queued = len(frontier.Awaiting)

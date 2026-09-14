@@ -678,3 +678,5 @@ A landing diff omits any file that is untracked in the checkout it is taken
 from, so `git add -N` every new file there, count the diff's `new file mode`
 lines, and check `git show --stat` after landing. This seat broke the trunk for
 four minutes that way.
+
+- 2026-09-14 (m1e): `section/dispatcher-adapter-and-mission-runner-fixtures` scenario `dispatch-e` is load-shaped: on one candidate tree (af608e58, coordinator-context slice 3 unit C) it passed in 181 s in one run and failed the next with "mission job timeout did not map to exit 4 (got 5); status: timeout error: budget-cap phase: supervision" while two Codex tasks and a race gate ran beside it. The assertion backdates capDeadline and reaps a detached design-critic dispatch; under load the reap lands in the supervision phase and the driver reports 5. Owner: the dispatcher bed (beds-report-every-failure is the nearest open goal); the fix is an artificial clock or a phase-aware expected status, never a retry loop (Wido, 2026-09-12).

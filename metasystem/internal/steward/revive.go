@@ -9,6 +9,8 @@ package steward
 
 import (
 	"fmt"
+	"os"
+	"path/filepath"
 	"time"
 
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/goal"
@@ -42,6 +44,13 @@ func PrepareIntent(repoRoot, receiptFile string, it Intent) error {
 		return err
 	}
 	defer arb.Release()
+	return prepareIntentUnderLock(repoRoot, receiptFile, it)
+}
+
+// prepareIntentUnderLock publishes one intent and its receipt while its
+// caller owns steward arbitration. Compound transitions use it so replacing
+// an authorization cannot open a lock gap or reacquire the same file lock.
+func prepareIntentUnderLock(repoRoot, receiptFile string, it Intent) error {
 	fence, err := ReadEnrollmentFence(repoRoot)
 	if err != nil {
 		return err
@@ -62,7 +71,15 @@ func PrepareIntent(repoRoot, receiptFile string, it Intent) error {
 		// A half-prepared intent must not survive: it would suppress
 		// the runner and let a manual retry skip preparation. A
 		// cancel that ALSO fails leaves a live intent — say so.
-		if cancelErr := CancelIntent(repoRoot, it.Nonce, "preparation failed at the receipt"); cancelErr != nil {
+		cancelErr := CancelIntent(repoRoot, it.Nonce, "preparation failed at the receipt")
+		if cancelErr != nil {
+			_, statErr := os.Lstat(filepath.Join(intentsDir(repoRoot), it.Nonce+".json"))
+			if os.IsNotExist(statErr) {
+				return fmt.Errorf("the revival receipt did not write (%v) and the intent is no longer live, but its cancellation did not finish durably (%v)", res.Err, cancelErr)
+			}
+			if statErr != nil {
+				return fmt.Errorf("the revival receipt did not write (%v), cancellation failed (%v), and intent liveness is unreadable (%v)", res.Err, cancelErr, statErr)
+			}
 			return fmt.Errorf("the revival receipt did not write (%v) AND the intent could not cancel (%v): a live half-prepared authorization remains — operator attention needed", res.Err, cancelErr)
 		}
 		return fmt.Errorf("the revival receipt did not write: %v", res.Err)
