@@ -106,12 +106,22 @@ func TestBriefModeOnly(t *testing.T) {
 func TestBriefBoundsErrorPrecedence(t *testing.T) {
 	runBriefBoundsCases(t, precedenceCases)
 	t.Run("mode-first-without-authority", func(t *testing.T) {
-		_, err := admitBriefBytes([]byte(boundedBrief("bad", "bad")), "", true, nil)
+		_, err := admitBriefBytes([]byte(boundedBrief("bad", "bad")), func() (string, error) { return "", nil }, true, nil)
 		var bounds *BriefBoundsRefusal
 		require(t, err != nil && !errors.As(err, &bounds), "error = %v", err)
 	})
 }
 func TestBriefAdmission(t *testing.T) {
+	partial := t.TempDir() + "/partial"
+	require(t, os.WriteFile(partial, []byte("Working Mode: implement\nBoundary: []"), 0o600) == nil, "write partial brief")
+	t.Run("brief-mode-paired-bounds", func(t *testing.T) {
+		_, err := BriefMode(partial)
+		requireBoundsRefusal(t, err, "Ceiling", "required with Boundary")
+	})
+	t.Run("brief-authority-paired-bounds", func(t *testing.T) {
+		err := ValidateBriefAuthority(partial, t.TempDir(), t.TempDir())
+		requireBoundsRefusal(t, err, "Ceiling", "required with Boundary")
+	})
 	t.Run("read-failure", func(t *testing.T) {
 		_, err := ReadBriefAdmission(t.TempDir()+"/missing", "", true, nil)
 		require(t, err != nil, "missing brief admitted")
@@ -123,13 +133,17 @@ func TestBriefAdmission(t *testing.T) {
 	t.Run("exact-bytes", func(t *testing.T) {
 		data := []byte("Working Mode: implement\nBoundary: []\nCeiling: 0")
 		var checked []byte
-		admission, err := admitBriefBytes(data, "", true, func(got []byte, _ BriefBounds) error { checked = append([]byte(nil), got...); return nil })
-		require(t, err == nil && reflect.DeepEqual(admission.Bytes, data) && reflect.DeepEqual(checked, data), "admission bytes = %q, checked = %q, error = %v", admission.Bytes, checked, err)
+		var checkedBounds BriefBounds
+		admission, err := admitBriefBytes(data, func() (string, error) { return "", nil }, true, func(got []byte, bounds BriefBounds) error {
+			checked, checkedBounds = append([]byte(nil), got...), bounds
+			return nil
+		})
+		require(t, err == nil && reflect.DeepEqual(admission.Bytes, data) && reflect.DeepEqual(checked, data) && reflect.DeepEqual(checkedBounds, admission.Bounds), "admission = %+v, checked bytes = %q, checked bounds = %+v, error = %v", admission, checked, checkedBounds, err)
 	})
 	t.Run("parser-ownership", func(t *testing.T) {
 		file, err := parser.ParseFile(token.NewFileSet(), "brief.go", nil, 0)
 		require(t, err == nil, "parse brief.go: %v", err)
-		require(t, boundsParserCalls(file, "admitBriefBytes") == 1 && boundsParserCalls(file, "BriefModeOnly") == 0 && boundsParserCalls(file, "ReadBriefAdmission") == 0, "bounds parser ownership changed")
+		require(t, boundsParserCalls(file, "admitBriefBytes") == 1 && boundsParserCalls(file, "BriefModeOnly") == 0 && boundsParserCalls(file, "ReadBriefAdmission") == 0 && boundsParserCalls(file, "ReadBriefAdmissionAtRoot") == 0, "bounds parser ownership changed")
 	})
 }
 func boundsParserCalls(file *ast.File, functionName string) (calls int) {

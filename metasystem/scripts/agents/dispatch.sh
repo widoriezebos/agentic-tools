@@ -856,11 +856,11 @@ attested_watcher_ceiling() {
 }
 
 brief_mode() { # brief
-  "$ms" job brief-mode --brief "$1"
+  "$ms" job brief-mode --mode-only --brief "$1"
 }
 
 brief_authority() { # brief, delegate base tree
-  "$ms" job brief-mode --authority-only --brief "$1" --base-tree "$2" --disk-root "$repo_scope"
+  "$ms" job brief-mode --authority-only --brief "$1" --root "$root" --base-tree "$2" --disk-root "$repo_scope"
 }
 
 append_return_path_form() { # source brief, destination brief
@@ -1539,7 +1539,7 @@ dispatch_job() {
   if (( approve_escalation )) && { [[ ! -t 0 ]] || [[ ! -t 2 ]]; }; then
     die 1 "--approve-escalation requires an interactive TTY; remove the flag or re-run the same dispatch from a TTY"
   fi
-  mode=$(brief_mode "$brief") || die 1 "brief must contain exactly one filled Working Mode header"
+  mode=$(brief_mode "$brief") || die 1 "brief headers are invalid; Working Mode must be filled and Boundary and Ceiling must appear together"
   [[ -z "$mode_override" || "$mode_override" == "$mode" ]] || die 1 "--mode contradicts the brief's Working Mode header"
   # --serving-goal resolves BEFORE any job state exists (goal-system
   # GOAL-08): the Go core reads the goal through the parser and a missing

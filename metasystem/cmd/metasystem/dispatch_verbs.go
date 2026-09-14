@@ -1993,14 +1993,20 @@ func runDispatchTestingRequirement(args []string) int {
 func runDispatchBriefMode(args []string) int {
 	flags := flag.NewFlagSet("job brief-mode", flag.ContinueOnError)
 	brief := flags.String("brief", "", "brief file")
+	root := flags.String("root", ".", "metasystem installation root")
 	baseTree := flags.String("base-tree", "", "Git checkout whose HEAD is the delegate base tree")
 	diskRoot := flags.String("disk-root", "", "live checkout root for runtime artifact paths")
 	authorityOnly := flags.Bool("authority-only", false, "check cited authority without requiring a Working Mode header")
+	modeOnly := flags.Bool("mode-only", false, "extract Working Mode without bounds or authority admission")
 	if flags.Parse(args) != nil {
 		return 2
 	}
 	if *brief == "" {
 		fmt.Fprintln(os.Stderr, "job brief-mode: --brief is required")
+		return 2
+	}
+	if *modeOnly && (*authorityOnly || *baseTree != "" || *diskRoot != "") {
+		fmt.Fprintln(os.Stderr, "job brief-mode: --mode-only cannot be combined with authority flags")
 		return 2
 	}
 	if (*baseTree == "") != (*diskRoot == "") {
@@ -2011,19 +2017,21 @@ func runDispatchBriefMode(args []string) int {
 		fmt.Fprintln(os.Stderr, "job brief-mode: --authority-only requires --base-tree and --disk-root")
 		return 2
 	}
-	if *baseTree != "" {
-		if err := dispatchcore.ValidateBriefAuthority(*brief, *baseTree, *diskRoot); err != nil {
+	if *modeOnly {
+		mode, err := dispatchcore.BriefModeOnly(*brief)
+		if err != nil {
 			return recordExit(err)
 		}
-	}
-	if *authorityOnly {
+		fmt.Println(mode)
 		return 0
 	}
-	mode, err := dispatchcore.BriefMode(*brief)
+	admission, err := dispatchcore.ReadBriefAdmissionAtRoot(*brief, *root, *baseTree, *diskRoot, !*authorityOnly)
 	if err != nil {
 		return recordExit(err)
 	}
-	fmt.Println(mode)
+	if !*authorityOnly {
+		fmt.Println(admission.Mode)
+	}
 	return 0
 }
 

@@ -821,6 +821,20 @@ All A3 special-character tests compare the full missing path and admit after com
 
 The single-snapshot and no-numstat tests observe operations. The full diagnostic list is never abbreviated. Existing dependencies remain intact during the owning integration mutation. Instruction witnesses remove only the stated sentence from the relevant unit's Boundary. Static shell and instruction assertions prove the handoff is installed; the seat's actual bed and pre-read result supply execution evidence.
 
+## Amendment after unit 1b's read (2026-09-15): citation identity narrowed, unit 1b split
+
+Unit 1a landed at e461dfd1. Unit 1b's first build followed this page's citation paragraph in section "Paths and matching" literally. That paragraph says a backtick span or JSON string is one citation. Read literally, it changed authority results for bounded briefs in both directions. Backticked `path:line`, commands with arguments, placeholders and globs were refused. A quoted sentence hid a missing path. One real implementer brief (artifacts/agents/implementer-b76a0ddc11f73e99fa195d84/brief.md) flipped from admitted to refused. The read is records/misc/brief-declares-the-round-boundary-unit-1b-code-read.md, finding F-1.
+
+Seat ruling A1 (amends that paragraph): a backtick span or JSON string is consumed as one authority citation only when its decoded content is exactly equal to a member of the brief's Boundary. Every other span, and all text outside spans, is scanned by the token scanner exactly as trunk does today. That includes its `*<>${` exclusions and its handling of `path:line`, commands with arguments, placeholders and globs. The input-wins rule still holds for a special-character Boundary member, and every other citation gives the same result as trunk.
+
+Seat ruling A2 (size): unit 1b is split into two units, each at most 400 changed lines.
+- Unit 1b-i lands the paired-bounds admission wiring, the `--mode-only` and `--root` operands, the carry-ins from unit 1a's reads, and the read's F-2, F-3 and F-5. In 1b-i, the token scanner stays exactly trunk's. The line handling of rows A1 and A2 lands with it: the live Boundary and Ceiling header lines and an indented bounds example are not scanned as citations. Those two rows change authority results only where this page intends, for a Boundary naming a new file and for an inert example line. Unit 1b-i owns rows A1, A2 and H8.
+- Unit 1b-ii lands ruling A1 and F-4's incomplete-span cases. It owns rows A3, A4 and A5. Row A3 holds in the narrowed form of ruling A1: the special-character rows apply to a citation equal to a Boundary member, and every other span gets trunk's result. Row A4 is concrete-member eligibility and input accounting, and row A5 is compatibility with the bounded lexer. Its witnesses: each of the five shapes gives the same result as trunk, a quoted sentence containing a missing path is still refused, a backticked Boundary member containing a space satisfies the input-wins rule, and an unterminated backtick or JSON string falls back to the token scanner.
+
+Seat ruling A3 (error precedence, 1b-i read finding F-13): the installation-prefix lookup runs only after the Working Mode check and a complete pair whose Ceiling and members are valid without the prefix. So a malformed Ceiling is now reported before a Boundary member error that needs the prefix. This amends the order in section "Header contract" ("validate Boundary, then Ceiling") for that one case.
+
+Landing note (read finding F-10): after 1b-i lands, rebuild every seat's engine (`scripts/agents/go-build.sh`, then `up --repo`). An engine older than 1b-i rejects `--mode-only`, and every dispatch would fail at dispatch.sh:1542.
+
 ## Critique record
 
 Round 1 reported eight material findings. Round 2 reported three material findings and reopened R1-04 and R1-07. The seat's round-2 rulings settle the source contract, path classification, and witness granularity. These dispositions fold all remaining findings into this spec. They do not claim passing implementation proof.
