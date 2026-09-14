@@ -2,14 +2,14 @@
 
 - State: claimed
 - Priority: 1
-- Sequence: 30
+- Sequence: 29
 - Risk: severity=2 novelty=1 exposure=3 accumulation=1 basis="severity 2: a refusal nobody can read is a refusal nobody acts on, and the one actionable line drowns; novelty 1: the same bound the Telegram ask got last night, applied to the hook's refusal text; exposure 3: every seat on every machine ends every turn through this text; accumulation 1: each refusal is the same wall, it does not compound"
 - Tier: 3
 - Intent: Wido, 2026-09-06: 'the stop message is still insanely long.' The Stop hook's refusal text has no bound: on m1's first Stop after c1525b90a (the refusal carries the turn verdict) it printed about two hundred run records from August ('no continuation recorded') and one actionable line (an unwatched job) in a single refusal. The Telegram ask got its bound last night (renderQuestion, 1600 runes, the token first, the rest trimmed with a notice); the hook's refusal and its systemMessage get the same discipline. DONE means: the refusal reads, in order, the verdict in one line, the actionable items (each with the command that clears it), then at most a few lines of everything else summarized by class and count ('244 runs without a recorded continuation, oldest 2026-08-16; full list: <path>'), the whole thing bounded to roughly a screen; the full unbounded text is written to a file under the checkout's supervision evidence and the refusal names it. Not a change to what is judged - only to what is printed.
 - Origin: main
 - Next step: Verification complete on the landing tree g12/land3 (candidate tree 3d2eb764): four beds green with a read-only candidate engine inside the tree, nine packages green in a clean environment, go-gate --fast green, Stop-decision surface zero differences from the tip. The engine section run is refused with 'active coordinator does not own the claimed goal reservation': the checkout lease carries claimEpoch 5 while this goal's StopCapability carries ClaimEpoch 1, so the equality the proof gate requires fails. Land next.
 - OpenedAt: 2026-09-06T14:30:14Z
-- Revision: 93
+- Revision: 94
 - Pinned: m1c
 - Budget: elapsedLimit=3d attemptLimit=40 reservedJobMinutesLimit=1200 activeJobLimit=2 reviewRoundLimit=3
 - BudgetExceptions: 1
@@ -113,4 +113,5 @@ History:
 - 2026-09-13T20:47:24Z 7TNQNE8407AJD6R8Y2WYV7Y2F8-m1e-c6925449 set-budget actor=human:Wido targets=stop-refusal-fits-on-one-screen displaced=m1c+main-1789191340-90689-8975a9@2026-09-13T15:38:47Z
 - 2026-09-13T20:47:44Z YHKPS9CQ390FMWNR8X5SDHYN35-m1c-69c9e454 edit actor=m1c+main-1789191340-90689-8975a9 targets=stop-refusal-fits-on-one-screen
 - 2026-09-14T01:10:57Z N4ZYEEC6SB0X1JNZBCVR748661-m1c-69c9e454 edit actor=m1c+main-1789191340-90689-8975a9 targets=stop-refusal-fits-on-one-screen
-Integrity: sha256=a92b18d11527f882c5f73f7780c0b3d29a920c1d49e5ac787972d34d2d24a39f
+- 2026-09-14T06:13:25Z ZRHWS9A9C4V59FPD3JJD50YX0E-m1b-30a7e141 done actor=human:Wido targets=actionable-metrics,chain-landing-carries-the-reviewed-diff,dispatch-bases-chains-on-the-remote-tip,failed-job-attention,fixture-repo-copies-exclude-the-artifacts-store,fixture-stewards-outlive-their-suite,fixture-waits-name-their-producer,goal-abandoned-with-a-reason,human-authority-surface-runs-its-cmd-tests,human-goal-verbs-forgiving,human-wait-does-not-consume-goal-budget,job-record-birth-token,lease-sweep-death-evidence,live-job-on-a-done-goal-unnoticed,machine-concurrency-governor,metasystem-stop-escalation-proofs,metasystem-stop-fleet-form,new-elapsed-budgets-use-explicit-hours,repo-root-paths-ride-agent-commits-unjudged,run-scoped-build-caches-have-a-janitor,skipped-test-fails-its-group-on-the-other-os,stop-batch-strands-a-resumable-goal,stop-refusal-fits-on-one-screen,token-spend-fence,watch-verb,watcher-repair-request-never-names-current,winddown-census-handoff-leak reason=priority-order from=1:30 to=1:29
+Integrity: sha256=44da7e976db39dddd8d9cc42dc2e0809f78d3c8ecd1a10e65f78710d30f9e9d8
