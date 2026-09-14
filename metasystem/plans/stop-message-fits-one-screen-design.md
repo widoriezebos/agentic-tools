@@ -1,8 +1,12 @@
 # Design: one task line at Stop, detail in the supervision report
 
 Goal: [stop-refusal-fits-on-one-screen](goals/stop-refusal-fits-on-one-screen.md).
-Design only. **Revision 4, 2026-09-13; ready for the build round.**
-Wido's ruling this evening, verbatim:
+Design only. **Revision 5, 2026-09-14; task naming ready for the build round.**
+Revision 4 landed as `21eb9c36`. Its first real use exposed a naming error:
+the line used a cut-off quotation from the goal's intent. This revision
+changes only Decision 4's task-name rule, the matching report heading and
+their proof targets. All other decisions and obligations carry forward.
+Wido's September 13 ruling, verbatim:
 
 > "make 100% absolutely sure we DO NOT BREAK LOOPS AGAIN. changing stop message is what we need to do; but WITHOUT introducing unwanted stopping again."
 
@@ -20,19 +24,33 @@ runtime's Stop cap, moves whole to
 closing the two allowances as its own final build item. No third goal is
 needed. This lane edits only this page, with no goal or ledger write.
 
-Revisions 1 to 3 remain superseded. Decisions 2 to 7 and their presentation
-proofs carry forward except where preserved Stop behavior requires truthful
-wording. Under R-97-m1e, there is no third critique round. No decision
-remains for Wido. Implementation, code-critique and the named proofs remain
-outstanding.
+Revisions 1 to 3 remain superseded. Revision 4 remains authority outside
+this naming correction. Under R-97-m1e, there is no third critique round.
+No decision remains for Wido. The naming change and its proofs remain to
+be built; this design pass does not recertify the landed delivery work.
 
 ## Grounding
 
-Read at this worktree's HEAD, `9106b52819de28b6de2f0a986325edf4da0935ce`.
-Paths below are relative to `metasystem/`. Revision 4 re-read the cited
-source and assertion lines at this HEAD, including both preserved allowances.
-No implementation is inferred from this page, and no runtime observation
-was performed.
+Revision 5 re-read these sources at this worktree's HEAD,
+`21eb9c36fc777be03a0c899acf972a6b70b50cc0`. Paths are relative to
+`metasystem/`. The bad console line is the seat observation supplied in the
+brief. This lane read code and assertions; it ran no hook or fixture bed.
+
+| Owner and lines re-read for revision 5 | Naming evidence |
+| --- | --- |
+| `plans/goals/stop-refusal-fits-on-one-screen.md:1-8`; `internal/goal/file.go:24-32,498-505,555-557`; `internal/goal/goal.go:409-422` | The heading supplies the goal ID. Intent supplies its why. This intent starts with Wido's dated quotation. IDs admit lowercase letters, digits and hyphens, at most 100 bytes; that grammar protects filenames and does not prove a meaningful name. |
+| `internal/goal/turnverdict.go:65-104`; `internal/report/scan.go:371-401,419-431` | Job facts already retain goal ID and role; their title is joined intent or role. Run facts retain goal ID, kind and the original display as title. Naming needs no new field or source read. |
+| `internal/run/run.go:40,173-193,474-488` | A run has a separate display and goal ID. Display is bounded at 200 bytes, but may be empty or prose. Its storage bound is not a naming contract. |
+| `internal/goal/turnfacts.go:174-236` | Ownership joins the main ID. Held and claimable selections come from the frozen goal-engine order. Naming must consume those facts without choosing work again. |
+| `internal/report/stoppresentation.go:847-903,905-958,999-1016,1089-1102` | The landed title picker uses job/run titles and selected intent. The line reserves its suffix before cutting title bytes. The heading reuses the unshortened title; the body retains the frozen facts. These are the local rendering seams. |
+| `internal/report/stoppresentation_test.go:57-62,93-129,352-395` | Presenter fixtures check line shape, byte safety, report detail and retained work. They never pin a recognisable title. Even the held goal called `held` uses repeated Unicode or marker prose as intent. |
+| `scripts/agents/fixture-stop-report.sh:24-43`; `scripts/agents/supervision-hook-fixtures.sh:112-120,620-665` | The shared assertion checks the sole field, 256 bytes and exact report lookup. The 200-run row checks report contents. Neither asserts the task name or report heading. |
+
+The following grounding and its unchanged citations are revision 4's
+historical read at `9106b52819de28b6de2f0a986325edf4da0935ce`, before the
+build landed. References to that grounded HEAD and unbuilt delivery below
+retain that baseline; they are not claims about revision 5's HEAD. This
+revision neither repeats those proofs nor changes their contracts.
 
 | Owner and lines read | What exists, and the seam this design uses |
 | --- | --- |
@@ -362,7 +380,7 @@ entry in `unavailable`, never an invented empty successful result.
 | `judgment` | Null on unavailable judgment or facts-file failure (distinguished by `control.judgmentAvailable` and `unavailable`), otherwise the immutable facts-file object: `schemaVersion:1`, `identity` (strings `installation`, `session`, `mainId`, `observedAt` from the existing command arguments/resolution and evaluation clock), `verdict` (the full existing Verdict JSON), `fullDisplay` (uncapped composed text), `scan`, `work`, `ownership`, `actions`, `refusal`. Root/session/main identity must match the outer input; evaluation time is preserved separately from collection time. This is a record of one evaluation, not permission to evaluate again. |
 | `judgment.scan` | Object with arrays `open`, `templateUnfilled`, `waitingOnHuman`, `stalePlans`, `busy`, `questions`, `drafts` of `ScanItem`; `openWorkWarnings`, `unreadable`, `runUnreadable` of strings; `jobs` and `runs` of the extended facts below. Preserve scanner order, membership and seen evidence. |
 | `ScanItem` | Object: strings `kind`, `id`, `detail`, `fullDetail`, `lineDigest`, `sourcePath`, `ownerMainId`, `requestedAction`; booleans `previouslyRefused`, `humanRequired`. `fullDetail` and `requestedAction` are uncut. Unknown ownership is empty; the item remains in the report. |
-| Job/run facts | All current `JobFact`/`RunFact` fields, lower-camel JSON keys, plus strings `title`, `role`, `goalId`, `startedAt`, `sourcePath`, `sourceDigest`, `ownership` (`owned`, `other`, `unknown`). Job title uses the joined goal intent when available, otherwise its existing role label with separator hyphens/underscores replaced by spaces; run title uses `Record.Display`. Empty values mean missing source data and are recorded as such. No record schema or ledger edit is needed. |
+| Job/run facts | All current `JobFact`/`RunFact` fields, lower-camel JSON keys, plus strings `title`, `role`, `goalId`, `startedAt`, `sourcePath`, `sourceDigest`, `ownership` (`owned`, `other`, `unknown`). Job title uses the joined goal intent when available, otherwise its existing role label with separator hyphens/underscores replaced by spaces; run title uses `Record.Display`. These are uncut source facts, not approved display names. The naming rule below consumes them without rewriting them. Empty values mean missing source data and are recorded as such. No record schema or ledger edit is needed. |
 | `judgment.work` | Object: `readSucceeded` boolean; arrays `claimed`, `landing`, `claimable` of `GoalFacts` with `id`, `intent`, `nextStep`, `revision` strings; `selected` is one such object or null; `selection` is `held`, `claimable`, `none`, or `unknown`; `refused` retains goal ID/cause objects; `inFlight`, `nonTerminalJobs` string arrays; `queued` integer and `goalFree` boolean. Capture IDs **and intents** from the goal records already read under the judgment lock. Retain goal-engine ordering; never select by report scan order. |
 | `judgment.ownership` | Object: `state` (`owned`, `none`, `unknown`), `goalId` string, `evidence` string. Only the resolved holder and joined own work can establish ownership; merely sharing a machine name is insufficient. |
 | `judgment.actions` | Ordered array of objects with strings `kind`, `targetId`, `instruction`, `command`, `owner`, `restriction`; booleans `humanRequired`, `supervisionRepair`. Empty command means a named manual step, not a made-up verb. Exact instructions/commands precede background detail in the report. |
@@ -386,17 +404,89 @@ fixing the clip alone cannot recover missing tails. Keep seen signatures,
 readiness, budgets and scan membership unchanged. Capture command-added
 durable wait lines before display trimming too.
 
-Title precedence is deterministic: an owned nonterminal job, then an owned
-active run, then the seat's held goal intent, then the engine-selected
-claimable goal intent. For multiple jobs/runs in the same tier, choose the
-earliest nonempty `startedAt`, then ID; include all others and their count in
-the report. Prefer a job's joined goal intent, falling back to its role; a
-run uses its display. A missing title says `task name unavailable` and keeps
-the record ID in the report. Other seats' work never supplies this title.
-A selected but unclaimed goal is labelled `next`, not in flight. Proven
-empty owned work and no selection produce `No task in flight`; incomplete
-ownership/scan evidence produces `Task unknown`. Normalize whitespace and
-controls only in the compact title; preserve source text in the report.
+**Task naming, revision 5.** Select the work before naming it. Keep the
+precedence: an owned nonterminal job, then an owned active run, then the
+seat's held goal, then the engine-selected claimable goal. For multiple
+jobs/runs in the same tier, choose the earliest nonempty `startedAt`, then
+ID; missing dates sort last. Include all others and their count in the
+report. Other seats' work never supplies the name. Sharing a machine name
+does not establish ownership. Keep the frozen holder/main-ID joins and
+engine selection; do not infer ownership from a goal ID or a useful title.
+
+| Selected tier | Name source, in order |
+| --- | --- |
+| Owned nonterminal job | Its `goalId`, rendered as words. If unusable, its `role`, rendered as a whole short label. Never use `JobFact.title`: it can be the whole joined intent. A role alone names the activity, such as `design review`; the report records that the goal name was unavailable. |
+| Owned active run | Its `goalId`, rendered as words. If unusable, its whole `title` (`Record.Display`), only if it passes the short-label rule below. A prose display contributes report detail only. The kind (`suite`, `cohort`, `custom`) and run ID remain report context; neither alone names the task. |
+| Seat's held goal | The frozen selected goal's `id`, rendered as words. Intent is report detail even when short. |
+| Engine-selected claimable goal | The same ID rule, labelled `next`. It is selected work to claim, not work in flight. |
+
+Render a goal ID by replacing each hyphen with a space and collapsing
+whitespace. Keep its words and case; do not invent a paraphrase. Thus
+`stop-refusal-fits-on-one-screen` names `stop refusal fits on one screen`.
+Use the existing goal-ID grammar and 100-byte bound before conversion.
+Require at least one letter. Reject an opaque hexadecimal key: after
+removing hyphens, it consists entirely of hexadecimal digits and has
+32, 40 or 64 characters. This also excludes a UUID. Empty, numeric-only,
+punctuation-only and malformed sources are unusable. These are display
+checks, not new ledger validation or reasons to block Stop.
+
+For a fallback role or run display, accept a **whole short label**, never
+an extracted sentence or clause. Reject embedded line breaks and terminal
+controls before normalization. Apply the opaque-key exclusion to the
+trimmed source before replacing any separators. Replace role hyphens and
+underscores with spaces; collapse whitespace in either label. The result
+must be at most 100 UTF-8 bytes, contain a letter, and contain only Unicode
+letters, combining marks,
+digits, spaces, hyphens, `/`, `&`, `+` and parentheses. Reject the whole
+candidate if it contains any other character. Do not strip quotes or
+sentence punctuation to make prose pass. The 100-byte bound matches the
+maximum goal name and bounds the heading too. It is checked **before** line shortening.
+A long display cannot qualify by first being cut to size.
+
+This is a conservative display rule, not language understanding. It may
+decline a useful punctuated display. A vague but lawful slug or short label
+can still be vague; no deterministic rule can recover missing meaning.
+The report keeps the exact source so that can be corrected at its owner.
+Do not add an English word list, model call, ledger field or live reread.
+
+If all name sources for the selected record fail, use
+`task name unavailable` and keep its ID and original sources in the report.
+Do not skip that record or drop to a lower work tier to find a prettier
+name. Empty intent does not invalidate a usable goal ID. A selected but
+unclaimed goal still says `No task in flight; next: task name unavailable`
+when its ID is unusable. Proven empty owned work and no selection produce
+`No task in flight`; incomplete ownership/scan evidence produces
+`Task unknown`. A known task with a missing name is neither of those states.
+Preserve the existing stopped-ledger handling too.
+
+The goal ID is preferable to the intent's first sentence or first clause:
+both can still start `Wido, 2026-09-06` and quote the complaint. Combining
+either with the slug spends the scarce title space on that same history.
+Appending role, run kind or record ID to a usable goal name has the same
+cost. Keep those details in the report. The goal's existing words already
+identify the work without a summary operation.
+
+Keep Decision 2's shortening rule whole. Reserve the outcome, intervention
+words, fixed separators and **whole read command** first. Shorten only the
+chosen name at a UTF-8 boundary to use the remaining bytes. A valid long
+name may be cut, including within its last word; that is display shortening
+of an established name, never a way to turn intent into a name. No ellipsis,
+wording change or shortening of the command is introduced here. The report
+keeps the chosen name before this cut. An over-100-byte goal ID is invalid
+source data and takes the fallback above, not a larger naming allowance.
+
+The report heading uses the **same chosen name before console shortening**:
+`# Task: stop refusal fits on one screen; Stop blocked`, for this held task
+and outcome. It carries at most 100 name bytes, or the fixed unavailable
+label. Keep `# No task in flight; next: <name>; Stop allowed/blocked`,
+`# No task in flight; Stop allowed/blocked` and `# Task unknown; Stop
+allowed/blocked` for their existing states. The heading never carries
+intent, a prose job title or a rejected run display. In the report body,
+retain the complete intent, original job/run title, role, goal/record IDs
+and source path from the frozen facts. The summary identifies the chosen
+tier and source, including a missing or rejected name source. Keep actions
+ahead of background as Decision 5 requires. Naming changes no source fact,
+control decision, intervention flag, report identity or delivery rule.
 
 Derive intervention phrases **only from explicit typed classifications**.
 `needsYourDecision` is the OR of `humanRequired`; `needsSupervisionRepair`
@@ -520,10 +610,10 @@ exit 0; invalid ID/flags exit 2, missing/expired/unreadable/root mismatch exit
 judgment, refusal, lease, cursor, scan or claim. All lookup and binding work
 is part of the implementation/conformance obligation, not proof of a read.
 
-Write atomically before emitting the pointer. The report starts with the task
-and **Stop blocked/allowed**, observation time, and any action needed from the
-human. Next come seat actions with their commands, then background counts,
-then complete diagnostic sections: original turn verdict, uncut open-plan
+Write atomically before emitting the pointer. The report starts with Decision
+4's task-name heading and **Stop blocked/allowed**, observation time, and any
+action needed from the human. Next come seat actions with their commands,
+then background counts, then complete diagnostic sections: original turn verdict, uncut open-plan
 steps, complete claimable list from the judgment, every health role, the
 pending digest, receipt result, `up` component output, watchdog/protocol and
 other notices. Include causes, remedies, refusal occurrence, block source,
@@ -766,6 +856,39 @@ states an outcome that remains true while its display string changes, the
 name stays and the string moves. All control, cause, remedy and evidence
 assertions remain. No row may pass merely because it found any JSON.
 
+Revision 5 adds the following naming rows in
+`internal/report/stoppresentation_test.go`, plus the named hook row. The
+existing shape/byte assertions stay. They are necessary but did not catch
+this defect: `TestPresentStopPublishesOneBoundedLineAndCompleteImmutableReport`
+at lines 93-129 accepts any text after `Task: `, while
+`fixture-stop-report.sh:24-43` checks the envelope, bound and locator only.
+These are current-HEAD anchors from the revision 5 grounding.
+
+Each naming row must assert the **exact task text before the outcome and
+exact first heading line**, chosen from its input and this decision. Do not
+derive the expectation by calling the production name picker or truncator.
+Require equality of the decoded console line to that literal task text
+plus the full expected outcome/intervention/command suffix. A prefix match
+alone could allow prose after a correct name. For the reported defect,
+use the complete intent at
+`plans/goals/stop-refusal-fits-on-one-screen.md:8`, including its date and
+quotation, with its real slug. Require `stop refusal fits on one screen`
+as the name and exclude `Wido, 2026-09-06` and the quotation from both title
+and heading. Assert the complete intent survives in the decoded frozen
+facts in the report body. A bound, an arbitrary nonempty title, absence of
+newlines or the word `Task` alone cannot satisfy a naming row.
+
+| Revision 5 proof row | Required observation |
+| --- | --- |
+| STOP-TASK-NAME-GOAL | Held and selected-but-unclaimed subcases use the real slug and full dated intent. Pin `Task: stop refusal fits on one screen` and `No task in flight; next: stop refusal fits on one screen`, with their exact headings and supplied outcome. Changing only intent, including to empty or a short sentence, leaves the name unchanged. A different slug changes the name. Test names: `TestStopTaskNamesUseGoalIDsInsteadOfIntent`. |
+| STOP-TASK-NAME-JOB-RUN | An owned job and an owned active run each carry the real goal ID, a conflicting role/display and a prose title. Both must use `stop refusal fits on one screen`. With no usable goal ID, role `design-review` gives `design review`; run display `Stop report checks` gives exactly `Stop report checks`. Long, quoted or multi-sentence titles cannot supply names. Preserve every original title and source in the body. Test name: `TestStopTaskNamesForOwnedJobsAndRuns`. |
+| STOP-TASK-NAME-PRECEDENCE | Distinct literal names prove job over run over held goal over selected claimable goal. Cover other-seat and unknown ownership, terminal records, reversed scan order, equal dates, missing dates and ID tie-breaking. An unnamed winning job/run says `task name unavailable` despite a named lower tier. Verify counts and other records in the report. Proven empty work says `No task in flight`; incomplete evidence says `Task unknown`. Keep the stopped-ledger case. Test name: `TestStopTaskNamePrecedence`. |
+| STOP-TASK-NAME-FALLBACK | Empty, whitespace-only, numeric-only, punctuation-only, malformed and overlong goal IDs, a UUID and 32/40/64-digit hexadecimal keys use the specified fallback. A job role that fails the short-label rule and a run with only a prose display yield `task name unavailable`. Include prose shorter than 100 bytes with a quote/date and prose longer than 100 bytes with no punctuation: neither may be clipped into eligibility. A missing name never changes work selection, control or flags. Valid Unicode labels and benign role separators remain usable. Test name: `TestStopTaskNameFallbacks`. |
+| STOP-TASK-NAME-BOUNDS | A valid goal slug near 100 bytes and an accepted Unicode run label put the cut inside a multibyte character. Pin literal shortened names for held and `next` forms, both outcomes and all four intervention combinations. The line stays valid UTF-8 and at most 256 bytes. The exact complete command, outcome and intervention words survive. The first report line retains the full accepted name, at most 100 name bytes, even when the console cuts it. A fallback label over 100 bytes is rejected whole. Test name: `TestStopTaskNameBoundsAndReportHeading`. |
+| STOP-TASK-NAME-HOOK | Add a focused hook row beside the existing bounded-line case at `supervision-hook-fixtures.sh:620-665`. Drive a frozen held goal with the real slug and dated intent through the actual presenter and invoked mapper. Decode the sole native field and require the literal name; run its printed command and require the exact heading plus complete body intent. Include a block with both intervention flags, matching the reported failure, and an allowance. Keep the same control/source, one visible line and report identity. This row must fail against revision 4's intent-based title even though its old shape assertions pass. |
+
+The table below carries revision 4's remaining proof obligations whole.
+
 | Proof | Required observation |
 | --- | --- |
 | STOP-REPORT-INPUT: huge input, block and allow | Combine 200 stale red runs, an owned unwatched job with an exact watch command, eight long plan steps, long questions/human waits, a health line over 2,000 bytes and a 40-line digest. Report contains every uncut fact, title, command and collected digest byte; one judgment/count only. Unknown schema, wrong types and mismatched identity fail before publication. Independent allowed input creates no continuation. |
@@ -905,11 +1028,14 @@ item changes the bounded-refusal wording only when its new behavior is true.
 All these are future obligations; none authorizes a Stop change in this build.
 
 The following matrix is for this presentation milestone. All rows are
-designed but unimplemented at the grounded HEAD. MISSING records absent
-code/proof, not a missing human decision.
+designed but unimplemented at revision 4's historical grounded HEAD.
+Those retained statuses are not a new assessment of the landed build.
+The added STOP-TASK-NAME row is assessed at revision 5's HEAD. MISSING
+records absent code/proof, not a missing human decision.
 
 | Obligation id | Severity | Design source | Required behavior | Owner | Code proof | Test proof | Runtime proof | Status | Next action |
 | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
+| STOP-TASK-NAME | HIGH | Decision 4, revision 5 | Name the selected work from its goal ID or whole fallback label; prose stays in the report body; preserve precedence, shortening and control | internal/report | stoppresentation.go: stopTitle, availableTitle, compactStopLine, renderStopReport | STOP-TASK-NAME-GOAL, JOB-RUN, PRECEDENCE, FALLBACK, BOUNDS and HOOK rows above | Read the decoded hook line and the exact report reached by its complete command with the dated-intent specimen | PARTIAL | Replace the intent-based name picker and pin literal names and headings; supplied first-use evidence contradicts the old naming rule |
 | STOP-LINE | HIGH | Decisions 2-3 | One compact line in the sole visible field | report and adapter | stop-present, MapStopOutput, runtime capability, all registrations | STOP-RUNTIME-MAP, STOP-LOCATOR, STOP-ALLOWANCE-LINE | Observe total actual host display | MISSING | Build candidate mappings and prove host behavior |
 | STOP-PRESERVATION | CRITICAL | Decision 1; headline proof | Every Stop decision and source equal trunk's for the same input; presentation failure creates or clears no block | goal, goal CLI, report, adapter and hook | Retained enforceIdleBacklog/escalateIdleBacklog; facts writer, mapper/fallback and both parent validators | Six unchanged Go control tests and template-backlog decisions; STOP-PRESERVATION-IDLE, STOP-FACTS-WRITER-FAILURE, STOP-INFRA-DISCLOSURE and degraded cases | Reproducible paired trunk/candidate table with raw verdict, source and native payload for every matrix case | MISSING | Preserve policy, build presentation and prove equality before acceptance |
 | STOP-FACTS | HIGH | Decisions 4, 6 | One uncut frozen judgment and explicit health schema; auxiliary write failure preserves completed control | goal, report scanner and health CLI | goal.go facts-file projection/writer; scan.go; steward_verbs.go | STOP-REPORT-INPUT, STOP-FACTS-WRITER-FAILURE, STOP-HEALTH-JSON | Inspect report tails and actions; observe preserved block after failed auxiliary write | MISSING | Extend facts before clipping and implement the exact stdout/stderr/exit contract |
@@ -919,6 +1045,18 @@ code/proof, not a missing human decision.
 | STOP-FAILURE | HIGH | Decisions 3-4, 7; STOP-PRESERVATION | Degraded causes survive; presentation failure neither clears nor creates a block; sole line flags repair | hook and report | Parent, composer and launcher fallbacks; preserved condition/refusal writers | STOP-INFRA-DISCLOSURE, STOP-FACTS-WRITER-FAILURE and all degraded rows | Controlled combined block/arming failure, missing-engine and deadline firings | MISSING | Preserve precedence and records while replacing the landed public-field clauses |
 
 ## Build list
+
+Revision 5's next build is only STOP-TASK-NAME. Change the name picker and
+report heading/summary in `internal/report/stoppresentation.go`; retain the
+existing source facts and wire schema. Add the six naming proof rows above.
+Run those focused cases and the affected bounded-line hook row. Review the
+diff against Decision 4 and verify the line/report pair through the hook.
+Keep all Stop decisions, ownership joins, state writes and delivery behavior
+unchanged. No goal or ledger edit is part of the correction.
+
+The numbered list below is revision 4's landed build brief, carried whole.
+It remains the preservation contract, not a request to rebuild or rerun the
+whole milestone for a naming correction.
 
 1. Carry **revision 4 and Wido's evening ruling** into the implementation
    brief. This is a presentation build. Preserve the third-refusal release,
@@ -986,6 +1124,47 @@ code/proof, not a missing human decision.
    this milestone's applicable proofs; the outer continuation has its own goal.
 
 ## Revision record
+
+**Revision 5, 2026-09-14:** revision 4 got the source of a task name wrong.
+It treated goal intent as a title, although intent is explanatory prose
+and the real goal at `plans/goals/stop-refusal-fits-on-one-screen.md:8`
+starts with Wido's date and quotation. The build followed that decision.
+Its one-line bound worked, but cut the quotation mid-word; its report put
+the full paragraph in `# Task:`. The shape fixtures could all pass because
+none required an actual name. This was a design error, not proof that the
+builder failed to follow the page.
+
+The first real console line supplied for this revision was:
+
+```text
+Task: Wido, 2026-09-06: 'the stop message is still insan; Stop blocked; needs your decision and supervision repair; status: metasystem report stop-status --id 76a61b00...-a2de31b8
+```
+
+The human's bar is: "unless it could be a meaningful oneliner about the
+task that is being worked on (or NO task being worked on)". Choose the
+goal slug rendered as words. It already names this work. Taking the first
+sentence or clause still risks the dated quotation; combining it with the
+slug adds history and leaves less room for the name. Jobs and runs use
+their own goal ID first. Without one, a job can contribute its whole role
+label and a run its whole short display. Prose never becomes eligible by
+truncation. If these sources do not name the task, say
+`task name unavailable` and preserve the evidence in the report. The short
+label syntax is deliberately conservative; a vague lawful name remains a
+source-quality limit, not a reason to guess or call a model.
+
+The report heading carries the chosen name before console shortening.
+Full intent and original titles stay in the body. Literal name and heading
+assertions in the six STOP-TASK-NAME rows close the missing proof. All
+ownership, precedence, `next`/empty/unknown states, byte reservation, Stop
+control and delivery decisions carry forward. No human choice is deferred.
+This is a defensible presentation correction using existing facts; no new
+ledger field, model call or source rewrite is needed.
+
+Grounding was checked by reading the named current-HEAD lines and the
+computed page diff. No code, fixtures, receipts, goals or ledgers changed;
+no hook, test or fixture bed ran. Only this page is revised, uncommitted.
+The design outcome exists; implementation and the new naming proofs remain
+outstanding. Revision 4's completion note below records its pre-build state.
 
 **Revision 4, 2026-09-13:** Wido ruled this evening, verbatim:
 

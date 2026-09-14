@@ -597,7 +597,7 @@ func PresentStop(root, inputPath, outputPath string, now time.Time) (StopPresent
 	decision, repair := stopInterventions(input)
 	reportID := input.Identity.SessionKey + "-" + input.Identity.Attempt
 	readCommand := "metasystem report stop-status --id " + reportID
-	title, titleKind := stopTitle(input)
+	title, titleKind, _ := stopTitle(input)
 	humanLine := compactStopLine(title, titleKind, input.Control.ShouldBlock, decision, repair, readCommand)
 	if len(humanLine) > StopHumanLineByteLimit || !validStopHumanLine(humanLine) {
 		return StopPresentationResult{}, fmt.Errorf("compact Stop line violates its byte or line contract")
@@ -844,12 +844,12 @@ func stopInterventions(input StopPresentationInput) (decision, repair bool) {
 	return decision, repair
 }
 
-func stopTitle(input StopPresentationInput) (string, string) {
+func stopTitle(input StopPresentationInput) (string, string, string) {
 	if input.Judgment == nil {
-		return "", "unknown"
+		return "", "unknown", "work evidence was incomplete; showing Task unknown"
 	}
 	if input.Judgment.Verdict.LedgerStatus == "stopped" {
-		return "", "none"
+		return "", "none", "the stopped ledger proves no task in flight"
 	}
 	jobs := append([]goal.JobFact{}, input.Judgment.Scan.Jobs...)
 	sort.SliceStable(jobs, func(i, j int) bool {
@@ -857,7 +857,13 @@ func stopTitle(input StopPresentationInput) (string, string) {
 	})
 	for _, job := range jobs {
 		if job.Ownership == "owned" && (job.Status == "pending-setup" || job.Status == "pending" || job.Status == "running") {
-			return availableTitle(job.Title), "task"
+			if title, ok := goalIDTaskName(job.GoalId); ok {
+				return title, "task", "selected owned nonterminal job; used goal ID " + job.GoalId
+			}
+			if title, ok := shortTaskLabel(job.Role, true); ok {
+				return title, "task", "selected owned nonterminal job; goal ID was unusable; used role " + job.Role
+			}
+			return "task name unavailable", "task", "selected owned nonterminal job; goal ID and role were unusable; showing task name unavailable"
 		}
 	}
 	runs := append([]goal.RunFact{}, input.Judgment.Scan.Runs...)
@@ -866,19 +872,37 @@ func stopTitle(input StopPresentationInput) (string, string) {
 	})
 	for _, run := range runs {
 		if run.Ownership == "owned" && (run.Status == "launching" || run.Status == "running" || run.Status == "draining") {
-			return availableTitle(run.Title), "task"
+			if title, ok := goalIDTaskName(run.GoalId); ok {
+				return title, "task", "selected owned active run; used goal ID " + run.GoalId
+			}
+			if title, ok := shortTaskLabel(run.Title, false); ok {
+				return title, "task", "selected owned active run; goal ID was unusable; used run display " + title
+			}
+			return "task name unavailable", "task", "selected owned active run; goal ID and run display were unusable; showing task name unavailable"
 		}
 	}
-	if input.Judgment.Work.Selection == "held" && input.Judgment.Work.Selected != nil {
-		return availableTitle(input.Judgment.Work.Selected.Intent), "task"
+	if input.Judgment.Work.Selection == "held" {
+		if !input.Judgment.Work.ReadSucceeded || input.Judgment.Ownership.State != "owned" || input.Judgment.Work.Selected == nil {
+			return "", "unknown", "held-work ownership evidence was incomplete; showing Task unknown"
+		}
+		if title, ok := goalIDTaskName(input.Judgment.Work.Selected.Id); ok {
+			return title, "task", "selected held goal; used goal ID " + input.Judgment.Work.Selected.Id
+		}
+		return "task name unavailable", "task", "selected held goal; goal ID was unusable; showing task name unavailable"
 	}
-	if input.Judgment.Work.Selection == "claimable" && input.Judgment.Work.Selected != nil {
-		return availableTitle(input.Judgment.Work.Selected.Intent), "next"
+	if input.Judgment.Work.Selection == "claimable" {
+		if !input.Judgment.Work.ReadSucceeded || input.Judgment.Ownership.State != "none" || input.Judgment.Work.Selected == nil {
+			return "", "unknown", "claimable-work ownership evidence was incomplete; showing Task unknown"
+		}
+		if title, ok := goalIDTaskName(input.Judgment.Work.Selected.Id); ok {
+			return title, "next", "selected claimable goal; used goal ID " + input.Judgment.Work.Selected.Id
+		}
+		return "task name unavailable", "next", "selected claimable goal; goal ID was unusable; showing task name unavailable"
 	}
-	if !input.Judgment.Work.ReadSucceeded || input.Judgment.Ownership.State == "unknown" {
-		return "", "unknown"
+	if !input.Judgment.Work.ReadSucceeded || input.Judgment.Ownership.State == "unknown" || input.Judgment.Work.Selection == "unknown" {
+		return "", "unknown", "work evidence was incomplete; showing Task unknown"
 	}
-	return "", "none"
+	return "", "none", "no owned or selected work was proven"
 }
 
 func startedBefore(leftAt, leftID, rightAt, rightID string) bool {
@@ -894,12 +918,67 @@ func startedBefore(leftAt, leftID, rightAt, rightID string) bool {
 	return leftAt < rightAt
 }
 
-func availableTitle(title string) string {
-	title = normalizeCompactText(title)
-	if title == "" {
-		return "task name unavailable"
+func goalIDTaskName(id string) (string, bool) {
+	if id == "" || len(id) > 100 {
+		return "", false
 	}
-	return title
+	hasLetter := false
+	for _, r := range id {
+		if r >= 'a' && r <= 'z' {
+			hasLetter = true
+			continue
+		}
+		if (r < '0' || r > '9') && r != '-' {
+			return "", false
+		}
+	}
+	if !hasLetter || opaqueHexTaskKey(id) {
+		return "", false
+	}
+	return strings.Join(strings.Fields(strings.ReplaceAll(id, "-", " ")), " "), true
+}
+
+func shortTaskLabel(source string, role bool) (string, bool) {
+	for _, r := range source {
+		if unicode.IsControl(r) || r == '\u2028' || r == '\u2029' {
+			return "", false
+		}
+	}
+	trimmed := strings.TrimSpace(source)
+	if trimmed == "" || opaqueHexTaskKey(trimmed) {
+		return "", false
+	}
+	if role {
+		trimmed = strings.NewReplacer("-", " ", "_", " ").Replace(trimmed)
+	}
+	label := strings.Join(strings.Fields(trimmed), " ")
+	if label == "" || len(label) > 100 {
+		return "", false
+	}
+	hasLetter := false
+	for _, r := range label {
+		switch {
+		case unicode.IsLetter(r):
+			hasLetter = true
+		case unicode.IsMark(r), unicode.IsDigit(r), r == ' ', r == '-', r == '/', r == '&', r == '+', r == '(', r == ')':
+		default:
+			return "", false
+		}
+	}
+	return label, hasLetter
+}
+
+func opaqueHexTaskKey(value string) bool {
+	compact := strings.ReplaceAll(value, "-", "")
+	if len(compact) != 32 && len(compact) != 40 && len(compact) != 64 {
+		return false
+	}
+	for _, r := range compact {
+		if !((r >= '0' && r <= '9') || (r >= 'a' && r <= 'f') || (r >= 'A' && r <= 'F')) {
+			return false
+		}
+	}
+	return true
 }
 
 func compactStopLine(title, kind string, blocked, decision, repair bool, readCommand string) string {
@@ -1001,7 +1080,7 @@ func renderStopReport(input StopPresentationInput, humanLine string, decision, r
 	if input.Control.ShouldBlock {
 		outcome = "Stop blocked"
 	}
-	title, kind := stopTitle(input)
+	title, kind, namingSummary := stopTitle(input)
 	heading := "No task in flight"
 	if kind == "task" {
 		heading = "Task: " + title
@@ -1049,7 +1128,7 @@ func renderStopReport(input StopPresentationInput, humanLine string, decision, r
 	if input.Control.BlockSource != nil {
 		blockSource = *input.Control.BlockSource
 	}
-	fmt.Fprintf(&report, "- Console line: `%s`\n- Block source: %s\n", humanLine, blockSource)
+	fmt.Fprintf(&report, "- Console line: `%s`\n- Block source: %s\n- Task naming: %s.\n", humanLine, blockSource, namingSummary)
 	if input.Judgment != nil {
 		fmt.Fprintf(&report, "- Claimable goals: %d; queued goals: %d; non-terminal jobs: %d.\n", len(input.Judgment.Work.Claimable), input.Judgment.Work.Queued, len(input.Judgment.Work.NonTerminalJobs))
 		writeBacklogSummary(&report, input.Judgment)

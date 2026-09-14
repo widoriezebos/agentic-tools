@@ -732,6 +732,101 @@ sed -n "$((line_log_start + 1)),\$p" "$line_root/artifacts/agents/supervision/ho
 grep -Eq '"lastStopElapsedSec": [0-9]+' "$hook_evidence" \
   || { echo "supervision hook chat-line fixture did not record its elapsed Stop seconds" >&2; exit 1; }
 
+# STOP-TASK-NAME-HOOK: intent remains frozen report detail while the goal slug
+# supplies the exact task name through the real presenter and runtime mapper.
+name_engine=$tmp/stop-task-name-engine
+name_trace=$tmp/stop-task-name-engine.trace
+dated_intent="Wido, 2026-09-06: 'the stop message is still insanely long.' The Stop hook's refusal text has no bound: on m1's first Stop after c1525b90a (the refusal carries the turn verdict) it printed about two hundred run records from August ('no continuation recorded') and one actionable line (an unwatched job) in a single refusal. The Telegram ask got its bound last night (renderQuestion, 1600 runes, the token first, the rest trimmed with a notice); the hook's refusal and its systemMessage get the same discipline. DONE means: the refusal reads, in order, the verdict in one line, the actionable items (each with the command that clears it), then at most a few lines of everything else summarized by class and count ('244 runs without a recorded continuation, oldest 2026-08-16; full list: <path>'), the whole thing bounded to roughly a screen; the full unbounded text is written to a file under the checkout's supervision evidence and the refusal names it. Not a change to what is judged - only to what is printed."
+cat >"$name_engine" <<'SH'
+#!/usr/bin/env bash
+if [[ ${1:-} == adapter && ${2:-} == stop-output ]]; then
+  printf '%s\n' 'adapter stop-output' >>"${METASYSTEM_STOP_NAME_TRACE:?}"
+fi
+if [[ ${1:-} == report && ${2:-} == turn-verdict ]]; then
+  facts_path= root= session= main_id= previous=
+  for argument in "$@"; do
+    case "$previous" in
+      --facts-file) facts_path=$argument ;;
+      --root) root=$argument ;;
+      --session) session=$argument ;;
+      --main-id) main_id=$argument ;;
+    esac
+    previous=$argument
+  done
+  [[ -n "$facts_path" && -n "$root" && -n "$session" ]] || exit 2
+  dated_intent=${METASYSTEM_STOP_NAME_INTENT:?}
+  should_block=${METASYSTEM_STOP_NAME_BLOCK:?}
+  block_source=null
+  refusal_block_source=
+  human_required=false
+  supervision_repair=false
+  if [[ "$should_block" == true ]]; then
+    block_source='"goal"'
+    refusal_block_source=goal
+    human_required=true
+    supervision_repair=true
+  fi
+  cat >"$facts_path" <<JSON
+{"schemaVersion":1,"identity":{"installation":"$root","session":"$session","mainId":"$main_id","observedAt":"2026-09-14T12:00:00Z"},"verdict":{"schemaVersion":1,"class":"seat-actionable","shouldBlock":$should_block,"blockSource":$block_source,"openWork":[],"openWorkSignature":"","goal":null,"ledgerStatus":"ok","diagnostics":[],"display":"frozen task-name fixture","surfaceWatchdog":false,"idleRefusal":false,"countSpent":false,"brainStatusDue":false},"fullDisplay":"frozen task-name fixture","scan":{"open":[],"templateUnfilled":[],"openWorkWarnings":[],"waitingOnHuman":[],"stalePlans":[],"busy":[],"questions":[],"drafts":[],"unreadable":[],"jobs":[],"runs":[],"runUnreadable":[]},"work":{"readSucceeded":true,"claimed":[{"id":"stop-refusal-fits-on-one-screen","intent":"$dated_intent","nextStep":"finish the naming proof","revision":"5"}],"landing":[],"claimable":[],"selected":{"id":"stop-refusal-fits-on-one-screen","intent":"$dated_intent","nextStep":"finish the naming proof","revision":"5"},"selection":"held","refused":[],"inFlight":[],"nonTerminalJobs":[],"queued":0,"goalFree":false},"ownership":{"state":"owned","goalId":"stop-refusal-fits-on-one-screen","evidence":"frozen holder join"},"actions":[{"kind":"continue-goal","targetId":"stop-refusal-fits-on-one-screen","instruction":"finish the naming proof","command":"","owner":"seat","restriction":"","humanRequired":$human_required,"supervisionRepair":$supervision_repair}],"refusal":{"class":"seat-actionable","causeCode":"","component":"","detail":"frozen task-name fixture","remedy":"","blockSource":"$refusal_block_source","occurrence":0,"countSpent":false,"idleRefusal":false,"humanStopConsumed":false,"humanRequired":false,"supervisionRepair":false,"escalation":{"intentId":"","incidentId":"","alarmDetail":"","detail":"","intentPrepared":false,"humanRequired":false,"supervisionRepair":false}}}
+JSON
+  printf '{"schemaVersion":1,"class":"seat-actionable","shouldBlock":%s,"blockSource":%s,"openWork":[],"openWorkSignature":"","goal":null,"ledgerStatus":"ok","diagnostics":[],"display":"frozen task-name fixture","surfaceWatchdog":false,"idleRefusal":false,"countSpent":false,"brainStatusDue":false}\n' \
+    "$should_block" "$block_source"
+  exit 0
+fi
+exec "${METASYSTEM_STOP_NAME_REAL_ENGINE:?}" "$@"
+SH
+chmod +x "$name_engine"
+
+stop_task_name_report_facts() { # report text
+  awk '
+    $0 == "## Original turn verdict and frozen judgment" { section = 1; next }
+    section && $0 == "```json" { capture = 1; next }
+    capture && $0 == "```" { exit }
+    capture { print }
+  ' <<<"$1"
+}
+
+printf '{"session_id":"stop-task-name-block","cwd":"%s","hook_event_name":"Stop"}\n' "$line_root" \
+  >"$tmp/stop-task-name-block.json"
+METASYSTEM_BIN="$name_engine" METASYSTEM_STOP_NAME_REAL_ENGINE="$line_root/bin/metasystem" \
+  METASYSTEM_STOP_NAME_TRACE="$name_trace" METASYSTEM_STOP_NAME_BLOCK=true METASYSTEM_STOP_NAME_INTENT="$dated_intent" \
+  bash "$line_root/scripts/agents/supervision-hook.sh" claude stop \
+    <"$tmp/stop-task-name-block.json" >"$tmp/stop-task-name-block.out" 2>"$tmp/stop-task-name-block.err"
+name_block_line=$("$ms" json get --file "$tmp/stop-task-name-block.out" --field reason)
+[[ "${name_block_line%%; Stop blocked*}" == 'Task: stop refusal fits on one screen' ]] \
+  && [[ "$name_block_line" == 'Task: stop refusal fits on one screen; Stop blocked; needs your decision and supervision repair; status: '* ]] \
+  || { echo "STOP-TASK-NAME-HOOK block did not carry the exact slug name and both intervention flags" >&2; cat "$tmp/stop-task-name-block.out" >&2; exit 1; }
+name_block_report=$(fixture_stop_status_report \
+  "$tmp/stop-task-name-block.out" "$line_root" claude stop-task-name-block) \
+  || { echo "STOP-TASK-NAME-HOOK block exposed no identity-bound report" >&2; exit 1; }
+[[ ${name_block_report%%$'\n'*} == '# Task: stop refusal fits on one screen; Stop blocked' ]] \
+  && grep -Fq '"blockSource": "goal"' <<<"$name_block_report" \
+  || { echo "STOP-TASK-NAME-HOOK block changed its heading or control source" >&2; exit 1; }
+name_block_facts=$(stop_task_name_report_facts "$name_block_report")
+[[ $("$ms" json get --value "$name_block_facts" --field work.selected.intent) == "$dated_intent" ]] \
+  || { echo "STOP-TASK-NAME-HOOK block report lost the complete dated intent" >&2; exit 1; }
+
+printf '{"session_id":"stop-task-name-allow","cwd":"%s","hook_event_name":"Stop"}\n' "$line_root" \
+  >"$tmp/stop-task-name-allow.json"
+METASYSTEM_BIN="$name_engine" METASYSTEM_STOP_NAME_REAL_ENGINE="$line_root/bin/metasystem" \
+  METASYSTEM_STOP_NAME_TRACE="$name_trace" METASYSTEM_STOP_NAME_BLOCK=false METASYSTEM_STOP_NAME_INTENT="$dated_intent" \
+  bash "$line_root/scripts/agents/supervision-hook.sh" claude stop \
+    <"$tmp/stop-task-name-allow.json" >"$tmp/stop-task-name-allow.out" 2>"$tmp/stop-task-name-allow.err"
+name_allow_line=$("$ms" json get --file "$tmp/stop-task-name-allow.out" --field systemMessage)
+[[ "${name_allow_line%%; Stop allowed*}" == 'Task: stop refusal fits on one screen' ]] \
+  || { echo "STOP-TASK-NAME-HOOK allowance did not carry the exact slug name" >&2; cat "$tmp/stop-task-name-allow.out" >&2; exit 1; }
+name_allow_report=$(fixture_stop_status_report \
+  "$tmp/stop-task-name-allow.out" "$line_root" claude stop-task-name-allow) \
+  || { echo "STOP-TASK-NAME-HOOK allowance exposed no identity-bound report" >&2; exit 1; }
+[[ ${name_allow_report%%$'\n'*} == '# Task: stop refusal fits on one screen; Stop allowed' ]] \
+  && grep -Fq '"blockSource": null' <<<"$name_allow_report" \
+  || { echo "STOP-TASK-NAME-HOOK allowance changed its heading or control source" >&2; exit 1; }
+name_allow_facts=$(stop_task_name_report_facts "$name_allow_report")
+[[ $("$ms" json get --value "$name_allow_facts" --field work.selected.intent) == "$dated_intent" ]] \
+  || { echo "STOP-TASK-NAME-HOOK allowance report lost the complete dated intent" >&2; exit 1; }
+[[ $(grep -Fc 'adapter stop-output' "$name_trace") -eq 2 ]] \
+  || { echo "STOP-TASK-NAME-HOOK did not invoke the runtime mapper once per outcome" >&2; exit 1; }
+
 compat_root=$tmp/compat-root
 cp -R "$line_root" "$compat_root"
 compat_evidence=$compat_root/artifacts/agents/steward/components/supervision-hook.json

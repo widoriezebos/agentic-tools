@@ -90,6 +90,82 @@ func writeStopInput(t *testing.T, path string, input StopPresentationInput) {
 	}
 }
 
+const stopTaskNameDatedIntent = `Wido, 2026-09-06: 'the stop message is still insanely long.' The Stop hook's refusal text has no bound: on m1's first Stop after c1525b90a (the refusal carries the turn verdict) it printed about two hundred run records from August ('no continuation recorded') and one actionable line (an unwatched job) in a single refusal. The Telegram ask got its bound last night (renderQuestion, 1600 runes, the token first, the rest trimmed with a notice); the hook's refusal and its systemMessage get the same discipline. DONE means: the refusal reads, in order, the verdict in one line, the actionable items (each with the command that clears it), then at most a few lines of everything else summarized by class and count ('244 runs without a recorded continuation, oldest 2026-08-16; full list: <path>'), the whole thing bounded to roughly a screen; the full unbounded text is written to a file under the checkout's supervision evidence and the refusal names it. Not a change to what is judged - only to what is printed.`
+
+func setStopSelectedGoal(input *StopPresentationInput, selection, id, intent string) {
+	fact := goal.GoalFacts{Id: id, Intent: intent, NextStep: "continue the named work", Revision: "5"}
+	input.Judgment.Work.Selected = &fact
+	input.Judgment.Work.Selection = selection
+	input.Judgment.Work.Claimed = []goal.GoalFacts{}
+	input.Judgment.Work.Claimable = []goal.GoalFacts{}
+	if selection == "held" {
+		input.Judgment.Work.Claimed = []goal.GoalFacts{fact}
+		input.Judgment.Ownership = goal.TurnOwnershipFacts{State: "owned", GoalId: id, Evidence: "joined holder evidence"}
+	} else {
+		input.Judgment.Work.Claimable = []goal.GoalFacts{fact}
+		input.Judgment.Ownership = goal.TurnOwnershipFacts{State: "none", Evidence: "no held claim"}
+	}
+}
+
+func presentStopTaskName(t *testing.T, input StopPresentationInput, wantTask, wantOutcome string, wantFullTask ...string) (StopPresentationResult, string) {
+	t.Helper()
+	work := t.TempDir()
+	inputPath := filepath.Join(work, "input.json")
+	outputPath := filepath.Join(work, "output.json")
+	writeStopInput(t, inputPath, input)
+	result, err := PresentStop(input.Identity.Installation, inputPath, outputPath, time.Date(2026, 9, 14, 12, 0, 0, 0, time.UTC))
+	if err != nil {
+		t.Fatal(err)
+	}
+	wantLine := wantTask + "; " + wantOutcome + "; status: metasystem report stop-status --id " + input.Identity.SessionKey + "-" + input.Identity.Attempt
+	if result.HumanLine != wantLine {
+		t.Fatalf("human line = %q, want %q", result.HumanLine, wantLine)
+	}
+	if len(result.HumanLine) > StopHumanLineByteLimit || !utf8.ValidString(result.HumanLine) || strings.ContainsAny(result.HumanLine, "\r\n") {
+		t.Fatalf("human line violates its wire contract: bytes=%d %q", len(result.HumanLine), result.HumanLine)
+	}
+	if result.Control.ShouldBlock != input.Control.ShouldBlock || !sameStringPointer(result.Control.BlockSource, input.Control.BlockSource) {
+		t.Fatalf("presentation changed Stop control: got=%+v want=%+v", result.Control, input.Control)
+	}
+	reportBytes, identity, err := ReadStopStatus(input.Identity.Installation, result.Report.Id)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if identity != input.Identity {
+		t.Fatalf("report identity changed: got=%+v want=%+v", identity, input.Identity)
+	}
+	report := string(reportBytes)
+	headingOutcome := strings.SplitN(wantOutcome, ";", 2)[0]
+	firstLine := strings.SplitN(report, "\n", 2)[0]
+	headingTask := wantTask
+	if len(wantFullTask) == 1 {
+		headingTask = wantFullTask[0]
+	}
+	if want := "# " + headingTask + "; " + headingOutcome; firstLine != want {
+		t.Fatalf("report heading = %q, want %q", firstLine, want)
+	}
+	return result, report
+}
+
+func frozenJudgmentFromStopReport(t *testing.T, report string) goal.TurnVerdictFacts {
+	t.Helper()
+	const start = "## Original turn verdict and frozen judgment\n\n```json\n"
+	index := strings.Index(report, start)
+	if index < 0 {
+		t.Fatal("report omitted frozen judgment section")
+	}
+	after := report[index+len(start):]
+	encoded, _, ok := strings.Cut(after, "\n```\n")
+	if !ok {
+		t.Fatal("report frozen judgment section was not closed")
+	}
+	var facts goal.TurnVerdictFacts
+	if err := json.Unmarshal([]byte(encoded), &facts); err != nil {
+		t.Fatalf("decode report frozen judgment: %v", err)
+	}
+	return facts
+}
+
 func TestPresentStopPublishesOneBoundedLineAndCompleteImmutableReport(t *testing.T) {
 	root := stopPresentationRoot(t)
 	input := stopPresentationFixture(root, strings.Repeat("1", 32), true)
@@ -135,6 +211,345 @@ func TestPresentStopPublishesOneBoundedLineAndCompleteImmutableReport(t *testing
 	if _, err := PresentStop(root, inputPath, outputPath, time.Now()); err == nil {
 		t.Fatal("an existing presentation output was overwritten")
 	}
+}
+
+func TestStopTaskNamesUseGoalIDsInsteadOfIntent(t *testing.T) {
+	tests := []struct {
+		name, selection, id, intent, wantTask, wantOutcome string
+		block                                              bool
+	}{
+		{"held dated intent", "held", "stop-refusal-fits-on-one-screen", stopTaskNameDatedIntent, "Task: stop refusal fits on one screen", "Stop blocked", true},
+		{"claimable dated intent", "claimable", "stop-refusal-fits-on-one-screen", stopTaskNameDatedIntent, "No task in flight; next: stop refusal fits on one screen", "Stop allowed", false},
+		{"empty intent", "held", "stop-refusal-fits-on-one-screen", "", "Task: stop refusal fits on one screen", "Stop blocked", true},
+		{"short intent", "held", "stop-refusal-fits-on-one-screen", "short explanation", "Task: stop refusal fits on one screen", "Stop blocked", true},
+		{"different slug", "held", "report-heading-stays-readable", stopTaskNameDatedIntent, "Task: report heading stays readable", "Stop blocked", true},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			root := stopPresentationRoot(t)
+			input := stopPresentationFixture(root, strings.Repeat("1", 32), test.block)
+			setStopSelectedGoal(&input, test.selection, test.id, test.intent)
+			_, report := presentStopTaskName(t, input, test.wantTask, test.wantOutcome)
+			firstLine := strings.SplitN(report, "\n", 2)[0]
+			if strings.Contains(firstLine, "Wido, 2026-09-06") || strings.Contains(firstLine, "insanely long") {
+				t.Fatalf("intent escaped into the task heading: %s", firstLine)
+			}
+			facts := frozenJudgmentFromStopReport(t, report)
+			if facts.Work.Selected == nil || facts.Work.Selected.Intent != test.intent {
+				t.Fatalf("complete intent did not survive in frozen report facts: %+v", facts.Work.Selected)
+			}
+			if !strings.Contains(report, "used goal ID "+test.id) {
+				t.Fatalf("report summary omitted the chosen goal-ID source:\n%s", report)
+			}
+		})
+	}
+}
+
+func TestStopTaskNamesForOwnedJobsAndRuns(t *testing.T) {
+	tests := []struct {
+		name, wantTask, summary string
+		job                     *goal.JobFact
+		run                     *goal.RunFact
+	}{
+		{
+			name: "job goal ID", wantTask: "Task: stop refusal fits on one screen", summary: "used goal ID stop-refusal-fits-on-one-screen",
+			job: &goal.JobFact{Id: "job-goal", StartedAt: "2026-09-14T08:00:00Z", Status: "running", Ownership: "owned", GoalId: "stop-refusal-fits-on-one-screen", Role: "design-review", Title: stopTaskNameDatedIntent, SourcePath: "artifacts/agents/jobs/job-goal.json"},
+		},
+		{
+			name: "run goal ID", wantTask: "Task: stop refusal fits on one screen", summary: "used goal ID stop-refusal-fits-on-one-screen",
+			run: &goal.RunFact{Id: "run-goal", StartedAt: "2026-09-14T08:00:00Z", Status: "running", Ownership: "owned", GoalId: "stop-refusal-fits-on-one-screen", Title: "A conflicting prose display. It must stay detail.", SourcePath: "artifacts/agents/runs/run-goal.json"},
+		},
+		{
+			name: "job role fallback", wantTask: "Task: design review", summary: "goal ID was unusable; used role design-review",
+			job: &goal.JobFact{Id: "job-role", Status: "pending", Ownership: "owned", Role: "design-review", Title: strings.Repeat("long prose title ", 20), SourcePath: "artifacts/agents/jobs/job-role.json"},
+		},
+		{
+			name: "run display fallback", wantTask: "Task: Stop report checks", summary: "goal ID was unusable; used run display Stop report checks",
+			run: &goal.RunFact{Id: "run-display", Status: "launching", Ownership: "owned", Title: "Stop report checks", SourcePath: "artifacts/agents/runs/run-display.json"},
+		},
+		{
+			name: "quoted run prose rejected", wantTask: "Task: task name unavailable", summary: "goal ID and run display were unusable",
+			run: &goal.RunFact{Id: "run-quoted", Status: "draining", Ownership: "owned", Title: `Wido, 2026-09-06: "fix the Stop line"`, SourcePath: "artifacts/agents/runs/run-quoted.json"},
+		},
+		{
+			name: "multi sentence run prose rejected", wantTask: "Task: task name unavailable", summary: "goal ID and run display were unusable",
+			run: &goal.RunFact{Id: "run-sentences", Status: "running", Ownership: "owned", Title: "First sentence. Second sentence.", SourcePath: "artifacts/agents/runs/run-sentences.json"},
+		},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			root := stopPresentationRoot(t)
+			input := stopPresentationFixture(root, strings.Repeat("2", 32), true)
+			if test.job != nil {
+				input.Judgment.Scan.Jobs = []goal.JobFact{*test.job}
+				input.Judgment.Work.NonTerminalJobs = []string{test.job.Id}
+			}
+			if test.run != nil {
+				input.Judgment.Scan.Runs = []goal.RunFact{*test.run}
+			}
+			_, report := presentStopTaskName(t, input, test.wantTask, "Stop blocked")
+			if !strings.Contains(report, test.summary) {
+				t.Fatalf("report summary omitted %q:\n%s", test.summary, report)
+			}
+			facts := frozenJudgmentFromStopReport(t, report)
+			if test.job != nil && (len(facts.Scan.Jobs) != 1 || facts.Scan.Jobs[0].Title != test.job.Title || facts.Scan.Jobs[0].SourcePath != test.job.SourcePath) {
+				t.Fatalf("job source facts changed in report: %+v", facts.Scan.Jobs)
+			}
+			if test.run != nil && (len(facts.Scan.Runs) != 1 || facts.Scan.Runs[0].Title != test.run.Title || facts.Scan.Runs[0].SourcePath != test.run.SourcePath) {
+				t.Fatalf("run source facts changed in report: %+v", facts.Scan.Runs)
+			}
+		})
+	}
+}
+
+func TestStopTaskNamePrecedence(t *testing.T) {
+	t.Run("tier order ignores unowned and terminal records", func(t *testing.T) {
+		root := stopPresentationRoot(t)
+		input := stopPresentationFixture(root, strings.Repeat("3", 32), true)
+		setStopSelectedGoal(&input, "held", "held-goal", "held detail")
+		input.Judgment.Work.Claimable = []goal.GoalFacts{{Id: "claimable-goal", Intent: "claimable detail"}}
+		input.Judgment.Scan.Jobs = []goal.JobFact{
+			{Id: "other-job", StartedAt: "2026-09-01T00:00:00Z", Status: "running", Ownership: "other", GoalId: "other-goal"},
+			{Id: "unknown-job", StartedAt: "2026-09-01T00:00:00Z", Status: "running", Ownership: "unknown", GoalId: "unknown-goal"},
+			{Id: "terminal-job", StartedAt: "2026-09-01T00:00:00Z", Status: "completed", Ownership: "owned", GoalId: "terminal-goal"},
+			{Id: "owned-job", StartedAt: "2026-09-03T00:00:00Z", Status: "running", Ownership: "owned", GoalId: "job-goal"},
+		}
+		input.Judgment.Scan.Runs = []goal.RunFact{
+			{Id: "terminal-run", StartedAt: "2026-09-01T00:00:00Z", Status: "green", Ownership: "owned", GoalId: "terminal-run-goal"},
+			{Id: "owned-run", StartedAt: "2026-09-02T00:00:00Z", Status: "running", Ownership: "owned", GoalId: "run-goal"},
+		}
+		input.Judgment.Work.NonTerminalJobs = []string{"other-job", "unknown-job", "owned-job"}
+		_, report := presentStopTaskName(t, input, "Task: job goal", "Stop blocked")
+		for _, want := range []string{"other-job", "unknown-job", "terminal-job", "owned-job", "terminal-run", "owned-run", "Claimable goals: 1", "non-terminal jobs: 3"} {
+			if !strings.Contains(report, want) {
+				t.Fatalf("precedence report omitted %q", want)
+			}
+		}
+	})
+
+	t.Run("run precedes held and selected claimable", func(t *testing.T) {
+		root := stopPresentationRoot(t)
+		input := stopPresentationFixture(root, strings.Repeat("4", 32), true)
+		setStopSelectedGoal(&input, "held", "held-goal", "held detail")
+		input.Judgment.Work.Claimable = []goal.GoalFacts{{Id: "claimable-goal"}}
+		input.Judgment.Scan.Runs = []goal.RunFact{{Id: "owned-run", Status: "running", Ownership: "owned", GoalId: "run-goal"}}
+		presentStopTaskName(t, input, "Task: run goal", "Stop blocked")
+	})
+
+	t.Run("held precedes claimable", func(t *testing.T) {
+		root := stopPresentationRoot(t)
+		input := stopPresentationFixture(root, strings.Repeat("5", 32), true)
+		setStopSelectedGoal(&input, "held", "held-goal", "held detail")
+		input.Judgment.Work.Claimable = []goal.GoalFacts{{Id: "claimable-goal"}}
+		presentStopTaskName(t, input, "Task: held goal", "Stop blocked")
+	})
+
+	t.Run("claimable is labelled next", func(t *testing.T) {
+		root := stopPresentationRoot(t)
+		input := stopPresentationFixture(root, strings.Repeat("6", 32), false)
+		setStopSelectedGoal(&input, "claimable", "claimable-goal", "claimable detail")
+		presentStopTaskName(t, input, "No task in flight; next: claimable goal", "Stop allowed")
+	})
+
+	t.Run("earliest date wins despite reverse order and missing dates", func(t *testing.T) {
+		root := stopPresentationRoot(t)
+		input := stopPresentationFixture(root, strings.Repeat("7", 32), true)
+		input.Judgment.Scan.Jobs = []goal.JobFact{
+			{Id: "missing", Status: "running", Ownership: "owned", GoalId: "missing-date"},
+			{Id: "later", StartedAt: "2026-09-14T09:00:00Z", Status: "running", Ownership: "owned", GoalId: "later-date"},
+			{Id: "earlier", StartedAt: "2026-09-14T08:00:00Z", Status: "running", Ownership: "owned", GoalId: "earlier-date"},
+		}
+		presentStopTaskName(t, input, "Task: earlier date", "Stop blocked")
+	})
+
+	t.Run("equal dates use record ID", func(t *testing.T) {
+		root := stopPresentationRoot(t)
+		input := stopPresentationFixture(root, strings.Repeat("8", 32), true)
+		input.Judgment.Scan.Runs = []goal.RunFact{
+			{Id: "z-run", StartedAt: "2026-09-14T08:00:00Z", Status: "running", Ownership: "owned", GoalId: "zulu-goal"},
+			{Id: "a-run", StartedAt: "2026-09-14T08:00:00Z", Status: "running", Ownership: "owned", GoalId: "alpha-goal"},
+		}
+		presentStopTaskName(t, input, "Task: alpha goal", "Stop blocked")
+	})
+
+	t.Run("winning unnamed job does not fall through", func(t *testing.T) {
+		root := stopPresentationRoot(t)
+		input := stopPresentationFixture(root, strings.Repeat("9", 32), true)
+		input.Judgment.Scan.Jobs = []goal.JobFact{{Id: "unnamed", Status: "running", Ownership: "owned", GoalId: "550e8400-e29b-41d4-a716-446655440000", Role: "Review."}}
+		input.Judgment.Scan.Runs = []goal.RunFact{{Id: "named-run", Status: "running", Ownership: "owned", GoalId: "named-run-goal"}}
+		_, report := presentStopTaskName(t, input, "Task: task name unavailable", "Stop blocked")
+		if !strings.Contains(report, "goal ID and role were unusable") || !strings.Contains(report, "named-run") {
+			t.Fatalf("unnamed winning job or lower-tier report evidence was lost:\n%s", report)
+		}
+	})
+
+	t.Run("winning unnamed run does not fall through", func(t *testing.T) {
+		root := stopPresentationRoot(t)
+		input := stopPresentationFixture(root, strings.Repeat("0", 32), true)
+		setStopSelectedGoal(&input, "held", "named-held-goal", "held detail")
+		input.Judgment.Scan.Runs = []goal.RunFact{{Id: "unnamed-run", Status: "running", Ownership: "owned", GoalId: strings.Repeat("d", 40), Title: "A dated run, 2026-09-06."}}
+		_, report := presentStopTaskName(t, input, "Task: task name unavailable", "Stop blocked")
+		if !strings.Contains(report, "goal ID and run display were unusable") || !strings.Contains(report, "named-held-goal") {
+			t.Fatalf("unnamed winning run or lower-tier report evidence was lost:\n%s", report)
+		}
+	})
+
+	t.Run("empty unknown and stopped states remain distinct", func(t *testing.T) {
+		root := stopPresentationRoot(t)
+		input := stopPresentationFixture(root, strings.Repeat("a", 32), false)
+		input.Judgment.Work.Claimed = []goal.GoalFacts{}
+		input.Judgment.Work.Claimable = []goal.GoalFacts{}
+		input.Judgment.Work.Selected = nil
+		input.Judgment.Work.Selection = "none"
+		input.Judgment.Ownership = goal.TurnOwnershipFacts{State: "none"}
+		presentStopTaskName(t, input, "No task in flight", "Stop allowed")
+
+		root = stopPresentationRoot(t)
+		input = stopPresentationFixture(root, strings.Repeat("b", 32), true)
+		input.Judgment.Work.ReadSucceeded = false
+		input.Judgment.Work.Selected = nil
+		input.Judgment.Work.Selection = "unknown"
+		input.Judgment.Ownership = goal.TurnOwnershipFacts{State: "unknown"}
+		presentStopTaskName(t, input, "Task unknown", "Stop blocked")
+
+		root = stopPresentationRoot(t)
+		input = stopPresentationFixture(root, strings.Repeat("c", 32), false)
+		input.Judgment.Verdict.LedgerStatus = "stopped"
+		input.Judgment.Work.ReadSucceeded = false
+		input.Judgment.Work.Selected = nil
+		input.Judgment.Work.Selection = "unknown"
+		input.Judgment.Ownership = goal.TurnOwnershipFacts{State: "unknown"}
+		presentStopTaskName(t, input, "No task in flight", "Stop allowed")
+	})
+}
+
+func TestStopTaskNameFallbacks(t *testing.T) {
+	invalidGoalIDs := []struct {
+		name, id string
+	}{
+		{"empty", ""},
+		{"whitespace", "   "},
+		{"numeric", "123456"},
+		{"punctuation", "---"},
+		{"malformed uppercase", "Not-kebab"},
+		{"malformed underscore", "not_kebab"},
+		{"overlong", strings.Repeat("a", 101)},
+		{"UUID", "550e8400-e29b-41d4-a716-446655440000"},
+		{"hex 32", strings.Repeat("a", 32)},
+		{"hex 40", strings.Repeat("b", 40)},
+		{"hex 64", strings.Repeat("c", 64)},
+	}
+	for _, test := range invalidGoalIDs {
+		t.Run("goal "+test.name, func(t *testing.T) {
+			root := stopPresentationRoot(t)
+			input := stopPresentationFixture(root, strings.Repeat("d", 32), true)
+			setStopSelectedGoal(&input, "held", test.id, stopTaskNameDatedIntent)
+			_, report := presentStopTaskName(t, input, "Task: task name unavailable", "Stop blocked")
+			if !strings.Contains(report, "goal ID was unusable") {
+				t.Fatalf("report did not identify the rejected goal-ID source:\n%s", report)
+			}
+		})
+	}
+
+	t.Run("invalid job role does not use prose title", func(t *testing.T) {
+		root := stopPresentationRoot(t)
+		input := stopPresentationFixture(root, strings.Repeat("e", 32), true)
+		input.Judgment.Scan.Jobs = []goal.JobFact{{Id: "job-bad-role", Status: "running", Ownership: "owned", Role: "Design review.", Title: "Short lawful title", SourcePath: "jobs/job-bad-role.json"}}
+		presentStopTaskName(t, input, "Task: task name unavailable", "Stop blocked")
+	})
+
+	t.Run("short dated run prose is rejected whole", func(t *testing.T) {
+		root := stopPresentationRoot(t)
+		input := stopPresentationFixture(root, strings.Repeat("f", 32), true)
+		input.Judgment.Scan.Runs = []goal.RunFact{{Id: "run-dated", Status: "running", Ownership: "owned", Title: `Wido, 2026-09-06 "Stop report"`}}
+		presentStopTaskName(t, input, "Task: task name unavailable", "Stop blocked")
+	})
+
+	t.Run("long unpunctuated run prose is not clipped into eligibility", func(t *testing.T) {
+		root := stopPresentationRoot(t)
+		input := stopPresentationFixture(root, strings.Repeat("0", 32), true)
+		input.Judgment.Scan.Runs = []goal.RunFact{{Id: "run-long", Status: "running", Ownership: "owned", Title: strings.Repeat("a", 101)}}
+		presentStopTaskName(t, input, "Task: task name unavailable", "Stop blocked")
+	})
+
+	t.Run("missing name preserves control and intervention flags", func(t *testing.T) {
+		root := stopPresentationRoot(t)
+		input := stopPresentationFixture(root, strings.Repeat("1", 32), true)
+		setStopSelectedGoal(&input, "held", "550e8400-e29b-41d4-a716-446655440000", stopTaskNameDatedIntent)
+		input.Notices = []StopNotice{{HumanRequired: true, SupervisionRepair: true}}
+		result, _ := presentStopTaskName(t, input, "Task: task name unavailable", "Stop blocked; needs your decision and supervision repair")
+		if !result.NeedsYourDecision || !result.NeedsSupervisionRepair {
+			t.Fatalf("missing name changed intervention flags: %+v", result)
+		}
+	})
+
+	t.Run("Unicode role and benign separators are usable", func(t *testing.T) {
+		root := stopPresentationRoot(t)
+		input := stopPresentationFixture(root, strings.Repeat("2", 32), true)
+		input.Judgment.Scan.Jobs = []goal.JobFact{{Id: "job-unicode", Status: "running", Ownership: "owned", Role: "design_review-équipe/2"}}
+		presentStopTaskName(t, input, "Task: design review équipe/2", "Stop blocked")
+	})
+
+	t.Run("Unicode run label is usable", func(t *testing.T) {
+		root := stopPresentationRoot(t)
+		input := stopPresentationFixture(root, strings.Repeat("3", 32), true)
+		input.Judgment.Scan.Runs = []goal.RunFact{{Id: "run-unicode", Status: "running", Ownership: "owned", Title: "Révision β2 + QA"}}
+		presentStopTaskName(t, input, "Task: Révision β2 + QA", "Stop blocked")
+	})
+}
+
+func TestStopTaskNameBoundsAndReportHeading(t *testing.T) {
+	const longSlug = "alpha-alpha-alpha-alpha-alpha-alpha-alpha-alpha-alpha-alpha-alpha-alpha-alpha-alpha-alpha-alpha-beta"
+	const fullGoalName = "alpha alpha alpha alpha alpha alpha alpha alpha alpha alpha alpha alpha alpha alpha alpha alpha beta"
+	tests := []struct {
+		name, selection, wantTask, wantOutcome string
+		block, human, repair                   bool
+	}{
+		{"held block without intervention", "held", "Task: alpha alpha alpha alpha alpha alpha alpha alpha alpha alpha alpha alpha alpha alpha alpha alph", "Stop blocked", true, false, false},
+		{"next allowance with decision", "claimable", "No task in flight; next: alpha alpha alpha alpha alpha alpha alpha alpha alpha", "Stop allowed; needs your decision", false, true, false},
+		{"held allowance with repair", "held", "Task: alpha alpha alpha alpha alpha alpha alpha alpha alpha alpha alpha al", "Stop allowed; needs supervision repair", false, false, true},
+		{"next block with both", "claimable", "No task in flight; next: alpha alpha alpha alpha alpha a", "Stop blocked; needs your decision and supervision repair", true, true, true},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			root := stopPresentationRoot(t)
+			input := stopPresentationFixture(root, strings.Repeat("4", 32), test.block)
+			setStopSelectedGoal(&input, test.selection, longSlug, "goal detail remains complete")
+			input.Notices = []StopNotice{{HumanRequired: test.human, SupervisionRepair: test.repair}}
+			headingTask := "Task: " + fullGoalName
+			if test.selection == "claimable" {
+				headingTask = "No task in flight; next: " + fullGoalName
+			}
+			result, report := presentStopTaskName(t, input, test.wantTask, test.wantOutcome, headingTask)
+			if first := strings.SplitN(report, "\n", 2)[0]; !strings.Contains(first, fullGoalName) {
+				t.Fatalf("report heading did not retain the full accepted name: %s", first)
+			}
+			if !strings.HasSuffix(result.HumanLine, "; "+test.wantOutcome+"; status: metasystem report stop-status --id "+result.Report.Id) {
+				t.Fatalf("reserved Stop suffix changed: %s", result.HumanLine)
+			}
+		})
+	}
+
+	t.Run("Unicode run cut stays on a UTF-8 boundary", func(t *testing.T) {
+		root := stopPresentationRoot(t)
+		input := stopPresentationFixture(root, strings.Repeat("5", 32), true)
+		input.Judgment.Scan.Runs = []goal.RunFact{{Id: "run-boundary", Status: "running", Ownership: "owned", Title: strings.Repeat("é", 50)}}
+		input.Notices = []StopNotice{{HumanRequired: true}}
+		result, report := presentStopTaskName(t, input, "Task: éééééééééééééééééééééééééééééééééééé", "Stop blocked; needs your decision", "Task: "+strings.Repeat("é", 50))
+		if len(result.HumanLine) > 256 || !utf8.ValidString(result.HumanLine) {
+			t.Fatalf("Unicode cut broke the line: bytes=%d %q", len(result.HumanLine), result.HumanLine)
+		}
+		if first := strings.SplitN(report, "\n", 2)[0]; first != "# Task: "+strings.Repeat("é", 50)+"; Stop blocked" {
+			t.Fatalf("report heading shortened the accepted run label: %s", first)
+		}
+	})
+
+	t.Run("overlong fallback label is rejected whole", func(t *testing.T) {
+		root := stopPresentationRoot(t)
+		input := stopPresentationFixture(root, strings.Repeat("6", 32), false)
+		input.Judgment.Scan.Runs = []goal.RunFact{{Id: "run-overlong", Status: "running", Ownership: "owned", Title: strings.Repeat("é", 51)}}
+		presentStopTaskName(t, input, "Task: task name unavailable", "Stop allowed")
+	})
 }
 
 func TestPresentStopReportRetainsInfrastructureControlWithoutFrozenFacts(t *testing.T) {
