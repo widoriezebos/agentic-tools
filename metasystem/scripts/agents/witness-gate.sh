@@ -140,11 +140,20 @@ if (( witness_common_eligible && witness_roots_clean )); then
   fi
   if (( witness_prepared )); then
     witness_prefix=${root#"$witness_toplevel"}; witness_prefix=${witness_prefix#/}
+    witness_snapshot_archive=$witness_state/snapshot.tar
     if [[ -n "$witness_prefix" ]]; then
-      if ! ( set -o pipefail; git -C "$witness_toplevel" archive "HEAD:$witness_prefix" | tar -x -C "$witness_snap" ); then
+      if ! (
+        git -C "$witness_toplevel" archive "HEAD:$witness_prefix" >"$witness_snapshot_archive" || exit $?
+        tar -xf "$witness_snapshot_archive" -C "$witness_snap" || exit $?
+        rm -f "$witness_snapshot_archive"
+      ); then
         witness_prepared=0
       fi
-    elif ! ( set -o pipefail; git -C "$witness_toplevel" archive HEAD | tar -x -C "$witness_snap" ); then
+    elif ! (
+      git -C "$witness_toplevel" archive HEAD >"$witness_snapshot_archive" || exit $?
+      tar -xf "$witness_snapshot_archive" -C "$witness_snap" || exit $?
+      rm -f "$witness_snapshot_archive"
+    ); then
       witness_prepared=0
     fi
   fi

@@ -43,14 +43,14 @@ if (( ! fixture_bed_child )); then
       wait_stop_real_runtime+=(wait-stop-claude)
     fi
     run_fixture_bed_scenarios supervision "supervision fixtures passed (S4-1 through S4-16 and engine re-arm)" \
-      "$fixture_bed_script" bed-death-self-test operator-layout nested-root census-lifecycle slow-census idle-hook rotation-log foreign-owner stop-hook-monitor \
+      "$fixture_bed_script" archive-file-extraction bed-death-self-test operator-layout nested-root census-lifecycle slow-census idle-hook rotation-log foreign-owner stop-hook-monitor \
       rearm-rebuild rearm-launch-fails rearm-provenance stop-everything seat-survives status-is-live stop-fence arm-again arm-refuses-survivor \
       wait-job-run wait-proof wait-ledger wait-restart wait-bounds wait-native-hint wait-no-native wait-compatibility wait-stop-fake \
       ${wait_stop_real_runtime[@]+"${wait_stop_real_runtime[@]}"}
   fi
 fi
 case "$fixture_scenario" in
-  bed-death-self-test | operator-layout | nested-root | census-lifecycle | slow-census | idle-hook | rotation-log | foreign-owner | stop-hook-monitor | \
+  archive-file-extraction | bed-death-self-test | operator-layout | nested-root | census-lifecycle | slow-census | idle-hook | rotation-log | foreign-owner | stop-hook-monitor | \
     rearm-rebuild | rearm-launch-fails | rearm-provenance | stop-everything | seat-survives | status-is-live | stop-fence | arm-again | arm-refuses-survivor | \
     wait-job-run | wait-proof | wait-ledger | wait-restart | wait-bounds | wait-native-hint | wait-no-native | wait-compatibility | wait-stop-fake | wait-stop-claude) ;;
   *) echo "supervision fixtures: unknown scenario: $fixture_scenario" >&2; exit 64 ;;
@@ -568,6 +568,40 @@ fixture_ceiling_sec=$(harness_fixture_cap supervision-wait)
 # process-isolated bed. Shell selects the contract slice and interprets no
 # waiter result of its own.
 case "$fixture_scenario" in
+  archive-file-extraction)
+    archive_source=$tmp/archive-source
+    archive_pipe_root=$tmp/archive-pipe-root
+    archive_file_root=$tmp/archive-file-root
+    padded_archive=$tmp/archive-with-padding.tar
+    mkdir -p "$archive_source" "$archive_pipe_root" "$archive_file_root"
+    printf 'payload survives extraction\n' >"$archive_source/payload.txt"
+    tar -cf "$padded_archive" -C "$archive_source" .
+    dd if=/dev/zero bs=1048576 count=16 >>"$padded_archive" 2>/dev/null
+
+    set +e
+    set -o pipefail
+    cat "$padded_archive" | tar -x -C "$archive_pipe_root"
+    archive_pipe_rc=$? archive_pipe_statuses="${PIPESTATUS[*]}"
+    set -e
+    read -r archive_producer_rc archive_pipe_extract_rc <<<"$archive_pipe_statuses"
+    [[ $archive_pipe_rc -ne 0 && $archive_producer_rc -ne 0 && $archive_pipe_extract_rc -eq 0 ]] \
+      || { echo "archive extraction fixture: the padded pipeline did not isolate a producer failure" >&2; exit 1; }
+
+    set +e
+    tar -xf "$padded_archive" -C "$archive_file_root"
+    archive_file_rc=$?
+    set -e
+    [[ $archive_file_rc -eq 0 ]] \
+      || { echo "archive extraction fixture: file extraction failed with exit $archive_file_rc" >&2; exit 1; }
+    diff -r "$archive_source" "$archive_pipe_root" >/dev/null \
+      && diff -r "$archive_source" "$archive_file_root" >/dev/null \
+      || { echo "archive extraction fixture: an extraction did not reproduce the source contents" >&2; exit 1; }
+    printf 'archive extraction reproduction: shell=%s old_rc=%s producer_rc=%s extractor_rc=%s file_rc=%s contents=identical padding_bytes=16777216\n' \
+      "$BASH_VERSION" "$archive_pipe_rc" "$archive_producer_rc" "$archive_pipe_extract_rc" "$archive_file_rc"
+    fixture_child_completed=1
+    assert_fixture_supervision_isolation
+    exit 0
+    ;;
   wait-job-run)
     (cd "$source_root" && METASYSTEM_WAIT_BINARY="$ms" go test ./internal/adapter ./internal/dispatch ./internal/run ./cmd/metasystem -run 'TestWait(AdapterBlocking|JobTerminals|RunTerminalsAndDeadline|InstalledRunCommand)$' -count=1)
     fixture_child_completed=1
@@ -2524,8 +2558,17 @@ trunk_tip=$(git -C "$repo" rev-parse trunk)
 trunk_stamp=$(git -C "$repo" rev-parse --short=12 trunk)
 
 archive_root=$tmp/trunk-archive
+archive_file=$tmp/trunk-archive.tar
 mkdir -p "$archive_root"
-git -C "$repo" archive trunk | tar -x -C "$archive_root"
+if ! git -C "$repo" archive trunk >"$archive_file"; then
+  echo "rearm provenance fixture: trunk archive failed" >&2
+  exit 1
+fi
+if ! tar -xf "$archive_file" -C "$archive_root"; then
+  echo "rearm provenance fixture: trunk archive extraction failed" >&2
+  exit 1
+fi
+rm -f "$archive_file"
 witness_report=$("$ms" behavior-surface digest --root "$archive_root" --projection ENGINE --endpoint rearm-provenance)
 witness_digest=$("$ms" json get --value "$witness_report" --field surfaceDigest)
 witness_stamp=witness-${witness_digest:0:12}
