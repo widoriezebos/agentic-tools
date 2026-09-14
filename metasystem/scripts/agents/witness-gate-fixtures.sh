@@ -59,6 +59,7 @@ make_leg() { # name
   cp "$root/scripts/agents/go-gate.sh" "$leg_tree/scripts/agents/go-gate.sh"
   chmod +x "$leg_tree/scripts/agents/go-gate.sh"
   printf 'module github.com/widoriezebos/agentic-tools/metasystem\n\ngo 1.24\n' >"$leg_tree/go.mod"
+  : >"$leg_tree/metasystem.conf"
   printf 'package fixture\n' >"$leg_tree/internal/fixture/fixture.go"
   printf 'package main\n' >"$leg_tree/cmd/metasystem/main.go"
   printf 'payload baseline\n' >"$leg_tree/docs/payload.md"
@@ -71,6 +72,11 @@ make_leg() { # name
 #!/usr/bin/env bash
 set -euo pipefail
 case "${1:-}" in
+  build)
+    [[ $# -eq 4 && ${2:-} == -o && -n ${3:-} && ${4:-} == ./cmd/metasystem ]] \
+      || { echo "fixture go: unsupported build request: $*" >&2; exit 86; }
+    cp "$WITNESS_FIXTURE_SOURCE_ENGINE" "$3"
+    chmod +x "$3" ;;
   run)
     [[ ${2:-} == ./cmd/metasystem ]]
     shift 2
