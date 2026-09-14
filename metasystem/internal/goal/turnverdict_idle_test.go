@@ -1,18 +1,20 @@
 package goal
 
 import (
+	"context"
 	"encoding/json"
 	"errors"
 	"fmt"
-	"github.com/widoriezebos/agentic-tools/metasystem/internal/atomicfile"
 	"os"
 	"path/filepath"
 	"strings"
 	"testing"
 	"time"
 
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/atomicfile"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/humanauthority"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/identity"
+	metarun "github.com/widoriezebos/agentic-tools/metasystem/internal/run"
 )
 
 func budgetedQueuedGoal(id, opened string) *GoalFile {
@@ -54,6 +56,197 @@ func installIdleLiveClaim(t *testing.T, root, lineage string) identity.Prober {
 		"pid": 41, "pidStartedAt": 100,
 	})
 	return idleFixtureProber{41: {Pid: 41, StartedAt: time.Unix(100, 0)}}
+}
+
+func seedPendingWaitIdleCounter(t *testing.T, fixture *pendingWaitVerdictFixture, blocks int) ClaimableBudgetedWork {
+	t.Helper()
+	work, err := readClaimableBudgetedWork(fixture.root, fixture.store.Now(), fixture.store.Prober)
+	if err != nil {
+		t.Fatal(err)
+	}
+	writeIdleJSON(t, statePath(fixture.root), verdictState{
+		SchemaVersion: 1,
+		Sessions: map[string]*sessionState{
+			pendingWaitSession: {
+				LastTouched:     fixture.store.Now().Add(-time.Minute).Format(time.RFC3339),
+				IdleBlockDigest: idleBacklogDigest(work), IdleBlocks: blocks,
+			},
+		},
+	})
+	return work
+}
+
+func pendingWaitIdleOutcome(t *testing.T, fixture *pendingWaitVerdictFixture) (Verdict, *sessionState) {
+	t.Helper()
+	verdict := fixture.verdict(t, ScanResult{})
+	state, err := fixture.store.loadVerdictState()
+	if err != nil {
+		t.Fatal(err)
+	}
+	session := state.Sessions[pendingWaitSession]
+	if session == nil {
+		t.Fatal("idle verdict did not retain its session state")
+	}
+	return verdict, session
+}
+
+func TestPendingWaitIdleBacklog(t *testing.T) {
+	t.Run("work waits have the live delegate counter effect", func(t *testing.T) {
+		liveDelegate := newPendingWaitVerdictFixture(t, "job", true)
+		liveDelegate.row.OpenWorkSignature = ""
+		liveDelegate.writeRow(t)
+		waiterPath := metarun.WaiterPath(liveDelegate.root, liveDelegate.row.Kind, liveDelegate.row.TargetID, liveDelegate.row.OwnerDigest)
+		if err := os.Remove(waiterPath); err != nil {
+			t.Fatal(err)
+		}
+		prober := liveDelegate.store.Prober.(idleFixtureProber)
+		prober[43] = identity.Exact{Pid: 43, StartedAt: time.Unix(300, 0), StartTicks: 430, BootID: pendingWaitBootID}
+		writeIdleJSON(t, filepath.Join(liveDelegate.root, "artifacts", "agents", "jobs", liveDelegate.row.TargetID+".json"), map[string]any{
+			"jobId": liveDelegate.row.TargetID, "operationId": liveDelegate.row.Target.OperationID,
+			"round": liveDelegate.row.Target.Round, "startedAt": liveDelegate.row.Target.StartedAt,
+			"status": "running", "goalId": pendingWaitGoalID,
+			"pid": 43, "pidStartedAt": 300, "pidStartTicks": 430, "bootId": pendingWaitBootID,
+		})
+		seedPendingWaitIdleCounter(t, liveDelegate, 2)
+		liveVerdict, liveSession := pendingWaitIdleOutcome(t, liveDelegate)
+		if liveVerdict.ShouldBlock || liveVerdict.IdleRefusal || liveSession.IdleBlocks != 0 {
+			t.Fatalf("live delegate control did not reset the idle counter: verdict=%+v session=%+v", liveVerdict, liveSession)
+		}
+
+		for _, kind := range []string{"job", "run", "attempt", "landing"} {
+			t.Run(kind, func(t *testing.T) {
+				fixture := newPendingWaitVerdictFixture(t, kind, true)
+				fixture.row.OpenWorkSignature = ""
+				fixture.writeRow(t)
+				seedPendingWaitIdleCounter(t, fixture, 2)
+				verdict, session := pendingWaitIdleOutcome(t, fixture)
+				if verdict.ShouldBlock != liveVerdict.ShouldBlock || verdict.IdleRefusal != liveVerdict.IdleRefusal ||
+					session.IdleBlocks != liveSession.IdleBlocks || session.IdleBlockDigest == "" {
+					t.Fatalf("%s wait differs from a live delegate: verdict=%+v session=%+v control=%+v/%+v", kind, verdict, session, liveVerdict, liveSession)
+				}
+				if !strings.Contains(verdict.Display, "WAITING: registered wait") || !strings.Contains(verdict.Display, fixture.row.Deadline) {
+					t.Fatalf("%s idle allowance omitted the visible wait: %s", kind, verdict.Display)
+				}
+			})
+		}
+	})
+
+	t.Run("human and channel waits never exempt idle backlog", func(t *testing.T) {
+		for _, kind := range []string{"human-act", "channel"} {
+			t.Run(kind, func(t *testing.T) {
+				fixture := newPendingWaitVerdictFixture(t, kind, true)
+				fixture.row.OpenWorkSignature = ""
+				fixture.row.ClaimableGoals = []metarun.ClaimableGoal{{ID: "ready-after-wait", Revision: 2}}
+				fixture.writeRow(t)
+				seedPendingWaitIdleCounter(t, fixture, 1)
+				scan := ScanResult{WaitingOnHuman: []Item{{Kind: "goal", Id: pendingWaitGoalID, Detail: "claimed goal waits on Wido"}}}
+				verdict := fixture.verdict(t, scan)
+				state, err := fixture.store.loadVerdictState()
+				if err != nil {
+					t.Fatal(err)
+				}
+				session := state.Sessions[pendingWaitSession]
+				if !verdict.ShouldBlock || !verdict.IdleRefusal || verdict.BlockSource == nil || *verdict.BlockSource != "idle-backlog" || session == nil || session.IdleBlocks != 2 {
+					t.Fatalf("%s wait exempted idle backlog: verdict=%+v session=%+v", kind, verdict, session)
+				}
+				stored, err := os.ReadFile(metarun.WaiterPath(fixture.root, fixture.row.Kind, fixture.row.TargetID, fixture.row.OwnerDigest))
+				if err != nil || !strings.Contains(string(stored), `"state":"pending"`) {
+					t.Fatalf("existing backlog ended the %s wait: %s %v", kind, stored, err)
+				}
+			})
+		}
+	})
+
+	t.Run("an invalid wait keeps today's idle refusal", func(t *testing.T) {
+		fixture := newPendingWaitVerdictFixture(t, "job", true)
+		fixture.row.Delivery = "declined"
+		fixture.writeRow(t)
+		seedPendingWaitIdleCounter(t, fixture, 1)
+		verdict, session := pendingWaitIdleOutcome(t, fixture)
+		if !verdict.ShouldBlock || !verdict.IdleRefusal || session.IdleBlocks != 2 {
+			t.Fatalf("invalid wait changed idle refusal: verdict=%+v session=%+v", verdict, session)
+		}
+	})
+
+	t.Run("a changed signature does not revoke the live delegate counter effect", func(t *testing.T) {
+		fixture := newPendingWaitVerdictFixture(t, "job", true)
+		fixture.row.OpenWorkSignature = strings.Repeat("d", 64)
+		fixture.writeRow(t)
+		seedPendingWaitIdleCounter(t, fixture, 2)
+		verdict, session := pendingWaitIdleOutcome(t, fixture)
+		if verdict.ShouldBlock || verdict.IdleRefusal || session.IdleBlocks != 0 {
+			t.Fatalf("changed signature revoked work-in-flight status: verdict=%+v session=%+v", verdict, session)
+		}
+	})
+
+	t.Run("human-act wait clears pending with exit 6 for changed work", func(t *testing.T) {
+		savedSignature := strings.Repeat("a", 64)
+		for _, test := range []struct {
+			name             string
+			baseline         []metarun.ClaimableGoal
+			current          []metarun.ClaimableGoal
+			currentSignature string
+		}{
+			{"new goal", nil, []metarun.ClaimableGoal{{ID: "newly-ready", Revision: 1}}, savedSignature},
+			{"revised goal", []metarun.ClaimableGoal{{ID: "ready", Revision: 1}}, []metarun.ClaimableGoal{{ID: "ready", Revision: 2}}, savedSignature},
+			{"changed open work", nil, nil, strings.Repeat("d", 64)},
+		} {
+			t.Run(test.name, func(t *testing.T) {
+				root := t.TempDir()
+				now := time.Date(2026, 8, 23, 2, 0, 0, 0, time.UTC)
+				bootElapsed := 2 * time.Hour
+				prober := idleFixtureProber{
+					int64(os.Getpid()): {Pid: int64(os.Getpid()), StartedAt: time.Unix(500, 0), StartTicks: 500, BootID: pendingWaitBootID},
+				}
+				epoch := int64(7)
+				result := (&metarun.Store{Root: root, Prober: prober}).Wait(context.Background(), metarun.WaitRequest{
+					Selector: metarun.WaitSelector{
+						Kind: "goal", TargetID: pendingWaitGoalID, GoalID: pendingWaitGoalID,
+						Event: "human-act", After: strings.Repeat("e", 40),
+					},
+					Owner: metarun.Caller{
+						Class: "MAIN", MainId: pendingWaitMainID, OwnerLineage: pendingWaitLineage,
+						ClaimEpoch: &epoch, SessionId: pendingWaitSession,
+					},
+					RuntimeSession: pendingWaitSession, Timeout: time.Hour, OpenWorkSignature: savedSignature,
+				}, metarun.WaitOptions{
+					Now: func() time.Time { return now },
+					BootClock: func() (string, time.Duration, error) {
+						return pendingWaitBootID, bootElapsed, nil
+					},
+					Observe: func(context.Context, metarun.WaitSelector, metarun.WaiterTarget, string) (metarun.SourceObservation, error) {
+						return metarun.SourceObservation{
+							Pending: true, Incarnation: metarun.WaiterTarget{
+								StartedAt: "ledger:" + strings.Repeat("e", 40), ProofDigest: strings.Repeat("f", 64),
+							},
+							Outcome: "pending", Evidence: "goal:" + pendingWaitGoalID,
+							ClaimableRead: true, ClaimableGoals: test.baseline,
+						}, nil
+					},
+					Deliver: func(context.Context, string, string, time.Time, string) (string, bool, error) {
+						return "blocking", false, nil
+					},
+					Actionable: func(_ context.Context, row metarun.Waiter) (string, bool, error) {
+						if test.currentSignature != row.OpenWorkSignature {
+							return "the open-work signature changed", true, nil
+						}
+						item, changed := metarun.ClaimableGoalChange(row.ClaimableGoals, test.current)
+						if changed {
+							return fmt.Sprintf("goal %s became claimable at revision %d", item.ID, item.Revision), true, nil
+						}
+						return "", false, nil
+					},
+				})
+				if result.ExitCode != 6 || result.SourceOutcome != "actionable-work" {
+					t.Fatalf("actionable wait result = %+v", result)
+				}
+				row, _, err := metarun.LoadWaiterByID(root, result.WaitID)
+				if err != nil || row.State != "ready" || row.Result == nil || row.Result.ExitCode != 6 || row.RemainingNanos != 0 {
+					t.Fatalf("actionable wait was not durably cleared: row=%+v err=%v", row, err)
+				}
+			})
+		}
+	})
 }
 
 func TestIdleBacklogDisplayLimitsAndPreservesGoalOrder(t *testing.T) {

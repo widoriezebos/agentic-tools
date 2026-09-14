@@ -38,16 +38,21 @@ if (( ! fixture_bed_child )); then
     run_fixture_bed_scenarios supervision "supervision fixtures passed (operator empty-runtime source)" \
       "$fixture_bed_script" operator-layout
   else
+    wait_stop_real_runtime=()
+    if [[ "${METASYSTEM_REAL_RUNTIME_BEDS:-0}" == 1 ]]; then
+      wait_stop_real_runtime+=(wait-stop-claude)
+    fi
     run_fixture_bed_scenarios supervision "supervision fixtures passed (S4-1 through S4-16 and engine re-arm)" \
       "$fixture_bed_script" bed-death-self-test operator-layout nested-root census-lifecycle slow-census idle-hook rotation-log foreign-owner stop-hook-monitor \
       rearm-rebuild rearm-launch-fails rearm-provenance stop-everything seat-survives status-is-live stop-fence arm-again arm-refuses-survivor \
-      wait-job-run wait-proof wait-ledger wait-restart wait-bounds wait-native-hint wait-no-native wait-compatibility
+      wait-job-run wait-proof wait-ledger wait-restart wait-bounds wait-native-hint wait-no-native wait-compatibility wait-stop-fake \
+      ${wait_stop_real_runtime[@]+"${wait_stop_real_runtime[@]}"}
   fi
 fi
 case "$fixture_scenario" in
   bed-death-self-test | operator-layout | nested-root | census-lifecycle | slow-census | idle-hook | rotation-log | foreign-owner | stop-hook-monitor | \
     rearm-rebuild | rearm-launch-fails | rearm-provenance | stop-everything | seat-survives | status-is-live | stop-fence | arm-again | arm-refuses-survivor | \
-    wait-job-run | wait-proof | wait-ledger | wait-restart | wait-bounds | wait-native-hint | wait-no-native | wait-compatibility) ;;
+    wait-job-run | wait-proof | wait-ledger | wait-restart | wait-bounds | wait-native-hint | wait-no-native | wait-compatibility | wait-stop-fake | wait-stop-claude) ;;
   *) echo "supervision fixtures: unknown scenario: $fixture_scenario" >&2; exit 64 ;;
 esac
 
@@ -611,6 +616,14 @@ case "$fixture_scenario" in
     assert_fixture_supervision_isolation
     exit 0
     ;;
+  wait-stop-fake)
+    (cd "$source_root" && GOCACHE="${GOCACHE:-/tmp/metasystem-gocache}" METASYSTEM_WAIT_BINARY="$ms" \
+      go test ./internal/goal ./internal/adapter ./cmd/metasystem \
+        -run '^Test(PendingWaitTurnVerdict|PendingWaitIdleBacklog|WaitDeliveryContract|PendingWaitInstalledVerdicts)$' -count=1)
+    fixture_child_completed=1
+    assert_fixture_supervision_isolation
+    exit 0
+    ;;
 esac
 
 enroll_fixture_engine() { # repository state root, engine path
@@ -695,6 +708,61 @@ make_repo() { # destination
   # then exercised only through its ambient, non-minting path.
   enroll_fixture_engine "$repo" "$repo/bin/metasystem"
 }
+
+if [[ "$fixture_scenario" == wait-stop-claude ]]; then
+  command -v claude >/dev/null 2>&1 \
+    || { echo "wait-stop-claude requires the installed Claude Code CLI" >&2; exit 1; }
+  claude_repo=$tmp/wait-stop-claude
+  make_repo "$claude_repo"
+  claude_model=${METASYSTEM_WAIT_STOP_CLAUDE_MODEL:-sonnet}
+  "$ms" config tailor --conf "$claude_repo/metasystem.conf" --runtimes claude \
+    --set "role.default.model.claude=$claude_model"
+  mkdir -p "$claude_repo/plans"
+  claude_goal='# Goals
+
+## Current goal: wait-stop-goal — Hold the registered wait
+- Origin: main
+- Next step: Continue after the wait.
+'
+  printf '%s' "$claude_goal" >"$claude_repo/plans/goals.md"
+  claude_goal_digest=$(printf '%s' "$claude_goal" | "$ms" util sha256)
+  printf '{"schemaVersion":1,"ledger":"# Goals\\n\\n## Current goal: wait-stop-goal — Hold the registered wait\\n- Origin: main\\n- Next step: Continue after the wait.\\n","sha256":"%s"}\n' \
+    "$claude_goal_digest" >"$claude_repo/plans/goals-accepted.json"
+  printf '%s\n' '# Active' '- Waiting on the human: none' \
+    '- Next step: Continue after the registered wait.' >"$claude_repo/plans/active.md"
+
+  claude_prompt=$tmp/wait-stop-claude.prompt
+  printf '%s\n' \
+    'Use the Bash tool first with run_in_background=true and this exact command:' \
+    'mkdir -p artifacts/agents/jobs && printf '\''%s\\n'\'' '\''{"jobId":"wait-stop-job","operationId":"dddddddddddddddddddddddddddddddd","status":"pending-setup","goalId":"wait-stop-goal"}'\'' > artifacts/agents/jobs/wait-stop-job.json && exec ./bin/metasystem wait --root "$PWD" --job wait-stop-job --timeout 2m' \
+    'Then use Bash once in the foreground with this exact command:' \
+    'for attempt in $(seq 1 100); do row=$(find artifacts/agents/waiters -maxdepth 1 -type f -name '\''job-wait-stop-job-*.json'\'' -print -quit 2>/dev/null); if [ -n "$row" ] && grep -Eq '\''"state"[[:space:]]*:[[:space:]]*"pending"'\'' "$row"; then exit 0; fi; sleep 0.05; done; exit 1' \
+    'After both tools succeed, answer exactly WAIT-REGISTERED and end the turn.' \
+    >"$claude_prompt"
+  claude_output=$tmp/wait-stop-claude.json
+  claude_error=$tmp/wait-stop-claude.err
+  claude_rc=0
+  (
+    cd "$claude_repo"
+    claude -p --output-format json --model "$claude_model" --max-turns 4 \
+      --max-budget-usd "${METASYSTEM_WAIT_STOP_CLAUDE_BUDGET_USD:-0.50}" \
+      --dangerously-skip-permissions --allowedTools Bash \
+      --settings "$source_root/scripts/enforcement/claude-code-hooks.json" \
+      <"$claude_prompt" >"$claude_output" 2>"$claude_error"
+  ) || claude_rc=$?
+  (( claude_rc == 0 )) \
+    || { echo "wait-stop-claude provider turn failed with exit $claude_rc" >&2; cat "$claude_error" >&2; exit 1; }
+  grep -Fq 'WAIT-REGISTERED' "$claude_output" \
+    || { echo "wait-stop-claude did not complete its registration turn" >&2; cat "$claude_output" >&2; exit 1; }
+  claude_verdict=$(find "$claude_repo/artifacts/agents/supervision/stop-verdicts" -type f -name '*.txt' -print -quit 2>/dev/null || true)
+  [[ -n "$claude_verdict" ]] && grep -Fq 'WAITING: registered wait' "$claude_verdict" \
+    || { echo "wait-stop-claude reached no Stop verdict carrying its registered wait" >&2; cat "$claude_error" >&2; exit 1; }
+  grep -Fq 'stop response decision=allow' "$claude_repo/artifacts/agents/supervision/hooks.log" \
+    || { echo "wait-stop-claude did not allow the real provider turn to end" >&2; cat "$claude_repo/artifacts/agents/supervision/hooks.log" >&2; exit 1; }
+  fixture_child_completed=1
+  assert_fixture_supervision_isolation
+  exit 0
+fi
 
 prepare_rearm_repo() { # repository prepared by make_repo
   local rearm_repo=$1

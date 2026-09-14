@@ -2,7 +2,9 @@ package adapter
 
 import (
 	"context"
+	"errors"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"strings"
 	"testing"
@@ -30,6 +32,43 @@ func TestWaitAdapterBlocking(t *testing.T) {
 				t.Fatalf("answer = %q, want blocking", answer)
 			}
 		})
+	}
+}
+
+func TestWaitDeliveryContract(t *testing.T) {
+	deadline := "2026-09-13T12:00:00Z"
+	waitID := "0123456789abcdef0123456789abcdef"
+	nonce := "fedcba9876543210fedcba9876543210"
+	for _, runtime := range []string{"claude", "codex", "devin", "fake"} {
+		t.Run(runtime, func(t *testing.T) {
+			adapterPath, err := filepath.Abs(filepath.Join("..", "..", "scripts", "agents", "adapters", runtime+".sh"))
+			if err != nil {
+				t.Fatal(err)
+			}
+			output, err := exec.Command(adapterPath, "wait-delivery",
+				"--wait-id", waitID, "--nonce", nonce, "--deadline", deadline, "--session", "session-1").Output()
+			if err != nil || string(output) != "blocking\n" {
+				t.Fatalf("exact wait-delivery request: output=%q err=%v", output, err)
+			}
+			command := exec.Command(adapterPath, "wait-delivery",
+				"--wait-id", waitID, "--nonce", nonce, "--deadline", deadline)
+			if output, err := command.CombinedOutput(); err == nil {
+				t.Fatalf("incomplete wait-delivery request passed: %q", output)
+			} else if exitError, ok := err.(*exec.ExitError); !ok || exitError.ExitCode() != 2 {
+				t.Fatalf("incomplete wait-delivery request = %v, want exit 2", err)
+			}
+		})
+	}
+
+	declining := filepath.Join(t.TempDir(), "declining-adapter.sh")
+	if err := os.WriteFile(declining, []byte("#!/bin/sh\nexit 2\n"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	_, err := DeliverWait(context.Background(), declining, WaitDeliveryRequest{
+		WaitID: waitID, Nonce: nonce, Deadline: time.Date(2026, 9, 13, 12, 0, 0, 0, time.UTC), Session: "session-1",
+	})
+	if !errors.Is(err, ErrWaitDeliveryDeclined) {
+		t.Fatalf("exit 2 did not become the named registration refusal: %v", err)
 	}
 }
 

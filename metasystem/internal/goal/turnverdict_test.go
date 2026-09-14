@@ -11,10 +11,525 @@ import (
 	"time"
 
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/brain"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/identity"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/proofrun"
+	metarun "github.com/widoriezebos/agentic-tools/metasystem/internal/run"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/stopfence"
 )
 
 func openItem(detail string) Item { return Item{Kind: "plan", Id: detail, Detail: detail} }
+
+const (
+	pendingWaitGoalID  = "claimed-wait-goal"
+	pendingWaitMainID  = "main-wait"
+	pendingWaitLineage = "lineage-wait"
+	pendingWaitSession = "session-wait"
+	pendingWaitBootID  = "fixture-boot"
+)
+
+type pendingWaitVerdictFixture struct {
+	root        string
+	store       *Store
+	row         metarun.Waiter
+	scan        ScanResult
+	bootElapsed time.Duration
+}
+
+func writePendingWaitJSON(t *testing.T, path string, value any) {
+	t.Helper()
+	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	data, err := json.Marshal(value)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(path, append(data, '\n'), 0o644); err != nil {
+		t.Fatal(err)
+	}
+}
+
+func pendingWaitClaim(landing bool) *GoalFile {
+	claim := &GoalFile{
+		Id: pendingWaitGoalID, State: StateClaimed, Intent: "Wait for durable work", Origin: OriginMain,
+		NextStep: "Continue after the registered wait.", OpenedAt: "2026-08-23T00:00:00Z", Revision: 2,
+		Claimed: &ClaimRecord{
+			Machine: "bed-m1", Lineage: pendingWaitLineage, At: "2026-08-23T01:00:00Z",
+			Revision: 2, AccountingRevision: 2,
+		},
+	}
+	if landing {
+		claim.Landing = &LandingRecord{At: "2026-08-23T01:30:00Z", Opid: "01J5X0000000000000000000B1-mac-a-1a2b3c4d"}
+	}
+	return claim
+}
+
+func newPendingWaitVerdictFixture(t *testing.T, kind string, readyBacklog bool) *pendingWaitVerdictFixture {
+	t.Helper()
+	landing := kind == "landing"
+	files := map[string]*GoalFile{pendingWaitGoalID: pendingWaitClaim(landing)}
+	if readyBacklog {
+		files["ready-after-wait"] = budgetedQueuedGoal("ready-after-wait", "2026-08-23T00:00:01Z")
+	}
+	root := servingBed(t, "bed-m1", files)
+	now := time.Date(2026, 8, 23, 2, 0, 0, 0, time.UTC)
+	bootElapsed := 2 * time.Hour
+	prober := idleFixtureProber{
+		41: {Pid: 41, StartedAt: time.Unix(100, 0), StartTicks: 410, BootID: pendingWaitBootID},
+		42: {Pid: 42, StartedAt: time.Unix(200, 0), StartTicks: 420, BootID: pendingWaitBootID},
+	}
+	store := &Store{Root: root, Now: func() time.Time { return now }, Prober: prober}
+	writePendingWaitJSON(t, sessionStopLeasePath(root), sessionStopLease{
+		HolderMainId: pendingWaitMainID, Pid: 41, PidStartedAt: 100,
+		PidStartTicks: 410, BootID: pendingWaitBootID, ClaimEpoch: 7,
+	})
+	writePendingWaitJSON(t, filepath.Join(root, "artifacts", "agents", "mains", pendingWaitSession+"-41.json"), sessionStopAnnouncement{
+		SessionId: pendingWaitSession, MainId: pendingWaitMainID, Pid: 41, PidStartedAt: 100,
+		PidStartTicks: 410, BootID: pendingWaitBootID, Runtime: "fake", InstanceTag: "fixture-wait-session",
+		CommandHash: strings.Repeat("a", 64), AnnouncedAt: now.Add(-time.Minute).Format(time.RFC3339),
+		Pgid: 41, OwnerLineage: pendingWaitLineage,
+	})
+
+	scan := ScanResult{Open: []Item{{Kind: "plan", Id: pendingWaitGoalID, Detail: "OPEN-WORK claimed-wait-goal: finish after the wait"}}}
+	selector := metarun.WaitSelector{Kind: kind, TargetID: kind + "-target"}
+	target := metarun.WaiterTarget{}
+	switch kind {
+	case "job":
+		target = metarun.WaiterTarget{OperationID: "operation-wait", Round: 1, StartedAt: "2026-08-23T01:40:00Z"}
+		writePendingWaitJSON(t, filepath.Join(root, "artifacts", "agents", "jobs", selector.TargetID+".json"), map[string]any{
+			"jobId": selector.TargetID, "operationId": target.OperationID, "round": target.Round,
+			"startedAt": target.StartedAt, "status": "running", "goalId": pendingWaitGoalID,
+		})
+	case "run", "attempt":
+		epoch := int64(7)
+		runID := kind + "-run"
+		runStore := &metarun.Store{Root: root, Now: store.Now}
+		nonce, err := runStore.Launch(metarun.Caller{
+			Class: "MAIN", MainId: pendingWaitMainID, OwnerLineage: pendingWaitLineage,
+			ClaimEpoch: &epoch, SessionId: pendingWaitSession,
+		}, metarun.LaunchParams{
+			Id: runID, Kind: "custom", Display: "pending wait fixture",
+			Log: filepath.Join(root, "artifacts", "agents", "runs", runID+".log"), GoalId: pendingWaitGoalID,
+		})
+		if err != nil {
+			t.Fatal(err)
+		}
+		runTarget := metarun.WaiterTarget{Generation: 1, LaunchNonce: nonce}
+		if kind == "run" {
+			selector.TargetID = runID
+			target = runTarget
+		} else {
+			selector.TargetID = "attempt-target"
+			proofIdentity := proofrun.BuildProofIdentityForContext(proofrun.ExecutionContext{
+				ManifestDigest: strings.Repeat("1", 64), Configuration: strings.Repeat("2", 64),
+				Platform: "fixture/fixture", Toolchain: strings.Repeat("3", 64),
+			}, "full", "fixture", []string{"gate"}, 1)
+			deadline := now.Add(10 * time.Minute)
+			attempt, result, reserveErr := proofrun.ReserveLocked(proofrun.AdmissionRequest{
+				ControlRoot: root, ExecutionRoot: root, GoalID: pendingWaitGoalID,
+				GoalRevision: 2, AccountingRevision: 2, ReservedMinutes: 10,
+				Identity: proofIdentity, Launcher: proofrun.ProcessIdentity{Pid: 90, PidStartedAt: 900},
+				Now: now, AttemptID: selector.TargetID,
+				ReservationOwner: &proofrun.ReservationOwner{
+					ControlRoot: root, RunID: runID, RunGeneration: 1, LaunchNonce: nonce,
+					GoalRevision: 2, ObligationRevision: 1, AttemptOrdinal: 1,
+					Deadline: deadline.Format(time.RFC3339Nano),
+				},
+			})
+			if reserveErr != nil || result.Disposition != proofrun.DispositionExecuted {
+				t.Fatalf("reserve pending attempt: result=%+v err=%v", result, reserveErr)
+			}
+			target = metarun.WaiterTarget{ProofDigest: attempt.ProofIdentity.IdentityDigest}
+		}
+	case "landing", "human-act", "channel":
+		tip, err := gitIn(root, "rev-parse", "HEAD")
+		if err != nil {
+			t.Fatal(err)
+		}
+		tip = strings.TrimSpace(tip)
+		selector.Kind, selector.TargetID, selector.GoalID, selector.After = "goal", pendingWaitGoalID, pendingWaitGoalID, tip
+		selector.Event = kind
+		if kind == "channel" {
+			selector.Event, selector.Verb, selector.Question, selector.Poll = "human-act", "answer", "question-wait", "channel"
+		}
+		target = metarun.WaiterTarget{
+			StartedAt:   "ledger:" + tip,
+			ProofDigest: ledgerEndpointIdentity(Endpoint{Root: root, Remote: "local", Branch: "refs/heads/main"}),
+		}
+	default:
+		t.Fatalf("unknown pending-wait fixture kind %q", kind)
+	}
+	epoch := int64(7)
+	row := metarun.Waiter{
+		SchemaVersion: 2, WaitID: strings.Repeat("b", 32), Nonce: strings.Repeat("c", 32),
+		Kind: selector.Kind, TargetID: selector.TargetID, OwnerDigest: metarun.OwnerDigest(pendingWaitMainID),
+		Pid: 42, PidStartedAt: 200, PidStartTicks: 420, BootID: pendingWaitBootID,
+		Session: pendingWaitSession, MainId: pendingWaitMainID, OwnerLineage: pendingWaitLineage,
+		ClaimEpoch: &epoch, RuntimeSession: pendingWaitSession, Selector: selector, GoalID: selector.GoalID, Target: target,
+		RegisteredAt:      now.Add(-5 * time.Second).Format(time.RFC3339Nano),
+		Deadline:          now.Add(time.Hour).Format(time.RFC3339Nano),
+		BootDeadlineNanos: (bootElapsed + time.Hour).Nanoseconds(), DeadlineBootID: pendingWaitBootID,
+		RemainingNanos: time.Hour.Nanoseconds(), LastObservedAt: now.Add(-5 * time.Second).Format(time.RFC3339Nano),
+		LastObservedBootNanos: (bootElapsed - 5*time.Second).Nanoseconds(), OpenWorkSignature: scan.OpenWorkSignature(),
+		State: "pending", Delivery: "blocking",
+	}
+	previousBootClock := turnVerdictBootClock
+	turnVerdictBootClock = func() (string, time.Duration, error) { return pendingWaitBootID, bootElapsed, nil }
+	t.Cleanup(func() { turnVerdictBootClock = previousBootClock })
+	fixture := &pendingWaitVerdictFixture{root: root, store: store, row: row, scan: scan, bootElapsed: bootElapsed}
+	fixture.writeRow(t)
+	return fixture
+}
+
+func (fixture *pendingWaitVerdictFixture) writeRow(t *testing.T) {
+	t.Helper()
+	paths, err := filepath.Glob(filepath.Join(metarun.WaitersDir(fixture.root), "*.json"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, path := range paths {
+		if err := os.Remove(path); err != nil {
+			t.Fatal(err)
+		}
+	}
+	writePendingWaitJSON(t, metarun.WaiterPath(fixture.root, fixture.row.Kind, fixture.row.TargetID, fixture.row.OwnerDigest), fixture.row)
+}
+
+func (fixture *pendingWaitVerdictFixture) verdict(t *testing.T, scan ScanResult) Verdict {
+	t.Helper()
+	verdict, err := fixture.store.TurnVerdict(scan, pendingWaitSession, "", pendingWaitMainID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return verdict
+}
+
+func TestPendingWaitTurnVerdict(t *testing.T) {
+	t.Run("work waits suppress matching open work and their own unwatched join", func(t *testing.T) {
+		liveDelegate := newPendingWaitVerdictFixture(t, "job", false)
+		if err := os.Remove(metarun.WaiterPath(liveDelegate.root, liveDelegate.row.Kind, liveDelegate.row.TargetID, liveDelegate.row.OwnerDigest)); err != nil {
+			t.Fatal(err)
+		}
+		prober := liveDelegate.store.Prober.(idleFixtureProber)
+		prober[43] = identity.Exact{Pid: 43, StartedAt: time.Unix(300, 0), StartTicks: 430, BootID: pendingWaitBootID}
+		writePendingWaitJSON(t, filepath.Join(liveDelegate.root, "artifacts", "agents", "jobs", liveDelegate.row.TargetID+".json"), map[string]any{
+			"jobId": liveDelegate.row.TargetID, "operationId": liveDelegate.row.Target.OperationID,
+			"round": liveDelegate.row.Target.Round, "startedAt": liveDelegate.row.Target.StartedAt,
+			"status": "running", "goalId": pendingWaitGoalID, "mainId": pendingWaitMainID,
+			"ownerLineage": pendingWaitLineage, "pid": 43, "pidStartedAt": 300,
+			"pidStartTicks": 430, "bootId": pendingWaitBootID,
+		})
+		liveScan := liveDelegate.scan
+		liveScan.Busy = []Item{{Kind: "job", Id: liveDelegate.row.TargetID, Detail: "delegate job is running"}}
+		liveScan.Jobs = []JobFact{{
+			Id: liveDelegate.row.TargetID, MainId: pendingWaitMainID, StartedAt: liveDelegate.row.Target.StartedAt,
+			Status: "running", WaiterLive: true,
+		}}
+		liveVerdict := liveDelegate.verdict(t, liveScan)
+		if liveVerdict.ShouldBlock || liveVerdict.BlockSource != nil {
+			t.Fatalf("live delegate control blocked: %+v", liveVerdict)
+		}
+
+		for _, kind := range []string{"job", "run", "attempt", "landing"} {
+			t.Run(kind, func(t *testing.T) {
+				fixture := newPendingWaitVerdictFixture(t, kind, false)
+				scan := fixture.scan
+				switch kind {
+				case "job":
+					scan.Jobs = []JobFact{{
+						Id: fixture.row.TargetID, MainId: pendingWaitMainID, StartedAt: fixture.row.Target.StartedAt, Status: "running",
+					}}
+				case "run":
+					scan.Runs = []RunFact{{
+						Id: fixture.row.TargetID, MainId: pendingWaitMainID, Generation: fixture.row.Target.Generation,
+						Nonce: fixture.row.Target.LaunchNonce, Status: metarun.StatusLaunching, Supervised: true,
+					}}
+				case "attempt":
+					attempt, err := proofrun.ReadAttempt(fixture.root, fixture.row.TargetID)
+					if err != nil || attempt.ReservationOwner == nil {
+						t.Fatalf("read governed attempt: %+v %v", attempt, err)
+					}
+					scan.Runs = []RunFact{{
+						Id: attempt.ReservationOwner.RunID, MainId: pendingWaitMainID,
+						Generation: attempt.ReservationOwner.RunGeneration, Nonce: attempt.ReservationOwner.LaunchNonce,
+						Status: metarun.StatusLaunching, Supervised: true,
+					}}
+				}
+				verdict := fixture.verdict(t, scan)
+				if verdict.ShouldBlock != liveVerdict.ShouldBlock || verdict.BlockSource != liveVerdict.BlockSource ||
+					!strings.Contains(verdict.Display, "WAITING: registered wait") ||
+					!strings.Contains(verdict.Display, fixture.row.Deadline) || strings.Contains(verdict.Display, "unwatched") {
+					t.Fatalf("valid %s wait did not carry work in flight: %+v", kind, verdict)
+				}
+			})
+		}
+	})
+
+	t.Run("human act suppresses only its matching waiting condition", func(t *testing.T) {
+		for _, kind := range []string{"human-act", "channel"} {
+			t.Run(kind, func(t *testing.T) {
+				fixture := newPendingWaitVerdictFixture(t, kind, false)
+				scan := fixture.scan
+				scan.WaitingOnHuman = []Item{{Kind: "plan", Id: "plans/waiting.md", Detail: "claimed goal waits on Wido"}}
+				if verdict := fixture.verdict(t, scan); verdict.ShouldBlock {
+					t.Fatalf("matching %s wait did not suppress saved open work: %+v", kind, verdict)
+				}
+				scan.WaitingOnHuman = []Item{{Kind: "goal", Id: "another-goal", Detail: "another goal waits on Wido"}}
+				if verdict := fixture.verdict(t, scan); !verdict.ShouldBlock || verdict.BlockSource == nil || *verdict.BlockSource != "open-work" {
+					t.Fatalf("another goal's waiting condition gained a %s exemption: %+v", kind, verdict)
+				}
+				withoutCondition := newPendingWaitVerdictFixture(t, kind, false)
+				if verdict := withoutCondition.verdict(t, withoutCondition.scan); !verdict.ShouldBlock || verdict.BlockSource == nil || *verdict.BlockSource != "open-work" {
+					t.Fatalf("unrelated waiting condition gained a %s exemption: %+v", kind, verdict)
+				}
+			})
+		}
+	})
+
+	t.Run("changed open signature is never suppressed", func(t *testing.T) {
+		fixture := newPendingWaitVerdictFixture(t, "job", false)
+		scan := fixture.scan
+		scan.Open[0].Detail += " and newly added work"
+		scan.Jobs = []JobFact{{
+			Id: fixture.row.TargetID, MainId: pendingWaitMainID, StartedAt: fixture.row.Target.StartedAt, Status: "running",
+		}}
+		if verdict := fixture.verdict(t, scan); !verdict.ShouldBlock || verdict.BlockSource == nil || *verdict.BlockSource != "open-work" ||
+			strings.Contains(verdict.Display, "unwatched") {
+			t.Fatalf("changed open work was suppressed: %+v", verdict)
+		}
+	})
+
+	t.Run("unrelated unwatched work still blocks", func(t *testing.T) {
+		fixture := newPendingWaitVerdictFixture(t, "job", false)
+		scan := fixture.scan
+		scan.Jobs = []JobFact{{Id: "another-job", MainId: pendingWaitMainID, StartedAt: "another-start", Status: "running"}}
+		verdict := fixture.verdict(t, scan)
+		if !verdict.ShouldBlock || verdict.BlockSource == nil || *verdict.BlockSource != "unwatched-work" {
+			t.Fatalf("an unrelated job gained the wait's unwatched exemption: %+v", verdict)
+		}
+	})
+
+	t.Run("an attempt wait watches only its governed run incarnation", func(t *testing.T) {
+		fixture := newPendingWaitVerdictFixture(t, "attempt", false)
+		attempt, err := proofrun.ReadAttempt(fixture.root, fixture.row.TargetID)
+		if err != nil || attempt.ReservationOwner == nil {
+			t.Fatalf("read governed attempt: %+v %v", attempt, err)
+		}
+		scan := fixture.scan
+		scan.Runs = []RunFact{{
+			Id: attempt.ReservationOwner.RunID, MainId: pendingWaitMainID,
+			Generation: attempt.ReservationOwner.RunGeneration + 1, Nonce: attempt.ReservationOwner.LaunchNonce,
+			Status: metarun.StatusLaunching, Supervised: true,
+		}}
+		if verdict := fixture.verdict(t, scan); !verdict.ShouldBlock || verdict.BlockSource == nil || *verdict.BlockSource != "unwatched-work" {
+			t.Fatalf("attempt wait covered a different run incarnation: %+v", verdict)
+		}
+	})
+
+	t.Run("only the canonical waiter path is eligible", func(t *testing.T) {
+		fixture := newPendingWaitVerdictFixture(t, "job", false)
+		expected := metarun.WaiterPath(fixture.root, fixture.row.Kind, fixture.row.TargetID, fixture.row.OwnerDigest)
+		if err := os.Rename(expected, filepath.Join(metarun.WaitersDir(fixture.root), "copied-row.json")); err != nil {
+			t.Fatal(err)
+		}
+		if verdict := fixture.verdict(t, fixture.scan); !verdict.ShouldBlock || verdict.BlockSource == nil || *verdict.BlockSource != "open-work" {
+			t.Fatalf("a wait outside WaiterPath changed the decision: %+v", verdict)
+		}
+	})
+
+	t.Run("malformed waiter is ineligible", func(t *testing.T) {
+		fixture := newPendingWaitVerdictFixture(t, "job", false)
+		path := metarun.WaiterPath(fixture.root, fixture.row.Kind, fixture.row.TargetID, fixture.row.OwnerDigest)
+		if err := os.WriteFile(path, []byte("{\n"), 0o644); err != nil {
+			t.Fatal(err)
+		}
+		if verdict := fixture.verdict(t, fixture.scan); !verdict.ShouldBlock || verdict.BlockSource == nil || *verdict.BlockSource != "open-work" {
+			t.Fatalf("a malformed waiter changed the decision: %+v", verdict)
+		}
+	})
+
+	t.Run("owner lifecycle is required", func(t *testing.T) {
+		for _, test := range []struct {
+			name   string
+			mutate func(*pendingWaitVerdictFixture)
+		}{
+			{"dead lease", func(f *pendingWaitVerdictFixture) {
+				prober := f.store.Prober.(idleFixtureProber)
+				delete(prober, 41)
+			}},
+			{"missing announcement", func(f *pendingWaitVerdictFixture) {
+				path := filepath.Join(f.root, "artifacts", "agents", "mains", pendingWaitSession+"-41.json")
+				if err := os.Remove(path); err != nil {
+					t.Fatal(err)
+				}
+			}},
+		} {
+			t.Run(test.name, func(t *testing.T) {
+				fixture := newPendingWaitVerdictFixture(t, "job", false)
+				test.mutate(fixture)
+				if verdict := fixture.verdict(t, fixture.scan); !verdict.ShouldBlock || verdict.BlockSource == nil || *verdict.BlockSource != "open-work" {
+					t.Fatalf("wait without a live owner changed the decision: %+v", verdict)
+				}
+			})
+		}
+	})
+
+	t.Run("failed eligibility changes no decision", func(t *testing.T) {
+		result := &metarun.WaitResult{SchemaVersion: 2, WaitID: strings.Repeat("b", 32)}
+		cases := []struct {
+			name   string
+			mutate func(*pendingWaitVerdictFixture)
+		}{
+			{"schema", func(f *pendingWaitVerdictFixture) { f.row.SchemaVersion = 1 }},
+			{"state", func(f *pendingWaitVerdictFixture) { f.row.State = "ready" }},
+			{"delivery", func(f *pendingWaitVerdictFixture) { f.row.Delivery = "declined" }},
+			{"result", func(f *pendingWaitVerdictFixture) { f.row.Result = result }},
+			{"wait id", func(f *pendingWaitVerdictFixture) { f.row.WaitID = "short" }},
+			{"nonce", func(f *pendingWaitVerdictFixture) { f.row.Nonce = "short" }},
+			{"main", func(f *pendingWaitVerdictFixture) { f.row.MainId = "another-main" }},
+			{"session", func(f *pendingWaitVerdictFixture) { f.row.Session = "another-session" }},
+			{"runtime session", func(f *pendingWaitVerdictFixture) { f.row.RuntimeSession = "another-session" }},
+			{"lineage", func(f *pendingWaitVerdictFixture) { f.row.OwnerLineage = "another-lineage" }},
+			{"owner digest", func(f *pendingWaitVerdictFixture) { f.row.OwnerDigest = metarun.OwnerDigest("another-main") }},
+			{"missing claim epoch", func(f *pendingWaitVerdictFixture) { f.row.ClaimEpoch = nil }},
+			{"claim epoch", func(f *pendingWaitVerdictFixture) { epoch := int64(8); f.row.ClaimEpoch = &epoch }},
+			{"selector kind", func(f *pendingWaitVerdictFixture) { f.row.Selector.Kind = "run" }},
+			{"selector target", func(f *pendingWaitVerdictFixture) { f.row.Selector.TargetID = "another-job" }},
+			{"zero target", func(f *pendingWaitVerdictFixture) { f.row.Target = metarun.WaiterTarget{} }},
+			{"malformed signature", func(f *pendingWaitVerdictFixture) { f.row.OpenWorkSignature = "not-a-digest" }},
+			{"selector extras", func(f *pendingWaitVerdictFixture) { f.row.Selector.Event = "landing" }},
+			{"unexpected goal binding", func(f *pendingWaitVerdictFixture) { f.row.GoalID = pendingWaitGoalID }},
+			{"dead waiter", func(f *pendingWaitVerdictFixture) { f.row.Pid = 404 }},
+			{"bad registered time", func(f *pendingWaitVerdictFixture) { f.row.RegisteredAt = "bad" }},
+			{"bad deadline", func(f *pendingWaitVerdictFixture) { f.row.Deadline = "bad" }},
+			{"bad observation time", func(f *pendingWaitVerdictFixture) { f.row.LastObservedAt = "bad" }},
+			{"observation before registration", func(f *pendingWaitVerdictFixture) {
+				f.row.LastObservedAt = f.store.Now().Add(-10 * time.Second).Format(time.RFC3339Nano)
+			}},
+			{"future observation", func(f *pendingWaitVerdictFixture) {
+				f.row.LastObservedAt = f.store.Now().Add(time.Second).Format(time.RFC3339Nano)
+			}},
+			{"stale observation", func(f *pendingWaitVerdictFixture) {
+				f.row.LastObservedAt = f.store.Now().Add(-31 * time.Second).Format(time.RFC3339Nano)
+			}},
+			{"expired deadline", func(f *pendingWaitVerdictFixture) { f.row.Deadline = f.store.Now().Format(time.RFC3339Nano) }},
+			{"deadline before registration", func(f *pendingWaitVerdictFixture) {
+				f.row.Deadline = f.store.Now().Add(-6 * time.Second).Format(time.RFC3339Nano)
+			}},
+			{"deadline over maximum", func(f *pendingWaitVerdictFixture) {
+				f.row.Deadline = f.store.Now().Add(25 * time.Hour).Format(time.RFC3339Nano)
+			}},
+			{"no remaining time", func(f *pendingWaitVerdictFixture) { f.row.RemainingNanos = 0 }},
+			{"missing boot", func(f *pendingWaitVerdictFixture) { f.row.BootID = "" }},
+			{"changed boot", func(f *pendingWaitVerdictFixture) { f.row.BootID = "another-boot" }},
+			{"deadline boot", func(f *pendingWaitVerdictFixture) { f.row.DeadlineBootID = "another-boot" }},
+			{"missing boot observation", func(f *pendingWaitVerdictFixture) { f.row.LastObservedBootNanos = 0 }},
+			{"future boot observation", func(f *pendingWaitVerdictFixture) {
+				f.row.LastObservedBootNanos = (f.bootElapsed + time.Second).Nanoseconds()
+			}},
+			{"stale boot observation", func(f *pendingWaitVerdictFixture) {
+				f.row.LastObservedBootNanos = (f.bootElapsed - 31*time.Second).Nanoseconds()
+			}},
+			{"boot deadline", func(f *pendingWaitVerdictFixture) { f.row.BootDeadlineNanos = f.bootElapsed.Nanoseconds() }},
+			{"boot duration over maximum", func(f *pendingWaitVerdictFixture) {
+				f.row.BootDeadlineNanos = f.row.LastObservedBootNanos + (25 * time.Hour).Nanoseconds()
+			}},
+			{"source incarnation", func(f *pendingWaitVerdictFixture) { f.row.Target.Round++ }},
+		}
+		for _, test := range cases {
+			t.Run(test.name, func(t *testing.T) {
+				fixture := newPendingWaitVerdictFixture(t, "job", false)
+				test.mutate(fixture)
+				fixture.writeRow(t)
+				verdict := fixture.verdict(t, fixture.scan)
+				if !verdict.ShouldBlock || verdict.BlockSource == nil || *verdict.BlockSource != "open-work" {
+					t.Fatalf("ineligible wait changed today's decision: %+v", verdict)
+				}
+			})
+		}
+	})
+
+	t.Run("source must join the claimed goal", func(t *testing.T) {
+		fixture := newPendingWaitVerdictFixture(t, "job", false)
+		writePendingWaitJSON(t, filepath.Join(fixture.root, "artifacts", "agents", "jobs", fixture.row.TargetID+".json"), map[string]any{
+			"jobId": fixture.row.TargetID, "operationId": fixture.row.Target.OperationID, "round": fixture.row.Target.Round,
+			"startedAt": fixture.row.Target.StartedAt, "status": "running", "goalId": "another-goal",
+		})
+		if verdict := fixture.verdict(t, fixture.scan); !verdict.ShouldBlock || verdict.BlockSource == nil || *verdict.BlockSource != "open-work" {
+			t.Fatalf("an unrelated goal wait changed the decision: %+v", verdict)
+		}
+	})
+
+	t.Run("source must remain pending", func(t *testing.T) {
+		fixture := newPendingWaitVerdictFixture(t, "job", false)
+		writePendingWaitJSON(t, filepath.Join(fixture.root, "artifacts", "agents", "jobs", fixture.row.TargetID+".json"), map[string]any{
+			"jobId": fixture.row.TargetID, "operationId": fixture.row.Target.OperationID, "round": fixture.row.Target.Round,
+			"startedAt": fixture.row.Target.StartedAt, "status": "succeeded", "goalId": pendingWaitGoalID,
+		})
+		if verdict := fixture.verdict(t, fixture.scan); !verdict.ShouldBlock || verdict.BlockSource == nil || *verdict.BlockSource != "open-work" {
+			t.Fatalf("terminal source wait changed the decision: %+v", verdict)
+		}
+	})
+
+	t.Run("landing wait requires the landing phase", func(t *testing.T) {
+		fixture := newPendingWaitVerdictFixture(t, "human-act", false)
+		fixture.row.Selector.Event = "landing"
+		fixture.row.GoalID = pendingWaitGoalID
+		fixture.writeRow(t)
+		if verdict := fixture.verdict(t, fixture.scan); !verdict.ShouldBlock {
+			t.Fatalf("a landing wait covered a working claim: %+v", verdict)
+		}
+	})
+
+	t.Run("warnings and degraded input are unchanged", func(t *testing.T) {
+		fixture := newPendingWaitVerdictFixture(t, "job", false)
+		scan := fixture.scan
+		scan.Runs = []RunFact{{Id: "red-run", Status: "red", ExpectRed: "inspect red evidence"}}
+		verdict := fixture.verdict(t, scan)
+		if verdict.ShouldBlock || !strings.Contains(verdict.Display, "went red") || !strings.Contains(verdict.Display, "inspect red evidence") {
+			t.Fatalf("a registered wait hid a warning: %+v", verdict)
+		}
+		scan.Unreadable = []string{"plans/broken.md: unreadable"}
+		verdict = fixture.verdict(t, scan)
+		if !verdict.ShouldBlock || verdict.BlockSource == nil || *verdict.BlockSource != "open-work" ||
+			len(verdict.Diagnostics) == 0 || verdict.Diagnostics[len(verdict.Diagnostics)-1] != "plans/broken.md: unreadable" {
+			t.Fatalf("a registered wait changed degraded scanner input: %+v", verdict)
+		}
+	})
+
+	t.Run("closed fence remains terminal", func(t *testing.T) {
+		fixture := newPendingWaitVerdictFixture(t, "job", false)
+		if err := stopfence.Write(fixture.root, stopfence.Record{
+			SchemaVersion: stopfence.SchemaVersion, State: stopfence.StateClosed, Phase: stopfence.PhaseStopped,
+			Generation: 1, ChangedAt: "2026-08-23T01:59:00Z", Checkout: fixture.root,
+			By: stopfence.Actor{Verb: "stop", Process: stopfence.Process{Pid: 71, PidStartedAt: 70}}, NotStopped: []stopfence.Survivor{},
+		}); err != nil {
+			t.Fatal(err)
+		}
+		verdict := fixture.verdict(t, fixture.scan)
+		if verdict.ShouldBlock || verdict.LedgerStatus != "stopped" || strings.Contains(verdict.Display, "WAITING: registered wait") {
+			t.Fatalf("a registered wait changed the closed fence: %+v", verdict)
+		}
+	})
+
+	t.Run("human stop authority remains final", func(t *testing.T) {
+		fixture := newPendingWaitVerdictFixture(t, "job", false)
+		prober := fixture.store.Prober.(idleFixtureProber)
+		prober[20] = identity.Exact{Pid: 20, StartedAt: time.Unix(200, 0)}
+		proof := *testHumanAuthority(t, fixture.root, fixture.store.Now())
+		marker, err := fixture.store.WriteSessionStop(SessionStop{
+			SchemaVersion: 3, SessionId: pendingWaitSession, HolderMainId: pendingWaitMainID, ClaimEpoch: 7,
+			By: "Wido", WrittenAt: fixture.store.Now().Format(time.RFC3339), ExpiresAt: fixture.store.Now().Add(time.Hour).Format(time.RFC3339),
+		}, proof)
+		if err != nil {
+			t.Fatal(err)
+		}
+		verdict, err := fixture.store.TurnVerdict(fixture.scan, marker.SessionId, "", marker.HolderMainId)
+		if err != nil || verdict.ShouldBlock || !strings.Contains(verdict.Display, "SESSION STOP authorized once") {
+			t.Fatalf("registered-wait work changed human stop authority: %+v %v", verdict, err)
+		}
+	})
+}
 
 // The dual-slot block-once state machine — the canonical sequence:
 // goal-block, open-work-block, clear, and NO re-block of the unchanged

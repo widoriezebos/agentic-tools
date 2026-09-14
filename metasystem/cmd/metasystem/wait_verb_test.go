@@ -2,8 +2,10 @@ package main
 
 import (
 	"context"
+	"crypto/sha256"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -531,6 +533,186 @@ func TestWaitSessionStartPrintsPendingRows(t *testing.T) {
 		return runSessionStart([]string{"--root", root, "--session", "another-session"})
 	}); code != metarun.ExitWaiterBusy {
 		t.Fatalf("another session received this holder's recovery rows: exit=%d", code)
+	}
+}
+
+func pendingWaitVerdictCommandFixture(t *testing.T, root, runtimeName string) (string, string) {
+	t.Helper()
+	for _, dir := range []string{
+		filepath.Join(root, "plans"),
+		filepath.Join(root, "artifacts", "agents", "jobs"),
+		metarun.WaitersDir(root),
+	} {
+		if err := os.MkdirAll(dir, 0o755); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if output, err := exec.Command("git", "-C", root, "init", "-q", "-b", "main").CombinedOutput(); err != nil {
+		t.Fatalf("initialize wait verdict fixture: %v %s", err, output)
+	}
+	if err := os.WriteFile(filepath.Join(root, "metasystem.conf"), []byte("metasystem.runtimes="+runtimeName+"\nrole.default.model."+runtimeName+"=fixture\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	goals := []byte("# Goals\n\n## Current goal: wait-stop-goal — Hold the registered wait\n- Origin: main\n- Next step: Continue after the wait.\n")
+	if err := os.WriteFile(filepath.Join(root, "plans", "goals.md"), goals, 0o644); err != nil {
+		t.Fatal(err)
+	}
+	baseline, _ := json.Marshal(map[string]any{
+		"schemaVersion": 1, "ledger": string(goals), "sha256": fmt.Sprintf("%x", sha256.Sum256(goals)),
+	})
+	if err := os.WriteFile(filepath.Join(root, "plans", "goals-accepted.json"), append(baseline, '\n'), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(root, "plans", "active.md"), []byte("# Active\n- Waiting on the human: none\n- Next step: Continue after the registered wait.\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	self := int64(os.Getpid())
+	exact, state, err := (identity.KernelProber{}).Probe(self)
+	if err != nil || state != identity.Alive {
+		t.Fatalf("current fixture process identity=%+v state=%s err=%v", exact, state, err)
+	}
+	processRef := exact.Ref()
+	session := "wait-stop-" + runtimeName
+	lineage := "wait-stop-lineage"
+	announcement, err := lease.AnnounceWithPair(root, session, self, exact.StartedAt.Unix(), exact.StartTicks, exact.BootID, "wait-stop-fixture", runtimeName, lineage)
+	if err != nil {
+		t.Fatal(err)
+	}
+	mainID := announcedMainID(t, announcement)
+	holder, err := lease.CurrentHolder(root)
+	if err != nil {
+		t.Fatal(err)
+	}
+	operationID := strings.Repeat("d", 32)
+	job := map[string]any{
+		"jobId": "wait-stop-job", "operationId": operationID, "status": "pending-setup", "goalId": "wait-stop-goal",
+	}
+	jobData, _ := json.Marshal(job)
+	if err := os.WriteFile(filepath.Join(root, "artifacts", "agents", "jobs", "wait-stop-job.json"), append(jobData, '\n'), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	signature, err := report.OpenWorkSignature(context.Background(), root)
+	if err != nil || signature == "" {
+		t.Fatalf("read fixture open-work signature: %q %v", signature, err)
+	}
+	bootID, elapsed, err := identity.BootClock()
+	if err != nil || bootID == "" {
+		t.Fatalf("read fixture boot clock: %q %s %v", bootID, elapsed, err)
+	}
+	now := time.Now().UTC()
+	epoch := holder.ClaimEpoch
+	row := metarun.Waiter{
+		SchemaVersion: 2, WaitID: strings.Repeat("a", 32), Nonce: strings.Repeat("b", 32),
+		Kind: "job", TargetID: "wait-stop-job", OwnerDigest: metarun.OwnerDigest(mainID),
+		Pid: self, PidStartedAt: processRef.StartedAtSec, PidStartedAtMicro: processRef.StartedAtUnixMicro,
+		PidStartTicks: processRef.StartTicks, BootID: processRef.BootID,
+		Session: session, MainId: mainID, OwnerLineage: lineage, ClaimEpoch: &epoch, RuntimeSession: session,
+		Selector:     metarun.WaitSelector{Kind: "job", TargetID: "wait-stop-job"},
+		Target:       metarun.WaiterTarget{OperationID: operationID},
+		RegisteredAt: now.Add(-time.Second).Format(time.RFC3339Nano), Deadline: now.Add(time.Minute).Format(time.RFC3339Nano),
+		BootDeadlineNanos: (elapsed + time.Minute).Nanoseconds(), DeadlineBootID: bootID, RemainingNanos: time.Minute.Nanoseconds(),
+		LastObservedAt: now.Format(time.RFC3339Nano), LastObservedBootNanos: elapsed.Nanoseconds(),
+		OpenWorkSignature: signature, State: "pending", Delivery: "blocking",
+	}
+	rowData, _ := json.Marshal(row)
+	if err := os.WriteFile(metarun.WaiterPath(root, row.Kind, row.TargetID, row.OwnerDigest), append(rowData, '\n'), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	return session, mainID
+}
+
+func assertPendingWaitVerdictOutput(t *testing.T, output []byte) {
+	t.Helper()
+	var verdict struct {
+		ShouldBlock bool   `json:"shouldBlock"`
+		Display     string `json:"display"`
+	}
+	if err := json.Unmarshal(output, &verdict); err != nil || verdict.ShouldBlock || !strings.Contains(verdict.Display, "WAITING: registered wait") {
+		t.Fatalf("pending-wait verdict output=%s parsed=%+v err=%v", output, verdict, err)
+	}
+}
+
+func TestPendingWaitInstalledVerdicts(t *testing.T) {
+	root := t.TempDir()
+	session, mainID := pendingWaitVerdictCommandFixture(t, root, "fake")
+	code, output, problem := captureChannelOutput(t, func() int {
+		return runReportTurnVerdict([]string{"--root", root, "--session", session, "--main-id", mainID})
+	})
+	if code != 0 || problem != "" {
+		t.Fatalf("plain command handler code=%d stderr=%q output=%s", code, problem, output)
+	}
+	assertPendingWaitVerdictOutput(t, []byte(output))
+
+	candidate := os.Getenv("METASYSTEM_WAIT_BINARY")
+	if candidate == "" {
+		return
+	}
+	binary := testutil.InstalledWaitBinary(t, candidate)
+
+	plainRoot := t.TempDir()
+	plainSession, plainMainID := pendingWaitVerdictCommandFixture(t, plainRoot, "fake")
+	plain := exec.Command(binary, "report", "turn-verdict", "--root", plainRoot, "--session", plainSession, "--main-id", plainMainID)
+	plainOutput, err := plain.CombinedOutput()
+	if err != nil {
+		t.Fatalf("installed plain turn verdict: %v %s", err, plainOutput)
+	}
+	assertPendingWaitVerdictOutput(t, plainOutput)
+
+	hookRoot := t.TempDir()
+	hookSession, _ := pendingWaitVerdictCommandFixture(t, hookRoot, "fake")
+	sourceRoot, err := filepath.Abs(filepath.Join("..", ".."))
+	if err != nil {
+		t.Fatal(err)
+	}
+	hook := filepath.Join(hookRoot, "scripts", "agents", "supervision-hook.sh")
+	evidenceGC := filepath.Join(hookRoot, "scripts", "agents", "evidence-gc.sh")
+	canonical := filepath.Join(hookRoot, "bin", "metasystem")
+	for _, target := range []string{hook, evidenceGC, canonical} {
+		if err := os.MkdirAll(filepath.Dir(target), 0o755); err != nil {
+			t.Fatal(err)
+		}
+	}
+	for source, target := range map[string]string{
+		filepath.Join(sourceRoot, "scripts", "agents", "supervision-hook.sh"): hook,
+		filepath.Join(sourceRoot, "scripts", "agents", "evidence-gc.sh"):      evidenceGC,
+		binary: canonical,
+	} {
+		data, readErr := os.ReadFile(source)
+		if readErr != nil {
+			t.Fatal(readErr)
+		}
+		if writeErr := os.WriteFile(target, data, 0o755); writeErr != nil {
+			t.Fatal(writeErr)
+		}
+	}
+	wrapper := filepath.Join(t.TempDir(), "metasystem-hook-engine")
+	wrapperSource := "#!/bin/sh\nif [ \"${1:-}\" = up ]; then printf '%s\\n' 'up outcome=already-healthy'; exit 0; fi\nexec \"${METASYSTEM_WAIT_REAL_ENGINE:?}\" \"$@\"\n"
+	if err := os.WriteFile(wrapper, []byte(wrapperSource), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	command := exec.Command("bash", hook, "fake", "stop")
+	environment := make([]string, 0, len(os.Environ())+3)
+	for _, value := range os.Environ() {
+		if strings.HasPrefix(value, "METASYSTEM_BIN=") || strings.HasPrefix(value, "METASYSTEM_WAIT_REAL_ENGINE=") || strings.HasPrefix(value, "METASYSTEM_FAKE_AGENT_ANCESTOR_PID=") {
+			continue
+		}
+		environment = append(environment, value)
+	}
+	command.Env = append(environment,
+		"METASYSTEM_BIN="+wrapper,
+		"METASYSTEM_WAIT_REAL_ENGINE="+canonical,
+		"METASYSTEM_FAKE_AGENT_ANCESTOR_PID="+fmt.Sprint(os.Getpid()),
+	)
+	command.Stdin = strings.NewReader(`{"session_id":"` + hookSession + `","cwd":"` + hookRoot + `","hook_event_name":"Stop"}`)
+	hookOutput, err := command.CombinedOutput()
+	if err != nil || strings.Contains(string(hookOutput), `"decision":"block"`) {
+		t.Fatalf("fake Stop hook did not allow the registered wait: err=%v output=%s", err, hookOutput)
+	}
+	artifact := filepath.Join(hookRoot, "artifacts", "agents", "supervision", "stop-verdicts", hookSession+".txt")
+	artifactData, err := os.ReadFile(artifact)
+	if err != nil || !strings.Contains(string(artifactData), "WAITING: registered wait") {
+		t.Fatalf("fake Stop hook omitted its registered-wait evidence: %v %s", err, artifactData)
 	}
 }
 

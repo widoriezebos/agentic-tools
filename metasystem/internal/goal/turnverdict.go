@@ -1,8 +1,10 @@
 package goal
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
+	"io"
 	"os"
 	"path/filepath"
 	"regexp"
@@ -12,6 +14,8 @@ import (
 
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/atomicfile"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/brain"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/identity"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/proofrun"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/run"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/stopfence"
 )
@@ -200,6 +204,99 @@ type TurnVerdictOptions struct {
 	SeatActorProblem string
 }
 
+type registeredWait struct {
+	row          run.Waiter
+	goalID       string
+	coveredJobID string
+	coveredRunID string
+	coveredRun   run.WaiterTarget
+	humanAct     bool
+	landing      bool
+}
+
+type registeredWaits []registeredWait
+
+func goalIDOf(facts *GoalFacts) string {
+	if facts == nil {
+		return ""
+	}
+	return facts.Id
+}
+
+func (waits registeredWaits) matchingSignature(signature string) registeredWaits {
+	matching := make(registeredWaits, 0, len(waits))
+	for _, wait := range waits {
+		if wait.row.OpenWorkSignature == signature {
+			matching = append(matching, wait)
+		}
+	}
+	return matching
+}
+
+func (waits registeredWaits) suppressOpenWork(signature, currentGoalID string, waitingOnHuman []Item) bool {
+	for _, wait := range waits.matchingSignature(signature) {
+		if !wait.humanAct || wait.goalID == currentGoalID && waitingOnHumanForGoal(waitingOnHuman, wait.goalID) {
+			return true
+		}
+	}
+	return false
+}
+
+func waitingOnHumanForGoal(items []Item, goalID string) bool {
+	for _, item := range items {
+		// Plan-stream conditions belong to the checkout's current goal. A
+		// typed goal condition, when supplied, must name the covered goal.
+		if item.Kind != "goal" || item.Id == goalID {
+			return true
+		}
+	}
+	return false
+}
+
+func (waits registeredWaits) hasWorkInFlight() bool {
+	for _, wait := range waits {
+		if !wait.humanAct {
+			return true
+		}
+	}
+	return false
+}
+
+func (waits registeredWaits) watchesJob(id string) bool {
+	for _, wait := range waits {
+		if !wait.humanAct && wait.coveredJobID == id {
+			return true
+		}
+	}
+	return false
+}
+
+func (waits registeredWaits) watchesRun(fact RunFact) bool {
+	for _, wait := range waits {
+		if !wait.humanAct && wait.coveredRunID == fact.Id &&
+			wait.coveredRun.Generation == fact.Generation && wait.coveredRun.LaunchNonce == fact.Nonce {
+			return true
+		}
+	}
+	return false
+}
+
+func (waits registeredWaits) lines() []string {
+	lines := make([]string, 0, len(waits))
+	for _, wait := range waits {
+		target := wait.row.Kind + " " + wait.row.TargetID
+		if wait.landing {
+			target = "landing for goal " + wait.goalID
+		} else if wait.humanAct {
+			target = "human act for goal " + wait.goalID
+		}
+		lines = append(lines, fmt.Sprintf("WAITING: registered wait %s covers %s until %s", wait.row.WaitID, target, wait.row.Deadline))
+	}
+	return lines
+}
+
+var turnVerdictBootClock = identity.BootClock
+
 // IdleEscalationEvent is the package-neutral handoff from the goal verdict to
 // the steward. The command layer supplies the steward-backed callbacks so the
 // goal package does not acquire a reverse dependency on the steward package.
@@ -304,6 +401,10 @@ func (s *Store) TurnVerdict(scan ScanResult, sessionId, watchdogDigest, mainId s
 		if workRead {
 			work, workErr = readClaimableBudgetedWork(s.Root, s.now(), s.prober())
 		}
+		waits := registeredWaits{}
+		if workRead && workErr == nil && len(scan.Unreadable) == 0 && len(scan.RunUnreadable) == 0 {
+			waits = s.registeredWaits(work, sessionId, mainId)
+		}
 		state, err := s.loadVerdictState()
 		if err != nil {
 			return Result{}, infrastructureFailure{"verdict-state", err}
@@ -311,14 +412,14 @@ func (s *Store) TurnVerdict(scan ScanResult, sessionId, watchdogDigest, mainId s
 		session := state.touch(sessionId, s.nowISO())
 
 		brainLines := s.brainSummary(scan, brainState)
-		runLines := s.decideRuns(&verdict, scan, session, mainId)
-		s.decide(&verdict, scan, session, &work, brainSeat)
+		runLines := s.decideRuns(&verdict, scan, session, mainId, waits)
+		s.decide(&verdict, scan, session, &work, brainSeat, waits)
 		if markerDetail != "" {
 			verdict.Diagnostics = append(verdict.Diagnostics, markerDetail)
 			verdict.Display = strings.TrimSpace(verdict.Display + "\n" + markerDetail)
 		}
 		if !humanAuthorized && !brainSeat {
-			s.enforceIdleBacklog(&verdict, &work, workErr, session, sessionId, mainId, options)
+			s.enforceIdleBacklogWithWaits(&verdict, &work, workErr, session, sessionId, mainId, options, waits)
 		}
 		greens := s.decideGreens(scan, session)
 		fullDisplay := composeDisplay(append(append([]string{}, brainLines...), runLines.lines...), verdict.Display, greens)
@@ -435,6 +536,277 @@ func withoutBrainOnlyScanEffects(scan ScanResult) ScanResult {
 	return scan
 }
 
+// registeredWaits returns only pending waits owned by this live holder
+// session and still joined to the holder's claimed goal and source
+// incarnation. A row that cannot prove every coordinate is absent from the
+// decision; waiter failures never grant permission to stop.
+func (s *Store) registeredWaits(work ClaimableBudgetedWork, sessionID, mainID string) registeredWaits {
+	lease, lineage, ok := s.registeredWaitOwner(sessionID, mainID)
+	if !ok {
+		return nil
+	}
+	paths, _ := filepath.Glob(filepath.Join(run.WaitersDir(s.Root), "*.json"))
+	if len(paths) == 0 {
+		return nil
+	}
+	bootID, bootElapsed, err := turnVerdictBootClock()
+	if err != nil || bootID == "" {
+		return nil
+	}
+	claimed := make(map[string]bool, len(work.Claimed)+len(work.Landing))
+	for _, id := range work.Claimed {
+		claimed[id] = true
+	}
+	for _, id := range work.Landing {
+		claimed[id] = true
+	}
+	waits := make(registeredWaits, 0, len(paths))
+	for _, path := range paths {
+		row, ok := registeredWaitAtOwnerPath(s.Root, path)
+		if !ok || !s.registeredWaitEligible(row, sessionID, mainID, lineage, lease.ClaimEpoch, bootID, bootElapsed) {
+			continue
+		}
+		wait, ok := s.registeredWaitSource(work, claimed, row, bootElapsed)
+		if ok {
+			waits = append(waits, wait)
+		}
+	}
+	return waits
+}
+
+func registeredWaitAtOwnerPath(root, path string) (run.Waiter, bool) {
+	info, err := os.Lstat(path)
+	if err != nil || !info.Mode().IsRegular() {
+		return run.Waiter{}, false
+	}
+	data, err := os.ReadFile(path)
+	if err != nil {
+		return run.Waiter{}, false
+	}
+	var row run.Waiter
+	decoder := json.NewDecoder(strings.NewReader(string(data)))
+	decoder.DisallowUnknownFields()
+	if decoder.Decode(&row) != nil || decoder.Decode(&struct{}{}) != io.EOF ||
+		filepath.Clean(path) != filepath.Clean(run.WaiterPath(root, row.Kind, row.TargetID, row.OwnerDigest)) {
+		return run.Waiter{}, false
+	}
+	return row, true
+}
+
+func (s *Store) registeredWaitOwner(sessionID, mainID string) (sessionStopLease, string, bool) {
+	if sessionID == "" || mainID == "" {
+		return sessionStopLease{}, "", false
+	}
+	lease, err := s.currentSessionStopLease()
+	if err != nil || lease.HolderMainId != mainID || identity.AliveRef(s.prober(), identity.Ref{
+		Pid: lease.Pid, StartedAtSec: lease.PidStartedAt, StartTicks: lease.PidStartTicks, BootID: lease.BootID,
+	}) != identity.Alive {
+		return sessionStopLease{}, "", false
+	}
+	if _, err := s.currentSessionLifecycle(sessionID, mainID, lease); err != nil {
+		return sessionStopLease{}, "", false
+	}
+	paths, err := filepath.Glob(filepath.Join(s.Root, "artifacts", "agents", "mains", "*.json"))
+	if err != nil {
+		return sessionStopLease{}, "", false
+	}
+	lineage := ""
+	for _, path := range paths {
+		if !sessionStopAnnouncementName.MatchString(filepath.Base(path)) {
+			continue
+		}
+		data, readErr := os.ReadFile(path)
+		if readErr != nil {
+			return sessionStopLease{}, "", false
+		}
+		var announcement sessionStopAnnouncement
+		decoder := json.NewDecoder(strings.NewReader(string(data)))
+		decoder.DisallowUnknownFields()
+		if decoder.Decode(&announcement) != nil || decoder.Decode(&struct{}{}) != io.EOF {
+			return sessionStopLease{}, "", false
+		}
+		if announcement.SessionId != sessionID || announcement.MainId != mainID {
+			continue
+		}
+		if lineage != "" || announcement.Pid != lease.Pid || announcement.PidStartedAt != lease.PidStartedAt ||
+			announcement.PidStartTicks != lease.PidStartTicks || announcement.BootID != lease.BootID {
+			return sessionStopLease{}, "", false
+		}
+		lineage = announcement.OwnerLineage
+		if lineage == "" {
+			lineage = mainID
+		}
+	}
+	if lineage == "" {
+		return sessionStopLease{}, "", false
+	}
+	return lease, lineage, true
+}
+
+func (s *Store) registeredWaitEligible(row run.Waiter, sessionID, mainID, lineage string, claimEpoch int64, bootID string, bootElapsed time.Duration) bool {
+	if row.SchemaVersion != 2 || row.State != "pending" || row.Delivery != "blocking" || row.Result != nil ||
+		!run.ValidWaitID(row.WaitID) || !run.ValidWaitID(row.Nonce) || row.MainId != mainID ||
+		row.Session != sessionID || row.RuntimeSession != sessionID || row.OwnerLineage != lineage ||
+		row.OwnerDigest != run.OwnerDigest(mainID) || row.ClaimEpoch == nil || *row.ClaimEpoch != claimEpoch ||
+		row.Kind != row.Selector.Kind || row.TargetID != row.Selector.TargetID || row.Target == (run.WaiterTarget{}) ||
+		(row.OpenWorkSignature != "" && !sessionStopDigest.MatchString(row.OpenWorkSignature)) ||
+		run.ValidateWaitSelector(row.Selector) != nil {
+		return false
+	}
+	if row.Kind == "goal" {
+		if row.GoalID == "" || row.GoalID != row.Selector.GoalID {
+			return false
+		}
+	} else if row.GoalID != "" {
+		return false
+	}
+	if identity.AliveRef(s.prober(), identity.Ref{
+		Pid: row.Pid, StartedAtSec: row.PidStartedAt, StartedAtUnixMicro: row.PidStartedAtMicro,
+		StartTicks: row.PidStartTicks, BootID: row.BootID,
+	}) != identity.Alive {
+		return false
+	}
+	registeredAt, registeredErr := time.Parse(time.RFC3339Nano, row.RegisteredAt)
+	deadline, deadlineErr := time.Parse(time.RFC3339Nano, row.Deadline)
+	lastObserved, observedErr := time.Parse(time.RFC3339Nano, row.LastObservedAt)
+	now := s.now().UTC()
+	if registeredErr != nil || deadlineErr != nil || observedErr != nil || registeredAt.After(lastObserved) ||
+		lastObserved.After(now) || now.Sub(lastObserved) > 30*time.Second || !now.Before(deadline) ||
+		!deadline.After(registeredAt) || deadline.Sub(registeredAt) > 24*time.Hour || row.RemainingNanos <= 0 {
+		return false
+	}
+	bootNanos := bootElapsed.Nanoseconds()
+	if row.DeadlineBootID != bootID ||
+		row.LastObservedBootNanos <= 0 || row.LastObservedBootNanos > bootNanos ||
+		bootNanos-row.LastObservedBootNanos > (30*time.Second).Nanoseconds() || row.BootDeadlineNanos <= bootNanos ||
+		row.BootDeadlineNanos-row.LastObservedBootNanos > (24*time.Hour).Nanoseconds() {
+		return false
+	}
+	return true
+}
+
+func (s *Store) registeredWaitSource(work ClaimableBudgetedWork, claimed map[string]bool, row run.Waiter, bootElapsed time.Duration) (registeredWait, bool) {
+	wait := registeredWait{row: row}
+	switch row.Kind {
+	case "job":
+		goalID, _, ok := s.pendingWaitJob(row)
+		if !ok || !claimed[goalID] {
+			return registeredWait{}, false
+		}
+		wait.goalID, wait.coveredJobID = goalID, row.TargetID
+		return wait, true
+	case "run":
+		goalID, current, ok := s.pendingWaitRun(row.TargetID, row.Target)
+		if !ok || !claimed[goalID] {
+			return registeredWait{}, false
+		}
+		wait.goalID, wait.coveredRunID, wait.coveredRun = goalID, row.TargetID, current
+		return wait, true
+	case "attempt":
+		goalID, runID, current, ok := s.pendingWaitAttempt(row)
+		if !ok || !claimed[goalID] {
+			return registeredWait{}, false
+		}
+		wait.goalID, wait.coveredRunID, wait.coveredRun = goalID, runID, current
+		return wait, true
+	case "goal":
+		if !claimed[row.Selector.GoalID] {
+			return registeredWait{}, false
+		}
+		if row.Selector.Event == "landing" && !contains(work.Landing, row.Selector.GoalID) {
+			return registeredWait{}, false
+		}
+		deadline, _ := time.Parse(time.RFC3339Nano, row.Deadline)
+		budget := min(10*time.Second, deadline.Sub(s.now().UTC()))
+		budget = min(budget, time.Duration(row.BootDeadlineNanos)-bootElapsed)
+		budget = min(budget, time.Duration(row.RemainingNanos))
+		if budget <= 0 {
+			return registeredWait{}, false
+		}
+		ctx, cancel := context.WithTimeout(context.Background(), budget)
+		observation, err := ObserveLedgerForWait(ctx, s.Root, row.Selector, row.Target, row.LastCheckedTip, row.OwnerLineage)
+		cancel()
+		if err != nil || observation.Temporary || !observation.Pending || observation.Incarnation != row.Target {
+			return registeredWait{}, false
+		}
+		wait.goalID = row.Selector.GoalID
+		wait.humanAct = row.Selector.Event == "human-act"
+		wait.landing = row.Selector.Event == "landing"
+		return wait, true
+	default:
+		return registeredWait{}, false
+	}
+}
+
+func (s *Store) pendingWaitJob(row run.Waiter) (string, run.WaiterTarget, bool) {
+	data, err := os.ReadFile(filepath.Join(s.Root, "artifacts", "agents", "jobs", row.TargetID+".json"))
+	if err != nil {
+		return "", run.WaiterTarget{}, false
+	}
+	var record struct {
+		JobID       string `json:"jobId"`
+		OperationID string `json:"operationId"`
+		Round       int64  `json:"round"`
+		Status      string `json:"status"`
+		StartedAt   string `json:"startedAt"`
+		GoalID      string `json:"goalId"`
+	}
+	if json.Unmarshal(data, &record) != nil || (record.JobID != "" && record.JobID != row.TargetID) ||
+		record.OperationID == "" || record.GoalID == "" {
+		return "", run.WaiterTarget{}, false
+	}
+	if record.Status == "pending-setup" {
+		current := run.WaiterTarget{OperationID: record.OperationID}
+		return record.GoalID, current, row.Target == current
+	}
+	if record.Status != "pending" && record.Status != "running" {
+		return "", run.WaiterTarget{}, false
+	}
+	preRunning := row.Target.OperationID == record.OperationID && row.Target.Round == 0 && row.Target.StartedAt == "" && record.Status != "running"
+	if !preRunning && (record.Round < 1 || record.StartedAt == "") {
+		return "", run.WaiterTarget{}, false
+	}
+	current := run.WaiterTarget{OperationID: record.OperationID, Round: record.Round, StartedAt: record.StartedAt}
+	if preRunning {
+		current = row.Target
+	}
+	if current == row.Target || (row.Target.OperationID == current.OperationID && row.Target.Round == 0 &&
+		row.Target.StartedAt == "" && current.Round > 0 && current.StartedAt != "" && record.Status == "running") {
+		return record.GoalID, current, true
+	}
+	return "", run.WaiterTarget{}, false
+}
+
+func (s *Store) pendingWaitRun(id string, target run.WaiterTarget) (string, run.WaiterTarget, bool) {
+	record, err := (&run.Store{Root: s.Root}).Read(id)
+	if err != nil || record == nil || record.GoalId == "" ||
+		(record.Status != run.StatusLaunching && record.Status != run.StatusRunning && record.Status != run.StatusDraining) {
+		return "", run.WaiterTarget{}, false
+	}
+	current := run.WaiterTarget{Generation: record.Generation, LaunchNonce: record.LaunchNonce}
+	return record.GoalId, current, current == target
+}
+
+func (s *Store) pendingWaitAttempt(row run.Waiter) (string, string, run.WaiterTarget, bool) {
+	attempt, err := proofrun.ReadAttempt(s.Root, row.TargetID)
+	if err != nil || attempt.Terminal != nil {
+		return "", "", run.WaiterTarget{}, false
+	}
+	if current := (run.WaiterTarget{ProofDigest: attempt.ProofIdentity.IdentityDigest}); current != row.Target {
+		return "", "", run.WaiterTarget{}, false
+	}
+	if attempt.ReservationOwner == nil {
+		return attempt.GoalID, "", run.WaiterTarget{}, true
+	}
+	owner := attempt.ReservationOwner
+	current := run.WaiterTarget{Generation: owner.RunGeneration, LaunchNonce: owner.LaunchNonce}
+	goalID, observed, ok := s.pendingWaitRun(owner.RunID, current)
+	if !ok || goalID != attempt.GoalID {
+		return "", "", run.WaiterTarget{}, false
+	}
+	return attempt.GoalID, owner.RunID, observed, true
+}
+
 func (s *Store) brainSummary(scan ScanResult, state brain.ReadResult) []string {
 	if state.State == brain.Undeclared {
 		return nil
@@ -534,6 +906,10 @@ func slugStopCause(value string) string {
 const unreadableIdleBacklogDigest = "ledger-unreadable"
 
 func (s *Store) enforceIdleBacklog(verdict *Verdict, work *ClaimableBudgetedWork, workErr error, session *sessionState, sessionID, mainID string, options TurnVerdictOptions) {
+	s.enforceIdleBacklogWithWaits(verdict, work, workErr, session, sessionID, mainID, options, nil)
+}
+
+func (s *Store) enforceIdleBacklogWithWaits(verdict *Verdict, work *ClaimableBudgetedWork, workErr error, session *sessionState, sessionID, mainID string, options TurnVerdictOptions, waits registeredWaits) {
 	blockedBeforeIdle := verdict.ShouldBlock
 	if workErr != nil {
 		verdict.Class = "idle-with-backlog"
@@ -575,7 +951,7 @@ func (s *Store) enforceIdleBacklog(verdict *Verdict, work *ClaimableBudgetedWork
 		verdict.Display = strings.TrimSpace(verdict.Display + "\n" + detail)
 	}
 	digest := idleBacklogDigest(*work)
-	if len(work.Claimable) == 0 || work.HasDelegateJobInFlight() {
+	if len(work.Claimable) == 0 || work.HasDelegateJobInFlight() || waits.hasWorkInFlight() {
 		session.IdleBlockDigest = digest
 		session.IdleBlocks = 0
 		return
@@ -751,7 +1127,7 @@ func (s *Store) escalateIdleBacklog(verdict *Verdict, session *sessionState, ses
 // run warnings always surface, and unwatched work blocks once — BEFORE
 // Busy can suppress anything (a watched active run is Busy; an unwatched
 // one blocks despite being busy, which is the point).
-func (s *Store) decideRuns(verdict *Verdict, scan ScanResult, session *sessionState, mainId string) runDisplayLines {
+func (s *Store) decideRuns(verdict *Verdict, scan ScanResult, session *sessionState, mainId string, waits registeredWaits) runDisplayLines {
 	var warnings runDisplayLines
 	warn := func(class runWarningClass, id, format string, args ...any) {
 		line := fmt.Sprintf(format, args...)
@@ -786,7 +1162,8 @@ func (s *Store) decideRuns(verdict *Verdict, scan ScanResult, session *sessionSt
 	var unwatchedTags, unwatchedIds []string
 	for _, job := range scan.Jobs {
 		if mainId != "" && job.MainId == mainId &&
-			(job.Status == "pending" || job.Status == "running") && !job.WaiterLive {
+			(job.Status == "pending" || job.Status == "running") && !job.WaiterLive &&
+			!waits.watchesJob(job.Id) {
 			unwatchedTags = append(unwatchedTags, "job:"+job.Id+"@"+job.StartedAt)
 			unwatchedIds = append(unwatchedIds, job.Id)
 		}
@@ -797,7 +1174,7 @@ func (s *Store) decideRuns(verdict *Verdict, scan ScanResult, session *sessionSt
 		// human-launched runs (null coordinates) — the waiter side already
 		// keys humans on the OS user id.
 		owned := runFact.MainId == mainId
-		if owned && inFlight && !runFact.WaiterLive {
+		if owned && inFlight && !runFact.WaiterLive && !waits.watchesRun(runFact) {
 			unwatchedTags = append(unwatchedTags, fmt.Sprintf("run:%s.g%d.%s", runFact.Id, runFact.Generation, runFact.Nonce))
 			unwatchedIds = append(unwatchedIds, runFact.Id)
 		}
@@ -953,7 +1330,7 @@ func (w ClaimableBudgetedWork) OnlyFencedClaim() (*GoalFile, bool) {
 }
 
 // decide is the precedence ladder from the design, in order.
-func (s *Store) decide(verdict *Verdict, scan ScanResult, session *sessionState, work *ClaimableBudgetedWork, brainSeat bool) {
+func (s *Store) decide(verdict *Verdict, scan ScanResult, session *sessionState, work *ClaimableBudgetedWork, brainSeat bool, waits registeredWaits) {
 	for _, item := range scan.Open {
 		verdict.OpenWork = append(verdict.OpenWork, item.Detail)
 	}
@@ -998,6 +1375,9 @@ func (s *Store) decide(verdict *Verdict, scan ScanResult, session *sessionState,
 		}
 		display = append(display, "STILL WORKING: "+strings.Join(names, "; "))
 
+	case len(scan.Open) > 0 && waits.suppressOpenWork(verdict.OpenWorkSignature, goalIDOf(facts), scan.WaitingOnHuman):
+		display = append(display, fmt.Sprintf("OPEN WORK (%d): %s", len(scan.Open), strings.Join(verdict.OpenWork, "; ")))
+
 	case len(scan.Open) > 0:
 		// Open work blocks once per durable plan-line marker. The session
 		// signature protects direct callers that supply unmarked scan facts;
@@ -1033,6 +1413,14 @@ func (s *Store) decide(verdict *Verdict, scan ScanResult, session *sessionState,
 		// The scanner reports nothing at all: the goal has the floor.
 		switch status {
 		case "ok":
+			if work != nil && len(work.Claimable) > 0 && waits.hasWorkInFlight() {
+				detail := "WORK IN FLIGHT: a registered wait is joined to the claimed goal"
+				if work != nil && len(work.Claimable) > 0 {
+					detail += "; claimable shared backlog also includes " + strings.Join(work.Claimable, ", ")
+				}
+				display = append(display, detail)
+				break
+			}
 			if work != nil && work.HasDelegateJobInFlight() && len(work.Claimable) > 0 {
 				display = append(display, "WORK IN FLIGHT: a non-terminal delegate job is joined to a live process; claimable shared backlog also includes "+strings.Join(work.Claimable, ", "))
 				break
@@ -1095,6 +1483,7 @@ func (s *Store) decide(verdict *Verdict, scan ScanResult, session *sessionState,
 	if status == "degraded" && !verdict.ShouldBlock && len(scan.Busy) == 0 && (len(scan.Open) > 0 || len(scan.WaitingOnHuman) > 0) {
 		display = append(display, "goal ledger degraded: "+statusLine)
 	}
+	display = append(display, waits.lines()...)
 	verdict.Display = strings.Join(display, "\n")
 }
 
