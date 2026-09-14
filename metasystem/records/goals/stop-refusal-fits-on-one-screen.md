@@ -1,6 +1,6 @@
 # stop-refusal-fits-on-one-screen
 
-- State: claimed
+- State: done
 - Priority: 1
 - Sequence: 29
 - Risk: severity=2 novelty=1 exposure=3 accumulation=1 basis="severity 2: a refusal nobody can read is a refusal nobody acts on, and the one actionable line drowns; novelty 1: the same bound the Telegram ask got last night, applied to the hook's refusal text; exposure 3: every seat on every machine ends every turn through this text; accumulation 1: each refusal is the same wall, it does not compound"
@@ -8,16 +8,15 @@
 - Intent: Wido, 2026-09-06: 'the stop message is still insanely long.' The Stop hook's refusal text has no bound: on m1's first Stop after c1525b90a (the refusal carries the turn verdict) it printed about two hundred run records from August ('no continuation recorded') and one actionable line (an unwatched job) in a single refusal. The Telegram ask got its bound last night (renderQuestion, 1600 runes, the token first, the rest trimmed with a notice); the hook's refusal and its systemMessage get the same discipline. DONE means: the refusal reads, in order, the verdict in one line, the actionable items (each with the command that clears it), then at most a few lines of everything else summarized by class and count ('244 runs without a recorded continuation, oldest 2026-08-16; full list: <path>'), the whole thing bounded to roughly a screen; the full unbounded text is written to a file under the checkout's supervision evidence and the refusal names it. Not a change to what is judged - only to what is printed.
 - Origin: main
 - Next step: Verification complete on the landing tree g12/land3 (candidate tree 3d2eb764): four beds green with a read-only candidate engine inside the tree, nine packages green in a clean environment, go-gate --fast green, Stop-decision surface zero differences from the tip. The engine section run is refused with 'active coordinator does not own the claimed goal reservation': the checkout lease carries claimEpoch 5 while this goal's StopCapability carries ClaimEpoch 1, so the equality the proof gate requires fails. Land next.
+- Concluded: Landed in six commits: 21eb9c36 the one-line human message with the detail in an identity-bound report; b64a485e the task named by its goal slug rather than a fragment of its prose intent; b643f423 the always-loaded instruction to read the report on every Stop, with the word budget raised to 1500 on Wido's ruling; 548d15f8 two lines carrying what just completed and what is in flight, with the report id shortened from 97 hex characters to the shortest reserved prefix; 094f836b the removal of 549 lines of conformance snapshot and locator probe that Wido never asked for; d811b04f the blocked line leading with 'Do not stop.' while the allowed line addresses the human. DONE as the goal set it, and better: the refusal is two lines rather than a screen, the full text is a report the line names, and nothing about what is judged changed - the Stop-decision surface, 155 assertions across ten Go test files and three beds, is identical to trunk's throughout. What this goal does NOT deliver, established by a design critique from the runtimes and recorded on the page: on an allowed Stop the message is shown to the human and no further model inference is scheduled on Claude or current Codex, and Devin has no report-bearing mapping, so no Stop text can compel a seat that has been allowed to stop. The only carrier that reaches a model there is the standing instruction in AGENTS.md. The guarantee that a seat never stops without reason belongs to coordinator-wakes-on-events-not-polls with seat-work-continues-past-the-runtime-stop-cap, which Wido joined into one program on 2026-09-14. Its first slice, publication-owners-hint-the-waiter, is approved and unclaimed and m1c takes it next.
 - OpenedAt: 2026-09-06T14:30:14Z
-- Revision: 94
+- Revision: 95
 - Pinned: m1c
 - Budget: elapsedLimit=3d attemptLimit=40 reservedJobMinutesLimit=1200 activeJobLimit=2 reviewRoundLimit=3
 - BudgetExceptions: 1
 - Approved: by=human:Wido at=2026-09-13T20:47:24Z revision=91 opid=7TNQNE8407AJD6R8Y2WYV7Y2F8-m1e-c6925449 authority=proven digest=a1479b3db51f4e5d9d25d25b0b8ff3f369d7785ab1f96c68c247104bb10223ea
 - Sliced: machine=m1 lineage=main-1788940932-18533-7fa6c2 revision=5 at=2026-09-09T09:11:17Z
 - AcceptedRisk: finding=OSR-08 chain=one-screen-crit3-20260909 by=Wido opid=4TDZJ12K9WGK59WRRT365G9ASH-m1-c6925449
-- Claimed: machine=m1c lineage=main-1789191340-90689-8975a9 at=2026-09-13T20:47:24Z revision=91 accountingRevision=91 episodeAt=2026-09-13T15:38:47Z episodeRevision=85
-- StopCapability: generation=91 revision=91 machine=m1c claimEpoch=1 fenceEpoch=0
 
 History:
 - 2026-09-06T14:30:14Z AE3TVHYT4WVWE623BDZZK3XWBK-m1-a4f8999f open actor=m1+main-1788594343-3833-fb64b9 targets=stop-refusal-fits-on-one-screen
@@ -114,4 +113,5 @@ History:
 - 2026-09-13T20:47:44Z YHKPS9CQ390FMWNR8X5SDHYN35-m1c-69c9e454 edit actor=m1c+main-1789191340-90689-8975a9 targets=stop-refusal-fits-on-one-screen
 - 2026-09-14T01:10:57Z N4ZYEEC6SB0X1JNZBCVR748661-m1c-69c9e454 edit actor=m1c+main-1789191340-90689-8975a9 targets=stop-refusal-fits-on-one-screen
 - 2026-09-14T06:13:25Z ZRHWS9A9C4V59FPD3JJD50YX0E-m1b-30a7e141 done actor=human:Wido targets=actionable-metrics,chain-landing-carries-the-reviewed-diff,dispatch-bases-chains-on-the-remote-tip,failed-job-attention,fixture-repo-copies-exclude-the-artifacts-store,fixture-stewards-outlive-their-suite,fixture-waits-name-their-producer,goal-abandoned-with-a-reason,human-authority-surface-runs-its-cmd-tests,human-goal-verbs-forgiving,human-wait-does-not-consume-goal-budget,job-record-birth-token,lease-sweep-death-evidence,live-job-on-a-done-goal-unnoticed,machine-concurrency-governor,metasystem-stop-escalation-proofs,metasystem-stop-fleet-form,new-elapsed-budgets-use-explicit-hours,repo-root-paths-ride-agent-commits-unjudged,run-scoped-build-caches-have-a-janitor,skipped-test-fails-its-group-on-the-other-os,stop-batch-strands-a-resumable-goal,stop-refusal-fits-on-one-screen,token-spend-fence,watch-verb,watcher-repair-request-never-names-current,winddown-census-handoff-leak reason=priority-order from=1:30 to=1:29
-Integrity: sha256=44da7e976db39dddd8d9cc42dc2e0809f78d3c8ecd1a10e65f78710d30f9e9d8
+- 2026-09-14T13:02:22Z 8DA764BVF83NCGGF9ZK6Y2ANA3-m1c-69c9e454 done actor=m1c+main-1789191340-90689-8975a9 targets=human-wait-does-not-consume-goal-budget,metasystem-stop-escalation-proofs,metasystem-stop-fleet-form,new-elapsed-budgets-use-explicit-hours,stop-refusal-fits-on-one-screen
+Integrity: sha256=da661bdaaaf85b796b56a90f286112c460a66146a0a97b77dfa2c40c34c90290
