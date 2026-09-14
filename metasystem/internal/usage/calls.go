@@ -121,6 +121,11 @@ func LatestCall(stateRoot, runtime, session string, opts ReadOptions) (Reading, 
 		reading.Reason = reason
 		return reading, nil
 	}
+	maintenance, err := lockCallMaintenance(stateRoot, false, opts.NonBlocking)
+	if err != nil {
+		return Reading{}, err
+	}
+	defer unlockCallFile(maintenance)
 
 	if runtime == "claude" {
 		return readUnderCursor(stateRoot, runtime, session, path, func(line []byte, ordinal int64) (*CallSample, *Marker, bool) {
@@ -130,7 +135,7 @@ func LatestCall(stateRoot, runtime, session string, opts ReadOptions) (Reading, 
 
 	tokenCounts := 0
 	usageRecords := 0
-	reading, err := readUnderCursor(stateRoot, runtime, session, path, func(line []byte, _ int64) (*CallSample, *Marker, bool) {
+	reading, err = readUnderCursor(stateRoot, runtime, session, path, func(line []byte, _ int64) (*CallSample, *Marker, bool) {
 		raw := decodeCallLine(line)
 		kind, tokenCount := codexRecordKind(raw)
 		if kind == "token_usage_record" {

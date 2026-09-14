@@ -48,7 +48,10 @@ type contextCallExport struct {
 	At           time.Time `json:"at"`
 }
 
-var lookupContextReportRuntime = runtimes.Lookup
+var (
+	lookupContextReportRuntime = runtimes.Lookup
+	readContextCallEvidence    = usage.ReadCallEvidence
+)
 
 const contextReportCoverage = "This cohort covers distinct recorded per-call samples. Runtimes with per-invocation usage, including Devin and ACP outcomes, are outside it. Calls the harness did not record are outside it. Claude fallback identity uses a physical line and timestamp. Compaction sources are Claude compact_boundary and Codex compacted. A reset is a later registered session for the same runtime and process identity. This report does not prove an independent inventory of all provider calls."
 
@@ -67,44 +70,14 @@ func WriteContextReport(stateRoot string, weekStart, now time.Time) (
 	callsPath = filepath.Join(directory, "calls.jsonl")
 	reportPath = filepath.Join(directory, "report.md")
 
-	registrations, _, err := usage.CallRegistrations(stateRoot)
+	evidence, err := readContextCallEvidence(stateRoot)
 	if err != nil {
 		return callsPath, reportPath, ContextReport{}, err
 	}
-	sessions, err := usage.CallSessions(stateRoot)
-	if err != nil {
-		return callsPath, reportPath, ContextReport{}, err
-	}
-	var samples []usage.CallSample
-	var markers []usage.Marker
-	for _, session := range sessions {
-		calls, sessionMarkers, readErr := usage.Calls(stateRoot, session.Runtime, session.Session, time.Time{})
-		if readErr != nil {
-			return callsPath, reportPath, ContextReport{}, fmt.Errorf(
-				"cannot read context session %s/%s cursor=%s samples=%s: %w",
-				session.Runtime, session.Session,
-				usage.CursorPath(stateRoot, session.Runtime, session.Session),
-				usage.SamplesPath(stateRoot, session.Runtime, session.Session), readErr)
-		}
-		for _, sample := range calls {
-			if sample.Runtime != session.Runtime || sample.Session != session.Session {
-				return callsPath, reportPath, ContextReport{}, fmt.Errorf(
-					"context sample identity %s/%s does not match discovered session %s/%s in %s",
-					sample.Runtime, sample.Session, session.Runtime, session.Session,
-					usage.SamplesPath(stateRoot, session.Runtime, session.Session))
-			}
-		}
-		for _, marker := range sessionMarkers {
-			if marker.Runtime != session.Runtime || marker.Session != session.Session {
-				return callsPath, reportPath, ContextReport{}, fmt.Errorf(
-					"context marker identity %s/%s does not match discovered session %s/%s in %s",
-					marker.Runtime, marker.Session, session.Runtime, session.Session,
-					usage.SamplesPath(stateRoot, session.Runtime, session.Session))
-			}
-		}
-		samples = append(samples, calls...)
-		markers = append(markers, sessionMarkers...)
-	}
+	sessions := evidence.Sessions
+	registrations := evidence.Registrations
+	samples := evidence.Samples
+	markers := evidence.Markers
 
 	normalizedSamples, normalizedMarkers, duplicateSamples, duplicateMarkers, err :=
 		normalizeContextCalls(samples, markers, weekStart, weekEnd)

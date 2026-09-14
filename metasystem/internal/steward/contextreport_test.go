@@ -103,6 +103,42 @@ func TestContextReportComputesTheWeek(t *testing.T) {
 	}
 }
 
+func TestContextReportUsesOneEvidenceSnapshot(t *testing.T) {
+	weekStart, now := contextReportTestWeek()
+	stateRoot := t.TempDir()
+	evidence := usage.CallEvidence{
+		Sessions: []usage.CallSession{{Runtime: "claude", Session: "snapshot"}},
+		Registrations: []usage.CallRegistration{{
+			Runtime: "claude", Session: "snapshot", PID: 101, PIDStartedAt: 1001,
+			FirstSeen: weekStart.Add(time.Minute),
+		}},
+		Samples: []usage.CallSample{{
+			Runtime: "claude", Session: "snapshot", InvocationID: "only",
+			PromptTokens: 100000, InputTokens: 100000, At: weekStart.Add(time.Hour),
+			Ordinal: 1, Source: "claude-transcript",
+		}},
+	}
+
+	previous := readContextCallEvidence
+	reads := 0
+	readContextCallEvidence = func(root string) (usage.CallEvidence, error) {
+		reads++
+		if root != stateRoot {
+			t.Fatalf("snapshot root = %s, want %s", root, stateRoot)
+		}
+		return evidence, nil
+	}
+	t.Cleanup(func() { readContextCallEvidence = previous })
+
+	_, _, report, err := WriteContextReport(stateRoot, weekStart, now)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if reads != 1 || !report.Pass || report.Samples != 1 || report.Max != 100000 {
+		t.Fatalf("snapshot reads=%d report=%+v", reads, report)
+	}
+}
+
 func TestContextReportPropagatesRecoveryError(t *testing.T) {
 	for _, scenario := range []string{"missing cursor", "malformed cursor", "missing samples", "short samples"} {
 		t.Run(scenario, func(t *testing.T) {

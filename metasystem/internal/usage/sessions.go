@@ -36,6 +36,15 @@ func CallSessions(stateRoot string) ([]CallSession, error) {
 	if !filepath.IsAbs(stateRoot) {
 		return nil, fmt.Errorf("state root must be absolute: %s", stateRoot)
 	}
+	maintenance, err := lockCallMaintenance(stateRoot, false, false)
+	if err != nil {
+		return nil, err
+	}
+	defer unlockCallFile(maintenance)
+	return callSessionsUnderMaintenance(stateRoot)
+}
+
+func callSessionsUnderMaintenance(stateRoot string) ([]CallSession, error) {
 	cursorDir := filepath.Join(stateRoot, "artifacts", "agents", "context", "cursors")
 	samplesDir := filepath.Join(stateRoot, "artifacts", "agents", "context", "samples")
 	stems := map[string]bool{}
@@ -186,6 +195,15 @@ func CallRegistrations(stateRoot string) (rows []CallRegistration, present bool,
 	if !filepath.IsAbs(stateRoot) {
 		return nil, false, fmt.Errorf("state root must be absolute: %s", stateRoot)
 	}
+	maintenance, err := lockCallMaintenance(stateRoot, false, false)
+	if err != nil {
+		return nil, false, err
+	}
+	defer unlockCallFile(maintenance)
+	return callRegistrationsUnderMaintenance(stateRoot)
+}
+
+func callRegistrationsUnderMaintenance(stateRoot string) (rows []CallRegistration, present bool, err error) {
 	path := filepath.Join(stateRoot, "artifacts", "agents", "context", "sessions.jsonl")
 	lock, err := lockCallFile(path + ".lock")
 	if err != nil {

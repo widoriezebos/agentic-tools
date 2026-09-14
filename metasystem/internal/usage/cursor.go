@@ -220,6 +220,15 @@ func Calls(stateRoot, runtime, session string, since time.Time) ([]CallSample, [
 	if err := validateCallLocation(stateRoot, runtime); err != nil {
 		return nil, nil, err
 	}
+	maintenance, err := lockCallMaintenance(stateRoot, false, false)
+	if err != nil {
+		return nil, nil, err
+	}
+	defer unlockCallFile(maintenance)
+	return callsUnderMaintenance(stateRoot, runtime, session, since)
+}
+
+func callsUnderMaintenance(stateRoot, runtime, session string, since time.Time) ([]CallSample, []Marker, error) {
 	lock, err := lockCallFile(CursorPath(stateRoot, runtime, session) + ".lock")
 	if err != nil {
 		return nil, nil, err
@@ -294,6 +303,15 @@ func registerSession(stateRoot, runtime, session string, pid, pidStartedAt int64
 	if err := validateCallLocation(stateRoot, runtime); err != nil {
 		return err
 	}
+	maintenance, err := lockCallMaintenance(stateRoot, false, nonBlocking)
+	if err != nil {
+		return err
+	}
+	defer unlockCallFile(maintenance)
+	return registerSessionUnderMaintenance(stateRoot, runtime, session, pid, pidStartedAt, nonBlocking)
+}
+
+func registerSessionUnderMaintenance(stateRoot, runtime, session string, pid, pidStartedAt int64, nonBlocking bool) error {
 	path := filepath.Join(stateRoot, "artifacts", "agents", "context", "sessions.jsonl")
 	lockPath := path + ".lock"
 	var lock *os.File
