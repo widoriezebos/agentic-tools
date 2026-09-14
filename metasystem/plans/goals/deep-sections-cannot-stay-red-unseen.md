@@ -2,14 +2,14 @@
 
 - State: approved
 - Priority: 1
-- Sequence: 56
+- Sequence: 19
 - Risk: severity=3 novelty=2 exposure=3 accumulation=3 basis="severity 3: a red that only a deep section sees can sit on trunk for days and then fail an unrelated landing; novelty 2: needs a rule for when deep groups run outside a deep landing and where the result is seen; exposure 3: every deep-only section; accumulation 3: reds pile up unseen and each blocks the next deep landing"
 - Tier: 2
 - Intent: A red in a section that only a deep group runs must surface within a bounded time, not at the next unrelated deep landing. On 2026-09-14 m1c found witness-gate-fixtures red on trunk since 2026-09-09 (goal witness-bed-fakes-the-proof-engine-build). The section is only in proof-and-landing's deep group, standard landings never ran it, and a deep cadence run exists (internal/testpolicy/select.go:158-161, ruling R-3) yet did not surface it. DONE: the reason the cadence run missed it is recorded; every deep-only section runs against the trunk tip on a declared cadence or trigger; its result is recorded where seats and the next landing see it; a red names or opens a goal; and a fixture proves a planted deep-only red surfaces without a deep landing.
 - Origin: human
 - Next step: Find why the deep cadence run did not surface the witness-gate red between 2026-09-09 and 2026-09-14, then design where deep-only results are run and seen.
 - OpenedAt: 2026-09-14T21:10:18Z
-- Revision: 3
+- Revision: 4
 - Budget: elapsedLimit=4h attemptLimit=6 reservedJobMinutesLimit=720 activeJobLimit=1 reviewRoundLimit=2
 - BudgetExceptions: 0
 - Approved: by=human:Wido at=2026-09-14T21:10:24Z revision=2 opid=D4QTYGNFY8CS198KS87BTM9WZM-m1e-c6925449 authority=proven digest=6e2f938a4cb7e2bdf8544531232f9784c55b3c9ebf62c69c44c647b053138e21
@@ -18,4 +18,5 @@ History:
 - 2026-09-14T21:10:18Z A1BK3NVF3JMVA698PHBQ8C9Z2H-m1e-c6925449 open actor=human:Wido targets=deep-sections-cannot-stay-red-unseen reason=TierOverride: derived=3 set=2 why=Opened by m1c in Wido's name under R-110-m1e: the structural gap behind witness-bed-fakes-the-proof-engine-build.
 - 2026-09-14T21:10:24Z D4QTYGNFY8CS198KS87BTM9WZM-m1e-c6925449 approve actor=human:Wido targets=deep-sections-cannot-stay-red-unseen
 - 2026-09-14T21:10:30Z AW53SCDE60WHKS4296QG0SV8XS-m1e-c6925449 set-priority actor=human:Wido targets=deep-sections-cannot-stay-red-unseen reason=priority-order subject=deep-sections-cannot-stay-red-unseen from=unranked to=1:56 requested-sequence=append
-Integrity: sha256=b12a83233fda89c8fa6a34894f3075649976ffa199fbe6f5bd08d56298d93f65
+- 2026-09-14T21:12:07Z BW96CKKNY2GA3D47DD1XJG51EB-m1e-c6925449 set-priority actor=human:Wido targets=actionable-metrics,chain-landing-carries-the-reviewed-diff,cross-cutting-change-inventories-its-readers,deep-sections-cannot-stay-red-unseen,degraded-stop-forms-have-one-source,dispatch-bases-chains-on-the-remote-tip,failed-job-attention,failures-show-observed-against-expected,fixture-repo-copies-exclude-the-artifacts-store,fixture-stewards-outlive-their-suite,fixture-waits-name-their-producer,human-authority-surface-runs-its-cmd-tests,human-goal-verbs-forgiving,human-wait-does-not-consume-goal-budget,job-record-birth-token,lease-sweep-death-evidence,live-job-on-a-done-goal-unnoticed,machine-concurrency-governor,member-size-gate,metasystem-stop-escalation-proofs,metasystem-stop-fleet-form,new-elapsed-budgets-use-explicit-hours,pipelines-never-lose-a-truncated-producer,repo-root-paths-ride-agent-commits-unjudged,run-scoped-build-caches-have-a-janitor,skipped-test-fails-its-group-on-the-other-os,stop-batch-strands-a-resumable-goal,stop-capability-follows-the-lease-epoch,stop-decision-surface-is-a-gate,stop-response-carries-a-structured-report-reference,testing-surfaces-declare-their-mirror,tests-never-wait-on-wall-time,token-spend-fence,trunk-versus-candidate-is-a-verification-step,watch-verb,watcher-repair-request-never-names-current,winddown-census-handoff-leak,witness-bed-fakes-the-proof-engine-build reason=priority-order subject=deep-sections-cannot-stay-red-unseen from=1:56 to=1:19 requested-sequence=19
+Integrity: sha256=d986fb35e8c08ccd1c78b182729a7becbb21792da372281ec5c305f94a0bc67d
