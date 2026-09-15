@@ -4653,6 +4653,56 @@ run_fixture_arm "dispatcher final shutdown" - \
 agent_supervision_repo=
 fi
 
+host_prompt_opens_with_preamble() { # prompt, header-break line number, preamble
+  local prompt=$1 header_break=$2 preamble=$3 check_dir header_bytes preamble_bytes compare_status
+  check_dir=$(mktemp -d "${TMPDIR:-/tmp}/host-preamble-check.XXXXXX") || {
+    echo "host_prompt_opens_with_preamble: could not create temporary directory" >&2
+    return 2
+  }
+  # Materialized inputs let each reader consume a complete file, so a large
+  # prompt remainder cannot turn a matching prefix into a broken-pipe failure.
+  if ! head -n "$header_break" "$prompt" >"$check_dir/header"; then
+    echo "host_prompt_opens_with_preamble: could not read the prompt header" >&2
+    rm -rf -- "$check_dir" \
+      || echo "host_prompt_opens_with_preamble: could not remove temporary directory" >&2
+    return 2
+  fi
+  if ! header_bytes=$(wc -c <"$check_dir/header"); then
+    echo "host_prompt_opens_with_preamble: could not count the prompt header bytes" >&2
+    rm -rf -- "$check_dir" \
+      || echo "host_prompt_opens_with_preamble: could not remove temporary directory" >&2
+    return 2
+  fi
+  if ! preamble_bytes=$(wc -c <"$preamble"); then
+    echo "host_prompt_opens_with_preamble: could not count the preamble bytes" >&2
+    rm -rf -- "$check_dir" \
+      || echo "host_prompt_opens_with_preamble: could not remove temporary directory" >&2
+    return 2
+  fi
+  if ! dd if="$prompt" of="$check_dir/prefix" bs=1 skip="$header_bytes" count="$preamble_bytes" 2>/dev/null; then
+    echo "host_prompt_opens_with_preamble: could not read the prompt preamble bytes" >&2
+    rm -rf -- "$check_dir" \
+      || echo "host_prompt_opens_with_preamble: could not remove temporary directory" >&2
+    return 2
+  fi
+  if cmp -s "$check_dir/prefix" "$preamble"; then
+    compare_status=0
+  else
+    compare_status=$?
+  fi
+  if (( compare_status > 1 )); then
+    echo "host_prompt_opens_with_preamble: could not compare the prompt and preamble bytes" >&2
+    rm -rf -- "$check_dir" \
+      || echo "host_prompt_opens_with_preamble: could not remove temporary directory" >&2
+    return 2
+  fi
+  if ! rm -rf -- "$check_dir"; then
+    echo "host_prompt_opens_with_preamble: could not remove temporary directory" >&2
+    return 2
+  fi
+  return "$compare_status"
+}
+
 if [[ "$fixture_scenario" == mission-runner ]]; then
 # The minimal mission runner is exercised only through its fake host. The
 # repository, origin, supervision set, signed contracts, frozen gate, turn
@@ -4926,9 +4976,56 @@ cycle_prompt="$cycle_turn/prompt.md"
 cycle_header_end=$(grep -n -m1 '^$' "$cycle_prompt" | cut -d: -f1)
 [[ -n "$cycle_header_end" ]] || { echo "host-turn prompt has no header break" >&2; exit 1; }
 cycle_preamble="$runner_repo/scripts/agents/roles/orchestrator.md"
-tail -c +"$(( $(head -n "$cycle_header_end" "$cycle_prompt" | wc -c) + 1 ))" "$cycle_prompt" \
-  | head -c "$(( $(wc -c <"$cycle_preamble") ))" | cmp -s - "$cycle_preamble" \
-  || { echo "host-turn prompt does not open with the orchestrator preamble" >&2; exit 1; }
+synthetic_header=$'Fixture: host prompt preamble\n\n'
+synthetic_large_prompt="$agent_fixture/host-preamble-large-remainder.prompt"
+printf '%s' "$synthetic_header" >"$synthetic_large_prompt"
+cat "$cycle_preamble" >>"$synthetic_large_prompt"
+dd if=/dev/zero bs=1024 count=70 >>"$synthetic_large_prompt" 2>/dev/null
+if host_prompt_opens_with_preamble "$synthetic_large_prompt" 2 "$cycle_preamble"; then
+  synthetic_status=0
+else
+  synthetic_status=$?
+fi
+[[ $synthetic_status -eq 0 ]] \
+  || { echo "large-remainder host prompt preamble case returned $synthetic_status instead of 0" >&2; exit 1; }
+
+synthetic_changed_prompt="$agent_fixture/host-preamble-changed-byte.prompt"
+printf '%s\0' "$synthetic_header" >"$synthetic_changed_prompt"
+dd if="$cycle_preamble" bs=1 skip=1 >>"$synthetic_changed_prompt" 2>/dev/null
+dd if=/dev/zero bs=1024 count=70 >>"$synthetic_changed_prompt" 2>/dev/null
+if host_prompt_opens_with_preamble "$synthetic_changed_prompt" 2 "$cycle_preamble"; then
+  synthetic_status=0
+else
+  synthetic_status=$?
+fi
+[[ $synthetic_status -eq 1 ]] \
+  || { echo "changed-byte host prompt preamble case returned $synthetic_status instead of 1" >&2; exit 1; }
+
+synthetic_short_prompt="$agent_fixture/host-preamble-truncated.prompt"
+preamble_bytes=$(wc -c <"$cycle_preamble")
+(( preamble_bytes > 1 )) \
+  || { echo "truncated host prompt preamble case needs a multi-byte preamble" >&2; exit 1; }
+printf '%s' "$synthetic_header" >"$synthetic_short_prompt"
+dd if="$cycle_preamble" of="$synthetic_short_prompt.part" bs=1 count="$((preamble_bytes / 2))" 2>/dev/null
+cat "$synthetic_short_prompt.part" >>"$synthetic_short_prompt"
+if host_prompt_opens_with_preamble "$synthetic_short_prompt" 2 "$cycle_preamble"; then
+  synthetic_status=0
+else
+  synthetic_status=$?
+fi
+[[ $synthetic_status -eq 1 ]] \
+  || { echo "truncated host prompt preamble case returned $synthetic_status instead of 1" >&2; exit 1; }
+
+if cycle_preamble_cause=$(host_prompt_opens_with_preamble "$cycle_prompt" "$cycle_header_end" "$cycle_preamble" 2>&1); then
+  cycle_preamble_status=0
+else
+  cycle_preamble_status=$?
+fi
+case "$cycle_preamble_status" in
+  0) ;;
+  1) echo "host-turn prompt does not open with the orchestrator preamble" >&2; exit 1 ;;
+  2) echo "host-turn prompt preamble check could not run: $cycle_preamble_cause" >&2; exit 1 ;;
+esac
 cycle_prompt_text=$(cat "$cycle_prompt")
 cycle_prev_index=0
 for cycle_heading in '## Mission Contract' '## Ledger Tail' '## Open Asks' \
