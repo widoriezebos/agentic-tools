@@ -60,8 +60,11 @@ recovery route, not evidence that the host displayed or enforced the notice.
 ## Registered waits at turn end
 
 The gate reads version-2 pending rows only from the resolved installation
-state root's `artifacts/agents/waiters` directory. A row affects the verdict
-only while its owner session, main lineage, lease epoch, process birth,
+state root's `artifacts/agents/waiters` directory. The live Stop session is the
+authenticated session: the current lease and its one matching main
+announcement prove the holder and lineage without deriving a session from the
+announcement. A row affects the verdict only while both row sessions equal the
+live Stop session and its main lineage, lease epoch, exact process birth,
 deadline, boot clock, observation freshness, selector, source incarnation and
 claimed goal all still match. A failed check is the same as no row. Unreadable
 gate inputs, a closed checkout fence and attended-human stop authority keep
@@ -73,6 +76,12 @@ saved open-work signature still matches, and resets the idle-backlog refusal
 counter exactly as a live delegate job does. An unrelated job or run remains
 unwatched.
 
+A human-launched run has no main coordinates. Its separate watched signal is
+accepted only from the pending human-owner row for that exact run incarnation
+when the waiter remains alive at its platform-exact recorded birth. This
+signal prevents an unwatched-run warning; it grants no registered-wait
+allowance.
+
 A valid human-act wait is narrower. It suppresses matching-signature open work
 only while the current claimed goal is also reported as waiting on a human. It
 never exempts idle backlog. Channel answer waits use this rule. New open work
@@ -82,7 +91,9 @@ work likewise clears the pending row with exit 6 before the seat takes its
 claim turn. Backlog already present at registration does not end the wait.
 
 Every effective row contributes a visible `WAITING` line naming its target and
-deadline. `TestPendingWaitTurnVerdict`, `TestPendingWaitIdleBacklog` and
+deadline. A Stop verdict obtains these lines only from the gate; raw recovery
+orientation remains available to session start and goal next without deciding
+the Stop. `TestPendingWaitTurnVerdict`, `TestPendingWaitIdleBacklog` and
 `TestWaitDeliveryContract` are the executable conformance boundary. A future
 adapter must pass all three; a native notification may only accelerate the
 next source read.

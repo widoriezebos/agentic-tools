@@ -721,27 +721,6 @@ func runReportTurnVerdict(args []string) int {
 		fmt.Fprintln(os.Stderr, err)
 		return 1
 	}
-	if stateRoot != "" {
-		waiting, waitErr := report.CurrentWaitingLines(stateRoot)
-		if waitErr != nil {
-			waiting = []string{"durable wait recovery rows could not be read: " + waitErr.Error()}
-		}
-		if len(waiting) > 0 {
-			waitingPrefix := strings.Join(waiting, "\n")
-			prefix := waitingPrefix
-			if verdict.Display != "" {
-				prefix += "\n" + verdict.Display
-			}
-			verdict.Display = prefix
-			if verdict.Facts != nil {
-				full := waitingPrefix
-				if verdict.Facts.FullDisplay != "" {
-					full += "\n" + verdict.Facts.FullDisplay
-				}
-				verdict.Facts.FullDisplay = full
-			}
-		}
-	}
 	if verdict.Facts != nil {
 		verdict.Facts.Verdict = verdict
 	}

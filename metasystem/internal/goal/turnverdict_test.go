@@ -1,6 +1,7 @@
 package goal
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
 	"os"
@@ -27,11 +28,12 @@ func SessionStopLifecycleTokenForTest(announcement SessionStopAnnouncementForTes
 func openItem(detail string) Item { return Item{Kind: "plan", Id: detail, Detail: detail} }
 
 const (
-	pendingWaitGoalID  = "claimed-wait-goal"
-	pendingWaitMainID  = "main-wait"
-	pendingWaitLineage = "lineage-wait"
-	pendingWaitSession = "session-wait"
-	pendingWaitBootID  = "fixture-boot"
+	pendingWaitGoalID              = "claimed-wait-goal"
+	pendingWaitMainID              = "main-wait"
+	pendingWaitLineage             = "lineage-wait"
+	pendingWaitSession             = "session-wait"
+	pendingWaitAnnouncementSession = "session-placeholder"
+	pendingWaitBootID              = "fixture-boot"
 )
 
 type pendingWaitVerdictFixture struct {
@@ -40,6 +42,23 @@ type pendingWaitVerdictFixture struct {
 	row         metarun.Waiter
 	scan        ScanResult
 	bootElapsed time.Duration
+}
+
+func isolatePendingWaitFixtureGit(t *testing.T) {
+	t.Helper()
+	for _, name := range []string{"GIT_OBJECT_DIRECTORY", "GIT_ALTERNATE_OBJECT_DIRECTORIES"} {
+		value, present := os.LookupEnv(name)
+		if err := os.Unsetenv(name); err != nil {
+			t.Fatal(err)
+		}
+		t.Cleanup(func() {
+			if present {
+				_ = os.Setenv(name, value)
+			} else {
+				_ = os.Unsetenv(name)
+			}
+		})
+	}
 }
 
 func writePendingWaitJSON(t *testing.T, path string, value any) {
@@ -73,6 +92,7 @@ func pendingWaitClaim(landing bool) *GoalFile {
 
 func newPendingWaitVerdictFixture(t *testing.T, kind string, readyBacklog bool) *pendingWaitVerdictFixture {
 	t.Helper()
+	isolatePendingWaitFixtureGit(t)
 	landing := kind == "landing"
 	files := map[string]*GoalFile{pendingWaitGoalID: pendingWaitClaim(landing)}
 	if readyBacklog {
@@ -91,7 +111,8 @@ func newPendingWaitVerdictFixture(t *testing.T, kind string, readyBacklog bool) 
 		PidStartTicks: 410, BootID: pendingWaitBootID, ClaimEpoch: 7,
 	})
 	writePendingWaitJSON(t, filepath.Join(root, "artifacts", "agents", "mains", pendingWaitSession+"-41.json"), sessionStopAnnouncement{
-		SessionId: pendingWaitSession, MainId: pendingWaitMainID, Pid: 41, PidStartedAt: 100,
+		SessionId: pendingWaitAnnouncementSession, RuntimeSession: pendingWaitSession,
+		MainId: pendingWaitMainID, Pid: 41, PidStartedAt: 100,
 		PidStartTicks: 410, BootID: pendingWaitBootID, Runtime: "fake", InstanceTag: "fixture-wait-session",
 		CommandHash: strings.Repeat("a", 64), AnnouncedAt: now.Add(-time.Minute).Format(time.RFC3339),
 		Pgid: 41, OwnerLineage: pendingWaitLineage,
@@ -279,10 +300,6 @@ func TestPendingWaitTurnVerdict(t *testing.T) {
 		})
 		liveScan := liveDelegate.scan
 		liveScan.Busy = []Item{{Kind: "job", Id: liveDelegate.row.TargetID, Detail: "delegate job is running"}}
-		liveScan.Jobs = []JobFact{{
-			Id: liveDelegate.row.TargetID, MainId: pendingWaitMainID, StartedAt: liveDelegate.row.Target.StartedAt,
-			Status: "running", WaiterLive: true,
-		}}
 		liveVerdict := liveDelegate.verdict(t, liveScan)
 		if liveVerdict.ShouldBlock || liveVerdict.BlockSource != nil {
 			t.Fatalf("live delegate control blocked: %+v", liveVerdict)
@@ -292,6 +309,7 @@ func TestPendingWaitTurnVerdict(t *testing.T) {
 			t.Run(kind, func(t *testing.T) {
 				fixture := newPendingWaitVerdictFixture(t, kind, false)
 				scan := fixture.scan
+				scan.Busy = append([]Item{}, liveScan.Busy...)
 				switch kind {
 				case "job":
 					scan.Jobs = []JobFact{{
@@ -314,12 +332,53 @@ func TestPendingWaitTurnVerdict(t *testing.T) {
 					}}
 				}
 				verdict := fixture.verdict(t, scan)
+				withoutWaitLine := func(display string) string {
+					var lines []string
+					for _, line := range strings.Split(display, "\n") {
+						if !strings.HasPrefix(line, "WAITING: registered wait") && !strings.HasPrefix(line, "Full turn verdict:") {
+							lines = append(lines, line)
+						}
+					}
+					return strings.Join(lines, "\n")
+				}
 				if verdict.ShouldBlock != liveVerdict.ShouldBlock || verdict.BlockSource != liveVerdict.BlockSource ||
+					verdict.IdleRefusal != liveVerdict.IdleRefusal || verdict.CountSpent != liveVerdict.CountSpent ||
+					withoutWaitLine(verdict.Display) != withoutWaitLine(liveVerdict.Display) ||
 					!strings.Contains(verdict.Display, "WAITING: registered wait") ||
 					!strings.Contains(verdict.Display, fixture.row.Deadline) || strings.Contains(verdict.Display, "unwatched") {
 					t.Fatalf("valid %s wait did not carry work in flight: %+v", kind, verdict)
 				}
 			})
+		}
+	})
+
+	t.Run("the live Stop session must match both row sessions", func(t *testing.T) {
+		fixture := newPendingWaitVerdictFixture(t, "job", false)
+		fixture.row.Session = "another-logical-session"
+		fixture.row.RuntimeSession = "another-logical-session"
+		fixture.writeRow(t)
+		scan := fixture.scan
+		scan.Jobs = []JobFact{{
+			Id: fixture.row.TargetID, MainId: pendingWaitMainID, StartedAt: fixture.row.Target.StartedAt, Status: "running",
+		}}
+		verdict := fixture.verdict(t, scan)
+		if !verdict.ShouldBlock || verdict.BlockSource == nil || *verdict.BlockSource != "unwatched-work" ||
+			strings.Contains(verdict.Display, "WAITING: registered wait") {
+			t.Fatalf("another logical session received the wait allowance: %+v", verdict)
+		}
+	})
+
+	t.Run("a lineage filled after registration accepts the main default only", func(t *testing.T) {
+		fixture := newPendingWaitVerdictFixture(t, "job", false)
+		fixture.row.OwnerLineage = pendingWaitMainID
+		fixture.writeRow(t)
+		if verdict := fixture.verdict(t, fixture.scan); verdict.ShouldBlock || !strings.Contains(verdict.Display, "WAITING: registered wait") {
+			t.Fatalf("the pre-fill main lineage was refused: %+v", verdict)
+		}
+		fixture.row.OwnerLineage = "another-lineage"
+		fixture.writeRow(t)
+		if verdict := fixture.verdict(t, fixture.scan); !verdict.ShouldBlock || strings.Contains(verdict.Display, "WAITING: registered wait") {
+			t.Fatalf("an unrelated lineage received the wait allowance: %+v", verdict)
 		}
 	})
 
@@ -420,6 +479,22 @@ func TestPendingWaitTurnVerdict(t *testing.T) {
 				if err := os.Remove(path); err != nil {
 					t.Fatal(err)
 				}
+			}},
+			{"duplicate main announcement", func(f *pendingWaitVerdictFixture) {
+				writePendingWaitJSON(t, filepath.Join(f.root, "artifacts", "agents", "mains", "duplicate-41.json"), sessionStopAnnouncement{
+					SessionId: "another-placeholder", RuntimeSession: pendingWaitSession,
+					MainId: pendingWaitMainID, Pid: 41, PidStartedAt: 100, PidStartTicks: 410, BootID: pendingWaitBootID,
+					Runtime: "fake", InstanceTag: "duplicate", CommandHash: strings.Repeat("a", 64),
+					AnnouncedAt: f.store.Now().Add(-time.Minute).Format(time.RFC3339), Pgid: 41, OwnerLineage: pendingWaitLineage,
+				})
+			}},
+			{"announcement birth differs from lease", func(f *pendingWaitVerdictFixture) {
+				writePendingWaitJSON(t, filepath.Join(f.root, "artifacts", "agents", "mains", pendingWaitSession+"-41.json"), sessionStopAnnouncement{
+					SessionId: pendingWaitAnnouncementSession, RuntimeSession: pendingWaitSession,
+					MainId: pendingWaitMainID, Pid: 41, PidStartedAt: 101, PidStartTicks: 410, BootID: pendingWaitBootID,
+					Runtime: "fake", InstanceTag: "wrong-birth", CommandHash: strings.Repeat("a", 64),
+					AnnouncedAt: f.store.Now().Add(-time.Minute).Format(time.RFC3339), Pgid: 41, OwnerLineage: pendingWaitLineage,
+				})
 			}},
 		} {
 			t.Run(test.name, func(t *testing.T) {
@@ -576,7 +651,7 @@ func TestPendingWaitTurnVerdict(t *testing.T) {
 		prober[20] = identity.Exact{Pid: 20, StartedAt: time.Unix(200, 0)}
 		proof := *testHumanAuthority(t, fixture.root, fixture.store.Now())
 		marker, err := fixture.store.WriteSessionStop(SessionStop{
-			SchemaVersion: 3, SessionId: pendingWaitSession, HolderMainId: pendingWaitMainID, ClaimEpoch: 7,
+			SchemaVersion: 3, SessionId: pendingWaitAnnouncementSession, HolderMainId: pendingWaitMainID, ClaimEpoch: 7,
 			By: "Wido", WrittenAt: fixture.store.Now().Format(time.RFC3339), ExpiresAt: fixture.store.Now().Add(time.Hour).Format(time.RFC3339),
 		}, proof)
 		if err != nil {
@@ -1291,12 +1366,13 @@ func TestUnwatchedAndWarnings(t *testing.T) {
 	if !v.ShouldBlock {
 		t.Fatalf("a reused job id did not re-arm: %+v", v)
 	}
-	// A watched job never blocks; a foreign main's job never blocks us.
+	// A raw waiter-liveness fact never watches a job; a foreign main's job
+	// still never blocks us.
 	watched := reused
 	watched.WaiterLive = true
-	v, _ = s.TurnVerdict(ScanResult{Jobs: []JobFact{watched}}, "s", "", "main-1")
-	if v.BlockSource != nil && *v.BlockSource == "unwatched-work" {
-		t.Fatalf("a watched job blocked as unwatched: %+v", v)
+	v, _ = s.TurnVerdict(ScanResult{Jobs: []JobFact{watched}}, "s-raw-waiter", "", "main-1")
+	if !v.ShouldBlock || v.BlockSource == nil || *v.BlockSource != "unwatched-work" {
+		t.Fatalf("a raw waiter-liveness fact watched a job: %+v", v)
 	}
 	foreign := JobFact{Id: "j9", MainId: "main-other", StartedAt: "x", Status: "running"}
 	v, _ = s.TurnVerdict(ScanResult{Jobs: []JobFact{foreign}}, "s-f", "", "main-1")
@@ -1315,6 +1391,215 @@ func TestUnwatchedAndWarnings(t *testing.T) {
 	v, _ = s.TurnVerdict(ScanResult{Busy: busy, Jobs: []JobFact{watched}, RunUnreadable: []string{"runs/x.json: torn"}}, "s", "", "main-1")
 	if !strings.Contains(v.Display, "runs/x.json: torn") || !strings.Contains(v.Display, "STILL WORKING") {
 		t.Fatalf("Busy hid the run-unreadable line: %s", v.Display)
+	}
+}
+
+func TestUnwatchedRunIgnoresRawLiveWaiter(t *testing.T) {
+	fixture := newPendingWaitVerdictFixture(t, "run", false)
+	scan := fixture.scan
+	scan.Runs = []RunFact{{
+		Id: fixture.row.TargetID, MainId: pendingWaitMainID, Generation: fixture.row.Target.Generation,
+		Nonce: fixture.row.Target.LaunchNonce, Status: metarun.StatusRunning, Supervised: true, WaiterLive: true,
+	}}
+	fixture.row.Session = "another-logical-session"
+	fixture.row.RuntimeSession = "another-logical-session"
+	fixture.writeRow(t)
+	verdict := fixture.verdict(t, scan)
+	if !verdict.ShouldBlock || verdict.BlockSource == nil || *verdict.BlockSource != "unwatched-work" ||
+		strings.Contains(verdict.Display, "WAITING: registered wait") {
+		t.Fatalf("a raw live-waiter fact bypassed the session gate: %+v", verdict)
+	}
+
+	reused := newPendingWaitVerdictFixture(t, "run", false)
+	reusedScan := reused.scan
+	reusedScan.Runs = []RunFact{{
+		Id: reused.row.TargetID, MainId: pendingWaitMainID, Generation: reused.row.Target.Generation,
+		Nonce: reused.row.Target.LaunchNonce, Status: metarun.StatusRunning, Supervised: true, WaiterLive: true,
+	}}
+	prober := reused.store.Prober.(idleFixtureProber)
+	prober[42] = identity.Exact{Pid: 42, StartedAt: time.Unix(200, 2_000)}
+	reused.row.PidStartedAtMicro = time.Unix(200, 1_000).UnixMicro()
+	reused.row.PidStartTicks = 0
+	reused.row.BootID = ""
+	reused.writeRow(t)
+	verdict = reused.verdict(t, reusedScan)
+	if !verdict.ShouldBlock || verdict.BlockSource == nil || *verdict.BlockSource != "unwatched-work" ||
+		strings.Contains(verdict.Display, "WAITING: registered wait") {
+		t.Fatalf("a same-second reused waiter pid bypassed exact-birth authentication: %+v", verdict)
+	}
+}
+
+func TestTwoConsecutiveStopsStaleRow(t *testing.T) {
+	fixture := newPendingWaitVerdictFixture(t, "job", false)
+	scan := fixture.scan
+	scan.Jobs = []JobFact{{
+		Id: fixture.row.TargetID, MainId: pendingWaitMainID, StartedAt: fixture.row.Target.StartedAt, Status: "running",
+	}}
+	fixture.row.Session = "stale-session"
+	fixture.row.RuntimeSession = "stale-session"
+	fixture.writeRow(t)
+
+	first := fixture.verdict(t, scan)
+	if !first.ShouldBlock || first.BlockSource == nil || *first.BlockSource != "unwatched-work" ||
+		!strings.Contains(first.Display, "unwatched") || strings.Contains(first.Display, "WAITING: registered wait") {
+		t.Fatalf("the first Stop treated a stale-session row as watched: %+v", first)
+	}
+	second := fixture.verdict(t, scan)
+	if second.ShouldBlock || second.BlockSource != nil || !strings.Contains(second.Display, "OPEN WORK") ||
+		strings.Contains(second.Display, "WAITING: registered wait") {
+		t.Fatalf("the second Stop did not preserve the block-once fallback without a stale-row allowance: %+v", second)
+	}
+
+	prober := fixture.store.Prober.(idleFixtureProber)
+	pid := int64(os.Getpid())
+	prober[pid] = identity.Exact{Pid: pid, StartedAt: time.Unix(400, 0), StartTicks: 440, BootID: pendingWaitBootID}
+	epoch := int64(7)
+	ctx, cancel := context.WithCancel(context.Background())
+	registered := make(chan struct{})
+	result := make(chan metarun.WaitResult, 1)
+	go func() {
+		result <- (&metarun.Store{Root: fixture.root, Now: fixture.store.Now, Prober: prober}).Wait(ctx, metarun.WaitRequest{
+			Selector: fixture.row.Selector,
+			Owner: metarun.Caller{
+				Class: "MAIN", MainId: pendingWaitMainID, OwnerLineage: pendingWaitLineage,
+				ClaimEpoch: &epoch, SessionId: pendingWaitSession,
+			},
+			RuntimeSession: pendingWaitSession, Timeout: time.Hour, OpenWorkSignature: scan.OpenWorkSignature(),
+		}, metarun.WaitOptions{
+			Now:       fixture.store.Now,
+			BootClock: func() (string, time.Duration, error) { return pendingWaitBootID, fixture.bootElapsed, nil },
+			Deliver: func(context.Context, string, string, time.Time, string) (string, bool, error) {
+				return "blocking", false, nil
+			},
+			Observe: func(ctx context.Context, _ metarun.WaitSelector, target metarun.WaiterTarget, _ string) (metarun.SourceObservation, error) {
+				if target == (metarun.WaiterTarget{}) {
+					return metarun.SourceObservation{Incarnation: fixture.row.Target, Pending: true, Outcome: "running"}, nil
+				}
+				close(registered)
+				<-ctx.Done()
+				return metarun.SourceObservation{}, ctx.Err()
+			},
+		})
+	}()
+	select {
+	case <-registered:
+	case early := <-result:
+		cancel()
+		t.Fatalf("the superseding re-watch ended before registration: %+v", early)
+	}
+
+	rewatched := fixture.verdict(t, scan)
+	if rewatched.ShouldBlock || strings.Contains(rewatched.Display, "unwatched") ||
+		!strings.Contains(rewatched.Display, "WAITING: registered wait") {
+		cancel()
+		t.Fatalf("the superseding re-watch did not count at the next Stop: %+v", rewatched)
+	}
+	cancel()
+	if stopped := <-result; stopped.ExitCode != metarun.ExitInterrupted {
+		t.Fatalf("the superseding re-watch did not stop after cancellation: %+v", stopped)
+	}
+}
+
+func TestForgedAssociationRefused(t *testing.T) {
+	fixture := newPendingWaitVerdictFixture(t, "job", false)
+	scan := fixture.scan
+	scan.Jobs = []JobFact{{
+		Id: fixture.row.TargetID, MainId: pendingWaitMainID, StartedAt: fixture.row.Target.StartedAt, Status: "running",
+	}}
+	fixture.row.Session = "forged-session"
+	fixture.row.RuntimeSession = "forged-session"
+	fixture.writeRow(t)
+	forged := fixture.verdict(t, scan)
+	if !forged.ShouldBlock || strings.Contains(forged.Display, "WAITING: registered wait") {
+		t.Fatalf("a forged runtime association received the wait allowance: %+v", forged)
+	}
+
+	fixture.row.Session = pendingWaitSession
+	fixture.row.RuntimeSession = pendingWaitSession
+	fixture.writeRow(t)
+	accepted := fixture.verdict(t, scan)
+	if accepted.ShouldBlock || !strings.Contains(accepted.Display, "WAITING: registered wait") {
+		t.Fatalf("the live Stop session did not receive its own wait allowance: %+v", accepted)
+	}
+}
+
+func TestHumanRunWatchedSignal(t *testing.T) {
+	fixture := newPendingWaitVerdictFixture(t, "run", false)
+	prober := fixture.store.Prober.(idleFixtureProber)
+	registeredBirth := time.Unix(200, 1_000)
+	prober[42] = identity.Exact{Pid: 42, StartedAt: registeredBirth}
+	fixture.row.OwnerDigest = metarun.OwnerDigest("")
+	fixture.row.MainId = ""
+	fixture.row.OwnerLineage = ""
+	fixture.row.ClaimEpoch = nil
+	fixture.row.Session = ""
+	fixture.row.RuntimeSession = ""
+	fixture.row.PidStartedAt = registeredBirth.Unix()
+	fixture.row.PidStartedAtMicro = registeredBirth.UnixMicro()
+	fixture.row.PidStartTicks = 0
+	fixture.row.BootID = ""
+	fixture.writeRow(t)
+	scan := ScanResult{Runs: []RunFact{{
+		Id: fixture.row.TargetID, Generation: fixture.row.Target.Generation, Nonce: fixture.row.Target.LaunchNonce,
+		Status: metarun.StatusRunning, Supervised: true,
+	}}}
+	hasWatchRun := func(verdict Verdict) bool {
+		if verdict.Facts == nil {
+			return false
+		}
+		for _, action := range verdict.Facts.Actions {
+			if action.Kind == "watch-run" && action.TargetId == fixture.row.TargetID {
+				return true
+			}
+		}
+		return false
+	}
+
+	watched, err := fixture.store.TurnVerdict(scan, "human-watched", "", "")
+	if err != nil || strings.Contains(watched.Display, "unwatched") || hasWatchRun(watched) {
+		t.Fatalf("the exact live human waiter was not treated as watched: %+v %v", watched, err)
+	}
+	if err := os.Remove(metarun.WaiterPath(fixture.root, fixture.row.Kind, fixture.row.TargetID, fixture.row.OwnerDigest)); err != nil {
+		t.Fatal(err)
+	}
+	unwatched, err := fixture.store.TurnVerdict(scan, "human-unwatched", "", "")
+	if err != nil || !unwatched.ShouldBlock || unwatched.BlockSource == nil || *unwatched.BlockSource != "unwatched-work" || !hasWatchRun(unwatched) {
+		t.Fatalf("an unwatched human run did not block and request recovery: %+v %v", unwatched, err)
+	}
+
+	fixture.writeRow(t)
+	prober[42] = identity.Exact{Pid: 42, StartedAt: time.Unix(200, 2_000)}
+	reused, err := fixture.store.TurnVerdict(scan, "human-reused-pid", "", "")
+	if err != nil || !reused.ShouldBlock || reused.BlockSource == nil || *reused.BlockSource != "unwatched-work" || !hasWatchRun(reused) {
+		t.Fatalf("a same-second reused human waiter pid retained watched authority: %+v %v", reused, err)
+	}
+}
+
+func TestWatchedJobUsesAuthenticatedWait(t *testing.T) {
+	raw := newPendingWaitVerdictFixture(t, "job", false)
+	if err := os.Remove(metarun.WaiterPath(raw.root, raw.row.Kind, raw.row.TargetID, raw.row.OwnerDigest)); err != nil {
+		t.Fatal(err)
+	}
+	rawScan := raw.scan
+	rawScan.Jobs = []JobFact{{
+		Id: raw.row.TargetID, MainId: pendingWaitMainID, StartedAt: raw.row.Target.StartedAt,
+		Status: "running", WaiterLive: true,
+	}}
+	rawVerdict := raw.verdict(t, rawScan)
+	if !rawVerdict.ShouldBlock || rawVerdict.BlockSource == nil || *rawVerdict.BlockSource != "unwatched-work" {
+		t.Fatalf("a raw live-waiter fact counted as an authenticated job watch: %+v", rawVerdict)
+	}
+
+	authenticated := newPendingWaitVerdictFixture(t, "job", false)
+	authenticatedScan := authenticated.scan
+	authenticatedScan.Jobs = []JobFact{{
+		Id: authenticated.row.TargetID, MainId: pendingWaitMainID, StartedAt: authenticated.row.Target.StartedAt,
+		Status: "running",
+	}}
+	authenticatedVerdict := authenticated.verdict(t, authenticatedScan)
+	if authenticatedVerdict.ShouldBlock || strings.Contains(authenticatedVerdict.Display, "unwatched") ||
+		!strings.Contains(authenticatedVerdict.Display, "WAITING: registered wait") {
+		t.Fatalf("the gate-accepted row did not count as the job watch: %+v", authenticatedVerdict)
 	}
 }
 

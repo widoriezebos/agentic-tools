@@ -218,6 +218,12 @@ type registeredWait struct {
 
 type registeredWaits []registeredWait
 
+type authenticatedWatches struct {
+	registered  registeredWaits
+	humanRuns   map[string]bool
+	humanCaller bool
+}
+
 func goalIDOf(facts *GoalFacts) string {
 	if facts == nil {
 		return ""
@@ -281,6 +287,18 @@ func (waits registeredWaits) watchesRun(fact RunFact) bool {
 		}
 	}
 	return false
+}
+
+func runWatchKey(fact RunFact) string {
+	return fmt.Sprintf("%s.g%d.%s", fact.Id, fact.Generation, fact.Nonce)
+}
+
+func (watches authenticatedWatches) watchesJob(id string) bool {
+	return watches.registered.watchesJob(id)
+}
+
+func (watches authenticatedWatches) watchesRun(fact RunFact) bool {
+	return watches.registered.watchesRun(fact) || watches.humanRuns[runWatchKey(fact)]
 }
 
 func (waits registeredWaits) lines() []string {
@@ -387,7 +405,7 @@ func (s *Store) TurnVerdict(scan ScanResult, sessionId, watchdogDigest, mainId s
 		// fence deliberately returns before reading the ledger.
 		stamp := &sessionState{LastTouched: s.nowISO()}
 		stopped.Facts = freezeTurnVerdictFacts(s.Root, sessionId, mainId, scan,
-			ClaimableBudgetedWork{}, false, nil, stopped, stopped.Display, stamp, options, false)
+			ClaimableBudgetedWork{}, false, nil, stopped, stopped.Display, stamp, options, false, authenticatedWatches{})
 		stopped.Facts.Actions = []TurnAction{}
 		return stopped, nil
 	}
@@ -407,7 +425,7 @@ func (s *Store) TurnVerdict(scan ScanResult, sessionId, watchdogDigest, mainId s
 			}
 			stamp := &sessionState{LastTouched: s.nowISO()}
 			allowed.Facts = freezeTurnVerdictFacts(s.Root, sessionId, mainId, scan,
-				ClaimableBudgetedWork{}, false, nil, allowed, display, stamp, options, false)
+				ClaimableBudgetedWork{}, false, nil, allowed, display, stamp, options, false, authenticatedWatches{})
 			allowed.Facts.Actions = []TurnAction{}
 			return allowed, nil
 		}
@@ -428,6 +446,7 @@ func (s *Store) TurnVerdict(scan ScanResult, sessionId, watchdogDigest, mainId s
 		if workRead && workErr == nil && len(scan.Unreadable) == 0 && len(scan.RunUnreadable) == 0 {
 			waits = s.registeredWaits(work, sessionId, mainId, options.SessionAbsent)
 		}
+		watches := s.authenticatedWatches(scan, mainId, waits)
 		state, err := s.loadVerdictState()
 		if err != nil {
 			return Result{}, infrastructureFailure{"verdict-state", err}
@@ -435,7 +454,7 @@ func (s *Store) TurnVerdict(scan ScanResult, sessionId, watchdogDigest, mainId s
 		session := state.touch(sessionId, s.nowISO())
 
 		brainLines := s.brainSummary(scan, brainState)
-		runLines := s.decideRuns(&verdict, scan, session, mainId, waits)
+		runLines := s.decideRuns(&verdict, scan, session, mainId, watches)
 		s.decide(&verdict, scan, session, &work, brainSeat, waits)
 		if options.SessionAbsent {
 			detail := "registered waits were not read because the Stop supplied no session"
@@ -535,7 +554,7 @@ func (s *Store) TurnVerdict(scan ScanResult, sessionId, watchdogDigest, mainId s
 			fileLine = "Full turn verdict was written to " + artifactPath + ", but its crash durability is unknown"
 		}
 		verdict.Display = renderTurnVerdict(verdict, brainLines, runLines, greens, fileLine)
-		verdict.Facts = freezeTurnVerdictFacts(s.Root, sessionId, mainId, scan, work, workRead, workErr, verdict, fullDisplay, session, options, humanStopConsumed)
+		verdict.Facts = freezeTurnVerdictFacts(s.Root, sessionId, mainId, scan, work, workRead, workErr, verdict, fullDisplay, session, options, humanStopConsumed, watches)
 		return Result{}, nil
 	})
 	_ = result
@@ -605,6 +624,21 @@ func (s *Store) registeredWaits(work ClaimableBudgetedWork, sessionID, mainID st
 	return waits
 }
 
+func (s *Store) authenticatedWatches(scan ScanResult, mainID string, waits registeredWaits) authenticatedWatches {
+	watches := authenticatedWatches{registered: waits, humanCaller: mainID == ""}
+	if mainID != "" {
+		return watches
+	}
+	watches.humanRuns = map[string]bool{}
+	for _, fact := range scan.Runs {
+		if fact.MainId == "" && run.AuthenticatedHumanRunWaiter(s.Root, s.prober(), fact.Id,
+			run.WaiterTarget{Generation: fact.Generation, LaunchNonce: fact.Nonce}) {
+			watches.humanRuns[runWatchKey(fact)] = true
+		}
+	}
+	return watches
+}
+
 func registeredWaitAtOwnerPath(root, path string) (run.Waiter, bool) {
 	info, err := os.Lstat(path)
 	if err != nil || !info.Mode().IsRegular() {
@@ -634,9 +668,6 @@ func (s *Store) registeredWaitOwner(sessionID, mainID string) (sessionStopLease,
 	}) != identity.Alive {
 		return sessionStopLease{}, "", false
 	}
-	if _, err := s.currentSessionLifecycle(sessionID, mainID, lease); err != nil {
-		return sessionStopLease{}, "", false
-	}
 	paths, err := filepath.Glob(filepath.Join(s.Root, "artifacts", "agents", "mains", "*.json"))
 	if err != nil {
 		return sessionStopLease{}, "", false
@@ -656,7 +687,7 @@ func (s *Store) registeredWaitOwner(sessionID, mainID string) (sessionStopLease,
 		if decoder.Decode(&announcement) != nil || decoder.Decode(&struct{}{}) != io.EOF {
 			return sessionStopLease{}, "", false
 		}
-		if announcement.SessionId != sessionID || announcement.MainId != mainID {
+		if announcement.MainId != mainID {
 			continue
 		}
 		if lineage != "" || announcement.Pid != lease.Pid || announcement.PidStartedAt != lease.PidStartedAt ||
@@ -677,7 +708,8 @@ func (s *Store) registeredWaitOwner(sessionID, mainID string) (sessionStopLease,
 func (s *Store) registeredWaitEligible(row run.Waiter, sessionID, mainID, lineage string, claimEpoch int64, bootID string, bootElapsed time.Duration) bool {
 	if row.SchemaVersion != 2 || row.State != "pending" || row.Delivery != "blocking" || row.Result != nil ||
 		!run.ValidWaitID(row.WaitID) || !run.ValidWaitID(row.Nonce) || row.MainId != mainID ||
-		row.Session != sessionID || row.RuntimeSession != sessionID || row.OwnerLineage != lineage ||
+		row.Session != sessionID || row.RuntimeSession != sessionID ||
+		(row.OwnerLineage != lineage && row.OwnerLineage != mainID) ||
 		row.OwnerDigest != run.OwnerDigest(mainID) || row.ClaimEpoch == nil || *row.ClaimEpoch != claimEpoch ||
 		row.Kind != row.Selector.Kind || row.TargetID != row.Selector.TargetID || row.Target == (run.WaiterTarget{}) ||
 		(row.OpenWorkSignature != "" && !sessionStopDigest.MatchString(row.OpenWorkSignature)) ||
@@ -1159,7 +1191,7 @@ func (s *Store) escalateIdleBacklog(verdict *Verdict, session *sessionState, ses
 // run warnings always surface, and unwatched work blocks once — BEFORE
 // Busy can suppress anything (a watched active run is Busy; an unwatched
 // one blocks despite being busy, which is the point).
-func (s *Store) decideRuns(verdict *Verdict, scan ScanResult, session *sessionState, mainId string, waits registeredWaits) runDisplayLines {
+func (s *Store) decideRuns(verdict *Verdict, scan ScanResult, session *sessionState, mainId string, watches authenticatedWatches) runDisplayLines {
 	var warnings runDisplayLines
 	warn := func(class runWarningClass, id, format string, args ...any) {
 		line := fmt.Sprintf(format, args...)
@@ -1194,8 +1226,7 @@ func (s *Store) decideRuns(verdict *Verdict, scan ScanResult, session *sessionSt
 	var unwatchedTags, unwatchedIds []string
 	for _, job := range scan.Jobs {
 		if mainId != "" && job.MainId == mainId &&
-			(job.Status == "pending" || job.Status == "running") && !job.WaiterLive &&
-			!waits.watchesJob(job.Id) {
+			(job.Status == "pending" || job.Status == "running") && !watches.watchesJob(job.Id) {
 			unwatchedTags = append(unwatchedTags, "job:"+job.Id+"@"+job.StartedAt)
 			unwatchedIds = append(unwatchedIds, job.Id)
 		}
@@ -1206,7 +1237,7 @@ func (s *Store) decideRuns(verdict *Verdict, scan ScanResult, session *sessionSt
 		// human-launched runs (null coordinates) — the waiter side already
 		// keys humans on the OS user id.
 		owned := runFact.MainId == mainId
-		if owned && inFlight && !runFact.WaiterLive && !waits.watchesRun(runFact) {
+		if owned && inFlight && !watches.watchesRun(runFact) {
 			unwatchedTags = append(unwatchedTags, fmt.Sprintf("run:%s.g%d.%s", runFact.Id, runFact.Generation, runFact.Nonce))
 			unwatchedIds = append(unwatchedIds, runFact.Id)
 		}

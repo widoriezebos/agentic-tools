@@ -121,6 +121,7 @@ func TestPendingWaitIdleBacklog(t *testing.T) {
 				seedPendingWaitIdleCounter(t, fixture, 2)
 				verdict, session := pendingWaitIdleOutcome(t, fixture)
 				if verdict.ShouldBlock != liveVerdict.ShouldBlock || verdict.IdleRefusal != liveVerdict.IdleRefusal ||
+					verdict.CountSpent != liveVerdict.CountSpent ||
 					session.IdleBlocks != liveSession.IdleBlocks || session.IdleBlockDigest == "" {
 					t.Fatalf("%s wait differs from a live delegate: verdict=%+v session=%+v control=%+v/%+v", kind, verdict, session, liveVerdict, liveSession)
 				}

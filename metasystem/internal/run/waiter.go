@@ -340,8 +340,8 @@ func (s *Store) RemoveWaiter(kind, id string, owner Caller) {
 }
 
 // LiveWaiter reports whether a live identity-verified waiter of the given
-// owner watches the given CURRENT lifecycle — the owner-correlated fact
-// the unwatched rule consumes.
+// owner watches the given current lifecycle. Scans retain this display fact;
+// turn-ending decisions authenticate registered waits through their gate.
 func LiveWaiter(root string, prober identity.Prober, kind, id, mainId string, target WaiterTarget) bool {
 	data, err := os.ReadFile(WaiterPath(root, kind, id, OwnerDigest(mainId)))
 	if err != nil {
@@ -569,6 +569,13 @@ func existingWaitRefuses(prober identity.Prober, row Waiter) error {
 		return &waiterError{ExitWaiterUnknown, "existing waiter identity is uncertain; refusing replacement"}
 	}
 	return nil
+}
+
+func supersedesStaleSession(existing, replacement Waiter) bool {
+	return existing.SchemaVersion == 2 && (existing.State == "pending" || existing.State == "registering") &&
+		existing.MainId != "" && existing.MainId == replacement.MainId && existing.OwnerDigest == replacement.OwnerDigest &&
+		existing.Session != "" && existing.Session == existing.RuntimeSession &&
+		replacement.Session != "" && replacement.Session == replacement.RuntimeSession && existing.Session != replacement.Session
 }
 
 func (s *Store) initialObservation(ctx context.Context, selector WaitSelector, options WaitOptions, deadline time.Time) (SourceObservation, error) {
@@ -918,8 +925,10 @@ func (s *Store) Wait(ctx context.Context, request WaitRequest, options WaitOptio
 	if err = withWaiterLockBounded(ctx, s.Root, deadline, options.Now, options.Sleep, func() error {
 		existing, readErr := readV2Waiter(rowPath)
 		if readErr == nil {
-			if err := existingWaitRefuses(s.prober(), existing); err != nil {
-				return err
+			if !supersedesStaleSession(existing, row) {
+				if err := existingWaitRefuses(s.prober(), existing); err != nil {
+					return err
+				}
 			}
 			removeWaiterHint(rowPath, existing)
 			removeV2Pointer(s.Root, existing)
@@ -1362,6 +1371,9 @@ func (s *Store) ResumeWait(ctx context.Context, waitID string, owner Caller, run
 	succeeded := options.SucceededMainID != "" && options.SucceededMainID == row.MainId && options.SucceededOwnerLineage != "" && options.SucceededOwnerLineage == row.OwnerLineage
 	if owner.OwnerLineage == "" || (owner.OwnerLineage != row.OwnerLineage && !succeeded) {
 		return waitResult(row, 6, "ready", "the wait owner lineage changed", "ownership-changed", "", row.LastCheckedTip, "", options.Now())
+	}
+	if succeeded && (owner.SessionId == "" || owner.SessionId != runtimeSession || row.Session != owner.SessionId || row.RuntimeSession != runtimeSession) {
+		return waitResult(row, ExitWaiterBusy, "failed", "the successor must register a fresh wait for its authenticated session", "registration-refused", "", row.LastCheckedTip, "", options.Now())
 	}
 	if missingPointer {
 		row, err = repairWaiterPointer(s.Root, waitID, rowPath)

@@ -34,7 +34,7 @@ func (p restartProber) Probe(pid int64) (identity.Exact, identity.Liveness, erro
 	return identity.Exact{Pid: pid, StartedAt: time.Unix(6000, 0), StartTicks: 600, BootID: "boot-w"}, identity.Alive, nil
 }
 
-func TestWaitRestartRecoveryReplay(t *testing.T) {
+func TestSuccessorRefusesWrongSessionRow(t *testing.T) {
 	if binary := os.Getenv("METASYSTEM_WAIT_BINARY"); binary != "" {
 		t.Run("installed process death resumes from rows", func(t *testing.T) {
 			binary := testutil.InstalledWaitBinary(t, binary)
@@ -268,8 +268,8 @@ func TestWaitRestartRecoveryReplay(t *testing.T) {
 		}
 		result := (&Store{Root: root, Prober: restartProber{deadPID: row.Pid}}).ResumeWait(context.Background(), waitID,
 			Caller{Class: "MAIN", MainId: "main-new", OwnerLineage: "new-lineage", SessionId: "new"}, "new", 0, options)
-		if result.ExitCode != ExitGreen {
-			t.Fatalf("explicit-lineage succession = %+v", result)
+		if result.ExitCode != ExitWaiterBusy || !strings.Contains(result.Reason, "register a fresh wait") {
+			t.Fatalf("wrong-session successor adopted the predecessor row: %+v", result)
 		}
 	})
 }

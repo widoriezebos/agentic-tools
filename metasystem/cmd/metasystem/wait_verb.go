@@ -154,8 +154,12 @@ func runWaitCommand(args []string, poll func(context.Context) error, callerPID i
 	if lineage == "" {
 		lineage = view.MainId
 	}
-	owner := metarun.Caller{Class: view.Class, MainId: view.MainId, OwnerLineage: lineage, ClaimEpoch: view.ClaimEpoch, SessionId: view.Announcement.SessionId}
-	runtimeSession := view.Announcement.SessionId
+	runtimeSession := view.Announcement.EffectiveRuntimeSession()
+	if runtimeSession == "" {
+		fmt.Fprintln(os.Stderr, "wait registration requires the main's authenticated runtime session")
+		return metarun.ExitWaiterBusy
+	}
+	owner := metarun.Caller{Class: view.Class, MainId: view.MainId, OwnerLineage: lineage, ClaimEpoch: view.ClaimEpoch, SessionId: runtimeSession}
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
 	var resumeRow metarun.Waiter
@@ -182,6 +186,7 @@ func runWaitCommand(args []string, poll func(context.Context) error, callerPID i
 		fmt.Fprintln(os.Stderr, err)
 		return metarun.ExitWaiterIO
 	}
+	registerFresh := false
 	if *resume != "" && view.ClaimEpoch != nil {
 		lineage, succeeded, successionErr := report.SucceededWaitOwner(stateRoot, view.MainId, *view.ClaimEpoch, resumeRow.MainId)
 		if successionErr != nil {
@@ -191,11 +196,12 @@ func runWaitCommand(args []string, poll func(context.Context) error, callerPID i
 		if succeeded {
 			options.SucceededMainID = resumeRow.MainId
 			options.SucceededOwnerLineage = lineage
+			registerFresh = resumeRow.Session != runtimeSession || resumeRow.RuntimeSession != runtimeSession
 		}
 	}
 	store := &metarun.Store{Root: stateRoot}
 	var result metarun.WaitResult
-	if *resume != "" {
+	if *resume != "" && !registerFresh {
 		renewal := time.Duration(0)
 		if timeoutExplicit {
 			renewal = *timeout

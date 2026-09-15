@@ -15,6 +15,56 @@ import (
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/lease"
 )
 
+func TestStopVerdictWaitingLinesFromGateOnly(t *testing.T) {
+	acceptedRoot := t.TempDir()
+	acceptedSession, acceptedMain := pendingWaitVerdictCommandFixture(t, acceptedRoot, "fake")
+	code, output, problem := captureChannelOutput(t, func() int {
+		return runReportTurnVerdict([]string{"--root", acceptedRoot, "--session", acceptedSession, "--main-id", acceptedMain})
+	})
+	var accepted struct {
+		Display string `json:"display"`
+	}
+	if code != 0 || problem != "" || json.Unmarshal([]byte(output), &accepted) != nil ||
+		strings.Count(accepted.Display, "WAITING: registered wait") != 1 {
+		t.Fatalf("accepted Stop wait lines: code=%d stderr=%q output=%q display=%q", code, problem, output, accepted.Display)
+	}
+
+	refusedRoot := t.TempDir()
+	refusedSession, refusedMain := pendingWaitVerdictCommandFixture(t, refusedRoot, "fake")
+	paths, err := filepath.Glob(filepath.Join(refusedRoot, "artifacts", "agents", "waiters", "*.json"))
+	if err != nil || len(paths) != 1 {
+		t.Fatalf("find refused waiter row: paths=%v err=%v", paths, err)
+	}
+	var row map[string]any
+	data, err := os.ReadFile(paths[0])
+	if err != nil || json.Unmarshal(data, &row) != nil {
+		t.Fatalf("read refused waiter row: %v", err)
+	}
+	row["runtimeSession"] = "forged-session"
+	data, _ = json.Marshal(row)
+	if err := os.WriteFile(paths[0], append(data, '\n'), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	code, output, problem = captureChannelOutput(t, func() int {
+		return runReportTurnVerdict([]string{"--root", refusedRoot, "--session", refusedSession, "--main-id", refusedMain})
+	})
+	var refused struct {
+		Display string `json:"display"`
+	}
+	if code != 0 || problem != "" || json.Unmarshal([]byte(output), &refused) != nil || strings.Contains(refused.Display, "WAITING") {
+		t.Fatalf("refused Stop inherited recovery orientation: code=%d stderr=%q output=%q display=%q", code, problem, output, refused.Display)
+	}
+	for name, invoke := range map[string]func() int{
+		"session start": func() int { return runSessionStart([]string{"--root", refusedRoot, "--session", refusedSession}) },
+		"goal next":     func() int { return runGoalNext([]string{"--root", refusedRoot}) },
+	} {
+		orientationCode, orientation, orientationProblem := captureChannelOutput(t, invoke)
+		if orientationCode != 0 || orientationProblem != "" || !strings.Contains(orientation, "WAITING") {
+			t.Fatalf("%s lost recovery orientation: code=%d stderr=%q output=%q", name, orientationCode, orientationProblem, orientation)
+		}
+	}
+}
+
 // The command-layer genesis boundary: goalCaller classifies against the
 // ONE root it is writing (never a caller-named second root — a root
 // the caller chooses is an authority-laundering hole) and applies the

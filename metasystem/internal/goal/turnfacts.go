@@ -85,7 +85,11 @@ type TurnEscalationFacts struct {
 	SupervisionRepair bool   `json:"supervisionRepair"`
 }
 
-func freezeTurnVerdictFacts(root, sessionID, mainID string, scan ScanResult, work ClaimableBudgetedWork, workRead bool, workErr error, verdict Verdict, fullDisplay string, session *sessionState, options TurnVerdictOptions, humanStopConsumed bool) *TurnVerdictFacts {
+func freezeTurnVerdictFacts(root, sessionID, mainID string, scan ScanResult, work ClaimableBudgetedWork, workRead bool, workErr error, verdict Verdict, fullDisplay string, session *sessionState, options TurnVerdictOptions, humanStopConsumed bool, watchOption ...authenticatedWatches) *TurnVerdictFacts {
+	watches := authenticatedWatches{}
+	if len(watchOption) > 0 {
+		watches = watchOption[0]
+	}
 	scan = cloneScanForFreeze(scan)
 	classifyOwnership(&scan, mainID)
 	facts := &TurnVerdictFacts{
@@ -105,7 +109,7 @@ func freezeTurnVerdictFacts(root, sessionID, mainID string, scan ScanResult, wor
 	}
 	facts.Ownership = freezeOwnership(facts.Work, options)
 	facts.Actions = append(facts.Actions, workActions(root, facts.Work, options)...)
-	facts.Actions = append(facts.Actions, scanActions(root, scan)...)
+	facts.Actions = append(facts.Actions, scanActions(root, scan, watches)...)
 	if verdict.escalation != nil {
 		facts.Refusal.Escalation = *verdict.escalation
 	}
@@ -263,17 +267,18 @@ func workActions(root string, work TurnWorkFacts, options TurnVerdictOptions) []
 		Command:     "metasystem goal next --machine " + machine + " --fetch", Owner: machine}}
 }
 
-func scanActions(root string, scan ScanResult) []TurnAction {
+func scanActions(root string, scan ScanResult, watches authenticatedWatches) []TurnAction {
 	var actions []TurnAction
 	for _, item := range scan.Jobs {
-		if item.Ownership == "owned" && (item.Status == "pending" || item.Status == "running") && !item.WaiterLive {
+		if item.Ownership == "owned" && (item.Status == "pending" || item.Status == "running") && !watches.watchesJob(item.Id) {
 			actions = append(actions, TurnAction{Kind: "watch-job", TargetId: item.Id,
 				Instruction: "watch the owned delegate job before ending the turn",
 				Command:     "metasystem job watch --root " + shellArgument(root) + " --job " + shellArgument(item.Id) + " --caller-pid $$", Owner: "seat"})
 		}
 	}
 	for _, item := range scan.Runs {
-		if item.Ownership == "owned" && (item.Status == "launching" || item.Status == "running" || item.Status == "draining") && !item.WaiterLive {
+		owned := item.Ownership == "owned" || watches.humanCaller && item.MainId == ""
+		if owned && (item.Status == "launching" || item.Status == "running" || item.Status == "draining") && !watches.watchesRun(item) {
 			actions = append(actions, TurnAction{Kind: "watch-run", TargetId: item.Id,
 				Instruction: "watch the owned run before ending the turn",
 				Command:     "metasystem run watch --id " + shellArgument(item.Id) + " --root " + shellArgument(root), Owner: "seat"})

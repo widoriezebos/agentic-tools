@@ -248,6 +248,85 @@ func TestWaitFIFOHintDelivery(t *testing.T) {
 	}
 }
 
+func TestSupersedeStaleSessionRow(t *testing.T) {
+	now := time.Date(2026, 9, 15, 10, 0, 0, 0, time.UTC)
+	target := WaiterTarget{Generation: 1, LaunchNonce: "run-nonce"}
+	options := WaitOptions{Now: func() time.Time { return now }, BootClock: func() (string, time.Duration, error) { return "boot-test", time.Hour, nil },
+		Sleep: func(context.Context, time.Duration) error { t.Fatal("terminal registration slept"); return nil },
+		Deliver: func(context.Context, string, string, time.Time, string) (string, bool, error) {
+			return "blocking", false, nil
+		},
+		Observe: func(context.Context, WaitSelector, WaiterTarget, string) (SourceObservation, error) {
+			return SourceObservation{Incarnation: target, ExitCode: ExitGreen, Outcome: "green"}, nil
+		}}
+	for _, test := range []struct {
+		name, session, main string
+		supersedes          bool
+	}{{"stale session", "s0", mainCaller.MainId, true}, {"matching session", "s1", mainCaller.MainId, false}, {"different owner", "s0", "main-other", false}} {
+		t.Run(test.name, func(t *testing.T) {
+			root := t.TempDir()
+			old := Waiter{SchemaVersion: 2, WaitID: strings.Repeat("a", 32), Nonce: strings.Repeat("b", 32), Kind: "run", TargetID: "r", OwnerDigest: OwnerDigest(mainCaller.MainId), Pid: 91, Session: test.session, RuntimeSession: test.session, MainId: test.main, State: "pending"}
+			path := WaiterPath(root, old.Kind, old.TargetID, old.OwnerDigest)
+			if err := writeV2Waiter(path, old); err != nil {
+				t.Fatal(err)
+			}
+			result := (&Store{Root: root, Prober: waitTestProber{live: true}}).Wait(context.Background(), WaitRequest{Selector: WaitSelector{Kind: "run", TargetID: "r"}, Owner: mainCaller, RuntimeSession: "s1", Timeout: time.Hour}, options)
+			stored, err := readV2Waiter(path)
+			if err != nil || test.supersedes != (result.ExitCode == ExitGreen) || (test.supersedes && (stored.Session != "s1" || stored.WaitID == old.WaitID)) || (!test.supersedes && stored.WaitID != old.WaitID) {
+				t.Fatalf("supersedes=%t result=%+v row=%+v err=%v", test.supersedes, result, stored, err)
+			}
+		})
+	}
+}
+
+func TestSupersedeVersusTerminalizeRace(t *testing.T) {
+	root := t.TempDir()
+	now := time.Date(2026, 9, 15, 10, 0, 0, 0, time.UTC)
+	old := Waiter{SchemaVersion: 2, WaitID: strings.Repeat("c", 32), Nonce: strings.Repeat("d", 32), Kind: "run", TargetID: "r", OwnerDigest: OwnerDigest(mainCaller.MainId), Pid: 91, Session: "s0", RuntimeSession: "s0", MainId: mainCaller.MainId, State: "pending", Deadline: now.Add(time.Hour).Format(time.RFC3339Nano)}
+	path := WaiterPath(root, old.Kind, old.TargetID, old.OwnerDigest)
+	if err := writeV2Waiter(path, old); err != nil {
+		t.Fatal(err)
+	}
+	attempted, release := make(chan struct{}, 2), make(chan struct{})
+	options := WaitOptions{Now: func() time.Time { return now }, BootClock: func() (string, time.Duration, error) { return "boot-test", time.Hour, nil }, Sleep: func(context.Context, time.Duration) error {
+		select {
+		case attempted <- struct{}{}:
+		default:
+		}
+		<-release
+		return nil
+	},
+		Deliver: func(context.Context, string, string, time.Time, string) (string, bool, error) {
+			return "blocking", false, nil
+		}, Observe: func(context.Context, WaitSelector, WaiterTarget, string) (SourceObservation, error) {
+			return SourceObservation{Incarnation: WaiterTarget{Generation: 1, LaunchNonce: "n"}, ExitCode: ExitGreen}, nil
+		}}
+	store := &Store{Root: root, Prober: waitTestProber{live: true}}
+	registered, finished := make(chan WaitResult, 1), make(chan WaitResult, 1)
+	if err := withWaiterLock(root, func() error {
+		go func() {
+			registered <- store.Wait(context.Background(), WaitRequest{Selector: WaitSelector{Kind: "run", TargetID: "r"}, Owner: mainCaller, RuntimeSession: "s1", Timeout: time.Hour}, options)
+		}()
+		go func() {
+			finished <- store.finishV2(context.Background(), path, old, options, ExitGreen, "ready", "old wait ended", "green", "old", "", "")
+		}()
+		<-attempted
+		<-attempted
+		close(release)
+		return nil
+	}); err != nil {
+		t.Fatal(err)
+	}
+	newResult, oldResult := <-registered, <-finished
+	stored, err := readV2Waiter(path)
+	if err != nil || newResult.ExitCode != ExitGreen || stored.WaitID != newResult.WaitID || stored.State != "ready" || stored.Result == nil || stored.Session != "s1" {
+		t.Fatalf("registration=%+v terminalization=%+v row=%+v err=%v", newResult, oldResult, stored, err)
+	}
+	if _, _, err := FindWaiterByID(root, old.WaitID); err == nil {
+		t.Fatal("superseded wait remained observable as pending")
+	}
+}
+
 func TestWaitRunTerminalsAndDeadline(t *testing.T) {
 	terminalCases := []struct {
 		name string

@@ -85,6 +85,44 @@ func TestWaitVerbArgumentsAndResult(t *testing.T) {
 	}
 }
 
+func TestUnassociatedRegistrationRefusesNoRow(t *testing.T) {
+	root := t.TempDir()
+	self := int64(os.Getpid())
+	exact, state, err := (identity.KernelProber{}).Probe(self)
+	if err != nil || state != identity.Alive {
+		t.Fatal(err)
+	}
+	announcement, err := lease.AnnounceWithPair(root, fmt.Sprintf("session-%d", self), self, exact.StartedAt.Unix(), exact.StartTicks, exact.BootID, "unassociated-wait", "fake", "lineage-wait")
+	if err != nil {
+		t.Fatal(err)
+	}
+	mainID := announcedMainID(t, announcement)
+	jobDir := filepath.Join(root, "artifacts", "agents", "jobs")
+	if err := os.MkdirAll(jobDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(jobDir, "job-unassociated.json"), []byte(`{"jobId":"job-unassociated","operationId":"reserve-a","round":1,"status":"completed","startedAt":"2026-09-15T10:00:00Z"}`), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	originalPID, originalAdapter := waitCallerPID, waitAdapterPathForRuntime
+	waitCallerPID = func() int64 { return self }
+	waitAdapterPathForRuntime = func(string, string) (string, error) {
+		return filepath.Abs(filepath.Join("..", "..", "scripts", "agents", "adapters", "fake.sh"))
+	}
+	t.Cleanup(func() { waitCallerPID, waitAdapterPathForRuntime = originalPID, originalAdapter })
+	code, _, problem := captureChannelOutput(t, func() int { return runWait([]string{"--root", root, "--job", "job-unassociated"}) })
+	rows, _ := filepath.Glob(filepath.Join(metarun.WaitersDir(root), "*.json"))
+	if code != metarun.ExitWaiterBusy || !strings.Contains(problem, "authenticated runtime session") || len(rows) != 0 {
+		t.Fatalf("unassociated registration code=%d stderr=%q rows=%v", code, problem, rows)
+	}
+	if err := lease.AssociateSession(root, mainID, "session-associated", "start", "clear"); err != nil {
+		t.Fatal(err)
+	}
+	if code, _, problem = captureChannelOutput(t, func() int { return runWait([]string{"--root", root, "--job", "job-unassociated"}) }); code != 0 || problem != "" {
+		t.Fatalf("associated registration code=%d stderr=%q", code, problem)
+	}
+}
+
 func TestWaitClaimableFrontierIsAChange(t *testing.T) {
 	baseline := []metarun.ClaimableGoal{{ID: "already-ready", Revision: 3}}
 	if item, changed := metarun.ClaimableGoalChange(baseline, baseline); changed {
@@ -449,7 +487,7 @@ func TestWaitSessionStartPrintsPendingRows(t *testing.T) {
 	var verdict struct {
 		Display string `json:"display"`
 	}
-	if code != 0 || problem != "" || json.Unmarshal([]byte(verdictOutput), &verdict) != nil || !strings.Contains(verdict.Display, want) {
+	if code != 0 || problem != "" || json.Unmarshal([]byte(verdictOutput), &verdict) != nil || strings.Contains(verdict.Display, want) {
 		t.Fatalf("turn verdict code=%d output=%q stderr=%q display=%q", code, verdictOutput, problem, verdict.Display)
 	}
 	if binary := os.Getenv("METASYSTEM_WAIT_BINARY"); binary != "" {
@@ -570,6 +608,19 @@ func TestWaitSessionStartWithoutLeaseReturnsBusy(t *testing.T) {
 
 func pendingWaitVerdictCommandFixture(t *testing.T, root, runtimeName string) (string, string) {
 	t.Helper()
+	for _, name := range []string{"GIT_OBJECT_DIRECTORY", "GIT_ALTERNATE_OBJECT_DIRECTORIES"} {
+		value, present := os.LookupEnv(name)
+		if err := os.Unsetenv(name); err != nil {
+			t.Fatal(err)
+		}
+		t.Cleanup(func() {
+			if present {
+				_ = os.Setenv(name, value)
+			} else {
+				_ = os.Unsetenv(name)
+			}
+		})
+	}
 	for _, dir := range []string{
 		filepath.Join(root, "plans"),
 		filepath.Join(root, "artifacts", "agents", "jobs"),
@@ -821,7 +872,7 @@ func TestWaitLeaseTakeoverRepairsAndResumes(t *testing.T) {
 	code, output, problem := captureChannelOutput(t, func() int { return runWait([]string{"--root", root, "--resume", waitID, "--json"}) })
 	var result metarun.WaitResult
 	decodeErr := json.Unmarshal([]byte(output), &result)
-	if code != 0 || problem != "" || decodeErr != nil || !result.PointerRepaired {
+	if code != 0 || problem != "" || decodeErr != nil || result.WaitID == waitID || result.PointerRepaired {
 		t.Fatalf("takeover resume code=%d output=%q problem=%q result=%+v err=%v", code, output, problem, result, decodeErr)
 	}
 }

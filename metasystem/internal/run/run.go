@@ -607,6 +607,32 @@ func OwnerDigest(mainId string) string {
 	return hex.EncodeToString(sum[:])[:12]
 }
 
+// AuthenticatedHumanRunWaiter reports whether the human-owned waiter row for
+// this run incarnation still names the exact live process that registered it.
+// Legacy whole-second identities cannot prove this ownership because a reused
+// pid inside that second could otherwise inherit the watched signal.
+func AuthenticatedHumanRunWaiter(root string, prober identity.Prober, id string, target WaiterTarget) bool {
+	ownerDigest := OwnerDigest("")
+	data, err := os.ReadFile(WaiterPath(root, "run", id, ownerDigest))
+	if err != nil {
+		return false
+	}
+	var waiter Waiter
+	if json.Unmarshal(data, &waiter) != nil || waiter.SchemaVersion != 2 || waiter.Kind != "run" ||
+		waiter.TargetID != id || waiter.OwnerDigest != ownerDigest || waiter.MainId != "" ||
+		waiter.State != "pending" || waiter.Delivery != "blocking" || waiter.Result != nil || waiter.Target != target {
+		return false
+	}
+	ref := identity.Ref{
+		Pid: waiter.Pid, StartedAtSec: waiter.PidStartedAt, StartedAtUnixMicro: waiter.PidStartedAtMicro,
+		StartTicks: waiter.PidStartTicks, BootID: waiter.BootID,
+	}
+	if ref.Mode() != identity.CompareDarwinMicroseconds && ref.Mode() != identity.CompareLinuxTicksBootID {
+		return false
+	}
+	return identity.AliveRef(prober, ref) == identity.Alive
+}
+
 // LifecycleTag is the tagged digest encoding for runs (the
 // job form is pinned beside it in internal/goal).
 func (r *Record) LifecycleTag() string {
