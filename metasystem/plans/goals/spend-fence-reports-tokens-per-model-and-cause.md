@@ -9,12 +9,12 @@
 - Origin: human
 - Next step: 2026-09-15 19:25 m1c: DESIGN LANDED as 5bda0be55 (471 lines, plans/spend-fence-reports-tokens-per-model-and-cause-design.md), proof mode standard purpose delivery on tree 3eba6e0d5cecaba59dd12b16b5c3d0baed33dbcc, 12 of 12 groups passed. The landing classifier refuses a delegate-written design page with code=missing-declaration (no engine chain exists for a Fable delegate plus a companion critique), so it landed through Wido's fix-forward lane (hact-20260912/land.sh with ALLOW_NEW_PLAN=1, in his name, with his explicit yes at the terminal); backlog-notes proposals and this seat's receipt lines are restored uncommitted and ride the first build landing. WAITING ON WIDO: the build budget and unit approval. The design's nine units cap at 2450 changed lines (U5a-1 300, U5a-2 300, U5a-3 300, U5a-4 300, U5b-1 250, U5b-2 300, U5c-1 300, U5c-2 250, U5c-3 150); the goal box is elapsedLimit=6h attemptLimit=6 reservedJobMinutes=720, which he raised once today from 4h. The brief for the first unit is written at /private/tmp/claude-501/-Users-wido-LocalStorage-GitHub-agentic-tools-m1c/e67ca063-900a-46ec-9bc8-9fbdcbc3765e/scratchpad/g16/build-brief-u5a-1.md (Codex Sol builds, Opus reads). Nothing else on this goal can start until he sets the build budget.
 - OpenedAt: 2026-09-15T09:38:26Z
-- Revision: 19
-- Budget: elapsedLimit=6h attemptLimit=6 reservedJobMinutesLimit=720 activeJobLimit=1 reviewRoundLimit=2
-- BudgetExceptions: 1
-- Approved: by=human:Wido at=2026-09-15T19:11:11Z revision=18 opid=NRRFZ76DM2Y1KWE6YNHJ3YSHWH-m1c-c6925449 authority=proven digest=a8bb620a1b98d264b2b6a1decc8600635b900be973e02d2fc7720681880ebfee
-- Claimed: machine=m1c lineage=main-1789191340-90689-2eda89 at=2026-09-15T19:11:11Z revision=18 accountingRevision=18 episodeAt=2026-09-15T13:57:56Z episodeRevision=9
-- StopCapability: generation=18 revision=18 machine=m1c claimEpoch=5 fenceEpoch=0
+- Revision: 20
+- Budget: elapsedLimit=3d attemptLimit=12 reservedJobMinutesLimit=720 activeJobLimit=1 reviewRoundLimit=2
+- BudgetExceptions: 2
+- Approved: by=human:Wido at=2026-09-15T19:24:32Z revision=20 opid=XBYTVA1B98DSTDQWGPPWQTW75G-m1c-c6925449 authority=proven digest=8845c73b409d935e44ec6299fe5203db2830fdcd2f383ef842e708e95edb6158
+- Claimed: machine=m1c lineage=main-1789191340-90689-2eda89 at=2026-09-15T19:24:32Z revision=20 accountingRevision=20 episodeAt=2026-09-15T13:57:56Z episodeRevision=9
+- StopCapability: generation=20 revision=20 machine=m1c claimEpoch=5 fenceEpoch=0
 
 History:
 - 2026-09-15T09:38:26Z T88J2JBMZM4AGBZBRDPHJH8MY5-m1e-c6925449 open actor=human:Wido targets=spend-fence-reports-tokens-per-model-and-cause
@@ -36,4 +36,5 @@ History:
 - 2026-09-15T18:16:01Z RQ7H935ZJ2AQR629XEP5HP9KTJ-m1c-a6ea8b3e edit actor=m1c+main-1789191340-90689-2eda89 targets=spend-fence-reports-tokens-per-model-and-cause
 - 2026-09-15T19:11:11Z NRRFZ76DM2Y1KWE6YNHJ3YSHWH-m1c-c6925449 set-budget actor=human:Wido targets=spend-fence-reports-tokens-per-model-and-cause displaced=m1c+main-1789191340-90689-2eda89@2026-09-15T13:57:56Z
 - 2026-09-15T19:21:59Z NYRV2HVNHN18TRAC444Z5PBS6H-m1c-a6ea8b3e edit actor=m1c+main-1789191340-90689-2eda89 targets=spend-fence-reports-tokens-per-model-and-cause
-Integrity: sha256=6c09d95514ada176286ac84072f6dac7bfc7ff4ae7bcbd498e5676d74f5b9e2c
+- 2026-09-15T19:24:32Z XBYTVA1B98DSTDQWGPPWQTW75G-m1c-c6925449 set-budget actor=human:Wido targets=spend-fence-reports-tokens-per-model-and-cause displaced=m1c+main-1789191340-90689-2eda89@2026-09-15T19:11:11Z
+Integrity: sha256=386962d92369220e60e3811083a32b4512da3e14329eeb6aaf3c56d50fb9a859
