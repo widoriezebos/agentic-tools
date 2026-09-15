@@ -1,6 +1,6 @@
 # codex-jobs-run-through-a-metasystem-verb
 
-- State: claimed
+- State: approved
 - Priority: 1
 - Sequence: 14
 - Risk: severity=3 novelty=2 exposure=3 accumulation=3 basis="severity 3: the largest measured leak, about 21 GB and 574 processes in a day; novelty 2: owning an external plugin's job lifecycle through a verb and a terminal observer; exposure 3: every seat delegates builds and critiques to Codex daily; accumulation 3: one broker tree per worktree, growing until killed"
@@ -9,12 +9,11 @@
 - Origin: human
 - Next step: 2026-09-15 16:15 m1c: RELEASED after design review round 2 of 3, so m1c can take spend-fence-reports-tokens-per-model-and-cause (1:2) at the program owner's request (m1e). Revision 2: /private/tmp/claude-501/-Users-wido-LocalStorage-GitHub-agentic-tools-m1c/2c27f5cc-245a-4735-a402-dafc351e4caf/scratchpad/g15/codex-jobs-run-through-a-metasystem-verb-design-r2.md (3484 words; revision 1 beside it). Codex Sol round 2 critique task-mu2q8xz6-lpvd2g: rework, 8 material findings in /private/tmp/claude-501/-Users-wido-LocalStorage-GitHub-agentic-tools-m1c/2c27f5cc-245a-4735-a402-dafc351e4caf/scratchpad/g15/codex-jobs-run-through-a-metasystem-verb-critique-r2.md (round 1 in ...-critique-r1.md, briefs beside them); its broker is stopped and its worktree removed. These scratch files live under /private/tmp and do not survive a reboot: the next claimant copies them first. Next: a fresh Fable delegate writes revision 3 answering the round 2 findings (round 3 is the last, R-42-m0); land the page; Wido approves the unit budget; then the build. Until the verb exists, seats keep stopping the broker for their job's cwd (R-113-m1e).
 - OpenedAt: 2026-09-15T09:05:17Z
-- Revision: 23
+- Revision: 24
 - Budget: elapsedLimit=1d attemptLimit=10 reservedJobMinutesLimit=1200 activeJobLimit=1 reviewRoundLimit=3
 - BudgetExceptions: 0
 - Approved: by=human:Wido at=2026-09-15T09:05:23Z revision=2 opid=50PGGR6362ATVFWK4Q1R345V6S-m1e-c6925449 authority=proven digest=537ebfba093086340305f455481757098770077cca503a905d295291a53ebfa3
-- Claimed: machine=m1c lineage=main-1789191340-90689-792d8f at=2026-09-15T13:03:00Z revision=16 accountingRevision=16 episodeAt=2026-09-15T13:03:00Z episodeRevision=16
-- StopCapability: generation=16 revision=16 machine=m1c claimEpoch=5 fenceEpoch=0
+- Episode: machine=m1c lineage=main-1789191340-90689-792d8f accountingRevision=16 episodeAt=2026-09-15T13:03:00Z episodeRevision=16 idleSeconds=0 released=2026-09-15T13:57:32Z
 
 History:
 - 2026-09-15T09:05:17Z VH18NT8H5Z1JXZ6SVWGC6ZCTZH-m1e-c6925449 open actor=human:Wido targets=codex-jobs-run-through-a-metasystem-verb
@@ -40,4 +39,5 @@ History:
 - 2026-09-15T13:47:57Z JK1ZM399XW0YE5ABZ4BXRJK2XJ-m1c-29fb3255 edit actor=m1c+main-1789191340-90689-792d8f targets=codex-jobs-run-through-a-metasystem-verb
 - 2026-09-15T13:55:08Z KAJK41QK704N4SCS0NHTDRXFJY-m1e-c6925449 set-priority actor=human:Wido targets=actionable-metrics,adoption-filled-delivery-passes-on-trunk,beds-run-under-the-oldest-supported-bash,brief-declares-the-round-boundary,builder-proves-each-rule-by-mutation,busy-seat-shells-are-ended,census-lifecycle-scenario-holds-under-load,chain-landing-carries-the-reviewed-diff,codex-jobs-run-through-a-metasystem-verb,coordinator-context-stays-under-budget,coordinator-wakes-on-events-not-polls,critique-closes-on-folded-proof,cross-cutting-change-inventories-its-readers,deep-sections-cannot-stay-red-unseen,degraded-stop-forms-have-one-source,delegate-sandbox-runs-the-beds,dispatch-bases-chains-on-the-remote-tip,engine-policy-binding-survives-drift-and-load,every-round-gets-an-independent-read,every-verb-resolves-repo-to-an-absolute-root,evidence-and-build-output-have-retention-and-stay-unindexed,failed-job-attention,failures-show-observed-against-expected,fixture-repo-copies-exclude-the-artifacts-store,fixture-runners-and-fakes-bound-their-own-life,fixture-waits-name-their-producer,follow-up-brief-cannot-cite-fresh-trunk-files,human-authority-surface-runs-its-cmd-tests,human-goal-verbs-forgiving,human-wait-does-not-consume-goal-budget,job-record-birth-token,lease-sweep-death-evidence,live-job-on-a-done-goal-unnoticed,machine-concurrency-governor,member-size-gate,metasystem-stop-escalation-proofs,metasystem-stop-fleet-form,moved-effects-are-inventoried-in-the-design,new-elapsed-budgets-use-explicit-hours,pipelines-never-lose-a-truncated-producer,proof-admission-fits-a-seat-proving-several-units,proof-runs-reap-what-they-armed-and-a-census-names-the-rest,receipt-admission-caps-concurrent-batteries,registered-wait-matches-the-runtime-session,repo-root-paths-ride-agent-commits-unjudged,round-proof-feeds-the-next-brief,run-scoped-build-caches-have-a-janitor,seat-landings-run-the-selected-sections,skipped-test-fails-its-group-on-the-other-os,small-change-lane,stop-batch-strands-a-resumable-goal,stop-capability-follows-the-lease-epoch,stop-decision-surface-is-a-gate,stop-gate-sees-harness-tracked-work,stop-hook-never-forces-an-empty-turn,stop-response-carries-a-structured-report-reference,test-environment-edges-are-closed,testing-surfaces-declare-their-mirror,tests-never-wait-on-wall-time,token-spend-fence,trunk-versus-candidate-is-a-verification-step,units-run-through-one-launcher,watch-verb,watcher-repair-request-never-names-current,winddown-census-handoff-leak reason=priority-order subject=units-run-through-one-launcher from=1:13 to=1:14 requested-sequence=3
 - 2026-09-15T13:57:28Z 9WQSH2X9RXNAS5MWCBT4GB956Z-m1c-29fb3255 edit actor=m1c+main-1789191340-90689-792d8f targets=codex-jobs-run-through-a-metasystem-verb
-Integrity: sha256=c846542deb3cd6b4b055d9b77dd5634bfe5d6f22d1ffccaa6f3cbb45c05f2120
+- 2026-09-15T13:57:32Z 81X4HY1XF23P2S864M6ZSBBTSH-m1c-29fb3255 release actor=m1c+main-1789191340-90689-792d8f targets=codex-jobs-run-through-a-metasystem-verb
+Integrity: sha256=348ff43db3661012570b52053dbc28ebae1c85d52d840d463466bbad509f96c6
