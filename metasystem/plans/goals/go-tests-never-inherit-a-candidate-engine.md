@@ -9,13 +9,12 @@
 - Origin: human
 - Next step: 2026-09-15 05:30 m1c. BUILT, NOT YET VERIFIED: goal 11 round 4 completed 03:55 (Codex task-mu1zw80f-2tws2f, /private/tmp/claude-501/-Users-wido-LocalStorage-GitHub-agentic-tools-m1c/96f72de7-79c7-496c-b717-141b91e84b81/scratchpad/g12/wt19; result in ~/.claude/plugins/data/codex-openai-codex/state/*/jobs/task-mu1zw80f-2tws2f.json result.rawOutput) and the brain-boot-failure-keeps-the-wait-line build completed 03:57 (Codex task-mu1zyph9-qr70rk, /private/tmp/claude-501/-Users-wido-LocalStorage-GitHub-agentic-tools-m1c/96f72de7-79c7-496c-b717-141b91e84b81/scratchpad/g12/wt24). For goal 11: read the round-4 report, cut the diff with untracked files, align the enrolled checkout, engine and tree on one tip in one command, test plan, test run --cap-min 120 --retry-decision naming proof-mu1zedfq-88e76db0c9273948 (evidence artifacts/agents/proof-runs/attempts/proof-mu1zedfq-88e76db0c9273948.json); the five known trunk-red deep sections are owned by their own goals; then an Opus read, land with a seat receipt, conclude. For brain-boot: claim after goal 11 lands, read its report, run the selected sections the same way, Opus read, land, conclude. Then registered-wait member A (brief g12/codex-brief-regwait-A.md).
 - OpenedAt: 2026-09-14T16:16:39Z
-- Revision: 31
+- Revision: 32
 - Budget: elapsedLimit=4h attemptLimit=6 reservedJobMinutesLimit=720 activeJobLimit=1 reviewRoundLimit=2
 - BudgetExceptions: 0
 - Approved: by=human:Wido at=2026-09-14T18:54:42Z revision=2 opid=1FVG0RPDDCS253V6D1FVHN0PXJ-m1e-c6925449 authority=proven digest=01c88816aa05e9379310fc5e7cf396643079963790219c3b366e2fd7c7cb0cc6
-- Claimed: machine=m1c lineage=main-1789191340-90689-8975a9 at=2026-09-15T00:35:35Z revision=24 accountingRevision=8 episodeAt=2026-09-14T21:28:54Z episodeRevision=8 idleSeconds=1958
-- StopCapability: generation=24 revision=24 machine=m1c claimEpoch=5 fenceEpoch=1
-- StopFence: stopId=stop-go-tests-never-inherit-a-candidate-engine-r24-f1 revision=24 epoch=1 capabilityGeneration=24 closedAt=2026-09-15T04:03:15Z reason=ELAPSED_LIMIT
+- Claimed: machine=m1c lineage=main-1789191340-90689-8975a9 at=2026-09-15T05:46:42Z revision=32 accountingRevision=32 episodeAt=2026-09-15T05:46:42Z episodeRevision=32
+- StopCapability: generation=32 revision=32 machine=m1c claimEpoch=5 fenceEpoch=0
 
 History:
 - 2026-09-14T16:16:39Z B3R2EK7S895J6G3ZMQCF8FYTZE-m1e-c6925449 open actor=human:Wido targets=go-tests-never-inherit-a-candidate-engine
@@ -49,4 +48,5 @@ History:
 - 2026-09-15T01:33:00Z NDFH6DSX9SJ045KP6B2H07M7Q2-m1c-69c9e454 edit actor=m1c+main-1789191340-90689-8975a9 targets=go-tests-never-inherit-a-candidate-engine
 - 2026-09-15T04:03:15Z GYJ674W5TA8J5PTKP1GW0EVEHG-m1c-43182c96 breach-stop actor=m1c+goal-stop-custodian targets=go-tests-never-inherit-a-candidate-engine
 - 2026-09-15T05:43:13Z AQQNT76MB8P06Z6E9H86V35B39-m1c-69c9e454 edit actor=m1c+main-1789191340-90689-8975a9 targets=go-tests-never-inherit-a-candidate-engine
-Integrity: sha256=15188dcbc229cfc2f78d94ed1cc9e91e46592ff0f4f53b33e08bb5105989c23e
+- 2026-09-15T05:46:42Z 3AQ4TZ298JH8TWC0ZQMX8EQJE6-m1e-c6925449 resume actor=human:Wido targets=go-tests-never-inherit-a-candidate-engine
+Integrity: sha256=a5c7b328ad12bde61f8c296218726562d0552859423511ee49f766a0310f40c4
