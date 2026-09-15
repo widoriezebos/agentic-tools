@@ -7,9 +7,9 @@
 - Tier: 3
 - Intent: On 2026-09-15 the shared seat machine ran at a load of 25 to 37 with 78 growing to 109 orphaned fixture stewards and helpers (about fifteen leaked per full section run, some four days old), beside 574 leaked Codex processes and a busy seat shell (records/misc/leaked-processes-diagnosis-2026-09-15.md). By Wido's decision R-113-m1e this goal keeps what the metasystem fully owns; the Codex broker lifecycle, busy seat shells, and retention and placement of evidence and build output moved to codex-jobs-run-through-a-metasystem-verb, busy-seat-shells-are-ended and evidence-and-build-output-have-retention-and-stay-unindexed. DONE: no fixture process outlives its owner beyond a bounded time: fixture-mode steward runners bound their own life from an authenticated fixture owner, the proof launcher reaps what a run armed on every return path, and fixture fakes carry their own deadlines; a census verb names every metasystem-caused process by owner, age and bound, and a reap verb ends only proven orphans after re-proving exact identity beside each signal; proven by a day of normal three-seat work that ends with no orphaned fixture process. Folds in fixture-stewards-outlive-their-suite (R-112-m1e).
 - Origin: human
-- Next step: 2026-09-15 14:25 m1c: claimed, then released at m1e's word. The design review rounds are used up: revision 3 was critique round 3 (rework, 12 material findings, 7 critical; m1e's worktree .claude/worktrees/leak-design, artifacts/reports/leak-design-critique-r3.md), and R-42-m0 caps review at 3 rounds. Waiting on Wido: split into two small goals (m1e recommends), a seat fold, or park. No seat briefs a revision until he decides.
+- Next step: 2026-09-15 m1c: WIDO DECIDED: split into two small goals (m1e's recommendation after critique round 3 used the review cap; revision 3 page and critiques r2 and r3 live in m1e's worktree .claude/worktrees/leak-design). Next: open the two goals from that material with their own budgets, then conclude or supersede this goal. No seat briefs a revision of the combined page.
 - OpenedAt: 2026-09-15T06:46:29Z
-- Revision: 25
+- Revision: 26
 - Budget: elapsedLimit=1d attemptLimit=10 reservedJobMinutesLimit=1200 activeJobLimit=1 reviewRoundLimit=3
 - BudgetExceptions: 0
 - Approved: by=human:Wido at=2026-09-15T09:05:07Z revision=12 opid=JBAC2XZM7SA6V9NH3V34A4MRKH-m1e-c6925449 authority=proven digest=8e26b3b3e4b55783bfb6368471bd7de0fd750d4c9582ece355151e57d2df42fb
@@ -41,4 +41,5 @@ History:
 - 2026-09-15T12:16:07Z 9JZY876BJBSP1CSY3T5DV1EJSG-m1c-29fb3255 claim actor=m1c+main-1789191340-90689-792d8f targets=seat-machines-shed-leaked-processes
 - 2026-09-15T12:17:26Z ECY7X66QTNSMHBNEF1DNDMTG8R-m1c-29fb3255 edit actor=m1c+main-1789191340-90689-792d8f targets=seat-machines-shed-leaked-processes
 - 2026-09-15T12:18:04Z W4RPAGJPFA08R8H6CVVFY5VTA7-m1c-29fb3255 release actor=m1c+main-1789191340-90689-792d8f targets=seat-machines-shed-leaked-processes
-Integrity: sha256=d5e819d89b188c18f9bb3b69837205310b87ddc1d894f786fdea500fe21e3070
+- 2026-09-15T12:27:31Z 9GBY01XVST1R6WG72GAAE3Q9EP-m1e-c6925449 edit actor=human:Wido targets=seat-machines-shed-leaked-processes
+Integrity: sha256=3e8af25fa021b0fd91e78525e9245736373585548cd785eb887b8f0547b7c04d
