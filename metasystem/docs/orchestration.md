@@ -352,6 +352,21 @@ Peers often share more than the repository: one development machine runs several
 
 The specific shared paths, caches, and lock locations are project facts for `docs/project-rules.md`.
 
+## Seat Rules
+
+These seat rules have been in effect since 2026-09-15 by Wido's word.
+The full statement, including the later form of every rule, is in `plans/seats-spend-tokens-in-bounded-sessions-design.md`, section P6.
+Until unit U3a's configuration keys land, the `context-budget` 200K health line is the trigger; Wido's cap decision in ruling R-114-m1e is 250K.
+
+| rule | today | check |
+| --- | --- | --- |
+| S1 over the trigger | When the `context-budget` health line shows the last call at or over the trigger, the seat keeps working: every remaining multi-call step runs as a fresh bounded delegate; the main session makes at most three main-thread calls per turn (launch, read the return, act); it records the handoff at a quiet point with `metasystem context handoff --root <installation>` when no wait is registering or pending; recording the handoff starts no successor today, so the seat ignores the gate's `end this session` display and keeps working; and it never stops or waits on Wido: a turn ends only by launching a delegate, registering a wait, or landing. | After the first sample at or over the trigger, no turn has more than three main-thread calls; a tool result contains `handoff recorded:`; no turn ends with a question to Wido; no allowed Stop occurs while the seat's claim has a next step. |
+| S2 turns bounded | At most 12 main-thread calls per turn; at most one background Bash per unit at a time; no Monitor; every wait goes through `metasystem job watch` or `metasystem wait`. | Calls between two Stop verdicts are at most 12; Monitor uses zero. |
+| S3 delegates fresh and bounded | A design revision or correction is a fresh delegate (`design-delegates-run-fresh-and-bounded`); `delegate --follow-up` is only for critique rounds on the one critic chain (`skills/design-critique/SKILL.md:64-67`); every code read is fresh with the bounded review brief (`e700328e1`); every delegate prompt starts with `Kind: design`, `build-read`, `critique`, or `other` and names a call budget and a page ceiling; no other `SendMessage` goes to a delegate. | Every Agent prompt's first line is a `Kind:` line and contains the word budget; every design revision or correction is a fresh launch with no `resumedAgentId` and no `--follow-up`; `resumedAgentId` and `--follow-up` results are zero outside critique chains. |
+| S4 messages | A `SendMessage` is at most 400 characters, covers one subject, and is sent at a unit boundary or for a question that stops the sender; it is never an acknowledgement. | Check length and count per unit. |
+| S5 reads by path | The main session never reads a tool result over 20,000 characters; a large output is read by a delegate from its persisted file. | Results over 20,000 characters are zero. |
+| S6 first act | Run `metasystem context resume` first when a handoff waits; otherwise read the `context-budget` line and run `goal next`. | Check the first tool calls. |
+
 ## Runtime Mechanics
 
 Adapters own launch, resume, model, permissions, output-format, and cancellation flags. Do not copy those flags into prose.
