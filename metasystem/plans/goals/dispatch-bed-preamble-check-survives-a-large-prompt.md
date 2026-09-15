@@ -9,13 +9,13 @@
 - Origin: human
 - Next step: 2026-09-15 10:35 m1b claimed (R-111-m1e) and dispatched build job m1b-g12-1789460228, tier 1 MECHANICAL, brief plans/dispatch-bed-preamble-check-survives-a-large-prompt-build-brief.md. Seat measurement: on /bin/bash 3.2 with a 4001-byte preamble, PIPESTATUS 141 0 0 in 10 of 10 runs with 1000 bytes after the preamble, and none with 100 bytes or fewer; the threshold is far below 64 KiB. Build: a host_prompt_opens_with_preamble function (0 match, 1 mismatch, 2 named cause) that reads files only; the mission-runner check calls it; a large-prompt leg inside the scenario (70 KiB remainder matches, one changed preamble byte and a truncated prompt do not). Verification outside the sandbox: no failure message lost from dispatch-fixtures.sh, the old head -c | cmp pipe gone, the mission-runner scenario alone on the candidate and on trunk, then the full selected plan in the lock queue, then land.
 - OpenedAt: 2026-09-14T22:02:05Z
-- Revision: 15
-- Budget: elapsedLimit=1h attemptLimit=3 reservedJobMinutesLimit=360 activeJobLimit=1 reviewRoundLimit=0
-- BudgetExceptions: 0
-- Approved: by=human:Wido at=2026-09-14T22:02:13Z revision=2 opid=3AWAZGMSCCBWKS7NKZRC8HBH3S-m1e-c6925449 authority=proven digest=29a75fd80201ab4654822efb15b6aa3a89b8eae4610079fdfa0ccc62606a6a82
+- Revision: 16
+- Budget: elapsedLimit=3h attemptLimit=3 reservedJobMinutesLimit=360 activeJobLimit=1 reviewRoundLimit=0
+- BudgetExceptions: 1
+- Approved: by=human:Wido at=2026-09-15T08:25:37Z revision=16 opid=V46502V3304C1BMTGQVRWMNZ5Q-m1b-c6925449 authority=proven digest=db3afbe2fdf6f155262cad2a7eb9145960ca4e19ec789eb1dbbf540d43bd1835
 - Sliced: machine=m1b lineage=main-1789191336-90295-e4b24b revision=13 at=2026-09-15T08:17:13Z
-- Claimed: machine=m1b lineage=main-1789191336-90295-e4b24b at=2026-09-15T08:17:04Z revision=13 accountingRevision=13 episodeAt=2026-09-15T08:17:04Z episodeRevision=13
-- StopCapability: generation=13 revision=13 machine=m1b claimEpoch=2 fenceEpoch=0
+- Claimed: machine=m1b lineage=main-1789191336-90295-e4b24b at=2026-09-15T08:25:37Z revision=16 accountingRevision=16 episodeAt=2026-09-15T08:17:04Z episodeRevision=13
+- StopCapability: generation=16 revision=16 machine=m1b claimEpoch=2 fenceEpoch=0
 
 History:
 - 2026-09-14T22:02:05Z V5NNW0CNA231NAHKXBTPZQ191B-m1e-c6925449 open actor=human:Wido targets=dispatch-bed-preamble-check-survives-a-large-prompt
@@ -33,4 +33,5 @@ History:
 - 2026-09-15T08:17:04Z Y9PHXB0ZPSMDTF4F8F1JK3Z44F-m1b-30a7e141 claim actor=m1b+main-1789191336-90295-e4b24b targets=dispatch-bed-preamble-check-survives-a-large-prompt
 - 2026-09-15T08:17:13Z 1N79EP5X5XN40SS75KF5H4CKVY-m1b-30a7e141 slice-start actor=m1b+main-1789191336-90295-e4b24b targets=dispatch-bed-preamble-check-survives-a-large-prompt
 - 2026-09-15T08:17:44Z 33ZDM50B9KPYTF7HMAKDMCRHNC-m1b-30a7e141 edit actor=m1b+main-1789191336-90295-e4b24b targets=dispatch-bed-preamble-check-survives-a-large-prompt
-Integrity: sha256=7e9618767e25e1e95967e4641030662df05f6dd00970df684ba327a6d047601f
+- 2026-09-15T08:25:37Z V46502V3304C1BMTGQVRWMNZ5Q-m1b-c6925449 set-budget actor=human:Wido targets=dispatch-bed-preamble-check-survives-a-large-prompt displaced=m1b+main-1789191336-90295-e4b24b@2026-09-15T08:17:04Z
+Integrity: sha256=49fb40fffd8f7f36cba0aaa27ec1264736f0d90edddb6568d10d8193e5c26216
