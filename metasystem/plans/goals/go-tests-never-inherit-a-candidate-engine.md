@@ -9,12 +9,13 @@
 - Origin: human
 - Next step: 2026-09-15 03:45 m1c. Round 3 engine run complete: attempt proof-mu1zedfq-88e76db0c9273948 (evidence /Users/wido/LocalStorage/GitHub/agentic-tools-m1c/metasystem/artifacts/agents/proof-runs/attempts/proof-mu1zedfq-88e76db0c9273948.json), tree on tip 87532d24, 52 deep groups, 47 passed; the only reds are the five sections red on trunk with their own goals (land-fixtures, dispatcher-adapter-and-mission-runner-fixtures, adoption-fixtures, suite-progress-fixtures, goal-cli-fixtures). Round 4 in flight: Codex task-mu1zw80f-2tws2f in /private/tmp/claude-501/-Users-wido-LocalStorage-GitHub-agentic-tools-m1c/96f72de7-79c7-496c-b717-141b91e84b81/scratchpad/g12/wt19 (brief codex-brief-go-tests-env-r4.md: F1 helper children keep the parent's proven registry home; F2 cleanup by owner flock, not age; check hardening; internal/testenv in a standard group). Verify round 4 through the engine with --retry-decision naming proof-mu1zedfq-88e76db0c9273948; align checkout, engine and tree on one tip in one command first. Then an Opus read, land with a seat receipt, conclude. In parallel: brain-boot-failure-keeps-the-wait-line build, Codex task-mu1zyph9-qr70rk in /private/tmp/claude-501/-Users-wido-LocalStorage-GitHub-agentic-tools-m1c/96f72de7-79c7-496c-b717-141b91e84b81/scratchpad/g12/wt24; ledger claim at landing.
 - OpenedAt: 2026-09-14T16:16:39Z
-- Revision: 29
+- Revision: 30
 - Budget: elapsedLimit=4h attemptLimit=6 reservedJobMinutesLimit=720 activeJobLimit=1 reviewRoundLimit=2
 - BudgetExceptions: 0
 - Approved: by=human:Wido at=2026-09-14T18:54:42Z revision=2 opid=1FVG0RPDDCS253V6D1FVHN0PXJ-m1e-c6925449 authority=proven digest=01c88816aa05e9379310fc5e7cf396643079963790219c3b366e2fd7c7cb0cc6
 - Claimed: machine=m1c lineage=main-1789191340-90689-8975a9 at=2026-09-15T00:35:35Z revision=24 accountingRevision=8 episodeAt=2026-09-14T21:28:54Z episodeRevision=8 idleSeconds=1958
-- StopCapability: generation=24 revision=24 machine=m1c claimEpoch=5 fenceEpoch=0
+- StopCapability: generation=24 revision=24 machine=m1c claimEpoch=5 fenceEpoch=1
+- StopFence: stopId=stop-go-tests-never-inherit-a-candidate-engine-r24-f1 revision=24 epoch=1 capabilityGeneration=24 closedAt=2026-09-15T04:03:15Z reason=ELAPSED_LIMIT
 
 History:
 - 2026-09-14T16:16:39Z B3R2EK7S895J6G3ZMQCF8FYTZE-m1e-c6925449 open actor=human:Wido targets=go-tests-never-inherit-a-candidate-engine
@@ -46,4 +47,5 @@ History:
 - 2026-09-15T01:30:54Z RR56PXFJA5ZG86XV1WT0RJWQ9E-m1c-69c9e454 edit actor=m1c+main-1789191340-90689-8975a9 targets=go-tests-never-inherit-a-candidate-engine
 - 2026-09-15T01:32:19Z MEBW66AWEYC48B868ZWG0J47ZM-m1c-69c9e454 edit actor=m1c+main-1789191340-90689-8975a9 targets=go-tests-never-inherit-a-candidate-engine
 - 2026-09-15T01:33:00Z NDFH6DSX9SJ045KP6B2H07M7Q2-m1c-69c9e454 edit actor=m1c+main-1789191340-90689-8975a9 targets=go-tests-never-inherit-a-candidate-engine
-Integrity: sha256=a0e158ae0edac26840d1f31c25577be76832ead16b3aa462315d086c1896c0ef
+- 2026-09-15T04:03:15Z GYJ674W5TA8J5PTKP1GW0EVEHG-m1c-43182c96 breach-stop actor=m1c+goal-stop-custodian targets=go-tests-never-inherit-a-candidate-engine
+Integrity: sha256=d4230803628fff352feb9ad3400d499ad13bc1fa32c209e1a0131e9c0b2074cc
