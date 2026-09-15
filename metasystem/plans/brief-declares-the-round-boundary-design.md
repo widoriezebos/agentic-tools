@@ -841,6 +841,10 @@ Landing note (read finding F-10): after 1b-i lands, rebuild every seat's engine 
 
 The unit 2 read found that diff attributes and configuration can still change ChangedLines' count under the exact argv and the runner's pins: a text change counts zero under a binary diff driver, under core.bigFileThreshold=1, or when the candidate adds a .gitattributes with * -diff, and diff.relative=true undercounts from a nested workspace. Unit 2 conforms to this page, which fixes the argv and prices binary contents at zero. Before unit 4c uses the count for the Ceiling, this page decides whether the count ignores repository attributes and those settings (for example --no-relative, an attribute source, or a pinned big-file threshold), and unit 4c is briefed with that decision.
 
+### Seat ruling A5 (unit 3a split)
+
+Unit 3a's first draft reached 474 changed lines against the 400-line ceiling (the page allocated 390). The seat split it without trimming a witness. Unit 3a-i is row R1, the closed admitted-record codec (brief_bounds_record.go and its test). Unit 3a-ii is rows R2 and R3, the composition marker and the optional source admission (composition.go, build.go and composition_brief_bounds_test.go), built on a tree carrying 3a-i. Units 3b and 3c follow 3a-ii.
+
 ## Critique record
 
 Round 1 reported eight material findings. Round 2 reported three material findings and reopened R1-04 and R1-07. The seat's round-2 rulings settle the source contract, path classification, and witness granularity. These dispositions fold all remaining findings into this spec. They do not claim passing implementation proof.
