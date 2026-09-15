@@ -2,14 +2,14 @@
 
 - State: approved
 - Priority: 1
-- Sequence: 30
+- Sequence: 31
 - Risk: severity=2 novelty=1 exposure=3 accumulation=2 basis="severity 2: a bed that cannot start hides every scenario in it; novelty 1: a known portability class; exposure 3: every bed on every Mac seat; accumulation 2: each new array risks it again"
 - Tier: 2
 - Intent: Fixture beds must run on the oldest shell a supported machine ships. On 2026-09-14 a new supervision bed expanded an empty array under set -u; macOS ships bash 3.2, which rejects that, so the whole bed died in the second it started while the build's sandbox, on a newer bash, saw nothing. The same class recurs whenever a bed adds an array. DONE: the gate parses and exercises every fixture bed's risky constructs under /bin/bash 3.2 semantics and refuses a bed that would fail there, naming the file and line.
 - Origin: human
 - Next step: Add a gate check that runs bash -n under the oldest supported bash and a static scan for empty-array expansion under set -u and other 3.2-incompatible constructs; prove it catches the 2026-09-14 line-45 defect.
 - OpenedAt: 2026-09-14T16:16:20Z
-- Revision: 33
+- Revision: 34
 - Budget: elapsedLimit=4h attemptLimit=6 reservedJobMinutesLimit=720 activeJobLimit=1 reviewRoundLimit=2
 - BudgetExceptions: 0
 - Approved: by=human:Wido at=2026-09-14T18:54:30Z revision=2 opid=EJSD1FG33MKT5NRH95HQJ5XSQD-m1e-c6925449 authority=proven digest=37322810b14872d2df18353f03628f0f19340493c8c98660a7cc2900065de837
@@ -48,4 +48,5 @@ History:
 - 2026-09-15T06:03:20Z ZJ6T6FVTESS8HXHBJGR0GVNTMD-m1e-c6925449 set-priority actor=human:Wido targets=beds-run-under-the-oldest-supported-bash,deep-sections-cannot-stay-red-unseen,every-round-gets-an-independent-read,failures-show-observed-against-expected,ledger-attention-clears-after-journaled-verbs,moved-effects-are-inventoried-in-the-design,stop-response-carries-a-structured-report-reference,tests-never-wait-on-wall-time reason=priority-order subject=tests-never-wait-on-wall-time from=1:27 to=1:28 requested-sequence=26
 - 2026-09-15T06:03:37Z BC060GAS8A40ZJ70DHK2BPSF6M-m1e-c6925449 set-priority actor=human:Wido targets=beds-run-under-the-oldest-supported-bash,every-round-gets-an-independent-read,ledger-attention-clears-after-journaled-verbs,moved-effects-are-inventoried-in-the-design reason=priority-order subject=every-round-gets-an-independent-read from=1:28 to=1:29 requested-sequence=27
 - 2026-09-15T06:03:54Z AM7732K8MGNAE8KGJ5RYF8A4ZH-m1e-c6925449 set-priority actor=human:Wido targets=beds-run-under-the-oldest-supported-bash,cross-cutting-change-inventories-its-readers,deep-sections-cannot-stay-red-unseen,degraded-stop-forms-have-one-source,failures-show-observed-against-expected,human-goal-verbs-forgiving,ledger-attention-clears-after-journaled-verbs,member-size-gate,moved-effects-are-inventoried-in-the-design,seat-landings-run-the-selected-sections,stop-batch-strands-a-resumable-goal,stop-capability-follows-the-lease-epoch,stop-decision-surface-is-a-gate,stop-response-carries-a-structured-report-reference,testing-surfaces-declare-their-mirror,trunk-versus-candidate-is-a-verification-step reason=priority-order subject=human-goal-verbs-forgiving from=1:29 to=1:30 requested-sequence=28
-Integrity: sha256=a9dcbeccd17af04b2725f2be5180e8f3a90b8c41b2361d789b8b0e490b8b8d14
+- 2026-09-15T06:04:09Z 6850T4VHA75W5K4WF8KDY3PQE9-m1e-c6925449 set-priority actor=human:Wido targets=beds-run-under-the-oldest-supported-bash,deep-sections-cannot-stay-red-unseen,degraded-stop-forms-have-one-source,failures-show-observed-against-expected,ledger-attention-clears-after-journaled-verbs,member-size-gate,moved-effects-are-inventoried-in-the-design,seat-landings-run-the-selected-sections,stop-response-carries-a-structured-report-reference,testing-surfaces-declare-their-mirror reason=priority-order subject=seat-landings-run-the-selected-sections from=1:30 to=1:31 requested-sequence=29
+Integrity: sha256=123e45a1313d70e292fd2d2900b37a71edbb26eeb02a95b3a94a0735bbf4714a
