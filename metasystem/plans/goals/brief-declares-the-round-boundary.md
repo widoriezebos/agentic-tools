@@ -1,6 +1,6 @@
 # brief-declares-the-round-boundary
 
-- State: approved
+- State: claimed
 - Priority: 1
 - Sequence: 6
 - Risk: severity=2 novelty=2 exposure=3 accumulation=2 basis="severity 2: a wrong boundary refuses a legitimate round or admits an unrelated one, both recoverable by a brief edit; novelty 2: a new brief header and a new conformance check, but both sit beside existing preflight and boundary code; exposure 3: every implementer chain on every runtime; accumulation 2: each undetected drift costs a read plus a fold round and the rounds compound across a program."
@@ -9,12 +9,13 @@
 - Origin: human
 - Next step: STATE (m1e; builds Codex gpt-5.6-sol, reads Opus): design revision 3 as amended after unit 1b's read (rulings A1 to A5) is the implementation spec. Landed: unit 1a e461dfd1, 1b-i fad3ace8, 1b-ii 314fb806, 2 9c030bcb, 3a-i 300ecfc6 (row R1, the admitted bounds record codec; unit 3a split under ruling A5). Next, in order, each briefed to Codex with its own Boundary, Ceiling and proof rule, read by Opus, and landed after every section the test plan selects: unit 3a-ii (rows R2 and R3, the composition marker and optional source admission), building now in worktree bdrb-u3a-ii from the set-aside draft, then 3b, 3c, 4a (its backslash end-to-end test re-derived under rulings A1 and A4), 4b, 4c (first decide the count's handling of attributes and settings, page section 'Carried to unit 4c'), 6a, 6b. builder-proves-each-rule-by-mutation U0 follows 3a-ii to 3c.
 - OpenedAt: 2026-09-14T15:28:36Z
-- Revision: 17
+- Revision: 18
 - Pinned: m1e
 - Budget: elapsedLimit=1d attemptLimit=10 reservedJobMinutesLimit=720 activeJobLimit=1 reviewRoundLimit=2
 - BudgetExceptions: 0
 - Approved: by=human:Wido at=2026-09-14T15:30:46Z revision=4 opid=3HTZ3RYJ6783ZGP6BCKRGKQZXN-m1e-c6925449 authority=proven digest=62b713cabfa16e685174e1c86975f82c1ab657462844e5102cc0a110359a0d6c
-- Episode: machine=m1e lineage=main-1789030447-51011-5722fc accountingRevision=12 episodeAt=2026-09-15T01:49:51Z episodeRevision=12 idleSeconds=2446 released=2026-09-15T08:43:26Z
+- Claimed: machine=m1e lineage=main-1789030447-51011-5722fc at=2026-09-15T09:22:11Z revision=18 accountingRevision=12 episodeAt=2026-09-15T01:49:51Z episodeRevision=12 idleSeconds=4771
+- StopCapability: generation=18 revision=18 machine=m1e claimEpoch=1 fenceEpoch=0
 
 History:
 - 2026-09-14T15:28:36Z 8AZ0ZXR3DM2PT1EVT97Y1F7WYA-m1e-c6925449 open actor=human:Wido targets=brief-declares-the-round-boundary
@@ -34,4 +35,5 @@ History:
 - 2026-09-15T07:12:44Z 6ZPZJJ8HXBDAYD8SW54GD362X1-m1e-892cdaec claim actor=m1e+main-1789030447-51011-5722fc targets=brief-declares-the-round-boundary
 - 2026-09-15T08:00:51Z TV2RR64CJGVJC4RTKSTRA7P7X2-m1e-c6925449 edit actor=human:Wido targets=brief-declares-the-round-boundary displaced=m1e+main-1789030447-51011-5722fc@2026-09-15T07:12:44Z
 - 2026-09-15T08:43:26Z A1K4HM0D59HEXM01PTFK900NP5-m1e-892cdaec release actor=m1e+main-1789030447-51011-5722fc targets=brief-declares-the-round-boundary
-Integrity: sha256=7ef52b7b4d3cf1554cf0fc77cabae279d05d1883615cc9fdb245e10414129b1e
+- 2026-09-15T09:22:11Z 1YCMZVJEBVBFMNFE7MQCYAA9FY-m1e-892cdaec claim actor=m1e+main-1789030447-51011-5722fc targets=brief-declares-the-round-boundary
+Integrity: sha256=617c1260b5bacd798e467551943dc4b07c251e015cb4114f240dde6c60ec6a09
