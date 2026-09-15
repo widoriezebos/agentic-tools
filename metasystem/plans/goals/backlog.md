@@ -6,7 +6,7 @@
 - MigrationEpoch: 2026-08-20T00:00:00Z
 - ManifestDigest: d82032bee818c2d82e6a95e6f1b75347499b88ee8b68c4d20a0f3c94d00ba320
 - MigrationMode: manifest
-- Revision: 84
+- Revision: 85
 - ApprovalGate: since=2026-09-03T14:16:24Z opid=JY54AQT8101VK9353WT9FQYGA9-m0-c5dbf036
 - FleetEnrollment: at=2026-09-06T06:37:21Z machine=m1 generation=1 opid=CMNCRETKYCB18MFZNYFSZJPXQY-m1-a4f8999f
 
@@ -107,4 +107,5 @@ History:
 - 2026-09-15T13:03:00Z C83JXN6KX6ASQBP9WKC52AH96B-m1c-29fb3255 ack actor=m1c+main-1789191340-90689-792d8f targets=suite-progress-bed-runs-on-trunk displaced=m1c+main-1789191340-90689-792d8f@2026-09-15T12:18:09Z ack
 - 2026-09-15T14:01:39Z W89Q0CM58SA5XQPQN6DPWS1D1Z-m1b-30a7e141 ack actor=m1b+main-1789191336-90295-e4b24b targets=every-verb-resolves-repo-to-an-absolute-root displaced=m1b+main-1789191336-90295-e4b24b@2026-09-15T12:38:32Z ack
 - 2026-09-15T14:19:47Z T7XVX4PHEDP4HCQKGT9E6ARKN8-m1c-a6ea8b3e ack actor=m1c+main-1789191340-90689-2eda89 targets=spend-fence-reports-tokens-per-model-and-cause displaced=m1c+main-1789191340-90689-2eda89@2026-09-15T13:57:56Z ack
-Integrity: sha256=19e6eabffb7b00b67aadb97d7f19cb60e3733dbd2ece7b6d337d53182158a1b0
+- 2026-09-15T15:58:41Z Q3QHW72TYK67S1ARK71CN07AMT-m1b-30a7e141 ack actor=m1b+main-1789191336-90295-e4b24b targets=registered-wait-matches-the-runtime-session displaced=m1b+main-1789191336-90295-e4b24b@2026-09-15T14:21:33Z ack
+Integrity: sha256=0d8ca912729783ad9bac478a770bbac94c741f048dee876aa13d25cfb0c00a06
