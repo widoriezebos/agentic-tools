@@ -1,6 +1,6 @@
 # every-verb-resolves-repo-to-an-absolute-root
 
-- State: approved
+- State: claimed
 - Priority: 1
 - Sequence: 15
 - Risk: severity=2 novelty=1 exposure=2 accumulation=2 basis="severity 2: false health alarms that send seats chasing phantom corruption; novelty 1: path hygiene; exposure 2: any human or seat running verbs by hand; accumulation 2: each false alarm costs a diagnosis"
@@ -9,11 +9,13 @@
 - Origin: human
 - Next step: 2026-09-15 16:00 m1b. Round 2 (job m1b-g15r2-1789477007) swapped 238 root and repo flags to a path flag helper (717 lines; only the four chain-root flags stay plain), but the seat's full cmd/metasystem run outside the sandbox failed 15 tests. The 14 that exist on trunk pass on trunk 70134f647. Cause: the helper resolved symlinks, and keys derived from root paths (transcript project directories, enrollment, waiter records, output references) are written with unresolved paths; on macOS temp roots under the var directory resolve into the private directory. Round 3 dispatched fresh as job m1b-g15r3-1789479483 (brief plans/every-verb-resolves-repo-to-an-absolute-root-build-r3-brief.md, candidate carried on local branch m1b-g15-round2-candidate): absolute and cleaned only, no symlink resolution. OPEN FOR WIDO: the approved DONE says symlink-resolved; the seat proposes absolute only, because resolution breaks path-derived keys. NEXT: verify round 3 outside the sandbox (full cmd/metasystem package against trunk), prove the selected plan, land with a receipt line; conclude only after Wido's word on the DONE wording.
 - OpenedAt: 2026-09-14T16:16:45Z
-- Revision: 54
+- Revision: 55
 - Budget: elapsedLimit=4h attemptLimit=6 reservedJobMinutesLimit=720 activeJobLimit=1 reviewRoundLimit=2
 - BudgetExceptions: 0
 - Approved: by=human:Wido at=2026-09-15T14:01:13Z revision=54 opid=SWK4VTP7726EJNRYCTEH1YKCXM-m1e-c6925449 authority=proven digest=e9d879317eac790baa0a041a071544486ddc06e9e2d8d7a1d1a78b2d0c0e19d3
 - Sliced: machine=m1b lineage=main-1789191336-90295-e4b24b revision=41 at=2026-09-15T12:45:13Z
+- Claimed: machine=m1b lineage=main-1789191336-90295-e4b24b at=2026-09-15T14:01:39Z revision=55 accountingRevision=55 episodeAt=2026-09-15T14:01:39Z episodeRevision=55
+- StopCapability: generation=55 revision=55 machine=m1b claimEpoch=2 fenceEpoch=0
 
 History:
 - 2026-09-14T16:16:45Z 2FC3WFPAYJENAPGDPHC3D3Z11Z-m1e-c6925449 open actor=human:Wido targets=every-verb-resolves-repo-to-an-absolute-root
@@ -70,4 +72,5 @@ History:
 - 2026-09-15T14:00:36Z M462VZW551YNNDTC65KRNCKWHW-m1e-c6925449 edit actor=human:Wido targets=every-verb-resolves-repo-to-an-absolute-root
 - 2026-09-15T14:01:07Z XJ0FKB5HPER7DCJTGXP9MA44ZJ-m1e-c6925449 unpark actor=human:Wido targets=every-verb-resolves-repo-to-an-absolute-root
 - 2026-09-15T14:01:13Z SWK4VTP7726EJNRYCTEH1YKCXM-m1e-c6925449 approve actor=human:Wido targets=every-verb-resolves-repo-to-an-absolute-root
-Integrity: sha256=ca29ef77325dbf2aeb768d11a002828cfa576b7e5da5b3369b9f783510cecdff
+- 2026-09-15T14:01:39Z W89Q0CM58SA5XQPQN6DPWS1D1Z-m1b-30a7e141 claim actor=m1b+main-1789191336-90295-e4b24b targets=every-verb-resolves-repo-to-an-absolute-root
+Integrity: sha256=59ce59dcdf8f08fe278926247376121fb79cd9f930b4294728b002fd575eab30

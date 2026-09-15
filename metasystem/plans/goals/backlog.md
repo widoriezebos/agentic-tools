@@ -6,7 +6,7 @@
 - MigrationEpoch: 2026-08-20T00:00:00Z
 - ManifestDigest: d82032bee818c2d82e6a95e6f1b75347499b88ee8b68c4d20a0f3c94d00ba320
 - MigrationMode: manifest
-- Revision: 82
+- Revision: 83
 - ApprovalGate: since=2026-09-03T14:16:24Z opid=JY54AQT8101VK9353WT9FQYGA9-m0-c5dbf036
 - FleetEnrollment: at=2026-09-06T06:37:21Z machine=m1 generation=1 opid=CMNCRETKYCB18MFZNYFSZJPXQY-m1-a4f8999f
 
@@ -105,4 +105,5 @@ History:
 - 2026-09-15T10:40:04Z KSPZF9860HA7SVJFD30RS4XPD8-m1e-892cdaec ack actor=m1e+main-1789030447-51011-5722fc targets=brief-declares-the-round-boundary displaced=m1e+main-1789030447-51011-5722fc@2026-09-15T09:22:11Z ack
 - 2026-09-15T12:16:07Z 9JZY876BJBSP1CSY3T5DV1EJSG-m1c-29fb3255 ack actor=m1c+main-1789191340-90689-792d8f targets=design-delegates-run-fresh-and-bounded displaced=m1c+main-1789191340-90689-792d8f@2026-09-15T11:38:06Z ack
 - 2026-09-15T13:03:00Z C83JXN6KX6ASQBP9WKC52AH96B-m1c-29fb3255 ack actor=m1c+main-1789191340-90689-792d8f targets=suite-progress-bed-runs-on-trunk displaced=m1c+main-1789191340-90689-792d8f@2026-09-15T12:18:09Z ack
-Integrity: sha256=4190c9f73635554fa77c43b070049f8dcf8978555b0678d7a697659e96cfc297
+- 2026-09-15T14:01:39Z W89Q0CM58SA5XQPQN6DPWS1D1Z-m1b-30a7e141 ack actor=m1b+main-1789191336-90295-e4b24b targets=every-verb-resolves-repo-to-an-absolute-root displaced=m1b+main-1789191336-90295-e4b24b@2026-09-15T12:38:32Z ack
+Integrity: sha256=fddb836f3ed08f1e50699327cea571dfd42a70c1f65c6bb2a815620d36fa6330
