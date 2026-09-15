@@ -50,13 +50,20 @@ type rolePacketSource struct {
 // CompositionSource binds one delivered packet range to the bytes selected
 // from its declared source.
 type CompositionSource struct {
-	Slot            string `json:"slot"`
-	Source          string `json:"source"`
-	SourceDigest    string `json:"sourceDigest"`
-	DeliveredDigest string `json:"deliveredDigest"`
-	SourceBytes     int    `json:"sourceBytes"`
-	StartByte       int    `json:"startByte"`
-	EndByte         int    `json:"endByte"`
+	Slot            string               `json:"slot"`
+	Source          string               `json:"source"`
+	SourceDigest    string               `json:"sourceDigest"`
+	DeliveredDigest string               `json:"deliveredDigest"`
+	SourceBytes     int                  `json:"sourceBytes"`
+	StartByte       int                  `json:"startByte"`
+	EndByte         int                  `json:"endByte"`
+	AdmittedBrief   *AdmittedBriefMarker `json:"admittedBrief,omitempty"`
+}
+
+type AdmittedBriefMarker struct {
+	SchemaVersion int    `json:"schemaVersion"`
+	Bounded       bool   `json:"bounded"`
+	RecordSHA256  string `json:"recordSha256"`
 }
 
 type CompositionReference struct {
@@ -134,6 +141,7 @@ type ComposeRolePacketParams struct {
 	ToolPolicy        string
 	ExtraSources      []string
 	Continuations     []CompositionContinuation
+	AdmittedBounds    string
 	// CapMinutes is the round's authorized cap when the dispatcher resolved
 	// it before composing; ReturnMarginMinutes is the margin the return-by
 	// sentence keeps before it (zero asks for the return by the cap itself,
@@ -217,6 +225,21 @@ type CompositionContinuation struct {
 func ComposeRolePacket(p ComposeRolePacketParams) (CompositionRecord, error) {
 	if p.Root == "" || p.Role == "" || p.Brief == "" || p.JobID == "" || p.Runtime == "" || p.Model == "" || p.ToolPolicy == "" || p.Round < 1 || p.Output == "" || p.CompositionOutput == "" {
 		return CompositionRecord{}, fmt.Errorf("role-packet composition requires root, role, brief, job, runtime, model, tool policy, round, output, and composition output")
+	}
+	var admittedBrief *AdmittedBriefMarker
+	if p.AdmittedBounds != "" {
+		data, err := os.ReadFile(p.AdmittedBounds)
+		if err != nil {
+			return CompositionRecord{}, fmt.Errorf("read admitted brief bounds: %w", err)
+		}
+		boundsRecord, err := DecodeBriefBoundsRecord(data)
+		if err != nil {
+			return CompositionRecord{}, err
+		}
+		if boundsRecord.JobID != p.JobID || boundsRecord.Round != p.Round {
+			return CompositionRecord{}, fmt.Errorf("admitted brief bounds do not bind job %s round %d", p.JobID, p.Round)
+		}
+		admittedBrief = &AdmittedBriefMarker{SchemaVersion: 1, Bounded: boundsRecord.Boundary != nil, RecordSHA256: digestBytes(data)}
 	}
 	tableBytes, recipe, err := ValidateRolePacketSources(p.Root, p.Role, p.ExtraSources)
 	if err != nil {
@@ -384,10 +407,14 @@ func ComposeRolePacket(p ComposeRolePacketParams) (CompositionRecord, error) {
 			delivered := renderSection(section, section.referenced)
 			start := packet.Len()
 			packet.Write(delivered)
-			sources = append(sources, CompositionSource{
+			source := CompositionSource{
 				Slot: section.slot, Source: section.source, SourceDigest: digestBytes(section.raw), DeliveredDigest: digestBytes(delivered),
 				SourceBytes: len(section.raw), StartByte: start, EndByte: packet.Len(),
-			})
+			}
+			if section.slot == "task-direction" && section.source == "caller:brief" {
+				source.AdmittedBrief = admittedBrief
+			}
+			sources = append(sources, source)
 		}
 		return packet.Bytes(), sources
 	}

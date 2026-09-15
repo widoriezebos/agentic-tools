@@ -1017,7 +1017,7 @@ func readCompositionForJob(path, job, role, runtimeName, model, mission string, 
 	previousEnd := int64(0)
 	for index, raw := range sources {
 		source, ok := raw.(map[string]any)
-		if !ok || len(source) != 7 {
+		if !ok || (len(source) != 7 && len(source) != 8) {
 			return nil, fmt.Errorf("composition source %d has an invalid shape", index)
 		}
 		for _, field := range []string{"slot", "source", "sourceDigest", "deliveredDigest", "sourceBytes", "startByte", "endByte"} {
@@ -1032,6 +1032,20 @@ func readCompositionForJob(path, job, role, runtimeName, model, mission string, 
 			!incarnationRe.MatchString(asString(source["sourceDigest"])) || !incarnationRe.MatchString(asString(source["deliveredDigest"])) ||
 			!startOK || !endOK || !bytesOK || start != previousEnd || end <= start || sourceBytes < 0 {
 			return nil, fmt.Errorf("composition source %d has invalid identity, digests, or byte range", index)
+		}
+		marker, marked := source["admittedBrief"]
+		if len(source) == 8 && !marked {
+			return nil, fmt.Errorf("composition source %d has an invalid shape", index)
+		}
+		if marked {
+			admitted, objectOK := marker.(map[string]any)
+			version, versionOK := numInt(admitted["schemaVersion"])
+			_, boundedOK := admitted["bounded"].(bool)
+			if !objectOK || len(admitted) != 3 || !versionOK || version != 1 || !boundedOK ||
+				!incarnationRe.MatchString(asString(admitted["recordSha256"])) ||
+				asString(source["slot"]) != "task-direction" || asString(source["source"]) != "caller:brief" {
+				return nil, fmt.Errorf("composition source %d has invalid admitted brief evidence", index)
+			}
 		}
 		previousEnd = end
 	}
