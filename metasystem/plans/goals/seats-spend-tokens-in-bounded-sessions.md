@@ -1,6 +1,6 @@
 # seats-spend-tokens-in-bounded-sessions
 
-- State: approved
+- State: claimed
 - Priority: 1
 - Sequence: 1
 - Risk: severity=3 novelty=2 exposure=3 accumulation=3 basis="severity 3: about 244M tokens in a day for one seat, most of it re-reading one session's context; novelty 2: delegate-bounded coordination and handoff at a size, on top of existing context and stop-gate machinery; exposure 3: every seat, every turn; accumulation 3: session context only grows until handed off"
@@ -9,13 +9,16 @@
 - Origin: human
 - Next step: Diagnose first, cheaply: split 2026-09-15's tokens per seat by cause (turns started by stop-hook refusals, background notifications, peer messages, user turns, and large reads) from the session transcripts and the spend fence, and name the top three causes with numbers. Then a Claude Fable design that builds on coordinator-context-stays-under-budget (context handoff), stop-gate-sees-harness-tracked-work and coordinator-wakes-on-events-not-polls rather than beside them; one Codex critique; build in units. Meanwhile m1e runs as a thin coordinator with delegates (memory m1e-handoff-2026-09-15-1400).
 - OpenedAt: 2026-09-15T09:35:07Z
-- Revision: 3
+- Revision: 4
 - Budget: elapsedLimit=1d attemptLimit=10 reservedJobMinutesLimit=1200 activeJobLimit=1 reviewRoundLimit=3
 - BudgetExceptions: 0
 - Approved: by=human:Wido at=2026-09-15T09:35:13Z revision=2 opid=HN761W4YE9ENW1S8D5PF4972ZF-m1e-c6925449 authority=proven digest=385f4dc72355f91d9a11ea1bdaac09f619ae1b3acebb7d6a604c2f0ab9f4b086
+- Claimed: machine=m1e lineage=main-1789030447-51011-5722fc at=2026-09-15T10:40:08Z revision=4 accountingRevision=4 episodeAt=2026-09-15T10:40:08Z episodeRevision=4
+- StopCapability: generation=4 revision=4 machine=m1e claimEpoch=1 fenceEpoch=0
 
 History:
 - 2026-09-15T09:35:07Z N1MEMJWFAH427K3GFXZAWFWVZ5-m1e-c6925449 open actor=human:Wido targets=seats-spend-tokens-in-bounded-sessions
 - 2026-09-15T09:35:13Z HN761W4YE9ENW1S8D5PF4972ZF-m1e-c6925449 approve actor=human:Wido targets=seats-spend-tokens-in-bounded-sessions
 - 2026-09-15T09:35:19Z KBAEABJSC6JZ6BBV8XE0WF862R-m1e-c6925449 set-priority actor=human:Wido targets=actionable-metrics,adoption-filled-delivery-passes-on-trunk,beds-run-under-the-oldest-supported-bash,brief-declares-the-round-boundary,builder-proves-each-rule-by-mutation,busy-seat-shells-are-ended,chain-landing-carries-the-reviewed-diff,codex-jobs-run-through-a-metasystem-verb,coordinator-context-stays-under-budget,coordinator-wakes-on-events-not-polls,critique-closes-on-folded-proof,cross-cutting-change-inventories-its-readers,deep-sections-cannot-stay-red-unseen,degraded-stop-forms-have-one-source,delegate-sandbox-runs-the-beds,design-allocations-leave-ceiling-margin,dispatch-bases-chains-on-the-remote-tip,dispatch-mission-timeout-scenario-holds-under-load,engine-policy-binding-survives-drift-and-load,every-round-gets-an-independent-read,every-verb-resolves-repo-to-an-absolute-root,evidence-and-build-output-have-retention-and-stay-unindexed,failed-job-attention,failures-show-observed-against-expected,fixture-repo-copies-exclude-the-artifacts-store,fixture-waits-name-their-producer,follow-up-brief-cannot-cite-fresh-trunk-files,goal-cli-power-of-attorney-check-reads-the-backlog-from-a-file,human-authority-surface-runs-its-cmd-tests,human-goal-verbs-forgiving,human-wait-does-not-consume-goal-budget,job-record-birth-token,lease-sweep-death-evidence,live-job-on-a-done-goal-unnoticed,machine-concurrency-governor,member-size-gate,metasystem-stop-escalation-proofs,metasystem-stop-fleet-form,moved-effects-are-inventoried-in-the-design,new-elapsed-budgets-use-explicit-hours,pipelines-never-lose-a-truncated-producer,proof-admission-fits-a-seat-proving-several-units,receipt-admission-caps-concurrent-batteries,registered-wait-matches-the-runtime-session,repo-root-paths-ride-agent-commits-unjudged,round-proof-feeds-the-next-brief,run-scoped-build-caches-have-a-janitor,seat-landings-run-the-selected-sections,seat-machines-shed-leaked-processes,seats-spend-tokens-in-bounded-sessions,skipped-test-fails-its-group-on-the-other-os,small-change-lane,stop-batch-strands-a-resumable-goal,stop-capability-follows-the-lease-epoch,stop-decision-surface-is-a-gate,stop-gate-sees-harness-tracked-work,stop-hook-never-forces-an-empty-turn,stop-response-carries-a-structured-report-reference,suite-progress-bed-runs-on-trunk,test-environment-edges-are-closed,testing-surfaces-declare-their-mirror,tests-never-wait-on-wall-time,token-spend-fence,trunk-versus-candidate-is-a-verification-step,watch-verb,watcher-repair-request-never-names-current,winddown-census-handoff-leak reason=priority-order subject=seats-spend-tokens-in-bounded-sessions from=unranked to=1:1 requested-sequence=1
-Integrity: sha256=aa48b37f144cd1a354317cf344ce0a592102e32ce428b1361f1e4aad5d7f4010
+- 2026-09-15T10:40:08Z JDSFJPCFSVYMMB0V3T4G4PJW2A-m1e-892cdaec claim actor=m1e+main-1789030447-51011-5722fc targets=seats-spend-tokens-in-bounded-sessions
+Integrity: sha256=3bc7c5ac7eb36e843119d14a73c1cf033d523c957a45129e7fd11a6cfede9d69
