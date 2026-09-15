@@ -1,6 +1,6 @@
 # dispatch-mission-timeout-scenario-holds-under-load
 
-- State: claimed
+- State: approved
 - Priority: 1
 - Sequence: 14
 - Risk: severity=2 novelty=1 exposure=3 accumulation=2 basis="severity 2: a false red that costs each seat a classification per proof and may hide a real exit-mapping defect; novelty 1: one scenario, one assertion; exposure 3: every seat's selected sections include this section; accumulation 2: it recurs on every loaded run until fixed"
@@ -9,13 +9,12 @@
 - Origin: human
 - Next step: 2026-09-15 14:45 m1b. LANDED 9efa209b8: fold round 2 (job m1b-g16r2-1789472943) with the launch-window leg kept as trunk, receipt line in the diff. Proof 28 of 29 with dispatch-e passing under load; the census-lifecycle red passed on a section control. Released by m1b; concluded in Wido's name under R-109-m1e.
 - OpenedAt: 2026-09-15T08:13:14Z
-- Revision: 24
+- Revision: 25
 - Budget: elapsedLimit=4h attemptLimit=6 reservedJobMinutesLimit=720 activeJobLimit=1 reviewRoundLimit=2
 - BudgetExceptions: 0
 - Approved: by=human:Wido at=2026-09-15T08:13:20Z revision=2 opid=2F83FWC30JPKFY2E4DFMT7VMB9-m1e-c6925449 authority=proven digest=cec903af559f370908ad4ef6d855d00a822e26be36dd5bd9b57f1105cca19105
 - Sliced: machine=m1b lineage=main-1789191336-90295-e4b24b revision=14 at=2026-09-15T09:59:29Z
-- Claimed: machine=m1b lineage=main-1789191336-90295-e4b24b at=2026-09-15T09:59:18Z revision=14 accountingRevision=14 episodeAt=2026-09-15T09:59:18Z episodeRevision=14
-- StopCapability: generation=14 revision=14 machine=m1b claimEpoch=2 fenceEpoch=0
+- Episode: machine=m1b lineage=main-1789191336-90295-e4b24b accountingRevision=14 episodeAt=2026-09-15T09:59:18Z episodeRevision=14 idleSeconds=0 released=2026-09-15T12:38:15Z
 
 History:
 - 2026-09-15T08:13:14Z 4GVK75JY2B3AMFCFYWEMPDR4SD-m1e-c6925449 open actor=human:Wido targets=dispatch-mission-timeout-scenario-holds-under-load
@@ -42,4 +41,5 @@ History:
 - 2026-09-15T12:13:39Z CQ4FQPS4XEZQJTGJ58HHV7A9CG-m1b-30a7e141 edit actor=m1b+main-1789191336-90295-e4b24b targets=dispatch-mission-timeout-scenario-holds-under-load
 - 2026-09-15T12:15:43Z R4RBZFQ78HJ2C8SGWR5AE7ZHQC-m1e-c6925449 done actor=human:Wido targets=actionable-metrics,adoption-filled-delivery-passes-on-trunk,beds-run-under-the-oldest-supported-bash,brief-declares-the-round-boundary,builder-proves-each-rule-by-mutation,busy-seat-shells-are-ended,chain-landing-carries-the-reviewed-diff,codex-jobs-run-through-a-metasystem-verb,coordinator-context-stays-under-budget,coordinator-wakes-on-events-not-polls,critique-closes-on-folded-proof,cross-cutting-change-inventories-its-readers,deep-sections-cannot-stay-red-unseen,degraded-stop-forms-have-one-source,delegate-sandbox-runs-the-beds,design-delegates-run-fresh-and-bounded,dispatch-bases-chains-on-the-remote-tip,dispatch-mission-timeout-scenario-holds-under-load,engine-policy-binding-survives-drift-and-load,every-round-gets-an-independent-read,every-verb-resolves-repo-to-an-absolute-root,evidence-and-build-output-have-retention-and-stay-unindexed,failed-job-attention,failures-show-observed-against-expected,fixture-repo-copies-exclude-the-artifacts-store,fixture-waits-name-their-producer,follow-up-brief-cannot-cite-fresh-trunk-files,human-authority-surface-runs-its-cmd-tests,human-goal-verbs-forgiving,human-wait-does-not-consume-goal-budget,job-record-birth-token,lease-sweep-death-evidence,live-job-on-a-done-goal-unnoticed,machine-concurrency-governor,member-size-gate,metasystem-stop-escalation-proofs,metasystem-stop-fleet-form,moved-effects-are-inventoried-in-the-design,new-elapsed-budgets-use-explicit-hours,pipelines-never-lose-a-truncated-producer,proof-admission-fits-a-seat-proving-several-units,receipt-admission-caps-concurrent-batteries,registered-wait-matches-the-runtime-session,repo-root-paths-ride-agent-commits-unjudged,round-proof-feeds-the-next-brief,run-scoped-build-caches-have-a-janitor,seat-landings-run-the-selected-sections,seat-machines-shed-leaked-processes,skipped-test-fails-its-group-on-the-other-os,small-change-lane,spend-fence-reports-tokens-per-model-and-cause,stop-batch-strands-a-resumable-goal,stop-capability-follows-the-lease-epoch,stop-decision-surface-is-a-gate,stop-gate-sees-harness-tracked-work,stop-hook-never-forces-an-empty-turn,stop-response-carries-a-structured-report-reference,suite-progress-bed-runs-on-trunk,test-environment-edges-are-closed,testing-surfaces-declare-their-mirror,tests-never-wait-on-wall-time,token-spend-fence,trunk-versus-candidate-is-a-verification-step,watch-verb,watcher-repair-request-never-names-current,winddown-census-handoff-leak reason=priority-order from=1:15 to=1:14
 - 2026-09-15T12:38:11Z 81S40AD9A5XC7G1PJWTQ2JF9NS-m1b-30a7e141 edit actor=m1b+main-1789191336-90295-e4b24b targets=dispatch-mission-timeout-scenario-holds-under-load
-Integrity: sha256=0335cedc2705c04bcd4e7889746ddee05d54cfc9656d2b5d10cd0ce7866ecc62
+- 2026-09-15T12:38:15Z DQBPMV30RJY0NJ0TV4R1AFK1P1-m1b-30a7e141 release actor=m1b+main-1789191336-90295-e4b24b targets=dispatch-mission-timeout-scenario-holds-under-load
+Integrity: sha256=2e81ba8f349a7ac6d2eb8f3360c284aaa1e7a30bdbd875bdce0e861f5a1b9f5a
