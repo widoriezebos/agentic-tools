@@ -1,6 +1,6 @@
 # machine-concurrency-governor
 
-- State: queued
+- State: approved
 - Priority: 1
 - Sequence: 56
 - Risk: severity=2 novelty=2 exposure=3 accumulation=1 basis="severity 2: overload makes proofs flaky and slow, no data loss; novelty 2: a machine-wide admission governor is new; exposure 3: every seat on the machine; accumulation 1: one governor and its config"
@@ -9,8 +9,10 @@
 - Origin: human
 - Next step: Appetite: 3h — design then build: machine-level slots configured at the repo/machine root (metasystem.concurrency.*: heavy-pass slots, suite slots, battery exclusivity), every run-launched job admitted against slots (queue, never refuse, when full), load-aware defaults derived from CPU count (the workflow precedent: min(16, cpus-2)), and the delegate verb's admission (L13) as the natural enforcement seam - design with L13 so it lands as one law, not a bolt-on. Until this lands the dispatch delegate hand-governs by recorded delegation: cap concurrent heavy passes, never run a battery beside gauntlets or beds, stagger suites under load SECOND DRIVING INCIDENT (2026-08-31): the first governed weight-discharge validation stalled in go-engine-gate past the 45m section cap while still producing output, during m3's attested heavy window on the shared Mac (both seats' timelines on record; cross-seat hold coordinated by session message). Wido's leniency word R-32-m2 covers the interim (machine-local cap 90m, coordinated quiet windows); THIS goal is the permanent fix and gains priority from the incident.
 - OpenedAt: 2026-08-29T07:38:20Z
-- Revision: 180
+- Revision: 181
+- Budget: elapsedLimit=4h attemptLimit=6 reservedJobMinutesLimit=720 activeJobLimit=1 reviewRoundLimit=2
 - BudgetExceptions: 0
+- Approved: by=human:Wido at=2026-09-15T20:31:10Z revision=181 opid=3E8SCW2VE00F971RGP7W4J9Y17-m1e-c6925449 authority=proven digest=8c458fc9ce804eb56bb4197b4924ec546827dc3b3be0227548dbae2d99019e7d
 
 History:
 - 2026-08-29T07:38:20Z XAR0VVP0CKT8476P0AZ8K4KG68-m1-bf243850 open actor=human:wido targets=machine-concurrency-governor
@@ -193,4 +195,5 @@ History:
 - 2026-09-15T19:13:27Z 7QVGTJBXNG69DRMXET9RDBS1C0-m1e-c6925449 set-priority actor=human:Wido targets=actionable-metrics,adoption-filled-delivery-passes-on-trunk,beds-run-under-the-oldest-supported-bash,brief-declares-the-round-boundary,builder-proves-each-rule-by-mutation,busy-seat-shells-are-ended,census-lifecycle-scenario-holds-under-load,chain-landing-carries-the-reviewed-diff,codex-jobs-run-through-a-metasystem-verb,coordinator-context-stays-under-budget,coordinator-wakes-on-events-not-polls,critique-closes-on-folded-proof,cross-cutting-change-inventories-its-readers,deep-sections-cannot-stay-red-unseen,degraded-stop-forms-have-one-source,delegate-sandbox-runs-the-beds,dispatch-bases-chains-on-the-remote-tip,engine-policy-binding-survives-drift-and-load,every-round-gets-an-independent-read,evidence-and-build-output-have-retention-and-stay-unindexed,failed-job-attention,failures-show-observed-against-expected,fixture-repo-copies-exclude-the-artifacts-store,fixture-runners-and-fakes-bound-their-own-life,fixture-waits-name-their-producer,fleet-doctor-repairs-what-stops-other-seats,follow-up-brief-cannot-cite-fresh-trunk-files,human-authority-surface-runs-its-cmd-tests,human-goal-verbs-forgiving,human-wait-does-not-consume-goal-budget,job-record-birth-token,lease-sweep-death-evidence,live-job-on-a-done-goal-unnoticed,machine-concurrency-governor,member-size-gate,metasystem-stop-escalation-proofs,metasystem-stop-fleet-form,moved-effects-are-inventoried-in-the-design,new-elapsed-budgets-use-explicit-hours,pipelines-never-lose-a-truncated-producer,proof-admission-fits-a-seat-proving-several-units,proof-runs-reap-what-they-armed-and-a-census-names-the-rest,receipt-admission-caps-concurrent-batteries,registered-wait-matches-the-runtime-session,repo-root-paths-ride-agent-commits-unjudged,round-proof-feeds-the-next-brief,run-scoped-build-caches-have-a-janitor,seat-landings-run-the-selected-sections,seat-successor-continues-a-handoff-without-a-human,skipped-test-fails-its-group-on-the-other-os,small-change-lane,stop-batch-strands-a-resumable-goal,stop-capability-follows-the-lease-epoch,stop-decision-surface-is-a-gate,stop-gate-sees-harness-tracked-work,stop-hook-never-forces-an-empty-turn,stop-response-carries-a-structured-report-reference,test-environment-edges-are-closed,testing-surfaces-declare-their-mirror,tests-never-wait-on-wall-time,token-spend-fence,trunk-versus-candidate-is-a-verification-step,watch-verb,watcher-repair-request-never-names-current,winddown-census-handoff-leak reason=priority-order subject=fleet-doctor-repairs-what-stops-other-seats from=1:55 to=1:56 requested-sequence=7
 - 2026-09-15T20:29:58Z QPWHB2RVDVJYH6MBMQ1E64EBSP-m1e-c6925449 unpark actor=human:Wido targets=machine-concurrency-governor
 - 2026-09-15T20:30:53Z 8WVAKDH5JYK4XV7FAYJW9NJPYJ-m1e-892cdaec edit actor=m1e+main-1789030447-51011-5722fc targets=machine-concurrency-governor
-Integrity: sha256=3fd020b96be9091078295064e69a762e86c90222ea94901d514f1270a678fb51
+- 2026-09-15T20:31:10Z 3E8SCW2VE00F971RGP7W4J9Y17-m1e-c6925449 approve actor=human:Wido targets=machine-concurrency-governor,token-spend-fence
+Integrity: sha256=24860f5cb2b29a03e2603bffbf71b7c62a5b29159becff105c820bb48984f4df
