@@ -1,6 +1,6 @@
 # seats-spend-tokens-in-bounded-sessions
 
-- State: claimed
+- State: approved
 - Priority: 1
 - Sequence: 1
 - Risk: severity=3 novelty=2 exposure=3 accumulation=3 basis="severity 3: about 244M tokens in a day for one seat, most of it re-reading one session's context; novelty 2: delegate-bounded coordination and handoff at a size, on top of existing context and stop-gate machinery; exposure 3: every seat, every turn; accumulation 3: session context only grows until handed off"
@@ -9,12 +9,11 @@
 - Origin: human
 - Next step: Design done: plans/seats-spend-tokens-in-bounded-sessions-design.md, revision 3, landed 495ddd0f2 as the program record by Wido's decision (option a) on 2026-09-15; its units are priority-1 goals in his name. Diagnosis: records/misc/token-diagnosis-2026-09-15.md, 2026-09-15 00:00 to 12:51 CEST (not 12:45), 871.7M Claude tokens; m1b 317.0M, m1c 165.4M, m1e 389.2M. This goal keeps: U6a landed 37d8c6c20 (2026-09-15); U7 (built by R-114-m1e decision 4), a seat inbox, about 200, after U3c, settling moved SSTB-208; the measurement; the proof, last: records/misc/tokens-day-<date>.md against P5. Carry-ins: SSTB-307, per-seat thresholds derived from spend window cause counts before the proof day; five reads from receipts read_tokens and read_calls (e700328e1), each at most 2M and 40 calls, three on trunk so far; three design revisions from receipts design_tokens and design_calls (fb6839a44), none on trunk yet. Elsewhere: U1 registered-wait-matches-the-runtime-session; U2a-c stop-gate-sees-harness-tracked-work; U3a, U3e, U3b, U3c coordinator-context-stays-under-budget; U4 units-run-through-one-launcher; U5a-c spend-fence-reports-tokens-per-model-and-cause. Wido decided all four open questions on 2026-09-15 (R-114-m1e, 4dd0b4b55): 1 launcher (a), the steward continuation, with no reliance on a terminal multiplexer; 2 cap 250K; 3 build U7 now; 4 build U3e as a separate hook under about 100 ms that never blocks a landing or a wait in flight. A limit never stops work (decision 6). R-115-m1e (2026-09-15): S7 and S8 in effect (S7: a handoff is recorded only after the seat's memory note holds its lessons, reasoning in flight and every in-flight delegate output path, check: the note's modification time precedes the handoff record; S8: every relayed number or rule names who said it and why, check: each peer message carrying a number or rule names its source); U6b landed b68129644 (2026-09-15). The proof day also asserts: no goal stalled across a handoff (every handoff record has a successor first act), no landed critique finding recurred (goal retro-flags-repeated-critique-findings), and the day's landings passed their gates as before. Program rule: no unit lowers a proof floor, removes a witness or a gate, or narrows a DONE to save tokens; each unit's read checks it.
 - OpenedAt: 2026-09-15T09:35:07Z
-- Revision: 10
+- Revision: 11
 - Budget: elapsedLimit=2d attemptLimit=10 reservedJobMinutesLimit=1200 activeJobLimit=1 reviewRoundLimit=3
 - BudgetExceptions: 1
 - Approved: by=human:Wido at=2026-09-15T19:13:04Z revision=10 opid=ZPMSRK5FNNBZT37HANNSZF9STM-m1e-c6925449 authority=proven digest=0a7118cfa4ed6e2cb2de59be22364f52cea4f83550bf37b59ba91df68328fd57
-- Claimed: machine=m1e lineage=main-1789030447-51011-5722fc at=2026-09-15T19:13:04Z revision=10 accountingRevision=10 episodeAt=2026-09-15T10:40:08Z episodeRevision=4
-- StopCapability: generation=10 revision=10 machine=m1e claimEpoch=1 fenceEpoch=0
+- Episode: machine=m1e lineage=main-1789030447-51011-5722fc accountingRevision=10 episodeAt=2026-09-15T10:40:08Z episodeRevision=4 idleSeconds=0 released=2026-09-15T19:39:31Z
 
 History:
 - 2026-09-15T09:35:07Z N1MEMJWFAH427K3GFXZAWFWVZ5-m1e-c6925449 open actor=human:Wido targets=seats-spend-tokens-in-bounded-sessions
@@ -27,4 +26,5 @@ History:
 - 2026-09-15T14:23:16Z T99E2RGTG25KH2AN6YP5XXQWC9-m1e-c6925449 edit actor=human:Wido targets=seats-spend-tokens-in-bounded-sessions displaced=m1e+main-1789030447-51011-5722fc@2026-09-15T10:40:08Z
 - 2026-09-15T14:49:33Z HG116MB3HYE0S54XWVWVP042BD-m1e-c6925449 edit actor=human:Wido targets=seats-spend-tokens-in-bounded-sessions displaced=m1e+main-1789030447-51011-5722fc@2026-09-15T10:40:08Z
 - 2026-09-15T19:13:04Z ZPMSRK5FNNBZT37HANNSZF9STM-m1e-c6925449 set-budget actor=human:Wido targets=seats-spend-tokens-in-bounded-sessions displaced=m1e+main-1789030447-51011-5722fc@2026-09-15T10:40:08Z
-Integrity: sha256=282c2e17e257ba92363c9ed741984466119901f433753c99d91dacf3fca2b2ba
+- 2026-09-15T19:39:31Z J6X2RVRCNHK0YN02W54TDH9X8J-m1e-892cdaec release actor=m1e+main-1789030447-51011-5722fc targets=seats-spend-tokens-in-bounded-sessions
+Integrity: sha256=3f656421dcab3c3ba20fed7513d818bd3b5d7cdd93223eb37125dfb98e56ca82
