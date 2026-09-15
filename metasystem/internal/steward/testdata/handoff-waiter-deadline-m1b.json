@@ -1,0 +1,65 @@
+{
+ "schemaVersion": 2,
+ "waitId": "635c4f30bcbaaa00accc40807544e8da",
+ "nonce": "d9cbd97ed9923d6a53aa31f5dcdb24f6",
+ "kind": "goal",
+ "targetId": "wait-verb-returns-on-recorded-events",
+ "ownerDigest": "30a7e1417b0a",
+ "pid": 87610,
+ "pidStartedAt": 1789306271,
+ "pidStartedAtExactMicro": 1789306271244066,
+ "session": "session-90295",
+ "mainId": "main-1789191336-90295-e4b24b",
+ "ownerLineage": "main-1789191336-90295-e4b24b",
+ "claimEpoch": 2,
+ "runtimeSession": "session-90295",
+ "selector": {
+  "kind": "goal",
+  "targetId": "wait-verb-returns-on-recorded-events",
+  "goalId": "wait-verb-returns-on-recorded-events",
+  "event": "landing",
+  "after": "18f1dcef1f4edd4bdf387c1a8820694eb5057eb5"
+ },
+ "goalId": "wait-verb-returns-on-recorded-events",
+ "target": {
+  "startedAt": "ledger:18f1dcef1f4edd4bdf387c1a8820694eb5057eb5",
+  "proofIdentityDigest": "1f6ad6fa6c8994c8f9a021721475f34d53e75dd3529c34f6286308e3014e198a"
+ },
+ "originalCursor": "18f1dcef1f4edd4bdf387c1a8820694eb5057eb5",
+ "lastCheckedTip": "db8e9f369758fb347ee67787f9bc63639ccb8deb",
+ "registeredAt": "2026-09-13T13:31:11.343664Z",
+ "deadline": "2026-09-13T13:31:41.343664Z",
+ "bootDeadlineNanos": 713626623102083,
+ "deadlineBootId": "1788592680.965383",
+ "lastObservedAt": "2026-09-13T13:31:33.320181Z",
+ "lastObservedBootNanos": 713618599625750,
+ "openWorkSignature": "5258a39b21d88865eb76e6542a408566105b81f130130fa26724d61f13e7949f",
+ "state": "deadline",
+ "delivery": "blocking",
+ "accelerator": "unavailable",
+ "result": {
+  "schemaVersion": 2,
+  "waitId": "635c4f30bcbaaa00accc40807544e8da",
+  "selector": {
+   "kind": "goal",
+   "targetId": "wait-verb-returns-on-recorded-events",
+   "goalId": "wait-verb-returns-on-recorded-events",
+   "event": "landing",
+   "after": "18f1dcef1f4edd4bdf387c1a8820694eb5057eb5"
+  },
+  "targetIncarnation": {
+   "startedAt": "ledger:18f1dcef1f4edd4bdf387c1a8820694eb5057eb5",
+   "proofIdentityDigest": "1f6ad6fa6c8994c8f9a021721475f34d53e75dd3529c34f6286308e3014e198a"
+  },
+  "exitCode": 124,
+  "reason": "this wait reached its deadline",
+  "sourceOutcome": "wait-deadline",
+  "sourceEvidence": "",
+  "registeredAt": "2026-09-13T13:31:11.343664Z",
+  "deadline": "2026-09-13T13:31:41.343664Z",
+  "observedAt": "2026-09-13T13:31:41.345791Z",
+  "returnedAt": "2026-09-13T13:31:41.345791Z",
+  "ledgerTip": "db8e9f369758fb347ee67787f9bc63639ccb8deb",
+  "replayCommand": "metasystem wait --resume 635c4f30bcbaaa00accc40807544e8da"
+ }
+}

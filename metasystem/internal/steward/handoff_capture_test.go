@@ -18,6 +18,7 @@ import (
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/goal"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/humanauthority"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/identity"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/run"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/usage"
 )
 
@@ -285,6 +286,50 @@ func handoffArtifactCount(root string) (directories, intents int) {
 		intents = len(entries)
 	}
 	return directories, intents
+}
+
+func TestHandoffAcceptsPreservedDeadlineWaiter(t *testing.T) {
+	root := canonicalPath(t.TempDir())
+	fixture, err := os.ReadFile("testdata/handoff-waiter-deadline-m1b.json")
+	if err != nil {
+		t.Fatal(err)
+	}
+	var waiter run.Waiter
+	if err := json.Unmarshal(fixture, &waiter); err != nil {
+		t.Fatal(err)
+	}
+	path := filepath.Join(root, "artifacts", "agents", "waiters", "preserved.json")
+	writeTestFile(t, path, fixture)
+	if copied, err := os.ReadFile(path); err != nil || !bytes.Equal(copied, fixture) {
+		t.Fatalf("preserved waiter bytes changed: %v", err)
+	}
+	if err := waiterInFlight(root, waiter.MainId); err != nil {
+		t.Fatalf("ended deadline waiter refused handoff: %v", err)
+	}
+}
+
+func TestHandoffWaiterStates(t *testing.T) {
+	check := func(state string) error {
+		root := canonicalPath(t.TempDir())
+		writeTestFile(t, filepath.Join(root, "artifacts", "agents", "waiters", "waiter.json"), []byte(fmt.Sprintf(`{"schemaVersion":2,"mainId":"main-test","state":%q}`, state)))
+		return waiterInFlight(root, "main-test")
+	}
+	for _, state := range run.WaiterStates {
+		wantInFlight := state.Name == run.WaiterStateRegistering || state.Name == run.WaiterStatePending
+		if (state.Class == run.WaiterStateInFlight) != wantInFlight {
+			t.Errorf("waiter state %q has the wrong class", state.Name)
+		}
+		err := check(state.Name)
+		var refusal *HandoffRefusal
+		if wantInFlight && (!errors.As(err, &refusal) || refusal.Code != "HANDOFF_WAIT_IN_FLIGHT") {
+			t.Errorf("in-flight waiter state %q returned %v", state.Name, err)
+		} else if !wantInFlight && err != nil {
+			t.Errorf("ended waiter state %q returned %v", state.Name, err)
+		}
+	}
+	if err := check("bogus"); err == nil || !strings.Contains(err.Error(), `unknown state "bogus"`) {
+		t.Errorf("unlisted waiter state returned %v", err)
+	}
 }
 
 func TestHandoffRefusals(t *testing.T) {

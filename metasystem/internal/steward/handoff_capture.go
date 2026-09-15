@@ -412,10 +412,17 @@ func waiterInFlight(root, mainID string) error {
 		if waiter.SchemaVersion != 2 {
 			return fmt.Errorf("handoff waiter record %s has unsupported schema %d", source.source, waiter.SchemaVersion)
 		}
-		if waiter.State == "pending" || waiter.State == "registering" {
-			return refusal("HANDOFF_WAIT_IN_FLIGHT", "")
+		known := false
+		for _, state := range run.WaiterStates {
+			if state.Name == waiter.State {
+				known = true
+				if state.Class == run.WaiterStateInFlight {
+					return refusal("HANDOFF_WAIT_IN_FLIGHT", "")
+				}
+				break
+			}
 		}
-		if waiter.State != "ready" && waiter.State != "failed" {
+		if !known {
 			return fmt.Errorf("handoff waiter record %s has unknown state %q", source.source, waiter.State)
 		}
 	}
