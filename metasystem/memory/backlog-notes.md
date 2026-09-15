@@ -689,3 +689,11 @@ four minutes that way.
   `scripts/agents/supervision-hook.sh claude stop` on a seat with a full day of
   transcripts, fix the slowest phase, and make the health remedy name a live
   owner. A seat could not open it as a goal (R-93-m1e: it blocks no claimed goal).
+
+- 2026-09-15 (m1c): `section/supervision-and-census-fixtures` scenario
+  `nested-worktree-deadlines` is load-shaped. On candidate tree 58a55197
+  (design-delegates-run-fresh-and-bounded) its `nested-wt-parent-steered-timeout`
+  leg reached the 60 s provider deadline (rc=0, elapsed=60s) in the deep run at
+  13:47 while other seats' Codex jobs ran; the same section passed on the same
+  tree in a rerun at 14:05. The diff changed no supervision code. It is a
+  wall-time wait inside a bed, the class tests-never-wait-on-wall-time owns.

@@ -31,18 +31,20 @@ type Options struct {
 	Root string
 	File string
 
-	Type        string
-	Outcome     string
-	Skills      string
-	Verify      string
-	Corrections string
-	StopLoss    string
-	Delegates   []string
-	Goal        string
-	BuiltBy     string
-	ReadTokens  string
-	ReadCalls   string
-	Note        string
+	Type         string
+	Outcome      string
+	Skills       string
+	Verify       string
+	Corrections  string
+	StopLoss     string
+	Delegates    []string
+	Goal         string
+	BuiltBy      string
+	ReadTokens   string
+	ReadCalls    string
+	DesignTokens string
+	DesignCalls  string
+	Note         string
 
 	RefEpoch string
 	RefSHA1  string
@@ -184,6 +186,12 @@ func Add(opts Options) Result {
 	if opts.ReadCalls != "" && !epochRe.MatchString(opts.ReadCalls) {
 		return fail(2, "invalid --read-calls: %s", opts.ReadCalls)
 	}
+	if opts.DesignTokens != "" && !epochRe.MatchString(opts.DesignTokens) {
+		return fail(2, "invalid --design-tokens: %s", opts.DesignTokens)
+	}
+	if opts.DesignCalls != "" && !epochRe.MatchString(opts.DesignCalls) {
+		return fail(2, "invalid --design-calls: %s", opts.DesignCalls)
+	}
 	if err := os.MkdirAll(filepath.Dir(opts.File), 0o755); err != nil {
 		return fail(2, "cannot create receipt directory: %v", err)
 	}
@@ -221,6 +229,12 @@ func Add(opts Options) Result {
 	}
 	if opts.ReadCalls != "" {
 		line += "|read_calls=" + opts.ReadCalls
+	}
+	if opts.DesignTokens != "" {
+		line += "|design_tokens=" + opts.DesignTokens
+	}
+	if opts.DesignCalls != "" {
+		line += "|design_calls=" + opts.DesignCalls
 	}
 	line += fmt.Sprintf("|critique_waived=%s|waiver_stream=%s|note=%s\n", class, stream, noPipes(note))
 	if err := appendLine(opts.File, line); err != nil {
@@ -266,7 +280,8 @@ func Correct(opts Options) Result {
 	if opts.Field == "built_by" && !ValidBuiltByValue(opts.NowValue) {
 		return fail(2, "invalid corrected built_by value: %s", opts.NowValue)
 	}
-	if (opts.Field == "read_tokens" || opts.Field == "read_calls") &&
+	if (opts.Field == "read_tokens" || opts.Field == "read_calls" ||
+		opts.Field == "design_tokens" || opts.Field == "design_calls") &&
 		opts.NowValue != "" && !epochRe.MatchString(opts.NowValue) {
 		return fail(2, "invalid corrected %s value: %s", opts.Field, opts.NowValue)
 	}

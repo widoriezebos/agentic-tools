@@ -115,6 +115,30 @@ func TestReadMetricsAreOptionalAndNumeric(t *testing.T) {
 	}
 }
 
+func TestDesignMetricsAreOptionalAndNumeric(t *testing.T) {
+	opts := baseOptions(t)
+	opts.Type, opts.Outcome = "design", "shipped"
+	if result := Add(opts); result.Code != 0 {
+		t.Fatalf("receipt without design metrics failed: %+v", result)
+	}
+	opts.Now = func() time.Time { return fixedNow().Add(time.Second) }
+	opts.DesignTokens, opts.DesignCalls = "56500000", "162"
+	if result := Add(opts); result.Code != 0 {
+		t.Fatalf("receipt with design metrics failed: %+v", result)
+	}
+	data, err := os.ReadFile(opts.File)
+	if err != nil {
+		t.Fatal(err)
+	}
+	lines := strings.Split(strings.TrimSpace(string(data)), "\n")
+	if strings.Contains(lines[0], "|design_tokens=") || strings.Contains(lines[0], "|design_calls=") {
+		t.Fatalf("optional metrics changed the old receipt shape: %q", lines[0])
+	}
+	if !strings.Contains(lines[1], "|design_tokens=56500000|design_calls=162|") {
+		t.Fatalf("design metrics missing from receipt: %q", lines[1])
+	}
+}
+
 func TestReceiptMetricsReportTypeAndBuilderValidation(t *testing.T) {
 	opts := baseOptions(t)
 	opts.Type, opts.Outcome = "metrics-report", "shipped"
@@ -149,7 +173,7 @@ func TestReceiptProvenanceValidationFailsClosed(t *testing.T) {
 	if result := Correct(opts); result.Code != 2 || result.Err[0] != "invalid corrected built_by value: critic" {
 		t.Fatalf("invalid corrected builder accepted: %+v", result)
 	}
-	for _, field := range []string{"read_tokens", "read_calls"} {
+	for _, field := range []string{"read_tokens", "read_calls", "design_tokens", "design_calls"} {
 		opts.Field, opts.NowValue = field, "many"
 		if result := Correct(opts); result.Code != 2 ||
 			result.Err[0] != "invalid corrected "+field+" value: many" {
@@ -170,6 +194,8 @@ func TestAddValidation(t *testing.T) {
 		{func(o *Options) { o.Corrections = "x" }, "invalid --corrections: x"},
 		{func(o *Options) { o.ReadTokens = "16m" }, "invalid --read-tokens: 16m"},
 		{func(o *Options) { o.ReadCalls = "many" }, "invalid --read-calls: many"},
+		{func(o *Options) { o.DesignTokens = "56m" }, "invalid --design-tokens: 56m"},
+		{func(o *Options) { o.DesignCalls = "many" }, "invalid --design-calls: many"},
 		{func(o *Options) { o.Skills = "a,code-critique" }, "receipt refused: skills=code-critique requires delegate entries naming a code-critic chain id and the implementer job id in that chain's reviews field"},
 	}
 	for _, tc := range cases {
@@ -235,6 +261,27 @@ func TestCorrectLifecycle(t *testing.T) {
 	if result := Correct(opts); result.Code != 2 ||
 		result.Err[0] != "correction --was value does not match field outcome on the original line" {
 		t.Fatalf("bad --was accepted: %+v", result)
+	}
+}
+
+func TestCorrectDesignCalls(t *testing.T) {
+	opts := baseOptions(t)
+	opts.Type, opts.Outcome = "design", "shipped"
+	opts.DesignCalls = "162"
+	if result := Add(opts); result.Code != 0 {
+		t.Fatalf("seed add failed: %+v", result)
+	}
+	data, _ := os.ReadFile(opts.File)
+	original := strings.TrimSuffix(string(data), "\n")
+	opts.RefEpoch = strings.SplitN(original, "|", 2)[0]
+	opts.RefSHA1 = fmt.Sprintf("%x", sha1.Sum([]byte(original)))
+	opts.Field, opts.Was, opts.NowValue, opts.Reason = "design_calls", "162", "160", "usage correction"
+	if result := Correct(opts); result.Code != 0 {
+		t.Fatalf("valid design call correction failed: %+v", result)
+	}
+	data, _ = os.ReadFile(opts.File)
+	if !strings.Contains(string(data), "|field=design_calls|was=162|now=160|reason=usage correction\n") {
+		t.Fatalf("design call correction missing: %s", data)
 	}
 }
 
