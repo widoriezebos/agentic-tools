@@ -13,7 +13,7 @@ import (
 
 func runReportStopPresent(args []string) int {
 	flags := flag.NewFlagSet("report stop-present", flag.ContinueOnError)
-	root := flags.String("root", "", "resolved metasystem installation")
+	root := pathFlag(flags, "root", "", "resolved metasystem installation")
 	input := flags.String("input-file", "", "Stop presentation input JSON")
 	output := flags.String("output-file", "", "fresh Stop presentation result JSON")
 	if flags.Parse(args) != nil {
@@ -38,7 +38,7 @@ func runReportStopPresent(args []string) int {
 
 func runReportStopInput(args []string) int {
 	flags := flag.NewFlagSet("report stop-input", flag.ContinueOnError)
-	root := flags.String("root", "", "resolved metasystem installation")
+	root := pathFlag(flags, "root", "", "resolved metasystem installation")
 	runtime := flags.String("runtime", "", "runtime name")
 	session := flags.String("session", "", "runtime session")
 	attempt := flags.String("attempt", "", "fresh 16-byte hexadecimal attempt")
@@ -93,7 +93,7 @@ func runReportStopInput(args []string) int {
 func runReportStopStatus(args []string) int {
 	flags := flag.NewFlagSet("report stop-status", flag.ContinueOnError)
 	id := flags.String("id", "", "exact short Stop report alias or legacy full id")
-	root := flags.String("root", "", "explicit metasystem installation")
+	root := pathFlag(flags, "root", "", "explicit metasystem installation")
 	if flags.Parse(args) != nil {
 		return 2
 	}
@@ -188,7 +188,7 @@ func runReportStopBlock(args []string) int {
 // jobs, missions running elsewhere, gate runs; nothing prints when idle.
 func runReportRunningWork(args []string) int {
 	flags := flag.NewFlagSet("report running-work", flag.ContinueOnError)
-	repo := flags.String("repo", "", "checkout root")
+	repo := pathFlag(flags, "repo", "", "checkout root")
 	if flags.Parse(args) != nil {
 		return 2
 	}
@@ -248,7 +248,7 @@ func runReportScanJobs(args []string) int {
 // plans.
 func runReportOpenWork(args []string) int {
 	flags := flag.NewFlagSet("report open-work", flag.ContinueOnError)
-	repo := flags.String("repo", "", "metasystem root")
+	repo := pathFlag(flags, "repo", "", "metasystem root")
 	if flags.Parse(args) != nil {
 		return 2
 	}

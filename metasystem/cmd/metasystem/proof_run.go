@@ -33,7 +33,7 @@ import (
 func runProofRunLaunch(args []string) int {
 	flags := flag.NewFlagSet("proof-run launch", flag.ContinueOnError)
 	suite := flags.String("suite", "", "suite name")
-	root := flags.String("root", "", "metasystem root")
+	root := pathFlag(flags, "root", "", "metasystem root")
 	controlRootFlag := flags.String("control-root", "", "canonical proof control root")
 	goalID := flags.String("goal", "", "accepted goal owning the proof reservation")
 	capMin := flags.String("cap-min", "", "reserved proof minutes")
@@ -194,7 +194,7 @@ func runProofRunLaunch(args []string) int {
 
 func runProofRunWorkerAuthorized(args []string) int {
 	flags := flag.NewFlagSet("proof-run worker-authorized", flag.ContinueOnError)
-	executionRoot := flags.String("root", "", "suite execution root")
+	executionRoot := pathFlag(flags, "root", "", "suite execution root")
 	if flags.Parse(args) != nil || flags.NArg() != 0 || *executionRoot == "" {
 		return 2
 	}
@@ -1006,7 +1006,7 @@ func selectedSections(selector, selected string, enumerated bool) ([]string, map
 func runProofRunWatchdog(args []string) int {
 	flags := flag.NewFlagSet("proof-run watchdog", flag.ContinueOnError)
 	suite := flags.String("suite", "", "suite name")
-	root := flags.String("root", "", "metasystem root")
+	root := pathFlag(flags, "root", "", "metasystem root")
 	conf := flags.String("conf", "", "metasystem configuration")
 	progress := flags.String("progress", "", "progress JSONL")
 	done := flags.String("done", "", "launcher done file")
@@ -1124,7 +1124,7 @@ func runProofRunAssert(args []string) int {
 
 func runProofRunCoverageBegin(args []string) int {
 	flags := flag.NewFlagSet("proof-run coverage-begin", flag.ContinueOnError)
-	executionRoot := flags.String("root", "", "executing full-gate root")
+	executionRoot := pathFlag(flags, "root", "", "executing full-gate root")
 	baseline := flags.String("baseline", "", "selected coverage ratchet")
 	producerPID := flags.Int64("producer-pid", 0, "full-gate producer process")
 	if flags.Parse(args) != nil || flags.NArg() != 0 || *executionRoot == "" || *baseline == "" || *producerPID < 1 {
@@ -1146,7 +1146,7 @@ func runProofRunCoverageBegin(args []string) int {
 
 func runProofRunCoverageEligible(args []string) int {
 	flags := flag.NewFlagSet("proof-run coverage-eligible", flag.ContinueOnError)
-	executionRoot := flags.String("root", "", "executing full-gate root")
+	executionRoot := pathFlag(flags, "root", "", "executing full-gate root")
 	baseline := flags.String("baseline", "", "selected coverage ratchet")
 	producerPID := flags.Int64("producer-pid", 0, "full-gate producer process")
 	if flags.Parse(args) != nil || flags.NArg() != 0 || *executionRoot == "" || *baseline == "" || *producerPID < 1 {
@@ -1172,7 +1172,7 @@ func runProofRunCoverageEligible(args []string) int {
 
 func runProofRunCoverageComplete(args []string) int {
 	flags := flag.NewFlagSet("proof-run coverage-complete", flag.ContinueOnError)
-	executionRoot := flags.String("root", "", "executing full-gate root")
+	executionRoot := pathFlag(flags, "root", "", "executing full-gate root")
 	baseline := flags.String("baseline", "", "selected coverage ratchet")
 	coverageLog := flags.String("input", "", "actual go test coverage log")
 	packages := flags.String("packages", "", "independent package inventory")
@@ -1201,7 +1201,7 @@ func runProofRunCoverageComplete(args []string) int {
 
 func runProofRunCoverageReuse(args []string) int {
 	flags := flag.NewFlagSet("proof-run coverage-reuse", flag.ContinueOnError)
-	executionRoot := flags.String("root", "", "source root whose coverage inputs are checked")
+	executionRoot := pathFlag(flags, "root", "", "source root whose coverage inputs are checked")
 	controlRoot := flags.String("control-root", "", "canonical root retaining proof evidence")
 	baseline := flags.String("baseline", "", "selected coverage ratchet")
 	var packages repeatedFlag
@@ -1247,7 +1247,7 @@ func runProofRunCoverageReuse(args []string) int {
 func runProofRunBanner(args []string) int {
 	flags := flag.NewFlagSet("proof-run banner", flag.ContinueOnError)
 	suite := flags.String("suite", "", "suite name")
-	root := flags.String("root", "", "metasystem root")
+	root := pathFlag(flags, "root", "", "metasystem root")
 	progress := flags.String("progress", "", "progress JSONL path")
 	logPath := flags.String("log", "", "suite log path")
 	if flags.Parse(args) != nil {
@@ -1269,7 +1269,7 @@ func runProofRunBanner(args []string) int {
 
 func runProofRunHeartbeat(args []string) int {
 	flags := flag.NewFlagSet("proof-run heartbeat", flag.ContinueOnError)
-	root := flags.String("root", "", "watched root")
+	root := pathFlag(flags, "root", "", "watched root")
 	if flags.Parse(args) != nil || *root == "" || flags.NArg() != 0 {
 		fmt.Fprintln(os.Stderr, "usage: metasystem proof-run heartbeat --root R")
 		return 2

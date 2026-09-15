@@ -67,7 +67,7 @@ func parsePreviousMetrics(list string) (map[string]string, error) {
 // carries the exact runtime:model pair in envelope.dispatch-allow.
 func runMissionContractEnvelopeAllows(args []string) int {
 	flags := flag.NewFlagSet("mission contract-envelope-allows", flag.ContinueOnError)
-	root := flags.String("root", "", "project root")
+	root := pathFlag(flags, "root", "", "project root")
 	missionID := flags.String("mission", "", "mission id")
 	pair := flags.String("pair", "", "exact runtime:model pair")
 	if flags.Parse(args) != nil {

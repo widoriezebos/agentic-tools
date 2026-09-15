@@ -57,7 +57,7 @@ func runnerDoc(path, label string) (map[string]any, error) {
 // one place.
 func runMissionTurnAdjudicate(args []string) int {
 	flags := flag.NewFlagSet("mission turn-adjudicate", flag.ContinueOnError)
-	root := flags.String("root", "", "checkout root")
+	root := pathFlag(flags, "root", "", "checkout root")
 	mission := flags.String("mission", "", "mission id")
 	statePath := flags.String("state", "", "mission state path")
 	turnPath := flags.String("turn", "", "turn record path")
@@ -89,7 +89,7 @@ func runMissionTurnAdjudicate(args []string) int {
 // compare-and-write.
 func runMissionTurnConclude(args []string) int {
 	flags := flag.NewFlagSet("mission turn-conclude", flag.ContinueOnError)
-	root := flags.String("root", "", "checkout root")
+	root := pathFlag(flags, "root", "", "checkout root")
 	mission := flags.String("mission", "", "mission id")
 	statePath := flags.String("state", "", "mission state path")
 	turnPath := flags.String("turn", "", "turn record path")
@@ -121,7 +121,7 @@ func runMissionTurnConclude(args []string) int {
 // and a second consecutive failure parks the mission for a human.
 func runMissionTurnRecordFailure(args []string) int {
 	flags := flag.NewFlagSet("mission turn-record-failure", flag.ContinueOnError)
-	root := flags.String("root", "", "checkout root")
+	root := pathFlag(flags, "root", "", "checkout root")
 	mission := flags.String("mission", "", "mission id")
 	statePath := flags.String("state", "", "mission state path")
 	turnPath := flags.String("turn", "", "turn record path")
@@ -170,7 +170,7 @@ func runMissionTurnRecordFailure(args []string) int {
 // it. Prints {"state":..., "asks":[...]}.
 func runMissionTurnPark(args []string) int {
 	flags := flag.NewFlagSet("mission turn-park", flag.ContinueOnError)
-	root := flags.String("root", "", "checkout root")
+	root := pathFlag(flags, "root", "", "checkout root")
 	mission := flags.String("mission", "", "mission id")
 	statePath := flags.String("state", "", "mission state path")
 	reason := flags.String("reason", "", "park reason")

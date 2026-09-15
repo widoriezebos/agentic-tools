@@ -14,7 +14,7 @@ import (
 
 func runRuntimeSetup(args []string) int {
 	flags := flag.NewFlagSet("runtime setup", flag.ContinueOnError)
-	repo := flags.String("repo", "", "repository root or a path inside the target installation")
+	repo := pathFlag(flags, "repo", "", "repository root or a path inside the target installation")
 	runtimeCSV := flags.String("runtimes", "", "comma-separated adoptable hosts (default: all)")
 	copySkills := flags.Bool("copy-skills", false, "copy skill trees instead of creating relative links")
 	check := flags.Bool("check", false, "validate readiness without writing")

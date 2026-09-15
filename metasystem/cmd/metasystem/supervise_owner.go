@@ -33,7 +33,7 @@ var procfsMounts = "/proc/self/mounts"
 func runSuperviseOwnerLoop(args []string) int {
 	flags := flag.NewFlagSet("supervise owner", flag.ContinueOnError)
 	registryDefault, registryDefaultErr := registry.DefaultPath()
-	repo := flags.String("repo", "", "checkout root")
+	repo := pathFlag(flags, "repo", "", "checkout root")
 	metasystemRoot := flags.String("metasystem-root", "", "installation root containing config and runtime adapters")
 	scope := flags.String("scope", "", "census scope (git toplevel); defaults to --repo")
 	tag := flags.String("tag", "", "owner instance tag")

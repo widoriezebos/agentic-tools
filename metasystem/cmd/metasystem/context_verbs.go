@@ -53,7 +53,7 @@ var classifyContextHandoffCaller, currentContextHandoffHolder, hookContextHandof
 
 func runContextStatus(args []string) int {
 	flags := flag.NewFlagSet("context status", flag.ContinueOnError)
-	root := flags.String("root", "", "installation or containing template root")
+	root := pathFlag(flags, "root", "", "installation or containing template root")
 	runtimeName := flags.String("runtime", "", "explicit runtime")
 	session := flags.String("session", "", "explicit session")
 	transcript := flags.String("transcript", "", "call transcript override")
@@ -99,7 +99,7 @@ func runContextStatus(args []string) int {
 
 func runContextReport(args []string) int {
 	flags := flag.NewFlagSet("context report", flag.ContinueOnError)
-	root := flags.String("root", "", "installation or containing template root")
+	root := pathFlag(flags, "root", "", "installation or containing template root")
 	week := flags.String("week", "", "first UTC date in YYYY-MM-DD form")
 	if flags.Parse(args) != nil {
 		return 2
@@ -138,7 +138,7 @@ func runContextReport(args []string) int {
 
 func runContextHandoff(args []string) int {
 	flags := flag.NewFlagSet("context handoff", flag.ContinueOnError)
-	root := flags.String("root", "", "installation or containing template root")
+	root := pathFlag(flags, "root", "", "installation or containing template root")
 	cancel := flags.String("cancel", "", "live handoff nonce to cancel")
 	by := flags.String("by", "", "name of the attending human")
 	asJSON := flags.Bool("json", false, "print a bounded result")
@@ -269,7 +269,7 @@ func parseContextScratch(values []string) ([]steward.ScratchArg, error) {
 
 func runContextVerify(args []string) int {
 	flags := flag.NewFlagSet("context verify", flag.ContinueOnError)
-	root := flags.String("root", "", "installation or containing template root")
+	root := pathFlag(flags, "root", "", "installation or containing template root")
 	nonce := flags.String("nonce", "", "handoff nonce")
 	if flags.Parse(args) != nil {
 		return 2
@@ -292,7 +292,7 @@ func runContextVerify(args []string) int {
 
 func runContextPrune(args []string) int {
 	flags := flag.NewFlagSet("context prune", flag.ContinueOnError)
-	root := flags.String("root", "", "installation or containing template root")
+	root := pathFlag(flags, "root", "", "installation or containing template root")
 	olderThanValue := flags.String("older-than", "14d", "positive duration or integer day count")
 	if flags.Parse(args) != nil {
 		return 2

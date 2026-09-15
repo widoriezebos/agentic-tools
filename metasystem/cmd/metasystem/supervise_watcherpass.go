@@ -16,7 +16,7 @@ import (
 // releases the lock. The job-watching loop drives this once per interval.
 func runSuperviseWatcherPass(args []string) int {
 	flags := flag.NewFlagSet("supervise watcher-pass", flag.ContinueOnError)
-	root := flags.String("root", "", "harness root (signatures and config)")
+	root := pathFlag(flags, "root", "", "harness root (signatures and config)")
 	scope := flags.String("scope", "", "checkout the census bounds to (defaults to --root)")
 	supervisionDir := flags.String("supervision-dir", "", "census/heartbeat directory")
 	heartbeat := flags.String("heartbeat", "", "watcher heartbeat file")

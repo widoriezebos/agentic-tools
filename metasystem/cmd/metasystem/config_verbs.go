@@ -145,7 +145,7 @@ func runConfigGet(args []string) int {
 func runConfigValidate(args []string) int {
 	flags := flag.NewFlagSet("config validate", flag.ContinueOnError)
 	conf := flags.String("conf", "metasystem.conf", "path to metasystem.conf")
-	repo := flags.String("repo", ".", "repository root the configuration is validated against")
+	repo := pathFlag(flags, "repo", ".", "repository root the configuration is validated against")
 	if flags.Parse(args) != nil {
 		return 2
 	}

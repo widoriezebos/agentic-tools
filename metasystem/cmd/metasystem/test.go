@@ -61,7 +61,7 @@ type testingPlanOutput struct {
 
 func runTestList(args []string) int {
 	flags := flag.NewFlagSet("test list", flag.ContinueOnError)
-	root := flags.String("root", "", "MetaSystem installation root")
+	root := pathFlag(flags, "root", "", "MetaSystem installation root")
 	jsonOutput := flags.Bool("json", false, "emit structured JSON")
 	if flags.Parse(args) != nil || flags.NArg() != 0 || *root == "" {
 		fmt.Fprintln(os.Stderr, "usage: metasystem test list --root INSTALLATION [--json]")
@@ -84,7 +84,7 @@ func runTestList(args []string) int {
 
 func runTestCheck(args []string) int {
 	flags := flag.NewFlagSet("test check", flag.ContinueOnError)
-	root := flags.String("root", "", "MetaSystem installation root")
+	root := pathFlag(flags, "root", "", "MetaSystem installation root")
 	jsonOutput := flags.Bool("json", false, "emit structured JSON")
 	if flags.Parse(args) != nil || flags.NArg() != 0 || *root == "" {
 		fmt.Fprintln(os.Stderr, "usage: metasystem test check --root INSTALLATION [--json]")
@@ -148,7 +148,7 @@ type testingSelectionRequest struct {
 func parseTestingSelection(name string, args []string, execution bool) (testingSelectionRequest, bool, int) {
 	flags := flag.NewFlagSet(name, flag.ContinueOnError)
 	request := testingSelectionRequest{}
-	flags.StringVar(&request.Root, "root", "", "MetaSystem installation root")
+	pathFlagVar(flags, &request.Root, "root", "", "MetaSystem installation root")
 	flags.StringVar(&request.GoalID, "goal", "", "accepted goal owning delivery")
 	flags.StringVar(&request.Tree, "tree", "", "exact whole-project candidate tree")
 	mode := flags.String("mode", "auto", "auto, standard, deep, or diagnostic canary")

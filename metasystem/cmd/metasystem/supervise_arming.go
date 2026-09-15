@@ -117,7 +117,7 @@ func runSuperviseLaunchDetached(args []string) int {
 // lines — nothing when everything is healthy.
 func runSuperviseWatchdogReport(args []string) int {
 	flags := flag.NewFlagSet("supervise watchdog-report", flag.ContinueOnError)
-	repo := flags.String("repo", "", "checkout root")
+	repo := pathFlag(flags, "repo", "", "checkout root")
 	if flags.Parse(args) != nil {
 		return 2
 	}

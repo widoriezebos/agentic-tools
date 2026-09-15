@@ -12,7 +12,7 @@ import (
 // dispatch, writing the result to --output.
 func runCapabilitySelect(args []string) int {
 	flags := flag.NewFlagSet("job snapshot-select", flag.ContinueOnError)
-	root := flags.String("root", "", "checkout root")
+	root := pathFlag(flags, "root", "", "checkout root")
 	runtime := flags.String("runtime", "", "runtime name")
 	role := flags.String("role", "", "role name")
 	identity := flags.String("identity", "", "configuration identity JSON")

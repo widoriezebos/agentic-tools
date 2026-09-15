@@ -50,7 +50,7 @@ var stewardPreviewHealthAt = steward.PreviewHealthAt
 // the worst result.
 func runStewardHealth(args []string) int {
 	flags := flag.NewFlagSet("health", flag.ContinueOnError)
-	repo := flags.String("repo", "", "checkout root")
+	repo := pathFlag(flags, "repo", "", "checkout root")
 	metasystemRoot := flags.String("metasystem-root", "", "installed metasystem root (defaults to checkout root)")
 	hookPreview := flags.Bool("hook-preview", false, "render current hook facts without advancing the tick-owned alert breaker (internal)")
 	format := flags.String("format", "text", "health output format: text or json")
@@ -102,7 +102,7 @@ func runStewardHealth(args []string) int {
 func runHealthAcknowledgeAlert(args []string) int {
 	flags := flag.NewFlagSet("health acknowledge-alert", flag.ContinueOnError)
 	episodeID := flags.String("episode", "", "alert episode id")
-	repo := flags.String("repo", ".", "checkout root")
+	repo := pathFlag(flags, "repo", ".", "checkout root")
 	if flags.Parse(args) != nil {
 		return 2
 	}
@@ -138,7 +138,7 @@ func runHealthAcknowledgeAlert(args []string) int {
 
 func runStewardHookAttempt(args []string) int {
 	flags := flag.NewFlagSet("steward hook-attempt", flag.ContinueOnError)
-	repo := flags.String("repo", "", "checkout root")
+	repo := pathFlag(flags, "repo", "", "checkout root")
 	pid := flags.Int64("pid", 0, "hook process pid")
 	turnKey := flags.String("turn-key", "", "current turn key")
 	if flags.Parse(args) != nil {
@@ -165,7 +165,7 @@ func runStewardHookAttempt(args []string) int {
 
 func runStewardHookComplete(args []string) int {
 	flags := flag.NewFlagSet("steward hook-complete", flag.ContinueOnError)
-	repo := flags.String("repo", "", "checkout root")
+	repo := pathFlag(flags, "repo", "", "checkout root")
 	generation := flags.Int("generation", 0, "hook turn generation")
 	attempt := flags.Int64("attempt", 0, "hook attempt sequence")
 	result := flags.String("result", "", "OK | ERROR | INDETERMINATE")
@@ -219,7 +219,7 @@ func runStewardHookComplete(args []string) int {
 
 func runStewardHookExpire(args []string) int {
 	flags := flag.NewFlagSet("steward hook-expire", flag.ContinueOnError)
-	repo := flags.String("repo", "", "checkout root")
+	repo := pathFlag(flags, "repo", "", "checkout root")
 	elapsedSec := flags.Int64("elapsed-sec", 0, "whole seconds elapsed since the Stop deadline parent started")
 	if flags.Parse(args) != nil {
 		return 2
@@ -247,7 +247,7 @@ func runStewardHookExpire(args []string) int {
 
 func runStewardDigestPending(args []string) int {
 	flags := flag.NewFlagSet("steward digest-pending", flag.ContinueOnError)
-	repo := flags.String("repo", "", "checkout root")
+	repo := pathFlag(flags, "repo", "", "checkout root")
 	if flags.Parse(args) != nil {
 		return 2
 	}
@@ -267,7 +267,7 @@ func runStewardDigestPending(args []string) int {
 
 func runStewardDigestAdvance(args []string) int {
 	flags := flag.NewFlagSet("steward digest-advance", flag.ContinueOnError)
-	repo := flags.String("repo", "", "checkout root")
+	repo := pathFlag(flags, "repo", "", "checkout root")
 	cursor := flags.Int64("cursor", -1, "emitted digest byte cursor")
 	prefix := flags.String("prefix-sha256", "", "emitted digest prefix digest")
 	if flags.Parse(args) != nil {
@@ -288,7 +288,7 @@ func runStewardDigestAdvance(args []string) int {
 // aging, and print the decision as JSON for the tick script.
 func runStewardTick(args []string) int {
 	flags := flag.NewFlagSet("steward tick", flag.ContinueOnError)
-	repo := flags.String("repo", "", "checkout root")
+	repo := pathFlag(flags, "repo", "", "checkout root")
 	staleTicks := flags.Int("stale-ticks", 0, "live-idle noise threshold in ticks (default 5)")
 	maxRevivals := flags.Int("max-revivals", 0, "dry revivals before notify-only (default 3)")
 	if flags.Parse(args) != nil {
@@ -372,7 +372,7 @@ func runStewardTick(args []string) int {
 // caller-selectable.
 func runStewardAuthorizeDispatch(args []string) int {
 	flags := flag.NewFlagSet("steward authorize-dispatch", flag.ContinueOnError)
-	repo := flags.String("repo", "", "checkout root")
+	repo := pathFlag(flags, "repo", "", "checkout root")
 	callerPid := flags.Int64("caller-pid", 0, "the dispatching process")
 	nonce := flags.String("intent", "", "the consumed intent's nonce")
 	if flags.Parse(args) != nil {
@@ -433,7 +433,7 @@ func runStewardAuthorizeDispatch(args []string) int {
 // before alerting; a consumed intent refuses on replay.
 func runStewardRevive(args []string) int {
 	flags := flag.NewFlagSet("steward revive", flag.ContinueOnError)
-	repo := flags.String("repo", "", "checkout root")
+	repo := pathFlag(flags, "repo", "", "checkout root")
 	if flags.Parse(args) != nil {
 		return 2
 	}
@@ -537,7 +537,7 @@ func runStewardRevive(args []string) int {
 // callable directly by any external ticker the operator provides.
 func runStewardRun(args []string) int {
 	flags := flag.NewFlagSet("steward run", flag.ContinueOnError)
-	repo := flags.String("repo", "", "checkout root")
+	repo := pathFlag(flags, "repo", "", "checkout root")
 	if flags.Parse(args) != nil {
 		return 2
 	}
@@ -575,7 +575,7 @@ func runStewardRun(args []string) int {
 
 func runStewardArm(args []string) int {
 	flags := flag.NewFlagSet("steward arm", flag.ContinueOnError)
-	repo := flags.String("repo", "", "checkout root")
+	repo := pathFlag(flags, "repo", "", "checkout root")
 	temporaryWord := flags.String("temporary-human-word", "", "verbatim remote human authorization; enrolls TEMPORARILY with the word recorded on the identity until a terminal re-arm")
 	reviewBy := flags.String("review-by", "", "the human's own re-approval date (required with --temporary-human-word)")
 	if flags.Parse(args) != nil {
@@ -646,7 +646,7 @@ func runStewardArm(args []string) int {
 
 func runStewardRestart(args []string) int {
 	flags := flag.NewFlagSet("steward restart", flag.ContinueOnError)
-	repo := flags.String("repo", "", "checkout root")
+	repo := pathFlag(flags, "repo", "", "checkout root")
 	if flags.Parse(args) != nil {
 		return 2
 	}
@@ -756,7 +756,7 @@ func printStewardStopped(checkout string, record stopfence.Record) {
 
 func runStewardDisarm(args []string) int {
 	flags := flag.NewFlagSet("steward disarm", flag.ContinueOnError)
-	repo := flags.String("repo", "", "checkout root")
+	repo := pathFlag(flags, "repo", "", "checkout root")
 	if flags.Parse(args) != nil {
 		return 2
 	}
@@ -777,7 +777,7 @@ func runStewardDisarm(args []string) int {
 // empty output means none, so shell callers can gate on it.
 func runStewardPending(args []string) int {
 	flags := flag.NewFlagSet("steward pending", flag.ContinueOnError)
-	repo := flags.String("repo", "", "checkout root")
+	repo := pathFlag(flags, "repo", "", "checkout root")
 	if flags.Parse(args) != nil {
 		return 2
 	}
@@ -802,7 +802,7 @@ func runStewardPending(args []string) int {
 // channel the design pins.
 func runStewardStatus(args []string) int {
 	flags := flag.NewFlagSet("steward status", flag.ContinueOnError)
-	repo := flags.String("repo", "", "checkout root")
+	repo := pathFlag(flags, "repo", "", "checkout root")
 	if flags.Parse(args) != nil {
 		return 2
 	}

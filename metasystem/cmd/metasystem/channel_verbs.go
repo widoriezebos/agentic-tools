@@ -48,7 +48,7 @@ func channelPollContext(root string) (context.Context, context.CancelFunc, error
 
 func runChannelStatus(args []string) int {
 	f := flag.NewFlagSet("channel status", flag.ContinueOnError)
-	root := f.String("root", ".", "repository root")
+	root := pathFlag(f, "root", ".", "repository root")
 	post := f.Bool("post", false, "post now")
 	if f.Parse(args) != nil {
 		return 2
@@ -106,7 +106,7 @@ func runChannelStatus(args []string) int {
 
 func runChannelAsk(args []string) int {
 	f := flag.NewFlagSet("channel ask", flag.ContinueOnError)
-	root := f.String("root", ".", "repository root")
+	root := pathFlag(f, "root", ".", "repository root")
 	id := f.String("goal", "", "goal id")
 	kind := f.String("kind", "", "question kind")
 	recommend := f.String("recommend", "", "recommended option")
@@ -198,7 +198,7 @@ func runChannelShow(args []string) int {
 }
 func channelQuestionFlags(name string, args []string) (string, string, bool) {
 	f := flag.NewFlagSet("channel "+name, flag.ContinueOnError)
-	root := f.String("root", ".", "repository root")
+	root := pathFlag(f, "root", ".", "repository root")
 	id := f.String("question", "", "question id")
 	if f.Parse(args) != nil || *id == "" {
 		return "", "", false
@@ -210,7 +210,7 @@ var channelWaitCommand = runWaitWithPoll
 
 func runChannelWait(args []string) int {
 	f := flag.NewFlagSet("channel wait", flag.ContinueOnError)
-	root := f.String("root", ".", "repository root")
+	root := pathFlag(f, "root", ".", "repository root")
 	id := f.String("question", "", "question id")
 	resume := f.String("resume", "", "durable channel wait identifier")
 	after := f.String("after", "", "accepted ledger cursor (required for legacy question records)")
@@ -309,7 +309,7 @@ func runChannelWait(args []string) int {
 }
 func runChannelPoll(args []string) int {
 	f := flag.NewFlagSet("channel poll", flag.ContinueOnError)
-	root := f.String("root", ".", "repository root")
+	root := pathFlag(f, "root", ".", "repository root")
 	if f.Parse(args) != nil {
 		return 2
 	}
@@ -346,7 +346,7 @@ func runChannelPoll(args []string) int {
 }
 func runChannelClose(args []string) int {
 	f := flag.NewFlagSet("channel close", flag.ContinueOnError)
-	root := f.String("root", ".", "repository root")
+	root := pathFlag(f, "root", ".", "repository root")
 	id := f.String("question", "", "question id")
 	because := f.String("because", "", "withdrawal reason")
 	if f.Parse(args) != nil || *id == "" || *because == "" {
@@ -415,7 +415,7 @@ func runChannelTelegram(args []string) int {
 		return 2
 	}
 	f := flag.NewFlagSet("channel telegram peek", flag.ContinueOnError)
-	root := f.String("root", ".", "repository root")
+	root := pathFlag(f, "root", ".", "repository root")
 	if f.Parse(args[1:]) != nil {
 		return 2
 	}

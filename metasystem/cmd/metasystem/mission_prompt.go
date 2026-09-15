@@ -14,7 +14,7 @@ import (
 
 func runMissionPromptAssemble(args []string) int {
 	flags := flag.NewFlagSet("mission prompt-assemble", flag.ContinueOnError)
-	repo := flags.String("repo", "", "repository root")
+	repo := pathFlag(flags, "repo", "", "repository root")
 	missionID := flags.String("mission", "", "mission id")
 	turn := flags.String("turn", "", "turn id")
 	output := flags.String("output", "", "path to write the assembled prompt")

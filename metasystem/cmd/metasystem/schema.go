@@ -12,7 +12,7 @@ import (
 // to an output file.
 func runSchemaMaterialize(args []string) int {
 	flags := flag.NewFlagSet("schema materialize", flag.ContinueOnError)
-	root := flags.String("root", "", "checkout root")
+	root := pathFlag(flags, "root", "", "checkout root")
 	role := flags.String("role", "", "role name")
 	version := flags.Int("version", 0, "schema version (1, 2, or critic-only 3 or 4)")
 	output := flags.String("output", "", "output path")

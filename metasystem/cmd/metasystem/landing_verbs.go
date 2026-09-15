@@ -26,7 +26,7 @@ func (values *landingRepeatedStrings) Set(value string) error {
 
 func runLandingObserve(args []string) int {
 	flags := flag.NewFlagSet("landing observe", flag.ContinueOnError)
-	root := flags.String("root", "", "project checkout root")
+	root := pathFlag(flags, "root", "", "project checkout root")
 	tree := flags.String("tree", "", "prospective project tree")
 	chain := flags.String("chain", "", "closed implementation chain root")
 	directFix := flags.String("direct-fix", "", "typed direct-fix class; register-carriage may accompany --chain")
@@ -72,7 +72,7 @@ func runLandingObserve(args []string) int {
 
 func runLandingCarryStatus(args []string) int {
 	flags := flag.NewFlagSet("landing carry-status", flag.ContinueOnError)
-	root := flags.String("root", "", "project checkout root")
+	root := pathFlag(flags, "root", "", "project checkout root")
 	carried := flags.String("carried", "", "human carry word operation id")
 	goalID := flags.String("goal", "", "goal item that holds the word")
 	ledgerTip := flags.String("ledger-tip", "", "frozen accepted goal-ledger tip")
@@ -105,7 +105,7 @@ func runLandingCarryStatus(args []string) int {
 
 func runLandingWorkspace(args []string) int {
 	flags := flag.NewFlagSet("landing workspace", flag.ContinueOnError)
-	root := flags.String("root", "", "MetaSystem installation root")
+	root := pathFlag(flags, "root", "", "MetaSystem installation root")
 	tree := flags.String("tree", "", "whole-project tree")
 	if flags.Parse(args) != nil || flags.NArg() != 0 || *root == "" || *tree == "" {
 		fmt.Fprintln(os.Stderr, "usage: metasystem landing workspace --root INSTALLATION --tree TREE")
@@ -121,7 +121,7 @@ func runLandingWorkspace(args []string) int {
 
 func runLandingHeld(args []string) int {
 	flags := flag.NewFlagSet("landing held", flag.ContinueOnError)
-	root := flags.String("root", "", "project checkout root")
+	root := pathFlag(flags, "root", "", "project checkout root")
 	base := flags.String("base", "", "fetched commit below the pushed range")
 	commit := flags.String("commit", "", "tip commit to push")
 	remote := flags.String("remote", "", "remote receiving the push")
@@ -166,7 +166,7 @@ func shortLandingID(id string) string {
 
 func runLandingTestReceipt(args []string) (status int) {
 	flags := flag.NewFlagSet("landing test-receipt", flag.ContinueOnError)
-	root := flags.String("root", "", "project checkout root")
+	root := pathFlag(flags, "root", "", "project checkout root")
 	tree := flags.String("tree", "", "candidate project tree")
 	command := flags.String("command", "", "test command to run from the isolated candidate workspace")
 	mode := flags.String("mode", "", "shared testing mode: auto, standard, or deep")
@@ -350,7 +350,7 @@ func canonicalValidatorEnvironment() []string {
 
 func runLandingDrift(args []string) int {
 	flags := flag.NewFlagSet("landing drift", flag.ContinueOnError)
-	root := flags.String("root", "", "project checkout root")
+	root := pathFlag(flags, "root", "", "project checkout root")
 	requireEmptyIndex := flags.Bool("require-empty-index", false, "refuse every staged entry")
 	if flags.Parse(args) != nil || flags.NArg() != 0 {
 		return 2
@@ -374,7 +374,7 @@ func runLandingDrift(args []string) int {
 
 func runLandingAdvance(args []string) int {
 	flags := flag.NewFlagSet("landing advance", flag.ContinueOnError)
-	root := flags.String("root", "", "project checkout root")
+	root := pathFlag(flags, "root", "", "project checkout root")
 	upstream := flags.String("upstream", "", "upstream commit or ref")
 	if flags.Parse(args) != nil || flags.NArg() != 0 || *root == "" || *upstream == "" {
 		return 2
@@ -393,7 +393,7 @@ func runLandingAdvance(args []string) int {
 
 func runLandingPark(args []string) int {
 	flags := flag.NewFlagSet("landing park", flag.ContinueOnError)
-	root := flags.String("root", "", "integration project root")
+	root := pathFlag(flags, "root", "", "integration project root")
 	chain := flags.String("chain", "", "root implementation chain")
 	target := flags.String("target", "", "frozen target commit")
 	reason := flags.String("reason", "", "original landing refusal code")
@@ -448,7 +448,7 @@ func runLandingAdoptionRulings(args []string) int {
 // printed decision, exit 1 an unreadable checkout.
 func runLandingReceiptLine(args []string) int {
 	flags := flag.NewFlagSet("landing receipt-line", flag.ContinueOnError)
-	root := flags.String("root", "", "MetaSystem installation root")
+	root := pathFlag(flags, "root", "", "MetaSystem installation root")
 	tree := flags.String("tree", "", "whole-project staged tree")
 	goalID := flags.String("goal", "", "goal the landing serves")
 	directFix := flags.String("direct-fix", "", "direct-fix landing class")

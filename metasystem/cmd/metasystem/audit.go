@@ -70,7 +70,7 @@ func runAuditCoverageRatchet(args []string) int {
 
 func runAuditMetasystem(args []string) int {
 	flags := flag.NewFlagSet("audit metasystem", flag.ContinueOnError)
-	root := flags.String("root", ".", "checkout root to audit")
+	root := pathFlag(flags, "root", ".", "checkout root to audit")
 	maxWords := flags.Int("max-always-loaded-words", 0, "always-loaded word budget (0 = 1500)")
 	allowPlaceholders := flags.Bool("allow-placeholders", false, "tolerate template placeholders (adopt.sh's structural pass)")
 	if flags.Parse(args) != nil {
@@ -99,7 +99,7 @@ func runAuditMetasystem(args []string) int {
 
 func runAuditDependencyRatchet(args []string) int {
 	flags := flag.NewFlagSet("audit dependency-ratchet", flag.ContinueOnError)
-	root := flags.String("root", ".", "checkout root to audit")
+	root := pathFlag(flags, "root", ".", "checkout root to audit")
 	if flags.Parse(args) != nil {
 		return 2
 	}
@@ -124,7 +124,7 @@ func runAuditDependencyRatchet(args []string) int {
 
 func runAuditHookStartExits(args []string) int {
 	flags := flag.NewFlagSet("audit hook-start-exits", flag.ContinueOnError)
-	root := flags.String("root", ".", "metasystem installation to audit")
+	root := pathFlag(flags, "root", ".", "metasystem installation to audit")
 	if flags.Parse(args) != nil || flags.NArg() != 0 {
 		fmt.Fprintln(os.Stderr, "usage: metasystem audit hook-start-exits [--root INSTALLATION]")
 		return 2

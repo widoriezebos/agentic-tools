@@ -61,7 +61,7 @@ func (values *repeatedStringFlag) Set(value string) error {
 
 func runDispatchComposeRolePacket(args []string) int {
 	flags := flag.NewFlagSet("job compose-role-packet", flag.ContinueOnError)
-	root := flags.String("root", "", "metasystem checkout root")
+	root := pathFlag(flags, "root", "", "metasystem checkout root")
 	role := flags.String("role", "", "role recipe")
 	brief := flags.String("brief", "", "task-direction file")
 	job := flags.String("job", "", "job id")
@@ -150,7 +150,7 @@ func runDispatchComposeRolePacket(args []string) int {
 
 func runDispatchVerifyReferences(args []string) int {
 	flags := flag.NewFlagSet("job verify-references", flag.ContinueOnError)
-	root := flags.String("root", "", "control root")
+	root := pathFlag(flags, "root", "", "control root")
 	composition := flags.String("composition", "", "composition record")
 	if flags.Parse(args) != nil {
 		return 2
@@ -211,7 +211,7 @@ func runDispatchOperationID(args []string) int {
 
 func runDispatchRecordCreate(args []string) int {
 	flags := flag.NewFlagSet("job record-create", flag.ContinueOnError)
-	root := flags.String("root", "", "checkout root")
+	root := pathFlag(flags, "root", "", "checkout root")
 	job := flags.String("job", "", "job id")
 	source := flags.String("source", "", "initial pending-setup record file")
 	if flags.Parse(args) != nil {
@@ -229,7 +229,7 @@ func runDispatchClaimLaunch(args []string) int {
 		return 2
 	}
 	flags := flag.NewFlagSet("job claim-launch", flag.ContinueOnError)
-	root := flags.String("root", "", "Git checkout root")
+	root := pathFlag(flags, "root", "", "Git checkout root")
 	opid := flags.String("opid", "", "idempotent launch operation id")
 	operationID := flags.String("operation-id", "", "reservation operation identity; defaults to opid")
 	session := flags.String("session", "", "namespaced session key")
@@ -362,7 +362,7 @@ func runDispatchClaimLaunch(args []string) int {
 
 func runDispatchFenceAfterLaunch(args []string) int {
 	flags := flag.NewFlagSet("job fence-after-launch", flag.ContinueOnError)
-	root := flags.String("root", "", "checkout state root")
+	root := pathFlag(flags, "root", "", "checkout state root")
 	job := flags.String("job", "", "launched job id")
 	if flags.Parse(args) != nil {
 		return 2
@@ -385,7 +385,7 @@ func runDispatchFenceAfterLaunch(args []string) int {
 
 func runDispatchFenceBeforeLaunch(args []string) int {
 	flags := flag.NewFlagSet("job fence-before-launch", flag.ContinueOnError)
-	root := flags.String("root", "", "checkout state root")
+	root := pathFlag(flags, "root", "", "checkout state root")
 	if flags.Parse(args) != nil {
 		return 2
 	}
@@ -407,7 +407,7 @@ func runDispatchFenceBeforeLaunch(args []string) int {
 
 func runDispatchFixturePauseBeforeLaunch(args []string) int {
 	flags := flag.NewFlagSet("job fixture-pause-before-launch", flag.ContinueOnError)
-	root := flags.String("root", "", "checkout state root")
+	root := pathFlag(flags, "root", "", "checkout state root")
 	seconds := flags.String("seconds", "", "positive fixture pause in seconds")
 	if flags.Parse(args) != nil {
 		return 2
@@ -479,7 +479,7 @@ func runDispatchClaimOccupancyPrepare(args []string) int {
 		return 2
 	}
 	flags := flag.NewFlagSet("job claim-occupancy-prepare", flag.ContinueOnError)
-	root := flags.String("root", "", "Git checkout root")
+	root := pathFlag(flags, "root", "", "Git checkout root")
 	session := flags.String("session", "", "namespaced session key")
 	output := flags.String("output", "", "transient occupancy preparation output")
 	if flags.Parse(args) != nil {
@@ -494,7 +494,7 @@ func runDispatchClaimOccupancyPrepare(args []string) int {
 
 func runDispatchLaunchCapabilityConsume(args []string) int {
 	flags := flag.NewFlagSet("job launch-capability-consume", flag.ContinueOnError)
-	root := flags.String("root", "", "Git checkout root")
+	root := pathFlag(flags, "root", "", "Git checkout root")
 	job := flags.String("job", "", "admitted job id")
 	capability := flags.String("capability", "", "opaque one-shot launch capability")
 	adapterVerb := flags.String("adapter-verb", "", "dispatch or follow-up")
@@ -601,7 +601,7 @@ func runDispatchPreforkMark(args []string) int {
 		return 2
 	}
 	flags := flag.NewFlagSet("job prefork-mark", flag.ContinueOnError)
-	root := flags.String("root", "", "checkout root")
+	root := pathFlag(flags, "root", "", "checkout root")
 	job := flags.String("job", "", "job id")
 	tag := flags.String("tag", "", "reservation instance tag")
 	supervisor := flags.Int64("supervisor-pid", 0, "supervisor process id")
@@ -655,7 +655,7 @@ func runDispatchReconcileReservation(args []string) int {
 		return 2
 	}
 	flags := flag.NewFlagSet("job reconcile-reservation", flag.ContinueOnError)
-	root := flags.String("root", "", "checkout root")
+	root := pathFlag(flags, "root", "", "checkout root")
 	job := flags.String("job", "", "job id")
 	if flags.Parse(args) != nil {
 		return 2
@@ -684,7 +684,7 @@ func runDispatchOwnershipPatch(args []string) int {
 		return 2
 	}
 	flags := flag.NewFlagSet("job ownership-patch", flag.ContinueOnError)
-	root := flags.String("root", "", "checkout root")
+	root := pathFlag(flags, "root", "", "checkout root")
 	output := flags.String("output", "", "ownership patch output file")
 	pid := flags.Int64("pid", 0, "supervisor process id")
 	pgid := flags.Int64("pgid", 0, "supervisor process group id")
@@ -719,7 +719,7 @@ func dispatchStartReader(root string) (identity.StartReader, error) {
 
 func runDispatchRecordSetup(args []string) int {
 	flags := flag.NewFlagSet("job record-setup", flag.ContinueOnError)
-	root := flags.String("root", "", "checkout root")
+	root := pathFlag(flags, "root", "", "checkout root")
 	job := flags.String("job", "", "job id")
 	source := flags.String("source", "", "complete pending record file")
 	if flags.Parse(args) != nil {
@@ -734,7 +734,7 @@ func runDispatchRecordSetup(args []string) int {
 
 func runDispatchRecordCAS(args []string) int {
 	flags := flag.NewFlagSet("job record-cas", flag.ContinueOnError)
-	root := flags.String("root", "", "checkout root")
+	root := pathFlag(flags, "root", "", "checkout root")
 	job := flags.String("job", "", "job id")
 	expect := flags.String("expect", "", "status the record must currently hold")
 	status := flags.String("status", "", "target status (equal to --expect for a metadata update)")
@@ -757,7 +757,7 @@ func runDispatchRecordCAS(args []string) int {
 
 func runDispatchRecordProtocolError(args []string) int {
 	flags := flag.NewFlagSet("job record-protocol-error", flag.ContinueOnError)
-	root := flags.String("root", "", "checkout root")
+	root := pathFlag(flags, "root", "", "checkout root")
 	job := flags.String("job", "", "job id")
 	expect := flags.String("expect", "", "status the record must currently hold")
 	violation := flags.String("violation", "", "protocol violation text")
@@ -778,7 +778,7 @@ func runDispatchRecordProtocolError(args []string) int {
 // a delegate-side outcome and 1 as a harness failure, never conflating.
 func runDispatchRepairClaim(args []string) int {
 	flags := flag.NewFlagSet("job repair-claim", flag.ContinueOnError)
-	root := flags.String("root", "", "checkout root")
+	root := pathFlag(flags, "root", "", "checkout root")
 	job := flags.String("job", "", "job id")
 	if flags.Parse(args) != nil {
 		return 2
@@ -796,7 +796,7 @@ func runDispatchRepairClaim(args []string) int {
 
 func runDispatchBuildSetup(args []string) int {
 	flags := flag.NewFlagSet("job build-setup", flag.ContinueOnError)
-	root := flags.String("root", "", "checkout root used to prove an approval")
+	root := pathFlag(flags, "root", "", "checkout root used to prove an approval")
 	output := flags.String("output", "", "pending-setup record output file")
 	job := flags.String("job", "", "job id")
 	role := flags.String("role", "", "job role")
@@ -821,7 +821,7 @@ func runDispatchBuildSetup(args []string) int {
 
 func runDispatchSliceAdmission(args []string) int {
 	flags := flag.NewFlagSet("job slice-admission", flag.ContinueOnError)
-	root := flags.String("root", "", "checkout root")
+	root := pathFlag(flags, "root", "", "checkout root")
 	capMinutes := flags.Uint64("cap-min", 0, "final reservation cap in minutes")
 	approvedRef := flags.String("approved-ref", "", "recorded human approval reference")
 	goalID := flags.String("goal", "", "goal id this approval covers")
@@ -908,7 +908,7 @@ func runDispatchBuildRecord(args []string) int {
 	flags.StringVar(&p.Mission, "mission", "", "mission id (optional)")
 	flags.StringVar(&p.MissionTurn, "mission-turn", "", "mission turn id (optional)")
 	flags.StringVar(&p.Stream, "stream", "", "mission stream this dispatch serves (optional)")
-	flags.StringVar(&p.Root, "root", "", "dispatching checkout root (required with --mission)")
+	pathFlagVar(flags, &p.Root, "root", "", "dispatching checkout root (required with --mission)")
 	flags.StringVar(&p.Runtime, "runtime", "", "runtime name")
 	flags.StringVar(&p.Workspace, "workspace", "", "job workspace root")
 	flags.StringVar(&p.CapResolution, "cap-resolution", "", "cap-resolution file")
@@ -986,7 +986,7 @@ func runDispatchBuildFollowRecord(args []string) int {
 	flags.StringVar(&p.CapResolution, "cap-resolution", "", "cap-resolution file")
 	flags.StringVar(&p.Model, "model", "", "canonical requested model")
 	flags.StringVar(&p.AliasedFrom, "aliased-from", "", "model alias source (optional)")
-	flags.StringVar(&p.Root, "root", "", "dispatching checkout root (required for mission chains)")
+	pathFlagVar(flags, &p.Root, "root", "", "dispatching checkout root (required for mission chains)")
 	flags.Uint64Var(&p.GoalRevision, "goal-revision", 0, "accepted goal revision this reservation serves")
 	goalTier := flags.Uint("goal-tier", 0, "claimed-revision goal tier")
 	flags.StringVar(&p.GateWidth, "gate-width", "", "inherited gate width")
@@ -1019,7 +1019,7 @@ func runDispatchBuildFollowRecord(args []string) int {
 // continuation round is told after its predecessor was cut off at its cap.
 func runDispatchCapContinuation(args []string) int {
 	flags := flag.NewFlagSet("job cap-continuation", flag.ContinueOnError)
-	root := flags.String("root", ".", "MetaSystem installation root (relative paths resolve against it)")
+	root := pathFlag(flags, "root", ".", "MetaSystem installation root (relative paths resolve against it)")
 	parent := flags.String("parent", "", "the capped parent round's record")
 	worktree := flags.String("worktree", "", "the chain's job worktree")
 	output := flags.String("output", "", "paragraph output file")
@@ -1055,7 +1055,7 @@ func runDispatchCapContinuation(args []string) int {
 
 func runDispatchFollowUpRebasePlan(args []string) int {
 	flags := flag.NewFlagSet("job follow-up-rebase-plan", flag.ContinueOnError)
-	repo := flags.String("repo", "", "metasystem checkout root")
+	repo := pathFlag(flags, "repo", "", "metasystem checkout root")
 	rootJob := flags.String("root-job", "", "chain root job id")
 	worktree := flags.String("worktree", "", "chain worktree")
 	trunk := flags.String("trunk", "", "pinned trunk commit or ref")
@@ -1076,7 +1076,7 @@ func runDispatchFollowUpRebasePlan(args []string) int {
 
 func runDispatchGoalRevision(args []string) int {
 	flags := flag.NewFlagSet("job goal-revision", flag.ContinueOnError)
-	root := flags.String("root", "", "checkout root")
+	root := pathFlag(flags, "root", "", "checkout root")
 	goalID := flags.String("goal", "", "goal id")
 	if flags.Parse(args) != nil {
 		return 2
@@ -1096,7 +1096,7 @@ func runDispatchGoalRevision(args []string) int {
 
 func runDispatchGoalBinding(args []string) int {
 	flags := flag.NewFlagSet("job goal-binding", flag.ContinueOnError)
-	root := flags.String("root", "", "checkout root")
+	root := pathFlag(flags, "root", "", "checkout root")
 	goalID := flags.String("goal", "", "goal id")
 	if flags.Parse(args) != nil {
 		return 2
@@ -1126,7 +1126,7 @@ func runDispatchGoalBinding(args []string) int {
 
 func runDispatchGoalLockPath(args []string) int {
 	flags := flag.NewFlagSet("job goal-lock-path", flag.ContinueOnError)
-	root := flags.String("root", "", "checkout root")
+	root := pathFlag(flags, "root", "", "checkout root")
 	goalID := flags.String("goal", "", "goal id")
 	revision := flags.Uint64("revision", 0, "goal revision")
 	if flags.Parse(args) != nil {
@@ -1142,7 +1142,7 @@ func runDispatchGoalLockPath(args []string) int {
 
 func runDispatchGoalAdmission(args []string) int {
 	flags := flag.NewFlagSet("job goal-admission", flag.ContinueOnError)
-	root := flags.String("root", "", "checkout root")
+	root := pathFlag(flags, "root", "", "checkout root")
 	stopLineage := flags.String("stop-lineage", "", "lineage whose owned claim may refuse admission")
 	if flags.Parse(args) != nil {
 		return 2
@@ -1177,7 +1177,7 @@ func runDispatchGoalAdmission(args []string) int {
 
 func runDispatchGoalRevisionAdmission(args []string) int {
 	flags := flag.NewFlagSet("job goal-revision-admission", flag.ContinueOnError)
-	root := flags.String("root", "", "checkout root")
+	root := pathFlag(flags, "root", "", "checkout root")
 	goalID := flags.String("goal", "", "goal id")
 	revision := flags.Uint64("revision", 0, "exact accepted goal revision")
 	proposedCap := flags.Uint64("proposed-cap", 0, "reserved minutes proposed by this dispatch")
@@ -1235,7 +1235,7 @@ func runDispatchGoalRevisionAdmission(args []string) int {
 
 func runDispatchBreachStop(args []string) int {
 	flags := flag.NewFlagSet("job breach-stop", flag.ContinueOnError)
-	root := flags.String("root", "", "checkout root")
+	root := pathFlag(flags, "root", "", "checkout root")
 	goalID := flags.String("goal", "", "goal id")
 	revision := flags.Uint64("revision", 0, "exact accepted goal revision")
 	if flags.Parse(args) != nil {
@@ -1268,7 +1268,7 @@ func runDispatchBreachStop(args []string) int {
 
 func runDispatchBreachStopRoutes(args []string) int {
 	flags := flag.NewFlagSet("job breach-stop-routes", flag.ContinueOnError)
-	root := flags.String("root", "", "checkout root")
+	root := pathFlag(flags, "root", "", "checkout root")
 	if flags.Parse(args) != nil || *root == "" {
 		return 2
 	}
@@ -1288,7 +1288,7 @@ func runDispatchBreachStopRoutes(args []string) int {
 
 func runDispatchStopBatchReconcile(args []string) int {
 	flags := flag.NewFlagSet("job stop-batch-reconcile", flag.ContinueOnError)
-	root := flags.String("root", "", "checkout root")
+	root := pathFlag(flags, "root", "", "checkout root")
 	stopID := flags.String("stop", "", "stop batch id")
 	if flags.Parse(args) != nil {
 		return 2
@@ -1313,7 +1313,7 @@ func runDispatchStopBatchReconcile(args []string) int {
 
 func runDispatchStopBatchPending(args []string) int {
 	flags := flag.NewFlagSet("job stop-batch-pending", flag.ContinueOnError)
-	root := flags.String("root", "", "checkout root")
+	root := pathFlag(flags, "root", "", "checkout root")
 	stopID := flags.String("stop", "", "stop batch id")
 	if flags.Parse(args) != nil || *root == "" || *stopID == "" {
 		return 2
@@ -1330,7 +1330,7 @@ func runDispatchStopBatchPending(args []string) int {
 
 func runDispatchStopBatchProofPending(args []string) int {
 	flags := flag.NewFlagSet("job stop-batch-proof-pending", flag.ContinueOnError)
-	root := flags.String("root", "", "checkout root")
+	root := pathFlag(flags, "root", "", "checkout root")
 	stopID := flags.String("stop", "", "stop batch id")
 	if flags.Parse(args) != nil || *root == "" || *stopID == "" {
 		return 2
@@ -1347,7 +1347,7 @@ func runDispatchStopBatchProofPending(args []string) int {
 
 func runDispatchStopProofCancel(args []string) int {
 	flags := flag.NewFlagSet("job stop-proof-cancel", flag.ContinueOnError)
-	root := flags.String("root", "", "checkout root")
+	root := pathFlag(flags, "root", "", "checkout root")
 	stopID := flags.String("stop", "", "stop batch id")
 	attemptID := flags.String("attempt", "", "proof attempt id")
 	if flags.Parse(args) != nil || *root == "" || *stopID == "" || *attemptID == "" {
@@ -1358,7 +1358,7 @@ func runDispatchStopProofCancel(args []string) int {
 
 func runDispatchStopCancelAuthorize(args []string) int {
 	flags := flag.NewFlagSet("job stop-cancel-authorize", flag.ContinueOnError)
-	root := flags.String("root", "", "checkout root")
+	root := pathFlag(flags, "root", "", "checkout root")
 	stopID := flags.String("stop", "", "stop batch id")
 	jobID := flags.String("job", "", "job id")
 	if flags.Parse(args) != nil || *root == "" || *stopID == "" || *jobID == "" {
@@ -1372,7 +1372,7 @@ func runDispatchStopCancelAuthorize(args []string) int {
 // re-provision refusal is the FIRST refusal a stale chain can hit.
 func runDispatchVerifyChainIncarnation(args []string) int {
 	flags := flag.NewFlagSet("job verify-chain-incarnation", flag.ContinueOnError)
-	root := flags.String("root", "", "checkout root")
+	root := pathFlag(flags, "root", "", "checkout root")
 	mission := flags.String("mission", "", "mission id")
 	parent := flags.String("parent", "", "parent (latest) record file")
 	if flags.Parse(args) != nil {
@@ -1457,7 +1457,7 @@ func runDispatchChainUsage(args []string) int {
 
 func runDispatchCustodyAdd(args []string) int {
 	flags := flag.NewFlagSet("job custody-add", flag.ContinueOnError)
-	root := flags.String("root", "", "checkout root")
+	root := pathFlag(flags, "root", "", "checkout root")
 	job := flags.String("job", "", "job id")
 	pid := flags.Int64("pid", 0, "custody process id")
 	pidStarted := flags.Int64("pid-started", 0, "custody process kernel start time (epoch seconds)")
@@ -1533,8 +1533,8 @@ func runDispatchCensusFresh(args []string) int {
 	verdict := flags.String("verdict", "", "last-census verdict file")
 	state := flags.String("state", "", "supervision arming record file")
 	arm := flags.String("arm", "", "re-arm command named in refusal messages")
-	repo := flags.String("repo", "", "repository path named in refusal messages")
-	root := flags.String("root", "", "metasystem root; when set, the verdict's fingerprint must match the armed code")
+	repo := pathFlag(flags, "repo", "", "repository path named in refusal messages")
+	root := pathFlag(flags, "root", "", "metasystem root; when set, the verdict's fingerprint must match the armed code")
 	if flags.Parse(args) != nil {
 		return 2
 	}
@@ -1567,8 +1567,8 @@ func runDispatchCensusWait(args []string) int {
 	verdict := flags.String("verdict", "", "last-census verdict file")
 	state := flags.String("state", "", "supervision arming record file")
 	arm := flags.String("arm", "", "re-arm command named in refusal messages")
-	repo := flags.String("repo", "", "repository path named in refusal messages")
-	root := flags.String("root", "", "metasystem root used to authenticate the census fingerprint")
+	repo := pathFlag(flags, "repo", "", "repository path named in refusal messages")
+	root := pathFlag(flags, "root", "", "metasystem root used to authenticate the census fingerprint")
 	postGeneration := flags.Int64("post-generation", 0, "captured generation for an explicit post-event wait")
 	postScan := flags.Int64("post-scan", 0, "captured scan sequence for an explicit post-event wait")
 	attemptBudget := flags.Int("attempt-budget", 2, "completed census passes allowed")
@@ -1613,7 +1613,7 @@ func runDispatchWatcherCeiling(args []string) int {
 func runDispatchExpandPermissions(args []string) int {
 	flags := flag.NewFlagSet("job expand-permissions", flag.ContinueOnError)
 	source := flags.String("source", "", "permissions envelope file")
-	repo := flags.String("repo", "", "repository root")
+	repo := pathFlag(flags, "repo", "", "repository root")
 	workspace := flags.String("workspace", "", "job workspace root")
 	worktree := strictBool(flags, "worktree", "1", "0", "1 when the workspace is a job worktree")
 	preset := flags.String("preset", "", "preset name (or custom)")
@@ -1631,7 +1631,7 @@ func runDispatchExpandPermissions(args []string) int {
 
 func runDispatchValidateMission(args []string) int {
 	flags := flag.NewFlagSet("job validate-mission", flag.ContinueOnError)
-	root := flags.String("root", "", "checkout root")
+	root := pathFlag(flags, "root", "", "checkout root")
 	mission := flags.String("mission", "", "mission id")
 	lease := flags.String("lease", "", "mission lease path")
 	if flags.Parse(args) != nil {
@@ -1646,7 +1646,7 @@ func runDispatchValidateMission(args []string) int {
 
 func runDispatchMirror(args []string) int {
 	flags := flag.NewFlagSet("job mirror", flag.ContinueOnError)
-	repo := flags.String("repo", "", "checkout root")
+	repo := pathFlag(flags, "repo", "", "checkout root")
 	checkout := flags.String("checkout", "", "repository scope the evidence segment derives from")
 	evidence := flags.String("evidence", "", "evidence root (absolute, outside the repository)")
 	rootJob := flags.String("root-job", "", "chain root job id")
@@ -1664,7 +1664,7 @@ func runDispatchMirror(args []string) int {
 
 func runDispatchCloseCheck(args []string) int {
 	flags := flag.NewFlagSet("job close-check", flag.ContinueOnError)
-	repo := flags.String("repo", "", "checkout root")
+	repo := pathFlag(flags, "repo", "", "checkout root")
 	root := flags.String("root", "", "chain root job id")
 	if flags.Parse(args) != nil {
 		return 2
@@ -1681,7 +1681,7 @@ func runDispatchReviewReferenceReconcile(args []string) int {
 		return 2
 	}
 	flags := flag.NewFlagSet("job review-reference-reconcile", flag.ContinueOnError)
-	repo := flags.String("repo", "", "checkout root")
+	repo := pathFlag(flags, "repo", "", "checkout root")
 	rootJob := flags.String("root-job", "", "reviewed chain root job id")
 	evidenceJob := flags.String("evidence-job", "", "completed critic, warden, or verifier job id")
 	if flags.Parse(args) != nil {
@@ -1726,7 +1726,7 @@ func runDispatchCritiqueRegisterAdvance(args []string) int {
 		return 2
 	}
 	flags := flag.NewFlagSet("job critique-register-advance", flag.ContinueOnError)
-	repo := flags.String("repo", "", "checkout root")
+	repo := pathFlag(flags, "repo", "", "checkout root")
 	rootJob := flags.String("root-job", "", "critic chain root job id")
 	roundJob := flags.String("round-job", "", "critic round job id")
 	if flags.Parse(args) != nil {
@@ -1746,7 +1746,7 @@ func runDispatchCritiqueRegisterAdvance(args []string) int {
 
 func runDispatchCritiqueOpenFindingIDs(args []string) int {
 	flags := flag.NewFlagSet("job critique-open-finding-ids", flag.ContinueOnError)
-	repo := flags.String("repo", "", "checkout root")
+	repo := pathFlag(flags, "repo", "", "checkout root")
 	rootJob := flags.String("root-job", "", "critic chain root job id")
 	if flags.Parse(args) != nil {
 		return 2
@@ -1767,7 +1767,7 @@ func runDispatchCritiqueOpenFindingIDs(args []string) int {
 
 func runDispatchCritiqueRegisterClose(args []string) int {
 	flags := flag.NewFlagSet("job critique-register-close", flag.ContinueOnError)
-	repo := flags.String("repo", ".", "checkout root")
+	repo := pathFlag(flags, "repo", ".", "checkout root")
 	rootJob := flags.String("root-job", "", "critic root")
 	if flags.Parse(args) != nil || flags.NArg() != 0 || *rootJob == "" {
 		fmt.Fprintln(os.Stderr, "job critique-register-close: --root-job is required")
@@ -1786,7 +1786,7 @@ func runDispatchCritiqueClose(args []string) int {
 		return 2
 	}
 	flags := flag.NewFlagSet("job critique-close", flag.ContinueOnError)
-	repo := flags.String("repo", ".", "checkout root")
+	repo := pathFlag(flags, "repo", ".", "checkout root")
 	rootJob := flags.String("root-job", "", "critic root")
 	runnerClosed := flags.Bool("runner-closed", false, "mark the runner closed")
 	if flags.Parse(args) != nil || flags.NArg() != 0 || *rootJob == "" {
@@ -1798,7 +1798,7 @@ func runDispatchCritiqueClose(args []string) int {
 
 func runDispatchCritiqueBudgetRebind(args []string) int {
 	flags := flag.NewFlagSet("job critique-budget-rebind", flag.ContinueOnError)
-	repo := flags.String("repo", ".", "checkout root")
+	repo := pathFlag(flags, "repo", ".", "checkout root")
 	rootJob := flags.String("root-job", "", "critic root")
 	if flags.Parse(args) != nil || flags.NArg() != 0 || *rootJob == "" {
 		fmt.Fprintln(os.Stderr, "job critique-budget-rebind: --root-job is required")
@@ -1814,7 +1814,7 @@ func runDispatchCritiqueBudgetRebind(args []string) int {
 
 func runDispatchReadSubject(args []string) int {
 	flags := flag.NewFlagSet("job read-subject", flag.ContinueOnError)
-	repo := flags.String("repo", ".", "checkout root")
+	repo := pathFlag(flags, "repo", ".", "checkout root")
 	role := flags.String("role", "", "critic role")
 	reviews := flags.String("reviews", "", "reviewed implementer job or commit")
 	workspace := flags.String("workspace", "", "reviewed workspace")
@@ -1850,7 +1850,7 @@ func runDispatchCritiqueReadAdmission(args []string) int {
 		return 2
 	}
 	flags := flag.NewFlagSet("job critique-read-admission", flag.ContinueOnError)
-	repo := flags.String("repo", "", "checkout root")
+	repo := pathFlag(flags, "repo", "", "checkout root")
 	role := flags.String("role", "", "critic role")
 	rootJob := flags.String("root-job", "", "requesting critic root job id")
 	round := flags.Int64("round", 0, "proposed critic round")
@@ -1899,7 +1899,7 @@ func runDispatchCritiqueExhaustionAdvance(args []string) int {
 		return 2
 	}
 	flags := flag.NewFlagSet("job critique-exhaustion-advance", flag.ContinueOnError)
-	repo := flags.String("repo", "", "checkout root")
+	repo := pathFlag(flags, "repo", "", "checkout root")
 	rootJob := flags.String("root-job", "", "chain root job id")
 	role := flags.String("role", "", "follow-up role")
 	message := flags.String("message", "", "successor message file")
@@ -1993,7 +1993,7 @@ func runDispatchTestingRequirement(args []string) int {
 func runDispatchBriefMode(args []string) int {
 	flags := flag.NewFlagSet("job brief-mode", flag.ContinueOnError)
 	brief := flags.String("brief", "", "brief file")
-	root := flags.String("root", ".", "metasystem installation root")
+	root := pathFlag(flags, "root", ".", "metasystem installation root")
 	baseTree := flags.String("base-tree", "", "Git checkout whose HEAD is the delegate base tree")
 	diskRoot := flags.String("disk-root", "", "live checkout root for runtime artifact paths")
 	authorityOnly := flags.Bool("authority-only", false, "check cited authority without requiring a Working Mode header")
@@ -2081,7 +2081,7 @@ func runDispatchOwnerLock(args []string) int {
 // refusal the orchestrator asked for by requesting a projection.
 func runDispatchServingGoal(args []string) int {
 	flags := flag.NewFlagSet("dispatch serving-goal", flag.ContinueOnError)
-	root := flags.String("root", "", "checkout root")
+	root := pathFlag(flags, "root", "", "checkout root")
 	if flags.Parse(args) != nil {
 		return 2
 	}

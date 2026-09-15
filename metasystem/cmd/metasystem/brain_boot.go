@@ -57,8 +57,8 @@ var newBrainBootInputsCommand = func(executable string, args ...string) *exec.Cm
 
 func runBrainBootCommand(args []string) int {
 	flags := flag.NewFlagSet("brain boot", flag.ContinueOnError)
-	root := flags.String("root", ".", "checkout state root")
-	repo := flags.String("repo", ".", "checkout containing the role packet")
+	root := pathFlag(flags, "root", ".", "checkout state root")
+	repo := pathFlag(flags, "repo", ".", "checkout containing the role packet")
 	bound := flags.Int("bytes", 10000, "maximum payload bytes")
 	deadlineMS := flags.Int("deadline-ms", 5000, "hard deadline in milliseconds")
 	readOnly := flags.Bool("read-only", false, "compose context without recording delivery")
@@ -327,8 +327,8 @@ func firstGroup(lines []brainBootLine, group string) int {
 
 func runBrainBootInputs(args []string) int {
 	flags := flag.NewFlagSet("brain boot-inputs", flag.ContinueOnError)
-	root := flags.String("root", "", "checkout state root")
-	repo := flags.String("repo", "", "checkout containing records")
+	root := pathFlag(flags, "root", "", "checkout state root")
+	repo := pathFlag(flags, "repo", "", "checkout containing records")
 	dir := flags.String("dir", "", "parent-owned section directory")
 	if flags.Parse(args) != nil || *root == "" || *repo == "" || *dir == "" {
 		fmt.Fprintln(os.Stderr, "brain boot-inputs needs --root, --repo, and --dir")
@@ -517,8 +517,8 @@ func clipBrainLine(line string) string {
 
 func runBrainDigestAdvance(args []string) int {
 	flags := flag.NewFlagSet("brain digest-advance", flag.ContinueOnError)
-	root := flags.String("root", "", "checkout state root")
-	repo := flags.String("repo", "", "checkout containing the digest")
+	root := pathFlag(flags, "root", "", "checkout state root")
+	repo := pathFlag(flags, "repo", "", "checkout containing the digest")
 	cursor := flags.Int64("cursor", -1, "emitted digest cursor")
 	prefix := flags.String("prefix-sha256", "", "emitted digest prefix digest")
 	if flags.Parse(args) != nil || *root == "" || *repo == "" || *cursor < 0 || *prefix == "" {
@@ -535,8 +535,8 @@ func runBrainDigestAdvance(args []string) int {
 
 func runBrainStartDelivered(args []string) int {
 	flags := flag.NewFlagSet("brain start-delivered", flag.ContinueOnError)
-	root := flags.String("root", "", "checkout state root")
-	repo := flags.String("repo", "", "checkout containing the digest")
+	root := pathFlag(flags, "root", "", "checkout state root")
+	repo := pathFlag(flags, "repo", "", "checkout containing the digest")
 	declarationSHA := flags.String("declaration-sha256", "", "declaration observed by read-only boot")
 	digestCursor := flags.Int64("digest-cursor", -1, "emitted digest cursor")
 	digestPrefix := flags.String("digest-prefix-sha256", "", "emitted digest prefix digest")

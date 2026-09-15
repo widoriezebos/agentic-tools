@@ -18,7 +18,7 @@ import (
 // copy-then-age flight-recorder archives.
 func runEvidenceGC(args []string) int {
 	flags := flag.NewFlagSet("evidence gc", flag.ContinueOnError)
-	root := flags.String("root", "", "checkout root")
+	root := pathFlag(flags, "root", "", "checkout root")
 	evidenceRoot := flags.String("evidence", "", "durable evidence root (absolute path)")
 	grace := flags.Float64("grace-seconds", 5400, "seconds a mirrored terminal chain's job records stay after mirroring")
 	if flags.Parse(args) != nil {

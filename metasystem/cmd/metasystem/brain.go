@@ -37,7 +37,7 @@ func brainHumanAct(root, verb string, fixture bool) error {
 
 func runBrainDeclare(args []string) int {
 	flags := flag.NewFlagSet("brain declare", flag.ContinueOnError)
-	root := flags.String("root", ".", "checkout state root")
+	root := pathFlag(flags, "root", ".", "checkout state root")
 	by := flags.String("by", "", "human making the declaration")
 	fixture := flags.Bool("fixture-human-authority", false, "fixture-only authority under an exact fake-runtime root")
 	if flags.Parse(args) != nil {
@@ -147,7 +147,7 @@ func sortedGoalIDs(items map[string]*goal.GoalFile) []string {
 
 func runBrainShow(args []string) int {
 	flags := flag.NewFlagSet("brain show", flag.ContinueOnError)
-	root := flags.String("root", ".", "checkout state root")
+	root := pathFlag(flags, "root", ".", "checkout state root")
 	if flags.Parse(args) != nil {
 		return 2
 	}
@@ -174,7 +174,7 @@ func runBrainShow(args []string) int {
 
 func runBrainWithdraw(args []string) int {
 	flags := flag.NewFlagSet("brain withdraw", flag.ContinueOnError)
-	root := flags.String("root", ".", "checkout state root")
+	root := pathFlag(flags, "root", ".", "checkout state root")
 	by := flags.String("by", "", "human withdrawing the declaration")
 	fixture := flags.Bool("fixture-human-authority", false, "fixture-only authority under an exact fake-runtime root")
 	if flags.Parse(args) != nil {
@@ -207,7 +207,7 @@ func runBrainWithdraw(args []string) int {
 
 func runBrainFence(args []string) int {
 	flags := flag.NewFlagSet("brain fence", flag.ContinueOnError)
-	root := flags.String("root", ".", "checkout state root")
+	root := pathFlag(flags, "root", ".", "checkout state root")
 	act := flags.String("act", "", "guarded act")
 	if flags.Parse(args) != nil || *act == "" {
 		fmt.Fprintln(os.Stderr, "brain fence needs --act")

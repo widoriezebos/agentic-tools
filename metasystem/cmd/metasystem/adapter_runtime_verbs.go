@@ -384,7 +384,7 @@ func runAdapterAdjudicateTurn(args []string) int {
 	flags := flag.NewFlagSet("adapter adjudicate-turn", flag.ContinueOnError)
 	var p adapter.AdjudicateParams
 	flags.StringVar(&p.Stage, "stage", "", "initial, after-repair, settle-result, or empty-reply")
-	flags.StringVar(&p.Root, "root", "", "checkout root")
+	pathFlagVar(flags, &p.Root, "root", "", "checkout root")
 	flags.StringVar(&p.Job, "job", "", "job id")
 	flags.StringVar(&p.RecordPath, "record", "", "job record file")
 	flags.StringVar(&p.SessionID, "session", "", "correlated session id")
@@ -462,7 +462,7 @@ func runAdapterDevinSettle(args []string) int {
 func runAdapterDevinCollect(args []string) int {
 	flags := flag.NewFlagSet("adapter devin-collect", flag.ContinueOnError)
 	params := delegate.CollectInputs{}
-	flags.StringVar(&params.Root, "root", "", "checkout root")
+	pathFlagVar(flags, &params.Root, "root", "", "checkout root")
 	flags.StringVar(&params.Job, "job", "", "job id")
 	flags.StringVar(&params.RoundDir, "round-dir", "", "round evidence directory")
 	flags.StringVar(&params.Workspace, "workspace", "", "delegate workspace (relative write targets resolve here)")

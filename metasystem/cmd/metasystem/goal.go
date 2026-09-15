@@ -123,7 +123,7 @@ func goalMutation(name string, args []string, extra func(*flag.FlagSet) []*strin
 		return code
 	}
 	flags := flag.NewFlagSet("goal "+name, flag.ContinueOnError)
-	root := flags.String("root", ".", "checkout root")
+	root := pathFlag(flags, "root", ".", "checkout root")
 	callerPid := flags.Int64("caller-pid", 0, "caller pid (defaults to the parent process)")
 	var extras []*string
 	if extra != nil {
@@ -273,7 +273,7 @@ func boolAsString(f *flag.FlagSet, name string) *string {
 // records needed by scripts and detailed inspection.
 func runGoalList(args []string) int {
 	flags := flag.NewFlagSet("goal list", flag.ContinueOnError)
-	root := flags.String("root", ".", "checkout root")
+	root := pathFlag(flags, "root", ".", "checkout root")
 	var output goalListOutput
 	flags.BoolVar(&output.JSON, "json", false, "print goal records as JSON")
 	flags.BoolVar(&output.History, "history", false, "include ledger history in JSON records")
@@ -357,7 +357,7 @@ func converted(root string) bool {
 // and the goals whose recorded tier exceeds their derivation.
 func runGoalTierProbe(args []string) int {
 	flags := flag.NewFlagSet("goal tier-probe", flag.ContinueOnError)
-	root := flags.String("root", ".", "checkout root")
+	root := pathFlag(flags, "root", ".", "checkout root")
 	pretty := flags.Bool("pretty", false, "print lines instead of JSON")
 	fetchFirst := flags.Bool("fetch", false, "fetch the canonical tip before reading")
 	if flags.Parse(args) != nil {
@@ -440,7 +440,7 @@ func listSynced(root string, output goalListOutput, fetchFirst bool, requiredLab
 // History stays opt-in so inspecting one goal does not replay its ledger.
 func runGoalShow(args []string) int {
 	flags := flag.NewFlagSet("goal show", flag.ContinueOnError)
-	root := flags.String("root", ".", "checkout root")
+	root := pathFlag(flags, "root", ".", "checkout root")
 	id := flags.String("id", "", "goal id")
 	history := flags.Bool("history", false, "include ledger history")
 	if flags.Parse(args) != nil || *id == "" {
@@ -567,7 +567,7 @@ func nextSynced(root, machine string, fetchFirst bool, requiredLabels ...string)
 // by instruction — the universal fallback transport.
 func runGoalNext(args []string) int {
 	flags := flag.NewFlagSet("goal next", flag.ContinueOnError)
-	root := flags.String("root", ".", "checkout root")
+	root := pathFlag(flags, "root", ".", "checkout root")
 	machineFlag := flags.String("machine", "", "machine nickname whose ordered frontier to inspect")
 	fetch := flags.Bool("fetch", false, "fetch and validate the canonical backlog before selecting")
 	var labels repeatedStrings
@@ -651,7 +651,7 @@ func runGoalNext(args []string) int {
 // hook's own fixed degraded message takes over.
 func runReportTurnVerdict(args []string) int {
 	flags := flag.NewFlagSet("report turn-verdict", flag.ContinueOnError)
-	root := flags.String("root", ".", "checkout root")
+	root := pathFlag(flags, "root", ".", "checkout root")
 	session := flags.String("session", "", "normalized session id")
 	watchdog := flags.String("watchdog-surfaced", "", "sha256 of this turn's watchdog report (empty clears)")
 	mainId := flags.String("main-id", "", "the caller main identity for the unwatched-work rule")

@@ -38,7 +38,7 @@ import (
 func runSuperviseComponent(args []string) int {
 	flags := flag.NewFlagSet("supervise component", flag.ContinueOnError)
 	component := flags.String("component", "", "watcher | reaper")
-	repo := flags.String("repo", "", "checkout root the component operates on")
+	repo := pathFlag(flags, "repo", "", "checkout root the component operates on")
 	metasystemRoot := flags.String("metasystem-root", "", "installation root containing config and runtime adapters")
 	scope := flags.String("scope", "", "census scope (git toplevel); defaults to --repo")
 	tag := flags.String("tag", "", "component instance tag")

@@ -82,7 +82,7 @@ func runHostDevinCollect(args []string) int {
 	flags := flag.NewFlagSet("host devin-collect", flag.ContinueOnError)
 	params := delegate.HostCollectInputs{}
 	var rejects rejectList
-	flags.StringVar(&params.Root, "root", "", "checkout root")
+	pathFlagVar(flags, &params.Root, "root", "", "checkout root")
 	flags.StringVar(&params.TurnRecordPath, "turn-record", "", "turn record file")
 	flags.StringVar(&params.TurnDir, "turn-dir", "", "turn evidence directory")
 	flags.StringVar(&params.Workspace, "workspace", "", "checkout root the host worked in")
@@ -175,7 +175,7 @@ func runHostClaudeResult(args []string) int {
 // config plus the workspace-scoped permission set.
 func runHostDevinConfig(args []string) int {
 	flags := flag.NewFlagSet("host devin-config", flag.ContinueOnError)
-	root := flags.String("root", "", "checkout root the workspace globs are scoped to")
+	root := pathFlag(flags, "root", "", "checkout root the workspace globs are scoped to")
 	output := flags.String("output", "", "config file to write")
 	if flags.Parse(args) != nil {
 		return 2
@@ -248,7 +248,7 @@ func runHostFakeReturn(args []string) int {
 	state := flags.String("state", "", "mission state")
 	output := flags.String("output", "", "return object file to write")
 	behavior := flags.String("behavior", "", "fake host behavior marker")
-	root := flags.String("root", "", "checkout root for any job record the behavior writes")
+	root := pathFlag(flags, "root", "", "checkout root for any job record the behavior writes")
 	if flags.Parse(args) != nil {
 		return 2
 	}

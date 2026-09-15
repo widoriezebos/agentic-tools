@@ -7,9 +7,56 @@ import (
 	"flag"
 	"fmt"
 	"os"
+	"path/filepath"
 
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/atomicfile"
 )
+
+type pathValue struct {
+	target *string
+}
+
+func (value pathValue) String() string {
+	if value.target == nil {
+		return ""
+	}
+	return *value.target
+}
+
+func (value pathValue) Set(raw string) error {
+	resolved, err := resolvePathFlag(raw)
+	if err != nil {
+		return err
+	}
+	*value.target = resolved
+	return nil
+}
+
+func resolvePathFlag(raw string) (string, error) {
+	if raw == "" {
+		return "", nil
+	}
+	absolute, err := filepath.Abs(raw)
+	if err != nil {
+		return "", err
+	}
+	return filepath.Clean(absolute), nil
+}
+
+func pathFlag(flags *flag.FlagSet, name, value, usage string) *string {
+	target := new(string)
+	pathFlagVar(flags, target, name, value, usage)
+	return target
+}
+
+func pathFlagVar(flags *flag.FlagSet, target *string, name, value, usage string) {
+	resolved, err := resolvePathFlag(value)
+	if err != nil {
+		panic(fmt.Sprintf("invalid default for -%s: %v", name, err))
+	}
+	*target = resolved
+	flags.Var(pathValue{target: target}, name, usage)
+}
 
 func printJSON(value any) {
 	encoded, err := json.Marshal(value)

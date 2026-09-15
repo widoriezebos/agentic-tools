@@ -77,8 +77,8 @@ func runSuperviseVerifyArmed(args []string) int {
 // here because it registers under the supervise family.
 func runCensusFingerprint(args []string) int {
 	flags := flag.NewFlagSet("supervise fingerprint", flag.ContinueOnError)
-	repo := flags.String("repo", "", "checkout root to fingerprint")
-	root := flags.String("root", "", "metasystem root (defaults to this checkout)")
+	repo := pathFlag(flags, "repo", "", "checkout root to fingerprint")
+	root := pathFlag(flags, "root", "", "metasystem root (defaults to this checkout)")
 	if flags.Parse(args) != nil {
 		return 2
 	}
@@ -109,7 +109,7 @@ func runCensusFingerprint(args []string) int {
 // owner loop lands with the process adapters (Phase 0 continues).
 func runSuperviseStatus(args []string) int {
 	flags := flag.NewFlagSet("supervise status", flag.ContinueOnError)
-	repo := flags.String("repo", "", "checkout root")
+	repo := pathFlag(flags, "repo", "", "checkout root")
 	if flags.Parse(args) != nil {
 		return 2
 	}

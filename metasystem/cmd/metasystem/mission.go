@@ -170,7 +170,7 @@ func runMissionStateWrite(args []string) int {
 func runMissionStateVerify(args []string) int {
 	flags := flag.NewFlagSet("mission state-verify", flag.ContinueOnError)
 	state := flags.String("state", "", "state path")
-	repo := flags.String("repo", "", "repository (with --ledger, verifies the anchor)")
+	repo := pathFlag(flags, "repo", "", "repository (with --ledger, verifies the anchor)")
 	ledger := flags.String("ledger", "", "ledger path (with --repo, verifies the anchor)")
 	if flags.Parse(args) != nil {
 		return 2
@@ -200,7 +200,7 @@ func runMissionStateVerify(args []string) int {
 func runMissionStateAnchor(args []string) int {
 	flags := flag.NewFlagSet("mission state-anchor", flag.ContinueOnError)
 	state := flags.String("state", "", "state path")
-	repo := flags.String("repo", "", "repository")
+	repo := pathFlag(flags, "repo", "", "repository")
 	ledger := flags.String("ledger", "", "ledger path")
 	if flags.Parse(args) != nil {
 		return 2
@@ -218,7 +218,7 @@ func runMissionStateAnchor(args []string) int {
 func runMissionStateReconcile(args []string) int {
 	flags := flag.NewFlagSet("mission state-reconcile", flag.ContinueOnError)
 	state := flags.String("state", "", "state path")
-	repo := flags.String("repo", "", "repository")
+	repo := pathFlag(flags, "repo", "", "repository")
 	ledger := flags.String("ledger", "", "ledger path")
 	if flags.Parse(args) != nil {
 		return 2
@@ -241,7 +241,7 @@ func runMissionStateReconcile(args []string) int {
 func runMissionFenceReserve(name string, reserve bool) func([]string) int {
 	return func(args []string) int {
 		flags := flag.NewFlagSet("mission "+name, flag.ContinueOnError)
-		repo := flags.String("repo", "", "repository")
+		repo := pathFlag(flags, "repo", "", "repository")
 		missionID := flags.String("mission", "", "mission id")
 		job := flags.String("job", "", "job id")
 		capMin := flags.Int("cap-min", 0, "per-job cap in minutes")
@@ -266,7 +266,7 @@ func runMissionFenceReserve(name string, reserve bool) func([]string) int {
 
 func runMissionFenceReserveCycle(args []string) int {
 	flags := flag.NewFlagSet("mission fence-reserve-cycle", flag.ContinueOnError)
-	repo := flags.String("repo", "", "repository")
+	repo := pathFlag(flags, "repo", "", "repository")
 	missionID := flags.String("mission", "", "mission id")
 	if flags.Parse(args) != nil {
 		return 2
@@ -284,7 +284,7 @@ func runMissionFenceReserveCycle(args []string) int {
 
 func runMissionFenceAuthorizeCap(args []string) int {
 	flags := flag.NewFlagSet("mission fence-authorize-cap", flag.ContinueOnError)
-	repo := flags.String("repo", "", "repository")
+	repo := pathFlag(flags, "repo", "", "repository")
 	missionID := flags.String("mission", "", "mission id")
 	job := flags.String("job", "", "job id")
 	runtime := flags.String("runtime", "", "runtime")
@@ -324,7 +324,7 @@ func runMissionFenceAuthorizeCap(args []string) int {
 
 func runMissionFenceAggregateUsage(args []string) int {
 	flags := flag.NewFlagSet("mission fence-aggregate-usage", flag.ContinueOnError)
-	repo := flags.String("repo", "", "repository")
+	repo := pathFlag(flags, "repo", "", "repository")
 	missionID := flags.String("mission", "", "mission id")
 	if flags.Parse(args) != nil {
 		return 2
@@ -342,7 +342,7 @@ func runMissionFenceAggregateUsage(args []string) int {
 
 func runMissionFenceReleaseJob(args []string) int {
 	flags := flag.NewFlagSet("mission fence-release-job", flag.ContinueOnError)
-	repo := flags.String("repo", "", "repository")
+	repo := pathFlag(flags, "repo", "", "repository")
 	missionID := flags.String("mission", "", "mission id")
 	job := flags.String("job", "", "job id whose reservation to release")
 	if flags.Parse(args) != nil {
@@ -361,7 +361,7 @@ func runMissionFenceReleaseJob(args []string) int {
 
 func runMissionFenceRefuse(args []string) int {
 	flags := flag.NewFlagSet("mission fence-refuse", flag.ContinueOnError)
-	repo := flags.String("repo", "", "repository")
+	repo := pathFlag(flags, "repo", "", "repository")
 	missionID := flags.String("mission", "", "mission id")
 	reason := flags.String("reason", "", "fence refusal reason")
 	if flags.Parse(args) != nil {

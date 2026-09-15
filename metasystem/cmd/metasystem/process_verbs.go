@@ -263,7 +263,7 @@ func armRefusalSecondLine(scope processScope, err error) string {
 func parseProcessScope(verb string, args []string, register ...func(*flag.FlagSet)) (processScope, int, int) {
 	flags := flag.NewFlagSet("metasystem "+verb, flag.ContinueOnError)
 	flags.SetOutput(os.Stderr)
-	repo := flags.String("repo", ".", "repository or path inside it")
+	repo := pathFlag(flags, "repo", ".", "repository or path inside it")
 	installation := flags.String("installation", "", "metasystem installation for this checkout")
 	all := flags.Bool("all", false, "every checkout on this host")
 	for _, add := range register {

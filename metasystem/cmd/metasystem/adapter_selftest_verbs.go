@@ -148,7 +148,7 @@ func runAdapterSelftestListener(args []string) int {
 func runAdapterSelftestRun(args []string) int {
 	flags := flag.NewFlagSet("adapter selftest-run", flag.ContinueOnError)
 	var p adapter.SelftestParams
-	flags.StringVar(&p.Root, "root", "", "checkout root")
+	pathFlagVar(flags, &p.Root, "root", "", "checkout root")
 	flags.StringVar(&p.Runtime, "runtime", "", "runtime name")
 	flags.StringVar(&p.AdapterPath, "adapter", "", "adapter script, exec'd for identity and probe")
 	flags.StringVar(&p.Usage, "usage", "", "native, unavailable, or metered")

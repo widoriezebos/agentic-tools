@@ -19,7 +19,7 @@ func runWatch(args []string) int {
 	}
 
 	flags := flag.NewFlagSet("watch", flag.ContinueOnError)
-	root := flags.String("root", ".", "checkout root")
+	root := pathFlag(flags, "root", ".", "checkout root")
 	asJSON := flags.Bool("json", false, "emit the typed snapshot as JSON")
 	if flags.Parse(args) != nil {
 		return 2

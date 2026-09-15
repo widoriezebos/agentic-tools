@@ -32,7 +32,7 @@ func weightThreshold(root string) int64 {
 
 func runGateWeightAdd(args []string) int {
 	flags := flag.NewFlagSet("gate weight-add", flag.ContinueOnError)
-	root := flags.String("root", "", "checkout root")
+	root := pathFlag(flags, "root", "", "checkout root")
 	commit := flags.String("commit", "", "landed commit")
 	prefix := flags.String("prefix", "", "metasystem path relative to Git toplevel")
 	goalID := flags.String("goal", "", "goal owning the landing; its highest risk answer scales the weight")
@@ -60,7 +60,7 @@ func runGateWeightAdd(args []string) int {
 
 func runGateWeightCheck(args []string) int {
 	flags := flag.NewFlagSet("gate weight-check", flag.ContinueOnError)
-	root := flags.String("root", "", "checkout root")
+	root := pathFlag(flags, "root", "", "checkout root")
 	if flags.Parse(args) != nil || *root == "" || flags.NArg() != 0 {
 		fmt.Fprintln(os.Stderr, "usage: metasystem gate weight-check --root R")
 		return 2
@@ -80,7 +80,7 @@ func runGateWeightCheck(args []string) int {
 
 func runGateWeightDischarge(args []string) int {
 	flags := flag.NewFlagSet("gate weight-discharge", flag.ContinueOnError)
-	root := flags.String("root", "", "checkout root")
+	root := pathFlag(flags, "root", "", "checkout root")
 	goalID := flags.String("goal", "", "goal owning the governed validation")
 	revision := flags.Uint64("obligation-revision", 0, "exact obligation revision")
 	runID := flags.String("run-id", "", "green governed run")

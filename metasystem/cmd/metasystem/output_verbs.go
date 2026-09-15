@@ -14,7 +14,7 @@ import (
 
 func runOutputSpill(args []string) int {
 	flags := flag.NewFlagSet("output spill", flag.ContinueOnError)
-	root := flags.String("root", "", "control root")
+	root := pathFlag(flags, "root", "", "control root")
 	verb := flags.String("verb", "", "producer verb")
 	ext := flags.String("ext", "", "output extension")
 	file := flags.String("file", "", "file to retain")
@@ -51,7 +51,7 @@ func runOutputSpill(args []string) int {
 
 func runOutputPrune(args []string) int {
 	flags := flag.NewFlagSet("output prune", flag.ContinueOnError)
-	root := flags.String("root", "", "control root")
+	root := pathFlag(flags, "root", "", "control root")
 	olderThanText := flags.String("older-than", "7d", "minimum file age")
 	if flags.Parse(args) != nil {
 		return 2

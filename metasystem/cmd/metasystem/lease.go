@@ -28,7 +28,7 @@ func optionalEpoch(flags *flag.FlagSet, value *int64) *int64 {
 
 func runLeaseAnnounce(args []string) int {
 	flags := flag.NewFlagSet("lease announce", flag.ContinueOnError)
-	root := flags.String("root", "", "checkout root")
+	root := pathFlag(flags, "root", "", "checkout root")
 	session := flags.String("session", "", "session id")
 	pid := flags.Int64("pid", 0, "main pid")
 	start := flags.Int64("start", 0, "main start epoch seconds")
@@ -51,7 +51,7 @@ func runLeaseAnnounce(args []string) int {
 
 func runLeaseRetire(args []string) int {
 	flags := flag.NewFlagSet("lease retire", flag.ContinueOnError)
-	root := flags.String("root", "", "checkout root")
+	root := pathFlag(flags, "root", "", "checkout root")
 	session := flags.String("session", "", "session id")
 	pid := flags.Int64("pid", 0, "main pid")
 	start := flags.Int64("start", 0, "main start epoch seconds")
@@ -67,7 +67,7 @@ func runLeaseRetire(args []string) int {
 
 func runLeaseClassify(args []string) int {
 	flags := flag.NewFlagSet("lease classify", flag.ContinueOnError)
-	root := flags.String("root", "", "checkout root")
+	root := pathFlag(flags, "root", "", "checkout root")
 	metasystemRoot := flags.String("metasystem-root", "", "installed metasystem root (defaults to checkout root)")
 	caller := flags.Int64("caller-pid", 0, "caller pid")
 	if flags.Parse(args) != nil {
@@ -87,7 +87,7 @@ func runLeaseClassify(args []string) int {
 
 func runLeaseHookDelegate(args []string) int {
 	flags := flag.NewFlagSet("lease hook-delegate", flag.ContinueOnError)
-	root := flags.String("root", "", "canonical state root containing delegate job records")
+	root := pathFlag(flags, "root", "", "canonical state root containing delegate job records")
 	metasystemRoot := flags.String("metasystem-root", "", "canonical installation root containing identity fixtures and engine")
 	caller := flags.Int64("caller-pid", 0, "hook caller pid")
 	job := flags.String("job", "", "adapter-supplied job identifier (optional evidence locator)")
@@ -112,7 +112,7 @@ func runLeaseHookDelegate(args []string) int {
 
 func runLeaseRequireHolder(args []string) int {
 	flags := flag.NewFlagSet("lease require-holder", flag.ContinueOnError)
-	root := flags.String("root", "", "checkout root")
+	root := pathFlag(flags, "root", "", "checkout root")
 	caller := flags.Int64("caller-pid", 0, "caller pid")
 	epoch := flags.Int64("expected-epoch", 0, "expected claim epoch (optional)")
 	if flags.Parse(args) != nil {
@@ -129,7 +129,7 @@ func runLeaseRequireHolder(args []string) int {
 
 func runLeaseRenew(args []string) int {
 	flags := flag.NewFlagSet("lease renew", flag.ContinueOnError)
-	root := flags.String("root", "", "checkout root")
+	root := pathFlag(flags, "root", "", "checkout root")
 	caller := flags.Int64("caller-pid", 0, "caller pid")
 	if flags.Parse(args) != nil {
 		return 2
@@ -145,7 +145,7 @@ func runLeaseRenew(args []string) int {
 
 func runLeaseRunHeld(args []string) int {
 	flags := flag.NewFlagSet("lease run-held", flag.ContinueOnError)
-	root := flags.String("root", "", "checkout root")
+	root := pathFlag(flags, "root", "", "checkout root")
 	caller := flags.Int64("caller-pid", 0, "caller pid")
 	epoch := flags.Int64("expected-epoch", 0, "expected claim epoch (optional)")
 	if flags.Parse(args) != nil {
@@ -165,7 +165,7 @@ func runLeaseRunHeld(args []string) int {
 
 func runLeaseProtocolGrowth(args []string) int {
 	flags := flag.NewFlagSet("lease protocol-growth", flag.ContinueOnError)
-	root := flags.String("root", "", "checkout root")
+	root := pathFlag(flags, "root", "", "checkout root")
 	mainID := flags.String("main-id", "", "main id")
 	if flags.Parse(args) != nil {
 		return 2
@@ -181,7 +181,7 @@ func runLeaseProtocolGrowth(args []string) int {
 
 func runLeaseProtocolAdvance(args []string) int {
 	flags := flag.NewFlagSet("lease protocol-advance", flag.ContinueOnError)
-	root := flags.String("root", "", "checkout root")
+	root := pathFlag(flags, "root", "", "checkout root")
 	mainID := flags.String("main-id", "", "main id")
 	caller := flags.Int64("caller-pid", 0, "caller pid")
 	counts := flags.String("counts", "", "JSON object of protocol-error counts")

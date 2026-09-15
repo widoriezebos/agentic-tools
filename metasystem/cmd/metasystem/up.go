@@ -66,7 +66,7 @@ func printUpResult(result up.Result) int {
 
 func runUp(args []string) int {
 	flags := flag.NewFlagSet("up", flag.ContinueOnError)
-	repo := flags.String("repo", ".", "repository or path inside it")
+	repo := pathFlag(flags, "repo", ".", "repository or path inside it")
 	metasystemRoot := flags.String("metasystem-root", "", "metasystem checkout root (internal compatibility option)")
 	session := flags.String("session", "", "session id (defaults to METASYSTEM_SESSION_ID or session-<pid>)")
 	pid := flags.Int64("pid", 0, "explicit session pid fallback; requires --start-time")

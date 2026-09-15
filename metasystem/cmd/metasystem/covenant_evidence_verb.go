@@ -24,7 +24,7 @@ import (
 // ride along), 1 refused or unreadable, 2 usage.
 func runCovenantEvidence(args []string) int {
 	flags := flag.NewFlagSet("covenant evidence", flag.ContinueOnError)
-	root := flags.String("root", ".", "repository root holding covenant.json and "+evidencetable.TableFilename)
+	root := pathFlag(flags, "root", ".", "repository root holding covenant.json and "+evidencetable.TableFilename)
 	asJSON := flags.Bool("json", false, "emit the full report as JSON")
 	if flags.Parse(args) != nil {
 		return 2

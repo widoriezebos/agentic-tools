@@ -38,7 +38,7 @@ var (
 // that separate trust problem.
 func runSessionStop(args []string) int {
 	flags := flag.NewFlagSet("session stop", flag.ContinueOnError)
-	root := flags.String("root", ".", "checkout root")
+	root := pathFlag(flags, "root", ".", "checkout root")
 	by := flags.String("by", "", "name of the attending human")
 	if flags.Parse(args) != nil {
 		return 2
@@ -109,7 +109,7 @@ func runSessionStop(args []string) int {
 
 func runSessionEnd(args []string) int {
 	flags := flag.NewFlagSet("session end", flag.ContinueOnError)
-	root := flags.String("root", ".", "checkout root")
+	root := pathFlag(flags, "root", ".", "checkout root")
 	session := flags.String("session", "", "announced session id")
 	if flags.Parse(args) != nil {
 		return 2

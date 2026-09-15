@@ -20,7 +20,7 @@ import (
 // Exit 0 shape-valid (with the honesty line), 1 refused, 2 usage.
 func runCovenantValidate(args []string) int {
 	flags := flag.NewFlagSet("covenant validate", flag.ContinueOnError)
-	root := flags.String("root", ".", "repository root; the covenant's one home is <root>/covenant.json")
+	root := pathFlag(flags, "root", ".", "repository root; the covenant's one home is <root>/covenant.json")
 	if flags.Parse(args) != nil {
 		return 2
 	}

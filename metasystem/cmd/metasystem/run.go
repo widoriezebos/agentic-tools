@@ -84,7 +84,7 @@ func watchLine(root, id string) string {
 
 func runRunLaunch(args []string) int {
 	flags := flag.NewFlagSet("run launch", flag.ContinueOnError)
-	root := flags.String("root", ".", "checkout root")
+	root := pathFlag(flags, "root", ".", "checkout root")
 	id := flags.String("id", "", "run id")
 	kind := flags.String("kind", "custom", "suite|cohort|custom")
 	display := flags.String("display", "", "one display line (never derived from argv)")
@@ -175,7 +175,7 @@ func runRunLaunch(args []string) int {
 
 func runRunWrap(args []string) int {
 	flags := flag.NewFlagSet("run wrap", flag.ContinueOnError)
-	root := flags.String("root", ".", "checkout root")
+	root := pathFlag(flags, "root", ".", "checkout root")
 	id := flags.String("id", "", "run id")
 	nonce := flags.String("nonce", "", "launch nonce (in argv by design: the third identity factor)")
 	logPath := flags.String("log", "", "log path")
@@ -239,7 +239,7 @@ func runRunWrap(args []string) int {
 
 func runRunWatch(args []string) int {
 	flags := flag.NewFlagSet("run watch", flag.ContinueOnError)
-	root := flags.String("root", ".", "checkout root")
+	root := pathFlag(flags, "root", ".", "checkout root")
 	id := flags.String("id", "", "run id")
 	pollMs := flags.Int("poll-ms", 2000, "poll interval")
 	callerPid := flags.Int64("caller-pid", 0, "caller pid")
@@ -284,7 +284,7 @@ func runRunWatch(args []string) int {
 
 func runRunRegister(args []string) int {
 	flags := flag.NewFlagSet("run register", flag.ContinueOnError)
-	root := flags.String("root", ".", "checkout root")
+	root := pathFlag(flags, "root", ".", "checkout root")
 	id := flags.String("id", "", "run id")
 	kind := flags.String("kind", "custom", "suite|cohort|custom")
 	display := flags.String("display", "", "one display line")
@@ -325,7 +325,7 @@ func runRunRegister(args []string) int {
 
 func runRunAdopt(args []string) int {
 	flags := flag.NewFlagSet("run adopt", flag.ContinueOnError)
-	root := flags.String("root", ".", "checkout root")
+	root := pathFlag(flags, "root", ".", "checkout root")
 	id := flags.String("id", "", "run id")
 	pid := flags.Int64("pid", 0, "the successor leader pid")
 	callerPid := flags.Int64("caller-pid", 0, "caller pid")
@@ -348,7 +348,7 @@ func runRunAdopt(args []string) int {
 
 func runRunAck(args []string) int {
 	flags := flag.NewFlagSet("run ack", flag.ContinueOnError)
-	root := flags.String("root", ".", "checkout root")
+	root := pathFlag(flags, "root", ".", "checkout root")
 	id := flags.String("id", "", "run id")
 	callerPid := flags.Int64("caller-pid", 0, "caller pid")
 	if flags.Parse(args) != nil {
@@ -370,7 +370,7 @@ func runRunAck(args []string) int {
 
 func runRunConclude(args []string) int {
 	flags := flag.NewFlagSet("run conclude", flag.ContinueOnError)
-	root := flags.String("root", ".", "checkout root")
+	root := pathFlag(flags, "root", ".", "checkout root")
 	id := flags.String("id", "", "run id")
 	callerPid := flags.Int64("caller-pid", 0, "caller pid")
 	if flags.Parse(args) != nil {
@@ -399,7 +399,7 @@ func runRunConclude(args []string) int {
 
 func runRunPrune(args []string) int {
 	flags := flag.NewFlagSet("run prune", flag.ContinueOnError)
-	root := flags.String("root", ".", "checkout root")
+	root := pathFlag(flags, "root", ".", "checkout root")
 	callerPid := flags.Int64("caller-pid", 0, "caller pid")
 	if flags.Parse(args) != nil {
 		return 2
@@ -424,7 +424,7 @@ func runRunPrune(args []string) int {
 
 func runRunList(args []string) int {
 	flags := flag.NewFlagSet("run list", flag.ContinueOnError)
-	root := flags.String("root", ".", "checkout root")
+	root := pathFlag(flags, "root", ".", "checkout root")
 	if flags.Parse(args) != nil {
 		return 2
 	}
@@ -436,7 +436,7 @@ func runRunList(args []string) int {
 
 func runRunStatus(args []string) int {
 	flags := flag.NewFlagSet("run status", flag.ContinueOnError)
-	root := flags.String("root", ".", "checkout root")
+	root := pathFlag(flags, "root", ".", "checkout root")
 	id := flags.String("id", "", "run id")
 	if flags.Parse(args) != nil {
 		return 2
@@ -459,7 +459,7 @@ func runRunStatus(args []string) int {
 // as run watch, over job records.
 func runJobWatchVerb(args []string) int {
 	flags := flag.NewFlagSet("job watch", flag.ContinueOnError)
-	root := flags.String("root", ".", "checkout root")
+	root := pathFlag(flags, "root", ".", "checkout root")
 	job := flags.String("job", "", "job id")
 	pollMs := flags.Int("poll-ms", 2000, "poll interval")
 	callerPid := flags.Int64("caller-pid", 0, "caller pid")

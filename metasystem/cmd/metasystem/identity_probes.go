@@ -61,7 +61,7 @@ func runIdentityGroupOwned(args []string) int {
 	flags := flag.NewFlagSet("proc group-owned", flag.ContinueOnError)
 	pgid := flags.Int64("pgid", 0, "process group id")
 	tag := flags.String("tag", "", "instance tag required in a shipped argv position")
-	root := flags.String("root", "", "checkout root for an authorized fake-runtime fallback")
+	root := pathFlag(flags, "root", "", "checkout root for an authorized fake-runtime fallback")
 	record := flags.String("record", "", "job record carrying an exact trusted-launcher proof")
 	if flags.Parse(args) != nil {
 		return 2

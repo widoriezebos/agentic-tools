@@ -64,7 +64,7 @@ func runGoalCarry(args []string) int {
 
 func runGoalCarryLanding(args []string) int {
 	flags := flag.NewFlagSet("goal carry", flag.ContinueOnError)
-	root := flags.String("root", ".", "checkout root")
+	root := pathFlag(flags, "root", ".", "checkout root")
 	id := flags.String("id", "", "goal id")
 	by := flags.String("by", "", "the directing human")
 	lineage := flags.String("lineage", "", "coordinator lineage")
@@ -180,7 +180,7 @@ func runGoalCarryLanding(args []string) int {
 
 func runGoalCarrying(args []string) int {
 	flags := flag.NewFlagSet("goal carrying", flag.ContinueOnError)
-	root := flags.String("root", ".", "checkout root")
+	root := pathFlag(flags, "root", ".", "checkout root")
 	id := flags.String("id", "", "goal id")
 	ref := flags.String("ref", "", "carry word operation id")
 	carrying := flags.String("carrying", "", "fleet reservation row operation id")
@@ -249,7 +249,7 @@ func runGoalCarrying(args []string) int {
 
 func runGoalCarried(args []string) int {
 	flags := flag.NewFlagSet("goal carried", flag.ContinueOnError)
-	root := flags.String("root", ".", "checkout root")
+	root := pathFlag(flags, "root", ".", "checkout root")
 	entry := flags.String("entry", "", "created carried journal entry")
 	rebuild := flags.String("rebuild-from-commit", "", "landed commit whose carried trailers rebuild the record")
 	repair := flags.Bool("repair-counselor", false, "repair the counselor line from the carried row")
@@ -612,7 +612,7 @@ func (v *repeatedStrings) Set(value string) error {
 func parseSyncFlags(name string, args []string) (*syncFlags, bool) {
 	fs := flag.NewFlagSet("goal "+name, flag.ContinueOnError)
 	f := &syncFlags{}
-	fs.StringVar(&f.root, "root", ".", "checkout root")
+	pathFlagVar(fs, &f.root, "root", ".", "checkout root")
 	fs.StringVar(&f.by, "by", "", "the directing human (a human act carries its name)")
 	if name == "approve" {
 		fs.Var(&f.ids, "id", "goal id (repeatable)")
@@ -1185,7 +1185,7 @@ func configureAbandonFleetFloor() {
 
 func runGoalAbandon(args []string) int {
 	flags := flag.NewFlagSet("goal abandon", flag.ContinueOnError)
-	root := flags.String("root", ".", "checkout root")
+	root := pathFlag(flags, "root", ".", "checkout root")
 	id := flags.String("id", "", "goal id")
 	by := flags.String("by", "", "the directing human")
 	because := flags.String("because", "", "one-line reason the goal will not be worked")
@@ -1224,7 +1224,7 @@ func runGoalAbandon(args []string) int {
 
 func runGoalCarryAbandoned(args []string) int {
 	flags := flag.NewFlagSet("goal carry", flag.ContinueOnError)
-	root := flags.String("root", ".", "checkout root")
+	root := pathFlag(flags, "root", ".", "checkout root")
 	id := flags.String("id", "", "abandoned goal id")
 	successor := flags.String("to", "", "live successor goal")
 	by := flags.String("by", "", "the directing human")
@@ -1258,7 +1258,7 @@ func runGoalCarryAbandoned(args []string) int {
 
 func runGoalEngineFloor(args []string) int {
 	flags := flag.NewFlagSet("goal engine-floor", flag.ContinueOnError)
-	root := flags.String("root", ".", "checkout root")
+	root := pathFlag(flags, "root", ".", "checkout root")
 	commit := flags.String("commit", "", "40-character lowercase engine commit")
 	by := flags.String("by", "", "the directing human")
 	lineage := flags.String("lineage", "", "this coordinator's lineage")
@@ -1291,7 +1291,7 @@ func runGoalEngineFloor(args []string) int {
 
 func runGoalSetPriorityWithAuthority(args []string, prove goalAuthorityProver) int {
 	flags := flag.NewFlagSet("goal set-priority", flag.ContinueOnError)
-	root := flags.String("root", ".", "checkout root")
+	root := pathFlag(flags, "root", ".", "checkout root")
 	id := flags.String("id", "", "goal id")
 	by := flags.String("by", "", "the directing human")
 	lineage := flags.String("lineage", "", "this coordinator's lineage")
@@ -1402,7 +1402,7 @@ func runGoalApprove(args []string) int {
 
 func runGoalClassifySweep(args []string) int {
 	fs := flag.NewFlagSet("goal classify-sweep", flag.ContinueOnError)
-	root := fs.String("root", ".", "checkout root")
+	root := pathFlag(fs, "root", ".", "checkout root")
 	draftPath := fs.String("draft", "", "classification draft file")
 	preview := fs.Bool("preview", false, "print the normalized listing without mutation")
 	confirm := fs.String("confirm", "", "sha256 of the normalized preview listing")
@@ -1630,7 +1630,7 @@ func runGoalSetBudget(args []string) int {
 
 func runGoalExtendBudget(args []string) int {
 	flags := flag.NewFlagSet("goal extend-budget", flag.ContinueOnError)
-	root := flags.String("root", ".", "checkout root")
+	root := pathFlag(flags, "root", ".", "checkout root")
 	id := flags.String("id", "", "goal id")
 	revision := flags.Uint64("revision", 0, "exact accepted goal revision")
 	proposedCap := flags.Uint64("proposed-cap", 0, "reserved minutes proposed by this dispatch")
@@ -2112,7 +2112,7 @@ func runGoalEnrollTerminal(args []string) int {
 
 func runGoalEnrollTerminalWith(args []string, enroll goalTerminalEnroller) int {
 	flags := flag.NewFlagSet("goal enroll-terminal", flag.ContinueOnError)
-	root := flags.String("root", ".", "checkout root")
+	root := pathFlag(flags, "root", ".", "checkout root")
 	lineage := flags.String("lineage", "", "coordinator lineage used to publish the fleet enrollment")
 	if flags.Parse(args) != nil {
 		return 2
@@ -2151,7 +2151,7 @@ func runGoalSetObligation(args []string) int {
 // runGoalResumeWithAuthority; no flag, config, or environment value selects it.
 func runGoalSetObligationWithAuthority(args []string, prove goalAuthorityProver) int {
 	flags := flag.NewFlagSet("goal set-obligation", flag.ContinueOnError)
-	root := flags.String("root", ".", "checkout root")
+	root := pathFlag(flags, "root", ".", "checkout root")
 	id := flags.String("id", "", "claimed goal id")
 	by := flags.String("by", "", "directing human")
 	lineage := flags.String("lineage", "", "coordinator lineage")

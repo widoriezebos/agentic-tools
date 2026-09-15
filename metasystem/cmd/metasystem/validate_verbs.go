@@ -16,7 +16,7 @@ import (
 // family); 2 usage.
 func runValidateTurnPrompt(args []string) int {
 	flags := flag.NewFlagSet("validate turn-prompt", flag.ContinueOnError)
-	root := flags.String("root", ".", "metasystem root holding the shipped preamble")
+	root := pathFlag(flags, "root", ".", "metasystem root holding the shipped preamble")
 	file := flags.String("file", "", "assembled prompt file")
 	turn := flags.String("turn", "", "turn directory holding turn.json")
 	if flags.Parse(args) != nil {
@@ -73,7 +73,7 @@ func runValidateCritiqueClosed(args []string) int {
 	flags := flag.NewFlagSet("validate critique-closed", flag.ContinueOnError)
 	findings := flags.String("findings", "", "critic return JSON")
 	dispositions := flags.String("dispositions", "", "Markdown file holding the dispositions table")
-	repo := flags.String("repo", "", "checkout root whose register is updated")
+	repo := pathFlag(flags, "repo", "", "checkout root whose register is updated")
 	rootJob := flags.String("root-job", "", "critic register root job")
 	if flags.Parse(args) != nil {
 		return 2
@@ -106,7 +106,7 @@ func runValidateCritiqueClosed(args []string) int {
 // metasystem root. Exit 0 pass; 1 drift or malformed quote; 2 usage.
 func runValidatePreambleQuotes(args []string) int {
 	flags := flag.NewFlagSet("validate preamble-quotes", flag.ContinueOnError)
-	root := flags.String("root", ".", "metasystem root quote sources resolve under")
+	root := pathFlag(flags, "root", ".", "metasystem root quote sources resolve under")
 	rolesDir := flags.String("roles-dir", "", "directory holding the role preambles")
 	if flags.Parse(args) != nil {
 		return 2
@@ -177,7 +177,7 @@ func runValidateSessionIsolation(args []string) int {
 // checking identity). Violations print to stderr, one per line.
 func runValidateReturnComplete(args []string) int {
 	flags := flag.NewFlagSet("validate return-complete", flag.ContinueOnError)
-	root := flags.String("root", "", "checkout root")
+	root := pathFlag(flags, "root", "", "checkout root")
 	role := flags.String("role", "", "role name (with --file)")
 	file := flags.String("file", "", "return file (with --role)")
 	job := flags.String("job", "", "job id (instead of --role/--file)")
@@ -241,7 +241,7 @@ pipe characters; the column parser cannot see an escaped pipe as content.
 	}
 	flags := flag.NewFlagSet("validate design-obligations", flag.ContinueOnError)
 	flags.Usage = usage
-	root := flags.String("root", ".", "root for resolving relative plan paths")
+	root := pathFlag(flags, "root", ".", "root for resolving relative plan paths")
 	files := []string{}
 	flags.Func("file", "design-obligation matrix (repeatable)", func(value string) error {
 		files = append(files, value)
@@ -299,7 +299,7 @@ Exit codes: 0 conforming; 1 conformance failure; 2 usage.
 	}
 	flags := flag.NewFlagSet("validate conformance", flag.ContinueOnError)
 	flags.Usage = usage
-	root := flags.String("root", ".", "merge-target checkout root")
+	root := pathFlag(flags, "root", ".", "merge-target checkout root")
 	stage, job := "", ""
 	testCommand, recertification := "", ""
 	// A gate argument given twice is a caller confusion this verb refuses

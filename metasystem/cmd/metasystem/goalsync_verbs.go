@@ -318,7 +318,7 @@ func goalUlid() (string, error) {
 // source digest gating everything.
 func runGoalMigrate(args []string) int {
 	flags := flag.NewFlagSet("goal migrate", flag.ContinueOnError)
-	root := flags.String("root", "", "checkout root")
+	root := pathFlag(flags, "root", "", "checkout root")
 	sourceDigest := flags.String("source-digest", "", "the reviewed goals.md sha256 literal")
 	manifest := flags.String("manifest", "", "amendment manifest path (omit for a bare migration)")
 	identity := flags.String("identity", "", "adoption ULID (minted when omitted)")
@@ -394,7 +394,7 @@ func runGoalMigrate(args []string) int {
 // accepted ref — how this machine observes the fleet.
 func runGoalFetch(args []string) int {
 	flags := flag.NewFlagSet("goal fetch", flag.ContinueOnError)
-	root := flags.String("root", "", "checkout root")
+	root := pathFlag(flags, "root", "", "checkout root")
 	if flags.Parse(args) != nil {
 		return 2
 	}
@@ -426,7 +426,7 @@ func runGoalRepair(args []string) int {
 	}
 	acceptRemote := flags.Bool("accept-remote", false, "accept the current remote tip despite a rewind")
 	by := flags.String("by", "", "human authorizing the repair")
-	root := flags.String("root", "", "checkout root")
+	root := pathFlag(flags, "root", "", "checkout root")
 	if flags.Parse(args) != nil {
 		return 2
 	}
@@ -461,7 +461,7 @@ func runGoalRepair(args []string) int {
 // literal without a python detour.
 func runGoalSourceDigest(args []string) int {
 	flags := flag.NewFlagSet("goal source-digest", flag.ContinueOnError)
-	root := flags.String("root", "", "checkout root")
+	root := pathFlag(flags, "root", "", "checkout root")
 	if flags.Parse(args) != nil {
 		return 2
 	}
@@ -482,7 +482,7 @@ func runGoalSourceDigest(args []string) int {
 // the verb a stranded clone runs to move again.
 func runGoalRecover(args []string) int {
 	flags := flag.NewFlagSet("goal recover", flag.ContinueOnError)
-	root := flags.String("root", "", "checkout root")
+	root := pathFlag(flags, "root", "", "checkout root")
 	if flags.Parse(args) != nil {
 		return 2
 	}

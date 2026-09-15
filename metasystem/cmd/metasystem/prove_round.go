@@ -61,7 +61,7 @@ type ProofRoundRecord struct {
 // round's passed groups.
 func runDispatchProveRound(args []string) int {
 	flags := flag.NewFlagSet("job prove-round", flag.ContinueOnError)
-	root := flags.String("root", ".", "MetaSystem installation root")
+	root := pathFlag(flags, "root", ".", "MetaSystem installation root")
 	job := flags.String("job", "", "any job id of the chain")
 	retryDecision := flags.String("retry-decision", "", "accountable retry decision file when the goal's newest attempt failed (the previous round's red proof)")
 	if flags.Parse(args) != nil || flags.NArg() != 0 {

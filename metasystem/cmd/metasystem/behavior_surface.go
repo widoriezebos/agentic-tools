@@ -144,7 +144,7 @@ func runBehaviorSurfaceSelect(args []string) int {
 
 func runBehaviorSurfaceDigest(args []string) int {
 	flags := flag.NewFlagSet("behavior-surface digest", flag.ContinueOnError)
-	root := flags.String("root", "", "root whose bytes are projected")
+	root := pathFlag(flags, "root", "", "root whose bytes are projected")
 	projectionName := flags.String("projection", "", "ENGINE, LANDING, or PAYLOAD")
 	endpoint := flags.String("endpoint", "", "human-readable endpoint identity")
 	prefix := flags.String("prefix", "", "optional metasystem prefix below --root")
@@ -199,7 +199,7 @@ func runBehaviorSurfaceDigest(args []string) int {
 
 func runBehaviorSurfaceList(args []string) int {
 	flags := flag.NewFlagSet("behavior-surface list", flag.ContinueOnError)
-	root := flags.String("root", "", "root whose existing paths are projected")
+	root := pathFlag(flags, "root", "", "root whose existing paths are projected")
 	projectionName := flags.String("projection", "", "ENGINE, LANDING, or PAYLOAD")
 	nul := flags.Bool("nul", false, "write NUL-terminated paths")
 	if flags.Parse(args) != nil || *root == "" || *projectionName == "" || flags.NArg() != 0 {

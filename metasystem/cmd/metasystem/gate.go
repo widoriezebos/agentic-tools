@@ -20,7 +20,7 @@ import (
 
 func runGateRegister(args []string) int {
 	flags := flag.NewFlagSet("gate register", flag.ContinueOnError)
-	root := flags.String("root", "", "checkout root")
+	root := pathFlag(flags, "root", "", "checkout root")
 	gate := flags.String("gate", "", "gate name")
 	pid := flags.Int64("pid", 0, "gate process pid")
 	if flags.Parse(args) != nil {
@@ -47,7 +47,7 @@ func runGateRegister(args []string) int {
 // every blocking run on stderr.
 func runGateFence(args []string) int {
 	flags := flag.NewFlagSet("gate fence", flag.ContinueOnError)
-	root := flags.String("root", "", "checkout root")
+	root := pathFlag(flags, "root", "", "checkout root")
 	selfPid := flags.Int64("self-pid", 0, "asking process pid; markers in its own chain do not block")
 	if flags.Parse(args) != nil {
 		return 2
@@ -96,7 +96,7 @@ func runGateControllerDescendant(args []string) int {
 
 func runGateWitnessFreeze(args []string) int {
 	flags := flag.NewFlagSet("gate witness-freeze", flag.ContinueOnError)
-	root := flags.String("root", "", "metasystem tree to freeze")
+	root := pathFlag(flags, "root", "", "metasystem tree to freeze")
 	if flags.Parse(args) != nil {
 		return 2
 	}
@@ -115,7 +115,7 @@ func runGateWitnessFreeze(args []string) int {
 
 func runGateWitnessVerify(args []string) int {
 	flags := flag.NewFlagSet("gate witness-verify", flag.ContinueOnError)
-	root := flags.String("root", "", "metasystem tree to verify")
+	root := pathFlag(flags, "root", "", "metasystem tree to verify")
 	witness := flags.String("witness", "", "witness JSON file or manifest digest")
 	if flags.Parse(args) != nil {
 		return 2
@@ -163,7 +163,7 @@ func witnessManifestDigest(witness string) (string, error) {
 
 func runGateCheck(args []string) int {
 	flags := flag.NewFlagSet("gate check", flag.ContinueOnError)
-	root := flags.String("root", "", "checkout root")
+	root := pathFlag(flags, "root", "", "checkout root")
 	if flags.Parse(args) != nil {
 		return 2
 	}
@@ -181,7 +181,7 @@ func runGateCheck(args []string) int {
 
 func runGateGuardAcquire(args []string) int {
 	flags := flag.NewFlagSet("gate guard-acquire", flag.ContinueOnError)
-	root := flags.String("root", "", "checkout root")
+	root := pathFlag(flags, "root", "", "checkout root")
 	owner := flags.String("owner", "", "human-readable guard owner")
 	waitSeconds := flags.Int64("wait-sec", 0, "bounded wait in seconds")
 	progressSeconds := flags.Int64("progress-sec", 0, "progress-note interval in seconds")
@@ -209,7 +209,7 @@ func runGateGuardAcquire(args []string) int {
 
 func runGateGuardRelease(args []string) int {
 	flags := flag.NewFlagSet("gate guard-release", flag.ContinueOnError)
-	root := flags.String("root", "", "checkout root")
+	root := pathFlag(flags, "root", "", "checkout root")
 	if flags.Parse(args) != nil {
 		return 2
 	}

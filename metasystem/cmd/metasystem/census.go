@@ -19,8 +19,8 @@ import (
 // --output, printing the inventory and diagnostic lines for the run.
 func runCensusRun(args []string) int {
 	flags := flag.NewFlagSet("proc census", flag.ContinueOnError)
-	repo := flags.String("repo", "", "checkout root")
-	root := flags.String("root", "", "metasystem root (defaults to --repo)")
+	repo := pathFlag(flags, "repo", "", "checkout root")
+	root := pathFlag(flags, "root", "", "metasystem root (defaults to --repo)")
 	fp := flags.String("fingerprint", "", "fingerprint to stamp")
 	interval := flags.Int("interval", 60, "interval seconds")
 	output := flags.String("output", "", "verdict output path")
@@ -96,7 +96,7 @@ func runProcAcknowledge(args []string) int {
 	flags := flag.NewFlagSet("proc acknowledge", flag.ContinueOnError)
 	pid := flags.Int64("pid", 0, "pid of the untracked process to acknowledge")
 	reason := flags.String("reason", "", "the human's reason this process is harmless")
-	root := flags.String("root", "", "checkout root (required; the fixture authority binds to it)")
+	root := pathFlag(flags, "root", "", "checkout root (required; the fixture authority binds to it)")
 	if flags.Parse(args) != nil {
 		return 2
 	}
@@ -157,7 +157,7 @@ func runCensusAlive(args []string) int {
 	start := flags.Int64("start-time", 0, "expected start epoch seconds")
 	startTicks := flags.Int64("start-ticks", 0, "expected start ticks (clock-step-immune pair; 0 = seconds only)")
 	bootID := flags.String("boot-id", "", "expected boot id (clock-step-immune pair)")
-	root := flags.String("root", "", "checkout root (required; the fixture authority binds to it)")
+	root := pathFlag(flags, "root", "", "checkout root (required; the fixture authority binds to it)")
 	if flags.Parse(args) != nil {
 		return 2
 	}
@@ -199,7 +199,7 @@ func runCensusSignatureCheck(args []string) int {
 // first signature-matched agent ancestor as compact JSON.
 func runCensusFindAncestor(args []string) int {
 	flags := flag.NewFlagSet("proc find-ancestor", flag.ContinueOnError)
-	repo := flags.String("repo", "", "metasystem root")
+	repo := pathFlag(flags, "repo", "", "metasystem root")
 	pid := flags.Int64("pid", 0, "process id to walk up from")
 	runtime := flags.String("runtime", "", "restrict to one runtime (optional)")
 	allHosts := flags.Bool("all-hosts", false, "search every adoptable host independent of the execution roster")

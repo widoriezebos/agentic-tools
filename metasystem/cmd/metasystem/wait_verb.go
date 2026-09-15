@@ -71,7 +71,7 @@ func runWaitWithPoll(args []string, poll func(context.Context) error) int {
 
 func runWaitCommand(args []string, poll func(context.Context) error, callerPID int64, printResult func(metarun.WaitResult, bool)) int {
 	flags := flag.NewFlagSet("wait", flag.ContinueOnError)
-	root := flags.String("root", ".", "checkout or installation state root")
+	root := pathFlag(flags, "root", ".", "checkout or installation state root")
 	job := flags.String("job", "", "delegate job identifier")
 	runID := flags.String("run", "", "tracked run identifier")
 	attempt := flags.String("attempt", "", "proof attempt identifier")
@@ -227,7 +227,7 @@ func runWaitCommand(args []string, poll func(context.Context) error, callerPID i
 
 func runWaitNotify(args []string) int {
 	flags := flag.NewFlagSet("wait notify", flag.ContinueOnError)
-	root := flags.String("root", ".", "checkout or installation state root")
+	root := pathFlag(flags, "root", ".", "checkout or installation state root")
 	job := flags.String("job", "", "delegate job identifier")
 	attempt := flags.String("attempt", "", "proof attempt identifier")
 	goalID := flags.String("goal", "", "goal identifier")
@@ -356,7 +356,7 @@ func printWaitResult(result metarun.WaitResult, jsonOutput bool) {
 
 func runSessionStart(args []string) int {
 	flags := flag.NewFlagSet("session start", flag.ContinueOnError)
-	root := flags.String("root", ".", "checkout root")
+	root := pathFlag(flags, "root", ".", "checkout root")
 	session := flags.String("session", "", "runtime session identifier")
 	if flags.Parse(args) != nil || *session == "" || flags.NArg() != 0 {
 		return metarun.ExitInvalidWait
