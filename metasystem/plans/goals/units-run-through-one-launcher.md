@@ -1,6 +1,6 @@
 # units-run-through-one-launcher
 
-- State: claimed
+- State: approved
 - Priority: 1
 - Sequence: 3
 - Risk: severity=2 novelty=2 exposure=3 accumulation=1 basis="severity 2: a defect costs a unit's round or misreads a proof, never a landing, because the verb never lands; novelty 2: a new verb that chains the existing build, wait, round proof and reader steps; exposure 3: every seat runs every unit through it; accumulation 1: a verb, a plan schema and per-run state"
@@ -9,12 +9,11 @@
 - Origin: human
 - Next step: 2026-09-15 16:40 m1b. Released unstarted: the page orders U4 after U2a of stop-gate-sees-harness-tracked-work, and U2a is not built. m1b took stop-gate-sees-harness-tracked-work instead, so that U2a lands first; this goal is free for whoever picks it up once U2a is on trunk.
 - OpenedAt: 2026-09-15T13:55:02Z
-- Revision: 5
+- Revision: 6
 - Budget: elapsedLimit=4h attemptLimit=6 reservedJobMinutesLimit=720 activeJobLimit=1 reviewRoundLimit=2
 - BudgetExceptions: 0
 - Approved: by=human:Wido at=2026-09-15T13:56:29Z revision=3 opid=653XWKPE2TF68EG9N0111AH9FT-m1e-c6925449 authority=proven digest=d206563d9e5d35c4aa1cba9235579fa193122668ba946407bcd8b3a8794e0a80
-- Claimed: machine=m1b lineage=main-1789191336-90295-e4b24b at=2026-09-15T14:19:37Z revision=4 accountingRevision=4 episodeAt=2026-09-15T14:19:37Z episodeRevision=4
-- StopCapability: generation=4 revision=4 machine=m1b claimEpoch=2 fenceEpoch=0
+- Episode: machine=m1b lineage=main-1789191336-90295-e4b24b accountingRevision=4 episodeAt=2026-09-15T14:19:37Z episodeRevision=4 idleSeconds=0 released=2026-09-15T14:20:44Z
 
 History:
 - 2026-09-15T13:55:02Z 68A43MJQNYFNSXRPDXRZ16S0GK-m1e-c6925449 open actor=human:Wido targets=units-run-through-one-launcher
@@ -22,4 +21,5 @@ History:
 - 2026-09-15T13:56:29Z 653XWKPE2TF68EG9N0111AH9FT-m1e-c6925449 approve actor=human:Wido targets=units-run-through-one-launcher
 - 2026-09-15T14:19:37Z BSHYC8WH2TGN4F1KTSNT60RDH3-m1b-30a7e141 claim actor=m1b+main-1789191336-90295-e4b24b targets=units-run-through-one-launcher
 - 2026-09-15T14:20:40Z 47ZXT9JHW09NN8V7DAX4CW6DSF-m1b-30a7e141 edit actor=m1b+main-1789191336-90295-e4b24b targets=units-run-through-one-launcher
-Integrity: sha256=66c154b629a06cff8cca4485300d0d0063f6e3f5370494ff92d7eccf38c63886
+- 2026-09-15T14:20:44Z W4ZF6K7ED8TH64J7Z2TRH2ZM6E-m1b-30a7e141 release actor=m1b+main-1789191336-90295-e4b24b targets=units-run-through-one-launcher
+Integrity: sha256=f6d2b29e884ac28333acda083da4b25cfc812634a7747f65ae55b60a9f20965b
