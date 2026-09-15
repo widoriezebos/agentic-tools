@@ -33,6 +33,8 @@ import (
 
 var conformanceJobID = regexp.MustCompile(`^[a-z0-9][a-z0-9-]*$`)
 
+const delegateReceiptRefusalCode = "DELEGATE_RECEIPT_REFUSED"
+
 type conformanceRun struct {
 	root          string
 	job           string
@@ -694,9 +696,10 @@ func allDigits(value string) bool {
 }
 
 // boundaryViolations is the gate's tampering policy over a changed-path
-// set: trusted plans/ state and the agent control plane are out of bounds
-// for an implementer, and the control plane must hold no delegate-created
-// files. The review and merge stages apply this one policy.
+// set: trusted plans/ state, the seat-owned receipt ledger, and the agent
+// control plane are out of bounds for an implementer, and the control plane
+// must hold no delegate-created files. The review and merge stages apply this
+// one policy.
 func (r *conformanceRun) boundaryViolations(paths []string) []string {
 	var violations []string
 	for _, path := range paths {
@@ -707,6 +710,10 @@ func (r *conformanceRun) boundaryViolations(paths []string) []string {
 		// protected root path.
 		if path == "plans" || strings.HasPrefix(path, "plans/") {
 			violations = append(violations, "trusted plans/ state changed: "+path)
+		}
+		if path == "memory/receipts.log" {
+			violations = append(violations, delegateReceiptRefusalCode+": delegate changed "+path+
+				"; leave "+path+" unchanged; the seat writes the receipt at landing")
 		}
 		if path == "artifacts/agents" || strings.HasPrefix(path, "artifacts/agents/") {
 			violations = append(violations, "agent control plane changed: "+path)

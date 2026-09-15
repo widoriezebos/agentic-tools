@@ -13,6 +13,9 @@ for instruction in scripts/agents/templates/brief.md scripts/agents/roles/design
   grep -Fq "$bounded_read" "$source_root/$instruction" \
     || { echo "instruction file $instruction does not carry the bounded-read sentence" >&2; exit 1; }
 done
+receipt_instruction='Leave `metasystem/memory/receipts.log` unchanged; the seat writes the receipt at landing.'
+grep -Fqx "$receipt_instruction" "$source_root/scripts/agents/templates/brief.md" \
+  || { echo "builder brief template does not reserve receipts for the seat" >&2; exit 1; }
 grep -Fq 'metasystem context verify --root' "$source_root/scripts/agents/roles/steward-continuation.md" \
   || { echo "steward-continuation role does not verify a named context handoff" >&2; exit 1; }
 grep -Fq 'metasystem context handoff --root' "$source_root/docs/orchestration.md" \
@@ -85,15 +88,18 @@ new_case() { # name
   local name=$1 case_root="$fixture_root/$1"
   controller="$case_root/controller"
   worktree="$case_root/worktree"
-  mkdir -p "$controller/scripts/agents" "$controller/docs"
+  mkdir -p "$controller/scripts/agents" "$controller/docs" "$controller/memory"
   cp "$source_root/scripts/agents/path-classes.txt" "$controller/scripts/agents/"
   cp "$source_root/scripts/metasystem-config.sh" "$controller/scripts/"
+  cp "$source_root/scripts/receipt.sh" "$controller/scripts/"
   # The copied config reader resolves its engine as <controller>/bin/metasystem.
   mkdir -p "$controller/bin"
   cp "$source_root/bin/metasystem" "$controller/bin/metasystem"
   printf 'artifacts/\nlocal.conf\n' >"$controller/.gitignore"
   printf 'base\n' >"$controller/source.txt"
   printf 'base\n' >"$controller/docs/note.md"
+  printf '%s\n' '1|1970-01-01T00:00:01Z|RECEIPT|type=implement|outcome=shipped|skills=none|verify=clean|corrections=0|stop_loss=no|delegate=none|goal=seed|built_by=coordinator|critique_waived=none|waiver_stream=none|note=seed' \
+    >"$controller/memory/receipts.log"
   printf '#!/usr/bin/env bash\nprintf "base\\n"\n' >"$controller/scripts/tool.sh"
   cat >"$controller/metasystem.conf" <<'CONF'
 metasystem.version=1
@@ -101,6 +107,7 @@ metasystem.runtimes=fake
 role.default.runtime=fake
 role.default.model.fake=fixture-default
 evidence.root=/tmp/metasystem-conformance-fixture-evidence
+retro.max-age-days=100000
 CONF
   git -C "$controller" init -q -b main
   git -C "$controller" add .
@@ -310,6 +317,25 @@ grep -Fq 'extra.txt' "$fixture_root/cumulative-boundary-outside.out" \
   || { echo "cumulative boundary refusal did not name the undeclared path" >&2; exit 1; }
 rm "$worktree/extra.txt"
 "$controller/bin/metasystem" validate conformance --root "$controller" --stage review --job impl-r2 >/dev/null
+
+# The receipt ledger belongs to the seat, regardless of a delegate's declared
+# boundary. The round refuses before publishing review artifacts; the ordinary
+# seat entrypoint remains free to append the landing receipt in its checkout.
+new_case delegate-receipt
+printf '%s\n' '2|1970-01-01T00:00:02Z|RECEIPT|type=implement|outcome=shipped|skills=none|verify=clean|corrections=0|stop_loss=no|delegate=none|goal=delegate-owned|built_by=delegate|critique_waived=none|waiver_stream=none|note=delegate wrote this' \
+  >>"$worktree/memory/receipts.log"
+write_implementer '' memory/receipts.log
+expect_failure delegate-receipt \
+  'DELEGATE_RECEIPT_REFUSED: delegate changed memory/receipts.log; leave memory/receipts.log unchanged; the seat writes the receipt at landing' \
+  "$controller/bin/metasystem" validate conformance --root "$controller" --stage review --job impl
+[[ ! -e "$controller/artifacts/agents/impl/rounds/1/diff.patch" \
+   && ! -e "$controller/artifacts/agents/impl/rounds/1/review.json" ]] \
+  || { echo "delegate receipt refusal published review artifacts" >&2; exit 1; }
+"$controller/scripts/receipt.sh" add --type implement --outcome shipped --verify clean \
+  --goal seat-owned --built-by coordinator --note 'fixture seat landing' \
+  >"$fixture_root/seat-receipt.out"
+grep -Fq '|goal=seat-owned|built_by=coordinator|' "$controller/memory/receipts.log" \
+  || { echo "seat receipt entrypoint did not append its own landing receipt" >&2; exit 1; }
 
 # CC-1-2 and CC-1-3: advancing the merge target cannot overwrite immutable
 # review-stage evidence, and merge never overwrites the critic's artifact,

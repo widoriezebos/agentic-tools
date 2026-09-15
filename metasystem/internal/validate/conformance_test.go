@@ -577,6 +577,28 @@ func TestConformanceReviewIdenticalRerunIsIdempotent(t *testing.T) {
 	}
 }
 
+func TestConformanceReviewRefusesDelegateReceiptChange(t *testing.T) {
+	f := newConformanceFixture(t)
+	if err := os.MkdirAll(filepath.Join(f.worktree, "memory"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	appendFile(t, filepath.Join(f.worktree, "memory", "receipts.log"), "delegate receipt\n")
+	f.writeImplementer("", "memory/receipts.log")
+
+	_, errs := expectConformance(t, f, "review", 1, delegateReceiptRefusalCode)
+	want := "conformance failure: " + delegateReceiptRefusalCode +
+		": delegate changed memory/receipts.log; leave memory/receipts.log unchanged; the seat writes the receipt at landing"
+	if len(errs) != 1 || errs[0] != want {
+		t.Fatalf("delegate receipt refusal = %v, want %q", errs, want)
+	}
+	for _, artifact := range []string{"diff.patch", "review.json"} {
+		path := filepath.Join(f.controller, "artifacts", "agents", "impl", "rounds", "1", artifact)
+		if _, err := os.Stat(path); !os.IsNotExist(err) {
+			t.Fatalf("refused delegate receipt change published %s: %v", artifact, err)
+		}
+	}
+}
+
 func TestConformanceMissingCriticConfiguration(t *testing.T) {
 	f := newConformanceFixture(t)
 	os.WriteFile(filepath.Join(f.controller, "metasystem.conf"), []byte("metasystem.version=1\n"), 0o644)

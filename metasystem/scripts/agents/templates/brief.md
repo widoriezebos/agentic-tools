@@ -19,6 +19,8 @@ orchestrator's engine on the worktree as you leave it (metasystem job
 prove-round); run the focused tests and the fast gate for what you change,
 and leave everything you return in the worktree, uncommitted.
 
+Leave `metasystem/memory/receipts.log` unchanged; the seat writes the receipt at landing.
+
 # Inputs
 
 <Name the design, accepted critique round, and files the delegate may rely on. An implementation design leaves no judgment calls.>
