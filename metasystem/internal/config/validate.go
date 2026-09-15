@@ -499,6 +499,7 @@ func Validate(confPath, repoRoot string) (tiersAbsent bool, problems []string, e
 	// who fat-fingers exec.local-timeout-sec=300s silently runs on defaults
 	// and discovers it from the exact hang class the bound exists to prevent.
 	for _, knob := range []string{
+		ContextCeilingTokensKey, ContextHandoffMarginTokensKey,
 		"channel.http-timeout-sec", "channel.long-poll-sec", "channel.poll-timeout-sec", "exec.local-timeout-sec", "exec.network-timeout-sec", "landing.receipt-bound-min",
 		"watch.interval-sec", "watch.stale-min", "watch.cap-min",
 		"census.log-max-bytes", "metasystem.counselor.brief-cadence-hours", "dispatch.cap-max",
@@ -537,6 +538,9 @@ func Validate(confPath, repoRoot string) (tiersAbsent bool, problems []string, e
 		}
 	}
 	fixtureBudgetOverrides := fixtureBudgetLawRoot(confPath)
+	if _, contextErr := contextBudgetFromConf(confPath); contextErr != nil {
+		add("%v", contextErr)
+	}
 	if _, riskGateErr := RiskGate(confPath); riskGateErr != nil {
 		add("%v", riskGateErr)
 	}

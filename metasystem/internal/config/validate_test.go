@@ -76,6 +76,53 @@ func TestValidateAccepts(t *testing.T) {
 	}
 }
 
+func TestContextBudgetConfigRefusesInvalidValues(t *testing.T) {
+	clearContextEnvironment(t)
+	for _, test := range []struct {
+		name, setting, want string
+		knob                bool
+	}{
+		{"malformed", ContextCeilingTokensKey + "=many\n", "key=" + ContextCeilingTokensKey + " reason=must be a positive integer", false},
+		{"non-positive", ContextCeilingTokensKey + "=0\n", "key=" + ContextCeilingTokensKey + " reason=must be a positive integer", true},
+		{"non-positive-margin", ContextHandoffMarginTokensKey + "=-1\n", "key=" + ContextHandoffMarginTokensKey + " reason=must be a positive integer", true},
+		{"inverted", ContextHandoffMarginTokensKey + "=250000\n", "key=" + ContextHandoffMarginTokensKey + " reason=must be below", false},
+		{"trigger-over-the-line", ContextHandoffMarginTokensKey + "=143361\n", "key=" + ContextCeilingTokensKey + " reason=trigger 106639 exceeds construction line 106638", false},
+		{"valve-past-the-line", ContextCeilingTokensKey + "=251639\n", "key=" + ContextCeilingTokensKey + " reason=trigger 106639 exceeds construction line 106638", false},
+		{"unknown-context-key", "context.ceiling.token=1\n", "key=context.ceiling.token reason=unknown context key", false},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			root := t.TempDir()
+			putFile(t, filepath.Join(root, "metasystem.conf"), test.setting)
+			_, loadErr := ContextBudget(root)
+			if loadErr == nil || !strings.Contains(loadErr.Error(), "CONTEXT_CONFIG_INVALID "+test.want) {
+				t.Fatalf("accessor accepted %q: %v", test.setting, loadErr)
+			}
+			problems := validateRepo(t, validConf+test.setting)
+			if !hasProblem(problems, "CONTEXT_CONFIG_INVALID "+test.want) {
+				t.Fatalf("Validate accepted %q: %v", test.setting, problems)
+			}
+			if test.knob && !hasProblem(problems, strings.Split(test.setting, "=")[0]+" must be a positive integer") {
+				t.Fatalf("positive-integer knob check missed %q: %v", test.setting, problems)
+			}
+			if test.name == "unknown-context-key" {
+				putFile(t, filepath.Join(root, "metasystem.conf"), "")
+				putFile(t, filepath.Join(root, "other.conf"), test.setting)
+				_, problems, err := Validate(filepath.Join(root, "other.conf"), root)
+				if err != nil || !hasProblem(problems, "key=context.ceiling.token") {
+					t.Fatalf("nonstandard conf path passed: problems=%v err=%v", problems, err)
+				}
+			}
+		})
+	}
+	root := t.TempDir()
+	setting := ContextHandoffMarginTokensKey + "=143362\n"
+	putFile(t, filepath.Join(root, "metasystem.conf"), setting)
+	budget, err := ContextBudget(root)
+	if problems := validateRepo(t, validConf+setting); err != nil || budget.Trigger != ContextConstructionLineTokens || len(problems) != 0 {
+		t.Fatalf("construction line was not accepted: budget=%+v err=%v problems=%v", budget, err, problems)
+	}
+}
+
 func TestValidateRefusesUnknownRiskGate(t *testing.T) {
 	problems := validateRepo(t, validConf+RiskGateKey+"=maybe\n")
 	if !hasProblem(problems, "mark or enforce") {
