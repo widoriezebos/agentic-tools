@@ -2101,8 +2101,12 @@ wide_approve=$("$ms" goal approve --root "$clone" --id poa-medium --under "$wide
 grep -q '"outcome":"confirmed"' <<<"$wide_approve" \
   || { echo "approve of a tier-2 goal under a tiers 1,2 entry did not confirm: $wide_approve" >&2; exit 1; }
 wide_tip=$(git -C "$origin" rev-parse main)
-git -C "$clone" cat-file -p "$wide_tip:plans/goals/backlog.md" | grep -q "^- $wide by=human:Wido tiers=1,2 verbs=approve " \
-  || { echo "the root record does not carry the tiers 1,2 entry" >&2; exit 1; }
+if ! git -C "$clone" cat-file -p "$wide_tip:plans/goals/backlog.md" >"$tmp/backlog-wide.md"; then
+  echo "could not read the backlog at $wide_tip" >&2
+  exit 1
+fi
+grep -q "^- $wide by=human:Wido tiers=1,2 verbs=approve " "$tmp/backlog-wide.md" \
+  || { echo "the root record does not carry the tiers 1,2 entry" >&2; cat "$tmp/backlog-wide.md" >&2; exit 1; }
 if by_out=$("$ms" goal approve --root "$clone" --id poa-late --under "$entry" --by Wido 2>&1); then
   echo "--under combined with --by: $by_out" >&2; exit 1
 fi
