@@ -9,13 +9,14 @@
 - Origin: human
 - Next step: 2026-09-15 21:30 m1b. Members A, B1, B2 and B3 are on trunk (c4e7d0f31, ba073f5ef, de01a54b2). Member C round 3 (job m1b-u1cr3-1789499161) replaced its silent return with a skip naming METASYSTEM_WAIT_BINARY, but its sandbox could not run the fixture or the mutation proof, because macOS denied process visibility there. The seat built the candidate binary and ran the fixture for real: it FAILED at the association assertion with an empty RuntimeSession. Cause diagnosed in the fixture, not the product: the test uses session-<pid> as its runtime session, which matches the placeholder grammar that member A refuses to associate by design. Round 4 dispatched as job m1b-u1cr4-1789499966 (brief plans/registered-wait-matches-the-runtime-session-C-build-r4-brief.md, candidate on branch m1b-u1c-r3): give the fixture non-placeholder session identifiers and keep every assertion. NEXT: the seat runs the fixture for real and the mutation proof outside the sandbox, then proves, lands with a receipt line, and concludes under R-109-m1e.
 - OpenedAt: 2026-09-14T19:00:55Z
-- Revision: 74
-- Budget: elapsedLimit=1d4h attemptLimit=24 reservedJobMinutesLimit=720 activeJobLimit=1 reviewRoundLimit=2
-- BudgetExceptions: 2
-- Approved: by=human:Wido at=2026-09-15T19:28:26Z revision=74 opid=DG6T9406FNJFYYMBE7Y4BX9JFV-m1e-c6925449 authority=proven digest=2dd13059bac36fd3f9666844052e5f183f84abd29284dcfe28d78bfcb876a7f4
+- Revision: 75
+- Budget: elapsedLimit=1d4h attemptLimit=24 reservedJobMinutesLimit=1440 activeJobLimit=1 reviewRoundLimit=2
+- BudgetExceptions: 3
+- NormApproval: approvedRef=R-117-m1e minutes=1440 reviewRounds=2 goalRevision=74
+- Approved: by=human:Wido at=2026-09-15T19:37:57Z revision=75 opid=MW30D97BGHR7P6NQND1SQRAECF-m1e-c6925449 authority=proven digest=5de4b7080b852e3a7ce06f689615b7209fefbccdb6beab0aa2e7e994cc5638e6
 - Sliced: machine=m1b lineage=main-1789191336-90295-e4b24b revision=53 at=2026-09-15T14:22:58Z
-- Claimed: machine=m1b lineage=main-1789191336-90295-e4b24b at=2026-09-15T19:28:26Z revision=74 accountingRevision=74 episodeAt=2026-09-15T14:21:33Z episodeRevision=53 idleSeconds=4
-- StopCapability: generation=74 revision=74 machine=m1b claimEpoch=1 fenceEpoch=0
+- Claimed: machine=m1b lineage=main-1789191336-90295-e4b24b at=2026-09-15T19:37:57Z revision=75 accountingRevision=75 episodeAt=2026-09-15T14:21:33Z episodeRevision=53 idleSeconds=4
+- StopCapability: generation=75 revision=75 machine=m1b claimEpoch=1 fenceEpoch=0
 
 History:
 - 2026-09-14T19:00:55Z VW88ZP3E8RMAVCYCTGCXW0EZPQ-m1e-c6925449 open actor=human:Wido targets=registered-wait-matches-the-runtime-session reason=TierOverride: derived=3 set=2 why=one eligibility rule in the stop gate with a measured failure, below its tier-3 parent
@@ -92,4 +93,5 @@ History:
 - 2026-09-15T19:16:13Z P0CRYY17XW36DHPNDYTRRYFKT3-m1b-30a7e141 edit actor=m1b+main-1789191336-90295-e4b24b targets=registered-wait-matches-the-runtime-session
 - 2026-09-15T19:19:57Z Q2VERY5KK6B7E8QRDM73G80H7W-m1b-30a7e141 edit actor=m1b+main-1789191336-90295-e4b24b targets=registered-wait-matches-the-runtime-session
 - 2026-09-15T19:28:26Z DG6T9406FNJFYYMBE7Y4BX9JFV-m1e-c6925449 set-budget actor=human:Wido targets=registered-wait-matches-the-runtime-session displaced=m1b+main-1789191336-90295-e4b24b@2026-09-15T15:58:45Z
-Integrity: sha256=733157b9edfb78d0bf2ffe61ce295b285fea47200e3197ea04d53702515e12c5
+- 2026-09-15T19:37:57Z MW30D97BGHR7P6NQND1SQRAECF-m1e-c6925449 set-budget actor=human:Wido targets=registered-wait-matches-the-runtime-session displaced=m1b+main-1789191336-90295-e4b24b@2026-09-15T19:28:26Z
+Integrity: sha256=6e867b6cfec6fabd156a755ea2256584c56edf62ce4a9b72e7d0a90f2b233d57
