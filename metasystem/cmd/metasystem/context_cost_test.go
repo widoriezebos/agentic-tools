@@ -90,7 +90,7 @@ func TestContextStopFitsDurationBudget(t *testing.T) {
 	if os.Getenv("METASYSTEM_CONTEXT_COST_PROOF") != "1" {
 		t.Skip("large full-Stop context proof requires METASYSTEM_CONTEXT_COST_PROOF=1")
 	}
-	candidate := contextCostCandidateEngine(t)
+	candidate := contextCostCandidateEngine(t, declaredContextCostCandidateEngine)
 	readerHelper := contextCostReaderHelper(t)
 	if info, err := os.Stat(candidate); err != nil || info.Mode()&0o111 == 0 {
 		t.Fatalf("built candidate %s is not executable: %v", candidate, err)
@@ -232,10 +232,12 @@ func TestContextCostRoleFromHealthLine(t *testing.T) {
 	}
 }
 
-func contextCostCandidateEngine(t *testing.T) string {
+func contextCostCandidateEngine(t *testing.T, declaredCandidate string) string {
 	t.Helper()
-	if candidate := os.Getenv("METASYSTEM_BIN"); candidate != "" {
-		absolute, err := filepath.Abs(candidate)
+	// TestMain captures this only for the explicitly enabled context-cost
+	// proof, then removes METASYSTEM_BIN from the package environment.
+	if declaredCandidate != "" {
+		absolute, err := filepath.Abs(declaredCandidate)
 		if err != nil {
 			t.Fatal(err)
 		}

@@ -10,11 +10,19 @@ import (
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/config"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/identity"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/spend"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/testenv"
 )
 
 var spendFenceNow = time.Date(2026, 9, 2, 20, 0, 0, 0, time.UTC)
 
 func TestMain(m *testing.M) {
+	declarations := []testenv.Declaration{}
+	if os.Getenv("METASYSTEM_STEWARD_TEST_CANDIDATE_ENGINE") == "1" {
+		declarations = append(declarations, testenv.Declare("METASYSTEM_BIN"))
+	}
+	if err := os.Unsetenv("METASYSTEM_STEWARD_TEST_CANDIDATE_ENGINE"); err != nil {
+		panic(err)
+	}
 	home, err := os.MkdirTemp("", "steward-test-home-")
 	if err != nil {
 		panic(err)
@@ -22,7 +30,7 @@ func TestMain(m *testing.M) {
 	if err := os.Setenv("HOME", home); err != nil {
 		panic(err)
 	}
-	code := m.Run()
+	code := testenv.Main(m, declarations...)
 	if err := os.RemoveAll(home); err != nil && code == 0 {
 		panic(err)
 	}

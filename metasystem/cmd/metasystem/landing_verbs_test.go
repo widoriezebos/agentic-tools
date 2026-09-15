@@ -20,6 +20,7 @@ import (
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/lease"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/proofrun"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/steward"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/testenv"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/testpolicy"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/validate"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/wiredoc"
@@ -1760,7 +1761,7 @@ func TestHCL55CarriedJudgeGrammar(t *testing.T) {
 func runReceiptGit(t *testing.T, root string, args ...string) string {
 	t.Helper()
 	command := exec.Command("git", append([]string{"-C", root}, args...)...)
-	command.Env = gittree.ScrubbedEnviron()
+	command.Env = testenv.WithoutInheritedControls(gittree.ScrubbedEnviron())
 	out, err := command.CombinedOutput()
 	if err != nil {
 		t.Fatalf("git %v failed: %v\n%s", args, err, out)

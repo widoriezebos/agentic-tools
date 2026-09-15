@@ -17,6 +17,7 @@ import (
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/dispatch"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/identity"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/registry"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/testenv"
 )
 
 type armingComponentProbe struct {
@@ -63,7 +64,7 @@ func TestMain(m *testing.M) {
 			}
 		}
 	}
-	os.Exit(m.Run())
+	os.Exit(testenv.Main(m))
 }
 
 func armingOwnerHelper(args []string) error {

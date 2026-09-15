@@ -4,6 +4,8 @@ import (
 	"fmt"
 	"os"
 	"testing"
+
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/testenv"
 )
 
 // TestMain compresses the fixture cap scale for the whole package: the
@@ -31,7 +33,7 @@ func TestMain(m *testing.M) {
 		fmt.Fprintf(os.Stderr, "prepare mission-bed templates: %v\n", err)
 		os.Exit(1)
 	}
-	code := m.Run()
+	code := testenv.Main(m)
 	cleanMissionBedTemplates()
 	os.Exit(code)
 }

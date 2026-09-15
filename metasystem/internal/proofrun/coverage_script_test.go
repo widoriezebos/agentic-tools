@@ -33,6 +33,7 @@ func TestCoverageDeltaProductionConsumer(t *testing.T) {
 				"COVERAGE_SCRIPT_REUSE_STATUS="+strconv.Itoa(test.reuseStatus),
 				"COVERAGE_SCRIPT_LAUNCH_COUNT="+count,
 				"METASYSTEM_BIN="+engine,
+				"METASYSTEM_PROOFRUN_TEST_CANDIDATE_ENGINE=1",
 				"PATH="+filepath.Join(root, "helpers")+string(os.PathListSeparator)+os.Getenv("PATH"),
 			)
 			output, err := command.CombinedOutput()
@@ -546,7 +547,7 @@ func filteredCoverageScriptEnvironment() []string {
 			continue
 		}
 		switch key {
-		case "GO_WANT_COVERAGE_SCRIPT_HELPER", "COVERAGE_SCRIPT_HELPER", "COVERAGE_SCRIPT_REUSE_STATUS", "COVERAGE_SCRIPT_LAUNCH_COUNT", "METASYSTEM_BIN", "PATH":
+		case "GO_WANT_COVERAGE_SCRIPT_HELPER", "COVERAGE_SCRIPT_HELPER", "COVERAGE_SCRIPT_REUSE_STATUS", "COVERAGE_SCRIPT_LAUNCH_COUNT", "METASYSTEM_BIN", "METASYSTEM_PROOFRUN_TEST_CANDIDATE_ENGINE", "PATH":
 			continue
 		}
 		result = append(result, entry)

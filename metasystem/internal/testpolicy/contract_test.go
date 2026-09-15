@@ -134,6 +134,47 @@ func TestMetaSystemContractPinsFallbackDeclarationAndGroupUnions(t *testing.T) {
 	}
 }
 
+func TestMetaSystemContractAlwaysAuditsGoTestEnvironments(t *testing.T) {
+	data, err := os.ReadFile("../../testing.json")
+	if err != nil {
+		t.Fatal(err)
+	}
+	contract, err := Decode(data)
+	if err != nil {
+		t.Fatal(err)
+	}
+	const groupID = "test-environment-standard"
+	if !contains(contract.Always.Standard, groupID) {
+		t.Fatalf("%s is not in always.standard: %v", groupID, contract.Always.Standard)
+	}
+	groups := groupMap(contract.Groups)
+	group, ok := groups[groupID]
+	if !ok {
+		t.Fatalf("%s group is absent", groupID)
+	}
+	all, names, err := GoTests(group)
+	if err != nil || all {
+		t.Fatalf("%s must declare its non-opt-in test inventory: all=%v names=%v err=%v", groupID, all, names, err)
+	}
+	if contains(names, "TestPackageWalkExternalCheckout") {
+		t.Fatalf("%s includes opt-in TestPackageWalkExternalCheckout: %v", groupID, names)
+	}
+	for _, input := range []string{"metasystem/cmd/**", "metasystem/internal/**"} {
+		if !contains(group.Inputs, input) {
+			t.Errorf("%s inputs omit %s: %v", groupID, input, group.Inputs)
+		}
+	}
+	for _, path := range []string{"metasystem/cmd/metasystem/main.go", "metasystem/internal/registry/registry.go"} {
+		plan, err := Select(contract, SelectionRequest{ChangedPaths: []string{path}, RequestedMode: ModeAuto, Purpose: PurposeDelivery})
+		if err != nil {
+			t.Fatalf("select %s: %v", path, err)
+		}
+		if !contains(plan.RequiredGroups, groupID) {
+			t.Errorf("landing touching %s did not require %s: %v", path, groupID, plan.RequiredGroups)
+		}
+	}
+}
+
 func appendUnique(values []string, additions ...string) []string {
 	seen := make(map[string]bool, len(values)+len(additions))
 	for _, value := range values {

@@ -169,6 +169,70 @@ func TestGoCollectionKeepsSubtestsAndDetectsMissingTerminalEvents(t *testing.T) 
 	}
 }
 
+func TestTestEnvironmentStandardInventoryMatchesObserved(t *testing.T) {
+	data, err := os.ReadFile("../../testing.json")
+	if err != nil {
+		t.Fatal(err)
+	}
+	contract, err := testpolicy.Decode(data)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var group testpolicy.Group
+	for _, candidate := range contract.Groups {
+		if candidate.ID == "test-environment-standard" {
+			group = candidate
+			break
+		}
+	}
+	if group.ID == "" {
+		t.Fatal("test-environment-standard is absent from testing.json")
+	}
+	all, names, err := testpolicy.GoTests(group)
+	if err != nil || all {
+		t.Fatalf("test-environment-standard inventory: all=%v names=%v err=%v", all, names, err)
+	}
+	for _, name := range names {
+		if name == "TestPackageWalkExternalCheckout" {
+			t.Fatalf("opt-in test is part of the standard inventory: %v", names)
+		}
+	}
+
+	moduleRoot, err := filepath.Abs(filepath.Join("..", ".."))
+	if err != nil {
+		t.Fatal(err)
+	}
+	args, expected, discovery, started, err := goArguments(context.Background(), group, moduleRoot, os.Environ())
+	if err != nil || !started {
+		t.Fatalf("discover test-environment-standard: started=%v err=%v", started, err)
+	}
+	selected := make(map[string]bool, len(names))
+	for _, name := range names {
+		selected[name] = true
+	}
+	for name := range discovery.Tests {
+		if name != "TestPackageWalkExternalCheckout" && !selected[name] {
+			t.Errorf("non-opt-in test is absent from test-environment-standard: %s", name)
+		}
+	}
+	if len(discovery.Tests["TestPackageWalkExternalCheckout"]) == 0 {
+		t.Error("opt-in TestPackageWalkExternalCheckout was not discovered")
+	}
+	command, err := explicitEnvironmentCommand(context.Background(), moduleRoot, os.Environ(), args)
+	if err != nil {
+		t.Fatal(err)
+	}
+	output, err := command.CombinedOutput()
+	if err != nil {
+		t.Fatalf("run test-environment-standard inventory: %v\n%s", err, output)
+	}
+	observed, missing, unexpected, complete := parseGoJSON(output, expected)
+	if !complete || len(missing) != 0 || len(unexpected) != 0 || nativeEvidenceFailed(observed) {
+		t.Fatalf("test-environment-standard inventory mismatch: expected=%v observed=%v missing=%v unexpected=%v complete=%v", expected, observed, missing, unexpected, complete)
+	}
+	t.Logf("engine inventory matched: expected roots=%d observed terminals=%d missing=%d unexpected=%d; every observed terminal passed", len(expected), len(observed), len(missing), len(unexpected))
+}
+
 func TestGoDiscoveryBindsDeclaredNamesToActualPackages(t *testing.T) {
 	root := t.TempDir()
 	if err := os.WriteFile(filepath.Join(root, "go.mod"), []byte("module example.invalid/application\n\ngo 1.22\n"), 0o600); err != nil {

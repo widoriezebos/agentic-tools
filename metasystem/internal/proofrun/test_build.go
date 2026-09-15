@@ -760,7 +760,10 @@ func runTestGroup(ctx context.Context, request TestRunRequest, group testpolicy.
 				result.EndedAt, result.DurationMS = resultDuration(started)
 				return result
 			}
-			environment = mergeTestEnvironment(environment, map[string]string{"METASYSTEM_BIN": engine})
+			environment = mergeTestEnvironment(environment, map[string]string{
+				"METASYSTEM_BIN": engine,
+				"METASYSTEM_STEWARD_TEST_CANDIDATE_ENGINE": "1",
+			})
 		}
 	case "section":
 		sectionReport = filepath.Join(request.LogRoot, group.ID+".stage-results.tsv")
