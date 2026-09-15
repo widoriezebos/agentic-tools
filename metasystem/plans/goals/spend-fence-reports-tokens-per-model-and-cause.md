@@ -9,12 +9,12 @@
 - Origin: human
 - Next step: 2026-09-15 18:20 m1c: BUDGET BREACH RAISED TO WIDO, work paused here. The design is finished and read: revision 3 at /private/tmp/claude-501/-Users-wido-LocalStorage-GitHub-agentic-tools-m1c/e67ca063-900a-46ec-9bc8-9fbdcbc3765e/scratchpad/g16/spend-fence-reports-tokens-per-model-and-cause-design-r3.md is copied to plans/spend-fence-reports-tokens-per-model-and-cause-design.md and STAGED in the m1c checkout at trunk e915b4c3a, with the engine rebuilt and armed at that commit and runtime setup run. The landing proof was refused: BUDGET_REFUSED admission closed ADMISSION_CLOSED_ELAPSED, revision 9, elapsedLimit=4h against a claim at 13:57:56Z. Test plan for tree 71b5d67808352343ab5a0507e0485518e901824f is mode=standard, 12 groups (the backlog note and receipt lines were unstaged because they forced mode=deep; they ride the build landing). Waiting on Wido: extend this goal's elapsed budget so the landing proof and the build can run, or conclude the design episode and re-open the build as its own budgeted episode. Nothing else on this goal can proceed until then; the seat holds the claim.
 - OpenedAt: 2026-09-15T09:38:26Z
-- Revision: 17
-- Budget: elapsedLimit=4h attemptLimit=6 reservedJobMinutesLimit=720 activeJobLimit=1 reviewRoundLimit=2
-- BudgetExceptions: 0
-- Approved: by=human:Wido at=2026-09-15T09:38:32Z revision=2 opid=09TQ95R1F9RTXQG0D5TSN7S0SJ-m1e-c6925449 authority=proven digest=87cf7649ecdc8beda20976c0c6c2983ddb4a64ba14796fcfcce37a691a882b4a
-- Claimed: machine=m1c lineage=main-1789191340-90689-2eda89 at=2026-09-15T13:57:56Z revision=9 accountingRevision=9 episodeAt=2026-09-15T13:57:56Z episodeRevision=9
-- StopCapability: generation=9 revision=9 machine=m1c claimEpoch=5 fenceEpoch=0
+- Revision: 18
+- Budget: elapsedLimit=6h attemptLimit=6 reservedJobMinutesLimit=720 activeJobLimit=1 reviewRoundLimit=2
+- BudgetExceptions: 1
+- Approved: by=human:Wido at=2026-09-15T19:11:11Z revision=18 opid=NRRFZ76DM2Y1KWE6YNHJ3YSHWH-m1c-c6925449 authority=proven digest=a8bb620a1b98d264b2b6a1decc8600635b900be973e02d2fc7720681880ebfee
+- Claimed: machine=m1c lineage=main-1789191340-90689-2eda89 at=2026-09-15T19:11:11Z revision=18 accountingRevision=18 episodeAt=2026-09-15T13:57:56Z episodeRevision=9
+- StopCapability: generation=18 revision=18 machine=m1c claimEpoch=5 fenceEpoch=0
 
 History:
 - 2026-09-15T09:38:26Z T88J2JBMZM4AGBZBRDPHJH8MY5-m1e-c6925449 open actor=human:Wido targets=spend-fence-reports-tokens-per-model-and-cause
@@ -34,4 +34,5 @@ History:
 - 2026-09-15T14:36:07Z 8WXJ7AVN4AM1EKQY5ZYX9YP5RP-m1c-a6ea8b3e edit actor=m1c+main-1789191340-90689-2eda89 targets=spend-fence-reports-tokens-per-model-and-cause
 - 2026-09-15T14:57:06Z YTPT5Q2HZEW16FRJVNV5VJM9CD-m1c-a6ea8b3e edit actor=m1c+main-1789191340-90689-2eda89 targets=spend-fence-reports-tokens-per-model-and-cause
 - 2026-09-15T18:16:01Z RQ7H935ZJ2AQR629XEP5HP9KTJ-m1c-a6ea8b3e edit actor=m1c+main-1789191340-90689-2eda89 targets=spend-fence-reports-tokens-per-model-and-cause
-Integrity: sha256=c055258ce84adb5d57a4bb9439df2c0b22670a8ffd4c21415a3463131232e8e4
+- 2026-09-15T19:11:11Z NRRFZ76DM2Y1KWE6YNHJ3YSHWH-m1c-c6925449 set-budget actor=human:Wido targets=spend-fence-reports-tokens-per-model-and-cause displaced=m1c+main-1789191340-90689-2eda89@2026-09-15T13:57:56Z
+Integrity: sha256=cf9c8c8023b37d30bc28da090da3a264b21f17c808144063124d77219756a435
