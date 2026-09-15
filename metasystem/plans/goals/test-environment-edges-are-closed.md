@@ -2,14 +2,14 @@
 
 - State: approved
 - Priority: 1
-- Sequence: 67
+- Sequence: 33
 - Risk: severity=1 novelty=1 exposure=2 accumulation=1 basis="severity 1: each gap is a rare edge of the shared Go test environment, none changes a result today; novelty 1: small follow-ups to go-tests-never-inherit-a-candidate-engine; exposure 2: every Go test package now goes through testenv.Main; accumulation 1: they do not compound"
 - Tier: 1
 - Intent: Low findings left by the independent reads of go-tests-never-inherit-a-candidate-engine (2026-09-15), none material. (1) internal/testenv/protection_test.go's build-constraint check misses some GOOS names (hurd, nacl, zos) and GOARCH names (amd64p32, armbe, arm64be, mips64p32, mips64p32le, ppc, riscv, s390, sparc, sparc64), and counts a //go:build comment anywhere in the file, which can only cause a false refusal. (2) A registry home that a joined helper child outlives stays until the next Main scans the same root; under the TMPDIR fallback only a run with the same TMPDIR cleans it. (3) A SIGKILL between MkdirTemp and the publishing rename in testenv.go leaves a dot-named staging directory that the scan never matches. DONE: the check derives the known GOOS and GOARCH names from the Go toolchain (go tool dist list) instead of a hand list and reads only a real build constraint line; a stale staging directory and an orphaned joined home are removed by the next Main once no live lock holds them; a test proves each.
 - Origin: human
 - Next step: Free, tier 1. Build after go-tests-never-inherit-a-candidate-engine lands.
 - OpenedAt: 2026-09-15T06:23:47Z
-- Revision: 3
+- Revision: 4
 - Budget: elapsedLimit=1h attemptLimit=3 reservedJobMinutesLimit=360 activeJobLimit=1 reviewRoundLimit=0
 - BudgetExceptions: 0
 - Approved: by=human:Wido at=2026-09-15T06:23:53Z revision=2 opid=AATRE9N7Q7941KP3WHJZZ8AQ0S-m1e-c6925449 authority=proven digest=ef0453e037f7cc31a67cbfd72ec16adde1707ac6525f8155e591750cc7ae0fb3
@@ -18,4 +18,5 @@ History:
 - 2026-09-15T06:23:47Z GKX4CJXWVF6MA2F09R54BKWGNQ-m1e-c6925449 open actor=human:Wido targets=test-environment-edges-are-closed
 - 2026-09-15T06:23:53Z AATRE9N7Q7941KP3WHJZZ8AQ0S-m1e-c6925449 approve actor=human:Wido targets=test-environment-edges-are-closed
 - 2026-09-15T06:24:06Z YSH97EYZMSAHSMHNT672N68Q5E-m1e-c6925449 set-priority actor=human:Wido targets=test-environment-edges-are-closed reason=priority-order subject=test-environment-edges-are-closed from=unranked to=1:67 requested-sequence=append
-Integrity: sha256=1827942bb4083e3545ced43801ad32ce92116fb08c4403e5a7b4bd130c0cb26d
+- 2026-09-15T06:24:39Z XZPA25ST9RAPGBZ42VRM8XDFPP-m1e-c6925449 set-priority actor=human:Wido targets=actionable-metrics,chain-landing-carries-the-reviewed-diff,cross-cutting-change-inventories-its-readers,deep-sections-cannot-stay-red-unseen,degraded-stop-forms-have-one-source,dispatch-bases-chains-on-the-remote-tip,failed-job-attention,failures-show-observed-against-expected,fixture-repo-copies-exclude-the-artifacts-store,fixture-stewards-outlive-their-suite,fixture-waits-name-their-producer,human-authority-surface-runs-its-cmd-tests,human-wait-does-not-consume-goal-budget,job-record-birth-token,lease-sweep-death-evidence,ledger-attention-clears-after-journaled-verbs,live-job-on-a-done-goal-unnoticed,machine-concurrency-governor,member-size-gate,metasystem-stop-escalation-proofs,metasystem-stop-fleet-form,new-elapsed-budgets-use-explicit-hours,pipelines-never-lose-a-truncated-producer,repo-root-paths-ride-agent-commits-unjudged,run-scoped-build-caches-have-a-janitor,skipped-test-fails-its-group-on-the-other-os,stop-batch-strands-a-resumable-goal,stop-decision-surface-is-a-gate,stop-response-carries-a-structured-report-reference,test-environment-edges-are-closed,testing-surfaces-declare-their-mirror,token-spend-fence,watch-verb,watcher-repair-request-never-names-current,winddown-census-handoff-leak reason=priority-order subject=test-environment-edges-are-closed from=1:67 to=1:33 requested-sequence=33
+Integrity: sha256=eb69df0884d4209ca5166988d83cd02a7d15f6703a400c7e5d3e733e5c70c7e5
