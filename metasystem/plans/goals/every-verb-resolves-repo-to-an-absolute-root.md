@@ -1,6 +1,6 @@
 # every-verb-resolves-repo-to-an-absolute-root
 
-- State: claimed
+- State: approved
 - Priority: 1
 - Sequence: 16
 - Risk: severity=2 novelty=1 exposure=2 accumulation=2 basis="severity 2: false health alarms that send seats chasing phantom corruption; novelty 1: path hygiene; exposure 2: any human or seat running verbs by hand; accumulation 2: each false alarm costs a diagnosis"
@@ -9,13 +9,12 @@
 - Origin: human
 - Next step: 2026-09-15 16:30 m1b. LANDED 0f381edff, with 11a66064d restoring the new test file the landing script dropped; trunk now matches the proven tree cbd58da1 exactly. Proof 43 of 43 groups, none red. Wido amended the DONE from symlink-resolved to absolute. Released by m1b; concluded in Wido's name under R-109-m1e.
 - OpenedAt: 2026-09-14T16:16:45Z
-- Revision: 57
+- Revision: 58
 - Budget: elapsedLimit=4h attemptLimit=6 reservedJobMinutesLimit=720 activeJobLimit=1 reviewRoundLimit=2
 - BudgetExceptions: 0
 - Approved: by=human:Wido at=2026-09-15T14:01:13Z revision=54 opid=SWK4VTP7726EJNRYCTEH1YKCXM-m1e-c6925449 authority=proven digest=e9d879317eac790baa0a041a071544486ddc06e9e2d8d7a1d1a78b2d0c0e19d3
 - Sliced: machine=m1b lineage=main-1789191336-90295-e4b24b revision=41 at=2026-09-15T12:45:13Z
-- Claimed: machine=m1b lineage=main-1789191336-90295-e4b24b at=2026-09-15T14:01:39Z revision=55 accountingRevision=55 episodeAt=2026-09-15T14:01:39Z episodeRevision=55
-- StopCapability: generation=55 revision=55 machine=m1b claimEpoch=2 fenceEpoch=0
+- Episode: machine=m1b lineage=main-1789191336-90295-e4b24b accountingRevision=55 episodeAt=2026-09-15T14:01:39Z episodeRevision=55 idleSeconds=0 released=2026-09-15T14:18:54Z
 
 History:
 - 2026-09-14T16:16:45Z 2FC3WFPAYJENAPGDPHC3D3Z11Z-m1e-c6925449 open actor=human:Wido targets=every-verb-resolves-repo-to-an-absolute-root
@@ -75,4 +74,5 @@ History:
 - 2026-09-15T14:01:39Z W89Q0CM58SA5XQPQN6DPWS1D1Z-m1b-30a7e141 claim actor=m1b+main-1789191336-90295-e4b24b targets=every-verb-resolves-repo-to-an-absolute-root
 - 2026-09-15T14:17:23Z HZP4JTBC1FSMZFCXRTJBZN644A-m1e-c6925449 set-priority actor=human:Wido targets=actionable-metrics,adoption-filled-delivery-passes-on-trunk,beds-run-under-the-oldest-supported-bash,brief-declares-the-round-boundary,builder-proves-each-rule-by-mutation,busy-seat-shells-are-ended,census-lifecycle-scenario-holds-under-load,chain-landing-carries-the-reviewed-diff,codex-jobs-run-through-a-metasystem-verb,coordinator-context-stays-under-budget,coordinator-wakes-on-events-not-polls,critique-closes-on-folded-proof,cross-cutting-change-inventories-its-readers,deep-sections-cannot-stay-red-unseen,degraded-stop-forms-have-one-source,delegate-sandbox-runs-the-beds,dispatch-bases-chains-on-the-remote-tip,engine-policy-binding-survives-drift-and-load,every-round-gets-an-independent-read,every-verb-resolves-repo-to-an-absolute-root,evidence-and-build-output-have-retention-and-stay-unindexed,failed-job-attention,failures-show-observed-against-expected,fixture-repo-copies-exclude-the-artifacts-store,fixture-runners-and-fakes-bound-their-own-life,fixture-waits-name-their-producer,follow-up-brief-cannot-cite-fresh-trunk-files,human-authority-surface-runs-its-cmd-tests,human-goal-verbs-forgiving,human-wait-does-not-consume-goal-budget,job-record-birth-token,lease-sweep-death-evidence,live-job-on-a-done-goal-unnoticed,machine-concurrency-governor,member-size-gate,metasystem-stop-escalation-proofs,metasystem-stop-fleet-form,moved-effects-are-inventoried-in-the-design,new-elapsed-budgets-use-explicit-hours,pipelines-never-lose-a-truncated-producer,proof-admission-fits-a-seat-proving-several-units,proof-runs-reap-what-they-armed-and-a-census-names-the-rest,receipt-admission-caps-concurrent-batteries,registered-wait-matches-the-runtime-session,repo-root-paths-ride-agent-commits-unjudged,retro-flags-repeated-critique-findings,round-proof-feeds-the-next-brief,run-scoped-build-caches-have-a-janitor,seat-landings-run-the-selected-sections,skipped-test-fails-its-group-on-the-other-os,small-change-lane,stop-batch-strands-a-resumable-goal,stop-capability-follows-the-lease-epoch,stop-decision-surface-is-a-gate,stop-gate-sees-harness-tracked-work,stop-hook-never-forces-an-empty-turn,stop-response-carries-a-structured-report-reference,test-environment-edges-are-closed,testing-surfaces-declare-their-mirror,tests-never-wait-on-wall-time,token-spend-fence,trunk-versus-candidate-is-a-verification-step,watch-verb,watcher-repair-request-never-names-current,winddown-census-handoff-leak reason=priority-order subject=retro-flags-repeated-critique-findings from=1:15 to=1:16 requested-sequence=4
 - 2026-09-15T14:18:50Z W82V3ZVHB2GECHHF9HWW9QXT1E-m1b-30a7e141 edit actor=m1b+main-1789191336-90295-e4b24b targets=every-verb-resolves-repo-to-an-absolute-root
-Integrity: sha256=7feb5b40e2b4c7f86ae1f30f4929d9368e7b933c9b00fba1a7f078c7d74ed210
+- 2026-09-15T14:18:54Z RVT09G4P6WN0SGD70XVMNC02JR-m1b-30a7e141 release actor=m1b+main-1789191336-90295-e4b24b targets=every-verb-resolves-repo-to-an-absolute-root
+Integrity: sha256=2ce65ed3bb66361931ea59d43ac7ff32117eb378c110485275ce928cadc754c5
