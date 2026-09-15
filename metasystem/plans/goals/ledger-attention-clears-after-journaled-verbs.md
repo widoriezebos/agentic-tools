@@ -1,13 +1,15 @@
 # ledger-attention-clears-after-journaled-verbs
 
 - State: approved
+- Priority: 1
+- Sequence: 14
 - Risk: severity=2 novelty=2 exposure=3 accumulation=1 basis="severity 2: a false dead health signal on every stop report hides real deadness and trains seats to ignore it; novelty 2: cause not yet diagnosed; exposure 3: every seat's stop-status reads this health; accumulation 1: one verdict"
 - Tier: 2
 - Intent: On m1b the steward's ledger-attention health stays dead for over 90 minutes, reporting 'the shared ledger moved to <tip> ... and is unexamined past 30m'. Over that time the seat ran many journaling goal verbs (goal edit, claim, set-budget) at tips newer than the moved tip. The steward pass is alive: artifacts/agents/steward/ledger-attention.json shows lastAttemptAt within minutes and lastOutcome current. But its examinedTip stays behind remoteTip and journalReady is unset, and clearLedgerAttentionFromJournal in internal/steward/ledgerattention.go returns early unless JournalReady is true. So a seat that examines the tip is never recognised, and every stop-status report shows a false dead role. Observed 2026-09-15 by m1b. DONE: a journaling goal verb at or after the moved tip clears the dead verdict on the next steward pass, proven by a steward test that moves the remote, journals one verb and expects ledger-attention alive; the cause of the unset journalReady is named.
 - Origin: human
 - Next step: Diagnose first: trace when JournalReady is set true (only when the remote tip changes, with a baseline of journal ids) and when it is reset to false, against this seat's state file, and name why a later journal entry with a descendant fetched oid never clears the stale examinedTip. Then fix and add the steward test.
 - OpenedAt: 2026-09-15T05:42:51Z
-- Revision: 2
+- Revision: 3
 - Budget: elapsedLimit=4h attemptLimit=6 reservedJobMinutesLimit=720 activeJobLimit=1 reviewRoundLimit=2
 - BudgetExceptions: 0
 - Approved: by=human:Wido at=2026-09-15T05:42:57Z revision=2 opid=A6GXMJV35E8B30G2MGMRRCFY2A-m1e-c6925449 authority=proven digest=0110d5753822680ce2ff35a65a97830911ed19fe7bf35b29f3ba1ef877c70e58
@@ -15,4 +17,5 @@
 History:
 - 2026-09-15T05:42:51Z Q4M6V96N3FAGXR2HZ2HBHQBSBH-m1e-c6925449 open actor=human:Wido targets=ledger-attention-clears-after-journaled-verbs
 - 2026-09-15T05:42:57Z A6GXMJV35E8B30G2MGMRRCFY2A-m1e-c6925449 approve actor=human:Wido targets=ledger-attention-clears-after-journaled-verbs
-Integrity: sha256=57e7b885b7b0d3f32c89368711361326d26813048f8081ef051ded605c2fe042
+- 2026-09-15T05:44:06Z ES533YBSVVRHR4D9QSQTQQP9B0-m1e-c6925449 set-priority actor=human:Wido targets=actionable-metrics,adoption-filled-delivery-passes-on-trunk,beds-run-under-the-oldest-supported-bash,chain-landing-carries-the-reviewed-diff,cross-cutting-change-inventories-its-readers,deep-sections-cannot-stay-red-unseen,degraded-stop-forms-have-one-source,delegate-sandbox-runs-the-beds,dispatch-bases-chains-on-the-remote-tip,every-round-gets-an-independent-read,every-verb-resolves-repo-to-an-absolute-root,failed-job-attention,failures-show-observed-against-expected,fixture-repo-copies-exclude-the-artifacts-store,fixture-stewards-outlive-their-suite,fixture-waits-name-their-producer,human-authority-surface-runs-its-cmd-tests,human-goal-verbs-forgiving,human-wait-does-not-consume-goal-budget,job-record-birth-token,lease-sweep-death-evidence,ledger-attention-clears-after-journaled-verbs,live-job-on-a-done-goal-unnoticed,machine-concurrency-governor,member-size-gate,metasystem-stop-escalation-proofs,metasystem-stop-fleet-form,moved-effects-are-inventoried-in-the-design,new-elapsed-budgets-use-explicit-hours,pipelines-never-lose-a-truncated-producer,registered-wait-matches-the-runtime-session,repo-root-paths-ride-agent-commits-unjudged,round-proof-feeds-the-next-brief,run-scoped-build-caches-have-a-janitor,seat-landings-run-the-selected-sections,skipped-test-fails-its-group-on-the-other-os,stop-batch-strands-a-resumable-goal,stop-capability-follows-the-lease-epoch,stop-decision-surface-is-a-gate,stop-response-carries-a-structured-report-reference,suite-progress-bed-runs-on-trunk,testing-surfaces-declare-their-mirror,tests-never-wait-on-wall-time,token-spend-fence,trunk-versus-candidate-is-a-verification-step,watch-verb,watcher-repair-request-never-names-current,winddown-census-handoff-leak reason=priority-order subject=ledger-attention-clears-after-journaled-verbs from=unranked to=1:14 requested-sequence=14
+Integrity: sha256=048cb587eb86f109efb21549eb82a499f8a98f4eac703f9b2fa171e294005328
