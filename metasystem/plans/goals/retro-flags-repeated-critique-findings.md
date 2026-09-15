@@ -1,6 +1,6 @@
 # retro-flags-repeated-critique-findings
 
-- State: queued
+- State: approved
 - Priority: 1
 - Sequence: 4
 - Risk: severity=2 novelty=2 exposure=2 accumulation=2 basis="severity 2: a missed recurrence costs a rework round, not data; novelty 2: receipts already carry read and design fields, matching finding ids across records is new; exposure 2: every critique and every retro; accumulation 2: repeated findings pile up unseen across fresh delegates and fresh sessions"
@@ -9,11 +9,13 @@
 - Origin: human
 - Next step: Design by a fresh, bounded Claude Fable delegate briefed from scripts/agents/templates/design-brief.md (at most 30 calls, 2500 words): the receipt field shape, the matching rule, the retro report line, the witness. Context: skills/retro/SKILL.md, scripts/receipt.sh, the receipt fields of e700328e1 and fb6839a44, records/misc/seats-spend-tokens-in-bounded-sessions-critique-r1.md to r3 as the sample. Then one Codex critique round, then the build.
 - OpenedAt: 2026-09-15T14:17:18Z
-- Revision: 2
+- Revision: 3
 - Budget: elapsedLimit=4h attemptLimit=6 reservedJobMinutesLimit=720 activeJobLimit=1 reviewRoundLimit=2
 - BudgetExceptions: 0
+- Approved: by=human:Wido at=2026-09-15T14:17:32Z revision=3 opid=8CQBY33J75VKCY0MQQYAVZ7PJ6-m1e-c6925449 authority=proven digest=383641803bf43d4853564a66f5756fecf566df06e4a55d49d7b7fb74e1c04fd4
 
 History:
 - 2026-09-15T14:17:18Z TZ49S5E3XVPF0Z49AWG1C8XXKY-m1e-c6925449 open actor=human:Wido targets=retro-flags-repeated-critique-findings
 - 2026-09-15T14:17:23Z HZP4JTBC1FSMZFCXRTJBZN644A-m1e-c6925449 set-priority actor=human:Wido targets=actionable-metrics,adoption-filled-delivery-passes-on-trunk,beds-run-under-the-oldest-supported-bash,brief-declares-the-round-boundary,builder-proves-each-rule-by-mutation,busy-seat-shells-are-ended,census-lifecycle-scenario-holds-under-load,chain-landing-carries-the-reviewed-diff,codex-jobs-run-through-a-metasystem-verb,coordinator-context-stays-under-budget,coordinator-wakes-on-events-not-polls,critique-closes-on-folded-proof,cross-cutting-change-inventories-its-readers,deep-sections-cannot-stay-red-unseen,degraded-stop-forms-have-one-source,delegate-sandbox-runs-the-beds,dispatch-bases-chains-on-the-remote-tip,engine-policy-binding-survives-drift-and-load,every-round-gets-an-independent-read,every-verb-resolves-repo-to-an-absolute-root,evidence-and-build-output-have-retention-and-stay-unindexed,failed-job-attention,failures-show-observed-against-expected,fixture-repo-copies-exclude-the-artifacts-store,fixture-runners-and-fakes-bound-their-own-life,fixture-waits-name-their-producer,follow-up-brief-cannot-cite-fresh-trunk-files,human-authority-surface-runs-its-cmd-tests,human-goal-verbs-forgiving,human-wait-does-not-consume-goal-budget,job-record-birth-token,lease-sweep-death-evidence,live-job-on-a-done-goal-unnoticed,machine-concurrency-governor,member-size-gate,metasystem-stop-escalation-proofs,metasystem-stop-fleet-form,moved-effects-are-inventoried-in-the-design,new-elapsed-budgets-use-explicit-hours,pipelines-never-lose-a-truncated-producer,proof-admission-fits-a-seat-proving-several-units,proof-runs-reap-what-they-armed-and-a-census-names-the-rest,receipt-admission-caps-concurrent-batteries,registered-wait-matches-the-runtime-session,repo-root-paths-ride-agent-commits-unjudged,retro-flags-repeated-critique-findings,round-proof-feeds-the-next-brief,run-scoped-build-caches-have-a-janitor,seat-landings-run-the-selected-sections,skipped-test-fails-its-group-on-the-other-os,small-change-lane,stop-batch-strands-a-resumable-goal,stop-capability-follows-the-lease-epoch,stop-decision-surface-is-a-gate,stop-gate-sees-harness-tracked-work,stop-hook-never-forces-an-empty-turn,stop-response-carries-a-structured-report-reference,test-environment-edges-are-closed,testing-surfaces-declare-their-mirror,tests-never-wait-on-wall-time,token-spend-fence,trunk-versus-candidate-is-a-verification-step,watch-verb,watcher-repair-request-never-names-current,winddown-census-handoff-leak reason=priority-order subject=retro-flags-repeated-critique-findings from=unranked to=1:4 requested-sequence=4
-Integrity: sha256=abff2af6fc7025fba8c5e3240cdf6db9105d6798d25f3d14e38cc4057a2d3cec
+- 2026-09-15T14:17:32Z 8CQBY33J75VKCY0MQQYAVZ7PJ6-m1e-c6925449 approve actor=human:Wido targets=retro-flags-repeated-critique-findings
+Integrity: sha256=d1da1b19dd40ed2efd7532c9ba1a28d2a5cc92ffc48f9b6e4e6847a466358071
