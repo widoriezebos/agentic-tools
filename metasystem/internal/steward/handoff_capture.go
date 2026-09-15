@@ -90,6 +90,7 @@ type HandoffResult struct {
 	Nonce       string
 	StatePath   string
 	StateDigest string
+	IntentPath  string
 	Intent      Intent
 }
 
@@ -1015,6 +1016,7 @@ func Handoff(stateRoot string, caller HandoffCaller, scratch []ScratchArg, now t
 	if err != nil {
 		return result, fmt.Errorf("handoff %s prepared but its live record cannot be read back: %w", nonce, err)
 	}
+	result.IntentPath = filepath.Join(intentsDir(root), nonce+".json")
 	result.Intent = prepared
 	return result, nil
 }

@@ -203,7 +203,7 @@ func runContextHandoff(args []string) int {
 	}
 	if *asJSON {
 		printJSON(contextHandoffOutput{Nonce: result.Nonce, StatePath: result.StatePath, Digest: result.StateDigest,
-			IntentPath: filepath.Join(stateRoot, "artifacts", "agents", "steward", "intents", result.Nonce+".json")})
+			IntentPath: result.IntentPath})
 	} else {
 		fmt.Printf("handoff recorded: %s state=%s sha256=%s\n", result.Nonce, result.StatePath, result.StateDigest)
 	}

@@ -700,6 +700,28 @@ func TestHandoffAcceptsOnlyTheActiveContinuation(t *testing.T) {
 
 }
 
+func TestHandoffResultNamesTheLiveIntentPath(t *testing.T) {
+	root := handoffCaptureRepo(t, "claimed")
+	link := filepath.Join(t.TempDir(), "root")
+	if err := os.Symlink(root, link); err != nil {
+		t.Fatal(err)
+	}
+	useHandoffNonces(t, "6200000000000003")
+	result, err := Handoff(link, handoffMainCaller(), nil, handoffCaptureNow, filepath.Join(link, "memory", "receipts.log"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	stateSuffix := string(filepath.Separator) + filepath.Join("artifacts", "agents", "context", "handoffs", result.Nonce, "state.json")
+	canonical := strings.TrimSuffix(result.StatePath, stateSuffix)
+	want := filepath.Join(intentsDir(canonical), result.Nonce+".json")
+	if result.IntentPath != want {
+		t.Fatalf("intent path=%q want=%q", result.IntentPath, want)
+	}
+	if intent := readIntentFile(t, result.IntentPath); intent.Nonce != result.Nonce {
+		t.Fatalf("intent nonce=%q want=%q", intent.Nonce, result.Nonce)
+	}
+}
+
 func readIntentFile(t *testing.T, path string) Intent {
 	t.Helper()
 	data, err := os.ReadFile(path)

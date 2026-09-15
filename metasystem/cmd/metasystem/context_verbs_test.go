@@ -648,7 +648,10 @@ run_section() { shift 2; "$@"; }
 
 func TestContextHandoffVerb(t *testing.T) {
 	container, root := contextHandoffCommandRoot(t)
-	useContextHandoffIdentity(t, root)
+	link := filepath.Join(t.TempDir(), "container")
+	contextMust(t, os.Symlink(container, link))
+	container = link
+	useContextHandoffIdentity(t, filepath.Join(link, "metasystem"))
 	contextMust(t, os.WriteFile(filepath.Join(root, "proof.txt"), []byte("bounded proof\n"), 0o644))
 	code, output, problem := captureContextVerb(t, dispatch, "context", "handoff", "--root", container, "--scratch", "purpose=proof,path=proof.txt,required=true", "--scratch", "purpose=second,path=proof.txt,required=false")
 	if code != 0 || problem != "" || !strings.HasPrefix(output, "handoff recorded: ") || !strings.Contains(output, " state=") || !strings.Contains(output, " sha256=") {
@@ -674,6 +677,16 @@ func TestContextHandoffVerb(t *testing.T) {
 	if err := json.Unmarshal([]byte(output), &projection); err != nil || code != 0 || problem != "" || len(projection) != 4 || projection["nonce"] == "" || projection["statePath"] == "" ||
 		projection["digest"] == "" || projection["intentPath"] == "" || strings.Contains(output, "disposable") {
 		t.Fatalf("JSON handoff = code %d stdout %q stderr %q", code, output, problem)
+	}
+	nonce, statePath, intentPath := projection["nonce"].(string), projection["statePath"].(string), projection["intentPath"].(string)
+	stateSuffix := string(filepath.Separator) + filepath.Join("artifacts", "agents", "context", "handoffs", nonce, "state.json")
+	canonical := strings.TrimSuffix(statePath, stateSuffix)
+	wantIntentPath := filepath.Join(canonical, "artifacts", "agents", "steward", "intents", nonce+".json")
+	if intentPath != wantIntentPath || strings.HasPrefix(intentPath, link) {
+		t.Fatalf("intent path=%q want canonical path=%q link=%q", intentPath, wantIntentPath, link)
+	}
+	if _, err := os.Stat(intentPath); err != nil {
+		t.Fatalf("intent path is not live: %v", err)
 	}
 	code, _, problem = captureContextVerb(t, runContextHandoff, "--root", container, "--scratch", "purpose=required,path=missing\nfile,required=true")
 	if code != 9 || !strings.HasPrefix(problem, "HANDOFF_REFERENCE ") || strings.Count(problem, "\n") != 1 {
