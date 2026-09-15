@@ -9,13 +9,13 @@
 - Origin: human
 - Next step: 2026-09-15 03:55 m1b. STATUS: units 1a and 1b are both ready to land except for Wido's decision. 1a: round 5 verified, full selected-plan proof on candidate 438334a8 with every red classified, diff applies to trunk. 1b: verified with seat probes. Its full selected-plan proof on candidate 512716ec on tip 2a149051 passed 47 of 52. The five red sections match the five m1c saw on unmodified trunk 87532d24, each with an owner goal: adoption filled-delivery (copied-delivery fails only under full-plan load), dispatcher mission-runner, goal-cli power-of-attorney, land's five SIGPIPE scenarios, and suite-progress exit 64. The 1c brief is drafted. WAITING ON WIDO: both review rounds are spent, so reads of 1a's final round and of 1b need rounds over the norm (A, recommended); or both land on the seat's checks (B); or stop (C). RULINGS: (1) unit 1a: every line of a value in the printed block is indented like the first, with leg multi-line-value-stays-one-block. (2) member 2's findings reader: only a column-0 FAIL line starts a block, with test TestFindingsReaderAnchorsAtColumnZero. (3) migration checklist: split multi-line expectations and never pass them to grep -F as one pattern; quote every assertion argument. SEAT RULINGS: a JSON read error never equals an expected value and names its cause; counts and labels come from the records file and a sidecar; no here-strings; a passing call starts no engine. FOR 1c: METASYSTEM_BED_FAILURES beside row 24's variables; the unfinished check; silentExit only from top-level terminal records, with subshell terminal records marked and ignored; parentExitedBeforeScenarios in the report.
 - OpenedAt: 2026-09-14T19:25:47Z
-- Revision: 33
-- Budget: elapsedLimit=1d attemptLimit=12 reservedJobMinutesLimit=720 activeJobLimit=1 reviewRoundLimit=2
-- BudgetExceptions: 1
-- Approved: by=human:Wido at=2026-09-15T00:10:17Z revision=23 opid=YHDKCV6DBQW020394P7CYPGD6E-m1b-c6925449 authority=proven digest=8fe19268b3ba84e1b399f9f5909db614405e49895b0bbfaadfe885907815c116
+- Revision: 34
+- Budget: elapsedLimit=2d attemptLimit=20 reservedJobMinutesLimit=720 activeJobLimit=1 reviewRoundLimit=2
+- BudgetExceptions: 2
+- Approved: by=human:Wido at=2026-09-15T05:40:44Z revision=34 opid=ATGTGHJ95ZH2GYVVTSNF019DJ4-m1b-c6925449 authority=proven digest=a4418ffc7449bcea332ba1ceba5abaace904d13e004827751b3e900049149e4c
 - Sliced: machine=m1b lineage=main-1789191336-90295-e4b24b revision=11 at=2026-09-14T22:39:44Z
-- Claimed: machine=m1b lineage=main-1789191336-90295-e4b24b at=2026-09-15T00:10:17Z revision=23 accountingRevision=23 episodeAt=2026-09-14T22:39:33Z episodeRevision=11
-- StopCapability: generation=23 revision=23 machine=m1b claimEpoch=2 fenceEpoch=0
+- Claimed: machine=m1b lineage=main-1789191336-90295-e4b24b at=2026-09-15T05:40:44Z revision=34 accountingRevision=34 episodeAt=2026-09-14T22:39:33Z episodeRevision=11
+- StopCapability: generation=34 revision=34 machine=m1b claimEpoch=2 fenceEpoch=0
 
 History:
 - 2026-09-14T19:25:47Z B9YWHY0CP8CV0QY1J09Y4NZ39D-m1e-c6925449 open actor=human:Wido targets=failures-show-observed-against-expected
@@ -51,4 +51,5 @@ History:
 - 2026-09-15T01:28:53Z D0AQWRBQVY5KRAN0WG5XPRW58Z-m1b-30a7e141 edit actor=m1b+main-1789191336-90295-e4b24b targets=failures-show-observed-against-expected
 - 2026-09-15T01:52:17Z VEWV4ACY34HBWCXVEPJGPEQED1-m1b-30a7e141 edit actor=m1b+main-1789191336-90295-e4b24b targets=failures-show-observed-against-expected
 - 2026-09-15T01:53:39Z JFCZZ7A73XTT2F6HHRFFP7AA64-m1b-30a7e141 edit actor=m1b+main-1789191336-90295-e4b24b targets=failures-show-observed-against-expected
-Integrity: sha256=472ec45c16b1b846491774fe1b6ee571e8fb3e0b0cde1952fe164c7335f3d3a6
+- 2026-09-15T05:40:44Z ATGTGHJ95ZH2GYVVTSNF019DJ4-m1b-c6925449 set-budget actor=human:Wido targets=failures-show-observed-against-expected displaced=m1b+main-1789191336-90295-e4b24b@2026-09-15T00:10:17Z
+Integrity: sha256=7742063557b00054fbdf317b211a91e53f5e4b102d98211a2cd548d4b45f1c90
