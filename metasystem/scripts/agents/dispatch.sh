@@ -1135,6 +1135,9 @@ wait_for_job() { # job
     wait_for_job_legacy "$job"
     return $?
   fi
+  if (( wait_rc == 4 )); then
+    printf '%s\n' "$output" >&2
+  fi
   case "$wait_rc" in
     0|1|2|3)
       lease_run_held "$current_claim_epoch" "$0" __reap-held --job "$job" \

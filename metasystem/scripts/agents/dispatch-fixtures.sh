@@ -1017,18 +1017,34 @@ make_large_agent_brief() { # output
   (set +o pipefail; yes 'filler line for the forty kibibyte referenced brief' | head -c 40960) >>"$output"
 }
 
-wait_for_agent_status() { # job, expected
-  local job=$1 expected=$2 observed= started=$SECONDS deadline=$((SECONDS + agent_status_cap_sec)) elapsed
+wait_for_agent_status() { # job, expected, optional waiter-target requirement
+  local job=$1 expected=$2 require_waiter_target=${3:-} observed= waiter= candidate target waiter_started record_started
+  local started=$SECONDS deadline=$((SECONDS + agent_status_cap_sec)) elapsed requirement=
   while (( SECONDS < deadline )); do
     observed=$(cd "$agent_repo" && scripts/agents/dispatch.sh status --job "$job" 2>/dev/null || true)
     if [[ "$observed" == "$expected" ]]; then
-      report_slow_agent_fixture_step "wait-status:$job:$expected" "$started"
-      return 0
+      # A running job can precede the waiter's observation. Incarnation-sensitive
+      # fixtures require its full durable target before changing live job fields.
+      if [[ "$require_waiter_target" == waiter-target ]]; then
+        record_started=$("$engine" json get --file "$agent_repo/artifacts/agents/jobs/$job.json" --field startedAt 2>/dev/null || true)
+        for candidate in "$agent_repo/artifacts/agents/waiters/job-$job-"*.json; do
+          [[ -f "$candidate" ]] || continue
+          target=$("$engine" json get --file "$candidate" --field target 2>/dev/null || true)
+          waiter_started=$("$engine" json get --value "$target" --field startedAt 2>/dev/null || true)
+          [[ -n "$waiter_started" && "$waiter_started" != null && "$waiter_started" == "$record_started" ]] \
+            && { waiter=$candidate; break; }
+        done
+      fi
+      if [[ "$require_waiter_target" != waiter-target || -n "$waiter" ]]; then
+        report_slow_agent_fixture_step "wait-status:$job:$expected" "$started"
+        return 0
+      fi
     fi
     sleep "$METASYSTEM_FIXTURE_POLL_INTERVAL_SEC"
   done
   elapsed=$((SECONDS - started))
-  echo "agent fixture status timed out: $job -> $expected (last status: ${observed:-missing}; elapsed: ${elapsed}s; scaled cap: ${agent_status_cap_sec}s)" >&2
+  [[ "$require_waiter_target" != waiter-target ]] || requirement=" with the waiter on that incarnation"
+  echo "agent fixture status timed out: $job -> $expected$requirement (last status: ${observed:-missing}; elapsed: ${elapsed}s; scaled cap: ${agent_status_cap_sec}s)" >&2
   return 1
 }
 
@@ -2875,17 +2891,10 @@ wait_for_agent_census_fresh timed
 ) &
 timeout_driver=$!
 wait_for_agent_status timed running
-# The engine judges the budget by capDeadline first (startedAt+capMin is
-# only the fallback), so the fixture must backdate BOTH: backdating only
-# startedAt left the real one-minute deadline live and the explicit reap
-# inert, a coin-flip against the fixture's own wait ceiling.
-#
-# Rewrites of LIVE records are atomic (json set stages and renames): the
-# waiting dispatcher classifies on every poll, classification reads every
-# job record fail-closed, and a torn read here refused reap-held and mapped
-# this timeout to wait exit 3 (VM, 2026-08-14, evidence 014657Z-2066978).
+# The explicit cap deadline owns budget expiration. Keeping startedAt stable
+# preserves the incarnation already observed by the waiting dispatcher.
 "$engine" json set --file "$agent_repo/artifacts/agents/jobs/timed.json" \
-  --field startedAt=2000-01-01T00:00:00Z --field capDeadline=2000-01-01T00:01:00Z
+  --field capDeadline=2000-01-01T00:01:00Z
 run_agent_fixture timed-reap timed "$agent_dispatch" reap --job timed
 wait_for_agent_fixture_process timed-driver timed "$timeout_driver"
 [[ "$(cat "$timeout_result")" == 4 ]] || {
@@ -2929,7 +2938,7 @@ capped_workspace=$("$engine" json get --file "$agent_repo/artifacts/agents/jobs/
 [[ -f "$capped_workspace/metasystem/capped-marker.txt" ]] \
   || { echo "the capped round did not write its worktree file before holding" >&2; exit 1; }
 "$engine" json set --file "$agent_repo/artifacts/agents/jobs/capped-wt.json" \
-  --field startedAt=2000-01-01T00:00:00Z --field capDeadline=2000-01-01T00:01:00Z
+  --field capDeadline=2000-01-01T00:01:00Z
 run_agent_fixture capped-wt-reap capped-wt "$agent_dispatch" reap --job capped-wt
 wait_for_agent_fixture_process capped-wt-driver capped-wt "$capped_driver"
 [[ "$(cat "$capped_result")" == 4 ]] || { echo "the capped implementer round did not map to wait exit 4 (got $(cat "$capped_result"))" >&2; exit 1; }
@@ -2957,7 +2966,7 @@ wait_for_agent_census_fresh capped-repeat
 repeat_capped_driver=$!
 wait_for_agent_status capped-repeat running
 "$engine" json set --file "$agent_repo/artifacts/agents/jobs/capped-repeat.json" \
-  --field startedAt=2000-01-01T00:00:00Z --field capDeadline=2000-01-01T00:01:00Z
+  --field capDeadline=2000-01-01T00:01:00Z
 run_agent_fixture capped-repeat-reap capped-repeat "$agent_dispatch" reap --job capped-repeat
 wait_for_agent_fixture_process capped-repeat-driver capped-repeat "$repeat_capped_driver"
 repeat_capped_message="$agent_fixture/capped-repeat-message.md"
@@ -2978,7 +2987,7 @@ set -e
 [[ "$("$engine" json get --file "$agent_repo/artifacts/agents/jobs/capped-repeat-r2.json" --field continuation)" == after-cap ]] \
   || { echo "the standing continuation lost its continuation field" >&2; exit 1; }
 "$engine" json set --file "$agent_repo/artifacts/agents/jobs/capped-repeat-r2.json" \
-  --field startedAt=2000-01-01T00:00:00Z --field capDeadline=2000-01-01T00:01:00Z
+  --field capDeadline=2000-01-01T00:01:00Z
 run_agent_fixture capped-repeat-r2-reap capped-repeat-r2 "$agent_dispatch" reap --job capped-repeat-r2
 grep -Fq 'budget-cap' "$agent_repo/artifacts/agents/jobs/capped-repeat-r2.json" \
   || { echo "the capped continuation did not record budget-cap" >&2; exit 1; }
@@ -3003,7 +3012,7 @@ wait_for_agent_census_fresh capped-gone
 gone_driver=$!
 wait_for_agent_status capped-gone running
 "$engine" json set --file "$agent_repo/artifacts/agents/jobs/capped-gone.json" \
-  --field startedAt=2000-01-01T00:00:00Z --field capDeadline=2000-01-01T00:01:00Z
+  --field capDeadline=2000-01-01T00:01:00Z
 run_agent_fixture capped-gone-reap capped-gone "$agent_dispatch" reap --job capped-gone
 wait_for_agent_fixture_process capped-gone-driver capped-gone "$gone_driver"
 gone_workspace=$("$engine" json get --file "$agent_repo/artifacts/agents/jobs/capped-gone.json" --field workspaceRoot)
@@ -3796,7 +3805,7 @@ wait_for_agent_census_fresh capped-behind
 behind_driver=$!
 wait_for_agent_status capped-behind running
 "$engine" json set --file "$agent_repo/artifacts/agents/jobs/capped-behind.json" \
-  --field startedAt=2000-01-01T00:00:00Z --field capDeadline=2000-01-01T00:01:00Z
+  --field capDeadline=2000-01-01T00:01:00Z
 run_agent_fixture capped-behind-reap capped-behind "$agent_dispatch" reap --job capped-behind
 wait_for_agent_fixture_process capped-behind-driver capped-behind "$behind_driver"
 behind_workspace=$("$engine" json get --file "$agent_repo/artifacts/agents/jobs/capped-behind.json" --field workspaceRoot)
@@ -4204,7 +4213,7 @@ wait_for_agent_census_fresh capped-old
 old_capped_driver=$!
 wait_for_agent_status capped-old running
 "$engine" json set --file "$agent_repo/artifacts/agents/jobs/capped-old.json" \
-  --field startedAt=2000-01-01T00:00:00Z --field capDeadline=2000-01-01T00:01:00Z
+  --field capDeadline=2000-01-01T00:01:00Z
 run_agent_fixture capped-old-reap capped-old "$agent_dispatch" reap --job capped-old
 wait_for_agent_fixture_process capped-old-driver capped-old "$old_capped_driver"
 run_agent_fixture capped-old-follow-up capped-old-r2 "$agent_dispatch" follow-up --job capped-old --message "$follow_message" --wait
@@ -4580,12 +4589,11 @@ wait_for_agent_census_fresh mission-timeout-job
   printf '%s\n' "$driver_status" >"$mission_timeout_result"
 ) >"$agent_fixture/mission-timeout.out" 2>&1 &
 mission_timeout_driver=$!
-wait_for_agent_status mission-timeout-job running
-# capDeadline first, startedAt only as fallback — backdate both (see the
-# timed fixture above); json set stages and renames, so the rewrite of
-# this live record stays atomic.
+wait_for_agent_status mission-timeout-job running waiter-target
+# startedAt is part of the waiter's incarnation and stays immutable while it
+# waits. The explicit cap deadline expires the job without changing that target.
 "$engine" json set --file "$agent_repo/artifacts/agents/jobs/mission-timeout-job.json" \
-  --field startedAt=2000-01-01T00:00:00Z --field capDeadline=2000-01-01T00:01:00Z
+  --field capDeadline=2000-01-01T00:01:00Z
 run_agent_fixture mission-timeout-reap mission-timeout-job "$agent_dispatch" reap --job mission-timeout-job
 wait_for_agent_fixture_process mission-timeout-driver mission-timeout-job "$mission_timeout_driver"
 [[ "$(cat "$mission_timeout_result")" == 4 ]] || {
