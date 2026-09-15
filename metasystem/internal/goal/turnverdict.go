@@ -199,6 +199,7 @@ type sessionState struct {
 // the holder's announced main process.
 type TurnVerdictOptions struct {
 	StopHookActive   bool
+	SessionAbsent    bool
 	SeatActor        Actor
 	SeatClaimEpoch   int64
 	SeatActorProblem string
@@ -425,7 +426,7 @@ func (s *Store) TurnVerdict(scan ScanResult, sessionId, watchdogDigest, mainId s
 		}
 		waits := registeredWaits{}
 		if workRead && workErr == nil && len(scan.Unreadable) == 0 && len(scan.RunUnreadable) == 0 {
-			waits = s.registeredWaits(work, sessionId, mainId)
+			waits = s.registeredWaits(work, sessionId, mainId, options.SessionAbsent)
 		}
 		state, err := s.loadVerdictState()
 		if err != nil {
@@ -436,6 +437,11 @@ func (s *Store) TurnVerdict(scan ScanResult, sessionId, watchdogDigest, mainId s
 		brainLines := s.brainSummary(scan, brainState)
 		runLines := s.decideRuns(&verdict, scan, session, mainId, waits)
 		s.decide(&verdict, scan, session, &work, brainSeat, waits)
+		if options.SessionAbsent {
+			detail := "registered waits were not read because the Stop supplied no session"
+			verdict.Diagnostics = append(verdict.Diagnostics, detail)
+			verdict.Display = strings.TrimSpace(verdict.Display + "\n" + detail)
+		}
 		if markerDetail != "" {
 			verdict.Diagnostics = append(verdict.Diagnostics, markerDetail)
 			verdict.Display = strings.TrimSpace(verdict.Display + "\n" + markerDetail)
@@ -562,7 +568,10 @@ func withoutBrainOnlyScanEffects(scan ScanResult) ScanResult {
 // session and still joined to the holder's claimed goal and source
 // incarnation. A row that cannot prove every coordinate is absent from the
 // decision; waiter failures never grant permission to stop.
-func (s *Store) registeredWaits(work ClaimableBudgetedWork, sessionID, mainID string) registeredWaits {
+func (s *Store) registeredWaits(work ClaimableBudgetedWork, sessionID, mainID string, sessionAbsent bool) registeredWaits {
+	if sessionAbsent {
+		return nil
+	}
 	lease, lineage, ok := s.registeredWaitOwner(sessionID, mainID)
 	if !ok {
 		return nil

@@ -155,6 +155,101 @@ SH
   chmod +x "$output"
 }
 
+make_hook_session_args_engine() { # output engine
+  local output=$1
+  cat >"$output" <<'SH'
+#!/usr/bin/env bash
+set -euo pipefail
+case_name=${RUNTIME_HOOK_CASE:?}
+if [[ ${1:-} == proc && ${2:-} == find-ancestor ]]; then
+  printf '{"runtime":"claude","pid":1,"pidStartedAt":1}\n'
+  exit 0
+fi
+if [[ ${1:-} == lease && ${2:-} == hook-delegate ]]; then
+  exit 3
+fi
+if [[ ${1:-} == lease && ${2:-} == classify ]]; then
+  printf '%s\n' '{"class":"MAIN","mainId":"coordinator","holder":true,"claimEpoch":7,"announcement":{"runtime":"claude","pid":1,"pidStartedAt":1,"ownerLineage":"hook-lineage"}}'
+  exit 0
+fi
+if [[ ${1:-} == up ]]; then
+  printf '%s|%s\n' "$case_name" "$*" >>"${METASYSTEM_RUNTIME_HOOK_CALL_LOG:?}"
+  printf 'fixture up\n'
+  exit 0
+fi
+if [[ ${1:-} == report && ${2:-} == turn-verdict ]]; then
+  printf '%s|%s\n' "$case_name" "$*" >>"${METASYSTEM_RUNTIME_HOOK_CALL_LOG:?}"
+  facts_file=
+  completion_file=
+  while (($#)); do
+    case $1 in
+      --facts-file) facts_file=$2; shift 2 ;;
+      --completion-file) completion_file=$2; shift 2 ;;
+      *) shift ;;
+    esac
+  done
+  [[ -z "$facts_file" ]] || printf '{}\n' >"$facts_file"
+  [[ -z "$completion_file" ]] || printf '{}\n' >"$completion_file"
+  printf '%s\n' '{"schemaVersion":1,"class":"seat-actionable","shouldBlock":false,"ledgerStatus":"ok","display":"fixture verdict","surfaceWatchdog":false,"idleRefusal":false,"brainStatusDue":false}'
+  exit 0
+fi
+exec "${RUNTIME_HOOK_REAL_ENGINE:?}" "$@"
+SH
+  chmod +x "$output"
+}
+
+TestHookSessionArgs() {
+  local repo=$tmp/hook-session-args engine=$tmp/hook-session-args-engine log=$tmp/hook-session-args.log
+  local case_name event payload line want
+  make_repo "$repo"
+  seed_coordinator_state "$repo"
+  make_hook_session_args_engine "$engine"
+  : >"$log"
+
+  for case_name in start-present stop-present end-present start-absent stop-absent end-absent; do
+    event=${case_name%%-*}
+    if [[ "$case_name" == start-present ]]; then
+      payload=$(printf '{"session_id":"runtime-session-42","source":"resume","cwd":"%s"}\n' "$repo")
+    elif [[ "$case_name" == start-absent ]]; then
+      payload=$(printf '{"source":"startup","cwd":"%s"}\n' "$repo")
+    elif [[ "$case_name" == *-present ]]; then
+      payload=$(printf '{"session_id":"runtime-session-42","cwd":"%s"}\n' "$repo")
+    else
+      payload=$(printf '{"cwd":"%s"}\n' "$repo")
+    fi
+    printf '%s' "$payload" | RUNTIME_HOOK_CASE="$case_name" METASYSTEM_RUNTIME_HOOK_CALL_LOG="$log" \
+      METASYSTEM_BIN="$engine" RUNTIME_HOOK_REAL_ENGINE="$ms" \
+      METASYSTEM_HOOK_DELEGATE_STATE_ROOT= METASYSTEM_HOOK_DELEGATE_INSTALLATION_ROOT= \
+      METASYSTEM_HOOK_DELEGATE_JOB= \
+      bash "$repo/scripts/agents/supervision-hook.sh" claude "$event" >/dev/null
+  done
+
+  assert_hook_call() { # case, command prefix, required argument fragments
+    local fixture_case=$1 prefix=$2
+    shift 2
+    line=$(grep -F "$fixture_case|$prefix " "$log") \
+      || { echo "$fixture_case did not call $prefix" >&2; return 1; }
+    for want in "$@"; do
+      [[ " $line " == *" $want "* ]] \
+        || { echo "$fixture_case $prefix call omitted $want: $line" >&2; return 1; }
+    done
+  }
+
+  assert_hook_call start-present up '--runtime-session runtime-session-42' '--start-source resume'
+  assert_hook_call stop-present up '--runtime-session runtime-session-42'
+  assert_hook_call stop-present 'report turn-verdict' '--session runtime-session-42'
+  assert_hook_call end-present up '--runtime-session runtime-session-42' '--retire'
+  assert_hook_call start-absent up '--no-runtime-session' '--start-source startup'
+  assert_hook_call stop-absent up '--no-runtime-session'
+  assert_hook_call stop-absent 'report turn-verdict' '--session-absent'
+  assert_hook_call end-absent up '--no-runtime-session' '--retire'
+
+  if grep -E '^(start|stop|end)-present\|.*--no-runtime-session|^stop-present\|report turn-verdict .*--session-absent' "$log" >/dev/null; then
+    echo "a payload carrying a session was marked sessionless" >&2
+    return 1
+  fi
+}
+
 TestImportedClaudeHookSkipsDevinOutsideExecutionRoster() {
   local repo=$tmp/imported workspace_state before after engine event output
   make_repo "$repo"
@@ -451,6 +546,13 @@ SH
   assert_no_brain_effect_calls "$tmp/devin-repair-hook-calls.log" "Devin delivery repair hooks"
 }
 
+if [[ ${1:-} == hook-session-args ]]; then
+  TestHookSessionArgs
+  echo "runtime hook fixture: hook-session-args ok"
+  exit 0
+fi
+
+TestHookSessionArgs
 TestImportedClaudeHookSkipsDevinOutsideExecutionRoster
 TestUnhintedLocalDelegateSkipsBeforeBrainEffects
 TestRuntimeHookGuardDelayStillEmitsOneStopVerdictWithinTimeout

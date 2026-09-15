@@ -868,6 +868,7 @@ start_prepare_brain() {
 
 start_main() {
   local source_path source_parent registered_runtimes delegate_result repo_result payload_probe session
+  local start_source start_session_absent
   local identity identity_runtime identity_pid identity_started parent_view parent_class parent_runtime
   local process_identity_failed=false
   local start_context_decl start_context_rc start_context_sources pending_line
@@ -922,8 +923,19 @@ start_main() {
   start_capture payload-read payload_probe required "$ms" json strip --file "$start_payload" --key __metasystem_shape_probe
   : "$payload_probe"
   start_capture payload-read session shell-required start_json_value_with_sentinel \
-    "$ms" json get --file "$start_payload" --field session_id --default '' --shell-safe
-  [[ -n "$session" ]] || session="session-$PPID"
+    "$ms" json get --value "$payload_probe" --field session_id --default '' --shell-safe
+  start_source=
+  case "$payload_probe" in
+    *$'\n  "source":'*)
+      start_capture payload-read start_source shell-required-nonempty start_json_value_with_sentinel \
+        "$ms" json get --value "$payload_probe" --field source --shell-safe
+      ;;
+  esac
+  start_session_absent=false
+  if [[ -z "$session" ]]; then
+    start_session_absent=true
+    session="session-$PPID"
+  fi
   if ! [[ "$session" =~ ^[A-Za-z0-9._-]{1,128}$ ]]; then
     start_capture start-preparation hash_result required-nonempty start_hash_text "$session"
     session=$hash_result
@@ -1053,9 +1065,15 @@ start_main() {
 
 start_up() {
   local start_runtime=$1 start_session=$2 start_pid=$3 start_started=$4
-  METASYSTEM_AGENT_RUNTIME="$start_runtime" "$ms" up --metasystem-root "$world_installation" \
-    --repo "$repo" --session "$start_session" --pid "$start_pid" --start-time "$start_started" \
-    --tag "${tag:-$start_runtime:$start_pid}"
+  if [[ "$start_session_absent" == true ]]; then
+    METASYSTEM_AGENT_RUNTIME="$start_runtime" "$ms" up --metasystem-root "$world_installation" \
+      --repo "$repo" --session "$start_session" --pid "$start_pid" --start-time "$start_started" \
+      --tag "${tag:-$start_runtime:$start_pid}" --no-runtime-session --start-source "$start_source"
+  else
+    METASYSTEM_AGENT_RUNTIME="$start_runtime" "$ms" up --metasystem-root "$world_installation" \
+      --repo "$repo" --session "$start_session" --pid "$start_pid" --start-time "$start_started" \
+      --tag "${tag:-$start_runtime:$start_pid}" --runtime-session "$start_session" --start-source "$start_source"
+  fi
 }
 
 if [[ "$event" == start ]]; then
@@ -1532,7 +1550,11 @@ elif (( repo_rc != 0 )) || ! hook_root_is_one_line "$repo"; then
 fi
 repo=$(cd -- "$repo" 2>/dev/null && pwd -P) || exit 0
 session=$(read_payload session_id)
-[[ -n "$session" ]] || session="session-$PPID"
+session_absent=false
+if [[ -z "$session" ]]; then
+  session_absent=true
+  session="session-$PPID"
+fi
 stop_hook_active=false
 if [[ "$event" == stop && "$(read_payload stop_hook_active)" == true ]]; then
   stop_hook_active=true
@@ -1543,6 +1565,18 @@ fi
 if ! [[ "$session" =~ ^[A-Za-z0-9._-]{1,128}$ ]]; then
   session=$(printf '%s' "$session" | "$ms" util sha256)
 fi
+runtime_session_args=(--runtime-session "$session")
+if [[ "$session_absent" == true ]]; then
+  runtime_session_args=(--no-runtime-session)
+fi
+
+report_turn_verdict() {
+  if [[ "$session_absent" == true ]]; then
+    "$ms" report turn-verdict --session-absent "$@"
+  else
+    "$ms" report turn-verdict "$@"
+  fi
+}
 
 hook_generation=
 hook_attempt_seq=
@@ -1914,12 +1948,12 @@ if [[ "$event" == stop ]]; then
   if [[ -n "$identity_pid" ]]; then
     up_output=$(METASYSTEM_AGENT_RUNTIME="$runtime" "$ms" up --metasystem-root "$world_installation" \
       --repo "$repo" --session "$session" --pid "$identity_pid" --start-time "$identity_started" \
-      --tag "$tag" 2>"$arming_stderr") || up_rc=$?
+      --tag "$tag" "${runtime_session_args[@]}" 2>"$arming_stderr") || up_rc=$?
   else
     # A Stop call with no session identity still drives the restricted verify
     # and recovery path. It gains no announcement or checkout lease authority.
     up_output=$(METASYSTEM_AGENT_RUNTIME="$runtime" "$ms" up --metasystem-root "$world_installation" \
-      --repo "$repo" --recover-only --if-down 2>"$arming_stderr") || up_rc=$?
+      --repo "$repo" --recover-only --if-down "${runtime_session_args[@]}" 2>"$arming_stderr") || up_rc=$?
   fi
   up_aggregate=$(printf '%s' "$up_output" | tail -1)
   if [[ "$up_aggregate" == *" re-armed="* ]]; then
@@ -2333,7 +2367,7 @@ $hook_log_failure"
   verdict_readable=false
   degraded_line=
   completion_failure=
-  if verdict=$("$ms" report turn-verdict --root "$repo" \
+  if verdict=$(report_turn_verdict --root "$repo" \
       --session "$session" --watchdog-surfaced "$watchdog_digest" \
       --main-id "$main_id" --stop-hook-active="$stop_hook_active" \
       --facts-file "$facts_file" --completion-file "$completion_file" 2>"$verdict_stderr"); then
@@ -2485,7 +2519,7 @@ if [[ "$event" == end ]]; then
   started=$identity_started
   METASYSTEM_AGENT_RUNTIME="$runtime" "$ms" up --metasystem-root "$world_installation" \
     --repo "$repo" --session "$session" --pid "$pid" --start-time "$started" \
-    --tag "$tag" --retire >/dev/null 2>&1 || true
+    --tag "$tag" "${runtime_session_args[@]}" --retire >/dev/null 2>&1 || true
   exit 0
 fi
 
@@ -2499,7 +2533,7 @@ started=$identity_started
 
 if output=$(METASYSTEM_AGENT_RUNTIME="$runtime" "$ms" up --metasystem-root "$world_installation" \
     --repo "$repo" --session "$session" --pid "$pid" --start-time "$started" \
-    --tag "$tag" 2>&1); then
+    --tag "$tag" "${runtime_session_args[@]}" 2>&1); then
   # The watchdog revives with the first metasystem activity on this
   # machine: `up` verifies the owner, watcher, steward, announcement, and
   # lease as one idempotent transaction.

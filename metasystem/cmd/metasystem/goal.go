@@ -656,6 +656,7 @@ func runReportTurnVerdict(args []string) int {
 	watchdog := flags.String("watchdog-surfaced", "", "sha256 of this turn's watchdog report (empty clears)")
 	mainId := flags.String("main-id", "", "the caller main identity for the unwatched-work rule")
 	stopHookActive := flags.Bool("stop-hook-active", false, "the runtime is repeating a Stop hook that previously blocked")
+	sessionAbsent := flags.Bool("session-absent", false, "the Stop payload supplied no runtime session")
 	factsFile := flags.String("facts-file", "", "fresh absolute path for the frozen judgment facts")
 	completionFile := flags.String("completion-file", "", "fresh absolute path for the presentation-only completion observation")
 	if flags.Parse(args) != nil {
@@ -702,7 +703,7 @@ func runReportTurnVerdict(args []string) int {
 		}
 	}
 	store := &goal.Store{Root: *root, Now: func() time.Time { return now }}
-	options := goal.TurnVerdictOptions{StopHookActive: *stopHookActive}
+	options := goal.TurnVerdictOptions{StopHookActive: *stopHookActive, SessionAbsent: *sessionAbsent}
 	stateRoot, rootErr := goal.ResolveStateRoot(*root)
 	if rootErr != nil {
 		options.SeatActorProblem = "the seat state root could not be resolved: " + rootErr.Error()

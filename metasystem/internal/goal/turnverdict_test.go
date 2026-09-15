@@ -211,6 +211,57 @@ func (fixture *pendingWaitVerdictFixture) verdict(t *testing.T, scan ScanResult)
 	return verdict
 }
 
+func TestSessionAbsentReadsNoWait(t *testing.T) {
+	primeOpenSignature := func(fixture *pendingWaitVerdictFixture) {
+		t.Helper()
+		state, err := fixture.store.loadVerdictState()
+		if err != nil {
+			t.Fatal(err)
+		}
+		state.touch(pendingWaitSession, fixture.store.nowISO()).OpenWorkSignature = fixture.scan.OpenWorkSignature()
+		if err := fixture.store.saveVerdictState(state); err != nil {
+			t.Fatal(err)
+		}
+	}
+
+	withSessionFixture := newPendingWaitVerdictFixture(t, "job", false)
+	primeOpenSignature(withSessionFixture)
+	withSession := withSessionFixture.verdict(t, withSessionFixture.scan)
+	if !strings.Contains(withSession.Display, "WAITING: registered wait") {
+		t.Fatalf("control verdict did not prove that the registered wait was readable: %+v", withSession)
+	}
+
+	absentFixture := newPendingWaitVerdictFixture(t, "job", false)
+	primeOpenSignature(absentFixture)
+	clockReads := 0
+	previousBootClock := turnVerdictBootClock
+	turnVerdictBootClock = func() (string, time.Duration, error) {
+		clockReads++
+		return previousBootClock()
+	}
+	t.Cleanup(func() { turnVerdictBootClock = previousBootClock })
+	absent, err := absentFixture.store.TurnVerdict(absentFixture.scan, pendingWaitSession, "", pendingWaitMainID, TurnVerdictOptions{
+		SessionAbsent: true,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	diagnostic := "registered waits were not read because the Stop supplied no session"
+	if clockReads != 0 || len(absent.Diagnostics) != 1 || absent.Diagnostics[0] != diagnostic ||
+		strings.Count(absent.Display, diagnostic) != 1 || strings.Contains(absent.Display, "WAITING: registered wait") {
+		t.Fatalf("sessionless Stop read or reported a registered wait: clockReads=%d verdict=%+v", clockReads, absent)
+	}
+	blockSource := func(source *string) string {
+		if source == nil {
+			return ""
+		}
+		return *source
+	}
+	if absent.ShouldBlock != withSession.ShouldBlock || blockSource(absent.BlockSource) != blockSource(withSession.BlockSource) {
+		t.Fatalf("session absence changed the Stop decision: with-session=%+v absent=%+v", withSession, absent)
+	}
+}
+
 func TestPendingWaitTurnVerdict(t *testing.T) {
 	t.Run("work waits suppress matching open work and their own unwatched join", func(t *testing.T) {
 		liveDelegate := newPendingWaitVerdictFixture(t, "job", false)
