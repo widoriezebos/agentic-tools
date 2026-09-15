@@ -1,6 +1,6 @@
 # seat-machines-shed-leaked-processes
 
-- State: approved
+- State: queued
 - Priority: 1
 - Sequence: 9
 - Risk: severity=3 novelty=2 exposure=3 accumulation=3 basis="severity 3: a day of leaks drives load past 30 and holds about 24 GB, slowing every seat and causing load-shaped false reds; novelty 2: reaping across several owners (Codex brokers per worktree, fixture stewards, seat waiters, indexing); exposure 3: every seat, every day; accumulation 3: grows until a reboot"
@@ -9,10 +9,8 @@
 - Origin: human
 - Next step: Diagnosis landed 6f747033. Design revision 1 (Claude Fable) was critiqued by Codex: rework, 19 material findings. Wido decided four questions (R-112-m1e, 32d76c7b): a metasystem verb owns Codex broker shutdown and cancel by id; a busy seat shell is ended after 30 minutes; the seat removes the legacy tmp.* roots once; fixture-stewards-outlive-their-suite is folded in and the budget is sized after revision 2's critique. Next: Fable revision 2 (in progress on m1e, worktree leak-design), Codex critique round 2, then Wido approves the budget for the unit list, then the build, broker verb first.
 - OpenedAt: 2026-09-15T06:46:29Z
-- Revision: 9
-- Budget: elapsedLimit=1d attemptLimit=10 reservedJobMinutesLimit=1200 activeJobLimit=1 reviewRoundLimit=3
+- Revision: 10
 - BudgetExceptions: 0
-- Approved: by=human:Wido at=2026-09-15T08:12:27Z revision=8 opid=KRCA32YRCY96FNZWFYVFJTS2SV-m1e-c6925449 authority=proven digest=ff4c2477d2b0095de82ec300c6783b05b98c5425e2c95e9eba6bffb784c68581
 
 History:
 - 2026-09-15T06:46:29Z SESZEVKK9N09W21BZ92BBBBTGP-m1e-c6925449 open actor=human:Wido targets=seat-machines-shed-leaked-processes
@@ -24,4 +22,5 @@ History:
 - 2026-09-15T08:12:21Z 7E7GAR2JSE9S0XMM9AJ6CHQFH4-m1e-c6925449 edit actor=human:Wido targets=seat-machines-shed-leaked-processes
 - 2026-09-15T08:12:27Z KRCA32YRCY96FNZWFYVFJTS2SV-m1e-c6925449 approve actor=human:Wido targets=seat-machines-shed-leaked-processes
 - 2026-09-15T08:37:09Z R33NKBD41T4J4V7ESQ7QKXG9FF-m1e-c6925449 done actor=human:Wido targets=actionable-metrics,adoption-filled-delivery-passes-on-trunk,beds-run-under-the-oldest-supported-bash,chain-landing-carries-the-reviewed-diff,cross-cutting-change-inventories-its-readers,deep-sections-cannot-stay-red-unseen,degraded-stop-forms-have-one-source,delegate-sandbox-runs-the-beds,delegates-never-write-the-receipts-log,design-allocations-leave-ceiling-margin,dispatch-bases-chains-on-the-remote-tip,dispatch-bed-preamble-check-survives-a-large-prompt,dispatch-mission-timeout-scenario-holds-under-load,engine-policy-binding-survives-drift-and-load,every-round-gets-an-independent-read,every-verb-resolves-repo-to-an-absolute-root,failed-job-attention,failures-show-observed-against-expected,fixture-repo-copies-exclude-the-artifacts-store,fixture-waits-name-their-producer,follow-up-brief-cannot-cite-fresh-trunk-files,goal-cli-power-of-attorney-check-reads-the-backlog-from-a-file,human-authority-surface-runs-its-cmd-tests,human-goal-verbs-forgiving,human-wait-does-not-consume-goal-budget,job-record-birth-token,land-bed-reads-build-stamps-without-a-broken-pipe,lease-sweep-death-evidence,live-job-on-a-done-goal-unnoticed,machine-concurrency-governor,member-size-gate,metasystem-stop-escalation-proofs,metasystem-stop-fleet-form,moved-effects-are-inventoried-in-the-design,new-elapsed-budgets-use-explicit-hours,pipelines-never-lose-a-truncated-producer,proof-admission-fits-a-seat-proving-several-units,registered-wait-matches-the-runtime-session,repo-root-paths-ride-agent-commits-unjudged,round-proof-feeds-the-next-brief,run-scoped-build-caches-have-a-janitor,seat-landings-run-the-selected-sections,seat-machines-shed-leaked-processes,skipped-test-fails-its-group-on-the-other-os,stop-batch-strands-a-resumable-goal,stop-capability-follows-the-lease-epoch,stop-decision-surface-is-a-gate,stop-gate-sees-harness-tracked-work,stop-response-carries-a-structured-report-reference,suite-progress-bed-runs-on-trunk,test-environment-edges-are-closed,testing-surfaces-declare-their-mirror,tests-never-wait-on-wall-time,token-spend-fence,trunk-versus-candidate-is-a-verification-step,watch-verb,watcher-repair-request-never-names-current,winddown-census-handoff-leak reason=priority-order from=1:10 to=1:9
-Integrity: sha256=3cde80d565069d02f5169e6ff855f0c950110df4bef6cd776390ad7ca263423f
+- 2026-09-15T09:04:54Z 8CANQ78320X3KX766ZJSEW72SS-m1e-c6925449 unapprove actor=human:Wido targets=seat-machines-shed-leaked-processes reason=Wido's decision R-113-m1e narrows this goal after design critique round 2; the approved intent must be re-approved as narrowed
+Integrity: sha256=752a6c151df60f9ecac09a6937c6b88aedf68fbdd1197ced9b996fb1e561efe7
