@@ -1,6 +1,6 @@
 # go-tests-never-inherit-a-candidate-engine
 
-- State: claimed
+- State: approved
 - Priority: 1
 - Sequence: 9
 - Risk: severity=2 novelty=1 exposure=2 accumulation=2 basis="severity 2: false failures that read as real guard defects; novelty 1: environment hygiene; exposure 2: any seat running beds and packages in one shell; accumulation 2: each occurrence costs a diagnosis"
@@ -9,12 +9,11 @@
 - Origin: human
 - Next step: 2026-09-15 01:10 m1c (handoff b51182f96c086845 recorded; this session continues). LANDED today: 96c2fe64 brain actor-seam, 95da20cc final design pages, c71f1e23 session-start-relays-the-durable-wait-line (concluded). GOAL 11: fix round 2 in flight, Codex task-mu1sxlg5-w8k7z7 in /private/tmp/claude-501/-Users-wido-LocalStorage-GitHub-agentic-tools-m1c/96f72de7-79c7-496c-b717-141b91e84b81/scratchpad/g12/wt19 (brief codex-brief-go-tests-env-r2.md). When it returns: rerun each F-1 case (behaviorsurface under hostile METASYSTEM_BIN, audit under METASYSTEM_HOOK_DELEGATE_JOB, missionrunner under hostile METASYSTEM_BIN), the two proof mutations, the changed packages (audit -timeout 15m, cmd -timeout 40m), go-gate --fast; land by hact land.sh with a seat receipt; goal.sh done. NEXT: registered-wait-matches-the-runtime-session member A, brief staged at /private/tmp/claude-501/-Users-wido-LocalStorage-GitHub-agentic-tools-m1c/96f72de7-79c7-496c-b717-141b91e84b81/scratchpad/g12/codex-brief-regwait-A.md (replace WORKTREE_PATH; the design is on trunk from 95da20cc). Free: brain-boot-failure-keeps-the-wait-line.
 - OpenedAt: 2026-09-14T16:16:39Z
-- Revision: 22
+- Revision: 23
 - Budget: elapsedLimit=4h attemptLimit=6 reservedJobMinutesLimit=720 activeJobLimit=1 reviewRoundLimit=2
 - BudgetExceptions: 0
 - Approved: by=human:Wido at=2026-09-14T18:54:42Z revision=2 opid=1FVG0RPDDCS253V6D1FVHN0PXJ-m1e-c6925449 authority=proven digest=01c88816aa05e9379310fc5e7cf396643079963790219c3b366e2fd7c7cb0cc6
-- Claimed: machine=m1c lineage=main-1789191340-90689-8975a9 at=2026-09-14T23:04:32Z revision=21 accountingRevision=8 episodeAt=2026-09-14T21:28:54Z episodeRevision=8 idleSeconds=142
-- StopCapability: generation=21 revision=21 machine=m1c claimEpoch=5 fenceEpoch=0
+- Episode: machine=m1c lineage=main-1789191340-90689-8975a9 accountingRevision=8 episodeAt=2026-09-14T21:28:54Z episodeRevision=8 idleSeconds=142 released=2026-09-15T00:05:19Z
 
 History:
 - 2026-09-14T16:16:39Z B3R2EK7S895J6G3ZMQCF8FYTZE-m1e-c6925449 open actor=human:Wido targets=go-tests-never-inherit-a-candidate-engine
@@ -39,4 +38,5 @@ History:
 - 2026-09-14T23:03:46Z 5K6KPS8PJVQD5VRTXHBMEE75BN-m1c-69c9e454 release actor=m1c+main-1789191340-90689-8975a9 targets=go-tests-never-inherit-a-candidate-engine
 - 2026-09-14T23:04:32Z 7H9K8PNMY01FPGN6QRZPSMZ270-m1c-69c9e454 claim actor=m1c+main-1789191340-90689-8975a9 targets=go-tests-never-inherit-a-candidate-engine
 - 2026-09-14T23:05:06Z 4DJSFGQVPVNEQ5G5V3AN5BA5S1-m1c-69c9e454 edit actor=m1c+main-1789191340-90689-8975a9 targets=go-tests-never-inherit-a-candidate-engine
-Integrity: sha256=e175b86b2b68cfa90856b21f62f31ec7cdaa8f7110f3e5eac859ce577eaa354e
+- 2026-09-15T00:05:19Z ZHTYR08JW2ZYSVG80P0C6273NF-m1c-69c9e454 release actor=m1c+main-1789191340-90689-8975a9 targets=go-tests-never-inherit-a-candidate-engine
+Integrity: sha256=5754ad51a1177857698d7592fbcc4a89b6f2daa0ecd5142a9e94e787784e073d
