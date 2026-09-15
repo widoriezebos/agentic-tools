@@ -1017,12 +1017,28 @@ func readCompositionForJob(path, job, role, runtimeName, model, mission string, 
 	previousEnd := int64(0)
 	for index, raw := range sources {
 		source, ok := raw.(map[string]any)
-		if !ok || len(source) != 7 {
+		if !ok {
 			return nil, fmt.Errorf("composition source %d has an invalid shape", index)
+		}
+		_, hasMarker := source["admittedBrief"]
+		if (hasMarker && (index != 0 || len(source) != 8)) || (!hasMarker && len(source) != 7) {
+			return nil, fmt.Errorf("composition source %d has an invalid shape", index)
+		}
+		for field := range source {
+			if field != "slot" && field != "source" && field != "sourceDigest" && field != "deliveredDigest" &&
+				field != "sourceBytes" && field != "startByte" && field != "endByte" && field != "admittedBrief" {
+				return nil, fmt.Errorf("composition source %d contains undeclared field %q", index, field)
+			}
 		}
 		for _, field := range []string{"slot", "source", "sourceDigest", "deliveredDigest", "sourceBytes", "startByte", "endByte"} {
 			if _, present := source[field]; !present {
 				return nil, fmt.Errorf("composition source %d is missing %s", index, field)
+			}
+		}
+		if hasMarker {
+			if asString(source["slot"]) != "task-direction" || asString(source["source"]) != "caller:brief" ||
+				validateAdmittedBriefMarker(source["admittedBrief"]) != nil {
+				return nil, fmt.Errorf("composition source %d has an invalid admittedBrief marker", index)
 			}
 		}
 		start, startOK := numInt(source["startByte"])

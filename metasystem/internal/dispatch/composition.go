@@ -50,13 +50,14 @@ type rolePacketSource struct {
 // CompositionSource binds one delivered packet range to the bytes selected
 // from its declared source.
 type CompositionSource struct {
-	Slot            string `json:"slot"`
-	Source          string `json:"source"`
-	SourceDigest    string `json:"sourceDigest"`
-	DeliveredDigest string `json:"deliveredDigest"`
-	SourceBytes     int    `json:"sourceBytes"`
-	StartByte       int    `json:"startByte"`
-	EndByte         int    `json:"endByte"`
+	Slot            string               `json:"slot"`
+	Source          string               `json:"source"`
+	SourceDigest    string               `json:"sourceDigest"`
+	DeliveredDigest string               `json:"deliveredDigest"`
+	SourceBytes     int                  `json:"sourceBytes"`
+	StartByte       int                  `json:"startByte"`
+	EndByte         int                  `json:"endByte"`
+	AdmittedBrief   *AdmittedBriefMarker `json:"admittedBrief,omitempty"`
 }
 
 type CompositionReference struct {
@@ -132,6 +133,7 @@ type ComposeRolePacketParams struct {
 	StageDir          string
 	ReferenceDir      string
 	ToolPolicy        string
+	AdmittedBounds    string
 	ExtraSources      []string
 	Continuations     []CompositionContinuation
 	// CapMinutes is the round's authorized cap when the dispatcher resolved
@@ -241,6 +243,18 @@ func ComposeRolePacket(p ComposeRolePacketParams) (CompositionRecord, error) {
 	if !utf8.Valid(briefBytes) {
 		return CompositionRecord{}, &CompositionRefusal{Code: "REFUSED-TASK-DIRECTION", Source: p.Brief, Detail: "task direction is not valid UTF-8"}
 	}
+	var admittedMarker *AdmittedBriefMarker
+	if p.AdmittedBounds != "" {
+		admittedRecord, recordBytes, readErr := ReadBriefBoundsRecord(p.AdmittedBounds)
+		if readErr != nil {
+			return CompositionRecord{}, &CompositionRefusal{Code: "REFUSED-BRIEF-BOUNDS-RECORD", Source: p.AdmittedBounds, Detail: readErr.Error()}
+		}
+		if admittedRecord.JobID != p.JobID || admittedRecord.Round != p.Round {
+			return CompositionRecord{}, &CompositionRefusal{Code: "REFUSED-BRIEF-BOUNDS-RECORD", Source: p.AdmittedBounds, Detail: "brief bounds record does not bind the composed job and round"}
+		}
+		marker := admittedBriefMarker(admittedRecord, recordBytes)
+		admittedMarker = &marker
+	}
 
 	record := CompositionRecord{
 		SchemaVersion: 1, JobID: p.JobID, Role: p.Role, Runtime: p.Runtime,
@@ -264,8 +278,9 @@ func ComposeRolePacket(p ComposeRolePacketParams) (CompositionRecord, error) {
 		reference     CompositionReference
 		referenceBody []byte
 		stagePath     string
+		admittedBrief *AdmittedBriefMarker
 	}
-	sections := []plannedSection{{slot: "task-direction", source: "caller:brief", purpose: "brief", raw: briefBytes, eligible: true}}
+	sections := []plannedSection{{slot: "task-direction", source: "caller:brief", purpose: "brief", raw: briefBytes, eligible: true, admittedBrief: admittedMarker}}
 	appendSource := func(slot, source string, raw []byte) {
 		sections = append(sections, plannedSection{slot: slot, source: source, raw: raw})
 	}
@@ -387,6 +402,7 @@ func ComposeRolePacket(p ComposeRolePacketParams) (CompositionRecord, error) {
 			sources = append(sources, CompositionSource{
 				Slot: section.slot, Source: section.source, SourceDigest: digestBytes(section.raw), DeliveredDigest: digestBytes(delivered),
 				SourceBytes: len(section.raw), StartByte: start, EndByte: packet.Len(),
+				AdmittedBrief: section.admittedBrief,
 			})
 		}
 		return packet.Bytes(), sources
