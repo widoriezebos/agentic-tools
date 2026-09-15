@@ -22,7 +22,7 @@ var (
 	proveSessionStopHuman     = func(root string, pid int64, now time.Time) (humanauthority.Proof, error) {
 		proof, err := humanauthority.ProveTerminal(root, pid, nil, now)
 		if err != nil {
-			return humanauthority.Proof{}, err
+			return proof, err
 		}
 		if !proof.TerminalValidFor(root) {
 			return humanauthority.Proof{}, fmt.Errorf("terminal human authority was not proven")

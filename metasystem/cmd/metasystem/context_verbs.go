@@ -140,6 +140,7 @@ func runContextHandoff(args []string) int {
 	flags := flag.NewFlagSet("context handoff", flag.ContinueOnError)
 	root := flags.String("root", "", "installation or containing template root")
 	cancel := flags.String("cancel", "", "live handoff nonce to cancel")
+	by := flags.String("by", "", "name of the attending human")
 	asJSON := flags.Bool("json", false, "print a bounded result")
 	var scratchValues []string
 	flags.Func("scratch", "purpose=P,path=REL[,required=true|false]", func(value string) error {
@@ -149,10 +150,14 @@ func runContextHandoff(args []string) int {
 	if flags.Parse(args) != nil {
 		return 2
 	}
-	cancelSupplied := false
-	flags.Visit(func(option *flag.Flag) { cancelSupplied = cancelSupplied || option.Name == "cancel" })
-	if *root == "" || flags.NArg() != 0 || (cancelSupplied && (*cancel == "" || len(scratchValues) != 0)) {
-		fmt.Fprintln(os.Stderr, "usage: metasystem context handoff --root ROOT [--scratch purpose=P,path=REL[,required=true|false]]... [--json] | --root ROOT --cancel NONCE")
+	cancelSupplied, bySupplied := false, false
+	flags.Visit(func(option *flag.Flag) {
+		cancelSupplied = cancelSupplied || option.Name == "cancel"
+		bySupplied = bySupplied || option.Name == "by"
+	})
+	if *root == "" || flags.NArg() != 0 || (cancelSupplied && (*cancel == "" || len(scratchValues) != 0)) ||
+		(bySupplied && (!cancelSupplied || strings.TrimSpace(*by) == "")) {
+		fmt.Fprintln(os.Stderr, "usage: metasystem context handoff --root ROOT [--scratch purpose=P,path=REL[,required=true|false]]... [--json] | --root ROOT --cancel NONCE [--by HUMAN]")
 		return 2
 	}
 	stateRoot, err := goal.ResolveStateRoot(*root)
@@ -160,7 +165,24 @@ func runContextHandoff(args []string) int {
 		return contextVerbError("handoff", err)
 	}
 	if cancelSupplied {
-		if err := steward.CancelHandoff(stateRoot, *cancel, steward.HandoffCanceller{}); err != nil {
+		caller, err := contextHandoffCaller(stateRoot)
+		if err != nil {
+			return contextVerbError("handoff", err)
+		}
+		canceller := steward.HandoffCanceller{Caller: caller}
+		if bySupplied {
+			act := &steward.HandoffHumanAct{By: *by}
+			canceller.Human = act
+			if caller.Class == lease.ClassHuman {
+				act.Proof, _ = proveSessionStopHuman(stateRoot, int64(os.Getppid()), time.Now().UTC())
+				holder, err := currentContextHandoffHolder(stateRoot)
+				if err != nil {
+					return contextVerbError("handoff", err)
+				}
+				act.HolderMainId, act.HolderSession, act.ClaimEpoch = holder.MainId, holder.SessionId, holder.ClaimEpoch
+			}
+		}
+		if err := steward.CancelHandoff(stateRoot, *cancel, canceller); err != nil {
 			return contextVerbError("handoff", err)
 		}
 		fmt.Printf("handoff cancelled: %s\n", *cancel)

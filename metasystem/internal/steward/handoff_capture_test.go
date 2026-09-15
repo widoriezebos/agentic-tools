@@ -697,6 +697,7 @@ func TestHandoffAcceptsOnlyTheActiveContinuation(t *testing.T) {
 			}
 		})
 	}
+
 }
 
 func readIntentFile(t *testing.T, path string) Intent {
@@ -767,6 +768,22 @@ func humanCancelFixture(t *testing.T) (string, HandoffResult, HandoffCanceller) 
 	}}
 }
 
+func handoffDelegateCaller(t *testing.T, root string) HandoffCaller {
+	t.Helper()
+	const jobID = "delegate-job"
+	active := testIntent("active-" + jobID)
+	active.JobId = jobID
+	consumedIntentOnDisk(t, root, active)
+	writeHandoffJob(t, root, jobID, "running", map[string]any{
+		"mainId": "delegate-main", "runtime": "fake", "sessionId": "recorded delegate session",
+		"instanceTag": "delegate-tag", "pid": 4343, "pidStartedAt": 101,
+	})
+	caller := handoffMainCaller()
+	caller.Class, caller.JobId, caller.MainId = handoffClassDelegate, jobID, "supplied-main"
+	caller.Runtime, caller.Session, caller.Tag, caller.Ref = "devin", "supplied-session", "supplied-tag", identity.Ref{Pid: 9999, StartedAtSec: 999}
+	return caller
+}
+
 func refusedCancel(t *testing.T, root, nonce string, canceller HandoffCanceller, want string) {
 	t.Helper()
 	err := CancelHandoff(root, nonce, canceller)
@@ -814,6 +831,30 @@ func TestCancelHandoffAdmitsAProvenHumanAct(t *testing.T) {
 		}
 	})
 
+	t.Run("empty session with process generation", func(t *testing.T) {
+		root, result, canceller := humanCancelFixture(t)
+		canceller.Human.HolderSession = ""
+		canceller.Human.Proof = handoffHumanProof(t, root, identity.Exact{Pid: 4711, StartedAt: time.Unix(1700000000, 0), StartTicks: 5, BootID: "boot-fixture"})
+		if err := CancelHandoff(root, result.Nonce, canceller); err != nil {
+			t.Fatal(err)
+		}
+		want := "cancelled: cancelled by human by=Wido holder=main-1 epoch=3 session=none human-pid=4711 human-started=1700000000 human-ticks=5 human-boot=boot-fixture"
+		if got := cancelledHandoff(t, root, result.Nonce).Outcome; got != want {
+			t.Fatalf("outcome=%q want=%q", got, want)
+		}
+	})
+
+	t.Run("dead recorder", func(t *testing.T) {
+		root, result, canceller := humanCancelFixture(t)
+		refusedCancel(t, root, result.Nonce, HandoffCanceller{}, "HANDOFF_NOT_HOLDER")
+		if err := CancelHandoff(root, result.Nonce, canceller); err != nil {
+			t.Fatal(err)
+		}
+		if got := cancelledHandoff(t, root, result.Nonce).Outcome; !strings.HasPrefix(got, "cancelled: cancelled by human by=Wido ") {
+			t.Fatalf("dead recorder outcome=%q", got)
+		}
+	})
+
 	t.Run("symlinked root", func(t *testing.T) {
 		root, result, canceller := humanCancelFixture(t)
 		link := filepath.Join(t.TempDir(), "link")
@@ -841,6 +882,16 @@ func TestCancelHandoffRefusesAnUnprovenHumanAct(t *testing.T) {
 		}
 	})
 
+	t.Run("consumed nonce with a proven act", func(t *testing.T) {
+		root, result, canceller := humanCancelFixture(t)
+		if _, err := ConsumeIntent(root, result.Nonce); err != nil {
+			t.Fatal(err)
+		}
+		if err := CancelHandoff(root, result.Nonce, canceller); !errors.As(err, new(*HandoffRefusal)) || err.Error() != "HANDOFF_NOT_LIVE nonce="+result.Nonce {
+			t.Fatalf("consumed cancellation=%v", err)
+		}
+	})
+
 	t.Run("recorder with --by", func(t *testing.T) {
 		root, result, _ := humanCancelFixture(t)
 		canceller := HandoffCanceller{Caller: handoffMainCaller(), Human: &HandoffHumanAct{By: "Wido"}}
@@ -864,6 +915,122 @@ func TestCancelHandoffRefusesAnUnprovenHumanAct(t *testing.T) {
 		root, result, canceller := humanCancelFixture(t)
 		canceller.Human.Proof = humanauthority.Proof{}
 		refusedCancel(t, root, result.Nonce, canceller, "HANDOFF_HUMAN_UNPROVEN nonce="+result.Nonce+" by= Wido  caller=HUMAN human=unobserved")
+	})
+
+	t.Run("empty caller class", func(t *testing.T) {
+		root, result, _ := humanCancelFixture(t)
+		canceller := HandoffCanceller{Human: &HandoffHumanAct{By: "Wido"}}
+		refusedCancel(t, root, result.Nonce, canceller, "HANDOFF_HUMAN_UNPROVEN nonce="+result.Nonce+" by=Wido caller=none human=unattempted")
+	})
+}
+
+func TestCancelHandoffAdmitsTheRecordingSession(t *testing.T) {
+	for _, test := range []struct {
+		name   string
+		caller func(*testing.T, string) HandoffCaller
+	}{
+		{name: "main", caller: func(_ *testing.T, _ string) HandoffCaller { return handoffMainCaller() }},
+		{name: "delegate", caller: handoffDelegateCaller},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			root := handoffCaptureRepo(t, "claimed")
+			caller := test.caller(t, root)
+			useHandoffNonces(t, "6400000000000002")
+			result, err := Handoff(root, caller, nil, handoffCaptureNow, filepath.Join(root, "memory", "receipts.log"))
+			if err != nil {
+				t.Fatal(err)
+			}
+			if err := CancelHandoff(root, result.Nonce, HandoffCanceller{Caller: caller}); err != nil {
+				t.Fatal(err)
+			}
+			if got := cancelledHandoff(t, root, result.Nonce).Outcome; got != "cancelled: cancelled by the seat" {
+				t.Fatalf("outcome=%q", got)
+			}
+			if _, err := os.Stat(filepath.Join(intentsDir(root), result.Nonce+".json")); !os.IsNotExist(err) {
+				t.Fatalf("cancelled handoff remains live: %v", err)
+			}
+		})
+	}
+}
+
+func TestCancelHandoffRefusesAnotherSession(t *testing.T) {
+	for _, test := range []struct {
+		name   string
+		mutate func(*HandoffCaller)
+	}{
+		{name: "session", mutate: func(c *HandoffCaller) { c.Session = "another" }},
+		{name: "pid", mutate: func(c *HandoffCaller) { c.Ref.Pid = 4243 }},
+		{name: "tag", mutate: func(c *HandoffCaller) { c.Tag = "other-tag" }},
+		{name: "main id", mutate: func(c *HandoffCaller) { c.MainId, c.HolderMainId = "main-2", "main-2" }},
+		{name: "runtime", mutate: func(c *HandoffCaller) { c.Runtime = "claude" }},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			root := handoffCaptureRepo(t, "claimed")
+			useHandoffNonces(t, "6400000000000003")
+			result, err := Handoff(root, handoffMainCaller(), nil, handoffCaptureNow, filepath.Join(root, "memory", "receipts.log"))
+			if err != nil {
+				t.Fatal(err)
+			}
+			caller := handoffMainCaller()
+			test.mutate(&caller)
+			want := "HANDOFF_OTHER_SESSION nonce=" + result.Nonce + " session=" + goal.NormalizeSession("session / original") + " caller=MAIN human=none"
+			refusedCancel(t, root, result.Nonce, HandoffCanceller{Caller: caller}, want)
+		})
+	}
+
+	t.Run("job", func(t *testing.T) {
+		root := handoffCaptureRepo(t, "claimed")
+		useHandoffNonces(t, "6400000000000004")
+		result, err := Handoff(root, handoffMainCaller(), nil, handoffCaptureNow, filepath.Join(root, "memory", "receipts.log"))
+		if err != nil {
+			t.Fatal(err)
+		}
+		caller := handoffDelegateCaller(t, root)
+		writeHandoffJob(t, root, caller.JobId, "running", map[string]any{
+			"mainId": "main-1", "runtime": "fake", "sessionId": "session / original",
+			"instanceTag": "main-tag", "pid": 4242, "pidStartedAt": 100,
+		})
+		want := "HANDOFF_OTHER_SESSION nonce=" + result.Nonce + " session=" + goal.NormalizeSession("session / original") + " caller=DELEGATE human=none"
+		refusedCancel(t, root, result.Nonce, HandoffCanceller{Caller: caller}, want)
+	})
+}
+
+func TestCancelHandoffPassesAdmissionRefusalsThrough(t *testing.T) {
+	for _, test := range []struct {
+		name   string
+		caller HandoffCaller
+		want   string
+	}{
+		{name: "zero caller", want: "HANDOFF_NOT_HOLDER"},
+		{name: "untrusted", caller: HandoffCaller{Class: "UNTRUSTED"}, want: "HANDOFF_NOT_HOLDER"},
+		{name: "not the holder", caller: func() HandoffCaller { c := handoffMainCaller(); c.HolderMainId = "main-2"; return c }(), want: "HANDOFF_NOT_HOLDER"},
+		{name: "unobservable", caller: func() HandoffCaller { c := handoffMainCaller(); c.Runtime = "devin"; return c }(), want: "HANDOFF_UNOBSERVABLE runtime=devin"},
+		{name: "no active continuation", caller: HandoffCaller{Class: handoffClassDelegate, JobId: "delegate-job", Machine: "bed-m1"}, want: "HANDOFF_NOT_HOLDER"},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			root := handoffCaptureRepo(t, "claimed")
+			useHandoffNonces(t, "6400000000000005")
+			result, err := Handoff(root, handoffMainCaller(), nil, handoffCaptureNow, filepath.Join(root, "memory", "receipts.log"))
+			if err != nil {
+				t.Fatal(err)
+			}
+			refusedCancel(t, root, result.Nonce, HandoffCanceller{Caller: test.caller}, test.want)
+		})
+	}
+
+	t.Run("plain error", func(t *testing.T) {
+		root := handoffCaptureRepo(t, "claimed")
+		useHandoffNonces(t, "6400000000000005")
+		result, err := Handoff(root, handoffMainCaller(), nil, handoffCaptureNow, filepath.Join(root, "memory", "receipts.log"))
+		if err != nil {
+			t.Fatal(err)
+		}
+		writeTestFile(t, filepath.Join(consumedDir(root), "bad.json"), []byte("{"))
+		err = CancelHandoff(root, result.Nonce, HandoffCanceller{Caller: HandoffCaller{Class: handoffClassDelegate, JobId: "delegate-job", Machine: "bed-m1"}})
+		if err == nil || errors.As(err, new(*HandoffRefusal)) || err.Error() != "consumed intent bad.json malformed: unexpected end of JSON input" {
+			t.Fatalf("plain admission error=%v", err)
+		}
+		assertHandoffStillLive(t, root, result.Nonce)
 	})
 }
 
@@ -1139,7 +1306,7 @@ func TestVerifyHandoffStateUsesExactLifecycleRecord(t *testing.T) {
 		if digest, err := VerifyHandoffState(root, result.Nonce); err != nil || digest != result.StateDigest {
 			t.Fatalf("reaped consumed state digest=%s err=%v", digest, err)
 		}
-		if err := CancelHandoff(root, result.Nonce, HandoffCanceller{Caller: handoffMainCaller()}); !errors.As(err, new(*HandoffRefusal)) || !strings.Contains(err.Error(), "HANDOFF_NOT_LIVE") {
+		if err := CancelHandoff(root, result.Nonce, HandoffCanceller{}); !errors.As(err, new(*HandoffRefusal)) || !strings.Contains(err.Error(), "HANDOFF_NOT_LIVE") {
 			t.Fatalf("consumed handoff cancellation=%v", err)
 		}
 	})

@@ -190,6 +190,13 @@ func stubSessionStopCommand(t *testing.T) {
 	})
 }
 
+func TestProveSessionStopHumanKeepsThePopulatedProof(t *testing.T) {
+	proof, err := proveSessionStopHuman(t.TempDir(), 1<<30, time.Date(2026, 9, 15, 9, 0, 0, 0, time.UTC))
+	if err == nil || proof.Outcome != humanauthority.OutcomeUnreadable {
+		t.Fatalf("proof outcome=%q err=%v", proof.Outcome, err)
+	}
+}
+
 func TestSessionStopAttendedHumanEndsQuietly(t *testing.T) {
 	root := sessionStopBed(t)
 	human, leaseRecord := sessionStopLiveRef(t)

@@ -1053,9 +1053,25 @@ func handoffHumanRefusal(nonce string, canceller HandoffCanceller, token string)
 	return refusal("HANDOFF_HUMAN_UNPROVEN", fmt.Sprintf("nonce=%s by=%s caller=%s human=%s", nonce, canceller.Human.By, class, token))
 }
 
+func handoffBindingNamesAuthority(binding HandoffBinding, authority HandoffCaller) bool {
+	return binding.Runtime == authority.Runtime &&
+		binding.Session == goal.NormalizeSession(authority.Session) &&
+		binding.MainId == authority.MainId &&
+		binding.Predecessor == authority.Ref &&
+		binding.PredecessorTag == authority.Tag &&
+		binding.PredecessorJob == authority.JobId
+}
+
 func handoffCancelReason(stateRoot, root, nonce string, intent Intent, canceller HandoffCanceller) (string, error) {
 	if canceller.Human == nil {
-		return "cancelled by the seat", nil
+		authority, err := admitHandoffCaller(root, canceller.Caller)
+		if err != nil {
+			return "", err
+		}
+		if handoffBindingNamesAuthority(*intent.Handoff, authority) {
+			return "cancelled by the seat", nil
+		}
+		return "", refusal("HANDOFF_OTHER_SESSION", fmt.Sprintf("nonce=%s session=%s caller=%s human=none", nonce, intent.Handoff.Session, authority.Class))
 	}
 	act := canceller.Human
 	if canceller.Caller.Class != handoffClassHuman {

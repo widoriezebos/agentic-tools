@@ -3,6 +3,7 @@ package main
 import (
 	"bytes"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"os"
 	"os/exec"
@@ -12,6 +13,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/humanauthority"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/identity"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/lease"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/steward"
@@ -698,6 +700,28 @@ func TestContextVerifyAndCancel(t *testing.T) {
 	if code != 0 || output != "handoff cancelled: "+first.nonce+"\n" || problem != "" {
 		t.Fatalf("cancel = code %d stdout %q stderr %q", code, output, problem)
 	}
+	foreign := recordContextHandoff(t, container)
+	identityClassifier := classifyContextHandoffCaller
+	classifyContextHandoffCaller = func(string, string, int64) (lease.Classification, error) {
+		announcement := &lease.Announcement{SessionId: "other-session", MainId: "main-context", Pid: 4242,
+			PidStartedAt: 100, PidStartTicks: 700, BootID: "boot-fixture", Runtime: "fake", InstanceTag: "main-tag"}
+		return lease.Classification{Class: lease.ClassMain, MainId: announcement.MainId, Announcement: announcement}, nil
+	}
+	code, _, problem = captureContextVerb(t, runContextHandoff, "--root", container, "--cancel", foreign.nonce)
+	if code != 9 || problem != "HANDOFF_OTHER_SESSION nonce="+foreign.nonce+" session=seat-session caller=MAIN human=none\n" {
+		t.Fatalf("foreign cancel = code %d stderr %q", code, problem)
+	}
+	classifyContextHandoffCaller = func(string, string, int64) (lease.Classification, error) {
+		return lease.Classification{}, errors.New("injected classification failure")
+	}
+	code, _, problem = captureContextVerb(t, runContextHandoff, "--root", container, "--cancel", foreign.nonce)
+	if code != 1 || !strings.HasPrefix(problem, "metasystem context handoff: classify caller:") {
+		t.Fatalf("unclassified cancel = code %d stderr %q", code, problem)
+	}
+	classifyContextHandoffCaller = identityClassifier
+	if code, _, problem = captureContextVerb(t, runContextHandoff, "--root", container, "--cancel", foreign.nonce); code != 0 || problem != "" {
+		t.Fatalf("restored recorder cancel = code %d stderr %q", code, problem)
+	}
 	second := recordContextHandoff(t, container)
 	_, err := steward.ConsumeIntent(root, second.nonce)
 	contextMust(t, err)
@@ -710,6 +734,112 @@ func TestContextVerifyAndCancel(t *testing.T) {
 	if code != 9 || !strings.HasPrefix(problem, "HANDOFF_NOT_LIVE ") {
 		t.Fatalf("consumed cancel = code %d stderr %q", code, problem)
 	}
+}
+
+func TestContextHandoffCancelByHuman(t *testing.T) {
+	t.Run("attended human", func(t *testing.T) {
+		container, root := contextHandoffCommandRoot(t)
+		useContextHandoffIdentity(t, root)
+		record := recordContextHandoff(t, container)
+		installSessionStopLease(t, root, map[string]any{
+			"holderMainId": "main-context", "pid": 4242, "pidStartedAt": 100, "claimEpoch": 7, "revision": 1,
+		})
+		now := time.Date(2026, 9, 15, 9, 0, 0, 0, time.UTC)
+		proof := sessionStopCommandProof(t, root, now)
+		classifyContextHandoffCaller = func(string, string, int64) (lease.Classification, error) {
+			return lease.Classification{Class: lease.ClassHuman}, nil
+		}
+		order := []string{}
+		currentContextHandoffHolder = func(gotRoot string) (lease.CurrentHolderView, error) {
+			if gotRoot != root || !reflect.DeepEqual(order, []string{"proof"}) {
+				t.Fatalf("holder read root=%q order=%v", gotRoot, order)
+			}
+			order = append(order, "holder")
+			return lease.CurrentHolderView{MainId: "main-context", SessionId: "seat-session", ClaimEpoch: 7}, nil
+		}
+		calls := 0
+		proveSessionStopHuman = func(gotRoot string, pid int64, gotNow time.Time) (humanauthority.Proof, error) {
+			calls++
+			order = append(order, "proof")
+			if gotRoot != root || pid != int64(os.Getppid()) || gotNow.IsZero() {
+				t.Fatalf("human proof arguments root=%q pid=%d now=%s", gotRoot, pid, gotNow)
+			}
+			return proof, nil
+		}
+		code, output, problem := captureContextVerb(t, runContextHandoff, "--root", container, "--cancel", record.nonce, "--by", "Wido")
+		if code != 0 || output != "handoff cancelled: "+record.nonce+"\n" || problem != "" || calls != 1 || !reflect.DeepEqual(order, []string{"proof", "holder"}) {
+			t.Fatalf("human cancel = code %d stdout %q stderr %q proof-calls=%d", code, output, problem, calls)
+		}
+		boot := proof.InvokerRef.BootID
+		if boot == "" {
+			boot = "none"
+		}
+		want := fmt.Sprintf("cancelled: cancelled by human by=Wido holder=main-context epoch=7 session=seat-session human-pid=%d human-started=%d human-ticks=%d human-boot=%s",
+			proof.InvokerRef.PID, proof.InvokerRef.PIDStartedAt, proof.InvokerRef.StartTicks, boot)
+		data, err := os.ReadFile(filepath.Join(root, "artifacts", "agents", "steward", "cancelled", record.nonce+".json"))
+		var intent steward.Intent
+		if err != nil || json.Unmarshal(data, &intent) != nil || intent.Outcome != want {
+			t.Fatalf("human cancellation outcome=%q want=%q err=%v", intent.Outcome, want, err)
+		}
+	})
+
+	t.Run("holder read failure", func(t *testing.T) {
+		container, root := contextHandoffCommandRoot(t)
+		useContextHandoffIdentity(t, root)
+		classifyContextHandoffCaller = func(string, string, int64) (lease.Classification, error) {
+			return lease.Classification{Class: lease.ClassHuman}, nil
+		}
+		currentContextHandoffHolder = func(string) (lease.CurrentHolderView, error) {
+			return lease.CurrentHolderView{}, errors.New("holder read failed")
+		}
+		code, _, problem := captureContextVerb(t, runContextHandoff, "--root", container, "--cancel", "0000000000000000", "--by", "Wido")
+		if code != 1 || problem != "metasystem context handoff: holder read failed\n" {
+			t.Fatalf("holder failure = code %d stderr %q", code, problem)
+		}
+	})
+
+	t.Run("agent never reaches the prover", func(t *testing.T) {
+		container, root := contextHandoffCommandRoot(t)
+		useContextHandoffIdentity(t, root)
+		record := recordContextHandoff(t, container)
+		identityClassifier := classifyContextHandoffCaller
+		identityHolder := currentContextHandoffHolder
+		classifyContextHandoffCaller = func(string, string, int64) (lease.Classification, error) {
+			return lease.Classification{Class: lease.ClassDelegate, Pid: 4343}, nil
+		}
+		proveSessionStopHuman = func(string, int64, time.Time) (humanauthority.Proof, error) {
+			t.Fatal("agent reached the human prover")
+			return humanauthority.Proof{}, nil
+		}
+		currentContextHandoffHolder = func(string) (lease.CurrentHolderView, error) {
+			t.Fatal("agent reached the human holder read")
+			return lease.CurrentHolderView{}, nil
+		}
+		code, _, problem := captureContextVerb(t, runContextHandoff, "--root", container, "--cancel", record.nonce, "--by", "Agent")
+		if code != 9 || problem != "HANDOFF_HUMAN_UNPROVEN nonce="+record.nonce+" by=Agent caller=DELEGATE human=unattempted\n" {
+			t.Fatalf("agent cancel = code %d stderr %q", code, problem)
+		}
+		classifyContextHandoffCaller, currentContextHandoffHolder = identityClassifier, identityHolder
+		if code, _, problem = captureContextVerb(t, runContextHandoff, "--root", container, "--cancel", record.nonce); code != 0 || problem != "" {
+			t.Fatalf("recorder cancel after refused agent = code %d stderr %q", code, problem)
+		}
+	})
+
+	t.Run("refused proof", func(t *testing.T) {
+		container, root := contextHandoffCommandRoot(t)
+		useContextHandoffIdentity(t, root)
+		record := recordContextHandoff(t, container)
+		classifyContextHandoffCaller = func(string, string, int64) (lease.Classification, error) {
+			return lease.Classification{Class: lease.ClassHuman}, nil
+		}
+		proveSessionStopHuman = func(string, int64, time.Time) (humanauthority.Proof, error) {
+			return humanauthority.Proof{Outcome: humanauthority.OutcomeAgent}, errors.New("refused walk")
+		}
+		code, _, problem := captureContextVerb(t, runContextHandoff, "--root", container, "--cancel", record.nonce, "--by", "Wido")
+		if code != 9 || problem != "HANDOFF_HUMAN_UNPROVEN nonce="+record.nonce+" by=Wido caller=HUMAN human=AGENT_IN_AUTHORITY_CHAIN\n" {
+			t.Fatalf("refused proof cancel = code %d stderr %q", code, problem)
+		}
+	})
 }
 
 func TestContextPruneVerb(t *testing.T) {
@@ -741,6 +871,7 @@ func TestContextPruneVerb(t *testing.T) {
 
 func TestContextVerbUsage(t *testing.T) {
 	root := contextCommandRoot(t)
+	const handoffUsage = "usage: metasystem context handoff --root ROOT [--scratch purpose=P,path=REL[,required=true|false]]... [--json] | --root ROOT --cancel NONCE [--by HUMAN]\n"
 	for _, test := range []struct {
 		run  func([]string) int
 		args []string
@@ -757,13 +888,17 @@ func TestContextVerbUsage(t *testing.T) {
 		{runContextHandoff, []string{"--root", root, "--scratch", "purpose=,purpose=p,path=x"}},
 		{runContextHandoff, []string{"--root", root, "--cancel", "0000000000000000", "--scratch", "purpose=p,path=x"}},
 		{runContextHandoff, []string{"--root", root, "--cancel="}},
+		{runContextHandoff, []string{"--root", root, "--by", "Wido"}},
+		{runContextHandoff, []string{"--root", root, "--cancel", "0000000000000000", "--by="}},
+		{runContextHandoff, []string{"--root", root, "--cancel", "0000000000000000", "--by", " "}},
 		{runContextPrune, []string{"--root", root, "--older-than", "0"}},
 		{runContextPrune, []string{"--root", root, "--older-than", "-1h"}},
 		{runContextPrune, []string{"--root", root, "--older-than", "106752d"}},
 		{runContextPrune, []string{"--root", root, "--older-than", "999999999999999999999d"}},
 	} {
 		code, _, problem := captureContextVerb(t, test.run, test.args...)
-		if code != 2 || !(strings.HasPrefix(problem, "usage: metasystem context ") || strings.Contains(problem, "--scratch must be")) {
+		byCase := strings.Contains(strings.Join(test.args, "\x00"), "--by")
+		if code != 2 || (byCase && problem != handoffUsage) || (!byCase && !(strings.HasPrefix(problem, "usage: metasystem context ") || strings.Contains(problem, "--scratch must be"))) {
 			t.Fatalf("args %q = code %d stderr %q", test.args, code, problem)
 		}
 	}
@@ -822,6 +957,7 @@ func contextMust(t *testing.T, err error) {
 func useContextHandoffIdentity(t *testing.T, root string) {
 	t.Helper()
 	oldClassify, oldHolder, oldHook := classifyContextHandoffCaller, currentContextHandoffHolder, hookContextHandoffDelegate
+	oldProof := proveSessionStopHuman
 	classifyContextHandoffCaller = func(stateRoot, installation string, _ int64) (lease.Classification, error) {
 		if stateRoot != root || installation != root {
 			t.Fatalf("handoff classified roots (%q, %q), want %q", stateRoot, installation, root)
@@ -831,13 +967,17 @@ func useContextHandoffIdentity(t *testing.T, root string) {
 		return lease.Classification{Class: lease.ClassMain, MainId: announcement.MainId, Announcement: announcement}, nil
 	}
 	currentContextHandoffHolder = func(string) (lease.CurrentHolderView, error) {
-		return lease.CurrentHolderView{MainId: "main-context", SessionId: "seat-session"}, nil
+		return lease.CurrentHolderView{MainId: "main-context", SessionId: "seat-session", ClaimEpoch: 7}, nil
 	}
 	hookContextHandoffDelegate = func(_, _ string, jobID string, _ int64) (lease.HookDelegateResult, error) {
 		return lease.HookDelegateResult{Delegate: true, JobID: jobID}, nil
 	}
+	proveSessionStopHuman = func(string, int64, time.Time) (humanauthority.Proof, error) {
+		return humanauthority.Proof{Outcome: humanauthority.OutcomeAgent}, errors.New("unexpected human proof")
+	}
 	t.Cleanup(func() {
 		classifyContextHandoffCaller, currentContextHandoffHolder, hookContextHandoffDelegate = oldClassify, oldHolder, oldHook
+		proveSessionStopHuman = oldProof
 	})
 }
 
