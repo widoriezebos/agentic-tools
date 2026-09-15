@@ -1,0 +1,285 @@
+# Leak evidence, captured 2026-09-15T06:46:16Z by m1e; load: { 18.42 26.87 24.13 }
+## m1b busy shell 53724 (full command)
+53724 90295 11:56:22  68.6 /bin/zsh -c source /Users/wido/.claude/shell-snapshots/snapshot-zsh-1789192875068-akvdz6.sh 2>/dev/null || true && export CODEX_COMPANION_SESSION_ID='e90b57fc-9012-459f-9031-d2deb9f37ea2'\012export CODEX_COMPANION_TRANSCRIPT_PATH='/Users/wido/.claude/projects/-Users-wido-LocalStorage-GitHub-agentic-tools-m1b/e90b57fc-9012-459f-9031-d2deb9f37ea2.jsonl'\012export CLAUDE_PLUGIN_DATA='/Users/wido/.claude/plugins/data/codex-openai-codex'\012export CODEX_COMPANION_SESSION_ID='e90b57fc-9012-459f-9031-d2deb9f37ea2'\012export CODEX_COMPANION_TRANSCRIPT_PATH='/Users/wido/.claude/projects/-Users-wido-LocalStorage-GitHub-agentic-tools-m1b/e90b57fc-9012-459f-9031-d2deb9f37ea2.jsonl'\012export CLAUDE_PLUGIN_DATA='/Users/wido/.claude/plugins/data/codex-openai-codex'\012export CODEX_COMPANION_SESSION_ID='e90b57fc-9012-459f-9031-d2deb9f37ea2'\012export CODEX_COMPANION_TRANSCRIPT_PATH='/Users/wido/.claude/projects/-Users-wido-LocalStorage-GitHub-agentic-tools-m1b/e90b57fc-9012-459f-9031-d2deb9f37ea2.jsonl'\012export CLAUDE_PLUGIN_DATA='/Users/wido/.claude/plugins/data/codex-openai-codex'\012export CODEX_COMPANION_SESSION_ID='e90b57fc-9012-459f-9031-d2deb9f37ea2'\012export CODEX_COMPANION_TRANSCRIPT_PATH='/Users/wido/.claude/projects/-Users-wido-LocalStorage-GitHub-agentic-tools-m1b/e90b57fc-9012-459f-9031-d2deb9f37ea2.jsonl'\012export CLAUDE_PLUGIN_DATA='/Users/wido/.claude/plugins/data/codex-openai-codex'\012export CODEX_COMPANION_SESSION_ID='e90b57fc-9012-459f-9031
+
+## Codex app-server brokers by --cwd (count, cwd, exists?)
+1 exists /Users/wido/LocalStorage/GitHub/agentic-tools-m1e/.claude/worktrees/agent-a871479611bf32c68
+1 GONE /Users/wido/LocalStorage/GitHub/agentic-tools-m1e/.claude/worktrees/agent-a8bdad3edd1ff6d82
+1 exists /Users/wido/LocalStorage/GitHub/agentic-tools-m1e/.claude/worktrees/agent-a9308e5e11faa95f3
+1 exists /Users/wido/LocalStorage/GitHub/agentic-tools-m1e/.claude/worktrees/agent-ae346097480df415f
+1 exists /Users/wido/LocalStorage/GitHub/agentic-tools-m1e/.claude/worktrees/bdrb-design
+1 exists /Users/wido/LocalStorage/GitHub/agentic-tools-m1e/.claude/worktrees/bdrb-u1a
+1 exists /Users/wido/LocalStorage/GitHub/agentic-tools-m1e/.claude/worktrees/bdrb-u1b
+1 exists /Users/wido/LocalStorage/GitHub/agentic-tools-m1e/.claude/worktrees/bdrb-u1bii
+1 exists /Users/wido/LocalStorage/GitHub/agentic-tools-m1e/.claude/worktrees/bdrb-u2
+1 exists /Users/wido/LocalStorage/GitHub/agentic-tools-m1e/.claude/worktrees/bdrb-u3a
+1 exists /Users/wido/LocalStorage/GitHub/agentic-tools-m1e/.claude/worktrees/bprm-design
+1 GONE /Users/wido/LocalStorage/GitHub/agentic-tools-m1e/.claude/worktrees/ccb-1bi
+1 GONE /Users/wido/LocalStorage/GitHub/agentic-tools-m1e/.claude/worktrees/ccb-1bii
+1 GONE /Users/wido/LocalStorage/GitHub/agentic-tools-m1e/.claude/worktrees/ccb-1bii-tip
+1 exists /Users/wido/LocalStorage/GitHub/agentic-tools-m1e/.claude/worktrees/ccb-2b-design
+1 exists /Users/wido/LocalStorage/GitHub/agentic-tools-m1e/.claude/worktrees/ccb-c1a
+1 exists /Users/wido/LocalStorage/GitHub/agentic-tools-m1e/.claude/worktrees/ccb-c1b
+1 exists /Users/wido/LocalStorage/GitHub/agentic-tools-m1e/.claude/worktrees/ccb-d1a
+1 exists /Users/wido/LocalStorage/GitHub/agentic-tools-m1e/.claude/worktrees/ccb-d1b
+1 exists /Users/wido/LocalStorage/GitHub/agentic-tools-m1e/.claude/worktrees/ccb-d2
+1 exists /Users/wido/LocalStorage/GitHub/agentic-tools-m1e/.claude/worktrees/ccb-fu-crit
+1 exists /Users/wido/LocalStorage/GitHub/agentic-tools-m1e/.claude/worktrees/ccb-pktfit
+1 GONE /Users/wido/LocalStorage/GitHub/agentic-tools-m1e/.claude/worktrees/ccb-s2a
+1 exists /Users/wido/LocalStorage/GitHub/agentic-tools-m1e/.claude/worktrees/ccb-s2b
+1 exists /Users/wido/LocalStorage/GitHub/agentic-tools-m1e/.claude/worktrees/ccb-s3
+1 exists /Users/wido/LocalStorage/GitHub/agentic-tools-m1e/.claude/worktrees/ccf-cleanup
+1 GONE /Users/wido/LocalStorage/GitHub/agentic-tools-m1e/.claude/worktrees/ccf-design
+1 GONE /Users/wido/LocalStorage/GitHub/agentic-tools-m1e/.claude/worktrees/ccf-s0
+1 exists /Users/wido/LocalStorage/GitHub/agentic-tools-m1e/.claude/worktrees/ccf-s13
+1 GONE /Users/wido/LocalStorage/GitHub/agentic-tools-m1e/.claude/worktrees/ccf-s1ai
+1 GONE /Users/wido/LocalStorage/GitHub/agentic-tools-m1e/.claude/worktrees/ccf-s1ai-carry
+1 GONE /Users/wido/LocalStorage/GitHub/agentic-tools-m1e/.claude/worktrees/ccf-s1ai-tip
+1 GONE /Users/wido/LocalStorage/GitHub/agentic-tools-m1e/.claude/worktrees/ccf-s1aii-a
+1 exists /Users/wido/LocalStorage/GitHub/agentic-tools-m1e/.claude/worktrees/ccf-s1aii-b
+1 exists /Users/wido/LocalStorage/GitHub/agentic-tools-m1e/.claude/worktrees/ccf-s1aii-c
+1 exists /Users/wido/LocalStorage/GitHub/agentic-tools-m1e/.claude/worktrees/ccf-s1b
+1 GONE /Users/wido/LocalStorage/GitHub/agentic-tools-m1e/.claude/worktrees/codex-critique-always
+1 GONE /Users/wido/LocalStorage/GitHub/agentic-tools-m1e/.claude/worktrees/hp-terminal
+1 GONE /Users/wido/LocalStorage/GitHub/agentic-tools-m1e/.claude/worktrees/lrsrd
+1 exists /private/tmp/claude-501/-Users-wido-LocalStorage-GitHub-agentic-tools-m1c/96f72de7-79c7-496c-b717-141b91e84b81/scratchpad/g10/wt2
+1 exists /private/tmp/claude-501/-Users-wido-LocalStorage-GitHub-agentic-tools-m1c/96f72de7-79c7-496c-b717-141b91e84b81/scratchpad/g10/wt3
+1 exists /private/tmp/claude-501/-Users-wido-LocalStorage-GitHub-agentic-tools-m1c/96f72de7-79c7-496c-b717-141b91e84b81/scratchpad/g10/wt6
+1 exists /private/tmp/claude-501/-Users-wido-LocalStorage-GitHub-agentic-tools-m1c/96f72de7-79c7-496c-b717-141b91e84b81/scratchpad/g12/land3
+1 exists /private/tmp/claude-501/-Users-wido-LocalStorage-GitHub-agentic-tools-m1c/96f72de7-79c7-496c-b717-141b91e84b81/scratchpad/g12/land6
+1 exists /private/tmp/claude-501/-Users-wido-LocalStorage-GitHub-agentic-tools-m1c/96f72de7-79c7-496c-b717-141b91e84b81/scratchpad/g12/wt
+1 exists /private/tmp/claude-501/-Users-wido-LocalStorage-GitHub-agentic-tools-m1c/96f72de7-79c7-496c-b717-141b91e84b81/scratchpad/g12/wt10
+1 exists /private/tmp/claude-501/-Users-wido-LocalStorage-GitHub-agentic-tools-m1c/96f72de7-79c7-496c-b717-141b91e84b81/scratchpad/g12/wt11
+1 GONE /private/tmp/claude-501/-Users-wido-LocalStorage-GitHub-agentic-tools-m1c/96f72de7-79c7-496c-b717-141b91e84b81/scratchpad/g12/wt12
+1 GONE /private/tmp/claude-501/-Users-wido-LocalStorage-GitHub-agentic-tools-m1c/96f72de7-79c7-496c-b717-141b91e84b81/scratchpad/g12/wt14
+1 GONE /private/tmp/claude-501/-Users-wido-LocalStorage-GitHub-agentic-tools-m1c/96f72de7-79c7-496c-b717-141b91e84b81/scratchpad/g12/wt15
+1 GONE /private/tmp/claude-501/-Users-wido-LocalStorage-GitHub-agentic-tools-m1c/96f72de7-79c7-496c-b717-141b91e84b81/scratchpad/g12/wt16
+1 GONE /private/tmp/claude-501/-Users-wido-LocalStorage-GitHub-agentic-tools-m1c/96f72de7-79c7-496c-b717-141b91e84b81/scratchpad/g12/wt17
+1 GONE /private/tmp/claude-501/-Users-wido-LocalStorage-GitHub-agentic-tools-m1c/96f72de7-79c7-496c-b717-141b91e84b81/scratchpad/g12/wt18
+1 exists /private/tmp/claude-501/-Users-wido-LocalStorage-GitHub-agentic-tools-m1c/96f72de7-79c7-496c-b717-141b91e84b81/scratchpad/g12/wt19
+1 GONE /private/tmp/claude-501/-Users-wido-LocalStorage-GitHub-agentic-tools-m1c/96f72de7-79c7-496c-b717-141b91e84b81/scratchpad/g12/wt20
+1 GONE /private/tmp/claude-501/-Users-wido-LocalStorage-GitHub-agentic-tools-m1c/96f72de7-79c7-496c-b717-141b91e84b81/scratchpad/g12/wt22
+1 GONE /private/tmp/claude-501/-Users-wido-LocalStorage-GitHub-agentic-tools-m1c/96f72de7-79c7-496c-b717-141b91e84b81/scratchpad/g12/wt24
+1 exists /private/tmp/claude-501/-Users-wido-LocalStorage-GitHub-agentic-tools-m1c/96f72de7-79c7-496c-b717-141b91e84b81/scratchpad/g12/wt25
+1 exists /private/tmp/claude-501/-Users-wido-LocalStorage-GitHub-agentic-tools-m1c/96f72de7-79c7-496c-b717-141b91e84b81/scratchpad/g12/wt5
+1 exists /private/tmp/claude-501/-Users-wido-LocalStorage-GitHub-agentic-tools-m1c/96f72de7-79c7-496c-b717-141b91e84b81/scratchpad/g12/wt6
+1 exists /private/tmp/claude-501/-Users-wido-LocalStorage-GitHub-agentic-tools-m1c/96f72de7-79c7-496c-b717-141b91e84b81/scratchpad/g12/wt7
+1 exists /private/tmp/claude-501/-Users-wido-LocalStorage-GitHub-agentic-tools-m1c/96f72de7-79c7-496c-b717-141b91e84b81/scratchpad/g12/wt8
+1 exists /private/tmp/claude-501/-Users-wido-LocalStorage-GitHub-agentic-tools-m1c/96f72de7-79c7-496c-b717-141b91e84b81/scratchpad/g12/wt9
+1 exists /private/tmp/claude-501/-Users-wido-LocalStorage-GitHub-agentic-tools-m1c/96f72de7-79c7-496c-b717-141b91e84b81/scratchpad/g12/wtb
+1 exists /private/tmp/claude-501/-Users-wido-LocalStorage-GitHub-agentic-tools-m1c/96f72de7-79c7-496c-b717-141b91e84b81/scratchpad/g12/wtd
+1 GONE /private/tmp/claude-501/-Users-wido-LocalStorage-GitHub-agentic-tools-m1c/96f72de7-79c7-496c-b717-141b91e84b81/scratchpad/g12/wtl
+1 GONE /private/tmp/claude-501/-Users-wido-LocalStorage-GitHub-agentic-tools-m1c/96f72de7-79c7-496c-b717-141b91e84b81/scratchpad/g8/wt-slice-a
+
+## app-server ages (etime) summary
+<1d days: 30
+01 days: 32
+02 days: 6
+
+## orphaned fixture processes (ppid 1): sample with temp-root existence
+495 01-21:54:45 root-exists /private/var/folders/jg/c9g5tnhx0c519rr0xfmw86d40000gn/T/tmp.4Hhb5RHimt/repo/artifacts/agents/steward/engine-pins/generation-1-253010b079a46e96f54ab9c1bef255858
+1143 03-19:54:32 root-exists /private/var/folders/jg/c9g5tnhx0c519rr0xfmw86d40000gn/T/tmp.zkg58SHeQ7/agent-fixture/repo/artifacts/agents/steward/engine-pins/generation-1-7b4acfeba154675edba
+4218 03-17:29:26 root-exists /private/var/folders/jg/c9g5tnhx0c519rr0xfmw86d40000gn/T/tmp.DQkZ5hWIIh/agent-fixture/selftest-repo/artifacts/agents/steward/engine-pins/generation-1-63ab39b0c3
+9543 03-17:29:09 root-exists /private/var/folders/jg/c9g5tnhx0c519rr0xfmw86d40000gn/T/tmp.a4vPoVxrgk/agent-fixture/steward-repo/artifacts/agents/steward/engine-pins/generation-1-63ab39b0c31
+10840 02-10:35:23 root-exists /private/var/folders/jg/c9g5tnhx0c519rr0xfmw86d40000gn/T/tmp.a6LftYXN7S/agent-fixture/budget-dispatch-repo/artifacts/agents/steward/engine-pins/generation-1-181
+13370 03-17:28:45 root-exists /private/var/folders/jg/c9g5tnhx0c519rr0xfmw86d40000gn/T/tmp.gQuMrRVSpW/node-repo/artifacts/agents/steward/engine-pins/generation-1-63ab39b0c31fde1fc68106189830
+14166 10:56:22 root-exists bash /var/folders/jg/c9g5tnhx0c519rr0xfmw86d40000gn/T//metasystem-supervision-hook-fixture.cA5Bed/line-root/scripts/agents/supervision-hook.sh claude stop --inv
+15334 03-19:46:13 root-exists /private/var/folders/jg/c9g5tnhx0c519rr0xfmw86d40000gn/T/tmp.rvXxHWGgkJ/agent-fixture/selftest-repo/artifacts/agents/steward/engine-pins/generation-1-7b4acfeba1
+15607 01-04:12:23 root-exists /private/var/folders/jg/c9g5tnhx0c519rr0xfmw86d40000gn/T/tmp.1I14Sfv2aw/agent-fixture/repo/artifacts/agents/steward/engine-pins/generation-1-9d97246a8c3d82c6853
+15799 01-05:59:32 root-exists /private/var/folders/jg/c9g5tnhx0c519rr0xfmw86d40000gn/T/tmp.XePh5vN8Zp/agent-fixture/budget-dispatch-repo/artifacts/agents/steward/engine-pins/generation-1-8ef
+16024 01-22:11:24 root-exists /private/var/folders/jg/c9g5tnhx0c519rr0xfmw86d40000gn/T/tmp.IV2wketoQg/operator-repo/metasystem/artifacts/agents/steward/engine-pins/generation-1-385516beaea99
+16040 02-10:35:08 root-exists /private/var/folders/jg/c9g5tnhx0c519rr0xfmw86d40000gn/T/tmp.a6LftYXN7S/agent-fixture/repo/artifacts/agents/steward/engine-pins/generation-1-181f7d2977bee2f0011
+16757 02-10:50:51 root-exists /private/var/folders/jg/c9g5tnhx0c519rr0xfmw86d40000gn/T/tmp.qIwqT5FRmK/agent-fixture/repo/artifacts/agents/steward/engine-pins/generation-1-c242be5b8cd356862df
+17039 01-05:56:09 root-exists /private/var/folders/jg/c9g5tnhx0c519rr0xfmw86d40000gn/T/tmp.XLvKzDZRdM/agent-fixture/repo/bin/metasystem util hold --tag mission-lease-tag
+19181 01-21:54:07 root-exists /private/var/folders/jg/c9g5tnhx0c519rr0xfmw86d40000gn/T/tmp.nYEicWHYZ9/repo/artifacts/agents/steward/engine-pins/generation-2-4d6a56f06066a6d563257c252e0a0e943
+20494 01-05:55:59 root-exists /private/var/folders/jg/c9g5tnhx0c519rr0xfmw86d40000gn/T/tmp.ujnFgP9Liw/agent-fixture/repo/artifacts/agents/steward/engine-pins/generation-1-8efc809073f11e3a538
+20596 01-22:11:15 root-exists /private/var/folders/jg/c9g5tnhx0c519rr0xfmw86d40000gn/T/tmp.hjSRJeCRXG/repo/artifacts/agents/steward/engine-pins/generation-1-385516beaea994ec96c0668e51d85c999
+21296 03-17:37:24 root-exists /private/var/folders/jg/c9g5tnhx0c519rr0xfmw86d40000gn/T/tmp.BoNOYwBt3W/agent-fixture/budget-dispatch-repo/artifacts/agents/steward/engine-pins/generation-1-63a
+24272 01-05:59:12 root-exists /private/var/folders/jg/c9g5tnhx0c519rr0xfmw86d40000gn/T/tmp.O4upDxFIIg/agent-fixture/repo/artifacts/agents/steward/engine-pins/generation-1-8efc809073f11e3a538
+24716 03-19:45:55 root-exists /private/var/folders/jg/c9g5tnhx0c519rr0xfmw86d40000gn/T/tmp.DYXklEdTWS/agent-fixture/steward-repo/artifacts/agents/steward/engine-pins/generation-1-7b4acfeba15
+24748 02-10:54:34 root-exists /private/var/folders/jg/c9g5tnhx0c519rr0xfmw86d40000gn/T/tmp.dUHBCunOep/agent-fixture/repo/artifacts/agents/steward/engine-pins/generation-1-c242be5b8cd356862df
+25320 01-05:47:13 root-exists /private/var/folders/jg/c9g5tnhx0c519rr0xfmw86d40000gn/T/tmp.WCkfsCFGeo/agent-fixture/repo/artifacts/agents/steward/engine-pins/generation-1-8efc809073f11e3a538
+26117 03-17:37:12 root-exists /private/var/folders/jg/c9g5tnhx0c519rr0xfmw86d40000gn/T/tmp.BoNOYwBt3W/agent-fixture/repo/artifacts/agents/steward/engine-pins/generation-1-63ab39b0c31fde1fc68
+26906 08:10:24 root-exists /private/var/folders/jg/c9g5tnhx0c519rr0xfmw86d40000gn/T/tmp.chsPdptHmX/repo/artifacts/agents/steward/engine-pins/generation-1-d2c2ee9f664bbbfad958fbe9d6cc76949
+27815 01-05:51:38 root-exists /private/var/folders/jg/c9g5tnhx0c519rr0xfmw86d40000gn/T/tmp.0mT9bTAX0K/agent-fixture/budget-dispatch-repo/artifacts/agents/steward/engine-pins/generation-1-8ef
+30988 01-22:41:56 root-exists /private/var/folders/jg/c9g5tnhx0c519rr0xfmw86d40000gn/T/tmp.xNJgmWYYr7/repo/artifacts/agents/steward/engine-pins/generation-1-ebf880eb68638a65a3333d5e2815d680b
+31675 08:15:41 root-exists /private/var/folders/jg/c9g5tnhx0c519rr0xfmw86d40000gn/T/tmp.JsQVGqUTvf/repo/artifacts/agents/steward/engine-pins/generation-1-d2c2ee9f664bbbfad958fbe9d6cc76949
+33235 01-04:10:51 root-exists /private/var/folders/jg/c9g5tnhx0c519rr0xfmw86d40000gn/T/tmp.mNXdA9acLL/agent-fixture/repo/artifacts/agents/steward/engine-pins/generation-1-9d97246a8c3d82c6853
+33762 01-22:10:35 root-exists /private/var/folders/jg/c9g5tnhx0c519rr0xfmw86d40000gn/T/tmp.QvCMv1FicL/repo/artifacts/agents/steward/engine-pins/generation-2-abe2f0d21a2db6fe8e03f046461360880
+34457 13:17:07 root-exists /private/var/folders/jg/c9g5tnhx0c519rr0xfmw86d40000gn/T/tmp.ep94uszpW4/repo/artifacts/agents/steward/engine-pins/generation-1-18fdefd772b21a653f84ca211ffebcf22
+35932 01-05:55:28 root-exists /private/var/folders/jg/c9g5tnhx0c519rr0xfmw86d40000gn/T/tmp.Oq9ZGFT6pd/agent-fixture/repo/artifacts/agents/steward/engine-pins/generation-1-8efc809073f11e3a538
+36080 01-05:51:21 root-exists /private/var/folders/jg/c9g5tnhx0c519rr0xfmw86d40000gn/T/tmp.0mT9bTAX0K/agent-fixture/repo/artifacts/agents/steward/engine-pins/generation-1-8efc809073f11e3a538
+36305 01-11:02:44 root-exists /private/var/folders/jg/c9g5tnhx0c519rr0xfmw86d40000gn/T/tmp.7nDoztMZi7/operator-repo/metasystem/artifacts/agents/steward/engine-pins/generation-1-2414143f8345e
+36586 08:23:55 no-root /Users/wido/LocalStorage/GitHub/agentic-tools-m1b/metasystem/artifacts/agents/worktrees/steward-19f943bedae6b2ef/metasystem/bin/metasystem channel fake serve --
+36818 08:11:58 root-exists /private/var/folders/jg/c9g5tnhx0c519rr0xfmw86d40000gn/T/tmp.UaCirriDDf/repo/artifacts/agents/steward/engine-pins/generation-2-23c7ccc6075c40e8235eaf54abbbfbc41
+38036 01-11:02:35 root-exists /private/var/folders/jg/c9g5tnhx0c519rr0xfmw86d40000gn/T/tmp.3SOWEblbjX/repo/artifacts/agents/steward/engine-pins/generation-1-2414143f8345e6711031a8ae4737637c8
+39499 02-10:50:02 root-exists /private/var/folders/jg/c9g5tnhx0c519rr0xfmw86d40000gn/T/tmp.j5cWqUlIrJ/agent-fixture/runner-repo/artifacts/agents/steward/engine-pins/generation-1-c242be5b8cd3
+40065 03-19:45:27 root-exists /private/var/folders/jg/c9g5tnhx0c519rr0xfmw86d40000gn/T/tmp.CHI2miiTbL/node-repo/artifacts/agents/steward/engine-pins/generation-1-7b4acfeba154675edba4d2ed5c88
+44709 01-05:42:43 root-exists /private/var/folders/jg/c9g5tnhx0c519rr0xfmw86d40000gn/T/tmp.5C8grUaGLk/agent-fixture/budget-dispatch-repo/artifacts/agents/steward/engine-pins/generation-1-8ef
+46396 01-18:44:34 root-exists /private/var/folders/jg/c9g5tnhx0c519rr0xfmw86d40000gn/T/tmp.W98qhhJks5/operator-repo/metasystem/artifacts/agents/steward/engine-pins/generation-1-816c0dd12afa8
+
+## orphan kinds
+sed: 1: "s|.*/(bin/metasystem|ar ...": RE error: parentheses not balanced
+
+## process shapes by first token (count, rss MB sum)
+  185    7825MB /Users/wido/.cache/codex-runtimes/codex-primary-runtime/dependencies/node/bin/node /Users/wido/.codex/plugins/cache/openai-curated-remote/codex-security/0.1.24/scripts/../mcp/server.mjs
+  185    2131MB /Applications/ChatGPT.app/Contents/Resources/cua_node/bin/node_repl
+   70    8118MB codex
+   70    1275MB /opt/homebrew/Caskroom/codex/0.154.0/bin/codex-code-mode-host
+   41    1470MB /opt/homebrew/Cellar/node/25.9.0_2/bin/node /Users/wido/.claude/plugins/cache/openai-codex/codex/1.0.6/scripts/app-server-broker.mjs
+   30    5388MB /Applications/Google
+   26     892MB /opt/homebrew/Cellar/node/26.8.2/bin/node /Users/wido/.claude/plugins/cache/openai-codex/codex/1.0.6/scripts/app-server-broker.mjs
+   24     193MB /System/Library/Frameworks/Metal.framework/Versions/A/XPCServices/MTLCompilerService.xpc/Contents/MacOS/MTLCompilerService
+   22      62MB /usr/sbin/distnoted
+   12      30MB /System/Library/Frameworks/NetFS.framework/Versions/A/XPCServices/PlugInLibraryService.xpc/Contents/MacOS/PlugInLibraryService
+   10      17MB -zsh
+    9      73MB login
+    8     471MB /Library/Application
+    8      35MB /bin/zsh
+    7     425MB /Applications/Utilities/Adobe
+    7     216MB /System/Library/PrivateFrameworks/SafariPlatformSupport.framework/Versions/A/XPCServices/com.apple.SafariPlatformSupport.Helper.xpc/Contents/MacOS/com.apple.SafariPlatformSupport.Helper
+    6      53MB /System/Library/PrivateFrameworks/CloudTelemetry.framework/Versions/A/XPCServices/CloudTelemetryService.xpc/Contents/MacOS/CloudTelemetryService
+    6      14MB bash
+    5    3003MB claude
+    5     372MB /System/Library/Frameworks/AppKit.framework/Versions/C/XPCServices/com.apple.appkit.xpc.openAndSavePanelService.xpc/Contents/MacOS/com.apple.appkit.xpc.openAndSavePanelService
+    5      89MB /System/Library/Frameworks/QuickLookUI.framework/Versions/A/XPCServices/QuickLookUIService.xpc/Contents/MacOS/QuickLookUIService
+    5      67MB /usr/libexec/trustd
+    5      43MB /System/Library/Frameworks/ExtensionFoundation.framework/Versions/A/XPCServices/extensionkitservice.xpc/Contents/MacOS/extensionkitservice
+    5      24MB /usr/sbin/cfprefsd
+    5      15MB caffeinate
+
+## codex-family shapes
+  185    7825MB  /Users/wido/.cache/codex-runtimes/codex-primary-runtime/dependencies/node/bin/node /Users/wido/.codex/plugins/cache/openai-curated-remote/codex-security/0.1.24/scripts/../mcp/server.mjs
+   70    1275MB  /opt/homebrew/Caskroom/codex/0.154.0/bin/codex-code-mode-host
+   68    7698MB  codex app-server
+   41    1470MB  /opt/homebrew/Cellar/node/25.9.0_2/bin/node /Users/wido/.claude/plugins/cache/openai-codex/codex/1.0.6/scripts/app-server-broker.mjs serve
+   26     892MB  /opt/homebrew/Cellar/node/26.8.2/bin/node /Users/wido/.claude/plugins/cache/openai-codex/codex/1.0.6/scripts/app-server-broker.mjs serve
+   12      30MB  /System/Library/Frameworks/NetFS.framework/Versions/A/XPCServices/PlugInLibraryService.xpc/Contents/MacOS/PlugInLibraryService
+    2       6MB  /bin/zsh -c source /Users/wido/.claude/shell-snapshots/snapshot-zsh-1789192882923-1w9vbn.sh 2>/dev/null
+    2       5MB  /bin/zsh -c source /Users/wido/.claude/shell-snapshots/snapshot-zsh-1789227576688-oeuhtw.sh 2>/dev/null
+    1     214MB  codex exec resume
+    1     207MB  codex
+    1     151MB  /Applications/Utilities/LogiPluginService.app/Contents/MacOS/LogiPluginService
+    1      77MB  /Applications/\040^NWhatsApp.app/Contents/PlugIns/ServiceExtension.appex/Contents/MacOS/ServiceExtension -AppleLanguages ("en-US", "nl-NL")
+    1      52MB  /System/Applications/Weather.app/Contents/PlugIns/WeatherWidget.appex/Contents/MacOS/WeatherWidget -LaunchArguments eyJlbmhhbmNlZFNlY3VyaXR5IjpmYWxzZSwidHlwZSI6MSwic2VydmljZU5hbWUiOiJjb20uYXBwbGUud2VhdGhlci53aWRnZXQifQ==
+    1      48MB  /opt/homebrew/Cellar/node/26.8.2/bin/node /Users/wido/.claude/plugins/cache/openai-codex/codex/1.0.6/scripts/codex-companion.mjs task-worker
+    1      37MB  /System/Applications/Photos.app/Contents/PlugIns/PhotosReliveWidget.appex/Contents/MacOS/PhotosReliveWidget -LaunchArguments eyJ0eXBlIjoxLCJlbmhhbmNlZFNlY3VyaXR5IjpmYWxzZSwic2VydmljZU5hbWUiOiJjb20uYXBwbGUuUGhvdG9zLlBob3Rvc1JlbGl2ZVdpZGdldCJ9
+    1      36MB  /System/Applications/Shortcuts.app/Contents/PlugIns/ShortcutsWidgetExtension.appex/Contents/MacOS/ShortcutsWidgetExtension -LaunchArguments eyJlbmhhbmNlZFNlY3VyaXR5IjpmYWxzZSwidHlwZSI6MSwic2VydmljZU5hbWUiOiJjb20uYXBwbGUuc2hvcnRjdXRzLlNob3J0Y3V0c1dpZGdldCJ9
+    1      34MB  /Library/Application Support/Adobe/Adobe Desktop Common/IPCBox/AdobeIPCBroker.app/Contents/MacOS/AdobeIPCBroker -launchedbyvulcan
+    1      27MB  /Applications/Utilities/Adobe Sync/CoreSync/Core Sync.app/Contents/PlugIns/ACCFinderSync.appex/Contents/MacOS/ACCFinderSync -AppleLanguages ("en-US",
+    1      26MB  /System/Applications/Home.app/Contents/PlugIns/HomeEnergyWidgetsExtension.appex/Contents/MacOS/HomeEnergyWidgetsExtension -LaunchArguments eyJ0eXBlIjoxLCJlbmhhbmNlZFNlY3VyaXR5IjpmYWxzZSwic2VydmljZU5hbWUiOiJjb20uYXBwbGUuSG9tZS5Ib21lRW5lcmd5V2lkZ2V0cyJ9
+    1      26MB  /Library/Application Support/Adobe/Adobe OS Extension/Creative Cloud.app/Contents/PlugIns/Adobe
+
+## one broker tree
+broker 289
+  289     1 09:41:21  32576 /opt/homebrew/Cellar/node/26.8.2/bin/node /Users/wido/.claude/plugins/cache/openai-codex/codex/1.0.6/scripts/app-server-broker.mjs serve --endpoint unix:/var/folders/jg/c9g5tnhx0c519rr0xfmw86d40000gn/T/cxc-ciavuZ/broker.so
+children:
+  315   289 09:41:21 101568 codex app-server
+      819   315 09:41:21  11648 /Applications/ChatGPT.app/Contents/Resources/cua_node/bin/node_repl
+     1069   315 09:41:20  40240 /Users/wido/.cache/codex-runtimes/codex-primary-runtime/dependencies/node/bin/node /Users/wido/.codex/plugins/cache/openai-curated-remote/codex-security/0.1.24/scripts/../mcp/server.mjs --stdio
+    12787   315 09:41:07  16832 /opt/homebrew/Caskroom/codex/0.154.0/bin/codex-code-mode-host
+
+## brokers whose parent is gone (ppid 1)
+      67
+
+## broker parents
+    1 09-23:33:58 /sbin/launchd
+
+## orphan stewards: args of three
+  495 01-22:00:28   0.0  28800 T/tmp.4Hhb5RHimt/repo/artifacts/agents/steward/engine-pins/generation-1-253010b079a46e96f54ab9c1bef25585801bc1ae9169bf1933ec09fdf22e23dd steward run --repo T/tmp.4Hhb5RHimt/repo
+ 1143 03-20:00:15   0.0  28608 T/tmp.zkg58SHeQ7/agent-fixture/repo/artifacts/agents/steward/engine-pins/generation-1-7b4acfeba154675edba4d2ed5c888ca492b7a661efbc7a101a413180e404ac1d steward run --repo T/tmp.zkg58SHeQ7/agent-fixture/repo
+16024 01-22:17:07   0.0  30560 T/tmp.IV2wketoQg/operator-repo/metasystem/artifacts/agents/steward/engine-pins/generation-1-385516beaea994ec96c0668e51d85c99922e52341a31f1ebff8e1f3d713fa4f0 steward run --repo T/tmp.IV2wketoQg/operator-repo/metasystem
+
+## orphan stewards: grandchild shapes
+   1 util hold --tag mission-lease-tag
+   1 1 bash /var/folders/jg/c9g5tnhx0c519rr0xfmw86d40000gn/T/tmp.aJBkFzVqld/repo/scripts/agents/hosts/fake.sh start-turn
+   1 1 /private/var/folders/jg/c9g5tnhx0c519rr0xfmw86d40000gn/T/tmp.zkg58SHeQ7/agent-fixture/repo/artifacts/agents/steward/engine-pins/generation-1-7b4acfeba154675edba4d2ed5c888ca492b7a661efbc7a101a413180e404ac1d steward run
+   1 1 /private/var/folders/jg/c9g5tnhx0c519rr0xfmw86d40000gn/T/tmp.zkg58SHeQ7/agent-fixture/budget-dispatch-repo/artifacts/agents/steward/engine-pins/generation-1-7b4acfeba154675edba4d2ed5c888ca492b7a661efbc7a101a413180e404ac1d steward run
+   1 1 /private/var/folders/jg/c9g5tnhx0c519rr0xfmw86d40000gn/T/tmp.yb4t1dndGU/operator-repo/metasystem/artifacts/agents/steward/engine-pins/generation-1-d2c2ee9f664bbbfad958fbe9d6cc769491bc4fcce6731d5c6ea3c3791ba7af82 steward run
+   1 1 /private/var/folders/jg/c9g5tnhx0c519rr0xfmw86d40000gn/T/tmp.yCSg6niUoh/operator-repo/metasystem/artifacts/agents/steward/engine-pins/generation-1-816c0dd12afa83987d62463ea3cd85c01218f3ae1deb130ad2f96bed51d5a070 steward run
+   1 1 /private/var/folders/jg/c9g5tnhx0c519rr0xfmw86d40000gn/T/tmp.xNJgmWYYr7/repo/artifacts/agents/steward/engine-pins/generation-1-ebf880eb68638a65a3333d5e2815d680b01ffbdf14080b95475ad4c630562e94 steward run
+   1 1 /private/var/folders/jg/c9g5tnhx0c519rr0xfmw86d40000gn/T/tmp.wClmEpiWPI/agent-fixture/repo/artifacts/agents/steward/engine-pins/generation-1-c242be5b8cd356862dfdedab84b727c28bf95b54cc5fcf48de44e7ebb4a05d6d steward run
+   1 1 /private/var/folders/jg/c9g5tnhx0c519rr0xfmw86d40000gn/T/tmp.ujnFgP9Liw/agent-fixture/repo/artifacts/agents/steward/engine-pins/generation-1-8efc809073f11e3a538885b3304571b179f9ef8ae29d209dc1e2aa663e2123e4 steward run
+   1 1 /private/var/folders/jg/c9g5tnhx0c519rr0xfmw86d40000gn/T/tmp.tg40ffOSSh/agent-fixture/repo/artifacts/agents/steward/engine-pins/generation-1-c242be5b8cd356862dfdedab84b727c28bf95b54cc5fcf48de44e7ebb4a05d6d steward run
+
+## supervision-hook orphans
+       1
+
+## indexing/scanning processes
+ 37.5  21488 02-11:42:22 /System/Library/Frameworks/CoreServices.framework/Versions/A/Frameworks/FSEvents.framework/Versions/A/Support/fseventsd
+ 17.2 244432 09-23:32:40 /System/Library/PrivateFrameworks/SkyLight.framework/Resources/WindowServer -daemon
+  9.5 937280 09-23:32:33 /System/Library/Frameworks/CoreServices.framework/Versions/A/Frameworks/Metadata.framework/Versions/A/Support/mds_stores
+  7.6  61920 09-23:32:40 /System/Library/Frameworks/CoreServices.framework/Versions/A/Frameworks/Metadata.framework/Versions/A/Support/mds
+  6.1  52320    04:35:06 /System/Library/PrivateFrameworks/XprotectFramework.framework/Versions/A/XPCServices/XprotectService.xpc/Contents/MacOS/Xprot
+  1.9  41600    04:35:10 /usr/libexec/syspolicyd
+  0.0  27248       01:29 /System/Library/Frameworks/CoreServices.framework/Versions/A/Frameworks/Metadata.framework/Versions/A/Support/mdworker_shared
+  0.0  21168 09-23:32:13 /System/Library/Frameworks/CoreServices.framework/Versions/A/Frameworks/Metadata.framework/Versions/A/Support/mdbulkimport -s
+  0.0  14816    04:35:08 /System/Library/PrivateFrameworks/XprotectFramework.framework/Versions/A/XPCServices/XProtectBridgeService.xpc/Contents/MacOS
+  0.0  13856 03-22:01:33 /System/Library/Frameworks/CoreServices.framework/Versions/A/Frameworks/Metadata.framework/Versions/A/Support/mds_stores
+  0.0  12496       00:16 /System/Library/Frameworks/CoreServices.framework/Versions/A/Frameworks/Metadata.framework/Versions/A/Support/mdworker_shared
+  0.0   8672 09-23:32:40 /usr/libexec/xprotectd
+
+## spotlight status for /private/var/folders and the checkouts
+/:
+	Indexing enabled. 
+ls: /Users/wido/LocalStorage/GitHub/agentic-tools-m1e/.metadata_never_index: No such file or directory
+
+## mdworker open files under var/folders or checkouts (sample)
+   2 /private/var/folders/jg/c9g5tnhx0c519rr0xfmw86d40000gn/0/com.apple.LaunchServices.dv/com.apple.LaunchServices-20971545-v2.csstore
+
+## top CPU now
+ 88.0  98432       01:31 /Applications/Utilities/Adobe Creative Cloud/ACC/Creative Cloud Helper.app/Contents/MacOS/Creative Cloud Helper --remoteApple
+ 64.8  27200    12:02:07 /bin/zsh -c source /Users/wido/.claude/shell-snapshots/snapshot-zsh-1789192875068-akvdz6.sh 2>/dev/null || true && export COD
+ 35.5   2368       00:10 /usr/bin/find -dx . -fstype local -type f -mtime -3
+ 23.5 244448 09-23:32:42 /System/Library/PrivateFrameworks/SkyLight.framework/Resources/WindowServer -daemon
+ 11.3 484848 02-15:12:55 claude --allow-dangerously-skip-permissions
+ 10.2 202848 09-23:32:12 /System/Applications/Utilities/Terminal.app/Contents/MacOS/Terminal
+  9.5 664240       05:14 /tmp/seat-u3a-tmp/go-build1954469823/b178/metasystem.test -test.paniconexit0 -test.count=1 -test.timeout=40m0s
+  9.0 658800 03-01:16:25 claude --allow-dangerously-skip-permissions
+  8.5  24048       00:01 (metasystem)
+  8.2 528656 09-23:32:12 /Applications/superwhisper.app/Contents/MacOS/superwhisper
+  6.1 690128 03-01:16:21 claude --allow-dangerously-skip-permissions
+  5.2  80848 09-23:34:00 /sbin/launchd
+
+## count of go build/test/link processes
+       1
+
+## reap of fixture orphans by m1e, 2026-09-15T07:01:33Z
+load before: { 7.72 10.22 14.79 }
+candidates:      163 processes, 4997 MB rss
+  41 /opt/homebrew/Cellar/node/25.9.0_2/bin/node /Users/wido/.claude/plugins/cache/openai-codex/codex/1.0.6/scripts/app-server-broker.mjs serve
+  40 repo/ steward run
+  25 /opt/homebrew/Cellar/node/26.8.2/bin/node /Users/wido/.claude/plugins/cache/openai-codex/codex/1.0.6/scripts/app-server-broker.mjs serve
+  24 agent-fixture/repo/ steward run
+   9 operator-repo/metasystem/ steward run
+   7 agent-fixture/budget-dispatch-repo/ steward run
+   4 agent-fixture/runner-repo/ steward run
+   3 node-repo/ steward run
+survivors after TERM: 0
+still alive: 0
+load after 45s: { 7.87 10.09 14.47 }
+
+## CORRECTION 2026-09-15T07:03:42Z: the reap block above killed nothing (zsh did not word-split the pid list) and its candidate filter also matched Codex brokers by their /T/ socket path. Redone under bash with a fixture-only filter:
+orphan stewards alive before: 109
+load before: { 7.52 9.41 13.84 }
+candidates: 97 processes,  MB rss candidates: 97 processes,  MB rss
+  40 repo/ steward run
+  24 agent-fixture/repo/ steward run
+   9 operator-repo/metasystem/ steward run
+   7 agent-fixture/budget-dispatch-repo/ steward run
+   4 agent-fixture/runner-repo/ steward run
+   3 node-repo/ steward run
+   3 agent-fixture/steward-repo/ steward run
+   3 agent-fixture/selftest-repo/ steward run
+survivors after TERM: 0
+still alive: 0
+orphan stewards alive after: 15
+brokers alive after (untouched): 72
+load after 40s: { 6.01 8.70 13.32 }
+
+## late finds by m1b, reaped 2026-09-15T07:08:32Z
+16685     1 05-01:01:17 107712 /Users/wido/LocalStorage/GitHub/agentic-tools-m1b/artifacts/agents/steward/engine-pins/generation-1-64353f7705cf73623175a32be5f029ea3119263e6255329a58c03d79e0c3b27b steward run --repo /User
+36586     1 08:46:11  19872 /Users/wido/LocalStorage/GitHub/agentic-tools-m1b/metasystem/artifacts/agents/worktrees/steward-19f943bedae6b2ef/metasystem/bin/metasystem channel fake serve --dir /private/tmp/beds-report-r3-
+16685 ended
+36586 ended
+other fake servers under /private/tmp or T with parent 1: 0
