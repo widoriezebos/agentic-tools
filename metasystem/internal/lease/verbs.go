@@ -16,6 +16,14 @@ import (
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/steward"
 )
 
+var placeholderSession = regexp.MustCompile(`^session-[0-9]+$`)
+
+var replacementStartSources = map[string]bool{
+	"resume":  true,
+	"clear":   true,
+	"compact": true,
+}
+
 // resolveRoot canonicalises the checkout root (absolute, symlinks resolved) so
 // every lease path derives from one spelling of it.
 func resolveRoot(root string) string {
@@ -211,6 +219,57 @@ func AnnounceWithProofAt(stateRoot, metasystemRoot, session string, pid, start, 
 	return path, nil
 }
 
+// AssociateSession binds a runtime session to an existing main announcement.
+// Session starts may replace an older binding only for lifecycle sources that
+// explicitly create a successor session; late Stop and End events cannot roll
+// the binding back.
+func AssociateSession(root, mainID, runtimeSession, event, startSource string) error {
+	root = resolveRoot(root)
+	if !mainIDPattern.MatchString(mainID) {
+		return fmt.Errorf("main id is invalid")
+	}
+	if runtimeSession == "" {
+		return fmt.Errorf("runtime session is required")
+	}
+	switch event {
+	case "start", "stop", "end":
+	default:
+		return fmt.Errorf("association event must be start, stop, or end")
+	}
+	if placeholderSession.MatchString(runtimeSession) {
+		return nil
+	}
+	lock, err := acquireBounded(registryLockPath(root), "lease")
+	if err != nil {
+		return err
+	}
+	defer lock.release()
+	records, err := readAnnouncements(root, false)
+	if err != nil {
+		return err
+	}
+	for _, rec := range records {
+		if rec.Ann.MainId != mainID {
+			continue
+		}
+		announcement := rec.Ann
+		switch {
+		case announcement.RuntimeSession == "":
+			announcement.RuntimeSession = runtimeSession
+			announcement.PreviousRuntimeSession = ""
+		case announcement.RuntimeSession == runtimeSession:
+		case event == "start" && replacementStartSources[startSource]:
+			announcement.PreviousRuntimeSession = announcement.RuntimeSession
+			announcement.RuntimeSession = runtimeSession
+		default:
+			return nil
+		}
+		announcement.SessionAssociatedAt = nowStamp()
+		return atomicJSON(rec.Path, &announcement)
+	}
+	return fmt.Errorf("main announcement %s was not found", mainID)
+}
+
 // Retire removes this process's announcement.
 func Retire(root, session string, pid, start int64) error {
 	root = resolveRoot(root)
@@ -224,7 +283,9 @@ func Retire(root, session string, pid, start int64) error {
 		return err
 	}
 	for _, rec := range records {
-		if rec.Ann.Pid == pid && rec.Ann.PidStartedAt == start && rec.Ann.SessionId == session {
+		matchesSession := rec.Ann.RuntimeSession == session ||
+			(rec.Ann.RuntimeSession == "" && rec.Ann.SessionId == session)
+		if rec.Ann.Pid == pid && rec.Ann.PidStartedAt == start && matchesSession {
 			if err := os.Remove(rec.Path); err != nil && !os.IsNotExist(err) {
 				return err
 			}

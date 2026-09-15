@@ -69,6 +69,9 @@ func runUp(args []string) int {
 	repo := pathFlag(flags, "repo", ".", "repository or path inside it")
 	metasystemRoot := flags.String("metasystem-root", "", "metasystem checkout root (internal compatibility option)")
 	session := flags.String("session", "", "session id (defaults to METASYSTEM_SESSION_ID or session-<pid>)")
+	runtimeSession := flags.String("runtime-session", "", "runtime session associated with this lifecycle event")
+	noRuntimeSession := flags.Bool("no-runtime-session", false, "record that this lifecycle event supplied no runtime session")
+	startSource := flags.String("start-source", "", "session start source")
 	pid := flags.Int64("pid", 0, "explicit session pid fallback; requires --start-time")
 	start := flags.Int64("start-time", 0, "explicit session start epoch fallback; requires --pid")
 	tag := flags.String("tag", "", "session instance tag")
@@ -84,7 +87,7 @@ func runUp(args []string) int {
 	if flags.Parse(args) != nil {
 		return 2
 	}
-	if flags.NArg() != 0 || *maxCap < 0 {
+	if flags.NArg() != 0 || *maxCap < 0 || (*runtimeSession != "" && *noRuntimeSession) {
 		fmt.Fprintln(os.Stderr, "up: flags are invalid")
 		return 2
 	}
@@ -126,6 +129,7 @@ func runUp(args []string) int {
 	options := up.Options{
 		Root: scope, MetasystemRoot: root, Scope: scope, Binary: binary, Session: *session, Pid: *pid,
 		StartTime: *start, Tag: *tag, Runtime: *runtimeName, OwnerLineage: *ownerLineage,
+		RuntimeSession: *runtimeSession, NoRuntimeSession: *noRuntimeSession, StartSource: *startSource,
 		MaxCap: *maxCap, RecoverOnly: *recoverOnly, IfDown: *ifDown, WaitScaleMilli: scale,
 		CallerPid: int64(os.Getppid()),
 	}

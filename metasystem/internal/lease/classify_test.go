@@ -187,6 +187,18 @@ func TestReadAnnouncementsSkipsIncompleteButRefusesTampered(t *testing.T) {
 	}
 }
 
+func TestLegacyPlaceholderGrammarUnassociated(t *testing.T) {
+	for _, test := range []struct{ session, want string }{
+		{"session-1", ""},
+		{"session-987654321", ""},
+		{"550e8400-e29b-41d4-a716-446655440000", "550e8400-e29b-41d4-a716-446655440000"},
+	} {
+		if got := (Announcement{SessionId: test.session}).EffectiveRuntimeSession(); got != test.want {
+			t.Fatalf("effective runtime session for %q = %q, want %q", test.session, got, test.want)
+		}
+	}
+}
+
 // A leaked fixture in a non-fake checkout
 // refuses CLASSIFICATION itself — the lease's every decision, takeover
 // included, sits behind this gate.

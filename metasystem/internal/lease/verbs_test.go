@@ -6,9 +6,23 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/steward"
 )
+
+func readAnnouncement(t *testing.T, path string) Announcement {
+	t.Helper()
+	data, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var announcement Announcement
+	if err := json.Unmarshal(data, &announcement); err != nil {
+		t.Fatal(err)
+	}
+	return announcement
+}
 
 // announceSelf announces this test process as a main and returns its mainId.
 func announceSelf(t *testing.T, root string) string {
@@ -267,6 +281,108 @@ func TestRetireRemovesAnnouncement(t *testing.T) {
 	}
 	if len(recs) != 0 {
 		t.Fatalf("retire should remove the announcement, %d remain", len(recs))
+	}
+}
+
+func TestAssociateSessionTransitions(t *testing.T) {
+	root := t.TempDir()
+	self, started := int64(os.Getpid()), selfStart(t)
+	path, err := Announce(root, "session-999999", self, started, "tag", "fake", "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	announcement := readAnnouncement(t, path)
+	if announcement.RuntimeSession != "" {
+		t.Fatalf("placeholder mint associated a runtime session: %+v", announcement)
+	}
+	oldClock := clock
+	t.Cleanup(func() { clock = oldClock })
+	clock = func() time.Time { return time.Date(2026, 9, 15, 10, 0, 0, 0, time.UTC) }
+	if err := AssociateSession(root, announcement.MainId, "runtime-a", "stop", ""); err != nil {
+		t.Fatal(err)
+	}
+	first := readAnnouncement(t, path)
+	clock = func() time.Time { return time.Date(2026, 9, 15, 10, 1, 0, 0, time.UTC) }
+	if err := AssociateSession(root, announcement.MainId, "runtime-a", "end", ""); err != nil {
+		t.Fatal(err)
+	}
+	refreshed := readAnnouncement(t, path)
+	if refreshed.RuntimeSession != "runtime-a" || refreshed.PreviousRuntimeSession != "" || refreshed.SessionAssociatedAt == first.SessionAssociatedAt {
+		t.Fatalf("same-session association did not refresh only its stamp: before=%+v after=%+v", first, refreshed)
+	}
+	for _, event := range []string{"stop", "end"} {
+		if err := AssociateSession(root, announcement.MainId, "runtime-old", event, ""); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if got := readAnnouncement(t, path); got != refreshed {
+		t.Fatalf("late lifecycle event changed the association: %+v", got)
+	}
+	if err := AssociateSession(root, announcement.MainId, "runtime-b", "start", "resume"); err != nil {
+		t.Fatal(err)
+	}
+	replaced := readAnnouncement(t, path)
+	if replaced.RuntimeSession != "runtime-b" || replaced.PreviousRuntimeSession != "runtime-a" {
+		t.Fatalf("resume did not replace the association monotonically: %+v", replaced)
+	}
+	if err := AssociateSession(root, announcement.MainId, "session-12345", "start", "clear"); err != nil {
+		t.Fatal(err)
+	}
+	if got := readAnnouncement(t, path); got != replaced {
+		t.Fatalf("placeholder runtime session changed the association: %+v", got)
+	}
+}
+
+func TestAssociateSessionRetireMatchesCurrent(t *testing.T) {
+	root := t.TempDir()
+	self, started := int64(os.Getpid()), selfStart(t)
+	path, err := Announce(root, "legacy-session", self, started, "tag", "fake", "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	announcement := readAnnouncement(t, path)
+	if err := AssociateSession(root, announcement.MainId, "current-session", "start", "resume"); err != nil {
+		t.Fatal(err)
+	}
+	if err := Retire(root, "legacy-session", self, started); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := os.Stat(path); err != nil {
+		t.Fatalf("stale session retired the live announcement: %v", err)
+	}
+	if err := Retire(root, "current-session", self, started); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := os.Stat(path); !os.IsNotExist(err) {
+		t.Fatalf("current session did not retire its announcement: %v", err)
+	}
+	legacyPath, err := Announce(root, "legacy-only", self, started, "tag", "fake", "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := Retire(root, "legacy-only", self, started); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := os.Stat(legacyPath); !os.IsNotExist(err) {
+		t.Fatalf("legacy session did not retire its announcement: %v", err)
+	}
+}
+
+func TestAnnounceNeverAssociates(t *testing.T) {
+	root := t.TempDir()
+	self, started := int64(os.Getpid()), selfStart(t)
+	path, err := AnnounceWithPair(root, "announced", self, started, 0, "", "tag", "fake", "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := readAnnouncement(t, path).RuntimeSession; got != "" {
+		t.Fatalf("announce associated %q", got)
+	}
+	if _, err := AnnounceWithProof(root, "announced", self, started, 0, "", "tag", "fake", "", nil); err != nil {
+		t.Fatal(err)
+	}
+	if got := readAnnouncement(t, path).RuntimeSession; got != "" {
+		t.Fatalf("re-announce associated %q", got)
 	}
 }
 

@@ -49,6 +49,24 @@ func runLeaseAnnounce(args []string) int {
 	return 0
 }
 
+func runLeaseAssociateSession(args []string) int {
+	flags := flag.NewFlagSet("lease associate-session", flag.ContinueOnError)
+	root := pathFlag(flags, "root", "", "checkout root")
+	mainID := flags.String("main-id", "", "main announcement id")
+	runtimeSession := flags.String("runtime-session", "", "runtime session id")
+	event := flags.String("event", "", "lifecycle event: start, stop, or end")
+	startSource := flags.String("start-source", "", "session start source")
+	if flags.Parse(args) != nil || flags.NArg() != 0 || *root == "" || *mainID == "" || *runtimeSession == "" || *event == "" {
+		fmt.Fprintln(os.Stderr, "lease associate-session: --root, --main-id, --runtime-session, and --event are required")
+		return 2
+	}
+	if err := lease.AssociateSession(*root, *mainID, *runtimeSession, *event, *startSource); err != nil {
+		fmt.Fprintln(os.Stderr, err)
+		return 1
+	}
+	return 0
+}
+
 func runLeaseRetire(args []string) int {
 	flags := flag.NewFlagSet("lease retire", flag.ContinueOnError)
 	root := pathFlag(flags, "root", "", "checkout root")

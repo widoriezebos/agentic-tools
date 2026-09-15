@@ -25,21 +25,24 @@ import (
 
 // Options are the complete inputs to ordinary and recovery-only arming.
 type Options struct {
-	Root           string
-	MetasystemRoot string
-	Scope          string
-	Binary         string
-	Session        string
-	Pid            int64
-	StartTime      int64
-	Tag            string
-	Runtime        string
-	OwnerLineage   string
-	MaxCap         int64
-	RecoverOnly    bool
-	IfDown         bool
-	WaitScaleMilli int
-	CallerPid      int64
+	Root             string
+	MetasystemRoot   string
+	Scope            string
+	Binary           string
+	Session          string
+	Pid              int64
+	StartTime        int64
+	Tag              string
+	Runtime          string
+	OwnerLineage     string
+	RuntimeSession   string
+	NoRuntimeSession bool
+	StartSource      string
+	MaxCap           int64
+	RecoverOnly      bool
+	IfDown           bool
+	WaitScaleMilli   int
+	CallerPid        int64
 }
 
 // ComponentOutcome is one typed and actionable component result.
@@ -281,6 +284,13 @@ func sessionTag(value, runtimeName, session string) string {
 		tag = "metasystem-main-" + runtimeName + "-" + lease.Slug(session)
 	}
 	return tag
+}
+
+func associateRuntimeSession(options Options, mainID, event string) error {
+	if options.NoRuntimeSession || options.RuntimeSession == "" {
+		return nil
+	}
+	return lease.AssociateSession(options.Root, mainID, options.RuntimeSession, event, options.StartSource)
 }
 
 func ownerLineage(value string) string {
@@ -669,6 +679,13 @@ func ordinaryBody(options Options) (Result, rearmFact) {
 	if err != nil {
 		return finish(failure(components, "checkout-lease", err, "repair the checkout lease and rerun metasystem up"))
 	}
+	event := "stop"
+	if options.StartSource != "" {
+		event = "start"
+	}
+	if err := associateRuntimeSession(options, view.MainId, event); err != nil {
+		return finish(failure(components, "session-announcement", err, "repair the named announcement and rerun metasystem up"))
+	}
 	authority := "writer"
 	holderName := view.MainId
 	if !view.Holder {
@@ -822,7 +839,18 @@ func Retire(options Options) Result {
 		return failure(nil, "session-identity", err,
 			"pass --pid <session-pid> and --start-time <epoch-seconds>")
 	}
-	if err := lease.Retire(options.Root, session.Session, session.Pid, session.StartTime); err != nil {
+	view, err := lease.ClassifyVerbAt(options.Root, installationRoot(options), session.Pid)
+	if err != nil {
+		return failure(nil, "session-announcement", err, "inspect the announcement registry and retry retirement")
+	}
+	if err := associateRuntimeSession(options, view.MainId, "end"); err != nil {
+		return failure(nil, "session-announcement", err, "inspect the announcement registry and retry retirement")
+	}
+	retireSession := session.Session
+	if options.RuntimeSession != "" && !options.NoRuntimeSession {
+		retireSession = options.RuntimeSession
+	}
+	if err := lease.Retire(options.Root, retireSession, session.Pid, session.StartTime); err != nil {
 		return failure(nil, "session-announcement", err, "inspect the announcement registry and retry retirement")
 	}
 	return Result{Components: []ComponentOutcome{{Component: "session-announcement", Outcome: "retired"}}, Outcome: "retired"}

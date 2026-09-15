@@ -599,6 +599,7 @@ func families() []family {
 			summary: "checkout write-authority: announce/classify/hold/renew",
 			verbs: []verb{
 				{"announce", "record this process as a main and claim the checkout lease", runLeaseAnnounce},
+				{"associate-session", "bind a runtime session to a main announcement", runLeaseAssociateSession},
 				{"retire", "remove this process's announcement", runLeaseRetire},
 				{"classify", "classify a caller and report holdership as JSON", runLeaseClassify},
 				{"hook-delegate", "verify that a hook caller descends from exact delegate-job custody", runLeaseHookDelegate},

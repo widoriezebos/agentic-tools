@@ -74,19 +74,22 @@ type sessionStopLease struct {
 }
 
 type sessionStopAnnouncement struct {
-	SessionId     string          `json:"sessionId"`
-	MainId        string          `json:"mainId"`
-	Pid           int64           `json:"pid"`
-	PidStartedAt  int64           `json:"pidStartedAt"`
-	PidStartTicks int64           `json:"pidStartTicks,omitempty"`
-	BootID        string          `json:"bootId,omitempty"`
-	Runtime       string          `json:"runtime"`
-	InstanceTag   string          `json:"instanceTag"`
-	CommandHash   string          `json:"commandHash"`
-	AnnouncedAt   string          `json:"announcedAt"`
-	Pgid          int64           `json:"pgid"`
-	OwnerLineage  string          `json:"ownerLineage,omitempty"`
-	Provenance    json.RawMessage `json:"identityProvenance,omitempty"`
+	SessionId              string          `json:"sessionId"`
+	RuntimeSession         string          `json:"runtimeSession,omitempty"`
+	PreviousRuntimeSession string          `json:"previousRuntimeSession,omitempty"`
+	SessionAssociatedAt    string          `json:"sessionAssociatedAt,omitempty"`
+	MainId                 string          `json:"mainId"`
+	Pid                    int64           `json:"pid"`
+	PidStartedAt           int64           `json:"pidStartedAt"`
+	PidStartTicks          int64           `json:"pidStartTicks,omitempty"`
+	BootID                 string          `json:"bootId,omitempty"`
+	Runtime                string          `json:"runtime"`
+	InstanceTag            string          `json:"instanceTag"`
+	CommandHash            string          `json:"commandHash"`
+	AnnouncedAt            string          `json:"announcedAt"`
+	Pgid                   int64           `json:"pgid"`
+	OwnerLineage           string          `json:"ownerLineage,omitempty"`
+	Provenance             json.RawMessage `json:"identityProvenance,omitempty"`
 }
 
 var sessionStopID = regexp.MustCompile(`^[0-9a-f]{32}$`)
@@ -177,6 +180,10 @@ func sessionStopHumanAuthorityToken(proof humanauthority.Proof) (string, error) 
 }
 
 func sessionStopLifecycleToken(announcement sessionStopAnnouncement) (string, error) {
+	// The association stamp records observation time, not lifecycle identity.
+	// Same-session Stop and End events may refresh it without invalidating a
+	// human authorization for that session.
+	announcement.SessionAssociatedAt = ""
 	data, err := json.Marshal(announcement)
 	if err != nil {
 		return "", err

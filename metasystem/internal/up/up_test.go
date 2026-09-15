@@ -2,6 +2,7 @@ package up
 
 import (
 	"crypto/sha256"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"os"
@@ -13,8 +14,61 @@ import (
 
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/census"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/identity"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/lease"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/steward"
 )
+
+func TestUpAssociationIgnoresEnv(t *testing.T) {
+	t.Setenv("METASYSTEM_SESSION_ID", "ambient-session")
+	makeAnnouncement := func(t *testing.T) (string, string, string) {
+		t.Helper()
+		root := t.TempDir()
+		pid, started := liveSelf(t)
+		path, err := lease.Announce(root, "session-12345", pid, started, "tag", "fake", "")
+		if err != nil {
+			t.Fatal(err)
+		}
+		view, err := lease.ClassifyVerb(root, pid)
+		if err != nil {
+			t.Fatal(err)
+		}
+		return root, path, view.MainId
+	}
+	read := func(t *testing.T, path string) lease.Announcement {
+		t.Helper()
+		data, err := os.ReadFile(path)
+		if err != nil {
+			t.Fatal(err)
+		}
+		var announcement lease.Announcement
+		if err := json.Unmarshal(data, &announcement); err != nil {
+			t.Fatal(err)
+		}
+		return announcement
+	}
+
+	root, path, mainID := makeAnnouncement(t)
+	if err := associateRuntimeSession(Options{Root: root, RuntimeSession: "explicit-session"}, mainID, "stop"); err != nil {
+		t.Fatal(err)
+	}
+	if got := read(t, path).RuntimeSession; got != "explicit-session" {
+		t.Fatalf("explicit runtime session was not associated: %q", got)
+	}
+	root, path, mainID = makeAnnouncement(t)
+	if err := associateRuntimeSession(Options{Root: root}, mainID, "stop"); err != nil {
+		t.Fatal(err)
+	}
+	if got := read(t, path).RuntimeSession; got != "" {
+		t.Fatalf("ambient session was associated: %q", got)
+	}
+	root, path, mainID = makeAnnouncement(t)
+	if err := associateRuntimeSession(Options{Root: root, RuntimeSession: "explicit-session", NoRuntimeSession: true}, mainID, "stop"); err != nil {
+		t.Fatal(err)
+	}
+	if got := read(t, path).RuntimeSession; got != "" {
+		t.Fatalf("absence bit associated a runtime session: %q", got)
+	}
+}
 
 func liveSelf(t *testing.T) (int64, int64) {
 	t.Helper()

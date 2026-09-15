@@ -19,10 +19,13 @@ import (
 // main. ownerLineage, when present, is the logical writer the process belongs
 // to, so a mission's successive processes are one owner rather than rivals.
 type Announcement struct {
-	SessionId    string `json:"sessionId"`
-	MainId       string `json:"mainId,omitempty"`
-	Pid          int64  `json:"pid"`
-	PidStartedAt int64  `json:"pidStartedAt"`
+	SessionId              string `json:"sessionId"`
+	RuntimeSession         string `json:"runtimeSession,omitempty"`
+	PreviousRuntimeSession string `json:"previousRuntimeSession,omitempty"`
+	SessionAssociatedAt    string `json:"sessionAssociatedAt,omitempty"`
+	MainId                 string `json:"mainId,omitempty"`
+	Pid                    int64  `json:"pid"`
+	PidStartedAt           int64  `json:"pidStartedAt"`
 	// The clock-step-immune identity pair; zero values on
 	// announcements that predate it fall back to the seconds comparison.
 	PidStartTicks int64  `json:"pidStartTicks,omitempty"`
@@ -37,6 +40,19 @@ type Announcement struct {
 	// relationship to the process named above. The explicit fallback carries
 	// the caller identity whose ancestry contained that process.
 	IdentityProvenance *IdentityProvenance `json:"identityProvenance,omitempty"`
+}
+
+// EffectiveRuntimeSession returns the associated runtime session. A legacy
+// announcement's original session remains usable unless it has the generated
+// placeholder shape, which never identifies a runtime session.
+func (a Announcement) EffectiveRuntimeSession() string {
+	if a.RuntimeSession != "" {
+		return a.RuntimeSession
+	}
+	if placeholderSession.MatchString(a.SessionId) {
+		return ""
+	}
+	return a.SessionId
 }
 
 // IdentityProvenance is the announcement's proof route. Caller fields are

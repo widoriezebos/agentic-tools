@@ -18,6 +18,12 @@ import (
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/stopfence"
 )
 
+type SessionStopAnnouncementForTest sessionStopAnnouncement
+
+func SessionStopLifecycleTokenForTest(announcement SessionStopAnnouncementForTest) (string, error) {
+	return sessionStopLifecycleToken(sessionStopAnnouncement(announcement))
+}
+
 func openItem(detail string) Item { return Item{Kind: "plan", Id: detail, Detail: detail} }
 
 const (
