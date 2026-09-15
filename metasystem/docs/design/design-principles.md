@@ -115,6 +115,20 @@ Strong signals that the design needs correction:
 - Concurrency exists but ownership, limits, cancellation, and timeout behavior are invisible in the design.
 - Comments are needed to translate confusing names, primitive plumbing, or dense conditionals into English.
 
+## Implementation Slicing
+
+When a design divides implementation into units, allocate at most 300 changed
+lines to each unit. Count additions plus deletions across the whole candidate,
+including production code, tests, scripts, and documentation. State the
+allocation explicitly in the design's implementation map and in every unit
+brief as `Changed-line allocation: <number>`. This planning maximum leaves
+room below a separately declared enforcement ceiling; it neither sets nor
+changes that ceiling.
+
+Split a larger unit before briefing it. Keep each behavior with the tests that
+prove it, and preserve required proof when making the split instead of trimming
+tests to fit the allocation.
+
 ## Design Questions
 
 Before implementation, be able to state:

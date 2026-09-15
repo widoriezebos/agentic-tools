@@ -2,6 +2,7 @@ Working Mode: <working mode>
 Mission Stream: <active mission stream; omit this line when no mission is active>
 Orchestrator Identity: <identity>
 Date: <YYYY-MM-DD>
+Changed-line allocation: <integer no greater than 300; additions plus deletions across the whole candidate, including tests>
 
 # Goal
 
@@ -28,6 +29,15 @@ Leave `metasystem/memory/receipts.log` unchanged; the seat writes the receipt at
 # Constraints
 
 <State non-goals, wall-clock and enforceable token budgets, and the critic round budget when applicable.>
+
+Set the changed-line allocation under `metasystem/docs/design/design-principles.md` before briefing an implementation unit.
+
+Before writing the full draft, estimate the complete candidate against the
+allocation, including its tests. At the first coherent implementation
+checkpoint, count additions plus deletions across the candidate, then recount
+after each coherent increment. If either the estimate or a count exceeds the
+allocation, stop at the first overrun and return the count with a split
+proposal; do not finish the full draft or trim required tests.
 
 Request the smallest section you need, read a large file through a bounded view, and open a reference only through its path.
 
