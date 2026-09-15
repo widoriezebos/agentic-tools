@@ -1,6 +1,6 @@
 # stop-gate-sees-harness-tracked-work
 
-- State: claimed
+- State: approved
 - Priority: 1
 - Sequence: 20
 - Risk: severity=2 novelty=2 exposure=3 accumulation=2 basis="severity 2: wasted model turns and context, no wrong landing; novelty 2: extends the registered wait to local work and human answers; exposure 3: every seat, every wait; accumulation 2: grows with parallel work"
@@ -9,12 +9,11 @@
 - Origin: human
 - Next step: 2026-09-15 16:45 m1b. Released unstarted: its U2a comes after U1, registered-wait-matches-the-runtime-session, which is not built yet. m1b took U1 instead so the chain U1, U2a, U4 can move; this goal is free once U1 lands, and its design is still a fresh bounded Fable delegate's.
 - OpenedAt: 2026-09-15T05:55:06Z
-- Revision: 36
+- Revision: 37
 - Budget: elapsedLimit=4h attemptLimit=6 reservedJobMinutesLimit=720 activeJobLimit=1 reviewRoundLimit=2
 - BudgetExceptions: 0
 - Approved: by=human:Wido at=2026-09-15T05:55:14Z revision=2 opid=Q4A1XGD8SS1NP18ZXR6H4J2D7P-m1e-c6925449 authority=proven digest=0e2336de904436c47d7feb8c7c51efa0f94188b03a99d611ddc81305c50a88b7
-- Claimed: machine=m1b lineage=main-1789191336-90295-e4b24b at=2026-09-15T14:20:48Z revision=35 accountingRevision=35 episodeAt=2026-09-15T14:20:48Z episodeRevision=35
-- StopCapability: generation=35 revision=35 machine=m1b claimEpoch=2 fenceEpoch=0
+- Episode: machine=m1b lineage=main-1789191336-90295-e4b24b accountingRevision=35 episodeAt=2026-09-15T14:20:48Z episodeRevision=35 idleSeconds=0 released=2026-09-15T14:21:29Z
 
 History:
 - 2026-09-15T05:55:06Z 41RARJ72SCV6WTBF0AMDG4AF1E-m1e-c6925449 open actor=human:Wido targets=stop-gate-sees-harness-tracked-work
@@ -53,4 +52,5 @@ History:
 - 2026-09-15T14:19:00Z 5N0QVQHR110PPJ85QWHJ7Q3VVS-m1e-c6925449 done actor=human:Wido targets=actionable-metrics,adoption-filled-delivery-passes-on-trunk,beds-run-under-the-oldest-supported-bash,busy-seat-shells-are-ended,census-lifecycle-scenario-holds-under-load,chain-landing-carries-the-reviewed-diff,cross-cutting-change-inventories-its-readers,deep-sections-cannot-stay-red-unseen,degraded-stop-forms-have-one-source,delegate-sandbox-runs-the-beds,dispatch-bases-chains-on-the-remote-tip,engine-policy-binding-survives-drift-and-load,every-round-gets-an-independent-read,every-verb-resolves-repo-to-an-absolute-root,evidence-and-build-output-have-retention-and-stay-unindexed,failed-job-attention,failures-show-observed-against-expected,fixture-repo-copies-exclude-the-artifacts-store,fixture-waits-name-their-producer,follow-up-brief-cannot-cite-fresh-trunk-files,human-authority-surface-runs-its-cmd-tests,human-goal-verbs-forgiving,human-wait-does-not-consume-goal-budget,job-record-birth-token,lease-sweep-death-evidence,live-job-on-a-done-goal-unnoticed,machine-concurrency-governor,member-size-gate,metasystem-stop-escalation-proofs,metasystem-stop-fleet-form,moved-effects-are-inventoried-in-the-design,new-elapsed-budgets-use-explicit-hours,pipelines-never-lose-a-truncated-producer,proof-admission-fits-a-seat-proving-several-units,registered-wait-matches-the-runtime-session,repo-root-paths-ride-agent-commits-unjudged,round-proof-feeds-the-next-brief,run-scoped-build-caches-have-a-janitor,seat-landings-run-the-selected-sections,skipped-test-fails-its-group-on-the-other-os,stop-batch-strands-a-resumable-goal,stop-capability-follows-the-lease-epoch,stop-decision-surface-is-a-gate,stop-gate-sees-harness-tracked-work,stop-response-carries-a-structured-report-reference,test-environment-edges-are-closed,testing-surfaces-declare-their-mirror,tests-never-wait-on-wall-time,token-spend-fence,trunk-versus-candidate-is-a-verification-step,watch-verb,watcher-repair-request-never-names-current,winddown-census-handoff-leak reason=priority-order from=1:21 to=1:20
 - 2026-09-15T14:20:48Z ED36522QHBGP40QMB3GD7GTQ90-m1b-30a7e141 claim actor=m1b+main-1789191336-90295-e4b24b targets=stop-gate-sees-harness-tracked-work
 - 2026-09-15T14:21:24Z XS7KW5QWJ03P8VBETSE605XVPY-m1b-30a7e141 edit actor=m1b+main-1789191336-90295-e4b24b targets=stop-gate-sees-harness-tracked-work
-Integrity: sha256=8675ef8c7bd29402dacce15c39751dcef0d4025f7b512d9581c55cbbe75e839c
+- 2026-09-15T14:21:29Z 9N7GEP44EC2TA4DT0P11MBPRB4-m1b-30a7e141 release actor=m1b+main-1789191336-90295-e4b24b targets=stop-gate-sees-harness-tracked-work
+Integrity: sha256=99546eab8959f14c08b6698edb1074ccf423750f5bbf9273eb310f1e0e6b9eb1
