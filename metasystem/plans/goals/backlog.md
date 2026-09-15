@@ -6,7 +6,7 @@
 - MigrationEpoch: 2026-08-20T00:00:00Z
 - ManifestDigest: d82032bee818c2d82e6a95e6f1b75347499b88ee8b68c4d20a0f3c94d00ba320
 - MigrationMode: manifest
-- Revision: 66
+- Revision: 67
 - ApprovalGate: since=2026-09-03T14:16:24Z opid=JY54AQT8101VK9353WT9FQYGA9-m0-c5dbf036
 - FleetEnrollment: at=2026-09-06T06:37:21Z machine=m1 generation=1 opid=CMNCRETKYCB18MFZNYFSZJPXQY-m1-a4f8999f
 
@@ -89,4 +89,5 @@ History:
 - 2026-09-14T23:04:32Z 7H9K8PNMY01FPGN6QRZPSMZ270-m1c-69c9e454 ack actor=m1c+main-1789191340-90689-8975a9 targets=session-start-relays-the-durable-wait-line displaced=m1c+main-1789191340-90689-8975a9@2026-09-14T23:03:51Z ack
 - 2026-09-14T23:46:53Z PNCBBMPB4H34MVRQR9YWEVJJD5-m1e-892cdaec ack actor=m1e+main-1789030447-51011-5722fc targets=coordinator-context-stays-under-budget displaced=m1e+main-1789030447-51011-5722fc@2026-09-14T03:21:41Z ack
 - 2026-09-15T00:10:53Z 2Y78Z4MRM6W2046FF2DHS6CV9Q-m1b-30a7e141 ack actor=m1b+main-1789191336-90295-e4b24b targets=failures-show-observed-against-expected displaced=m1b+main-1789191336-90295-e4b24b@2026-09-14T22:39:33Z ack
-Integrity: sha256=39569d290f988b19087ea23eead65f5c577b0d06941f95e90fec94d381fcac2f
+- 2026-09-15T00:35:35Z J65DZJR6EP4XN3JG6G4X4KAZQB-m1c-69c9e454 ack actor=m1c+main-1789191340-90689-8975a9 targets=forged-delegate-hint-refuses-session-start displaced=m1c+main-1789191340-90689-8975a9@2026-09-15T00:05:25Z ack
+Integrity: sha256=3a40aea6eb60d34f5771ed7d04290f0a1d8c98f0aaf095037bcf9c8652a9482c
