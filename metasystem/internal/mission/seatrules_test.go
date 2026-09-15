@@ -8,26 +8,42 @@ import (
 )
 
 func TestSeatRulesPresentInOrchestrationDoc(t *testing.T) {
-	// These rules come from plans/seats-spend-tokens-in-bounded-sessions-design.md, section P6.
+	// S1-S6 come from plans/seats-spend-tokens-in-bounded-sessions-design.md section P6; S7, S8, and the efficiency line come from ruling R-115-m1e.
 	rules := []struct {
-		name string
-		text string
+		name, today, check string
 	}{
-		{"S1 over the trigger", "every remaining multi-call step runs as a fresh bounded delegate"},
-		{"S2 turns bounded", "At most 12 main-thread calls per turn; at most one background Bash per unit at a time"},
-		{"S3 delegates fresh and bounded", "every delegate prompt starts with `Kind: design`, `build-read`, `critique`, or `other`"},
-		{"S4 messages", "A `SendMessage` is at most 400 characters, covers one subject"},
-		{"S5 reads by path", "The main session never reads a tool result over 20,000 characters"},
-		{"S6 first act", "Run `metasystem context resume` first when a handoff waits; otherwise read the `context-budget` line and run `goal next`"},
+		{"S1 over the trigger", "every remaining multi-call step runs as a fresh bounded delegate", "no turn has more than three main-thread calls; a tool result contains `handoff recorded:`"},
+		{"S2 turns bounded", "At most 12 main-thread calls per turn; at most one background Bash per unit at a time", "Calls between two Stop verdicts are at most 12; Monitor uses zero."},
+		{"S3 delegates fresh and bounded", "every delegate prompt starts with `Kind: design`, `build-read`, `critique`, or `other`", "`resumedAgentId` and `--follow-up` results are zero outside critique chains."},
+		{"S4 messages", "A `SendMessage` is at most 400 characters, covers one subject", "Check length and count per unit."},
+		{"S5 reads by path", "The main session never reads a tool result over 20,000 characters", "Results over 20,000 characters are zero."},
+		{"S6 first act", "Run `metasystem context resume` first when a handoff waits; otherwise read the `context-budget` line and run `goal next`", "Check the first tool calls."},
+		{"S7 handoff keeps lessons", "A handoff is recorded only after the seat's memory note holds this session's lessons, its reasoning in flight, and every in-flight delegate's output path.", "The note's modification time precedes the handoff record."},
+		{"S8 relayed provenance", "Every relayed number or rule names who said it and why.", "Each peer message carrying a number or rule names its source."},
 	}
 
 	doc, err := os.ReadFile(filepath.Join(repoRoot(t), "docs", "orchestration.md"))
 	if err != nil {
 		t.Fatal(err)
 	}
+	lines := strings.Split(string(doc), "\n")
 	for _, rule := range rules {
-		if !strings.Contains(string(doc), rule.text) {
-			t.Errorf("%s is absent from docs/orchestration.md", rule.name)
+		var row string
+		for _, line := range lines {
+			if strings.Contains(line, rule.today) {
+				row = line
+				break
+			}
 		}
+		if row == "" {
+			t.Errorf("%s today text is absent from docs/orchestration.md", rule.name)
+			continue
+		}
+		if !strings.Contains(row, rule.check) {
+			t.Errorf("%s check text is absent from its row in docs/orchestration.md", rule.name)
+		}
+	}
+	if !strings.Contains(string(doc), "Efficiency never regresses functionality: no unit lowers a proof floor, removes a witness or a gate, or narrows a DONE to save tokens; S7, S8 and this line come from ruling R-115-m1e") {
+		t.Errorf("efficiency lead line is absent from docs/orchestration.md")
 	}
 }

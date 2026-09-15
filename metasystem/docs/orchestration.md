@@ -357,6 +357,7 @@ The specific shared paths, caches, and lock locations are project facts for `doc
 These seat rules have been in effect since 2026-09-15 by Wido's word.
 The full statement, including the later form of every rule, is in `plans/seats-spend-tokens-in-bounded-sessions-design.md`, section P6.
 Until unit U3a's configuration keys land, the `context-budget` 200K health line is the trigger; Wido's cap decision in ruling R-114-m1e is 250K.
+Efficiency never regresses functionality: no unit lowers a proof floor, removes a witness or a gate, or narrows a DONE to save tokens; S7, S8 and this line come from ruling R-115-m1e, in effect since 2026-09-15.
 
 | rule | today | check |
 | --- | --- | --- |
@@ -366,6 +367,8 @@ Until unit U3a's configuration keys land, the `context-budget` 200K health line 
 | S4 messages | A `SendMessage` is at most 400 characters, covers one subject, and is sent at a unit boundary or for a question that stops the sender; it is never an acknowledgement. | Check length and count per unit. |
 | S5 reads by path | The main session never reads a tool result over 20,000 characters; a large output is read by a delegate from its persisted file. | Results over 20,000 characters are zero. |
 | S6 first act | Run `metasystem context resume` first when a handoff waits; otherwise read the `context-budget` line and run `goal next`. | Check the first tool calls. |
+| S7 handoff keeps lessons | A handoff is recorded only after the seat's memory note holds this session's lessons, its reasoning in flight, and every in-flight delegate's output path. | The note's modification time precedes the handoff record. |
+| S8 relayed provenance | Every relayed number or rule names who said it and why. | Each peer message carrying a number or rule names its source. |
 
 ## Runtime Mechanics
 
