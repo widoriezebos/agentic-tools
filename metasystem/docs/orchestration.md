@@ -20,6 +20,8 @@ These exemptions govern interactive work. Inside a mission the mission runner cr
 
 Every delegation states the goal, the workspace it runs in, the inputs it may rely on, the expected return shape (facts, paths, diff, verdict), the acceptance criteria, a budget, and what to do at an unspecified gap: stop and report it, never fill it silently. The trust and certification rule below binds every return. A delegate reads within its context: request the smallest section you need, read a large file through a bounded view, and open a reference only through its path. When `context status` or the identity-bound Stop report says the last call is over the bound, the seat runs `metasystem context handoff --root <installation>` alone in its own message, then ends the session.
 
+Before dispatching a code read or critique, the seat prepares the reader's private copy and completes and reads `scripts/agents/templates/review-brief.md`: it records the copy's path and exact commit or diff, writes a focused numbered checklist whose items name file line ranges or fixture rows, and sets a numeric tool-call budget at which the reader stops and reports unchecked items. Each round uses a fresh reader and never resumes a reader from an earlier round. After findings are folded, a confirmation read uses the template's scoped variant and checks only those folded findings.
+
 ## The Collaboration Loop
 
 For each substantial piece of work, use this five-step loop:

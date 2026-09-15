@@ -91,6 +91,30 @@ func TestO13ReceiptProvenanceParsesWithOldRows(t *testing.T) {
 	}
 }
 
+func TestReadMetricsAreOptionalAndNumeric(t *testing.T) {
+	opts := baseOptions(t)
+	opts.Type, opts.Outcome = "review", "shipped"
+	if result := Add(opts); result.Code != 0 {
+		t.Fatalf("receipt without read metrics failed: %+v", result)
+	}
+	opts.Now = func() time.Time { return fixedNow().Add(time.Second) }
+	opts.ReadTokens, opts.ReadCalls = "16000000", "106"
+	if result := Add(opts); result.Code != 0 {
+		t.Fatalf("receipt with read metrics failed: %+v", result)
+	}
+	data, err := os.ReadFile(opts.File)
+	if err != nil {
+		t.Fatal(err)
+	}
+	lines := strings.Split(strings.TrimSpace(string(data)), "\n")
+	if strings.Contains(lines[0], "|read_tokens=") || strings.Contains(lines[0], "|read_calls=") {
+		t.Fatalf("optional metrics changed the old receipt shape: %q", lines[0])
+	}
+	if !strings.Contains(lines[1], "|read_tokens=16000000|read_calls=106|") {
+		t.Fatalf("read metrics missing from receipt: %q", lines[1])
+	}
+}
+
 func TestReceiptMetricsReportTypeAndBuilderValidation(t *testing.T) {
 	opts := baseOptions(t)
 	opts.Type, opts.Outcome = "metrics-report", "shipped"
@@ -125,6 +149,13 @@ func TestReceiptProvenanceValidationFailsClosed(t *testing.T) {
 	if result := Correct(opts); result.Code != 2 || result.Err[0] != "invalid corrected built_by value: critic" {
 		t.Fatalf("invalid corrected builder accepted: %+v", result)
 	}
+	for _, field := range []string{"read_tokens", "read_calls"} {
+		opts.Field, opts.NowValue = field, "many"
+		if result := Correct(opts); result.Code != 2 ||
+			result.Err[0] != "invalid corrected "+field+" value: many" {
+			t.Fatalf("invalid corrected %s accepted: %+v", field, result)
+		}
+	}
 }
 
 func TestAddValidation(t *testing.T) {
@@ -137,6 +168,8 @@ func TestAddValidation(t *testing.T) {
 		{func(o *Options) { o.Verify = "bogus" }, "invalid --verify: bogus"},
 		{func(o *Options) { o.StopLoss = "maybe" }, "invalid --stop-loss: maybe"},
 		{func(o *Options) { o.Corrections = "x" }, "invalid --corrections: x"},
+		{func(o *Options) { o.ReadTokens = "16m" }, "invalid --read-tokens: 16m"},
+		{func(o *Options) { o.ReadCalls = "many" }, "invalid --read-calls: many"},
 		{func(o *Options) { o.Skills = "a,code-critique" }, "receipt refused: skills=code-critique requires delegate entries naming a code-critic chain id and the implementer job id in that chain's reviews field"},
 	}
 	for _, tc := range cases {

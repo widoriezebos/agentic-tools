@@ -40,6 +40,8 @@ type Options struct {
 	Delegates   []string
 	Goal        string
 	BuiltBy     string
+	ReadTokens  string
+	ReadCalls   string
 	Note        string
 
 	RefEpoch string
@@ -176,6 +178,12 @@ func Add(opts Options) Result {
 	if !ValidBuiltByValue(opts.BuiltBy) {
 		return fail(2, "invalid --built-by: %s", opts.BuiltBy)
 	}
+	if opts.ReadTokens != "" && !epochRe.MatchString(opts.ReadTokens) {
+		return fail(2, "invalid --read-tokens: %s", opts.ReadTokens)
+	}
+	if opts.ReadCalls != "" && !epochRe.MatchString(opts.ReadCalls) {
+		return fail(2, "invalid --read-calls: %s", opts.ReadCalls)
+	}
 	if err := os.MkdirAll(filepath.Dir(opts.File), 0o755); err != nil {
 		return fail(2, "cannot create receipt directory: %v", err)
 	}
@@ -207,6 +215,12 @@ func Add(opts Options) Result {
 	}
 	if opts.BuiltBy != "" {
 		line += "|built_by=" + opts.BuiltBy
+	}
+	if opts.ReadTokens != "" {
+		line += "|read_tokens=" + opts.ReadTokens
+	}
+	if opts.ReadCalls != "" {
+		line += "|read_calls=" + opts.ReadCalls
 	}
 	line += fmt.Sprintf("|critique_waived=%s|waiver_stream=%s|note=%s\n", class, stream, noPipes(note))
 	if err := appendLine(opts.File, line); err != nil {
@@ -251,6 +265,10 @@ func Correct(opts Options) Result {
 	}
 	if opts.Field == "built_by" && !ValidBuiltByValue(opts.NowValue) {
 		return fail(2, "invalid corrected built_by value: %s", opts.NowValue)
+	}
+	if (opts.Field == "read_tokens" || opts.Field == "read_calls") &&
+		opts.NowValue != "" && !epochRe.MatchString(opts.NowValue) {
+		return fail(2, "invalid corrected %s value: %s", opts.Field, opts.NowValue)
 	}
 	data, err := os.ReadFile(opts.File)
 	if err != nil {

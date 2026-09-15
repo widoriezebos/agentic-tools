@@ -680,3 +680,12 @@ lines, and check `git show --stat` after landing. This seat broke the trunk for
 four minutes that way.
 
 - 2026-09-14 (m1e): `section/dispatcher-adapter-and-mission-runner-fixtures` scenario `dispatch-e` is load-shaped: on one candidate tree (af608e58, coordinator-context slice 3 unit C) it passed in 181 s in one run and failed the next with "mission job timeout did not map to exit 4 (got 5); status: timeout error: budget-cap phase: supervision" while two Codex tasks and a race gate ran beside it. The assertion backdates capDeadline and reaps a detached design-critic dispatch; under load the reap lands in the supervision phase and the driver reports 5. Owner: the dispatcher bed (beds-report-every-failure is the nearest open goal); the fix is an artificial clock or a phase-aware expected status, never a retry loop (Wido, 2026-09-12).
+
+- 2026-09-15 (m1c): health reports `stop-hook-duration` dead on m1c: the last Stop
+  took 21 s of the 60 s budget against a 15 s threshold. The remedy text names
+  goal stop-hook-health-cost, which is done (m1d found spend.Measure re-reading
+  every job record and every Claude transcript at each turn end), so the red has
+  no live owner and every Stop report repeats it. Proposal: time each phase of
+  `scripts/agents/supervision-hook.sh claude stop` on a seat with a full day of
+  transcripts, fix the slowest phase, and make the health remedy name a live
+  owner. A seat could not open it as a goal (R-93-m1e: it blocks no claimed goal).

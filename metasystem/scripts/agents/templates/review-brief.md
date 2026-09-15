@@ -12,6 +12,63 @@ in scope, hostile inputs are not.">
 Scope: <the files, behaviors, or contracts under review — and
 what is explicitly OUT, including any agreed ceiling on fix work>
 
-Return format: numbered findings, most severe first, each with
-file, rule, and the concrete failure it causes; or AGREE with
-observations that do not gate.
+## Prepared copy
+
+Path: <absolute path to the reader's private copy>
+
+Contents: <commit SHA, or base and candidate identifying the exact diff>
+
+## Checklist
+
+Each item names its complete read boundary. Use line ranges for source and
+document checks, and fixture row names or ranges for fixture checks.
+
+1. `<file>:<start>-<end>` — <behavior or contract to check>
+2. `<fixture file>:<row name or start-end>` — <scenario to check>
+
+## Tool-call budget
+
+Maximum reader tool calls: <N>
+
+Stop when this number is reached. In the findings file, list every checklist
+item or part of an item that the budget did not allow you to check.
+
+## Findings artifact and return shape
+
+Write findings to: <absolute findings file path>
+
+Inside that file, number findings from most severe to least severe. Each
+finding names the file, rule, and concrete failure it causes. If there are no
+material findings, record AGREE and any non-gating observations there.
+
+Return only these two lines; never return the findings themselves:
+
+```text
+<absolute findings file path>
+VERDICT: land
+```
+
+or:
+
+```text
+<absolute findings file path>
+VERDICT: fix first (<N> material findings)
+```
+
+## Scoped confirmation read after a fold
+
+Prepared copy path: <absolute path to the copy containing the fold>
+
+Contents: <commit SHA, or base and candidate identifying the exact folded diff>
+
+Folded findings (this is the whole checklist; do not repeat or widen the
+original review):
+
+1. `<finding id>` — `<file>:<start>-<end>` or `<fixture>:<row>` — <folded correction to confirm>
+
+Maximum reader tool calls: <N>
+
+Write findings to: <absolute confirmation findings file path>
+
+Use the same two-line return shape above. Report any folded finding left
+unchecked when the tool-call budget is reached.
