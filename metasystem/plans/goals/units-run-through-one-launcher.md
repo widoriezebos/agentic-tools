@@ -1,6 +1,6 @@
 # units-run-through-one-launcher
 
-- State: approved
+- State: claimed
 - Priority: 1
 - Sequence: 3
 - Risk: severity=2 novelty=2 exposure=3 accumulation=1 basis="severity 2: a defect costs a unit's round or misreads a proof, never a landing, because the verb never lands; novelty 2: a new verb that chains the existing build, wait, round proof and reader steps; exposure 3: every seat runs every unit through it; accumulation 1: a verb, a plan schema and per-run state"
@@ -9,13 +9,16 @@
 - Origin: human
 - Next step: Design first, by a fresh bounded Claude Fable delegate, from P7 row U4 and rules S2 and S3 of plans/seats-spend-tokens-in-bounded-sessions-design.md. Size about 300 changed lines. Order: after U2a of stop-gate-sees-harness-tracked-work, and before U5a of spend-fence-reports-tokens-per-model-and-cause. The design settles moved SSTB-210: how a corrected unit re-enters through unit run --resume <run> --follow-up on the same critic chain, and the plan state that allows it. It also settles moved SSTB-208: the plan schema, the router line and the families() entry in cmd/metasystem/main.go. Every rule gets a focused witness a builder runs without a fixture bed or a live session (SSTB-311). Until this lands, rule S2 holds: one background Bash per unit, no Monitor, and every wait through metasystem job watch or metasystem wait.
 - OpenedAt: 2026-09-15T13:55:02Z
-- Revision: 3
+- Revision: 4
 - Budget: elapsedLimit=4h attemptLimit=6 reservedJobMinutesLimit=720 activeJobLimit=1 reviewRoundLimit=2
 - BudgetExceptions: 0
 - Approved: by=human:Wido at=2026-09-15T13:56:29Z revision=3 opid=653XWKPE2TF68EG9N0111AH9FT-m1e-c6925449 authority=proven digest=d206563d9e5d35c4aa1cba9235579fa193122668ba946407bcd8b3a8794e0a80
+- Claimed: machine=m1b lineage=main-1789191336-90295-e4b24b at=2026-09-15T14:19:37Z revision=4 accountingRevision=4 episodeAt=2026-09-15T14:19:37Z episodeRevision=4
+- StopCapability: generation=4 revision=4 machine=m1b claimEpoch=2 fenceEpoch=0
 
 History:
 - 2026-09-15T13:55:02Z 68A43MJQNYFNSXRPDXRZ16S0GK-m1e-c6925449 open actor=human:Wido targets=units-run-through-one-launcher
 - 2026-09-15T13:55:08Z KAJK41QK704N4SCS0NHTDRXFJY-m1e-c6925449 set-priority actor=human:Wido targets=actionable-metrics,adoption-filled-delivery-passes-on-trunk,beds-run-under-the-oldest-supported-bash,brief-declares-the-round-boundary,builder-proves-each-rule-by-mutation,busy-seat-shells-are-ended,census-lifecycle-scenario-holds-under-load,chain-landing-carries-the-reviewed-diff,codex-jobs-run-through-a-metasystem-verb,coordinator-context-stays-under-budget,coordinator-wakes-on-events-not-polls,critique-closes-on-folded-proof,cross-cutting-change-inventories-its-readers,deep-sections-cannot-stay-red-unseen,degraded-stop-forms-have-one-source,delegate-sandbox-runs-the-beds,dispatch-bases-chains-on-the-remote-tip,engine-policy-binding-survives-drift-and-load,every-round-gets-an-independent-read,every-verb-resolves-repo-to-an-absolute-root,evidence-and-build-output-have-retention-and-stay-unindexed,failed-job-attention,failures-show-observed-against-expected,fixture-repo-copies-exclude-the-artifacts-store,fixture-runners-and-fakes-bound-their-own-life,fixture-waits-name-their-producer,follow-up-brief-cannot-cite-fresh-trunk-files,human-authority-surface-runs-its-cmd-tests,human-goal-verbs-forgiving,human-wait-does-not-consume-goal-budget,job-record-birth-token,lease-sweep-death-evidence,live-job-on-a-done-goal-unnoticed,machine-concurrency-governor,member-size-gate,metasystem-stop-escalation-proofs,metasystem-stop-fleet-form,moved-effects-are-inventoried-in-the-design,new-elapsed-budgets-use-explicit-hours,pipelines-never-lose-a-truncated-producer,proof-admission-fits-a-seat-proving-several-units,proof-runs-reap-what-they-armed-and-a-census-names-the-rest,receipt-admission-caps-concurrent-batteries,registered-wait-matches-the-runtime-session,repo-root-paths-ride-agent-commits-unjudged,round-proof-feeds-the-next-brief,run-scoped-build-caches-have-a-janitor,seat-landings-run-the-selected-sections,skipped-test-fails-its-group-on-the-other-os,small-change-lane,stop-batch-strands-a-resumable-goal,stop-capability-follows-the-lease-epoch,stop-decision-surface-is-a-gate,stop-gate-sees-harness-tracked-work,stop-hook-never-forces-an-empty-turn,stop-response-carries-a-structured-report-reference,test-environment-edges-are-closed,testing-surfaces-declare-their-mirror,tests-never-wait-on-wall-time,token-spend-fence,trunk-versus-candidate-is-a-verification-step,units-run-through-one-launcher,watch-verb,watcher-repair-request-never-names-current,winddown-census-handoff-leak reason=priority-order subject=units-run-through-one-launcher from=unranked to=1:3 requested-sequence=3
 - 2026-09-15T13:56:29Z 653XWKPE2TF68EG9N0111AH9FT-m1e-c6925449 approve actor=human:Wido targets=units-run-through-one-launcher
-Integrity: sha256=5c9a23bb12976c56a829edb37556d04e220a061b02124faa78b1bffa26ef9134
+- 2026-09-15T14:19:37Z BSHYC8WH2TGN4F1KTSNT60RDH3-m1b-30a7e141 claim actor=m1b+main-1789191336-90295-e4b24b targets=units-run-through-one-launcher
+Integrity: sha256=172c71e2ec771f39fd557a4f28a32bf4ea6c71eeb23327e6c3d1939e1eb08f3c
