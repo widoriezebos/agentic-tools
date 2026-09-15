@@ -16,6 +16,7 @@ import (
 var (
 	briefPathTokenRun = regexp.MustCompile(`[A-Za-z0-9_.*\-/<>{}$]+`)
 	briefPathToken    = regexp.MustCompile(`^[A-Za-z0-9_.-]+(/[A-Za-z0-9_.*-]+)+$`)
+	briefPathLine     = regexp.MustCompile(`:[0-9]+(-[0-9]+)?$`)
 	briefHeading      = regexp.MustCompile(`^\s*(#{1,6})\s+(.+?)\s*$`)
 	briefOutputLine   = regexp.MustCompile(`(?i)^\s*(?:[-*]\s*)?may[- ](?:write|touch)\s*:`)
 	briefCreatePrefix = regexp.MustCompile("(?i)(?:new[ \\t]+file|create)[ \\t]*:?[ \\t]*[`\\\"']?[ \\t]*$")
@@ -273,7 +274,7 @@ func ValidateBriefAuthority(briefPath, baseTree, diskRoot string) error {
 	return err
 }
 
-func validateBriefAuthority(data []byte, _ BriefBounds, baseTree, diskRoot string) error {
+func validateBriefAuthority(data []byte, bounds BriefBounds, baseTree, diskRoot string) error {
 	baseCommit, err := gitOutput(baseTree, "rev-parse", "--verify", "HEAD^{commit}")
 	if err != nil {
 		return fmt.Errorf("brief authority admission cannot resolve delegate base tree: %w", err)
@@ -290,7 +291,7 @@ func validateBriefAuthority(data []byte, _ BriefBounds, baseTree, diskRoot strin
 		}
 	}
 
-	candidates := extractBriefAuthorityPaths(string(data), topDirectories, nestedDirectories)
+	candidates := extractBriefAuthorityPaths(string(data), bounds, topDirectories, nestedDirectories)
 	missing := make([]string, 0)
 	for _, candidate := range candidates {
 		if artifactAuthorityPath(candidate) {
@@ -328,12 +329,23 @@ func treeDirectories(baseTree, treeish string) (map[string]bool, error) {
 	return directories, nil
 }
 
-func extractBriefAuthorityPaths(brief string, topDirectories, nestedDirectories map[string]bool) []string {
+type briefAuthorityCitation struct {
+	start, end int
+	path       string
+}
+
+func extractBriefAuthorityPaths(brief string, bounds BriefBounds, topDirectories, nestedDirectories map[string]bool) []string {
 	type pathUse struct {
 		input  bool
 		output bool
 	}
 	uses := map[string]pathUse{}
+	concreteMembers := map[string]bool{}
+	for _, member := range bounds.Boundary {
+		if briefBoundaryMemberIsConcrete(member) {
+			concreteMembers[member] = true
+		}
+	}
 	workspaceHeadingLevel := 0
 	for _, line := range strings.Split(brief, "\n") {
 		if heading := briefHeading.FindStringSubmatch(line); heading != nil {
@@ -351,27 +363,34 @@ func extractBriefAuthorityPaths(brief string, topDirectories, nestedDirectories 
 		if strings.HasPrefix(line, "Boundary:") || inertBriefBoundsLine(line) {
 			continue
 		}
-		for _, location := range briefPathTokenRun.FindAllStringIndex(line, -1) {
-			token := strings.TrimRight(line[location[0]:location[1]], ".")
-			if strings.ContainsAny(token, "*<>${") || !briefPathToken.MatchString(token) {
-				continue
-			}
-			parts := strings.Split(token, "/")
-			eligible := briefAuthorityDirectories[parts[0]] && (topDirectories[parts[0]] || parts[0] == "artifacts")
-			if len(parts) >= 3 && parts[0] == "metasystem" {
-				eligible = topDirectories["metasystem"] && briefAuthorityDirectories[parts[1]] &&
-					(nestedDirectories[parts[1]] || parts[1] == "artifacts")
-			}
-			if !eligible || (boundaryExample && strings.HasPrefix(token, "metasystem/")) {
-				continue
-			}
-			use := uses[token]
-			if workspaceOutputLine || briefCreatePrefix.MatchString(line[:location[0]]) {
+		citations := briefBoundaryCitations(line, concreteMembers)
+		record := func(candidate string, start int) {
+			use := uses[candidate]
+			if workspaceOutputLine || briefCreatePrefix.MatchString(line[:start]) {
 				use.output = true
 			} else {
 				use.input = true
 			}
-			uses[token] = use
+			uses[candidate] = use
+		}
+		for _, citation := range citations {
+			if (briefAuthorityPathEligible(citation.path, topDirectories, nestedDirectories) || concreteMembers[citation.path]) &&
+				!(boundaryExample && strings.HasPrefix(citation.path, "metasystem/")) {
+				record(citation.path, citation.start)
+			}
+		}
+		for _, location := range briefPathTokenRun.FindAllStringIndex(line, -1) {
+			if briefCitationConsumes(citations, location) {
+				continue
+			}
+			token := strings.TrimRight(line[location[0]:location[1]], ".")
+			if strings.ContainsAny(token, "*<>${") || !briefPathToken.MatchString(token) {
+				continue
+			}
+			if !briefAuthorityPathEligible(token, topDirectories, nestedDirectories) || (boundaryExample && strings.HasPrefix(token, "metasystem/")) {
+				continue
+			}
+			record(token, location[0])
 		}
 	}
 	paths := make([]string, 0, len(uses))
@@ -382,6 +401,87 @@ func extractBriefAuthorityPaths(brief string, topDirectories, nestedDirectories 
 	}
 	sort.Strings(paths)
 	return paths
+}
+
+func briefBoundaryMemberIsConcrete(member string) bool {
+	return !strings.HasSuffix(member, "/") &&
+		!briefBoundaryIsPattern(member) &&
+		!strings.ContainsAny(member, "<>${") &&
+		!briefPathLine.MatchString(member)
+}
+
+func briefBoundaryCitations(line string, members map[string]bool) []briefAuthorityCitation {
+	var citations []briefAuthorityCitation
+	for start := 0; start < len(line); {
+		switch line[start] {
+		case '`':
+			offset := strings.IndexByte(line[start+1:], '`')
+			if offset < 0 {
+				return citations
+			}
+			end := start + offset + 1
+			value := line[start+1 : end]
+			var decoded string
+			if json.Unmarshal([]byte(value), &decoded) == nil {
+				value = decoded
+			}
+			if members[value] {
+				citations = append(citations, briefAuthorityCitation{start, end + 1, value})
+			}
+			start = end + 1
+		case '"':
+			value, end, terminated, valid := briefJSONStringAt(line, start)
+			if !terminated {
+				return citations
+			}
+			if valid && members[value] {
+				citations = append(citations, briefAuthorityCitation{start, end + 1, value})
+			}
+			start = end + 1
+		default:
+			start++
+		}
+	}
+	return citations
+}
+
+func briefJSONStringAt(line string, start int) (string, int, bool, bool) {
+	escaped := false
+	for end := start + 1; end < len(line); end++ {
+		if escaped {
+			escaped = false
+			continue
+		}
+		if line[end] == '\\' {
+			escaped = true
+			continue
+		}
+		if line[end] == '"' {
+			var value string
+			err := json.Unmarshal([]byte(line[start:end+1]), &value)
+			return value, end, true, err == nil
+		}
+	}
+	return "", len(line), false, false
+}
+
+func briefCitationConsumes(citations []briefAuthorityCitation, location []int) bool {
+	for _, citation := range citations {
+		if location[0] < citation.end && location[1] > citation.start {
+			return true
+		}
+	}
+	return false
+}
+
+func briefAuthorityPathEligible(candidate string, topDirectories, nestedDirectories map[string]bool) bool {
+	parts := strings.Split(candidate, "/")
+	eligible := briefAuthorityDirectories[parts[0]] && (topDirectories[parts[0]] || parts[0] == "artifacts")
+	if len(parts) >= 3 && parts[0] == "metasystem" {
+		eligible = topDirectories["metasystem"] && briefAuthorityDirectories[parts[1]] &&
+			(nestedDirectories[parts[1]] || parts[1] == "artifacts")
+	}
+	return eligible
 }
 
 func inertBriefBoundsLine(line string) bool {
