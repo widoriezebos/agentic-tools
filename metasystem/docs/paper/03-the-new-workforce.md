@@ -1,10 +1,10 @@
 # 3. The New Workforce
 
-**Candidates become plentiful; a well-supported decision about one exact candidate stays scarce.**
+**Candidates become plentiful, but a well-supported decision about one exact candidate stays scarce.**
 
 > *A builder receives a recorded request, inspects an application, tries a change, runs a check and revises the result. A second builder can receive the same request a moment later and try a different path. Neither needs a free afternoon or a meeting invite. Yet the second attempt can repeat the first assumption, omit the same evidence and leave twice as much work to judge.*
 
-Agentic labor is not ordinary labor made faster. It is a different kind of workforce: some costs fall, some familiar constraints disappear from a unit of work and new failure modes become important. The delivery system I propose must be built for what this workforce actually is, not for what people hope or fear it is.
+Agentic labor is not ordinary labor made faster. It is a different kind of workforce: some costs fall, some familiar constraints disappear from a unit of work, and new failure modes become important. The delivery system I propose must be built for what this workforce actually is, not for what people hope or fear it is.
 
 ## What falls or changes shape
 
@@ -14,7 +14,7 @@ A second attempt also becomes easier to start. There is no need to wait for the 
 
 Recorded instruction changes shape as well. A briefing on how to examine a payment flow or repair a failed release can be supplied repeatedly without a teacher repeating the same explanation. The record makes the briefing consistent, but it does not make the briefing sufficient or correct. Its owner still has to maintain it, connect it to current intent and notice when the application has moved beyond its assumptions.
 
-Finally, a machine worker does not tire during a long afternoon in the human sense. It can continue through hours people reserve for rest. Computation still has a price, long attempts can lose direction and tools can stop. What falls away is fatigue; cost and failure stay.
+Finally, a machine worker does not tire in the human sense. It can continue through a long afternoon and through hours people reserve for rest. Computation still has a price, long attempts can lose direction and tools can stop. What falls away is fatigue; cost and failure stay.
 
 ## What actually goes away
 
@@ -22,17 +22,17 @@ Consider a fault found at the end of a human workday. The person who understands
 
 What goes away is limited. A service can still ration access to machinery. An organization can still have deadlines. The people responsible for consequences still have finite attention, and a poor record can still make a fresh attempt ignorant. Scarcity does not vanish. But several reasons for arranging human work no longer apply to the worker carrying a single task with stated limits on scope, time and spend. From now on we call such a task a 'bounded attempt'. Every candidate is the result of one bounded attempt.
 
-Later role design should rely only on constraints that are really gone. Two roles need not remain separate because one person could not fit both activities into a day. They may still need separation because a claim requires independent judgment, because only a responsible authority may make a value ruling or because the actor constructing a candidate must not authorize its release. Different causes produce different separations. Removing a scheduling limit does not remove an authority boundary.
+Later role design should rely only on constraints that are really gone. Two roles need not remain separate because one person could not fit both activities into a day. They may need to remain separate because a claim requires independent judgment, because only a responsible authority may make a value ruling or because the actor constructing a candidate must not authorize its release. Different causes produce different separations. Removing a scheduling limit does not remove an authority boundary.
 
 ## What appears
 
 > *A builder reaches a useful observation, then its session ends before the observation enters a durable record. The next builder begins with the original request and repeats the same search.*
 
-Memory existed during the attempt but did not survive it. Machine workers are stateless: continuity depends on records outside the worker, because the worker will not remember tomorrow.
+Memory existed during the attempt, but it did not survive the attempt. Machine workers are stateless: because a worker will not remember tomorrow, continuity depends on records outside the worker.
 
 > *Another builder begins tracing a failure and then produces nothing. It may be waiting on a tool, stopped after an error, trapped in a loop or gone entirely.*
 
-To an observer, all four look the same: a worker that needs more time. We call that silent death: absence does not explain itself, so active work needs visible progress, a deadline and a recorded end state.
+To an observer, all four look the same: a worker that needs more time. We call that silent death. Absence does not explain itself, so active work needs visible progress, a deadline and a recorded end state.
 
 > *A third builder comes back with a plausible candidate and a well-written report. Its explanation is orderly, the names sound right and the check it selected passes. A boundary case later shows that the candidate revives an expired session.*
 
@@ -40,7 +40,7 @@ Work can be convincing and wrong at the same time: a coherent explanation can ca
 
 > *An independent examiner then receives the builder's conclusion and repeats it in gentler words.*
 
-The independent examiner may be biased by the supplied framing or may favor a response that appears cooperative. The pattern is agreement-seeking. Asking for examination does not create independence if every independent examiner starts from the same reasoning or is rewarded only for producing a smooth consensus.
+The independent examiner may be biased by the supplied framing or favor a response that appears cooperative. The pattern is agreement-seeking. Asking for examination does not create independence if every independent examiner starts from the same reasoning or is rewarded only for producing a smooth consensus.
 
 Long attempts introduce another failure.
 
@@ -56,15 +56,15 @@ These failures are real: seen in practice or easy to reproduce. Not every attemp
 
 ## Generation is cheap, judgment is not
 
-Suppose five builders produce five solutions to the session problem before lunch. The organization still needs to know which solution preserves the authorized upload, refuses the late background response, handles existing sessions and can be reversed. Reading five persuasive explanations does not answer those questions. It only moves the unresolved work from construction to judgment.
+Suppose five builders produce five solutions to the session problem before lunch. The organization still needs to know, through verification, which solution preserves the authorized upload, refuses the late background response, handles existing sessions and can be reversed. Reading five persuasive explanations does not answer those questions. The unresolved work does not go away: it stops being construction work and becomes work for judgment.
 
 Producing candidates gets cheap much faster than reliable judging does. That gap shapes the whole design. Five candidates can exist by lunch; what stays rare is a decision, backed by evidence, that one exact candidate serves the authorized intent within known limits.
 
-Verification supplies that support through discriminating tests, independent attempts to find faults and observations of actual behavior. These methods also cost time and computation, and some conclusions still require human judgment. The point is not to make production scarce again. It is to aim production at evidence: enough to reject attractive mistakes, stop searches that go nowhere and save human attention for the questions machinery cannot decide.
+Verification supplies that support through discriminating tests, independent attempts to find faults and observations of actual behaviour. These methods also cost time and computation, and some conclusions still require human judgment. The point is not to make production scarce again. It is to aim production at evidence: enough to reject attractive mistakes, stop searches that go nowhere and save human attention for the questions machinery cannot decide.
 
 ## Consequences in one view
 
-The table summarizes the design brief; it does not claim that one mechanism settles every case.
+The table summarizes the design brief. It does not claim that one mechanism settles every case.
 
 | Change in the workforce | Failure that remains or appears | System property that follows |
 | --- | --- | --- |
@@ -78,4 +78,4 @@ The table summarizes the design brief; it does not claim that one mechanism sett
 | Machine judgment can share one blind spot | Several agreeing results can still be wrong | Use independent examination and reserve named questions for responsible authorities |
 | Checks are cheap to add | A check or its test setup can break and make a good candidate look faulty | Give each check an owner, the outcome it protects and a review date, and record failures of the check or its setup separately from failures of the candidate |
 
-The table does not describe a world without human limits or economic limits. It distinguishes which limits have moved and which new ones govern the work. That distinction is enough to expose the next trap: preserving a familiar process after the need that justified it has changed.
+The table does not describe a world without human or economic limits. It distinguishes the limits that have moved from the new ones that govern the work. That distinction is enough to expose the next trap: preserving a familiar process after the need that justified it has changed.
