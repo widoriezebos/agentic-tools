@@ -4,7 +4,7 @@
 
 > *In a continuation of the hypothetical session-expiry change, a later bounded release of the repaired design reaches live traffic on the weekend when clocks move forward. A few sessions expire at the wrong moment: one comparison uses local clock time instead of elapsed time. The releaser stops the expansion and restores the previous behavior.*
 
-That is recovery, and recovery by itself changes nothing: the same mistake can ship again next month. Here we solve one problem: how one failure becomes changed future behaviour, without piling up rules nobody owns or notes nobody reads. What follows is design, told through the example, not a description of an existing system.
+That is recovery. But recovery by itself changes nothing: the same mistake can ship again next month. Here we solve one problem: how one failure becomes changed future behaviour, without piling up rules nobody owns or notes nobody reads. What follows is design, told through the example, not a description of an existing system.
 
 ## From failure to lesson
 
@@ -16,7 +16,7 @@ Nobody has learning as a job of their own: each step already has an owner. The r
 
 ## How a bug becomes a fix
 
-Every failure produces work, but not every failure produces a rule. The work walks the same ladder as anything else, and it starts with the step most practice skips: the analysis of the bug is a claim, and the claim is challenged before anyone builds on it.
+Every failure produces work, but not every failure produces a rule. That work walks the same ladder as anything else, and it starts with the step most practice skips: the analysis of the bug is a claim, and that claim is challenged before anyone builds on it.
 
 > *A support report arrives during the expiry rollout: on one tablet model the warning never appears, and people are signed out in the middle of writing. A builder reproduces the failure with the device's settings and writes down the suspected cause: the warning code fails on that screen size.*
 
@@ -28,11 +28,11 @@ Only a surviving analysis becomes work. The backlog item's intent states the out
 
 From there the fix is governed like any change. Where it carries design, the design is itself a claim and is challenged the way the analysis was, before construction spends on it; where the fix is mechanical, it goes straight to a builder. The builder constructs the candidate, and a fresh examiner challenges the finished candidate, its design and code together. The reproduction must fail on the old behaviour and pass on the new, which is the discriminating evidence we required in Chapter 6. The custodian accepts only the complete chain, and the releaser watches the repaired behaviour against the intent. Being a bug shortens nothing; being low-risk does.
 
-The diagnosis can still be wrong after all of this. When live behaviour shows the fix aimed at the wrong cause while the outcome is still the right one to want, that is not an intent revision: the analysis reopens, and a new candidate follows the same ladder. Only evidence against the desired outcome itself returns to the responsible authority as a challenge to the intent. And fixing the defect is not the same return as learning from it. The incident that raised the bug may separately produce a lesson through the path above; the fix repairs today's behaviour, while the lesson changes what happens next time.
+The diagnosis can still be wrong after all of this. When live behaviour shows that the fix aimed at the wrong cause, while the outcome is still the right one to want, that is not an intent revision: the analysis reopens, and a new candidate follows the same ladder. Only evidence against the desired outcome itself returns to the responsible authority, as a challenge to the intent. And fixing the defect is not the same return as learning from it. The incident that raised the bug may separately produce a lesson through the path above: the fix repairs today's behaviour, while the lesson changes what happens next time.
 
 ## A rule in the metasystem
 
-An enforced rule is a feature like any other: it enters the backlog, is built, examined and accepted. What lands is a handful of files in the application's rule set. The check is code. Any threshold it reads is data. A known-bad case must fail and known-good cases must pass. And a governance record names the owner (who may maintain or withdraw the rule), the review date and the appeal route. The check runs at the acceptance boundary against each submitted candidate: if session code reads local wall time, the submission is refused. A builder can run the same check while working; that run is advice.
+An enforced rule is a feature like any other: it enters the backlog, is built, examined and accepted. What lands is a handful of files in the application's rule set. The check is code, and any threshold it reads is data. A known-bad case must fail and known-good cases must pass. And a governance record names the owner (who may maintain or withdraw the rule), the review date and the appeal route. The check runs at the acceptance boundary against each submitted candidate: if session code reads local wall time, the submission is refused. A builder can run the same check while working; that run is advice.
 
 The governance record keeps the rule from outliving its need. Without it, checks born from incidents pile up into ceremonies again, rebuilding Chapter 4's problem in machinery. At the acceptance boundary, the gate runs every rule and checks three facts in the rule's governance record: a current owner is named, the review date is still in the future and the check still fails on its known-bad case. A new rule that lacks an owner, a known-bad fixture or a review date never receives refusal power.
 
@@ -46,15 +46,15 @@ The governance record states the broken-check response and its scope. At adoptio
 
 ## Proving and trusting the rule
 
-Every new rule goes through the same trial. It runs in marking mode before it may refuse anything, and the builder who proposed it reviews what it marked.
+Every new rule goes through the same trial. Before it may refuse anything, it runs in marking mode, and the builder who proposed it reviews what it marked.
 
 > *In the clock rule's trial, one mark turns out to be a false alarm: a calendar that formats a timestamp for display. One real problem gets no mark at all: a helper that hides the same comparison under another name. A builder repairs that miss in the application, not in the check: all time reading moves into one module, and the rule becomes an import ban that is easy to verify.*
 
-From here the path is the same for every rule. An independent examiner tests it with changes that must be blocked and changes that must pass. The whole rule set also runs against the must-pass cases of every rule, because two sensible refusals can combine to block all valid work. Activation is gradual, and the owner advances each step: warnings first, then refusal in an isolated setting, then refusal for a limited class of changes, then full power. A step is advanced only while the rule behaves within the bounds its record states, such as how many of its refusals turn out to be false alarms. And full power is not permanent trust. The check tests for local clock time, not for the danger itself, and the two can drift apart: a new time interface can carry the same danger past the old pattern, and a builder blocked by the rule can reach the same result another way. The known-bad case, the review date and the appeal route are how that drift gets seen.
+The path from here is the same for every rule. An independent examiner tests it with changes that must be blocked and changes that must pass. The whole rule set also runs against the must-pass cases of every rule, because two sensible refusals can combine to block all valid work. Activation is gradual, and the owner advances each step: warnings first, then refusal in an isolated setting, then refusal for a limited class of changes, then full power. A step is advanced only while the rule behaves within the bounds its record states (such as how many of its refusals turn out to be false alarms). And full power is not permanent trust. The check tests for local clock time, not for the danger itself, and the two can drift apart: a new time interface can carry the same danger past the old pattern, and a builder blocked by the rule can reach the same result another way. The known-bad case, the review date and the appeal route are how that drift gets seen.
 
 ## What lessons become
 
-A landed rule is a tested floor while its check still discriminates. When an ordinary rule falls back to marking, the report states that its floor is not being enforced. When a severe rule's check breaks, the gate closes its recorded scope until a tested protection is restored or the responsible authority changes the rule.
+A landed rule is a tested floor while its check still discriminates. When an ordinary rule falls back to marking, the report states that the rule's floor is not being enforced. When a severe rule's check breaks, the gate closes its recorded scope until a tested protection is restored or the responsible authority changes the rule.
 
 > *Months later a faster session implementation arrives, and the clock rule catches it: the new code reads local wall time in its expiry comparison. The check refuses it, and nobody had to remember the incident.*
 

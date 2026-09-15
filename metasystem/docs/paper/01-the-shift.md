@@ -1,10 +1,10 @@
 # 1. The Shift
 
-**Engineering moves up a level, from building the application to governing the system that builds it.**
+**Engineering moves up a level: from building the application to governing the system that builds it.**
 
 > *An engineer receives a small request on Thursday morning: change how long a user stays signed in.*
 
-The request is one sentence; the work is not. Someone must find where sessions begin, understand what keeps them alive, change the behaviour, test the result, judge the security consequences, release it, watch it and be ready to reverse it. The change may be a few lines, but the responsibility covers everything between wanting it and depending on it.
+The request is one sentence, but the work is not. Someone must find where sessions begin, understand what keeps them alive, change the behaviour, test the result, judge the security consequences, release it, watch it and be ready to reverse it. The change may be a few lines, but the responsibility covers everything between wanting it and depending on it.
 
 For consequential or repeatedly delivered software, I propose a shift in ownership: machinery absorbs more of construction and delivery, and engineering moves toward designing and governing that machinery. The application remains what people use; the system that produces and cares for it becomes a primary object of engineering.
 
@@ -12,11 +12,11 @@ For consequential or repeatedly delivered software, I propose a shift in ownersh
 
 What we are discussing now is not new. Programmers once allocated registers and calculated jump targets by hand. And then compilers took care of all of that.
 
-Before version control, a change could mean copying a directory, naming it with a date and hoping two people had not edited the same file. Version control took over the remembering and the comparing. It did not decide which change was right; it made history durable so people could make that decision with better evidence.
+Before version control, a change could mean copying a directory, naming it with a date and hoping two people had not edited the same file. Version control took over the remembering and the comparing. It did not decide which change was right. It made history durable, so people could make that decision with better evidence.
 
 A release once depended on a person signing in to each server at night, following a runbook and remembering which commands had succeeded. One missed line could leave two servers behaving differently. Infrastructure as code turned the desired state into a description that machinery can compare with reality and then implement.
 
-Testing followed the same pattern. A release team once clicked through the application by hand from a checklist, with every cycle consuming the same attention. Continuous integration moved repeatable checks next to the change. The checklist disappeared only where its protection could become an automatic, repeatable refusal.
+Testing followed the same pattern. A release team once clicked through the application by hand from a checklist, and every cycle consumed the same attention. Continuous integration moved repeatable checks next to the change. The checklist disappeared only where its protection could become an automatic, repeatable refusal.
 
 This ladder shows that machinery can absorb bounded, repeatable work. But it does not show that machinery can absorb engineering wholesale. Compilers do not choose the outcome a product should serve. Version control does not resolve a conflict of values. An infrastructure description does not decide which operational risk is acceptable. Continuous integration does not prove that an application is good.
 
@@ -26,7 +26,7 @@ One further premise is needed now. Machinery can increasingly carry an iterative
 
 Suppose every sensitive data export must leave an audit trail. A team can place that requirement in a review guide. It can also make the rule enforceable: a change affecting exports cannot proceed unless it produces the required record and passes the relevant checks.
 
-The application then stops being a handcrafted object that machinery only packages at the end. It becomes an output that a governed system can produce, reproduce, inspect, release, observe and repair. To do those things again, the system needs a statement of the intended outcome, limits on action, checks that separate a supported claim from a guess and records of what happened. Together those form a durable asset. The title's word for that governed system is the metasystem. Part of it is generic machinery; the rest is specific to this application. We will return to the difference in Chapter 18.
+Then the application stops being a handcrafted object that machinery only packages at the end. It becomes an output that a governed system can produce, reproduce, inspect, release, observe and repair. To do those things again, the system needs a statement of the intended outcome, limits on action, checks that separate a supported claim from a guess and records of what happened. Together those form a durable asset. The title's word for that governed system is the metasystem. Part of it is generic machinery; the rest is specific to this application. We will return to the difference in Chapter 18.
 
 Some limits need authority. A suggestion may be ignored; an enforced rule can refuse a change. We call the governing rules laws; "enforced rule" names a law implemented at the action it can stop. The legal metaphor identifies who has authority to decide, what a law can refuse and how to challenge a decision. It does not imply a 'machine court' or mimicked legal ceremony. A law here is a rule with enough authority to stop action when a named condition has not been met.
 
@@ -48,11 +48,11 @@ The following day describes a possible end state, one that is not yet common pra
 
 > *An enforced rule refuses that candidate. No person is asked to inspect a convincing explanation or notice the failure of the tests in some stream of output. The builder revises the design so that expiry is final and the upload has only its narrow permission. The examination repeats the new checks, runs the existing sign-in and account-recovery checks and verifies rollback.*
 
-The evidence belongs to the exact candidate that was examined. When the builder revises the candidate, the old results cannot authorize the new one. So the new candidate must pass its own examination.
+The evidence belongs to the exact candidate that was examined. When the builder revises that candidate, the old results cannot authorize the new one. So the new candidate must pass its own examination.
 
 > *Another enforced rule refuses release unless live observation can distinguish an expected rise in sign-ins from a broken loop that ejects responsive users.*
 
-Both push up the same number: an expiry change adds sign-ins by design, because ended sessions bring people back. In the loop, one person is wrongly judged idle, signed out mid-work and thrown out again minutes after signing back in. The total looks healthy either way. But the pattern per account tells them apart.
+Both push up the same number: an expiry change adds sign-ins by design, because ended sessions bring people back. In the loop, one person is wrongly judged idle, signed out mid-work and then thrown out again minutes after signing back in. Either way, the total looks healthy. But the pattern per account tells them apart.
 
 > *In the afternoon, the releaser sends the candidate to a small part of live traffic. It compares expiry, sign-in, upload and error behavior with the authorized bounds. It expands only while observations remain inside them. Otherwise it restores the previous behavior. If policy reserves release for a responsible authority, it pauses with the evidence ready.*
 
@@ -60,7 +60,7 @@ Both push up the same number: an expiry change adds sign-ins by design, because 
 
 ## Why this premise is important
 
-The shift depends on the loop: try a change with tools, observe what happens, revise. It does not depend on machinery writing one plausible patch. That loop can expose errors and recover from them, but sounding convincing does not make it trustworthy. A builder can stop after tracing session behaviour without declaring failure, leaving delay indistinguishable from progress. Construction and independent examination can share the assumption that every network event proves human activity. A convincing candidate can still revive an expired session. The evidence can expose those mistakes, but it cannot decide whether passive reading should keep an account open.
+The shift depends on the loop: try a change with tools, observe what happens, revise. The shift does not depend on machinery writing one plausible patch. That loop can expose errors and recover from them, but sounding convincing does not make it trustworthy. A builder can stop after tracing session behaviour without declaring failure, leaving delay indistinguishable from progress. Construction and independent examination can share the assumption that every network event proves human activity. A convincing candidate can still revive an expired session. The evidence can expose those mistakes, but the evidence cannot decide whether passive reading should keep an account open.
 
 We take a rule from each of those failures. Because silent stopping makes waiting look like work, progress needs a durable record and each active attempt needs a visible deadline. Because several attempts can share the same mistaken assumption, a proposal needs challenge grounded independently of the builder's explanation. Because a plausible mistake can cross from code into user harm, permissions must be narrow enough to contain what construction and release may do. Because evidence cannot resolve the value choice hidden in "active work," that choice needs a named human authority before it becomes a check.
 
@@ -70,6 +70,6 @@ Questions like that stay with people: choices between values, decisions someone 
 
 I make a design argument. I do not claim that such systems are already common practice. The claims should stand or fall across applications and organizations. The test is observable: do stated outcomes become dependable behaviour, do failures become visible and contained and does human authority remain real where it is needed?
 
-Scope also counts. A disposable script may not justify elaborate production machinery, but software released repeatedly, changed by many hands or trusted with money, identity, safety or essential work may justify much more. The investment depends on repetition and risk, and not every project needs the same amount of machinery.
+Scope also counts. A disposable script may not justify elaborate production machinery, but software released repeatedly, changed by many hands or trusted with money, identity, safety or essential work can justify much more. The investment depends on repetition and risk, and not every project needs the same amount of machinery.
 
 The historical ladder establishes only that bounded work can move into tools. Iterative tool use extends that to a broader construction-and-delivery loop. Neither premise says what delivery must contain. Before we choose machinery, one question is still open: what does software delivery actually require, apart from the process inherited to organize it?

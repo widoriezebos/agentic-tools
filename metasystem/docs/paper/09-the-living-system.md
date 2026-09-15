@@ -14,7 +14,7 @@ A delivery system is living, in a limited but important sense. Its workers start
 
 A status that still says "working" cannot distinguish slow progress from a stopped worker.
 
-The system observes two things. It looks for recent work products that change the recorded state of the task. And it looks for a heartbeat: a small, independently observed sign that the worker is still able to act. Neither is sufficient alone. A worker can remain alive while making no progress, and a finished work product can remain visible after its worker has died. Together, the two allow a liveness watcher to distinguish activity, waiting and silence more reliably.
+The system observes two things. It looks for recent work products that change the recorded state of the task. And it looks for a heartbeat: a small, independently observed sign that the worker is still able to act. But neither is sufficient alone. A worker can remain alive while making no progress, and a finished work product can remain visible after its worker has died. Together, the two allow a liveness watcher to distinguish activity, waiting and silence more reliably.
 
 Every wait also has a deadline and an owner. The deadline says when uncertainty must stop being treated as normal delay. The owner is the actor with the authority to decide what follows: retry, replacement, reversal or human escalation. "Wait until it finishes" is not an operating rule unless someone can say when the wait ends and who acts then.
 
@@ -24,11 +24,11 @@ Timeout does not mean blind repetition. Before a task begins, the system records
 
 > *A liveness watcher decides to stop the silent worker. Between observation and action, that worker ends and its short numeric identifier is assigned to a new, unrelated task. If the watcher acts only on the remembered number, it stops the wrong work.*
 
-The identifier was accurate once; now it is not authority.
+An identifier that was accurate once is not authority now.
 
-Consequential actions check identity at the moment they occur: the system verifies both the actor or object being named and its current claim to the resource. Before stopping work, it confirms that the target is still the same worker and still belongs to the timed-out task. Before replacing session data, it confirms that the candidate is still authorized for that exact data. Before release, it confirms that the accepted change is still the change whose evidence passed.
+At the moment a consequential action occurs, the system checks identity: it verifies both the named actor or object and its current claim to the resource. Before stopping work, it confirms that the target is still the same worker and still belongs to the timed-out task. Before replacing session data, it confirms that the candidate is still authorized for that exact data. Before release, it confirms that the accepted change is still the change whose evidence passed.
 
-This check closes a gap between decision and use. Names, labels and process numbers help locate a subject. But they can become stale or be reused. A current claim ties the subject to the particular task, resource and permission. If that relationship cannot be proved at the point of action, the action does not proceed.
+This check closes a gap between decision and use. Names, labels and process numbers help locate a subject, but they can become stale or be reused. A current claim ties the subject to the particular task, resource and permission. If that relationship cannot be proved at the point of action, the action does not proceed.
 
 ## Isolation by construction
 
@@ -38,7 +38,7 @@ The system prevents that interference by giving the examination an isolated copy
 
 Isolation also limits authority. The builder receives the application material and test data needed to construct the session change, but not live account secrets or permission to release. The independent examiner receives the finished candidate and an isolated place to challenge it, but not power to repair or accept it. The migration worker receives authority over the named migration and no broader access to stored data. A mistake can then harm only the resources intentionally placed within reach.
 
-This is least authority: each task receives only the information, resources and actions needed for that task. In Chapter 8 we applied the same rule to the shared record, where each role reads a limited view while the full history remains preserved for recovery and audit. Isolation and narrow permissions turn the possible reach of an error into a design decision.
+This is least authority: each task receives only the information, resources and actions needed for that task. We applied the same rule to the shared record in Chapter 8: each role reads a limited view, while the full history remains preserved for recovery and audit. Isolation and narrow permissions turn the possible reach of an error into a design decision.
 
 ## Safe against itself
 

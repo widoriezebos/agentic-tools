@@ -20,7 +20,7 @@ Each responsibility therefore needs an explicit account of the understanding it 
 
 Engineers also learn through conversation about how the application behaves. An engineer asks why a request succeeded after the session expired. The machinery explains where access was checked and shows the evidence. A follow-up question explores whether the same explanation applies to an upload already in progress.
 
-The engineer's questions guide the conversation. The machinery can connect the behaviour to earlier design decisions and explain consequences the engineer has yet to consider. Claims stay connected to evidence, and uncertainty stays visible. When an explanation leaves something unresolved, the engineer's questions can lead the conversation to an experiment.
+The engineer's questions guide the conversation. The machinery can connect the behaviour to earlier design decisions and explain consequences the engineer has yet to consider. Claims stay connected to evidence, and uncertainty stays visible. When an explanation leaves something unresolved, the engineer keeps the unknown, and the engineer's questions can lead the conversation to an experiment on it.
 
 ## Learn by predicting and investigating
 
@@ -28,11 +28,11 @@ The engineer's questions guide the conversation. The machinery can connect the b
 
 > *The request succeeds. The engineer follows the response through the application, finds where it updates activity and predicts what will happen if that update is removed. The machinery makes the trial change and repeats the experiment. Access stays closed.*
 
-The machinery prepares the environment and carries out the experiment the engineer chose. In this exercise, the engineer has to commit to an expectation before seeing the result, then investigate the difference. That is an encounter from which judgment can grow. An explanation supplied afterwards can help the engineer understand the result and its limits.
+The machinery prepares the environment and carries out the experiment the engineer chose. In this exercise, the engineer has to commit to an expectation before seeing the result, and then investigate the difference. That is an encounter from which judgment can grow. An explanation supplied afterwards can help the engineer understand the result and its limits.
 
 The source of the expected behaviour stays visible: the recorded ruling says that a background refresh must not extend the session. The experiment shows what this candidate does. A teaching agent's agreement establishes neither fact.
 
-Sometimes the useful work is reading the relevant implementation. Sometimes it is writing a small version personally, or diagnosing a failure without asking the agent for its answer. The choice depends on what the engineer needs to learn. Machinery can remove setup work while leaving the investigation with the person. The exercise ends when the person can account for the result and apply the reasoning to a changed case.
+Sometimes the useful work is reading the relevant implementation. Sometimes it is writing a small version personally, or diagnosing a failure without asking the agent for its answer. The choice depends on what the engineer needs to learn. Machinery can remove the setup work while leaving the investigation with the person. The exercise ends when the person can account for the result and apply the reasoning to a changed case.
 
 ## More experience than chance provides
 
@@ -40,19 +40,19 @@ Ordinary development exposes an engineer to whichever problems happen to arrive.
 
 The session case can be varied by changing which clock the test controls. In another case, an authorized upload finishes after the ordinary session closes. The engineer chooses an observation that would reveal whether the upload has acquired too much permission. Each variation asks them to decide whether the earlier explanation still applies.
 
-This could give people useful experience faster than waiting for failures in their own work. Engineers can encounter rare faults and compare approaches from other applications. That benefit remains a claim to test. Generated cases may repeat the teaching agent's assumptions, and an isolated environment may omit the condition that caused a real failure. Retained observations and examination by experienced people keep the cases grounded. Contact with users is still needed to learn what the software's behavior means for the work they are trying to do.
+This can give people useful experience faster than waiting for failures in their own work. Engineers can encounter rare faults and compare approaches from other applications. But that benefit remains a claim to test. Generated cases may repeat the teaching agent's assumptions, and an isolated environment may omit the condition that caused a real failure. Retained observations and examination by experienced people keep the cases grounded. Contact with users is still needed to learn what the software's behaviour means for the work they are trying to do.
 
-A newcomer needs a progression through work they can understand and check. They might begin by constructing a small session handler, then diagnose faults in another version before examining a proposed change. As they learn to choose their own experiments, they may need less help. Maintaining the expertise of today's reviewers is insufficient if nobody can develop the people who will replace them.
+A newcomer needs a progression through work they can understand and check. They can begin by constructing a small session handler, then diagnose faults in another version before examining a proposed change. As they learn to choose their own experiments, they may need less help. Maintaining the expertise of today's reviewers is insufficient if nobody can develop the people who will replace them.
 
 ## Find out whether learning lasts
 
-Repeating an explanation immediately after hearing it is weak evidence of learning. A later case must require the engineer to work out again what matters.
+Repeating an explanation immediately after hearing it is weak evidence of learning. A later case must require the engineer to work out what matters again.
 
 > *Weeks later, the new engineer examines a different session failure. An agent blames a sleeping device and recommends extending the timeout. The engineer asks to repeat the case while the device stays awake. The same failure occurs. The agent's explanation is insufficient, and the engineer asks for further investigation before accepting the proposed remedy.*
 
 A useful assessment includes sound work and also plausible wrong advice. The engineer must be able to challenge that advice without rejecting every recommendation. And they should recognize when the available evidence is insufficient, and seek help before acting.
 
-The expected results need support that is independent of the agent that taught the case. That support can come from reproduced failures and from checks examined by another qualified engineer. Assessment uses unfamiliar cases, and it returns to the subject after time has passed. It establishes what the person could do under those conditions. But it cannot certify every future judgment.
+The expected results need support that is independent of the agent that taught the case. That support can come from reproduced failures, and it can also come from checks examined by another qualified engineer. Assessment uses unfamiliar cases, and it returns to the subject after time has passed. It establishes what the person could do under those conditions. But it cannot certify every future judgment.
 
 The paper's separation of construction and examination still holds. A person who learns through a builder's private reasoning about a candidate has seen the path that an independent examiner must be free of. They may investigate it for learning. But its independent examination belongs to someone else.
 

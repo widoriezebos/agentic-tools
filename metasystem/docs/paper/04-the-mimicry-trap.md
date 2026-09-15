@@ -14,15 +14,15 @@ What follows are things I have seen in software teams, but not every team uses e
 
 > *A developer works for a day on a difficult change while the rest of the team cannot see whether the work is moving or stuck.*
 
-A short daily meeting forces private state into the open. The circle of people speaking in turn is only the form: the standup serves a need that outlives it, and that need is visible progress, visible blockage and a chance to coordinate before hidden delay becomes expensive.
+A short daily meeting forces private state into the open. The circle of people speaking in turn is only the form. The standup serves a need that outlives it: visible progress, visible blockage and a chance to coordinate before hidden delay becomes expensive.
 
 > *A team with ten people and more requests than attention chooses a small batch for the next two weeks.*
 
-The sprint answers a need: protecting scarce human attention from constant reshuffling. Its fixed interval gives people a stable horizon, limits interruption and creates a regular moment to reconsider priority. The cadence is only a means.
+The sprint answers a need: protecting scarce human attention from constant reshuffling. Its fixed interval gives people a stable horizon, limits interruption and creates a regular moment to reconsider priority. But the cadence is only a means.
 
 > *A manager deciding between two projects asks how long each will take.*
 
-The answers are imperfect. But they let people discuss commitments and competing claims on scarce people before expensive labor is assigned. Estimates help allocate scarce people and expose disagreement about scope. The need they serve is a decision made with a visible statement of expected cost and uncertainty. The number itself is secondary.
+The answers are imperfect. But they let people discuss commitments and competing claims on scarce people before expensive labor is assigned. Estimates help allocate scarce people, and they expose disagreement about scope. The need they serve is a decision made with a visible statement of expected cost and uncertainty. The number itself is secondary.
 
 > *A developer finishes a change that looks correct to its author. Another developer reads it, finds an unchecked edge case and learns how that part of the application works.*
 
@@ -30,11 +30,11 @@ Code review adds a second perspective while spreading knowledge that would other
 
 > *When the person who understands a service leaves, the next person reconstructs its assumptions from incidents and old messages.*
 
-Documentation reduces that loss by putting decisions, behaviour and operating knowledge somewhere more durable than memory. The need it serves is recoverable context. The document's format and the time of writing are incidental.
+Documentation reduces that loss by putting decisions, behaviour and operating knowledge somewhere more durable than memory. It serves one need: recoverable context. The format of the document and the time of writing are incidental.
 
 > *After the same release failure happens twice, a team stops normal work and asks why its process has not learned.*
 
-The retrospective creates protected time to compare expectation with outcome and change future behaviour. The need behind it is a learning loop with authority to alter the system; the meeting invitation is not the point.
+The retrospective creates protected time to compare expectation with outcome and change future behaviour. The need behind it is a learning loop with authority to alter the system. The meeting invitation is not the point.
 
 The method is the same each time: take a concrete practice, recover the human limit that produced it and name the need it served. These practices really happened. The proposal is to keep meeting each need only where it still exists under the new workforce.
 
@@ -44,17 +44,17 @@ The method is the same each time: take a concrete practice, recover the human li
 
 Both answers are recognizable, and recognizability has real value: it helps people know where to ask, gives authorities a place to intervene and makes accountability easier to describe.
 
-Familiarity also leaves people in a reassuring position: a machine proposes each step and a person approves it. That arrangement can be appropriate when the person is deciding a reserved question or when the consequences require independent human judgment. But it is less convincing when the approval consists of glancing at a polished report of evidence the person cannot reproduce. The visible human remains, but the claimed scrutiny may not.
+Familiarity also leaves people in a reassuring position: a machine proposes each step and a person approves it. That arrangement can be appropriate when the person is deciding a reserved question, or when the consequences require independent human judgment. But the arrangement is less convincing when the approval consists of glancing at a polished report of evidence that the person cannot reproduce. The human remains visible; the claimed scrutiny may not.
 
-A ceremony cannot justify itself by being recognizable. The relevant question is whether the need it serves is actually met. A named review with no independent challenge is weaker than an unfamiliar examination that reliably finds a known fault. A fixed two-week interval with no scarcity to manage is only delay. Accountability requires traceable authority and consequences, and keeping every familiar form alive does not supply them.
+A ceremony cannot justify itself by being recognizable. The relevant question is whether the need it serves is actually met. A named review with no independent challenge is weaker than an unfamiliar examination that reliably finds a known fault. And a fixed two-week interval with no scarcity to manage is only delay. Accountability requires traceable authority and consequences; keeping every familiar form alive does not supply them.
 
 ## The cost of preserving the form
 
 Suppose every machine worker must write a morning report, attend a planning exchange, estimate its attempt and produce a closing summary. Most of the information already exists in the work record. Rewriting it consumes computation and creates several versions of state that can disagree. A responsible authority must either read them all or accept that some reports exist only because the process asks for them.
 
-The greater cost is misplaced confidence. A polished review summary can look like scrutiny even when its author received the builder's reasoning and repeated the same assumption. An estimate can make uncertain exploration look controlled without limiting spend. A retrospective can collect lessons that never change a check, permission or decision. The copied form becomes an empty performance when nothing observable distinguishes performing the ceremony from meeting the need behind it.
+But the greater cost is misplaced confidence. A polished review summary can look like scrutiny even when its author received the builder's reasoning and repeated the same assumption. An estimate can make uncertain exploration look controlled without limiting spend. A retrospective can collect lessons that never change a check, permission or decision. The copied form becomes an empty performance when nothing observable distinguishes performing the ceremony from meeting the need behind it.
 
-Attention then follows the old problems. Managers ask whether each worker reported on time while a stopped attempt has no deadline or terminal record. Reviewers count approvals while every independent examiner shares the same source of expected results. Planners optimize a cadence while weak verification allows a plausible mistake to approach release. Mimicry adds steps, which is expensive, and those steps can also conceal the failure modes of the new workforce.
+And then attention follows the old problems. Managers ask whether each worker reported on time while a stopped attempt has no deadline or terminal record. Reviewers count approvals while every independent examiner shares the same source of expected results. Planners optimize a cadence while weak verification allows a plausible mistake to approach release. Mimicry adds steps (which is expensive), and those steps can also conceal the failure modes of the new workforce.
 
 ## Find the need, then decide what happens to the form
 
@@ -62,7 +62,7 @@ Consider an inherited approval meeting. First ask why the meeting was requested 
 
 Only after those questions does a responsible authority decide what happens to the form, and that decision is recorded. When no need remains, discard the form and record why. When meeting the need is mechanical and its success observable, machinery can replace the form. When a need remains and the old form still serves it, retain the form. When the need remains but the old form fits it poorly, adapt the form. When the act contains a value ruling or accountability that machinery cannot hold, keep it as an explicitly human act, held by a responsible authority. One ceremony often serves several needs, and each need can lead to a different outcome for the form. The approval meeting served three, and each gets its own answer: a shared record takes over the scattered information, the conflict between the two groups still has to be argued out between people and ruled on by a responsible authority, and approval of the consequential action stays with the responsible authority who answers for it. What remains of the meeting is the part only people can do.
 
-This works well for both removal and replacement of a meeting. A team should not delete a practice just because it feels old. It should name the need, show that the need no longer exists or is met elsewhere and observe the result. That includes what people learn through the practice, even when teaching was never its stated purpose. Nor should it demand a replacement for a need that is really gone. That would preserve process for its own sake.
+This works well for both removal and replacement of a meeting. A team should not delete a practice just because it feels old. The team should name the need, show that the need no longer exists or is met elsewhere, and observe the result. That includes what people learn through the practice, even when teaching was never its stated purpose. Nor should the team demand a replacement for a need that is really gone: that would preserve process for its own sake.
 
 ## Four worked cases
 
@@ -80,4 +80,4 @@ The fourth case ends differently. A shorter session limit protects unattended ac
 
 The meeting does more than apply an existing rule. It reveals that the shared word concealed incompatible intentions.
 
-Some ceremonies gather people whose knowledge is unspoken, to then have a session in which disagreement becomes visible. The need they serve cannot be fully named in advance, because discovery belongs to the act. The method must name what remains unknown, and it must also preserve a human place for negotiation. Machinery can prepare examples and expose conflicting statements; it can record rulings, and later it can enforce what can be made checkable. But the disagreement itself still has to happen between people. No machinery can have it for them.
+Some ceremonies gather people whose knowledge is unspoken, and then have a session in which disagreement becomes visible. The need they serve cannot be fully named in advance, because discovery belongs to the act. The method must name what remains unknown, and it must also preserve a human place for negotiation. Machinery can prepare examples and expose conflicting statements; it can record rulings, and later it can enforce what can be made checkable. But the disagreement itself still has to happen between people. No machinery can have it for them.

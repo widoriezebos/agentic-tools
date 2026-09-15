@@ -4,7 +4,7 @@
 
 > *In Chapter 1's hypothetical day, the first session-expiry candidate comes with a clear explanation. It treats a late background response as activity, so an expired session can become usable again. A controlled clock and a delayed response expose the fault in seconds.*
 
-The whole principle is the gap between the explanation and the observation: a convincing claim can point you somewhere, but only well-grounded evidence and bounded proof can authorize an action with consequences. The aim is an accurate statement of what one exact result has shown and what it has not shown.
+The whole principle is the gap between the explanation and the observation: a convincing claim can point you somewhere, but only well-grounded evidence and bounded proof can authorize an action with consequences. The aim is an accurate statement of what one exact result has shown, and of what it has not shown.
 
 ## Evidence, proof and the boundary between them
 
@@ -12,17 +12,17 @@ The whole principle is the gap between the explanation and the observation: a co
 
 That result is evidence for the claim that expired sessions cannot be used. A production measure showing that responsive users are not entering repeated sign-in loops is also evidence, but of a different kind. An independent examiner's finding is evidence when it identifies the exact candidate, condition and observable result.
 
-But what this check can prove is narrower. It demonstrates that rejection follows within its controlled clock, a specified session state, a stated definition of activity and the exact candidate examined. The conclusion holds inside those boundaries and assumptions. Just because the check passed does not mean that it becomes a universal statement about every device, delay, future revision or user.
+But what this check can prove is narrower. It demonstrates that rejection follows for the exact candidate examined, within its controlled clock, a specified session state and a stated definition of activity. The conclusion holds only inside those boundaries and assumptions. Just because the check passed does not mean that it becomes a universal statement about every device, delay, future revision or user.
 
 ## Enforced rules instead of guidelines
 
 > *The first candidate reaches a release step with the late-response check failing. A guide beside the work says that all session checks should pass.*
 
-The builder can still proceed if the guide has no power. When the same condition sits at the release action and refuses the candidate, the missing protection becomes effective instead of being advice.
+If the guide has no power, the builder can still proceed. But when the same condition sits at the release action and refuses the candidate, the missing protection becomes effective instead of being advice.
 
 This is an enforced rule. It controls a named action, judges the exact candidate presented for that action and explains a refusal in plain language. "Release refused: a response received after expiry restores access" is governable. "Policy failed" is not. The refusal must also say what may happen next, such as returning the candidate to construction or asking a responsible authority to decide an exception.
 
-Binding to the exact candidate is essential. Evidence from an earlier version cannot authorize a later revision, even when the difference looks harmless. Release evidence must also bind to the environment; one configuration cannot authorize another that changes the behaviour. An enforced rule remains trustworthy only while its evidence refers to the exact candidate and environment that will reach users and no actor can bypass it without the named authority.
+Binding to the exact candidate is essential. Evidence from an earlier version cannot authorize a later revision, even when the difference looks harmless. Release evidence must also bind to the environment: one configuration cannot authorize another that changes the behaviour. An enforced rule remains trustworthy only while its evidence refers to the exact candidate and environment that will reach users and no actor can bypass it without the named authority.
 
 ## Discriminating tests
 
@@ -30,7 +30,7 @@ Binding to the exact candidate is essential. Evidence from an earlier version ca
 
 If the test also passes there, it does not distinguish the claimed protection from its known failure. The passing result measures only the test's ability to agree with both versions.
 
-A discriminating test must fail on a relevant broken version and pass on the supported one. A preserved known-bad candidate can provide that comparison. Where no natural example exists, the independent examiner can introduce a small fault (such as reversing the expiry comparison or allowing refresh to extend the session) and confirm that the test detects it. The fault does not show that every fault will be found. It shows that this test responds to the behaviour it claims to protect.
+A discriminating test must pass on the supported version and fail on a relevant broken one. A preserved known-bad candidate can provide that comparison. Where no natural example exists, the independent examiner can introduce a small fault (such as reversing the expiry comparison or allowing refresh to extend the session) and confirm that the test detects it. The fault does not show that every fault will be found. But it shows that this test responds to the behaviour it claims to protect.
 
 Expected results need their own source. The rule that background refresh does not extend a session comes from the responsible authority's ruling. It does not come from the builder's candidate, and it does not come from a test generator guessing what seems sensible. The test keeps that source and its own change history, so the origin of every expected answer stays traceable. Without that, a changed test can make a broken candidate look correct by changing the expected answer to match the implementation.
 
@@ -42,11 +42,11 @@ Each new independent examiner receives the materials needed to examine the claim
 
 Fresh context removes one source of shared error: the builder's path. A newly started examiner using the same model can still find faults that a review performed inside the builder's context missed. But the two workers still share the model and its data, so their agreement cannot by itself rule out a shared mistake.
 
-The independent examiner's job is active fault-finding. It tries boundary times, stale pages, sleeping devices, crossed requests and assumptions shared by the checks. A material finding returns the candidate for repair, or calls for stronger evidence when the fault lies in the support rather than the work. Either way, what changed is examined again. Repeated rounds stop for one of three explicit reasons: a bounded search completes without a new material issue, the judging budget is exhausted and forces escalation, or an open question requires a human ruling. Stopping is a recorded decision, not the moment the process stops producing output. One test separates a material issue from a preference: if the finding stands, must the candidate change, or does the evidence stop supporting its claim? When the bounded search runs its full round and produces no material issue, the search has completed. Repeating the same search then adds little, though an examination aimed differently can still find what it missed.
+The independent examiner's job is active fault-finding. It tries boundary times, stale pages, sleeping devices, crossed requests and assumptions shared by the checks. A material finding returns the candidate for repair, or, when the fault lies in the support rather than the work, calls for stronger evidence. Either way, what changed is examined again. Repeated rounds stop for one of three explicit reasons: a bounded search completes without a new material issue, the judging budget is exhausted and forces escalation, or an open question requires a human ruling. Stopping is a recorded decision, not the moment the process stops producing output. One test separates a material issue from a preference: if the finding stands, must the candidate change, or does the evidence stop supporting its claim? When the bounded search runs its full round and produces no material issue, the search has completed. Repeating the same search then adds little, though an examination aimed differently can still find what it missed.
 
 ## Four questions set verification depth
 
-Changing a comma in internal help text can alter one line, and so can reversing one comparison in account authorization. Line count says little about the evidence either change deserves. The authorization error can expose every signed-in account; the text change may be immediately reversible and affect no behaviour.
+Changing a comma in internal help text can alter one line. So can reversing one comparison in account authorization. Line count says little about the evidence either change deserves. The authorization error can expose every signed-in account; the text change may be immediately reversible and affect no behaviour.
 
 Four questions set verification depth. If the change is wrong, how severe could the harm be? How unfamiliar is the approach to the system and its independent examiners? How many users or systems can it affect? And how much change has accumulated since the last broad examination? Severity decides how strong the evidence must be. Novelty calls for challenges beyond the checks that grew around the old design. Exposure raises the price of one missed fault. Accumulation justifies a broad examination that catches interactions among modest changes.
 
@@ -66,7 +66,7 @@ The answer to these limits is to claim only what was shown. The system records w
 
 ## Evidence that triggers human review
 
-A reversible wording correction has well-understood behavior, a check that fails on the old wording, narrow exposure and no value dispute. Machine evidence can be sufficient to authorize it under an established rule. A person repeating the same inspection checks what the machine already checked. That adds delay and little protection.
+A reversible wording correction has well-understood behaviour, a check that fails on the old wording, narrow exposure and no value dispute. Machine evidence can be sufficient to authorize it under an established rule. A person repeating the same inspection checks what the machine already checked. That adds delay and little protection.
 
 A one-line change that decides who may access an account is different. So is a permanent deletion, a new approach with weak tests or a choice that trades one group's safety against another's access. Independent human review is required when the evidence exposes a value judgment; when the action is irreversible or its possible harm is severe; when the work is unfamiliar and the tests do not discriminate strongly; or when builders, independent examiners and test generators may share a model, data source or assumption, because what they share can make them agree for the same mistaken reason. These triggers come from the evidence, the possible consequences and the independence of the sources; job titles and calendar stages play no part. In Chapter 13 we will see who may perform that review, how accountability is assigned and how an appeal proceeds.
 
@@ -78,14 +78,14 @@ Low risk does not mean no control. A path authorized by enforced rules still nee
 
 Together those acts form care.
 
-The classification is a problem of its own. The rule failed to recognize that the activity signal involved a value choice and broad exposure. That missed trigger is treated as a defect, not as bad luck. Its record includes the evidence available before release, the evidence found afterwards and the reason the earlier rule did not escalate.
+The classification is a problem of its own. The rule did not recognize that the activity signal involved a value choice and broad exposure. That missed trigger is treated as a defect, not as bad luck. Its record includes the evidence available before release, the evidence found afterwards and the reason the earlier rule did not escalate.
 
-Repair then tests a revised classification against this case and against cases that should remain on the path governed by automatic checks. A rule that sends every harmless wording change to a person may prevent one miss by making the system unusable. Some lessons can become an automatic refusal; others remain guidance for an independent examiner, because their meaning depends on context. The aim is a better dividing line, not an ever-growing collection of permanent enforced rules.
+Repair then tests a revised classification against this case, and also against cases that should remain on the path governed by automatic checks. A rule that sends every harmless wording change to a person may prevent one miss by making the system unusable. Some lessons can become an automatic refusal. Others remain guidance for an independent examiner, because their meaning depends on context. The aim is a better dividing line, not an ever-growing collection of permanent enforced rules.
 
 ## The change, continued
 
-Chapter 1's day already gave us the ruling, the named checks, the refused candidate and one human interruption. Here those facts set the task: find the observations that tell supported behaviour apart from the known failure.
+Chapter 1's day already gave us the ruling, the named checks, the refused candidate and one human interruption. Here those facts set the task: find the observations that can tell supported behaviour apart from the known failure.
 
 > *The first discriminating check fails against the earlier behavior because the expired session still works, then passes against the repaired candidate. The independent examiner reverses the comparison on purpose and confirms that the check fails. A controlled clock covers one second before expiry, the exact boundary and one second after. Other checks introduce small differences between device and service clocks and verify that existing sessions adopt the new limit.*
 
-The four risk questions make the depth decision clear. Authentication failure can expose accounts or lock every signed-in user out, so the consequence is severe. The boundary behaviour is subtle enough to be unfamiliar in important cases. Every current session may be exposed. Related changes to warnings, uploads and restoration have accumulated around the expiry rule. Independent human review is triggered even if the final repair is a one-line comparison.
+The four risk questions make the depth decision clear. The consequence is severe, because authentication failure can expose accounts or lock every signed-in user out. In important cases, the boundary behaviour is subtle enough to be unfamiliar. Every current session may be exposed. And related changes to warnings, uploads and restoration have accumulated around the expiry rule. Independent human review is triggered, even if the final repair is a one-line comparison.

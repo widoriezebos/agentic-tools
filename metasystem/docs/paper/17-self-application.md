@@ -8,19 +8,19 @@ The idea for such a change usually comes from the system's own records: an incid
 
 If the proposal can install itself and then judge whether its own evidence is sufficient, the removed check disappears at the moment it is needed. A convincing explanation can make the circle look complete: the new rule says the new rule is safe.
 
-An ordinary application change does not create this exact problem. A session-expiry candidate is judged by actors outside the candidate. A change to an enforced rule, the identity check or the rule that assigns release authority can weaken the machinery that judges it. The delivery system must survive changing itself without allowing a candidate to rewrite the terms of its own acceptance.
+An ordinary application change does not create this exact problem. A session-expiry candidate is judged by actors outside the candidate. But a change to an enforced rule, the identity check or the rule that assigns release authority can weaken the machinery that judges it. The delivery system must survive changing itself without allowing a candidate to rewrite the terms of its own acceptance.
 
-This is like a stress test and I think it is really necessary for the metasystem to evolve. A delivery system that cannot safely change its own enforced rules will either freeze or allow its most consequential work to bypass them. A system can be internally consistent and still serve the wrong purpose, miss harms outside its tests, cost more than a simpler practice or fail in another organization.
+This self-change problem is like a stress test, and I think it is really necessary for the metasystem to evolve. A delivery system that cannot safely change its own enforced rules will either freeze or allow its most consequential work to bypass them. A system can be internally consistent and still serve the wrong purpose, miss harms outside its tests, cost more than a simpler practice or fail in another organization.
 
 ## The distinctive self-change problem
 
 > *Suppose the session incident in Chapter 12 has produced an enforced rule against local-time comparisons in security limits. Months later, a builder changes that rule so that it recognizes a new time interface. The candidate includes both the revised rule and a revision to the cases used to test it. One of those revisions removes the broken case that crosses a daylight-saving boundary, and nothing calls attention to the removal.*
 
-If only the candidate check runs, it passes. The same change has weakened the independent examination and erased the evidence that would reveal the weakness. The failure is circular because the object under examination controls the means of examination. Separating authorship from review helps, but it does not solve the problem when both roles must use the compromised candidate to decide whether it is safe.
+If only the candidate check runs, it passes. The same change has weakened the independent examination and erased the evidence that would reveal the weakness. The failure is circular because the object under examination controls the means of examination. Separating authorship from review helps. But it does not solve the problem when both roles must use the compromised candidate to decide whether it is safe.
 
-The self-change needs an older basis that the proposal cannot alter. The current check runs the known-bad clock case against the proposed replacement. The protected copy of the case remains available even if the candidate tries to omit it. An independent examiner asks whether the new interface creates another escape. The current authority rule, not the proposed one, decides who may accept the result.
+The self-change needs an older basis that the proposal cannot alter. The current check runs the known-bad clock case against the proposed replacement. The protected copy of the case remains available, even if the candidate tries to omit it. An independent examiner asks whether the new interface creates another escape. The current authority rule (not the proposed one) decides who may accept the result.
 
-This arrangement assumes only that a proposed change cannot be its own sole witness. It does not assume that the older version is perfect. The older basis supplies comparison and recovery long enough for the candidate to be challenged. If both old and new versions share a blind spot, live evidence or a separate examination may still expose it. The claim remains bounded.
+This arrangement assumes only that a proposed change cannot be its own sole witness. It does not assume that the older version is perfect. The older basis supplies comparison and recovery for long enough that the candidate can be challenged. If both old and new versions share a blind spot, live evidence or a separate examination may still expose it. The claim remains bounded.
 
 ## The bootstrap
 
@@ -36,11 +36,11 @@ Recovery also needs to cover authority and data, not only program files. If a ca
 
 > *The builder of the faster release rule argues that the ordinary review requirement should not apply because the work only changes delivery machinery.*
 
-That argument reverses the risk. A defect in one application feature may affect one path; a defect in an enforced rule may admit many later defects. So the rule governing independent examination applies to its own replacement unless an authorized exception explicitly supplies an equal or stronger protection.
+That argument reverses the risk. A defect in one application feature may affect one path; a defect in an enforced rule may admit many later defects. So the rule governing independent examination applies to its own replacement, unless an authorized exception explicitly supplies an equal or stronger protection.
 
 Workers changing the system receive only the permissions needed for that work. A builder can propose a new authority rule but cannot adopt it. An independent examiner can attack the proposal but cannot repair it and accept the repair itself. An authorized custodian can bind the accepted candidate to its evidence but cannot waive a failed check.
 
-Sometimes the current rule cannot safely judge its replacement. A new identity mechanism may change the very evidence by which the old mechanism recognizes an authorized actor. In that case, pretending that the ordinary path still applies creates false confidence. A check outside both mechanisms, or a named human authority with protected evidence and a tested recovery path, supplies what the ordinary path cannot. The exception does not let the system justify itself. It makes the missing independence explicit and assigns it elsewhere.
+Sometimes the current rule cannot safely judge its replacement. A new identity mechanism may change the very evidence by which the old mechanism recognizes an authorized actor. In that case, pretending that the ordinary path still applies creates false confidence. A check outside both mechanisms (or a named human authority with protected evidence and a tested recovery path) supplies what the ordinary path cannot. The exception does not let the system justify itself. It makes the missing independence explicit and assigns it elsewhere.
 
 The same discipline governs emergency maintenance. A failed delivery service may need repair before its full examination path can operate. The responsible authority can approve a narrow, reversible intervention under a recorded exception. The repair receives retrospective independent examination before ordinary authority returns. Urgency may change the available controls; it does not erase the need to identify who accepted the risk and how the temporary power ends.
 
@@ -52,7 +52,7 @@ This sequence can expose several structural defects: an enforced rule that can j
 
 Passing shows that, under the stated cases and assumptions, the system preserves an older basis for judgment, maintains required separation and can recover from the candidate it is examining. That is useful evidence of internal consistency. But it leaves open whether the clock rule protects users in every environment, whether the organization has assigned authority wisely and whether governed delivery reduces cost or harm outside this system.
 
-Self-application is a necessary test, but an insufficient one. Failure directly contradicts a system's claim that its rules hold for all important work: the most important maintenance has escaped them. Success removes that contradiction, but only within the tested boundary. The stronger claims require evidence that the system cannot generate by examining itself.
+Self-application is a necessary test, but it is an insufficient one. Failure directly contradicts a system's claim that its rules hold for all important work: the most important maintenance has escaped them. Success removes that contradiction, but only within the tested boundary. The stronger claims require evidence that the system cannot generate by examining itself.
 
 ## Falsifiability and independent support
 
