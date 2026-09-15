@@ -2,14 +2,14 @@
 
 - State: approved
 - Priority: 1
-- Sequence: 37
+- Sequence: 38
 - Risk: severity=1 novelty=2 exposure=2 accumulation=1 basis="severity 1: a refused slice is re-sliced, nothing lands wrongly; novelty 2: goal slice gains a measured refusal; exposure 2: every slice; accumulation 1: nothing builds on the count"
 - Tier: 2
 - Intent: Delivery-efficiency phase D, delegate loop. Goal slice refuses a member whose design names more than a set number of files or moves more than one owner, with the count in the refusal, so a member is split before its build rather than after nineteen rounds. Why: the stop-decisions member touched twenty-two files and five thousand lines and replaced the deadline parent in one build; Wido's rule of 2026-09-10 is one mechanism per member. DONE: a fixture slices an oversized member draft and is refused with the count; a compliant draft passes; the limits live in metasystem.conf. every mechanism in this goal lives in the Go engine, the ledger verbs and the adapter contract, never in one runtime; it is proven on at least two runtimes.
 - Origin: human
 - Next step: Design page: the two limits, where they are read, the refusal text, the fixture; then build.
 - OpenedAt: 2026-09-14T15:31:38Z
-- Revision: 35
+- Revision: 36
 - Budget: elapsedLimit=4h attemptLimit=6 reservedJobMinutesLimit=720 activeJobLimit=1 reviewRoundLimit=2
 - BudgetExceptions: 0
 - Approved: by=human:Wido at=2026-09-14T18:54:11Z revision=3 opid=YYX0BJJ1AW3MSF8A9C00KP2RQX-m1e-c6925449 authority=proven digest=c279ab9fba4a1840722b4f58b0d0caed4c66663515df38827daf0e5a1f3c8ae0
@@ -50,4 +50,5 @@ History:
 - 2026-09-15T06:03:54Z AM7732K8MGNAE8KGJ5RYF8A4ZH-m1e-c6925449 set-priority actor=human:Wido targets=beds-run-under-the-oldest-supported-bash,cross-cutting-change-inventories-its-readers,deep-sections-cannot-stay-red-unseen,degraded-stop-forms-have-one-source,failures-show-observed-against-expected,human-goal-verbs-forgiving,ledger-attention-clears-after-journaled-verbs,member-size-gate,moved-effects-are-inventoried-in-the-design,seat-landings-run-the-selected-sections,stop-batch-strands-a-resumable-goal,stop-capability-follows-the-lease-epoch,stop-decision-surface-is-a-gate,stop-response-carries-a-structured-report-reference,testing-surfaces-declare-their-mirror,trunk-versus-candidate-is-a-verification-step reason=priority-order subject=human-goal-verbs-forgiving from=1:34 to=1:35 requested-sequence=28
 - 2026-09-15T06:04:09Z 6850T4VHA75W5K4WF8KDY3PQE9-m1e-c6925449 set-priority actor=human:Wido targets=beds-run-under-the-oldest-supported-bash,deep-sections-cannot-stay-red-unseen,degraded-stop-forms-have-one-source,failures-show-observed-against-expected,ledger-attention-clears-after-journaled-verbs,member-size-gate,moved-effects-are-inventoried-in-the-design,seat-landings-run-the-selected-sections,stop-response-carries-a-structured-report-reference,testing-surfaces-declare-their-mirror reason=priority-order subject=seat-landings-run-the-selected-sections from=1:35 to=1:36 requested-sequence=29
 - 2026-09-15T06:04:24Z CRNHTZRQ3VT3MFJK3TXEECYCVK-m1e-c6925449 set-priority actor=human:Wido targets=beds-run-under-the-oldest-supported-bash,cross-cutting-change-inventories-its-readers,deep-sections-cannot-stay-red-unseen,degraded-stop-forms-have-one-source,failures-show-observed-against-expected,ledger-attention-clears-after-journaled-verbs,member-size-gate,moved-effects-are-inventoried-in-the-design,stop-response-carries-a-structured-report-reference,testing-surfaces-declare-their-mirror,trunk-versus-candidate-is-a-verification-step reason=priority-order subject=trunk-versus-candidate-is-a-verification-step from=1:36 to=1:37 requested-sequence=30
-Integrity: sha256=7bc665e1dfab56f23c18239a4dace236a8634ccfb7bdee738b07a9bfee027c45
+- 2026-09-15T06:04:36Z GR7JP2E8ASAVNN7R7F0HTSG2SG-m1e-c6925449 set-priority actor=human:Wido targets=beds-run-under-the-oldest-supported-bash,cross-cutting-change-inventories-its-readers,deep-sections-cannot-stay-red-unseen,degraded-stop-forms-have-one-source,failures-show-observed-against-expected,ledger-attention-clears-after-journaled-verbs,member-size-gate,moved-effects-are-inventoried-in-the-design,stop-capability-follows-the-lease-epoch,stop-decision-surface-is-a-gate,stop-response-carries-a-structured-report-reference,testing-surfaces-declare-their-mirror reason=priority-order subject=stop-capability-follows-the-lease-epoch from=1:37 to=1:38 requested-sequence=31
+Integrity: sha256=aa56a0a354571e4cb8ea5d2c6d3162108ed433e24542a5858a1b61dd2badd4e7

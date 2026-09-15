@@ -2,14 +2,14 @@
 
 - State: approved
 - Priority: 1
-- Sequence: 32
+- Sequence: 33
 - Risk: severity=2 novelty=1 exposure=3 accumulation=2 basis="severity 2: a bed that cannot start hides every scenario in it; novelty 1: a known portability class; exposure 3: every bed on every Mac seat; accumulation 2: each new array risks it again"
 - Tier: 2
 - Intent: Fixture beds must run on the oldest shell a supported machine ships. On 2026-09-14 a new supervision bed expanded an empty array under set -u; macOS ships bash 3.2, which rejects that, so the whole bed died in the second it started while the build's sandbox, on a newer bash, saw nothing. The same class recurs whenever a bed adds an array. DONE: the gate parses and exercises every fixture bed's risky constructs under /bin/bash 3.2 semantics and refuses a bed that would fail there, naming the file and line.
 - Origin: human
 - Next step: Add a gate check that runs bash -n under the oldest supported bash and a static scan for empty-array expansion under set -u and other 3.2-incompatible constructs; prove it catches the 2026-09-14 line-45 defect.
 - OpenedAt: 2026-09-14T16:16:20Z
-- Revision: 35
+- Revision: 36
 - Budget: elapsedLimit=4h attemptLimit=6 reservedJobMinutesLimit=720 activeJobLimit=1 reviewRoundLimit=2
 - BudgetExceptions: 0
 - Approved: by=human:Wido at=2026-09-14T18:54:30Z revision=2 opid=EJSD1FG33MKT5NRH95HQJ5XSQD-m1e-c6925449 authority=proven digest=37322810b14872d2df18353f03628f0f19340493c8c98660a7cc2900065de837
@@ -50,4 +50,5 @@ History:
 - 2026-09-15T06:03:54Z AM7732K8MGNAE8KGJ5RYF8A4ZH-m1e-c6925449 set-priority actor=human:Wido targets=beds-run-under-the-oldest-supported-bash,cross-cutting-change-inventories-its-readers,deep-sections-cannot-stay-red-unseen,degraded-stop-forms-have-one-source,failures-show-observed-against-expected,human-goal-verbs-forgiving,ledger-attention-clears-after-journaled-verbs,member-size-gate,moved-effects-are-inventoried-in-the-design,seat-landings-run-the-selected-sections,stop-batch-strands-a-resumable-goal,stop-capability-follows-the-lease-epoch,stop-decision-surface-is-a-gate,stop-response-carries-a-structured-report-reference,testing-surfaces-declare-their-mirror,trunk-versus-candidate-is-a-verification-step reason=priority-order subject=human-goal-verbs-forgiving from=1:29 to=1:30 requested-sequence=28
 - 2026-09-15T06:04:09Z 6850T4VHA75W5K4WF8KDY3PQE9-m1e-c6925449 set-priority actor=human:Wido targets=beds-run-under-the-oldest-supported-bash,deep-sections-cannot-stay-red-unseen,degraded-stop-forms-have-one-source,failures-show-observed-against-expected,ledger-attention-clears-after-journaled-verbs,member-size-gate,moved-effects-are-inventoried-in-the-design,seat-landings-run-the-selected-sections,stop-response-carries-a-structured-report-reference,testing-surfaces-declare-their-mirror reason=priority-order subject=seat-landings-run-the-selected-sections from=1:30 to=1:31 requested-sequence=29
 - 2026-09-15T06:04:24Z CRNHTZRQ3VT3MFJK3TXEECYCVK-m1e-c6925449 set-priority actor=human:Wido targets=beds-run-under-the-oldest-supported-bash,cross-cutting-change-inventories-its-readers,deep-sections-cannot-stay-red-unseen,degraded-stop-forms-have-one-source,failures-show-observed-against-expected,ledger-attention-clears-after-journaled-verbs,member-size-gate,moved-effects-are-inventoried-in-the-design,stop-response-carries-a-structured-report-reference,testing-surfaces-declare-their-mirror,trunk-versus-candidate-is-a-verification-step reason=priority-order subject=trunk-versus-candidate-is-a-verification-step from=1:31 to=1:32 requested-sequence=30
-Integrity: sha256=fbf9b2d709aef0b5d2109069056d869a516e63b632d4850f56805ec5da45126d
+- 2026-09-15T06:04:36Z GR7JP2E8ASAVNN7R7F0HTSG2SG-m1e-c6925449 set-priority actor=human:Wido targets=beds-run-under-the-oldest-supported-bash,cross-cutting-change-inventories-its-readers,deep-sections-cannot-stay-red-unseen,degraded-stop-forms-have-one-source,failures-show-observed-against-expected,ledger-attention-clears-after-journaled-verbs,member-size-gate,moved-effects-are-inventoried-in-the-design,stop-capability-follows-the-lease-epoch,stop-decision-surface-is-a-gate,stop-response-carries-a-structured-report-reference,testing-surfaces-declare-their-mirror reason=priority-order subject=stop-capability-follows-the-lease-epoch from=1:32 to=1:33 requested-sequence=31
+Integrity: sha256=d1e3a77268e7324417d1e282d786566c647144bcff6f85b17e0904bbd92f56b9

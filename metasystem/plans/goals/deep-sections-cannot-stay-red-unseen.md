@@ -2,14 +2,14 @@
 
 - State: approved
 - Priority: 1
-- Sequence: 34
+- Sequence: 35
 - Risk: severity=3 novelty=2 exposure=3 accumulation=3 basis="severity 3: a red that only a deep section sees can sit on trunk for days and then fail an unrelated landing; novelty 2: needs a rule for when deep groups run outside a deep landing and where the result is seen; exposure 3: every deep-only section; accumulation 3: reds pile up unseen and each blocks the next deep landing"
 - Tier: 2
 - Intent: A red in a section that only a deep group runs must surface within a bounded time, not at the next unrelated deep landing. On 2026-09-14 m1c found witness-gate-fixtures red on trunk since 2026-09-09 (goal witness-bed-fakes-the-proof-engine-build). The section is only in proof-and-landing's deep group, standard landings never ran it, and a deep cadence run exists (internal/testpolicy/select.go:158-161, ruling R-3) yet did not surface it. DONE: the reason the cadence run missed it is recorded; every deep-only section runs against the trunk tip on a declared cadence or trigger; its result is recorded where seats and the next landing see it; a red names or opens a goal; and a fixture proves a planted deep-only red surfaces without a deep landing.
 - Origin: human
 - Next step: Find why the deep cadence run did not surface the witness-gate red between 2026-09-09 and 2026-09-14, then design where deep-only results are run and seen.
 - OpenedAt: 2026-09-14T21:10:18Z
-- Revision: 25
+- Revision: 26
 - Budget: elapsedLimit=4h attemptLimit=6 reservedJobMinutesLimit=720 activeJobLimit=1 reviewRoundLimit=2
 - BudgetExceptions: 0
 - Approved: by=human:Wido at=2026-09-14T21:10:24Z revision=2 opid=D4QTYGNFY8CS198KS87BTM9WZM-m1e-c6925449 authority=proven digest=6e2f938a4cb7e2bdf8544531232f9784c55b3c9ebf62c69c44c647b053138e21
@@ -40,4 +40,5 @@ History:
 - 2026-09-15T06:03:54Z AM7732K8MGNAE8KGJ5RYF8A4ZH-m1e-c6925449 set-priority actor=human:Wido targets=beds-run-under-the-oldest-supported-bash,cross-cutting-change-inventories-its-readers,deep-sections-cannot-stay-red-unseen,degraded-stop-forms-have-one-source,failures-show-observed-against-expected,human-goal-verbs-forgiving,ledger-attention-clears-after-journaled-verbs,member-size-gate,moved-effects-are-inventoried-in-the-design,seat-landings-run-the-selected-sections,stop-batch-strands-a-resumable-goal,stop-capability-follows-the-lease-epoch,stop-decision-surface-is-a-gate,stop-response-carries-a-structured-report-reference,testing-surfaces-declare-their-mirror,trunk-versus-candidate-is-a-verification-step reason=priority-order subject=human-goal-verbs-forgiving from=1:31 to=1:32 requested-sequence=28
 - 2026-09-15T06:04:09Z 6850T4VHA75W5K4WF8KDY3PQE9-m1e-c6925449 set-priority actor=human:Wido targets=beds-run-under-the-oldest-supported-bash,deep-sections-cannot-stay-red-unseen,degraded-stop-forms-have-one-source,failures-show-observed-against-expected,ledger-attention-clears-after-journaled-verbs,member-size-gate,moved-effects-are-inventoried-in-the-design,seat-landings-run-the-selected-sections,stop-response-carries-a-structured-report-reference,testing-surfaces-declare-their-mirror reason=priority-order subject=seat-landings-run-the-selected-sections from=1:32 to=1:33 requested-sequence=29
 - 2026-09-15T06:04:24Z CRNHTZRQ3VT3MFJK3TXEECYCVK-m1e-c6925449 set-priority actor=human:Wido targets=beds-run-under-the-oldest-supported-bash,cross-cutting-change-inventories-its-readers,deep-sections-cannot-stay-red-unseen,degraded-stop-forms-have-one-source,failures-show-observed-against-expected,ledger-attention-clears-after-journaled-verbs,member-size-gate,moved-effects-are-inventoried-in-the-design,stop-response-carries-a-structured-report-reference,testing-surfaces-declare-their-mirror,trunk-versus-candidate-is-a-verification-step reason=priority-order subject=trunk-versus-candidate-is-a-verification-step from=1:33 to=1:34 requested-sequence=30
-Integrity: sha256=cee5c91abdab582918b54d2356dbdb8336abac6b9d8a630422f09e67cb93e154
+- 2026-09-15T06:04:36Z GR7JP2E8ASAVNN7R7F0HTSG2SG-m1e-c6925449 set-priority actor=human:Wido targets=beds-run-under-the-oldest-supported-bash,cross-cutting-change-inventories-its-readers,deep-sections-cannot-stay-red-unseen,degraded-stop-forms-have-one-source,failures-show-observed-against-expected,ledger-attention-clears-after-journaled-verbs,member-size-gate,moved-effects-are-inventoried-in-the-design,stop-capability-follows-the-lease-epoch,stop-decision-surface-is-a-gate,stop-response-carries-a-structured-report-reference,testing-surfaces-declare-their-mirror reason=priority-order subject=stop-capability-follows-the-lease-epoch from=1:34 to=1:35 requested-sequence=31
+Integrity: sha256=3a0dd95e2b95d6cf4c67e9d0cb0d8c7410b4a2808d7dee4587c89c1f984ceb89

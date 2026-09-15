@@ -2,14 +2,14 @@
 
 - State: approved
 - Priority: 1
-- Sequence: 38
+- Sequence: 39
 - Risk: severity=2 novelty=2 exposure=2 accumulation=3 basis="severity 2: churn rather than wrong decisions; novelty 2: a new shared renderer across Go, shell and a generated template; exposure 2: every change to a degraded Stop form; accumulation 3: every form change multiplies across all rows that copy it"
 - Tier: 2
 - Intent: The Stop hook's fixed degraded texts are duplicated as literals across the fixture beds, so every change to a degraded form breaks rows that are otherwise correct; three bed rounds on 2026-09-13 were spent on exactly that. DONE: one side-effect-free renderer produces every degraded Stop form from a cause plus typed qualifiers in canonical order; the hook and the fixtures both take the forms from it; one contract fixture holds the full literal goldens for every base and qualifier form, so a wrong shared constant still fails on its own; the enforcement template's bootstrap fallback is generated from the same declarations.
 - Origin: human
 - Next step: Build the renderer and the golden contract fixture, move the hook and every bed row onto it, and generate the bootstrap fallback from the same source.
 - OpenedAt: 2026-09-14T16:16:27Z
-- Revision: 31
+- Revision: 32
 - Budget: elapsedLimit=4h attemptLimit=6 reservedJobMinutesLimit=720 activeJobLimit=1 reviewRoundLimit=2
 - BudgetExceptions: 0
 - Approved: by=human:Wido at=2026-09-14T18:54:36Z revision=2 opid=K66ACW9K1RS0SEV51Y6EY7J55R-m1e-c6925449 authority=proven digest=c3abed22409f6e8dcbfe811a72d193d6880c0311fa6a4839f71727739cde1757
@@ -46,4 +46,5 @@ History:
 - 2026-09-15T06:03:54Z AM7732K8MGNAE8KGJ5RYF8A4ZH-m1e-c6925449 set-priority actor=human:Wido targets=beds-run-under-the-oldest-supported-bash,cross-cutting-change-inventories-its-readers,deep-sections-cannot-stay-red-unseen,degraded-stop-forms-have-one-source,failures-show-observed-against-expected,human-goal-verbs-forgiving,ledger-attention-clears-after-journaled-verbs,member-size-gate,moved-effects-are-inventoried-in-the-design,seat-landings-run-the-selected-sections,stop-batch-strands-a-resumable-goal,stop-capability-follows-the-lease-epoch,stop-decision-surface-is-a-gate,stop-response-carries-a-structured-report-reference,testing-surfaces-declare-their-mirror,trunk-versus-candidate-is-a-verification-step reason=priority-order subject=human-goal-verbs-forgiving from=1:35 to=1:36 requested-sequence=28
 - 2026-09-15T06:04:09Z 6850T4VHA75W5K4WF8KDY3PQE9-m1e-c6925449 set-priority actor=human:Wido targets=beds-run-under-the-oldest-supported-bash,deep-sections-cannot-stay-red-unseen,degraded-stop-forms-have-one-source,failures-show-observed-against-expected,ledger-attention-clears-after-journaled-verbs,member-size-gate,moved-effects-are-inventoried-in-the-design,seat-landings-run-the-selected-sections,stop-response-carries-a-structured-report-reference,testing-surfaces-declare-their-mirror reason=priority-order subject=seat-landings-run-the-selected-sections from=1:36 to=1:37 requested-sequence=29
 - 2026-09-15T06:04:24Z CRNHTZRQ3VT3MFJK3TXEECYCVK-m1e-c6925449 set-priority actor=human:Wido targets=beds-run-under-the-oldest-supported-bash,cross-cutting-change-inventories-its-readers,deep-sections-cannot-stay-red-unseen,degraded-stop-forms-have-one-source,failures-show-observed-against-expected,ledger-attention-clears-after-journaled-verbs,member-size-gate,moved-effects-are-inventoried-in-the-design,stop-response-carries-a-structured-report-reference,testing-surfaces-declare-their-mirror,trunk-versus-candidate-is-a-verification-step reason=priority-order subject=trunk-versus-candidate-is-a-verification-step from=1:37 to=1:38 requested-sequence=30
-Integrity: sha256=fb47df75c2d501b4c9f7aa744990f89700b57dd0b1fe27ddec131063c0f7d156
+- 2026-09-15T06:04:36Z GR7JP2E8ASAVNN7R7F0HTSG2SG-m1e-c6925449 set-priority actor=human:Wido targets=beds-run-under-the-oldest-supported-bash,cross-cutting-change-inventories-its-readers,deep-sections-cannot-stay-red-unseen,degraded-stop-forms-have-one-source,failures-show-observed-against-expected,ledger-attention-clears-after-journaled-verbs,member-size-gate,moved-effects-are-inventoried-in-the-design,stop-capability-follows-the-lease-epoch,stop-decision-surface-is-a-gate,stop-response-carries-a-structured-report-reference,testing-surfaces-declare-their-mirror reason=priority-order subject=stop-capability-follows-the-lease-epoch from=1:38 to=1:39 requested-sequence=31
+Integrity: sha256=79750990269afdb408e4b30f329885a068011ccd1940d180a07255543021f57a

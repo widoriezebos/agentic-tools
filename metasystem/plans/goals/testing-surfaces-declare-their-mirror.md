@@ -2,14 +2,14 @@
 
 - State: approved
 - Priority: 1
-- Sequence: 39
+- Sequence: 40
 - Risk: severity=2 novelty=2 exposure=2 accumulation=2 basis="severity 2: a narrowed proof selection silently under-tests; novelty 2: a new contract feature; exposure 2: every change to a mirrored surface; accumulation 2: grows with each mirrored surface"
 - Tier: 2
 - Intent: Some testing surfaces must select exactly the fallback surface's proof breadth, and today that is enforced only by a test that fails after the omission is made. On 2026-09-14 a new proof group was added to the residual surface but not to context-budget, and TestContextTestingContractSelectsProof caught it only in a full package run. DONE: a surface that must mirror another declares it in testing.json and inherits the other's lists, or the contract validator names the missing group and surface at load time, so the omission cannot be written.
 - Origin: human
 - Next step: Add a mirror declaration to the testing contract with validation at load, migrate context-budget to it, and prove the 2026-09-14 omission is refused at load rather than at test time.
 - OpenedAt: 2026-09-14T16:16:33Z
-- Revision: 30
+- Revision: 31
 - Budget: elapsedLimit=4h attemptLimit=6 reservedJobMinutesLimit=720 activeJobLimit=1 reviewRoundLimit=2
 - BudgetExceptions: 0
 - Approved: by=human:Wido at=2026-09-14T18:54:48Z revision=2 opid=G0Y3VRH6FBYNH4ZCPR1Z389N53-m1e-c6925449 authority=proven digest=0a7e950be00b236cb18c2b805390e3f8534c1028b3d822f2fca6e77b2e032f88
@@ -45,4 +45,5 @@ History:
 - 2026-09-15T06:03:54Z AM7732K8MGNAE8KGJ5RYF8A4ZH-m1e-c6925449 set-priority actor=human:Wido targets=beds-run-under-the-oldest-supported-bash,cross-cutting-change-inventories-its-readers,deep-sections-cannot-stay-red-unseen,degraded-stop-forms-have-one-source,failures-show-observed-against-expected,human-goal-verbs-forgiving,ledger-attention-clears-after-journaled-verbs,member-size-gate,moved-effects-are-inventoried-in-the-design,seat-landings-run-the-selected-sections,stop-batch-strands-a-resumable-goal,stop-capability-follows-the-lease-epoch,stop-decision-surface-is-a-gate,stop-response-carries-a-structured-report-reference,testing-surfaces-declare-their-mirror,trunk-versus-candidate-is-a-verification-step reason=priority-order subject=human-goal-verbs-forgiving from=1:36 to=1:37 requested-sequence=28
 - 2026-09-15T06:04:09Z 6850T4VHA75W5K4WF8KDY3PQE9-m1e-c6925449 set-priority actor=human:Wido targets=beds-run-under-the-oldest-supported-bash,deep-sections-cannot-stay-red-unseen,degraded-stop-forms-have-one-source,failures-show-observed-against-expected,ledger-attention-clears-after-journaled-verbs,member-size-gate,moved-effects-are-inventoried-in-the-design,seat-landings-run-the-selected-sections,stop-response-carries-a-structured-report-reference,testing-surfaces-declare-their-mirror reason=priority-order subject=seat-landings-run-the-selected-sections from=1:37 to=1:38 requested-sequence=29
 - 2026-09-15T06:04:24Z CRNHTZRQ3VT3MFJK3TXEECYCVK-m1e-c6925449 set-priority actor=human:Wido targets=beds-run-under-the-oldest-supported-bash,cross-cutting-change-inventories-its-readers,deep-sections-cannot-stay-red-unseen,degraded-stop-forms-have-one-source,failures-show-observed-against-expected,ledger-attention-clears-after-journaled-verbs,member-size-gate,moved-effects-are-inventoried-in-the-design,stop-response-carries-a-structured-report-reference,testing-surfaces-declare-their-mirror,trunk-versus-candidate-is-a-verification-step reason=priority-order subject=trunk-versus-candidate-is-a-verification-step from=1:38 to=1:39 requested-sequence=30
-Integrity: sha256=db55046a5246f98b147f6fdb582d121cba229aa47f9eb52109720859ee26fd00
+- 2026-09-15T06:04:36Z GR7JP2E8ASAVNN7R7F0HTSG2SG-m1e-c6925449 set-priority actor=human:Wido targets=beds-run-under-the-oldest-supported-bash,cross-cutting-change-inventories-its-readers,deep-sections-cannot-stay-red-unseen,degraded-stop-forms-have-one-source,failures-show-observed-against-expected,ledger-attention-clears-after-journaled-verbs,member-size-gate,moved-effects-are-inventoried-in-the-design,stop-capability-follows-the-lease-epoch,stop-decision-surface-is-a-gate,stop-response-carries-a-structured-report-reference,testing-surfaces-declare-their-mirror reason=priority-order subject=stop-capability-follows-the-lease-epoch from=1:39 to=1:40 requested-sequence=31
+Integrity: sha256=6e86a7253b5dd0378fa09f079f9f4323fcea3387d640684878c59aab467ecdfa

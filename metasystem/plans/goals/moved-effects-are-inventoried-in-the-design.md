@@ -2,14 +2,14 @@
 
 - State: approved
 - Priority: 1
-- Sequence: 31
+- Sequence: 32
 - Risk: severity=1 novelty=1 exposure=2 accumulation=1 basis="severity 1: a missing inventory delays a build, it does not break a landed one; novelty 1: a packet clause and a check; exposure 2: every design-bearing goal that moves an owner; accumulation 1: nothing builds on the list itself"
 - Tier: 1
 - Intent: Delivery-efficiency phase D, delegate loop. A design page that moves responsibilities from one owner to another lists every moved effect and its new owner, and the design critic's packet checks that list against the code the page names; a page that moves an owner without the inventory yields a material finding and is not built. Why: half the twenty-five defects of the stop-decisions build were an effect that moved from the worker to the parent and was never re-owned; the sweep that finally listed them belonged in the page. DONE: the critic packet carries the check; a fixture page that moves an owner without the list yields a material finding; the stop-decisions page's sweep is recorded as the first inventory. every mechanism in this goal lives in the Go engine, the ledger verbs and the adapter contract, never in one runtime; it is proven on at least two runtimes.
 - Origin: human
 - Next step: Write the packet clause and the fixture page; then the check.
 - OpenedAt: 2026-09-14T15:32:16Z
-- Revision: 38
+- Revision: 39
 - Budget: elapsedLimit=1h attemptLimit=3 reservedJobMinutesLimit=360 activeJobLimit=1 reviewRoundLimit=0
 - BudgetExceptions: 0
 - Approved: by=human:Wido at=2026-09-14T18:54:05Z revision=3 opid=AH7E99KZ0E5C78EM6TNPBK4J6F-m1e-c6925449 authority=proven digest=e3bc82ec89ab1c1cb0b15ebb16f7e36ccd171e2d1e5eba1b597024bea6b5b4ed
@@ -53,4 +53,5 @@ History:
 - 2026-09-15T06:03:54Z AM7732K8MGNAE8KGJ5RYF8A4ZH-m1e-c6925449 set-priority actor=human:Wido targets=beds-run-under-the-oldest-supported-bash,cross-cutting-change-inventories-its-readers,deep-sections-cannot-stay-red-unseen,degraded-stop-forms-have-one-source,failures-show-observed-against-expected,human-goal-verbs-forgiving,ledger-attention-clears-after-journaled-verbs,member-size-gate,moved-effects-are-inventoried-in-the-design,seat-landings-run-the-selected-sections,stop-batch-strands-a-resumable-goal,stop-capability-follows-the-lease-epoch,stop-decision-surface-is-a-gate,stop-response-carries-a-structured-report-reference,testing-surfaces-declare-their-mirror,trunk-versus-candidate-is-a-verification-step reason=priority-order subject=human-goal-verbs-forgiving from=1:28 to=1:29 requested-sequence=28
 - 2026-09-15T06:04:09Z 6850T4VHA75W5K4WF8KDY3PQE9-m1e-c6925449 set-priority actor=human:Wido targets=beds-run-under-the-oldest-supported-bash,deep-sections-cannot-stay-red-unseen,degraded-stop-forms-have-one-source,failures-show-observed-against-expected,ledger-attention-clears-after-journaled-verbs,member-size-gate,moved-effects-are-inventoried-in-the-design,seat-landings-run-the-selected-sections,stop-response-carries-a-structured-report-reference,testing-surfaces-declare-their-mirror reason=priority-order subject=seat-landings-run-the-selected-sections from=1:29 to=1:30 requested-sequence=29
 - 2026-09-15T06:04:24Z CRNHTZRQ3VT3MFJK3TXEECYCVK-m1e-c6925449 set-priority actor=human:Wido targets=beds-run-under-the-oldest-supported-bash,cross-cutting-change-inventories-its-readers,deep-sections-cannot-stay-red-unseen,degraded-stop-forms-have-one-source,failures-show-observed-against-expected,ledger-attention-clears-after-journaled-verbs,member-size-gate,moved-effects-are-inventoried-in-the-design,stop-response-carries-a-structured-report-reference,testing-surfaces-declare-their-mirror,trunk-versus-candidate-is-a-verification-step reason=priority-order subject=trunk-versus-candidate-is-a-verification-step from=1:30 to=1:31 requested-sequence=30
-Integrity: sha256=f3c7c94b845eb346f1181a86851d56f3578ef3cc16a9fc767c1e42d7b20a3d47
+- 2026-09-15T06:04:36Z GR7JP2E8ASAVNN7R7F0HTSG2SG-m1e-c6925449 set-priority actor=human:Wido targets=beds-run-under-the-oldest-supported-bash,cross-cutting-change-inventories-its-readers,deep-sections-cannot-stay-red-unseen,degraded-stop-forms-have-one-source,failures-show-observed-against-expected,ledger-attention-clears-after-journaled-verbs,member-size-gate,moved-effects-are-inventoried-in-the-design,stop-capability-follows-the-lease-epoch,stop-decision-surface-is-a-gate,stop-response-carries-a-structured-report-reference,testing-surfaces-declare-their-mirror reason=priority-order subject=stop-capability-follows-the-lease-epoch from=1:31 to=1:32 requested-sequence=31
+Integrity: sha256=d9245014294408518b3dcf566c1a45b769c5d6e63aa732b380709de9fa8cc1ba
