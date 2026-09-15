@@ -111,28 +111,6 @@ func auditHookStartSource(path, source, fixtures, fixtureAssertions string) []Ho
 	if lastResort == 0 || exitTrap == 0 || !entrySignalTraps || strictMode == 0 || dispatch == 0 || !(lastResort < exitTrap && termTrap < strictMode && strictMode < dispatch) {
 		add(1, "start initialization", "last-resort bytes and EXIT trap must be initialized before strict mode and dispatch")
 	}
-	readinessInitialization := lineContaining(prefixLines, "start_ready_to_arm=false")
-	readinessAssignments := 0
-	readinessPlacementValid := false
-	for index, line := range prefixLines {
-		if strings.TrimSpace(line) != "start_ready_to_arm=true" {
-			continue
-		}
-		readinessAssignments++
-		for next := index + 1; next < len(prefixLines); next++ {
-			trimmed := strings.TrimSpace(prefixLines[next])
-			if trimmed == "" {
-				continue
-			}
-			readinessPlacementValid = trimmed == "start_prepare_brain"
-			break
-		}
-	}
-	if readinessInitialization != 0 || readinessAssignments != 0 {
-		if readinessInitialization == 0 || readinessAssignments != 1 || !readinessPlacementValid {
-			add(readinessInitialization, "start arming readiness", "arming readiness must be initialized once and set only after preparation immediately before brain boot")
-		}
-	}
 	armingStatusInitialization := lineContaining(prefixLines, "start_arming_status=0")
 	waitStatusInitialization := lineContaining(prefixLines, "start_wait_recovery_status=0")
 	armingStatusAssignments := countTrimmedLine(prefixLines, "start_arming_status=$capture_status")
@@ -140,7 +118,7 @@ func auditHookStartSource(path, source, fixtures, fixtureAssertions string) []Ho
 	if armingStatusInitialization == 0 || waitStatusInitialization == 0 || armingStatusAssignments != 1 || waitStatusAssignments != 1 {
 		add(1, "start post-context status", "arming and wait-recovery status must each be initialized and recorded exactly once by start_capture")
 	}
-	postContextCapture := "if [[ \"$policy\" == arming || \"$policy\" == arming-after-brain || \"$policy\" == wait-recovery ]]; then\n" +
+	postContextCapture := "if [[ \"$policy\" == arming || \"$policy\" == wait-recovery ]]; then\n" +
 		"    captured=$(builtin trap - EXIT HUP INT TERM; \"$@\" 2>&1) && capture_status=0 || capture_status=$?"
 	armingCapture := `start_capture arming up_output arming start_up "$runtime" "$session" "$identity_pid" "$identity_started"`
 	waitCapture := `start_capture wait-recovery waiting_lines wait-recovery "$ms" session start --root "$repo" --session "$session"`
@@ -156,7 +134,11 @@ func auditHookStartSource(path, source, fixtures, fixtureAssertions string) []Ho
 		"    waiting_lines=${waiting_lines//$'\\n'/'; '}\n" +
 		"    collect_start_notice \"Metasystem could not read durable wait recovery rows for this session: $waiting_lines\""
 	preparedPublisher := "start_finish_prepared() {\n" +
-		"  if [[ \"$start_context_kind\" == channel ]]; then\n" +
+		"  if [[ \"$start_brain_failure\" == brain-boot ]]; then\n" +
+		"    start_finish notice brain-boot\n" +
+		"  elif [[ \"$start_brain_failure\" == brain-timeout ]]; then\n" +
+		"    start_finish notice brain-timeout\n" +
+		"  elif [[ \"$start_context_kind\" == channel ]]; then\n" +
 		"    start_finish intentional context-ready\n" +
 		"  elif [[ \"$start_context_kind\" == screen ]]; then\n" +
 		"    start_finish intentional screen-context-ready\n" +
@@ -182,9 +164,27 @@ func auditHookStartSource(path, source, fixtures, fixtureAssertions string) []Ho
 	identityFailureAt := strings.Index(prefix, identityFailureHandling)
 	armingCaptureAt := strings.Index(prefix, armingCapture)
 	if identityStateInitialization == 0 || identityFailureAt < 0 || armingCaptureAt < 0 || identityFailureAt > armingCaptureAt ||
-		waitCaptureAt < armingCaptureAt || preparedCallAt < waitCaptureAt ||
-		!strings.Contains(prefix, `"$start_deferred_identity_read" != true && "${identity_pid:-}" =~ ^[1-9][0-9]*$`) {
+		waitCaptureAt < armingCaptureAt || preparedCallAt < waitCaptureAt {
 		add(1, "start deferred identity result", "identity-read failure must skip arming but preserve holder-checked wait recovery before publishing prepared context")
+	}
+	brainFailureInitialization := lineContaining(prefixLines, "start_brain_failure=")
+	brainPrepareAt := strings.Index(prefix, "\n  start_prepare_brain\n")
+	brainFailureDeferral := "start_defer_brain_failure() {\n" +
+		"  case ${1-} in\n" +
+		"    brain-boot)\n" +
+		"      start_brain_failure=brain-boot"
+	brainTimeoutDeferral := "brain-timeout)\n" +
+		"      start_brain_failure=brain-timeout"
+	captureDeferral := `if start_capture_defer_brain_failure "$failure_key"; then return 0; fi`
+	brainNoticeRelay := "if [[ ( \"$key\" == brain-boot || \"$key\" == brain-timeout ) && -n \"$start_notices\" ]]; then\n" +
+		"        start_json_escape \"$start_notices\"\n" +
+		"        start_append_notice_text \"$response\" \"$start_escaped\""
+	if brainFailureInitialization == 0 || brainPrepareAt < 0 || waitCaptureAt < brainPrepareAt || preparedCallAt < waitCaptureAt ||
+		!strings.Contains(prefix, brainFailureDeferral) || !strings.Contains(prefix, brainTimeoutDeferral) ||
+		!strings.Contains(prefix, captureDeferral) || !strings.Contains(prefix, brainNoticeRelay) ||
+		countTrimmedLine(prefixLines, "start_finish notice brain-boot") != 1 ||
+		countTrimmedLine(prefixLines, "start_finish notice brain-timeout") != 1 {
+		add(1, "start brain wait recovery", "brain boot failure must become a notice and continue to holder-matched wait recovery before prepared publication")
 	}
 	wantDispatcher := "if [[ \"$event\" == start ]]; then\n  start_main\n  start_finish notice unexpected-termination\nfi\n" + hookStartBoundary
 	if !strings.Contains(prefix+"\n"+hookStartBoundary, wantDispatcher) {
@@ -223,7 +223,7 @@ func auditHookStartSource(path, source, fixtures, fixtureAssertions string) []Ho
 	allowedIgnoredOwners := map[string]bool{"start_cleanup": true, "start_emergency": true, "start_finish": true, "start_preserve_boot_stderr": true}
 	startCapturePolicies := map[string]bool{
 		"required": true, "required-nonempty": true, "shell-required": true, "shell-required-nonempty": true,
-		"arming": true, "arming-after-brain": true, "one-line": true, "state-root": true, "json-optional-field": true,
+		"arming": true, "one-line": true, "state-root": true, "json-optional-field": true,
 		"delegate-custody": true, "context-channel": true, "wait-recovery": true, "allow-empty": true,
 		"identity-optional": true, "identity-required": true, "identity-required-nonempty": true, "identity-shell-required": true,
 	}
@@ -269,9 +269,6 @@ func auditHookStartSource(path, source, fixtures, fixtureAssertions string) []Ho
 		if strings.Contains(line, "start_context_shape_ready=") && lineNumber != lineContaining(prefixLines, "start_context_shape_ready=false") && owner != "start_prepare_context_object" {
 			add(lineNumber, "start context shape", "only the context renderer may validate a publishable context object")
 		}
-		if strings.Contains(line, "start_ready_to_arm=") && lineNumber != lineContaining(prefixLines, "start_ready_to_arm=false") && owner != "start_main" {
-			add(lineNumber, "start arming readiness", "only start_main may mark completed pre-arming identity preparation")
-		}
 		if strings.Contains(line, "start_arming_rearmed=") && lineNumber != lineContaining(prefixLines, "start_arming_rearmed=false") && owner != "start_capture" {
 			add(lineNumber, "start re-arm observation", "only start_capture may record the checked arming result")
 		}
@@ -284,12 +281,12 @@ func auditHookStartSource(path, source, fixtures, fixtureAssertions string) []Ho
 		if strings.Contains(line, "start_deferred_identity_read=") && lineNumber != identityStateInitialization && owner != "start_capture" && owner != "start_main" {
 			add(lineNumber, "start deferred identity result", "only start_capture and start_main may record a checked identity-read failure")
 		}
+		if strings.Contains(line, "start_brain_failure=") && lineNumber != brainFailureInitialization && owner != "start_defer_brain_failure" {
+			add(lineNumber, "start brain wait recovery", "only the deferred brain-failure owner may record a brain outcome that continues to wait recovery")
+		}
 		if trimmed == "start_deferred_identity_read=false" && lineNumber != identityStateInitialization &&
 			(owner != "start_main" || previous != "process_identity_failed=$start_deferred_identity_read") {
 			add(lineNumber, "start deferred identity result", "start_main may clear identity-read failure only while preserving a failed process lookup across holder fallback")
-		}
-		if strings.Contains(line, "start_brain_arming_failed=") && lineNumber != lineContaining(prefixLines, "start_brain_arming_failed=false") && owner != "start_capture" {
-			add(lineNumber, "start brain arming result", "only start_capture may record a checked post-boot arming failure")
 		}
 		if finishAt := strings.Index(line, "start_finish"); finishAt >= 0 && strings.ContainsAny(line[finishAt:], "><") && owner != "start_finish" {
 			add(lineNumber, "start output channel", "caller redirects finalizer output")
@@ -321,9 +318,6 @@ func auditHookStartSource(path, source, fixtures, fixtureAssertions string) []Ho
 			policy := strings.Trim(match[2], `"'`)
 			if strings.HasPrefix(policy, "$") || !startCapturePolicies[policy] {
 				add(lineNumber, "start operation mapping", "start_capture status policy must be a declared literal")
-			}
-			if policy == "arming-after-brain" && (owner != "start_finish" || key != "arming" || !strings.Contains(line, " start_up ")) {
-				add(lineNumber, "start operation mapping", "arming-after-brain is reserved for the finalizer's checked compatibility arming call")
 			}
 			if policy == "arming" && (owner != "start_main" || key != "arming" || !strings.Contains(line, " start_up ")) {
 				add(lineNumber, "start operation mapping", "arming is reserved for start_main's checked post-context arming call")
@@ -377,6 +371,9 @@ func auditHookStartSource(path, source, fixtures, fixtureAssertions string) []Ho
 		!declaresTestFunc(fixtureAssertions, "TestHookStartContextOutcomeShapesOnBash32") ||
 		!declaresTestFunc(fixtureAssertions, "TestHookStartIntentionalFullPathFixturesOnBash32") ||
 		!declaresTestFunc(fixtureAssertions, "TestHookStartForgedDelegateHintRefusesOnBash32") ||
+		!declaresTestFunc(fixtureAssertions, "TestHookStartBrainBootFailureKeepsWaitLineOnBash32") ||
+		!declaresTestFunc(fixtureAssertions, "TestHookStartBrainTimeoutKeepsWaitLineOnBash32") ||
+		!strings.Contains(fixtureAssertions, `"HOOK_START_WAIT_MATCHED=1"`) ||
 		!strings.Contains(fixtureAssertions, `mode: "context-arming-failure"`) ||
 		!strings.Contains(fixtureAssertions, `mode: "context-holder-read"`) ||
 		!strings.Contains(fixtureAssertions, `mode: "context-process-identity"`) ||

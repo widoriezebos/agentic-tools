@@ -23,12 +23,11 @@ start_context_payload=
 start_context_field=
 start_context_event=
 start_context_shape_ready=false
-start_ready_to_arm=false
 start_arming_rearmed=false
 start_arming_status=0
 start_wait_recovery_status=0
 start_deferred_identity_read=false
-start_brain_arming_failed=false
+start_brain_failure=
 start_brain_delivery=false
 start_brain_declaration_sha=
 start_brain_digest_emitted=false
@@ -234,21 +233,17 @@ start_finish() { # notice <catalog-key> | intentional <declared-reason>
 
   case "$family" in
     notice)
-      if [[ ( "$key" == brain-boot || "$key" == brain-timeout ) && "$start_ready_to_arm" == true &&
-            "$start_deferred_identity_read" != true && "${identity_pid:-}" =~ ^[1-9][0-9]*$ &&
-            "${identity_started:-}" =~ ^[1-9][0-9]*$ ]]; then
-        start_capture arming up_output arming-after-brain start_up "$runtime" "$session" "$identity_pid" "$identity_started"
-      fi
       if ! start_notice_json "$key"; then
         start_emergency
       fi
       response=$start_notice
       status=$start_notice_status
-      if [[ ( "$key" == brain-boot || "$key" == brain-timeout ) && "$start_brain_arming_failed" == true ]]; then
-        start_append_notice_text "$response" 'Metasystem supervision arming failed: repair supervision from the owning installation and run metasystem up there.'
+      if [[ ( "$key" == brain-boot || "$key" == brain-timeout ) && -n "$start_notices" ]]; then
+        start_json_escape "$start_notices"
+        start_append_notice_text "$response" "$start_escaped"
         response=$start_notice
       fi
-      if [[ ( "$key" == arming || "$key" == brain-boot || "$key" == brain-timeout ) && "$start_arming_rearmed" == true ]]; then
+      if [[ "$key" == arming && "$start_arming_rearmed" == true ]]; then
         start_append_notice_text "$response" 'Metasystem re-armed the rebuilt engine: the engine reported a completed re-arm before the later failure.'
         response=$start_notice
       fi
@@ -492,13 +487,21 @@ start_physical_directory() {
   builtin cd -- "$1" 2>/dev/null && builtin pwd -P
 }
 
+start_capture_defer_brain_failure() {
+  case ${1-} in
+    brain-boot) start_defer_brain_failure brain-boot ;;
+    brain-timeout) start_defer_brain_failure brain-timeout ;;
+    *) return 1 ;;
+  esac
+}
+
 start_capture() { # failure key, destination, policy, argv
   local failure_key=$1 destination=$2 policy=$3 captured= capture_status=0
   shift 3
-  if [[ "$policy" == arming || "$policy" == arming-after-brain ]]; then
+  if [[ "$policy" == arming ]]; then
     start_arming_started=true
   fi
-  if [[ "$policy" == arming || "$policy" == arming-after-brain || "$policy" == wait-recovery ]]; then
+  if [[ "$policy" == arming || "$policy" == wait-recovery ]]; then
     captured=$(builtin trap - EXIT HUP INT TERM; "$@" 2>&1) && capture_status=0 || capture_status=$?
   elif captured=$(builtin trap - EXIT HUP INT TERM; "$@"); then
     capture_status=0
@@ -508,6 +511,7 @@ start_capture() { # failure key, destination, policy, argv
   case "$policy" in
     required)
       if (( capture_status != 0 )); then
+        if start_capture_defer_brain_failure "$failure_key"; then return 0; fi
         start_finish notice "$failure_key"
       fi
       ;;
@@ -518,16 +522,19 @@ start_capture() { # failure key, destination, policy, argv
       ;;
     shell-required)
       if (( capture_status != 0 )) || [[ "$captured" != *x ]]; then
+        if start_capture_defer_brain_failure "$failure_key"; then return 0; fi
         start_finish notice "$failure_key"
       fi
       captured=${captured%x}
       ;;
     shell-required-nonempty)
       if (( capture_status != 0 )) || [[ "$captured" != *x ]]; then
+        if start_capture_defer_brain_failure "$failure_key"; then return 0; fi
         start_finish notice "$failure_key"
       fi
       captured=${captured%x}
       if [[ -z "$captured" ]]; then
+        if start_capture_defer_brain_failure "$failure_key"; then return 0; fi
         start_finish notice "$failure_key"
       fi
       ;;
@@ -563,14 +570,6 @@ start_capture() { # failure key, destination, policy, argv
         start_arming_rearmed=true
       fi
       ;;
-    arming-after-brain)
-      if [[ "$captured" == *' re-armed='* ]]; then
-        start_arming_rearmed=true
-      fi
-      if (( capture_status != 0 )); then
-        start_brain_arming_failed=true
-      fi
-      ;;
     one-line)
       if (( capture_status != 0 )) || ! hook_root_is_one_line "$captured"; then
         start_finish notice "$failure_key"
@@ -587,6 +586,7 @@ start_capture() { # failure key, destination, policy, argv
       if (( capture_status == 3 )); then
         captured=
       elif (( capture_status != 0 )) || [[ "$captured" != *x ]]; then
+        if start_capture_defer_brain_failure "$failure_key"; then return 0; fi
         start_finish notice "$failure_key"
       else
         captured=${captured%x}
@@ -617,6 +617,7 @@ start_capture() { # failure key, destination, policy, argv
       ;;
     allow-empty)
       if (( capture_status != 0 )); then
+        if start_capture_defer_brain_failure "$failure_key"; then return 0; fi
         start_finish notice "$failure_key"
       fi
       ;;
@@ -647,8 +648,26 @@ collect_start_notice() {
   fi
 }
 
+start_defer_brain_failure() {
+  case ${1-} in
+    brain-boot)
+      start_brain_failure=brain-boot
+      ;;
+    brain-timeout)
+      start_brain_failure=brain-timeout
+      ;;
+    *) start_finish notice unexpected-termination ;;
+  esac
+  start_context_kind=none
+  start_context_payload=
+}
+
 start_finish_prepared() {
-  if [[ "$start_context_kind" == channel ]]; then
+  if [[ "$start_brain_failure" == brain-boot ]]; then
+    start_finish notice brain-boot
+  elif [[ "$start_brain_failure" == brain-timeout ]]; then
+    start_finish notice brain-timeout
+  elif [[ "$start_context_kind" == channel ]]; then
     start_finish intentional context-ready
   elif [[ "$start_context_kind" == screen ]]; then
     start_finish intentional screen-context-ready
@@ -708,11 +727,14 @@ start_preserve_boot_stderr() {
 start_stop_boot_child() {
   local command_line=
   start_capture brain-timeout command_line allow-empty ps -p "$start_boot_pid" -o command=
+  [[ -z "$start_brain_failure" ]] || return 0
   if [[ "$command_line" != *"$ms"* ]]; then
-    start_finish notice brain-timeout
+    start_defer_brain_failure brain-timeout
+    return 0
   fi
   if ! builtin kill -TERM "$start_boot_pid" 2>/dev/null; then
-    start_finish notice brain-timeout
+    start_defer_brain_failure brain-timeout
+    return 0
   fi
 }
 
@@ -728,18 +750,22 @@ start_prepare_brain() {
   boot_started=$SECONDS
   while builtin kill -0 "$start_boot_pid" 2>/dev/null && (( SECONDS - boot_started < start_brain_wait_sec )); do
     if ! command sleep 0.05; then
-      start_finish notice brain-boot
+      start_defer_brain_failure brain-boot
+      return 0
     fi
   done
   if builtin kill -0 "$start_boot_pid" 2>/dev/null; then
     boot_timeout=true
     start_stop_boot_child
+    [[ -z "$start_brain_failure" ]] || return 0
     if ! command sleep 0.2; then
-      start_finish notice brain-timeout
+      start_defer_brain_failure brain-timeout
+      return 0
     fi
     if builtin kill -0 "$start_boot_pid" 2>/dev/null; then
       if ! builtin kill -KILL "$start_boot_pid" 2>/dev/null; then
-        start_finish notice brain-timeout
+        start_defer_brain_failure brain-timeout
+        return 0
       fi
     fi
   fi
@@ -747,64 +773,84 @@ start_prepare_brain() {
   start_boot_pid=
   if [[ "$boot_timeout" == true ]]; then
     start_preserve_boot_stderr
-    start_finish notice brain-timeout
+    start_defer_brain_failure brain-timeout
+    return 0
   elif (( boot_status != 0 )) || [[ ! -s "$boot_out" ]]; then
     start_preserve_boot_stderr
-    start_finish notice brain-boot
+    start_defer_brain_failure brain-boot
+    return 0
   fi
 
   start_capture brain-boot declared required "$ms" json get --file "$boot_out" --field declared
+  [[ -z "$start_brain_failure" ]] || return 0
   if [[ "$declared" == false ]]; then
     start_capture brain-boot unknown required "$ms" json strip --file "$boot_out" --key declared
+    [[ -z "$start_brain_failure" ]] || return 0
     if [[ "$unknown" != '{}' ]]; then
-      start_finish notice brain-boot
+      start_defer_brain_failure brain-boot
+      return 0
     fi
     start_context_kind=none
     return 0
   fi
   if [[ "$declared" != true ]]; then
-    start_finish notice brain-boot
+    start_defer_brain_failure brain-boot
+    return 0
   fi
   start_capture brain-boot unknown required "$ms" json strip --file "$boot_out" --key declared --key state \
     --key payload --key bytes --key sections --key digestEmitted --key digestCursor \
     --key digestPrefixSha256 --key declarationSha256
+  [[ -z "$start_brain_failure" ]] || return 0
   if [[ "$unknown" != '{}' ]]; then
-    start_finish notice brain-boot
+    start_defer_brain_failure brain-boot
+    return 0
   fi
   start_capture brain-boot state shell-required start_json_value_with_sentinel \
     "$ms" json get --file "$boot_out" --field state --shell-safe
+  [[ -z "$start_brain_failure" ]] || return 0
   start_capture brain-boot bytes required "$ms" json get --file "$boot_out" --field bytes
+  [[ -z "$start_brain_failure" ]] || return 0
   start_capture brain-boot start_brain_digest_emitted required "$ms" json get --file "$boot_out" --field digestEmitted
+  [[ -z "$start_brain_failure" ]] || return 0
   start_capture brain-boot start_brain_digest_cursor required "$ms" json get --file "$boot_out" --field digestCursor
+  [[ -z "$start_brain_failure" ]] || return 0
   start_capture brain-boot start_brain_digest_prefix json-optional-field start_json_value_with_sentinel \
     "$ms" json get --file "$boot_out" --field digestPrefixSha256 --shell-safe
+  [[ -z "$start_brain_failure" ]] || return 0
   start_capture brain-boot start_brain_declaration_sha json-optional-field start_json_value_with_sentinel \
     "$ms" json get --file "$boot_out" --field declarationSha256 --shell-safe
+  [[ -z "$start_brain_failure" ]] || return 0
   start_capture brain-boot start_context_payload shell-required-nonempty start_json_value_with_sentinel \
     "$ms" json get --file "$boot_out" --field payload --shell-safe
+  [[ -z "$start_brain_failure" ]] || return 0
   sections_valid=true
   for section in asks held fleet digest; do
     start_capture brain-boot section_state shell-required start_json_value_with_sentinel \
       "$ms" json get --file "$boot_out" --field "sections.$section" --shell-safe
+    [[ -z "$start_brain_failure" ]] || return 0
     case "$section_state" in complete|cut|skipped|error) ;; *) sections_valid=false ;; esac
   done
   if [[ ( "$state" != declared && "$state" != corrupt ) || ! "$bytes" =~ ^[0-9]+$ ||
         ( "$start_brain_digest_emitted" != true && "$start_brain_digest_emitted" != false ) ||
         ! "$start_brain_digest_cursor" =~ ^[0-9]+$ || "$sections_valid" != true ||
         -z "$start_context_payload" ]]; then
-    start_finish notice brain-boot
+    start_defer_brain_failure brain-boot
+    return 0
   fi
   if [[ "$start_brain_digest_emitted" == true && ! "$start_brain_digest_prefix" =~ ^[0-9a-f]{64}$ ]]; then
-    start_finish notice brain-boot
+    start_defer_brain_failure brain-boot
+    return 0
   fi
   if [[ "$state" == declared ]]; then
     if ! [[ "$start_brain_declaration_sha" =~ ^[0-9a-f]{64}$ ]]; then
-      start_finish notice brain-boot
+      start_defer_brain_failure brain-boot
+      return 0
     fi
     start_brain_delivery=true
   else
     if [[ -n "$start_brain_declaration_sha" ]]; then
-      start_finish notice brain-boot
+      start_defer_brain_failure brain-boot
+      return 0
     fi
   fi
   if [[ -n "$start_context_field" ]]; then
@@ -973,7 +1019,6 @@ start_main() {
   start_brain_deadline_ms=${METASYSTEM_BRAIN_BOOT_DEADLINE_MS:-5000}
   [[ "$start_brain_deadline_ms" =~ ^[1-9][0-9]*$ ]] || start_brain_deadline_ms=5000
   start_brain_wait_sec=$((start_brain_deadline_ms / 1000 + 3))
-  start_ready_to_arm=true
   start_prepare_brain
   start_prepare_context_object
 

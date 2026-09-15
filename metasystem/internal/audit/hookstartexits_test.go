@@ -21,6 +21,7 @@ start_terminal_complete=false
 start_arming_status=0
 start_wait_recovery_status=0
 start_deferred_identity_read=false
+start_brain_failure=
 start_holder_context_notice='holder notice'
 start_last_resort='fallback'
 start_notice_json() {
@@ -36,11 +37,22 @@ start_emergency() {
   start_terminal_complete=true
   builtin exit 0
 }
+start_json_escape() {
+  start_escaped=$1
+}
+start_append_notice_text() {
+  : "$1" "$2"
+}
 start_finish() {
   builtin trap - EXIT HUP INT TERM
   if [[ "$start_deferred_identity_read" != true && "${identity_pid:-}" =~ ^[1-9][0-9]*$ ]]; then :; fi
   case "${1-}" in
-    notice) ;;
+    notice)
+      if [[ ( "$key" == brain-boot || "$key" == brain-timeout ) && -n "$start_notices" ]]; then
+        start_json_escape "$start_notices"
+        start_append_notice_text "$response" "$start_escaped"
+      fi
+      ;;
     intentional)
       local key=$2
       case "$key" in
@@ -54,7 +66,11 @@ start_finish() {
   builtin exit 0
 }
 start_finish_prepared() {
-  if [[ "$start_context_kind" == channel ]]; then
+  if [[ "$start_brain_failure" == brain-boot ]]; then
+    start_finish notice brain-boot
+  elif [[ "$start_brain_failure" == brain-timeout ]]; then
+    start_finish notice brain-timeout
+  elif [[ "$start_context_kind" == channel ]]; then
     start_finish intentional context-ready
   elif [[ "$start_context_kind" == screen ]]; then
     start_finish intentional screen-context-ready
@@ -64,11 +80,29 @@ start_finish_prepared() {
     start_finish intentional healthy-no-context
   fi
 }
+start_defer_brain_failure() {
+  case ${1-} in
+    brain-boot)
+      start_brain_failure=brain-boot
+      ;;
+    brain-timeout)
+      start_brain_failure=brain-timeout
+      ;;
+    *) start_finish notice unexpected-termination ;;
+  esac
+}
+start_capture_defer_brain_failure() {
+  case ${1-} in
+    brain-boot) start_defer_brain_failure brain-boot ;;
+    brain-timeout) start_defer_brain_failure brain-timeout ;;
+    *) return 1 ;;
+  esac
+}
 start_capture() {
 
   local failure_key=$1 destination=$2 policy=$3 captured= capture_status=0
   shift 3
-  if [[ "$policy" == arming || "$policy" == arming-after-brain || "$policy" == wait-recovery ]]; then
+  if [[ "$policy" == arming || "$policy" == wait-recovery ]]; then
     captured=$(builtin trap - EXIT HUP INT TERM; "$@" 2>&1) && capture_status=0 || capture_status=$?
   elif captured=$(builtin trap - EXIT HUP INT TERM; "$@"); then
     capture_status=0
@@ -76,6 +110,9 @@ start_capture() {
     capture_status=$?
   fi
   case "$policy" in
+    required)
+      if start_capture_defer_brain_failure "$failure_key"; then return 0; fi
+      ;;
     arming)
       start_arming_status=$capture_status
       ;;
@@ -90,6 +127,9 @@ start_capture() {
 collect_start_notice() {
   : "$1"
 }
+start_prepare_brain() {
+  :
+}
 start_exit_trap() {
   start_finish notice unexpected-termination
 }
@@ -99,6 +139,7 @@ start_signal() {
 start_main() {
   start_capture engine-missing value required tool verb
   start_capture holder-read parent_view identity-required-nonempty tool verb
+  start_prepare_brain
   if [[ "$start_deferred_identity_read" == true ]]; then
     collect_start_notice "$start_holder_context_notice"
   else
@@ -158,6 +199,9 @@ func completeHookStartFixtureAssertions() string {
 		"func TestHookStartContextOutcomeShapesOnBash32() {",
 		"func TestHookStartIntentionalFullPathFixturesOnBash32() {",
 		"func TestHookStartForgedDelegateHintRefusesOnBash32() {",
+		"func TestHookStartBrainBootFailureKeepsWaitLineOnBash32() {",
+		"func TestHookStartBrainTimeoutKeepsWaitLineOnBash32() {",
+		`"HOOK_START_WAIT_MATCHED=1"`,
 		`mode: "context-arming-failure"`,
 		`mode: "context-holder-read"`,
 		`mode: "context-process-identity"`,
@@ -342,18 +386,9 @@ func TestAuditHookStartExitsRejectsMutationBypasses(t *testing.T) {
 		{"forged context shape", func(s string) string {
 			return strings.Replace(s, "  start_finish notice engine-missing", "  start_context_shape_ready=true\n  start_finish notice engine-missing", 1)
 		}, fixtures, "start context shape"},
-		{"forged arming readiness", func(s string) string {
-			return strings.Replace(s, "  start_finish notice engine-missing", "  start_ready_to_arm=true\n  start_finish notice engine-missing", 1)
-		}, fixtures, "start arming readiness"},
-		{"misused brain arming policy", func(s string) string {
-			return strings.Replace(s, "start_capture engine-missing value required tool verb", "start_capture engine-missing value arming-after-brain tool verb", 1)
-		}, fixtures, "reserved for the finalizer"},
 		{"forged re-arm observation", func(s string) string {
 			return strings.Replace(s, "  start_finish notice engine-missing", "  start_arming_rearmed=true\n  start_finish notice engine-missing", 1)
 		}, fixtures, "start re-arm observation"},
-		{"forged brain arming result", func(s string) string {
-			return strings.Replace(s, "  start_finish notice engine-missing", "  start_brain_arming_failed=true\n  start_finish notice engine-missing", 1)
-		}, fixtures, "start brain arming result"},
 		{"return from main", func(s string) string {
 			return strings.Replace(s, "  start_finish notice engine-missing", "  return 0", 1)
 		}, fixtures, "fall-through"},
@@ -415,6 +450,14 @@ func TestAuditHookStartExitsRejectsPostContextFailureBypasses(t *testing.T) {
 				`collect_start_notice "Metasystem could not read durable wait recovery rows for this session: $waiting_lines"`,
 				`: "$waiting_lines"`, 1)
 		}, "post-context arming and wait-recovery failures must become notices"},
+		{"brain failure wait recovery removed", func(s string) string {
+			return strings.Replace(s,
+				`start_capture wait-recovery waiting_lines wait-recovery "$ms" session start --root "$repo" --session "$session"`,
+				`: "$waiting_lines"`, 1)
+		}, "brain boot failure must become a notice and continue to holder-matched wait recovery"},
+		{"brain failure finalized early", func(s string) string {
+			return strings.Replace(s, "      start_defer_brain_failure brain-boot\n      return 0", "      start_finish notice brain-boot\n      return 0", 1)
+		}, "brain boot failure must become a notice and continue to holder-matched wait recovery"},
 		{"prepared context publisher bypassed", func(s string) string {
 			return strings.Replace(s, "    start_finish intentional context-ready", "    start_finish intentional healthy-no-context", 1)
 		}, "post-context arming and wait-recovery failures must become notices"},
@@ -455,6 +498,9 @@ func TestAuditHookStartExitsRejectsMissingFullPathContextShapeProof(t *testing.T
 		{"process identity recovery case", `mode: "context-process-identity"`},
 		{"forged delegate refusal case", "func TestHookStartForgedDelegateHintRefusesOnBash32"},
 		{"session start trace assertion", `strings.Contains(traceText, "\nup ") || !strings.Contains(traceText, "\nsession start ")`},
+		{"brain boot wait recovery case", "func TestHookStartBrainBootFailureKeepsWaitLineOnBash32"},
+		{"brain timeout wait recovery case", "func TestHookStartBrainTimeoutKeepsWaitLineOnBash32"},
+		{"brain matched-holder wait row", `"HOOK_START_WAIT_MATCHED=1"`},
 	} {
 		t.Run(test.name, func(t *testing.T) {
 			assertions := strings.Replace(completeHookStartFixtureAssertions(), test.required, "", 1)
@@ -994,14 +1040,68 @@ func TestHookStartFailureBranchFixturesOnBash32(t *testing.T) {
 			}
 			if test.key == "brain-boot" || test.key == "brain-timeout" {
 				traceBytes, err := os.ReadFile(trace)
-				if err != nil || !strings.Contains(string(traceBytes), "\nup ") {
-					t.Fatalf("brain failure skipped the supervision arming leg: %v: %s", err, traceBytes)
+				if err != nil || !strings.Contains(string(traceBytes), "\nup ") || !strings.Contains(string(traceBytes), "\nsession start ") {
+					t.Fatalf("brain failure skipped supervision arming or holder-matched wait recovery: %v: %s", err, traceBytes)
 				}
 			}
 			if after := snapshotFixtureTree(t, root); after != before {
 				t.Fatalf("failure branch changed durable state\nbefore:\n%s\nafter:\n%s", before, after)
 			}
 		})
+	}
+}
+
+func TestHookStartBrainBootFailureKeepsWaitLineOnBash32(t *testing.T) {
+	assertHookStartBrainFailureKeepsWaitLineOnBash32(t, "brain-boot", nil)
+}
+
+func TestHookStartBrainTimeoutKeepsWaitLineOnBash32(t *testing.T) {
+	assertHookStartBrainFailureKeepsWaitLineOnBash32(t, "brain-timeout", []string{"METASYSTEM_BRAIN_BOOT_DEADLINE_MS=1"})
+}
+
+func assertHookStartBrainFailureKeepsWaitLineOnBash32(t *testing.T, mode string, environment []string) {
+	t.Helper()
+	root := t.TempDir()
+	hook := filepath.Join(root, "scripts", "agents", "supervision-hook.sh")
+	writeExecutable(t, hook, readProductionHook(t))
+	trace := filepath.Join(t.TempDir(), "trace")
+	enginePath := filepath.Join(root, "bin", "metasystem")
+	writeExecutable(t, enginePath, fullPathFixtureEngine())
+	command := exec.Command("git", "init", "-q", "-b", "main", root)
+	if output, err := command.CombinedOutput(); err != nil {
+		t.Fatalf("git init: %v: %s", err, output)
+	}
+	before := snapshotFixtureTree(t, root)
+	environment = append([]string{
+		"HOOK_START_TRACE=" + trace,
+		"HOOK_START_FULL_MODE=" + mode,
+		"HOOK_START_WAIT_MATCHED=1",
+	}, environment...)
+	if mode == "brain-timeout" {
+		shimDir := t.TempDir()
+		writeExecutable(t, filepath.Join(shimDir, "ps"), "#!/bin/bash\nprintf '%s\\n' \"${HOOK_START_PS_COMMAND:?}\"\n")
+		environment = append(environment, "PATH="+shimDir+":"+os.Getenv("PATH"), "HOOK_START_PS_COMMAND="+enginePath)
+	}
+	stdout, stderr, status := runHookStartCommand(t, hook, "claude", `{"session_id":"brain-wait","source":"startup"}`+"\n", environment, false)
+	wantStdout, wantStatus := directNoticeOutcome(t, mode)
+	wantStdout = appendSystemMessage(wantStdout, "WAIT RECOVERY fixture row")
+	wantStdout = appendSystemMessage(wantStdout, "Supervision may have been partly initialized.")
+	if status != wantStatus || stdout != wantStdout || stderr != "" {
+		t.Fatalf("brain failure = status %d stdout %q stderr %q; want status %d stdout %q", status, stdout, stderr, wantStatus, wantStdout)
+	}
+	traceBytes, err := os.ReadFile(trace)
+	if err != nil {
+		t.Fatal(err)
+	}
+	traceText := string(traceBytes)
+	brainAt := strings.Index(traceText, "brain boot ")
+	upAt := strings.Index(traceText, "\nup ")
+	waitAt := strings.Index(traceText, "\nsession start ")
+	if brainAt < 0 || upAt < brainAt || waitAt < upAt {
+		t.Fatalf("brain failure did not reach arming and holder-matched wait recovery in order: %s", traceText)
+	}
+	if after := snapshotFixtureTree(t, root); after != before {
+		t.Fatalf("brain-failure wait fixture changed fake durable state\nbefore:\n%s\nafter:\n%s", before, after)
 	}
 }
 
@@ -1223,7 +1323,11 @@ if [[ ${1-} == session && ${2-} == start ]]; then
     printf '%s\n' 'second failure' >&2
     exit 7
   fi
-  [[ $mode != context-wait-rows && $mode != context-process-identity && $mode != context-arming-failure ]] || { printf '%s\n' 'WAIT RECOVERY fixture row'; exit 0; }
+  if [[ $mode == context-wait-rows || $mode == context-process-identity || $mode == context-arming-failure ||
+        ( ${HOOK_START_WAIT_MATCHED:-0} == 1 && ( $mode == brain-boot || $mode == brain-timeout ) ) ]]; then
+    printf '%s\n' 'WAIT RECOVERY fixture row'
+    exit 0
+  fi
   exit 64
 fi
 if [[ ${1-} == brain && ${2-} == start-delivered ]]; then
