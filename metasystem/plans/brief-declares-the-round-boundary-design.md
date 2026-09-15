@@ -837,6 +837,10 @@ Seat ruling A4 (unit 1b-ii read finding F-31; narrows ruling A1): a backtick spa
 
 Landing note (read finding F-10): after 1b-i lands, rebuild every seat's engine (`scripts/agents/go-build.sh`, then `up --repo`). An engine older than 1b-i rejects `--mode-only`, and every dispatch would fail at dispatch.sh:1542.
 
+### Carried to unit 4c (unit 2 read F-3)
+
+The unit 2 read found that diff attributes and configuration can still change ChangedLines' count under the exact argv and the runner's pins: a text change counts zero under a binary diff driver, under core.bigFileThreshold=1, or when the candidate adds a .gitattributes with * -diff, and diff.relative=true undercounts from a nested workspace. Unit 2 conforms to this page, which fixes the argv and prices binary contents at zero. Before unit 4c uses the count for the Ceiling, this page decides whether the count ignores repository attributes and those settings (for example --no-relative, an attribute source, or a pinned big-file threshold), and unit 4c is briefed with that decision.
+
 ## Critique record
 
 Round 1 reported eight material findings. Round 2 reported three material findings and reopened R1-04 and R1-07. The seat's round-2 rulings settle the source contract, path classification, and witness granularity. These dispositions fold all remaining findings into this spec. They do not claim passing implementation proof.
