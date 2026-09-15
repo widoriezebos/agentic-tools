@@ -6,7 +6,7 @@
 - MigrationEpoch: 2026-08-20T00:00:00Z
 - ManifestDigest: d82032bee818c2d82e6a95e6f1b75347499b88ee8b68c4d20a0f3c94d00ba320
 - MigrationMode: manifest
-- Revision: 80
+- Revision: 81
 - ApprovalGate: since=2026-09-03T14:16:24Z opid=JY54AQT8101VK9353WT9FQYGA9-m0-c5dbf036
 - FleetEnrollment: at=2026-09-06T06:37:21Z machine=m1 generation=1 opid=CMNCRETKYCB18MFZNYFSZJPXQY-m1-a4f8999f
 
@@ -103,4 +103,5 @@ History:
 - 2026-09-15T09:50:24Z 7DWWGDZB5V4PH5VM5TF29P0SNP-m1c-69c9e454 ack actor=m1c+main-1789191340-90689-8975a9 targets=design-allocations-leave-ceiling-margin displaced=m1c+main-1789191340-90689-8975a9@2026-09-15T09:23:53Z ack
 - 2026-09-15T09:57:33Z 8SZWYATG3551EVT3G23ZSGQD2V-m1b-30a7e141 ack actor=m1b+main-1789191336-90295-e4b24b targets=goal-cli-power-of-attorney-check-reads-the-backlog-from-a-file displaced=m1b+main-1789191336-90295-e4b24b@2026-09-15T09:07:18Z ack
 - 2026-09-15T10:40:04Z KSPZF9860HA7SVJFD30RS4XPD8-m1e-892cdaec ack actor=m1e+main-1789030447-51011-5722fc targets=brief-declares-the-round-boundary displaced=m1e+main-1789030447-51011-5722fc@2026-09-15T09:22:11Z ack
-Integrity: sha256=c72a69346fcc93b0ac0e5c98c4be1b46fa982d21b7381f14a8ea53af04c13660
+- 2026-09-15T12:16:07Z 9JZY876BJBSP1CSY3T5DV1EJSG-m1c-29fb3255 ack actor=m1c+main-1789191340-90689-792d8f targets=design-delegates-run-fresh-and-bounded displaced=m1c+main-1789191340-90689-792d8f@2026-09-15T11:38:06Z ack
+Integrity: sha256=9193cd5e8e07b8ac69c8dc57c63835eb0fed5aeb614368a87a81221e8c4c0b42
