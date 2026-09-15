@@ -1,6 +1,6 @@
 # forged-delegate-hint-refuses-session-start
 
-- State: approved
+- State: claimed
 - Priority: 1
 - Sequence: 10
 - Risk: severity=3 novelty=1 exposure=3 accumulation=2 basis="severity 3: a SessionStart carrying a forged delegate hint now exits 0 where it must refuse, and the supervision-and-census section stops before any scenario runs; novelty 1: a side effect of c71f1e23's continuation path; exposure 3: every landing whose proof selects that section; accumulation 2: the stopped section hides every later scenario's result"
@@ -9,14 +9,17 @@
 - Origin: human
 - Next step: Codex Sol diagnosis and fix dispatched by m1c in scratchpad g12/wt22; m1c claims it at landing.
 - OpenedAt: 2026-09-14T23:42:58Z
-- Revision: 4
+- Revision: 5
 - Budget: elapsedLimit=4h attemptLimit=6 reservedJobMinutesLimit=720 activeJobLimit=1 reviewRoundLimit=2
 - BudgetExceptions: 0
 - Approved: by=human:Wido at=2026-09-14T23:43:04Z revision=2 opid=Y9TFPK7MYB00MY7GP6YB5V29ND-m1e-c6925449 authority=proven digest=d8d9d68927f4e6f9e6e4c648b2cdb7183096531c578a6fb892ca0e500e15353e
+- Claimed: machine=m1c lineage=main-1789191340-90689-8975a9 at=2026-09-15T00:05:25Z revision=5 accountingRevision=5 episodeAt=2026-09-15T00:05:25Z episodeRevision=5
+- StopCapability: generation=5 revision=5 machine=m1c claimEpoch=5 fenceEpoch=0
 
 History:
 - 2026-09-14T23:42:58Z GWXJMTMRHG77P56F4VPBR6Z9XX-m1e-c6925449 open actor=human:Wido targets=forged-delegate-hint-refuses-session-start reason=TierOverride: derived=3 set=2 why=Opened by m1c in Wido's name under R-110-m1e: a trunk regression from m1c's c71f1e23, reported by m1e.
 - 2026-09-14T23:43:04Z Y9TFPK7MYB00MY7GP6YB5V29ND-m1e-c6925449 approve actor=human:Wido targets=forged-delegate-hint-refuses-session-start
 - 2026-09-14T23:43:10Z D9XVR0J0PEDKXBXBRASMNEYFHJ-m1e-c6925449 set-priority actor=human:Wido targets=forged-delegate-hint-refuses-session-start reason=priority-order subject=forged-delegate-hint-refuses-session-start from=unranked to=1:59 requested-sequence=append
 - 2026-09-14T23:43:52Z 8Z4DJNRHD4N1PJ9C27FX0QTGVH-m1e-c6925449 set-priority actor=human:Wido targets=actionable-metrics,adoption-filled-delivery-passes-on-trunk,beds-run-under-the-oldest-supported-bash,brain-boot-failure-keeps-the-wait-line,chain-landing-carries-the-reviewed-diff,cross-cutting-change-inventories-its-readers,deep-sections-cannot-stay-red-unseen,degraded-stop-forms-have-one-source,delegate-sandbox-runs-the-beds,dispatch-bases-chains-on-the-remote-tip,dispatch-bed-preamble-check-survives-a-large-prompt,every-round-gets-an-independent-read,every-verb-resolves-repo-to-an-absolute-root,failed-job-attention,failures-show-observed-against-expected,fixture-repo-copies-exclude-the-artifacts-store,fixture-stewards-outlive-their-suite,fixture-waits-name-their-producer,forged-delegate-hint-refuses-session-start,human-authority-surface-runs-its-cmd-tests,human-goal-verbs-forgiving,human-wait-does-not-consume-goal-budget,job-record-birth-token,land-bed-reads-build-stamps-without-a-broken-pipe,lease-sweep-death-evidence,live-job-on-a-done-goal-unnoticed,machine-concurrency-governor,member-size-gate,metasystem-stop-escalation-proofs,metasystem-stop-fleet-form,moved-effects-are-inventoried-in-the-design,new-elapsed-budgets-use-explicit-hours,pipelines-never-lose-a-truncated-producer,registered-wait-matches-the-runtime-session,repo-root-paths-ride-agent-commits-unjudged,round-proof-feeds-the-next-brief,run-scoped-build-caches-have-a-janitor,skipped-test-fails-its-group-on-the-other-os,stop-batch-strands-a-resumable-goal,stop-capability-follows-the-lease-epoch,stop-decision-surface-is-a-gate,stop-response-carries-a-structured-report-reference,suite-progress-bed-runs-on-trunk,testing-surfaces-declare-their-mirror,tests-never-wait-on-wall-time,token-spend-fence,trunk-versus-candidate-is-a-verification-step,watch-verb,watcher-repair-request-never-names-current,winddown-census-handoff-leak reason=priority-order subject=forged-delegate-hint-refuses-session-start from=1:59 to=1:10 requested-sequence=10
-Integrity: sha256=73354b367feb67582985dfa4fa992338c54f97d43a27306c54dd49822f3dcabe
+- 2026-09-15T00:05:25Z 8BZ21HH2R8MJK1J8SST3DN918D-m1c-69c9e454 claim actor=m1c+main-1789191340-90689-8975a9 targets=forged-delegate-hint-refuses-session-start
+Integrity: sha256=40b5eac7010d63d8517bd7dcc7f7838155f0119b04813552548467c57b3d4aff
