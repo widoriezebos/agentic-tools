@@ -1,6 +1,6 @@
 # registered-wait-matches-the-runtime-session
 
-- State: approved
+- State: claimed
 - Priority: 1
 - Sequence: 22
 - Risk: severity=3 novelty=2 exposure=3 accumulation=2 basis="severity 3: the landed stop gate ignores every wait a seat actually registers from a shell, so the structural fix for seats stopping with work pending does not work in normal use; novelty 2: how a shell-registered watch learns the runtime session is not yet designed; exposure 3: every seat that waits on a delegate, proof or landing; accumulation 2: each ignored wait is a refused Stop or a seat that must poll"
@@ -9,12 +9,13 @@
 - Origin: human
 - Next step: 2026-09-15 17:45 m1b. Member A LANDED (receipt 4daa8c69d, code c4e7d0f31; proof 53 of 53; trunk matches proven tree 00bc111f). Member B1 build dispatched as job m1b-u1b1-1789485814 (brief plans/registered-wait-matches-the-runtime-session-B1-build-brief.md): the hook passes --runtime-session and --start-source to up, --no-runtime-session and --session-absent when the payload carries no session_id, and TurnVerdictOptions gains SessionAbsent so a sessionless Stop reads no registered wait. NEXT: verify B1 outside the sandbox (hook syntax, TestSessionAbsentReadsNoWait, the hook fixture leg), prove, land with a receipt line, then B2 and B3 together, then C. Landing trap: apply with git apply --index and diff with git diff HEAD, then check git diff --name-status <proven tree> origin/main is empty.
 - OpenedAt: 2026-09-14T19:00:55Z
-- Revision: 61
+- Revision: 62
 - Budget: elapsedLimit=1d4h attemptLimit=16 reservedJobMinutesLimit=720 activeJobLimit=1 reviewRoundLimit=2
 - BudgetExceptions: 1
 - Approved: by=human:Wido at=2026-09-15T15:58:03Z revision=60 opid=JE65KMHM5HV36FWFE3W6ZA07KB-m1e-c6925449 authority=proven digest=74f8e4f176d535f70ef1ccf95a7bbf9455fb1c2fc86c7e48db9545746edc0391
 - Sliced: machine=m1b lineage=main-1789191336-90295-e4b24b revision=53 at=2026-09-15T14:22:58Z
-- Episode: machine=m1b lineage=main-1789191336-90295-e4b24b accountingRevision=60 episodeAt=2026-09-15T14:21:33Z episodeRevision=53 idleSeconds=0 released=2026-09-15T15:58:41Z
+- Claimed: machine=m1b lineage=main-1789191336-90295-e4b24b at=2026-09-15T15:58:45Z revision=62 accountingRevision=60 episodeAt=2026-09-15T14:21:33Z episodeRevision=53 idleSeconds=4
+- StopCapability: generation=62 revision=62 machine=m1b claimEpoch=2 fenceEpoch=0
 
 History:
 - 2026-09-14T19:00:55Z VW88ZP3E8RMAVCYCTGCXW0EZPQ-m1e-c6925449 open actor=human:Wido targets=registered-wait-matches-the-runtime-session reason=TierOverride: derived=3 set=2 why=one eligibility rule in the stop gate with a measured failure, below its tier-3 parent
@@ -78,4 +79,5 @@ History:
 - 2026-09-15T15:24:00Z MXZVVKAM0XJECGMB0FES8N2Q99-m1b-30a7e141 edit actor=m1b+main-1789191336-90295-e4b24b targets=registered-wait-matches-the-runtime-session
 - 2026-09-15T15:58:03Z JE65KMHM5HV36FWFE3W6ZA07KB-m1e-c6925449 set-budget actor=human:Wido targets=registered-wait-matches-the-runtime-session displaced=m1b+main-1789191336-90295-e4b24b@2026-09-15T14:21:33Z
 - 2026-09-15T15:58:41Z Q3QHW72TYK67S1ARK71CN07AMT-m1b-30a7e141 release actor=m1b+main-1789191336-90295-e4b24b targets=registered-wait-matches-the-runtime-session
-Integrity: sha256=261612f1573494115ae0fba9b7c8a618470a16bb6d27aa776daeb13bc2ff4ef9
+- 2026-09-15T15:58:45Z X3HE5BVKXQV4MM4BCE81J7VM5V-m1b-30a7e141 claim actor=m1b+main-1789191336-90295-e4b24b targets=registered-wait-matches-the-runtime-session
+Integrity: sha256=9e0da7972d88e392eb3495b9397c9fecd609bedb2e538e525cc78399b4ee296b
