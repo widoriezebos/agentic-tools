@@ -1,6 +1,6 @@
 # code-reads-and-critiques-run-bounded
 
-- State: approved
+- State: claimed
 - Priority: 1
 - Sequence: 3
 - Risk: severity=2 novelty=1 exposure=3 accumulation=2 basis="severity 2: about 20M tokens per read, two or three reads per unit; novelty 1: brief discipline and a prepared copy; exposure 3: every unit has at least one read; accumulation 2: grows with every unit"
@@ -9,13 +9,16 @@
 - Origin: human
 - Next step: Build, tier 1: a read-brief template with the prepared copy, checklist, call budget and return shape; the seat instructions; the receipt fields. Suggested owner: any seat.
 - OpenedAt: 2026-09-15T09:38:02Z
-- Revision: 3
+- Revision: 4
 - Budget: elapsedLimit=4h attemptLimit=6 reservedJobMinutesLimit=720 activeJobLimit=1 reviewRoundLimit=2
 - BudgetExceptions: 0
 - Approved: by=human:Wido at=2026-09-15T09:38:08Z revision=2 opid=M4HP75PPFCD05W4DKAGVT0ZWME-m1e-c6925449 authority=proven digest=0e342561c0d2c863d19cf8209a4b84c99ed40bc6a7c90858e614615e0e9e6324
+- Claimed: machine=m1c lineage=main-1789191340-90689-8975a9 at=2026-09-15T09:50:24Z revision=4 accountingRevision=4 episodeAt=2026-09-15T09:50:24Z episodeRevision=4
+- StopCapability: generation=4 revision=4 machine=m1c claimEpoch=5 fenceEpoch=0
 
 History:
 - 2026-09-15T09:38:02Z 33TJZQNKS2QX13YDZKER9P81F0-m1e-c6925449 open actor=human:Wido targets=code-reads-and-critiques-run-bounded
 - 2026-09-15T09:38:08Z M4HP75PPFCD05W4DKAGVT0ZWME-m1e-c6925449 approve actor=human:Wido targets=code-reads-and-critiques-run-bounded
 - 2026-09-15T09:38:16Z ENW3RQS21ETEVEZWA3TQM00W1R-m1e-c6925449 set-priority actor=human:Wido targets=actionable-metrics,adoption-filled-delivery-passes-on-trunk,beds-run-under-the-oldest-supported-bash,brief-declares-the-round-boundary,builder-proves-each-rule-by-mutation,busy-seat-shells-are-ended,chain-landing-carries-the-reviewed-diff,code-reads-and-critiques-run-bounded,codex-jobs-run-through-a-metasystem-verb,coordinator-context-stays-under-budget,coordinator-wakes-on-events-not-polls,critique-closes-on-folded-proof,cross-cutting-change-inventories-its-readers,deep-sections-cannot-stay-red-unseen,degraded-stop-forms-have-one-source,delegate-sandbox-runs-the-beds,design-allocations-leave-ceiling-margin,dispatch-bases-chains-on-the-remote-tip,dispatch-mission-timeout-scenario-holds-under-load,engine-policy-binding-survives-drift-and-load,every-round-gets-an-independent-read,every-verb-resolves-repo-to-an-absolute-root,evidence-and-build-output-have-retention-and-stay-unindexed,failed-job-attention,failures-show-observed-against-expected,fixture-repo-copies-exclude-the-artifacts-store,fixture-waits-name-their-producer,follow-up-brief-cannot-cite-fresh-trunk-files,goal-cli-power-of-attorney-check-reads-the-backlog-from-a-file,human-authority-surface-runs-its-cmd-tests,human-goal-verbs-forgiving,human-wait-does-not-consume-goal-budget,job-record-birth-token,lease-sweep-death-evidence,live-job-on-a-done-goal-unnoticed,machine-concurrency-governor,member-size-gate,metasystem-stop-escalation-proofs,metasystem-stop-fleet-form,moved-effects-are-inventoried-in-the-design,new-elapsed-budgets-use-explicit-hours,pipelines-never-lose-a-truncated-producer,proof-admission-fits-a-seat-proving-several-units,receipt-admission-caps-concurrent-batteries,registered-wait-matches-the-runtime-session,repo-root-paths-ride-agent-commits-unjudged,round-proof-feeds-the-next-brief,run-scoped-build-caches-have-a-janitor,seat-landings-run-the-selected-sections,seat-machines-shed-leaked-processes,skipped-test-fails-its-group-on-the-other-os,small-change-lane,stop-batch-strands-a-resumable-goal,stop-capability-follows-the-lease-epoch,stop-decision-surface-is-a-gate,stop-gate-sees-harness-tracked-work,stop-hook-never-forces-an-empty-turn,stop-response-carries-a-structured-report-reference,suite-progress-bed-runs-on-trunk,test-environment-edges-are-closed,testing-surfaces-declare-their-mirror,tests-never-wait-on-wall-time,token-spend-fence,trunk-versus-candidate-is-a-verification-step,watch-verb,watcher-repair-request-never-names-current,winddown-census-handoff-leak reason=priority-order subject=code-reads-and-critiques-run-bounded from=unranked to=1:3 requested-sequence=3
-Integrity: sha256=9afc20f783ead9beebefa704c978733ffcc4dc218d18f93c10e269cf27269f29
+- 2026-09-15T09:50:24Z 7DWWGDZB5V4PH5VM5TF29P0SNP-m1c-69c9e454 claim actor=m1c+main-1789191340-90689-8975a9 targets=code-reads-and-critiques-run-bounded
+Integrity: sha256=f29cead7421358c519c4e26830e3e197744d4456e051f671ccb1892d0b7db0c5
