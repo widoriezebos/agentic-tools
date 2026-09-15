@@ -1,0 +1,38 @@
+# Amendment 8d, critique round 3 (the last): findings judged, and the close
+
+Reader for m1e, 2026-09-15. Critic read 66d66bc5d; origin/main 9b2934e3f differs only in the goal file's Next step. Design lines are revision 3's. Proposals; the seat rules.
+
+Counts: 7 material and 2 low, all confirmed. REOPENED 3 (215, 216, 218); NEW-FROM-FOLD 3 (217, 220, 221); NEW-MISSED 3 (219, 222, 223). FOLD-AT-BUILD 8 (216 to 223) plus 215 part a; BLOCKS-UNIT 1 (215 part b: the deny switch, ROUTE to the successor goal); REJECT 0 findings, one scope claim rejected (215).
+
+## Findings
+
+- **215 critical, REOPENED 203.** Arithmetic right, but in deny mode never-denied calls past the trigger have no count bound, so neither p95 < 150K nor max <= 200K holds by construction (seventh admitted call 206,178). Confirmed: design :51 (frequency sentence, residual), :59 (never-denied set); goal :8 "bounded by construction"; rulings.md:173 item 5. Reader adds: a denied attempt is itself one more call past the trigger (small step, no count bound), so no in-turn gate alone bounds a session; the backstop is a turn end plus a forced handoff, severed to section 7. Disposition: (a) FOLD-AT-BUILD: D1.4, D3.6, 7.3 stop claiming the construction beyond the handoff tail, deny may not ship without a count bound, one report line gives the evidence (correction 1); (b) BLOCKS-UNIT the deny switch (7.3, the launch unit of seat-successor-continues-a-handoff-without-a-human), behind Wido's Q2. REJECT "blocks the cap group as a whole": nothing denies in the cap group (D3.5 :61, SR14); the only dependent value is U3a-1a's construction line 106,638, which every answer keeps or lowers (a stricter refusal, additive under R-115-m1e item 6).
+- **216 high, REOPENED 206.** Terminal set {completed} leaves observed failed and killed in flight; two conflicting transition sentences (:68). Confirmed: c53cbef5 jsonl:839 enqueue `<status>failed</status>` (background Bash); 2c27f5cc jsonl:135 enqueue `<status>killed</status>` with the resume note. Corpus (~/.claude/projects): completed 18,850, failed 743, killed 161, stopped 8 (4 enqueue records), running 170 (all task-output tool results, retrieval_status timeout or not_ready; never a notification). FOLD-AT-BUILD U3b-2a (correction 2).
+- **217 high, NEW-FROM-FOLD.** Resume keys on `input.to` or an unobserved `toolUseResult.agentId`. Confirmed 36c93128 jsonl:14039-14040: result `{success:true, message:"Resuming agent a72a593", resumedAgentId}`, no agentId; observed failure `{success:false, message:"No agent named '...' is reachable"}` (3 records). FOLD-AT-BUILD U3b-2a (correction 3).
+- **218 high, REOPENED 209.** Two blocking flocks precede any deadline check. Confirmed: calls.go:124 `lockCallMaintenance(stateRoot, false, opts.NonBlocking)`; evidence.go:112-119 LOCK_SH without LOCK_NB unless nonBlocking; cursor.go:59-63 and :615-621 LOCK_EX blocking unless NonBlocking. FOLD-AT-BUILD U3e-1, U3e-2a (correction 4).
+- **219 high, NEW-MISSED** (the gate ran in native subagents since revision 1; r3's one-line switch exposes it). Confirmed: job settings carry SessionStart only (adapter/claude.go:122-131); the hook skips only `METASYSTEM_HOOK_DELEGATE_JOB` (:1481); installed Claude Code 2.1.272 lists `agent_id`, `agent_type` among common hook input fields (binary string). Also bites observe mode now: every subagent call execs the engine and may write would-deny rows under the coordinator's session. FOLD-AT-BUILD U3e-2a, bed leg U3e-2b (correction 5).
+- **220 medium, NEW-FROM-FOLD.** `--delegate id=a` persists no asked or output without a transcript. Confirmed :68; rulings.md:174 item 2; goal :8. FOLD-AT-BUILD U3b-2a (correction 6).
+- **221 medium, NEW-FROM-FOLD.** Shipped observe line has no owning file; U3e-2b edits .claude/settings.json against SR3. Confirmed :61, :117, :123, :124; SR3 in the brief; both files tracked (git ls-files); setup.go:173-185 merges on a failed check. FOLD-AT-BUILD U3e-2a, U3e-2b (correction 7).
+- **222 low, NEW-MISSED.** D1.1's rationale is false: validate.go parses every key (:37-68), checks selected prefixes (:101-105, :501-512), has no unknown-key refusal. FOLD-AT-BUILD U3a-1a (correction 8).
+- **223 low, NEW-MISSED.** D4.1 names states literally; owner is `run.WaiterStates` (waiter_states.go:16-20), consumed at handoff_capture.go:416-421. FOLD-AT-BUILD U3b-1 (correction 9).
+
+Reader note RN-2 (not a critic finding; page text only): D4.4 resolves the note directory as `.claude/projects/<slug>/memory` for every runtime, while S7 (orchestration.md:370) and the goal's runtime rule (:8) are runtime-free; a Codex coordinator would always meet `HANDOFF_NOTE_OUTSIDE_MEMORY`. Proposal: the seat rules the non-Claude note location in U3b-2b's brief; a seat ruling, not Wido's.
+
+## What the skill requires at the round limit
+
+Goal budget `reviewRoundLimit=3`; round 3 is spent. SKILL.md:55-62: no fourth round ("Never dispatch a silent fourth round"); `job critique-register-close` defers exhausted bounded findings into review obligations (discharged by `goal discharge-review-obligation` against chain, artifact and test) or closes after a human records `goal accept-risk`; "whenever a severe or unproven finding remains, stop with the design waiting on the human." Every material finding carries rigor severe (215 to 220) or unproven (221), and a seat fold is not a critic closure, so the close needs Wido's word. Precedent, same shape: R-114-m1e item 1, "Land the page after one fresh Fable fold of the small findings, with no further round." Work does not stop meanwhile (R-114-m1e item 6): the seat continues the successor goal's design and registered-wait members.
+
+## Proposed close
+
+1. Append ctx8d-r3-corrections.md to revision 3; register 215a and 216 to 223 as review obligations, each discharged by its named witness in its unit's Opus read.
+2. Buildable on Wido's word, all in observe mode, order unchanged: U3a-1a, U3a-1b, U3b-1, U3b-2a (split a1/a2), U3b-2b (RN-2 ruled in its brief), U3e-1, U3e-2a (split a1/a2), U3e-2b.
+3. Waits: only the deny switch (section 7.3, the successor goal's launch unit), behind Q2.
+
+## Questions for Wido (one message)
+
+- **Q1, the close.** Touches the skill's "stop with the design waiting on the human" and R-114-m1e item 1's precedent. Land revision 3 with the seat corrections and no fourth round, 216 to 223 and 215a as review obligations? Recommend yes.
+- **Q2, construction against never-denied calls.** Touches R-114-m1e item 5: "never blocks a landing or an in-flight wait, so the DONE's stated size holds by construction." Past the trigger, landings, waits, delegate launches and denied attempts have no count bound, so the halves conflict. (a) Deny mode counts calls past the trigger against a reserve carried in the margin; past it a new landing, wait or delegate launch is denied with the handoff remedy and the successor continues it (a call already running completes); the successor's forced handoff bounds denied attempts. One reserved call: trigger 150,000 - 4 x 14,454 = 92,184, about 51.7K room from the measured first call 40,504. (b) Leave them unbounded and measure: narrows "by construction", which R-115-m1e item 6 forbids. (c) Decide in the successor design without a ruling. Recommend (a), reserve sized in the successor design from observe-mode evidence (correction 1's report line); observe mode ships meanwhile.
+
+## Not checked (budget)
+
+The Claude Code hooks web page (219 rests on the installed binary's field list; bed evidence in correction 5); which record kinds the 4 `stopped` enqueues are; SendMessage to a running (not stopped) agent; orchestration.md:355-357 (S1); the revision 2 page (classes of 222, 223 inferred); allocation estimates in corrections 6 and 7.
