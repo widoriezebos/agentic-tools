@@ -357,7 +357,7 @@ The specific shared paths, caches, and lock locations are project facts for `doc
 These seat rules have been in effect since 2026-09-15 by Wido's word.
 The full statement, including the later form of every rule, is in `plans/seats-spend-tokens-in-bounded-sessions-design.md`, section P6.
 Until unit U3a's configuration keys land, the `context-budget` 200K health line is the trigger; Wido's cap decision in ruling R-114-m1e is 250K.
-Efficiency never regresses functionality: no unit lowers a proof floor, removes a witness or a gate, or narrows a DONE to save tokens; S7, S8 and this line come from ruling R-115-m1e, in effect since 2026-09-15.
+Efficiency never regresses functionality: no unit lowers a proof floor, removes a witness or a gate, or narrows a DONE to save tokens, and each unit's read checks it; S7, S8 and this line come from ruling R-115-m1e, in effect since 2026-09-15.
 
 | rule | today | check |
 | --- | --- | --- |

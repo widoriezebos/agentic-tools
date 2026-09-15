@@ -12,7 +12,7 @@ func TestSeatRulesPresentInOrchestrationDoc(t *testing.T) {
 	rules := []struct {
 		name, today, check string
 	}{
-		{"S1 over the trigger", "every remaining multi-call step runs as a fresh bounded delegate", "no turn has more than three main-thread calls; a tool result contains `handoff recorded:`"},
+		{"S1 over the trigger", "every remaining multi-call step runs as a fresh bounded delegate", "After the first sample at or over the trigger, no turn has more than three main-thread calls; a tool result contains `handoff recorded:`; no turn ends with a question to Wido; no allowed Stop occurs while the seat's claim has a next step."},
 		{"S2 turns bounded", "At most 12 main-thread calls per turn; at most one background Bash per unit at a time", "Calls between two Stop verdicts are at most 12; Monitor uses zero."},
 		{"S3 delegates fresh and bounded", "every delegate prompt starts with `Kind: design`, `build-read`, `critique`, or `other`", "`resumedAgentId` and `--follow-up` results are zero outside critique chains."},
 		{"S4 messages", "A `SendMessage` is at most 400 characters, covers one subject", "Check length and count per unit."},
@@ -43,7 +43,7 @@ func TestSeatRulesPresentInOrchestrationDoc(t *testing.T) {
 			t.Errorf("%s check text is absent from its row in docs/orchestration.md", rule.name)
 		}
 	}
-	if !strings.Contains(string(doc), "Efficiency never regresses functionality: no unit lowers a proof floor, removes a witness or a gate, or narrows a DONE to save tokens; S7, S8 and this line come from ruling R-115-m1e") {
+	if !strings.Contains(string(doc), "Efficiency never regresses functionality: no unit lowers a proof floor, removes a witness or a gate, or narrows a DONE to save tokens, and each unit's read checks it; S7, S8 and this line come from ruling R-115-m1e") {
 		t.Errorf("efficiency lead line is absent from docs/orchestration.md")
 	}
 }
