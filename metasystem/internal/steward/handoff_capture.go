@@ -19,6 +19,7 @@ import (
 
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/dispatch"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/goal"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/humanauthority"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/identity"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/output"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/run"
@@ -28,6 +29,7 @@ import (
 const (
 	handoffClassMain     = "MAIN"
 	handoffClassDelegate = "DELEGATE"
+	handoffClassHuman    = "HUMAN"
 )
 
 var (
@@ -47,6 +49,23 @@ type HandoffCaller struct {
 	Runtime, Session, Machine          string
 	Ref                                identity.Ref
 	Tag                                string
+}
+
+// HandoffCanceller identifies who asks to cancel. Human is present only for
+// an attended-human act, whose proof and holder coordinates the steward checks.
+type HandoffCanceller struct {
+	Caller HandoffCaller
+	Human  *HandoffHumanAct
+}
+
+// HandoffHumanAct carries the named human, terminal proof, and holder
+// coordinates observed by the command at the cancellation boundary.
+type HandoffHumanAct struct {
+	By            string
+	Proof         humanauthority.Proof
+	HolderMainId  string
+	HolderSession string
+	ClaimEpoch    int64
 }
 
 type ScratchArg struct {
@@ -1026,9 +1045,65 @@ func cancelHandoffUnderLock(root, nonce, reason string) error {
 	return CancelIntent(root, nonce, reason)
 }
 
+func handoffHumanRefusal(nonce string, canceller HandoffCanceller, token string) error {
+	class := canceller.Caller.Class
+	if class == "" {
+		class = "none"
+	}
+	return refusal("HANDOFF_HUMAN_UNPROVEN", fmt.Sprintf("nonce=%s by=%s caller=%s human=%s", nonce, canceller.Human.By, class, token))
+}
+
+func handoffCancelReason(stateRoot, root, nonce string, intent Intent, canceller HandoffCanceller) (string, error) {
+	if canceller.Human == nil {
+		return "cancelled by the seat", nil
+	}
+	act := canceller.Human
+	if canceller.Caller.Class != handoffClassHuman {
+		return "", handoffHumanRefusal(nonce, canceller, "unattempted")
+	}
+	if !act.Proof.TerminalValidFor(stateRoot) {
+		token := "unobserved"
+		if act.Proof.Valid() {
+			token = "other-root"
+		} else if act.Proof.Outcome != "" && act.Proof.Outcome != humanauthority.OutcomeProven {
+			token = act.Proof.Outcome
+		}
+		return "", handoffHumanRefusal(nonce, canceller, token)
+	}
+	lease, err := goal.ReadHolderLease(root)
+	if err != nil {
+		return "", fmt.Errorf("handoff %s cannot be cancelled by a human act: the checkout holder lease cannot be proved: %w", nonce, err)
+	}
+	if lease.HolderMainId != act.HolderMainId || lease.ClaimEpoch != act.ClaimEpoch {
+		return "", fmt.Errorf("handoff %s cannot be cancelled by a human act: the supplied holder coordinates do not match the current checkout lease", nonce)
+	}
+	if intent.Handoff.MainId != lease.HolderMainId {
+		return "", fmt.Errorf("handoff %s cannot be cancelled by a human act: it was recorded by %s and the current holder is %s", nonce, intent.Handoff.MainId, lease.HolderMainId)
+	}
+	by, err := goal.ValidateHumanName(act.By)
+	if err != nil {
+		return "", fmt.Errorf("handoff %s cannot be cancelled by a human act: %w", nonce, err)
+	}
+	p := act.Proof.InvokerRef
+	ref := identity.Ref{Pid: p.PID, StartedAtSec: p.PIDStartedAt, StartTicks: p.StartTicks, BootID: p.BootID}
+	if ref.StartedAtSec < 1 || ref.Mode() == identity.CompareInvalid {
+		return "", fmt.Errorf("handoff %s cannot be cancelled by a human act: the attended-human process identity is invalid", nonce)
+	}
+	session := "none"
+	if act.HolderSession != "" {
+		session = goal.NormalizeSession(act.HolderSession)
+	}
+	boot := ref.BootID
+	if boot == "" {
+		boot = "none"
+	}
+	return fmt.Sprintf("cancelled by human by=%s holder=%s epoch=%d session=%s human-pid=%d human-started=%d human-ticks=%d human-boot=%s",
+		by, lease.HolderMainId, lease.ClaimEpoch, session, p.PID, p.PIDStartedAt, p.StartTicks, boot), nil
+}
+
 // CancelHandoff cancels only a live, bound handoff. Consumption is a terminal
 // authorization transition and cannot be relabelled as a seat cancellation.
-func CancelHandoff(stateRoot, nonce string) error {
+func CancelHandoff(stateRoot, nonce string, canceller HandoffCanceller) error {
 	if !handoffNoncePattern.MatchString(nonce) {
 		return refusal("HANDOFF_NOT_LIVE", "nonce="+nonce)
 	}
@@ -1051,7 +1126,11 @@ func CancelHandoff(stateRoot, nonce string) error {
 	if intent.Reason != seatHandoffReason || intent.Handoff == nil {
 		return refusal("HANDOFF_NOT_LIVE", "nonce="+nonce)
 	}
-	if err := cancelHandoffUnderLock(root, nonce, "cancelled by the seat"); err != nil {
+	reason, err := handoffCancelReason(stateRoot, root, nonce, intent, canceller)
+	if err != nil {
+		return err
+	}
+	if err := cancelHandoffUnderLock(root, nonce, reason); err != nil {
 		_, statErr := os.Lstat(filepath.Join(intentsDir(root), nonce+".json"))
 		switch {
 		case statErr == nil:

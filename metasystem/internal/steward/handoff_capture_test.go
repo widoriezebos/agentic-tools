@@ -16,6 +16,7 @@ import (
 
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/dispatch"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/goal"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/humanauthority"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/identity"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/usage"
 )
@@ -716,6 +717,227 @@ func cancelledHandoff(t *testing.T, root, nonce string) Intent {
 	return readIntentFile(t, filepath.Join(cancelledDir(root), nonce+".json"))
 }
 
+type handoffHumanReader struct{ exact identity.Exact }
+
+func (r handoffHumanReader) Read(pid int64) (humanauthority.Snapshot, error) {
+	if pid != r.exact.Pid {
+		return humanauthority.Snapshot{}, fmt.Errorf("unknown process %d", pid)
+	}
+	exact := r.exact
+	exact.Argv = []string{"attended-human-shell"}
+	exact.ArgvKnown = true
+	return humanauthority.Snapshot{Exact: exact, Executable: "/fixture/attended-human-shell", ExecutableKnown: true,
+		OwnerUID: 501, OwnerKnown: true, ParentPID: 0, ParentKnown: true,
+		TerminalID: "tty-handoff", TerminalKnown: true}, nil
+}
+
+func (r handoffHumanReader) SessionLeader(int64) (int64, error) { return r.exact.Pid, nil }
+
+func handoffHumanProof(t *testing.T, root string, exact identity.Exact) humanauthority.Proof {
+	t.Helper()
+	adapters := filepath.Join(root, "scripts", "agents", "adapters")
+	if err := os.MkdirAll(adapters, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	adapter := "#!/bin/sh\n[ \"$1\" = signature ] && printf '%s\\n' 'match never-an-attended-human-shell'\n"
+	if err := os.WriteFile(filepath.Join(adapters, "human-fixture.sh"), []byte(adapter), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	proof, err := humanauthority.ProveTerminal(root, exact.Pid, handoffHumanReader{exact}, handoffCaptureNow)
+	if err != nil || !proof.TerminalValidFor(root) {
+		t.Fatalf("terminal proof err=%v valid=%t", err, proof.TerminalValidFor(root))
+	}
+	return proof
+}
+
+func humanCancelFixture(t *testing.T) (string, HandoffResult, HandoffCanceller) {
+	t.Helper()
+	root := handoffCaptureRepo(t, "claimed")
+	useHandoffNonces(t, "6400000000000001")
+	result, err := Handoff(root, handoffMainCaller(), nil, handoffCaptureNow, filepath.Join(root, "memory", "receipts.log"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	writeStewardRecord(t, filepath.Join(root, "artifacts", "agents", "mains", "worktree-lease.json"), map[string]any{
+		"holderMainId": "main-1", "pid": 4242, "pidStartedAt": 100, "claimEpoch": 3, "revision": 1,
+	})
+	proof := handoffHumanProof(t, root, identity.Exact{Pid: 4711, StartedAt: time.Unix(1700000000, 0)})
+	return root, result, HandoffCanceller{Caller: HandoffCaller{Class: handoffClassHuman}, Human: &HandoffHumanAct{
+		By: " Wido ", Proof: proof, HolderMainId: "main-1", HolderSession: "session / original", ClaimEpoch: 3,
+	}}
+}
+
+func refusedCancel(t *testing.T, root, nonce string, canceller HandoffCanceller, want string) {
+	t.Helper()
+	err := CancelHandoff(root, nonce, canceller)
+	var refusal *HandoffRefusal
+	if !errors.As(err, &refusal) || err.Error() != want {
+		t.Fatalf("cancellation refusal=%v want=%q", err, want)
+	}
+	assertHandoffStillLive(t, root, nonce)
+}
+
+func failedCancel(t *testing.T, root, nonce string, canceller HandoffCanceller, want string) {
+	t.Helper()
+	err := CancelHandoff(root, nonce, canceller)
+	var refusal *HandoffRefusal
+	if err == nil || errors.As(err, &refusal) || (strings.HasSuffix(want, ": ") && !strings.HasPrefix(err.Error(), want)) ||
+		(!strings.HasSuffix(want, ": ") && err.Error() != want) {
+		t.Fatalf("cancellation error=%v want=%q", err, want)
+	}
+	assertHandoffStillLive(t, root, nonce)
+}
+
+func assertHandoffStillLive(t *testing.T, root, nonce string) {
+	t.Helper()
+	if _, err := os.Stat(filepath.Join(intentsDir(root), nonce+".json")); err != nil {
+		t.Fatalf("live handoff missing: %v", err)
+	}
+	if _, err := os.Stat(filepath.Join(cancelledDir(root), nonce+".json")); !os.IsNotExist(err) {
+		t.Fatalf("unexpected cancellation tombstone: %v", err)
+	}
+}
+
+func TestCancelHandoffAdmitsAProvenHumanAct(t *testing.T) {
+	t.Run("attended human", func(t *testing.T) {
+		root, result, canceller := humanCancelFixture(t)
+		if err := CancelHandoff(root, result.Nonce, canceller); err != nil {
+			t.Fatal(err)
+		}
+		want := "cancelled: cancelled by human by=Wido holder=main-1 epoch=3 session=" + goal.NormalizeSession("session / original") +
+			" human-pid=4711 human-started=1700000000 human-ticks=0 human-boot=none"
+		if got := cancelledHandoff(t, root, result.Nonce).Outcome; got != want {
+			t.Fatalf("outcome=%q want=%q", got, want)
+		}
+		if _, err := os.Stat(filepath.Join(intentsDir(root), result.Nonce+".json")); !os.IsNotExist(err) {
+			t.Fatalf("cancelled handoff remains live: %v", err)
+		}
+	})
+
+	t.Run("symlinked root", func(t *testing.T) {
+		root, result, canceller := humanCancelFixture(t)
+		link := filepath.Join(t.TempDir(), "link")
+		if err := os.Symlink(root, link); err != nil {
+			t.Fatal(err)
+		}
+		canceller.Human.Proof = handoffHumanProof(t, link, identity.Exact{Pid: 4711, StartedAt: time.Unix(1700000000, 0)})
+		if err := CancelHandoff(link, result.Nonce, canceller); err != nil {
+			t.Fatal(err)
+		}
+	})
+}
+
+func TestCancelHandoffRefusesAnUnprovenHumanAct(t *testing.T) {
+	t.Run("consumed nonce", func(t *testing.T) {
+		root, result, _ := humanCancelFixture(t)
+		if _, err := ConsumeIntent(root, result.Nonce); err != nil {
+			t.Fatal(err)
+		}
+		canceller := HandoffCanceller{Caller: handoffMainCaller(), Human: &HandoffHumanAct{By: "Wido"}}
+		err := CancelHandoff(root, result.Nonce, canceller)
+		var refusal *HandoffRefusal
+		if !errors.As(err, &refusal) || err.Error() != "HANDOFF_NOT_LIVE nonce="+result.Nonce {
+			t.Fatalf("consumed cancellation=%v", err)
+		}
+	})
+
+	t.Run("recorder with --by", func(t *testing.T) {
+		root, result, _ := humanCancelFixture(t)
+		canceller := HandoffCanceller{Caller: handoffMainCaller(), Human: &HandoffHumanAct{By: "Wido"}}
+		refusedCancel(t, root, result.Nonce, canceller, "HANDOFF_HUMAN_UNPROVEN nonce="+result.Nonce+" by=Wido caller=MAIN human=unattempted")
+	})
+
+	t.Run("refused walk", func(t *testing.T) {
+		root, result, canceller := humanCancelFixture(t)
+		canceller.Human.Proof = humanauthority.Proof{Outcome: humanauthority.OutcomeAgent}
+		refusedCancel(t, root, result.Nonce, canceller, "HANDOFF_HUMAN_UNPROVEN nonce="+result.Nonce+" by= Wido  caller=HUMAN human=AGENT_IN_AUTHORITY_CHAIN")
+	})
+
+	t.Run("other root", func(t *testing.T) {
+		root, result, canceller := humanCancelFixture(t)
+		other := handoffCaptureRepo(t, "claimed")
+		canceller.Human.Proof = handoffHumanProof(t, other, identity.Exact{Pid: 4711, StartedAt: time.Unix(1700000000, 0)})
+		refusedCancel(t, root, result.Nonce, canceller, "HANDOFF_HUMAN_UNPROVEN nonce="+result.Nonce+" by= Wido  caller=HUMAN human=other-root")
+	})
+
+	t.Run("zero proof", func(t *testing.T) {
+		root, result, canceller := humanCancelFixture(t)
+		canceller.Human.Proof = humanauthority.Proof{}
+		refusedCancel(t, root, result.Nonce, canceller, "HANDOFF_HUMAN_UNPROVEN nonce="+result.Nonce+" by= Wido  caller=HUMAN human=unobserved")
+	})
+}
+
+func TestCancelHandoffHumanActIsHolderBound(t *testing.T) {
+	leasePath := func(root string) string {
+		return filepath.Join(root, "artifacts", "agents", "mains", "worktree-lease.json")
+	}
+	t.Run("absent lease", func(t *testing.T) {
+		root, result, canceller := humanCancelFixture(t)
+		if err := os.Remove(leasePath(root)); err != nil {
+			t.Fatal(err)
+		}
+		failedCancel(t, root, result.Nonce, canceller, "handoff "+result.Nonce+" cannot be cancelled by a human act: the checkout holder lease cannot be proved: ")
+	})
+	t.Run("malformed lease", func(t *testing.T) {
+		root, result, canceller := humanCancelFixture(t)
+		writeStewardRecord(t, leasePath(root), map[string]any{"holderMainId": "main-1", "pid": 0, "pidStartedAt": 100, "claimEpoch": 3})
+		failedCancel(t, root, result.Nonce, canceller, "handoff "+result.Nonce+" cannot be cancelled by a human act: the checkout holder lease cannot be proved: checkout lease is malformed")
+	})
+
+	for _, test := range []struct {
+		name, main string
+		epoch      int64
+	}{
+		{name: "different holder", main: "main-2", epoch: 3},
+		{name: "moved epoch", main: "main-1", epoch: 4},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			root, result, canceller := humanCancelFixture(t)
+			writeStewardRecord(t, leasePath(root), map[string]any{"holderMainId": test.main, "pid": 4242, "pidStartedAt": 100, "claimEpoch": test.epoch})
+			failedCancel(t, root, result.Nonce, canceller, "handoff "+result.Nonce+" cannot be cancelled by a human act: the supplied holder coordinates do not match the current checkout lease")
+		})
+	}
+
+	t.Run("nonce of another holder", func(t *testing.T) {
+		root, result, canceller := humanCancelFixture(t)
+		writeStewardRecord(t, leasePath(root), map[string]any{"holderMainId": "main-2", "pid": 4242, "pidStartedAt": 100, "claimEpoch": 3})
+		canceller.Human.HolderMainId = "main-2"
+		failedCancel(t, root, result.Nonce, canceller, "handoff "+result.Nonce+" cannot be cancelled by a human act: it was recorded by main-1 and the current holder is main-2")
+	})
+}
+
+func TestCancelHandoffHumanActRequiresNameAndIdentity(t *testing.T) {
+	for _, test := range []struct{ name, by, want string }{
+		{name: "whitespace name", by: "   ", want: "a non-blank human name is required"},
+		{name: "long name", by: strings.Repeat("W", 201), want: "the human name must be at most 200 bytes and contain no control characters"},
+		{name: "control character", by: "Wi\x01do", want: "the human name must be at most 200 bytes and contain no control characters"},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			root, result, canceller := humanCancelFixture(t)
+			canceller.Human.By = test.by
+			failedCancel(t, root, result.Nonce, canceller, "handoff "+result.Nonce+" cannot be cancelled by a human act: "+test.want)
+		})
+	}
+
+	t.Run("missing start time", func(t *testing.T) {
+		root, result, canceller := humanCancelFixture(t)
+		canceller.Human.Proof = handoffHumanProof(t, root, identity.Exact{Pid: 4711, StartTicks: 5, BootID: "boot-fixture"})
+		failedCancel(t, root, result.Nonce, canceller, "handoff "+result.Nonce+" cannot be cancelled by a human act: the attended-human process identity is invalid")
+	})
+
+	t.Run("missing pid", func(t *testing.T) {
+		root, result, canceller := humanCancelFixture(t)
+		canceller.Human.Proof.InvokerRef.PID = 0
+		refusedCancel(t, root, result.Nonce, canceller, "HANDOFF_HUMAN_UNPROVEN nonce="+result.Nonce+" by= Wido  caller=HUMAN human=unobserved")
+	})
+
+	t.Run("invalid identity mode", func(t *testing.T) {
+		root, result, canceller := humanCancelFixture(t)
+		canceller.Human.Proof = handoffHumanProof(t, root, identity.Exact{Pid: 4711, StartedAt: time.Unix(1700000000, 0), StartTicks: 5})
+		failedCancel(t, root, result.Nonce, canceller, "handoff "+result.Nonce+" cannot be cancelled by a human act: the attended-human process identity is invalid")
+	})
+}
+
 func TestHandoffIgnoresConcurrentUnrelatedRecords(t *testing.T) {
 	root := handoffCaptureRepo(t, "claimed")
 	useHandoffNonces(t, "6500000000000004")
@@ -888,7 +1110,7 @@ func TestCancelHandoffReportsItsExactPartialOutcome(t *testing.T) {
 	if err := os.MkdirAll(target, 0o755); err != nil {
 		t.Fatal(err)
 	}
-	if err := CancelHandoff(root, result.Nonce); err == nil || !strings.Contains(err.Error(), "is no longer live") {
+	if err := CancelHandoff(root, result.Nonce, HandoffCanceller{Caller: handoffMainCaller()}); err == nil || !strings.Contains(err.Error(), "is no longer live") {
 		t.Fatalf("cancellation partial was not exact: %v", err)
 	}
 	if _, err := os.Stat(filepath.Join(intentsDir(root), result.Nonce+".json")); !os.IsNotExist(err) {
@@ -917,7 +1139,7 @@ func TestVerifyHandoffStateUsesExactLifecycleRecord(t *testing.T) {
 		if digest, err := VerifyHandoffState(root, result.Nonce); err != nil || digest != result.StateDigest {
 			t.Fatalf("reaped consumed state digest=%s err=%v", digest, err)
 		}
-		if err := CancelHandoff(root, result.Nonce); !errors.As(err, new(*HandoffRefusal)) || !strings.Contains(err.Error(), "HANDOFF_NOT_LIVE") {
+		if err := CancelHandoff(root, result.Nonce, HandoffCanceller{Caller: handoffMainCaller()}); !errors.As(err, new(*HandoffRefusal)) || !strings.Contains(err.Error(), "HANDOFF_NOT_LIVE") {
 			t.Fatalf("consumed handoff cancellation=%v", err)
 		}
 	})
@@ -948,7 +1170,7 @@ func TestHandoffRejectsInvalidLiveAuthority(t *testing.T) {
 			t.Fatal(err)
 		}
 		var refusal *HandoffRefusal
-		if err := CancelHandoff(root, intent.Nonce); !errors.As(err, &refusal) || refusal.Code != "HANDOFF_NOT_LIVE" {
+		if err := CancelHandoff(root, intent.Nonce, HandoffCanceller{Caller: handoffMainCaller()}); !errors.As(err, &refusal) || refusal.Code != "HANDOFF_NOT_LIVE" {
 			t.Fatalf("ordinary live intent cancellation=%v", err)
 		}
 		if _, err := os.Stat(filepath.Join(intentsDir(root), intent.Nonce+".json")); err != nil {
@@ -1034,7 +1256,7 @@ func TestContextPruneKeepsLiveHandoffs(t *testing.T) {
 	if _, err := os.Stat(first.StatePath); err != nil {
 		t.Fatalf("live handoff state missing: %v", err)
 	}
-	if err := CancelHandoff(root, first.Nonce); err != nil {
+	if err := CancelHandoff(root, first.Nonce, HandoffCanceller{Caller: handoffMainCaller()}); err != nil {
 		t.Fatal(err)
 	}
 	result, err = PruneContext(root, 14*24*time.Hour, handoffCaptureNow)
@@ -1072,7 +1294,7 @@ func TestContextPruneKeepsLiveHandoffs(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if err := CancelHandoff(root, boundary.Nonce); err != nil {
+	if err := CancelHandoff(root, boundary.Nonce, HandoffCanceller{Caller: handoffMainCaller()}); err != nil {
 		t.Fatal(err)
 	}
 	ageHandoffState(t, root, boundary.Nonce, handoffCaptureNow.Add(-14*24*time.Hour))
@@ -1141,7 +1363,7 @@ func TestContextPruneStopsOnUsageError(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if err := CancelHandoff(root, handoff.Nonce); err != nil {
+	if err := CancelHandoff(root, handoff.Nonce, HandoffCanceller{Caller: handoffMainCaller()}); err != nil {
 		t.Fatal(err)
 	}
 	ageHandoffState(t, root, handoff.Nonce, handoffCaptureNow.AddDate(0, 0, -30))
@@ -1193,7 +1415,7 @@ func TestContextPruneRefusesRedirectedHandoffTrees(t *testing.T) {
 		if err != nil {
 			t.Fatal(err)
 		}
-		if err := CancelHandoff(root, handoff.Nonce); err != nil {
+		if err := CancelHandoff(root, handoff.Nonce, HandoffCanceller{Caller: handoffMainCaller()}); err != nil {
 			t.Fatal(err)
 		}
 		outside := filepath.Join(t.TempDir(), "keep.txt")
@@ -1237,7 +1459,7 @@ func TestContextPruneRechecksBeforeRemoval(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if err := CancelHandoff(root, handoff.Nonce); err != nil {
+	if err := CancelHandoff(root, handoff.Nonce, HandoffCanceller{Caller: handoffMainCaller()}); err != nil {
 		t.Fatal(err)
 	}
 	ageHandoffState(t, root, handoff.Nonce, handoffCaptureNow.AddDate(0, 0, -30))
@@ -1259,7 +1481,7 @@ func TestContextPruneReportsRemovalBeforeSyncFailure(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if err := CancelHandoff(root, handoff.Nonce); err != nil {
+	if err := CancelHandoff(root, handoff.Nonce, HandoffCanceller{Caller: handoffMainCaller()}); err != nil {
 		t.Fatal(err)
 	}
 	ageHandoffState(t, root, handoff.Nonce, handoffCaptureNow.AddDate(0, 0, -30))
@@ -1310,7 +1532,7 @@ func TestContextPruneRetainsDamageAndRefusesBadBounds(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if err := CancelHandoff(root, handoff.Nonce); err != nil {
+	if err := CancelHandoff(root, handoff.Nonce, HandoffCanceller{Caller: handoffMainCaller()}); err != nil {
 		t.Fatal(err)
 	}
 	extra := filepath.Join(HandoffDir(root, handoff.Nonce), "unowned-evidence.txt")
@@ -1391,7 +1613,7 @@ func TestHandoffAndDiagnosticsHaveSeparateLifetimes(t *testing.T) {
 	}
 	userOwned := filepath.Join(root, "metasystem-context-diagnostic-user-owned", "keep.txt")
 	writeTestFile(t, userOwned, []byte("keep\n"))
-	if err := CancelHandoff(root, result.Nonce); err != nil {
+	if err := CancelHandoff(root, result.Nonce, HandoffCanceller{Caller: handoffMainCaller()}); err != nil {
 		t.Fatal(err)
 	}
 	ageHandoffState(t, root, result.Nonce, handoffCaptureNow.AddDate(0, 0, -30))

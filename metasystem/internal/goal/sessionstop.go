@@ -46,6 +46,12 @@ type SessionStop struct {
 	SessionLifecycle string                `json:"sessionLifecycle"`
 }
 
+// HolderLease identifies the current checkout holder at a lease epoch.
+type HolderLease struct {
+	HolderMainId string
+	ClaimEpoch   int64
+}
+
 type consumedSessionStop struct {
 	ConsumedAt   string `json:"consumedAt"`
 	SessionId    string `json:"sessionId"`
@@ -99,13 +105,13 @@ func sessionStopLeasePath(root string) string {
 	return filepath.Join(root, "artifacts", "agents", "mains", "worktree-lease.json")
 }
 
-func validateSessionStopBy(by string) (string, error) {
+func ValidateHumanName(by string) (string, error) {
 	by = strings.TrimSpace(by)
 	if by == "" {
-		return "", fmt.Errorf("session stop requires a non-blank human name")
+		return "", fmt.Errorf("a non-blank human name is required")
 	}
 	if len(by) > 200 || strings.IndexFunc(by, unicode.IsControl) >= 0 {
-		return "", fmt.Errorf("session stop human name must be at most 200 bytes and contain no control characters")
+		return "", fmt.Errorf("the human name must be at most 200 bytes and contain no control characters")
 	}
 	return by, nil
 }
@@ -125,7 +131,7 @@ func validateSessionStop(marker *SessionStop) error {
 		!safeSession.MatchString(marker.HolderMainId) || marker.ClaimEpoch < 1 {
 		return fmt.Errorf("session stop marker has invalid holder coordinates")
 	}
-	by, err := validateSessionStopBy(marker.By)
+	by, err := ValidateHumanName(marker.By)
 	if err != nil {
 		return err
 	}
@@ -429,6 +435,16 @@ func (s *Store) currentSessionStopLease() (sessionStopLease, error) {
 		return sessionStopLease{}, fmt.Errorf("checkout lease is malformed")
 	}
 	return lease, nil
+}
+
+// ReadHolderLease reads the holder coordinates through the session-stop
+// lease decoder so every attended-human gate applies the same validity rule.
+func ReadHolderLease(root string) (HolderLease, error) {
+	lease, err := (&Store{Root: root}).currentSessionStopLease()
+	if err != nil {
+		return HolderLease{}, err
+	}
+	return HolderLease{HolderMainId: lease.HolderMainId, ClaimEpoch: lease.ClaimEpoch}, nil
 }
 
 // inspectSessionStop checks every freshness coordinate using repository-local

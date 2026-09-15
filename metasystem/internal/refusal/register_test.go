@@ -68,6 +68,24 @@ func TestHCL03EveryRowReal(t *testing.T) {
 	}
 }
 
+func TestHCL03HandoffCaptureSitesAreEmissionLines(t *testing.T) {
+	data, err := os.ReadFile(filepath.Join(moduleRoot(t), "internal", "steward", "handoff_capture.go"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	lines := strings.Split(string(data), "\n")
+	const prefix = "handoff_capture.go:"
+	for _, row := range Rows {
+		if row.Owner != "internal/steward" || !strings.HasPrefix(row.Site, prefix) {
+			continue
+		}
+		line, err := strconv.Atoi(strings.TrimPrefix(row.Site, prefix))
+		if err != nil || line < 1 || line > len(lines) || !strings.Contains(lines[line-1], `"`+row.Code+`"`) {
+			t.Errorf("row %s site %q is not an emission line", row.Code, row.Site)
+		}
+	}
+}
+
 func TestHCL03PendingRowsNamed(t *testing.T) {
 	rowCodes := make(map[string]struct{}, len(Rows))
 	defectCodes := make(map[string]struct{}, len(Defects))

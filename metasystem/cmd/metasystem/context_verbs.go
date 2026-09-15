@@ -160,7 +160,7 @@ func runContextHandoff(args []string) int {
 		return contextVerbError("handoff", err)
 	}
 	if cancelSupplied {
-		if err := steward.CancelHandoff(stateRoot, *cancel); err != nil {
+		if err := steward.CancelHandoff(stateRoot, *cancel, steward.HandoffCanceller{}); err != nil {
 			return contextVerbError("handoff", err)
 		}
 		fmt.Printf("handoff cancelled: %s\n", *cancel)
