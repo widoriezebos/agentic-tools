@@ -373,9 +373,10 @@ func auditHookStartSource(path, source, fixtures, fixtureAssertions string) []Ho
 			add(1, "start fixture coverage", fmt.Sprintf("hook-start case names undeclared outcome %q", key))
 		}
 	}
-	if !strings.Contains(fixtureAssertions, "func TestHookStartDeclaredOutcomeMatrixOnBash32") ||
-		!strings.Contains(fixtureAssertions, "func TestHookStartContextOutcomeShapesOnBash32") ||
-		!strings.Contains(fixtureAssertions, "func TestHookStartIntentionalFullPathFixturesOnBash32") ||
+	if !declaresTestFunc(fixtureAssertions, "TestHookStartDeclaredOutcomeMatrixOnBash32") ||
+		!declaresTestFunc(fixtureAssertions, "TestHookStartContextOutcomeShapesOnBash32") ||
+		!declaresTestFunc(fixtureAssertions, "TestHookStartIntentionalFullPathFixturesOnBash32") ||
+		!declaresTestFunc(fixtureAssertions, "TestHookStartForgedDelegateHintRefusesOnBash32") ||
 		!strings.Contains(fixtureAssertions, `mode: "context-arming-failure"`) ||
 		!strings.Contains(fixtureAssertions, `mode: "context-holder-read"`) ||
 		!strings.Contains(fixtureAssertions, `mode: "context-process-identity"`) ||
@@ -631,4 +632,10 @@ func lastLineContaining(lines []string, text string) int {
 		}
 	}
 	return 0
+}
+
+// declaresTestFunc reports whether source declares the named test function at
+// the start of a line, so a quoted copy of the name elsewhere does not count.
+func declaresTestFunc(source, name string) bool {
+	return regexp.MustCompile(`(?m)^func ` + regexp.QuoteMeta(name) + `\(`).MatchString(source)
 }

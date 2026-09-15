@@ -846,6 +846,7 @@ start_main() {
     if [[ "$delegate_result" == true ]]; then
       start_finish intentional authenticated-delegate
     fi
+    start_finish notice custody-unreadable
   fi
 
   source_path=${BASH_SOURCE[0]}

@@ -157,6 +157,7 @@ func completeHookStartFixtureAssertions() string {
 		"func TestHookStartDeclaredOutcomeMatrixOnBash32() {",
 		"func TestHookStartContextOutcomeShapesOnBash32() {",
 		"func TestHookStartIntentionalFullPathFixturesOnBash32() {",
+		"func TestHookStartForgedDelegateHintRefusesOnBash32() {",
 		`mode: "context-arming-failure"`,
 		`mode: "context-holder-read"`,
 		`mode: "context-process-identity"`,
@@ -452,6 +453,7 @@ func TestAuditHookStartExitsRejectsMissingFullPathContextShapeProof(t *testing.T
 	}{
 		{"arming failure context case", `mode: "context-arming-failure"`},
 		{"process identity recovery case", `mode: "context-process-identity"`},
+		{"forged delegate refusal case", "func TestHookStartForgedDelegateHintRefusesOnBash32"},
 		{"session start trace assertion", `strings.Contains(traceText, "\nup ") || !strings.Contains(traceText, "\nsession start ")`},
 	} {
 		t.Run(test.name, func(t *testing.T) {
@@ -834,6 +836,42 @@ func TestHookStartIntentionalFullPathFixturesOnBash32(t *testing.T) {
 				t.Fatalf("fake-engine full path changed durable state\nbefore:\n%s\nafter:\n%s", before, after)
 			}
 		})
+	}
+}
+
+func TestHookStartForgedDelegateHintRefusesOnBash32(t *testing.T) {
+	root := t.TempDir()
+	hook := filepath.Join(root, "scripts", "agents", "supervision-hook.sh")
+	writeExecutable(t, hook, readProductionHook(t))
+	trace := filepath.Join(t.TempDir(), "trace")
+	writeExecutable(t, filepath.Join(root, "bin", "metasystem"), fullPathFixtureEngine())
+	command := exec.Command("git", "init", "-q", "-b", "main", root)
+	if output, err := command.CombinedOutput(); err != nil {
+		t.Fatalf("git init: %v: %s", err, output)
+	}
+	before := snapshotFixtureTree(t, root)
+	stdout, stderr, status := runHookStartCommand(t, hook, "claude", "{}\n", []string{
+		"HOOK_START_TRACE=" + trace,
+		"HOOK_START_FULL_MODE=healthy",
+		"METASYSTEM_HOOK_DELEGATE_STATE_ROOT=" + root,
+		"METASYSTEM_HOOK_DELEGATE_INSTALLATION_ROOT=" + root,
+		"METASYSTEM_HOOK_DELEGATE_JOB=job-forged",
+	}, false)
+	wantStdout, wantStatus := directNoticeOutcome(t, "custody-unreadable")
+	if status != wantStatus || stdout != wantStdout || stderr != "" {
+		t.Fatalf("forged delegate hint = status %d stdout %q stderr %q; want status %d stdout %q", status, stdout, stderr, wantStatus, wantStdout)
+	}
+	traceBytes, err := os.ReadFile(trace)
+	if err != nil {
+		t.Fatal(err)
+	}
+	traceText := string(traceBytes)
+	if strings.Count(traceText, "lease hook-delegate ") != 1 || strings.Contains(traceText, "\nruntime list") ||
+		strings.Contains(traceText, "\nup ") || strings.Contains(traceText, "\nsession start ") {
+		t.Fatalf("forged delegate hint continued after custody refusal: %s", traceText)
+	}
+	if after := snapshotFixtureTree(t, root); after != before {
+		t.Fatalf("forged delegate hint changed durable state\nbefore:\n%s\nafter:\n%s", before, after)
 	}
 }
 
