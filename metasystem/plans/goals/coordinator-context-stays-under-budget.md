@@ -1,6 +1,6 @@
 # coordinator-context-stays-under-budget
 
-- State: claimed
+- State: approved
 - Priority: 1
 - Sequence: 5
 - Risk: severity=2 novelty=2 exposure=3 accumulation=1 basis="severity 2: an over-bounded output hides evidence the seat needs; novelty 2: bounded verb output is a new discipline; exposure 3: every seat's every turn; accumulation 1: verbs and docs"
@@ -9,13 +9,12 @@
 - Origin: human
 - Next step: STATE after C2 (m1e; builds Codex gpt-5.6-sol, reads Opus, designs Claude Fable): SLICE 3 COMPLETE, and follow-up amendment 8c.15 is built: C1a 0cca29a4 (a human act can cancel a handoff only through the session stop gate), C1b ffdc623b (only the recording session or a proven human act cancels; the unauthenticated path is removed), C2 25fb3b54 (the handoff result names its live intent path from the steward's canonical root). Next: the week of measurement under section 7 of plans/coordinator-context-stays-under-budget-design.md, then the goal's conclusion. Landings run every section the test plan selects. Open for Wido: 8c.7, whether a held handoff expires.
 - OpenedAt: 2026-09-11T15:45:19Z
-- Revision: 75
+- Revision: 76
 - Pinned: m1e
 - Budget: elapsedLimit=4d attemptLimit=14 reservedJobMinutesLimit=1200 activeJobLimit=1 reviewRoundLimit=3
 - BudgetExceptions: 2
 - Approved: by=human:Wido at=2026-09-15T06:31:26Z revision=71 opid=KB8K0VZ9F1SR97TFJQPYC6N672-m1e-c6925449 authority=proven digest=c57427f469df5c5a5ce2c49651e1546ce35a315571d438eed42119b02b01ae7b
-- Claimed: machine=m1e lineage=main-1789030447-51011-5722fc at=2026-09-15T08:43:30Z revision=74 accountingRevision=74 episodeAt=2026-09-15T08:43:30Z episodeRevision=74
-- StopCapability: generation=74 revision=74 machine=m1e claimEpoch=1 fenceEpoch=0
+- Episode: machine=m1e lineage=main-1789030447-51011-5722fc accountingRevision=74 episodeAt=2026-09-15T08:43:30Z episodeRevision=74 idleSeconds=0 released=2026-09-15T09:22:07Z
 
 History:
 - 2026-09-11T15:45:19Z 5F6TSCSSSW5B4H5JVZDBKEWHPE-m1e-5083721b open actor=m1e+main-1789141490-27414-b9c0d2 targets=coordinator-context-stays-under-budget
@@ -93,4 +92,5 @@ History:
 - 2026-09-15T07:11:52Z CPV50QGPDS6AQGSGQYNTFQGWV1-m1e-892cdaec release actor=human:Wido targets=coordinator-context-stays-under-budget
 - 2026-09-15T08:43:30Z 9R6HW56GZKFNK9GSH6VJ1D6BQE-m1e-892cdaec claim actor=m1e+main-1789030447-51011-5722fc targets=coordinator-context-stays-under-budget
 - 2026-09-15T08:58:14Z W3JYDTW5MWVKXMF87F6R3PJTSD-m1e-c6925449 edit actor=human:Wido targets=coordinator-context-stays-under-budget displaced=m1e+main-1789030447-51011-5722fc@2026-09-15T08:43:30Z
-Integrity: sha256=86d22c91d78202d97979580a83b04a6a2cf2fd30ad0c0ada8f01e92cc066833e
+- 2026-09-15T09:22:07Z QTNKJ52FEGJR6KH1B81WQZ9B3X-m1e-892cdaec release actor=m1e+main-1789030447-51011-5722fc targets=coordinator-context-stays-under-budget
+Integrity: sha256=5bf5bd47258fb1da1835d7a4b02704e3a3ed60d554087262db72758dec449260
