@@ -30,8 +30,8 @@ fi
 unset METASYSTEM_FIXTURE_SCENARIO
 if (( ! fixture_bed_child )); then
   fixture_bed_script=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd -P)/$(basename "${BASH_SOURCE[0]}")
-  run_fixture_bed_scenarios land "land fixtures passed (27 isolated legs)" \
-    "$fixture_bed_script" push-retry step-failure new-plan goal receipt-line tier-one full-width-chain build-stamp \
+  run_fixture_bed_scenarios land "land fixtures passed (28 isolated legs)" \
+    "$fixture_bed_script" early-reader-large-producer push-retry step-failure new-plan goal receipt-line tier-one full-width-chain build-stamp \
     brain-land-refuses brain-absent-node-proceeds ledger-move-lands records-move-lands \
     input-move-refuses receipt-cutover carried-fresh carried-prefixed carried-second carried-red-battery \
     carried-intent-failure carried-crash-local carried-asks carried-ledger-path carried-crash \
@@ -192,6 +192,63 @@ clear_independent_fixture_context() {
     METASYSTEM_SUITE_PROGRESS_ACTIVE METASYSTEM_SUITE_PROGRESS_ROOT \
     METASYSTEM_SUITE_PROGRESS_LOG METASYSTEM_ENUMERATION_ENGINE_DEPENDENCY \
     METASYSTEM_ENUMERATION_STAGE_RESULTS_OUT
+}
+
+extract_fixture_git_archive() { # repository, destination, archive file, git archive arguments...
+  local repository=$1 destination=$2 archive=$3
+  shift 3
+  if git -C "$repository" archive "$@" >"$archive"; then
+    :
+  else
+    echo "land $fixture_scenario fixture: git archive failed for $*" >&2
+    return 1
+  fi
+  if tar -xf "$archive" -C "$destination"; then
+    :
+  else
+    echo "land $fixture_scenario fixture: archive extraction failed for $*" >&2
+    return 1
+  fi
+  rm -f "$archive" || {
+    echo "land $fixture_scenario fixture: could not remove archive $archive" >&2
+    return 1
+  }
+}
+
+fixture_engine_build_stamp() { # engine
+  local engine=$1 metadata stamps stamp
+  if metadata=$(go version -m "$engine"); then
+    :
+  else
+    echo "land $fixture_scenario fixture: go version -m failed for $engine" >&2
+    return 1
+  fi
+  if stamps=$(sed -n 's/.*BuildStamp=\([a-z0-9-]*\).*/\1/p' <<<"$metadata"); then
+    :
+  else
+    echo "land $fixture_scenario fixture: build stamp extraction failed for $engine" >&2
+    return 1
+  fi
+  IFS= read -r stamp <<<"$stamps" || {
+    echo "land $fixture_scenario fixture: build stamp output was unreadable for $engine" >&2
+    return 1
+  }
+  printf '%s\n' "$stamp"
+}
+
+fixture_first_fixed_line_number() { # pattern, file
+  local pattern=$1 file=$2 match status
+  if match=$(grep -nFm 1 -- "$pattern" "$file"); then
+    printf '%s\n' "${match%%:*}"
+    return 0
+  else
+    status=$?
+  fi
+  [[ $status -eq 1 ]] || {
+    echo "land $fixture_scenario fixture: could not read $file while locating $pattern" >&2
+    return "$status"
+  }
+  return 0
 }
 
 make_leg() { # name
@@ -1014,7 +1071,9 @@ if is_carried_scenario; then
 	  grep -Fq "$carried_word" "$peer_output" \
 	    || { echo "land $fixture_scenario fixture: trailer debt ask did not name seat A's word" >&2; cat "$peer_output" >&2; exit 1; }
 	fi
-	! git -C "$leg_remote" log --format=%B refs/heads/main | grep -Fq "Carry: $peer_word" \
+	peer_origin_log=$(git -C "$leg_remote" log --format=%B refs/heads/main) \
+	  || { echo "land $fixture_scenario fixture: could not read origin history" >&2; exit 1; }
+	! grep -Fq "Carry: $peer_word" <<<"$peer_origin_log" \
 	  || { echo "land $fixture_scenario fixture: seat B pushed a commit despite seat A's debt" >&2; exit 1; }
 	git -C "$leg_peer" fetch -q origin
 	git -C "$leg_peer" update-ref refs/metasystem/goals/accepted origin/main
@@ -1091,7 +1150,7 @@ if is_carried_scenario; then
     || { echo "land $fixture_scenario fixture: reservation did not close" >&2; exit 1; }
   grep -Fq '== STEP: complete carried goal record' "$carried_output"
 	previous_line=0
-	push_line=$(grep -nF '== STEP: push carried commit to origin (single attempt)' "$carried_output" | head -1 | cut -d: -f1)
+	push_line=$(fixture_first_fixed_line_number '== STEP: push carried commit to origin (single attempt)' "$carried_output") || exit 1
 	[[ "$push_line" =~ ^[0-9]+$ ]] \
 	  || { echo "land carried-fresh fixture: push step is absent" >&2; cat "$carried_output" >&2; exit 1; }
 	for advisory in \
@@ -1103,7 +1162,7 @@ if is_carried_scenario; then
 	  'carried testing result:' \
 	  'carried obligation finding:' \
 	  'carried exception count after this one:'; do
-	  advisory_line=$(grep -nF "$advisory" "$carried_output" | head -1 | cut -d: -f1)
+	  advisory_line=$(fixture_first_fixed_line_number "$advisory" "$carried_output") || exit 1
 	  [[ "$advisory_line" =~ ^[0-9]+$ && $advisory_line -gt $previous_line && $advisory_line -lt $push_line ]] \
 	    || { echo "land carried-fresh fixture: advisory '$advisory' is absent or out of order" >&2; cat "$carried_output" >&2; exit 1; }
 	  previous_line=$advisory_line
@@ -1277,7 +1336,7 @@ install_cutover_engine() { # checkout, engine
 }
 
 make_brain_source_leg() { # name
-  local name=$1 source_top source_prefix legacy ledger digest manifest fixture_start migrate_out
+  local name=$1 source_top source_prefix legacy ledger digest manifest fixture_start migrate_out leg_identity_matches
   clear_independent_fixture_context
   # These disposable roots need their own witness because the parent's witness describes a different repository.
   unset METASYSTEM_GATE_WITNESS METASYSTEM_GATE_WITNESS_ROOT \
@@ -1297,9 +1356,9 @@ make_brain_source_leg() { # name
   source_prefix=${source_prefix%/}
   mkdir -p "$leg_seed"
   if [[ -n "$source_prefix" ]]; then
-    git -C "$source_top" archive "HEAD:$source_prefix" | tar -x -C "$leg_seed"
+    extract_fixture_git_archive "$source_top" "$leg_seed" "$leg_root/source.tar" "HEAD:$source_prefix" || exit 1
   else
-    git -C "$source_top" archive HEAD | tar -x -C "$leg_seed"
+    extract_fixture_git_archive "$source_top" "$leg_seed" "$leg_root/source.tar" HEAD || exit 1
   fi
   mkdir -p "$leg_seed/bin"
   cp "$root/scripts/agents/land.sh" "$leg_seed/scripts/agents/land.sh"
@@ -1366,7 +1425,10 @@ REVIEWED_SOURCE_SHA256: $digest
 MANIFEST
   migrate_out=$(METASYSTEM_OWNER_LINEAGE=fixture-lineage "$source_engine" goal migrate --root "$leg_local" \
     --source-digest "$digest" --manifest "$manifest" --by Wido)
-  leg_identity=$(sed -n 's/.*"identity": "\([^"]*\)".*/\1/p' <<<"$migrate_out" | head -1)
+  leg_identity_matches=$(sed -n 's/.*"identity": "\([^"]*\)".*/\1/p' <<<"$migrate_out") \
+    || { echo "brain land fixture migration identity could not be extracted" >&2; exit 1; }
+  IFS= read -r leg_identity <<<"$leg_identity_matches" \
+    || { echo "brain land fixture migration identity output was unreadable" >&2; exit 1; }
   [[ ${#leg_identity} -eq 26 ]] || { echo "brain land fixture migration reported no identity" >&2; exit 1; }
   git -C "$leg_local" fetch -q origin
   git -C "$leg_local" reset -q --hard origin/main
@@ -1676,7 +1738,10 @@ SH
     exit 1
   }
   commit_push_local=$(git -C "$leg_local" rev-parse HEAD)
-  git -C "$leg_local" show -s --format=%B "$commit_push_local" | grep -Fxq 'Goal-Item: ship-widget'
+  commit_push_message=$(git -C "$leg_local" show -s --format=%B "$commit_push_local") \
+    || { echo "commit --push range fixture could not read its local commit message" >&2; exit 1; }
+  grep -Fxq 'Goal-Item: ship-widget' <<<"$commit_push_message" \
+    || { echo "commit --push range fixture local commit omitted Goal-Item: ship-widget" >&2; exit 1; }
   if git -C "$leg_remote" merge-base --is-ancestor "$commit_push_local" refs/heads/main 2>/dev/null; then
     echo "commit --push range-refused commit reached origin" >&2
     exit 1
@@ -1909,8 +1974,8 @@ SH
   recert_rc=$?
   set -e
   [[ $recert_rc -ne 0 ]] || { echo "raced recertified route unexpectedly landed" >&2; exit 1; }
-  recert_held_line=$(grep -n '== STEP: goal held at the rebased base' "$recert_output" | head -1 | cut -d: -f1 || true)
-  recert_push_line=$(grep -n '== STEP: push recertified commit to origin (single attempt)' "$recert_output" | head -1 | cut -d: -f1 || true)
+  recert_held_line=$(fixture_first_fixed_line_number '== STEP: goal held at the rebased base' "$recert_output") || exit 1
+  recert_push_line=$(fixture_first_fixed_line_number '== STEP: push recertified commit to origin (single attempt)' "$recert_output") || exit 1
   if [[ -z "$recert_held_line" || -z "$recert_push_line" || $recert_held_line -ge $recert_push_line ]] \
     || ! grep -Fq "held: ok 1 commit(s) above ${recert_target:0:12}" "$recert_output" \
     || ! grep -Fq '[rejected]' "$recert_output" \
@@ -2057,6 +2122,50 @@ if [[ "$fixture_scenario" == brain-absent-node-proceeds ]]; then
   exit 0
 fi
 
+# A producer larger than the pipe buffer makes the old grep -q form fail
+# deterministically, while the reader can stop safely when it owns the file.
+if [[ "$fixture_scenario" == early-reader-large-producer ]]; then
+harness_fixture_bed_leg early-reader-large-producer
+large_reader_source=$tmp/early-reader-large-producer.txt
+large_reader_status=$tmp/early-reader-large-producer.status
+large_reader_match='fixture large producer match'
+printf '%s\n' "$large_reader_match" >"$large_reader_source"
+dd if=/dev/zero bs=1048576 count=16 >>"$large_reader_source" 2>/dev/null \
+  || { echo "land early-reader fixture: could not create the large producer input" >&2; exit 1; }
+large_reader_bytes=$(wc -c <"$large_reader_source") \
+  || { echo "land early-reader fixture: could not measure the large producer input" >&2; exit 1; }
+large_reader_bytes=${large_reader_bytes//[[:space:]]/}
+[[ "$large_reader_bytes" =~ ^[0-9]+$ && $large_reader_bytes -gt 1048576 ]] \
+  || { echo "land early-reader fixture: producer input is not larger than a pipe buffer" >&2; exit 1; }
+
+# Build the historical pipeline operator from a fixed token so ordinary bed
+# reads stay file-based while this one reproduction still exercises pipefail.
+large_reader_pipe='|'
+large_reader_command=$'set -o pipefail\nset +e\ncat "$1" '
+large_reader_command+="$large_reader_pipe grep -Fq -- \"\$2\""$'\n'
+large_reader_command+=$'pipeline_rc=$? pipeline_statuses="${PIPESTATUS[*]}"\nprintf \'%s %s\\n\' "$pipeline_rc" "$pipeline_statuses" >"$3"\nexit "$pipeline_rc"\n'
+set +e
+/bin/bash -c "$large_reader_command" _ "$large_reader_source" "$large_reader_match" "$large_reader_status"
+large_reader_old_rc=$?
+set -e
+read -r large_reader_pipeline_rc large_reader_producer_rc large_reader_grep_rc <"$large_reader_status" \
+  || { echo "land early-reader fixture: old pipeline wrote no readable status" >&2; exit 1; }
+[[ $large_reader_old_rc -ne 0 \
+  && $large_reader_pipeline_rc -eq $large_reader_old_rc \
+  && $large_reader_producer_rc -ne 0 \
+  && $large_reader_grep_rc -eq 0 ]] \
+  || { echo "land early-reader fixture: large old pipeline did not isolate a producer failure" >&2; exit 1; }
+
+large_reader_file_rc=0
+grep -Fq -- "$large_reader_match" "$large_reader_source" || large_reader_file_rc=$?
+[[ $large_reader_file_rc -eq 0 ]] \
+  || { echo "land early-reader fixture: file reader did not find the matching line" >&2; exit 1; }
+printf 'land early-reader large-producer reproduction: bytes=%s old_rc=%s producer_rc=%s reader_rc=%s file_rc=%s\n' \
+  "$large_reader_bytes" "$large_reader_old_rc" "$large_reader_producer_rc" "$large_reader_grep_rc" "$large_reader_file_rc"
+echo "land early-reader-large-producer fixture passed"
+exit 0
+fi
+
 # The default build stamp is a landed commit only when every path selected by
 # the compiled ENGINE policy matches HEAD. The fixture keeps the metasystem
 # below the repository toplevel, matching the layout used by adopted seats.
@@ -2068,9 +2177,9 @@ source_prefix=$(git -C "$root" rev-parse --show-prefix)
 source_prefix=${source_prefix%/}
 mkdir -p "$build_root"
 if [[ -n "$source_prefix" ]]; then
-  git -C "$source_top" archive "HEAD:$source_prefix" | tar -x -C "$build_root"
+  extract_fixture_git_archive "$source_top" "$build_root" "$tmp/build-stamp-source.tar" "HEAD:$source_prefix" || exit 1
 else
-  git -C "$source_top" archive HEAD | tar -x -C "$build_root"
+  extract_fixture_git_archive "$source_top" "$build_root" "$tmp/build-stamp-source.tar" HEAD || exit 1
 fi
 cp "$root/scripts/agents/go-build.sh" "$build_root/scripts/agents/go-build.sh"
 git -C "$build_top" init -q -b main
@@ -2082,12 +2191,12 @@ clean_stamp=$(git -C "$build_top" rev-parse HEAD)
 clean_engine=$tmp/clean-engine
 dirty_engine=$tmp/dirty-engine
 bash "$build_root/scripts/agents/go-build.sh" --out "$clean_engine" >/dev/null
-observed_clean=$(go version -m "$clean_engine" | sed -n 's/.*BuildStamp=\([a-z0-9-]*\).*/\1/p' | head -1)
+observed_clean=$(fixture_engine_build_stamp "$clean_engine") || exit 1
 [[ "$observed_clean" == "$clean_stamp" ]] \
   || { echo "clean ENGINE tree carried stamp $observed_clean, want $clean_stamp" >&2; exit 1; }
 printf 'package supervise\n' >"$build_root/internal/supervise/rearm_dirty_fixture.go"
 bash "$build_root/scripts/agents/go-build.sh" --out "$dirty_engine" >/dev/null
-observed_dirty=$(go version -m "$dirty_engine" | sed -n 's/.*BuildStamp=\([a-z0-9-]*\).*/\1/p' | head -1)
+observed_dirty=$(fixture_engine_build_stamp "$dirty_engine") || exit 1
 [[ "$observed_dirty" == "dev-$clean_stamp-dirty" ]] \
   || { echo "dirty ENGINE tree carried stamp $observed_dirty, want dev-$clean_stamp-dirty" >&2; exit 1; }
 echo "land build-stamp fixture passed"
@@ -2358,7 +2467,11 @@ receipt_line_code_head=$(git -C "$leg_local" rev-parse HEAD)
   || { echo "land receipt-line fixture: the landing with its receipt line committed nothing" >&2; exit 1; }
 [[ $(git -C "$leg_local" show --name-only --format= HEAD | sort | tr '\n' ' ') == "memory/receipts.log payload.txt " ]] \
   || { echo "land receipt-line fixture: the landed commit does not carry the code and its receipt together" >&2; exit 1; }
-git -C "$leg_local" show HEAD:memory/receipts.log | grep -F '|RECEIPT|' | grep -Fq '|goal=fx|' \
+receipt_line_ledger=$(git -C "$leg_local" show HEAD:memory/receipts.log) \
+  || { echo "land receipt-line fixture: the landed receipt ledger is unreadable" >&2; exit 1; }
+receipt_line_entries=$(grep -F '|RECEIPT|' <<<"$receipt_line_ledger") \
+  || { echo "land receipt-line fixture: the landed ledger has no RECEIPT line" >&2; exit 1; }
+grep -Fq '|goal=fx|' <<<"$receipt_line_entries" \
   || { echo "land receipt-line fixture: the landed ledger lacks the goal's RECEIPT line" >&2; exit 1; }
 printf 'records only\n' >>"$leg_local/plans/existing.md"
 (
@@ -2587,10 +2700,12 @@ grep -Fxq 'verdict=pass bar=a' "$full_chain_log" || {
   cat "$full_chain_log" >&2
   exit 1
 }
-git -C "$leg_local" show -s --format=%B HEAD \
-  | grep -Fxq 'Landing-Provenance-Verdict: pass bar=a'
-git -C "$leg_local" show -s --format=%B HEAD \
-  | grep -Fq 'Landing-Provenance: chain=full-chain change='
+full_chain_commit_message=$(git -C "$leg_local" show -s --format=%B HEAD) \
+  || { echo "land full-width-chain fixture: the landed commit message is unreadable" >&2; exit 1; }
+grep -Fxq 'Landing-Provenance-Verdict: pass bar=a' <<<"$full_chain_commit_message" \
+  || { echo "land full-width-chain fixture: the landed commit omitted the pass verdict" >&2; exit 1; }
+grep -Fq 'Landing-Provenance: chain=full-chain change=' <<<"$full_chain_commit_message" \
+  || { echo "land full-width-chain fixture: the landed commit omitted chain provenance" >&2; exit 1; }
 [[ $(git -C "$leg_local" rev-parse HEAD) == $(git --git-dir="$leg_remote" rev-parse refs/heads/main) ]]
 
 printf '# full-width candidate two\n' >>"$leg_local/scripts/agents/go-gate.sh"
@@ -2962,7 +3077,8 @@ cutover_old_source=$tmp/receipt-cutover-old-src
 cutover_seed_claim_engine=$tmp/receipt-cutover-seed-claim-engine
 cutover_source_top=$(git -C "$root" rev-parse --show-toplevel)
 mkdir -p "$cutover_old_source"
-git -C "$cutover_source_top" archive 6bc19ba1c metasystem/ | tar -x -C "$cutover_old_source"
+extract_fixture_git_archive "$cutover_source_top" "$cutover_old_source" \
+  "$tmp/receipt-cutover-old-source.tar" 6bc19ba1c metasystem/ || exit 1
 METASYSTEM_BUILD_STAMP=receipt-cutover-seed-claim \
   bash "$cutover_old_source/metasystem/scripts/agents/go-build.sh" --out "$cutover_seed_claim_engine" >/dev/null
 make_leg receipt-cutover

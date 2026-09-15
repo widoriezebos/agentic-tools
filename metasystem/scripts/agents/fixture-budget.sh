@@ -64,6 +64,27 @@ harness_fixture_bed_child_scenario() { # bed name, optional private child argume
 	printf '%s\n' "$expected"
 }
 
+harness_fixture_engine_build_descriptor() { # immutable engine
+	local engine=$1 metadata descriptors descriptor
+	if metadata=$(go version -m "$engine"); then
+		:
+	else
+		printf 'fixture harness: go version -m failed for immutable engine %s\n' "$engine" >&2
+		return 1
+	fi
+	if descriptors=$(sed -n 's/.*supervise.BuildStamp=\([^[:space:]]*\).*/\1/p' <<<"$metadata"); then
+		:
+	else
+		printf 'fixture harness: build descriptor extraction failed for immutable engine %s\n' "$engine" >&2
+		return 1
+	fi
+	IFS= read -r descriptor <<<"$descriptors" || {
+		printf 'fixture harness: build descriptor output was unreadable for immutable engine %s\n' "$engine" >&2
+		return 1
+	}
+	printf '%s\n' "$descriptor"
+}
+
 harness_dispatch_fixture_bed_child_scenario() { # bed name, optional private child arguments
 	local bed=$1 capability expected extra fixture_capability_scenario engine digest stamp actual actual_stamp capability_dir engine_dir
 	shift
@@ -140,7 +161,7 @@ harness_dispatch_fixture_bed_child_scenario() { # bed name, optional private chi
     printf '%s fixtures: shared immutable engine digest mismatch\n' "$bed" >&2
     return 64
   }
-  actual_stamp=$(go version -m "$engine" | sed -n 's/.*supervise.BuildStamp=\([^[:space:]]*\).*/\1/p' | head -1)
+  actual_stamp=$(harness_fixture_engine_build_descriptor "$engine") || return 64
   [[ "$actual_stamp" == "$stamp" ]] || {
     printf '%s fixtures: shared immutable engine build descriptor mismatch\n' "$bed" >&2
     return 64
@@ -194,7 +215,7 @@ harness_dispatch_fixture_bed_mint_capability() { # private directory, index, sce
 	chmod 600 "$capability" || return 1
 	[[ -f "$engine" && ! -L "$engine" ]] || return 1
   digest=$("${METASYSTEM_BIN:-$fixture_bed_root/bin/metasystem}" util sha256 --file "$engine") || return 1
-  stamp=$(go version -m "$engine" | sed -n 's/.*supervise.BuildStamp=\([^[:space:]]*\).*/\1/p' | head -1)
+  stamp=$(harness_fixture_engine_build_descriptor "$engine") || return 1
   [[ -n "$stamp" ]] || return 1
   printf '%s\n%s\n%s\n%s\n' "$scenario" "$engine" "$digest" "$stamp" >"$capability" || return 1
   printf '%s\n' "$capability"
