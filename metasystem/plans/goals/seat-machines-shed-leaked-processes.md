@@ -2,14 +2,14 @@
 
 - State: approved
 - Priority: 1
-- Sequence: 9
+- Sequence: 10
 - Risk: severity=3 novelty=2 exposure=3 accumulation=3 basis="severity 3: a day of leaks drives load past 30 and holds about 24 GB, slowing every seat and causing load-shaped false reds; novelty 2: reaping across several owners (Codex brokers per worktree, fixture stewards, seat waiters, indexing); exposure 3: every seat, every day; accumulation 3: grows until a reboot"
 - Tier: 3
 - Intent: On 2026-09-15 the shared seat machine ran at a load of 25 to 37 with 78 growing to 109 orphaned fixture stewards and helpers (about fifteen leaked per full section run, some four days old), beside 574 leaked Codex processes and a busy seat shell (records/misc/leaked-processes-diagnosis-2026-09-15.md). By Wido's decision R-113-m1e this goal keeps what the metasystem fully owns; the Codex broker lifecycle, busy seat shells, and retention and placement of evidence and build output moved to codex-jobs-run-through-a-metasystem-verb, busy-seat-shells-are-ended and evidence-and-build-output-have-retention-and-stay-unindexed. DONE: no fixture process outlives its owner beyond a bounded time: fixture-mode steward runners bound their own life from an authenticated fixture owner, the proof launcher reaps what a run armed on every return path, and fixture fakes carry their own deadlines; a census verb names every metasystem-caused process by owner, age and bound, and a reap verb ends only proven orphans after re-proving exact identity beside each signal; proven by a day of normal three-seat work that ends with no orphaned fixture process. Folds in fixture-stewards-outlive-their-suite (R-112-m1e).
 - Origin: human
 - Next step: Scope narrowed by Wido's decision R-113-m1e after design critique round 2 (21 material findings, rework): this goal keeps fixture runners, the launcher's reap, fixture fakes, and the census and reap verb. Next: Claude Fable revision 3 of plans/seat-machines-shed-leaked-processes-design.md on the narrowed scope, folding round 2's findings on these parts and handing the moved sections to the three new goals as seed notes; then the last Codex critique round (review round 3 of 3); then Wido approves the budget for its units; then the build.
 - OpenedAt: 2026-09-15T06:46:29Z
-- Revision: 12
+- Revision: 13
 - Budget: elapsedLimit=1d attemptLimit=10 reservedJobMinutesLimit=1200 activeJobLimit=1 reviewRoundLimit=3
 - BudgetExceptions: 0
 - Approved: by=human:Wido at=2026-09-15T09:05:07Z revision=12 opid=JBAC2XZM7SA6V9NH3V34A4MRKH-m1e-c6925449 authority=proven digest=8e26b3b3e4b55783bfb6368471bd7de0fd750d4c9582ece355151e57d2df42fb
@@ -27,4 +27,5 @@ History:
 - 2026-09-15T09:04:54Z 8CANQ78320X3KX766ZJSEW72SS-m1e-c6925449 unapprove actor=human:Wido targets=seat-machines-shed-leaked-processes reason=Wido's decision R-113-m1e narrows this goal after design critique round 2; the approved intent must be re-approved as narrowed
 - 2026-09-15T09:05:01Z ZP7ZM0V1SH01H9CCCSFQJHC9W7-m1e-c6925449 edit actor=human:Wido targets=seat-machines-shed-leaked-processes
 - 2026-09-15T09:05:07Z JBAC2XZM7SA6V9NH3V34A4MRKH-m1e-c6925449 approve actor=human:Wido targets=seat-machines-shed-leaked-processes
-Integrity: sha256=2985c564a11d43d7e66e1c1d57937c4dba803762275c7e9a6d109a099c8a07de
+- 2026-09-15T09:05:11Z Q8W1J81SCETAFZKM6YCWQA516P-m1e-c6925449 set-priority actor=human:Wido targets=dispatch-bed-preamble-check-survives-a-large-prompt,seat-machines-shed-leaked-processes reason=priority-order subject=seat-machines-shed-leaked-processes from=1:9 to=1:10 requested-sequence=10
+Integrity: sha256=a487f4d754e53a887ef8d7b553ac3a81321e3150f5031e2eebd80b911aed7362
