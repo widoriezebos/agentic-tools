@@ -6,7 +6,7 @@
 - MigrationEpoch: 2026-08-20T00:00:00Z
 - ManifestDigest: d82032bee818c2d82e6a95e6f1b75347499b88ee8b68c4d20a0f3c94d00ba320
 - MigrationMode: manifest
-- Revision: 74
+- Revision: 75
 - ApprovalGate: since=2026-09-03T14:16:24Z opid=JY54AQT8101VK9353WT9FQYGA9-m0-c5dbf036
 - FleetEnrollment: at=2026-09-06T06:37:21Z machine=m1 generation=1 opid=CMNCRETKYCB18MFZNYFSZJPXQY-m1-a4f8999f
 
@@ -97,4 +97,5 @@ History:
 - 2026-09-15T07:46:57Z GD1V9HCT798Y38XSJV9V0JGM32-m1c-69c9e454 ack actor=m1c+main-1789191340-90689-8975a9 targets=go-tests-never-inherit-a-candidate-engine displaced=m1c+main-1789191340-90689-8975a9@2026-09-15T06:17:43Z ack
 - 2026-09-15T08:37:32Z Z64HJ4MYHMSWENEGAKHC2M4DSM-m1c-69c9e454 ack actor=m1c+main-1789191340-90689-8975a9 targets=land-bed-reads-build-stamps-without-a-broken-pipe displaced=m1c+main-1789191340-90689-8975a9@2026-09-15T07:46:57Z ack
 - 2026-09-15T08:43:26Z A1K4HM0D59HEXM01PTFK900NP5-m1e-892cdaec ack actor=m1e+main-1789030447-51011-5722fc targets=brief-declares-the-round-boundary displaced=m1e+main-1789030447-51011-5722fc@2026-09-15T07:12:44Z ack
-Integrity: sha256=4a4385bed7b109f8f2fc21ca360cdac87f9df0136920b8f6d58e6474646da920
+- 2026-09-15T09:07:04Z 840ZVTPYSKSEDG3THN5S5E61E4-m1b-30a7e141 ack actor=m1b+main-1789191336-90295-e4b24b targets=dispatch-bed-preamble-check-survives-a-large-prompt displaced=m1b+main-1789191336-90295-e4b24b@2026-09-15T08:17:04Z ack
+Integrity: sha256=463071a2e3409660ce03e35d59412bf254e441c5a556d80e7b3322d5a2a08d4d
