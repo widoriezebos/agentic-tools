@@ -134,6 +134,7 @@ func families() []family {
 			name:    "landing",
 			summary: "classify and record the two bars for a prospective landing",
 			verbs: []verb{
+				{"batch", "join, status, withdraw, owner, tick, or wait for a guarded landing batch", runLandingBatch},
 				{"advance", "rebase a landing commit without moving dirty registers", runLandingAdvance},
 				{"drift", "classify worktree changes tolerated during landing", runLandingDrift},
 				{"observe", "emit a provenance verdict for the prospective project tree", runLandingObserve},
@@ -503,6 +504,7 @@ func families() []family {
 			name:    "goal",
 			summary: "the goal ledger: the thread of intent that survives every turn (D67)",
 			verbs: []verb{
+				{"handover", "transfer this holder's claim to the guarded landing owner", runGoalHandover},
 				{"open", "declare a goal; Current when none exists, queued otherwise", runGoalOpen},
 				{"abandon", "human-only: record that a goal will never be worked and why; retained with its reason, satisfies no dependency, never pruned, reopenable", runGoalAbandon},
 				{"carry", "human-only: name the live successor carrying an abandoned goal, or carry a landing past one named refusal or testing group", runGoalCarry},

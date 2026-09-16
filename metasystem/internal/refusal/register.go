@@ -33,6 +33,8 @@ type Shell struct {
 type Defect struct{ Code, Why string }
 
 var Rows = []Row{
+	{Code: "BATCH_UNAVAILABLE", Owner: "cmd/metasystem", Site: "landing_batch_verbs.go:29", Shape: Question},
+	{Code: "BATCH_GOAL_ELSEWHERE", Owner: "internal/landing/batch", Site: "join.go", Shape: Question},
 	{Code: "AGENT_IN_AUTHORITY_CHAIN", Owner: "internal/humanauthority", Site: "authority.go:31", Shape: Identity},
 	{Code: "ANCESTRY_CHANGED", Owner: "internal/humanauthority", Site: "authority.go:35", Shape: Identity},
 	{Code: "ANCESTRY_CYCLE", Owner: "internal/humanauthority", Site: "authority.go:38", Shape: Identity},
