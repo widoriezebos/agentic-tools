@@ -9,15 +9,15 @@
 - Origin: human
 - Next step: 2026-09-14 m1b: all three members are on trunk (member 1 57ba0586, member 2 e0c5bd61, member 3 bf59fd0d); the parent owes clause 5 and the two real legs, wait-whole-goal-claude and wait-whole-goal-codex, with wake-ups per pending hour, tokens while pending and event-to-resume, on an engine at or past 1f5adda9. The tip blocker is cleared at 1f5adda9 (command-package capture helpers drain while the command runs). Two wait-verb gaps observed today, for the parent proof to cover or backlog: (1) a 'job watch' on a still-running delegate job (member2-build-1-r27) turned its waiter row ready at 18:33:19Z, six seconds before the landing driver's push of 1f5adda9, which hard-resets the watching checkout just before committing; the job kept running, and the watch printed nothing, so a caller cannot tell a terminal event from an open-work or checkout change; (2) re-registering the same job's watch replaced that row, so the result that explained the early return was lost. Wanted: the wrapper prints its typed exit reason, and a replaced row keeps its previous result. Still red on the tip and owned by M1c: stop-hook-monitor and rearm-provenance. The parent claim waits behind stop-decisions-record-deadline-evidence, which m1b still holds.
 - OpenedAt: 2026-09-11T15:45:15Z
-- Revision: 79
+- Revision: 80
 - BlockedBy: publication-owners-hint-the-waiter, wait-verb-returns-on-recorded-events
 - Pinned: m1b
-- Budget: elapsedLimit=1d attemptLimit=10 reservedJobMinutesLimit=1200 activeJobLimit=1 reviewRoundLimit=3
-- BudgetExceptions: 0
-- Approved: by=human:Wido at=2026-09-11T20:33:37Z revision=13 opid=SKG6KKD1D4X47D0F681RTY11AS-m1-c6925449 authority=proven digest=acfb9e16feb6090b3ad627c4c41225d9c946af808c6d672d570a86b07343c73f
+- Budget: elapsedLimit=1d attemptLimit=20 reservedJobMinutesLimit=1200 activeJobLimit=1 reviewRoundLimit=3
+- BudgetExceptions: 1
+- Approved: by=human:Wido at=2026-09-16T02:15:37Z revision=80 opid=CJ9Q5HX65XE8HHVX2P0DZ2H7G7-m1e-c6925449 authority=proven digest=a3d90f4cfcd3dc1173ab3ab672d84d27502030570c4de23b491efe51ad4ddbb9
 - Sliced: machine=m1b lineage=main-1789191336-90295-e4b24b revision=29 at=2026-09-13T00:19:49Z
-- Claimed: machine=m1b lineage=main-1789191336-90295-e4b24b at=2026-09-16T02:15:06Z revision=79 accountingRevision=29 episodeAt=2026-09-13T00:18:31Z episodeRevision=29 idleSeconds=259169
-- StopCapability: generation=79 revision=79 machine=m1b claimEpoch=2 fenceEpoch=0
+- Claimed: machine=m1b lineage=main-1789191336-90295-e4b24b at=2026-09-16T02:15:37Z revision=80 accountingRevision=80 episodeAt=2026-09-13T00:18:31Z episodeRevision=29 idleSeconds=259169
+- StopCapability: generation=80 revision=80 machine=m1b claimEpoch=1 fenceEpoch=0
 
 History:
 - 2026-09-11T15:45:15Z HPJKBN0ZC1BZBK2M5KWKW0JP71-m1e-5083721b open actor=m1e+main-1789141490-27414-b9c0d2 targets=coordinator-wakes-on-events-not-polls
@@ -99,4 +99,5 @@ History:
 - 2026-09-16T02:12:00Z RHKZ04TYQSTE04CMF5DSWMD10T-m1b-30a7e141 claim actor=m1b+main-1789191336-90295-e4b24b targets=coordinator-wakes-on-events-not-polls
 - 2026-09-16T02:15:01Z N8FXA14AB3WVTM7BN5CM1GCV4M-m1b-30a7e141 release actor=m1b+main-1789191336-90295-e4b24b targets=coordinator-wakes-on-events-not-polls
 - 2026-09-16T02:15:06Z E5EA5CB24HV9YZAPYNDHGGWKRM-m1b-30a7e141 claim actor=m1b+main-1789191336-90295-e4b24b targets=coordinator-wakes-on-events-not-polls
-Integrity: sha256=284d7268f7652aaac8b3ec0160436b85ab931dce3297fb3c8c4aa2e528068dcf
+- 2026-09-16T02:15:37Z CJ9Q5HX65XE8HHVX2P0DZ2H7G7-m1e-c6925449 set-budget actor=human:Wido targets=coordinator-wakes-on-events-not-polls displaced=m1b+main-1789191336-90295-e4b24b@2026-09-16T02:15:06Z
+Integrity: sha256=cf25ce6982cddd895029d980d6cb856c389239424d1de64d8205f2b473838f55
