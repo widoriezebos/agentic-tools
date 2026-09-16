@@ -1,6 +1,6 @@
 # delegate-launchers-become-go-verbs
 
-- State: claimed
+- State: approved
 - Priority: 1
 - Sequence: 5
 - Risk: severity=2 novelty=2 exposure=2 accumulation=1 basis="severity 2: a broken launcher stops the design and critique lanes on every seat, but corrupts no record; novelty 2: new Go verbs next to metasystem delegate, behaviour copied from working bash; exposure 2: every seat launches designs and critiques through them; accumulation 1: the bash copies are deleted in the same landing"
@@ -9,13 +9,12 @@
 - Origin: human
 - Next step: Opened in the name of Wido by seat m1e from the enrolled pane on his word 2026-09-16 18:25 CEST. Starts as soon as headless-launchers-live-in-the-repo lands (the bash is the behaviour reference). No Fable design round: a seat brief, one Codex critique of the brief, Codex gpt-5.6-sol builds in units of at most 300 lines, Opus reads, the landing lane lands. Before the brief, read units-land-in-batches-under-one-proof design r3: if automatic batch landing needs units built through the job domain for implementation-chain evidence, these verbs are where that evidence is recorded.
 - OpenedAt: 2026-09-16T16:29:04Z
-- Revision: 14
+- Revision: 15
 - Budget: elapsedLimit=4h attemptLimit=6 reservedJobMinutesLimit=720 activeJobLimit=1 reviewRoundLimit=2
 - BudgetExceptions: 0
 - Approved: by=human:Wido at=2026-09-16T20:29:38Z revision=11 opid=0F2R9PMCE40D9FXT7TV64VXAJ7-m1e-c6925449 authority=proven digest=5af06f6fdcc6e181ad671abf4c8faf3aff1514d3b10e84f7960e34b1b31cc8d5
 - Sliced: machine=m1b lineage=main-1789560571-22295-8d907a revision=12 at=2026-09-16T21:32:54Z
-- Claimed: machine=m1b lineage=main-1789560571-22295-8d907a at=2026-09-16T20:51:15Z revision=12 accountingRevision=12 episodeAt=2026-09-16T20:51:15Z episodeRevision=12
-- StopCapability: generation=12 revision=12 machine=m1b claimEpoch=3 fenceEpoch=0
+- Episode: machine=m1b lineage=main-1789560571-22295-8d907a accountingRevision=12 episodeAt=2026-09-16T20:51:15Z episodeRevision=12 idleSeconds=0 released=2026-09-16T23:50:23Z
 
 History:
 - 2026-09-16T16:29:04Z CDDQA3HQVS4F93EKGDHHXPPMAP-m1e-c6925449 open actor=human:Wido targets=delegate-launchers-become-go-verbs
@@ -32,4 +31,5 @@ History:
 - 2026-09-16T20:51:15Z 7BZHCKHSQW0DDJ0ACK6NMP3F96-m1b-d0e95724 claim actor=m1b+main-1789560571-22295-8d907a targets=delegate-launchers-become-go-verbs
 - 2026-09-16T21:32:54Z HEN97WQ8SA90B9PSZ9P0Y5DH3N-m1b-d0e95724 slice-start actor=m1b+main-1789560571-22295-8d907a targets=delegate-launchers-become-go-verbs
 - 2026-09-16T23:50:00Z 0DWV3F5YABVXPT4579SMYD8XTF-m1e-c6925449 done actor=human:Wido targets=adoption-filled-delivery-passes-on-trunk,beds-run-under-the-oldest-supported-bash,brief-declares-the-round-boundary,builder-proves-each-rule-by-mutation,busy-seat-shells-are-ended,codex-jobs-run-through-a-metasystem-verb,coordinator-context-stays-under-budget,critique-closes-on-folded-proof,cross-cutting-change-inventories-its-readers,deep-sections-cannot-stay-red-unseen,degraded-stop-forms-have-one-source,delegate-launchers-become-go-verbs,delegate-runs-stay-under-200k-context,delegate-sandbox-runs-the-beds,design-rounds-read-less-and-repeat-less,engine-policy-binding-survives-drift-and-load,every-round-gets-an-independent-read,evidence-and-build-output-have-retention-and-stay-unindexed,failures-show-observed-against-expected,fast-gate-runs-the-ratchet-and-honours-groups,fixture-children-cannot-outlive-their-test,fixture-runners-and-fakes-bound-their-own-life,fleet-doctor-repairs-what-stops-other-seats,follow-up-brief-cannot-cite-fresh-trunk-files,headless-launchers-live-in-the-repo,human-break-glass-commit-keeps-the-ledger-valid,human-goal-verbs-forgiving,member-size-gate,one-steward-per-checkout-on-its-own-root,proof-admission-fits-a-seat-proving-several-units,proof-runs-reap-what-they-armed-and-a-census-names-the-rest,receipt-admission-caps-concurrent-batteries,receipt-writer-follows-the-worktree-it-runs-in,red-on-main-gets-an-owner-on-the-ledger,round-proof-feeds-the-next-brief,seat-landings-run-the-selected-sections,seat-successor-continues-a-handoff-without-a-human,seats-spend-tokens-in-bounded-sessions,small-change-lane,spend-fence-reports-tokens-per-model-and-cause,stop-capability-follows-the-lease-epoch,stop-decision-surface-is-a-gate,stop-gate-sees-harness-tracked-work,stop-hook-never-forces-an-empty-turn,stop-response-carries-a-structured-report-reference,test-environment-edges-are-closed,testing-surfaces-declare-their-mirror,tests-never-wait-on-wall-time,trunk-reds-proof-grades-and-alert-episode,trunk-versus-candidate-is-a-verification-step,units-land-in-batches-under-one-proof,units-run-through-one-launcher,waits-run-outside-model-contexts reason=priority-order from=1:6 to=1:5
-Integrity: sha256=2035a29a347653708fc7146d0e730d6eeefd5065e172caf2daa3c366e7066075
+- 2026-09-16T23:50:23Z 2N42SD53QVN43F9XH3XXPRWR1S-m1b-d0e95724 release actor=m1b+main-1789560571-22295-8d907a targets=delegate-launchers-become-go-verbs
+Integrity: sha256=17d28aa436235a8dcfcced82a71248d76efa6f3c5eb3a58fc7435f7da9ea1d4c
