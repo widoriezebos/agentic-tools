@@ -23,6 +23,7 @@ import (
 	"time"
 
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/gittree"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/identity"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/testpolicy"
 )
 
@@ -1639,6 +1640,11 @@ func digestEnvironment(environment []string) string {
 	for _, entry := range environment {
 		name, _, _ := strings.Cut(entry, "=")
 		switch name {
+		// The run owner's exact process reference changes on every launch. It
+		// locates fixture custody but does not change test behavior, so binding it
+		// would prevent proof reuse across attempts and seats.
+		case identity.RunOwnerEnv:
+			continue
 		case "METASYSTEM_PROOF_CONTROL_ROOT", "METASYSTEM_PROOF_ATTEMPT", "METASYSTEM_PROOF_RECORD_KEY", "METASYSTEM_PROOF_CREATION_CLAIM", "METASYSTEM_PROOF_AUTH_BIN":
 			continue
 		// Where a build caches or writes its temporary files does not change

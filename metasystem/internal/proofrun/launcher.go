@@ -197,6 +197,11 @@ func LaunchSuite(options LaunchOptions) int {
 		}
 	}
 
+	childEnvironment, err = identity.ExportRunOwner(childEnvironment)
+	if err != nil {
+		fmt.Fprintln(combinedErr, "suite launcher: export run owner:", err)
+		return 1
+	}
 	suite := exec.Command(options.Command[0], options.Command[1:]...)
 	suite.Dir = options.Root
 	suite.Env = append(childEnvironment,

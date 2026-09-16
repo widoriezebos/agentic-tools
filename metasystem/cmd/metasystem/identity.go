@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"flag"
 	"fmt"
+	"io"
 	"os"
 	"strconv"
 	"syscall"
@@ -12,6 +13,30 @@ import (
 
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/identity"
 )
+
+func runIdentityRef(args []string) int {
+	return runIdentityRefWithProber(args, identity.KernelProber{}, os.Stdout)
+}
+
+func runIdentityRefWithProber(args []string, prober identity.Prober, output io.Writer) int {
+	flags := flag.NewFlagSet("proc ref", flag.ContinueOnError)
+	pid := flags.Int64("pid", 0, "process id")
+	if flags.Parse(args) != nil || flags.NArg() != 0 {
+		return 2
+	}
+	exact, state, err := prober.Probe(*pid)
+	if err != nil || state != identity.Alive {
+		return 1
+	}
+	encoded, err := identity.EncodeRef(exact.Ref())
+	if err != nil {
+		return 1
+	}
+	if _, err := fmt.Fprintln(output, encoded); err != nil {
+		return 1
+	}
+	return 0
+}
 
 func runFixtureCustodian(args []string) int {
 	if _, present := os.LookupEnv(identity.FixtureOwnerEnv); present {

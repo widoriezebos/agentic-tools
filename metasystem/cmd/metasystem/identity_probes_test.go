@@ -1,20 +1,55 @@
 package main
 
 import (
+	"bytes"
 	"encoding/json"
 	"errors"
 	"fmt"
 	"os"
 	"os/exec"
 	"path/filepath"
+	"runtime"
+	"strings"
 	"syscall"
 	"testing"
 	"time"
 
 	"golang.org/x/sys/unix"
 
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/identity"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/janitor"
 )
+
+type processRefProber struct {
+	exact identity.Exact
+	state identity.Liveness
+	err   error
+}
+
+func (p processRefProber) Probe(int64) (identity.Exact, identity.Liveness, error) {
+	return p.exact, p.state, p.err
+}
+
+func TestProcessRefPrintsOneExactEncodedLineOrNothing(t *testing.T) {
+	exact := identity.Exact{Pid: 42, StartedAt: time.UnixMicro(123_456_789)}
+	if runtime.GOOS == "linux" {
+		exact.StartTicks, exact.BootID = 73, "fixture-boot"
+	}
+	if !exact.Ref().NativeExact() {
+		t.Skip("process refs require a supported native exact identity")
+	}
+	var output bytes.Buffer
+	code := runIdentityRefWithProber([]string{"--pid", "42"}, processRefProber{exact: exact, state: identity.Alive}, &output)
+	parsed, err := identity.ParseRef(strings.TrimSpace(output.String()))
+	if code != 0 || err != nil || parsed != exact.Ref() || strings.Count(output.String(), "\n") != 1 {
+		t.Fatalf("proc ref exit=%d output=%q parsed=%+v err=%v", code, output.String(), parsed, err)
+	}
+	output.Reset()
+	code = runIdentityRefWithProber([]string{"--pid", "42"}, processRefProber{state: identity.Unknown, err: errors.New("denied")}, &output)
+	if code == 0 || output.Len() != 0 {
+		t.Fatalf("unprobeable proc ref exit=%d output=%q", code, output.String())
+	}
+}
 
 func TestProcessProbeReportsTerminalAndSessionLeader(t *testing.T) {
 	output, code := captureStdout(t, func() int {

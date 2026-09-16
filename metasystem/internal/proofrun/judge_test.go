@@ -11,6 +11,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/identity"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/testpolicy"
 )
 
@@ -271,6 +272,11 @@ func TestEnvironmentDigestIgnoresCacheAndTemporaryLocations(t *testing.T) {
 	moved := []string{"PATH=/usr/bin", "HOME=/Users/seat", "GOFLAGS=-mod=mod", "GOCACHE=/b/go-cache", "GOTMPDIR=/b/go-tmp", "STATICCHECK_CACHE=/b/staticcheck", "TMPDIR=/b/tmp"}
 	if digestEnvironment(base) != digestEnvironment(moved) {
 		t.Fatal("a moved build cache or scratch changed the environment digest")
+	}
+	firstOwner := append(append([]string(nil), base...), identity.RunOwnerEnv+"=first-exact-ref")
+	secondOwner := append(append([]string(nil), base...), identity.RunOwnerEnv+"=second-exact-ref")
+	if digestEnvironment(firstOwner) != digestEnvironment(secondOwner) {
+		t.Fatal("a new run owner's exact process reference changed the environment digest")
 	}
 	changed := []string{"PATH=/usr/bin", "HOME=/Users/seat", "GOFLAGS=-mod=vendor", "GOCACHE=/a/go-cache"}
 	if digestEnvironment(base) == digestEnvironment(changed) {

@@ -22,6 +22,7 @@ import (
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/config"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/gittree"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/goal"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/identity"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/landing"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/output"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/proofrun"
@@ -907,13 +908,18 @@ func runTestRun(args []string) int {
 	if !prepared.FirstTestingTransition {
 		workerEngine = prepared.PolicyEngine
 	}
+	workerEnvironment, err := identity.ExportRunOwner(prepared.Environment)
+	if err != nil {
+		fmt.Fprintln(os.Stderr, "metasystem test run: export run owner:", err)
+		return retainIncompleteProofAttempt(prepared.Installation, attempt.AttemptID, joined, 1)
+	}
 	launchStatus := proofrun.LaunchSuite(proofrun.LaunchOptions{Suite: "testing", Root: prepared.ProjectRoot,
 		ControlRoot: prepared.Installation, AttemptID: attempt.AttemptID, JoinedAttempt: joined, Deadline: deadline, ConfPath: prepared.ConfPath,
 		ProgressPath: runRequest.ProgressPath, LogPath: filepath.Join(pathsRoot, "launcher.log"),
 		Banner: "TESTING-CONTRACT plan=" + planDigest, Silence: limits.silence, SectionCap: limits.sectionCap,
 		EvidenceTimeout: limits.evidenceTimeout, EvidenceMax: limits.evidenceMax, Poll: time.Second, TermGrace: 5 * time.Second,
 		KillGrace: time.Second, Command: []string{workerEngine, "test", "worker", "--packet", packetPath, "--packet-sha256", packetDigest, "--result", workerResultPath},
-		Environment: prepared.Environment, Output: os.Stdout, ErrorOutput: os.Stderr,
+		Environment: workerEnvironment, Output: os.Stdout, ErrorOutput: os.Stderr,
 		PrepareSuccess: func(completion proofrun.CompletionContext) (json.RawMessage, error) {
 			result, readErr := readTestingWorkerResult(workerResultPath)
 			if readErr != nil {
@@ -1405,7 +1411,7 @@ func testingEnvironment(environment []string) []string {
 	allowed := map[string]bool{"PATH": true, "HOME": true, "TMPDIR": true, "TMP": true, "TEMP": true,
 		"GOCACHE": true, "GOMODCACHE": true, "GOTMPDIR": true, "STATICCHECK_CACHE": true, "GOPATH": true, "GOROOT": true, "GOFLAGS": true, "GOWORK": true,
 		"CGO_ENABLED": true, "GOTOOLCHAIN": true, "GOEXPERIMENT": true, "JAVA_HOME": true, "LANG": true,
-		"LC_ALL": true, "SYSTEMROOT": true, "TZ": true}
+		"LC_ALL": true, "SYSTEMROOT": true, "TZ": true, identity.RunOwnerEnv: true}
 	var result []string
 	for _, entry := range environment {
 		name, _, ok := strings.Cut(entry, "=")
@@ -1419,7 +1425,8 @@ func testingEnvironment(environment []string) []string {
 
 func inheritedTestingEnvironment(prepared, inherited []string) []string {
 	allowed := map[string]bool{"METASYSTEM_PROOF_CONTROL_ROOT": true, "METASYSTEM_PROOF_ATTEMPT": true,
-		"METASYSTEM_PROOF_RECORD_KEY": true, "METASYSTEM_PROOF_CREATION_CLAIM": true, "METASYSTEM_PROOF_AUTH_BIN": true}
+		"METASYSTEM_PROOF_RECORD_KEY": true, "METASYSTEM_PROOF_CREATION_CLAIM": true, "METASYSTEM_PROOF_AUTH_BIN": true,
+		identity.RunOwnerEnv: true}
 	values := make(map[string]string, len(prepared)+len(allowed))
 	for _, entry := range prepared {
 		name, value, ok := strings.Cut(entry, "=")

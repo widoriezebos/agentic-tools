@@ -18,6 +18,7 @@ import (
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/identity"
 	metarun "github.com/widoriezebos/agentic-tools/metasystem/internal/run"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/stopfence"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/testpolicy"
 )
 
 func TestWaitAttemptAfterDrain(t *testing.T) {
@@ -96,9 +97,11 @@ done
 while [[ ! -e "$done_path" ]]; do sleep 0.01; done
 `)
 	progress := filepath.Join(root, "progress.jsonl")
+	ownerPath := filepath.Join(root, "run-owner")
 	logPath := filepath.Join(root, "logs", "suite.log")
 	banner := "suite-cost suite=fixture witness=armed duration=minutes heartbeat=progress.jsonl logs=logs/suite.log"
 	sectionCommand := `printf '{"suite":"fixture","section":"only","event":"start","at":"%s","depth":0}\n' "$(date -u +%Y-%m-%dT%H:%M:%SZ)" >>"$1"
+printf '%s' "$METASYSTEM_RUN_OWNER" >"$2"
 echo suite-output
 printf '{"suite":"fixture","section":"only","event":"end","at":"%s","depth":0}\n' "$(date -u +%Y-%m-%dT%H:%M:%SZ)" >>"$1"`
 	var output bytes.Buffer
@@ -109,14 +112,20 @@ printf '{"suite":"fixture","section":"only","event":"end","at":"%s","depth":0}\n
 		ExpectedSections: []string{"only"}, TwiceConsulted: map[string]bool{},
 		Silence: time.Second, SectionCap: time.Second, EvidenceTimeout: time.Second, EvidenceMax: 1024,
 		Poll: 10 * time.Millisecond, TermGrace: time.Millisecond, KillGrace: time.Millisecond,
-		WatchdogExecutable: watchdog, Command: []string{"bash", "-c", sectionCommand, "fixture", progress},
-		Output: &output, ErrorOutput: &errors,
+		WatchdogExecutable: watchdog, Command: []string{"bash", "-c", sectionCommand, "fixture", progress, ownerPath},
+		Environment: []string{"PATH=" + os.Getenv("PATH")},
+		Output:      &output, ErrorOutput: &errors,
 	})
 	if result != 0 {
 		t.Fatalf("result = %d, output = %q, errors = %q", result, output.String(), errors.String())
 	}
 	if !strings.Contains(output.String(), banner+"\n") || !strings.Contains(output.String(), "suite-output") {
 		t.Fatalf("output = %q", output.String())
+	}
+	ownerValue, err := os.ReadFile(ownerPath)
+	owner, parseErr := identity.ParseRef(string(ownerValue))
+	if err != nil || parseErr != nil || owner.Pid != int64(os.Getpid()) {
+		t.Fatalf("suite run owner=%q parsed=%+v readErr=%v parseErr=%v", ownerValue, owner, err, parseErr)
 	}
 	if _, err := os.Stat(logPath + ".done"); !os.IsNotExist(err) {
 		t.Fatalf("launcher did not remove reaped watchdog done file: %v", err)
@@ -132,6 +141,23 @@ printf '{"suite":"fixture","section":"only","event":"end","at":"%s","depth":0}\n
 	run, err := ReadLatestProgressRun(progress)
 	if err != nil || len(run.Events) != 2 || len(run.Header.TmpPaths) != 1 {
 		t.Fatalf("progress run = %+v, %v", run, err)
+	}
+}
+
+func TestRunOwnerSurvivesProofFiltersToLeafCommand(t *testing.T) {
+	const owner = "outer-exact-ref"
+	environment := proofChildEnvironment([]string{
+		"PATH=" + os.Getenv("PATH"), "METASYSTEM_PROOF_CONTROL_ROOT=/old", identity.RunOwnerEnv + "=" + owner,
+	})
+	leaf := groupTestEnvironment(TestRunRequest{Environment: environment}, testpolicy.Group{})
+	command, err := explicitEnvironmentCommand(context.Background(), t.TempDir(), leaf,
+		[]string{"sh", "-c", `printf '%s' "$METASYSTEM_RUN_OWNER"`})
+	if err != nil {
+		t.Fatal(err)
+	}
+	output, err := command.Output()
+	if err != nil || string(output) != owner {
+		t.Fatalf("leaf environment run owner=%q err=%v; environment=%v", output, err, leaf)
 	}
 }
 
