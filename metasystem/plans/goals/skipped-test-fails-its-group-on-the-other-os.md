@@ -1,6 +1,6 @@
 # skipped-test-fails-its-group-on-the-other-os
 
-- State: approved
+- State: queued
 - Priority: 2
 - Sequence: 40
 - Risk: severity=2 novelty=1 exposure=2 accumulation=1 basis="severity 2: a correct candidate is refused at the gate and the seat routes around it, nothing granted or destroyed; novelty 1: one classification in the existing group verdict; exposure 2: every package with a platform-gated test, on every landing that selects it; accumulation 1: each refusal costs one receipt run"
@@ -9,11 +9,9 @@
 - Origin: main
 - Next step: m1c's lane (proof engine): read the skip reason from the go test json output, classify platform-gated skips (runtime.GOOS guards, build-tag absence) as expected omissions in the group record, keep other skips as failures, and print the reason on the TEST-GROUP line; Sol builds behind a fixture that plays one gated and one ungated skip, Opus critiques. Named cases from the join critic ha-surfacecrit2-20260910 (HAS-05, HAS-06, 2026-09-10): after the hp-terminal landing, the subtest 'Terminal app login is the session leader' of TestTerminalAppLoginAndTmuxSessionShapesEnroll in internal/humanauthority/authority_test.go still skips outside Darwin with a stale reason (the per-OS login program list it names was deleted; the check now stats the real /usr/bin/login as a root-owned write-protected file, which exists on Debian too), so the first Linux run under this goal retries it without its OS guard; and TestRootAncestorWithWithheldArgumentsHasReadableIdentityFacts in internal/identity/enumerate_test.go passes only under a root-owned withheld-argument ancestor such as Terminal.app's login, so runtime-owner-standard fails on any Linux seat and on a daemon or tmux-only ancestry on this Mac.
 - OpenedAt: 2026-09-10T09:59:25Z
-- Revision: 124
+- Revision: 125
 - Pinned: m1c
-- Budget: elapsedLimit=4h attemptLimit=6 reservedJobMinutesLimit=720 activeJobLimit=1 reviewRoundLimit=2
 - BudgetExceptions: 0
-- Approved: by=human:Wido at=2026-09-13T06:40:19Z revision=4 opid=SR5BH6HZM2ZHRHTYF6T0DRE8GA-m1e-c6925449 authority=proven digest=a0a43ad70d8f7fe7efe8e1f234f44f8e0170aba804b0616fffc7ae29b76560b1
 
 History:
 - 2026-09-10T09:59:25Z YS9E1DBHFWFR7NZ4EY5JEJHZ27-m1-1701c13c open actor=m1+main-1788940932-18533-7fa6c2 targets=skipped-test-fails-its-group-on-the-other-os
@@ -140,4 +138,5 @@ History:
 - 2026-09-16T20:31:47Z TVGXM9ANEJV81KJPRVG1TZ0VZV-m1e-c6925449 set-priority actor=human:Wido targets=census-lifecycle-scenario-holds-under-load,chain-landing-carries-the-reviewed-diff,dispatch-bases-chains-on-the-remote-tip,events-package-has-a-test-group,fixture-repo-copies-exclude-the-artifacts-store,fixture-waits-name-their-producer,human-authority-surface-runs-its-cmd-tests,human-wait-does-not-consume-goal-budget,metasystem-stop-escalation-proofs,metasystem-stop-fleet-form,new-elapsed-budgets-use-explicit-hours,pipelines-never-lose-a-truncated-producer,repo-root-paths-ride-agent-commits-unjudged,run-scoped-build-caches-have-a-janitor,skipped-test-fails-its-group-on-the-other-os reason=priority-order subject=run-scoped-build-caches-have-a-janitor from=1:56 to=1:55 requested-sequence=38
 - 2026-09-16T20:31:55Z MZ8CMERCF5WV60JPBWJT7P5P1R-m1e-c6925449 set-priority actor=human:Wido targets=census-lifecycle-scenario-holds-under-load,chain-landing-carries-the-reviewed-diff,dispatch-bases-chains-on-the-remote-tip,events-package-has-a-test-group,fixture-repo-copies-exclude-the-artifacts-store,fixture-waits-name-their-producer,human-authority-surface-runs-its-cmd-tests,human-wait-does-not-consume-goal-budget,metasystem-stop-escalation-proofs,metasystem-stop-fleet-form,new-elapsed-budgets-use-explicit-hours,pipelines-never-lose-a-truncated-producer,repo-root-paths-ride-agent-commits-unjudged,skipped-test-fails-its-group-on-the-other-os reason=priority-order subject=fixture-waits-name-their-producer from=1:55 to=1:54 requested-sequence=39
 - 2026-09-16T20:32:03Z DV0XMRG1CTZ5DY387DDZFHDXBH-m1e-c6925449 set-priority actor=human:Wido targets=census-lifecycle-scenario-holds-under-load,chain-landing-carries-the-reviewed-diff,dispatch-bases-chains-on-the-remote-tip,events-package-has-a-test-group,fixture-repo-copies-exclude-the-artifacts-store,human-authority-surface-runs-its-cmd-tests,human-wait-does-not-consume-goal-budget,metasystem-stop-escalation-proofs,metasystem-stop-fleet-form,new-elapsed-budgets-use-explicit-hours,pipelines-never-lose-a-truncated-producer,repo-root-paths-ride-agent-commits-unjudged,skipped-test-fails-its-group-on-the-other-os reason=priority-order subject=skipped-test-fails-its-group-on-the-other-os from=1:54 to=2:40 requested-sequence=40
-Integrity: sha256=a1313fa289056d55af3d90817f54cf2bfb71d61b2481063bc3b7c1624da9d4ad
+- 2026-09-16T20:34:05Z Z19963C47HEBZBDFAWBZ9SYADS-m1e-c6925449 unapprove actor=human:Wido targets=skipped-test-fails-its-group-on-the-other-os reason=Wido 2026-09-16 22:40 CEST: clean house on priority 1 first, then a few human convenience features; every priority 2+ goal is unapproved until then
+Integrity: sha256=295511b98e21f5aa979ae19812ab67d9e1e71b2f20f863e4e7a97cb1cf7ebc94
