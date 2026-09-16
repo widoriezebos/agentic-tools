@@ -1,6 +1,6 @@
 # repo-root-paths-ride-agent-commits-unjudged
 
-- State: approved
+- State: queued
 - Priority: 2
 - Sequence: 44
 - Risk: severity=3 novelty=1 exposure=2 accumulation=2 basis="severity 3: an unjudged behavior change (a hook timeout, a runtime registration) can land under a pass verdict, which is the landing law failing at its one job; novelty 1: one enumeration at a scope that already exists elsewhere (the conformance review does it); exposure 2: every agent landing from a nested checkout, which is all of them today, but only when someone stages a repository-root path; accumulation 2: every such ride is silent, so a wrong one is found only by its effect"
@@ -9,11 +9,9 @@
 - Origin: main
 - Next step: MECHANICAL, one chain: the landing evaluator (internal/landing, observe.go) enumerates changed paths at the repository level between the base tree and the settled index tree, and refuses with repo-root-path-unjudged when any changed path lies outside the installation prefix while a prefix exists; commit.sh passes the whole-repository settled tree alongside the prefix tree so the evaluator can see both; a landing fixture stages a repository-root file and proves the refusal; docs name the human path for such files. Verify first that the ride is real: stage a one-byte change to a repository-root file in a throwaway clone and run the commit wrapper under an agent identity; if it refuses already, record where and close this as not-a-defect.
 - OpenedAt: 2026-09-06T08:52:29Z
-- Revision: 143
+- Revision: 144
 - Pinned: m1c
-- Budget: elapsedLimit=1d attemptLimit=10 reservedJobMinutesLimit=1200 activeJobLimit=1 reviewRoundLimit=3
 - BudgetExceptions: 0
-- Approved: by=human:Wido at=2026-09-13T06:40:50Z revision=17 opid=7617GGFRPN4FHKBDE7GKCD77PB-m1e-c6925449 authority=proven digest=427030a06cae6b132998505407fa77382ff1a8cc75b30fff9d8da98ffbe307c6
 
 History:
 - 2026-09-06T08:52:29Z XZGKDTQRQ4MY68GSRH291EXKNW-m1d-62183579 open actor=m1d+main-1788683763-71870-f7f607 targets=repo-root-paths-ride-agent-commits-unjudged
@@ -159,4 +157,5 @@ History:
 - 2026-09-16T20:32:15Z TDBM54SXFYKS7XNWS2GXMP5KE4-m1e-c6925449 set-priority actor=human:Wido targets=census-lifecycle-scenario-holds-under-load,chain-landing-carries-the-reviewed-diff,dispatch-bases-chains-on-the-remote-tip,events-package-has-a-test-group,human-authority-surface-runs-its-cmd-tests,human-wait-does-not-consume-goal-budget,metasystem-stop-escalation-proofs,metasystem-stop-fleet-form,new-elapsed-budgets-use-explicit-hours,pipelines-never-lose-a-truncated-producer,repo-root-paths-ride-agent-commits-unjudged reason=priority-order subject=chain-landing-carries-the-reviewed-diff from=1:56 to=1:55 requested-sequence=42
 - 2026-09-16T20:32:20Z 605V8R43X8E3DXCYYWTNHSGCJB-m1e-c6925449 set-priority actor=human:Wido targets=census-lifecycle-scenario-holds-under-load,dispatch-bases-chains-on-the-remote-tip,events-package-has-a-test-group,human-authority-surface-runs-its-cmd-tests,human-wait-does-not-consume-goal-budget,metasystem-stop-escalation-proofs,metasystem-stop-fleet-form,new-elapsed-budgets-use-explicit-hours,pipelines-never-lose-a-truncated-producer,repo-root-paths-ride-agent-commits-unjudged reason=priority-order subject=human-authority-surface-runs-its-cmd-tests from=1:55 to=1:54 requested-sequence=43
 - 2026-09-16T20:32:26Z ECXB1G7RHC8BNFF7JR3JGM3XYK-m1e-c6925449 set-priority actor=human:Wido targets=census-lifecycle-scenario-holds-under-load,dispatch-bases-chains-on-the-remote-tip,events-package-has-a-test-group,human-wait-does-not-consume-goal-budget,metasystem-stop-escalation-proofs,metasystem-stop-fleet-form,new-elapsed-budgets-use-explicit-hours,pipelines-never-lose-a-truncated-producer,repo-root-paths-ride-agent-commits-unjudged reason=priority-order subject=repo-root-paths-ride-agent-commits-unjudged from=1:54 to=2:44 requested-sequence=44
-Integrity: sha256=7356bb0fa1e68fa165254e39ab30fcc10757d80f657717f61432d0b8f20aac04
+- 2026-09-16T20:34:29Z ZGGHRBNNZCMCD5VR37GSDHV3FA-m1e-c6925449 unapprove actor=human:Wido targets=repo-root-paths-ride-agent-commits-unjudged reason=Wido 2026-09-16 22:40 CEST: clean house on priority 1 first, then a few human convenience features; every priority 2+ goal is unapproved until then
+Integrity: sha256=515b59d98f9e0758c6529d5de398d55ecdc8d1a14d4da4a4164e2d67a0a5cf8f
