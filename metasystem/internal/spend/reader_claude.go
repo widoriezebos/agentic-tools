@@ -8,6 +8,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"io/fs"
 	"os"
 	"path/filepath"
 	"sort"
@@ -19,11 +20,11 @@ import (
 )
 
 type transcriptRequest struct {
-	id, file, session, cwd, model, timestamp string
-	line                                     int
-	usage                                    map[string]any
-	detail                                   string
-	dayEligible                              bool
+	id, file, session, cwd, model, timestamp, runtime string
+	line                                              int
+	usage                                             map[string]any
+	detail                                            string
+	dayEligible                                       bool
 }
 
 var transcriptBytesRead func(int)
@@ -55,88 +56,72 @@ func readSeat(repoRoot, machine string, now time.Time, delegates map[string]bool
 			Provenance: "seat unreadable", Detail: err.Error(),
 		})
 	}
-	toplevel, err := gitToplevel(repoRoot)
-	if err != nil {
-		recordUnreadable(repoRoot, err)
-		return nil, seat, unmeasured, nil
-	}
-	home, err := os.UserHomeDir()
-	if err != nil {
-		recordUnreadable("~", fmt.Errorf("cannot resolve home directory: %w", err))
-		return nil, seat, unmeasured, nil
-	}
-	slug := strings.ReplaceAll(toplevel, string(filepath.Separator), "-")
-	projects := filepath.Join(home, ".claude", "projects")
-	dirs, err := os.ReadDir(projects)
-	if os.IsNotExist(err) {
-		seat.CacheWriteFailures += pruneTranscriptCursors(repoRoot, visitedCursorPaths)
-		return nil, seat, nil, nil
-	}
-	if err != nil {
-		recordUnreadable(projects, fmt.Errorf("cannot list Claude transcript root %s: %w", projects, err))
-		return nil, seat, unmeasured, nil
-	}
-	var files []string
-	for _, dir := range dirs {
-		if !dir.IsDir() || (dir.Name() != slug && !strings.HasPrefix(dir.Name(), slug+"-")) {
+	var files []transcriptFile
+	for index := range readerRegistry {
+		registered := &readerRegistry[index]
+		if !registered.inScope || registered.capability != readerCapabilityPerCall {
 			continue
 		}
-		dirPath := filepath.Join(projects, dir.Name())
-		entries, listErr := os.ReadDir(dirPath)
-		if listErr != nil {
-			recordUnreadable(dirPath, fmt.Errorf("cannot list Claude transcript slug %s: %w", dirPath, listErr))
-			continue
+		discovered := registered.discover(repoRoot)
+		seat.UnreadableFiles += discovered.counters.UnreadableFiles
+		for _, gap := range discovered.gaps {
+			gap.Machine = machine
+			unmeasured = append(unmeasured, gap)
 		}
-		for _, entry := range entries {
-			if filepath.Ext(entry.Name()) == ".jsonl" {
-				files = append(files, filepath.Join(dirPath, entry.Name()))
-			}
+		if discovered.fatal {
+			return nil, seat, unmeasured, nil
+		}
+		for _, file := range discovered.files {
+			file.registered, file.toplevel = registered, discovered.toplevel
+			files = append(files, file)
 		}
 	}
-	sort.Strings(files)
-	delegateDigest := delegateSessionDigest(delegates)
 	requests := map[string]transcriptRequest{}
-	var invalid []transcriptRequest
-	for _, path := range files {
-		fileSession := strings.TrimSuffix(filepath.Base(path), filepath.Ext(path))
-		if delegates[fileSession] {
+	for _, file := range files {
+		registered := file.registered
+		path := file.path
+		fileSession := file.session
+		if delegates[fileSession] || delegates[file.parentSession] {
 			continue
 		}
 		info, statErr := os.Stat(path)
 		if statErr != nil {
-			recordUnreadable(path, fmt.Errorf("cannot stat Claude transcript %s: %w", path, statErr))
+			recordUnreadable(path, fmt.Errorf("cannot stat %s transcript %s: %w", registered.name, path, statErr))
 			continue
 		}
-		dayEligible := !info.ModTime().Before(now.Add(-48 * time.Hour))
 		visitedCursorPaths[transcriptCursorPath(repoRoot, path)] = true
-		fileRequests, fileInvalid, foreign, cacheWriteFailed, readErr := readTranscriptCursor(repoRoot, path, info, toplevel, dayEligible, delegates, delegateDigest)
-		if cacheWriteFailed {
+		result := registered.scan(file, readerCursor{repoRoot: repoRoot, toplevel: file.toplevel, now: now, info: info}, readerJobs(delegates))
+		if result.cacheWriteFailed {
 			seat.CacheWriteFailures++
 		}
-		if readErr != nil {
-			recordUnreadable(path, readErr)
+		if result.err != nil {
+			recordUnreadable(path, result.err)
 			continue
 		}
-		if foreign {
+		if result.foreign {
 			seat.SkippedForeignFiles++
 			continue
 		}
 		seat.Files++
-		if !dayEligible {
+		if result.aged {
 			seat.AgedFiles++
 		}
-		for key, request := range fileRequests {
+		for key, request := range result.calls {
+			request.runtime = registered.name
 			requests[key] = request
 		}
-		invalid = append(invalid, fileInvalid...)
+		for _, gap := range result.unmeasured {
+			gap.Machine = machine
+			unmeasured = append(unmeasured, gap)
+			seat.UnmeasuredRequests++
+		}
 	}
 	seat.CacheWriteFailures += pruneTranscriptCursors(repoRoot, visitedCursorPaths)
 
-	ordered := make([]transcriptRequest, 0, len(requests)+len(invalid))
+	ordered := make([]transcriptRequest, 0, len(requests))
 	for _, request := range requests {
 		ordered = append(ordered, request)
 	}
-	ordered = append(ordered, invalid...)
 	sort.Slice(ordered, func(i, j int) bool {
 		if ordered[i].file != ordered[j].file {
 			return ordered[i].file < ordered[j].file
@@ -171,9 +156,9 @@ func readSeat(repoRoot, machine string, now time.Time, delegates map[string]bool
 		}
 		tokens := tokensFromMission(classes)
 		model := config.CanonicalModel(request.model)
-		money, priced, unpriced, foreign := price("claude", model, classes, (*mission.UsageCost)(nil), false, settings)
+		money, priced, unpriced, foreign := price(request.runtime, model, classes, (*mission.UsageCost)(nil), false, settings)
 		item := pricedMeasurement{
-			goal: "seat", machine: machine, day: timestamp.Format("2006-01-02"), runtime: "claude", model: model,
+			goal: "seat", machine: machine, day: timestamp.Format("2006-01-02"), runtime: request.runtime, model: model,
 			tokens: tokens, money: money, priced: priced, unpriced: unpriced, foreign: foreign, dayEligible: request.dayEligible,
 		}
 		measured = append(measured, item)
@@ -184,6 +169,114 @@ func readSeat(repoRoot, machine string, now time.Time, delegates map[string]bool
 		}
 	}
 	return measured, seat, unmeasured, nil
+}
+func claudeReader() reader {
+	return reader{
+		name: "claude", capability: readerCapabilityPerCall, inScope: true,
+		discover: discoverClaudeTranscripts, scan: scanClaudeTranscript,
+	}
+}
+func discoverClaudeTranscripts(repoRoot string) discoveryResult {
+	var result discoveryResult
+	recordUnreadable := func(path string, err error) {
+		displayPath := path
+		if filepath.IsAbs(path) {
+			displayPath = relativePath(repoRoot, path)
+		}
+		result.counters.UnreadableFiles++
+		result.gaps = append(result.gaps, UnmeasuredEntry{
+			ID: displayPath, File: displayPath, Goal: "seat", Provenance: "seat unreadable", Detail: err.Error(),
+		})
+	}
+	var err error
+	result.toplevel, err = gitToplevel(repoRoot)
+	if err != nil {
+		recordUnreadable(repoRoot, err)
+		result.fatal = true
+		return result
+	}
+	home, err := os.UserHomeDir()
+	if err != nil {
+		recordUnreadable("~", fmt.Errorf("cannot resolve home directory: %w", err))
+		result.fatal = true
+		return result
+	}
+	slug := strings.ReplaceAll(result.toplevel, string(filepath.Separator), "-")
+	projects := filepath.Join(home, ".claude", "projects")
+	_ = filepath.WalkDir(projects, func(path string, entry fs.DirEntry, walkErr error) error {
+		if walkErr != nil {
+			if path != projects || !os.IsNotExist(walkErr) {
+				recordUnreadable(path, fmt.Errorf("cannot list Claude transcript path %s: %w", path, walkErr))
+			}
+			if path == projects && !os.IsNotExist(walkErr) {
+				result.fatal = true
+				return fs.SkipAll
+			}
+			if entry != nil && entry.IsDir() {
+				return fs.SkipDir
+			}
+			return nil
+		}
+		relative, _ := filepath.Rel(projects, path)
+		parts := strings.Split(relative, string(filepath.Separator))
+		if len(parts) == 1 {
+			if path == projects {
+				return nil
+			}
+			if !entry.IsDir() {
+				return nil
+			}
+			if entry.Name() != slug && !strings.HasPrefix(entry.Name(), slug+"-") {
+				return fs.SkipDir
+			}
+			return nil
+		}
+		if filepath.Ext(entry.Name()) == ".jsonl" {
+			result.files = append(result.files, claudeTranscriptFile(filepath.Join(projects, parts[0]), path))
+			if entry.IsDir() {
+				return fs.SkipDir
+			}
+		}
+		return nil
+	})
+	sort.Slice(result.files, func(i, j int) bool { return result.files[i].path < result.files[j].path })
+	return result
+}
+func claudeTranscriptFile(slugPath, path string) transcriptFile {
+	file := transcriptFile{path: path, session: strings.TrimSuffix(filepath.Base(path), filepath.Ext(path))}
+	relative, err := filepath.Rel(slugPath, path)
+	if err != nil {
+		return file
+	}
+	parts := strings.Split(filepath.Clean(relative), string(filepath.Separator))
+	for index, part := range parts[:len(parts)-1] {
+		if part == "subagents" {
+			file.delegate = true
+			if index > 0 {
+				file.parentSession = parts[index-1]
+			}
+			break
+		}
+	}
+	return file
+}
+func scanClaudeTranscript(file transcriptFile, cursor readerCursor, jobs readerJobs) scanResult {
+	dayEligible := !cursor.info.ModTime().Before(cursor.now.Add(-48 * time.Hour))
+	calls, invalid, foreign, cacheWriteFailed, err := readTranscriptCursor(
+		cursor.repoRoot, file.path, cursor.info, cursor.toplevel, dayEligible, jobs, delegateSessionDigest(jobs),
+	)
+	unmeasured := make([]UnmeasuredEntry, 0, len(invalid))
+	for _, request := range invalid {
+		id := request.id
+		if id == "" {
+			id = fmt.Sprintf("%s:%d", filepath.Base(request.file), request.line)
+		}
+		unmeasured = append(unmeasured, seatUnmeasured(cursor.repoRoot, request, id, request.detail))
+	}
+	return scanResult{
+		calls: calls, unmeasured: unmeasured, foreign: foreign, aged: !dayEligible,
+		cacheWriteFailed: cacheWriteFailed, err: err,
+	}
 }
 
 func readTranscriptCursor(repoRoot, path string, info os.FileInfo, toplevel string, dayEligible bool, delegates map[string]bool, delegateDigest string) (map[string]transcriptRequest, []transcriptRequest, bool, bool, error) {

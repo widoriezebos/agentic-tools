@@ -646,10 +646,17 @@ func TestDeletedTranscriptCursorIsPruned(t *testing.T) {
 	if _, err := os.Stat(cursor); err != nil {
 		t.Fatalf("the initial measurement did not create its cursor: %v", err)
 	}
+	mustSpendTest(t, os.Remove(filepath.Join(root, ".git")))
+	_, err := Measure(root, "bed-m1", bedNow.Add(time.Minute))
+	mustSpendTest(t, err)
+	if _, err := os.Stat(cursor); err != nil {
+		t.Fatalf("fatal transcript discovery pruned a live cursor: %v", err)
+	}
+	mustSpendTest(t, os.Mkdir(filepath.Join(root, ".git"), 0o755))
 	if err := os.Remove(transcript); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := Measure(root, "bed-m1", bedNow.Add(time.Minute)); err != nil {
+	if _, err := Measure(root, "bed-m1", bedNow.Add(2*time.Minute)); err != nil {
 		t.Fatal(err)
 	}
 	if _, err := os.Stat(cursor); !os.IsNotExist(err) {
