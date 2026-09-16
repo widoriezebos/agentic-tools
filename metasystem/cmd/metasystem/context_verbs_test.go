@@ -168,7 +168,7 @@ func TestContextStatusVerbPrintsTheRoleLine(t *testing.T) {
 	code, text, problem := captureChannelOutput(t, func() int {
 		return dispatch([]string{"context", "status", "--root", root})
 	})
-	if code != 0 || problem != "" || !strings.HasPrefix(text, "context-budget=alive (150 thousand tokens this call, bound 150, ceiling 200; over the bound:") {
+	if code != 0 || problem != "" || !strings.HasPrefix(text, "context-budget=alive (150 thousand tokens this call, trigger 105, proof line 150, proof maximum 200, ceiling 250; over the trigger:") {
 		t.Fatalf("inferred text status = code %d stdout %q stderr %q", code, text, problem)
 	}
 	if _, err := os.Stat(filepath.Join(root, "artifacts", "agents", "context", "sessions.jsonl")); err != nil {
@@ -194,7 +194,7 @@ func TestContextStatusVerbPrintsTheRoleLine(t *testing.T) {
 	code, explicit, problem := captureChannelOutput(t, func() int {
 		return runContextStatus([]string{"--root", explicitRoot, "--runtime", "claude", "--session", "explicit", "--transcript", explicitTranscript})
 	})
-	if code != 0 || problem != "" || explicit != "context-budget=alive (diagnostic transcript override; 120 thousand tokens this call, bound 150, ceiling 200)\n" {
+	if code != 0 || problem != "" || explicit != "context-budget=alive (diagnostic transcript override; 120 thousand tokens this call, trigger 105, proof line 150, proof maximum 200, ceiling 250; over the trigger)\n" {
 		t.Fatalf("explicit status = code %d stdout %q stderr %q", code, explicit, problem)
 	}
 	if _, err := os.Stat(filepath.Join(explicitRoot, "artifacts", "agents", "context", "sessions.jsonl")); !os.IsNotExist(err) {
@@ -246,6 +246,25 @@ func TestContextStatusVerbPrintsTheRoleLine(t *testing.T) {
 	}
 }
 
+func TestContextStatusPrintsTheBudgetLine(t *testing.T) {
+	t.Setenv("METASYSTEM_CONTEXT_CEILING_TOKENS", "")
+	_ = os.Unsetenv("METASYSTEM_CONTEXT_CEILING_TOKENS")
+	t.Setenv("METASYSTEM_CONTEXT_HANDOFF_MARGIN_TOKENS", "")
+	_ = os.Unsetenv("METASYSTEM_CONTEXT_HANDOFF_MARGIN_TOKENS")
+	root := contextCommandRoot(t)
+	if err := os.WriteFile(filepath.Join(root, "metasystem.conf"), []byte("context.ceiling.tokens=200000\ncontext.handoff.margin.tokens=120000\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	writeDerivedContextCommandTranscript(t, root, "configured", 120000, 1, true)
+	writeContextCommandHolder(t, root, "claude", "configured")
+	code, output, problem := captureChannelOutput(t, func() int {
+		return dispatch([]string{"context", "status", "--root", root})
+	})
+	if code != 0 || problem != "" || !strings.Contains(output, "trigger 80, proof line 150, proof maximum 200, ceiling 200") {
+		t.Fatalf("configured status = code %d stdout %q stderr %q", code, output, problem)
+	}
+}
+
 func TestContextStatusExitCodesForReadableUnknownAndCeilingBreach(t *testing.T) {
 	root := contextCommandRoot(t)
 	missingSession := "missing-" + filepath.Base(root)
@@ -260,7 +279,7 @@ func TestContextStatusExitCodesForReadableUnknownAndCeilingBreach(t *testing.T) 
 	code, output, problem = captureChannelOutput(t, func() int {
 		return runContextStatus([]string{"--root", root, "--runtime", "claude", "--session", "ceiling", "--transcript", transcript})
 	})
-	if code != 0 || problem != "" || !strings.HasPrefix(output, "context-budget=dead (diagnostic transcript override; 200 thousand tokens this call is over the ceiling 200") {
+	if code != 0 || problem != "" || !strings.HasPrefix(output, "context-budget=dead (diagnostic transcript override; 200 thousand tokens this call, trigger 105, proof line 150, proof maximum 200, ceiling 250; over the proof maximum") {
 		t.Fatalf("ceiling breach = code %d stdout %q stderr %q", code, output, problem)
 	}
 }
@@ -282,7 +301,7 @@ func TestContextStatusLabelsTranscriptDiagnostics(t *testing.T) {
 	code, overBoundText, problem := captureChannelOutput(t, func() int {
 		return runContextStatus([]string{"--root", root, "--runtime", "claude", "--session", "over-bound", "--transcript", overBound})
 	})
-	wantOverBound := "context-budget=alive (diagnostic transcript override; 160 thousand tokens this call, bound 150, ceiling 200; over the bound)\n"
+	wantOverBound := "context-budget=alive (diagnostic transcript override; 160 thousand tokens this call, trigger 105, proof line 150, proof maximum 200, ceiling 250; over the trigger)\n"
 	if code != 0 || problem != "" || overBoundText != wantOverBound || strings.Contains(overBoundText, "handoff") {
 		t.Fatalf("over-bound diagnostic = code %d stdout %q stderr %q", code, overBoundText, problem)
 	}
@@ -302,7 +321,7 @@ func TestContextStatusLabelsTranscriptDiagnostics(t *testing.T) {
 	code, ceilingText, problem := captureChannelOutput(t, func() int {
 		return runContextStatus([]string{"--root", root, "--runtime", "claude", "--session", "over-ceiling", "--transcript", overCeiling})
 	})
-	if code != 0 || problem != "" || !strings.HasPrefix(ceilingText, "context-budget=dead (diagnostic transcript override; 200 thousand tokens this call is over the ceiling 200") ||
+	if code != 0 || problem != "" || !strings.HasPrefix(ceilingText, "context-budget=dead (diagnostic transcript override; 200 thousand tokens this call, trigger 105, proof line 150, proof maximum 200, ceiling 250; over the proof maximum") ||
 		!strings.Contains(ceilingText, "; remedy: metasystem context status --root "+root+")") || strings.Contains(ceilingText, "handoff") {
 		t.Fatalf("over-ceiling diagnostic = code %d stdout %q stderr %q", code, ceilingText, problem)
 	}

@@ -15,8 +15,84 @@ import (
 	"testing"
 	"time"
 
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/config"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/usage"
 )
+
+func TestContextReportThresholdsAreTheDoneNumbers(t *testing.T) {
+	if ProofP95Tokens != 150000 || ProofMaxTokens != 200000 {
+		t.Fatalf("proof thresholds = %d/%d", ProofP95Tokens, ProofMaxTokens)
+	}
+	for _, test := range []struct {
+		name                   string
+		p95, max               int64
+		p95Failure, maxFailure bool
+	}{
+		{"below proof thresholds", ProofP95Tokens - 1, ProofMaxTokens, false, false},
+		{"at p95 proof line", ProofP95Tokens, ProofMaxTokens, true, false},
+		{"over proof maximum", 1, ProofMaxTokens + 1, false, true},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			report := ContextReport{Samples: 1, P95: test.p95, Max: test.max}
+			finishContextReport(&report, nil)
+			p95Failure := contextReportHasFailure(report, "not below")
+			maxFailure := contextReportHasFailure(report, "maximum prompt tokens")
+			if p95Failure != test.p95Failure || maxFailure != test.maxFailure {
+				t.Fatalf("report failures = %v; want p95=%t maximum=%t", report.Failures, test.p95Failure, test.maxFailure)
+			}
+		})
+	}
+}
+
+func TestTriggerConstructionHoldsAtTheProofLine(t *testing.T) {
+	line := ProofP95Tokens - HandoffCallsAfterTrigger*ObservedMaxCallStepTokens
+	trigger := config.DefaultContextCeilingTokens - config.DefaultContextHandoffMarginTokens
+	if line != config.ContextConstructionLineTokens || trigger > line || int64(107000) <= line {
+		t.Fatalf("construction line=%d config=%d default trigger=%d; 107000 must exceed it", line, config.ContextConstructionLineTokens, trigger)
+	}
+}
+
+func TestAdmittedCallsUnderTheProofMaximum(t *testing.T) {
+	// Six calls is arithmetic only; it is not an admitted-call count.
+	got := config.DefaultContextCeilingTokens - config.DefaultContextHandoffMarginTokens + 6*ObservedMaxCallStepTokens
+	if got >= ProofMaxTokens {
+		t.Fatalf("default trigger plus six maximum steps = %d, want below %d", got, ProofMaxTokens)
+	}
+}
+
+func TestContextReportPrintsTheLargestStep(t *testing.T) {
+	testContextReportObservations(t)
+}
+func TestContextReportPrintsCallsOverTheTrigger(t *testing.T) {
+	testContextReportObservations(t)
+}
+
+func testContextReportObservations(t *testing.T) {
+	weekStart := time.Date(2026, 9, 7, 0, 0, 0, 0, time.UTC)
+	trigger := config.DefaultContextCeilingTokens - config.DefaultContextHandoffMarginTokens
+	var samples []usage.CallSample
+	for index, count := range []int{4, 7} {
+		session := fmt.Sprintf("proof-%d", index)
+		for call := 0; call < count; call++ {
+			tokens := trigger + int64(call)
+			if index == 0 && call > 0 {
+				tokens += ObservedMaxCallStepTokens - 1
+			}
+			samples = append(samples, usage.CallSample{Runtime: "claude", Session: session, InvocationID: fmt.Sprintf("%s-%d", session, call),
+				PromptTokens: tokens, At: weekStart.Add(time.Duration(index*10+call) * time.Minute), Source: "claude-transcript"})
+		}
+	}
+	samples = append(samples, usage.CallSample{Runtime: "claude", Session: "proof-interleaved", InvocationID: "proof-interleaved-0",
+		PromptTokens: 40000, At: weekStart.Add(5 * time.Minute), Source: "claude-transcript"})
+	report, _, _ := buildContextReport(nil, nil, samples, nil, 0, 0, weekStart, weekStart.AddDate(0, 0, 7))
+	text := []byte(renderContextReport(report, nil, "digest", weekStart.Add(12*time.Hour)))
+	if report.LargestCallStep != ObservedMaxCallStepTokens || !bytes.Contains(text, []byte("largest call step 14454 (construction constant 14454)")) {
+		t.Fatalf("largest step report=%+v\n%s", report, text)
+	}
+	if report.CallsOverTrigger != 7 || !bytes.Contains(text, []byte("calls at or over the trigger, most in one session 7")) {
+		t.Fatalf("calls over trigger report=%+v\n%s", report, text)
+	}
+}
 
 func TestContextReportComputesTheWeek(t *testing.T) {
 	t.Run("baseline and committed boundary", func(t *testing.T) {
@@ -574,12 +650,12 @@ func TestContextReportWindowAndCoverage(t *testing.T) {
 
 	t.Run("p95 must be strictly below the bound", func(t *testing.T) {
 		root := t.TempDir()
-		seedContextReportSession(t, root, "claude", "at-bound", reportClaudeCall("at-bound", ContextBoundTokens, weekStart.Add(time.Hour)))
+		seedContextReportSession(t, root, "claude", "at-bound", reportClaudeCall("at-bound", ProofP95Tokens, weekStart.Add(time.Hour)))
 		if err := usage.RegisterSession(root, "claude", "at-bound", 503, 5003); err != nil {
 			t.Fatal(err)
 		}
 		_, _, report, err := WriteContextReport(root, weekStart, now)
-		if err != nil || report.Pass || report.P95 != ContextBoundTokens || !contextReportHasFailure(report, "not below") {
+		if err != nil || report.Pass || report.P95 != ProofP95Tokens || !contextReportHasFailure(report, "not below") {
 			t.Fatalf("bound report = %+v, err=%v", report, err)
 		}
 	})

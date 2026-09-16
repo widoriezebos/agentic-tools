@@ -12,17 +12,14 @@ import (
 	"time"
 
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/census"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/config"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/identity"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/output"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/runtimes"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/usage"
 )
 
-const (
-	RoleContext          HealthRole = "context-budget"
-	ContextBoundTokens   int64      = 150000
-	ContextCeilingTokens int64      = 200000
-)
+const RoleContext HealthRole = "context-budget"
 
 type ContextOptions struct {
 	Runtime    string
@@ -67,6 +64,10 @@ func ContextBudgetLine(stateRoot, installationRoot string, now time.Time, opts C
 func contextBudgetLineWithProber(stateRoot, installationRoot string, now time.Time, opts ContextOptions, prober identity.Prober) (RoleVerdict, usage.Reading, error) {
 	remedy := "metasystem context status --root " + installationRoot
 	diagnostic := opts.Transcript != ""
+	budget, err := config.ContextBudget(installationRoot)
+	if err != nil {
+		return roleUnknown(RoleContext, err.Error(), "metasystem config validate --conf "+filepath.Join(installationRoot, "metasystem.conf")), usage.Reading{}, err
+	}
 	holder, noHolderReason, unobservableReason, err := resolveContextIdentity(stateRoot, opts, prober)
 	if err != nil {
 		return labelContextDiagnostic(roleUnknown(RoleContext, err.Error(), remedy), diagnostic), usage.Reading{}, err
@@ -102,7 +103,7 @@ func contextBudgetLineWithProber(stateRoot, installationRoot string, now time.Ti
 		if readErr != nil {
 			return labelContextDiagnostic(roleUnknown(RoleContext, readErr.Error(), remedy), true), reading, readErr
 		}
-		return contextVerdict(reading, installationRoot, true), reading, nil
+		return contextVerdict(reading, budget, installationRoot, true), reading, nil
 	}
 	if !holder.explicit && unobservableReason == "" {
 		if err := usage.RegisterSessionNonBlocking(stateRoot, holder.runtime, holder.session, holder.process.Pid, holder.process.StartedAtSec); err != nil {
@@ -123,7 +124,7 @@ func contextBudgetLineWithProber(stateRoot, installationRoot string, now time.Ti
 		return roleUnknown(RoleContext, err.Error(), remedy), reading, err
 	}
 
-	verdict := contextVerdict(reading, installationRoot, false)
+	verdict := contextVerdict(reading, budget, installationRoot, false)
 	if spillPath, bytes, found := output.NewestSince(stateRoot, reading.PreviousReadAt); found {
 		verdict.Reason += fmt.Sprintf("; newest spill: %s (%d bytes)", filepath.Base(spillPath), bytes)
 	}
@@ -290,7 +291,7 @@ func contextGitToplevel(installationRoot string) (string, error) {
 	}
 }
 
-func contextVerdict(reading usage.Reading, installationRoot string, diagnostic bool) RoleVerdict {
+func contextVerdict(reading usage.Reading, budget config.Budget, installationRoot string, diagnostic bool) RoleVerdict {
 	statusRemedy := "metasystem context status --root " + installationRoot
 	if reading.Latest == nil {
 		if contextBenignUnknown(reading.Capability, reading.Reason) {
@@ -307,23 +308,22 @@ func contextVerdict(reading usage.Reading, installationRoot string, diagnostic b
 
 	tokens := reading.Latest.PromptTokens
 	display := contextThousands(tokens)
-	if tokens > ContextCeilingTokens {
+	reason := fmt.Sprintf("%d thousand tokens this call, trigger %d, proof line %d, proof maximum %d, ceiling %d",
+		display, budget.Trigger/1000, ProofP95Tokens/1000, ProofMaxTokens/1000, budget.Ceiling/1000)
+	if tokens > ProofMaxTokens {
 		remedy := "metasystem context handoff --root " + installationRoot
 		if diagnostic {
 			remedy = statusRemedy
 		}
-		verdict := roleDead(RoleContext,
-			fmt.Sprintf("%d thousand tokens this call is over the ceiling %d", display, ContextCeilingTokens/1000),
-			remedy)
+		verdict := roleDead(RoleContext, reason+"; over the proof maximum", remedy)
 		verdict.NoAutomaticRemedy = true
 		return labelContextDiagnostic(verdict, diagnostic)
 	}
-	reason := fmt.Sprintf("%d thousand tokens this call, bound %d, ceiling %d", display, ContextBoundTokens/1000, ContextCeilingTokens/1000)
-	if tokens > ContextBoundTokens {
+	if tokens > budget.Trigger {
 		if diagnostic {
-			reason += "; over the bound"
+			reason += "; over the trigger"
 		} else {
-			reason += "; over the bound: run metasystem context handoff --root " + installationRoot
+			reason += "; over the trigger: run metasystem context handoff --root " + installationRoot
 		}
 	}
 	return labelContextDiagnostic(roleAlive(RoleContext, reason), diagnostic)

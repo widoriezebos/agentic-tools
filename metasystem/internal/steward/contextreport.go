@@ -13,6 +13,7 @@ import (
 	"time"
 
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/atomicfile"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/config"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/dispatch"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/runtimes"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/usage"
@@ -26,6 +27,8 @@ type ContextReport struct {
 	Samples             int
 	P95                 int64
 	Max                 int64
+	LargestCallStep     int64
+	CallsOverTrigger    int
 	Compactions         map[string]int
 	Resets              int
 	Handoffs            int
@@ -62,6 +65,14 @@ func (e *ContextEvidenceRetiredError) Error() string {
 var (
 	lookupContextReportRuntime = runtimes.Lookup
 	readContextCallEvidence    = usage.ReadCallEvidence
+)
+
+const (
+	ProofP95Tokens int64 = 150000
+	ProofMaxTokens int64 = 200000
+	// ObservedMaxCallStepTokens is the largest consecutive main-thread increment in transcript 9292cf37 on 2026-09-15: lines 51 to 71 span calls one (40504), sixteen (121869), and sixty-nine (207575).
+	ObservedMaxCallStepTokens int64 = 14454
+	HandoffCallsAfterTrigger  int64 = 3
 )
 
 const contextReportCoverage = "This cohort covers distinct recorded per-call samples. Runtimes with per-invocation usage, including Devin and ACP outcomes, are outside it. Calls the harness did not record are outside it. Claude fallback identity uses a physical line and timestamp. Compaction sources are Claude compact_boundary and Codex compacted. A reset is a later registered session for the same runtime and process identity. This report does not prove an independent inventory of all provider calls."
@@ -326,10 +337,24 @@ func buildContextReport(sessions []usage.CallSession, registrations []usage.Call
 	report.Samples = len(retained)
 	if len(retained) > 0 {
 		values := make([]int64, len(retained))
+		previous := map[string]int64{}
+		callsOverTrigger := map[string]int{}
+		trigger := config.DefaultContextCeilingTokens - config.DefaultContextHandoffMarginTokens
 		for index, sample := range retained {
 			values[index] = sample.PromptTokens
 			if sample.PromptTokens > report.Max {
 				report.Max = sample.PromptTokens
+			}
+			key := contextSessionKey(sample.Runtime, sample.Session)
+			if prior, ok := previous[key]; ok && sample.PromptTokens-prior > report.LargestCallStep {
+				report.LargestCallStep = sample.PromptTokens - prior
+			}
+			previous[key] = sample.PromptTokens
+			if sample.PromptTokens >= trigger {
+				callsOverTrigger[key]++
+				if callsOverTrigger[key] > report.CallsOverTrigger {
+					report.CallsOverTrigger = callsOverTrigger[key]
+				}
 			}
 		}
 		sort.Slice(values, func(i, j int) bool { return values[i] < values[j] })
@@ -562,11 +587,11 @@ func finishContextReport(report *ContextReport, coverageGaps []string) {
 	if report.Samples == 0 {
 		failures = append(failures, "the distinct per-call cohort is empty")
 	}
-	if report.Samples > 0 && report.P95 >= ContextBoundTokens {
-		failures = append(failures, fmt.Sprintf("p95 prompt tokens %d is not below %d", report.P95, ContextBoundTokens))
+	if report.Samples > 0 && report.P95 >= ProofP95Tokens {
+		failures = append(failures, fmt.Sprintf("p95 prompt tokens %d is not below %d", report.P95, ProofP95Tokens))
 	}
-	if report.Max > ContextCeilingTokens {
-		failures = append(failures, fmt.Sprintf("maximum prompt tokens %d is over %d", report.Max, ContextCeilingTokens))
+	if report.Max > ProofMaxTokens {
+		failures = append(failures, fmt.Sprintf("maximum prompt tokens %d is over %d", report.Max, ProofMaxTokens))
 	}
 	compactions := 0
 	for _, count := range report.Compactions {
@@ -628,7 +653,8 @@ func renderContextReport(report ContextReport, coverageGaps []string, callsDiges
 			fmt.Fprintf(&output, "| %s | %d |\n", contextReportMarkdownText(key), report.Cohort[key])
 		}
 	}
-	fmt.Fprintf(&output, "\nDistinct samples: %d  \nP95 prompt tokens: %d  \nMaximum prompt tokens: %d\n\n", report.Samples, report.P95, report.Max)
+	fmt.Fprintf(&output, "\nDistinct samples: %d  \nP95 prompt tokens: %d  \nMaximum prompt tokens: %d  \nlargest call step %d (construction constant %d)  \ncalls at or over the trigger, most in one session %d\n\n",
+		report.Samples, report.P95, report.Max, report.LargestCallStep, ObservedMaxCallStepTokens, report.CallsOverTrigger)
 	output.WriteString("`cursorOffset` in `calls.jsonl` is the source ordinal recorded on the sample, not a cursor byte offset.\n\n")
 
 	output.WriteString("## Operational signals\n\n")

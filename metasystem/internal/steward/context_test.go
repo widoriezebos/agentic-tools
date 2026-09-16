@@ -10,6 +10,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/config"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/identity"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/output"
 	usagepkg "github.com/widoriezebos/agentic-tools/metasystem/internal/usage"
@@ -23,13 +24,13 @@ func TestRoleContextRendersBoundCeilingAndUnknowns(t *testing.T) {
 		status HealthStatus
 		reason string
 	}{
-		{120000, HealthAlive, "120 thousand tokens this call, bound 150, ceiling 200"},
-		{150000, HealthAlive, "150 thousand tokens this call, bound 150, ceiling 200"},
-		{150001, HealthAlive, "150 thousand tokens this call, bound 150, ceiling 200; over the bound"},
-		{160000, HealthAlive, "160 thousand tokens this call, bound 150, ceiling 200; over the bound"},
-		{200000, HealthAlive, "200 thousand tokens this call, bound 150, ceiling 200; over the bound"},
-		{200001, HealthDead, "200 thousand tokens this call is over the ceiling 200"},
-		{210000, HealthDead, "210 thousand tokens this call is over the ceiling 200"},
+		{104000, HealthAlive, "104 thousand tokens this call, trigger 105, proof line 150, proof maximum 200, ceiling 250"},
+		{105000, HealthAlive, "105 thousand tokens this call, trigger 105, proof line 150, proof maximum 200, ceiling 250"},
+		{105001, HealthAlive, "105 thousand tokens this call, trigger 105, proof line 150, proof maximum 200, ceiling 250; over the trigger"},
+		{120000, HealthAlive, "120 thousand tokens this call, trigger 105, proof line 150, proof maximum 200, ceiling 250; over the trigger"},
+		{200000, HealthAlive, "200 thousand tokens this call, trigger 105, proof line 150, proof maximum 200, ceiling 250; over the trigger"},
+		{200001, HealthDead, "200 thousand tokens this call, trigger 105, proof line 150, proof maximum 200, ceiling 250; over the proof maximum"},
+		{210000, HealthDead, "210 thousand tokens this call, trigger 105, proof line 150, proof maximum 200, ceiling 250; over the proof maximum"},
 	} {
 		for _, diagnostic := range []bool{true, false} {
 			name := fmt.Sprintf("tokens-%d", test.tokens)
@@ -65,9 +66,9 @@ func TestRoleContextRendersBoundCeilingAndUnknowns(t *testing.T) {
 					if !role.NoAutomaticRemedy || role.Remedy != handoff {
 						t.Fatalf("live ceiling breach must name the handoff: %+v", role)
 					}
-				case test.tokens > ContextBoundTokens && !diagnostic:
-					if !strings.Contains(role.Reason, "; over the bound: run "+handoff) {
-						t.Fatalf("live over-bound reading must name the handoff: %+v", role)
+				case test.tokens > config.DefaultContextCeilingTokens-config.DefaultContextHandoffMarginTokens && !diagnostic:
+					if !strings.Contains(role.Reason, "; over the trigger: run "+handoff) {
+						t.Fatalf("live over-trigger reading must name the handoff: %+v", role)
 					}
 				}
 			})
@@ -227,6 +228,47 @@ func TestRoleContextRendersBoundCeilingAndUnknowns(t *testing.T) {
 	})
 }
 
+func TestContextVerdictReadsConfiguredBounds(t *testing.T) {
+	t.Setenv("METASYSTEM_CONTEXT_CEILING_TOKENS", "")
+	_ = os.Unsetenv("METASYSTEM_CONTEXT_CEILING_TOKENS")
+	t.Setenv("METASYSTEM_CONTEXT_HANDOFF_MARGIN_TOKENS", "")
+	_ = os.Unsetenv("METASYSTEM_CONTEXT_HANDOFF_MARGIN_TOKENS")
+	root := t.TempDir()
+	if err := os.WriteFile(filepath.Join(root, "metasystem.conf"), []byte("context.ceiling.tokens=200000\ncontext.handoff.margin.tokens=120000\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	transcript := writeContextClaudeTranscript(t, root, 90000, false)
+	role, _, err := ContextBudgetLine(root, root, time.Date(2026, 9, 15, 12, 0, 0, 0, time.UTC), ContextOptions{Runtime: "claude", Session: "session", Transcript: transcript, Toplevel: root})
+	want := "diagnostic transcript override; 90 thousand tokens this call, trigger 80, proof line 150, proof maximum 200, ceiling 200; over the trigger"
+	if err != nil || role.Status != HealthAlive || role.Reason != want {
+		t.Fatalf("configured verdict = %+v, want reason %q", role, want)
+	}
+
+	invalidRoot := t.TempDir()
+	if err := os.WriteFile(filepath.Join(invalidRoot, "metasystem.conf"), []byte("context.ceiling.tokens=invalid\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	role, reading, err := contextBudgetLineWithProber(invalidRoot, invalidRoot, time.Date(2026, 9, 15, 12, 0, 0, 0, time.UTC), ContextOptions{}, healthProbe{})
+	if err == nil || role.Status != HealthUnknown || role.Reason != err.Error() || !strings.Contains(role.Reason, "CONTEXT_CONFIG_INVALID key=context.ceiling.tokens") ||
+		role.Remedy != "metasystem config validate --conf "+filepath.Join(invalidRoot, "metasystem.conf") || !reflect.DeepEqual(reading, usagepkg.Reading{}) {
+		t.Fatalf("invalid budget = role %+v reading %+v err %v", role, reading, err)
+	}
+}
+
+func TestContextVerdictOverTriggerIsAliveWithTheRemedy(t *testing.T) {
+	role := contextVerdict(usagepkg.Reading{Latest: &usagepkg.CallSample{PromptTokens: 105001}}, config.Budget{Ceiling: 250000, Margin: 145000, Trigger: 105000}, "/root", false)
+	if role.Status != HealthAlive || !strings.HasSuffix(role.Reason, "; over the trigger: run metasystem context handoff --root /root") {
+		t.Fatalf("over-trigger verdict = %+v", role)
+	}
+}
+
+func TestContextVerdictOverProofMaximumIsDead(t *testing.T) {
+	role := contextVerdict(usagepkg.Reading{Latest: &usagepkg.CallSample{PromptTokens: ProofMaxTokens + 1}}, config.Budget{Ceiling: 250000, Margin: 145000, Trigger: 105000}, "/root", false)
+	if role.Status != HealthDead || !role.NoAutomaticRemedy || role.Remedy != "metasystem context handoff --root /root" || !strings.HasSuffix(role.Reason, "; over the proof maximum") {
+		t.Fatalf("over-proof-maximum verdict = %+v", role)
+	}
+}
+
 func TestHealthLineCarriesContextBudget(t *testing.T) {
 	root := t.TempDir()
 	if err := os.Mkdir(filepath.Join(root, ".git"), 0o755); err != nil {
@@ -269,7 +311,7 @@ func TestHealthLineCarriesContextBudget(t *testing.T) {
 	if contextRole.Role != RoleContext {
 		t.Fatalf("context role moved from health order: index=%d role=%+v", contextIndex, contextRole)
 	}
-	if !strings.Contains(verdict.Line(), "context-budget=dead (200 thousand tokens this call is over the ceiling 200") ||
+	if !strings.Contains(verdict.Line(), "context-budget=dead (200 thousand tokens this call, trigger 105, proof line 150, proof maximum 200, ceiling 250; over the proof maximum") ||
 		!verdict.ShouldAlert || contextRole.FailureEscalation != NoLawfulRemedy {
 		t.Fatalf("health line did not carry immediate context escalation: %+v line=%s", verdict, verdict.Line())
 	}
