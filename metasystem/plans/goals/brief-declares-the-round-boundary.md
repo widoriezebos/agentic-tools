@@ -1,6 +1,6 @@
 # brief-declares-the-round-boundary
 
-- State: claimed
+- State: approved
 - Priority: 1
 - Sequence: 14
 - Risk: severity=2 novelty=2 exposure=3 accumulation=2 basis="severity 2: a wrong boundary refuses a legitimate round or admits an unrelated one, both recoverable by a brief edit; novelty 2: a new brief header and a new conformance check, but both sit beside existing preflight and boundary code; exposure 3: every implementer chain on every runtime; accumulation 2: each undetected drift costs a read plus a fold round and the rounds compound across a program."
@@ -9,13 +9,12 @@
 - Origin: human
 - Next step: Unit 3b is COMPLETE: 3b-i (review-side source evidence: S1 selection, S2-S5, D1.bounds-unreadable) landed 5fed9c978 and 3b-ii (ReadRoundBriefBounds, the conformance wrapper, the admitted-record reader with the 17 S6 rows and S1.current/later/headerless-follow-up) landed 6ef88f1b7, split by ruling A6 with ruling A7 raising 3b-i's allocation to 480 lines. Both were proved as ONE two-unit stack, not separately: attempt proof-mu3n92us-9198342a5450f774, tree 62e976b81c, mode deep, 53 of 53 selected groups executed green with ZERO reused. Ruling A8 stands for every future brief: authorize a worktree-local GOCACHE, never GOTMPDIR. Next: unit 3c (page line 377) - the dispatcher-to-review seam over internal/dispatch/brief_bounds_record.go + brief_bounds_persist_test.go, cmd/metasystem/dispatch_verbs.go + dispatch_brief_bounds_persist_test.go and scripts/agents/dispatch.sh, carrying R4 and the five S1 dispatcher-to-review cases; builder-proves-each-rule-by-mutation U0 waits on it. Two non-material 3b-ii reader notes to fold in 3c or a later round: ReadRoundBriefBounds refuses a legacy job whose round directory lacks prompt.md where the page's legacy path returns unbounded, and the wrapper's composition type assertion treats a wrongly typed member as legacy instead of refusing.
 - OpenedAt: 2026-09-14T15:28:36Z
-- Revision: 38
+- Revision: 39
 - Pinned: m1e
 - Budget: elapsedLimit=1d attemptLimit=10 reservedJobMinutesLimit=720 activeJobLimit=1 reviewRoundLimit=2
 - BudgetExceptions: 0
 - Approved: by=human:Wido at=2026-09-14T15:30:46Z revision=4 opid=3HTZ3RYJ6783ZGP6BCKRGKQZXN-m1e-c6925449 authority=proven digest=62b713cabfa16e685174e1c86975f82c1ab657462844e5102cc0a110359a0d6c
-- Claimed: machine=m1e lineage=main-1789030447-51011-2956ea at=2026-09-16T05:11:04Z revision=37 accountingRevision=35 episodeAt=2026-09-16T01:46:11Z episodeRevision=35 idleSeconds=5328
-- StopCapability: generation=37 revision=37 machine=m1e claimEpoch=1 fenceEpoch=0
+- Episode: machine=m1e lineage=main-1789030447-51011-2956ea accountingRevision=35 episodeAt=2026-09-16T01:46:11Z episodeRevision=35 idleSeconds=5328 released=2026-09-16T05:33:08Z
 
 History:
 - 2026-09-14T15:28:36Z 8AZ0ZXR3DM2PT1EVT97Y1F7WYA-m1e-c6925449 open actor=human:Wido targets=brief-declares-the-round-boundary
@@ -56,4 +55,5 @@ History:
 - 2026-09-16T03:42:16Z 0B8KCBW8TP7WG4TVK1JFZ37GWB-m1e-a3d4c1e1 release actor=m1e+main-1789030447-51011-2956ea targets=brief-declares-the-round-boundary
 - 2026-09-16T05:11:04Z 23R78K0Z4Z1GTET8CC18YMGJDN-m1e-a3d4c1e1 claim actor=m1e+main-1789030447-51011-2956ea targets=brief-declares-the-round-boundary
 - 2026-09-16T05:32:40Z 9C22MCHZ8EBEQXVTCE7Q292NNK-m1e-a3d4c1e1 edit actor=m1e+main-1789030447-51011-2956ea targets=brief-declares-the-round-boundary
-Integrity: sha256=cc5bf1ad68ecf1f5fd76f5611716069221e2c61d6e3160b81728dfa9e4fd498b
+- 2026-09-16T05:33:08Z J1J7G3624GGQ34SNQBT2G14X85-m1e-a3d4c1e1 release actor=m1e+main-1789030447-51011-2956ea targets=brief-declares-the-round-boundary
+Integrity: sha256=a590cb8caf0d1cbe5953890b65c421f09ab6773b05e5f172649f2b09dfb31c43
