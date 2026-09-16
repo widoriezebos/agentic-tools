@@ -57,9 +57,11 @@ type LaunchOptions struct {
 	Signal             func(int, syscall.Signal) error
 	PrepareSuccess     func(CompletionContext) (json.RawMessage, error)
 	CommitTerminal     func(CompletionContext, json.RawMessage) error
-	HintTerminal       func(string, string)
+	HintTerminal       func(root, attemptID, publicationID, bootID string, bootNanos int64)
 	BeforeProcessDone  func(CompletionContext) error
 }
+
+var proofPublicationBootClock = identity.BootClock
 
 type CompletionContext struct {
 	ControlRoot   string
@@ -478,6 +480,10 @@ func LaunchSuite(options LaunchOptions) int {
 		}
 	}
 	if options.AttemptID != "" && !options.JoinedAttempt {
+		beganBootID, beganBootElapsed, beganBootErr := proofPublicationBootClock()
+		if beganBootErr != nil {
+			beganBootID, beganBootElapsed = "", 0
+		}
 		if options.CommitTerminal != nil {
 			err = options.CommitTerminal(completion, receipt)
 		} else {
@@ -491,13 +497,17 @@ func LaunchSuite(options LaunchOptions) int {
 			fmt.Fprintln(combinedErr, "suite launcher: commit terminal proof result:", err)
 			return 1
 		}
+		publicationID := ""
+		if terminalAttempt, readErr := ReadAttempt(controlRoot, options.AttemptID); readErr == nil {
+			publicationID = fmt.Sprintf("attempt:%s:%s", terminalAttempt.AttemptID, terminalAttempt.ProofIdentity.IdentityDigest)
+		}
 		hintTerminal := options.HintTerminal
 		if hintTerminal == nil {
-			hintTerminal = func(root, attemptID string) {
-				_, _ = metarun.NotifyWaiters(root, metarun.WaitHint{Kind: "attempt", TargetID: attemptID})
+			hintTerminal = func(root, attemptID, publicationID, bootID string, bootNanos int64) {
+				_, _ = metarun.NotifyWaiters(root, metarun.WaitHint{Kind: "attempt", TargetID: attemptID, PublicationID: publicationID, BeganBootID: bootID, BeganBootNanos: bootNanos})
 			}
 		}
-		hintTerminal(controlRoot, options.AttemptID)
+		hintTerminal(controlRoot, options.AttemptID, publicationID, beganBootID, beganBootElapsed.Nanoseconds())
 	}
 	if options.BeforeProcessDone != nil {
 		if err := options.BeforeProcessDone(completion); err != nil {

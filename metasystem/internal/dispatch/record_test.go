@@ -129,17 +129,23 @@ func TestRecordSetupCompletesReservation(t *testing.T) {
 	}
 }
 
-func TestJobTransitionsHintAfterDurableWrite(t *testing.T) {
+func TestWaitPublishedAtOwners(t *testing.T) {
 	root := sandbox(t)
 	createPending(t, root, "job-a")
-	original := notifyJobWaiters
-	defer func() { notifyJobWaiters = original }()
-	var hintedStatuses []string
-	notifyJobWaiters = func(hintRoot, job string) {
+	original, originalClock := notifyJobWaiters, recordBootClock
+	defer func() { notifyJobWaiters, recordBootClock = original, originalClock }()
+	recordBootClock = func() (string, time.Duration, error) { return "boot-owner", 2 * time.Hour, nil }
+	var hintedStatuses, publicationIDs []string
+	notifyJobWaiters = func(hintRoot, job, publicationID, bootID string, bootNanos int64) {
 		if hintRoot != root || job != "job-a" {
 			t.Fatalf("hint target = %s %s", hintRoot, job)
 		}
-		hintedStatuses = append(hintedStatuses, asString(readRecord(t, root, job)["status"]))
+		written, ok := readJobStatus(root, job)
+		if !ok || publicationID != formatJobEvidence(job, written)+":"+written.Status || bootID != "boot-owner" || bootNanos != int64(2*time.Hour) {
+			t.Fatalf("publication=%q written=%+v boot=%s/%d", publicationID, written, bootID, bootNanos)
+		}
+		hintedStatuses = append(hintedStatuses, written.Status)
+		publicationIDs = append(publicationIDs, publicationID)
 	}
 
 	setupPending(t, root, "job-a")
@@ -153,11 +159,29 @@ func TestJobTransitionsHintAfterDurableWrite(t *testing.T) {
 	if _, err := RecordCAS(root, "job-a", "running", "running", metadataPatch); err != nil {
 		t.Fatal(err)
 	}
-	if err := RecordProtocolError(root, "job-a", "running", "invalid proof envelope", ""); err != nil {
+	completePatch := writeJSON(t, filepath.Join(t.TempDir(), "complete.json"), map[string]any{"phase": "validation", "error": nil})
+	if _, err := RecordCAS(root, "job-a", "running", "completed", completePatch); err != nil {
 		t.Fatal(err)
 	}
-	if got, want := strings.Join(hintedStatuses, ","), "pending,running,failed"; got != want {
+	if got, want := strings.Join(hintedStatuses, ","), "pending,running,completed"; got != want {
 		t.Fatalf("durable states visible at hints = %q, want %q", got, want)
+	}
+	if len(publicationIDs) != 3 || publicationIDs[0] == publicationIDs[1] || publicationIDs[1] == publicationIDs[2] || !strings.HasSuffix(publicationIDs[2], ":completed") {
+		t.Fatalf("job publications did not identify each durable status: %v", publicationIDs)
+	}
+}
+
+func TestJobPublicationDecodeFailureKeepsDurableTransition(t *testing.T) {
+	root := sandbox(t)
+	createPending(t, root, "job-decode")
+	originalRead, originalNotify := readWrittenJobStatus, notifyJobWaiters
+	defer func() { readWrittenJobStatus, notifyJobWaiters = originalRead, originalNotify }()
+	readWrittenJobStatus = func(string) (jobStatus, bool) { return jobStatus{}, false }
+	publicationID := "not-called"
+	notifyJobWaiters = func(_, _ string, published string, _ string, _ int64) { publicationID = published }
+	setupPending(t, root, "job-decode")
+	if record := readRecord(t, root, "job-decode"); record["status"] != "pending" || publicationID != "" {
+		t.Fatalf("durable transition=%v publication=%q", record["status"], publicationID)
 	}
 }
 

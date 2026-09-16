@@ -6,8 +6,11 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"strconv"
 	"time"
 
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/events"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/identity"
 	"golang.org/x/sys/unix"
 )
 
@@ -28,8 +31,11 @@ type fifoHintReceiver struct {
 
 // WaitHint names the durable source whose waiters should read again.
 type WaitHint struct {
-	Kind     string
-	TargetID string
+	Kind           string
+	TargetID       string
+	BeganBootNanos int64
+	BeganBootID    string
+	PublicationID  string
 }
 
 // HintDelivery describes best-effort delivery. A zero delivery is a normal
@@ -38,6 +44,9 @@ type HintDelivery struct {
 	Matched   int
 	Delivered int
 }
+
+var notifyWaitersBootClock = identity.BootClock
+var waitHintEvents = &events.Emitter{Component: "run", Pid: int64(os.Getpid())}
 
 func waiterHintPath(rowPath, nonce string) string {
 	return rowPath + "." + nonce + ".hint"
@@ -170,5 +179,15 @@ func NotifyWaiters(root string, hint WaitHint) (HintDelivery, error) {
 		}
 		_ = unix.Close(fd)
 	}
+	publishedBootID, publishedBootElapsed, clockErr := notifyWaitersBootClock()
+	if clockErr != nil {
+		publishedBootID, publishedBootElapsed = "", 0
+	}
+	waitHintEvents.Emit(root, "wait-published", "durable publication notified its waiters", map[string]string{
+		"kind": hint.Kind, "targetId": hint.TargetID, "publicationId": hint.PublicationID,
+		"matched": strconv.Itoa(delivery.Matched), "delivered": strconv.Itoa(delivery.Delivered),
+		"beganBootNanos": strconv.FormatInt(hint.BeganBootNanos, 10), "beganBootId": hint.BeganBootID,
+		"publishedBootNanos": strconv.FormatInt(publishedBootElapsed.Nanoseconds(), 10), "publishedBootId": publishedBootID,
+	})
 	return delivery, nil
 }

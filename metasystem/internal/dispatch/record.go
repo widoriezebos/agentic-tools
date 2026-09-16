@@ -25,6 +25,7 @@ import (
 	"time"
 
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/atomicfile"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/identity"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/progress"
 	metarun "github.com/widoriezebos/agentic-tools/metasystem/internal/run"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/wiredoc"
@@ -34,8 +35,19 @@ import (
 var validJobID = regexp.MustCompile(`^[a-z0-9][a-z0-9-]*$`)
 var validCommitReview = regexp.MustCompile(`^commit:[0-9a-f]{40}$`)
 
-var notifyJobWaiters = func(root, job string) {
-	_, _ = metarun.NotifyWaiters(root, metarun.WaitHint{Kind: "job", TargetID: job})
+var recordBootClock = identity.BootClock
+var readWrittenJobStatus = readJobStatusPath
+
+var notifyJobWaiters = func(root, job, publicationID, bootID string, bootNanos int64) {
+	_, _ = metarun.NotifyWaiters(root, metarun.WaitHint{Kind: "job", TargetID: job, PublicationID: publicationID, BeganBootID: bootID, BeganBootNanos: bootNanos})
+}
+
+func recordBootSample() (string, int64) {
+	bootID, elapsed, err := recordBootClock()
+	if err != nil {
+		return "", 0
+	}
+	return bootID, elapsed.Nanoseconds()
 }
 
 // The lawful status graph. A record may only move along these edges; a
@@ -333,6 +345,8 @@ func recordCreateLocked(root, job string, record map[string]any, occupancy Sessi
 // main id. This is the create/setup handshake that makes reservation atomic.
 func RecordSetup(root, job, sourcePath string) error {
 	wroteTransition := false
+	bootID, bootNanos := recordBootSample()
+	publicationID := ""
 	err := withRecordSessionLock(root, job, func(recordPath string, transaction *SessionIndexTransaction) error {
 		current, err := readObject(recordPath)
 		if err != nil {
@@ -386,11 +400,15 @@ func RecordSetup(root, job, sourcePath string) error {
 		if err := writeRecord(recordPath, record); err != nil {
 			return err
 		}
+		written, ok := readWrittenJobStatus(recordPath)
+		if ok {
+			publicationID = formatJobPublicationID(job, written)
+		}
 		wroteTransition = true
 		return transaction.syncRecord(job, record)
 	})
 	if wroteTransition {
-		notifyJobWaiters(root, job)
+		notifyJobWaiters(root, job, publicationID, bootID, bootNanos)
 	}
 	return err
 }
@@ -444,6 +462,8 @@ func recordProductRoots(value any) ([]string, error) {
 // untouched. The job must be pending or running to accept the stamp.
 func RecordProtocolError(root, job, expect, violation, violationFile string) error {
 	wroteTransition := false
+	bootID, bootNanos := recordBootSample()
+	publicationID := ""
 	err := withRecordLock(root, job, func(recordPath string) error {
 		record, err := readObject(recordPath)
 		if err != nil {
@@ -489,11 +509,15 @@ func RecordProtocolError(root, job, expect, violation, violationFile string) err
 		if err := writeRecord(recordPath, record); err != nil {
 			return err
 		}
+		written, ok := readWrittenJobStatus(recordPath)
+		if ok {
+			publicationID = formatJobPublicationID(job, written)
+		}
 		wroteTransition = true
 		return nil
 	})
 	if wroteTransition {
-		notifyJobWaiters(root, job)
+		notifyJobWaiters(root, job, publicationID, bootID, bootNanos)
 	}
 	return err
 }
@@ -508,6 +532,8 @@ func RecordProtocolError(root, job, expect, violation, violationFile string) err
 // The returned observed string is non-empty only on a lost compare.
 func RecordCAS(root, job, expect, target, patchPath string) (observed string, err error) {
 	wroteTransition := false
+	bootID, bootNanos := recordBootSample()
+	publicationID := ""
 	err = withRecordSessionLock(root, job, func(recordPath string, transaction *SessionIndexTransaction) error {
 		record, readErr := readObject(recordPath)
 		if readErr != nil {
@@ -583,13 +609,19 @@ func RecordCAS(root, job, expect, target, patchPath string) (observed string, er
 			return err
 		}
 		wroteTransition = !metadataUpdate
+		if wroteTransition {
+			written, ok := readWrittenJobStatus(recordPath)
+			if ok {
+				publicationID = formatJobPublicationID(job, written)
+			}
+		}
 		// The occupancy index hears every status transition in the same
 		// locked breath; key-less records took the plain record lock and
 		// carry a disabled transaction (ported: the wip's indexed CAS).
 		return transaction.syncRecord(job, record)
 	})
 	if wroteTransition {
-		notifyJobWaiters(root, job)
+		notifyJobWaiters(root, job, publicationID, bootID, bootNanos)
 	}
 	return observed, err
 }

@@ -11,6 +11,7 @@ import (
 	"os"
 	"time"
 
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/identity"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/lease"
 )
 
@@ -54,6 +55,21 @@ func runUtilJSONValidate(args []string) int {
 // elapsed-time measurement across two calls.
 func runUtilNowNs(args []string) int {
 	fmt.Println(time.Now().UnixNano())
+	return 0
+}
+
+// runUtilBootClock gives shell publication owners the engine's boot clock.
+func runUtilBootClock(args []string) int {
+	if len(args) != 0 {
+		fmt.Fprintln(os.Stderr, "util bootclock accepts no arguments")
+		return 2
+	}
+	bootID, elapsed, err := identity.BootClock()
+	if err != nil {
+		fmt.Fprintln(os.Stderr, "util bootclock:", err)
+		return 1
+	}
+	fmt.Printf("%s %d\n", bootID, elapsed.Nanoseconds())
 	return 0
 }
 

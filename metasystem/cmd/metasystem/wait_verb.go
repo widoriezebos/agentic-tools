@@ -21,6 +21,7 @@ import (
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/proofrun"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/report"
 	metarun "github.com/widoriezebos/agentic-tools/metasystem/internal/run"
+	usagecore "github.com/widoriezebos/agentic-tools/metasystem/internal/usage"
 )
 
 var waitCallerPID = func() int64 { return int64(os.Getppid()) }
@@ -62,7 +63,58 @@ func runWait(args []string) int {
 	if len(args) > 0 && args[0] == "notify" {
 		return runWaitNotify(args[1:])
 	}
+	if len(args) > 0 && args[0] == "measure" {
+		return runWaitMeasure(args[1:])
+	}
 	return runWaitWithPoll(args, nil)
+}
+
+func runWaitMeasure(args []string) int {
+	flags := flag.NewFlagSet("wait measure", flag.ContinueOnError)
+	root := pathFlag(flags, "root", ".", "checkout or installation state root")
+	sinceText := flags.String("since", "", "include registrations at or after this RFC3339 stamp")
+	untilText := flags.String("until", "", "read records no later than this RFC3339 stamp")
+	runtimeName := flags.String("runtime", "", "include only this runtime")
+	jsonOutput := flags.Bool("json", false, "print the typed report as JSON")
+	if flags.Parse(args) != nil || flags.NArg() != 0 {
+		return metarun.ExitInvalidWait
+	}
+	parseBound := func(name, value string) (time.Time, bool) {
+		if value == "" {
+			return time.Time{}, true
+		}
+		parsed, err := time.Parse(time.RFC3339, value)
+		if err != nil {
+			fmt.Fprintf(os.Stderr, "wait measure --%s must be RFC3339\n", name)
+			return time.Time{}, false
+		}
+		return parsed, true
+	}
+	since, sinceOK := parseBound("since", *sinceText)
+	until, untilOK := parseBound("until", *untilText)
+	if !sinceOK || !untilOK || (!since.IsZero() && !until.IsZero() && until.Before(since)) {
+		if sinceOK && untilOK {
+			fmt.Fprintln(os.Stderr, "wait measure --until must not precede --since")
+		}
+		return metarun.ExitInvalidWait
+	}
+	stateRoot, err := goal.ResolveStateRoot(*root)
+	if err != nil {
+		fmt.Fprintln(os.Stderr, err)
+		return metarun.ExitWaiterIO
+	}
+	measurement, err := usagecore.MeasureWaits(stateRoot, usagecore.WaitMeasureOptions{Since: since, Until: until, Runtime: *runtimeName})
+	if err != nil {
+		fmt.Fprintln(os.Stderr, err)
+		return metarun.ExitWaiterIO
+	}
+	if *jsonOutput {
+		encoded, _ := json.Marshal(measurement)
+		fmt.Println(string(encoded))
+	} else {
+		fmt.Print(usagecore.FormatWaitMeasurement(measurement))
+	}
+	return usagecore.WaitMeasurementExit(measurement)
 }
 
 func runWaitWithPoll(args []string, poll func(context.Context) error) int {
@@ -237,7 +289,14 @@ func runWaitNotify(args []string) int {
 	job := flags.String("job", "", "delegate job identifier")
 	attempt := flags.String("attempt", "", "proof attempt identifier")
 	goalID := flags.String("goal", "", "goal identifier")
+	beganBootNanos := flags.Int64("began-boot-nanos", 0, "owner boot-clock sample before the durable write")
+	bootID := flags.String("boot-id", "", "boot identity for the pre-write sample")
+	publicationID := flags.String("publication-id", "", "durable publication join identity")
 	if flags.Parse(args) != nil || flags.NArg() != 0 {
+		return metarun.ExitInvalidWait
+	}
+	if *beganBootNanos < 0 || (*beganBootNanos > 0) != (*bootID != "") {
+		fmt.Fprintln(os.Stderr, "wait notify needs a positive --began-boot-nanos together with --boot-id, or neither")
 		return metarun.ExitInvalidWait
 	}
 	selector := metarun.WaitHint{}
@@ -249,7 +308,7 @@ func runWaitNotify(args []string) int {
 			fmt.Fprintln(os.Stderr, "wait notify requires exactly one of --job, --attempt, or --goal")
 			return metarun.ExitInvalidWait
 		}
-		selector = metarun.WaitHint{Kind: candidate.kind, TargetID: candidate.value}
+		selector = metarun.WaitHint{Kind: candidate.kind, TargetID: candidate.value, BeganBootNanos: *beganBootNanos, BeganBootID: *bootID, PublicationID: *publicationID}
 	}
 	if selector.Kind == "" {
 		fmt.Fprintln(os.Stderr, "wait notify requires exactly one of --job, --attempt, or --goal")
@@ -301,6 +360,7 @@ func waitOptions(root string, selector metarun.WaitSelector, owner metarun.Calle
 		return observation, observeErr
 	}
 	return metarun.WaitOptions{
+		Runtime:          runtimeName,
 		Observe:          observe,
 		OpenHintReceiver: metarun.OpenFIFOHintReceiver,
 		OpenWorkSignature: func(ctx context.Context) (string, error) {
@@ -354,10 +414,10 @@ func printWaitResult(result metarun.WaitResult, jsonOutput bool) {
 		return
 	}
 	incarnation, _ := json.Marshal(result.TargetIncarnation)
-	fmt.Printf("WAIT %s %s %s exit=%d outcome=%q reason=%q evidence=%q incarnation=%s\n",
+	fmt.Printf("WAIT %s %s %s exit=%d outcome=%q reason=%q evidence=%q returnEventFailed=%t incarnation=%s\n",
 		result.WaitID, result.Selector.Kind, result.Selector.TargetID, result.ExitCode,
 		strings.ReplaceAll(result.SourceOutcome, "\n", " "), strings.ReplaceAll(result.Reason, "\n", " "),
-		strings.ReplaceAll(result.SourceEvidence, "\n", " "), incarnation)
+		strings.ReplaceAll(result.SourceEvidence, "\n", " "), result.ReturnEventFailed, incarnation)
 }
 
 func runSessionStart(args []string) int {

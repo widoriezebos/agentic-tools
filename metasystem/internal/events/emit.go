@@ -8,6 +8,8 @@ package events
 
 import (
 	"encoding/json"
+	"fmt"
+	"io"
 	"os"
 	"path/filepath"
 	"sort"
@@ -41,22 +43,29 @@ var clock = time.Now
 // Emit appends one event. It is best-effort and never panics: any failure is
 // silently dropped, because the recorder must never take down its caller.
 func (e *Emitter) Emit(root, event, summary string, fields map[string]string) {
-	e.emitWithSeq(root, event, summary, atomic.AddInt64(&e.seq, 1), fields)
+	defer func() { _ = recover() }()
+	_ = e.emitWithSeq(root, event, summary, atomic.AddInt64(&e.seq, 1), fields)
+}
+
+// EmitChecked appends one event and reports why the append did not become
+// durable. Callers use it only when losing the witness must itself be visible.
+func (e *Emitter) EmitChecked(root, event, summary string, fields map[string]string) error {
+	return e.emitWithSeq(root, event, summary, atomic.AddInt64(&e.seq, 1), fields)
 }
 
 // EmitOnce emits a single event with an explicit sequence number, for a
 // one-shot caller (such as a shell command) that supplies its own seq.
 func EmitOnce(root, component, event, summary string, pid, pidStartedAt, seq int64, fields map[string]string) {
-	(&Emitter{Component: component, Pid: pid, PidStartedAt: pidStartedAt}).emitWithSeq(root, event, summary, seq, fields)
+	defer func() { _ = recover() }()
+	_ = (&Emitter{Component: component, Pid: pid, PidStartedAt: pidStartedAt}).emitWithSeq(root, event, summary, seq, fields)
 }
 
-func (e *Emitter) emitWithSeq(root, event, summary string, seq int64, fields map[string]string) {
-	defer func() { _ = recover() }()
+func (e *Emitter) emitWithSeq(root, event, summary string, seq int64, fields map[string]string) error {
 	if root == "" {
 		root = os.Getenv("METASYSTEM_HARNESS_ROOT")
 	}
 	if root == "" {
-		return
+		return fmt.Errorf("event root is empty")
 	}
 
 	args := map[string]string{}
@@ -70,7 +79,7 @@ func (e *Emitter) emitWithSeq(root, event, summary string, seq int64, fields map
 	}
 
 	if !registryAllows(root, e.Component, event) {
-		return
+		return fmt.Errorf("event %s is not registered for component %s", event, e.Component)
 	}
 
 	now := clock().UTC()
@@ -118,19 +127,26 @@ func (e *Emitter) emitWithSeq(root, event, summary string, seq int64, fields map
 		line = shrink(record)
 	}
 	if len(line) > capBytes {
-		return // pathological: dropped whole, never written torn
+		return fmt.Errorf("event exceeds the %d-byte append cap", capBytes)
 	}
 
 	path := filepath.Join(root, "artifacts", "agents", "events.jsonl")
-	if os.MkdirAll(filepath.Dir(path), 0o755) != nil {
-		return
+	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+		return err
 	}
 	fd, err := os.OpenFile(path, os.O_WRONLY|os.O_APPEND|os.O_CREATE, 0o644)
 	if err != nil {
-		return
+		return err
 	}
-	_, _ = fd.Write([]byte(line))
-	_ = fd.Close()
+	written, writeErr := fd.Write([]byte(line))
+	closeErr := fd.Close()
+	if writeErr != nil {
+		return writeErr
+	}
+	if written != len(line) {
+		return io.ErrShortWrite
+	}
+	return closeErr
 }
 
 // frame renders the record as the on-wire line: a leading newline then

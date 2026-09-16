@@ -192,6 +192,224 @@ func TestWaitHintsOnlyTriggerReads(t *testing.T) {
 	}
 }
 
+func TestWaitLifecycleEvents(t *testing.T) {
+	copyEvent := func(target *[]map[string]string, event string, fields map[string]string) {
+		copy := map[string]string{"event": event}
+		for key, value := range fields {
+			copy[key] = value
+		}
+		*target = append(*target, copy)
+	}
+	assertStamped := func(t *testing.T, event map[string]string) {
+		t.Helper()
+		for _, field := range []string{"registeredBootId", "prevObservedBootId", "observedBootId", "returnedBootId"} {
+			if event[field] != "boot-a" {
+				t.Fatalf("%s=%q in event %v", field, event[field], event)
+			}
+		}
+	}
+
+	t.Run("at-entry append failure and replay", func(t *testing.T) {
+		root := t.TempDir()
+		now, boot := time.Date(2026, 9, 16, 10, 0, 0, 0, time.UTC), time.Minute
+		var emitted []map[string]string
+		failReturn := true
+		options := WaitOptions{
+			Runtime: "codex", Now: func() time.Time { return now },
+			BootClock: func() (string, time.Duration, error) { boot += time.Second; return "boot-a", boot, nil },
+			Deliver: func(context.Context, string, string, time.Time, string) (string, bool, error) {
+				return "blocking", false, nil
+			},
+			Observe: func(context.Context, WaitSelector, WaiterTarget, string) (SourceObservation, error) {
+				boot += 5 * time.Second
+				return SourceObservation{Incarnation: WaiterTarget{OperationID: "op-a", Round: 1, StartedAt: now.Format(time.RFC3339)}, ExitCode: ExitGreen, Outcome: "completed", Evidence: "job:job-a:op-a:r1:" + now.Format(time.RFC3339)}, nil
+			},
+			EmitEvent: func(_ string, event, _ string, fields map[string]string) error {
+				copyEvent(&emitted, event, fields)
+				if event == "wait-returned" && failReturn {
+					return os.ErrPermission
+				}
+				return nil
+			},
+		}
+		store := &Store{Root: root, Prober: waitTestProber{live: true}}
+		result := store.Wait(context.Background(), WaitRequest{Selector: WaitSelector{Kind: "job", TargetID: "job-a"}, Owner: mainCaller, RuntimeSession: "session-a", Timeout: time.Minute}, options)
+		if result.ExitCode != ExitGreen || !result.AtEntry || !result.ReturnEventFailed || result.Mode != "register" || result.ObservedBootNanos <= result.RegisteredBootNanos || result.ReturnedBootNanos < result.ObservedBootNanos {
+			t.Fatalf("at-entry result = %+v", result)
+		}
+		row, _, err := FindWaiterByID(root, result.WaitID)
+		if err != nil || row.Result == nil || !row.Result.ReturnEventFailed || len(emitted) != 2 || emitted[0]["event"] != "wait-registered" || emitted[1]["event"] != "wait-returned" || emitted[1]["atEntry"] != "true" {
+			t.Fatalf("row=%+v events=%v err=%v", row, emitted, err)
+		}
+		assertStamped(t, emitted[1])
+		failReturn = false
+		replayed := store.ResumeWait(context.Background(), result.WaitID, mainCaller, "session-a", 0, options)
+		if replayed.Mode != "replay" || replayed.AtEntry || emitted[len(emitted)-1]["mode"] != "replay" {
+			t.Fatalf("replay=%+v events=%v", replayed, emitted)
+		}
+	})
+
+	t.Run("three pending observations then ready", func(t *testing.T) {
+		root := t.TempDir()
+		now, boot := time.Date(2026, 9, 16, 11, 0, 0, 0, time.UTC), time.Minute
+		reads := 0
+		var readStarts []time.Duration
+		var emitted []map[string]string
+		options := WaitOptions{
+			Runtime: "codex", Now: func() time.Time { return now },
+			BootClock: func() (string, time.Duration, error) { boot += time.Second; return "boot-a", boot, nil },
+			Deliver: func(context.Context, string, string, time.Time, string) (string, bool, error) {
+				return "blocking", false, nil
+			},
+			Sleep: func(_ context.Context, duration time.Duration) error {
+				now = now.Add(duration)
+				boot += duration
+				return nil
+			},
+			Observe: func(context.Context, WaitSelector, WaiterTarget, string) (SourceObservation, error) {
+				reads++
+				readStarts = append(readStarts, boot+time.Millisecond)
+				boot += 2 * time.Second
+				return SourceObservation{Pending: reads <= 3, Incarnation: WaiterTarget{Generation: 1, LaunchNonce: "n"}, ExitCode: ExitGreen, Outcome: "green", Evidence: "run:pending:g1"}, nil
+			},
+			EmitEvent: func(_ string, event, _ string, fields map[string]string) error {
+				copyEvent(&emitted, event, fields)
+				return nil
+			},
+		}
+		result := (&Store{Root: root, Prober: waitTestProber{live: true}}).Wait(context.Background(), WaitRequest{Selector: WaitSelector{Kind: "run", TargetID: "pending"}, Owner: mainCaller, RuntimeSession: "session-a", Timeout: time.Minute}, options)
+		row, _, err := FindWaiterByID(root, result.WaitID)
+		if err != nil || reads != 4 || result.ExitCode != ExitGreen || result.AtEntry || result.Mode != "register" || result.ObservedBootNanos <= readStarts[3].Nanoseconds() || row.LastObservedBootNanos >= readStarts[2].Nanoseconds() || len(emitted) != 2 {
+			t.Fatalf("result=%+v row=%+v reads=%d starts=%v events=%v err=%v", result, row, reads, readStarts, emitted, err)
+		}
+		assertStamped(t, emitted[1])
+	})
+
+	t.Run("ready post-read sample failure stays zero", func(t *testing.T) {
+		root := t.TempDir()
+		calls := 0
+		options := WaitOptions{
+			Runtime: "codex", BootClock: func() (string, time.Duration, error) {
+				calls++
+				if calls == 2 {
+					return "", 0, os.ErrPermission
+				}
+				return "boot-a", time.Duration(calls) * time.Second, nil
+			},
+			Deliver: func(context.Context, string, string, time.Time, string) (string, bool, error) {
+				return "blocking", false, nil
+			},
+			Observe: func(context.Context, WaitSelector, WaiterTarget, string) (SourceObservation, error) {
+				return SourceObservation{Incarnation: WaiterTarget{Generation: 1, LaunchNonce: "n"}, ExitCode: ExitGreen, Outcome: "green"}, nil
+			},
+		}
+		result := (&Store{Root: root, Prober: waitTestProber{live: true}}).Wait(context.Background(), WaitRequest{Selector: WaitSelector{Kind: "run", TargetID: "zero"}, Owner: mainCaller, RuntimeSession: "session-a", Timeout: time.Minute}, options)
+		row, _, err := FindWaiterByID(root, result.WaitID)
+		if err != nil || result.ExitCode != ExitGreen || result.ObservedBootNanos != 0 || result.ObservedBootID != "" || row.LastObservedBootNanos == 0 {
+			t.Fatalf("result=%+v row=%+v err=%v", result, row, err)
+		}
+	})
+
+	t.Run("deadline interrupt and failed persist", func(t *testing.T) {
+		for _, test := range []struct {
+			name        string
+			target      string
+			sleep       func(context.Context, time.Duration) error
+			wantState   string
+			removeReady bool
+		}{{"deadline", "deadline", nil, "deadline", false}, {"interrupt", "interrupt", func(context.Context, time.Duration) error { return context.Canceled }, "interrupted", false}, {"failed persist", "persist-fail", func(context.Context, time.Duration) error { return nil }, "failed", true}} {
+			t.Run(test.name, func(t *testing.T) {
+				root := t.TempDir()
+				now, boot, reads := time.Date(2026, 9, 16, 12, 0, 0, 0, time.UTC), time.Minute, 0
+				var emitted []map[string]string
+				options := WaitOptions{Runtime: "codex", Now: func() time.Time { return now }, BootClock: func() (string, time.Duration, error) { boot += time.Second; return "boot-a", boot, nil },
+					Deliver: func(context.Context, string, string, time.Time, string) (string, bool, error) {
+						return "blocking", false, nil
+					},
+					Observe: func(context.Context, WaitSelector, WaiterTarget, string) (SourceObservation, error) {
+						reads++
+						if test.removeReady && reads == 2 {
+							_ = os.Remove(WaiterPath(root, "run", test.target, OwnerDigest(mainCaller.MainId)))
+							return SourceObservation{Incarnation: WaiterTarget{Generation: 1, LaunchNonce: "n"}, ExitCode: ExitGreen, Outcome: "green"}, nil
+						}
+						return SourceObservation{Pending: true, Incarnation: WaiterTarget{Generation: 1, LaunchNonce: "n"}, Outcome: "running"}, nil
+					},
+					EmitEvent: func(_ string, event, _ string, fields map[string]string) error {
+						copyEvent(&emitted, event, fields)
+						return nil
+					},
+				}
+				if test.name == "deadline" {
+					options.Sleep = func(_ context.Context, duration time.Duration) error {
+						now = now.Add(duration)
+						boot += duration
+						return nil
+					}
+				} else {
+					options.Sleep = test.sleep
+				}
+				result := (&Store{Root: root, Prober: waitTestProber{live: true}}).Wait(context.Background(), WaitRequest{Selector: WaitSelector{Kind: "run", TargetID: test.target}, Owner: mainCaller, RuntimeSession: "session-a", Timeout: 3 * time.Second}, options)
+				if result.State != test.wantState {
+					t.Fatalf("result=%+v events=%v", result, emitted)
+				}
+				if test.removeReady {
+					if len(emitted) != 1 || emitted[0]["event"] != "wait-registered" {
+						t.Fatalf("failed persist emitted a return: %v", emitted)
+					}
+				} else if len(emitted) != 2 || emitted[1]["state"] != test.wantState {
+					t.Fatalf("terminal event mismatch: %v", emitted)
+				}
+			})
+		}
+	})
+
+	t.Run("renewal and takeover modes", func(t *testing.T) {
+		for _, test := range []struct {
+			name, mode string
+			withResult bool
+		}{{"renewal", "renew", true}, {"takeover", "takeover", false}} {
+			t.Run(test.name, func(t *testing.T) {
+				root := t.TempDir()
+				now, boot := time.Date(2026, 9, 16, 13, 0, 0, 0, time.UTC), time.Hour
+				owner := Caller{Class: "MAIN", MainId: "main-lifecycle", OwnerLineage: "lineage-lifecycle", SessionId: "session-lifecycle"}
+				waitID := strings.Repeat("a", 31) + map[bool]string{true: "1", false: "2"}[test.withResult]
+				selector := WaitSelector{Kind: "run", TargetID: "run-" + test.mode}
+				row := Waiter{SchemaVersion: 2, WaitID: waitID, Nonce: strings.Repeat("b", 32), Kind: selector.Kind, TargetID: selector.TargetID, OwnerDigest: OwnerDigest(owner.MainId), Pid: 91, PidStartedAt: 5000, PidStartTicks: 77, BootID: "boot-old", Session: owner.SessionId, MainId: owner.MainId, OwnerLineage: owner.OwnerLineage, RuntimeSession: owner.SessionId, Selector: selector, Target: WaiterTarget{Generation: 1, LaunchNonce: "n"}, RegisteredAt: now.Add(-time.Minute).Format(time.RFC3339Nano), Deadline: now.Add(time.Hour).Format(time.RFC3339Nano), DeadlineBootID: "boot-a", BootDeadlineNanos: (2 * time.Hour).Nanoseconds(), RemainingNanos: time.Hour.Nanoseconds(), State: "pending", Delivery: "blocking", RegisteredBootNanos: int64(time.Minute), RegisteredBootID: "boot-a", LastObservedBootNanos: int64(2 * time.Minute), LastObservedBootID: "boot-a"}
+				if test.withResult {
+					row.State = "deadline"
+					row.Result = &WaitResult{SchemaVersion: 2, WaitID: waitID, Selector: selector, ExitCode: ExitWaitDeadline, State: "deadline", RegisteredAt: row.RegisteredAt, ReturnedAt: now.Add(-time.Second).Format(time.RFC3339Nano)}
+				}
+				path := WaiterPath(root, row.Kind, row.TargetID, row.OwnerDigest)
+				if err := writeV2Waiter(path, row); err != nil {
+					t.Fatal(err)
+				}
+				if err := writeV2Pointer(root, row, path); err != nil {
+					t.Fatal(err)
+				}
+				var emitted []map[string]string
+				options := WaitOptions{Runtime: "codex", Now: func() time.Time { return now }, BootClock: func() (string, time.Duration, error) { boot += time.Second; return "boot-a", boot, nil },
+					Deliver: func(context.Context, string, string, time.Time, string) (string, bool, error) {
+						return "blocking", false, nil
+					},
+					Observe: func(context.Context, WaitSelector, WaiterTarget, string) (SourceObservation, error) {
+						boot += 2 * time.Second
+						return SourceObservation{Incarnation: row.Target, ExitCode: ExitGreen, Outcome: "green", Evidence: "run:ready"}, nil
+					},
+					EmitEvent: func(_ string, event, _ string, fields map[string]string) error {
+						copyEvent(&emitted, event, fields)
+						return nil
+					},
+				}
+				store := &Store{Root: root, Prober: restartProber{deadPID: row.Pid}}
+				result := store.ResumeWait(context.Background(), waitID, owner, owner.SessionId, map[bool]time.Duration{true: time.Hour, false: 0}[test.withResult], options)
+				if result.ExitCode != ExitGreen || result.Mode != test.mode || result.AtEntry != test.withResult || len(emitted) != 2 || emitted[0]["mode"] != test.mode || emitted[1]["mode"] != test.mode {
+					t.Fatalf("result=%+v events=%v", result, emitted)
+				}
+			})
+		}
+	})
+}
+
 func TestWaitFIFOHintDelivery(t *testing.T) {
 	root := t.TempDir()
 	if err := os.MkdirAll(WaitersDir(root), 0o755); err != nil {
@@ -309,7 +527,7 @@ func TestSupersedeVersusTerminalizeRace(t *testing.T) {
 			registered <- store.Wait(context.Background(), WaitRequest{Selector: WaitSelector{Kind: "run", TargetID: "r"}, Owner: mainCaller, RuntimeSession: "s1", Timeout: time.Hour}, options)
 		}()
 		go func() {
-			finished <- store.finishV2(context.Background(), path, old, options, ExitGreen, "ready", "old wait ended", "green", "old", "", "")
+			finished <- store.finishV2(context.Background(), path, old, options, ExitGreen, "ready", "old wait ended", "green", "old", "", "", finishStamps{})
 		}()
 		<-attempted
 		<-attempted
@@ -1045,7 +1263,7 @@ func TestInterruptWaiterRow(t *testing.T) {
 	if _, err := store.InterruptWaiterRow(path, "again", WaitOptions{}); err == nil || err.Error() != fmt.Sprintf("waiter row %s is already ended (state %q)", path, WaiterStateInterrupted) {
 		t.Fatalf("second interrupt error = %v", err)
 	}
-	store.finishV2(context.Background(), path, got, options, ExitWaitDeadline, WaiterStateDeadline, "deadline", "wait-deadline", "", got.LastCheckedTip, "")
+	store.finishV2(context.Background(), path, got, options, ExitWaitDeadline, WaiterStateDeadline, "deadline", "wait-deadline", "", got.LastCheckedTip, "", finishStamps{})
 	if preserved, err := readV2Waiter(path); err != nil || preserved.InterruptedBy != "handoff 0123456789abcdef" {
 		t.Fatalf("ordinary terminal transition cleared interruptedBy: %q, err=%v", preserved.InterruptedBy, err)
 	}

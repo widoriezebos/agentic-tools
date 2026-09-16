@@ -456,6 +456,7 @@ func families() []family {
 				{"slug", "print a stable slug of the argument (matches the sanitize rule)", runUtilSlug},
 				{"json-validate", "exit 0 if --file/--value is valid JSON, else 1", runUtilJSONValidate},
 				{"now-ns", "print the current wall-clock time in nanoseconds", runUtilNowNs},
+				{"bootclock", "print the operating-system boot identity and monotonic nanoseconds", runUtilBootClock},
 				{"hold", "stay alive carrying --tag until SIGTERM, then write the stopped file", runUtilHold},
 			},
 		},

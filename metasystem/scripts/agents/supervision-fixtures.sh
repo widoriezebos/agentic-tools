@@ -49,13 +49,14 @@ if (( ! fixture_bed_child )); then
       census-lifecycle slow-census idle-hook rotation-log foreign-owner stop-hook-monitor \
       rearm-rebuild rearm-launch-fails rearm-provenance stop-everything seat-survives status-is-live stop-fence arm-again arm-refuses-survivor \
       wait-job-run wait-proof wait-ledger wait-restart wait-bounds wait-native-hint wait-no-native wait-compatibility wait-stop-fake \
+      wait-measure-fake \
       ${wait_stop_real_runtime[@]+"${wait_stop_real_runtime[@]}"}
   fi
 fi
 case "$fixture_scenario" in
   archive-file-extraction | early-reader-pipefail | bed-death-self-test | operator-layout | nested-holder-state | nested-worktree | nested-override | nested-candidate-hooks | nested-no-world | nested-engine-skew | nested-worktree-completion | nested-worktree-deadlines | nested-compiled-installations | census-lifecycle | slow-census | idle-hook | rotation-log | foreign-owner | stop-hook-monitor | \
     rearm-rebuild | rearm-launch-fails | rearm-provenance | stop-everything | seat-survives | status-is-live | stop-fence | arm-again | arm-refuses-survivor | \
-    wait-job-run | wait-proof | wait-ledger | wait-restart | wait-bounds | wait-native-hint | wait-no-native | wait-compatibility | wait-stop-fake | wait-stop-claude) ;;
+    wait-job-run | wait-proof | wait-ledger | wait-restart | wait-bounds | wait-native-hint | wait-no-native | wait-compatibility | wait-stop-fake | wait-measure-fake | wait-stop-claude) ;;
   *) echo "supervision fixtures: unknown scenario: $fixture_scenario" >&2; exit 64 ;;
 esac
 harness_fixture_bed_leg "$fixture_scenario"
@@ -208,6 +209,7 @@ assert_scratch_scoped_announcement_calls() {
     'scripts/agents/supervision-fixtures.sh:call:"$repo"' \
     'scripts/agents/supervision-fixtures.sh:call:"$foreign/repo/metasystem"' \
     'scripts/agents/supervision-fixtures.sh:call:' \
+    'scripts/agents/supervision-fixtures.sh:direct:"$measure_root"' \
     'scripts/agents/supervision-fixtures.sh:direct:"$repo"' \
     'scripts/agents/supervision-fixtures.sh:call:"$gate_repo"' | LC_ALL=C sort)
   [[ "$actual" == "$expected" ]] || {
@@ -675,7 +677,7 @@ case "$fixture_scenario" in
     exit 0
     ;;
   wait-native-hint)
-    (cd "$source_root" && GOCACHE="${GOCACHE:-/tmp/metasystem-gocache}" go test ./internal/run ./internal/dispatch ./internal/proofrun ./internal/goal -run 'Test(WaitFIFOHintDelivery|JobTransitionsHintAfterDurableWrite|ProofTerminalHintsAfterDurableCommit|ConfirmedPublicationHintsAfterCanonicalWrite)$' -count=1)
+    (cd "$source_root" && GOCACHE="${GOCACHE:-/tmp/metasystem-gocache}" go test ./internal/run ./internal/dispatch ./internal/proofrun ./internal/goal -run 'Test(WaitFIFOHintDelivery|WaitPublishedAtOwners)$' -count=1)
     fixture_child_completed=1
     assert_fixture_supervision_isolation
     exit 0
@@ -700,6 +702,186 @@ case "$fixture_scenario" in
         | tee "$wait_stop_fake_output")
     grep -Fq -- '--- PASS: TestPendingWaitFromChildShell ' "$wait_stop_fake_output" \
       || { echo "wait-stop-fake did not run TestPendingWaitFromChildShell" >&2; exit 1; }
+    fixture_child_completed=1
+    assert_fixture_supervision_isolation
+    exit 0
+    ;;
+  wait-measure-fake)
+    unset GIT_OBJECT_DIRECTORY GIT_ALTERNATE_OBJECT_DIRECTORIES
+    (cd "$source_root" && GOCACHE="${GOCACHE:-/tmp/metasystem-gocache}" METASYSTEM_WAIT_BINARY="$ms" \
+      go test ./internal/run ./internal/dispatch ./internal/proofrun ./internal/goal ./internal/usage ./cmd/metasystem \
+        -run '^(TestWaitLifecycleEvents|TestWaitPublishedAtOwners|TestWaitMeasurementAccounting|TestWaitMeasureVerb)$' -count=1)
+
+	measure_root=$tmp/wait-measure-fake
+	measure_origin=$tmp/wait-measure-origin.git
+	mkdir -p "$measure_root"
+	git -C "$source_root" ls-files -z |
+	  while IFS= read -r -d '' tracked; do
+	    [[ -e "$source_root/$tracked" || -L "$source_root/$tracked" ]] && printf '%s\0' "$tracked"
+	  done |
+	  tar -C "$source_root" --null -T - -cf - |
+	  tar -C "$measure_root" -xf -
+	fixture_harness_roots+=("$measure_root")
+	printf '%s\n' 'metasystem.runtimes=fake' 'role.default.model.fake=fake-model' >"$measure_root/metasystem.conf"
+	awk '{ gsub(/<[^>]+>/, "fixture"); print }' "$measure_root/docs/project-rules.md" \
+	  >"$measure_root/docs/project-rules.md.fixture"
+	mv "$measure_root/docs/project-rules.md.fixture" "$measure_root/docs/project-rules.md"
+	landing_goal=wait-measure-goal
+	measure_goal=$measure_root/plans/goals/$landing_goal.md
+	mkdir -p "${measure_goal%/*}"
+	{
+	  printf '# %s\n\n' "$landing_goal"
+	  printf '%s\n' '- State: claimed'
+	  printf '%s\n' '- Intent: Exercise wait measurement landing ownership.'
+	  printf '%s\n' '- Origin: main'
+	  printf '%s\n' '- Next step: Land the wait measurement target.'
+	  printf '%s\n' '- OpenedAt: 2026-09-03T08:00:00Z'
+	  printf '%s\n' '- Revision: 1'
+	  printf '%s\n\n' '- Claimed: machine=wait-measure lineage=wait-measure-lineage at=2026-09-03T08:01:00Z revision=1'
+	  printf '%s\n' 'History:'
+	  printf '%s\n' '- 2026-09-03T08:01:00Z 01ARZ3NDEKTSV4RRFFQ69G5FAW-wait-measure-goal-00000001 claim actor=wait-measure+wait-measure-lineage targets=wait-measure-goal'
+	} >"$measure_goal"
+	measure_goal_digest=$("$ms" util sha256 --file "$measure_goal")
+	printf 'Integrity: sha256=%s\n' "$measure_goal_digest" >>"$measure_goal"
+	git init -q -b main "$measure_root"
+	git -C "$measure_root" config metasystem.goal.machine wait-measure
+	git -C "$measure_root" config user.name fixture
+	git -C "$measure_root" config user.email fixture.invalid
+	git -C "$measure_root" config commit.gpgsign false
+	git -C "$measure_root" add -A
+	git -C "$measure_root" commit -qm 'wait measurement bed'
+	git init -q --bare -b main "$measure_origin"
+	git -C "$measure_root" remote add origin "$measure_origin"
+	git -C "$measure_root" push -q -u origin main
+	mkdir -p "$measure_root/bin"
+	cp_engine "$ms" "$measure_root/bin/metasystem"
+	measure_engine=$measure_root/bin/metasystem
+	"$measure_engine" lease announce --root "$measure_root" --session wait-measure-fake \
+	  --pid $$ --start "$(process_started_at $$)" --tag fixture-wait-measure-fake --runtime fake >/dev/null
+
+	mkdir -p "$measure_root/artifacts/agents/jobs"
+	start_job_wait() { # job id, output path
+	  local job=$1 output=$2
+	  printf '{"jobId":"%s","operationId":"op-%s","round":1,"status":"running","startedAt":"2026-09-16T10:00:00Z"}\n' "$job" "$job" \
+	    >"$measure_root/artifacts/agents/jobs/$job.json"
+	  "$measure_engine" wait --root "$measure_root" --job "$job" --timeout 45s --json >"$output" 2>&1 &
+	  measure_wait_pid=$!
+	  measure_wait_start=$(process_started_at "$measure_wait_pid")
+	  owned_pids+=("$measure_wait_pid:$measure_wait_start")
+	  wait_until "$job reaches a durable pending wait" bash -c '
+	    row=$(find "$1/artifacts/agents/waiters" -maxdepth 1 -type f -name "job-$2-*.json" -print -quit 2>/dev/null)
+	    [[ -n "$row" ]] && grep -Eq "\"state\"[[:space:]]*:[[:space:]]*\"pending\"" "$row"
+	  ' _ "$measure_root" "$job"
+	}
+	finish_job_wait() { # job id, process id, output path, notify yes/no
+	  local job=$1 pid=$2 output=$3 notify=$4 boot_id= boot_nanos= publication
+	  printf '{"jobId":"%s","operationId":"op-%s","round":1,"status":"completed","startedAt":"2026-09-16T10:00:00Z","endedAt":"2026-09-16T10:00:01Z"}\n' "$job" "$job" \
+	    >"$measure_root/artifacts/agents/jobs/$job.json"
+	  if [[ "$notify" == yes ]]; then
+	    read -r boot_id boot_nanos < <("$measure_engine" util bootclock)
+	    publication="job:$job:op-$job:r1:2026-09-16T10:00:00Z:completed"
+	    "$measure_engine" wait notify --root "$measure_root" --job "$job" \
+	      --publication-id "$publication" --began-boot-nanos "$boot_nanos" --boot-id "$boot_id" >/dev/null
+	  fi
+	  wait_until "$job wait returns" bash -c '! kill -0 "$1" 2>/dev/null' _ "$pid"
+	  wait "$pid"
+	  grep -Fq '"exitCode":0' "$output" || { echo "$job wait did not return green" >&2; cat "$output" >&2; exit 1; }
+	}
+
+	start_job_wait job-control "$tmp/job-control.out"
+	control_pid=$measure_wait_pid
+	finish_job_wait job-control "$control_pid" "$tmp/job-control.out" yes
+
+	start_job_wait job-unhinted "$tmp/job-unhinted.out"
+	unhinted_pid=$measure_wait_pid
+	unhinted_row=$(find "$measure_root/artifacts/agents/waiters" -maxdepth 1 -type f -name 'job-job-unhinted-*.json' -print -quit)
+	unhinted_fifo=$("$measure_engine" json get --file "$unhinted_row" --field hintPath)
+	rm -f "$unhinted_fifo"
+	finish_job_wait job-unhinted "$unhinted_pid" "$tmp/job-unhinted.out" no
+
+	registry_copy=$tmp/event-registry.json
+	cp "$measure_root/scripts/agents/event-registry.json" "$registry_copy"
+	printf '%s\n' '{"events":{"wait-registered":{"emitters":["run"]},"wait-returned":{"emitters":["run"]}}}' \
+	  >"$measure_root/scripts/agents/event-registry.json"
+	mkdir -p "$measure_root/artifacts/agents/runs"
+	run_nonce=0123456789abcdef0123456789abcdef
+	printf '%s\n' '{"schemaVersion":1,"runId":"run-unpublished","kind":"suite","display":"unpublished run","custody":"wrapped","generation":1,"fenceGeneration":1,"pid":null,"pidStartedAt":null,"pgid":null,"launchNonce":"'"$run_nonce"'","log":"run.log","startedAt":"2026-09-16T10:00:00Z","mainId":null,"ownerLineage":null,"claimEpoch":null,"sessionId":"","goalId":"","staleAfterMin":30,"hungSince":null,"windDownMin":2,"evidence":{"mode":"exit-sidecar"},"expect":{},"status":"launching","provisionalVerdict":null,"terminalSeq":null,"acked":false,"error":null,"exitCode":null,"endedAt":null}' \
+	  >"$measure_root/artifacts/agents/runs/run-unpublished.json"
+	"$measure_engine" wait --root "$measure_root" --run run-unpublished --timeout 45s --json >"$tmp/run-unpublished.out" 2>&1 &
+	run_wait_pid=$!
+	run_wait_start=$(process_started_at "$run_wait_pid")
+	owned_pids+=("$run_wait_pid:$run_wait_start")
+	wait_until "run without publication events reaches pending" bash -c '
+	  row=$(find "$1/artifacts/agents/waiters" -maxdepth 1 -type f -name "run-run-unpublished-*.json" -print -quit 2>/dev/null)
+	  [[ -n "$row" ]] && grep -Eq "\"state\"[[:space:]]*:[[:space:]]*\"pending\"" "$row"
+	' _ "$measure_root"
+	printf '%s\n' '{"schemaVersion":1,"runId":"run-unpublished","kind":"suite","display":"unpublished run","custody":"wrapped","generation":1,"fenceGeneration":1,"pid":null,"pidStartedAt":null,"pgid":null,"launchNonce":"'"$run_nonce"'","log":"run.log","startedAt":"2026-09-16T10:00:00Z","mainId":null,"ownerLineage":null,"claimEpoch":null,"sessionId":"","goalId":"","staleAfterMin":30,"hungSince":null,"windDownMin":2,"evidence":{"mode":"exit-sidecar"},"expect":{},"status":"green","provisionalVerdict":null,"terminalSeq":1,"acked":false,"error":null,"exitCode":0,"endedAt":"2026-09-16T10:00:01Z"}' \
+	  >"$measure_root/artifacts/agents/runs/run-unpublished.json"
+	wait_until "run without publication events returns" bash -c '! kill -0 "$1" 2>/dev/null' _ "$run_wait_pid"
+	wait "$run_wait_pid"
+	grep -Fq '"exitCode":0' "$tmp/run-unpublished.out" || { cat "$tmp/run-unpublished.out" >&2; exit 1; }
+	cp "$registry_copy" "$measure_root/scripts/agents/event-registry.json"
+
+	printf '%s\n' 'temporary landing measurement target' >"$measure_root/wait-measure-revert.txt"
+	git -C "$measure_root" add wait-measure-revert.txt
+	git -C "$measure_root" -c user.name=fixture -c user.email=fixture.invalid commit -qm 'temporary landing measurement target' \
+	  --trailer "Goal-Item: $landing_goal"
+	revert_target=$(git -C "$measure_root" rev-parse HEAD)
+	git -C "$measure_root" push -q origin main
+	git -C "$measure_root" update-ref refs/metasystem/accepted "$revert_target"
+	"$measure_engine" wait --root "$measure_root" --goal "$landing_goal" --event landing \
+	  --after "$revert_target" --timeout "$(harness_fixture_cap bed-scenario)s" --json >"$tmp/landing-wait.out" 2>&1 &
+	landing_wait_pid=$!
+	landing_wait_start=$(process_started_at "$landing_wait_pid")
+	owned_pids+=("$landing_wait_pid:$landing_wait_start")
+	wait_until "landing wait reaches pending" bash -c '
+	  row=$(find "$1/artifacts/agents/waiters" -maxdepth 1 -type f -name "goal-$2-*.json" -print -quit 2>/dev/null)
+	  [[ -n "$row" ]] && grep -Eq "\"state\"[[:space:]]*:[[:space:]]*\"pending\"" "$row"
+	' _ "$measure_root" "$landing_goal"
+	git -C "$measure_root" revert --no-commit "$revert_target"
+	printf '%s\n' 'revert the landing measurement target' >"$tmp/landing-message"
+	land_engine=$tmp/wait-measure-land-engine
+	land_sample_log=$tmp/wait-measure-land-sample
+	cat >"$land_engine" <<'LAND_ENGINE'
+#!/usr/bin/env bash
+set -euo pipefail
+if [[ ${1:-} == util && ${2:-} == bootclock ]]; then
+  sample=$("${MEASURE_REAL_ENGINE:?}" "$@")
+  printf '%s\n' "$sample" >"${MEASURE_BOOT_LOG:?}"
+  printf '%s\n' "$sample"
+  exit 0
+fi
+exec "${MEASURE_REAL_ENGINE:?}" "$@"
+LAND_ENGINE
+	chmod +x "$land_engine"
+	MEASURE_REAL_ENGINE="$measure_engine" MEASURE_BOOT_LOG="$land_sample_log" METASYSTEM_BIN="$land_engine" \
+	  METASYSTEM_OWNER_LINEAGE=wait-measure-lineage \
+	  bash "$measure_root/scripts/agents/land.sh" -m "$tmp/landing-message" --goal "$landing_goal" \
+	    --direct-fix exact-revert --revert-of "$revert_target" --staged-only --skip-transport \
+	    >"$tmp/landing.out" 2>&1 \
+	  || { echo "wait-measure-fake land.sh failed" >&2; tail -n 80 "$tmp/landing.out" >&2; exit 1; }
+	wait_until "landing wait returns" bash -c '! kill -0 "$1" 2>/dev/null' _ "$landing_wait_pid"
+	wait "$landing_wait_pid"
+	grep -Fq '"exitCode":0' "$tmp/landing-wait.out" || { cat "$tmp/landing-wait.out" >&2; exit 1; }
+	landing_sample=$(awk '{print $2}' "$land_sample_log")
+
+	measure_report=$tmp/wait-measure.txt
+	"$measure_engine" wait measure --root "$measure_root" >"$measure_report"
+	for target in job-control job-unhinted run-unpublished "$landing_goal"; do
+	  grep -Fq "\"targetId\":\"$target\"" "$measure_report" \
+	    || { echo "wait-measure-fake omitted $target" >&2; cat "$measure_report" >&2; exit 1; }
+	done
+	grep -Fq 'wait measurement verdict=unproven' "$measure_report" \
+	  || { echo "wait-measure-fake did not remain unproven" >&2; cat "$measure_report" >&2; exit 1; }
+	grep -Fq 'unavailable=0' "$measure_report" \
+	  || { echo "wait-measure-fake produced an unavailable sample" >&2; cat "$measure_report" >&2; exit 1; }
+	control_uncertainty=$(grep '"targetId":"job-control"' "$measure_report" | sed -n 's/.*"uncertaintyNanos":\([0-9][0-9]*\).*/\1/p')
+	unhinted_uncertainty=$(grep '"targetId":"job-unhinted"' "$measure_report" | sed -n 's/.*"uncertaintyNanos":\([0-9][0-9]*\).*/\1/p')
+	[[ "$control_uncertainty" =~ ^[0-9]+$ && "$unhinted_uncertainty" =~ ^[0-9]+$ && "$unhinted_uncertainty" -gt "$control_uncertainty" ]] \
+	  || { echo "unhinted bracket was not wider: control=$control_uncertainty unhinted=$unhinted_uncertainty" >&2; cat "$measure_report" >&2; exit 1; }
+	landing_lower=$(grep "\"targetId\":\"$landing_goal\"" "$measure_report" | sed -n 's/.*"publishedLower":\([0-9][0-9]*\).*/\1/p')
+	[[ "$landing_lower" == "$landing_sample" ]] \
+	  || { echo "landing lower edge $landing_lower differs from land.sh sample $landing_sample" >&2; cat "$measure_report" >&2; exit 1; }
     fixture_child_completed=1
     assert_fixture_supervision_isolation
     exit 0

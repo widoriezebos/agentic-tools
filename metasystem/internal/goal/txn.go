@@ -21,6 +21,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/identity"
 	metarun "github.com/widoriezebos/agentic-tools/metasystem/internal/run"
 )
 
@@ -494,19 +495,21 @@ type PublishRequest struct {
 	AfterConfirmed func(tip string) error
 	// HintConfirmed is a best-effort acceleration seam. The canonical ledger
 	// read remains the only authority for a waiting caller.
-	HintConfirmed func(root string, targets []string)
+	HintConfirmed func(root string, targets []string, publicationID, bootID string, bootNanos int64)
 }
 
-func hintConfirmedWaiters(root string, req PublishRequest) {
+var goalPublicationBootClock = identity.BootClock
+
+func hintConfirmedWaiters(root string, req PublishRequest, publicationID, bootID string, bootNanos int64) {
 	hint := req.HintConfirmed
 	if hint == nil {
-		hint = func(root string, targets []string) {
+		hint = func(root string, targets []string, publicationID, bootID string, bootNanos int64) {
 			for _, target := range targets {
-				_, _ = metarun.NotifyWaiters(root, metarun.WaitHint{Kind: "goal", TargetID: target})
+				_, _ = metarun.NotifyWaiters(root, metarun.WaitHint{Kind: "goal", TargetID: target, PublicationID: publicationID, BeganBootID: bootID, BeganBootNanos: bootNanos})
 			}
 		}
 	}
-	hint(root, append([]string(nil), req.Intent.Targets...))
+	hint(root, append([]string(nil), req.Intent.Targets...), publicationID, bootID, bootNanos)
 }
 
 // PublishResult is the transaction's terminal classification.
@@ -554,7 +557,7 @@ func Publish(e Endpoint, req PublishRequest) (PublishResult, error) {
 				return PublishResult{}, trErr
 			}
 			if present {
-				hintConfirmedWaiters(e.Root, req)
+				hintConfirmedWaiters(e.Root, req, tip, "", 0)
 				return PublishResult{Outcome: OutcomeConfirmed, Tip: tip, Detail: "idempotent"}, nil
 			}
 			return PublishResult{}, fmt.Errorf("journal entry %s says confirmed but its opid is not in canonical history; branch surgery needs the repair path", req.Opid)
@@ -612,6 +615,10 @@ func runTransaction(e Endpoint, req PublishRequest) (PublishResult, error) {
 		deadline = DefaultPublishDeadline
 	}
 	stopAt := time.Now().Add(deadline)
+	beganBootID, beganBootElapsed, beganBootErr := goalPublicationBootClock()
+	if beganBootErr != nil {
+		beganBootID, beganBootElapsed = "", 0
+	}
 
 	attempt := 0
 	for {
@@ -727,7 +734,7 @@ func runTransaction(e Endpoint, req PublishRequest) (PublishResult, error) {
 						Detail: "pushed; the opid is not visible on the refetched tip and the journal entry stays pushed"},
 					fmt.Errorf("postcondition unresolved after a landed push (present=%v err=%v)", present, trErr)
 			}
-			hintConfirmedWaiters(e.Root, req)
+			hintConfirmedWaiters(e.Root, req, newTip, beganBootID, beganBootElapsed.Nanoseconds())
 			if req.AfterConfirmed != nil {
 				if hookErr := req.AfterConfirmed(newTip); hookErr != nil {
 					return PublishResult{Outcome: "", Tip: newTip, Commit: commit,
@@ -785,7 +792,7 @@ func terminalFromMutate(e Endpoint, req PublishRequest, tip string, err error) (
 	opid := req.Opid
 	switch v := err.(type) {
 	case AlreadyApplied:
-		hintConfirmedWaiters(e.Root, req)
+		hintConfirmedWaiters(e.Root, req, tip, "", 0)
 		if req.AfterConfirmed != nil {
 			if hookErr := req.AfterConfirmed(tip); hookErr != nil {
 				return PublishResult{Outcome: "", Tip: tip, Detail: "already applied; the confirmed follow-on effect failed and the journal entry stays open"}, hookErr

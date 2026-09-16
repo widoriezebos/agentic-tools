@@ -290,7 +290,10 @@ while [[ ! -e "$done_path" ]]; do sleep 0.01; done
 	}
 }
 
-func TestProofTerminalHintsAfterDurableCommit(t *testing.T) {
+func TestWaitPublishedAtOwners(t *testing.T) {
+	originalClock := proofPublicationBootClock
+	defer func() { proofPublicationBootClock = originalClock }()
+	proofPublicationBootClock = func() (string, time.Duration, error) { return "proof-boot", 3 * time.Hour, nil }
 	executionRoot, proofIdentity := proofAttemptFixture(t, "terminal-hint")
 	controlRoot := t.TempDir()
 	launcher, err := CurrentProcessIdentity(nil)
@@ -330,10 +333,16 @@ while [[ ! -e "$done_path" ]]; do sleep 0.01; done
 			_, commitErr := FinalizeAttempt(controlRoot, attempt.AttemptID, TerminalSuccess, completion.ExitStatus, "fixture terminal", receipt, completion.CompletedAt)
 			return commitErr
 		},
-		HintTerminal: func(hintRoot, attemptID string) {
+		HintTerminal: func(hintRoot, attemptID, publicationID, bootID string, bootNanos int64) {
 			terminal, readErr := ReadAttempt(hintRoot, attemptID)
 			if readErr != nil || terminal.Terminal == nil || terminal.Terminal.Result != TerminalSuccess {
 				t.Fatalf("hint preceded durable terminal: attempt=%+v err=%v", terminal, readErr)
+			}
+			if publicationID != fmt.Sprintf("attempt:%s:%s", attemptID, terminal.ProofIdentity.IdentityDigest) {
+				t.Fatalf("publication identity = %q", publicationID)
+			}
+			if bootID != "proof-boot" || bootNanos != int64(3*time.Hour) {
+				t.Fatalf("boot sample = %s/%d", bootID, bootNanos)
 			}
 			hinted = true
 		},

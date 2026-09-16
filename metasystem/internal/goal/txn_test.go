@@ -398,7 +398,10 @@ func TestPublishLandsWithParentAndTrailer(t *testing.T) {
 	}
 }
 
-func TestConfirmedPublicationHintsAfterCanonicalWrite(t *testing.T) {
+func TestWaitPublishedAtOwners(t *testing.T) {
+	originalClock := goalPublicationBootClock
+	defer func() { goalPublicationBootClock = originalClock }()
+	goalPublicationBootClock = func() (string, time.Duration, error) { return "goal-boot", 4 * time.Hour, nil }
 	origin, clone := oneClone(t)
 	e := endpointFor(clone)
 	hinted := false
@@ -409,7 +412,7 @@ func TestConfirmedPublicationHintsAfterCanonicalWrite(t *testing.T) {
 		Mutate: func(string) ([]Change, error) {
 			return []Change{goalChange("goal-a", "# goal-a\nState: queued\n")}, nil
 		},
-		HintConfirmed: func(root string, targets []string) {
+		HintConfirmed: func(root string, targets []string, publicationID, bootID string, bootNanos int64) {
 			if root != clone || strings.Join(targets, ",") != "goal-a" {
 				t.Fatalf("hint target root=%q targets=%v", root, targets)
 			}
@@ -422,11 +425,73 @@ func TestConfirmedPublicationHintsAfterCanonicalWrite(t *testing.T) {
 			if entryErr != nil || entry.Phase != PhasePushed {
 				t.Fatalf("hint moved or preceded the publication boundary: entry=%+v err=%v", entry, entryErr)
 			}
+			if publicationID != tip {
+				t.Fatalf("publication identity = %q, want ledger tip %q", publicationID, tip)
+			}
+			if bootID != "goal-boot" || bootNanos != int64(4*time.Hour) {
+				t.Fatalf("boot sample = %s/%d", bootID, bootNanos)
+			}
 			hinted = true
 		},
 	})
 	if err != nil || res.Outcome != OutcomeConfirmed || !hinted {
 		t.Fatalf("result=%+v err=%v hinted=%t", res, err, hinted)
+	}
+
+	_, first, competitor := twoClones(t)
+	clockReads := 0
+	goalPublicationBootClock = func() (string, time.Duration, error) {
+		clockReads++
+		return "goal-boot", time.Duration(clockReads+4) * time.Hour, nil
+	}
+	attempts := 0
+	var retrySample int64
+	retried, err := Publish(endpointFor(first), PublishRequest{
+		Opid: "op-retry-hint", Machine: "mac-a", Lineage: "l1", Intent: testIntentFor("open"), Message: "goal open retry-hint",
+		Mutate: func(string) ([]Change, error) {
+			return []Change{goalChange("retry-hint", "# retry-hint\nState: queued\n")}, nil
+		},
+		BeforePush: func(attempt int) error {
+			attempts = attempt
+			if attempt != 1 {
+				return nil
+			}
+			other, otherErr := Publish(endpointFor(competitor), PublishRequest{
+				Opid: "op-retry-competitor", Machine: "mac-b", Lineage: "l1", Intent: testIntentFor("open"), Message: "goal open retry-other",
+				Mutate: func(string) ([]Change, error) {
+					return []Change{goalChange("retry-other", "# retry-other\nState: queued\n")}, nil
+				},
+			})
+			if otherErr != nil || other.Outcome != OutcomeConfirmed {
+				return fmt.Errorf("competitor publish: %+v %v", other, otherErr)
+			}
+			return nil
+		},
+		HintConfirmed: func(_ string, _ []string, _ string, bootID string, bootNanos int64) {
+			if bootID != "goal-boot" {
+				t.Fatalf("retry boot identity = %q", bootID)
+			}
+			retrySample = bootNanos
+		},
+	})
+	if err != nil || retried.Outcome != OutcomeConfirmed || attempts < 2 || retrySample != int64(5*time.Hour) || clockReads != 2 {
+		t.Fatalf("retry result=%+v err=%v attempts=%d sample=%d clockReads=%d", retried, err, attempts, retrySample, clockReads)
+	}
+
+	zeroSample := int64(-1)
+	_, alreadyClone := oneClone(t)
+	already, err := Publish(endpointFor(alreadyClone), PublishRequest{
+		Opid: "op-already-hint", Machine: "mac-a", Lineage: "l1", Intent: testIntentFor("open"), Message: "goal open already-hint",
+		Mutate: func(string) ([]Change, error) { return nil, AlreadyApplied{} },
+		HintConfirmed: func(_ string, _ []string, _ string, bootID string, bootNanos int64) {
+			if bootID != "" {
+				t.Fatalf("already-applied hint carried boot identity %q", bootID)
+			}
+			zeroSample = bootNanos
+		},
+	})
+	if err != nil || already.Outcome != OutcomeConfirmed || already.Detail != "idempotent" || zeroSample != 0 {
+		t.Fatalf("already-applied result=%+v err=%v sample=%d", already, err, zeroSample)
 	}
 }
 

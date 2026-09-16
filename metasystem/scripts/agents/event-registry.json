@@ -857,6 +857,78 @@
         }
       }
     },
+    "wait-published": {
+      "emitters": [
+        "run"
+      ],
+      "ids": {},
+      "payload": {
+        "kind": {"required": true, "type": "str"},
+        "targetId": {"required": true, "type": "str"},
+        "publicationId": {"required": false, "type": "str"},
+        "matched": {"required": true, "type": "str"},
+        "delivered": {"required": true, "type": "str"},
+        "beganBootNanos": {"required": true, "type": "str"},
+        "beganBootId": {"required": false, "type": "str"},
+        "publishedBootNanos": {"required": true, "type": "str"},
+        "publishedBootId": {"required": true, "type": "str"}
+      }
+    },
+    "wait-registered": {
+      "emitters": [
+        "run"
+      ],
+      "ids": {},
+      "payload": {
+        "waitId": {"required": true, "type": "str"},
+        "nonce": {"required": true, "type": "str"},
+        "kind": {"required": true, "type": "str"},
+        "targetId": {"required": true, "type": "str"},
+        "runtime": {"required": true, "type": "str"},
+        "runtimeSession": {"required": true, "type": "str"},
+        "mainId": {"required": true, "type": "str"},
+        "mode": {"required": true, "type": "str"},
+        "registeredAt": {"required": true, "type": "str"},
+        "registeredBootNanos": {"required": true, "type": "str"},
+        "registeredBootId": {"required": true, "type": "str"},
+        "accelerator": {"required": true, "type": "str"}
+      }
+    },
+    "wait-returned": {
+      "emitters": [
+        "run"
+      ],
+      "ids": {},
+      "payload": {
+        "waitId": {"required": true, "type": "str"},
+        "nonce": {"required": true, "type": "str"},
+        "kind": {"required": true, "type": "str"},
+        "targetId": {"required": true, "type": "str"},
+        "runtime": {"required": true, "type": "str"},
+        "runtimeSession": {"required": true, "type": "str"},
+        "mainId": {"required": true, "type": "str"},
+        "mode": {"required": true, "type": "str"},
+        "atEntry": {"required": true, "type": "str"},
+        "state": {"required": true, "type": "str"},
+        "exitCode": {"required": true, "type": "str"},
+        "sourceOutcome": {"required": false, "type": "str"},
+        "sourceEvidence": {"required": false, "type": "str"},
+        "ledgerTip": {"required": false, "type": "str"},
+        "terminalStamp": {"required": false, "type": "str"},
+        "registeredAt": {"required": true, "type": "str"},
+        "prevObservedAt": {"required": true, "type": "str"},
+        "observedAt": {"required": true, "type": "str"},
+        "returnedAt": {"required": true, "type": "str"},
+        "registeredBootNanos": {"required": true, "type": "str"},
+        "registeredBootId": {"required": true, "type": "str"},
+        "prevObservedBootNanos": {"required": true, "type": "str"},
+        "prevObservedBootId": {"required": true, "type": "str"},
+        "observedBootNanos": {"required": true, "type": "str"},
+        "observedBootId": {"required": true, "type": "str"},
+        "returnedBootNanos": {"required": true, "type": "str"},
+        "returnedBootId": {"required": true, "type": "str"}
+      }
+    },
     "wall-passed": {
       "emitters": [
         "runner"

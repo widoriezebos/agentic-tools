@@ -62,8 +62,21 @@ landing_recertification=
 landing_carried=
 pathspecs=()
 
+sample_landing_publication() {
+  landing_hint_boot_id=
+  landing_hint_boot_nanos=
+  read -r landing_hint_boot_id landing_hint_boot_nanos < <("$ms" util bootclock) || {
+    landing_hint_boot_id=
+    landing_hint_boot_nanos=
+  }
+}
+
 hint_landing_waiters() {
-  [[ -z "$landing_goal" ]] || "$ms" wait notify --root "$root" --goal "$landing_goal" >/dev/null 2>&1 || true
+  local publication_id=$1
+  local stamp_args=()
+  [[ -z "$landing_hint_boot_id" ]] || stamp_args=(--began-boot-nanos "$landing_hint_boot_nanos" --boot-id "$landing_hint_boot_id")
+  [[ -z "$landing_goal" ]] || "$ms" wait notify --root "$root" --goal "$landing_goal" \
+    ${stamp_args[@]+"${stamp_args[@]}"} --publication-id "$publication_id" >/dev/null 2>&1 || true
 }
 
 while (( $# )); do
@@ -969,6 +982,7 @@ finish_carried_publication() {
   create_carried_intent "$commit"
 	print_carried_advisory "$commit"
   fixture_pause before-push
+  sample_landing_publication
   run_step "push carried commit to origin (single attempt)" push_origin
   push_rc=$?
   if (( push_rc != 0 )); then
@@ -977,7 +991,7 @@ finish_carried_publication() {
     fi
     fail_step "$push_rc"
   fi
-  hint_landing_waiters
+  hint_landing_waiters "$commit"
   carry_abandon_armed=0
   fixture_pause after-push
   run_required_step "complete carried goal record" "$ms" goal carried --root "$root" --entry "$carried_entry"
@@ -1157,6 +1171,7 @@ if [[ -n "$landing_recertification" ]]; then
     proof_detail=$(tail -n 1 "$step_output")
     park_recertified chain-recertification-test-command-refused "$proof_detail"
   fi
+  sample_landing_publication
   run_step "push recertified commit to origin (single attempt)" push_origin
   push_rc=$?
   if (( push_rc != 0 )); then
@@ -1167,7 +1182,7 @@ if [[ -n "$landing_recertification" ]]; then
     fi
     fail_step "$push_rc"
   fi
-  hint_landing_waiters
+  hint_landing_waiters "$(git rev-parse HEAD)"
 else
   run_required_step "fetch origin" fetch_origin
   run_required_step "rebase onto origin/$branch" rebase_origin
@@ -1177,6 +1192,7 @@ else
 
   push_attempt=1
   push_limit=3
+  sample_landing_publication
   while (( push_attempt <= push_limit )); do
     run_step "push origin (attempt $push_attempt of $push_limit)" push_origin
     push_rc=$?
@@ -1197,7 +1213,7 @@ else
     run_required_step "verify shared testing proof after retry rebase" verify_current_testing_proof
     push_attempt=$((push_attempt + 1))
   done
-  hint_landing_waiters
+  hint_landing_waiters "$(git rev-parse HEAD)"
 fi
 
 if (( ! skip_transport )); then

@@ -64,7 +64,11 @@ type jobStatus struct {
 }
 
 func readJobStatus(root, jobId string) (jobStatus, bool) {
-	data, err := os.ReadFile(filepath.Join(root, "artifacts", "agents", "jobs", jobId+".json"))
+	return readJobStatusPath(filepath.Join(root, "artifacts", "agents", "jobs", jobId+".json"))
+}
+
+func readJobStatusPath(path string) (jobStatus, bool) {
+	data, err := os.ReadFile(path)
 	if err != nil {
 		return jobStatus{}, false
 	}
@@ -73,6 +77,17 @@ func readJobStatus(root, jobId string) (jobStatus, bool) {
 		return jobStatus{}, false
 	}
 	return record, true
+}
+
+func formatJobEvidence(jobID string, record jobStatus) string {
+	if record.Status == "pending-setup" {
+		return "job:" + jobID + ":" + record.OperationID + ":pending-setup"
+	}
+	return fmt.Sprintf("job:%s:%s:r%d:%s", jobID, record.OperationID, record.Round, record.StartedAt)
+}
+
+func formatJobPublicationID(jobID string, record jobStatus) string {
+	return formatJobEvidence(jobID, record) + ":" + record.Status
 }
 
 // ObserveJob reads the job through its record owner and translates only a
@@ -97,7 +112,7 @@ func ObserveJob(ctx context.Context, root, jobID string, pinned run.WaiterTarget
 	}
 	if record.Status == "pending-setup" {
 		incarnation := run.WaiterTarget{OperationID: record.OperationID}
-		return run.SourceObservation{Pending: true, Incarnation: incarnation, Outcome: record.Status, Evidence: "job:" + jobID + ":" + record.OperationID + ":pending-setup"}, nil
+		return run.SourceObservation{Pending: true, Incarnation: incarnation, Outcome: record.Status, Evidence: formatJobEvidence(jobID, record)}, nil
 	}
 	preRunning := pinned.OperationID == record.OperationID && pinned.Round == 0 && pinned.StartedAt == "" && record.Status != "running"
 	if !preRunning && (record.Round < 1 || record.StartedAt == "") {
@@ -107,7 +122,7 @@ func ObserveJob(ctx context.Context, root, jobID string, pinned run.WaiterTarget
 	if preRunning {
 		incarnation = pinned
 	}
-	evidence := fmt.Sprintf("job:%s:%s:r%d:%s", jobID, record.OperationID, record.Round, record.StartedAt)
+	evidence := formatJobEvidence(jobID, record)
 	observation := run.SourceObservation{Pending: true, Incarnation: incarnation, Outcome: record.Status, Evidence: evidence}
 	switch record.Status {
 	case "pending", "running":

@@ -10,11 +10,13 @@ import (
 	"path/filepath"
 	"regexp"
 	"sort"
+	"strconv"
 	"strings"
 	"time"
 
 	"golang.org/x/sys/unix"
 
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/events"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/identity"
 )
 
@@ -88,22 +90,37 @@ type SourceObservation struct {
 
 // WaitResult is both the one command result and the terminal replay payload.
 type WaitResult struct {
-	SchemaVersion     int          `json:"schemaVersion"`
-	WaitID            string       `json:"waitId"`
-	Selector          WaitSelector `json:"selector"`
-	TargetIncarnation WaiterTarget `json:"targetIncarnation"`
-	ExitCode          int          `json:"exitCode"`
-	Reason            string       `json:"reason"`
-	SourceOutcome     string       `json:"sourceOutcome"`
-	SourceEvidence    string       `json:"sourceEvidence"`
-	RegisteredAt      string       `json:"registeredAt"`
-	Deadline          string       `json:"deadline"`
-	ObservedAt        string       `json:"observedAt"`
-	ReturnedAt        string       `json:"returnedAt"`
-	LedgerTip         string       `json:"ledgerTip,omitempty"`
-	TerminalStamp     string       `json:"terminalStamp,omitempty"`
-	ReplayCommand     string       `json:"replayCommand"`
-	PointerRepaired   bool         `json:"pointerRepaired,omitempty"`
+	SchemaVersion         int          `json:"schemaVersion"`
+	WaitID                string       `json:"waitId"`
+	Nonce                 string       `json:"nonce,omitempty"`
+	Selector              WaitSelector `json:"selector"`
+	TargetIncarnation     WaiterTarget `json:"targetIncarnation"`
+	ExitCode              int          `json:"exitCode"`
+	Reason                string       `json:"reason"`
+	SourceOutcome         string       `json:"sourceOutcome"`
+	SourceEvidence        string       `json:"sourceEvidence"`
+	RegisteredAt          string       `json:"registeredAt"`
+	Deadline              string       `json:"deadline"`
+	ObservedAt            string       `json:"observedAt"`
+	ReturnedAt            string       `json:"returnedAt"`
+	LedgerTip             string       `json:"ledgerTip,omitempty"`
+	TerminalStamp         string       `json:"terminalStamp,omitempty"`
+	ReplayCommand         string       `json:"replayCommand"`
+	PointerRepaired       bool         `json:"pointerRepaired,omitempty"`
+	Runtime               string       `json:"runtime,omitempty"`
+	Mode                  string       `json:"mode,omitempty"`
+	AtEntry               bool         `json:"atEntry,omitempty"`
+	State                 string       `json:"state,omitempty"`
+	PrevObservedAt        string       `json:"prevObservedAt,omitempty"`
+	RegisteredBootNanos   int64        `json:"registeredBootNanos,omitempty"`
+	RegisteredBootID      string       `json:"registeredBootId,omitempty"`
+	PrevObservedBootNanos int64        `json:"prevObservedBootNanos,omitempty"`
+	PrevObservedBootID    string       `json:"prevObservedBootId,omitempty"`
+	ObservedBootNanos     int64        `json:"observedBootNanos,omitempty"`
+	ObservedBootID        string       `json:"observedBootId,omitempty"`
+	ReturnedBootNanos     int64        `json:"returnedBootNanos,omitempty"`
+	ReturnedBootID        string       `json:"returnedBootId,omitempty"`
+	ReturnEventFailed     bool         `json:"returnEventFailed,omitempty"`
 }
 
 // ResumeIdentity records the process that lawfully replaced a dead waiter.
@@ -148,6 +165,9 @@ type Waiter struct {
 	OwnerLineage          string          `json:"ownerLineage,omitempty"`
 	ClaimEpoch            *int64          `json:"claimEpoch,omitempty"`
 	RuntimeSession        string          `json:"runtimeSession,omitempty"`
+	Runtime               string          `json:"runtime,omitempty"`
+	Mode                  string          `json:"mode,omitempty"`
+	AtEntry               bool            `json:"atEntry,omitempty"`
 	Selector              WaitSelector    `json:"selector,omitempty"`
 	GoalID                string          `json:"goalId,omitempty"`
 	Target                WaiterTarget    `json:"target"`
@@ -161,6 +181,9 @@ type Waiter struct {
 	RemainingNanos        int64           `json:"remainingNanos,omitempty"`
 	LastObservedAt        string          `json:"lastObservedAt,omitempty"`
 	LastObservedBootNanos int64           `json:"lastObservedBootNanos,omitempty"`
+	LastObservedBootID    string          `json:"lastObservedBootId,omitempty"`
+	RegisteredBootNanos   int64           `json:"registeredBootNanos,omitempty"`
+	RegisteredBootID      string          `json:"registeredBootId,omitempty"`
 	OpenWorkSignature     string          `json:"openWorkSignature,omitempty"`
 	ClaimableGoals        []ClaimableGoal `json:"claimableGoals,omitempty"`
 	LastPollError         string          `json:"lastPollError,omitempty"`
@@ -203,7 +226,17 @@ type WaitOptions struct {
 	BootClock             func() (string, time.Duration, error)
 	Sleep                 func(context.Context, time.Duration) error
 	OpenHintReceiver      OpenHintReceiver
+	Runtime               string
+	EmitEvent             func(root, event, summary string, fields map[string]string) error
 }
+
+type finishStamps struct {
+	AtEntry           bool
+	ObservedBootNanos int64
+	ObservedBootID    string
+}
+
+var waitEvents = &events.Emitter{Component: "run", Pid: int64(os.Getpid())}
 
 // WaitersDir is the one namespace for job and run waiters alike.
 func WaitersDir(root string) string { return filepath.Join(root, "artifacts", "agents", "waiters") }
@@ -389,6 +422,9 @@ func normalizeWaitOptions(options WaitOptions) WaitOptions {
 	if options.Sleep == nil {
 		options.Sleep = defaultWaitSleep
 	}
+	if options.EmitEvent == nil {
+		options.EmitEvent = waitEvents.EmitChecked
+	}
 	return options
 }
 
@@ -459,13 +495,17 @@ func invalidWaitResult(reason string) WaitResult {
 
 func waitResult(row Waiter, code int, state, reason, outcome, evidence, ledgerTip, terminalStamp string, now time.Time) WaitResult {
 	result := WaitResult{
-		SchemaVersion: 2, WaitID: row.WaitID, Selector: row.Selector, TargetIncarnation: row.Target,
+		SchemaVersion: 2, WaitID: row.WaitID, Nonce: row.Nonce, Selector: row.Selector, TargetIncarnation: row.Target,
 		ExitCode: code, Reason: reason, SourceOutcome: outcome, SourceEvidence: evidence,
 		RegisteredAt: row.RegisteredAt, Deadline: row.Deadline,
 		ObservedAt: now.UTC().Format(time.RFC3339Nano), ReturnedAt: now.UTC().Format(time.RFC3339Nano),
 		LedgerTip: ledgerTip, TerminalStamp: terminalStamp,
 		ReplayCommand:   WaitResumeCommand(row),
 		PointerRepaired: row.PointerRepaired,
+		Runtime:         row.Runtime, Mode: row.Mode, AtEntry: row.AtEntry, State: state,
+		PrevObservedAt:      row.LastObservedAt,
+		RegisteredBootNanos: row.RegisteredBootNanos, RegisteredBootID: row.RegisteredBootID,
+		PrevObservedBootNanos: row.LastObservedBootNanos, PrevObservedBootID: row.LastObservedBootID,
 	}
 	return result
 }
@@ -641,13 +681,58 @@ func (s *Store) persistV2(ctx context.Context, rowPath string, expectNonce strin
 	return updated, err
 }
 
-func (s *Store) finishV2(ctx context.Context, rowPath string, row Waiter, options WaitOptions, code int, state, reason, outcome, evidence, tip, stamp string) WaitResult {
-	return s.finishV2By(ctx, rowPath, row, options, code, state, reason, outcome, evidence, tip, stamp, "")
+func waitEventFields(row Waiter) map[string]string {
+	return map[string]string{
+		"waitId": row.WaitID, "nonce": row.Nonce, "kind": row.Kind, "targetId": row.TargetID,
+		"runtime": row.Runtime, "runtimeSession": row.RuntimeSession, "mainId": row.MainId,
+		"mode": row.Mode, "registeredAt": row.RegisteredAt,
+		"registeredBootNanos": strconv.FormatInt(row.RegisteredBootNanos, 10), "registeredBootId": row.RegisteredBootID,
+		"accelerator": row.Accelerator,
+	}
 }
 
-func (s *Store) finishV2By(ctx context.Context, rowPath string, row Waiter, options WaitOptions, code int, state, reason, outcome, evidence, tip, stamp, by string) WaitResult {
+func emitWaitRegistered(root string, row Waiter, options WaitOptions) {
+	_ = options.EmitEvent(root, "wait-registered", "wait registration became durable", waitEventFields(row))
+}
+
+func waitReturnedFields(row Waiter, result WaitResult) map[string]string {
+	fields := waitEventFields(row)
+	fields["mode"], fields["atEntry"], fields["state"] = result.Mode, strconv.FormatBool(result.AtEntry), result.State
+	fields["exitCode"], fields["sourceOutcome"], fields["sourceEvidence"] = strconv.Itoa(result.ExitCode), result.SourceOutcome, result.SourceEvidence
+	fields["ledgerTip"], fields["terminalStamp"] = result.LedgerTip, result.TerminalStamp
+	fields["prevObservedAt"], fields["observedAt"], fields["returnedAt"] = result.PrevObservedAt, result.ObservedAt, result.ReturnedAt
+	fields["prevObservedBootNanos"], fields["prevObservedBootId"] = strconv.FormatInt(result.PrevObservedBootNanos, 10), result.PrevObservedBootID
+	fields["observedBootNanos"], fields["observedBootId"] = strconv.FormatInt(result.ObservedBootNanos, 10), result.ObservedBootID
+	fields["returnedBootNanos"], fields["returnedBootId"] = strconv.FormatInt(result.ReturnedBootNanos, 10), result.ReturnedBootID
+	return fields
+}
+
+func observedAfterRead(options WaitOptions, atEntry bool) finishStamps {
+	stamps := finishStamps{AtEntry: atEntry}
+	bootID, elapsed, err := options.BootClock()
+	if err == nil {
+		stamps.ObservedBootNanos, stamps.ObservedBootID = elapsed.Nanoseconds(), bootID
+	}
+	return stamps
+}
+
+func (s *Store) finishV2(ctx context.Context, rowPath string, row Waiter, options WaitOptions, code int, state, reason, outcome, evidence, tip, stamp string, stamps finishStamps) WaitResult {
+	return s.finishV2By(ctx, rowPath, row, options, code, state, reason, outcome, evidence, tip, stamp, stamps, "")
+}
+
+func (s *Store) finishV2By(ctx context.Context, rowPath string, row Waiter, options WaitOptions, code int, state, reason, outcome, evidence, tip, stamp string, stamps finishStamps, by string) WaitResult {
+	options = normalizeWaitOptions(options)
 	now := options.Now().UTC()
 	result := waitResult(row, code, state, reason, outcome, evidence, tip, stamp, now)
+	returnedBootID, returnedBootElapsed, bootErr := options.BootClock()
+	if bootErr == nil {
+		result.ReturnedBootID, result.ReturnedBootNanos = returnedBootID, returnedBootElapsed.Nanoseconds()
+	}
+	result.AtEntry = stamps.AtEntry || row.AtEntry
+	result.ObservedBootNanos, result.ObservedBootID = stamps.ObservedBootNanos, stamps.ObservedBootID
+	if state != "ready" && result.ObservedBootNanos == 0 {
+		result.ObservedBootNanos, result.ObservedBootID = row.LastObservedBootNanos, row.LastObservedBootID
+	}
 	deadline, _ := time.Parse(time.RFC3339Nano, row.Deadline)
 	updated, err := s.persistV2(ctx, rowPath, row.Nonce, deadline, options, func(current *Waiter) {
 		current.State = state
@@ -664,6 +749,14 @@ func (s *Store) finishV2By(ctx context.Context, rowPath string, row Waiter, opti
 	})
 	if err != nil {
 		return waitResult(row, ExitWaiterIO, "failed", "wait result could not be durably recorded: "+err.Error(), "storage-failure", "", row.LastCheckedTip, "", now)
+	}
+	if emitErr := options.EmitEvent(s.Root, "wait-returned", "durable wait result returned to its caller", waitReturnedFields(updated, result)); emitErr != nil {
+		result.ReturnEventFailed = true
+		if repaired, repairErr := s.persistV2(ctx, rowPath, row.Nonce, deadline, options, func(current *Waiter) {
+			current.Result = &result
+		}); repairErr == nil {
+			updated = repaired
+		}
 	}
 	removeWaiterHint(rowPath, updated)
 	return result
@@ -683,7 +776,7 @@ func (s *Store) InterruptWaiterRow(rowPath, by string, options WaitOptions) (Wai
 		}
 	}
 	result := s.finishV2By(context.Background(), rowPath, row, options, ExitInterrupted, WaiterStateInterrupted,
-		"wait command was interrupted", "interrupted", "", row.LastCheckedTip, "", by)
+		"wait command was interrupted", "interrupted", "", row.LastCheckedTip, "", finishStamps{}, by)
 	if result.ExitCode != ExitInterrupted {
 		return Waiter{}, fmt.Errorf("%s", result.Reason)
 	}
@@ -714,23 +807,24 @@ func adoptsPendingSetupTarget(pinned, observed WaiterTarget, outcome string) boo
 func (s *Store) waitLoop(ctx context.Context, rowPath string, row Waiter, options WaitOptions, receiver HintReceiver) WaitResult {
 	deadline, err := time.Parse(time.RFC3339Nano, row.Deadline)
 	if err != nil {
-		return s.finishV2(ctx, rowPath, row, options, ExitNoRecord, "failed", "waiter deadline is invalid", "invalid-source", "", "", "")
+		return s.finishV2(ctx, rowPath, row, options, ExitNoRecord, "failed", "waiter deadline is invalid", "invalid-source", "", "", "", finishStamps{})
 	}
 	var lastHintRead time.Time
 	for {
 		if err := ctx.Err(); err != nil {
-			return s.finishV2(context.Background(), rowPath, row, options, ExitInterrupted, "interrupted", "wait command was interrupted", "interrupted", "", row.LastCheckedTip, "")
+			return s.finishV2(context.Background(), rowPath, row, options, ExitInterrupted, "interrupted", "wait command was interrupted", "interrupted", "", row.LastCheckedTip, "", finishStamps{})
 		}
 		now := options.Now().UTC()
 		bootID, bootElapsed, bootErr := options.BootClock()
+		iterationStamps := finishStamps{ObservedBootNanos: bootElapsed.Nanoseconds(), ObservedBootID: bootID}
 		if bootErr != nil || bootID != row.DeadlineBootID {
-			return s.finishV2(ctx, rowPath, row, options, ExitWaitDeadline, "deadline", "the boot clock changed or became unreadable", "wait-deadline", "", row.LastCheckedTip, "")
+			return s.finishV2(ctx, rowPath, row, options, ExitWaitDeadline, "deadline", "the boot clock changed or became unreadable", "wait-deadline", "", row.LastCheckedTip, "", iterationStamps)
 		}
 		if now.Before(mustParseWaitTime(row.RegisteredAt)) {
-			return s.finishV2(ctx, rowPath, row, options, ExitWaiterIO, "failed", "the wall clock moved before the wait registration time", "clock-drift", "", row.LastCheckedTip, "")
+			return s.finishV2(ctx, rowPath, row, options, ExitWaiterIO, "failed", "the wall clock moved before the wait registration time", "clock-drift", "", row.LastCheckedTip, "", iterationStamps)
 		}
 		if !now.Before(deadline) || bootElapsed.Nanoseconds() >= row.BootDeadlineNanos {
-			return s.finishV2(ctx, rowPath, row, options, ExitWaitDeadline, "deadline", "this wait reached its deadline", "wait-deadline", "", row.LastCheckedTip, "")
+			return s.finishV2(ctx, rowPath, row, options, ExitWaitDeadline, "deadline", "this wait reached its deadline", "wait-deadline", "", row.LastCheckedTip, "", iterationStamps)
 		}
 		if options.Actionable != nil {
 			remaining := deadline.Sub(options.Now())
@@ -740,23 +834,25 @@ func (s *Store) waitLoop(ctx context.Context, rowPath string, row Waiter, option
 			actionCtx, cancel := context.WithTimeout(ctx, remaining)
 			reason, changed, actionErr := options.Actionable(actionCtx, row)
 			cancel()
+			actionStamps := observedAfterRead(options, false)
 			if ctx.Err() != nil {
-				return s.finishV2(context.Background(), rowPath, row, options, ExitInterrupted, "interrupted", "wait command was interrupted", "interrupted", "", row.LastCheckedTip, "")
+				return s.finishV2(context.Background(), rowPath, row, options, ExitInterrupted, "interrupted", "wait command was interrupted", "interrupted", "", row.LastCheckedTip, "", iterationStamps)
 			}
 			if actionErr != nil {
 				_, currentBoot, bootCheckErr := options.BootClock()
 				if !options.Now().UTC().Before(deadline) || (bootCheckErr == nil && currentBoot.Nanoseconds() >= row.BootDeadlineNanos) {
-					return s.finishV2(ctx, rowPath, row, options, ExitWaitDeadline, "deadline", "this wait reached its deadline during the actionable-work check", "wait-deadline", "", row.LastCheckedTip, "")
+					return s.finishV2(ctx, rowPath, row, options, ExitWaitDeadline, "deadline", "this wait reached its deadline during the actionable-work check", "wait-deadline", "", row.LastCheckedTip, "", iterationStamps)
 				}
-				return s.finishV2(ctx, rowPath, row, options, ExitWaiterIO, "failed", "actionable work could not be checked: "+actionErr.Error(), "storage-failure", "", row.LastCheckedTip, "")
+				return s.finishV2(ctx, rowPath, row, options, ExitWaiterIO, "failed", "actionable work could not be checked: "+actionErr.Error(), "storage-failure", "", row.LastCheckedTip, "", iterationStamps)
 			}
 			if changed {
-				return s.finishV2(ctx, rowPath, row, options, 6, "ready", reason, "actionable-work", "", row.LastCheckedTip, "")
+				return s.finishV2(ctx, rowPath, row, options, 6, "ready", reason, "actionable-work", "", row.LastCheckedTip, "", actionStamps)
 			}
 		}
 		observation, observeErr := s.observe(ctx, row, options, deadline)
+		observationStamps := observedAfterRead(options, false)
 		if ctx.Err() != nil {
-			return s.finishV2(context.Background(), rowPath, row, options, ExitInterrupted, "interrupted", "wait command was interrupted", "interrupted", "", row.LastCheckedTip, "")
+			return s.finishV2(context.Background(), rowPath, row, options, ExitInterrupted, "interrupted", "wait command was interrupted", "interrupted", "", row.LastCheckedTip, "", iterationStamps)
 		}
 		if observeErr != nil || observation.Temporary {
 			lastGood := time.Duration(row.LastObservedBootNanos)
@@ -765,7 +861,7 @@ func (s *Store) waitLoop(ctx context.Context, rowPath string, row Waiter, option
 				if observeErr != nil {
 					reason += ": " + observeErr.Error()
 				}
-				return s.finishV2(ctx, rowPath, row, options, ExitWaiterIO, "failed", reason, "transport-failure", "", row.LastCheckedTip, "")
+				return s.finishV2(ctx, rowPath, row, options, ExitWaiterIO, "failed", reason, "transport-failure", "", row.LastCheckedTip, "", iterationStamps)
 			}
 		} else {
 			if observation.PollAt != "" {
@@ -775,31 +871,32 @@ func (s *Store) waitLoop(ctx context.Context, rowPath string, row Waiter, option
 			if observation.Incarnation != row.Target && adoptsPendingSetupTarget(row.Target, observation.Incarnation, observation.Outcome) {
 				row.Target = observation.Incarnation
 			} else if observation.Incarnation != row.Target {
-				return s.finishV2(ctx, rowPath, row, options, ExitNoRecord, "failed", "the source identifier now names a different incarnation", "target-replaced", observation.Evidence, observation.LedgerTip, observation.TerminalStamp)
+				return s.finishV2(ctx, rowPath, row, options, ExitNoRecord, "failed", "the source identifier now names a different incarnation", "target-replaced", observation.Evidence, observation.LedgerTip, observation.TerminalStamp, iterationStamps)
 			}
 			// The wait's own event wins over a frontier change seen in the
 			// same cycle: a matched act or landing is the result, and backlog
 			// that became claimable is still claimable at the seat's next
 			// turn end.
 			if !observation.Pending {
-				return s.finishV2(ctx, rowPath, row, options, observation.ExitCode, "ready", observation.Reason, observation.Outcome, observation.Evidence, observation.LedgerTip, observation.TerminalStamp)
+				return s.finishV2(ctx, rowPath, row, options, observation.ExitCode, "ready", observation.Reason, observation.Outcome, observation.Evidence, observation.LedgerTip, observation.TerminalStamp, observationStamps)
 			}
 			if observation.ClaimableRead {
 				if item, changed := ClaimableGoalChange(row.ClaimableGoals, observation.ClaimableGoals); changed {
-					return s.finishV2(ctx, rowPath, row, options, 6, "ready", fmt.Sprintf("goal %s became claimable at revision %d", item.ID, item.Revision), "actionable-work", observation.Evidence, observation.LedgerTip, observation.TerminalStamp)
+					return s.finishV2(ctx, rowPath, row, options, 6, "ready", fmt.Sprintf("goal %s became claimable at revision %d", item.ID, item.Revision), "actionable-work", observation.Evidence, observation.LedgerTip, observation.TerminalStamp, observationStamps)
 				}
 			}
 			updated, persistErr := s.persistV2(ctx, rowPath, row.Nonce, deadline, options, func(current *Waiter) {
 				current.Target = row.Target
 				current.LastObservedAt = now.Format(time.RFC3339Nano)
 				current.LastObservedBootNanos = bootElapsed.Nanoseconds()
+				current.LastObservedBootID = bootID
 				current.LastCheckedTip = observation.LedgerTip
 				current.LastPollAt = row.LastPollAt
 				current.LastPollError = row.LastPollError
 				current.RemainingNanos = minDuration(deadline.Sub(now), time.Duration(row.BootDeadlineNanos-bootElapsed.Nanoseconds())).Nanoseconds()
 			})
 			if persistErr != nil {
-				return s.finishV2(ctx, rowPath, row, options, ExitWaiterIO, "failed", "successful observation could not be recorded: "+persistErr.Error(), "storage-failure", "", row.LastCheckedTip, "")
+				return s.finishV2(ctx, rowPath, row, options, ExitWaiterIO, "failed", "successful observation could not be recorded: "+persistErr.Error(), "storage-failure", "", row.LastCheckedTip, "", iterationStamps)
 			}
 			row = updated
 		}
@@ -816,7 +913,7 @@ func (s *Store) waitLoop(ctx context.Context, rowPath string, row Waiter, option
 			if hintErr == nil && hinted {
 				if earliest := lastHintRead.Add(time.Second); !lastHintRead.IsZero() && options.Now().Before(earliest) {
 					if err := options.Sleep(ctx, earliest.Sub(options.Now())); err != nil {
-						return s.finishV2(context.Background(), rowPath, row, options, ExitInterrupted, "interrupted", "wait command was interrupted", "interrupted", "", row.LastCheckedTip, "")
+						return s.finishV2(context.Background(), rowPath, row, options, ExitInterrupted, "interrupted", "wait command was interrupted", "interrupted", "", row.LastCheckedTip, "", iterationStamps)
 					}
 				}
 				lastHintRead = options.Now()
@@ -841,7 +938,7 @@ func (s *Store) waitLoop(ctx context.Context, rowPath string, row Waiter, option
 			}
 		}
 		if err := options.Sleep(ctx, pause); err != nil {
-			return s.finishV2(context.Background(), rowPath, row, options, ExitInterrupted, "interrupted", "wait command was interrupted", "interrupted", "", row.LastCheckedTip, "")
+			return s.finishV2(context.Background(), rowPath, row, options, ExitInterrupted, "interrupted", "wait command was interrupted", "interrupted", "", row.LastCheckedTip, "", iterationStamps)
 		}
 	}
 }
@@ -880,7 +977,9 @@ func (s *Store) Wait(ctx context.Context, request WaitRequest, options WaitOptio
 	if err != nil || bootID == "" {
 		return waitResult(baseRow, ExitWaiterIO, "failed", "the operating-system boot clock is unavailable", "clock-failure", "", "", "", registeredAt)
 	}
+	registrationStamps := finishStamps{ObservedBootNanos: bootElapsed.Nanoseconds(), ObservedBootID: bootID}
 	initial, err := s.initialObservation(ctx, request.Selector, options, deadline)
+	initialStamps := observedAfterRead(options, !initial.Pending)
 	if err != nil {
 		if ctx.Err() != nil {
 			return waitResult(baseRow, ExitInterrupted, "interrupted", "wait command was interrupted", "interrupted", "", "", "", options.Now())
@@ -917,12 +1016,14 @@ func (s *Store) Wait(ctx context.Context, request WaitRequest, options WaitOptio
 		TargetID: request.Selector.TargetID, OwnerDigest: ownerDigest,
 		Pid: exact.Pid, PidStartedAt: exact.StartedAt.Unix(), PidStartedAtMicro: processMicrosecondIdentity(exact), PidStartTicks: exact.StartTicks, BootID: exact.BootID,
 		Session: request.Owner.SessionId, MainId: request.Owner.MainId, OwnerLineage: request.Owner.OwnerLineage,
-		ClaimEpoch: request.Owner.ClaimEpoch, RuntimeSession: request.RuntimeSession,
+		ClaimEpoch: request.Owner.ClaimEpoch, RuntimeSession: request.RuntimeSession, Runtime: options.Runtime,
+		Mode: "register", AtEntry: !initial.Pending,
 		Selector: request.Selector, GoalID: request.Selector.GoalID, Target: initial.Incarnation,
 		OriginalCursor: request.Selector.After, LastCheckedTip: floorAfterObservation(request.Selector.After, initial),
 		RegisteredAt: registeredAt.Format(time.RFC3339Nano), Deadline: deadline.Format(time.RFC3339Nano),
 		BootDeadlineNanos: (bootElapsed + request.Timeout).Nanoseconds(), DeadlineBootID: bootID, RemainingNanos: request.Timeout.Nanoseconds(),
-		LastObservedAt: registeredAt.Format(time.RFC3339Nano), LastObservedBootNanos: bootElapsed.Nanoseconds(),
+		LastObservedAt: registeredAt.Format(time.RFC3339Nano), LastObservedBootNanos: bootElapsed.Nanoseconds(), LastObservedBootID: bootID,
+		RegisteredBootNanos: bootElapsed.Nanoseconds(), RegisteredBootID: bootID,
 		OpenWorkSignature: request.OpenWorkSignature, State: "registering", Accelerator: "unavailable",
 		ClaimableGoals: initial.ClaimableGoals, LastPollAt: initial.PollAt, LastPollError: initial.PollError,
 	}
@@ -985,31 +1086,32 @@ func (s *Store) Wait(ctx context.Context, request WaitRequest, options WaitOptio
 		return waitResult(baseRow, WaiterExitCode(err), "failed", err.Error(), "registration-refused", "", initial.LedgerTip, "", registeredAt)
 	}
 	if options.Deliver == nil {
-		return s.finishV2(ctx, rowPath, row, options, ExitWaiterBusy, "failed", "the runtime has no wait-delivery operation", "ineligible-registration", "", tipAfterFailure(row, initial), "")
+		return s.finishV2(ctx, rowPath, row, options, ExitWaiterBusy, "failed", "the runtime has no wait-delivery operation", "ineligible-registration", "", tipAfterFailure(row, initial), "", registrationStamps)
 	}
 	answer, declined, deliveryErr := deliverBeforeDeadline(ctx, deadline, options, waitID, nonce, request.RuntimeSession)
 	if ctx.Err() != nil {
-		return s.finishV2(context.Background(), rowPath, row, options, ExitInterrupted, "interrupted", "wait command was interrupted", "interrupted", "", tipAfterFailure(row, initial), "")
+		return s.finishV2(context.Background(), rowPath, row, options, ExitInterrupted, "interrupted", "wait command was interrupted", "interrupted", "", tipAfterFailure(row, initial), "", registrationStamps)
 	}
 	if declined {
-		return s.finishV2(ctx, rowPath, row, options, ExitWaiterBusy, "failed", "the runtime declined blocking wait delivery", "ineligible-registration", "", tipAfterFailure(row, initial), "")
+		return s.finishV2(ctx, rowPath, row, options, ExitWaiterBusy, "failed", "the runtime declined blocking wait delivery", "ineligible-registration", "", tipAfterFailure(row, initial), "", registrationStamps)
 	}
 	if deliveryErr != nil || answer != "blocking" {
 		reason := "wait delivery failed"
 		if deliveryErr != nil {
 			reason += ": " + deliveryErr.Error()
 		}
-		return s.finishV2(ctx, rowPath, row, options, ExitWaiterIO, "failed", reason, "transport-failure", "", tipAfterFailure(row, initial), "")
+		return s.finishV2(ctx, rowPath, row, options, ExitWaiterIO, "failed", reason, "transport-failure", "", tipAfterFailure(row, initial), "", registrationStamps)
 	}
 	row, err = s.persistV2(ctx, rowPath, nonce, deadline, options, func(current *Waiter) {
 		current.State = "pending"
 		current.Delivery = answer
 	})
 	if err != nil {
-		return s.finishV2(ctx, rowPath, row, options, ExitWaiterIO, "failed", "pending registration could not be published: "+err.Error(), "storage-failure", "", tipAfterFailure(row, initial), "")
+		return s.finishV2(ctx, rowPath, row, options, ExitWaiterIO, "failed", "pending registration could not be published: "+err.Error(), "storage-failure", "", tipAfterFailure(row, initial), "", registrationStamps)
 	}
+	emitWaitRegistered(s.Root, row, options)
 	if !initial.Pending {
-		return s.finishV2(ctx, rowPath, row, options, initial.ExitCode, "ready", initial.Reason, initial.Outcome, initial.Evidence, initial.LedgerTip, initial.TerminalStamp)
+		return s.finishV2(ctx, rowPath, row, options, initial.ExitCode, "ready", initial.Reason, initial.Outcome, initial.Evidence, initial.LedgerTip, initial.TerminalStamp, initialStamps)
 	}
 	return s.waitLoop(ctx, rowPath, row, options, receiver)
 }
@@ -1198,7 +1300,15 @@ func (s *Store) replaySavedWait(ctx context.Context, row Waiter, options WaitOpt
 	}
 	replayed := *row.Result
 	replayed.PointerRepaired = row.PointerRepaired
+	replayed.Mode = "replay"
+	replayed.AtEntry = false
 	replayed.ReturnedAt = options.Now().UTC().Format(time.RFC3339Nano)
+	if bootID, bootElapsed, bootErr := options.BootClock(); bootErr == nil {
+		replayed.ReturnedBootID, replayed.ReturnedBootNanos = bootID, bootElapsed.Nanoseconds()
+	}
+	if emitErr := options.EmitEvent(s.Root, "wait-returned", "retained wait result replayed to its caller", waitReturnedFields(row, replayed)); emitErr != nil {
+		replayed.ReturnEventFailed = true
+	}
 	return replayed
 }
 
@@ -1209,6 +1319,7 @@ func (s *Store) renewSavedWait(ctx context.Context, rowPath string, row Waiter, 
 	if bootErr != nil || bootID == "" {
 		return waitResult(row, ExitWaiterIO, "failed", "the operating-system boot clock is unavailable", "clock-failure", "", row.LastCheckedTip, "", now)
 	}
+	registrationStamps := finishStamps{ObservedBootNanos: bootElapsed.Nanoseconds(), ObservedBootID: bootID}
 	if options.Observe == nil {
 		return waitResult(row, ExitWaiterIO, "failed", "the wait source reader is unavailable", "transport-failure", "", row.LastCheckedTip, "", now)
 	}
@@ -1223,6 +1334,7 @@ func (s *Store) renewSavedWait(ctx context.Context, rowPath string, row Waiter, 
 	// still above the floor here.
 	initial, observeErr := options.Observe(readCtx, row.Selector, WaiterTarget{}, row.LastCheckedTip)
 	cancel()
+	initialStamps := observedAfterRead(options, !initial.Pending)
 	if ctx.Err() != nil {
 		return waitResult(row, ExitInterrupted, "interrupted", "wait command was interrupted", "interrupted", "", row.LastCheckedTip, "", options.Now())
 	}
@@ -1318,11 +1430,13 @@ func (s *Store) renewSavedWait(ctx context.Context, rowPath string, row Waiter, 
 		current.PidStartTicks, current.BootID = exact.StartTicks, exact.BootID
 		current.Session, current.MainId, current.OwnerDigest = owner.SessionId, owner.MainId, newOwnerDigest
 		current.OwnerLineage, current.ClaimEpoch, current.RuntimeSession = owner.OwnerLineage, owner.ClaimEpoch, runtimeSession
+		current.Runtime, current.Mode, current.AtEntry = options.Runtime, "renew", !initial.Pending
 		current.Target = row.Target
 		current.RegisteredAt, current.Deadline = now.Format(time.RFC3339Nano), deadline.Format(time.RFC3339Nano)
 		current.RemainingNanos = renewal.Nanoseconds()
 		current.BootDeadlineNanos, current.DeadlineBootID = (bootElapsed + renewal).Nanoseconds(), bootID
-		current.LastObservedAt, current.LastObservedBootNanos = now.Format(time.RFC3339Nano), bootElapsed.Nanoseconds()
+		current.LastObservedAt, current.LastObservedBootNanos, current.LastObservedBootID = now.Format(time.RFC3339Nano), bootElapsed.Nanoseconds(), bootID
+		current.RegisteredBootNanos, current.RegisteredBootID = bootElapsed.Nanoseconds(), bootID
 		current.OpenWorkSignature = openWorkSignature
 		current.SourceResultIdentity = ""
 		current.LastCheckedTip = tipAfterFailure(row, initial)
@@ -1357,31 +1471,32 @@ func (s *Store) renewSavedWait(ctx context.Context, rowPath string, row Waiter, 
 		return waitResult(row, WaiterExitCode(err), "failed", "wait could not be renewed: "+err.Error(), "storage-failure", "", row.LastCheckedTip, "", options.Now())
 	}
 	if options.Deliver == nil {
-		return s.finishV2(ctx, newPath, row, options, ExitWaiterBusy, "failed", "the runtime has no wait-delivery operation", "ineligible-registration", "", tipAfterFailure(row, initial), "")
+		return s.finishV2(ctx, newPath, row, options, ExitWaiterBusy, "failed", "the runtime has no wait-delivery operation", "ineligible-registration", "", tipAfterFailure(row, initial), "", registrationStamps)
 	}
 	answer, declined, deliveryErr := deliverBeforeDeadline(ctx, deadline, options, row.WaitID, row.Nonce, runtimeSession)
 	if ctx.Err() != nil {
-		return s.finishV2(context.Background(), newPath, row, options, ExitInterrupted, "interrupted", "wait command was interrupted", "interrupted", "", tipAfterFailure(row, initial), "")
+		return s.finishV2(context.Background(), newPath, row, options, ExitInterrupted, "interrupted", "wait command was interrupted", "interrupted", "", tipAfterFailure(row, initial), "", registrationStamps)
 	}
 	if declined {
-		return s.finishV2(ctx, newPath, row, options, ExitWaiterBusy, "failed", "the runtime declined blocking wait delivery", "ineligible-registration", "", tipAfterFailure(row, initial), "")
+		return s.finishV2(ctx, newPath, row, options, ExitWaiterBusy, "failed", "the runtime declined blocking wait delivery", "ineligible-registration", "", tipAfterFailure(row, initial), "", registrationStamps)
 	}
 	if deliveryErr != nil || answer != "blocking" {
 		reason := "wait delivery failed during renewal"
 		if deliveryErr != nil {
 			reason += ": " + deliveryErr.Error()
 		}
-		return s.finishV2(ctx, newPath, row, options, ExitWaiterIO, "failed", reason, "transport-failure", "", tipAfterFailure(row, initial), "")
+		return s.finishV2(ctx, newPath, row, options, ExitWaiterIO, "failed", reason, "transport-failure", "", tipAfterFailure(row, initial), "", registrationStamps)
 	}
 	row, err = s.persistV2(ctx, newPath, row.Nonce, deadline, options, func(current *Waiter) {
 		current.State = "pending"
 		current.Delivery = answer
 	})
 	if err != nil {
-		return s.finishV2(ctx, newPath, row, options, ExitWaiterIO, "failed", "renewed pending registration could not be published: "+err.Error(), "storage-failure", "", tipAfterFailure(row, initial), "")
+		return s.finishV2(ctx, newPath, row, options, ExitWaiterIO, "failed", "renewed pending registration could not be published: "+err.Error(), "storage-failure", "", tipAfterFailure(row, initial), "", registrationStamps)
 	}
+	emitWaitRegistered(s.Root, row, options)
 	if !initial.Pending {
-		return s.finishV2(ctx, newPath, row, options, initial.ExitCode, "ready", initial.Reason, initial.Outcome, initial.Evidence, initial.LedgerTip, initial.TerminalStamp)
+		return s.finishV2(ctx, newPath, row, options, initial.ExitCode, "ready", initial.Reason, initial.Outcome, initial.Evidence, initial.LedgerTip, initial.TerminalStamp, initialStamps)
 	}
 	return s.waitLoop(ctx, newPath, row, options, receiver)
 }
@@ -1430,7 +1545,7 @@ func (s *Store) ResumeWait(ctx context.Context, waitID string, owner Caller, run
 	deadline := mustParseWaitTime(row.Deadline)
 	if renewal == 0 {
 		if bootErr != nil || bootID != row.DeadlineBootID || !now.Before(deadline) || bootElapsed.Nanoseconds() >= row.BootDeadlineNanos {
-			return s.finishV2(ctx, rowPath, row, options, ExitWaitDeadline, "deadline", "the saved wait has no remaining bounded time", "wait-deadline", "", row.LastCheckedTip, "")
+			return s.finishV2(ctx, rowPath, row, options, ExitWaitDeadline, "deadline", "the saved wait has no remaining bounded time", "wait-deadline", "", row.LastCheckedTip, "", finishStamps{})
 		}
 		remaining := minDuration(time.Duration(row.RemainingNanos), minDuration(deadline.Sub(now), time.Duration(row.BootDeadlineNanos-bootElapsed.Nanoseconds())))
 		deadline = now.Add(remaining)
@@ -1477,7 +1592,7 @@ func (s *Store) ResumeWait(ctx context.Context, waitID string, owner Caller, run
 	}
 	answer, declined, deliveryErr := deliverBeforeDeadline(ctx, deadline, options, row.WaitID, newNonce, runtimeSession)
 	if ctx.Err() != nil {
-		return s.finishV2(context.Background(), rowPath, row, options, ExitInterrupted, "interrupted", "wait command was interrupted", "interrupted", "", row.LastCheckedTip, "")
+		return s.finishV2(context.Background(), rowPath, row, options, ExitInterrupted, "interrupted", "wait command was interrupted", "interrupted", "", row.LastCheckedTip, "", finishStamps{})
 	}
 	if declined {
 		return waitResult(row, ExitWaiterBusy, "failed", "the runtime declined blocking wait delivery", "ineligible-registration", "", row.LastCheckedTip, "", now)
@@ -1505,6 +1620,7 @@ func (s *Store) ResumeWait(ctx context.Context, waitID string, owner Caller, run
 		current.Session, current.MainId, current.OwnerDigest = owner.SessionId, owner.MainId, newOwnerDigest
 		current.OwnerLineage = owner.OwnerLineage
 		current.ClaimEpoch, current.RuntimeSession = owner.ClaimEpoch, runtimeSession
+		current.Runtime, current.Mode, current.AtEntry = options.Runtime, "takeover", false
 		current.RegisteredAt, current.Deadline, current.RemainingNanos = row.RegisteredAt, deadline.Format(time.RFC3339Nano), row.RemainingNanos
 		current.BootDeadlineNanos, current.DeadlineBootID = row.BootDeadlineNanos, row.DeadlineBootID
 		current.Delivery = answer
@@ -1562,6 +1678,7 @@ func (s *Store) ResumeWait(ctx context.Context, waitID string, owner Caller, run
 		}
 		return waitResult(row, code, "failed", "wait could not be resumed: "+err.Error(), outcome, "", row.LastCheckedTip, "", now)
 	}
+	emitWaitRegistered(s.Root, row, options)
 	return s.waitLoop(ctx, newPath, row, options, receiver)
 }
 

@@ -9,11 +9,13 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"testing"
 	"time"
 
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/behaviorsurface"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/events"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/identity"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/lease"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/proofrun"
@@ -21,6 +23,7 @@ import (
 	metarun "github.com/widoriezebos/agentic-tools/metasystem/internal/run"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/steward"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/testutil"
+	usagecore "github.com/widoriezebos/agentic-tools/metasystem/internal/usage"
 )
 
 type waitCommandProber struct {
@@ -442,6 +445,125 @@ func TestWaitNotifyCommand(t *testing.T) {
 	}
 	if code := runWait([]string{"notify", "--job", "one", "--goal", "two"}); code != metarun.ExitInvalidWait {
 		t.Fatalf("ambiguous notify exit=%d", code)
+	}
+}
+
+func TestWaitMeasureVerb(t *testing.T) {
+	emitReturn := func(root, id, runtimeName string, atEntry bool, previous, observed, returned int64) {
+		t.Helper()
+		fields := map[string]string{
+			"waitId": id, "nonce": strings.Repeat("b", 32), "kind": "attempt", "targetId": id, "runtime": runtimeName, "mode": "register", "state": "ready",
+			"sourceEvidence": "attempt:" + id + ":digest", "registeredAt": "2026-09-16T10:00:00Z", "returnedAt": "2026-09-16T10:00:01Z",
+			"registeredBootNanos": "1", "prevObservedBootNanos": strconv.FormatInt(previous, 10), "observedBootNanos": strconv.FormatInt(observed, 10), "returnedBootNanos": strconv.FormatInt(returned, 10),
+			"registeredBootId": "boot", "prevObservedBootId": "boot", "observedBootId": "boot", "returnedBootId": "boot", "atEntry": strconv.FormatBool(atEntry),
+		}
+		if err := (&events.Emitter{Component: "run", Pid: 30, PidStartedAt: 40}).EmitChecked(root, "wait-returned", "wait measure verb fixture", fields); err != nil {
+			t.Fatal(err)
+		}
+	}
+	makeRoot := func(atEntry bool, previous, observed, returned int64) string {
+		root := t.TempDir()
+		emitReturn(root, strings.Repeat("a", 32), "codex", atEntry, previous, observed, returned)
+		return root
+	}
+	refuted := makeRoot(false, 2, 5, int64(70*time.Second))
+	first, code := captureStdout(t, func() int { return runWait([]string{"measure", "--root", refuted, "--json"}) })
+	second, again := captureStdout(t, func() int { return runWait([]string{"measure", "--root", refuted, "--json"}) })
+	if code != 1 || again != 1 || first != second || !strings.Contains(first, `"verdict":"refuted"`) || strings.Contains(strings.ToLower(first), "pass") {
+		t.Fatalf("refuted code=%d/%d output=%s", code, again, first)
+	}
+	if binary := os.Getenv("METASYSTEM_WAIT_BINARY"); binary != "" {
+		command := exec.Command(binary, "wait", "measure", "--root", refuted, "--json")
+		data, err := command.CombinedOutput()
+		if err == nil || command.ProcessState.ExitCode() != 1 || string(data) != first {
+			t.Fatalf("installed exit=%v output=%s", err, data)
+		}
+	}
+	available := makeRoot(false, 10, 20, int64(time.Second))
+	if output, code := captureStdout(t, func() int { return runWaitMeasure([]string{"--root", available, "--json"}) }); code != 0 || !strings.Contains(output, `"verdict":"unproven"`) {
+		t.Fatalf("available exit=%d output=%s", code, output)
+	}
+	unavailable := makeRoot(true, 10, 20, int64(time.Second))
+	if _, code := captureStdout(t, func() int { return runWaitMeasure([]string{"--root", unavailable}) }); code != 2 {
+		t.Fatalf("unavailable exit=%d", code)
+	}
+	if code := runWaitMeasure([]string{"--since", "bad"}); code != metarun.ExitInvalidWait {
+		t.Fatalf("invalid exit=%d", code)
+	}
+
+	grouped := t.TempDir()
+	emitReturn(grouped, "codex-event", "codex", false, 10, 20, int64(time.Second))
+	emitReturn(grouped, "fake-event", "fake", false, 10, 20, int64(time.Second))
+	before, err := os.ReadFile(filepath.Join(grouped, "artifacts", "agents", "events.jsonl"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	type answer struct {
+		data string
+		err  error
+	}
+	answers := make(chan answer, 2)
+	for range 2 {
+		go func() {
+			measurement, measureErr := usagecore.MeasureWaits(grouped, usagecore.WaitMeasureOptions{})
+			encoded, _ := json.Marshal(measurement)
+			answers <- answer{data: string(encoded), err: measureErr}
+		}()
+	}
+	one, two := <-answers, <-answers
+	after, err := os.ReadFile(filepath.Join(grouped, "artifacts", "agents", "events.jsonl"))
+	if err != nil || one.err != nil || two.err != nil || one.data != two.data || string(before) != string(after) || !strings.Contains(one.data, `"runtime":"codex"`) || !strings.Contains(one.data, `"runtime":"fake"`) {
+		t.Fatalf("concurrent read one=%s/%v two=%s/%v unchanged=%t readErr=%v", one.data, one.err, two.data, two.err, string(before) == string(after), err)
+	}
+
+	duplicateRoot := t.TempDir()
+	bootID, bootElapsed, err := identity.BootClock()
+	if err != nil || bootElapsed < 5*time.Second {
+		t.Fatalf("boot clock = %s/%s err=%v", bootID, bootElapsed, err)
+	}
+	publicationID := "job:job-duplicate:operation:r1:started:completed"
+	jobReturn := map[string]string{
+		"waitId": strings.Repeat("c", 32), "nonce": strings.Repeat("d", 32), "kind": "job", "targetId": "job-duplicate", "runtime": "codex", "mode": "register", "state": "ready",
+		"sourceEvidence": "job:job-duplicate:operation:r1:started", "sourceOutcome": "completed", "registeredAt": "2026-09-16T10:00:00Z", "returnedAt": "2026-09-16T10:00:01Z",
+		"registeredBootNanos": strconv.FormatInt((bootElapsed - 5*time.Second).Nanoseconds(), 10), "prevObservedBootNanos": strconv.FormatInt((bootElapsed - 4*time.Second).Nanoseconds(), 10),
+		"observedBootNanos": strconv.FormatInt((bootElapsed - 2*time.Second).Nanoseconds(), 10), "returnedBootNanos": strconv.FormatInt((bootElapsed - time.Second).Nanoseconds(), 10),
+		"registeredBootId": bootID, "prevObservedBootId": bootID, "observedBootId": bootID, "returnedBootId": bootID, "atEntry": "false",
+	}
+	if err := (&events.Emitter{Component: "run", Pid: 31, PidStartedAt: 41}).EmitChecked(duplicateRoot, "wait-returned", "duplicate publication fixture", jobReturn); err != nil {
+		t.Fatal(err)
+	}
+	for range 2 {
+		args := []string{"--root", duplicateRoot, "--job", "job-duplicate", "--publication-id", publicationID, "--began-boot-nanos", strconv.FormatInt((bootElapsed - 3*time.Second).Nanoseconds(), 10), "--boot-id", bootID}
+		if _, code := captureStdout(t, func() int { return runWaitNotify(args) }); code != 0 {
+			t.Fatalf("duplicate notify exit=%d", code)
+		}
+	}
+	stream, err := os.ReadFile(filepath.Join(duplicateRoot, "artifacts", "agents", "events.jsonl"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	publicationCount := 0
+	for _, line := range strings.Split(strings.TrimSpace(string(stream)), "\n") {
+		var event map[string]any
+		if err := json.Unmarshal([]byte(line), &event); err != nil {
+			t.Fatal(err)
+		}
+		if event["event"] != "wait-published" {
+			continue
+		}
+		began, beganErr := strconv.ParseInt(fmt.Sprint(event["beganBootNanos"]), 10, 64)
+		published, publishedErr := strconv.ParseInt(fmt.Sprint(event["publishedBootNanos"]), 10, 64)
+		if beganErr != nil || publishedErr != nil || began >= published {
+			t.Fatalf("publication did not follow its began sample: began=%v/%v published=%v/%v", began, beganErr, published, publishedErr)
+		}
+		publicationCount++
+	}
+	if publicationCount != 2 {
+		t.Fatalf("published event count=%d, want 2", publicationCount)
+	}
+	duplicate, err := usagecore.MeasureWaits(duplicateRoot, usagecore.WaitMeasureOptions{})
+	if err != nil || len(duplicate.Runtimes) != 1 || len(duplicate.Runtimes[0].Samples) != 1 || duplicate.Runtimes[0].Samples[0].LooseEdgeReason != "publication-ambiguous" || duplicate.Runtimes[0].Samples[0].LowerEdge != "prev-observation" || duplicate.Runtimes[0].Samples[0].UpperEdge != "observation" || duplicate.Runtimes[0].Defects["publication-ambiguous"] != 1 {
+		t.Fatalf("duplicate publication measurement=%+v err=%v", duplicate, err)
 	}
 }
 
