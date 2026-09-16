@@ -142,6 +142,9 @@ func runProofRunLaunch(args []string) int {
 		return proofrun.ExitAdmissionRefused
 	}
 	if decision.Disposition != proofrun.DispositionExecuted {
+		if decision.Reason != "" {
+			fmt.Fprintln(os.Stderr, decision.Reason)
+		}
 		if err := proofrun.EncodeResult(os.Stderr, *resultPath, decision); err != nil {
 			fmt.Fprintln(os.Stderr, "proof-run launch: publish launch result:", err)
 			return 1
@@ -519,7 +522,7 @@ func admitProofLaunch(request proofLaunchAdmission) (proofrun.Attempt, proofrun.
 		return proofrun.Attempt{}, proofrun.LaunchResult{}, false, fmt.Errorf("proof reservation lost checkout-fence authority")
 	}
 	reservation := proofrun.AdmissionRequest{
-		ControlRoot: request.ControlRoot, ExecutionRoot: request.ExecutionRoot, GoalID: request.GoalID,
+		ControlRoot: request.ControlRoot, ExecutionRoot: request.ExecutionRoot, ConfPath: request.ConfPath, GoalID: request.GoalID,
 		GoalRevision: binding.Revision, AccountingRevision: accountingRevision, BudgetEpoch: projection.WeightEpoch,
 		ReservedMinutes: uint64(capValue), Identity: proofIdentity, Launcher: launcher, ReservationOwner: reservationOwner,
 		RetryDecisionPath: request.RetryDecision, Now: now,

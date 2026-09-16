@@ -198,6 +198,7 @@ type RetryDecision struct {
 type AdmissionRequest struct {
 	ControlRoot         string
 	ExecutionRoot       string
+	ConfPath            string
 	GoalID              string
 	GoalRevision        uint64
 	AccountingRevision  uint64
@@ -224,6 +225,7 @@ type LaunchResult struct {
 	PriorAttempt  string `json:"priorAttemptId,omitempty"`
 	EvidencePath  string `json:"evidencePath,omitempty"`
 	ExitStatus    int    `json:"exitStatus"`
+	Reason        string `json:"reason,omitempty"`
 }
 
 type MutationLock struct{ file *os.File }
@@ -576,6 +578,16 @@ func ReserveLocked(request AdmissionRequest) (Attempt, LaunchResult, error) {
 	} else if _, statErr := os.Lstat(path); statErr == nil || !os.IsNotExist(statErr) {
 		return Attempt{}, LaunchResult{}, fmt.Errorf("proof attempt id %s is already retained", id)
 	}
+	start := sampleLoad(request.ControlRoot, id, request.Launcher.Pid, now)
+	admission, err := ResolveAdmissionCap(request.ConfPath, start.Cores)
+	if err != nil {
+		return Attempt{}, LaunchResult{}, err
+	}
+	nested, nestedKnown := loadSeams.nested(request.Launcher.Pid)
+	if admission.Refuses(start, nested, nestedKnown) {
+		return Attempt{}, LaunchResult{SchemaVersion: 1, Disposition: DispositionAdmissionRefused,
+			ExitStatus: ExitAdmissionRefused, Reason: admission.RefusalReason(start.OverlappingHost)}, nil
+	}
 	attempt := Attempt{
 		SchemaVersion: AttemptSchemaVersion, AttemptID: id, GoalID: request.GoalID,
 		GoalRevision: request.GoalRevision, AccountingRevision: request.AccountingRevision,
@@ -583,7 +595,7 @@ func ReserveLocked(request AdmissionRequest) (Attempt, LaunchResult, error) {
 		StartedAt: now.Format(time.RFC3339Nano), Deadline: now.Add(time.Duration(request.ReservedMinutes) * time.Minute).Format(time.RFC3339Nano),
 		ProofIdentity: request.Identity, ControlRoot: request.ControlRoot, ExecutionRoot: request.ExecutionRoot,
 		Launcher: request.Launcher, ProcessKeys: []string{}, Retry: retry, ReservationOwner: request.ReservationOwner,
-		Load: &AttemptLoad{Start: sampleLoad(request.ControlRoot, id, request.Launcher.Pid, now)},
+		Load: &AttemptLoad{Start: start},
 	}
 	if previous != nil {
 		attempt.PreviousAttempt = previous.AttemptID
@@ -952,6 +964,9 @@ func effectiveProofConfigurationDigest(configurationPath string, environment []s
 	sort.Strings(keys)
 	hash := sha256.New()
 	for _, key := range keys {
+		if key == AdmissionCapKey {
+			continue
+		}
 		// The shipped template's model slot is metadata, not a resolvable key.
 		// Concrete local/runtime bindings below carry the effective model;
 		// the source manifest still binds the template's original bytes.

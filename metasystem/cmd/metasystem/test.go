@@ -851,6 +851,9 @@ func runTestRun(args []string) int {
 		}
 	}
 	if decision.Disposition != proofrun.DispositionExecuted {
+		if decision.Reason != "" {
+			fmt.Fprintln(os.Stderr, decision.Reason)
+		}
 		if err := proofrun.EncodeResult(os.Stdout, request.ResultPath, decision); err != nil {
 			fmt.Fprintln(os.Stderr, "metasystem test run: publish no-child result:", err)
 			return 1

@@ -36,7 +36,8 @@ const LoadAttribution = "load"
 var loadSeams = struct {
 	host      func(now time.Time) hostload.Sample
 	launchers func(self int64) (int, bool)
-}{host: hostload.Read, launchers: countProofLaunchers}
+	nested    func(self int64) (bool, bool)
+}{host: hostload.Read, launchers: countProofLaunchers, nested: nestedProofLauncher}
 
 // sampleLoad reads the host, this checkout's other live attempts, and the
 // host's other top-level proof launchers at now. The attempt's own launcher
@@ -91,9 +92,17 @@ type processRow struct {
 // host outside self's family; a table that cannot be read reports unknown
 // rather than zero.
 func countProofLaunchers(self int64) (int, bool) {
+	rows, known := readProcessRows()
+	if !known {
+		return 0, false
+	}
+	return topLevelLaunchers(rows, self), true
+}
+
+func readProcessRows() ([]processRow, bool) {
 	pids, err := identity.AllPids()
 	if err != nil {
-		return 0, false
+		return nil, false
 	}
 	rows := make([]processRow, 0, len(pids))
 	for _, pid := range pids {
@@ -107,7 +116,26 @@ func countProofLaunchers(self int64) (int, bool) {
 		}
 		rows = append(rows, row)
 	}
-	return topLevelLaunchers(rows, self), true
+	return rows, true
+}
+
+func nestedProofLauncher(self int64) (bool, bool) {
+	rows, known := readProcessRows()
+	if !known {
+		return false, false
+	}
+	parent, launcher := map[int64]int64{}, map[int64]bool{}
+	for _, row := range rows {
+		parent[row.pid], launcher[row.pid] = row.parent, row.launcher
+	}
+	seen := map[int64]bool{}
+	for current := parent[self]; current > 0 && !seen[current]; current = parent[current] {
+		seen[current] = true
+		if launcher[current] {
+			return true, true
+		}
+	}
+	return false, true
 }
 
 // topLevelLaunchers counts the launchers that have no launcher above them

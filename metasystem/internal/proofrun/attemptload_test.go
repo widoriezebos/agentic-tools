@@ -117,8 +117,12 @@ func TestReserveAndFinalizeRecordTheHostLoad(t *testing.T) {
 		t.Fatal(err)
 	}
 	now := time.Date(2026, 9, 12, 17, 0, 0, 0, time.UTC)
+	conf := filepath.Join(root, "admission.conf")
+	if err := os.WriteFile(conf, []byte("proof.admission.top-level-max=0\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
 	request := AdmissionRequest{ControlRoot: root, ExecutionRoot: root, GoalID: "goal-a", GoalRevision: 3,
-		AccountingRevision: 2, ReservedMinutes: 4, Identity: identity, Launcher: launcher, Now: now}
+		AccountingRevision: 2, ReservedMinutes: 4, Identity: identity, Launcher: launcher, Now: now, ConfPath: conf}
 	attempt, _, err := ReserveLocked(request)
 	if err != nil {
 		t.Fatal(err)
