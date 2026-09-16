@@ -246,9 +246,34 @@ if [[ "$fixture_scenario" == wrong-terminal ]]; then
   expected_checkout=$(cd "$clone" && pwd -P)
   identity_file=$tmp/wrong-terminal-identities.json
   export METASYSTEM_FAKE_PROCESS_IDENTITY_FILE=$identity_file
-  printf '{"%s":{"terminal":false}}\n' "$$" >"$identity_file"
+  delegate_fixture=$tmp/wrong-terminal-delegate
+  mkdir -p "$delegate_fixture"
+  fake_agent=$delegate_fixture/metasystem-fake-agent
+  tool_shell=$delegate_fixture/fixture-tool-shell
+  cat >"$fake_agent" <<'FAKE_AGENT'
+#!/usr/bin/env bash
+set -euo pipefail
+identity_file=$1
+engine=$2
+tool_shell=$3
+suite_pid=$4
+shift 4
+started=$("$engine" proc started-at --pid $$)
+printf '{"%s":{"pidStartedAt":%s,"command":"metasystem-fake-agent fixture","terminal":false},"%s":{"terminal":false}}\n' \
+  "$$" "$started" "$suite_pid" >"$identity_file"
+"$tool_shell" "$engine" "$@"
+FAKE_AGENT
+  cat >"$tool_shell" <<'FIXTURE_TOOL_SHELL'
+#!/usr/bin/env bash
+set -euo pipefail
+engine=$1
+shift
+"$engine" "$@"
+FIXTURE_TOOL_SHELL
+  chmod +x "$fake_agent" "$tool_shell"
   set +e
-  "$clone/bin/metasystem" stop --repo "$clone" >"$tmp/wrong-terminal.refusal" 2>&1
+  "$fake_agent" "$identity_file" "$clone/bin/metasystem" "$tool_shell" "$$" \
+    stop --repo "$clone" >"$tmp/wrong-terminal.refusal" 2>&1
   refusal_rc=$?
   set -e
   (( refusal_rc == 1 )) \
@@ -260,10 +285,9 @@ if [[ "$fixture_scenario" == wrong-terminal ]]; then
   cmp -s "$tmp/wrong-terminal.expected" "$tmp/wrong-terminal.refusal" \
     || { echo "wrong-terminal refusal did not match the process-verb grammar" >&2; diff -u "$tmp/wrong-terminal.expected" "$tmp/wrong-terminal.refusal" >&2 || true; exit 1; }
 
-  # The refusal above deliberately inherits the bed's delegate ancestry. For
-  # the fixture-human half, make the scratch installation's signature universe
-  # agent-free before its staged terminal fact is read, as the supervision bed
-  # does for control-plane scenarios.
+  # The bed stages the refusal's delegate ancestry. The fixture-human half
+  # deliberately drops it, then makes the scratch installation's signature
+  # universe agent-free before its staged terminal fact is read.
   for adapter in "$clone"/scripts/agents/adapters/*.sh; do
     case "${adapter##*/}" in fake.sh | runtime-common.sh) ;;
       *) rm -f "$adapter" ;;
