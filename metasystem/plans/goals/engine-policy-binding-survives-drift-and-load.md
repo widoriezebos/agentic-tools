@@ -1,6 +1,6 @@
 # engine-policy-binding-survives-drift-and-load
 
-- State: claimed
+- State: approved
 - Priority: 1
 - Sequence: 29
 - Risk: severity=2 novelty=2 exposure=3 accumulation=2 basis="severity 2: refused runs and manual re-arms, no wrong landing; novelty 2: changes the policy-binding judgment and its timing; exposure 3: every engine run on every seat; accumulation 2: worse with load and landing rate"
@@ -9,12 +9,11 @@
 - Origin: human
 - Next step: 2026-09-16 02:10 m1c: DO NOT DESIGN THIS GOAL HERE. m1e already holds design r1 and Codex critique r1 (10 material, rework) at /private/tmp/claude-501/-Users-wido-LocalStorage-GitHub-agentic-tools-m1e/5afd308c-3804-42b1-87c4-4547e1460fa9/scratchpad (engine-policy-binding-survives-drift-and-load-design-r1.md, -critique-r1.md) and a Fable r2 fold is running there with its seat rulings (test verify does not re-arm; a run never stashes an append-only ledger file, it refuses with the preserving remedy; worktree enrollment borrowing is a separate goal; keep rearm-resolve-seconds). m1c cancelled its own duplicate Fable design at 02:10 as soon as m1e said so. m1c's part: take the r2 page when it lands and BUILD its units (Codex Sol builds, Opus reads, deep proof, landing through Wido's lane with the receipt). While waiting, m1c releases this goal and works spend-fence unit U5a-2, whose brief is ready, because a machine holds one claim and nothing here can proceed without the page.
 - OpenedAt: 2026-09-15T05:55:22Z
-- Revision: 41
+- Revision: 42
 - Budget: elapsedLimit=4h attemptLimit=6 reservedJobMinutesLimit=720 activeJobLimit=1 reviewRoundLimit=2
 - BudgetExceptions: 0
 - Approved: by=human:Wido at=2026-09-15T05:55:30Z revision=2 opid=AHEG73BFDFM935QEF6CY7BZJPK-m1e-c6925449 authority=proven digest=63ceddd30a86381c144ea03b4a78f9c82678b39aa1fb788e44c9b185ccf0a392
-- Claimed: machine=m1c lineage=main-1789191340-90689-2eda89 at=2026-09-16T00:04:42Z revision=39 accountingRevision=39 episodeAt=2026-09-16T00:04:42Z episodeRevision=39
-- StopCapability: generation=39 revision=39 machine=m1c claimEpoch=5 fenceEpoch=0
+- Episode: machine=m1c lineage=main-1789191340-90689-2eda89 accountingRevision=39 episodeAt=2026-09-16T00:04:42Z episodeRevision=39 idleSeconds=0 released=2026-09-16T00:08:34Z
 
 History:
 - 2026-09-15T05:55:22Z 8EAG3N9FPAMVM02CM6W74JD46H-m1e-c6925449 open actor=human:Wido targets=engine-policy-binding-survives-drift-and-load
@@ -58,4 +57,5 @@ History:
 - 2026-09-16T00:04:42Z G0HZTPRD9B3RXAX3FZZ96DV4JW-m1c-a6ea8b3e claim actor=m1c+main-1789191340-90689-2eda89 targets=engine-policy-binding-survives-drift-and-load
 - 2026-09-16T00:05:37Z A5QPDG3S2TWXJJ9RAZ2DYS11ZP-m1c-a6ea8b3e edit actor=m1c+main-1789191340-90689-2eda89 targets=engine-policy-binding-survives-drift-and-load
 - 2026-09-16T00:08:28Z HCY2WHAPP18H5TKW1AP7A2RRDM-m1c-a6ea8b3e edit actor=m1c+main-1789191340-90689-2eda89 targets=engine-policy-binding-survives-drift-and-load
-Integrity: sha256=5b6359f526d57f09054c427f1376b014d57759cb4b12c4ddd982d71eb3c08f2f
+- 2026-09-16T00:08:34Z F2B523J8225B2GGN9XKF5GQ546-m1c-a6ea8b3e release actor=m1c+main-1789191340-90689-2eda89 targets=engine-policy-binding-survives-drift-and-load
+Integrity: sha256=bff2453b30567c7575d579799227aced5d9d5e282370d44059bed3fec10f9463
