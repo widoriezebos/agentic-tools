@@ -9,7 +9,7 @@
 - Origin: human
 - Next step: STATE 2026-09-16 13:05 CEST (m1e landing lane; builds Codex gpt-5.6-sol, reads Opus, designs Claude Fable): slice 3 complete; 8c.15 built (C1a 0cca29a4, C1b ffdc623b, C2 25fb3b54). Amendment 8d revision 3, the cap group, landed 7704d36fe with ruling R-116-m1e; records under records/misc/coordinator-context-stays-under-budget-8d-*. The automatic successor is goal seat-successor-continues-a-handoff-without-a-human: this goal depends on it for the deny switch and does not conclude without it. 8c.7 decided (R-116-m1e item 5): a held handoff expires after 8h and cancels with a notice (handoffExpiryRule), a small unit joining the cap units. LANDED cap units: U3a-1a1 a921c63a1; U3a-1a2 61c0cedfe (proof-mu3ru1lh-110c98359b2c6e93); the FIXED pair U3b-1a 3dbead3e6 (handoff state schema 2 and engine identity, with the seven refusal-register Site re-syncs) and U3b-1b ce3b1b162 (the wait-ending function, complete and unwired, with the HANDOFF_WAIT_UNENDABLE register row and the EvalSymlinks test root), proved together as a stack in proof-mu3xsxqr-b7ad295550b05185 (tree 44380ecac, deep, 53 of 53 executed, none reused; all ten new Go tests passed inside it and again by name package at a time).; U3a-1b LANDED 3a2ab6e2e (the Stop-time CONTEXT line on the rendered verdict trailer, terminal verdicts exact), proved alone in proof-mu3z45j1-d194a832cc3c56cf (tree 66fd6c877, deep, 53 of 53 executed incl. section/goal-cli-fixtures and section/supervision-and-census-fixtures; its five new Go tests passed by name package at a time). Next: U3b-2a1 (never U3b-2a2 until its six refusal tokens have register rows), U3b-2b; U3e-1, U3e-2a (split in two), U3e-2b. Each built by Codex in a worktree, read by Opus, landed after every group the test plan selects. The tool gate ships in observe mode. Then the week of measurement under section 7 and the conclusion.
 - OpenedAt: 2026-09-11T15:45:19Z
-- Revision: 116
+- Revision: 117
 - Pinned: m1e
 - Budget: elapsedLimit=4d attemptLimit=14 reservedJobMinutesLimit=1200 activeJobLimit=1 reviewRoundLimit=3
 - BudgetExceptions: 2
@@ -133,4 +133,5 @@ History:
 - 2026-09-16T10:24:32Z 8EZBV9VTGV0N85Z3TMHFH4PC1A-m1e-a3d4c1e1 edit actor=m1e+main-1789030447-51011-2956ea targets=coordinator-context-stays-under-budget
 - 2026-09-16T11:00:14Z FXF7D2YSVTVDNA2PD5W5ZABTDC-m1e-a3d4c1e1 edit actor=m1e+main-1789030447-51011-2956ea targets=coordinator-context-stays-under-budget
 - 2026-09-16T11:20:43Z PV5VNWHMSW07NAH4VQWC7HA47W-m1e-a3d4c1e1 release actor=m1e+main-1789030447-51011-2956ea targets=coordinator-context-stays-under-budget
-Integrity: sha256=ff45596d78588ede6220976d4ac7ea16b9ab479257937545184bcd98c8eda1ed
+- 2026-09-16T12:01:15Z 4H99CHF49K2TXJZK3P8R64PTTS-m1e-a3d4c1e1 edit actor=m1e+main-1789030447-51011-2956ea targets=coordinator-context-stays-under-budget
+Integrity: sha256=e99d035f9bf3dcb825b09baad0004d840449457af45264ebb3e40137935def47
