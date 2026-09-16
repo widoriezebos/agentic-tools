@@ -198,10 +198,13 @@ func TestApproveAndSetBudgetUnderPowerOfAttorney(t *testing.T) {
 	expectRefusal(t, "--by beside --under", res, err, "seat's own")
 
 	// The claim, then set-budget within the box; over the box refuses.
-	if res, err := Claim(attorneyReq(root, 23, "mac-a"), "small"); err != nil || res.Outcome != OutcomeConfirmed {
+	holder := attorneyReq(root, 23, "mac-b")
+	holder.ClaimEpoch = 6
+	if res, err := Claim(holder, "small"); err != nil || res.Outcome != OutcomeConfirmed {
 		t.Fatalf("claim: %+v %v", res, err)
 	}
 	within := Budget{ElapsedLimit: "1h", AttemptLimit: 2, ReservedJobMinutesLimit: 120, ActiveJobLimit: 1, ReviewRoundLimit: 0}
+	seat.ClaimEpoch = 2
 	res, err = SetBudgetApproved(withUlid(seat, 24), "small", within, nil)
 	if err != nil || res.Outcome != OutcomeConfirmed {
 		t.Fatalf("set-budget under attorney: %+v %v", res, err)
@@ -210,7 +213,7 @@ func TestApproveAndSetBudgetUnderPowerOfAttorney(t *testing.T) {
 		t.Fatal(err)
 	}
 	f = tree.Live["small"]
-	if f.Approved.Authority != ApprovalAuthorityAttorney || *f.Budget != within || f.History[len(f.History)-1].AuthorityRuling != entry.ID {
+	if f.Approved.Authority != ApprovalAuthorityAttorney || *f.Budget != within || f.History[len(f.History)-1].AuthorityRuling != entry.ID || f.StopCapability == nil || f.StopCapability.ClaimEpoch != 6 {
 		t.Fatalf("the set-budget is the seat's act under attorney: %+v %+v", f.Approved, f.Budget)
 	}
 	over := Budget{ElapsedLimit: "8h", AttemptLimit: 2, ReservedJobMinutesLimit: 120, ActiveJobLimit: 1, ReviewRoundLimit: 0}

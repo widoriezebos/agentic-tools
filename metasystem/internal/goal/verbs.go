@@ -1243,7 +1243,7 @@ func setBudgetRequest(r VerbRequest, id string, budget Budget, proof *humanautho
 			bindApproval(f, r, authority, reviewBy)
 			if f.State == StateClaimed && f.Claimed != nil {
 				claimEpoch := r.ClaimEpoch
-				if claimEpoch < 1 && r.Actor.Human != "" && f.StopCapability != nil {
+				if f.StopCapability != nil && (!ownPair(f.Claimed, r.Actor) || claimEpoch < 1 && r.Actor.Human != "") {
 					claimEpoch = f.StopCapability.ClaimEpoch
 				}
 				if err := rebindClaimKeepEpisode(f, r.stamp(), f.Revision, claimEpoch); err != nil {

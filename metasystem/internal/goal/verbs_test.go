@@ -375,6 +375,42 @@ func TestBudgetedClaimRevisionLaws(t *testing.T) {
 	})
 }
 
+func TestSetBudgetKeepsForeignHolderClaimEpoch(t *testing.T) {
+	for _, tc := range []struct {
+		name       string
+		actorEpoch int64
+	}{
+		{name: "human with seat lease", actorEpoch: 2},
+		{name: "human without seat lease"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			root := riskLocalRoot(t, "foreign-budget-epoch")
+			holder := obligationAuthorityVerbReq(root, "01J5X00000000000000000H300", "mac-a")
+			holder.ClaimEpoch = 6
+			if result, err := openClaimForTest(t, holder, "foreign-budget", "Keep the holder's lease epoch.", OriginMain, "Rebudget it.", testBudget()); err != nil || result.Outcome != OutcomeConfirmed {
+				t.Fatalf("claim at holder epoch 6: %+v %v", result, err)
+			}
+			next := testBudget()
+			next.AttemptLimit++
+			actor := obligationAuthorityVerbReq(root, "01J5X00000000000000000H310", "mac-b")
+			actor.ClaimEpoch = tc.actorEpoch
+			actor.Now = holder.Now.Add(time.Minute)
+			result, err := setBudgetApprovedForTest(t, actor, "foreign-budget", next)
+			if err != nil || result.Outcome != OutcomeConfirmed {
+				t.Fatalf("foreign set-budget: %+v %v", result, err)
+			}
+			tree, err := loadTree(root, result.Tip)
+			if err != nil {
+				t.Fatal(err)
+			}
+			capability := tree.Live["foreign-budget"].StopCapability
+			if capability == nil || capability.ClaimEpoch != 6 {
+				t.Fatalf("foreign set-budget changed holder epoch: %+v", capability)
+			}
+		})
+	}
+}
+
 func publishClaimFixtureMutation(t *testing.T, root, id, opid string, mutate func(*GoalFile)) PublishResult {
 	t.Helper()
 	result, err := Publish(obligationAuthorityEndpoint(root), PublishRequest{
