@@ -22,9 +22,27 @@ import (
 type transcriptRequest struct {
 	id, file, session, cwd, model, timestamp, runtime string
 	line                                              int
-	usage                                             map[string]any
+	classes                                           rawTokenClasses
 	detail                                            string
 	dayEligible                                       bool
+}
+
+type rawTokenClasses struct {
+	Input, CacheCreation, CacheRead, Output, Reasoning float64
+	HasCacheRead, HasReasoning                         bool
+}
+
+func (classes rawTokenClasses) missionClasses() map[string]float64 {
+	missionClasses := map[string]float64{
+		"inputTokens": classes.Input + classes.CacheCreation, "outputTokens": classes.Output,
+	}
+	if classes.HasCacheRead {
+		missionClasses["cachedInputTokens"] = classes.CacheRead
+	}
+	if classes.HasReasoning {
+		missionClasses["reasoningTokens"] = classes.Reasoning
+	}
+	return missionClasses
 }
 
 var transcriptBytesRead func(int)
@@ -41,7 +59,7 @@ func (r observedTranscriptReader) Read(buffer []byte) (int, error) {
 	return count, err
 }
 
-func readSeat(repoRoot, machine string, now time.Time, delegates map[string]bool, settings config.SpendSettings) ([]pricedMeasurement, SeatSummary, []UnmeasuredEntry, error) {
+func readSeat(repoRoot, machine string, now time.Time, jobs readerJobs, settings config.SpendSettings) ([]pricedMeasurement, SeatSummary, []UnmeasuredEntry, error) {
 	seat := SeatSummary{CodexUnmeasured: true}
 	visitedCursorPaths := map[string]bool{}
 	var unmeasured []UnmeasuredEntry
@@ -81,7 +99,7 @@ func readSeat(repoRoot, machine string, now time.Time, delegates map[string]bool
 		registered := file.registered
 		path := file.path
 		fileSession := file.session
-		if delegates[fileSession] || delegates[file.parentSession] {
+		if jobs.referencedSessions[fileSession] || jobs.referencedSessions[file.parentSession] {
 			continue
 		}
 		info, statErr := os.Stat(path)
@@ -90,7 +108,7 @@ func readSeat(repoRoot, machine string, now time.Time, delegates map[string]bool
 			continue
 		}
 		visitedCursorPaths[transcriptCursorPath(repoRoot, path)] = true
-		result := registered.scan(file, readerCursor{repoRoot: repoRoot, toplevel: file.toplevel, now: now, info: info}, readerJobs(delegates))
+		result := registered.scan(file, readerCursor{repoRoot: repoRoot, toplevel: file.toplevel, now: now, info: info}, jobs)
 		if result.cacheWriteFailed {
 			seat.CacheWriteFailures++
 		}
@@ -108,7 +126,9 @@ func readSeat(repoRoot, machine string, now time.Time, delegates map[string]bool
 		}
 		for key, request := range result.calls {
 			request.runtime = registered.name
-			requests[key] = request
+			if retained, exists := requests[key]; !exists || earlierStamped(request, retained) {
+				requests[key] = request
+			}
 		}
 		for _, gap := range result.unmeasured {
 			gap.Machine = machine
@@ -142,18 +162,15 @@ func readSeat(repoRoot, machine string, now time.Time, delegates map[string]bool
 			continue
 		}
 		timestamp, stampErr := parseTime(request.timestamp)
-		classes, usageErr := transcriptTokens(request.usage)
-		if stampErr != nil || usageErr != nil {
+		if stampErr != nil {
 			detail := "unparsable timestamp"
-			if usageErr != nil {
-				detail = usageErr.Error()
-			}
 			entry := seatUnmeasured(repoRoot, request, id, detail)
 			entry.Machine = machine
 			unmeasured = append(unmeasured, entry)
 			seat.UnmeasuredRequests++
 			continue
 		}
+		classes := request.classes.missionClasses()
 		tokens := tokensFromMission(classes)
 		model := config.CanonicalModel(request.model)
 		money, priced, unpriced, foreign := price(request.runtime, model, classes, (*mission.UsageCost)(nil), false, settings)
@@ -169,6 +186,15 @@ func readSeat(repoRoot, machine string, now time.Time, delegates map[string]bool
 		}
 	}
 	return measured, seat, unmeasured, nil
+}
+
+func earlierStamped(candidate, retained transcriptRequest) bool {
+	candidateStamp, candidateErr := parseTime(candidate.timestamp)
+	retainedStamp, retainedErr := parseTime(retained.timestamp)
+	if candidateErr == nil && retainedErr == nil {
+		return candidateStamp.Before(retainedStamp)
+	}
+	return candidateErr == nil && retainedErr != nil
 }
 func claudeReader() reader {
 	return reader{
@@ -263,7 +289,7 @@ func claudeTranscriptFile(slugPath, path string) transcriptFile {
 func scanClaudeTranscript(file transcriptFile, cursor readerCursor, jobs readerJobs) scanResult {
 	dayEligible := !cursor.info.ModTime().Before(cursor.now.Add(-48 * time.Hour))
 	calls, invalid, foreign, cacheWriteFailed, err := readTranscriptCursor(
-		cursor.repoRoot, file.path, cursor.info, cursor.toplevel, dayEligible, jobs, delegateSessionDigest(jobs),
+		cursor.repoRoot, file.path, cursor.info, cursor.toplevel, dayEligible, jobs.referencedSessions, jobDigest(jobs),
 	)
 	unmeasured := make([]UnmeasuredEntry, 0, len(invalid))
 	for _, request := range invalid {
@@ -279,10 +305,10 @@ func scanClaudeTranscript(file transcriptFile, cursor readerCursor, jobs readerJ
 	}
 }
 
-func readTranscriptCursor(repoRoot, path string, info os.FileInfo, toplevel string, dayEligible bool, delegates map[string]bool, delegateDigest string) (map[string]transcriptRequest, []transcriptRequest, bool, bool, error) {
+func readTranscriptCursor(repoRoot, path string, info os.FileInfo, toplevel string, dayEligible bool, delegates map[string]bool, jobsDigest string) (map[string]transcriptRequest, []transcriptRequest, bool, bool, error) {
 	cachePath := transcriptCursorPath(repoRoot, path)
 	cache, valid := loadTranscriptCursor(cachePath, path)
-	valid = valid && cache.DelegateDigest == delegateDigest
+	valid = valid && cache.JobDigest == jobsDigest
 	unchanged := valid && cache.Size == info.Size() && cache.ModTimeNanos == info.ModTime().UnixNano()
 	grown := valid && cache.Size < info.Size()
 	if valid && cache.FirstCWD != "" && !seatCWD(toplevel, cache.FirstCWD) {
@@ -299,7 +325,7 @@ func readTranscriptCursor(repoRoot, path string, info os.FileInfo, toplevel stri
 	}
 	if !grown {
 		cache = transcriptCursorCache{
-			SchemaVersion: spendCacheSchemaVersion, Path: path, DelegateDigest: delegateDigest,
+			SchemaVersion: transcriptCursorSchemaVersion, Path: path, JobDigest: jobsDigest,
 			Requests: map[string]cachedTranscriptRequest{}, Invalid: []cachedTranscriptRequest{},
 		}
 	}
@@ -421,7 +447,7 @@ func applyTranscriptLine(cache *transcriptCursorCache, line []byte, path string,
 	}
 	message, _ := raw["message"].(map[string]any)
 	request := cachedTranscriptRequest{
-		ID: textOr(raw["requestId"], ""), Session: session, CWD: cwd,
+		ID: textOr(message["id"], textOr(raw["requestId"], "")), Session: session, CWD: cwd,
 		Model: textOr(message["model"], "unknown"), Timestamp: textOr(raw["timestamp"], ""), Line: lineNumber,
 	}
 	request.Usage, _ = message["usage"].(map[string]any)
@@ -429,8 +455,32 @@ func applyTranscriptLine(cache *transcriptCursorCache, line []byte, path string,
 	if key == "" {
 		key = fmt.Sprintf("%s:%d", path, lineNumber)
 	}
-	cache.Requests[key] = request
+	request.ID = key
+	if retained, exists := cache.Requests[key]; !exists {
+		cache.Requests[key] = request
+	} else if !measurableTranscriptRequest(retained) && measurableTranscriptRequest(request) {
+		cache.Requests[key] = request
+	} else if output, ok := transcriptNumber(request.Usage["output_tokens"]); ok && output > retainedOutput(retained) {
+		usage := make(map[string]any, len(retained.Usage))
+		for name, value := range retained.Usage {
+			usage[name] = value
+		}
+		usage["output_tokens"] = request.Usage["output_tokens"]
+		retained.Usage = usage
+		cache.Requests[key] = retained
+	}
 	return false
+}
+
+func measurableTranscriptRequest(request cachedTranscriptRequest) bool {
+	_, err := rawTranscriptTokens(request.Usage)
+	_, stampErr := parseTime(request.Timestamp)
+	return request.Model != "<synthetic>" && err == nil && stampErr == nil
+}
+
+func retainedOutput(request cachedTranscriptRequest) float64 {
+	output, _ := transcriptNumber(request.Usage["output_tokens"])
+	return output
 }
 
 func transcriptCursorSnapshot(cache transcriptCursorCache, path, toplevel string, dayEligible bool, delegates map[string]bool) (map[string]transcriptRequest, []transcriptRequest, bool) {
@@ -451,22 +501,6 @@ func transcriptCursorSnapshot(cache transcriptCursorCache, path, toplevel string
 	return requests, invalid, false
 }
 
-func delegateSessionDigest(delegates map[string]bool) string {
-	sessions := make([]string, 0, len(delegates))
-	for session, delegated := range delegates {
-		if delegated {
-			sessions = append(sessions, session)
-		}
-	}
-	sort.Strings(sessions)
-	hash := sha256.New()
-	for _, session := range sessions {
-		hash.Write([]byte(session))
-		hash.Write([]byte{0})
-	}
-	return hex.EncodeToString(hash.Sum(nil))
-}
-
 func cloneTranscriptCursor(cache transcriptCursorCache) transcriptCursorCache {
 	clone := cache
 	clone.Requests = make(map[string]cachedTranscriptRequest, len(cache.Requests))
@@ -479,9 +513,18 @@ func cloneTranscriptCursor(cache transcriptCursorCache) transcriptCursorCache {
 }
 
 func transcriptRequestFromCache(path string, request cachedTranscriptRequest, dayEligible bool) transcriptRequest {
+	classes, usageErr := rawTranscriptTokens(request.Usage)
+	detail := request.Detail
+	if detail == "" {
+		if request.Model == "<synthetic>" {
+			detail = "synthetic model"
+		} else if usageErr != nil {
+			detail = usageErr.Error()
+		}
+	}
 	return transcriptRequest{
 		id: request.ID, file: path, session: request.Session, cwd: request.CWD, model: request.Model,
-		timestamp: request.Timestamp, line: request.Line, usage: request.Usage, detail: request.Detail, dayEligible: dayEligible,
+		timestamp: request.Timestamp, line: request.Line, classes: classes, detail: detail, dayEligible: dayEligible,
 	}
 }
 
@@ -570,6 +613,19 @@ func transcriptTokens(usage map[string]any) (map[string]float64, error) {
 		classes["reasoningTokens"] = thinking
 	}
 	return classes, nil
+}
+
+func rawTranscriptTokens(usage map[string]any) (rawTokenClasses, error) {
+	legacy, err := transcriptTokens(usage)
+	if err != nil {
+		return rawTokenClasses{}, err
+	}
+	creation, _ := transcriptNumber(usage["cache_creation_input_tokens"])
+	_, hasCacheRead := usage["cache_read_input_tokens"]
+	_, hasReasoning := usage["thinking_tokens"]
+	return rawTokenClasses{Input: legacy["inputTokens"] - creation, CacheCreation: creation,
+		CacheRead: legacy["cachedInputTokens"], Output: legacy["outputTokens"], Reasoning: legacy["reasoningTokens"],
+		HasCacheRead: hasCacheRead, HasReasoning: hasReasoning}, nil
 }
 
 func transcriptNumber(raw any) (float64, bool) {

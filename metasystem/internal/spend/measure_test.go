@@ -121,7 +121,7 @@ func closeEnough(left, right float64) bool { return math.Abs(left-right) < 0.000
 
 func TestMeasureReplays20260902Bed(t *testing.T) {
 	_, ledger := measureBed(t)
-	if !closeEnough(ledger.DayScope.Tokens, 173523756) || !closeEnough(ledger.DayScope.Money, 67.911555) {
+	if !closeEnough(ledger.DayScope.Tokens, 55434018) || !closeEnough(ledger.DayScope.Money, 67.911555) {
 		t.Fatalf("machine-day totals do not replay the observed bed: %+v", ledger.DayScope)
 	}
 	dispatch := ledger.GoalScopes["dispatch-cap-necessity"]
@@ -175,7 +175,7 @@ func TestUnreadableJobRecordCannotDisappear(t *testing.T) {
 
 func TestSeatTranscriptExcludesSharedCheckoutDelegateSession(t *testing.T) {
 	_, ledger := measureBed(t)
-	if !closeEnough(ledger.Seat.DayTokens, 118425925) || ledger.Seat.Files != 2 {
+	if !closeEnough(ledger.Seat.DayTokens, 336187) || ledger.Seat.Files != 2 {
 		t.Fatalf("the shared-checkout delegate transcript was counted as seat spend: %+v", ledger.Seat)
 	}
 	if !closeEnough(ledger.GoalScopes["dispatch-cap-necessity"].Tokens, 33922917) {
@@ -204,7 +204,7 @@ func TestSeatTranscriptShapeFailureIsUnmeasured(t *testing.T) {
 func TestSeatGoalDoesNotSilentlyLoseAgedTranscriptSpend(t *testing.T) {
 	_, ledger := measureBed(t)
 	seatGoal := ledger.GoalScopes["seat"]
-	if ledger.Seat.AgedFiles != 1 || !closeEnough(ledger.Seat.DayTokens, 118425925) || !closeEnough(ledger.Seat.LifetimeTokens, 118426225) || !closeEnough(seatGoal.Tokens, 118426225) {
+	if ledger.Seat.AgedFiles != 1 || !closeEnough(ledger.Seat.DayTokens, 336187) || !closeEnough(ledger.Seat.LifetimeTokens, 336487) || !closeEnough(seatGoal.Tokens, 336487) {
 		t.Fatalf("the aged transcript did not stay in the lifetime goal scope only: seat=%+v goal=%+v", ledger.Seat, seatGoal)
 	}
 }
@@ -276,9 +276,9 @@ func TestSeatUnreadableTranscriptIsCountedNotSkipped(t *testing.T) {
 	}
 	seatGoal := ledger.GoalScopes["seat"]
 	if !found || ledger.Seat.UnreadableFiles != 1 || ledger.Seat.Files != 2 ||
-		!closeEnough(ledger.Seat.DayTokens, 118425925) ||
-		!closeEnough(ledger.Seat.LifetimeTokens, 118426225) ||
-		!closeEnough(seatGoal.Tokens, 118426225) {
+		!closeEnough(ledger.Seat.DayTokens, 336187) ||
+		!closeEnough(ledger.Seat.LifetimeTokens, 336487) ||
+		!closeEnough(seatGoal.Tokens, 336487) {
 		t.Fatalf("the unreadable transcript was skipped or changed readable spend: seat=%+v goal=%+v entries=%+v", ledger.Seat, seatGoal, ledger.Unmeasured)
 	}
 }
@@ -314,6 +314,32 @@ func TestUnpricedModelIsNeverZero(t *testing.T) {
 	}
 }
 
+func TestPartialClaudePriceTablePreservesLegacyMoneyAndTokens(t *testing.T) {
+	usage := map[string]any{"input_tokens": 10, "cache_creation_input_tokens": 2, "cache_read_input_tokens": 5, "output_tokens": 3}
+	classes, err := rawTranscriptTokens(usage)
+	if err != nil {
+		t.Fatal(err)
+	}
+	missionClasses := classes.missionClasses()
+	settings := config.SpendSettings{Currency: "USD", Prices: map[config.SpendPriceKey]float64{
+		{Runtime: "claude", Model: "model", Class: "input"}:  2,
+		{Runtime: "claude", Model: "model", Class: "cached"}: 1,
+		{Runtime: "claude", Model: "model", Class: "output"}: 4,
+	}}
+	money, priced, unpriced, _ := price("claude", "model", missionClasses, nil, false, settings)
+	if tokens := tokensFromMission(missionClasses); tokens.Total() != 20 || !closeEnough(money, 0.000041) || priced != 1 || unpriced != 0 {
+		t.Fatalf("optional reasoning changed legacy accounting: tokens=%+v money=%v priced=%d unpriced=%d", tokens, money, priced, unpriced)
+	}
+	delete(usage, "cache_read_input_tokens")
+	delete(settings.Prices, config.SpendPriceKey{Runtime: "claude", Model: "model", Class: "cached"})
+	classes, err = rawTranscriptTokens(usage)
+	missionClasses = classes.missionClasses()
+	money, priced, unpriced, _ = price("claude", "model", missionClasses, nil, false, settings)
+	if tokens := tokensFromMission(missionClasses); err != nil || tokens.Total() != 15 || !closeEnough(money, 0.000036) || priced != 1 || unpriced != 0 {
+		t.Fatalf("absent optional classes changed legacy accounting: tokens=%+v money=%v priced=%d unpriced=%d err=%v", tokens, money, priced, unpriced, err)
+	}
+}
+
 func TestForeignCurrencyIsCountedBeside(t *testing.T) {
 	settings := config.SpendSettings{Currency: "USD", Prices: map[config.SpendPriceKey]float64{
 		{Runtime: "claude", Model: "model", Class: "input"}: 2,
@@ -326,14 +352,14 @@ func TestForeignCurrencyIsCountedBeside(t *testing.T) {
 
 func TestSeatTranscriptDedupesByRequestId(t *testing.T) {
 	_, ledger := measureBed(t)
-	if !closeEnough(ledger.Seat.DayTokens, 118425925) {
-		t.Fatalf("both streamed snapshots were counted instead of last-wins request deduplication: %+v", ledger.Seat)
+	if !closeEnough(ledger.Seat.DayTokens, 336187) {
+		t.Fatalf("streamed snapshots did not retain first fields with maximum output: %+v", ledger.Seat)
 	}
 }
 
 func TestSeatTranscriptFiltersByCwd(t *testing.T) {
 	_, ledger := measureBed(t)
-	if !closeEnough(ledger.Seat.DayTokens, 118425925) {
+	if !closeEnough(ledger.Seat.DayTokens, 336187) {
 		t.Fatalf("a worktree or foreign working directory entered seat spend: %+v", ledger.Seat)
 	}
 }
@@ -410,7 +436,7 @@ func TestSeatTranscriptSkipsForeignCheckoutAfterFirstCWDLine(t *testing.T) {
 	}
 }
 
-func TestTranscriptCursorMatchesFullParseAcrossChanges(t *testing.T) {
+func TestCursorV2MatchesAFullParseAndRebuildsV1(t *testing.T) {
 	root := t.TempDir()
 	if err := os.Mkdir(filepath.Join(root, ".git"), 0o755); err != nil {
 		t.Fatal(err)
@@ -482,19 +508,19 @@ func TestTranscriptCursorMatchesFullParseAcrossChanges(t *testing.T) {
 	}
 	appendTranscript(seatTranscriptLine(t, "seat", root, "request-a", 100, 10))
 	ledger = assertMatchesFullParse("request identifier rewritten after cursor")
-	if ledger.Seat.LifetimeTokens != 132 {
-		t.Fatalf("the later request identifier did not replace the earlier request: %+v", ledger.Seat)
+	if ledger.Seat.LifetimeTokens != 42 {
+		t.Fatalf("the repeated request did not retain first fields and maximum output: %+v", ledger.Seat)
 	}
 	partial := bytes.TrimSuffix(seatTranscriptLine(t, "seat", root, "request-c", 30, 3), []byte{'\n'})
 	split := len(partial) / 2
 	appendTranscript(partial[:split])
 	ledger = assertMatchesFullParse("partial trailing line")
-	if ledger.Seat.LifetimeTokens != 132 || ledger.Seat.UnmeasuredRequests != 2 {
+	if ledger.Seat.LifetimeTokens != 42 || ledger.Seat.UnmeasuredRequests != 2 {
 		t.Fatalf("the partial trailing line did not match full-parse invalid-line semantics: %+v", ledger.Seat)
 	}
 	appendTranscript(append(append([]byte(nil), partial[split:]...), '\n'))
 	ledger = assertMatchesFullParse("partial trailing line completed after the cursor")
-	if ledger.Seat.LifetimeTokens != 165 || ledger.Seat.UnmeasuredRequests != 1 {
+	if ledger.Seat.LifetimeTokens != 75 || ledger.Seat.UnmeasuredRequests != 1 {
 		t.Fatalf("the completed trailing line did not replace its partial snapshot: %+v", ledger.Seat)
 	}
 	truncated := seatTranscriptLine(t, "seat", root, "request-b", 20, 2)
@@ -519,6 +545,23 @@ func TestTranscriptCursorMatchesFullParseAcrossChanges(t *testing.T) {
 	var cache transcriptCursorCache
 	if json.Unmarshal(cacheBytes, &cache) != nil || !validTranscriptCursor(cache, path) {
 		t.Fatalf("the corrupt cursor cache was not replaced with valid state: %s", cacheBytes)
+	}
+	wrong := cache.Requests["request-b"]
+	wrong.Usage = map[string]any{"input_tokens": 20, "output_tokens": 9999}
+	v1 := map[string]any{"schemaVersion": 1, "path": path, "size": cache.Size, "modTime": cache.ModTimeNanos,
+		"offset": cache.Offset, "line": cache.Line, "firstCwd": cache.FirstCWD, "delegateDigest": "v1",
+		"requests": map[string]cachedTranscriptRequest{"request-b": wrong}, "invalid": []cachedTranscriptRequest{}}
+	if err := writeSpendCache(transcriptCursorPath(root, path), v1); err != nil {
+		t.Fatal(err)
+	}
+	ledger, err = Measure(root, "bed-m1", bedNow.Add(100*time.Minute))
+	if err != nil || ledger.Seat.LifetimeTokens != 22 {
+		t.Fatalf("schema-1 cursor was reused: seat=%+v err=%v", ledger.Seat, err)
+	}
+	rebuiltBytes, err := os.ReadFile(transcriptCursorPath(root, path))
+	var rebuilt transcriptCursorCache
+	if err != nil || json.Unmarshal(rebuiltBytes, &rebuilt) != nil || !validTranscriptCursor(rebuilt, path) || retainedOutput(rebuilt.Requests["request-b"]) != 2 {
+		t.Fatalf("schema-1 cursor was not rebuilt as schema 2: %s err=%v", rebuiltBytes, err)
 	}
 }
 
@@ -686,8 +729,8 @@ func TestTranscriptCursorPreservesDelegateFilteringBeforeRequestReplacement(t *t
 	if err != nil {
 		t.Fatal(err)
 	}
-	if first.Seat.LifetimeTokens != 200 {
-		t.Fatalf("the later request did not initially replace the earlier request: %+v", first.Seat)
+	if first.Seat.LifetimeTokens != 110 {
+		t.Fatalf("the repeated request did not retain first fields and maximum output: %+v", first.Seat)
 	}
 	jobs := filepath.Join(root, "artifacts", "agents", "jobs")
 	if err := os.MkdirAll(jobs, 0o755); err != nil {

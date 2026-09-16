@@ -1,7 +1,11 @@
 package spend
 
 import (
+	"crypto/sha256"
+	"encoding/hex"
+	"encoding/json"
 	"os"
+	"sort"
 	"strings"
 	"time"
 )
@@ -38,13 +42,53 @@ type readerCursor struct {
 	now                time.Time
 	info               os.FileInfo
 }
-type readerJobs map[string]bool
+type readerJob struct {
+	path, id, sessionID, resumedSessionID, role, runtime, startedAt string
+	record                                                          map[string]any
+}
+type readerJobs struct {
+	records            []readerJob
+	bySession          map[string][]readerJob
+	referencedSessions map[string]bool
+}
 type scanResult struct {
 	calls            map[string]transcriptRequest
 	unmeasured       []UnmeasuredEntry
 	foreign, aged    bool
 	cacheWriteFailed bool
 	err              error
+}
+
+func newReaderJobs() readerJobs {
+	return readerJobs{bySession: map[string][]readerJob{}, referencedSessions: map[string]bool{}}
+}
+
+func (jobs *readerJobs) add(path string, record map[string]any) {
+	job := readerJob{
+		path: path, id: textOr(record["jobId"], ""), sessionID: textOr(record["sessionId"], ""),
+		resumedSessionID: textOr(record["resumedSessionId"], ""), role: textOr(record["role"], ""),
+		runtime: textOr(record["runtime"], ""), startedAt: textOr(record["startedAt"], ""), record: record,
+	}
+	jobs.records = append(jobs.records, job)
+	if job.sessionID != "" {
+		jobs.bySession[job.sessionID] = append(jobs.bySession[job.sessionID], job)
+	}
+	for _, session := range []string{job.sessionID, job.resumedSessionID} {
+		if session != "" {
+			jobs.referencedSessions[session] = true
+		}
+	}
+}
+
+func jobDigest(jobs readerJobs) string {
+	records := append([]readerJob(nil), jobs.records...)
+	sort.Slice(records, func(i, j int) bool { return records[i].path < records[j].path })
+	hash := sha256.New()
+	for _, job := range records {
+		fields, _ := json.Marshal([]string{job.path, job.id, job.sessionID, job.resumedSessionID, job.role, job.runtime, job.startedAt})
+		hash.Write(fields)
+	}
+	return hex.EncodeToString(hash.Sum(nil))
 }
 
 var readerRegistry = []reader{claudeReader()}

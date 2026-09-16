@@ -12,6 +12,7 @@ import (
 )
 
 const spendCacheSchemaVersion = 1
+const transcriptCursorSchemaVersion = 2
 
 type cachedJobMeasurement struct {
 	Path         string                 `json:"path"`
@@ -37,17 +38,17 @@ type cachedTranscriptRequest struct {
 }
 
 type transcriptCursorCache struct {
-	SchemaVersion  int                                `json:"schemaVersion"`
-	Path           string                             `json:"path"`
-	Size           int64                              `json:"size"`
-	ModTimeNanos   int64                              `json:"modTime"`
-	Offset         int64                              `json:"offset"`
-	Line           int                                `json:"line"`
-	FirstCWD       string                             `json:"firstCwd,omitempty"`
-	DelegateDigest string                             `json:"delegateDigest"`
-	Requests       map[string]cachedTranscriptRequest `json:"requests"`
-	Invalid        []cachedTranscriptRequest          `json:"invalid"`
-	Tail           []byte                             `json:"tail,omitempty"`
+	SchemaVersion int                                `json:"schemaVersion"`
+	Path          string                             `json:"path"`
+	Size          int64                              `json:"size"`
+	ModTimeNanos  int64                              `json:"modTime"`
+	Offset        int64                              `json:"offset"`
+	Line          int                                `json:"line"`
+	FirstCWD      string                             `json:"firstCwd,omitempty"`
+	JobDigest     string                             `json:"jobDigest"`
+	Requests      map[string]cachedTranscriptRequest `json:"requests"`
+	Invalid       []cachedTranscriptRequest          `json:"invalid"`
+	Tail          []byte                             `json:"tail,omitempty"`
 }
 
 func spendCacheDir(repoRoot string) string {
@@ -108,8 +109,8 @@ func loadTranscriptCursor(path, transcriptPath string) (transcriptCursorCache, b
 }
 
 func validTranscriptCursor(cache transcriptCursorCache, transcriptPath string) bool {
-	if cache.SchemaVersion != spendCacheSchemaVersion || cache.Path != transcriptPath || cache.Size < 0 ||
-		cache.Offset < 0 || cache.Offset != cache.Size || cache.Line < 0 || cache.DelegateDigest == "" ||
+	if cache.SchemaVersion != transcriptCursorSchemaVersion || cache.Path != transcriptPath || cache.Size < 0 ||
+		cache.Offset < 0 || cache.Offset != cache.Size || cache.Line < 0 || cache.JobDigest == "" ||
 		cache.Requests == nil || cache.Invalid == nil {
 		return false
 	}

@@ -144,7 +144,7 @@ func Measure(repoRoot, machine string, now time.Time) (Ledger, error) {
 	jobCache, jobCacheDirty := loadTerminalJobCache(jobCachePath)
 	jobCacheWriteFailures := 0
 	seenJobRecords := make(map[string]bool, len(entries))
-	delegateSessions := map[string]bool{}
+	readerJobIndex := newReaderJobs()
 	var measured []pricedMeasurement
 	for _, entry := range entries {
 		if entry.IsDir() || filepath.Ext(entry.Name()) != ".json" {
@@ -172,11 +172,7 @@ func Measure(repoRoot, machine string, now time.Time) (Ledger, error) {
 			continue
 		}
 		record := measurement.Record
-		for _, key := range []string{"sessionId", "resumedSessionId"} {
-			if session, _ := record[key].(string); session != "" {
-				delegateSessions[session] = true
-			}
-		}
+		readerJobIndex.add(recordPath, record)
 		status, _ := record["status"].(string)
 		if terminalStatus(status) && settledJobMeasurement(measurement.Provenance) && !cacheHit && infoErr == nil {
 			jobCache.Entries[recordPath] = cachedJobMeasurement{
@@ -235,7 +231,7 @@ func Measure(repoRoot, machine string, now time.Time) (Ledger, error) {
 		}
 	}
 
-	seatRows, seat, seatUnmeasured, err := readSeat(repoRoot, machine, now, delegateSessions, settings)
+	seatRows, seat, seatUnmeasured, err := readSeat(repoRoot, machine, now, readerJobIndex, settings)
 	if err != nil {
 		return Ledger{}, err
 	}
