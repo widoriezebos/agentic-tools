@@ -1,6 +1,6 @@
 # registered-wait-matches-the-runtime-session
 
-- State: claimed
+- State: approved
 - Priority: 1
 - Sequence: 25
 - Risk: severity=3 novelty=2 exposure=3 accumulation=2 basis="severity 3: the landed stop gate ignores every wait a seat actually registers from a shell, so the structural fix for seats stopping with work pending does not work in normal use; novelty 2: how a shell-registered watch learns the runtime session is not yet designed; exposure 3: every seat that waits on a delegate, proof or landing; accumulation 2: each ignored wait is a refused Stop or a seat that must poll"
@@ -9,13 +9,12 @@
 - Origin: human
 - Next step: 2026-09-15 22:50 m1b. Member C round 9 (job m1b-u1cr9-1789504416) PASSES for real: the seat built the candidate and ran the fixture outside the sandbox four times at 13 to 18 seconds, no skip, after round 8's arming fix and round 9's step reordering. Seat mutation proof: reverting B1's hook wiring fails the fixture as required; reverting A's association or B2's gate stops the candidate building; but reverting B2's removal of the waiting-lines prepend still PASSES, which the design says must fail, so the fixture has a hole. One baseline failure occurred immediately after the mutation runs and did not reproduce in three consecutive runs, so it is treated as leftover state, to be watched in the bed. Round 10 dispatched as job m1b-u1cr10-1789505289 from branch m1b-u1c-r9: assert exactly one WAITING line from the gate on the accepted Stop and none on refused rows. NEXT: rerun the mutation proof, prove every selected group, take an Opus read with no NOT LAND, and land with a receipt in the same commit (R-117-m1e item 5).
 - OpenedAt: 2026-09-14T19:00:55Z
-- Revision: 84
+- Revision: 85
 - Budget: elapsedLimit=1d4h attemptLimit=24 reservedJobMinutesLimit=720 activeJobLimit=2 reviewRoundLimit=2
 - BudgetExceptions: 4
 - Approved: by=human:Wido at=2026-09-16T00:03:49Z revision=84 opid=6N170BMS97DWPY8V946G92E70M-m1e-c6925449 authority=proven digest=734bbd52a97a1daa15ae3e6411fefafccff4a5a398046d708528509a7465e93c
 - Sliced: machine=m1b lineage=main-1789191336-90295-e4b24b revision=53 at=2026-09-15T14:22:58Z
-- Claimed: machine=m1b lineage=main-1789191336-90295-e4b24b at=2026-09-16T00:03:49Z revision=84 accountingRevision=84 episodeAt=2026-09-15T14:21:33Z episodeRevision=53 idleSeconds=20
-- StopCapability: generation=84 revision=84 machine=m1b claimEpoch=1 fenceEpoch=0
+- Episode: machine=m1b lineage=main-1789191336-90295-e4b24b accountingRevision=84 episodeAt=2026-09-15T14:21:33Z episodeRevision=53 idleSeconds=20 released=2026-09-16T00:03:56Z
 
 History:
 - 2026-09-14T19:00:55Z VW88ZP3E8RMAVCYCTGCXW0EZPQ-m1e-c6925449 open actor=human:Wido targets=registered-wait-matches-the-runtime-session reason=TierOverride: derived=3 set=2 why=one eligibility rule in the stop gate with a measured failure, below its tier-3 parent
@@ -102,4 +101,5 @@ History:
 - 2026-09-16T00:03:08Z GHJXVMDMV3A2YVQMRN3CD4SYKH-m1b-30a7e141 release actor=m1b+main-1789191336-90295-e4b24b targets=registered-wait-matches-the-runtime-session
 - 2026-09-16T00:03:19Z 27AR4RYAJWMSCWQWZ5Z8WHVTYG-m1b-30a7e141 claim actor=m1b+main-1789191336-90295-e4b24b targets=registered-wait-matches-the-runtime-session
 - 2026-09-16T00:03:49Z 6N170BMS97DWPY8V946G92E70M-m1e-c6925449 set-budget actor=human:Wido targets=registered-wait-matches-the-runtime-session displaced=m1b+main-1789191336-90295-e4b24b@2026-09-16T00:03:19Z
-Integrity: sha256=cd3b7ac8dbafc0b58118a637050332a6f30e0098f8a359e2b52823dea6c2c15d
+- 2026-09-16T00:03:56Z MSHR36GJYHFACY535HPTK69SYM-m1b-30a7e141 release actor=m1b+main-1789191336-90295-e4b24b targets=registered-wait-matches-the-runtime-session
+Integrity: sha256=943e16b334cf12e06be05b858d49fa3bb4fa0a578c8b86bf1764665297854f1d
