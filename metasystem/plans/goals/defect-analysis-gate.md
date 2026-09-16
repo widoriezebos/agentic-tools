@@ -1,6 +1,6 @@
 # defect-analysis-gate
 
-- State: approved
+- State: queued
 - Priority: 3
 - Sequence: 3
 - Risk: severity=2 novelty=2 exposure=2 accumulation=2 basis="severity 2: a gate that refuses a fix dispatch wrongly stalls a repair, one that admits without an analysis lets an unearned fix in; novelty 2: an analysis record on the goal and a challenge join through the existing register are new, the reproduction bar (two-bars Defect-Proof) and the admission boundary exist; exposure 2: every defect-fix dispatch; accumulation 2: the goal record's schema and the admission path"
@@ -9,11 +9,9 @@
 - Origin: main
 - Next step: 2026-09-13 09:2xZ m1b: design page LANDED (plans/defect-analysis-gate-design.md, a Codex draft on the seat's brief: the analysis record on the goal, the Defect-Proof join, the risk-scaled challenge through the finding register, the fail-closed gate at dispatch admission; three members in section 6). The seat held this goal only because the stop gate's idle rule demanded a claim; it is not in Wido's queue for m1b, so the claim is released. Next act for whoever takes it: the rostered Codex design read at DESIGN-BEARING on the landed page (--design metasystem/plans/defect-analysis-gate-design.md --outputs <manifest>), fold, then open member 1 of section 6. Risk answers recorded by the seat (tier 2) with the draft chain as evidence.
 - OpenedAt: 2026-09-02T11:36:02Z
-- Revision: 23
+- Revision: 24
 - Pinned: m1b
-- Budget: elapsedLimit=3d attemptLimit=12 reservedJobMinutesLimit=720 activeJobLimit=2 reviewRoundLimit=2
 - BudgetExceptions: 0
-- Approved: by=human:Wido at=2026-09-13T09:37:11Z revision=23 opid=3ME78ZMNCQ0R9J29HZYR4Z5ANT-m1b-c6925449 authority=proven digest=0acea4de8468b3172637e518ec0f9dee8216498c0f254cf8fcd158f3d41b9f38
 - Sliced: machine=m1b lineage=main-1789191336-90295-e4b24b revision=12 at=2026-09-13T06:34:01Z
 
 History:
@@ -40,4 +38,5 @@ History:
 - 2026-09-13T08:21:55Z 1SYGJNPFN07HNXKW9QG3TYHWH8-m1-c6925449 done actor=human:Wido targets=answer-archive,app-doctrine,app-guardrail-custody,app-guardrail-program,claude-delegate-scratch-cleanup,claude-denywrite-list-is-a-snapshot,continuous-self-improvement,counselor,cross-repo-guardrails,defect-analysis-gate,delegate-sandbox-cannot-run-the-beds,design-prohibition-is-role-scoped,effort-by-complexity-per-model,fable-effort-high,fixture-default-branch-assumption,follow-up-brief-cannot-cite-fresh-trunk-files,goal-suite-sits-on-the-default-test-timeout,hook-demands-what-landing-forbids,host-health-role,human-carried-landing,incident-proposal-drafting,integration-branch,land-verb-pruning,ledger-authentication,metasystem-way-patterns,missionrunner-terminate-flake,narrator-digests,norm-approval-reads-a-file-the-ledger-does-not-carry,paid-proof-authorization,precedent-index,python3-kit-port,reconciliation-guards,registry-design-names-selection-rows,repo-flag-resolves-one-root,resume-reclaims-on-handover,runtime-limit-is-not-a-protocol-error,same-process-succession,seam-declaration-convergence,seam-eventstream-error-surface,shutdown-claims-more-than-it-stops,standing-validation,steward-owned-execution,stop-message-truth,uncapped-delegate-fanout,verbs-match-intent,vm-epoch-identity-drift,watchdog-kill-observation-gap reason=priority-order from=3:5 to=3:4
 - 2026-09-13T08:22:09Z GGXEQ7244F0YZM1R3QVRPBN8G0-m1-c6925449 done actor=human:Wido targets=answer-archive,app-doctrine,app-guardrail-custody,app-guardrail-program,claude-delegate-scratch-cleanup,claude-denywrite-list-is-a-snapshot,continuous-self-improvement,counselor,cross-repo-guardrails,defect-analysis-gate,delegate-sandbox-cannot-run-the-beds,design-prohibition-is-role-scoped,effort-by-complexity-per-model,fable-effort-high,fixture-default-branch-assumption,follow-up-brief-cannot-cite-fresh-trunk-files,goal-suite-sits-on-the-default-test-timeout,hook-demands-what-landing-forbids,host-health-role,human-carried-landing,incident-proposal-drafting,integration-branch,land-verb-pruning,ledger-authentication,metasystem-way-patterns,missionrunner-terminate-flake,narrator-digests,paid-proof-authorization,precedent-index,python3-kit-port,reconciliation-guards,registry-design-names-selection-rows,repo-flag-resolves-one-root,resume-reclaims-on-handover,runtime-limit-is-not-a-protocol-error,same-process-succession,seam-declaration-convergence,seam-eventstream-error-surface,shutdown-claims-more-than-it-stops,standing-validation,steward-owned-execution,stop-message-truth,uncapped-delegate-fanout,verbs-match-intent,vm-epoch-identity-drift,watchdog-kill-observation-gap reason=priority-order from=3:4 to=3:3
 - 2026-09-13T09:37:11Z 3ME78ZMNCQ0R9J29HZYR4Z5ANT-m1b-c6925449 approve actor=human:Wido targets=defect-analysis-gate
-Integrity: sha256=6754f763f384e22ee4fdbfa406f16c50414a1ce1989a48fe561d3ccb39cc9f97
+- 2026-09-16T20:35:14Z M1VX8E8JTXAKPJ929KMTY173Y3-m1e-c6925449 unapprove actor=human:Wido targets=defect-analysis-gate reason=Wido 2026-09-16 22:40 CEST: clean house on priority 1 first, then a few human convenience features; every priority 2+ goal is unapproved until then
+Integrity: sha256=d67a24cb0b2ec89a12b8adfd5542b9a582018a87280a11037e24b0a86c11113d
