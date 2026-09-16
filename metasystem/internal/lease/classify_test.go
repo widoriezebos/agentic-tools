@@ -314,6 +314,12 @@ func grandchild(t *testing.T, root string) (int64, int64) {
 
 // stageStewardInstall mints a valid installation whose binary is a real
 // executable we can spawn, so a live process runs "the installed steward".
+// The binary is /bin/sh reading a script named by the steward family
+// token, so the process's kernel argv stays exactly "<bin> steward" for
+// its whole life, as a real steward's does. The stand-in must never
+// rewrite its own arguments: /usr/bin/yes turns argv[1]'s terminator into
+// a newline at startup, and a kern.procargs2 read straddling that rewrite
+// comes back truncated, so the live child classified UNTRUSTED.
 func stageStewardInstall(t *testing.T, root string) string {
 	t.Helper()
 	top, err := filepath.Abs(root)
@@ -324,7 +330,12 @@ func stageStewardInstall(t *testing.T, root string) string {
 	if err := os.MkdirAll(filepath.Dir(bin), 0o755); err != nil {
 		t.Fatal(err)
 	}
-	if err := os.Symlink("/usr/bin/yes", bin); err != nil {
+	if err := os.Symlink("/bin/sh", bin); err != nil {
+		t.Fatal(err)
+	}
+	// "<bin> steward" runs this script from bin's directory: it reports
+	// that the stand-in is running, then holds until stdin closes.
+	if err := os.WriteFile(filepath.Join(filepath.Dir(bin), "steward"), []byte("printf ready\nread line\n"), 0o644); err != nil {
 		t.Fatal(err)
 	}
 	idPath := steward.RepoIdentityPath(top)
@@ -339,28 +350,43 @@ func stageStewardInstall(t *testing.T, root string) string {
 	return bin
 }
 
-// spawnAndSettle starts the binary and waits until the kernel reports
-// its argv — probing mid-exec reads an empty command.
+// spawnAndSettle starts the binary, waits until the stand-in reports it is
+// running, and requires the kernel to read its argv exactly as started:
+// Classify reads that argv, so a stand-in that changed it would turn every
+// verdict below into a race.
 func spawnAndSettle(t *testing.T, bin string) int64 {
 	t.Helper()
 	// The argv carries the steward family token: classification is
 	// scoped to "<installed binary> steward …", never the bare
 	// executable.
 	cmd := exec.Command(bin, "steward")
+	cmd.Dir = filepath.Dir(bin)
+	hold, err := cmd.StdinPipe()
+	if err != nil {
+		t.Fatal(err)
+	}
+	ready, readyWriter, err := os.Pipe()
+	if err != nil {
+		t.Fatal(err)
+	}
+	cmd.Stdout = readyWriter
 	if err := cmd.Start(); err != nil {
 		t.Fatal(err)
 	}
-	t.Cleanup(func() { _ = cmd.Process.Kill(); _ = cmd.Wait() })
-	pid := int64(cmd.Process.Pid)
-	deadline := time.Now().Add(wiringBound)
-	for time.Now().Before(deadline) {
-		if command, ok := ProcessCommand(pid, nil); ok && command != "" {
-			return pid
-		}
-		time.Sleep(20 * time.Millisecond)
+	_ = readyWriter.Close()
+	t.Cleanup(func() { _ = hold.Close(); _ = ready.Close(); _ = cmd.Process.Kill(); _ = cmd.Wait() })
+	if err := ready.SetReadDeadline(time.Now().Add(wiringBound)); err != nil {
+		t.Fatal(err)
 	}
-	t.Fatal("spawned steward never became readable")
-	return 0
+	if _, err := ready.Read(make([]byte, 1)); err != nil {
+		t.Fatalf("spawned steward never reported running: %v", err)
+	}
+	pid := int64(cmd.Process.Pid)
+	want := bin + " steward"
+	if command, ok := ProcessCommand(pid, nil); !ok || command != want {
+		t.Fatalf("a running steward stand-in must read as %q, got %q (readable=%v)", want, command, ok)
+	}
+	return pid
 }
 
 func TestClassifyStewardByInstalledBinaryAndIdentity(t *testing.T) {
