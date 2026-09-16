@@ -1,6 +1,6 @@
 # chain-landing-carries-the-reviewed-diff
 
-- State: approved
+- State: queued
 - Priority: 2
 - Sequence: 42
 - Risk: severity=3 novelty=1 exposure=2 accumulation=1 basis="severity 3: a chain landing whose staged set does not contain the reviewed diff lands under the chain's message and register with a pass verdict, the landing law failing at its one job; novelty 1: one comparison of the staged tree against the chain's reviewed diff, both already on disk; exposure 2: every chain landing on every machine, but only when the seat stages the wrong set; accumulation 1: it does not compound"
@@ -9,12 +9,10 @@
 - Origin: main
 - Next step: MECHANICAL, one chain: internal/landing (the chain stage of land.sh) reads the root's latest round diff, lists its changed paths, and refuses when the staged tree's blobs for those paths equal the base tree's; fixture in the landing fixture suite. Verify first on the 0b8d1bea case by replaying its staged set against the chain in a throwaway clone. || Absorbed 2026-09-11 from goal chain-landing-carries-unrelated-staged-plans: Fold into chain-landing-carries-the-reviewed-diff under the merged intent (both-ways binding of the staged set to the reviewed diff); keep the register-carriage rename rule in the refusal message. || Umbrella chain-landing-binds-the-reviewed-tree (2026-09-13 backlog consolidation): this goal leads the fix for the members below. || Absorbed 2026-09-13 from goal closing-read-and-receipt-in-parallel: Receipt taken before the closing read lands; proof reservation admitted beside it. Approved, pinned m1c, ranked priority 1 on 2026-09-13; cmd/metasystem/proof_run.go:583 still refuses the reservation under activeJobLimit so a receipt beside a live read needs a human set-budget; the fold keeps all three clauses: the docs/o
 - OpenedAt: 2026-09-06T22:26:51Z
-- Revision: 138
+- Revision: 139
 - Labels: headless-fleet, headless-process
 - Pinned: m1c
-- Budget: elapsedLimit=1d attemptLimit=10 reservedJobMinutesLimit=1200 activeJobLimit=1 reviewRoundLimit=3
 - BudgetExceptions: 0
-- Approved: by=human:Wido at=2026-09-13T06:40:39Z revision=15 opid=NVG6G0W0H3SN56JFDQCQ9Z1Z7G-m1e-c6925449 authority=proven digest=e6412f76f7d7b2b51d54092f9bdc5aeb3a8d30f56d33586a543e26ce1dad9415
 
 History:
 - 2026-09-06T22:26:51Z 8N6SFVRDAKFY800KSWNKE88FG5-m1d-62183579 open actor=m1d+main-1788683763-71870-f7f607 targets=chain-landing-carries-the-reviewed-diff
@@ -155,4 +153,5 @@ History:
 - 2026-09-16T20:32:03Z DV0XMRG1CTZ5DY387DDZFHDXBH-m1e-c6925449 set-priority actor=human:Wido targets=census-lifecycle-scenario-holds-under-load,chain-landing-carries-the-reviewed-diff,dispatch-bases-chains-on-the-remote-tip,events-package-has-a-test-group,fixture-repo-copies-exclude-the-artifacts-store,human-authority-surface-runs-its-cmd-tests,human-wait-does-not-consume-goal-budget,metasystem-stop-escalation-proofs,metasystem-stop-fleet-form,new-elapsed-budgets-use-explicit-hours,pipelines-never-lose-a-truncated-producer,repo-root-paths-ride-agent-commits-unjudged,skipped-test-fails-its-group-on-the-other-os reason=priority-order subject=skipped-test-fails-its-group-on-the-other-os from=1:56 to=1:55 requested-sequence=40
 - 2026-09-16T20:32:09Z MTZMWKB9E103BMQECEWJA0YWGD-m1e-c6925449 set-priority actor=human:Wido targets=census-lifecycle-scenario-holds-under-load,chain-landing-carries-the-reviewed-diff,dispatch-bases-chains-on-the-remote-tip,events-package-has-a-test-group,fixture-repo-copies-exclude-the-artifacts-store,human-authority-surface-runs-its-cmd-tests,human-wait-does-not-consume-goal-budget,metasystem-stop-escalation-proofs,metasystem-stop-fleet-form,new-elapsed-budgets-use-explicit-hours,pipelines-never-lose-a-truncated-producer,repo-root-paths-ride-agent-commits-unjudged reason=priority-order subject=fixture-repo-copies-exclude-the-artifacts-store from=1:55 to=1:54 requested-sequence=41
 - 2026-09-16T20:32:15Z TDBM54SXFYKS7XNWS2GXMP5KE4-m1e-c6925449 set-priority actor=human:Wido targets=census-lifecycle-scenario-holds-under-load,chain-landing-carries-the-reviewed-diff,dispatch-bases-chains-on-the-remote-tip,events-package-has-a-test-group,human-authority-surface-runs-its-cmd-tests,human-wait-does-not-consume-goal-budget,metasystem-stop-escalation-proofs,metasystem-stop-fleet-form,new-elapsed-budgets-use-explicit-hours,pipelines-never-lose-a-truncated-producer,repo-root-paths-ride-agent-commits-unjudged reason=priority-order subject=chain-landing-carries-the-reviewed-diff from=1:54 to=2:42 requested-sequence=42
-Integrity: sha256=ceeeb44947948fb8129b3e86add502741da6aa8f19908d7eae9af8186f1f1e97
+- 2026-09-16T20:34:16Z E9Z39DHB3C374WEM7PWAB0JN7R-m1e-c6925449 unapprove actor=human:Wido targets=chain-landing-carries-the-reviewed-diff reason=Wido 2026-09-16 22:40 CEST: clean house on priority 1 first, then a few human convenience features; every priority 2+ goal is unapproved until then
+Integrity: sha256=efd3d394f99575a2653dd213c112b182c5b102a7e38d3047df7bfe642e5b2eff
