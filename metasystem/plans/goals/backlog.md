@@ -6,7 +6,7 @@
 - MigrationEpoch: 2026-08-20T00:00:00Z
 - ManifestDigest: d82032bee818c2d82e6a95e6f1b75347499b88ee8b68c4d20a0f3c94d00ba320
 - MigrationMode: manifest
-- Revision: 91
+- Revision: 92
 - ApprovalGate: since=2026-09-03T14:16:24Z opid=JY54AQT8101VK9353WT9FQYGA9-m0-c5dbf036
 - FleetEnrollment: at=2026-09-06T06:37:21Z machine=m1 generation=1 opid=CMNCRETKYCB18MFZNYFSZJPXQY-m1-a4f8999f
 
@@ -14,6 +14,7 @@ PowerOfAttorney:
 - W20E4BC5BSZHCWG3DF5SNGM812-m1e-c6925449 by=human:Wido tiers=1 verbs=approve,set-budget,unpark since=2026-09-13T06:38:47Z expires=2026-09-19
 - HN63XDTBD11WDD5B24PCPK89Z6-m1e-c6925449 by=human:Wido tiers=1,2 verbs=approve,set-budget,unpark since=2026-09-13T20:46:45Z expires=2026-09-19
 - STGRH0WVA5WDWK60TM0CBD2P4S-m1c-c6925449 by=human:Wido tiers=1 verbs=approve,set-budget,unpark since=2026-09-16T00:06:45Z expires=2026-09-22
+- FS0EXK42TCS94KQRW8APTQ66EK-m1e-c6925449 by=human:Wido tiers=1,2 verbs=approve,set-budget,unpark since=2026-09-16T07:34:02Z expires=2026-09-20
 
 History:
 - 2026-08-22T06:30:55Z BXWE9NXAWCGCTR3MFCE8GDC4P5-widos-m5-pro-bf243850 migrate actor=human:wido
@@ -116,4 +117,5 @@ History:
 - 2026-09-16T00:03:56Z MSHR36GJYHFACY535HPTK69SYM-m1b-30a7e141 ack actor=m1b+main-1789191336-90295-e4b24b targets=registered-wait-matches-the-runtime-session displaced=m1b+main-1789191336-90295-e4b24b@2026-09-16T00:03:19Z ack
 - 2026-09-16T00:06:45Z STGRH0WVA5WDWK60TM0CBD2P4S-m1c-c6925449 grant actor=human:Wido reason=tiers=1 verbs=approve,set-budget,unpark expires=2026-09-22
 - 2026-09-16T02:16:08Z GCD6ZFXF2FFBBKRHMCZ56GH6DF-m1b-30a7e141 ack actor=m1b+main-1789191336-90295-e4b24b targets=coordinator-wakes-on-events-not-polls displaced=m1b+main-1789191336-90295-e4b24b@2026-09-16T02:15:06Z ack
-Integrity: sha256=1a188de71fe311b9c1ffe8c73e15766f2915da63172a1ef2dd248dd05c0ef8ab
+- 2026-09-16T07:34:02Z FS0EXK42TCS94KQRW8APTQ66EK-m1e-c6925449 grant actor=human:Wido reason=tiers=1,2 verbs=approve,set-budget,unpark expires=2026-09-20
+Integrity: sha256=adaf12f68db3c6f4c174e95ec7f2652c7c12bca2fd81454cd12f3a67cd151f9a
