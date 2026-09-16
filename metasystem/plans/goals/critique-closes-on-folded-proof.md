@@ -1,6 +1,6 @@
 # critique-closes-on-folded-proof
 
-- State: claimed
+- State: approved
 - Priority: 1
 - Sequence: 19
 - Risk: severity=2 novelty=2 exposure=3 accumulation=1 basis="severity 2: a closure rule that is too loose lets a material finding land; novelty 2: fold-proven closure and the round-2 failsafe are new rules; exposure 3: every chain; accumulation 1: skills and dispatcher"
@@ -9,13 +9,12 @@
 - Origin: human
 - Next step: STATE 2026-09-16 (m1e landing lane): slice 2 unit U2a LANDED 27045e8d2 (design critique capped at two rounds; the commit carries the cmd/metasystem TestDispatchCritiqueAdvanceVerbsPath code-critic relabel its cap required), proved alone in proof-mu3uzvd8-704c628fff05c6e8 (deep, 43 executed and passed, 10 reused, 0 failed) after stack proof-mu3uh475-29d0b1f3dbd72008 (U2a+U2b+U2c) went red only on U2b's staticcheck SA4006 at internal/dispatch/finding_grain_test.go:47 and :50. Next: U2b fix-forward by its build chain (check the appendMaterialRound errors), then prove and land U2b, U2c, U2d, U2e in that order (U2e's dispatch-fixtures leg design_round_two_fixture_obligations first executes in the lane's proof; flag the seat when U2e lands). Then slice 3 (the three metrics on landing provenance and mirrored refusal events, section 5 with F-8; section 8 row 5), then the section 8 proof on two runtimes and conclusion. Slice 1 is on origin/main (4fbd271c8 through section 13 60bb82d25; 9c.12 parked 3749e91fb).
 - OpenedAt: 2026-09-11T15:45:22Z
-- Revision: 86
+- Revision: 87
 - Pinned: m1e
 - Budget: elapsedLimit=1d attemptLimit=10 reservedJobMinutesLimit=1200 activeJobLimit=1 reviewRoundLimit=3
 - BudgetExceptions: 0
 - Approved: by=human:Wido at=2026-09-11T20:33:44Z revision=15 opid=8BE27ZT80ZJ6JTWNQ3GZAERK8Y-m1-c6925449 authority=proven digest=cf4c80f3b42d74737238cccc4774f7900e36fd98d52c0bc36aec01bab9f27fbb
-- Claimed: machine=m1e lineage=main-1789030447-51011-2956ea at=2026-09-16T08:26:10Z revision=85 accountingRevision=85 episodeAt=2026-09-16T08:26:10Z episodeRevision=85
-- StopCapability: generation=85 revision=85 machine=m1e claimEpoch=1 fenceEpoch=0
+- Episode: machine=m1e lineage=main-1789030447-51011-2956ea accountingRevision=85 episodeAt=2026-09-16T08:26:10Z episodeRevision=85 idleSeconds=0 released=2026-09-16T09:05:46Z
 
 History:
 - 2026-09-11T15:45:22Z WKPXEN9CTZR44TMFZTQJE9X68Q-m1e-5083721b open actor=m1e+main-1789141490-27414-b9c0d2 targets=critique-closes-on-folded-proof
@@ -104,4 +103,5 @@ History:
 - 2026-09-16T06:47:13Z 54J591YX20WVHCGVTRR98HDQ65-m1e-c6925449 set-priority actor=human:Wido targets=actionable-metrics,adoption-filled-delivery-passes-on-trunk,beds-run-under-the-oldest-supported-bash,brief-declares-the-round-boundary,builder-proves-each-rule-by-mutation,busy-seat-shells-are-ended,census-lifecycle-scenario-holds-under-load,chain-landing-carries-the-reviewed-diff,codex-jobs-run-through-a-metasystem-verb,coordinator-context-stays-under-budget,coordinator-wakes-on-events-not-polls,critique-closes-on-folded-proof,cross-cutting-change-inventories-its-readers,deep-sections-cannot-stay-red-unseen,degraded-stop-forms-have-one-source,delegate-sandbox-runs-the-beds,design-rounds-read-less-and-repeat-less,dispatch-bases-chains-on-the-remote-tip,engine-policy-binding-survives-drift-and-load,every-round-gets-an-independent-read,evidence-and-build-output-have-retention-and-stay-unindexed,failed-job-attention,failures-show-observed-against-expected,fixture-children-cannot-outlive-their-test,fixture-repo-copies-exclude-the-artifacts-store,fixture-runners-and-fakes-bound-their-own-life,fixture-waits-name-their-producer,fleet-doctor-repairs-what-stops-other-seats,follow-up-brief-cannot-cite-fresh-trunk-files,human-authority-surface-runs-its-cmd-tests,human-break-glass-commit-keeps-the-ledger-valid,human-goal-verbs-forgiving,human-wait-does-not-consume-goal-budget,job-record-birth-token,lease-sweep-death-evidence,live-job-on-a-done-goal-unnoticed,machine-concurrency-governor,member-size-gate,metasystem-stop-escalation-proofs,metasystem-stop-fleet-form,new-elapsed-budgets-use-explicit-hours,one-steward-per-checkout-on-its-own-root,pipelines-never-lose-a-truncated-producer,proof-admission-fits-a-seat-proving-several-units,proof-runs-reap-what-they-armed-and-a-census-names-the-rest,receipt-admission-caps-concurrent-batteries,receipt-writer-follows-the-worktree-it-runs-in,repo-root-paths-ride-agent-commits-unjudged,retro-flags-repeated-critique-findings,round-proof-feeds-the-next-brief,run-scoped-build-caches-have-a-janitor,seat-landings-run-the-selected-sections,seat-successor-continues-a-handoff-without-a-human,seats-spend-tokens-in-bounded-sessions,skipped-test-fails-its-group-on-the-other-os,small-change-lane,spend-fence-reports-tokens-per-model-and-cause,stop-batch-strands-a-resumable-goal,stop-capability-follows-the-lease-epoch,stop-decision-surface-is-a-gate,stop-gate-sees-harness-tracked-work,stop-hook-never-forces-an-empty-turn,stop-response-carries-a-structured-report-reference,test-environment-edges-are-closed,testing-surfaces-declare-their-mirror,tests-never-wait-on-wall-time,token-spend-fence,trunk-versus-candidate-is-a-verification-step,units-run-through-one-launcher,watch-verb,watcher-repair-request-never-names-current,winddown-census-handoff-leak reason=priority-order subject=fixture-children-cannot-outlive-their-test from=1:18 to=1:19 requested-sequence=1
 - 2026-09-16T08:26:10Z AZKP60DFJCNC5C1NMPJVGMPQHE-m1e-a3d4c1e1 claim actor=m1e+main-1789030447-51011-2956ea targets=critique-closes-on-folded-proof
 - 2026-09-16T09:05:20Z Z02RX3SY06W5N9GDDBCPVN8R0B-m1e-a3d4c1e1 edit actor=m1e+main-1789030447-51011-2956ea targets=critique-closes-on-folded-proof
-Integrity: sha256=60e2379cf02286fb09054329848f3bb532ebc730e77dba355208ed36ec668784
+- 2026-09-16T09:05:46Z NC67WFJGXKG781HZ851YT36852-m1e-a3d4c1e1 release actor=m1e+main-1789030447-51011-2956ea targets=critique-closes-on-folded-proof
+Integrity: sha256=cae184e358145d89c8de52c5a08814f4fe675b1001321577520f413bf5631289
