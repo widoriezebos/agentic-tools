@@ -1,6 +1,6 @@
 # census-lifecycle-scenario-holds-under-load
 
-- State: approved
+- State: queued
 - Priority: 2
 - Sequence: 51
 - Risk: severity=2 novelty=1 exposure=3 accumulation=2 basis="severity 2: a false red costs each seat a classification per proof and may hide a real census defect; novelty 1: one scenario; exposure 3: every seat's selected plan includes this section; accumulation 2: it recurs on loaded runs until fixed"
@@ -9,10 +9,8 @@
 - Origin: human
 - Next step: Diagnose first: the m1b proof's supervision-and-census-fixtures.log is preserved as artifacts/agents/suite-failures/census-lifecycle-red-20260915T1225Z-supervision-and-census-fixtures.log in the m1b checkout; find which census-lifecycle check failed (the report's output tail cut it off) and decide whether the leg or the census is at fault. Sibling sighting (m1c): nested-worktree-deadlines' leg nested-wt-parent-steered-timeout hit the 60 s provider deadline once on tree 58a55197 at 13:47 and passed on a rerun at 14:05 (memory/backlog-notes.md in fb6839a44). Both look like wall-time waits inside a bed, the class tests-never-wait-on-wall-time covers.
 - OpenedAt: 2026-09-15T12:40:29Z
-- Revision: 55
-- Budget: elapsedLimit=4h attemptLimit=6 reservedJobMinutesLimit=720 activeJobLimit=1 reviewRoundLimit=2
+- Revision: 56
 - BudgetExceptions: 0
-- Approved: by=human:Wido at=2026-09-15T12:41:56Z revision=3 opid=22AGFWVMZRT2RJG4SVXEYBK8FJ-m1e-c6925449 authority=proven digest=4aa84a3197fe596d19bf766fc70a56487e2e9cc8dd8d11e55f2bc167175e2a0e
 
 History:
 - 2026-09-15T12:40:29Z 8X6HAV0YCYRDHNPWGFYERFHEJD-m1e-c6925449 open actor=human:Wido targets=census-lifecycle-scenario-holds-under-load
@@ -70,4 +68,5 @@ History:
 - 2026-09-16T20:32:55Z GS9W7K77HQFFN3G21X02BVJ30P-m1e-c6925449 set-priority actor=human:Wido targets=census-lifecycle-scenario-holds-under-load,events-package-has-a-test-group,new-elapsed-budgets-use-explicit-hours,pipelines-never-lose-a-truncated-producer reason=priority-order subject=new-elapsed-budgets-use-explicit-hours from=1:57 to=1:56 requested-sequence=49
 - 2026-09-16T20:32:59Z GBTR7QRDKCMEGQ2H9JTXRXFYS4-m1e-c6925449 set-priority actor=human:Wido targets=census-lifecycle-scenario-holds-under-load,pipelines-never-lose-a-truncated-producer reason=priority-order subject=pipelines-never-lose-a-truncated-producer from=1:56 to=1:55 requested-sequence=50
 - 2026-09-16T20:33:03Z 3WSSJZWXWD9PTWR4RM4W36EQQJ-m1e-c6925449 set-priority actor=human:Wido targets=census-lifecycle-scenario-holds-under-load reason=priority-order subject=census-lifecycle-scenario-holds-under-load from=1:55 to=2:51 requested-sequence=51
-Integrity: sha256=9f9844f166dbe1de2c09fe5e982fbf486b481dd8554a8f821c5952cda395b978
+- 2026-09-16T20:35:08Z 15AN4X0CVY2ZR7RRJRW5SS85C6-m1e-c6925449 unapprove actor=human:Wido targets=census-lifecycle-scenario-holds-under-load reason=Wido 2026-09-16 22:40 CEST: clean house on priority 1 first, then a few human convenience features; every priority 2+ goal is unapproved until then
+Integrity: sha256=9794b78f2b9350e1d92822bf45acba75471961fdaddfef70d2e33db84563ceb6
