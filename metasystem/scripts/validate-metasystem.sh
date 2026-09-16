@@ -989,6 +989,13 @@ for link in \
   scripts/agents/second-session.sh \
   scripts/agents/arm-supervision.sh \
   scripts/agents/fixture-budget.sh \
+  scripts/agents/headless-design-launch.sh \
+  scripts/agents/headless-design-wait.sh \
+  scripts/agents/codex-critique-launch.sh \
+  scripts/agents/critique-round-task.sh \
+  scripts/agents/landing-lane-worker.sh \
+  scripts/agents/headless-launchers-fixtures.sh \
+  scripts/agents/templates/design-common.md \
   scripts/agents/validate-skill-inventory.sh \
   scripts/agents/enumerate-suite.sh \
   scripts/agents/validate-section-selector.sh \
@@ -1079,6 +1086,12 @@ bash scripts/agents/dependency-ratchet.sh >/dev/null
 bash -n scripts/agents/dependency-ratchet.sh
 bash -n scripts/agents/arm-supervision.sh
 bash -n scripts/agents/fixture-budget.sh
+bash -n scripts/agents/headless-design-launch.sh
+bash -n scripts/agents/headless-design-wait.sh
+bash -n scripts/agents/codex-critique-launch.sh
+bash -n scripts/agents/critique-round-task.sh
+bash -n scripts/agents/landing-lane-worker.sh
+bash -n scripts/agents/headless-launchers-fixtures.sh
 bash -n scripts/agents/validate-skill-inventory.sh
 bash -n scripts/agents/enumerate-suite.sh
 bash -n scripts/agents/validate-section-selector.sh
@@ -2442,6 +2455,9 @@ done
 }
 if section_selected agent-protocol-fixtures; then
   run_section agent-protocol-fixtures needs-engine agent_protocol_fixtures_section
+fi
+if section_selected headless-launchers-fixtures; then
+  run_section headless-launchers-fixtures needs-nothing bash scripts/agents/headless-launchers-fixtures.sh
 fi
 
 # Dispatcher and fake-adapter fixtures run in a minimal adopted-mode Git
