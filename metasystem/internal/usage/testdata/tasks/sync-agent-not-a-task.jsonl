@@ -1,0 +1,2 @@
+{"type":"assistant","message":{"role":"assistant","content":[{"type":"tool_use","id":"toolu_sync_error","name":"Agent","input":{"description":"Unavailable model","prompt":"[cut]"}}]}}
+{"type":"user","message":{"role":"user","content":[{"type":"tool_result","tool_use_id":"toolu_sync_error","content":[{"type":"text","text":"Error: model is temporarily unavailable"}]}]},"toolUseResult":"Error: model is temporarily unavailable"}
