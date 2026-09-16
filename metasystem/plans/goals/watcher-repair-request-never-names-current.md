@@ -1,6 +1,6 @@
 # watcher-repair-request-never-names-current
 
-- State: approved
+- State: queued
 - Priority: 2
 - Sequence: 32
 - Risk: severity=3 novelty=2 exposure=3 accumulation=3 basis="severity 3: the seat's watcher repair silently does not happen, and health reads healthy while it does not; novelty 2: the failure is in the owner's own repair branch, not a known seam; exposure 3: every seat runs this owner; accumulation 3: it spun for twenty hours here and nothing bounded it"
@@ -9,11 +9,9 @@
 - Origin: main
 - Next step: Read the failed-repair branch in the supervision owner against owner.ndjson on m1d (1177 lines, first at 2026-09-06T13:24:29+02:00, last at 2026-09-07T09:11:18+02:00, cleared when the restart finally completed at 09:12:18). Decide between rewriting the stale request and re-minting it, then add the consecutive-failure escalation so twenty silent hours cannot recur.
 - OpenedAt: 2026-09-07T07:21:49Z
-- Revision: 191
+- Revision: 192
 - Pinned: m1b
-- Budget: elapsedLimit=1d attemptLimit=10 reservedJobMinutesLimit=1200 activeJobLimit=1 reviewRoundLimit=3
 - BudgetExceptions: 0
-- Approved: by=human:Wido at=2026-09-13T06:41:47Z revision=82 opid=TNN201XV6S296J5JBJX9ES5BQV-m1e-c6925449 authority=proven digest=e423a3e145d8f640b038443baa65ccd82658ef26cffcfc86dd4550813214e250
 
 History:
 - 2026-09-07T07:21:49Z XQNY093C5MJWAYSYAEQ3H79X48-m1d-25755dc0 open actor=m1d+main-1788764558-63534-a15b0d targets=watcher-repair-request-never-names-current
@@ -207,4 +205,5 @@ History:
 - 2026-09-16T20:30:48Z V9DK4493GE2B6NBXCF6JSTMV7M-m1e-c6925449 set-priority actor=human:Wido targets=actionable-metrics,census-lifecycle-scenario-holds-under-load,chain-landing-carries-the-reviewed-diff,dispatch-bases-chains-on-the-remote-tip,events-package-has-a-test-group,failed-job-attention,fixture-repo-copies-exclude-the-artifacts-store,fixture-waits-name-their-producer,human-authority-surface-runs-its-cmd-tests,human-wait-does-not-consume-goal-budget,lease-sweep-death-evidence,machine-concurrency-governor,metasystem-stop-escalation-proofs,metasystem-stop-fleet-form,new-elapsed-budgets-use-explicit-hours,pipelines-never-lose-a-truncated-producer,repo-root-paths-ride-agent-commits-unjudged,run-scoped-build-caches-have-a-janitor,skipped-test-fails-its-group-on-the-other-os,token-spend-fence,watch-verb,watcher-repair-request-never-names-current,winddown-census-handoff-leak reason=priority-order subject=failed-job-attention from=1:56 to=1:55 requested-sequence=30
 - 2026-09-16T20:30:54Z PN0F8WF918DCCBTPKCSM1HHMHG-m1e-c6925449 set-priority actor=human:Wido targets=actionable-metrics,census-lifecycle-scenario-holds-under-load,chain-landing-carries-the-reviewed-diff,dispatch-bases-chains-on-the-remote-tip,events-package-has-a-test-group,fixture-repo-copies-exclude-the-artifacts-store,fixture-waits-name-their-producer,human-authority-surface-runs-its-cmd-tests,human-wait-does-not-consume-goal-budget,lease-sweep-death-evidence,machine-concurrency-governor,metasystem-stop-escalation-proofs,metasystem-stop-fleet-form,new-elapsed-budgets-use-explicit-hours,pipelines-never-lose-a-truncated-producer,repo-root-paths-ride-agent-commits-unjudged,run-scoped-build-caches-have-a-janitor,skipped-test-fails-its-group-on-the-other-os,token-spend-fence,watch-verb,watcher-repair-request-never-names-current,winddown-census-handoff-leak reason=priority-order subject=watch-verb from=1:55 to=1:54 requested-sequence=31
 - 2026-09-16T20:31:03Z STZ81SQF520MYKDNNXK9KW53BD-m1e-c6925449 set-priority actor=human:Wido targets=actionable-metrics,census-lifecycle-scenario-holds-under-load,chain-landing-carries-the-reviewed-diff,dispatch-bases-chains-on-the-remote-tip,events-package-has-a-test-group,fixture-repo-copies-exclude-the-artifacts-store,fixture-waits-name-their-producer,human-authority-surface-runs-its-cmd-tests,human-wait-does-not-consume-goal-budget,lease-sweep-death-evidence,machine-concurrency-governor,metasystem-stop-escalation-proofs,metasystem-stop-fleet-form,new-elapsed-budgets-use-explicit-hours,pipelines-never-lose-a-truncated-producer,repo-root-paths-ride-agent-commits-unjudged,run-scoped-build-caches-have-a-janitor,skipped-test-fails-its-group-on-the-other-os,token-spend-fence,watcher-repair-request-never-names-current,winddown-census-handoff-leak reason=priority-order subject=watcher-repair-request-never-names-current from=1:54 to=2:32 requested-sequence=32
-Integrity: sha256=4335e6cb17dc8b9eec4de4d17bbc6534302588cb82c0f8ee7f3574e993456527
+- 2026-09-16T20:33:27Z TKBBXTRBPV4B5GG0V5BVNMJXXG-m1e-c6925449 unapprove actor=human:Wido targets=watcher-repair-request-never-names-current reason=Wido 2026-09-16 22:40 CEST: clean house on priority 1 first, then a few human convenience features; every priority 2+ goal is unapproved until then
+Integrity: sha256=07ca34d52cd5a8c26f32a7449c930a5eb43d1a9f91e534cd6c28859c7dbc43f8
