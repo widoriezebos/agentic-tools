@@ -1,6 +1,6 @@
 # fixture-children-cannot-outlive-their-test
 
-- State: approved
+- State: claimed
 - Priority: 1
 - Sequence: 11
 - Risk: severity=3 novelty=1 exposure=3 accumulation=3 basis="severity 3: sixteen orphans took the machine to a load average of 40 and starved every seat for hours; novelty 1: this is the known fixture-leak class in a new place, with the code identified; exposure 3: the fixture runs in internal/goal, which every deep proof selects; accumulation 3: each aborted run adds burners that ignore TERM and never exit"
@@ -9,11 +9,12 @@
 - Origin: human
 - Next step: 2026-09-16 17:10Z m1c: units 1, 2, 3a (d44c98d87), 3c (e1cc059ca) and 3b (0dda2d620) are landed. Unit 4a (the custodian watches its launcher) is read clean after one fix round. Unit 4b (controlled launchers export the run owner) is green on the seat's gate, race and witness runs and is under a fresh Opus read. 4a and 4b land as one batch under a single deep proof once 4b reads clean; the landing script is ready and runs the oldest-bash gate first. Unit 5 is split in three: 5a (the zombie reading and testutil.Fixture's record-and-kill cleanup, witnesses 2 and 17) is being built by Codex now; 5b (Hold, the key scan, the leash, the shell prologue, the exit scan) and 5c (the custodian start gate turned on, log retention, a reap that needs no process table) follow. Units 6 to 12 after. The revision-5 amendment (rule 7) rides with a unit 5 landing.
 - OpenedAt: 2026-09-16T06:19:56Z
-- Revision: 33
+- Revision: 34
 - Budget: elapsedLimit=1d2h attemptLimit=6 reservedJobMinutesLimit=720 activeJobLimit=1 reviewRoundLimit=2
 - BudgetExceptions: 1
 - Approved: by=human:Wido at=2026-09-16T18:43:03Z revision=32 opid=18KCFSCKKA1TQCJGPMCAGXNZKN-m1e-c6925449 authority=proven digest=d6f6e8462722d0abf7dad4d683fdf62ed225fa0ec613a40328097f6339c50fa4
-- Episode: machine=m1c lineage=main-1789560465-86072-c7b126 accountingRevision=32 episodeAt=2026-09-16T18:42:59Z episodeRevision=31 idleSeconds=0 released=2026-09-16T19:58:50Z
+- Claimed: machine=m1c lineage=main-1789560465-86072-c7b126 at=2026-09-16T19:59:00Z revision=34 accountingRevision=32 episodeAt=2026-09-16T18:42:59Z episodeRevision=31 idleSeconds=10
+- StopCapability: generation=34 revision=34 machine=m1c claimEpoch=6 fenceEpoch=0
 
 History:
 - 2026-09-16T06:19:56Z KZ4JS51YKMW6TAMMQSB3EKBFX7-m1c-c6925449 open actor=human:Wido targets=fixture-children-cannot-outlive-their-test reason=TierOverride: derived=3 set=2 why=the four risk answers derive tier 3, but the defect is one identified fixture with a known fix shape and no design unknowns: a bare busy loop replaced by a sleeping wait, reaping by recorded pid, and teardown that survives an abort. Tier 2 fits the work, not the blast radius.
@@ -49,4 +50,5 @@ History:
 - 2026-09-16T18:42:59Z 52015X1ZQZFXGVDSG9YKGPFDDP-m1e-c6925449 resume actor=human:Wido targets=fixture-children-cannot-outlive-their-test
 - 2026-09-16T18:43:03Z 18KCFSCKKA1TQCJGPMCAGXNZKN-m1e-c6925449 set-budget actor=human:Wido targets=fixture-children-cannot-outlive-their-test displaced=m1c+main-1789560465-86072-c7b126@2026-09-16T18:42:59Z
 - 2026-09-16T19:58:50Z 9MZ8XE84X51QJ6C4VP01KHYYE7-m1c-fde8080b release actor=m1c+main-1789560465-86072-c7b126 targets=fixture-children-cannot-outlive-their-test
-Integrity: sha256=2d9a47f72da4905cfd67054e10183fb0a57081684d767aa47223b895906a2da6
+- 2026-09-16T19:59:00Z 23G7DPJ0GSC8B1EYNY085JWQ48-m1c-fde8080b claim actor=m1c+main-1789560465-86072-c7b126 targets=fixture-children-cannot-outlive-their-test
+Integrity: sha256=14ff634674761250ab6f38fc5b150df4378fe261c566d667855deb68d1784d1b
