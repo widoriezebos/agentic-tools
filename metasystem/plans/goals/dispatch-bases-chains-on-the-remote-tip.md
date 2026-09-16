@@ -1,6 +1,6 @@
 # dispatch-bases-chains-on-the-remote-tip
 
-- State: approved
+- State: queued
 - Priority: 2
 - Sequence: 45
 - Risk: severity=2 novelty=1 exposure=3 accumulation=2 basis="severity 2: a chain built on a stale base fails at landing with a rebase conflict after hours of builder and critic work, and a seat then resolves it by hand; novelty 1: a fetch and a base choice in a door that exists; exposure 3: every chain on every machine, four seats on one host landing all day; accumulation 2: the more seats land, the staler every other seat's base and the likelier the conflict"
@@ -9,11 +9,9 @@
 - Origin: main
 - Next step: WIDENED 2026-09-10 (m1d): the same law for the CLOSING READ. A code-critic dispatch on a chain whose base is behind the remote tip reads a tree that will not be the one that lands, so its certification is spent on the wrong tree. Specimen: chain bsws-build1b-20260909, 2026-09-09 to 10: the closing read of round 4 (bsws-crit2) was dispatched while trunk had moved 54 commits under the chain, six of them touching the chain's files; that read died on a rate limit, but had it returned, round 5 (a pure merge-forward, no behaviour change, 45 minutes) would still have needed its own read. The order must be: rebase the chain onto the remote tip, then dispatch the closing read, never the reverse. DONE gains: the dispatch door refuses a code-critic dispatch on a chain whose base is not the current remote tip, naming the follow-up rebase as the remedy, or performs that rebase itself before the read. MECHANICAL, one chain: dispatch.sh (fetch, base on refs/remotes/<remote>/<branch>, refusal on fetch failure, clean-checkout fast-forward), the follow-up admission in internal/dispatch (merge-or-refuse instead of the warning), goal claim's lag line; fixtures: a dispatch against a stale local main bases on the remote tip; a fetch failure refuses; a follow-up on a behind worktree without product conflicts merges, with conflicts refuses naming the files; the existing dispatch fixtures keep passing. Any free seat; half a day.
 - OpenedAt: 2026-09-06T12:31:31Z
-- Revision: 149
+- Revision: 150
 - Pinned: m1b
-- Budget: elapsedLimit=1d attemptLimit=10 reservedJobMinutesLimit=1200 activeJobLimit=1 reviewRoundLimit=3
 - BudgetExceptions: 0
-- Approved: by=human:Wido at=2026-09-06T12:31:59Z revision=2 opid=QTM46H2XYQ075XHFX1D7FD5WWW-m1-7cd0bd60 authority=proven digest=b1cd64f41ce42fee1f6d65f44fcf8210010887c256da435bf991cd96b587b7d9
 
 History:
 - 2026-09-06T12:31:31Z 5T8DE34F5JFW4ZZRYNBESXDPKW-m1-a4f8999f open actor=m1+main-1788594343-3833-fb64b9 targets=dispatch-bases-chains-on-the-remote-tip
@@ -165,4 +163,5 @@ History:
 - 2026-09-16T20:32:20Z 605V8R43X8E3DXCYYWTNHSGCJB-m1e-c6925449 set-priority actor=human:Wido targets=census-lifecycle-scenario-holds-under-load,dispatch-bases-chains-on-the-remote-tip,events-package-has-a-test-group,human-authority-surface-runs-its-cmd-tests,human-wait-does-not-consume-goal-budget,metasystem-stop-escalation-proofs,metasystem-stop-fleet-form,new-elapsed-budgets-use-explicit-hours,pipelines-never-lose-a-truncated-producer,repo-root-paths-ride-agent-commits-unjudged reason=priority-order subject=human-authority-surface-runs-its-cmd-tests from=1:56 to=1:55 requested-sequence=43
 - 2026-09-16T20:32:26Z ECXB1G7RHC8BNFF7JR3JGM3XYK-m1e-c6925449 set-priority actor=human:Wido targets=census-lifecycle-scenario-holds-under-load,dispatch-bases-chains-on-the-remote-tip,events-package-has-a-test-group,human-wait-does-not-consume-goal-budget,metasystem-stop-escalation-proofs,metasystem-stop-fleet-form,new-elapsed-budgets-use-explicit-hours,pipelines-never-lose-a-truncated-producer,repo-root-paths-ride-agent-commits-unjudged reason=priority-order subject=repo-root-paths-ride-agent-commits-unjudged from=1:55 to=1:54 requested-sequence=44
 - 2026-09-16T20:32:32Z HC8GDDX3DH5CE3W21P5ZKAG7ZW-m1e-c6925449 set-priority actor=human:Wido targets=census-lifecycle-scenario-holds-under-load,dispatch-bases-chains-on-the-remote-tip,events-package-has-a-test-group,human-wait-does-not-consume-goal-budget,metasystem-stop-escalation-proofs,metasystem-stop-fleet-form,new-elapsed-budgets-use-explicit-hours,pipelines-never-lose-a-truncated-producer reason=priority-order subject=dispatch-bases-chains-on-the-remote-tip from=1:54 to=2:45 requested-sequence=45
-Integrity: sha256=a590b0fccd6b809b9c047f19e6fc173bb2ce01d3ce3c6b8bb86e78c517fa7cea
+- 2026-09-16T20:34:35Z 0DTG60ETM3T22TW6SBACS6QRSX-m1e-c6925449 unapprove actor=human:Wido targets=dispatch-bases-chains-on-the-remote-tip reason=Wido 2026-09-16 22:40 CEST: clean house on priority 1 first, then a few human convenience features; every priority 2+ goal is unapproved until then
+Integrity: sha256=eda59db4c4f264a729d30c6c1f6178f044b822c38889212cb645c7ae9c1d48be
