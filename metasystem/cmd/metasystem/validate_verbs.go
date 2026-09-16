@@ -5,7 +5,9 @@ import (
 	"flag"
 	"fmt"
 	"os"
+	"path/filepath"
 	"regexp"
+	"strings"
 
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/validate"
 )
@@ -406,6 +408,74 @@ Exit codes: 0 more cycles are allowed; 1 stop-loss triggered; 2 usage error.
 		fmt.Fprintln(os.Stderr, line)
 	}
 	return code
+}
+
+func runValidateMovedEffects(args []string) int {
+	usage := func() {
+		fmt.Fprint(os.Stderr, `Usage:
+  metasystem validate moved-effects --file <page.md> [--root <repository-root>]
+
+Checks a Moved effects inventory with this table header:
+| Effect | From | To | Code |
+
+Use the exact line "No owner moves." when the page moves no owner.
+`)
+	}
+	flags := flag.NewFlagSet("validate moved-effects", flag.ContinueOnError)
+	flags.Usage = usage
+	root := pathFlag(flags, "root", "..", "repository root containing the metasystem root")
+	file := flags.String("file", "", "design page")
+	if err := flags.Parse(args); err != nil {
+		if errors.Is(err, flag.ErrHelp) {
+			return 0
+		}
+		return 2
+	}
+	if flags.NArg() > 0 || *file == "" {
+		fmt.Fprintln(os.Stderr, "validate moved-effects: --file is required and positional arguments are not accepted")
+		usage()
+		return 2
+	}
+	page, err := os.ReadFile(*file)
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "validate moved-effects: read %s: %v\n", *file, err)
+		return 2
+	}
+	repositoryRoot := *root
+	exists := func(path string) bool {
+		clean := filepath.Clean(filepath.FromSlash(path))
+		if filepath.IsAbs(path) || clean == ".." || strings.HasPrefix(clean, ".."+string(filepath.Separator)) {
+			return false
+		}
+		info, err := os.Stat(filepath.Join(repositoryRoot, clean))
+		return err == nil && (info.Mode().IsRegular() || info.IsDir())
+	}
+	report := validate.CheckMovedEffects(page, exists)
+	for _, row := range report.Rows {
+		paths := make([]string, 0, len(row.Paths))
+		for _, path := range row.Paths {
+			status := "absent"
+			if exists(path) {
+				status = "ok"
+			}
+			paths = append(paths, path+" "+status)
+		}
+		if len(paths) == 0 {
+			paths = append(paths, "(none)")
+		}
+		fmt.Printf("row %d: %s | %s -> %s | code %s\n", row.Line, row.Effect, row.From, row.To, strings.Join(paths, " "))
+	}
+	for _, problem := range report.Problems {
+		fmt.Printf("%s: line %d: %s\n", problem.Code, problem.Line, problem.Detail)
+	}
+	if report.Inventory == "absent" {
+		fmt.Println("moved-effects: no Moved effects section; the design critic decides whether this page moves an owner, and a page that does without this section is a material finding")
+	}
+	fmt.Printf("moved-effects: inventory=%s rows=%d problems=%d\n", report.Inventory, len(report.Rows), len(report.Problems))
+	if len(report.Problems) > 0 {
+		return 1
+	}
+	return 0
 }
 
 // runValidateRefactorBaseline relays the refactor gate:

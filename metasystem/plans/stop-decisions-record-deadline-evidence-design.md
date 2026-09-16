@@ -382,3 +382,22 @@ Add new `internal/report/stopdeadline_test.go` and `cmd/metasystem/stopdecision_
 Reuse atomicfile and component evidence; keep new logic in Go.
 The orchestrator runs full-width shared testing and the Opus build read, then
 rebuilds and re-arms seats through landing. This round changes only this page.
+
+## 10. Moved effects
+
+Recorded 2026-09-15 as the first inventory under goal moved-effects-are-inventoried-in-the-design. It is the sweep build round 8 returned (every effect the Stop worker performed after composing its response, and its owner now) with round 25's per-route hooks-log lines. Code names where the effect is performed before this member lands.
+
+| Effect | From | To | Code |
+|---|---|---|---|
+| The response line `stop response decision=<decision> elapsed=<n>s` in the supervision hooks log | Stop worker | parent emission recorder, after a successful delivery | `metasystem/scripts/agents/supervision-hook.sh` |
+| The elapsed-seconds measurement for that line | Stop worker | parent emission recorder, from the actual post-write time | `metasystem/scripts/agents/supervision-hook.sh` |
+| Staging the response bytes in a temporary file, the provider stdout write, and removing the file | Stop worker | deadline controller: holds the bytes in memory, performs the sole provider write, hashes them into the receipt | `metasystem/scripts/agents/supervision-hook.sh` |
+| Hook attempt completion on success or unavailable presentation | Stop worker | receipt-gated settlement | `metasystem/scripts/agents/supervision-hook.sh` |
+| Hook attempt completion when provider output fails | Stop worker | parent failed-delivery callback, closing the attempt as provider-delivery-failed with no receipt | `metasystem/scripts/agents/supervision-hook.sh` |
+| Narrator digest advancement and its failure warning | Stop worker | settlement result checked against the held report and its matching receipt | `metasystem/scripts/agents/supervision-hook.sh` |
+| Protocol-error cursor advance (main identity, caller process, counts) | Stop worker | settlement, after matching delivery, with the identity carried in the held report | `metasystem/internal/lease/verbs.go` |
+| The full turn-verdict artifact and turn-verdict state | Stop worker | receipt-gated goal settlement | `metasystem/internal/goal/turnverdict.go` |
+| The idle continuation or alarm and its occurrence count | Stop worker | receipt-gated goal settlement | `metasystem/internal/goal/turnverdict.go` |
+| One-use session Stop consumption | Stop worker | receipt-gated goal settlement | `metasystem/internal/goal/sessionstop.go` |
+| Open-work seen state | Stop worker | receipt-gated open-work settlement | `metasystem/internal/report/openwork.go` |
+| The decision or outcome trail line, and the condition line before it when the decision carries an infrastructure condition, on every delivered route | Stop worker (`append_stop_condition`) | parent, per delivered route | `metasystem/scripts/agents/supervision-hook.sh` |

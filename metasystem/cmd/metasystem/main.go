@@ -124,6 +124,7 @@ func families() []family {
 				{"refactor-baseline", "record or check the trusted refactor baseline", runValidateRefactorBaseline},
 				{"return-complete", "validate an agent return against its role schema and job identity", runValidateReturnComplete},
 				{"design-obligations", "check the structure and declared state of design-obligation matrices", runValidateDesignObligations},
+				{"moved-effects", "check a design page's moved-effect inventory and code paths", runValidateMovedEffects},
 				{"conformance", "review, recertify, or merge conformance for an implementer job", runValidateConformance},
 				{"stop-loss", "block further investigation cycles when a ledger trigger fired", runValidateStopLoss},
 			},
