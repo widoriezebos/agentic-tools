@@ -7,10 +7,10 @@
 # and the fixtures that drive it have something to drive.
 # Sourced by validate-metasystem.sh; also runnable standalone.
 #
-# Fast mode (go-gate.sh --fast) runs only the static stages — gofmt, vet,
-# staticcheck, refusal register — plus the engine build: seconds end to end,
-# for tight edit loops. It is not a landing gate: no race tests, no
-# cross-builds, no govulncheck, no coverage ratchet, and it refuses the
+# Fast mode (go-gate.sh --fast) runs only the dependency ratchet and static
+# stages — gofmt, vet, staticcheck, refusal register — plus the engine build:
+# seconds end to end, for tight edit loops. It is not a landing gate: no race
+# tests, no cross-builds, no govulncheck, no coverage ratchet, and it refuses the
 # witness protocol outright. The full gate remains the landing requirement.
 # The switch is the explicit flag only, never an environment variable: an
 # exported variable outlives the edit loop it served and would silently
@@ -132,6 +132,19 @@ fi
 if ! command -v go >/dev/null 2>&1; then
   echo "go gate: go.mod present but no go toolchain on PATH; the committed engine cannot be built" >&2
   exit 1
+fi
+
+# A forbidden script dependency is cheaper and more urgent than every test in
+# the edit-loop gate. Run the current source's audit before any test process;
+# its status is the refusal status rather than a generic static-stage failure.
+if [[ "$gate_fast" == 1 ]]; then
+  gate_dependency_rc=0
+  gate_dependency_out=$(go run ./cmd/metasystem audit dependency-ratchet --root "$root" 2>&1) \
+    || gate_dependency_rc=$?
+  if [[ "$gate_dependency_rc" != 0 ]]; then
+    printf '%s\n' "$gate_dependency_out" >&2
+    exit "$gate_dependency_rc"
+  fi
 fi
 
 # A STANDALONE go-gate run registers itself (goal-system GOAL-17: an
@@ -556,9 +569,9 @@ if [[ "$gate_fast" == 1 ]]; then
   rm -f "$gate_build_scratch"
   gate_build_scratch=
   if [[ "$gate_hook_start_scope" == installation ]]; then
-    echo "go gate: fast mode passed (gofmt, vet, staticcheck, refusal register, SessionStart exit audit, build); the full gate remains the landing requirement"
+    echo "go gate: fast mode passed (dependency ratchet, gofmt, vet, staticcheck, refusal register, SessionStart exit audit, build); the full gate remains the landing requirement"
   else
-    echo "go gate: fast mode passed (gofmt, vet, staticcheck, refusal register, build); the full gate remains the landing requirement"
+    echo "go gate: fast mode passed (dependency ratchet, gofmt, vet, staticcheck, refusal register, build); the full gate remains the landing requirement"
   fi
   exit 0
 fi

@@ -159,6 +159,7 @@ func collectRefusalTokens(t *testing.T, root string) map[string]struct{} {
 		"internal/steward",
 		"internal/channel",
 		"internal/humanauthority",
+		"internal/testpolicy",
 		"cmd/metasystem",
 	}
 	collected := make(map[string]struct{})

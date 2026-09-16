@@ -1,6 +1,11 @@
 package testpolicy
 
-import "testing"
+import (
+	"os"
+	"reflect"
+	"strings"
+	"testing"
+)
 
 func TestSelectionUsesFallbackForUnownedPath(t *testing.T) {
 	contract := fixtureContract()
@@ -124,7 +129,7 @@ func TestModesDoNotLowerRequiredRisk(t *testing.T) {
 
 func TestCanaryIsRequiredAndExplicitDiagnosticGetsAStage(t *testing.T) {
 	contract := fixtureContract()
-	plan, err := Select(contract, SelectionRequest{ChangedPaths: []string{"src/output.go"}, RequestedMode: ModeStandard, Purpose: PurposeDiagnostic, Groups: []string{"app-deep"}})
+	plan, err := Select(contract, SelectionRequest{ChangedPaths: []string{"src/output.go"}, RequestedMode: ModeCanary, Purpose: PurposeDiagnostic, Groups: []string{"app-deep"}})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -134,6 +139,58 @@ func TestCanaryIsRequiredAndExplicitDiagnosticGetsAStage(t *testing.T) {
 	last := plan.Stages[len(plan.Stages)-1]
 	if last.ID != "diagnostic" || !contains(last.Groups, "app-deep") {
 		t.Fatalf("explicit diagnostic group has no executable stage: %+v", plan.Stages)
+	}
+}
+
+func TestExplicitGroupsRequireDiagnosticCanaryMode(t *testing.T) {
+	contract := fixtureContract()
+	contract.Groups = append(contract.Groups, Group{ID: "manual-only"})
+	requested := []string{"app-deep", "manual-only"}
+	wantSelected := []string{"app-deep", "app-unit", "manual-only"}
+	for _, mode := range []Mode{ModeAuto, ModeCanary, ModeStandard, ModeDeep} {
+		for _, purpose := range []Purpose{PurposeDelivery, PurposeDiagnostic, PurposeCadence} {
+			t.Run(string(mode)+"/"+string(purpose), func(t *testing.T) {
+				plan, err := Select(contract, SelectionRequest{ChangedPaths: []string{"src/output.go"}, RequestedMode: mode,
+					Purpose: purpose, Groups: requested})
+				if mode == ModeCanary {
+					if err != nil || plan.Purpose != PurposeDiagnostic || !reflect.DeepEqual(plan.SelectedGroups, wantSelected) {
+						t.Fatalf("canary selection purpose=%s groups=%v err=%v, want diagnostic %v", plan.Purpose, plan.SelectedGroups, err, wantSelected)
+					}
+					return
+				}
+				if err == nil || !strings.Contains(err.Error(), "TEST_GROUP_SELECTION_REFUSED") ||
+					!strings.Contains(err.Error(), "--mode canary --groups <ids>") {
+					t.Fatalf("explicit groups were not refused with the canary fix-it: plan=%+v err=%v", plan, err)
+				}
+			})
+		}
+	}
+}
+
+func TestMetaSystemGroupSelectionScenario(t *testing.T) {
+	data, err := os.ReadFile("../../testing.json")
+	if err != nil {
+		t.Fatal(err)
+	}
+	contract, err := Decode(data)
+	if err != nil {
+		t.Fatal(err)
+	}
+	groups := []string{"section/adoption-fixtures", "section/watch-background-jobs-fixtures"}
+	for _, mode := range []Mode{ModeCanary, ModeAuto, ModeStandard, ModeDeep} {
+		plan, selectErr := Select(contract, SelectionRequest{ChangedPaths: []string{"internal/testpolicy/select.go"},
+			RequestedMode: mode, Purpose: PurposeDiagnostic, Groups: groups})
+		if mode == ModeCanary {
+			if selectErr != nil || len(plan.SelectedGroups) != 5 {
+				t.Fatalf("canary selected %d of %d groups, err=%v; want 5", len(plan.SelectedGroups), len(contract.Groups), selectErr)
+			}
+			t.Logf("mode=%s selected=%d of %d groups", mode, len(plan.SelectedGroups), len(contract.Groups))
+			continue
+		}
+		if selectErr == nil || !strings.Contains(selectErr.Error(), "TEST_GROUP_SELECTION_REFUSED") {
+			t.Fatalf("mode=%s selected %d of %d groups instead of refusing: %v", mode, len(plan.SelectedGroups), len(contract.Groups), selectErr)
+		}
+		t.Logf("mode=%s refused: %v", mode, selectErr)
 	}
 }
 

@@ -105,6 +105,12 @@ func Select(contract Contract, request SelectionRequest) (Plan, error) {
 	if request.Purpose != PurposeDelivery && request.Purpose != PurposeDiagnostic && request.Purpose != PurposeCadence {
 		return Plan{}, fmt.Errorf("test purpose must be delivery, diagnostic, or cadence")
 	}
+	if len(request.Groups) > 0 && request.RequestedMode != ModeCanary {
+		return Plan{}, fmt.Errorf("TEST_GROUP_SELECTION_REFUSED: --groups requires diagnostic canary mode; use --mode canary --groups <ids>")
+	}
+	if len(request.Groups) > 0 {
+		request.Purpose = PurposeDiagnostic
+	}
 	if request.RequestedMode == ModeCanary && request.Purpose == PurposeDelivery {
 		return Plan{}, fmt.Errorf("canary mode is diagnostic and cannot satisfy delivery")
 	}

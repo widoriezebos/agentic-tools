@@ -236,6 +236,64 @@ esac
 	}
 }
 
+func TestFastGoGateRunsDependencyRatchetBeforeTests(t *testing.T) {
+	root := t.TempDir()
+	copyScriptFile(t, filepath.Join(packageRoot(t), "scripts", "agents", "go-gate.sh"), filepath.Join(root, "scripts", "agents", "go-gate.sh"))
+	copyScriptFile(t, filepath.Join(packageRoot(t), "scripts", "agents", "go-build.sh"), filepath.Join(root, "scripts", "agents", "go-build.sh"))
+	writeDependencyGateFile(t, filepath.Join(root, "go.mod"), "module github.com/widoriezebos/agentic-tools/metasystem\n", 0o600)
+	writeDependencyGateFile(t, filepath.Join(root, "scripts", "banned.sh"), "#!/usr/bin/env bash\nnode x.js\n", 0o700)
+	for _, directory := range []string{"internal", "cmd", "helpers"} {
+		if err := os.MkdirAll(filepath.Join(root, directory), 0o755); err != nil {
+			t.Fatal(err)
+		}
+	}
+	trace := filepath.Join(root, "trace")
+	goHelper := `#!/usr/bin/env bash
+set -euo pipefail
+case "${1:-}" in
+  version) echo 'go version fixture' ;;
+  env) echo local ;;
+  vet) printf 'vet\n' >>"$FAST_GATE_TRACE" ;;
+  test) printf 'test\n' >>"$FAST_GATE_TRACE" ;;
+  run)
+    if [[ " $* " == *" ./cmd/metasystem audit dependency-ratchet "* ]]; then
+      printf 'ratchet\n' >>"$FAST_GATE_TRACE"
+      echo 'dependency ratchet: banned interpreter node: scripts/banned.sh:2' >&2
+      exit 19
+    fi
+    printf 'staticcheck\n' >>"$FAST_GATE_TRACE"
+    ;;
+  build) exit 97 ;;
+  *) exit 97 ;;
+esac
+`
+	writeDependencyGateFile(t, filepath.Join(root, "helpers", "go"), goHelper, 0o700)
+	writeDependencyGateFile(t, filepath.Join(root, "helpers", "gofmt"), "#!/usr/bin/env bash\nexit 0\n", 0o700)
+	command := exec.Command("bash", filepath.Join(root, "scripts", "agents", "go-gate.sh"), "--fast")
+	command.Dir = root
+	command.Env = append(filteredCoverageScriptEnvironment(), "FAST_GATE_TRACE="+trace,
+		"PATH="+filepath.Join(root, "helpers")+string(os.PathListSeparator)+os.Getenv("PATH"))
+	output, err := command.CombinedOutput()
+	exit, ok := err.(*exec.ExitError)
+	if !ok || exit.ExitCode() != 19 {
+		t.Fatalf("fast gate exit=%v, want dependency ratchet status 19; output:\n%s", err, output)
+	}
+	events, readErr := os.ReadFile(trace)
+	if readErr != nil || string(events) != "ratchet\n" {
+		t.Fatalf("gate events=%q err=%v, want ratchet before any test; output:\n%s", events, readErr, output)
+	}
+}
+
+func writeDependencyGateFile(t *testing.T, path, content string, mode os.FileMode) {
+	t.Helper()
+	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(path, []byte(content), mode); err != nil {
+		t.Fatal(err)
+	}
+}
+
 func TestGoGateWorkerContextsReachOwnedStageBoundary(t *testing.T) {
 	for _, test := range []struct {
 		name, attempt       string
