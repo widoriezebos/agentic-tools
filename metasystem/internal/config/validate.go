@@ -438,6 +438,17 @@ func Validate(confPath, repoRoot string) (tiersAbsent bool, problems []string, e
 			})
 		}
 	}
+	_, batchRootLocal := localValues[BatchRootKey]
+	_, batchWaitLocal := localValues[BatchMaxWaitKey]
+	_, batchRootEnv := os.LookupEnv(EnvName(BatchRootKey))
+	_, batchWaitEnv := os.LookupEnv(EnvName(BatchMaxWaitKey))
+	if _, rootSet := values[BatchRootKey]; rootSet || batchRootLocal || batchRootEnv {
+		if _, batchErr := ResolveBatchLanding(confPath, repoRoot, func() time.Time { return time.Time{} }); batchErr != nil {
+			add("%v", batchErr)
+		}
+	} else if _, waitSet := values[BatchMaxWaitKey]; waitSet || batchWaitLocal || batchWaitEnv {
+		add("%s requires %s", BatchMaxWaitKey, BatchRootKey)
+	}
 	resolved := func(key, mode string) (string, bool) {
 		if mode != "" {
 			if v, ok := localValues["mode."+mode+"."+key]; ok {

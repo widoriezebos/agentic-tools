@@ -3,8 +3,11 @@ package config
 import (
 	"fmt"
 	"os"
+	"os/exec"
+	"path/filepath"
 	"regexp"
 	"strings"
+	"time"
 )
 
 // Resolution rules for the metasystem.conf settings file. A caller asks for one
@@ -18,6 +21,67 @@ var (
 	roleModelKey    = regexp.MustCompile(`^role\.[a-z0-9-]+\.model\.[a-z0-9-]+$`)
 	digitsOnlyValue = regexp.MustCompile(`^[0-9]+$`)
 )
+
+const (
+	BatchRootKey        = "landing.batch-root"
+	BatchMaxWaitKey     = "landing.batch-max-wait"
+	DefaultBatchMaxWait = 45 * time.Minute
+)
+
+type BatchLanding struct {
+	Root    string
+	MaxWait time.Duration
+	now     func() time.Time
+}
+
+func ResolveBatchLanding(confPath, seatRoot string, now func() time.Time) (BatchLanding, error) {
+	if now == nil {
+		return BatchLanding{}, fmt.Errorf("resolve batch landing: an injected clock is required")
+	}
+	rawRoot, _, err := Get(GetParams{Key: BatchRootKey, ConfPath: confPath})
+	if err != nil {
+		return BatchLanding{}, fmt.Errorf("resolve %s: %w", BatchRootKey, err)
+	}
+	root, err := batchLandingRoot(rawRoot, seatRoot)
+	if err != nil {
+		return BatchLanding{}, err
+	}
+	rawWait, _, err := Get(GetParams{Key: BatchMaxWaitKey, ConfPath: confPath, Default: DefaultBatchMaxWait.String(), DefaultSet: true})
+	if err != nil {
+		return BatchLanding{}, fmt.Errorf("resolve %s: %w", BatchMaxWaitKey, err)
+	}
+	wait, err := time.ParseDuration(rawWait)
+	if err != nil || wait < time.Minute || wait > 6*time.Hour {
+		return BatchLanding{}, fmt.Errorf("%s must be a duration from 1m through 6h, got %q", BatchMaxWaitKey, rawWait)
+	}
+	return BatchLanding{Root: root, MaxWait: wait, now: now}, nil
+}
+
+func batchLandingRoot(raw, seatRoot string) (string, error) {
+	if !filepath.IsAbs(raw) {
+		return "", fmt.Errorf("%s must be absolute, got %q", BatchRootKey, raw)
+	}
+	root := resolvePath(raw)
+	if root == resolvePath(seatRoot) {
+		return "", fmt.Errorf("%s must name a dedicated non-seat checkout", BatchRootKey)
+	}
+	command := exec.Command("git", "-C", root, "rev-parse", "--show-toplevel")
+	command.Env = []string{"PATH=" + os.Getenv("PATH"), "LC_ALL=C"}
+	top, err := command.Output()
+	if err != nil || resolvePath(strings.TrimSpace(string(top))) != root {
+		return "", fmt.Errorf("%s must name an existing checkout, got %q", BatchRootKey, raw)
+	}
+	if _, err := os.Lstat(filepath.Join(root, "artifacts", "agents", "brain.json")); err == nil {
+		return "", fmt.Errorf("%s must name a dedicated non-seat checkout", BatchRootKey)
+	} else if err != nil && !os.IsNotExist(err) {
+		return "", fmt.Errorf("inspect %s as a non-seat checkout: %w", BatchRootKey, err)
+	}
+	return root, nil
+}
+
+func (c BatchLanding) MaxWaitElapsed(oldestJoinedAt time.Time) bool {
+	return !c.now().Before(oldestJoinedAt.Add(c.MaxWait))
+}
 
 // GetParams is one configuration lookup.
 //

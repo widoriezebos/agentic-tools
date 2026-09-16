@@ -2,9 +2,12 @@ package config
 
 import (
 	"os"
+	"os/exec"
 	"path/filepath"
 	"reflect"
+	"strings"
 	"testing"
+	"time"
 )
 
 func putFile(t *testing.T, path, body string) {
@@ -19,6 +22,86 @@ func mapEnv(m map[string]string) func(string) (string, bool) {
 }
 
 func noEnv(string) (string, bool) { return "", false }
+
+func initGit(t *testing.T, dir string) {
+	t.Helper()
+	if err := exec.Command("git", "init", "-q", dir).Run(); err != nil {
+		t.Fatal(err)
+	}
+}
+
+func TestResolveBatchLandingConfiguration(t *testing.T) {
+	seat, landing := t.TempDir(), t.TempDir()
+	initGit(t, landing)
+	conf := filepath.Join(seat, "metasystem.conf")
+	putFile(t, conf, BatchRootKey+"="+landing+"\n")
+	now := time.Date(2200, 1, 1, 0, 0, 0, 0, time.UTC)
+	settings, err := ResolveBatchLanding(conf, seat, func() time.Time { return now })
+	if err != nil || settings.Root != resolvePath(landing) || settings.MaxWait != 45*time.Minute {
+		t.Fatalf("default batch settings: settings=%+v err=%v", settings, err)
+	}
+	for _, wait := range []string{"0s", "-1m", "30s", "6h1s"} {
+		putFile(t, conf, BatchRootKey+"="+landing+"\n"+BatchMaxWaitKey+"="+wait+"\n")
+		if _, err := ResolveBatchLanding(conf, seat, func() time.Time { return now }); err == nil || !strings.Contains(err.Error(), BatchMaxWaitKey) {
+			t.Fatalf("invalid wait %q accepted: %v", wait, err)
+		}
+	}
+	fake := t.TempDir()
+	subdir := filepath.Join(landing, "nested")
+	for _, dir := range []string{filepath.Join(fake, ".git"), subdir, filepath.Join(landing, "artifacts", "agents")} {
+		if err := os.MkdirAll(dir, 0o755); err != nil {
+			t.Fatal(err)
+		}
+	}
+	for _, test := range []struct{ name, root, want string }{
+		{"relative", "relative", "absolute"},
+		{"regular file", conf, "existing checkout"},
+		{"missing", filepath.Join(seat, "missing"), "existing checkout"},
+		{"seat checkout", seat, "non-seat checkout"},
+		{"fabricated checkout", fake, "existing checkout"},
+		{"checkout subdirectory", subdir, "existing checkout"},
+	} {
+		putFile(t, conf, BatchRootKey+"="+test.root+"\n")
+		if _, err := ResolveBatchLanding(conf, seat, func() time.Time { return now }); err == nil || !strings.Contains(err.Error(), test.want) {
+			t.Fatalf("%s root accepted: %v", test.name, err)
+		}
+	}
+	initGit(t, seat)
+	t.Setenv("GIT_DIR", filepath.Join(seat, ".git"))
+	t.Setenv("GIT_WORK_TREE", seat)
+	putFile(t, conf, BatchRootKey+"="+landing+"\n")
+	if settings, err := ResolveBatchLanding(conf, seat, func() time.Time { return now }); err != nil || settings.Root != resolvePath(landing) {
+		t.Fatalf("git steering escaped into batch root resolution: settings=%+v err=%v", settings, err)
+	}
+	putFile(t, filepath.Join(landing, "artifacts", "agents", "brain.json"), "{}\n")
+	putFile(t, conf, BatchRootKey+"="+landing+"\n")
+	if _, err := ResolveBatchLanding(conf, seat, func() time.Time { return now }); err == nil || !strings.Contains(err.Error(), "non-seat checkout") {
+		t.Fatalf("brain seat accepted: %v", err)
+	}
+}
+
+func TestBatchLandingBoundaryUsesInjectedClock(t *testing.T) {
+	seat, landing := t.TempDir(), t.TempDir()
+	initGit(t, landing)
+	conf := filepath.Join(seat, "metasystem.conf")
+	putFile(t, conf, BatchRootKey+"="+landing+"\n"+BatchMaxWaitKey+"=2m\n")
+	joined := time.Date(2200, 1, 1, 0, 0, 0, 0, time.UTC)
+	now := joined.Add(2*time.Minute - time.Nanosecond)
+	if _, err := ResolveBatchLanding(conf, seat, nil); err == nil {
+		t.Fatal("nil clock accepted")
+	}
+	settings, err := ResolveBatchLanding(conf, seat, func() time.Time { return now })
+	if err != nil {
+		t.Fatal(err)
+	}
+	if settings.MaxWaitElapsed(joined) {
+		t.Fatal("maximum wait elapsed before the configured boundary")
+	}
+	now = joined.Add(2 * time.Minute)
+	if !settings.MaxWaitElapsed(joined) {
+		t.Fatal("maximum wait did not elapse at the configured boundary")
+	}
+}
 
 // TestGetPrecedence walks the resolution order the reference reader defines:
 // flag, environment, .local, mode-scoped, committed, default.

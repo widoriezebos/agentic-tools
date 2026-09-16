@@ -10,7 +10,7 @@ import (
 // validateRepo prepares a repository whose registration checks are gated off
 // (the template carries development/metasystem-design.md) with the given conf
 // body and an evidence root outside the tree, and returns the problems.
-func validateRepo(t *testing.T, confBody string) []string {
+func validateRepo(t *testing.T, confBody string, localBody ...string) []string {
 	t.Helper()
 	repo := t.TempDir()
 	if err := os.MkdirAll(filepath.Join(repo, "development"), 0o755); err != nil {
@@ -19,12 +19,16 @@ func validateRepo(t *testing.T, confBody string) []string {
 	putFile(t, filepath.Join(repo, "development", "metasystem-design.md"), "template\n")
 	conf := filepath.Join(repo, "metasystem.conf")
 	evidence := t.TempDir()
+	batch := t.TempDir()
+	initGit(t, batch)
 	body := strings.ReplaceAll(confBody, "@EVIDENCE@", evidence)
 	body = strings.ReplaceAll(body, "@REPO@", repo)
+	body = strings.ReplaceAll(body, "@BATCH@", batch)
 	if !strings.Contains(body, "testing.contract=") {
 		body += "testing.contract=testing.json\n"
 	}
 	putFile(t, conf, body)
+	putFile(t, conf+".local", strings.Join(localBody, ""))
 	putFile(t, filepath.Join(repo, "testing.json"), minimalTestingContract)
 	tiersAbsent, problems, err := Validate(conf, repo)
 	if err != nil {
@@ -73,6 +77,30 @@ const validConf = "metasystem.version=1\n" +
 func TestValidateAccepts(t *testing.T) {
 	if problems := validateRepo(t, validConf); len(problems) != 0 {
 		t.Fatalf("valid configuration rejected: %v", problems)
+	}
+}
+
+func TestValidateBatchLandingConfiguration(t *testing.T) {
+	for _, test := range []struct {
+		name, setting, local, want string
+		env                        bool
+	}{
+		{"zero wait", BatchRootKey + "=@BATCH@\n" + BatchMaxWaitKey + "=0s\n", "", BatchMaxWaitKey, false},
+		{"negative wait", BatchRootKey + "=@BATCH@\n" + BatchMaxWaitKey + "=-1m\n", "", BatchMaxWaitKey, false},
+		{"above maximum", BatchRootKey + "=@BATCH@\n" + BatchMaxWaitKey + "=6h1s\n", "", BatchMaxWaitKey, false},
+		{"missing root", BatchRootKey + "=/path/that/does/not/exist\n", "", "existing checkout", false},
+		{"wait without root in conf", BatchMaxWaitKey + "=2m\n", "", BatchRootKey, false},
+		{"wait without root in local", "", BatchMaxWaitKey + "=2m\n", BatchRootKey, false},
+		{"wait without root in env", "", "", BatchRootKey, true},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			if test.env {
+				t.Setenv(EnvName(BatchMaxWaitKey), "2m")
+			}
+			if problems := validateRepo(t, validConf+test.setting, test.local); !hasProblem(problems, test.want) {
+				t.Fatalf("Validate accepted %q: %v", test.setting, problems)
+			}
+		})
 	}
 }
 
