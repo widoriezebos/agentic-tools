@@ -1,6 +1,6 @@
 # headless-launchers-live-in-the-repo
 
-- State: claimed
+- State: approved
 - Priority: 1
 - Sequence: 2
 - Risk: severity=2 novelty=1 exposure=2 accumulation=2 basis="severity 2: if the scratchpad copies are lost, the design and critique lanes stop on every seat, but no record is corrupted; novelty 1: the scripts already work and only move; exposure 2: every seat launches designs, critiques and the landing lane worker through them; accumulation 2: each day adds private copies that drift"
@@ -9,16 +9,16 @@
 - Origin: human
 - Next step: Opened in the name of Wido by seat m1e from the enrolled pane on his word 2026-09-16 17:58 CEST: "I follow your recommendation: conclude this goal and replace it with a small one we build now". No design round: Codex gpt-5.6-sol builds in a worktree from a seat brief (about 150 lines), an Opus reader reads, and the landing lane lands it. Witness (3) is the next real design run, not a dedicated one.
 - OpenedAt: 2026-09-16T16:00:21Z
-- Revision: 4
+- Revision: 5
 - Budget: elapsedLimit=4h attemptLimit=6 reservedJobMinutesLimit=720 activeJobLimit=1 reviewRoundLimit=2
 - BudgetExceptions: 0
 - Approved: by=human:Wido at=2026-09-16T16:00:34Z revision=3 opid=TDFKM30SW376BM6AKA6HG9772R-m1e-c6925449 authority=proven digest=489b85d98f0dd81f3dc0433a2bad160285e5dd8714cd0b53b300f8d899e5f217
-- Claimed: machine=m1b lineage=main-1789560571-22295-8d907a at=2026-09-16T16:21:20Z revision=4 accountingRevision=4 episodeAt=2026-09-16T16:21:20Z episodeRevision=4
-- StopCapability: generation=4 revision=4 machine=m1b claimEpoch=3 fenceEpoch=0
+- Episode: machine=m1b lineage=main-1789560571-22295-8d907a accountingRevision=4 episodeAt=2026-09-16T16:21:20Z episodeRevision=4 idleSeconds=0 released=2026-09-16T16:22:11Z
 
 History:
 - 2026-09-16T16:00:21Z SN9D1TKKK8VF1HRR0DPWQHF2PG-m1e-c6925449 open actor=human:Wido targets=headless-launchers-live-in-the-repo
 - 2026-09-16T16:00:26Z ZV5453XB54JPS3VRPCPR3DXFA8-m1e-c6925449 set-priority actor=human:Wido targets=actionable-metrics,adoption-filled-delivery-passes-on-trunk,beds-run-under-the-oldest-supported-bash,brief-declares-the-round-boundary,builder-proves-each-rule-by-mutation,busy-seat-shells-are-ended,census-lifecycle-scenario-holds-under-load,chain-landing-carries-the-reviewed-diff,codex-jobs-run-through-a-metasystem-verb,coordinator-context-stays-under-budget,coordinator-wakes-on-events-not-polls,critique-closes-on-folded-proof,cross-cutting-change-inventories-its-readers,deep-sections-cannot-stay-red-unseen,degraded-stop-forms-have-one-source,delegate-launch-sets-its-own-context-window,delegate-sandbox-runs-the-beds,design-rounds-read-less-and-repeat-less,dispatch-bases-chains-on-the-remote-tip,engine-policy-binding-survives-drift-and-load,every-round-gets-an-independent-read,evidence-and-build-output-have-retention-and-stay-unindexed,failed-job-attention,failures-show-observed-against-expected,fixture-children-cannot-outlive-their-test,fixture-repo-copies-exclude-the-artifacts-store,fixture-runners-and-fakes-bound-their-own-life,fixture-waits-name-their-producer,fleet-doctor-repairs-what-stops-other-seats,follow-up-brief-cannot-cite-fresh-trunk-files,headless-launchers-live-in-the-repo,human-authority-surface-runs-its-cmd-tests,human-break-glass-commit-keeps-the-ledger-valid,human-goal-verbs-forgiving,human-wait-does-not-consume-goal-budget,job-record-birth-token,lease-sweep-death-evidence,live-job-on-a-done-goal-unnoticed,machine-concurrency-governor,member-size-gate,metasystem-stop-escalation-proofs,metasystem-stop-fleet-form,new-elapsed-budgets-use-explicit-hours,one-steward-per-checkout-on-its-own-root,pipelines-never-lose-a-truncated-producer,proof-admission-fits-a-seat-proving-several-units,proof-runs-reap-what-they-armed-and-a-census-names-the-rest,receipt-admission-caps-concurrent-batteries,receipt-writer-follows-the-worktree-it-runs-in,repo-root-paths-ride-agent-commits-unjudged,retro-flags-repeated-critique-findings,round-proof-feeds-the-next-brief,run-scoped-build-caches-have-a-janitor,seat-landings-run-the-selected-sections,seat-successor-continues-a-handoff-without-a-human,seats-spend-tokens-in-bounded-sessions,skipped-test-fails-its-group-on-the-other-os,small-change-lane,spend-fence-reports-tokens-per-model-and-cause,stop-batch-strands-a-resumable-goal,stop-capability-follows-the-lease-epoch,stop-decision-surface-is-a-gate,stop-gate-sees-harness-tracked-work,stop-hook-never-forces-an-empty-turn,stop-response-carries-a-structured-report-reference,test-environment-edges-are-closed,testing-surfaces-declare-their-mirror,tests-never-wait-on-wall-time,token-spend-fence,trunk-versus-candidate-is-a-verification-step,units-run-through-one-launcher,watch-verb,watcher-repair-request-never-names-current,winddown-census-handoff-leak reason=priority-order subject=headless-launchers-live-in-the-repo from=unranked to=1:2 requested-sequence=2
 - 2026-09-16T16:00:34Z TDFKM30SW376BM6AKA6HG9772R-m1e-c6925449 approve actor=human:Wido targets=headless-launchers-live-in-the-repo
 - 2026-09-16T16:21:20Z 9GJWTC9AWTF6PY13G0XY3V2HC3-m1b-d0e95724 claim actor=m1b+main-1789560571-22295-8d907a targets=headless-launchers-live-in-the-repo
-Integrity: sha256=378d7c7ae64116fa174717a2cf89b6e76d5596206caf70b787414b1da4b1ab79
+- 2026-09-16T16:22:11Z BK55BF7E1C8Q7HS06MFJM221WM-m1b-d0e95724 release actor=m1b+main-1789560571-22295-8d907a targets=headless-launchers-live-in-the-repo
+Integrity: sha256=75aa3a85776369138a8c3a2766551d20e11281ec3896bacdc099152f36fcebde
