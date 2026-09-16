@@ -1,6 +1,6 @@
 # fixture-children-cannot-outlive-their-test
 
-- State: approved
+- State: claimed
 - Priority: 1
 - Sequence: 70
 - Risk: severity=3 novelty=1 exposure=3 accumulation=3 basis="severity 3: sixteen orphans took the machine to a load average of 40 and starved every seat for hours; novelty 1: this is the known fixture-leak class in a new place, with the code identified; exposure 3: the fixture runs in internal/goal, which every deep proof selects; accumulation 3: each aborted run adds burners that ignore TERM and never exit"
@@ -9,14 +9,17 @@
 - Origin: human
 - Next step: 2026-09-16 08:30 m1c: m1c builds and lands this itself; m1e's lane holds a slot at the next stack boundary and keeps off the test lock between m1c's proof and its landing. EVIDENCE STATE, stated plainly: the sixteen orphans were killed at 08:15 before this goal existed, because Wido asked what was consuming his CPU; the live process table is therefore gone. What remains is their pid list (75155-75170, saved at /tmp/m1c-orphans.txt), the ps output with command lines, parent chain (all ppid 1) and per-process CPU in m1c's transcript, and the cause in code at internal/goal/attention_test.go:140-180 with waitForGroupAbsence at :662. That is enough to build and witness against, because the witness is a test that kills the test binary mid-fixture and asserts no survivor, not a replay of tonight's incident. NEIGHBOURING CAUSE, not to be conflated with this one (m1e's census, same morning): the three largest CPU consumers on this Mac are macOS services, mediaanalysisd at 81 percent for over three days, fseventsd at 50 percent and mds_stores at 27 percent, which is Spotlight and media indexing walking the evidence and build stores. That belongs to goal evidence-and-build-output-have-retention-and-stay-unindexed (.noindex placement), whose design r1 and critique are in m1e's scratchpad. This goal owns only fixture children that outlive their test. NEXT: after spend-fence unit U5a-4 lands, release spend-fence, claim this, design small (reaping identity, where teardown lives so it survives an abort, the census rule), build in one or two units of at most 300 lines with the kill-the-binary witness, Opus read, deep proof, land through Wido's lane with its receipt.
 - OpenedAt: 2026-09-16T06:19:56Z
-- Revision: 4
+- Revision: 5
 - Budget: elapsedLimit=4h attemptLimit=6 reservedJobMinutesLimit=720 activeJobLimit=1 reviewRoundLimit=2
 - BudgetExceptions: 0
 - Approved: by=human:Wido at=2026-09-16T06:20:12Z revision=2 opid=ZCWSQMQBA1KPT17HD66XK8X4TN-m1c-c6925449 authority=proven digest=0807f412291385a225138361bf9908294a165b2a4c8ab3fdf6b806d593ced5b7
+- Claimed: machine=m1c lineage=main-1789191340-90689-2eda89 at=2026-09-16T06:28:38Z revision=5 accountingRevision=5 episodeAt=2026-09-16T06:28:38Z episodeRevision=5
+- StopCapability: generation=5 revision=5 machine=m1c claimEpoch=5 fenceEpoch=0
 
 History:
 - 2026-09-16T06:19:56Z KZ4JS51YKMW6TAMMQSB3EKBFX7-m1c-c6925449 open actor=human:Wido targets=fixture-children-cannot-outlive-their-test reason=TierOverride: derived=3 set=2 why=the four risk answers derive tier 3, but the defect is one identified fixture with a known fix shape and no design unknowns: a bare busy loop replaced by a sleeping wait, reaping by recorded pid, and teardown that survives an abort. Tier 2 fits the work, not the blast radius.
 - 2026-09-16T06:20:12Z ZCWSQMQBA1KPT17HD66XK8X4TN-m1c-c6925449 approve actor=human:Wido targets=fixture-children-cannot-outlive-their-test
 - 2026-09-16T06:20:16Z YEKCVT7R6K6HVVY4PN52DT6QA4-m1c-c6925449 set-priority actor=human:Wido targets=fixture-children-cannot-outlive-their-test reason=priority-order subject=fixture-children-cannot-outlive-their-test from=unranked to=1:70 requested-sequence=append
 - 2026-09-16T06:23:40Z FP1NE3QKWE7YBEXBSM0S7YBFJ5-m1c-a6ea8b3e edit actor=m1c+main-1789191340-90689-2eda89 targets=fixture-children-cannot-outlive-their-test
-Integrity: sha256=53e136602f2e18de02cd4f771eef12fe6730a4b1f4e079303778d956fb931d11
+- 2026-09-16T06:28:38Z 0VC59W9YP5PT0310CP8KHAZE2T-m1c-a6ea8b3e claim actor=m1c+main-1789191340-90689-2eda89 targets=fixture-children-cannot-outlive-their-test
+Integrity: sha256=4a355f54f3d0f8eb995d78225e76066715959734afa223c7994ca3edec5962f2
