@@ -16,6 +16,7 @@ import (
 
 	"golang.org/x/sys/unix"
 
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/goal"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/identity"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/steward"
 	usagepkg "github.com/widoriezebos/agentic-tools/metasystem/internal/usage"
@@ -80,10 +81,128 @@ type contextCostBed struct {
 	healthRecord string
 	testBinary   string
 	readerHelper string
+	argvRecord   string
 	startedAt    int64
 	lastHookGen  int
 	maxLabel     string
 	maxElapsed   time.Duration
+}
+
+func TestTurnVerdictPrintsTheContextLine(t *testing.T) {
+	root := contextTurnVerdictRoot(t, "context.ceiling.tokens=240000\ncontext.handoff.margin.tokens=140000\n")
+	transcript := writeContextCommandTranscript(t, root, "context-line", 120500, 1, true)
+	code, output, problem := captureChannelOutput(t, func() int {
+		return runReportTurnVerdict([]string{"--root", root, "--session", "context-line", "--transcript", transcript, "--runtime", "claude"})
+	})
+	var verdict struct {
+		Display string `json:"display"`
+	}
+	want := "CONTEXT: 121K of trigger 100K (proof line 150K, maximum 200K, ceiling 240K)"
+	if code != 0 || problem != "" || json.Unmarshal([]byte(output), &verdict) != nil ||
+		strings.Count(verdict.Display, "CONTEXT:") != 1 || !strings.Contains(verdict.Display, want) ||
+		!contextLineRidesTheTrailer(verdict.Display, want) {
+		t.Fatalf("turn verdict context: code=%d stderr=%q output=%q display=%q", code, problem, output, verdict.Display)
+	}
+}
+
+// contextLineRidesTheTrailer: the line sits directly above the full-verdict
+// path, never above the ladder the Stop beds read by position
+// (goal-cli-fixtures.sh:1082-1090 and :1121-1127).
+func contextLineRidesTheTrailer(display, want string) bool {
+	lines := strings.Split(display, "\n")
+	return len(lines) >= 2 && lines[0] != want && lines[len(lines)-2] == want &&
+		strings.HasPrefix(lines[len(lines)-1], "Full turn verdict")
+}
+
+func TestTurnVerdictUnknownSampleNeverBlocks(t *testing.T) {
+	tests := []struct {
+		name, config, reason string
+		args                 func(*testing.T, string) []string
+	}{
+		{"missing flags", "", "--transcript and --runtime are required", func(_ *testing.T, root string) []string {
+			return []string{"--root", root, "--session", "missing-flags"}
+		}},
+		{"sampling error", "", "invalid runtime name", func(t *testing.T, root string) []string {
+			path := writeContextCommandTranscript(t, root, "sampling-error", 120500, 1, true)
+			return []string{"--root", root, "--session", "sampling-error", "--transcript", path, "--runtime", "INVALID"}
+		}},
+		{"long sampling error", "", "too long", func(_ *testing.T, root string) []string {
+			path := filepath.Join(root, strings.Repeat("x", goal.TurnVerdictDisplayRuneLimit*2))
+			return []string{"--root", root, "--session", "long-error", "--transcript", path, "--runtime", "claude"}
+		}},
+		{"no sample", "", "no call recorded yet", func(t *testing.T, root string) []string {
+			path := filepath.Join(root, "empty.jsonl")
+			if err := os.WriteFile(path, nil, 0o600); err != nil {
+				t.Fatal(err)
+			}
+			return []string{"--root", root, "--session", "no-sample", "--transcript", path, "--runtime", "claude"}
+		}},
+		{"invalid config", "context.ceiling.tokens=100000\ncontext.handoff.margin.tokens=100000\n", "CONTEXT_CONFIG_INVALID", func(t *testing.T, root string) []string {
+			path := writeContextCommandTranscript(t, root, "invalid-config", 120500, 1, true)
+			return []string{"--root", root, "--session", "invalid-config", "--transcript", path, "--runtime", "claude"}
+		}},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			root := contextTurnVerdictRoot(t, test.config)
+			code, output, problem := captureChannelOutput(t, func() int { return runReportTurnVerdict(test.args(t, root)) })
+			var verdict struct {
+				ShouldBlock bool    `json:"shouldBlock"`
+				BlockSource *string `json:"blockSource"`
+				Display     string  `json:"display"`
+			}
+			decodeErr := json.Unmarshal([]byte(output), &verdict)
+			unknownLine := ""
+			for _, line := range strings.Split(verdict.Display, "\n") {
+				if strings.HasPrefix(line, "CONTEXT: unknown (") {
+					unknownLine = line
+				}
+			}
+			if code != 0 || problem != "" || decodeErr != nil || verdict.ShouldBlock ||
+				verdict.BlockSource != nil || len([]rune(verdict.Display)) > goal.TurnVerdictDisplayRuneLimit || strings.Count(verdict.Display, "CONTEXT:") != 1 ||
+				!strings.Contains(verdict.Display, "CONTEXT: unknown (") || !strings.Contains(verdict.Display, test.reason) ||
+				!contextLineRidesTheTrailer(verdict.Display, unknownLine) {
+				t.Fatalf("unknown context changed verdict: code=%d stderr=%q output=%q verdict=%+v", code, problem, output, verdict)
+			}
+		})
+	}
+}
+
+func contextTurnVerdictRoot(t *testing.T, contextConfig string) string {
+	t.Helper()
+	root := contextCommandRoot(t)
+	if err := os.WriteFile(filepath.Join(root, "metasystem.conf"), []byte("metasystem.runtimes=fake\n"+contextConfig), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("METASYSTEM_GOAL_NOW", "2026-09-16T12:00:00Z")
+	return root
+}
+
+func TestStopHookPassesTranscriptAndRuntime(t *testing.T) {
+	candidate := contextCostCandidateEngine(t, declaredContextCostCandidateEngine)
+	bed := newContextCostBed(t, "claude", candidate, "")
+	process := bed.startStop("argument-witness")
+	<-process.done
+	process.cancel()
+	if process.err != nil {
+		t.Fatalf("shipped Stop command failed: %v\n%s", process.err, process.output.String())
+	}
+	data, err := os.ReadFile(bed.argvRecord)
+	if err != nil {
+		t.Fatalf("read recorded turn-verdict argv: %v", err)
+	}
+	args := strings.Split(strings.TrimSuffix(string(data), "\x00"), "\x00")
+	for flag, want := range map[string]string{"--transcript": bed.transcript, "--runtime": "claude"} {
+		found := false
+		for index := 0; index+1 < len(args); index++ {
+			if args[index] == flag && args[index+1] == want {
+				found = true
+			}
+		}
+		if !found {
+			t.Fatalf("recorded report turn-verdict argv omitted %s %q: %q", flag, want, args)
+		}
+	}
 }
 
 func TestContextStopFitsDurationBudget(t *testing.T) {
@@ -293,9 +412,10 @@ func newContextCostBed(t *testing.T, runtimeName, candidate, readerHelper string
 	outer := t.TempDir()
 	installation := filepath.Join(outer, "metasystem")
 	home := filepath.Join(outer, "fixture-home")
+	stubDirectory := filepath.Join(outer, "stub-bin")
 	for _, directory := range []string{
 		filepath.Join(outer, "development"), filepath.Join(installation, "bin"),
-		filepath.Join(installation, "plans"), home,
+		filepath.Join(installation, "plans"), home, stubDirectory,
 	} {
 		if err := os.MkdirAll(directory, 0o755); err != nil {
 			t.Fatal(err)
@@ -331,9 +451,13 @@ func newContextCostBed(t *testing.T, runtimeName, candidate, readerHelper string
 	if err != nil || state != identity.Alive {
 		t.Fatalf("cannot establish fixture process identity: state=%s err=%v", state, err)
 	}
-	wrapper := filepath.Join(outer, "context-cost-engine")
+	wrapper := filepath.Join(stubDirectory, "metasystem")
+	argvRecord := filepath.Join(outer, "turn-verdict.argv")
 	wrapperSource := `#!/usr/bin/env bash
 set -euo pipefail
+if [[ ${1:-} == report && ${2:-} == turn-verdict ]]; then
+  printf '%s\0' "$@" >"${METASYSTEM_CONTEXT_COST_ARGV_RECORD:?}"
+fi
 if [[ ${1:-} == health && ${2:-} == --hook-preview ]]; then
   METASYSTEM_CONTEXT_COST_HEALTH_HELPER=1 \
     "${METASYSTEM_CONTEXT_COST_TEST_BINARY:?}" -test.run '^TestContextCostHealthHelper$'
@@ -364,8 +488,8 @@ exec "${METASYSTEM_CONTEXT_COST_REAL_ENGINE:?}" "$@"
 		engine: filepath.Join(installation, "bin", "metasystem"), wrapper: wrapper,
 		hook:         filepath.Join(installation, "scripts", "agents", "supervision-hook.sh"),
 		healthRecord: filepath.Join(outer, "hook-context-role.json"), testBinary: testBinary,
-		readerHelper: readerHelper,
-		startedAt:    exact.StartedAt.Unix(),
+		readerHelper: readerHelper, argvRecord: argvRecord,
+		startedAt: exact.StartedAt.Unix(),
 	}
 	if runtimeName == "claude" {
 		bed.transcript = filepath.Join(home, ".claude", "projects", contextCostClaudeSlug(outer), bed.session+".jsonl")
@@ -411,6 +535,8 @@ func (bed *contextCostBed) environment(wrapper bool) []string {
 			fmt.Sprintf("METASYSTEM_CONTEXT_COST_PID=%d", os.Getpid()),
 			fmt.Sprintf("METASYSTEM_CONTEXT_COST_STARTED=%d", bed.startedAt),
 			"METASYSTEM_CONTEXT_COST_TEST_BINARY="+bed.testBinary,
+			"METASYSTEM_CONTEXT_COST_ARGV_RECORD="+bed.argvRecord,
+			"PATH="+filepath.Dir(bed.wrapper)+string(os.PathListSeparator)+os.Getenv("PATH"),
 			"METASYSTEM_CONTEXT_COST_HEALTH_ROOT="+bed.installation,
 			"METASYSTEM_CONTEXT_COST_HEALTH_INSTALLATION="+bed.installation,
 			"METASYSTEM_CONTEXT_COST_HEALTH_RECORD="+bed.healthRecord,
@@ -436,14 +562,14 @@ func (bed *contextCostBed) announceHolder() {
 
 func (bed *contextCostBed) startStop(label string) *contextCostProcess {
 	bed.prepareStopObservation()
-	payload := fmt.Sprintf(`{"session_id":%q,"cwd":%q,"hook_event_name":"Stop","fixture_leg":%q}`+"\n", bed.session, bed.outer, label)
+	payload := fmt.Sprintf(`{"session_id":%q,"cwd":%q,"hook_event_name":"Stop","transcript_path":%q,"fixture_leg":%q}`+"\n", bed.session, bed.outer, bed.transcript, label)
 	process := startContextCostProcess(bed.t, bed.outer, bed.environment(true), strings.NewReader(payload), "bash", bed.hook, bed.runtime, "stop")
 	return process
 }
 
 func (bed *contextCostBed) startStopBehindBarrier(label string) *contextCostBarrierProcess {
 	bed.prepareStopObservation()
-	payload := fmt.Sprintf(`{"session_id":%q,"cwd":%q,"hook_event_name":"Stop","fixture_leg":%q}`+"\n", bed.session, bed.outer, label)
+	payload := fmt.Sprintf(`{"session_id":%q,"cwd":%q,"hook_event_name":"Stop","transcript_path":%q,"fixture_leg":%q}`+"\n", bed.session, bed.outer, bed.transcript, label)
 	return startContextCostBarrierProcess(bed.t, bed.outer, bed.environment(true), strings.NewReader(payload), "bash", bed.hook, bed.runtime, "stop")
 }
 

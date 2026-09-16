@@ -1550,6 +1550,7 @@ elif (( repo_rc != 0 )) || ! hook_root_is_one_line "$repo"; then
 fi
 repo=$(cd -- "$repo" 2>/dev/null && pwd -P) || exit 0
 session=$(read_payload session_id)
+transcript_path=$("$ms" json get --file "$payload" --field transcript_path --default '' --shell-safe 2>/dev/null || true)
 session_absent=false
 if [[ -z "$session" ]]; then
   session_absent=true
@@ -2370,6 +2371,7 @@ $hook_log_failure"
   if verdict=$(report_turn_verdict --root "$repo" \
       --session "$session" --watchdog-surfaced "$watchdog_digest" \
       --main-id "$main_id" --stop-hook-active="$stop_hook_active" \
+      --transcript "$transcript_path" --runtime "$runtime" \
       --facts-file "$facts_file" --completion-file "$completion_file" 2>"$verdict_stderr"); then
     printf '%s\n' "$verdict" >"$verdict_file"
     if [[ ! -s "$facts_file" ]]; then

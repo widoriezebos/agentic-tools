@@ -13,12 +13,14 @@ import (
 
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/atomicfile"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/authority"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/config"
 	dispatchpkg "github.com/widoriezebos/agentic-tools/metasystem/internal/dispatch"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/fixtureauth"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/goal"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/lease"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/report"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/steward"
+	usagepkg "github.com/widoriezebos/agentic-tools/metasystem/internal/usage"
 )
 
 // goalCommandNow keeps the wall clock authoritative unless the target root
@@ -657,6 +659,8 @@ func runReportTurnVerdict(args []string) int {
 	mainId := flags.String("main-id", "", "the caller main identity for the unwatched-work rule")
 	stopHookActive := flags.Bool("stop-hook-active", false, "the runtime is repeating a Stop hook that previously blocked")
 	sessionAbsent := flags.Bool("session-absent", false, "the Stop payload supplied no runtime session")
+	transcript := flags.String("transcript", "", "runtime transcript for the last main-thread call")
+	runtimeName := flags.String("runtime", "", "runtime that produced the transcript")
 	factsFile := flags.String("facts-file", "", "fresh absolute path for the frozen judgment facts")
 	completionFile := flags.String("completion-file", "", "fresh absolute path for the presentation-only completion observation")
 	if flags.Parse(args) != nil {
@@ -705,6 +709,7 @@ func runReportTurnVerdict(args []string) int {
 	store := &goal.Store{Root: *root, Now: func() time.Time { return now }}
 	options := goal.TurnVerdictOptions{StopHookActive: *stopHookActive, SessionAbsent: *sessionAbsent}
 	stateRoot, rootErr := goal.ResolveStateRoot(*root)
+	options.ContextLine = turnVerdictContextLine(*root, stateRoot, *runtimeName, *session, *transcript, now, rootErr)
 	if rootErr != nil {
 		options.SeatActorProblem = "the seat state root could not be resolved: " + rootErr.Error()
 	} else {
@@ -769,6 +774,48 @@ func runReportTurnVerdict(args []string) int {
 	}
 	fmt.Println(string(data))
 	return 0
+}
+
+func turnVerdictContextLine(root, stateRoot, runtimeName, session, transcript string, now time.Time, rootErr error) string {
+	const contextPrefix = "CONTEXT: "
+	unknown := func(reason string) string {
+		reason = strings.ReplaceAll(strings.ReplaceAll(reason, "\r", " "), "\n", " ")
+		reasonRunes := []rune(reason)
+		if limit := goal.TurnVerdictDisplayRuneLimit / 8; len(reasonRunes) > limit {
+			reason = string(reasonRunes[:limit/2]) + "..." + string(reasonRunes[len(reasonRunes)-limit/2:])
+		}
+		return contextPrefix + "unknown (" + reason + ")"
+	}
+	if transcript == "" || runtimeName == "" {
+		return unknown("--transcript and --runtime are required")
+	}
+	if rootErr != nil {
+		return unknown(rootErr.Error())
+	}
+	budget, err := config.ContextBudget(root)
+	if err != nil {
+		return unknown(err.Error())
+	}
+	reading, err := usagepkg.LatestCall(stateRoot, runtimeName, session, usagepkg.ReadOptions{
+		Capability: usagepkg.PerCall, Transcript: transcript, Installation: root, Now: now, NonBlocking: true,
+	})
+	if err != nil {
+		return unknown(err.Error())
+	}
+	if reading.Latest == nil {
+		return unknown(reading.Reason)
+	}
+	return fmt.Sprintf(contextPrefix+"%dK of trigger %dK (proof line %dK, maximum %dK, ceiling %dK)",
+		turnContextThousands(reading.Latest.PromptTokens), budget.Trigger/1000,
+		steward.ProofP95Tokens/1000, steward.ProofMaxTokens/1000, budget.Ceiling/1000)
+}
+
+func turnContextThousands(tokens int64) int64 {
+	thousands := tokens / 1000
+	if tokens%1000 >= 500 {
+		thousands++
+	}
+	return thousands
 }
 
 var turnVerdictFactsWriter = atomicfile.WriteText

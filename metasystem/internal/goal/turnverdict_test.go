@@ -27,6 +27,41 @@ func SessionStopLifecycleTokenForTest(announcement SessionStopAnnouncementForTes
 
 func openItem(detail string) Item { return Item{Kind: "plan", Id: detail, Detail: detail} }
 
+const fixtureContextLine = "CONTEXT: 121K of trigger 100K (proof line 150K, maximum 200K, ceiling 240K)"
+
+// The ladder keeps its leading rows (goal-cli-fixtures.sh:1082-1090 reads them
+// by position) and the line sits directly above the full-verdict path.
+func TestTurnVerdictPrintsTheContextLine(t *testing.T) {
+	store := &Store{Root: servingBed(t, "bed-m1", nil), Now: func() time.Time { return time.Unix(1786800000, 0) }}
+	verdict, err := store.TurnVerdict(
+		ScanResult{Open: []Item{openItem("OPEN-WORK fixture: finish it")}}, "context-line", "", "",
+		TurnVerdictOptions{ContextLine: fixtureContextLine})
+	if err != nil {
+		t.Fatal(err)
+	}
+	lines := strings.Split(verdict.Display, "\n")
+	if len(lines) < 4 || lines[0] != "OPEN WORK (1)" || lines[1] != "OPEN-WORK fixture: finish it" ||
+		lines[len(lines)-2] != fixtureContextLine || !strings.HasPrefix(lines[len(lines)-1], "Full turn verdict") ||
+		strings.Count(verdict.Display, "CONTEXT:") != 1 {
+		t.Fatalf("rendered verdict context line = %q", verdict.Display)
+	}
+}
+
+// supervision-hook-fixtures.sh:1096 compares the whole allowance display.
+func TestTurnVerdictHandoffAllowanceStaysExact(t *testing.T) {
+	store := testStore(t)
+	verdict, err := store.TurnVerdict(ScanResult{}, "context-line", "", "", TurnVerdictOptions{
+		ContextLine:     fixtureContextLine,
+		HandoffRecorded: func(string) (string, bool, error) { return "recorded", true, nil },
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if verdict.Display != "handoff recorded: recorded; end this session" || verdict.ShouldBlock {
+		t.Fatalf("handoff allowance display = %q shouldBlock=%v", verdict.Display, verdict.ShouldBlock)
+	}
+}
+
 const (
 	pendingWaitGoalID              = "claimed-wait-goal"
 	pendingWaitMainID              = "main-wait"

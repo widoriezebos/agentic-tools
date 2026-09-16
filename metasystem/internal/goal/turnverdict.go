@@ -198,8 +198,12 @@ type sessionState struct {
 // The actor is the checkout holder's enrolled machine plus the lineage from
 // the holder's announced main process.
 type TurnVerdictOptions struct {
-	StopHookActive   bool
-	SessionAbsent    bool
+	StopHookActive bool
+	SessionAbsent  bool
+	// ContextLine is D1.2's composed CONTEXT line. Only the rendered
+	// verdict carries it: the terminal one-line verdicts (stop fence,
+	// live-handoff allowance, infrastructure) are read whole by callers.
+	ContextLine      string
 	SeatActor        Actor
 	SeatClaimEpoch   int64
 	SeatActorProblem string
@@ -553,7 +557,14 @@ func (s *Store) TurnVerdict(scan ScanResult, sessionId, watchdogDigest, mainId s
 			verdict.Diagnostics = append(verdict.Diagnostics, detail)
 			fileLine = "Full turn verdict was written to " + artifactPath + ", but its crash durability is unknown"
 		}
-		verdict.Display = renderTurnVerdict(verdict, brainLines, runLines, greens, fileLine)
+		// The CONTEXT line rides the trailer above the full-verdict path, never
+		// above the ladder, whose leading rows the Stop beds read by position;
+		// boundedVerdictLines never trims the trailer.
+		trailer := fileLine
+		if options.ContextLine != "" {
+			trailer = options.ContextLine + "\n" + fileLine
+		}
+		verdict.Display = renderTurnVerdict(verdict, brainLines, runLines, greens, trailer)
 		verdict.Facts = freezeTurnVerdictFacts(s.Root, sessionId, mainId, scan, work, workRead, workErr, verdict, fullDisplay, session, options, humanStopConsumed, watches)
 		return Result{}, nil
 	})
