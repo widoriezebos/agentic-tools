@@ -7,11 +7,13 @@ import (
 	"regexp"
 	"strconv"
 	"strings"
+	"time"
 )
 
 const (
 	SpendModeKey              = "spend.mode"
 	SpendCurrencyKey          = "spend.currency"
+	SpendZoneKey              = "spend.zone"
 	SpendCeilingDayTokensKey  = "spend.ceiling.day.tokens"
 	SpendCeilingDayMoneyKey   = "spend.ceiling.day.money"
 	SpendCeilingGoalTokensKey = "spend.ceiling.goal.tokens"
@@ -19,6 +21,7 @@ const (
 
 	DefaultSpendMode              = "alert"
 	DefaultSpendCurrency          = "USD"
+	DefaultSpendZone              = "UTC"
 	DefaultSpendCeilingDayTokens  = uint64(250000000)
 	DefaultSpendCeilingDayMoney   = 750.0
 	DefaultSpendCeilingGoalTokens = uint64(125000000)
@@ -42,6 +45,7 @@ type SpendPriceKey struct {
 type SpendSettings struct {
 	Mode             string
 	Currency         string
+	Zone             string
 	DayTokenCeiling  uint64
 	DayMoneyCeiling  float64
 	GoalTokenCeiling uint64
@@ -52,6 +56,7 @@ type SpendSettings struct {
 var spendFixedDefaults = map[string]string{
 	SpendModeKey:              DefaultSpendMode,
 	SpendCurrencyKey:          DefaultSpendCurrency,
+	SpendZoneKey:              DefaultSpendZone,
 	SpendCeilingDayTokensKey:  strconv.FormatUint(DefaultSpendCeilingDayTokens, 10),
 	SpendCeilingDayMoneyKey:   strconv.FormatFloat(DefaultSpendCeilingDayMoney, 'f', -1, 64),
 	SpendCeilingGoalTokensKey: strconv.FormatUint(DefaultSpendCeilingGoalTokens, 10),
@@ -64,7 +69,7 @@ var spendFixedDefaults = map[string]string{
 func ReadSpendSettings(confPath string) (SpendSettings, error) {
 	values := map[string]string{}
 	for _, key := range []string{
-		SpendModeKey, SpendCurrencyKey, SpendCeilingDayTokensKey,
+		SpendModeKey, SpendCurrencyKey, SpendZoneKey, SpendCeilingDayTokensKey,
 		SpendCeilingDayMoneyKey, SpendCeilingGoalTokensKey, SpendCeilingGoalMoneyKey,
 	} {
 		value, err := budgetLawValue(confPath, key, spendFixedDefaults[key])
@@ -81,7 +86,7 @@ func ReadSpendSettings(confPath string) (SpendSettings, error) {
 	dayMoney, _ := strconv.ParseFloat(values[SpendCeilingDayMoneyKey], 64)
 	goalMoney, _ := strconv.ParseFloat(values[SpendCeilingGoalMoneyKey], 64)
 	settings := SpendSettings{
-		Mode: values[SpendModeKey], Currency: values[SpendCurrencyKey],
+		Mode: values[SpendModeKey], Currency: values[SpendCurrencyKey], Zone: values[SpendZoneKey],
 		DayTokenCeiling: dayTokens, DayMoneyCeiling: dayMoney,
 		GoalTokenCeiling: goalTokens, GoalMoneyCeiling: goalMoney,
 		Prices: map[SpendPriceKey]float64{},
@@ -120,6 +125,9 @@ func validateSpendFixedValues(values map[string]string) error {
 	}
 	if !spendCurrencyPattern.MatchString(values[SpendCurrencyKey]) {
 		return fmt.Errorf("%s must be three uppercase letters, got %q", SpendCurrencyKey, values[SpendCurrencyKey])
+	}
+	if _, err := time.LoadLocation(values[SpendZoneKey]); err != nil {
+		return fmt.Errorf("%s must name a time zone, got %q", SpendZoneKey, values[SpendZoneKey])
 	}
 	for _, key := range []string{SpendCeilingDayTokensKey, SpendCeilingGoalTokensKey} {
 		if !positiveInteger.MatchString(values[key]) {

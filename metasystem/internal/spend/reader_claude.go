@@ -59,7 +59,7 @@ func (r observedTranscriptReader) Read(buffer []byte) (int, error) {
 	return count, err
 }
 
-func readSeat(repoRoot, machine string, now time.Time, jobs readerJobs, settings config.SpendSettings) ([]pricedMeasurement, SeatSummary, []UnmeasuredEntry, error) {
+func readSeat(repoRoot, machine string, now time.Time, jobs readerJobs, settings config.SpendSettings) ([]pricedMeasurement, SeatSummary, []UnmeasuredEntry, map[string]attributionCall, error) {
 	seat := SeatSummary{CodexUnmeasured: true}
 	visitedCursorPaths := map[string]bool{}
 	var unmeasured []UnmeasuredEntry
@@ -87,7 +87,7 @@ func readSeat(repoRoot, machine string, now time.Time, jobs readerJobs, settings
 			unmeasured = append(unmeasured, gap)
 		}
 		if discovered.fatal {
-			return nil, seat, unmeasured, nil
+			return nil, seat, unmeasured, nil, nil
 		}
 		for _, file := range discovered.files {
 			file.registered, file.toplevel = registered, discovered.toplevel
@@ -95,42 +95,61 @@ func readSeat(repoRoot, machine string, now time.Time, jobs readerJobs, settings
 		}
 	}
 	requests := map[string]transcriptRequest{}
+	attributed := map[string]attributionCall{}
 	for _, file := range files {
 		registered := file.registered
 		path := file.path
 		fileSession := file.session
-		if jobs.referencedSessions[fileSession] || jobs.referencedSessions[file.parentSession] {
-			continue
-		}
+		legacyOwned := jobs.referencedSessions[fileSession] || jobs.referencedSessions[file.parentSession]
 		info, statErr := os.Stat(path)
 		if statErr != nil {
-			recordUnreadable(path, fmt.Errorf("cannot stat %s transcript %s: %w", registered.name, path, statErr))
+			if !legacyOwned {
+				recordUnreadable(path, fmt.Errorf("cannot stat %s transcript %s: %w", registered.name, path, statErr))
+			}
 			continue
 		}
 		visitedCursorPaths[transcriptCursorPath(repoRoot, path)] = true
-		result := registered.scan(file, readerCursor{repoRoot: repoRoot, toplevel: file.toplevel, now: now, info: info}, jobs)
-		if result.cacheWriteFailed {
+		scanJobs := jobs
+		if legacyOwned {
+			scanJobs.referencedSessions = map[string]bool{}
+		}
+		result := registered.scan(file, readerCursor{repoRoot: repoRoot, toplevel: file.toplevel, now: now, info: info}, scanJobs)
+		if result.cacheWriteFailed && !legacyOwned {
 			seat.CacheWriteFailures++
 		}
 		if result.err != nil {
-			recordUnreadable(path, result.err)
+			if !legacyOwned {
+				recordUnreadable(path, result.err)
+			}
 			continue
 		}
-		if result.foreign {
+		if result.foreign && !legacyOwned {
 			seat.SkippedForeignFiles++
 			continue
 		}
-		seat.Files++
-		if result.aged {
+		if !legacyOwned {
+			seat.Files++
+		}
+		if result.aged && !legacyOwned {
 			seat.AgedFiles++
 		}
 		for key, request := range result.calls {
 			request.runtime = registered.name
+			call := attributionCall{request: request, file: file}
+			if retained, exists := attributed[key]; !exists || earlierStamped(request, retained.request) {
+				attributed[key] = call
+			}
+			if legacyOwned {
+				continue
+			}
 			if retained, exists := requests[key]; !exists || earlierStamped(request, retained) {
 				requests[key] = request
 			}
 		}
 		for _, gap := range result.unmeasured {
+			if legacyOwned {
+				continue
+			}
 			gap.Machine = machine
 			unmeasured = append(unmeasured, gap)
 			seat.UnmeasuredRequests++
@@ -185,7 +204,7 @@ func readSeat(repoRoot, machine string, now time.Time, jobs readerJobs, settings
 			seat.DayTokens += tokens.Total()
 		}
 	}
-	return measured, seat, unmeasured, nil
+	return measured, seat, unmeasured, attributed, nil
 }
 
 func earlierStamped(candidate, retained transcriptRequest) bool {

@@ -6,6 +6,7 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 )
 
 func mustSpendTest(t *testing.T, err error) {
@@ -13,7 +14,7 @@ func mustSpendTest(t *testing.T, err error) {
 		t.Fatal(err)
 	}
 }
-func TestDiscoveryFlagsSubagentFilesFromPaths(t *testing.T) {
+func TestKindsFollowPathsAndJobRecords(t *testing.T) {
 	if len(readerRegistry) != 1 || readerRegistry[0].name != "claude" ||
 		readerRegistry[0].capability != readerCapabilityPerCall || !readerRegistry[0].inScope {
 		t.Fatalf("Claude reader registration is incomplete: %+v", readerRegistry)
@@ -57,9 +58,93 @@ func TestDiscoveryFlagsSubagentFilesFromPaths(t *testing.T) {
 	jobs := filepath.Join(root, "artifacts", "agents", "jobs")
 	mustSpendTest(t, os.MkdirAll(jobs, 0o755))
 	mustSpendTest(t, os.WriteFile(filepath.Join(jobs, "parent.json"), []byte(`{"jobId":"parent","status":"completed","runtime":"claude","canonicalModelKey":"claude-sonnet-4-20250514","startedAt":"2026-09-02T10:00:00Z","sessionId":"parent","usage":{"inputTokens":7}}`), 0o644))
+	mustSpendTest(t, os.WriteFile(filepath.Join(directory, "engine.jsonl"), []byte(strings.ReplaceAll(strings.ReplaceAll(string(seatTranscriptLine(t, "engine", root, "engine-request", 4, 5)), "claude-sonnet-4-20250514", "Claude Opus 4.8"), `"input_tokens":4`, `"cache_creation_input_tokens":1,"cache_read_input_tokens":2,"input_tokens":4,"thinking_tokens":3`)), 0o644))
+	writeSeatTranscript(t, filepath.Join(directory, "continuation.jsonl"), "continuation", root, "continuation-request", 5, 6)
+	mustSpendTest(t, os.WriteFile(filepath.Join(jobs, "engine.json"), []byte(`{"jobId":"engine","status":"completed","runtime":"claude","startedAt":"2026-09-02T10:00:00Z","sessionId":"engine","role":"implementer","usage":{"inputTokens":1}}`), 0o644))
+	mustSpendTest(t, os.WriteFile(filepath.Join(jobs, "continuation.json"), []byte(`{"jobId":"continuation","status":"completed","runtime":"claude","startedAt":"2026-09-02T10:00:00Z","sessionId":"continuation","role":"steward-continuation","usage":{"inputTokens":1}}`), 0o644))
 	ledger, err = Measure(root, "bed-m1", bedNow)
 	if err != nil || ledger.Seat.Files != 1 || ledger.Seat.LifetimeTokens != 3 {
 		t.Fatalf("delegate parent's subagent transcript entered seat spend: seat=%+v err=%v", ledger.Seat, err)
+	}
+	if got := kindTokens(ledger); got["main"] != 14 || got["delegate"] != 7 || got["engine"] != 15 {
+		t.Fatalf("call kinds do not follow paths and owners: %v", got)
+	}
+	if got := ledger.Attribution.ByModel; len(got) != 2 || got[0] != (ModelAttribution{Model: "claude-opus-4-8", Input: 4, CacheCreation: 1, CacheRead: 2, Output: 5, Reasoning: 3, Total: 15}) || got[1] != (ModelAttribution{Model: "claude-sonnet-4-20250514", Input: 9, Output: 12, Total: 21}) {
+		t.Fatalf("model classes were not grouped and sorted: %+v", got)
+	}
+}
+
+func kindTokens(ledger Ledger) map[string]float64 {
+	result := map[string]float64{}
+	for _, row := range ledger.Attribution.ByKind {
+		result[row.Kind] = row.Tokens
+	}
+	return result
+}
+
+func TestSharedSessionCallsHaveOneOwnerEach(t *testing.T) {
+	root := t.TempDir()
+	mustSpendTest(t, os.Mkdir(filepath.Join(root, ".git"), 0o755))
+	mustSpendTest(t, os.WriteFile(filepath.Join(root, "metasystem.conf"), []byte("metasystem.runtimes=fake\nspend.zone=Europe/Amsterdam\n"), 0o644))
+	t.Setenv("HOME", t.TempDir())
+	dir := filepath.Join(os.Getenv("HOME"), ".claude", "projects", strings.ReplaceAll(root, string(filepath.Separator), "-"))
+	line := func(id, stamp string) []byte {
+		return []byte(strings.Replace(string(seatTranscriptLine(t, "shared", root, id, 1, 1)), bedNow.Format(time.RFC3339), stamp, 1))
+	}
+	content := append(append(append(line("before", "2026-09-02T21:45:00Z"), line("resumed-only", "2026-09-02T22:20:00Z")...), line("exact", "2026-09-02T22:30:00Z")...), line("after", "2026-09-02T22:45:00Z")...)
+	mustSpendTest(t, os.MkdirAll(dir, 0o755))
+	mustSpendTest(t, os.WriteFile(filepath.Join(dir, "shared.jsonl"), content, 0o644))
+	jobs := filepath.Join(root, "artifacts", "agents", "jobs")
+	mustSpendTest(t, os.MkdirAll(jobs, 0o755))
+	mustSpendTest(t, os.WriteFile(filepath.Join(jobs, "a.json"), []byte(`{"jobId":"a","status":"completed","runtime":"claude","sessionId":"shared","startedAt":"2026-09-02T21:30:00Z","usage":{"inputTokens":1}}`), 0o644))
+	mustSpendTest(t, os.WriteFile(filepath.Join(jobs, "b.json"), []byte(`{"jobId":"b","status":"completed","runtime":"claude","sessionId":"shared","startedAt":"2026-09-02T22:30:00Z","usage":{"inputTokens":1}}`), 0o644))
+	mustSpendTest(t, os.WriteFile(filepath.Join(jobs, "resumed.json"), []byte(`{"jobId":"resumed","status":"completed","runtime":"claude","sessionId":"other","resumedSessionId":"shared","startedAt":"2026-09-02T22:15:00Z","usage":{"inputTokens":1}}`), 0o644))
+	previous, err := Measure(root, "bed-m1", time.Date(2026, 9, 2, 21, 50, 0, 0, time.UTC))
+	mustSpendTest(t, err)
+	current, err := Measure(root, "bed-m1", time.Date(2026, 9, 2, 23, 0, 0, 0, time.UTC))
+	mustSpendTest(t, err)
+	if kindTokens(previous)["engine"] != 4 || kindTokens(current)["engine"] != 4 {
+		t.Fatalf("shared calls were duplicated or assigned to the wrong start: previous=%v current=%v", kindTokens(previous), kindTokens(current))
+	}
+}
+
+func TestScopeIsDeclaredNotInferred(t *testing.T) {
+	root := t.TempDir()
+	mustSpendTest(t, os.Mkdir(filepath.Join(root, ".git"), 0o755))
+	copyFixtureFile(t, filepath.Join("testdata", "bed-20260902", "metasystem.conf"), filepath.Join(root, "metasystem.conf"), nil)
+	t.Setenv("HOME", t.TempDir())
+	jobs := filepath.Join(root, "artifacts", "agents", "jobs")
+	mustSpendTest(t, os.MkdirAll(jobs, 0o755))
+	mustSpendTest(t, os.WriteFile(filepath.Join(jobs, "codex.json"), []byte(`{"jobId":"codex","status":"completed","runtime":"codex","startedAt":"2026-09-02T10:00:00Z","usage":{"inputTokens":300000000}}`), 0o644))
+	mustSpendTest(t, os.WriteFile(filepath.Join(jobs, "unknown.json"), []byte(`{"jobId":"unknown","status":"completed","runtime":"claude","startedAt":"2026-09-02T10:00:00Z","usage":{"inputTokens":1}}`), 0o644))
+	original := append([]reader(nil), readerRegistry...)
+	defer func() { readerRegistry = original }()
+	other := claudeReader()
+	other.name, other.inScope = "other", false
+	other.discover = func(string) discoveryResult { panic("out-of-scope reader was read") }
+	readerRegistry = append([]reader(nil), original...)
+	readerRegistry[0].capability = readerCapabilityNone
+	readerRegistry = append(readerRegistry, other)
+	ledger, err := Measure(root, "bed-m1", bedNow)
+	if err != nil || ledger.Attribution.Scope != "claude" || ledger.Attribution.OutOfScope != 1 || ledger.Attribution.Unknown != 1 || len(ledger.Attribution.ByModel) != 0 || ledger.DayScope.Tokens < 300000000 {
+		t.Fatalf("scope changed the floor or attribution: attribution=%+v day=%+v", ledger.Attribution, ledger.DayScope)
+	}
+}
+
+func TestHealthAttributionUsesTheZoneDay(t *testing.T) {
+	root := t.TempDir()
+	mustSpendTest(t, os.Mkdir(filepath.Join(root, ".git"), 0o755))
+	mustSpendTest(t, os.WriteFile(filepath.Join(root, "metasystem.conf"), []byte("metasystem.runtimes=fake\nspend.zone=Europe/Amsterdam\n"), 0o644))
+	t.Setenv("HOME", t.TempDir())
+	dir := filepath.Join(os.Getenv("HOME"), ".claude", "projects", strings.ReplaceAll(root, string(filepath.Separator), "-"))
+	mustSpendTest(t, os.MkdirAll(dir, 0o755))
+	line := func(id, stamp string) []byte {
+		return []byte(strings.Replace(string(seatTranscriptLine(t, "seat", root, id, 1, 1)), bedNow.Format(time.RFC3339), stamp, 1))
+	}
+	mustSpendTest(t, os.WriteFile(filepath.Join(dir, "seat.jsonl"), append(line("old", "2026-09-02T21:59:00Z"), line("new", "2026-09-02T22:01:00Z")...), 0o644))
+	ledger, err := Measure(root, "bed-m1", time.Date(2026, 9, 2, 23, 0, 0, 0, time.UTC))
+	if err != nil || ledger.Day != "2026-09-02" || ledger.Seat.DayTokens != 4 || ledger.Attribution.Window.Day != "2026-09-03" || kindTokens(ledger)["main"] != 2 {
+		t.Fatalf("zone window changed legacy UTC values or included an endpoint neighbor: day=%s seat=%+v attribution=%+v", ledger.Day, ledger.Seat, ledger.Attribution)
 	}
 }
 func TestSeamKeepsEveryVisibleGap(t *testing.T) {

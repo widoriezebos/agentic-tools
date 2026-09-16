@@ -101,6 +101,7 @@ type Ledger struct {
 	Seat          SeatSummary             `json:"seat"`
 	Unmeasured    []UnmeasuredEntry       `json:"unmeasured"`
 	Inflight      []string                `json:"inflight"`
+	Attribution   Attribution             `json:"attribution"`
 }
 
 type pricedMeasurement struct {
@@ -130,7 +131,7 @@ func Measure(repoRoot, machine string, now time.Time) (Ledger, error) {
 		return Ledger{}, err
 	}
 	ledger := Ledger{
-		SchemaVersion: 1, ObservedAt: now, Day: now.Format("2006-01-02"), Machine: machine,
+		SchemaVersion: 2, ObservedAt: now, Day: now.Format("2006-01-02"), Machine: machine,
 		Currency: settings.Currency, Settings: settings, GoalScopes: map[string]ScopeSummary{},
 		ClaimedGoals: claimed, Unmeasured: []UnmeasuredEntry{}, Inflight: []string{},
 	}
@@ -231,7 +232,7 @@ func Measure(repoRoot, machine string, now time.Time) (Ledger, error) {
 		}
 	}
 
-	seatRows, seat, seatUnmeasured, err := readSeat(repoRoot, machine, now, readerJobIndex, settings)
+	seatRows, seat, seatUnmeasured, calls, err := readSeat(repoRoot, machine, now, readerJobIndex, settings)
 	if err != nil {
 		return Ledger{}, err
 	}
@@ -239,6 +240,7 @@ func Measure(repoRoot, machine string, now time.Time) (Ledger, error) {
 	measured = append(measured, seatRows...)
 	ledger.Seat = seat
 	ledger.Unmeasured = append(ledger.Unmeasured, seatUnmeasured...)
+	ledger.Attribution = buildAttribution(now, settings.Zone, readerJobIndex, calls)
 	ledger.Rows = aggregateRows(measured)
 	ledger.DayScope = summarizeDay(ledger, measured)
 	goals := map[string]bool{"seat": true}

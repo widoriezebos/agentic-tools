@@ -10,7 +10,7 @@ import (
 func clearSpendEnvironment(t *testing.T) {
 	t.Helper()
 	for _, key := range []string{
-		SpendModeKey, SpendCurrencyKey, SpendCeilingDayTokensKey,
+		SpendModeKey, SpendCurrencyKey, SpendZoneKey, SpendCeilingDayTokensKey,
 		SpendCeilingDayMoneyKey, SpendCeilingGoalTokensKey, SpendCeilingGoalMoneyKey,
 	} {
 		name := EnvName(key)
@@ -34,7 +34,7 @@ func TestSpendCeilingDefaults(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if settings.Mode != "alert" || settings.Currency != "USD" ||
+	if settings.Mode != "alert" || settings.Currency != "USD" || settings.Zone != "UTC" ||
 		settings.DayTokenCeiling != 250000000 || settings.DayMoneyCeiling != 750 ||
 		settings.GoalTokenCeiling != 125000000 || settings.GoalMoneyCeiling != 300 {
 		t.Fatalf("spend defaults changed: %#v", settings)
@@ -66,6 +66,7 @@ func TestValidateSpendKeys(t *testing.T) {
 		{"enforce", SpendModeKey + "=enforce\n", "spend.mode=enforce is refused until step 2 lands on Wido's word (R-60-m1)"},
 		{"other mode", SpendModeKey + "=off\n", "spend.mode must be alert"},
 		{"currency", SpendCurrencyKey + "=usd\n", "spend.currency must be three uppercase letters"},
+		{"zone", SpendZoneKey + "=Nowhere/Else\n", "spend.zone must name a time zone"},
 		{"token ceiling", SpendCeilingDayTokensKey + "=0\n", "spend.ceiling.day.tokens must be a positive integer"},
 		{"money ceiling", SpendCeilingGoalMoneyKey + "=many\n", "spend.ceiling.goal.money must be a positive decimal"},
 		{"price decimal", "spend.price.codex.gpt-5-6-sol.input=-1\n", "must be a non-negative decimal"},
