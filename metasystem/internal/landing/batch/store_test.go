@@ -1,7 +1,12 @@
 package batch
 
 import (
+	"crypto/sha256"
+	"encoding/hex"
+	"encoding/json"
 	"os"
+	"path/filepath"
+	"strings"
 	"testing"
 	"time"
 
@@ -94,5 +99,115 @@ func TestBatchLivenessUsesInjectedProber(t *testing.T) {
 		if got := NewStore("", prober).Liveness(identity.Ref{Pid: pid, StartedAtSec: pid}); got != want {
 			t.Fatalf("pid %d liveness=%s, want %s", pid, got, want)
 		}
+	}
+}
+func writeChainDoc(t *testing.T, path string, value any) {
+	t.Helper()
+	must(t, os.MkdirAll(filepath.Dir(path), 0o755))
+	data, err := json.Marshal(value)
+	must(t, err)
+	must(t, os.WriteFile(path, data, 0o644))
+}
+func chainSubject(c map[string]any) map[string]any {
+	return c["closure"].(map[string]any)["subject"].(map[string]any)
+}
+func chainFixture(t *testing.T, change func(map[string]any, map[string]any)) (string, []byte) {
+	t.Helper()
+	root := t.TempDir()
+	patch := []byte("diff --git a/a.go b/a.go\n")
+	digest := sha256.Sum256(patch)
+	implementation := map[string]any{"jobId": "implementation", "parentJob": nil, "role": "implementer", "status": "completed", "round": 1, "chainClosed": true, "goalId": "goal-a", "goalRevision": 2, "independentCritiqueJobRef": "critic"}
+	critic := map[string]any{"jobId": "critic", "parentJob": nil, "role": "code-critic", "status": "completed", "round": 1, "chainClosed": true, "reviews": "implementation", "closure": map[string]any{"criticRoot": "critic", "round": 1, "mechanism": "clean", "subject": map[string]any{"kind": "live", "implementerRoot": "implementation", "reviewedMember": "implementation", "reviewedProjectTree": strings.Repeat("a", 40), "diffDigest": hex.EncodeToString(digest[:])}}}
+	mirror := filepath.Join(root, "mirror")
+	implementation["mirror"] = map[string]any{"path": mirror}
+	critic["mirror"] = map[string]any{"path": mirror}
+	if change != nil {
+		change(implementation, critic)
+	}
+	jobs := filepath.Join(root, "artifacts", "agents", "jobs")
+	writeChainDoc(t, filepath.Join(jobs, "implementation.json"), implementation)
+	writeChainDoc(t, filepath.Join(jobs, "critic.json"), critic)
+	writeChainDoc(t, filepath.Join(jobs, "outsider.json"), map[string]any{"jobId": "outsider", "parentJob": nil, "role": "implementer", "status": "completed", "round": 1})
+	round := filepath.Join(root, "artifacts", "agents", "implementation", "rounds", "1")
+	must(t, os.MkdirAll(round, 0o755))
+	must(t, os.WriteFile(filepath.Join(round, "diff.patch"), patch, 0o644))
+	writeChainDoc(t, filepath.Join(mirror, "manifest.json"), map[string]any{"files": map[string]any{"jobs/implementation.json": map[string]any{}, "jobs/critic.json": map[string]any{}, "rounds/1/diff.patch": map[string]any{"sha256": hex.EncodeToString(digest[:])}}})
+	return root, patch
+}
+func TestBatchJoinRefusesOpenChain(t *testing.T) {
+	cases := []struct {
+		name, want string
+		change     func(map[string]any, map[string]any)
+	}{
+		{"open", "BATCH_JOIN_CHAIN_UNCLOSED: implementation chain is open", func(i, _ map[string]any) { i["chainClosed"] = false }},
+		{"implementation closure invalid", "BATCH_JOIN_CHAIN_UNREAD: implementation chain closure is invalid", func(i, _ map[string]any) { i["status"] = "running" }},
+		{"wrong implementation role", "BATCH_JOIN_CHAIN_NOT_IMPLEMENTATION: chain root is not an implementer job", func(i, _ map[string]any) { i["role"] = "observer" }},
+		{"wrong goal", "BATCH_JOIN_CHAIN_UNREAD: implementation chain does not bind the named goal", func(i, _ map[string]any) { i["goalId"] = "goal-b" }},
+		{"revision moved", "BATCH_JOIN_CHAIN_REVISION_MOVED: chain goal revision is 1, claim revision is 2", func(i, _ map[string]any) { i["goalRevision"] = 1 }},
+		{"critic missing", "BATCH_JOIN_CHAIN_UNREAD: closed code-critic root is unreadable", func(i, _ map[string]any) { delete(i, "independentCritiqueJobRef") }},
+		{"wrong critic role", "BATCH_JOIN_CHAIN_UNREAD: critic chain root is not a code-critic job", func(_, c map[string]any) { c["role"] = "observer" }},
+		{"critic closure invalid", "BATCH_JOIN_CHAIN_UNREAD: code-critic chain closure is invalid", func(_, c map[string]any) { c["status"] = "running" }},
+		{"non-live subject", "BATCH_JOIN_CHAIN_UNREAD: code-critic closure subject is not live", func(_, c map[string]any) { chainSubject(c)["kind"] = "commit" }},
+		{"other implementation", "BATCH_JOIN_CHAIN_UNREAD: code-critic closure certifies another implementation chain", func(_, c map[string]any) { chainSubject(c)["implementerRoot"] = "outsider" }},
+		{"member outside chain", "BATCH_JOIN_CHAIN_UNREAD: certified implementer is outside implementation chain", func(_, c map[string]any) { chainSubject(c)["reviewedMember"] = "outsider" }},
+		{"digest changed", "BATCH_JOIN_CHAIN_UNREAD: certified diff is unreadable or changed", func(_, c map[string]any) { chainSubject(c)["diffDigest"] = strings.Repeat("b", 64) }},
+	}
+	for _, test := range cases {
+		t.Run(test.name, func(t *testing.T) {
+			root, _ := chainFixture(t, test.change)
+			if _, err := readCertifiedChain(root, "goal-a", "implementation", 2); err == nil || err.Error() != test.want {
+				t.Fatalf("refusal=%v, want %s", err, test.want)
+			}
+		})
+	}
+}
+func TestBatchJoinDerivesDiffFromChain(t *testing.T) {
+	root, patch := chainFixture(t, nil)
+	chain, err := readCertifiedChain(root, "goal-a", "implementation", 2)
+	must(t, err)
+	digest := sha256.Sum256(patch)
+	if string(chain.Patch) != string(patch) || chain.Digest != hex.EncodeToString(digest[:]) {
+		t.Fatalf("certified output=%q digest=%s", chain.Patch, chain.Digest)
+	}
+}
+func TestBatchJoinRequiresJobDomainChain(t *testing.T) {
+	root := t.TempDir()
+	_, err := readCertifiedChain(root, "goal-a", "codex-rescue", 2)
+	if err == nil || !strings.HasPrefix(err.Error(), "BATCH_JOIN_CHAIN_REQUIRED:") || !strings.Contains(err.Error(), "delegate --role implementer") {
+		t.Fatalf("job-domain refusal=%v", err)
+	}
+}
+func TestBatchChainTransportIsByteExact(t *testing.T) {
+	root, patch := chainFixture(t, nil)
+	chain, err := readCertifiedChain(root, "goal-a", "implementation", 2)
+	must(t, err)
+	landing := t.TempDir()
+	must(t, transportChain(landing, chain))
+	target := filepath.Join(landing, "artifacts", "agents", "landing-batches", "chains", chain.ID, "diff.patch")
+	if string(contents(t, target)) != string(patch) {
+		t.Fatal("transport changed certified bytes")
+	}
+	must(t, os.WriteFile(target, []byte("different"), 0o644))
+	if err := transportChain(landing, chain); err == nil || !strings.HasPrefix(err.Error(), "BATCH_CHAIN_CONFLICT:") || string(contents(t, target)) != "different" {
+		t.Fatalf("conflict=%v target=%q", err, contents(t, target))
+	}
+}
+func TestBatchUnitJoinsOneBatch(t *testing.T) {
+	root := t.TempDir()
+	store := NewStore(root, scriptedProber{})
+	member := func(goal, chain string) Unit {
+		return Unit{GoalID: goal, Chain: chain, Claim: Claim{Machine: "m", Lineage: "l", Epoch: 1, Revision: 1, AccountingRevision: 1}, State: UnitJoined}
+	}
+	must(t, store.Create(Record{Schema: 1, BatchID: testBatchID, State: StateOpen, Units: []Unit{member("goal-a", "implementation")}}))
+	other := "01j5x00000000000000000ba02"
+	must(t, store.Create(Record{Schema: 1, BatchID: other, State: StateOpen}))
+	if err := checkMembership(store, other, "goal-b", "implementation"); err == nil || !strings.HasPrefix(err.Error(), "BATCH_UNIT_ELSEWHERE:") {
+		t.Fatalf("chain refusal=%v", err)
+	}
+	if err := checkMembership(store, other, "goal-a", "implementation-2"); err == nil || !strings.HasPrefix(err.Error(), "BATCH_GOAL_ELSEWHERE:") {
+		t.Fatalf("goal refusal=%v", err)
+	}
+	if err := checkMembership(store, testBatchID, "goal-a", "implementation-2"); err != nil {
+		t.Fatalf("same-batch goal refused: %v", err)
 	}
 }
