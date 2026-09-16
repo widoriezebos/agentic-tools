@@ -1,6 +1,6 @@
 # fixture-waits-name-their-producer
 
-- State: approved
+- State: queued
 - Priority: 2
 - Sequence: 39
 - Risk: severity=2 novelty=2 exposure=2 accumulation=1 basis="severity 2: a correct candidate refused at the gate by host load, nothing granted or destroyed; novelty 2: an owned-producer contract for shell waits is new; exposure 2: every landing whose plan selects a fixture bed; accumulation 1: one helper, migrated bed by bed"
@@ -9,11 +9,9 @@
 - Origin: main
 - Next step: After proof-groups-detect-hangs-by-progress-not-the-clock lands its supervisor: design one wait contract (producer pid, expected transition, failure signal) and the shell helper that implements it; migrate the beds one at a time, dispatch-fixtures.sh (forty-six deadlines) last. || Absorbed 2026-09-11 from goal dispatch-fixture-recollection-pass-budget: Survivor fixture-waits-name-their-producer; absorb: the dispatch scenario's recollection wait (scanSeq passes at dispatch-fixtures.sh:1003-1037) ends on the steward's recollection producer or its hang verdict, never on a fixed pass count; the silence failsafe stays. || Absorbed 2026-09-11 from goal supervision-fixture-census-window-fails-under-load: Merged intent: every shell fixture wait names the producer it waits on and ends only on that producer's transition, exit or hung verdict, so the stop-everything scenario waits for a fresh census verdict from the census writer before dispatching and a loaded host never refuses a receipt for a timing the candidate did no
 - OpenedAt: 2026-09-10T22:29:05Z
-- Revision: 123
+- Revision: 124
 - Pinned: m1c
-- Budget: elapsedLimit=4h attemptLimit=6 reservedJobMinutesLimit=720 activeJobLimit=1 reviewRoundLimit=2
 - BudgetExceptions: 0
-- Approved: by=human:Wido at=2026-09-13T06:40:09Z revision=4 opid=7DH6M3FW0W3SDEFV4BED3P7ZBB-m1e-c6925449 authority=proven digest=870f815574eac7c4758587329c78ec70c6a504c72fd23ba2ff2ed433d7d8d4b3
 
 History:
 - 2026-09-10T22:29:05Z PM4QNHYAGETYRZ5V8J36YF6APB-m1-1701c13c open actor=m1+main-1788940932-18533-7fa6c2 targets=fixture-waits-name-their-producer
@@ -139,4 +137,5 @@ History:
 - 2026-09-16T20:31:40Z RKT636JJPJ4B2WE1GN3B55Z10W-m1e-c6925449 set-priority actor=human:Wido targets=census-lifecycle-scenario-holds-under-load,chain-landing-carries-the-reviewed-diff,dispatch-bases-chains-on-the-remote-tip,events-package-has-a-test-group,fixture-repo-copies-exclude-the-artifacts-store,fixture-waits-name-their-producer,human-authority-surface-runs-its-cmd-tests,human-wait-does-not-consume-goal-budget,metasystem-stop-escalation-proofs,metasystem-stop-fleet-form,new-elapsed-budgets-use-explicit-hours,pipelines-never-lose-a-truncated-producer,repo-root-paths-ride-agent-commits-unjudged,run-scoped-build-caches-have-a-janitor,skipped-test-fails-its-group-on-the-other-os,token-spend-fence reason=priority-order subject=token-spend-fence from=1:56 to=1:55 requested-sequence=37
 - 2026-09-16T20:31:47Z TVGXM9ANEJV81KJPRVG1TZ0VZV-m1e-c6925449 set-priority actor=human:Wido targets=census-lifecycle-scenario-holds-under-load,chain-landing-carries-the-reviewed-diff,dispatch-bases-chains-on-the-remote-tip,events-package-has-a-test-group,fixture-repo-copies-exclude-the-artifacts-store,fixture-waits-name-their-producer,human-authority-surface-runs-its-cmd-tests,human-wait-does-not-consume-goal-budget,metasystem-stop-escalation-proofs,metasystem-stop-fleet-form,new-elapsed-budgets-use-explicit-hours,pipelines-never-lose-a-truncated-producer,repo-root-paths-ride-agent-commits-unjudged,run-scoped-build-caches-have-a-janitor,skipped-test-fails-its-group-on-the-other-os reason=priority-order subject=run-scoped-build-caches-have-a-janitor from=1:55 to=1:54 requested-sequence=38
 - 2026-09-16T20:31:55Z MZ8CMERCF5WV60JPBWJT7P5P1R-m1e-c6925449 set-priority actor=human:Wido targets=census-lifecycle-scenario-holds-under-load,chain-landing-carries-the-reviewed-diff,dispatch-bases-chains-on-the-remote-tip,events-package-has-a-test-group,fixture-repo-copies-exclude-the-artifacts-store,fixture-waits-name-their-producer,human-authority-surface-runs-its-cmd-tests,human-wait-does-not-consume-goal-budget,metasystem-stop-escalation-proofs,metasystem-stop-fleet-form,new-elapsed-budgets-use-explicit-hours,pipelines-never-lose-a-truncated-producer,repo-root-paths-ride-agent-commits-unjudged,skipped-test-fails-its-group-on-the-other-os reason=priority-order subject=fixture-waits-name-their-producer from=1:54 to=2:39 requested-sequence=39
-Integrity: sha256=91f79b5b1241224e7a941bbdce2ee256bc3d94cb458341841054c7d3f4582f46
+- 2026-09-16T20:34:00Z 2NV6887DE87J6AFWME41QC89F3-m1e-c6925449 unapprove actor=human:Wido targets=fixture-waits-name-their-producer reason=Wido 2026-09-16 22:40 CEST: clean house on priority 1 first, then a few human convenience features; every priority 2+ goal is unapproved until then
+Integrity: sha256=eac8a1f79a0ea67156c86335ea6fe628a59519995b37a2ef9399bbccd603b2bc
