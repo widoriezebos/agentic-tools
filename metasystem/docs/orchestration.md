@@ -51,17 +51,11 @@ The loop also has reverse edges. An implementer gap-stop reopens design with
 the gap as input. A critic finding that indicts the design rather than the code
 reopens design critique. A failed merge gate returns the work to
 implementation, after which the critic reviews the new tree. Design and code
-critique draw on a review-round member that Part One stores on the goal: the
-`metasystem.budget.tier-1`, `metasystem.budget.tier-2`, and
-`metasystem.budget.tier-3` keys in `metasystem.conf` provide zero, two, and
-three rounds, while `metasystem.budget.review-round-max` keeps three as the
-ceiling. Part Two accounts mechanically (design point
-STR2-ROUND-ACCOUNTING-05): dispatch freezes the goal's round member on the
-critic chain root at dispatch (a goal-free root reads the configured ceiling
-alone), counts each follow-up round against it, and refuses the round past it;
-exhaustion opens no fresh budget. Only an approved token raising the goal's
-five-member tuple raises the stored member, never above the ceiling, and `job
-critique-budget-rebind` copies the raised member onto an open root.
+critique have separate round rules. For code critique and the warden, Part One
+stores a review-round member on the goal: the `metasystem.budget.tier-1`,
+`metasystem.budget.tier-2`, and `metasystem.budget.tier-3` keys in
+`metasystem.conf` provide zero, two, and three rounds, while
+`metasystem.budget.review-round-max` keeps three as the ceiling. Design critique has two rounds at tier 3 and does not exist below tier 3. A design-critic chain's `reviewRoundLimit` is 2 whatever the goal's stored member says. Part Two accounts mechanically (design point STR2-ROUND-ACCOUNTING-05): dispatch freezes the applicable limit on the critic chain root at dispatch (a goal-free non-design root reads the configured ceiling alone), counts each follow-up round against it, and refuses the round past it; exhaustion opens no fresh budget. Only an approved token raising the goal's five-member tuple raises the stored code-critique or warden member, never above the ceiling, and `job critique-budget-rebind` copies that raised member onto an open root.
 
 Before reserving a job, the dispatcher judges the exact claimed revision and
 the proposed cap. If that seam refuses on attempts, on reserved minutes, or on both and
@@ -143,8 +137,9 @@ holds now>"`, R-105-m1e); never a blocker's park.
 Under R-60-m1, the reviewer stops critique at the first round with no material
 finding. A material finding must change what gets built and name that
 artifact; a finding that fails the artifact test is demoted at registration.
-When the rounds are spent, `job critique-register-close` defers each bounded
-open finding into a review obligation on the goal (discharged later by `goal
+For design critique, Round 2 folded with no material finding closes the loop. Round 2 folded with only mechanical findings on a falling trajectory closes with one review obligation per finding naming its fixture. The page header records the exit as `closed at round 2 on N fixture obligations`. Any other round-2 residue refuses with `cap-exhausted-human-raise`, naming `goal accept-risk` and a re-scope by `goal edit`. There is no third design round and none can be bought.
+When code-critique or warden rounds are spent, `job critique-register-close`
+defers each bounded open finding into a review obligation on the goal (discharged later by `goal
 discharge-review-obligation` against the chain, artifact and test that carry
 it) and closes the register; a severe or unproven finding closes only after a
 human records `goal accept-risk` for it. The reviewer never dispatches a

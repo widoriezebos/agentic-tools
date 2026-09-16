@@ -3696,6 +3696,69 @@ cmp -s "$repeat_follow_stage_before" "$repeat_follow_stage" \
 touch "$repeat_follow_release"
 wait_for_agent_status repeat-follow-r2 completed
 
+design_round_two_fixture_obligations() {
+  local goal=design-round-two-fixture root=design-round-two-fixture page=metasystem/fixture-admission/design-round-two.md
+  local brief="$agent_fixture/design-round-two.md" record return safe fixture close_result refusal_rc lineage goal_text
+  mkdir -p "$agent_repo/metasystem/fixture-admission"
+  printf '# Design round two fixture\n' >"$agent_repo/$page"
+  git -C "$agent_repo" add -- "$page"
+  git -C "$agent_repo" -c core.hooksPath=/dev/null -c user.name=metasystem -c user.email=metasystem@example.invalid commit -qm 'add design round two fixture'
+  METASYSTEM_OWNER_LINEAGE=agent-fixture "$engine" goal open --root "$agent_repo" --id "$goal" --origin human \
+    --intent "Prove the design round-two close table" --next "Run the two-round critic chain." \
+    --risk severity=3,novelty=1,exposure=1,accumulation=1 --basis "The fixture exercises the enforced design-critique limit and obligation projection." >/dev/null
+  "$engine" goal approve --root "$agent_repo" --id "$goal" --by Wido --lineage agent-fixture \
+    --elapsed-limit 8h --attempt-limit 10 --reserved-job-minutes-limit 1200 --active-job-limit 1 \
+    --review-round-limit 3 --fixture-human-authority >/dev/null
+  # The close defers as the root's (machineId, mainId) pair and defer-findings admits only the goal's
+  # owning pair, so the chain is goal-bound and the claim's lineage is this bed's holder main.
+  lineage=$("$engine" json get --value "$("$engine" lease require-holder --root "$agent_repo" --caller-pid "$$")" --field mainId --default "")
+  [[ -n "$lineage" ]] || { echo "design round-two fixture found no lease holder main" >&2; exit 1; }
+  "$engine" goal claim --root "$agent_repo" --id "$goal" --lineage "$lineage" >/dev/null
+  make_agent_brief "$brief" design
+  run_agent_fixture design-round-two-root "$root" "$agent_dispatch" dispatch --role design-critic \
+    --outputs "$fixture_declared_outputs" --design "$page" --brief "$brief" --runtime fake --job-id "$root" --goal "$goal" --wait
+  record="$agent_repo/artifacts/agents/jobs/$root.json"
+  [[ "$("$engine" json get --file "$record" --field goalId)" == "$goal" && "$("$engine" json get --file "$record" --field mainId)" == "$lineage" ]] \
+    || { echo "design critic root is not bound to the goal's owning pair" >&2; exit 1; }
+  [[ "$("$engine" json get --file "$record" --field reviewRoundLimit)" == 2 ]] \
+    || { echo "design critic did not freeze reviewRoundLimit=2" >&2; exit 1; }
+  safe='{"local":true,"recoverable":true,"proofBoundaryCrossed":false,"authorityBoundaryCrossed":false,"secretsBoundaryCrossed":false,"irreversibleDataBoundaryCrossed":false,"externalSideEffectBoundaryCrossed":false}'
+  return="$agent_repo/artifacts/agents/$root/rounds/1/return.json"
+  json_replace_field "$return" schemaVersion 5
+  json_replace_field "$return" findings '[{"id":"ROUND1-A","severity":"medium","material":true,"claim":"old a","evidence":"read"},{"id":"ROUND1-B","severity":"medium","material":true,"claim":"old b","evidence":"read"}]'
+  json_replace_field "$return" verdictMaterialCount 2
+  json_replace_field "$return" rigor "[{\"findingId\":\"ROUND1-A\",\"rigorClass\":\"bounded\",\"facts\":$safe,\"reopeningTrigger\":\"if a recurs\",\"artifact\":\"metasystem/internal/dispatch/build.go\",\"grain\":\"mechanical\",\"behaviour\":\"old a\",\"fixture\":\"go test ./old-a\"},{\"findingId\":\"ROUND1-B\",\"rigorClass\":\"bounded\",\"facts\":$safe,\"reopeningTrigger\":\"if b recurs\",\"artifact\":\"metasystem/internal/dispatch/build.go\",\"grain\":\"mechanical\",\"behaviour\":\"old b\",\"fixture\":\"go test ./old-b\"}]"
+  "$engine" job critique-register-advance --repo "$agent_repo" --root-job "$root" --round-job "$root" >/dev/null
+  change_design_page_after_round_one "$root" design-round-two
+  run_agent_fixture design-round-two-r2 "$root-r2" "$agent_dispatch" follow-up --job "$root" --message "$follow_message" --wait
+  fixture='go test ./internal/dispatch/ -run TestRoundTwoCloseMechanicalFallingUsesOwnFixtures'
+  return="$agent_repo/artifacts/agents/$root/rounds/2/return.json"
+  json_replace_field "$return" schemaVersion 5
+  json_replace_field "$return" findings '[{"id":"ROUND1-A","severity":"low","material":false,"claim":"old a resolved","evidence":"read"},{"id":"ROUND1-B","severity":"low","material":false,"claim":"old b resolved","evidence":"read"},{"id":"ROUND2-FIXTURE","severity":"medium","material":true,"claim":"title must not become proof","evidence":"read"}]'
+  json_replace_field "$return" verdictMaterialCount 1
+  json_replace_field "$return" rigor "[{\"findingId\":\"ROUND2-FIXTURE\",\"rigorClass\":\"bounded\",\"facts\":$safe,\"reopeningTrigger\":\"if the fixture fails\",\"artifact\":\"metasystem/internal/dispatch/build.go\",\"grain\":\"mechanical\",\"behaviour\":\"round-two closure\",\"fixture\":\"$fixture\"}]"
+  "$engine" job critique-register-advance --repo "$agent_repo" --root-job "$root" --round-job "$root-r2" >/dev/null
+  [[ "$("$engine" json get --file "$record" --field materialByRound)" == '[{"material":2,"round":1},{"material":1,"round":2}]' ]] \
+    || { echo "design critic did not record the exact 2-to-1 material trajectory" >&2; exit 1; }
+  set +e
+  run_agent_fixture_captured design-round-two-r3 "$root-r3" "$agent_fixture/design-round-two-r3.out" \
+    "$agent_dispatch" follow-up --job "$root-r2" --message "$follow_message" --wait
+  refusal_rc=$?
+  set -e
+  [[ "$refusal_rc" -eq 10 && ! -e "$agent_repo/artifacts/agents/jobs/$root-r3.json" ]] \
+    && grep -Fq 'reason=cap-exhausted-human-raise' "$agent_fixture/design-round-two-r3.out" \
+    || { echo "design round three did not refuse with cap-exhausted-human-raise" >&2; exit 1; }
+  close_result=$("$engine" job critique-register-close --repo "$agent_repo" --root-job "$root")
+  [[ "$close_result" == deferred ]] \
+    || { echo "design round-two close did not return deferred" >&2; exit 1; }
+  goal_text=$(git -C "$agent_repo" show "refs/metasystem/goals/accepted:plans/goals/$goal.md")
+  [[ "$(grep -Fc -- '- ReviewObligation:' <<<"$goal_text")" -eq 1 ]] \
+    && grep -Fqx -- "- ReviewObligation: finding=ROUND2-FIXTURE chain=$root artifact=\"metasystem/internal/dispatch/build.go\" test=\"prove: $fixture\" fixture=\"$fixture\" state=open" <<<"$goal_text" \
+    || { echo "design round-two obligation did not use its finding fixture" >&2; exit 1; }
+}
+
+design_round_two_fixture_obligations
+
 fi
 
 if dispatch_cluster d; then

@@ -35,14 +35,10 @@ The loop's stop rule is fixed before round 1, never improvised mid-loop: the bri
 
 ## Round Budget and Exhaustion
 
-Part One stores the review-round member in the goal's tier box: zero rounds
-for Tier 1, two for Tier 2, and three for Tier 3, and the tier itself derives
-from the goal's severity and novelty answers (exposure and accumulation
-weight the proof, not the tier), never from the shape of the change. Part Two accounts mechanically (design
-point STR2-ROUND-ACCOUNTING-05): dispatch freezes that member on the critic
-chain root (a goal-free root reads `metasystem.budget.review-round-max`
-alone), counts each follow-up round against it, refuses the round past it,
-and exhaustion opens no fresh budget. Start every chain from
+For code critique and the warden, Part One stores the review-round member in
+the goal's tier box: zero rounds for Tier 1, two for Tier 2, and three for Tier
+3. The tier derives from severity and novelty (exposure and accumulation
+weight the proof), never from the change's shape. Design critique has two rounds at tier 3 and does not exist below tier 3. A design-critic chain's `reviewRoundLimit` is 2 whatever the goal's stored member says. Part Two accounts mechanically (design point STR2-ROUND-ACCOUNTING-05): dispatch freezes the applicable limit on the critic chain root (a goal-free non-design root reads `metasystem.budget.review-round-max` alone), counts each follow-up round against it, refuses the round past it, and exhaustion opens no fresh budget. Start every chain from
 `scripts/agents/templates/review-brief.md` — budget, threat model, appetite,
 and scope declared BEFORE round one; a true finding outside the declared
 threat model closes as out-of-scope citing the brief. Record the goal's budget
@@ -51,11 +47,13 @@ material finding. A finding keeps the chain open only when it changes what gets 
 and names the artifact it would change; a finding that fails the artifact
 test is demoted at registration.
 
-Only an approved token raising the goal's five-member tuple can raise its
-stored review-round member, and the three-round ceiling still applies; `job
-critique-budget-rebind` copies the raised member onto an open root. When the
-rounds are spent, `job critique-register-close` defers exhausted bounded
-findings into review obligations on the goal (`goal
+Round 2 folded with no material finding closes the loop. Round 2 folded with only mechanical findings on a falling trajectory closes with one review obligation per finding naming its fixture. The page header records the exit as `closed at round 2 on N fixture obligations`. Any other round-2 residue refuses with `cap-exhausted-human-raise`, naming `goal accept-risk` and a re-scope by `goal edit`. There is no third design round and none can be bought.
+
+For code critique and the warden, only an approved token raising the goal's
+five-member tuple can raise its stored review-round member, and the three-round
+ceiling still applies; `job critique-budget-rebind` copies the raised member
+onto an open root. When their rounds are spent, `job critique-register-close`
+defers exhausted bounded findings into review obligations on the goal (`goal
 discharge-review-obligation` discharges them later against the chain,
 artifact and test that carry them) or closes after a human records `goal
 accept-risk`; whenever a severe or unproven finding remains, stop with the

@@ -68,17 +68,22 @@ type ScanResult struct {
 
 // JobFact is one delegate job's monitor-relevant slice.
 type JobFact struct {
-	Id           string `json:"id"`
-	MainId       string `json:"mainId"`
-	StartedAt    string `json:"startedAt"`
-	Status       string `json:"status"`
-	WaiterLive   bool   `json:"waiterLive"`
-	Title        string `json:"title"`
-	Role         string `json:"role"`
-	GoalId       string `json:"goalId"`
-	SourcePath   string `json:"sourcePath"`
-	SourceDigest string `json:"sourceDigest"`
-	Ownership    string `json:"ownership"`
+	Id                 string `json:"id"`
+	MainId             string `json:"mainId"`
+	StartedAt          string `json:"startedAt"`
+	Status             string `json:"status"`
+	WaiterLive         bool   `json:"waiterLive"`
+	Title              string `json:"title"`
+	Role               string `json:"role"`
+	GoalId             string `json:"goalId"`
+	SourcePath         string `json:"sourcePath"`
+	SourceDigest       string `json:"sourceDigest"`
+	Ownership          string `json:"ownership"`
+	ReviewRoundLimit   int64  `json:"reviewRoundLimit,omitempty"`
+	CritiqueRound      int64  `json:"critiqueRound,omitempty"`
+	CritiqueMaterial   int64  `json:"critiqueMaterial,omitempty"`
+	CritiqueMechanical bool   `json:"critiqueMechanical,omitempty"`
+	CritiqueFalling    bool   `json:"critiqueFalling,omitempty"`
 }
 
 // RunFact is one run record's monitor-relevant slice.
@@ -457,7 +462,7 @@ func (s *Store) TurnVerdict(scan ScanResult, sessionId, watchdogDigest, mainId s
 		}
 		session := state.touch(sessionId, s.nowISO())
 
-		brainLines := s.brainSummary(scan, brainState)
+		brainLines := append(s.brainSummary(scan, brainState), designCritiqueLines(scan.Jobs)...)
 		runLines := s.decideRuns(&verdict, scan, session, mainId, watches)
 		s.decide(&verdict, scan, session, &work, brainSeat, waits)
 		if options.SessionAbsent {
@@ -1268,6 +1273,20 @@ func (s *Store) decideRuns(verdict *Verdict, scan ScanResult, session *sessionSt
 		}
 	}
 	return warnings
+}
+
+func designCritiqueLines(jobs []JobFact) []string {
+	var lines []string
+	for _, job := range jobs {
+		if job.Role == "design-critic" && job.ReviewRoundLimit > 0 {
+			line := fmt.Sprintf("design critique round %d of %d folded: %d material", job.CritiqueRound, job.ReviewRoundLimit, job.CritiqueMaterial)
+			if job.CritiqueMaterial > 0 && job.CritiqueMechanical && job.CritiqueFalling {
+				line = fmt.Sprintf("design critique round %d of %d folded: %d mechanical, falling", job.CritiqueRound, job.ReviewRoundLimit, job.CritiqueMaterial)
+			}
+			lines = append(lines, line)
+		}
+	}
+	return lines
 }
 
 // decideGreens surfaces green terminals exactly once per session on the

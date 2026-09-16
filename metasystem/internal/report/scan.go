@@ -451,13 +451,49 @@ func jobFacts(root string, prober identity.Prober, statuses map[string]bool, goa
 				SourcePath: sourcePath, SourceDigest: sourceDigest, Ownership: "unknown",
 			})
 		}
-		if !statuses[record.Status] {
+		var critique struct {
+			ReviewRoundLimit int64 `json:"reviewRoundLimit"`
+			Round            int64 `json:"findingRegisterRound"`
+			ChainClosed      bool  `json:"chainClosed"`
+			MaterialByRound  []struct {
+				Round, Material int64
+			} `json:"materialByRound"`
+			Register []struct {
+				Grain, Status string
+			} `json:"findingRegister"`
+		}
+		active, mechanical := 0, false
+		var material, roundOne, roundTwo int64
+		var hasOne, hasTwo bool
+		if record.Role == "design-critic" {
+			_ = json.Unmarshal(data, &critique)
+			for _, finding := range critique.Register {
+				if finding.Status == "open" || finding.Status == "disputed" {
+					active++
+					mechanical = (active == 1 || mechanical) && finding.Grain == "mechanical"
+				}
+			}
+			for _, folded := range critique.MaterialByRound {
+				if folded.Round == critique.Round {
+					material = folded.Material
+				}
+				if folded.Round == 1 {
+					roundOne, hasOne = folded.Material, true
+				} else if folded.Round == 2 {
+					roundTwo, hasTwo = folded.Material, true
+				}
+			}
+		}
+		openFoldedDesign := record.Role == "design-critic" && record.Status == "completed" && critique.Round > 0 && critique.ReviewRoundLimit > 0 && !critique.ChainClosed
+		if !statuses[record.Status] && !openFoldedDesign {
 			continue
 		}
 		facts = append(facts, goal.JobFact{
 			Id: record.JobId, MainId: mainId, StartedAt: record.StartedAt, Status: record.Status,
 			Title: title, Role: record.Role, GoalId: record.GoalId, SourcePath: sourcePath,
 			SourceDigest: sourceDigest, Ownership: "unknown",
+			ReviewRoundLimit: critique.ReviewRoundLimit, CritiqueRound: critique.Round, CritiqueMaterial: material,
+			CritiqueMechanical: active > 0 && mechanical, CritiqueFalling: hasOne && hasTwo && roundTwo < roundOne,
 			WaiterLive: run.LiveWaiter(root, prober, "job", record.JobId, mainId,
 				run.WaiterTarget{StartedAt: record.StartedAt}),
 		})
