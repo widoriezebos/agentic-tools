@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"os"
 	"os/exec"
@@ -31,13 +32,36 @@ type witnessDigestCache struct {
 var (
 	witnessTreeDigester      = digestArchivedTree
 	witnessDigestCacheWriter = writeWitnessDigestCache
+	projectionDiffRunner     = diffEngineProjection
+	archivedEngineDigester   = archivedEngineDigestAtCommit
 )
+
+type classifiedJudgmentError struct {
+	message string
+	cause   error
+}
+
+func (e *classifiedJudgmentError) Error() string { return e.message }
+func (e *classifiedJudgmentError) Unwrap() error { return e.cause }
+
+// Judgment classes let callers distinguish a negative ownership verdict from
+// a stalled decision without coupling that choice to message text.
+var (
+	ErrNotOwned          = errors.New("destination is not owned")
+	ErrProjectionDiffers = fmt.Errorf("ENGINE projection differs: %w", ErrNotOwned)
+	ErrJudgmentStalled   = errors.New("steward judgment stalled")
+)
+
+func classifiedJudgment(message string, cause error) error {
+	return &classifiedJudgmentError{message: message, cause: cause}
+}
 
 var (
 	commitBuildStamp  = regexp.MustCompile(`^[0-9a-f]{7,40}$`)
 	witnessBuildStamp = regexp.MustCompile(`^witness-([0-9a-f]{12})$`)
 	witnessCacheKey   = regexp.MustCompile(`^[0-9]+:[0-9a-f]{40}([0-9a-f]{24})?$`)
 	witnessDigest     = regexp.MustCompile(`^[0-9a-f]{64}$`)
+	projectionHeader  = regexp.MustCompile(`^:([0-7]{6}) ([0-7]{6}) ([0-9a-fA-F]{40}|[0-9a-fA-F]{64}) ([0-9a-fA-F]{40}|[0-9a-fA-F]{64}) ([A-Za-z]+)$`)
 )
 
 // RearmResolveSeconds reads the witness-history deadline in the same
@@ -84,7 +108,7 @@ func gitOutputContext(ctx context.Context, root string, args ...string) (string,
 }
 
 func witnessTimeoutError(seconds int) error {
-	return fmt.Errorf("witness resolution exceeded the configured %d-second bound (%s)", seconds, rearmResolveSecondsConfig)
+	return classifiedJudgment(fmt.Sprintf("witness resolution exceeded the configured %d-second bound (%s)", seconds, rearmResolveSecondsConfig), ErrJudgmentStalled)
 }
 
 // resolveWitnessStamp searches the complete reachable history newest first.
@@ -159,7 +183,7 @@ func resolveWitnessStamp(repoRoot, installationRoot, ref, hex12 string) (string,
 			return finish(candidate, nil)
 		}
 	}
-	return finish("", fmt.Errorf("witness digest matches no commit reachable from %s within the %d-second bound", ref, seconds))
+	return finish("", classifiedJudgment(fmt.Sprintf("witness digest matches no commit reachable from %s within the %d-second bound", ref, seconds), ErrNotOwned))
 }
 
 func readWitnessDigestCache(path string) map[string]string {
@@ -227,7 +251,7 @@ func resolveLandedBuild(repoRoot, installationRoot, landingRef, stamp string) (s
 	case commitBuildStamp.MatchString(stamp):
 		out, err := exec.Command("git", "-C", installationRoot, "rev-parse", "--verify", "--quiet", stamp+"^{commit}").Output()
 		if err != nil {
-			return "", fmt.Errorf("rebuilt engine carries unresolved build stamp %q; automatic re-arm is bounded to landed commits", stamp)
+			return "", classifiedJudgment(fmt.Sprintf("rebuilt engine carries unresolved build stamp %q; automatic re-arm is bounded to landed commits", stamp), ErrNotOwned)
 		}
 		commit = strings.TrimSpace(string(out))
 	case witnessBuildStamp.MatchString(stamp):
@@ -241,10 +265,10 @@ func resolveLandedBuild(repoRoot, installationRoot, landingRef, stamp string) (s
 		if shown == "" {
 			shown = "<unreadable>"
 		}
-		return "", fmt.Errorf("rebuilt engine carries build stamp %s; automatic re-arm is bounded to landed commits", shown)
+		return "", classifiedJudgment(fmt.Sprintf("rebuilt engine carries build stamp %s; automatic re-arm is bounded to landed commits", shown), ErrNotOwned)
 	}
 	if err := exec.Command("git", "-C", installationRoot, "merge-base", "--is-ancestor", commit, landingRef).Run(); err != nil {
-		return "", fmt.Errorf("rebuilt engine was built from %s, which is not landed on %s", stamp, landingRef)
+		return "", classifiedJudgment(fmt.Sprintf("rebuilt engine was built from %s, which is not landed on %s", stamp, landingRef), ErrNotOwned)
 	}
 	return commit, nil
 }
@@ -263,7 +287,7 @@ func verifyEnrollmentLandedSource(installationRoot, sourceCommit, landedCommit s
 		if ctx.Err() != nil {
 			return witnessTimeoutError(seconds)
 		}
-		return fmt.Errorf("enrollment records landed source %q but executable stamp source %q is not its ancestor (%s)", landedCommit, sourceCommit, strings.TrimSpace(string(out)))
+		return classifiedJudgment(fmt.Sprintf("enrollment records landed source %q but executable stamp source %q is not its ancestor (%s)", landedCommit, sourceCommit, strings.TrimSpace(string(out))), ErrNotOwned)
 	}
 	args := []string{"log", "--format=", "--name-only", "--ancestry-path", "--diff-merges=first-parent", sourceCommit + ".." + landedCommit, "--"}
 	args = append(args, enrollmentSkewPathspecs[:]...)
@@ -275,7 +299,7 @@ func verifyEnrollmentLandedSource(installationRoot, sourceCommit, landedCommit s
 		return fmt.Errorf("read enrollment engine-and-agent-script skew: %w", err)
 	}
 	if changedPaths != "" {
-		return fmt.Errorf("enrollment records landed source %q but engine or agent scripts changed after executable stamp source %q", landedCommit, sourceCommit)
+		return classifiedJudgment(fmt.Sprintf("enrollment records landed source %q but engine or agent scripts changed after executable stamp source %q", landedCommit, sourceCommit), ErrNotOwned)
 	}
 	return nil
 }
@@ -292,6 +316,116 @@ func verifyEnrollmentBuildSource(installationRoot, stamp, sourceCommit, landedCo
 		return nil
 	}
 	return err
+}
+
+type projectionDiffEntry struct {
+	oldMode, newMode string
+	oldID, newID     string
+	path             string
+}
+
+func parseProjectionDiff(raw []byte) ([]projectionDiffEntry, error) {
+	var entries []projectionDiffEntry
+	for len(raw) > 0 {
+		header, rest, found := bytes.Cut(raw, []byte{0})
+		if !found {
+			return nil, fmt.Errorf("parse ENGINE projection diff: truncated header")
+		}
+		match := projectionHeader.FindSubmatch(header)
+		if match == nil || len(match[3]) != len(match[4]) {
+			return nil, fmt.Errorf("parse ENGINE projection diff: malformed header %q", header)
+		}
+		path, tail, found := bytes.Cut(rest, []byte{0})
+		if !found || len(path) == 0 {
+			return nil, fmt.Errorf("parse ENGINE projection diff: missing NUL-terminated path")
+		}
+		entries = append(entries, projectionDiffEntry{string(match[1]), string(match[2]), string(match[3]), string(match[4]), string(path)})
+		raw = tail
+	}
+	return entries, nil
+}
+
+func projectionKind(mode string) (byte, bool) {
+	switch mode {
+	case "000000":
+		return 'a', true
+	case "100644", "100755":
+		return 'f', true
+	case "120000":
+		return 's', true
+	case "160000":
+		return 'g', true
+	default:
+		return 0, false
+	}
+}
+
+func projectionChange(entries []projectionDiffEntry, policy behaviorsurface.Policy, prefix string) (string, bool, error) {
+	for _, entry := range entries {
+		oldKind, oldKnown := projectionKind(entry.oldMode)
+		newKind, newKnown := projectionKind(entry.newMode)
+		if !oldKnown || !newKnown || oldKind == 'g' || newKind == 'g' {
+			return "", true, nil
+		}
+	}
+	for _, entry := range entries {
+		included, err := policy.Includes(behaviorsurface.Engine, entry.path, prefix)
+		if err != nil {
+			return "", false, err
+		}
+		oldKind, _ := projectionKind(entry.oldMode)
+		newKind, _ := projectionKind(entry.newMode)
+		if included && (oldKind != newKind || entry.oldID != entry.newID) {
+			return entry.path, false, nil
+		}
+	}
+	return "", false, nil
+}
+
+func diffEngineProjection(ctx context.Context, installationRoot, sourceCommit, destinationCommit string) ([]byte, error) {
+	args := []string{"diff-tree", "-r", "-z", "--no-commit-id", "--no-abbrev", "--no-renames", "--no-ext-diff", "--ignore-submodules=none", "--relative", sourceCommit, destinationCommit}
+	cmd := exec.CommandContext(ctx, "git", append([]string{"-C", installationRoot}, args...)...)
+	var stdout, stderr bytes.Buffer
+	cmd.Stdout, cmd.Stderr = &stdout, &stderr
+	if err := cmd.Run(); err != nil {
+		return nil, fmt.Errorf("git %s: %w (%s)", strings.Join(args, " "), err, strings.TrimSpace(stderr.String()))
+	}
+	return stdout.Bytes(), nil
+}
+
+func compareEngineProjection(ctx context.Context, installationRoot, sourceCommit, destinationCommit string, policy behaviorsurface.Policy) error {
+	raw, err := projectionDiffRunner(ctx, installationRoot, sourceCommit, destinationCommit)
+	if err != nil {
+		return err
+	}
+	entries, err := parseProjectionDiff(raw)
+	if err != nil {
+		return err
+	}
+	changedPath, undecidable, err := projectionChange(entries, policy, "")
+	if err != nil {
+		return err
+	}
+	if !undecidable {
+		if changedPath == "" {
+			return nil
+		}
+		message := fmt.Sprintf("enrolled source %s and destination %s have different ENGINE projections (first changed path %q)", sourceCommit, destinationCommit, changedPath)
+		return classifiedJudgment(message, ErrProjectionDiffers)
+	}
+	sourceDigest, err := archivedEngineDigester(ctx, installationRoot, sourceCommit, policy)
+	if err != nil {
+		return fmt.Errorf("read enrolled source ENGINE projection: %w", err)
+	}
+	destinationDigest, err := archivedEngineDigester(ctx, installationRoot, destinationCommit, policy)
+	if err != nil {
+		return fmt.Errorf("read destination ENGINE projection: %w", err)
+	}
+	if sourceDigest != destinationDigest {
+		message := fmt.Sprintf("enrolled source %s and destination %s have different ENGINE projections", sourceCommit, destinationCommit)
+		return classifiedJudgment(message, ErrProjectionDiffers)
+	}
+	return nil
 }
 
 // VerifySourceAtDestination proves that the pinned enrolled bytes still own
@@ -331,22 +465,11 @@ func (b *EnrolledBinary) VerifySourceAtDestination(installationRoot, destination
 	if err != nil {
 		return err
 	}
-	sourceDigest, err := archivedEngineDigestAtCommit(ctx, installationRoot, sourceCommit, policy)
-	if err != nil {
+	if err := compareEngineProjection(ctx, installationRoot, sourceCommit, destinationCommit, policy); err != nil {
 		if ctx.Err() != nil {
 			return witnessTimeoutError(seconds)
 		}
-		return fmt.Errorf("read enrolled source ENGINE projection: %w", err)
-	}
-	destinationDigest, err := archivedEngineDigestAtCommit(ctx, installationRoot, destinationCommit, policy)
-	if err != nil {
-		if ctx.Err() != nil {
-			return witnessTimeoutError(seconds)
-		}
-		return fmt.Errorf("read destination ENGINE projection: %w", err)
-	}
-	if sourceDigest != destinationDigest {
-		return fmt.Errorf("enrolled source %s and destination %s have different ENGINE projections", sourceCommit, destinationCommit)
+		return err
 	}
 	return nil
 }

@@ -59,6 +59,95 @@ func initRearmRepo(t *testing.T) string {
 	return root
 }
 
+func TestSourceAtDestinationDecidesDriftByKindAndContent(t *testing.T) {
+	outer := canonicalPath(t.TempDir())
+	rearmGit(t, outer, "init", "-q", "-b", "trunk")
+	rearmGit(t, outer, "config", "user.name", "test")
+	rearmGit(t, outer, "config", "user.email", "test@example.invalid")
+	installation := filepath.Join(outer, "metasystem")
+	writeRearmFile(t, filepath.Join(installation, "go.mod"), "module fixture.invalid/nested\n")
+	writeRearmFile(t, filepath.Join(installation, "cmd", "surface.txt"), "source")
+	writeRearmFile(t, filepath.Join(installation, "cmd", "kind"), "target")
+	if err := os.Symlink("one", filepath.Join(installation, "cmd", "link")); err != nil {
+		t.Fatal(err)
+	}
+	rearmGit(t, outer, "add", ".")
+	rearmGit(t, outer, "commit", "-qm", "source")
+	source := rearmGit(t, outer, "rev-parse", "HEAD")
+	policy, err := behaviorsurface.Load()
+	if err != nil {
+		t.Fatal(err)
+	}
+	originalDiff, originalArchive := projectionDiffRunner, archivedEngineDigester
+	t.Cleanup(func() { projectionDiffRunner, archivedEngineDigester = originalDiff, originalArchive })
+	diffCalls, archiveCalls := 0, 0
+	projectionDiffRunner = func(ctx context.Context, root, from, to string) ([]byte, error) {
+		diffCalls++
+		return originalDiff(ctx, root, from, to)
+	}
+	archivedEngineDigester = func(ctx context.Context, root, commit string, loaded behaviorsurface.Policy) (string, error) {
+		archiveCalls++
+		return originalArchive(ctx, root, commit, loaded)
+	}
+	cases := []struct {
+		name             string
+		change           func()
+		equal, indexOnly bool
+		changedPath      string
+	}{
+		{"ledger-only move", func() { writeRearmFile(t, filepath.Join(installation, "memory", "receipts.log"), "ledger\n") }, true, false, ""},
+		{"engine content", func() { writeRearmFile(t, filepath.Join(installation, "cmd", "surface.txt"), "changed") }, false, false, "cmd/surface.txt"},
+		{"executable mode", func() { _ = os.Chmod(filepath.Join(installation, "cmd", "surface.txt"), 0o755) }, true, false, ""},
+		{"symlink target", func() {
+			_ = os.Remove(filepath.Join(installation, "cmd", "link"))
+			_ = os.Symlink("two", filepath.Join(installation, "cmd", "link"))
+		}, false, false, "cmd/link"},
+		{"file to symlink", func() {
+			_ = os.Remove(filepath.Join(installation, "cmd", "kind"))
+			_ = os.Symlink("target", filepath.Join(installation, "cmd", "kind"))
+		}, false, false, "cmd/kind"},
+		{"added engine file", func() { writeRearmFile(t, filepath.Join(installation, "cmd", "added"), "added") }, false, false, "cmd/added"},
+		{"outside installation", func() { writeRearmFile(t, filepath.Join(outer, "cmd", "outside"), "outside") }, true, false, ""},
+		{"gitlink fallback", func() {
+			rearmGit(t, outer, "update-index", "--add", "--cacheinfo", "160000,"+source+",metasystem/cmd/submodule")
+		}, true, true, ""},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			rearmGit(t, outer, "checkout", "-q", "--detach", source)
+			tc.change()
+			if !tc.indexOnly {
+				rearmGit(t, outer, "add", "-A")
+			}
+			rearmGit(t, outer, "commit", "-qm", tc.name)
+			destination := rearmGit(t, outer, "rev-parse", "HEAD")
+			tempRoot := t.TempDir()
+			t.Setenv("TMPDIR", tempRoot)
+			sourceDigest, sourceErr := archivedEngineDigestAtCommit(context.Background(), installation, source, policy)
+			destinationDigest, destinationErr := archivedEngineDigestAtCommit(context.Background(), installation, destination, policy)
+			if sourceErr != nil || destinationErr != nil || (sourceDigest == destinationDigest) != tc.equal {
+				t.Fatalf("archived digest agreement setup: source=%v destination=%v equal=%t want=%t", sourceErr, destinationErr, sourceDigest == destinationDigest, tc.equal)
+			}
+			before, _ := os.ReadDir(tempRoot)
+			diffCalls, archiveCalls = 0, 0
+			err := compareEngineProjection(context.Background(), installation, source, destination, policy)
+			if (err == nil) != tc.equal || diffCalls != 1 || archiveCalls != map[bool]int{true: 2}[tc.indexOnly] {
+				t.Fatalf("comparison: err=%v diffs=%d archives=%d equal=%t", err, diffCalls, archiveCalls, tc.equal)
+			}
+			if tc.changedPath != "" && (!strings.Contains(err.Error(), tc.changedPath) || !errors.Is(err, ErrProjectionDiffers) || !errors.Is(err, ErrNotOwned) || errors.Is(err, ErrJudgmentStalled)) {
+				t.Fatalf("changed path or error class missing: %v", err)
+			}
+			if after, readErr := os.ReadDir(tempRoot); readErr != nil || !reflect.DeepEqual(before, after) {
+				t.Fatalf("comparison changed the temporary directory: before=%v after=%v err=%v", before, after, readErr)
+			}
+		})
+	}
+	truncated := fmt.Sprintf(":100644 100644 %040x %040x M\x00cmd/x", 1, 2)
+	if _, err := parseProjectionDiff([]byte(truncated)); err == nil {
+		t.Fatal("truncated raw diff was accepted as equality")
+	}
+}
+
 func buildFakeRunner(t *testing.T, output, stamp string) {
 	t.Helper()
 	cmd := exec.Command("go", "build", "-modcacherw", "-buildvcs=false",
@@ -114,6 +203,24 @@ func newRearmBed(t *testing.T, startRunner bool) rearmBed {
 
 func TestVerifySourceAtDestinationHumanEnrollmentAndMachineRearm(t *testing.T) {
 	t.Setenv("METASYSTEM_SUPERVISION_REGISTRY_HOME", t.TempDir())
+	originalDiff, originalArchive := projectionDiffRunner, archivedEngineDigester
+	t.Cleanup(func() { projectionDiffRunner, archivedEngineDigester = originalDiff, originalArchive })
+	diffCalls, archiveCalls := 0, 0
+	projectionDiffRunner = func(ctx context.Context, root, from, to string) ([]byte, error) {
+		diffCalls++
+		return originalDiff(ctx, root, from, to)
+	}
+	archivedEngineDigester = func(ctx context.Context, root, commit string, policy behaviorsurface.Policy) (string, error) {
+		archiveCalls++
+		return originalArchive(ctx, root, commit, policy)
+	}
+	assertFast := func() {
+		t.Helper()
+		if diffCalls != 1 || archiveCalls != 0 {
+			t.Fatalf("source comparison used %d diffs and %d archives", diffCalls, archiveCalls)
+		}
+		diffCalls, archiveCalls = 0, 0
+	}
 	root := initRearmRepo(t)
 	source := commitRearmTree(t, root, "enrolled source")
 	engine := filepath.Join(canonicalPath(t.TempDir()), "metasystem")
@@ -141,6 +248,7 @@ func TestVerifySourceAtDestinationHumanEnrollmentAndMachineRearm(t *testing.T) {
 		if err := pinned.VerifySourceAtDestination(root, at); err != nil {
 			t.Fatalf("lawful human enrollment at %s: %v", at, err)
 		}
+		assertFast()
 	}
 	if pinned.Install.LandedCommit != "" || pinned.Install.LandingRef != "" {
 		t.Fatal("source verification manufactured machine enrollment provenance")
@@ -153,24 +261,27 @@ func TestVerifySourceAtDestinationHumanEnrollmentAndMachineRearm(t *testing.T) {
 	if err := pinned.VerifySourceAtDestination(root, destination); err != nil {
 		t.Fatalf("machine rearm lost record-only reuse: %v", err)
 	}
+	assertFast()
 	pinned.Install.LandedCommit = destination
 	if err := pinned.VerifySourceAtDestination(root, destination); err != nil {
 		t.Fatalf("machine rearm lost a newer record-only landed source: %v", err)
 	}
+	assertFast()
 	pinned.Install = human
 	changed := commitRearmTree(t, root, "different engine")
-	if err := pinned.VerifySourceAtDestination(root, changed); err == nil || !strings.Contains(err.Error(), "different ENGINE projections") {
+	if err := pinned.VerifySourceAtDestination(root, changed); err == nil || !strings.Contains(err.Error(), "different ENGINE projections") || !errors.Is(err, ErrProjectionDiffers) || !errors.Is(err, ErrNotOwned) {
 		t.Fatalf("human enrollment accepted changed engine source: %v", err)
 	}
+	assertFast()
 	pinned.Install.MintedBy = "machine-rebuild"
 	pinned.Install.LandedCommit, pinned.Install.LandingRef = changed, "refs/remotes/origin/trunk"
-	if err := pinned.VerifySourceAtDestination(root, changed); err == nil || !strings.Contains(err.Error(), "engine or agent scripts changed") {
+	if err := pinned.VerifySourceAtDestination(root, changed); err == nil || !strings.Contains(err.Error(), "engine or agent scripts changed") || !errors.Is(err, ErrNotOwned) {
 		t.Fatalf("machine enrollment accepted changed engine source: %v", err)
 	}
 	pinned.Install = human
 	rearmGit(t, root, "checkout", "--orphan", "unrelated")
 	unrelated := commitRearmTree(t, root, "unrelated source")
-	if err := pinned.VerifySourceAtDestination(root, unrelated); err == nil || !strings.Contains(err.Error(), "not landed") {
+	if err := pinned.VerifySourceAtDestination(root, unrelated); err == nil || !strings.Contains(err.Error(), "not landed") || !errors.Is(err, ErrNotOwned) {
 		t.Fatalf("human enrollment accepted unrelated destination: %v", err)
 	}
 }
@@ -333,8 +444,21 @@ func TestWitnessResolverRefusesUnlandedTreeDigest(t *testing.T) {
 	rearmGit(t, root, "checkout", "-q", "trunk")
 	ref := "refs/remotes/origin/trunk"
 	rearmGit(t, root, "update-ref", ref, trunk)
-	if resolved, err := resolveWitnessStamp(root, root, ref, digest[:12]); err == nil || resolved != "" {
+	resolved, err := resolveWitnessStamp(root, root, ref, digest[:12])
+	if err == nil || resolved != "" || !errors.Is(err, ErrNotOwned) {
 		t.Fatalf("unlanded witness digest resolved to %q: %v", resolved, err)
+	}
+	if _, err := resolveLandedBuild(root, root, ref, "witness-"+digest[:12]); err == nil || !errors.Is(err, ErrNotOwned) {
+		t.Fatalf("no-match witness verdict lost its class: %v", err)
+	}
+	original := witnessTreeDigester
+	t.Cleanup(func() { witnessTreeDigester = original })
+	_ = os.Remove(filepath.Join(root, "artifacts", "agents", "steward", witnessDigestCacheName))
+	witnessTreeDigester = func(context.Context, string, string, behaviorsurface.Policy) (string, error) {
+		return "", errors.New("injected digest failure")
+	}
+	if _, err := resolveLandedBuild(root, root, ref, "witness-"+digest[:12]); err == nil || !strings.Contains(err.Error(), "injected digest failure") || errors.Is(err, ErrNotOwned) || errors.Is(err, ErrJudgmentStalled) {
+		t.Fatalf("operational witness failure was misclassified: %v", err)
 	}
 }
 
@@ -413,7 +537,7 @@ func TestWitnessResolverWritesCacheOnceOnExpiry(t *testing.T) {
 		writeWitnessDigestCache(path, anchor, entries)
 	}
 	resolved, err := resolveWitnessStamp(root, root, ref, "000000000000")
-	if err == nil || resolved != "" || !strings.Contains(err.Error(), "exceeded the configured 1-second bound") {
+	if err == nil || resolved != "" || !strings.Contains(err.Error(), "exceeded the configured 1-second bound") || !errors.Is(err, ErrJudgmentStalled) || errors.Is(err, ErrNotOwned) {
 		t.Fatalf("resolver expiry was not loud: resolved=%q err=%v", resolved, err)
 	}
 	if digestCalls < 2 || cacheWrites != 1 {
