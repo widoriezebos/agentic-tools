@@ -2,14 +2,14 @@
 
 - State: approved
 - Priority: 1
-- Sequence: 62
+- Sequence: 61
 - Risk: severity=3 novelty=2 exposure=3 accumulation=1 basis="severity 3: budget enforcement can stop lawful work or permit unbounded time; novelty 2: a bounded change to existing ledger and elapsed projection; exposure 3: shared goal execution across seats; accumulation 1: each episode is evaluated independently, with no new aggregate accounting"
 - Tier: 3
 - Intent: New elapsed budget inputs in hours and minutes are stored verbatim, so 24h stays 24h. Reject newly supplied d tokens with an explanation of the eight-hour legacy versus calendar-day ambiguity and an explicit-hour alternative. Preserve historical d records at their original eight-hour interpretation, including journal recovery; do not silently reinterpret or migrate a live budget.
 - Origin: main
 - Next step: Second independent successor of goal:breach-clock-and-budget-honesty. Reuse accepted Fix 2 and its review decisions in plans/breach-clock-and-budget-honesty-design.md. Retarget all actual input/replay writers and their tests to current main. Wait for goal:budget-raises-preserve-elapsed-origin before operational budget corrections, which otherwise reset the clock. Keep rollout deliberate with old and new binaries; do not absorb human-wait or quota work.
 - OpenedAt: 2026-09-11T05:37:45Z
-- Revision: 120
+- Revision: 121
 - Labels: breach-clock-successor
 - Pinned: m1c
 - Budget: elapsedLimit=1d attemptLimit=10 reservedJobMinutesLimit=1200 activeJobLimit=1 reviewRoundLimit=3
@@ -137,4 +137,5 @@ History:
 - 2026-09-16T20:31:47Z TVGXM9ANEJV81KJPRVG1TZ0VZV-m1e-c6925449 set-priority actor=human:Wido targets=census-lifecycle-scenario-holds-under-load,chain-landing-carries-the-reviewed-diff,dispatch-bases-chains-on-the-remote-tip,events-package-has-a-test-group,fixture-repo-copies-exclude-the-artifacts-store,fixture-waits-name-their-producer,human-authority-surface-runs-its-cmd-tests,human-wait-does-not-consume-goal-budget,metasystem-stop-escalation-proofs,metasystem-stop-fleet-form,new-elapsed-budgets-use-explicit-hours,pipelines-never-lose-a-truncated-producer,repo-root-paths-ride-agent-commits-unjudged,run-scoped-build-caches-have-a-janitor,skipped-test-fails-its-group-on-the-other-os reason=priority-order subject=run-scoped-build-caches-have-a-janitor from=1:65 to=1:64 requested-sequence=38
 - 2026-09-16T20:31:55Z MZ8CMERCF5WV60JPBWJT7P5P1R-m1e-c6925449 set-priority actor=human:Wido targets=census-lifecycle-scenario-holds-under-load,chain-landing-carries-the-reviewed-diff,dispatch-bases-chains-on-the-remote-tip,events-package-has-a-test-group,fixture-repo-copies-exclude-the-artifacts-store,fixture-waits-name-their-producer,human-authority-surface-runs-its-cmd-tests,human-wait-does-not-consume-goal-budget,metasystem-stop-escalation-proofs,metasystem-stop-fleet-form,new-elapsed-budgets-use-explicit-hours,pipelines-never-lose-a-truncated-producer,repo-root-paths-ride-agent-commits-unjudged,skipped-test-fails-its-group-on-the-other-os reason=priority-order subject=fixture-waits-name-their-producer from=1:64 to=1:63 requested-sequence=39
 - 2026-09-16T20:32:03Z DV0XMRG1CTZ5DY387DDZFHDXBH-m1e-c6925449 set-priority actor=human:Wido targets=census-lifecycle-scenario-holds-under-load,chain-landing-carries-the-reviewed-diff,dispatch-bases-chains-on-the-remote-tip,events-package-has-a-test-group,fixture-repo-copies-exclude-the-artifacts-store,human-authority-surface-runs-its-cmd-tests,human-wait-does-not-consume-goal-budget,metasystem-stop-escalation-proofs,metasystem-stop-fleet-form,new-elapsed-budgets-use-explicit-hours,pipelines-never-lose-a-truncated-producer,repo-root-paths-ride-agent-commits-unjudged,skipped-test-fails-its-group-on-the-other-os reason=priority-order subject=skipped-test-fails-its-group-on-the-other-os from=1:63 to=1:62 requested-sequence=40
-Integrity: sha256=bf72cff12616195e922acc9c18a4a8524d4dd890f9f40a49981f32f07177b390
+- 2026-09-16T20:32:09Z MTZMWKB9E103BMQECEWJA0YWGD-m1e-c6925449 set-priority actor=human:Wido targets=census-lifecycle-scenario-holds-under-load,chain-landing-carries-the-reviewed-diff,dispatch-bases-chains-on-the-remote-tip,events-package-has-a-test-group,fixture-repo-copies-exclude-the-artifacts-store,human-authority-surface-runs-its-cmd-tests,human-wait-does-not-consume-goal-budget,metasystem-stop-escalation-proofs,metasystem-stop-fleet-form,new-elapsed-budgets-use-explicit-hours,pipelines-never-lose-a-truncated-producer,repo-root-paths-ride-agent-commits-unjudged reason=priority-order subject=fixture-repo-copies-exclude-the-artifacts-store from=1:62 to=1:61 requested-sequence=41
+Integrity: sha256=f52900433477977436a7532479f0dafd5ca66cadcab8b9d60cd0499df454129a
