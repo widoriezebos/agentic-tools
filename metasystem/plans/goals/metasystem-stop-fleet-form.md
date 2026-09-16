@@ -1,6 +1,6 @@
 # metasystem-stop-fleet-form
 
-- State: approved
+- State: queued
 - Priority: 2
 - Sequence: 47
 - Risk: severity=3 novelty=2 exposure=3 accumulation=2 basis="severity 3: the fleet form signals processes in checkouts it does not own, and a wrong identity there ends a human session; novelty 2: one process enumeration shared with the census, and a registry that keeps no owner identity; exposure 3: every checkout on the host, not just the seat's own; accumulation 2: the directory-gone branch will be asked for again each time a checkout is removed"
@@ -9,11 +9,9 @@
 - Origin: main
 - Next step: Blocked until slice 1 lands. Read first: internal/registry/reduce.go keeps no owner process identity in PublishedOwner, so the directory-gone branch can only report what the registry actually holds, and internal/census exports no entry point that accepts a pre-enumerated process table, which is why the shared enumeration is deferred rather than faked. The closing design critique recorded both as STOP-R3-003 and STOP-R3-006 in records/misc/metasystem-stop-critique-r3.md
 - OpenedAt: 2026-09-07T07:30:31Z
-- Revision: 131
+- Revision: 132
 - Pinned: m1b
-- Budget: elapsedLimit=1d attemptLimit=10 reservedJobMinutesLimit=1200 activeJobLimit=1 reviewRoundLimit=3
 - BudgetExceptions: 0
-- Approved: by=human:Wido at=2026-09-13T07:44:54Z revision=7 opid=6R85TNRYBPWSAWECN8SB6AT3GW-m1e-c6925449 authority=proven digest=cea0e4b57162ca71bba141ddcf4e65d453acbd677080eee7cef7395f92cf0f3d
 
 History:
 - 2026-09-07T07:30:31Z 0B1KJ7PY0YEBJV104YWT9XAA4X-m1b-c6925449 open actor=m1b+main-1788680071-18713-e76d5d targets=metasystem-stop-fleet-form
@@ -147,4 +145,5 @@ History:
 - 2026-09-16T20:32:32Z HC8GDDX3DH5CE3W21P5ZKAG7ZW-m1e-c6925449 set-priority actor=human:Wido targets=census-lifecycle-scenario-holds-under-load,dispatch-bases-chains-on-the-remote-tip,events-package-has-a-test-group,human-wait-does-not-consume-goal-budget,metasystem-stop-escalation-proofs,metasystem-stop-fleet-form,new-elapsed-budgets-use-explicit-hours,pipelines-never-lose-a-truncated-producer reason=priority-order subject=dispatch-bases-chains-on-the-remote-tip from=1:56 to=1:55 requested-sequence=45
 - 2026-09-16T20:32:38Z G4Z1659A0JH8M2YQC7RVE32FPG-m1e-c6925449 set-priority actor=human:Wido targets=census-lifecycle-scenario-holds-under-load,events-package-has-a-test-group,human-wait-does-not-consume-goal-budget,metasystem-stop-escalation-proofs,metasystem-stop-fleet-form,new-elapsed-budgets-use-explicit-hours,pipelines-never-lose-a-truncated-producer reason=priority-order subject=metasystem-stop-escalation-proofs from=1:55 to=1:54 requested-sequence=46
 - 2026-09-16T20:32:45Z YSGCPTAR92E50X71Q7J8DSMCF1-m1e-c6925449 set-priority actor=human:Wido targets=census-lifecycle-scenario-holds-under-load,events-package-has-a-test-group,human-wait-does-not-consume-goal-budget,metasystem-stop-fleet-form,new-elapsed-budgets-use-explicit-hours,pipelines-never-lose-a-truncated-producer reason=priority-order subject=metasystem-stop-fleet-form from=1:54 to=2:47 requested-sequence=47
-Integrity: sha256=bca027d63a4e8da482760ae80bf440e0a4e57fdd38cc7bdd4c29f802d5f94cee
+- 2026-09-16T20:34:46Z RK8N63T5DE3A5E7YNVQ84XR74F-m1e-c6925449 unapprove actor=human:Wido targets=metasystem-stop-fleet-form reason=Wido 2026-09-16 22:40 CEST: clean house on priority 1 first, then a few human convenience features; every priority 2+ goal is unapproved until then
+Integrity: sha256=18c132c364a05f41df8b00532321837c708a0cc33c1b0e8635f2b5b8f183e0a7
