@@ -1,6 +1,6 @@
 # set-priority-treats-an-oversize-sequence-as-last
 
-- State: approved
+- State: queued
 - Priority: 3
 - Sequence: 42
 - Risk: severity=1 novelty=1 exposure=2 accumulation=1 basis="severity 1: a refused reorder, no wrong ledger state; novelty 1: clamp a bound that already has an append form; exposure 2: every human or seat reorder that names a position; accumulation 1: each refusal is visible and retried"
@@ -9,13 +9,12 @@
 - Origin: human
 - Next step: Build, tier 1: in internal/goal/order.go clamp a position above the destination maximum to the end instead of refusing, report the effective position in the result, keep the below-1 refusal, and extend the order tests.
 - OpenedAt: 2026-09-15T06:06:03Z
-- Revision: 3
-- Budget: elapsedLimit=1h attemptLimit=3 reservedJobMinutesLimit=360 activeJobLimit=1 reviewRoundLimit=0
+- Revision: 4
 - BudgetExceptions: 0
-- Approved: by=human:Wido at=2026-09-15T06:06:09Z revision=2 opid=4R1Q8B5DY6JN28KCAP8WQ3HW6V-m1e-c6925449 authority=proven digest=255226290d276d64ab74be365ff6bd0a7c5cec57627e31a4fe27a30d8f38b0ed
 
 History:
 - 2026-09-15T06:06:03Z 56ZG34WXN2DVPR59QM322CRG8B-m1e-c6925449 open actor=human:Wido targets=set-priority-treats-an-oversize-sequence-as-last
 - 2026-09-15T06:06:09Z 4R1Q8B5DY6JN28KCAP8WQ3HW6V-m1e-c6925449 approve actor=human:Wido targets=set-priority-treats-an-oversize-sequence-as-last
 - 2026-09-15T06:06:15Z STNM6WK6WE657ZSDC7B9N36KE8-m1e-c6925449 set-priority actor=human:Wido targets=set-priority-treats-an-oversize-sequence-as-last reason=priority-order subject=set-priority-treats-an-oversize-sequence-as-last from=unranked to=3:42 requested-sequence=append
-Integrity: sha256=77bfeed16a42d95c2fe5e11aaff189ff70158c847e699fb3b13072cb4ddf421f
+- 2026-09-16T20:35:19Z 05KYTN17SVSY9CC3DCR8JXE1PV-m1e-c6925449 unapprove actor=human:Wido targets=set-priority-treats-an-oversize-sequence-as-last reason=Wido 2026-09-16 22:40 CEST: clean house on priority 1 first, then a few human convenience features; every priority 2+ goal is unapproved until then
+Integrity: sha256=f72210894d82749c21acd1098fb2ac384265def022e1c9c4c40f314d6ffa24e0
