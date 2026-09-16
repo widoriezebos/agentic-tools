@@ -1,6 +1,6 @@
 # events-package-has-a-test-group
 
-- State: claimed
+- State: approved
 - Priority: 1
 - Sequence: 54
 - Risk: severity=2 novelty=1 exposure=2 accumulation=1 basis="severity 2: a regression in the event emitter that wait rows and wait measure read can land unproven, but no record is corrupted by the missing group itself; novelty 1: one Go group and one surface path, following dozens of existing groups; exposure 2: every landing that touches internal/events; accumulation 1: each unproven landing is one more untested change, and the fix stops the accumulation at once"
@@ -9,13 +9,12 @@
 - Origin: human
 - Next step: Seat m1b: one Codex gpt-5.6-sol unit (testing.json only, no Go code change; the expected shape is the group added to the residual standard list and to context-budget's, which TestContextTestingContractSelectsProof holds equal), the seat's own read, test plan evidence on a one-line change, then a deep proof on the lane's next stack. No design round. Opened in the name of Wido by seat m1e from the enrolled pane on his word 2026-09-16 about 20:45 CEST (m1b drafted the open). BUILT AND READ 2026-09-16 18:55Z (m1b): Codex job m1b-evtg1-1789584286 changed three lines of metasystem/testing.json: group events-standard after context-foundations-standard, and events-standard after context-foundations-standard in the standard lists of residual and context-budget. The seat's read: no other group or surface changed and the two standard lists are equal. In the job worktree, test check reports READY with 74 groups, and go test passes for ./internal/events, ./internal/testpolicy and TestContextTestingContractSelectsProof. DONE 3 evidence: test plan --purpose diagnostic at base 752d1d621, where testing.json, internal/testpolicy and internal/events are the same blobs as at 235e6d564. Tree 147b251b8 (base plus one comment line in internal/events/emit.go) selects 53 groups, deep, on surface residual. Tree 5b5be370f (the same plus the candidate testing.json) selects those 53 in the same order plus events-standard, and drops none. Next: the deep proof of trunk plus the candidate testing.json after the trunk-reds fix lands (the proof selects section/goal-cli-fixtures and section/supervision-and-census-fixtures), then the landing through m1e's lane. PROVED 2026-09-16 19:54Z: deep proof attempt proof-mu4hzoan-cbafe5abbc6b230a on tree 105487fbb at 28ea2f22b (trunk green after the trunk-reds landing c3b982a75), 48 selected, executed and passed, none reused, 1307s. The candidate changes only testing.json, so the proof does not select events-standard; after the landing the seat runs test run --groups events-standard at the new tip so DONE 1 has a runner execution. Diff, message, receipt row and attempt id handed to m1e's lane. LANDED 2026-09-16 20:41:50Z as ddac6a2ef through m1e lane 7 (second stack; the next landing followed as d14bbaa4f). Stack deep proof proof-mu4jocvm-0c9966a23c1b77e3 (candidate tree c51e6817c, policy base 6cf0eea8a): 55 selected and passed, and events-standard executed natively with exit 0 (DONE 1 runner execution). Canary proof-mu4kj1zy-73f1ceb296326951 at the final tip d14bbaa4f (canary mode, --groups events-standard): 4 groups passed, and events-standard executed with exit 0. Seat m1b checked both attempt records in m1e checkout. DONE 1-4 are met. The conclusion is human-reserved (human-opened goal): Wido, or m1e in his name from the enrolled pane.
 - OpenedAt: 2026-09-16T18:41:29Z
-- Revision: 32
+- Revision: 33
 - Budget: elapsedLimit=4h attemptLimit=6 reservedJobMinutesLimit=720 activeJobLimit=1 reviewRoundLimit=2
 - BudgetExceptions: 0
 - Approved: by=human:Wido at=2026-09-16T18:41:36Z revision=3 opid=Y4SHVAC3108FGYZD6MS9MS6E1N-m1e-c6925449 authority=proven digest=ea15b55d2e1e05afbc7c732a380b5fdcae2d06fef110f62867083d93cb259b40
 - Sliced: machine=m1b lineage=main-1789560571-22295-8d907a revision=4 at=2026-09-16T18:44:51Z
-- Claimed: machine=m1b lineage=main-1789560571-22295-8d907a at=2026-09-16T18:44:37Z revision=4 accountingRevision=4 episodeAt=2026-09-16T18:44:37Z episodeRevision=4
-- StopCapability: generation=4 revision=4 machine=m1b claimEpoch=3 fenceEpoch=0
+- Episode: machine=m1b lineage=main-1789560571-22295-8d907a accountingRevision=4 episodeAt=2026-09-16T18:44:37Z episodeRevision=4 idleSeconds=0 released=2026-09-16T20:51:04Z
 
 History:
 - 2026-09-16T18:41:29Z AFWPGKZ6YKSFVAXZ4WTFWVKT95-m1e-c6925449 open actor=human:Wido targets=events-package-has-a-test-group
@@ -50,4 +49,5 @@ History:
 - 2026-09-16T20:32:51Z 767PDWBW38QGNKWQNPP2ZXQZ3H-m1e-c6925449 set-priority actor=human:Wido targets=census-lifecycle-scenario-holds-under-load,events-package-has-a-test-group,human-wait-does-not-consume-goal-budget,new-elapsed-budgets-use-explicit-hours,pipelines-never-lose-a-truncated-producer reason=priority-order subject=human-wait-does-not-consume-goal-budget from=1:56 to=1:55 requested-sequence=48
 - 2026-09-16T20:32:55Z GS9W7K77HQFFN3G21X02BVJ30P-m1e-c6925449 set-priority actor=human:Wido targets=census-lifecycle-scenario-holds-under-load,events-package-has-a-test-group,new-elapsed-budgets-use-explicit-hours,pipelines-never-lose-a-truncated-producer reason=priority-order subject=new-elapsed-budgets-use-explicit-hours from=1:55 to=1:54 requested-sequence=49
 - 2026-09-16T20:50:53Z PT89VTBW161H7AVM1YEKT5J1NZ-m1b-d0e95724 edit actor=m1b+main-1789560571-22295-8d907a targets=events-package-has-a-test-group
-Integrity: sha256=3d6a6242fe0db52a991cf6578294c2d74220dd36bf7ec222c00b71acf10d107b
+- 2026-09-16T20:51:04Z CNPSZ51NQ1PG2FJE6MV1HCBEAC-m1b-d0e95724 release actor=m1b+main-1789560571-22295-8d907a targets=events-package-has-a-test-group
+Integrity: sha256=5a42c81bb99d93fdd190dbc2b373b37c19fbc9f5359fc88005043015cd5d082b
