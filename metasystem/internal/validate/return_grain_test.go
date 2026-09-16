@@ -32,7 +32,7 @@ func TestMechanicalRigorRequiresBehaviourAndFixture(t *testing.T) {
 	requireReturnGrain(t, check() == "", "invariant row required mechanical proof: %s", check())
 }
 
-func TestReturnVersionFiveRoleGateAndNoClosePolicy(t *testing.T) {
+func TestReturnVersionFiveRoleGateAndNoValidatorClosePolicy(t *testing.T) {
 	root := t.TempDir()
 	dir := filepath.Join(root, "scripts", "agents", "schemas")
 	requireReturnGrain(t, os.MkdirAll(dir, 0o755) == nil, "create schema directory")
@@ -53,10 +53,11 @@ func TestReturnVersionFiveRoleGateAndNoClosePolicy(t *testing.T) {
 		got := strings.Join(ReturnCompleteRole(root, role, write(role+".json", candidate)), "\n")
 		requireReturnGrain(t, strings.Contains(got, "unknown return schema version"), "%s version %d was not refused by name: %s", role, version, got)
 	}
+}
+
+func TestMaterialByRoundPublishedWithFoldedRound(t *testing.T) {
 	data, err := os.ReadFile(filepath.Join("..", "dispatch", "finding_register.go"))
 	requireReturnGrain(t, err == nil, "read finding_register.go: %v", err)
 	source := string(data)
 	requireReturnGrain(t, strings.Contains(source, "root[findingRegisterRoundField] = round\n\t\t\tmaterialHistory, historyErr := appendMaterialRound") && strings.Contains(source, "root[materialByRoundField] = materialHistory"), "materialByRound is not published beside the folded round")
-	closeSource := strings.Split(strings.Split(source, "func CritiqueRegisterClose")[1], "func cleanClosure")[0]
-	requireReturnGrain(t, !strings.Contains(closeSource, "materialByRound") && !strings.Contains(closeSource, ".Grain"), "CritiqueRegisterClose applies policy from trajectory or grain")
 }

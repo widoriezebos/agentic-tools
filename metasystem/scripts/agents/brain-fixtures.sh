@@ -368,7 +368,7 @@ internal/channel/poll.go:		published, err := goal.Answer(goal.VerbRequest{Endpoi
 internal/channel/poll.go:		published, err := goal.Approve(goal.VerbRequest{Endpoint: ep, Actor: goal.Actor{Machine: c.Machine, Lineage: c.Lineage, Human: "wido"}, Ulid: ulid, Now: c.Now}, []string{status.GoalID}, nil, &proof)
 internal/channel/question.go:		published, e := goal.Asked(goal.VerbRequest{Endpoint: ep, Actor: goal.Actor{Machine: r.Machine, Lineage: r.Lineage}, Ulid: ulid, Now: r.Now}, r.Goal, id, r.Kind, r.Facts[0])
 internal/dispatch/claim.go:		Endpoint: endpoint, Actor: goal.Actor{Machine: binding.Machine, Lineage: binding.Lineage},
-internal/dispatch/finding_register.go:			req := goal.VerbRequest{Endpoint: endpoint, Actor: goal.Actor{Machine: machine, Lineage: lineage}, Ulid: deterministicULID(rootJob), Now: time.Now().UTC(), ClaimEpoch: epoch}
+internal/dispatch/finding_register.go:	req := goal.VerbRequest{Endpoint: endpoint, Actor: goal.Actor{Machine: machine, Lineage: lineage}, Ulid: deterministicULID(rootJob), Now: time.Now().UTC(), ClaimEpoch: epoch}
 internal/dispatch/stop.go:				Actor:    goal.Actor{Machine: binding.Machine, Lineage: stopCustodianLineage},
 internal/dispatch/stop.go:	actor := goal.Actor{Machine: binding.Machine, Lineage: stopCustodianLineage}
 internal/goal/recover.go:		r.Actor.Human = by

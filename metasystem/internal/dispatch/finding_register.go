@@ -39,6 +39,7 @@ type registerFinding struct {
 	Critic         string
 	RigorClass     critiqueModel.RigorClass
 	Grain          string
+	Fixture        string
 	FactsDigest    string
 	Facts          any
 	Artifact       string
@@ -551,6 +552,12 @@ func CritiqueRegisterResolveOutOfScope(repoRoot, rootJob string, findingIDs []st
 }
 
 func CritiqueRegisterClose(repoRoot, rootJob string) (string, error) {
+	return critiqueRegisterClose(repoRoot, rootJob, deferReviewObligations)
+}
+
+type deferReviewObligationsFunc func(string, string, string, string, string, int64, []goal.ReviewObligation) (string, error)
+
+func critiqueRegisterClose(repoRoot, rootJob string, deferFindings deferReviewObligationsFunc) (string, error) {
 	return withFindingRegisterLock(repoRoot, func() (string, error) {
 		state := loadCritiqueState(repoRoot)
 		outcome := "closed"
@@ -568,29 +575,54 @@ func CritiqueRegisterClose(repoRoot, rootJob string) (string, error) {
 			}
 			var unresolved []int
 			var blockers []string
+			var blockerIDs []string
 			for i, f := range register {
 				if f.Status == "open" || f.Status == "disputed" {
 					unresolved = append(unresolved, i)
 					if f.RigorClass == critiqueModel.Severe || f.RigorClass == critiqueModel.Unproven {
 						blockers = append(blockers, fmt.Sprintf("finding %s artifact=%s is %s and blocks close", f.FindingID, f.Artifact, f.RigorClass))
+						blockerIDs = append(blockerIDs, f.FindingID)
 					}
 				}
 				if f.Resolution == "out-of-scope" && (f.RigorClass == critiqueModel.Severe || f.RigorClass == critiqueModel.Unproven) {
 					blockers = append(blockers, fmt.Sprintf("finding %s artifact=%s is illegally resolved out-of-scope", f.FindingID, f.Artifact))
+					blockerIDs = append(blockerIDs, f.FindingID)
 				}
 			}
 			if len(blockers) > 0 {
+				foldedRound, roundOK := numInt(root[findingRegisterRoundField])
+				if asString(root["role"]) == "design-critic" && roundOK && foldedRound == 2 {
+					return roundTwoHumanRaise(roundTwoHumanFindingIDs(root, register, unresolved, blockerIDs))
+				}
 				return fmt.Errorf("%s; next: goal accept-risk --finding <id> --chain <root> --by <human> --why, or raise the goal budget and run job critique-budget-rebind", strings.Join(blockers, "\n"))
 			}
 			if len(unresolved) == 0 {
+				// Section 4 bullet 3 closes a clean folded second round.
 				return nil
 			}
-			accounting, err := critiqueRoundAccounting(repoRoot, state, rootJob, root)
+			foldedRound, err := findingRegisterRound(root, len(register))
 			if err != nil {
-				return malformedRoundAccounting(rootJob, err)
+				return err
 			}
-			if accounting.consumed < accounting.limit {
-				return fmt.Errorf("review budget is not exhausted; dispatch the next round")
+			designRoundTwo := asString(root["role"]) == "design-critic" && foldedRound == 2
+			useFixture := false
+			if designRoundTwo {
+				// Section 4 bullet 4 defers only fixture-backed mechanical findings on a falling trajectory;
+				// bullet 5 sends every other non-clean row to the human without another automatic round.
+				humanIDs := roundTwoHumanFindingIDs(root, register, unresolved, nil)
+				if len(humanIDs) > 0 {
+					return roundTwoHumanRaise(humanIDs)
+				}
+				useFixture = true
+			}
+			if !designRoundTwo {
+				accounting, accountingErr := critiqueRoundAccounting(repoRoot, state, rootJob, root)
+				if accountingErr != nil {
+					return malformedRoundAccounting(rootJob, accountingErr)
+				}
+				if accounting.consumed < accounting.limit {
+					return fmt.Errorf("review budget is not exhausted; dispatch the next round")
+				}
 			}
 			goalID := asString(root["goalId"])
 			machine := asString(root["machineId"])
@@ -599,20 +631,19 @@ func CritiqueRegisterClose(repoRoot, rootJob string) (string, error) {
 			if goalID == "" || machine == "" || lineage == "" || epoch < 1 {
 				return fmt.Errorf("critic root has no complete owning goal pair")
 			}
-			endpoint, err := goal.ResolveEndpoint(repoRoot)
-			if err != nil {
-				return err
-			}
-			req := goal.VerbRequest{Endpoint: endpoint, Actor: goal.Actor{Machine: machine, Lineage: lineage}, Ulid: deterministicULID(rootJob), Now: time.Now().UTC(), ClaimEpoch: epoch}
 			obligations := make([]goal.ReviewObligation, 0, len(unresolved))
 			for _, i := range unresolved {
 				f := register[i]
-				obligations = append(obligations, goal.ReviewObligation{Finding: f.FindingID, Chain: rootJob, Artifact: f.Artifact, Test: "prove: " + strings.Split(f.Title, "\n")[0], State: "open"})
+				test := strings.Split(f.Title, "\n")[0]
+				if useFixture {
+					test = f.Fixture
+				}
+				obligations = append(obligations, goal.ReviewObligation{Finding: f.FindingID, Chain: rootJob, Artifact: f.Artifact, Test: "prove: " + test, State: "open"})
 			}
-			if _, err := goal.DeferFindings(req, goalID, obligations); err != nil {
+			opid, err := deferFindings(repoRoot, rootJob, goalID, machine, lineage, epoch, obligations)
+			if err != nil {
 				return err
 			}
-			opid := goal.Opid(req.Ulid, machine, lineage)
 			for _, i := range unresolved {
 				register[i].Status = "deferred"
 				register[i].Resolution = "deferred"
@@ -624,6 +655,73 @@ func CritiqueRegisterClose(repoRoot, rootJob string) (string, error) {
 		})
 		return outcome, err
 	})
+}
+
+func deferReviewObligations(repoRoot, rootJob, goalID, machine, lineage string, epoch int64, obligations []goal.ReviewObligation) (string, error) {
+	endpoint, err := goal.ResolveEndpoint(repoRoot)
+	if err != nil {
+		return "", err
+	}
+	req := goal.VerbRequest{Endpoint: endpoint, Actor: goal.Actor{Machine: machine, Lineage: lineage}, Ulid: deterministicULID(rootJob), Now: time.Now().UTC(), ClaimEpoch: epoch}
+	result, err := goal.DeferFindings(req, goalID, obligations)
+	if err != nil {
+		return "", err
+	}
+	// A rejected publish returns no error; the register must not record a deferral the goal does not carry.
+	if result.Outcome != goal.OutcomeConfirmed && result.Outcome != goal.OutcomeConfirmedLate {
+		return "", fmt.Errorf("goal %s defer-findings ended %s: %s; the findings stay open", goalID, result.Outcome, result.Detail)
+	}
+	return goal.Opid(req.Ulid, machine, lineage), nil
+}
+
+func roundTwoHumanRaise(findingIDs []string) error {
+	unique := map[string]bool{}
+	for _, id := range findingIDs {
+		unique[id] = true
+	}
+	ids := make([]string, 0, len(unique))
+	for id := range unique {
+		ids = append(ids, id)
+	}
+	sort.Strings(ids)
+	return refuse(CritiqueCapExhaustedExitCode, "%s: findings %s require human action; next: goal accept-risk --finding <id> --chain <root> --by <human> --why, or a re-scope by goal edit", CritiqueCapExhaustedReason, strings.Join(ids, ", "))
+}
+
+func roundTwoHumanFindingIDs(root map[string]any, register []registerFinding, unresolved []int, ids []string) []string {
+	for _, i := range unresolved {
+		f := register[i]
+		if f.Grain != "mechanical" || f.Fixture == "" {
+			ids = append(ids, f.FindingID)
+		}
+	}
+	if !fallingMaterialTrajectory(root[materialByRoundField]) {
+		for _, i := range unresolved {
+			ids = append(ids, register[i].FindingID)
+		}
+	}
+	return ids
+}
+
+func fallingMaterialTrajectory(value any) bool {
+	history, ok := value.([]any)
+	if !ok {
+		return false
+	}
+	material := map[int64]int64{}
+	var last int64
+	for _, raw := range history {
+		row, ok := raw.(map[string]any)
+		round, roundOK := numInt(row["round"])
+		count, countOK := numInt(row["material"])
+		if !ok || len(row) != 2 || !roundOK || !countOK || round <= last || round > 2 || count < 0 {
+			return false
+		}
+		last = round
+		material[round] = count
+	}
+	roundOne, onePresent := material[1]
+	roundTwo, twoPresent := material[2]
+	return onePresent && twoPresent && roundTwo < roundOne
 }
 
 func cleanClosure(state critiqueState, rootJob string, root map[string]any, register []registerFinding) (Closure, bool, error) {
@@ -842,7 +940,7 @@ func decodeFindingRegister(value any) ([]registerFinding, error) {
 	register := make([]registerFinding, 0, len(items))
 	for index, raw := range items {
 		entry, ok := raw.(map[string]any)
-		if !ok || (len(entry) != 7 && len(entry) != 13 && len(entry) != 14) {
+		if !ok || (len(entry) != 7 && len(entry) != 13 && len(entry) != 14 && len(entry) != 15) {
 			return nil, fmt.Errorf("entry %d is not an object with the canonical fields", index)
 		}
 		finding := registerFinding{
@@ -860,8 +958,11 @@ func decodeFindingRegister(value any) ([]registerFinding, error) {
 			Evidence:       asString(entry["evidence"]),
 			EvidenceDigest: asString(entry["evidenceDigest"]),
 		}
-		if len(entry) == 14 {
+		if len(entry) == 14 || len(entry) == 15 {
 			finding.Grain = asString(entry["grain"])
+		}
+		if len(entry) == 15 {
+			finding.Fixture = asString(entry["fixture"])
 		}
 		if len(entry) == 7 && finding.Status == "resolved" {
 			finding.Resolution = "withdrawn"
@@ -873,7 +974,7 @@ func decodeFindingRegister(value any) ([]registerFinding, error) {
 			(finding.Status != "open" && finding.Status != "resolved" && finding.Status != "disputed" && finding.Status != "deferred" && finding.Status != "accepted-risk") {
 			return nil, fmt.Errorf("entry %d has invalid canonical values", index)
 		}
-		if len(entry) == 13 || len(entry) == 14 {
+		if len(entry) == 13 || len(entry) == 14 || len(entry) == 15 {
 			unresolved := finding.Status == "open" || finding.Status == "disputed"
 			if unresolved && (finding.Resolution != "" || finding.DecisionOpID != "") {
 				return nil, fmt.Errorf("entry %d carries a resolution while unresolved", index)
@@ -920,7 +1021,7 @@ func encodeFindingRegister(register []registerFinding) []any {
 		}
 		items[index] = map[string]any{
 			"findingId": finding.FindingID, "critic": finding.Critic,
-			"rigorClass": string(finding.RigorClass), "grain": grain, "factsDigest": finding.FactsDigest,
+			"rigorClass": string(finding.RigorClass), "grain": grain, "fixture": finding.Fixture, "factsDigest": finding.FactsDigest,
 			"status": finding.Status, "evidenceDigest": finding.EvidenceDigest,
 			"multiplicity": finding.Multiplicity, "facts": finding.Facts,
 			"artifact": finding.Artifact, "title": finding.Title,
@@ -1146,10 +1247,15 @@ func foldCritiqueFindingsVersioned(register []registerFinding, role, roundJob st
 		if schemaVersion == 5 && asString(row["grain"]) == "mechanical" {
 			grain = "mechanical"
 		}
+		fixture := ""
+		if schemaVersion == 5 {
+			fixture = asString(row["fixture"])
+		}
 		title := strings.TrimSpace(strings.Split(strings.ReplaceAll(asString(finding["claim"]), "\r\n", "\n"), "\n")[0])
 		candidate := registerFinding{
 			FindingID: id, Critic: roundJob, RigorClass: class,
 			Grain:       grain,
+			Fixture:     fixture,
 			FactsDigest: factsDigest, Facts: row["facts"], Artifact: artifact, Title: title, Status: "open",
 			Evidence: asString(finding["evidence"]), EvidenceDigest: digestJSON(finding["evidence"]), Multiplicity: identity.Multiplicity,
 		}
@@ -1164,6 +1270,7 @@ func foldCritiqueFindingsVersioned(register []registerFinding, role, roundJob st
 			candidate.Grain = current.Grain
 		}
 		advanced[existingIndex].Grain = candidate.Grain
+		advanced[existingIndex].Fixture = candidate.Fixture
 		if candidate.Multiplicity > current.Multiplicity {
 			advanced[existingIndex].Multiplicity = candidate.Multiplicity
 			current.Multiplicity = candidate.Multiplicity

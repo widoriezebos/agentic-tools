@@ -68,7 +68,10 @@ func CleanRegister(value any) (bool, error) {
 		withGrain := hasExactFields(entry,
 			"findingId", "critic", "rigorClass", "grain", "factsDigest", "facts", "artifact", "title",
 			"status", "resolution", "decisionOpid", "evidence", "evidenceDigest", "multiplicity")
-		if !legacy && !modern && !withGrain {
+		withFixture := hasExactFields(entry,
+			"findingId", "critic", "rigorClass", "grain", "fixture", "factsDigest", "facts", "artifact", "title",
+			"status", "resolution", "decisionOpid", "evidence", "evidenceDigest", "multiplicity")
+		if !legacy && !modern && !withGrain && !withFixture {
 			return false, fmt.Errorf("finding register entry %d is not an object with the canonical fields", index)
 		}
 		status, ok := entry["status"].(string)
