@@ -1765,11 +1765,14 @@ fi
 if [[ ${1:-} == steward && ${2:-} == hook-attempt ]]; then
   "${METASYSTEM_DEADLINE_REAL_ENGINE:?}" "$@" || exit $?
   hook_parent=$PPID
+  release_file=${METASYSTEM_DEADLINE_RELEASE_FILE:?}
   delay_started=$SECONDS
-  while kill -0 "$hook_parent" 2>/dev/null && (( SECONDS - delay_started < 61 )); do
+  while [[ ! -e "$release_file" ]] && kill -0 "$hook_parent" 2>/dev/null &&
+      (( SECONDS - delay_started < 61 )); do
     sleep 0.05
   done
   if kill -0 "$hook_parent" 2>/dev/null; then
+    [[ ! -e "$release_file" ]] || { echo "supervision hook deadline fixture released while its hook worker was alive" >&2; exit 70; }
     echo "supervision hook deadline fixture delay ceiling reached (elapsed: $((SECONDS - delay_started))s; cap: 61s)" >&2
     exit 70
   fi
@@ -1781,34 +1784,50 @@ chmod +x "$deadline_engine"
 deadline_expected='{"systemMessage":"Task unknown; Stop allowed; needs supervision repair; stop deadline expired. The steward must restore supervision. Status unavailable."}'
 if [[ "$fixture_scenario" == deadline-expiry ]]; then
 harness_fixture_bed_leg deadline-expiry-and-repeat
+# The worker window is at least ten times the worst observed head time before the first asserted
+# engine call; the tail allowance is + 30 seconds.
+deadline_budget_sec=20
+deadline_worker_floor=$((deadline_budget_sec - 3))
+deadline_elapsed_limit=$((deadline_budget_sec + 30))
+deadline_release_file=$tmp/deadline-expiry.release
 deadline_started=$SECONDS
 deadline_rc=0
 METASYSTEM_BIN="$deadline_engine" METASYSTEM_DEADLINE_REAL_ENGINE="$ms" \
+  METASYSTEM_DEADLINE_RELEASE_FILE="$deadline_release_file" \
+  METASYSTEM_STOP_DEADLINE_BUDGET_SEC="$deadline_budget_sec" \
   bash "$line_root/scripts/agents/supervision-hook.sh" claude stop <"$tmp/line-payload.json" \
     >"$tmp/deadline.out" 2>"$tmp/deadline.err" || deadline_rc=$?
 deadline_elapsed=$((SECONDS - deadline_started))
 (( deadline_rc == 0 )) \
   || { echo "supervision hook deadline fixture did not exit successfully: $deadline_rc" >&2; exit 1; }
-(( deadline_elapsed < 60 )) \
-  || { echo "supervision hook deadline fixture exceeded the provider's sixty-second budget: ${deadline_elapsed}s" >&2; exit 1; }
+(( deadline_elapsed < deadline_elapsed_limit )) \
+  || { echo "supervision hook deadline fixture exceeded its injected budget margin: ${deadline_elapsed}s" >&2; exit 1; }
 [[ $(<"$tmp/deadline.out") == "$deadline_expected" ]] \
   || { echo "supervision hook deadline fixture did not emit its fixed degraded timeout" >&2; cat "$tmp/deadline.out" >&2; exit 1; }
 if grep -Fq '"decision":"block"' "$tmp/deadline.out"; then
   echo "supervision hook deadline fixture blocked on infrastructure" >&2; exit 1
 fi
-grep -Eq 'stop response outcome=deadline-expired-allow elapsed=5[0-9]s$' \
-  "$line_root/artifacts/agents/supervision/hooks.log" \
+deadline_trail_elapsed=$(sed -n \
+  's/^.*stop response outcome=deadline-expired-allow elapsed=\([0-9][0-9]*\)s$/\1/p' \
+  "$line_root/artifacts/agents/supervision/hooks.log" | tail -1)
+[[ "$deadline_trail_elapsed" =~ ^[0-9]+$ ]] \
+  && (( deadline_trail_elapsed >= deadline_worker_floor && deadline_trail_elapsed < deadline_elapsed_limit )) \
   || { echo "supervision hook deadline fixture did not log its elapsed deadline refusal" >&2; exit 1; }
 grep -Fq 'stop-condition infrastructure stop-deadline-expired stop-deadline ' \
   "$line_root/artifacts/agents/supervision/hooks.log" \
   || { echo "supervision hook deadline fixture omitted its condition line" >&2; exit 1; }
 [[ $($ms json get --file "$hook_evidence" --field outcome) == DEADLINE_EXPIRED ]] \
   || { echo "supervision hook deadline fixture did not complete the expired attempt" >&2; exit 1; }
-grep -Eq '"lastStopElapsedSec": 5[0-9]' "$hook_evidence" \
-  && grep -Eq '"stopElapsedSec": 5[0-9]' "$hook_evidence" \
+deadline_last_stop_elapsed=$(sed -n 's/^.*"lastStopElapsedSec": \([0-9][0-9]*\).*$/\1/p' "$hook_evidence" | tail -1)
+deadline_stop_elapsed=$(sed -n 's/^.*"stopElapsedSec": \([0-9][0-9]*\).*$/\1/p' "$hook_evidence" | tail -1)
+[[ "$deadline_last_stop_elapsed" =~ ^[0-9]+$ && "$deadline_stop_elapsed" =~ ^[0-9]+$ ]] \
+  && (( deadline_last_stop_elapsed >= deadline_worker_floor && deadline_last_stop_elapsed < deadline_elapsed_limit )) \
+  && (( deadline_stop_elapsed >= deadline_worker_floor && deadline_stop_elapsed < deadline_elapsed_limit )) \
   || { echo "supervision hook deadline fixture did not retain the elapsed expiry measurement" >&2; exit 1; }
 deadline_second_rc=0
 METASYSTEM_BIN="$deadline_engine" METASYSTEM_DEADLINE_REAL_ENGINE="$ms" \
+  METASYSTEM_DEADLINE_RELEASE_FILE="$deadline_release_file" \
+  METASYSTEM_STOP_DEADLINE_BUDGET_SEC="$deadline_budget_sec" \
   bash "$line_root/scripts/agents/supervision-hook.sh" claude stop <"$tmp/line-payload.json" \
     >"$tmp/deadline-second.out" 2>"$tmp/deadline-second.err" || deadline_second_rc=$?
 (( deadline_second_rc == 0 )) \
@@ -1822,6 +1841,71 @@ deadline_record="$line_root/artifacts/agents/supervision/stop-refusals/line-fixt
 grep -Fq '"cause": "stop deadline expired"' "$deadline_record" \
   && grep -Fq '"count": 2' "$deadline_record" \
   || { echo "repeated deadline overrun lost its recorded cause or occurrence count" >&2; cat "$deadline_record" >&2; exit 1; }
+
+deadline_budget_engine=$tmp/deadline-budget-engine
+cat >"$deadline_budget_engine" <<'SH'
+#!/usr/bin/env bash
+if [[ ${1:-} == runtime && ${2:-} == list ]]; then
+  exit 3
+fi
+exec "${METASYSTEM_DEADLINE_BUDGET_REAL_ENGINE:?}" "$@"
+SH
+chmod +x "$deadline_budget_engine"
+deadline_budget_bin=$tmp/deadline-budget-bin
+mkdir -p "$deadline_budget_bin"
+deadline_budget_date=$deadline_budget_bin/date
+deadline_budget_real_date=$(command -v date)
+cat >"$deadline_budget_date" <<'SH'
+#!/usr/bin/env bash
+if [[ ${1:-} == -u && ${2:-} == +%s && ! -e "${METASYSTEM_DEADLINE_START_FILE:?}" ]]; then
+  started=$("${METASYSTEM_DEADLINE_REAL_DATE:?}" "$@") || exit $?
+  printf '%s\n' "$started" >"$METASYSTEM_DEADLINE_START_FILE"
+  printf '%s\n' "$started"
+  exit 0
+fi
+exec "${METASYSTEM_DEADLINE_REAL_DATE:?}" "$@"
+SH
+chmod +x "$deadline_budget_date"
+assert_deadline_condition_budget() { # input, expected budget, failure message
+  local input=$1 expected_budget=$2 failure_message=$3 payload output start_file log_start before after
+  local condition_start condition_end condition_rc
+  payload=$tmp/deadline-budget-$input.json
+  output=$tmp/deadline-budget-$input.out
+  start_file=$tmp/deadline-budget-$input.start
+  printf '{"session_id":"deadline-budget-%s","cwd":"%s","hook_event_name":"Stop"}\n' \
+    "$input" "$line_root" >"$payload"
+  log_start=$(wc -l <"$line_root/artifacts/agents/supervision/hooks.log")
+  before=$(date -u +%s)
+  condition_rc=0
+  PATH="$deadline_budget_bin:$PATH" METASYSTEM_BIN="$deadline_budget_engine" METASYSTEM_DEADLINE_BUDGET_REAL_ENGINE="$ms" \
+    METASYSTEM_DEADLINE_REAL_DATE="$deadline_budget_real_date" METASYSTEM_DEADLINE_START_FILE="$start_file" \
+    METASYSTEM_STOP_DEADLINE_BUDGET_SEC="$input" \
+    bash "$line_root/scripts/agents/supervision-hook.sh" claude stop <"$payload" \
+      >"$output" 2>"$tmp/deadline-budget-$input.err" || condition_rc=$?
+  after=$(date -u +%s)
+  (( condition_rc == 0 )) \
+    || { echo "deadline budget input $input did not produce an infrastructure allowance" >&2; exit 1; }
+  condition_start=
+  [[ ! -f "$start_file" ]] || condition_start=$(<"$start_file")
+  condition_end=$(sed -n "$((log_start + 1)),\$p" \
+      "$line_root/artifacts/agents/supervision/hooks.log" \
+    | sed -n 's/^stop-condition infrastructure stop-hook-output-was-unreadable stop-worker - \([0-9][0-9]*\) degraded-allow$/\1/p' \
+    | tail -1)
+  [[ "$condition_start" =~ ^[0-9]+$ && "$condition_end" =~ ^[0-9]+$ ]] \
+    || { echo "deadline budget input $input left no readable infrastructure condition horizon" >&2; exit 1; }
+  if ! (( condition_end - condition_start == expected_budget &&
+      condition_end - after <= expected_budget && expected_budget <= condition_end - before )); then
+    echo "$failure_message" >&2
+    echo "deadline budget bracket: before=$before start=$condition_start after=$after end=$condition_end expected=$expected_budget" >&2
+    exit 1
+  fi
+}
+assert_deadline_condition_budget 3 60 \
+  'deadline budget rejected lower-bound input 3 did not keep the default sixty-second condition horizon'
+assert_deadline_condition_budget 61 60 \
+  'deadline budget rejected upper-bound input 61 did not keep the default sixty-second condition horizon'
+assert_deadline_condition_budget 20 20 \
+  'deadline budget accepted input 20 did not set a twenty-second condition horizon'
 exit 0
 fi
 
@@ -1880,6 +1964,8 @@ deadline_record_failure_log_start=$(wc -l <"$line_root/artifacts/agents/supervis
 deadline_record_failure_rc=0
 METASYSTEM_BIN="$prefix_engine" METASYSTEM_PREFIX_DEADLINE_ENGINE="$deadline_engine" \
   METASYSTEM_DEADLINE_REAL_ENGINE="$ms" METASYSTEM_DEADLINE_RECORD_FAILURE=1 \
+  METASYSTEM_DEADLINE_RELEASE_FILE="$tmp/deadline-record-failure.release" \
+  METASYSTEM_STOP_DEADLINE_BUDGET_SEC=20 \
   bash "$line_root/scripts/agents/supervision-hook.sh" claude stop \
     <"$tmp/deadline-record-failure-payload.json" \
     >"$tmp/deadline-record-failure.out" 2>"$tmp/deadline-record-failure.err" \
@@ -1910,6 +1996,8 @@ chmod 0444 "$line_root/artifacts/agents/supervision/hooks.log"
 deadline_prefix_rc=0
 METASYSTEM_BIN="$prefix_engine" METASYSTEM_PREFIX_DEADLINE_ENGINE="$deadline_engine" \
   METASYSTEM_DEADLINE_REAL_ENGINE="$ms" \
+  METASYSTEM_DEADLINE_RELEASE_FILE="$tmp/deadline-log-failure.release" \
+  METASYSTEM_STOP_DEADLINE_BUDGET_SEC=20 \
   bash "$line_root/scripts/agents/supervision-hook.sh" claude stop <"$tmp/line-payload.json" \
     >"$tmp/deadline-prefix.out" 2>"$tmp/deadline-prefix.err" || deadline_prefix_rc=$?
 chmod 0644 "$line_root/artifacts/agents/supervision/hooks.log"
@@ -1940,18 +2028,25 @@ chmod +x "$empty_ps_dir/ps"
 printf '{"session_id":"empty-ps-deadline-fixture","cwd":"%s","hook_event_name":"Stop"}\n' \
   "$line_root" >"$tmp/empty-ps-deadline-payload.json"
 empty_ps_log_start=$(wc -l <"$line_root/artifacts/agents/supervision/hooks.log")
+# The worker window is at least ten times the worst observed head time before the first asserted
+# engine call; the tail allowance is + 30 seconds.
+empty_ps_budget_sec=20
+empty_ps_elapsed_limit=$((empty_ps_budget_sec + 30))
+empty_ps_release_file=$tmp/deadline-restricted-process.release
 empty_ps_started=$SECONDS
 empty_ps_rc=0
 PATH="$empty_ps_dir:$PATH" TMPDIR="$empty_ps_deadline_root" \
   METASYSTEM_BIN="$deadline_engine" METASYSTEM_DEADLINE_REAL_ENGINE="$ms" \
+  METASYSTEM_DEADLINE_RELEASE_FILE="$empty_ps_release_file" \
+  METASYSTEM_STOP_DEADLINE_BUDGET_SEC="$empty_ps_budget_sec" \
   bash "$line_root/scripts/agents/supervision-hook.sh" claude stop \
     <"$tmp/empty-ps-deadline-payload.json" \
     >"$tmp/empty-ps-deadline.out" 2>"$tmp/empty-ps-deadline.err" || empty_ps_rc=$?
 empty_ps_elapsed=$((SECONDS - empty_ps_started))
 (( empty_ps_rc == 0 )) \
   || { echo "empty-ps supervision hook deadline fixture returned $empty_ps_rc" >&2; exit 1; }
-(( empty_ps_elapsed < 60 )) \
-  || { echo "empty-ps supervision hook deadline fixture exceeded the provider's sixty-second budget: ${empty_ps_elapsed}s" >&2; exit 1; }
+(( empty_ps_elapsed < empty_ps_elapsed_limit )) \
+  || { echo "empty-ps supervision hook deadline fixture exceeded its injected budget margin: ${empty_ps_elapsed}s" >&2; exit 1; }
 [[ $(<"$tmp/empty-ps-deadline.out") == "$deadline_expected" ]] \
   || { echo "empty-ps supervision hook deadline fixture did not emit its fixed degraded timeout" >&2; cat "$tmp/empty-ps-deadline.out" >&2; exit 1; }
 if grep -Fq '"decision":"block"' "$tmp/empty-ps-deadline.out"; then
@@ -1967,6 +2062,7 @@ empty_ps_worker=$(sed -n 's/^stop deadline: worker \([0-9][0-9]*\) left running,
 empty_ps_deadline_dirs=("$empty_ps_deadline_root"/metasystem-stop-deadline.*)
 (( ${#empty_ps_deadline_dirs[@]} == 1 )) && [[ -d "${empty_ps_deadline_dirs[0]}" ]] \
   || { echo "empty-ps supervision hook deadline fixture did not retain exactly one worker directory" >&2; exit 1; }
+touch "$empty_ps_release_file"
 hook_process_pid=$empty_ps_worker
 hook_process_path=$line_root/scripts/agents/supervision-hook.sh
 empty_ps_worker_deadline=$((SECONDS + 70))

@@ -1093,14 +1093,19 @@ harness_root=$(cd "$script_dir/../.." && pwd -P) || exit 0
 # local steward handoff at the bound. The provider may enforce its own retry
 # cap independently of this hook-owned bound.
 
-# The Stop timeout is our sixty-second budget. Registration templates under
+# The Stop timeout is a sixty-second budget by default. Registration templates under
 # metasystem/scripts/enforcement ship it, adopt.sh installs it into each
-# runtime's live settings, and it matches the runtime's own default. This
-# parent gives the worker fifty-seven seconds for arming, health, digest,
+# runtime's live settings, and it matches the runtime's own default. The parent
+# gives the worker the budget minus three seconds for arming, health, digest,
 # watchdog, ledger fetch, and verdict work, then retains three seconds to emit
 # a provider-level refusal. This block owns the budget.
 if [[ "$event" == stop && "${METASYSTEM_STOP_DEADLINE_PARENT:-}" != "$PPID" ]]; then
-  deadline_budget_sec=60
+  deadline_budget_sec=${METASYSTEM_STOP_DEADLINE_BUDGET_SEC:-60}
+  # METASYSTEM_BRAIN_BOOT_DEADLINE_MS uses the same validate-before-use precedent.
+  while [[ "$deadline_budget_sec" =~ ^0[0-9]+$ ]]; do
+    deadline_budget_sec=${deadline_budget_sec#0}
+  done
+  [[ "$deadline_budget_sec" =~ ^([4-9]|[1-5][0-9]|60)$ ]] || deadline_budget_sec=60
   deadline_worker_sec=$((deadline_budget_sec - 3))
   deadline_started_epoch=$(date -u +%s)
   deadline_dir=

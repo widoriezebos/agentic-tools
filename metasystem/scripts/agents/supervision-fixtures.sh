@@ -1736,11 +1736,26 @@ cp_engine "$skew_root/bin/metasystem" "$nested_installation/bin/metasystem"
 deadline_engine=$tmp/wt-deadline-engine
 cat >"$deadline_engine" <<'FIXTURE'
 #!/usr/bin/env bash
+block_kind=
 if [[ ${1:-} == runtime && ${2:-} == list ]]; then
-  sleep 58
+  block_kind=runtime-list
+elif [[ ${1:-} == path && ${2:-} == state-root && ${METASYSTEM_SLOW_STATE_ROOT:-0} == 1 ]]; then
+  block_kind=state-root
 fi
-if [[ ${1:-} == path && ${2:-} == state-root && ${METASYSTEM_SLOW_STATE_ROOT:-0} == 1 ]]; then
-  sleep 58
+if [[ -n "$block_kind" ]]; then
+  block_prefix=${METASYSTEM_WT_DEADLINE_CONTROL_DIR:?}/${METASYSTEM_WT_DEADLINE_SESSION:?}.$block_kind
+  blocked_file=$block_prefix.blocked
+  release_file=$block_prefix.release
+  delay_started=$SECONDS
+  printf '%s\n' "$$" >"$blocked_file"
+  while [[ ! -e "$release_file" ]] &&
+      (( SECONDS - delay_started < METASYSTEM_WT_DEADLINE_HANG_CAP_SEC )); do
+    sleep 0.05
+  done
+  if [[ ! -e "$release_file" ]]; then
+    echo "nested worktree deadline fake block ceiling reached (elapsed: $((SECONDS - delay_started))s; cap: ${METASYSTEM_WT_DEADLINE_HANG_CAP_SEC}s)" >&2
+    exit 70
+  fi
 fi
 exec "${METASYSTEM_WT_DEADLINE_REAL_ENGINE:?}" "$@"
 FIXTURE
@@ -1748,12 +1763,20 @@ chmod +x "$deadline_engine"
 
   run_nested_timeout() { # session, steering, slow state root, expected record root
     local session_id steering slow_root expected_root output record started elapsed timeout_rc unexpected_record log_start
+    local deadline_budget_sec deadline_worker_floor deadline_elapsed_limit blocked_kind blocked_file release_file
+    local blocked_pid reap_deadline record_digest_before record_digest_after trail_elapsed
+    local -a blocked_kinds blocked_pids release_files
   session_id=$1
   steering=$2
   slow_root=$3
     expected_root=$4
     output=$tmp/$session_id.out
     log_start=$(wc -l <"$expected_root/artifacts/agents/supervision/hooks.log")
+    # The worker window is at least ten times the worst observed head time before the first asserted
+    # engine call; the tail allowance is + 30 seconds.
+    deadline_budget_sec=20
+    deadline_worker_floor=$((deadline_budget_sec - 3))
+    deadline_elapsed_limit=$((deadline_budget_sec + 30))
   started=$SECONDS
   timeout_rc=0
   if [[ "$steering" == true ]]; then
@@ -1761,18 +1784,41 @@ chmod +x "$deadline_engine"
       "$nested_worktree_installation/scripts/agents/supervision-hook.sh" "$output" \
       "GIT_DIR=$nested_scope/.git" "GIT_WORK_TREE=$nested_worktree" \
       "METASYSTEM_BIN=$deadline_engine" "METASYSTEM_WT_DEADLINE_REAL_ENGINE=$ms" \
+      "METASYSTEM_STOP_DEADLINE_BUDGET_SEC=$deadline_budget_sec" \
+      "METASYSTEM_WT_DEADLINE_CONTROL_DIR=$tmp" "METASYSTEM_WT_DEADLINE_SESSION=$session_id" \
+      "METASYSTEM_WT_DEADLINE_HANG_CAP_SEC=$fixture_ceiling_sec" \
       "METASYSTEM_SLOW_STATE_ROOT=$slow_root" "METASYSTEM_SKEW_REAL_ENGINE=$ms" \
       || timeout_rc=$?
   else
     run_nested_holder_stop "$session_id" "$nested_worktree" \
       "$nested_worktree_installation/scripts/agents/supervision-hook.sh" "$output" \
       "METASYSTEM_BIN=$deadline_engine" "METASYSTEM_WT_DEADLINE_REAL_ENGINE=$ms" \
+      "METASYSTEM_STOP_DEADLINE_BUDGET_SEC=$deadline_budget_sec" \
+      "METASYSTEM_WT_DEADLINE_CONTROL_DIR=$tmp" "METASYSTEM_WT_DEADLINE_SESSION=$session_id" \
+      "METASYSTEM_WT_DEADLINE_HANG_CAP_SEC=$fixture_ceiling_sec" \
       "METASYSTEM_SLOW_STATE_ROOT=$slow_root" "METASYSTEM_SKEW_REAL_ENGINE=$ms" \
       || timeout_rc=$?
   fi
   elapsed=$((SECONDS - started))
-  (( timeout_rc == 0 && elapsed < 60 )) \
+  (( timeout_rc == 0 && elapsed < deadline_elapsed_limit )) \
     || { echo "$session_id exceeded or failed the provider deadline: rc=$timeout_rc elapsed=${elapsed}s" >&2; exit 1; }
+  blocked_kinds=(runtime-list)
+  [[ "$slow_root" == 0 ]] || blocked_kinds+=(state-root)
+  blocked_pids=()
+  release_files=()
+  for blocked_kind in "${blocked_kinds[@]}"; do
+    blocked_file=$tmp/$session_id.$blocked_kind.blocked
+    release_file=$tmp/$session_id.$blocked_kind.release
+    [[ -f "$blocked_file" ]] \
+      || { echo "$session_id did not reach its $blocked_kind provider block" >&2; exit 1; }
+    blocked_pid=$(<"$blocked_file")
+    [[ "$blocked_pid" =~ ^[0-9]+$ ]] && kill -0 "$blocked_pid" 2>/dev/null \
+      || { echo "$session_id did not return while its $blocked_kind provider call was still blocked" >&2; exit 1; }
+    [[ ! -e "$release_file" ]] \
+      || { echo "$session_id released its $blocked_kind provider call before the parent returned" >&2; exit 1; }
+    blocked_pids+=("$blocked_pid")
+    release_files+=("$release_file")
+  done
   if grep -Fq '"decision":"block"' "$output"; then
     echo "$session_id blocked on deadline infrastructure" >&2
     cat "$output" >&2
@@ -1796,21 +1842,38 @@ chmod +x "$deadline_engine"
     fi
     [[ -f "$record" && $($ms json get --file "$record" --field sessionId) == "$session_id" ]] \
       || { echo "$session_id wrote no refusal record at $expected_root" >&2; exit 1; }
-    # decision-surface.sh fingerprints the historical assertion spelling.
-    # Keep that non-executable row and derive the live file assertion's exact
-    # pattern from it, so the compatibility row cannot drift from the check.
-    decision_surface_deadline_assertion=$(command cat <<'DECISION_SURFACE_DEADLINE_ASSERTION'
-      | grep -Eq 'stop response outcome=deadline-expired-allow elapsed=5[0-9]s$' \
-DECISION_SURFACE_DEADLINE_ASSERTION
-)
-    deadline_pattern_regex="grep -Eq '([^']*)'"
-    [[ "$decision_surface_deadline_assertion" =~ $deadline_pattern_regex ]]
-    deadline_allow_pattern=${BASH_REMATCH[1]}
     sed -n "$((log_start + 1)),\$p" "$expected_root/artifacts/agents/supervision/hooks.log" \
-      >"$tmp/$session_id.deadline-log-tail" \
-      && grep -Eq "$deadline_allow_pattern" \
-        "$tmp/$session_id.deadline-log-tail" \
+      >"$tmp/$session_id.deadline-log-tail"
+    trail_elapsed=$(sed -n \
+      's/^.*stop response outcome=deadline-expired-allow elapsed=\([0-9][0-9]*\)s$/\1/p' \
+      "$tmp/$session_id.deadline-log-tail" | tail -1)
+    [[ "$trail_elapsed" =~ ^[0-9]+$ ]] \
+      && (( trail_elapsed >= deadline_worker_floor && trail_elapsed < deadline_elapsed_limit )) \
       || { echo "$session_id left no deadline allowance trail line" >&2; exit 1; }
+    record_digest_before=$($ms util sha256 --file "$record")
+  fi
+  for release_file in "${release_files[@]}"; do
+    touch "$release_file"
+  done
+  reap_deadline=$((SECONDS + fixture_ceiling_sec))
+  for blocked_pid in "${blocked_pids[@]}"; do
+    while kill -0 "$blocked_pid" 2>/dev/null; do
+      if (( SECONDS >= reap_deadline )); then
+        echo "$session_id fake provider pid $blocked_pid survived its harness cleanup ceiling" >&2
+        exit 1
+      fi
+      sleep 0.05
+    done
+  done
+  if [[ "$slow_root" == 1 ]]; then
+    unexpected_record=$(find "$nested_scope" "$nested_worktree" -type f \
+      -path "*/stop-refusals/$session_id.json" -print -quit)
+    [[ -z "$unexpected_record" ]] \
+      || { echo "$session_id wrote a refusal record after its provider calls were released: $unexpected_record" >&2; exit 1; }
+  else
+    record_digest_after=$($ms util sha256 --file "$record")
+    [[ "$record_digest_after" == "$record_digest_before" ]] \
+      || { echo "$session_id changed its refusal record after its provider calls were released" >&2; exit 1; }
   fi
 }
 
