@@ -1,6 +1,6 @@
 # critique-closes-on-folded-proof
 
-- State: claimed
+- State: approved
 - Priority: 1
 - Sequence: 19
 - Risk: severity=2 novelty=2 exposure=3 accumulation=1 basis="severity 2: a closure rule that is too loose lets a material finding land; novelty 2: fold-proven closure and the round-2 failsafe are new rules; exposure 3: every chain; accumulation 1: skills and dispatcher"
@@ -9,13 +9,12 @@
 - Origin: human
 - Next step: 2026-09-16 14:25 CEST m1e landing lane 3: slice 2 COMPLETE on origin/main. U2c 47a010c08, U2d 7e50bde23, U2e 48b3e7369 landed contiguously, proved as ONE stack: proof-mu41vx96-e685109c707976d7 (tree aaf73af33 at 5135802dd, deep, 53/53 executed, 0 reused; dispatch-c executed and passed; retry decision named proof-mu3wuqc6-453a7d4a280b148a). All 20 new Go tests re-run by name package at a time under the hold, 20/20 PASS. Receipts 1789561146, 1789561159, 1789561171 (skills=verify: skills=code-critique is refused without code-critic chain ids). Each message says the stack repairs origin/main's close that printed deferred and lost obligations. NEXT: slice 3 per the design page, revision 3. LINEAGE QUESTION (recorded; does not block landing): the close takes its actor lineage from the root's mainId (finding_register.go:629), while goal claims carry the owner lineage. In R0 the lease holder is main-1789030447-51011-614e7f but claims carry ...-2956ea, so once U2c lands, any close that defers REFUSES in R0 (origin/main silently lost the obligations). This goal's page (revision 3) does not say where the pair comes from. turn-verdict-hardening-design.md section 2.3 lines 436-438 says "the goal's claim pair is the ownership proof", not J.mainId. severity-tiered-rigor-design.md lines 412-414 says the close verb acts as the pair. Engine precedent agrees: MarkSliced (claim.go:403) and the seat-idle actor (cmd/metasystem/goal.go:793) both act as the claim's lineage. SEAT RULING: a conformance fix after the drain, with no Wido word needed: the close takes the pair from the goal's claim, not the root's mainId. Also owed (pre-existing): a close that refused can never re-run for that root (its operation id is fixed), and its error wrongly names the recovery rule. CONSEQUENCE FOR ORDER ITEM 2: the successor, break-glass and doctor closes defer their r3 findings. Before each close, check that the root's mainId equals the goal claim's lineage; a refused close burns the root. Then slice 3 (section 5 with F-8; row 5), then the section 8 proof on two runtimes, then conclusion. On origin/main: slice 1, U2a 27045e8d2, U2b ca1a9e7c0.
 - OpenedAt: 2026-09-11T15:45:22Z
-- Revision: 94
+- Revision: 95
 - Pinned: m1e
 - Budget: elapsedLimit=1d attemptLimit=10 reservedJobMinutesLimit=1200 activeJobLimit=1 reviewRoundLimit=3
 - BudgetExceptions: 0
 - Approved: by=human:Wido at=2026-09-11T20:33:44Z revision=15 opid=8BE27ZT80ZJ6JTWNQ3GZAERK8Y-m1-c6925449 authority=proven digest=cf4c80f3b42d74737238cccc4774f7900e36fd98d52c0bc36aec01bab9f27fbb
-- Claimed: machine=m1e lineage=main-1789030447-51011-2956ea at=2026-09-16T12:01:02Z revision=93 accountingRevision=85 episodeAt=2026-09-16T08:26:10Z episodeRevision=85 idleSeconds=7670
-- StopCapability: generation=93 revision=93 machine=m1e claimEpoch=1 fenceEpoch=0
+- Episode: machine=m1e lineage=main-1789030447-51011-2956ea accountingRevision=85 episodeAt=2026-09-16T08:26:10Z episodeRevision=85 idleSeconds=7670 released=2026-09-16T12:27:14Z
 
 History:
 - 2026-09-11T15:45:22Z WKPXEN9CTZR44TMFZTQJE9X68Q-m1e-5083721b open actor=m1e+main-1789141490-27414-b9c0d2 targets=critique-closes-on-folded-proof
@@ -112,4 +111,5 @@ History:
 - 2026-09-16T10:39:19Z 5GQ2B16S77EAE6XRM3KQ79TKB2-m1e-a3d4c1e1 edit actor=m1e+main-1789030447-51011-2956ea targets=critique-closes-on-folded-proof
 - 2026-09-16T12:01:02Z EHN6RW72HYV0F61PFJTY0W8KNY-m1e-a3d4c1e1 claim actor=m1e+main-1789030447-51011-2956ea targets=critique-closes-on-folded-proof
 - 2026-09-16T12:19:49Z YH5VAQ673Y8F7BBNSA4RW6CK7H-m1e-a3d4c1e1 edit actor=m1e+main-1789030447-51011-2956ea targets=critique-closes-on-folded-proof
-Integrity: sha256=94df77a842a2a348f80aa09d7ce9c9892e61770a868369a95b17b5f44e3cd3a6
+- 2026-09-16T12:27:14Z XGJ4DK5EQW2EWKW87ASGMYRZ1F-m1e-a3d4c1e1 release actor=m1e+main-1789030447-51011-2956ea targets=critique-closes-on-folded-proof
+Integrity: sha256=23e19522d1dcd92c4dde1bfa61694934f0b28441f2fc396243cba8aa99a36dcf
