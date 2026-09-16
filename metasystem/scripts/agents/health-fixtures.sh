@@ -380,11 +380,31 @@ wait_for_pid_exit "killed runner exit" "$runner_pid" || fail "killed runner did 
 # This bed isolates the consecutive-failure breaker from the earlier
 # stop-and-recover exercise, which deliberately contributes a flap episode.
 rm -f "$repo/artifacts/agents/steward/health.json" "$alert_delivery_log" "$tmp/alerts.log"
+# Resolved findings remain uncleared until health recovers. Keep one unrelated
+# retained finding so every episode assertion has to select its finding digest.
+mkdir -p "$repo/artifacts/agents/steward/alerts"
+cat >"$repo/artifacts/agents/steward/alerts/alert-aaaaaaaaaaaaaaaa-1.json" <<'UNRELATED_ALERT'
+{
+  "schema": 1,
+  "episodeId": "alert-aaaaaaaaaaaaaaaa-1",
+  "digest": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+  "message": "fixed prior finding",
+  "openedAt": "2026-09-16T00:00:00Z",
+  "attempts": [],
+  "transportResult": "PENDING",
+  "acknowledged": false,
+  "resolved": true,
+  "resolvedAt": "2026-09-16T00:00:01Z",
+  "cleared": false
+}
+UNRELATED_ALERT
 run_health runner-dead
 dead_rc=$health_rc
 [[ "$dead_rc" -eq 1 ]] || { cat "$tmp/runner-dead.err" >&2; fail "dead bed returned $dead_rc"; }
 grep -Fq 'steward-runner=dead' "$tmp/runner-dead.out" || fail "dead verdict did not name the killed runner"
 grep -Fq 'metasystem up --repo' "$tmp/runner-dead.out" || fail "dead verdict omitted the up remedy"
+initial_failure_digest=$("$ms" json get --file "$repo/artifacts/agents/steward/health.json" --field verdict.findingDigest) \
+  || fail "first failure finding digest was unreadable"
 if [[ -f "$alert_delivery_log" ]] && grep -Fq 'HEALTH unhealthy' "$alert_delivery_log"; then
   fail "a recoverable first failure notified the human before escalation"
 fi
@@ -392,6 +412,7 @@ silent_episode=
 for candidate in "$repo/artifacts/agents/steward/alerts"/*.json; do
   [[ -f "$candidate" ]] || continue
   grep -Fq '"cleared": false' "$candidate" || continue
+  [[ "$("$ms" json get --file "$candidate" --field digest)" == "$initial_failure_digest" ]] || continue
   silent_episode=$candidate
 done
 [[ -n "$silent_episode" ]] || fail "the first failure opened no silent history episode"
@@ -405,12 +426,15 @@ for observation in 2 3 4 5; do
 done
 grep -Fq '"consecutiveFailures": 5' "$tmp/tick-5.out" || fail "failure five was not projected"
 grep -Fq '"failureEscalation": "AUTO_HEAL_ENDED"' "$tmp/tick-5.out" || fail "failure five did not end auto-heal"
+failure_five_digest=$("$ms" json get --file "$repo/artifacts/agents/steward/health.json" --field verdict.findingDigest) \
+  || fail "failure five finding digest was unreadable"
 
 episode_count=0
 episode_file=
 for candidate in "$repo/artifacts/agents/steward/alerts"/*.json; do
   [[ -f "$candidate" ]] || continue
   grep -Fq '"cleared": false' "$candidate" || continue
+  [[ "$("$ms" json get --file "$candidate" --field digest)" == "$failure_five_digest" ]] || continue
   episode_count=$((episode_count + 1))
   episode_file=$candidate
 done
@@ -431,11 +455,16 @@ fi
   cat "$tmp/tick-dedup.err" >&2
   fail "same-digest dedup tick failed"
 }
+dedup_digest=$("$ms" json get --file "$repo/artifacts/agents/steward/health.json" --field verdict.findingDigest) \
+  || fail "dedup finding digest was unreadable"
+[[ "$dedup_digest" == "$failure_five_digest" ]] \
+  || fail "dedup tick changed finding digest from $failure_five_digest to $dedup_digest"
 [[ $(grep -c 'HEALTH unhealthy' "$alert_delivery_log" 2>/dev/null || true) -eq 1 ]] || fail "same digest submitted a second notification"
 active_episodes=0
 for candidate in "$repo/artifacts/agents/steward/alerts"/*.json; do
   [[ -f "$candidate" ]] || continue
   grep -Fq '"cleared": false' "$candidate" || continue
+  [[ "$("$ms" json get --file "$candidate" --field digest)" == "$dedup_digest" ]] || continue
   active_episodes=$((active_episodes + 1))
 done
 [[ "$active_episodes" -eq 1 ]] || fail "same digest opened a second active episode"

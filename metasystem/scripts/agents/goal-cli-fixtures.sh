@@ -725,12 +725,16 @@ PROOF_GRADE_AGENT_SHELL
   cat >"$proof_grade_headless_script" <<'PROOF_GRADE_HEADLESS'
 #!/usr/bin/env bash
 set -euo pipefail
-headless_tty=$(ps -p "$$" -o tty= | tr -d '[:space:]')
-case "$headless_tty" in
-  "" | "?" | "??" | "-") ;;
-  *) echo "headless fixture process unexpectedly has terminal $headless_tty" >&2; exit 1 ;;
-esac
-exec "$PROOF_GRADE_MS" goal release --root "$PROOF_GRADE_CLONE" --id ship-widget --by Wido
+if { : </dev/tty; } 2>/dev/null; then
+  echo "headless fixture process unexpectedly has a controlling terminal" >&2
+  exit 1
+fi
+# Human authority starts at the CLI's real parent, so keep the detached shell
+# alive until the command returns instead of replacing it with the CLI.
+set +e
+"$PROOF_GRADE_MS" goal release --root "$PROOF_GRADE_CLONE" --id ship-widget --by Wido
+headless_release_rc=$?
+exit "$headless_release_rc"
 PROOF_GRADE_HEADLESS
   chmod +x "$proof_grade_headless_script"
   set +e
