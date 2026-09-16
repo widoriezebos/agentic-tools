@@ -2,14 +2,14 @@
 
 - State: approved
 - Priority: 1
-- Sequence: 56
+- Sequence: 55
 - Risk: severity=2 novelty=2 exposure=2 accumulation=1 basis="severity 2: an unproven escalation path means a stop that reports killed without evidence it killed; novelty 2: a held fake host and its readiness handshake do not exist yet; exposure 2: every seat that stops a checkout with a mission, a suite or an ignored signal in flight; accumulation 1: the scenarios are written once"
 - Tier: 2
 - Intent: Slice 1b of the stop verb: the escalation and per-family fixture scenarios that slice 1 deliberately left out, plus the fixture-only held fake host they need. Slice 1 (chain stopverb-build1, goal metasystem-stop-verb) builds and proves the human-visible contract with five scenarios; section 10 of plans/metasystem-stop-verb-design.md names the rest: arm-refuses-survivor, mission-stop with its ignore-TERM and host-ignores-TERM variants and its dead-runner live-turn case, proof-run-stop with its dead-watchdog case, slow-owner, crash-recovery, remote-job, ignored-signal and wrong-terminal. DONE means every one of those scenarios exists, passes outside a delegate sandbox, and would fail against the tree before it
 - Origin: main
 - Next step: Blocked until slice 1 lands. Then: specify the held fake host in scripts/agents/hosts/fake.sh (how a turn selects the held behaviour and how the fixture proves its signal handler is installed before stop runs; round 5 of the slice-1 chain stopped on exactly this and was right to), then write the scenarios in the beds section 10 assigns them, then one code critique. The orchestrator runs the supervision, mission and suite-progress beds outside the sandbox: a delegate sandbox cannot execute a freshly copied fixture engine (status 126) nor authenticate spawned process groups
 - OpenedAt: 2026-09-07T07:30:28Z
-- Revision: 139
+- Revision: 140
 - Pinned: m1b
 - Budget: elapsedLimit=4h attemptLimit=6 reservedJobMinutesLimit=720 activeJobLimit=1 reviewRoundLimit=2
 - BudgetExceptions: 0
@@ -155,4 +155,5 @@ History:
 - 2026-09-16T20:32:09Z MTZMWKB9E103BMQECEWJA0YWGD-m1e-c6925449 set-priority actor=human:Wido targets=census-lifecycle-scenario-holds-under-load,chain-landing-carries-the-reviewed-diff,dispatch-bases-chains-on-the-remote-tip,events-package-has-a-test-group,fixture-repo-copies-exclude-the-artifacts-store,human-authority-surface-runs-its-cmd-tests,human-wait-does-not-consume-goal-budget,metasystem-stop-escalation-proofs,metasystem-stop-fleet-form,new-elapsed-budgets-use-explicit-hours,pipelines-never-lose-a-truncated-producer,repo-root-paths-ride-agent-commits-unjudged reason=priority-order subject=fixture-repo-copies-exclude-the-artifacts-store from=1:59 to=1:58 requested-sequence=41
 - 2026-09-16T20:32:15Z TDBM54SXFYKS7XNWS2GXMP5KE4-m1e-c6925449 set-priority actor=human:Wido targets=census-lifecycle-scenario-holds-under-load,chain-landing-carries-the-reviewed-diff,dispatch-bases-chains-on-the-remote-tip,events-package-has-a-test-group,human-authority-surface-runs-its-cmd-tests,human-wait-does-not-consume-goal-budget,metasystem-stop-escalation-proofs,metasystem-stop-fleet-form,new-elapsed-budgets-use-explicit-hours,pipelines-never-lose-a-truncated-producer,repo-root-paths-ride-agent-commits-unjudged reason=priority-order subject=chain-landing-carries-the-reviewed-diff from=1:58 to=1:57 requested-sequence=42
 - 2026-09-16T20:32:20Z 605V8R43X8E3DXCYYWTNHSGCJB-m1e-c6925449 set-priority actor=human:Wido targets=census-lifecycle-scenario-holds-under-load,dispatch-bases-chains-on-the-remote-tip,events-package-has-a-test-group,human-authority-surface-runs-its-cmd-tests,human-wait-does-not-consume-goal-budget,metasystem-stop-escalation-proofs,metasystem-stop-fleet-form,new-elapsed-budgets-use-explicit-hours,pipelines-never-lose-a-truncated-producer,repo-root-paths-ride-agent-commits-unjudged reason=priority-order subject=human-authority-surface-runs-its-cmd-tests from=1:57 to=1:56 requested-sequence=43
-Integrity: sha256=68e3ed36b748b92cadabb1d0e6faa987ab1a62cb83af7bf942deea9d6a5bcdbf
+- 2026-09-16T20:32:26Z ECXB1G7RHC8BNFF7JR3JGM3XYK-m1e-c6925449 set-priority actor=human:Wido targets=census-lifecycle-scenario-holds-under-load,dispatch-bases-chains-on-the-remote-tip,events-package-has-a-test-group,human-wait-does-not-consume-goal-budget,metasystem-stop-escalation-proofs,metasystem-stop-fleet-form,new-elapsed-budgets-use-explicit-hours,pipelines-never-lose-a-truncated-producer,repo-root-paths-ride-agent-commits-unjudged reason=priority-order subject=repo-root-paths-ride-agent-commits-unjudged from=1:56 to=1:55 requested-sequence=44
+Integrity: sha256=509acdf90bf5f49eddf3b48b0035089fbec051c478d6bb05eb6ab84f4e4d073a

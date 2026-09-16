@@ -2,14 +2,14 @@
 
 - State: approved
 - Priority: 1
-- Sequence: 58
+- Sequence: 57
 - Risk: severity=3 novelty=2 exposure=3 accumulation=1 basis="severity 3: budget enforcement can stop lawful work or permit unbounded time; novelty 2: a bounded change to existing ledger and elapsed projection; exposure 3: shared goal execution across seats; accumulation 1: each episode is evaluated independently, with no new aggregate accounting"
 - Tier: 3
 - Intent: Time a goal spends blocked on a recorded human act does not count toward its elapsed limit. Show waiting time separately and report waiting on the human since the recorded start rather than counting down to a breach. Define reliable evidence for human-wait start/end around existing next-step or plan records, goal asks and refused human verbs, without allowing arbitrary agent prose to create unrecorded free execution time.
 - Origin: main
 - Next step: Third independent successor of goal:breach-clock-and-budget-honesty, preserving the requirement added 2026-09-09 after its reviewed design. Specimen: breach-stop-wedges-seat claimed 10:07Z with 4h, next step WAITING ON WIDO from 11:47Z, custodian stopped it 16:08Z at 6h01m including the wait; the requested raise then required a resume. Needs its own bounded Codex Astra xhigh design for authoritative interval records, end/resume rules, subtraction and reporting through existing goal and ProjectBudget owners. Depends on a stable elapsed origin from goal:budget-raises-preserve-elapsed-origin. No implementation in the elapsed-origin slice.
 - OpenedAt: 2026-09-11T05:37:49Z
-- Revision: 123
+- Revision: 124
 - Labels: breach-clock-successor
 - Pinned: m1c
 - Budget: elapsedLimit=1d attemptLimit=10 reservedJobMinutesLimit=1200 activeJobLimit=1 reviewRoundLimit=3
@@ -140,4 +140,5 @@ History:
 - 2026-09-16T20:32:09Z MTZMWKB9E103BMQECEWJA0YWGD-m1e-c6925449 set-priority actor=human:Wido targets=census-lifecycle-scenario-holds-under-load,chain-landing-carries-the-reviewed-diff,dispatch-bases-chains-on-the-remote-tip,events-package-has-a-test-group,fixture-repo-copies-exclude-the-artifacts-store,human-authority-surface-runs-its-cmd-tests,human-wait-does-not-consume-goal-budget,metasystem-stop-escalation-proofs,metasystem-stop-fleet-form,new-elapsed-budgets-use-explicit-hours,pipelines-never-lose-a-truncated-producer,repo-root-paths-ride-agent-commits-unjudged reason=priority-order subject=fixture-repo-copies-exclude-the-artifacts-store from=1:61 to=1:60 requested-sequence=41
 - 2026-09-16T20:32:15Z TDBM54SXFYKS7XNWS2GXMP5KE4-m1e-c6925449 set-priority actor=human:Wido targets=census-lifecycle-scenario-holds-under-load,chain-landing-carries-the-reviewed-diff,dispatch-bases-chains-on-the-remote-tip,events-package-has-a-test-group,human-authority-surface-runs-its-cmd-tests,human-wait-does-not-consume-goal-budget,metasystem-stop-escalation-proofs,metasystem-stop-fleet-form,new-elapsed-budgets-use-explicit-hours,pipelines-never-lose-a-truncated-producer,repo-root-paths-ride-agent-commits-unjudged reason=priority-order subject=chain-landing-carries-the-reviewed-diff from=1:60 to=1:59 requested-sequence=42
 - 2026-09-16T20:32:20Z 605V8R43X8E3DXCYYWTNHSGCJB-m1e-c6925449 set-priority actor=human:Wido targets=census-lifecycle-scenario-holds-under-load,dispatch-bases-chains-on-the-remote-tip,events-package-has-a-test-group,human-authority-surface-runs-its-cmd-tests,human-wait-does-not-consume-goal-budget,metasystem-stop-escalation-proofs,metasystem-stop-fleet-form,new-elapsed-budgets-use-explicit-hours,pipelines-never-lose-a-truncated-producer,repo-root-paths-ride-agent-commits-unjudged reason=priority-order subject=human-authority-surface-runs-its-cmd-tests from=1:59 to=1:58 requested-sequence=43
-Integrity: sha256=f7a0a7cf51ce797108fc1f6cc9f9ad6fb2242a77bc5662fc83bf382433d716e1
+- 2026-09-16T20:32:26Z ECXB1G7RHC8BNFF7JR3JGM3XYK-m1e-c6925449 set-priority actor=human:Wido targets=census-lifecycle-scenario-holds-under-load,dispatch-bases-chains-on-the-remote-tip,events-package-has-a-test-group,human-wait-does-not-consume-goal-budget,metasystem-stop-escalation-proofs,metasystem-stop-fleet-form,new-elapsed-budgets-use-explicit-hours,pipelines-never-lose-a-truncated-producer,repo-root-paths-ride-agent-commits-unjudged reason=priority-order subject=repo-root-paths-ride-agent-commits-unjudged from=1:58 to=1:57 requested-sequence=44
+Integrity: sha256=53f42c30243c6154ca45c4bfb1b610537d353fe87294fedab7b51f01f89b2a01
