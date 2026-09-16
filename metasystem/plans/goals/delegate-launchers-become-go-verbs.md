@@ -1,6 +1,6 @@
 # delegate-launchers-become-go-verbs
 
-- State: approved
+- State: claimed
 - Priority: 1
 - Sequence: 6
 - Risk: severity=2 novelty=2 exposure=2 accumulation=1 basis="severity 2: a broken launcher stops the design and critique lanes on every seat, but corrupts no record; novelty 2: new Go verbs next to metasystem delegate, behaviour copied from working bash; exposure 2: every seat launches designs and critiques through them; accumulation 1: the bash copies are deleted in the same landing"
@@ -9,10 +9,12 @@
 - Origin: human
 - Next step: Opened in the name of Wido by seat m1e from the enrolled pane on his word 2026-09-16 18:25 CEST. Starts as soon as headless-launchers-live-in-the-repo lands (the bash is the behaviour reference). No Fable design round: a seat brief, one Codex critique of the brief, Codex gpt-5.6-sol builds in units of at most 300 lines, Opus reads, the landing lane lands. Before the brief, read units-land-in-batches-under-one-proof design r3: if automatic batch landing needs units built through the job domain for implementation-chain evidence, these verbs are where that evidence is recorded.
 - OpenedAt: 2026-09-16T16:29:04Z
-- Revision: 11
+- Revision: 12
 - Budget: elapsedLimit=4h attemptLimit=6 reservedJobMinutesLimit=720 activeJobLimit=1 reviewRoundLimit=2
 - BudgetExceptions: 0
 - Approved: by=human:Wido at=2026-09-16T20:29:38Z revision=11 opid=0F2R9PMCE40D9FXT7TV64VXAJ7-m1e-c6925449 authority=proven digest=5af06f6fdcc6e181ad671abf4c8faf3aff1514d3b10e84f7960e34b1b31cc8d5
+- Claimed: machine=m1b lineage=main-1789560571-22295-8d907a at=2026-09-16T20:51:15Z revision=12 accountingRevision=12 episodeAt=2026-09-16T20:51:15Z episodeRevision=12
+- StopCapability: generation=12 revision=12 machine=m1b claimEpoch=3 fenceEpoch=0
 
 History:
 - 2026-09-16T16:29:04Z CDDQA3HQVS4F93EKGDHHXPPMAP-m1e-c6925449 open actor=human:Wido targets=delegate-launchers-become-go-verbs
@@ -26,4 +28,5 @@ History:
 - 2026-09-16T20:29:25Z 12ERVJ3CKCJ4N488EYWK9V9W10-m1e-c6925449 unapprove actor=human:Wido targets=delegate-launchers-become-go-verbs reason=DONE text corrected to the landed hlr bash (codex exec, no companion or broker) on Wido word 2026-09-16 22:3x CEST
 - 2026-09-16T20:29:31Z 4DT2JNREV8W2NRPYRKNQE0DEF4-m1e-c6925449 edit actor=human:Wido targets=delegate-launchers-become-go-verbs
 - 2026-09-16T20:29:38Z 0F2R9PMCE40D9FXT7TV64VXAJ7-m1e-c6925449 approve actor=human:Wido targets=delegate-launchers-become-go-verbs
-Integrity: sha256=05e15808b7800fe3abd90e5c0d5650eaac78f0e020ca333f1bbe05f18d183187
+- 2026-09-16T20:51:15Z 7BZHCKHSQW0DDJ0ACK6NMP3F96-m1b-d0e95724 claim actor=m1b+main-1789560571-22295-8d907a targets=delegate-launchers-become-go-verbs
+Integrity: sha256=418644c505a58a7cb93c93a0ab8588301b1ff754a210ccd8c16b2b109f2c5f6d
