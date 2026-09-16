@@ -1,6 +1,6 @@
 # coordinator-context-stays-under-budget
 
-- State: claimed
+- State: approved
 - Priority: 1
 - Sequence: 15
 - Risk: severity=2 novelty=2 exposure=3 accumulation=1 basis="severity 2: an over-bounded output hides evidence the seat needs; novelty 2: bounded verb output is a new discipline; exposure 3: every seat's every turn; accumulation 1: verbs and docs"
@@ -9,13 +9,12 @@
 - Origin: human
 - Next step: STATE 2026-09-16 13:05 CEST (m1e landing lane; builds Codex gpt-5.6-sol, reads Opus, designs Claude Fable): slice 3 complete; 8c.15 built (C1a 0cca29a4, C1b ffdc623b, C2 25fb3b54). Amendment 8d revision 3, the cap group, landed 7704d36fe with ruling R-116-m1e; records under records/misc/coordinator-context-stays-under-budget-8d-*. The automatic successor is goal seat-successor-continues-a-handoff-without-a-human: this goal depends on it for the deny switch and does not conclude without it. 8c.7 decided (R-116-m1e item 5): a held handoff expires after 8h and cancels with a notice (handoffExpiryRule), a small unit joining the cap units. LANDED cap units: U3a-1a1 a921c63a1; U3a-1a2 61c0cedfe (proof-mu3ru1lh-110c98359b2c6e93); the FIXED pair U3b-1a 3dbead3e6 (handoff state schema 2 and engine identity, with the seven refusal-register Site re-syncs) and U3b-1b ce3b1b162 (the wait-ending function, complete and unwired, with the HANDOFF_WAIT_UNENDABLE register row and the EvalSymlinks test root), proved together as a stack in proof-mu3xsxqr-b7ad295550b05185 (tree 44380ecac, deep, 53 of 53 executed, none reused; all ten new Go tests passed inside it and again by name package at a time).; U3a-1b LANDED 3a2ab6e2e (the Stop-time CONTEXT line on the rendered verdict trailer, terminal verdicts exact), proved alone in proof-mu3z45j1-d194a832cc3c56cf (tree 66fd6c877, deep, 53 of 53 executed incl. section/goal-cli-fixtures and section/supervision-and-census-fixtures; its five new Go tests passed by name package at a time). Next: U3b-2a1 (never U3b-2a2 until its six refusal tokens have register rows), U3b-2b; U3e-1, U3e-2a (split in two), U3e-2b. Each built by Codex in a worktree, read by Opus, landed after every group the test plan selects. The tool gate ships in observe mode. Then the week of measurement under section 7 and the conclusion.
 - OpenedAt: 2026-09-11T15:45:19Z
-- Revision: 115
+- Revision: 116
 - Pinned: m1e
 - Budget: elapsedLimit=4d attemptLimit=14 reservedJobMinutesLimit=1200 activeJobLimit=1 reviewRoundLimit=3
 - BudgetExceptions: 2
 - Approved: by=human:Wido at=2026-09-15T06:31:26Z revision=71 opid=KB8K0VZ9F1SR97TFJQPYC6N672-m1e-c6925449 authority=proven digest=c57427f469df5c5a5ce2c49651e1546ce35a315571d438eed42119b02b01ae7b
-- Claimed: machine=m1e lineage=main-1789030447-51011-2956ea at=2026-09-16T09:57:53Z revision=113 accountingRevision=98 episodeAt=2026-09-16T00:06:34Z episodeRevision=98 idleSeconds=21766
-- StopCapability: generation=113 revision=113 machine=m1e claimEpoch=1 fenceEpoch=0
+- Episode: machine=m1e lineage=main-1789030447-51011-2956ea accountingRevision=98 episodeAt=2026-09-16T00:06:34Z episodeRevision=98 idleSeconds=21766 released=2026-09-16T11:20:43Z
 
 History:
 - 2026-09-11T15:45:19Z 5F6TSCSSSW5B4H5JVZDBKEWHPE-m1e-5083721b open actor=m1e+main-1789141490-27414-b9c0d2 targets=coordinator-context-stays-under-budget
@@ -133,4 +132,5 @@ History:
 - 2026-09-16T09:57:53Z 6RC01K2XYTJR0HCNK7S5Y5RW6G-m1e-a3d4c1e1 claim actor=m1e+main-1789030447-51011-2956ea targets=coordinator-context-stays-under-budget
 - 2026-09-16T10:24:32Z 8EZBV9VTGV0N85Z3TMHFH4PC1A-m1e-a3d4c1e1 edit actor=m1e+main-1789030447-51011-2956ea targets=coordinator-context-stays-under-budget
 - 2026-09-16T11:00:14Z FXF7D2YSVTVDNA2PD5W5ZABTDC-m1e-a3d4c1e1 edit actor=m1e+main-1789030447-51011-2956ea targets=coordinator-context-stays-under-budget
-Integrity: sha256=8f44e16b4ab8cdc9b1aa3f590575126574a1e73bcb69d4b4c9435b7fd0a25ccf
+- 2026-09-16T11:20:43Z PV5VNWHMSW07NAH4VQWC7HA47W-m1e-a3d4c1e1 release actor=m1e+main-1789030447-51011-2956ea targets=coordinator-context-stays-under-budget
+Integrity: sha256=ff45596d78588ede6220976d4ac7ea16b9ab479257937545184bcd98c8eda1ed
