@@ -1,6 +1,6 @@
 # run-scoped-build-caches-have-a-janitor
 
-- State: approved
+- State: queued
 - Priority: 2
 - Sequence: 38
 - Risk: severity=2 novelty=2 exposure=2 accumulation=2 basis="severity 2: a janitor that deletes a live cache breaks an in-flight build, and a missing one fills the disk and cascades into a read-only guest; novelty 2: a new owner spanning several writers, the liveness rule is proven by hand but not in product; exposure 2: every delegated run and landing on every seat; accumulation 2: crosses run launch, landing, fixture beds and a scheduled trim"
@@ -9,12 +9,10 @@
 - Origin: human
 - Next step: INTENT: no run-scoped cache or worktree outlives its run by more than the idle window, on any seat. CONSTRAINTS: liveness is process reference (argv or open file) plus idle mtime, never age in days (a one-day cut freed nothing on 2026-09-11; a two-hour idle cut was safe mid-suite because Go bumps a used entry mtime at most hourly); the janitor own argv must not carry run paths (a reaper killed the 2026-09-11 sweep with SIGTERM when its argv listed 485 run directories, a path-free Python sweep survived); never touch another seat session scratch; after deleting landing worktrees run git worktree prune. FREEDOMS: janitor as a steward tick, a scheduled job, or a run-exit hook; the idle window value; whether writers register directories or the janitor discovers them by name. This is the first concrete member of the parked umbrella disk-hygiene (backlog-notes item 19); the umbrella stays parked. ROSTER: Sol implements, Fable critiques (R-25). Tier 2, full gate width. || Absorbed 2026-09-11 from goal disk-hygiene: Merged intent: every run-scoped byte the metasystem writes (build caches, worktrees, scratch directories, fixture beds, evidence snapshots) has a declared lifecycle enforced by one janitor once its run ends or idles, with headroom checks in the suite and provision paths, and a fixture proves a leaked directory of a dea
 - OpenedAt: 2026-09-11T10:28:10Z
-- Revision: 122
+- Revision: 123
 - Labels: robustness
 - Pinned: m1c
-- Budget: elapsedLimit=4h attemptLimit=6 reservedJobMinutesLimit=720 activeJobLimit=1 reviewRoundLimit=2
 - BudgetExceptions: 0
-- Approved: by=human:Wido at=2026-09-13T06:39:57Z revision=4 opid=ZZB0GDZFXK8V7QZVGXPPPX6BP4-m1e-c6925449 authority=proven digest=9212f19c6f0b1f61339c4117251c3d2899a35fa8a816c51c9f48ffb699cc68ae
 
 History:
 - 2026-09-11T10:28:10Z R3S86XJGMCDM5N5R7AQWWBDSQT-m1-c6925449 open actor=m1+main-1788680071-18713-e76d5d targets=run-scoped-build-caches-have-a-janitor
@@ -139,4 +137,5 @@ History:
 - 2026-09-16T20:31:33Z 6QJ7XVJJQ9AQX9723TQ9W3GVQX-m1e-c6925449 set-priority actor=human:Wido targets=census-lifecycle-scenario-holds-under-load,chain-landing-carries-the-reviewed-diff,dispatch-bases-chains-on-the-remote-tip,events-package-has-a-test-group,fixture-repo-copies-exclude-the-artifacts-store,fixture-waits-name-their-producer,human-authority-surface-runs-its-cmd-tests,human-wait-does-not-consume-goal-budget,machine-concurrency-governor,metasystem-stop-escalation-proofs,metasystem-stop-fleet-form,new-elapsed-budgets-use-explicit-hours,pipelines-never-lose-a-truncated-producer,repo-root-paths-ride-agent-commits-unjudged,run-scoped-build-caches-have-a-janitor,skipped-test-fails-its-group-on-the-other-os,token-spend-fence reason=priority-order subject=machine-concurrency-governor from=1:56 to=1:55 requested-sequence=36
 - 2026-09-16T20:31:40Z RKT636JJPJ4B2WE1GN3B55Z10W-m1e-c6925449 set-priority actor=human:Wido targets=census-lifecycle-scenario-holds-under-load,chain-landing-carries-the-reviewed-diff,dispatch-bases-chains-on-the-remote-tip,events-package-has-a-test-group,fixture-repo-copies-exclude-the-artifacts-store,fixture-waits-name-their-producer,human-authority-surface-runs-its-cmd-tests,human-wait-does-not-consume-goal-budget,metasystem-stop-escalation-proofs,metasystem-stop-fleet-form,new-elapsed-budgets-use-explicit-hours,pipelines-never-lose-a-truncated-producer,repo-root-paths-ride-agent-commits-unjudged,run-scoped-build-caches-have-a-janitor,skipped-test-fails-its-group-on-the-other-os,token-spend-fence reason=priority-order subject=token-spend-fence from=1:55 to=1:54 requested-sequence=37
 - 2026-09-16T20:31:47Z TVGXM9ANEJV81KJPRVG1TZ0VZV-m1e-c6925449 set-priority actor=human:Wido targets=census-lifecycle-scenario-holds-under-load,chain-landing-carries-the-reviewed-diff,dispatch-bases-chains-on-the-remote-tip,events-package-has-a-test-group,fixture-repo-copies-exclude-the-artifacts-store,fixture-waits-name-their-producer,human-authority-surface-runs-its-cmd-tests,human-wait-does-not-consume-goal-budget,metasystem-stop-escalation-proofs,metasystem-stop-fleet-form,new-elapsed-budgets-use-explicit-hours,pipelines-never-lose-a-truncated-producer,repo-root-paths-ride-agent-commits-unjudged,run-scoped-build-caches-have-a-janitor,skipped-test-fails-its-group-on-the-other-os reason=priority-order subject=run-scoped-build-caches-have-a-janitor from=1:54 to=2:38 requested-sequence=38
-Integrity: sha256=857fc01bb289317465611a52345f0ce74b6467ecb4e6a095d23ef126ba28110c
+- 2026-09-16T20:33:55Z 49PSYQKGXE1M9TTHVXMGBA59YV-m1e-c6925449 unapprove actor=human:Wido targets=run-scoped-build-caches-have-a-janitor reason=Wido 2026-09-16 22:40 CEST: clean house on priority 1 first, then a few human convenience features; every priority 2+ goal is unapproved until then
+Integrity: sha256=ec77eda8d6e74921cc4f6d4ec8dc92e3f8137a818d33161ac0dad3e7dd89ba3b
