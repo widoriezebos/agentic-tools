@@ -1,6 +1,6 @@
 # machine-concurrency-governor
 
-- State: approved
+- State: queued
 - Priority: 2
 - Sequence: 36
 - Risk: severity=2 novelty=2 exposure=3 accumulation=1 basis="severity 2: overload makes proofs flaky and slow, no data loss; novelty 2: a machine-wide admission governor is new; exposure 3: every seat on the machine; accumulation 1: one governor and its config"
@@ -9,10 +9,8 @@
 - Origin: human
 - Next step: Appetite: 3h — design then build: machine-level slots configured at the repo/machine root (metasystem.concurrency.*: heavy-pass slots, suite slots, battery exclusivity), every run-launched job admitted against slots (queue, never refuse, when full), load-aware defaults derived from CPU count (the workflow precedent: min(16, cpus-2)), and the delegate verb's admission (L13) as the natural enforcement seam - design with L13 so it lands as one law, not a bolt-on. Until this lands the dispatch delegate hand-governs by recorded delegation: cap concurrent heavy passes, never run a battery beside gauntlets or beds, stagger suites under load SECOND DRIVING INCIDENT (2026-08-31): the first governed weight-discharge validation stalled in go-engine-gate past the 45m section cap while still producing output, during m3's attested heavy window on the shared Mac (both seats' timelines on record; cross-seat hold coordinated by session message). Wido's leniency word R-32-m2 covers the interim (machine-local cap 90m, coordinated quiet windows); THIS goal is the permanent fix and gains priority from the incident.
 - OpenedAt: 2026-08-29T07:38:20Z
-- Revision: 208
-- Budget: elapsedLimit=4h attemptLimit=6 reservedJobMinutesLimit=720 activeJobLimit=1 reviewRoundLimit=2
+- Revision: 209
 - BudgetExceptions: 0
-- Approved: by=human:Wido at=2026-09-15T20:31:10Z revision=181 opid=3E8SCW2VE00F971RGP7W4J9Y17-m1e-c6925449 authority=proven digest=8c458fc9ce804eb56bb4197b4924ec546827dc3b3be0227548dbae2d99019e7d
 
 History:
 - 2026-08-29T07:38:20Z XAR0VVP0CKT8476P0AZ8K4KG68-m1-bf243850 open actor=human:wido targets=machine-concurrency-governor
@@ -223,4 +221,5 @@ History:
 - 2026-09-16T20:31:19Z C1DT7Y4C9BRRF4SNSB80SWEFCN-m1e-c6925449 set-priority actor=human:Wido targets=census-lifecycle-scenario-holds-under-load,chain-landing-carries-the-reviewed-diff,dispatch-bases-chains-on-the-remote-tip,events-package-has-a-test-group,fixture-repo-copies-exclude-the-artifacts-store,fixture-waits-name-their-producer,human-authority-surface-runs-its-cmd-tests,human-wait-does-not-consume-goal-budget,lease-sweep-death-evidence,machine-concurrency-governor,metasystem-stop-escalation-proofs,metasystem-stop-fleet-form,new-elapsed-budgets-use-explicit-hours,pipelines-never-lose-a-truncated-producer,repo-root-paths-ride-agent-commits-unjudged,run-scoped-build-caches-have-a-janitor,skipped-test-fails-its-group-on-the-other-os,token-spend-fence,winddown-census-handoff-leak reason=priority-order subject=lease-sweep-death-evidence from=1:56 to=1:55 requested-sequence=34
 - 2026-09-16T20:31:27Z BVMYGCGW7TJ8P9PADA9WZXM60K-m1e-c6925449 set-priority actor=human:Wido targets=census-lifecycle-scenario-holds-under-load,chain-landing-carries-the-reviewed-diff,dispatch-bases-chains-on-the-remote-tip,events-package-has-a-test-group,fixture-repo-copies-exclude-the-artifacts-store,fixture-waits-name-their-producer,human-authority-surface-runs-its-cmd-tests,human-wait-does-not-consume-goal-budget,machine-concurrency-governor,metasystem-stop-escalation-proofs,metasystem-stop-fleet-form,new-elapsed-budgets-use-explicit-hours,pipelines-never-lose-a-truncated-producer,repo-root-paths-ride-agent-commits-unjudged,run-scoped-build-caches-have-a-janitor,skipped-test-fails-its-group-on-the-other-os,token-spend-fence,winddown-census-handoff-leak reason=priority-order subject=winddown-census-handoff-leak from=1:55 to=1:54 requested-sequence=35
 - 2026-09-16T20:31:33Z 6QJ7XVJJQ9AQX9723TQ9W3GVQX-m1e-c6925449 set-priority actor=human:Wido targets=census-lifecycle-scenario-holds-under-load,chain-landing-carries-the-reviewed-diff,dispatch-bases-chains-on-the-remote-tip,events-package-has-a-test-group,fixture-repo-copies-exclude-the-artifacts-store,fixture-waits-name-their-producer,human-authority-surface-runs-its-cmd-tests,human-wait-does-not-consume-goal-budget,machine-concurrency-governor,metasystem-stop-escalation-proofs,metasystem-stop-fleet-form,new-elapsed-budgets-use-explicit-hours,pipelines-never-lose-a-truncated-producer,repo-root-paths-ride-agent-commits-unjudged,run-scoped-build-caches-have-a-janitor,skipped-test-fails-its-group-on-the-other-os,token-spend-fence reason=priority-order subject=machine-concurrency-governor from=1:54 to=2:36 requested-sequence=36
-Integrity: sha256=dee01adfb9c7202cf5180e5a9a242c78a78713787c2b02dfeb70cba39798d56a
+- 2026-09-16T20:33:44Z ZDGXCXNCSWQH9NEHA1FFE3340S-m1e-c6925449 unapprove actor=human:Wido targets=machine-concurrency-governor reason=Wido 2026-09-16 22:40 CEST: clean house on priority 1 first, then a few human convenience features; every priority 2+ goal is unapproved until then
+Integrity: sha256=972dac0464e5e331769b0988325e6130a6dd2c4f29fc36040d0b41a548a4b05b
