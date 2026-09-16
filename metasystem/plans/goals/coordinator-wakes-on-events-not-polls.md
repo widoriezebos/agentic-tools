@@ -1,6 +1,6 @@
 # coordinator-wakes-on-events-not-polls
 
-- State: claimed
+- State: approved
 - Priority: 1
 - Sequence: 14
 - Risk: severity=2 novelty=2 exposure=3 accumulation=2 basis="severity 2: a wait that never returns idles a seat; novelty 2: a wait verb over existing records is new; exposure 3: every seat; accumulation 2: touches the hook and the verbs"
@@ -9,15 +9,14 @@
 - Origin: human
 - Next step: m1e's landing lane holds the records candidate: branch m1b-cw5-ready df37dd21c, re-derived at base 611b3a977 after the alternates repair, byte-identical to the seat-verified change set and green on go build. m1e dispatched its Opus read; findings return to m1b to fold. The lane takes the testrun lock and lands with the receipt, then m1b releases and concludes. Open for Wido, unchanged: the clause 5 endpoint (keep the clause and open attestation work, narrow the endpoint to the return, or leave the parent short of DONE) and the missing Codex coordinator seat for the two-runtime leg. The records question itself is settled: engine records can only refute clause 5, never prove a pass (r3 b7081ff52, r4 09349e0dc, doctrine note 3918944bf).
 - OpenedAt: 2026-09-11T15:45:15Z
-- Revision: 97
+- Revision: 98
 - BlockedBy: publication-owners-hint-the-waiter, wait-verb-returns-on-recorded-events
 - Pinned: m1b
 - Budget: elapsedLimit=2d attemptLimit=20 reservedJobMinutesLimit=1200 activeJobLimit=1 reviewRoundLimit=3
 - BudgetExceptions: 2
 - Approved: by=human:Wido at=2026-09-16T08:32:26Z revision=97 opid=E7223BSH06SS7XV1SF33Z3J6EX-m1e-c6925449 authority=proven digest=06f4fbd070bf9216ce69dd1dcb81d064ce276cb648b3c00c8c19155b81861d93
 - Sliced: machine=m1b lineage=main-1789191336-90295-e4b24b revision=29 at=2026-09-13T00:19:49Z
-- Claimed: machine=m1b lineage=main-1789191336-90295-e4b24b at=2026-09-16T08:32:26Z revision=97 accountingRevision=97 episodeAt=2026-09-13T00:18:31Z episodeRevision=29 idleSeconds=259181
-- StopCapability: generation=97 revision=97 machine=m1b claimEpoch=1 fenceEpoch=0
+- Episode: machine=m1b lineage=main-1789191336-90295-e4b24b accountingRevision=97 episodeAt=2026-09-13T00:18:31Z episodeRevision=29 idleSeconds=259181 released=2026-09-16T08:32:37Z
 
 History:
 - 2026-09-11T15:45:15Z HPJKBN0ZC1BZBK2M5KWKW0JP71-m1e-5083721b open actor=m1e+main-1789141490-27414-b9c0d2 targets=coordinator-wakes-on-events-not-polls
@@ -117,4 +116,5 @@ History:
 - 2026-09-16T07:58:20Z 8B8S6BBQQ3TSYSTB9DT2QXPDJV-m1b-30a7e141 release actor=m1b+main-1789191336-90295-e4b24b targets=coordinator-wakes-on-events-not-polls
 - 2026-09-16T07:58:28Z K44TGDVMJBHE8XWHMM38D6DNGQ-m1b-30a7e141 claim actor=m1b+main-1789191336-90295-e4b24b targets=coordinator-wakes-on-events-not-polls
 - 2026-09-16T08:32:26Z E7223BSH06SS7XV1SF33Z3J6EX-m1e-c6925449 set-budget actor=human:Wido targets=coordinator-wakes-on-events-not-polls displaced=m1b+main-1789191336-90295-e4b24b@2026-09-16T07:58:28Z
-Integrity: sha256=1f742b221573564055c9a4d8515062b90889704f6a7ce0c54116a323978eaf22
+- 2026-09-16T08:32:37Z 06TVM7E1K85PYBAZ9REMEA7HC2-m1b-30a7e141 release actor=m1b+main-1789191336-90295-e4b24b targets=coordinator-wakes-on-events-not-polls
+Integrity: sha256=d6f41a4c98ea5088f2e3de986d1275901969735ae67730bc4a601bc919cbe851

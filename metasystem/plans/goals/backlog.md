@@ -6,7 +6,7 @@
 - MigrationEpoch: 2026-08-20T00:00:00Z
 - ManifestDigest: d82032bee818c2d82e6a95e6f1b75347499b88ee8b68c4d20a0f3c94d00ba320
 - MigrationMode: manifest
-- Revision: 92
+- Revision: 93
 - ApprovalGate: since=2026-09-03T14:16:24Z opid=JY54AQT8101VK9353WT9FQYGA9-m0-c5dbf036
 - FleetEnrollment: at=2026-09-06T06:37:21Z machine=m1 generation=1 opid=CMNCRETKYCB18MFZNYFSZJPXQY-m1-a4f8999f
 
@@ -118,4 +118,5 @@ History:
 - 2026-09-16T00:06:45Z STGRH0WVA5WDWK60TM0CBD2P4S-m1c-c6925449 grant actor=human:Wido reason=tiers=1 verbs=approve,set-budget,unpark expires=2026-09-22
 - 2026-09-16T02:16:08Z GCD6ZFXF2FFBBKRHMCZ56GH6DF-m1b-30a7e141 ack actor=m1b+main-1789191336-90295-e4b24b targets=coordinator-wakes-on-events-not-polls displaced=m1b+main-1789191336-90295-e4b24b@2026-09-16T02:15:06Z ack
 - 2026-09-16T07:34:02Z FS0EXK42TCS94KQRW8APTQ66EK-m1e-c6925449 grant actor=human:Wido reason=tiers=1,2 verbs=approve,set-budget,unpark expires=2026-09-20
-Integrity: sha256=adaf12f68db3c6f4c174e95ec7f2652c7c12bca2fd81454cd12f3a67cd151f9a
+- 2026-09-16T08:32:37Z 06TVM7E1K85PYBAZ9REMEA7HC2-m1b-30a7e141 ack actor=m1b+main-1789191336-90295-e4b24b targets=coordinator-wakes-on-events-not-polls displaced=m1b+main-1789191336-90295-e4b24b@2026-09-16T07:58:28Z ack
+Integrity: sha256=e50bb870b17b4805c702e44e081b866d5e5063d01daf1a8d1f2002706897b209
