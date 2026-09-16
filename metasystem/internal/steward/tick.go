@@ -30,7 +30,12 @@ type WorkerCensus interface {
 type TickConfig struct {
 	StaleTicks  int
 	MaxRevivals int
+	// Now is set only by fixture-authorized command boundaries. A zero value
+	// keeps each tick operation on the wall clock.
+	Now time.Time
 }
+
+var tickHealthNow = time.Now
 
 func (c TickConfig) withDefaults() TickConfig {
 	if c.StaleTicks <= 0 {
@@ -40,6 +45,13 @@ func (c TickConfig) withDefaults() TickConfig {
 		c.MaxRevivals = 3
 	}
 	return c
+}
+
+func (c TickConfig) now() time.Time {
+	if c.Now.IsZero() {
+		return time.Now().UTC()
+	}
+	return c.Now.UTC()
 }
 
 // TickResult is everything the calling verb needs to act and report.
@@ -123,14 +135,14 @@ func RunTick(repoRoot string, cfg TickConfig, census WorkerCensus) (result TickR
 		// zero can never satisfy the armed-runner health check.
 		generation = 0
 	}
-	tickAttempt, err := beginComponentAttempt(repoRoot, "steward-tick", generation, selfExact.Ref(), time.Now())
+	tickAttempt, err := beginComponentAttempt(repoRoot, "steward-tick", generation, selfExact.Ref(), cfg.now())
 	if err != nil {
 		return TickResult{}, fmt.Errorf("record tick attempt: %w", err)
 	}
 	tickCompleted := false
 	defer func() {
 		if result.Health.Schema == 0 {
-			if healthErr := completeTickHealth(repoRoot, &result, generation, selfExact.Ref()); healthErr != nil && returnErr == nil {
+			if healthErr := completeTickHealth(repoRoot, &result, generation, selfExact.Ref(), cfg.Now); healthErr != nil && returnErr == nil {
 				returnErr = healthErr
 			}
 		}
@@ -142,7 +154,7 @@ func RunTick(repoRoot string, cfg TickConfig, census WorkerCensus) (result TickR
 			evidence = returnErr.Error()
 		}
 		if _, completeErr := completeComponentAttempt(repoRoot, "steward-tick", generation, tickAttempt.AttemptSeq,
-			ComponentError, "TICK_FAILED", evidence, nil, time.Now()); completeErr != nil && returnErr == nil {
+			ComponentError, "TICK_FAILED", evidence, nil, cfg.now()); completeErr != nil && returnErr == nil {
 			returnErr = fmt.Errorf("record failed tick completion: %w", completeErr)
 		}
 	}()
@@ -150,18 +162,18 @@ func RunTick(repoRoot string, cfg TickConfig, census WorkerCensus) (result TickR
 	// Budget healing runs before health and notification. A successful stop is
 	// machinery history only; a failure remains visible to the ordinary health
 	// breaker, which is the sole escalation owner.
-	goalStops := runBreachStopCustodian(repoRoot, time.Now())
-	governedRefreshFailures := refreshGovernedObligations(repoRoot, time.Now())
+	goalStops := runBreachStopCustodian(repoRoot, cfg.now())
+	governedRefreshFailures := refreshGovernedObligations(repoRoot, cfg.now())
 	if len(governedRefreshFailures) > 0 {
 		return degradedTick(repoRoot, "governed-obligation observation failed: "+strings.Join(governedRefreshFailures, "; "))
 	}
-	if err := observeDirectValidationWindow(repoRoot, time.Now()); err != nil {
+	if err := observeDirectValidationWindow(repoRoot, cfg.now()); err != nil {
 		return degradedTick(repoRoot, "direct-validation observation failed: "+err.Error())
 	}
-	if err := sweepRulingReviews(repoRoot, time.Now()); err != nil {
+	if err := sweepRulingReviews(repoRoot, cfg.now()); err != nil {
 		return degradedTick(repoRoot, "ruling review sweep failed: "+err.Error())
 	}
-	if err := sweepCounselorBrief(repoRoot, time.Now()); err != nil {
+	if err := sweepCounselorBrief(repoRoot, cfg.now()); err != nil {
 		return degradedTick(repoRoot, "counselor brief carriage failed: "+err.Error())
 	}
 
@@ -171,17 +183,17 @@ func RunTick(repoRoot string, cfg TickConfig, census WorkerCensus) (result TickR
 	if err != nil {
 		return degradedTick(repoRoot, "reaping failed: "+err.Error())
 	}
-	ledgerAttempt, err := beginComponentAttempt(repoRoot, "ledger-attention", generation, selfExact.Ref(), time.Now())
+	ledgerAttempt, err := beginComponentAttempt(repoRoot, "ledger-attention", generation, selfExact.Ref(), cfg.now())
 	if err != nil {
 		return TickResult{}, fmt.Errorf("record ledger-attention attempt: %w", err)
 	}
-	ledgerReport := RunLedgerAttention(repoRoot, time.Now())
+	ledgerReport := RunLedgerAttention(repoRoot, cfg.now())
 	ledgerResult, ledgerOutcome, ledgerEvidence := ComponentOK, "PASS_COMPLETE", ledgerReport.Outcome
 	if ledgerReport.Outcome == "failed" {
 		ledgerResult, ledgerOutcome, ledgerEvidence = ComponentError, ledgerReport.FailureKind, ledgerReport.Failure
 	}
 	if _, err := completeComponentAttempt(repoRoot, "ledger-attention", generation, ledgerAttempt.AttemptSeq,
-		ledgerResult, ledgerOutcome, ledgerEvidence, nil, time.Now()); err != nil {
+		ledgerResult, ledgerOutcome, ledgerEvidence, nil, cfg.now()); err != nil {
 		return TickResult{}, fmt.Errorf("record ledger-attention completion: %w", err)
 	}
 
@@ -203,7 +215,7 @@ func RunTick(repoRoot string, cfg TickConfig, census WorkerCensus) (result TickR
 	// clock can never outlive the outage's evidence. ONE sample
 	// governs the whole tick — aging, decision, and narration must
 	// tell the same story even when the mark moves mid-tick.
-	outageMark, providerOutage := outage.StandingAt(repoRoot, time.Now())
+	outageMark, providerOutage := outage.StandingAt(repoRoot, cfg.now())
 	if providerOutage && marks == prev.Marks {
 		ev = prev
 	}
@@ -227,7 +239,7 @@ func RunTick(repoRoot string, cfg TickConfig, census WorkerCensus) (result TickR
 	result = TickResult{Decision: d, Evidence: ev, OpenWork: workReason,
 		Reaped: reaped, ProviderOutage: providerOutage, Outage: outageMark, GoalStops: goalStops,
 		LedgerAttention: ledgerReport}
-	if err := NarrateDigest(repoRoot, prev, result, time.Now()); err != nil {
+	if err := NarrateDigest(repoRoot, prev, result, cfg.now()); err != nil {
 		return result, fmt.Errorf("write narrator digest: %w", err)
 	}
 	machine := "this machine"
@@ -252,12 +264,12 @@ func RunTick(repoRoot string, cfg TickConfig, census WorkerCensus) (result TickR
 	// narration notices also reaches the operator, one gated message
 	// per building condition.
 	Narrate(repoRoot, result, cfg)
-	ReachTheHuman(repoRoot, noticingsAt(repoRoot, result, cfg, time.Now()))
-	if err := completeTickHealth(repoRoot, &result, generation, selfExact.Ref()); err != nil {
+	ReachTheHuman(repoRoot, noticingsAt(repoRoot, result, cfg, cfg.now()))
+	if err := completeTickHealth(repoRoot, &result, generation, selfExact.Ref(), cfg.Now); err != nil {
 		return result, err
 	}
 	if _, err := completeComponentAttempt(repoRoot, "steward-tick", generation, tickAttempt.AttemptSeq,
-		ComponentOK, "PASS_COMPLETE", result.Health.FindingDigest, nil, time.Now()); err != nil {
+		ComponentOK, "PASS_COMPLETE", result.Health.FindingDigest, nil, cfg.now()); err != nil {
 		return result, fmt.Errorf("record tick completion: %w", err)
 	}
 	tickCompleted = true
@@ -267,33 +279,39 @@ func RunTick(repoRoot string, cfg TickConfig, census WorkerCensus) (result TickR
 // completeTickHealth performs the mandatory end of every tick: one durable
 // health observation, one durable narration line, and a queued alert whenever
 // the observation's dead or persistent-unknown boundary requires one.
-func completeTickHealth(repoRoot string, result *TickResult, generation int, process identity.Ref) error {
-	health, err := ObserveHealth(repoRoot, time.Now(), identity.KernelProber{})
+func completeTickHealth(repoRoot string, result *TickResult, generation int, process identity.Ref, now time.Time) error {
+	healthNow := func() time.Time {
+		if now.IsZero() {
+			return tickHealthNow()
+		}
+		return now.UTC()
+	}
+	health, err := ObserveHealth(repoRoot, healthNow(), identity.KernelProber{})
 	if err != nil {
 		return fmt.Errorf("compute health: %w", err)
 	}
 	result.Health = health
-	if err := requestWatcherRepair(repoRoot, health, time.Now()); err != nil {
+	if err := requestWatcherRepair(repoRoot, health, healthNow()); err != nil {
 		return fmt.Errorf("request watcher repair: %w", err)
 	}
-	narratorAttempt, err := beginComponentAttempt(repoRoot, "narrator", generation, process, time.Now())
+	narratorAttempt, err := beginComponentAttempt(repoRoot, "narrator", generation, process, healthNow())
 	if err != nil {
 		return fmt.Errorf("record narrator attempt: %w", err)
 	}
 	line := health.Line()
 	if err := NarrateHealthLine(repoRoot, line); err != nil {
 		_, _ = completeComponentAttempt(repoRoot, "narrator", generation, narratorAttempt.AttemptSeq,
-			ComponentError, "WRITE_FAILED", err.Error(), nil, time.Now())
+			ComponentError, "WRITE_FAILED", err.Error(), nil, healthNow())
 		return fmt.Errorf("narrate health: %w", err)
 	}
 	if _, err := completeComponentAttempt(repoRoot, "narrator", generation, narratorAttempt.AttemptSeq,
-		ComponentOK, "EMITTED", line, nil, time.Now()); err != nil {
+		ComponentOK, "EMITTED", line, nil, healthNow()); err != nil {
 		return fmt.Errorf("record narrator completion: %w", err)
 	}
-	if _, err := UpdateAlertEpisodes(repoRoot, health, line, time.Now()); err != nil {
+	if _, err := UpdateAlertEpisodes(repoRoot, health, line, healthNow()); err != nil {
 		return fmt.Errorf("update health alert episodes: %w", err)
 	}
-	if err := UpdateSpendEpisodes(repoRoot, health.Spend, time.Now()); err != nil {
+	if err := UpdateSpendEpisodes(repoRoot, health.Spend, healthNow()); err != nil {
 		return fmt.Errorf("update spend alert episodes: %w", err)
 	}
 	return nil

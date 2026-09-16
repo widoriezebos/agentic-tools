@@ -31,12 +31,18 @@ func TestArmTemporaryRefusesContentFreeRemoteWord(t *testing.T) {
 	}
 }
 
+func TestRunnerLaunchArgumentsRemainCompatible(t *testing.T) {
+	if got := strings.Join(runnerLaunchArguments("/fixture/repo"), " "); got != "steward run --repo /fixture/repo" {
+		t.Fatalf("runner launch argv = %q; want the pre-change contract", got)
+	}
+}
+
 func TestRunLoopTicksUntilTheStopFile(t *testing.T) {
 	root := gitRepoWithCurrentGoal(t)
 	census := fakeCensus{workers: Workers{Live: 1, CensusComplete: true}}
 	done := make(chan error, 1)
 	go func() {
-		done <- RunLoop(root, census, nil, 50*time.Millisecond)
+		done <- RunLoop(root, census, nil, 50*time.Millisecond, TickConfig{})
 		close(done)
 	}()
 	t.Cleanup(func() {
@@ -108,7 +114,7 @@ func TestRunLoopAttemptsRevivalBeforeNotifyingItsFailure(t *testing.T) {
 		}
 		return os.ErrInvalid
 	}
-	if err := RunLoop(root, deadCensus(), revive, time.Hour); err != nil {
+	if err := RunLoop(root, deadCensus(), revive, time.Hour, TickConfig{}); err != nil {
 		t.Fatal(err)
 	}
 	if alertedBeforeRepair {
@@ -124,7 +130,7 @@ func TestSecondRunnerRefusesBesideALiveOne(t *testing.T) {
 	root := gitRepoWithCurrentGoal(t)
 	census := fakeCensus{workers: Workers{Live: 1, CensusComplete: true}}
 	done := make(chan error, 1)
-	go func() { done <- RunLoop(root, census, nil, time.Hour) }()
+	go func() { done <- RunLoop(root, census, nil, time.Hour, TickConfig{}) }()
 	deadline := time.Now().Add(wiringBound)
 	for time.Now().Before(deadline) {
 		if _, err := os.Stat(runnerRecordPath(root)); err == nil {
@@ -132,7 +138,7 @@ func TestSecondRunnerRefusesBesideALiveOne(t *testing.T) {
 		}
 		time.Sleep(20 * time.Millisecond)
 	}
-	if err := RunLoop(root, census, nil, time.Hour); err == nil {
+	if err := RunLoop(root, census, nil, time.Hour, TickConfig{}); err == nil {
 		t.Fatal("one repository, one runner")
 	}
 	os.WriteFile(runnerStopPath(root), []byte("stop\n"), 0o644)

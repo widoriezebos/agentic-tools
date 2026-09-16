@@ -248,13 +248,44 @@ printf '{"systemMessage":"Just completed: unknown for this turn.\\nNo task in fl
   --installation "$repo" --report-id "$hook_report_id" --report-alias "$hook_report_alias" --report-path "$hook_report_path" --report-sha256 "$hook_report_sha" \
   || fail "hook completion could not be recorded"
 
+health_clock_args=()
+
+format_health_clock() {
+  date -u -r "$1" +%Y-%m-%dT%H:%M:%SZ 2>/dev/null \
+    || date -u -d "@$1" +%Y-%m-%dT%H:%M:%SZ
+}
+
+set_health_clock() {
+  local epoch=$1 stamp
+  stamp=$(format_health_clock "$epoch") || fail "health clock timestamp could not be formatted"
+  export METASYSTEM_GOAL_NOW=$stamp
+}
+
+set_component_clock_evidence() {
+  local component=$1 epoch=$2 stamp
+  stamp=$(format_health_clock "$epoch") || fail "component clock timestamp could not be formatted"
+  "$ms" json set --file "$repo/artifacts/agents/steward/components/$component.json" \
+    --field "lastAttempt=$stamp" --field "lastCompletion=$stamp" --field "lastSuccess=$stamp" \
+    || fail "$component evidence could not follow the health clock"
+}
+
 run_health() {
   local name=$1
   set +e
-  "$ms" health --repo "$repo" >"$tmp/$name.out" 2>"$tmp/$name.err"
+  "$ms" health --repo "$repo" ${health_clock_args[@]+"${health_clock_args[@]}"} >"$tmp/$name.out" 2>"$tmp/$name.err"
   health_rc=$?
   set -e
 }
+
+if [[ "$fixture_scenario" == alert-episode ]]; then
+  health_clock_args=(--metasystem-root "$fixture_install")
+  health_clock_epoch=$(date -u +%s)
+  set_health_clock "$health_clock_epoch"
+  set_component_clock_evidence repo-watcher "$health_clock_epoch"
+  set_component_clock_evidence supervision-hook "$health_clock_epoch"
+  "$ms" json set --file "$repo/artifacts/agents/supervision/last-census.json" \
+    --int "completedAtEpoch=$health_clock_epoch" || fail "census evidence could not follow the health clock"
+fi
 
 read_runner_pid() {
   sed -n 's/^[[:space:]]*"pid":[[:space:]]*\([0-9][0-9]*\).*/\1/p' \
@@ -419,6 +450,12 @@ done
 grep -Fq '"attempts": []' "$silent_episode" || fail "the silent history episode attempted notification before escalation"
 
 for observation in 2 3 4 5; do
+  if [[ "$fixture_scenario" == alert-episode && "$observation" -eq 5 ]]; then
+    failure_five_epoch=$(date -u +%s)
+    failure_five_narrator_epoch=$((failure_five_epoch + 3600))
+    set_component_clock_evidence narrator "$failure_five_narrator_epoch"
+    set_health_clock "$((failure_five_narrator_epoch + 3))"
+  fi
   "$ms" steward tick --repo "$repo" >"$tmp/tick-$observation.out" 2>"$tmp/tick-$observation.err" || {
     cat "$tmp/tick-$observation.err" >&2
     fail "failure observation $observation tick failed"
@@ -428,6 +465,11 @@ grep -Fq '"consecutiveFailures": 5' "$tmp/tick-5.out" || fail "failure five was 
 grep -Fq '"failureEscalation": "AUTO_HEAL_ENDED"' "$tmp/tick-5.out" || fail "failure five did not end auto-heal"
 failure_five_digest=$("$ms" json get --file "$repo/artifacts/agents/steward/health.json" --field verdict.findingDigest) \
   || fail "failure five finding digest was unreadable"
+
+if [[ "$fixture_scenario" == alert-episode ]]; then
+  set_health_clock "$((failure_five_narrator_epoch + 6))"
+  set_component_clock_evidence narrator "$((failure_five_epoch - 3600))"
+fi
 
 episode_count=0
 episode_file=
@@ -476,6 +518,11 @@ done
 grep -Fq '"acknowledged": true' "$episode_file" || fail "episode acknowledgment was not recorded"
 grep -Fq '"acknowledgedBy"' "$episode_file" || fail "episode acknowledgment omitted the observed invoker"
 
+if [[ "$fixture_scenario" == alert-episode ]]; then
+  set_component_clock_evidence repo-watcher "$((failure_five_narrator_epoch + 6))"
+  "$ms" json set --file "$repo/artifacts/agents/supervision/last-census.json" \
+    --int "completedAtEpoch=$((failure_five_narrator_epoch + 6))" || fail "recovery census evidence could not follow the health clock"
+fi
 "$ms" steward restart --repo "$repo" >"$tmp/runner-restart.out" 2>"$tmp/runner-restart.err" || {
   cat "$tmp/runner-restart.err" >&2
   fail "the killed runner's focused restart failed"

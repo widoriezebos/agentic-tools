@@ -110,7 +110,7 @@ func TickSeconds(repoRoot string) int {
 // retries pending notifications.
 // launcher. The loop never crashes out of a tick: a failed pass is
 // reported and the next tick tries again.
-func RunLoop(repoRoot string, census WorkerCensus, revive func() error, interval time.Duration) error {
+func RunLoop(repoRoot string, census WorkerCensus, revive func() error, interval time.Duration, cfg TickConfig) error {
 	top := canonicalPath(repoRoot)
 	fence, err := readOpenFence(top, "the steward runner")
 	if err != nil {
@@ -141,7 +141,7 @@ func RunLoop(repoRoot string, census WorkerCensus, revive func() error, interval
 	if err := writeJSONAtomic(runnerRecordPath(top), RunnerRecord{
 		Pid: int64(os.Getpid()), StartTicks: self.StartTicks, BootID: self.BootID,
 		PidStartedAt:    self.StartedAt.Unix(),
-		StartedAt:       time.Now().UTC().Format(time.RFC3339),
+		StartedAt:       cfg.now().Format(time.RFC3339),
 		FenceGeneration: fence.Generation,
 	}); err != nil {
 		return err
@@ -168,7 +168,7 @@ func RunLoop(repoRoot string, census WorkerCensus, revive func() error, interval
 		if _, err := os.Stat(runnerStopPath(top)); err == nil {
 			return nil
 		}
-		result, err := RunTick(top, TickConfig{}, census)
+		result, err := RunTick(top, cfg, census)
 		if err != nil {
 			fmt.Fprintf(os.Stderr, "tick failed: %v\n", err)
 		}
@@ -767,7 +767,7 @@ func launchRunner(repoRoot string, binary *EnrolledBinary) (RunnerRecord, error)
 		return RunnerRecord{}, err
 	}
 	defer logFile.Close()
-	cmd, err := binary.Command("steward", "run", "--repo", repoRoot)
+	cmd, err := binary.Command(runnerLaunchArguments(repoRoot)...)
 	if err != nil {
 		return RunnerRecord{}, err
 	}
@@ -789,6 +789,10 @@ func launchRunner(repoRoot string, binary *EnrolledBinary) (RunnerRecord, error)
 		time.Sleep(50 * time.Millisecond)
 	}
 	return RunnerRecord{}, fmt.Errorf("the runner did not confirm within ten seconds; see %s", runnerLogPath(repoRoot))
+}
+
+func runnerLaunchArguments(repoRoot string) []string {
+	return []string{"steward", "run", "--repo", repoRoot}
 }
 
 var runnerStopWriter = os.WriteFile

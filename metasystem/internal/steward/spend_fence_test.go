@@ -262,14 +262,18 @@ func TestTickCarriesSpendObservationAndUnknownDoesNotClearEpisodes(t *testing.T)
 	})
 	result := TickResult{}
 	process := identity.Ref{Pid: 1, StartedAtSec: 1}
-	if err := completeTickHealth(root, &result, 1, process); err != nil {
+	if err := completeTickHealth(root, &result, 1, process, spendFenceNow); err != nil {
 		t.Fatal(err)
+	}
+	narrator, _, narratorErr := loadComponentEvidenceForHealth(root, "narrator")
+	if !result.Health.ObservedAt.Equal(spendFenceNow) || narratorErr != nil || !narrator.LastSuccess.Equal(spendFenceNow) {
+		t.Fatalf("injected health completion time was not shared: health=%v narrator=%v err=%v", result.Health.ObservedAt, narrator.LastSuccess, narratorErr)
 	}
 	if calls != 1 || !result.Health.Spend.Valid || len(result.Health.Spend.Crossings) != 1 || len(spendDeliveryLines(t, sink)) != 1 {
 		t.Fatalf("the tick did not carry checkSpendFence's one typed observation exactly once: calls=%d health=%+v deliveries=%v", calls, result.Health, deliveryLines(t, sink))
 	}
 	unknown = true
-	if err := completeTickHealth(root, &result, 1, process); err != nil {
+	if err := completeTickHealth(root, &result, 1, process, spendFenceNow.Add(time.Second)); err != nil {
 		t.Fatal(err)
 	}
 	if calls != 2 || result.Health.Spend.Valid {
@@ -282,5 +286,25 @@ func TestTickCarriesSpendObservationAndUnknownDoesNotClearEpisodes(t *testing.T)
 	owned := spendOwned(episodes)
 	if len(owned) != 1 || owned[0].Cleared || owned[0].Resolved || len(spendDeliveryLines(t, sink)) != 1 {
 		t.Fatalf("an unknown tick cleared or resubmitted a spend episode: %+v", owned)
+	}
+}
+
+func TestTickProductionClockCompletesNarratorAfterHealthObservation(t *testing.T) {
+	root, _ := notifyRepo(t, "")
+	originalNow := tickHealthNow
+	clockCalls := 0
+	tickHealthNow = func() time.Time {
+		clockCalls++
+		return spendFenceNow.Add(time.Duration(clockCalls) * time.Second)
+	}
+	t.Cleanup(func() { tickHealthNow = originalNow })
+	result := TickResult{}
+	process := identity.Ref{Pid: 1, StartedAtSec: 1}
+	if err := completeTickHealth(root, &result, 1, process, time.Time{}); err != nil {
+		t.Fatal(err)
+	}
+	narrator, _, err := loadComponentEvidenceForHealth(root, "narrator")
+	if err != nil || !narrator.LastSuccess.After(result.Health.ObservedAt) || clockCalls < 4 {
+		t.Fatalf("production clock did not advance after health observation: health=%v narrator=%v calls=%d err=%v", result.Health.ObservedAt, narrator.LastSuccess, clockCalls, err)
 	}
 }

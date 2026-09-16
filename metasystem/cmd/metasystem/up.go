@@ -30,6 +30,9 @@ func upMetasystemRoot(explicit string) (string, error) {
 	if err != nil {
 		return "", err
 	}
+	if binary, err = filepath.EvalSymlinks(binary); err != nil {
+		return "", err
+	}
 	root := filepath.Dir(filepath.Dir(binary))
 	if _, err := os.Stat(filepath.Join(root, "metasystem.conf")); err != nil {
 		return "", fmt.Errorf("cannot derive the metasystem root from %s; pass --metasystem-root", binary)

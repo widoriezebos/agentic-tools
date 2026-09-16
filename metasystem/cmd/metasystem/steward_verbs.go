@@ -45,6 +45,48 @@ func stewardCensusFor(repo string) steward.WorkerCensus {
 var stewardHealthNow = time.Now
 var stewardPreviewHealthAt = steward.PreviewHealthAt
 
+func stewardClockRoot(explicit, fallback string) string {
+	if explicit != "" {
+		return explicit
+	}
+	if installed, err := upMetasystemRoot(""); err == nil {
+		return installed
+	}
+	return fallback
+}
+
+func stewardFixtureNow(root string) (time.Time, bool, error) {
+	if !fixtureauth.FixtureModeRoot(root) {
+		return time.Time{}, false, nil
+	}
+	authorization, err := fixtureauth.New(root)
+	if err != nil {
+		return time.Time{}, false, err
+	}
+	return authorization.Clock().GoalNow()
+}
+
+func stewardFixtureTickConfig(repo, root string) (steward.TickConfig, error) {
+	now, ok, err := stewardFixtureNow(stewardClockRoot(root, repo))
+	if err != nil || !ok {
+		return steward.TickConfig{}, err
+	}
+	return steward.TickConfig{Now: now}, nil
+}
+
+func stewardRunClockRoot(repo string) string {
+	root := stewardClockRoot("", repo)
+	top, err := canonicalPath(repo)
+	if err != nil {
+		return root
+	}
+	installed, err := steward.VerifyIdentity(steward.RepoIdentityPath(top), top)
+	if err != nil {
+		return root
+	}
+	return filepath.Dir(filepath.Dir(installed.InstallPath))
+}
+
 // runStewardHealth prints every role on one line and returns the aggregate
 // health code: zero healthy, one when any role is dead, two when unknown is
 // the worst result.
@@ -69,11 +111,19 @@ func runStewardHealth(args []string) int {
 		fmt.Fprintln(os.Stderr, "health: --repo is required")
 		return 2
 	}
+	clockRoot := stewardClockRoot(*metasystemRoot, *repo)
 	if *metasystemRoot == "" {
 		*metasystemRoot = *repo
 	}
+	now := stewardHealthNow().UTC()
+	if fixtureNow, ok, err := stewardFixtureNow(clockRoot); err != nil {
+		fmt.Fprintln(os.Stderr, "health: fixture clock:", err)
+		return 2
+	} else if ok {
+		now = fixtureNow
+	}
 	if *hookPreview {
-		verdict := stewardPreviewHealthAt(*repo, *metasystemRoot, stewardHealthNow(), nil)
+		verdict := stewardPreviewHealthAt(*repo, *metasystemRoot, now, nil)
 		if *format == "json" {
 			if err := json.NewEncoder(os.Stdout).Encode(steward.NewHookHealthPreview(verdict)); err != nil {
 				fmt.Fprintln(os.Stderr, "health: encode hook preview:", err)
@@ -84,14 +134,14 @@ func runStewardHealth(args []string) int {
 		}
 		return verdict.ExitCode()
 	}
-	verdict, err := steward.ObserveHealth(*repo, time.Now(), nil)
+	verdict, err := steward.ObserveHealth(*repo, now, nil)
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "health: health evidence is unknown: %v\n", err)
 		return 2
 	}
 	alertView := verdict
 	alertView.ShouldAlert = false
-	if _, err := steward.UpdateAlertEpisodes(*repo, alertView, verdict.Line(), time.Now()); err != nil {
+	if _, err := steward.UpdateAlertEpisodes(*repo, alertView, verdict.Line(), now); err != nil {
 		fmt.Fprintf(os.Stderr, "health: alert episode state is unknown: %v\n", err)
 		return 2
 	}
@@ -298,9 +348,13 @@ func runStewardTick(args []string) int {
 		fmt.Fprintln(os.Stderr, "steward tick: --repo is required")
 		return 2
 	}
-	result, err := steward.RunTick(*repo, steward.TickConfig{
-		StaleTicks: *staleTicks, MaxRevivals: *maxRevivals,
-	}, stewardCensusFor(*repo))
+	tickConfig, err := stewardFixtureTickConfig(*repo, "")
+	if err != nil {
+		fmt.Fprintln(os.Stderr, "steward tick: fixture clock:", err)
+		return 2
+	}
+	tickConfig.StaleTicks, tickConfig.MaxRevivals = *staleTicks, *maxRevivals
+	result, err := steward.RunTick(*repo, tickConfig, stewardCensusFor(*repo))
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "steward tick: %v\n", err)
 		if _, deliverErr := steward.DeliverPending(*repo); deliverErr != nil {
@@ -552,6 +606,11 @@ func runStewardRun(args []string) int {
 		}
 		signal.Ignore(syscall.SIGTERM)
 	}
+	tickConfig, clockErr := stewardFixtureTickConfig(*repo, stewardRunClockRoot(*repo))
+	if clockErr != nil {
+		fmt.Fprintln(os.Stderr, "steward run: fixture clock:", clockErr)
+		return 2
+	}
 	interval := time.Duration(steward.TickSeconds(*repo)) * time.Second
 	err := steward.RunLoop(*repo, stewardCensusFor(*repo), func() error {
 		cmd := exec.Command(os.Args[0], "steward", "revive", "--repo", *repo)
@@ -560,7 +619,7 @@ func runStewardRun(args []string) int {
 			return fmt.Errorf("%v (%s)", err, strings.TrimSpace(string(out)))
 		}
 		return nil
-	}, interval)
+	}, interval, tickConfig)
 	if err != nil {
 		var stopped *steward.StoppedError
 		if errors.As(err, &stopped) {

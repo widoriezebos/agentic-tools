@@ -46,7 +46,7 @@ func TestRunnerCreationReadersReturnFencedWithoutCreating(t *testing.T) {
 	for name, call := range map[string]func() error{
 		"arm":     func() error { _, err := Arm(root, "/bin/true"); return err },
 		"restart": func() error { _, err := Restart(root, "/bin/true"); return err },
-		"run":     func() error { return RunLoop(root, fakeCensus{}, nil, time.Hour) },
+		"run":     func() error { return RunLoop(root, fakeCensus{}, nil, time.Hour, TickConfig{}) },
 	} {
 		err := call()
 		var stopped *StoppedError
@@ -73,7 +73,7 @@ func TestRunLoopClosesItsCreationClaimAfterASecondFenceRead(t *testing.T) {
 	}
 	t.Cleanup(func() { runnerAfterRecordPublished = nil })
 
-	err := RunLoop(root, census, nil, time.Hour)
+	err := RunLoop(root, census, nil, time.Hour, TickConfig{})
 	var stopped *StoppedError
 	if !called || !errors.As(err, &stopped) || !stopped.Raced {
 		t.Fatalf("runner did not end itself after the fence changed: called=%t err=%v", called, err)

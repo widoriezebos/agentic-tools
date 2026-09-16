@@ -2,6 +2,8 @@ package main
 
 import (
 	"encoding/json"
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 	"time"
@@ -85,6 +87,55 @@ func TestHealthHookPreviewJSONMatchesTextFromOneEvaluation(t *testing.T) {
 		if code != 2 || stdout != "" || stderr == "" || calls != before {
 			t.Fatalf("invalid format evaluated health: code=%d calls=%d stdout=%q stderr=%q", code, calls, stdout, stderr)
 		}
+	}
+}
+
+func TestHealthCommandUsesOnlyAnAuthorizedFixtureClock(t *testing.T) {
+	originalPreview, originalNow := stewardPreviewHealthAt, stewardHealthNow
+	t.Cleanup(func() { stewardPreviewHealthAt, stewardHealthNow = originalPreview, originalNow })
+	wall := time.Date(2026, 9, 16, 18, 0, 0, 0, time.UTC)
+	fixtureNow := wall.Add(time.Hour)
+	stewardHealthNow = func() time.Time { return wall }
+	var observed time.Time
+	stewardPreviewHealthAt = func(_ string, _ string, now time.Time, _ identity.Prober) steward.HealthVerdict {
+		observed = now
+		return steward.HealthVerdict{Schema: 1, ObservedAt: now, Aggregate: "healthy"}
+	}
+
+	runtimeRoot := func(runtime string) string {
+		root := t.TempDir()
+		if err := os.WriteFile(filepath.Join(root, "metasystem.conf"), []byte("metasystem.runtimes="+runtime+"\n"), 0o644); err != nil {
+			t.Fatal(err)
+		}
+		return root
+	}
+	root, fixtureRoot := t.TempDir(), runtimeRoot("fake")
+	run := func(clockRoot string, preview bool) int {
+		args := []string{"--repo", root, "--metasystem-root", clockRoot}
+		if preview {
+			args = append(args, "--hook-preview")
+		}
+		_, code := captureStdout(t, func() int { return runStewardHealth(args) })
+		return code
+	}
+	t.Setenv("METASYSTEM_GOAL_NOW", fixtureNow.Format(time.RFC3339))
+	code := run(fixtureRoot, true)
+	if code != 0 || !observed.Equal(fixtureNow) {
+		t.Fatalf("authorized fixture clock = %v, code %d; want %v", observed, code, fixtureNow)
+	}
+	code = run(fixtureRoot, false)
+	if code == 0 {
+		t.Fatal("empty repository unexpectedly reported healthy")
+	}
+	recordData, err := os.ReadFile(steward.HealthRecordPath(root))
+	if stamp := fixtureNow.Format(time.RFC3339); err != nil || !strings.Contains(string(recordData), `"observedAt": "`+stamp+`"`) {
+		t.Fatalf("normal health observation omitted %s: read error %v; record %s", stamp, err, recordData)
+	}
+
+	t.Setenv("METASYSTEM_GOAL_NOW", "not-a-time")
+	code = run(runtimeRoot("none"), true)
+	if code != 0 || !observed.Equal(wall) {
+		t.Fatalf("production health clock = %v, code %d; want wall clock %v", observed, code, wall)
 	}
 }
 
