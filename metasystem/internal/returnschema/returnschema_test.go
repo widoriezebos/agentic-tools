@@ -1,6 +1,7 @@
 package returnschema
 
 import (
+	"crypto/sha256"
 	"encoding/json"
 	"fmt"
 	"os"
@@ -104,6 +105,19 @@ func TestVersionFourAddsArtifactMember(t *testing.T) {
 	}
 }
 
+func TestVersionFiveRequiresGrain(t *testing.T) {
+	v5, err := VersionFive(v1Schema())
+	if err != nil {
+		t.Fatal(err)
+	}
+	props := v5["properties"].(map[string]any)
+	row := props["rigor"].(map[string]any)["items"].(map[string]any)
+	grain := row["properties"].(map[string]any)["grain"].(map[string]any)["enum"].([]any)
+	if v5["$comment"] != "metasystem.version=5" || v5["title"] != "Impl return version 5" || fmt.Sprint(props["schemaVersion"].(map[string]any)["enum"]) != "[5]" || !strings.Contains(fmt.Sprint(row["required"]), "grain") || !strings.Contains(fmt.Sprint(row["required"]), "behaviour") || !strings.Contains(fmt.Sprint(row["required"]), "fixture") || fmt.Sprint(grain) != "[mechanical invariant]" {
+		t.Fatal("version-five grain contract is wrong")
+	}
+}
+
 func TestMaterializeV1V2AndCriticV3(t *testing.T) {
 	root := t.TempDir()
 	schemaDir := filepath.Join(root, "scripts/agents/schemas")
@@ -161,6 +175,9 @@ func TestMaterializeV1V2AndCriticV3(t *testing.T) {
 	}
 	var v4 map[string]any
 	data, _ = os.ReadFile(v4Out)
+	if got := fmt.Sprintf("%x", sha256.Sum256(data)); got != "6e8c62dceffd262687ec36e8bfdd59ae4767cd81d6a7fce9ae4dd8202445d310" {
+		t.Fatalf("version-four materialization changed: %s", got)
+	}
 	_ = json.Unmarshal(data, &v4)
 	if v4["$comment"] != "metasystem.version=4" {
 		t.Fatalf("v4 output missing the marker: %v", v4["$comment"])

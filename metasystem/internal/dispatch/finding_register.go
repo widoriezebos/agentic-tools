@@ -21,6 +21,7 @@ import (
 const findingRegisterField = "findingRegister"
 const findingRegisterRoundField = "findingRegisterRound"
 const findingRegisterSubjectDigestField = "findingRegisterSubjectDigest"
+const materialByRoundField = "materialByRound"
 const reviewRoundLimitField = "reviewRoundLimit"
 const criticRoundsConsumedField = "criticRoundsConsumed"
 
@@ -30,12 +31,14 @@ func init() {
 	dedicatedMetadataFields[closureField] = true
 	dedicatedMetadataFields[findingRegisterSubjectDigestField] = true
 	dedicatedMetadataFields[cleanReadRoundsField] = true
+	dedicatedMetadataFields[materialByRoundField] = true
 }
 
 type registerFinding struct {
 	FindingID      string
 	Critic         string
 	RigorClass     critiqueModel.RigorClass
+	Grain          string
 	FactsDigest    string
 	Facts          any
 	Artifact       string
@@ -117,6 +120,10 @@ func CritiqueRegisterAdvance(repoRoot, rootJob, roundJob string) (outcome string
 				return refuse(3, "critique register round %d cannot advance before round %d has been folded", round, foldedRound+1)
 			}
 			state.records[rootJob] = root
+			materialHistoryValue, materialHistoryPresent := root[materialByRoundField]
+			if !materialHistoryPresent {
+				materialHistoryValue = []any{}
+			}
 			_, historyPresent := root[cleanReadRoundsField]
 			cleanReads, historyErr := cleanReadsForRoot(state, rootJob, root)
 			if historyErr != nil {
@@ -124,6 +131,7 @@ func CritiqueRegisterAdvance(repoRoot, rootJob, roundJob string) (outcome string
 			}
 
 			advanced := register
+			var roundMaterial int64
 			var completedSubject ReadSubject
 			completedSubjectPresent := false
 			completedSubjectBound := false
@@ -133,6 +141,7 @@ func CritiqueRegisterAdvance(repoRoot, rootJob, roundJob string) (outcome string
 				// untouched — a cancellation is nobody's critique.
 			} else if failedAttempt {
 				advanced = foldProtocolError(register, role, roundJob, roundRecord)
+				roundMaterial = int64(len(advanced) - len(register))
 			} else {
 				resultPath := filepath.Join(state.agents, rootJob, "rounds", fmt.Sprint(round), "return.json")
 				result, readErr := readObject(resultPath)
@@ -170,9 +179,11 @@ func CritiqueRegisterAdvance(repoRoot, rootJob, roundJob string) (outcome string
 				completedSubjectBound = subjectPresent && readsubject.ReturnBindsSubject(persisted, result)
 				if subjectPresent && !completedSubjectBound {
 					advanced = foldUnboundReturn(register, role, roundJob, persisted, result)
+					roundMaterial = int64(len(advanced) - len(register))
 				} else {
 					var demotions []any
-					advanced, demotions, registerErr = foldCritiqueFindings(register, role, roundJob, findings, result["rigor"], subject, round)
+					version, _ := numInt(result["schemaVersion"])
+					advanced, demotions, roundMaterial, registerErr = foldCritiqueFindingsVersioned(register, role, roundJob, findings, result["rigor"], version, subject, round)
 					if registerErr != nil {
 						return registerErr
 					}
@@ -216,6 +227,13 @@ func CritiqueRegisterAdvance(repoRoot, rootJob, roundJob string) (outcome string
 			}
 			root[findingRegisterField] = after
 			root[findingRegisterRoundField] = round
+			materialHistory, historyErr := appendMaterialRound(materialHistoryValue, round, roundMaterial, cancelledRound)
+			if historyErr != nil {
+				return historyErr
+			}
+			if materialHistoryPresent || len(materialHistory) > 0 {
+				root[materialByRoundField] = materialHistory
+			}
 			if historyPresent || len(cleanReads) > 0 {
 				root[cleanReadRoundsField] = encodeCleanReadRounds(cleanReads)
 			}
@@ -291,6 +309,7 @@ func foldProtocolError(register []registerFinding, role, roundJob string, roundR
 	}
 	advanced = append(advanced, registerFinding{
 		FindingID: id, Critic: roundJob, RigorClass: critiqueModel.Unproven,
+		Grain:       "invariant",
 		FactsDigest: digestJSON(nil), Status: "open",
 		EvidenceDigest: digestJSON(map[string]any{
 			"error": roundRecord["error"], "phase": roundRecord["phase"], "protocolError": roundRecord["protocolError"],
@@ -314,6 +333,7 @@ func foldUnboundReturn(register []registerFinding, role, roundJob string, subjec
 	}
 	advanced = append(advanced, registerFinding{
 		FindingID: id, Critic: roundJob, RigorClass: critiqueModel.Unproven,
+		Grain:  "invariant",
 		Status: "open", Title: "critic return is not bound to the persisted read subject",
 		FactsDigest: digestJSON(nil),
 		EvidenceDigest: digestJSON(map[string]any{
@@ -822,13 +842,14 @@ func decodeFindingRegister(value any) ([]registerFinding, error) {
 	register := make([]registerFinding, 0, len(items))
 	for index, raw := range items {
 		entry, ok := raw.(map[string]any)
-		if !ok || (len(entry) != 7 && len(entry) != 13) {
+		if !ok || (len(entry) != 7 && len(entry) != 13 && len(entry) != 14) {
 			return nil, fmt.Errorf("entry %d is not an object with the canonical fields", index)
 		}
 		finding := registerFinding{
 			FindingID:      asString(entry["findingId"]),
 			Critic:         asString(entry["critic"]),
 			RigorClass:     critiqueModel.RigorClass(asString(entry["rigorClass"])),
+			Grain:          "invariant",
 			FactsDigest:    asString(entry["factsDigest"]),
 			Facts:          entry["facts"],
 			Artifact:       asString(entry["artifact"]),
@@ -839,17 +860,20 @@ func decodeFindingRegister(value any) ([]registerFinding, error) {
 			Evidence:       asString(entry["evidence"]),
 			EvidenceDigest: asString(entry["evidenceDigest"]),
 		}
+		if len(entry) == 14 {
+			finding.Grain = asString(entry["grain"])
+		}
 		if len(entry) == 7 && finding.Status == "resolved" {
 			finding.Resolution = "withdrawn"
 		}
 		finding.Multiplicity, ok = numInt(entry["multiplicity"])
-		if finding.FindingID == "" || finding.Critic == "" || !finding.RigorClass.Valid() ||
+		if finding.FindingID == "" || finding.Critic == "" || !finding.RigorClass.Valid() || (finding.Grain != "mechanical" && finding.Grain != "invariant") ||
 			!hexDigest64.MatchString(finding.FactsDigest) || !hexDigest64.MatchString(finding.EvidenceDigest) ||
 			!ok || finding.Multiplicity < 1 ||
 			(finding.Status != "open" && finding.Status != "resolved" && finding.Status != "disputed" && finding.Status != "deferred" && finding.Status != "accepted-risk") {
 			return nil, fmt.Errorf("entry %d has invalid canonical values", index)
 		}
-		if len(entry) == 13 {
+		if len(entry) == 13 || len(entry) == 14 {
 			unresolved := finding.Status == "open" || finding.Status == "disputed"
 			if unresolved && (finding.Resolution != "" || finding.DecisionOpID != "") {
 				return nil, fmt.Errorf("entry %d carries a resolution while unresolved", index)
@@ -889,9 +913,14 @@ func critiqueFindingRegister(root map[string]any) ([]registerFinding, bool, erro
 func encodeFindingRegister(register []registerFinding) []any {
 	items := make([]any, len(register))
 	for index, finding := range register {
+		grain := finding.Grain
+		// An unset or unrecognized grain is invariant, never mechanical, because the close table reads this field.
+		if grain != "mechanical" && grain != "invariant" {
+			grain = "invariant"
+		}
 		items[index] = map[string]any{
 			"findingId": finding.FindingID, "critic": finding.Critic,
-			"rigorClass": string(finding.RigorClass), "factsDigest": finding.FactsDigest,
+			"rigorClass": string(finding.RigorClass), "grain": grain, "factsDigest": finding.FactsDigest,
 			"status": finding.Status, "evidenceDigest": finding.EvidenceDigest,
 			"multiplicity": finding.Multiplicity, "facts": finding.Facts,
 			"artifact": finding.Artifact, "title": finding.Title,
@@ -1050,8 +1079,14 @@ func artifactAbsentFromTree(repoRoot, tree, path string) bool {
 }
 
 func foldCritiqueFindings(register []registerFinding, role, roundJob string, findings []any, rigorValue any, subject critiqueSubject, round int64) ([]registerFinding, []any, error) {
+	advanced, demotions, _, err := foldCritiqueFindingsVersioned(register, role, roundJob, findings, rigorValue, 0, subject, round)
+	return advanced, demotions, err
+}
+
+func foldCritiqueFindingsVersioned(register []registerFinding, role, roundJob string, findings []any, rigorValue any, schemaVersion int64, subject critiqueSubject, round int64) ([]registerFinding, []any, int64, error) {
 	advanced := append([]registerFinding(nil), register...)
 	var demotions []any
+	var admitted int64
 	byID := map[string]int{}
 	for index, finding := range advanced {
 		byID[finding.FindingID] = index
@@ -1059,6 +1094,7 @@ func foldCritiqueFindings(register []registerFinding, role, roundJob string, fin
 	rigorRows := rigorRowsByID(rigorValue)
 	identities := findingIdentities(role, findings)
 	processed := map[string]bool{}
+	admittedIDs := map[string]bool{}
 	for index, raw := range findings {
 		finding, ok := raw.(map[string]any)
 		if !ok {
@@ -1090,6 +1126,12 @@ func foldCritiqueFindings(register []registerFinding, role, roundJob string, fin
 			}
 			continue
 		}
+		admittedID := asString(finding["id"])
+		if admittedID == "" {
+			admittedID = id
+		}
+		admittedIDs[admittedID] = true
+		admitted = int64(len(admittedIDs))
 
 		factsDigest := digestJSON(row["facts"])
 		recurring := false
@@ -1100,9 +1142,14 @@ func foldCritiqueFindings(register []registerFinding, role, roundJob string, fin
 			}
 		}
 		class := critiqueModel.NormalizeWire(row["rigorClass"], row["facts"], row["reopeningTrigger"], recurring)
+		grain := "invariant"
+		if schemaVersion == 5 && asString(row["grain"]) == "mechanical" {
+			grain = "mechanical"
+		}
 		title := strings.TrimSpace(strings.Split(strings.ReplaceAll(asString(finding["claim"]), "\r\n", "\n"), "\n")[0])
 		candidate := registerFinding{
 			FindingID: id, Critic: roundJob, RigorClass: class,
+			Grain:       grain,
 			FactsDigest: factsDigest, Facts: row["facts"], Artifact: artifact, Title: title, Status: "open",
 			Evidence: asString(finding["evidence"]), EvidenceDigest: digestJSON(finding["evidence"]), Multiplicity: identity.Multiplicity,
 		}
@@ -1112,6 +1159,11 @@ func foldCritiqueFindings(register []registerFinding, role, roundJob string, fin
 			continue
 		}
 		current := advanced[existingIndex]
+		// The close table reads grain, so a re-report may strengthen it to invariant but never weaken it.
+		if current.Grain == "invariant" {
+			candidate.Grain = current.Grain
+		}
+		advanced[existingIndex].Grain = candidate.Grain
 		if candidate.Multiplicity > current.Multiplicity {
 			advanced[existingIndex].Multiplicity = candidate.Multiplicity
 			current.Multiplicity = candidate.Multiplicity
@@ -1132,7 +1184,32 @@ func foldCritiqueFindings(register []registerFinding, role, roundJob string, fin
 			advanced[existingIndex] = candidate
 		}
 	}
-	return advanced, demotions, nil
+	return advanced, demotions, admitted, nil
+}
+
+func appendMaterialRound(value any, round, material int64, cancelled bool) ([]any, error) {
+	history, ok := value.([]any)
+	if !ok {
+		return nil, fmt.Errorf("materialByRound is not an array")
+	}
+	var last int64
+	for index, raw := range history {
+		row, rowOK := raw.(map[string]any)
+		rowRound, roundOK := numInt(row["round"])
+		rowMaterial, materialOK := numInt(row["material"])
+		if !rowOK || len(row) != 2 || !roundOK || !materialOK || rowRound <= last || rowMaterial < 0 {
+			return nil, fmt.Errorf("materialByRound entry %d is not canonical", index)
+		}
+		last = rowRound
+	}
+	result := append([]any(nil), history...)
+	if cancelled {
+		return result, nil
+	}
+	if round <= last {
+		return nil, fmt.Errorf("materialByRound cannot append round %d after round %d", round, last)
+	}
+	return append(result, map[string]any{"round": round, "material": material}), nil
 }
 
 func rigorRowsByID(value any) map[string][]map[string]any {

@@ -25,6 +25,7 @@ var VersionThreeRoles = map[string]bool{
 }
 
 var VersionFourRoles = VersionThreeRoles
+var VersionFiveRoles = VersionThreeRoles
 
 // VersionTwo returns the v2 form of a v1 schema: a version marker, the
 // schemaVersion and claimed members added to properties and required, and the
@@ -114,6 +115,26 @@ func VersionFour(schema map[string]any) (map[string]any, error) {
 	return value, nil
 }
 
+// VersionFive adds the finding grain and the proof named by mechanical rows.
+func VersionFive(schema map[string]any) (map[string]any, error) {
+	value, err := VersionFour(schema)
+	if err != nil {
+		return nil, err
+	}
+	value["$comment"] = "metasystem.version=5"
+	title, _ := value["title"].(string)
+	value["title"] = strings.TrimSuffix(title, " version 4") + " version 5"
+	properties := value["properties"].(map[string]any)
+	properties["schemaVersion"] = map[string]any{"type": "integer", "enum": []any{5}}
+	items := properties["rigor"].(map[string]any)["items"].(map[string]any)
+	items["required"] = append(items["required"].([]any), "grain", "behaviour", "fixture")
+	row := items["properties"].(map[string]any)
+	row["grain"] = map[string]any{"type": "string", "enum": []any{"mechanical", "invariant"}}
+	row["behaviour"] = map[string]any{"type": []any{"string", "null"}}
+	row["fixture"] = map[string]any{"type": []any{"string", "null"}}
+	return value, nil
+}
+
 func rigorSchema() map[string]any {
 	boolean := func() map[string]any { return map[string]any{"type": "boolean"} }
 	factProperties := map[string]any{
@@ -177,6 +198,13 @@ func Materialize(root, role string, version int, outputPath string) error {
 			return fmt.Errorf("schema version 4 is only available for critic roles")
 		}
 		if schema, err = VersionFour(schema); err != nil {
+			return err
+		}
+	} else if version == 5 {
+		if !VersionFiveRoles[role] {
+			return fmt.Errorf("schema version 5 is only available for critic roles")
+		}
+		if schema, err = VersionFive(schema); err != nil {
 			return err
 		}
 	}

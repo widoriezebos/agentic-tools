@@ -177,7 +177,7 @@ func (c *returnChecker) checkReturn(role, returnPath string, record map[string]a
 		if version, present := resultObj["schemaVersion"]; present {
 			v, vOK := jsonInteger(version)
 			resultVersion = v
-			if !returnVersionedRoles[role] || !vOK || (v != 2 && v != 3 && v != 4) || (v == 3 && !returnschema.VersionThreeRoles[role]) || (v == 4 && !returnschema.VersionFourRoles[role]) {
+			if !returnVersionedRoles[role] || !vOK || (v != 2 && v != 3 && v != 4 && v != 5) || (v == 3 && !returnschema.VersionThreeRoles[role]) || (v == 4 && !returnschema.VersionFourRoles[role]) || (v == 5 && !returnschema.VersionFiveRoles[role]) {
 				c.violation("unknown return schema version for role %q: %v", role, version)
 			} else if schema != nil && v == 2 {
 				upgraded, err := returnschema.VersionTwo(schema)
@@ -200,6 +200,13 @@ func (c *returnChecker) checkReturn(role, returnPath string, record map[string]a
 				} else {
 					schema = upgraded
 				}
+			} else if schema != nil && v == 5 {
+				upgraded, err := returnschema.VersionFive(schema)
+				if err != nil {
+					c.violation("role schema cannot version: %v", err)
+				} else {
+					schema = upgraded
+				}
 			}
 		}
 	}
@@ -216,8 +223,8 @@ func (c *returnChecker) checkReturn(role, returnPath string, record map[string]a
 	resultObj, _ := result.(map[string]any)
 	if (role == "design-critic" || role == "code-critic" || role == "warden") && resultObj != nil {
 		c.checkMaterialCount(resultObj)
-		if resultVersion == 3 || resultVersion == 4 {
-			c.checkRigorRows(resultObj)
+		if resultVersion == 3 || resultVersion == 4 || resultVersion == 5 {
+			c.checkRigorRows(resultObj, resultVersion)
 		}
 	}
 	if role == "behavior-judge" && resultObj != nil {
@@ -349,7 +356,7 @@ func writeNormalizedReturn(path string, result map[string]any) error {
 	return os.Rename(temporaryPath, path)
 }
 
-func (c *returnChecker) checkRigorRows(result map[string]any) {
+func (c *returnChecker) checkRigorRows(result map[string]any, version int64) {
 	findings, findingsOK := result["findings"].([]any)
 	rigor, rigorOK := result["rigor"].([]any)
 	if !findingsOK || !rigorOK {
@@ -403,6 +410,19 @@ func (c *returnChecker) checkRigorRows(result map[string]any) {
 		rigorSeen[id] = true
 		if !material[id] {
 			c.violation("$.rigor[%d] classifies %q, which is not a material finding", index, id)
+		}
+		if version == 5 {
+			grain, grainOK := row["grain"].(string)
+			if !grainOK || (grain != "mechanical" && grain != "invariant") {
+				c.violation("$.rigor[%d].grain must be mechanical or invariant", index)
+			} else if grain == "mechanical" {
+				for _, field := range []string{"behaviour", "fixture"} {
+					text, ok := row[field].(string)
+					if !ok || strings.TrimSpace(text) == "" {
+						c.violation("$.rigor[%d].%s must contain non-whitespace text for a mechanical finding", index, field)
+					}
+				}
+			}
 		}
 		trigger, triggerOK := row["reopeningTrigger"].(string)
 		if !triggerOK || strings.TrimSpace(trigger) == "" {
