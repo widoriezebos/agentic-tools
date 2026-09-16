@@ -17,17 +17,23 @@ import (
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/goal"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/identity"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/output"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/run"
 )
 
-const HandoffSchemaVersion = 1
+const (
+	HandoffSchemaVersion       = 2
+	handoffSchemaVersionLegacy = 1
+)
 
 const HandoffDisposable = "what the harness holds only in memory is disposable; nothing in memory is needed to continue"
 
 const (
-	maxHandoffOpenJobs = 50
-	maxHandoffScratch  = 20
-	maxHandoffMessages = 50
-	maxHandoffLandings = 5
+	maxHandoffOpenJobs  = 50
+	maxHandoffScratch   = 20
+	maxHandoffMessages  = 50
+	maxHandoffLandings  = 5
+	maxHandoffOpenWork  = 50
+	maxHandoffDelegates = 50
 )
 
 var (
@@ -109,6 +115,38 @@ type HandoffMessage struct {
 	DeliveryStatus string `json:"deliveryStatus"`
 }
 
+// HandoffOpenWork is one in-flight wait the successor takes over, recorded
+// whole so the successor needs nothing from the predecessor's memory.
+type HandoffOpenWork struct {
+	RowID               string           `json:"rowId"`
+	WaitID              string           `json:"waitId,omitempty"`
+	Kind                string           `json:"kind"`
+	Selector            run.WaitSelector `json:"selector"`
+	Target              run.WaiterTarget `json:"target"`
+	DeadlineLeftSeconds int64            `json:"deadlineLeftSeconds"`
+	Pid                 int64            `json:"pid,omitempty"`
+	PidStartedAt        int64            `json:"pidStartedAt,omitempty"`
+}
+
+// HandoffDelegate is one declared delegate task. U3b-2a fills it; this unit
+// only declares it and carries it through the bound and the overflow.
+type HandoffDelegate struct {
+	ID         string `json:"id"`
+	ToolUseID  string `json:"toolUseId"`
+	Kind       string `json:"kind"`
+	Asked      string `json:"asked,omitempty"`
+	Output     string `json:"output,omitempty"`
+	DeclaredAt string `json:"declaredAt"`
+	Terminal   bool   `json:"terminal,omitempty"`
+}
+
+// HandoffEngine is the engine that wrote the state.
+type HandoffEngine struct {
+	Path       string `json:"path"`
+	SHA256     string `json:"sha256"`
+	InstallGen int    `json:"installGeneration"`
+}
+
 // HandoffManifest holds list overflow without weakening the state file's
 // byte bound. Its digest and exact owned path are pinned by HandoffState.
 type HandoffManifest struct {
@@ -117,6 +155,8 @@ type HandoffManifest struct {
 	LastLandings  HandoffLastLandings `json:"lastLandings"`
 	Scratch       []HandoffReference  `json:"scratch,omitempty"`
 	MessagesOwed  []HandoffMessage    `json:"messagesOwed,omitempty"`
+	OpenWork      []HandoffOpenWork   `json:"openWork,omitempty"`
+	Delegates     []HandoffDelegate   `json:"delegates,omitempty"`
 }
 
 // HandoffState is the bounded orientation snapshot. The live goal ledger and
@@ -132,6 +172,9 @@ type HandoffState struct {
 	LastLandings  HandoffLastLandings            `json:"lastLandings"`
 	Scratch       []HandoffReference             `json:"scratch,omitempty"`
 	MessagesOwed  []HandoffMessage               `json:"messagesOwed,omitempty"`
+	OpenWork      []HandoffOpenWork              `json:"openWork,omitempty"`
+	Delegates     []HandoffDelegate              `json:"delegates,omitempty"`
+	Engine        *HandoffEngine                 `json:"engine,omitempty"`
 	Manifest      *dispatch.CompositionReference `json:"manifest,omitempty"`
 	Disposable    string                         `json:"disposable"`
 }
@@ -302,8 +345,8 @@ func validateHandoffLists(root, ownedDir string, jobs []HandoffOpenJob, landings
 }
 
 func validateHandoffState(root, nonce, goalID string, binding HandoffBinding, state HandoffState, manifest HandoffManifest, hasManifest bool) error {
-	if state.SchemaVersion != HandoffSchemaVersion {
-		return fmt.Errorf("handoff state schemaVersion must be %d", HandoffSchemaVersion)
+	if state.SchemaVersion != handoffSchemaVersionLegacy && state.SchemaVersion != HandoffSchemaVersion {
+		return fmt.Errorf("handoff state schemaVersion must be 1 or 2")
 	}
 	if state.WrittenAt.IsZero() || !state.WrittenAt.Equal(binding.RecordedAt) {
 		return fmt.Errorf("handoff state writtenAt does not match the recorded binding time")
@@ -340,8 +383,8 @@ func validateHandoffState(root, nonce, goalID string, binding HandoffBinding, st
 	if state.Disposable != HandoffDisposable {
 		return fmt.Errorf("handoff disposable declaration is missing or changed")
 	}
-	if hasManifest && manifest.SchemaVersion != HandoffSchemaVersion {
-		return fmt.Errorf("handoff manifest schemaVersion must be %d", HandoffSchemaVersion)
+	if hasManifest && manifest.SchemaVersion != handoffSchemaVersionLegacy && manifest.SchemaVersion != HandoffSchemaVersion {
+		return fmt.Errorf("handoff manifest schemaVersion must be 1 or 2")
 	}
 	if err := validateHandoffLists(root, ownedDir, state.OpenJobs, state.LastLandings, state.Scratch, state.MessagesOwed); err != nil {
 		return err
@@ -357,6 +400,12 @@ func validateHandoffState(root, nonce, goalID string, binding HandoffBinding, st
 	}
 	if len(state.MessagesOwed) > maxHandoffMessages {
 		return fmt.Errorf("handoff inline messagesOwed exceeds %d", maxHandoffMessages)
+	}
+	if len(state.OpenWork) > maxHandoffOpenWork {
+		return fmt.Errorf("handoff inline openWork exceeds %d", maxHandoffOpenWork)
+	}
+	if len(state.Delegates) > maxHandoffDelegates {
+		return fmt.Errorf("handoff inline delegates exceeds %d", maxHandoffDelegates)
 	}
 	if len(state.LastLandings.History)+len(manifest.LastLandings.History) > maxHandoffLandings ||
 		len(state.LastLandings.Receipts)+len(manifest.LastLandings.Receipts) > maxHandoffLandings {

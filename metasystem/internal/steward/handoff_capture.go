@@ -746,6 +746,14 @@ func splitHandoffStateLists(state *HandoffState, manifest *HandoffManifest) {
 		manifest.MessagesOwed = append(manifest.MessagesOwed, state.MessagesOwed[maxHandoffMessages:]...)
 		state.MessagesOwed = state.MessagesOwed[:maxHandoffMessages]
 	}
+	if len(state.OpenWork) > maxHandoffOpenWork {
+		manifest.OpenWork = append(manifest.OpenWork, state.OpenWork[maxHandoffOpenWork:]...)
+		state.OpenWork = state.OpenWork[:maxHandoffOpenWork]
+	}
+	if len(state.Delegates) > maxHandoffDelegates {
+		manifest.Delegates = append(manifest.Delegates, state.Delegates[maxHandoffDelegates:]...)
+		state.Delegates = state.Delegates[:maxHandoffDelegates]
+	}
 }
 
 func marshalHandoffJSON(value any) ([]byte, error) {
@@ -758,6 +766,7 @@ func marshalHandoffJSON(value any) ([]byte, error) {
 
 func manifestHasContent(manifest HandoffManifest) bool {
 	return len(manifest.OpenJobs) > 0 || len(manifest.Scratch) > 0 || len(manifest.MessagesOwed) > 0 ||
+		len(manifest.OpenWork) > 0 || len(manifest.Delegates) > 0 ||
 		len(manifest.LastLandings.History) > 0 || len(manifest.LastLandings.Receipts) > 0
 }
 
@@ -766,6 +775,8 @@ func fitHandoffState(root, dir string, state HandoffState) (HandoffState, Handof
 	splitHandoffStateLists(&state, &manifest)
 	moveOrder := []func(){
 		func() { manifest.OpenJobs = append(state.OpenJobs, manifest.OpenJobs...); state.OpenJobs = nil },
+		func() { manifest.OpenWork = append(state.OpenWork, manifest.OpenWork...); state.OpenWork = nil },
+		func() { manifest.Delegates = append(state.Delegates, manifest.Delegates...); state.Delegates = nil },
 		func() { manifest.Scratch = append(state.Scratch, manifest.Scratch...); state.Scratch = nil },
 		func() {
 			manifest.MessagesOwed = append(state.MessagesOwed, manifest.MessagesOwed...)
@@ -843,7 +854,7 @@ func buildHandoffState(root, nonce, dir string, capture capturedHandoff, now tim
 			Claimant: HandoffClaimant{Machine: claim.Machine, Lineage: claim.Lineage, At: claim.At, Revision: claim.Revision}},
 		NextStep: HandoffNextStep{Text: capture.goal.NextStep, References: planReferences},
 		OpenJobs: jobStates, LastLandings: capture.landings, Scratch: scratchReferences,
-		MessagesOwed: capture.messages, Disposable: HandoffDisposable,
+		MessagesOwed: capture.messages, Engine: captureHandoffEngine(root), Disposable: HandoffDisposable,
 	}
 	state, _, stateData, manifestData, err := fitHandoffState(root, dir, state)
 	if err != nil {
@@ -875,6 +886,21 @@ func buildHandoffState(root, nonce, dir string, capture capturedHandoff, now tim
 		}
 	}
 	return binding, nil
+}
+
+func captureHandoffEngine(root string) *HandoffEngine {
+	path, err := os.Executable()
+	if err != nil {
+		return nil
+	}
+	engine := &HandoffEngine{Path: path}
+	if data, err := os.ReadFile(path); err == nil {
+		engine.SHA256 = testableDigest(data)
+	}
+	if installed, err := VerifyIdentity(RepoIdentityPath(root), root); err == nil {
+		engine.InstallGen = installed.Generation
+	}
+	return engine
 }
 
 func liveHandoffIntents(intents []Intent) ([]Intent, error) {

@@ -218,13 +218,20 @@ func TestHandoffManifestPreservesOverflow(t *testing.T) {
 	if len(last.History) != maxHandoffLandings || last.History[0].OpID != "landing-6" || last.History[4].OpID != "landing-2" {
 		t.Fatalf("landing history was not capped to the newest five: %+v", last.History)
 	}
-	bounded := HandoffState{OpenJobs: make([]HandoffOpenJob, maxHandoffOpenJobs+3), Scratch: make([]HandoffReference, maxHandoffScratch+2), MessagesOwed: make([]HandoffMessage, maxHandoffMessages+4)}
+	bounded := HandoffState{OpenJobs: make([]HandoffOpenJob, maxHandoffOpenJobs+3), Scratch: make([]HandoffReference, maxHandoffScratch+2), MessagesOwed: make([]HandoffMessage, maxHandoffMessages+4), OpenWork: make([]HandoffOpenWork, maxHandoffOpenWork+5), Delegates: make([]HandoffDelegate, maxHandoffDelegates+6)}
 	manifestBound := HandoffManifest{}
 	splitHandoffStateLists(&bounded, &manifestBound)
 	if len(bounded.OpenJobs) != maxHandoffOpenJobs || len(manifestBound.OpenJobs) != 3 ||
 		len(bounded.Scratch) != maxHandoffScratch || len(manifestBound.Scratch) != 2 ||
-		len(bounded.MessagesOwed) != maxHandoffMessages || len(manifestBound.MessagesOwed) != 4 {
-		t.Fatalf("inline list bounds silently lost overflow: state=%+v manifest=%+v", bounded, manifestBound)
+		len(bounded.MessagesOwed) != maxHandoffMessages || len(manifestBound.MessagesOwed) != 4 ||
+		len(bounded.OpenWork) != maxHandoffOpenWork || len(manifestBound.OpenWork) != 5 ||
+		len(bounded.Delegates) != maxHandoffDelegates || len(manifestBound.Delegates) != 6 || !manifestHasContent(manifestBound) {
+		t.Fatalf("inline/overflow counts openWork=(%d,%d) delegates=(%d,%d)", len(bounded.OpenWork), len(manifestBound.OpenWork), len(bounded.Delegates), len(manifestBound.Delegates))
+	}
+	encoded, _ := marshalHandoffJSON(manifestBound)
+	var decoded HandoffManifest
+	if err := decodeStrictHandoffJSON(encoded, &decoded); err != nil || len(decoded.OpenWork) != 5 || len(decoded.Delegates) != 6 {
+		t.Fatalf("new manifest lists did not round trip: manifest=%+v err=%v", decoded, err)
 	}
 	root := handoffCaptureRepo(t, "claimed")
 	useHandoffNonces(t, "6000000000000002")
@@ -275,6 +282,27 @@ func TestHandoffManifestPreservesOverflow(t *testing.T) {
 	}
 	if _, err := VerifyHandoffState(root, result.Nonce); err != nil {
 		t.Fatalf("overflow state did not verify: %v", err)
+	}
+}
+
+func TestHandoffRecordsEngineIdentity(t *testing.T) {
+	root := handoffCaptureRepo(t, "claimed")
+	useHandoffNonces(t, "4000000000000004")
+	result, err := Handoff(root, handoffMainCaller(), nil, handoffCaptureNow, filepath.Join(root, "memory", "receipts.log"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	state := readHandoffStateFile(t, result.StatePath)
+	path, err := os.Executable()
+	if err != nil {
+		t.Fatal(err)
+	}
+	data, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if state.Engine == nil || state.Engine.Path != path || state.Engine.SHA256 != testableDigest(data) || state.Engine.InstallGen != 1 || len(state.OpenWork) != 0 || len(state.Delegates) != 0 {
+		t.Fatalf("engine=%+v openWork=%d delegates=%d", state.Engine, len(state.OpenWork), len(state.Delegates))
 	}
 }
 

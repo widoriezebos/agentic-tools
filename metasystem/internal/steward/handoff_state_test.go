@@ -186,6 +186,68 @@ func rewriteManifest(t *testing.T, fixture stagedHandoffFixture, mutate func(map
 	})
 }
 
+func TestHandoffStateRoundTripSchema2(t *testing.T) {
+	captureRoot := handoffCaptureRepo(t, "claimed")
+	useHandoffNonces(t, "2000000000000002")
+	result, err := Handoff(captureRoot, handoffMainCaller(), nil, handoffCaptureNow, filepath.Join(captureRoot, "memory", "receipts.log"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if version := readHandoffStateFile(t, result.StatePath).SchemaVersion; version != 2 {
+		t.Fatalf("writer schema=%d want=2", version)
+	}
+	root := t.TempDir()
+	want := HandoffState{SchemaVersion: HandoffSchemaVersion, OpenWork: make([]HandoffOpenWork, maxHandoffOpenWork+1),
+		Delegates: make([]HandoffDelegate, maxHandoffDelegates+1), Engine: &HandoffEngine{Path: "/engine", SHA256: strings.Repeat("a", 64), InstallGen: 7}}
+	_, _, stateData, manifestData, err := fitHandoffState(root, filepath.Join(root, "handoff"), want)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var state HandoffState
+	var manifest HandoffManifest
+	if err := decodeStrictHandoffJSON(stateData, &state); err != nil {
+		t.Fatal(err)
+	}
+	if err := decodeStrictHandoffJSON(manifestData, &manifest); err != nil {
+		t.Fatal(err)
+	}
+	if state.SchemaVersion != 2 || manifest.SchemaVersion != 2 || state.Engine == nil || state.Engine.InstallGen != 7 ||
+		len(state.OpenWork)+len(manifest.OpenWork) != maxHandoffOpenWork+1 || len(state.Delegates)+len(manifest.Delegates) != maxHandoffDelegates+1 {
+		engineGen := 0
+		if state.Engine != nil {
+			engineGen = state.Engine.InstallGen
+		}
+		t.Fatalf("schema versions=(%d,%d) engine generation=%d openWork=%d delegates=%d", state.SchemaVersion, manifest.SchemaVersion, engineGen, len(state.OpenWork)+len(manifest.OpenWork), len(state.Delegates)+len(manifest.Delegates))
+	}
+}
+
+func TestHandoffStateReadsSchema1(t *testing.T) {
+	root := stagedRepo(t)
+	fixture := writeStagedHandoffFixture(t, root, "1000000000000001")
+	fixture = rewriteManifest(t, fixture, func(value map[string]any) { value["schemaVersion"] = 1 })
+	fixture = rewriteState(t, fixture, func(value map[string]any) { value["schemaVersion"] = 1 })
+	if _, err := verifyBoundHandoffState(root, "1000000000000001", "fix-it", fixture.binding); err != nil {
+		t.Fatalf("schema-1 state with absent new fields must read: %v", err)
+	}
+}
+
+func TestHandoffStateRefusesSchema3(t *testing.T) {
+	for _, target := range []string{"state", "manifest"} {
+		t.Run(target, func(t *testing.T) {
+			root := stagedRepo(t)
+			fixture := writeStagedHandoffFixture(t, root, "3000000000000003")
+			if target == "state" {
+				fixture = rewriteState(t, fixture, func(value map[string]any) { value["schemaVersion"] = 3 })
+			} else {
+				fixture = rewriteManifest(t, fixture, func(value map[string]any) { value["schemaVersion"] = 3 })
+			}
+			if _, err := verifyBoundHandoffState(root, "3000000000000003", "fix-it", fixture.binding); err == nil || !strings.Contains(err.Error(), target+" schemaVersion must be 1 or 2") {
+				t.Fatalf("schema 3 %s must refuse: %v", target, err)
+			}
+		})
+	}
+}
+
 func TestHandoffStateVerifierIsStrictAndBounded(t *testing.T) {
 	t.Run("unknown state field", func(t *testing.T) {
 		root := stagedRepo(t)
@@ -273,6 +335,16 @@ func TestHandoffStateVerifierIsStrictAndBounded(t *testing.T) {
 			t.Fatalf("oversized list must refuse: %v", err)
 		}
 	})
+	for _, field := range []string{"openWork", "delegates"} {
+		t.Run(field+" inline limit", func(t *testing.T) {
+			root := stagedRepo(t)
+			fixture := writeStagedHandoffFixture(t, root, "2000000000000002")
+			fixture = rewriteState(t, fixture, func(object map[string]any) { object[field] = make([]any, 51) })
+			if _, err := verifyBoundHandoffState(root, "2000000000000002", "fix-it", fixture.binding); err == nil || !strings.Contains(err.Error(), "inline "+field+" exceeds 50") {
+				t.Fatalf("oversized %s must refuse: %v", field, err)
+			}
+		})
+	}
 
 	t.Run("manifest preserves overflow", func(t *testing.T) {
 		root := stagedRepo(t)
