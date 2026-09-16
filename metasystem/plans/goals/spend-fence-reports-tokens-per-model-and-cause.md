@@ -1,6 +1,6 @@
 # spend-fence-reports-tokens-per-model-and-cause
 
-- State: claimed
+- State: approved
 - Priority: 1
 - Sequence: 2
 - Risk: severity=2 novelty=2 exposure=3 accumulation=1 basis="severity 2: without it every overspend is found late; novelty 2: attributing tokens to causes from session transcripts and delegate receipts; exposure 3: every seat every day; accumulation 1: reporting, not a leak"
@@ -9,12 +9,11 @@
 - Origin: human
 - Next step: 2026-09-16 08:45 m1c: PARKED MID-LANDING for Wido's cleanup priority; unit U5a-4 is BUILT, READ TWICE, TRIMMED TO 300 LINES AND UNLANDED. Everything needed to finish it: the landing diff at /private/tmp/claude-501/-Users-wido-LocalStorage-GitHub-agentic-tools-m1c/e67ca063-900a-46ec-9bc8-9fbdcbc3765e/scratchpad/u5a4-landing.diff (code, both review records; apply with git apply --index --exclude=metasystem/memory/receipts.log, then write a fresh receipt because the old hunk will not apply), the landing message at /private/tmp/claude-501/-Users-wido-LocalStorage-GitHub-agentic-tools-m1c/e67ca063-900a-46ec-9bc8-9fbdcbc3765e/scratchpad/g16/landing-msg-u5a4.txt, the worktree at /private/tmp/claude-501/-Users-wido-LocalStorage-GitHub-agentic-tools-m1c/e67ca063-900a-46ec-9bc8-9fbdcbc3765e/scratchpad/g16/wt-u5a4, and the reads at /private/tmp/claude-501/-Users-wido-LocalStorage-GitHub-agentic-tools-m1c/e67ca063-900a-46ec-9bc8-9fbdcbc3765e/scratchpad/g16/wt-u5a4/read-u5a4.md and read-u5a4-round2.md (VERDICT LAND). Its last proof attempt (tree ca36b37fe76f, engine armed at 09349e0dc) was NOT sufficient: section/land-fixtures scenario carried-ledger-path, and section/supervision-and-census-fixtures scenarios nested-worktree-deadlines and stop-fence, all failed. None is in internal/spend, the machine was at load 40 with mediaanalysisd, fseventsd and mds_stores taking three cores, and nested-worktree-deadlines is the known load-shaped one; m1c was running the land bed directly to settle ownership when it switched goals. Units U5a-1 to U5a-3 are landed (29259bf51, bf7e48b9a, 7dbe0195c). Unit U5b-1 is built and read clean (VERDICT LAND, 133 lines) in /private/tmp/claude-501/-Users-wido-LocalStorage-GitHub-agentic-tools-m1c/e67ca063-900a-46ec-9bc8-9fbdcbc3765e/scratchpad/g16/wt-u5b1, unlanded. Briefs written for U5a-4, U5b-1 and U5b-2; U5c-1 to U5c-3 remain. RESUME by re-proving U5a-4 on a quiet machine after the fixture-leak fix lands.
 - OpenedAt: 2026-09-15T09:38:26Z
-- Revision: 27
+- Revision: 28
 - Budget: elapsedLimit=3d attemptLimit=12 reservedJobMinutesLimit=720 activeJobLimit=1 reviewRoundLimit=2
 - BudgetExceptions: 2
 - Approved: by=human:Wido at=2026-09-15T19:24:32Z revision=20 opid=XBYTVA1B98DSTDQWGPPWQTW75G-m1c-c6925449 authority=proven digest=8845c73b409d935e44ec6299fe5203db2830fdcd2f383ef842e708e95edb6158
-- Claimed: machine=m1c lineage=main-1789191340-90689-2eda89 at=2026-09-16T00:08:38Z revision=25 accountingRevision=20 episodeAt=2026-09-15T13:57:56Z episodeRevision=9 idleSeconds=265
-- StopCapability: generation=25 revision=25 machine=m1c claimEpoch=5 fenceEpoch=0
+- Episode: machine=m1c lineage=main-1789191340-90689-2eda89 accountingRevision=20 episodeAt=2026-09-15T13:57:56Z episodeRevision=9 idleSeconds=265 released=2026-09-16T06:28:35Z
 
 History:
 - 2026-09-15T09:38:26Z T88J2JBMZM4AGBZBRDPHJH8MY5-m1e-c6925449 open actor=human:Wido targets=spend-fence-reports-tokens-per-model-and-cause
@@ -44,4 +43,5 @@ History:
 - 2026-09-16T00:08:38Z 5KVKBYTD53E42AG7KV603Z1KVQ-m1c-a6ea8b3e claim actor=m1c+main-1789191340-90689-2eda89 targets=spend-fence-reports-tokens-per-model-and-cause
 - 2026-09-16T03:03:34Z ZY0796J1ZD7RSYSTX0Y07J8ZZC-m1c-a6ea8b3e edit actor=m1c+main-1789191340-90689-2eda89 targets=spend-fence-reports-tokens-per-model-and-cause
 - 2026-09-16T06:28:31Z 1C0V1M1K7WDF219B6QVSWJHYJM-m1c-a6ea8b3e edit actor=m1c+main-1789191340-90689-2eda89 targets=spend-fence-reports-tokens-per-model-and-cause
-Integrity: sha256=886edadf070f3ec42cfe0f556b4b9e3201e5d28cad9f6c4378324dd402c23e51
+- 2026-09-16T06:28:35Z CK7FSMQSD0FN1ES1RZCTFCPN57-m1c-a6ea8b3e release actor=m1c+main-1789191340-90689-2eda89 targets=spend-fence-reports-tokens-per-model-and-cause
+Integrity: sha256=84b320d022fa1572c91dafff5774f4f642be7055267d85ece97b64554ca2aca7
