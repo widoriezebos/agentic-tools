@@ -136,10 +136,9 @@ func RunTestPlan(ctx context.Context, request TestRunRequest) (TestResult, int, 
 			}
 			runnable = nil
 		}
-		// Groups of one stage are independent (each runs in its own detached
-		// worktree of the candidate tree), so a bounded pool runs them side by
-		// side; results are appended in plan order, and the stage order stays
-		// canary, standard, deep. The wall time of a stage is its longest group.
+		// Independent groups share the stage's bounded pool, while performance
+		// groups run alone after them; results stay in plan order and stages stay
+		// canary, standard, deep.
 		stageResults, stageHaltedBy, progressErr := runStageGroups(ctx, request, groups, runnable, progress, stopAtFirstFailure)
 		if haltedBy == "" {
 			haltedBy = stageHaltedBy
@@ -222,12 +221,12 @@ func (w *progressWriter) verdict(group, verdict string) error {
 		At: time.Now().UTC().Format(time.RFC3339Nano), Depth: 0, Verdict: verdict})
 }
 
-// runStageGroups runs one stage's groups under the request's concurrency cap
-// and returns their results in plan order and, in stop mode, the first group
-// that failed. A progress-record failure or, in stop mode, a failed group
-// stops new launches; the groups already running still finish and report,
-// so no evidence is lost, and a progress failure is returned after the stage
-// drains.
+var runStageTestGroup = runTestGroup
+var waitForStageGroups = (*sync.WaitGroup).Wait
+
+// runStageGroups runs non-performance groups longest-first under the concurrency
+// cap, then runs performance groups longest-first and alone, while preserving
+// plan-ordered results and draining launched work after the stop gate closes.
 func runStageGroups(ctx context.Context, request TestRunRequest, groups map[string]testpolicy.Group, ids []string, progress *progressWriter, stopAtFirstFailure bool) ([]GroupResult, string, error) {
 	results := make([]GroupResult, len(ids))
 	if len(ids) == 0 {
@@ -292,6 +291,11 @@ func runStageGroups(ctx context.Context, request TestRunRequest, groups map[stri
 		order[index] = index
 	}
 	sort.SliceStable(order, func(a, b int) bool {
+		aPerformance := groups[ids[order[a]]].Kind == "performance"
+		bPerformance := groups[ids[order[b]]].Kind == "performance"
+		if aPerformance != bPerformance {
+			return !aPerformance
+		}
 		return weight(ids[order[a]]) > weight(ids[order[b]])
 	})
 	for _, index := range order {
@@ -302,6 +306,11 @@ func runStageGroups(ctx context.Context, request TestRunRequest, groups map[stri
 			continue
 		default:
 		}
+		waitForExclusiveRun := func() {}
+		if groups[id].Kind == "performance" {
+			waitForExclusiveRun = func() { waitForStageGroups(&wg) }
+		}
+		waitForExclusiveRun()
 		slots <- struct{}{}
 		// The slot may have been freed by the very group whose failure closed
 		// the gate; look again before spending it.
@@ -321,7 +330,7 @@ func runStageGroups(ctx context.Context, request TestRunRequest, groups map[stri
 				results[index] = unlaunchedGroupResult(request, groups[id], "record testing group start: "+err.Error())
 				return
 			}
-			groupResult := runTestGroup(ctx, request, groups[id])
+			groupResult := runStageTestGroup(ctx, request, groups[id])
 			results[index] = groupResult
 			if stopAtFirstFailure && groupResult.Status != "passed" && groupResult.Status != "reused" {
 				halt(id)
@@ -335,6 +344,7 @@ func runStageGroups(ctx context.Context, request TestRunRequest, groups map[stri
 				stop(err)
 			}
 		}(index, id)
+		waitForExclusiveRun()
 	}
 	wg.Wait()
 	return results, haltedBy, firstErr
