@@ -1,6 +1,6 @@
 # tests-never-wait-on-wall-time
 
-- State: claimed
+- State: approved
 - Priority: 1
 - Sequence: 33
 - Risk: severity=2 novelty=1 exposure=3 accumulation=1 basis="severity 2: a wall-clock guard that flakes under load turns a green tree red and a red tree green at random, and a flake reported as green hides a defect; novelty 1: a source-level check and a rerun rule in the existing gate; exposure 3: every Go test in every package; accumulation 1: nothing builds on the rule itself"
@@ -9,12 +9,11 @@
 - Origin: human
 - Next step: 2026-09-16 13:40 CEST m1e landing lane 3: the lease classify stand-in fix LANDED 721d43788 (classify_test.go only: /bin/sh stand-in with an exact-argv settle; message cites identity_darwin.go:113). Proof proof-mu40fxik-2e0d0f482f7a4fc1 deep, 32 executed + 21 reused, 0 failed; runtime-owner-standard EXECUTED with TestClassifyStewardByInstalledBinaryAndIdentity, TestForgedStewardIdentityDoesNotClassifySteward, TestStewardOfAnotherRepositoryIsNotThisSteward, TestTerminalBearingCallerOfInstalledBinaryStaysHuman passing; re-run by name -count=3 12/12 in another root; receipt 1789558579. Follow-up-brief's stack D re-proof is now unblocked. PRODUCTION FOLLOW-UP, NOT BUILT (fails closed): identity_darwin.go:113's two-call kern.procargs2 size-then-read misreads any process that edits its own argv; the smallest fix is one read into a kern.argmax-sized buffer, as ps does. Triage after the drain. PRIOR: 1d2c5e4e3 landed a standalone fix under this goal, smaller than any of the twelve units of tests-never-wait-on-wall-time-design-r2 and adding no wall-clock site and no manifest entry: internal/audit's TestMain arms a signal.Notify guard so every hook child starts with a signal disposition bash can trap, and a new test makes the launcher-shaped flake deterministic. The failure was NEVER wall time: nohup sets SIGHUP to SIG_IGN, execve keeps it, Go respects an inherited SIG_IGN, and bash cannot trap a signal ignored on entry, so the hook's own trap was un-installable and the injected kill -HUP was a no-op. Proved with its two sibling trunk-red fixes as ONE stack: attempt proof-mu3k5n71-14287a80ba0b66c5, tree 6e4b70a78, mode deep, 53 groups, sufficient=true, hook-start-audit-standard and section/supervision-and-census-fixtures both EXECUTED green (never reused; red in the candidate-free trunk control proof-mu3hu4t9). Next: the design page for the forbidden constructs, the source check, the rerun record and its fixture, then the twelve units of design-r2. Lead from the read: the guard covers internal/audit only; no other package's tests depend today on a spawned shell trapping a signal (grep-checked).
 - OpenedAt: 2026-09-14T16:17:21Z
-- Revision: 76
+- Revision: 77
 - Budget: elapsedLimit=4h attemptLimit=6 reservedJobMinutesLimit=720 activeJobLimit=1 reviewRoundLimit=2
 - BudgetExceptions: 0
 - Approved: by=human:Wido at=2026-09-14T18:54:18Z revision=3 opid=R6K59WYRSQ0VKNA03P3ZW9R9YJ-m1e-c6925449 authority=proven digest=0c51567678d94b5076e5895a0141492324419794dcbfb555f5e4c9b685d50924
-- Claimed: machine=m1e lineage=main-1789030447-51011-2956ea at=2026-09-16T11:20:46Z revision=75 accountingRevision=75 episodeAt=2026-09-16T11:20:46Z episodeRevision=75
-- StopCapability: generation=75 revision=75 machine=m1e claimEpoch=1 fenceEpoch=0
+- Episode: machine=m1e lineage=main-1789030447-51011-2956ea accountingRevision=75 episodeAt=2026-09-16T11:20:46Z episodeRevision=75 idleSeconds=0 released=2026-09-16T11:39:12Z
 
 History:
 - 2026-09-14T16:17:21Z BB2BF7NWX7DTTDZNB10KRZFY7P-m1e-c6925449 open actor=human:Wido targets=tests-never-wait-on-wall-time
@@ -93,4 +92,5 @@ History:
 - 2026-09-16T10:04:30Z PJED1PP7J29E1N3Y7717BZ8GA1-m1e-a3d4c1e1 edit actor=m1e+main-1789030447-51011-2956ea targets=tests-never-wait-on-wall-time
 - 2026-09-16T11:20:46Z ZJANMMK56HC5X607B9D4E9300Z-m1e-a3d4c1e1 claim actor=m1e+main-1789030447-51011-2956ea targets=tests-never-wait-on-wall-time
 - 2026-09-16T11:36:34Z T6RNB6CE64TXE6133EWBS3GZXK-m1e-a3d4c1e1 edit actor=m1e+main-1789030447-51011-2956ea targets=tests-never-wait-on-wall-time
-Integrity: sha256=11c86f791768e6b9e61a536cd3387f1d683d9cc499dca83da33576d1f7a35df8
+- 2026-09-16T11:39:12Z 1DYEX7JNT0BWQJEDQ25VB6X1V7-m1e-a3d4c1e1 release actor=m1e+main-1789030447-51011-2956ea targets=tests-never-wait-on-wall-time
+Integrity: sha256=65b683d0b46cb29c27a70179565186e89e3d28b44ea9ac039f50189ce7166be2
