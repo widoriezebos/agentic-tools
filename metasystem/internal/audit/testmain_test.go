@@ -8,5 +8,6 @@ import (
 )
 
 func TestMain(m *testing.M) {
+	armHookSignalGuard()
 	os.Exit(testenv.Main(m))
 }
