@@ -290,9 +290,11 @@ to mktemp patches nobody deleted, which is how record-locks reached
 
 `follow_up` (d.sh:1017-1155) reuses the sequence with these
 deviations, in order: the chain lock is taken on the ROOT id; a
-worktree chain that has fallen behind main gets a WORKTREE-BEHIND
-warning, not a refusal (d.sh:1044-1052); the newest chain record must
-be `completed` or `failed` with protocol_error — anything else needs a
+worktree chain that has fallen behind main is fast-forwarded by stashing and
+reapplying its changes when trunk touched the chain's files or gained a path
+the follow-up brief cites, before brief authority admission; otherwise it gets
+a WORKTREE-BEHIND warning, not a refusal (d.sh:1044-1052); the newest chain
+record must be `completed` or `failed` with protocol_error — anything else needs a
 fresh dispatch (d.sh:1055-1058) — and must carry a session id; the
 child id is `<root>-r<round>`; a design-critic's workspace is
 synchronized only when it shares history with this repository

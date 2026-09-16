@@ -17,7 +17,7 @@ func TestPlanFollowUpRebaseBehindWithOverlap(t *testing.T) {
 	gitFollowUpRebase(t, repo, "commit", "-qm", "trunk overlap")
 	trunk := gitFollowUpRebase(t, repo, "rev-parse", "HEAD")
 
-	plan, err := PlanFollowUpRebase(repo, "chain-a", worktree, trunk)
+	plan, err := PlanFollowUpRebase(repo, "chain-a", worktree, trunk, "")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -35,7 +35,7 @@ func TestPlanFollowUpRebaseBehindWithoutOverlap(t *testing.T) {
 	gitFollowUpRebase(t, repo, "commit", "-qm", "unrelated trunk change")
 	trunk := gitFollowUpRebase(t, repo, "rev-parse", "HEAD")
 
-	plan, err := PlanFollowUpRebase(repo, "chain-a", worktree, trunk)
+	plan, err := PlanFollowUpRebase(repo, "chain-a", worktree, trunk, "")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -49,7 +49,7 @@ func TestPlanFollowUpRebaseBehindWithoutOverlap(t *testing.T) {
 
 func TestPlanFollowUpRebaseNotBehind(t *testing.T) {
 	repo, worktree, head := newFollowUpRebaseFixture(t, []string{"metasystem/shared.txt"})
-	plan, err := PlanFollowUpRebase(repo, "chain-a", worktree, head)
+	plan, err := PlanFollowUpRebase(repo, "chain-a", worktree, head, "")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -67,7 +67,7 @@ func TestPlanFollowUpRebaseRefusesUnreadableRound(t *testing.T) {
 	gitFollowUpRebase(t, repo, "commit", "-qm", "trunk movement")
 	trunk := gitFollowUpRebase(t, repo, "rev-parse", "HEAD")
 
-	_, err := PlanFollowUpRebase(repo, "chain-a", worktree, trunk)
+	_, err := PlanFollowUpRebase(repo, "chain-a", worktree, trunk, "")
 	if err == nil || !strings.Contains(err.Error(), "cannot decode chain chain-a round 1 return") {
 		t.Fatalf("unreadable round error = %v", err)
 	}
@@ -84,7 +84,7 @@ func TestPlanFollowUpRebaseSkipsRoundsWithoutBoundaries(t *testing.T) {
 	gitFollowUpRebase(t, repo, "commit", "-qm", "trunk boundary overlap")
 	trunk := gitFollowUpRebase(t, repo, "rev-parse", "HEAD")
 
-	plan, err := PlanFollowUpRebase(repo, "chain-a", worktree, trunk)
+	plan, err := PlanFollowUpRebase(repo, "chain-a", worktree, trunk, "")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -105,7 +105,7 @@ func TestPlanFollowUpRebaseUsesDirtyPathAbsentFromBoundaries(t *testing.T) {
 	gitFollowUpRebase(t, repo, "commit", "-qm", "trunk dirty-path overlap")
 	trunk := gitFollowUpRebase(t, repo, "rev-parse", "HEAD")
 
-	plan, err := PlanFollowUpRebase(repo, "chain-a", worktree, trunk)
+	plan, err := PlanFollowUpRebase(repo, "chain-a", worktree, trunk, "")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -128,12 +128,70 @@ func TestPlanFollowUpRebaseReportsUnmergedPaths(t *testing.T) {
 		t.Fatalf("stash apply unexpectedly avoided a conflict: %s", output)
 	}
 
-	plan, err := PlanFollowUpRebase(repo, "chain-a", worktree, trunk)
+	plan, err := PlanFollowUpRebase(repo, "chain-a", worktree, trunk, "")
 	if err != nil {
 		t.Fatal(err)
 	}
 	if plan.Rebase || plan.BehindCount != 0 || !reflect.DeepEqual(plan.UnmergedPaths, []string{"metasystem/shared.txt"}) {
 		t.Fatalf("unmerged plan = %+v", plan)
+	}
+}
+
+func TestPlanFollowUpRebaseCitedTrunkPath(t *testing.T) {
+	repo, worktree, _ := newFollowUpRebaseFixture(t, []string{"metasystem/shared.txt"})
+	freshPath := "metasystem/plans/fresh.md"
+	writeFollowUpRebaseFile(t, filepath.Join(repo, freshPath), "fresh trunk plan\n")
+	gitFollowUpRebase(t, repo, "add", freshPath)
+	gitFollowUpRebase(t, repo, "commit", "-qm", "fresh trunk plan")
+	trunk := gitFollowUpRebase(t, repo, "rev-parse", "HEAD")
+	brief := filepath.Join(t.TempDir(), "follow-up.md")
+	writeFollowUpRebaseFile(t, brief, "Authority: "+freshPath+"\n")
+
+	plan, err := PlanFollowUpRebase(repo, "chain-a", worktree, trunk, brief)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !plan.Rebase || !reflect.DeepEqual(plan.CitedTrunkPaths, []string{freshPath}) || len(plan.OverlappingPaths) != 0 ||
+		plan.Reason != "the brief cites paths the trunk gained" {
+		t.Fatalf("cited trunk path plan = %+v", plan)
+	}
+	withoutBrief, err := PlanFollowUpRebase(repo, "chain-a", worktree, trunk, "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if withoutBrief.Rebase || !reflect.DeepEqual(withoutBrief.CitedTrunkPaths, []string{}) {
+		t.Fatalf("plan without brief = %+v", withoutBrief)
+	}
+}
+
+func TestPlanFollowUpRebaseCitedPathsThatDoNotTrigger(t *testing.T) {
+	cases := []struct {
+		name, trunkPath, brief string
+	}{
+		{"already in worktree", "trunk-unrelated.txt", "Authority: metasystem/plans/base.md\n"},
+		{"absent from trunk", "metasystem/plans/unrelated.md", "Authority: metasystem/plans/never.md\n"},
+		{"runtime path", "artifacts/agents/x.md", "Authority: artifacts/agents/x.md\n"},
+		{"declared output", "metasystem/plans/made.md", "Create: metasystem/plans/made.md\n"},
+		{"malformed bounds", "metasystem/plans/fresh.md", "Boundary: not-json\nAuthority: metasystem/plans/fresh.md\n"},
+	}
+	for _, test := range cases {
+		t.Run(test.name, func(t *testing.T) {
+			repo, worktree, _ := newFollowUpRebaseFixture(t, []string{"metasystem/shared.txt", "metasystem/other.txt"})
+			writeFollowUpRebaseFile(t, filepath.Join(repo, test.trunkPath), "trunk change\n")
+			gitFollowUpRebase(t, repo, "add", test.trunkPath)
+			gitFollowUpRebase(t, repo, "commit", "-qm", "unrelated trunk change")
+			trunk := gitFollowUpRebase(t, repo, "rev-parse", "HEAD")
+			brief := filepath.Join(t.TempDir(), "follow-up.md")
+			writeFollowUpRebaseFile(t, brief, test.brief)
+
+			plan, err := PlanFollowUpRebase(repo, "chain-a", worktree, trunk, brief)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if plan.Rebase || !reflect.DeepEqual(plan.CitedTrunkPaths, []string{}) {
+				t.Fatalf("non-triggering cited path plan = %+v", plan)
+			}
+		})
 	}
 }
 
@@ -179,6 +237,7 @@ func newFollowUpRebaseFixture(t *testing.T, boundary []string) (repo, worktree, 
 	gitFollowUpRebase(t, repo, "config", "user.email", "fixture@example.invalid")
 	writeFollowUpRebaseFile(t, filepath.Join(repo, "metasystem", "shared.txt"), "base\n")
 	writeFollowUpRebaseFile(t, filepath.Join(repo, "metasystem", "other.txt"), "base\n")
+	writeFollowUpRebaseFile(t, filepath.Join(repo, "metasystem", "plans", "base.md"), "base\n")
 	gitFollowUpRebase(t, repo, "add", "metasystem")
 	gitFollowUpRebase(t, repo, "commit", "-qm", "base")
 	base = gitFollowUpRebase(t, repo, "rev-parse", "HEAD")

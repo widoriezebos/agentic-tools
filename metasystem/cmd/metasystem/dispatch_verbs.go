@@ -1059,6 +1059,7 @@ func runDispatchFollowUpRebasePlan(args []string) int {
 	rootJob := flags.String("root-job", "", "chain root job id")
 	worktree := flags.String("worktree", "", "chain worktree")
 	trunk := flags.String("trunk", "", "pinned trunk commit or ref")
+	brief := pathFlag(flags, "brief", "", "follow-up brief")
 	if flags.Parse(args) != nil {
 		return 2
 	}
@@ -1066,7 +1067,7 @@ func runDispatchFollowUpRebasePlan(args []string) int {
 		fmt.Fprintln(os.Stderr, "job follow-up-rebase-plan: --repo, --root-job, --worktree, and --trunk are required")
 		return 2
 	}
-	plan, err := dispatchcore.PlanFollowUpRebase(*repo, *rootJob, *worktree, *trunk)
+	plan, err := dispatchcore.PlanFollowUpRebase(*repo, *rootJob, *worktree, *trunk, *brief)
 	if err != nil {
 		return recordExit(err)
 	}

@@ -2498,7 +2498,7 @@ follow_up() {
       && -n "$worktree_path" && "$worktree_path" != null && -d "$worktree_path" ]]; then
     trunk_commit=$(git -C "$root" rev-parse HEAD 2>/dev/null) \
       || die 1 "follow-up rebase cannot resolve the trunk commit"
-    rebase_plan=$("$ms" job follow-up-rebase-plan --repo "$root" --root-job "$root_id" \
+    rebase_plan=$("$ms" job follow-up-rebase-plan --brief "$authority_message" --repo "$root" --root-job "$root_id" \
       --worktree "$worktree_path" --trunk "$trunk_commit") \
       || die 1 "follow-up rebase planning refused because the chain boundary or Git history is unreadable"
     plan_rebase=$(json_value "$rebase_plan" rebase)

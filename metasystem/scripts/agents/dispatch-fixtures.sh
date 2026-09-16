@@ -3736,6 +3736,31 @@ grep -Fq "WORKTREE-BEHIND: the chain worktree is behind 1 commit, none on this c
 [[ "$(git -C "$stale_workspace" rev-parse HEAD)" == "$stale_head" ]] \
   || { echo "non-overlapping follow-up moved its worktree" >&2; exit 1; }
 
+fresh_trunk_path="metasystem/scripts/agents/fresh-trunk-guidance.md"
+printf 'fresh trunk guidance\n' >"$agent_repo/$fresh_trunk_path"
+git -C "$agent_repo" add "$fresh_trunk_path"
+git -C "$agent_repo" -c core.hooksPath=/dev/null -c user.name=metasystem -c user.email=metasystem@example.invalid commit -qm fresh-trunk-guidance
+fresh_trunk_commit=$(git -C "$agent_repo" rev-parse HEAD)
+fresh_trunk_message="$agent_fixture/fresh-trunk-message.md"
+cp "$follow_message" "$fresh_trunk_message"
+printf '\nAuthority: %s\n' "$fresh_trunk_path" >>"$fresh_trunk_message"
+fresh_trunk_plan=$("$engine" job follow-up-rebase-plan --repo "$agent_repo" --root-job stale-wt \
+  --worktree "$stale_workspace" --trunk "$fresh_trunk_commit" --brief "$fresh_trunk_message")
+[[ "$("$engine" json get --value "$fresh_trunk_plan" --field rebase)" == true \
+   && "$("$engine" json get --value "$fresh_trunk_plan" --field citedTrunkPaths)" == '["metasystem/scripts/agents/fresh-trunk-guidance.md"]' ]] \
+  || { echo "a follow-up citation of a trunk-gained path did not plan a rebase" >&2; printf '%s\n' "$fresh_trunk_plan" >&2; exit 1; }
+run_agent_fixture fresh-trunk-follow stale-wt-r3 "$agent_dispatch" follow-up \
+  --job stale-wt --message "$fresh_trunk_message" --wait
+fresh_trunk_record="$agent_repo/artifacts/agents/jobs/stale-wt-r3.json"
+[[ "$(git -C "$stale_workspace" rev-parse HEAD)" == "$fresh_trunk_commit" \
+   && "$(<"$stale_workspace/$fresh_trunk_path")" == 'fresh trunk guidance' \
+   && "$(<"$stale_workspace/metasystem/stale-chain.txt")" == 'delegate change' ]] \
+  || { echo "the cited-path follow-up did not deliver trunk guidance while preserving delegate work" >&2; exit 1; }
+[[ "$("$engine" json get --file "$fresh_trunk_record" --field rebasedFrom)" == "$stale_head" \
+   && "$("$engine" json get --file "$fresh_trunk_record" --field rebasedTo)" == "$fresh_trunk_commit" \
+   && "$("$engine" json get --file "$fresh_trunk_record" --field conflictedPaths)" == '[]' ]] \
+  || { echo "the cited-path follow-up did not record its clean fast-forward" >&2; cat "$fresh_trunk_record" >&2; exit 1; }
+
 rebase_brief="$agent_fixture/rebase-wt.md"
 make_agent_brief "$rebase_brief" implement
 run_agent_fixture rebase-wt rebase-wt "$agent_dispatch" dispatch --role implementer --brief "$rebase_brief" --job-id rebase-wt --worktree --wait

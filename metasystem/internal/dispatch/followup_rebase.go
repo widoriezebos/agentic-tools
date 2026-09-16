@@ -12,7 +12,7 @@ import (
 
 // FollowUpRebasePlan is the job-domain decision consumed by the follow-up
 // dispatcher. Git mutation remains shell plumbing; this result says whether
-// the trunk commits overlap the complete chain path boundary.
+// trunk changes overlap the chain or supply a path the brief cites.
 type FollowUpRebasePlan struct {
 	Rebase           bool     `json:"rebase"`
 	Reason           string   `json:"reason"`
@@ -20,6 +20,7 @@ type FollowUpRebasePlan struct {
 	RebasedFrom      string   `json:"rebasedFrom"`
 	RebasedTo        string   `json:"rebasedTo"`
 	OverlappingPaths []string `json:"overlappingPaths"`
+	CitedTrunkPaths  []string `json:"citedTrunkPaths"`
 	UnmergedPaths    []string `json:"unmergedPaths"`
 }
 
@@ -28,7 +29,7 @@ type FollowUpRebasePlan struct {
 // worktree. Worktrees never commit, so their dirty path set carries every
 // round's live changes; readable boundaries additionally preserve paths that
 // a later round restored to HEAD.
-func PlanFollowUpRebase(repoRoot, rootJob, worktree, trunk string) (FollowUpRebasePlan, error) {
+func PlanFollowUpRebase(repoRoot, rootJob, worktree, trunk, briefPath string) (FollowUpRebasePlan, error) {
 	if repoRoot == "" || worktree == "" || trunk == "" || !validJobID.MatchString(rootJob) {
 		return FollowUpRebasePlan{}, fmt.Errorf("follow-up rebase planning requires a repository root, chain root job, worktree, and trunk ref")
 	}
@@ -50,7 +51,7 @@ func PlanFollowUpRebase(repoRoot, rootJob, worktree, trunk string) (FollowUpReba
 	}
 	plan := FollowUpRebasePlan{
 		Reason: "the worktree already contains the trunk commit", BehindCount: behind,
-		RebasedFrom: from, RebasedTo: to, OverlappingPaths: []string{}, UnmergedPaths: []string{},
+		RebasedFrom: from, RebasedTo: to, OverlappingPaths: []string{}, CitedTrunkPaths: []string{}, UnmergedPaths: []string{},
 	}
 	unmerged, err := gitPathSet(worktree, "diff", "--name-only", "-z", "--diff-filter=U")
 	if err != nil {
@@ -85,13 +86,61 @@ func PlanFollowUpRebase(repoRoot, rootJob, worktree, trunk string) (FollowUpReba
 		}
 	}
 	sort.Strings(plan.OverlappingPaths)
-	if len(plan.OverlappingPaths) == 0 {
-		plan.Reason = "the worktree is behind, but no trunk commit touched this chain's files"
-		return plan, nil
+	plan.CitedTrunkPaths, err = followUpCitedTrunkPaths(repoRoot, worktree, from, to, briefPath)
+	if err != nil {
+		return FollowUpRebasePlan{}, err
 	}
-	plan.Rebase = true
-	plan.Reason = "trunk commits touched this chain's files"
+	if len(plan.OverlappingPaths) > 0 {
+		plan.Rebase = true
+		plan.Reason = "trunk commits touched this chain's files"
+	} else if len(plan.CitedTrunkPaths) > 0 {
+		plan.Rebase = true
+		plan.Reason = "the brief cites paths the trunk gained"
+	} else {
+		plan.Reason = "the worktree is behind, but no trunk commit touched this chain's files"
+	}
 	return plan, nil
+}
+
+func followUpCitedTrunkPaths(repoRoot, worktree, from, to, briefPath string) ([]string, error) {
+	paths := []string{}
+	if briefPath == "" {
+		return paths, nil
+	}
+	data, err := os.ReadFile(briefPath)
+	if err != nil {
+		return nil, fmt.Errorf("follow-up rebase planning cannot read brief: %w", err)
+	}
+	var bounds BriefBounds
+	_, err = admitBriefBytes(data, func() (string, error) { return projectInstallPrefix(repoRoot) }, false,
+		func(_ []byte, admitted BriefBounds) error { bounds = admitted; return nil })
+	if err != nil {
+		return paths, nil
+	}
+	topDirectories, err := treeDirectories(worktree, to)
+	if err != nil {
+		return nil, fmt.Errorf("follow-up rebase planning cannot inspect the trunk tree: %w", err)
+	}
+	nestedDirectories := map[string]bool{}
+	if topDirectories["metasystem"] {
+		nestedDirectories, err = treeDirectories(worktree, to+":metasystem")
+		if err != nil {
+			return nil, fmt.Errorf("follow-up rebase planning cannot inspect the trunk metasystem tree: %w", err)
+		}
+	}
+	for _, candidate := range extractBriefAuthorityPaths(string(data), bounds, topDirectories, nestedDirectories) {
+		if artifactAuthorityPath(candidate) {
+			continue
+		}
+		if _, fromErr := gitOutput(worktree, "cat-file", "-e", from+":"+candidate); fromErr == nil {
+			continue
+		}
+		if _, toErr := gitOutput(worktree, "cat-file", "-e", to+":"+candidate); toErr == nil {
+			paths = append(paths, candidate)
+		}
+	}
+	sort.Strings(paths)
+	return paths, nil
 }
 
 func followUpChainPaths(repoRoot, rootJob string) (map[string]struct{}, error) {
