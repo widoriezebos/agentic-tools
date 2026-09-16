@@ -1,6 +1,6 @@
 # critique-closes-on-folded-proof
 
-- State: claimed
+- State: approved
 - Priority: 1
 - Sequence: 19
 - Risk: severity=2 novelty=2 exposure=3 accumulation=1 basis="severity 2: a closure rule that is too loose lets a material finding land; novelty 2: fold-proven closure and the round-2 failsafe are new rules; exposure 3: every chain; accumulation 1: skills and dispatcher"
@@ -9,13 +9,12 @@
 - Origin: human
 - Next step: 2026-09-16 11:55 CEST m1e: U2b LANDED ca1a9e7c0. Stack E2 (U2c+U2d+U2e, proof-mu3wuqc6-453a7d4a280b148a) RED on U2c: brain-actor-seam-coverage (new goal.Actor site in finding_register.go not on the brain-fixtures.sh allow-list) and dispatch-c close refusal 'critic root has no complete owning goal pair' (finding_register.go:632). U2c goes to a fix-forward chain (S5/U2c-fix-report.md); U2d and U2e wait on it. CORRECTION to U2a's commit record 27045e8d2 and the lane's E1 report: E1's section/brain-fixtures red was this U2c allow-list failure, NOT the U2b staticcheck gate (the land-fixtures and adoption attributions stand). The U2a landing stands: proved alone and green, brain-fixtures passed. PRIOR: STATE 2026-09-16 (m1e landing lane): slice 2 units U2a 27045e8d2 and U2b ca1a9e7c0 LANDED, each proved alone (U2a proof-mu3uzvd8-704c628fff05c6e8; U2b proof-mu3w7hoa-38d2d1418f5ff1d8, 53 of 53 groups executed, section/return-schema-fixtures included). U2a carries the cmd/metasystem TestDispatchCritiqueAdvanceVerbsPath code-critic relabel its cap required; U2b carries the SA4006 err checks that reddened stack proof-mu3uh475-29d0b1f3dbd72008. Next: prove U2c+U2d+U2e as one stack and land them in order (U2e's dispatch-fixtures leg design_round_two_fixture_obligations first executes in that proof; flag the seat when U2e lands; a red splits the stack). Then slice 3 (the three metrics on landing provenance and mirrored refusal events, section 5 with F-8; section 8 row 5), then the section 8 proof on two runtimes and conclusion. Slice 1 is on origin/main (4fbd271c8 through section 13 60bb82d25; 9c.12 parked 3749e91fb).
 - OpenedAt: 2026-09-11T15:45:22Z
-- Revision: 90
+- Revision: 91
 - Pinned: m1e
 - Budget: elapsedLimit=1d attemptLimit=10 reservedJobMinutesLimit=1200 activeJobLimit=1 reviewRoundLimit=3
 - BudgetExceptions: 0
 - Approved: by=human:Wido at=2026-09-11T20:33:44Z revision=15 opid=8BE27ZT80ZJ6JTWNQ3GZAERK8Y-m1-c6925449 authority=proven digest=cf4c80f3b42d74737238cccc4774f7900e36fd98d52c0bc36aec01bab9f27fbb
-- Claimed: machine=m1e lineage=main-1789030447-51011-2956ea at=2026-09-16T09:10:23Z revision=88 accountingRevision=85 episodeAt=2026-09-16T08:26:10Z episodeRevision=85 idleSeconds=277
-- StopCapability: generation=88 revision=88 machine=m1e claimEpoch=1 fenceEpoch=0
+- Episode: machine=m1e lineage=main-1789030447-51011-2956ea accountingRevision=85 episodeAt=2026-09-16T08:26:10Z episodeRevision=85 idleSeconds=277 released=2026-09-16T09:57:49Z
 
 History:
 - 2026-09-11T15:45:22Z WKPXEN9CTZR44TMFZTQJE9X68Q-m1e-5083721b open actor=m1e+main-1789141490-27414-b9c0d2 targets=critique-closes-on-folded-proof
@@ -108,4 +107,5 @@ History:
 - 2026-09-16T09:10:23Z 290RHAP0Z50E96HMHK0JY23F3R-m1e-a3d4c1e1 claim actor=m1e+main-1789030447-51011-2956ea targets=critique-closes-on-folded-proof
 - 2026-09-16T09:39:38Z 569KER6FQ5H3XG28B3C7GVX3D4-m1e-a3d4c1e1 edit actor=m1e+main-1789030447-51011-2956ea targets=critique-closes-on-folded-proof
 - 2026-09-16T09:51:25Z PB27JA6TR5EVW5CSBPY3KN0ANM-m1e-a3d4c1e1 edit actor=m1e+main-1789030447-51011-2956ea targets=critique-closes-on-folded-proof
-Integrity: sha256=6001a46f0a1faf095aa0069d2f0844736e57a5721d23760ad0467677269e0c15
+- 2026-09-16T09:57:49Z JWH326GS4KKG4X0ZTZSJNWC8QM-m1e-a3d4c1e1 release actor=m1e+main-1789030447-51011-2956ea targets=critique-closes-on-folded-proof
+Integrity: sha256=35c1b2fd87bfc0c4039ba0a9facdf0cfc3f82832f35aff5c1d7ebefe8d397b6f
