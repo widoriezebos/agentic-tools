@@ -1,6 +1,6 @@
 # follow-up-brief-cannot-cite-fresh-trunk-files
 
-- State: approved
+- State: claimed
 - Priority: 1
 - Sequence: 23
 - Risk: severity=2 novelty=2 exposure=2 accumulation=2 basis="severity 2: a round either burns its whole attempt reading guidance it cannot see, as round 13 did, or builds six cross-cutting behaviours without the amendment that decides them; novelty 2: admission reads the worktree base while the rebase trigger reads the chain's own paths, and the fix has to join them; exposure 2: every chain whose guidance lands mid-chain, which is every chain that folds a critique; accumulation 2: three sightings this week and it recurs every time a disposition lands between rounds"
@@ -9,11 +9,12 @@
 - Origin: main
 - Next step: the two seams are the admission check (cited paths judged against the base commit) and the rebase decision (internal/dispatch/followup_rebase.go plus the wrapper in scripts/agents/dispatch.sh, landed 7211d700 by goal delegate-follow-up-cannot-merge-main). Candidate shape: admission accepts a path present on the trunk tip, and the rebase plan treats a cited-but-absent path as a reason to bring the worktree forward, which is the same stash, fast-forward and re-apply the wrapper already performs. Sibling goals: follow-up-brief-cannot-cite-round-created-files covers files a ROUND created; this one covers files the TRUNK gained || Absorbed 2026-09-11 from goal follow-up-brief-cannot-cite-round-created-files: Merge into follow-up-brief-cannot-cite-fresh-trunk-files with the merged intent above; this record's clause to carry: 'a path on the worktree disk (modified or untracked, not ignored) is admitted; a fixture cites a file the previous round created'. || Umbrella follow-up-rebase-defects (2026-09-13 backlog consolidation): this goal leads the fix for the members below. || Absorbed 2026-09-13 from goal follow-up-rebase-drop-failure-names-hash: Stash-drop refusal after re-apply names hash and tag. dispatch.sh:2189 still says 'the tagged stash $tag could not be removed' with no hash, while the restore path (2052) names 'stash hash X with tag Y'; FRC-01 non-material, tier 1, one fixture scenario. || Absorbed 2026-09-13 by m1b (new defect, same follow-up mechanism): a follow-up round of a design-critic chain carries no Declared Outputs section and no declaredOutputs fields, although the brief template promises the manifest and its digest; seen on member2-design-read-1-r2 (dispatched with --follow-up member2-design-read-1), whose reader reported the manifest could not be proven from the round's record. Candidate shape: build-follow-record copies the root's declared outputs and the dispatcher appends the section on follow-ups as on roots. || HELD 2026-09-16 10:40 (m1e): the followup-trunk unit (S5/followup-trunk-land.diff, read LAND) proved red as stack D, attempt proof-mu3thgmt-a68b46410ffb245b, tree a18f63f78 at tip 1f17cb99e, deep, 46 passed / 6 reused / 1 failed: runtime-owner-standard, internal/lease.TestClassifyStewardByInstalledBinaryAndIdentity (classify_test.go:376, STEWARD expected, got UNTRUSTED). The diff has no internal/lease hit, and the run overlapped a 16-way timing probe (load 11 to 20). Not attributed yet: an A/B of that one test (base against candidate, quiet machine) comes before any retry decision, and a load-shaped test is fixed forward under R-104, never retried. ATTRIBUTED 10:55 (landing lane 2, S5/landing-lane-2-report.md STEP 1): NOT CANDIDATE. Base passed 5/5 plus 200/200 and the candidate 5/5 plus 200/200, at load 4-6. The proof's failure took 0.06 s at 08:21:18Z, ten minutes after the probe window, and returned {UNTRUSTED Pid:0}. This is an intermittent trunk failure of an unknown mechanism, and it needs a fix-forward chain before stack D re-proves. Lead: runtime-owner-standard runs supervise, run, identity, lease and census together, and a supervise watchdog or kill test may reap the test's 'yes steward' child (classify_test.go:317-364; the STEWARD path is classify.go:478-485 and 505-518).
 - OpenedAt: 2026-09-07T14:29:13Z
-- Revision: 68
+- Revision: 69
 - Budget: elapsedLimit=4h attemptLimit=6 reservedJobMinutesLimit=720 activeJobLimit=1 reviewRoundLimit=2
 - BudgetExceptions: 0
 - Approved: by=human:Wido at=2026-09-15T05:56:47Z revision=29 opid=YMCN4ZY46CMMVN2CMWWCR5H3HE-m1e-c6925449 authority=proven digest=9f4832b562da421ac4a6f8b8b7303cbad334b62b89b860fc2d319d385ef1f681
-- Episode: machine=m1e lineage=main-1789030447-51011-2956ea accountingRevision=65 episodeAt=2026-09-16T08:01:03Z episodeRevision=65 idleSeconds=0 released=2026-09-16T08:26:06Z
+- Claimed: machine=m1e lineage=main-1789030447-51011-2956ea at=2026-09-16T11:39:16Z revision=69 accountingRevision=65 episodeAt=2026-09-16T08:01:03Z episodeRevision=65 idleSeconds=11590
+- StopCapability: generation=69 revision=69 machine=m1e claimEpoch=1 fenceEpoch=0
 
 History:
 - 2026-09-07T14:29:13Z Z8Y2FPSCCES041S4CQ9ETC414Y-m1b-c6925449 open actor=m1b+main-1788680071-18713-e76d5d targets=follow-up-brief-cannot-cite-fresh-trunk-files
@@ -84,4 +85,5 @@ History:
 - 2026-09-16T08:26:06Z XNZXJ356B1JATT1SDCBQ4013MB-m1e-a3d4c1e1 release actor=m1e+main-1789030447-51011-2956ea targets=follow-up-brief-cannot-cite-fresh-trunk-files
 - 2026-09-16T08:26:14Z 1ZABP9J6Y3505PAMBT9QR314VH-m1e-624859b3 edit actor=m1e+main-1789030447-51011-8eb7e9 targets=follow-up-brief-cannot-cite-fresh-trunk-files
 - 2026-09-16T08:30:35Z P3Q01JKPTNZWT48E4N56W2Y7VP-m1e-624859b3 edit actor=m1e+main-1789030447-51011-8eb7e9 targets=follow-up-brief-cannot-cite-fresh-trunk-files
-Integrity: sha256=8eb98e8beb5ea59b6d01947b9d9fad0590357b3380ea3a3597a35ebc3f14a5b4
+- 2026-09-16T11:39:16Z 5GQRYQD4RJA9R7ASHNH18BN73R-m1e-a3d4c1e1 claim actor=m1e+main-1789030447-51011-2956ea targets=follow-up-brief-cannot-cite-fresh-trunk-files
+Integrity: sha256=8e3e7e10ac1da5e17ca5bf3483296035f8d23cf1d66151c7af38d4c63734a12a
