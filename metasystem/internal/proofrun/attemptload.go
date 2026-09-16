@@ -37,7 +37,16 @@ var loadSeams = struct {
 	host      func(now time.Time) hostload.Sample
 	launchers func(self int64) (int, bool)
 	nested    func(self int64) (bool, bool)
-}{host: hostload.Read, launchers: countProofLaunchers, nested: nestedProofLauncher}
+	prober    identity.Prober
+	pids      func() ([]int64, error)
+	parent    func(pid int64) (int64, bool)
+}{}
+
+func init() {
+	loadSeams.host, loadSeams.launchers = hostload.Read, countProofLaunchers
+	loadSeams.nested, loadSeams.prober = nestedProofLauncher, identity.KernelProber{}
+	loadSeams.pids, loadSeams.parent = identity.AllPids, identity.ParentPid
+}
 
 // sampleLoad reads the host, this checkout's other live attempts, and the
 // host's other top-level proof launchers at now. The attempt's own launcher
@@ -100,17 +109,17 @@ func countProofLaunchers(self int64) (int, bool) {
 }
 
 func readProcessRows() ([]processRow, bool) {
-	pids, err := identity.AllPids()
+	pids, err := loadSeams.pids()
 	if err != nil {
 		return nil, false
 	}
 	rows := make([]processRow, 0, len(pids))
 	for _, pid := range pids {
 		row := processRow{pid: pid}
-		if parent, ok := identity.ParentPid(pid); ok {
+		if parent, ok := loadSeams.parent(pid); ok {
 			row.parent = parent
 		}
-		exact, state, err := (identity.KernelProber{}).Probe(pid)
+		exact, state, err := loadSeams.prober.Probe(pid)
 		if err == nil && state == identity.Alive && exact.ArgvKnown && isProofLauncherArgv(exact.Argv) {
 			row.launcher = true
 		}
@@ -188,7 +197,8 @@ func topLevelLaunchers(rows []processRow, self int64) int {
 // the words out of the census.
 func isProofLauncherArgv(argv []string) bool {
 	return len(argv) >= 3 && filepath.Base(argv[0]) == "metasystem" &&
-		(argv[1] == "proof-run" && argv[2] == "launch" || argv[1] == "test" && argv[2] == "run")
+		(argv[1] == "proof-run" && argv[2] == "launch" || argv[1] == "test" && argv[2] == "run" ||
+			len(argv) >= 4 && argv[1] == "landing" && argv[2] == "batch" && argv[3] == "owner")
 }
 
 // liveAttemptsOtherThan counts this checkout's attempts without a terminal
@@ -201,7 +211,7 @@ func liveAttemptsOtherThan(root, self string) int {
 		if attempt.AttemptID == self || attempt.Terminal != nil {
 			continue
 		}
-		if identity.AliveRef(identity.KernelProber{}, attempt.Launcher.Ref()) == identity.Alive {
+		if identity.AliveRef(loadSeams.prober, attempt.Launcher.Ref()) == identity.Alive {
 			count++
 		}
 	}

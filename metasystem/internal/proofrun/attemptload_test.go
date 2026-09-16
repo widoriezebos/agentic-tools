@@ -9,7 +9,21 @@ import (
 	"time"
 
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/hostload"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/identity"
 )
+
+type censusProber struct {
+	processes map[int64]identity.Exact
+	calls     map[int64]int
+}
+
+func (p *censusProber) Probe(pid int64) (identity.Exact, identity.Liveness, error) {
+	p.calls[pid]++
+	if exact, ok := p.processes[pid]; ok {
+		return exact, identity.Alive, nil
+	}
+	return identity.Exact{}, identity.Dead, nil
+}
 
 // installFakeLoad scripts the host sample and the host-wide launcher count
 // the attribution reads, so no scheduler is in the loop.
@@ -24,12 +38,14 @@ func installFakeLoad(t *testing.T, sample hostload.Sample, launchers int, known 
 	t.Cleanup(func() { loadSeams = previous })
 }
 
-func TestProofLauncherArgvCountsEngineTestRuns(t *testing.T) {
+func TestProofLauncherArgv(t *testing.T) {
 	for argv, want := range map[string]bool{
 		"/seat/m1b/metasystem/bin/metasystem proof-run launch --suite testing --root /x": true,
 		"metasystem proof-run launch":                     true,
 		"/seat/m1c/bin/metasystem test run --goal goal-a": true,
+		"metasystem landing batch owner --root /landing":  true,
 		"metasystem test plan":                            false,
+		"metasystem landing batch status":                 false,
 		"metasystem test":                                 false,
 		"metasystem goal run":                             false,
 		"not-metasystem test run":                         false,
@@ -56,6 +72,58 @@ func TestProofLauncherArgvCountsEngineTestRuns(t *testing.T) {
 		row(10, 1, "metasystem proof-run launch"), row(11, 10, "metasystem test run"),
 	}, 999); got != 1 {
 		t.Fatalf("a proof launch with a nested engine test run counted %d launcher(s), want 1", got)
+	}
+}
+
+func TestCensusCountsRunningBatchProof(t *testing.T) {
+	row := func(pid, parent int64, argv string) processRow {
+		return processRow{pid: pid, parent: parent, launcher: isProofLauncherArgv(strings.Fields(argv))}
+	}
+	if got := topLevelLaunchers([]processRow{row(10, 1, "metasystem landing batch owner")}, 999); got != 1 {
+		t.Fatalf("a running batch owner counted %d launcher(s), want 1", got)
+	}
+	if got := topLevelLaunchers([]processRow{
+		row(10, 1, "metasystem landing batch owner"), row(11, 10, "metasystem test run"),
+	}, 999); got != 1 {
+		t.Fatalf("a batch owner with its nested engine run counted %d launcher(s), want 1", got)
+	}
+	previousPids := loadSeams.pids
+	loadSeams.pids = func() ([]int64, error) { return nil, os.ErrPermission }
+	t.Cleanup(func() { loadSeams.pids = previousPids })
+	if got, known := countProofLaunchers(999); got != 0 || known {
+		t.Fatalf("an unreadable process table returned %d, known=%v", got, known)
+	}
+}
+
+func TestCensusUsesInjectedProber(t *testing.T) {
+	installFakeLoad(t, hostload.Sample{Available: true, Cores: 8, Load1m: 1}, 0, true)
+	root, proofIdentity := proofAttemptFixture(t, "injected-census")
+	now := time.Date(2026, 9, 16, 18, 0, 0, 0, time.UTC)
+	fakeOwner := identity.Exact{Pid: 313131, StartedAt: now, Argv: []string{"metasystem", "landing", "batch", "owner"}, ArgvKnown: true}
+	fakeAttempt := identity.Exact{Pid: 424242, StartedAt: now.Add(-time.Hour)}
+	fake := &censusProber{processes: map[int64]identity.Exact{
+		fakeOwner.Pid: fakeOwner, fakeAttempt.Pid: fakeAttempt,
+	}, calls: map[int64]int{}}
+	loadSeams.prober = fake
+	loadSeams.pids = func() ([]int64, error) { return []int64{fakeOwner.Pid}, nil }
+	loadSeams.parent = func(int64) (int64, bool) { return 1, true }
+	launcher := processIdentity(identity.Exact{Pid: 515151, StartedAt: now.Add(-2 * time.Hour)}, 0)
+	attempt, _, err := ReserveLocked(AdmissionRequest{ControlRoot: root, ExecutionRoot: root, GoalID: "goal-a", GoalRevision: 2,
+		AccountingRevision: 2, ReservedMinutes: 2, Identity: proofIdentity, Launcher: launcher, Now: now})
+	if err != nil {
+		t.Fatal(err)
+	}
+	attempt.Launcher = processIdentity(fakeAttempt, 0)
+	if err := writeAttempt(attempt); err != nil {
+		t.Fatal(err)
+	}
+	loadSeams.launchers = countProofLaunchers
+	sample := sampleLoad(root, "proof-other", 0, now)
+	if sample.OverlappingHost != 1 || !sample.OverlapKnown || sample.OverlappingLocal != 1 {
+		t.Fatalf("injected census sample = %+v, want one host launcher and one local attempt", sample)
+	}
+	if fake.calls[fakeOwner.Pid] == 0 || fake.calls[fakeAttempt.Pid] == 0 {
+		t.Fatalf("injected prober calls = %v", fake.calls)
 	}
 }
 
