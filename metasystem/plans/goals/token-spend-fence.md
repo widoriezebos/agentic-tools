@@ -1,6 +1,6 @@
 # token-spend-fence
 
-- State: approved
+- State: queued
 - Priority: 2
 - Sequence: 37
 - Risk: severity=2 novelty=2 exposure=3 accumulation=1 basis="severity 2: a wrong fence stops or fails to stop spending, no data loss; novelty 2: enforcement on token spend is new; exposure 3: every seat's sessions; accumulation 1: one fence and its records"
@@ -9,11 +9,9 @@
 - Origin: main
 - Next step: STEP 1 (ALERT MODE) LANDED 2026-09-03 by m3 in 0acb0973 (chain fence-build-m3, one Fable review with one material finding corrected and re-reviewed once, R-70-m3 dead-code deletion on Wido's word; record records/misc/token-spend-fence-code-review.md): the spend package, six commented spend keys in metasystem.conf, the steward spend-fence health role alerting per crossing and refusing nothing. Machines rebuild their engines to run it. NEXT: calibration in alert mode on every machine (set the ceilings in metasystem.conf, watch the health line), then STEP 2, ENFORCE, only by Wido's word once he agrees the calibrated setting is good: the dispatcher refuses a dispatch that would cross the ceiling, naming the ceiling, the spend so far and who can raise it; full ladder (design, critique, build, code review). Twelve non-material review notes (TSF-C1, TSF-C2 in the record) are backlog candidates, not corrections.
 - OpenedAt: 2026-09-03T08:42:26Z
-- Revision: 211
+- Revision: 212
 - Labels: robustness, spend
-- Budget: elapsedLimit=4h attemptLimit=6 reservedJobMinutesLimit=720 activeJobLimit=1 reviewRoundLimit=2
 - BudgetExceptions: 0
-- Approved: by=human:Wido at=2026-09-15T20:31:10Z revision=183 opid=3E8SCW2VE00F971RGP7W4J9Y17-m1e-c6925449 authority=proven digest=227aea8023075c61f379f5d27ed94537d1396abb0095606aa9cf07b2206c6e20
 - Sliced: machine=m1b lineage=main-1788333346-60696-6a3256 revision=4 at=2026-09-03T11:28:16Z
 
 History:
@@ -228,4 +226,5 @@ History:
 - 2026-09-16T20:31:27Z BVMYGCGW7TJ8P9PADA9WZXM60K-m1e-c6925449 set-priority actor=human:Wido targets=census-lifecycle-scenario-holds-under-load,chain-landing-carries-the-reviewed-diff,dispatch-bases-chains-on-the-remote-tip,events-package-has-a-test-group,fixture-repo-copies-exclude-the-artifacts-store,fixture-waits-name-their-producer,human-authority-surface-runs-its-cmd-tests,human-wait-does-not-consume-goal-budget,machine-concurrency-governor,metasystem-stop-escalation-proofs,metasystem-stop-fleet-form,new-elapsed-budgets-use-explicit-hours,pipelines-never-lose-a-truncated-producer,repo-root-paths-ride-agent-commits-unjudged,run-scoped-build-caches-have-a-janitor,skipped-test-fails-its-group-on-the-other-os,token-spend-fence,winddown-census-handoff-leak reason=priority-order subject=winddown-census-handoff-leak from=1:56 to=1:55 requested-sequence=35
 - 2026-09-16T20:31:33Z 6QJ7XVJJQ9AQX9723TQ9W3GVQX-m1e-c6925449 set-priority actor=human:Wido targets=census-lifecycle-scenario-holds-under-load,chain-landing-carries-the-reviewed-diff,dispatch-bases-chains-on-the-remote-tip,events-package-has-a-test-group,fixture-repo-copies-exclude-the-artifacts-store,fixture-waits-name-their-producer,human-authority-surface-runs-its-cmd-tests,human-wait-does-not-consume-goal-budget,machine-concurrency-governor,metasystem-stop-escalation-proofs,metasystem-stop-fleet-form,new-elapsed-budgets-use-explicit-hours,pipelines-never-lose-a-truncated-producer,repo-root-paths-ride-agent-commits-unjudged,run-scoped-build-caches-have-a-janitor,skipped-test-fails-its-group-on-the-other-os,token-spend-fence reason=priority-order subject=machine-concurrency-governor from=1:55 to=1:54 requested-sequence=36
 - 2026-09-16T20:31:40Z RKT636JJPJ4B2WE1GN3B55Z10W-m1e-c6925449 set-priority actor=human:Wido targets=census-lifecycle-scenario-holds-under-load,chain-landing-carries-the-reviewed-diff,dispatch-bases-chains-on-the-remote-tip,events-package-has-a-test-group,fixture-repo-copies-exclude-the-artifacts-store,fixture-waits-name-their-producer,human-authority-surface-runs-its-cmd-tests,human-wait-does-not-consume-goal-budget,metasystem-stop-escalation-proofs,metasystem-stop-fleet-form,new-elapsed-budgets-use-explicit-hours,pipelines-never-lose-a-truncated-producer,repo-root-paths-ride-agent-commits-unjudged,run-scoped-build-caches-have-a-janitor,skipped-test-fails-its-group-on-the-other-os,token-spend-fence reason=priority-order subject=token-spend-fence from=1:54 to=2:37 requested-sequence=37
-Integrity: sha256=dc8510a207f8766bccb632d07007e8c287bfdfa9acee40b23fcfab390cfdd307
+- 2026-09-16T20:33:49Z CWWB2BQWH4NBB395G9VNBES51V-m1e-c6925449 unapprove actor=human:Wido targets=token-spend-fence reason=Wido 2026-09-16 22:40 CEST: clean house on priority 1 first, then a few human convenience features; every priority 2+ goal is unapproved until then
+Integrity: sha256=cb717d0726c123bf0fa5af9d46d44552fa13d56b4f3d3849246a6ca5d3ea364b
