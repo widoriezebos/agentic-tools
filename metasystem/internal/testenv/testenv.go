@@ -9,11 +9,15 @@ import (
 	"fmt"
 	"io"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"strings"
+	"syscall"
 	"testing"
 
 	"golang.org/x/sys/unix"
+
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/identity"
 )
 
 const supervisionRegistryHome = "METASYSTEM_SUPERVISION_REGISTRY_HOME"
@@ -31,6 +35,7 @@ var inheritedControlNames = []string{
 	"METASYSTEM_BIN",
 	"METASYSTEM_CHECKOUT_EXECUTION_GUARD_ROOT",
 	"METASYSTEM_DELEGATE_ROOT",
+	identity.FixtureCustodianStartEnv,
 	"METASYSTEM_GATE_WITNESS_ROOT",
 	"METASYSTEM_GUARD_PROBE",
 	"METASYSTEM_HARNESS_ROOT",
@@ -82,6 +87,35 @@ func DeclareInheritedControls() []Declaration {
 // Main prepares the package environment, runs the tests, releases its registry
 // ownership, and returns the package exit code.
 func Main(m *testing.M, declarations ...Declaration) (code int) {
+	if os.Getenv(identity.FixtureCustodianEnv) == "1" {
+		owner, err := identity.ParseRef(os.Getenv(identity.FixtureCustodianOwnerEnv))
+		if err != nil {
+			fmt.Fprintf(os.Stderr, "run fixture custodian: owner=%q: %v\n", os.Getenv(identity.FixtureCustodianOwnerEnv), err)
+			return 2
+		}
+		var watchStat unix.Stat_t
+		if err := unix.Fstat(3, &watchStat); err != nil {
+			fmt.Fprintf(os.Stderr, "run fixture custodian: watch descriptor 3 is unavailable; it must be a pipe: %v\n", err)
+			return 2
+		}
+		if watchStat.Mode&unix.S_IFMT != unix.S_IFIFO {
+			fmt.Fprintf(os.Stderr, "run fixture custodian: watch descriptor 3 is mode %#o, not a pipe\n", watchStat.Mode&unix.S_IFMT)
+			return 2
+		}
+		watchFlags, err := unix.FcntlInt(uintptr(3), unix.F_GETFL, 0)
+		if err != nil || watchFlags&unix.O_ACCMODE != unix.O_RDONLY {
+			fmt.Fprintf(os.Stderr, "run fixture custodian: watch descriptor 3 is not a pipe read end: flags=%#x err=%v\n", watchFlags, err)
+			return 2
+		}
+		watch := os.NewFile(3, "fixture-owner-watch")
+		defer watch.Close()
+		if err := identity.RunCustodian(owner, watch, os.Stderr); err != nil {
+			fmt.Fprintln(os.Stderr, "run fixture custodian:", err)
+			return 2
+		}
+		return 0
+	}
+	startCustodian := os.Getenv(identity.FixtureCustodianStartEnv) == "1"
 	cleanup, err := prepare(declarations)
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "prepare test environment: %v\n", err)
@@ -95,8 +129,66 @@ func Main(m *testing.M, declarations ...Declaration) (code int) {
 			}
 		}
 	}()
+	if startCustodian {
+		err = startFixtureCustodian(os.Getenv(supervisionRegistryHome))
+		if err != nil {
+			fmt.Fprintf(os.Stderr, "start fixture custodian: %v\n", err)
+			return 2
+		}
+	}
 	code = m.Run()
 	return code
+}
+
+func startFixtureCustodian(registry string) error {
+	exact, state, err := (identity.KernelProber{}).Probe(int64(os.Getpid()))
+	if err != nil || state != identity.Alive {
+		return fmt.Errorf("prove owner identity: state=%s err=%v", state, err)
+	}
+	owner, err := identity.EncodeRef(exact.Ref())
+	if err != nil {
+		return err
+	}
+	reader, writer, err := os.Pipe()
+	if err != nil {
+		return err
+	}
+	defer func() {
+		reader.Close()
+		writer.Close()
+	}()
+	logPath := registry + ".custodian.log"
+	logFile, err := os.OpenFile(logPath, os.O_WRONLY|os.O_CREATE|os.O_APPEND|unix.O_NOFOLLOW, 0o600)
+	if err != nil {
+		return err
+	}
+	defer logFile.Close()
+	command := exec.Command(os.Args[0])
+	for _, entry := range os.Environ() {
+		name, _, _ := strings.Cut(entry, "=")
+		if name != identity.FixtureOwnerEnv && name != identity.FixtureCustodianEnv &&
+			name != identity.FixtureCustodianOwnerEnv && name != identity.FixtureCustodianLogEnv {
+			command.Env = append(command.Env, entry)
+		}
+	}
+	command.Env = append(command.Env, identity.FixtureCustodianEnv+"=1", identity.FixtureCustodianOwnerEnv+"="+owner,
+		identity.FixtureCustodianLogEnv+"="+logPath)
+	command.ExtraFiles = []*os.File{reader}
+	command.Stderr = logFile
+	command.SysProcAttr = &syscall.SysProcAttr{Setsid: true}
+	if err := command.Start(); err != nil {
+		return err
+	}
+	if _, state, probeErr := (identity.KernelProber{}).Probe(int64(command.Process.Pid)); probeErr != nil || state != identity.Alive {
+		_ = command.Process.Kill()
+		return fmt.Errorf("probe custodian: state=%s err=%v", state, probeErr)
+	}
+	// The duplicate is never closed; the kernel closes it at process exit, which tells the custodian the owner died.
+	if _, err := unix.FcntlInt(writer.Fd(), unix.F_DUPFD_CLOEXEC, 0); err != nil {
+		_ = command.Process.Kill()
+		return err
+	}
+	return nil
 }
 
 func prepare(declarations []Declaration) (func() error, error) {
