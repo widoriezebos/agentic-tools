@@ -1,6 +1,6 @@
 # winddown-census-handoff-leak
 
-- State: approved
+- State: queued
 - Priority: 2
 - Sequence: 35
 - Risk: severity=2 novelty=2 exposure=2 accumulation=1 basis="severity 2: a live process group surviving the wind-down is a custody hole that blocks a weight discharge; novelty 2: the census adoption of abandoned groups is untriaged (never implemented, racing, or misordered); exposure 2: every governed run's wind-down; accumulation 1: one census path"
@@ -9,11 +9,9 @@
 - Origin: main
 - Next step: Appetite: 3h, HIGH priority - this blocks the first weight discharge (goal standing-validation, envelope at ceiling) and is a real custody hole. Triage first: is the census adoption of abandoned groups (a) never implemented for this path, (b) implemented but racing the group's process identity, or (c) implemented but the abandonment never reaches it. The dab1dbd fold contract and the lease-fold fix (3ba27a82) are adjacent - verify the handoff against both. Then fix on the owning seam with a test that constructs the survived-SIGKILL case deterministically. The discharge resumes on Wido's word after this lands.
 - OpenedAt: 2026-08-31T22:42:31Z
-- Revision: 199
+- Revision: 200
 - Pinned: m1b
-- Budget: elapsedLimit=4h attemptLimit=6 reservedJobMinutesLimit=720 activeJobLimit=1 reviewRoundLimit=2
 - BudgetExceptions: 0
-- Approved: by=human:Wido at=2026-09-13T06:42:29Z revision=87 opid=QMR318TA5VCTCS0VYCW4EN9H29-m1e-c6925449 authority=proven digest=d8302bcef2cac204eee96f51eb9a52a38afccb3751c6b2fe3c7e5b5138c3fbfb
 
 History:
 - 2026-08-31T22:42:31Z N02MC9XCBZ382B3ZSTNPPCR5MV-m2-bc1be9cb open actor=m2+mac-coordinator targets=winddown-census-handoff-leak
@@ -215,4 +213,5 @@ History:
 - 2026-09-16T20:31:11Z Z13WSWGM6M2BZEEHMWC8N808X2-m1e-c6925449 set-priority actor=human:Wido targets=actionable-metrics,census-lifecycle-scenario-holds-under-load,chain-landing-carries-the-reviewed-diff,dispatch-bases-chains-on-the-remote-tip,events-package-has-a-test-group,fixture-repo-copies-exclude-the-artifacts-store,fixture-waits-name-their-producer,human-authority-surface-runs-its-cmd-tests,human-wait-does-not-consume-goal-budget,lease-sweep-death-evidence,machine-concurrency-governor,metasystem-stop-escalation-proofs,metasystem-stop-fleet-form,new-elapsed-budgets-use-explicit-hours,pipelines-never-lose-a-truncated-producer,repo-root-paths-ride-agent-commits-unjudged,run-scoped-build-caches-have-a-janitor,skipped-test-fails-its-group-on-the-other-os,token-spend-fence,winddown-census-handoff-leak reason=priority-order subject=actionable-metrics from=1:56 to=1:55 requested-sequence=33
 - 2026-09-16T20:31:19Z C1DT7Y4C9BRRF4SNSB80SWEFCN-m1e-c6925449 set-priority actor=human:Wido targets=census-lifecycle-scenario-holds-under-load,chain-landing-carries-the-reviewed-diff,dispatch-bases-chains-on-the-remote-tip,events-package-has-a-test-group,fixture-repo-copies-exclude-the-artifacts-store,fixture-waits-name-their-producer,human-authority-surface-runs-its-cmd-tests,human-wait-does-not-consume-goal-budget,lease-sweep-death-evidence,machine-concurrency-governor,metasystem-stop-escalation-proofs,metasystem-stop-fleet-form,new-elapsed-budgets-use-explicit-hours,pipelines-never-lose-a-truncated-producer,repo-root-paths-ride-agent-commits-unjudged,run-scoped-build-caches-have-a-janitor,skipped-test-fails-its-group-on-the-other-os,token-spend-fence,winddown-census-handoff-leak reason=priority-order subject=lease-sweep-death-evidence from=1:55 to=1:54 requested-sequence=34
 - 2026-09-16T20:31:27Z BVMYGCGW7TJ8P9PADA9WZXM60K-m1e-c6925449 set-priority actor=human:Wido targets=census-lifecycle-scenario-holds-under-load,chain-landing-carries-the-reviewed-diff,dispatch-bases-chains-on-the-remote-tip,events-package-has-a-test-group,fixture-repo-copies-exclude-the-artifacts-store,fixture-waits-name-their-producer,human-authority-surface-runs-its-cmd-tests,human-wait-does-not-consume-goal-budget,machine-concurrency-governor,metasystem-stop-escalation-proofs,metasystem-stop-fleet-form,new-elapsed-budgets-use-explicit-hours,pipelines-never-lose-a-truncated-producer,repo-root-paths-ride-agent-commits-unjudged,run-scoped-build-caches-have-a-janitor,skipped-test-fails-its-group-on-the-other-os,token-spend-fence,winddown-census-handoff-leak reason=priority-order subject=winddown-census-handoff-leak from=1:54 to=2:35 requested-sequence=35
-Integrity: sha256=9b4a873c1813353f886e27d20f55076bbbac71df9fd50003bb4b682518587edf
+- 2026-09-16T20:33:38Z 6HTBW7ANNRXXR2Q9017CE2X59E-m1e-c6925449 unapprove actor=human:Wido targets=winddown-census-handoff-leak reason=Wido 2026-09-16 22:40 CEST: clean house on priority 1 first, then a few human convenience features; every priority 2+ goal is unapproved until then
+Integrity: sha256=a4c9fa8eccd299e1810c43aff7571b3bdd6f3a49e6cde3cee8a34c514bc73f1e
