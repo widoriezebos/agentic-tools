@@ -11,13 +11,12 @@
   registry types) are owned by golden fixtures during the build.
   D100's rulings stand: NO self-work exception, DETECTOR tier.
 - Goal: host-implementer-wall (Current)
-- In flight right now: INTERPOSED AGAIN at Wido's direction —
-  GitHub issues #4/#5/#6 (vm-smoke-4: the agents scored FULL
-  MARKS on the held-out grader and the metasystem refused to
-  bank it). Priority order #6 (sealed host caps), #5 (worktree
-  delegate commits), #4 (stop-loss candidate visibility +
-  ledgerSemantics 3). Wall slice 5 resumes after; its state and
-  build map follow unchanged:
+- In flight right now: none — the interposed GitHub issues
+  #4/#5/#6 landed 2026-08-18 (c7a4ddfb3, 1d48b0c7a, 69f417c70)
+  and wall slice 5's build map folded that same day; the goal
+  is done, concluded 2026-09-11 (all nine wall-o* blockers
+  concluded in done-goals.tsv; rows O12/O17/O18 are
+  runtime-ready seals, not goals). No further work.
 - Slice-5 state: ALL FOUR BUILD-MAP ITEMS BUILT (2026-08-18);
   round-1 critique returned SEVEN material findings, ALL FOLDED
   same day: (1) the open write anchors, and resume inspects an
@@ -150,13 +149,8 @@
   finding trajectory 5 → 3 → 3 → 2 → 0, "AGREE — slices land"
   (scratchpad wall-slice*-output.md; scanner gap recorded in
   KI-34).
-- Waiting on the human: the session itself is mid-build on
-  slice 5 right now (no human input needed); the build map above
-  is the lossless handoff when the context window compacts.
-- Next step: execute the slice-5 build map above in order, then
-  its critique loop; then the remaining rows (doctrine/prompts,
-  delegation floor, events, detector tier) — both-host gates
-  before any ship.
+- Waiting on the human: nothing.
+- Next step: none.
 
 ## What happened (unchanged evidence)
 
