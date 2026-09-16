@@ -1,6 +1,6 @@
 # units-land-in-batches-under-one-proof
 
-- State: approved
+- State: claimed
 - Priority: 1
 - Sequence: 1
 - Risk: severity=3 novelty=3 exposure=3 accumulation=2 basis="Wido 2026-09-16 15:35 and 15:50 CEST: create batches of release candidates, make sure they are all green already with cheap tests, then batch them into a single release tested with the expensive test, with chances of green as high as they can be, so the price is paid once for many landings; design it like that and get it implemented with highest priority because if this is the biggest bottleneck we better solve it first. Precedents: U2c plus U2d plus U2e proved as one stack (proof-mu41vx96, 53 of 53); the U3b-1a plus 1b stack. Seat m1e landing lanes do this by hand today. Every landing pays a 20 to 45 minute deep proof under the one testrun lock; on 2026-09-16 a trunk flake at a 2 s margin turned a 53-group proof red and the lane lost its slot."
@@ -9,10 +9,12 @@
 - Origin: human
 - Next step: Design r1 by a headless Claude Fable delegate (seat m1e brief S5/blb-design-prompt.md, launched by S5/fable-design-launch.sh on a worktree at origin/main). It builds on proof-admission-fits-a-seat-proving-several-units design r3 (plans/proof-admission-fits-a-seat-proving-several-units-design.md: candidate tree digest, candidate-scoped retry, two-lens verdict) and names which of its units are prerequisites. Then a Codex critique, a Codex sol build in units of at most 300 lines, Opus reads, landing through the lane. Design ceilings: 150 tool calls, 5000 words. STATUS 2026-09-16 16:25 CEST: design r1 DONE (worktree .claude/worktrees/blb-design/metasystem/plans/units-land-in-batches-under-one-proof-design-r1.md, 436 lines, 4931 words, units B1-B9 about 2360 lines, B6 waits on r3 U1a/U1b/U3a/U3b/U3c, B7 on r3 U4; zero compactions). Codex sol critique r1 running in worktree crit-blb (output artifacts/reports/blb-critique-r1.md). ANSWERS to the page's open questions: Q1 (seat, corrected 16:25 CEST) a single-group diagnostic run is EXEMPT from the R-111-m1e lock as a focused run, because DONE (1) already says the changed fixture-bed scenario runs alone outside the lock; the page's A1 stands, and D6's owner search is the same kind of run. Q2 (seat) landing.batch-root is a DEDICATED landing checkout used only by the batch verbs (proposed /Users/wido/LocalStorage/GitHub/agentic-tools-landing, created at B5 rollout), never m1e's checkout, which is stale and carries local ledger edits, and land.sh resets the checkout it lands in. Q3 WIDO 2026-09-16 16:20 CEST, stronger than D7: 'in theory the load should not matter. It is something to try and attempt to avoid. But it should not be an issue if it cannot be avoided to run two suites side by side under heavy load. Tests should not ever fail because they take longer. You should redesign them if they do. So avoiding the window where another load is taking place should be something we strive for but it's not a hard requirement. So I'm fine to start the test if it takes too long regardless.' Meaning for DONE (5): the quiet window is best effort; once the maximum wait elapses the batch proof starts REGARDLESS of load AND of other proof launchers (no launcher-only condition), recording the load sample and launcher count on the attempt; a red that load explains is a TEST DEFECT redesigned at its cause (injected clock, fact wait), never a reason to hold, retry, eject a unit or raise a bound. The testrun lock of R-111-m1e decision 2 is unchanged by this answer. The r2 fold takes these answers and the critique together.
 - OpenedAt: 2026-09-16T13:45:00Z
-- Revision: 5
+- Revision: 6
 - Budget: elapsedLimit=1d attemptLimit=10 reservedJobMinutesLimit=1200 activeJobLimit=1 reviewRoundLimit=3
 - BudgetExceptions: 0
 - Approved: by=human:Wido at=2026-09-16T13:45:16Z revision=3 opid=17NWRYW57YJ04351BCV5X3JJA0-m1e-c6925449 authority=proven digest=adc946ee51484052b99e862debbd91d1e55ebc0ef3be4816b4b8c5654e6d3f0d
+- Claimed: machine=m1b lineage=main-1789560571-22295-8d907a at=2026-09-16T16:25:13Z revision=6 accountingRevision=6 episodeAt=2026-09-16T16:25:13Z episodeRevision=6
+- StopCapability: generation=6 revision=6 machine=m1b claimEpoch=3 fenceEpoch=0
 
 History:
 - 2026-09-16T13:45:00Z 2V898K1J58M679D106Y0DXP2TV-m1e-c6925449 open actor=human:Wido targets=units-land-in-batches-under-one-proof
@@ -20,4 +22,5 @@ History:
 - 2026-09-16T13:45:16Z 17NWRYW57YJ04351BCV5X3JJA0-m1e-c6925449 approve actor=human:Wido targets=units-land-in-batches-under-one-proof
 - 2026-09-16T14:17:22Z QNJJ3AC4XRSG1R2Y3N2C08DE37-m1e-a3d4c1e1 edit actor=m1e+main-1789030447-51011-2956ea targets=units-land-in-batches-under-one-proof
 - 2026-09-16T14:21:08Z HCF9THTK3612Z91XGXE4C8SZY2-m1e-a3d4c1e1 edit actor=m1e+main-1789030447-51011-2956ea targets=units-land-in-batches-under-one-proof
-Integrity: sha256=b3b2ec30b401fea5c119521f9926ff68266791b18855a17077af1470f2c5b51a
+- 2026-09-16T16:25:13Z 0PZEZN5QTXCGX5FJKCQ5Y8B6PV-m1b-d0e95724 claim actor=m1b+main-1789560571-22295-8d907a targets=units-land-in-batches-under-one-proof
+Integrity: sha256=6f3378ad569adaefdd7d87307c3230dd381cfb863f4f8b330901bfebce23d8e7
