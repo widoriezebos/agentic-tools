@@ -1,15 +1,15 @@
 # human-wait-does-not-consume-goal-budget
 
 - State: approved
-- Priority: 1
-- Sequence: 54
+- Priority: 2
+- Sequence: 48
 - Risk: severity=3 novelty=2 exposure=3 accumulation=1 basis="severity 3: budget enforcement can stop lawful work or permit unbounded time; novelty 2: a bounded change to existing ledger and elapsed projection; exposure 3: shared goal execution across seats; accumulation 1: each episode is evaluated independently, with no new aggregate accounting"
 - Tier: 3
 - Intent: Time a goal spends blocked on a recorded human act does not count toward its elapsed limit. Show waiting time separately and report waiting on the human since the recorded start rather than counting down to a breach. Define reliable evidence for human-wait start/end around existing next-step or plan records, goal asks and refused human verbs, without allowing arbitrary agent prose to create unrecorded free execution time.
 - Origin: main
 - Next step: Third independent successor of goal:breach-clock-and-budget-honesty, preserving the requirement added 2026-09-09 after its reviewed design. Specimen: breach-stop-wedges-seat claimed 10:07Z with 4h, next step WAITING ON WIDO from 11:47Z, custodian stopped it 16:08Z at 6h01m including the wait; the requested raise then required a resume. Needs its own bounded Codex Astra xhigh design for authoritative interval records, end/resume rules, subtraction and reporting through existing goal and ProjectBudget owners. Depends on a stable elapsed origin from goal:budget-raises-preserve-elapsed-origin. No implementation in the elapsed-origin slice.
 - OpenedAt: 2026-09-11T05:37:49Z
-- Revision: 127
+- Revision: 128
 - Labels: breach-clock-successor
 - Pinned: m1c
 - Budget: elapsedLimit=1d attemptLimit=10 reservedJobMinutesLimit=1200 activeJobLimit=1 reviewRoundLimit=3
@@ -144,4 +144,5 @@ History:
 - 2026-09-16T20:32:32Z HC8GDDX3DH5CE3W21P5ZKAG7ZW-m1e-c6925449 set-priority actor=human:Wido targets=census-lifecycle-scenario-holds-under-load,dispatch-bases-chains-on-the-remote-tip,events-package-has-a-test-group,human-wait-does-not-consume-goal-budget,metasystem-stop-escalation-proofs,metasystem-stop-fleet-form,new-elapsed-budgets-use-explicit-hours,pipelines-never-lose-a-truncated-producer reason=priority-order subject=dispatch-bases-chains-on-the-remote-tip from=1:57 to=1:56 requested-sequence=45
 - 2026-09-16T20:32:38Z G4Z1659A0JH8M2YQC7RVE32FPG-m1e-c6925449 set-priority actor=human:Wido targets=census-lifecycle-scenario-holds-under-load,events-package-has-a-test-group,human-wait-does-not-consume-goal-budget,metasystem-stop-escalation-proofs,metasystem-stop-fleet-form,new-elapsed-budgets-use-explicit-hours,pipelines-never-lose-a-truncated-producer reason=priority-order subject=metasystem-stop-escalation-proofs from=1:56 to=1:55 requested-sequence=46
 - 2026-09-16T20:32:45Z YSGCPTAR92E50X71Q7J8DSMCF1-m1e-c6925449 set-priority actor=human:Wido targets=census-lifecycle-scenario-holds-under-load,events-package-has-a-test-group,human-wait-does-not-consume-goal-budget,metasystem-stop-fleet-form,new-elapsed-budgets-use-explicit-hours,pipelines-never-lose-a-truncated-producer reason=priority-order subject=metasystem-stop-fleet-form from=1:55 to=1:54 requested-sequence=47
-Integrity: sha256=f18c4bc1043fa525f1c149870549a1a183032383a8c85d3d5e2ed3d4699775fd
+- 2026-09-16T20:32:51Z 767PDWBW38QGNKWQNPP2ZXQZ3H-m1e-c6925449 set-priority actor=human:Wido targets=census-lifecycle-scenario-holds-under-load,events-package-has-a-test-group,human-wait-does-not-consume-goal-budget,new-elapsed-budgets-use-explicit-hours,pipelines-never-lose-a-truncated-producer reason=priority-order subject=human-wait-does-not-consume-goal-budget from=1:54 to=2:48 requested-sequence=48
+Integrity: sha256=7bbd214314dba580cf3afac2cad4bbbb0119b78a7dcad6f796f41b751042d14c
