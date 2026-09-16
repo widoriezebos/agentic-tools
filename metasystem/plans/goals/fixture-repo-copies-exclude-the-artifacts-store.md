@@ -1,6 +1,6 @@
 # fixture-repo-copies-exclude-the-artifacts-store
 
-- State: approved
+- State: queued
 - Priority: 2
 - Sequence: 41
 - Risk: severity=2 novelty=1 exposure=2 accumulation=1 basis="severity 2: a red bed fills the disk and the ENOSPC cascade turns an infrastructure failure into a suite failure and a read-only guest, no wrong decision is admitted; novelty 1: an exclusion at existing copy paths and a bound at the existing capture writer; exposure 2: every fixture bed that copies the checkout plus the capture writer; accumulation 1: one mechanism, no cross-layer state"
@@ -9,12 +9,10 @@
 - Origin: human
 - Next step: INTENT: fixture copies and failure captures stay bounded in size and never contain a prior capture. CONSTRAINTS: find every place a bed or the adoption comparison copies the checkout (skew-repo and its siblings, cp or rsync of the root under scripts/agents and the fixture beds) and the capture writer named in records/misc/flight-recorder.md; exclude artifacts/ at the copy and refuse nesting at the capture; prove with a bed scenario that is red on today main and green after. Evidence: the 2026-09-11 disk triage found 2.4GB free with that one capture at 22.5GB, of which 22.2GB was the nested copy (deleted that day, the capture own evidence kept). FREEDOMS: a shared exclusion helper or per-bed excludes; the capture writer prunes or refuses. ROSTER: Sol implements, Fable critiques (R-25). Tier 2.
 - OpenedAt: 2026-09-11T10:28:06Z
-- Revision: 124
+- Revision: 125
 - Labels: robustness
 - Pinned: m1c
-- Budget: elapsedLimit=4h attemptLimit=6 reservedJobMinutesLimit=720 activeJobLimit=1 reviewRoundLimit=2
 - BudgetExceptions: 0
-- Approved: by=human:Wido at=2026-09-13T06:40:29Z revision=3 opid=NB30BR83PXR38XXM6H12V1VKXS-m1e-c6925449 authority=proven digest=69ae4ded76b1f3e982b6a3bda99beeb06dcd9b44243748df9f03d1467410953b
 
 History:
 - 2026-09-11T10:28:06Z H49WWF4NWQ1EDM86RCJT7NPK0C-m1-c6925449 open actor=m1+main-1788680071-18713-e76d5d targets=fixture-repo-copies-exclude-the-artifacts-store
@@ -141,4 +139,5 @@ History:
 - 2026-09-16T20:31:55Z MZ8CMERCF5WV60JPBWJT7P5P1R-m1e-c6925449 set-priority actor=human:Wido targets=census-lifecycle-scenario-holds-under-load,chain-landing-carries-the-reviewed-diff,dispatch-bases-chains-on-the-remote-tip,events-package-has-a-test-group,fixture-repo-copies-exclude-the-artifacts-store,fixture-waits-name-their-producer,human-authority-surface-runs-its-cmd-tests,human-wait-does-not-consume-goal-budget,metasystem-stop-escalation-proofs,metasystem-stop-fleet-form,new-elapsed-budgets-use-explicit-hours,pipelines-never-lose-a-truncated-producer,repo-root-paths-ride-agent-commits-unjudged,skipped-test-fails-its-group-on-the-other-os reason=priority-order subject=fixture-waits-name-their-producer from=1:56 to=1:55 requested-sequence=39
 - 2026-09-16T20:32:03Z DV0XMRG1CTZ5DY387DDZFHDXBH-m1e-c6925449 set-priority actor=human:Wido targets=census-lifecycle-scenario-holds-under-load,chain-landing-carries-the-reviewed-diff,dispatch-bases-chains-on-the-remote-tip,events-package-has-a-test-group,fixture-repo-copies-exclude-the-artifacts-store,human-authority-surface-runs-its-cmd-tests,human-wait-does-not-consume-goal-budget,metasystem-stop-escalation-proofs,metasystem-stop-fleet-form,new-elapsed-budgets-use-explicit-hours,pipelines-never-lose-a-truncated-producer,repo-root-paths-ride-agent-commits-unjudged,skipped-test-fails-its-group-on-the-other-os reason=priority-order subject=skipped-test-fails-its-group-on-the-other-os from=1:55 to=1:54 requested-sequence=40
 - 2026-09-16T20:32:09Z MTZMWKB9E103BMQECEWJA0YWGD-m1e-c6925449 set-priority actor=human:Wido targets=census-lifecycle-scenario-holds-under-load,chain-landing-carries-the-reviewed-diff,dispatch-bases-chains-on-the-remote-tip,events-package-has-a-test-group,fixture-repo-copies-exclude-the-artifacts-store,human-authority-surface-runs-its-cmd-tests,human-wait-does-not-consume-goal-budget,metasystem-stop-escalation-proofs,metasystem-stop-fleet-form,new-elapsed-budgets-use-explicit-hours,pipelines-never-lose-a-truncated-producer,repo-root-paths-ride-agent-commits-unjudged reason=priority-order subject=fixture-repo-copies-exclude-the-artifacts-store from=1:54 to=2:41 requested-sequence=41
-Integrity: sha256=03941184685482986be03bef282903a91400bef33b2eae7b94c1fd55141a1c0f
+- 2026-09-16T20:34:11Z GR9SV80WGXJGZBW2E63J6MDQRZ-m1e-c6925449 unapprove actor=human:Wido targets=fixture-repo-copies-exclude-the-artifacts-store reason=Wido 2026-09-16 22:40 CEST: clean house on priority 1 first, then a few human convenience features; every priority 2+ goal is unapproved until then
+Integrity: sha256=5099d187dcff26b41607e5577466c51ac9a5122e1dc017763b0901dda3f80885
