@@ -1,6 +1,6 @@
 # deep-sections-cannot-stay-red-unseen
 
-- State: claimed
+- State: approved
 - Priority: 1
 - Sequence: 37
 - Risk: severity=3 novelty=2 exposure=3 accumulation=3 basis="severity 3: a red that only a deep section sees can sit on trunk for days and then fail an unrelated landing; novelty 2: needs a rule for when deep groups run outside a deep landing and where the result is seen; exposure 3: every deep-only section; accumulation 3: reds pile up unseen and each blocks the next deep landing"
@@ -9,12 +9,11 @@
 - Origin: human
 - Next step: 87e33cbf2 landed the goal's first unit (built Codex gpt-5.6-sol task-mu3iycmk-yo3ab5/task-mu3jgqdp-32onbz, read Opus, landed by human commit from the enrolled pane): a failed group now fills NotRunReason with the evidence that made it red and its log ends with a TEST-VERDICT line the recomputed digest covers, so runtime-owner-standard can no longer be red with zero failing tests; internal/identity's withheld-argv test is host-scoped so it no longer skips under a headless proof worker. Proved with its two sibling trunk-red fixes as ONE stack: attempt proof-mu3k5n71-14287a80ba0b66c5, tree 6e4b70a78, mode deep, 53 groups, sufficient=true, runtime-owner-standard EXECUTED green (never reused; the candidate-free trunk control proof-mu3hu4t9 had it red with zero failing tests). Next: the goal's original question, why the deep cadence run did not surface the witness-gate red between 2026-09-09 and 2026-09-14, then the design for where deep-only results are run and seen. Leads from the read: F9, 69 other t.Skip sites can redden their group the same way (now visibly); and the still-unowned class 'a bed's verdict depends on its launcher'.
 - OpenedAt: 2026-09-14T21:10:18Z
-- Revision: 64
+- Revision: 65
 - Budget: elapsedLimit=4h attemptLimit=6 reservedJobMinutesLimit=720 activeJobLimit=1 reviewRoundLimit=2
 - BudgetExceptions: 0
 - Approved: by=human:Wido at=2026-09-14T21:10:24Z revision=2 opid=D4QTYGNFY8CS198KS87BTM9WZM-m1e-c6925449 authority=proven digest=6e2f938a4cb7e2bdf8544531232f9784c55b3c9ebf62c69c44c647b053138e21
-- Claimed: machine=m1e lineage=main-1789030447-51011-2956ea at=2026-09-16T03:42:20Z revision=63 accountingRevision=63 episodeAt=2026-09-16T03:42:20Z episodeRevision=63
-- StopCapability: generation=63 revision=63 machine=m1e claimEpoch=1 fenceEpoch=0
+- Episode: machine=m1e lineage=main-1789030447-51011-2956ea accountingRevision=63 episodeAt=2026-09-16T03:42:20Z episodeRevision=63 idleSeconds=0 released=2026-09-16T05:10:59Z
 
 History:
 - 2026-09-14T21:10:18Z A1BK3NVF3JMVA698PHBQ8C9Z2H-m1e-c6925449 open actor=human:Wido targets=deep-sections-cannot-stay-red-unseen reason=TierOverride: derived=3 set=2 why=Opened by m1c in Wido's name under R-110-m1e: the structural gap behind witness-bed-fakes-the-proof-engine-build.
@@ -81,4 +80,5 @@ History:
 - 2026-09-16T02:09:51Z HSPBK2AFX8XRD6G1Z9RXY70GAG-m1e-c6925449 done actor=human:Wido targets=actionable-metrics,beds-run-under-the-oldest-supported-bash,census-lifecycle-scenario-holds-under-load,chain-landing-carries-the-reviewed-diff,cross-cutting-change-inventories-its-readers,deep-sections-cannot-stay-red-unseen,degraded-stop-forms-have-one-source,delegate-sandbox-runs-the-beds,dispatch-bases-chains-on-the-remote-tip,engine-policy-binding-survives-drift-and-load,every-round-gets-an-independent-read,failed-job-attention,failures-show-observed-against-expected,fixture-repo-copies-exclude-the-artifacts-store,fixture-waits-name-their-producer,human-authority-surface-runs-its-cmd-tests,human-goal-verbs-forgiving,human-wait-does-not-consume-goal-budget,job-record-birth-token,lease-sweep-death-evidence,live-job-on-a-done-goal-unnoticed,machine-concurrency-governor,member-size-gate,metasystem-stop-escalation-proofs,metasystem-stop-fleet-form,new-elapsed-budgets-use-explicit-hours,pipelines-never-lose-a-truncated-producer,proof-admission-fits-a-seat-proving-several-units,registered-wait-matches-the-runtime-session,repo-root-paths-ride-agent-commits-unjudged,round-proof-feeds-the-next-brief,run-scoped-build-caches-have-a-janitor,seat-landings-run-the-selected-sections,skipped-test-fails-its-group-on-the-other-os,stop-batch-strands-a-resumable-goal,stop-capability-follows-the-lease-epoch,stop-decision-surface-is-a-gate,stop-response-carries-a-structured-report-reference,test-environment-edges-are-closed,testing-surfaces-declare-their-mirror,tests-never-wait-on-wall-time,token-spend-fence,trunk-versus-candidate-is-a-verification-step,watch-verb,watcher-repair-request-never-names-current,winddown-census-handoff-leak reason=priority-order from=1:38 to=1:37
 - 2026-09-16T03:42:20Z 2HKKN49ERE3MKVH7RMXC03PQ60-m1e-a3d4c1e1 claim actor=m1e+main-1789030447-51011-2956ea targets=deep-sections-cannot-stay-red-unseen
 - 2026-09-16T05:09:07Z KCVT46X5PECRV360GP0VN2Y5PH-m1e-a3d4c1e1 edit actor=m1e+main-1789030447-51011-2956ea targets=deep-sections-cannot-stay-red-unseen
-Integrity: sha256=b0214e5fcc9c93313b7202a8d21217953c39882a0328b85cac95fc6db4af1be4
+- 2026-09-16T05:10:59Z 64DXA5KEXKYZTVDVRFVFKW2VZG-m1e-a3d4c1e1 release actor=m1e+main-1789030447-51011-2956ea targets=deep-sections-cannot-stay-red-unseen
+Integrity: sha256=daf45dbe85ccc17e23c6f77b5aaf5997c9ac3bd7b4ec693303b8f4e20fd93a17
