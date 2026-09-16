@@ -57,7 +57,76 @@ func TestProcessOwnerAnswersForLiveAndDeadProcesses(t *testing.T) {
 	}
 }
 
-func TestRootAncestorWithWithheldArgumentsHasReadableIdentityFacts(t *testing.T) {
+func TestProcessesWithWithheldArgumentsHaveReadableIdentityFacts(t *testing.T) {
+	pids, err := AllPids()
+	if err != nil {
+		t.Fatal(err)
+	}
+	subjects := make([]int64, 0)
+	liveProcessCount := 0
+	for _, pid := range pids {
+		exact, state, err := (KernelProber{}).Probe(pid)
+		if err != nil || state != Alive {
+			continue
+		}
+		liveProcessCount++
+		if pid != 1 && !exact.ArgvKnown {
+			subjects = append(subjects, pid)
+		}
+	}
+	if len(subjects) == 0 {
+		if os.Geteuid() != 0 {
+			t.Fatalf("no live non-init process with withheld arguments for euid %d among %d live processes", os.Geteuid(), liveProcessCount)
+		}
+		exact, state, err := (KernelProber{}).Probe(1)
+		if err != nil || state != Alive || !exact.ArgvKnown {
+			t.Fatalf("root Probe(1) = (state %v, argv known %v, err %v), want alive with arguments readable", state, exact.ArgvKnown, err)
+		}
+		return
+	}
+	assertedWhileAlive := 0
+	departed := 0
+	for _, pid := range subjects {
+		owner, ownerKnown := ProcessOwner(pid)
+		parent, parentKnown := ParentPid(pid)
+		executable, executableKnown := ExecutablePath(pid)
+		if !ownerKnown || !parentKnown || !executableKnown {
+			_, state, err := (KernelProber{}).Probe(pid)
+			// A departed process is not a defect. The guard never excuses a
+			// missing required fact for a process that remains alive.
+			if err != nil || state != Alive {
+				departed++
+				continue
+			}
+		}
+		valid := true
+		if !ownerKnown {
+			t.Errorf("ProcessOwner(%d) = (%d, false), want an answer for a live process with withheld arguments", pid, owner)
+			valid = false
+		}
+		if !parentKnown || parent == pid {
+			t.Errorf("ParentPid(%d) = (%d, %v), want an answer other than the process itself", pid, parent, parentKnown)
+			valid = false
+		}
+		// Linux kernel threads have no executable path, so an explicit unknown
+		// answer is valid when its accompanying path is empty.
+		if executableKnown {
+			if executable == "" || !filepath.IsAbs(executable) {
+				t.Errorf("ExecutablePath(%d) = (%q, true), want a non-empty absolute path", pid, executable)
+				valid = false
+			}
+		} else if executable != "" {
+			t.Errorf("ExecutablePath(%d) = (%q, false), want an empty path when unknown", pid, executable)
+			valid = false
+		}
+		if valid {
+			assertedWhileAlive++
+		}
+	}
+	if len(subjects) > 0 && assertedWhileAlive == 0 {
+		t.Fatalf("none of %d withheld-argument subjects remained alive through all identity assertions (%d departed)", len(subjects), departed)
+	}
+
 	current := int64(os.Getpid())
 	seen := map[int64]bool{}
 	for current > 0 && !seen[current] {
@@ -82,7 +151,6 @@ func TestRootAncestorWithWithheldArgumentsHasReadableIdentityFacts(t *testing.T)
 		}
 		current = parent
 	}
-	t.Skip("this process ancestry has no non-init root-owned process with arguments withheld by the operating system")
 }
 
 func TestProcessCwdMatchesWorkingDirectory(t *testing.T) {

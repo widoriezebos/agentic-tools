@@ -651,6 +651,49 @@ func runTestGroup(ctx context.Context, request TestRunRequest, group testpolicy.
 		InputDigest: request.CandidateTree, InputManifest: append([]string(nil), group.Inputs...), CWD: group.CWD,
 		ToolIdentities: map[string]string{}, ReportDigests: map[string]string{}, StartedAt: started.Format(time.RFC3339Nano),
 		ProgressRule: progressRule(limits)}
+	defer func() {
+		if result.Status == "passed" || result.Status == "reused" || result.LogPath == "" {
+			return
+		}
+		recordAppendFailure := func(err error) {
+			if result.NotRunReason != "" {
+				result.NotRunReason += "; "
+			}
+			result.NotRunReason += "verdict line not written: " + err.Error()
+		}
+		logFile, err := os.OpenFile(result.LogPath, os.O_RDWR|os.O_APPEND, 0)
+		if errors.Is(err, os.ErrNotExist) {
+			return
+		}
+		if err != nil {
+			recordAppendFailure(err)
+			return
+		}
+		exitStatus := "none"
+		if result.NativeExitStatus != nil {
+			exitStatus = fmt.Sprintf("%d", *result.NativeExitStatus)
+		}
+		reason := strings.Join(strings.Fields(result.NotRunReason), " ")
+		verdict := fmt.Sprintf("TEST-VERDICT %s status=%s exit=%s reason=%s\n", group.ID, result.Status, exitStatus, reason)
+		existing, err := io.ReadAll(logFile)
+		if err != nil {
+			recordAppendFailure(errors.Join(err, logFile.Close()))
+			return
+		}
+		separator := ""
+		if len(existing) > 0 && existing[len(existing)-1] != '\n' {
+			separator = "\n"
+		}
+		_, writeErr := io.WriteString(logFile, separator+verdict)
+		_, seekErr := logFile.Seek(0, io.SeekStart)
+		logBytes, readErr := io.ReadAll(logFile)
+		closeErr := logFile.Close()
+		if err := errors.Join(writeErr, seekErr, readErr, closeErr); err != nil {
+			recordAppendFailure(err)
+			return
+		}
+		result.LogDigest = digestBytes(logBytes)
+	}()
 	detached, err := (gittree.Workspace{Dir: request.ProjectRoot}).NewDetachedWorktree(request.CandidateTree)
 	if err != nil {
 		result.Status = "invalid"
@@ -927,10 +970,25 @@ func runTestGroup(ctx context.Context, request TestRunRequest, group testpolicy.
 			result.NotRunReason = err.Error()
 		}
 		if result.Status == "" {
-			if exit != 0 || !result.CollectionComplete || nativeEvidenceFailed(result.Observed) {
+			evidenceFailed, evidenceSummary := nativeEvidenceSummary(result.Observed)
+			if exit != 0 || !result.CollectionComplete || evidenceFailed {
 				result.Status = "failed"
 				if exit == 0 && !result.CollectionComplete {
 					result.Status = "invalid"
+				}
+				if result.NotRunReason == "" {
+					collection := "complete"
+					if !result.CollectionComplete {
+						collection = "incomplete"
+					}
+					switch {
+					case evidenceSummary != "":
+						result.NotRunReason = fmt.Sprintf("%s (process exit %d, collection %s)", evidenceSummary, exit, collection)
+					case exit != 0:
+						result.NotRunReason = fmt.Sprintf("process exit %d with no failing test in the evidence (collection %s)", exit, collection)
+					default:
+						result.NotRunReason = fmt.Sprintf("collection incomplete with no failing test in the evidence (process exit %d)", exit)
+					}
 				}
 			} else {
 				result.Status = "passed"
@@ -1249,12 +1307,33 @@ func prepareSectionEngine(cwd, source, expected string) (string, error) {
 }
 
 func nativeEvidenceFailed(observed []NativeTestIdentity) bool {
+	failed, _ := nativeEvidenceSummary(observed)
+	return failed
+}
+
+func nativeEvidenceSummary(observed []NativeTestIdentity) (failed bool, summary string) {
+	nonPassing := make([]string, 0, 5)
+	nonPassingCount := 0
+	failedCount := 0
 	for _, test := range observed {
 		if test.Status != "passed" {
-			return true
+			nonPassingCount++
+			if test.Status == "failed" {
+				failedCount++
+			}
+			if len(nonPassing) < 5 {
+				nonPassing = append(nonPassing, fmt.Sprintf("%s.%s %s", test.Classname, test.Name, test.Status))
+			}
 		}
 	}
-	return false
+	if nonPassingCount == 0 {
+		return false, ""
+	}
+	prefix := ""
+	if failedCount == 0 {
+		prefix = "no test failed; "
+	}
+	return true, fmt.Sprintf("%s%d of %d observed tests did not pass: %s", prefix, nonPassingCount, len(observed), strings.Join(nonPassing, ", "))
 }
 
 func executableIdentity(path string) (string, error) {
