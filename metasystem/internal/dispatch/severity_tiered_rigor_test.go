@@ -71,17 +71,19 @@ func TestGoalReviewRoundLimitUsesTupleAndGoalFreeCeiling(t *testing.T) {
 			t.Fatalf("update %s: %v: %s", ref, err, output)
 		}
 	}
-	limit, err := goalReviewRoundLimit(repo, "bounded", 2)
-	if err != nil || limit != 9 {
-		t.Fatalf("goal tuple limit = %d, %v", limit, err)
+	limit, err := goalReviewRoundLimit(repo, "bounded", 2, "code-critic")
+	if err != nil || limit.roleLimit != 9 {
+		t.Fatalf("goal tuple limit = %d, %v", limit.roleLimit, err)
 	}
-	writeCapRound(t, repo, "nine-round-critic", "design-critic", 1, false, []any{}, []any{})
+	// design-critic limits are capped at 2 by section 4 of critique-closes-on-folded-proof-design.md; see design_round_cap_test.go.
+	writeCapRound(t, repo, "nine-round-critic", "code-critic", 1, false, []any{}, []any{})
 	rootPath := filepath.Join(repo, "artifacts", "agents", "jobs", "nine-round-critic.json")
 	root := readJSONFile(t, rootPath)
 	root[reviewRoundLimitField] = 9
 	writeJSONFile(t, filepath.Dir(rootPath), filepath.Base(rootPath), root)
 	for round := 2; round <= 4; round++ {
-		writeCapRound(t, repo, "nine-round-critic", "design-critic", round, false, []any{}, []any{})
+		// design-critic limits are capped at 2 by section 4 of critique-closes-on-folded-proof-design.md; see design_round_cap_test.go.
+		writeCapRound(t, repo, "nine-round-critic", "code-critic", round, false, []any{}, []any{})
 	}
 	root = readJSONFile(t, rootPath)
 	if round, _ := numInt(root[findingRegisterRoundField]); round != 4 {
@@ -92,8 +94,8 @@ func TestGoalReviewRoundLimitUsesTupleAndGoalFreeCeiling(t *testing.T) {
 	if err := os.WriteFile(filepath.Join(goalFree, "metasystem.conf"), []byte("metasystem.budget.review-round-max=7\n"), 0o644); err != nil {
 		t.Fatal(err)
 	}
-	if limit, err := goalReviewRoundLimit(goalFree, "", 0); err != nil || limit != 7 {
-		t.Fatalf("goal-free ceiling = %d, %v", limit, err)
+	if limit, err := goalReviewRoundLimit(goalFree, "", 0, "code-critic"); err != nil || limit.roleLimit != 7 {
+		t.Fatalf("goal-free ceiling = %d, %v", limit.roleLimit, err)
 	}
 }
 
@@ -307,7 +309,8 @@ func TestMalformedRoundAccountingNamesBudgetRebindNextStep(t *testing.T) {
 
 func TestRaiseByRebind(t *testing.T) {
 	repo := revisionBindingBed(t, 2)
-	root := map[string]any{"jobId": "critic", "role": "design-critic", "goalId": "bounded", reviewRoundLimitField: 1, criticRoundsConsumedField: 1}
+	// design-critic limits are capped at 2 by section 4 of critique-closes-on-folded-proof-design.md; see design_round_cap_test.go.
+	root := map[string]any{"jobId": "critic", "role": "code-critic", "goalId": "bounded", reviewRoundLimitField: 1, criticRoundsConsumedField: 1}
 	writeJSONFile(t, filepath.Join(repo, "artifacts", "agents", "jobs"), "critic.json", root)
 	if outcome, err := CritiqueBudgetRebind(repo, "critic"); err != nil || outcome != "rebound" {
 		t.Fatalf("rebind = %q, %v", outcome, err)
@@ -328,7 +331,8 @@ func TestRaiseByRebind(t *testing.T) {
 func TestCritiqueBudgetRebindBackfillsLegacyAccounting(t *testing.T) {
 	repo := revisionBindingBed(t, 2)
 	root := map[string]any{
-		"jobId": "legacy-critic", "role": "design-critic", "round": 1, "parentJob": nil,
+		// design-critic limits are capped at 2 by section 4 of critique-closes-on-folded-proof-design.md; see design_round_cap_test.go.
+		"jobId": "legacy-critic", "role": "code-critic", "round": 1, "parentJob": nil,
 		"status": "completed", "goalId": "bounded", findingRegisterField: []any{}, findingRegisterRoundField: 1,
 	}
 	writeJSONFile(t, filepath.Join(repo, "artifacts", "agents", "jobs"), "legacy-critic.json", root)
@@ -358,7 +362,8 @@ func TestSTR2BCloseOneWrite(t *testing.T) {
 	repo := revisionBindingBed(t, 2)
 	chain := "critic-crash"
 	finding := registerFinding{FindingID: "B-1", Critic: chain, RigorClass: critiqueModel.Bounded, FactsDigest: digestJSON(registerFacts()), Facts: registerFacts(), Artifact: "NEW metasystem/a file.go", Title: "bounded title", Status: "open", Evidence: "proof", EvidenceDigest: digestJSON("proof"), Multiplicity: 1}
-	root := map[string]any{"jobId": chain, "role": "design-critic", "goalId": "bounded", "machineId": "bed-m1", "mainId": "coordinator", "claimEpoch": 7, findingRegisterRoundField: 1, reviewRoundLimitField: 3, criticRoundsConsumedField: 3, "demotions": []any{}, findingRegisterField: encodeFindingRegister([]registerFinding{finding})}
+	// design-critic limits are capped at 2 by section 4 of critique-closes-on-folded-proof-design.md; see design_round_cap_test.go.
+	root := map[string]any{"jobId": chain, "role": "code-critic", "goalId": "bounded", "machineId": "bed-m1", "mainId": "coordinator", "claimEpoch": 7, findingRegisterRoundField: 1, reviewRoundLimitField: 3, criticRoundsConsumedField: 3, "demotions": []any{}, findingRegisterField: encodeFindingRegister([]registerFinding{finding})}
 	writeJSONFile(t, filepath.Join(repo, "artifacts", "agents", "jobs"), chain+".json", root)
 	endpoint, err := goal.ResolveEndpoint(repo)
 	if err != nil {

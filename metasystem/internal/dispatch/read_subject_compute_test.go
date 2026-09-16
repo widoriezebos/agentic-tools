@@ -733,6 +733,7 @@ func TestDesignChainClosesAtRoundOne(t *testing.T) {
 	rootPath := filepath.Join(repo, "artifacts", "agents", "jobs", "design.json")
 	root := readJSONFile(t, rootPath)
 	root["role"] = "design-critic"
+	root[reviewRoundLimitField] = 2
 	root["declaredOutputs"] = []any{"metasystem/plans/x.md"}
 	if err := writeRecord(rootPath, root); err != nil {
 		t.Fatal(err)

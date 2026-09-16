@@ -736,7 +736,7 @@ func TestDispatchCritiqueAdvanceVerbsPath(t *testing.T) {
 			}
 		}
 		record := map[string]any{
-			"jobId": job, "role": "design-critic", "round": round,
+			"jobId": job, "role": "code-critic", "round": round,
 			"parentJob": parent, "status": "completed",
 		}
 		if round == 1 {
@@ -788,7 +788,7 @@ func TestDispatchCritiqueAdvanceVerbsPath(t *testing.T) {
 	}
 	stderr, code := captureStderr(t, func() int {
 		return runDispatchCritiqueExhaustionAdvance([]string{
-			"--repo", repo, "--root-job", "critic", "--role", "design-critic",
+			"--repo", repo, "--root-job", "critic", "--role", "code-critic",
 			"--message", message, "--successor", "critic-r4",
 		})
 	})

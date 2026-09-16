@@ -63,8 +63,10 @@ func TestRegisterCatchUpRefusalNamesAdvanceVerb(t *testing.T) {
 	}
 }
 
-func writeCapRound(t *testing.T, repo, root, role string, round int, protocolError bool, findings, rigor []any) string {
+// writeCapRound models the three-round code-critic budget used by these generic accounting tests.
+func writeCapRound(t *testing.T, repo, root, _ string, round int, protocolError bool, findings, rigor []any) string {
 	t.Helper()
+	role := "code-critic"
 	job := root
 	parent := any(nil)
 	if round > 1 {
@@ -120,7 +122,7 @@ func TestBoundaryAtThreeRounds(t *testing.T) {
 	if err := os.WriteFile(message, []byte("Address B-1.\n"), 0o644); err != nil {
 		t.Fatal(err)
 	}
-	_, err = CritiqueExhaustionAdvance(repo, "critic", "design-critic", message, "critic-r4")
+	_, err = CritiqueExhaustionAdvance(repo, "critic", "code-critic", message, "critic-r4")
 	want := "reason=cap-exhausted-human-raise the review-round limit is exhausted with bounded findings; close the critique register to defer them at round 3 with open finding identifiers: B-1"
 	if err == nil || err.Error() != want {
 		t.Fatalf("bounded terminal boundary = %v, want %q", err, want)
@@ -165,7 +167,7 @@ func TestCritiqueExhaustionAdvanceBackfillsLegacyRoundAccounting(t *testing.T) {
 	if err := os.WriteFile(message, []byte("Address S-legacy.\n"), 0o644); err != nil {
 		t.Fatal(err)
 	}
-	_, err := CritiqueExhaustionAdvance(repo, "critic", "design-critic", message, "critic-r4")
+	_, err := CritiqueExhaustionAdvance(repo, "critic", "code-critic", message, "critic-r4")
 	if err == nil || !strings.Contains(err.Error(), "review-round limit is exhausted") || strings.Contains(err.Error(), "malformed round accounting") {
 		t.Fatalf("legacy exhaustion advance = %v", err)
 	}
@@ -185,7 +187,7 @@ func TestCritiqueExhaustionRefusesMalformedHistory(t *testing.T) {
 	if err := writeRecord(rootPath, root); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := CritiqueExhaustionAdvance(repo, "critic", "design-critic", message, "critic-r2"); err == nil ||
+	if _, err := CritiqueExhaustionAdvance(repo, "critic", "code-critic", message, "critic-r2"); err == nil ||
 		!strings.Contains(err.Error(), "critiqueExhaustions is malformed") {
 		t.Fatalf("malformed exhaustion history = %v", err)
 	}
@@ -194,7 +196,7 @@ func TestCritiqueExhaustionRefusesMalformedHistory(t *testing.T) {
 	if err := writeRecord(rootPath, root); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := CritiqueExhaustionAdvance(repo, "critic", "design-critic", message, "critic-r2"); err == nil ||
+	if _, err := CritiqueExhaustionAdvance(repo, "critic", "code-critic", message, "critic-r2"); err == nil ||
 		!strings.Contains(err.Error(), secondExhaustionRefused) {
 		t.Fatalf("second exhaustion history = %v", err)
 	}
@@ -203,7 +205,7 @@ func TestCritiqueExhaustionRefusesMalformedHistory(t *testing.T) {
 	if err := writeRecord(rootPath, root); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := CritiqueExhaustionAdvance(repo, "critic", "design-critic", message, "critic-r2"); err == nil ||
+	if _, err := CritiqueExhaustionAdvance(repo, "critic", "code-critic", message, "critic-r2"); err == nil ||
 		!strings.Contains(err.Error(), secondExhaustionRefused) {
 		t.Fatalf("non-object exhaustion history = %v", err)
 	}

@@ -504,7 +504,7 @@ func TestBuildRecordDesignCriticCarriesDeclaredOutputs(t *testing.T) {
 	if record["design"] != design {
 		t.Fatalf("reviewed design = %v", record["design"])
 	}
-	if limit, _ := numInt(record[reviewRoundLimitField]); limit != 3 {
+	if limit, _ := numInt(record[reviewRoundLimitField]); limit != 2 {
 		t.Fatalf("review round limit = %v", record[reviewRoundLimitField])
 	}
 	if counted, _ := record[reviewChainCountedField].(bool); !counted {
@@ -939,7 +939,7 @@ func TestMirrorRefusesEvidenceInsideRepository(t *testing.T) {
 	}
 }
 
-// critiqueFixture lays out a register-backed design-critic chain at round
+// critiqueFixture lays out a register-backed code-critic chain at round
 // three with one open severe finding.
 func critiqueFixture(t *testing.T) (repo string) {
 	t.Helper()
@@ -957,14 +957,14 @@ func TestCritiqueSevereTerminalBoundary(t *testing.T) {
 
 	vague := filepath.Join(dir, "vague.md")
 	os.WriteFile(vague, []byte("please continue\n"), 0o644)
-	_, err := CritiqueExhaustionAdvance(repo, "crit", "design-critic", vague, "crit-r4")
+	_, err := CritiqueExhaustionAdvance(repo, "crit", "code-critic", vague, "crit-r4")
 	if err == nil || !strings.Contains(err.Error(), "F-1") {
 		t.Fatalf("unenumerated successor = %v", err)
 	}
 
 	named := filepath.Join(dir, "named.md")
 	os.WriteFile(named, []byte("Addressing F-1 head-on.\n"), 0o644)
-	_, err = CritiqueExhaustionAdvance(repo, "crit", "design-critic", named, "crit-r4")
+	_, err = CritiqueExhaustionAdvance(repo, "crit", "code-critic", named, "crit-r4")
 	want := "reason=cap-exhausted-human-raise the review-round limit is exhausted with a severe or unproven finding; waiting on the human is the only remedy at terminal round 3 with open finding identifiers: F-1"
 	if err == nil || err.Error() != want {
 		t.Fatalf("severe terminal boundary = %v, want %q", err, want)
@@ -983,7 +983,7 @@ func TestCritiqueBeforeRoundLimitAllowsContinuation(t *testing.T) {
 	writeCapRound(t, repo, "crit", "design-critic", 2, false, []any{}, []any{})
 	message := filepath.Join(t.TempDir(), "m.md")
 	os.WriteFile(message, []byte("x\n"), 0o644)
-	action, err := CritiqueExhaustionAdvance(repo, "crit", "design-critic", message, "next")
+	action, err := CritiqueExhaustionAdvance(repo, "crit", "code-critic", message, "next")
 	if err != nil || action != "none" {
 		t.Fatalf("off-budget round = %q, %v", action, err)
 	}

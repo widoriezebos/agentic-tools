@@ -530,6 +530,7 @@ func TestCritiqueRegisterAdvanceBackfillsAbsentDemotions(t *testing.T) {
 	rootPath := filepath.Join(repo, "artifacts", "agents", "jobs", "critic.json")
 	root := readJSONFile(t, rootPath)
 	root["role"] = "design-critic"
+	root[reviewRoundLimitField] = 2
 	root["declaredOutputs"] = []any{"metasystem/design.md"}
 	delete(root, "demotions")
 	if err := writeRecord(rootPath, root); err != nil {

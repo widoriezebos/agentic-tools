@@ -21,6 +21,9 @@ import (
 var incarnationRe = regexp.MustCompile(`^[0-9a-f]{64}$`)
 var gitObjectIDRe = regexp.MustCompile(`^([0-9a-f]{40}|[0-9a-f]{64})$`)
 
+// designCritiqueRoundLimit implements section 4 of critique-closes-on-folded-proof-design.md and R-97-m1e.
+const designCritiqueRoundLimit uint8 = 2
+
 // VerifyChainIncarnation proves a chain still belongs to the LIVE mission
 // incarnation: a mission identifier can be
 // re-provisioned, and a surviving chain from incarnation A must not consume
@@ -304,37 +307,67 @@ type BuildRecordParams struct {
 	Composition       string // closed-packet composition record
 }
 
-func goalReviewRoundLimit(repoRoot, goalID string, revision uint64) (uint8, error) {
+type reviewRoundLimitResolution struct {
+	role        string
+	goalBound   bool
+	roleLimit   uint8
+	sourceLimit uint8
+}
+
+func reviewRoundLimitForRole(role string, goalBound bool, sourceLimit uint8) reviewRoundLimitResolution {
+	resolution := reviewRoundLimitResolution{role: role, goalBound: goalBound, roleLimit: sourceLimit, sourceLimit: sourceLimit}
+	if role == "design-critic" {
+		resolution.roleLimit = designCritiqueRoundLimit
+	}
+	return resolution
+}
+
+func validateReviewRoundTier(role string, goalBound bool, tier uint8) error {
+	if role == "design-critic" && goalBound && tier != 3 {
+		return fmt.Errorf("design-critic at goal tier %d is refused: design critique exists at tier 3 only", tier)
+	}
+	return nil
+}
+
+func goalReviewRoundLimit(repoRoot, goalID string, revision uint64, role string) (reviewRoundLimitResolution, error) {
+	var zero reviewRoundLimitResolution
 	maximum, err := config.ReviewRoundMax(filepath.Join(repoRoot, "metasystem.conf"))
 	if err != nil {
-		return 0, err
+		return zero, err
 	}
 	if maximum > 255 {
-		return 0, fmt.Errorf("configured review-round ceiling %d exceeds the critic record's 255-round representation", maximum)
+		return zero, fmt.Errorf("configured review-round ceiling %d exceeds the critic record's 255-round representation", maximum)
 	}
 	if goalID == "" {
-		return uint8(maximum), nil
+		return reviewRoundLimitForRole(role, false, uint8(maximum)), nil
 	}
 	endpoint, err := goal.ResolveEndpoint(repoRoot)
 	if err != nil {
-		return 0, err
+		return zero, err
 	}
 	projection, err := goal.Project(endpoint, false, time.Now().UTC())
 	if err != nil {
-		return 0, err
+		return zero, err
 	}
 	record := projection.Tree.Live[goalID]
 	if record == nil || record.Claimed == nil || record.Claimed.Revision != revision || record.Budget == nil {
-		return 0, fmt.Errorf("goal %s revision %d has no matching claimed review-round budget", goalID, revision)
+		return zero, fmt.Errorf("goal %s revision %d has no matching claimed review-round budget", goalID, revision)
 	}
 	limit := record.Budget.ReviewRoundLimit
 	if limit < 0 {
-		return 0, fmt.Errorf("goal %s revision %d has a negative review-round limit", goalID, revision)
+		return zero, fmt.Errorf("goal %s revision %d has a negative review-round limit", goalID, revision)
 	}
 	if uint64(limit) > maximum {
 		limit = int64(maximum)
 	}
-	return uint8(limit), nil
+	return reviewRoundLimitForRole(role, true, uint8(limit)), nil
+}
+
+func (r reviewRoundLimitResolution) rebindLimit() uint8 {
+	if r.role == "design-critic" && (!r.goalBound || r.sourceLimit >= designCritiqueRoundLimit) {
+		return r.roleLimit
+	}
+	return r.sourceLimit
 }
 
 func ParseDeclaredOutputs(path string) ([]string, error) {
@@ -606,13 +639,16 @@ func BuildRecord(p BuildRecordParams) error {
 		"critiqueExhaustions": []any{},
 	}
 	if p.Role == "design-critic" || p.Role == "code-critic" || p.Role == "warden" {
-		limit, limitErr := goalReviewRoundLimit(p.Root, p.GoalID, p.GoalRevision)
-		if limitErr != nil || limit == 0 {
+		if tierErr := validateReviewRoundTier(p.Role, p.GoalID != "", p.GoalTier); tierErr != nil {
+			return tierErr
+		}
+		resolution, limitErr := goalReviewRoundLimit(p.Root, p.GoalID, p.GoalRevision, p.Role)
+		if limitErr != nil || resolution.roleLimit == 0 {
 			return fmt.Errorf("cannot resolve a positive goal review-round limit: %v", limitErr)
 		}
 		record["findingRegister"] = []any{}
 		record["findingRegisterRound"] = 0
-		record["reviewRoundLimit"] = limit
+		record["reviewRoundLimit"] = resolution.roleLimit
 		record["criticRoundsConsumed"] = 0
 		record["demotions"] = []any{}
 		if p.Role == "design-critic" || p.Role == "code-critic" {

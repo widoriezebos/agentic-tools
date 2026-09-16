@@ -242,14 +242,17 @@ func critiqueRoundAccounting(repoRoot string, state critiqueState, rootJob strin
 		if !ok || limit < 1 || limit > 255 {
 			return account, fmt.Errorf("reviewRoundLimit is not a positive eight-bit integer")
 		}
+		if asString(root["role"]) == "design-critic" && limit > int64(designCritiqueRoundLimit) {
+			return account, fmt.Errorf("design-critic review-round limit %d exceeds cap %d", limit, designCritiqueRoundLimit)
+		}
 		account.limit = limit
 	} else {
 		revision, _ := numInt(root["goalRevision"])
-		limit, err := goalReviewRoundLimit(repoRoot, asString(root["goalId"]), uint64(max(revision, 0)))
-		if err != nil || limit == 0 {
+		resolution, err := goalReviewRoundLimit(repoRoot, asString(root["goalId"]), uint64(max(revision, 0)), asString(root["role"]))
+		if err != nil || resolution.roleLimit == 0 {
 			return account, fmt.Errorf("cannot resolve a positive goal review-round limit: %v", err)
 		}
-		account.limit = int64(limit)
+		account.limit = int64(resolution.roleLimit)
 	}
 
 	consumedValue, consumedPresent := root[criticRoundsConsumedField]
@@ -735,14 +738,18 @@ func CritiqueBudgetRebind(repoRoot, rootJob string) (outcome string, err error) 
 					return e
 				}
 			}
-			limit, e := goalReviewRoundLimit(repoRoot, goalID, revision)
-			if e != nil || limit == 0 {
+			resolution, e := goalReviewRoundLimit(repoRoot, goalID, revision, role)
+			if e != nil {
 				return fmt.Errorf("cannot resolve a positive goal review-round limit: %v", e)
 			}
+			limit := resolution.rebindLimit()
+			if limit == 0 {
+				return fmt.Errorf("cannot resolve a positive goal review-round limit: resolved limit is zero")
+			}
 			opid := fmt.Sprintf("critique-budget-rebind-%s-r%d", rootJob, revision)
-			_, limitPresent := root[reviewRoundLimitField]
+			storedLimit, limitPresent := numInt(root[reviewRoundLimitField])
 			_, consumedPresent := root[criticRoundsConsumedField]
-			if binding, ok := root["critiqueBudgetBinding"].(map[string]any); ok && asString(binding["opid"]) == opid && limitPresent && consumedPresent {
+			if binding, ok := root["critiqueBudgetBinding"].(map[string]any); ok && asString(binding["opid"]) == opid && limitPresent && storedLimit == int64(limit) && consumedPresent {
 				outcome = "unchanged"
 				return nil
 			}
