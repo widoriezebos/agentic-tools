@@ -1,6 +1,6 @@
 # delegate-runs-stay-under-200k-context
 
-- State: queued
+- State: approved
 - Priority: 1
 - Sequence: 5
 - Risk: severity=2 novelty=2 exposure=2 accumulation=1 basis="severity 2: premium-priced calls and budget outages, no corruption; novelty 2: measurement from transcript usage rows the seat already reads by script, a refusal on the launch path; exposure 2: every headless design and critique run; accumulation 1: one measurement, one refusal code, one policy value"
@@ -9,11 +9,13 @@
 - Origin: human
 - Next step: Opened in the name of Wido by seat m1e from the enrolled pane on his word 2026-09-16 20:25 CEST. Starts after delegate-launchers-become-go-verbs lands (the verbs carry the measurement). Seat brief with one Codex critique, Codex gpt-5.6-sol builds, Opus reads, the landing lane lands. Until then the seat sizes every brief by hand to fit.
 - OpenedAt: 2026-09-16T18:20:42Z
-- Revision: 2
+- Revision: 3
 - Budget: elapsedLimit=4h attemptLimit=6 reservedJobMinutesLimit=720 activeJobLimit=1 reviewRoundLimit=2
 - BudgetExceptions: 0
+- Approved: by=human:Wido at=2026-09-16T18:20:55Z revision=3 opid=R9XDWNX5JB6MEY0F0VM0BDXGMC-m1e-c6925449 authority=proven digest=ffc04f292ffbc3482d71ab4cd236419df54ae1a6a6ff7241f52d21cc743c19fa
 
 History:
 - 2026-09-16T18:20:42Z 6BSNB388RHH7QDN6TB1QMKFX77-m1e-c6925449 open actor=human:Wido targets=delegate-runs-stay-under-200k-context
 - 2026-09-16T18:20:47Z RNYFQYZF5SGZC11DNN5HN4R87J-m1e-c6925449 set-priority actor=human:Wido targets=actionable-metrics,adoption-filled-delivery-passes-on-trunk,beds-run-under-the-oldest-supported-bash,brief-declares-the-round-boundary,builder-proves-each-rule-by-mutation,busy-seat-shells-are-ended,census-lifecycle-scenario-holds-under-load,chain-landing-carries-the-reviewed-diff,codex-jobs-run-through-a-metasystem-verb,coordinator-context-stays-under-budget,coordinator-wakes-on-events-not-polls,critique-closes-on-folded-proof,cross-cutting-change-inventories-its-readers,deep-sections-cannot-stay-red-unseen,degraded-stop-forms-have-one-source,delegate-runs-stay-under-200k-context,delegate-sandbox-runs-the-beds,design-rounds-read-less-and-repeat-less,dispatch-bases-chains-on-the-remote-tip,engine-policy-binding-survives-drift-and-load,every-round-gets-an-independent-read,evidence-and-build-output-have-retention-and-stay-unindexed,failed-job-attention,failures-show-observed-against-expected,fixture-children-cannot-outlive-their-test,fixture-repo-copies-exclude-the-artifacts-store,fixture-runners-and-fakes-bound-their-own-life,fixture-waits-name-their-producer,fleet-doctor-repairs-what-stops-other-seats,follow-up-brief-cannot-cite-fresh-trunk-files,human-authority-surface-runs-its-cmd-tests,human-break-glass-commit-keeps-the-ledger-valid,human-goal-verbs-forgiving,human-wait-does-not-consume-goal-budget,job-record-birth-token,lease-sweep-death-evidence,live-job-on-a-done-goal-unnoticed,machine-concurrency-governor,member-size-gate,metasystem-stop-escalation-proofs,metasystem-stop-fleet-form,new-elapsed-budgets-use-explicit-hours,one-steward-per-checkout-on-its-own-root,pipelines-never-lose-a-truncated-producer,proof-admission-fits-a-seat-proving-several-units,proof-runs-reap-what-they-armed-and-a-census-names-the-rest,receipt-admission-caps-concurrent-batteries,receipt-writer-follows-the-worktree-it-runs-in,repo-root-paths-ride-agent-commits-unjudged,round-proof-feeds-the-next-brief,run-scoped-build-caches-have-a-janitor,seat-landings-run-the-selected-sections,seat-successor-continues-a-handoff-without-a-human,seats-spend-tokens-in-bounded-sessions,skipped-test-fails-its-group-on-the-other-os,small-change-lane,spend-fence-reports-tokens-per-model-and-cause,stop-batch-strands-a-resumable-goal,stop-capability-follows-the-lease-epoch,stop-decision-surface-is-a-gate,stop-gate-sees-harness-tracked-work,stop-hook-never-forces-an-empty-turn,stop-response-carries-a-structured-report-reference,test-environment-edges-are-closed,testing-surfaces-declare-their-mirror,tests-never-wait-on-wall-time,token-spend-fence,trunk-versus-candidate-is-a-verification-step,units-run-through-one-launcher,watch-verb,watcher-repair-request-never-names-current,winddown-census-handoff-leak reason=priority-order subject=delegate-runs-stay-under-200k-context from=unranked to=1:5 requested-sequence=5
-Integrity: sha256=ce8b5bf92880950e792eaaa56074370271bb8c0d29c28bff3ea01e5f1c87db82
+- 2026-09-16T18:20:55Z R9XDWNX5JB6MEY0F0VM0BDXGMC-m1e-c6925449 approve actor=human:Wido targets=delegate-runs-stay-under-200k-context
+Integrity: sha256=27fdc93895a8297c32f4979a69d2d3db0036523c430a6eb9d72f87326ddd6b66
