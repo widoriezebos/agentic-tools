@@ -88,9 +88,16 @@ func (p KernelProber) Probe(pid int64) (Exact, Liveness, error) {
 	if err != nil || state != Alive {
 		return exact, state, err
 	}
-	if argv, known := p.ReadArgv(pid); known {
+	if argv, environ, exe, readErr := procArgsAndExecutable(pid); readErr == nil {
 		exact.Argv = argv
 		exact.ArgvKnown = true
+		exact.Environ = environ
+		exact.EnvironKnown = environ != nil
+		exact.Exe = exe
+		exact.ExeKnown = true
+	} else if exe, known := kernelExecutablePath(pid); known {
+		exact.Exe = exe
+		exact.ExeKnown = true
 	}
 	return exact, Alive, nil
 }
@@ -98,26 +105,26 @@ func (p KernelProber) Probe(pid int64) (Exact, Liveness, error) {
 // procArgs reads argv via KERN_PROCARGS2: the buffer holds argc, the
 // executable path, NUL padding, then the NUL-separated argv and env.
 func procArgs(pid int64) ([]string, error) {
-	argv, _, err := procArgsAndExecutable(pid)
+	argv, _, _, err := procArgsAndExecutable(pid)
 	return argv, err
 }
 
-func procArgsAndExecutable(pid int64) ([]string, string, error) {
+func procArgsAndExecutable(pid int64) ([]string, []string, string, error) {
 	raw, err := unix.SysctlRaw("kern.procargs2", int(pid))
 	if err != nil {
-		return nil, "", fmt.Errorf("identity: procargs2 %d: %w", pid, err)
+		return nil, nil, "", fmt.Errorf("identity: procargs2 %d: %w", pid, err)
 	}
 	if len(raw) < 4 {
-		return nil, "", fmt.Errorf("identity: procargs2 %d: short read", pid)
+		return nil, nil, "", fmt.Errorf("identity: procargs2 %d: short read", pid)
 	}
 	argc := int(*(*int32)(unsafe.Pointer(&raw[0])))
 	if argc < 1 || argc > 4096 {
-		return nil, "", fmt.Errorf("identity: procargs2 %d: implausible argc %d", pid, argc)
+		return nil, nil, "", fmt.Errorf("identity: procargs2 %d: implausible argc %d", pid, argc)
 	}
 	rest := raw[4:]
 	cut := bytes.IndexByte(rest, 0)
 	if cut < 0 {
-		return nil, "", fmt.Errorf("identity: procargs2 %d: unterminated exec path", pid)
+		return nil, nil, "", fmt.Errorf("identity: procargs2 %d: unterminated exec path", pid)
 	}
 	executable := string(rest[:cut])
 	rest = rest[cut:]
@@ -134,12 +141,26 @@ func procArgsAndExecutable(pid int64) ([]string, string, error) {
 		rest = rest[cut+1:]
 	}
 	if len(argv) != argc {
-		return nil, "", fmt.Errorf("identity: procargs2 %d: read %d of %d argv words", pid, len(argv), argc)
+		return nil, nil, "", fmt.Errorf("identity: procargs2 %d: read %d of %d argv words", pid, len(argv), argc)
 	}
 	if executable == "" {
-		return nil, "", fmt.Errorf("identity: procargs2 %d: empty exec path", pid)
+		return nil, nil, "", fmt.Errorf("identity: procargs2 %d: empty exec path", pid)
 	}
-	return argv, executable, nil
+	var environ []string
+	if len(rest) > 0 {
+		environ = []string{}
+	}
+	for len(rest) > 0 {
+		cut = bytes.IndexByte(rest, 0)
+		if cut < 0 {
+			break
+		}
+		if cut > 0 {
+			environ = append(environ, string(rest[:cut]))
+		}
+		rest = rest[cut+1:]
+	}
+	return argv, environ, executable, nil
 }
 
 func kernelExecutablePath(pid int64) (string, bool) {

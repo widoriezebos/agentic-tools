@@ -493,3 +493,115 @@ proof on a survivor born under it; the leash making "hang until killed" mean
   defines it either way.
 - Whether `metasystem test run` passes its environment to go-gate.sh
   unfiltered; unit 4 confirms; outermost-wins holds either way.
+
+## Amendment, revision 4: the carrier on Darwin
+
+Appended after unit 1 was measured on m1c (darwin/arm64).
+`kern.procargs2` returns the environment only for the calling process and
+for targets that are not restricted binaries; for a SIP platform binary such
+as `/bin/sh` it returns the exec path and argv, nothing else. A `/bin/sh`
+child started with the tag reads back zero environment words, tag not found;
+a Go child reads back all 65, tag found. Linux procfs has no such
+restriction. Every fixture 3.7 converts is `/bin/sh`, so 3.1's carrier
+reaches none of them here.
+
+### The decision
+
+The tag stays one word, `METASYSTEM_FIXTURE_OWNER=<EncodeKey(key)>`. A shell
+carries it as one complete argv word (option 1); a Go process carries it in
+its environment, as 3.1 says. One matcher reads both slots; two slots
+because no single slot exists.
+
+- argv is the only slot Darwin shows for a restricted binary, and the fixture
+  authors every shell, so it can fill it. argv does not survive exec, and a
+  production exec (`bash -c 'exec "$0" job watch'`, `up` launching
+  supervision `Setsid`) rebuilds it from code this page must not touch.
+  Below it the process is a Go binary, whose environment is readable on
+  both platforms.
+- The ownership record (option 2) names a test, not a process. Tying a
+  `/bin/sh` process to it needs a per-process channel, and its exe is
+  `/bin/sh`, so 3.5's `go-tmp` directory rule never matches it. It stays the
+  second net for untagged `go-tmp` exes.
+- Accepted degradation (option 3) leaves producer 1, the hanging git
+  wrapper, in `fixture-survivor?` on the seat platform: reported, never
+  reaped, where the leak was observed. Rejected.
+
+### How the word gets into argv, and how it survives
+
+A shell the fixture starts directly: `exec.Command("/bin/sh", "-c", script,
+"sh", token)` from Go, `sh -c "$script" sh "$token"` from a bed. The token is
+`$1`; a `shift` changes positional parameters, not the argv the kernel
+recorded at exec.
+
+A fixture-authored script that production code starts (the git wrapper on
+`PATH`, `fake.sh`, the `hang` script, the bed's `__stopped`/`__detached`
+entry) begins with a prologue, one source text in `testutil.ShellPrologue`
+and `harness_fixture_prologue`:
+
+    if [ -n "${METASYSTEM_FIXTURE_OWNER-}" ]; then
+      tag="METASYSTEM_FIXTURE_OWNER=$METASYSTEM_FIXTURE_OWNER"
+      [ "${1-}" = "$tag" ] || exec /bin/sh "$0" "$tag" "$@"
+      shift
+    fi
+
+The script's own environment is intact, only the outside read is blocked;
+it re-execs itself once (`bash` for the bash beds) with the word first,
+keeping pid, pgid and session; without the variable it is unchanged, keeping
+fake.sh's promise in 3.7. Shell literals in `*_test.go` get it too.
+
+`Setpgid`, `Setsid` and reparenting change neither slot. Exec replaces both:
+the environment passes unless scrubbed (section 5 stands), argv is rebuilt,
+hence the prologue. A `sleep 1` forked by an allowed loop has no slot to
+fill and dies within a second, inside the custodian's five-second rescan.
+
+### Reading it
+
+`identity.FixtureTag(exact) (FixtureKey, bool)` finds one word with the
+prefix `METASYSTEM_FIXTURE_OWNER=` in argv, then in the environment, and
+parses the key; both scans of 3.1 call nothing else. Linux reads both slots
+from procfs; Darwin reads argv for every same-uid process and the
+environment for unrestricted ones. Zero environment words on a live process
+is indistinguishable from a restricted one: `EnvironKnown` false; a fixture
+child always has the tag.
+
+Neither slot readable and signalable is indeterminate; indeterminacy never
+acts. This exposes an under-scoped class: same-uid unreadable processes are
+chronic on macOS (survivors.go), so 3.5's `fixture-survivor?` as written
+would print the user's daemons at every `health`. Scoped: unreadable in both
+slots and in a group or session led by a dead-owned tagged process or with
+an exe under `go-tmp`, or a parsed tag whose owner probes Unknown. The rest
+is the census's stray problem, as `TaggedSurvivors` rules. The
+safety rules stand: unproven ownership reports; a dead-owner scan errors
+while the owner lives; cleanup selects on the full key.
+
+### Wording that changes
+
+3.1: "goes in the environment of every process a fixture launches" becomes
+"is one word, in the environment of every process a fixture launches and in
+the argv of every shell". 3.5: `fixture-survivor?` as scoped above.
+Unchecked, first bullet: answered. Witness 1 adds `FixtureTag` from argv,
+from environment, from neither, and the empty-environment rule. In 3, 5, 16
+and 17 "tagged shell" means the word in argv; 5's `sh -c 'exec sh script'`
+relies on the script's prologue. 8's fourth process is untagged in both slots
+with its exe under `go-tmp`. 12's live variant replaces `sleep 30` with
+leashed tagged shells. 13's unreadable specimen sits in the dead-owned one's
+group. New witness 18, unit 12: every shell literal in a `*_test.go` and
+every `scripts/agents/**` script that reads `METASYSTEM_FIXTURE_LEASH`
+starts with the prologue; a git wrapper started through `PATH` probes with
+the word in argv.
+
+### Units re-estimated
+
+1. `FixtureTag`, the empty-environment rule, Darwin environment for
+   unrestricted targets: +40, about 280.
+2. Both slots through `FixtureTag`, the `?` scope: +30, about 250.
+3. No carrier logic of its own; the log names the slot: +10, about 270.
+5. `ShellPrologue`, `Shell(script, args...)`, witness 12's variant: +40,
+   about 310; splits at witness 17 under section 7's rule.
+6. The `?` scope and its wording: +20, about 250.
+9. Prologue on the three wrappers: +15, about 215.
+10. `harness_fixture_prologue`, the `hang` script: +20, about 250.
+11. Prologue in fake.sh and the bed entry: +10, about 190.
+12. Witness 18: +40, about 170.
+
+Units 4, 7 and 8: unchanged.

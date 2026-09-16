@@ -66,6 +66,7 @@ func EnumerateProcesses() ([]Process, error) {
 			Pid: pid, PPID: 0, PGID: int64(pgid),
 			Started: exact.StartedAt.Unix(), StartedExactMicro: exact.StartedAt.UnixMicro(),
 			StartTicks: exact.StartTicks, BootID: exact.BootID, Argv: argv,
+			Environ: exact.Environ, Exe: exact.Exe,
 			Cwd: "", CwdError: false, Alive: true,
 		})
 	}

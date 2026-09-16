@@ -33,6 +33,9 @@ func TestProbeSelf(t *testing.T) {
 	if len(exact.Argv) == 0 {
 		t.Fatal("self argv unreadable")
 	}
+	if !exact.EnvironKnown || !exact.ExeKnown || exact.Exe == "" {
+		t.Fatalf("self metadata unreadable: environ=%v exe=%q", exact.EnvironKnown, exact.Exe)
+	}
 }
 
 func TestProbeReapedChildIsDead(t *testing.T) {
@@ -217,6 +220,32 @@ func TestProbeLiveChildArgv(t *testing.T) {
 	}
 	if got := AliveRef(KernelProber{}, exact.Ref()); got != Alive {
 		t.Fatalf("round-trip ref not alive: %v", got)
+	}
+}
+
+func TestProbeRestrictedShellDoesNotClaimKnownEmptyEnvironment(t *testing.T) {
+	if runtime.GOOS != "darwin" {
+		t.Skip("Darwin kern.procargs2 restriction")
+	}
+	command := exec.Command("/bin/sh", "-c", "sleep 60; true")
+	command.Env = append(os.Environ(), "METASYSTEM_IDENTITY_TEST=known")
+	if err := command.Start(); err != nil {
+		t.Fatal(err)
+	}
+	defer func() { _ = command.Process.Kill(); _, _ = command.Process.Wait() }()
+	deadline := time.Now().Add(wiringBound)
+	for {
+		exact, state, err := (KernelProber{}).Probe(int64(command.Process.Pid))
+		if err == nil && state == Alive && exact.ArgvKnown && len(exact.Argv) == 3 {
+			if exact.EnvironKnown && len(exact.Environ) == 0 {
+				t.Fatal("restricted child environment reported as known empty")
+			}
+			return
+		}
+		if time.Now().After(deadline) {
+			t.Fatalf("restricted child argv unreadable: state=%v err=%v", state, err)
+		}
+		time.Sleep(20 * time.Millisecond)
 	}
 }
 

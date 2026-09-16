@@ -104,7 +104,32 @@ func (p KernelProber) Probe(pid int64) (Exact, Liveness, error) {
 		exact.Argv = argv
 		exact.ArgvKnown = true
 	}
+	if environ, known := readEnviron(pid); known {
+		exact.Environ = environ
+		exact.EnvironKnown = true
+	}
+	if exe, known := kernelExecutablePath(pid); known {
+		exact.Exe = exe
+		exact.ExeKnown = true
+	}
 	return exact, Alive, nil
+}
+
+func readEnviron(pid int64) ([]string, bool) {
+	data, err := os.ReadFile(fmt.Sprintf("/proc/%d/environ", pid))
+	if err != nil {
+		return nil, false
+	}
+	data = bytes.TrimRight(data, "\x00")
+	if len(data) == 0 {
+		return []string{}, true
+	}
+	parts := bytes.Split(data, []byte{0})
+	environ := make([]string, len(parts))
+	for index := range parts {
+		environ[index] = string(parts[index])
+	}
+	return environ, true
 }
 
 func kernelExecutablePath(pid int64) (string, bool) {

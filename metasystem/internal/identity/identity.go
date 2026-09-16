@@ -37,13 +37,17 @@ type Exact struct {
 	StartTicks int64     // linux: /proc/<pid>/stat field 22, clock-step-immune; 0 elsewhere
 	BootID     string    // linux: /proc/sys/kernel/random/boot_id; "" elsewhere
 	Argv       []string  // valid only when ArgvKnown; see below
+	Environ    []string  // valid only when EnvironKnown
+	Exe        string    // valid only when ExeKnown
 	// ArgvKnown records whether the argv read SUCCEEDED. Argv is
 	// best-effort at probe time — a process whose argv cannot be read is
 	// still alive — but a consumer matching a tag against Argv must treat
 	// ArgvKnown=false as absence of evidence, never as a failed match:
 	// an unreadable argv proves nothing, and Unknown never authorizes
 	// anything.
-	ArgvKnown bool
+	ArgvKnown    bool
+	EnvironKnown bool
+	ExeKnown     bool
 }
 
 // Ref converts a live identity to exactly one native record shape.

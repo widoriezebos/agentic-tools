@@ -39,12 +39,14 @@ type Process struct {
 	// enumeration backfills seconds*1e6.
 	StartedExactMicro int64 `json:"pidStartedAtExactMicro,omitempty"`
 	// The clock-step-immune pair; zero/empty on fixture rows.
-	StartTicks int64  `json:"pidStartTicks,omitempty"`
-	BootID     string `json:"bootId,omitempty"`
-	Argv       string `json:"argv"`
-	Cwd        string `json:"cwd"`
-	CwdError   bool   `json:"cwdError"`
-	Alive      bool   `json:"alive"`
+	StartTicks int64    `json:"pidStartTicks,omitempty"`
+	BootID     string   `json:"bootId,omitempty"`
+	Argv       string   `json:"argv"`
+	Environ    []string `json:"environ,omitempty"`
+	Exe        string   `json:"exe,omitempty"`
+	Cwd        string   `json:"cwd"`
+	CwdError   bool     `json:"cwdError"`
+	Alive      bool     `json:"alive"`
 }
 
 // InventoryItem is one classified process in the verdict.

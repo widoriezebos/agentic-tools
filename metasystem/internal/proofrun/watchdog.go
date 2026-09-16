@@ -282,14 +282,20 @@ func SignalSuiteGroup(options WatchdogOptions, prober identity.Prober) error {
 // SignalAuthenticated sends one signal only after the recorded kernel
 // identity has been proved immediately beside the action.
 func SignalAuthenticated(options WatchdogOptions, prober identity.Prober, ref identity.Ref, target int, signalValue syscall.Signal, label string) error {
-	if state := identity.AliveRef(prober, ref); state != identity.Alive {
-		return fmt.Errorf("%s signal refused for %s because pid %d no longer has its recorded start identity (%s)", signalValue, label, ref.Pid, state)
-	}
 	signal := options.Signal
 	if signal == nil {
 		signal = syscall.Kill
 	}
-	if err := signal(target, signalValue); err != nil && err != syscall.ESRCH {
+	err := identity.SignalExact(prober, ref, signalValue, func(_ int, value syscall.Signal) error {
+		return signal(target, value)
+	})
+	if errors.Is(err, identity.ErrGone) {
+		return fmt.Errorf("%s signal refused for %s because pid %d no longer has its recorded start identity (dead)", signalValue, label, ref.Pid)
+	}
+	if errors.Is(err, identity.ErrUninspectable) {
+		return fmt.Errorf("%s signal refused for %s because pid %d no longer has its recorded start identity (unknown)", signalValue, label, ref.Pid)
+	}
+	if err != nil {
 		return err
 	}
 	return nil
