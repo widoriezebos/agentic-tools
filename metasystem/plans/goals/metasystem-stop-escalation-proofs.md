@@ -1,6 +1,6 @@
 # metasystem-stop-escalation-proofs
 
-- State: approved
+- State: queued
 - Priority: 2
 - Sequence: 46
 - Risk: severity=2 novelty=2 exposure=2 accumulation=1 basis="severity 2: an unproven escalation path means a stop that reports killed without evidence it killed; novelty 2: a held fake host and its readiness handshake do not exist yet; exposure 2: every seat that stops a checkout with a mission, a suite or an ignored signal in flight; accumulation 1: the scenarios are written once"
@@ -9,11 +9,9 @@
 - Origin: main
 - Next step: Blocked until slice 1 lands. Then: specify the held fake host in scripts/agents/hosts/fake.sh (how a turn selects the held behaviour and how the fixture proves its signal handler is installed before stop runs; round 5 of the slice-1 chain stopped on exactly this and was right to), then write the scenarios in the beds section 10 assigns them, then one code critique. The orchestrator runs the supervision, mission and suite-progress beds outside the sandbox: a delegate sandbox cannot execute a freshly copied fixture engine (status 126) nor authenticate spawned process groups
 - OpenedAt: 2026-09-07T07:30:28Z
-- Revision: 142
+- Revision: 143
 - Pinned: m1b
-- Budget: elapsedLimit=4h attemptLimit=6 reservedJobMinutesLimit=720 activeJobLimit=1 reviewRoundLimit=2
 - BudgetExceptions: 0
-- Approved: by=human:Wido at=2026-09-13T07:44:39Z revision=19 opid=A2HVZ4RDRF8G5WE1Y3ZFGSD52K-m1e-c6925449 authority=proven digest=fa5ab2cdac3f5496cff3de38ea522bdfffc3ce8ca0a5a404c6f766f17146badf
 
 History:
 - 2026-09-07T07:30:28Z 9S47R8KRJBAWTSFQ1TJQDEMD2S-m1b-c6925449 open actor=m1b+main-1788680071-18713-e76d5d targets=metasystem-stop-escalation-proofs
@@ -158,4 +156,5 @@ History:
 - 2026-09-16T20:32:26Z ECXB1G7RHC8BNFF7JR3JGM3XYK-m1e-c6925449 set-priority actor=human:Wido targets=census-lifecycle-scenario-holds-under-load,dispatch-bases-chains-on-the-remote-tip,events-package-has-a-test-group,human-wait-does-not-consume-goal-budget,metasystem-stop-escalation-proofs,metasystem-stop-fleet-form,new-elapsed-budgets-use-explicit-hours,pipelines-never-lose-a-truncated-producer,repo-root-paths-ride-agent-commits-unjudged reason=priority-order subject=repo-root-paths-ride-agent-commits-unjudged from=1:56 to=1:55 requested-sequence=44
 - 2026-09-16T20:32:32Z HC8GDDX3DH5CE3W21P5ZKAG7ZW-m1e-c6925449 set-priority actor=human:Wido targets=census-lifecycle-scenario-holds-under-load,dispatch-bases-chains-on-the-remote-tip,events-package-has-a-test-group,human-wait-does-not-consume-goal-budget,metasystem-stop-escalation-proofs,metasystem-stop-fleet-form,new-elapsed-budgets-use-explicit-hours,pipelines-never-lose-a-truncated-producer reason=priority-order subject=dispatch-bases-chains-on-the-remote-tip from=1:55 to=1:54 requested-sequence=45
 - 2026-09-16T20:32:38Z G4Z1659A0JH8M2YQC7RVE32FPG-m1e-c6925449 set-priority actor=human:Wido targets=census-lifecycle-scenario-holds-under-load,events-package-has-a-test-group,human-wait-does-not-consume-goal-budget,metasystem-stop-escalation-proofs,metasystem-stop-fleet-form,new-elapsed-budgets-use-explicit-hours,pipelines-never-lose-a-truncated-producer reason=priority-order subject=metasystem-stop-escalation-proofs from=1:54 to=2:46 requested-sequence=46
-Integrity: sha256=f57caaa8d750a4077a0229db53cd4fb1fe81fccc0b1ee7794c0f4e439c5e1e63
+- 2026-09-16T20:34:41Z ZQ266P2QCK37AC5DEBX81CWDYR-m1e-c6925449 unapprove actor=human:Wido targets=metasystem-stop-escalation-proofs reason=Wido 2026-09-16 22:40 CEST: clean house on priority 1 first, then a few human convenience features; every priority 2+ goal is unapproved until then
+Integrity: sha256=468ac8f8fb6ded7409c3ed2f9637a8d71c8ed739eba9f63b0a3b9e8483422696
