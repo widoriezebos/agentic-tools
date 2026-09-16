@@ -452,8 +452,14 @@ func (s *Store) TurnVerdict(scan ScanResult, sessionId, watchdogDigest, mainId s
 			work, workErr = readClaimableBudgetedWork(s.Root, s.now(), s.prober())
 		}
 		waits := registeredWaits{}
+		var waitDropReasons []string
 		if workRead && workErr == nil && len(scan.Unreadable) == 0 && len(scan.RunUnreadable) == 0 {
-			waits = s.registeredWaits(work, sessionId, mainId, options.SessionAbsent)
+			waits, waitDropReasons = s.registeredWaits(work, sessionId, mainId, options.SessionAbsent)
+		} else if workRead && !options.SessionAbsent && mainId != "" {
+			paths, _ := filepath.Glob(filepath.Join(run.WaitersDir(s.Root), "*-"+run.OwnerDigest(mainId)+".json"))
+			if len(paths) > 0 {
+				waitDropReasons = []string{fmt.Sprintf("registered waits not credited at work-unreadable: workErr=%v unreadable=%v runUnreadable=%v", workErr, scan.Unreadable, scan.RunUnreadable)}
+			}
 		}
 		watches := s.authenticatedWatches(scan, mainId, waits)
 		state, err := s.loadVerdictState()
@@ -465,6 +471,11 @@ func (s *Store) TurnVerdict(scan ScanResult, sessionId, watchdogDigest, mainId s
 		brainLines := append(s.brainSummary(scan, brainState), designCritiqueLines(scan.Jobs)...)
 		runLines := s.decideRuns(&verdict, scan, session, mainId, watches)
 		s.decide(&verdict, scan, session, &work, brainSeat, waits)
+		if len(waitDropReasons) > 0 && strings.HasPrefix(waitDropReasons[0], "registered waits not credited at work-unreadable:") {
+			verdict.Diagnostics = append(waitDropReasons, verdict.Diagnostics...)
+		} else {
+			verdict.Diagnostics = append(verdict.Diagnostics, waitDropReasons...)
+		}
 		if options.SessionAbsent {
 			detail := "registered waits were not read because the Stop supplied no session"
 			verdict.Diagnostics = append(verdict.Diagnostics, detail)
@@ -553,7 +564,8 @@ func (s *Store) TurnVerdict(scan ScanResult, sessionId, watchdogDigest, mainId s
 		}
 		artifactPath := turnVerdictArtifactPath(s.Root, sessionId)
 		fileLine := "Full turn verdict: " + artifactPath
-		if durable, writeErr := atomicfile.WriteText(artifactPath, fullDisplay, s.Root); writeErr != nil {
+		artifactDisplay := strings.TrimSpace(fullDisplay + "\n" + strings.Join(waitDropReasons, "\n"))
+		if durable, writeErr := atomicfile.WriteText(artifactPath, artifactDisplay, s.Root); writeErr != nil {
 			detail := "full turn verdict could not be written: " + writeErr.Error()
 			verdict.Diagnostics = append(verdict.Diagnostics, detail)
 			fileLine = "Full turn verdict could not be written to " + artifactPath
@@ -603,21 +615,22 @@ func withoutBrainOnlyScanEffects(scan ScanResult) ScanResult {
 // session and still joined to the holder's claimed goal and source
 // incarnation. A row that cannot prove every coordinate is absent from the
 // decision; waiter failures never grant permission to stop.
-func (s *Store) registeredWaits(work ClaimableBudgetedWork, sessionID, mainID string, sessionAbsent bool) registeredWaits {
-	if sessionAbsent {
-		return nil
+func (s *Store) registeredWaits(work ClaimableBudgetedWork, sessionID, mainID string, sessionAbsent bool) (registeredWaits, []string) {
+	if sessionAbsent || mainID == "" {
+		return nil, nil
 	}
-	lease, lineage, ok := s.registeredWaitOwner(sessionID, mainID)
-	if !ok {
-		return nil
-	}
-	paths, _ := filepath.Glob(filepath.Join(run.WaitersDir(s.Root), "*.json"))
+	paths, _ := filepath.Glob(filepath.Join(run.WaitersDir(s.Root), "*-"+run.OwnerDigest(mainID)+".json"))
 	if len(paths) == 0 {
-		return nil
+		return nil, nil
+	}
+	var reason string
+	lease, lineage, ok := s.registeredWaitOwner(sessionID, mainID, &reason)
+	if !ok {
+		return nil, []string{"registered waits not credited at " + reason}
 	}
 	bootID, bootElapsed, err := turnVerdictBootClock()
 	if err != nil || bootID == "" {
-		return nil
+		return nil, []string{"registered waits not credited at " + waitDrop("boot-clock", "err", err, "bootId", bootID)}
 	}
 	claimed := make(map[string]bool, len(work.Claimed)+len(work.Landing))
 	for _, id := range work.Claimed {
@@ -627,17 +640,22 @@ func (s *Store) registeredWaits(work ClaimableBudgetedWork, sessionID, mainID st
 		claimed[id] = true
 	}
 	waits := make(registeredWaits, 0, len(paths))
+	var reasons []string
 	for _, path := range paths {
-		row, ok := registeredWaitAtOwnerPath(s.Root, path)
-		if !ok || !s.registeredWaitEligible(row, sessionID, mainID, lineage, lease.ClaimEpoch, bootID, bootElapsed) {
+		reason = ""
+		row, ok := registeredWaitAtOwnerPath(s.Root, path, &reason)
+		if !ok || !s.registeredWaitEligible(row, sessionID, mainID, lineage, lease.ClaimEpoch, bootID, bootElapsed, &reason) {
+			reasons = append(reasons, registeredWaitDrop(&row, path, reason))
 			continue
 		}
-		wait, ok := s.registeredWaitSource(work, claimed, row, bootElapsed)
+		wait, ok := s.registeredWaitSource(work, claimed, row, bootElapsed, &reason)
 		if ok {
 			waits = append(waits, wait)
+		} else {
+			reasons = append(reasons, registeredWaitDrop(&row, path, reason))
 		}
 	}
-	return waits
+	return waits, reasons
 }
 
 func (s *Store) authenticatedWatches(scan ScanResult, mainID string, waits registeredWaits) authenticatedWatches {
@@ -655,52 +673,85 @@ func (s *Store) authenticatedWatches(scan ScanResult, mainID string, waits regis
 	return watches
 }
 
-func registeredWaitAtOwnerPath(root, path string) (run.Waiter, bool) {
+func waitDrop(branch string, pairs ...any) string {
+	values := make([]string, 0, len(pairs)/2)
+	for i := 0; i < len(pairs); i += 2 {
+		value := pairs[i+1]
+		if pointer, ok := value.(*int64); ok && pointer != nil {
+			value = *pointer
+		}
+		values = append(values, fmt.Sprintf("%v=%v", pairs[i], value))
+	}
+	return branch + ": " + strings.Join(values, " ")
+}
+
+func registeredWaitDrop(row *run.Waiter, path, reason string) string {
+	if row.WaitID == "" {
+		return fmt.Sprintf("registered wait file %s not credited at %s", filepath.Base(path), reason)
+	}
+	return fmt.Sprintf("registered wait %s (%s %s, file %s) not credited at %s", row.WaitID, row.Kind, row.TargetID, filepath.Base(path), reason)
+}
+
+func registeredWaitAtOwnerPath(root, path string, reason *string) (run.Waiter, bool) {
 	info, err := os.Lstat(path)
 	if err != nil || !info.Mode().IsRegular() {
+		*reason = waitDrop("row-unreadable", "check", "lstat-or-regular", "err", err)
 		return run.Waiter{}, false
 	}
 	data, err := os.ReadFile(path)
 	if err != nil {
+		*reason = waitDrop("row-unreadable", "check", "read", "err", err)
 		return run.Waiter{}, false
 	}
 	var row run.Waiter
 	decoder := json.NewDecoder(strings.NewReader(string(data)))
 	decoder.DisallowUnknownFields()
-	if decoder.Decode(&row) != nil || decoder.Decode(&struct{}{}) != io.EOF ||
-		filepath.Clean(path) != filepath.Clean(run.WaiterPath(root, row.Kind, row.TargetID, row.OwnerDigest)) {
-		return run.Waiter{}, false
+	decodeErr := decoder.Decode(&row)
+	trailing := decodeErr == nil && decoder.Decode(&struct{}{}) != io.EOF
+	expected := run.WaiterPath(root, row.Kind, row.TargetID, row.OwnerDigest)
+	if decodeErr != nil || trailing || filepath.Clean(path) != filepath.Clean(expected) {
+		*reason = waitDrop("row-unreadable", "check", "decode-trailing-or-path", "decodeErr", decodeErr, "trailingData", trailing, "base", filepath.Base(path), "expectedBase", filepath.Base(expected))
+		return row, false
 	}
 	return row, true
 }
 
-func (s *Store) registeredWaitOwner(sessionID, mainID string) (sessionStopLease, string, bool) {
-	if sessionID == "" || mainID == "" {
+func (s *Store) registeredWaitOwner(sessionID, mainID string, reason *string) (sessionStopLease, string, bool) {
+	if sessionID == "" {
+		*reason = waitDrop("owner-lease", "sessionId", sessionID, "err", nil, "holderMainId", "", "mainId", mainID, "pid", 0, "pidStartedAt", 0, "pidStartTicks", 0, "bootId", "", "liveness", identity.Unknown.String(), "mode", identity.CompareInvalid)
 		return sessionStopLease{}, "", false
 	}
 	lease, err := s.currentSessionStopLease()
-	if err != nil || lease.HolderMainId != mainID || identity.AliveRef(s.prober(), identity.Ref{
-		Pid: lease.Pid, StartedAtSec: lease.PidStartedAt, StartTicks: lease.PidStartTicks, BootID: lease.BootID,
-	}) != identity.Alive {
+	liveness, mode := identity.Unknown, identity.CompareInvalid
+	if err == nil && lease.HolderMainId == mainID {
+		liveness, mode = identity.AliveRefComparison(s.prober(), identity.Ref{Pid: lease.Pid, StartedAtSec: lease.PidStartedAt, StartTicks: lease.PidStartTicks, BootID: lease.BootID})
+	}
+	if err != nil || lease.HolderMainId != mainID || liveness != identity.Alive {
+		*reason = waitDrop("owner-lease", "sessionId", sessionID, "err", err, "holderMainId", lease.HolderMainId, "mainId", mainID, "pid", lease.Pid, "pidStartedAt", lease.PidStartedAt, "pidStartTicks", lease.PidStartTicks, "bootId", lease.BootID, "liveness", liveness.String(), "mode", mode)
 		return sessionStopLease{}, "", false
 	}
 	paths, err := filepath.Glob(filepath.Join(s.Root, "artifacts", "agents", "mains", "*.json"))
 	if err != nil {
+		*reason = waitDrop("owner-announcement", "file", "", "err", err, "announcementPid", 0, "leasePid", lease.Pid, "announcementPidStartedAt", 0, "leasePidStartedAt", lease.PidStartedAt, "announcementPidStartTicks", 0, "leasePidStartTicks", lease.PidStartTicks, "announcementBootId", "", "leaseBootId", lease.BootID, "lineage", "")
 		return sessionStopLease{}, "", false
 	}
 	lineage := ""
+	matching := 0
 	for _, path := range paths {
 		if !sessionStopAnnouncementName.MatchString(filepath.Base(path)) {
 			continue
 		}
+		matching++
 		data, readErr := os.ReadFile(path)
 		if readErr != nil {
+			*reason = waitDrop("owner-announcement", "file", filepath.Base(path), "err", readErr, "announcementPid", 0, "leasePid", lease.Pid, "announcementPidStartedAt", 0, "leasePidStartedAt", lease.PidStartedAt, "announcementPidStartTicks", 0, "leasePidStartTicks", lease.PidStartTicks, "announcementBootId", "", "leaseBootId", lease.BootID, "lineage", lineage)
 			return sessionStopLease{}, "", false
 		}
 		var announcement sessionStopAnnouncement
 		decoder := json.NewDecoder(strings.NewReader(string(data)))
 		decoder.DisallowUnknownFields()
 		if decoder.Decode(&announcement) != nil || decoder.Decode(&struct{}{}) != io.EOF {
+			*reason = waitDrop("owner-announcement", "file", filepath.Base(path), "err", "decode or trailing data", "announcementPid", announcement.Pid, "leasePid", lease.Pid, "announcementPidStartedAt", announcement.PidStartedAt, "leasePidStartedAt", lease.PidStartedAt, "announcementPidStartTicks", announcement.PidStartTicks, "leasePidStartTicks", lease.PidStartTicks, "announcementBootId", announcement.BootID, "leaseBootId", lease.BootID, "lineage", lineage)
 			return sessionStopLease{}, "", false
 		}
 		if announcement.MainId != mainID {
@@ -708,6 +759,7 @@ func (s *Store) registeredWaitOwner(sessionID, mainID string) (sessionStopLease,
 		}
 		if lineage != "" || announcement.Pid != lease.Pid || announcement.PidStartedAt != lease.PidStartedAt ||
 			announcement.PidStartTicks != lease.PidStartTicks || announcement.BootID != lease.BootID {
+			*reason = waitDrop("owner-announcement", "file", filepath.Base(path), "err", nil, "announcementPid", announcement.Pid, "leasePid", lease.Pid, "announcementPidStartedAt", announcement.PidStartedAt, "leasePidStartedAt", lease.PidStartedAt, "announcementPidStartTicks", announcement.PidStartTicks, "leasePidStartTicks", lease.PidStartTicks, "announcementBootId", announcement.BootID, "leaseBootId", lease.BootID, "lineage", lineage)
 			return sessionStopLease{}, "", false
 		}
 		lineage = announcement.OwnerLineage
@@ -716,12 +768,13 @@ func (s *Store) registeredWaitOwner(sessionID, mainID string) (sessionStopLease,
 		}
 	}
 	if lineage == "" {
+		*reason = waitDrop("owner-announcement-missing", "mainId", mainID, "matchingFiles", matching)
 		return sessionStopLease{}, "", false
 	}
 	return lease, lineage, true
 }
-
-func (s *Store) registeredWaitEligible(row run.Waiter, sessionID, mainID, lineage string, claimEpoch int64, bootID string, bootElapsed time.Duration) bool {
+func (s *Store) registeredWaitEligible(row run.Waiter, sessionID, mainID, lineage string, claimEpoch int64, bootID string, bootElapsed time.Duration, reason *string) bool {
+	selectorErr := run.ValidateWaitSelector(row.Selector)
 	if row.SchemaVersion != 2 || row.State != "pending" || row.Delivery != "blocking" || row.Result != nil ||
 		!run.ValidWaitID(row.WaitID) || !run.ValidWaitID(row.Nonce) || row.MainId != mainID ||
 		row.Session != sessionID || row.RuntimeSession != sessionID ||
@@ -729,20 +782,25 @@ func (s *Store) registeredWaitEligible(row run.Waiter, sessionID, mainID, lineag
 		row.OwnerDigest != run.OwnerDigest(mainID) || row.ClaimEpoch == nil || *row.ClaimEpoch != claimEpoch ||
 		row.Kind != row.Selector.Kind || row.TargetID != row.Selector.TargetID || row.Target == (run.WaiterTarget{}) ||
 		(row.OpenWorkSignature != "" && !sessionStopDigest.MatchString(row.OpenWorkSignature)) ||
-		run.ValidateWaitSelector(row.Selector) != nil {
+		selectorErr != nil {
+		*reason = waitDrop("row-coordinates", "schemaVersion", row.SchemaVersion, "wantSchemaVersion", 2, "state", row.State, "wantState", "pending", "delivery", row.Delivery, "wantDelivery", "blocking", "resultPresent", row.Result != nil, "wantResultPresent", false, "waitIdValid", run.ValidWaitID(row.WaitID), "wantWaitIdValid", true, "nonceValid", run.ValidWaitID(row.Nonce), "wantNonceValid", true, "mainId", row.MainId, "wantMainId", mainID, "session", row.Session, "wantSession", sessionID, "runtimeSession", row.RuntimeSession, "wantRuntimeSession", sessionID, "ownerLineage", row.OwnerLineage, "lineage", lineage, "lineageMainId", mainID, "ownerDigest", row.OwnerDigest, "wantOwnerDigest", run.OwnerDigest(mainID), "claimEpoch", row.ClaimEpoch, "wantClaimEpoch", claimEpoch, "kind", row.Kind, "selectorKind", row.Selector.Kind, "goalId", row.GoalID, "selectorGoalId", row.Selector.GoalID, "targetId", row.TargetID, "selectorTargetId", row.Selector.TargetID, "targetZero", row.Target == (run.WaiterTarget{}), "wantTargetZero", false, "openWorkSignature", row.OpenWorkSignature, "selectorError", selectorErr)
 		return false
 	}
 	if row.Kind == "goal" {
 		if row.GoalID == "" || row.GoalID != row.Selector.GoalID {
+			*reason = waitDrop("row-coordinates", "kind", row.Kind, "goalId", row.GoalID, "selectorGoalId", row.Selector.GoalID)
 			return false
 		}
 	} else if row.GoalID != "" {
+		*reason = waitDrop("row-coordinates", "kind", row.Kind, "goalId", row.GoalID, "selectorGoalId", row.Selector.GoalID)
 		return false
 	}
-	if identity.AliveRef(s.prober(), identity.Ref{
+	liveness, mode := identity.AliveRefComparison(s.prober(), identity.Ref{
 		Pid: row.Pid, StartedAtSec: row.PidStartedAt, StartedAtUnixMicro: row.PidStartedAtMicro,
 		StartTicks: row.PidStartTicks, BootID: row.BootID,
-	}) != identity.Alive {
+	})
+	if liveness != identity.Alive {
+		*reason = waitDrop("row-process", "pid", row.Pid, "pidStartedAt", row.PidStartedAt, "pidStartedAtMicro", row.PidStartedAtMicro, "pidStartTicks", row.PidStartTicks, "bootId", row.BootID, "liveness", liveness.String(), "mode", mode)
 		return false
 	}
 	registeredAt, registeredErr := time.Parse(time.RFC3339Nano, row.RegisteredAt)
@@ -752,6 +810,7 @@ func (s *Store) registeredWaitEligible(row run.Waiter, sessionID, mainID, lineag
 	if registeredErr != nil || deadlineErr != nil || observedErr != nil || registeredAt.After(lastObserved) ||
 		lastObserved.After(now) || now.Sub(lastObserved) > 30*time.Second || !now.Before(deadline) ||
 		!deadline.After(registeredAt) || deadline.Sub(registeredAt) > 24*time.Hour || row.RemainingNanos <= 0 {
+		*reason = waitDrop("row-wall-clock", "registeredAt", row.RegisteredAt, "lastObservedAt", row.LastObservedAt, "deadline", row.Deadline, "now", now.Format(time.RFC3339Nano), "now-lastObserved", now.Sub(lastObserved), "remainingNanos", row.RemainingNanos, "registeredError", registeredErr, "lastObservedError", observedErr, "deadlineError", deadlineErr)
 		return false
 	}
 	bootNanos := bootElapsed.Nanoseconds()
@@ -759,17 +818,20 @@ func (s *Store) registeredWaitEligible(row run.Waiter, sessionID, mainID, lineag
 		row.LastObservedBootNanos <= 0 || row.LastObservedBootNanos > bootNanos ||
 		bootNanos-row.LastObservedBootNanos > (30*time.Second).Nanoseconds() || row.BootDeadlineNanos <= bootNanos ||
 		row.BootDeadlineNanos-row.LastObservedBootNanos > (24*time.Hour).Nanoseconds() {
+		*reason = waitDrop("row-boot-clock", "deadlineBootId", row.DeadlineBootID, "bootId", bootID, "lastObservedBootNanos", row.LastObservedBootNanos, "bootNanos", bootNanos, "bootDeadlineNanos", row.BootDeadlineNanos)
 		return false
 	}
 	return true
 }
 
-func (s *Store) registeredWaitSource(work ClaimableBudgetedWork, claimed map[string]bool, row run.Waiter, bootElapsed time.Duration) (registeredWait, bool) {
+func (s *Store) registeredWaitSource(work ClaimableBudgetedWork, claimed map[string]bool, row run.Waiter, bootElapsed time.Duration, reason *string) (registeredWait, bool) {
 	wait := registeredWait{row: row}
+	claimedIDs := append(append([]string{}, work.Claimed...), work.Landing...)
 	switch row.Kind {
 	case "job":
-		goalID, _, ok := s.pendingWaitJob(row)
+		goalID, _, ok := s.pendingWaitJob(row, reason)
 		if !ok || !claimed[goalID] {
+			*reason = sourceDrop(row.Kind, ok, goalID, claimed[goalID], claimedIDs, *reason, "check", "job-record")
 			return registeredWait{}, false
 		}
 		wait.goalID, wait.coveredJobID = goalID, row.TargetID
@@ -777,6 +839,7 @@ func (s *Store) registeredWaitSource(work ClaimableBudgetedWork, claimed map[str
 	case "run":
 		goalID, current, ok := s.pendingWaitRun(row.TargetID, row.Target)
 		if !ok || !claimed[goalID] {
+			*reason = sourceDrop(row.Kind, ok, goalID, claimed[goalID], claimedIDs, "", "check", "run-record", "target", row.Target, "current", current, "ok", ok)
 			return registeredWait{}, false
 		}
 		wait.goalID, wait.coveredRunID, wait.coveredRun = goalID, row.TargetID, current
@@ -784,15 +847,18 @@ func (s *Store) registeredWaitSource(work ClaimableBudgetedWork, claimed map[str
 	case "attempt":
 		goalID, runID, current, ok := s.pendingWaitAttempt(row)
 		if !ok || !claimed[goalID] {
+			*reason = sourceDrop(row.Kind, ok, goalID, claimed[goalID], claimedIDs, "", "check", "attempt-record", "runId", runID, "target", row.Target, "current", current, "ok", ok)
 			return registeredWait{}, false
 		}
 		wait.goalID, wait.coveredRunID, wait.coveredRun = goalID, runID, current
 		return wait, true
 	case "goal":
 		if !claimed[row.Selector.GoalID] {
+			*reason = sourceDrop(row.Kind, true, row.Selector.GoalID, false, claimedIDs, "")
 			return registeredWait{}, false
 		}
 		if row.Selector.Event == "landing" && !contains(work.Landing, row.Selector.GoalID) {
+			*reason = sourceDrop(row.Kind, true, row.Selector.GoalID, false, work.Landing, "")
 			return registeredWait{}, false
 		}
 		deadline, _ := time.Parse(time.RFC3339Nano, row.Deadline)
@@ -800,12 +866,14 @@ func (s *Store) registeredWaitSource(work ClaimableBudgetedWork, claimed map[str
 		budget = min(budget, time.Duration(row.BootDeadlineNanos)-bootElapsed)
 		budget = min(budget, time.Duration(row.RemainingNanos))
 		if budget <= 0 {
+			*reason = waitDrop("source", "kind", row.Kind, "check", "budget", "budget", budget, "remainingNanos", row.RemainingNanos, "bootRemaining", time.Duration(row.BootDeadlineNanos)-bootElapsed, "wallRemaining", deadline.Sub(s.now().UTC()))
 			return registeredWait{}, false
 		}
 		ctx, cancel := context.WithTimeout(context.Background(), budget)
 		observation, err := ObserveLedgerForWait(ctx, s.Root, row.Selector, row.Target, row.LastCheckedTip, row.OwnerLineage)
 		cancel()
 		if err != nil || observation.Temporary || !observation.Pending || observation.Incarnation != row.Target {
+			*reason = waitDrop("source", "kind", row.Kind, "check", "observation", "err", err, "temporary", observation.Temporary, "pending", observation.Pending, "incarnation", observation.Incarnation, "target", row.Target)
 			return registeredWait{}, false
 		}
 		wait.goalID = row.Selector.GoalID
@@ -813,13 +881,23 @@ func (s *Store) registeredWaitSource(work ClaimableBudgetedWork, claimed map[str
 		wait.landing = row.Selector.Event == "landing"
 		return wait, true
 	default:
+		*reason = waitDrop("source", "kind", row.Kind, "check", "known-kind")
 		return registeredWait{}, false
 	}
 }
 
-func (s *Store) pendingWaitJob(row run.Waiter) (string, run.WaiterTarget, bool) {
+func sourceDrop(kind string, ok bool, goalID string, _ bool, claimedIDs []string, reason string, pairs ...any) string {
+	if reason != "" {
+		return reason
+	}
+	token := map[bool]string{false: "source", true: "not-claimed"}[ok]
+	return waitDrop(token, append([]any{"kind", kind, "goalId", goalID, "claimedIds", claimedIDs}, pairs...)...)
+}
+
+func (s *Store) pendingWaitJob(row run.Waiter, reason *string) (string, run.WaiterTarget, bool) {
 	data, err := os.ReadFile(filepath.Join(s.Root, "artifacts", "agents", "jobs", row.TargetID+".json"))
 	if err != nil {
+		*reason = waitDrop("job-record", "rowOperationId", row.Target.OperationID, "rowRound", row.Target.Round, "rowStartedAt", row.Target.StartedAt, "err", err)
 		return "", run.WaiterTarget{}, false
 	}
 	var record struct {
@@ -830,19 +908,29 @@ func (s *Store) pendingWaitJob(row run.Waiter) (string, run.WaiterTarget, bool) 
 		StartedAt   string `json:"startedAt"`
 		GoalID      string `json:"goalId"`
 	}
-	if json.Unmarshal(data, &record) != nil || (record.JobID != "" && record.JobID != row.TargetID) ||
+	decodeErr := json.Unmarshal(data, &record)
+	drop := func() string {
+		return waitDrop("job-record", "rowOperationId", row.Target.OperationID, "rowRound", row.Target.Round, "rowStartedAt", row.Target.StartedAt, "recordJobId", record.JobID, "recordStatus", record.Status, "recordOperationId", record.OperationID, "recordRound", record.Round, "recordStartedAt", record.StartedAt, "recordGoalId", record.GoalID, "err", decodeErr)
+	}
+	if decodeErr != nil || (record.JobID != "" && record.JobID != row.TargetID) ||
 		record.OperationID == "" || record.GoalID == "" {
+		*reason = drop()
 		return "", run.WaiterTarget{}, false
 	}
 	if record.Status == "pending-setup" {
 		current := run.WaiterTarget{OperationID: record.OperationID}
+		if row.Target != current {
+			*reason = drop()
+		}
 		return record.GoalID, current, row.Target == current
 	}
 	if record.Status != "pending" && record.Status != "running" {
+		*reason = drop()
 		return "", run.WaiterTarget{}, false
 	}
 	preRunning := row.Target.OperationID == record.OperationID && row.Target.Round == 0 && row.Target.StartedAt == "" && record.Status != "running"
 	if !preRunning && (record.Round < 1 || record.StartedAt == "") {
+		*reason = drop()
 		return "", run.WaiterTarget{}, false
 	}
 	current := run.WaiterTarget{OperationID: record.OperationID, Round: record.Round, StartedAt: record.StartedAt}
@@ -853,6 +941,7 @@ func (s *Store) pendingWaitJob(row run.Waiter) (string, run.WaiterTarget, bool) 
 		row.Target.StartedAt == "" && current.Round > 0 && current.StartedAt != "" && record.Status == "running") {
 		return record.GoalID, current, true
 	}
+	*reason = drop()
 	return "", run.WaiterTarget{}, false
 }
 
