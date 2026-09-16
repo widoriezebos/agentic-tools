@@ -1,6 +1,6 @@
 # coordinator-wakes-on-events-not-polls
 
-- State: claimed
+- State: approved
 - Priority: 1
 - Sequence: 14
 - Risk: severity=2 novelty=2 exposure=3 accumulation=2 basis="severity 2: a wait that never returns idles a seat; novelty 2: a wait verb over existing records is new; exposure 3: every seat; accumulation 2: touches the hook and the verbs"
@@ -9,15 +9,14 @@
 - Origin: human
 - Next step: ROUND 8 IS THE MERGE OF ROUND 7 WITH TRUNK, built and read-complete; branch m1b-cw5-r8 (4d054496) on tip b865ebc13, 21 files, +1669/-113, full diff at the seat scratchpad cw5b8-full.diff. Trunk's ce3b1b162 had split finishV2 into finishV2 plus finishV2By(by) while round 7 was rewriting the same function to take revision 5's post-read stamps; the merged finishV2 carries stamps and delegates to finishV2By carrying stamps and by, and against round 7 the merge adds 29 lines to waiter.go and 26 to waiter_test.go with zero deletions, the other 19 files byte-identical. Seat-verified outside the sandbox: gofmt, build, vet over the eight touched packages, and green go test on internal/run 2.5s, internal/usage 8.5s, internal/steward 206.6s. The independent confirming read returned LAND with zero material findings (S5/cw5-r8-read.md). REMAINING: the candidate proof, queued FIFO on the machine test-run lock and holding that lock across the whole hold because proof-candidate.sh installs an engine; it must cover events, dispatch, goal, proofrun, cmd/metasystem and the supervision-fixtures bed leg, since no reader ran those and land.sh on bash 3.2 was only read. Then land by human commit with the receipt in the same commit, release, and conclude on the endpoint Wido narrowed on 2026-09-16 at 11:25: the parent concludes on the refutation-only measurement, and attestation becomes its own goal if it is ever wanted. FOLLOW-UP recorded from the read's immaterial finding N2, a trunk race this candidate does not introduce: Store.InterruptWaiterRow checks the ended state outside the waiter lock, so once steward.EndInFlightWaits is wired a handoff can overwrite a ready result. The fix belongs to trunk's InterruptWaiterRow and the hazard only exists once the wiring lands, so its owner is the coordinator-context-stays-under-budget unit that does the wiring, not this goal.
 - OpenedAt: 2026-09-11T15:45:15Z
-- Revision: 101
+- Revision: 102
 - BlockedBy: publication-owners-hint-the-waiter, wait-verb-returns-on-recorded-events
 - Pinned: m1b
 - Budget: elapsedLimit=2d attemptLimit=20 reservedJobMinutesLimit=1200 activeJobLimit=1 reviewRoundLimit=3
 - BudgetExceptions: 2
 - Approved: by=human:Wido at=2026-09-16T08:32:26Z revision=97 opid=E7223BSH06SS7XV1SF33Z3J6EX-m1e-c6925449 authority=proven digest=06f4fbd070bf9216ce69dd1dcb81d064ce276cb648b3c00c8c19155b81861d93
 - Sliced: machine=m1b lineage=main-1789191336-90295-e4b24b revision=29 at=2026-09-13T00:19:49Z
-- Claimed: machine=m1b lineage=main-1789191336-90295-e4b24b at=2026-09-16T08:32:41Z revision=99 accountingRevision=97 episodeAt=2026-09-13T00:18:31Z episodeRevision=29 idleSeconds=259185
-- StopCapability: generation=99 revision=99 machine=m1b claimEpoch=2 fenceEpoch=0
+- Episode: machine=m1b lineage=main-1789191336-90295-e4b24b accountingRevision=97 episodeAt=2026-09-13T00:18:31Z episodeRevision=29 idleSeconds=259185 released=2026-09-16T12:25:43Z
 
 History:
 - 2026-09-11T15:45:15Z HPJKBN0ZC1BZBK2M5KWKW0JP71-m1e-5083721b open actor=m1e+main-1789141490-27414-b9c0d2 targets=coordinator-wakes-on-events-not-polls
@@ -121,4 +120,5 @@ History:
 - 2026-09-16T08:32:41Z HM7EBSW79AY669CZWFMPTWH3QK-m1b-30a7e141 claim actor=m1b+main-1789191336-90295-e4b24b targets=coordinator-wakes-on-events-not-polls
 - 2026-09-16T09:19:21Z VWTDBAZPCCH16K9G5YK4CQ9R4F-m1b-30a7e141 edit actor=m1b+main-1789191336-90295-e4b24b targets=coordinator-wakes-on-events-not-polls
 - 2026-09-16T11:58:26Z TVCY7SS2P7R8NQ18ZVCJG8DR9N-m1b-30a7e141 edit actor=m1b+main-1789191336-90295-e4b24b targets=coordinator-wakes-on-events-not-polls
-Integrity: sha256=944645b6f687b0ce36a8a866ea439616232f97efb8350e17fe1dbca1a5823756
+- 2026-09-16T12:25:43Z CRGPSWE5WF1JZN0NJEG012ET98-m1b-30a7e141 release actor=m1b+main-1789191336-90295-e4b24b targets=coordinator-wakes-on-events-not-polls
+Integrity: sha256=4d834d3d1105ab775cac68545008fc579cf71d752cc0ea44a01959ebbae196fc
