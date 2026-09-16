@@ -888,6 +888,7 @@ func installPendingWaitHookFixture(t *testing.T, root, binary string) (hook, can
 		t.Fatal(err)
 	}
 	for _, relative := range []string{
+		"scripts/receipt.sh",
 		"scripts/agents/supervision-hook.sh",
 		"scripts/agents/evidence-gc.sh",
 		"scripts/agents/arm-supervision.sh",
@@ -940,7 +941,7 @@ exec "${METASYSTEM_WAIT_REAL_ENGINE:?}" "$@"
 	return hook, canonical, wrapper
 }
 
-func pendingWaitHookEnvironment(wrapper, canonical string) []string {
+func pendingWaitHookEnvironment(wrapper, canonical, now string) []string {
 	environment := make([]string, 0, len(os.Environ())+4)
 	for _, value := range os.Environ() {
 		if strings.HasPrefix(value, "METASYSTEM_HOOK_DELEGATE_") ||
@@ -949,20 +950,25 @@ func pendingWaitHookEnvironment(wrapper, canonical string) []string {
 			strings.HasPrefix(value, "METASYSTEM_WAIT_UP_COMMAND_FILE=") ||
 			strings.HasPrefix(value, "METASYSTEM_FAKE_AGENT_ANCESTOR_PID=") ||
 			strings.HasPrefix(value, "METASYSTEM_FAKE_PROCESS_IDENTITY_FILE=") ||
-			strings.HasPrefix(value, "METASYSTEM_CENSUS_PROCESS_FILE=") {
+			strings.HasPrefix(value, "METASYSTEM_CENSUS_PROCESS_FILE=") ||
+			strings.HasPrefix(value, "METASYSTEM_GOAL_NOW=") {
 			continue
 		}
 		environment = append(environment, value)
 	}
-	return append(environment,
+	environment = append(environment,
 		"METASYSTEM_BIN="+wrapper,
 		"METASYSTEM_WAIT_REAL_ENGINE="+canonical,
 		"METASYSTEM_WAIT_UP_COMMAND_FILE="+wrapper+".up-command",
 		"METASYSTEM_FAKE_AGENT_ANCESTOR_PID="+fmt.Sprint(os.Getpid()),
 	)
+	if now != "" {
+		environment = append(environment, "METASYSTEM_GOAL_NOW="+now)
+	}
+	return environment
 }
 
-func runPendingWaitHook(t *testing.T, hook, wrapper, canonical, event, payload, label string) installedHookResult {
+func runPendingWaitHook(t *testing.T, hook, wrapper, canonical, event, payload, label, now string) installedHookResult {
 	t.Helper()
 	outputDir := t.TempDir()
 	stdoutPath := filepath.Join(outputDir, label+".stdout")
@@ -979,7 +985,7 @@ func runPendingWaitHook(t *testing.T, hook, wrapper, canonical, event, payload, 
 	ctx, cancel := boundedFixtureContext(t, 30*time.Second)
 	defer cancel()
 	command := exec.CommandContext(ctx, "/bin/bash", hook, "fake", event)
-	command.Env = pendingWaitHookEnvironment(wrapper, canonical)
+	command.Env = pendingWaitHookEnvironment(wrapper, canonical, now)
 	command.Stdin = strings.NewReader(payload)
 	command.Stdout, command.Stderr = stdout, stderr
 	runErr := command.Run()
@@ -1001,6 +1007,19 @@ func runPendingWaitHook(t *testing.T, hook, wrapper, canonical, event, payload, 
 			label, runErr, closeStdoutErr, closeStderrErr, stdoutErr, stderrErr, upCommandErr, upCommandData, stdoutData, stderrData)
 	}
 	return installedHookResult{stdout: string(stdoutData), stderr: string(stderrData), upCommand: strings.TrimSpace(string(upCommandData))}
+}
+
+func pendingWaitFixtureNow(t *testing.T, root, waitID string) string {
+	t.Helper()
+	row, _, err := metarun.FindWaiterByID(root, waitID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	observed, err := time.Parse(time.RFC3339Nano, row.LastObservedAt)
+	if err != nil {
+		t.Fatalf("waiter %s lastObservedAt: %v", waitID, err)
+	}
+	return observed.Add(30 * time.Second).Format(time.RFC3339Nano)
 }
 
 func pendingWaitVerdict(t *testing.T, root, session, mainID string) struct {
@@ -1225,7 +1244,7 @@ func TestPendingWaitInstalledVerdicts(t *testing.T) {
 	}
 	for source, target := range map[string]string{
 		filepath.Join(sourceRoot, "scripts", "agents", "supervision-hook.sh"): hook,
-		filepath.Join(sourceRoot, "scripts", "agents", "evidence-gc.sh"):      evidenceGC,
+		filepath.Join(sourceRoot, "scripts", "receipt.sh"):                    filepath.Join(hookRoot, "scripts", "receipt.sh"),
 		binary: canonical,
 	} {
 		data, readErr := os.ReadFile(source)
@@ -1236,15 +1255,26 @@ func TestPendingWaitInstalledVerdicts(t *testing.T) {
 			t.Fatal(writeErr)
 		}
 	}
+	if err := os.WriteFile(evidenceGC, []byte("#!/bin/sh\nexit 0\n"), 0o755); err != nil {
+		t.Fatal(err)
+	}
 	wrapper := filepath.Join(t.TempDir(), "metasystem-hook-engine")
-	wrapperSource := "#!/bin/sh\nif [ \"${1:-}\" = up ]; then printf '%s\\n' 'up outcome=already-healthy'; exit 0; fi\nexec \"${METASYSTEM_WAIT_REAL_ENGINE:?}\" \"$@\"\n"
+	wrapperSource := `#!/bin/sh
+if [ "${1:-}" = up ]; then printf '%s\n' 'up outcome=already-healthy'; exit 0; fi
+if [ "${1:-}" = health ]; then
+  printf '%s\n' '{"schemaVersion":1,"exitCode":0,"line":"HEALTH healthy — ","interventions":[],"verdict":{"schema":1,"observedAt":"2026-09-17T10:00:00Z","observation":1,"aggregate":"healthy","roles":[],"shouldAlert":false,"findingDigest":""}}'
+  exit 0
+fi
+exec "${METASYSTEM_WAIT_REAL_ENGINE:?}" "$@"
+`
 	if err := os.WriteFile(wrapper, []byte(wrapperSource), 0o755); err != nil {
 		t.Fatal(err)
 	}
+	t.Setenv("METASYSTEM_GOAL_NOW", "2099-01-01T00:00:00Z")
 	command := exec.Command("bash", hook, "fake", "stop")
 	environment := make([]string, 0, len(os.Environ())+3)
 	for _, value := range os.Environ() {
-		if strings.HasPrefix(value, "METASYSTEM_BIN=") || strings.HasPrefix(value, "METASYSTEM_WAIT_REAL_ENGINE=") || strings.HasPrefix(value, "METASYSTEM_FAKE_AGENT_ANCESTOR_PID=") {
+		if strings.HasPrefix(value, "METASYSTEM_BIN=") || strings.HasPrefix(value, "METASYSTEM_WAIT_REAL_ENGINE=") || strings.HasPrefix(value, "METASYSTEM_FAKE_AGENT_ANCESTOR_PID=") || strings.HasPrefix(value, "METASYSTEM_GOAL_NOW=") {
 			continue
 		}
 		environment = append(environment, value)
@@ -1253,11 +1283,26 @@ func TestPendingWaitInstalledVerdicts(t *testing.T) {
 		"METASYSTEM_BIN="+wrapper,
 		"METASYSTEM_WAIT_REAL_ENGINE="+canonical,
 		"METASYSTEM_FAKE_AGENT_ANCESTOR_PID="+fmt.Sprint(os.Getpid()),
+		"METASYSTEM_GOAL_NOW="+pendingWaitFixtureNow(t, hookRoot, strings.Repeat("a", 32)),
 	)
 	command.Stdin = strings.NewReader(`{"session_id":"` + hookSession + `","cwd":"` + hookRoot + `","hook_event_name":"Stop"}`)
 	hookOutput, err := command.CombinedOutput()
-	if err != nil || strings.Contains(string(hookOutput), `"decision":"block"`) {
-		t.Fatalf("fake Stop hook did not allow the registered wait: err=%v output=%s", err, hookOutput)
+	if err != nil || strings.Contains(string(hookOutput), `"decision":"block"`) || strings.Contains(string(hookOutput), "needs supervision repair") {
+		reportText := "unavailable"
+		var payload map[string]string
+		if json.Unmarshal(hookOutput, &payload) == nil {
+			message := payload["reason"]
+			if message == "" {
+				message = payload["systemMessage"]
+			}
+			if at := strings.LastIndex(message, "stop-status --id "); at >= 0 {
+				alias := strings.TrimSpace(message[at+len("stop-status --id "):])
+				if data, _, readErr := report.ReadStopStatus(hookRoot, alias); readErr == nil {
+					reportText = string(data)
+				}
+			}
+		}
+		t.Fatalf("fake Stop hook did not allow the registered wait: err=%v output=%s report=%s", err, hookOutput, reportText)
 	}
 	artifact := filepath.Join(hookRoot, "artifacts", "agents", "supervision", "stop-verdicts", hookSession+".txt")
 	artifactData, err := os.ReadFile(artifact)
@@ -1301,7 +1346,7 @@ func TestPendingWaitFromChildShell(t *testing.T) {
 	})
 
 	startPayload := fmt.Sprintf(`{"session_id":%q,"cwd":%q,"source":"clear"}`, runtimeSession, root)
-	startHook := runPendingWaitHook(t, hook, wrapper, canonical, "start", startPayload, "associated-start")
+	startHook := runPendingWaitHook(t, hook, wrapper, canonical, "start", startPayload, "associated-start", "")
 	announcements := lease.AnnouncementsFor(root, int64(os.Getpid()))
 	if len(announcements) != 1 || announcements[0].MainId != mainID ||
 		announcements[0].RuntimeSession != runtimeSession || announcements[0].SessionId == runtimeSession {
@@ -1436,7 +1481,7 @@ func TestPendingWaitFromChildShell(t *testing.T) {
 	}
 	hookUnassociatedSession := "d4e2c904-c6b1-457a-8ed3-2c1e4a0aef88"
 	controlPayload := fmt.Sprintf(`{"session_id":%q,"cwd":%q,"hook_event_name":"Stop"}`, hookUnassociatedSession, root)
-	controlHook := runPendingWaitHook(t, hook, wrapper, canonical, "stop", controlPayload, "unassociated-stop")
+	controlHook := runPendingWaitHook(t, hook, wrapper, canonical, "stop", controlPayload, "unassociated-stop", "")
 	if !strings.Contains(controlHook.stdout, `"decision":"block"`) {
 		t.Fatalf("unassociated Stop hook did not block: stdout=%s stderr=%s", controlHook.stdout, controlHook.stderr)
 	}
@@ -1455,7 +1500,7 @@ func TestPendingWaitFromChildShell(t *testing.T) {
 	assertRegisteredWaitVerdict(t, pendingWaitVerdict(t, root, runtimeSession, mainID), waitingLine)
 	beforeAllow := strings.Count(string(logData), "stop response decision=allow")
 	allowedPayload := fmt.Sprintf(`{"session_id":%q,"cwd":%q,"hook_event_name":"Stop"}`, runtimeSession, root)
-	allowedHook := runPendingWaitHook(t, hook, wrapper, canonical, "stop", allowedPayload, "associated-stop")
+	allowedHook := runPendingWaitHook(t, hook, wrapper, canonical, "stop", allowedPayload, "associated-stop", pendingWaitFixtureNow(t, root, row.WaitID))
 	if strings.Contains(allowedHook.stdout, `"decision":"block"`) {
 		t.Fatalf("associated Stop hook blocked: stdout=%s stderr=%s", allowedHook.stdout, allowedHook.stderr)
 	}
@@ -1476,7 +1521,9 @@ func TestPendingWaitFromChildShell(t *testing.T) {
 	writeWaiterFixture(t, root, foreign)
 	assertRegisteredWaitVerdict(t, pendingWaitVerdict(t, root, runtimeSession, mainID), waitingLine)
 	beforeAllow = strings.Count(string(logData), "stop response decision=allow")
-	allowedHook = runPendingWaitHook(t, hook, wrapper, canonical, "stop", allowedPayload, "associated-stop-with-hostile-rows")
+	t.Setenv("METASYSTEM_GOAL_NOW", "2099-01-01T00:00:00Z")
+	allowedHook = runPendingWaitHook(t, hook, wrapper, canonical, "stop", allowedPayload, "associated-stop-with-hostile-rows", pendingWaitFixtureNow(t, root, row.WaitID))
+	t.Setenv("METASYSTEM_GOAL_NOW", "")
 	if strings.Contains(allowedHook.stdout, `"decision":"block"`) {
 		t.Fatalf("hostile rows changed the associated Stop: stdout=%s stderr=%s", allowedHook.stdout, allowedHook.stderr)
 	}
@@ -1567,7 +1614,7 @@ func TestPendingWaitFromChildShell(t *testing.T) {
 	dead.Pid, dead.PidStartedAt = int64(sleeper.Process.Pid), sleeperExact.StartedAt.Unix()
 	dead.PidStartedAtMicro, dead.PidStartTicks, dead.BootID = sleeperExact.StartedAt.UnixMicro(), sleeperExact.StartTicks, sleeperExact.BootID
 	writeWaiterFixture(t, root, dead)
-	runPendingWaitHook(t, hook, wrapper, canonical, "stop", allowedPayload, "associated-stop-with-dead-waiter")
+	runPendingWaitHook(t, hook, wrapper, canonical, "stop", allowedPayload, "associated-stop-with-dead-waiter", "")
 	logData, err = os.ReadFile(hookLog)
 	if err != nil {
 		t.Fatalf("associated dead-waiter Stop hook log=%s err=%v", logData, err)
@@ -1581,7 +1628,7 @@ func TestPendingWaitFromChildShell(t *testing.T) {
 
 	beforeBlock = strings.Count(string(logData), "stop response decision=block")
 	absentPayload := fmt.Sprintf(`{"cwd":%q,"hook_event_name":"Stop"}`, root)
-	absentHook := runPendingWaitHook(t, hook, wrapper, canonical, "stop", absentPayload, "absent-session-stop")
+	absentHook := runPendingWaitHook(t, hook, wrapper, canonical, "stop", absentPayload, "absent-session-stop", "")
 	if !strings.Contains(absentHook.stdout, `"decision":"block"`) {
 		t.Fatalf("sessionless Stop hook did not block: stdout=%s stderr=%s", absentHook.stdout, absentHook.stderr)
 	}
