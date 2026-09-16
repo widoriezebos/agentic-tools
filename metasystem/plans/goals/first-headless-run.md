@@ -1,19 +1,17 @@
 # first-headless-run
 
-- State: approved
+- State: queued
 - Priority: 2
 - Sequence: 21
 - Intent: Run the metasystem headless for real: on m0, with no Claude session on top, the mission runner (family metasystem mission, cmd/metasystem/mission.go, so far exercised only through its fake host in scripts/agents/dispatch-fixtures.sh) picks one approved tier-2 goal, composes its brief, dispatches the build and the review, folds or defers findings, lands the result and talks to Wido through the fleet conversation channel where a severe finding needs his word; every defect the run surfaces is fixed forward as its own tier-1 or tier-2 item the same day; the run is recorded, and its landing on its own is the proof that the machines can be headless.
 - Origin: main
 - Next step: INTENT: obtain the first limited real headless feature-delivery receipt from the existing mission runner on the pinned machine, without a supervising chat. SCOPE: this proves one feature only; it cannot conclude sustained headless-fleet readiness. CONSTRAINTS: preserve the approved goal budget and machine pin, use a supported host whose current health/launch preflight passes, and retain the exact goal approval, contract, birth baseline, claim, job/review and landing records. The September 6 aborted/hung attempt is retained in history; its night-specific manual command sequence is evidence to recheck, never a standing startup procedure. host-runtime-setup, metasystem-stop-verb and mission-birth-baseline-from-dirty-worktree own the corresponding machinery; do not rebuild them or steal their claims. Use their current supported verbs and explicit refusals, never terminal tricks. This diagnostic may proceed before every fleet reliability item finishes; each exposed defect has a separate owner and is not silently waived. Consecutive delivery and omitted-stage negative proofs belong to headless-continuous-delivery-proof; multi-node and brain proof belong to headless-fleet-coordination-proof.
 - OpenedAt: 2026-09-03T12:10:50Z
-- Revision: 40
+- Revision: 41
 - Labels: headless-fleet, headless-proof
 - Arc: headless-fleet
 - Pinned: m1
-- Budget: elapsedLimit=1d attemptLimit=10 reservedJobMinutesLimit=720 activeJobLimit=1 reviewRoundLimit=2
 - BudgetExceptions: 0
-- Approved: by=human:Wido at=2026-09-06T15:46:29Z revision=17 opid=WFVEHJPWDM290E8WVX9EDB8B1S-m1-7cd0bd60 authority=proven digest=f3221db8cdf77daede3db76fbf4c861511fd0b0b0724f96c140d89180762c395
 
 History:
 - 2026-09-03T12:10:50Z Y3RZW9JRD4KE9WTRF7TFX4SX73-m1-7bb1546e open actor=m1+main-1788333680-2840-7f79f4 targets=first-headless-run
@@ -56,4 +54,5 @@ History:
 - 2026-09-13T07:44:44Z TJ1TBGQ70A0PZH04C34J9P51C5-m1e-c6925449 set-priority actor=human:Wido targets=first-headless-run,fleet-channel-gateway,fleet-join-bootstrap,fleet-pull,headless-continuous-delivery-proof,headless-fleet-coordination-proof,metasystem-stop-escalation-proofs,mission-birth-baseline-from-dirty-worktree,never-idle-ironclad,recovery-rehearsal,seat-mutual-awareness reason=priority-order subject=metasystem-stop-escalation-proofs from=2:24 to=2:23 requested-sequence=39
 - 2026-09-13T08:21:48Z NRD0NSKR47C7ESV46MD65VP4V0-m1-c6925449 done actor=human:Wido targets=commit-goal-binding,first-headless-run,fleet-channel-gateway,fleet-join-bootstrap,fleet-pull,gate-governance-records,headless-continuous-delivery-proof,headless-fleet-coordination-proof,idle-every-runtime-enforcement,landing-design-provenance,merge-stage-critic-close,mission-birth-baseline-from-dirty-worktree,never-idle-ironclad,recovery-rehearsal,recovery-to-good-state,role-context-composition,role-lane-packets,seat-mutual-awareness reason=priority-order from=2:23 to=2:22
 - 2026-09-13T08:23:10Z R328E6Y43B7EEREMEA8T0MVQWG-m1-c6925449 done actor=human:Wido targets=first-headless-run,fleet-channel-gateway,fleet-join-bootstrap,fleet-pull,headless-continuous-delivery-proof,headless-fleet-coordination-proof,idle-every-runtime-enforcement,mission-birth-baseline-from-dirty-worktree,never-idle-ironclad,recovery-rehearsal,recovery-to-good-state,role-lane-packets,seat-mutual-awareness reason=priority-order from=2:22 to=2:21
-Integrity: sha256=3211be0097f4a6f7120893b5b53fd6fd435092abb69c7c95ebf4ac57e4341ab8
+- 2026-09-16T20:33:17Z 4MCR019941D9SZHR8GD2SAR97E-m1e-c6925449 unapprove actor=human:Wido targets=first-headless-run reason=Wido 2026-09-16 22:40 CEST: clean house on priority 1 first, then a few human convenience features; every priority 2+ goal is unapproved until then
+Integrity: sha256=99893588e179fd435f3c8dc1d4118d3712393cf5b5c1f3d418de350109ab3de0
