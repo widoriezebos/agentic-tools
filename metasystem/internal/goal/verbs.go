@@ -11,6 +11,7 @@ package goal
 // and actor. Arc cascades land with the arcs layer.
 
 import (
+	"encoding/json"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -26,6 +27,8 @@ import (
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/fixtureauth"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/governance"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/humanauthority"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/proofrun"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/readsubject"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/refusal"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/retrodebt"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/testpolicy"
@@ -1735,8 +1738,12 @@ func DeferFindings(r VerbRequest, id string, obligations []ReviewObligation) (Pu
 		}, Validate: func(commit string) error { return ValidateCommit(r.Endpoint.Root, commit) }})
 }
 
-func DischargeReviewObligation(r VerbRequest, id, finding, chain, by, citation string) (PublishResult, error) {
-	if finding == "" || chain == "" || by == "" || strings.TrimSpace(citation) == "" {
+type DischargeEvidence struct {
+	Root, ImplementationChain, Artifact, ResultRunID, CriticRoot string
+}
+
+func DischargeReviewObligation(r VerbRequest, id, finding, chain, by, citation string, supplied ...DischargeEvidence) (PublishResult, error) {
+	if finding == "" || chain == "" || by == "" || strings.TrimSpace(citation) == "" && len(supplied) == 0 {
 		return PublishResult{}, fmt.Errorf("discharge-review-obligation requires --finding, --chain, --by, and --test")
 	}
 	return Publish(r.Endpoint, PublishRequest{Opid: r.opid(), Machine: r.Actor.Machine, Lineage: r.Actor.Lineage,
@@ -1765,6 +1772,19 @@ func DischargeReviewObligation(r VerbRequest, id, finding, chain, by, citation s
 			if matchErr != nil {
 				return nil, matchErr
 			}
+			obligation := f.ReviewObligations[match]
+			if obligation.Fixture != "" {
+				var evidence DischargeEvidence
+				if len(supplied) == 1 {
+					evidence = supplied[0]
+				}
+				if err := proveFixtureObligation(evidence, obligation); err != nil {
+					return nil, err
+				}
+				citation = "proved: " + obligation.Fixture + " chain=" + evidence.ImplementationChain + " critic=" + evidence.CriticRoot + " result=" + evidence.ResultRunID
+			} else if strings.TrimSpace(citation) == "" {
+				return nil, fmt.Errorf("discharge-review-obligation requires --finding, --chain, --by, and --test")
+			}
 			f.ReviewObligations[match].State = "discharged"
 			f.ReviewObligations[match].Test = citation
 			touch(f, r, "discharge-review-obligation", []string{id})
@@ -1776,6 +1796,75 @@ func DischargeReviewObligation(r VerbRequest, id, finding, chain, by, citation s
 		}, Validate: func(commit string) error { return ValidateCommit(r.Endpoint.Root, commit) }})
 }
 
+func proveFixtureObligation(evidence DischargeEvidence, obligation ReviewObligation) error {
+	prefix := fmt.Sprintf("discharge-review-obligation obligation finding=%s chain=%s", obligation.Finding, obligation.Chain)
+	refuse := func(format string, args ...any) error { return fmt.Errorf(prefix+": "+format, args...) }
+	for _, field := range []struct{ name, value string }{{"--root", evidence.Root}, {"--implementation-chain", evidence.ImplementationChain}, {"--artifact", evidence.Artifact}, {"--result", evidence.ResultRunID}, {"--critic", evidence.CriticRoot}} {
+		if field.value == "" {
+			return refuse("requires %s", field.name)
+		}
+	}
+	if evidence.Artifact != obligation.Artifact {
+		return refuse("mismatched --artifact: got %q want %q", evidence.Artifact, obligation.Artifact)
+	}
+	groupID := strings.TrimPrefix(obligation.Fixture, "group:")
+	if groupID == "" || strings.ContainsAny(groupID, " \t\r\n") {
+		return refuse("the obligation's fixture must name one test group")
+	}
+	_, result, err := proofrun.GovernedTestResult(evidence.Root, evidence.ResultRunID)
+	if err != nil {
+		return refuse("cannot use governed result %s: %v", evidence.ResultRunID, err)
+	}
+	var match proofrun.GroupResult
+	matches := 0
+	for _, group := range result.Groups {
+		if group.ID == groupID {
+			match, matches = group, matches+1
+		}
+	}
+	if matches != 1 {
+		return refuse("requires exactly one result group %q", groupID)
+	}
+	if match.Status == "reused" {
+		return refuse("a reused group result does not prove the obligation's fixture ran")
+	}
+	if !match.CollectionComplete || match.Status != "passed" {
+		return refuse("requires a complete passed result group %q", groupID)
+	}
+	data, err := os.ReadFile(filepath.Join(evidence.Root, "artifacts", "agents", "jobs", evidence.CriticRoot+".json"))
+	if err != nil {
+		return refuse("cannot read critic root %s: %v", evidence.CriticRoot, err)
+	}
+	var critic map[string]any
+	if err := json.Unmarshal(data, &critic); err != nil {
+		return refuse("cannot decode critic root %s: %v", evidence.CriticRoot, err)
+	}
+	jobID, _ := critic["jobId"].(string)
+	if jobID != evidence.CriticRoot || critic["role"] != "code-critic" {
+		return refuse("requires critic root %s to be its own code-critic record", evidence.CriticRoot)
+	}
+	reviewsChain := critic["reviews"] == evidence.ImplementationChain
+	if reviews, ok := critic["reviews"].([]any); ok {
+		for _, review := range reviews {
+			reviewsChain = reviewsChain || review == evidence.ImplementationChain
+		}
+	}
+	if !reviewsChain {
+		return refuse("requires critic root %s to review implementation chain %s", evidence.CriticRoot, evidence.ImplementationChain)
+	}
+	if closed, _ := critic["chainClosed"].(bool); !closed {
+		return refuse("requires critic root %s to have a closed chain", evidence.CriticRoot)
+	}
+	clean, err := readsubject.CleanRegister(critic["findingRegister"])
+	if err != nil || !clean {
+		return refuse("requires critic root %s to have a clean finding register: %v", evidence.CriticRoot, err)
+	}
+	closure, present, err := readsubject.ReadClosure(critic)
+	if err != nil || !present || closure.Mechanism != "clean" || closure.CriticRoot != jobID {
+		return refuse("requires critic root %s to carry its clean closure: %v", evidence.CriticRoot, err)
+	}
+	return nil
+}
 func reviewObligationMatch(obligations []ReviewObligation, finding, chain string) (int, error) {
 	var matches []int
 	for i, obligation := range obligations {

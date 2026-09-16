@@ -635,10 +635,12 @@ func critiqueRegisterClose(repoRoot, rootJob string, deferFindings deferReviewOb
 			for _, i := range unresolved {
 				f := register[i]
 				test := strings.Split(f.Title, "\n")[0]
+				fixture := ""
 				if useFixture {
 					test = f.Fixture
+					fixture = f.Fixture
 				}
-				obligations = append(obligations, goal.ReviewObligation{Finding: f.FindingID, Chain: rootJob, Artifact: f.Artifact, Test: "prove: " + test, State: "open"})
+				obligations = append(obligations, goal.ReviewObligation{Finding: f.FindingID, Chain: rootJob, Artifact: f.Artifact, Test: "prove: " + test, Fixture: fixture, State: "open"})
 			}
 			opid, err := deferFindings(repoRoot, rootJob, goalID, machine, lineage, epoch, obligations)
 			if err != nil {

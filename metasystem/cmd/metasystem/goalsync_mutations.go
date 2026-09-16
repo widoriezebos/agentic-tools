@@ -400,6 +400,7 @@ func syncStoppingReqWithProof(verb, root, by, lineageFlag string, observedProof 
 var (
 	proveSyncReqHumanAuthority    = humanauthority.Prove
 	proveSyncReqTerminalAuthority = humanauthority.ProveTerminal
+	dischargeReviewObligation     = goal.DischargeReviewObligation
 )
 
 func terminalEnrollmentLineage(enrollment humanauthority.Enrollment) string {
@@ -593,7 +594,7 @@ type syncFlags struct {
 	blocks, under, tiers, verbs, expires, verified                           string
 	lineage, digest, elapsedLimit, approvedRef, temporaryWord, reviewBy      string
 	budgetBox, confirm, risk, basis, evidence                                string
-	finding, chain, why, test                                                string
+	finding, chain, why, test, implementationChain, artifact, result, critic string
 	attemptLimit, reservedJobMinutesLimit, activeJobLimit, reviewRoundLimit  int64
 	tier                                                                     uint
 	labels, unlabels, ids                                                    repeatedStrings
@@ -642,6 +643,10 @@ func parseSyncFlags(name string, args []string) (*syncFlags, bool) {
 	fs.StringVar(&f.basis, "basis", "", "plain-English basis for the four risk answers")
 	fs.StringVar(&f.evidence, "evidence", "", "misclassification evidence reference")
 	fs.StringVar(&f.test, "test", "", "test citation")
+	fs.StringVar(&f.implementationChain, "implementation-chain", "", "implementation chain carrying the fix")
+	fs.StringVar(&f.artifact, "artifact", "", "changed artifact")
+	fs.StringVar(&f.result, "result", "", "retained governed test result")
+	fs.StringVar(&f.critic, "critic", "", "clean code-critic root")
 	fs.StringVar(&f.lineage, "lineage", "", "this coordinator's lineage (or export METASYSTEM_OWNER_LINEAGE)")
 	fs.StringVar(&f.digest, "digest", "", "the declaration's freshness digest (declare-free)")
 	fs.StringVar(&f.approvedRef, "approved-ref", "", "recorded human approval reference for an over-norm goal budget")
@@ -718,8 +723,8 @@ func parseSyncFlags(name string, args []string) (*syncFlags, bool) {
 
 func runGoalDischargeReviewObligation(args []string) int {
 	f, ok := parseSyncFlags("discharge-review-obligation", args)
-	if !ok || f.id == "" || f.finding == "" || f.chain == "" || f.by == "" || f.test == "" {
-		fmt.Fprintln(os.Stderr, "goal discharge-review-obligation needs --id, --finding, --chain, --by, and --test")
+	if !ok || f.id == "" || f.finding == "" || f.chain == "" || f.by == "" || f.test == "" && (f.chain == goal.HumanCarriedChain || f.implementationChain == "" || f.artifact == "" || f.result == "" || f.critic == "") {
+		fmt.Fprintln(os.Stderr, "goal discharge-review-obligation needs --id, --finding, --chain, and --by; non-fixture obligations also need --test, while fixture obligations need --implementation-chain, --artifact, --result, and --critic")
 		return 2
 	}
 	if f.chain == goal.HumanCarriedChain {
@@ -741,7 +746,8 @@ func runGoalDischargeReviewObligation(args []string) int {
 	if req.CallerClass == lease.ClassHuman {
 		req.Actor.Human = f.by
 	}
-	res, err := goal.DischargeReviewObligation(req, f.id, f.finding, f.chain, f.by, f.test)
+	evidence := goal.DischargeEvidence{Root: f.root, ImplementationChain: f.implementationChain, Artifact: f.artifact, ResultRunID: f.result, CriticRoot: f.critic}
+	res, err := dischargeReviewObligation(req, f.id, f.finding, f.chain, f.by, f.test, evidence)
 	return printSyncResult(res, err)
 }
 

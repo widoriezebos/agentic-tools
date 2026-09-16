@@ -168,7 +168,7 @@ func (r RiskRecord) scoreArgs() string {
 	return fmt.Sprintf("severity=%d,novelty=%d,exposure=%d,accumulation=%d", r.Severity, r.Novelty, r.Exposure, r.Accumulation)
 }
 
-type ReviewObligation struct{ Finding, Chain, Artifact, Test, State string }
+type ReviewObligation struct{ Finding, Chain, Artifact, Test, Fixture, State string }
 type AcceptedRiskRecord struct{ Finding, Chain, By, Opid string }
 
 // GoalNormApprovalClaim is the durable scope-norm exception beside a budget.
@@ -1036,12 +1036,17 @@ func parseFileField(f *GoalFile, field string, seen map[string]bool, addProblem 
 			addProblem("ReviewObligation: test= %v", err)
 			return
 		}
+		without, fixture, _, err := cutQuotedRecordField(without, "fixture")
+		if err != nil {
+			addProblem("ReviewObligation: fixture= %v", err)
+			return
+		}
 		rec, err := parseKVRecord(without, []string{"finding", "chain", "state"}, nil, "")
 		if err != nil {
 			addProblem("ReviewObligation: %v", err)
 			return
 		}
-		f.ReviewObligations = append(f.ReviewObligations, ReviewObligation{Finding: rec["finding"], Chain: rec["chain"], Artifact: artifact, Test: test, State: rec["state"]})
+		f.ReviewObligations = append(f.ReviewObligations, ReviewObligation{Finding: rec["finding"], Chain: rec["chain"], Artifact: artifact, Test: test, Fixture: fixture, State: rec["state"]})
 	case "AcceptedRisk":
 		rec, err := parseKVRecord(value, []string{"finding", "chain", "by", "opid"}, nil, "")
 		if err != nil {
@@ -1658,7 +1663,11 @@ func RenderFile(f *GoalFile) []byte {
 			o.Triggers.TestDiscrimination, o.Triggers.CorrelatedAssumptionRisk, o.Triggers.AuthorityScopeChange, o.Triggers.DestructiveReach)
 	}
 	for _, obligation := range f.ReviewObligations {
-		fmt.Fprintf(&b, "- ReviewObligation: finding=%s chain=%s artifact=%s test=%s state=%s\n", obligation.Finding, obligation.Chain, strconv.Quote(obligation.Artifact), strconv.Quote(obligation.Test), obligation.State)
+		fmt.Fprintf(&b, "- ReviewObligation: finding=%s chain=%s artifact=%s test=%s", obligation.Finding, obligation.Chain, strconv.Quote(obligation.Artifact), strconv.Quote(obligation.Test))
+		if obligation.Fixture != "" {
+			fmt.Fprintf(&b, " fixture=%s", strconv.Quote(obligation.Fixture))
+		}
+		fmt.Fprintf(&b, " state=%s\n", obligation.State)
 	}
 	for _, risk := range f.AcceptedRisks {
 		fmt.Fprintf(&b, "- AcceptedRisk: finding=%s chain=%s by=%s opid=%s\n", risk.Finding, risk.Chain, risk.By, risk.Opid)
