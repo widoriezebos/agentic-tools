@@ -63,7 +63,8 @@ func (KernelProber) ReadStart(pid int64) (Exact, Liveness, error) {
 		}
 		return Exact{}, Unknown, fmt.Errorf("identity: read /proc/%d/stat: %w", pid, err)
 	}
-	startTicks, _, err := parseProcStat(string(stat))
+	statLine := string(stat)
+	startTicks, _, err := parseProcStat(statLine)
 	if err != nil {
 		return Exact{}, Unknown, fmt.Errorf("identity: /proc/%d/stat: %w", pid, err)
 	}
@@ -79,7 +80,7 @@ func (KernelProber) ReadStart(pid int64) (Exact, Liveness, error) {
 		return Exact{}, Unknown, fmt.Errorf("identity: %w", err)
 	}
 	started := time.Unix(boot, 0).Add(time.Duration(startTicks) * (time.Second / userHZ))
-	return Exact{Pid: pid, StartedAt: started, StartTicks: startTicks, BootID: bootIdentity}, Alive, nil
+	return Exact{Pid: pid, StartedAt: started, StartTicks: startTicks, BootID: bootIdentity, Zombie: procStatZombie(statLine)}, Alive, nil
 }
 
 func (KernelProber) ReadArgv(pid int64) ([]string, bool) {
@@ -161,6 +162,11 @@ func parseProcStat(stat string) (startTicks int64, ppid int64, err error) {
 		return 0, 0, fmt.Errorf("starttime unparsable: %w", err)
 	}
 	return startTicks, ppid, nil
+}
+
+func procStatZombie(stat string) bool {
+	closing := strings.LastIndexByte(stat, ')')
+	return closing >= 0 && strings.HasPrefix(strings.TrimSpace(stat[closing+1:]), "Z ")
 }
 
 // bootTimeEpoch reads btime (boot time, epoch seconds) from /proc/stat.

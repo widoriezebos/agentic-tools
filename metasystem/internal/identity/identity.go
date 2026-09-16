@@ -36,6 +36,7 @@ type Exact struct {
 	StartedAt  time.Time // kernel-exact (microseconds on darwin, 10ms ticks on linux)
 	StartTicks int64     // linux: /proc/<pid>/stat field 22, clock-step-immune; 0 elsewhere
 	BootID     string    // linux: /proc/sys/kernel/random/boot_id; "" elsewhere
+	Zombie     bool      // the process has exited and awaits collection by its parent
 	Argv       []string  // valid only when ArgvKnown; see below
 	Environ    []string  // valid only when EnvironKnown
 	Exe        string    // valid only when ExeKnown

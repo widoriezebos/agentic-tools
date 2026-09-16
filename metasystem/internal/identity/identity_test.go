@@ -55,6 +55,46 @@ func TestProbeReapedChildIsDead(t *testing.T) {
 	}
 }
 
+func TestProbeZombieKeepsItsExactLiveIdentity(t *testing.T) {
+	readPipe, writePipe, err := os.Pipe()
+	if err != nil {
+		t.Fatal(err)
+	}
+	command := exec.Command("/bin/sh", "-c", "read value")
+	command.Stdin = readPipe
+	if err := command.Start(); err != nil {
+		t.Fatal(err)
+	}
+	_ = readPipe.Close()
+	defer func() { _ = command.Process.Kill(); _, _ = command.Process.Wait() }()
+	pid := int64(command.Process.Pid)
+	running, state, err := (KernelProber{}).Probe(pid)
+	if err != nil || state != Alive || running.Zombie {
+		t.Fatalf("running child: state=%v zombie=%v err=%v", state, running.Zombie, err)
+	}
+	_ = writePipe.Close()
+
+	var zombie Exact
+	deadline := time.Now().Add(wiringBound)
+	for !zombie.Zombie {
+		zombie, state, err = (KernelProber{}).Probe(pid)
+		if err == nil && state == Dead {
+			t.Fatal("unreaped child probed dead")
+		}
+		if time.Now().After(deadline) {
+			t.Fatalf("child did not become a readable zombie: state=%v err=%v", state, err)
+		}
+		<-time.After(10 * time.Millisecond)
+	}
+	if state != Alive || err != nil || !SameIdentity(zombie, running.Ref()) {
+		t.Fatalf("zombie lost its exact live identity: state=%v exact=%+v err=%v", state, zombie, err)
+	}
+	_ = command.Wait()
+	if _, state, err := (KernelProber{}).Probe(pid); err != nil || state != Dead {
+		t.Fatalf("waited child: state=%v err=%v", state, err)
+	}
+}
+
 func TestProbeRejectsInvalidPid(t *testing.T) {
 	if _, state, err := (KernelProber{}).Probe(0); state != Unknown || err == nil {
 		t.Fatal("pid 0 must be Unknown with an error, never a verdict")

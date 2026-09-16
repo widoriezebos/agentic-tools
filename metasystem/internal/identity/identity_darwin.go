@@ -49,6 +49,7 @@ func BootClock() (string, time.Duration, error) {
 // { tv_sec int64; tv_usec int32; pad int32 } on 64-bit darwin.
 const kinfoStartSecOffset = 0
 const kinfoStartUsecOffset = 8
+const kinfoStatOffset, zombieStatus = 36, 5 // SZOMB is 5 in Darwin's sys/proc.h.
 
 func (KernelProber) ReadStart(pid int64) (Exact, Liveness, error) {
 	if pid < 1 {
@@ -66,7 +67,7 @@ func (KernelProber) ReadStart(pid int64) (Exact, Liveness, error) {
 	if len(raw) == 0 {
 		return Exact{}, Dead, nil
 	}
-	if len(raw) < kinfoStartUsecOffset+4 {
+	if len(raw) <= kinfoStatOffset {
 		return Exact{}, Unknown, fmt.Errorf("identity: kern.proc.pid %d returned %d bytes", pid, len(raw))
 	}
 	sec := int64(binary.LittleEndian.Uint64(raw[kinfoStartSecOffset:]))
@@ -74,7 +75,7 @@ func (KernelProber) ReadStart(pid int64) (Exact, Liveness, error) {
 	if sec <= 0 || usec < 0 || usec > 999999 {
 		return Exact{}, Unknown, fmt.Errorf("identity: pid %d start time is implausible (sec=%d usec=%d)", pid, sec, usec)
 	}
-	exact := Exact{Pid: pid, StartedAt: time.Unix(sec, int64(usec)*1000)}
+	exact := Exact{Pid: pid, StartedAt: time.Unix(sec, int64(usec)*1000), Zombie: raw[kinfoStatOffset] == zombieStatus}
 	return exact, Alive, nil
 }
 
