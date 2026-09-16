@@ -1,6 +1,6 @@
 # lease-sweep-death-evidence
 
-- State: approved
+- State: queued
 - Priority: 2
 - Sequence: 34
 - Risk: severity=2 novelty=1 exposure=2 accumulation=1 basis="severity 2: a stale job stamped ended while its group still lives leaves a custody hole, nothing lands wrongly; novelty 1: the mechanism is designed and critiqued in plans/dispatch-cap-settlement-design.md section 1.9; exposure 2: every lease sweep on every seat; accumulation 1: one sweep path"
@@ -9,11 +9,9 @@
 - Origin: main
 - Next step: Appetite: 4h, full ladder. Split out of dispatch-cap-necessity on 2026-09-02 by m1b (R-4: residue demands a token). Mechanism already designed and critiqued: plans/dispatch-cap-settlement-design.md revision 4 section 1.9 - after a successful SIGTERM poll group absence every 50ms for 2s, re-prove ownership and SIGKILL, poll 2s, final absence check via the group-absence function exported in place from internal/supervise/arming.go (lease may import supervise: measured with go list, lease -> steward -> supervise); when the group survives, concludeStaleJob writes nothing, the sweep returns the named error, the takeover refuses its sweep stamp and the next claim, succession or up retries; the dispatch reap path stamps timeout under its own ladder once the cap expires. Test: no endedAt stamp while the group lives. A builder starts from that section.
 - OpenedAt: 2026-09-02T18:37:50Z
-- Revision: 198
+- Revision: 199
 - Pinned: m1b
-- Budget: elapsedLimit=4h attemptLimit=6 reservedJobMinutesLimit=720 activeJobLimit=1 reviewRoundLimit=2
 - BudgetExceptions: 0
-- Approved: by=human:Wido at=2026-09-13T06:42:19Z revision=87 opid=79AHQJTXJFWWEE31DQEK0ZPSW8-m1e-c6925449 authority=proven digest=885cc6b35d6e238a4580790e28506dc7ce395bea9e49d0e74452ab04f1adac3f
 
 History:
 - 2026-09-02T18:37:50Z DDVQT0QE5B3Z2VM0DBN9YSGE4X-m1b-fad3674e open actor=m1b+main-1788333346-60696-6a3256 targets=lease-sweep-death-evidence
@@ -214,4 +212,5 @@ History:
 - 2026-09-16T20:31:03Z STZ81SQF520MYKDNNXK9KW53BD-m1e-c6925449 set-priority actor=human:Wido targets=actionable-metrics,census-lifecycle-scenario-holds-under-load,chain-landing-carries-the-reviewed-diff,dispatch-bases-chains-on-the-remote-tip,events-package-has-a-test-group,fixture-repo-copies-exclude-the-artifacts-store,fixture-waits-name-their-producer,human-authority-surface-runs-its-cmd-tests,human-wait-does-not-consume-goal-budget,lease-sweep-death-evidence,machine-concurrency-governor,metasystem-stop-escalation-proofs,metasystem-stop-fleet-form,new-elapsed-budgets-use-explicit-hours,pipelines-never-lose-a-truncated-producer,repo-root-paths-ride-agent-commits-unjudged,run-scoped-build-caches-have-a-janitor,skipped-test-fails-its-group-on-the-other-os,token-spend-fence,watcher-repair-request-never-names-current,winddown-census-handoff-leak reason=priority-order subject=watcher-repair-request-never-names-current from=1:56 to=1:55 requested-sequence=32
 - 2026-09-16T20:31:11Z Z13WSWGM6M2BZEEHMWC8N808X2-m1e-c6925449 set-priority actor=human:Wido targets=actionable-metrics,census-lifecycle-scenario-holds-under-load,chain-landing-carries-the-reviewed-diff,dispatch-bases-chains-on-the-remote-tip,events-package-has-a-test-group,fixture-repo-copies-exclude-the-artifacts-store,fixture-waits-name-their-producer,human-authority-surface-runs-its-cmd-tests,human-wait-does-not-consume-goal-budget,lease-sweep-death-evidence,machine-concurrency-governor,metasystem-stop-escalation-proofs,metasystem-stop-fleet-form,new-elapsed-budgets-use-explicit-hours,pipelines-never-lose-a-truncated-producer,repo-root-paths-ride-agent-commits-unjudged,run-scoped-build-caches-have-a-janitor,skipped-test-fails-its-group-on-the-other-os,token-spend-fence,winddown-census-handoff-leak reason=priority-order subject=actionable-metrics from=1:55 to=1:54 requested-sequence=33
 - 2026-09-16T20:31:19Z C1DT7Y4C9BRRF4SNSB80SWEFCN-m1e-c6925449 set-priority actor=human:Wido targets=census-lifecycle-scenario-holds-under-load,chain-landing-carries-the-reviewed-diff,dispatch-bases-chains-on-the-remote-tip,events-package-has-a-test-group,fixture-repo-copies-exclude-the-artifacts-store,fixture-waits-name-their-producer,human-authority-surface-runs-its-cmd-tests,human-wait-does-not-consume-goal-budget,lease-sweep-death-evidence,machine-concurrency-governor,metasystem-stop-escalation-proofs,metasystem-stop-fleet-form,new-elapsed-budgets-use-explicit-hours,pipelines-never-lose-a-truncated-producer,repo-root-paths-ride-agent-commits-unjudged,run-scoped-build-caches-have-a-janitor,skipped-test-fails-its-group-on-the-other-os,token-spend-fence,winddown-census-handoff-leak reason=priority-order subject=lease-sweep-death-evidence from=1:54 to=2:34 requested-sequence=34
-Integrity: sha256=202e3721ad20d2efcc44a165f37681eafc728064be0f6ce5c36c29a230ddec54
+- 2026-09-16T20:33:33Z 75DZYG7DC1EAR135KSFMSXBAW8-m1e-c6925449 unapprove actor=human:Wido targets=lease-sweep-death-evidence reason=Wido 2026-09-16 22:40 CEST: clean house on priority 1 first, then a few human convenience features; every priority 2+ goal is unapproved until then
+Integrity: sha256=182d8739d055a49ce896b9b4b2cb2970270e2f62cdc3f284ccb53d8d1d765aeb
