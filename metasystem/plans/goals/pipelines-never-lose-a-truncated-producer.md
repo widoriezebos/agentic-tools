@@ -1,6 +1,6 @@
 # pipelines-never-lose-a-truncated-producer
 
-- State: approved
+- State: queued
 - Priority: 2
 - Sequence: 50
 - Risk: severity=3 novelty=1 exposure=3 accumulation=2 basis="severity 3: the witness gate runs git archive into tar under pipefail on a real landing path, so a tree crossing the pipe-buffer window refuses real landings with a false tar write error; novelty 1: a known SIGPIPE-under-pipefail class; exposure 3: every seat's landings through the witness gate plus the land and supervision beds; accumulation 2: the failure comes and goes with tree size, so it recurs silently as the tree grows"
@@ -9,10 +9,8 @@
 - Origin: human
 - Next step: Slice 1 LANDED 9bc768c0 (m1c): witness-gate.sh:144 and :147 and supervision-fixtures.sh:2528 archive to a file. Slice 2 LANDED 71b96a02 (m1c): every producer-into-early-exiting-reader pipe in supervision-fixtures.sh reads a here-string or the file, 29 executable sites down to 1, the marked archive reproduction; a race reproduction forces the failure without size or load (producer writes its match, stalls, writes a second chunk: piped form fails with producer 141, here-string passes, under macOS bash 3.2); stop-hook-monitor and rearm-provenance, red on trunk before, pass. Conforming site LANDED 1f5adda9 (m1b): cmd/metasystem's single draining capture helper and a source check refusing a swapped standard stream elsewhere, which cured the wait-restart and wait-stop-fake hangs; its check matches by variable name, so a pipe declared with var, held in an array or returned from a helper slips past, and this goal's gate check must cover those spellings. In flight elsewhere: m1b's round 24 (land-fixtures.sh, file-based archives) and round 26 (supervision-hook-fixtures.sh early-exit pipes). Remaining for this goal once those land: the gate check refusing a producer piped into an early-exiting reader under pipefail regardless of size, and a swapped standard stream outside a draining helper, with a declared-exception form.
 - OpenedAt: 2026-09-14T17:06:35Z
-- Revision: 107
-- Budget: elapsedLimit=1d attemptLimit=10 reservedJobMinutesLimit=1200 activeJobLimit=1 reviewRoundLimit=3
+- Revision: 108
 - BudgetExceptions: 0
-- Approved: by=human:Wido at=2026-09-14T18:59:29Z revision=5 opid=NEBVKN9S3QHTP4KX374BG45AJM-m1e-c6925449 authority=proven digest=158307a470b9a7552005be6ab4b3143abf8070de868128a146fc0e05c44104d6
 
 History:
 - 2026-09-14T17:06:35Z BZGJWQGTEKXMPXCJXYHQ2VFGQ5-m1e-c6925449 open actor=human:Wido targets=pipelines-never-lose-a-truncated-producer
@@ -122,4 +120,5 @@ History:
 - 2026-09-16T20:32:51Z 767PDWBW38QGNKWQNPP2ZXQZ3H-m1e-c6925449 set-priority actor=human:Wido targets=census-lifecycle-scenario-holds-under-load,events-package-has-a-test-group,human-wait-does-not-consume-goal-budget,new-elapsed-budgets-use-explicit-hours,pipelines-never-lose-a-truncated-producer reason=priority-order subject=human-wait-does-not-consume-goal-budget from=1:57 to=1:56 requested-sequence=48
 - 2026-09-16T20:32:55Z GS9W7K77HQFFN3G21X02BVJ30P-m1e-c6925449 set-priority actor=human:Wido targets=census-lifecycle-scenario-holds-under-load,events-package-has-a-test-group,new-elapsed-budgets-use-explicit-hours,pipelines-never-lose-a-truncated-producer reason=priority-order subject=new-elapsed-budgets-use-explicit-hours from=1:56 to=1:55 requested-sequence=49
 - 2026-09-16T20:32:59Z GBTR7QRDKCMEGQ2H9JTXRXFYS4-m1e-c6925449 set-priority actor=human:Wido targets=census-lifecycle-scenario-holds-under-load,pipelines-never-lose-a-truncated-producer reason=priority-order subject=pipelines-never-lose-a-truncated-producer from=1:55 to=2:50 requested-sequence=50
-Integrity: sha256=ce8ced9dc33c57527f92316277f49cc4e89fae1dccb908ecf1881a56458b84fe
+- 2026-09-16T20:35:03Z AZBGWAB9SPBECX708CF13VKFA9-m1e-c6925449 unapprove actor=human:Wido targets=pipelines-never-lose-a-truncated-producer reason=Wido 2026-09-16 22:40 CEST: clean house on priority 1 first, then a few human convenience features; every priority 2+ goal is unapproved until then
+Integrity: sha256=84008f105d15dbfcc39658bbbde3456d306f1a76d59faf1e979d88158efdb121
