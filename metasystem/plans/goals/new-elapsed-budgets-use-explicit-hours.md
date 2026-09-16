@@ -2,14 +2,14 @@
 
 - State: approved
 - Priority: 1
-- Sequence: 56
+- Sequence: 55
 - Risk: severity=3 novelty=2 exposure=3 accumulation=1 basis="severity 3: budget enforcement can stop lawful work or permit unbounded time; novelty 2: a bounded change to existing ledger and elapsed projection; exposure 3: shared goal execution across seats; accumulation 1: each episode is evaluated independently, with no new aggregate accounting"
 - Tier: 3
 - Intent: New elapsed budget inputs in hours and minutes are stored verbatim, so 24h stays 24h. Reject newly supplied d tokens with an explanation of the eight-hour legacy versus calendar-day ambiguity and an explicit-hour alternative. Preserve historical d records at their original eight-hour interpretation, including journal recovery; do not silently reinterpret or migrate a live budget.
 - Origin: main
 - Next step: Second independent successor of goal:breach-clock-and-budget-honesty. Reuse accepted Fix 2 and its review decisions in plans/breach-clock-and-budget-honesty-design.md. Retarget all actual input/replay writers and their tests to current main. Wait for goal:budget-raises-preserve-elapsed-origin before operational budget corrections, which otherwise reset the clock. Keep rollout deliberate with old and new binaries; do not absorb human-wait or quota work.
 - OpenedAt: 2026-09-11T05:37:45Z
-- Revision: 126
+- Revision: 127
 - Labels: breach-clock-successor
 - Pinned: m1c
 - Budget: elapsedLimit=1d attemptLimit=10 reservedJobMinutesLimit=1200 activeJobLimit=1 reviewRoundLimit=3
@@ -143,4 +143,5 @@ History:
 - 2026-09-16T20:32:26Z ECXB1G7RHC8BNFF7JR3JGM3XYK-m1e-c6925449 set-priority actor=human:Wido targets=census-lifecycle-scenario-holds-under-load,dispatch-bases-chains-on-the-remote-tip,events-package-has-a-test-group,human-wait-does-not-consume-goal-budget,metasystem-stop-escalation-proofs,metasystem-stop-fleet-form,new-elapsed-budgets-use-explicit-hours,pipelines-never-lose-a-truncated-producer,repo-root-paths-ride-agent-commits-unjudged reason=priority-order subject=repo-root-paths-ride-agent-commits-unjudged from=1:59 to=1:58 requested-sequence=44
 - 2026-09-16T20:32:32Z HC8GDDX3DH5CE3W21P5ZKAG7ZW-m1e-c6925449 set-priority actor=human:Wido targets=census-lifecycle-scenario-holds-under-load,dispatch-bases-chains-on-the-remote-tip,events-package-has-a-test-group,human-wait-does-not-consume-goal-budget,metasystem-stop-escalation-proofs,metasystem-stop-fleet-form,new-elapsed-budgets-use-explicit-hours,pipelines-never-lose-a-truncated-producer reason=priority-order subject=dispatch-bases-chains-on-the-remote-tip from=1:58 to=1:57 requested-sequence=45
 - 2026-09-16T20:32:38Z G4Z1659A0JH8M2YQC7RVE32FPG-m1e-c6925449 set-priority actor=human:Wido targets=census-lifecycle-scenario-holds-under-load,events-package-has-a-test-group,human-wait-does-not-consume-goal-budget,metasystem-stop-escalation-proofs,metasystem-stop-fleet-form,new-elapsed-budgets-use-explicit-hours,pipelines-never-lose-a-truncated-producer reason=priority-order subject=metasystem-stop-escalation-proofs from=1:57 to=1:56 requested-sequence=46
-Integrity: sha256=0f2d8924638b773ac7b496e910a283935d9c4ce8d3ef58c37897d483a5896049
+- 2026-09-16T20:32:45Z YSGCPTAR92E50X71Q7J8DSMCF1-m1e-c6925449 set-priority actor=human:Wido targets=census-lifecycle-scenario-holds-under-load,events-package-has-a-test-group,human-wait-does-not-consume-goal-budget,metasystem-stop-fleet-form,new-elapsed-budgets-use-explicit-hours,pipelines-never-lose-a-truncated-producer reason=priority-order subject=metasystem-stop-fleet-form from=1:56 to=1:55 requested-sequence=47
+Integrity: sha256=a806bb930b76584b88708cea98445fc24c9415cc26a16bd96d09c967227efc89
