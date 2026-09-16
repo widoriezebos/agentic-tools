@@ -9,13 +9,13 @@
 - Origin: human
 - Next step: STATE (m1e; builds Codex gpt-5.6-sol, reads Opus, designs Claude Fable): slice 3 complete; 8c.15 built: C1a 0cca29a4, C1b ffdc623b, C2 25fb3b54. Evidence F2 from m1c: context handoff started no continuation three times on 2026-09-15 (12:20; 14:30 c0632af9c910ff65; 15:05 aef24bbc5d8173d2). Amendment 8d revision 3, the cap group, landed at 7704d36fe with ruling R-116-m1e after three Codex critique rounds, nine seat corrections and correction 10; records under records/misc/coordinator-context-stays-under-budget-8d-*. The automatic successor is goal seat-successor-continues-a-handoff-without-a-human: this goal depends on it for the deny switch and does not conclude without it. 8c.7 is decided (R-116-m1e item 5): a held handoff expires after 8h and cancels with a notice (handoffExpiryRule); a small unit joining the cap units. U3a-1a was split by the m1e build-chain delegate over its 260-line allocation (estimate 325): U3a-1a1 (context keys, ContextBudget accessor, refusals, construction line 106638) landed a921c63a1. Next: U3a-1a2 (steward readers, proof constants, report lines), then U3a-1b; U3b-1, U3b-2a (split in two), U3b-2b; U3e-1, U3e-2a (split in two), U3e-2b. Each is built by Codex gpt-5.6-sol in a worktree from a brief carrying "a NOT LAND verdict never lands; after the fold limit, stop and report", read by Opus, and landed after every group the test plan selects. The tool gate ships in observe mode. Then the week of measurement under section 7 and the conclusion.
 - OpenedAt: 2026-09-11T15:45:19Z
-- Revision: 95
+- Revision: 96
 - Pinned: m1e
 - Budget: elapsedLimit=4d attemptLimit=14 reservedJobMinutesLimit=1200 activeJobLimit=1 reviewRoundLimit=3
 - BudgetExceptions: 2
 - Approved: by=human:Wido at=2026-09-15T06:31:26Z revision=71 opid=KB8K0VZ9F1SR97TFJQPYC6N672-m1e-c6925449 authority=proven digest=c57427f469df5c5a5ce2c49651e1546ce35a315571d438eed42119b02b01ae7b
-- Claimed: machine=m1e lineage=main-1789030447-51011-5722fc at=2026-09-15T19:39:35Z revision=94 accountingRevision=74 episodeAt=2026-09-15T08:43:30Z episodeRevision=74 idleSeconds=37048
-- StopCapability: generation=94 revision=94 machine=m1e claimEpoch=1 fenceEpoch=0
+- Claimed: machine=m1e lineage=main-1788680071-18713-e76d5d at=2026-09-16T00:06:06Z revision=96 accountingRevision=96 episodeAt=2026-09-16T00:06:06Z episodeRevision=96
+- StopCapability: generation=96 revision=96 machine=m1e claimEpoch=1 fenceEpoch=0
 
 History:
 - 2026-09-11T15:45:19Z 5F6TSCSSSW5B4H5JVZDBKEWHPE-m1e-5083721b open actor=m1e+main-1789141490-27414-b9c0d2 targets=coordinator-context-stays-under-budget
@@ -113,4 +113,5 @@ History:
 - 2026-09-15T19:32:21Z Y0Q557RJ36A54PRHBJE594F86M-m1e-c6925449 edit actor=human:Wido targets=coordinator-context-stays-under-budget
 - 2026-09-15T19:39:35Z ABJHEN0RAAKM3Z3DFNH0QYB66Y-m1e-892cdaec claim actor=m1e+main-1789030447-51011-5722fc targets=coordinator-context-stays-under-budget
 - 2026-09-15T20:35:46Z 17N3YN5EF2R9YZAQH413HA3PVD-m1e-892cdaec edit actor=m1e+main-1789030447-51011-5722fc targets=coordinator-context-stays-under-budget
-Integrity: sha256=8ac022e1c05d17fcf066cb85f0de501b8efcc4af559134f17fc00c174bb04e3f
+- 2026-09-16T00:06:06Z KPA42XAYZQZMRB13929P6V6WNC-m1e-c6925449 steal actor=human:Wido targets=coordinator-context-stays-under-budget displaced=m1e+main-1789030447-51011-5722fc@2026-09-15T19:39:35Z
+Integrity: sha256=16908e951af1b79e7d151874302b100107c6f5e065d01b7cbc0b5c3932fe0dc5
