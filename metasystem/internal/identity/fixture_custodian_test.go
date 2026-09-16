@@ -2,11 +2,49 @@ package identity
 
 import (
 	"io"
+	"os"
 	"strings"
 	"syscall"
 	"testing"
 	"time"
 )
+
+func TestControlledLaunchersExportTheirOwnRef(t *testing.T) {
+	backing := make([]string, 1)
+	got, err := ExportRunOwner(backing[:0])
+	if err != nil || len(got) != 1 || backing[0] != "" {
+		t.Fatalf("ExportRunOwner(spare capacity) = %v, %v; backing=%q", got, err, backing[0])
+	}
+	ref, err := ParseRef(strings.TrimPrefix(got[0], RunOwnerEnv+"="))
+	if err != nil || AliveRef(KernelProber{}, ref) != Alive || ref.Pid != int64(os.Getpid()) {
+		t.Fatalf("exported run owner = %v, %v", ref, err)
+	}
+	existing := []string{"A=b", RunOwnerEnv + "=outer"}
+	if preserved, err := ExportRunOwner(existing); err != nil || len(preserved) != 2 || preserved[1] != existing[1] {
+		t.Fatalf("existing run owner changed: %v, %v", preserved, err)
+	}
+}
+
+func TestRunOwnerResolution(t *testing.T) {
+	owner, goTest, goTool, launcher := fixtureExact(700, 70), fixtureExact(701, 71), fixtureExact(702, 72), fixtureExact(703, 73)
+	goTest.Argv, goTest.ArgvKnown = []string{"/usr/bin/go", "test"}, true
+	goTool.Argv, goTool.ArgvKnown = []string{"go", "tool"}, true
+	launcher.Argv, launcher.ArgvKnown = []string{"sh", "run"}, true
+	table := fixtureTable{700: owner, 701: goTest, 702: goTool, 703: launcher}
+	parents := map[int64]int64{700: 701, 701: 702, 702: 703, 703: 1}
+	parent := func(pid int64) (int64, bool) { next, ok := parents[pid]; return next, ok }
+	for index, unreadable := range []bool{false, true} {
+		t.Run([]string{"go tooling", "unreadable argv ends walk"}[index], func(t *testing.T) {
+			goTool.ArgvKnown = !unreadable
+			table[702] = goTool
+			chain, err := resolveRunOwner(table, parent, owner.Ref(), "", false)
+			wantLen, wantLast := 3-index, int64(703-index)
+			if err != nil || len(chain) != wantLen || chain[len(chain)-1].Pid != wantLast {
+				t.Fatalf("chain=%v err=%v; want length %d ending at %d", chain, err, wantLen, wantLast)
+			}
+		})
+	}
+}
 
 type custodianTable struct {
 	fixtureTable

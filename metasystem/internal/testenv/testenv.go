@@ -149,6 +149,18 @@ func startFixtureCustodian(registry string) error {
 	if err != nil {
 		return err
 	}
+	runOwner, runOwnerSet := os.LookupEnv(identity.RunOwnerEnv)
+	chain, err := identity.ResolveRunOwner(exact.Ref(), runOwner, runOwnerSet)
+	if err != nil {
+		return fmt.Errorf("run owner %q: %w", runOwner, err)
+	}
+	chainValues := make([]string, len(chain))
+	for index, ref := range chain {
+		chainValues[index], err = identity.EncodeRef(ref)
+		if err != nil {
+			return err
+		}
+	}
 	reader, writer, err := os.Pipe()
 	if err != nil {
 		return err
@@ -166,13 +178,13 @@ func startFixtureCustodian(registry string) error {
 	command := exec.Command(os.Args[0])
 	for _, entry := range os.Environ() {
 		name, _, _ := strings.Cut(entry, "=")
-		if name != identity.FixtureOwnerEnv && name != identity.FixtureCustodianEnv &&
+		if name != identity.FixtureOwnerEnv && name != identity.FixtureCustodianEnv && name != identity.FixtureCustodianChainEnv &&
 			name != identity.FixtureCustodianOwnerEnv && name != identity.FixtureCustodianLogEnv {
 			command.Env = append(command.Env, entry)
 		}
 	}
 	command.Env = append(command.Env, identity.FixtureCustodianEnv+"=1", identity.FixtureCustodianOwnerEnv+"="+owner,
-		identity.FixtureCustodianLogEnv+"="+logPath)
+		identity.FixtureCustodianLogEnv+"="+logPath, identity.FixtureCustodianChainEnv+"="+strings.Join(chainValues, "|"))
 	command.ExtraFiles = []*os.File{reader}
 	command.Stderr = logFile
 	command.SysProcAttr = &syscall.SysProcAttr{Setsid: true}

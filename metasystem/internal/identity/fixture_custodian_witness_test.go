@@ -14,6 +14,111 @@ import (
 	"golang.org/x/sys/unix"
 )
 
+const launcherWitnessMode, launcherBasePath = "FIXTURE_LAUNCHER_WITNESS_MODE", "PATH=/usr/bin:/bin"
+
+func TestLauncherDeathKillsTheTest(t *testing.T) {
+	if !runLauncherWitnessMode(t) {
+		runLauncherDeathWitness(t, false)
+	}
+}
+
+func TestCustodianWatchesTheExportedLauncher(t *testing.T) {
+	if runLauncherWitnessMode(t) {
+		return
+	}
+	dead, err := EncodeRef(fixtureExact(1<<30, 1).Ref())
+	checkWitness(t, err)
+	for _, value := range []string{"malformed", dead, launcherProcessRef(t)} {
+		t.Run(value, func(t *testing.T) {
+			sink := filepath.Join(t.TempDir(), "signal-sink")
+			dir := filepath.Dir(sink)
+			checkWitness(t, os.WriteFile(sink, nil, 0o600))
+			command := exec.Command(os.Args[0], "-test.run=^TestCustodianWatchesTheExportedLauncher$", "-test.count=1")
+			command.Env = []string{launcherBasePath, launcherWitnessMode + "=owner|" + dir, FixtureCustodianStartEnv + "=1", RunOwnerEnv + "=" + value}
+			output, runErr := command.CombinedOutput()
+			contents, _ := os.ReadFile(sink)
+			if runErr == nil || !strings.Contains(string(output), value) || len(contents) != 0 {
+				t.Fatalf("invalid run owner %q: err=%v output=%q sink=%q", value, runErr, output, contents)
+			}
+		})
+	}
+	runLauncherDeathWitness(t, true)
+}
+
+func launcherProcessRef(t *testing.T) string {
+	command := exec.Command("sleep", "30")
+	checkWitness(t, command.Start())
+	t.Cleanup(func() { _ = command.Process.Kill(); _, _ = command.Process.Wait() })
+	return liveWitnessProcessRef(t, int64(command.Process.Pid), 0)
+}
+
+func liveWitnessProcessRef(t *testing.T, pid, disallowed int64) string {
+	exact, state, probeErr := (KernelProber{}).Probe(pid)
+	value, encodeErr := EncodeRef(exact.Ref())
+	if probeErr != nil || state != Alive || encodeErr != nil || exact.Pid == disallowed {
+		t.Fatalf("probe process %d: disallowed=%d state=%s probe=%v encode=%v", exact.Pid, disallowed, state, probeErr, encodeErr)
+	}
+	return value
+}
+
+func runLauncherWitnessMode(t *testing.T) bool {
+	mode, dir, _ := strings.Cut(os.Getenv(launcherWitnessMode), "|")
+	switch mode {
+	case "owner":
+		if sink := filepath.Join(dir, "signal-sink"); func() bool { _, err := os.Stat(sink); return err == nil }() {
+			checkWitness(t, os.WriteFile(sink, []byte("test ran"), 0o600))
+			return true
+		}
+		runWitnessOwner(t, dir)
+	case "launcher":
+		environment, err := ExportRunOwner([]string{launcherBasePath, launcherWitnessMode + "=owner|" + dir, FixtureCustodianStartEnv + "=1"})
+		checkWitness(t, err)
+		command := exec.Command("/bin/sh", "-c", `"$1" -test.run="^$2$" -test.count=1; while :; do sleep 1; done`, "sh", os.Args[0], t.Name())
+		command.Env = environment
+		checkWitness(t, command.Start())
+		checkWitness(t, os.WriteFile(filepath.Join(dir, "shellpid"), []byte(strconv.Itoa(command.Process.Pid)), 0o600))
+		time.Sleep(24 * time.Hour)
+	default:
+		return false
+	}
+	return true
+}
+
+func runLauncherDeathWitness(t *testing.T, exported bool) {
+	dir := t.TempDir()
+	var command *exec.Cmd
+	if exported {
+		command = exec.Command(os.Args[0], "-test.run=^"+t.Name()+"$", "-test.count=1")
+		command.Env = []string{launcherBasePath, launcherWitnessMode + "=launcher|" + dir}
+	} else {
+		command = exec.Command("/bin/sh", "-c", `"$1" -test.run="^$2$" -test.count=1; exit $?`, "sh", os.Args[0], t.Name())
+		command.Env = []string{launcherBasePath, launcherWitnessMode + "=owner|" + dir, FixtureCustodianStartEnv + "=1"}
+	}
+	command.SysProcAttr = &syscall.SysProcAttr{Setpgid: true}
+	startWitnessCommand(t, command, filepath.Join(dir, "launcher.stderr"), false)
+	t.Cleanup(func() { _ = syscall.Kill(-command.Process.Pid, syscall.SIGKILL); _, _ = command.Process.Wait() })
+	owner := waitWitnessRef(t, filepath.Join(dir, "ownerpid"), filepath.Join(dir, "launcher.stderr"))
+	child := waitWitnessRef(t, filepath.Join(dir, "pid0"), filepath.Join(dir, "launcher.stderr"))
+	defer SignalExact(KernelProber{}, child, syscall.SIGKILL)
+	other := waitWitnessRef(t, filepath.Join(dir, "pid1"), filepath.Join(dir, "launcher.stderr"))
+	defer SignalExact(KernelProber{}, other, syscall.SIGKILL)
+	var shell Ref
+	if exported {
+		shell = waitWitnessRef(t, filepath.Join(dir, "shellpid"), filepath.Join(dir, "launcher.stderr"))
+	}
+	launcherValue := liveWitnessProcessRef(t, int64(command.Process.Pid), owner.Pid)
+	_ = command.Process.Kill()
+	_, _ = command.Process.Wait()
+	waitWitnessDead(t, owner)
+	waitWitnessDead(t, child)
+	waitWitnessDead(t, other)
+	if exported && AliveRef(KernelProber{}, shell) != Alive {
+		t.Fatal("intermediate shell died with the exported launcher")
+	}
+	logPath, _ := os.ReadFile(filepath.Join(dir, "logpath"))
+	waitWitnessLog(t, string(logPath), "dead-launcher="+launcherValue)
+}
+
 func TestKilledTestBinaryLeavesNoFixtureChild(t *testing.T) { custodianWitness(t, false) }
 func TestCustodianReapsStoppedAndDetached(t *testing.T)     { custodianWitness(t, true) }
 
@@ -100,6 +205,7 @@ func runWitnessOwner(t *testing.T, dir string) {
 	if err != nil || state != Alive {
 		t.Fatalf("probe owner: state=%s err=%v", state, err)
 	}
+	checkWitness(t, os.WriteFile(filepath.Join(dir, "ownerpid"), []byte(strconv.Itoa(os.Getpid())), 0o600))
 	word := fixtureWord(t, FixtureKey{Owner: exact.Ref(), Test: t.Name(), Nonce: "1234abcd"})
 	script := filepath.Join(dir, "detached.sh")
 	body := `if [ -n "${METASYSTEM_FIXTURE_OWNER-}" ]; then tag="METASYSTEM_FIXTURE_OWNER=$METASYSTEM_FIXTURE_OWNER"; [ "${1-}" = "$tag" ] || exec /bin/sh "$0" "$tag" "$@"; shift; fi; printf %s $$ > "$1"; trap '' TERM; while :; do sleep 1; done`
@@ -192,7 +298,7 @@ func waitWitnessDead(t *testing.T, ref Ref) {
 			return
 		}
 	}
-	t.Fatalf("fixture child %d survived owner death", ref.Pid)
+	t.Fatalf("process %d stayed alive", ref.Pid)
 }
 
 func checkWitness(t *testing.T, err error) {
