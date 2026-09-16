@@ -1,6 +1,6 @@
 # delegate-launchers-become-go-verbs
 
-- State: claimed
+- State: approved
 - Priority: 1
 - Sequence: 3
 - Risk: severity=2 novelty=2 exposure=2 accumulation=1 basis="severity 2: a broken launcher stops the design and critique lanes on every seat, but corrupts no record; novelty 2: new Go verbs next to metasystem delegate, behaviour copied from working bash; exposure 2: every seat launches designs and critiques through them; accumulation 1: the bash copies are deleted in the same landing"
@@ -9,16 +9,16 @@
 - Origin: human
 - Next step: Opened in the name of Wido by seat m1e from the enrolled pane on his word 2026-09-16 18:25 CEST. Starts as soon as headless-launchers-live-in-the-repo lands (the bash is the behaviour reference). No Fable design round: a seat brief, one Codex critique of the brief, Codex gpt-5.6-sol builds in units of at most 300 lines, Opus reads, the landing lane lands. Before the brief, read units-land-in-batches-under-one-proof design r3: if automatic batch landing needs units built through the job domain for implementation-chain evidence, these verbs are where that evidence is recorded.
 - OpenedAt: 2026-09-16T16:29:04Z
-- Revision: 4
+- Revision: 5
 - Budget: elapsedLimit=4h attemptLimit=6 reservedJobMinutesLimit=720 activeJobLimit=1 reviewRoundLimit=2
 - BudgetExceptions: 0
 - Approved: by=human:Wido at=2026-09-16T16:29:15Z revision=3 opid=53GEFQB4QWB43PEBR856SFZ7QP-m1e-c6925449 authority=proven digest=b860657520704981b9ed07a8a8afe93b1afd30e864a2bef28c3f1488e2ff058b
-- Claimed: machine=m1b lineage=main-1789560571-22295-8d907a at=2026-09-16T16:29:29Z revision=4 accountingRevision=4 episodeAt=2026-09-16T16:29:29Z episodeRevision=4
-- StopCapability: generation=4 revision=4 machine=m1b claimEpoch=3 fenceEpoch=0
+- Episode: machine=m1b lineage=main-1789560571-22295-8d907a accountingRevision=4 episodeAt=2026-09-16T16:29:29Z episodeRevision=4 idleSeconds=0 released=2026-09-16T16:39:00Z
 
 History:
 - 2026-09-16T16:29:04Z CDDQA3HQVS4F93EKGDHHXPPMAP-m1e-c6925449 open actor=human:Wido targets=delegate-launchers-become-go-verbs
 - 2026-09-16T16:29:09Z VH2SZGXVAGRQAA82K3Z7VXNXNM-m1e-c6925449 set-priority actor=human:Wido targets=actionable-metrics,adoption-filled-delivery-passes-on-trunk,beds-run-under-the-oldest-supported-bash,brief-declares-the-round-boundary,builder-proves-each-rule-by-mutation,busy-seat-shells-are-ended,census-lifecycle-scenario-holds-under-load,chain-landing-carries-the-reviewed-diff,codex-jobs-run-through-a-metasystem-verb,coordinator-context-stays-under-budget,coordinator-wakes-on-events-not-polls,critique-closes-on-folded-proof,cross-cutting-change-inventories-its-readers,deep-sections-cannot-stay-red-unseen,degraded-stop-forms-have-one-source,delegate-launchers-become-go-verbs,delegate-sandbox-runs-the-beds,design-rounds-read-less-and-repeat-less,dispatch-bases-chains-on-the-remote-tip,engine-policy-binding-survives-drift-and-load,every-round-gets-an-independent-read,evidence-and-build-output-have-retention-and-stay-unindexed,failed-job-attention,failures-show-observed-against-expected,fixture-children-cannot-outlive-their-test,fixture-repo-copies-exclude-the-artifacts-store,fixture-runners-and-fakes-bound-their-own-life,fixture-waits-name-their-producer,fleet-doctor-repairs-what-stops-other-seats,follow-up-brief-cannot-cite-fresh-trunk-files,human-authority-surface-runs-its-cmd-tests,human-break-glass-commit-keeps-the-ledger-valid,human-goal-verbs-forgiving,human-wait-does-not-consume-goal-budget,job-record-birth-token,lease-sweep-death-evidence,live-job-on-a-done-goal-unnoticed,machine-concurrency-governor,member-size-gate,metasystem-stop-escalation-proofs,metasystem-stop-fleet-form,new-elapsed-budgets-use-explicit-hours,one-steward-per-checkout-on-its-own-root,pipelines-never-lose-a-truncated-producer,proof-admission-fits-a-seat-proving-several-units,proof-runs-reap-what-they-armed-and-a-census-names-the-rest,receipt-admission-caps-concurrent-batteries,receipt-writer-follows-the-worktree-it-runs-in,repo-root-paths-ride-agent-commits-unjudged,round-proof-feeds-the-next-brief,run-scoped-build-caches-have-a-janitor,seat-landings-run-the-selected-sections,seat-successor-continues-a-handoff-without-a-human,seats-spend-tokens-in-bounded-sessions,skipped-test-fails-its-group-on-the-other-os,small-change-lane,spend-fence-reports-tokens-per-model-and-cause,stop-batch-strands-a-resumable-goal,stop-capability-follows-the-lease-epoch,stop-decision-surface-is-a-gate,stop-gate-sees-harness-tracked-work,stop-hook-never-forces-an-empty-turn,stop-response-carries-a-structured-report-reference,test-environment-edges-are-closed,testing-surfaces-declare-their-mirror,tests-never-wait-on-wall-time,token-spend-fence,trunk-versus-candidate-is-a-verification-step,units-run-through-one-launcher,watch-verb,watcher-repair-request-never-names-current,winddown-census-handoff-leak reason=priority-order subject=delegate-launchers-become-go-verbs from=unranked to=1:3 requested-sequence=3
 - 2026-09-16T16:29:15Z 53GEFQB4QWB43PEBR856SFZ7QP-m1e-c6925449 approve actor=human:Wido targets=delegate-launchers-become-go-verbs
 - 2026-09-16T16:29:29Z 1YH43T5B7QVBRFQB31205T1SCJ-m1b-d0e95724 claim actor=m1b+main-1789560571-22295-8d907a targets=delegate-launchers-become-go-verbs
-Integrity: sha256=0268f37ab6a11bcc911432390deb67094974fd12da542079c9039a7b00432fd5
+- 2026-09-16T16:39:00Z 7JRCBBZSW6FFKT1TMQ92GG52M8-m1b-d0e95724 release actor=m1b+main-1789560571-22295-8d907a targets=delegate-launchers-become-go-verbs
+Integrity: sha256=52dac6985ed76033b611cc72cfccc0616e3df763f62e751a0bb6d6564d3bc150
