@@ -1,6 +1,6 @@
 # critique-closes-on-folded-proof
 
-- State: approved
+- State: claimed
 - Priority: 1
 - Sequence: 19
 - Risk: severity=2 novelty=2 exposure=3 accumulation=1 basis="severity 2: a closure rule that is too loose lets a material finding land; novelty 2: fold-proven closure and the round-2 failsafe are new rules; exposure 3: every chain; accumulation 1: skills and dispatcher"
@@ -9,12 +9,13 @@
 - Origin: human
 - Next step: STATE 2026-09-16 (m1e landing lane): slice 2 unit U2a LANDED 27045e8d2 (design critique capped at two rounds; the commit carries the cmd/metasystem TestDispatchCritiqueAdvanceVerbsPath code-critic relabel its cap required), proved alone in proof-mu3uzvd8-704c628fff05c6e8 (deep, 43 executed and passed, 10 reused, 0 failed) after stack proof-mu3uh475-29d0b1f3dbd72008 (U2a+U2b+U2c) went red only on U2b's staticcheck SA4006 at internal/dispatch/finding_grain_test.go:47 and :50. Next: U2b fix-forward by its build chain (check the appendMaterialRound errors), then prove and land U2b, U2c, U2d, U2e in that order (U2e's dispatch-fixtures leg design_round_two_fixture_obligations first executes in the lane's proof; flag the seat when U2e lands). Then slice 3 (the three metrics on landing provenance and mirrored refusal events, section 5 with F-8; section 8 row 5), then the section 8 proof on two runtimes and conclusion. Slice 1 is on origin/main (4fbd271c8 through section 13 60bb82d25; 9c.12 parked 3749e91fb).
 - OpenedAt: 2026-09-11T15:45:22Z
-- Revision: 87
+- Revision: 88
 - Pinned: m1e
 - Budget: elapsedLimit=1d attemptLimit=10 reservedJobMinutesLimit=1200 activeJobLimit=1 reviewRoundLimit=3
 - BudgetExceptions: 0
 - Approved: by=human:Wido at=2026-09-11T20:33:44Z revision=15 opid=8BE27ZT80ZJ6JTWNQ3GZAERK8Y-m1-c6925449 authority=proven digest=cf4c80f3b42d74737238cccc4774f7900e36fd98d52c0bc36aec01bab9f27fbb
-- Episode: machine=m1e lineage=main-1789030447-51011-2956ea accountingRevision=85 episodeAt=2026-09-16T08:26:10Z episodeRevision=85 idleSeconds=0 released=2026-09-16T09:05:46Z
+- Claimed: machine=m1e lineage=main-1789030447-51011-2956ea at=2026-09-16T09:10:23Z revision=88 accountingRevision=85 episodeAt=2026-09-16T08:26:10Z episodeRevision=85 idleSeconds=277
+- StopCapability: generation=88 revision=88 machine=m1e claimEpoch=1 fenceEpoch=0
 
 History:
 - 2026-09-11T15:45:22Z WKPXEN9CTZR44TMFZTQJE9X68Q-m1e-5083721b open actor=m1e+main-1789141490-27414-b9c0d2 targets=critique-closes-on-folded-proof
@@ -104,4 +105,5 @@ History:
 - 2026-09-16T08:26:10Z AZKP60DFJCNC5C1NMPJVGMPQHE-m1e-a3d4c1e1 claim actor=m1e+main-1789030447-51011-2956ea targets=critique-closes-on-folded-proof
 - 2026-09-16T09:05:20Z Z02RX3SY06W5N9GDDBCPVN8R0B-m1e-a3d4c1e1 edit actor=m1e+main-1789030447-51011-2956ea targets=critique-closes-on-folded-proof
 - 2026-09-16T09:05:46Z NC67WFJGXKG781HZ851YT36852-m1e-a3d4c1e1 release actor=m1e+main-1789030447-51011-2956ea targets=critique-closes-on-folded-proof
-Integrity: sha256=cae184e358145d89c8de52c5a08814f4fe675b1001321577520f413bf5631289
+- 2026-09-16T09:10:23Z 290RHAP0Z50E96HMHK0JY23F3R-m1e-a3d4c1e1 claim actor=m1e+main-1789030447-51011-2956ea targets=critique-closes-on-folded-proof
+Integrity: sha256=8625f22f11d579160275f9bdd1fc29a7f36e04eed0a1ed013aaee972c06fc9bc
