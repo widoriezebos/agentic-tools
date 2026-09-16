@@ -1,6 +1,6 @@
 # coordinator-context-stays-under-budget
 
-- State: claimed
+- State: approved
 - Priority: 1
 - Sequence: 12
 - Risk: severity=2 novelty=2 exposure=3 accumulation=1 basis="severity 2: an over-bounded output hides evidence the seat needs; novelty 2: bounded verb output is a new discipline; exposure 3: every seat's every turn; accumulation 1: verbs and docs"
@@ -9,13 +9,12 @@
 - Origin: human
 - Next step: STATE (m1e; builds Codex gpt-5.6-sol, reads Opus, designs Claude Fable): slice 3 complete; 8c.15 built: C1a 0cca29a4, C1b ffdc623b, C2 25fb3b54. Evidence F2 from m1c: context handoff started no continuation three times on 2026-09-15 (12:20; 14:30 c0632af9c910ff65; 15:05 aef24bbc5d8173d2). Amendment 8d revision 3, the cap group, landed at 7704d36fe with ruling R-116-m1e after three Codex critique rounds, nine seat corrections and correction 10; records under records/misc/coordinator-context-stays-under-budget-8d-*. The automatic successor is goal seat-successor-continues-a-handoff-without-a-human: this goal depends on it for the deny switch and does not conclude without it. 8c.7 is decided (R-116-m1e item 5): a held handoff expires after 8h and cancels with a notice (handoffExpiryRule); a small unit joining the cap units. U3a-1a was split by the m1e build-chain delegate over its 260-line allocation (estimate 325): U3a-1a1 (context keys, ContextBudget accessor, refusals, construction line 106638) landed a921c63a1. Next: U3a-1a2 (steward readers, proof constants, report lines), then U3a-1b; U3b-1, U3b-2a (split in two), U3b-2b; U3e-1, U3e-2a (split in two), U3e-2b. Each is built by Codex gpt-5.6-sol in a worktree from a brief carrying "a NOT LAND verdict never lands; after the fold limit, stop and report", read by Opus, and landed after every group the test plan selects. The tool gate ships in observe mode. Then the week of measurement under section 7 and the conclusion. SESSION-LIMIT OUTAGE 2026-09-15 23:50 to 2026-09-16 02:00: every Claude delegate died at the account session limit; Codex jobs survived. The claim was recovered for successor session 30fb8387 (steal then release in Wido's name from the enrolled terminal, then a claim by the successor; same owner machine). U3a-1a2's Codex diff waited uncommitted in worktree ctx-U3a-1a2 and is being read, tested and landed by a relaunched chain delegate; then U3a-1b and U3b-1.
 - OpenedAt: 2026-09-11T15:45:19Z
-- Revision: 99
+- Revision: 100
 - Pinned: m1e
 - Budget: elapsedLimit=4d attemptLimit=14 reservedJobMinutesLimit=1200 activeJobLimit=1 reviewRoundLimit=3
 - BudgetExceptions: 2
 - Approved: by=human:Wido at=2026-09-15T06:31:26Z revision=71 opid=KB8K0VZ9F1SR97TFJQPYC6N672-m1e-c6925449 authority=proven digest=c57427f469df5c5a5ce2c49651e1546ce35a315571d438eed42119b02b01ae7b
-- Claimed: machine=m1e lineage=main-1789030447-51011-2956ea at=2026-09-16T00:06:34Z revision=98 accountingRevision=98 episodeAt=2026-09-16T00:06:34Z episodeRevision=98
-- StopCapability: generation=98 revision=98 machine=m1e claimEpoch=1 fenceEpoch=0
+- Episode: machine=m1e lineage=main-1789030447-51011-2956ea accountingRevision=98 episodeAt=2026-09-16T00:06:34Z episodeRevision=98 idleSeconds=0 released=2026-09-16T01:46:08Z
 
 History:
 - 2026-09-11T15:45:19Z 5F6TSCSSSW5B4H5JVZDBKEWHPE-m1e-5083721b open actor=m1e+main-1789141490-27414-b9c0d2 targets=coordinator-context-stays-under-budget
@@ -117,4 +116,5 @@ History:
 - 2026-09-16T00:06:29Z F165MHE1GB36JY6YE40N7GVZVG-m1e-c6925449 release actor=human:Wido targets=coordinator-context-stays-under-budget
 - 2026-09-16T00:06:34Z DT4F9B2GY4BXSSXGXME9N5F5XP-m1e-a3d4c1e1 claim actor=m1e+main-1789030447-51011-2956ea targets=coordinator-context-stays-under-budget
 - 2026-09-16T00:06:45Z 70WGAC3MECZTM1WFJKJ09Y8PBV-m1e-a3d4c1e1 edit actor=m1e+main-1789030447-51011-2956ea targets=coordinator-context-stays-under-budget
-Integrity: sha256=7d6ab9c91fdfb60b8cc2c2c0c66bd1b4e865888e9ab764ddc331f5817732621f
+- 2026-09-16T01:46:08Z N81NY792WAB0VNCTP86NTXGR99-m1e-a3d4c1e1 release actor=m1e+main-1789030447-51011-2956ea targets=coordinator-context-stays-under-budget
+Integrity: sha256=5588bb3be806ae0c871a1509388909f8143fa10a0629f432e0e6afaba2aef137
