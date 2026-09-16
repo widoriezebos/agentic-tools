@@ -9,10 +9,11 @@
 - Origin: human
 - Next step: Opened in the name of Wido by seat m1e from the enrolled pane on his word 2026-09-16 18:25 CEST. Starts as soon as headless-launchers-live-in-the-repo lands (the bash is the behaviour reference). No Fable design round: a seat brief, one Codex critique of the brief, Codex gpt-5.6-sol builds in units of at most 300 lines, Opus reads, the landing lane lands. Before the brief, read units-land-in-batches-under-one-proof design r3: if automatic batch landing needs units built through the job domain for implementation-chain evidence, these verbs are where that evidence is recorded.
 - OpenedAt: 2026-09-16T16:29:04Z
-- Revision: 12
+- Revision: 13
 - Budget: elapsedLimit=4h attemptLimit=6 reservedJobMinutesLimit=720 activeJobLimit=1 reviewRoundLimit=2
 - BudgetExceptions: 0
 - Approved: by=human:Wido at=2026-09-16T20:29:38Z revision=11 opid=0F2R9PMCE40D9FXT7TV64VXAJ7-m1e-c6925449 authority=proven digest=5af06f6fdcc6e181ad671abf4c8faf3aff1514d3b10e84f7960e34b1b31cc8d5
+- Sliced: machine=m1b lineage=main-1789560571-22295-8d907a revision=12 at=2026-09-16T21:32:54Z
 - Claimed: machine=m1b lineage=main-1789560571-22295-8d907a at=2026-09-16T20:51:15Z revision=12 accountingRevision=12 episodeAt=2026-09-16T20:51:15Z episodeRevision=12
 - StopCapability: generation=12 revision=12 machine=m1b claimEpoch=3 fenceEpoch=0
 
@@ -29,4 +30,5 @@ History:
 - 2026-09-16T20:29:31Z 4DT2JNREV8W2NRPYRKNQE0DEF4-m1e-c6925449 edit actor=human:Wido targets=delegate-launchers-become-go-verbs
 - 2026-09-16T20:29:38Z 0F2R9PMCE40D9FXT7TV64VXAJ7-m1e-c6925449 approve actor=human:Wido targets=delegate-launchers-become-go-verbs
 - 2026-09-16T20:51:15Z 7BZHCKHSQW0DDJ0ACK6NMP3F96-m1b-d0e95724 claim actor=m1b+main-1789560571-22295-8d907a targets=delegate-launchers-become-go-verbs
-Integrity: sha256=418644c505a58a7cb93c93a0ab8588301b1ff754a210ccd8c16b2b109f2c5f6d
+- 2026-09-16T21:32:54Z HEN97WQ8SA90B9PSZ9P0Y5DH3N-m1b-d0e95724 slice-start actor=m1b+main-1789560571-22295-8d907a targets=delegate-launchers-become-go-verbs
+Integrity: sha256=5a0a469352d8f5d09bc4eeb4da0b994ce2cc7d59c447cf79fe3ac05b6b762be7
