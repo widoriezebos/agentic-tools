@@ -516,6 +516,11 @@ func Validate(confPath, repoRoot string) (tiersAbsent bool, problems []string, e
 			add("dispatch.return-margin-min must be a non-negative integer, got %s", pyRepr(raw))
 		}
 	}
+	if raw, present := values["proof.admission.top-level-max"]; present {
+		if parsed, parseErr := strconv.Atoi(raw); parseErr != nil || parsed < 0 || parsed > 64 {
+			add("proof.admission.top-level-max must be an integer from 0 through 64, got %s", pyRepr(raw))
+		}
+	}
 	if raw, present := values["steward.tick-patience-sec"]; present {
 		const maxPatienceSeconds = int64(^uint64(0)>>1) / int64(time.Second)
 		if parsed, parseErr := strconv.ParseInt(raw, 10, 64); parseErr == nil && parsed > maxPatienceSeconds {

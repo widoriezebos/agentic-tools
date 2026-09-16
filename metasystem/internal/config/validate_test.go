@@ -348,6 +348,21 @@ func TestValidateNumericKnobs(t *testing.T) {
 	}
 }
 
+func TestValidateChecksTheAdmissionCap(t *testing.T) {
+	const key = "proof.admission.top-level-max"
+	for _, value := range []string{"0", "3"} {
+		if problems := validateRepo(t, validConf+key+"="+value+"\n"); hasProblem(problems, key) {
+			t.Fatalf("valid admission cap %s was rejected: %v", value, problems)
+		}
+	}
+	for _, value := range []string{"x", "-1", "65"} {
+		want := key + " must be an integer from 0 through 64, got " + pyRepr(value)
+		if problems := validateRepo(t, validConf+key+"="+value+"\n"); !hasProblem(problems, want) {
+			t.Fatalf("admission cap %s: expected %q in %v", value, want, problems)
+		}
+	}
+}
+
 func TestValidateBudgetLawOverrideSources(t *testing.T) {
 	clearBudgetLawEnvironment(t)
 	fixtureConf := strings.Replace(validConf, "metasystem.runtimes=claude,codex,fake", "metasystem.runtimes=fake", 1)

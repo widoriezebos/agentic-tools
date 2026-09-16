@@ -150,3 +150,32 @@ func TestAdmissionCapUsesTheRecordedStartSample(t *testing.T) {
 		t.Fatalf("reserve sampled %d times: attempt=%+v decision=%+v error=%v", calls, attempt, decision, err)
 	}
 }
+
+func TestReserveSkipsTheNestedCensusWhenTheCapCannotRefuse(t *testing.T) {
+	for _, test := range []struct {
+		name            string
+		admissionMax    int
+		overlapKnown    bool
+		wantNestedCalls int
+	}{
+		{name: "disabled", admissionMax: 0, overlapKnown: true, wantNestedCalls: 0},
+		{name: "overlap-unknown", admissionMax: 2, overlapKnown: false, wantNestedCalls: 0},
+		{name: "enabled-and-known", admissionMax: 2, overlapKnown: true, wantNestedCalls: 1},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			request := admissionRequest(t, test.admissionMax, 0, test.overlapKnown, false)
+			calls := 0
+			loadSeams.nested = func(int64) (bool, bool) {
+				calls++
+				return false, true
+			}
+			attempt, decision, err := ReserveLocked(request)
+			if err != nil || decision.Disposition != DispositionExecuted || attempt.AttemptID == "" {
+				t.Fatalf("reserve = %+v, %+v, %v", attempt, decision, err)
+			}
+			if calls != test.wantNestedCalls {
+				t.Fatalf("nested census calls = %d, want %d", calls, test.wantNestedCalls)
+			}
+		})
+	}
+}

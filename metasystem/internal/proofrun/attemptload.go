@@ -182,10 +182,13 @@ func topLevelLaunchers(rows []processRow, self int64) int {
 }
 
 // isProofLauncherArgv recognises a metasystem engine, whatever its path,
-// running `proof-run launch`: the verb pair right after the binary, so a
-// shell or a test that merely mentions the words is never a launcher.
+// running a top-level proof battery. An engine test run reserves a top-level
+// attempt and runs the groups, so the cap and load attribution count it too.
+// The verb pair immediately after the binary keeps shells that merely mention
+// the words out of the census.
 func isProofLauncherArgv(argv []string) bool {
-	return len(argv) >= 3 && filepath.Base(argv[0]) == "metasystem" && argv[1] == "proof-run" && argv[2] == "launch"
+	return len(argv) >= 3 && filepath.Base(argv[0]) == "metasystem" &&
+		(argv[1] == "proof-run" && argv[2] == "launch" || argv[1] == "test" && argv[2] == "run")
 }
 
 // liveAttemptsOtherThan counts this checkout's attempts without a terminal

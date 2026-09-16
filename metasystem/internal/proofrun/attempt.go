@@ -583,7 +583,10 @@ func ReserveLocked(request AdmissionRequest) (Attempt, LaunchResult, error) {
 	if err != nil {
 		return Attempt{}, LaunchResult{}, err
 	}
-	nested, nestedKnown := loadSeams.nested(request.Launcher.Pid)
+	nested, nestedKnown := false, false
+	if admission.Max > 0 && start.OverlapKnown {
+		nested, nestedKnown = loadSeams.nested(request.Launcher.Pid)
+	}
 	if admission.Refuses(start, nested, nestedKnown) {
 		return Attempt{}, LaunchResult{SchemaVersion: 1, Disposition: DispositionAdmissionRefused,
 			ExitStatus: ExitAdmissionRefused, Reason: admission.RefusalReason(start.OverlappingHost)}, nil
