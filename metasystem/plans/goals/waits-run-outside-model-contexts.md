@@ -1,6 +1,6 @@
 # waits-run-outside-model-contexts
 
-- State: queued
+- State: approved
 - Priority: 1
 - Sequence: 4
 - Risk: severity=2 novelty=2 exposure=3 accumulation=1 basis="severity 2: waste of tokens and budget, no record is corrupted; novelty 2: extends the existing metasystem wait verb with event kinds the seats already wait on by hand; exposure 3: every seat, lane and reader waits; accumulation 1: one verb, one contract rule, one template change"
@@ -9,11 +9,13 @@
 - Origin: human
 - Next step: Opened in the name of Wido by seat m1e from the enrolled pane on his word 2026-09-16 20:25 CEST. Seat brief, one Codex critique of the brief, Codex gpt-5.6-sol builds in units of at most 300 lines, Opus reads, the landing lane lands. Until it lands, the seat rule applies by prompt: no subagent wait call over 240 s (lane-5 prompt template updated 18:20Z).
 - OpenedAt: 2026-09-16T18:20:23Z
-- Revision: 2
+- Revision: 3
 - Budget: elapsedLimit=4h attemptLimit=6 reservedJobMinutesLimit=720 activeJobLimit=1 reviewRoundLimit=2
 - BudgetExceptions: 0
+- Approved: by=human:Wido at=2026-09-16T18:20:37Z revision=3 opid=3VR691BMNW9NCDTK87Q3KXNC3T-m1e-c6925449 authority=proven digest=fd30d886e561053c0cce6488459a1d0d8954b4447b21d419af685690f5cd00eb
 
 History:
 - 2026-09-16T18:20:23Z KKVQ4CNFW8ZTHWJH3CAWR6RYD3-m1e-c6925449 open actor=human:Wido targets=waits-run-outside-model-contexts
 - 2026-09-16T18:20:30Z 1WAJ4ZA2PSNY5B7S8SFWZJPC2D-m1e-c6925449 set-priority actor=human:Wido targets=actionable-metrics,adoption-filled-delivery-passes-on-trunk,beds-run-under-the-oldest-supported-bash,brief-declares-the-round-boundary,builder-proves-each-rule-by-mutation,busy-seat-shells-are-ended,census-lifecycle-scenario-holds-under-load,chain-landing-carries-the-reviewed-diff,codex-jobs-run-through-a-metasystem-verb,coordinator-context-stays-under-budget,coordinator-wakes-on-events-not-polls,critique-closes-on-folded-proof,cross-cutting-change-inventories-its-readers,deep-sections-cannot-stay-red-unseen,degraded-stop-forms-have-one-source,delegate-sandbox-runs-the-beds,design-rounds-read-less-and-repeat-less,dispatch-bases-chains-on-the-remote-tip,engine-policy-binding-survives-drift-and-load,every-round-gets-an-independent-read,evidence-and-build-output-have-retention-and-stay-unindexed,failed-job-attention,failures-show-observed-against-expected,fixture-children-cannot-outlive-their-test,fixture-repo-copies-exclude-the-artifacts-store,fixture-runners-and-fakes-bound-their-own-life,fixture-waits-name-their-producer,fleet-doctor-repairs-what-stops-other-seats,follow-up-brief-cannot-cite-fresh-trunk-files,human-authority-surface-runs-its-cmd-tests,human-break-glass-commit-keeps-the-ledger-valid,human-goal-verbs-forgiving,human-wait-does-not-consume-goal-budget,job-record-birth-token,lease-sweep-death-evidence,live-job-on-a-done-goal-unnoticed,machine-concurrency-governor,member-size-gate,metasystem-stop-escalation-proofs,metasystem-stop-fleet-form,new-elapsed-budgets-use-explicit-hours,one-steward-per-checkout-on-its-own-root,pipelines-never-lose-a-truncated-producer,proof-admission-fits-a-seat-proving-several-units,proof-runs-reap-what-they-armed-and-a-census-names-the-rest,receipt-admission-caps-concurrent-batteries,receipt-writer-follows-the-worktree-it-runs-in,repo-root-paths-ride-agent-commits-unjudged,round-proof-feeds-the-next-brief,run-scoped-build-caches-have-a-janitor,seat-landings-run-the-selected-sections,seat-successor-continues-a-handoff-without-a-human,seats-spend-tokens-in-bounded-sessions,skipped-test-fails-its-group-on-the-other-os,small-change-lane,spend-fence-reports-tokens-per-model-and-cause,stop-batch-strands-a-resumable-goal,stop-capability-follows-the-lease-epoch,stop-decision-surface-is-a-gate,stop-gate-sees-harness-tracked-work,stop-hook-never-forces-an-empty-turn,stop-response-carries-a-structured-report-reference,test-environment-edges-are-closed,testing-surfaces-declare-their-mirror,tests-never-wait-on-wall-time,token-spend-fence,trunk-versus-candidate-is-a-verification-step,units-run-through-one-launcher,waits-run-outside-model-contexts,watch-verb,watcher-repair-request-never-names-current,winddown-census-handoff-leak reason=priority-order subject=waits-run-outside-model-contexts from=unranked to=1:4 requested-sequence=4
-Integrity: sha256=993562fce8b4a40491d503925f6dadf32cb708c2a62e1da960dd1ea750c1f1d7
+- 2026-09-16T18:20:37Z 3VR691BMNW9NCDTK87Q3KXNC3T-m1e-c6925449 approve actor=human:Wido targets=waits-run-outside-model-contexts
+Integrity: sha256=936617097650441152241c2a83fb3c20c5963f373a40a206dea4b05db030d9ea
