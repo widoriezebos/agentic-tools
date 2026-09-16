@@ -3,6 +3,7 @@ package run
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 	"os"
 	"path/filepath"
 	"strconv"
@@ -1023,4 +1024,29 @@ func TestWaitSavedResultReplayEvidence(t *testing.T) {
 			t.Fatalf("replaced source replay=%+v", result)
 		}
 	})
+}
+
+func TestInterruptWaiterRow(t *testing.T) {
+	root := t.TempDir()
+	now := time.Date(2026, 9, 16, 10, 0, 0, 0, time.UTC)
+	path := WaiterPath(root, "run", "interrupt-me", "owner")
+	row := Waiter{SchemaVersion: 2, WaitID: strings.Repeat("a", 32), Nonce: strings.Repeat("b", 32), Kind: "run",
+		State: WaiterStatePending, LastCheckedTip: "tip-7", Deadline: now.Add(time.Hour).Format(time.RFC3339Nano)}
+	if err := writeV2Waiter(path, row); err != nil {
+		t.Fatal(err)
+	}
+	store := &Store{Root: root}
+	options := WaitOptions{Now: func() time.Time { return now }}
+	got, err := store.InterruptWaiterRow(path, "handoff 0123456789abcdef", options)
+	if err != nil || got.State != WaiterStateInterrupted || got.InterruptedBy != "handoff 0123456789abcdef" || got.Result == nil ||
+		got.Result.ExitCode != ExitInterrupted || got.Result.Reason != "wait command was interrupted" || got.Result.SourceOutcome != "interrupted" {
+		t.Fatalf("interrupt transition: row=%+v result=%+v err=%v", got, got.Result, err)
+	}
+	if _, err := store.InterruptWaiterRow(path, "again", WaitOptions{}); err == nil || err.Error() != fmt.Sprintf("waiter row %s is already ended (state %q)", path, WaiterStateInterrupted) {
+		t.Fatalf("second interrupt error = %v", err)
+	}
+	store.finishV2(context.Background(), path, got, options, ExitWaitDeadline, WaiterStateDeadline, "deadline", "wait-deadline", "", got.LastCheckedTip, "")
+	if preserved, err := readV2Waiter(path); err != nil || preserved.InterruptedBy != "handoff 0123456789abcdef" {
+		t.Fatalf("ordinary terminal transition cleared interruptedBy: %q, err=%v", preserved.InterruptedBy, err)
+	}
 }

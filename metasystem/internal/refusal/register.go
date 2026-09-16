@@ -57,6 +57,7 @@ var Rows = []Row{
 	{Code: "HANDOFF_STATE_TOO_LARGE", Owner: "internal/steward", Site: "handoff_capture.go:814", Shape: Question},
 	{Code: "HANDOFF_UNOBSERVABLE", Owner: "internal/steward", Site: "handoff_capture.go:317", Shape: Question},
 	{Code: "HANDOFF_WAIT_IN_FLIGHT", Owner: "internal/steward", Site: "handoff_capture.go:420", Shape: Question},
+	{Code: "HANDOFF_WAIT_UNENDABLE", Owner: "internal/steward", Site: "handoff_waits.go:142", Shape: Question},
 
 	{Code: "APPROVAL_REQUIRED", Owner: "internal/goal", Site: "approval.go:266", Shape: Agent, Override: "goal approve", Commands: 1},
 	{Code: "APPROVAL_EXPIRED", Owner: "internal/goal", Site: "approval.go:301", Shape: Agent, Override: "goal approve", Commands: 1},

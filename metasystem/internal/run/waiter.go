@@ -172,6 +172,7 @@ type Waiter struct {
 	Result                *WaitResult     `json:"result,omitempty"`
 	Renewals              []WaitRenewal   `json:"renewals,omitempty"`
 	ResumedBy             *ResumeIdentity `json:"resumedBy,omitempty"`
+	InterruptedBy         string          `json:"interruptedBy,omitempty"`
 	PointerRepaired       bool            `json:"pointerRepaired,omitempty"`
 }
 
@@ -641,6 +642,10 @@ func (s *Store) persistV2(ctx context.Context, rowPath string, expectNonce strin
 }
 
 func (s *Store) finishV2(ctx context.Context, rowPath string, row Waiter, options WaitOptions, code int, state, reason, outcome, evidence, tip, stamp string) WaitResult {
+	return s.finishV2By(ctx, rowPath, row, options, code, state, reason, outcome, evidence, tip, stamp, "")
+}
+
+func (s *Store) finishV2By(ctx context.Context, rowPath string, row Waiter, options WaitOptions, code int, state, reason, outcome, evidence, tip, stamp, by string) WaitResult {
 	now := options.Now().UTC()
 	result := waitResult(row, code, state, reason, outcome, evidence, tip, stamp, now)
 	deadline, _ := time.Parse(time.RFC3339Nano, row.Deadline)
@@ -653,12 +658,36 @@ func (s *Store) finishV2(ctx context.Context, rowPath string, row Waiter, option
 		current.SourceResultIdentity = evidence
 		current.RemainingNanos = 0
 		current.Result = &result
+		if by != "" {
+			current.InterruptedBy = by
+		}
 	})
 	if err != nil {
 		return waitResult(row, ExitWaiterIO, "failed", "wait result could not be durably recorded: "+err.Error(), "storage-failure", "", row.LastCheckedTip, "", now)
 	}
 	removeWaiterHint(rowPath, updated)
 	return result
+}
+
+// InterruptWaiterRow ends one row through the same terminal transition the
+// wait loop takes when its own context is cancelled, recording who ended it.
+func (s *Store) InterruptWaiterRow(rowPath, by string, options WaitOptions) (Waiter, error) {
+	options = normalizeWaitOptions(options)
+	row, err := readV2Waiter(rowPath)
+	if err != nil {
+		return Waiter{}, err
+	}
+	for _, state := range WaiterStates {
+		if state.Name == row.State && state.Class == WaiterStateEnded {
+			return Waiter{}, fmt.Errorf("waiter row %s is already ended (state %q)", rowPath, row.State)
+		}
+	}
+	result := s.finishV2By(context.Background(), rowPath, row, options, ExitInterrupted, WaiterStateInterrupted,
+		"wait command was interrupted", "interrupted", "", row.LastCheckedTip, "", by)
+	if result.ExitCode != ExitInterrupted {
+		return Waiter{}, fmt.Errorf("%s", result.Reason)
+	}
+	return readV2Waiter(rowPath)
 }
 
 // ClaimableGoalChange reports only additions and revision changes against the
