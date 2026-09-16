@@ -6,7 +6,7 @@
 - MigrationEpoch: 2026-08-20T00:00:00Z
 - ManifestDigest: d82032bee818c2d82e6a95e6f1b75347499b88ee8b68c4d20a0f3c94d00ba320
 - MigrationMode: manifest
-- Revision: 94
+- Revision: 95
 - ApprovalGate: since=2026-09-03T14:16:24Z opid=JY54AQT8101VK9353WT9FQYGA9-m0-c5dbf036
 - FleetEnrollment: at=2026-09-06T06:37:21Z machine=m1 generation=1 opid=CMNCRETKYCB18MFZNYFSZJPXQY-m1-a4f8999f
 
@@ -120,4 +120,5 @@ History:
 - 2026-09-16T07:34:02Z FS0EXK42TCS94KQRW8APTQ66EK-m1e-c6925449 grant actor=human:Wido reason=tiers=1,2 verbs=approve,set-budget,unpark expires=2026-09-20
 - 2026-09-16T08:32:37Z 06TVM7E1K85PYBAZ9REMEA7HC2-m1b-30a7e141 ack actor=m1b+main-1789191336-90295-e4b24b targets=coordinator-wakes-on-events-not-polls displaced=m1b+main-1789191336-90295-e4b24b@2026-09-16T07:58:28Z ack
 - 2026-09-16T19:58:50Z 9MZ8XE84X51QJ6C4VP01KHYYE7-m1c-fde8080b ack actor=m1c+main-1789560465-86072-c7b126 targets=fixture-children-cannot-outlive-their-test displaced=m1c+main-1789560465-86072-c7b126@2026-09-16T18:42:59Z ack
-Integrity: sha256=b2d8e6164c049038b61cbedc6d6c24c1b97ab331513d4cdeb7062feda943a575
+- 2026-09-16T23:51:51Z S0H1K0NY95NNDQZY8FPDRA15C6-m1e-a3d4c1e1 ack actor=m1e+main-1789030447-51011-2956ea targets=trunk-reds-proof-grades-and-alert-episode displaced=m1e+main-1789030447-51011-2956ea@2026-09-16T23:48:08Z ack
+Integrity: sha256=34edeee11d85681fc7bad21a860e976d1e1d2b42d7f2256a8034501553c1cee9
