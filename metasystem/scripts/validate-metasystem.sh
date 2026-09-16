@@ -1126,6 +1126,9 @@ bash -n scripts/assert-return-complete.sh
 bash -n scripts/watch-background-jobs.sh
 bash -n scripts/agents/dispatch.sh
 bash -n scripts/agents/adapters/runtime-common.sh
+bash -n scripts/agents/oldest-bash-gate.sh
+bash scripts/agents/oldest-bash-gate.sh --self-test >/dev/null
+bash scripts/agents/oldest-bash-gate.sh >/dev/null
 }
 if section_selected shell-and-dependency-audits; then
   run_section shell-and-dependency-audits needs-nothing shell_and_dependency_audits_section

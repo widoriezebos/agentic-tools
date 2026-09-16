@@ -1,0 +1,176 @@
+# Existing Bash 3.2 fixture hazards; new findings are refused.
+# Conversion units delete rows as they repair sites.
+# Rows match rule, path, and content hash; the final column is informational.
+bare-test	scripts/adopt-fixtures.sh	e343c729d49178ae29be136dfcc211e922a7a53bf7dd9816c00d97d5f4303cc3	[[ "$fixture_scenario" == "$1" ]]
+bare-test	scripts/agents/actionable-metrics-fixtures.sh	38e4c772fc2ed99e6e5cd90fc07e997311223fd535c966274ec8dbd2c41cb08e	[[ $(grep -Fc -- '--goal "$goal"' "$root/scripts/agents/dispatch.sh") -ge 3 ]]
+bare-test	scripts/agents/channel-fixtures.sh	0dc348d76c277efdb64143b042e5987c0a27be5ed50f70d8c8b0b3be8a15aad6	[[ $("$ms" channel wait --root "$repo" --question "$qid" --timeout 1) == approve ]]
+bare-test	scripts/agents/channel-fixtures.sh	33f1570d591558a355741ca4fe16c3bfef4d6979aca153926a8ba054aa546405	[[ $("$ms" channel wait --root "$repo" --question "$telegram_qid" --timeout 1) == approve ]]
+bare-test	scripts/agents/channel-fixtures.sh	6f30ae7f2089d458ce68df0ea934aa05b062c13a2423d840ed3edd91af1acf43	[[ $("$ms" channel wait --root "$repo" --question "$telegram_qid" --timeout 1 --poll-seconds 1) == approve ]]
+bare-test	scripts/agents/channel-fixtures.sh	8216762fe3d32b8d5a7126a824f84c2e7e404f61515268f923aadada50ab58ac	[[ -n "$opid" ]]
+bare-test	scripts/agents/channel-fixtures.sh	a56cb1c0b0fba58d76a154cccbc06407c24862d14f8144da779f389d4fe1312d	[[ -n "$telegram_opid" ]]
+bare-test	scripts/agents/checkout-execution-guard-fixtures.sh	0474e3d841235475feaa90e15e800b926ecf72b1728329d3b282123f21f047f6	[[ "$forged_rc" == 1 ]]
+bare-test	scripts/agents/checkout-execution-guard-fixtures.sh	11655b90e8dc569ca8031637a60b4fb0cabef58ad72bc77f409a23907ff8db1f	(( checkout_execution_guard_held == 0 ))
+bare-test	scripts/agents/checkout-execution-guard-fixtures.sh	a7d2b3c135ef322a7f20388be333024d69daf3ec930a2e0674a35cfcd66754e6	[[ "$result" == acquired ]]
+bare-test	scripts/agents/delegate-caps-fixtures.sh	36ee620e50bad8dd7034ac30ee37112aaa6848fe18f01877373abbfc77a4d4cd	[[ "$(printf '%s\n' "$@" | sort -u)" == "$(printf '%s\n' AUTH-R2-005 AUTH-R2-006 AUTH-R2-007 AUTH-R2-008)" ]]
+bare-test	scripts/agents/delegate-caps-fixtures.sh	6a509f8fdb799438a5ff9f0345ef0fb035850dbe0b6686049eb0b2b9ce0ed322	[[ "$verdict" == SUCCESS && "$attested" == "$digest" ]]
+bare-test	scripts/agents/dispatch-fixtures.sh	55e91a3684a1f1bb567f1acbdcf69cffffb8bb1beb374189a99552e106e5a96e	[[ "$fixture_scenario" == "dispatch-$1" ]]
+bare-test	scripts/agents/dispatch-fixtures.sh	8d15ceef01b683364ad9e677722350b98fd56c3584275da2fcb8bd48da233d83	(( owned_group_alive ))
+bare-test	scripts/agents/dispatch-fixtures.sh	b2b40ec02f452b949a8ff7279b11f39393f497e35cac925699c07db3a247e31f	[[ "$2" == 320 ]]
+bare-test	scripts/agents/land-fixtures.sh	0747c36ec33eba8291b4efe7a6d6cd7bf1c9e75eed7efa581a2fa94341c7ece9	[[ $(git -C "$leg_local" rev-parse HEAD) == "$new_plan_base" ]]
+bare-test	scripts/agents/land-fixtures.sh	0d9bcbae6cb001249f8b3ce91bb1f64147f240c612bd8ad222304b7173d46083	[[ $(git -C "$leg_local" rev-parse HEAD^{tree}) == "$cutover_tree" ]]
+bare-test	scripts/agents/land-fixtures.sh	1085bfaced5112815510c4c3e9f0144431a25cd8f4697969ccb63cf9cfe35cc9	[[ $(git -C "$leg_local" status --porcelain) == ' M records/narrator-digest.log' ]]
+bare-test	scripts/agents/land-fixtures.sh	111e5feeca5a32a8873029a53e9fe18fb82b5f22c8116262abf1bda096ae6b7c	[[ "$cutover_peer_candidate" == "$cutover_candidate" ]]
+bare-test	scripts/agents/land-fixtures.sh	11ca85d7d3114e3374dbe57414d618305c8335bbd641aad4789465289c6d4b26	[[ $("$source_engine" json get --value "$cutover_goal_revision" --field code) == goal-revision-moved ]]
+bare-test	scripts/agents/land-fixtures.sh	149b4fc099079133098739f14bf5e9dc04d8c84a12db721b72b210b06737deef	[[ $("$source_engine" json get --value "$cutover_candidate_policy_observation" --field mode) == refuse ]]
+bare-test	scripts/agents/land-fixtures.sh	1637498cc9ed7c6e8782fdba390ed89233a9b5bc5ed6447ddbd809073d5923bc	[[ $(git -C "$leg_local" show HEAD:records/narrator-digest.log) == 'digest=seed' ]]
+bare-test	scripts/agents/land-fixtures.sh	1805bec2544f3b9f9c15ada729b5cc2d5ccf61a3370adde0244c92ad7bed0df9	[[ $("$source_engine" json get --file "$tier_one_receipt" --field "binding.$binding_field") == "$tier_one_projection_tree" ]]
+bare-test	scripts/agents/land-fixtures.sh	19187c4970681b9dc3b9c79280aa3c1490cfbcb2c907cb088c4f1712984a75a7	[[ $("$source_engine" json get --value "$cutover_invalid_observation" --field code) == promotion-record-malformed ]]
+bare-test	scripts/agents/land-fixtures.sh	19187c4970681b9dc3b9c79280aa3c1490cfbcb2c907cb088c4f1712984a75a7	[[ $("$source_engine" json get --value "$cutover_invalid_observation" --field code) == promotion-record-malformed ]]
+bare-test	scripts/agents/land-fixtures.sh	19c8210daf8cb964e2baa5bbfda1b78ade54573381821853ac449d6ae46ded49	[[ $(git -C "$leg_local" rev-parse HEAD) == "$ledger_base" ]]
+bare-test	scripts/agents/land-fixtures.sh	19c8210daf8cb964e2baa5bbfda1b78ade54573381821853ac449d6ae46ded49	[[ $(git -C "$leg_local" rev-parse HEAD) == "$ledger_base" ]]
+bare-test	scripts/agents/land-fixtures.sh	1b2f905cb44bbd4dd39c5e39c8bd376f566d21e6e7e85ece7cb0ac20012c8556	[[ $(git --git-dir="$leg_remote" show main:plans/new.md) == 'deliberate new plan' ]]
+bare-test	scripts/agents/land-fixtures.sh	256093d22e8588af6444992494618b89896265954c6f53751d58f2d645a199e8	[[ $(git -C "$leg_local" rev-parse 'stash@{0}') == "$full_chain_stash" ]]
+bare-test	scripts/agents/land-fixtures.sh	256093d22e8588af6444992494618b89896265954c6f53751d58f2d645a199e8	[[ $(git -C "$leg_local" rev-parse 'stash@{0}') == "$full_chain_stash" ]]
+bare-test	scripts/agents/land-fixtures.sh	256093d22e8588af6444992494618b89896265954c6f53751d58f2d645a199e8	[[ $(git -C "$leg_local" rev-parse 'stash@{0}') == "$full_chain_stash" ]]
+bare-test	scripts/agents/land-fixtures.sh	2bb8d45bd5b06121d8eccfc81350f2daf4b5c25cb72efa0df2f23a0e89fffa8b	[[ $("$source_engine" json get --value "$cutover_goal_missing" --field code) == goal-binding-missing ]]
+bare-test	scripts/agents/land-fixtures.sh	2e2d89d92972d1cd5fc042f0eb134fc3f80a1fa8a8184af04464f4403b86a2af	[[ -z $(git -C "$leg_local" status --porcelain) ]]
+bare-test	scripts/agents/land-fixtures.sh	2fe9ae144d9ca5b689c6c2fcf225d038e748a6c0efef9711a299856de0e247bc	[[ $("$source_engine" json get --file "$tier_one_receipt" --field tree) == "$tier_one_tree" ]]
+bare-test	scripts/agents/land-fixtures.sh	30e1aeaf72c5b6acfafe24af2ce858315b120e8d4498c78ebb93b34cd8916270	[[ $(grep -Fxc 'digest=peer' "$full_chain_committed_digest") == 1 ]]
+bare-test	scripts/agents/land-fixtures.sh	30f41ad38c9783277cc725f461de3e8de57975b92fcdd45d90a3caefb342590e	[[ $(LC_ALL=C grep -Ec '^Goal-Revision: [1-9][0-9]*$' <<<"$positive_message_text") == 1 ]]
+bare-test	scripts/agents/land-fixtures.sh	35b6543a14b43a0bc66a1ee0d3c6ec77b9cd79da0a5bfcd4b1498cd3a172da9a	[[ $(receipt_checkout_env_run "$leg_local" "$leg_local/bin/metasystem" json get --value "$cutover_refusal" --field verdictTrailer) == 'would-refuse code=chain-test-receipt-refused' ]]
+bare-test	scripts/agents/land-fixtures.sh	36dd76f6cab6e0c4fdc20f6de91c4fb188b5842bdd06f9ca1158075bf7959676	[[ "$ledger_head" == $(git --git-dir="$leg_remote" rev-parse refs/heads/main) ]]
+bare-test	scripts/agents/land-fixtures.sh	37436c7330f39d8d42ae3c078d4ab131a6b680b6b6c84f58b89126e1e88e70cb	[[ "$fixture_receipt_tree" == "$cutover_tree" ]]
+bare-test	scripts/agents/land-fixtures.sh	38bdd9a82e1d8ec4a3bf84c69377d9c51a7213fdaa25d124c294fa175fea7fd5	[[ $(git -C "$leg_local" rev-parse HEAD) != $(git --git-dir="$leg_remote" rev-parse refs/heads/main) ]]
+bare-test	scripts/agents/land-fixtures.sh	3e9aeb43b48f71046bc0fdfa1ea5ab749b90c7f0242a9e5270605341305963f0	[[ $("$source_engine" json get --file "$tier_one_receipt" --field "binding.$binding_field") == "$tier_one_tree" ]]
+bare-test	scripts/agents/land-fixtures.sh	3e9aeb43b48f71046bc0fdfa1ea5ab749b90c7f0242a9e5270605341305963f0	[[ $("$source_engine" json get --file "$tier_one_receipt" --field "binding.$binding_field") == "$tier_one_tree" ]]
+bare-test	scripts/agents/land-fixtures.sh	3ea476a4581116e20de810eb1d827ed025d5f0953998b83488a5a94e17f1e66b	[[ $(git -C "$leg_local" worktree list | wc -l | tr -d ' ') == 1 ]]
+bare-test	scripts/agents/land-fixtures.sh	3ea476a4581116e20de810eb1d827ed025d5f0953998b83488a5a94e17f1e66b	[[ $(git -C "$leg_local" worktree list | wc -l | tr -d ' ') == 1 ]]
+bare-test	scripts/agents/land-fixtures.sh	3ea476a4581116e20de810eb1d827ed025d5f0953998b83488a5a94e17f1e66b	[[ $(git -C "$leg_local" worktree list | wc -l | tr -d ' ') == 1 ]]
+bare-test	scripts/agents/land-fixtures.sh	42418093d6d276e3149fe938042f92557a287361e67e1b1e6f76bf3beb6ba529	[[ $(git --git-dir="$leg_remote" rev-parse refs/heads/main) == "$input_peer" ]]
+bare-test	scripts/agents/land-fixtures.sh	46719ddfb244dbf5a86cc7057a8830c23267bcc8c6de74e6968704c20d8f8386	[[ $(<"$leg_local/records/narrator-digest.log") == $'digest=seed\ndigest=drift' ]]
+bare-test	scripts/agents/land-fixtures.sh	479286c8ece4354c4d95912af5a14d49e1691667600deba51f17c830f75d98f4	[[ $(git -C "$cutover_policy_old" rev-parse HEAD) == "$cutover_policy_before" ]]
+bare-test	scripts/agents/land-fixtures.sh	47a7e7c86291d13da5a8a422deb7ea4f3f53629ba1a826cb91be9bfffebe32a5	[[ $("$source_engine" json get --value "$cutover_goal_missing" --field mode) == refuse ]]
+bare-test	scripts/agents/land-fixtures.sh	494a1f38a8319d533cd388ceaa00dfc27ed94ac4015b9ece5a420c1158aeee24	[[ -f "$leg_local/$full_chain_receipt_2" ]]
+bare-test	scripts/agents/land-fixtures.sh	4b39e00275d61217b8533bbc8fa05061fcb8218e3d29183b9a478b7c8c28dd72	[[ $(git -C "$leg_local" rev-parse HEAD^1) == "$records_peer" ]]
+bare-test	scripts/agents/land-fixtures.sh	53a043a468edc7a7e40ae2b1a07c36943472a4870998df6cbe25d4a9b5808f31	[[ $("$source_engine" json get --value "$cutover_candidate_policy_observation" --field code) == missing-declaration ]]
+bare-test	scripts/agents/land-fixtures.sh	5d2551cb39cc407b4738b2a71ed66a01f583f84f50172214bd0f32b7db676f72	[[ "$retry_local_head" == "$retry_remote_head" ]]
+bare-test	scripts/agents/land-fixtures.sh	5fdd2ef7e52e511aeade2af6c40c69a23a9af46f7ed88c2c7f8c4ebd299dedde	[[ $(grep -Fxc 'Machine: brain-leg+fixture-lineage' <<<"$positive_message_text") == 1 ]]
+bare-test	scripts/agents/land-fixtures.sh	63521fa5b27c64d20d1419626e95b94365ce75a5242fcb7f5fa24111c7a15922	[[ ${cutover_candidate_receipt##*/} == ${cutover_old_receipt##*/} ]]
+bare-test	scripts/agents/land-fixtures.sh	6376b391b338674b19acc0a329075d2e2b19e9563a51d769de762f9888e75489	(( runner_dead ))
+bare-test	scripts/agents/land-fixtures.sh	67103abdae2d462628b0cd016adbb2ead6fc813df60de47c081dd6dfd73e19ab	[[ $(git -C "$leg_local" show HEAD:payload.txt) == $'seed\npayload=peer' ]]
+bare-test	scripts/agents/land-fixtures.sh	6798ff0c3c3621207bc6628380ccd6f25a2758be184cc80eb10c1085cf5e6991	[[ $(git -C "$leg_local" show HEAD:memory/receipts.log) == "$(printf 'receipt=seed\n%s\n%s' "$full_chain_receipt_line_1" "$full_chain_receipt_line_2")" ]]
+bare-test	scripts/agents/land-fixtures.sh	6c760c3143edbdbca3a39d0130df0eabc9999b4a16b1f6326b46b73154bc6cdf	[[ "$new_plan_local_head" == "$new_plan_remote_head" ]]
+bare-test	scripts/agents/land-fixtures.sh	75bc2c2a035902d0e730cbdc0a467457027a8ada2fe8181962f275c12a956a02	[[ $("$source_engine" json get --value "$cutover_invalid_observation" --field mode) == refuse ]]
+bare-test	scripts/agents/land-fixtures.sh	75bc2c2a035902d0e730cbdc0a467457027a8ada2fe8181962f275c12a956a02	[[ $("$source_engine" json get --value "$cutover_invalid_observation" --field mode) == refuse ]]
+bare-test	scripts/agents/land-fixtures.sh	7e240122256fd71de54ed23d3aa4795d038323b249929fcb4997158be4b90f19	[[ $(git -C "$leg_local" rev-parse HEAD) == $(git --git-dir="$leg_remote" rev-parse refs/heads/main) ]]
+bare-test	scripts/agents/land-fixtures.sh	7e240122256fd71de54ed23d3aa4795d038323b249929fcb4997158be4b90f19	[[ $(git -C "$leg_local" rev-parse HEAD) == $(git --git-dir="$leg_remote" rev-parse refs/heads/main) ]]
+bare-test	scripts/agents/land-fixtures.sh	7e240122256fd71de54ed23d3aa4795d038323b249929fcb4997158be4b90f19	[[ $(git -C "$leg_local" rev-parse HEAD) == $(git --git-dir="$leg_remote" rev-parse refs/heads/main) ]]
+bare-test	scripts/agents/land-fixtures.sh	7e240122256fd71de54ed23d3aa4795d038323b249929fcb4997158be4b90f19	[[ $(git -C "$leg_local" rev-parse HEAD) == $(git --git-dir="$leg_remote" rev-parse refs/heads/main) ]]
+bare-test	scripts/agents/land-fixtures.sh	86e08de5aacb2060d3074d3a7a41453e87f301768fd41bb595a63408b77315e1	[[ $(grep -Fxc 'Goal-Item: ship-widget' <<<"$positive_message_text") == 1 ]]
+bare-test	scripts/agents/land-fixtures.sh	8a5840bddd713d8579f8b022679c4c27f994a2f6d7b25881eca30f90475ae939	[[ $(git --git-dir="$cutover_policy_remote" rev-parse refs/heads/main) == "$cutover_policy_remote_before" ]]
+bare-test	scripts/agents/land-fixtures.sh	8c1dba8440935b942eb13173fb7e1dd3c2dd77eee3f79a37006869433f797e66	[[ $(wc -l <"$full_chain_committed_digest" | tr -d ' ') == 3 ]]
+bare-test	scripts/agents/land-fixtures.sh	905bb520fb2435950bd611b5844e25e212e1bab35437bbd08236dd2afeb798f2	[[ $(git -C "$leg_local" rev-parse HEAD) == "$receipt_seed_build_stamp" ]]
+bare-test	scripts/agents/land-fixtures.sh	905bb520fb2435950bd611b5844e25e212e1bab35437bbd08236dd2afeb798f2	[[ $(git -C "$leg_local" rev-parse HEAD) == "$receipt_seed_build_stamp" ]]
+bare-test	scripts/agents/land-fixtures.sh	90735bc4292a340d9a63fc6317d9e944be96109d4cae852b1f31471f06930885	[[ $(git -C "$leg_local" log -1 --format=%s) == 'fixture carries receipts before a contended digest' ]]
+bare-test	scripts/agents/land-fixtures.sh	91f847528ffb69387ab4d00f6e4744703ba0a91d367416e0209ddf5e1e4337ab	[[ $(git -C "$leg_local" rev-parse HEAD) != "$input_peer" ]]
+bare-test	scripts/agents/land-fixtures.sh	9291b8a4b2446a519e5aec1e8c819d95270011833d49586d26a343315e94dafa	[[ "\${1:-}" == --trimpath && "\${2:-}" == --out && -n "\${3:-}" ]]
+bare-test	scripts/agents/land-fixtures.sh	9d9ebd0ce74a6b8684d43f876b7b8eb8d7ead522a21a94b5d79cff5e8a5b4e0c	[[ $("$source_engine" json get --value "$cutover_goal_revision" --field mode) == refuse ]]
+bare-test	scripts/agents/land-fixtures.sh	a24e69e6fa83cf6210cee4a368fcca9495f32924ada05971b56ecdc87f00fc30	[[ $("$source_engine" json get --file "$cutover_policy_seed/scripts/agents/landing-promotion.json" \\n--field schemaVersion) == 2 ]]
+bare-test	scripts/agents/land-fixtures.sh	a5fff010af5d11211c4a55c5b2c13fbf1dba469629dd24e72e42b64625aa3c66	[[ $(git --git-dir="$leg_remote" rev-parse refs/heads/main) == "$full_chain_contended_origin" ]]
+bare-test	scripts/agents/land-fixtures.sh	b0cb80a3c10e5acb68b6b27c3575971771bf427509e14b5eedba8fab3d34b99a	[[ $(git -C "$leg_local" stash list | wc -l | tr -d ' ') == 1 ]]
+bare-test	scripts/agents/land-fixtures.sh	b0cb80a3c10e5acb68b6b27c3575971771bf427509e14b5eedba8fab3d34b99a	[[ $(git -C "$leg_local" stash list | wc -l | tr -d ' ') == 1 ]]
+bare-test	scripts/agents/land-fixtures.sh	b0cb80a3c10e5acb68b6b27c3575971771bf427509e14b5eedba8fab3d34b99a	[[ $(git -C "$leg_local" stash list | wc -l | tr -d ' ') == 1 ]]
+bare-test	scripts/agents/land-fixtures.sh	b0d8dabc2bdf2371935708256bad080fe18e1c10227b8725267e73e81e616e74	[[ -f "$leg_local/artifacts/agents/validation-weight.json" ]]
+bare-test	scripts/agents/land-fixtures.sh	b3b438d1ada23dc6cf19ad4afdd423d5ec2275b5a359de529dbd7f5dcc2d74ab	[[ $(git -C "$leg_local" rev-parse HEAD) == "$full_chain_second_base" ]]
+bare-test	scripts/agents/land-fixtures.sh	b58aeaa2223812baadd3984868d9542bc85b3f66861d42cbba4b2958b5153c83	[[ $(receipt_checkout_env_run "$leg_peer" "$leg_peer/bin/metasystem" json get --file "$cutover_candidate_receipt" --field testing.candidateEngineIdentityVersion) == 2 ]]
+bare-test	scripts/agents/land-fixtures.sh	b6c5b45c9c7d77f058c3af452200938d3db464027a1b1b4ceb5c6801a6944425	[[ $(git -C "$leg_peer" rev-parse HEAD) == "$receipt_seed_build_stamp" ]]
+bare-test	scripts/agents/land-fixtures.sh	b8afc2449ef94d5c9eada0bcae8c5072620d89f9aefc10fb8e617afd8452988c	[[ $(receipt_checkout_env_run "$leg_local" "$leg_local/bin/metasystem" json get --value "$cutover_control" --field mode) == observe ]]
+bare-test	scripts/agents/land-fixtures.sh	baf7c9e5a88689eccac856d54d897c1919b307336f6320cb2f98fbc476a3c99c	[[ $(git -C "$leg_local" rev-parse HEAD^1) == "$ledger_peer" ]]
+bare-test	scripts/agents/land-fixtures.sh	c0aee02def3a9bcda4efd227a4ede0e56c6f427b8367bbfd308bc0774bf5825c	[[ $("$source_engine" json get --value "$cutover_policy_new_accept" --field verdictTrailer) == 'pass bar=b' ]]
+bare-test	scripts/agents/land-fixtures.sh	c5b0907197c4406c2c9dffbde414478f1a9022300db5bca8e951bb47fd97e6cc	[[ $(git --git-dir="$leg_remote" show main:peer.txt) == 'peer advance' ]]
+bare-test	scripts/agents/land-fixtures.sh	c62ac2057075a96577e1a41e5d8565d7b2729eaed2dba3cde273cc797a6a8647	[[ "$retry_remote_head" == "$retry_transport_head" ]]
+bare-test	scripts/agents/land-fixtures.sh	c7d55117dea8b7b77ee2add57bb78b04a27a9b75082c531ecf4dce3ad58d558a	[[ $(sed -n '1p' "$full_chain_committed_digest") == 'digest=seed' ]]
+bare-test	scripts/agents/land-fixtures.sh	c869655b75e0b7ac279ec7c7aa27bb5f654e203a88c8f71e188fe5cd60daa654	[[ $(git -C "$leg_local" rev-parse HEAD) == "$full_chain_base" ]]
+bare-test	scripts/agents/land-fixtures.sh	c869655b75e0b7ac279ec7c7aa27bb5f654e203a88c8f71e188fe5cd60daa654	[[ $(git -C "$leg_local" rev-parse HEAD) == "$full_chain_base" ]]
+bare-test	scripts/agents/land-fixtures.sh	c869655b75e0b7ac279ec7c7aa27bb5f654e203a88c8f71e188fe5cd60daa654	[[ $(git -C "$leg_local" rev-parse HEAD) == "$full_chain_base" ]]
+bare-test	scripts/agents/land-fixtures.sh	c869655b75e0b7ac279ec7c7aa27bb5f654e203a88c8f71e188fe5cd60daa654	[[ $(git -C "$leg_local" rev-parse HEAD) == "$full_chain_base" ]]
+bare-test	scripts/agents/land-fixtures.sh	c86b072452bf313b7a26c2f3f7d79ad957fa362c4c18251463984ba4274bbbeb	[[ "$records_receipt_workspace" != "$records_candidate_workspace" ]]
+bare-test	scripts/agents/land-fixtures.sh	c936dbb0c0845dc871d43c85047fae3781c61c7bc90b03173462d25abcb34575	[[ $("$source_engine" json get --value "$cutover_goal_mismatch" --field code) == goal-binding-mismatch ]]
+bare-test	scripts/agents/land-fixtures.sh	ca06a2c426e02ca729b95e8e93477117bf8388b64c78fdc38641dd8a9cd0467b	[[ $(git --git-dir="$cutover_moved_remote" rev-parse refs/heads/main) == "$cutover_peer" ]]
+bare-test	scripts/agents/land-fixtures.sh	d1f16bfce0dae8a692b55b30cc01b7e199e23ab8260d91c9562b9c85bf216bc3	[[ $(git -C "$leg_local" status --porcelain) == $' M memory/receipts.log\n M records/narrator-digest.log' ]]
+bare-test	scripts/agents/land-fixtures.sh	d5e0c5ae309530313c31727dae591d13c740c0c27a81763ca056108649655e9e	[[ $("$source_engine" json get --file "$tier_one_receipt" --field exitStatus) == 0 ]]
+bare-test	scripts/agents/land-fixtures.sh	d7160d28e407b52c5d6156d6c47ecc0f4a373d639b459e6e953ac8553064e89c	[[ $(git -C "$leg_local" write-tree) == "$ledger_receipt_tree" ]]
+bare-test	scripts/agents/land-fixtures.sh	d91e00d008e9e173deb3cb08bc1e6315fb926e1c4ed4f3dc476839e78e4b296d	[[ $(git -C "$leg_local" rev-parse HEAD) == "$cutover_peer" ]]
+bare-test	scripts/agents/land-fixtures.sh	dce72ff90e93a0475f3dff7242b45f8734a5037877b63152992e8617740d5723	[[ $(git --git-dir="$leg_remote" show main:payload.txt) == 'local landing' ]]
+bare-test	scripts/agents/land-fixtures.sh	e168d135b25bddab255cced1afad5ed30d9120e419bc373f568048a55d334f08	[[ "${1:-}" == --trimpath && "${2:-}" == --out && -n "${3:-}" ]]
+bare-test	scripts/agents/land-fixtures.sh	eac277173603216e2af986e33bc5dc79e0ab645097ae376c97e933aa4ba38948	[[ $(receipt_checkout_env_run "$leg_local" "$leg_local/bin/metasystem" json get --file "$ledger_receipt" --field workspace.tree) =~ ^[0-9a-f]{40}$ ]]
+bare-test	scripts/agents/land-fixtures.sh	f193a5f3cfd186ffa5663bd9c272270bb9fa63fcf3ac44a5900c4aecaa7a6ee4	[[ $("$source_engine" json get --value "$cutover_policy_new_accept" --field mode) == observe ]]
+bare-test	scripts/agents/land-fixtures.sh	f3c414c9f22a1b61e6f7e4b50a5efbb45b35dbfb62191e1c2c09d9c30c6dff8f	[[ $("$source_engine" json get --value "$cutover_goal_mismatch" --field mode) == refuse ]]
+bare-test	scripts/agents/land-fixtures.sh	f3dc436c343625f1620c4439878f70c4627bfe2f1e71b0b02ef5b512e741e9e2	[[ $(grep -Fxc 'digest=drift' "$full_chain_committed_digest") == 1 ]]
+bare-test	scripts/agents/land-fixtures.sh	f541967080e631e027886c917e82aaa3e34075c416162ca9ad5c395f8ea689e9	[[ "$positive_commit" == $(git --git-dir="$leg_remote" rev-parse refs/heads/main) ]]
+bare-test	scripts/agents/land-fixtures.sh	f6cea47b774bf9aa91044df44893ef434881fb663f6ca155bf966954831ccb72	[[ "$ledger_receipt_workspace" == "$ledger_candidate_workspace" ]]
+bare-test	scripts/agents/land-fixtures.sh	f9774b6b92fc7858a8530740e13c4a3c948510a039ef374a3f808ddc337f78ca	[[ "$ledger_moved_candidate" != "$ledger_receipt_tree" ]]
+bare-test	scripts/agents/land-fixtures.sh	fbc5263d82d14d1e5de99eef6ab9e0ba39d1d5c8a882b22d9e793c34a2a33a2e	[[ $(git -C "$cutover_policy_old" diff --cached --binary -- records/misc/promotion-policy.md) == "$cutover_policy_patch_before" ]]
+bare-test	scripts/agents/land-fixtures.sh	fd9ad3d4874c9fae9883df5eaf6d844c5b940a8cbfeb34ffd022cf278ff7c651	[[ "$records_head" == $(git --git-dir="$leg_remote" rev-parse refs/heads/main) ]]
+bare-test	scripts/agents/land-fixtures.sh	fe83d530023b9fcf4ef03aea9cccad0013dfeb8f19079d0a59634147bd5dde27	[[ $(receipt_checkout_env_run "$leg_local" "$leg_local/bin/metasystem" json get --value "$cutover_control" --field verdictTrailer) == 'pass bar=a' ]]
+bare-test	scripts/agents/path-class-fixtures.sh	1b6b2f987a066511d10c3709de688ec30142359dd3f5bc0d7000bf4eb048b83f	[[ \$# -gt 0 ]]
+bare-test	scripts/agents/path-class-fixtures.sh	beca019e194f4e1f137464a52dfcccd6afb548d7013c386c403f3deb727fcec1	[[ -n "\$proof_out" ]]
+bare-test	scripts/agents/static-reproof-fixtures.sh	beca019e194f4e1f137464a52dfcccd6afb548d7013c386c403f3deb727fcec1	[[ -n "\$proof_out" ]]
+bare-test	scripts/agents/static-reproof-fixtures.sh	f3cb0757061d0e10bc4bc91ba1b7033f755f0605da664dca4e6beb2c126d6d4b	[[ -n "$proof_out" ]]
+bare-test	scripts/agents/suite-progress-fixtures.sh	9cfaaa6c7fca0d93c1061d2789c70cb26334b1b0db736f202659f59541c4c58c	[[ -n "$evidence_dir" && -f "$evidence_dir/copy-note.txt" ]]
+bare-test	scripts/agents/supervision-fixtures.sh	158b0a6c52bc9da0ea5cccb61a98c5be36d9f5d96c3ed6ccfded66f1815364f5	[[ "${operator_env[*]}" == *"METASYSTEM_CENSUS_PROCESS_FILE=$operator_process_fixture"* ]]
+bare-test	scripts/agents/supervision-fixtures.sh	16cea9925572c5c9579ebbe3a9535d56fcabfe74f602da3a5150094742316edd	[[ "$decision_surface_deadline_assertion" =~ $deadline_pattern_regex ]]
+bare-test	scripts/agents/supervision-fixtures.sh	57473eecd6bc76eb86dd2a8119c94832dea0b4a18546b20d92a6f753cdad1217	[[ -f "$file" ]] && [[ "$("$engine" json get --file "$file" --field "$field" 2>/dev/null)" == "$expected" ]]
+bare-test	scripts/agents/supervision-fixtures.sh	5f0f5a4614271736bdd51b853da109f4f03f040002a4dcb92e2b902854d72233	[[ "$(json_field "$state" "components.$1.pid")" != "$2" ]]
+bare-test	scripts/agents/supervision-fixtures.sh	76c91f8502846bd19b7f62136e9fac46354f91d627f34813755712c1878be1dc	[[ ! -e "$2" ]]
+bare-test	scripts/agents/supervision-fixtures.sh	80a6bd2ec3de53cae8927173198c0918f71dd3d54faea54520feff5d03afa5bf	[[ $2 -eq 0 ]]
+bare-test	scripts/agents/supervision-fixtures.sh	c9aa09c4bc7039c6a0d43e81d982e16da87ab0cc65844ed7c1797f1f1252a4c1	[[ "$(env -u METASYSTEM_METASYSTEM_RUNTIMES \\n"$operator_harness/scripts/metasystem-config.sh" get --key metasystem.runtimes --default '')" == codex ]]
+bare-test	scripts/agents/supervision-fixtures.sh	e5e1a54d9e06cf8639b17b7c4676089e96ec7da223f7ab7d23737910f8e5b7dd	[[ -z "$operator_runtimes" ]]
+bare-test	scripts/agents/supervision-fixtures.sh	e941b91ee51ab99eacaf90a103894977a5921f222eb8f068b6ecf0aaf9311afa	[[ "$observed" =~ ^[0-9]+$ && "$observed" -gt "$first" ]]
+bare-test	scripts/agents/supervision-fixtures.sh	e9eaca1d448f58a21a87c03344f6790060224f926e8030d0a7912c5420448b9a	[[ "$decision_surface_stop_hook_assertions" =~ $decision_pattern_regex ]]
+bare-test	scripts/agents/supervision-fixtures.sh	ef5a98ae989018787859aae126ec6eef3f0e455eb3845d554863888d2298b451	[[ "$(census_field "$1" verdict)" == "$2" ]]
+bare-test	scripts/agents/supervision-go-fixtures.sh	8e7a1f9f2543a7cdfe39d7d1e869430739a416495a87b08a224177fb49b2e286	[[ "$("$bin" json strip --file "$tmp/state-components.json" --key watcher --key reaper 2>/dev/null)" == '{}' ]]
+bare-test	scripts/agents/supervision-hook-fixtures.sh	2c29e93dcb91bf54d1a9c9af81602f9885e4395dc1ec851d8c0ece4c9d721941	[[ $($engine json get --value "$ancestor" --field pid) == $$ \\n&& $($engine json get --value "$ancestor" --field runtime) == "$runtime" ]]
+bare-test	scripts/agents/witness-gate-fixtures.sh	0632409191e1bb1bc88a455fbaa0d6c8e0cb1ff275ea67fe18108595d79c76a1	[[ "$wrong_start_pid" == $$ ]]
+bare-test	scripts/agents/witness-gate-fixtures.sh	296e54f9f5a419aa7198dd34d1c7e6b93e1e172c07be013643af5601acf684d5	[[ -n "${METASYSTEM_GATE_WITNESS_EXPORT:-}" && -d "$METASYSTEM_GATE_WITNESS_EXPORT" ]]
+bare-test	scripts/agents/witness-gate-fixtures.sh	8f1bc80aad6d366cbd527c61583cf8122eb4592e97d0bbd32a4f486f85fb5a92	[[ "${GOFLAGS:-}" == -mod=readonly ]]
+bare-test	scripts/agents/witness-gate-fixtures.sh	a9ee6fd5dcdc65a8716ba6b315ebb1f9fb5292058b3d7a332678c7444f784e30	[[ "$frozen_digest" =~ ^[a-f0-9]{64}$ && -d "$frozen_tree" ]]
+bare-test	scripts/agents/witness-gate-fixtures.sh	ad9888472983b0f219b046f54fd6f64a602a2ab683119aa57cca2c748f9b44f0	[[ "$("$source_engine" json get --file "$witness_path" --field controller.pid)" == $$ ]]
+bare-test	scripts/agents/witness-gate-fixtures.sh	b0a9ede68cb1f128777d5cc65fb9d68288d0d8cf5a18ccedcc241a5ebde822a6	[[ -z "${METASYSTEM_GATE_WITNESS_EXPORT:-}" ]]
+bare-test	scripts/agents/witness-gate-fixtures.sh	bf6860d838ea928e930de74542988710e3821ace24ebf466d40b8acb91b9bf5e	[[ "$("$source_engine" json get --file "$witness_path" --field controller.startTicks)" != "$wrong_start_ticks" ]]
+bare-test	scripts/agents/witness-gate-fixtures.sh	ca171606b3fdd9b83b78f3fcc8b45d245b89a3079d2aaea6e0e1c99e2e3f805d	[[ "${GOMODCACHE:-}" == "${WITNESS_FIXTURE_EXPECT_GOMODCACHE:-}" ]]
+bare-test	scripts/agents/witness-gate-fixtures.sh	dcb22c6e5f188538709761280db6ae90b7965dc597a3dfe3ca855d51721a0b02	[[ ${2:-} == ./cmd/metasystem ]]
+bare-test	scripts/agents/witness-gate-fixtures.sh	f258b6f3973a301bab9994e58c1ac5f8bda9b4316a8d3e84039d65d2d8b97d02	[[ "$("$source_engine" json get --file "$witness_path" --field controller.startedAtSec)" != "$wrong_start_started" ]]
+empty-array	scripts/adopt-fixture-helpers.sh	017a08e5fcbf3644eff3a30869b1fdd10c4cae18340c7fe0a37b714bddf71539	joined=$(printf '%s\n' "${models[@]}" | LC_ALL=C sort -u | paste -sd, -)
+empty-array	scripts/agents/delegate-caps-fixtures.sh	20d6667c677bfec7eda9de817feb50768df4a63144dbbf7d2e499e3b5f1c7cdb	|| { echo "AUTH-R2-009: executed registry is not exact:" "${passed[@]}" >&2; exit 1; }
+empty-array	scripts/agents/delegate-caps-fixtures.sh	73759035861360e5c34fb36f4a6f22c0b6a76b851d7de209844185b8b2ad126f	registry_is_complete "${passed[@]}" \
+empty-array	scripts/agents/dispatch-fixtures.sh	18fbf1891ed083970425aee571082c1e2810c333e00426afff55b3c2b1ccc327	if argv_contains -C "${codex_args_two[@]}"; then
+empty-array	scripts/agents/dispatch-fixtures.sh	25cc0a3ef95aed38e91897c57586ae4251cfdd9ffa97f3ef323e0acdfa96139f	argv_contains 'sandbox_mode="workspace-write"' "${codex_args_two[@]}" \
+empty-array	scripts/agents/dispatch-fixtures.sh	25d7e154596d4050ddcd7b281d962a8baad58f6527e2c68fe274be39ed67520b	argv_contains 'approval_policy="never"' "${codex_args_two[@]}" \
+empty-array	scripts/agents/dispatch-fixtures.sh	39e0f293c8587d8c26f5471e13b6dae1e960a21ad986e6265ace9d853bad264f	argv_contains 'model="gpt-5-fixture"' "${codex_args_two[@]}" \
+empty-array	scripts/agents/dispatch-fixtures.sh	5534ef407a52aa2b467709fe618f6edf4331514a0e167687799c138e6b35839b	argv_contains 'approval_policy="never"' "${codex_args_one[@]}" \
+empty-array	scripts/agents/dispatch-fixtures.sh	5cde5e10e350889d3f38ffef7de322574daa9152f7d176946af052c401a9d482	[[ "$(argv_value_after -m "${codex_args_one[@]}")" == gpt-5-fixture ]] \
+empty-array	scripts/agents/dispatch-fixtures.sh	84421e44e636dc404352c082a0ffd92f4a7ad0364e4002e755bf2b78743cbbb9	[[ "$(argv_value_after --sandbox "${codex_args_one[@]}")" == workspace-write ]] \
+empty-array	scripts/agents/dispatch-fixtures.sh	858d7878cd38d09b5c58054a8aff45aa097edd4cf4833a62589e87de9d308a0d	argv_contains codex-fixture-session "${codex_args_two[@]}" \
+empty-array	scripts/agents/dispatch-fixtures.sh	8a4191316db6a2b49648ca749dcb5a976ef2c9e7bc30f4c1366174aa49318b6c	argv_contains 'sandbox_workspace_write.network_access=true' "${codex_args_two[@]}" \
+empty-array	scripts/agents/dispatch-fixtures.sh	92d4ebf670f812b45c1e21b83e23daaf89be9ae694a836ed4705066472e46c40	argv_contains 'sandbox_workspace_write.network_access=true' "${codex_args_one[@]}" \
+empty-array	scripts/agents/dispatch-fixtures.sh	b81cd9e29411a016695c814082d3df35a8a825d660b4e0297fd356d6fb099b05	[[ "$(argv_value_after -C "${codex_args_one[@]}")" == "$runner_repo" ]] \
+empty-array	scripts/agents/dispatch-fixtures.sh	dd16dadd86e17a70870b19c7b4973c27d81e80d9f2b53abc0bd9affa18abccca	"$fixture_bed_script" "${fixture_parent_scenarios[@]}"
+empty-array	scripts/agents/evidence-segment-fixtures.sh	816e538664bc95d46519701c06b7109277fdbf76d3b0c148cd4b3e9f3e21e654	for destination in "${destinations[@]}"; do
+empty-array	scripts/agents/fixture-bed-scenarios.sh	b68485456c5d31c3f709e57c6545028680d0867ed4005064c6196f29040c3699	fixture_bed_parent_child_pids="${live_pids[*]}"
+empty-array	scripts/agents/fixture-stop-report.sh	05b3090b0bb32ac5d2e7dd26e053d32038191ba6e04c416fb44a57aea024c784	! "$engine" json get "${payload_args[@]}" --field systemMessage >/dev/null 2>&1 || return 1
+empty-array	scripts/agents/fixture-stop-report.sh	1118fcba26e55e2aac5f6e1d076ce903aebf0683ffd11a4cb50007280564499e	! "$engine" json get "${payload_args[@]}" --field reason >/dev/null 2>&1 || return 1
+empty-array	scripts/agents/fixture-stop-report.sh	16257e743ef331e19440283d3bc284bcc75ea35c4a31c590fe94dcd149da639e	payload_shape=$("$engine" json strip "${payload_args[@]}" --key systemMessage) || return 1
+empty-array	scripts/agents/fixture-stop-report.sh	72e50f4a33f7a94ec547f21321e44b76d61dc707f8917ab70566aa1d2931e511	payload_shape=$("$engine" json strip "${payload_args[@]}" --key decision --key reason) || return 1
+empty-array	scripts/agents/fixture-stop-report.sh	9192cc354f64dfb9cd61d7e4eb8b6814befcd333e7e959afbafc06aebe558cf3	line=$("$engine" json get "${payload_args[@]}" --field "$field") || return 1
+empty-array	scripts/agents/fixture-stop-report.sh	f05763cd989bb46c7b559f75b86a9fcd7bceafb14dff855a218d5fffe1f5b0b2	decision=$("$engine" json get "${payload_args[@]}" --field decision 2>/dev/null) || decision_rc=$?
+empty-array	scripts/agents/land-fixtures.sh	2888abdbb6415c3f5ff34bb6ebcbea738508282c4056dda7c402035f1cb16c03	for entry in "${receipt_environment[@]}"; do
+empty-array	scripts/agents/land-fixtures.sh	2a3994d0bd65d841fe850c18f7f7f26f739c1dfa88f412d39d6e3d63cb83bf61	env -i "${receipt_environment[@]}" "$@"
+empty-array	scripts/agents/land-fixtures.sh	9f70565e827d0c012851c57b84718891985a62a35886934531ff30608485f147	git commit "${commit_args[@]}"
+empty-array	scripts/agents/path-class-fixtures.sh	4b40e70698acad0cfb3f09000fcfd5798dc60e4b550c3e5a99d227b3a4775c57	grep -rnE -I "$pattern" -- "${repo_paths[@]}"
+empty-array	scripts/agents/path-class-fixtures.sh	871d0c30123f274a605695b3b4d48af813198de618d315d9aef25ba8c2372437	grep -rnE -I --exclude-dir=reviews --exclude=journey.md "$pattern" -- "${install_paths[@]}"
+empty-array	scripts/agents/runtime-hook-fixtures.sh	25ed61728c8540ded5775b48ebb5f5bf43e99ab01cf33152f7b39921cea972b8	wait_owned concurrent-runtime-children "${pids[@]}"
+empty-array	scripts/agents/supervision-fixtures.sh	265d4bd106334732389239489e7050d2d723999b8be8f5cf8de26b4b8ae1816a	for blocked_kind in "${blocked_kinds[@]}"; do
+empty-array	scripts/agents/supervision-fixtures.sh	9798fb4126670aaf00e2a268d92f4acf0604512175986b1c278a022516692aeb	"${command_words[@]}"
+empty-array	scripts/agents/supervision-fixtures.sh	b614fda102ca39a7780bd5bb15da9ad6d555cac9efc3f4519b2c2572c994dd54	for release_file in "${release_files[@]}"; do
+empty-array	scripts/agents/supervision-fixtures.sh	c3b010dd99f0f4f0176169b1d0051fb2736d3f99caf8595f71d0c7a2286de4dd	for blocked_pid in "${blocked_pids[@]}"; do
