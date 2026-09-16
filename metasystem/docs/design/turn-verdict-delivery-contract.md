@@ -99,7 +99,10 @@ adapter must pass all three; a native notification may only accelerate the
 next source read.
 
 The `wait-stop-fake` bed drives both the installed plain command and the fake
-Stop hook through `TestPendingWaitInstalledVerdicts`. The
+Stop hook through `TestPendingWaitInstalledVerdicts`. It also runs
+`TestPendingWaitFromChildShell`, which associates the runtime session through
+the installed SessionStart hook, registers a wait from a child shell under its
+own process identifier, and proves the matching and hostile Stop outcomes. The
 `wait-stop-claude` bed additionally reaches a real Claude Code turn end while
 the blocking command owns a pending row. Because that leg consumes a live
 provider turn, the external runtime-bed orchestrator enables it with

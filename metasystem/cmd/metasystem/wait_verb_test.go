@@ -19,6 +19,7 @@ import (
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/proofrun"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/report"
 	metarun "github.com/widoriezebos/agentic-tools/metasystem/internal/run"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/steward"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/testutil"
 )
 
@@ -606,7 +607,19 @@ func TestWaitSessionStartWithoutLeaseReturnsBusy(t *testing.T) {
 	}
 }
 
+type pendingWaitVerdictCommandOptions struct {
+	jobStatus   string
+	writeWaiter bool
+}
+
 func pendingWaitVerdictCommandFixture(t *testing.T, root, runtimeName string) (string, string) {
+	t.Helper()
+	return pendingWaitVerdictCommandFixtureWithOptions(t, root, runtimeName, pendingWaitVerdictCommandOptions{
+		jobStatus: "pending-setup", writeWaiter: true,
+	})
+}
+
+func pendingWaitVerdictCommandFixtureWithOptions(t *testing.T, root, runtimeName string, options pendingWaitVerdictCommandOptions) (string, string) {
 	t.Helper()
 	for _, name := range []string{"GIT_OBJECT_DIRECTORY", "GIT_ALTERNATE_OBJECT_DIRECTORIES"} {
 		value, present := os.LookupEnv(name)
@@ -668,12 +681,24 @@ func pendingWaitVerdictCommandFixture(t *testing.T, root, runtimeName string) (s
 		t.Fatal(err)
 	}
 	operationID := strings.Repeat("d", 32)
+	if options.jobStatus == "" {
+		options.jobStatus = "pending-setup"
+	}
 	job := map[string]any{
-		"jobId": "wait-stop-job", "operationId": operationID, "status": "pending-setup", "goalId": "wait-stop-goal",
+		"jobId": "wait-stop-job", "operationId": operationID, "status": options.jobStatus, "goalId": "wait-stop-goal",
+	}
+	target := metarun.WaiterTarget{OperationID: operationID}
+	if options.jobStatus == "pending" {
+		startedAt := time.Now().UTC().Add(-time.Second).Format(time.RFC3339Nano)
+		job["mainId"], job["round"], job["startedAt"] = mainID, 1, startedAt
+		target.Round, target.StartedAt = 1, startedAt
 	}
 	jobData, _ := json.Marshal(job)
 	if err := os.WriteFile(filepath.Join(root, "artifacts", "agents", "jobs", "wait-stop-job.json"), append(jobData, '\n'), 0o644); err != nil {
 		t.Fatal(err)
+	}
+	if !options.writeWaiter {
+		return session, mainID
 	}
 	signature, err := report.OpenWorkSignature(context.Background(), root)
 	if err != nil || signature == "" {
@@ -692,7 +717,7 @@ func pendingWaitVerdictCommandFixture(t *testing.T, root, runtimeName string) (s
 		PidStartTicks: processRef.StartTicks, BootID: processRef.BootID,
 		Session: session, MainId: mainID, OwnerLineage: lineage, ClaimEpoch: &epoch, RuntimeSession: session,
 		Selector:     metarun.WaitSelector{Kind: "job", TargetID: "wait-stop-job"},
-		Target:       metarun.WaiterTarget{OperationID: operationID},
+		Target:       target,
 		RegisteredAt: now.Add(-time.Second).Format(time.RFC3339Nano), Deadline: now.Add(time.Minute).Format(time.RFC3339Nano),
 		BootDeadlineNanos: (elapsed + time.Minute).Nanoseconds(), DeadlineBootID: bootID, RemainingNanos: time.Minute.Nanoseconds(),
 		LastObservedAt: now.Format(time.RFC3339Nano), LastObservedBootNanos: elapsed.Nanoseconds(),
@@ -703,6 +728,326 @@ func pendingWaitVerdictCommandFixture(t *testing.T, root, runtimeName string) (s
 		t.Fatal(err)
 	}
 	return session, mainID
+}
+
+type installedHookResult struct {
+	stdout    string
+	stderr    string
+	upCommand string
+}
+
+func boundedFixtureContext(t *testing.T, duration time.Duration) (context.Context, context.CancelFunc) {
+	t.Helper()
+	deadline := time.Now().Add(duration)
+	if testDeadline, ok := t.Deadline(); ok && testDeadline.Before(deadline) {
+		deadline = testDeadline
+	}
+	return context.WithDeadline(context.Background(), deadline)
+}
+
+func copyExecutableFixture(t *testing.T, source, target string) {
+	t.Helper()
+	data, err := os.ReadFile(source)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.MkdirAll(filepath.Dir(target), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(target, data, 0o755); err != nil {
+		t.Fatal(err)
+	}
+}
+
+func installPendingWaitHookFixture(t *testing.T, root, binary string) (hook, canonical, wrapper string) {
+	t.Helper()
+	sourceRoot, err := filepath.Abs(filepath.Join("..", ".."))
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, relative := range []string{
+		"scripts/agents/supervision-hook.sh",
+		"scripts/agents/evidence-gc.sh",
+		"scripts/agents/arm-supervision.sh",
+		"scripts/agents/dispatch.sh",
+		"scripts/agents/adapters/fake.sh",
+		"scripts/agents/adapters/runtime-common.sh",
+		"scripts/watch-background-jobs.sh",
+		"scripts/metasystem-config.sh",
+	} {
+		copyExecutableFixture(t, filepath.Join(sourceRoot, relative), filepath.Join(root, relative))
+	}
+	hook = filepath.Join(root, "scripts", "agents", "supervision-hook.sh")
+	canonical = filepath.Join(root, "bin", "metasystem")
+	copyExecutableFixture(t, binary, canonical)
+	fixtureRoot, err := filepath.EvalSymlinks(root)
+	if err != nil {
+		t.Fatal(err)
+	}
+	canonical, err = filepath.EvalSymlinks(canonical)
+	if err != nil {
+		t.Fatal(err)
+	}
+	engine, err := os.ReadFile(canonical)
+	if err != nil {
+		t.Fatal(err)
+	}
+	digest := sha256.Sum256(engine)
+	if err := os.MkdirAll(filepath.Dir(steward.RepoIdentityPath(fixtureRoot)), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := steward.MintIdentity(steward.RepoIdentityPath(fixtureRoot), steward.InstallIdentity{
+		RepoIdentity: fixtureRoot, Generation: 1, InstallPath: canonical,
+		InstallDigest: fmt.Sprintf("sha256:%x", digest), MintedAt: time.Now().UTC().Format(time.RFC3339Nano),
+		Enrollment: steward.EnrollmentFixture,
+	}); err != nil {
+		t.Fatal(err)
+	}
+	wrapper = filepath.Join(t.TempDir(), "metasystem-hook-engine")
+	wrapperSource := `#!/bin/sh
+if [ "${1:-}" = up ]; then
+  printf '%s' "$0" > "${METASYSTEM_WAIT_UP_COMMAND_FILE:?}"
+  printf ' %s' "$@" >> "${METASYSTEM_WAIT_UP_COMMAND_FILE:?}"
+  printf '\n' >> "${METASYSTEM_WAIT_UP_COMMAND_FILE:?}"
+fi
+exec "${METASYSTEM_WAIT_REAL_ENGINE:?}" "$@"
+`
+	if err := os.WriteFile(wrapper, []byte(wrapperSource), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	return hook, canonical, wrapper
+}
+
+func pendingWaitHookEnvironment(wrapper, canonical string) []string {
+	environment := make([]string, 0, len(os.Environ())+4)
+	for _, value := range os.Environ() {
+		if strings.HasPrefix(value, "METASYSTEM_HOOK_DELEGATE_") ||
+			strings.HasPrefix(value, "METASYSTEM_BIN=") ||
+			strings.HasPrefix(value, "METASYSTEM_WAIT_REAL_ENGINE=") ||
+			strings.HasPrefix(value, "METASYSTEM_WAIT_UP_COMMAND_FILE=") ||
+			strings.HasPrefix(value, "METASYSTEM_FAKE_AGENT_ANCESTOR_PID=") ||
+			strings.HasPrefix(value, "METASYSTEM_FAKE_PROCESS_IDENTITY_FILE=") ||
+			strings.HasPrefix(value, "METASYSTEM_CENSUS_PROCESS_FILE=") {
+			continue
+		}
+		environment = append(environment, value)
+	}
+	return append(environment,
+		"METASYSTEM_BIN="+wrapper,
+		"METASYSTEM_WAIT_REAL_ENGINE="+canonical,
+		"METASYSTEM_WAIT_UP_COMMAND_FILE="+wrapper+".up-command",
+		"METASYSTEM_FAKE_AGENT_ANCESTOR_PID="+fmt.Sprint(os.Getpid()),
+	)
+}
+
+func runPendingWaitHook(t *testing.T, hook, wrapper, canonical, event, payload, label string) installedHookResult {
+	t.Helper()
+	outputDir := t.TempDir()
+	stdoutPath := filepath.Join(outputDir, label+".stdout")
+	stderrPath := filepath.Join(outputDir, label+".stderr")
+	stdout, err := os.Create(stdoutPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	stderr, err := os.Create(stderrPath)
+	if err != nil {
+		_ = stdout.Close()
+		t.Fatal(err)
+	}
+	ctx, cancel := boundedFixtureContext(t, 30*time.Second)
+	defer cancel()
+	command := exec.CommandContext(ctx, "/bin/bash", hook, "fake", event)
+	command.Env = pendingWaitHookEnvironment(wrapper, canonical)
+	command.Stdin = strings.NewReader(payload)
+	command.Stdout, command.Stderr = stdout, stderr
+	runErr := command.Run()
+	closeStdoutErr, closeStderrErr := stdout.Close(), stderr.Close()
+	stdoutData, stdoutErr := os.ReadFile(stdoutPath)
+	stderrData, stderrErr := os.ReadFile(stderrPath)
+	upCommandData, upCommandErr := os.ReadFile(wrapper + ".up-command")
+	if os.IsNotExist(upCommandErr) {
+		upCommandData, upCommandErr = []byte("not captured"), nil
+	}
+	if ctx.Err() != nil {
+		fixtureRoot := filepath.Dir(filepath.Dir(filepath.Dir(hook)))
+		announcements := lease.AnnouncementsFor(fixtureRoot, int64(os.Getpid()))
+		t.Fatalf("%s hook exceeded its Go deadline: announcements=%+v up-command=%s stdout=%s stderr=%s",
+			label, announcements, upCommandData, stdoutData, stderrData)
+	}
+	if runErr != nil || closeStdoutErr != nil || closeStderrErr != nil || stdoutErr != nil || stderrErr != nil || upCommandErr != nil {
+		t.Fatalf("%s hook failed: run=%v close=(%v,%v) read=(%v,%v,%v) up-command=%s stdout=%s stderr=%s",
+			label, runErr, closeStdoutErr, closeStderrErr, stdoutErr, stderrErr, upCommandErr, upCommandData, stdoutData, stderrData)
+	}
+	return installedHookResult{stdout: string(stdoutData), stderr: string(stderrData), upCommand: strings.TrimSpace(string(upCommandData))}
+}
+
+func pendingWaitVerdict(t *testing.T, root, session, mainID string) struct {
+	ShouldBlock bool    `json:"shouldBlock"`
+	BlockSource *string `json:"blockSource"`
+	IdleRefusal bool    `json:"idleRefusal"`
+	CountSpent  bool    `json:"countSpent"`
+	Display     string  `json:"display"`
+} {
+	t.Helper()
+	code, output, problem := captureChannelOutput(t, func() int {
+		return runReportTurnVerdict([]string{"--root", root, "--session", session, "--main-id", mainID})
+	})
+	var verdict struct {
+		ShouldBlock bool    `json:"shouldBlock"`
+		BlockSource *string `json:"blockSource"`
+		IdleRefusal bool    `json:"idleRefusal"`
+		CountSpent  bool    `json:"countSpent"`
+		Display     string  `json:"display"`
+	}
+	if code != 0 || problem != "" || json.Unmarshal([]byte(output), &verdict) != nil {
+		t.Fatalf("turn verdict session=%s code=%d stderr=%q output=%q", session, code, problem, output)
+	}
+	return verdict
+}
+
+func countWaitingLines(display string) int {
+	count := 0
+	for _, line := range strings.Split(display, "\n") {
+		if strings.HasPrefix(line, "WAITING") {
+			count++
+		}
+	}
+	return count
+}
+
+func assertUnwatchedWaitVerdict(t *testing.T, verdict struct {
+	ShouldBlock bool    `json:"shouldBlock"`
+	BlockSource *string `json:"blockSource"`
+	IdleRefusal bool    `json:"idleRefusal"`
+	CountSpent  bool    `json:"countSpent"`
+	Display     string  `json:"display"`
+}) {
+	t.Helper()
+	if !verdict.ShouldBlock || verdict.BlockSource == nil || *verdict.BlockSource != "unwatched-work" ||
+		countWaitingLines(verdict.Display) != 0 {
+		t.Fatalf("unassociated Stop verdict=%+v", verdict)
+	}
+}
+
+func assertRegisteredWaitVerdict(t *testing.T, verdict struct {
+	ShouldBlock bool    `json:"shouldBlock"`
+	BlockSource *string `json:"blockSource"`
+	IdleRefusal bool    `json:"idleRefusal"`
+	CountSpent  bool    `json:"countSpent"`
+	Display     string  `json:"display"`
+}, waitingLine string) {
+	t.Helper()
+	lineCount := 0
+	for _, line := range strings.Split(verdict.Display, "\n") {
+		if line == waitingLine {
+			lineCount++
+		}
+	}
+	if verdict.ShouldBlock || verdict.BlockSource != nil || verdict.IdleRefusal || verdict.CountSpent ||
+		lineCount != 1 || countWaitingLines(verdict.Display) != 1 || strings.Contains(strings.ToLower(verdict.Display), "unwatched") {
+		t.Fatalf("associated Stop verdict=%+v waitingLine=%q", verdict, waitingLine)
+	}
+}
+
+func writePendingWaitJobStatus(root, status string) error {
+	path := filepath.Join(root, "artifacts", "agents", "jobs", "wait-stop-job.json")
+	data, err := os.ReadFile(path)
+	if err != nil {
+		return err
+	}
+	var job map[string]any
+	if err := json.Unmarshal(data, &job); err != nil {
+		return err
+	}
+	job["status"] = status
+	data, err = json.Marshal(job)
+	if err != nil {
+		return err
+	}
+	return os.WriteFile(path, append(data, '\n'), 0o644)
+}
+
+func pendingWaiterRows(root string) ([]metarun.Waiter, error) {
+	paths, err := filepath.Glob(filepath.Join(metarun.WaitersDir(root), "*.json"))
+	if err != nil {
+		return nil, err
+	}
+	rows := make([]metarun.Waiter, 0, len(paths))
+	for _, path := range paths {
+		data, readErr := os.ReadFile(path)
+		if readErr != nil {
+			return nil, fmt.Errorf("read waiter row %s: %w", path, readErr)
+		}
+		var row metarun.Waiter
+		if err := json.Unmarshal(data, &row); err != nil {
+			return nil, fmt.Errorf("decode waiter row %s: %w", path, err)
+		}
+		if row.SchemaVersion != 2 {
+			return nil, fmt.Errorf("waiter row %s has schema version %d, want 2", path, row.SchemaVersion)
+		}
+		rows = append(rows, row)
+	}
+	return rows, nil
+}
+
+func pollPendingWaiter(t *testing.T, root, target string) metarun.Waiter {
+	t.Helper()
+	deadline := time.Now().Add(10 * time.Second)
+	if testDeadline, ok := t.Deadline(); ok && testDeadline.Before(deadline) {
+		deadline = testDeadline
+	}
+	for time.Now().Before(deadline) {
+		rows, err := pendingWaiterRows(root)
+		if err != nil {
+			t.Fatal(err)
+		}
+		for _, row := range rows {
+			if row.Kind == "job" && row.TargetID == target && row.State == "pending" {
+				return row
+			}
+		}
+		time.Sleep(10 * time.Millisecond)
+	}
+	t.Fatalf("waiter for %s did not become pending before the Go poll deadline", target)
+	return metarun.Waiter{}
+}
+
+func writeWaiterFixture(t *testing.T, root string, row metarun.Waiter) {
+	t.Helper()
+	data, err := json.Marshal(row)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(metarun.WaiterPath(root, row.Kind, row.TargetID, row.OwnerDigest), append(data, '\n'), 0o600); err != nil {
+		t.Fatal(err)
+	}
+}
+
+func proveFixtureProcessOwnership(t *testing.T, pid int, instanceTag string) error {
+	t.Helper()
+	outputPath := filepath.Join(t.TempDir(), "process-command.txt")
+	output, err := os.Create(outputPath)
+	if err != nil {
+		return err
+	}
+	ctx, cancel := boundedFixtureContext(t, 2*time.Second)
+	defer cancel()
+	command := exec.CommandContext(ctx, "ps", "-p", fmt.Sprint(pid), "-o", "command=")
+	command.Stdout = output
+	command.Stderr = output
+	runErr := command.Run()
+	closeErr := output.Close()
+	data, readErr := os.ReadFile(outputPath)
+	if ctx.Err() != nil {
+		return fmt.Errorf("process ownership proof exceeded its Go deadline")
+	}
+	if runErr != nil || closeErr != nil || readErr != nil {
+		return fmt.Errorf("process ownership proof failed: run=%v close=%v read=%v", runErr, closeErr, readErr)
+	}
+	if !strings.Contains(string(data), instanceTag) {
+		return fmt.Errorf("process %d command %q does not carry fixture tag %q", pid, strings.TrimSpace(string(data)), instanceTag)
+	}
+	return nil
 }
 
 func assertPendingWaitVerdictOutput(t *testing.T, output []byte) {
@@ -796,6 +1141,343 @@ func TestPendingWaitInstalledVerdicts(t *testing.T) {
 	artifactData, err := os.ReadFile(artifact)
 	if err != nil || !strings.Contains(string(artifactData), "WAITING: registered wait") {
 		t.Fatalf("fake Stop hook omitted its registered-wait evidence: %v %s", err, artifactData)
+	}
+}
+
+func TestPendingWaitFromChildShell(t *testing.T) {
+	candidate := os.Getenv("METASYSTEM_WAIT_BINARY")
+	if candidate == "" {
+		t.Skip("METASYSTEM_WAIT_BINARY is not set")
+	}
+	binary := testutil.InstalledWaitBinary(t, candidate)
+	root := t.TempDir()
+	_, mainID := pendingWaitVerdictCommandFixtureWithOptions(t, root, "fake", pendingWaitVerdictCommandOptions{
+		jobStatus: "pending", writeWaiter: false,
+	})
+	runtimeSession := "8d91c146-8460-4bf1-9a48-04bc577c3aa4"
+	hook, canonical, wrapper := installPendingWaitHookFixture(t, root, binary)
+	shutdownOutputDir := t.TempDir()
+	t.Cleanup(func() {
+		stdout, stdoutErr := os.Create(filepath.Join(shutdownOutputDir, "shutdown.stdout"))
+		stderr, stderrErr := os.Create(filepath.Join(shutdownOutputDir, "shutdown.stderr"))
+		if stdoutErr != nil || stderrErr != nil {
+			t.Errorf("prepare supervision shutdown output: stdout=%v stderr=%v", stdoutErr, stderrErr)
+			return
+		}
+		ctx, cancel := boundedFixtureContext(t, 15*time.Second)
+		defer cancel()
+		command := exec.CommandContext(ctx, canonical, "up", "--metasystem-root", root, "--repo", root, "--shutdown")
+		command.Stdout, command.Stderr = stdout, stderr
+		runErr := command.Run()
+		closeStdoutErr, closeStderrErr := stdout.Close(), stderr.Close()
+		if ctx.Err() != nil || runErr != nil || closeStdoutErr != nil || closeStderrErr != nil {
+			output, _ := os.ReadFile(filepath.Join(shutdownOutputDir, "shutdown.stdout"))
+			problem, _ := os.ReadFile(filepath.Join(shutdownOutputDir, "shutdown.stderr"))
+			t.Errorf("shut down fixture supervision: deadline=%v run=%v close=(%v,%v) stdout=%s stderr=%s",
+				ctx.Err(), runErr, closeStdoutErr, closeStderrErr, output, problem)
+		}
+	})
+
+	startPayload := fmt.Sprintf(`{"session_id":%q,"cwd":%q,"source":"clear"}`, runtimeSession, root)
+	startHook := runPendingWaitHook(t, hook, wrapper, canonical, "start", startPayload, "associated-start")
+	announcements := lease.AnnouncementsFor(root, int64(os.Getpid()))
+	if len(announcements) != 1 || announcements[0].MainId != mainID ||
+		announcements[0].RuntimeSession != runtimeSession || announcements[0].SessionId == runtimeSession {
+		t.Fatalf("hook-associated announcement=%+v main=%s runtime-session=%s up-command=%s hook-stdout=%s hook-stderr=%s",
+			announcements, mainID, runtimeSession, startHook.upCommand, startHook.stdout, startHook.stderr)
+	}
+	if rows, err := pendingWaiterRows(root); err != nil || len(rows) != 0 {
+		t.Fatalf("fixture or SessionStart wrote a waiter row: rows=%+v err=%v", rows, err)
+	}
+
+	childOutputDir := t.TempDir()
+	childStdoutPath := filepath.Join(childOutputDir, "child.stdout")
+	childStderrPath := filepath.Join(childOutputDir, "child.stderr")
+	childStdout, err := os.Create(childStdoutPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	childStderr, err := os.Create(childStderrPath)
+	if err != nil {
+		_ = childStdout.Close()
+		t.Fatal(err)
+	}
+	child := exec.Command("/bin/bash", "-c", `exec "$0" job watch --root "$1" --job "$2" --caller-pid $$`, binary, root, "wait-stop-job")
+	child.Stdout, child.Stderr = childStdout, childStderr
+	if err := child.Start(); err != nil {
+		_ = childStdout.Close()
+		_ = childStderr.Close()
+		t.Fatal(err)
+	}
+	childPID := child.Process.Pid
+	childExit := make(chan error, 1)
+	go func() { childExit <- child.Wait() }()
+	childObserved := false
+	var childWaitErr error
+	var childWaitID string
+	finishChild := func() error {
+		if childObserved {
+			return childWaitErr
+		}
+		if err := writePendingWaitJobStatus(root, "completed"); err != nil {
+			return err
+		}
+		notifyStdout, err := os.Create(filepath.Join(childOutputDir, "notify.stdout"))
+		if err != nil {
+			return err
+		}
+		notifyStderr, err := os.Create(filepath.Join(childOutputDir, "notify.stderr"))
+		if err != nil {
+			_ = notifyStdout.Close()
+			return err
+		}
+		notifyContext, cancel := boundedFixtureContext(t, 5*time.Second)
+		notify := exec.CommandContext(notifyContext, binary, "wait", "notify", "--root", root, "--job", "wait-stop-job")
+		notify.Stdout, notify.Stderr = notifyStdout, notifyStderr
+		notifyErr := notify.Run()
+		notifyContextErr := notifyContext.Err()
+		cancel()
+		closeNotifyStdoutErr, closeNotifyStderrErr := notifyStdout.Close(), notifyStderr.Close()
+		if notifyContextErr != nil || notifyErr != nil || closeNotifyStdoutErr != nil || closeNotifyStderrErr != nil {
+			return fmt.Errorf("notify child wait while waiting for wait notify --job wait-stop-job: context=%v run=%v close=(%v,%v)", notifyContextErr, notifyErr, closeNotifyStdoutErr, closeNotifyStderrErr)
+		}
+		completionContext, cancelCompletion := boundedFixtureContext(t, 5*time.Second)
+		defer cancelCompletion()
+		select {
+		case childWaitErr = <-childExit:
+			childObserved = true
+		case <-completionContext.Done():
+			completionErr := completionContext.Err()
+			if err := proveFixtureProcessOwnership(t, childPID, filepath.Base(binary)); err != nil {
+				return err
+			}
+			if err := child.Process.Kill(); err != nil {
+				return err
+			}
+			reapContext, cancelReap := boundedFixtureContext(t, 5*time.Second)
+			defer cancelReap()
+			select {
+			case childWaitErr = <-childExit:
+				childObserved = true
+			case <-reapContext.Done():
+				return fmt.Errorf("wait for the killed child wait process to be reaped: %w", reapContext.Err())
+			}
+			return fmt.Errorf("wait for the child wait process to exit after notifying wait-stop-job: %w", completionErr)
+		}
+		closeStdoutErr, closeStderrErr := childStdout.Close(), childStderr.Close()
+		if closeStdoutErr != nil || closeStderrErr != nil {
+			return fmt.Errorf("close child output: stdout=%v stderr=%v", closeStdoutErr, closeStderrErr)
+		}
+		if childWaitErr != nil {
+			return childWaitErr
+		}
+		for childWaitID != "" {
+			select {
+			case <-completionContext.Done():
+				return fmt.Errorf("wait for registered wait %s to leave pending after its child exited: %w", childWaitID, completionContext.Err())
+			default:
+			}
+			stored, _, findErr := metarun.FindWaiterByID(root, childWaitID)
+			if findErr != nil {
+				return fmt.Errorf("read registered wait %s after its child exited: %w", childWaitID, findErr)
+			}
+			if stored.State != "pending" {
+				break
+			}
+			time.Sleep(10 * time.Millisecond)
+		}
+		return nil
+	}
+	t.Cleanup(func() {
+		if err := finishChild(); err != nil {
+			output, _ := os.ReadFile(childStdoutPath)
+			problem, _ := os.ReadFile(childStderrPath)
+			t.Errorf("finish child wait: %v stdout=%s stderr=%s", err, output, problem)
+		}
+	})
+
+	row := pollPendingWaiter(t, root, "wait-stop-job")
+	childWaitID = row.WaitID
+	if row.Session != runtimeSession || row.RuntimeSession != runtimeSession || row.MainId != mainID || row.Pid != int64(childPID) {
+		t.Fatalf("child-shell waiter did not carry the runtime owner: row=%+v child-pid=%d", row, childPID)
+	}
+	waitingLine := fmt.Sprintf("WAITING: registered wait %s covers job wait-stop-job until %s", row.WaitID, row.Deadline)
+
+	plainUnassociatedSession := "5f4981ee-a34c-41a7-a0ac-ec51e6cf51ad"
+	assertUnwatchedWaitVerdict(t, pendingWaitVerdict(t, root, plainUnassociatedSession, mainID))
+	beforeBlock := 0
+	hookLog := filepath.Join(root, "artifacts", "agents", "supervision", "hooks.log")
+	if data, readErr := os.ReadFile(hookLog); readErr == nil {
+		beforeBlock = strings.Count(string(data), "stop response decision=block")
+	} else if !os.IsNotExist(readErr) {
+		t.Fatal(readErr)
+	}
+	hookUnassociatedSession := "d4e2c904-c6b1-457a-8ed3-2c1e4a0aef88"
+	controlPayload := fmt.Sprintf(`{"session_id":%q,"cwd":%q,"hook_event_name":"Stop"}`, hookUnassociatedSession, root)
+	controlHook := runPendingWaitHook(t, hook, wrapper, canonical, "stop", controlPayload, "unassociated-stop")
+	if !strings.Contains(controlHook.stdout, `"decision":"block"`) {
+		t.Fatalf("unassociated Stop hook did not block: stdout=%s stderr=%s", controlHook.stdout, controlHook.stderr)
+	}
+	logData, err := os.ReadFile(hookLog)
+	if err != nil || strings.Count(string(logData), "stop response decision=block") != beforeBlock+1 {
+		t.Fatalf("unassociated Stop hook log=%s err=%v", logData, err)
+	}
+	announcements = lease.AnnouncementsFor(root, int64(os.Getpid()))
+	if len(announcements) != 1 || announcements[0].RuntimeSession != runtimeSession {
+		t.Fatalf("late unassociated Stop rolled back the runtime session: %+v", announcements)
+	}
+	if rows, rowsErr := pendingWaiterRows(root); rowsErr != nil || len(rows) != 1 || rows[0].WaitID != row.WaitID || rows[0].Pid != int64(childPID) {
+		t.Fatalf("the Stop gate wrote or replaced a waiter row: rows=%+v err=%v", rows, rowsErr)
+	}
+
+	assertRegisteredWaitVerdict(t, pendingWaitVerdict(t, root, runtimeSession, mainID), waitingLine)
+	beforeAllow := strings.Count(string(logData), "stop response decision=allow")
+	allowedPayload := fmt.Sprintf(`{"session_id":%q,"cwd":%q,"hook_event_name":"Stop"}`, runtimeSession, root)
+	allowedHook := runPendingWaitHook(t, hook, wrapper, canonical, "stop", allowedPayload, "associated-stop")
+	if strings.Contains(allowedHook.stdout, `"decision":"block"`) {
+		t.Fatalf("associated Stop hook blocked: stdout=%s stderr=%s", allowedHook.stdout, allowedHook.stderr)
+	}
+	logData, err = os.ReadFile(hookLog)
+	if err != nil || strings.Count(string(logData), "stop response decision=allow") != beforeAllow+1 {
+		t.Fatalf("associated Stop hook log=%s err=%v", logData, err)
+	}
+	verdictArtifact := filepath.Join(root, "artifacts", "agents", "supervision", "stop-verdicts", runtimeSession+".txt")
+	artifactData, err := os.ReadFile(verdictArtifact)
+	if err != nil || strings.Count(string(artifactData), waitingLine) != 1 || countWaitingLines(string(artifactData)) != 1 {
+		t.Fatalf("associated Stop artifact=%s err=%v", artifactData, err)
+	}
+
+	foreign := row
+	foreign.WaitID, foreign.Nonce = strings.Repeat("c", 32), strings.Repeat("e", 32)
+	foreign.MainId = "main-foreign"
+	foreign.OwnerDigest = metarun.OwnerDigest(foreign.MainId)
+	writeWaiterFixture(t, root, foreign)
+	assertRegisteredWaitVerdict(t, pendingWaitVerdict(t, root, runtimeSession, mainID), waitingLine)
+	beforeAllow = strings.Count(string(logData), "stop response decision=allow")
+	allowedHook = runPendingWaitHook(t, hook, wrapper, canonical, "stop", allowedPayload, "associated-stop-with-hostile-rows")
+	if strings.Contains(allowedHook.stdout, `"decision":"block"`) {
+		t.Fatalf("hostile rows changed the associated Stop: stdout=%s stderr=%s", allowedHook.stdout, allowedHook.stderr)
+	}
+	logData, err = os.ReadFile(hookLog)
+	if err != nil || strings.Count(string(logData), "stop response decision=allow") != beforeAllow+1 {
+		t.Fatalf("associated hostile-row Stop hook log=%s err=%v", logData, err)
+	}
+	artifactData, err = os.ReadFile(verdictArtifact)
+	if err != nil || strings.Count(string(artifactData), waitingLine) != 1 || countWaitingLines(string(artifactData)) != 1 {
+		t.Fatalf("hostile-row Stop artifact=%s err=%v", artifactData, err)
+	}
+	hostileSession := "never-associated-hostile"
+	assertUnwatchedWaitVerdict(t, pendingWaitVerdict(t, root, hostileSession, mainID))
+
+	sleepSource, err := exec.LookPath("sleep")
+	if err != nil {
+		t.Fatal(err)
+	}
+	sleepTag := "metasystem-child-wait-dead-sleeper"
+	sleepBinary := filepath.Join(t.TempDir(), sleepTag)
+	if err := os.Symlink(sleepSource, sleepBinary); err != nil {
+		t.Fatal(err)
+	}
+	sleepOutputDir := t.TempDir()
+	sleepOutput, err := os.Create(filepath.Join(sleepOutputDir, "sleep.stdout"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	sleepProblem, err := os.Create(filepath.Join(sleepOutputDir, "sleep.stderr"))
+	if err != nil {
+		_ = sleepOutput.Close()
+		t.Fatal(err)
+	}
+	sleeper := exec.Command(sleepBinary, "60")
+	sleeper.Stdout, sleeper.Stderr = sleepOutput, sleepProblem
+	if err := sleeper.Start(); err != nil {
+		_ = sleepOutput.Close()
+		_ = sleepProblem.Close()
+		t.Fatal(err)
+	}
+	sleeperReaped := false
+	t.Cleanup(func() {
+		if sleeperReaped {
+			return
+		}
+		if proveErr := proveFixtureProcessOwnership(t, sleeper.Process.Pid, sleepTag); proveErr == nil {
+			_ = sleeper.Process.Kill()
+		}
+		_ = sleeper.Wait()
+		_ = sleepOutput.Close()
+		_ = sleepProblem.Close()
+	})
+	sleeperExact, sleeperState, err := (identity.KernelProber{}).Probe(int64(sleeper.Process.Pid))
+	if err != nil || sleeperState != identity.Alive {
+		t.Fatalf("dead-row sleeper identity=%+v state=%s err=%v", sleeperExact, sleeperState, err)
+	}
+	if err := proveFixtureProcessOwnership(t, sleeper.Process.Pid, sleepTag); err != nil {
+		t.Fatal(err)
+	}
+	if err := sleeper.Process.Kill(); err != nil {
+		t.Fatal(err)
+	}
+	if err := sleeper.Wait(); err == nil {
+		t.Fatal("killed sleeper exited without its signal status")
+	}
+	sleeperReaped = true
+	if err := sleepOutput.Close(); err != nil {
+		t.Fatal(err)
+	}
+	if err := sleepProblem.Close(); err != nil {
+		t.Fatal(err)
+	}
+	deadStartedAt := time.Now().UTC().Add(-time.Second).Format(time.RFC3339Nano)
+	deadOperationID := strings.Repeat("f", 32)
+	deadJob := map[string]any{
+		"jobId": "dead-wait-job", "operationId": deadOperationID, "status": "pending", "goalId": "wait-stop-goal",
+		"mainId": mainID, "round": 1, "startedAt": deadStartedAt,
+	}
+	deadJobData, _ := json.Marshal(deadJob)
+	if err := os.WriteFile(filepath.Join(root, "artifacts", "agents", "jobs", "dead-wait-job.json"), append(deadJobData, '\n'), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	dead := row
+	dead.WaitID, dead.Nonce = strings.Repeat("a", 31)+"c", strings.Repeat("b", 31)+"d"
+	dead.TargetID = "dead-wait-job"
+	dead.Selector = metarun.WaitSelector{Kind: "job", TargetID: dead.TargetID}
+	dead.Target = metarun.WaiterTarget{OperationID: deadOperationID, Round: 1, StartedAt: deadStartedAt}
+	dead.Pid, dead.PidStartedAt = int64(sleeper.Process.Pid), sleeperExact.StartedAt.Unix()
+	dead.PidStartedAtMicro, dead.PidStartTicks, dead.BootID = sleeperExact.StartedAt.UnixMicro(), sleeperExact.StartTicks, sleeperExact.BootID
+	writeWaiterFixture(t, root, dead)
+	runPendingWaitHook(t, hook, wrapper, canonical, "stop", allowedPayload, "associated-stop-with-dead-waiter")
+	logData, err = os.ReadFile(hookLog)
+	if err != nil {
+		t.Fatalf("associated dead-waiter Stop hook log=%s err=%v", logData, err)
+	}
+	deadWaitingLine := fmt.Sprintf("WAITING: registered wait %s covers job dead-wait-job until %s", dead.WaitID, dead.Deadline)
+	artifactData, err = os.ReadFile(verdictArtifact)
+	if err != nil || strings.Count(string(artifactData), waitingLine) != 1 ||
+		strings.Contains(string(artifactData), deadWaitingLine) || countWaitingLines(string(artifactData)) != 1 {
+		t.Fatalf("dead-waiter Stop artifact=%s err=%v", artifactData, err)
+	}
+
+	beforeBlock = strings.Count(string(logData), "stop response decision=block")
+	absentPayload := fmt.Sprintf(`{"cwd":%q,"hook_event_name":"Stop"}`, root)
+	absentHook := runPendingWaitHook(t, hook, wrapper, canonical, "stop", absentPayload, "absent-session-stop")
+	if !strings.Contains(absentHook.stdout, `"decision":"block"`) {
+		t.Fatalf("sessionless Stop hook did not block: stdout=%s stderr=%s", absentHook.stdout, absentHook.stderr)
+	}
+	logData, err = os.ReadFile(hookLog)
+	if err != nil || strings.Count(string(logData), "stop response decision=block") != beforeBlock+1 {
+		t.Fatalf("sessionless Stop hook log=%s err=%v", logData, err)
+	}
+	if err := finishChild(); err != nil {
+		output, _ := os.ReadFile(childStdoutPath)
+		problem, _ := os.ReadFile(childStderrPath)
+		t.Fatalf("child wait did not exit zero: %v stdout=%s stderr=%s", err, output, problem)
+	}
+	stored, _, findErr := metarun.FindWaiterByID(root, row.WaitID)
+	if findErr != nil {
+		t.Fatalf("read completed child waiter: %v", findErr)
+	}
+	if stored.State == "pending" {
+		t.Fatalf("completed child left its waiter pending: %+v", stored)
 	}
 }
 

@@ -693,9 +693,13 @@ case "$fixture_scenario" in
     exit 0
     ;;
   wait-stop-fake)
+    wait_stop_fake_output=$tmp/wait-stop-fake-go-test.out
     (cd "$source_root" && GOCACHE="${GOCACHE:-/tmp/metasystem-gocache}" METASYSTEM_WAIT_BINARY="$ms" \
       go test ./internal/goal ./internal/adapter ./cmd/metasystem \
-        -run '^Test(PendingWaitTurnVerdict|PendingWaitIdleBacklog|WaitDeliveryContract|PendingWaitInstalledVerdicts)$' -count=1)
+        -run '^Test(PendingWaitTurnVerdict|PendingWaitIdleBacklog|WaitDeliveryContract|PendingWaitInstalledVerdicts|PendingWaitFromChildShell)$' -count=1 -v \
+        | tee "$wait_stop_fake_output")
+    grep -Fq -- '--- PASS: TestPendingWaitFromChildShell ' "$wait_stop_fake_output" \
+      || { echo "wait-stop-fake did not run TestPendingWaitFromChildShell" >&2; exit 1; }
     fixture_child_completed=1
     assert_fixture_supervision_isolation
     exit 0
