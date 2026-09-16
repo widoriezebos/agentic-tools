@@ -1,6 +1,6 @@
 # brief-declares-the-round-boundary
 
-- State: approved
+- State: claimed
 - Priority: 1
 - Sequence: 14
 - Risk: severity=2 novelty=2 exposure=3 accumulation=2 basis="severity 2: a wrong boundary refuses a legitimate round or admits an unrelated one, both recoverable by a brief edit; novelty 2: a new brief header and a new conformance check, but both sit beside existing preflight and boundary code; exposure 3: every implementer chain on every runtime; accumulation 2: each undetected drift costs a read plus a fold round and the rounds compound across a program."
@@ -9,12 +9,13 @@
 - Origin: human
 - Next step: STATE (m1e; builds Codex gpt-5.6-sol, reads Opus): design revision 3 as amended after unit 1b's read (rulings A1 to A5) is the implementation spec. Landed: unit 1a e461dfd1, 1b-i fad3ace8, 1b-ii 314fb806, 2 9c030bcb, 3a-i 300ecfc6, 3a-ii 3be6a03da. Next, in order, each briefed to Codex with its own Boundary, Ceiling and proof rule, read by Opus, and landed after every section the test plan selects: unit 3b (the review reader: rows S2 to S6, the S1 selection cases and D1.bounds-unreadable), then 3c, 4a (its backslash end-to-end test re-derived under rulings A1 and A4), 4b, 4c (first decide the count's handling of attributes and settings, page section 'Carried to unit 4c'), 6a, 6b. builder-proves-each-rule-by-mutation U0 follows 3c.
 - OpenedAt: 2026-09-14T15:28:36Z
-- Revision: 36
+- Revision: 37
 - Pinned: m1e
 - Budget: elapsedLimit=1d attemptLimit=10 reservedJobMinutesLimit=720 activeJobLimit=1 reviewRoundLimit=2
 - BudgetExceptions: 0
 - Approved: by=human:Wido at=2026-09-14T15:30:46Z revision=4 opid=3HTZ3RYJ6783ZGP6BCKRGKQZXN-m1e-c6925449 authority=proven digest=62b713cabfa16e685174e1c86975f82c1ab657462844e5102cc0a110359a0d6c
-- Episode: machine=m1e lineage=main-1789030447-51011-2956ea accountingRevision=35 episodeAt=2026-09-16T01:46:11Z episodeRevision=35 idleSeconds=0 released=2026-09-16T03:42:16Z
+- Claimed: machine=m1e lineage=main-1789030447-51011-2956ea at=2026-09-16T05:11:04Z revision=37 accountingRevision=35 episodeAt=2026-09-16T01:46:11Z episodeRevision=35 idleSeconds=5328
+- StopCapability: generation=37 revision=37 machine=m1e claimEpoch=1 fenceEpoch=0
 
 History:
 - 2026-09-14T15:28:36Z 8AZ0ZXR3DM2PT1EVT97Y1F7WYA-m1e-c6925449 open actor=human:Wido targets=brief-declares-the-round-boundary
@@ -53,4 +54,5 @@ History:
 - 2026-09-15T19:13:27Z 7QVGTJBXNG69DRMXET9RDBS1C0-m1e-c6925449 set-priority actor=human:Wido targets=actionable-metrics,adoption-filled-delivery-passes-on-trunk,beds-run-under-the-oldest-supported-bash,brief-declares-the-round-boundary,builder-proves-each-rule-by-mutation,busy-seat-shells-are-ended,census-lifecycle-scenario-holds-under-load,chain-landing-carries-the-reviewed-diff,codex-jobs-run-through-a-metasystem-verb,coordinator-context-stays-under-budget,coordinator-wakes-on-events-not-polls,critique-closes-on-folded-proof,cross-cutting-change-inventories-its-readers,deep-sections-cannot-stay-red-unseen,degraded-stop-forms-have-one-source,delegate-sandbox-runs-the-beds,dispatch-bases-chains-on-the-remote-tip,engine-policy-binding-survives-drift-and-load,every-round-gets-an-independent-read,evidence-and-build-output-have-retention-and-stay-unindexed,failed-job-attention,failures-show-observed-against-expected,fixture-repo-copies-exclude-the-artifacts-store,fixture-runners-and-fakes-bound-their-own-life,fixture-waits-name-their-producer,fleet-doctor-repairs-what-stops-other-seats,follow-up-brief-cannot-cite-fresh-trunk-files,human-authority-surface-runs-its-cmd-tests,human-goal-verbs-forgiving,human-wait-does-not-consume-goal-budget,job-record-birth-token,lease-sweep-death-evidence,live-job-on-a-done-goal-unnoticed,machine-concurrency-governor,member-size-gate,metasystem-stop-escalation-proofs,metasystem-stop-fleet-form,moved-effects-are-inventoried-in-the-design,new-elapsed-budgets-use-explicit-hours,pipelines-never-lose-a-truncated-producer,proof-admission-fits-a-seat-proving-several-units,proof-runs-reap-what-they-armed-and-a-census-names-the-rest,receipt-admission-caps-concurrent-batteries,registered-wait-matches-the-runtime-session,repo-root-paths-ride-agent-commits-unjudged,round-proof-feeds-the-next-brief,run-scoped-build-caches-have-a-janitor,seat-landings-run-the-selected-sections,seat-successor-continues-a-handoff-without-a-human,skipped-test-fails-its-group-on-the-other-os,small-change-lane,stop-batch-strands-a-resumable-goal,stop-capability-follows-the-lease-epoch,stop-decision-surface-is-a-gate,stop-gate-sees-harness-tracked-work,stop-hook-never-forces-an-empty-turn,stop-response-carries-a-structured-report-reference,test-environment-edges-are-closed,testing-surfaces-declare-their-mirror,tests-never-wait-on-wall-time,token-spend-fence,trunk-versus-candidate-is-a-verification-step,watch-verb,watcher-repair-request-never-names-current,winddown-census-handoff-leak reason=priority-order subject=fleet-doctor-repairs-what-stops-other-seats from=1:13 to=1:14 requested-sequence=7
 - 2026-09-16T01:46:11Z G90E93B8VYJSTQ0S11CB16DR3N-m1e-a3d4c1e1 claim actor=m1e+main-1789030447-51011-2956ea targets=brief-declares-the-round-boundary
 - 2026-09-16T03:42:16Z 0B8KCBW8TP7WG4TVK1JFZ37GWB-m1e-a3d4c1e1 release actor=m1e+main-1789030447-51011-2956ea targets=brief-declares-the-round-boundary
-Integrity: sha256=e0e3b52e041b8f376f02013b9325ed7c00ee151c03f9dc8248f07a311715e8cf
+- 2026-09-16T05:11:04Z 23R78K0Z4Z1GTET8CC18YMGJDN-m1e-a3d4c1e1 claim actor=m1e+main-1789030447-51011-2956ea targets=brief-declares-the-round-boundary
+Integrity: sha256=7aec3273177f42ffd7f194886a6722d87421ea587fef785ff294269e09e882fe
