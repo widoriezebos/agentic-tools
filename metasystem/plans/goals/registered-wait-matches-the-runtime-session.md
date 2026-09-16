@@ -1,6 +1,6 @@
 # registered-wait-matches-the-runtime-session
 
-- State: claimed
+- State: approved
 - Priority: 1
 - Sequence: 25
 - Risk: severity=3 novelty=2 exposure=3 accumulation=2 basis="severity 3: the landed stop gate ignores every wait a seat actually registers from a shell, so the structural fix for seats stopping with work pending does not work in normal use; novelty 2: how a shell-registered watch learns the runtime session is not yet designed; exposure 3: every seat that waits on a delegate, proof or landing; accumulation 2: each ignored wait is a refused Stop or a seat that must poll"
@@ -9,13 +9,12 @@
 - Origin: human
 - Next step: 2026-09-16 04:15 m1b. ALL FIVE MEMBERS LANDED: A c4e7d0f31, B1 ba073f5ef, B2 and B3 de01a54b2, C 53c6d2ee7. Each landing matched its proven tree. Released by m1b; concluded in Wido's name under R-109-m1e. Cutover for every seat: rebuild the enrolled engine, run metasystem up, and re-run runtime setup, because B1 ships the hook; a seat whose announcement still carries a placeholder session must run metasystem up --runtime-session <session> --start-source resume or its proofs refuse with no authenticated goal reservation context.
 - OpenedAt: 2026-09-14T19:00:55Z
-- Revision: 91
+- Revision: 92
 - Budget: elapsedLimit=1d4h attemptLimit=24 reservedJobMinutesLimit=720 activeJobLimit=2 reviewRoundLimit=2
 - BudgetExceptions: 4
 - Approved: by=human:Wido at=2026-09-16T00:03:49Z revision=84 opid=6N170BMS97DWPY8V946G92E70M-m1e-c6925449 authority=proven digest=734bbd52a97a1daa15ae3e6411fefafccff4a5a398046d708528509a7465e93c
 - Sliced: machine=m1b lineage=main-1789191336-90295-e4b24b revision=53 at=2026-09-15T14:22:58Z
-- Claimed: machine=m1b lineage=main-1789191336-90295-e4b24b at=2026-09-16T00:04:03Z revision=86 accountingRevision=84 episodeAt=2026-09-15T14:21:33Z episodeRevision=53 idleSeconds=27
-- StopCapability: generation=86 revision=86 machine=m1b claimEpoch=2 fenceEpoch=0
+- Episode: machine=m1b lineage=main-1789191336-90295-e4b24b accountingRevision=84 episodeAt=2026-09-15T14:21:33Z episodeRevision=53 idleSeconds=27 released=2026-09-16T02:09:43Z
 
 History:
 - 2026-09-14T19:00:55Z VW88ZP3E8RMAVCYCTGCXW0EZPQ-m1e-c6925449 open actor=human:Wido targets=registered-wait-matches-the-runtime-session reason=TierOverride: derived=3 set=2 why=one eligibility rule in the stop gate with a measured failure, below its tier-3 parent
@@ -109,4 +108,5 @@ History:
 - 2026-09-16T00:58:35Z 0JRVE2HEXBS93G1A2Z70RFF47K-m1b-30a7e141 edit actor=m1b+main-1789191336-90295-e4b24b targets=registered-wait-matches-the-runtime-session
 - 2026-09-16T01:10:28Z GXCPS5GA1AN7GYT284BTXXBKSB-m1b-30a7e141 edit actor=m1b+main-1789191336-90295-e4b24b targets=registered-wait-matches-the-runtime-session
 - 2026-09-16T02:09:38Z 4603XBF22RY8R7HK0WAREQBM78-m1b-30a7e141 edit actor=m1b+main-1789191336-90295-e4b24b targets=registered-wait-matches-the-runtime-session
-Integrity: sha256=650fe4858934baa5ee7c2fcf1da244e750961abcd6103b7e3a9ea80ebb4e8afe
+- 2026-09-16T02:09:43Z 4Q3GK6F1V42SCP41KADY6WYX8B-m1b-30a7e141 release actor=m1b+main-1789191336-90295-e4b24b targets=registered-wait-matches-the-runtime-session
+Integrity: sha256=03977ec344eb76b0f5bdae16107451a39f06e4cfa7917913cfbe281dd2cad73f
