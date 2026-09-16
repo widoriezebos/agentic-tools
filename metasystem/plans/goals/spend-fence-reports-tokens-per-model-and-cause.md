@@ -1,6 +1,6 @@
 # spend-fence-reports-tokens-per-model-and-cause
 
-- State: claimed
+- State: approved
 - Priority: 1
 - Sequence: 2
 - Risk: severity=2 novelty=2 exposure=3 accumulation=1 basis="severity 2: without it every overspend is found late; novelty 2: attributing tokens to causes from session transcripts and delegate receipts; exposure 3: every seat every day; accumulation 1: reporting, not a leak"
@@ -9,12 +9,11 @@
 - Origin: human
 - Next step: 2026-09-16 00:05 m1c: UNIT U5a-1 LANDED as 29259bf51 (7 files, 495 insertions, 59 deletions: the reader registry with declared capability and explicit scope, typed discovery and scan results, transcript.go renamed to reader_claude.go, recursive discovery carrying the delegate flag and parent session, both review records and the receipt line). Read twice by Opus: four material findings closed and verified LAND. Proof: deep, purpose delivery, tree ad35b81ce279115471d022dc38b09bae8ea05e78, sufficient=true, after one recorded retry for a load-shaped health fixture flake (fixture-notification counts uncleared alert episodes but keys them on the whole health message, so a two-second narrator-freshness flicker under load opens a second episode; worth its own goal). RELEASED HERE per Wido at 23:25 via m1e, biggest impact first: m1c takes receipt-admission-caps-concurrent-batteries, which lifts the one-test-run-per-machine hold that cost this unit two queue waits and two invalidated proofs. RESUME AT U5a-2: brief written at /private/tmp/claude-501/-Users-wido-LocalStorage-GitHub-agentic-tools-m1c/e67ca063-900a-46ec-9bc8-9fbdcbc3765e/scratchpad/g16/build-brief-u5a-2.md (call identity, cursor schema 2, five raw classes, jobDigest, job-record index; cap 300; witnesses 7 part and 8). Then U5a-3, U5a-4, U5b-1, U5b-2, U5c-1, U5c-2, U5c-3 in the design's order, each built by Codex Sol, read by Opus, proven deep and landed through Wido's lane with its receipt.
 - OpenedAt: 2026-09-15T09:38:26Z
-- Revision: 23
+- Revision: 24
 - Budget: elapsedLimit=3d attemptLimit=12 reservedJobMinutesLimit=720 activeJobLimit=1 reviewRoundLimit=2
 - BudgetExceptions: 2
 - Approved: by=human:Wido at=2026-09-15T19:24:32Z revision=20 opid=XBYTVA1B98DSTDQWGPPWQTW75G-m1c-c6925449 authority=proven digest=8845c73b409d935e44ec6299fe5203db2830fdcd2f383ef842e708e95edb6158
-- Claimed: machine=m1c lineage=main-1789191340-90689-2eda89 at=2026-09-15T19:24:32Z revision=20 accountingRevision=20 episodeAt=2026-09-15T13:57:56Z episodeRevision=9
-- StopCapability: generation=20 revision=20 machine=m1c claimEpoch=5 fenceEpoch=0
+- Episode: machine=m1c lineage=main-1789191340-90689-2eda89 accountingRevision=20 episodeAt=2026-09-15T13:57:56Z episodeRevision=9 idleSeconds=0 released=2026-09-16T00:04:13Z
 
 History:
 - 2026-09-15T09:38:26Z T88J2JBMZM4AGBZBRDPHJH8MY5-m1e-c6925449 open actor=human:Wido targets=spend-fence-reports-tokens-per-model-and-cause
@@ -40,4 +39,5 @@ History:
 - 2026-09-15T19:27:57Z 97CTDTWA254ANM27G8EAM3V5WJ-m1c-a6ea8b3e edit actor=m1c+main-1789191340-90689-2eda89 targets=spend-fence-reports-tokens-per-model-and-cause
 - 2026-09-15T20:32:29Z 1K6N0ZH4G1ZWA69G4CZ5TMXACA-m1c-a6ea8b3e edit actor=m1c+main-1789191340-90689-2eda89 targets=spend-fence-reports-tokens-per-model-and-cause
 - 2026-09-16T00:04:00Z PGA06VA0X16CJS2WYYMGA4YCBM-m1c-a6ea8b3e edit actor=m1c+main-1789191340-90689-2eda89 targets=spend-fence-reports-tokens-per-model-and-cause
-Integrity: sha256=7fbe450b5d22caa5a6de26fe312015c9edfc7235ed0337e76371a2b40101aa23
+- 2026-09-16T00:04:13Z 1BVTKTEATGHHJSE5R3REGVCKKK-m1c-a6ea8b3e release actor=m1c+main-1789191340-90689-2eda89 targets=spend-fence-reports-tokens-per-model-and-cause
+Integrity: sha256=659e0c89f1cb651bb1f4da1236ca3a196735691778732279ec49f8cc3a5cd0c6
