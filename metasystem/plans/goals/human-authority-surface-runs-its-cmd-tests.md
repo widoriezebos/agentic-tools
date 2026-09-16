@@ -1,6 +1,6 @@
 # human-authority-surface-runs-its-cmd-tests
 
-- State: approved
+- State: queued
 - Priority: 2
 - Sequence: 43
 - Risk: severity=1 novelty=1 exposure=2 accumulation=1 basis="severity 1: a gate runs fewer tests than it could, nothing granted or destroyed; novelty 1: one more group in the shape the contract already uses; exposure 2: every landing that touches the three command files; accumulation 1: one group, no compounding"
@@ -9,11 +9,9 @@
 - Origin: main
 - Next step: One bounded correction to metasystem/testing.json: add a go unit group (cwd metasystem, run pattern naming the tests in session_stop_test.go, goalsync_mutations_test.go and identity_probes_test.go) to the human-authority surface's standard list; Sol builds, Opus critiques, contract-only landing. || 2026-09-16 16:58 CEST m1e: the same class was found by m1b's cw5 round 12 proof (proof-mu47bhk3-ce70c8d93f32f897). No group runs internal/events: testing.json never names the package, yet cw5 changes internal/events/emit.go (+28/-12). m1b ran go test ./internal/events by hand on 2eb578236, green. When this goal is built, either add internal/events to its owning surface's standard list, or add the general load-time check that every Go package with _test.go files is run by a group of the surface that owns it. The check closes the class; the list edit fixes one package.
 - OpenedAt: 2026-09-10T08:53:23Z
-- Revision: 126
+- Revision: 127
 - Pinned: m1c
-- Budget: elapsedLimit=4h attemptLimit=6 reservedJobMinutesLimit=720 activeJobLimit=1 reviewRoundLimit=2
 - BudgetExceptions: 0
-- Approved: by=human:Wido at=2026-09-13T06:41:10Z revision=4 opid=36QGVKWYBBJTPVZ9102NNYTZ0W-m1e-c6925449 authority=proven digest=ed04f3293279cfebb1dac3e8505d7815ffa5fc56e67e58e4c7747e84cfd9158a
 
 History:
 - 2026-09-10T08:53:23Z 8SPKHVV8JBHARP5NM156PN6M80-m1-1701c13c open actor=m1+main-1788940932-18533-7fa6c2 targets=human-authority-surface-runs-its-cmd-tests
@@ -142,4 +140,5 @@ History:
 - 2026-09-16T20:32:09Z MTZMWKB9E103BMQECEWJA0YWGD-m1e-c6925449 set-priority actor=human:Wido targets=census-lifecycle-scenario-holds-under-load,chain-landing-carries-the-reviewed-diff,dispatch-bases-chains-on-the-remote-tip,events-package-has-a-test-group,fixture-repo-copies-exclude-the-artifacts-store,human-authority-surface-runs-its-cmd-tests,human-wait-does-not-consume-goal-budget,metasystem-stop-escalation-proofs,metasystem-stop-fleet-form,new-elapsed-budgets-use-explicit-hours,pipelines-never-lose-a-truncated-producer,repo-root-paths-ride-agent-commits-unjudged reason=priority-order subject=fixture-repo-copies-exclude-the-artifacts-store from=1:56 to=1:55 requested-sequence=41
 - 2026-09-16T20:32:15Z TDBM54SXFYKS7XNWS2GXMP5KE4-m1e-c6925449 set-priority actor=human:Wido targets=census-lifecycle-scenario-holds-under-load,chain-landing-carries-the-reviewed-diff,dispatch-bases-chains-on-the-remote-tip,events-package-has-a-test-group,human-authority-surface-runs-its-cmd-tests,human-wait-does-not-consume-goal-budget,metasystem-stop-escalation-proofs,metasystem-stop-fleet-form,new-elapsed-budgets-use-explicit-hours,pipelines-never-lose-a-truncated-producer,repo-root-paths-ride-agent-commits-unjudged reason=priority-order subject=chain-landing-carries-the-reviewed-diff from=1:55 to=1:54 requested-sequence=42
 - 2026-09-16T20:32:20Z 605V8R43X8E3DXCYYWTNHSGCJB-m1e-c6925449 set-priority actor=human:Wido targets=census-lifecycle-scenario-holds-under-load,dispatch-bases-chains-on-the-remote-tip,events-package-has-a-test-group,human-authority-surface-runs-its-cmd-tests,human-wait-does-not-consume-goal-budget,metasystem-stop-escalation-proofs,metasystem-stop-fleet-form,new-elapsed-budgets-use-explicit-hours,pipelines-never-lose-a-truncated-producer,repo-root-paths-ride-agent-commits-unjudged reason=priority-order subject=human-authority-surface-runs-its-cmd-tests from=1:54 to=2:43 requested-sequence=43
-Integrity: sha256=c51012bfc9a5b07be93dc38d6400ab5cbbd19c56a6bef2104c3b5712bee66ff7
+- 2026-09-16T20:34:22Z WJYYF31S347SFJN3BK8BQ3WPDA-m1e-c6925449 unapprove actor=human:Wido targets=human-authority-surface-runs-its-cmd-tests reason=Wido 2026-09-16 22:40 CEST: clean house on priority 1 first, then a few human convenience features; every priority 2+ goal is unapproved until then
+Integrity: sha256=b1f8be09e7b67bc4b805185912f30b08c02873e3043fa4363bfa3672070c13f0
