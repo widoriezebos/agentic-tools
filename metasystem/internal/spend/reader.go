@@ -28,7 +28,8 @@ type transcriptFile struct {
 	path, session, toplevel string
 	delegate                bool
 	parentSession           string
-	registered              *reader
+	transcriptMetadata
+	registered *reader
 }
 type discoveryResult struct {
 	files    []transcriptFile
@@ -52,7 +53,8 @@ type readerJobs struct {
 	referencedSessions map[string]bool
 }
 type scanResult struct {
-	calls            map[string]transcriptRequest
+	calls map[string]transcriptRequest
+	transcriptMetadata
 	unmeasured       []UnmeasuredEntry
 	foreign, aged    bool
 	cacheWriteFailed bool

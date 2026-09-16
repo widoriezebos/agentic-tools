@@ -35,6 +35,17 @@ type cachedTranscriptRequest struct {
 	Line      int            `json:"line"`
 	Usage     map[string]any `json:"usage,omitempty"`
 	Detail    string         `json:"detail,omitempty"`
+	callCause
+}
+type callCause struct {
+	Cause       cause  `json:"cause,omitempty"`
+	CauseDetail string `json:"causeDetail,omitempty"`
+}
+type turnStarter struct {
+	Line      int    `json:"line"`
+	Timestamp string `json:"timestamp,omitempty"`
+	Cause     cause  `json:"cause"`
+	Detail    string `json:"detail,omitempty"`
 }
 
 type transcriptCursorCache struct {
@@ -46,6 +57,9 @@ type transcriptCursorCache struct {
 	Line          int                                `json:"line"`
 	FirstCWD      string                             `json:"firstCwd,omitempty"`
 	JobDigest     string                             `json:"jobDigest"`
+	Starters      []turnStarter                      `json:"starters"`
+	DelegateKind  delegateKind                       `json:"delegateKind,omitempty"`
+	KindMissing   bool                               `json:"kindMissing,omitempty"`
 	Requests      map[string]cachedTranscriptRequest `json:"requests"`
 	Invalid       []cachedTranscriptRequest          `json:"invalid"`
 	Tail          []byte                             `json:"tail,omitempty"`
@@ -111,11 +125,11 @@ func loadTranscriptCursor(path, transcriptPath string) (transcriptCursorCache, b
 func validTranscriptCursor(cache transcriptCursorCache, transcriptPath string) bool {
 	if cache.SchemaVersion != transcriptCursorSchemaVersion || cache.Path != transcriptPath || cache.Size < 0 ||
 		cache.Offset < 0 || cache.Offset != cache.Size || cache.Line < 0 || cache.JobDigest == "" ||
-		cache.Requests == nil || cache.Invalid == nil {
+		cache.Starters == nil || cache.Requests == nil || cache.Invalid == nil {
 		return false
 	}
 	for key, request := range cache.Requests {
-		if key == "" || request.Line < 1 || request.Detail != "" {
+		if key == "" || request.Line < 1 || request.Detail != "" || request.Cause == "" {
 			return false
 		}
 	}

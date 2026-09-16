@@ -7,6 +7,34 @@ import (
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/config"
 )
 
+type cause string
+type delegateKind string
+
+const (
+	causeHuman            cause        = "human"
+	causeStopHook         cause        = "stop-hook"
+	causeNotification     cause        = "notification"
+	causePeer             cause        = "peer"
+	causeCompaction       cause        = "compaction"
+	causeUsageLimitResume cause        = "usage-limit-resume"
+	causeUnstarted        cause        = "unstarted"
+	kindDesign            delegateKind = "design"
+	kindBuildRead         delegateKind = "build-read"
+	kindCritique          delegateKind = "critique"
+	kindOther             delegateKind = "other"
+)
+
+var roleKinds = map[string]delegateKind{"design-critic": kindCritique, "code-critic": kindCritique, "critic": kindCritique, "implementer": kindOther}
+
+func roleKind(role string) delegateKind {
+	if kind, ok := roleKinds[role]; ok {
+		return kind
+	}
+	return kindOther
+}
+
+func delegateCause(kind delegateKind) cause { return cause("delegate:" + string(kind)) }
+
 type AttributionWindow struct {
 	From time.Time `json:"from"`
 	To   time.Time `json:"to"`
@@ -15,6 +43,12 @@ type AttributionWindow struct {
 }
 type KindAttribution struct {
 	Kind   string  `json:"kind"`
+	Tokens float64 `json:"tokens"`
+}
+type CauseAttribution struct {
+	Cause  string  `json:"cause"`
+	Turns  int     `json:"turns"`
+	Calls  int     `json:"calls"`
 	Tokens float64 `json:"tokens"`
 }
 type ModelAttribution struct {
@@ -33,6 +67,12 @@ type Attribution struct {
 	ByModel    []ModelAttribution `json:"byModel"`
 	OutOfScope int                `json:"outOfScope"`
 	Unknown    int                `json:"unknown"`
+	causeAttribution
+}
+type causeAttribution struct {
+	ByCause           []CauseAttribution `json:"byCause"`
+	KindMissing       int                `json:"kindMissing"`
+	CauseUnclassified int                `json:"causeUnclassified"`
 }
 type attributionCall struct {
 	request transcriptRequest
@@ -44,7 +84,7 @@ func buildAttribution(now time.Time, zone string, jobs readerJobs, calls map[str
 	local := now.In(location)
 	from := time.Date(local.Year(), local.Month(), local.Day(), 0, 0, 0, 0, location)
 	window := AttributionWindow{From: from, To: from.AddDate(0, 0, 1), Zone: zone, Day: from.Format("2006-01-02")}
-	result := Attribution{Scope: readerScopeLabel(readerRegistry), Window: window, ByKind: []KindAttribution{}, ByModel: []ModelAttribution{}}
+	result := Attribution{Scope: readerScopeLabel(readerRegistry), Window: window, ByKind: []KindAttribution{}, ByModel: []ModelAttribution{}, ByCause: []CauseAttribution{}}
 	readers := map[string]reader{}
 	for _, registered := range readerRegistry {
 		if registered.inScope {
@@ -65,22 +105,50 @@ func buildAttribution(now time.Time, zone string, jobs readerJobs, calls map[str
 	}
 	kinds := map[string]float64{}
 	models := map[string]*ModelAttribution{}
+	causes := map[cause]CauseAttribution{}
+	kindMissingCounted := map[string]bool{}
 	for _, call := range calls {
+		file := call.file
+		if call.request.id == "" {
+			for _, starter := range file.starters {
+				stamp, err := parseTime(starter.Timestamp)
+				if err != nil || stamp.Before(window.From) || !stamp.Before(window.To) {
+					continue
+				}
+				value := starter.Cause
+				if file.delegate {
+					value = delegateCause(file.kind)
+				}
+				addCause(causes, value, 1, 0, 0)
+				if !file.delegate && starter.Cause == causeHuman && starter.Detail == "unclassified" {
+					result.CauseUnclassified++
+				}
+			}
+			continue
+		}
 		stamp, stampErr := parseTime(call.request.timestamp)
 		if stampErr != nil {
 			continue
 		}
 		kind := "main"
+		cause := call.request.cause
 		if call.file.delegate {
 			kind = "delegate"
+			cause = delegateCause(call.file.kind)
 		} else if owner := jobs.owner(call.file.session, call.request.runtime, stamp); owner != nil && owner.role != "steward-continuation" {
 			kind, stamp = "engine", owner.start
+			cause = delegateCause(roleKind(owner.role))
 		}
 		if stamp.Before(window.From) || !stamp.Before(window.To) {
 			continue
 		}
+		if file.delegate && file.kindMissing && !kindMissingCounted[file.path] {
+			result.KindMissing++
+			kindMissingCounted[file.path] = true
+		}
 		total := call.request.classes.total()
 		kinds[kind] += total
+		addCause(causes, cause, 0, 1, total)
 		model := config.CanonicalModel(call.request.model)
 		row := models[model]
 		if row == nil {
@@ -95,9 +163,19 @@ func buildAttribution(now time.Time, zone string, jobs readerJobs, calls map[str
 	for _, row := range models {
 		result.ByModel = append(result.ByModel, *row)
 	}
+	for _, row := range causes {
+		result.ByCause = append(result.ByCause, row)
+	}
 	sort.Slice(result.ByKind, func(i, j int) bool { return result.ByKind[i].Kind < result.ByKind[j].Kind })
 	sort.Slice(result.ByModel, func(i, j int) bool { return result.ByModel[i].Model < result.ByModel[j].Model })
+	sort.Slice(result.ByCause, func(i, j int) bool { return result.ByCause[i].Cause < result.ByCause[j].Cause })
 	return result
+}
+
+func addCause(rows map[cause]CauseAttribution, value cause, turns, calls int, tokens float64) {
+	row := rows[value]
+	row.Cause, row.Turns, row.Calls, row.Tokens = string(value), row.Turns+turns, row.Calls+calls, row.Tokens+tokens
+	rows[value] = row
 }
 
 type ownedJob struct {

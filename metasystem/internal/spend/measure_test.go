@@ -449,7 +449,7 @@ func TestCursorV2MatchesAFullParseAndRebuildsV1(t *testing.T) {
 	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
 		t.Fatal(err)
 	}
-	initial := append([]byte("not-json\n"), seatTranscriptLine(t, "seat", root, "request-a", 10, 1)...)
+	initial := append([]byte(fmt.Sprintf("not-json\n{\"type\":\"user\",\"timestamp\":%q,\"promptSource\":\"typed\",\"message\":{\"content\":\"hello\"}}\n", bedNow.Format(time.RFC3339))), seatTranscriptLine(t, "seat", root, "request-a", 10, 1)...)
 	if err := os.WriteFile(path, initial, 0o644); err != nil {
 		t.Fatal(err)
 	}
@@ -484,7 +484,7 @@ func TestCursorV2MatchesAFullParseAndRebuildsV1(t *testing.T) {
 	}
 
 	ledger := assertMatchesFullParse("initial file")
-	if ledger.Seat.LifetimeTokens != 11 || ledger.Seat.UnmeasuredRequests != 1 {
+	if ledger.Seat.LifetimeTokens != 11 || ledger.Seat.UnmeasuredRequests != 1 || len(ledger.Attribution.ByCause) != 1 || ledger.Attribution.ByCause[0] != (CauseAttribution{"human", 1, 1, 11}) {
 		t.Fatalf("the initial full semantics are wrong: %+v", ledger.Seat)
 	}
 	appendTranscript := func(line []byte) {

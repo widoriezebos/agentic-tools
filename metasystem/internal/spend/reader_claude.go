@@ -23,6 +23,7 @@ type transcriptRequest struct {
 	id, file, session, cwd, model, timestamp, runtime string
 	line                                              int
 	classes                                           rawTokenClasses
+	cause                                             cause
 	detail                                            string
 	dayEligible                                       bool
 }
@@ -127,6 +128,8 @@ func readSeat(repoRoot, machine string, now time.Time, jobs readerJobs, settings
 			seat.SkippedForeignFiles++
 			continue
 		}
+		file.transcriptMetadata = result.transcriptMetadata
+		attributed["\x00"+file.path] = attributionCall{file: file}
 		if !legacyOwned {
 			seat.Files++
 		}
@@ -307,8 +310,9 @@ func claudeTranscriptFile(slugPath, path string) transcriptFile {
 }
 func scanClaudeTranscript(file transcriptFile, cursor readerCursor, jobs readerJobs) scanResult {
 	dayEligible := !cursor.info.ModTime().Before(cursor.now.Add(-48 * time.Hour))
+	var metadata transcriptMetadata
 	calls, invalid, foreign, cacheWriteFailed, err := readTranscriptCursor(
-		cursor.repoRoot, file.path, cursor.info, cursor.toplevel, dayEligible, jobs.referencedSessions, jobDigest(jobs),
+		cursor.repoRoot, file.path, cursor.info, cursor.toplevel, dayEligible, jobs.referencedSessions, jobDigest(jobs), &metadata,
 	)
 	unmeasured := make([]UnmeasuredEntry, 0, len(invalid))
 	for _, request := range invalid {
@@ -319,12 +323,19 @@ func scanClaudeTranscript(file transcriptFile, cursor readerCursor, jobs readerJ
 		unmeasured = append(unmeasured, seatUnmeasured(cursor.repoRoot, request, id, request.detail))
 	}
 	return scanResult{
-		calls: calls, unmeasured: unmeasured, foreign: foreign, aged: !dayEligible,
+		calls: calls, transcriptMetadata: metadata,
+		unmeasured: unmeasured, foreign: foreign, aged: !dayEligible,
 		cacheWriteFailed: cacheWriteFailed, err: err,
 	}
 }
 
-func readTranscriptCursor(repoRoot, path string, info os.FileInfo, toplevel string, dayEligible bool, delegates map[string]bool, jobsDigest string) (map[string]transcriptRequest, []transcriptRequest, bool, bool, error) {
+type transcriptMetadata struct {
+	starters    []turnStarter
+	kind        delegateKind
+	kindMissing bool
+}
+
+func readTranscriptCursor(repoRoot, path string, info os.FileInfo, toplevel string, dayEligible bool, delegates map[string]bool, jobsDigest string, metadata *transcriptMetadata) (map[string]transcriptRequest, []transcriptRequest, bool, bool, error) {
 	cachePath := transcriptCursorPath(repoRoot, path)
 	cache, valid := loadTranscriptCursor(cachePath, path)
 	valid = valid && cache.JobDigest == jobsDigest
@@ -340,12 +351,13 @@ func readTranscriptCursor(repoRoot, path string, info os.FileInfo, toplevel stri
 	}
 	if unchanged {
 		requests, invalid, foreign := transcriptCursorSnapshot(cache, path, toplevel, dayEligible, delegates)
+		*metadata = transcriptCursorMetadata(cache)
 		return requests, invalid, foreign, false, nil
 	}
 	if !grown {
 		cache = transcriptCursorCache{
 			SchemaVersion: transcriptCursorSchemaVersion, Path: path, JobDigest: jobsDigest,
-			Requests: map[string]cachedTranscriptRequest{}, Invalid: []cachedTranscriptRequest{},
+			Starters: []turnStarter{}, Requests: map[string]cachedTranscriptRequest{}, Invalid: []cachedTranscriptRequest{},
 		}
 	}
 	file, err := os.Open(path)
@@ -370,13 +382,23 @@ func readTranscriptCursor(repoRoot, path string, info os.FileInfo, toplevel stri
 		cache.Requests = map[string]cachedTranscriptRequest{}
 		cache.Invalid = []cachedTranscriptRequest{}
 		cache.Tail = nil
+		cache.Starters = []turnStarter{}
 	}
 	cacheWriteFailed := writeSpendCache(cachePath, cache) != nil
 	if foreign {
 		return nil, nil, true, cacheWriteFailed, nil
 	}
 	requests, invalid, foreign := transcriptCursorSnapshot(cache, path, toplevel, dayEligible, delegates)
+	*metadata = transcriptCursorMetadata(cache)
 	return requests, invalid, foreign, cacheWriteFailed, nil
+}
+
+func transcriptCursorMetadata(cache transcriptCursorCache) transcriptMetadata {
+	kind := cache.DelegateKind
+	if kind == "" {
+		kind = kindOther
+	}
+	return transcriptMetadata{append([]turnStarter(nil), cache.Starters...), kind, cache.KindMissing || cache.DelegateKind == ""}
 }
 
 func pruneTranscriptCursors(repoRoot string, visited map[string]bool) int {
@@ -453,6 +475,18 @@ func applyTranscriptLine(cache *transcriptCursorCache, line []byte, path string,
 			return true
 		}
 	}
+	if textOr(raw["type"], "") == "user" {
+		text, toolResult := transcriptUserText(raw)
+		if cache.DelegateKind == "" {
+			cache.DelegateKind, cache.KindMissing = delegateKindLine(text)
+		}
+		if !toolResult {
+			if starter, ok := classifyTurnStarter(raw, text, lineNumber); ok {
+				cache.Starters = append(cache.Starters, starter)
+			}
+		}
+		return false
+	}
 	if textOr(raw["type"], "") != "assistant" {
 		return false
 	}
@@ -467,7 +501,11 @@ func applyTranscriptLine(cache *transcriptCursorCache, line []byte, path string,
 	message, _ := raw["message"].(map[string]any)
 	request := cachedTranscriptRequest{
 		ID: textOr(message["id"], textOr(raw["requestId"], "")), Session: session, CWD: cwd,
-		Model: textOr(message["model"], "unknown"), Timestamp: textOr(raw["timestamp"], ""), Line: lineNumber,
+		Model: textOr(message["model"], "unknown"), Timestamp: textOr(raw["timestamp"], ""), Line: lineNumber, Cause: causeUnstarted,
+	}
+	if len(cache.Starters) > 0 {
+		starter := cache.Starters[len(cache.Starters)-1]
+		request.Cause, request.CauseDetail = starter.Cause, starter.Detail
 	}
 	request.Usage, _ = message["usage"].(map[string]any)
 	key := request.ID
@@ -489,6 +527,89 @@ func applyTranscriptLine(cache *transcriptCursorCache, line []byte, path string,
 		cache.Requests[key] = retained
 	}
 	return false
+}
+
+func transcriptUserText(raw map[string]any) (string, bool) {
+	message, _ := raw["message"].(map[string]any)
+	if text, ok := message["content"].(string); ok {
+		return text, false
+	}
+	var parts []string
+	var toolResult bool
+	items, _ := message["content"].([]any)
+	for _, item := range items {
+		block, _ := item.(map[string]any)
+		toolResult = toolResult || textOr(block["type"], "") == "tool_result"
+		if text := textOr(block["text"], ""); text != "" {
+			parts = append(parts, text)
+		}
+	}
+	return strings.Join(parts, "\n"), toolResult
+}
+
+func delegateKindLine(text string) (delegateKind, bool) {
+	line, _, _ := strings.Cut(strings.TrimSpace(text), "\n")
+	line = strings.TrimSpace(line)
+	kind := delegateKind(strings.TrimPrefix(line, "Kind: "))
+	if strings.HasPrefix(line, "Kind: ") && (kind == kindDesign || kind == kindBuildRead || kind == kindCritique || kind == kindOther) {
+		return kind, false
+	}
+	return kindOther, true
+}
+
+type starterRule struct {
+	match  bool
+	cause  cause
+	detail string
+}
+
+func classifyTurnStarter(raw map[string]any, text string, line int) (turnStarter, bool) {
+	s := strings.TrimSpace(text)
+	origin, _ := raw["origin"].(map[string]any)
+	o, ps := textOr(origin["kind"], ""), textOr(raw["promptSource"], "")
+	rules := []starterRule{
+		{strings.HasPrefix(s, "Stop hook feedback"), causeStopHook, stopHookDetail(s)},
+		{o == "task-notification" || strings.HasPrefix(s, "<task-notification>") || strings.HasPrefix(s, "[SYSTEM NOTIFICATION"), causeNotification, notificationSource(s)},
+		{o == "coordinator" || strings.HasPrefix(s, "The coordinator sent a message"), causePeer, "coordinator"},
+		{o == "peer" || strings.HasPrefix(s, "Another Claude session sent a message") || strings.Contains(s[:min(len(s), 400)], "<cross-session-message"), causePeer, ""},
+		{strings.HasPrefix(s, "This session is being continued"), causeCompaction, ""},
+		{o == "auto-continuation" || strings.HasPrefix(s, "Your claude.ai usage limit"), causeUsageLimitResume, ""},
+		{ps == "sdk" || strings.HasPrefix(s, "# Task Direction"), causeHuman, "sdk"},
+		{o == "human", causeHuman, "human"}, {ps == "typed", causeHuman, "typed"}, {ps == "queued", causeHuman, "queued"},
+		{strings.HasPrefix(s, "<local-command"), causeHuman, "local-command"}, {strings.HasPrefix(s, "<command-name>"), causeHuman, "command-name"},
+		{strings.HasPrefix(s, "<bash-input>"), causeHuman, "bash-input"}, {strings.HasPrefix(s, "<bash-stdout>"), causeHuman, "bash-stdout"},
+		{strings.HasPrefix(s, "[Request interrupted"), causeHuman, "interrupted"},
+	}
+	for _, rule := range rules {
+		if rule.match {
+			return turnStarter{line, textOr(raw["timestamp"], ""), rule.cause, rule.detail}, true
+		}
+	}
+	if raw["isMeta"] == true {
+		return turnStarter{}, false
+	}
+	return turnStarter{line, textOr(raw["timestamp"], ""), causeHuman, "unclassified"}, true
+}
+
+func stopHookDetail(text string) string {
+	_, rest, ok := strings.Cut(text, "Stop blocked;")
+	detail, _, closed := strings.Cut(rest, ";")
+	if !ok || !closed || strings.TrimSpace(detail) == "" {
+		return "unparsed"
+	}
+	return strings.TrimSpace(detail)
+}
+
+func notificationSource(text string) string {
+	if strings.HasPrefix(text, "[SYSTEM NOTIFICATION") {
+		return "monitor"
+	}
+	for _, source := range [][2]string{{"<note>", "agent"}, {"<result>", "agent"}, {"<exit-code>", "bash"}, {"<output>", "bash"}} {
+		if strings.Contains(text, source[0]) {
+			return source[1]
+		}
+	}
+	return "other"
 }
 
 func measurableTranscriptRequest(request cachedTranscriptRequest) bool {
@@ -527,6 +648,7 @@ func cloneTranscriptCursor(cache transcriptCursorCache) transcriptCursorCache {
 		clone.Requests[key] = request
 	}
 	clone.Invalid = append([]cachedTranscriptRequest(nil), cache.Invalid...)
+	clone.Starters = append([]turnStarter(nil), cache.Starters...)
 	clone.Tail = append([]byte(nil), cache.Tail...)
 	return clone
 }
@@ -543,7 +665,8 @@ func transcriptRequestFromCache(path string, request cachedTranscriptRequest, da
 	}
 	return transcriptRequest{
 		id: request.ID, file: path, session: request.Session, cwd: request.CWD, model: request.Model,
-		timestamp: request.Timestamp, line: request.Line, classes: classes, detail: detail, dayEligible: dayEligible,
+		timestamp: request.Timestamp, line: request.Line, classes: classes, cause: request.Cause,
+		detail: detail, dayEligible: dayEligible,
 	}
 }
 

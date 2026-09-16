@@ -81,7 +81,64 @@ func kindTokens(ledger Ledger) map[string]float64 {
 	}
 	return result
 }
+func assertSpend(t *testing.T, ok bool, args ...any) {
+	t.Helper()
+	if !ok {
+		t.Fatal(args...)
+	}
+}
 
+func TestCauseFollowsTheTurnStarterNotAQueuedDelivery(t *testing.T) {
+	cases := [][6]any{
+		{"Stop hook feedback: x; Stop blocked; needs review; next", "", "", false, causeStopHook, "needs review"}, {"<task-notification><note>x</note>", "", "", false, causeNotification, "agent"}, {"[SYSTEM NOTIFICATION x]", "", "", false, causeNotification, "monitor"}, {"<task-notification><exit-code>0</exit-code>", "", "", false, causeNotification, "bash"}, {"x", "task-notification", "", false, causeNotification, "other"}, {"x", "peer", "", false, causePeer, ""}, {"The coordinator sent a message", "", "", false, causePeer, "coordinator"}, {"This session is being continued", "", "", false, causeCompaction, ""}, {"x", "auto-continuation", "", false, causeUsageLimitResume, ""}, {"# Task Direction", "", "", false, causeHuman, "sdk"}, {"x", "human", "", false, causeHuman, "human"}, {"unknown", "", "", false, causeHuman, "unclassified"}, {"skill", "", "", true, cause(""), ""},
+	}
+	for _, tc := range cases {
+		got, ok := classifyTurnStarter(map[string]any{"timestamp": bedNow.Format(time.RFC3339), "origin": map[string]any{"kind": tc[1]}, "promptSource": tc[2], "isMeta": tc[3]}, tc[0].(string), 1)
+		assertSpend(t, ok == (tc[4] != cause("")) && got.Cause == tc[4] && got.Detail == tc[5], tc[0], got, ok)
+	}
+	cache := transcriptCursorCache{Starters: []turnStarter{{Cause: causePeer}}, Requests: map[string]cachedTranscriptRequest{}, Invalid: []cachedTranscriptRequest{}}
+	applyTranscriptLine(&cache, []byte(`{"type":"attachment","attachment":{"type":"queued_command"}}`), "x", 1, ".", nil)
+	applyTranscriptLine(&cache, []byte(`{"type":"user","promptSource":"queued","message":{"content":"queued"}}`), "x", 2, ".", nil)
+	empty, root := transcriptCursorCache{Starters: []turnStarter{}, Requests: map[string]cachedTranscriptRequest{}, Invalid: []cachedTranscriptRequest{}}, t.TempDir()
+	applyTranscriptLine(&empty, seatTranscriptLine(t, "s", root, "before", 1, 1), "x", 1, root, nil)
+	assertSpend(t, len(cache.Starters) == 2 && cache.Starters[1].Cause == causeHuman && cache.Starters[1].Detail == "queued" && empty.Requests["before"].Cause == causeUnstarted, "queued delivery or unstarted call was classified incorrectly")
+}
+
+func TestKindDomainIsFourValuesBeforeAndAfterU4Rows(t *testing.T) {
+	seen := map[delegateKind]bool{}
+	for _, line := range []string{"\nKind: design\nKind: critique", "Kind: build-read", "Kind: critique", "Kind: other"} {
+		kind, missing := delegateKindLine(line)
+		seen[kind] = true
+		assertSpend(t, !missing, line)
+	}
+	kindCache := transcriptCursorCache{}
+	applyTranscriptLine(&kindCache, []byte(`{"type":"user","message":{"content":"build"}}`), "x", 1, ".", nil)
+	applyTranscriptLine(&kindCache, []byte(`{"type":"user","message":{"content":"Kind: design"}}`), "x", 2, ".", nil)
+	assertSpend(t, kindCache.DelegateKind == kindOther && kindCache.KindMissing, "later Kind line changed a missing first line")
+	roleKinds["designer"], roleKinds["reader"] = kindDesign, kindBuildRead
+	defer func() { delete(roleKinds, "designer"); delete(roleKinds, "reader") }()
+	for _, role := range []string{"design-critic", "code-critic", "critic", "implementer", "unknown", "designer", "reader"} {
+		seen[roleKind(role)] = true
+	}
+	_, continuationMapped := roleKinds["steward-continuation"]
+	assertSpend(t, len(seen) == 4 && !continuationMapped, "kind domain changed", seen)
+}
+
+func TestByCauseRowsCarryTurnsAndCalls(t *testing.T) {
+	file, missing := transcriptFile{path: "p", session: "s", starters: []turnStarter{{Timestamp: "2026-09-01T23:00:00Z", Cause: causePeer}, {Timestamp: "2026-09-02T01:00:00Z", Cause: causeHuman, Detail: "unclassified"}, {Timestamp: "2026-09-02T02:00:00Z", Cause: causeHuman}}}, transcriptFile{path: "missing", session: "s", delegate: true, kindMissing: true, kind: kindOther}
+	calls := map[string]attributionCall{"meta": {file: file}, "missing": {file: missing}}
+	for i, tc := range [][2]any{{causePeer, file}, {causePeer, file}, {causeHuman, file}, {causeHuman, file}, {causeHuman, file}, {causeHuman, file}, {causeHuman, file}, {causeHuman, missing}} {
+		request := transcriptRequest{id: string(rune('0' + i)), timestamp: "2026-09-02T03:00:00Z", runtime: "claude", model: "m", cause: tc[0].(cause), classes: rawTokenClasses{Input: 1}}
+		calls[request.id] = attributionCall{request, tc[1].(transcriptFile)}
+	}
+	attribution := buildAttribution(time.Date(2026, 9, 2, 12, 0, 0, 0, time.UTC), "UTC", newReaderJobs(), calls)
+	assertSpend(t, len(attribution.ByCause) == 3 && attribution.KindMissing == 1 && attribution.CauseUnclassified == 1 && attribution.ByCause[0] == (CauseAttribution{"delegate:other", 0, 1, 1}) && attribution.ByCause[1] == (CauseAttribution{"human", 2, 5, 5}) && attribution.ByCause[2] == (CauseAttribution{"peer", 0, 2, 2}), "by-cause rows wrong", attribution)
+}
+
+func TestKindMissingIgnoresDelegateFilesOutsideWindow(t *testing.T) {
+	got := buildAttribution(time.Date(2026, 9, 2, 12, 0, 0, 0, time.UTC), "UTC", newReaderJobs(), map[string]attributionCall{"meta": {file: transcriptFile{path: "old", delegate: true, kindMissing: true}}, "old": {request: transcriptRequest{id: "old", timestamp: "2026-09-01T23:00:00Z", runtime: "claude", model: "m", classes: rawTokenClasses{Input: 1}}, file: transcriptFile{path: "old", delegate: true, kindMissing: true}}})
+	assertSpend(t, got.KindMissing == 0, "out-of-window file counted as kind-missing", got.KindMissing)
+}
 func TestSharedSessionCallsHaveOneOwnerEach(t *testing.T) {
 	root := t.TempDir()
 	mustSpendTest(t, os.Mkdir(filepath.Join(root, ".git"), 0o755))
