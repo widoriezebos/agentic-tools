@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"os"
 	"path/filepath"
 	"strconv"
 	"strings"
@@ -19,6 +20,118 @@ func (e *BriefBoundsUnreadable) Error() string { return "BRIEF_BOUNDS_UNREADABLE
 
 func briefBoundsUnreadable(format string, args ...any) error {
 	return &BriefBoundsUnreadable{Detail: fmt.Sprintf(format, args...)}
+}
+
+// ReadRoundBriefBounds reads the admission evidence for one supplied job
+// round. Legacy rounds without markers or retained admission files are
+// unbounded.
+func ReadRoundBriefBounds(root, rootJob, job, roundText string, jobComposition map[string]any) (dispatch.BriefBounds, error) {
+	round, err := strconv.ParseInt(roundText, 10, 64)
+	if err != nil || round < 1 {
+		return dispatch.BriefBounds{}, briefBoundsUnreadable("round %q is not a positive integer", roundText)
+	}
+	roundDir := filepath.Join(root, "artifacts", "agents", rootJob, "rounds", roundText)
+	compositionPath := filepath.Join(roundDir, "composition.json")
+	roundComposition, roundPresent, err := readOptionalRoundFile(compositionPath)
+	if err != nil {
+		return dispatch.BriefBounds{}, briefBoundsUnreadable("read round composition: %v", err)
+	}
+
+	var prompt []byte
+	if roundPresent || jobComposition != nil {
+		prompt, err = os.ReadFile(filepath.Join(roundDir, "prompt.md"))
+		if err != nil {
+			return dispatch.BriefBounds{}, briefBoundsUnreadable("read round prompt: %v", err)
+		}
+	}
+	var roundMarker, jobMarker *dispatch.AdmittedBriefMarker
+	if roundPresent {
+		source, _, sourceErr := validateBriefBoundsSource(root, job, roundText, roundComposition, prompt)
+		if sourceErr != nil {
+			return dispatch.BriefBounds{}, sourceErr
+		}
+		roundMarker = source.AdmittedBrief
+	}
+	if jobComposition != nil {
+		encoded, encodeErr := json.Marshal(jobComposition)
+		if encodeErr != nil {
+			return dispatch.BriefBounds{}, briefBoundsUnreadable("encode job composition: %v", encodeErr)
+		}
+		source, _, sourceErr := validateBriefBoundsSource(root, job, roundText, encoded, prompt)
+		if sourceErr != nil {
+			return dispatch.BriefBounds{}, sourceErr
+		}
+		jobMarker = source.AdmittedBrief
+	}
+
+	recordPath := filepath.Join(roundDir, "brief-bounds.json")
+	copyPath := filepath.Join(roundDir, "admitted-brief.md")
+	recordBytes, recordPresent, recordErr := readRegularRoundFile(recordPath)
+	copyBytes, copyPresent, copyErr := readRegularRoundFile(copyPath)
+	if roundMarker == nil && jobMarker == nil {
+		if recordErr != nil || copyErr != nil || recordPresent || copyPresent {
+			return dispatch.BriefBounds{}, briefBoundsUnreadable("admission files exist without an admitted brief marker")
+		}
+		return dispatch.BriefBounds{}, nil
+	}
+	if roundMarker == nil || jobMarker == nil {
+		return dispatch.BriefBounds{}, briefBoundsUnreadable("job and round admitted brief markers are both required")
+	}
+	if *roundMarker != *jobMarker {
+		return dispatch.BriefBounds{}, briefBoundsUnreadable("job and round admitted brief markers do not agree")
+	}
+	if roundMarker.SchemaVersion != 1 {
+		return dispatch.BriefBounds{}, briefBoundsUnreadable("admitted brief marker has unsupported schema version")
+	}
+	if recordErr != nil || !recordPresent {
+		return dispatch.BriefBounds{}, briefBoundsUnreadable("read brief bounds record: %v", recordErr)
+	}
+	if copyErr != nil || !copyPresent {
+		return dispatch.BriefBounds{}, briefBoundsUnreadable("read admitted brief copy: %v", copyErr)
+	}
+	if got := sourceDigest(recordBytes); got != roundMarker.RecordSHA256 {
+		return dispatch.BriefBounds{}, briefBoundsUnreadable("brief bounds record digest is %s, want %s", got, roundMarker.RecordSHA256)
+	}
+	record, err := dispatch.DecodeBriefBoundsRecord(recordBytes)
+	if err != nil {
+		return dispatch.BriefBounds{}, briefBoundsUnreadable("decode brief bounds record: %v", err)
+	}
+	if record.JobID != job || record.RootJob != rootJob || record.Round != round {
+		return dispatch.BriefBounds{}, briefBoundsUnreadable("brief bounds record identity does not match job, root job, and round")
+	}
+	if roundMarker.Bounded != (record.Boundary != nil) {
+		return dispatch.BriefBounds{}, briefBoundsUnreadable("admitted brief marker bounded state does not match record")
+	}
+	if int64(len(copyBytes)) != record.AdmittedBytes {
+		return dispatch.BriefBounds{}, briefBoundsUnreadable("admitted brief byte count is %d, want %d", len(copyBytes), record.AdmittedBytes)
+	}
+	if got := sourceDigest(copyBytes); got != record.AdmittedSHA256 {
+		return dispatch.BriefBounds{}, briefBoundsUnreadable("admitted brief digest is %s, want %s", got, record.AdmittedSHA256)
+	}
+	return record.Bounds(), nil
+}
+
+func readOptionalRoundFile(path string) ([]byte, bool, error) {
+	data, err := os.ReadFile(path)
+	if os.IsNotExist(err) {
+		return nil, false, nil
+	}
+	return data, err == nil, err
+}
+
+func readRegularRoundFile(path string) ([]byte, bool, error) {
+	info, err := os.Lstat(path)
+	if os.IsNotExist(err) {
+		return nil, false, nil
+	}
+	if err != nil {
+		return nil, true, err
+	}
+	if !info.Mode().IsRegular() {
+		return nil, true, fmt.Errorf("%s is not a regular file", path)
+	}
+	data, err := os.ReadFile(path)
+	return data, true, err
 }
 
 func validateBriefBoundsSource(root, job, roundText string, composition, prompt []byte) (dispatch.CompositionSource, *dispatch.CompositionReference, error) {

@@ -22,6 +22,10 @@ type briefSourceFixture struct {
 }
 
 func composeBriefSource(t *testing.T, body []byte) briefSourceFixture {
+	return composeBriefSourceFor(t, body, "bounds-r2", 2, "")
+}
+
+func composeBriefSourceFor(t *testing.T, body []byte, job string, round int64, admittedBounds string) briefSourceFixture {
 	t.Helper()
 	root, err := filepath.Abs(filepath.Join("..", ".."))
 	if err != nil {
@@ -34,7 +38,7 @@ func composeBriefSource(t *testing.T, body []byte) briefSourceFixture {
 	}
 	stage := filepath.Join(root, "artifacts", "agents", "test-brief-bounds-source-"+strings.ReplaceAll(t.Name(), "/", "-"), "staged")
 	t.Cleanup(func() { _ = os.RemoveAll(filepath.Dir(stage)) })
-	record, err := dispatch.ComposeRolePacket(dispatch.ComposeRolePacketParams{Root: root, Role: "verifier", Brief: brief, JobID: "bounds-r2", Runtime: "fake", Model: "fake-model", Round: 2, DestructiveReach: dispatch.HazardMechanical, ToolPolicy: "read-only", Output: prompt, CompositionOutput: composition, StageDir: stage, ReferenceDir: stage})
+	record, err := dispatch.ComposeRolePacket(dispatch.ComposeRolePacketParams{Root: root, Role: "verifier", Brief: brief, JobID: job, Runtime: "fake", Model: "fake-model", Round: round, DestructiveReach: dispatch.HazardMechanical, ToolPolicy: "read-only", Output: prompt, CompositionOutput: composition, StageDir: stage, ReferenceDir: stage, AdmittedBounds: admittedBounds})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -46,7 +50,7 @@ func composeBriefSource(t *testing.T, body []byte) briefSourceFixture {
 	if err != nil {
 		t.Fatal(err)
 	}
-	return briefSourceFixture{root: root, job: "bounds-r2", body: body, prompt: promptBytes, encoded: encoded, record: record}
+	return briefSourceFixture{root: root, job: job, body: body, prompt: promptBytes, encoded: encoded, record: record}
 }
 
 func checkBriefSource(t *testing.T, f briefSourceFixture, record dispatch.CompositionRecord, prompt []byte) (dispatch.CompositionSource, *dispatch.CompositionReference, error) {
@@ -68,6 +72,7 @@ func requireBoundsUnreadable(t *testing.T, err error, detail string) {
 
 func TestReviewBriefBoundsRoundIsolation(t *testing.T) {
 	f := composeBriefSource(t, []byte("inline\n"))
+	runReviewBriefBoundsSelectionCases(t)
 	tests := []struct {
 		name, detail string
 		mutate       func(*dispatch.CompositionRecord)

@@ -52,6 +52,11 @@ type conformanceRun struct {
 	errs []string
 }
 
+func (r *conformanceRun) reviewBriefBounds() (dispatch.BriefBounds, error) {
+	composition, _ := r.record["composition"].(map[string]any)
+	return ReadRoundBriefBounds(r.root, r.rootJob, r.job, r.roundText, composition)
+}
+
 // ConformanceOptions carries only the two explicit recertification inputs.
 // Empty options preserve the pre-existing review and merge behavior.
 type ConformanceOptions struct {
