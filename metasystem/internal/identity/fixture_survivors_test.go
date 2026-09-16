@@ -73,8 +73,9 @@ func TestCleanupIsScopedToTheFixtureKey(t *testing.T) {
 	}
 	delete(table, 700)
 	got, err = FixtureSurvivorsOfDeadOwner(table, owner)
-	if err != nil || len(got) != 2 || got[0].Ref.Pid != 701 || got[1].Ref.Pid != 702 {
-		t.Fatalf("dead-owner scan = %#v, %v; want both children", got, err)
+	if err != nil || len(got) != 2 || got[0].Ref.Pid != 701 || got[0].Carrier != FixtureCarrierArgvWord ||
+		got[1].Ref.Pid != 702 || got[1].Carrier != FixtureCarrierEnvironment {
+		t.Fatalf("dead-owner scan = %#v, %v; want argv child then environment child", got, err)
 	}
 }
 

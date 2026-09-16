@@ -1,0 +1,29 @@
+Specimens: orphaned fixture stewards surviving TestPendingWaitFromChildShell, m1b checkout.
+Collected 2026-09-16 ~13:50 CEST by seat m1b. All reaped with a single SIGTERM; none survived.
+Every one: parent pid 1, command `steward run --repo <temp root>`, its temp root still present on
+disk (t.TempDir cleanup never ran). Engine pin generation 1 in each, i.e. a fixture engine, not a
+seat engine. Repo temp roots removed after the reap, 6.4M total.
+
+pid    age       repo (all under /private/var/folders/jg/c9g5tnhx0c519rr0xfmw86d40000gn/T/)
+76875  04:12:24  TestPendingWaitFromChildShell3944322836/002
+41627  03:56:34  TestPendingWaitFromChildShell3578394209/002
+65062  03:28:44  TestPendingWaitFromChildShell2589724218/002
+65878  03:02:51  TestPendingWaitFromChildShell2261552678/002
+84017  02:48:24  TestPendingWaitFromChildShell1578318953/002
+91471  02:31:47  TestPendingWaitFromChildShell1700812110/002
+72210  02:13:53  TestPendingWaitFromChildShell3839156042/002
+69740  01:55:58  TestPendingWaitFromChildShell3520607104/002
+60312  01:41:23  TestPendingWaitFromChildShell963833060/002
+28498  01:29:13  TestPendingWaitFromChildShell2617822050/002
+9676   00:53:05  TestPendingWaitFromChildShell1503697220/002
+43684  00:33:19  TestPendingWaitFromChildShell488157586/002
+62381  00:16:08  TestPendingWaitFromChildShell2429367593/002
+
+Why the class matters for the scan's placement: `up --shutdown` is synchronous over recorded
+supervision identities and fails when report.Complete() is false (internal/up/up.go:861-877). These
+13 are exactly what it owns, so their survival means the test's shutdown cleanup did not run or did
+not finish - the test binary died, or the cleanup's 15s bounded context expired. A survivor scan
+that excludes the shutdown's own children cannot see any of this.
+
+No live test binary was running TestPendingWaitFromChildShell at collection time; the only running
+go test binaries were two TestAdoptionComparisonSelectedScenarios under another seat's proof.

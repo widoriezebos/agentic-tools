@@ -10,7 +10,13 @@ import (
 	"golang.org/x/sys/unix"
 )
 
-const fixtureOwnerPrefix = "METASYSTEM_FIXTURE_OWNER="
+const FixtureOwnerEnv = "METASYSTEM_FIXTURE_OWNER"
+const fixtureOwnerPrefix = FixtureOwnerEnv + "="
+
+type FixtureCarrier string
+
+const FixtureCarrierArgvWord FixtureCarrier = "argv-word"
+const FixtureCarrierEnvironment FixtureCarrier = "environment"
 
 type FixtureSurvivorClass string
 
@@ -21,15 +27,17 @@ const (
 )
 
 type FixtureSurvivor struct {
-	Class FixtureSurvivorClass
-	Ref   Ref
-	Pgid  int64
-	Exe   string
-	Argv  []string
-	Key   FixtureKey
+	Class   FixtureSurvivorClass
+	Ref     Ref
+	Pgid    int64
+	Exe     string
+	Argv    []string
+	Key     FixtureKey
+	Carrier FixtureCarrier
 }
 
-func FixtureTag(exact Exact) (FixtureKey, bool) {
+func FixtureTag(exact Exact) (FixtureKey, FixtureCarrier, bool) {
+	carriers := []FixtureCarrier{FixtureCarrierArgvWord, FixtureCarrierEnvironment}
 	for index, words := range [][]string{exact.Argv, exact.Environ} {
 		if index == 0 && !exact.ArgvKnown || index == 1 && !exact.EnvironKnown {
 			continue
@@ -40,11 +48,11 @@ func FixtureTag(exact Exact) (FixtureKey, bool) {
 			}
 			key, err := ParseKey(strings.TrimPrefix(word, fixtureOwnerPrefix))
 			if err == nil {
-				return key, true
+				return key, carriers[index], true
 			}
 		}
 	}
-	return FixtureKey{}, false
+	return FixtureKey{}, "", false
 }
 
 var fixtureSurvivorProber Prober = KernelProber{}
@@ -90,9 +98,10 @@ func FixtureSurvivorsOfDeadOwner(prober Prober, owner Ref) ([]FixtureSurvivor, e
 }
 
 type fixtureObservation struct {
-	exact Exact
-	scope fixtureProcessScope
-	key   FixtureKey
+	exact   Exact
+	scope   fixtureProcessScope
+	key     FixtureKey
+	carrier FixtureCarrier
 }
 
 func scanFixtureSurvivors(prober Prober, matches func(FixtureKey) bool) ([]FixtureSurvivor, error) {
@@ -107,9 +116,9 @@ func scanFixtureSurvivors(prober Prober, matches func(FixtureKey) bool) ([]Fixtu
 			continue
 		}
 		observation := fixtureObservation{exact: exact, scope: fixtureSurvivorScope(pid)}
-		if key, ok := FixtureTag(exact); ok {
+		if key, carrier, ok := FixtureTag(exact); ok {
 			if matches(key) {
-				observation.key = key
+				observation.key, observation.carrier = key, carrier
 				certain = append(certain, observation)
 			}
 			continue
@@ -142,7 +151,7 @@ func scanFixtureSurvivors(prober Prober, matches func(FixtureKey) bool) ([]Fixtu
 func (observation fixtureObservation) survivor(class FixtureSurvivorClass) FixtureSurvivor {
 	return FixtureSurvivor{
 		Class: class, Ref: observation.exact.Ref(), Pgid: observation.scope.pgid,
-		Exe: observation.exact.Exe, Argv: observation.exact.Argv, Key: observation.key,
+		Exe: observation.exact.Exe, Argv: observation.exact.Argv, Key: observation.key, Carrier: observation.carrier,
 	}
 }
 
