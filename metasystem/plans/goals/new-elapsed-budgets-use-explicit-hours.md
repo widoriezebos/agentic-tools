@@ -1,6 +1,6 @@
 # new-elapsed-budgets-use-explicit-hours
 
-- State: approved
+- State: queued
 - Priority: 2
 - Sequence: 49
 - Risk: severity=3 novelty=2 exposure=3 accumulation=1 basis="severity 3: budget enforcement can stop lawful work or permit unbounded time; novelty 2: a bounded change to existing ledger and elapsed projection; exposure 3: shared goal execution across seats; accumulation 1: each episode is evaluated independently, with no new aggregate accounting"
@@ -9,12 +9,10 @@
 - Origin: main
 - Next step: Second independent successor of goal:breach-clock-and-budget-honesty. Reuse accepted Fix 2 and its review decisions in plans/breach-clock-and-budget-honesty-design.md. Retarget all actual input/replay writers and their tests to current main. Wait for goal:budget-raises-preserve-elapsed-origin before operational budget corrections, which otherwise reset the clock. Keep rollout deliberate with old and new binaries; do not absorb human-wait or quota work.
 - OpenedAt: 2026-09-11T05:37:45Z
-- Revision: 129
+- Revision: 130
 - Labels: breach-clock-successor
 - Pinned: m1c
-- Budget: elapsedLimit=1d attemptLimit=10 reservedJobMinutesLimit=1200 activeJobLimit=1 reviewRoundLimit=3
 - BudgetExceptions: 0
-- Approved: by=human:Wido at=2026-09-13T07:45:22Z revision=3 opid=H97CBRR70MC30DBCJDKFQ00ES0-m1e-c6925449 authority=proven digest=5673bd54ca329d6540236ca8d584488b0533ae0581aedf2ef2e467a3b895169d
 
 History:
 - 2026-09-11T05:37:45Z 67J50K768RCDA25GHBZ4J69J7M-m1c-66a02980 open actor=m1c+main-1789023008-75159-b69143 targets=new-elapsed-budgets-use-explicit-hours
@@ -146,4 +144,5 @@ History:
 - 2026-09-16T20:32:45Z YSGCPTAR92E50X71Q7J8DSMCF1-m1e-c6925449 set-priority actor=human:Wido targets=census-lifecycle-scenario-holds-under-load,events-package-has-a-test-group,human-wait-does-not-consume-goal-budget,metasystem-stop-fleet-form,new-elapsed-budgets-use-explicit-hours,pipelines-never-lose-a-truncated-producer reason=priority-order subject=metasystem-stop-fleet-form from=1:56 to=1:55 requested-sequence=47
 - 2026-09-16T20:32:51Z 767PDWBW38QGNKWQNPP2ZXQZ3H-m1e-c6925449 set-priority actor=human:Wido targets=census-lifecycle-scenario-holds-under-load,events-package-has-a-test-group,human-wait-does-not-consume-goal-budget,new-elapsed-budgets-use-explicit-hours,pipelines-never-lose-a-truncated-producer reason=priority-order subject=human-wait-does-not-consume-goal-budget from=1:55 to=1:54 requested-sequence=48
 - 2026-09-16T20:32:55Z GS9W7K77HQFFN3G21X02BVJ30P-m1e-c6925449 set-priority actor=human:Wido targets=census-lifecycle-scenario-holds-under-load,events-package-has-a-test-group,new-elapsed-budgets-use-explicit-hours,pipelines-never-lose-a-truncated-producer reason=priority-order subject=new-elapsed-budgets-use-explicit-hours from=1:54 to=2:49 requested-sequence=49
-Integrity: sha256=4b82197c9e576d5559694317e39bd6608244ca53ab548e7605feee0257ec6ecc
+- 2026-09-16T20:34:57Z 1Q3BDX6ZHZ8GFC54ADZVET7HC1-m1e-c6925449 unapprove actor=human:Wido targets=new-elapsed-budgets-use-explicit-hours reason=Wido 2026-09-16 22:40 CEST: clean house on priority 1 first, then a few human convenience features; every priority 2+ goal is unapproved until then
+Integrity: sha256=a0022ecf14e2ac32e9685bb8ed9ee6e06dd8cef67af0e732de4f3a086f767b42
