@@ -53,7 +53,7 @@ while (( $# )); do
   esac
 done
 git commit -q "$@" \
-  --trailer "Landing-Provenance: chain=$chain" \
+  --trailer "Landing-Provenance: chain=$chain change=aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa" \
   --trailer "Landing-Provenance-Verdict: ` + verdict + `"
 `
 	batchProvenanceWrite(t, filepath.Join(root, "scripts", "agents", "commit.sh"), wrapper, 0o755)
@@ -156,6 +156,124 @@ func TestBatchChainCommitKeepsWouldRefuseVerdictBehavior(t *testing.T) {
 	if err != nil || record.State != batch.StateLanded {
 		t.Fatalf("chain member record state=%s error=%v", record.State, err)
 	}
+}
+
+func TestBatchRecoveryFindsProductionProvenanceShapes(t *testing.T) {
+	change := strings.Repeat("a", 64)
+	certified := strings.Repeat("b", 64)
+	for _, test := range []struct {
+		name, chain, provenance string
+	}{
+		{name: "ordinary", chain: "ordinary-chain", provenance: "chain=ordinary-chain change=" + change},
+		{name: "direct-fix", chain: "carried-chain", provenance: "chain=carried-chain direct-fix class=register-carriage change=" + change + " certified-change=" + certified},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			record, commits := recoverBatchProvenanceFixture(t,
+				[]string{test.chain},
+				[][]string{{"Landing-Provenance: " + test.provenance}},
+			)
+			if record.State != batch.StateLanded || !record.Units[0].P6Done || record.Units[0].LandedCommit != commits[0] {
+				t.Fatalf("recovery record=%+v, want chain commit %s landed", record, commits[0])
+			}
+		})
+	}
+}
+
+func TestBatchRecoveryRequiresExactChainField(t *testing.T) {
+	change := strings.Repeat("c", 64)
+	for _, test := range []struct {
+		name, trailer string
+	}{
+		{name: "longer-chain", trailer: "Landing-Provenance: chain=ab change=" + change},
+		{name: "certified-change", trailer: "Landing-Provenance: direct-fix class=register-carriage change=" + change + " certified-change=a"},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			record, _ := recoverBatchProvenanceFixture(t, []string{"a"}, [][]string{{test.trailer}})
+			if record.State != batch.StateLanding || record.Units[0].P6Done || record.Units[0].LandedCommit != "" {
+				t.Fatalf("non-matching field landed chain a: %+v", record)
+			}
+		})
+	}
+}
+
+func TestBatchRecoveryResolvesEachChainToItsOwnCommit(t *testing.T) {
+	change := strings.Repeat("d", 64)
+	record, commits := recoverBatchProvenanceFixture(t,
+		[]string{"chain-a", "chain-b"},
+		[][]string{
+			{"Landing-Provenance: chain=chain-a change=" + change},
+			{"Landing-Provenance: chain=chain-b change=" + change},
+		},
+	)
+	if record.State != batch.StateLanded || record.Units[0].LandedCommit != commits[0] || record.Units[1].LandedCommit != commits[1] {
+		t.Fatalf("series recovery record=%+v, want commits %v", record, commits)
+	}
+}
+
+func TestBatchRecoveryUsesNewestMatchingCommit(t *testing.T) {
+	change := strings.Repeat("e", 64)
+	record, commits := recoverBatchProvenanceFixture(t,
+		[]string{"repeated-chain"},
+		[][]string{
+			{"Landing-Provenance: chain=repeated-chain change=" + change},
+			{"Landing-Provenance: chain=repeated-chain direct-fix class=register-carriage change=" + change + " certified-change=" + strings.Repeat("f", 64)},
+		},
+	)
+	if record.State != batch.StateLanded || record.Units[0].LandedCommit != commits[1] {
+		t.Fatalf("repeated chain landed commit=%q, want newest %s", record.Units[0].LandedCommit, commits[1])
+	}
+}
+
+func recoverBatchProvenanceFixture(t *testing.T, chains []string, commitTrailers [][]string) (batch.Record, []string) {
+	t.Helper()
+	root := t.TempDir()
+	origin := filepath.Join(t.TempDir(), "origin.git")
+	batchProvenanceGit(t, "init", "-q", "--bare", origin)
+	batchProvenanceGit(t, "init", "-q", "-b", "main", root)
+	batchProvenanceGit(t, "-C", root, "config", "user.name", "Fixture")
+	batchProvenanceGit(t, "-C", root, "config", "user.email", "fixture@example.invalid")
+	batchProvenanceGit(t, "-C", root, "commit", "--allow-empty", "-qm", "base")
+	batchProvenanceGit(t, "-C", root, "remote", "add", "origin", origin)
+	batchProvenanceGit(t, "-C", root, "push", "-q", "-u", "origin", "main")
+
+	commits := make([]string, 0, len(commitTrailers))
+	for index, trailers := range commitTrailers {
+		args := []string{"-C", root, "commit", "--allow-empty", "-qm", "landing fixture " + string(rune('a'+index))}
+		for _, trailer := range trailers {
+			args = append(args, "--trailer", trailer)
+		}
+		batchProvenanceGit(t, args...)
+		commits = append(commits, batchProvenanceGit(t, "-C", root, "rev-parse", "HEAD"))
+	}
+	batchProvenanceGit(t, "-C", root, "push", "-q", "origin", "main")
+
+	units := make([]batch.Unit, 0, len(chains))
+	for index, chain := range chains {
+		units = append(units, batch.Unit{
+			GoalID: "goal-" + string(rune('a'+index)), Chain: chain, State: batch.UnitJoined,
+			Claim: batch.Claim{Machine: "landing", Lineage: landingOwnerLineage, Epoch: 1, Revision: 1, AccountingRevision: 1},
+		})
+	}
+	store := batch.NewStore(root, nil)
+	record := batch.Record{
+		Schema: 1, BatchID: batchProvenanceTestID, State: batch.StateLanding, Units: units,
+		Landing: &batch.LandingProgress{PushComplete: true, PushedTip: batchProvenanceGit(t, "-C", root, "rev-parse", "HEAD")},
+	}
+	if err := store.Create(record); err != nil {
+		t.Fatal(err)
+	}
+
+	original := batchChildRunner
+	t.Cleanup(func() { batchChildRunner = original })
+	batchChildRunner = func(string, string, ...string) error { return nil }
+	if err := recoverBatchLanding(root, store, batchProvenanceTestID, landingOwnerLineage, time.Unix(3, 0)); err != nil {
+		t.Fatal(err)
+	}
+	recovered, err := store.Load(batchProvenanceTestID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return recovered, commits
 }
 
 func batchProvenanceWrite(t *testing.T, path, contents string, mode os.FileMode) {

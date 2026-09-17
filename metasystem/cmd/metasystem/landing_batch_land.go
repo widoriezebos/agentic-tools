@@ -353,16 +353,16 @@ func batchPrefixReceiptArgs(root, goalID, tree, resultPath string, groups []stri
 }
 
 func recoverBatchLanding(root string, store batch.Store, id, actor string, at time.Time) error {
-	findTrailer := func(prefix, value string) (string, bool, error) {
+	findTrailer := func(matches func(string) bool) (string, bool, error) {
 		format := "%H%x00%B%x00"
-		output, err := gitOutput(root, "log", "origin/main", "--format="+format)
+		output, err := gitOutput(root, "log", "--first-parent", "origin/main", "--format="+format)
 		if err != nil {
 			return "", false, err
 		}
 		parts := strings.Split(output, "\x00")
 		for index := 0; index+1 < len(parts); index += 2 {
 			for _, line := range strings.Split(parts[index+1], "\n") {
-				if strings.TrimSpace(line) == prefix+value {
+				if matches(strings.TrimSpace(line)) {
 					return strings.TrimSpace(parts[index]), true, nil
 				}
 			}
@@ -371,10 +371,10 @@ func recoverBatchLanding(root string, store batch.Store, id, actor string, at ti
 	}
 	return batch.RecoverPushedSeries(store, id, actor, at, batch.RecoverySeams{
 		OriginCommit: func(unit batch.Unit) (string, bool, error) {
-			return findTrailer("Landing-Provenance: chain=", unit.Chain)
+			return findTrailer(func(line string) bool { return landingProvenanceNamesChain(line, unit.Chain) })
 		},
 		OriginSource: func(_ batch.Unit, source string) (string, bool, error) {
-			return findTrailer("Goal-Source: ", source)
+			return findTrailer(func(line string) bool { return line == "Goal-Source: "+source })
 		},
 		Finalize: func(unit batch.Unit, commit string) error {
 			next := "landed commit:" + commit + ":chain=" + unit.Chain
@@ -388,6 +388,20 @@ func recoverBatchLanding(root string, store batch.Store, id, actor string, at ti
 			return batch.CleanupLandingBranch(root, id, record.Landing.PushedTip)
 		},
 	})
+}
+
+// landingProvenanceNamesChain mirrors the field parsing in internal/landing/held.go.
+func landingProvenanceNamesChain(line, chain string) bool {
+	value, found := strings.CutPrefix(line, "Landing-Provenance:")
+	if !found {
+		return false
+	}
+	for _, field := range strings.Fields(value) {
+		if field == "chain="+chain {
+			return true
+		}
+	}
+	return false
 }
 
 func commitForTree(root, ref, tree string) (string, error) {
