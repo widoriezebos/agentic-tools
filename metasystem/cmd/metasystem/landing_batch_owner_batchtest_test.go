@@ -5,19 +5,23 @@ package main
 import (
 	"bufio"
 	"context"
-	"flag"
+	"encoding/json"
+	"errors"
 	"fmt"
+	"io"
 	"os"
 	"os/exec"
 	"path/filepath"
 	"slices"
 	"strings"
+	"sync"
 	"syscall"
 	"testing"
 	"time"
 
 	"golang.org/x/sys/unix"
 
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/behaviorsurface"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/config"
 	dispatchcore "github.com/widoriezebos/agentic-tools/metasystem/internal/dispatch"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/goal"
@@ -25,8 +29,22 @@ import (
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/landing/batch"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/lease"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/proofrun"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/supervise"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/testpolicy"
 )
+
+func TestBatchGoalHandoverChild(t *testing.T) {
+	raw := os.Getenv("GO_WANT_BATCH_GOAL_HANDOVER_CHILD")
+	if raw == "" {
+		return
+	}
+	var args []string
+	if err := json.Unmarshal([]byte(raw), &args); err != nil {
+		fmt.Println(err)
+		os.Exit(25)
+	}
+	os.Exit(runGoalHandoverMutation(args))
+}
 
 func TestBatchJoinSpawnsOneOwner(t *testing.T) {
 	original := batchOwnerEnsure
@@ -64,21 +82,68 @@ func TestBatchJoinSpawnsOneOwner(t *testing.T) {
 	}
 }
 
+func TestBatchOwnerInspectionUsesInjectedProberAndKeepsReadErrorsUnknown(t *testing.T) {
+	holder := lease.CurrentHolderView{MainId: "main-a", OwnerLineage: landingOwnerLineage, ClaimEpoch: 1, Pid: 41}
+	announcements := func(string, int64) []lease.Announcement {
+		return []lease.Announcement{{MainId: "main-a", Pid: 41, PidStartedAt: 2}}
+	}
+	read := func(string) (lease.CurrentHolderView, error) { return holder, nil }
+	exact := identity.Exact{Pid: 41, StartedAt: time.Unix(2, 0)}
+	pid, state, err := inspectBatchOwnerWith("root", processRefProber{exact: exact, state: identity.Alive}, read, announcements)
+	if err != nil || pid != 41 || state != identity.Alive {
+		t.Fatalf("alive inspection pid=%d state=%s error=%v", pid, state, err)
+	}
+	_, state, err = inspectBatchOwnerWith("root", processRefProber{exact: exact, state: identity.Dead}, read, announcements)
+	if err != nil || state != identity.Dead {
+		t.Fatalf("dead inspection state=%s error=%v", state, err)
+	}
+	readErr := errors.New("transient lease read")
+	_, state, err = inspectBatchOwnerWith("root", processRefProber{}, func(string) (lease.CurrentHolderView, error) {
+		return lease.CurrentHolderView{}, readErr
+	}, announcements)
+	if !errors.Is(err, readErr) || state != identity.Unknown {
+		t.Fatalf("read failure state=%s error=%v", state, err)
+	}
+}
+
 func TestBatchOwnerHoldsTheLease(t *testing.T) {
 	if mode := os.Getenv("GO_WANT_BATCH_OWNER_LEASE_HELPER"); mode != "" {
-		held, err := acquireBatchOwner(os.Getenv("BATCH_OWNER_TEST_ROOT"))
+		root := os.Getenv("BATCH_OWNER_TEST_ROOT")
+		if mode == "hold-foreign" {
+			exact, state, err := (identity.KernelProber{}).Probe(int64(os.Getpid()))
+			if err != nil || state != identity.Alive {
+				fmt.Printf("predecessor identity state=%s err=%v\n", state, err)
+				os.Exit(22)
+			}
+			if _, err := lease.AnnounceWithPair(root, fmt.Sprintf("landing-owner-predecessor-%d", os.Getpid()), int64(os.Getpid()),
+				exact.StartedAt.Unix(), exact.StartTicks, exact.BootID, "landing-owner", "metasystem", "retired-landing-lineage"); err != nil {
+				fmt.Println(err)
+				os.Exit(23)
+			}
+			holder, err := lease.CurrentHolder(root)
+			if err != nil || holder.ClaimEpoch != 1 {
+				fmt.Printf("predecessor holder=%+v err=%v\n", holder, err)
+				os.Exit(24)
+			}
+			fmt.Println("READY")
+			_, _ = os.Stdin.Read(make([]byte, 1))
+			return
+		}
+		held, err := acquireBatchOwner(root)
 		if err != nil {
 			fmt.Println(err)
 			os.Exit(23)
 		}
-		defer held.retire()
-		holder, err := lease.CurrentHolder(os.Getenv("BATCH_OWNER_TEST_ROOT"))
+		if mode != "hold-dead" {
+			defer held.retire()
+		}
+		holder, err := lease.CurrentHolder(root)
 		if err != nil || holder.OwnerLineage != landingOwnerLineage || holder.ClaimEpoch < 1 {
 			fmt.Printf("holder=%+v err=%v\n", holder, err)
 			os.Exit(24)
 		}
 		fmt.Println("READY")
-		if mode == "hold" {
+		if mode == "hold" || mode == "hold-dead" {
 			_, _ = os.Stdin.Read(make([]byte, 1))
 		}
 		return
@@ -87,9 +152,7 @@ func TestBatchOwnerHoldsTheLease(t *testing.T) {
 	if err := exec.Command("git", "init", "-q", root).Run(); err != nil {
 		t.Fatal(err)
 	}
-	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
-	defer cancel()
-	first := exec.CommandContext(ctx, os.Args[0], "-test.run=^TestBatchOwnerHoldsTheLease$")
+	first := exec.Command(os.Args[0], "-test.run=^TestBatchOwnerHoldsTheLease$")
 	first.Env = append(os.Environ(), "GO_WANT_BATCH_OWNER_LEASE_HELPER=hold", "BATCH_OWNER_TEST_ROOT="+root)
 	stdin, err := first.StdinPipe()
 	if err != nil {
@@ -107,7 +170,7 @@ func TestBatchOwnerHoldsTheLease(t *testing.T) {
 	if !scanner.Scan() || scanner.Text() != "READY" {
 		t.Fatalf("first owner did not acquire the lease: %q (%v)", scanner.Text(), scanner.Err())
 	}
-	second := exec.CommandContext(ctx, os.Args[0], "-test.run=^TestBatchOwnerHoldsTheLease$")
+	second := exec.Command(os.Args[0], "-test.run=^TestBatchOwnerHoldsTheLease$")
 	second.Env = append(os.Environ(), "GO_WANT_BATCH_OWNER_LEASE_HELPER=once", "BATCH_OWNER_TEST_ROOT="+root)
 	output, secondErr := second.CombinedOutput()
 	if secondErr == nil || !strings.Contains(string(output), "BATCH_OWNER_OWNED_ELSEWHERE") {
@@ -117,17 +180,57 @@ func TestBatchOwnerHoldsTheLease(t *testing.T) {
 
 func TestBatchOwnerWiringBound(t *testing.T) {
 	if os.Getenv("GO_WANT_BATCH_OWNER_SIGNAL_HELPER") != "" {
-		wake, _, cleanup := batchOwnerSignals()
+		signalWake, _, cleanup := batchOwnerSignals()
 		defer cleanup()
-		fmt.Println("READY")
-		<-wake
-		fmt.Println("WOKE")
+		root := os.Getenv("BATCH_OWNER_TEST_ROOT")
+		settings, err := config.NewBatchLanding(root, time.Minute, time.Now)
+		if err != nil {
+			fmt.Println(err)
+			os.Exit(24)
+		}
+		stop, loopWake := make(chan struct{}), make(chan struct{}, 1)
+		var stopOnce sync.Once
+		// The loop's timer never fires (After below), so only SIGUSR1 can bring a second Resume.
+		// Closing stdin is the parent's give-up, and it stops the loop.
+		go func() {
+			_, _ = io.Copy(io.Discard, os.Stdin)
+			stopOnce.Do(func() { close(stop) })
+		}()
+		calls := 0
+		owner, err := batch.NewOwner(batch.OwnerOptions{
+			Store: batch.NewStore(root, nil), Settings: settings, Actor: "fixture", PID: int64(os.Getpid()), Now: time.Now,
+			FetchTree: func() (string, error) { return "tree", nil },
+			ReadClaim: func(string, string, string, string) (batch.Claim, error) { return batch.Claim{}, nil },
+			Rebind:    func(string, string) error { return nil }, Sample: func() proofrun.LoadSample { return proofrun.LoadSample{} },
+			Admission: func(proofrun.LoadSample) proofrun.AdmissionCap { return proofrun.AdmissionCap{} },
+			Launch:    func(string, proofrun.LoadSample, string) error { return nil },
+			After:     func(time.Duration) <-chan time.Time { return make(chan time.Time) },
+			Report:    func(string, error) {}, Glob: func(string) ([]string, error) {
+				calls++
+				if calls == 1 {
+					fmt.Println("READY")
+				} else {
+					fmt.Println("TICK")
+					stopOnce.Do(func() { close(stop) })
+				}
+				return nil, nil
+			},
+		})
+		if err != nil {
+			fmt.Println(err)
+			os.Exit(25)
+		}
+		go func() { <-signalWake; loopWake <- struct{}{} }()
+		owner.Loop(time.Minute, loopWake, stop)
 		return
 	}
-	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
-	defer cancel()
-	command := exec.CommandContext(ctx, os.Args[0], "-test.run=^TestBatchOwnerWiringBound$")
-	command.Env = append(os.Environ(), "GO_WANT_BATCH_OWNER_SIGNAL_HELPER=1")
+	root := t.TempDir()
+	command := exec.Command(os.Args[0], "-test.run=^TestBatchOwnerWiringBound$")
+	command.Env = append(os.Environ(), "GO_WANT_BATCH_OWNER_SIGNAL_HELPER=1", "BATCH_OWNER_TEST_ROOT="+root)
+	stdin, err := command.StdinPipe()
+	if err != nil {
+		t.Fatal(err)
+	}
 	stdout, err := command.StdoutPipe()
 	if err != nil {
 		t.Fatal(err)
@@ -142,9 +245,32 @@ func TestBatchOwnerWiringBound(t *testing.T) {
 	if err := syscall.Kill(command.Process.Pid, syscall.SIGUSR1); err != nil {
 		t.Fatal(err)
 	}
-	if !scanner.Scan() || scanner.Text() != "WOKE" {
-		t.Fatalf("SIGUSR1 did not wake owner: %q (%v)", scanner.Text(), scanner.Err())
+	// Wait for the fact (the second Resume's TICK) on the package's wiring bound, never on an
+	// instant or a count of steps a loaded machine can outrun.
+	lines := make(chan string)
+	go func() {
+		defer close(lines)
+		for scanner.Scan() {
+			lines <- scanner.Text()
+		}
+	}()
+	bound := time.NewTimer(wiringBound)
+	defer bound.Stop()
+	for observed := ""; observed != "TICK"; {
+		select {
+		case line, ok := <-lines:
+			if !ok {
+				t.Fatalf("SIGUSR1 wiring ended before the owner loop ticked: %v", scanner.Err())
+			}
+			observed = line
+		case <-bound.C:
+			_ = stdin.Close()
+			_ = command.Process.Kill()
+			_ = command.Wait()
+			t.Fatalf("SIGUSR1 did not reach the owner loop within %s", wiringBound)
+		}
 	}
+	_ = stdin.Close()
 	if err := command.Wait(); err != nil {
 		t.Fatal(err)
 	}
@@ -197,13 +323,21 @@ func TestBatchProofCoversTheUnion(t *testing.T) {
 			events = append(events, "rearm:"+tree)
 			return nil
 		},
-		plan: func(_, _, _ string, mode testpolicy.Mode) (testpolicy.Plan, error) {
-			events = append(events, "plan:"+string(mode))
-			if mode == testpolicy.ModeAuto {
-				return testpolicy.Plan{RequiredMode: testpolicy.ModeStandard, ExecutedMode: testpolicy.ModeStandard, SelectedGroups: []string{"common"}}, nil
+		seal: func(_, _, _, _ string, _ time.Time) error {
+			events = append(events, "seal")
+			return store.Update(batchID, func(record *batch.Record) error {
+				record.Seal = map[string]batch.Claim{"goal-a": claim, "goal-b": claim}
+				record.Transition(batch.StateSealed, time.Unix(7, 0), "seal", "landing-owner", "")
+				return nil
+			})
+		},
+		plan: func(_, goalID, _ string, mode testpolicy.Mode) (testpolicy.Plan, error) {
+			events = append(events, "plan:"+goalID+":"+string(mode))
+			groups := []string{"common"}
+			if goalID == "goal-a" {
+				groups = append(groups, "member-only-crosscut")
 			}
-			return testpolicy.Plan{RequiredMode: testpolicy.ModeDeep, ExecutedMode: testpolicy.ModeDeep,
-				SelectedGroups: []string{"common", "member-only-crosscut"}}, nil
+			return testpolicy.Plan{RequiredMode: testpolicy.ModeStandard, ExecutedMode: testpolicy.ModeStandard, SelectedGroups: groups}, nil
 		},
 		launch: func(request batchProofLaunch) (proofrun.TestResult, error) {
 			events = append(events, "launch:"+string(request.Mode))
@@ -211,7 +345,7 @@ func TestBatchProofCoversTheUnion(t *testing.T) {
 			if err != nil || admitted.State != batch.StateProving || admitted.Proof == nil || admitted.Proof.Status != "planned" {
 				t.Fatalf("runner charged without durable admission: record=%+v err=%v", admitted, err)
 			}
-			return proofrun.TestResult{AttemptID: "attempt-tip", Delivery: proofrun.DeliveryJudgment{Sufficient: true}, Groups: []proofrun.GroupResult{
+			return proofrun.TestResult{AttemptID: "attempt-tip", LaunchCounts: proofrun.LaunchCounts{Test: 1, Build: 1}, Delivery: proofrun.DeliveryJudgment{Sufficient: true}, Groups: []proofrun.GroupResult{
 				{ID: "common", NativeLaunched: true}, {ID: "member-only-crosscut", ReuseAttempt: "attempt-member"},
 			}}, nil
 		},
@@ -224,7 +358,7 @@ func TestBatchProofCoversTheUnion(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if strings.Join(events, ",") != "rearm:base,plan:auto,plan:deep,launch:deep" || finished.State != batch.StateLanding ||
+	if strings.Join(events, ",") != "rearm:base,seal,plan:goal-a:auto,plan:goal-b:auto,launch:standard" || finished.State != batch.StateLanding ||
 		finished.Proof == nil || finished.Proof.AttemptID != "attempt-tip" || finished.Proof.Launchers != 2 ||
 		!slices.Equal(finished.Proof.Executions, []string{"common"}) || finished.Proof.Reuse["member-only-crosscut"] != "attempt-member" {
 		t.Fatalf("events=%v proof=%+v state=%s", events, finished.Proof, finished.State)
@@ -240,13 +374,116 @@ func TestBatchProofAcceptsReusableSuccess(t *testing.T) {
 	}
 }
 
+func TestBatchProofUnionUsesRealMemberRiskSelection(t *testing.T) {
+	contract := testpolicy.Contract{
+		Surfaces: []testpolicy.Surface{{ID: "app", Paths: []string{"pkg/**"}, Standard: []string{"base"}, CrossCutting: []string{"cross"}}},
+		Groups:   []testpolicy.Group{{ID: "base"}, {ID: "cross", Obligations: []string{"cross"}}},
+	}
+	units := []batch.Unit{{GoalID: "risk-a"}, {GoalID: "tip-b"}}
+	plan, err := planBatchMemberUnion("root", "tree", units, testpolicy.ModeAuto, func(_, goalID, _ string, mode testpolicy.Mode) (testpolicy.Plan, error) {
+		risk := testpolicy.GoalRisk{}
+		if goalID == "risk-a" {
+			risk.Accumulation = 2
+		}
+		return testpolicy.Select(contract, testpolicy.SelectionRequest{ChangedPaths: []string{"pkg/value.go"}, GoalRisk: risk, RequestedMode: mode, Purpose: testpolicy.PurposeDelivery})
+	})
+	if err != nil || !slices.Contains(plan.SelectedGroups, "cross") {
+		t.Fatalf("member-risk union plan=%+v error=%v", plan, err)
+	}
+}
+
+func TestBatchProofRearmsBaseBeforePlanningEvenWhenTreeMatches(t *testing.T) {
+	root := t.TempDir()
+	for _, args := range [][]string{{"init", "-q", "-b", "main", root}, {"-C", root, "config", "user.name", "Fixture"}, {"-C", root, "config", "user.email", "fixture@example.com"}} {
+		if err := exec.Command("git", args...).Run(); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if err := os.WriteFile(filepath.Join(root, "value"), []byte("old\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	mustRun := func(args ...string) {
+		t.Helper()
+		if out, err := exec.Command("git", append([]string{"-C", root}, args...)...).CombinedOutput(); err != nil {
+			t.Fatalf("git %v: %v\n%s", args, err, out)
+		}
+	}
+	mustRun("add", "value")
+	mustRun("commit", "-qm", "old")
+	old := strings.TrimSpace(string(mustOutput(t, exec.Command("git", "-C", root, "rev-parse", "HEAD"))))
+	if err := os.WriteFile(filepath.Join(root, "value"), []byte("base\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	mustRun("add", "value")
+	mustRun("commit", "-qm", "base")
+	baseTree := strings.TrimSpace(string(mustOutput(t, exec.Command("git", "-C", root, "rev-parse", "HEAD^{tree}"))))
+	mustRun("update-ref", "refs/remotes/origin/main", "HEAD")
+	mustRun("checkout", "-q", "--detach", old)
+	original := batchBaseRearm
+	t.Cleanup(func() { batchBaseRearm = original })
+	var events []string
+	batchBaseRearm.fastForward = func(context.Context, string, string) error { events = append(events, "fast-forward"); return nil }
+	batchBaseRearm.rebuild = func(context.Context, string) error { events = append(events, "rebuild"); return nil }
+	batchBaseRearm.up = func(context.Context, string, string) (upOutcome, error) {
+		events = append(events, "up")
+		return upOutcome{}, nil
+	}
+	if err := rearmBatchBase(root, baseTree); err != nil || strings.Join(events, ",") != "fast-forward,rebuild,up" {
+		t.Fatalf("moved rearm events=%v error=%v", events, err)
+	}
+	events = nil
+	mustRun("checkout", "-q", "refs/remotes/origin/main")
+	if err := rearmBatchBase(root, baseTree); err != nil || strings.Join(events, ",") != "rebuild,up" {
+		t.Fatalf("equal-tree rearm events=%v error=%v", events, err)
+	}
+}
+
 func TestBatchSupervisorTakeoverRebindsJoinedClaims(t *testing.T) {
 	const batchID = "01j5x00000000000000000ba01"
-	root := t.TempDir()
+	if !slices.Contains(supervise.ProductionComponents(), supervise.LandingOwner) {
+		t.Fatal("production supervisor arming omitted the landing owner")
+	}
+	root := syncedClaimedGoalFixture(t)
+	goalSyncMutationGit(t, root, "config", "metasystem.goal.machine", "landing-machine")
+	amendSyncedGoalFixture(t, root, "hand standing validation to the landing owner", func(file *goal.GoalFile) {
+		file.Claimed.Machine, file.Claimed.Lineage = "landing-machine", landingOwnerLineage
+		file.Claimed.HandedOver = goal.HandedOver{FromMachine: "seat-machine", FromLineage: "seat-lineage", FromEpoch: 1, Batch: batchID}
+		file.StopCapability = &goal.StopCapability{Generation: 1, Revision: file.Claimed.Revision, Machine: "landing-machine", ClaimEpoch: 1}
+	})
+	parent, state, err := (identity.KernelProber{}).Probe(int64(os.Getppid()))
+	if err != nil || state != identity.Alive {
+		t.Fatalf("probe owner caller: state=%s err=%v", state, err)
+	}
+	first := exec.Command(os.Args[0], "-test.run=^TestBatchOwnerHoldsTheLease$")
+	first.Env = append(os.Environ(), "GO_WANT_BATCH_OWNER_LEASE_HELPER=hold-foreign", "BATCH_OWNER_TEST_ROOT="+root)
+	firstInput, err := first.StdinPipe()
+	if err != nil {
+		t.Fatal(err)
+	}
+	firstOutput, err := first.StdoutPipe()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := first.Start(); err != nil {
+		t.Fatal(err)
+	}
+	firstReleased := false
+	t.Cleanup(func() {
+		if !firstReleased {
+			_ = firstInput.Close()
+			_ = first.Wait()
+		}
+	})
+	firstScanner := bufio.NewScanner(firstOutput)
+	if !firstScanner.Scan() || firstScanner.Text() != "READY" {
+		t.Fatalf("first batch owner did not acquire the lease: %q (%v)", firstScanner.Text(), firstScanner.Err())
+	}
+	t.Setenv("METASYSTEM_OWNER_LINEAGE", landingOwnerLineage)
+	t.Setenv("METASYSTEM_GOAL_NOW", "2026-08-30T08:07:00Z")
 	store := batch.NewStore(root, nil)
 	claim := batch.Claim{Machine: "landing", Lineage: landingOwnerLineage, Epoch: 1, Revision: 3, AccountingRevision: 2}
 	if err := store.Create(batch.Record{Schema: 1, BatchID: batchID, State: batch.StateOpen, Units: []batch.Unit{
-		{GoalID: "goal-a", Chain: "chain-a", Claim: claim, State: batch.UnitJoined},
+		{GoalID: "standing-validation", Chain: "chain-a", Claim: claim, State: batch.UnitJoined},
 		{GoalID: "goal-b", Chain: "chain-b", Claim: claim, State: batch.UnitJoining},
 	}}); err != nil {
 		t.Fatal(err)
@@ -257,32 +494,200 @@ func TestBatchSupervisorTakeoverRebindsJoinedClaims(t *testing.T) {
 			t.Fatalf("rebind root=%q, want %q", gotRoot, root)
 		}
 		calls = append(calls, append([]string(nil), args...))
+		if len(args) < 2 || args[0] != "goal" || args[1] != "handover" {
+			return fmt.Errorf("unexpected rebind command %v", args)
+		}
+		childArgs, err := json.Marshal(args[2:])
+		if err != nil {
+			return err
+		}
+		command := exec.Command(os.Args[0], "-test.run=^TestBatchGoalHandoverChild$")
+		command.Env = append(os.Environ(), "GO_WANT_BATCH_GOAL_HANDOVER_CHILD="+string(childArgs))
+		if output, err := command.CombinedOutput(); err != nil {
+			return fmt.Errorf("real goal handover: %w: %s", err, output)
+		}
 		return nil
 	}
-	if err := rebindBatchClaims(root, batchID, "landing-machine", 2, run); err != nil {
+	acceptedTree := func() string {
+		return strings.TrimSpace(goalSyncMutationGit(t, root, "rev-parse", goal.AcceptedRef+"^{tree}"))
+	}
+	if err := rebindBatchClaims(root, batchID, acceptedTree(), "landing-machine", 1, batch.ReadReturnLedgerGoal, run); err != nil || len(calls) != 0 {
+		t.Fatalf("equal-epoch tick rebind calls=%v error=%v", calls, err)
+	}
+	if err := firstInput.Close(); err != nil {
+		t.Fatal(err)
+	}
+	if err := first.Wait(); err != nil {
+		t.Fatal(err)
+	}
+	firstReleased = true
+	replacement, err := acquireBatchOwner(root)
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(replacement.retire)
+	if replacement.epoch != 2 {
+		t.Fatalf("replacement owner epoch=%d, want real lease takeover epoch 2", replacement.epoch)
+	}
+	if err := rebindBatchClaims(root, batchID, acceptedTree(), "landing-machine", replacement.epoch, batch.ReadReturnLedgerGoal, run); err != nil {
 		t.Fatal(err)
 	}
 	if len(calls) != 1 {
 		t.Fatalf("rebind calls=%v", calls)
 	}
 	joined := strings.Join(calls[0], " ")
-	if !strings.Contains(joined, "--id goal-a") || strings.Contains(joined, "goal-b") ||
+	if !strings.Contains(joined, "--id standing-validation") || strings.Contains(joined, "goal-b") ||
 		!strings.Contains(joined, "--target-claim-epoch 2") || !strings.Contains(joined, "--target-lineage "+landingOwnerLineage) {
 		t.Fatalf("rebind calls=%v", calls)
+	}
+	ledger, err := batch.ReadReturnLedgerGoal(root, acceptedTree(), "standing-validation")
+	if err != nil || ledger.ClaimEpoch != 2 {
+		t.Fatalf("real rebound ledger=%+v error=%v", ledger, err)
+	}
+	if err := rebindBatchClaims(root, batchID, acceptedTree(), "landing-machine", 2, batch.ReadReturnLedgerGoal, run); err != nil || len(calls) != 1 {
+		t.Fatalf("settled takeover rebind calls=%v error=%v", calls, err)
+	}
+	ref := parent.Ref()
+	job := map[string]any{
+		"jobId": "stale-batch-proof", "operationId": "stale-batch-proof", "goalId": "standing-validation", "goalRevision": 2,
+		"machineId": "landing-machine", "claimEpoch": 1, "capMin": 1, "status": "running",
+		"pid": parent.Pid, "pidStartedAt": ref.StartedAtSec,
+	}
+	if ref.StartedAtUnixMicro > 0 {
+		job["pidStartedAtExactMicro"] = ref.StartedAtUnixMicro
+	}
+	if ref.StartTicks > 0 {
+		job["pidStartTicks"], job["bootId"] = ref.StartTicks, ref.BootID
+	}
+	jobs := filepath.Join(root, "artifacts", "agents", "jobs")
+	if err := os.MkdirAll(jobs, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	writeTemp(t, jobs, "stale-batch-proof.json", job)
+	t.Setenv("METASYSTEM_HOOK_DELEGATE_STATE_ROOT", root)
+	t.Setenv("METASYSTEM_HOOK_DELEGATE_INSTALLATION_ROOT", root)
+	t.Setenv("METASYSTEM_HOOK_DELEGATE_JOB", "stale-batch-proof")
+	attempt, _, _, err := admitProofLaunch(proofLaunchAdmission{ControlRoot: root, ExecutionRoot: root,
+		ConfPath: filepath.Join(root, "metasystem.conf"), GoalID: "standing-validation", CapMin: "1", ScopeClass: "full", CommandClass: "testing"})
+	if err == nil || !strings.Contains(err.Error(), "custody changed before reservation") || attempt.AttemptID != "" {
+		t.Fatalf("stale takeover proof attempt=%+v error=%v", attempt, err)
+	}
+	canonicalRoot, err := filepath.EvalSymlinks(root)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, name := range []string{"coverage-ratchet.json", "coverage-ratchet-linux.json"} {
+		path := filepath.Join(root, "scripts", "agents", name)
+		if err := os.WriteFile(path, []byte(`{"floors":{"cmd/metasystem":1},"exempt":{}}`), 0o600); err != nil {
+			t.Fatal(err)
+		}
+	}
+	proofIdentity, err := proofrun.BuildProofIdentity(canonicalRoot, filepath.Join(canonicalRoot, "metasystem.conf"), "full", "testing", []string{"gate"}, behaviorsurface.SupportedVersion)
+	if err != nil {
+		t.Fatal(err)
+	}
+	parentIdentity := proofrun.ProcessIdentity{Pid: parent.Pid, PidStartedAt: ref.StartedAtSec, PidStartedAtMicro: ref.StartedAtUnixMicro, PidStartTicks: ref.StartTicks, BootID: ref.BootID}
+	parentAttempt, _, err := proofrun.ReserveLocked(proofrun.AdmissionRequest{ControlRoot: canonicalRoot, ExecutionRoot: canonicalRoot, GoalID: "standing-validation",
+		GoalRevision: 2, AccountingRevision: 2, ReservedMinutes: 1, Identity: proofIdentity, Launcher: parentIdentity, Now: time.Unix(2, 0)})
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("METASYSTEM_HOOK_DELEGATE_JOB", "")
+	t.Setenv("METASYSTEM_PROOF_CONTROL_ROOT", canonicalRoot)
+	t.Setenv("METASYSTEM_PROOF_ATTEMPT", parentAttempt.AttemptID)
+	before, err := proofrun.ReadAttempts(canonicalRoot)
+	if err != nil {
+		t.Fatal(err)
+	}
+	attempt, _, _, err = admitProofLaunch(proofLaunchAdmission{ControlRoot: canonicalRoot, ExecutionRoot: canonicalRoot, ConfPath: filepath.Join(canonicalRoot, "metasystem.conf"),
+		GoalID: "standing-validation", CapMin: "1", ScopeClass: "selected", CommandClass: "testing", ExpectedGoalRevision: 3, ExpectedAccountingRevision: 2})
+	after, readErr := proofrun.ReadAttempts(canonicalRoot)
+	if err == nil || !strings.Contains(err.Error(), "GOAL_REVISION_MOVED") || attempt.AttemptID != "" || readErr != nil || len(after) != len(before) {
+		t.Fatalf("parent revision admission attempt=%+v error=%v attempts=%d->%d read=%v", attempt, err, len(before), len(after), readErr)
 	}
 }
 
 func TestGoalHandoverTargetRootFlagFlows(t *testing.T) {
-	flags := flag.NewFlagSet("goal handover", flag.ContinueOnError)
-	target := pathFlag(flags, "target-root", "", "return target checkout")
-	want := filepath.Join(t.TempDir(), "seat")
-	if err := flags.Parse([]string{"--target-root", want}); err != nil {
+	const batchID = "01j5x00000000000000000ba01"
+	root := syncedClaimedGoalFixture(t)
+	goalSyncMutationGit(t, root, "config", "metasystem.goal.machine", "landing-machine")
+	amendSyncedGoalFixture(t, root, "hand standing validation to landing", func(file *goal.GoalFile) {
+		file.Claimed.Machine, file.Claimed.Lineage = "landing-machine", landingOwnerLineage
+		file.Claimed.HandedOver = goal.HandedOver{FromMachine: "seat-machine", FromLineage: "seat-lineage", FromEpoch: 1, Batch: batchID}
+		file.StopCapability = &goal.StopCapability{Generation: 1, Revision: file.Claimed.Revision, Machine: "landing-machine", ClaimEpoch: 1}
+	})
+	seat := t.TempDir()
+	goalSyncMutationGit(t, seat, "init", "-q", "-b", "main")
+	goalSyncMutationGit(t, seat, "config", "metasystem.goal.machine", "seat-machine")
+	parent, state, err := (identity.KernelProber{}).Probe(int64(os.Getppid()))
+	if err != nil || state != identity.Alive {
+		t.Fatalf("probe hand-back caller: state=%s err=%v", state, err)
+	}
+	for _, fixture := range []struct{ checkout, session, lineage string }{
+		{root, "landing-fixture", landingOwnerLineage},
+		{seat, "seat-fixture", "seat-lineage"},
+	} {
+		if _, err := lease.AnnounceWithPair(fixture.checkout, fixture.session, parent.Pid, parent.StartedAt.Unix(), parent.StartTicks, parent.BootID, "fixture", "fake", fixture.lineage); err != nil {
+			t.Fatal(err)
+		}
+	}
+	t.Setenv("METASYSTEM_OWNER_LINEAGE", landingOwnerLineage)
+	t.Setenv("METASYSTEM_GOAL_NOW", "2026-08-30T08:07:00Z")
+	code := runGoalHandoverMutation([]string{"--root", root, "--id", "standing-validation", "--lineage", landingOwnerLineage,
+		"--target-machine", "seat-machine", "--target-lineage", "seat-lineage", "--target-claim-epoch", "1", "--batch", batchID, "--target-root", seat})
+	if code != 0 {
+		t.Fatalf("real target-root return exited %d", code)
+	}
+	tip := goalSyncMutationGit(t, root, "rev-parse", goal.AcceptedRef)
+	data := goalSyncMutationGit(t, root, "cat-file", "-p", tip+":plans/goals/standing-validation.md")
+	returned, problems := goal.ParseFile([]byte(data))
+	if len(problems) != 0 || returned.Claimed.Machine != "seat-machine" || returned.Claimed.Lineage != "seat-lineage" || returned.Claimed.HandedOver != (goal.HandedOver{}) {
+		t.Fatalf("target-root return claim=%+v problems=%v", returned.Claimed, problems)
+	}
+}
+
+func TestBatchProductionReturnAndForwardHandoverArguments(t *testing.T) {
+	const batchID = "01j5x00000000000000000ba01"
+	root, seat := t.TempDir(), filepath.Join(t.TempDir(), "seat")
+	store := batch.NewStore(root, nil)
+	claim := batch.Claim{Machine: "seat-machine", Lineage: "seat-lineage", Epoch: 3, Revision: 4, AccountingRevision: 4}
+	if err := store.Create(batch.Record{Schema: 1, BatchID: batchID, State: batch.StateOpen, Units: []batch.Unit{{
+		GoalID: "goal-a", Chain: "chain-a", SeatRoot: seat, Claim: claim, State: batch.UnitReturnPending,
+	}}}); err == nil {
+		t.Fatal("invalid return-pending fixture unexpectedly passed")
+	}
+	if err := store.Create(batch.Record{Schema: 1, BatchID: batchID, State: batch.StateOpen, Units: []batch.Unit{{
+		GoalID: "goal-a", Chain: "chain-a", SeatRoot: seat, Claim: claim, State: batch.UnitJoined,
+	}}}); err != nil {
 		t.Fatal(err)
 	}
-	request := goal.VerbRequest{}
-	bindHandoverTargetRoot(&request, *target)
-	if request.HandoverTargetRoot != want {
-		t.Fatalf("handover request target root=%q, want %q", request.HandoverTargetRoot, want)
+	if err := batch.RequestReturn(store, batchID, "goal-a", batch.UnitEjected, "red", "owner", time.Unix(1, 0)); err != nil {
+		t.Fatal(err)
+	}
+	original, originalRead := batchChildRunner, batchReturnLedgerGoal
+	t.Cleanup(func() { batchChildRunner, batchReturnLedgerGoal = original, originalRead })
+	batchReturnLedgerGoal = func(string, string, string) (batch.ReturnLedgerGoal, error) {
+		return batch.ReturnLedgerGoal{Claimed: true, Batch: batchID}, nil
+	}
+	var calls [][]string
+	batchChildRunner = func(gotRoot, lineage string, args ...string) error {
+		calls = append(calls, append([]string{gotRoot, lineage}, args...))
+		return nil
+	}
+	seams := productionReturnSeams(root, func() string { return "tree" })
+	if err := seams.HandBack("goal-a", claim, 8); err != nil {
+		t.Fatal(err)
+	}
+	joined := strings.Join(calls[0], " ")
+	if !strings.Contains(joined, "--target-root "+seat) || !strings.Contains(joined, "--target-claim-epoch 8") || !strings.Contains(joined, "--batch "+batchID) {
+		t.Fatalf("hand-back argv=%v", calls[0])
+	}
+	calls = nil
+	if err := seams.Release("goal-a", "failure first"); err != nil {
+		t.Fatal(err)
+	}
+	if len(calls) != 2 || !slices.Contains(calls[0], "edit") || !slices.Contains(calls[1], "release") {
+		t.Fatalf("release order=%v", calls)
 	}
 }
 
@@ -347,6 +752,9 @@ func TestLandingBatchJoinVerbPublishesOutsideFlock(t *testing.T) {
 	}
 	dependencies.base = func(string) (string, error) { return base, nil }
 	dependencies.mint = func() (string, error) { return "01j5x00000000000000000ba99", nil }
+	dependencies.author = func(string, *goal.GoalFile) (string, string, string, error) {
+		return "Fixture", "Fixture", "fixture@example.com", nil
+	}
 	dependencies.transport = func(root string, chain batch.CertifiedChain) error {
 		flockFree("transport")
 		events = append(events, "transport")

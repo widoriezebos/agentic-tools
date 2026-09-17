@@ -331,3 +331,13 @@ the engine's `metasystem goal` family (`internal/goal`).
 - **Journey** — the plain-English story of the program
   (`docs/journey.md`). Concluding a goal appends its paragraph in the
   same landing.
+- **Landing batch** — an ordered set of reviewed goal units whose claims have
+  been handed to the dedicated landing owner. The owner seals their selected
+  test union, proves one tip, creates exact prefix receipts, builds every unit
+  commit locally in join order, and publishes the complete series with one
+  push. Red diagnosis may eject units, but never changes the survivors' order.
+- **Batch hold** — a durable `held-trunk-red` or `held-unclassified` state.
+  Trunk red means the fresh base diagnostic was red or no member could be
+  named; unclassified means diagnostic admission itself refused. Both are
+  terminal for `landing batch wait` until a new tree or human action reopens
+  the work.

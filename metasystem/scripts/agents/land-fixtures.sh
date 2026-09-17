@@ -30,12 +30,43 @@ fi
 unset METASYSTEM_FIXTURE_SCENARIO
 if (( ! fixture_bed_child )); then
   fixture_bed_script=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd -P)/$(basename "${BASH_SOURCE[0]}")
-  run_fixture_bed_scenarios land "land fixtures passed (28 isolated legs)" \
+  run_fixture_bed_scenarios land "land fixtures passed (33 isolated legs)" \
     "$fixture_bed_script" early-reader-large-producer push-retry step-failure new-plan goal receipt-line tier-one full-width-chain build-stamp \
     brain-land-refuses brain-absent-node-proceeds ledger-move-lands records-move-lands \
     input-move-refuses receipt-cutover carried-fresh carried-prefixed carried-second carried-red-battery \
     carried-intent-failure carried-crash-local carried-asks carried-ledger-path carried-crash \
-    carried-two-seat carried-debt-abandoned carried-debt-expired abandonment-refuses-every-push-route
+    carried-two-seat carried-debt-abandoned carried-debt-expired abandonment-refuses-every-push-route batch-owner-holds-lease \
+    batch-lands-by-agent-commit batch-two-units-disjoint-groups batch-land-trunk-moved batch-land-resumes
+fi
+
+if [[ "$fixture_scenario" == batch-owner-holds-lease ]]; then
+  (cd "$root" && go test -count=1 -tags batchtest -run '^TestBatchOwnerHoldsTheLease$' ./cmd/metasystem)
+  echo "land batch-owner-holds-lease fixture passed"
+  exit 0
+fi
+
+if [[ "$fixture_scenario" == batch-lands-by-agent-commit ]]; then
+  (cd "$root" && go test -count=1 -run '^TestCommitWithWrapperUsesTempRepoTokenAndExplicitIdentity$' ./internal/landing/batch)
+  echo "land batch-lands-by-agent-commit fixture passed"
+  exit 0
+fi
+
+if [[ "$fixture_scenario" == batch-two-units-disjoint-groups ]]; then
+  (cd "$root" && go test -count=1 -run '^(TestPrefixReceiptsReuseByIdentity|TestBatchLandingTransportRunsWholeSeriesOnce)$' ./internal/landing/batch)
+  echo "land batch-two-units-disjoint-groups fixture passed"
+  exit 0
+fi
+
+if [[ "$fixture_scenario" == batch-land-trunk-moved ]]; then
+  (cd "$root" && go test -count=1 -run '^TestLandingBranchLeasesEndpointAndDeletesCandidateAtomically$' ./internal/landing/batch)
+  echo "land batch-land-trunk-moved fixture passed"
+  exit 0
+fi
+
+if [[ "$fixture_scenario" == batch-land-resumes ]]; then
+  (cd "$root" && go test -count=1 -run '^TestBatchLandingResumeRebuildsCompleteSeries$' ./internal/landing/batch)
+  echo "land batch-land-resumes fixture passed"
+  exit 0
 fi
 
 tmp=$(mktemp -d "${TMPDIR:-/tmp}/metasystem-land.XXXXXX")

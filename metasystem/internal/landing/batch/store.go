@@ -122,7 +122,9 @@ func (store Store) updateLocked(id string, mutate func(*Record) error) error {
 		return err
 	}
 	sameUnit := func(next, old Unit) bool {
-		return next.GoalID == old.GoalID && next.Chain == old.Chain && next.SeatRoot == old.SeatRoot && next.Claim == old.Claim
+		return next.GoalID == old.GoalID && next.Chain == old.Chain && next.SeatRoot == old.SeatRoot && next.Claim == old.Claim &&
+			next.Approver == old.Approver && next.AuthorName == old.AuthorName && next.AuthorEmail == old.AuthorEmail &&
+			slices.Equal(next.ChangedPaths, old.ChangedPaths) && slices.Equal(next.SelectedGroups, old.SelectedGroups)
 	}
 	unitsImmutable := len(record.Units) >= len(prior.Units) && slices.EqualFunc(record.Units[:len(prior.Units)], prior.Units, sameUnit)
 	if record.BatchID != id || record.Schema != prior.Schema || !unitsImmutable {

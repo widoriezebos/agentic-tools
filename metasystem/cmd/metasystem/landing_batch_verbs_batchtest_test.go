@@ -3,8 +3,12 @@
 package main
 
 import (
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
+
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/landing/batch"
 )
 
 func TestBatchCapabilitiesGate(t *testing.T) {
@@ -20,6 +24,29 @@ func TestBatchCapabilitiesGate(t *testing.T) {
 				t.Fatalf("missing %s = code %d, stderr %q", capability, code, stderr)
 			}
 		})
+	}
+}
+
+func TestBatchTrunkRedLedgerOwnerCapability(t *testing.T) {
+	restore := unregisterBatchCapabilityForTest(trunkRedLedgerOwner)
+	if batchCapabilitiesAvailable() {
+		t.Fatal("automatic landing remained available without the trunk-red ledger owner marker")
+	}
+	restore()
+	root := t.TempDir()
+	owner := productionTrunkRedLedgerOwner(root)
+	red := batch.TrunkRed{BatchID: "batch", AttemptID: "attempt", BaseTree: "tree", Groups: []batch.RedGroup{{ID: "group", Status: "failed"}}}
+	first, err := owner.Record("op-1", red)
+	if err != nil {
+		t.Fatal(err)
+	}
+	second, err := owner.Record("op-1", red)
+	if err != nil || len(first) != 1 || len(second) != 1 || first[0] != second[0] {
+		t.Fatalf("idempotent refs first=%v second=%v error=%v", first, second, err)
+	}
+	data, err := os.ReadFile(filepath.Join(root, "memory", "flake-registry.md"))
+	if err != nil || strings.Count(string(data), "batch-trunk-red:") != 1 {
+		t.Fatalf("test-only ledger bytes=%q error=%v", data, err)
 	}
 }
 

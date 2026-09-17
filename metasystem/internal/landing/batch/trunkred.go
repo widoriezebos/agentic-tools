@@ -21,12 +21,13 @@ type Failure struct {
 
 // RedGroup records one proof group that did not pass.
 type RedGroup struct {
-	ID           string    `json:"id"`
-	Status       string    `json:"status"`
-	NotRunReason string    `json:"notRunReason"`
-	LogPath      string    `json:"logPath"`
-	LogDigest    string    `json:"logDigest"`
-	Failures     []Failure `json:"failures"`
+	ID            string    `json:"id"`
+	InputManifest []string  `json:"inputManifest,omitempty"`
+	Status        string    `json:"status"`
+	NotRunReason  string    `json:"notRunReason"`
+	LogPath       string    `json:"logPath"`
+	LogDigest     string    `json:"logDigest"`
+	Failures      []Failure `json:"failures"`
 }
 
 // TrunkRed describes proof failures observed on a batch base tree.

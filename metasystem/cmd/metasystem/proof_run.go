@@ -276,6 +276,7 @@ type proofLaunchAdmission struct {
 	SharedManifestDigest                                                string
 	ComponentIdentities                                                 map[string]string
 	ExecuteAfresh                                                       bool
+	RequireDiagnosticHeadroom                                           bool
 }
 
 func canonicalProofRoot(path string) (string, error) {
@@ -527,7 +528,7 @@ func admitProofLaunch(request proofLaunchAdmission) (proofrun.Attempt, proofrun.
 		return proofrun.Attempt{}, proofrun.LaunchResult{}, false, fmt.Errorf("GOAL_REVISION_MOVED: expected goal/accounting revisions %d/%d, found %d/%d",
 			request.ExpectedGoalRevision, request.ExpectedAccountingRevision, binding.Revision, accountingRevision)
 	}
-	if request.ExpectedGoalRevision != 0 {
+	if request.RequireDiagnosticHeadroom {
 		attemptHeadroom := projection.Limits.AttemptLimit >= projection.Attempts && projection.Limits.AttemptLimit-projection.Attempts >= 2
 		minuteHeadroom := uint64(capValue) <= ^uint64(0)/2 && projection.Limits.ReservedJobMinutesLimit >= projection.ReservedJobMinutes &&
 			projection.Limits.ReservedJobMinutesLimit-projection.ReservedJobMinutes >= 2*uint64(capValue)

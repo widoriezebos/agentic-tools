@@ -829,6 +829,7 @@ commit_trailers=(
   --trailer "Landing-Provenance: $landing_provenance"
   --trailer "Landing-Provenance-Verdict: $landing_verdict"
 )
+[[ -z "${METASYSTEM_LANDED_BY:-}" ]] || commit_trailers+=(--trailer "Landed-By: $METASYSTEM_LANDED_BY")
 [[ -z "$landing_goal" ]] || commit_trailers+=(--trailer "Goal-Item: $landing_goal")
 if [[ -n "$landing_carried" ]]; then
   commit_trailers+=(

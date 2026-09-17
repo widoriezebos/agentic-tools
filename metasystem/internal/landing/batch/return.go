@@ -14,6 +14,7 @@ const ReturnTargetLive, ReturnTargetDead, ReturnTargetRestarted, ReturnTargetOcc
 type ReturnLedgerGoal struct {
 	Claimed                       bool
 	Machine, Lineage, Batch, Next string
+	ClaimEpoch                    uint64
 }
 type ReturnTarget struct {
 	State  string
@@ -42,6 +43,11 @@ func ReadReturnLedgerGoal(root, tree, goalID string) (ReturnLedgerGoal, error) {
 	if file.Claimed != nil {
 		out.Claimed, out.Machine, out.Lineage = true, file.Claimed.Machine, file.Claimed.Lineage
 		out.Batch = file.Claimed.HandedOver.Batch
+		if file.StopCapability != nil {
+			if file.StopCapability.ClaimEpoch > 0 {
+				out.ClaimEpoch = uint64(file.StopCapability.ClaimEpoch)
+			}
+		}
 	}
 	return out, nil
 }

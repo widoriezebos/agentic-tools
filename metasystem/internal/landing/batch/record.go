@@ -22,12 +22,19 @@ type unitRecordFields struct {
 	ReturnDisposition string `json:"returnDisposition,omitempty"`
 }
 type Unit struct {
-	GoalID   string `json:"goalId"`
-	Chain    string `json:"chain"`
-	SeatRoot string `json:"seatRoot,omitempty"`
-	Claim    Claim  `json:"claim"`
-	State    string `json:"state"`
-	Gate     runIDs `json:"gate,omitempty"`
+	GoalID         string   `json:"goalId"`
+	Chain          string   `json:"chain"`
+	SeatRoot       string   `json:"seatRoot,omitempty"`
+	Claim          Claim    `json:"claim"`
+	State          string   `json:"state"`
+	Gate           runIDs   `json:"gate,omitempty"`
+	ChangedPaths   []string `json:"changedPaths,omitempty"`
+	SelectedGroups []string `json:"selectedGroups,omitempty"`
+	Approver       string   `json:"approver,omitempty"`
+	AuthorName     string   `json:"authorName,omitempty"`
+	AuthorEmail    string   `json:"authorEmail,omitempty"`
+	LandedCommit   string   `json:"landedCommit,omitempty"`
+	P6Done         bool     `json:"p6Done,omitempty"`
 
 	unitRecordFields
 }
@@ -40,14 +47,16 @@ type HistoryEntry struct {
 	Detail string `json:"detail,omitempty"`
 }
 type Record struct {
-	Schema   int            `json:"schema"`
-	BatchID  string         `json:"batchId"`
-	TipTree  string         `json:"tipTree"`
-	State    string         `json:"state"`
-	Units    []Unit         `json:"units"`
-	History  []HistoryEntry `json:"history"`
-	TrunkRed *TrunkRedHold  `json:"trunkRed,omitempty"`
-	Proof    *Proof         `json:"proof,omitempty"`
+	Schema   int                      `json:"schema"`
+	BatchID  string                   `json:"batchId"`
+	TipTree  string                   `json:"tipTree"`
+	State    string                   `json:"state"`
+	Units    []Unit                   `json:"units"`
+	History  []HistoryEntry           `json:"history"`
+	TrunkRed *TrunkRedHold            `json:"trunkRed,omitempty"`
+	Proof    *Proof                   `json:"proof,omitempty"`
+	Receipts map[string]PrefixReceipt `json:"receipts,omitempty"`
+	Landing  *LandingProgress         `json:"landing,omitempty"`
 
 	CensusHold bool `json:"censusHold,omitempty"`
 	batchRecordFields

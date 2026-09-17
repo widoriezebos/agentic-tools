@@ -44,6 +44,16 @@ List only rules that cannot be inferred from code or tooling and apply broadly i
 - The candidate index and every delivery-relevant working-tree input must describe the same workspace bytes (the whole project minus the goal ledger paths that goal verbs rewrite: `plans/goals`, `plans/goals.md`, `plans/goals-accepted.json`, `records/goals`, `records/counselor`, `memory/receipts.log`, `records/narrator-digest.log`) before selected testing evidence can authorize delivery; the exact tree the proof ran on is still recorded; a tip move that leaves every selected test group's execution identity unchanged never voids that proof, however many records it touched; a moved declared input is proved again, never treated as permission to publish partial coverage.
 - A receipt is appended in the same commit as the work it describes; bookkeeping-only commits hide the ratio of records to evidence. `land.sh` enforces it: a landing that changes code (any path that is neither a record nor a ledger) is refused unless its staged `memory/receipts.log` appends a RECEIPT line for the landing's goal, and the refusal names the one `scripts/receipt.sh add` command that writes the line; records-only, receipt-only and exact-revert landings are exempt, as is a checkout whose HEAD keeps no tracked `memory/receipts.log` (the rule binds from the ledger's first commit on), and a landing that removes the ledger is refused.
 - When the same repository is developed by expensive models and measured or exercised by cheap ones, pin both rosters explicitly and name which activity each configuration serves; a cost rule applied to the wrong roster cancels healthy work.
+- Automatic batch landing is fail-closed until every compile-time capability,
+  including the separately owned trunk-red ledger owner, is present. A join
+  hands the unit's claim to the landing owner; only that owner may advance the
+  record, diagnose red, make the unit's approver-attributed commit, push the
+  complete series, and return or release the claim.
+- Batch proof and landing preserve original join order. Every diagnostic run
+  is fresh and charged to the authority member; every earlier prefix has an
+  exact receipt; commits remain local until one range-held check passes; one
+  push publishes the series; recovery identifies units by their individual
+  origin trailers and finalizes each once.
 
 ## Paper prose
 

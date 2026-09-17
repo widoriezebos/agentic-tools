@@ -9,6 +9,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"slices"
 	"strings"
 	"time"
 
@@ -40,6 +41,7 @@ type batchJoinDependencies struct {
 	publish   func(batch.Store, string, batch.Unit, string, time.Time, func(string, string, string) (testpolicy.Plan, error), func() error) error
 	handover  func(batchJoinRequest, string, batch.Claim) error
 	ensure    func(string) error
+	author    func(string, *goal.GoalFile) (string, string, string, error)
 }
 
 var batchJoinDependenciesForCommand = productionBatchJoinDependencies
@@ -64,8 +66,26 @@ func productionBatchJoinDependencies() batchJoinDependencies {
 			return batch.RunJoinGate(tree, patch, fixtures, unit, execute)
 		},
 		plan: productionJoinPlan, publish: batch.PublishJoin,
-		handover: productionForwardHandover, ensure: ensureBatchOwner,
+		handover: productionForwardHandover, ensure: ensureBatchOwner, author: productionBatchAuthor,
 	}
+}
+
+func productionBatchAuthor(root string, file *goal.GoalFile) (string, string, string, error) {
+	if file == nil || file.Approved == nil || !strings.HasPrefix(file.Approved.By, "human:") {
+		return "", "", "", fmt.Errorf("BATCH_JOIN_AUTHOR_UNBOUND: goal has no human approver")
+	}
+	approver := strings.TrimPrefix(file.Approved.By, "human:")
+	key := "goal.human." + strings.ToLower(approver)
+	identity, _, err := config.Get(config.GetParams{Key: key, ConfPath: filepath.Join(root, "metasystem.conf")})
+	left, right := strings.LastIndex(identity, "<"), strings.LastIndex(identity, ">")
+	if err != nil || left < 1 || right != len(identity)-1 || left >= right-1 {
+		return "", "", "", fmt.Errorf("BATCH_JOIN_AUTHOR_UNBOUND: %s has no complete %s identity", file.Approved.By, key)
+	}
+	name, email := strings.TrimSpace(identity[:left]), strings.TrimSpace(identity[left+1:right])
+	if name == "" || email == "" || !strings.Contains(email, "@") {
+		return "", "", "", fmt.Errorf("BATCH_JOIN_AUTHOR_UNBOUND: %s has no complete %s identity", file.Approved.By, key)
+	}
+	return approver, name, email, nil
 }
 
 func executeBatchJoin(request batchJoinRequest, dependencies batchJoinDependencies) (batch.Record, error) {
@@ -97,8 +117,18 @@ func executeBatchJoin(request batchJoinRequest, dependencies batchJoinDependenci
 	unit := batch.Unit{GoalID: request.GoalID, Chain: request.ChainID, SeatRoot: request.SeatRoot, State: batch.UnitJoining,
 		Claim: batch.Claim{Machine: binding.Machine, Lineage: binding.Lineage, Epoch: uint64(binding.Capability.ClaimEpoch),
 			Revision: binding.Revision, AccountingRevision: binding.File.Claimed.AccountingRevision}}
+	if dependencies.author != nil {
+		unit.Approver, unit.AuthorName, unit.AuthorEmail, err = dependencies.author(request.SeatRoot, binding.File)
+		if err != nil {
+			return batch.Record{}, err
+		}
+	}
+	for path := range batch.ChangedPaths(chain.Patch) {
+		unit.ChangedPaths = append(unit.ChangedPaths, path)
+	}
+	slices.Sort(unit.ChangedPaths)
 	if unit.Claim.AccountingRevision == 0 {
-		unit.Claim.AccountingRevision = binding.Revision
+		return batch.Record{}, fmt.Errorf("BATCH_JOIN_REVISION_MOVED: goal %s has no accounting revision", request.GoalID)
 	}
 	prefixes, err := dependencies.assemble(request.LandingRoot, record.BaseTree, []batch.Unit{unit})
 	if err != nil || len(prefixes) != 1 {
@@ -194,7 +224,7 @@ func productionForwardHandover(request batchJoinRequest, batchID string, source 
 	if err != nil {
 		return err
 	}
-	return runBatchChildAs(request.SeatRoot, source.Lineage, "goal", "handover", "--root", request.SeatRoot,
+	return batchChildRunner(request.SeatRoot, source.Lineage, "goal", "handover", "--root", request.SeatRoot,
 		"--id", request.GoalID, "--lineage", source.Lineage, "--target-machine", machine,
 		"--target-lineage", landingOwnerLineage, "--target-claim-epoch", fmt.Sprint(holder.ClaimEpoch), "--batch", batchID)
 }

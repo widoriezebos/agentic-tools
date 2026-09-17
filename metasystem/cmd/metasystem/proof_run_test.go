@@ -533,6 +533,7 @@ func TestBatchP2RequiresDiagnosticHeadroom(t *testing.T) {
 				ControlRoot: root, ExecutionRoot: root, ConfPath: filepath.Join(root, "metasystem.conf"), GoalID: "standing-validation",
 				CapMin: "1", ScopeClass: "selected", CommandClass: "testing",
 				ExpectedGoalRevision: 2, ExpectedAccountingRevision: 2,
+				RequireDiagnosticHeadroom: true,
 			})
 			if err == nil || !strings.Contains(err.Error(), "BATCH_MEMBER_BUDGET_REFUSED") || attempt.AttemptID != "" {
 				t.Fatalf("headroom attempt=%+v err=%v", attempt, err)

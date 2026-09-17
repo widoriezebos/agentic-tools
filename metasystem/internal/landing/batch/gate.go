@@ -170,6 +170,9 @@ func patchChangedPaths(patch []byte) patchChange {
 	return set
 }
 
+// ChangedPaths derives a unit's path manifest from its certified patch.
+func ChangedPaths(patch []byte) map[string]bool { return patchChangedPaths(patch) }
+
 func decodePatchPath(raw string) string {
 	raw = strings.TrimSpace(raw)
 	if strings.HasPrefix(raw, `"`) {

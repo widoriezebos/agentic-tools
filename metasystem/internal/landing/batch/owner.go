@@ -15,7 +15,7 @@ type ownerSeams struct {
 	fetchTree func() (string, error)
 	readClaim func(string, string, string, string) (Claim, error)
 	returns   ReturnSeams
-	rebind    func(string) error
+	rebind    func(string, string) error
 	sample    func() proofrun.LoadSample
 	admission func(proofrun.LoadSample) proofrun.AdmissionCap
 	launch    func(string, proofrun.LoadSample, string) error
@@ -40,7 +40,7 @@ type OwnerOptions struct {
 	FetchTree func() (string, error)
 	ReadClaim func(string, string, string, string) (Claim, error)
 	Returns   ReturnSeams
-	Rebind    func(string) error
+	Rebind    func(string, string) error
 	Sample    func() proofrun.LoadSample
 	Admission func(proofrun.LoadSample) proofrun.AdmissionCap
 	Launch    func(string, proofrun.LoadSample, string) error
@@ -93,14 +93,26 @@ func (owner *Owner) Tick(id string) error {
 	if err = ReturnUnits(owner.store, id, tree, owner.actor, at, owner.returns); err != nil {
 		return err
 	}
-	if err = owner.rebind(id); err != nil {
+	if err = owner.rebind(id, tree); err != nil {
 		return err
 	}
 	record, err := owner.store.Load(id)
 	if err != nil {
 		return err
 	}
-	if record.State != StateOpen {
+	if record.State == StateDiagnosing || record.State == StateLanding {
+		lock := owner.locks[id]
+		if lock == nil {
+			lock = owner.lock(id)
+			owner.locks[id] = lock
+		}
+		polled, pollErr := lock.poll()
+		if pollErr != nil || polled != lockAcquired {
+			return pollErr
+		}
+		return lock.whileHeld(func() error { return owner.launch(id, proofrun.LoadSample{}, "resume") })
+	}
+	if record.State != StateOpen && record.State != StateSealed {
 		return owner.release(id)
 	}
 	sample := owner.sample()
