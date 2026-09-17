@@ -383,10 +383,44 @@ func ValidateTree(t *TreeGoals) []Problem {
 	// and must not keep the machine from taking the next item; a claim
 	// waiting to land (goal land-ready) keeps its claim for the landing and
 	// leaves the count too, one landing slot per machine.
+	type holderPair struct{ machine, lineage string }
+	var landingPair *holderPair
+	forAll(t, func(where string, f *GoalFile) {
+		if f.Claimed == nil || !f.Claimed.HandedOver.present() {
+			return
+		}
+		handed := f.Claimed.HandedOver
+		if f.State != StateClaimed {
+			addf("%s: HandedOver requires state claimed", where)
+			return
+		}
+		if strings.TrimSpace(handed.Batch) == "" {
+			addf("%s: HandedOver requires a non-empty batch", where)
+			return
+		}
+		if strings.TrimSpace(handed.FromMachine) == "" || strings.TrimSpace(handed.FromLineage) == "" || handed.FromEpoch == 0 {
+			addf("%s: HandedOver requires a complete source pair and epoch", where)
+			return
+		}
+		pair := holderPair{f.Claimed.Machine, f.Claimed.Lineage}
+		if handed.FromMachine == pair.machine && handed.FromLineage == pair.lineage {
+			addf("%s: a seat cannot hand a claim to its current holder pair", where)
+			return
+		}
+		if landingPair == nil {
+			landingPair = &pair
+		} else if *landingPair != pair {
+			addf("%s: all handed-over claims must share one holder pair; got %s+%s after %s+%s",
+				where, pair.machine, pair.lineage, landingPair.machine, landingPair.lineage)
+		}
+	})
 	claimsByMachine := map[string][]*GoalFile{}
 	landingByMachine := map[string][]string{}
 	for _, id := range sortedGoalIds(t.Live) {
 		f := t.Live[id]
+		if f.State == StateClaimed && f.Claimed != nil && f.Claimed.HandedOver.present() {
+			continue
+		}
 		if f.State == StateClaimed && f.Claimed != nil && f.Landing != nil {
 			// A fenced landing claim keeps its slot: the resume restores it.
 			landingByMachine[f.Claimed.Machine] = append(landingByMachine[f.Claimed.Machine], id)

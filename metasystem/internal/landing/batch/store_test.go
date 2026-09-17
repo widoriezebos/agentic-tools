@@ -207,7 +207,7 @@ func TestBatchUnitJoinsOneBatch(t *testing.T) {
 	if err := checkMembership(store, other, "goal-a", "implementation-2"); err == nil || !strings.HasPrefix(err.Error(), "BATCH_GOAL_ELSEWHERE:") {
 		t.Fatalf("goal refusal=%v", err)
 	}
-	if err := checkMembership(store, testBatchID, "goal-a", "implementation-2"); err != nil {
-		t.Fatalf("same-batch goal refused: %v", err)
+	if err := checkMembership(store, testBatchID, "goal-a", "implementation-2"); err == nil || !strings.HasPrefix(err.Error(), "BATCH_GOAL_ELSEWHERE:") {
+		t.Fatalf("same-batch goal refusal=%v", err)
 	}
 }

@@ -276,11 +276,25 @@ type SlicedRecord struct {
 	At       string
 }
 
+// HandedOver keeps the source custody needed to return a batch member.
+// Its zero value means the claim has not been handed over.
+type HandedOver struct {
+	FromMachine string
+	FromLineage string
+	FromEpoch   uint64
+	Batch       string
+}
+
+func (h HandedOver) present() bool {
+	return h.FromMachine != "" || h.FromLineage != "" || h.FromEpoch != 0 || h.Batch != ""
+}
+
 // ClaimRecord is the ownership record of a claimed goal.
 type ClaimRecord struct {
-	Machine string
-	Lineage string
-	At      string
+	Machine    string
+	Lineage    string
+	At         string
+	HandedOver HandedOver
 	// Revision is the exact goal revision whose work this claim began.
 	// Zero is tolerated only for legacy records written before revision
 	// binding existed.
@@ -1289,6 +1303,22 @@ func parseFileField(f *GoalFile, field string, seen map[string]bool, addProblem 
 		f.Claimed = &ClaimRecord{Machine: rec["machine"], Lineage: rec["lineage"], At: rec["at"], Revision: revision,
 			AccountingRevision: accountingRevision, EpisodeAt: episodeAt, EpisodeRevision: episodeRevision,
 			EpisodeObligationRevision: episodeObligationRevision, IdleSeconds: idleSeconds}
+	case "HandedOver":
+		if f.Claimed == nil {
+			addProblem("HandedOver appears before Claimed")
+			return
+		}
+		rec, err := parseKVRecord(value, []string{"fromMachine", "fromLineage", "fromEpoch", "batch"}, nil, "")
+		if err != nil {
+			addProblem("HandedOver: %v", err)
+			return
+		}
+		epoch, err := strconv.ParseUint(rec["fromEpoch"], 10, 64)
+		if err != nil || epoch == 0 {
+			addProblem("HandedOver fromEpoch=%q is not a positive integer", rec["fromEpoch"])
+			return
+		}
+		f.Claimed.HandedOver = HandedOver{FromMachine: rec["fromMachine"], FromLineage: rec["fromLineage"], FromEpoch: epoch, Batch: rec["batch"]}
 	case "Landing":
 		rec, err := parseKVRecord(value, []string{"at", "opid"}, nil, "")
 		if err != nil {
@@ -1691,6 +1721,10 @@ func RenderFile(f *GoalFile) []byte {
 			}
 		}
 		b.WriteByte('\n')
+		if handed := f.Claimed.HandedOver; handed.present() {
+			fmt.Fprintf(&b, "- HandedOver: fromMachine=%s fromLineage=%s fromEpoch=%d batch=%s\n",
+				handed.FromMachine, handed.FromLineage, handed.FromEpoch, handed.Batch)
+		}
 	}
 	if f.Landing != nil {
 		fmt.Fprintf(&b, "- Landing: at=%s opid=%s\n", f.Landing.At, f.Landing.Opid)

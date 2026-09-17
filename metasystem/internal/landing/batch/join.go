@@ -12,9 +12,6 @@ func checkMembership(store Store, batchID, goalID, chainID string) error {
 	}
 	for _, path := range paths {
 		id := strings.TrimSuffix(filepath.Base(path), ".json")
-		if id == batchID {
-			continue
-		}
 		record, err := store.Load(id)
 		if err != nil {
 			return err
@@ -24,6 +21,12 @@ func checkMembership(store Store, batchID, goalID, chainID string) error {
 		}
 		for _, unit := range record.Units {
 			if unit.State != UnitJoining && unit.State != UnitJoined {
+				continue
+			}
+			if id == batchID {
+				if unit.GoalID == goalID && unit.Chain != chainID {
+					return refuseBatch("BATCH_GOAL_ELSEWHERE", "goal "+goalID+" already belongs to batch "+id)
+				}
 				continue
 			}
 			if unit.Chain == chainID {
