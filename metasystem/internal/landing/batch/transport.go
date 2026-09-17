@@ -1,6 +1,7 @@
 package batch
 
 import (
+	"errors"
 	"fmt"
 	"os"
 	"os/exec"
@@ -9,6 +10,32 @@ import (
 
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/gittree"
 )
+
+// EndpointPushError preserves whether git named a stale lease or another
+// remote rejection, so the landing state machine does not infer policy from a
+// generic non-zero exit.
+type EndpointPushError struct {
+	Cause                      error
+	StaleLease, RemoteRejected bool
+}
+
+func (err *EndpointPushError) Error() string { return err.Cause.Error() }
+func (err *EndpointPushError) Unwrap() error { return err.Cause }
+
+func IsNonLeaseEndpointRejection(err error) bool {
+	var push *EndpointPushError
+	return errors.As(err, &push) && push.RemoteRejected && !push.StaleLease
+}
+
+func IsStaleEndpointLease(err error) bool {
+	var push *EndpointPushError
+	return errors.As(err, &push) && push.StaleLease
+}
+
+func classifyEndpointPushError(text string, cause error) error {
+	return &EndpointPushError{Cause: cause, StaleLease: strings.Contains(text, "stale info"),
+		RemoteRejected: strings.Contains(text, "[rejected]") || strings.Contains(text, "[remote rejected]")}
+}
 
 // CommandSpec is one explicit landing transport boundary.
 type CommandSpec struct {
@@ -114,10 +141,18 @@ func commitForTreeInRef(root, ref, tree string) (string, error) {
 // candidate branch in the same atomic remote transaction. Both refs are
 // leased, so a moved endpoint or candidate writes neither ref.
 func LandLandingBranch(root, id, baseCommit, tip string) error {
-	return runLandingGit(root, "BATCH_LAND_PUSH_REFUSED", "push", "--atomic", "origin",
-		tip+":refs/heads/main", ":"+landingBranchRef(id),
-		"--force-with-lease=refs/heads/main:"+baseCommit,
-		"--force-with-lease="+landingBranchRef(id)+":"+tip)
+	args := []string{"push", "--atomic", "origin",
+		tip + ":refs/heads/main", ":" + landingBranchRef(id),
+		"--force-with-lease=refs/heads/main:" + baseCommit,
+		"--force-with-lease=" + landingBranchRef(id) + ":" + tip}
+	command := exec.Command("git", append([]string{"-C", root}, args...)...)
+	command.Env = gittree.ScrubbedEnviron("LC_ALL=C")
+	if output, err := command.CombinedOutput(); err != nil {
+		text := strings.TrimSpace(string(output))
+		cause := fmt.Errorf("BATCH_LAND_PUSH_REFUSED: %s: %w", text, err)
+		return classifyEndpointPushError(text, cause)
+	}
+	return nil
 }
 
 // AbandonLandingBranch removes an unlanded candidate against its exact tip

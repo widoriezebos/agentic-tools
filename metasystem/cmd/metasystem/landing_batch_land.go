@@ -40,88 +40,98 @@ func executeBatchLanding(root, id, actor string, at time.Time) error {
 		if err != nil {
 			return err
 		}
-		seams := batch.LandSeams{
-			Prepare: func(_ string) error { return batch.PrepareLandingBranch(root, id, baseCommit) },
-			Apply:   func(unit batch.Unit) error { return batch.ApplyCertifiedPatch(root, root, unit.Chain) },
-			AppendReceipt: func(unit batch.Unit, receipt batch.PrefixReceipt) error {
-				return batch.RunCommand(batch.CommandSpec{Dir: root, Name: filepath.Join(root, "scripts", "receipt.sh"), Args: []string{"add", "--type", "implement", "--outcome", "shipped", "--goal", unit.GoalID, "--built-by", "coordinator", "--note", "batch " + id + " prefix " + receipt.Tree}})
-			},
-			Commit: func(unit batch.Unit, receipt batch.PrefixReceipt) (string, error) {
-				path := receipt.ResultPath
-				if path == "" {
-					path = filepath.Join(root, "artifacts", "agents", "proof-runs", "batch", id+".json")
-				}
-				message := fmt.Sprintf("land %s in batch %s\n\nOriginal join order; prefix tree %s.\n", unit.GoalID, id, receipt.Tree)
-				if err := batch.CommitWithWrapper(root, unit.Chain, unit.GoalID, path, message, unit.AuthorName, unit.AuthorEmail, actor); err != nil {
-					return "", err
-				}
-				return gitOutput(root, "rev-parse", "HEAD")
-			},
-			ApplyBuild: func(_ batch.Unit, build batch.BranchBuild) error {
-				return batch.ApplyBranchBuild(root, root, build)
-			},
-			AppendBuildReceipt: func(unit batch.Unit, build batch.BranchBuild, receipt batch.PrefixReceipt) error {
-				return batch.RunCommand(batch.CommandSpec{Dir: root, Name: filepath.Join(root, "scripts", "receipt.sh"), Args: []string{"add", "--type", "implement", "--outcome", "shipped", "--goal", unit.GoalID, "--built-by", "coordinator", "--note", "batch " + id + " unit " + strings.Join(build.Units, "+") + " prefix " + receipt.Tree}})
-			},
-			CommitBuild: func(unit batch.Unit, build batch.BranchBuild, receipt batch.PrefixReceipt) (string, error) {
-				path := receipt.ResultPath
-				if path == "" {
-					path = filepath.Join(root, "artifacts", "agents", "proof-runs", "batch", id+".json")
-				}
-				chain := build.Attestation.Source.RootJob
-				if chain == "" {
-					chain = unit.Chain
-				}
-				last := unit.GoalLast && len(unit.CommitIDs) != 0 && build.Commit == unit.CommitIDs[len(unit.CommitIDs)-1]
-				if err := batch.CommitWithWrapper(root, chain, unit.GoalID, path, batch.BranchLandingMessage(unit.GoalID, build, last), unit.AuthorName, unit.AuthorEmail, actor); err != nil {
-					return "", err
-				}
-				commit, err := gitOutput(root, "rev-parse", "HEAD")
-				if err != nil {
-					return "", err
-				}
-				if err := batch.RequirePassingCommitVerdict(root, unit.GoalID, commit); err != nil {
-					return "", err
-				}
-				return commit, nil
-			},
-			Held: func(_, tip string) error {
-				return batchChildRunner(root, landingOwnerLineage, "landing", "held", "--root", root, "--base", baseCommit, "--commit", tip, "--remote", "origin", "--ref", "refs/heads/main")
-			},
-			PublishBranch: func(expected, tip string) error {
-				return batch.PublishLandingBranch(root, id, expected, tip)
-			},
-			Push: func(_, tip string) error {
-				return batch.LandLandingBranch(root, id, baseCommit, tip)
-			},
-			Origin: func() (string, error) {
-				commit, _, err := fetchBatchOrigin(root)
-				return commit, err
-			},
-			OriginTree: func(commit string) (string, error) {
-				return gitOutput(root, "rev-parse", commit+"^{tree}")
-			},
-			Abandon: func(tip, detachAt string) error {
-				return batch.AbandonLandingBranch(root, id, tip, detachAt)
-			},
-			LeaseBase: baseCommit,
-			RecoverPush: func(origin, baseTree, tip string) (batch.PushRecovery, error) {
-				return recoverMovedBatchPush(root, id, record, baseCommit, origin, baseTree, tip)
-			},
-			Reset: func(_ string) error {
-				command := exec.Command("git", "-C", root, "reset", "--hard", baseCommit)
-				command.Env = gittree.ScrubbedEnviron()
-				return command.Run()
-			},
-			Cleanup: func() error {
-				return batch.CleanupLandingBranch(root, id, gitHead(root))
-			},
-		}
+		seams := batchLandSeams(root, id, record, baseCommit, actor)
 		if err := batch.LandSeries(store, id, actor, at, seams); err != nil {
 			return err
 		}
 	}
 	return finishBatchLanding(root, store, id, actor, at)
+}
+
+var batchLandFetchOrigin = fetchBatchOrigin
+var batchLandAbandon = batch.AbandonLandingBranch
+var batchLandOriginTree = func(root, commit string) (string, error) {
+	return gitOutput(root, "rev-parse", commit+"^{tree}")
+}
+var batchLandRecoverPush = recoverMovedBatchPush
+
+func batchLandSeams(root, id string, record batch.Record, baseCommit, actor string) batch.LandSeams {
+	return batch.LandSeams{
+		Prepare: func(_ string) error { return batch.PrepareLandingBranch(root, id, baseCommit) },
+		Apply:   func(unit batch.Unit) error { return batch.ApplyCertifiedPatch(root, root, unit.Chain) },
+		AppendReceipt: func(unit batch.Unit, receipt batch.PrefixReceipt) error {
+			return batch.RunCommand(batch.CommandSpec{Dir: root, Name: filepath.Join(root, "scripts", "receipt.sh"), Args: []string{"add", "--type", "implement", "--outcome", "shipped", "--goal", unit.GoalID, "--built-by", "coordinator", "--note", "batch " + id + " prefix " + receipt.Tree}})
+		},
+		Commit: func(unit batch.Unit, receipt batch.PrefixReceipt) (string, error) {
+			path := receipt.ResultPath
+			if path == "" {
+				path = filepath.Join(root, "artifacts", "agents", "proof-runs", "batch", id+".json")
+			}
+			message := fmt.Sprintf("land %s in batch %s\n\nOriginal join order; prefix tree %s.\n", unit.GoalID, id, receipt.Tree)
+			if err := batch.CommitWithWrapper(root, unit.Chain, unit.GoalID, path, message, unit.AuthorName, unit.AuthorEmail, actor); err != nil {
+				return "", err
+			}
+			return gitOutput(root, "rev-parse", "HEAD")
+		},
+		ApplyBuild: func(_ batch.Unit, build batch.BranchBuild) error {
+			return batch.ApplyBranchBuild(root, root, build)
+		},
+		AppendBuildReceipt: func(unit batch.Unit, build batch.BranchBuild, receipt batch.PrefixReceipt) error {
+			return batch.RunCommand(batch.CommandSpec{Dir: root, Name: filepath.Join(root, "scripts", "receipt.sh"), Args: []string{"add", "--type", "implement", "--outcome", "shipped", "--goal", unit.GoalID, "--built-by", "coordinator", "--note", "batch " + id + " unit " + strings.Join(build.Units, "+") + " prefix " + receipt.Tree}})
+		},
+		CommitBuild: func(unit batch.Unit, build batch.BranchBuild, receipt batch.PrefixReceipt) (string, error) {
+			path := receipt.ResultPath
+			if path == "" {
+				path = filepath.Join(root, "artifacts", "agents", "proof-runs", "batch", id+".json")
+			}
+			chain := build.Attestation.Source.RootJob
+			if chain == "" {
+				chain = unit.Chain
+			}
+			last := unit.GoalLast && len(unit.CommitIDs) != 0 && build.Commit == unit.CommitIDs[len(unit.CommitIDs)-1]
+			if err := batch.CommitWithWrapper(root, chain, unit.GoalID, path, batch.BranchLandingMessage(unit.GoalID, build, last), unit.AuthorName, unit.AuthorEmail, actor); err != nil {
+				return "", err
+			}
+			commit, err := gitOutput(root, "rev-parse", "HEAD")
+			if err != nil {
+				return "", err
+			}
+			if err := batch.RequirePassingCommitVerdict(root, unit.GoalID, commit); err != nil {
+				return "", err
+			}
+			return commit, nil
+		},
+		Held: func(_, tip string) error {
+			return batchChildRunner(root, landingOwnerLineage, "landing", "held", "--root", root, "--base", baseCommit, "--commit", tip, "--remote", "origin", "--ref", "refs/heads/main")
+		},
+		PublishBranch: func(expected, tip string) error {
+			return batch.PublishLandingBranch(root, id, expected, tip)
+		},
+		Push: func(_, tip string) error {
+			return batch.LandLandingBranch(root, id, baseCommit, tip)
+		},
+		Origin: func() (string, error) {
+			commit, _, err := batchLandFetchOrigin(root)
+			return commit, err
+		},
+		OriginTree: func(commit string) (string, error) {
+			return batchLandOriginTree(root, commit)
+		},
+		Abandon:        func(tip, detachAt string) error { return batchLandAbandon(root, id, tip, detachAt) },
+		SeriesOnOrigin: func(origin, tip string) (bool, error) { return batchSeriesOnEndpoint(root, origin, tip) },
+		LeaseBase:      baseCommit,
+		RecoverPush: func(origin, baseTree, tip string) (batch.PushRecovery, error) {
+			return batchLandRecoverPush(root, id, record, baseCommit, origin, baseTree, tip)
+		},
+		Reset: func(_ string) error {
+			command := exec.Command("git", "-C", root, "reset", "--hard", baseCommit)
+			command.Env = gittree.ScrubbedEnviron()
+			return command.Run()
+		},
+		Cleanup: func() error {
+			return batch.CleanupLandingBranch(root, id, gitHead(root))
+		},
+	}
 }
 
 func finishBatchLanding(root string, store batch.Store, id, actor string, at time.Time) error {
@@ -130,6 +140,9 @@ func finishBatchLanding(root string, store batch.Store, id, actor string, at tim
 		return err
 	}
 	if landed.State == batch.StateOpen || landed.State == batch.StateDissolved {
+		return nil
+	}
+	if landed.State == batch.StateLanding && landed.Landing != nil && !landed.Landing.PushComplete && landed.Landing.PushRejection != nil {
 		return nil
 	}
 	return recoverBatchLanding(root, store, id, actor, at)
@@ -143,6 +156,14 @@ func recoverMovedBatchPush(root, id string, record batch.Record, expectedBase, o
 	if err != nil {
 		return recovery, err
 	}
+	landed, err := batchSeriesOnEndpoint(root, originCommit, tip)
+	if err != nil {
+		return recovery, err
+	}
+	if landed {
+		recovery.Tip, recovery.Pushed = tip, true
+		return recovery, nil
+	}
 	if originCommit == expectedBase {
 		return recovery, nil
 	}
@@ -155,9 +176,6 @@ func recoverMovedBatchPush(root, id string, record batch.Record, expectedBase, o
 		return recovery, err
 	}
 	if batchProofInputsMoved(record, changed, prefix) {
-		if err := batch.AbandonLandingBranch(root, id, tip, originCommit); err != nil {
-			return recovery, err
-		}
 		recovery.Reopen = true
 		return recovery, nil
 	}
@@ -200,34 +218,27 @@ func recoverMovedBatchPush(root, id string, record batch.Record, expectedBase, o
 	return recovery, nil
 }
 
-func reopenMovedBatchAfterRecoveryFailure(root, id, tip, originCommit string, recovery batch.PushRecovery, cause error) (batch.PushRecovery, error) {
-	if err := abortBatchRebase(root); err != nil {
-		return recovery, errors.Join(cause, err)
-	}
-	if err := batch.AbandonLandingBranch(root, id, tip, originCommit); err != nil {
-		return recovery, errors.Join(cause, err)
-	}
+func reopenMovedBatchAfterRecoveryFailure(_, _, _, _ string, recovery batch.PushRecovery, _ error) (batch.PushRecovery, error) {
 	recovery.Reopen = true
 	return recovery, nil
 }
 
-func abortBatchRebase(root string) error {
-	command := exec.Command("git", "-C", root, "rebase", "--abort")
-	command.Env = gittree.ScrubbedEnviron()
-	if output, err := command.CombinedOutput(); err != nil {
-		gitDir, pathErr := gitOutput(root, "rev-parse", "--absolute-git-dir")
-		if pathErr != nil {
-			return errors.Join(err, pathErr)
-		}
-		for _, marker := range []string{"rebase-merge", "rebase-apply"} {
-			if _, statErr := os.Stat(filepath.Join(gitDir, marker)); statErr == nil || !os.IsNotExist(statErr) {
-				return fmt.Errorf("abort landing rebase: %s: %w", strings.TrimSpace(string(output)), err)
-			}
-		}
+func batchSeriesOnEndpoint(root, origin, tip string) (bool, error) {
+	if origin == "" || tip == "" {
+		return false, nil
 	}
-	return nil
+	command := exec.Command("git", "-C", root, "merge-base", "--is-ancestor", tip, origin)
+	command.Env = gittree.ScrubbedEnviron()
+	err := command.Run()
+	if err == nil {
+		return true, nil
+	}
+	var exit *exec.ExitError
+	if errors.As(err, &exit) && exit.ExitCode() == 1 {
+		return false, nil
+	}
+	return false, err
 }
-
 func fetchBatchOrigin(root string) (string, string, error) {
 	command := exec.Command("git", "-C", root, "fetch", "origin", "+refs/heads/main:refs/remotes/origin/main")
 	command.Env = gittree.ScrubbedEnviron()
@@ -254,8 +265,10 @@ func batchProofInputsMoved(record batch.Record, changed []string, installationPr
 	for _, changedPath := range changed {
 		policyPath := filepath.ToSlash(changedPath)
 		if installationPrefix != "" && policyPath != installationPrefix && !strings.HasPrefix(policyPath, installationPrefix+"/") {
-			policyPath = installationPrefix + "/" + policyPath
+			continue
 		}
+		// ENGINE changes invalidate proof inputs only when the changed path is
+		// part of this installation; sibling repositories have separate engines.
 		included, err := policy.Includes(behaviorsurface.Engine, policyPath, installationPrefix)
 		if err != nil || included {
 			return true
@@ -321,7 +334,7 @@ func executeBatchPrefixReceipt(root, id string, record batch.Record, goalID, tre
 		if group.ReuseAttempt != "" {
 			out.Reused[group.ID] = group.ReuseAttempt
 		}
-		if group.Status != "passed" && group.Status != "reused" {
+		if group.Status == "failed" {
 			out.Red = append(out.Red, batch.RedGroup{ID: group.ID, Status: group.Status, LogPath: group.LogPath, LogDigest: group.LogDigest, InputManifest: slices.Clone(group.InputManifest)})
 		}
 	}

@@ -425,27 +425,15 @@ func TestBatchLandTrunkMovedRebasesOrReopens(t *testing.T) {
 				pushes++
 				return originalPush(root, id, base, tip)
 			}
-			seams := batch.LandSeams{
-				Prepare:       func(string) error { return nil },
-				Apply:         func(batch.Unit) error { return nil },
-				AppendReceipt: func(batch.Unit, batch.PrefixReceipt) error { return nil },
-				Commit:        func(batch.Unit, batch.PrefixReceipt) (string, error) { return tip, nil },
-				Held:          func(string, string) error { return nil },
-				PublishBranch: func(expected, next string) error {
-					return batch.PublishLandingBranch(root, record.BatchID, expected, next)
-				},
-				Push: func(string, string) error {
-					refusedPushes++
-					return batch.LandLandingBranch(root, record.BatchID, baseCommit, tip)
-				},
-				Origin: func() (string, error) {
-					commit, _, err := fetchBatchOrigin(root)
-					return commit, err
-				},
-				RecoverPush: func(currentOrigin, currentBaseTree, currentTip string) (batch.PushRecovery, error) {
-					return recoverMovedBatchPush(root, record.BatchID, record, baseCommit, currentOrigin, currentBaseTree, currentTip)
-				},
-				Cleanup: func() error { return batch.CleanupLandingBranch(root, record.BatchID, gitHead(root)) },
+			seams := batchLandSeams(root, record.BatchID, record, baseCommit, "owner")
+			seams.Prepare = func(string) error { return nil }
+			seams.Apply = func(batch.Unit) error { return nil }
+			seams.AppendReceipt = func(batch.Unit, batch.PrefixReceipt) error { return nil }
+			seams.Commit = func(batch.Unit, batch.PrefixReceipt) (string, error) { return tip, nil }
+			seams.Held = func(string, string) error { return nil }
+			seams.Push = func(string, string) error {
+				refusedPushes++
+				return batch.LandLandingBranch(root, record.BatchID, baseCommit, tip)
 			}
 			if err := batch.LandSeries(store, record.BatchID, "owner", time.Unix(2, 0), seams); err != nil {
 				t.Fatal(err)
@@ -486,6 +474,80 @@ func TestBatchLandTrunkMovedRebasesOrReopens(t *testing.T) {
 				t.Fatalf("candidate branch %s survived recovery", branchRef)
 			}
 		})
+	}
+}
+
+func TestBatchLandProductionSeamsBoundRecoveryAndAbandon(t *testing.T) {
+	root, _, _, baseCommit, baseTree, tip := movedBatchGitFixture(t)
+	candidateTree := strings.TrimSpace(runBatchFixtureGit(t, root, "rev-parse", tip+"^{tree}"))
+	patch := runBatchFixtureGit(t, root, "diff", "--binary", baseCommit, tip)
+	chainDir := filepath.Join(root, "artifacts", "agents", "landing-batches", "chains", "chain-a")
+	if err := os.MkdirAll(chainDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(chainDir, "diff.patch"), []byte(patch), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	record := batch.Record{Schema: 1, BatchID: "01j5x00000000000000000ba21", State: batch.StateLanding, BaseTree: baseTree,
+		PrefixTrees: []string{candidateTree}, TipTree: candidateTree,
+		Units: []batch.Unit{{GoalID: "goal-a", Chain: "chain-a", State: batch.UnitJoined,
+			Claim: batch.Claim{Machine: "landing", Lineage: "owner", Epoch: 1, Revision: 1, AccountingRevision: 1}}},
+		Receipts: map[string]batch.PrefixReceipt{"goal-a": {GoalID: "goal-a", Tree: candidateTree}},
+		Proof:    &batch.Proof{Status: "green", AttemptID: "tip-proof"},
+		Landing:  &batch.LandingProgress{Base: baseTree, BranchTip: tip, Commits: map[string]string{"goal-a": tip}, HeldChecked: true},
+		History:  []batch.HistoryEntry{{At: time.Unix(1, 0).UTC().Format(time.RFC3339Nano), To: batch.StateLanding, Actor: "owner"}},
+	}
+	store := batch.NewStore(root, nil)
+	if err := store.Create(record); err != nil {
+		t.Fatal(err)
+	}
+	originalFetch, originalTree, originalAbandon, originalRecover := batchLandFetchOrigin, batchLandOriginTree, batchLandAbandon, batchLandRecoverPush
+	t.Cleanup(func() {
+		batchLandFetchOrigin, batchLandOriginTree, batchLandAbandon, batchLandRecoverPush = originalFetch, originalTree, originalAbandon, originalRecover
+	})
+	origins := []string{tip, tip, baseCommit, tip}
+	originReads := 0
+	batchLandFetchOrigin = func(string) (string, string, error) {
+		origin := origins[min(originReads, len(origins)-1)]
+		originReads++
+		return origin, "ignored-tree", nil
+	}
+	treeReads := 0
+	batchLandOriginTree = func(string, string) (string, error) {
+		treeReads++
+		return baseTree, nil
+	}
+	abandons := 0
+	batchLandAbandon = func(_, _ string, _, _ string) error {
+		abandons++
+		return nil
+	}
+	recoveries := 0
+	batchLandRecoverPush = func(_ string, _ string, _ batch.Record, _ string, origin, _ string, _ string) (batch.PushRecovery, error) {
+		recoveries++
+		return batch.PushRecovery{Origin: origin}, errors.New("recovery transport unavailable")
+	}
+	seams := batchLandSeams(root, record.BatchID, record, baseCommit, "owner")
+	seams.Prepare = func(string) error { return nil }
+	seams.Apply = func(batch.Unit) error { return nil }
+	seams.AppendReceipt = func(batch.Unit, batch.PrefixReceipt) error { return nil }
+	seams.Commit = func(batch.Unit, batch.PrefixReceipt) (string, error) { return tip, nil }
+	seams.Held = func(string, string) error { return nil }
+	seams.PublishBranch = func(string, string) error { return nil }
+	seams.Push = func(string, string) error {
+		return &batch.EndpointPushError{Cause: errors.New("stale info"), StaleLease: true, RemoteRejected: true}
+	}
+	seams.SeriesOnOrigin = func(string, string) (bool, error) { return false, nil }
+	seams.Cleanup = nil
+	for tick := 0; tick < 3; tick++ {
+		_ = batch.LandSeries(store, record.BatchID, "owner", time.Unix(int64(2+tick), 0), seams)
+	}
+	landed, err := store.Load(record.BatchID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if seams.LeaseBase != baseCommit || recoveries != 3 || treeReads != 1 || abandons != 1 || landed.State != batch.StateOpen || landed.Landing != nil {
+		t.Fatalf("lease=%q recoveries=%d treeReads=%d abandons=%d record=%+v", seams.LeaseBase, recoveries, treeReads, abandons, landed)
 	}
 }
 

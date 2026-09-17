@@ -21,6 +21,24 @@ type LandingProgress struct {
 	RefusedOrigin string            `json:"refusedOrigin,omitempty"`
 	RefusedBase   string            `json:"refusedBase,omitempty"`
 	PushRounds    int               `json:"pushRounds,omitempty"`
+	PushRejection *PushRejection    `json:"pushRejection,omitempty"`
+}
+
+// PushRejection is the durable held state for a remote refusal that was not
+// caused by a stale lease. The green proof remains valid while the endpoint is
+// unchanged, so later ticks have no work to repeat.
+type PushRejection struct {
+	Text      string `json:"text"`
+	At        string `json:"at"`
+	OriginTip string `json:"originTip"`
+}
+
+// MissingLeaseBaseError reports an impossible endpoint transaction: recovery
+// cannot compare a commit lease with a tree or an inferred fallback.
+type MissingLeaseBaseError struct{}
+
+func (*MissingLeaseBaseError) Error() string {
+	return "BATCH_LAND_PUSH_REFUSED: endpoint lease base is absent"
 }
 
 type LandSeams struct {
@@ -39,6 +57,7 @@ type LandSeams struct {
 	Origin             func() (string, error)
 	OriginTree         func(string) (string, error)
 	Abandon            func(tip, detachAt string) error
+	SeriesOnOrigin     func(origin, tip string) (bool, error)
 	LeaseBase          string
 	RecoverPush        func(refusedOrigin, base, tip string) (PushRecovery, error)
 }
@@ -98,13 +117,53 @@ func LandSeries(store Store, id, actor string, at time.Time, seams LandSeams) er
 		}
 		return record.BaseTree, nil
 	}
-	abandonAndReopen := func(candidateTip, detachAt, baseTree string) error {
-		if seams.Abandon != nil {
-			if err := seams.Abandon(candidateTip, detachAt); err != nil {
-				return err
+	persistProgress := func(clearFailure bool) error {
+		return store.Update(id, func(current *Record) error {
+			current.Landing = &progress
+			if clearFailure && current.Proof != nil {
+				current.Proof.Failure = ""
 			}
+			return nil
+		})
+	}
+	markAlreadyLanded := func(endpoint, candidateTip string) (bool, error) {
+		if candidateTip == "" || seams.SeriesOnOrigin == nil {
+			return false, nil
 		}
-		return ReopenRefusedPush(store, id, baseTree, actor, at)
+		landed, checkErr := seams.SeriesOnOrigin(endpoint, candidateTip)
+		if checkErr != nil || !landed {
+			return false, checkErr
+		}
+		progress.PushComplete, progress.PushedTip, progress.BranchTip = true, candidateTip, candidateTip
+		progress.RefusedOrigin, progress.RefusedBase, progress.PushRounds, progress.PushRejection = "", "", 0, nil
+		return true, persistProgress(true)
+	}
+	holdPushRejection := func(rejectionOrigin string, pushErr error) error {
+		progress.RefusedOrigin, progress.RefusedBase = "", ""
+		progress.PushRejection = &PushRejection{Text: pushErr.Error(), At: at.UTC().Format(time.RFC3339Nano), OriginTip: rejectionOrigin}
+		return store.Update(id, func(current *Record) error {
+			current.Landing = &progress
+			if current.Proof != nil {
+				current.Proof.Failure = "endpoint push held: " + pushErr.Error()
+			}
+			current.Transition(StateLanding, at, "push-held", actor, pushErr.Error())
+			return nil
+		})
+	}
+	abandonAndReopen := func(candidateTip, detachAt, baseTree string) (bool, error) {
+		if landed, checkErr := markAlreadyLanded(detachAt, candidateTip); checkErr != nil || landed {
+			return landed, checkErr
+		}
+		if seams.SeriesOnOrigin == nil {
+			return false, fmt.Errorf("BATCH_LAND_UNWIRED: already-landed helper is absent")
+		}
+		if seams.Abandon == nil {
+			return false, fmt.Errorf("BATCH_LAND_UNWIRED: abandon helper is absent")
+		}
+		if err := seams.Abandon(candidateTip, detachAt); err != nil {
+			return false, err
+		}
+		return false, ReopenRefusedPush(store, id, baseTree, actor, at)
 	}
 	recoverNow := func(recoveryOrigin, candidateTip string, pushErr error) (bool, error) {
 		if seams.RecoverPush == nil {
@@ -114,16 +173,23 @@ func LandSeries(store Store, id, actor string, at time.Time, seams LandSeams) er
 		if recovery.Origin == "" {
 			recovery.Origin = recoveryOrigin
 		}
-		progress.RefusedOrigin, progress.RefusedBase = recovery.Origin, recoveryOrigin
+		progress.PushRejection = nil
 		if recovery.Tip != "" {
 			// PublishLandingBranch completed. Preserve its lease tip even
 			// when the following endpoint transaction was refused.
 			progress.BranchTip = recovery.Tip
 		}
-		if recoveryErr != nil && recovery.Tip != "" {
+		if recoveryErr != nil && IsNonLeaseEndpointRejection(recoveryErr) {
+			if storeErr := holdPushRejection(recovery.Origin, recoveryErr); storeErr != nil {
+				return false, errors.Join(pushErr, recoveryErr, storeErr)
+			}
+			return false, fmt.Errorf("BATCH_LAND_PUSH_REFUSED: origin %s held after remote rejection: %w", recovery.Origin, recoveryErr)
+		}
+		progress.RefusedOrigin, progress.RefusedBase = recovery.Origin, recoveryOrigin
+		if recoveryErr != nil {
 			progress.PushRounds++
 		}
-		if storeErr := store.Update(id, func(current *Record) error { current.Landing = &progress; return nil }); storeErr != nil {
+		if storeErr := persistProgress(true); storeErr != nil {
 			return false, errors.Join(pushErr, recoveryErr, storeErr)
 		}
 		if recoveryErr != nil {
@@ -135,11 +201,23 @@ func LandSeries(store Store, id, actor string, at time.Time, seams LandSeams) er
 						return false, err
 					}
 				}
-				return false, abandonAndReopen(progress.BranchTip, recovery.Origin, baseTree)
+				return abandonAndReopen(progress.BranchTip, recovery.Origin, baseTree)
 			}
 			return false, fmt.Errorf("BATCH_LAND_PUSH_REFUSED: origin %s recovery failed: %w", recoveryOrigin, errors.Join(pushErr, recoveryErr))
 		}
 		if recovery.Reopen {
+			if landed, checkErr := markAlreadyLanded(recovery.Origin, candidateTip); checkErr != nil || landed {
+				return landed, checkErr
+			}
+			if seams.SeriesOnOrigin == nil {
+				return false, fmt.Errorf("BATCH_LAND_UNWIRED: already-landed helper is absent")
+			}
+			if seams.Abandon == nil {
+				return false, fmt.Errorf("BATCH_LAND_UNWIRED: abandon helper is absent")
+			}
+			if abandonErr := seams.Abandon(candidateTip, recovery.Origin); abandonErr != nil {
+				return false, abandonErr
+			}
 			return false, ReopenMovedTrunk(store, id, recovery.BaseTree, actor, at)
 		}
 		if !recovery.Pushed || recovery.Tip == "" {
@@ -147,10 +225,83 @@ func LandSeries(store Store, id, actor string, at time.Time, seams LandSeams) er
 		}
 		progress.PushComplete, progress.PushedTip, progress.BranchTip = true, recovery.Tip, recovery.Tip
 		progress.RefusedOrigin, progress.RefusedBase, progress.PushRounds = "", "", 0
-		if storeErr := store.Update(id, func(current *Record) error { current.Landing = &progress; return nil }); storeErr != nil {
+		if storeErr := persistProgress(true); storeErr != nil {
 			return false, storeErr
 		}
 		return true, nil
+	}
+	attemptPush := func(candidateTip string) (bool, error) {
+		if seams.Push == nil {
+			return false, fmt.Errorf("BATCH_LAND_UNWIRED: push helper is absent")
+		}
+		pushErr := seams.Push(record.BaseTree, candidateTip)
+		if pushErr == nil {
+			progress.PushComplete, progress.PushedTip = true, candidateTip
+			progress.RefusedOrigin, progress.RefusedBase, progress.PushRounds, progress.PushRejection = "", "", 0, nil
+			return true, persistProgress(true)
+		}
+		// A retry after a durable non-lease hold must itself identify a stale
+		// lease before recovery is allowed to reopen the candidate.
+		if seams.Origin != nil {
+			origin, err = seams.Origin()
+			if err != nil {
+				return false, errors.Join(pushErr, err)
+			}
+		}
+		if landed, checkErr := markAlreadyLanded(origin, candidateTip); checkErr != nil {
+			return false, errors.Join(pushErr, checkErr)
+		} else if landed {
+			// The endpoint accepted the atomic transaction but its acknowledgement
+			// was lost. P6 recovery will finalize the already-published units.
+			return true, nil
+		}
+		if IsNonLeaseEndpointRejection(pushErr) {
+			if storeErr := holdPushRejection(origin, pushErr); storeErr != nil {
+				return false, errors.Join(pushErr, storeErr)
+			}
+			return false, fmt.Errorf("BATCH_LAND_PUSH_REFUSED: origin %s held after remote rejection: %w", origin, pushErr)
+		}
+		if !IsStaleEndpointLease(pushErr) {
+			return false, fmt.Errorf("BATCH_LAND_PUSH_REFUSED: endpoint push failed without a stale lease: %w", pushErr)
+		}
+		if seams.LeaseBase == "" {
+			return false, &MissingLeaseBaseError{}
+		}
+		progress.PushRejection = nil
+		progress.RefusedBase, progress.RefusedOrigin = seams.LeaseBase, origin
+		if storeErr := persistProgress(false); storeErr != nil {
+			return false, errors.Join(pushErr, storeErr)
+		}
+		if origin == progress.RefusedBase {
+			return false, fmt.Errorf("BATCH_LAND_PUSH_REFUSED: origin %s is unchanged after the refused push: %w", origin, pushErr)
+		}
+		return recoverNow(origin, candidateTip, pushErr)
+	}
+	if !progress.PushComplete && progress.BranchTip != "" {
+		if landed, checkErr := markAlreadyLanded(origin, progress.BranchTip); checkErr != nil {
+			return checkErr
+		} else if landed {
+			return nil
+		}
+	}
+	if !progress.PushComplete && progress.PushRejection != nil {
+		if origin == progress.PushRejection.OriginTip {
+			return nil
+		}
+		candidateTip := progress.BranchTip
+		if candidateTip == "" {
+			candidateTip = progress.Commits[units[len(units)-1].GoalID]
+		}
+		if candidateTip == "" {
+			return fmt.Errorf("BATCH_LAND_PUSH_REFUSED: held landing has no candidate tip")
+		}
+		pushed, pushErr := attemptPush(candidateTip)
+		if pushErr != nil {
+			return pushErr
+		}
+		if !pushed {
+			return nil
+		}
 	}
 	if !progress.PushComplete && progress.RefusedBase != "" {
 		candidateTip := progress.BranchTip
@@ -165,7 +316,8 @@ func LandSeries(store Store, id, actor string, at time.Time, seams LandSeams) er
 			if treeErr != nil {
 				return treeErr
 			}
-			return abandonAndReopen(candidateTip, origin, baseTree)
+			_, reopenErr := abandonAndReopen(candidateTip, origin, baseTree)
+			return reopenErr
 		}
 		pushed, recoveryErr := recoverNow(origin, candidateTip, errors.New("prior endpoint refusal"))
 		if recoveryErr != nil {
@@ -278,47 +430,12 @@ func LandSeries(store Store, id, actor string, at time.Time, seams LandSeams) er
 		}
 	}
 	if !progress.PushComplete {
-		if seams.Push == nil {
-			return fmt.Errorf("BATCH_LAND_UNWIRED: push helper is absent")
+		pushed, pushErr := attemptPush(tip)
+		if pushErr != nil {
+			return pushErr
 		}
-		if pushErr := seams.Push(record.BaseTree, tip); pushErr != nil {
-			// RefusedBase is the lease base used by this endpoint attempt. A
-			// later tick compares the freshly fetched endpoint to this base,
-			// never to a candidate tip that was merely published for recovery.
-			progress.RefusedBase = seams.LeaseBase
-			if progress.RefusedBase == "" {
-				progress.RefusedBase = record.BaseTree
-			}
-			progress.RefusedOrigin = origin
-			if storeErr := store.Update(id, func(current *Record) error { current.Landing = &progress; return nil }); storeErr != nil {
-				return errors.Join(pushErr, storeErr)
-			}
-			if seams.Origin != nil {
-				origin, err = seams.Origin()
-				if err != nil {
-					return errors.Join(pushErr, err)
-				}
-				progress.RefusedOrigin = origin
-				if storeErr := store.Update(id, func(current *Record) error { current.Landing = &progress; return nil }); storeErr != nil {
-					return errors.Join(pushErr, storeErr)
-				}
-			}
-			if origin == progress.RefusedBase {
-				return fmt.Errorf("BATCH_LAND_PUSH_REFUSED: origin %s is unchanged after the refused push: %w", origin, pushErr)
-			}
-			pushed, recoveryErr := recoverNow(origin, tip, pushErr)
-			if recoveryErr != nil {
-				return recoveryErr
-			}
-			if !pushed {
-				return nil
-			}
-		} else {
-			progress.PushComplete, progress.PushedTip = true, tip
-			progress.RefusedOrigin, progress.RefusedBase, progress.PushRounds = "", "", 0
-			if err := store.Update(id, func(current *Record) error { current.Landing = &progress; return nil }); err != nil {
-				return err
-			}
+		if !pushed {
+			return nil
 		}
 	}
 	if seams.Cleanup != nil {
@@ -361,16 +478,45 @@ func reopenLandingCandidate(store Store, id, newBaseTree, actor string, at time.
 		if !errors.As(err, &conflict) {
 			return err
 		}
-		if updateErr := store.Update(id, func(current *Record) error {
+		survivors := slices.DeleteFunc(slices.Clone(units), func(unit Unit) bool { return unit.GoalID == conflict.GoalID })
+		var survivorPrefixes []string
+		if len(survivors) != 0 {
+			survivorPrefixes, err = assembleUnits(store.root, newBaseTree, survivors)
+			if err != nil {
+				return err
+			}
+		}
+		branchTip := ""
+		if record.Landing != nil {
+			if len(survivors) == 0 {
+				if err := DeleteLandingBranch(store.root, id, record.Landing.BranchTip); err != nil {
+					return err
+				}
+			} else if slices.ContainsFunc(survivors, func(unit Unit) bool { return len(unit.Builds) != 0 }) {
+				branchTip, err = RebuildLandingBranch(store.root, id, newBaseTree, record.Landing.BranchTip, actor, survivors)
+				if err != nil {
+					return err
+				}
+			}
+		}
+		return store.Update(id, func(current *Record) error {
 			current.BaseTree = newBaseTree
+			if returnErr := requestUnitReturn(current, conflict.GoalID, UnitEjected, conflict.Error(), actor, at); returnErr != nil {
+				return returnErr
+			}
+			current.SelectedGroups, current.Seal, current.Proof, current.Receipts, current.Landing = nil, nil, nil, nil, nil
+			if len(survivors) == 0 {
+				current.PrefixTrees, current.TipTree = nil, newBaseTree
+				current.Transition(StateDissolved, at, "reassemble", actor, "no survivors")
+				return nil
+			}
+			if branchTip != "" {
+				current.Landing = &LandingProgress{Base: newBaseTree, BranchTip: branchTip}
+			}
+			current.PrefixTrees, current.TipTree, current.ClosedReason = survivorPrefixes, survivorPrefixes[len(survivorPrefixes)-1], ""
+			current.Transition(StateOpen, at, "reassemble", actor, "survivors")
 			return nil
-		}); updateErr != nil {
-			return updateErr
-		}
-		if returnErr := RequestReturn(store, id, conflict.GoalID, UnitEjected, conflict.Error(), actor, at); returnErr != nil {
-			return returnErr
-		}
-		return ReassembleSurvivors(store, id, actor, at)
+		})
 	}
 	return store.Update(id, func(current *Record) error {
 		current.BaseTree, current.PrefixTrees, current.TipTree = newBaseTree, prefixes, prefixes[len(prefixes)-1]

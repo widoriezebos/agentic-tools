@@ -55,6 +55,7 @@ type batchSeams struct {
 	prober      identity.Prober
 	flock       func(int, int) error
 	publish     func(string) error
+	updated     func(Record)
 	ledgerOwner LedgerOwner
 }
 type Store struct {
@@ -66,7 +67,7 @@ func NewStore(root string, prober identity.Prober) Store {
 	if prober == nil {
 		prober = identity.KernelProber{}
 	}
-	return Store{root: root, seams: batchSeams{prober: prober, flock: unix.Flock, publish: func(string) error { return nil }}}
+	return Store{root: root, seams: batchSeams{prober: prober, flock: unix.Flock, publish: func(string) error { return nil }, updated: func(Record) {}}}
 }
 func (s Store) Liveness(p identity.Ref) identity.Liveness {
 	return identity.AliveRef(s.seams.prober, p)
@@ -147,7 +148,11 @@ func (store Store) updateLocked(id string, mutate func(*Record) error) error {
 	if err != nil || bytes.Equal(before, after) {
 		return err
 	}
-	return store.write(record)
+	if err := store.write(record); err != nil {
+		return err
+	}
+	store.seams.updated(record)
+	return nil
 }
 func (store Store) locked(change func() error) error {
 	path := filepath.Join(store.root, "artifacts", "agents", "locks", "landing-batches.lock")
