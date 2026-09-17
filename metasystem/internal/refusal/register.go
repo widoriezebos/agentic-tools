@@ -47,6 +47,7 @@ var Rows = []Row{
 	{Code: "BATCH_SEALED", Owner: "internal/landing/batch", Site: "join.go", Shape: Question},
 	{Code: "BATCH_SEAL_GATE_RED", Owner: "internal/landing/batch", Site: "seal.go", Shape: Question},
 	{Code: "BATCH_UNIT_ELSEWHERE", Owner: "internal/landing/batch", Site: "join.go", Shape: Question},
+	{Code: "TRUNK_RED_OWNER_UNBOUND", Owner: "internal/landing/batch", Site: "trunkred.go:69", Shape: Question},
 	{Code: "AGENT_IN_AUTHORITY_CHAIN", Owner: "internal/humanauthority", Site: "authority.go:31", Shape: Identity},
 	{Code: "ANCESTRY_CHANGED", Owner: "internal/humanauthority", Site: "authority.go:35", Shape: Identity},
 	{Code: "ANCESTRY_CYCLE", Owner: "internal/humanauthority", Site: "authority.go:38", Shape: Identity},
