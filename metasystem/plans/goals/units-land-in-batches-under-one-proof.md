@@ -7,9 +7,9 @@
 - Tier: 3
 - Intent: Units land in BATCHES under ONE proof. DONE: (1) a unit joins a batch only through a cheap gate whose five results (its package tests, its witnesses proved by mutation, an independent read, staticcheck and vet, the changed fixture-bed scenario run alone outside the lock under R-111) are recorded on its queue entry, and a missing result refuses the join; (2) the batch is one candidate tree assembled in join order, and a conflicting join is refused at join time naming the files; (3) batch size is bounded by the union of the selected groups, all groups being the deep-proof ceiling, and a batch proof starts when the lock is free and at least two gated units wait or the maximum wait has elapsed; (4) a red batch is never retried: the failing group's files name the owning unit, that unit is ejected with the failure attached and the rest are proved as a new tree, and a red that names no unit stops the batch as a trunk flake until the flake is fixed at the cause; (5) a batch proof starts only in a quiet window; on green the units land in join order with their receipt rows and the delivery check reuses the green groups by execution identity; fixtures prove each.
 - Origin: human
-- Next step: 2026-09-17 07:00Z (Wido, recorded by seat m1e): PROCESS RESET, records/misc/delivery-process-reset-2026-09-17.md. BA9a1 and BA5c finish as briefed (Codex, in flight since 06:27Z). The remaining units build as three section-sized jobs from brief B and the r3 page, no seat rulings, one read per build: Build B = BA9a2, BA9b, BA11a, BA11b; Build C = BA12a, BA12b, BA17, BA13; Build D = BA14a, BA14b, BA15. Lane opens at two ready builds or 90 min; the number held is changed lines per proof (>= 2,000). PRIOR: null
+- Next step: 2026-09-17 07:47Z (Wido, recorded by seat m1e): the landing-branch ruling (goals-live-on-branches rule 6.9, d52891e67) rides on the r3 page as an amendment before D8: the seal composes landing/<batch-id>, D7 rebuilds it from the survivors, D8 lands by one fast-forward and deletes it; BA12b, BA13 and BA14a carry it. BA5c, BA9a1 and the r3 page are in lane L14 with glb unit 1 and rom U2a (L13 stopped on a lane gate timeout, not a red). Builds as before: Build B = BA9a2, BA9b, BA11a, BA11b (briefed from the page after BA9a1 lands); Build C = BA12a, BA12b, BA17, BA13; Build D = BA14a, BA14b, BA15.
 - OpenedAt: 2026-09-16T13:45:00Z
-- Revision: 34
+- Revision: 35
 - Budget: elapsedLimit=5d attemptLimit=20 reservedJobMinutesLimit=1200 activeJobLimit=1 reviewRoundLimit=3
 - BudgetExceptions: 1
 - Approved: by=human:Wido at=2026-09-17T06:05:10Z revision=32 opid=9SM144F0E2F8TXWZVS92BVJ3JA-m1e-c6925449 authority=proven digest=be2a6acf3d7fab09d0b7689c2a5b182bbbc0d371a3d808e8f2e1f7e31b521372
@@ -51,4 +51,5 @@ History:
 - 2026-09-17T06:05:10Z 9SM144F0E2F8TXWZVS92BVJ3JA-m1e-c6925449 set-budget actor=human:Wido targets=units-land-in-batches-under-one-proof displaced=m1e+main-1789030447-51011-2956ea@2026-09-16T23:56:14Z
 - 2026-09-17T06:23:54Z JNBA003MC0N62PWYNKWKM1A5X4-m1e-c6925449 edit actor=human:Wido targets=units-land-in-batches-under-one-proof displaced=m1e+main-1789030447-51011-2956ea@2026-09-17T06:05:10Z
 - 2026-09-17T06:54:54Z K3HGXGSE1F4AAA7M62AGP2PHGB-m1e-c6925449 edit actor=human:Wido targets=units-land-in-batches-under-one-proof displaced=m1e+main-1789030447-51011-2956ea@2026-09-17T06:05:10Z
-Integrity: sha256=4655d3d3f5981a2dc3bba02b6b29884ba3f37e8ddf15daaf637854c150d18bd7
+- 2026-09-17T07:47:43Z 3NJRS8QJKNTMYWX7W1YWK37A38-m1e-c6925449 edit actor=human:Wido targets=units-land-in-batches-under-one-proof displaced=m1e+main-1789030447-51011-2956ea@2026-09-17T06:05:10Z
+Integrity: sha256=6cb424c0bc693aa199fa25aad0059ce5e4b0656380c6ae00460a646574af0a38
