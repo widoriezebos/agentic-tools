@@ -34,6 +34,8 @@ novelty derive the tier; exposure and accumulation weight its proof.
 
 Programs START with `goal open` by a person: a multi-session effort gets a ledger goal before its first commit so intent survives turns; a seat's own `goal open` only names the claimed goal it blocks (`--blocks`) and parks it until that blocker is done, and non-blocking ideas go to `memory/backlog-notes.md`. At turn end, read `goal next`, one line every runtime has, hooks or none; a free seat adds `--machine <own-nick> --fetch` and claims only the ready goal it returns. Records explain work but never select it, nor do scanning, kickoff order or pin preference. If another seat wins the claim, fetch again. Concluding or parking a human-opened goal is human-reserved. The ledger mutates only through `goal` verbs; manual edits go through `goal reconcile`.
 
+A seat that leaves a goal waiting on a human writes `RULING NEEDED`, `WAITING ON THE HUMAN`, `WAITING ON <one word>` followed by `CALL`, `RULING`, `DECISION`, `ANSWER`, or `WORD`, `QUESTION TO THE HUMAN`, `PARK REQUEST`, or `PARK REQUESTED` at the start of the newest `Next step` entry, so the idle continuation leaves that goal alone.
+
 On every governed Stop, blocked or allowed, run the exact printed `metasystem report stop-status --id ...` command and read the report before ending the turn or taking the next work action; follow its seat action within existing authority. If the report is unavailable, keep any established block, report the read failure and recover current work through `goal next`; never infer that no work remains.
 
 ## Completion

@@ -1135,15 +1135,8 @@ func (s *Store) enforceIdleBacklogWithWaits(verdict *Verdict, work *ClaimableBud
 		session.IdleBlocks = 1
 	}
 	if session.IdleBlocks >= 3 {
-		goalID := work.Claimable[0]
-		claimNeeded := true
-		// A breach-stopped goal is waiting on a human and must not keep the
-		// machine from taking the next item; Next excludes it from Claimed.
-		if len(work.Claimed) > 0 {
-			goalID = work.Claimed[0]
-			claimNeeded = false
-		}
-		s.escalateIdleBacklog(verdict, session, sessionID, mainID, goalID, claimNeeded, blockedBeforeIdle, options, "")
+		goalID, claimNeeded, unavailable := idleBacklogContinuation(*work)
+		s.escalateIdleBacklog(verdict, session, sessionID, mainID, goalID, claimNeeded, blockedBeforeIdle, options, unavailable)
 		return
 	}
 	verdict.ShouldBlock = true
@@ -1153,6 +1146,22 @@ func (s *Store) enforceIdleBacklogWithWaits(verdict *Verdict, work *ClaimableBud
 	verdict.Display = strings.TrimSpace(verdict.Display + "\n" + fmt.Sprintf(
 		"IDLE WITH BACKLOG: %d claimable goals await a live claim or job: %s; %s; stop_hook_active=%t; an attended human may run `metasystem session stop --by <name>`",
 		len(work.Claimable), idleBacklogNames(*work), countText, options.StopHookActive))
+}
+
+func idleBacklogContinuation(work ClaimableBudgetedWork) (string, bool, string) {
+	if len(work.Claimed) > 0 {
+		id := work.Claimed[0]
+		if NextStepNamesAPendingHumanWord(work.GoalFacts[id].NextStep) {
+			return "", false, "this machine's held goal waits on a human word"
+		}
+		return id, false, ""
+	}
+	for _, id := range work.Claimable {
+		if !NextStepNamesAPendingHumanWord(work.GoalFacts[id].NextStep) {
+			return id, true, ""
+		}
+	}
+	return "", false, "every ready goal waits on a human word"
 }
 
 func idleBacklogNames(work ClaimableBudgetedWork) string {
@@ -1210,7 +1219,7 @@ func (s *Store) escalateIdleBacklog(verdict *Verdict, session *sessionState, ses
 		event.ClaimDetail = "goal is already claimed by this machine; no steward claim is needed"
 	}
 
-	if unavailable == "" && options.SeatActorProblem == "" &&
+	if unavailable == "" && goalID != "" && options.SeatActorProblem == "" &&
 		options.SeatActor.Machine != "" && options.SeatActor.Lineage != "" && options.SeatClaimEpoch > 0 {
 		if s.PrepareIdleContinuation == nil {
 			event.IntentDetail = "the steward continuation preparation seam is unavailable"

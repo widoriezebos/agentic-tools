@@ -581,6 +581,157 @@ func TestIdleBacklogContinuesThisMachinesHeldClaimWithoutAnotherClaim(t *testing
 	}
 }
 
+func TestIdleBacklogContinuationSkipsAGoalWaitingOnAHumanWord(t *testing.T) {
+	waitsForHuman := budgetedQueuedGoal("waits-for-human", "2026-08-23T00:00:00Z")
+	waitsForHuman.NextStep = "RULING NEEDED: choose the release boundary"
+	waitsForHuman.Priority, waitsForHuman.Sequence = 1, 1
+	ready := budgetedQueuedGoal("ready-for-work", "2026-08-23T00:00:01Z")
+	ready.Priority, ready.Sequence = 1, 2
+	root := servingBed(t, "bed-m1", map[string]*GoalFile{
+		waitsForHuman.Id: waitsForHuman,
+		ready.Id:         ready,
+	})
+	var prepared IdleEscalationEvent
+	store := &Store{
+		Root: root,
+		PrepareIdleContinuation: func(event IdleEscalationEvent) (string, error) {
+			prepared = event
+			return "intent-ready", nil
+		},
+		RecordIdleIncident: func(IdleEscalationEvent) (string, error) { return "alert-ready", nil },
+	}
+	options := TurnVerdictOptions{
+		SeatActor: Actor{Machine: "bed-m1", Lineage: "seat-lineage"}, SeatClaimEpoch: 7,
+	}
+	for stop := 1; stop <= 3; stop++ {
+		verdict, err := store.TurnVerdict(ScanResult{}, "skip-human-word", "", "main-1", options)
+		if err != nil || (stop < 3 && !verdict.ShouldBlock) {
+			t.Fatalf("idle stop %d: verdict=%+v err=%v", stop, verdict, err)
+		}
+	}
+	if prepared.GoalID != ready.Id || !prepared.ClaimNeeded {
+		t.Fatalf("the continuation did not skip the human-waiting work: %+v", prepared)
+	}
+	endpoint, err := ResolveEndpoint(root)
+	if err != nil {
+		t.Fatal(err)
+	}
+	projection, err := Project(endpoint, false, time.Now())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if claim := projection.Tree.Live[waitsForHuman.Id].Claimed; claim != nil {
+		t.Fatalf("the skipped work was claimed: %+v", claim)
+	}
+}
+
+func TestIdleBacklogContinuationLeavesAHeldGoalThatWaitsOnAHumanWord(t *testing.T) {
+	held := budgetedQueuedGoal("held-for-human", "2026-08-22T00:00:00Z")
+	held.State = StateClaimed
+	held.Revision = 2
+	held.NextStep = "WAITING ON THE HUMAN before continuing"
+	held.Claimed = &ClaimRecord{
+		Machine: "bed-m1", Lineage: "seat-lineage", At: "2026-08-23T01:00:00Z", Revision: 2,
+	}
+	ready := budgetedQueuedGoal("ready-after-held", "2026-08-23T00:00:00Z")
+	root := servingBed(t, "bed-m1", map[string]*GoalFile{
+		held.Id:  held,
+		ready.Id: ready,
+	})
+	prepared := false
+	store := &Store{
+		Root: root,
+		PrepareIdleContinuation: func(IdleEscalationEvent) (string, error) {
+			prepared = true
+			return "unexpected-intent", nil
+		},
+		RecordIdleIncident: func(IdleEscalationEvent) (string, error) { return "alert-held-human", nil },
+		RaiseIdleAlarm:     func(IdleEscalationEvent) error { return nil },
+	}
+	options := TurnVerdictOptions{
+		SeatActor: Actor{Machine: "bed-m1", Lineage: "seat-lineage"}, SeatClaimEpoch: 7,
+	}
+	var third Verdict
+	for stop := 1; stop <= 3; stop++ {
+		var err error
+		third, err = store.TurnVerdict(ScanResult{}, "held-human-word", "", "main-1", options)
+		if err != nil || (stop < 3 && !third.ShouldBlock) {
+			t.Fatalf("idle stop %d: verdict=%+v err=%v", stop, third, err)
+		}
+	}
+	if prepared || third.ShouldBlock || third.BlockSource != nil ||
+		!strings.Contains(third.Display, "held goal waits on a human word") {
+		t.Fatalf("the held human-waiting work was handed off: prepared=%t verdict=%+v", prepared, third)
+	}
+	endpoint, err := ResolveEndpoint(root)
+	if err != nil {
+		t.Fatal(err)
+	}
+	projection, err := Project(endpoint, false, time.Now())
+	if err != nil {
+		t.Fatal(err)
+	}
+	claim := projection.Tree.Live[held.Id].Claimed
+	if claim == nil || claim.Machine != "bed-m1" || claim.Lineage != "seat-lineage" {
+		t.Fatalf("the held claim changed: %+v", claim)
+	}
+	if claim := projection.Tree.Live[ready.Id].Claimed; claim != nil {
+		t.Fatalf("the one-claim limit was bypassed for ready work: %+v", claim)
+	}
+}
+
+func TestIdleBacklogWithOnlyHumanWaitingGoalsPreparesNoContinuation(t *testing.T) {
+	first := budgetedQueuedGoal("first-human-wait", "2026-08-23T00:00:00Z")
+	first.NextStep = "QUESTION TO THE HUMAN: which option should proceed?"
+	second := budgetedQueuedGoal("second-human-wait", "2026-08-23T00:00:01Z")
+	second.NextStep = "PARK REQUESTED until approval arrives"
+	root := servingBed(t, "bed-m1", map[string]*GoalFile{
+		first.Id:  first,
+		second.Id: second,
+	})
+	prepared := false
+	var incident IdleEscalationEvent
+	store := &Store{
+		Root: root,
+		PrepareIdleContinuation: func(IdleEscalationEvent) (string, error) {
+			prepared = true
+			return "unexpected-intent", nil
+		},
+		RecordIdleIncident: func(event IdleEscalationEvent) (string, error) {
+			incident = event
+			return "alert-all-human", nil
+		},
+		RaiseIdleAlarm: func(IdleEscalationEvent) error { return nil },
+	}
+	options := TurnVerdictOptions{
+		SeatActor: Actor{Machine: "bed-m1", Lineage: "seat-lineage"}, SeatClaimEpoch: 7,
+	}
+	var third Verdict
+	for stop := 1; stop <= 3; stop++ {
+		var err error
+		third, err = store.TurnVerdict(ScanResult{}, "only-human-words", "", "main-1", options)
+		if err != nil || (stop < 3 && (!third.ShouldBlock || !third.IdleRefusal)) {
+			t.Fatalf("idle stop %d: verdict=%+v err=%v", stop, third, err)
+		}
+	}
+	if prepared || third.ShouldBlock || third.BlockSource != nil || !third.IdleRefusal ||
+		third.Class != "idle-with-backlog" || !third.CountSpent || incident.GoalID != "" ||
+		!strings.Contains(third.Display, "every ready goal waits on a human word") {
+		t.Fatalf("the all-human-waiting backlog changed the bounded verdict: prepared=%t incident=%+v verdict=%+v", prepared, incident, third)
+	}
+	endpoint, err := ResolveEndpoint(root)
+	if err != nil {
+		t.Fatal(err)
+	}
+	projection, err := Project(endpoint, false, time.Now())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if projection.Tree.Live[first.Id].Claimed != nil || projection.Tree.Live[second.Id].Claimed != nil {
+		t.Fatalf("human-waiting work was claimed: first=%+v second=%+v", projection.Tree.Live[first.Id].Claimed, projection.Tree.Live[second.Id].Claimed)
+	}
+}
+
 func TestMismatchedSessionStopMarkerDoesNotGateIdleEscalation(t *testing.T) {
 	now := time.Date(2026, 9, 2, 10, 1, 0, 0, time.UTC)
 	root := servingBed(t, "bed-m1", map[string]*GoalFile{
