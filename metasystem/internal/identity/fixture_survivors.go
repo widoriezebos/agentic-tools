@@ -69,6 +69,7 @@ var fixtureSurvivorScope = func(pid int64) fixtureProcessScope {
 	return fixtureProcessScope{int64(pgid), int64(sid), signalable}
 }
 
+// FixtureSurvivors returns processes for key, including unreadable processes only when their process group or session ties them to a certain result.
 func FixtureSurvivors(key FixtureKey) ([]FixtureSurvivor, error) {
 	wanted, err := EncodeKey(key)
 	if err != nil {
@@ -77,9 +78,10 @@ func FixtureSurvivors(key FixtureKey) ([]FixtureSurvivor, error) {
 	return scanFixtureSurvivors(fixtureSurvivorProber, func(candidate FixtureKey) bool {
 		encoded, encodeErr := EncodeKey(candidate)
 		return encodeErr == nil && encoded == wanted
-	})
+	}, false)
 }
 
+// FixtureSurvivorsOfDeadOwner returns processes for owner's fixtures, including unreadable processes under go-tmp or tied to a certain result by process group or session.
 func FixtureSurvivorsOfDeadOwner(prober Prober, owner Ref) ([]FixtureSurvivor, error) {
 	wanted, err := EncodeRef(owner)
 	if prober == nil || err != nil {
@@ -94,7 +96,7 @@ func FixtureSurvivorsOfDeadOwner(prober Prober, owner Ref) ([]FixtureSurvivor, e
 	return scanFixtureSurvivors(prober, func(candidate FixtureKey) bool {
 		encoded, encodeErr := EncodeRef(candidate.Owner)
 		return encodeErr == nil && encoded == wanted
-	})
+	}, true)
 }
 
 type fixtureObservation struct {
@@ -104,7 +106,7 @@ type fixtureObservation struct {
 	carrier FixtureCarrier
 }
 
-func scanFixtureSurvivors(prober Prober, matches func(FixtureKey) bool) ([]FixtureSurvivor, error) {
+func scanFixtureSurvivors(prober Prober, matches func(FixtureKey) bool, includeGoTmpUnreadable bool) ([]FixtureSurvivor, error) {
 	pids, err := survivorPids()
 	if err != nil {
 		return nil, fmt.Errorf("identity: enumerate fixture processes: %w", err)
@@ -140,7 +142,7 @@ func scanFixtureSurvivors(prober Prober, matches func(FixtureKey) bool) ([]Fixtu
 	}
 	for _, observation := range unreadable {
 		_, underGoTmp := goTmpRoot(observation.exact.Exe)
-		if observation.exact.ExeKnown && underGoTmp || sharesFixtureScope(observation, certain) {
+		if includeGoTmpUnreadable && observation.exact.ExeKnown && underGoTmp || sharesFixtureScope(observation, certain) {
 			result = append(result, observation.survivor(FixtureSurvivorUnreadable))
 		}
 	}

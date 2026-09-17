@@ -111,6 +111,39 @@ func TestFixtureScanClassifiesGoTmpUnreadableProcess(t *testing.T) {
 	}
 }
 
+func TestFixtureSurvivorsRequiresUnreadableProcessToShareFixtureScope(t *testing.T) {
+	owner := fixtureExact(700, 70).Ref()
+	key := FixtureKey{Owner: owner, Test: "TestOne", Nonce: "00000001"}
+	child := fixtureExact(701, 71)
+	child.Argv, child.ArgvKnown = []string{"/bin/sh", fixtureWord(t, key)}, true
+	untied := fixtureExact(702, 72)
+	untied.Exe, untied.ExeKnown = filepath.Join(t.TempDir(), "go-tmp", "TestOther99", "metasystem"), true
+	tied := fixtureExact(703, 73)
+	table := fixtureTable{701: child, 702: untied, 703: tied}
+	installFixtureScanTable(t, table)
+	fixtureSurvivorScope = func(pid int64) fixtureProcessScope {
+		switch pid {
+		case 701:
+			return fixtureProcessScope{pgid: 901, sid: 1001, signalable: true}
+		case 703:
+			return fixtureProcessScope{pgid: 901, sid: 1003, signalable: true}
+		default:
+			return fixtureProcessScope{pgid: pid, sid: pid + 100, signalable: true}
+		}
+	}
+	got, err := FixtureSurvivors(key)
+	if err != nil || len(got) != 2 || got[0].Ref.Pid != 701 || got[0].Class != FixtureSurvivorCertain ||
+		got[1].Ref.Pid != 703 || got[1].Class != FixtureSurvivorUnreadable {
+		t.Fatalf("key scan = %#v, %v; want certain pid 701 and unreadable pid 703", got, err)
+	}
+	delete(table, 701)
+	delete(table, 703)
+	got, err = FixtureSurvivors(key)
+	if err != nil || len(got) != 0 {
+		t.Fatalf("untied go-tmp scan = %#v, %v; want no results", got, err)
+	}
+}
+
 func TestFixtureScanUsesOwnershipRecordBelowGoTmp(t *testing.T) {
 	owner := fixtureExact(700, 70).Ref()
 	key := FixtureKey{Owner: owner, Test: "TestRecord", Nonce: "a1b2c3d4"}
