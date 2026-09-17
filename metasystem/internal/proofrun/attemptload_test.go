@@ -52,7 +52,7 @@ func TestProofLauncherArgv(t *testing.T) {
 		"/seat/m1b/metasystem/bin/metasystem proof-run launch --suite testing --root /x": true,
 		"metasystem proof-run launch":                     true,
 		"/seat/m1c/bin/metasystem test run --goal goal-a": true,
-		"metasystem landing batch owner --root /landing":  true,
+		"metasystem landing batch owner --root /landing":  false,
 		"metasystem test plan":                            false,
 		"metasystem landing batch status":                 false,
 		"metasystem test":                                 false,
@@ -88,8 +88,8 @@ func TestCensusCountsRunningBatchProof(t *testing.T) {
 	row := func(pid, parent int64, argv string) processRow {
 		return processRow{pid: pid, parent: parent, launcher: isProofLauncherArgv(strings.Fields(argv))}
 	}
-	if got := topLevelLaunchers([]processRow{row(10, 1, "metasystem landing batch owner")}, 999); got != 1 {
-		t.Fatalf("a running batch owner counted %d launcher(s), want 1", got)
+	if got := topLevelLaunchers([]processRow{row(10, 1, "metasystem landing batch owner")}, 999); got != 0 {
+		t.Fatalf("an idle batch owner counted %d launcher(s), want 0", got)
 	}
 	if got := topLevelLaunchers([]processRow{
 		row(10, 1, "metasystem landing batch owner"), row(11, 10, "metasystem test run"),
@@ -108,13 +108,13 @@ func TestCensusUsesInjectedProber(t *testing.T) {
 	installFakeLoad(t, hostload.Sample{Available: true, Cores: 8, Load1m: 1}, 0, true)
 	root, proofIdentity := proofAttemptFixture(t, "injected-census")
 	now := time.Date(2026, 9, 16, 18, 0, 0, 0, time.UTC)
-	fakeOwner := identity.Exact{Pid: 313131, StartedAt: now, Argv: []string{"metasystem", "landing", "batch", "owner"}, ArgvKnown: true}
+	fakeLauncher := identity.Exact{Pid: 313131, StartedAt: now, Argv: []string{"metasystem", "test", "run"}, ArgvKnown: true}
 	fakeAttempt := identity.Exact{Pid: 424242, StartedAt: now.Add(-time.Hour)}
 	fake := &censusProber{processes: map[int64]identity.Exact{
-		fakeOwner.Pid: fakeOwner, fakeAttempt.Pid: fakeAttempt,
+		fakeLauncher.Pid: fakeLauncher, fakeAttempt.Pid: fakeAttempt,
 	}, calls: map[int64]int{}}
 	loadSeams.prober = fake
-	loadSeams.pids = func() ([]int64, error) { return []int64{fakeOwner.Pid}, nil }
+	loadSeams.pids = func() ([]int64, error) { return []int64{fakeLauncher.Pid}, nil }
 	loadSeams.parent = func(int64) (int64, bool) { return 1, true }
 	launcher := processIdentity(identity.Exact{Pid: 515151, StartedAt: now.Add(-2 * time.Hour)}, 0)
 	attempt, _, err := ReserveLocked(AdmissionRequest{ControlRoot: root, ExecutionRoot: root, GoalID: "goal-a", GoalRevision: 2,
@@ -131,7 +131,7 @@ func TestCensusUsesInjectedProber(t *testing.T) {
 	if sample.OverlappingHost != 1 || !sample.OverlapKnown || sample.OverlappingLocal != 1 {
 		t.Fatalf("injected census sample = %+v, want one host launcher and one local attempt", sample)
 	}
-	if fake.calls[fakeOwner.Pid] == 0 || fake.calls[fakeAttempt.Pid] == 0 {
+	if fake.calls[fakeLauncher.Pid] == 0 || fake.calls[fakeAttempt.Pid] == 0 {
 		t.Fatalf("injected prober calls = %v", fake.calls)
 	}
 }

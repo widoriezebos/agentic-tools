@@ -57,7 +57,9 @@ TEMPORARY, and it replaces the shell lock that serializes one engine test run pe
   `test run` as the verb pair right after the binary. An engine test run reserves a top-level attempt and runs
   the groups, so it is a battery in every sense the cap and the attribution care about, and it is exactly what
   the shell lock serializes. One consequence, intended: `Loaded()` now fires on records where another seat's
-  test run is the contention, which is the attribution naming the fleet's real load for the first time.
+  test run is the contention, which is the attribution naming the fleet's real load for the first time. A
+  coordinator daemon, including an idle landing-batch owner, is never a launcher; only its child while that
+  child is running proof work counts.
 - No shared state between seats: the slot is the process census under the reserving checkout's proof mutation
   lock, so a dead seat can never hold a slot (R-35-m3's reason), and a slot is released by the launcher's
   termination, which is what the reading sees.

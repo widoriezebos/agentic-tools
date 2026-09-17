@@ -204,8 +204,7 @@ func topLevelLaunchers(rows []processRow, self int64) int {
 // the words out of the census.
 func isProofLauncherArgv(argv []string) bool {
 	return len(argv) >= 3 && filepath.Base(argv[0]) == "metasystem" &&
-		(argv[1] == "proof-run" && argv[2] == "launch" || argv[1] == "test" && argv[2] == "run" ||
-			len(argv) >= 4 && argv[1] == "landing" && argv[2] == "batch" && argv[3] == "owner")
+		(argv[1] == "proof-run" && argv[2] == "launch" || argv[1] == "test" && argv[2] == "run")
 }
 
 // liveAttemptsOtherThan counts this checkout's attempts without a terminal
