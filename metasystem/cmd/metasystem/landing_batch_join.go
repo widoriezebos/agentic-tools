@@ -70,7 +70,7 @@ func productionBatchJoinDependencies() batchJoinDependencies {
 		protectedTests: batch.CheckProtectedTests,
 		gate: func(root, tree string, patch, fixtures []byte, unit *batch.Unit) error {
 			execute := productionJoinGate(root)
-			return batch.RunJoinGate(tree, patch, fixtures, unit, execute)
+			return batch.RunJoinGateAt(root, tree, patch, fixtures, unit, execute)
 		},
 		plan: productionJoinPlan, publish: batch.PublishJoin,
 		handover: productionForwardHandover, ensure: ensureBatchOwner, author: productionBatchAuthor, prober: identity.KernelProber{},

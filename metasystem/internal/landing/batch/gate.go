@@ -11,7 +11,6 @@ import (
 	"strconv"
 	"strings"
 
-	"github.com/widoriezebos/agentic-tools/metasystem/internal/config"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/gittree"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/testpolicy"
 )
@@ -51,15 +50,7 @@ func isSharedFixtureHarness(path string) bool {
 }
 
 func runJoinGate(unitTree string, patch, fixtureMap []byte, unit *Unit, execute batchGateExec) error {
-	root := ""
-	if unit.SeatRoot != "" {
-		configured, _, err := config.Get(config.GetParams{Key: config.BatchRootKey, ConfPath: filepath.Join(unit.SeatRoot, "metasystem.conf")})
-		if err != nil {
-			return err
-		}
-		root = configured
-	}
-	return runJoinGateAt(root, unitTree, patch, fixtureMap, unit, execute)
+	return runJoinGateAt("", unitTree, patch, fixtureMap, unit, execute)
 }
 
 func runJoinGateAt(root, unitTree string, patch, fixtureMap []byte, unit *Unit, execute batchGateExec) error {
@@ -103,6 +94,11 @@ func runJoinGateAt(root, unitTree string, patch, fixtureMap []byte, unit *Unit, 
 
 func RunJoinGate(unitTree string, patch, fixtureMap []byte, unit *Unit, execute GateExecutor) error {
 	return runJoinGate(unitTree, patch, fixtureMap, unit, execute)
+}
+
+// RunJoinGateAt selects package steps from unitTree in the repository at root.
+func RunJoinGateAt(root, unitTree string, patch, fixtureMap []byte, unit *Unit, execute GateExecutor) error {
+	return runJoinGateAt(root, unitTree, patch, fixtureMap, unit, execute)
 }
 
 // CheckProtectedTests keeps every named base-contract test in the package

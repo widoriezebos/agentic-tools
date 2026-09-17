@@ -105,6 +105,56 @@ func TestLandingBatchJoinRefusesRedFastStaticGate(t *testing.T) {
 	}
 }
 
+func TestProductionJoinGateSelectsPackagesAgainstTheLandingRoot(t *testing.T) {
+	repository := t.TempDir()
+	git := func(arguments ...string) string {
+		command := exec.Command("git", arguments...)
+		command.Dir = repository
+		output, err := command.CombinedOutput()
+		if err != nil {
+			t.Fatalf("git %v: %v: %s", arguments, err, output)
+		}
+		return strings.TrimSpace(string(output))
+	}
+	git("init", "-q")
+	git("config", "user.name", "Fixture")
+	git("config", "user.email", "fixture@example.invalid")
+	files := map[string]string{
+		"metasystem/go.mod":                       "module fixture\n",
+		"metasystem/outer/keep.go":                "package outer\n",
+		"metasystem/outer/missing/inner/value.go": "package inner\n",
+		"metasystem/scripts/agents/go-gate.sh":    "#!/bin/sh\nexit 0\n",
+	}
+	for path, content := range files {
+		absolute := filepath.Join(repository, filepath.FromSlash(path))
+		if err := os.MkdirAll(filepath.Dir(absolute), 0o755); err != nil {
+			t.Fatal(err)
+		}
+		mode := os.FileMode(0o644)
+		if strings.HasSuffix(path, ".sh") {
+			mode = 0o755
+		}
+		if err := os.WriteFile(absolute, []byte(content), mode); err != nil {
+			t.Fatal(err)
+		}
+	}
+	git("add", ".")
+	git("commit", "-q", "-m", "base")
+	if err := os.Remove(filepath.Join(repository, "metasystem", "outer", "missing", "inner", "value.go")); err != nil {
+		t.Fatal(err)
+	}
+	git("add", "-u")
+	tree := git("write-tree")
+	patch := []byte(git("diff", "--cached", "--binary", "HEAD"))
+	unit := batch.Unit{}
+	if err := productionBatchJoinDependencies().gate(repository, tree, patch, nil, &unit); err != nil {
+		t.Fatalf("production join gate: %v", err)
+	}
+	if len(unit.Gate) != 2 {
+		t.Fatalf("production join gate runs=%v, want fast gate and parent package", unit.Gate)
+	}
+}
+
 func TestLandingBatchJoinRefusesDroppedListedTest(t *testing.T) {
 	production := productionBatchJoinDependencies()
 	if reflect.ValueOf(production.protectedTests).Pointer() != reflect.ValueOf(batch.CheckProtectedTests).Pointer() {
