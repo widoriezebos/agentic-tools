@@ -40,7 +40,7 @@ accounting ceiling, not spend) and removes every obstacle tonight;
 the exact minimum (360) saves nothing and risks another ask; skipping
 the review saves an hour but waives the one check that just caught a
 real bug. I recommend 450. If you do not answer, the discharge waits
-and the deadline is tomorrow 12:48 UTC."
+and the deadline is tomorrow at 14:48."
 
 ## Rule 3 — Lead with what a non-reader needs
 
@@ -91,6 +91,18 @@ question is not an invitation to fill the space. Length is earned only
 by the human asking for it or by a genuine multi-part answer where
 each part is itself minimal. When in doubt, send the short version —
 a follow-up costs one line; a wall costs the human's time every time.
+
+## Rule 8 — Times are the human's local time
+
+Ordered by Wido, 2026-09-17: every clock time written for a person
+(an ETA, a deadline, when something landed or started, in a chat
+turn, a message to another seat, a return, a report or a commit
+message) is the local time of the machine's clock, as `date +%H:%M`
+prints it, written plainly: "back around 15:30". Never UTC, and never
+both side by side. Machine-read records keep UTC with its `Z`:
+receipts, ledgers, logs, trailers, JSON and RFC3339 fields. A seat
+that quotes a time from a record converts it before writing it for a
+person.
 
 ## Enforcement
 
