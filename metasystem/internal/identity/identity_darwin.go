@@ -18,30 +18,34 @@ import (
 type KernelProber struct{}
 
 // BootClock returns the current boot identifier and monotonic elapsed time on
-// that boot. Darwin exposes the boot instant rather than a stable UUID, so the
-// canonical seconds-and-microseconds pair is the boot identity.
+// that boot. Darwin's boot session UUID stays fixed across wall-clock changes;
+// kern.boottime is only a fallback because macOS moves it when adjusting the
+// wall clock.
 func BootClock() (string, time.Duration, error) {
 	var monotonic unix.Timespec
 	if err := unix.ClockGettime(unix.CLOCK_MONOTONIC_RAW, &monotonic); err != nil {
 		return "", 0, fmt.Errorf("identity: read monotonic boot clock: %w", err)
 	}
 	elapsed := time.Duration(monotonic.Nano())
-	if elapsed < 0 {
-		return "", 0, fmt.Errorf("identity: monotonic boot clock is implausible")
+	sessionUUID, sessionErr := unix.Sysctl("kern.bootsessionuuid")
+	bootTime, bootTimeErr := unix.SysctlTimeval("kern.boottime")
+	readings := DarwinBootReadings{
+		SessionUUID: sessionUUID,
+		SessionErr:  sessionErr,
+		BootTimeErr: bootTimeErr,
+		Now:         time.Now(),
+		Elapsed:     elapsed,
 	}
-	boot, err := unix.SysctlTimeval("kern.boottime")
-	if err == nil && boot.Sec > 0 && boot.Usec >= 0 {
-		return fmt.Sprintf("%d.%06d", boot.Sec, boot.Usec), elapsed, nil
+	if bootTime != nil {
+		readings.BootTimeSec = bootTime.Sec
+		readings.BootTimeUsec = int64(bootTime.Usec)
 	}
-	// Sandboxed runtimes may deny kern.boottime while still allowing the
+	// Sandboxed runtimes may deny the sysctls while still allowing the
 	// monotonic clock. A minute-bucketed boot estimate stays stable across
 	// processes; a correction large enough to change that estimate invalidates
 	// a pending wait instead of extending it.
-	estimatedBoot := time.Now().UTC().Add(-elapsed).Truncate(time.Minute)
-	if estimatedBoot.Unix() <= 0 {
-		return "", 0, fmt.Errorf("identity: kern.boottime is implausible")
-	}
-	return "estimated-" + estimatedBoot.Format("20060102T1504Z"), elapsed, nil
+	bootID, err := DarwinBootIdentity(readings)
+	return bootID, elapsed, err
 }
 
 // kinfoProc's layout: extern_proc begins the struct, and its first
