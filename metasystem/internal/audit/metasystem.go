@@ -17,6 +17,9 @@ import (
 // instruction inventories, placeholder checks, the always-loaded word budget,
 // and the report-only common-path bundle.
 
+// DefaultMaxAlwaysLoadedWords is the instruction budget used when no override is set.
+const DefaultMaxAlwaysLoadedWords = 1500
+
 var auditRequiredFiles = []string{
 	"AGENTS.md", "wow.md", "metasystem.conf", "docs/project-rules.md",
 	"docs/orchestration.md", "docs/collaboration.md",
@@ -63,7 +66,7 @@ type AuditResult struct {
 
 // AuditOptions mirror the shim's environment knobs.
 type AuditOptions struct {
-	MaxAlwaysLoadedWords int  // 0 means the 1500 default
+	MaxAlwaysLoadedWords int  // 0 uses DefaultMaxAlwaysLoadedWords
 	AllowPlaceholders    bool // adopt.sh's structural pass, pre-fill
 }
 
@@ -162,7 +165,7 @@ func AuditMetasystem(root string, opts AuditOptions) (*AuditResult, error) {
 
 	maxWords := opts.MaxAlwaysLoadedWords
 	if maxWords == 0 {
-		maxWords = 1500
+		maxWords = DefaultMaxAlwaysLoadedWords
 	}
 	if alwaysWords > maxWords {
 		result.Violations = append(result.Violations,
