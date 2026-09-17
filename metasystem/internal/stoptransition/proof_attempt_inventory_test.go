@@ -51,7 +51,7 @@ func TestProofReservationBeforeChildPublicationIsStoppable(t *testing.T) {
 	}
 	now := time.Now().UTC()
 	attempt, _, err := proofrun.ReserveLocked(proofrun.AdmissionRequest{ControlRoot: root, ExecutionRoot: root,
-		GoalID: "goal-a", GoalRevision: 2, AccountingRevision: 2, ReservedMinutes: 2,
+		GoalID: "goal-a", GoalRevision: 2, AccountingRevision: 2, CandidateGoalID: "goal-a", CandidateRevision: 2, ReservedMinutes: 2,
 		Identity: proofIdentity, Launcher: launcher, Now: now})
 	if err != nil {
 		t.Fatal(err)

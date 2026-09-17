@@ -14,6 +14,16 @@ import (
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/proofrun"
 )
 
+func candidateProofAdmission(request proofrun.AdmissionRequest, tree string) proofrun.AdmissionRequest {
+	request.CandidateGoalID = request.GoalID
+	request.CandidateRevision = request.AccountingRevision
+	request.CandidateBudgetEpoch = request.BudgetEpoch
+	if request.Identity.CommandClass == "testing" {
+		request.CandidateTree = tree
+	}
+	return request
+}
+
 func TestCanonicalReceiptProofContext(t *testing.T) {
 	fixture := newCanonicalReceiptFixture(t)
 	if fixture.receipt.Proof == nil || fixture.receipt.Proof.AttemptID != fixture.attempt.AttemptID ||
@@ -173,8 +183,8 @@ func TestReceiptPreparationSurvivesCanonicalRecordMotion(t *testing.T) {
 		t.Fatal(err)
 	}
 	now := time.Now().UTC()
-	attempt, _, err := proofrun.ReserveLocked(proofrun.AdmissionRequest{ControlRoot: f.root, ExecutionRoot: preparation.ExecutionRoot(),
-		GoalID: "goal-a", GoalRevision: 2, AccountingRevision: 2, ReservedMinutes: 5, Identity: proofIdentity, Launcher: launcher, Now: now})
+	attempt, _, err := proofrun.ReserveLocked(candidateProofAdmission(proofrun.AdmissionRequest{ControlRoot: f.root, ExecutionRoot: preparation.ExecutionRoot(),
+		GoalID: "goal-a", GoalRevision: 2, AccountingRevision: 2, ReservedMinutes: 5, Identity: proofIdentity, Launcher: launcher, Now: now}, tree))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -239,9 +249,9 @@ func newCanonicalReceiptFixture(t *testing.T) *canonicalReceiptFixture {
 		t.Fatal(err)
 	}
 	now := time.Now().UTC()
-	attempt, _, err := proofrun.ReserveLocked(proofrun.AdmissionRequest{ControlRoot: f.root,
+	attempt, _, err := proofrun.ReserveLocked(candidateProofAdmission(proofrun.AdmissionRequest{ControlRoot: f.root,
 		ExecutionRoot: preparation.ExecutionRoot(), GoalID: "goal-a", GoalRevision: 2, AccountingRevision: 2,
-		ReservedMinutes: 5, Identity: identity, Launcher: launcher, Now: now})
+		ReservedMinutes: 5, Identity: identity, Launcher: launcher, Now: now}, tree))
 	if err != nil {
 		t.Fatal(err)
 	}

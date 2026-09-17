@@ -190,7 +190,7 @@ func newPendingWaitVerdictFixture(t *testing.T, kind string, readyBacklog bool) 
 			deadline := now.Add(10 * time.Minute)
 			attempt, result, reserveErr := proofrun.ReserveLocked(proofrun.AdmissionRequest{
 				ControlRoot: root, ExecutionRoot: root, GoalID: pendingWaitGoalID,
-				GoalRevision: 2, AccountingRevision: 2, ReservedMinutes: 10,
+				GoalRevision: 2, AccountingRevision: 2, CandidateGoalID: pendingWaitGoalID, CandidateRevision: 2, ReservedMinutes: 10,
 				Identity: proofIdentity, Launcher: proofrun.ProcessIdentity{Pid: 90, PidStartedAt: 900},
 				Now: now, AttemptID: selector.TargetID,
 				ReservationOwner: &proofrun.ReservationOwner{

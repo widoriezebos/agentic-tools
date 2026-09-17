@@ -102,7 +102,8 @@ func writeValidationAttempt(t *testing.T, root, runID, omitted string) string {
 		LaunchNonce: strings.Repeat("a", 32), GoalRevision: 2, ObligationRevision: 3, AttemptOrdinal: 3,
 		Deadline: now.Add(10 * time.Minute).Format(time.RFC3339Nano)}
 	attempt, _, err := proofrun.ReserveLocked(proofrun.AdmissionRequest{ControlRoot: root, ExecutionRoot: root,
-		GoalID: "bounded", GoalRevision: 2, AccountingRevision: 2, ReservedMinutes: 10, Identity: identity,
+		GoalID: "bounded", GoalRevision: 2, AccountingRevision: 2,
+		CandidateGoalID: "bounded", CandidateRevision: 2, CandidateTree: digest[:40], ReservedMinutes: 10, Identity: identity,
 		Launcher: launcher, ReservationOwner: owner, Now: now, AttemptID: "attempt-" + runID})
 	if err != nil {
 		t.Fatal(err)

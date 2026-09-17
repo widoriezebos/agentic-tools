@@ -88,8 +88,8 @@ func censusAdmissionRequest(t *testing.T, max int, exact identity.Exact, command
 	root, proofIdentity := proofAttemptFixture(t, commandClass)
 	conf := filepath.Join(root, "admission.conf")
 	writeTestFile(t, conf, []byte(AdmissionCapKey+"="+strconv.Itoa(max)+"\n"), 0o600)
-	return AdmissionRequest{ControlRoot: root, ExecutionRoot: root, ConfPath: conf, GoalID: "goal-a", GoalRevision: 2,
-		AccountingRevision: 2, ReservedMinutes: 2, Identity: proofIdentity, Launcher: processIdentity(exact, 0), Now: now}
+	return candidateAdmission(AdmissionRequest{ControlRoot: root, ExecutionRoot: root, ConfPath: conf, GoalID: "goal-a", GoalRevision: 2,
+		AccountingRevision: 2, ReservedMinutes: 2, Identity: proofIdentity, Launcher: processIdentity(exact, 0), Now: now})
 }
 
 func TestAdmissionCapResolvesFromConfigurationAndCores(t *testing.T) {
@@ -146,8 +146,8 @@ func admissionRequest(t *testing.T, admissionMax, overlaps int, known, nested bo
 	if err != nil {
 		t.Fatal(err)
 	}
-	return AdmissionRequest{ControlRoot: root, ExecutionRoot: root, ConfPath: conf, GoalID: "goal-a", GoalRevision: 2,
-		AccountingRevision: 2, ReservedMinutes: 2, Identity: identity, Launcher: launcher, Now: time.Date(2026, 9, 16, 12, 0, 0, 0, time.UTC)}
+	return candidateAdmission(AdmissionRequest{ControlRoot: root, ExecutionRoot: root, ConfPath: conf, GoalID: "goal-a", GoalRevision: 2,
+		AccountingRevision: 2, ReservedMinutes: 2, Identity: identity, Launcher: launcher, Now: time.Date(2026, 9, 16, 12, 0, 0, 0, time.UTC)})
 }
 func TestAdmissionCapExemptsNestedReceipts(t *testing.T) {
 	request := admissionRequest(t, 1, 3, true, true)
@@ -404,9 +404,9 @@ func TestConcurrentTopLevelAttemptsCompleteWithNestedAndJoinedReceipts(t *testin
 			}
 
 			componentIdentity := strings.Repeat(fixture.name, 64)
-			joinedRequest := AdmissionRequest{ControlRoot: fixture.request.ControlRoot, GoalID: fixture.request.GoalID,
+			joinedRequest := candidateAdmission(AdmissionRequest{ControlRoot: fixture.request.ControlRoot, GoalID: fixture.request.GoalID,
 				GoalRevision: fixture.request.GoalRevision, AccountingRevision: fixture.request.AccountingRevision,
-				ComponentIdentities: map[string]string{"group-" + fixture.name: componentIdentity}}
+				ComponentIdentities: map[string]string{"group-" + fixture.name: componentIdentity}})
 			joinedDecision, decided, err := JoinedComponentDecisionLocked(joinedRequest)
 			if err == nil && decided {
 				err = &unexpectedJoinedDecisionError{}
