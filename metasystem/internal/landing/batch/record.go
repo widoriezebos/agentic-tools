@@ -13,11 +13,13 @@ type Claim struct {
 	Revision           uint64 `json:"revision"`
 	AccountingRevision uint64 `json:"accountingRevision"`
 }
+type runIDs []string
 type Unit struct {
 	GoalID string `json:"goalId"`
 	Chain  string `json:"chain"`
 	Claim  Claim  `json:"claim"`
 	State  string `json:"state"`
+	Gate   runIDs `json:"gate,omitempty"`
 }
 type HistoryEntry struct {
 	At     string `json:"at"`

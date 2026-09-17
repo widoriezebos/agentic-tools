@@ -36,6 +36,7 @@ var Rows = []Row{
 	{Code: "BATCH_UNAVAILABLE", Owner: "cmd/metasystem", Site: "landing_batch_verbs.go:29", Shape: Question},
 	{Code: "BATCH_CHAIN_CONFLICT", Owner: "internal/landing/batch", Site: "chain.go", Shape: Question},
 	{Code: "BATCH_GOAL_ELSEWHERE", Owner: "internal/landing/batch", Site: "join.go", Shape: Question},
+	{Code: "BATCH_JOIN_GATE_RED", Owner: "internal/landing/batch", Site: "gate.go", Shape: Question},
 	{Code: "BATCH_JOIN_CHAIN_NOT_IMPLEMENTATION", Owner: "internal/landing/batch", Site: "chain.go", Shape: Question},
 	{Code: "BATCH_JOIN_CHAIN_REQUIRED", Owner: "internal/landing/batch", Site: "chain.go", Shape: Question},
 	{Code: "BATCH_JOIN_CHAIN_REVISION_MOVED", Owner: "internal/landing/batch", Site: "chain.go", Shape: Question},
