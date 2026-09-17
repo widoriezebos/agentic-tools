@@ -261,7 +261,7 @@ func (attempt Attempt) CandidateTreeDigest() (string, bool) {
 	if attempt.TestResult != nil && validTreeDigest(attempt.TestResult.CandidateTree) {
 		return attempt.TestResult.CandidateTree, true
 	}
-	return proofIdentityCandidateTree(attempt.ProofIdentity)
+	return CandidateTreeFromProofIdentity(attempt.ProofIdentity)
 }
 
 type LaunchResult struct {
@@ -478,7 +478,7 @@ func validateAttempt(attempt Attempt) error {
 			return fmt.Errorf("proof attempt testing evidence names candidate tree %s, want %s", attempt.TestResult.CandidateTree, candidateTree)
 		}
 	}
-	if identityTree, ok := proofIdentityCandidateTree(attempt.ProofIdentity); ok {
+	if identityTree, ok := CandidateTreeFromProofIdentity(attempt.ProofIdentity); ok {
 		if candidateTree, candidateOK := attempt.CandidateTreeDigest(); candidateOK && candidateTree != identityTree {
 			return fmt.Errorf("proof attempt candidate tree %s disagrees with proof identity tree %s", candidateTree, identityTree)
 		}
@@ -847,18 +847,40 @@ func componentDecisionLocked(request AdmissionRequest) (*Attempt, LaunchResult, 
 
 const candidateTreeIdentityPrefix = "candidate-tree:"
 
-func proofIdentityCandidateTree(identity ProofIdentity) (string, bool) {
-	if identity.CommandClass != "testing" || len(identity.IdentityInputs) == 0 {
+// CandidateTreeFromProofIdentity returns a tree only when a testing identity
+// names one unambiguously. Tagged inputs supersede the legacy bare form.
+func CandidateTreeFromProofIdentity(identity ProofIdentity) (string, bool) {
+	if identity.CommandClass != "testing" {
 		return "", false
 	}
-	input := identity.IdentityInputs[0]
-	if validTreeDigest(input) {
-		return input, true
+	var taggedTree, bareTree string
+	var taggedCount, bareCount int
+	for _, input := range identity.IdentityInputs {
+		if strings.HasPrefix(input, candidateTreeIdentityPrefix) {
+			taggedCount++
+			candidate := strings.TrimPrefix(input, candidateTreeIdentityPrefix)
+			if validIdentityCandidateTree(candidate) {
+				taggedTree = candidate
+			}
+			continue
+		}
+		if validIdentityCandidateTree(input) {
+			bareCount++
+			bareTree = input
+		}
 	}
-	if tree := strings.TrimPrefix(input, candidateTreeIdentityPrefix); tree != input && validTreeDigest(tree) {
-		return tree, true
+	if taggedCount != 0 {
+		return taggedTree, taggedCount == 1 && taggedTree != ""
 	}
-	return "", false
+	return bareTree, bareCount == 1
+}
+
+func validIdentityCandidateTree(value string) bool {
+	if len(value) != 40 {
+		return false
+	}
+	_, err := hex.DecodeString(value)
+	return err == nil
 }
 
 func attemptCandidateTree(attempt Attempt) (string, bool) {

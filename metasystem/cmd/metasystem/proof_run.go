@@ -625,11 +625,9 @@ func proofAdmissionCandidateTree(request proofLaunchAdmission) string {
 	if validProofCandidateTree(request.CandidateTree) {
 		return request.CandidateTree
 	}
-	if len(request.IdentityInputs) != 0 {
-		candidate := strings.TrimPrefix(request.IdentityInputs[0], "candidate-tree:")
-		if validProofCandidateTree(candidate) {
-			return candidate
-		}
+	identity := proofrun.ProofIdentity{CommandClass: request.CommandClass, IdentityInputs: request.IdentityInputs}
+	if candidate, ok := proofrun.CandidateTreeFromProofIdentity(identity); ok {
+		return candidate
 	}
 	return ""
 }

@@ -23,7 +23,7 @@ func candidateAdmission(request AdmissionRequest) AdmissionRequest {
 	request.CandidateRevision = request.AccountingRevision
 	request.CandidateBudgetEpoch = request.BudgetEpoch
 	if request.Identity.CommandClass == "testing" && request.CandidateTree == "" {
-		if tree, ok := proofIdentityCandidateTree(request.Identity); ok {
+		if tree, ok := CandidateTreeFromProofIdentity(request.Identity); ok {
 			request.CandidateTree = tree
 		} else {
 			request.CandidateTree = strings.Repeat("b", 40)
@@ -425,6 +425,72 @@ func TestAttemptWithoutCandidateFieldsReadsAsToday(t *testing.T) {
 	}
 }
 
+func TestProofIdentityCandidateTreeFindsPrefixedInputAnywhere(t *testing.T) {
+	tree, bare := strings.Repeat("2", 40), strings.Repeat("1", 40)
+	identity := ProofIdentity{CommandClass: "testing", IdentityInputs: []string{
+		strings.Repeat("0", 64),
+		bare,
+		candidateTreeIdentityPrefix + tree,
+	}}
+	if got, ok := CandidateTreeFromProofIdentity(identity); !ok || got != tree {
+		t.Fatalf("prefixed candidate tree after a sorted digest = %q, %t", got, ok)
+	}
+
+	identity.IdentityInputs = append(identity.IdentityInputs, candidateTreeIdentityPrefix+strings.Repeat("3", 40))
+	if got, ok := CandidateTreeFromProofIdentity(identity); ok {
+		t.Fatalf("conflicting prefixed candidate trees produced %q", got)
+	}
+
+	identity.IdentityInputs = []string{bare, candidateTreeIdentityPrefix + "invalid"}
+	if got, ok := CandidateTreeFromProofIdentity(identity); ok {
+		t.Fatalf("bare fallback bypassed a malformed prefixed input with %q", got)
+	}
+}
+
+func TestProofIdentityCandidateTreeAcceptsOnlyOneBareLegacyTree(t *testing.T) {
+	tree := strings.Repeat("2", 40)
+	identity := ProofIdentity{CommandClass: "testing", IdentityInputs: []string{
+		strings.Repeat("0", 64),
+		tree,
+		"plan:legacy",
+	}}
+	if got, ok := CandidateTreeFromProofIdentity(identity); !ok || got != tree {
+		t.Fatalf("unique bare legacy candidate tree = %q, %t", got, ok)
+	}
+
+	identity.IdentityInputs = []string{tree, strings.Repeat("3", 40)}
+	if got, ok := CandidateTreeFromProofIdentity(identity); ok {
+		t.Fatalf("ambiguous bare legacy candidate trees produced %q", got)
+	}
+
+	identity.IdentityInputs = []string{strings.Repeat("4", 64)}
+	if got, ok := CandidateTreeFromProofIdentity(identity); ok {
+		t.Fatalf("64-hex identity digest produced candidate tree %q", got)
+	}
+}
+
+func TestSchemaThreeCandidateTreeIgnoresSortedIdentityDigests(t *testing.T) {
+	root, identity := proofAttemptFixture(t, "testing")
+	identity = BindIdentityInputs(identity, []string{
+		strings.Repeat("0", 64),
+		strings.Repeat("1", 64),
+	})
+	launcher, err := CurrentProcessIdentity(nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	now := time.Date(2026, 9, 18, 12, 0, 0, 0, time.UTC)
+	tree := strings.Repeat("2", 40)
+	attempt, decision, err := ReserveLocked(AdmissionRequest{
+		ControlRoot: root, ExecutionRoot: root, GoalID: "goal-a", GoalRevision: 2, AccountingRevision: 2,
+		CandidateGoalID: "goal-a", CandidateRevision: 2, CandidateTree: tree,
+		ReservedMinutes: 2, Identity: identity, Launcher: launcher, Now: now,
+	})
+	if err != nil || decision.Disposition != DispositionExecuted || attempt.CandidateTree != tree {
+		t.Fatalf("schema-3 attempt with sorted identity digests = %+v decision=%+v err=%v", attempt, decision, err)
+	}
+}
+
 func TestAttemptSchemaThreeCarriesTheCandidateTupleAtomically(t *testing.T) {
 	root, identity := proofAttemptFixture(t, "testing")
 	launcher, err := CurrentProcessIdentity(nil)
@@ -505,7 +571,8 @@ func TestCandidateTreeFieldsMustAgree(t *testing.T) {
 	}
 	withIdentity := attempt
 	withIdentity.ProofIdentity = BindIdentityInputs(identity, []string{candidateTreeIdentityPrefix + other})
-	if err := validateAttempt(withIdentity); err == nil || !strings.Contains(err.Error(), "disagrees") {
+	want := "proof attempt candidate tree " + tree + " disagrees with proof identity tree " + other
+	if err := validateAttempt(withIdentity); err == nil || err.Error() != want {
 		t.Fatalf("candidate field disagreed with identity without refusal: %v", err)
 	}
 	withResult := attempt

@@ -43,6 +43,17 @@ func candidateProofLaunchAdmission(request proofLaunchAdmission) proofLaunchAdmi
 	return request
 }
 
+func TestProofAdmissionCandidateTreeUsesProofIdentityAccessor(t *testing.T) {
+	tree := strings.Repeat("2", 40)
+	request := proofLaunchAdmission{CommandClass: "testing", IdentityInputs: []string{
+		strings.Repeat("0", 64),
+		"candidate-tree:" + tree,
+	}}
+	if got := proofAdmissionCandidateTree(request); got != tree {
+		t.Fatalf("proof admission candidate tree = %q, want %q", got, tree)
+	}
+}
+
 func TestProofRunWitnessStateUsesProbeAndFrozenEligibility(t *testing.T) {
 	root := t.TempDir()
 	if err := os.MkdirAll(filepath.Join(root, "internal"), 0o700); err != nil {
