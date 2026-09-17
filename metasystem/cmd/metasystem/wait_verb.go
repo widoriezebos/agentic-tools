@@ -26,6 +26,7 @@ import (
 
 var waitCallerPID = func() int64 { return int64(os.Getppid()) }
 var waitBootClock = identity.BootClock
+var waitPathStat = metarun.PathStat(os.Stat)
 var errChannelPollNotDue = errors.New("channel provider poll is not due")
 var waitOpenWorkSignature = report.OpenWorkSignature
 
@@ -128,6 +129,8 @@ func runWaitCommand(args []string, poll func(context.Context) error, callerPID i
 	runID := flags.String("run", "", "tracked run identifier")
 	attempt := flags.String("attempt", "", "proof attempt identifier")
 	goalID := flags.String("goal", "", "goal identifier")
+	path := flags.String("path", "", "absolute path to observe")
+	until := flags.String("until", "", "path condition: present or absent")
 	resume := flags.String("resume", "", "durable wait identifier")
 	event := flags.String("event", "", "goal event: landing or human-act")
 	after := flags.String("after", "", "accepted commit before the event")
@@ -146,13 +149,17 @@ func runWaitCommand(args []string, poll func(context.Context) error, callerPID i
 		}
 	})
 	selectors := 0
-	for _, value := range []string{*job, *runID, *attempt, *goalID, *resume} {
+	for _, value := range []string{*job, *runID, *attempt, *goalID, *path, *resume} {
 		if value != "" {
 			selectors++
 		}
 	}
 	if selectors != 1 {
-		fmt.Fprintln(os.Stderr, "wait requires exactly one of --job, --run, --attempt, --goal, or --resume")
+		fmt.Fprintln(os.Stderr, "wait requires exactly one of --job, --run, --attempt, --goal, --path, or --resume")
+		return metarun.ExitInvalidWait
+	}
+	if *resume == "" && *path == "" && *until != "" {
+		fmt.Fprintln(os.Stderr, "wait --until requires --path")
 		return metarun.ExitInvalidWait
 	}
 	if *timeout <= 0 || *timeout > 24*time.Hour {
@@ -173,13 +180,15 @@ func runWaitCommand(args []string, poll func(context.Context) error, callerPID i
 			if poll != nil {
 				selector.Poll = "channel"
 			}
+		case *path != "":
+			selector = metarun.WaitSelector{Kind: "path", TargetID: metarun.PathWaitTargetID(*path), Path: *path, Until: *until}
 		}
 		if err := metarun.ValidateWaitSelector(selector); err != nil {
 			fmt.Fprintln(os.Stderr, err)
 			return metarun.ExitInvalidWait
 		}
 	} else {
-		if *job != "" || *runID != "" || *attempt != "" || *goalID != "" || *event != "" || *after != "" || *verb != "" || *question != "" || *chain != "" {
+		if *job != "" || *runID != "" || *attempt != "" || *goalID != "" || *path != "" || *until != "" || *event != "" || *after != "" || *verb != "" || *question != "" || *chain != "" {
 			fmt.Fprintln(os.Stderr, "--resume accepts no replacement target, cursor, or event selector")
 			return metarun.ExitInvalidWait
 		}
@@ -333,6 +342,10 @@ func waitOptions(root string, selector metarun.WaitSelector, owner metarun.Calle
 	if err != nil {
 		return metarun.WaitOptions{}, err
 	}
+	openHintReceiver := metarun.OpenFIFOHintReceiver
+	if selector.Kind == "path" {
+		openHintReceiver = nil
+	}
 	observe := func(ctx context.Context, selected metarun.WaitSelector, pinned metarun.WaiterTarget, lastTip string) (metarun.SourceObservation, error) {
 		var observation metarun.SourceObservation
 		var observeErr error
@@ -345,6 +358,8 @@ func waitOptions(root string, selector metarun.WaitSelector, owner metarun.Calle
 			observation, observeErr = proofrun.ObserveAttempt(ctx, root, selected, pinned, lastTip)
 		case "goal":
 			observation, observeErr = goal.ObserveLedgerForWait(ctx, root, selected, pinned, lastTip, owner.OwnerLineage)
+		case "path":
+			observation, observeErr = metarun.ObservePath(ctx, selected, waitPathStat)
 		default:
 			return metarun.SourceObservation{}, fmt.Errorf("unknown wait source %q", selected.Kind)
 		}
@@ -359,14 +374,42 @@ func waitOptions(root string, selector metarun.WaitSelector, owner metarun.Calle
 		}
 		return observation, observeErr
 	}
+	openWorkSignature := func(ctx context.Context) (string, error) {
+		return waitOpenWorkSignature(ctx, root)
+	}
+	actionable := func(ctx context.Context, row metarun.Waiter) (string, bool, error) {
+		select {
+		case <-ctx.Done():
+			return "", false, ctx.Err()
+		default:
+		}
+		holder, err := waitCurrentHolder(ctx, root)
+		if err != nil {
+			return "", false, fmt.Errorf("the checkout wait owner can no longer be verified: %w", err)
+		}
+		claimEpochChanged := row.ClaimEpoch == nil || holder.ClaimEpoch != *row.ClaimEpoch
+		if holder.MainId != row.MainId || holder.OwnerLineage != row.OwnerLineage || claimEpochChanged {
+			return "the checkout wait owner changed", true, nil
+		}
+		signature, err := waitOpenWorkSignature(ctx, root)
+		if err != nil {
+			return "", false, err
+		}
+		if signature != row.OpenWorkSignature {
+			return "the open-work signature changed", true, nil
+		}
+		return "", false, nil
+	}
+	if selector.Kind == "path" {
+		openWorkSignature = func(context.Context) (string, error) { return "", nil }
+		actionable = nil
+	}
 	return metarun.WaitOptions{
-		Runtime:          runtimeName,
-		Observe:          observe,
-		OpenHintReceiver: metarun.OpenFIFOHintReceiver,
-		OpenWorkSignature: func(ctx context.Context) (string, error) {
-			return waitOpenWorkSignature(ctx, root)
-		},
-		BootClock: waitBootClock,
+		Runtime:           runtimeName,
+		Observe:           observe,
+		OpenHintReceiver:  openHintReceiver,
+		OpenWorkSignature: openWorkSignature,
+		BootClock:         waitBootClock,
 		Deliver: func(ctx context.Context, waitID, nonce string, deadline time.Time, session string) (string, bool, error) {
 			answer, err := adapter.DeliverWait(ctx, adapterPath, adapter.WaitDeliveryRequest{WaitID: waitID, Nonce: nonce, Deadline: deadline, Session: session})
 			if errors.Is(err, adapter.ErrWaitDeliveryDeclined) {
@@ -377,29 +420,7 @@ func waitOptions(root string, selector metarun.WaitSelector, owner metarun.Calle
 			}
 			return answer, false, err
 		},
-		Actionable: func(ctx context.Context, row metarun.Waiter) (string, bool, error) {
-			select {
-			case <-ctx.Done():
-				return "", false, ctx.Err()
-			default:
-			}
-			holder, err := waitCurrentHolder(ctx, root)
-			if err != nil {
-				return "", false, fmt.Errorf("the checkout wait owner can no longer be verified: %w", err)
-			}
-			claimEpochChanged := row.ClaimEpoch == nil || holder.ClaimEpoch != *row.ClaimEpoch
-			if holder.MainId != row.MainId || holder.OwnerLineage != row.OwnerLineage || claimEpochChanged {
-				return "the checkout wait owner changed", true, nil
-			}
-			openWorkSignature, err := waitOpenWorkSignature(ctx, root)
-			if err != nil {
-				return "", false, err
-			}
-			if openWorkSignature != row.OpenWorkSignature {
-				return "the open-work signature changed", true, nil
-			}
-			return "", false, nil
-		},
+		Actionable: actionable,
 	}, nil
 }
 

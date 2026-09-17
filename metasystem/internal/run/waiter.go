@@ -60,6 +60,8 @@ type WaiterTarget struct {
 type WaitSelector struct {
 	Kind     string `json:"kind"`
 	TargetID string `json:"targetId"`
+	Path     string `json:"path,omitempty"`
+	Until    string `json:"until,omitempty"`
 	GoalID   string `json:"goalId,omitempty"`
 	Event    string `json:"event,omitempty"`
 	After    string `json:"after,omitempty"`
@@ -435,13 +437,31 @@ func ValidWaitID(value string) bool { return nonceRe.MatchString(value) }
 // classification, so malformed input cannot be mistaken for an authority
 // refusal.
 func ValidateWaitSelector(selector WaitSelector) error {
-	if selector.Kind != "job" && selector.Kind != "run" && selector.Kind != "attempt" && selector.Kind != "goal" {
-		return fmt.Errorf("wait needs a job, run, attempt, or goal selector")
+	if selector.Kind != "job" && selector.Kind != "run" && selector.Kind != "attempt" && selector.Kind != "goal" && selector.Kind != "path" {
+		return fmt.Errorf("wait needs a job, run, attempt, goal, or path selector")
 	}
 	if !waitIdentifierRe.MatchString(selector.TargetID) {
 		return fmt.Errorf("wait target identifier is invalid")
 	}
-	if selector.Kind == "goal" {
+	if selector.Kind == "path" {
+		if selector.Path == "" || !filepath.IsAbs(selector.Path) {
+			return fmt.Errorf("wait path must be absolute")
+		}
+		if filepath.Clean(selector.Path) != selector.Path {
+			return fmt.Errorf("wait path must be clean")
+		}
+		if selector.Until != "present" && selector.Until != "absent" {
+			return fmt.Errorf("wait path --until must be present or absent")
+		}
+		if selector.TargetID != PathWaitTargetID(selector.Path) {
+			return fmt.Errorf("wait path target identifier does not match the cleaned path")
+		}
+		if selector.GoalID != "" || selector.Event != "" || selector.After != "" || selector.Verb != "" || selector.Question != "" || selector.Chain != "" || selector.Poll != "" {
+			return fmt.Errorf("ledger event arguments apply only to goal waits")
+		}
+	} else if selector.Path != "" || selector.Until != "" {
+		return fmt.Errorf("path wait arguments apply only to path waits")
+	} else if selector.Kind == "goal" {
 		if selector.GoalID == "" || selector.GoalID != selector.TargetID {
 			return fmt.Errorf("goal wait requires one matching goal identifier")
 		}
@@ -632,7 +652,7 @@ func (s *Store) initialObservation(ctx context.Context, selector WaitSelector, o
 	}
 	readCtx, cancel := context.WithTimeout(ctx, remaining)
 	defer cancel()
-	return options.Observe(readCtx, selector, WaiterTarget{}, selector.After)
+	return readWaitSource(readCtx, selector, WaiterTarget{}, selector.After, options)
 }
 
 func (s *Store) observe(ctx context.Context, row Waiter, options WaitOptions, deadline time.Time) (SourceObservation, error) {
@@ -645,8 +665,18 @@ func (s *Store) observe(ctx context.Context, row Waiter, options WaitOptions, de
 	}
 	readCtx, cancel := context.WithTimeout(ctx, remaining)
 	defer cancel()
-	return options.Observe(readCtx, row.Selector, row.Target, row.LastCheckedTip)
+	return readWaitSource(readCtx, row.Selector, row.Target, row.LastCheckedTip, options)
 }
+
+func readWaitSource(ctx context.Context, selector WaitSelector, pinned WaiterTarget, lastTip string, options WaitOptions) (SourceObservation, error) {
+	observation, err := options.Observe(ctx, selector, pinned, lastTip)
+	if observation.PollError != "" && observation.PollAt == "" {
+		observation.PollAt = options.Now().UTC().Format(time.RFC3339Nano)
+	}
+	return observation, err
+}
+
+func waitSelectorHasIncarnation(selector WaitSelector) bool { return selector.Kind != "path" }
 
 func deliverBeforeDeadline(ctx context.Context, deadline time.Time, options WaitOptions, waitID, nonce, session string) (string, bool, error) {
 	remaining := deadline.Sub(options.Now())
@@ -989,7 +1019,7 @@ func (s *Store) Wait(ctx context.Context, request WaitRequest, options WaitOptio
 	if initial.Temporary {
 		return waitResult(baseRow, ExitWaiterIO, "failed", "the wait source could not provide an initial successful observation", "transport-failure", "", initial.LedgerTip, "", registeredAt)
 	}
-	if initial.Incarnation == (WaiterTarget{}) {
+	if waitSelectorHasIncarnation(request.Selector) && initial.Incarnation == (WaiterTarget{}) {
 		code := initial.ExitCode
 		if code == 0 {
 			code = ExitNoRecord
@@ -1283,7 +1313,7 @@ func (s *Store) replaySavedWait(ctx context.Context, row Waiter, options WaitOpt
 	}
 	floor := replayObservationFloor(row)
 	validationCtx, cancel := context.WithTimeout(ctx, 10*time.Second)
-	observation, observeErr := options.Observe(validationCtx, row.Selector, row.Target, floor)
+	observation, observeErr := readWaitSource(validationCtx, row.Selector, row.Target, floor, options)
 	cancel()
 	if observeErr != nil || observation.Temporary {
 		if errors.Is(ctx.Err(), context.Canceled) {
@@ -1332,7 +1362,7 @@ func (s *Store) renewSavedWait(ctx context.Context, rowPath string, row Waiter, 
 	// registration or renewal that matched its event and then ended before
 	// publishing never advanced that tip past the event, so the event is
 	// still above the floor here.
-	initial, observeErr := options.Observe(readCtx, row.Selector, WaiterTarget{}, row.LastCheckedTip)
+	initial, observeErr := readWaitSource(readCtx, row.Selector, WaiterTarget{}, row.LastCheckedTip, options)
 	cancel()
 	initialStamps := observedAfterRead(options, !initial.Pending)
 	if ctx.Err() != nil {
@@ -1345,7 +1375,7 @@ func (s *Store) renewSavedWait(ctx context.Context, rowPath string, row Waiter, 
 		}
 		return waitResult(row, ExitWaiterIO, "failed", reason, "transport-failure", "", row.LastCheckedTip, "", options.Now())
 	}
-	if initial.Incarnation == (WaiterTarget{}) {
+	if waitSelectorHasIncarnation(row.Selector) && initial.Incarnation == (WaiterTarget{}) {
 		code := initial.ExitCode
 		if code == 0 {
 			code = ExitNoRecord

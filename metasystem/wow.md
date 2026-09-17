@@ -14,6 +14,7 @@ The single routing layer. `AGENTS.md` owns always-on behavior; this table owns w
 | Code and design standards | `docs/design/design-principles.md` | Any non-trivial code, design, refactor, or consequential change |
 | Completion check and design proof | `docs/design/design-obligation-gate.md` | Finishing any change; full matrix on its listed triggers |
 | End-to-end verification | `skills/verify/SKILL.md` | A change claims to work and can be run |
+| Waiting without model polling | `metasystem wait` | Waiting for a job, run, attempt, goal, or path |
 | Adversarial design critique | `skills/design-critique/SKILL.md` | A design is ready to attack, or a critique loop needs a stop decision |
 | Two-layer implementation critique | `skills/code-critique/SKILL.md` | Implemented work needs conformance review against its brief and diff, then defect review |
 | Behavior-preserving refactor | `skills/refactor/SKILL.md` | Restructuring or cleanup whose contract is unchanged behavior |

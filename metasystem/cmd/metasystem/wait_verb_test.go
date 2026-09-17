@@ -32,6 +32,18 @@ type waitCommandProber struct {
 	start int64
 }
 
+type waitPathFileInfo struct {
+	size     int64
+	modified time.Time
+}
+
+func (info waitPathFileInfo) Name() string       { return "result" }
+func (info waitPathFileInfo) Size() int64        { return info.size }
+func (info waitPathFileInfo) Mode() os.FileMode  { return 0o600 }
+func (info waitPathFileInfo) ModTime() time.Time { return info.modified }
+func (info waitPathFileInfo) IsDir() bool        { return false }
+func (info waitPathFileInfo) Sys() any           { return nil }
+
 func announcedMainID(t *testing.T, path string) string {
 	t.Helper()
 	data, err := os.ReadFile(path)
@@ -86,6 +98,62 @@ func TestWaitVerbArgumentsAndResult(t *testing.T) {
 	_, plain, _ := captureChannelOutput(t, func() int { printWaitResult(result, false); return 0 })
 	if strings.Count(strings.TrimSpace(plain), "\n") != 0 || !strings.Contains(plain, "run-a") || !strings.Contains(plain, "run:run-a:g2:n") {
 		t.Fatalf("plain result is not one complete line: %q", plain)
+	}
+}
+
+func TestWaitPathSelectorIsValidated(t *testing.T) {
+	clean := filepath.Join(string(filepath.Separator), "tmp", "metasystem-path-selector")
+	dirty := clean + string(filepath.Separator) + ".." + string(filepath.Separator) + filepath.Base(clean)
+	cases := []struct {
+		name string
+		args []string
+		want string
+	}{
+		{name: "path is one selector", args: []string{"--path", clean, "--until", "present", "--job", "job-a"}, want: "exactly one"},
+		{name: "path is absolute", args: []string{"--path", "relative", "--until", "present"}, want: "absolute"},
+		{name: "path is clean", args: []string{"--path", dirty, "--until", "present"}, want: "clean"},
+		{name: "until is known", args: []string{"--path", clean, "--until", "ready"}, want: "present or absent"},
+		{name: "until is required", args: []string{"--path", clean}, want: "--until"},
+		{name: "until needs path", args: []string{"--job", "job-a", "--until", "present"}, want: "--until requires --path"},
+		{name: "resume replaces no path fields", args: []string{"--resume", strings.Repeat("a", 32), "--until", "present"}, want: "replacement"},
+	}
+	for _, test := range cases {
+		t.Run(test.name, func(t *testing.T) {
+			code, _, problem := captureChannelOutput(t, func() int { return runWait(test.args) })
+			if code != metarun.ExitInvalidWait || !strings.Contains(problem, test.want) {
+				t.Fatalf("code=%d stderr=%q want=%q", code, problem, test.want)
+			}
+		})
+	}
+	selector := metarun.WaitSelector{Kind: "path", TargetID: metarun.PathWaitTargetID(clean), Path: clean, Until: "absent"}
+	if err := metarun.ValidateWaitSelector(selector); err != nil {
+		t.Fatalf("valid path selector: %v", err)
+	}
+	originalAdapter, originalStat, originalSignature := waitAdapterPathForRuntime, waitPathStat, waitOpenWorkSignature
+	waitAdapterPathForRuntime = func(string, string) (string, error) { return "/unused/fake-adapter", nil }
+	waitPathStat = func(string) (os.FileInfo, error) {
+		return waitPathFileInfo{size: 4, modified: time.Date(2026, 9, 17, 10, 0, 0, 0, time.UTC)}, nil
+	}
+	waitOpenWorkSignature = func(context.Context, string) (string, error) {
+		t.Fatal("path options read the open-work signature")
+		return "", nil
+	}
+	t.Cleanup(func() {
+		waitAdapterPathForRuntime = originalAdapter
+		waitPathStat = originalStat
+		waitOpenWorkSignature = originalSignature
+	})
+	selector.Until = "present"
+	options, err := waitOptions(t.TempDir(), selector, metarun.Caller{}, "fake", nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	observation, err := options.Observe(context.Background(), selector, metarun.WaiterTarget{}, "")
+	if err != nil || observation.Pending || observation.Evidence == "" || options.OpenHintReceiver != nil || options.Actionable != nil {
+		t.Fatalf("path options observation=%+v hint=%t actionable=%t err=%v", observation, options.OpenHintReceiver != nil, options.Actionable != nil, err)
+	}
+	if signature, err := options.OpenWorkSignature(context.Background()); err != nil || signature != "" {
+		t.Fatalf("path open-work baseline=%q err=%v", signature, err)
 	}
 }
 

@@ -775,7 +775,7 @@ func usage() {
 	fmt.Fprintln(os.Stderr, "       metasystem health acknowledge-alert --episode <id> [--repo <checkout>]")
 	fmt.Fprintln(os.Stderr, "       metasystem watch [--root <checkout>] [--json]")
 	fmt.Fprintln(os.Stderr, "       metasystem watch --job <id> [--root <checkout>] [--poll-ms <milliseconds>]")
-	fmt.Fprintln(os.Stderr, "       metasystem wait (--job <id>|--run <id>|--attempt <id>|--goal <id>|--resume <wait-id>) [--timeout <duration>] [--json]")
+	fmt.Fprintln(os.Stderr, "       metasystem wait (--job <id>|--run <id>|--attempt <id>|--goal <id>|--path <absolute-path> --until <present|absent>|--resume <wait-id>) [--timeout <duration>] [--json]")
 	fmt.Fprintln(os.Stderr, "       metasystem delegate --role <role> --brief <file> --goal <id|none-explicit> --destructive-reach <class> [--op <id>]")
 	fmt.Fprintln(os.Stderr, "       metasystem delegate --follow-up <job> --brief <file>")
 	fmt.Fprintln(os.Stderr, "       metasystem delegate --cancel <job>")
