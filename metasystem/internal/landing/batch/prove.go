@@ -24,6 +24,7 @@ type Proof struct {
 	Sample          proofrun.LoadSample `json:"sample"`
 	Launchers       int                 `json:"launchers"`
 	Executions      []string            `json:"executions,omitempty"`
+	Passed          []string            `json:"passed,omitempty"`
 	Reuse           map[string]string   `json:"reuse,omitempty"`
 	GroupIdentities map[string]string   `json:"groupIdentities,omitempty"`
 	RedGroups       []RedGroup          `json:"redGroups,omitempty"`
@@ -110,6 +111,9 @@ func FinishProof(store Store, id, actor string, result proofrun.TestResult, laun
 			}
 			if group.NativeLaunched {
 				record.Proof.Executions = append(record.Proof.Executions, group.ID)
+				if group.Status == "passed" {
+					record.Proof.Passed = append(record.Proof.Passed, group.ID)
+				}
 			}
 			if group.ReuseAttempt != "" {
 				if record.Proof.Reuse == nil {

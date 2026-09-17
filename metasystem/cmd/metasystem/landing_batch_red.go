@@ -1,6 +1,7 @@
 package main
 
 import (
+	"errors"
 	"fmt"
 	"os"
 	"os/exec"
@@ -21,6 +22,7 @@ func init() {
 }
 
 var productionTrunkRedLedgerOwner = func(string) batch.LedgerOwner { return batch.UnboundLedgerOwner{} }
+var batchDiagnosticLauncher = launchBatchDiagnostic
 
 func executeBatchDiagnosis(root, id, actor string, at time.Time) error {
 	store := batch.NewStore(root, nil)
@@ -36,11 +38,21 @@ func executeBatchDiagnosis(root, id, actor string, at time.Time) error {
 	if err != nil {
 		return err
 	}
+	machine, err := goal.ResolveMachine(root)
+	if err != nil {
+		return err
+	}
 	return batch.DiagnoseRed(store, id, actor, record.Proof.RedGroups, "", at, batch.RedSeams{
 		Run: func(request batch.DiagnosticRequest) (batch.DiagnosticResult, error) {
-			return launchBatchDiagnostic(root, id, request)
+			return batchDiagnosticLauncher(root, id, request)
 		},
-		MintOpid:   func() (string, error) { return goal.NewOperationULID() },
+		MintOpid: func() (string, error) {
+			ulid, err := goal.NewOperationULID()
+			if err != nil {
+				return "", err
+			}
+			return goal.Opid(ulid, machine, landingOwnerLineage), nil
+		},
 		Ledger:     productionTrunkRedLedgerOwner(root),
 		BaseCommit: baseCommit,
 		UpdateNext: func(goalID, status string) error {
@@ -81,14 +93,20 @@ func launchBatchDiagnostic(root, batchID string, request batch.DiagnosticRequest
 		return batch.DiagnosticResult{}, err
 	}
 	resultPath := filepath.Join(root, "artifacts", "agents", "proof-runs", "batch", batchID+"-diagnostic.json")
+	if err := os.Remove(resultPath); err != nil && !errors.Is(err, os.ErrNotExist) {
+		return batch.DiagnosticResult{}, err
+	}
 	args := batchDiagnosticArgs(root, request, resultPath)
 	output, status, runErr := batchDiagnosticExecute(binary, args, root, append(gittree.ScrubbedEnviron(), "METASYSTEM_OWNER_LINEAGE="+landingOwnerLineage))
 	if runErr != nil && status == proofrun.ExitAdmissionRefused {
 		return batch.DiagnosticResult{}, &batch.DiagnosticRefusal{Status: strings.TrimSpace(string(output))}
 	}
 	var result proofrun.TestResult
-	if err := readStrictJSON(resultPath, &result); err != nil {
-		return batch.DiagnosticResult{}, err
+	if readErr := readStrictJSON(resultPath, &result); readErr != nil {
+		if runErr != nil {
+			return batch.DiagnosticResult{}, fmt.Errorf("batch diagnostic: %s: %w", strings.TrimSpace(string(output)), errors.Join(runErr, readErr))
+		}
+		return batch.DiagnosticResult{}, readErr
 	}
 	diagnostic := batch.DiagnosticResult{AttemptID: result.AttemptID}
 	for _, group := range result.Groups {

@@ -160,6 +160,26 @@ func TestBatchOwnerRecordsHeldTrunkRed(t *testing.T) {
 	})
 }
 
+func TestBatchOwnerResumesLandingAfterTrunkRedClearError(t *testing.T) {
+	record := ownerRecord(testBatchID, StateLanding, time.Unix(1, 0))
+	record.Proof = &Proof{Status: "green", BaseCommit: "next-commit"}
+	bed := newOwnerBed(t, record, time.Unix(2, 0))
+	ledger := &clearingLedger{openErr: os.ErrPermission}
+	bed.store = bed.store.WithLedgerOwner(ledger)
+	bed.owner.store = bed.store
+	var reported error
+	bed.owner.report = func(id string, err error) {
+		if id != testBatchID {
+			t.Fatalf("reported batch=%q", id)
+		}
+		reported = err
+	}
+	must(t, bed.owner.Tick(testBatchID))
+	if bed.launches != 1 || reported == nil || !strings.Contains(reported.Error(), os.ErrPermission.Error()) {
+		t.Fatalf("launches=%d reported=%v", bed.launches, reported)
+	}
+}
+
 func TestBatchOwnerLaunchesAtMaximumWait(t *testing.T) {
 	witness(t, !strings.Contains(string(contents(t, "owner.go")), "time.Now("), "owner reads the wall clock")
 	joined := time.Date(2030, 1, 1, 0, 0, 0, 0, time.UTC)

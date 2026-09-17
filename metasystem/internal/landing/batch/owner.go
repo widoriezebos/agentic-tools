@@ -115,7 +115,7 @@ func (owner *Owner) Tick(id string) error {
 	if record.State == StateLanding {
 		if _, unbound := owner.store.LedgerOwner().(UnboundLedgerOwner); !unbound {
 			if err := clearGreenTipEntries(record.Proof, trunkRedClearSeams{mint: owner.mint, ledger: owner.store.LedgerOwner(), descendsFrom: owner.descendsFrom}); err != nil {
-				return err
+				owner.report(id, fmt.Errorf("clear green tip trunk-red entries: %w", err))
 			}
 		}
 	}

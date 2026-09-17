@@ -3,6 +3,7 @@ package batch
 import (
 	"fmt"
 	"slices"
+	"strings"
 	"time"
 )
 
@@ -36,7 +37,15 @@ func reopenHeldAfterDiagnostic(store Store, id, newBaseTree, newBaseCommit, acto
 	if err != nil {
 		return err
 	}
+	refs := record.TrunkRed.Entries
 	if !result.Green() {
+		refs = slices.DeleteFunc(slices.Clone(refs), func(ref EntryRef) bool {
+			return slices.ContainsFunc(result.Groups, func(group RedGroup) bool { return group.ID == ref.Group })
+		})
+		cleared, err := clearHeldTrunkRedEntries(refs, result, newBaseTree, newBaseCommit, seams)
+		if err != nil || !cleared {
+			return err
+		}
 		opid, err := seams.mint()
 		if err != nil {
 			return err
@@ -61,40 +70,59 @@ func reopenHeldAfterDiagnostic(store Store, id, newBaseTree, newBaseCommit, acto
 	if err != nil {
 		return err
 	}
+	cleared, err := clearHeldTrunkRedEntries(refs, result, newBaseTree, newBaseCommit, seams)
+	if err != nil || !cleared {
+		return err
+	}
+	return applyHeldReopen(store, id, newBaseTree, actor, at, prepared)
+}
+
+func clearHeldTrunkRedEntries(refs []EntryRef, result DiagnosticResult, newBaseTree, newBaseCommit string, seams trunkRedClearSeams) (bool, error) {
+	if len(refs) == 0 {
+		return true, nil
+	}
 	open, err := seams.ledger.Open()
 	if err != nil {
-		return err
+		return false, err
 	}
 	byID := make(map[string]OpenEntry, len(open))
 	for _, entry := range open {
 		byID[entry.ID] = entry
 	}
-	for _, ref := range record.TrunkRed.Entries {
+	for _, ref := range refs {
 		entry, found := byID[ref.ID]
-		if !found || entry.Group != ref.Group {
-			return fmt.Errorf("held trunk-red entry %s is not open", ref.ID)
+		if !found {
+			continue
+		}
+		if entry.Group != ref.Group {
+			return false, fmt.Errorf("held trunk-red entry %s has group %s, want %s", ref.ID, entry.Group, ref.Group)
 		}
 		if entry.LastBaseCommit == newBaseCommit {
-			return nil
+			return false, nil
 		}
 		descends, err := seams.descendsFrom(newBaseCommit, entry.LastBaseCommit)
 		if err != nil {
-			return err
+			return false, err
 		}
 		if !descends {
-			return nil
+			return false, nil
 		}
 	}
-	for _, ref := range record.TrunkRed.Entries {
+	for _, ref := range refs {
+		if _, found := byID[ref.ID]; !found {
+			continue
+		}
 		opid, err := seams.mint()
 		if err != nil {
-			return err
+			return false, err
 		}
 		if err := seams.ledger.Clear(opid, ref, Green{AttemptID: result.AttemptID, BaseCommit: newBaseCommit, BaseTree: newBaseTree, Group: ref.Group}); err != nil {
-			return err
+			if !strings.HasPrefix(err.Error(), "TRUNK_RED_CLOSED:") {
+				return false, err
+			}
 		}
 	}
-	return applyHeldReopen(store, id, newBaseTree, actor, at, prepared)
+	return true, nil
 }
 
 func clearGreenTipEntries(proof *Proof, seams trunkRedClearSeams) error {
@@ -106,7 +134,7 @@ func clearGreenTipEntries(proof *Proof, seams trunkRedClearSeams) error {
 		return err
 	}
 	for _, entry := range open {
-		if len(entry.Holds) != 0 || !slices.Contains(proof.Executions, entry.Group) || entry.LastBaseCommit == proof.BaseCommit {
+		if len(entry.Holds) != 0 || !slices.Contains(proof.Passed, entry.Group) || entry.LastBaseCommit == proof.BaseCommit {
 			continue
 		}
 		descends, err := seams.descendsFrom(proof.BaseCommit, entry.LastBaseCommit)

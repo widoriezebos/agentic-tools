@@ -119,12 +119,14 @@ func TestLedgerTrunkRedOwnerClearClassifiesFixCommit(t *testing.T) {
 		merged      bool
 		unreadable  bool
 		packed      bool
+		commitGraph bool
 		branchState string
 	}{
 		{name: "merged", merged: true, branchState: goal.TrunkRedBranchMerged},
 		{name: "present but not merged", branchState: goal.TrunkRedBranchOpen},
 		{name: "unreadable", merged: true, unreadable: true},
 		{name: "unreadable pack", merged: true, unreadable: true, packed: true},
+		{name: "unreadable pack commit graph", merged: true, unreadable: true, packed: true, commitGraph: true},
 	}
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
@@ -176,6 +178,10 @@ func TestLedgerTrunkRedOwnerClearClassifiesFixCommit(t *testing.T) {
 					if err := os.Remove(filepath.Join(root, ".git", "objects", fixCommit[:2], fixCommit[2:])); err != nil {
 						t.Fatal(err)
 					}
+					if test.commitGraph {
+						goalSyncMutationGit(t, root, "update-ref", "refs/probe/green", greenCommit)
+						goalSyncMutationGit(t, root, "commit-graph", "write", "--reachable")
+					}
 					if err := os.Chmod(indexPath, 0); err != nil {
 						t.Fatal(err)
 					}
@@ -192,7 +198,7 @@ func TestLedgerTrunkRedOwnerClearClassifiesFixCommit(t *testing.T) {
 			err = owner.Clear(clearOpid, refs[0], batch.Green{AttemptID: "attempt-green", BaseCommit: greenCommit, BaseTree: tree, Group: "fast"})
 			if test.unreadable {
 				open, openErr := owner.Open()
-				if err == nil || openErr != nil || len(open) != 1 {
+				if err == nil || !strings.Contains(err.Error(), fixCommit) || openErr != nil || len(open) != 1 {
 					t.Fatalf("unreadable fix commit: clear error=%v open=%+v open error=%v", err, open, openErr)
 				}
 				return

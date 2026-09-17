@@ -97,7 +97,7 @@ func (owner ledgerTrunkRedOwner) Clear(opid string, ref batch.EntryRef, green ba
 		if objectErr != nil {
 			var exit *exec.ExitError
 			if errors.As(objectErr, &exit) && exit.ExitCode() == 1 {
-				if _, historyErr := goalBranchGit(owner.endpoint.Root, "rev-list", "--quiet", green.BaseCommit); historyErr != nil {
+				if _, historyErr := goalBranchGit(owner.endpoint.Root, "-c", "core.commitGraph=false", "rev-list", "--quiet", green.BaseCommit); historyErr != nil {
 					return historyErr
 				}
 				break
