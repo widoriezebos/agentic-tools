@@ -412,6 +412,9 @@ func validateAttempt(attempt Attempt) error {
 		if attempt.TestResult.AttemptID != attempt.AttemptID {
 			return fmt.Errorf("proof attempt testing evidence names a different attempt")
 		}
+		if candidateTree, ok := proofIdentityCandidateTree(attempt.ProofIdentity); ok && candidateTree != attempt.TestResult.CandidateTree {
+			return fmt.Errorf("proof attempt testing evidence names candidate tree %s, want %s", attempt.TestResult.CandidateTree, candidateTree)
+		}
 	}
 	if err := validateProofIdentity(attempt.ProofIdentity); err != nil {
 		return err
@@ -660,6 +663,7 @@ func componentDecisionLocked(request AdmissionRequest) (*Attempt, LaunchResult, 
 		attempt Attempt
 		state   string
 	}
+	requestTree, requestTreeKnown := proofIdentityCandidateTree(request.Identity)
 	latest := map[string]componentObservation{}
 	for index := range attempts {
 		candidate := attempts[index]
@@ -690,11 +694,14 @@ func componentDecisionLocked(request AdmissionRequest) (*Attempt, LaunchResult, 
 					if group.ID != id || group.ExecutionIdentity != identity {
 						continue
 					}
-					if candidate.Terminal.Result == TerminalSuccess && (group.Status == "passed" || group.Status == "reused") && group.CollectionComplete {
+					if (group.Status == "passed" || group.Status == "reused") && group.CollectionComplete {
 						state = "success"
 					}
 					break
 				}
+			}
+			if state == "failed" && !failureBelongsToCandidate(candidate, requestTree, requestTreeKnown) {
+				continue
 			}
 			latest[id] = componentObservation{attempt: candidate, state: state}
 		}
@@ -733,6 +740,32 @@ func componentDecisionLocked(request AdmissionRequest) (*Attempt, LaunchResult, 
 			EvidencePath: attemptsDir(request.ControlRoot), ExitStatus: ExitReusableSuccess}, true, nil
 	}
 	return nil, LaunchResult{}, false, nil
+}
+
+const candidateTreeIdentityPrefix = "candidate-tree:"
+
+func proofIdentityCandidateTree(identity ProofIdentity) (string, bool) {
+	for _, input := range identity.IdentityInputs {
+		if tree := strings.TrimPrefix(input, candidateTreeIdentityPrefix); tree != input && validTreeDigest(tree) {
+			return tree, true
+		}
+	}
+	return "", false
+}
+
+func attemptCandidateTree(attempt Attempt) (string, bool) {
+	if attempt.TestResult != nil && validTreeDigest(attempt.TestResult.CandidateTree) {
+		return attempt.TestResult.CandidateTree, true
+	}
+	return proofIdentityCandidateTree(attempt.ProofIdentity)
+}
+
+func failureBelongsToCandidate(attempt Attempt, requestTree string, requestTreeKnown bool) bool {
+	if !requestTreeKnown {
+		return true
+	}
+	attemptTree, attemptTreeKnown := attemptCandidateTree(attempt)
+	return !attemptTreeKnown || attemptTree == requestTree
 }
 
 func componentInputs(inputs []string) map[string]string {

@@ -63,6 +63,9 @@ type TestRunRequest struct {
 	// Concurrency bounds how many groups of one stage run at once; zero or
 	// one runs them in plan order, one after another.
 	Concurrency int
+	// AllGroups keeps a delivery run collecting after a failed group. Other
+	// purposes already collect every selected group.
+	AllGroups bool `json:",omitempty"`
 }
 
 // PreparedGroupExecution is immutable metadata collected once before
@@ -94,11 +97,11 @@ func RunTestPlan(ctx context.Context, request TestRunRequest) (TestResult, int, 
 	}
 	firstStatus := 0
 	progress := &progressWriter{path: request.ProgressPath}
-	// A delivery attempt cannot become sufficient once one group failed, so
-	// it stops launching at the first failure and records the rest as not
-	// run (R-96-m1e); cadence and diagnostic attempts keep continue-and-
-	// collect (R-16), because they exist to see every failure.
-	stopAtFirstFailure := request.Plan.Purpose == testpolicy.PurposeDelivery
+	// Delivery normally stops launching at the first failure and records the
+	// rest as not run (R-96-m1e). A caller collecting a complete failure set
+	// opts into all groups; cadence and diagnostic already continue because
+	// they exist to see every failure (R-16).
+	stopAtFirstFailure := request.Plan.Purpose == testpolicy.PurposeDelivery && !request.AllGroups
 	haltedBy := ""
 	for _, stage := range request.Plan.Stages {
 		var runnable []string
@@ -173,11 +176,21 @@ func RunTestPlan(ctx context.Context, request TestRunRequest) (TestResult, int, 
 	result.Cost.ActualDurationMS, result.Cost.ChildDurationMS = result.DurationMS, result.ChildDurationMS
 	result.Cost.ExecutionDurationMS = time.Since(workerStarted).Milliseconds()
 	result.Cost.ReusedLaunches = result.LaunchCounts.ReusedTest + result.LaunchCounts.ReusedBuild + result.LaunchCounts.ReusedOther
+	result.StoppedAtFirstFailure = stoppedAtFirstFailure(result.Groups)
 	result.RecomputeDelivery()
 	if request.Plan.Purpose == testpolicy.PurposeDelivery && !result.Delivery.Sufficient && firstStatus == 0 {
 		firstStatus = 1
 	}
 	return result, firstStatus, nil
+}
+
+func stoppedAtFirstFailure(groups []GroupResult) bool {
+	for _, group := range groups {
+		if group.Status == "not-run" && strings.HasPrefix(group.NotRunReason, "delivery attempt stopped at the first failed group ") {
+			return true
+		}
+	}
+	return false
 }
 
 // haltReason is the not-run reason of every group a delivery attempt left

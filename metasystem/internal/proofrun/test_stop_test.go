@@ -2,6 +2,7 @@ package proofrun
 
 import (
 	"context"
+	"encoding/json"
 	"path/filepath"
 	"strings"
 	"testing"
@@ -10,10 +11,28 @@ import (
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/testpolicy"
 )
 
+func TestDefaultTestRunRequestOmitsAllGroupsForPreviousWorker(t *testing.T) {
+	encoded, err := json.Marshal(TestRunRequest{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if strings.Contains(string(encoded), "AllGroups") {
+		t.Fatalf("default worker packet exposes the new field to a previous strict worker: %s", encoded)
+	}
+	encoded, err = json.Marshal(TestRunRequest{AllGroups: true})
+	if err != nil || !strings.Contains(string(encoded), `"AllGroups":true`) {
+		t.Fatalf("all-groups worker packet omitted its opt-in: %s err=%v", encoded, err)
+	}
+}
+
 // stopFixture runs a four-group plan (canary: first, second, third; deep:
 // deep) whose second group fails, one group at a time so the plan order is
 // the launch order, and returns the result by group.
 func stopFixture(t *testing.T, purpose testpolicy.Purpose) (TestResult, int, map[string]GroupResult) {
+	return stopFixtureWithAllGroups(t, purpose, false)
+}
+
+func stopFixtureWithAllGroups(t *testing.T, purpose testpolicy.Purpose, allGroups bool) (TestResult, int, map[string]GroupResult) {
 	t.Helper()
 	root := t.TempDir()
 	runTestResultGit(t, root, "init", "-q", "-b", "main")
@@ -32,7 +51,8 @@ func stopFixture(t *testing.T, purpose testpolicy.Purpose) (TestResult, int, map
 		t.Fatal(err)
 	}
 	result, status, err := RunTestPlan(context.Background(), TestRunRequest{ProjectRoot: root, CandidateTree: tree, BaseCommit: "HEAD", PolicyBaseCommit: "HEAD",
-		Contract: contract, Plan: plan, AttemptID: "attempt", LogRoot: filepath.Join(root, "artifacts", "test-logs"), ProgressPath: progress, Concurrency: 1})
+		Contract: contract, Plan: plan, AttemptID: "attempt", LogRoot: filepath.Join(root, "artifacts", "test-logs"), ProgressPath: progress, Concurrency: 1,
+		AllGroups: allGroups})
 	if err != nil {
 		t.Fatalf("plan run failed: %v", err)
 	}
@@ -77,6 +97,66 @@ func TestDeliveryAttemptStopsLaunchingAtTheFirstFailedGroup(t *testing.T) {
 	}
 	if len(result.Groups) != 4 {
 		t.Fatalf("result does not carry every selected group: %+v", result.Groups)
+	}
+	if !result.StoppedAtFirstFailure {
+		t.Fatalf("delivery result did not record that its failing-group set is truncated: %+v", result)
+	}
+}
+
+func TestDeliveryAllGroupsRunsEverySelectedGroup(t *testing.T) {
+	result, status, byID := stopFixtureWithAllGroups(t, testpolicy.PurposeDelivery, true)
+	if status != 24 || result.LaunchCounts.Test != 4 || result.Delivery.Sufficient {
+		t.Fatalf("delivery all-groups attempt did not collect after failure: status=%d counts=%+v delivery=%+v", status, result.LaunchCounts, result.Delivery)
+	}
+	if result.StoppedAtFirstFailure || byID["first"].Status != "passed" || byID["second"].Status != "failed" ||
+		byID["third"].Status != "passed" || byID["deep"].Status != "passed" {
+		t.Fatalf("delivery all-groups result is incomplete: stopped=%t groups=%+v", result.StoppedAtFirstFailure, result.Groups)
+	}
+}
+
+func TestDeliveryResultRecordsFirstFailureTruncation(t *testing.T) {
+	truncated, _, _ := stopFixture(t, testpolicy.PurposeDelivery)
+	complete, _, _ := stopFixtureWithAllGroups(t, testpolicy.PurposeDelivery, true)
+	if !truncated.StoppedAtFirstFailure || complete.StoppedAtFirstFailure {
+		t.Fatalf("run-level truncation facts do not distinguish delivery results: truncated=%t complete=%t",
+			truncated.StoppedAtFirstFailure, complete.StoppedAtFirstFailure)
+	}
+}
+
+func TestFailingGroupSetCompleteReadsLegacyTruncation(t *testing.T) {
+	truncated, _, _ := stopFixture(t, testpolicy.PurposeDelivery)
+	complete, _, _ := stopFixtureWithAllGroups(t, testpolicy.PurposeDelivery, true)
+	if FailingGroupSetComplete(truncated) || !FailingGroupSetComplete(complete) {
+		t.Fatalf("failing-group completeness helper disagrees with current results: truncated=%t complete=%t",
+			FailingGroupSetComplete(truncated), FailingGroupSetComplete(complete))
+	}
+	truncated.StoppedAtFirstFailure = false
+	legacyBytes, err := json.Marshal(truncated)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var legacyFields map[string]json.RawMessage
+	if err := json.Unmarshal(legacyBytes, &legacyFields); err != nil {
+		t.Fatal(err)
+	}
+	delete(legacyFields, "stoppedAtFirstFailure")
+	legacyBytes, err = json.Marshal(legacyFields)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var legacy TestResult
+	decoder := json.NewDecoder(strings.NewReader(string(legacyBytes)))
+	decoder.DisallowUnknownFields()
+	if err := decoder.Decode(&legacy); err != nil {
+		t.Fatalf("old result without the run-level field no longer parses: %v", err)
+	}
+	if FailingGroupSetComplete(legacy) {
+		t.Fatal("legacy fail-fast evidence was mistaken for a complete failing-group set")
+	}
+	missing := complete
+	missing.Groups[0].Status, missing.Groups[0].NotRunReason = "not-run", "missing-proof"
+	if FailingGroupSetComplete(missing) {
+		t.Fatal("a result with a nonterminal selected group was mistaken for a complete failing-group set")
 	}
 }
 

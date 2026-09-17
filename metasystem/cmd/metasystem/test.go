@@ -45,6 +45,7 @@ type testingPreparation struct {
 	FirstTestingTransition                      bool
 	Plan                                        testpolicy.Plan
 	Environment                                 []string
+	AllGroups                                   bool
 }
 
 type testingPlanOutput struct {
@@ -142,7 +143,7 @@ type testingSelectionRequest struct {
 	Purpose                                               testpolicy.Purpose
 	Groups                                                []string
 	Carried                                               bool
-	NoReuse, RequireDiagnosticHeadroom                    bool
+	NoReuse, RequireDiagnosticHeadroom, AllGroups         bool
 	// LandedRearm is set by the outermost test run only: the pinned child
 	// plan and the verify verbs judge the engine as they find it.
 	LandedRearm bool
@@ -172,6 +173,7 @@ func parseTestingSelection(name string, args []string, execution bool) (testingS
 		flags.Uint64Var(&request.ExpectedAccountingRevision, "expected-accounting-revision", 0, "sealed accounting revision")
 		flags.BoolVar(&request.NoReuse, "no-reuse", false, "execute diagnostic groups freshly")
 		flags.BoolVar(&request.RequireDiagnosticHeadroom, "require-diagnostic-headroom", false, "reserve the mandatory batch-tip diagnostic")
+		flags.BoolVar(&request.AllGroups, "all-groups", false, "run every selected delivery group after a failure")
 	}
 	if flags.Parse(args) != nil || flags.NArg() != 0 || request.Root == "" {
 		fmt.Fprintf(os.Stderr, "usage: metasystem %s --root INSTALLATION [--goal ID] [--tree TREE] [--mode auto|standard|deep|canary] [--purpose delivery|diagnostic|cadence] [--groups ID,ID]\n", name)
@@ -198,6 +200,10 @@ func parseTestingSelection(name string, args []string, execution bool) (testingS
 	}
 	if request.RequireDiagnosticHeadroom && request.Purpose != testpolicy.PurposeDelivery {
 		fmt.Fprintln(os.Stderr, "--require-diagnostic-headroom is available only for delivery purpose")
+		return request, false, 2
+	}
+	if request.AllGroups && request.Purpose != testpolicy.PurposeDelivery {
+		fmt.Fprintln(os.Stderr, "--all-groups is available only for delivery purpose")
 		return request, false, 2
 	}
 	if (request.ExpectedGoalRevision == 0) != (request.ExpectedAccountingRevision == 0) {
@@ -387,7 +393,8 @@ func prepareTesting(request testingSelectionRequest) (testingPreparation, error)
 		JudgeKey:               proofrun.ComputeJudgeKey(context.Background(), projectRoot, policyBaseCommit, strings.TrimSuffix(prefix, "/")),
 		EngineRearm:            engineRearm,
 		FirstTestingTransition: !basePresent,
-		BehaviorPolicyDigest:   bytesSHA256(behaviorsurface.Bytes()), Plan: plan, Environment: testingEnvironment(os.Environ())}, nil
+		BehaviorPolicyDigest:   bytesSHA256(behaviorsurface.Bytes()), Plan: plan, Environment: testingEnvironment(os.Environ()),
+		AllGroups: request.AllGroups}, nil
 }
 
 type protectedCoverageBaseline struct {
@@ -544,7 +551,7 @@ func testingRunRequest(prepared testingPreparation, attemptID, logRoot, candidat
 		PolicyEngineDigest: prepared.PolicyEngineDigest, JudgeKey: prepared.JudgeKey, PolicyEngine: prepared.PolicyEngine, BehaviorPolicyDigest: prepared.BehaviorPolicyDigest,
 		EngineRearm:     prepared.EngineRearm,
 		CandidateEngine: candidateEngine, CandidateEngineDigest: candidateEngineDigest,
-		CandidateEngineBuildIdentity: candidateEngineBuildIdentity}
+		CandidateEngineBuildIdentity: candidateEngineBuildIdentity, AllGroups: prepared.AllGroups}
 }
 
 type candidateEngineBuild struct {
@@ -836,7 +843,7 @@ func runTestRun(args []string) int {
 		ExecutionRoot: prepared.ProjectRoot, ConfPath: prepared.ConfPath, GoalID: request.GoalID, RetryDecision: request.RetryDecision,
 		CapMin: request.CapMin, ExpectedGoalRevision: request.ExpectedGoalRevision,
 		ExpectedAccountingRevision: request.ExpectedAccountingRevision,
-		ScopeClass:                 "selected", CommandClass: "testing", IdentityInputs: append([]string{prepared.CandidateTree, prepared.ContractDigest,
+		ScopeClass:                 "selected", CommandClass: "testing", IdentityInputs: append([]string{"candidate-tree:" + prepared.CandidateTree, prepared.ContractDigest,
 			prepared.BaseContractDigest, prepared.PolicyEngineDigest, candidateEngine.Digest, prepared.BehaviorPolicyDigest, planDigest}, identityInputs...), Environment: prepared.Environment,
 		SharedEngine: engine, SharedManifestDigest: manifestDigest, ComponentIdentities: identities,
 		// A cadence attempt is the fresh sweep: it never inherits a

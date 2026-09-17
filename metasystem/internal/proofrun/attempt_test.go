@@ -415,6 +415,169 @@ func TestComponentRepeatDecisionSpansPlanChanges(t *testing.T) {
 	}
 }
 
+func TestRedAttemptFencesOnlyFailedOrNonterminalComponents(t *testing.T) {
+	root, baseIdentity := proofAttemptFixture(t, "testing")
+	launcher, err := CurrentProcessIdentity(nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	now := time.Now().UTC()
+	tree := strings.Repeat("1", 40)
+	identities := map[string]string{"failed": strings.Repeat("a", 64), "passed": strings.Repeat("b", 64), "not-run": strings.Repeat("c", 64)}
+	request := componentAdmissionRequest(root, baseIdentity, launcher, now, tree, "red", identities)
+	attempt := retainComponentAttempt(t, request, tree, []componentStatus{{"failed", "failed"}, {"passed", "passed"}, {"not-run", "not-run"}}, now.Add(time.Second))
+
+	passed := componentAdmissionRequest(root, baseIdentity, launcher, now.Add(2*time.Second), tree, "passed-only", map[string]string{"passed": identities["passed"]})
+	if decision, noChild, err := NoChildDecisionLocked(passed); err != nil || !noChild || decision.ExitStatus != ExitReusableSuccess {
+		t.Fatalf("passing component of red attempt was not reusable: decision=%+v noChild=%t err=%v", decision, noChild, err)
+	}
+	for _, id := range []string{"failed", "not-run"} {
+		component := componentAdmissionRequest(root, baseIdentity, launcher, now.Add(2*time.Second), tree, id+"-only", map[string]string{id: identities[id]})
+		if decision, noChild, err := NoChildDecisionLocked(component); err != nil || !noChild || decision.ExitStatus != ExitRetryRequired || decision.PriorAttempt != attempt.AttemptID {
+			t.Fatalf("%s component did not retain its retry fence: decision=%+v noChild=%t err=%v", id, decision, noChild, err)
+		}
+	}
+}
+
+func TestRetryDecisionIgnoresFailuresFromOtherCandidateTrees(t *testing.T) {
+	root, baseIdentity := proofAttemptFixture(t, "testing")
+	launcher, err := CurrentProcessIdentity(nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	now := time.Now().UTC()
+	firstIdentity, secondIdentity := strings.Repeat("a", 64), strings.Repeat("b", 64)
+	firstTree, secondTree, candidateTree := strings.Repeat("1", 40), strings.Repeat("2", 40), strings.Repeat("3", 40)
+	first := componentAdmissionRequest(root, baseIdentity, launcher, now, firstTree, "first", map[string]string{"g1": firstIdentity})
+	retainComponentAttempt(t, first, firstTree, []componentStatus{{"g1", "failed"}}, now.Add(time.Second))
+	second := componentAdmissionRequest(root, baseIdentity, launcher, now.Add(2*time.Second), secondTree, "second", map[string]string{"g2": secondIdentity})
+	retainComponentAttempt(t, second, secondTree, []componentStatus{{"g2", "failed"}}, now.Add(3*time.Second))
+
+	request := componentAdmissionRequest(root, baseIdentity, launcher, now.Add(4*time.Second), candidateTree, "candidate",
+		map[string]string{"g1": firstIdentity, "g2": secondIdentity})
+	request.RetryDecisionPath = filepath.Join(root, "not-needed.json")
+	if decision, noChild, err := NoChildDecisionLocked(request); err != nil || noChild {
+		t.Fatalf("other candidates' failures affected retry admission: decision=%+v noChild=%t err=%v", decision, noChild, err)
+	}
+}
+
+func TestAttemptRejectsCandidateTreeDisagreement(t *testing.T) {
+	root, baseIdentity := proofAttemptFixture(t, "testing")
+	launcher, err := CurrentProcessIdentity(nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	now := time.Now().UTC()
+	identity := strings.Repeat("a", 64)
+	request := componentAdmissionRequest(root, baseIdentity, launcher, now, strings.Repeat("1", 40), "mismatch", map[string]string{"g1": identity})
+	attempt, decision, err := ReserveLocked(request)
+	if err != nil || decision.Disposition != DispositionExecuted {
+		t.Fatalf("reserve candidate-bound attempt: decision=%+v err=%v", decision, err)
+	}
+	result := componentAttemptResult(attempt.AttemptID, "g1", identity, "failed")
+	result.CandidateTree = strings.Repeat("2", 40)
+	result.RecomputeDelivery()
+	if _, err := FinalizeAttemptWithTestResultLocked(root, attempt.AttemptID, TerminalFailed, 23, "red", nil, &result, now.Add(time.Second)); err == nil ||
+		!strings.Contains(err.Error(), "testing evidence names candidate tree") {
+		t.Fatalf("candidate-tree disagreement was retained: %v", err)
+	}
+	stored, err := ReadAttempt(root, attempt.AttemptID)
+	if err != nil || stored.Terminal != nil || stored.TestResult != nil {
+		t.Fatalf("failed candidate-tree binding changed the retained attempt: attempt=%+v err=%v", stored, err)
+	}
+}
+
+func TestEjectAndReproveCandidateScopesRetryFence(t *testing.T) {
+	root, baseIdentity := proofAttemptFixture(t, "testing")
+	launcher, err := CurrentProcessIdentity(nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	now := time.Now().UTC()
+	treeOne, treeTwo := strings.Repeat("1", 40), strings.Repeat("2", 40)
+	failedOne, changedOne, passedTwo := strings.Repeat("a", 64), strings.Repeat("c", 64), strings.Repeat("b", 64)
+	first := componentAdmissionRequest(root, baseIdentity, launcher, now, treeOne, "tree-one",
+		map[string]string{"g1": failedOne, "g2": passedTwo})
+	prior := retainComponentAttempt(t, first, treeOne, []componentStatus{{"g1", "failed"}, {"g2", "passed"}}, now.Add(time.Second))
+
+	newTree := componentAdmissionRequest(root, baseIdentity, launcher, now.Add(2*time.Second), treeTwo, "tree-two",
+		map[string]string{"g1": changedOne, "g2": passedTwo})
+	if decision, noChild, err := NoChildDecisionLocked(newTree); err != nil || noChild {
+		t.Fatalf("eject-and-reprove tree was not admitted: decision=%+v noChild=%t err=%v", decision, noChild, err)
+	}
+	sameTree := componentAdmissionRequest(root, baseIdentity, launcher, now.Add(2*time.Second), treeOne, "tree-one-retry",
+		map[string]string{"g1": failedOne, "g2": passedTwo})
+	if decision, noChild, err := NoChildDecisionLocked(sameTree); err != nil || !noChild || decision.ExitStatus != ExitRetryRequired || decision.PriorAttempt != prior.AttemptID {
+		t.Fatalf("same-tree red did not require its typed retry decision: decision=%+v noChild=%t err=%v", decision, noChild, err)
+	}
+
+	evidencePath := filepath.Join(root, "failure.log")
+	if err := os.WriteFile(evidencePath, []byte("failed group diagnosed\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	decisionPath := filepath.Join(root, "retry.json")
+	encoded, _ := json.Marshal(RetryDecision{SchemaVersion: 1, PriorAttempt: prior.AttemptID, Cause: "deterministic group failure",
+		EvidencePath: filepath.Base(evidencePath), Rationale: "the failing group input has been reviewed"})
+	if err := os.WriteFile(decisionPath, encoded, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	sameTree.RetryDecisionPath = decisionPath
+	retry, decision, err := ReserveLocked(sameTree)
+	if err != nil || decision.Disposition != DispositionExecuted || retry.PreviousAttempt != prior.AttemptID || retry.Retry == nil {
+		t.Fatalf("typed same-tree retry decision did not open execution: retry=%+v decision=%+v err=%v", retry, decision, err)
+	}
+}
+
+type componentStatus struct {
+	id, status string
+}
+
+func componentAdmissionRequest(root string, base ProofIdentity, launcher ProcessIdentity, now time.Time, tree, plan string, identities map[string]string) AdmissionRequest {
+	inputs := []string{candidateTreeIdentityPrefix + tree, "plan:" + plan}
+	for id, identity := range identities {
+		inputs = append(inputs, "group:"+id+":"+identity)
+	}
+	return AdmissionRequest{ControlRoot: root, ExecutionRoot: root, GoalID: "goal-a", GoalRevision: 2, AccountingRevision: 2,
+		ReservedMinutes: 2, Identity: BindIdentityInputs(base, inputs), Launcher: launcher, Now: now, ComponentIdentities: identities}
+}
+
+func retainComponentAttempt(t *testing.T, request AdmissionRequest, tree string, statuses []componentStatus, ended time.Time) Attempt {
+	t.Helper()
+	attempt, decision, err := ReserveLocked(request)
+	if err != nil || decision.Disposition != DispositionExecuted {
+		t.Fatalf("reserve component attempt: decision=%+v err=%v", decision, err)
+	}
+	result := componentAttemptResult(attempt.AttemptID, statuses[0].id, request.ComponentIdentities[statuses[0].id], "passed")
+	result.CandidateTree = tree
+	result.Groups = nil
+	result.SelectedGroups, result.RequiredGroups = nil, nil
+	result.LaunchCounts.Test = 0
+	for _, observed := range statuses {
+		group := componentAttemptResult(attempt.AttemptID, observed.id, request.ComponentIdentities[observed.id], "passed").Groups[0]
+		switch observed.status {
+		case "failed":
+			exit := 23
+			group.Status, group.NativeExitStatus = "failed", &exit
+		case "not-run":
+			group.Status, group.NotRunReason = "not-run", "delivery attempt stopped at the first failed group failed"
+			group.NativeLaunched, group.CollectionComplete, group.NativeExitStatus = false, false, nil
+		}
+		result.Groups = append(result.Groups, group)
+		result.SelectedGroups = append(result.SelectedGroups, observed.id)
+		result.RequiredGroups = append(result.RequiredGroups, observed.id)
+		if observed.status != "not-run" {
+			result.LaunchCounts.Test++
+		}
+	}
+	result.StoppedAtFirstFailure = stoppedAtFirstFailure(result.Groups)
+	result.RecomputeDelivery()
+	retained, err := FinalizeAttemptWithTestResultLocked(request.ControlRoot, attempt.AttemptID, TerminalFailed, 23, "red", nil, &result, ended)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return retained
+}
+
 func TestExactReusableTestResultPreservesCommittedOuterOwner(t *testing.T) {
 	root, identity := proofAttemptFixture(t, "testing")
 	launcher, err := CurrentProcessIdentity(nil)

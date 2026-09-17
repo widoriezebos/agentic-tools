@@ -87,6 +87,28 @@ func TestPublishTestingResultUnderTheBoundIsUnchanged(t *testing.T) {
 	}
 }
 
+func TestTestingSelectionCarriesDeliveryAllGroupsOnlyForExecution(t *testing.T) {
+	root := t.TempDir()
+	request, _, code := parseTestingSelection("test run", []string{"--root", root, "--purpose", "delivery", "--all-groups"}, true)
+	if code != 0 || !request.AllGroups {
+		t.Fatalf("test run did not carry --all-groups: code=%d request=%+v", code, request)
+	}
+	_, code = captureStderr(t, func() int {
+		_, _, parsed := parseTestingSelection("test run", []string{"--root", root, "--purpose", "diagnostic", "--all-groups"}, true)
+		return parsed
+	})
+	if code != 2 {
+		t.Fatalf("diagnostic --all-groups status=%d, want usage refusal", code)
+	}
+	_, code = captureStderr(t, func() int {
+		_, _, parsed := parseTestingSelection("test plan", []string{"--root", root, "--all-groups"}, false)
+		return parsed
+	})
+	if code != 2 {
+		t.Fatalf("read-only test selection accepted execution flag: status=%d", code)
+	}
+}
+
 func TestTrustedPolicyEngineIsRequiredWithoutBuildingDuringReadOnlySelection(t *testing.T) {
 	root := t.TempDir()
 	if _, _, _, err := trustedPolicyEngine(root, strings.Repeat("a", 40), false); err == nil || !strings.Contains(err.Error(), "TEST_POLICY_ENGINE_REQUIRED") {

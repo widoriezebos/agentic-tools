@@ -196,6 +196,7 @@ type TestResult struct {
 	Omissions                      []testpolicy.Omission     `json:"omissions"`
 	Uncertainty                    []string                  `json:"uncertainty,omitempty"`
 	Groups                         []GroupResult             `json:"groups"`
+	StoppedAtFirstFailure          bool                      `json:"stoppedAtFirstFailure"`
 	LaunchCounts                   LaunchCounts              `json:"launchCounts"`
 	StartedAt                      string                    `json:"startedAt,omitempty"`
 	EndedAt                        string                    `json:"endedAt"`
@@ -203,6 +204,22 @@ type TestResult struct {
 	ChildDurationMS                int64                     `json:"childDurationMs"`
 	Cost                           TestCost                  `json:"cost"`
 	Delivery                       DeliveryJudgment          `json:"delivery"`
+}
+
+// FailingGroupSetComplete reports whether the result contains the terminal
+// outcome of every selected group. The group evidence fallback keeps
+// delivery results written before the run-level field was introduced
+// readable without mistaking a fail-fast run for a complete failing set.
+func FailingGroupSetComplete(result TestResult) bool {
+	if result.StoppedAtFirstFailure {
+		return false
+	}
+	for _, group := range result.Groups {
+		if group.Status == "not-run" {
+			return false
+		}
+	}
+	return true
 }
 
 func (result *TestResult) RecomputeDelivery() {
