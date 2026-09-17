@@ -398,6 +398,9 @@ func TestBatchTickReconcilesAKilledJoinerOnce(t *testing.T) {
 		{"accounting revision mismatch", "handover", UnitEjected, bad(func(c *Claim) { c.AccountingRevision++ })},
 	}
 	for _, test := range tests {
+		if test.want == UnitEjected {
+			test.want = UnitReturnPending
+		}
 		bed, store := joinBed(t)
 		store.seams.publish = func(point string) error {
 			if point == test.point {
@@ -411,13 +414,13 @@ func TestBatchTickReconcilesAKilledJoinerOnce(t *testing.T) {
 		must(t, ReconcileJoins(store, testBatchID, bed.base, "landing+owner", time.Unix(2, 0), test.read))
 		record := load(t, store)
 		unit := record.Units[0]
-		witness(t, unit.State == test.want && len(record.History) == 2 && record.History[1].Verb == "reconcile" && (test.want == UnitEjected) == (unit.Failure == "join-incomplete"), "%s unit=%+v history=%+v", test.name, unit, record.History)
+		witness(t, unit.State == test.want && len(record.History) == 2 && record.History[1].Verb == "reconcile" && (test.want == UnitReturnPending) == (unit.Failure == "join-incomplete"), "%s unit=%+v history=%+v", test.name, unit, record.History)
 	}
 }
 func TestBatchJoinPrechecksBeforePublication(t *testing.T) {
 	_, store := joinBed(t)
 	ejected := joiningUnit("old", "absent")
-	ejected.State = UnitEjected
+	ejected.State, ejected.Outcome, ejected.Failure = UnitReturnPending, UnitEjected, "old failure"
 	must(t, store.Update(testBatchID, func(record *Record) error { record.Units = append(record.Units, ejected); return nil }))
 	handovers := 0
 	join := func(unit Unit, mode testpolicy.Mode) error {

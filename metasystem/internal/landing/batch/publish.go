@@ -68,9 +68,9 @@ func ReconcileJoins(store Store, batchID, tree, actor string, at time.Time, read
 					continue
 				}
 				claim, claimErr := read(store.root, tree, batchID, unit.GoalID)
-				unit.State, unit.Failure = UnitEjected, "join-incomplete"
+				unit.State, unit.Outcome, unit.Failure = UnitReturnPending, UnitEjected, "join-incomplete"
 				if claimErr == nil && claim.Machine == unit.Claim.Machine && claim.Lineage == unit.Claim.Lineage && claim.Revision == unit.Claim.Revision && claim.AccountingRevision == unit.Claim.AccountingRevision {
-					unit.State, unit.Failure = UnitJoined, ""
+					unit.State, unit.Outcome, unit.Failure = UnitJoined, "", ""
 				}
 				appendUnitHistory(record, at, "reconcile", actor, unit.GoalID, UnitJoining, unit.State)
 			}

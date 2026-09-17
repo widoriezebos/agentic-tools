@@ -51,6 +51,11 @@ func (store Store) Load(id string) (Record, error) {
 }
 func (store Store) Create(record Record) error {
 	return store.locked(func() error {
+		for _, unit := range record.Units {
+			if terminalUnitState(unit.State) {
+				return fmt.Errorf("new batch unit cannot start in terminal state %s", unit.State)
+			}
+		}
 		path, err := store.recordPath(record.BatchID)
 		if err != nil {
 			return err
@@ -82,6 +87,14 @@ func (store Store) updateLocked(id string, mutate func(*Record) error) error {
 	unitsImmutable := len(record.Units) >= len(prior.Units) && slices.EqualFunc(record.Units[:len(prior.Units)], prior.Units, sameUnit)
 	if record.BatchID != id || record.Schema != prior.Schema || !unitsImmutable {
 		return fmt.Errorf("batch identity and existing units are immutable")
+	}
+	for index, unit := range record.Units {
+		if index >= len(prior.Units) && terminalUnitState(unit.State) {
+			return fmt.Errorf("new batch unit cannot start in terminal state %s", unit.State)
+		}
+		if index < len(prior.Units) && unit.State != prior.Units[index].State && terminalUnitState(unit.State) && (prior.Units[index].State != UnitReturnPending || !returnDisposition(unit.ReturnDisposition) || unit.Outcome != unit.State) {
+			return fmt.Errorf("batch unit enters terminal state only from return-pending with its return disposition")
+		}
 	}
 	if len(record.History) < len(prior.History) || !slices.Equal(record.History[:len(prior.History)], prior.History) {
 		return fmt.Errorf("batch history is append-only")
@@ -136,9 +149,20 @@ func validateRecord(record Record) error {
 		return fmt.Errorf("held trunk-red record is incomplete")
 	}
 	for _, unit := range record.Units {
-		if unit.GoalID == "" || unit.Chain == "" || unit.Claim.Machine == "" || unit.Claim.Lineage == "" || unit.Claim.Epoch == 0 || unit.Claim.Revision == 0 || unit.Claim.AccountingRevision == 0 || !strings.Contains("|joining|joined|withdrawn-budget|ejected|landed|", "|"+unit.State+"|") {
+		if unit.GoalID == "" || unit.Chain == "" || unit.Claim.Machine == "" || unit.Claim.Lineage == "" || unit.Claim.Epoch == 0 || unit.Claim.Revision == 0 || unit.Claim.AccountingRevision == 0 || !strings.Contains("|joining|joined|return-pending|withdrawn-budget|ejected|landed|", "|"+unit.State+"|") {
 			return fmt.Errorf("batch unit identity, revisions, or state are incomplete")
+		}
+		if unit.State == UnitReturnPending && (!terminalUnitState(unit.Outcome) || strings.TrimSpace(unit.Failure) == "" || unit.ReturnDisposition != "") {
+			return fmt.Errorf("return-pending batch unit needs a terminal outcome and reason without a disposition")
 		}
 	}
 	return nil
+}
+
+func terminalUnitState(state string) bool {
+	return state == UnitEjected || state == UnitWithdrawnBudget || state == UnitLanded
+}
+
+func returnDisposition(disposition string) bool {
+	return disposition == ReturnHandedBack || disposition == ReturnReleased || disposition == ReturnAlreadyReturned
 }

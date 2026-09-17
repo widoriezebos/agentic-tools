@@ -4,7 +4,9 @@ import "time"
 
 const StateOpen, StateSealed, StateProving, StateDiagnosing, StateLanding, StateLanded, StateHeldTrunkRed, StateDissolved = "open", "sealed", "proving", "diagnosing", "landing", "landed", "held-trunk-red", "dissolved"
 
-const UnitJoining, UnitJoined, UnitWithdrawnBudget, UnitEjected, UnitLanded = "joining", "joined", "withdrawn-budget", "ejected", "landed"
+const UnitJoining, UnitJoined, UnitReturnPending, UnitWithdrawnBudget, UnitEjected, UnitLanded = "joining", "joined", "return-pending", "withdrawn-budget", "ejected", "landed"
+
+const ReturnHandedBack, ReturnReleased, ReturnAlreadyReturned = "handed-back", "released", "already-returned"
 
 type Claim struct {
 	Machine            string `json:"machine"`
@@ -15,7 +17,9 @@ type Claim struct {
 }
 type runIDs []string
 type unitRecordFields struct {
-	Failure string `json:"failure,omitempty"`
+	Outcome           string `json:"outcome,omitempty"`
+	Failure           string `json:"failure,omitempty"`
+	ReturnDisposition string `json:"returnDisposition,omitempty"`
 }
 type Unit struct {
 	GoalID string `json:"goalId"`
