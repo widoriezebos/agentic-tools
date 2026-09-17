@@ -5,6 +5,7 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"strings"
 	"testing"
@@ -12,7 +13,10 @@ import (
 
 	"golang.org/x/sys/unix"
 
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/config"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/hostload"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/identity"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/proofrun"
 )
 
 const testBatchID = "01j5x00000000000000000ba01"
@@ -29,6 +33,104 @@ func must(t *testing.T, err error) {
 }
 func load(t *testing.T, s Store) Record      { r, e := s.Load(testBatchID); must(t, e); return r }
 func contents(t *testing.T, p string) []byte { b, e := os.ReadFile(p); must(t, e); return b }
+func polls(t *testing.T, owner *proofLock, wants ...lockPoll) {
+	for _, want := range wants {
+		if got, err := owner.poll(); err != nil || got != want {
+			t.Fatalf("poll=%v error=%v, want %v", got, err, want)
+		}
+	}
+}
+func seedProofLock(t *testing.T, dir, pid string) {
+	must(t, os.Mkdir(dir, 0o755))
+	must(t, os.WriteFile(filepath.Join(dir, "owner"), []byte("m1e "+pid+" 2029-01-01T00:00:00Z hand\n"), 0o644))
+}
+func testProofLock(prober scriptedProber, lockDir, queueDir string, pid int64, now *time.Time) *proofLock {
+	return newProofLock(NewStore("", prober), lockDir, queueDir, "batch:test", pid, func() time.Time { return *now })
+}
+func TestBatchLockIsFifoAndStaleSafe(t *testing.T) {
+	root, now := t.TempDir(), time.Date(2030, 1, 1, 0, 0, 0, 0, time.UTC)
+	lockDir, queueDir := filepath.Join(root, "lock"), filepath.Join(root, "queue")
+	prober := scriptedProber{1: identity.Alive, 2: identity.Alive, 3: identity.Dead, 4: identity.Unknown, 9: identity.Alive, 90: identity.Alive}
+	seedProofLock(t, lockDir, "90")
+	first := testProofLock(prober, lockDir, queueDir, 1, &now)
+	polls(t, first, lockQueued)
+	now = now.Add(time.Second)
+	second := testProofLock(prober, lockDir, queueDir, 2, &now)
+	polls(t, second, lockQueued)
+	must(t, os.RemoveAll(lockDir))
+	polls(t, second, lockQueued)
+	polls(t, first, lockAcquired)
+	if owner := string(contents(t, filepath.Join(lockDir, "owner"))); !strings.HasPrefix(owner, "landing-batch-owner 1 ") {
+		t.Fatalf("owner=%q", owner)
+	}
+	_ = first.whileHeld(func() error { return os.ErrInvalid })
+	polls(t, second, lockAcquired)
+	must(t, os.WriteFile(filepath.Join(lockDir, "owner"), []byte("m1e 90 2030-01-01T00:00:01Z successor\n"), 0o644))
+	must(t, second.release())
+	_ = contents(t, filepath.Join(lockDir, "owner"))
+	must(t, os.RemoveAll(lockDir))
+
+	now = now.Add(time.Second)
+	hand := filepath.Join(queueDir, "1893456001-m1e-9")
+	must(t, os.WriteFile(hand, []byte("m1e 9 2030-01-01T00:00:01Z hand proof\n"), 0o644))
+	third := testProofLock(prober, lockDir, queueDir, 1, &now)
+	polls(t, third, lockQueued)
+	prober[9] = identity.Dead
+	polls(t, third, lockStaleRemoved, lockAcquired)
+	must(t, third.release())
+	seedProofLock(t, lockDir, "3")
+	fourth := testProofLock(prober, lockDir, queueDir, 1, &now)
+	polls(t, fourth, lockStaleRemoved, lockAcquired)
+	must(t, fourth.release())
+	must(t, os.Mkdir(lockDir, 0o755))
+	young := now.Add(-time.Minute)
+	must(t, os.Chtimes(lockDir, young, young))
+	early := testProofLock(prober, lockDir, queueDir, 1, &now)
+	polls(t, early, lockQueued)
+	must(t, early.release())
+	must(t, os.WriteFile(filepath.Join(lockDir, "owner"), nil, 0o644))
+	old := now.Add(-2*time.Minute - time.Second)
+	must(t, os.Chtimes(lockDir, old, old))
+	fifth := testProofLock(prober, lockDir, queueDir, 1, &now)
+	polls(t, fifth, lockStaleRemoved, lockAcquired)
+	must(t, fifth.release())
+	seedProofLock(t, lockDir, "4")
+	sixth := testProofLock(prober, lockDir, queueDir, 1, &now)
+	polls(t, sixth, lockQueued)
+	must(t, sixth.release())
+	if entries, err := os.ReadDir(queueDir); err != nil || len(entries) != 0 {
+		t.Fatalf("give up left queue entries: %v, %v", entries, err)
+	}
+}
+func TestBatchStartRule(t *testing.T) {
+	seat, landing := t.TempDir(), t.TempDir()
+	must(t, exec.Command("git", "init", "-q", landing).Run())
+	conf := filepath.Join(seat, "metasystem.conf")
+	must(t, os.WriteFile(conf, []byte(config.BatchRootKey+"="+landing+"\n"+config.BatchMaxWaitKey+"=2m\n"), 0o644))
+	joined, now := time.Date(2030, 1, 1, 0, 0, 0, 0, time.UTC), time.Time{}
+	settings, err := config.ResolveBatchLanding(conf, seat, func() time.Time { return now })
+	must(t, err)
+	quiet := proofrun.LoadSample{Sample: hostload.Sample{Available: true, Cores: 8}, OverlapKnown: true}
+	loaded := proofrun.LoadSample{Sample: hostload.Sample{Available: true, Cores: 2, Load1m: 2}, OverlapKnown: true, OverlappingHost: 2}
+	check := func(name string, free bool, units, cap int, elapsed time.Duration, sample proofrun.LoadSample, start bool, window string) {
+		t.Run(name, func(t *testing.T) {
+			now = joined.Add(elapsed)
+			startGot, windowGot, capGot := batchStartRule(free, units, joined, settings, sample, proofrun.AdmissionCap{Max: cap})
+			if startGot != start || windowGot != window || capGot != (sample.OverlapKnown && sample.OverlappingHost < cap) {
+				t.Fatalf("decision=%v/%s cap=%v", startGot, windowGot, capGot)
+			}
+		})
+	}
+	check("no units", true, 0, 3, 2*time.Minute, quiet, false, "")
+	check("lock held", false, 2, 3, 0, quiet, false, "")
+	check("one before wait", true, 1, 3, 0, quiet, false, "")
+	check("at wait", true, 1, 3, 2*time.Minute, quiet, true, "expired")
+	check("two quiet", true, 2, 3, 0, quiet, true, "quiet")
+	check("unknown census", true, 2, 3, 0, proofrun.LoadSample{}, false, "")
+	check("overlap is not quiet", true, 2, 3, 0, loaded, false, "")
+	check("wait overrides load", true, 2, 3, 2*time.Minute, loaded, true, "expired")
+	check("engine cap", true, 2, 2, 2*time.Minute, loaded, false, "")
+}
 func TestBatchJoinsSerializeUnderTheLock(t *testing.T) {
 	store := NewStore(t.TempDir(), scriptedProber{})
 	must(t, store.Create(Record{Schema: 1, BatchID: testBatchID, TipTree: "base", State: StateOpen}))
