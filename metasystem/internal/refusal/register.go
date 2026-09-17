@@ -48,6 +48,8 @@ var Rows = []Row{
 	{Code: "BATCH_SEAL_GATE_RED", Owner: "internal/landing/batch", Site: "seal.go", Shape: Question},
 	{Code: "BATCH_UNIT_ELSEWHERE", Owner: "internal/landing/batch", Site: "join.go", Shape: Question},
 	{Code: "TRUNK_RED_OWNER_UNBOUND", Owner: "internal/landing/batch", Site: "trunkred.go:69", Shape: Question},
+	{Code: "TRUNK_RED_RECORD_PENDING", Owner: "internal/landing/batch", Site: "trunkred_record.go:11", Shape: Question},
+	{Code: "TRUNK_RED_RECORD_FAILED", Owner: "internal/landing/batch", Site: "trunkred_record.go:21", Shape: Question},
 	{Code: "AGENT_IN_AUTHORITY_CHAIN", Owner: "internal/humanauthority", Site: "authority.go:31", Shape: Identity},
 	{Code: "ANCESTRY_CHANGED", Owner: "internal/humanauthority", Site: "authority.go:35", Shape: Identity},
 	{Code: "ANCESTRY_CYCLE", Owner: "internal/humanauthority", Site: "authority.go:38", Shape: Identity},
@@ -201,6 +203,7 @@ var Rows = []Row{
 }
 
 var Exclusions = []Exclusion{
+	{Pattern: "trunk-red-record-refused", Reason: "a batch history verb rather than a refusal returned to a caller"},
 	{Pattern: "GIT_*", Reason: "git environment variable names"},
 	{Pattern: "METASYSTEM_*", Reason: "this tree's environment variable names"},
 	{Pattern: "BASH_SOURCE", Reason: "an environment name"},
