@@ -117,17 +117,20 @@ Strong signals that the design needs correction:
 
 ## Implementation Slicing
 
-When a design divides implementation into units, allocate at most 300 changed
-lines to each unit. Count additions plus deletions across the whole candidate,
-including production code, tests, scripts, and documentation. State the
-allocation explicitly in the design's implementation map and in every unit
-brief as `Changed-line allocation: <number>`. This planning maximum leaves
-room below a separately declared enforcement ceiling; it neither sets nor
-changes that ceiling.
+When a design divides implementation into units, a unit is one coherent
+section of the design: the files, behavior and tests that one builder produces
+in one job, normally 600 to 1,500 changed lines (additions plus deletions
+across production code, tests, scripts and documentation). State the estimate
+in the design's implementation map and in every unit brief as `Changed-line
+allocation: <number>`. It is an estimate for the reader and the proof, not a
+cap: a builder that finds the unit does not hold together returns a split
+proposal (a gap-stop) instead of trimming tests, and the seat never pre-splits
+a unit to fit a number. Keep each behavior with the tests that prove it.
 
-Split a larger unit before briefing it. Keep each behavior with the tests that
-prove it, and preserve required proof when making the split instead of trimming
-tests to fit the allocation.
+Every unit is one relay through the coordinator (brief, build, read, stack,
+proof, landing); the 300-line cap of 2026-09-15 turned a 3,000-line goal into
+24 relays, and the relays, not the builds, were the days
+(records/misc/delivery-process-reset-2026-09-17.md).
 
 ## Design Questions
 

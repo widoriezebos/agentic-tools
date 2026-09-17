@@ -146,3 +146,11 @@ The origin/main validator still consumes its four-column compatibility projectio
 | Reporting | Seat | BA15 | `metasystem/cmd/metasystem/wait_verb.go` is the existing wait boundary. |
 
 BRIEF-B DONE units=24 lines=148 moved-effects=pass
+
+## Builds (process reset, 2026-09-17)
+
+Landed units are the ones whose commits are on main. BA9a1 and BA5c are in flight as briefed.
+The remaining units build as three section-sized builds, one builder each, from this brief and
+the revision-3 design page, with one independent read per build and one proof per build stack:
+Build B = BA9a2, BA9b, BA11a, BA11b. Build C = BA12a, BA12b, BA17, BA13. Build D = BA14a, BA14b,
+BA15. Reasons and numbers: records/misc/delivery-process-reset-2026-09-17.md.

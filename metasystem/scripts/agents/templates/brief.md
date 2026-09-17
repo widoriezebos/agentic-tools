@@ -2,7 +2,7 @@ Working Mode: <working mode>
 Mission Stream: <active mission stream; omit this line when no mission is active>
 Orchestrator Identity: <identity>
 Date: <YYYY-MM-DD>
-Changed-line allocation: <integer no greater than 300; additions plus deletions across the whole candidate, including tests>
+Changed-line allocation: <the design's estimate for this unit, additions plus deletions including tests; an estimate, not a cap>
 
 # Goal
 
@@ -24,7 +24,7 @@ Leave `metasystem/memory/receipts.log` unchanged; the seat writes the receipt at
 
 # Inputs
 
-<Name the design, accepted critique round, and files the delegate may rely on. An implementation design leaves no judgment calls.>
+<Name the design page and its revision, the section or sections this unit builds, and the files the delegate may rely on. The design page is the specification: this brief adds workspace, inputs, return shape and proof group, and restates no rule of the page. If the page needs rulings to be buildable, fold the page first.>
 
 # Constraints
 
@@ -32,12 +32,11 @@ Leave `metasystem/memory/receipts.log` unchanged; the seat writes the receipt at
 
 Set the changed-line allocation under `metasystem/docs/design/design-principles.md` before briefing an implementation unit.
 
-Before writing the full draft, estimate the complete candidate against the
-allocation, including its tests. At the first coherent implementation
-checkpoint, count additions plus deletions across the candidate, then recount
-after each coherent increment. If either the estimate or a count exceeds the
-allocation, stop at the first overrun and return the count with a split
-proposal; do not finish the full draft or trim required tests.
+Estimate the complete candidate against the allocation before drafting,
+including its tests, and report the count at the end. The allocation is an
+estimate, not a cap: overrunning it is not a reason to stop. If the unit does
+not hold together as one coherent change, return a split proposal (a gap)
+instead of trimming required tests.
 
 Request the smallest section you need, read a large file through a bounded view, and open a reference only through its path.
 

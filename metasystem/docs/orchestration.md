@@ -20,6 +20,8 @@ These exemptions govern interactive work. Inside a mission the mission runner cr
 
 Every delegation states the goal, the workspace it runs in, the inputs it may rely on, the expected return shape (facts, paths, diff, verdict), the acceptance criteria, a budget, and what to do at an unspecified gap: stop and report it, never fill it silently. The trust and certification rule below binds every return. A delegate reads within its context: request the smallest section you need, read a large file through a bounded view, and open a reference only through its path. When `context status` or the identity-bound Stop report says the last call is over the bound, the seat runs `metasystem context handoff --root <installation>` alone in its own message, then ends the session.
 
+No model context waits. A delegate that launches a job, a proof or a landing returns at once; a shell or Go waiter re-invokes the seat when the record is durable (`metasystem wait`, or the launcher's own poll outside any model context). A wait inside a model context is billed at the whole context per poll: the landing lanes and build chains of 2026-09-15 and 09-16 cost about 110M weighted tokens for 70 output tokens per call.
+
 Before dispatching a code read or critique, the seat prepares the reader's private copy and completes and reads `scripts/agents/templates/review-brief.md`: it records the copy's path and exact commit or diff, writes a focused numbered checklist whose items name file line ranges or fixture rows, and sets a numeric tool-call budget at which the reader stops and reports unchecked items. Each round uses a fresh reader and never resumes a reader from an earlier round. After findings are folded, a confirmation read uses the template's scoped variant and checks only those folded findings.
 
 Before dispatching a design author or a revision, the seat fills in `scripts/agents/templates/design-brief.md`: the context pack, a numeric tool-call budget, and a word-count page-size ceiling. Every revision goes to a fresh delegate and is never resumed; this is an exception to the follow-up resume described in the paragraph beginning "Corrections use". The seat writes one `type=design` receipt for each revision and records that delegate's tokens and calls as `design_tokens` and `design_calls`.
@@ -33,17 +35,23 @@ For each substantial piece of work, use this five-step loop:
    inside a mission created by the mission runner the implementation itself still goes through
    an implementer job — the host never authors product bytes there, regardless
    of size or urgency. Interactive work outside the mission runner is unaffected.
-2. **Design critique.** A delegate critiques the design, the orchestrator
-   dispositions every finding, and rounds continue until a mechanically joined
-   round has zero material findings. Exhausting the round budget is not
-   agreement.
+2. **Design critique.** A delegate critiques the design once. A material
+   finding shows that the design cannot be built as written or would build the
+   wrong behavior, and names the artifact; witness bookkeeping, naming and
+   record-format findings are notes for the builder's brief, not rounds. The
+   orchestrator dispositions every finding. A second round runs only after a
+   fold that changed a rule; there is never a third. An amendment that records
+   a human ruling gets no round: the ruling is the authority and the builder
+   proves the fold (2026-09-17 reset,
+   records/misc/delivery-process-reset-2026-09-17.md).
 3. **Implementation.** A delegate implements the closed design. The
    orchestrator does not write the product itself.
 4. **Implementation critique.** A delegate in the code-critic role, in a fresh
    session and on a different effective model unless configuration declares
-   `independence=session-only`, reviews the exact implementation tree. The
-   orchestrator dispositions every finding, and rounds continue until the
-   final round over that tree has zero material findings.
+   `independence=session-only`, reviews the exact implementation tree: one
+   read per build, of the whole build. The orchestrator dispositions every
+   finding; a material finding goes back to the builder once, and the re-read
+   covers the fix only. The proof gates main.
 5. **Gate and merge.** The orchestrator runs the gate of record and merges. The
    gate is a floor beneath the two parties' agreement, not a substitute for it.
 
@@ -137,7 +145,7 @@ holds now>"`, R-105-m1e); never a blocker's park.
 Under R-60-m1, the reviewer stops critique at the first round with no material
 finding. A material finding must change what gets built and name that
 artifact; a finding that fails the artifact test is demoted at registration.
-For design critique, Round 2 folded with no material finding closes the loop. Round 2 folded with only mechanical findings on a falling trajectory closes with one review obligation per finding naming its fixture. The page header records the exit as `closed at round 2 on N fixture obligations`. Any other round-2 residue refuses with `cap-exhausted-human-raise`, naming `goal accept-risk` and a re-scope by `goal edit`. There is no third design round and none can be bought.
+For design critique, one round is the norm since 2026-09-17 (step 2 of the loop); the round-2 rules below apply only when a fold changed a rule. For design critique, Round 2 folded with no material finding closes the loop. Round 2 folded with only mechanical findings on a falling trajectory closes with one review obligation per finding naming its fixture. The page header records the exit as `closed at round 2 on N fixture obligations`. Any other round-2 residue refuses with `cap-exhausted-human-raise`, naming `goal accept-risk` and a re-scope by `goal edit`. There is no third design round and none can be bought.
 When code-critique or warden rounds are spent, `job critique-register-close`
 defers each bounded open finding into a review obligation on the goal (discharged later by `goal
 discharge-review-obligation` against the chain, artifact and test that carry
