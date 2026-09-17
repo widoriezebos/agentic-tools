@@ -7,9 +7,9 @@
 - Tier: 3
 - Intent: Units land in BATCHES under ONE proof. DONE: (1) a unit joins a batch only through a cheap gate whose five results (its package tests, its witnesses proved by mutation, an independent read, staticcheck and vet, the changed fixture-bed scenario run alone outside the lock under R-111) are recorded on its queue entry, and a missing result refuses the join; (2) the batch is one candidate tree assembled in join order, and a conflicting join is refused at join time naming the files; (3) batch size is bounded by the union of the selected groups, all groups being the deep-proof ceiling, and a batch proof starts when the lock is free and at least two gated units wait or the maximum wait has elapsed; (4) a red batch is never retried: the failing group's files name the owning unit, that unit is ejected with the failure attached and the rest are proved as a new tree, and a red that names no unit stops the batch as a trunk flake until the flake is fixed at the cause; (5) a batch proof starts only in a quiet window; on green the units land in join order with their receipt rows and the delivery check reuses the green groups by execution identity; fixtures prove each.
 - Origin: human
-- Next step: 2026-09-17 07:47Z (Wido, recorded by seat m1e): the landing-branch ruling (goals-live-on-branches rule 6.9, d52891e67) rides on the r3 page as an amendment before D8: the seal composes landing/<batch-id>, D7 rebuilds it from the survivors, D8 lands by one fast-forward and deletes it; BA12b, BA13 and BA14a carry it. BA5c, BA9a1 and the r3 page are in lane L14 with glb unit 1 and rom U2a (L13 stopped on a lane gate timeout, not a red). Builds as before: Build B = BA9a2, BA9b, BA11a, BA11b (briefed from the page after BA9a1 lands); Build C = BA12a, BA12b, BA17, BA13; Build D = BA14a, BA14b, BA15.
+- Next step: 2026-09-17 09:44Z (seat m1e, lane L18, attempt proof-mu5bbrhm-61f8ba8fda5365e7): landed the r3 page e6a99bc88 (with the landing-branch amendment of rule 6.9), the attribution amendment f773dc1ea (D8 commits authored and committed as each goal's approver, BATCH_JOIN_AUTHOR_UNBOUND at the join, Landed-By in W15), BA5c 03e984e59 and BA9a1 7c7951b59. Next: Build B = BA9a2, BA9b, BA11a, BA11b from brief B and the r3 page; Build C = BA12a, BA12b, BA17, BA13; Build D = BA14a, BA14b, BA15.
 - OpenedAt: 2026-09-16T13:45:00Z
-- Revision: 35
+- Revision: 36
 - Budget: elapsedLimit=5d attemptLimit=20 reservedJobMinutesLimit=1200 activeJobLimit=1 reviewRoundLimit=3
 - BudgetExceptions: 1
 - Approved: by=human:Wido at=2026-09-17T06:05:10Z revision=32 opid=9SM144F0E2F8TXWZVS92BVJ3JA-m1e-c6925449 authority=proven digest=be2a6acf3d7fab09d0b7689c2a5b182bbbc0d371a3d808e8f2e1f7e31b521372
@@ -52,4 +52,5 @@ History:
 - 2026-09-17T06:23:54Z JNBA003MC0N62PWYNKWKM1A5X4-m1e-c6925449 edit actor=human:Wido targets=units-land-in-batches-under-one-proof displaced=m1e+main-1789030447-51011-2956ea@2026-09-17T06:05:10Z
 - 2026-09-17T06:54:54Z K3HGXGSE1F4AAA7M62AGP2PHGB-m1e-c6925449 edit actor=human:Wido targets=units-land-in-batches-under-one-proof displaced=m1e+main-1789030447-51011-2956ea@2026-09-17T06:05:10Z
 - 2026-09-17T07:47:43Z 3NJRS8QJKNTMYWX7W1YWK37A38-m1e-c6925449 edit actor=human:Wido targets=units-land-in-batches-under-one-proof displaced=m1e+main-1789030447-51011-2956ea@2026-09-17T06:05:10Z
-Integrity: sha256=6cb424c0bc693aa199fa25aad0059ce5e4b0656380c6ae00460a646574af0a38
+- 2026-09-17T09:45:05Z 740YF1DPZGEFRWF66448FHEB27-m1e-c6925449 edit actor=human:Wido targets=units-land-in-batches-under-one-proof displaced=m1e+main-1789030447-51011-2956ea@2026-09-17T06:05:10Z
+Integrity: sha256=e034c729a6f3c94d1fcb4a561ba47494cb82683957273e881a55c1d61b33d1be
