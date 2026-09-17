@@ -200,5 +200,6 @@ func holdAndRecordTrunkRed(store Store, record Record, actor string, result Diag
 	if err := store.HoldTrunkRed(record.BatchID, red, opid, at, actor); err != nil {
 		return err
 	}
-	return store.WithLedgerOwner(seams.Ledger).EnsureTrunkRedRecorded(record.BatchID, seams.MintOpid, at, actor)
+	_, err = store.WithLedgerOwner(seams.Ledger).EnsureTrunkRedRecorded(record.BatchID, seams.MintOpid, at, actor)
+	return err
 }

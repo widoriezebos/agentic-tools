@@ -1,6 +1,9 @@
 package main
 
 import (
+	"encoding/json"
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 	"time"
@@ -16,6 +19,69 @@ func trunkRedNextFixture(t *testing.T) (string, goal.Projection) {
 		t.Fatal(err)
 	}
 	return root, p
+}
+
+func TestGoalTrunkRedCommandsAndJSON(t *testing.T) {
+	t.Setenv("METASYSTEM_GOAL_NOW", "2026-09-17T10:00:00Z")
+	root := syncedClaimedGoalFixture(t)
+	emptyOutput, emptyCode := captureStdout(t, func() int {
+		return runGoalList([]string{"--root", root, "--json"})
+	})
+	if emptyCode != 0 || !strings.Contains(emptyOutput, `"trunkRed":[]`) {
+		t.Fatalf("empty JSON register code=%d output=%q", emptyCode, emptyOutput)
+	}
+	stamp := "2026-09-17T09:00:00Z"
+	id := "tr-fast-command0001"
+	register := goal.RenderTrunkRed([]goal.TrunkRedEntry{{
+		ID: id, Identity: id, Group: "fast", Status: "failed", Failures: []goal.TrunkRedFailure{},
+		Sightings: []goal.TrunkRedSighting{{Attempt: "attempt-1", Batch: "batch-1", BaseCommit: "base-1", SeenAt: stamp,
+			Opid: goal.Opid("01J5X0000000000000000000X1", "mac-cli", "m1")}},
+		Owner: goal.TrunkRedOwner{Machine: "mac-cli", Since: stamp, How: "joiner"}, Holds: []string{"batch-1"}, Opened: stamp,
+	}})
+	registerPath := filepath.Join(root, "plans", "goals", "trunk-red.json")
+	if err := os.WriteFile(registerPath, register, 0o644); err != nil {
+		t.Fatal(err)
+	}
+	goalSyncMutationGit(t, root, "add", "plans/goals/trunk-red.json")
+	goalSyncMutationGit(t, root, "commit", "-q", "-m", "trunk-red command fixture")
+	goalSyncMutationGit(t, root, "update-ref", goal.LocalLedgerBranch, "HEAD")
+	goalSyncMutationGit(t, root, "update-ref", goal.AcceptedRef, "HEAD")
+	goalSyncMutationGit(t, root, "branch", "fix/red")
+
+	output, code := captureStdout(t, func() int {
+		return runGoalTrunkRed([]string{"own", "--root", root, "--id", id, "--goal", "standing-validation", "--branch", "fix/red", "--lineage", "m1"})
+	})
+	if code != 0 || !strings.Contains(output, `"outcome":"confirmed"`) {
+		t.Fatalf("own command code=%d output=%q", code, output)
+	}
+	output, code = captureStdout(t, func() int {
+		return runGoalList([]string{"--root", root, "--json"})
+	})
+	var listed struct {
+		TrunkRed []goal.TrunkRedEntry `json:"trunkRed"`
+	}
+	if code != 0 || json.Unmarshal([]byte(output), &listed) != nil || len(listed.TrunkRed) != 1 || listed.TrunkRed[0].FixBranch.Name != "fix/red" {
+		t.Fatalf("json list code=%d output=%q parsed=%+v", code, output, listed)
+	}
+	stderr, code := captureStderr(t, func() int {
+		return runGoalTrunkRed([]string{"close", "--root", root, "--id", id, "--why", "external outage", "--lineage", "m1"})
+	})
+	if code != 1 || !strings.Contains(stderr, "TRUNK_RED_CLOSE_IS_HUMAN") {
+		t.Fatalf("close without human code=%d stderr=%q", code, stderr)
+	}
+
+	output, code = captureStdout(t, func() int {
+		return runGoalTrunkRed([]string{"close", "--root", root, "--id", id, "--by", "Wido", "--why", "external outage", "--lineage", "human-line"})
+	})
+	if code != 0 || !strings.Contains(output, `"outcome":"confirmed"`) {
+		t.Fatalf("close command code=%d output=%q", code, output)
+	}
+	stderr, code = captureStderr(t, func() int {
+		return runGoalTrunkRed([]string{"own", "--root", root, "--id", id, "--goal", "standing-validation", "--to", "mac-other"})
+	})
+	if code != 2 || !strings.Contains(stderr, "--to only with --by") {
+		t.Fatalf("--to edge code=%d stderr=%q", code, stderr)
+	}
 }
 func renderTrunkRedNext(t *testing.T, root, machine string, p goal.Projection, labels ...string) string {
 	t.Helper()

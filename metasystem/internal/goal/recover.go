@@ -10,6 +10,7 @@ package goal
 // stops blocking this clone the moment recovery classifies it.
 
 import (
+	"encoding/json"
 	"errors"
 	"fmt"
 	"strconv"
@@ -305,6 +306,22 @@ func requestForEntry(e Endpoint, entry Entry) (PublishRequest, error) {
 	}
 	cascade := in.Args["cascade"] == "arc"
 	switch in.Verb {
+	case "trunk-red-record":
+		var args TrunkRedRecordArgs
+		if err := json.Unmarshal([]byte(in.Args["red"]), &args); err != nil {
+			return PublishRequest{}, fmt.Errorf("the stored trunk-red record is malformed; close it by hand: %v", err)
+		}
+		return trunkRedRecordRequest(r, args), nil
+	case "trunk-red-own":
+		return trunkRedOwnRequest(r, TrunkRedOwnArgs{Entry: target, Goal: in.Args["goal"], Branch: in.Args["branch"],
+			BranchCommit: in.Args["branchCommit"], To: in.Args["to"], By: in.Args["by"]}), nil
+	case "trunk-red-clear":
+		branchMerged, err := strconv.ParseBool(in.Args["branchMerged"])
+		if err != nil {
+			return PublishRequest{}, fmt.Errorf("the stored trunk-red clear has an invalid branchMerged value; close it by hand")
+		}
+		return trunkRedClearRequest(r, TrunkRedClearArgs{Entry: in.Args["entry"], Attempt: in.Args["attempt"],
+			BaseCommit: in.Args["baseCommit"], BaseTree: in.Args["baseTree"], Group: in.Args["group"], BranchMerged: branchMerged}), nil
 	case "carrying":
 		return carryingRequest(r, CarryingArgs{Goal: target, ApprovedRef: in.Args["approvedRef"], Workspace: in.Args["workspace"], Project: in.Args["tree"], By: in.Args["by"]}), nil
 	case "carried":

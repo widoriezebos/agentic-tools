@@ -56,6 +56,7 @@ const (
 	// Keep the published role name stable for existing health consumers.
 	RoleClaimedGoalBudget   HealthRole = "claimed-goal-appetite"
 	RoleClaimedGoalDelivery HealthRole = "claimed-goal-delivery"
+	RoleTrunkRed            HealthRole = "trunk-red"
 	RoleSpendFence          HealthRole = "spend-fence"
 	RoleNonterminalJobs     HealthRole = "nonterminal-jobs"
 	RoleCapabilitySnapshots HealthRole = "capability-snapshots"
@@ -77,6 +78,7 @@ var healthRoleOrder = []HealthRole{
 	RoleLedgerAttention,
 	RoleClaimedGoalBudget,
 	RoleClaimedGoalDelivery,
+	RoleTrunkRed,
 	RoleSpendFence,
 	RoleGovernedObligations,
 	RoleNonterminalJobs,
@@ -422,6 +424,7 @@ func evaluateHealthRoles(repoRoot, metasystemRoot string, now time.Time, prober 
 		timed(func() RoleVerdict { return checkLedgerAttention(repoRoot, now) }),
 		timed(func() RoleVerdict { return checkClaimedGoalBudgets(repoRoot, now) }),
 		timed(func() RoleVerdict { return checkClaimedGoalDelivery(repoRoot, now) }),
+		timed(func() RoleVerdict { return checkTrunkRed(repoRoot, now) }),
 		spendRole,
 		timed(func() RoleVerdict { return checkGovernedObligations(repoRoot) }),
 		timed(func() RoleVerdict { return checkNonterminalJobs(repoRoot, prober) }),

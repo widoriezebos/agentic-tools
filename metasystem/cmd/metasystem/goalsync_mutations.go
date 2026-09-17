@@ -683,6 +683,7 @@ func printSyncResult(res goal.PublishResult, err error) int {
 // it consumes and ignores the rest.
 type syncFlags struct {
 	root, by, id, intent, next, origin, because, conclude, arc, pin, members string
+	goal, branch, to                                                         string
 	blocks, under, tiers, verbs, expires, verified                           string
 	lineage, digest, elapsedLimit, approvedRef, temporaryWord, reviewBy      string
 	budgetBox, confirm, risk, basis, evidence                                string
@@ -728,6 +729,9 @@ func parseSyncFlags(name string, args []string) (*syncFlags, bool) {
 	fs.StringVar(&f.arc, "arc", "", "the destination arc")
 	fs.StringVar(&f.pin, "pin", "", "the machine nickname a goal is pinned to (\"-\" clears)")
 	fs.StringVar(&f.members, "members", "", "split member draft path")
+	fs.StringVar(&f.goal, "goal", "", "fix goal for a trunk-red entry")
+	fs.StringVar(&f.branch, "branch", "", "fix branch for a trunk-red entry")
+	fs.StringVar(&f.to, "to", "", "machine receiving a human-assigned trunk-red entry")
 	fs.StringVar(&f.finding, "finding", "", "finding identifier")
 	fs.StringVar(&f.chain, "chain", "", "critic chain root")
 	fs.StringVar(&f.why, "why", "", "decision reason")
@@ -808,6 +812,14 @@ func parseSyncFlags(name string, args []string) (*syncFlags, bool) {
 	}
 	if f.members != "" && name != "split" {
 		fmt.Fprintf(os.Stderr, "goal %s does not take --members\n", name)
+		return nil, false
+	}
+	if name != "trunk-red own" && (f.goal != "" || f.branch != "" || f.to != "") {
+		fmt.Fprintf(os.Stderr, "goal %s does not take --goal, --branch, or --to\n", name)
+		return nil, false
+	}
+	if name == "trunk-red own" && f.to != "" && f.by == "" {
+		fmt.Fprintln(os.Stderr, "goal trunk-red own takes --to only with --by")
 		return nil, false
 	}
 	return f, true
@@ -1208,6 +1220,18 @@ func runSyncOnly(name string, run func(req goal.VerbRequest, f *syncFlags) (goal
 				fmt.Fprintf(os.Stderr, "goal %s needs --pin (a machine nickname, or - to clear)\n", name)
 				return 2
 			}
+			if r == "goal" && f.goal == "" {
+				fmt.Fprintf(os.Stderr, "goal %s needs --goal\n", name)
+				return 2
+			}
+			if r == "by" && f.by == "" {
+				fmt.Fprintf(os.Stderr, "goal %s needs --by\n", name)
+				return 2
+			}
+			if r == "why" && strings.TrimSpace(f.why) == "" {
+				fmt.Fprintf(os.Stderr, "goal %s needs --why\n", name)
+				return 2
+			}
 		}
 		requestBuilder := syncReq
 		if name == "release" {
@@ -1223,6 +1247,42 @@ func runSyncOnly(name string, run func(req goal.VerbRequest, f *syncFlags) (goal
 		code := printSyncResult(res, runErr)
 		return code
 	}
+}
+
+func runGoalTrunkRed(args []string) int {
+	if len(args) == 0 || args[0] != "own" && args[0] != "close" {
+		fmt.Fprintln(os.Stderr, "goal trunk-red needs one of:\n  own --id <entry> --goal <fix-goal> [--branch <name>] [--by <human> [--to <machine>]]\n  close --id <entry> --by <human> --why <text>")
+		return 2
+	}
+	sub := args[0]
+	if sub == "own" {
+		run := runSyncOnly("trunk-red own", func(req goal.VerbRequest, f *syncFlags) (goal.PublishResult, error) {
+			branchCommit := ""
+			if f.branch != "" {
+				commit, err := resolveTrunkRedBranch(req.Endpoint, f.branch)
+				if err != nil {
+					return goal.PublishResult{}, err
+				}
+				branchCommit = commit
+			}
+			return goal.OwnTrunkRed(req, goal.TrunkRedOwnArgs{Entry: f.id, Goal: f.goal, Branch: f.branch,
+				BranchCommit: branchCommit, To: f.to, By: f.by})
+		}, "id", "goal")
+		return run(args[1:])
+	}
+	run := runSyncOnly("trunk-red close", func(req goal.VerbRequest, f *syncFlags) (goal.PublishResult, error) {
+		return goal.CloseTrunkRed(req, goal.TrunkRedCloseArgs{Entry: f.id, By: f.by, Why: strings.TrimSpace(f.why)})
+	}, "id", "why")
+	return run(args[1:])
+}
+
+func resolveTrunkRedBranch(endpoint goal.Endpoint, name string) (string, error) {
+	for _, ref := range []string{"refs/heads/" + name, "refs/remotes/" + endpoint.Remote + "/" + name} {
+		if commit, err := goalBranchGit(endpoint.Root, "rev-parse", "--verify", "--quiet", ref); err == nil {
+			return commit, nil
+		}
+	}
+	return "", fmt.Errorf("branch %s is not in this checkout", name)
 }
 
 type goalAuthorityProver func(string, int64, humanauthority.Reader, string, string, time.Time) (humanauthority.Proof, error)

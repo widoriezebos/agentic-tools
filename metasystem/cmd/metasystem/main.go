@@ -538,6 +538,7 @@ func families() []family {
 				{"resume", "human-only: resume a stopped goal under its standing valid approval", runGoalResume},
 				{"release", "release this machine's claim (or the arc's with --arc)", runGoalRelease},
 				{"steal", "take over another machine's claim (displacement-bearing)", runGoalSteal},
+				{"trunk-red", "own or close a trunk-red register entry (own is an agent act; close, and own --by, are human acts)", runGoalTrunkRed},
 				{"land-ready", "mark this machine's claimed goal as built and waiting to land; the claim leaves the one-claim quota and its elapsed fence until it lands", runGoalLandReady},
 				{"edit", "edit a goal's intent or next step in place", runGoalEdit},
 				{"set-arc", "move a goal into an arc under the membership rules", runGoalSetArc},

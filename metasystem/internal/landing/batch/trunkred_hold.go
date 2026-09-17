@@ -18,6 +18,9 @@ type TrunkRedHold struct {
 // HoldTrunkRed durably holds a trunk-red observation with the batch that saw it.
 func (store Store) HoldTrunkRed(id string, red TrunkRed, opid string, at time.Time, actor string) error {
 	return store.Update(id, func(record *Record) error {
+		if record.State == StateHeldTrunkRed && record.TrunkRed != nil && record.TrunkRed.Opid == opid {
+			return nil
+		}
 		if record.State != StateProving && record.State != StateDiagnosing {
 			return fmt.Errorf("batch %s cannot hold trunk red from state %s", id, record.State)
 		}
@@ -36,7 +39,15 @@ func (store Store) HoldTrunkRed(id string, red TrunkRed, opid string, at time.Ti
 			red.Joiners[index] = unit.Claim
 		}
 		red.SeenAt = at
-		record.TrunkRed = &TrunkRedHold{Opid: opid, Opids: []string{opid}, Red: red}
+		if record.TrunkRed == nil {
+			record.TrunkRed = &TrunkRedHold{Opid: opid, Opids: []string{opid}, Red: red}
+		} else {
+			record.TrunkRed.Opid = opid
+			record.TrunkRed.Opids = append(record.TrunkRed.Opids, opid)
+			record.TrunkRed.Red = red
+			record.TrunkRed.Entries = nil
+			record.TrunkRed.RecordedAt = ""
+		}
 		groupIDs := make([]string, len(red.Groups))
 		for index, group := range red.Groups {
 			groupIDs[index] = group.ID
