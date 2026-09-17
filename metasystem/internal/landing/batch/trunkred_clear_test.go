@@ -2,6 +2,7 @@ package batch
 
 import (
 	"fmt"
+	"os"
 	"slices"
 	"testing"
 	"time"
@@ -170,7 +171,7 @@ func TestReopenRetriesPartialClearAndSkipsClosedEntries(t *testing.T) {
 	t.Run("concurrent close refusal does not block reopen", func(t *testing.T) {
 		bed, store, ledger := heldReopenBed(t)
 		ref := load(t, store).TrunkRed.Entries[0]
-		ledger.clearErrors = map[string][]error{ref.ID: {fmt.Errorf("TRUNK_RED_CLOSED: entry %s is closed", ref.ID)}}
+		ledger.clearErrors = map[string][]error{ref.ID: {&TrunkRedRecordFailed{Outcome: "rejected", Evidence: fmt.Sprintf("TRUNK_RED_CLOSED: entry %s is closed", ref.ID)}}}
 		seams := trunkRedClearSeams{
 			run: func(DiagnosticRequest, Claim) (DiagnosticResult, error) {
 				return DiagnosticResult{AttemptID: "green"}, nil
@@ -183,6 +184,85 @@ func TestReopenRetriesPartialClearAndSkipsClosedEntries(t *testing.T) {
 			t.Fatalf("record=%+v clears=%+v", record, ledger.cleared)
 		}
 	})
+}
+
+func TestRedDiagnosticRecordsDespiteUnclearablePassedEntry(t *testing.T) {
+	bed, store, ledger := heldReopenBed(t)
+	passed := addHeldGroup(t, store, ledger, "passed")
+	for index := range ledger.open {
+		if ledger.open[index].ID == passed.ID {
+			ledger.open[index].LastBaseCommit = "next-commit"
+		}
+	}
+	diagnosticCalls := 0
+	mints := 0
+	seams := trunkRedClearSeams{
+		run: func(DiagnosticRequest, Claim) (DiagnosticResult, error) {
+			diagnosticCalls++
+			return DiagnosticResult{AttemptID: "mixed", Groups: []RedGroup{{ID: "group", Status: "failed"}}}, nil
+		},
+		mint: func() (string, error) { mints++; return fmt.Sprintf("op-%d", mints), nil }, ledger: ledger,
+		descendsFrom: func(string, string) (bool, error) { return true, nil },
+	}
+	must(t, reopenHeldAfterDiagnostic(store, testBatchID, bed.moved, "next-commit", "owner", time.Unix(10, 0), seams))
+	record := load(t, store)
+	if record.State != StateHeldTrunkRed || record.TrunkRed.Red.BaseTree != bed.moved || len(ledger.recorded) != 1 ||
+		len(ledger.recorded[0].Groups) != 1 || ledger.recorded[0].Groups[0].ID != "group" || len(ledger.cleared) != 0 || len(ledger.open) != 2 {
+		t.Fatalf("record=%+v ledger=%+v", record, ledger)
+	}
+
+	ownerBed := newOwnerBed(t, record, time.Unix(11, 0))
+	ownerBed.tree = bed.moved
+	ownerBed.store = ownerBed.store.WithLedgerOwner(ledger)
+	ownerBed.owner.store = ownerBed.store
+	ownerBed.owner.runDiagnostic = func(string, DiagnosticRequest, Claim) (DiagnosticResult, error) {
+		diagnosticCalls++
+		return DiagnosticResult{}, nil
+	}
+	must(t, ownerBed.owner.Tick(testBatchID))
+	if diagnosticCalls != 1 {
+		t.Fatalf("diagnostic calls=%d, want one", diagnosticCalls)
+	}
+}
+
+func TestReopenDiscoversEveryLedgerEntryHeldByBatch(t *testing.T) {
+	bed, store, ledger := heldReopenBed(t)
+	oldRef := load(t, store).TrunkRed.Entries[0]
+	diagnosticCalls := 0
+	requests := []DiagnosticRequest{}
+	mints := 0
+	seams := trunkRedClearSeams{
+		run: func(request DiagnosticRequest, _ Claim) (DiagnosticResult, error) {
+			diagnosticCalls++
+			requests = append(requests, request)
+			if diagnosticCalls == 1 {
+				return DiagnosticResult{AttemptID: "changed-red", Groups: []RedGroup{{ID: "group", Status: "failed", Failures: []Failure{{Report: "report", Classname: "Class", Name: "Other", Status: "failed"}}}}}, nil
+			}
+			return DiagnosticResult{AttemptID: "green"}, nil
+		},
+		mint: func() (string, error) { mints++; return fmt.Sprintf("op-%d", mints), nil }, ledger: ledger,
+		descendsFrom: func(string, string) (bool, error) { return true, nil },
+	}
+	must(t, reopenHeldAfterDiagnostic(store, testBatchID, bed.moved, "next-commit", "owner", time.Unix(10, 0), seams))
+	newRef := load(t, store).TrunkRed.Entries[0]
+	if newRef.ID == oldRef.ID {
+		t.Fatalf("changed failure identity reused entry %s", oldRef.ID)
+	}
+	ledger.open = append(ledger.open, OpenEntry{ID: newRef.ID, Group: newRef.Group, Holds: []string{testBatchID}, LastBaseCommit: "next-commit"})
+	must(t, os.WriteFile(bed.root+"/trunk", []byte("third\n"), 0o644))
+	bedGit(t, bed.root, "add", "trunk")
+	bedGit(t, bed.root, "commit", "-m", "third")
+	thirdTree := bedGit(t, bed.root, "rev-parse", "HEAD^{tree}")
+
+	must(t, reopenHeldAfterDiagnostic(store, testBatchID, thirdTree, "third-commit", "owner", time.Unix(11, 0), seams))
+	cleared := []string{}
+	for _, clear := range ledger.cleared {
+		cleared = append(cleared, clear.ref.ID)
+	}
+	if record := load(t, store); record.State != StateOpen || !slices.Contains(cleared, oldRef.ID) || !slices.Contains(cleared, newRef.ID) ||
+		len(cleared) != 2 || len(requests) != 2 || !slices.Equal(requests[1].Groups, []string{"group"}) {
+		t.Fatalf("record=%+v clears=%v requests=%+v", record, cleared, requests)
+	}
 }
 
 func TestMixedDiagnosticClearsPassedEntryBeforeRehold(t *testing.T) {

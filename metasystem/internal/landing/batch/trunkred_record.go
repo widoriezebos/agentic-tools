@@ -39,6 +39,13 @@ func (failure *TrunkRedRecordFailed) Error() string {
 	return fmt.Sprintf("TRUNK_RED_RECORD_FAILED %s: %s", failure.Outcome, failure.Evidence)
 }
 
+// IsTrunkRedClosed reports whether a ledger transaction refused a clear
+// because another writer had already closed the entry.
+func IsTrunkRedClosed(err error) bool {
+	var failed *TrunkRedRecordFailed
+	return errors.As(err, &failed) && failed != nil && strings.HasPrefix(failed.Evidence, "TRUNK_RED_CLOSED:")
+}
+
 // EnsureTrunkRedRecorded records an unrecorded held trunk red through the ledger owner.
 func (store Store) EnsureTrunkRedRecorded(id string, mint func() (string, error), at time.Time, actor string) (TrunkRedRecordOutcome, error) {
 	record, err := store.Load(id)

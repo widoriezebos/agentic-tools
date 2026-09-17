@@ -104,6 +104,10 @@ func TestLedgerTrunkRedOwnerRecordsIdempotently(t *testing.T) {
 	if err := owner.Clear(clearOpid, refs[0], batch.Green{AttemptID: "green-1", BaseCommit: greenCommit, BaseTree: greenTree, Group: "fast"}); err != nil {
 		t.Fatal(err)
 	}
+	closedOpid := goal.Opid("01J5X0000000000000000000V6", machine, lineage)
+	if err := owner.Clear(closedOpid, refs[0], batch.Green{AttemptID: "green-2", BaseCommit: greenCommit, BaseTree: greenTree, Group: "fast"}); !batch.IsTrunkRedClosed(err) {
+		t.Fatalf("second clear error=%v, want typed already-closed classification", err)
+	}
 	if open, err := owner.Open(); err != nil || len(open) != 0 {
 		t.Fatalf("clear left open entries: %+v %v", open, err)
 	}
