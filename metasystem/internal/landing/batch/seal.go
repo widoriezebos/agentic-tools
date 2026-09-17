@@ -12,6 +12,17 @@ import (
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/testpolicy"
 )
 
+// Seal re-derives the batch at the fetched base, dry-runs every prefix
+// boundary, and freezes member selections and revisions before proof admission.
+func Seal(store Store, id, baseTree, owner string, at time.Time, plan func(string, string, string) (testpolicy.Plan, error), gate GateExecutor) error {
+	return store.Update(id, func(record *Record) error {
+		if record.State != StateOpen {
+			return fmt.Errorf("BATCH_PROOF_STATE_REFUSED: batch %s must be open before seal", id)
+		}
+		return sealBatch(store.root, baseTree, owner, at, record, plan, gate, assembleUnits)
+	})
+}
+
 func sealBatch(root, baseTree, owner string, at time.Time, record *Record, plan func(string, string, string) (testpolicy.Plan, error), gate batchGateExec, assemble func(string, string, []Unit) ([]string, error)) error {
 	prefixes, err := assemble(root, baseTree, record.Units)
 	if err != nil {

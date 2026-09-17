@@ -50,6 +50,16 @@ func NewBatchLanding(root string, maxWait time.Duration, now func() time.Time) (
 	return BatchLanding{Root: resolvePath(root), MaxWait: maxWait, now: now}, nil
 }
 
+// ResolveExplicitBatchLanding validates an explicitly supplied landing root
+// with the same existence and non-seat rules as configured resolution.
+func ResolveExplicitBatchLanding(root, seatRoot string, maxWait time.Duration, now func() time.Time) (BatchLanding, error) {
+	validated, err := batchLandingRoot(root, seatRoot)
+	if err != nil {
+		return BatchLanding{}, err
+	}
+	return NewBatchLanding(validated, maxWait, now)
+}
+
 func ResolveBatchLanding(confPath, seatRoot string, now func() time.Time) (BatchLanding, error) {
 	if now == nil {
 		return BatchLanding{}, fmt.Errorf("resolve batch landing: an injected clock is required")

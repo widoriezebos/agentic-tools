@@ -68,9 +68,9 @@ func newOwnerBed(t *testing.T, record Record, now time.Time) *ownerBed {
 		return ReturnLedgerGoal{}, nil
 	}}
 	bed.owner, err = NewOwner(OwnerOptions{Store: bed.store, Settings: settings, Actor: "landing+owner", PID: 7,
-		LockDir: bed.lockDir, QueueDir: bed.queueDir, Now: func() time.Time { return bed.now }, FetchTree: func() (string, error) { return bed.tree, bed.fetchErr }, ReadClaim: readClaim, Returns: returns, Rebind: func(id string) error {
+		LockDir: bed.lockDir, QueueDir: bed.queueDir, Now: func() time.Time { return bed.now }, FetchTree: func() (string, error) { return bed.tree, bed.fetchErr }, ReadClaim: readClaim, Returns: returns, Rebind: func(id, tree string) error {
 			bed.ticks = append(bed.ticks, id)
-			bed.events = append(bed.events, "rebind:"+id)
+			bed.events = append(bed.events, "rebind:"+id+":"+tree)
 			return nil
 		}, Sample: func() proofrun.LoadSample {
 			if len(bed.samples) == 0 {
@@ -146,7 +146,7 @@ func TestBatchOwnerReconcilesAtFetchedTree(t *testing.T) {
 	bed.tree, bed.claimTree, bed.claim = "B", "B", joining.Claim
 	must(t, bed.owner.Tick(testBatchID))
 	record := load(t, bed.store)
-	witness(t, record.Units[1].State == UnitJoined && slices.Equal(bed.events, []string{"return:A", "rebind:" + testBatchID, "reconcile:B", "return:B", "rebind:" + testBatchID}), "record=%+v events=%v", record, bed.events)
+	witness(t, record.Units[1].State == UnitJoined && slices.Equal(bed.events, []string{"return:A", "rebind:" + testBatchID + ":A", "reconcile:B", "return:B", "rebind:" + testBatchID + ":B"}), "record=%+v events=%v", record, bed.events)
 }
 
 func TestBatchOwnerReturnsAfterReconcile(t *testing.T) {
@@ -155,7 +155,7 @@ func TestBatchOwnerReturnsAfterReconcile(t *testing.T) {
 	bed := newOwnerBed(t, record, time.Unix(3, 0))
 	must(t, bed.owner.Tick(testBatchID))
 	unit := load(t, bed.store).Units[0]
-	witness(t, unit.State == UnitEjected && unit.ReturnDisposition == ReturnAlreadyReturned && slices.Equal(bed.events, []string{"reconcile:tree", "return:tree", "rebind:" + testBatchID}), "unit=%+v events=%v", unit, bed.events)
+	witness(t, unit.State == UnitEjected && unit.ReturnDisposition == ReturnAlreadyReturned && slices.Equal(bed.events, []string{"reconcile:tree", "return:tree", "rebind:" + testBatchID + ":tree"}), "unit=%+v events=%v", unit, bed.events)
 }
 
 func TestBatchOwnerHoldsPersistentUnknownCensus(t *testing.T) {

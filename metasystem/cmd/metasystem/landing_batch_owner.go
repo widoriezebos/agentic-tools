@@ -48,20 +48,27 @@ var batchOwnerEnsure = batchOwnerEnsureSeams{
 }
 
 func inspectBatchOwner(root string) (int64, identity.Liveness, error) {
-	holder, err := lease.CurrentHolder(root)
+	return inspectBatchOwnerWith(root, identity.KernelProber{}, lease.CurrentHolder, lease.AnnouncementsFor)
+}
+
+func inspectBatchOwnerWith(root string, prober identity.Prober, readHolder func(string) (lease.CurrentHolderView, error), announcements func(string, int64) []lease.Announcement) (int64, identity.Liveness, error) {
+	holder, err := readHolder(root)
 	if err != nil {
-		return 0, identity.Dead, nil
+		if errors.Is(err, lease.ErrLeaseAbsent) {
+			return 0, identity.Dead, nil
+		}
+		return 0, identity.Unknown, err
 	}
 	if holder.OwnerLineage != landingOwnerLineage {
 		return holder.Pid, identity.Unknown, fmt.Errorf("landing checkout is held by lineage %s", holder.OwnerLineage)
 	}
-	for _, announcement := range lease.AnnouncementsFor(root, holder.Pid) {
+	for _, announcement := range announcements(root, holder.Pid) {
 		if announcement.MainId != holder.MainId {
 			continue
 		}
 		ref := identity.Ref{Pid: announcement.Pid, StartedAtSec: announcement.PidStartedAt,
 			StartTicks: announcement.PidStartTicks, BootID: announcement.BootID}
-		return holder.Pid, identity.AliveRef(identity.KernelProber{}, ref), nil
+		return holder.Pid, identity.AliveRef(prober, ref), nil
 	}
 	return holder.Pid, identity.Unknown, fmt.Errorf("landing owner announcement is absent")
 }
@@ -140,7 +147,7 @@ func (held batchOwnerLease) retire() {
 
 func resolveBatchOwnerSettings(seatRoot, landingRoot string, maxWait time.Duration, now func() time.Time) (config.BatchLanding, error) {
 	if landingRoot != "" {
-		return config.NewBatchLanding(landingRoot, maxWait, now)
+		return config.ResolveExplicitBatchLanding(landingRoot, seatRoot, maxWait, now)
 	}
 	return config.ResolveBatchLanding(filepath.Join(seatRoot, "metasystem.conf"), seatRoot, now)
 }
@@ -188,6 +195,8 @@ var batchReturnTargetSeams = struct {
 	announcements func(string, string) []lease.Announcement
 }{goalFilesAt, lease.CurrentHolder, lease.AnnouncementsForOwnerLineage}
 
+var batchReturnLedgerGoal = batch.ReadReturnLedgerGoal
+
 func productionReturnTarget(landingRoot, tree string, prober identity.Prober, unit batch.Unit) batch.ReturnTarget {
 	files, err := batchReturnTargetSeams.goals(landingRoot, tree)
 	if err != nil {
@@ -230,6 +239,8 @@ func runBatchChild(root string, args ...string) error {
 	return runBatchChildAs(root, landingOwnerLineage, args...)
 }
 
+var batchChildRunner = runBatchChildAs
+
 func runBatchChildAs(root, lineage string, args ...string) error {
 	binary, err := os.Executable()
 	if err != nil {
@@ -246,12 +257,12 @@ func runBatchChildAs(root, lineage string, args ...string) error {
 
 func productionReturnSeams(root string, tree func() string) batch.ReturnSeams {
 	return batch.ReturnSeams{
-		Read: batch.ReadReturnLedgerGoal,
+		Read: batchReturnLedgerGoal,
 		Target: func(unit batch.Unit) batch.ReturnTarget {
 			return productionReturnTarget(root, tree(), identity.KernelProber{}, unit)
 		},
 		HandBack: func(goalID string, source batch.Claim, epoch uint64) error {
-			record, err := batch.ReadReturnLedgerGoal(root, tree(), goalID)
+			record, err := batchReturnLedgerGoal(root, tree(), goalID)
 			if err != nil {
 				return err
 			}
@@ -259,16 +270,16 @@ func productionReturnSeams(root string, tree func() string) batch.ReturnSeams {
 			if err != nil {
 				return err
 			}
-			return runBatchChild(root, "goal", "handover", "--root", root, "--id", goalID,
+			return batchChildRunner(root, landingOwnerLineage, "goal", "handover", "--root", root, "--id", goalID,
 				"--lineage", landingOwnerLineage, "--target-machine", source.Machine,
 				"--target-lineage", source.Lineage, "--target-claim-epoch", strconv.FormatUint(epoch, 10),
 				"--batch", record.Batch, "--target-root", loaded.SeatRoot)
 		},
 		Release: func(goalID, next string) error {
-			if err := runBatchChild(root, "goal", "edit", "--root", root, "--id", goalID, "--next", next, "--lineage", landingOwnerLineage); err != nil {
+			if err := batchChildRunner(root, landingOwnerLineage, "goal", "edit", "--root", root, "--id", goalID, "--next", next, "--lineage", landingOwnerLineage); err != nil {
 				return err
 			}
-			return runBatchChild(root, "goal", "release", "--root", root, "--id", goalID, "--lineage", landingOwnerLineage)
+			return batchChildRunner(root, landingOwnerLineage, "goal", "release", "--root", root, "--id", goalID, "--lineage", landingOwnerLineage)
 		},
 	}
 }
@@ -279,14 +290,14 @@ func findBatchUnit(root, batchID, goalID string) (batch.Unit, error) {
 		return batch.Unit{}, err
 	}
 	for _, unit := range record.Units {
-		if unit.GoalID == goalID {
+		if unit.GoalID == goalID && unit.State == batch.UnitReturnPending {
 			return unit, nil
 		}
 	}
 	return batch.Unit{}, fmt.Errorf("batch unit %s is absent", goalID)
 }
 
-func rebindBatchClaims(root, batchID, machine string, epoch int64, run func(string, ...string) error) error {
+func rebindBatchClaims(root, batchID, tree, machine string, epoch int64, read func(string, string, string) (batch.ReturnLedgerGoal, error), run func(string, ...string) error) error {
 	record, err := batch.NewStore(root, nil).Load(batchID)
 	if err != nil {
 		return err
@@ -294,6 +305,16 @@ func rebindBatchClaims(root, batchID, machine string, epoch int64, run func(stri
 	for _, unit := range record.Units {
 		if unit.State != batch.UnitJoined {
 			continue
+		}
+		ledger, err := read(root, tree, unit.GoalID)
+		if err != nil {
+			return fmt.Errorf("read joined goal %s before rebind: %w", unit.GoalID, err)
+		}
+		if ledger.Claimed && ledger.Machine == machine && ledger.Lineage == landingOwnerLineage && ledger.Batch == batchID && ledger.ClaimEpoch == uint64(epoch) {
+			continue
+		}
+		if ledger.ClaimEpoch > uint64(epoch) {
+			return fmt.Errorf("rebind joined goal %s: claim epoch %d is ahead of owner epoch %d", unit.GoalID, ledger.ClaimEpoch, epoch)
 		}
 		if err := run(root, "goal", "handover", "--root", root, "--id", unit.GoalID,
 			"--lineage", landingOwnerLineage, "--target-machine", machine,
@@ -323,8 +344,10 @@ func newProductionBatchOwner(settings config.BatchLanding, held batchOwnerLease,
 	return batch.NewOwner(batch.OwnerOptions{
 		Store: store, Settings: settings, Actor: landingOwnerLineage, PID: held.pid, Now: now,
 		FetchTree: fetch, ReadClaim: batch.ReadClaimAt, Returns: returns,
-		Rebind: func(batchID string) error {
-			return rebindBatchClaims(settings.Root, batchID, machine, held.epoch, runBatchChild)
+		Rebind: func(batchID, tree string) error {
+			return rebindBatchClaims(settings.Root, batchID, tree, machine, held.epoch, batch.ReadReturnLedgerGoal, func(root string, args ...string) error {
+				return batchChildRunner(root, landingOwnerLineage, args...)
+			})
 		},
 		Sample: func() proofrun.LoadSample { return proofrun.SampleLoad(settings.Root, "", held.pid, now()) },
 		Admission: func(sample proofrun.LoadSample) proofrun.AdmissionCap {
@@ -335,7 +358,18 @@ func newProductionBatchOwner(settings config.BatchLanding, held batchOwnerLease,
 			return cap
 		},
 		Launch: func(id string, sample proofrun.LoadSample, window string) error {
-			return executeBatchProof(settings.Root, id, landingOwnerLineage, window, sample, now(), productionBatchProofDependencies)
+			record, err := store.Load(id)
+			if err != nil {
+				return err
+			}
+			switch record.State {
+			case batch.StateDiagnosing:
+				return executeBatchDiagnosis(settings.Root, id, landingOwnerLineage, now())
+			case batch.StateLanding:
+				return executeBatchLanding(settings.Root, id, landingOwnerLineage, now())
+			default:
+				return executeBatchProof(settings.Root, id, landingOwnerLineage, window, sample, now(), productionBatchProofDependencies)
+			}
 		},
 		After: time.After,
 		Report: func(id string, err error) {

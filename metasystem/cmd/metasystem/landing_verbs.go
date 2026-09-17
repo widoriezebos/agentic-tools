@@ -164,6 +164,8 @@ func shortLandingID(id string) string {
 	return id[:12]
 }
 
+var landingReceiptTestRun = runTestRun
+
 func runLandingTestReceipt(args []string) (status int) {
 	flags := flag.NewFlagSet("landing test-receipt", flag.ContinueOnError)
 	root := pathFlag(flags, "root", "", "project checkout root")
@@ -225,7 +227,7 @@ func runLandingTestReceipt(args []string) (status int) {
 			testArgs = append(testArgs, "--expected-goal-revision", fmt.Sprint(*expectedGoalRevision),
 				"--expected-accounting-revision", fmt.Sprint(*expectedAccountingRevision))
 		}
-		status := runTestRun(testArgs)
+		status := landingReceiptTestRun(testArgs)
 		if status != 0 && status != proofrun.ExitReusableSuccess {
 			return status
 		}

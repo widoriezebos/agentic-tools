@@ -3,6 +3,9 @@
 package main
 
 import (
+	"bufio"
+	"encoding/json"
+	"fmt"
 	"os"
 	"os/exec"
 	"strings"
@@ -34,11 +37,54 @@ func TestBatchVerbsUnavailableWithoutFilesystemWrites(t *testing.T) {
 }
 
 func TestBatchTaggedCapabilityWitnessExecutesInProof(t *testing.T) {
+	names := []string{
+		"TestBatchCapabilitiesGate", "TestGoalHandoverRequiresCompleteInputs", "TestGoalHandoverTargetAuthenticationFailsClosed",
+		"TestBatchJoinSpawnsOneOwner", "TestBatchOwnerHoldsTheLease", "TestBatchOwnerWiringBound",
+		"TestBatchOwnerInspectionUsesInjectedProberAndKeepsReadErrorsUnknown", "TestBatchProductionReturnTargetClassifiesCustody",
+		"TestBatchProofCoversTheUnion", "TestBatchProofAcceptsReusableSuccess", "TestBatchProofRearmsBaseBeforePlanningEvenWhenTreeMatches",
+		"TestBatchSupervisorTakeoverRebindsJoinedClaims", "TestGoalHandoverTargetRootFlagFlows", "TestLandingBatchJoinVerbPublishesOutsideFlock",
+		"TestBatchProductionReturnAndForwardHandoverArguments", "TestBatchTrunkRedLedgerOwnerCapability",
+		"TestBatchProofUnionUsesRealMemberRiskSelection",
+	}
 	command := exec.Command("go", "test", "-count=1", "-tags", "batchtest",
-		"-run", "^(TestBatchCapabilitiesGate|TestGoalHandoverRequiresCompleteInputs|TestGoalHandoverTargetAuthenticationFailsClosed|TestBatchJoinSpawnsOneOwner|TestBatchOwnerHoldsTheLease|TestBatchOwnerWiringBound|TestBatchProductionReturnTargetClassifiesCustody|TestBatchProofCoversTheUnion|TestBatchProofAcceptsReusableSuccess|TestBatchSupervisorTakeoverRebindsJoinedClaims|TestGoalHandoverTargetRootFlagFlows|TestLandingBatchJoinVerbPublishesOutsideFlock)$", "./cmd/metasystem")
+		"-json", "-run", "^("+strings.Join(names, "|")+")$", "./cmd/metasystem")
 	command.Dir = "../.."
-	if output, err := command.CombinedOutput(); err != nil {
+	output, err := command.CombinedOutput()
+	if err != nil {
 		t.Fatalf("tagged batch capability witness: %v\n%s", err, output)
+	}
+	if err := requireTaggedBatchPasses(output, names); err != nil {
+		t.Fatal(err)
+	}
+}
+
+func requireTaggedBatchPasses(output []byte, names []string) error {
+	passed := map[string]bool{}
+	scanner := bufio.NewScanner(strings.NewReader(string(output)))
+	for scanner.Scan() {
+		var event struct {
+			Action string `json:"Action"`
+			Test   string `json:"Test"`
+		}
+		if json.Unmarshal(scanner.Bytes(), &event) == nil && event.Action == "pass" && event.Test != "" {
+			passed[event.Test] = true
+		}
+	}
+	if err := scanner.Err(); err != nil {
+		return err
+	}
+	for _, name := range names {
+		if !passed[name] {
+			return fmt.Errorf("tagged batch capability witness %s did not report pass", name)
+		}
+	}
+	return nil
+}
+
+func TestBatchTaggedCapabilityWitnessRejectsMissingTest(t *testing.T) {
+	line := []byte(`{"Action":"pass","Test":"TestPresent"}` + "\n")
+	if err := requireTaggedBatchPasses(line, []string{"TestPresent", "TestMissing"}); err == nil || !strings.Contains(err.Error(), "TestMissing") {
+		t.Fatalf("missing tagged witness error=%v", err)
 	}
 }
 
@@ -60,6 +106,8 @@ func TestBatchProductionRegistryContainsOnlyBuiltUnits(t *testing.T) {
 	want := map[batchCapability]bool{
 		ownerVerbAndTick: true, productionSupervisorTakeover: true,
 		proofPlanningAndTipLaunch: true, revisionBoundAdmissionAndDiagnosticHeadroom: true,
+		freshBaseDiagnosis: true, ejectionAndRedScheduling: true, prefixReceipts: true,
+		landingTransportHelpers: true, atomicSeriesAndRecovery: true, waitStatusDocsAndInventory: true,
 	}
 	if len(compiledBatchCapabilities) != len(want) {
 		t.Fatalf("production registered %d batch capabilities, want %d", len(compiledBatchCapabilities), len(want))

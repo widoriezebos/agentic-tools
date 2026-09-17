@@ -28,6 +28,7 @@ func PublishJoin(store Store, batchID string, unit Unit, actor string, at time.T
 			if err != nil {
 				return err
 			}
+			unit.SelectedGroups = slices.Clone(selection.SelectedGroups)
 			record.PrefixTrees, record.TipTree = prefixes, tip
 			recordSelection(record, selection)
 			record.Units = append(record.Units, unit)

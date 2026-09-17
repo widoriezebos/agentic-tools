@@ -3,6 +3,7 @@ package testpolicy
 import (
 	"encoding/json"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"reflect"
 	"regexp"
@@ -130,6 +131,45 @@ func TestMetaSystemContractPinsFallbackDeclarationAndGroupUnions(t *testing.T) {
 			detectionRank(residual.Risk.Detection) < detectionRank(surface.Risk.Detection) ||
 			recoveryRank(residual.Risk.Recovery) < recoveryRank(surface.Risk.Recovery) {
 			t.Fatalf("fallback surface risk raise is lower than surface %s: fallback=%+v surface=%+v", surface.ID, residual.Risk, surface.Risk)
+		}
+	}
+}
+
+func TestMetaSystemContractNamesOnlyUntaggedGoTests(t *testing.T) {
+	data, err := os.ReadFile("../../testing.json")
+	if err != nil {
+		t.Fatal(err)
+	}
+	contract, err := Decode(data)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, group := range contract.Groups {
+		if group.Adapter != "go" || len(group.Tests) == 0 || string(group.Tests) == `"all"` {
+			continue
+		}
+		var names []string
+		if err := json.Unmarshal(group.Tests, &names); err != nil {
+			t.Fatalf("group %s tests: %v", group.ID, err)
+		}
+		available := map[string]bool{}
+		for _, pkg := range group.Packages {
+			command := exec.Command("go", "test", "-list", "^Test", "./"+pkg)
+			command.Dir = "../.."
+			output, err := command.Output()
+			if err != nil {
+				t.Fatalf("list untagged tests for group %s package %s: %v", group.ID, pkg, err)
+			}
+			for _, line := range strings.Fields(string(output)) {
+				if strings.HasPrefix(line, "Test") {
+					available[line] = true
+				}
+			}
+		}
+		for _, name := range names {
+			if !available[name] {
+				t.Errorf("go group %s names test %s which is absent without build tags", group.ID, name)
+			}
 		}
 	}
 }

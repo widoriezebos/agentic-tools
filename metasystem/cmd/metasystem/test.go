@@ -142,6 +142,7 @@ type testingSelectionRequest struct {
 	Purpose                                               testpolicy.Purpose
 	Groups                                                []string
 	Carried                                               bool
+	NoReuse, RequireDiagnosticHeadroom                    bool
 	// LandedRearm is set by the outermost test run only: the pinned child
 	// plan and the verify verbs judge the engine as they find it.
 	LandedRearm bool
@@ -164,6 +165,8 @@ func parseTestingSelection(name string, args []string, execution bool) (testingS
 		flags.StringVar(&request.ResultPath, "result", "", "atomic result projection path")
 		flags.Uint64Var(&request.ExpectedGoalRevision, "expected-goal-revision", 0, "sealed goal revision")
 		flags.Uint64Var(&request.ExpectedAccountingRevision, "expected-accounting-revision", 0, "sealed accounting revision")
+		flags.BoolVar(&request.NoReuse, "no-reuse", false, "execute diagnostic groups freshly")
+		flags.BoolVar(&request.RequireDiagnosticHeadroom, "require-diagnostic-headroom", false, "reserve the mandatory batch-tip diagnostic")
 	}
 	if flags.Parse(args) != nil || flags.NArg() != 0 || request.Root == "" {
 		fmt.Fprintf(os.Stderr, "usage: metasystem %s --root INSTALLATION [--goal ID] [--tree TREE] [--mode auto|standard|deep|canary] [--purpose delivery|diagnostic|cadence] [--groups ID,ID]\n", name)
@@ -184,6 +187,14 @@ func parseTestingSelection(name string, args []string, execution bool) (testingS
 		}
 	}
 	request.Mode, request.Purpose = testpolicy.Mode(*mode), testpolicy.Purpose(*purpose)
+	if request.NoReuse && request.Purpose != testpolicy.PurposeDiagnostic {
+		fmt.Fprintln(os.Stderr, "--no-reuse is available only for diagnostic purpose")
+		return request, false, 2
+	}
+	if request.RequireDiagnosticHeadroom && request.Purpose != testpolicy.PurposeDelivery {
+		fmt.Fprintln(os.Stderr, "--require-diagnostic-headroom is available only for delivery purpose")
+		return request, false, 2
+	}
 	if (request.ExpectedGoalRevision == 0) != (request.ExpectedAccountingRevision == 0) {
 		fmt.Fprintln(os.Stderr, "expected goal and accounting revisions must be supplied together")
 		return request, false, 2
@@ -825,7 +836,8 @@ func runTestRun(args []string) int {
 		SharedEngine: engine, SharedManifestDigest: manifestDigest, ComponentIdentities: identities,
 		// A cadence attempt is the fresh sweep: it never inherits a
 		// reusable-success answer from an earlier run of its goal.
-		ExecuteAfresh: request.Purpose == testpolicy.PurposeCadence}
+		ExecuteAfresh:             request.Purpose == testpolicy.PurposeCadence || request.NoReuse,
+		RequireDiagnosticHeadroom: request.RequireDiagnosticHeadroom}
 	attempt, decision, joined, err := admitProofLaunch(admission)
 	if err != nil {
 		fmt.Fprintln(os.Stderr, "metasystem test run:", err)
