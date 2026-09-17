@@ -3,6 +3,7 @@ package goal
 import (
 	"errors"
 	"fmt"
+	"reflect"
 	"strings"
 	"testing"
 )
@@ -149,7 +150,7 @@ func TestDoneRefusesOpenReadItemIDsAndPassesWhenClosed(t *testing.T) {
 	var openErr *DoneReadItemsOpenError
 	_, tip := acceptedTree(t, root, readItemRequest(root, 72).Now)
 	_, typedErr := doneRequest(readItemRequest(root, 73), "source", "Built.").Mutate(tip)
-	if doneErr != nil || result.Outcome != OutcomeRejected || !errors.As(typedErr, &openErr) || !strings.Contains(result.Detail, "read-z-1, read-z-2") || !strings.Contains(result.Detail, "--fixed") || !strings.Contains(result.Detail, "--moved") || !strings.Contains(result.Detail, "--accepted") {
+	if doneErr != nil || result.Outcome != OutcomeRejected || !errors.As(typedErr, &openErr) || !strings.Contains(result.Detail, "read-z-1, read-z-2") || !strings.Contains(result.Detail, "--id source --item read-z-1 --fixed") || !strings.Contains(result.Detail, "--id source --item read-z-2 --moved") || !strings.Contains(result.Detail, "--id source --item read-z-2 --accepted") {
 		t.Fatalf("open-item done refusal: result=%+v error=%v typed=%T %v", result, doneErr, typedErr, typedErr)
 	}
 	reason := "the behavior is intentional"
@@ -163,6 +164,138 @@ func TestDoneRefusesOpenReadItemIDsAndPassesWhenClosed(t *testing.T) {
 	if doneErr != nil || result.Outcome != OutcomeConfirmed || !strings.Contains(result.Detail, "read-z-1: the behavior is intentional") {
 		t.Fatalf("done after closure: %+v %v", result, doneErr)
 	}
+}
+
+type terminalLedgerSnapshot struct {
+	accepted string
+	remote   string
+	files    map[string][]byte
+}
+
+func snapshotTerminalLedger(t *testing.T, root string) terminalLedgerSnapshot {
+	t.Helper()
+	snapshot, err := CaptureSnapshot(root)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return terminalLedgerSnapshot{
+		accepted: acceptedTip(t, root),
+		remote:   mustGit(t, root, "ls-remote", "origin", "refs/heads/main"),
+		files:    snapshot.Files,
+	}
+}
+
+func assertTerminalReadItemRefusal(t *testing.T, root, goalID, itemID string, before terminalLedgerSnapshot, result PublishResult, err error) {
+	t.Helper()
+	if err != nil || result.Outcome != OutcomeRejected || !strings.Contains(result.Detail, "goal "+goalID) || !strings.Contains(result.Detail, itemID) {
+		t.Fatalf("terminal transition did not name its open item: result=%+v err=%v", result, err)
+	}
+	if after := snapshotTerminalLedger(t, root); !reflect.DeepEqual(after, before) {
+		t.Fatalf("refused terminal transition changed ledger bytes or refs:\nbefore=%+v\nafter=%+v", before, after)
+	}
+}
+
+func TestEveryTerminalGoalTransitionRefusesOpenReadItems(t *testing.T) {
+	t.Run("split", func(t *testing.T) {
+		root := readItemBed(t, "split-parent")
+		if result, err := AddReadItems(readItemRequest(root, 100), "split-parent", "critic", []string{"Keep the parent live."}); err != nil || result.Outcome != OutcomeConfirmed {
+			t.Fatalf("add: %+v %v", result, err)
+		}
+		materialize(t, root, acceptedTip(t, root))
+		members := testMembers("split-parent")
+		before := snapshotTerminalLedger(t, root)
+		result, err := Split(readItemRequest(root, 101), "split-parent", members, mainRatification("split-parent", members), nil)
+		assertTerminalReadItemRefusal(t, root, "split-parent", "critic-1", before, result, err)
+		reason := "addressed before decomposition"
+		if closed, closeErr := CloseReadItem(readItemRequest(root, 102), "split-parent", "critic-1", ReadItemClosure{Accepted: &reason}); closeErr != nil || closed.Outcome != OutcomeConfirmed {
+			t.Fatalf("close: %+v %v", closed, closeErr)
+		}
+		if split, splitErr := Split(readItemRequest(root, 103), "split-parent", members, mainRatification("split-parent", members), nil); splitErr != nil || split.Outcome != OutcomeConfirmed {
+			t.Fatalf("split after close: %+v %v", split, splitErr)
+		}
+	})
+
+	t.Run("abandon --also member", func(t *testing.T) {
+		root := readItemBed(t, "abandon-parent", "abandon-child")
+		configureAbandonFloorTest(t, strings.Repeat("a", 40))
+		recordAbandonFloorTest(t, root, "01J5X00000000000000000RT00")
+		blocked := []string{"abandon-parent"}
+		if result, err := Edit(readItemRequest(root, 110), "abandon-child", EditFields{Blocked: &blocked}); err != nil || result.Outcome != OutcomeConfirmed {
+			t.Fatalf("block child: %+v %v", result, err)
+		}
+		if result, err := AddReadItems(readItemRequest(root, 111), "abandon-child", "critic", []string{"Do not strand this child item."}); err != nil || result.Outcome != OutcomeConfirmed {
+			t.Fatalf("add: %+v %v", result, err)
+		}
+		materialize(t, root, acceptedTip(t, root))
+		request := readItemRequest(root, 112)
+		request.Actor.Human = "Wido"
+		spec := AbandonSpec{Because: "the work is obsolete", Also: []string{"abandon-child"}}
+		before := snapshotTerminalLedger(t, root)
+		result, err := Abandon(request, "abandon-parent", spec, goalHumanProof(t, root, request.Now))
+		assertTerminalReadItemRefusal(t, root, "abandon-child", "critic-1", before, result, err)
+		reason := "accepted before abandonment"
+		if closed, closeErr := CloseReadItem(readItemRequest(root, 113), "abandon-child", "critic-1", ReadItemClosure{Accepted: &reason}); closeErr != nil || closed.Outcome != OutcomeConfirmed {
+			t.Fatalf("close: %+v %v", closed, closeErr)
+		}
+		request = readItemRequest(root, 114)
+		request.Actor.Human = "Wido"
+		if abandoned, abandonErr := Abandon(request, "abandon-parent", spec, goalHumanProof(t, root, request.Now)); abandonErr != nil || abandoned.Outcome != OutcomeConfirmed {
+			t.Fatalf("abandon after close: %+v %v", abandoned, abandonErr)
+		}
+	})
+
+	t.Run("reconcile to done", func(t *testing.T) {
+		file := vGoal("reconcile-done", StateQueued)
+		file.ReadItems = []ReadItem{{ID: "critic-1", Read: "critic", Text: "Close before reconciling.", State: ReadItemOpen, AddedAt: "2026-09-17T10:00:00Z"}}
+		root, _ := priorityReconcileBed(t, []*GoalFile{file}, nil)
+		editFile(t, root, livePath("reconcile-done"), func(edited *GoalFile) {
+			edited.State = StateDone
+			edited.Conclude = "Hand-concluded."
+		})
+		before := snapshotTerminalLedger(t, root)
+		result, err := Reconcile(humanReconcileReq(root, "01J5X00000000000000000RT10"))
+		assertTerminalReadItemRefusal(t, root, "reconcile-done", "critic-1", before, result.Publish, err)
+		reason := "accepted before hand conclusion"
+		closed, closeErr := CloseReadItem(readItemRequest(root, 120), "reconcile-done", "critic-1", ReadItemClosure{Accepted: &reason})
+		if closeErr != nil || closed.Outcome != OutcomeConfirmed {
+			t.Fatalf("close: %+v %v", closed, closeErr)
+		}
+		materialize(t, root, closed.Tip)
+		editFile(t, root, livePath("reconcile-done"), func(edited *GoalFile) {
+			edited.State = StateDone
+			edited.Conclude = "Hand-concluded."
+		})
+		if reconciled, reconcileErr := Reconcile(humanReconcileReq(root, "01J5X00000000000000000RT20")); reconcileErr != nil || reconciled.Publish.Outcome != OutcomeConfirmed {
+			t.Fatalf("reconcile after close: %+v %v", reconciled, reconcileErr)
+		}
+	})
+
+	t.Run("done on parked goal", func(t *testing.T) {
+		root := readItemBed(t, "parked-done")
+		if result, err := AddReadItems(readItemRequest(root, 130), "parked-done", "critic", []string{"Close before done."}); err != nil || result.Outcome != OutcomeConfirmed {
+			t.Fatalf("add: %+v %v", result, err)
+		}
+		if result, err := Park(readItemRequest(root, 131), "parked-done", "waiting for review"); err != nil || result.Outcome != OutcomeConfirmed {
+			t.Fatalf("park: %+v %v", result, err)
+		}
+		materialize(t, root, acceptedTip(t, root))
+		request := readItemRequest(root, 132)
+		request.Actor.Human = "Wido"
+		before := snapshotTerminalLedger(t, root)
+		result, err := Done(request, "parked-done", "Done after review.")
+		assertTerminalReadItemRefusal(t, root, "parked-done", "critic-1", before, result, err)
+		reason := "accepted before conclusion"
+		closeRequest := readItemRequest(root, 133)
+		closeRequest.Actor.Human = "Wido"
+		if closed, closeErr := CloseReadItem(closeRequest, "parked-done", "critic-1", ReadItemClosure{Accepted: &reason}); closeErr != nil || closed.Outcome != OutcomeConfirmed {
+			t.Fatalf("close: %+v %v", closed, closeErr)
+		}
+		request = readItemRequest(root, 134)
+		request.Actor.Human = "Wido"
+		if done, doneErr := Done(request, "parked-done", "Done after review."); doneErr != nil || done.Outcome != OutcomeConfirmed {
+			t.Fatalf("done after close: %+v %v", done, doneErr)
+		}
+	})
 }
 
 func TestRetroReadItemsListsOpenAndFlagsConcludedDefect(t *testing.T) {

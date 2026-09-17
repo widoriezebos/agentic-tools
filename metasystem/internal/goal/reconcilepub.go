@@ -333,6 +333,9 @@ func applyRow(t *TreeGoals, r VerbRequest, row MappedVerb, session *replaySessio
 		if row.BaseState != "" && f.State != row.BaseState {
 			return nil, conflict("state", "is %s on the fetched tip, the hand edit was made against %s", f.State, row.BaseState)
 		}
+		if err := refuseOpenReadItems(row.Id, f); err != nil {
+			return nil, err
+		}
 		for _, dep := range f.Blocked {
 			if depState(t, dep) != StateDone {
 				return nil, conflict("blockedBy", "blocker %s is not done on the fetched tip", dep)

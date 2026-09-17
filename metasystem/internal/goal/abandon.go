@@ -326,6 +326,11 @@ func abandonRequest(r VerbRequest, id string, spec AbandonSpec, arguments abando
 			if spec.Carried != "" && (tree.Live[spec.Carried] == nil || arguments.set[spec.Carried]) {
 				return nil, fmt.Errorf("carried must name a live successor")
 			}
+			for _, goalID := range sortedSet(arguments.set) {
+				if err := refuseOpenReadItems(goalID, tree.Live[goalID]); err != nil {
+					return nil, err
+				}
+			}
 
 			dependents := directLiveDependents(tree, arguments.set)
 			var uncovered []string

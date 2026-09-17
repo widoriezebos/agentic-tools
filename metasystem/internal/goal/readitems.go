@@ -276,14 +276,34 @@ func CloseReadItem(r VerbRequest, id, itemID string, closure ReadItemClosure) (P
 	})
 }
 
-// DoneReadItemsOpenError is the typed conclude refusal for unclosed findings.
+// DoneReadItemsOpenError is the typed terminal-transition refusal for unclosed findings.
 type DoneReadItemsOpenError struct {
 	Goal    string
 	ItemIDs []string
 }
 
 func (e *DoneReadItemsOpenError) Error() string {
-	return fmt.Sprintf("GOAL_DONE_READ_ITEMS_OPEN: goal %s has open read items %s; close each with goal read-items close --fixed <commit>, --moved <goal-id>, or --accepted <reason>", e.Goal, strings.Join(e.ItemIDs, ", "))
+	remedies := make([]string, 0, len(e.ItemIDs))
+	for _, itemID := range e.ItemIDs {
+		command := fmt.Sprintf("metasystem goal read-items close --id %s --item %s", e.Goal, itemID)
+		remedies = append(remedies, command+" --fixed <commit> | "+command+" --moved <goal-id> | "+command+` --accepted "<reason>"`)
+	}
+	return fmt.Sprintf("GOAL_DONE_READ_ITEMS_OPEN: goal %s has open read items %s; close each with one of:\n%s", e.Goal, strings.Join(e.ItemIDs, ", "), strings.Join(remedies, "\n"))
+}
+
+func refuseOpenReadItems(goalID string, file *GoalFile) error {
+	var open []string
+	if file != nil {
+		for _, item := range file.ReadItems {
+			if item.State == ReadItemOpen {
+				open = append(open, item.ID)
+			}
+		}
+	}
+	if len(open) == 0 {
+		return nil
+	}
+	return &DoneReadItemsOpenError{Goal: goalID, ItemIDs: open}
 }
 
 // ReadItemsForRetro returns the retro's ledger section from the accepted tree.

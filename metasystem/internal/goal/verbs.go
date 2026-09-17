@@ -2125,14 +2125,8 @@ func doneRequest(r VerbRequest, id, conclusion string) PublishRequest {
 			if !exists {
 				return nil, fmt.Errorf("goal %s is not live; nothing to conclude", id)
 			}
-			var openReadItems []string
-			for _, item := range f.ReadItems {
-				if item.State == ReadItemOpen {
-					openReadItems = append(openReadItems, item.ID)
-				}
-			}
-			if len(openReadItems) > 0 {
-				return nil, &DoneReadItemsOpenError{Goal: id, ItemIDs: openReadItems}
+			if err := refuseOpenReadItems(id, f); err != nil {
+				return nil, err
 			}
 			for _, obligation := range f.ReviewObligations {
 				if obligation.State == "open" {

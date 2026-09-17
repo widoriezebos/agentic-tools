@@ -236,6 +236,9 @@ func splitRequest(r VerbRequest, parentID string, members []MemberDraft, ratific
 			if parent == nil {
 				return nil, fmt.Errorf("goal %s does not exist", parentID)
 			}
+			if err := refuseOpenReadItems(parentID, parent); err != nil {
+				return nil, err
+			}
 			if parent.Sliced != nil {
 				return nil, fmt.Errorf("GOAL_SPLIT_REFUSED: goal %s recorded its first slice (machine %s, revision %d, %s); split is a before-slicing act and slicing has begun — conclude the goal and open successor goals instead", parentID, parent.Sliced.Machine, parent.Sliced.Revision, parent.Sliced.At)
 			}
