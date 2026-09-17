@@ -5,6 +5,7 @@ import (
 	"encoding/hex"
 	"os"
 	"os/exec"
+	"path/filepath"
 	"slices"
 	"strings"
 	"syscall"
@@ -12,7 +13,10 @@ import (
 	"time"
 
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/identity"
+	"golang.org/x/sys/unix"
 )
+
+const fixtureLeashEnv = "METASYSTEM_FIXTURE_LEASH"
 
 type fixtureTB interface {
 	Cleanup(func())
@@ -28,6 +32,9 @@ type ProcessFixture struct {
 	prober identity.Prober
 	signal identity.SignalFunc
 	refs   []identity.Ref
+	scan   func(identity.FixtureKey) ([]identity.FixtureSurvivor, error)
+	held   map[identity.Ref]bool
+	leash  *os.File
 }
 
 func Fixture(t testing.TB) *ProcessFixture {
@@ -49,19 +56,49 @@ func newProcessFixture(t fixtureTB, testName string, prober identity.Prober, sig
 	if err != nil {
 		t.Fatalf("create process fixture for test name %q: %v", testName, err)
 	}
-	fixture := &ProcessFixture{t: t, key: key, tag: identity.FixtureOwnerEnv + "=" + encoded, prober: prober, signal: signal}
+	leash, err := openFixtureLeash()
+	if err != nil {
+		t.Fatalf("create process fixture leash: %v", err)
+	}
+	fixture := &ProcessFixture{
+		t: t, key: key, tag: identity.FixtureOwnerEnv + "=" + encoded,
+		prober: prober, signal: signal, scan: identity.FixtureSurvivors,
+		held: make(map[identity.Ref]bool), leash: leash,
+	}
 	t.Cleanup(fixture.cleanup)
 	return fixture
+}
+
+func openFixtureLeash() (*os.File, error) {
+	directory, err := os.MkdirTemp("", "metasystem-fixture-")
+	if err != nil {
+		return nil, err
+	}
+	path := filepath.Join(directory, "leash")
+	if err := unix.Mkfifo(path, 0o600); err != nil {
+		_ = os.RemoveAll(directory)
+		return nil, err
+	}
+	reader, err := unix.Open(path, unix.O_RDONLY|unix.O_NONBLOCK|unix.O_CLOEXEC, 0)
+	if err == nil {
+		var writer int
+		writer, err = unix.Open(path, unix.O_WRONLY|unix.O_NONBLOCK|unix.O_CLOEXEC, 0)
+		_ = unix.Close(reader)
+		if err == nil {
+			return os.NewFile(uintptr(writer), path), nil
+		}
+	}
+	_ = os.RemoveAll(directory)
+	return nil, err
 }
 
 func (f *ProcessFixture) Key() identity.FixtureKey { return f.key }
 
 func (f *ProcessFixture) Env(base []string) []string {
-	prefix := identity.FixtureOwnerEnv + "="
 	environment := slices.DeleteFunc(append([]string(nil), base...), func(entry string) bool {
-		return strings.HasPrefix(entry, prefix)
+		return strings.HasPrefix(entry, identity.FixtureOwnerEnv+"=") || strings.HasPrefix(entry, fixtureLeashEnv+"=")
 	})
-	return append(environment, f.tag)
+	return append(environment, f.tag, fixtureLeashEnv+"="+f.leash.Name())
 }
 
 func (f *ProcessFixture) Shell(script string, args ...string) *exec.Cmd {
@@ -70,7 +107,11 @@ func (f *ProcessFixture) Shell(script string, args ...string) *exec.Cmd {
 	return command
 }
 
-func (f *ProcessFixture) Record(pid int) {
+func (f *ProcessFixture) Record(pid int) { f.record(pid, false) }
+
+func (f *ProcessFixture) Hold(pid int) { f.record(pid, true) }
+
+func (f *ProcessFixture) record(pid int, held bool) {
 	exact, state, err := f.prober.Probe(int64(pid))
 	if err == nil && state == identity.Dead {
 		f.t.Logf("process fixture: pid %d exited before it could be recorded", pid)
@@ -81,22 +122,25 @@ func (f *ProcessFixture) Record(pid int) {
 		return
 	}
 	f.refs = append(f.refs, exact.Ref())
+	f.held[exact.Ref()] = held
 }
 
 func (f *ProcessFixture) cleanup() {
+	defer f.closeLeash()
 	for _, ref := range f.refs {
-		f.stopRunningFinishedChild(ref)
+		f.stopRecordedChild(ref, f.held[ref])
 	}
-	f.waitForRecordedExits()
+	f.waitForExits(f.refs)
+	f.reapKeySurvivors()
 }
 
-func (f *ProcessFixture) stopRunningFinishedChild(ref identity.Ref) {
+func (f *ProcessFixture) stopRecordedChild(ref identity.Ref, held bool) {
 	exact, state, err := f.prober.Probe(ref.Pid)
 	if err == nil && (state == identity.Dead || state == identity.Alive && !identity.SameIdentity(exact, ref)) {
 		return
 	}
 	if err != nil || state != identity.Alive {
-		f.t.Errorf("finished child identity unproven at teardown: ref=%+v", ref)
+		f.t.Errorf("child identity unproven at teardown: ref=%+v", ref)
 		return
 	}
 	if exact.Zombie {
@@ -104,20 +148,22 @@ func (f *ProcessFixture) stopRunningFinishedChild(ref identity.Ref) {
 	}
 	signalErr := identity.SignalExact(f.prober, ref, syscall.SIGKILL, f.signal)
 	if signalErr == identity.ErrUninspectable {
-		f.t.Errorf("finished child identity unproven at signal: ref=%+v", ref)
+		f.t.Errorf("child identity unproven at signal: ref=%+v", ref)
 	} else if signalErr != nil && signalErr != identity.ErrGone {
-		f.t.Errorf("finished child signal failed for ref=%+v: %v", ref, signalErr)
+		f.t.Errorf("child signal failed for ref=%+v: %v", ref, signalErr)
 	}
-	f.t.Errorf("finished child found running at teardown: pid=%d exe=%q argv=%q", ref.Pid, exact.Exe, exact.Argv)
+	if !held {
+		f.t.Errorf("finished child found running at teardown: pid=%d exe=%q argv=%q", ref.Pid, exact.Exe, exact.Argv)
+	}
 }
 
-func (f *ProcessFixture) waitForRecordedExits() {
+func (f *ProcessFixture) waitForExits(refs []identity.Ref) {
 	ticker := time.NewTicker(10 * time.Millisecond)
 	defer ticker.Stop()
 	deadline := time.After(5 * time.Second)
 	for {
 		var pending []identity.Ref
-		for _, ref := range f.refs {
+		for _, ref := range refs {
 			exact, state, err := f.prober.Probe(ref.Pid)
 			if err != nil || state == identity.Unknown || state == identity.Alive && identity.SameIdentity(exact, ref) && !exact.Zombie {
 				pending = append(pending, ref)
@@ -130,9 +176,42 @@ func (f *ProcessFixture) waitForRecordedExits() {
 		case <-ticker.C:
 		case <-deadline:
 			for _, ref := range pending {
-				f.t.Errorf("finished child did not exit within five seconds: ref=%+v", ref)
+				f.t.Errorf("child did not exit within five seconds: ref=%+v", ref)
 			}
 			return
 		}
 	}
+}
+
+func (f *ProcessFixture) reapKeySurvivors() {
+	survivors, err := f.scan(f.key)
+	if err != nil {
+		f.t.Errorf("scan process fixture survivors: %v", err)
+		return
+	}
+	var reaped []identity.Ref
+	for _, survivor := range survivors {
+		exact, state, probeErr := f.prober.Probe(survivor.Ref.Pid)
+		if probeErr == nil && state == identity.Alive && identity.SameIdentity(exact, survivor.Ref) && exact.Zombie {
+			continue
+		}
+		if survivor.Class != identity.FixtureSurvivorCertain {
+			f.t.Errorf("fixture survivor ownership unproven at teardown: pid=%d exe=%q argv=%q", survivor.Ref.Pid, survivor.Exe, survivor.Argv)
+			continue
+		}
+		signalErr := identity.SignalExact(f.prober, survivor.Ref, syscall.SIGKILL, f.signal)
+		if signalErr == identity.ErrUninspectable {
+			f.t.Errorf("fixture survivor identity unproven at signal: ref=%+v", survivor.Ref)
+		} else if signalErr != nil && signalErr != identity.ErrGone {
+			f.t.Errorf("fixture survivor signal failed for ref=%+v: %v", survivor.Ref, signalErr)
+		}
+		f.t.Errorf("unrecorded fixture child found running at teardown: pid=%d exe=%q argv=%q", survivor.Ref.Pid, survivor.Exe, survivor.Argv)
+		reaped = append(reaped, survivor.Ref)
+	}
+	f.waitForExits(reaped)
+}
+
+func (f *ProcessFixture) closeLeash() {
+	_ = f.leash.Close()
+	_ = os.RemoveAll(filepath.Dir(f.leash.Name()))
 }
