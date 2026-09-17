@@ -19,6 +19,7 @@ import (
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/humanauthority"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/identity"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/landing"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/lease"
 )
 
 type goalSyncEnrollmentReader struct {
@@ -1528,6 +1529,77 @@ func goalSyncMutationGit(t *testing.T, root string, args ...string) string {
 		t.Fatalf("git %s: %v: %s", strings.Join(args, " "), err, output)
 	}
 	return strings.TrimSpace(string(output))
+}
+
+func handoverTargetRoot(t *testing.T, machine, lineage string) (string, string, lease.Announcement, identity.Exact) {
+	t.Helper()
+	root := t.TempDir()
+	goalSyncMutationGit(t, root, "init", "-q")
+	goalSyncMutationGit(t, root, "config", "metasystem.goal.machine", machine)
+	exact, state, err := (identity.KernelProber{}).Probe(int64(os.Getpid()))
+	if err != nil || state != identity.Alive {
+		t.Fatalf("probe target: state=%s err=%v", state, err)
+	}
+	path, err := lease.AnnounceWithPair(root, "handover-target", exact.Pid, exact.StartedAt.Unix(), exact.StartTicks, exact.BootID, "handover", "fake", lineage)
+	if err != nil {
+		t.Fatal(err)
+	}
+	announcements := lease.AnnouncementsFor(root, exact.Pid)
+	if len(announcements) != 1 {
+		t.Fatalf("target announcements = %d, want 1", len(announcements))
+	}
+	return root, path, announcements[0], exact
+}
+
+func writeHandoverJSON(t *testing.T, path string, value any) {
+	watchWriteJSON(t, filepath.Dir(path), filepath.Base(path), value)
+}
+
+func TestGoalHandoverTargetLiveness(t *testing.T) {
+	seatRoot := t.TempDir()
+	if got, err := goalHandoverAuthenticationRoot("", seatRoot); err != nil || got != seatRoot {
+		t.Fatalf("return authentication root = %q, %v", got, err)
+	}
+	tests := []struct {
+		name, machine, targetMachine, mutation string
+		epoch                                  int64
+		state, want                            identity.Liveness
+	}{
+		{"landing machine mismatch", "landing", "other", "", 1, identity.Alive, identity.Unknown},
+		{"seat holder lineage mismatch", "seat", "seat", "holder-lineage", 1, identity.Alive, identity.Unknown},
+		{"landing holder epoch mismatch", "landing", "landing", "", 2, identity.Alive, identity.Unknown},
+		{"seat announcement main mismatch", "seat", "seat", "main", 1, identity.Alive, identity.Unknown},
+		{"landing announcement lineage mismatch", "landing", "landing", "announcement-lineage", 1, identity.Alive, identity.Unknown},
+		{"landing matching live announcement", "landing", "landing", "", 1, identity.Alive, identity.Alive},
+		{"seat matching dead announcement", "seat", "seat", "", 1, identity.Dead, identity.Dead},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			root, path, ann, exact := handoverTargetRoot(t, test.machine, "target-lineage")
+			switch test.mutation {
+			case "holder-lineage":
+				ann.Pid++
+				ann.OwnerLineage = "other"
+				writeHandoverJSON(t, filepath.Join(root, "artifacts/agents/mains/aaa.json"), ann)
+			case "main":
+				ann.MainId = "main-1-1-abcdef"
+				writeHandoverJSON(t, path, ann)
+			case "announcement-lineage":
+				copy := ann
+				copy.Pid++
+				writeHandoverJSON(t, filepath.Join(root, "artifacts/agents/mains/aaa.json"), copy)
+				ann.OwnerLineage = "other"
+				writeHandoverJSON(t, path, ann)
+			}
+			old := goalHandoverProber
+			goalHandoverProber = processRefProber{exact: exact, state: test.state}
+			t.Cleanup(func() { goalHandoverProber = old })
+			got, _ := goalHandoverTargetLiveness(root, test.targetMachine, "target-lineage", test.epoch)
+			if got != test.want {
+				t.Fatalf("liveness = %s, want %s", got, test.want)
+			}
+		})
+	}
 }
 
 // A recorded tier above its derivation (the earlier formula's tier 3 on an

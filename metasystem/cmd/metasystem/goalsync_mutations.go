@@ -35,27 +35,19 @@ import (
 
 var goalHandoverProber identity.Prober = identity.KernelProber{}
 
-func goalHandoverTargetLiveness(seatRoot, targetMachine, targetLineage string, targetEpoch int64) (identity.Liveness, error) {
-	now, err := goalCommandNow(seatRoot)
-	if err != nil {
-		return identity.Unknown, err
-	}
-	landing, err := config.ResolveBatchLanding(filepath.Join(seatRoot, "metasystem.conf"), seatRoot, func() time.Time { return now })
-	if err != nil {
-		return identity.Unknown, err
-	}
-	machine, err := goal.ResolveMachine(landing.Root)
+func goalHandoverTargetLiveness(root, targetMachine, targetLineage string, targetEpoch int64) (identity.Liveness, error) {
+	machine, err := goal.ResolveMachine(root)
 	if err != nil || machine != targetMachine {
-		return identity.Unknown, fmt.Errorf("configured landing checkout is machine %q, not target %q", machine, targetMachine)
+		return identity.Unknown, fmt.Errorf("target checkout is machine %q, not target %q", machine, targetMachine)
 	}
-	holder, err := lease.CurrentHolder(landing.Root)
+	holder, err := lease.CurrentHolder(root)
 	if err != nil {
 		return identity.Unknown, err
 	}
 	if holder.OwnerLineage != targetLineage || holder.ClaimEpoch != targetEpoch {
 		return identity.Unknown, fmt.Errorf("landing holder is %s at epoch %d, not %s at epoch %d", holder.OwnerLineage, holder.ClaimEpoch, targetLineage, targetEpoch)
 	}
-	for _, announcement := range lease.AnnouncementsFor(landing.Root, holder.Pid) {
+	for _, announcement := range lease.AnnouncementsFor(root, holder.Pid) {
 		lineage := announcement.OwnerLineage
 		if lineage == "" {
 			lineage = announcement.MainId
@@ -67,6 +59,18 @@ func goalHandoverTargetLiveness(seatRoot, targetMachine, targetLineage string, t
 		}
 	}
 	return identity.Unknown, nil
+}
+
+func goalHandoverAuthenticationRoot(seatRoot, targetRoot string) (string, error) {
+	if targetRoot != "" {
+		return targetRoot, nil
+	}
+	now, err := goalCommandNow(seatRoot)
+	if err != nil {
+		return "", err
+	}
+	landing, err := config.ResolveBatchLanding(filepath.Join(seatRoot, "metasystem.conf"), seatRoot, func() time.Time { return now })
+	return landing.Root, err
 }
 
 func runGoalHandoverMutation(args []string) int {
@@ -81,6 +85,7 @@ func runGoalHandoverMutation(args []string) int {
 	targetLineage := flags.String("target-lineage", "", "target lineage")
 	targetEpoch := flags.Int64("target-claim-epoch", 0, "target claim epoch")
 	batch := flags.String("batch", "", "landing batch id")
+	targetRoot := flags.String("target-root", "", "checkout root that authenticates a returning target")
 	if flags.Parse(args) != nil {
 		return 2
 	}
@@ -97,6 +102,7 @@ func runGoalHandoverMutation(args []string) int {
 		fmt.Fprintln(os.Stderr, err)
 		return 1
 	}
+	req.HandoverTargetRoot = *targetRoot
 	liveness := func() (identity.Liveness, error) {
 		if req.Actor.Machine == *targetMachine && req.Actor.Lineage == *targetLineage {
 			if req.ClaimEpoch != *targetEpoch || req.ClaimEpoch < 1 {
@@ -104,7 +110,11 @@ func runGoalHandoverMutation(args []string) int {
 			}
 			return identity.Alive, nil
 		}
-		return goalHandoverTargetLiveness(*root, *targetMachine, *targetLineage, *targetEpoch)
+		authRoot, err := goalHandoverAuthenticationRoot(*root, *targetRoot)
+		if err != nil {
+			return identity.Unknown, err
+		}
+		return goalHandoverTargetLiveness(authRoot, *targetMachine, *targetLineage, *targetEpoch)
 	}
 	res, err := goal.Handover(req, *id, *targetMachine, *targetLineage, *targetEpoch, *batch, liveness)
 	return printSyncResult(res, err)

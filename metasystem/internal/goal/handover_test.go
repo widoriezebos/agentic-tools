@@ -216,6 +216,93 @@ func TestGoalHandoverAppliesCompleteFieldTable(t *testing.T) {
 	reject("unclaimed goal", holder, "unclaimed", "landing", "landing-lineage", 13, func() (identity.Liveness, error) { return identity.Alive, nil }, "no complete claimed authority")
 }
 
+func handBackBed(t *testing.T, rich bool) (string, VerbRequest, VerbRequest) {
+	t.Helper()
+	root, source := handoverBed(t, "hand-back", rich)
+	source.Ulid = "01J5X00000000000000000HC01"
+	if result, err := Handover(source, "hand-back", "landing", "landing-lineage", 11, "batch-a", func() (identity.Liveness, error) { return identity.Alive, nil }); err != nil || result.Outcome != OutcomeConfirmed {
+		t.Fatalf("forward handover: %+v %v", result, err)
+	}
+	holder := source
+	holder.Actor, holder.ClaimEpoch, holder.Ulid = Actor{Machine: "landing", Lineage: "landing-lineage"}, 11, "01J5X00000000000000000HC02"
+	return root, source, holder
+}
+
+func setHandoverTargetRoot(t *testing.T, request *VerbRequest, root string) {
+	t.Helper()
+	field := reflect.ValueOf(request).Elem().FieldByName("HandoverTargetRoot")
+	if !field.IsValid() {
+		t.Fatal("HandoverTargetRoot is absent")
+	}
+	field.SetString(root)
+}
+
+func TestGoalHandBackClearsHandedOverAndValidates(t *testing.T) {
+	root, source, holder := handBackBed(t, true)
+	source.Ulid = "01J5X00000000000000000HC03"
+	if result, err := openClaimForTest(t, source, "other-member", "Land another member.", OriginMain, "Hand it over.", testBudget()); err != nil || result.Outcome != OutcomeConfirmed {
+		t.Fatalf("second claim: %+v %v", result, err)
+	}
+	source.Ulid = "01J5X00000000000000000HC04"
+	if result, err := Handover(source, "other-member", "landing", "landing-lineage", 11, "batch-a", func() (identity.Liveness, error) { return identity.Alive, nil }); err != nil || result.Outcome != OutcomeConfirmed {
+		t.Fatalf("second handover: %+v %v", result, err)
+	}
+	before, _ := loadTree(root, acceptedTip(t, root))
+	other := RenderFile(before.Live["other-member"])
+	setHandoverTargetRoot(t, &holder, root)
+	result, err := Handover(holder, "hand-back", "mac-studio", "session-a", 8, "batch-a", func() (identity.Liveness, error) { return identity.Alive, nil })
+	if err != nil || result.Outcome != OutcomeConfirmed {
+		t.Fatalf("hand-back: %+v %v", result, err)
+	}
+	after, _ := loadTree(root, result.Tip)
+	returned := after.Live["hand-back"]
+	if returned.Claimed.Machine != "mac-studio" || returned.Claimed.Lineage != "session-a" || returned.Claimed.HandedOver != (HandedOver{}) || returned.StopCapability.ClaimEpoch != 8 {
+		t.Fatalf("returned claim: %+v", returned)
+	}
+	if string(RenderFile(after.Live["other-member"])) != string(other) {
+		t.Fatal("other handed-over member changed")
+	}
+	if err := ValidateCommit(root, result.Tip); err != nil {
+		t.Fatalf("returned commit did not validate: %v", err)
+	}
+}
+
+func TestGoalHandBackRefusals(t *testing.T) {
+	tests := []struct {
+		name, machine, lineage, batch, targetRoot, want string
+		epoch                                           int64
+		occupied                                        bool
+	}{
+		{"epoch below source", "mac-studio", "session-a", "batch-a", "seat-root", "at least source epoch", 6, false},
+		{"batch mismatch", "mac-studio", "session-a", "batch-b", "seat-root", "does not match handed-over batch", 8, false},
+		{"source already claimed", "mac-studio", "session-a", "batch-a", "seat-root", "quota is one claim per machine", 8, true},
+		{"target root on forward", "other", "other-lineage", "batch-a", "seat-root", "only permitted for a return", 8, false},
+		{"target root missing", "mac-studio", "session-a", "batch-a", "", "return requires --target-root", 8, false},
+	}
+	for index, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			root, source, holder := handBackBed(t, false)
+			setHandoverTargetRoot(t, &holder, test.targetRoot)
+			if test.occupied {
+				source.Ulid = "01J5X00000000000000000HD01"
+				if result, err := openClaimForTest(t, source, "source-occupied", "Keep the source busy.", OriginMain, "Finish it.", testBudget()); err != nil || result.Outcome != OutcomeConfirmed {
+					t.Fatalf("occupied source: %+v %v", result, err)
+				}
+			}
+			holder.Ulid = []string{"01J5X00000000000000000HD02", "01J5X00000000000000000HD03", "01J5X00000000000000000HD04", "01J5X00000000000000000HD05", "01J5X00000000000000000HD06"}[index]
+			before := acceptedTip(t, root)
+			result, err := Handover(holder, "hand-back", test.machine, test.lineage, test.epoch, test.batch, func() (identity.Liveness, error) { return identity.Alive, nil })
+			detail := result.Detail
+			if err != nil {
+				detail = err.Error()
+			}
+			if result.Outcome == OutcomeConfirmed || !strings.Contains(detail, test.want) || acceptedTip(t, root) != before {
+				t.Fatalf("refusal: result=%+v err=%v before=%s after=%s", result, err, before, acceptedTip(t, root))
+			}
+		})
+	}
+}
+
 func handedOverTerminalClearsRecord(t *testing.T, done bool) {
 	t.Helper()
 	root, req := handoverBed(t, "terminal-handover", false)

@@ -213,6 +213,8 @@ type VerbRequest struct {
 	// ClaimEpoch is the authenticated checkout lease generation. Only
 	// transitions that create a claimed revision consume it.
 	ClaimEpoch int64
+	// HandoverTargetRoot is present only when goal handover authenticates a return seat.
+	HandoverTargetRoot string
 	// CallerClass is the one command-edge classification used by every
 	// human-word mutation. It prevents later verbs from reclassifying a
 	// different process view after the actor was assembled.
@@ -981,6 +983,21 @@ func Handover(r VerbRequest, id, targetMachine, targetLineage string, targetClai
 			} else if r.ClaimEpoch != currentEpoch {
 				return nil, fmt.Errorf("goal %s handover caller epoch %d does not match the current holder epoch %d", id, r.ClaimEpoch, currentEpoch)
 			}
+			handedOver := f.Claimed.HandedOver
+			returnTarget := handedOver.present() && targetMachine == handedOver.FromMachine && targetLineage == handedOver.FromLineage
+			if returnTarget && batch != handedOver.Batch {
+				return nil, fmt.Errorf("goal %s return batch %s does not match handed-over batch %s", id, batch, handedOver.Batch)
+			}
+			returning := returnTarget && batch == handedOver.Batch
+			if returning && r.HandoverTargetRoot == "" {
+				return nil, fmt.Errorf("goal %s return requires --target-root", id)
+			}
+			if !returning && r.HandoverTargetRoot != "" {
+				return nil, fmt.Errorf("goal %s --target-root is only permitted for a return", id)
+			}
+			if returning && uint64(targetClaimEpoch) < handedOver.FromEpoch {
+				return nil, fmt.Errorf("goal %s return target epoch %d must be at least source epoch %d", id, targetClaimEpoch, handedOver.FromEpoch)
+			}
 			liveness, livenessErr := targetLiveness()
 			if livenessErr != nil || liveness != identity.Alive {
 				return nil, fmt.Errorf("goal %s handover target %s+%s has %s liveness; a live announced target is required", id, targetMachine, targetLineage, liveness)
@@ -988,7 +1005,9 @@ func Handover(r VerbRequest, id, targetMachine, targetLineage string, targetClai
 			claim, capability := *f.Claimed, *f.StopCapability
 			touch(f, r, "handover", []string{id})
 			claim.Machine, claim.Lineage = targetMachine, targetLineage
-			if !samePair {
+			if returning {
+				claim.HandedOver = HandedOver{}
+			} else if !samePair {
 				claim.HandedOver = HandedOver{FromMachine: r.Actor.Machine, FromLineage: r.Actor.Lineage, FromEpoch: uint64(currentEpoch), Batch: batch}
 			}
 			f.Claimed = &claim
