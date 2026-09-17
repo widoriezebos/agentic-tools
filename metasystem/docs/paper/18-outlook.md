@@ -68,6 +68,25 @@ Human lawmakers and regulators may use machinery to compare proposals, trace con
 
 These are limits of the concept rather than promised features awaiting implementation. Evidence from real use may show that some require institutions outside the delivery system, that some proposed limits are impractical or that familiar human practices protect them better. The outlook remains credible only if such findings can narrow or overturn it.
 
+## Rules from the first week of self-application
+
+Chapter 17 argued that the machinery must be held to its own rules when it changes itself. The first week of doing so produced a measurable failure and a correction, and the correction is worth stating as rules because each one came from evidence rather than preference. In the three days to 2026-09-17, three coordinator seats and their delegates spent about 514 million weighted tokens, of which 12 million were output. The rest was context re-read. The design and review work that the process existed to protect was under twelve percent of the spend. Sixty-two percent went to the coordinators' own contexts, which had grown to more than twice the size they needed, and thirty-two percent to delegates that polled a job or a proof from inside a model context, paying for the whole context on every poll. A cap of three hundred changed lines per unit, adopted after one oversized build, turned a three-thousand-line goal into twenty-four relays through a coordinator, and the relays, not the builds, took the days. Design critique ran to three rounds that never converged because the bar for a finding had never been stated.
+
+The rules that replaced that process are recorded with the numbers behind them in `records/misc/delivery-process-reset-2026-09-17.md`:
+
+- A unit of work is one coherent section of a design: the files, behaviour and tests that one builder produces in one job, normally six hundred to fifteen hundred changed lines. The size estimate written on a unit is for the reader and the proof, never a cap. A builder that finds a unit incoherent returns a proposal to split it; it never trims tests to fit a number, and a coordinator never pre-splits a unit to fit one.
+- The design page is the brief. A brief adds the workspace, the inputs, the shape of the return and the proof group, and restates no rule of the page. If the page needs rulings to be buildable, the page is folded once and then built. A ruling that lives only in a brief is design that nobody reviewed.
+- Design critique runs one round. A finding is material only when the design cannot be built as written or builds the wrong behaviour. A second round follows only a fold that changed a rule, and there is never a third. An amendment that records a human ruling gets no round.
+- Every build gets one independent read of the whole build in a fresh context. A fix round re-reads the fix only. The proof, not the reader, gates the main line.
+- No model context waits. A delegate that launches a job, a proof or a landing returns at once, and a waiter outside any model context re-invokes the coordinator when the record is durable. A wait inside a model context is billed at the whole context per poll.
+- A coordinator keeps a bounded context and hands off by record at a fixed point well before the bound. The handoff note, not the context, carries the state.
+- Designs are written only in step with build capacity. A design written ahead of the builders that will consume it is spend without evidence, and a queue of them is how a session limit is reached.
+- Landings are batched. A lane opens when two builds are ready or ninety minutes have passed, and one proof covers the batch. The number held is changed lines landed per proof, later goals per proof, never landings per hour.
+- Work in flight is re-cut, never discarded. When a rule changes, the units already built are regrouped under the new rule and land as they are.
+- The measure of the process is hours from a goal's opening to its landing and weighted tokens per landed changed line. Both are recorded, and a rule that moves neither is a rule under suspicion.
+
+These are rules for the software that runs the delivery, and they are enforced where they can be: in the brief template, the orchestration loop and the design principles the builders read. They are also falsifiable. The targets set with them, under eight hours for a three-thousand-line goal and under two thousand weighted tokens per landed line against seven thousand before, are the evidence that will keep or overturn them.
+
 ## Closing
 
 We began with a small request whose consequences exceed its wording. We returned to intent: state the desired outcome, expose ambiguity, record conflict and revise the purpose when reality shows it to be wrong. We examined inherited ceremony: identify the need a practice served, then retain, adapt, replace or explicitly discard the form according to that need.
