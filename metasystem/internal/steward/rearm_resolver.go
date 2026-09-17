@@ -32,6 +32,7 @@ type witnessDigestCache struct {
 var (
 	witnessTreeDigester      = digestArchivedTree
 	witnessDigestCacheWriter = writeWitnessDigestCache
+	witnessGitCommandRunner  = runWitnessGitCommand
 	projectionDiffRunner     = diffEngineProjection
 	archivedEngineDigester   = archivedEngineDigestAtCommit
 )
@@ -61,6 +62,7 @@ var (
 	witnessBuildStamp = regexp.MustCompile(`^witness-([0-9a-f]{12})$`)
 	witnessCacheKey   = regexp.MustCompile(`^[0-9]+:[0-9a-f]{40}([0-9a-f]{24})?$`)
 	witnessDigest     = regexp.MustCompile(`^[0-9a-f]{64}$`)
+	witnessObjectID   = regexp.MustCompile(`^[0-9a-f]{40}([0-9a-f]{24})?$`)
 	projectionHeader  = regexp.MustCompile(`^:([0-7]{6}) ([0-7]{6}) ([0-9a-fA-F]{40}|[0-9a-fA-F]{64}) ([0-9a-fA-F]{40}|[0-9a-fA-F]{64}) ([A-Za-z]+)$`)
 )
 
@@ -111,20 +113,145 @@ func witnessTimeoutError(seconds int) error {
 	return classifiedJudgment(fmt.Sprintf("witness resolution exceeded the configured %d-second bound (%s)", seconds, rearmResolveSecondsConfig), ErrJudgmentStalled)
 }
 
+type witnessCandidate struct {
+	commit, tree, firstParent string
+	changes                   []projectionDiffEntry
+}
+
+func runWitnessGitCommand(ctx context.Context, root string, input []byte, args ...string) ([]byte, error) {
+	cmd := exec.CommandContext(ctx, "git", append([]string{"-C", root}, args...)...)
+	if input != nil {
+		cmd.Stdin = bytes.NewReader(input)
+	}
+	var stdout, stderr bytes.Buffer
+	cmd.Stdout, cmd.Stderr = &stdout, &stderr
+	if err := cmd.Run(); err != nil {
+		return nil, fmt.Errorf("git %s: %w (%s)", strings.Join(args, " "), err, strings.TrimSpace(stderr.String()))
+	}
+	return stdout.Bytes(), nil
+}
+
+func parseWitnessLog(raw []byte) ([]witnessCandidate, error) {
+	if len(raw) == 0 {
+		return nil, nil
+	}
+	parts := bytes.Split(raw, []byte{0})
+	if len(parts[len(parts)-1]) != 0 {
+		return nil, fmt.Errorf("parse witness history: output is not NUL-terminated")
+	}
+	parts = parts[:len(parts)-1]
+	var candidates []witnessCandidate
+	for position := 0; position < len(parts); {
+		header := parts[position]
+		if len(header) == 0 || header[0] != 1 {
+			return nil, fmt.Errorf("parse witness history: expected commit header, got %q", header)
+		}
+		fields := strings.Fields(string(header[1:]))
+		if len(fields) < 2 || !witnessObjectID.MatchString(fields[0]) || !witnessObjectID.MatchString(fields[1]) {
+			return nil, fmt.Errorf("parse witness history: malformed commit header %q", header)
+		}
+		for _, parent := range fields[2:] {
+			if !witnessObjectID.MatchString(parent) {
+				return nil, fmt.Errorf("parse witness history: malformed parent %q", parent)
+			}
+		}
+		candidate := witnessCandidate{commit: fields[0], tree: fields[1]}
+		if len(fields) > 2 {
+			candidate.firstParent = fields[2]
+		}
+		position++
+		for position < len(parts) && (len(parts[position]) == 0 || parts[position][0] != 1) {
+			rawHeader := bytes.TrimPrefix(parts[position], []byte{'\n'})
+			match := projectionHeader.FindSubmatch(rawHeader)
+			if match == nil || len(match[3]) != len(match[4]) {
+				return nil, fmt.Errorf("parse witness history: malformed raw entry %q", parts[position])
+			}
+			position++
+			if position >= len(parts) || len(parts[position]) == 0 {
+				return nil, fmt.Errorf("parse witness history: missing NUL-terminated path")
+			}
+			candidate.changes = append(candidate.changes, projectionDiffEntry{
+				oldMode: string(match[1]), newMode: string(match[2]),
+				oldID: string(match[3]), newID: string(match[4]), path: string(parts[position]),
+			})
+			position++
+		}
+		candidates = append(candidates, candidate)
+	}
+	return candidates, nil
+}
+
+func readWitnessCandidates(ctx context.Context, installationRoot, ref string) ([]witnessCandidate, error) {
+	args := []string{"log", "--topo-order", "--no-abbrev", "--raw", "-z", "--no-renames", "--no-ext-diff", "--ignore-submodules=none", "--diff-merges=first-parent", "--format=%x01%H %T %P", ref}
+	raw, err := witnessGitCommandRunner(ctx, installationRoot, nil, args...)
+	if err != nil {
+		return nil, err
+	}
+	return parseWitnessLog(raw)
+}
+
+func readWitnessPrefixTrees(ctx context.Context, installationRoot, prefix string, candidates []witnessCandidate) error {
+	var input strings.Builder
+	for _, candidate := range candidates {
+		fmt.Fprintf(&input, "%s:%s\n", candidate.commit, prefix)
+	}
+	out, err := witnessGitCommandRunner(ctx, installationRoot, []byte(input.String()), "cat-file", "--batch-check=%(objectname)")
+	if err != nil {
+		return err
+	}
+	lines := bytes.Split(bytes.TrimSuffix(out, []byte{'\n'}), []byte{'\n'})
+	if len(lines) != len(candidates) {
+		return fmt.Errorf("resolve nested witness trees: got %d batch results for %d candidates", len(lines), len(candidates))
+	}
+	for index, line := range lines {
+		if !witnessObjectID.Match(line) {
+			return fmt.Errorf("resolve nested witness tree for %s:%s: %s", candidates[index].commit, prefix, line)
+		}
+		candidates[index].tree = string(line)
+	}
+	return nil
+}
+
+func witnessProjectionClasses(candidates []witnessCandidate, policy behaviorsurface.Policy, prefix string) ([]int, map[int][]int, error) {
+	classByCommit := make(map[string]int, len(candidates))
+	classes := make([]int, len(candidates))
+	nextClass := 0
+	for index := len(candidates) - 1; index >= 0; index-- {
+		changedPath, undecidable, err := projectionChange(candidates[index].changes, policy, prefix)
+		if err != nil {
+			return nil, nil, err
+		}
+		parentClass, parentKnown := classByCommit[candidates[index].firstParent]
+		if changedPath == "" && !undecidable && candidates[index].firstParent != "" && parentKnown {
+			classes[index] = parentClass
+		} else {
+			classes[index] = nextClass
+			nextClass++
+		}
+		classByCommit[candidates[index].commit] = classes[index]
+	}
+	members := make(map[int][]int, nextClass)
+	for index, class := range classes {
+		members[class] = append(members[class], index)
+	}
+	return classes, members, nil
+}
+
 // resolveWitnessStamp searches the complete reachable history newest first.
-// Commits that share a tree share one digest computation, so merge-heavy
-// history cannot repeatedly charge the same content walk.
+// First-parent edges that preserve the ENGINE projection form classes, and
+// every member of a class shares one cached or computed digest.
 func resolveWitnessStamp(repoRoot, installationRoot, ref, hex12 string) (string, error) {
 	seconds := RearmResolveSeconds(installationRoot)
 	ctx, cancel := context.WithTimeout(context.Background(), time.Duration(seconds)*time.Second)
 	defer cancel()
-	toplevel, err := gitOutputContext(ctx, installationRoot, "rev-parse", "--show-toplevel")
+	toplevelBytes, err := witnessGitCommandRunner(ctx, installationRoot, nil, "rev-parse", "--show-toplevel")
 	if err != nil {
 		if ctx.Err() != nil {
 			return "", witnessTimeoutError(seconds)
 		}
 		return "", err
 	}
+	toplevel := strings.TrimSpace(string(toplevelBytes))
 	prefix, err := filepath.Rel(toplevel, installationRoot)
 	if err != nil || prefix == ".." || strings.HasPrefix(prefix, ".."+string(filepath.Separator)) {
 		return "", fmt.Errorf("installation root %q is outside git toplevel %q", installationRoot, toplevel)
@@ -143,44 +270,61 @@ func resolveWitnessStamp(repoRoot, installationRoot, ref, hex12 string) (string,
 		witnessDigestCacheWriter(cachePath, repoRoot, digests)
 		return commit, resultErr
 	}
-	candidateText, err := gitOutputContext(ctx, installationRoot, "rev-list", ref)
+	candidates, err := readWitnessCandidates(ctx, installationRoot, ref)
 	if err != nil {
 		if ctx.Err() != nil {
 			return finish("", witnessTimeoutError(seconds))
 		}
 		return finish("", err)
 	}
-	for _, candidate := range strings.Fields(candidateText) {
-		if ctx.Err() != nil {
-			return finish("", witnessTimeoutError(seconds))
-		}
-		treeSpec := candidate + "^{tree}"
-		archiveSpec := candidate
-		if prefix != "" {
-			treeSpec = candidate + ":" + prefix
-			archiveSpec = treeSpec
-		}
-		tree, treeErr := gitOutputContext(ctx, installationRoot, "rev-parse", "--verify", treeSpec)
-		if treeErr != nil {
+	if prefix != "" {
+		if err := readWitnessPrefixTrees(ctx, installationRoot, prefix, candidates); err != nil {
 			if ctx.Err() != nil {
 				return finish("", witnessTimeoutError(seconds))
 			}
-			return finish("", treeErr)
+			return finish("", err)
 		}
-		cacheKey := fmt.Sprintf("%d:%s", policy.Version, tree)
-		digest, cached := digests[cacheKey]
-		if !cached {
-			digest, err = witnessTreeDigester(ctx, toplevel, archiveSpec, policy)
-			if err != nil {
-				if ctx.Err() != nil {
-					return finish("", witnessTimeoutError(seconds))
+	}
+	classes, members, err := witnessProjectionClasses(candidates, policy, prefix)
+	if err != nil {
+		return finish("", err)
+	}
+	classDigests := make(map[int]string, len(members))
+	for index, candidate := range candidates {
+		if ctx.Err() != nil {
+			return finish("", witnessTimeoutError(seconds))
+		}
+		class := classes[index]
+		digest, ready := classDigests[class]
+		if !ready {
+			for _, member := range members[class] {
+				cacheKey := fmt.Sprintf("%d:%s", policy.Version, candidates[member].tree)
+				if digest, ready = digests[cacheKey]; ready {
+					break
 				}
-				return finish("", err)
 			}
-			digests[cacheKey] = digest
+			if !ready {
+				newest := candidates[members[class][0]]
+				archiveSpec := newest.commit
+				if prefix != "" {
+					archiveSpec += ":" + prefix
+				}
+				digest, err = witnessTreeDigester(ctx, toplevel, archiveSpec, policy)
+				if err != nil {
+					if ctx.Err() != nil {
+						return finish("", witnessTimeoutError(seconds))
+					}
+					return finish("", err)
+				}
+			}
+			for _, member := range members[class] {
+				cacheKey := fmt.Sprintf("%d:%s", policy.Version, candidates[member].tree)
+				digests[cacheKey] = digest
+			}
+			classDigests[class] = digest
 		}
 		if strings.HasPrefix(digest, hex12) {
-			return finish(candidate, nil)
+			return finish(candidate.commit, nil)
 		}
 	}
 	return finish("", classifiedJudgment(fmt.Sprintf("witness digest matches no commit reachable from %s within the %d-second bound", ref, seconds), ErrNotOwned))

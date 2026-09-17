@@ -375,9 +375,33 @@ func TestWitnessResolverWalksPastTheSixtyFourthCandidate(t *testing.T) {
 	}
 	ref := "refs/remotes/origin/trunk"
 	rearmGit(t, root, "update-ref", ref, "HEAD")
+	originalRunner, originalDigester := witnessGitCommandRunner, witnessTreeDigester
+	t.Cleanup(func() {
+		witnessGitCommandRunner, witnessTreeDigester = originalRunner, originalDigester
+	})
+	logCalls, batchCalls, archiveCalls := 0, 0, 0
+	witnessGitCommandRunner = func(ctx context.Context, root string, input []byte, args ...string) ([]byte, error) {
+		if len(args) > 0 && args[0] == "log" {
+			logCalls++
+			if !strings.Contains("\x00"+strings.Join(args, "\x00")+"\x00", "\x00-z\x00") {
+				t.Fatal("witness history was not requested in NUL-delimited form")
+			}
+		}
+		if len(args) > 0 && args[0] == "cat-file" {
+			batchCalls++
+		}
+		return originalRunner(ctx, root, input, args...)
+	}
+	witnessTreeDigester = func(ctx context.Context, toplevel, tree string, loaded behaviorsurface.Policy) (string, error) {
+		archiveCalls++
+		return originalDigester(ctx, toplevel, tree, loaded)
+	}
 	resolved, err := resolveWitnessStamp(root, root, ref, digest[:12])
 	if err != nil || resolved != first {
 		t.Fatalf("the sixty-fifth reachable candidate did not resolve: got=%s want=%s err=%v", resolved, first, err)
+	}
+	if logCalls != 1 || batchCalls != 0 || archiveCalls != 65 {
+		t.Fatalf("65-candidate walk used log=%d batch=%d archives=%d, want 1, 0, 65", logCalls, batchCalls, archiveCalls)
 	}
 }
 
