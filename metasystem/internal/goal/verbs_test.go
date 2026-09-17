@@ -213,9 +213,15 @@ func TestOpenClaimDoneLifecycle(t *testing.T) {
 	if err != nil || res.Outcome != OutcomeConfirmed {
 		t.Fatalf("claim: %+v %v", res, err)
 	}
-	res, err = Done(verbReq(a, "01J5X0000000000000000000D2", "mac-a"), "build-it", "Built and verified.")
+	doneRequest := verbReq(a, "01J5X0000000000000000000D2", "mac-a")
+	swept := ""
+	doneRequest.SweepBranch = func(goalID string) error { swept = goalID; return nil }
+	res, err = Done(doneRequest, "build-it", "Built and verified.")
 	if err != nil || res.Outcome != OutcomeConfirmed {
 		t.Fatalf("done: %+v %v", res, err)
+	}
+	if swept != "build-it" {
+		t.Fatalf("done swept %q", swept)
 	}
 
 	// The archive carries the record with the full history; the live
@@ -313,6 +319,27 @@ func TestLastArcGoalConclusionRaisesRetroDebt(t *testing.T) {
 	open, err := retrodebt.Open(root)
 	if err != nil || len(open) != 1 || open[0].Kind != retrodebt.KindArc || !strings.HasPrefix(open[0].Source, "retro-arc:") {
 		t.Fatalf("concluded arc did not raise its retro debt: %+v %v", open, err)
+	}
+}
+
+func TestLastArcGoalConclusionRaisesRetroDebtWhenSweepFails(t *testing.T) {
+	_, root := oneClone(t)
+	seedLedger(t, root)
+	if res, err := Open(verbReq(root, "01J5X00000000000000000RS10", "mac-a"), "retro-sweep", "Finish the arc.", "main", "Go."); err != nil || res.Outcome != OutcomeConfirmed {
+		t.Fatalf("open: %+v %v", res, err)
+	}
+	if res, err := SetArc(verbReq(root, "01J5X00000000000000000RS11", "mac-a"), "retro-sweep", "sweep-arc"); err != nil || res.Outcome != OutcomeConfirmed {
+		t.Fatalf("set arc: %+v %v", res, err)
+	}
+	request := verbReq(root, "01J5X00000000000000000RS12", "mac-a")
+	request.SweepBranch = func(string) error { return fmt.Errorf("fixture sweep refused") }
+	result, doneErr := Done(request, "retro-sweep", "Arc done.")
+	if result.Outcome != OutcomeConfirmed || doneErr == nil || !strings.Contains(doneErr.Error(), "fixture sweep refused") {
+		t.Fatalf("done with failed sweep = %+v, %v", result, doneErr)
+	}
+	open, err := retrodebt.Open(root)
+	if err != nil || len(open) != 1 || open[0].Kind != retrodebt.KindArc || !strings.HasPrefix(open[0].Source, "sweep-arc:") {
+		t.Fatalf("failed sweep lost arc retro debt: %+v %v", open, err)
 	}
 }
 
@@ -975,6 +1002,32 @@ func TestParkUnparkCycle(t *testing.T) {
 	last := displaced.History[len(displaced.History)-1]
 	if last.Displaced == "" || last.Actor != "human:wido" {
 		t.Fatalf("the history line carries displaced= under the human: %+v", last)
+	}
+}
+
+func TestParkRecordsPushedBranchSummary(t *testing.T) {
+	_, root, _ := twoClones(t)
+	seedLedger(t, root)
+	if result, err := Open(verbReq(root, "01J5X00000000000000000E2A0", "mac-a"), "branched", "Branch work.", "main", "Build u1."); err != nil || result.Outcome != OutcomeConfirmed {
+		t.Fatalf("open: %+v %v", result, err)
+	}
+	req := verbReq(root, "01J5X00000000000000000E2A1", "mac-a")
+	req.ParkBranchCheck = func(goalID, next string) (string, error) {
+		if goalID != "branched" || next != "Build u1." {
+			t.Fatalf("branch check got goal=%q next=%q", goalID, next)
+		}
+		return "goal/branched last unit u1 commit " + strings.Repeat("a", 40) + " is read clean", nil
+	}
+	result, err := Park(req, "branched", "handoff")
+	if err != nil || result.Outcome != OutcomeConfirmed {
+		t.Fatalf("park: %+v %v", result, err)
+	}
+	tree, err := loadTree(root, result.Tip)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := tree.Live["branched"].NextStep; got != "goal/branched last unit u1 commit "+strings.Repeat("a", 40)+" is read clean" {
+		t.Fatalf("Next step = %q", got)
 	}
 }
 

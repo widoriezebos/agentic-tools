@@ -52,6 +52,35 @@ func ValidateHumanCarriedCritic(repoRoot, rootJob, commit string) error {
 	return nil
 }
 
+// ValidateCommitCriticClosure proves that a closed code-critic chain is bound
+// to the exact persisted commit subject supplied by its consumer.
+func ValidateCommitCriticClosure(repoRoot, rootJob string, subject readsubject.ReadSubject) (readsubject.Closure, error) {
+	state := loadCritiqueState(repoRoot)
+	root, present := state.records[rootJob]
+	if !present || asString(root["role"]) != "code-critic" {
+		return readsubject.Closure{}, fmt.Errorf("expected %s to be a code-critic root", rootJob)
+	}
+	members, err := chainMembers(filepath.Join(repoRoot, "artifacts", "agents", "jobs"), rootJob)
+	if err != nil {
+		return readsubject.Closure{}, err
+	}
+	records := make([]map[string]any, 0, len(members))
+	for _, member := range members {
+		records = append(records, member.record)
+	}
+	closure, closurePresent, err := readsubject.ReadClosedClosure(filepath.Join(repoRoot, "artifacts", "agents"), root, records)
+	if err != nil {
+		return readsubject.Closure{}, err
+	}
+	if !closurePresent {
+		return readsubject.Closure{}, fmt.Errorf("code-critic root %s has no clean closure", rootJob)
+	}
+	if closure.Subject.Kind != readsubject.SubjectCommit || !closure.Subject.Equal(subject) {
+		return readsubject.Closure{}, fmt.Errorf("code-critic root %s did not close on commit subject %s", rootJob, subject.Digest())
+	}
+	return closure, nil
+}
+
 const (
 	independentCritiqueReferenceField = "independentCritiqueJobRef"
 	liveProofReferenceField           = "liveProofEvidenceRef"

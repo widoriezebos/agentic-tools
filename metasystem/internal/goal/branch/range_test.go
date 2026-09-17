@@ -129,10 +129,28 @@ func TestValidateRangeRefusals(t *testing.T) {
 		{"read mismatch", func(f *branchFixture, t *testing.T) string {
 			return f.commit(t, "metasystem/records/reads/goal-a/"+hexB+".json", "{}", "read\n\nGoal-Read: goal-a/u "+hexA)
 		}},
+		{"malformed reads path", func(f *branchFixture, t *testing.T) string {
+			return f.commit(t, "metasystem/records/reads/not-an-attestation.md", "x", "plan\n\nGoal-Plan: goal-a")
+		}},
 		{"other goal", func(f *branchFixture, t *testing.T) string {
 			return f.commit(t, "metasystem/a.go", "x", "unit\n\nGoal-Unit: goal-b/u")
 		}},
-		{"not descendant", func(f *branchFixture, t *testing.T) string {
+		{"empty unit commit", func(f *branchFixture, t *testing.T) string {
+			return git(t, f.root, "commit-tree", f.base+"^{tree}", "-p", f.base, "-m", "empty\n\nGoal-Unit: goal-a/u")
+		}},
+		{"empty unit in build list", func(f *branchFixture, t *testing.T) string {
+			return f.commit(t, "metasystem/a.go", "x", "empty member\n\nGoal-Unit: goal-a/5++6")
+		}},
+		{"repeated unit in build list", func(f *branchFixture, t *testing.T) string {
+			return f.commit(t, "metasystem/a.go", "x", "repeated member\n\nGoal-Unit: goal-a/5+5")
+		}},
+		{"branch base outside endpoint history", func(f *branchFixture, t *testing.T) string {
+			common := f.base
+			tip := git(t, f.root, "commit-tree", common+"^{tree}", "-p", common, "-m", "outside branch base")
+			f.base = git(t, f.root, "commit-tree", common+"^{tree}", "-p", common, "-m", "endpoint advances")
+			return tip
+		}},
+		{"unrelated history", func(f *branchFixture, t *testing.T) string {
 			return git(t, f.root, "commit-tree", f.base+"^{tree}", "-m", "root\n\nGoal-Unit: goal-a/u")
 		}},
 	}
@@ -145,10 +163,24 @@ func TestValidateRangeRefusals(t *testing.T) {
 			if !errors.As(err, &refusal) || refusal.Code != "GOAL_BRANCH_RANGE" || !strings.Contains(err.Error(), tip) {
 				t.Fatalf("tip %s: %v", tip, err)
 			}
-			if test.name == "not descendant" && !strings.Contains(refusal.Reason, "tip does not descend") {
-				t.Fatalf("descendant refusal changed: %v", err)
+			if test.name == "unrelated history" && !strings.Contains(refusal.Reason, "no common history") {
+				t.Fatalf("history refusal changed: %v", err)
+			}
+			if test.name == "branch base outside endpoint history" && !strings.Contains(refusal.Reason, "expected exactly one kind trailer") {
+				t.Fatalf("outside-base refusal changed: %v", err)
 			}
 		})
+	}
+}
+
+func TestValidateRangeAllowsBranchBehindEndpoint(t *testing.T) {
+	f := newBranchFixture(t)
+	tip := f.commit(t, "metasystem/code.go", "unit", "unit\n\nGoal-Unit: goal-a/u1")
+	git(t, f.root, "checkout", "-q", "-b", "endpoint", f.base)
+	endpoint := f.commit(t, "endpoint.txt", "later", "endpoint moves")
+	commits, err := branch.ValidateRange(f.root, endpoint, tip, "goal-a")
+	if err != nil || len(commits) != 1 || commits[0].ID != tip {
+		t.Fatalf("commits=%+v err=%v", commits, err)
 	}
 }
 
@@ -164,5 +196,25 @@ func TestValidateRangeCleanRangePasses(t *testing.T) {
 	empty, err := branch.ValidateRange(f.root, tip, tip, "goal-a")
 	if err != nil || len(empty) != 0 {
 		t.Fatalf("empty=%+v err=%v", empty, err)
+	}
+}
+
+func TestValidateRangeAcceptsBuildListsAndRejectsDuplicateUnitAcrossBuilds(t *testing.T) {
+	f := newBranchFixture(t)
+	first := f.commit(t, "metasystem/a.go", "one", "build\n\nGoal-Unit: goal-a/5+6+7a+7b")
+	commits, err := branch.ValidateRange(f.root, f.base, first, "goal-a")
+	if err != nil || len(commits) != 1 || strings.Join(commits[0].Units, "+") != "5+6+7a+7b" {
+		t.Fatalf("multi-unit build=%+v err=%v", commits, err)
+	}
+	second := f.commit(t, "metasystem/b.go", "two", "duplicate\n\nGoal-Unit: goal-a/7b+8")
+	if _, err := branch.ValidateRange(f.root, f.base, second, "goal-a"); err == nil || !strings.Contains(err.Error(), "unit 7b is already named") {
+		t.Fatalf("duplicate unit range=%v", err)
+	}
+
+	f = newBranchFixture(t)
+	single := f.commit(t, "metasystem/a.go", "single", "single\n\nGoal-Unit: goal-a/5f")
+	commits, err = branch.ValidateRange(f.root, f.base, single, "goal-a")
+	if err != nil || len(commits) != 1 || len(commits[0].Units) != 1 || commits[0].Unit != "5f" {
+		t.Fatalf("single-unit build=%+v err=%v", commits, err)
 	}
 }

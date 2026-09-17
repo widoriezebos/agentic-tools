@@ -105,6 +105,41 @@ func TestO12BothGoalDoneRoutesRequestTheGoalReport(t *testing.T) {
 	})
 }
 
+func TestGoalDoneWithoutLocalBranchSkipsUnreadableRemote(t *testing.T) {
+	root := syncedDoneFixture(t)
+	metricsVerbGit(t, root, "remote", "add", "local", filepath.Join(t.TempDir(), "unreadable.git"))
+
+	var handled bool
+	code, stdout, stderr := captureCommandOutput(t, true, true, func() int {
+		var code int
+		code, handled = trySyncMutation("done", []string{
+			"--root", root, "--id", "synced-goal", "--conclude", "Branchless goal done.", "--lineage", "fixture",
+		})
+		return code
+	})
+	if !handled || code != 0 || !strings.Contains(stdout, `"outcome":"confirmed"`) || stderr != "" {
+		t.Fatalf("branchless done read the unreadable remote: handled=%v code=%d stdout=%q stderr=%q", handled, code, stdout, stderr)
+	}
+}
+
+func TestGoalDoneWithLocalBranchStillSweepsUnreadableRemote(t *testing.T) {
+	root := syncedDoneFixture(t)
+	metricsVerbGit(t, root, "remote", "add", "local", filepath.Join(t.TempDir(), "unreadable.git"))
+	metricsVerbGit(t, root, "update-ref", "refs/heads/goal/synced-goal", "HEAD")
+
+	var handled bool
+	code, _, stderr := captureCommandOutput(t, true, true, func() int {
+		var code int
+		code, handled = trySyncMutation("done", []string{
+			"--root", root, "--id", "synced-goal", "--conclude", "Branched goal done.", "--lineage", "fixture",
+		})
+		return code
+	})
+	if !handled || code != 1 || !strings.Contains(stderr, "goal done confirmed but its branch was not swept: git fetch") {
+		t.Fatalf("local branch bypassed the sweep refusal: handled=%v code=%d stderr=%q", handled, code, stderr)
+	}
+}
+
 func legacyGoalIsDone(ledger *goal.Ledger, id string) bool {
 	if ledger == nil {
 		return false

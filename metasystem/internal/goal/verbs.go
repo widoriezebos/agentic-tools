@@ -224,6 +224,11 @@ type VerbRequest struct {
 	// accepted tree and checked again inside the transaction. The act stays
 	// the seat's own: no human actor, no proof.
 	Attorney *PowerOfAttorneyEntry
+	// ParkBranchCheck verifies that branch-backed work is recoverable and
+	// returns the branch state that parking records in Next step.
+	ParkBranchCheck func(goalID, next string) (string, error)
+	// SweepBranch removes recoverable branch work after a confirmed conclusion.
+	SweepBranch func(goalID string) error
 }
 
 type humanAuthorityRow struct {
@@ -1764,23 +1769,39 @@ func Done(r VerbRequest, id, conclusion string) (PublishResult, error) {
 	if err != nil || (result.Outcome != OutcomeConfirmed && result.Outcome != OutcomeConfirmedLate) {
 		return result, err
 	}
+	var sweepErr error
+	if r.SweepBranch != nil {
+		sweepErr = r.SweepBranch(id)
+	}
+	var retroErr error
 	tree, treeErr := loadTree(r.Endpoint.Root, result.Tip)
 	if treeErr != nil {
-		return result, fmt.Errorf("goal done confirmed but arc retro debt could not be classified: %w", treeErr)
-	}
-	archived := tree.Done[id]
-	if archived == nil || archived.Arc == "" {
-		return result, nil
-	}
-	for _, live := range tree.Live {
-		if live.Arc == archived.Arc {
-			return result, nil
+		retroErr = fmt.Errorf("goal done confirmed but arc retro debt could not be classified: %w", treeErr)
+	} else {
+		archived := tree.Done[id]
+		if archived != nil && archived.Arc != "" {
+			lastInArc := true
+			for _, live := range tree.Live {
+				if live.Arc == archived.Arc {
+					lastInArc = false
+					break
+				}
+			}
+			if lastInArc {
+				if _, err := retrodebt.Raise(r.Endpoint.Root, retrodebt.KindArc, archived.Arc+":"+r.opid(), r.Now); err != nil {
+					retroErr = fmt.Errorf("goal done confirmed but its arc retro debt did not land: %w", err)
+				}
+			}
 		}
 	}
-	if _, debtErr := retrodebt.Raise(r.Endpoint.Root, retrodebt.KindArc, archived.Arc+":"+r.opid(), r.Now); debtErr != nil {
-		return result, fmt.Errorf("goal done confirmed but its arc retro debt did not land: %w", debtErr)
+	if sweepErr != nil {
+		reportedSweep := fmt.Errorf("goal done confirmed but its branch was not swept: %w", sweepErr)
+		if retroErr != nil {
+			return result, fmt.Errorf("%v; %w", retroErr, reportedSweep)
+		}
+		return result, reportedSweep
 	}
-	return result, nil
+	return result, retroErr
 }
 
 func DeferFindings(r VerbRequest, id string, obligations []ReviewObligation) (PublishResult, error) {
@@ -2224,6 +2245,13 @@ func parkRequest(r VerbRequest, id, because string) PublishRequest {
 			if f.State != StateQueued && f.State != StateApproved && f.State != StateClaimed {
 				return nil, fmt.Errorf("goal %s is %s; only queued, approved, or claimed goals park", id, f.State)
 			}
+			branchSummary := ""
+			if r.ParkBranchCheck != nil {
+				branchSummary, err = r.ParkBranchCheck(id, f.NextStep)
+				if err != nil {
+					return nil, err
+				}
+			}
 			if f.Origin == OriginHuman {
 				missing := fmt.Sprintf("goal %s was opened by the human; an agent cannot silently remove a standing human reservation (park is a human act here)", id)
 				if err := r.requireHuman(humanAuthorityRow{Verb: "park", Name: "park of a human-origin goal", Missing: missing}, humanauthority.GradeTerminal); err != nil {
@@ -2246,6 +2274,9 @@ func parkRequest(r VerbRequest, id, because string) PublishRequest {
 			f.Parked = &ParkRecord{
 				By: r.Actor.historyActor(), At: r.stamp(),
 				Because: because, Displaced: displaced,
+			}
+			if branchSummary != "" {
+				f.NextStep = branchSummary
 			}
 			leaveOrDropEpisode(f, r)
 			if err := clearClaimBinding(f); err != nil {

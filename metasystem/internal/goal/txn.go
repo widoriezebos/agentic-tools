@@ -324,7 +324,7 @@ const (
 
 // classifyPushFailure separates a lease refusal (definite, retry
 // lawful) from transport-unknown (definite nothing).
-func classifyPushFailure(output string) CASOutcome {
+func ClassifyPushFailure(output string) CASOutcome {
 	lower := strings.ToLower(output)
 	// The lost-lease shapes differ by transport: a smart-protocol
 	// remote says "stale info", while receive-pack on a file-path
@@ -342,6 +342,8 @@ func classifyPushFailure(output string) CASOutcome {
 	}
 	return CASUnknown
 }
+
+func classifyPushFailure(output string) CASOutcome { return ClassifyPushFailure(output) }
 
 // PublishCAS attempts the compare-and-swap: force-with-lease with
 // the EXPLICIT expected oid in remote mode (no plain push exists in

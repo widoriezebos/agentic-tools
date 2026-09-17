@@ -13,6 +13,25 @@ DONE 4 and 5; units 4, 7 (split into 7a and 7b), 8, 10a and 10b. Displaced: revi
 a per-unit test receipt (`GOAL_LAND_UNPROVEN` per unit), a revision 1 shape that the critique fold "the landing
 pushes with a lease against the trunk commit it prepared from" had kept; the lease rule itself stands, for the series.
 
+Landing amendment, 2026-09-17 13:53, rulings of the goal's holder (m1c) and the coordinator (m1e) on two conflicts
+that the read of units 5 to 7b found in this page. No design round and no critique round. First, where L lives before
+its proof: 6.2 pushes the landing branch only after a green receipt, while 6.4, 6.5 and 6.9 name L at a red proof.
+`land-prep` builds L locally, in its landing worktree, before the proof; the proof runs on L's project tree; the
+leased push of `landing/<goal-id>` happens only after a green receipt, so 6.2 stands, and on red nothing is pushed.
+The red record line and the red loop name the local L commit id (40 hex digits, in the landing worktree's object
+store) and its tree id, and the red loop runs on the host that built L, so it needs no remote ref. Witness: a red
+proof reaches the red loop with L unpushed and origin's landing ref unchanged, and the command that calls the red loop
+computes the change set from the prefix's entries and folded paths against E (6.5). Second, the human's word for
+`--through` (6.1) is only a `Next step` or history line of the exact form `land through <full commit id>`. Park's
+summary line (`goal/G last unit U commit <id> is <state>`) never matches, and no other field of the page is read.
+Witness: a page whose `Next step` is park's line refuses `--through`; the same id in a `land through` line lands.
+Third, `--last` refuses when the branch carries a unit beyond the land-ready prefix, and no `Goal-Last` is written,
+since the verb can see that unit. Witness: an unread u4 past a prefix ending at u3 refuses `--last`. What changed:
+6.1, 6.9 and units 7a and 7b. Nothing else moves.
+
+Build-grain amendment, 2026-09-17 12:12, Wido's ruling: one build is one commit, whose `Goal-Unit` joins all of that
+build's unit names with `+`; reads, replacement, status and landing identity bind to that same list.
+
 Attribution amendment, 2026-09-17 08:20Z, Wido's ruling: "When it is possible to attribute commits to a human, when a
 human is in the loop granting authority, then I think that will always have my preference", for the verbs, not the
 hand lane's script. What changed: rule 6.10 (every commit the landing verbs write is authored and committed as the
@@ -169,12 +188,13 @@ files, and land one trunk commit per unit with its receipt row, applied as a dif
 Since the landing-branch amendment (6.9) the series is composed as a pushed branch and the landing is one fast-forward
 of the endpoint to its tip.
 
-6.1 The landing set. A landing takes the goal's land-ready prefix (section 5) as one set. Two words start it, never
-a schedule: `--last`, the holder's word that the prefix is every unit of the goal's plan, which also writes
-`Goal-Last`; or `--through <commit>`, a shorter prefix, which lands only on the human's word naming that commit on
-the goal page (`Next step` or a history line), else `GOAL_LAND_PARTIAL` names the missing word. Before a `--last`
-landing the holder runs `goal land-ready` (the landing slot, `docs/backlog-mechanism.md`), since the goal is built;
-a partial landing runs under the claim without the slot. Witness: unit 7a.
+6.1 The landing set. A landing takes the goal's land-ready prefix (section 5) as one set. Two words start it, never a
+schedule: `--last`, the holder's word that the prefix is every unit of the goal's plan, which also writes `Goal-Last`;
+or `--through <commit>`, a shorter prefix, which lands only on the human's word naming that commit on the goal page, a
+`Next step` or history line of the exact form `land through <full commit id>` and nothing else, else
+`GOAL_LAND_PARTIAL` names the missing word. Before a `--last` landing the holder runs `goal land-ready` (the landing
+slot, `docs/backlog-mechanism.md`), since the goal is built; a partial landing runs under the claim without the slot.
+Witness: unit 7a.
 
 6.2 One candidate, one proof. `goal branch land-prep --goal G (--last | --through <commit>) --root <checkout> --out
 <dir> --test-receipt <path>` fetches the endpoint tip E, starts the landing branch (6.9) at E, and applies the prefix
@@ -251,18 +271,19 @@ series of 6.3 as commits on `landing/<goal-id>` starting at E, by applying each 
 receipt row in turn; no merge commit and no squash, so 6.3's per-unit shape, trailers and digests are exactly what
 lands. The tip L has tree C. The verb pushes the branch to origin with a lease as goal branches are pushed (section
 3): created against an absent ref, replaced against the tip it last pushed; a ref moved behind the lease refuses
-`GOAL_LAND_BRANCH_MOVED` and nothing is written. The proof of 6.2 runs on L's project tree, and the attempt and the
-record line name L beside C, so the proved candidate is a commit any enrolled host can fetch. A new candidate (6.5,
-6.6) is a new L: `land-prep` rebuilds the branch from E and the fixed prefix and replaces it under the lease, never
-amending in place, and the record keeps one line per L. In a batch (section 10) the branch is `landing/<batch-id>`,
-built from the members in join order at the seal, and ejecting a member rebuilds it from the survivors: the ejected
-goal's commits are simply not re-applied, which is the ruling's reason. The branch lives from `land-prep` to the
-landing or the dissolve: `land-push` deletes it, against L, after the fast-forward; a landing given up deletes it the
-same way; a `landing/` branch whose id names no live landing is listed by the sweep (section 8) and deleted on the
-same word as an abandoned goal branch. The range rule of section 1 governs goal branches; the landing branch's commits
-carry receipt rows and are checked by `verify` (6.3, unit 8), not by `goal branch check`. Reads change nothing: a read
-binds to the unit commit and its digest (section 4), and 6.2 checks that digest against the re-applied entries as
-before. Witness: units 7a, 8, 9 and 10b.
+`GOAL_LAND_BRANCH_MOVED` and nothing is written. `land-prep` builds L locally before the proof, the proof of 6.2 runs
+on L's project tree, and the attempt and the record line name L beside C. The leased push comes only after a green
+receipt (6.2), so a proved candidate is a commit any enrolled host can fetch; a red L stays unpushed on the host that
+built it, where the red loop (6.5) runs. A new candidate (6.5, 6.6) is a new L: `land-prep` rebuilds the branch from E
+and the fixed prefix and replaces it under the lease, never amending in place, and the record keeps one line per L. In
+a batch (section 10) the branch is `landing/<batch-id>`, built from the members in join order at the seal, and
+ejecting a member rebuilds it from the survivors: the ejected goal's commits are simply not re-applied, which is the
+ruling's reason. The branch lives from `land-prep` to the landing or the dissolve: `land-push` deletes it, against L,
+after the fast-forward; a landing given up deletes it the same way; a `landing/` branch whose id names no live landing
+is listed by the sweep (section 8) and deleted on the same word as an abandoned goal branch. The range rule of section
+1 governs goal branches; the landing branch's commits carry receipt rows and are checked by `verify` (6.3, unit 8),
+not by `goal branch check`. Reads change nothing: a read binds to the unit commit and its digest (section 4), and 6.2
+checks that digest against the re-applied entries as before. Witness: units 7a, 8, 9 and 10b.
 
 6.10 Attribution (Wido's ruling, 2026-09-17). When a human in the loop granted the authority, the landed commits name
 that human. Every commit `land-prep` writes on the landing branch has as author and committer the person on the goal's

@@ -2,7 +2,10 @@ package batch
 
 import (
 	"bytes"
+	"crypto/sha256"
+	"encoding/hex"
 	"errors"
+	"fmt"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -66,6 +69,88 @@ func assembleUnits(root, base string, units []Unit) (prefixes []string, err erro
 			return nil, snapshotErr
 		}
 		prefixes = append(prefixes, next)
+	}
+	return prefixes, nil
+}
+
+func branchPatch(repo, commit string) ([]byte, error) {
+	command := exec.Command("git", "-C", repo, "-c", "core.useReplaceRefs=false", "diff", "--binary", "--full-index", commit+"^", commit)
+	command.Env = gittree.ScrubbedEnviron()
+	output, err := command.CombinedOutput()
+	if err != nil {
+		return nil, fmt.Errorf("read branch patch %s: %s: %w", commit, strings.TrimSpace(string(output)), err)
+	}
+	return output, nil
+}
+
+func applyBranchCommit(repo, worktree, commit string) error {
+	patch, err := branchPatch(repo, commit)
+	if err != nil {
+		return err
+	}
+	command := exec.Command("git", "-C", worktree, "-c", "core.useReplaceRefs=false", "-c", "core.hooksPath=/dev/null", "apply", "--index", "--3way", "--binary", "--whitespace=nowarn", "-")
+	command.Env, command.Stdin = gittree.ScrubbedEnviron(), bytes.NewReader(patch)
+	if output, err := command.CombinedOutput(); err != nil {
+		return fmt.Errorf("apply branch commit %s: %s: %w", commit, strings.TrimSpace(string(output)), err)
+	}
+	return nil
+}
+
+func treeTransitionDigest(repo, before, after string) (string, error) {
+	command := exec.Command("git", "-C", repo, "-c", "core.useReplaceRefs=false", "diff-tree", "-r", "-z", "--no-renames", "--full-index", before, after)
+	command.Env = gittree.ScrubbedEnviron("LC_ALL=C")
+	raw, err := command.Output()
+	if err != nil {
+		return "", err
+	}
+	sum := sha256.Sum256(raw)
+	return hex.EncodeToString(sum[:]), nil
+}
+
+// AssembleBranchMembers applies each member as a contiguous sequence and
+// checks every change against its own transition before exposing cumulative
+// member prefix trees.
+func AssembleBranchMembers(root, base string, members []BranchMember) (prefixes []string, err error) {
+	detached, err := (gittree.Workspace{Dir: root}).NewDetachedWorktree(base)
+	if err != nil {
+		return nil, err
+	}
+	defer func() { err = errors.Join(err, detached.Close()) }()
+	workspace := detached.Workspace()
+	for _, member := range members {
+		if len(member.Builds) == 0 {
+			return nil, refuseBatch("BATCH_JOIN_UNREAD", "goal "+member.GoalID+" contributes no certified build")
+		}
+		for _, build := range member.Builds {
+			for _, fold := range build.Folds {
+				if err := applyBranchCommit(root, workspace.Dir, fold.ID); err != nil {
+					return nil, refuseBatch("BATCH_JOIN_REREAD", "goal "+member.GoalID+" fold no longer applies: "+err.Error())
+				}
+			}
+			before, err := workspace.Snapshot("HEAD")
+			if err != nil {
+				return nil, err
+			}
+			if err := applyBranchCommit(root, workspace.Dir, build.Commit); err != nil {
+				return nil, refuseBatch("BATCH_JOIN_REREAD", "goal "+member.GoalID+" build no longer applies: "+err.Error())
+			}
+			after, err := workspace.Snapshot("HEAD")
+			if err != nil {
+				return nil, err
+			}
+			digest, err := treeTransitionDigest(root, before, after)
+			if err != nil {
+				return nil, err
+			}
+			if digest != build.Digest {
+				return nil, refuseBatch("BATCH_JOIN_REREAD", fmt.Sprintf("goal %s build %s applies as %s, not %s", member.GoalID, strings.Join(build.Units, "+"), digest, build.Digest))
+			}
+		}
+		prefix, err := workspace.Snapshot("HEAD")
+		if err != nil {
+			return nil, err
+		}
+		prefixes = append(prefixes, prefix)
 	}
 	return prefixes, nil
 }

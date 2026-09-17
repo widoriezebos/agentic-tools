@@ -252,6 +252,85 @@ func TestParkAcceptsFixtureHumanAuthorityAtTheCommandEdge(t *testing.T) {
 	}
 }
 
+func TestParkCommandEdgeSkipsUnreadableRemoteOnlyWithoutLocalBranch(t *testing.T) {
+	for _, test := range []struct {
+		name        string
+		localBranch bool
+	}{
+		{name: "no local branch"},
+		{name: "local branch still needs origin", localBranch: true},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			root := syncedClaimedGoalFixture(t)
+			goalSyncMutationGit(t, root, "remote", "add", "local", filepath.Join(t.TempDir(), "unreachable.git"))
+			amendSyncedGoalFixture(t, root, "human-origin park fixture", func(file *goal.GoalFile) {
+				file.Origin = goal.OriginHuman
+			})
+			if test.localBranch {
+				goalSyncMutationGit(t, root, "update-ref", "refs/heads/goal/standing-validation", "HEAD")
+			}
+			t.Setenv("METASYSTEM_OWNER_LINEAGE", "m1")
+			t.Setenv("METASYSTEM_GOAL_NOW", "2026-09-09T10:00:00Z")
+
+			code, stdout, stderr := captureCommandOutput(t, true, true, func() int {
+				return runGoalPark([]string{
+					"--root", root, "--id", "standing-validation", "--because", "fixture human pause",
+					"--by", "Wido", "--fixture-human-authority",
+				})
+			})
+			if !test.localBranch {
+				if code != 0 || !strings.Contains(stdout, `"outcome":"confirmed"`) || stderr != "" {
+					t.Fatalf("branchless park fetched the unreadable remote: code=%d stdout=%q stderr=%q", code, stdout, stderr)
+				}
+				return
+			}
+			if code == 0 || !strings.Contains(stdout, `"outcome":"rejected"`) || !strings.Contains(stdout, "git fetch") {
+				t.Fatalf("local branch treated an unreadable remote as absent: code=%d stdout=%q stderr=%q", code, stdout, stderr)
+			}
+		})
+	}
+}
+
+func TestParkCommandEdgeChecksEndpointOnlyForLocalBranch(t *testing.T) {
+	for _, test := range []struct {
+		name        string
+		localBranch bool
+	}{
+		{name: "no local branch"},
+		{name: "local branch", localBranch: true},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			root := syncedClaimedGoalFixture(t)
+			goalSyncMutationGit(t, root, "config", "goal.sync-branch", "refs/heads/develop")
+			amendSyncedGoalFixture(t, root, "human-origin park fixture", func(file *goal.GoalFile) {
+				file.Origin = goal.OriginHuman
+			})
+			if test.localBranch {
+				goalSyncMutationGit(t, root, "update-ref", "refs/heads/goal/standing-validation", "HEAD")
+			}
+			t.Setenv("METASYSTEM_OWNER_LINEAGE", "m1")
+			t.Setenv("METASYSTEM_GOAL_NOW", "2026-09-09T10:00:00Z")
+
+			code, stdout, stderr := captureCommandOutput(t, true, true, func() int {
+				return runGoalPark([]string{
+					"--root", root, "--id", "standing-validation", "--because", "fixture human pause",
+					"--by", "Wido", "--fixture-human-authority",
+				})
+			})
+			if !test.localBranch {
+				if code != 0 || !strings.Contains(stdout, `"outcome":"confirmed"`) || stderr != "" {
+					t.Fatalf("branchless park refused the unsupported endpoint: code=%d stdout=%q stderr=%q", code, stdout, stderr)
+				}
+				return
+			}
+			if code == 0 || !strings.Contains(stdout, `"outcome":"rejected"`) ||
+				!strings.Contains(stdout, "GOAL_BRANCH_ENDPOINT_UNSUPPORTED") || stderr != "" {
+				t.Fatalf("local branch bypassed the unsupported endpoint refusal: code=%d stdout=%q stderr=%q", code, stdout, stderr)
+			}
+		})
+	}
+}
+
 func TestArcStoppingCommandsFallBackToTerminalGrade(t *testing.T) {
 	tests := []struct {
 		name    string

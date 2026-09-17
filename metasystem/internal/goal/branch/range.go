@@ -1,9 +1,7 @@
 package branch
 
 import (
-	"errors"
 	"fmt"
-	"os/exec"
 	"strings"
 	"unicode"
 
@@ -29,13 +27,17 @@ const (
 )
 
 type KindInfo struct {
-	Kind           Kind
-	Unit, CommitID string
+	Kind     Kind
+	Units    []string
+	Unit     string
+	CommitID string
 }
 type Commit struct {
-	ID           string
-	Kind         Kind
-	Unit, Digest string
+	ID     string
+	Kind   Kind
+	Units  []string
+	Unit   string
+	Digest string
 }
 
 const RangeCode = "GOAL_BRANCH_RANGE"
@@ -47,9 +49,36 @@ func (e *RangeError) Error() string {
 }
 func refuse(commit, reason string) error { return &RangeError{RangeCode, commit, reason} }
 
-func splitGoalUnit(value string) (string, string, bool) {
-	goal, unit, ok := strings.Cut(value, "/")
-	return goal, unit, ok && goal != "" && unit != "" && !strings.Contains(unit, "/") && strings.IndexFunc(unit, unicode.IsSpace) < 0
+func parseUnits(value string) ([]string, bool) {
+	parts := strings.Split(value, "+")
+	seen := map[string]bool{}
+	for _, unit := range parts {
+		if unit == "" || strings.Contains(unit, "/") || strings.IndexFunc(unit, unicode.IsSpace) >= 0 || seen[unit] {
+			return nil, false
+		}
+		seen[unit] = true
+	}
+	return parts, true
+}
+
+func splitGoalUnits(value string) (string, []string, bool) {
+	goal, list, ok := strings.Cut(value, "/")
+	units, valid := parseUnits(list)
+	return goal, units, ok && goal != "" && valid
+}
+
+func unitList(units []string) string { return strings.Join(units, "+") }
+
+func sameUnits(a, b []string) bool {
+	if len(a) != len(b) {
+		return false
+	}
+	for index := range a {
+		if a[index] != b[index] {
+			return false
+		}
+	}
+	return true
 }
 
 func KindOf(repo, commit, goalID string) (KindInfo, error) {
@@ -82,7 +111,7 @@ func KindOf(repo, commit, goalID string) (KindInfo, error) {
 	if key == "Goal-Read" {
 		first = fields[0]
 	}
-	goal, unit, ok := splitGoalUnit(first)
+	goal, units, ok := splitGoalUnits(first)
 	if !ok {
 		return KindInfo{}, refuse(commit, key+" is malformed")
 	}
@@ -90,12 +119,12 @@ func KindOf(repo, commit, goalID string) (KindInfo, error) {
 		return KindInfo{}, refuse(commit, fmt.Sprintf("%s names goal %q, not %q", key, goal, goalID))
 	}
 	if key == "Goal-Unit" {
-		return KindInfo{Kind: Unit, Unit: unit}, nil
+		return KindInfo{Kind: Unit, Units: units, Unit: unitList(units)}, nil
 	}
 	if !hex40(fields[1]) {
 		return KindInfo{}, refuse(commit, "Goal-Read commit id is not full 40-hex")
 	}
-	return KindInfo{Kind: Read, Unit: unit, CommitID: fields[1]}, nil
+	return KindInfo{Kind: Read, Units: units, Unit: unitList(units), CommitID: fields[1]}, nil
 }
 
 func hex40(value string) bool {
@@ -130,6 +159,9 @@ func PathClass(path string) Class {
 	if _, _, ok := readPath(path); ok {
 		return ClassRead
 	}
+	if path == "metasystem/records/reads" || strings.HasPrefix(path, "metasystem/records/reads/") {
+		return ClassExcluded
+	}
 	if strings.HasPrefix(path, "metasystem/records/misc/") {
 		return ClassReadProse
 	}
@@ -140,18 +172,19 @@ func PathClass(path string) Class {
 }
 
 func ValidateRange(repo, endpointTip, tip, goalID string) ([]Commit, error) {
-	if _, err := gitOutput(repo, "merge-base", "--is-ancestor", endpointTip, tip); err != nil {
-		var exit *exec.ExitError
-		if errors.As(err, &exit) && exit.ExitCode() == 1 {
-			return nil, refuse(tip, "tip does not descend from the endpoint")
-		}
-		return nil, err
+	baseOut, err := gitOutput(repo, "merge-base", endpointTip, tip)
+	if err != nil || strings.TrimSpace(string(baseOut)) == "" {
+		return nil, refuse(tip, "tip and endpoint have no common history")
 	}
-	out, err := gitOutput(repo, "rev-list", "--first-parent", "--reverse", "--parents", endpointTip+".."+tip)
+	base := strings.TrimSpace(string(baseOut))
+	out, err := gitOutput(repo, "rev-list", "--first-parent", "--reverse", "--parents", base+".."+tip)
 	if err != nil {
 		return nil, err
 	}
 	commits := []Commit{}
+	unitCommits := map[string]KindInfo{}
+	unitLists := map[string]bool{}
+	seenUnits := map[string]string{}
 	for _, line := range strings.FieldsFunc(strings.TrimSpace(string(out)), func(r rune) bool { return r == '\n' || r == '\r' }) {
 		fields := strings.Fields(line)
 		if len(fields) == 0 {
@@ -170,9 +203,13 @@ func ValidateRange(repo, endpointTip, tip, goalID string) ([]Commit, error) {
 			return nil, err
 		}
 		reads, prose := 0, 0
+		if kind.Kind == Unit && len(entries) == 0 {
+			return nil, refuse(id, "kind unit requires at least one tree entry")
+		}
 		for _, entry := range entries {
 			class := PathClass(entry.Path)
-			allowed := kind.Kind == Unit && class == ClassUnit || kind.Kind == Plan && class == ClassPlan
+			allowed := kind.Kind == Unit && class == ClassUnit ||
+				kind.Kind == Plan && (class == ClassPlan || entry.Path == landingRecordPath(goalID))
 			if kind.Kind == Read {
 				switch class {
 				case ClassRead:
@@ -191,7 +228,27 @@ func ValidateRange(repo, endpointTip, tip, goalID string) ([]Commit, error) {
 		if kind.Kind == Read && reads != 1 {
 			return nil, refuse(id, fmt.Sprintf("kind read requires exactly one attestation path, found %d", reads))
 		}
-		item := Commit{ID: id, Kind: kind.Kind, Unit: kind.Unit}
+		if kind.Kind == Unit {
+			for _, unit := range kind.Units {
+				if earlier := seenUnits[unit]; earlier != "" {
+					return nil, refuse(id, fmt.Sprintf("unit %s is already named by build commit %s", unit, earlier))
+				}
+				seenUnits[unit] = id
+			}
+			unitCommits[id] = kind
+			unitLists[kind.Unit] = true
+		}
+		if kind.Kind == Read {
+			subject, present := unitCommits[kind.CommitID]
+			if !present {
+				subject, err = KindOf(repo, kind.CommitID, goalID)
+				present = err == nil && subject.Kind == Unit
+			}
+			if !present || !sameUnits(subject.Units, kind.Units) || !unitLists[kind.Unit] {
+				return nil, refuse(id, "Goal-Read does not name a preceding build commit with the same unit list")
+			}
+		}
+		item := Commit{ID: id, Kind: kind.Kind, Units: append([]string(nil), kind.Units...), Unit: kind.Unit}
 		if kind.Kind == Unit {
 			item.Digest, err = UnitDigest(repo, id)
 			if err != nil {

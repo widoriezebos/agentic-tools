@@ -25,6 +25,7 @@ import (
 	dispatchcore "github.com/widoriezebos/agentic-tools/metasystem/internal/dispatch"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/fixtureauth"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/goal"
+	goalbranch "github.com/widoriezebos/agentic-tools/metasystem/internal/goal/branch"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/goalrevision"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/humanauthority"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/identity"
@@ -1120,6 +1121,21 @@ func trySyncMutation(name string, args []string) (int, bool) {
 			res, err := goal.ParkArc(req, f.id, f.because)
 			return printSyncResult(res, err), true
 		}
+		req.ParkBranchCheck = func(goalID, next string) (string, error) {
+			readRemote := func() (string, string, bool, error) {
+				if req.Endpoint.Branch != "refs/heads/main" {
+					return "", "", false, fmt.Errorf("GOAL_BRANCH_ENDPOINT_UNSUPPORTED: endpoint %s is not refs/heads/main", req.Endpoint.Branch)
+				}
+				endpointTip, err := goalBranchEndpointTip(f.root, req.Endpoint)
+				if err != nil {
+					return "", "", false, err
+				}
+				originTip, present, err := goalBranchOriginTip(f.root, req.Endpoint, goalID)
+				return endpointTip, originTip, present, err
+			}
+			state, err := goalbranch.CheckParkBranch(f.root, goalID, next, readRemote)
+			return state.Summary, err
+		}
 		res, err := goal.Park(req, f.id, f.because)
 		return printSyncResult(res, err), true
 	case "unpark":
@@ -1146,6 +1162,31 @@ func trySyncMutation(name string, args []string) (int, bool) {
 	case "done":
 		if !need(f.id, "id") || !need(f.conclude, "conclude") {
 			return 2, true
+		}
+		req.SweepBranch = func(goalID string) error {
+			projection, err := goal.Project(req.Endpoint, false, req.Now)
+			if err != nil {
+				return err
+			}
+			dropped := ""
+			if file := projection.Tree.Done[goalID]; file != nil {
+				dropped = file.NextStep
+			}
+			shouldSweep, err := goalbranch.ShouldSweep(f.root, goalID, dropped)
+			if err != nil || !shouldSweep {
+				return err
+			}
+			endpointTip, err := goalBranchEndpointTip(f.root, req.Endpoint)
+			if err != nil {
+				return err
+			}
+			transport := ""
+			if _, remoteErr := goalBranchGit(f.root, "remote", "get-url", "transport"); remoteErr == nil {
+				transport = "transport"
+			}
+			_, err = goalbranch.Sweep(goalbranch.SweepRequest{Repo: f.root, Remote: req.Endpoint.Remote, Transport: transport,
+				EndpointTip: endpointTip, GoalID: goalID, Dropped: dropped, CheckClaim: func() error { return nil }})
+			return err
 		}
 		res, err := goal.Done(req, f.id, f.conclude)
 		code := printSyncResult(res, err)
