@@ -38,6 +38,15 @@ func installFakeLoad(t *testing.T, sample hostload.Sample, launchers int, known 
 	t.Cleanup(func() { loadSeams = previous })
 }
 
+func TestSampleLoadExportUsesTheProofCensus(t *testing.T) {
+	now := time.Unix(7, 0)
+	installFakeLoad(t, hostload.Sample{Available: true, Cores: 12, Load1m: 3}, 4, true)
+	got := SampleLoad(t.TempDir(), "proof-self", 41, now)
+	if !got.OverlapKnown || got.OverlappingHost != 4 || got.Cores != 12 || got.Load1m != 3 || got.At != now.UTC().Format(time.RFC3339Nano) {
+		t.Fatalf("exported load sample=%+v", got)
+	}
+}
+
 func TestProofLauncherArgv(t *testing.T) {
 	for argv, want := range map[string]bool{
 		"/seat/m1b/metasystem/bin/metasystem proof-run launch --suite testing --root /x": true,

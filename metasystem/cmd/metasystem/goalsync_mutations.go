@@ -35,6 +35,10 @@ import (
 
 var goalHandoverProber identity.Prober = identity.KernelProber{}
 
+func bindHandoverTargetRoot(request *goal.VerbRequest, targetRoot string) {
+	request.HandoverTargetRoot = targetRoot
+}
+
 func goalHandoverTargetLiveness(root, targetMachine, targetLineage string, targetEpoch int64) (identity.Liveness, error) {
 	machine, err := goal.ResolveMachine(root)
 	if err != nil || machine != targetMachine {
@@ -102,7 +106,7 @@ func runGoalHandoverMutation(args []string) int {
 		fmt.Fprintln(os.Stderr, err)
 		return 1
 	}
-	req.HandoverTargetRoot = *targetRoot
+	bindHandoverTargetRoot(&req, *targetRoot)
 	liveness := func() (identity.Liveness, error) {
 		if req.Actor.Machine == *targetMachine && req.Actor.Lineage == *targetLineage {
 			if req.ClaimEpoch != *targetEpoch || req.ClaimEpoch < 1 {

@@ -7,13 +7,48 @@ import (
 	"os"
 	"path/filepath"
 	"slices"
+	"sort"
 	"strings"
+	"time"
 
 	"golang.org/x/sys/unix"
 
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/atomicfile"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/identity"
 )
+
+// FindOrCreateOpen selects the one open batch, or creates it while holding the
+// batch flock. Preparation is deliberately not part of this critical section.
+func FindOrCreateOpen(store Store, baseTree, id, actor string, at time.Time) (Record, error) {
+	var selected Record
+	err := store.locked(func() error {
+		paths, err := filepath.Glob(filepath.Join(store.root, "artifacts", "agents", "landing-batches", "*.json"))
+		if err != nil {
+			return err
+		}
+		sort.Strings(paths)
+		for _, path := range paths {
+			recordID := strings.TrimSuffix(filepath.Base(path), ".json")
+			record, loadErr := store.Load(recordID)
+			if loadErr != nil {
+				return loadErr
+			}
+			if record.State == StateOpen && record.ClosedReason == "" {
+				if selected.BatchID != "" {
+					return fmt.Errorf("more than one open landing batch exists")
+				}
+				selected = record
+			}
+		}
+		if selected.BatchID != "" {
+			return nil
+		}
+		selected = Record{Schema: 1, BatchID: id, BaseTree: baseTree, TipTree: baseTree}
+		selected.Transition(StateOpen, at, "open", actor, "")
+		return store.write(selected)
+	})
+	return selected, err
+}
 
 type batchSeams struct {
 	prober      identity.Prober
@@ -87,7 +122,7 @@ func (store Store) updateLocked(id string, mutate func(*Record) error) error {
 		return err
 	}
 	sameUnit := func(next, old Unit) bool {
-		return next.GoalID == old.GoalID && next.Chain == old.Chain && next.Claim == old.Claim
+		return next.GoalID == old.GoalID && next.Chain == old.Chain && next.SeatRoot == old.SeatRoot && next.Claim == old.Claim
 	}
 	unitsImmutable := len(record.Units) >= len(prior.Units) && slices.EqualFunc(record.Units[:len(prior.Units)], prior.Units, sameUnit)
 	if record.BatchID != id || record.Schema != prior.Schema || !unitsImmutable {
@@ -151,7 +186,7 @@ func (store Store) recordPath(id string) (string, error) {
 	return filepath.Join(store.root, "artifacts", "agents", "landing-batches", id+".json"), nil
 }
 func validateRecord(record Record) error {
-	if record.Schema != 1 || len(record.BatchID) != 26 || strings.Trim(record.BatchID, "0123456789abcdefghjkmnpqrstvwxyz") != "" || !strings.Contains("|open|sealed|proving|diagnosing|landing|landed|held-trunk-red|dissolved|", "|"+record.State+"|") {
+	if record.Schema != 1 || len(record.BatchID) != 26 || strings.Trim(record.BatchID, "0123456789abcdefghjkmnpqrstvwxyz") != "" || !strings.Contains("|open|sealed|proving|diagnosing|landing|landed|held-trunk-red|held-unclassified|dissolved|", "|"+record.State+"|") {
 		return fmt.Errorf("batch record is incomplete")
 	}
 	if record.State == StateHeldTrunkRed && (record.TrunkRed == nil || record.TrunkRed.Opid == "" || len(record.TrunkRed.Opids) == 0 || record.TrunkRed.Opids[len(record.TrunkRed.Opids)-1] != record.TrunkRed.Opid) {

@@ -19,6 +19,9 @@ type certifiedChain struct {
 	Patch                    []byte
 }
 
+// CertifiedChain is the closed implementation output accepted by join.
+type CertifiedChain = certifiedChain
+
 func refuseBatch(code, detail string) error { return fmt.Errorf("%s: %s", code, detail) }
 func readJob(root, id string) (dispatch.JobRecord, error) {
 	data, err := os.ReadFile(filepath.Join(root, "artifacts", "agents", "jobs", id+".json"))
@@ -115,3 +118,9 @@ func transportChain(root string, chain certifiedChain) error {
 	}
 	return nil
 }
+
+func ReadCertifiedChain(root, goalID, chainID string, goalRevision uint64) (CertifiedChain, error) {
+	return readCertifiedChain(root, goalID, chainID, goalRevision)
+}
+
+func TransportChain(root string, chain CertifiedChain) error { return transportChain(root, chain) }

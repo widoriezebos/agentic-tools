@@ -62,6 +62,10 @@ func assembleUnits(root, base string, units []Unit) (prefixes []string, err erro
 	return prefixes, nil
 }
 
+func AssembleUnits(root, base string, units []Unit) ([]string, error) {
+	return assembleUnits(root, base, units)
+}
+
 func checkMembership(store Store, batchID, goalID, chainID string) error {
 	paths, err := filepath.Glob(filepath.Join(store.root, "artifacts", "agents", "landing-batches", "*.json"))
 	if err != nil {

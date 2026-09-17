@@ -174,7 +174,13 @@ func runLandingTestReceipt(args []string) (status int) {
 	capMin := flags.String("cap-min", "", "reserved proof minutes")
 	retryDecision := flags.String("retry-decision", "", "accountable retry decision")
 	resultPath := flags.String("result", "", "atomic structured launch result path")
+	expectedGoalRevision := flags.Uint64("expected-goal-revision", 0, "sealed goal revision")
+	expectedAccountingRevision := flags.Uint64("expected-accounting-revision", 0, "sealed accounting revision")
 	if flags.Parse(args) != nil || flags.NArg() != 0 {
+		return 2
+	}
+	if (*expectedGoalRevision == 0) != (*expectedAccountingRevision == 0) {
+		fmt.Fprintln(os.Stderr, "landing test-receipt expected goal and accounting revisions must be supplied together")
 		return 2
 	}
 	if (*mode == "") == (*command == "") {
@@ -214,6 +220,10 @@ func runLandingTestReceipt(args []string) (status int) {
 		}
 		if *retryDecision != "" {
 			testArgs = append(testArgs, "--retry-decision", *retryDecision)
+		}
+		if *expectedGoalRevision != 0 {
+			testArgs = append(testArgs, "--expected-goal-revision", fmt.Sprint(*expectedGoalRevision),
+				"--expected-accounting-revision", fmt.Sprint(*expectedAccountingRevision))
 		}
 		status := runTestRun(testArgs)
 		if status != 0 && status != proofrun.ExitReusableSuccess {
@@ -274,6 +284,7 @@ func runLandingTestReceipt(args []string) (status int) {
 	attempt, decision, joined, err := admitProofLaunch(proofLaunchAdmission{ControlRoot: controlRoot,
 		ExecutionRoot: preparation.ExecutionRoot(), ConfPath: confPath, GoalID: *goalID, CapMin: *capMin,
 		RetryDecision: *retryDecision, ScopeClass: "full", CommandClass: "landing-test-receipt", Sections: expected,
+		ExpectedGoalRevision: *expectedGoalRevision, ExpectedAccountingRevision: *expectedAccountingRevision,
 		Environment: executionEnvironment})
 	if err != nil {
 		decision = proofrun.LaunchResult{SchemaVersion: 1, Disposition: proofrun.DispositionAdmissionRefused, ExitStatus: proofrun.ExitAdmissionRefused}

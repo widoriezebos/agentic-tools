@@ -1,6 +1,7 @@
 package batch
 
 import (
+	"fmt"
 	"path/filepath"
 	"strings"
 	"time"
@@ -21,7 +22,31 @@ type ownerSeams struct {
 	lock      func(string) *proofLock
 	after     func(time.Duration) <-chan time.Time
 	report    func(string, error)
+	glob      func(string) ([]string, error)
 	locks     map[string]*proofLock
+}
+
+// OwnerOptions names every authority and side effect used by the durable
+// batch owner. Callers must provide an injected clock; tests can substitute
+// every external edge without weakening the production constructor.
+type OwnerOptions struct {
+	Store     Store
+	Settings  config.BatchLanding
+	Actor     string
+	PID       int64
+	LockDir   string
+	QueueDir  string
+	Now       func() time.Time
+	FetchTree func() (string, error)
+	ReadClaim func(string, string, string, string) (Claim, error)
+	Returns   ReturnSeams
+	Rebind    func(string) error
+	Sample    func() proofrun.LoadSample
+	Admission func(proofrun.LoadSample) proofrun.AdmissionCap
+	Launch    func(string, proofrun.LoadSample, string) error
+	After     func(time.Duration) <-chan time.Time
+	Report    func(string, error)
+	Glob      func(string) ([]string, error)
 }
 
 type Owner struct {
@@ -29,6 +54,31 @@ type Owner struct {
 	settings config.BatchLanding
 	actor    string
 	ownerSeams
+}
+
+// NewOwner constructs the only process allowed to advance batch records.
+func NewOwner(options OwnerOptions) (*Owner, error) {
+	if options.Now == nil || options.FetchTree == nil || options.ReadClaim == nil || options.Rebind == nil ||
+		options.Sample == nil || options.Admission == nil || options.Launch == nil || options.After == nil || options.Report == nil {
+		return nil, fmt.Errorf("construct batch owner: every owner seam is required")
+	}
+	if options.PID < 1 {
+		return nil, fmt.Errorf("construct batch owner: pid must be positive")
+	}
+	if options.Glob == nil {
+		options.Glob = filepath.Glob
+	}
+	owner := &Owner{store: options.Store, settings: options.Settings, actor: options.Actor}
+	owner.ownerSeams = ownerSeams{
+		now: options.Now, fetchTree: options.FetchTree, readClaim: options.ReadClaim,
+		returns: options.Returns, rebind: options.Rebind, sample: options.Sample,
+		admission: options.Admission, launch: options.Launch, after: options.After,
+		report: options.Report, glob: options.Glob, locks: map[string]*proofLock{},
+	}
+	owner.lock = func(id string) *proofLock {
+		return newProofLock(options.Store, options.LockDir, options.QueueDir, "batch:"+id, options.PID, options.Now)
+	}
+	return owner, nil
 }
 
 func (owner *Owner) Tick(id string) error {
@@ -141,7 +191,11 @@ func (owner *Owner) start(record *Record, sample proofrun.LoadSample, at time.Ti
 }
 
 func (owner *Owner) Resume() {
-	paths, _ := filepath.Glob(filepath.Join(owner.store.root, "artifacts", "agents", "landing-batches", "*.json"))
+	paths, err := owner.glob(filepath.Join(owner.store.root, "artifacts", "agents", "landing-batches", "*.json"))
+	if err != nil {
+		owner.report("", fmt.Errorf("enumerate landing batches: %w", err))
+		return
+	}
 	for _, path := range paths {
 		id := strings.TrimSuffix(filepath.Base(path), ".json")
 		record, loadErr := owner.store.Load(id)

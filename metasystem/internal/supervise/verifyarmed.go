@@ -12,7 +12,7 @@ import (
 
 // ArmedInspection names the first supervision component that prevents an
 // arming attempt from being certified. Component is empty when the complete
-// owner, watcher, reaper, and census generation verifies.
+// owner, watcher, reaper, landing owner, and census generation verifies.
 type ArmedInspection struct {
 	Component string
 	Reason    string
@@ -44,7 +44,7 @@ func armedIdentityAlive(pid, start int64, tag string, probe identity.FixtureProb
 }
 
 // ArmedNow reports whether supervision is verifiably armed at this instant:
-// a live owner, live watcher and reaper components with fresh heartbeats,
+// a live owner and all three components with fresh heartbeats,
 // the watcher's loaded cap matching the derived ceiling the state attests,
 // and a fresh successful census carrying the state's fingerprint and
 // generation. One attempt, pure over the given clock; `up` owns the retry
@@ -88,11 +88,9 @@ func InspectArmedAt(agentsDir, metasystemRoot string, ownerPid, ownerStart int64
 		return ArmedInspection{Component: "repo-watcher", Reason: fmt.Sprintf("the watcher census is unreadable: %v", err)}
 	}
 	components, _ := state["components"].(map[string]any)
-	for _, component := range []string{"watcher", "reaper"} {
-		componentName := "repo-watcher"
-		if component == "reaper" {
-			componentName = "job-reaper"
-		}
+	for _, kind := range productionComponentSet {
+		component := string(kind)
+		componentName := supervisionComponentName(kind)
 		entry, _ := components[component].(map[string]any)
 		if entry == nil {
 			return ArmedInspection{Component: componentName, Reason: "the component identity is absent from supervision state"}

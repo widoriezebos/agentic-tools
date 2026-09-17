@@ -516,6 +516,21 @@ func TestAnnouncementsForFindsExactlyOurRecords(t *testing.T) {
 	}
 }
 
+func TestAnnouncementsForOwnerLineageFindsReturnTarget(t *testing.T) {
+	root := t.TempDir()
+	self := int64(os.Getpid())
+	if _, err := AnnounceWithPair(root, "return sess", self, selfStart(t), 0, "", "tag", "fake", "return-lineage"); err != nil {
+		t.Fatal(err)
+	}
+	got := AnnouncementsForOwnerLineage(root, "return-lineage")
+	if len(got) != 1 || got[0].Pid != self || got[0].OwnerLineage != "return-lineage" {
+		t.Fatalf("return lineage announcements=%+v", got)
+	}
+	if other := AnnouncementsForOwnerLineage(root, "other-lineage"); len(other) != 0 {
+		t.Fatalf("foreign lineage announcements=%+v", other)
+	}
+}
+
 func TestTerminalBearingCallerOfInstalledBinaryStaysHuman(t *testing.T) {
 	root := t.TempDir()
 	bin := stageStewardInstall(t, root)

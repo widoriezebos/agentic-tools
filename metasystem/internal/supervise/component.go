@@ -9,7 +9,7 @@ import (
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/identity"
 )
 
-// Shared plumbing for the standing components (watcher and reaper): the
+// Shared plumbing for the standing production components: the
 // supervision directory layout they publish into, and the atomic file write
 // both use so a reader never sees a half-written verdict or record.
 

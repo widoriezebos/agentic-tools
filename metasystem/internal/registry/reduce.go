@@ -16,8 +16,9 @@ import (
 // minted write-ahead and the identities captured per component
 // (SLC-R3-013, SLC-R4-011).
 type GenerationSet struct {
-	WatcherTag string
-	ReaperTag  string
+	WatcherTag      string
+	ReaperTag       string
+	LandingOwnerTag string
 	// Identities maps component name to its captured identity; a
 	// component missing here is inside its unrecorded launch window.
 	Identities map[string]ProcessRef
@@ -301,6 +302,7 @@ func (r *Reduction) foldClaim(record *Record) {
 		set := claim.generation(record.Generation)
 		set.WatcherTag = record.WatcherTag
 		set.ReaperTag = record.ReaperTag
+		set.LandingOwnerTag = record.LandingOwnerTag
 		// The watermark is contiguous (SLC-R9-003): it only ever
 		// advances, and compaction drops exactly the generations a
 		// watermark covers.
@@ -358,6 +360,7 @@ func (r *Reduction) foldPublishedOwner(record *Record) {
 		set := owner.generation(record.Generation)
 		set.WatcherTag = record.WatcherTag
 		set.ReaperTag = record.ReaperTag
+		set.LandingOwnerTag = record.LandingOwnerTag
 		if record.RetiredThrough > owner.RetiredThrough {
 			owner.RetiredThrough = record.RetiredThrough
 		}

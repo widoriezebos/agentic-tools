@@ -6,9 +6,9 @@ import (
 )
 
 var landingBatchVerbs = map[string]func([]string) int{
-	"join": runBatchVerbSkeleton, "status": runBatchVerbSkeleton,
-	"withdraw": runBatchVerbSkeleton, "owner": runBatchVerbSkeleton,
-	"tick": runBatchVerbSkeleton, "wait": runBatchVerbSkeleton,
+	"join": runBatchJoin, "status": runBatchVerbSkeleton,
+	"withdraw": runBatchVerbSkeleton, "owner": runBatchOwner,
+	"tick": runBatchTick, "wait": runBatchVerbSkeleton,
 }
 
 func runLandingBatch(args []string) int {

@@ -34,6 +34,22 @@ type BatchLanding struct {
 	now     func() time.Time
 }
 
+// NewBatchLanding binds already-resolved owner settings. It is used by the
+// production supervisor, which runs inside the dedicated landing checkout and
+// therefore cannot resolve that same checkout as if it were a seat.
+func NewBatchLanding(root string, maxWait time.Duration, now func() time.Time) (BatchLanding, error) {
+	if now == nil {
+		return BatchLanding{}, fmt.Errorf("resolve batch landing: an injected clock is required")
+	}
+	if root == "" {
+		return BatchLanding{}, fmt.Errorf("%s is required", BatchRootKey)
+	}
+	if maxWait < time.Minute || maxWait > 6*time.Hour {
+		return BatchLanding{}, fmt.Errorf("%s must be a duration from 1m through 6h", BatchMaxWaitKey)
+	}
+	return BatchLanding{Root: resolvePath(root), MaxWait: maxWait, now: now}, nil
+}
+
 func ResolveBatchLanding(confPath, seatRoot string, now func() time.Time) (BatchLanding, error) {
 	if now == nil {
 		return BatchLanding{}, fmt.Errorf("resolve batch landing: an injected clock is required")

@@ -40,6 +40,7 @@ type fakeWorld struct {
 
 type relaunchedRecord struct {
 	generation, retiredThrough int64
+	watcher, reaper, landing   string
 }
 
 type exitRecord struct {
@@ -50,7 +51,7 @@ type exitRecord struct {
 func newWorld() *fakeWorld {
 	return &fakeWorld{
 		root: Present, state: Present, currency: NamesSelf,
-		stateNamesSelf: true, observation: Healthy, groupCount: 2,
+		stateNamesSelf: true, observation: Healthy, groupCount: 3,
 		stopProven: true, launchedAppend: map[string]error{}, nextPid: 100,
 	}
 }
@@ -83,11 +84,12 @@ func (w *fakeWorld) Stop(held Held) bool {
 	return w.stopProven
 }
 
-func (w *fakeWorld) AppendRelaunched(generation int64, watcherTag, reaperTag string, retiredThrough int64) error {
+func (w *fakeWorld) AppendRelaunched(generation int64, watcherTag, reaperTag, landingOwnerTag string, retiredThrough int64) error {
 	if w.relaunchedErr != nil {
 		return w.relaunchedErr
 	}
-	w.relaunched = append(w.relaunched, relaunchedRecord{generation, retiredThrough})
+	w.relaunched = append(w.relaunched, relaunchedRecord{generation: generation, retiredThrough: retiredThrough,
+		watcher: watcherTag, reaper: reaperTag, landing: landingOwnerTag})
 	return nil
 }
 func (w *fakeWorld) AppendLaunched(held Held) error {
@@ -119,6 +121,29 @@ func newOwner(world *fakeWorld) *Owner {
 		Establishment: Establishment{Deadline: 5},
 		TagPrefix:     "test-owner",
 		Sleep:         func(time.Duration) {},
+	}
+}
+
+func TestProductionSupervisorTakeoverRelaunchesLandingOwner(t *testing.T) {
+	world := newWorld()
+	owner := newOwner(world)
+	owner.SeedGeneration, owner.generation = 1, 1
+	if exit := owner.Cycle(time.Unix(20, 0)); exit != nil {
+		t.Fatalf("takeover establishment exited: %+v", exit)
+	}
+	if owner.generation != 2 || len(world.launched) != len(productionComponentSet) || len(world.relaunched) != 1 {
+		t.Fatalf("takeover generation=%d launched=%+v relaunched=%+v", owner.generation, world.launched, world.relaunched)
+	}
+	seen := map[Component]bool{}
+	for _, held := range world.launched {
+		seen[held.Component] = true
+		if held.Generation != 2 {
+			t.Fatalf("component launched in stale generation: %+v", held)
+		}
+	}
+	row := world.relaunched[0]
+	if !seen[Watcher] || !seen[Reaper] || !seen[LandingOwner] || row.landing != "test-owner-landing-owner-2" {
+		t.Fatalf("production set=%v write-ahead=%+v", seen, row)
 	}
 }
 

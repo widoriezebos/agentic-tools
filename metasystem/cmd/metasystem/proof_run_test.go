@@ -418,6 +418,129 @@ func TestNativeDelegateProofAdmissionExtendsItsClaimPairBudget(t *testing.T) {
 	}
 }
 
+func TestSupervisorTakeoverRefusesStaleEpochProof(t *testing.T) {
+	root, now := proofExtensionGoalFixture(t)
+	amendSyncedGoalFixture(t, root, "landing owner epoch two", func(file *goal.GoalFile) {
+		file.StopCapability.ClaimEpoch = 2
+	})
+	parent, state, err := (identity.KernelProber{}).Probe(int64(os.Getppid()))
+	if err != nil || state != identity.Alive {
+		t.Fatalf("probe stale delegate parent: state=%s err=%v", state, err)
+	}
+	ref := parent.Ref()
+	record := map[string]any{
+		"jobId": "stale-proof", "operationId": "stale-proof", "goalId": "standing-validation", "goalRevision": 2,
+		"machineId": "mac-cli", "claimEpoch": 1, "capMin": 1, "status": "running",
+		"pid": parent.Pid, "pidStartedAt": ref.StartedAtSec,
+	}
+	if ref.StartedAtUnixMicro > 0 {
+		record["pidStartedAtExactMicro"] = ref.StartedAtUnixMicro
+	}
+	if ref.StartTicks > 0 {
+		record["pidStartTicks"], record["bootId"] = ref.StartTicks, ref.BootID
+	}
+	jobs := filepath.Join(root, "artifacts", "agents", "jobs")
+	if err := os.MkdirAll(jobs, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	writeTemp(t, jobs, "stale-proof.json", record)
+	t.Setenv("METASYSTEM_HOOK_DELEGATE_STATE_ROOT", root)
+	t.Setenv("METASYSTEM_HOOK_DELEGATE_INSTALLATION_ROOT", root)
+	t.Setenv("METASYSTEM_HOOK_DELEGATE_JOB", "stale-proof")
+	t.Setenv("METASYSTEM_GOAL_NOW", now.Format(time.RFC3339))
+	attempt, _, _, err := admitProofLaunch(proofLaunchAdmission{
+		ControlRoot: root, ExecutionRoot: root, ConfPath: filepath.Join(root, "metasystem.conf"), GoalID: "standing-validation",
+		CapMin: "1", ScopeClass: "full", CommandClass: "testing",
+	})
+	if err == nil || !strings.Contains(err.Error(), "native delegate proof custody changed before reservation") || attempt.AttemptID != "" {
+		t.Fatalf("stale epoch attempt=%+v err=%v", attempt, err)
+	}
+}
+
+func announceProofFixtureHolder(t *testing.T, root string) {
+	t.Helper()
+	parent, state, err := (identity.KernelProber{}).Probe(int64(os.Getppid()))
+	if err != nil || state != identity.Alive {
+		t.Fatalf("probe proof caller: state=%s err=%v", state, err)
+	}
+	if _, err := lease.AnnounceWithPair(root, "batch-proof-main", parent.Pid, parent.StartedAt.Unix(),
+		parent.StartTicks, parent.BootID, "batch-proof-main", "fake", "m1"); err != nil {
+		t.Fatal(err)
+	}
+}
+
+func TestBatchRevisionBoundAdmissionRefusesBeforeRunnerOrCharge(t *testing.T) {
+	for _, test := range []struct {
+		name                string
+		goalRev, accountRev uint64
+	}{{"goal moved", 1, 2}, {"accounting moved", 2, 1}} {
+		t.Run(test.name, func(t *testing.T) {
+			root, now := proofExtensionGoalFixture(t)
+			announceProofFixtureHolder(t, root)
+			t.Setenv("METASYSTEM_GOAL_NOW", now.Format(time.RFC3339))
+			binding, err := dispatchcore.ResolveGoalBinding(root, "standing-validation", now)
+			if err != nil {
+				t.Fatal(err)
+			}
+			before := dispatchcore.ProjectBudget(root, binding.File, now)
+			attempt, _, _, err := admitProofLaunch(proofLaunchAdmission{
+				ControlRoot: root, ExecutionRoot: root, ConfPath: filepath.Join(root, "metasystem.conf"), GoalID: "standing-validation",
+				CapMin: "1", ScopeClass: "selected", CommandClass: "testing",
+				ExpectedGoalRevision: test.goalRev, ExpectedAccountingRevision: test.accountRev,
+			})
+			after := dispatchcore.ProjectBudget(root, binding.File, now)
+			if err == nil || !strings.Contains(err.Error(), "GOAL_REVISION_MOVED") || attempt.AttemptID != "" ||
+				after.Attempts != before.Attempts || after.ReservedJobMinutes != before.ReservedJobMinutes {
+				t.Fatalf("attempt=%+v err=%v budget=%d/%d -> %d/%d", attempt, err,
+					before.Attempts, before.ReservedJobMinutes, after.Attempts, after.ReservedJobMinutes)
+			}
+		})
+	}
+}
+
+func TestTestingSelectionExpectedRevisionsArePaired(t *testing.T) {
+	root := t.TempDir()
+	if _, _, code := parseTestingSelection("test run", []string{"--root", root, "--expected-goal-revision", "2"}, true); code != 2 {
+		t.Fatalf("unpaired expected revision exited %d", code)
+	}
+	request, _, code := parseTestingSelection("test run", []string{"--root", root,
+		"--expected-goal-revision", "2", "--expected-accounting-revision", "1"}, true)
+	if code != 0 || request.ExpectedGoalRevision != 2 || request.ExpectedAccountingRevision != 1 {
+		t.Fatalf("paired expected revisions request=%+v code=%d", request, code)
+	}
+}
+
+func TestBatchP2RequiresDiagnosticHeadroom(t *testing.T) {
+	for _, test := range []struct {
+		name   string
+		mutate func(*goal.GoalFile)
+	}{
+		{"one attempt remains", func(*goal.GoalFile) {}},
+		{"less than twice P2 minutes remain", func(file *goal.GoalFile) {
+			file.Budget.AttemptLimit = 10
+			file.Budget.ReservedJobMinutesLimit = 1
+			file.Approved.Digest = goal.ApprovalDigest(file.Intent, file.Tier, *file.Budget, file.Risk)
+		}},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			root, now := proofExtensionGoalFixture(t)
+			if test.name != "one attempt remains" {
+				amendSyncedGoalFixture(t, root, test.name, test.mutate)
+			}
+			announceProofFixtureHolder(t, root)
+			t.Setenv("METASYSTEM_GOAL_NOW", now.Format(time.RFC3339))
+			attempt, _, _, err := admitProofLaunch(proofLaunchAdmission{
+				ControlRoot: root, ExecutionRoot: root, ConfPath: filepath.Join(root, "metasystem.conf"), GoalID: "standing-validation",
+				CapMin: "1", ScopeClass: "selected", CommandClass: "testing",
+				ExpectedGoalRevision: 2, ExpectedAccountingRevision: 2,
+			})
+			if err == nil || !strings.Contains(err.Error(), "BATCH_MEMBER_BUDGET_REFUSED") || attempt.AttemptID != "" {
+				t.Fatalf("headroom attempt=%+v err=%v", attempt, err)
+			}
+		})
+	}
+}
+
 func TestProofRunCommandTopLevelRetryAcrossRenamedRoots(t *testing.T) {
 	controlRoot := syncedClaimedGoalFixture(t)
 	controlRoot, err := filepath.EvalSymlinks(controlRoot)
