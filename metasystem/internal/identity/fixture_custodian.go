@@ -14,7 +14,6 @@ const (
 	FixtureCustodianEnv      = "METASYSTEM_FIXTURE_CUSTODIAN"
 	FixtureCustodianOwnerEnv = "METASYSTEM_FIXTURE_CUSTODIAN_OWNER"
 	FixtureCustodianLogEnv   = "METASYSTEM_FIXTURE_CUSTODIAN_LOG"
-	FixtureCustodianStartEnv = "METASYSTEM_FIXTURE_CUSTODIAN_START"
 	FixtureCustodianChainEnv = "METASYSTEM_FIXTURE_CUSTODIAN_CHAIN"
 	RunOwnerEnv              = "METASYSTEM_RUN_OWNER"
 	custodianPoll            = 250 * time.Millisecond
@@ -91,7 +90,10 @@ type custodianRuntime struct {
 }
 
 // RunCustodian watches the owner and its launcher chain, kills the owner after launcher loss, and reaps its attributed children.
-func RunCustodian(owner Ref, watch io.Reader, log io.Writer) error {
+func RunCustodian(owner Ref, watch io.Reader, ready io.WriteCloser, log io.Writer) error {
+	if ready != nil {
+		defer ready.Close()
+	}
 	if _, err := EncodeRef(owner); err != nil || watch == nil || log == nil {
 		return fmt.Errorf("identity: fixture custodian has invalid inputs")
 	}
@@ -104,6 +106,10 @@ func RunCustodian(owner Ref, watch io.Reader, log io.Writer) error {
 	chain, err := custodianChain(owner)
 	if err != nil {
 		return err
+	}
+	if ready != nil {
+		_, _ = io.WriteString(ready, "ready\n")
+		_ = ready.Close()
 	}
 	return runCustodian(owner, watch, log, custodianRuntime{
 		prober: prober, self: exact.Ref(), chain: chain,

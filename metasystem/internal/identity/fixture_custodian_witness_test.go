@@ -35,7 +35,7 @@ func TestCustodianWatchesTheExportedLauncher(t *testing.T) {
 			dir := filepath.Dir(sink)
 			checkWitness(t, os.WriteFile(sink, nil, 0o600))
 			command := exec.Command(os.Args[0], "-test.run=^TestCustodianWatchesTheExportedLauncher$", "-test.count=1")
-			command.Env = []string{launcherBasePath, launcherWitnessMode + "=owner|" + dir, FixtureCustodianStartEnv + "=1", RunOwnerEnv + "=" + value}
+			command.Env = []string{launcherBasePath, launcherWitnessMode + "=owner|" + dir, RunOwnerEnv + "=" + value}
 			output, runErr := command.CombinedOutput()
 			contents, _ := os.ReadFile(sink)
 			if runErr == nil || !strings.Contains(string(output), value) || len(contents) != 0 {
@@ -72,7 +72,7 @@ func runLauncherWitnessMode(t *testing.T) bool {
 		}
 		runWitnessOwner(t, dir)
 	case "launcher":
-		environment, err := ExportRunOwner([]string{launcherBasePath, launcherWitnessMode + "=owner|" + dir, FixtureCustodianStartEnv + "=1"})
+		environment, err := ExportRunOwner([]string{launcherBasePath, launcherWitnessMode + "=owner|" + dir})
 		checkWitness(t, err)
 		command := exec.Command("/bin/sh", "-c", `"$1" -test.run="^$2$" -test.count=1; while :; do sleep 1; done`, "sh", os.Args[0], t.Name())
 		command.Env = environment
@@ -93,7 +93,7 @@ func runLauncherDeathWitness(t *testing.T, exported bool) {
 		command.Env = []string{launcherBasePath, launcherWitnessMode + "=launcher|" + dir}
 	} else {
 		command = exec.Command("/bin/sh", "-c", `"$1" -test.run="^$2$" -test.count=1; exit $?`, "sh", os.Args[0], t.Name())
-		command.Env = []string{launcherBasePath, launcherWitnessMode + "=owner|" + dir, FixtureCustodianStartEnv + "=1"}
+		command.Env = []string{launcherBasePath, launcherWitnessMode + "=owner|" + dir}
 	}
 	command.SysProcAttr = &syscall.SysProcAttr{Setpgid: true}
 	startWitnessCommand(t, command, filepath.Join(dir, "launcher.stderr"), false)
@@ -142,7 +142,7 @@ func TestQuietCustodianRemovesItsLog(t *testing.T) {
 	}
 	dir := t.TempDir()
 	command := exec.Command(os.Args[0], "-test.run=^"+t.Name()+"$", "-test.count=1")
-	command.Env = append(os.Environ(), "FIXTURE_QUIET_CUSTODIAN_WITNESS="+dir, FixtureCustodianStartEnv+"=1")
+	command.Env = append(os.Environ(), "FIXTURE_QUIET_CUSTODIAN_WITNESS="+dir)
 	startWitnessCommand(t, command, filepath.Join(dir, "owner.stderr"), true)
 	t.Cleanup(func() { _ = command.Process.Kill(); _, _ = command.Process.Wait() })
 	custodian := waitWitnessRef(t, filepath.Join(dir, "custodianpid"), filepath.Join(dir, "owner.stderr"))
@@ -193,6 +193,26 @@ func TestCustodianRejectsRuntimePollerAsWatch(t *testing.T) {
 	}
 }
 
+func TestCustodianRejectsMissingReadyDescriptor(t *testing.T) {
+	owner := liveWitnessProcessRef(t, int64(os.Getpid()), 0)
+	watch, held, err := os.Pipe()
+	checkWitness(t, err)
+	t.Cleanup(func() { _ = watch.Close(); _ = held.Close() })
+	var output strings.Builder
+	command := exec.Command(os.Args[0])
+	command.Env = append(os.Environ(), FixtureCustodianEnv+"=1", FixtureCustodianOwnerEnv+"="+owner)
+	command.ExtraFiles, command.Stderr = []*os.File{watch}, &output
+	checkWitness(t, command.Start())
+	t.Cleanup(func() { _ = command.Process.Kill(); _, _ = command.Process.Wait() })
+	started, _ := ParseRef(liveWitnessProcessRef(t, int64(command.Process.Pid), 0))
+	t.Cleanup(func() { _ = SignalExact(KernelProber{}, started, syscall.SIGKILL) })
+	waitErr := command.Wait()
+	exit, ok := waitErr.(*exec.ExitError)
+	if !ok || exit.ExitCode() != 2 || !strings.Contains(output.String(), "descriptor 4") {
+		t.Fatalf("custodian exit=%v output=%q; want exit 2 naming descriptor 4", waitErr, output.String())
+	}
+}
+
 func custodianWitness(t *testing.T, hard bool) {
 	if dir := os.Getenv("FIXTURE_CUSTODIAN_WITNESS"); dir != "" {
 		runWitnessOwner(t, dir)
@@ -200,7 +220,7 @@ func custodianWitness(t *testing.T, hard bool) {
 	}
 	dir := t.TempDir()
 	command := exec.Command(os.Args[0], "-test.run=^"+t.Name()+"$", "-test.count=1")
-	command.Env = append(os.Environ(), "FIXTURE_CUSTODIAN_WITNESS="+dir, FixtureCustodianStartEnv+"=1")
+	command.Env = append(os.Environ(), "FIXTURE_CUSTODIAN_WITNESS="+dir)
 	command.SysProcAttr = &syscall.SysProcAttr{Setpgid: true}
 	startWitnessCommand(t, command, filepath.Join(dir, "owner.stderr"), true)
 	owner, state, err := (KernelProber{}).Probe(int64(command.Process.Pid))

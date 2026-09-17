@@ -47,11 +47,12 @@ type ProcessFixture struct {
 
 func Fixture(t testing.TB) *ProcessFixture {
 	t.Helper()
-	return newRecordedProcessFixture(t, t.Name(), t.TempDir, identity.KernelProber{}, syscall.Kill)
+	custodian, present := testenv.FixtureCustodian()
+	return newRecordedProcessFixture(t, t.Name(), t.TempDir, custodian, present, identity.KernelProber{}, syscall.Kill)
 }
 
-func newRecordedProcessFixture(t fixtureTB, testName string, tempDir func() string, prober identity.Prober, signal identity.SignalFunc) *ProcessFixture {
-	fixture := makeProcessFixture(t, testName, prober, signal)
+func newRecordedProcessFixture(t fixtureTB, testName string, tempDir func() string, custodian identity.Ref, custodianPresent bool, prober identity.Prober, signal identity.SignalFunc) *ProcessFixture {
+	fixture := makeProcessFixture(t, testName, custodian, custodianPresent, prober, signal)
 	registered := false
 	defer func() {
 		if !registered {
@@ -71,13 +72,21 @@ func newRecordedProcessFixture(t fixtureTB, testName string, tempDir func() stri
 	return fixture
 }
 
-func newProcessFixture(t fixtureTB, testName string, prober identity.Prober, signal identity.SignalFunc) *ProcessFixture {
-	fixture := makeProcessFixture(t, testName, prober, signal)
+func newProcessFixture(t fixtureTB, testName string, custodian identity.Ref, custodianPresent bool, prober identity.Prober, signal identity.SignalFunc) *ProcessFixture {
+	fixture := makeProcessFixture(t, testName, custodian, custodianPresent, prober, signal)
 	registerProcessFixture(t, fixture)
 	return fixture
 }
 
-func makeProcessFixture(t fixtureTB, testName string, prober identity.Prober, signal identity.SignalFunc) *ProcessFixture {
+func makeProcessFixture(t fixtureTB, testName string, custodian identity.Ref, custodianPresent bool, prober identity.Prober, signal identity.SignalFunc) *ProcessFixture {
+	if !custodianPresent {
+		t.Fatalf("process fixture needs a custodian: this binary's TestMain must call testenv.Main")
+	}
+	custodianExact, custodianState, custodianErr := prober.Probe(custodian.Pid)
+	custodianMatches := custodianState == identity.Alive && identity.SameIdentity(custodianExact, custodian)
+	if custodianErr != nil || !custodianMatches || custodianExact.Zombie {
+		t.Fatalf("process fixture needs a running custodian: state=%s same-identity=%t zombie=%t err=%v", custodianState, custodianMatches, custodianExact.Zombie, custodianErr)
+	}
 	owner, state, err := prober.Probe(int64(os.Getpid()))
 	if err != nil || state != identity.Alive || !owner.Ref().NativeExact() {
 		t.Fatalf("create process fixture: owner identity is unproven: state=%v err=%v", state, err)
@@ -135,7 +144,7 @@ func (f *ProcessFixture) Key() identity.FixtureKey { return f.key }
 
 func (f *ProcessFixture) Env(base []string) []string {
 	environment := slices.DeleteFunc(append([]string(nil), base...), func(entry string) bool {
-		return strings.HasPrefix(entry, identity.FixtureOwnerEnv+"=") || strings.HasPrefix(entry, fixtureLeashEnv+"=")
+		return strings.HasPrefix(entry, identity.FixtureOwnerEnv+"=") || strings.HasPrefix(entry, fixtureLeashEnv+"=") || strings.HasPrefix(entry, identity.FixtureCustodianEnv)
 	})
 	return append(environment, f.tag, fixtureLeashEnv+"="+f.leash.Name())
 }
