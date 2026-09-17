@@ -13,6 +13,14 @@ DONE 4 and 5; units 4, 7 (split into 7a and 7b), 8, 10a and 10b. Displaced: revi
 a per-unit test receipt (`GOAL_LAND_UNPROVEN` per unit), a revision 1 shape that the critique fold "the landing
 pushes with a lease against the trunk commit it prepared from" had kept; the lease rule itself stands, for the series.
 
+Revision 3 amendment, 2026-09-17 07:30Z, Wido's ruling: the landing itself is a branch. Wido asked whether the landing
+would be clever enough to compose on a separate branch, so that a member with a serious issue can be taken out and the
+landing retried without untangling a merged tree, and ruled yes. What changed: rule 6.9 (the landing branch,
+`landing/<goal-id>` or `landing/<batch-id>`, pushed at land-prep, proved at its tip, landed by one fast-forward push,
+rebuilt on ejection, deleted on land or dissolve); 6.2 composes on that branch; Publication fast-forwards instead of
+committing on the endpoint; section 7 gains the fetchable candidate; section 10's BA12b rebuilds the batch's landing
+branch and BA14a lands by fast-forward; units 7a, 8, 9 and 10b. A human ruling: no critique round. Nothing else moves.
+
 Revision 2 folds the critique of 2026-09-16 (16 material findings). What changed: one range rule keeps each commit
 kind to its own paths; a read is a machine-written attestation bound to a commit; the digest comes from raw tree
 entries so machines agree; a rebase writes a new attestation or refuses; the landing pushes with a lease against the
@@ -152,6 +160,8 @@ word. Proof: units 4, 5 and 7a.
 Revision 3 replaces revision 2's per-unit trunk landing with one landing act per goal. Slices land on the branch
 (sections 2 and 5); the goal lands on the endpoint. Both lanes take the units' entries from their commits, not
 files, and land one trunk commit per unit with its receipt row, applied as a diff, under one proof of the series tip.
+Since the landing-branch amendment (6.9) the series is composed as a pushed branch and the landing is one fast-forward
+of the endpoint to its tip.
 
 6.1 The landing set. A landing takes the goal's land-ready prefix (section 5) as one set. Two words start it, never
 a schedule: `--last`, the holder's word that the prefix is every unit of the goal's plan, which also writes
@@ -161,17 +171,19 @@ landing the holder runs `goal land-ready` (the landing slot, `docs/backlog-mecha
 a partial landing runs under the claim without the slot. Witness: unit 7a.
 
 6.2 One candidate, one proof. `goal branch land-prep --goal G (--last | --through <commit>) --root <checkout> --out
-<dir> --test-receipt <path>` fetches the endpoint tip E, seeds a temporary index from it, and applies the prefix in
-branch order. The fold range of unit i is the `Goal-Plan` and `Goal-Read` commits after unit i-1's commit and before
-unit i+1's, to the branch tip for the last unit; for each unit the verb applies its folds, then the unit, then its
-receipt row, and takes that trunk commit's tree; the last tree is the candidate C. Before writing any file it checks
-two things. Every unit's entries against its predecessor tree, folded paths and exclusions removed, hash to that
-unit's attestation digest; otherwise `GOAL_UNIT_REREAD` names the unit and the paths and the holder rebases and
-reads again. The one test receipt (schema 3) names `ProjectWorkspaceTree(C)` as its tree, or `landing observe`
-accepts it for C by identity; otherwise `GOAL_LAND_UNPROVEN`. That receipt is the landing's proof: no intermediate
-tree of the series is proved, and none is pushed alone (publication below). A candidate equal to one the landing
-record (6.4) already holds as red refuses `GOAL_LAND_RETRY`. The verb then writes the diffs, the messages, the
-record line's draft and a `trunk` file naming E. Witness: unit 7a.
+<dir> --test-receipt <path>` fetches the endpoint tip E, starts the landing branch (6.9) at E, and applies the prefix
+in branch order as commits on that branch, one per unit in 6.3's shape. The fold range of unit i is the `Goal-Plan`
+and `Goal-Read` commits after unit i-1's commit and before unit i+1's, to the branch tip for the last unit; for each
+unit the verb applies its folds, then the unit, then its receipt row, and takes that trunk commit's tree; the last
+tree is the candidate C. Before writing any file it checks two things. Every unit's entries against its predecessor
+tree, folded paths and exclusions removed, hash to that unit's attestation digest; otherwise `GOAL_UNIT_REREAD` names
+the unit and the paths and the holder rebases and reads again. The one test receipt (schema 3) names
+`ProjectWorkspaceTree(C)` as its tree, or `landing observe` accepts it for C by identity; otherwise
+`GOAL_LAND_UNPROVEN`. That receipt is the landing's proof: no intermediate tree of the series is proved, and none is
+pushed alone (publication below). A candidate equal to one the landing record (6.4) already holds as red refuses
+`GOAL_LAND_RETRY`. The verb then pushes the landing branch under its lease (6.9) and writes into `<dir>` the record
+line's draft and a `trunk` file naming E and the landing tip L; the diffs and messages it also writes are the hand
+lane's artefacts until unit 8 lands. Witness: unit 7a.
 
 6.3 The shape on the endpoint. One trunk commit per unit, in branch order, diff-applied, with revision 2's trailers
 as the landing manifest: `Goal-Unit: G/<unit>`, `Goal-Digest: <unit digest>`, one `Goal-Source: <id>` for the unit
@@ -185,12 +197,12 @@ per-commit trailers and stay as they are; per-unit commits change nothing in uni
 one unit to a loop over the prefix with the receipt checked once at the tip. Witness: units 7a and 8.
 
 6.4 The landing record. `records/misc/<goal-id>-landing.md` is the landing record. It lives on the branch as a
-`Goal-Plan` commit after the units it describes, so it folds into the last unit's trunk commit (6.2's fold range)
-and lands with the goal. One line per landing proof: the proof number n, E, C, the attempt id, the verdict, the red
-groups, the canary run that showed the fix clean (6.5), and the fix commit. `land-prep` writes the draft line into
-`<dir>`; the holder commits it before the next proof, the verb from unit 8 on. The goal's `Next step` carries the
-count in the same words: "landing G through <unit>: proof n of C red on <groups>, fix <commit>", and after the push
-"LANDED G through <unit> after n proofs". Witness: units 7a and 7b.
+`Goal-Plan` commit after the units it describes, so it folds into the last unit's trunk commit (6.2's fold range) and
+lands with the goal. One line per landing proof: the proof number n, E, C, the landing tip L (6.9), the attempt id,
+the verdict, the red groups, the canary run that showed the fix clean (6.5), and the fix commit. `land-prep` writes
+the draft line into `<dir>`; the holder commits it before the next proof, the verb from unit 8 on. The goal's `Next
+step` carries the count in the same words: "landing G through <unit>: proof n of C red on <groups>, fix <commit>", and
+after the push "LANDED G through <unit> after n proofs". Witness: units 7a and 7b.
 
 6.5 Red at the landing. A red proof of C is part of the landing: no new goal, no design round, no critique round, no
 brief. The lane classifies first. When a failing group's input manifest (`testing.json`) names a file in the goal's
@@ -228,13 +240,34 @@ Witness: unit 7b.
 own design page, a `Goal-Plan` commit on the branch, folded at the landing by 6.2's fold range; still no new goal.
 Witness: unit 7a (the fold range) and unit 1 (code never rides as a plan).
 
-Publication. The human commits each trunk commit of the series on E from the enrolled terminal, as today. Then `goal
-branch land-push --prepared <dir>` fetches the endpoint; if its tip is not E it refuses `GOAL_LAND_TRUNK_MOVED` and
-pushes nothing, and the holder returns to land-prep for a new candidate tree and its proof; otherwise it pushes the
-whole series once with `--force-with-lease=<endpoint>:E`; no prefix of the series is ever pushed. Nothing rebases
-between the check and the push, so no trunk change reaches the integration branch unread. `land.sh` changes in three
-lines: reset to E instead of `origin/main`, no rebase, push with the lease. Until unit 8 lands the hand lane makes
-those edits by hand and takes E from the `trunk` file.
+6.9 The landing branch (Wido's ruling, 2026-09-17). The candidate is a branch, not an index: `land-prep` composes the
+series of 6.3 as commits on `landing/<goal-id>` starting at E, by applying each unit's entries, its folds and its
+receipt row in turn; no merge commit and no squash, so 6.3's per-unit shape, trailers and digests are exactly what
+lands. The tip L has tree C. The verb pushes the branch to origin with a lease as goal branches are pushed (section
+3): created against an absent ref, replaced against the tip it last pushed; a ref moved behind the lease refuses
+`GOAL_LAND_BRANCH_MOVED` and nothing is written. The proof of 6.2 runs on L's project tree, and the attempt and the
+record line name L beside C, so the proved candidate is a commit any enrolled host can fetch. A new candidate (6.5,
+6.6) is a new L: `land-prep` rebuilds the branch from E and the fixed prefix and replaces it under the lease, never
+amending in place, and the record keeps one line per L. In a batch (section 10) the branch is `landing/<batch-id>`,
+built from the members in join order at the seal, and ejecting a member rebuilds it from the survivors: the ejected
+goal's commits are simply not re-applied, which is the ruling's reason. The branch lives from `land-prep` to the
+landing or the dissolve: `land-push` deletes it, against L, after the fast-forward; a landing given up deletes it the
+same way; a `landing/` branch whose id names no live landing is listed by the sweep (section 8) and deleted on the
+same word as an abandoned goal branch. The range rule of section 1 governs goal branches; the landing branch's commits
+carry receipt rows and are checked by `verify` (6.3, unit 8), not by `goal branch check`. Reads change nothing: a read
+binds to the unit commit and its digest (section 4), and 6.2 checks that digest against the re-applied entries as
+before. Witness: units 7a, 8, 9 and 10b.
+
+Publication. `goal branch land-push --prepared <dir>` fetches the endpoint and the landing branch. If the endpoint tip
+is not E it refuses `GOAL_LAND_TRUNK_MOVED` and pushes nothing, and the holder returns to `land-prep` for a new
+candidate and its proof; if the landing tip is not L it refuses `GOAL_LAND_BRANCH_MOVED`. Otherwise it fast-forwards
+the endpoint to L with `--force-with-lease=<endpoint>:E`, one push, the whole series or nothing, no prefix ever; then
+it deletes the landing branch against L. Nothing rebases between the check and the push, so no trunk change reaches
+the integration branch unread. The commits that reach the endpoint are the landing branch's, made by the verb as unit
+2's are, under Wido's ruling of 2026-09-16 that the landing is automatic; the human act at a landing is the holder's
+word of 6.1. Until unit 8 lands the hand lane does the same by hand: it commits the series on the landing branch from
+the enrolled terminal, pushes it, proves its tip and fast-forwards with the lease; `land.sh` changes from a commit on
+the endpoint to a commit on the landing branch and a leased fast-forward, and takes E and L from the `trunk` file.
 
 Verification. `goal branch verify --landed <trunk-commit>` reads the trailers, takes the landed commit's entries
 against its parent, removes the `Goal-Fold` paths and the exclusions, hashes, and compares with `Goal-Digest`; a
@@ -247,7 +280,8 @@ The lock stays per host: it bounds engine runs on one host, and a candidate's tr
 proof of C anywhere is a proof of C. Two hosts proving one tree waste one run and never disagree; a disagreement is a
 host-dependent test, fixed at its cause. The receipt lives on the host that ran it, so the host that proves is the
 host that prepares and lands. A second machine needs an enrolled engine (`metasystem up`), the lock library
-(`testrun-lock.sh` today, BA8 later) and fetch access to origin; the VM also needs the transport mirror.
+(`testrun-lock.sh` today, BA8 later) and fetch access to origin; the VM also needs the transport mirror. The landing
+branch (6.9) is what a second host fetches: a proof of L's tree anywhere is a proof of C, and the record names L.
 
 7.1 The lock is taken once per goal landing, for the one proof of 6.2, and once per interim run of 7.2; never per
 unit (revision 3). Witness: unit 7a takes one receipt for a three-unit series.
@@ -326,10 +360,14 @@ commits beside a chain, and these rows take it:
   tree stays for receipts.
 - BA12b's ejection names the member: the goal whose unit's files the failing group names is ejected whole with the
   failure attached to its `Next step` by BA6b's return; rule 6.5's fix loop runs on that goal's branch while the
-  survivors are proved as a new tree, and the goal rejoins as a new member with a new candidate. A red that names no
+  survivors are proved as a new tree, and the goal rejoins as a new member with a new candidate. The batch's landing
+  branch `landing/<batch-id>` (6.9) is rebuilt from the survivors in join order and replaced under its lease; the
+  ejected member's commits are not re-applied. A red that names no
   member is the trunk red of BA12a and 6.6.
-- BA13 receipts each unit commit of a member by identity from the one tip proof, as it receipts prefixes today;
-  BA14a lands one trunk commit per unit of each member in join order with 6.3's trailers and receipt rows; BA1's
+- The seal composes the batch as `landing/<batch-id>` (6.9), one trunk commit per unit of each member in join order
+  with 6.3's trailers and receipt rows, and pushes it before the proof, whose attempt names the tip; BA13 receipts
+  each unit commit of a member by identity from the one tip proof, as it receipts prefixes today; BA14a lands by one
+  fast-forward of the endpoint to that tip under the lease, the whole batch or nothing, and deletes the branch; BA1's
   record, BA6b's `Next` edit, BA13's receipt identity and BA14a's message carry the member's commit ids and its last
   unit; BA14b recognises each landed unit by `Goal-Source` and finishes a member once, when every one of its units
   has its trailer on origin; BA5b's handover precedes any sweep and changes no field; BA15's status and
@@ -382,12 +420,12 @@ on trunk without their unit. Files are under `internal/goal/branch/` unless a pa
 | 4. Attestation and carry. | `attest.go`, `commit.go` | 2, 5 | A critic-root source validates; a reader-record source records the sha256; a copy for another commit refuses; an edited file fails its digest; no fast-gate observation on the unit's tree refuses `GOAL_READ_UNGATED`; a commit that modifies an existing test file with no `testsChanged` naming it refuses `GOAL_READ_TESTS_UNNAMED`; a rebase over an untouched file writes a carry naming both commits; a rebase over a touched file or a changed fold refuses `GOAL_READ_STALE`. | 300 |
 | 5. Status, land-ready, park. | `status.go`, `internal/goal/verbs.go`, `cmd/metasystem/goal.go` | 4, 5 | Prefix of one on clean, unread, clean; a goal with no branch parks; a goal with a branch and an unpushed tip refuses; `Next step` names the last unit and its commit. | 240 |
 | 6. Transport mirror and leased delete. | `mirror.go`, `cmd/metasystem/goal_branch.go` | 1, 8 | After an amend transport equals origin; a transport tip moved behind its lease refuses; a delete against a moved oid refuses and the ref stays. | 180 |
-| 7a. Goal landing preparation. | `land.go`, `cmd/metasystem/goal_branch.go`, `internal/refusal/register.go` | 6.1 to 6.4, 6.8, 7.1, 7.2 | Over a three-unit prefix: every unit's non-fold entries hash to its digest; a trunk change in a unit file refuses before any file is written; one receipt naming C suffices for the series, and a receipt naming an intermediate tree or an interim tree that is not C refuses `GOAL_LAND_UNPROVEN`; each message carries every trailer and only the last carries `Goal-Last`, under `--last` only; `--through` a shorter prefix without the human's word on the goal page refuses `GOAL_LAND_PARTIAL`; a `Goal-Plan` commit after the last unit folds into the last trunk commit; the record draft names the proof number, E, C and the attempt; a candidate equal to a recorded red one refuses `GOAL_LAND_RETRY`. | 300 |
+| 7a. Goal landing preparation. | `land.go`, `cmd/metasystem/goal_branch.go`, `internal/refusal/register.go` | 6.1 to 6.4, 6.8, 7.1, 7.2 | Over a three-unit prefix: every unit's non-fold entries hash to its digest; a trunk change in a unit file refuses before any file is written; one receipt naming C suffices for the series, and a receipt naming an intermediate tree or an interim tree that is not C refuses `GOAL_LAND_UNPROVEN`; each message carries every trailer and only the last carries `Goal-Last`, under `--last` only; `--through` a shorter prefix without the human's word on the goal page refuses `GOAL_LAND_PARTIAL`; a `Goal-Plan` commit after the last unit folds into the last trunk commit; the record draft names the proof number, E, C, L and the attempt; a candidate equal to a recorded red one refuses `GOAL_LAND_RETRY`; the series is pushed as `landing/G` with its tip tree equal to C, a second `land-prep` replaces it under the lease, and a ref moved behind the lease refuses `GOAL_LAND_BRANCH_MOVED` with nothing written. | 340 |
 | 7b. The landing red loop. After 7a. | `red.go`, `cmd/metasystem/goal_branch.go`, `internal/refusal/register.go` | 6.5 to 6.7 | With a fake runner and a fake ledger-owner seam: a failing group whose manifest names a change-set file is the goal's red and no run on E happens; a group outside the change set runs on E first, and red on E writes one register entry referencing the branch and holds `GOAL_LAND_TRUNK_RED` with nothing written on the endpoint; green on E is the goal's red; the next `land-prep` refuses `GOAL_LAND_UNCHECKED` until the record's red line names a clean canary run on the tip; the record gains one line per proof and `Next step` carries the count; every run is admitted under the goal's claim, so an exhausted attempt box refuses before any runner. | 280 |
-| 8. Landing publication and verify. | `publish.go`, `verify.go`, `/Users/wido/LocalStorage/hact-20260912/land.sh` | 6 | A moved endpoint refuses before any push; the leased push lands the whole series on E or nothing; `verify` reports equal for each commit of a landed series; a one-byte mutation in a fixture's landed commit fails it. | 240 |
-| 9. Sweep and conclusion. | `sweep.go`, `internal/goal/verbs.go`, `cmd/metasystem/goal.go` | 8 | A plan-only tail refuses; an unknown commit refuses; a tip advanced between check and delete refuses; a `Goal-Last` landing sweeps; `goal done` sweeps; a parked goal without a branch is listed; an abandoned branch survives a plain sweep. | 290 |
+| 8. Landing publication and verify. | `publish.go`, `verify.go`, `internal/refusal/register.go`, `/Users/wido/LocalStorage/hact-20260912/land.sh` | 6, 6.9 | A moved endpoint refuses before any push; a moved landing tip refuses `GOAL_LAND_BRANCH_MOVED`; the leased fast-forward lands the whole series on E or nothing and deletes the landing branch against L; `verify` reports equal for each commit of a landed series; a one-byte mutation in a fixture's landed commit fails it. | 270 |
+| 9. Sweep and conclusion. | `sweep.go`, `internal/goal/verbs.go`, `cmd/metasystem/goal.go` | 8 | A plan-only tail refuses; an unknown commit refuses; a tip advanced between check and delete refuses; a `Goal-Last` landing sweeps; `goal done` sweeps; a parked goal without a branch is listed; an abandoned branch survives a plain sweep; a `landing/` branch of no live landing is listed and deleted only on the word (6.9). | 300 |
 | 10a. Batch reader and per-member check. After BA2 and BA4. | `internal/landing/batch/branch.go`, `join.go` | 10 | A fixture branch of three units with critic-root attestations joins as one member and certifies each unit's bytes; a reader-record attestation on one unit refuses `BATCH_JOIN_UNREAD` for the member; a two-goal batch passes with each unit compared to its own transition inside its member; a moved trunk in a unit file refuses `BATCH_JOIN_REREAD`; a second member of one goal refuses `BATCH_GOAL_ELSEWHERE`. | 290 |
-| 10b. Batch identity rows and goal ejection. After 10a, BA12b, BA14b and BA15. | `record.go`, `return.go`, `red.go`, `receipts.go`, `land_apply.go`, `recovery.go`, `cmd/metasystem/landing_batch_verbs.go`, the inventory | 10 | Record and receipt carry the member's commit ids and last unit; `Next` names the last unit; a failing group that names one member's unit ejects that goal whole with the failure on its `Next step` and the survivors form a new tree; recovery finds each landed unit by `Goal-Source` and finishes the member once; `validate moved-effects` reports zero problems. | 300 |
+| 10b. Batch identity rows and goal ejection. After 10a, BA12b, BA14b and BA15. | `record.go`, `return.go`, `red.go`, `receipts.go`, `land_apply.go`, `recovery.go`, `cmd/metasystem/landing_batch_verbs.go`, the inventory | 10 | Record and receipt carry the member's commit ids and last unit; `Next` names the last unit; a failing group that names one member's unit ejects that goal whole with the failure on its `Next step`, the survivors form a new tree and `landing/<batch-id>` is rebuilt from them under its lease (6.9); recovery finds each landed unit by `Goal-Source` and finishes the member once; `validate moved-effects` reports zero problems. | 320 |
 | 11. First mover. After unit 3. | `records/misc/fixture-children-branch-move.md` | 9 | Proof of DONE 2. | 60, records only |
 
 ### Builds (process reset, 2026-09-17)
@@ -396,7 +434,8 @@ Unit 1 builds alone (in flight when the reset was made). Build A = units 2, 3 an
 units 5, 6, 7a and 7b. Build C = units 8, 9, 10a, 10b and 11, after batch build C (BA12a,
 BA12b, BA17, BA13). One builder per build, from this page and nothing else; one independent read
 per build; the goal lands under one deep proof. The reasons and the numbers:
-records/misc/delivery-process-reset-2026-09-17.md.
+records/misc/delivery-process-reset-2026-09-17.md. The landing-branch amendment (6.9) touches units 7a, 8, 9 and
+10b only; Build A is unchanged.
 
 ### Critique round 2 dispositions (revision 3, 2026-09-17)
 
