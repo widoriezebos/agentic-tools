@@ -19,6 +19,8 @@ type Proof struct {
 	ExecutedMode    testpolicy.Mode     `json:"executedMode"`
 	SelectedGroups  []string            `json:"selectedGroups"`
 	AttemptID       string              `json:"attemptId,omitempty"`
+	BaseCommit      string              `json:"baseCommit,omitempty"`
+	BaseTree        string              `json:"baseTree,omitempty"`
 	Sample          proofrun.LoadSample `json:"sample"`
 	Launchers       int                 `json:"launchers"`
 	Executions      []string            `json:"executions,omitempty"`
@@ -96,6 +98,8 @@ func FinishProof(store Store, id, actor string, result proofrun.TestResult, laun
 			return fmt.Errorf("BATCH_PROOF_NOT_ADMITTED: batch %s has no planned proof", id)
 		}
 		record.Proof.AttemptID = result.AttemptID
+		record.Proof.BaseCommit = result.BaseCommit
+		record.Proof.BaseTree = result.CandidateTree
 		record.Proof.Launchers = result.LaunchCounts.Test + result.LaunchCounts.Build + result.LaunchCounts.Other
 		for _, group := range result.Groups {
 			if group.ExecutionIdentity != "" {

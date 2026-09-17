@@ -1,6 +1,7 @@
 package batch
 
 import (
+	"errors"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -10,6 +11,7 @@ import (
 	"time"
 
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/config"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/gittree"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/identity"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/proofrun"
 )
@@ -27,6 +29,7 @@ type ownerBed struct {
 	window            string
 	launched          proofrun.LoadSample
 	events, ticks     []string
+	redOutcomes       []string
 	lockDir, queueDir string
 }
 
@@ -45,7 +48,9 @@ func ownerRecord(id, state string, joinedAt time.Time) Record {
 func newOwnerBed(t *testing.T, record Record, now time.Time) *ownerBed {
 	t.Helper()
 	root, seat := t.TempDir(), t.TempDir()
-	must(t, exec.Command("git", "init", "-q", root).Run())
+	initCommand := exec.Command("git", "init", "-q", root)
+	initCommand.Env = gittree.ScrubbedEnviron()
+	must(t, initCommand.Run())
 	conf := filepath.Join(seat, "metasystem.conf")
 	must(t, os.WriteFile(conf, []byte(config.BatchRootKey+"="+root+"\n"+config.BatchMaxWaitKey+"=1m\n"), 0o644))
 	bed := &ownerBed{now: now, tree: "tree", sample: proofrun.LoadSample{OverlapKnown: true}, lockDir: filepath.Join(root, "owner-lock"), queueDir: filepath.Join(root, "owner-queue")}
@@ -72,7 +77,14 @@ func newOwnerBed(t *testing.T, record Record, now time.Time) *ownerBed {
 			bed.ticks = append(bed.ticks, id)
 			bed.events = append(bed.events, "rebind:"+id+":"+tree)
 			return nil
-		}, Sample: func() proofrun.LoadSample {
+		}, Mint: func() (string, error) { return "minted-opid", nil }, LogRed: func(id string, outcome TrunkRedRecordOutcome) {
+			bed.redOutcomes = append(bed.redOutcomes, id+"="+string(outcome))
+		}, BaseCommit: func(tree string) (string, error) { return "commit-" + tree, nil },
+		RunDiagnostic: func(string, DiagnosticRequest, Claim) (DiagnosticResult, error) {
+			return DiagnosticResult{AttemptID: "diagnostic"}, nil
+		},
+		DescendsFrom: func(descendant, ancestor string) (bool, error) { return descendant != ancestor, nil },
+		Sample: func() proofrun.LoadSample {
 			if len(bed.samples) == 0 {
 				return bed.sample
 			}
@@ -86,6 +98,66 @@ func newOwnerBed(t *testing.T, record Record, now time.Time) *ownerBed {
 		}, After: func(time.Duration) <-chan time.Time { return make(chan time.Time) }, Report: func(string, error) {}})
 	must(t, err)
 	return bed
+}
+
+func TestBatchOwnerRecordsHeldTrunkRed(t *testing.T) {
+	now := time.Date(2030, 1, 2, 3, 4, 5, 0, time.UTC)
+	newRecord := func() Record {
+		record := ownerRecord(testBatchID, StateHeldTrunkRed, now.Add(-time.Minute))
+		record.TrunkRed.Red = TrunkRed{BatchID: testBatchID, AttemptID: "attempt", Groups: []RedGroup{{ID: "fast"}}}
+		return record
+	}
+	t.Run("pending failed and recorded", func(t *testing.T) {
+		bed := newOwnerBed(t, newRecord(), now)
+		calls := 0
+		ledger := recordOwner(func(opid string, _ TrunkRed) ([]EntryRef, error) {
+			calls++
+			switch calls {
+			case 1:
+				return nil, ErrTrunkRedRecordPending
+			case 2:
+				return nil, &TrunkRedRecordFailed{Outcome: "abandoned", Evidence: "owner ended"}
+			default:
+				if opid != "opid-2" {
+					t.Fatalf("record opid=%q, want opid-2", opid)
+				}
+				return []EntryRef{{ID: "entry-1", Group: "fast"}}, nil
+			}
+		})
+		bed.store = bed.store.WithLedgerOwner(ledger)
+		bed.owner.store = bed.store
+		mintCalls := 0
+		bed.owner.mint = func() (string, error) { mintCalls++; return "opid-2", nil }
+		if err := bed.owner.Tick(testBatchID); !errors.Is(err, ErrTrunkRedRecordPending) {
+			t.Fatalf("pending tick error=%v", err)
+		}
+		var failed *TrunkRedRecordFailed
+		if err := bed.owner.Tick(testBatchID); !errors.As(err, &failed) {
+			t.Fatalf("failed tick error=%v", err)
+		}
+		afterFailure := load(t, bed.store)
+		if afterFailure.TrunkRed.Opid != "opid-2" || strings.Join(afterFailure.TrunkRed.Opids, ",") != "opid,opid-2" || mintCalls != 1 {
+			t.Fatalf("failed tick record=%+v mint calls=%d", afterFailure.TrunkRed, mintCalls)
+		}
+		must(t, bed.owner.Tick(testBatchID))
+		final := load(t, bed.store)
+		if len(final.TrunkRed.Entries) != 1 || final.TrunkRed.Entries[0].ID != "entry-1" || !slices.Equal(bed.redOutcomes, []string{testBatchID + "=recorded"}) {
+			t.Fatalf("recorded tick hold=%+v outcomes=%v", final.TrunkRed, bed.redOutcomes)
+		}
+	})
+	t.Run("moved batch is logged", func(t *testing.T) {
+		bed := newOwnerBed(t, newRecord(), now)
+		ledger := recordOwner(func(string, TrunkRed) ([]EntryRef, error) {
+			must(t, bed.store.Update(testBatchID, func(record *Record) error { record.State = StateOpen; return nil }))
+			return []EntryRef{{ID: "entry-1", Group: "fast"}}, nil
+		})
+		bed.store = bed.store.WithLedgerOwner(ledger)
+		bed.owner.store = bed.store
+		must(t, bed.owner.Tick(testBatchID))
+		if !slices.Equal(bed.redOutcomes, []string{testBatchID + "=moved-on"}) || load(t, bed.store).State != StateOpen {
+			t.Fatalf("outcomes=%v record=%+v", bed.redOutcomes, load(t, bed.store))
+		}
+	})
 }
 
 func TestBatchOwnerLaunchesAtMaximumWait(t *testing.T) {

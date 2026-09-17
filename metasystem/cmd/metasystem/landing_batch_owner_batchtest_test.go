@@ -201,7 +201,12 @@ func TestBatchOwnerWiringBound(t *testing.T) {
 			Store: batch.NewStore(root, nil), Settings: settings, Actor: "fixture", PID: int64(os.Getpid()), Now: time.Now,
 			FetchTree: func() (string, error) { return "tree", nil },
 			ReadClaim: func(string, string, string, string) (batch.Claim, error) { return batch.Claim{}, nil },
-			Rebind:    func(string, string) error { return nil }, Sample: func() proofrun.LoadSample { return proofrun.LoadSample{} },
+			Rebind:    func(string, string) error { return nil }, Mint: func() (string, error) { return "opid", nil },
+			LogRed: func(string, batch.TrunkRedRecordOutcome) {}, BaseCommit: func(string) (string, error) { return "commit", nil },
+			RunDiagnostic: func(string, batch.DiagnosticRequest, batch.Claim) (batch.DiagnosticResult, error) {
+				return batch.DiagnosticResult{}, nil
+			},
+			DescendsFrom: func(string, string) (bool, error) { return false, nil }, Sample: func() proofrun.LoadSample { return proofrun.LoadSample{} },
 			Admission: func(proofrun.LoadSample) proofrun.AdmissionCap { return proofrun.AdmissionCap{} },
 			Launch:    func(string, proofrun.LoadSample, string) error { return nil },
 			After:     func(time.Duration) <-chan time.Time { return make(chan time.Time) },

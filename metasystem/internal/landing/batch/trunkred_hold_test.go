@@ -91,6 +91,40 @@ func TestTrunkRedHoldIsDurableAndCallsNoOwner(t *testing.T) {
 	}
 }
 
+func TestTrunkRedHoldRetryAndRehold(t *testing.T) {
+	store := NewStore(t.TempDir(), scriptedProber{})
+	units := []Unit{trunkRedHoldUnit("m1b", 1)}
+	must(t, store.Create(Record{Schema: 1, BatchID: testBatchID, State: StateProving, Units: units}))
+	firstAt := time.Date(2030, 2, 3, 4, 5, 6, 0, time.UTC)
+	first := TrunkRed{AttemptID: "attempt-1", Groups: []RedGroup{{ID: "fast"}}}
+	must(t, store.HoldTrunkRed(testBatchID, first, "op-1", firstAt, "actor"))
+	before := recordBytes(t, store)
+	must(t, store.HoldTrunkRed(testBatchID, first, "op-1", firstAt, "actor"))
+	if after := recordBytes(t, store); string(after) != string(before) {
+		t.Fatal("an acknowledged hold retry changed the batch record")
+	}
+
+	recordedAt := firstAt.Add(time.Minute)
+	must(t, store.Update(testBatchID, func(record *Record) error {
+		record.State = StateDiagnosing
+		record.TrunkRed.Entries = []EntryRef{{ID: "entry-1", Group: "fast"}}
+		record.TrunkRed.RecordedAt = recordedAt.Format(time.RFC3339Nano)
+		record.Transition(StateDiagnosing, recordedAt, "trunk-red-recorded", "actor", "entries=entry-1")
+		return nil
+	}))
+	secondAt := recordedAt.Add(time.Minute)
+	second := TrunkRed{AttemptID: "attempt-2", Groups: []RedGroup{{ID: "fast"}}}
+	must(t, store.HoldTrunkRed(testBatchID, second, "op-2", secondAt, "actor"))
+	record := load(t, store)
+	hold := record.TrunkRed
+	if hold.Opid != "op-2" || strings.Join(hold.Opids, ",") != "op-1,op-2" || len(hold.Entries) != 0 || hold.RecordedAt != "" || hold.Red.AttemptID != "attempt-2" {
+		t.Fatalf("re-held trunk red=%+v", hold)
+	}
+	if len(record.History) != 3 || record.History[1].Verb != "trunk-red-recorded" || record.History[2].Verb != "trunk-red-hold" {
+		t.Fatalf("re-hold history=%+v", record.History)
+	}
+}
+
 func TestTrunkRedHoldTakesJoinersAndRefusesOtherStates(t *testing.T) {
 	at := time.Date(2031, 3, 4, 5, 6, 7, 8, time.UTC)
 	units := []Unit{trunkRedHoldUnit("m1c", 1), trunkRedHoldUnit("m1b", 2)}

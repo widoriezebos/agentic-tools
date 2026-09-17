@@ -1,0 +1,240 @@
+package main
+
+import (
+	"encoding/json"
+	"errors"
+	"os"
+	"os/exec"
+	"path/filepath"
+	"strings"
+	"testing"
+	"time"
+
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/gittree"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/goal"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/landing/batch"
+)
+
+func TestLedgerTrunkRedOwnerRecordsIdempotently(t *testing.T) {
+	root := syncedClaimedGoalFixture(t)
+	const machine, lineage = "mac-landing", "landing-lineage"
+	ownerValue, err := newLedgerTrunkRedOwner(root, machine, lineage)
+	if err != nil || !isLedgerTrunkRedOwner(ownerValue) {
+		t.Fatalf("construct owner: %T %v", ownerValue, err)
+	}
+	owner := ownerValue.(*ledgerTrunkRedOwner)
+	owner.now = func() time.Time { return time.Date(2026, 9, 17, 11, 0, 0, 0, time.UTC) }
+	red := batch.TrunkRed{BatchID: "batch-1", AttemptID: "attempt-1", BaseCommit: "base-1", BaseTree: "tree-1",
+		SeenAt: time.Date(2026, 9, 17, 10, 0, 0, 0, time.UTC), Joiners: []batch.Claim{{Machine: machine}},
+		Groups: []batch.RedGroup{{ID: "fast", Status: "failed", Failures: []batch.Failure{{Report: "report", Classname: "Class", Name: "Test", Status: "failed", Reason: "red"}}}}}
+	opid := goal.Opid("01J5X0000000000000000000V1", machine, lineage)
+	refs, err := owner.Record(opid, red)
+	if err != nil || len(refs) != 1 || refs[0].Group != "fast" {
+		t.Fatalf("first record: %+v %v", refs, err)
+	}
+	afterFirst := goalSyncMutationGit(t, root, "rev-list", "--count", goal.LocalLedgerBranch)
+	refs, err = owner.Record(opid, red)
+	if err != nil || len(refs) != 1 || goalSyncMutationGit(t, root, "rev-list", "--count", goal.LocalLedgerBranch) != afterFirst {
+		t.Fatalf("idempotent replay: %+v %v", refs, err)
+	}
+
+	entry, err := goal.ReadEntry(root, opid)
+	if err != nil {
+		t.Fatal(err)
+	}
+	entry.Phase, entry.Outcome, entry.Evidence, entry.TerminalAt = goal.PhasePushed, "", "", ""
+	writeAdapterJournalEntry(t, root, entry)
+	refs, err = owner.Record(opid, red)
+	if err != nil || len(refs) != 1 || goalSyncMutationGit(t, root, "rev-list", "--count", goal.LocalLedgerBranch) != afterFirst {
+		t.Fatalf("pushed recovery replay: %+v %v", refs, err)
+	}
+
+	red2 := red
+	red2.BatchID, red2.AttemptID, red2.BaseCommit = "batch-2", "attempt-2", "base-2"
+	red2.SeenAt = red.SeenAt.Add(time.Hour)
+	opid2 := goal.Opid("01J5X0000000000000000000V2", machine, lineage)
+	intent := adapterRecordIntent(red2)
+	created, err := goal.CreateEntry(root, opid2, machine, lineage, intent)
+	if err != nil {
+		t.Fatal(err)
+	}
+	created.Owner = goal.OwnerIdentity{Pid: 999999999, PidStartedAt: 1}
+	writeAdapterJournalEntry(t, root, created)
+	refs, err = owner.Record(opid2, red2)
+	if err != nil || len(refs) != 1 {
+		t.Fatalf("created recovery: %+v %v", refs, err)
+	}
+	open, err := owner.Open()
+	if err != nil || len(open) != 1 || len(open[0].Holds) != 2 || open[0].LastBaseCommit != "base-2" {
+		t.Fatalf("open projection: %+v %v", open, err)
+	}
+
+	red3 := red
+	red3.BatchID, red3.AttemptID = "batch-3", "attempt-3"
+	opid3 := goal.Opid("01J5X0000000000000000000V3", machine, lineage)
+	if _, err := goal.CreateEntry(root, opid3, machine, lineage, adapterRecordIntent(red3)); err != nil {
+		t.Fatal(err)
+	}
+	if err := goal.MarkTerminal(root, opid3, goal.OutcomeAbandoned, "owner stopped before publication"); err != nil {
+		t.Fatal(err)
+	}
+	beforeFailed := goalSyncMutationGit(t, root, "rev-list", "--count", goal.LocalLedgerBranch)
+	_, err = owner.Record(opid3, red3)
+	var failed *batch.TrunkRedRecordFailed
+	if !errors.As(err, &failed) || failed.Outcome != string(goal.OutcomeAbandoned) || failed.Evidence != "owner stopped before publication" ||
+		goalSyncMutationGit(t, root, "rev-list", "--count", goal.LocalLedgerBranch) != beforeFailed {
+		t.Fatalf("abandoned mapping: failure=%+v err=%v", failed, err)
+	}
+	if _, err := owner.Record("old-opid", red); err == nil {
+		t.Fatal("an opid outside the landing owner's form was accepted")
+	}
+
+	ownOpid := goal.Opid("01J5X0000000000000000000V4", machine, lineage)
+	ownRequest, err := owner.request(ownOpid)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := goal.OwnTrunkRed(ownRequest, goal.TrunkRedOwnArgs{Entry: refs[0].ID, Goal: "standing-validation", Branch: "fix/red",
+		BranchCommit: "1111111111111111111111111111111111111111"}); err != nil {
+		t.Fatal(err)
+	}
+	clearOpid := goal.Opid("01J5X0000000000000000000V5", machine, lineage)
+	greenCommit := goalSyncMutationGit(t, root, "rev-parse", "HEAD")
+	greenTree := goalSyncMutationGit(t, root, "rev-parse", "HEAD^{tree}")
+	if err := owner.Clear(clearOpid, refs[0], batch.Green{AttemptID: "green-1", BaseCommit: greenCommit, BaseTree: greenTree, Group: "fast"}); err != nil {
+		t.Fatal(err)
+	}
+	if open, err := owner.Open(); err != nil || len(open) != 0 {
+		t.Fatalf("clear left open entries: %+v %v", open, err)
+	}
+	projection, err := goal.Project(owner.endpoint, false, owner.now())
+	if err != nil || len(projection.Tree.TrunkRed) != 1 || projection.Tree.TrunkRed[0].Closed == nil || projection.Tree.TrunkRed[0].FixBranch.State != goal.TrunkRedBranchOpen {
+		t.Fatalf("clear with absent fix commit: entries=%+v error=%v", projection.Tree.TrunkRed, err)
+	}
+}
+
+func TestLedgerTrunkRedOwnerClearClassifiesFixCommit(t *testing.T) {
+	tests := []struct {
+		name        string
+		merged      bool
+		unreadable  bool
+		packed      bool
+		branchState string
+	}{
+		{name: "merged", merged: true, branchState: goal.TrunkRedBranchMerged},
+		{name: "present but not merged", branchState: goal.TrunkRedBranchOpen},
+		{name: "unreadable", merged: true, unreadable: true},
+		{name: "unreadable pack", merged: true, unreadable: true, packed: true},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			root := syncedClaimedGoalFixture(t)
+			const machine, lineage = "mac-landing", "landing-lineage"
+			ownerValue, err := newLedgerTrunkRedOwner(root, machine, lineage)
+			if err != nil {
+				t.Fatal(err)
+			}
+			owner := ownerValue.(*ledgerTrunkRedOwner)
+			owner.now = func() time.Time { return time.Date(2026, 9, 17, 11, 0, 0, 0, time.UTC) }
+
+			tree := goalSyncMutationGit(t, root, "rev-parse", "HEAD^{tree}")
+			fixCommit := goalSyncMutationGit(t, root, "commit-tree", tree, "-m", "fix commit")
+			greenArgs := []string{"commit-tree", tree, "-m", "green commit for " + test.name}
+			if test.merged {
+				greenArgs = append(greenArgs, "-p", fixCommit)
+			}
+			greenCommit := goalSyncMutationGit(t, root, greenArgs...)
+
+			red := batch.TrunkRed{BatchID: "batch-clear", AttemptID: "attempt-red", BaseCommit: fixCommit, BaseTree: tree,
+				SeenAt: time.Date(2026, 9, 17, 10, 0, 0, 0, time.UTC), Joiners: []batch.Claim{{Machine: machine}},
+				Groups: []batch.RedGroup{{ID: "fast", Status: "failed", Failures: []batch.Failure{{Report: "report", Classname: "Class", Name: "Test", Status: "failed", Reason: "red"}}}}}
+			recordOpid := goal.Opid("01J5X0000000000000000000X1", machine, lineage)
+			refs, err := owner.Record(recordOpid, red)
+			if err != nil || len(refs) != 1 {
+				t.Fatalf("record: refs=%+v error=%v", refs, err)
+			}
+			ownOpid := goal.Opid("01J5X0000000000000000000X2", machine, lineage)
+			ownRequest, err := owner.request(ownOpid)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if _, err := goal.OwnTrunkRed(ownRequest, goal.TrunkRedOwnArgs{Entry: refs[0].ID, Goal: "standing-validation", Branch: "fix/red", BranchCommit: fixCommit}); err != nil {
+				t.Fatal(err)
+			}
+
+			if test.unreadable {
+				if test.packed {
+					prefix := filepath.Join(root, ".git", "objects", "pack", "pack")
+					command := exec.Command("git", "-C", root, "pack-objects", prefix)
+					command.Env = gittree.ScrubbedEnviron()
+					command.Stdin = strings.NewReader(fixCommit + "\n")
+					output, err := command.Output()
+					if err != nil {
+						t.Fatal(err)
+					}
+					indexPath := prefix + "-" + strings.TrimSpace(string(output)) + ".idx"
+					if err := os.Remove(filepath.Join(root, ".git", "objects", fixCommit[:2], fixCommit[2:])); err != nil {
+						t.Fatal(err)
+					}
+					if err := os.Chmod(indexPath, 0); err != nil {
+						t.Fatal(err)
+					}
+					t.Cleanup(func() { _ = os.Chmod(indexPath, 0o600) })
+				} else {
+					objectPath := filepath.Join(root, ".git", "objects", fixCommit[:2], fixCommit[2:])
+					if err := os.Chmod(objectPath, 0); err != nil {
+						t.Fatal(err)
+					}
+					t.Cleanup(func() { _ = os.Chmod(objectPath, 0o600) })
+				}
+			}
+			clearOpid := goal.Opid("01J5X0000000000000000000X3", machine, lineage)
+			err = owner.Clear(clearOpid, refs[0], batch.Green{AttemptID: "attempt-green", BaseCommit: greenCommit, BaseTree: tree, Group: "fast"})
+			if test.unreadable {
+				open, openErr := owner.Open()
+				if err == nil || openErr != nil || len(open) != 1 {
+					t.Fatalf("unreadable fix commit: clear error=%v open=%+v open error=%v", err, open, openErr)
+				}
+				return
+			}
+			if err != nil {
+				t.Fatal(err)
+			}
+			projection, err := goal.Project(owner.endpoint, false, owner.now())
+			if err != nil || len(projection.Tree.TrunkRed) != 1 || projection.Tree.TrunkRed[0].Closed == nil || projection.Tree.TrunkRed[0].FixBranch.State != test.branchState {
+				t.Fatalf("clear: entries=%+v error=%v", projection.Tree.TrunkRed, err)
+			}
+		})
+	}
+}
+
+func adapterRecordIntent(red batch.TrunkRed) goal.Intent {
+	args := goal.TrunkRedRecordArgs{Batch: red.BatchID, Attempt: red.AttemptID, BaseCommit: red.BaseCommit,
+		BaseTree: red.BaseTree, SeenAt: red.SeenAt.UTC().Truncate(time.Second).Format(time.RFC3339), OwnerMachine: red.OwnerMachine()}
+	for _, group := range red.Groups {
+		converted := goal.TrunkRedRecordGroup{Identity: batch.TrunkRedID(group), Group: group.ID, Status: group.Status,
+			NotRunReason: group.NotRunReason, LogPath: group.LogPath, LogDigest: group.LogDigest}
+		for _, failure := range group.Failures {
+			converted.Failures = append(converted.Failures, goal.TrunkRedFailure{Report: failure.Report, Classname: failure.Classname,
+				Name: failure.Name, Status: failure.Status, Reason: failure.Reason})
+		}
+		if converted.Failures == nil {
+			converted.Failures = []goal.TrunkRedFailure{}
+		}
+		args.Groups = append(args.Groups, converted)
+	}
+	encoded, _ := json.Marshal(args)
+	return goal.Intent{Verb: "trunk-red-record", Args: map[string]string{"red": string(encoded)}}
+}
+
+func writeAdapterJournalEntry(t *testing.T, root string, entry goal.Entry) {
+	t.Helper()
+	data, err := json.MarshalIndent(entry, "", "  ")
+	if err != nil {
+		t.Fatal(err)
+	}
+	path := filepath.Join(root, "artifacts", "agents", "goal-transactions", entry.Opid+".json")
+	if err := os.WriteFile(path, data, 0o644); err != nil {
+		t.Fatal(err)
+	}
+}

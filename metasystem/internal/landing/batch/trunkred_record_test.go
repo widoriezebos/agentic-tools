@@ -39,6 +39,13 @@ func recordBytes(t *testing.T, store Store) []byte {
 	return data
 }
 
+func ensureTrunkRedRecorded(t *testing.T, store Store, mint func() (string, error), at time.Time, actor string) TrunkRedRecordOutcome {
+	t.Helper()
+	outcome, err := store.EnsureTrunkRedRecorded(testBatchID, mint, at, actor)
+	must(t, err)
+	return outcome
+}
+
 func TestTrunkRedHoldIsDurableBeforeAnyLedgerCall(t *testing.T) {
 	var store Store
 	lockHeld := false
@@ -66,7 +73,9 @@ func TestTrunkRedHoldIsDurableBeforeAnyLedgerCall(t *testing.T) {
 		}
 		return nil
 	}
-	must(t, store.EnsureTrunkRedRecorded(testBatchID, nil, time.Date(2033, 2, 3, 4, 5, 6, 7, time.UTC), "actor"))
+	if outcome := ensureTrunkRedRecorded(t, store, nil, time.Date(2033, 2, 3, 4, 5, 6, 7, time.UTC), "actor"); outcome != TrunkRedRecordRecorded {
+		t.Fatalf("record outcome=%q", outcome)
+	}
 	if hold := load(t, store).TrunkRed; len(hold.Entries) != 1 || hold.Entries[0].ID != "entry-1" {
 		t.Fatalf("recorded hold=%+v", hold)
 	}
@@ -84,7 +93,7 @@ func TestTrunkRedRefusalLeavesHeldWithEmptyEntries(t *testing.T) {
 	store := heldTrunkRedStore(t, owner)
 	at := time.Date(2033, 2, 3, 4, 5, 6, 7, time.FixedZone("offset", 3600))
 	for range 2 {
-		if err := store.EnsureTrunkRedRecorded(testBatchID, nil, at, "actor"); err == nil {
+		if _, err := store.EnsureTrunkRedRecorded(testBatchID, nil, at, "actor"); err == nil {
 			t.Fatal("refusing owner returned no error")
 		}
 	}
@@ -92,12 +101,16 @@ func TestTrunkRedRefusalLeavesHeldWithEmptyEntries(t *testing.T) {
 	if record.State != StateHeldTrunkRed || len(record.TrunkRed.Entries) != 0 || len(record.History) != 2 || record.History[1].Verb != "trunk-red-record-refused" || record.History[1].Detail != "trunk-red-record refused: ledger unavailable" {
 		t.Fatalf("refused record=%+v", record)
 	}
-	must(t, store.EnsureTrunkRedRecorded(testBatchID, nil, at, "actor"))
+	if outcome := ensureTrunkRedRecorded(t, store, nil, at, "actor"); outcome != TrunkRedRecordRecorded {
+		t.Fatalf("record outcome=%q", outcome)
+	}
 	record = load(t, store)
 	if len(record.TrunkRed.Entries) != 1 || record.TrunkRed.RecordedAt != at.UTC().Format(time.RFC3339Nano) || record.History[len(record.History)-1].Verb != "trunk-red-recorded" || record.History[len(record.History)-1].Detail != "entries=entry-1" {
 		t.Fatalf("recorded hold=%+v history=%+v", record.TrunkRed, record.History)
 	}
-	must(t, store.EnsureTrunkRedRecorded(testBatchID, nil, at, "actor"))
+	if outcome := ensureTrunkRedRecorded(t, store, nil, at, "actor"); outcome != TrunkRedRecordAlready {
+		t.Fatalf("repeat outcome=%q", outcome)
+	}
 	if calls != 3 {
 		t.Fatalf("owner calls=%d, want 3", calls)
 	}
@@ -111,13 +124,69 @@ func TestTrunkRedRefusalLeavesHeldWithEmptyEntries(t *testing.T) {
 	} {
 		t.Run(test.name, func(t *testing.T) {
 			store := heldTrunkRedStore(t, test.owner)
-			err := store.EnsureTrunkRedRecorded(testBatchID, nil, at, "actor")
+			_, err := store.EnsureTrunkRedRecorded(testBatchID, nil, at, "actor")
 			record := load(t, store)
 			if err == nil || !strings.Contains(err.Error(), test.want) || len(record.TrunkRed.Entries) != 0 || record.History[len(record.History)-1].Verb != "trunk-red-record-refused" {
 				t.Fatalf("error=%v record=%+v", err, record)
 			}
 		})
 	}
+}
+
+func TestTrunkRedRecordOutcomeDistinguishesAlreadyFromMovedOn(t *testing.T) {
+	t.Run("batch state moved on", func(t *testing.T) {
+		calls := 0
+		store := heldTrunkRedStore(t, recordOwner(func(string, TrunkRed) ([]EntryRef, error) {
+			calls++
+			return []EntryRef{{ID: "entry-1", Group: "fast"}}, nil
+		}))
+		must(t, store.Update(testBatchID, func(record *Record) error {
+			record.State = StateOpen
+			return nil
+		}))
+		outcome, err := store.EnsureTrunkRedRecorded(testBatchID, nil, time.Time{}, "actor")
+		if err != nil || outcome != TrunkRedRecordMovedOn || calls != 0 {
+			t.Fatalf("outcome=%q error=%v owner calls=%d", outcome, err, calls)
+		}
+	})
+
+	t.Run("same operation already stored references", func(t *testing.T) {
+		var store Store
+		entries := []EntryRef{{ID: "entry-1", Group: "fast"}}
+		owner := recordOwner(func(string, TrunkRed) ([]EntryRef, error) {
+			must(t, store.Update(testBatchID, func(record *Record) error {
+				record.TrunkRed.Entries = entries
+				record.Transition(StateHeldTrunkRed, time.Time{}, "trunk-red-recorded", "other", "entries=entry-1")
+				return nil
+			}))
+			return entries, nil
+		})
+		store = heldTrunkRedStore(t, owner)
+		outcome, err := store.EnsureTrunkRedRecorded(testBatchID, nil, time.Time{}, "actor")
+		record := load(t, store)
+		if err != nil || outcome != TrunkRedRecordAlready || len(record.History) != 2 || record.History[1].Verb != "trunk-red-recorded" {
+			t.Fatalf("outcome=%q error=%v history=%+v", outcome, err, record.History)
+		}
+	})
+
+	t.Run("same operation stores references before refusal", func(t *testing.T) {
+		var store Store
+		entries := []EntryRef{{ID: "entry-1", Group: "fast"}}
+		owner := recordOwner(func(string, TrunkRed) ([]EntryRef, error) {
+			must(t, store.Update(testBatchID, func(record *Record) error {
+				record.TrunkRed.Entries = entries
+				record.Transition(StateHeldTrunkRed, time.Time{}, "trunk-red-recorded", "other", "entries=entry-1")
+				return nil
+			}))
+			return nil, errors.New("git fetch: connection reset")
+		})
+		store = heldTrunkRedStore(t, owner)
+		outcome, err := store.EnsureTrunkRedRecorded(testBatchID, nil, time.Time{}, "actor")
+		record := load(t, store)
+		if err != nil || outcome != TrunkRedRecordAlready || len(record.History) != 2 || record.History[1].Verb != "trunk-red-recorded" {
+			t.Fatalf("outcome=%q error=%v history=%+v", outcome, err, record.History)
+		}
+	})
 }
 
 func TestTrunkRedFailedOutcomeMintsOneNewOpid(t *testing.T) {
@@ -143,7 +212,7 @@ func TestTrunkRedFailedOutcomeMintsOneNewOpid(t *testing.T) {
 			return "op-2", nil
 		}
 		var failed *TrunkRedRecordFailed
-		if err := store.EnsureTrunkRedRecorded(testBatchID, mint, time.Time{}, "actor"); !errors.As(err, &failed) {
+		if _, err := store.EnsureTrunkRedRecorded(testBatchID, mint, time.Time{}, "actor"); !errors.As(err, &failed) {
 			t.Fatalf("error=%v, want failed transaction", err)
 		}
 		record := load(t, store)
@@ -152,7 +221,7 @@ func TestTrunkRedFailedOutcomeMintsOneNewOpid(t *testing.T) {
 		}
 		before := recordBytes(t, store)
 		pendingMints := 0
-		err := store.EnsureTrunkRedRecorded(testBatchID, func() (string, error) { pendingMints++; return "unused", nil }, time.Time{}, "actor")
+		_, err := store.EnsureTrunkRedRecorded(testBatchID, func() (string, error) { pendingMints++; return "unused", nil }, time.Time{}, "actor")
 		if !errors.Is(err, ErrTrunkRedRecordPending) || string(recordBytes(t, store)) != string(before) || pendingMints != 0 {
 			t.Fatalf("pending error=%v mint calls=%d", err, pendingMints)
 		}
@@ -169,10 +238,10 @@ func TestTrunkRedFailedOutcomeMintsOneNewOpid(t *testing.T) {
 		})
 		store = heldTrunkRedStore(t, owner)
 		mintCalls := 0
-		err := store.EnsureTrunkRedRecorded(testBatchID, func() (string, error) { mintCalls++; return "op-2", nil }, time.Time{}, "actor")
+		outcome, err := store.EnsureTrunkRedRecorded(testBatchID, func() (string, error) { mintCalls++; return "op-2", nil }, time.Time{}, "actor")
 		hold := load(t, store).TrunkRed
-		if err == nil || mintCalls != 0 || len(hold.Opids) != 2 || hold.Opid != "op-other" {
-			t.Fatalf("error=%v mint calls=%d hold=%+v", err, mintCalls, hold)
+		if err != nil || outcome != TrunkRedRecordMovedOn || mintCalls != 0 || len(hold.Opids) != 2 || hold.Opid != "op-other" {
+			t.Fatalf("outcome=%q error=%v mint calls=%d hold=%+v", outcome, err, mintCalls, hold)
 		}
 	})
 	t.Run("mint error", func(t *testing.T) {
@@ -183,7 +252,7 @@ func TestTrunkRedFailedOutcomeMintsOneNewOpid(t *testing.T) {
 		store := heldTrunkRedStore(t, owner)
 		before := recordBytes(t, store)
 		mintErr := errors.New("mint unavailable")
-		err := store.EnsureTrunkRedRecorded(testBatchID, func() (string, error) { return "", mintErr }, time.Time{}, "actor")
+		_, err := store.EnsureTrunkRedRecorded(testBatchID, func() (string, error) { return "", mintErr }, time.Time{}, "actor")
 		if !errors.Is(err, mintErr) || !errors.Is(err, failed) || string(recordBytes(t, store)) != string(before) {
 			t.Fatalf("mint error=%v or changed the record", err)
 		}
@@ -243,7 +312,7 @@ func TestTrunkRedLeavesABatchThatMovedOnAlone(t *testing.T) {
 			})
 			store = heldTrunkRedStore(t, owner)
 			mints := 0
-			err := store.EnsureTrunkRedRecorded(testBatchID, func() (string, error) {
+			outcome, err := store.EnsureTrunkRedRecorded(testBatchID, func() (string, error) {
 				mints++
 				if test.mint != "" {
 					applyTrunkRedTestChange(t, store, test.mint)
@@ -252,10 +321,11 @@ func TestTrunkRedLeavesABatchThatMovedOnAlone(t *testing.T) {
 			}, time.Time{}, "actor")
 			record := load(t, store)
 			if record.State != test.wantState || len(record.TrunkRed.Entries) != 0 || strings.Join(record.TrunkRed.Opids, ",") != test.wantOpids || mints != test.wantMints || len(record.History) != 1+test.wantHistory {
-				t.Fatalf("error=%v state=%q hold=%+v mints=%d history=%+v", err, record.State, record.TrunkRed, mints, record.History)
+				t.Fatalf("outcome=%q error=%v state=%q hold=%+v mints=%d history=%+v", outcome, err, record.State, record.TrunkRed, mints, record.History)
 			}
-			if (test.result == "refs" && err != nil) || (test.result == "failed" && !errors.Is(err, failedErr)) || (test.result == "refusal" && !errors.Is(err, ownerErr)) || (test.result == "nil" && (err == nil || record.History[1].Verb != "trunk-red-record-refused")) {
-				t.Fatalf("result=%q error=%v history=%+v", test.result, err, record.History)
+			moved := test.owner != "" || test.mint != ""
+			if moved && (outcome != TrunkRedRecordMovedOn || err != nil) || !moved && ((test.result == "refs" && err != nil) || (test.result == "failed" && !errors.Is(err, failedErr)) || (test.result == "refusal" && !errors.Is(err, ownerErr)) || (test.result == "nil" && (err == nil || record.History[1].Verb != "trunk-red-record-refused"))) {
+				t.Fatalf("result=%q outcome=%q error=%v history=%+v", test.result, outcome, err, record.History)
 			}
 		})
 	}

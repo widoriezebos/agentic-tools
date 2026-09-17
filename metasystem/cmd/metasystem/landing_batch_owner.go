@@ -235,10 +235,6 @@ func productionReturnTarget(landingRoot, tree string, prober identity.Prober, un
 	return batch.ReturnTarget{State: batch.ReturnTargetUnknown, Reason: "source identity is not provable"}
 }
 
-func runBatchChild(root string, args ...string) error {
-	return runBatchChildAs(root, landingOwnerLineage, args...)
-}
-
 var batchChildRunner = runBatchChildAs
 
 func runBatchChildAs(root, lineage string, args ...string) error {
@@ -327,7 +323,7 @@ func rebindBatchClaims(root, batchID, tree, machine string, epoch int64, read fu
 }
 
 func newProductionBatchOwner(settings config.BatchLanding, held batchOwnerLease, now func() time.Time) (*batch.Owner, error) {
-	store := batch.NewStore(settings.Root, identity.KernelProber{})
+	store := batch.NewStore(settings.Root, identity.KernelProber{}).WithLedgerOwner(productionTrunkRedLedgerOwner(settings.Root))
 	latestTree := ""
 	returns := productionReturnSeams(settings.Root, func() string { return latestTree })
 	fetch := func() (string, error) {
@@ -348,6 +344,32 @@ func newProductionBatchOwner(settings config.BatchLanding, held batchOwnerLease,
 			return rebindBatchClaims(settings.Root, batchID, tree, machine, held.epoch, batch.ReadReturnLedgerGoal, func(root string, args ...string) error {
 				return batchChildRunner(root, landingOwnerLineage, args...)
 			})
+		},
+		Mint: func() (string, error) {
+			ulid, err := goal.NewOperationULID()
+			if err != nil {
+				return "", err
+			}
+			return goal.Opid(ulid, machine, landingOwnerLineage), nil
+		},
+		LogRed: func(id string, outcome batch.TrunkRedRecordOutcome) {
+			line, _ := json.Marshal(map[string]any{"component": "landing-owner", "batch": id, "trunkRed": outcome})
+			fmt.Fprintln(os.Stderr, string(line))
+		},
+		BaseCommit: func(tree string) (string, error) { return commitForTree(settings.Root, "origin/main", tree) },
+		RunDiagnostic: func(id string, request batch.DiagnosticRequest, claim batch.Claim) (batch.DiagnosticResult, error) {
+			return launchBatchDiagnostic(settings.Root, id, request, claim)
+		},
+		DescendsFrom: func(descendant, ancestor string) (bool, error) {
+			_, err := gitOutput(settings.Root, "merge-base", "--is-ancestor", ancestor, descendant)
+			if err == nil {
+				return true, nil
+			}
+			var exit *exec.ExitError
+			if errors.As(err, &exit) && exit.ExitCode() == 1 {
+				return false, nil
+			}
+			return false, err
 		},
 		Sample: func() proofrun.LoadSample { return proofrun.SampleLoad(settings.Root, "", held.pid, now()) },
 		Admission: func(sample proofrun.LoadSample) proofrun.AdmissionCap {

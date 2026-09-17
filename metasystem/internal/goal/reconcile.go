@@ -175,7 +175,7 @@ type Snapshot struct {
 // locations into one in-memory snapshot.
 func CaptureSnapshot(repoRoot string) (*Snapshot, error) {
 	snap := &Snapshot{Files: map[string][]byte{}}
-	walk := func(dir, prefix string) error {
+	walk := func(dir, prefix string, includeTrunkRed bool) error {
 		entries, err := os.ReadDir(dir)
 		if err != nil {
 			if os.IsNotExist(err) {
@@ -184,7 +184,7 @@ func CaptureSnapshot(repoRoot string) (*Snapshot, error) {
 			return err
 		}
 		for _, entry := range entries {
-			if entry.IsDir() || !strings.HasSuffix(entry.Name(), ".md") {
+			if entry.IsDir() || !strings.HasSuffix(entry.Name(), ".md") && !(includeTrunkRed && entry.Name() == "trunk-red.json") {
 				continue
 			}
 			data, err := os.ReadFile(filepath.Join(dir, entry.Name()))
@@ -196,13 +196,13 @@ func CaptureSnapshot(repoRoot string) (*Snapshot, error) {
 		return nil
 	}
 	base := filepath.Join(repoRoot, filepath.FromSlash(goalsRoot))
-	if err := walk(base, goalsPrefix); err != nil {
+	if err := walk(base, goalsPrefix, true); err != nil {
 		return nil, err
 	}
-	if err := walk(filepath.Join(repoRoot, filepath.FromSlash(strings.TrimSuffix(legacyDonePrefix, "/"))), legacyDonePrefix); err != nil {
+	if err := walk(filepath.Join(repoRoot, filepath.FromSlash(strings.TrimSuffix(legacyDonePrefix, "/"))), legacyDonePrefix, false); err != nil {
 		return nil, err
 	}
-	if err := walk(filepath.Join(repoRoot, filepath.FromSlash(recordsGoalsRoot)), recordsGoalsPrefix); err != nil {
+	if err := walk(filepath.Join(repoRoot, filepath.FromSlash(recordsGoalsRoot)), recordsGoalsPrefix, false); err != nil {
 		return nil, err
 	}
 	return snap, nil

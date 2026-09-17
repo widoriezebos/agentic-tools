@@ -431,11 +431,15 @@ func listSynced(root string, output goalListOutput, fetchFirst bool, requiredLab
 		fmt.Print(goalListSummary(grouped, syncedListStates, p.Tip, p.Banners, output.Done, p.Horizon, p.Tree.TrunkRed...))
 		return 0
 	}
+	trunkRed := p.Tree.TrunkRed
+	if trunkRed == nil {
+		trunkRed = []goal.TrunkRedEntry{}
+	}
 	return printGoalListJSON(map[string]any{
 		"root": root, "world": "synced", "tip": p.Tip, "banners": p.Banners,
 		"open":   open,
 		"queued": grouped[goal.StateQueued], "approved": grouped[goal.StateApproved], "claimed": grouped[goal.StateClaimed],
-		"parked": grouped[goal.StateParked], "done": done, "abandoned": abandoned,
+		"parked": grouped[goal.StateParked], "done": done, "abandoned": abandoned, "trunkRed": trunkRed,
 	}, output.Pretty)
 }
 

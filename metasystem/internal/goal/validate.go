@@ -120,6 +120,14 @@ func ParseTreeFiles(files map[string][]byte) (*TreeGoals, []Problem) {
 				addf("%s: %s", p, rp)
 			}
 			t.Root = root
+		case rel == "trunk-red.json":
+			entries, entryProblems := ParseTrunkRed(data)
+			for _, problem := range entryProblems {
+				addf("%s", problem)
+			}
+			if len(entryProblems) == 0 {
+				t.TrunkRed = entries
+			}
 		case strings.HasPrefix(rel, "done/") && strings.HasSuffix(rel, ".md") && !strings.Contains(strings.TrimPrefix(rel, "done/"), "/"):
 			// PERMANENT, not soak (named reason per Ruling N):
 			// historical git trees carry plans/goals/done immutably,

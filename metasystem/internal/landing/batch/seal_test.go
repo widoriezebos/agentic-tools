@@ -8,6 +8,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/gittree"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/goal"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/testpolicy"
 )
@@ -18,7 +19,9 @@ type assemblyBed struct {
 }
 
 func bedGit(t *testing.T, root string, args ...string) string {
-	output, err := exec.Command("git", append([]string{"-C", root}, args...)...).Output()
+	command := exec.Command("git", append([]string{"-C", root}, args...)...)
+	command.Env = gittree.ScrubbedEnviron()
+	output, err := command.Output()
 	must(t, err)
 	return strings.TrimSpace(string(output))
 }
@@ -34,7 +37,9 @@ func assemblyFixture(t *testing.T) assemblyBed {
 	script := `set -eu; cd "$1"; git init -q -b main; git config user.name Test; git config user.email test@example.com; printf 'package p\nvar A = 0\n' >a.go; printf 'package p\nvar B = 0\n' >b.go; printf 'base\n' >trunk; git add .; git commit -qm base
 base=$(git rev-parse HEAD); mkdir -p artifacts/agents/landing-batches/chains/{chain-a,chain-b,conflict}; printf 'package p\nvar A = 1\n' >a.go; git diff --binary HEAD >artifacts/agents/landing-batches/chains/chain-a/diff.patch; git add a.go; git commit -qm chain-a; printf 'package p\nvar B = 1\n' >b.go; git diff --binary HEAD >artifacts/agents/landing-batches/chains/chain-b/diff.patch; git add b.go; git commit -qm chain-b
 git reset -q --hard "$base"; printf 'package p\nvar A = 2\n' >a.go; printf 'package p\nvar B = 2\n' >b.go; git diff --binary HEAD >artifacts/agents/landing-batches/chains/conflict/diff.patch; git reset -q --hard "$base"; printf 'moved\n' >trunk; git add trunk; git commit -qm moved`
-	must(t, exec.Command("bash", "-c", script, "ba4-fixture", root).Run())
+	command := exec.Command("bash", "-c", script, "ba4-fixture", root)
+	command.Env = gittree.ScrubbedEnviron()
+	must(t, command.Run())
 	base := bedGit(t, root, "rev-parse", "HEAD~1^{tree}")
 	moved := bedGit(t, root, "rev-parse", "HEAD^{tree}")
 	claim := Claim{Machine: "seat", Lineage: "l", Epoch: 1, Revision: 9, AccountingRevision: 9}
