@@ -428,7 +428,7 @@ func listSynced(root string, output goalListOutput, fetchFirst bool, requiredLab
 	grouped[goal.StateAbandoned] = abandoned
 	if !output.JSON {
 		grouped[goal.StateDone] = done
-		fmt.Print(goalListSummary(grouped, syncedListStates, p.Tip, p.Banners, output.Done, p.Horizon))
+		fmt.Print(goalListSummary(grouped, syncedListStates, p.Tip, p.Banners, output.Done, p.Horizon, p.Tree.TrunkRed...))
 		return 0
 	}
 	return printGoalListJSON(map[string]any{
@@ -488,6 +488,10 @@ func runGoalShow(args []string) int {
 
 // nextSynced prints the ordered frontier line for one machine.
 func nextSynced(root, machine string, fetchFirst bool, requiredLabels ...string) int {
+	return nextSyncedWithProjector(root, machine, fetchFirst, goal.Project, requiredLabels...)
+}
+
+func nextSyncedWithProjector(root, machine string, fetchFirst bool, project func(goal.Endpoint, bool, time.Time) (goal.Projection, error), requiredLabels ...string) int {
 	e, err := goal.ResolveEndpoint(root)
 	if err != nil {
 		fmt.Fprintln(os.Stderr, err)
@@ -498,7 +502,7 @@ func nextSynced(root, machine string, fetchFirst bool, requiredLabels ...string)
 		fmt.Fprintln(os.Stderr, err)
 		return 1
 	}
-	p, err := goal.Project(e, fetchFirst, now)
+	p, err := project(e, fetchFirst, now)
 	if err != nil {
 		fmt.Fprintln(os.Stderr, err)
 		return 1
@@ -512,6 +516,9 @@ func nextSynced(root, machine string, fetchFirst bool, requiredLabels ...string)
 	if frontierErr != nil {
 		fmt.Fprintln(os.Stderr, "goal next could not answer: "+frontierErr.Error())
 		return 1
+	}
+	for _, entry := range frontier.TrunkRedOwned {
+		fmt.Println(trunkRedOwnedLine(entry))
 	}
 	fenced := make([]*goal.GoalFile, 0, len(frontier.Fenced))
 	for _, id := range frontier.Fenced {
@@ -544,7 +551,7 @@ func nextSynced(root, machine string, fetchFirst bool, requiredLabels ...string)
 			}
 			if !matched {
 				fmt.Println("no goal matches --label " + strings.Join(requiredLabels, " --label "))
-				return 0
+				break
 			}
 		}
 		line := "no claimable goal for machine " + machine
@@ -562,7 +569,35 @@ func nextSynced(root, machine string, fetchFirst bool, requiredLabels ...string)
 		}
 		fmt.Println(line)
 	}
+	for _, entry := range frontier.TrunkRedElsewhere {
+		owner := entry.Owner.Machine
+		if owner == "" {
+			owner = "nobody"
+		}
+		fmt.Printf("trunk red %s owned by %s since %s\n", entry.ID, owner, entry.Owner.Since)
+	}
 	return 0
+}
+
+func trunkRedOwnedLine(entry goal.TrunkRedEntry) string {
+	observed := entry.Status
+	if len(entry.Failures) > 0 {
+		failure := entry.Failures[0]
+		observed = failure.Report + "/" + failure.Classname + "/" + failure.Name
+	}
+	sighting := goal.TrunkRedSighting{}
+	if len(entry.Sightings) > 0 {
+		sighting = entry.Sightings[len(entry.Sightings)-1]
+	}
+	fix := entry.FixGoal
+	if fix == "" {
+		fix = "take it first"
+	}
+	line := fmt.Sprintf("trunk red %s: %s %s on %s, holds %d batches, since %s; fix it under %s", entry.ID, entry.Group, observed, sighting.BaseCommit, len(entry.Holds), entry.Owner.Since, fix)
+	if entry.FixBranch.Name != "" {
+		line += fmt.Sprintf(" on branch %s@%s (%s)", entry.FixBranch.Name, entry.FixBranch.Commit, entry.FixBranch.State)
+	}
+	return line
 }
 
 // runGoalNext prints the one orientation line any runtime's main can read

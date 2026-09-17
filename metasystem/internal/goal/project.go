@@ -583,6 +583,9 @@ type NextVerdict struct {
 	Blocked  []string           // approved and unexpired behind an open blocker
 	Awaiting []string           // queued or carrying an expired relayed approval
 	Refused  []AdmissionRefusal // approved and otherwise eligible, but the claim gate refuses; the cause is the gate's text
+
+	TrunkRedOwned     []TrunkRedEntry
+	TrunkRedElsewhere []TrunkRedEntry
 }
 
 type NextSelectionKind string
@@ -619,6 +622,16 @@ func SelectNext(frontier NextVerdict) NextSelection {
 func Next(p Projection, machine string, requiredLabels ...string) (NextVerdict, error) {
 	v := NextVerdict{}
 	t := p.Tree
+	for _, entry := range t.TrunkRed {
+		if entry.Closed != nil {
+			continue
+		}
+		if entry.Owner.Machine == machine {
+			v.TrunkRedOwned = append(v.TrunkRedOwned, entry)
+		} else {
+			v.TrunkRedElsewhere = append(v.TrunkRedElsewhere, entry)
+		}
+	}
 	admission := newClaimAdmissionContext(p.Root)
 	for _, id := range OrderedOpenGoalIDs(t.Live) {
 		f := t.Live[id]

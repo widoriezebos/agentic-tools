@@ -33,6 +33,7 @@ type TreeGoals struct {
 	DonePaths      map[string]string
 	Abandoned      map[string]*GoalFile
 	AbandonedPaths map[string]string
+	TrunkRed       []TrunkRedEntry
 }
 
 // Archived returns an archived record without assigning completion semantics

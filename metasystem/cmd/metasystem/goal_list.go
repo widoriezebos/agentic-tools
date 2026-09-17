@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"os"
+	"sort"
 	"strings"
 	"unicode"
 
@@ -44,7 +45,7 @@ func printGoalListJSON(value any, pretty bool) int {
 var syncedListStates = []string{goal.StateClaimed, goal.StateApproved, goal.StateQueued, goal.StateParked}
 var legacyListStates = []string{"current", goal.StateQueued, goal.StateParked}
 
-func goalListSummary(grouped map[string][]*goal.GoalFile, states []string, tip string, notices []string, includeDone bool, horizon goal.ApprovalHorizon) string {
+func goalListSummary(grouped map[string][]*goal.GoalFile, states []string, tip string, notices []string, includeDone bool, horizon goal.ApprovalHorizon, trunkRed ...goal.TrunkRedEntry) string {
 	if includeDone {
 		states = append(append([]string{}, states...), goal.StateDone)
 	}
@@ -61,6 +62,15 @@ func goalListSummary(grouped map[string][]*goal.GoalFile, states []string, tip s
 	}
 	if _, syncedArchive := grouped[goal.StateAbandoned]; syncedArchive {
 		fmt.Fprintf(&summary, "abandoned=%d ", len(grouped[goal.StateAbandoned]))
+	}
+	openRed := make([]goal.TrunkRedEntry, 0, len(trunkRed))
+	for _, entry := range trunkRed {
+		if entry.Closed == nil {
+			openRed = append(openRed, entry)
+		}
+	}
+	if len(openRed) > 0 {
+		fmt.Fprintf(&summary, "trunk-red=%d ", len(openRed))
 	}
 	fmt.Fprintf(&summary, "tip=%s\n", tip)
 	footer := func() string {
@@ -80,7 +90,25 @@ func goalListSummary(grouped map[string][]*goal.GoalFile, states []string, tip s
 		return true
 	}
 	for i, notice := range notices {
-		if !appendLine("! "+strings.Join(strings.Fields(notice), " ")+"\n", remaining > 0 || i+1 < len(notices)) {
+		if !appendLine("! "+strings.Join(strings.Fields(notice), " ")+"\n", remaining > 0 || i+1 < len(notices) || len(openRed) > 0) {
+			summary.WriteString(footer())
+			return summary.String()
+		}
+	}
+	sort.Slice(openRed, func(i, j int) bool {
+		if openRed[i].Opened == openRed[j].Opened {
+			return openRed[i].ID < openRed[j].ID
+		}
+		return openRed[i].Opened < openRed[j].Opened
+	})
+	for i, entry := range openRed {
+		owner := entry.Owner.Machine
+		if owner == "" {
+			owner = "nobody"
+		}
+		line := fmt.Sprintf("! trunk red %s %s owned by %s since %s; holds %d batches\n", entry.ID, entry.Group, owner, entry.Owner.Since, len(entry.Holds))
+		line = strings.Join(strings.Fields(line), " ") + "\n"
+		if !appendLine(line, remaining > 0 || i+1 < len(openRed)) {
 			summary.WriteString(footer())
 			return summary.String()
 		}

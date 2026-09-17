@@ -1,0 +1,135 @@
+package main
+
+import (
+	"strings"
+	"testing"
+	"time"
+
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/goal"
+)
+
+func trunkRedNextFixture(t *testing.T) (string, goal.Projection) {
+	t.Helper()
+	root := syncedStoppedGoalFixture(t)
+	p, err := goal.Project(goal.Endpoint{Root: root, Remote: "local", Branch: goal.LocalLedgerBranch}, false, time.Now())
+	if err != nil {
+		t.Fatal(err)
+	}
+	return root, p
+}
+func renderTrunkRedNext(t *testing.T, root, machine string, p goal.Projection, labels ...string) string {
+	t.Helper()
+	out, code := captureStdout(t, func() int {
+		return nextSyncedWithProjector(root, machine, false, func(goal.Endpoint, bool, time.Time) (goal.Projection, error) { return p, nil }, labels...)
+	})
+	if code != 0 {
+		t.Fatalf("goal next code=%d output=%q", code, out)
+	}
+	return out
+}
+func TestTrunkRedEmptyFieldChangesNothing(t *testing.T) {
+	root, p := trunkRedNextFixture(t)
+	if problems := goal.ValidateTree(p.Tree); len(problems) != 0 {
+		t.Fatalf("tree without trunk-red entries is invalid: %v", problems)
+	}
+	want := "single-machine mode: multi-machine guarantees are void here; joining a fleet is the backlog-local-promotion goal\n" +
+		"FENCED standing-validation: breach-stopped by stop-standing-validation-r2-f1 (ELAPSED_LIMIT); only goal resume, a human act, clears it; the queue is open\n" +
+		"no claimable goal for machine mac-cli; no matching eligible work\n"
+	if without := renderTrunkRedNext(t, root, "mac-cli", p); without != want {
+		t.Fatalf("no-entry output\ngot:  %q\nwant: %q", without, want)
+	}
+	tree := *p.Tree
+	tree.TrunkRed = []goal.TrunkRedEntry{}
+	p.Tree = &tree
+	if with := renderTrunkRedNext(t, root, "mac-cli", p); with != want {
+		t.Fatalf("empty field output\ngot:  %q\nwant: %q", with, want)
+	}
+}
+func TestTrunkRedNextLinesAndPlacement(t *testing.T) {
+	root, p := trunkRedNextFixture(t)
+	tests := []struct {
+		entry goal.TrunkRedEntry
+		want  string
+	}{
+		{goal.TrunkRedEntry{ID: "failed", Group: "fast", Failures: []goal.TrunkRedFailure{{Report: "report", Classname: "Class", Name: "Test"}}, Sightings: []goal.TrunkRedSighting{{BaseCommit: "old"}, {BaseCommit: "base"}}, Owner: goal.TrunkRedOwner{Machine: "mac-cli", Since: "2026-09-17T01:00:00Z"}, FixGoal: "fix-red", FixBranch: goal.TrunkRedBranch{Name: "fix/red", Commit: "abc", State: goal.TrunkRedBranchOpen}, Holds: []string{"b1", "b2"}}, "trunk red failed: fast report/Class/Test on base, holds 2 batches, since 2026-09-17T01:00:00Z; fix it under fix-red on branch fix/red@abc (open)"},
+		{goal.TrunkRedEntry{ID: "status", Group: "deep", Status: "not-run", Sightings: []goal.TrunkRedSighting{{BaseCommit: "base2"}}, Owner: goal.TrunkRedOwner{Machine: "mac-cli", Since: "2026-09-17T02:00:00Z"}}, "trunk red status: deep not-run on base2, holds 0 batches, since 2026-09-17T02:00:00Z; fix it under take it first"},
+	}
+	for _, test := range tests {
+		if got := trunkRedOwnedLine(test.entry); got != test.want {
+			t.Fatalf("owned line\ngot:  %q\nwant: %q", got, test.want)
+		}
+	}
+	elsewhereTests := []struct {
+		entry goal.TrunkRedEntry
+		want  string
+	}{
+		{goal.TrunkRedEntry{ID: "elsewhere", Owner: goal.TrunkRedOwner{Machine: "m2", Since: "later"}}, "trunk red elsewhere owned by m2 since later"},
+		{goal.TrunkRedEntry{ID: "unowned", Owner: goal.TrunkRedOwner{Since: "now"}}, "trunk red unowned owned by nobody since now"},
+	}
+	for _, elsewhere := range elsewhereTests {
+		tree := *p.Tree
+		tree.TrunkRed = []goal.TrunkRedEntry{tests[0].entry, tests[1].entry, elsewhere.entry}
+		p.Tree = &tree
+		out := renderTrunkRedNext(t, root, "mac-cli", p)
+		ordered := []string{tests[0].want, tests[1].want, "FENCED standing-validation:", "no claimable goal for machine mac-cli", elsewhere.want}
+		position := -1
+		for _, text := range ordered {
+			next := strings.Index(out, text)
+			if next <= position {
+				t.Fatalf("line %q is missing or misplaced in %q", text, out)
+			}
+			position = next
+		}
+	}
+	tree := *p.Tree
+	tree.TrunkRed = []goal.TrunkRedEntry{elsewhereTests[0].entry}
+	p.Tree = &tree
+	out := renderTrunkRedNext(t, root, "mac-cli", p, "missing")
+	noMatch := strings.Index(out, "no goal matches --label missing")
+	elsewhere := strings.Index(out, elsewhereTests[0].want)
+	if noMatch < 0 || elsewhere <= noMatch {
+		t.Fatalf("other-machine line must follow the label-no-match line: %q", out)
+	}
+}
+func TestTrunkRedListCountsOpenEntriesOnly(t *testing.T) {
+	grouped := map[string][]*goal.GoalFile{goal.StateQueued: {{Id: "goal", State: goal.StateQueued}}}
+	plain := goalListSummary(grouped, syncedListStates, "tip", []string{"notice"}, false, goal.ApprovalHorizon{})
+	empty := goalListSummary(grouped, syncedListStates, "tip", []string{"notice"}, false, goal.ApprovalHorizon{}, []goal.TrunkRedEntry{}...)
+	wantEmpty := "claimed=0 approved=0 queued=1 parked=0 done=0 tip=tip\n" +
+		"! notice\n" +
+		"0:0 queued tier 0 goal pin=- claim=- :: \n"
+	entries := []goal.TrunkRedEntry{{ID: "c", Group: "g3", Opened: "2", Owner: goal.TrunkRedOwner{Machine: "m3", Since: "three"}}, {ID: "closed", Closed: &goal.TrunkRedClosure{At: "closed"}}, {ID: "b", Group: "g2", Opened: "2", Owner: goal.TrunkRedOwner{Machine: "m2", Since: "two"}}, {ID: "z", Group: "g1", Opened: "1", Owner: goal.TrunkRedOwner{Since: "one"}, Holds: []string{"one"}}}
+	out := goalListSummary(grouped, syncedListStates, "tip", []string{"notice"}, false, goal.ApprovalHorizon{}, entries...)
+	ordered := []string{"trunk-red=3 tip=tip", "! notice", "! trunk red z g1 owned by nobody since one; holds 1 batches", "! trunk red b g2 owned by m2 since two; holds 0 batches", "! trunk red c g3 owned by m3 since three; holds 0 batches", "0:0 queued"}
+	position := -1
+	inOrder := true
+	for _, text := range ordered {
+		next := strings.Index(out, text)
+		if next <= position {
+			inOrder = false
+		}
+		position = next
+	}
+	headerEnd := strings.IndexByte(out, '\n') + 1
+	footer := "... 1 more; run with --json > file for the records\n"
+	row := "! trunk red z g1 owned by nobody since one; holds 1 batches\n"
+	notice := strings.Repeat("x", goalListSummaryMaxBytes-headerEnd-len(row)-3)
+	capped := goalListSummary(grouped, syncedListStates, "tip", []string{notice}, false, goal.ApprovalHorizon{}, entries[3])
+	emptyGrouped := map[string][]*goal.GoalFile{}
+	emptyHeader := "claimed=0 approved=0 queued=0 parked=0 done=0 trunk-red=1 tip=tip\n"
+	noticeOnly := strings.Repeat("x", goalListSummaryMaxBytes-len(emptyHeader)-3)
+	noticeCapped := goalListSummary(emptyGrouped, syncedListStates, "tip", []string{noticeOnly}, false, goal.ApprovalHorizon{}, entries[3])
+	noticeFooter := "... 0 more; run with --json > file for the records\n"
+	for name, ok := range map[string]bool{
+		"no entries":                  plain == wantEmpty && empty == wantEmpty,
+		"open and closed entries":     strings.Contains(out, "trunk-red=3 tip=tip") && !strings.Contains(out, "trunk red closed"),
+		"empty owner":                 strings.Contains(out, "owned by nobody"),
+		"opened and identifier order": inOrder,
+		"cap and placement":           len(capped) <= goalListSummaryMaxBytes && strings.HasSuffix(capped, footer) && !strings.Contains(capped, "! trunk red") && !strings.Contains(capped, "0:0 queued"),
+		"notice-side cap reserve":     len(noticeCapped) <= goalListSummaryMaxBytes && strings.HasSuffix(noticeCapped, noticeFooter),
+	} {
+		if !ok {
+			t.Fatalf("%s: summary contract failed: output=%q capped-bytes=%d", name, out, len(capped))
+		}
+	}
+}
