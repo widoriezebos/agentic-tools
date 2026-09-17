@@ -17,6 +17,7 @@ import (
 
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/behaviorsurface"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/gittree"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/landing"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/proofrun"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/steward"
 )
@@ -220,9 +221,8 @@ func readLandedRearmFacts(ctx context.Context, installation, projectRoot, prefix
 
 // The three acts of a re-arm, behind seams a fixture can watch.
 var (
-	landedRearmFastForward = func(ctx context.Context, projectRoot, tip string) error {
-		_, err := landedRearmGit(ctx, projectRoot, "merge", "--ff-only", tip)
-		return err
+	landedRearmFastForward = func(ctx context.Context, installation, tip string) error {
+		return landing.FastForwardPreservingRegisters(ctx, installation, tip)
 	}
 	landedRearmRebuild = func(ctx context.Context, installation string) error {
 		command := exec.CommandContext(ctx, "bash", "scripts/agents/go-build.sh")
@@ -287,7 +287,7 @@ var upOutcomeField = regexp.MustCompile(`\boutcome=([A-Za-z_-]+)`)
 // performLandedRearm brings the checkout to the tip, rebuilds the engine
 // there and re-arms the enrollment; the record names what changed.
 func performLandedRearm(ctx context.Context, installation, projectRoot string, facts landedRearmFacts, previousGeneration int) (*proofrun.EngineRearm, error) {
-	if err := landedRearmFastForward(ctx, projectRoot, facts.Tip); err != nil {
+	if err := landedRearmFastForward(ctx, installation, facts.Tip); err != nil {
 		return nil, fmt.Errorf("TEST_POLICY_ENGINE_REQUIRED: fast-forward the checkout to the landed tip %s: %w; run: %s", facts.Tip, err, landedRearmCommand(projectRoot))
 	}
 	if err := landedRearmRebuild(ctx, installation); err != nil {

@@ -2,6 +2,7 @@ package landing
 
 import (
 	"bytes"
+	"context"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -339,4 +340,155 @@ func countLine(lines []string, want string) int {
 		}
 	}
 	return count
+}
+func readFastForwardFile(t *testing.T, root, path string) string {
+	data, err := os.ReadFile(filepath.Join(root, filepath.FromSlash(path)))
+	if err != nil {
+		t.Fatal(err)
+	}
+	return string(data)
+}
+func dirtyFastForwardFixture(t *testing.T, conflict bool) *advanceFixture {
+	f := newAdvanceFixture(t)
+	appendAdvanceFile(t, f.root, "memory/receipts.log", "receipt=staged\n")
+	runAdvanceGit(t, f.root, "add", "memory/receipts.log")
+	appendAdvanceFile(t, f.root, "memory/receipts.log", "receipt=working\n")
+	appendAdvanceFile(t, f.root, "records/narrator-digest.log", "digest=working\n")
+	appendAdvanceFile(t, f.peer, "memory/receipts.log", "receipt=landed\n")
+	appendAdvanceFile(t, f.peer, "records/narrator-digest.log", "digest=landed\n")
+	writeAdvanceFile(t, f.peer, "landed.txt", "landed\n")
+	if conflict {
+		writeAdvanceFile(t, f.peer, "product.txt", "landed product\n")
+	}
+	runAdvanceGit(t, f.peer, "add", ".")
+	runAdvanceGit(t, f.peer, "commit", "-qm", "landed")
+	runAdvanceGit(t, f.peer, "push", "-q", "origin", "main")
+	f.fetch()
+	writeAdvanceFile(t, f.root, "product.txt", "local product\n")
+	writeAdvanceFile(t, f.root, "untracked.txt", "keep me\n")
+	return f
+}
+func fastForwardState(t *testing.T, root string) map[string]string {
+	index, _ := (gittree.Workspace{Dir: root}).GitPath("index")
+	return map[string]string{"HEAD": runAdvanceGit(t, root, "rev-parse", "HEAD"), "index": readFastForwardFile(t, filepath.Dir(index), filepath.Base(index)), "memory/receipts.log": readFastForwardFile(t, root, "memory/receipts.log"), "records/narrator-digest.log": readFastForwardFile(t, root, "records/narrator-digest.log"), "product.txt": readFastForwardFile(t, root, "product.txt")}
+}
+func TestFastForwardPreservesRegisters(t *testing.T) {
+	f := dirtyFastForwardFixture(t, false)
+	tip := runAdvanceGit(t, f.root, "rev-parse", "refs/remotes/origin/main")
+	realWrite, wroteRecovery := writeFastForwardRecovery, false
+	writeFastForwardRecovery = func(path, text, anchor string) (bool, error) {
+		wroteRecovery = true
+		return realWrite(path, text, anchor)
+	}
+	err := FastForwardPreservingRegisters(context.Background(), f.root, "refs/remotes/origin/main")
+	writeFastForwardRecovery = realWrite
+	if err != nil || !wroteRecovery {
+		t.Fatalf("fast-forward error = %v, wrote recovery = %t", err, wroteRecovery)
+	}
+	for path, want := range map[string]string{"memory/receipts.log": "receipt=seed\nreceipt=landed\nreceipt=staged\nreceipt=working\n", "records/narrator-digest.log": "digest=seed\ndigest=landed\ndigest=working\n"} {
+		if got := readFastForwardFile(t, f.root, path); got != want {
+			t.Fatalf("%s = %q, want %q", path, got, want)
+		}
+	}
+	if got := runAdvanceGit(t, f.root, "rev-parse", "HEAD"); got != tip {
+		t.Fatalf("HEAD = %s, want %s", got, tip)
+	}
+	if _, err := os.Stat(filepath.Join(f.root, ".git", fastForwardRecoveryName)); !os.IsNotExist(err) {
+		t.Fatalf("completed recovery file error = %v", err)
+	}
+}
+func TestFastForwardFailuresRestoreRegisters(t *testing.T) {
+	for _, name := range []string{"merge", "restore", "write", "leftover"} {
+		t.Run(name, func(t *testing.T) {
+			f := dirtyFastForwardFixture(t, name == "merge")
+			before, recovery := fastForwardState(t, f.root), filepath.Join(f.root, ".git", fastForwardRecoveryName)
+			realWrite := writeFastForwardRecovery
+			if name == "write" {
+				writeFastForwardRecovery = func(string, string, string) (bool, error) { return false, os.ErrPermission }
+			}
+			if name == "leftover" {
+				writeAdvanceFile(t, filepath.Dir(recovery), filepath.Base(recovery), "leftover\n")
+			}
+			if name == "restore" {
+				_ = os.Chmod(filepath.Join(f.root, "records"), 0o555)
+			}
+			err := FastForwardPreservingRegisters(context.Background(), f.root, "refs/remotes/origin/main")
+			writeFastForwardRecovery = realWrite
+			_ = os.Chmod(filepath.Join(f.root, "records"), 0o755)
+			if err == nil || !strings.Contains(err.Error(), recovery) {
+				t.Fatalf("%s error = %v, want recovery path", name, err)
+			}
+			for key, want := range before {
+				if got := fastForwardState(t, f.root)[key]; got != want {
+					t.Fatalf("%s changed %s", name, key)
+				}
+			}
+		})
+	}
+}
+func TestFastForwardAppendFailureKeepsLandedHeadAndUnrelatedFiles(t *testing.T) {
+	f := dirtyFastForwardFixture(t, false)
+	tip := runAdvanceGit(t, f.root, "rev-parse", "refs/remotes/origin/main")
+	recovery := filepath.Join(f.root, ".git", fastForwardRecoveryName)
+	realAppend := appendRegister
+	appendRegister = func(string, []byte) error { return os.ErrPermission }
+	err := FastForwardPreservingRegisters(context.Background(), f.root, "refs/remotes/origin/main")
+	appendRegister = realAppend
+	for _, want := range []string{recovery, "memory/receipts.log", "records/narrator-digest.log"} {
+		if err == nil || !strings.Contains(err.Error(), want) {
+			t.Errorf("append error = %v, want %s", err, want)
+		}
+	}
+	for path, want := range map[string]string{"product.txt": "local product\n", "untracked.txt": "keep me\n"} {
+		if got := readFastForwardFile(t, f.root, path); got != want {
+			t.Errorf("%s = %q, want %q", path, got, want)
+		}
+	}
+	if got := runAdvanceGit(t, f.root, "rev-parse", "HEAD"); got != tip {
+		t.Errorf("HEAD = %s, want landed tip %s", got, tip)
+	}
+	if got := advanceGitOutput(t, f.root, "diff", "--cached", "--name-only", "--", ".", ":(exclude)memory/receipts.log", ":(exclude)records/narrator-digest.log"); got != "" {
+		t.Errorf("cached non-register paths = %q", got)
+	}
+	recoveryBytes, readErr := os.ReadFile(recovery)
+	if readErr != nil || strings.Count(string(recoveryBytes), "working-sha256 ") != 2 || !strings.Contains(string(recoveryBytes), `suffix-bytes "receipt=staged\nreceipt=working\n"`) || !strings.Contains(string(recoveryBytes), `suffix-bytes "digest=working\n"`) {
+		t.Errorf("recovery = %q, error %v", recoveryBytes, readErr)
+	}
+}
+func TestFastForwardRefusesNonAppendRegisters(t *testing.T) {
+	for _, transition := range [][2]string{{"receipt=seed", "receipt=seed\nreceipt=next\n"}, {"receipt=seed\n", "receipt=seed\nreceipt=partial"}} {
+		if _, ok := appendDelta([]byte(transition[0]), true, []byte(transition[1]), true); ok {
+			t.Fatalf("non-append transition was accepted: %q", transition)
+		}
+	}
+	if _, ok := appendDelta([]byte("receipt=seed\n"), true, nil, false); ok {
+		t.Fatal("a deleted register was accepted")
+	}
+	for _, test := range []struct{ name, local, landed string }{{"local rewrite", "receipt=rewritten\n", ""}, {"staged rewrite", "receipt=rewritten\n", ""}, {"landed rewrite", "receipt=seed\nreceipt=local\n", "receipt=rewritten\n"}} {
+		t.Run(test.name, func(t *testing.T) {
+			f := newAdvanceFixture(t)
+			if test.local != "" {
+				writeAdvanceFile(t, f.root, "memory/receipts.log", test.local)
+			}
+			if test.name == "staged rewrite" {
+				runAdvanceGit(t, f.root, "add", "memory/receipts.log")
+			}
+			if test.landed != "" {
+				writeAdvanceFile(t, f.peer, "memory/receipts.log", test.landed)
+			} else {
+				appendAdvanceFile(t, f.peer, "product.txt", "landed\n")
+			}
+			runAdvanceGit(t, f.peer, "add", ".")
+			runAdvanceGit(t, f.peer, "commit", "-qm", "landed change")
+			runAdvanceGit(t, f.peer, "push", "-q", "origin", "main")
+			f.fetch()
+			err := FastForwardPreservingRegisters(context.Background(), f.root, "refs/remotes/origin/main")
+			if err == nil || !strings.Contains(err.Error(), "TEST_POLICY_ENGINE_REQUIRED") || !strings.Contains(err.Error(), "memory/receipts.log") {
+				t.Fatalf("non-append error = %v", err)
+			}
+			if got := readFastForwardFile(t, f.root, "memory/receipts.log"); got != test.local {
+				t.Fatalf("refusal changed bytes from %q to %q", test.local, got)
+			}
+		})
+	}
 }
