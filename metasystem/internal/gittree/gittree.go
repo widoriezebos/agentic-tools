@@ -386,6 +386,13 @@ func (w Workspace) ChangedPaths(fromTree, toTree string) ([]string, error) {
 	return paths, nil
 }
 
+// PathsCollide reports whether either repository-relative path is the other
+// path or one of its descendants. The slash is significant: dir2 never
+// collides with dir.
+func PathsCollide(left, right string) bool {
+	return left == right || strings.HasPrefix(left, right+"/") || strings.HasPrefix(right, left+"/")
+}
+
 // Apply applies a patch EXACTLY to a base tree in an isolated index and
 // returns the resulting tree id: no three-way merge, no rejects, no fuzz,
 // no worktree involvement. A patch that does not apply byte-exactly is an

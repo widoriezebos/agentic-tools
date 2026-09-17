@@ -6,6 +6,7 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
+	"errors"
 	"flag"
 	"fmt"
 	"io"
@@ -122,7 +123,8 @@ func runTestPlan(args []string) int {
 	if status != 0 {
 		return status
 	}
-	prepared, err := prepareTesting(request)
+	request.LandedRearm = !request.PolicyChild
+	prepared, err := prepareTestingForCommand(request)
 	if err != nil {
 		fmt.Fprintln(os.Stderr, "metasystem test plan:", err)
 		return 1
@@ -145,9 +147,10 @@ type testingSelectionRequest struct {
 	Groups                                                []string
 	Carried                                               bool
 	NoReuse, RequireDiagnosticHeadroom, AllGroups         bool
-	// LandedRearm is set by the outermost test run only: the pinned child
-	// plan and the verify verbs judge the engine as they find it.
+	// LandedRearm is set by outermost plan and run commands. The pinned child
+	// and the verify verb judge the engine as they find it.
 	LandedRearm bool
+	PolicyChild bool
 }
 
 func admitTestingRun(request testingSelectionRequest, admission proofLaunchAdmission) (proofrun.Attempt, proofrun.LaunchResult, bool, error) {
@@ -168,6 +171,7 @@ func parseTestingSelection(name string, args []string, execution bool) (testingS
 	purpose := flags.String("purpose", "delivery", "delivery, diagnostic, or cadence")
 	groups := flags.String("groups", "", "comma-separated diagnostic groups")
 	jsonOutput := flags.Bool("json", false, "emit structured JSON")
+	flags.BoolVar(&request.PolicyChild, "policy-child", false, "judge policy in the pinned child without re-arming")
 	flags.BoolVar(&request.Carried, "carried", false, "compose a completed red result for carried-landing classification")
 	if execution {
 		flags.StringVar(&request.CapMin, "cap-min", "", "reserved proof minutes")
@@ -181,6 +185,10 @@ func parseTestingSelection(name string, args []string, execution bool) (testingS
 	}
 	if flags.Parse(args) != nil || flags.NArg() != 0 || request.Root == "" {
 		fmt.Fprintf(os.Stderr, "usage: metasystem %s --root INSTALLATION [--goal ID] [--tree TREE] [--mode auto|standard|deep|canary] [--purpose delivery|diagnostic|cadence] [--groups ID,ID]\n", name)
+		return request, false, 2
+	}
+	if request.PolicyChild && (name != "test plan" || execution) {
+		fmt.Fprintln(os.Stderr, "--policy-child is internal to the pinned test plan child")
 		return request, false, 2
 	}
 	purposeSet := false
@@ -217,7 +225,44 @@ func parseTestingSelection(name string, args []string, execution bool) (testingS
 	return request, *jsonOutput, 0
 }
 
+const preparationRestartedEnv = "METASYSTEM_PREPARATION_RESTARTED"
+
+type preparationBaseMove struct {
+	ours, engine string
+}
+
+func (move *preparationBaseMove) Error() string {
+	return fmt.Sprintf("the landing ref moved under preparation from %s to %s", move.ours, move.engine)
+}
+
+type testingPreparationAttempt func(testingSelectionRequest) (testingPreparation, error)
+
 func prepareTesting(request testingSelectionRequest) (testingPreparation, error) {
+	return prepareTestingWith(request, prepareTestingOnce)
+}
+
+func prepareTestingWith(request testingSelectionRequest, attempt testingPreparationAttempt) (testingPreparation, error) {
+	restarted := os.Getenv(preparationRestartedEnv) == "1"
+	for {
+		prepared, err := attempt(request)
+		var move *preparationBaseMove
+		if !errors.As(err, &move) {
+			return prepared, err
+		}
+		if restarted {
+			return testingPreparation{}, engineRefusal("base-moved", []enginecause.Fact{
+				enginecause.Value("ours", move.ours), enginecause.Value("engine", move.engine), enginecause.Value("restarts", "1"),
+			}, "the landing ref moved a second time during one test invocation")
+		}
+		fmt.Fprintf(os.Stderr, "metasystem test: the landing ref moved under the run (ours=%s engine=%s); restarting preparation once\n", move.ours, move.engine)
+		if err := os.Setenv(preparationRestartedEnv, "1"); err != nil {
+			return testingPreparation{}, fmt.Errorf("record the one policy-base restart: %w", err)
+		}
+		restarted = true
+	}
+}
+
+func prepareTestingOnce(request testingSelectionRequest) (testingPreparation, error) {
 	installation, err := canonicalProofRoot(request.Root)
 	if err != nil {
 		return testingPreparation{}, err
@@ -358,7 +403,7 @@ func prepareTesting(request testingSelectionRequest) (testingPreparation, error)
 		if afterDigest, digestErr := fileSHA256(policyEngine); digestErr != nil || afterDigest != policyEngineDigest {
 			return testingPreparation{}, engineRefusal("enrollment-drift", engineCheckoutFacts(installation), "retained trusted-base engine changed during policy selection")
 		}
-		if mismatch := decisionMismatchRefusal(candidateTree, policyBaseCommit, baseContractDigest, basePlan); mismatch != nil {
+		if mismatch := compareTrustedPolicyDecision(installation, projectRoot, candidateTree, policyBaseCommit, baseContractDigest, basePlan); mismatch != nil {
 			return testingPreparation{}, mismatch
 		}
 		plan = basePlan.Plan
@@ -398,6 +443,48 @@ func prepareTesting(request testingSelectionRequest) (testingPreparation, error)
 		FirstTestingTransition: !basePresent,
 		BehaviorPolicyDigest:   bytesSHA256(behaviorsurface.Bytes()), Plan: plan, Environment: testingEnvironment(os.Environ()),
 		AllGroups: request.AllGroups}, nil
+}
+
+var prepareTestingForCommand = prepareTesting
+
+func compareTrustedPolicyDecision(installation, projectRoot, candidateTree, policyBaseCommit, baseContractDigest string, decision testingPlanOutput) error {
+	mismatch := decisionMismatchRefusal(candidateTree, policyBaseCommit, baseContractDigest, decision)
+	if mismatch == nil {
+		return nil
+	}
+	// CandidateTree cannot be explained by a moved policy base. The base
+	// contract digest can: it is read from that base's testing.json.
+	if candidateTree != decision.CandidateTree || policyBaseCommit == decision.PolicyBaseCommit {
+		return mismatch
+	}
+	moved, err := authenticatedPolicyBaseMove(installation, projectRoot, policyBaseCommit, decision.PolicyBaseCommit)
+	if err != nil || !moved {
+		return mismatch
+	}
+	return &preparationBaseMove{ours: policyBaseCommit, engine: decision.PolicyBaseCommit}
+}
+
+func authenticatedPolicyBaseMove(installation, projectRoot, ours, engine string) (bool, error) {
+	seconds := steward.RearmResolveSeconds(installation)
+	_, err := landedRearmGitStep(context.Background(), landedRearmClock, seconds, "compare-moved-policy-base-ancestry", projectRoot,
+		"merge-base", "--is-ancestor", ours, engine)
+	if err != nil {
+		var exitError *exec.ExitError
+		if errors.As(err, &exitError) && exitError.ExitCode() == 1 {
+			return false, nil
+		}
+		return false, err
+	}
+	ref, _, _, err := landingRefParts(context.Background(), landedRearmClock, seconds, projectRoot)
+	if err != nil {
+		return false, err
+	}
+	current, err := landedRearmGitStep(context.Background(), landedRearmClock, seconds, "reread-moved-policy-base", projectRoot,
+		"rev-parse", "--verify", ref+"^{commit}")
+	if err != nil {
+		return false, err
+	}
+	return current == engine, nil
 }
 
 type protectedCoverageBaseline struct {
@@ -466,7 +553,7 @@ func trustedPolicyEngine(installation, policyBaseCommit string, firstTransition 
 }
 
 func planWithTrustedPolicyEngine(engine string, request testingSelectionRequest, installation, candidateTree string) (testingPlanOutput, error) {
-	args := []string{"test", "plan", "--root", installation, "--tree", candidateTree, "--mode", string(request.Mode), "--purpose", string(request.Purpose), "--json"}
+	args := []string{"test", "plan", "--root", installation, "--tree", candidateTree, "--mode", string(request.Mode), "--purpose", string(request.Purpose), "--json", "--policy-child"}
 	if request.GoalID != "" {
 		args = append(args, "--goal", request.GoalID)
 	}
@@ -794,7 +881,7 @@ func runTestRun(args []string) int {
 		return status
 	}
 	request.LandedRearm = true
-	prepared, err := prepareTesting(request)
+	prepared, err := prepareTestingForCommand(request)
 	if err != nil {
 		fmt.Fprintln(os.Stderr, "metasystem test run:", err)
 		return 1
@@ -1125,7 +1212,7 @@ func runTestVerify(args []string) int {
 // launches nothing and creates no attempt. The result's per-group
 // ExecutionIdentity is the identity on the current tree.
 func verifyRetainedTesting(request testingSelectionRequest) (proofrun.TestResult, error) {
-	prepared, err := prepareTesting(request)
+	prepared, err := prepareTestingForCommand(request)
 	if err != nil {
 		return proofrun.TestResult{}, err
 	}

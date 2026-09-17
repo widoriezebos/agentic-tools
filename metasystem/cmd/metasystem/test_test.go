@@ -3,6 +3,7 @@ package main
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"os"
 	"os/exec"
@@ -21,6 +22,206 @@ import (
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/steward"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/testpolicy"
 )
+
+func TestTestPlanReArmsOnALandedEngine(t *testing.T) {
+	previous := prepareTestingForCommand
+	defer func() { prepareTestingForCommand = previous }()
+	called, rearm := 0, false
+	prepareTestingForCommand = func(request testingSelectionRequest) (testingPreparation, error) {
+		called++
+		rearm = request.LandedRearm
+		return testingPreparation{}, errors.New("stop after observing preparation")
+	}
+	status, _, _ := captureCommandOutput(t, true, true, func() int {
+		return runTestPlan([]string{"--root", t.TempDir(), "--purpose", "diagnostic"})
+	})
+	if status != 1 || called != 1 || !rearm {
+		t.Fatalf("outer test plan did not enter landed re-arm: status=%d calls=%d rearm=%t", status, called, rearm)
+	}
+}
+
+func TestTestRunRearmsOnALandedEngine(t *testing.T) {
+	previous := prepareTestingForCommand
+	defer func() { prepareTestingForCommand = previous }()
+	called, rearm := 0, false
+	prepareTestingForCommand = func(request testingSelectionRequest) (testingPreparation, error) {
+		called++
+		rearm = request.LandedRearm
+		return testingPreparation{}, errors.New("stop after observing preparation")
+	}
+	status, _, _ := captureCommandOutput(t, true, true, func() int {
+		return runTestRun([]string{"--root", t.TempDir(), "--purpose", "diagnostic"})
+	})
+	if status != 1 || called != 1 || !rearm {
+		t.Fatalf("outer test run did not enter landed re-arm: status=%d calls=%d rearm=%t", status, called, rearm)
+	}
+}
+
+func TestPolicyChildNeverFetchesOrReArms(t *testing.T) {
+	previous := prepareTestingForCommand
+	defer func() { prepareTestingForCommand = previous }()
+	preparations, rearmCalls := 0, 0
+	prepareTestingForCommand = func(request testingSelectionRequest) (testingPreparation, error) {
+		preparations++
+		if request.LandedRearm {
+			rearmCalls++
+		}
+		return testingPreparation{CandidateTree: "candidate", PolicyBaseCommit: "base"}, nil
+	}
+	status, stdout, stderr := captureCommandOutput(t, true, true, func() int {
+		return runTestPlan([]string{"--root", t.TempDir(), "--purpose", "diagnostic", "--json", "--policy-child"})
+	})
+	var output testingPlanOutput
+	if status != 0 || preparations != 1 || rearmCalls != 0 || stderr != "" || json.Unmarshal([]byte(stdout), &output) != nil {
+		t.Fatalf("policy child did not stay fetch/re-arm free with JSON-only stdout: status=%d preparations=%d rearms=%d stdout=%q stderr=%q", status, preparations, rearmCalls, stdout, stderr)
+	}
+
+	engine := filepath.Join(t.TempDir(), "policy-engine")
+	script := "#!/bin/sh\nseen=\nfor arg in \"$@\"; do [ \"$arg\" = --policy-child ] && seen=1; done\n[ \"$seen\" = 1 ] || exit 9\nprintf '%s\\n' '{\"schemaVersion\":1}'\n"
+	if err := os.WriteFile(engine, []byte(script), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := planWithTrustedPolicyEngine(engine, testingSelectionRequest{Mode: testpolicy.ModeAuto, Purpose: testpolicy.PurposeDiagnostic}, t.TempDir(), "candidate"); err != nil {
+		t.Fatalf("parent did not flag its policy child: %v", err)
+	}
+	verify, _, code := parseTestingSelection("test verify", []string{"--root", t.TempDir()}, false)
+	if code != 0 || verify.LandedRearm || verify.PolicyChild {
+		t.Fatalf("test verify changed its re-arm behavior: code=%d request=%+v", code, verify)
+	}
+}
+
+func TestBaseMovedUnderTheRunRestartsPreparationOnce(t *testing.T) {
+	t.Setenv(preparationRestartedEnv, "")
+	calls := 0
+	var prepared testingPreparation
+	var prepareErr error
+	status, _, stderr := captureCommandOutput(t, true, true, func() int {
+		prepared, prepareErr = prepareTestingWith(testingSelectionRequest{LandedRearm: true}, func(request testingSelectionRequest) (testingPreparation, error) {
+			calls++
+			if !request.LandedRearm {
+				return testingPreparation{}, errors.New("restart skipped landed re-arm entry")
+			}
+			if calls == 1 {
+				return testingPreparation{}, &preparationBaseMove{ours: "old-base", engine: "new-base"}
+			}
+			return testingPreparation{PolicyBaseCommit: "new-base"}, nil
+		})
+		if prepareErr != nil {
+			return 1
+		}
+		return 0
+	})
+	if status != 0 || prepareErr != nil || calls != 2 || prepared.PolicyBaseCommit != "new-base" ||
+		os.Getenv(preparationRestartedEnv) != "1" || !strings.Contains(stderr, "restarting preparation once") {
+		t.Fatalf("authenticated move did not restart once from the landed re-arm entry: status=%d calls=%d prepared=%+v err=%v guard=%q stderr=%q",
+			status, calls, prepared, prepareErr, os.Getenv(preparationRestartedEnv), stderr)
+	}
+}
+
+func newPolicyBaseMoveFixture(t *testing.T) (string, string) {
+	t.Helper()
+	root := t.TempDir()
+	testingFixtureGit(t, root, "init", "-q", "-b", "main")
+	writeTestingFixtureFile(t, filepath.Join(root, "cmd", "metasystem", "engine.go"), []byte("package main\n"), 0o644)
+	writeTestingFixtureFile(t, filepath.Join(root, "testing.json"), []byte("base contract\n"), 0o644)
+	testingFixtureGit(t, root, "add", ".")
+	testingFixtureGit(t, root, "-c", "user.name=Test", "-c", "user.email=test@example.invalid", "commit", "-qm", "old base")
+	old := strings.TrimSpace(testingFixtureGit(t, root, "rev-parse", "HEAD"))
+	testingFixtureGit(t, root, "config", "--local", "metasystem.steward.landing-ref", "refs/remotes/origin/main")
+	testingFixtureGit(t, root, "update-ref", "refs/remotes/origin/main", old)
+	return root, old
+}
+
+func TestBaseMovedToAnEngineChangeReArmsOnce(t *testing.T) {
+	for _, test := range []struct {
+		name           string
+		contractChange bool
+	}{
+		{name: "engine path only"},
+		{name: "engine path and testing contract", contractChange: true},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			t.Setenv(preparationRestartedEnv, "")
+			root, old := newPolicyBaseMoveFixture(t)
+			writeTestingFixtureFile(t, filepath.Join(root, "cmd", "metasystem", "engine.go"), []byte("package main\nvar moved = true\n"), 0o644)
+			if test.contractChange {
+				writeTestingFixtureFile(t, filepath.Join(root, "testing.json"), []byte("changed base contract\n"), 0o644)
+			}
+			testingFixtureGit(t, root, "add", ".")
+			testingFixtureGit(t, root, "-c", "user.name=Test", "-c", "user.email=test@example.invalid", "commit", "-qm", "move base")
+			moved := strings.TrimSpace(testingFixtureGit(t, root, "rev-parse", "HEAD"))
+			testingFixtureGit(t, root, "update-ref", "refs/remotes/origin/main", moved)
+			decision := testingPlanOutput{CandidateTree: "candidate", PolicyBaseCommit: moved, BaseContractDigest: "old-digest"}
+			if test.contractChange {
+				decision.BaseContractDigest = "new-digest"
+			}
+			calls, rearms := 0, 0
+			_, err := prepareTestingWith(testingSelectionRequest{LandedRearm: true}, func(request testingSelectionRequest) (testingPreparation, error) {
+				calls++
+				if calls == 1 {
+					return testingPreparation{}, compareTrustedPolicyDecision(root, root, "candidate", old, "old-digest", decision)
+				}
+				if request.LandedRearm {
+					rearms++
+				}
+				return testingPreparation{PolicyBaseCommit: moved}, nil
+			})
+			if err != nil || calls != 2 || rearms != 1 {
+				t.Fatalf("descendant move did not succeed after exactly one restart and re-arm: calls=%d rearms=%d err=%v", calls, rearms, err)
+			}
+		})
+	}
+}
+
+func TestSecondBaseMoveRefusesBaseMoved(t *testing.T) {
+	t.Setenv(preparationRestartedEnv, "")
+	calls := 0
+	_, err := prepareTestingWith(testingSelectionRequest{}, func(testingSelectionRequest) (testingPreparation, error) {
+		calls++
+		if calls == 1 {
+			return testingPreparation{}, &preparationBaseMove{ours: "base-a", engine: "base-b"}
+		}
+		return testingPreparation{}, &preparationBaseMove{ours: "base-b", engine: "base-c"}
+	})
+	if err == nil || calls != 2 || !strings.Contains(err.Error(), "cause=base-moved ours=base-b engine=base-c restarts=1") {
+		t.Fatalf("second move did not refuse with the guarded base-moved cause: calls=%d err=%v", calls, err)
+	}
+}
+
+func TestUnexplainedPolicyFieldRefusesDecisionMismatch(t *testing.T) {
+	root, old := newPolicyBaseMoveFixture(t)
+	writeTestingFixtureFile(t, filepath.Join(root, "cmd", "metasystem", "engine.go"), []byte("package main\nvar moved = true\n"), 0o644)
+	testingFixtureGit(t, root, "add", ".")
+	testingFixtureGit(t, root, "-c", "user.name=Test", "-c", "user.email=test@example.invalid", "commit", "-qm", "move base")
+	moved := strings.TrimSpace(testingFixtureGit(t, root, "rev-parse", "HEAD"))
+	testingFixtureGit(t, root, "update-ref", "refs/remotes/origin/main", moved)
+	err := compareTrustedPolicyDecision(root, root, "candidate", old, "digest", testingPlanOutput{
+		CandidateTree: "other-candidate", PolicyBaseCommit: moved, BaseContractDigest: "other-digest",
+	})
+	if err == nil || !strings.Contains(err.Error(), "cause=decision-mismatch field=candidate-tree") {
+		t.Fatalf("candidate mismatch was incorrectly explained by the base move: %v", err)
+	}
+}
+
+func TestNonDescendantPolicyBaseRefusesDecisionMismatch(t *testing.T) {
+	root, common := newPolicyBaseMoveFixture(t)
+	writeTestingFixtureFile(t, filepath.Join(root, "cmd", "metasystem", "engine.go"), []byte("package main\nvar ours = true\n"), 0o644)
+	testingFixtureGit(t, root, "add", ".")
+	testingFixtureGit(t, root, "-c", "user.name=Test", "-c", "user.email=test@example.invalid", "commit", "-qm", "ours")
+	ours := strings.TrimSpace(testingFixtureGit(t, root, "rev-parse", "HEAD"))
+	testingFixtureGit(t, root, "checkout", "-q", "-b", "sibling", common)
+	writeTestingFixtureFile(t, filepath.Join(root, "cmd", "metasystem", "engine.go"), []byte("package main\nvar sibling = true\n"), 0o644)
+	testingFixtureGit(t, root, "add", ".")
+	testingFixtureGit(t, root, "-c", "user.name=Test", "-c", "user.email=test@example.invalid", "commit", "-qm", "sibling")
+	sibling := strings.TrimSpace(testingFixtureGit(t, root, "rev-parse", "HEAD"))
+	testingFixtureGit(t, root, "update-ref", "refs/remotes/origin/main", sibling)
+	err := compareTrustedPolicyDecision(root, root, "candidate", ours, "digest", testingPlanOutput{
+		CandidateTree: "candidate", PolicyBaseCommit: sibling, BaseContractDigest: "digest",
+	})
+	if err == nil || !strings.Contains(err.Error(), "cause=decision-mismatch field=policy-base-commit") {
+		t.Fatalf("non-descendant base was incorrectly restarted: %v", err)
+	}
+}
 
 func TestPublishTestingResultSpillsOverTheBound(t *testing.T) {
 	root := t.TempDir()

@@ -58,7 +58,7 @@ func TestLandedRearmDecidesFromTheThreeFacts(t *testing.T) {
 }
 
 type landedRearmFixture struct {
-	remote, projectRoot, installation string
+	remote, seed, projectRoot, installation string
 }
 
 func readLandedRearmFactsForTest(ctx context.Context, installation, projectRoot, prefix, source string, ownsTip func(string) bool) (landedRearmFacts, error) {
@@ -95,6 +95,8 @@ func newLandedRearmFixture(t *testing.T) landedRearmFixture {
 		{"metasystem/metasystem.conf", "testing.contract=testing.json\n"},
 		{"metasystem/cmd/metasystem/main.go", "package main\n"},
 		{"metasystem/docs/notes.md", "notes\n"},
+		{"metasystem/memory/receipts.log", "receipt=seed\n"},
+		{"metasystem/records/narrator-digest.log", "digest=seed\n"},
 	} {
 		path := filepath.Join(seed, item.path)
 		if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
@@ -119,7 +121,21 @@ func newLandedRearmFixture(t *testing.T) landedRearmFixture {
 	landedGit(t, seed, "add", ".")
 	landedGit(t, seed, "commit", "-qm", "landed engine change")
 	landedGit(t, seed, "push", "-q", "origin", "main")
-	return landedRearmFixture{remote: remote, projectRoot: projectRoot, installation: filepath.Join(projectRoot, "metasystem")}
+	return landedRearmFixture{remote: remote, seed: seed, projectRoot: projectRoot, installation: filepath.Join(projectRoot, "metasystem")}
+}
+
+func landFixturePath(t *testing.T, fixture landedRearmFixture, path, content string) {
+	t.Helper()
+	seedPath := filepath.Join(fixture.seed, filepath.FromSlash(path))
+	if err := os.MkdirAll(filepath.Dir(seedPath), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(seedPath, []byte(content), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	landedGit(t, fixture.seed, "add", ".")
+	landedGit(t, fixture.seed, "commit", "-qm", "land path")
+	landedGit(t, fixture.seed, "push", "-q", "origin", "main")
 }
 
 func TestLandedRearmReadsTheCheckoutAgainstItsRemote(t *testing.T) {
@@ -262,6 +278,88 @@ func TestLandedRearmFastForwardsRebuildsAndReArms(t *testing.T) {
 	// installation with the checkout as --repo.
 	if !strings.HasSuffix(runtimeUpCommandFor(fixture.installation, fixture.projectRoot), filepath.Join("bin", "metasystem")+" up --repo "+fixture.projectRoot) {
 		t.Fatal("the up seam does not name the rebuilt binary's own up")
+	}
+}
+
+func TestLandedRearmRefusesAFastForwardBlockedByDirtyLedgers(t *testing.T) {
+	for _, test := range []struct {
+		name, path              string
+		staged, existingSidecar bool
+	}{
+		{name: "unstaged ledger", path: "metasystem/memory/receipts.log"},
+		{name: "staged ledger", path: "metasystem/records/narrator-digest.log", staged: true},
+		{name: "pre-existing save sidecar", path: "metasystem/memory/receipts.log", existingSidecar: true},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			fixture := newLandedRearmFixture(t)
+			landFixturePath(t, fixture, test.path, "landed append\n")
+			local := filepath.Join(fixture.projectRoot, filepath.FromSlash(test.path))
+			if err := os.WriteFile(local, []byte("local append\n"), 0o644); err != nil {
+				t.Fatal(err)
+			}
+			if test.staged {
+				landedGit(t, fixture.projectRoot, "add", test.path)
+			}
+			if test.existingSidecar {
+				short := landedGit(t, fixture.projectRoot, "rev-parse", "--short", "HEAD")
+				if err := os.WriteFile(local+".local."+short+".0", []byte("older save\n"), 0o644); err != nil {
+					t.Fatal(err)
+				}
+			}
+			head := landedGit(t, fixture.projectRoot, "rev-parse", "HEAD")
+			facts, err := readLandedRearmFactsForTest(context.Background(), fixture.installation, fixture.projectRoot, "metasystem", head, func(string) bool { return false })
+			if err != nil {
+				t.Fatal(err)
+			}
+			fastForwards := 0
+			previous := landedRearmFastForward
+			landedRearmFastForward = func(context.Context, string, string) error { fastForwards++; return nil }
+			t.Cleanup(func() { landedRearmFastForward = previous })
+			_, err = landedRearmAct(context.Background(), fixture.installation, fixture.projectRoot, facts, 1)
+			ledgerPath := strings.TrimPrefix(test.path, "metasystem/")
+			if err == nil || fastForwards != 0 || !strings.Contains(err.Error(), "cause=fast-forward-blocked") ||
+				!strings.Contains(err.Error(), "ledger-path='"+test.path+"'") || !strings.Contains(err.Error(), "cp -p -n --") ||
+				!strings.Contains(err.Error(), "$(git rev-parse --short HEAD)") || !strings.Contains(err.Error(), "while test -e") ||
+				!strings.Contains(err.Error(), "git restore --staged --worktree --source=HEAD --") ||
+				!strings.Contains(err.Error(), "append only the missing saved lines") || strings.Contains(err.Error(), "reset --hard") ||
+				strings.Contains(err.Error(), "git checkout --") || !strings.Contains(err.Error(), ledgerPath) {
+				t.Fatalf("dirty ledger was not refused before the fast-forward with a preserving unique remedy: err=%v fast-forwards=%d", err, fastForwards)
+			}
+		})
+	}
+}
+
+func TestLandedRearmRefusesAncestorPathCollisionsBeforeFastForward(t *testing.T) {
+	for _, test := range []struct {
+		name, incoming, local string
+	}{
+		{name: "dirty descendant of incoming file", incoming: "metasystem/collision", local: "metasystem/collision/child"},
+		{name: "dirty file ancestor of incoming path", incoming: "metasystem/collision/child", local: "metasystem/collision"},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			fixture := newLandedRearmFixture(t)
+			landFixturePath(t, fixture, test.incoming, "landed\n")
+			local := filepath.Join(fixture.projectRoot, filepath.FromSlash(test.local))
+			if err := os.MkdirAll(filepath.Dir(local), 0o755); err != nil {
+				t.Fatal(err)
+			}
+			if err := os.WriteFile(local, []byte("local\n"), 0o644); err != nil {
+				t.Fatal(err)
+			}
+			head := landedGit(t, fixture.projectRoot, "rev-parse", "HEAD")
+			facts, err := readLandedRearmFactsForTest(context.Background(), fixture.installation, fixture.projectRoot, "metasystem", head, func(string) bool { return false })
+			if err != nil {
+				t.Fatal(err)
+			}
+			fastForwards := 0
+			previous := landedRearmFastForward
+			landedRearmFastForward = func(context.Context, string, string) error { fastForwards++; return nil }
+			t.Cleanup(func() { landedRearmFastForward = previous })
+			_, err = landedRearmAct(context.Background(), fixture.installation, fixture.projectRoot, facts, 1)
+			if err == nil || fastForwards != 0 || !strings.Contains(err.Error(), "cause=fast-forward-blocked") || !strings.Contains(err.Error(), test.local) {
+				t.Fatalf("ancestor collision reached the fast-forward or lost its blocker: err=%v fast-forwards=%d facts=%+v", err, fastForwards, facts)
+			}
+		})
 	}
 }
 

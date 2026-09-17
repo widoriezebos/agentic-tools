@@ -9,6 +9,23 @@ import (
 	"time"
 )
 
+func TestPathsCollideAtPathComponents(t *testing.T) {
+	for _, test := range []struct {
+		left, right string
+		want        bool
+	}{
+		{"dir", "dir", true},
+		{"dir/file", "dir", true},
+		{"dir", "dir/file", true},
+		{"dir2/file", "dir", false},
+		{"directory", "dir/file", false},
+	} {
+		if got := PathsCollide(test.left, test.right); got != test.want {
+			t.Errorf("PathsCollide(%q, %q) = %t, want %t", test.left, test.right, got, test.want)
+		}
+	}
+}
+
 // One committed repository per test; every projection claim runs against
 // real git, exactly as the validator and the runner invoke it.
 type treeFixture struct {

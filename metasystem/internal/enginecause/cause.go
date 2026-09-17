@@ -4,6 +4,7 @@ package enginecause
 import (
 	"fmt"
 	"strings"
+	"unicode"
 )
 
 // Fact is one observed value carried by a refusal. Paths are shell-quoted
@@ -19,6 +20,22 @@ func Value(key, value string) Fact { return Fact{Key: key, Value: value} }
 
 // Path records a path-valued diagnostic fact.
 func Path(key, value string) Fact { return Fact{Key: key, Value: value, Path: true} }
+
+var appendOnlyLedgers = []string{
+	"memory/receipts.log",
+	"records/narrator-digest.log",
+}
+
+// IsAppendOnlyLedger reports whether path is one of the ledgers whose local
+// append must be saved and reconciled across a landed fast-forward.
+func IsAppendOnlyLedger(path string) bool {
+	for _, ledger := range appendOnlyLedgers {
+		if path == ledger {
+			return true
+		}
+	}
+	return false
+}
 
 // Cause is one operator outcome. Kind is the value of the "fact" fact when
 // one token has branches that need different operator actions.
@@ -51,11 +68,20 @@ func fact(facts []Fact, key, fallback string) string {
 func factValues(facts []Fact, key string) []string {
 	var values []string
 	for _, item := range facts {
-		if item.Key == key && item.Value != "" {
+		if item.Key == key && item.Value != "" && (!item.Path || printablePath(item.Value)) {
 			values = append(values, item.Value)
 		}
 	}
 	return values
+}
+
+func printablePath(value string) bool {
+	for _, character := range value {
+		if unicode.IsControl(character) {
+			return false
+		}
+	}
+	return true
 }
 
 func quoted(value string) string {
@@ -71,6 +97,52 @@ func rearm(facts []Fact) []string {
 
 func one(command string) func([]Fact) []string {
 	return func([]Fact) []string { return []string{command} }
+}
+
+func fastForwardBlocked(facts []Fact) []string {
+	tracked := factValues(facts, "tracked-path")
+	untracked := factValues(facts, "untracked-path")
+	ledgers := factValues(facts, "ledger-path")
+	if len(tracked)+len(untracked)+len(ledgers) == 0 {
+		return append([]string{"git status --short"}, rearm(facts)...)
+	}
+
+	commands := []string{}
+	var saved []string
+	if len(ledgers) > 0 {
+		parts := make([]string, 0, len(ledgers))
+		for index, path := range ledgers {
+			variable := fmt.Sprintf("save%d", index+1)
+			parts = append(parts, fmt.Sprintf("%s=%s.local.$(git rev-parse --short HEAD).0; while test -e \"$%s\"; do %s=${%s%%.*}.$((${%s##*.}+1)); done; cp -p -n -- %s \"$%s\"",
+				variable, quoted(path), variable, variable, variable, variable, quoted(path), variable))
+			saved = append(saved, fmt.Sprintf("$%s", variable))
+		}
+		commands = append(commands, strings.Join(parts, "; "))
+		quotedLedgers := make([]string, len(ledgers))
+		for index, path := range ledgers {
+			quotedLedgers[index] = quoted(path)
+		}
+		commands = append(commands, "git restore --staged --worktree --source=HEAD -- "+strings.Join(quotedLedgers, " "))
+	}
+	stashPaths := append(append([]string(nil), tracked...), untracked...)
+	if len(stashPaths) > 0 {
+		for index := range stashPaths {
+			stashPaths[index] = quoted(stashPaths[index])
+		}
+		includeUntracked := ""
+		if len(untracked) > 0 {
+			includeUntracked = "--include-untracked "
+		}
+		commands = append(commands, "git stash push "+includeUntracked+"-- "+strings.Join(stashPaths, " "))
+	}
+	commands = append(commands, rearm(facts)...)
+	if len(stashPaths) > 0 {
+		commands = append(commands, "git stash pop")
+	}
+	if len(ledgers) > 0 {
+		commands = append(commands, "after the fast-forward, append only the missing saved lines from "+strings.Join(saved, " and ")+" back to "+strings.Join(ledgers, " and "))
+	}
+	return commands
 }
 
 // Table is the single inventory of policy-engine refusal outcomes. A generic
@@ -107,9 +179,9 @@ var Table = []Cause{
 		commands := []string{"bin/metasystem wait --root " + quoted(fact(f, "checkout", ".")) + " --attempt " + quoted(fact(f, "attempt", "<attempt>"))}
 		return append(commands, rearm(f)...)
 	}},
-	{Token: "fast-forward-blocked", Commands: 5, remedy: func(f []Fact) []string {
-		return append([]string{"git status --short"}, rearm(f)...)
-	}},
+	{Token: "fast-forward-blocked", Commands: 9, sample: []Fact{
+		Path("tracked-path", "docs/local.txt"), Path("untracked-path", "generated/local.txt"), Path("ledger-path", "memory/receipts.log"),
+	}, remedy: fastForwardBlocked},
 	{Token: "rebuild-failed", Commands: 2, remedy: func(f []Fact) []string {
 		return []string{"scripts/agents/go-build.sh", "bin/metasystem up --repo " + quoted(fact(f, "checkout", "."))}
 	}},
@@ -152,7 +224,7 @@ func Render(token string, facts []Fact) (Rendered, error) {
 		return Rendered{}, fmt.Errorf("unknown policy-engine refusal cause %q", token)
 	}
 	commands := cause.remedy(facts)
-	return Rendered{Remedy: strings.Join(commands, " && "), Commands: cause.Commands}, nil
+	return Rendered{Remedy: strings.Join(commands, " && "), Commands: len(commands)}, nil
 }
 
 // Refuse renders one complete policy-engine refusal.
@@ -162,12 +234,20 @@ func Refuse(token string, facts []Fact, detail string) error {
 		return err
 	}
 	var observed strings.Builder
+	unprintable := 0
 	for _, item := range facts {
 		value := item.Value
 		if item.Path {
+			if !printablePath(value) {
+				unprintable++
+				continue
+			}
 			value = quoted(value)
 		}
 		fmt.Fprintf(&observed, " %s=%s", item.Key, value)
+	}
+	if unprintable > 0 {
+		fmt.Fprintf(&observed, " unprintable=%d see=git-status--porcelain-z", unprintable)
 	}
 	return fmt.Errorf("TEST_POLICY_ENGINE_REQUIRED: cause=%s%s: %s; run: %s", token, observed.String(), detail, rendered.Remedy)
 }

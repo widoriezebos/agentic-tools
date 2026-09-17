@@ -44,6 +44,7 @@ type landedRearmFacts struct {
 	SourceOwnsTip    bool
 	HeadIsAncestor   bool
 	DirtyEnginePaths []string
+	BlockingPaths    []landedRearmBlocker
 	// FetchErr is set when the landing ref could not be fetched (no such
 	// remote, or the remote unreachable): the local ref is judged as today,
 	// and a re-arm from a tip that could not be fetched is refused.
@@ -55,6 +56,11 @@ type landedRearmFacts struct {
 	// delivery run with --tree, the landing receipt): a fast-forward would
 	// move that index under the receipt, so such a run keeps the manual path.
 	NamedDeliveryTree bool
+}
+
+type landedRearmBlocker struct {
+	Path string
+	Kind string
 }
 
 // landedRearmDecision is the decision: nothing to do, re-arm, or a refusal
@@ -89,6 +95,14 @@ func decideLandedRearm(facts landedRearmFacts, checkout string) landedRearmDecis
 	if !facts.HeadIsAncestor {
 		observed = append(observed, enginecause.Value("fact", "head-diverged"), enginecause.Value("head", facts.Head))
 		return landedRearmDecision{Refusal: engineRefusal("engine-behind-tip", observed, "the checkout's HEAD is not an ancestor of that tip, so the run cannot bring the checkout to it").Error()}
+	}
+	if len(facts.BlockingPaths) > 0 {
+		blockerFacts := append([]enginecause.Fact(nil), observed...)
+		for _, blocker := range facts.BlockingPaths {
+			blockerFacts = append(blockerFacts, enginecause.Path(blocker.Kind+"-path", blocker.Path))
+		}
+		return landedRearmDecision{Refusal: engineRefusal("fast-forward-blocked", blockerFacts,
+			"dirty or untracked checkout paths collide with paths changed by the landed tip, so the run refuses before changing the checkout").Error()}
 	}
 	if len(facts.DirtyEnginePaths) > 0 {
 		observed = append(observed, enginecause.Value("fact", "dirty-engine-paths"))
@@ -127,6 +141,11 @@ func landingRefParts(ctx context.Context, clock steward.RearmClock, seconds int,
 var landedRearmGitPins = []string{"-c", "core.useReplaceRefs=false", "-c", "core.hooksPath=/dev/null", "-c", "gc.auto=0", "-c", "maintenance.auto=false"}
 
 func landedRearmGitStep(ctx context.Context, clock steward.RearmClock, seconds int, step, dir string, args ...string) (string, error) {
+	output, err := landedRearmGitOutputStep(ctx, clock, seconds, step, dir, args...)
+	return strings.TrimSpace(output), err
+}
+
+func landedRearmGitOutputStep(ctx context.Context, clock steward.RearmClock, seconds int, step, dir string, args ...string) (string, error) {
 	var stdout, stderr bytes.Buffer
 	err := steward.RunRearmStep(ctx, clock, time.Duration(seconds)*time.Second, step, func(stepContext context.Context, progress func()) error {
 		command := exec.CommandContext(stepContext, "git", append(append([]string{"-C", dir}, landedRearmGitPins...), args...)...)
@@ -141,7 +160,7 @@ func landedRearmGitStep(ctx context.Context, clock steward.RearmClock, seconds i
 		}
 		return "", fmt.Errorf("git %s: %w: %s", strings.Join(args, " "), err, strings.TrimSpace(stderr.String()))
 	}
-	return strings.TrimSpace(stdout.String()), nil
+	return stdout.String(), nil
 }
 
 // fetchLandingRef brings the landing ref to the remote's tip, bounded like
@@ -158,41 +177,89 @@ func fetchLandingRef(ctx context.Context, clock steward.RearmClock, seconds int,
 // tree) or untracked that the behavior-surface policy classifies as ENGINE,
 // top-relative under the installation prefix: the same classification
 // go-build.sh applies before it stamps a build dirty.
+type checkoutDirtyPath struct {
+	path      string
+	untracked bool
+}
+
+func dirtyCheckoutPaths(ctx context.Context, clock steward.RearmClock, seconds int, installation string) ([]checkoutDirtyPath, error) {
+	// --no-relative: an inherited diff.relative would strip the installation
+	// prefix and let every engine path slip past the classification.
+	changed, err := landedRearmGitOutputStep(ctx, clock, seconds, "list-dirty-paths", installation, "diff", "--name-only", "--no-renames", "--no-relative", "-z", "HEAD", "--")
+	if err != nil {
+		return nil, err
+	}
+	untracked, err := landedRearmGitOutputStep(ctx, clock, seconds, "list-untracked-paths", installation, "ls-files", "--others", "--exclude-standard", "--full-name", "-z")
+	if err != nil {
+		return nil, err
+	}
+	seen := map[string]bool{}
+	var dirty []checkoutDirtyPath
+	for index, listing := range []string{changed, untracked} {
+		for _, path := range strings.Split(listing, "\x00") {
+			if path == "" || seen[path] {
+				continue
+			}
+			seen[path] = true
+			dirty = append(dirty, checkoutDirtyPath{path: path, untracked: index == 1})
+		}
+	}
+	sort.Slice(dirty, func(left, right int) bool { return dirty[left].path < dirty[right].path })
+	return dirty, nil
+}
+
 func dirtyEnginePaths(ctx context.Context, clock steward.RearmClock, seconds int, installation, prefix string) ([]string, error) {
 	policy, err := behaviorsurface.Load()
 	if err != nil {
 		return nil, err
 	}
-	// --no-relative: an inherited diff.relative would strip the installation
-	// prefix and let every engine path slip past the classification.
-	changed, err := landedRearmGitStep(ctx, clock, seconds, "list-dirty-engine-paths", installation, "diff", "--name-only", "--no-renames", "--no-relative", "-z", "HEAD", "--")
+	dirty, err := dirtyCheckoutPaths(ctx, clock, seconds, installation)
 	if err != nil {
 		return nil, err
 	}
-	untracked, err := landedRearmGitStep(ctx, clock, seconds, "list-untracked-engine-paths", installation, "ls-files", "--others", "--exclude-standard", "--full-name", "-z")
-	if err != nil {
-		return nil, err
-	}
-	seen := map[string]bool{}
-	var dirty []string
-	for _, listing := range []string{changed, untracked} {
-		for _, path := range strings.Split(listing, "\x00") {
-			path = strings.TrimSpace(path)
-			if path == "" || seen[path] {
-				continue
-			}
-			seen[path] = true
-			engine, classifyErr := policy.Includes(behaviorsurface.Engine, path, prefix)
-			if classifyErr != nil {
-				return nil, classifyErr
-			}
-			if engine {
-				dirty = append(dirty, path)
-			}
+	var enginePaths []string
+	for _, item := range dirty {
+		engine, classifyErr := policy.Includes(behaviorsurface.Engine, item.path, prefix)
+		if classifyErr != nil {
+			return nil, classifyErr
+		}
+		if engine {
+			enginePaths = append(enginePaths, item.path)
 		}
 	}
-	sort.Strings(dirty)
-	return dirty, nil
+	return enginePaths, nil
+}
+
+func dirtyBlockingPaths(ctx context.Context, clock steward.RearmClock, seconds int, installation, prefix, head, tip string) ([]landedRearmBlocker, error) {
+	dirty, err := dirtyCheckoutPaths(ctx, clock, seconds, installation)
+	if err != nil {
+		return nil, err
+	}
+	changed, err := landedRearmGitOutputStep(ctx, clock, seconds, "list-landed-changed-paths", installation,
+		"diff", "--name-only", "--no-renames", "--no-relative", "-z", head, tip, "--")
+	if err != nil {
+		return nil, err
+	}
+	changedPaths := strings.Split(changed, "\x00")
+	var blockers []landedRearmBlocker
+	for _, item := range dirty {
+		for _, incoming := range changedPaths {
+			if incoming == "" || !gittree.PathsCollide(item.path, incoming) {
+				continue
+			}
+			kind := "tracked"
+			if item.untracked {
+				kind = "untracked"
+			}
+			installationPath := strings.TrimPrefix(item.path, strings.TrimSuffix(prefix, "/")+"/")
+			if enginecause.IsAppendOnlyLedger(installationPath) {
+				kind = "ledger"
+			}
+			blockers = append(blockers, landedRearmBlocker{Path: item.path, Kind: kind})
+			break
+		}
+	}
+	return blockers, nil
 }
 
 var (
@@ -210,6 +277,7 @@ var (
 		return false, err
 	}
 	landedRearmDirty    = dirtyEnginePaths
+	landedRearmBlockers = dirtyBlockingPaths
 	landedRearmAttempts = proofrun.ReadAttempts
 )
 
@@ -247,6 +315,10 @@ func readLandedRearmFacts(ctx context.Context, clock steward.RearmClock, seconds
 		return facts, err
 	}
 	facts.DirtyEnginePaths, err = landedRearmDirty(ctx, clock, seconds, installation, prefix)
+	if err != nil {
+		return facts, err
+	}
+	facts.BlockingPaths, err = landedRearmBlockers(ctx, clock, seconds, installation, prefix, head, facts.Tip)
 	if err != nil {
 		return facts, err
 	}
