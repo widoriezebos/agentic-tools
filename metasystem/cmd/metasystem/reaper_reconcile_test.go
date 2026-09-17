@@ -37,8 +37,9 @@ func TestReaperTickReconcilesAnAttemptWhoseLauncherIsGone(t *testing.T) {
 	}
 	// A pid that no such process holds: the kernel prober answers Dead.
 	launcher := proofrun.ProcessIdentity{Pid: 1<<30 - 7, PidStartedAt: 100}
-	attempt, result, err := proofrun.ReserveLocked(proofrun.AdmissionRequest{ControlRoot: root, ExecutionRoot: root, GoalID: "goal-a",
-		GoalRevision: 3, AccountingRevision: 2, ReservedMinutes: 4, Identity: identity, Launcher: launcher, Now: time.Now().UTC()})
+	attempt, result, err := proofrun.ReserveLocked(candidateProofAdmission(proofrun.AdmissionRequest{ControlRoot: root, ExecutionRoot: root, GoalID: "goal-a",
+		GoalRevision: 3, AccountingRevision: 2, ReservedMinutes: 4, Identity: identity, Launcher: launcher, Now: time.Now().UTC()}))
+
 	if err != nil || result.Disposition != proofrun.DispositionExecuted {
 		t.Fatalf("reserve = %+v, %+v, %v", attempt, result, err)
 	}

@@ -197,7 +197,7 @@ func TestDiagnosticNoReuseForcesFreshRunsAndDeliveryRefuses(t *testing.T) {
 	t.Setenv("METASYSTEM_GOAL_NOW", now.Format(time.RFC3339))
 	admission := proofLaunchAdmission{ControlRoot: controlRoot, ExecutionRoot: controlRoot, ConfPath: filepath.Join(controlRoot, "metasystem.conf"),
 		GoalID: "standing-validation", CapMin: "1", ScopeClass: "selected", CommandClass: "testing",
-		IdentityInputs: []string{"diagnostic-no-reuse"}, ExecuteAfresh: true}
+		CandidateTree: strings.Repeat("b", 40), IdentityInputs: []string{"diagnostic-no-reuse"}, ExecuteAfresh: true}
 	retained, decision, _, err := admitProofLaunch(admission)
 	if err != nil || decision.Disposition != proofrun.DispositionExecuted || retained.AttemptID == "" {
 		t.Fatalf("seed admission=%+v attempt=%+v err=%v", decision, retained, err)

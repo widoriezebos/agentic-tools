@@ -519,6 +519,21 @@ func TestVerifyRecoversCandidateDigestFromNewestSufficientAttempt(t *testing.T) 
 	}
 }
 
+func TestDiagnosticsReadersFollowTheCandidatePair(t *testing.T) {
+	candidate := proofrun.Attempt{SchemaVersion: proofrun.CandidateAttemptSchemaVersion,
+		GoalID: "authority-c", AccountingRevision: 3, CandidateGoalID: "candidate-x", CandidateRevision: 7}
+	if !attemptAccountsForCandidate(candidate, "candidate-x", 7) {
+		t.Fatal("candidate-owned diagnostic attempt was not selected")
+	}
+	if attemptAccountsForCandidate(candidate, "authority-c", 3) {
+		t.Fatal("diagnostic reader selected the authority pair instead of the candidate pair")
+	}
+	legacy := proofrun.Attempt{SchemaVersion: proofrun.AttemptSchemaVersion, GoalID: "legacy", AccountingRevision: 5}
+	if !attemptAccountsForCandidate(legacy, "legacy", 5) {
+		t.Fatal("diagnostic reader stopped selecting schema-2 authority accounting")
+	}
+}
+
 func TestVerifyDoesNotKeyLegacyCandidateDigestByWholeTreeReceipt(t *testing.T) {
 	const groupID = "candidate-bed"
 	digest := strings.Repeat("a", 64)

@@ -375,7 +375,7 @@ func ExactReusableTestResult(template TestResult, attempts []Attempt, identities
 	var newest *Attempt
 	for index := range attempts {
 		attempt := attempts[index]
-		if goalID == "" || accountingRevision == 0 || attempt.GoalID != goalID || attempt.AccountingRevision != accountingRevision ||
+		if goalID == "" || accountingRevision == 0 || attempt.AccountedGoal() != goalID || attempt.AccountedRevision() != accountingRevision ||
 			attempt.Terminal == nil || attempt.Terminal.Result != TerminalSuccess || attempt.TestResult == nil || len(CommittedDeliveryReceipt(attempt)) == 0 {
 			continue
 		}

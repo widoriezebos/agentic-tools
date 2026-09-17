@@ -179,6 +179,7 @@ var Rows = []Row{
 	{Code: "TEST_CONTRACT_REQUIRED", Owner: "internal/testpolicy", Site: "contract.go:137", Shape: Question},
 	{Code: "TEST_CONTRACT_INVALID", Owner: "cmd/metasystem", Site: "runtime_setup.go:63", Shape: Question},
 	{Code: "TEST_GROUP_SELECTION_REFUSED", Owner: "internal/testpolicy", Site: "select.go:109", Shape: Question},
+	{Code: "RETRY_PRIOR_OUTSIDE_TREE", Owner: "internal/proofrun", Site: "attempt.go", Shape: Question},
 	{Code: "STOP_LOCATOR_UNAVAILABLE", Owner: "internal/hostsetup", Site: "setup.go:112", Shape: Question},
 	{Code: "TEST_POLICY_COVERAGE_FLOOR_LOWERED", Owner: "cmd/metasystem", Site: "test.go:355", Shape: Question},
 	{Code: "TESTING_MERGE_CONFLICT", Owner: "internal/testpolicy/contractmerge", Site: "merge.go", Shape: Question},

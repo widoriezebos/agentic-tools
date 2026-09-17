@@ -26,6 +26,23 @@ import (
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/stopfence"
 )
 
+func candidateProofAdmission(request proofrun.AdmissionRequest) proofrun.AdmissionRequest {
+	request.CandidateGoalID = request.GoalID
+	request.CandidateRevision = request.AccountingRevision
+	request.CandidateBudgetEpoch = request.BudgetEpoch
+	if request.Identity.CommandClass == "testing" && request.CandidateTree == "" {
+		request.CandidateTree = strings.Repeat("b", 40)
+	}
+	return request
+}
+
+func candidateProofLaunchAdmission(request proofLaunchAdmission) proofLaunchAdmission {
+	if request.CommandClass == "testing" && request.CandidateTree == "" {
+		request.CandidateTree = strings.Repeat("b", 40)
+	}
+	return request
+}
+
 func TestProofRunWitnessStateUsesProbeAndFrozenEligibility(t *testing.T) {
 	root := t.TempDir()
 	if err := os.MkdirAll(filepath.Join(root, "internal"), 0o700); err != nil {
@@ -262,9 +279,10 @@ func TestCommitProofTerminalRefusesWithoutGoalRevisionAuthority(t *testing.T) {
 		t.Fatal(err)
 	}
 	started := time.Now().UTC()
-	attempt, _, err := proofrun.ReserveLocked(proofrun.AdmissionRequest{ControlRoot: root, ExecutionRoot: root,
+	attempt, _, err := proofrun.ReserveLocked(candidateProofAdmission(proofrun.AdmissionRequest{ControlRoot: root, ExecutionRoot: root,
 		GoalID: "standing-validation", GoalRevision: 2, AccountingRevision: 2, ReservedMinutes: 30,
-		Identity: proofIdentity, Launcher: launcher, Now: started})
+		Identity: proofIdentity, Launcher: launcher, Now: started}))
+
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -361,11 +379,14 @@ func TestProofAdmissionExtendsRejudgesAndReserves(t *testing.T) {
 		t.Fatal(err)
 	}
 	t.Setenv("METASYSTEM_GOAL_NOW", now.Format(time.RFC3339))
-	attempt, decision, joined, err := admitProofLaunch(proofLaunchAdmission{
+	attempt, decision, joined, err := admitProofLaunch(candidateProofLaunchAdmission(proofLaunchAdmission{
 		ControlRoot: root, ExecutionRoot: root, ConfPath: filepath.Join(root, "metasystem.conf"), GoalID: "standing-validation",
 		CapMin: "1", ScopeClass: "full", CommandClass: "testing",
-	})
-	if err != nil || joined || decision.Disposition != proofrun.DispositionExecuted || attempt.AttemptID == "" {
+	}))
+
+	if err != nil || joined || decision.Disposition != proofrun.DispositionExecuted || attempt.AttemptID == "" ||
+		attempt.SchemaVersion != proofrun.CandidateAttemptSchemaVersion || attempt.CandidateGoalID != attempt.GoalID ||
+		attempt.CandidateRevision != attempt.AccountingRevision || attempt.CandidateTree != strings.Repeat("b", 40) {
 		t.Fatalf("proof admission did not extend and reserve: attempt=%+v decision=%+v joined=%v err=%v", attempt, decision, joined, err)
 	}
 	tip := goalSyncMutationGit(t, root, "rev-parse", goal.AcceptedRef)
@@ -404,10 +425,11 @@ func TestNativeDelegateProofAdmissionExtendsItsClaimPairBudget(t *testing.T) {
 	t.Setenv("METASYSTEM_HOOK_DELEGATE_INSTALLATION_ROOT", root)
 	t.Setenv("METASYSTEM_HOOK_DELEGATE_JOB", "native-proof")
 	t.Setenv("METASYSTEM_GOAL_NOW", now.Format(time.RFC3339))
-	attempt, decision, joined, err := admitProofLaunch(proofLaunchAdmission{
+	attempt, decision, joined, err := admitProofLaunch(candidateProofLaunchAdmission(proofLaunchAdmission{
 		ControlRoot: root, ExecutionRoot: root, ConfPath: filepath.Join(root, "metasystem.conf"), GoalID: "standing-validation",
 		CapMin: "1", ScopeClass: "full", CommandClass: "testing",
-	})
+	}))
+
 	if err != nil || joined || decision.Disposition != proofrun.DispositionExecuted || attempt.AttemptID == "" {
 		t.Fatalf("native delegate proof did not extend and reserve: attempt=%+v decision=%+v joined=%v err=%v", attempt, decision, joined, err)
 	}
@@ -448,10 +470,11 @@ func TestSupervisorTakeoverRefusesStaleEpochProof(t *testing.T) {
 	t.Setenv("METASYSTEM_HOOK_DELEGATE_INSTALLATION_ROOT", root)
 	t.Setenv("METASYSTEM_HOOK_DELEGATE_JOB", "stale-proof")
 	t.Setenv("METASYSTEM_GOAL_NOW", now.Format(time.RFC3339))
-	attempt, _, _, err := admitProofLaunch(proofLaunchAdmission{
+	attempt, _, _, err := admitProofLaunch(candidateProofLaunchAdmission(proofLaunchAdmission{
 		ControlRoot: root, ExecutionRoot: root, ConfPath: filepath.Join(root, "metasystem.conf"), GoalID: "standing-validation",
 		CapMin: "1", ScopeClass: "full", CommandClass: "testing",
-	})
+	}))
+
 	if err == nil || !strings.Contains(err.Error(), "native delegate proof custody changed before reservation") || attempt.AttemptID != "" {
 		t.Fatalf("stale epoch attempt=%+v err=%v", attempt, err)
 	}
@@ -483,11 +506,12 @@ func TestBatchRevisionBoundAdmissionRefusesBeforeRunnerOrCharge(t *testing.T) {
 				t.Fatal(err)
 			}
 			before := dispatchcore.ProjectBudget(root, binding.File, now)
-			attempt, _, _, err := admitProofLaunch(proofLaunchAdmission{
+			attempt, _, _, err := admitProofLaunch(candidateProofLaunchAdmission(proofLaunchAdmission{
 				ControlRoot: root, ExecutionRoot: root, ConfPath: filepath.Join(root, "metasystem.conf"), GoalID: "standing-validation",
 				CapMin: "1", ScopeClass: "selected", CommandClass: "testing",
 				ExpectedGoalRevision: test.goalRev, ExpectedAccountingRevision: test.accountRev,
-			})
+			}))
+
 			after := dispatchcore.ProjectBudget(root, binding.File, now)
 			if err == nil || !strings.Contains(err.Error(), "GOAL_REVISION_MOVED") || attempt.AttemptID != "" ||
 				after.Attempts != before.Attempts || after.ReservedJobMinutes != before.ReservedJobMinutes {
@@ -529,12 +553,13 @@ func TestBatchP2RequiresDiagnosticHeadroom(t *testing.T) {
 			}
 			announceProofFixtureHolder(t, root)
 			t.Setenv("METASYSTEM_GOAL_NOW", now.Format(time.RFC3339))
-			attempt, _, _, err := admitProofLaunch(proofLaunchAdmission{
+			attempt, _, _, err := admitProofLaunch(candidateProofLaunchAdmission(proofLaunchAdmission{
 				ControlRoot: root, ExecutionRoot: root, ConfPath: filepath.Join(root, "metasystem.conf"), GoalID: "standing-validation",
 				CapMin: "1", ScopeClass: "selected", CommandClass: "testing",
 				ExpectedGoalRevision: 2, ExpectedAccountingRevision: 2,
 				RequireDiagnosticHeadroom: true,
-			})
+			}))
+
 			if err == nil || !strings.Contains(err.Error(), "BATCH_MEMBER_BUDGET_REFUSED") || attempt.AttemptID != "" {
 				t.Fatalf("headroom attempt=%+v err=%v", attempt, err)
 			}
@@ -829,9 +854,10 @@ func terminalCommitFixture(t *testing.T) (string, proofrun.Attempt, func([]strin
 	if err != nil {
 		t.Fatal(err)
 	}
-	attempt, _, err := proofrun.ReserveLocked(proofrun.AdmissionRequest{ControlRoot: root, ExecutionRoot: root,
+	attempt, _, err := proofrun.ReserveLocked(candidateProofAdmission(proofrun.AdmissionRequest{ControlRoot: root, ExecutionRoot: root,
 		GoalID: "standing-validation", GoalRevision: 2, AccountingRevision: 2, ReservedMinutes: 30,
-		Identity: proofIdentity, Launcher: launcher, Now: time.Now().UTC()})
+		Identity: proofIdentity, Launcher: launcher, Now: time.Now().UTC()}))
+
 	if err != nil {
 		t.Fatal(err)
 	}

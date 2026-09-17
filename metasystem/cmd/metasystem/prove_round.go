@@ -218,7 +218,7 @@ func newestAttemptForTree(attempts []proofrun.Attempt, tree, goalID string, know
 	var newestStart time.Time
 	found := false
 	for _, attempt := range attempts {
-		if known[attempt.AttemptID] || attempt.TestResult == nil || attempt.TestResult.CandidateTree != tree || attempt.GoalID != goalID {
+		if known[attempt.AttemptID] || attempt.TestResult == nil || attempt.TestResult.CandidateTree != tree || attempt.AccountedGoal() != goalID {
 			continue
 		}
 		started, err := time.Parse(time.RFC3339Nano, attempt.StartedAt)

@@ -2,6 +2,7 @@ package main
 
 import (
 	"bytes"
+	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"flag"
@@ -267,6 +268,7 @@ func legacyProofLaunchAllowed(root string) bool {
 
 type proofLaunchAdmission struct {
 	ControlRoot, ExecutionRoot, ConfPath, GoalID, CapMin, RetryDecision string
+	CandidateTree                                                       string
 	ScopeClass, CommandClass                                            string
 	ExpectedGoalRevision, ExpectedAccountingRevision                    uint64
 	Sections                                                            []string
@@ -332,8 +334,11 @@ func admitProofLaunch(request proofLaunchAdmission) (proofrun.Attempt, proofrun.
 			if lockErr != nil {
 				return proofrun.Attempt{}, proofrun.LaunchResult{}, false, lockErr
 			}
+			candidateTree, _ := attempt.CandidateTreeDigest()
 			componentRequest := proofrun.AdmissionRequest{ControlRoot: request.ControlRoot, GoalID: attempt.GoalID,
 				GoalRevision: attempt.GoalRevision, AccountingRevision: attempt.AccountingRevision,
+				CandidateGoalID: attempt.AccountedGoal(), CandidateRevision: attempt.AccountedRevision(),
+				CandidateBudgetEpoch: attempt.AccountedBudgetEpoch(), CandidateTree: candidateTree,
 				RetryDecisionPath: request.RetryDecision, ComponentIdentities: request.ComponentIdentities, ExecuteAfresh: request.ExecuteAfresh}
 			decision, decided, decisionErr := proofrun.JoinedComponentDecisionLocked(componentRequest)
 			if decisionErr != nil {
@@ -460,6 +465,7 @@ func admitProofLaunch(request proofLaunchAdmission) (proofrun.Attempt, proofrun.
 	proofIdentity := proofrun.BuildProofIdentityForContext(context, request.ScopeClass,
 		request.CommandClass, request.Sections, behaviorsurface.SupportedVersion)
 	proofIdentity = proofrun.BindIdentityInputs(proofIdentity, request.IdentityInputs)
+	candidateTree := proofAdmissionCandidateTree(request)
 	heldGoal, err := goalrevision.Acquire(request.ControlRoot, request.GoalID, binding.Revision, "proof-admission")
 	if err != nil {
 		return proofrun.Attempt{}, proofrun.LaunchResult{}, false, err
@@ -543,6 +549,8 @@ func admitProofLaunch(request proofLaunchAdmission) (proofrun.Attempt, proofrun.
 	reservation := proofrun.AdmissionRequest{
 		ControlRoot: request.ControlRoot, ExecutionRoot: request.ExecutionRoot, ConfPath: request.ConfPath, GoalID: request.GoalID,
 		GoalRevision: binding.Revision, AccountingRevision: accountingRevision, BudgetEpoch: projection.WeightEpoch,
+		CandidateGoalID: request.GoalID, CandidateRevision: accountingRevision, CandidateBudgetEpoch: projection.WeightEpoch,
+		CandidateTree:   candidateTree,
 		ReservedMinutes: uint64(capValue), Identity: proofIdentity, Launcher: launcher, ReservationOwner: reservationOwner,
 		RetryDecisionPath: request.RetryDecision, Now: now,
 		ComponentIdentities: request.ComponentIdentities, ExecuteAfresh: request.ExecuteAfresh,
@@ -590,6 +598,7 @@ func admitProofLaunch(request proofLaunchAdmission) (proofrun.Attempt, proofrun.
 				return proofrun.Attempt{}, proofrun.LaunchResult{}, false, fmt.Errorf("proof reservation budget projection became unknown after extension")
 			}
 			reservation.BudgetEpoch = projection.WeightEpoch
+			reservation.CandidateBudgetEpoch = projection.WeightEpoch
 			verdict, err = dispatchcore.EvaluateGoalRevisionAdmissionForDispatch(request.ControlRoot, request.GoalID, binding.Revision,
 				uint64(capValue), now, "implementer", "fresh", dispatchcore.HazardMechanical)
 			if err != nil {
@@ -607,6 +616,30 @@ func admitProofLaunch(request proofLaunchAdmission) (proofrun.Attempt, proofrun.
 	}
 	attempt, decision, err := proofrun.ReserveLocked(reservation)
 	return attempt, decision, false, err
+}
+
+func proofAdmissionCandidateTree(request proofLaunchAdmission) string {
+	if request.CommandClass != "testing" {
+		return ""
+	}
+	if validProofCandidateTree(request.CandidateTree) {
+		return request.CandidateTree
+	}
+	if len(request.IdentityInputs) != 0 {
+		candidate := strings.TrimPrefix(request.IdentityInputs[0], "candidate-tree:")
+		if validProofCandidateTree(candidate) {
+			return candidate
+		}
+	}
+	return ""
+}
+
+func validProofCandidateTree(value string) bool {
+	if len(value) != 40 {
+		return false
+	}
+	_, err := hex.DecodeString(value)
+	return err == nil
 }
 
 func uniqueActiveProofGoal(root string, now time.Time) (string, error) {

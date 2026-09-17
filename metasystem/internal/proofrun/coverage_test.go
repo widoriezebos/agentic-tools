@@ -18,8 +18,9 @@ func TestCoverageReceiptProducerConsumer(t *testing.T) {
 		t.Fatal(err)
 	}
 	now := time.Now().UTC()
-	attempt, _, err := ReserveLocked(AdmissionRequest{ControlRoot: root, ExecutionRoot: root, GoalID: "goal-a",
-		GoalRevision: 2, AccountingRevision: 2, ReservedMinutes: 5, Identity: identity, Launcher: launcher, Now: now})
+	attempt, _, err := ReserveLocked(candidateAdmission(AdmissionRequest{ControlRoot: root, ExecutionRoot: root, GoalID: "goal-a",
+		GoalRevision: 2, AccountingRevision: 2, ReservedMinutes: 5, Identity: identity, Launcher: launcher, Now: now}))
+
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -90,8 +91,9 @@ func TestCoverageEligibilityKeepsAuthenticatedForeignDescendantOutOfProducerSlot
 	if err != nil {
 		t.Fatal(err)
 	}
-	attempt, _, err := ReserveLocked(AdmissionRequest{ControlRoot: root, ExecutionRoot: root, GoalID: "goal-a",
-		GoalRevision: 2, AccountingRevision: 2, ReservedMinutes: 5, Identity: identity, Launcher: launcher, Now: time.Now().UTC()})
+	attempt, _, err := ReserveLocked(candidateAdmission(AdmissionRequest{ControlRoot: root, ExecutionRoot: root, GoalID: "goal-a",
+		GoalRevision: 2, AccountingRevision: 2, ReservedMinutes: 5, Identity: identity, Launcher: launcher, Now: time.Now().UTC()}))
+
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -126,8 +128,9 @@ func TestCoverageEligibilityAcceptsEquivalentSnapshotPath(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	attempt, _, err := ReserveLocked(AdmissionRequest{ControlRoot: root, ExecutionRoot: root, GoalID: "goal-a",
-		GoalRevision: 2, AccountingRevision: 2, ReservedMinutes: 5, Identity: identity, Launcher: launcher, Now: time.Now().UTC()})
+	attempt, _, err := ReserveLocked(candidateAdmission(AdmissionRequest{ControlRoot: root, ExecutionRoot: root, GoalID: "goal-a",
+		GoalRevision: 2, AccountingRevision: 2, ReservedMinutes: 5, Identity: identity, Launcher: launcher, Now: time.Now().UTC()}))
+
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -209,8 +212,9 @@ func completedCoverageFixture(t *testing.T) (string, Attempt, string) {
 	baseline := coverageRatchetPath(root)
 	launcher, _ := CurrentProcessIdentity(nil)
 	now := time.Now().UTC()
-	attempt, _, err := ReserveLocked(AdmissionRequest{ControlRoot: root, ExecutionRoot: root, GoalID: "goal-a", GoalRevision: 2,
-		AccountingRevision: 2, ReservedMinutes: 5, Identity: identity, Launcher: launcher, Now: now})
+	attempt, _, err := ReserveLocked(candidateAdmission(AdmissionRequest{ControlRoot: root, ExecutionRoot: root, GoalID: "goal-a", GoalRevision: 2,
+		AccountingRevision: 2, ReservedMinutes: 5, Identity: identity, Launcher: launcher, Now: now}))
+
 	if err != nil {
 		t.Fatal(err)
 	}

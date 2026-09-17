@@ -16,6 +16,16 @@ import (
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/testpolicy"
 )
 
+func candidateProofAdmission(request proofrun.AdmissionRequest) proofrun.AdmissionRequest {
+	request.CandidateGoalID = request.GoalID
+	request.CandidateRevision = request.AccountingRevision
+	request.CandidateBudgetEpoch = request.BudgetEpoch
+	if request.Identity.CommandClass == "testing" && request.CandidateTree == "" {
+		request.CandidateTree = strings.Repeat("b", 40)
+	}
+	return request
+}
+
 func commitExtensionReceipt(t *testing.T, root, content string) {
 	t.Helper()
 	path := filepath.Join(root, "memory", "receipts.log")
@@ -337,6 +347,20 @@ func TestProofDeliveryEvidenceRequiresSufficientRecentSuccess(t *testing.T) {
 	attempt.Terminal.At = attempt.EndedAt
 	if evidence := proofAttemptAdvancement(attempt, "bounded", now); evidence != nil {
 		t.Fatalf("old proof attempt was evidence: %+v", evidence)
+	}
+}
+
+func TestExtensionEvidenceFollowsTheCandidate(t *testing.T) {
+	now := time.Date(2026, 8, 28, 10, 0, 0, 0, time.UTC)
+	result := validDeliveryTestResult("proof-candidate")
+	attempt := proofrun.Attempt{SchemaVersion: proofrun.CandidateAttemptSchemaVersion, AttemptID: "proof-candidate",
+		GoalID: "authority-c", CandidateGoalID: "candidate-x", EndedAt: now.Add(-time.Hour).Format(time.RFC3339Nano),
+		Terminal: &proofrun.AttemptTerminal{Result: proofrun.TerminalSuccess, At: now.Add(-time.Hour).Format(time.RFC3339Nano)}, TestResult: &result}
+	if evidence := proofAttemptAdvancement(attempt, "candidate-x", now); evidence == nil || evidence.id != attempt.AttemptID {
+		t.Fatalf("candidate did not receive its proof advancement: %+v", evidence)
+	}
+	if evidence := proofAttemptAdvancement(attempt, "authority-c", now); evidence != nil {
+		t.Fatalf("authority received candidate-owned proof advancement: %+v", evidence)
 	}
 }
 

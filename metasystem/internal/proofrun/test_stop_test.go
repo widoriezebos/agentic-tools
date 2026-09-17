@@ -185,7 +185,7 @@ func TestDeliveryRetryReusesTheFailedPredecessorsPassedGroups(t *testing.T) {
 	identity := BindIdentityInputs(baseIdentity, []string{"group:first:" + identities["first"], "group:second:" + identities["second"], "group:third:" + identities["third"], "plan:one"})
 	request := AdmissionRequest{ControlRoot: controlRoot, ExecutionRoot: controlRoot, GoalID: "goal-a", GoalRevision: 2, AccountingRevision: 2,
 		ReservedMinutes: 2, Identity: identity, Launcher: launcher, Now: now, ComponentIdentities: identities}
-	attempt, _, err := ReserveLocked(request)
+	attempt, _, err := ReserveLocked(candidateAdmission(request))
 	if err != nil {
 		t.Fatal(err)
 	}

@@ -456,7 +456,7 @@ func TestWaitInstalledRunCommand(t *testing.T) {
 		if err != nil {
 			t.Fatal(err)
 		}
-		proofAttempt, _, err := proofrun.ReserveLocked(proofrun.AdmissionRequest{ControlRoot: root, ExecutionRoot: root, GoalID: "goal-a", GoalRevision: 1, AccountingRevision: 1, ReservedMinutes: 1, Identity: proofIdentity, Launcher: launcher, Now: time.Now().UTC()})
+		proofAttempt, _, err := proofrun.ReserveLocked(candidateProofAdmission(proofrun.AdmissionRequest{ControlRoot: root, ExecutionRoot: root, GoalID: "goal-a", GoalRevision: 1, AccountingRevision: 1, ReservedMinutes: 1, Identity: proofIdentity, Launcher: launcher, Now: time.Now().UTC()}))
 		if err != nil {
 			t.Fatal(err)
 		}

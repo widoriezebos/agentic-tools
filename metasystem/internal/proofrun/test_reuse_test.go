@@ -38,8 +38,9 @@ func newReuseFixture(t *testing.T) *reuseFixture {
 func (f *reuseFixture) reserve(goalID string, revision uint64, startedAt time.Time, plan string) Attempt {
 	f.t.Helper()
 	identity := BindIdentityInputs(f.identity, []string{"group:first:" + strings.Repeat("1", 64), "plan:" + plan})
-	attempt, _, err := ReserveLocked(AdmissionRequest{ControlRoot: f.root, ExecutionRoot: f.root, GoalID: goalID, GoalRevision: revision, AccountingRevision: revision,
-		ReservedMinutes: 2, Identity: identity, Launcher: f.launcher, Now: startedAt})
+	attempt, _, err := ReserveLocked(candidateAdmission(AdmissionRequest{ControlRoot: f.root, ExecutionRoot: f.root, GoalID: goalID, GoalRevision: revision, AccountingRevision: revision,
+		ReservedMinutes: 2, Identity: identity, Launcher: f.launcher, Now: startedAt}))
+
 	if err != nil {
 		f.t.Fatal(err)
 	}
@@ -172,20 +173,20 @@ func TestExecuteAfreshNeverAnswersReusableSuccess(t *testing.T) {
 	identity := BindIdentityInputs(f.identity, []string{"group:first:" + strings.Repeat("1", 64), "plan:same"})
 	request := AdmissionRequest{ControlRoot: f.root, ExecutionRoot: f.root, GoalID: "goal-x", GoalRevision: 3, AccountingRevision: 3,
 		ReservedMinutes: 2, Identity: identity, Launcher: f.launcher, Now: f.now.Add(2 * time.Second), ComponentIdentities: map[string]string{"first": strings.Repeat("1", 64)}}
-	if decision, decided, err := NoChildDecisionLocked(request); err != nil || !decided || decision.Disposition != DispositionReusableSuccess {
+	if decision, decided, err := NoChildDecisionLocked(candidateAdmission(request)); err != nil || !decided || decision.Disposition != DispositionReusableSuccess {
 		t.Fatalf("a same-goal success was not answered reusable-success by default: %+v decided=%v err=%v", decision, decided, err)
 	}
 	request.ExecuteAfresh = true
-	if decision, decided, err := NoChildDecisionLocked(request); err != nil || decided {
+	if decision, decided, err := NoChildDecisionLocked(candidateAdmission(request)); err != nil || decided {
 		t.Fatalf("an execute-afresh admission still answered without a child: %+v err=%v", decision, err)
 	}
-	fresh, decision, err := ReserveLocked(request)
+	fresh, decision, err := ReserveLocked(candidateAdmission(request))
 	if err != nil || decision.Disposition != DispositionExecuted || fresh.AttemptID == "" || fresh.PreviousAttempt != "" {
 		t.Fatalf("an execute-afresh admission did not reserve a fresh attempt: %+v %+v err=%v", fresh, decision, err)
 	}
 	duplicate := request
 	duplicate.Now = f.now.Add(3 * time.Second)
-	if decision, decided, err := NoChildDecisionLocked(duplicate); err != nil || !decided || decision.Disposition != DispositionLiveDuplicate {
+	if decision, decided, err := NoChildDecisionLocked(candidateAdmission(duplicate)); err != nil || !decided || decision.Disposition != DispositionLiveDuplicate {
 		t.Fatalf("execute-afresh admission stopped answering a live duplicate: %+v decided=%v err=%v", decision, decided, err)
 	}
 }
@@ -216,5 +217,36 @@ func TestExactReuseYieldsToANewerObservationOnTheSeat(t *testing.T) {
 	}
 	if exact, ok := ExactReusableTestResult(template, attempts, identities, "goal-x", 3); ok {
 		t.Fatalf("exact reuse republished a green that a newer failure on the seat contradicts: %+v", exact)
+	}
+}
+
+func TestExactReuseFollowsTheCandidatePair(t *testing.T) {
+	f := newReuseFixture(t)
+	identity := BindIdentityInputs(f.identity, []string{"group:first:" + strings.Repeat("1", 64), "plan:candidate"})
+	attempt, _, err := ReserveLocked(AdmissionRequest{ControlRoot: f.root, ExecutionRoot: f.root,
+		GoalID: "authority-c", GoalRevision: 4, AccountingRevision: 3,
+		CandidateGoalID: "candidate-x", CandidateRevision: 7, CandidateTree: strings.Repeat("b", 40),
+		ReservedMinutes: 2, Identity: identity, Launcher: f.launcher, Now: f.now})
+	if err != nil {
+		t.Fatal(err)
+	}
+	result := componentAttemptResult(attempt.AttemptID, "first", strings.Repeat("1", 64), "passed")
+	result.Groups[0].EndedAt = f.now.Add(time.Second).Format(time.RFC3339Nano)
+	payload := json.RawMessage(`{"schemaVersion":2,"marker":"candidate-pair"}`)
+	if _, err := FinalizeAttemptWithTestResultLocked(f.root, attempt.AttemptID, TerminalSuccess, 0, "green", payload, &result, f.now.Add(time.Second)); err != nil {
+		t.Fatal(err)
+	}
+	attempts, err := ReadAttempts(f.root)
+	if err != nil {
+		t.Fatal(err)
+	}
+	template := result
+	template.AttemptID = ""
+	identities := map[string]string{"first": strings.Repeat("1", 64)}
+	if exact, ok := ExactReusableTestResult(template, attempts, identities, "candidate-x", 7); !ok || exact.AttemptID != attempt.AttemptID {
+		t.Fatalf("candidate pair did not recover exact result: exact=%+v ok=%t", exact, ok)
+	}
+	if exact, ok := ExactReusableTestResult(template, attempts, identities, "authority-c", 3); ok {
+		t.Fatalf("authority pair reused candidate-owned result: %+v", exact)
 	}
 }

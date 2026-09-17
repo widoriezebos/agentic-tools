@@ -282,7 +282,7 @@ func proofAdvancementEvidence(repoRoot, goalID string, now time.Time) ([]advance
 }
 
 func proofAttemptAdvancement(attempt proofrun.Attempt, goalID string, now time.Time) *advancementEvidence {
-	if attempt.GoalID != goalID || attempt.TestResult == nil || attempt.Terminal == nil ||
+	if attempt.AccountedGoal() != goalID || attempt.TestResult == nil || attempt.Terminal == nil ||
 		attempt.Terminal.Result != proofrun.TerminalSuccess || attempt.TestResult.Purpose != testpolicy.PurposeDelivery ||
 		attempt.EndedAt == "" || attempt.Terminal.At != attempt.EndedAt ||
 		!attempt.TestResult.Delivery.Sufficient || proofrun.ValidateTestResult(*attempt.TestResult) != nil {

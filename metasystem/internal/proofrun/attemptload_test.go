@@ -117,8 +117,9 @@ func TestCensusUsesInjectedProber(t *testing.T) {
 	loadSeams.pids = func() ([]int64, error) { return []int64{fakeLauncher.Pid}, nil }
 	loadSeams.parent = func(int64) (int64, bool) { return 1, true }
 	launcher := processIdentity(identity.Exact{Pid: 515151, StartedAt: now.Add(-2 * time.Hour)}, 0)
-	attempt, _, err := ReserveLocked(AdmissionRequest{ControlRoot: root, ExecutionRoot: root, GoalID: "goal-a", GoalRevision: 2,
-		AccountingRevision: 2, ReservedMinutes: 2, Identity: proofIdentity, Launcher: launcher, Now: now})
+	attempt, _, err := ReserveLocked(candidateAdmission(AdmissionRequest{ControlRoot: root, ExecutionRoot: root, GoalID: "goal-a", GoalRevision: 2,
+		AccountingRevision: 2, ReservedMinutes: 2, Identity: proofIdentity, Launcher: launcher, Now: now}))
+
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -217,7 +218,7 @@ func TestReserveAndFinalizeRecordTheHostLoad(t *testing.T) {
 	}
 	request := AdmissionRequest{ControlRoot: root, ExecutionRoot: root, GoalID: "goal-a", GoalRevision: 3,
 		AccountingRevision: 2, ReservedMinutes: 4, Identity: identity, Launcher: launcher, Now: now, ConfPath: conf}
-	attempt, _, err := ReserveLocked(request)
+	attempt, _, err := ReserveLocked(candidateAdmission(request))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -243,7 +244,7 @@ func TestReserveAndFinalizeRecordTheHostLoad(t *testing.T) {
 	green.CommandClass = "green-under-load"
 	green.IdentityDigest = green.digest()
 	request.Identity = green
-	succeeded, _, err := ReserveLocked(request)
+	succeeded, _, err := ReserveLocked(candidateAdmission(request))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -257,7 +258,7 @@ func TestReserveAndFinalizeRecordTheHostLoad(t *testing.T) {
 	cancelledIdentity.CommandClass = "cancelled-under-load"
 	cancelledIdentity.IdentityDigest = cancelledIdentity.digest()
 	request.Identity = cancelledIdentity
-	cancelled, _, err := ReserveLocked(request)
+	cancelled, _, err := ReserveLocked(candidateAdmission(request))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -271,7 +272,7 @@ func TestReserveAndFinalizeRecordTheHostLoad(t *testing.T) {
 	quiet.CommandClass = "failed-quietly"
 	quiet.IdentityDigest = quiet.digest()
 	request.Identity = quiet
-	lonely, _, err := ReserveLocked(request)
+	lonely, _, err := ReserveLocked(candidateAdmission(request))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -289,8 +290,9 @@ func TestOldRecordsFinalizeWithoutAFabricatedStartSample(t *testing.T) {
 		t.Fatal(err)
 	}
 	now := time.Date(2026, 9, 12, 17, 0, 0, 0, time.UTC)
-	attempt, _, err := ReserveLocked(AdmissionRequest{ControlRoot: root, ExecutionRoot: root, GoalID: "goal-a", GoalRevision: 3,
-		AccountingRevision: 2, ReservedMinutes: 4, Identity: identity, Launcher: launcher, Now: now})
+	attempt, _, err := ReserveLocked(candidateAdmission(AdmissionRequest{ControlRoot: root, ExecutionRoot: root, GoalID: "goal-a", GoalRevision: 3,
+		AccountingRevision: 2, ReservedMinutes: 4, Identity: identity, Launcher: launcher, Now: now}))
+
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -316,7 +318,7 @@ func TestRetryDecisionNamesThePriorAttemptsLoad(t *testing.T) {
 	now := time.Date(2026, 9, 12, 17, 0, 0, 0, time.UTC)
 	request := AdmissionRequest{ControlRoot: root, ExecutionRoot: root, GoalID: "goal-a", GoalRevision: 3,
 		AccountingRevision: 2, ReservedMinutes: 4, Identity: identity, Launcher: launcher, Now: now}
-	failed, _, err := ReserveLocked(request)
+	failed, _, err := ReserveLocked(candidateAdmission(request))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -334,7 +336,7 @@ func TestRetryDecisionNamesThePriorAttemptsLoad(t *testing.T) {
 	}
 	request.RetryDecisionPath = decisionPath
 	request.Now = now.Add(3 * time.Minute)
-	retry, _, err := ReserveLocked(request)
+	retry, _, err := ReserveLocked(candidateAdmission(request))
 	if err != nil || retry.Retry == nil {
 		t.Fatalf("retry = %+v, %v", retry, err)
 	}
@@ -394,8 +396,9 @@ func TestUnreadableAttemptRecordsAreSkippedNotFatal(t *testing.T) {
 		t.Fatal(err)
 	}
 	now := time.Date(2026, 9, 12, 17, 0, 0, 0, time.UTC)
-	good, _, err := ReserveLocked(AdmissionRequest{ControlRoot: root, ExecutionRoot: root, GoalID: "goal-a", GoalRevision: 3,
-		AccountingRevision: 2, ReservedMinutes: 4, Identity: identity, Launcher: launcher, Now: now})
+	good, _, err := ReserveLocked(candidateAdmission(AdmissionRequest{ControlRoot: root, ExecutionRoot: root, GoalID: "goal-a", GoalRevision: 3,
+		AccountingRevision: 2, ReservedMinutes: 4, Identity: identity, Launcher: launcher, Now: now}))
+
 	if err != nil {
 		t.Fatal(err)
 	}

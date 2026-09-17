@@ -321,8 +321,9 @@ func TestRunWatchdogEndsASuiteForAVerdictOrACancellationAndNothingElse(t *testin
 		if err != nil {
 			t.Fatal(err)
 		}
-		attempt, _, err := ReserveLocked(AdmissionRequest{ControlRoot: controlRoot, ExecutionRoot: controlRoot, GoalID: "goal-a",
-			GoalRevision: 2, AccountingRevision: 2, ReservedMinutes: 2, Identity: proofIdentity, Launcher: launcher, Now: time.Now().UTC()})
+		attempt, _, err := ReserveLocked(candidateAdmission(AdmissionRequest{ControlRoot: controlRoot, ExecutionRoot: controlRoot, GoalID: "goal-a",
+			GoalRevision: 2, AccountingRevision: 2, ReservedMinutes: 2, Identity: proofIdentity, Launcher: launcher, Now: time.Now().UTC()}))
+
 		if err != nil {
 			t.Fatal(err)
 		}

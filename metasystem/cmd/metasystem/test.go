@@ -152,6 +152,9 @@ type testingSelectionRequest struct {
 
 func admitTestingRun(request testingSelectionRequest, admission proofLaunchAdmission) (proofrun.Attempt, proofrun.LaunchResult, bool, error) {
 	admission.ExecuteAfresh = request.Purpose == testpolicy.PurposeCadence || request.NoReuse
+	if admission.CandidateTree == "" {
+		admission.CandidateTree = request.Tree
+	}
 	return admitProofLaunch(admission)
 }
 
@@ -846,7 +849,7 @@ func runTestRun(args []string) int {
 		ExecutionRoot: prepared.ProjectRoot, ConfPath: prepared.ConfPath, GoalID: request.GoalID, RetryDecision: request.RetryDecision,
 		CapMin: request.CapMin, ExpectedGoalRevision: request.ExpectedGoalRevision,
 		ExpectedAccountingRevision: request.ExpectedAccountingRevision,
-		ScopeClass:                 "selected", CommandClass: "testing", IdentityInputs: append([]string{"candidate-tree:" + prepared.CandidateTree, prepared.ContractDigest,
+		ScopeClass:                 "selected", CommandClass: "testing", CandidateTree: prepared.CandidateTree, IdentityInputs: append([]string{prepared.ContractDigest,
 			prepared.BaseContractDigest, prepared.PolicyEngineDigest, candidateEngine.Digest, prepared.BehaviorPolicyDigest, planDigest}, identityInputs...), Environment: prepared.Environment,
 		SharedEngine: engine, SharedManifestDigest: manifestDigest, ComponentIdentities: identities,
 		// A cadence attempt is the fresh sweep: it never inherits a
@@ -1185,7 +1188,7 @@ func printMovedProofInputs(request testingSelectionRequest, current proofrun.Tes
 		var sourceTree string
 		var newest time.Time
 		for _, attempt := range attempts {
-			if attempt.GoalID != goalID || attempt.AccountingRevision != accountingRevision ||
+			if !attemptAccountsForCandidate(attempt, goalID, accountingRevision) ||
 				attempt.Terminal == nil || attempt.Terminal.Result != proofrun.TerminalSuccess || attempt.TestResult == nil {
 				continue
 			}
@@ -1238,7 +1241,7 @@ func printMovedProofInputsWithoutCandidateEngine(request testingSelectionRequest
 		var sourceTree string
 		var newest time.Time
 		for _, attempt := range attempts {
-			if attempt.GoalID != prepared.GoalID || attempt.AccountingRevision != prepared.AccountingRevision ||
+			if !attemptAccountsForCandidate(attempt, prepared.GoalID, prepared.AccountingRevision) ||
 				attempt.Terminal == nil || attempt.Terminal.Result != proofrun.TerminalSuccess || attempt.TestResult == nil {
 				continue
 			}
@@ -1271,6 +1274,10 @@ func printMovedProofInputsWithoutCandidateEngine(request testingSelectionRequest
 			fmt.Fprintf(os.Stderr, "proof-input-moved-after-receipt: group %s was proved on tree %s with a different input identity; moved declared paths: %s\n", id, sourceTree, strings.Join(moved, ","))
 		}
 	}
+}
+
+func attemptAccountsForCandidate(attempt proofrun.Attempt, goalID string, accountingRevision uint64) bool {
+	return attempt.AccountedGoal() == goalID && attempt.AccountedRevision() == accountingRevision
 }
 
 func testInputManifestContains(manifest []string, candidate string) bool {

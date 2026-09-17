@@ -231,9 +231,10 @@ func TestGovernedExhaustionReprojectsSettledSpendAtConclusion(t *testing.T) {
 		if err != nil {
 			t.Fatal(err)
 		}
-		proof, _, err := proofrun.ReserveLocked(proofrun.AdmissionRequest{ControlRoot: root, ExecutionRoot: root,
+		proof, _, err := proofrun.ReserveLocked(candidateProofAdmission(proofrun.AdmissionRequest{ControlRoot: root, ExecutionRoot: root,
 			GoalID: "bounded", GoalRevision: 2, AccountingRevision: 2, ReservedMinutes: 30,
-			Identity: identity, Launcher: launcher, Now: now.Add(time.Minute), AttemptID: "late-proof"})
+			Identity: identity, Launcher: launcher, Now: now.Add(time.Minute), AttemptID: "late-proof"}))
+
 		if err != nil {
 			t.Fatal(err)
 		}

@@ -151,7 +151,7 @@ func admissionRequest(t *testing.T, admissionMax, overlaps int, known, nested bo
 }
 func TestAdmissionCapExemptsNestedReceipts(t *testing.T) {
 	request := admissionRequest(t, 1, 3, true, true)
-	attempt, decision, err := ReserveLocked(request)
+	attempt, decision, err := ReserveLocked(candidateAdmission(request))
 	if err != nil || decision.Disposition != DispositionExecuted || attempt.AttemptID == "" {
 		t.Fatalf("nested reserve = %+v, %+v, %v", attempt, decision, err)
 	}
@@ -159,7 +159,7 @@ func TestAdmissionCapExemptsNestedReceipts(t *testing.T) {
 	if err != nil || stored.AttemptID != attempt.AttemptID {
 		t.Fatalf("nested attempt was not written: %+v, %v", stored, err)
 	}
-	joined, _, err := JoinedComponentDecisionLocked(request)
+	joined, _, err := JoinedComponentDecisionLocked(candidateAdmission(request))
 	if err != nil || joined.Disposition == DispositionAdmissionRefused {
 		t.Fatalf("joined decision consulted admission cap: %+v, %v", joined, err)
 	}
@@ -171,7 +171,7 @@ func TestAdmissionCapRefusesAtTheCap(t *testing.T) {
 	}{{"at-cap", DispositionAdmissionRefused, 2}, {"below-cap", DispositionExecuted, 1}} {
 		t.Run(test.name, func(t *testing.T) {
 			request := admissionRequest(t, 2, test.overlaps, true, false)
-			attempt, decision, err := ReserveLocked(request)
+			attempt, decision, err := ReserveLocked(candidateAdmission(request))
 			if err != nil || decision.Disposition != test.want {
 				t.Fatalf("reserve = %+v, %+v, %v", attempt, decision, err)
 			}
@@ -267,7 +267,7 @@ func TestAdmissionRefusalNamesItsExpiryAndRuling(t *testing.T) {
 }
 func TestAdmissionCapAdmitsWhenOverlapIsUnknown(t *testing.T) {
 	request := admissionRequest(t, 1, 99, false, false)
-	attempt, decision, err := ReserveLocked(request)
+	attempt, decision, err := ReserveLocked(candidateAdmission(request))
 	if err != nil || decision.Disposition != DispositionExecuted || attempt.Load == nil || attempt.Load.Start.OverlapKnown {
 		t.Fatalf("unknown overlap reserve = %+v, %+v, %v", attempt, decision, err)
 	}
@@ -301,7 +301,7 @@ func TestAdmissionCapUsesTheRecordedStartSample(t *testing.T) {
 		}
 		return 99, true
 	}
-	attempt, decision, err := ReserveLocked(request)
+	attempt, decision, err := ReserveLocked(candidateAdmission(request))
 	if err != nil || decision.Disposition != DispositionExecuted || calls != 1 || attempt.Load.Start.OverlappingHost != 1 {
 		t.Fatalf("reserve sampled %d times: attempt=%+v decision=%+v error=%v", calls, attempt, decision, err)
 	}
@@ -325,7 +325,7 @@ func TestReserveSkipsTheNestedCensusWhenTheCapCannotRefuse(t *testing.T) {
 				calls++
 				return false, true
 			}
-			attempt, decision, err := ReserveLocked(request)
+			attempt, decision, err := ReserveLocked(candidateAdmission(request))
 			if err != nil || decision.Disposition != DispositionExecuted || attempt.AttemptID == "" {
 				t.Fatalf("reserve = %+v, %+v, %v", attempt, decision, err)
 			}

@@ -30,8 +30,9 @@ import (
 )
 
 const (
-	LegacyAttemptSchemaVersion = 1
-	AttemptSchemaVersion       = 2
+	LegacyAttemptSchemaVersion    = 1
+	AttemptSchemaVersion          = 2
+	CandidateAttemptSchemaVersion = 3
 
 	DispositionExecuted         = "executed"
 	DispositionFailed           = "failed"
@@ -143,30 +144,34 @@ type PendingCoverage struct {
 // Attempt is the retained accounting and outcome record for one admitted
 // proof. A nil Terminal result is accountable nonterminal work, never success.
 type Attempt struct {
-	SchemaVersion      int               `json:"schemaVersion"`
-	AttemptID          string            `json:"attemptId"`
-	GoalID             string            `json:"goalId"`
-	GoalRevision       uint64            `json:"goalRevision"`
-	AccountingRevision uint64            `json:"accountingRevision"`
-	BudgetEpoch        *uint64           `json:"budgetEpoch"`
-	ReservedMinutes    uint64            `json:"reservedMinutes"`
-	ObservedMinutes    uint64            `json:"observedMinutes"`
-	StartedAt          string            `json:"startedAt"`
-	Deadline           string            `json:"deadline"`
-	EndedAt            string            `json:"endedAt,omitempty"`
-	ProofIdentity      ProofIdentity     `json:"proofIdentity"`
-	ControlRoot        string            `json:"controlRoot"`
-	ExecutionRoot      string            `json:"executionRoot"`
-	Launcher           ProcessIdentity   `json:"launcher"`
-	ProcessKeys        []string          `json:"processKeys"`
-	Terminal           *AttemptTerminal  `json:"terminal,omitempty"`
-	PreviousAttempt    string            `json:"previousAttempt,omitempty"`
-	Retry              *RetryEvidence    `json:"retryEvidence,omitempty"`
-	ReservationOwner   *ReservationOwner `json:"reservationOwner,omitempty"`
-	CancellationIntent string            `json:"cancellationIntent,omitempty"`
-	PendingCoverage    *PendingCoverage  `json:"pendingCoverage,omitempty"`
-	PendingTestGroups  map[string]string `json:"pendingTestGroups,omitempty"`
-	DeliveryReceipt    json.RawMessage   `json:"deliveryReceipt,omitempty"`
+	SchemaVersion        int               `json:"schemaVersion"`
+	AttemptID            string            `json:"attemptId"`
+	GoalID               string            `json:"goalId"`
+	GoalRevision         uint64            `json:"goalRevision"`
+	AccountingRevision   uint64            `json:"accountingRevision"`
+	BudgetEpoch          *uint64           `json:"budgetEpoch"`
+	CandidateGoalID      string            `json:"candidateGoalId,omitempty"`
+	CandidateRevision    uint64            `json:"candidateRevision,omitempty"`
+	CandidateBudgetEpoch *uint64           `json:"candidateBudgetEpoch,omitempty"`
+	CandidateTree        string            `json:"candidateTree,omitempty"`
+	ReservedMinutes      uint64            `json:"reservedMinutes"`
+	ObservedMinutes      uint64            `json:"observedMinutes"`
+	StartedAt            string            `json:"startedAt"`
+	Deadline             string            `json:"deadline"`
+	EndedAt              string            `json:"endedAt,omitempty"`
+	ProofIdentity        ProofIdentity     `json:"proofIdentity"`
+	ControlRoot          string            `json:"controlRoot"`
+	ExecutionRoot        string            `json:"executionRoot"`
+	Launcher             ProcessIdentity   `json:"launcher"`
+	ProcessKeys          []string          `json:"processKeys"`
+	Terminal             *AttemptTerminal  `json:"terminal,omitempty"`
+	PreviousAttempt      string            `json:"previousAttempt,omitempty"`
+	Retry                *RetryEvidence    `json:"retryEvidence,omitempty"`
+	ReservationOwner     *ReservationOwner `json:"reservationOwner,omitempty"`
+	CancellationIntent   string            `json:"cancellationIntent,omitempty"`
+	PendingCoverage      *PendingCoverage  `json:"pendingCoverage,omitempty"`
+	PendingTestGroups    map[string]string `json:"pendingTestGroups,omitempty"`
+	DeliveryReceipt      json.RawMessage   `json:"deliveryReceipt,omitempty"`
 	// DeliveryReceiptBytes preserves the exact prepared schema-2 payload. A
 	// json.RawMessage is re-indented when the enclosing attempt is persisted,
 	// so it cannot be the recovery source for byte-exact publication.
@@ -196,26 +201,67 @@ type RetryDecision struct {
 }
 
 type AdmissionRequest struct {
-	ControlRoot         string
-	ExecutionRoot       string
-	ConfPath            string
-	GoalID              string
-	GoalRevision        uint64
-	AccountingRevision  uint64
-	BudgetEpoch         *uint64
-	ReservedMinutes     uint64
-	Identity            ProofIdentity
-	Launcher            ProcessIdentity
-	RetryDecisionPath   string
-	ReservationOwner    *ReservationOwner
-	Now                 time.Time
-	AttemptID           string
-	ComponentIdentities map[string]string
+	ControlRoot          string
+	ExecutionRoot        string
+	ConfPath             string
+	GoalID               string
+	GoalRevision         uint64
+	AccountingRevision   uint64
+	BudgetEpoch          *uint64
+	CandidateGoalID      string
+	CandidateRevision    uint64
+	CandidateBudgetEpoch *uint64
+	CandidateTree        string
+	ReservedMinutes      uint64
+	Identity             ProofIdentity
+	Launcher             ProcessIdentity
+	RetryDecisionPath    string
+	ReservationOwner     *ReservationOwner
+	Now                  time.Time
+	AttemptID            string
+	ComponentIdentities  map[string]string
 	// ExecuteAfresh never answers reusable-success: the caller wants a fresh
 	// execution (a cadence sweep, or a composer that could not compose from
 	// the seat's newest observations); live duplicates and retry decisions
 	// still apply.
 	ExecuteAfresh bool
+}
+
+// AccountedGoal returns the goal whose budget consumption owns the attempt.
+// The schema branch is deliberate: an incomplete schema-3 tuple must never be
+// silently reattributed to the authority goal.
+func (attempt Attempt) AccountedGoal() string {
+	if attempt.SchemaVersion == CandidateAttemptSchemaVersion {
+		return attempt.CandidateGoalID
+	}
+	return attempt.GoalID
+}
+
+func (attempt Attempt) AccountedRevision() uint64 {
+	if attempt.SchemaVersion == CandidateAttemptSchemaVersion {
+		return attempt.CandidateRevision
+	}
+	return attempt.AccountingRevision
+}
+
+func (attempt Attempt) AccountedBudgetEpoch() *uint64 {
+	if attempt.SchemaVersion == CandidateAttemptSchemaVersion {
+		return attempt.CandidateBudgetEpoch
+	}
+	return attempt.BudgetEpoch
+}
+
+// CandidateTreeDigest returns the candidate tree recorded by schema 3. Older
+// records derive it from their testing result or the legacy proof-identity
+// input so retained evidence remains readable without rewriting it.
+func (attempt Attempt) CandidateTreeDigest() (string, bool) {
+	if attempt.SchemaVersion == CandidateAttemptSchemaVersion {
+		return attempt.CandidateTree, validTreeDigest(attempt.CandidateTree)
+	}
+	if attempt.TestResult != nil && validTreeDigest(attempt.TestResult.CandidateTree) {
+		return attempt.TestResult.CandidateTree, true
+	}
+	return proofIdentityCandidateTree(attempt.ProofIdentity)
 }
 
 type LaunchResult struct {
@@ -395,12 +441,28 @@ func writeAttempt(attempt Attempt) error {
 }
 
 func validateAttempt(attempt Attempt) error {
-	if (attempt.SchemaVersion != LegacyAttemptSchemaVersion && attempt.SchemaVersion != AttemptSchemaVersion) || !safeAttemptID(attempt.AttemptID) ||
+	if (attempt.SchemaVersion != LegacyAttemptSchemaVersion && attempt.SchemaVersion != AttemptSchemaVersion &&
+		attempt.SchemaVersion != CandidateAttemptSchemaVersion) || !safeAttemptID(attempt.AttemptID) ||
 		attempt.GoalID == "" || attempt.GoalRevision == 0 || attempt.AccountingRevision == 0 ||
 		attempt.AccountingRevision > attempt.GoalRevision || attempt.ReservedMinutes == 0 ||
 		attempt.ControlRoot == "" || attempt.ExecutionRoot == "" || attempt.ProofIdentity.IdentityDigest == "" ||
 		attempt.Launcher.Pid < 1 || attempt.Launcher.Ref().Mode() == identity.CompareInvalid {
 		return fmt.Errorf("proof attempt has incomplete accounting, identity, or launcher facts")
+	}
+	if attempt.SchemaVersion == CandidateAttemptSchemaVersion {
+		if attempt.CandidateGoalID == "" || attempt.CandidateRevision == 0 {
+			return fmt.Errorf("schema-3 proof attempt has an incomplete candidate tuple")
+		}
+		if attempt.ProofIdentity.CommandClass == "testing" {
+			if !validTreeDigest(attempt.CandidateTree) {
+				return fmt.Errorf("schema-3 testing attempt has no valid candidate tree")
+			}
+		} else if attempt.CandidateTree != "" {
+			return fmt.Errorf("schema-3 non-testing attempt carries a candidate tree")
+		}
+	} else if attempt.CandidateGoalID != "" || attempt.CandidateRevision != 0 ||
+		attempt.CandidateBudgetEpoch != nil || attempt.CandidateTree != "" {
+		return fmt.Errorf("proof attempt schema %d cannot carry candidate fields", attempt.SchemaVersion)
 	}
 	if attempt.SchemaVersion == LegacyAttemptSchemaVersion && attempt.TestResult != nil {
 		return fmt.Errorf("legacy proof attempt cannot carry schema-2 testing evidence")
@@ -412,8 +474,13 @@ func validateAttempt(attempt Attempt) error {
 		if attempt.TestResult.AttemptID != attempt.AttemptID {
 			return fmt.Errorf("proof attempt testing evidence names a different attempt")
 		}
-		if candidateTree, ok := proofIdentityCandidateTree(attempt.ProofIdentity); ok && candidateTree != attempt.TestResult.CandidateTree {
+		if candidateTree, ok := attempt.CandidateTreeDigest(); ok && candidateTree != attempt.TestResult.CandidateTree {
 			return fmt.Errorf("proof attempt testing evidence names candidate tree %s, want %s", attempt.TestResult.CandidateTree, candidateTree)
+		}
+	}
+	if identityTree, ok := proofIdentityCandidateTree(attempt.ProofIdentity); ok {
+		if candidateTree, candidateOK := attempt.CandidateTreeDigest(); candidateOK && candidateTree != identityTree {
+			return fmt.Errorf("proof attempt candidate tree %s disagrees with proof identity tree %s", candidateTree, identityTree)
 		}
 	}
 	if err := validateProofIdentity(attempt.ProofIdentity); err != nil {
@@ -532,6 +599,30 @@ func sameUint64Value(left, right *uint64) bool {
 	return left == nil && right == nil || left != nil && right != nil && *left == *right
 }
 
+func testingAttemptSchema(version int) bool {
+	return version == AttemptSchemaVersion || version == CandidateAttemptSchemaVersion
+}
+
+// WithdrawReservationLocked removes an attempt only while it remains the
+// untouched reservation published by ReserveLocked. The caller holds the
+// proof mutation lock, so no observation can race the check and removal.
+func WithdrawReservationLocked(root, id string) error {
+	attempt, err := ReadAttempt(root, id)
+	if err != nil {
+		return err
+	}
+	if len(attempt.ProcessKeys) != 0 || attempt.Terminal != nil || attempt.TestResult != nil ||
+		attempt.ObservedMinutes != 0 || attempt.EndedAt != "" || attempt.CancellationIntent != "" ||
+		attempt.PendingCoverage != nil || len(attempt.PendingTestGroups) != 0 || len(CommittedDeliveryReceipt(attempt)) != 0 {
+		return fmt.Errorf("proof attempt %s has observations and cannot be withdrawn", id)
+	}
+	path, err := AttemptPath(root, id)
+	if err != nil {
+		return err
+	}
+	return os.Remove(path)
+}
+
 // ReserveLocked applies duplicate and retry rules while the caller holds the
 // goal-revision lock followed by the proof mutation lock.
 func ReserveLocked(request AdmissionRequest) (Attempt, LaunchResult, error) {
@@ -544,6 +635,16 @@ func ReserveLocked(request AdmissionRequest) (Attempt, LaunchResult, error) {
 	}
 	if request.ReservedMinutes == 0 || request.AccountingRevision == 0 || request.AccountingRevision > request.GoalRevision {
 		return Attempt{}, LaunchResult{}, fmt.Errorf("proof reservation requires positive bounded accounting facts")
+	}
+	if request.CandidateGoalID == "" || request.CandidateRevision == 0 {
+		return Attempt{}, LaunchResult{}, fmt.Errorf("proof reservation requires a complete candidate tuple")
+	}
+	if request.Identity.CommandClass == "testing" {
+		if !validTreeDigest(request.CandidateTree) {
+			return Attempt{}, LaunchResult{}, fmt.Errorf("testing proof reservation requires a valid candidate tree")
+		}
+	} else if request.CandidateTree != "" {
+		return Attempt{}, LaunchResult{}, fmt.Errorf("non-testing proof reservation cannot carry a candidate tree")
 	}
 	previous, decision, decided, err := repeatDecisionLocked(request)
 	if err != nil {
@@ -564,7 +665,7 @@ func ReserveLocked(request AdmissionRequest) (Attempt, LaunchResult, error) {
 	}
 	var retry *RetryEvidence
 	if previous != nil {
-		retry, err = readRetryDecision(request.RetryDecisionPath, request.ControlRoot, request.GoalID, previous.ProofIdentity.IdentityDigest, previous.AttemptID)
+		retry, err = readRetryDecision(request.RetryDecisionPath, request.ControlRoot, request, previous.ProofIdentity.IdentityDigest, previous.AttemptID)
 		if err != nil {
 			return Attempt{}, LaunchResult{}, err
 		}
@@ -595,9 +696,11 @@ func ReserveLocked(request AdmissionRequest) (Attempt, LaunchResult, error) {
 			ExitStatus: ExitAdmissionRefused, Reason: admission.RefusalReason(start.OverlappingHost)}, nil
 	}
 	attempt := Attempt{
-		SchemaVersion: AttemptSchemaVersion, AttemptID: id, GoalID: request.GoalID,
+		SchemaVersion: CandidateAttemptSchemaVersion, AttemptID: id, GoalID: request.GoalID,
 		GoalRevision: request.GoalRevision, AccountingRevision: request.AccountingRevision,
 		BudgetEpoch: request.BudgetEpoch, ReservedMinutes: request.ReservedMinutes,
+		CandidateGoalID: request.CandidateGoalID, CandidateRevision: request.CandidateRevision,
+		CandidateBudgetEpoch: request.CandidateBudgetEpoch, CandidateTree: request.CandidateTree,
 		StartedAt: now.Format(time.RFC3339Nano), Deadline: now.Add(time.Duration(request.ReservedMinutes) * time.Minute).Format(time.RFC3339Nano),
 		ProofIdentity: request.Identity, ControlRoot: request.ControlRoot, ExecutionRoot: request.ExecutionRoot,
 		Launcher: request.Launcher, ProcessKeys: []string{}, Retry: retry, ReservationOwner: request.ReservationOwner,
@@ -632,7 +735,7 @@ func JoinedComponentDecisionLocked(request AdmissionRequest) (LaunchResult, bool
 	if err != nil || decided || previous == nil {
 		return decision, decided, err
 	}
-	if _, err := readRetryDecision(request.RetryDecisionPath, request.ControlRoot, request.GoalID,
+	if _, err := readRetryDecision(request.RetryDecisionPath, request.ControlRoot, request,
 		previous.ProofIdentity.IdentityDigest, previous.AttemptID); err != nil {
 		return LaunchResult{}, false, err
 	}
@@ -663,11 +766,11 @@ func componentDecisionLocked(request AdmissionRequest) (*Attempt, LaunchResult, 
 		attempt Attempt
 		state   string
 	}
-	requestTree, requestTreeKnown := proofIdentityCandidateTree(request.Identity)
+	requestTree, requestTreeKnown := request.CandidateTree, validTreeDigest(request.CandidateTree)
 	latest := map[string]componentObservation{}
 	for index := range attempts {
 		candidate := attempts[index]
-		if candidate.GoalID != request.GoalID || candidate.AccountingRevision != request.AccountingRevision {
+		if candidate.AccountedGoal() != request.CandidateGoalID || candidate.AccountedRevision() != request.CandidateRevision {
 			continue
 		}
 		planned := componentInputs(candidate.ProofIdentity.IdentityInputs)
@@ -745,19 +848,21 @@ func componentDecisionLocked(request AdmissionRequest) (*Attempt, LaunchResult, 
 const candidateTreeIdentityPrefix = "candidate-tree:"
 
 func proofIdentityCandidateTree(identity ProofIdentity) (string, bool) {
-	for _, input := range identity.IdentityInputs {
-		if tree := strings.TrimPrefix(input, candidateTreeIdentityPrefix); tree != input && validTreeDigest(tree) {
-			return tree, true
-		}
+	if identity.CommandClass != "testing" || len(identity.IdentityInputs) == 0 {
+		return "", false
+	}
+	input := identity.IdentityInputs[0]
+	if validTreeDigest(input) {
+		return input, true
+	}
+	if tree := strings.TrimPrefix(input, candidateTreeIdentityPrefix); tree != input && validTreeDigest(tree) {
+		return tree, true
 	}
 	return "", false
 }
 
 func attemptCandidateTree(attempt Attempt) (string, bool) {
-	if attempt.TestResult != nil && validTreeDigest(attempt.TestResult.CandidateTree) {
-		return attempt.TestResult.CandidateTree, true
-	}
-	return proofIdentityCandidateTree(attempt.ProofIdentity)
+	return attempt.CandidateTreeDigest()
 }
 
 func failureBelongsToCandidate(attempt Attempt, requestTree string, requestTreeKnown bool) bool {
@@ -791,8 +896,8 @@ func BindJoinedTestComponentsLocked(root, attemptID string, identities map[strin
 	if err != nil {
 		return Attempt{}, err
 	}
-	if attempt.SchemaVersion != AttemptSchemaVersion || attempt.Terminal != nil || attempt.CancellationIntent != "" || attempt.TestResult != nil || len(attempt.PendingTestGroups) != 0 {
-		return Attempt{}, fmt.Errorf("live schema-%d proof attempt without an existing testing owner is required", AttemptSchemaVersion)
+	if !testingAttemptSchema(attempt.SchemaVersion) || attempt.Terminal != nil || attempt.CancellationIntent != "" || attempt.TestResult != nil || len(attempt.PendingTestGroups) != 0 {
+		return Attempt{}, fmt.Errorf("live testing-capable proof attempt without an existing testing owner is required")
 	}
 	attempt.PendingTestGroups = make(map[string]string, len(identities))
 	for id, identity := range identities {
@@ -835,7 +940,12 @@ func noChildDecisionLocked(request AdmissionRequest) (*Attempt, LaunchResult, bo
 	var previous *Attempt
 	for index := range attempts {
 		candidate := &attempts[index]
-		if candidate.GoalID != request.GoalID || candidate.ProofIdentity.IdentityDigest != request.Identity.IdentityDigest {
+		if candidate.AccountedGoal() != request.CandidateGoalID || candidate.AccountedRevision() != request.CandidateRevision ||
+			candidate.ProofIdentity.IdentityDigest != request.Identity.IdentityDigest {
+			continue
+		}
+		if candidate.Terminal != nil && candidate.Terminal.Result != TerminalSuccess &&
+			!failureBelongsToCandidate(*candidate, request.CandidateTree, validTreeDigest(request.CandidateTree)) {
 			continue
 		}
 		candidateStarted, _ := time.Parse(time.RFC3339Nano, candidate.StartedAt)
@@ -871,7 +981,7 @@ func noChildDecisionLocked(request AdmissionRequest) (*Attempt, LaunchResult, bo
 	return previous, LaunchResult{}, false, nil
 }
 
-func readRetryDecision(path, root, goalID, identityDigest, prior string) (*RetryEvidence, error) {
+func readRetryDecision(path, root string, request AdmissionRequest, identityDigest, prior string) (*RetryEvidence, error) {
 	info, err := os.Lstat(path)
 	if err != nil || !info.Mode().IsRegular() {
 		return nil, fmt.Errorf("retry decision must be a readable regular file")
@@ -894,8 +1004,14 @@ func readRetryDecision(path, root, goalID, identityDigest, prior string) (*Retry
 		return nil, fmt.Errorf("retry decision has incomplete accountable evidence")
 	}
 	priorAttempt, err := ReadAttempt(root, decision.PriorAttempt)
-	if err != nil || priorAttempt.GoalID != goalID || priorAttempt.ProofIdentity.IdentityDigest != identityDigest {
+	if err != nil || priorAttempt.AccountedGoal() != request.CandidateGoalID ||
+		priorAttempt.AccountedRevision() != request.CandidateRevision || priorAttempt.ProofIdentity.IdentityDigest != identityDigest {
 		return nil, fmt.Errorf("retry decision prior attempt is outside the same goal and input history")
+	}
+	if requestTree, requestTreeKnown := request.CandidateTree, validTreeDigest(request.CandidateTree); requestTreeKnown {
+		if priorTree, priorTreeKnown := priorAttempt.CandidateTreeDigest(); priorTreeKnown && priorTree != requestTree {
+			return nil, fmt.Errorf("RETRY_PRIOR_OUTSIDE_TREE: retry decision prior attempt is outside candidate tree %s", requestTree)
+		}
 	}
 	evidencePath := decision.EvidencePath
 	if !filepath.IsAbs(evidencePath) {
@@ -1212,8 +1328,8 @@ func RecordTestResult(root, id string, result TestResult) (Attempt, error) {
 	if err != nil {
 		return Attempt{}, err
 	}
-	if attempt.SchemaVersion != AttemptSchemaVersion || attempt.Terminal != nil || attempt.TestResult != nil {
-		return Attempt{}, fmt.Errorf("live schema-%d proof attempt without a retained test result is required", AttemptSchemaVersion)
+	if !testingAttemptSchema(attempt.SchemaVersion) || attempt.Terminal != nil || attempt.TestResult != nil {
+		return Attempt{}, fmt.Errorf("live testing-capable proof attempt without a retained test result is required")
 	}
 	result.AttemptID = attempt.AttemptID
 	if err := ValidateTestResult(result); err != nil {

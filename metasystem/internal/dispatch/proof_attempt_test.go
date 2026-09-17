@@ -25,10 +25,11 @@ func TestOrdinaryProofSharesGoalBudget(t *testing.T) {
 		t.Fatal(err)
 	}
 	started := time.Date(2026, 8, 28, 8, 15, 0, 0, time.UTC)
-	attempt, _, err := proofrun.ReserveLocked(proofrun.AdmissionRequest{
+	attempt, _, err := proofrun.ReserveLocked(candidateProofAdmission(proofrun.AdmissionRequest{
 		ControlRoot: root, ExecutionRoot: root, GoalID: "bounded", GoalRevision: 3, AccountingRevision: 3,
 		ReservedMinutes: 45, Identity: identity, Launcher: launcher, Now: started,
-	})
+	}))
+
 	if err != nil || attempt.BudgetEpoch != nil {
 		t.Fatalf("reserve ordinary proof with nullable epoch: attempt=%+v err=%v", attempt, err)
 	}
@@ -94,10 +95,11 @@ func TestProofOnlyGoalStopBatch(t *testing.T) {
 		t.Fatal(err)
 	}
 	now := time.Now().UTC()
-	attempt, _, err := proofrun.ReserveLocked(proofrun.AdmissionRequest{
+	attempt, _, err := proofrun.ReserveLocked(candidateProofAdmission(proofrun.AdmissionRequest{
 		ControlRoot: root, ExecutionRoot: root, GoalID: "bounded", GoalRevision: 2, AccountingRevision: 2,
 		ReservedMinutes: 5, Identity: identity, Launcher: launcher, Now: now,
-	})
+	}))
+
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -106,10 +108,11 @@ func TestProofOnlyGoalStopBatch(t *testing.T) {
 		t.Fatal(err)
 	}
 	self, _ := proofrun.CurrentProcessIdentity(nil)
-	unrelated, _, err := proofrun.ReserveLocked(proofrun.AdmissionRequest{
+	unrelated, _, err := proofrun.ReserveLocked(candidateProofAdmission(proofrun.AdmissionRequest{
 		ControlRoot: root, ExecutionRoot: root, GoalID: "other-goal", GoalRevision: 1, AccountingRevision: 1,
 		ReservedMinutes: 5, Identity: unrelatedIdentity, Launcher: self, Now: now,
-	})
+	}))
+
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -208,14 +211,15 @@ func TestProofGovernedReservationJoin(t *testing.T) {
 	}
 	deadline := started.Add(5 * time.Minute).Format(time.RFC3339Nano)
 	launcher, _ := proofrun.CurrentProcessIdentity(nil)
-	attempt, _, err := proofrun.ReserveLocked(proofrun.AdmissionRequest{
+	attempt, _, err := proofrun.ReserveLocked(candidateProofAdmission(proofrun.AdmissionRequest{
 		ControlRoot: root, ExecutionRoot: root, GoalID: "bounded", GoalRevision: 3, AccountingRevision: 3,
 		ReservedMinutes: 5, Identity: proofIdentity, Launcher: launcher, Now: started,
 		ReservationOwner: &proofrun.ReservationOwner{ControlRoot: root, RunID: record.RunId,
 			RunGeneration: record.Generation, LaunchNonce: record.LaunchNonce, GoalRevision: record.Governed.GoalRevision,
 			ObligationRevision: record.Governed.ObligationRevision, AttemptOrdinal: record.Governed.AttemptOrdinal,
 			BudgetEpoch: record.Governed.BudgetEpoch, Deadline: deadline},
-	})
+	}))
+
 	if err != nil {
 		t.Fatal(err)
 	}

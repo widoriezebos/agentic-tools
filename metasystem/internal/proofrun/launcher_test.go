@@ -28,7 +28,7 @@ func TestWaitAttemptAfterDrain(t *testing.T) {
 		t.Fatal(err)
 	}
 	now := time.Now().UTC()
-	attempt, _, err := ReserveLocked(AdmissionRequest{ControlRoot: root, ExecutionRoot: root, GoalID: "goal-a", GoalRevision: 2, AccountingRevision: 2, ReservedMinutes: 2, Identity: proofIdentity, Launcher: launcher, Now: now})
+	attempt, _, err := ReserveLocked(candidateAdmission(AdmissionRequest{ControlRoot: root, ExecutionRoot: root, GoalID: "goal-a", GoalRevision: 2, AccountingRevision: 2, ReservedMinutes: 2, Identity: proofIdentity, Launcher: launcher, Now: now}))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -250,10 +250,11 @@ func TestProofFinalizationStopRace(t *testing.T) {
 		t.Fatal(err)
 	}
 	now := time.Now().UTC()
-	attempt, _, err := ReserveLocked(AdmissionRequest{
+	attempt, _, err := ReserveLocked(candidateAdmission(AdmissionRequest{
 		ControlRoot: controlRoot, ExecutionRoot: executionRoot, GoalID: "goal-a", GoalRevision: 2,
 		AccountingRevision: 2, ReservedMinutes: 2, Identity: proofIdentity, Launcher: launcher, Now: now,
-	})
+	}))
+
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -327,10 +328,11 @@ func TestWaitPublishedAtOwners(t *testing.T) {
 		t.Fatal(err)
 	}
 	now := time.Now().UTC()
-	attempt, _, err := ReserveLocked(AdmissionRequest{
+	attempt, _, err := ReserveLocked(candidateAdmission(AdmissionRequest{
 		ControlRoot: controlRoot, ExecutionRoot: executionRoot, GoalID: "goal-a", GoalRevision: 2,
 		AccountingRevision: 2, ReservedMinutes: 2, Identity: proofIdentity, Launcher: launcher, Now: now,
-	})
+	}))
+
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -385,8 +387,9 @@ func TestProofCancellationBeforeChildCreationStartsNoChild(t *testing.T) {
 		t.Fatal(err)
 	}
 	now := time.Now().UTC()
-	attempt, _, err := ReserveLocked(AdmissionRequest{ControlRoot: root, ExecutionRoot: root, GoalID: "goal-a",
-		GoalRevision: 2, AccountingRevision: 2, ReservedMinutes: 2, Identity: proofIdentity, Launcher: launcher, Now: now})
+	attempt, _, err := ReserveLocked(candidateAdmission(AdmissionRequest{ControlRoot: root, ExecutionRoot: root, GoalID: "goal-a",
+		GoalRevision: 2, AccountingRevision: 2, ReservedMinutes: 2, Identity: proofIdentity, Launcher: launcher, Now: now}))
+
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -443,8 +446,9 @@ func testJoinedLaunchInputParity(t *testing.T, commandClass string) {
 		t.Fatal(err)
 	}
 	now := time.Now().UTC()
-	attempt, _, err := ReserveLocked(AdmissionRequest{ControlRoot: controlRoot, ExecutionRoot: controlRoot, GoalID: "goal-a",
-		GoalRevision: 2, AccountingRevision: 2, ReservedMinutes: 2, Identity: parentIdentity, Launcher: launcher, Now: now})
+	attempt, _, err := ReserveLocked(candidateAdmission(AdmissionRequest{ControlRoot: controlRoot, ExecutionRoot: controlRoot, GoalID: "goal-a",
+		GoalRevision: 2, AccountingRevision: 2, ReservedMinutes: 2, Identity: parentIdentity, Launcher: launcher, Now: now}))
+
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -503,8 +507,9 @@ func TestPreparationCrossingTheReservationStillCommitsSuccess(t *testing.T) {
 		t.Fatal(err)
 	}
 	now := time.Now().UTC().Add(-59*time.Second - 500*time.Millisecond)
-	attempt, _, err := ReserveLocked(AdmissionRequest{ControlRoot: root, ExecutionRoot: root, GoalID: "goal-a",
-		GoalRevision: 2, AccountingRevision: 2, ReservedMinutes: 1, Identity: proofIdentity, Launcher: launcher, Now: now})
+	attempt, _, err := ReserveLocked(candidateAdmission(AdmissionRequest{ControlRoot: root, ExecutionRoot: root, GoalID: "goal-a",
+		GoalRevision: 2, AccountingRevision: 2, ReservedMinutes: 1, Identity: proofIdentity, Launcher: launcher, Now: now}))
+
 	if err != nil {
 		t.Fatal(err)
 	}

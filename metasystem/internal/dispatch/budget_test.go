@@ -487,10 +487,11 @@ func TestReservedJobMinutesIsSumOfNamedComponents(t *testing.T) {
 			t.Fatal(err)
 		}
 		terminalStarted := time.Date(2026, 8, 28, 8, 0, 0, 0, time.UTC)
-		terminal, _, err := proofrun.ReserveLocked(proofrun.AdmissionRequest{
+		terminal, _, err := proofrun.ReserveLocked(candidateProofAdmission(proofrun.AdmissionRequest{
 			ControlRoot: root, ExecutionRoot: root, GoalID: "bounded", GoalRevision: 3, AccountingRevision: 3,
 			ReservedMinutes: 20, Identity: terminalIdentity, Launcher: launcher, Now: terminalStarted, AttemptID: "sum-terminal-proof",
-		})
+		}))
+
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -498,11 +499,11 @@ func TestReservedJobMinutesIsSumOfNamedComponents(t *testing.T) {
 			terminalStarted.Add(5*time.Minute)); err != nil {
 			t.Fatal(err)
 		}
-		if _, _, err := proofrun.ReserveLocked(proofrun.AdmissionRequest{
+		if _, _, err := proofrun.ReserveLocked(candidateProofAdmission(proofrun.AdmissionRequest{
 			ControlRoot: root, ExecutionRoot: root, GoalID: "bounded", GoalRevision: 3, AccountingRevision: 3,
 			ReservedMinutes: 15, Identity: liveIdentity, Launcher: launcher,
 			Now: time.Date(2026, 8, 28, 9, 0, 0, 0, time.UTC), AttemptID: "sum-live-proof",
-		}); err != nil {
+		})); err != nil {
 			t.Fatal(err)
 		}
 	}
@@ -574,10 +575,11 @@ func TestBudgetProjectionRefusesObservedProofAccountingOverflow(t *testing.T) {
 		t.Fatal(err)
 	}
 	started := time.Date(2026, 8, 28, 8, 2, 0, 0, time.UTC)
-	attempt, _, err := proofrun.ReserveLocked(proofrun.AdmissionRequest{
+	attempt, _, err := proofrun.ReserveLocked(candidateProofAdmission(proofrun.AdmissionRequest{
 		ControlRoot: root, ExecutionRoot: root, GoalID: "bounded", GoalRevision: 3, AccountingRevision: 3,
 		ReservedMinutes: 1, Identity: proofIdentity, Launcher: launcher, Now: started, AttemptID: "overflowed-terminal-proof",
-	})
+	}))
+
 	if err != nil {
 		t.Fatal(err)
 	}

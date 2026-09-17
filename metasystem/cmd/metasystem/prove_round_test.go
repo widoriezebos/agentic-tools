@@ -226,6 +226,21 @@ func TestNewestAttemptForTreeIsTheNewestMatchingOne(t *testing.T) {
 	}
 }
 
+func TestProveRoundFindsTheAttemptByCandidate(t *testing.T) {
+	tree := strings.Repeat("a", 40)
+	now := time.Date(2026, 9, 12, 20, 0, 0, 0, time.UTC).Format(time.RFC3339Nano)
+	attempts := []proofrun.Attempt{
+		{SchemaVersion: proofrun.CandidateAttemptSchemaVersion, AttemptID: "candidate", GoalID: "authority-c", CandidateGoalID: "goal-x",
+			StartedAt: now, TestResult: &proofrun.TestResult{CandidateTree: tree}},
+		{SchemaVersion: proofrun.CandidateAttemptSchemaVersion, AttemptID: "authority", GoalID: "goal-x", CandidateGoalID: "other",
+			StartedAt: now, TestResult: &proofrun.TestResult{CandidateTree: tree}},
+	}
+	got, found := newestAttemptForTree(attempts, tree, "goal-x", nil)
+	if !found || got.AttemptID != "candidate" {
+		t.Fatalf("round discovery selected authority instead of candidate: got=%+v found=%t", got, found)
+	}
+}
+
 func TestADiagnosticAttemptNeverBecomesATestingReceipt(t *testing.T) {
 	for _, test := range []struct {
 		name       string
