@@ -93,8 +93,10 @@ type TrunkRedEntry struct {
 }
 
 type trunkRedFile struct {
-	Schema  int             `json:"schema"`
-	Entries []TrunkRedEntry `json:"entries"`
+	Schema       int             `json:"schema"`
+	Entries      []TrunkRedEntry `json:"entries"`
+	Cadence      *CadenceStatus  `json:"cadence,omitempty"`
+	CadenceClaim *CadenceClaim   `json:"cadenceClaim,omitempty"`
 }
 
 // ParseTrunkRed validates the complete register before any reader can act on it.
@@ -115,6 +117,19 @@ func ParseTrunkRed(data []byte) ([]TrunkRedEntry, []Problem) {
 	}
 	if file.Entries == nil {
 		addf("entries must be an array")
+	}
+	if file.Cadence != nil {
+		if err := validateCadenceStatus(file.Cadence); err != nil {
+			addf("%v", err)
+		}
+	}
+	if file.CadenceClaim != nil {
+		if err := validateCadenceClaim(file.CadenceClaim); err != nil {
+			addf("%v", err)
+		}
+	}
+	if file.Cadence != nil && file.CadenceClaim != nil && file.Cadence.Key() == file.CadenceClaim.Key {
+		addf("cadence status and claim have the same terminal key")
 	}
 	ids := map[string]bool{}
 	openIdentities := map[string]bool{}
@@ -331,13 +346,16 @@ func cleanTrunkRedEntry(entry TrunkRedEntry) TrunkRedEntry {
 }
 
 type TrunkRedRecordArgs struct {
-	Batch        string                `json:"batch"`
-	Attempt      string                `json:"attempt"`
-	BaseCommit   string                `json:"baseCommit"`
-	BaseTree     string                `json:"baseTree"`
-	SeenAt       string                `json:"seenAt"`
-	OwnerMachine string                `json:"ownerMachine"`
-	Groups       []TrunkRedRecordGroup `json:"groups"`
+	Batch            string                `json:"batch"`
+	Attempt          string                `json:"attempt"`
+	BaseCommit       string                `json:"baseCommit"`
+	BaseTree         string                `json:"baseTree"`
+	SeenAt           string                `json:"seenAt"`
+	OwnerMachine     string                `json:"ownerMachine"`
+	Groups           []TrunkRedRecordGroup `json:"groups"`
+	Cadence          *CadenceStatus        `json:"cadence,omitempty"`
+	CadenceClaim     *CadenceClaim         `json:"cadenceClaim,omitempty"`
+	CadenceClaimOpid string                `json:"cadenceClaimOpid,omitempty"`
 }
 
 type TrunkRedRecordGroup struct {
@@ -376,13 +394,23 @@ func trunkRedRecordRequest(r VerbRequest, args TrunkRedRecordArgs) PublishReques
 			if err != nil {
 				return nil, err
 			}
+			handled, cadenceAlready, err := applyCadenceRecord(tree, r, args)
+			if err != nil {
+				return nil, err
+			}
+			if handled {
+				if cadenceAlready {
+					return nil, AlreadyApplied{}
+				}
+				return []Change{{Path: trunkRedPath, Content: renderTrunkRedState(tree.TrunkRed, tree.Cadence, tree.CadenceClaim)}}, nil
+			}
 			already := 0
 			for _, group := range args.Groups {
 				if trunkRedSightingExists(tree.TrunkRed, group.Identity, r.opid()) {
 					already++
 				}
 			}
-			if already == len(args.Groups) && len(args.Groups) > 0 {
+			if already == len(args.Groups) && (len(args.Groups) > 0 || cadenceAlready) {
 				return nil, AlreadyApplied{}
 			}
 			for _, group := range args.Groups {
@@ -407,9 +435,13 @@ func trunkRedRecordRequest(r VerbRequest, args TrunkRedRecordArgs) PublishReques
 					if args.OwnerMachine != "" {
 						owner = TrunkRedOwner{Machine: args.OwnerMachine, Since: args.SeenAt, How: "joiner"}
 					}
+					holds := []string{}
+					if args.Batch != "" {
+						holds = append(holds, args.Batch)
+					}
 					tree.TrunkRed = append(tree.TrunkRed, TrunkRedEntry{ID: id, Identity: group.Identity, Group: group.Group,
 						Status: group.Status, Failures: append([]TrunkRedFailure(nil), group.Failures...), NotRunReason: group.NotRunReason,
-						Sightings: []TrunkRedSighting{sighting}, Owner: owner, Holds: []string{args.Batch}, Opened: args.SeenAt})
+						Sightings: []TrunkRedSighting{sighting}, Owner: owner, Holds: holds, Opened: args.SeenAt})
 					continue
 				}
 				entry.Group, entry.Status, entry.NotRunReason = group.Group, group.Status, group.NotRunReason
@@ -422,7 +454,7 @@ func trunkRedRecordRequest(r VerbRequest, args TrunkRedRecordArgs) PublishReques
 					entry.Owner = TrunkRedOwner{Machine: args.OwnerMachine, Since: args.SeenAt, How: "joiner"}
 				}
 			}
-			return []Change{{Path: trunkRedPath, Content: RenderTrunkRed(tree.TrunkRed)}}, nil
+			return []Change{{Path: trunkRedPath, Content: renderTrunkRedState(tree.TrunkRed, tree.Cadence, tree.CadenceClaim)}}, nil
 		},
 		Validate: func(commit string) error { return ValidateCommit(r.Endpoint.Root, commit) },
 	}
@@ -509,7 +541,7 @@ func trunkRedClearRequest(r VerbRequest, args TrunkRedClearArgs) PublishRequest 
 			if args.BranchMerged && entry.FixBranch.Name != "" {
 				entry.FixBranch.State = TrunkRedBranchMerged
 			}
-			return []Change{{Path: trunkRedPath, Content: RenderTrunkRed(tree.TrunkRed)}}, nil
+			return []Change{{Path: trunkRedPath, Content: renderTrunkRedState(tree.TrunkRed, tree.Cadence, tree.CadenceClaim)}}, nil
 		},
 		Validate: func(commit string) error { return ValidateCommit(r.Endpoint.Root, commit) },
 	}
@@ -574,7 +606,7 @@ func trunkRedOwnRequest(r VerbRequest, args TrunkRedOwnArgs) PublishRequest {
 			if args.Branch != "" {
 				entry.FixBranch = TrunkRedBranch{Name: args.Branch, Commit: args.BranchCommit, State: TrunkRedBranchOpen}
 			}
-			return []Change{{Path: trunkRedPath, Content: RenderTrunkRed(tree.TrunkRed)}}, nil
+			return []Change{{Path: trunkRedPath, Content: renderTrunkRedState(tree.TrunkRed, tree.Cadence, tree.CadenceClaim)}}, nil
 		},
 		Validate: func(commit string) error { return ValidateCommit(r.Endpoint.Root, commit) },
 	}
@@ -613,7 +645,7 @@ func trunkRedCloseRequest(r VerbRequest, args TrunkRedCloseArgs) PublishRequest 
 			}
 			entry.Closed = &TrunkRedClosure{At: r.stamp(), How: "hand", Opid: r.opid(), By: args.By, Why: args.Why}
 			entry.Holds = []string{}
-			return []Change{{Path: trunkRedPath, Content: RenderTrunkRed(tree.TrunkRed)}}, nil
+			return []Change{{Path: trunkRedPath, Content: renderTrunkRedState(tree.TrunkRed, tree.Cadence, tree.CadenceClaim)}}, nil
 		},
 		Validate: func(commit string) error { return ValidateCommit(r.Endpoint.Root, commit) },
 	}

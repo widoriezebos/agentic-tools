@@ -34,6 +34,8 @@ type TreeGoals struct {
 	Abandoned      map[string]*GoalFile
 	AbandonedPaths map[string]string
 	TrunkRed       []TrunkRedEntry
+	Cadence        *CadenceStatus
+	CadenceClaim   *CadenceClaim
 }
 
 // Archived returns an archived record without assigning completion semantics
@@ -127,6 +129,7 @@ func ParseTreeFiles(files map[string][]byte) (*TreeGoals, []Problem) {
 			}
 			if len(entryProblems) == 0 {
 				t.TrunkRed = entries
+				t.Cadence, t.CadenceClaim = trunkRedCadenceFields(data)
 			}
 		case strings.HasPrefix(rel, "done/") && strings.HasSuffix(rel, ".md") && !strings.Contains(strings.TrimPrefix(rel, "done/"), "/"):
 			// PERMANENT, not soak (named reason per Ruling N):
