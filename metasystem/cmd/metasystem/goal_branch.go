@@ -373,7 +373,7 @@ func runGoalBranchLandPrepWith(args []string, dependencies goalBranchLandPrepDep
 		redResult, redErr := branch.HandleLandingRed(branch.RedRequest{
 			Goal: *goalID, Endpoint: result.Endpoint, Branch: "goal/" + *goalID, BranchTip: branchTip,
 			LastUnit: result.LastUnit, Proof: branch.LandingProof{Number: result.ProofNumber,
-				Endpoint: result.Endpoint, Candidate: result.Candidate, Landing: result.Landing, Attempt: result.Attempt},
+				Endpoint: result.Endpoint, Candidate: result.Candidate, Landing: result.Landing, RetryIdentity: result.RetryIdentity, Attempt: result.Attempt},
 			FailingGroups: result.FailingGroups, ChangeSet: changeSet, Contract: contract,
 			AdmitDiagnostic: admit, Runner: dependencies.Runner, TrunkRed: dependencies.TrunkRed, Progress: dependencies.Progress,
 		})

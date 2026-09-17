@@ -95,3 +95,39 @@ func TestPrefixRedPersistenceFailureIsReturned(t *testing.T) {
 		t.Fatalf("prefix persistence failure=%T %v", err, err)
 	}
 }
+
+func TestBatchMemberRecordReceiptAndNextCarryIdentity(t *testing.T) {
+	bed := assemblyFixture(t)
+	member := BranchMember{GoalID: "goal-a", Tip: "branch-tip", Builds: []BranchBuild{
+		{Units: []string{"8", "9"}, Commit: "commit-89"},
+		{Units: []string{"10a", "10b"}, Commit: "commit-10"},
+	}}
+	bed.record.Units[0] = BindBranchMember(bed.record.Units[0], member)
+	bed.record.State = StateLanding
+	bed.record.PrefixTrees = []string{"prefix-a", "prefix-b"}
+	bed.record.TipTree = "prefix-b"
+	bed.record.Proof = &Proof{Status: "green", AttemptID: "tip", SelectedGroups: []string{"group"}}
+	store := NewStore(bed.root, nil)
+	must(t, store.Create(bed.record))
+	must(t, ComposePrefixReceipts(store, testBatchID, "owner", time.Unix(3, 0), PrefixReceiptSeams{Execute: func(string, string, []string) (PrefixRunResult, error) {
+		return PrefixRunResult{AttemptID: "prefix"}, nil
+	}}))
+	record := load(t, store)
+	receipt := record.Receipts["goal-a"]
+	if !slices.Equal(record.Units[0].CommitIDs, []string{"commit-89", "commit-10"}) || record.Units[0].LastUnit != "10b" ||
+		!slices.Equal(receipt.CommitIDs, record.Units[0].CommitIDs) || receipt.LastUnit != "10b" || !slices.Equal(receipt.Units, []string{"8", "9", "10a", "10b"}) {
+		t.Fatalf("record=%+v receipt=%+v", record.Units[0], receipt)
+	}
+	must(t, RequestReturn(store, testBatchID, "goal-a", UnitEjected, "attempt=red groups=group", "owner", time.Unix(4, 0)))
+	var next string
+	must(t, ReturnUnits(store, testBatchID, "tree", "owner", time.Unix(5, 0), ReturnSeams{
+		Read: func(string, string, string) (ReturnLedgerGoal, error) {
+			return ReturnLedgerGoal{Claimed: true, Machine: "landing", Lineage: "owner", Batch: testBatchID}, nil
+		},
+		Target:  func(Unit) ReturnTarget { return ReturnTarget{State: ReturnTargetDead} },
+		Release: func(_ string, value string) error { next = value; return nil },
+	}))
+	if !strings.Contains(next, "goal-a through 10b") || !strings.Contains(next, "attempt=red groups=group") {
+		t.Fatalf("Next=%q", next)
+	}
+}

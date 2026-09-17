@@ -10,6 +10,8 @@ import (
 	"strings"
 	"testing"
 	"time"
+
+	goalbranch "github.com/widoriezebos/agentic-tools/metasystem/internal/goal/branch"
 )
 
 func landingBed(t *testing.T) (assemblyBed, Store) {
@@ -201,10 +203,46 @@ func TestBatchLandingHeldRefusalNamesCause(t *testing.T) {
 	}
 }
 
-// TestBatchDelegationRules keeps the name the protected test contract lists for
-// batch-buildcd-standard: a landing cannot drop or rename a listed test. Since
-// BLB-R3-001 nothing delegates; the test checks the landing-side rule that
-// only the green proof's actor lands.
+func TestBatchMemberLandsEveryBuildInOrder(t *testing.T) {
+	message := BranchLandingMessage("goal-a", BranchBuild{Units: []string{"10a", "10b"}, Commit: "source-10", Digest: "digest-10",
+		Folds: []goalbranch.Commit{{ID: "fold-source"}}, FoldPaths: []string{"metasystem/plans/goal-a.md"}, CoAuthors: []string{"Reader <reader@example.invalid>"}}, true)
+	for _, trailer := range []string{"Goal-Unit: goal-a/10a+10b", "Goal-Digest: digest-10", "Goal-Source: fold-source", "Goal-Source: source-10", "Goal-Fold: metasystem/plans/goal-a.md", "Co-Authored-By: Reader <reader@example.invalid>", "Goal-Last: goal-a"} {
+		if !strings.Contains(message, trailer) {
+			t.Fatalf("landing message lacks %q:\n%s", trailer, message)
+		}
+	}
+	bed := assemblyFixture(t)
+	bed.record.Units = bed.record.Units[:1]
+	bed.record.Units[0] = BindBranchMember(bed.record.Units[0], BranchMember{GoalID: "goal-a", Tip: "tip-a", Builds: []BranchBuild{
+		{Units: []string{"8", "9"}, Commit: "source-89", Digest: "digest-89"},
+		{Units: []string{"10a", "10b"}, Commit: "source-10", Digest: "digest-10"},
+	}})
+	bed.record.State, bed.record.PrefixTrees, bed.record.TipTree = StateLanding, []string{"prefix-a"}, "prefix-a"
+	bed.record.Proof = &Proof{Status: "green", AttemptID: "tip"}
+	bed.record.History = append(bed.record.History, HistoryEntry{At: time.Unix(3, 0).UTC().Format(time.RFC3339Nano), Verb: "prove", From: StateProving, To: StateLanding, Actor: "owner"})
+	bed.record.Receipts = map[string]PrefixReceipt{"goal-a": {GoalID: "goal-a", Tree: "prefix-a", CommitIDs: []string{"source-89", "source-10"}, LastUnit: "10b"}}
+	store := NewStore(bed.root, nil)
+	must(t, store.Create(bed.record))
+	var events []string
+	seams := greenLandSeams(&events)
+	seams.ApplyBuild = func(_ Unit, build BranchBuild) error { events = append(events, "apply:"+build.Commit); return nil }
+	seams.AppendBuildReceipt = func(_ Unit, build BranchBuild, _ PrefixReceipt) error {
+		events = append(events, "receipt:"+build.Commit)
+		return nil
+	}
+	seams.CommitBuild = func(_ Unit, build BranchBuild, _ PrefixReceipt) (string, error) {
+		events = append(events, "commit:"+build.Commit)
+		return "landed-" + build.Commit, nil
+	}
+	must(t, LandSeries(store, testBatchID, "owner", time.Unix(4, 0), seams))
+	want := []string{"apply:source-89", "receipt:source-89", "commit:source-89", "apply:source-10", "receipt:source-10", "commit:source-10", "held", "push", "cleanup"}
+	if !slices.Equal(events, want) || load(t, store).Landing.Commits["goal-a"] != "landed-source-10" {
+		t.Fatalf("events=%v progress=%+v", events, load(t, store).Landing)
+	}
+}
+
+// TestBatchDelegationRules keeps the name protected by testing.json and checks
+// that only the actor responsible for the green proof can land its candidate.
 func TestBatchDelegationRules(t *testing.T) {
 	bed, _ := landingBed(t)
 	bed.record.History = append(bed.record.History, HistoryEntry{At: time.Unix(3, 0).UTC().Format(time.RFC3339Nano), Verb: "prove", From: StateProving, To: StateLanding, Actor: "landing-owner"})
@@ -296,6 +334,37 @@ func TestBatchRecoveryRefusalsNameCauses(t *testing.T) {
 			t.Fatalf("cleanup refusal=%v", err)
 		}
 	})
+}
+
+func TestBatchRecoveryRequiresEveryMemberGoalSource(t *testing.T) {
+	bed := assemblyFixture(t)
+	bed.record.State = StateLanding
+	bed.record.Proof = &Proof{Status: "green", AttemptID: "tip"}
+	bed.record.History = append(bed.record.History, HistoryEntry{At: time.Unix(3, 0).UTC().Format(time.RFC3339Nano), Verb: "prove", From: StateProving, To: StateLanding, Actor: "owner"})
+	bed.record.Units = bed.record.Units[:1]
+	bed.record.Units[0].CommitIDs = []string{"source-a", "source-b"}
+	bed.record.Units[0].LastUnit = "10b"
+	bed.record.Landing = &LandingProgress{Base: bed.record.BaseTree, PushComplete: true, PushedTip: "tip"}
+	store := NewStore(bed.root, nil)
+	must(t, store.Create(bed.record))
+	foundB, finalized := false, 0
+	seams := RecoverySeams{
+		OriginSource: func(_ Unit, source string) (string, bool, error) {
+			return "landed-" + source, source == "source-a" || foundB, nil
+		},
+		Finalize: func(Unit, string) error { finalized++; return nil },
+		Cleanup:  func() error { return nil },
+	}
+	must(t, RecoverPushedSeries(store, testBatchID, "owner", time.Unix(4, 0), seams))
+	if finalized != 0 || load(t, store).Units[0].P6Done {
+		t.Fatalf("partial Goal-Source set finalized member: finalized=%d record=%+v", finalized, load(t, store))
+	}
+	foundB = true
+	must(t, RecoverPushedSeries(store, testBatchID, "owner", time.Unix(5, 0), seams))
+	must(t, RecoverPushedSeries(store, testBatchID, "owner", time.Unix(6, 0), seams))
+	if finalized != 1 || load(t, store).State != StateLanded {
+		t.Fatalf("finalized=%d record=%+v", finalized, load(t, store))
+	}
 }
 
 func TestApplyCertifiedPatchStagesTheTransportedBytes(t *testing.T) {

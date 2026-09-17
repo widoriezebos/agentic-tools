@@ -183,6 +183,11 @@ func ReassembleSurvivors(store Store, id, actor string, at time.Time) error {
 	}
 	survivors := slices.DeleteFunc(slices.Clone(record.Units), func(unit Unit) bool { return unit.State != UnitJoined })
 	if len(survivors) == 0 {
+		if record.Landing != nil {
+			if err := DeleteLandingBranch(store.root, id, record.Landing.BranchTip); err != nil {
+				return err
+			}
+		}
 		return store.Update(id, func(current *Record) error {
 			current.PrefixTrees, current.SelectedGroups, current.Seal, current.Proof, current.Landing, current.Receipts = nil, nil, nil, nil, nil, nil
 			current.TipTree = current.BaseTree
@@ -194,8 +199,18 @@ func ReassembleSurvivors(store Store, id, actor string, at time.Time) error {
 	if err != nil {
 		return err
 	}
+	branchTip := ""
+	if record.Landing != nil && record.Landing.BranchTip != "" && slices.ContainsFunc(survivors, func(unit Unit) bool { return len(unit.Builds) != 0 }) {
+		branchTip, err = RebuildLandingBranch(store.root, id, record.BaseTree, record.Landing.BranchTip, actor, survivors)
+		if err != nil {
+			return err
+		}
+	}
 	return store.Update(id, func(current *Record) error {
 		current.PrefixTrees, current.SelectedGroups, current.Seal, current.Proof, current.Landing, current.Receipts = prefixes, nil, nil, nil, nil, nil
+		if branchTip != "" {
+			current.Landing = &LandingProgress{Base: current.BaseTree, BranchTip: branchTip}
+		}
 		current.TipTree = prefixes[len(prefixes)-1]
 		current.ClosedReason = ""
 		current.Transition(StateOpen, at, "reassemble", actor, "survivors")

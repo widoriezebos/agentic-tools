@@ -102,6 +102,9 @@ func ReturnUnits(store Store, batchID, tree, actor string, at time.Time, seams R
 				err = seams.HandBack(unit.GoalID, unit.Claim, target.Epoch)
 			case ReturnTargetDead, ReturnTargetRestarted, ReturnTargetOccupied:
 				next := unit.Outcome + ": " + unit.Failure
+				if unit.LastUnit != "" {
+					next = unit.Outcome + " " + unit.GoalID + " through " + unit.LastUnit + ": " + unit.Failure
+				}
 				if target.Reason != "" {
 					next = target.Reason + "; " + next
 				}

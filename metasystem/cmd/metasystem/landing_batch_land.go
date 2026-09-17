@@ -57,6 +57,34 @@ func executeBatchLanding(root, id, actor string, at time.Time) error {
 				}
 				return gitOutput(root, "rev-parse", "HEAD")
 			},
+			ApplyBuild: func(_ batch.Unit, build batch.BranchBuild) error {
+				return batch.ApplyBranchBuild(root, root, build)
+			},
+			AppendBuildReceipt: func(unit batch.Unit, build batch.BranchBuild, receipt batch.PrefixReceipt) error {
+				return batch.RunCommand(batch.CommandSpec{Dir: root, Name: filepath.Join(root, "scripts", "receipt.sh"), Args: []string{"add", "--type", "implement", "--outcome", "shipped", "--goal", unit.GoalID, "--built-by", "coordinator", "--note", "batch " + id + " unit " + strings.Join(build.Units, "+") + " prefix " + receipt.Tree}})
+			},
+			CommitBuild: func(unit batch.Unit, build batch.BranchBuild, receipt batch.PrefixReceipt) (string, error) {
+				path := receipt.ResultPath
+				if path == "" {
+					path = filepath.Join(root, "artifacts", "agents", "proof-runs", "batch", id+".json")
+				}
+				chain := build.Attestation.Source.RootJob
+				if chain == "" {
+					chain = unit.Chain
+				}
+				last := unit.GoalLast && len(unit.CommitIDs) != 0 && build.Commit == unit.CommitIDs[len(unit.CommitIDs)-1]
+				if err := batch.CommitWithWrapper(root, chain, unit.GoalID, path, batch.BranchLandingMessage(unit.GoalID, build, last), unit.AuthorName, unit.AuthorEmail, actor); err != nil {
+					return "", err
+				}
+				commit, err := gitOutput(root, "rev-parse", "HEAD")
+				if err != nil {
+					return "", err
+				}
+				if err := batch.RequirePassingCommitVerdict(root, unit.GoalID, commit); err != nil {
+					return "", err
+				}
+				return commit, nil
+			},
 			Held: func(_, tip string) error {
 				return batchChildRunner(root, landingOwnerLineage, "landing", "held", "--root", root, "--base", baseCommit, "--commit", tip, "--remote", "origin", "--ref", "refs/heads/main")
 			},
@@ -312,20 +340,28 @@ func batchPrefixReceiptArgs(root, goalID, tree, resultPath string, groups []stri
 }
 
 func recoverBatchLanding(root string, store batch.Store, id, actor string, at time.Time) error {
-	return batch.RecoverPushedSeries(store, id, actor, at, batch.RecoverySeams{
-		OriginCommit: func(unit batch.Unit) (string, bool, error) {
-			format := "%H%x00%B%x00"
-			output, err := gitOutput(root, "log", "origin/main", "--format="+format)
-			if err != nil {
-				return "", false, err
-			}
-			parts := strings.Split(output, "\x00")
-			for index := 0; index+1 < len(parts); index += 2 {
-				if strings.Contains(parts[index+1], "Landing-Provenance: chain="+unit.Chain) {
+	findTrailer := func(prefix, value string) (string, bool, error) {
+		format := "%H%x00%B%x00"
+		output, err := gitOutput(root, "log", "origin/main", "--format="+format)
+		if err != nil {
+			return "", false, err
+		}
+		parts := strings.Split(output, "\x00")
+		for index := 0; index+1 < len(parts); index += 2 {
+			for _, line := range strings.Split(parts[index+1], "\n") {
+				if strings.TrimSpace(line) == prefix+value {
 					return strings.TrimSpace(parts[index]), true, nil
 				}
 			}
-			return "", false, nil
+		}
+		return "", false, nil
+	}
+	return batch.RecoverPushedSeries(store, id, actor, at, batch.RecoverySeams{
+		OriginCommit: func(unit batch.Unit) (string, bool, error) {
+			return findTrailer("Landing-Provenance: chain=", unit.Chain)
+		},
+		OriginSource: func(_ batch.Unit, source string) (string, bool, error) {
+			return findTrailer("Goal-Source: ", source)
 		},
 		Finalize: func(unit batch.Unit, commit string) error {
 			next := "landed commit:" + commit + ":chain=" + unit.Chain

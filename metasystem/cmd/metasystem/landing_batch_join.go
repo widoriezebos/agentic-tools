@@ -24,25 +24,28 @@ import (
 )
 
 type batchJoinRequest struct {
-	SeatRoot, LandingRoot, GoalID, ChainID string
-	At                                     time.Time
+	SeatRoot, LandingRoot, GoalID, ChainID, Through string
+	Last                                            bool
+	At                                              time.Time
 }
 
 type batchJoinDependencies struct {
-	binding   func(string, string, time.Time) (dispatchcore.GoalBinding, error)
-	chain     func(string, string, string, uint64) (batch.CertifiedChain, error)
-	base      func(string) (string, error)
-	mint      func() (string, error)
-	transport func(string, batch.CertifiedChain) error
-	assemble  func(string, string, []batch.Unit) ([]string, error)
-	fixtures  func(string) ([]byte, error)
-	gate      func(string, string, []byte, []byte, *batch.Unit) error
-	plan      func(string, string, string) (testpolicy.Plan, error)
-	publish   func(batch.Store, string, batch.Unit, string, time.Time, func(string, string, string) (testpolicy.Plan, error), func() error) error
-	handover  func(batchJoinRequest, string, batch.Claim) error
-	ensure    func(string) error
-	author    func(string, *goal.GoalFile) (string, string, string, error)
-	prober    identity.Prober
+	binding         func(string, string, time.Time) (dispatchcore.GoalBinding, error)
+	chain           func(string, string, string, uint64) (batch.CertifiedChain, error)
+	base            func(string) (string, error)
+	mint            func() (string, error)
+	transport       func(string, batch.CertifiedChain) error
+	member          func(batchJoinRequest) (batch.BranchMember, []byte, error)
+	transportMember func(batchJoinRequest, batch.BranchMember) error
+	assemble        func(string, string, []batch.Unit) ([]string, error)
+	fixtures        func(string) ([]byte, error)
+	gate            func(string, string, []byte, []byte, *batch.Unit) error
+	plan            func(string, string, string) (testpolicy.Plan, error)
+	publish         func(batch.Store, string, batch.Unit, string, time.Time, func(string, string, string) (testpolicy.Plan, error), func() error) error
+	handover        func(batchJoinRequest, string, batch.Claim) error
+	ensure          func(string) error
+	author          func(string, *goal.GoalFile) (string, string, string, error)
+	prober          identity.Prober
 }
 
 var batchJoinDependenciesForCommand = productionBatchJoinDependencies
@@ -58,7 +61,8 @@ func productionBatchJoinDependencies() batchJoinDependencies {
 			return strings.ToLower(id), err
 		},
 		transport: batch.TransportChain,
-		assemble:  batch.AssembleUnits,
+		member:    productionBatchBranchMember, transportMember: transportBatchBranchMember,
+		assemble: batch.AssembleUnits,
 		fixtures: func(root string) ([]byte, error) {
 			return os.ReadFile(filepath.Join(root, "scripts", "agents", "fixture-bed-groups.tsv"))
 		},
@@ -69,6 +73,38 @@ func productionBatchJoinDependencies() batchJoinDependencies {
 		plan: productionJoinPlan, publish: batch.PublishJoin,
 		handover: productionForwardHandover, ensure: ensureBatchOwner, author: productionBatchAuthor, prober: identity.KernelProber{},
 	}
+}
+
+func productionBatchBranchMember(request batchJoinRequest) (batch.BranchMember, []byte, error) {
+	if _, err := goalBranchGit(request.SeatRoot, "fetch", "--quiet", "origin", "main"); err != nil {
+		return batch.BranchMember{}, nil, err
+	}
+	endpoint, err := goalBranchGit(request.SeatRoot, "rev-parse", "FETCH_HEAD")
+	if err != nil {
+		return batch.BranchMember{}, nil, err
+	}
+	if _, err := goalBranchGit(request.SeatRoot, "fetch", "--quiet", "origin", "refs/heads/goal/"+request.GoalID); err != nil {
+		return batch.BranchMember{}, nil, err
+	}
+	tip, err := goalBranchGit(request.SeatRoot, "rev-parse", "FETCH_HEAD")
+	if err != nil {
+		return batch.BranchMember{}, nil, err
+	}
+	member, err := batch.ReadGoalBranch(batch.BranchReadRequest{Repo: request.SeatRoot, EndpointTip: endpoint, BranchTip: tip, GoalID: request.GoalID, Through: request.Through, Last: request.Last})
+	if err != nil {
+		return batch.BranchMember{}, nil, err
+	}
+	patch, err := batch.BranchMemberPatch(request.SeatRoot, member)
+	return member, patch, err
+}
+
+func transportBatchBranchMember(request batchJoinRequest, _ batch.BranchMember) error {
+	command := exec.Command("git", "-C", request.LandingRoot, "fetch", "--quiet", "origin", "refs/heads/goal/"+request.GoalID)
+	command.Env = gittree.ScrubbedEnviron()
+	if output, err := command.CombinedOutput(); err != nil {
+		return fmt.Errorf("transport goal branch: %s: %w", strings.TrimSpace(string(output)), err)
+	}
+	return nil
 }
 
 func productionBatchAuthor(root string, file *goal.GoalFile) (string, string, string, error) {
@@ -94,7 +130,18 @@ func executeBatchJoin(request batchJoinRequest, dependencies batchJoinDependenci
 	if err != nil {
 		return batch.Record{}, err
 	}
-	chain, err := dependencies.chain(request.SeatRoot, request.GoalID, request.ChainID, binding.Revision)
+	var chain batch.CertifiedChain
+	var member batch.BranchMember
+	var patch []byte
+	if request.Last || request.Through != "" {
+		if dependencies.member == nil {
+			return batch.Record{}, fmt.Errorf("BATCH_JOIN_UNREAD: goal branch reader is unavailable")
+		}
+		member, patch, err = dependencies.member(request)
+	} else {
+		chain, err = dependencies.chain(request.SeatRoot, request.GoalID, request.ChainID, binding.Revision)
+		patch = chain.Patch
+	}
 	if err != nil {
 		return batch.Record{}, err
 	}
@@ -108,9 +155,6 @@ func executeBatchJoin(request batchJoinRequest, dependencies batchJoinDependenci
 	}
 	actor := binding.Machine + "+" + binding.Lineage
 	store := batch.NewStore(request.LandingRoot, dependencies.prober)
-	if err := dependencies.transport(request.LandingRoot, chain); err != nil {
-		return batch.Record{}, err
-	}
 	record := batch.Record{BatchID: id, BaseTree: baseTree, TipTree: baseTree, State: batch.StateOpen}
 	records, err := store.Records()
 	if err != nil {
@@ -125,7 +169,22 @@ func executeBatchJoin(request batchJoinRequest, dependencies batchJoinDependenci
 			record, foundOpen = candidate, true
 		}
 	}
-	unit := batch.Unit{GoalID: request.GoalID, Chain: request.ChainID, SeatRoot: request.SeatRoot, State: batch.UnitJoining,
+	if request.Last || request.Through != "" {
+		if dependencies.transportMember == nil {
+			return batch.Record{}, fmt.Errorf("BATCH_JOIN_UNREAD: goal branch transport is unavailable")
+		}
+		err = dependencies.transportMember(request, member)
+	} else {
+		err = dependencies.transport(request.LandingRoot, chain)
+	}
+	if err != nil {
+		return batch.Record{}, err
+	}
+	chainID := request.ChainID
+	if chainID == "" {
+		chainID = member.Tip
+	}
+	unit := batch.Unit{GoalID: request.GoalID, Chain: chainID, SeatRoot: request.SeatRoot, State: batch.UnitJoining,
 		Claim: batch.Claim{Machine: binding.Machine, Lineage: binding.Lineage, Epoch: uint64(binding.Capability.ClaimEpoch),
 			Revision: binding.Revision, AccountingRevision: binding.File.Claimed.AccountingRevision}}
 	if dependencies.author != nil {
@@ -134,7 +193,10 @@ func executeBatchJoin(request batchJoinRequest, dependencies batchJoinDependenci
 			return batch.Record{}, err
 		}
 	}
-	for path := range batch.ChangedPaths(chain.Patch) {
+	if len(member.Builds) != 0 {
+		unit = batch.BindBranchMember(unit, member)
+	}
+	for path := range batch.ChangedPaths(patch) {
 		unit.ChangedPaths = append(unit.ChangedPaths, path)
 	}
 	slices.Sort(unit.ChangedPaths)
@@ -149,10 +211,10 @@ func executeBatchJoin(request batchJoinRequest, dependencies batchJoinDependenci
 	if err != nil {
 		return batch.Record{}, err
 	}
-	if err := dependencies.gate(request.LandingRoot, prefixes[0], chain.Patch, fixtureMap, &unit); err != nil {
+	if err := dependencies.gate(request.LandingRoot, prefixes[0], patch, fixtureMap, &unit); err != nil {
 		return batch.Record{}, err
 	}
-	// The unit was prepared on the open batch's own base, which trunk may have
+	// The candidate was prepared on the open batch's own base, which trunk may have
 	// passed since; only a batch that changed under the preparation refuses.
 	prepared := record
 	record, err = batch.FindOrCreateOpen(store, baseTree, id, actor, request.At)
@@ -258,8 +320,10 @@ func runBatchJoin(args []string) int {
 	root := pathFlag(flags, "root", ".", "seat checkout root")
 	goalID := flags.String("goal", "", "claimed goal id")
 	chainID := flags.String("chain", "", "closed implementation chain root")
-	if flags.Parse(args) != nil || flags.NArg() != 0 || *goalID == "" || *chainID == "" {
-		fmt.Fprintln(os.Stderr, "usage: metasystem landing batch join --root ROOT --goal GOAL --chain CHAIN")
+	last := flags.Bool("last", false, "join the whole land-ready goal")
+	through := flags.String("through", "", "join through one land-ready goal commit")
+	if flags.Parse(args) != nil || flags.NArg() != 0 || *goalID == "" || ((*chainID != "") == (*last || *through != "")) || (*last && *through != "") {
+		fmt.Fprintln(os.Stderr, "usage: metasystem landing batch join --root ROOT --goal GOAL (--chain CHAIN | --last | --through COMMIT)")
 		return 2
 	}
 	now, err := batchJoinClock(*root)
@@ -272,7 +336,7 @@ func runBatchJoin(args []string) int {
 		fmt.Fprintln(os.Stderr, err)
 		return 1
 	}
-	record, err := executeBatchJoin(batchJoinRequest{SeatRoot: *root, LandingRoot: settings.Root, GoalID: *goalID, ChainID: *chainID, At: now}, batchJoinDependenciesForCommand())
+	record, err := executeBatchJoin(batchJoinRequest{SeatRoot: *root, LandingRoot: settings.Root, GoalID: *goalID, ChainID: *chainID, Last: *last, Through: *through, At: now}, batchJoinDependenciesForCommand())
 	if err != nil {
 		fmt.Fprintln(os.Stderr, err)
 		return 1

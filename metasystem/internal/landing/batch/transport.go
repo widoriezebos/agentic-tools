@@ -36,6 +36,80 @@ func PublishLandingBranch(root, id, expected, tip string) error {
 	return nil
 }
 
+func DeleteLandingBranch(root, id, expected string) error {
+	if expected == "" {
+		return nil
+	}
+	lease := "--force-with-lease=" + landingBranchRef(id) + ":" + expected
+	if err := runLandingGit(root, "BATCH_LANDING_BRANCH_MOVED", "push", "origin", ":"+landingBranchRef(id), lease); err != nil {
+		present, lookupErr := remoteLandingBranchPresent(root, id)
+		if lookupErr == nil && !present {
+			return nil
+		}
+		return err
+	}
+	return nil
+}
+
+// RebuildLandingBranch replaces a proved candidate after a whole member is
+// ejected. Each surviving contribution remains a distinct commit in original join
+// order, and the old branch tip is the authority for replacement.
+func RebuildLandingBranch(root, id, baseTree, expected, actor string, survivors []Unit) (string, error) {
+	baseCommit, err := commitForTreeInRef(root, "origin/main", baseTree)
+	if err != nil {
+		return "", err
+	}
+	parent, tree := baseCommit, baseTree
+	for _, unit := range survivors {
+		for index, build := range unit.Builds {
+			prefixes, err := AssembleBranchMembers(root, tree, []BranchMember{{GoalID: unit.GoalID, Tip: unit.BranchTip, Builds: []BranchBuild{build}}})
+			if err != nil {
+				return "", err
+			}
+			tree = prefixes[0]
+			command := exec.Command("git", "-C", root, "commit-tree", tree, "-p", parent)
+			command.Env = append(gittree.ScrubbedEnviron(), "GIT_AUTHOR_NAME="+unit.AuthorName, "GIT_AUTHOR_EMAIL="+unit.AuthorEmail,
+				"GIT_COMMITTER_NAME="+unit.AuthorName, "GIT_COMMITTER_EMAIL="+unit.AuthorEmail)
+			command.Stdin = strings.NewReader(BranchLandingMessage(unit.GoalID, build, unit.GoalLast && index == len(unit.Builds)-1) + "Landed-By: " + actor + "\n")
+			output, err := command.CombinedOutput()
+			if err != nil {
+				return "", fmt.Errorf("BATCH_LANDING_BRANCH_PREP_REFUSED: %s: %w", strings.TrimSpace(string(output)), err)
+			}
+			parent = strings.TrimSpace(string(output))
+		}
+	}
+	if parent == baseCommit {
+		return "", fmt.Errorf("BATCH_LANDING_BRANCH_PREP_REFUSED: no surviving builds")
+	}
+	present, err := remoteLandingBranchPresent(root, id)
+	if err != nil {
+		return "", err
+	}
+	if !present {
+		expected = ""
+	}
+	if err := PublishLandingBranch(root, id, expected, parent); err != nil {
+		return "", err
+	}
+	return parent, nil
+}
+
+func commitForTreeInRef(root, ref, tree string) (string, error) {
+	command := exec.Command("git", "-C", root, "log", "--first-parent", "--format=%H %T", ref)
+	command.Env = gittree.ScrubbedEnviron()
+	output, err := command.Output()
+	if err != nil {
+		return "", err
+	}
+	for _, line := range strings.Split(string(output), "\n") {
+		fields := strings.Fields(line)
+		if len(fields) == 2 && fields[1] == tree {
+			return fields[0], nil
+		}
+	}
+	return "", fmt.Errorf("BATCH_LAND_TRUNK_MOVED: no %s commit has base tree %s", ref, tree)
+}
+
 // LandLandingBranch performs the only endpoint update and deletes the
 // candidate branch in the same atomic remote transaction. Both refs are
 // leased, so a moved endpoint or candidate writes neither ref.
@@ -135,4 +209,20 @@ func CommitWithWrapper(root, chain, goalID, receipt, message, authorName, author
 		Args: []string{"--chain", chain, "--goal", goalID, "--test-receipt", receipt, "-F", name},
 		Env: []string{"GIT_AUTHOR_NAME=" + authorName, "GIT_AUTHOR_EMAIL=" + authorEmail,
 			"GIT_COMMITTER_NAME=" + authorName, "GIT_COMMITTER_EMAIL=" + authorEmail, "METASYSTEM_LANDED_BY=" + landedBy}})
+}
+
+// RequirePassingCommitVerdict keeps a branch member local unless the commit
+// boundary recorded that its complete provenance check passed.
+func RequirePassingCommitVerdict(root, goalID, commit string) error {
+	command := exec.Command("git", "-C", root, "show", "-s", "--format=%(trailers:key=Landing-Provenance-Verdict,valueonly)", commit)
+	command.Env = gittree.ScrubbedEnviron()
+	output, err := command.Output()
+	verdict := strings.TrimSpace(string(output))
+	if err != nil {
+		verdict = "unreadable"
+	}
+	if !strings.HasPrefix(verdict, "pass") {
+		return fmt.Errorf("BATCH_LAND_UNPROVENANCED: goal %s commit %s verdict %s", goalID, commit, verdict)
+	}
+	return nil
 }

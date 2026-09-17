@@ -43,6 +43,7 @@ type LandRequest struct {
 
 type LandResult struct {
 	Endpoint, Candidate, Landing, Branch, Attempt, LastUnit string
+	RetryIdentity                                           string
 	ProofNumber                                             int
 	FailingGroups                                           []string
 }
@@ -52,6 +53,7 @@ type LandingProof struct {
 	Endpoint, Candidate, Landing string
 	Attempt, Verdict, CanaryRun  string
 	CanaryTip, Fix               string
+	RetryIdentity                string
 	Groups                       []string
 }
 
@@ -74,8 +76,12 @@ func RenderLandingProof(proof LandingProof) string {
 	if fix == "" {
 		fix = "-"
 	}
-	return fmt.Sprintf("- Proof: n=%d endpoint=%s candidate=%s landing=%s attempt=%s verdict=%s groups=%s canary=%s fix=%s",
-		proof.Number, proof.Endpoint, proof.Candidate, proof.Landing, proof.Attempt, proof.Verdict, groups, canary, fix)
+	retry := proof.RetryIdentity
+	if retry == "" {
+		retry = "-"
+	}
+	return fmt.Sprintf("- Proof: n=%d endpoint=%s candidate=%s landing=%s retry=%s attempt=%s verdict=%s groups=%s canary=%s fix=%s",
+		proof.Number, proof.Endpoint, proof.Candidate, proof.Landing, retry, proof.Attempt, proof.Verdict, groups, canary, fix)
 }
 
 func ParseLandingRecord(data []byte) ([]LandingProof, error) {
@@ -100,6 +106,12 @@ func ParseLandingRecord(data []byte) ([]LandingProof, error) {
 		}
 		proof := LandingProof{Number: n, Endpoint: fields["endpoint"], Candidate: fields["candidate"],
 			Landing: fields["landing"], Attempt: fields["attempt"], Verdict: fields["verdict"]}
+		if fields["retry"] != "" && fields["retry"] != "-" {
+			if !hex40(fields["retry"]) {
+				return nil, fmt.Errorf("landing record has a malformed retry identity: %s", line)
+			}
+			proof.RetryIdentity = fields["retry"]
+		}
 		if groups := fields["groups"]; groups != "" && groups != "-" {
 			proof.Groups = strings.Split(groups, ",")
 		}
@@ -628,9 +640,12 @@ func PrepareLanding(req LandRequest) (LandResult, error) {
 		return LandResult{}, err
 	}
 	for _, proof := range proofs {
-		proofIdentity, identityErr := landingRetryIdentity(req.Repo, proof.Candidate, req.GoalID)
-		if identityErr != nil {
-			return LandResult{}, identityErr
+		proofIdentity := proof.RetryIdentity
+		if proofIdentity == "" {
+			proofIdentity, err = landingRetryIdentity(req.Repo, proof.Candidate, req.GoalID)
+			if err != nil {
+				return LandResult{}, err
+			}
 		}
 		if proof.Verdict == "red" && proofIdentity == candidateIdentity {
 			return LandResult{}, operationRefusal(LandRetryCode, "candidate %s was already recorded red in proof %d", candidate, proof.Number)
@@ -644,7 +659,7 @@ func PrepareLanding(req LandRequest) (LandResult, error) {
 	}
 	result := LandResult{Endpoint: req.EndpointTip, Candidate: candidate, Landing: landingTip,
 		Branch: "landing/" + req.GoalID, Attempt: evidence.attempt, LastUnit: lastUnit, ProofNumber: len(proofs) + 1,
-		FailingGroups: append([]string(nil), evidence.failingGroups...)}
+		FailingGroups: append([]string(nil), evidence.failingGroups...), RetryIdentity: candidateIdentity}
 	if len(evidence.failingGroups) != 0 {
 		return result, nil
 	}
@@ -664,7 +679,7 @@ func PrepareLanding(req LandRequest) (LandResult, error) {
 		}
 	}
 	draft := LandingProof{Number: result.ProofNumber, Endpoint: result.Endpoint, Candidate: result.Candidate,
-		Landing: result.Landing, Attempt: result.Attempt, Verdict: "pending"}
+		Landing: result.Landing, RetryIdentity: result.RetryIdentity, Attempt: result.Attempt, Verdict: "pending"}
 	if err := writeLandArtifacts(req.Out, result, draft, messages, diffs); err != nil {
 		return LandResult{}, err
 	}

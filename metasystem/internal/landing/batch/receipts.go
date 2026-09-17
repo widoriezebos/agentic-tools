@@ -10,6 +10,8 @@ import (
 // PrefixReceipt records how one exact prefix obtained every selected group.
 type PrefixReceipt struct {
 	GoalID, Tree, AttemptID, ResultPath string
+	CommitIDs, Units                    []string
+	LastUnit                            string
 	Reused                              map[string]string
 	Executed                            []string
 }
@@ -59,7 +61,10 @@ func ComposePrefixReceipts(store Store, id, actor string, at time.Time, seams Pr
 		if existing, ok := record.Receipts[unit.GoalID]; ok && existing.Tree == tree {
 			continue
 		}
-		receipt := PrefixReceipt{GoalID: unit.GoalID, Tree: tree, Reused: map[string]string{}}
+		receipt := PrefixReceipt{GoalID: unit.GoalID, Tree: tree, CommitIDs: slices.Clone(unit.CommitIDs), LastUnit: unit.LastUnit, Reused: map[string]string{}}
+		for _, build := range unit.Builds {
+			receipt.Units = append(receipt.Units, build.Units...)
+		}
 		if seams.Execute == nil {
 			return fmt.Errorf("batch %s has no prefix receipt runner", id)
 		}

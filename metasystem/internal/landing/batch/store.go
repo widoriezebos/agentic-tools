@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"reflect"
 	"slices"
 	"sort"
 	"strings"
@@ -124,7 +125,8 @@ func (store Store) updateLocked(id string, mutate func(*Record) error) error {
 	sameUnit := func(next, old Unit) bool {
 		return next.GoalID == old.GoalID && next.Chain == old.Chain && next.SeatRoot == old.SeatRoot && next.Claim == old.Claim &&
 			next.Approver == old.Approver && next.AuthorName == old.AuthorName && next.AuthorEmail == old.AuthorEmail &&
-			slices.Equal(next.ChangedPaths, old.ChangedPaths) && slices.Equal(next.SelectedGroups, old.SelectedGroups)
+			next.LastUnit == old.LastUnit && next.GoalLast == old.GoalLast && next.BranchTip == old.BranchTip && slices.Equal(next.CommitIDs, old.CommitIDs) &&
+			reflect.DeepEqual(next.Builds, old.Builds) && slices.Equal(next.ChangedPaths, old.ChangedPaths) && slices.Equal(next.SelectedGroups, old.SelectedGroups)
 	}
 	unitsImmutable := len(record.Units) >= len(prior.Units) && slices.EqualFunc(record.Units[:len(prior.Units)], prior.Units, sameUnit)
 	if record.BatchID != id || record.Schema != prior.Schema || !unitsImmutable {

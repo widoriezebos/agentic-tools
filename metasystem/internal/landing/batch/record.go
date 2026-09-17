@@ -22,19 +22,24 @@ type unitRecordFields struct {
 	ReturnDisposition string `json:"returnDisposition,omitempty"`
 }
 type Unit struct {
-	GoalID         string   `json:"goalId"`
-	Chain          string   `json:"chain"`
-	SeatRoot       string   `json:"seatRoot,omitempty"`
-	Claim          Claim    `json:"claim"`
-	State          string   `json:"state"`
-	Gate           runIDs   `json:"gate,omitempty"`
-	ChangedPaths   []string `json:"changedPaths,omitempty"`
-	SelectedGroups []string `json:"selectedGroups,omitempty"`
-	Approver       string   `json:"approver,omitempty"`
-	AuthorName     string   `json:"authorName,omitempty"`
-	AuthorEmail    string   `json:"authorEmail,omitempty"`
-	LandedCommit   string   `json:"landedCommit,omitempty"`
-	P6Done         bool     `json:"p6Done,omitempty"`
+	GoalID         string        `json:"goalId"`
+	Chain          string        `json:"chain"`
+	SeatRoot       string        `json:"seatRoot,omitempty"`
+	Claim          Claim         `json:"claim"`
+	State          string        `json:"state"`
+	Gate           runIDs        `json:"gate,omitempty"`
+	ChangedPaths   []string      `json:"changedPaths,omitempty"`
+	SelectedGroups []string      `json:"selectedGroups,omitempty"`
+	Approver       string        `json:"approver,omitempty"`
+	AuthorName     string        `json:"authorName,omitempty"`
+	AuthorEmail    string        `json:"authorEmail,omitempty"`
+	LandedCommit   string        `json:"landedCommit,omitempty"`
+	P6Done         bool          `json:"p6Done,omitempty"`
+	CommitIDs      []string      `json:"commitIds,omitempty"`
+	LastUnit       string        `json:"lastUnit,omitempty"`
+	GoalLast       bool          `json:"goalLast,omitempty"`
+	BranchTip      string        `json:"branchTip,omitempty"`
+	Builds         []BranchBuild `json:"builds,omitempty"`
 
 	unitRecordFields
 }

@@ -428,6 +428,72 @@ func TestGoalLandingPreimageRetryAndCanaryFence(t *testing.T) {
 	})
 }
 
+func TestGoalLandingRetryIdentitySurvivesASecondClone(t *testing.T) {
+	f := newLandFixture(t)
+	first, err := branch.PrepareLanding(landRequest(t, f, filepath.Join(t.TempDir(), "first")))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if first.RetryIdentity == "" {
+		t.Fatal("prepared landing has no persisted retry identity")
+	}
+	git(t, f.root, "push", "-q", "origin", ":refs/heads/landing/goal-a")
+	proof := branch.LandingProof{Number: 1, Endpoint: first.Endpoint, Candidate: first.Candidate, Landing: first.Landing,
+		RetryIdentity: first.RetryIdentity, Attempt: first.Attempt, Verdict: "red", Groups: []string{"deep"}}
+	write(t, f.root, "metasystem/records/misc/goal-a-landing.md", branch.RenderLandingProof(proof)+"\n")
+	git(t, f.root, "add", "metasystem/records/misc/goal-a-landing.md")
+	if _, err := branch.CommitStaged(branch.CommitRequest{Repo: f.root, Remote: "origin", EndpointTip: f.base,
+		GoalID: "goal-a", OpID: "clone-red-record", Kind: branch.Plan, CheckClaim: claimAllowed}); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := branch.Push(pushRequest(f.branchFixture, "clone-red-push")); err != nil {
+		t.Fatal(err)
+	}
+
+	clone := filepath.Join(t.TempDir(), "clone-b")
+	git(t, filepath.Dir(clone), "clone", "-q", "--no-local", f.origin, clone)
+	git(t, clone, "config", "user.name", "Clone B")
+	git(t, clone, "config", "user.email", "clone-b@example.invalid")
+	git(t, clone, "config", "goal.human.Wido", "Wido Approver <wido@example.invalid>")
+	freshBase := &branchFixture{root: clone, origin: f.origin, base: f.base}
+	fresh := landFixture{branchFixture: freshBase, units: append([]string(nil), f.units...), tip: git(t, clone, "rev-parse", "origin/goal/goal-a")}
+	fresh.projected, err = landing.ProjectWorkspaceTree(filepath.Join(clone, "metasystem"), git(t, clone, "rev-parse", fresh.tip+"^{tree}"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	fresh.receipt = filepath.Join(t.TempDir(), "retry.json")
+	writeLandingReceipt(t, fresh.receipt, fresh.projected, "clone-b-retry")
+	_, err = branch.PrepareLanding(landRequest(t, fresh, filepath.Join(t.TempDir(), "retry")))
+	requireLandCode(t, err, branch.LandRetryCode)
+
+	fix := commitUnit(t, freshBase, "land-fix-1", "metasystem/fix.go", "fixed\n")
+	readUnit(t, freshBase, "land-fix-1", fix)
+	if _, err := branch.Push(pushRequest(freshBase, "clone-b-fix-push")); err != nil {
+		t.Fatal(err)
+	}
+	fresh.tip = git(t, clone, "rev-parse", "refs/heads/goal/goal-a")
+	proof.CanaryRun, proof.CanaryTip, proof.Fix = "clone-b-canary", fresh.tip, fix
+	write(t, clone, "metasystem/records/misc/goal-a-landing.md", branch.RenderLandingProof(proof)+"\n")
+	git(t, clone, "add", "metasystem/records/misc/goal-a-landing.md")
+	if _, err := branch.CommitStaged(branch.CommitRequest{Repo: clone, Remote: "origin", EndpointTip: f.base,
+		GoalID: "goal-a", OpID: "clone-b-canary-record", Kind: branch.Plan, CheckClaim: claimAllowed}); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := branch.Push(pushRequest(freshBase, "clone-b-canary-push")); err != nil {
+		t.Fatal(err)
+	}
+	fresh.tip = git(t, clone, "rev-parse", "refs/heads/goal/goal-a")
+	fresh.projected, err = landing.ProjectWorkspaceTree(filepath.Join(clone, "metasystem"), git(t, clone, "rev-parse", fresh.tip+"^{tree}"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	writeLandingReceipt(t, fresh.receipt, fresh.projected, "clone-b-fixed")
+	result, err := branch.PrepareLanding(landRequest(t, fresh, filepath.Join(t.TempDir(), "fixed")))
+	if err != nil || result.Landing == first.Landing {
+		t.Fatalf("second clone fixed landing=%+v err=%v", result, err)
+	}
+}
+
 func TestGoalLandingLastRefusesUnitBeyondPrefix(t *testing.T) {
 	f := newLandFixture(t)
 	commitUnit(t, f.branchFixture, "u4", "metasystem/four.go", "four\n")

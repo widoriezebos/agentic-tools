@@ -57,14 +57,18 @@ func TestBatchStatusExposesReturnRevisionHeadroomOwnerLockSampleAndDeadline(t *t
 	}
 	record := batch.Record{BatchID: "batch", State: batch.StateLanding, Proof: &batch.Proof{Status: "green"}, Seal: map[string]batch.Claim{"goal-a": {Revision: 2, AccountingRevision: 2}}, Units: []batch.Unit{{
 		GoalID: "goal-a", Chain: "chain-a", State: batch.UnitReturnPending, Outcome: batch.UnitLanded,
+		CommitIDs: []string{"source-a", "source-b"}, LastUnit: "10b",
 		Claim: batch.Claim{Epoch: 3, Revision: 8, AccountingRevision: 5},
 	}}}
+	record.PrefixTrees = []string{"prefix-a"}
+	record.Landing = &batch.LandingProgress{BranchTip: "branch-tip"}
 	record.History = []batch.HistoryEntry{{At: "2030-01-01T00:00:00Z", Verb: "join"}}
 	view := batchRecordStatus(record, settings)
 	if view.Owner != "41" || view.OwnerLiveness == "" || !strings.Contains(view.Lock, "41") || view.ProofStatus != "green" ||
 		len(view.Headroom) != 1 || view.Headroom[0].Status != string(dispatchcore.BudgetKnown) || view.Headroom[0].AttemptsLeft != 1 ||
 		view.Headroom[0].ReservedMinutesLeft != 100 || view.Headroom[0].HasDiagnosticHeadroom || view.Deadline != "2030-01-01T00:45:00Z" ||
-		len(view.Units) != 1 || view.Units[0].State != batch.UnitReturnPending || view.Units[0].Revision != 8 || view.Units[0].AccountingRevision != 5 || !view.Sample.OverlapKnown {
+		view.Branch != "landing/batch" || view.BranchTip != "branch-tip" || len(view.Units) != 1 || view.Units[0].State != batch.UnitReturnPending ||
+		view.Units[0].Revision != 8 || view.Units[0].AccountingRevision != 5 || view.Units[0].LastUnit != "10b" || view.Units[0].PrefixTree != "prefix-a" || !view.Sample.OverlapKnown {
 		t.Fatalf("status=%+v", view)
 	}
 }

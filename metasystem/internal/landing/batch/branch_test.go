@@ -5,8 +5,10 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"slices"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/dispatch"
 	goalbranch "github.com/widoriezebos/agentic-tools/metasystem/internal/goal/branch"
@@ -49,6 +51,7 @@ func newGoalBranchBed(t *testing.T) goalBranchBed {
 	for _, path := range []string{"metasystem/a-1.txt", "metasystem/a-2.txt", "metasystem/a-3.txt", "metasystem/b-1.txt"} {
 		branchWrite(t, root, path, "base\n")
 	}
+	branchWrite(t, root, "metasystem/gone/value.go", "package gone\n")
 	branchGit(t, root, "add", ".")
 	branchGit(t, root, "commit", "-qm", "base")
 	return goalBranchBed{root: root, base: branchGit(t, root, "rev-parse", "HEAD")}
@@ -165,6 +168,35 @@ func TestBatchBranchMemberRefusesMovedTrunk(t *testing.T) {
 	}
 }
 
+func TestBatchSealBranchDeletionUsesParentPackage(t *testing.T) {
+	bed := newGoalBranchBed(t)
+	branchGit(t, bed.root, "switch", "--quiet", "--detach", bed.base)
+	must(t, os.Remove(filepath.Join(bed.root, "metasystem", "gone", "value.go")))
+	branchGit(t, bed.root, "add", "-u", "metasystem/gone/value.go")
+	commit, err := goalbranch.CommitStaged(goalbranch.CommitRequest{
+		Repo: bed.root, Remote: bed.root, EndpointTip: bed.base, GoalID: "goal-a", Unit: "delete-package",
+		OpID: "build-goal-a-delete-package", Kind: goalbranch.Unit, CheckClaim: func() error { return nil },
+	})
+	must(t, err)
+	tip := branchCriticRead(t, bed, "goal-a", "delete-package", commit, "critic-goal-a-delete-package", false)
+	member, err := ReadGoalBranch(BranchReadRequest{Repo: bed.root, EndpointTip: bed.base, BranchTip: tip, GoalID: "goal-a", Last: true})
+	must(t, err)
+	unit := BindBranchMember(Unit{GoalID: "goal-a", ChangedPaths: []string{"metasystem/gone/value.go"}}, member)
+	var packages []string
+	err = runSealGate(bed.root, "sealed-tree", []Unit{unit}, func(_ string, step gateStep) gateStepResult {
+		if strings.HasPrefix(step.Name, "package ") {
+			packages = append(packages, strings.TrimPrefix(step.Name, "package "))
+		}
+		if step.Name == "package ./gone" {
+			return gateStepResult{RunID: "missing-package", ExitCode: 1}
+		}
+		return gateStepResult{RunID: "seal-green"}
+	})
+	if err != nil || !slices.Contains(packages, "./...") || slices.Contains(packages, "./gone") {
+		t.Fatalf("seal deletion gate=%v packages=%v", err, packages)
+	}
+}
+
 func TestBatchBranchAllowsOnlyOneMemberPerGoal(t *testing.T) {
 	root := t.TempDir()
 	store := NewStore(root, scriptedProber{})
@@ -173,5 +205,53 @@ func TestBatchBranchAllowsOnlyOneMemberPerGoal(t *testing.T) {
 	err := checkMembership(store, testBatchID, "goal-a", "branch-tip-b")
 	if err == nil || !strings.HasPrefix(err.Error(), "BATCH_GOAL_ELSEWHERE:") {
 		t.Fatalf("second member=%v", err)
+	}
+}
+
+func TestBatchGoalEjectionRebuildsLeasedLandingBranch(t *testing.T) {
+	bed := newGoalBranchBed(t)
+	tipA := buildGoalBranch(t, bed, "goal-a", []string{"1", "2"}, -1)
+	memberA, err := ReadGoalBranch(BranchReadRequest{Repo: bed.root, EndpointTip: bed.base, BranchTip: tipA, GoalID: "goal-a", Last: true})
+	must(t, err)
+	tipB := buildGoalBranch(t, bed, "goal-b", []string{"1"}, -1)
+	memberB, err := ReadGoalBranch(BranchReadRequest{Repo: bed.root, EndpointTip: bed.base, BranchTip: tipB, GoalID: "goal-b", Last: true})
+	must(t, err)
+	origin := filepath.Join(t.TempDir(), "origin.git")
+	branchGit(t, filepath.Dir(origin), "init", "-q", "--bare", origin)
+	branchGit(t, bed.root, "remote", "add", "origin", origin)
+	branchGit(t, bed.root, "push", "-q", "origin", "main")
+	claim := Claim{Machine: "landing", Lineage: "owner", Epoch: 1, Revision: 1, AccountingRevision: 1}
+	unitA := BindBranchMember(Unit{GoalID: "goal-a", Chain: tipA, Claim: claim, State: UnitJoined, ChangedPaths: []string{"metasystem/a-1.txt"}, AuthorName: "Approver A", AuthorEmail: "a@example.invalid"}, memberA)
+	unitB := BindBranchMember(Unit{GoalID: "goal-b", Chain: tipB, Claim: claim, State: UnitJoined, ChangedPaths: []string{"metasystem/b-1.txt"}, AuthorName: "Approver B", AuthorEmail: "b@example.invalid"}, memberB)
+	baseTree := branchGit(t, bed.root, "rev-parse", bed.base+"^{tree}")
+	oldTip, err := RebuildLandingBranch(bed.root, testBatchID, baseTree, "", "owner", []Unit{unitA, unitB})
+	must(t, err)
+	prefixes, err := assembleUnits(bed.root, baseTree, []Unit{unitA, unitB})
+	must(t, err)
+	record := Record{Schema: 1, BatchID: testBatchID, TipTree: prefixes[len(prefixes)-1], State: StateDiagnosing, Units: []Unit{unitA, unitB},
+		Proof: &Proof{Status: "failed", AttemptID: "tip-red"}, Landing: &LandingProgress{Base: baseTree, BranchTip: oldTip},
+		batchRecordFields: batchRecordFields{BaseTree: baseTree, PrefixTrees: prefixes}}
+	store := NewStore(bed.root, nil)
+	must(t, store.Create(record))
+	must(t, DiagnoseRed(store, testBatchID, "owner", []RedGroup{{ID: "group", InputManifest: []string{"metasystem/a-1.txt"}}}, "", time.Unix(2, 0), RedSeams{Run: func(DiagnosticRequest) (DiagnosticResult, error) {
+		return DiagnosticResult{AttemptID: "base-green"}, nil
+	}}))
+	updated := load(t, store)
+	newTip := branchGit(t, origin, "rev-parse", "refs/heads/landing/"+testBatchID)
+	if newTip == oldTip || updated.Landing == nil || updated.Landing.BranchTip != newTip || updated.Units[0].State != UnitReturnPending ||
+		!slices.Equal([]string{updated.Units[1].GoalID}, []string{"goal-b"}) {
+		t.Fatalf("old=%s new=%s record=%+v", oldTip, newTip, updated)
+	}
+	if got := branchGit(t, origin, "show", newTip+":metasystem/a-1.txt"); got != "base" {
+		t.Fatalf("ejected goal-a bytes remain on rebuilt landing branch: %q", got)
+	}
+	if got := branchGit(t, origin, "show", newTip+":metasystem/b-1.txt"); got != "goal-b/1" {
+		t.Fatalf("survivor bytes=%q", got)
+	}
+	must(t, DeleteLandingBranch(bed.root, testBatchID, newTip))
+	republished, err := RebuildLandingBranch(bed.root, testBatchID, baseTree, newTip, "owner", []Unit{unitB})
+	must(t, err)
+	if got := branchGit(t, origin, "rev-parse", "refs/heads/landing/"+testBatchID); got != republished {
+		t.Fatalf("republished tip=%s, want %s", got, republished)
 	}
 }

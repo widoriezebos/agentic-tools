@@ -73,6 +73,7 @@ var Rows = []Row{
 	{Code: "BATCH_LAND_RECEIPT_REFUSED", Owner: "internal/landing/batch", Site: "land.go", Shape: Question},
 	{Code: "BATCH_LAND_STATE_REFUSED", Owner: "internal/landing/batch", Site: "land.go", Shape: Question},
 	{Code: "BATCH_LAND_TRUNK_MOVED", Owner: "cmd/metasystem", Site: "landing_batch_land.go", Shape: Question},
+	{Code: "BATCH_LAND_UNPROVENANCED", Owner: "internal/landing/batch", Site: "transport.go", Shape: Question},
 	{Code: "BATCH_LAND_UNWIRED", Owner: "internal/landing/batch", Site: "land.go", Shape: Question},
 	{Code: "BATCH_P6_REFUSED", Owner: "internal/landing/batch", Site: "recovery.go", Shape: Question},
 	{Code: "BATCH_RECOVERY_NOT_PUSHED", Owner: "internal/landing/batch", Site: "recovery.go", Shape: Question},

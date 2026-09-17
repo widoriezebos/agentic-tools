@@ -8,6 +8,8 @@ import (
 type RecoverySeams struct {
 	// OriginCommit resolves Landing-Provenance: chain=<unit.Chain> on origin.
 	OriginCommit func(Unit) (string, bool, error)
+	// OriginSource resolves the endpoint commit carrying one Goal-Source id.
+	OriginSource func(Unit, string) (string, bool, error)
 	// Finalize performs the idempotent P6 re-arm, Next edit and cleanup.
 	Finalize func(Unit, string) error
 	// Cleanup removes the detached/local assembly after trailer recognition.
@@ -28,9 +30,32 @@ func RecoverPushedSeries(store Store, id, actor string, at time.Time, seams Reco
 		if snapshot.P6Done {
 			continue
 		}
-		commit, found, err := seams.OriginCommit(snapshot)
-		if err != nil {
-			return err
+		commit, found := "", false
+		if len(snapshot.CommitIDs) != 0 {
+			found = true
+			for _, source := range snapshot.CommitIDs {
+				if seams.OriginSource == nil {
+					return fmt.Errorf("BATCH_P6_REFUSED: member %s has no Goal-Source resolver", snapshot.GoalID)
+				}
+				landed, sourceFound, sourceErr := seams.OriginSource(snapshot, source)
+				if sourceErr != nil {
+					return sourceErr
+				}
+				if !sourceFound {
+					found = false
+					break
+				}
+				commit = landed
+			}
+		} else {
+			var err error
+			if seams.OriginCommit == nil {
+				return fmt.Errorf("BATCH_P6_REFUSED: unit %s has no provenance resolver", snapshot.GoalID)
+			}
+			commit, found, err = seams.OriginCommit(snapshot)
+			if err != nil {
+				return err
+			}
 		}
 		if !found {
 			continue

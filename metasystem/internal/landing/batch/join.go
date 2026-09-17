@@ -9,6 +9,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"slices"
 	"strings"
 
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/gittree"
@@ -41,6 +42,22 @@ func joinRefusal(record Record) error {
 }
 
 func assembleUnits(root, base string, units []Unit) (prefixes []string, err error) {
+	if slices.ContainsFunc(units, func(unit Unit) bool { return len(unit.Builds) != 0 }) {
+		current := base
+		for _, unit := range units {
+			member, ok := branchMemberOf(unit)
+			if !ok {
+				return nil, refuseBatch("BATCH_JOIN_UNREAD", "goal "+unit.GoalID+" has no branch member identity")
+			}
+			memberPrefixes, memberErr := AssembleBranchMembers(root, current, []BranchMember{member})
+			if memberErr != nil {
+				return nil, memberErr
+			}
+			current = memberPrefixes[0]
+			prefixes = append(prefixes, current)
+		}
+		return prefixes, nil
+	}
 	detached, err := (gittree.Workspace{Dir: root}).NewDetachedWorktree(base)
 	if err != nil {
 		return nil, err
@@ -81,6 +98,33 @@ func branchPatch(repo, commit string) ([]byte, error) {
 		return nil, fmt.Errorf("read branch patch %s: %s: %w", commit, strings.TrimSpace(string(output)), err)
 	}
 	return output, nil
+}
+
+func branchMemberPatch(repo string, member BranchMember) ([]byte, error) {
+	var patch bytes.Buffer
+	for _, build := range member.Builds {
+		commits := make([]string, 0, len(build.Folds)+1)
+		for _, fold := range build.Folds {
+			commits = append(commits, fold.ID)
+		}
+		commits = append(commits, build.Commit)
+		for _, commit := range commits {
+			transition, err := branchPatch(repo, commit)
+			if err != nil {
+				return nil, err
+			}
+			patch.Write(transition)
+			if len(transition) != 0 && transition[len(transition)-1] != '\n' {
+				patch.WriteByte('\n')
+			}
+		}
+	}
+	return patch.Bytes(), nil
+}
+
+// BranchMemberPatch returns the commit transitions applied for one branch contribution.
+func BranchMemberPatch(repo string, member BranchMember) ([]byte, error) {
+	return branchMemberPatch(repo, member)
 }
 
 func applyBranchCommit(repo, worktree, commit string) error {

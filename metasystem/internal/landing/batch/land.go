@@ -12,6 +12,7 @@ import (
 type LandingProgress struct {
 	Base          string            `json:"base"`
 	Commits       map[string]string `json:"commits,omitempty"`
+	BuildCommits  map[string]string `json:"buildCommits,omitempty"`
 	BranchTip     string            `json:"branchTip,omitempty"`
 	HeldChecked   bool              `json:"heldChecked,omitempty"`
 	PushComplete  bool              `json:"pushComplete,omitempty"`
@@ -23,20 +24,23 @@ type LandingProgress struct {
 }
 
 type LandSeams struct {
-	Prepare       func(base string) error
-	Apply         func(Unit) error
-	AppendReceipt func(Unit, PrefixReceipt) error
-	Commit        func(Unit, PrefixReceipt) (string, error)
-	Held          func(base, tip string) error
-	PublishBranch func(expected, tip string) error
-	Push          func(base, tip string) error
-	Reset         func(base string) error
-	Cleanup       func() error
-	Origin        func() (string, error)
-	OriginTree    func(string) (string, error)
-	Abandon       func(tip, detachAt string) error
-	LeaseBase     string
-	RecoverPush   func(refusedOrigin, base, tip string) (PushRecovery, error)
+	Prepare            func(base string) error
+	Apply              func(Unit) error
+	AppendReceipt      func(Unit, PrefixReceipt) error
+	Commit             func(Unit, PrefixReceipt) (string, error)
+	ApplyBuild         func(Unit, BranchBuild) error
+	AppendBuildReceipt func(Unit, BranchBuild, PrefixReceipt) error
+	CommitBuild        func(Unit, BranchBuild, PrefixReceipt) (string, error)
+	Held               func(base, tip string) error
+	PublishBranch      func(expected, tip string) error
+	Push               func(base, tip string) error
+	Reset              func(base string) error
+	Cleanup            func() error
+	Origin             func() (string, error)
+	OriginTree         func(string) (string, error)
+	Abandon            func(tip, detachAt string) error
+	LeaseBase          string
+	RecoverPush        func(refusedOrigin, base, tip string) (PushRecovery, error)
 }
 
 // PushRecovery is the one bounded decision after an endpoint lease refusal.
@@ -49,7 +53,7 @@ type PushRecovery struct {
 
 const maxRecoveryPushRounds = 3
 
-// LandSeries builds every commit locally in original join order, checks the
+// LandSeries creates every commit locally in original join order, checks the
 // whole range once, and pushes the complete series once.
 func LandSeries(store Store, id, actor string, at time.Time, seams LandSeams) error {
 	record, err := store.Load(id)
@@ -75,10 +79,11 @@ func LandSeries(store Store, id, actor string, at time.Time, seams LandSeams) er
 	if len(units) == 0 {
 		return fmt.Errorf("BATCH_LAND_STATE_REFUSED: batch %s has no joined units", id)
 	}
-	progress := LandingProgress{Base: record.BaseTree, Commits: map[string]string{}}
+	progress := LandingProgress{Base: record.BaseTree, Commits: map[string]string{}, BuildCommits: map[string]string{}}
 	if record.Landing != nil {
 		progress = *record.Landing
 		progress.Commits = cloneStrings(record.Landing.Commits)
+		progress.BuildCommits = cloneStrings(record.Landing.BuildCommits)
 	}
 	origin := record.BaseTree
 	if seams.Origin != nil {
@@ -175,6 +180,7 @@ func LandSeries(store Store, id, actor string, at time.Time, seams LandSeams) er
 		// stack from the recorded base so recovery never trusts an unproved
 		// worktree shape or pushes a recorded prefix.
 		progress.Commits = map[string]string{}
+		progress.BuildCommits = map[string]string{}
 		progress.HeldChecked = false
 		if seams.Prepare != nil {
 			if err := seams.Prepare(record.BaseTree); err != nil {
@@ -189,11 +195,44 @@ func LandSeries(store Store, id, actor string, at time.Time, seams LandSeams) er
 		receipt, ok := record.Receipts[unit.GoalID]
 		if index == len(units)-1 && !ok {
 			receipt = PrefixReceipt{GoalID: unit.GoalID, Tree: record.TipTree, AttemptID: record.Proof.AttemptID,
+				CommitIDs: slices.Clone(unit.CommitIDs), LastUnit: unit.LastUnit,
 				Reused: cloneStrings(record.Proof.Reuse), Executed: slices.Clone(record.Proof.Executions)}
+			for _, build := range unit.Builds {
+				receipt.Units = append(receipt.Units, build.Units...)
+			}
 			ok = true
 		}
 		if !ok || receipt.Tree != record.PrefixTrees[index] {
 			return fmt.Errorf("BATCH_LAND_RECEIPT_REFUSED: unit %s has no exact prefix receipt", unit.GoalID)
+		}
+		if len(unit.Builds) != 0 {
+			if seams.ApplyBuild == nil || seams.AppendBuildReceipt == nil || seams.CommitBuild == nil {
+				return fmt.Errorf("BATCH_LAND_UNWIRED: branch member helpers are incomplete")
+			}
+			for _, build := range unit.Builds {
+				if progress.BuildCommits[build.Commit] != "" {
+					continue
+				}
+				if err = seams.ApplyBuild(unit, build); err == nil {
+					err = seams.AppendBuildReceipt(unit, build, receipt)
+				}
+				var commit string
+				if err == nil {
+					commit, err = seams.CommitBuild(unit, build, receipt)
+				}
+				if err != nil {
+					return ejectRefusedMember(store, id, actor, at, record.BaseTree, unit, err, seams.Reset)
+				}
+				if commit == "" {
+					return fmt.Errorf("BATCH_LAND_COMMIT_REFUSED: build %s returned no commit", build.Commit)
+				}
+				progress.BuildCommits[build.Commit] = commit
+				progress.Commits[unit.GoalID] = commit
+				if err := store.Update(id, func(current *Record) error { current.Landing = &progress; return nil }); err != nil {
+					return err
+				}
+			}
+			continue
 		}
 		if seams.Apply == nil || seams.AppendReceipt == nil || seams.Commit == nil {
 			return fmt.Errorf("BATCH_LAND_UNWIRED: local series helpers are incomplete")
@@ -206,16 +245,7 @@ func LandSeries(store Store, id, actor string, at time.Time, seams LandSeams) er
 			commit, err = seams.Commit(unit, receipt)
 		}
 		if err != nil {
-			if seams.Reset != nil {
-				err = fmt.Errorf("commit %s refused: %w", unit.GoalID, err)
-				if resetErr := seams.Reset(record.BaseTree); resetErr != nil {
-					return fmt.Errorf("%v; reset: %w", err, resetErr)
-				}
-			}
-			if returnErr := RequestReturn(store, id, unit.GoalID, UnitEjected, err.Error(), actor, at); returnErr != nil {
-				return returnErr
-			}
-			return ReassembleSurvivors(store, id, actor, at)
+			return ejectRefusedMember(store, id, actor, at, record.BaseTree, unit, err, seams.Reset)
 		}
 		if commit == "" {
 			return fmt.Errorf("BATCH_LAND_COMMIT_REFUSED: unit %s returned no commit", unit.GoalID)
@@ -349,6 +379,19 @@ func reopenLandingCandidate(store Store, id, newBaseTree, actor string, at time.
 		current.Transition(StateOpen, at, "trunk-moved", actor, detail)
 		return nil
 	})
+}
+
+func ejectRefusedMember(store Store, id, actor string, at time.Time, base string, unit Unit, err error, reset func(string) error) error {
+	err = fmt.Errorf("commit %s refused: %w", unit.GoalID, err)
+	if reset != nil {
+		if resetErr := reset(base); resetErr != nil {
+			return fmt.Errorf("%v; reset: %w", err, resetErr)
+		}
+	}
+	if returnErr := RequestReturn(store, id, unit.GoalID, UnitEjected, err.Error(), actor, at); returnErr != nil {
+		return returnErr
+	}
+	return ReassembleSurvivors(store, id, actor, at)
 }
 
 func cloneStrings(source map[string]string) map[string]string {

@@ -80,6 +80,20 @@ func recordSelection(record *Record, plan testpolicy.Plan) {
 func runSealGate(root, tree string, units []Unit, execute batchGateExec) error {
 	paths := patchChange{}
 	for _, unit := range units {
+		if len(unit.Builds) != 0 {
+			member, ok := branchMemberOf(unit)
+			if !ok {
+				return fmt.Errorf("goal %s has no branch contribution", unit.GoalID)
+			}
+			patch, err := branchMemberPatch(root, member)
+			if err != nil {
+				return err
+			}
+			for path, deleted := range patchChangedPaths(patch) {
+				paths[path] = deleted
+			}
+			continue
+		}
 		patch, err := os.ReadFile(filepath.Join(root, "artifacts", "agents", "landing-batches", "chains", unit.Chain, "diff.patch"))
 		if err != nil {
 			return err

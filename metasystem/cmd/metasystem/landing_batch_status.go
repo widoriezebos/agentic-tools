@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"slices"
 	"time"
 
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/config"
@@ -26,14 +27,17 @@ var batchStatusSample = func(root string) proofrun.LoadSample {
 }
 
 type batchStatusUnit struct {
-	GoalID             string `json:"goalId"`
-	Chain              string `json:"chain"`
-	State              string `json:"state"`
-	Outcome            string `json:"outcome,omitempty"`
-	ReturnDisposition  string `json:"returnDisposition,omitempty"`
-	Revision           uint64 `json:"revision"`
-	AccountingRevision uint64 `json:"accountingRevision"`
-	ClaimEpoch         uint64 `json:"claimEpoch"`
+	GoalID             string   `json:"goalId"`
+	Chain              string   `json:"chain"`
+	CommitIDs          []string `json:"commitIds,omitempty"`
+	LastUnit           string   `json:"lastUnit,omitempty"`
+	PrefixTree         string   `json:"prefixTree,omitempty"`
+	State              string   `json:"state"`
+	Outcome            string   `json:"outcome,omitempty"`
+	ReturnDisposition  string   `json:"returnDisposition,omitempty"`
+	Revision           uint64   `json:"revision"`
+	AccountingRevision uint64   `json:"accountingRevision"`
+	ClaimEpoch         uint64   `json:"claimEpoch"`
 }
 
 type batchStatusView struct {
@@ -46,6 +50,8 @@ type batchStatusView struct {
 	ProofStatus   string                `json:"proofStatus,omitempty"`
 	Headroom      []batchStatusHeadroom `json:"headroom"`
 	Deadline      string                `json:"deadline,omitempty"`
+	Branch        string                `json:"branch,omitempty"`
+	BranchTip     string                `json:"branchTip,omitempty"`
 	Sample        proofrun.LoadSample   `json:"sample"`
 	Units         []batchStatusUnit     `json:"units"`
 }
@@ -97,6 +103,9 @@ func batchRecordStatus(record batch.Record, settings config.BatchLanding) batchS
 			view.Headroom = append(view.Headroom, statusHeadroom(settings.Root, unit.GoalID, batchStatusNow().UTC(), uint64(capMinutes)))
 		}
 	}
+	if record.Landing != nil && record.Landing.BranchTip != "" {
+		view.Branch, view.BranchTip = "landing/"+record.BatchID, record.Landing.BranchTip
+	}
 	pid, live, err := batchStatusOwner(settings.Root)
 	view.Owner, view.OwnerLiveness = fmt.Sprint(pid), fmt.Sprint(live)
 	if err != nil {
@@ -115,8 +124,13 @@ func batchRecordStatus(record batch.Record, settings config.BatchLanding) batchS
 	if !oldest.IsZero() {
 		view.Deadline = oldest.Add(settings.MaxWait).UTC().Format(time.RFC3339Nano)
 	}
-	for _, unit := range record.Units {
+	for index, unit := range record.Units {
+		prefix := ""
+		if index < len(record.PrefixTrees) {
+			prefix = record.PrefixTrees[index]
+		}
 		view.Units = append(view.Units, batchStatusUnit{GoalID: unit.GoalID, Chain: unit.Chain, State: unit.State,
+			CommitIDs: slices.Clone(unit.CommitIDs), LastUnit: unit.LastUnit, PrefixTree: prefix,
 			Outcome: unit.Outcome, ReturnDisposition: unit.ReturnDisposition, Revision: unit.Claim.Revision,
 			AccountingRevision: unit.Claim.AccountingRevision, ClaimEpoch: unit.Claim.Epoch})
 	}

@@ -86,6 +86,22 @@ func executeBatchProof(root, id, actor, window string, sample proofrun.LoadSampl
 	if record.State != batch.StateSealed {
 		return fmt.Errorf("BATCH_PROOF_STATE_REFUSED: batch %s is not sealed", id)
 	}
+	if record.Landing == nil && slices.ContainsFunc(record.Units, func(unit batch.Unit) bool { return len(unit.Builds) != 0 }) {
+		tip, branchErr := batch.RebuildLandingBranch(root, id, record.BaseTree, "", actor, record.Units)
+		if branchErr != nil {
+			return branchErr
+		}
+		if err := store.Update(id, func(current *batch.Record) error {
+			current.Landing = &batch.LandingProgress{Base: current.BaseTree, BranchTip: tip}
+			return nil
+		}); err != nil {
+			return err
+		}
+		record, err = store.Load(id)
+		if err != nil {
+			return err
+		}
+	}
 	joined := slices.DeleteFunc(slices.Clone(record.Units), func(unit batch.Unit) bool { return unit.State != batch.UnitJoined })
 	if len(joined) == 0 {
 		return fmt.Errorf("BATCH_PROOF_STATE_REFUSED: batch %s has no joined units", id)
