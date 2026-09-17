@@ -107,7 +107,7 @@ func runFixtureCustodian(args []string) int {
 	}
 	watch := os.NewFile(3, "fixture-owner-watch")
 	defer watch.Close()
-	if err := identity.RunCustodian(owner, watch, logFile); err != nil {
+	if err := identity.RunCustodian(owner, watch, nil, logFile); err != nil {
 		fmt.Fprintln(os.Stderr, "proc custodian:", err)
 		return 1
 	}

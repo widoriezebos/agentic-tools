@@ -1650,9 +1650,9 @@ func digestEnvironment(environment []string) string {
 	for _, entry := range environment {
 		name, _, _ := strings.Cut(entry, "=")
 		switch name {
-		// The run owner's exact process reference changes on every launch. It
-		// locates fixture custody but does not change test behavior, so binding it
-		// would prevent proof reuse across attempts and seats.
+		// The run owner's exact process reference locates fixture custody. A bad
+		// value fails the binary at start and a good one changes no test outcome,
+		// so binding it to the proof key would only prevent reuse.
 		case identity.RunOwnerEnv:
 			continue
 		case "METASYSTEM_PROOF_CONTROL_ROOT", "METASYSTEM_PROOF_ATTEMPT", "METASYSTEM_PROOF_RECORD_KEY", "METASYSTEM_PROOF_CREATION_CLAIM", "METASYSTEM_PROOF_AUTH_BIN":

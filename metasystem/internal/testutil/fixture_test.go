@@ -16,6 +16,8 @@ import (
 	"time"
 
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/identity"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/testenv"
+	"golang.org/x/sys/unix"
 )
 
 type recordingTB struct {
@@ -23,14 +25,64 @@ type recordingTB struct {
 	errs     []string
 }
 
+var errRecordingFatal = errors.New("recording Fatalf")
+
 type fixtureProbeFunc func(int64) (identity.Exact, identity.Liveness, error)
 
 func (f fixtureProbeFunc) Probe(pid int64) (identity.Exact, identity.Liveness, error) { return f(pid) }
 
-func (*recordingTB) Logf(string, ...any)              {}
-func (r *recordingTB) Fatalf(format string, a ...any) { panic(fmt.Sprintf(format, a...)) }
-func (r *recordingTB) Cleanup(cleanup func())         { r.cleanups = append(r.cleanups, cleanup) }
-func (r *recordingTB) Errorf(f string, a ...any)      { r.errs = append(r.errs, fmt.Sprintf(f, a...)) }
+func (*recordingTB) Logf(string, ...any) {}
+func (r *recordingTB) Fatalf(format string, a ...any) {
+	r.errs = append(r.errs, fmt.Sprintf(format, a...))
+	panic(errRecordingFatal)
+}
+func (r *recordingTB) Cleanup(cleanup func())    { r.cleanups = append(r.cleanups, cleanup) }
+func (r *recordingTB) Errorf(f string, a ...any) { r.errs = append(r.errs, fmt.Sprintf(f, a...)) }
+
+func runningBinaryCustodian() identity.Ref { ref, _ := testenv.FixtureCustodian(); return ref }
+
+func TestFixtureRefusesWithoutARunningCustodian(t *testing.T) {
+	owner, custodian := fixtureTeardownExact(int64(os.Getpid()), 1), fixtureTeardownExact(int64(os.Getpid())+1000, 2)
+	mismatch, zombie := custodian, custodian
+	mismatch.StartedAt, mismatch.StartTicks, zombie.Zombie = mismatch.StartedAt.Add(time.Microsecond), mismatch.StartTicks+1, true
+	for index, want := range []string{"process fixture needs a custodian: this binary's TestMain must call testenv.Main", "process fixture needs a running custodian: state=dead same-identity=false zombie=false err=<nil>", "process fixture needs a running custodian: state=alive same-identity=false zombie=false err=<nil>", "process fixture needs a running custodian: state=alive same-identity=true zombie=true err=<nil>", ""} {
+		recorder := &recordingTB{}
+		prober := fixtureProbeFunc(func(pid int64) (identity.Exact, identity.Liveness, error) {
+			if pid != custodian.Pid {
+				return owner, identity.Alive, nil
+			}
+			return []identity.Exact{{}, {}, mismatch, zombie, custodian}[index], []identity.Liveness{identity.Dead, identity.Dead, identity.Alive, identity.Alive, identity.Alive}[index], nil
+		})
+		fixture, recovered := (*ProcessFixture)(nil), any(nil)
+		func() {
+			defer func() { recovered = recover() }()
+			fixture = newProcessFixture(recorder, t.Name(), custodian.Ref(), index != 0, prober, syscall.Kill)
+		}()
+		if want != "" {
+			if recovered != errRecordingFatal || !slices.Equal(recorder.errs, []string{want}) {
+				t.Fatalf("panic=%v fatals=%q, want sentinel and %q", recovered, recorder.errs, want)
+			}
+			continue
+		}
+		if recovered != nil || len(recorder.errs) != 0 || fixture == nil || fixture.Key().Nonce == "" {
+			t.Fatalf("alive custodian: fixture=%v panic=%v fatals=%q", fixture, recovered, recorder.errs)
+		}
+		fixture.closeLeash()
+	}
+}
+
+func TestCustodianVariablesNeverReachFixtureChildren(t *testing.T) {
+	leash := os.Stdin
+	fixture := &ProcessFixture{tag: identity.FixtureOwnerEnv + "=fixture", leash: leash}
+	base := []string{identity.FixtureCustodianEnv + "=1", identity.FixtureCustodianOwnerEnv + "=owner", identity.FixtureCustodianLogEnv + "=log", identity.FixtureCustodianChainEnv + "=chain", identity.FixtureCustodianEnv + "_UNKNOWN=value", identity.FixtureOwnerEnv + "=inherited", "KEEP=value"}
+	transforms := []func([]string) []string{testenv.WithoutInheritedControls, fixture.Env}
+	wants := [][]string{{identity.FixtureOwnerEnv + "=inherited", "KEEP=value"}, {"KEEP=value", fixture.tag, fixtureLeashEnv + "=" + leash.Name()}}
+	for index, transform := range transforms {
+		if got := transform(base); !slices.Equal(got, wants[index]) {
+			t.Fatalf("child environment %d = %v, want %v", index, got, wants[index])
+		}
+	}
+}
 
 func TestFixtureWritesItsOwnershipRecord(t *testing.T) {
 	fixture, record := Fixture(t), filepath.Join(filepath.Dir(t.TempDir()), "fixture-owner")
@@ -47,8 +99,11 @@ func TestFixtureWritesItsOwnershipRecord(t *testing.T) {
 func TestCensusFindsAnUntaggedExecutableByRecord(t *testing.T) {
 	if os.Getenv("TESTUTIL_UNTAGGED_EXECUTABLE_HELPER") != "" {
 		ready, release := os.NewFile(4, "fixture-copy-ready"), os.NewFile(3, "fixture-copy-release")
-		_, err := ready.Write([]byte{1})
-		failOnFixtureError(t, errors.Join(err, ready.Close()))
+		custodian, _ := testenv.FixtureCustodian()
+		encoded, err := identity.EncodeRef(custodian)
+		logPath := fmt.Sprintf("%s.custodian-%d.log", os.Getenv("METASYSTEM_SUPERVISION_REGISTRY_HOME"), os.Getpid())
+		_, writeErr := fmt.Fprintf(ready, "%s\t%s\n", encoded, logPath)
+		failOnFixtureError(t, errors.Join(err, writeErr, ready.Close()))
 		_, err = io.Copy(io.Discard, release)
 		failOnFixtureError(t, err)
 		return
@@ -83,15 +138,21 @@ func TestCensusFindsAnUntaggedExecutableByRecord(t *testing.T) {
 			outside := startUntaggedFixtureCopy(t, fixture, outsideDirectory)
 			wrong := startUntaggedFixtureCopy(t, fixture, wrongDirectory)
 			got, err := identity.FixtureSurvivors(fixture.Key())
-			if err != nil || len(got) != 1 {
-				t.Fatalf("fixture scan = %#v, %v; want one result", got, err)
+			if err != nil || len(got) != 2 {
+				t.Fatalf("fixture scan = %#v, %v; want copied binary and its custodian", got, err)
+			}
+			custodianRef := encodeFixtureRef(t, positive.custodian)
+			if encodeFixtureRef(t, got[0].Ref) == custodianRef {
+				got[0], got[1] = got[1], got[0]
 			}
 			gotKey, gotKeyErr := identity.EncodeKey(got[0].Key)
 			wantKey, wantKeyErr := identity.EncodeKey(fixture.Key())
-			if got[0].Ref.Pid != positive.exact.Pid || got[0].Exe != positive.exact.Exe ||
+			custodianKey, custodianKeyErr := identity.EncodeKey(got[1].Key)
+			if got[0].Ref.Pid != positive.exact.Pid || got[0].Exe != positive.exact.Exe || encodeFixtureRef(t, got[1].Ref) != custodianRef ||
 				got[0].Class != identity.FixtureSurvivorCertain || got[0].Carrier != identity.FixtureCarrierRecord ||
-				gotKeyErr != nil || wantKeyErr != nil || gotKey != wantKey {
-				t.Fatalf("fixture scan = %#v, %v; key encodings %q/%q errors %v/%v; want only record-backed pid %d exe %q", got, err, gotKey, wantKey, gotKeyErr, wantKeyErr, positive.exact.Pid, positive.exact.Exe)
+				got[1].Class != identity.FixtureSurvivorCertain || got[1].Carrier != identity.FixtureCarrierRecord ||
+				gotKeyErr != nil || custodianKeyErr != nil || wantKeyErr != nil || gotKey != wantKey || custodianKey != wantKey {
+				t.Fatalf("fixture scan = %#v; key encodings %q/%q/%q errors %v/%v/%v; want record-backed pid %d exe %q and custodian %+v", got, gotKey, custodianKey, wantKey, gotKeyErr, custodianKeyErr, wantKeyErr, positive.exact.Pid, positive.exact.Exe, positive.custodian)
 			}
 			for _, processCopy := range []*untaggedFixtureCopy{positive, outside, wrong} {
 				failOnFixtureError(t, processCopy.release.Close())
@@ -111,7 +172,7 @@ func TestFixtureCleanupReadsOwnershipRecordBeforeTempDirRemoval(t *testing.T) {
 		failOnFixtureError(t, os.MkdirAll(tempDirectory, 0o700))
 		recorder.Cleanup(func() { _ = os.RemoveAll(perTestDirectory) })
 		return tempDirectory
-	}, identity.KernelProber{}, syscall.Kill)
+	}, runningBinaryCustodian(), true, identity.KernelProber{}, syscall.Kill)
 	processCopy := startUntaggedFixtureCopy(t, nil, tempDirectory)
 	for index := len(recorder.cleanups) - 1; index >= 0; index-- {
 		recorder.cleanups[index]()
@@ -127,9 +188,11 @@ func TestFixtureCleanupReadsOwnershipRecordBeforeTempDirRemoval(t *testing.T) {
 }
 
 type untaggedFixtureCopy struct {
-	command *exec.Cmd
-	exact   identity.Exact
-	release *os.File
+	command   *exec.Cmd
+	exact     identity.Exact
+	custodian identity.Ref
+	logPath   string
+	release   *os.File
 }
 
 func startUntaggedFixtureCopy(t *testing.T, fixture *ProcessFixture, directory string) *untaggedFixtureCopy {
@@ -156,11 +219,19 @@ func startUntaggedFixtureCopy(t *testing.T, fixture *ProcessFixture, directory s
 		} else {
 			_ = command.Process.Kill()
 		}
+		_, _ = command.Process.Wait()
+		processCopy.finishCustodianLog(t)
 	})
-	var ready [1]byte
-	_, err = io.ReadFull(readyReader, ready[:])
+	ready, err := bufio.NewReader(readyReader).ReadString('\n')
 	_ = readyReader.Close()
 	failOnFixtureError(t, err)
+	encodedCustodian, logPath, found := strings.Cut(strings.TrimSpace(ready), "\t")
+	if !found {
+		t.Fatalf("fixture copy readiness %q has no custodian log path", ready)
+	}
+	processCopy.custodian, err = identity.ParseRef(encodedCustodian)
+	failOnFixtureError(t, err)
+	processCopy.logPath = logPath
 	var state identity.Liveness
 	processCopy.exact, state, err = (identity.KernelProber{}).Probe(int64(command.Process.Pid))
 	if err != nil || state != identity.Alive || !processCopy.exact.Ref().NativeExact() || !processCopy.exact.ExeKnown {
@@ -168,8 +239,44 @@ func startUntaggedFixtureCopy(t *testing.T, fixture *ProcessFixture, directory s
 	}
 	if fixture != nil {
 		fixture.Hold(int(processCopy.exact.Pid))
+		fixture.Hold(int(processCopy.custodian.Pid))
+		custodianRef := encodeFixtureRef(t, processCopy.custodian)
+		if !slices.ContainsFunc(fixture.refs, func(ref identity.Ref) bool { return encodeFixtureRef(t, ref) == custodianRef }) {
+			t.Fatalf("fixture records %v do not contain custodian %+v", fixture.refs, processCopy.custodian)
+		}
 	}
 	return processCopy
+}
+
+func (p *untaggedFixtureCopy) finishCustodianLog(t *testing.T) {
+	if p.logPath == "" {
+		return
+	}
+	fd, err := unix.Open(p.logPath, unix.O_RDONLY|unix.O_CLOEXEC|unix.O_NOFOLLOW, 0)
+	if os.IsNotExist(err) {
+		return
+	}
+	failOnFixtureError(t, err)
+	log := os.NewFile(uintptr(fd), p.logPath)
+	defer log.Close()
+	failOnFixtureError(t, unix.Flock(fd, unix.LOCK_EX))
+	contents, err := io.ReadAll(log)
+	failOnFixtureError(t, err)
+	if string(contents) != "" && string(contents) != identity.FixtureCustodianCompletionLine(p.exact.Ref()) {
+		return
+	}
+	logInfo, logErr := log.Stat()
+	pathInfo, pathErr := os.Lstat(p.logPath)
+	if logErr == nil && pathErr == nil && pathInfo.Mode().IsRegular() && os.SameFile(logInfo, pathInfo) {
+		failOnFixtureError(t, os.Remove(p.logPath))
+	}
+}
+
+func encodeFixtureRef(t *testing.T, ref identity.Ref) string {
+	t.Helper()
+	encoded, err := identity.EncodeRef(ref)
+	failOnFixtureError(t, err)
+	return encoded
 }
 
 func unsetFixtureEnvironment(t *testing.T, name string) {
@@ -204,13 +311,17 @@ func TestBinaryExitScanNamesAChildThatOutlivedItsTest(t *testing.T) {
 	buffered := bufio.NewReader(outputReader)
 	line, err := buffered.ReadString('\n')
 	failOnFixtureError(t, err)
-	pid, err := strconv.ParseInt(strings.TrimSpace(line), 10, 64)
+	pidText, childEnv, _ := strings.Cut(strings.TrimSpace(line), "|")
+	pid, err := strconv.ParseInt(pidText, 10, 64)
 	failOnFixtureError(t, err)
 	child, state, err := (identity.KernelProber{}).Probe(pid)
 	if err != nil || state != identity.Alive {
 		t.Fatalf("probe helper child: state=%v err=%v", state, err)
 	}
 	defer identity.SignalExact(identity.KernelProber{}, child.Ref(), syscall.SIGKILL)
+	if childEnv != "" {
+		t.Fatalf("custodian variable reached live fixture child: %s", childEnv)
+	}
 	failOnFixtureError(t, releaseWriter.Close())
 	rest, readErr := io.ReadAll(buffered)
 	if readErr != nil {
@@ -237,7 +348,7 @@ func TestBinaryExitScanHelper(t *testing.T) {
 	input, release := os.NewFile(3, "exit-scan-input"), os.NewFile(4, "exit-scan-release")
 	var fixture *ProcessFixture
 	t.Cleanup(func() {
-		command := fixture.Shell("trap '' TERM\nprintf '%d\\n' $$\nread -r _")
+		command := fixture.Shell("trap '' TERM\nprintf '%d|' $$\nenv | sed -n 's/^\\(METASYSTEM_FIXTURE_CUSTODIAN[^=]*\\)=.*/\\1/p'\nprintf '\\n'\nread -r _")
 		stdout, _ := command.StdoutPipe()
 		command.Stdin, command.Stderr = input, os.Stderr
 		failOnFixtureError(t, command.Start())
@@ -312,7 +423,7 @@ func TestHelperFailingBeforeItsKillPointLeavesNoChild(t *testing.T) {
 	for index, helperFailure := range []string{"helper write failed", "helper ownership mismatched", "helper did not observe exit"} {
 		t.Run(helperFailure, func(t *testing.T) {
 			prober, recorder := identity.KernelProber{}, &recordingTB{}
-			fixture := newProcessFixture(recorder, t.Name(), prober, syscall.Kill)
+			fixture := newProcessFixture(recorder, t.Name(), runningBinaryCustodian(), true, prober, syscall.Kill)
 			fixture.scan = noFixtureSurvivors
 			command := fixture.Shell("trap '' TERM\nkill -STOP $$")
 			if err := command.Start(); err != nil {
@@ -401,7 +512,7 @@ func TestRecordedChildIsReprovedBeforeKill(t *testing.T) {
 			}
 			return first, identity.Alive, nil
 		})
-		fixture := newProcessFixture(recorder, t.Name(), prober, func(int, syscall.Signal) error { sent++; return nil })
+		fixture := newProcessFixture(recorder, t.Name(), owner.Ref(), true, prober, func(int, syscall.Signal) error { sent++; return nil })
 		fixture.scan = func(identity.FixtureKey) ([]identity.FixtureSurvivor, error) { return nil, nil }
 		if test.held {
 			fixture.Hold(500)
@@ -417,7 +528,7 @@ func TestRecordedChildIsReprovedBeforeKill(t *testing.T) {
 		}
 	}
 	recorder, sent := &recordingTB{}, 0
-	fixture := newProcessFixture(recorder, t.Name(), identity.KernelProber{}, func(int, syscall.Signal) error { sent++; return nil })
+	fixture := newProcessFixture(recorder, t.Name(), runningBinaryCustodian(), true, identity.KernelProber{}, func(int, syscall.Signal) error { sent++; return nil })
 	fixture.scan = func(identity.FixtureKey) ([]identity.FixtureSurvivor, error) { return nil, nil }
 	command := fixture.Shell("read -r _\nexit 0")
 	stdin, _ := command.StdinPipe()
@@ -433,7 +544,7 @@ func TestRecordedChildIsReprovedBeforeKill(t *testing.T) {
 
 func TestKeyScanNamesAnUnrecordedTaggedGrandchild(t *testing.T) {
 	prober, recorder := identity.KernelProber{}, &recordingTB{}
-	fixture := newProcessFixture(recorder, t.Name(), prober, syscall.Kill)
+	fixture := newProcessFixture(recorder, t.Name(), runningBinaryCustodian(), true, prober, syscall.Kill)
 	reader, writer, err := os.Pipe()
 	failOnFixtureError(t, err)
 	releaseReader, releaseWriter, err := os.Pipe()
@@ -474,7 +585,7 @@ read -r _ <&3 || :`, ready)
 
 func TestLeashedShellExitsWhenItsOwnerLetsGo(t *testing.T) {
 	recorder, sent := &recordingTB{}, 0
-	fixture := newProcessFixture(recorder, t.Name(), identity.KernelProber{}, func(pid int, sig syscall.Signal) error { sent++; return syscall.Kill(pid, sig) })
+	fixture := newProcessFixture(recorder, t.Name(), runningBinaryCustodian(), true, identity.KernelProber{}, func(pid int, sig syscall.Signal) error { sent++; return syscall.Kill(pid, sig) })
 	fixture.scan = noFixtureSurvivors
 	command, ref, release := startLeashedShell(t, fixture, true)
 	// Close the leash before releasing the shell; on macOS, a reader entering read as the last writer closes can miss EOF.
@@ -490,7 +601,8 @@ func TestLeashedShellExitsWhenItsOwnerLetsGo(t *testing.T) {
 
 func TestCleanupIsScopedToTheFixtureKey(t *testing.T) {
 	recorders := []*recordingTB{{}, {}}
-	fixtures := []*ProcessFixture{newProcessFixture(recorders[0], t.Name(), identity.KernelProber{}, syscall.Kill), newProcessFixture(recorders[1], t.Name(), identity.KernelProber{}, syscall.Kill)}
+	custodian := runningBinaryCustodian()
+	fixtures := []*ProcessFixture{newProcessFixture(recorders[0], t.Name(), custodian, true, identity.KernelProber{}, syscall.Kill), newProcessFixture(recorders[1], t.Name(), custodian, true, identity.KernelProber{}, syscall.Kill)}
 	first, firstRef, _ := startLeashedShell(t, fixtures[0], false)
 	second, secondRef, _ := startLeashedShell(t, fixtures[1], false)
 	recorders[0].cleanups[0]()

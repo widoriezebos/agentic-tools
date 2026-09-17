@@ -16,6 +16,8 @@ import (
 	"testing"
 	"time"
 
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/identity"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/testenv"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/testpolicy"
 )
 
@@ -365,6 +367,7 @@ type supervisorHelperFixture struct {
 	grandchildInputRead io.Closer
 	stdout              *bufio.Reader
 	ready               chan error
+	custodians          []identity.Ref
 	keepAlive           chan struct{}
 	log                 *synchronizedBuffer
 	readyActivity       time.Time
@@ -511,8 +514,8 @@ func newSupervisorHelperFixture(t *testing.T, mode string, args ...string) *supe
 	command.Stderr = fixture.log
 	go func() {
 		line, readErr := fixture.stdout.ReadString('\n')
-		if readErr == nil && line != "ready\n" {
-			readErr = fmt.Errorf("helper announced %q, want %q", line, "ready\n")
+		if readErr == nil {
+			fixture.custodians, readErr = parseSupervisorHelperReady(line)
 		}
 		fixture.ready <- readErr
 	}()
@@ -561,7 +564,87 @@ func (fixture *supervisorHelperFixture) gate(options *supervisorOptions, reader 
 	}
 	options.Reader = &readinessGatedTreeReader{
 		ready: fixture.ready, keepAlive: fixture.keepAlive, activity: options.Activity, readyActivity: &fixture.readyActivity,
-		reader: reader, onSample: onSample,
+		reader: &supervisorHelperTreeReader{reader: reader, custodians: &fixture.custodians, prober: identity.KernelProber{}}, onSample: onSample,
+	}
+}
+
+type supervisorHelperTreeReader struct {
+	reader     processTreeReader
+	custodians *[]identity.Ref
+	prober     identity.Prober
+}
+
+func (reader *supervisorHelperTreeReader) Sample(rootPID int) (processTreeSample, error) {
+	sample, err := reader.reader.Sample(rootPID)
+	if err != nil {
+		return processTreeSample{}, err
+	}
+	return excludeSupervisorHelperCustodians(sample, *reader.custodians, reader.prober), nil
+}
+
+func excludeSupervisorHelperCustodians(sample processTreeSample, custodians []identity.Ref, prober identity.Prober) processTreeSample {
+	excluded := make(map[int]bool, len(custodians))
+	for _, ref := range custodians {
+		exact, state, err := prober.Probe(ref.Pid)
+		if err == nil && state == identity.Alive && identity.SameIdentity(exact, ref) {
+			excluded[int(ref.Pid)] = true
+		}
+	}
+	members := make([]int, 0, len(sample.Members))
+	for _, pid := range sample.Members {
+		if !excluded[pid] {
+			members = append(members, pid)
+		}
+	}
+	sample.Members = members
+	if sample.MemberCPU != nil {
+		memberCPU := make([]processMemberCPU, 0, len(sample.MemberCPU))
+		for _, member := range sample.MemberCPU {
+			if !excluded[member.PID] {
+				memberCPU = append(memberCPU, member)
+			}
+		}
+		sample.MemberCPU = memberCPU
+	}
+	return sample
+}
+
+func TestSupervisorHelperCustodianAccountingUsesExactIdentity(t *testing.T) {
+	custodian, ok := testenv.FixtureCustodian()
+	if !ok {
+		t.Fatal("test binary has no fixture custodian")
+	}
+	ownerPID := os.Getpid()
+	sample := processTreeSample{
+		Members: []int{ownerPID, int(custodian.Pid)},
+		MemberCPU: []processMemberCPU{
+			{PID: ownerPID, CPUSeconds: 0.5},
+			{PID: int(custodian.Pid), CPUSeconds: 0.25},
+		},
+	}
+	fixture := &supervisorHelperFixture{ready: make(chan error, 1), custodians: []identity.Ref{custodian}, keepAlive: make(chan struct{})}
+	fixture.ready <- nil
+	options := supervisorOptions{}
+	fixture.gate(&options, &scriptedTreeReader{samples: []processTreeSample{sample}}, nil)
+	if _, err := options.Reader.Sample(ownerPID); err != nil {
+		t.Fatal(err)
+	}
+	got, err := options.Reader.Sample(ownerPID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(got.Members) != 1 || got.Members[0] != ownerPID || len(got.MemberCPU) != 1 || got.MemberCPU[0].PID != ownerPID || sampleMemberCPUTotal(got) != 0.5 {
+		t.Fatalf("custodian-filtered sample = %+v; want only owner pid %d and its CPU", got, ownerPID)
+	}
+	mismatched := custodian
+	if mismatched.StartTicks != 0 {
+		mismatched.StartTicks++
+	} else {
+		mismatched.StartedAtUnixMicro++
+	}
+	got = excludeSupervisorHelperCustodians(sample, []identity.Ref{mismatched}, identity.KernelProber{})
+	if len(got.Members) != 2 || len(got.MemberCPU) != 2 {
+		t.Fatalf("identity-mismatched sample = %+v; want both processes retained", got)
 	}
 }
 
@@ -625,51 +708,51 @@ func TestSupervisorProcessHelper(t *testing.T) {
 		for {
 		}
 	case "setsid-child":
-		child, err := startNestedSupervisorHelper(true, "busy-forever")
+		child, custodians, err := startNestedSupervisorHelper(true, "busy-forever")
 		if err != nil {
 			os.Exit(31)
 		}
-		announceSupervisorHelperReady()
+		announceSupervisorHelperReady(custodians...)
 		if child.Wait() != nil {
 			os.Exit(31)
 		}
 		select {}
 	case "reaped-child":
-		child, err := startNestedSupervisorHelper(false, "reaping-member")
+		child, custodians, err := startNestedSupervisorHelper(false, "reaping-member")
 		if err != nil {
 			os.Exit(32)
 		}
-		announceSupervisorHelperReady()
+		announceSupervisorHelperReady(custodians...)
 		if child.Wait() != nil {
 			os.Exit(32)
 		}
 		select {}
 	case "reaping-member":
-		child, err := startNestedSupervisorHelper(false, "busy-forever")
+		child, custodians, err := startNestedSupervisorHelper(false, "busy-forever")
 		if err != nil {
 			os.Exit(32)
 		}
-		announceSupervisorHelperReady()
+		announceSupervisorHelperReady(custodians...)
 		if child.Wait() != nil {
 			os.Exit(32)
 		}
 		select {}
 	case "retained-child":
-		child, err := startNestedSupervisorHelper(false, "busy-forever")
+		child, custodians, err := startNestedSupervisorHelper(false, "busy-forever")
 		if err != nil {
 			os.Exit(32)
 		}
-		announceSupervisorHelperReady()
+		announceSupervisorHelperReady(custodians...)
 		if child.Wait() != nil {
 			os.Exit(32)
 		}
 		select {}
 	case "stage-writer":
-		child, err := startNestedSupervisorHelper(true, "stage-child", args[0])
+		child, custodians, err := startNestedSupervisorHelper(true, "stage-child", args[0])
 		if err != nil {
 			os.Exit(33)
 		}
-		announceSupervisorHelperReady()
+		announceSupervisorHelperReady(custodians...)
 		if child.Wait() != nil {
 			os.Exit(33)
 		}
@@ -704,13 +787,43 @@ func TestSupervisorProcessHelper(t *testing.T) {
 	}
 }
 
-func announceSupervisorHelperReady() {
-	if _, err := fmt.Fprintln(os.Stdout, "ready"); err != nil {
+func announceSupervisorHelperReady(descendants ...identity.Ref) {
+	custodian, ok := testenv.FixtureCustodian()
+	if !ok {
+		os.Exit(35)
+	}
+	custodians := append([]identity.Ref{custodian}, descendants...)
+	values := make([]string, len(custodians))
+	for index, ref := range custodians {
+		value, err := identity.EncodeRef(ref)
+		if err != nil {
+			os.Exit(35)
+		}
+		values[index] = value
+	}
+	if _, err := fmt.Fprintf(os.Stdout, "ready %s\n", strings.Join(values, "|")); err != nil {
 		os.Exit(35)
 	}
 }
 
-func startNestedSupervisorHelper(setsid bool, mode string, args ...string) (*exec.Cmd, error) {
+func parseSupervisorHelperReady(line string) ([]identity.Ref, error) {
+	encoded, ok := strings.CutSuffix(strings.TrimPrefix(line, "ready "), "\n")
+	if !ok || !strings.HasPrefix(line, "ready ") || encoded == "" {
+		return nil, fmt.Errorf("helper announced %q, want ready with custodian identities", line)
+	}
+	values := strings.Split(encoded, "|")
+	refs := make([]identity.Ref, len(values))
+	for index, value := range values {
+		ref, err := identity.ParseRef(value)
+		if err != nil {
+			return nil, fmt.Errorf("helper announced invalid custodian identity %q: %w", value, err)
+		}
+		refs[index] = ref
+	}
+	return refs, nil
+}
+
+func startNestedSupervisorHelper(setsid bool, mode string, args ...string) (*exec.Cmd, []identity.Ref, error) {
 	command := rawSupervisorHelperCommand(mode, args...)
 	command.Stderr = os.Stderr
 	if setsid {
@@ -718,22 +831,22 @@ func startNestedSupervisorHelper(setsid bool, mode string, args ...string) (*exe
 	}
 	fd, err := strconv.Atoi(os.Getenv("SUPERVISOR_NESTED_STDIN_FD"))
 	if err != nil || fd < 3 {
-		return nil, fmt.Errorf("nested helper stdin descriptor is unavailable")
+		return nil, nil, fmt.Errorf("nested helper stdin descriptor is unavailable")
 	}
 	nestedInput := os.NewFile(uintptr(fd), "supervisor-nested-stdin")
 	if nestedInput == nil {
-		return nil, fmt.Errorf("open nested helper stdin descriptor %d", fd)
+		return nil, nil, fmt.Errorf("open nested helper stdin descriptor %d", fd)
 	}
 	command.Stdin = nestedInput
 	var forwardedInput *os.File
 	if grandchildDescriptor := os.Getenv("SUPERVISOR_GRANDCHILD_STDIN_FD"); grandchildDescriptor != "" {
 		grandchildFD, descriptorErr := strconv.Atoi(grandchildDescriptor)
 		if descriptorErr != nil || grandchildFD < 3 {
-			return nil, fmt.Errorf("grandchild helper stdin descriptor is unavailable")
+			return nil, nil, fmt.Errorf("grandchild helper stdin descriptor is unavailable")
 		}
 		forwardedInput = os.NewFile(uintptr(grandchildFD), "supervisor-grandchild-stdin")
 		if forwardedInput == nil {
-			return nil, fmt.Errorf("open grandchild helper stdin descriptor %d", grandchildFD)
+			return nil, nil, fmt.Errorf("open grandchild helper stdin descriptor %d", grandchildFD)
 		}
 		command.ExtraFiles = append(command.ExtraFiles, forwardedInput)
 		command.Env = supervisorHelperChildEnvironment(command.Env)
@@ -743,25 +856,26 @@ func startNestedSupervisorHelper(setsid bool, mode string, args ...string) (*exe
 		if forwardedInput != nil {
 			_ = forwardedInput.Close()
 		}
-		return nil, err
+		return nil, nil, err
 	}
 	if err := command.Start(); err != nil {
 		if forwardedInput != nil {
 			_ = forwardedInput.Close()
 		}
-		return nil, err
+		return nil, nil, err
 	}
 	if forwardedInput != nil {
 		_ = forwardedInput.Close()
 	}
 	line, err := bufio.NewReader(stdout).ReadString('\n')
 	if err != nil {
-		return nil, fmt.Errorf("nested %s helper readiness %q: %w", mode, line, err)
+		return nil, nil, fmt.Errorf("nested %s helper readiness %q: %w", mode, line, err)
 	}
-	if line != "ready\n" {
-		return nil, fmt.Errorf("nested %s helper readiness %q, want %q", mode, line, "ready\n")
+	custodians, err := parseSupervisorHelperReady(line)
+	if err != nil {
+		return nil, nil, fmt.Errorf("nested %s helper readiness: %w", mode, err)
 	}
-	return command, nil
+	return command, custodians, nil
 }
 
 func supervisorHelperChildEnvironment(environment []string) []string {

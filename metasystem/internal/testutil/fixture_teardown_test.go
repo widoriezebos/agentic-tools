@@ -55,7 +55,7 @@ func TestReapKeySurvivorsRequiresCertainLiveIdentityBeforeSignal(t *testing.T) {
 			}
 			var sent []sentSignal
 			recorder := &recordingTB{}
-			fixture := newProcessFixture(recorder, t.Name(), prober, func(pid int, sig syscall.Signal) error {
+			fixture := newProcessFixture(recorder, t.Name(), owner.Ref(), true, prober, func(pid int, sig syscall.Signal) error {
 				signaled = true
 				sent = append(sent, sentSignal{pid, sig})
 				return nil

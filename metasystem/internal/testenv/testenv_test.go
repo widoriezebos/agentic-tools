@@ -12,6 +12,7 @@ import (
 	"path/filepath"
 	"reflect"
 	"strings"
+	"syscall"
 	"testing"
 	"time"
 
@@ -271,6 +272,26 @@ func TestQuietFixtureCustodianLogDecision(t *testing.T) {
 	removeQuietFixtureCustodianLog(different.Name(), owner, target)
 	if _, err := os.Lstat(different.Name()); err != nil {
 		t.Fatalf("different regular file was removed: %v", err)
+	}
+}
+
+func TestCustodianStartRefusesACustodianThatExitsAtOnce(t *testing.T) {
+	for script, want := range map[string]string{"exit 2": "exit status 2", "printf 'notready\\n' >&4": "custodian exited before ready"} {
+		_, err := startFixtureCustodian(func() *exec.Cmd { return exec.Command("/bin/sh", "-c", script) }, filepath.Join(t.TempDir(), "registry"))
+		if err == nil || !strings.Contains(err.Error(), want) {
+			t.Fatalf("script %q: start error = %v, want text %q", script, err, want)
+		}
+	}
+	binaryRef, _ := FixtureCustodian()
+	var command *exec.Cmd
+	ref, err := startFixtureCustodian(func() *exec.Cmd { command = exec.Command(os.Args[0]); return command }, filepath.Join(t.TempDir(), "registry"))
+	checkTestenv(t, err)
+	t.Cleanup(func() { _ = identity.SignalExact(identity.KernelProber{}, ref, syscall.SIGKILL); _ = command.Wait() })
+	if exact, state, probeErr := (identity.KernelProber{}).Probe(ref.Pid); probeErr != nil || state != identity.Alive || !identity.SameIdentity(exact, ref) || exact.Zombie {
+		t.Fatalf("started custodian: state=%s exact=%+v err=%v", state, exact, probeErr)
+	}
+	if current, present := FixtureCustodian(); !present || binaryRef != current {
+		t.Fatalf("binary custodian changed: before=%+v after=%+v/%t", binaryRef, current, present)
 	}
 }
 

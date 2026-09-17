@@ -3,6 +3,7 @@
 package testenv
 
 import (
+	"bufio"
 	"crypto/rand"
 	"encoding/hex"
 	"errors"
@@ -37,7 +38,6 @@ var inheritedControlNames = []string{
 	"METASYSTEM_BIN",
 	"METASYSTEM_CHECKOUT_EXECUTION_GUARD_ROOT",
 	"METASYSTEM_DELEGATE_ROOT",
-	identity.FixtureCustodianStartEnv,
 	"METASYSTEM_GATE_WITNESS_ROOT",
 	"METASYSTEM_GUARD_PROBE",
 	"METASYSTEM_HARNESS_ROOT",
@@ -51,6 +51,7 @@ var inheritedControlNames = []string{
 
 var inheritedControlPrefixes = []string{
 	"METASYSTEM_CHECKOUT_EXECUTION_GUARD_",
+	identity.FixtureCustodianEnv,
 	"METASYSTEM_GATE_WITNESS",
 	"METASYSTEM_HOOK_DELEGATE_",
 	"METASYSTEM_PROOF_",
@@ -61,6 +62,11 @@ var fixtureKeys struct {
 	sync.Mutex
 	keys []identity.FixtureKey
 }
+
+var fixtureCustodian identity.Ref
+
+// FixtureCustodian returns the exact custodian started for this test binary.
+func FixtureCustodian() (identity.Ref, bool) { return fixtureCustodian, fixtureCustodian.Pid != 0 }
 
 // RegisterFixtureKey records a key minted by this test binary for its exit scan.
 func RegisterFixtureKey(key identity.FixtureKey) {
@@ -127,8 +133,16 @@ func Main(m *testing.M, declarations ...Declaration) (code int) {
 			fmt.Fprintf(os.Stderr, "run fixture custodian: watch descriptor 3 is not a pipe read end: flags=%#x err=%v\n", watchFlags, err)
 			return 2
 		}
+		var readyStat unix.Stat_t
+		statErr := unix.Fstat(4, &readyStat)
+		readyFlags, err := unix.FcntlInt(uintptr(4), unix.F_GETFL, 0)
+		if statErr != nil || readyStat.Mode&unix.S_IFMT != unix.S_IFIFO || err != nil || readyFlags&unix.O_ACCMODE != unix.O_WRONLY {
+			fmt.Fprintf(os.Stderr, "run fixture custodian: ready descriptor 4 is not a pipe opened for writing: mode=%#o flags=%#x stat=%v flags-error=%v\n", readyStat.Mode&unix.S_IFMT, readyFlags, statErr, err)
+			return 2
+		}
 		watch := os.NewFile(3, "fixture-owner-watch")
-		err = identity.RunCustodian(owner, watch, os.Stderr)
+		ready := os.NewFile(4, "fixture-custodian-ready")
+		err = identity.RunCustodian(owner, watch, ready, os.Stderr)
 		_ = watch.Close()
 		if err != nil {
 			fmt.Fprintln(os.Stderr, "run fixture custodian:", err)
@@ -139,7 +153,6 @@ func Main(m *testing.M, declarations ...Declaration) (code int) {
 		}
 		return 0
 	}
-	startCustodian := os.Getenv(identity.FixtureCustodianStartEnv) == "1"
 	cleanup, err := prepare(declarations)
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "prepare test environment: %v\n", err)
@@ -153,12 +166,10 @@ func Main(m *testing.M, declarations ...Declaration) (code int) {
 			}
 		}
 	}()
-	if startCustodian {
-		err = startFixtureCustodian(os.Getenv(supervisionRegistryHome))
-		if err != nil {
-			fmt.Fprintf(os.Stderr, "start fixture custodian: %v\n", err)
-			return 2
-		}
+	fixtureCustodian, err = startFixtureCustodian(func() *exec.Cmd { return exec.Command(os.Args[0]) }, os.Getenv(supervisionRegistryHome))
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "start fixture custodian: %v\n", err)
+		return 2
 	}
 	code = exitScan(m.Run(), registeredFixtureKeys(), identity.FixtureSurvivors, identity.KernelProber{}, syscall.Kill, os.Stderr)
 	return code
@@ -211,67 +222,92 @@ func waitForFixtureExit(prober identity.Prober, ref identity.Ref) {
 	}
 }
 
-func startFixtureCustodian(registry string) error {
+func startFixtureCustodian(build func() *exec.Cmd, registry string) (identity.Ref, error) {
 	exact, state, err := (identity.KernelProber{}).Probe(int64(os.Getpid()))
 	if err != nil || state != identity.Alive {
-		return fmt.Errorf("prove owner identity: state=%s err=%v", state, err)
+		return identity.Ref{}, fmt.Errorf("prove owner identity: state=%s err=%v", state, err)
 	}
 	owner, err := identity.EncodeRef(exact.Ref())
 	if err != nil {
-		return err
+		return identity.Ref{}, err
 	}
 	runOwner, runOwnerSet := os.LookupEnv(identity.RunOwnerEnv)
 	chain, err := identity.ResolveRunOwner(exact.Ref(), runOwner, runOwnerSet)
 	if err != nil {
-		return fmt.Errorf("run owner %q: %w", runOwner, err)
+		return identity.Ref{}, fmt.Errorf("run owner %q: %w", runOwner, err)
 	}
 	chainValues := make([]string, len(chain))
 	for index, ref := range chain {
 		chainValues[index], err = identity.EncodeRef(ref)
 		if err != nil {
-			return err
+			return identity.Ref{}, err
 		}
 	}
 	reader, writer, err := os.Pipe()
 	if err != nil {
-		return err
+		return identity.Ref{}, err
 	}
 	defer func() {
 		reader.Close()
 		writer.Close()
 	}()
+	readyReader, readyWriter, err := os.Pipe()
+	if err != nil {
+		return identity.Ref{}, err
+	}
+	defer readyReader.Close()
+	defer readyWriter.Close()
 	logPath := fmt.Sprintf("%s.custodian-%d.log", registry, exact.Pid)
 	logFile, err := os.OpenFile(logPath, os.O_WRONLY|os.O_CREATE|os.O_APPEND|unix.O_NOFOLLOW, 0o600)
 	if err != nil {
-		return err
+		return identity.Ref{}, err
 	}
 	defer logFile.Close()
-	command := exec.Command(os.Args[0])
+	if err := unix.Flock(int(logFile.Fd()), unix.LOCK_EX); err != nil {
+		return identity.Ref{}, err
+	}
+	command := build()
 	for _, entry := range os.Environ() {
 		name, _, _ := strings.Cut(entry, "=")
-		if name != identity.FixtureOwnerEnv && name != identity.FixtureCustodianEnv && name != identity.FixtureCustodianChainEnv &&
-			name != identity.FixtureCustodianOwnerEnv && name != identity.FixtureCustodianLogEnv {
+		if name != identity.FixtureOwnerEnv && !strings.HasPrefix(name, identity.FixtureCustodianEnv) {
 			command.Env = append(command.Env, entry)
 		}
 	}
 	command.Env = append(command.Env, identity.FixtureCustodianEnv+"=1", identity.FixtureCustodianOwnerEnv+"="+owner,
 		identity.FixtureCustodianLogEnv+"="+logPath, identity.FixtureCustodianChainEnv+"="+strings.Join(chainValues, "|"))
-	command.ExtraFiles = []*os.File{reader}
+	command.ExtraFiles = []*os.File{reader, readyWriter}
 	command.Stderr = logFile
 	command.SysProcAttr = &syscall.SysProcAttr{Setsid: true}
 	if err := command.Start(); err != nil {
-		return err
+		return identity.Ref{}, err
 	}
-	if _, state, probeErr := (identity.KernelProber{}).Probe(int64(command.Process.Pid)); probeErr != nil || state != identity.Alive {
+	_ = readyWriter.Close()
+	ready := bufio.NewScanner(readyReader)
+	for ready.Scan() && ready.Text() != "ready" {
+	}
+	if ready.Text() != "ready" {
+		_ = command.Wait()
+		return identity.Ref{}, fmt.Errorf("custodian exited before ready: %s; log tail: %q", command.ProcessState, fixtureCustodianLogTail(logPath))
+	}
+	custodian, state, probeErr := (identity.KernelProber{}).Probe(int64(command.Process.Pid))
+	if probeErr != nil || state != identity.Alive || !custodian.Ref().NativeExact() || custodian.Zombie {
 		_ = command.Process.Kill()
-		return fmt.Errorf("probe custodian: state=%s err=%v", state, probeErr)
+		_ = command.Wait()
+		return identity.Ref{}, fmt.Errorf("probe custodian: state=%s zombie=%t err=%v", state, custodian.Zombie, probeErr)
 	}
 	// The duplicate is never closed; the kernel closes it at process exit, which tells the custodian the owner died.
 	if _, err := unix.FcntlInt(writer.Fd(), unix.F_DUPFD_CLOEXEC, 0); err != nil {
-		_ = command.Process.Kill()
-		return err
+		_ = identity.SignalExact(identity.KernelProber{}, custodian.Ref(), syscall.SIGKILL)
+		_ = command.Wait()
+		return identity.Ref{}, err
 	}
-	return nil
+	return custodian.Ref(), nil
+}
+
+func fixtureCustodianLogTail(path string) string {
+	contents, _ := os.ReadFile(path)
+	lines := strings.Split(strings.TrimRight(string(contents), "\n"), "\n")
+	return strings.Join(lines[max(0, len(lines)-8):], "\n")
 }
 
 func removeQuietFixtureCustodianLog(path string, owner identity.Ref, stderr *os.File) {
