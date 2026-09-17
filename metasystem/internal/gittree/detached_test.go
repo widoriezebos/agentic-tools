@@ -11,6 +11,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/testpolicy/contractgit"
 	"golang.org/x/sys/unix"
 )
 
@@ -279,7 +280,12 @@ func TestDetachedCommitWorktreeConflictingRebaseCleansUp(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	result, err := detached.Rebase(upstream)
+	driverArgs, err := contractgit.RuntimeDriverArgs()
+	if err != nil {
+		_ = detached.Close()
+		t.Fatal(err)
+	}
+	result, err := detached.Rebase(upstream, driverArgs...)
 	if err != nil {
 		_ = detached.Close()
 		t.Fatal(err)

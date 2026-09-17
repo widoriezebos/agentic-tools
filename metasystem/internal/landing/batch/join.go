@@ -13,6 +13,7 @@ import (
 	"strings"
 
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/gittree"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/testpolicy/contractgit"
 )
 
 type batchRecordFields struct {
@@ -42,6 +43,9 @@ func joinRefusal(record Record) error {
 }
 
 func assembleUnits(root, base string, units []Unit) (prefixes []string, err error) {
+	if _, err := batchMergeDriverArgs(); err != nil {
+		return nil, err
+	}
 	if slices.ContainsFunc(units, func(unit Unit) bool { return len(unit.Builds) != 0 }) {
 		current := base
 		for _, unit := range units {
@@ -69,9 +73,17 @@ func assembleUnits(root, base string, units []Unit) (prefixes []string, err erro
 		if err != nil {
 			return nil, err
 		}
-		command := exec.Command("git", batchMergeGitCommand(workspace.Dir, "-c", "core.useReplaceRefs=false", "-c", "core.hooksPath=/dev/null", "apply", "--index", "--3way", "--binary", "--whitespace=nowarn", "-")...)
-		command.Env, command.Stdin = gittree.ScrubbedEnviron(), bytes.NewReader(patch)
-		if output, applyErr := command.CombinedOutput(); applyErr != nil {
+		before, err := workspace.StagedTree()
+		if err != nil {
+			return nil, err
+		}
+		if err := contractgit.PreflightPatchAttributes(workspace.Dir, before, "unit "+unit.GoalID, patch); err != nil {
+			return nil, err
+		}
+		if output, applyErr := runBatchMergeGit(workspace.Dir, patch, "-c", "core.useReplaceRefs=false", "-c", "core.hooksPath=/dev/null", "apply", "--index", "--3way", "--binary", "--whitespace=nowarn", "-"); applyErr != nil {
+			if contractgit.IsRefusal(applyErr) {
+				return nil, applyErr
+			}
 			paths := exec.Command("git", "-C", workspace.Dir, "diff", "--name-only", "--diff-filter=U", "-z")
 			paths.Env = gittree.ScrubbedEnviron()
 			raw, _ := paths.Output()
@@ -80,6 +92,13 @@ func assembleUnits(root, base string, units []Unit) (prefixes []string, err erro
 			}
 			conflicts := strings.Split(strings.TrimSuffix(string(raw), "\x00"), "\x00")
 			return nil, &assemblyConflict{GoalID: unit.GoalID, Cause: refuseBatch("BATCH_JOIN_CONFLICT", "unit "+unit.GoalID+" paths "+strings.Join(conflicts, ", "))}
+		}
+		after, err := workspace.StagedTree()
+		if err != nil {
+			return nil, err
+		}
+		if err := contractgit.CheckPatchContract(workspace.Dir, before, after, patch, "unit "+unit.GoalID); err != nil {
+			return nil, err
 		}
 		next, snapshotErr := workspace.Snapshot("HEAD")
 		if snapshotErr != nil {
@@ -132,12 +151,24 @@ func applyBranchCommit(repo, worktree, commit string) error {
 	if err != nil {
 		return err
 	}
-	command := exec.Command("git", batchMergeGitCommand(worktree, "-c", "core.useReplaceRefs=false", "-c", "core.hooksPath=/dev/null", "apply", "--index", "--3way", "--binary", "--whitespace=nowarn", "-")...)
-	command.Env, command.Stdin = gittree.ScrubbedEnviron(), bytes.NewReader(patch)
-	if output, err := command.CombinedOutput(); err != nil {
+	before, err := (gittree.Workspace{Dir: worktree}).StagedTree()
+	if err != nil {
+		return err
+	}
+	if err := contractgit.PreflightCommitAttributes(worktree, before, commit); err != nil {
+		return err
+	}
+	if output, err := runBatchMergeGit(worktree, patch, "-c", "core.useReplaceRefs=false", "-c", "core.hooksPath=/dev/null", "apply", "--index", "--3way", "--binary", "--whitespace=nowarn", "-"); err != nil {
+		if contractgit.IsRefusal(err) {
+			return err
+		}
 		return fmt.Errorf("apply branch commit %s: %s: %w", commit, strings.TrimSpace(string(output)), err)
 	}
-	return nil
+	after, err := (gittree.Workspace{Dir: worktree}).StagedTree()
+	if err != nil {
+		return err
+	}
+	return contractgit.CheckCommitContract(worktree, before, after, commit, "commit "+commit)
 }
 
 func treeTransitionDigest(repo, before, after string) (string, error) {
@@ -163,6 +194,9 @@ func transitionChangesTestingContract(repo, before, after string) (bool, error) 
 }
 
 func transitionMatchesBuild(repo, before, after, commit, want string) (string, bool, error) {
+	if err := contractgit.CheckCommitContract(repo, before, after, commit, "commit "+commit); err != nil {
+		return "", false, err
+	}
 	got, err := treeTransitionDigest(repo, before, after)
 	if err != nil || got == want {
 		return got, got == want, err
@@ -192,6 +226,9 @@ func transitionMatchesBuild(repo, before, after, commit, want string) (string, b
 // checks every change against its own transition before exposing cumulative
 // member prefix trees.
 func AssembleBranchMembers(root, base string, members []BranchMember) (prefixes []string, err error) {
+	if _, err := batchMergeDriverArgs(); err != nil {
+		return nil, err
+	}
 	detached, err := (gittree.Workspace{Dir: root}).NewDetachedWorktree(base)
 	if err != nil {
 		return nil, err
@@ -205,6 +242,9 @@ func AssembleBranchMembers(root, base string, members []BranchMember) (prefixes 
 		for _, build := range member.Builds {
 			for _, fold := range build.Folds {
 				if err := applyBranchCommit(root, workspace.Dir, fold.ID); err != nil {
+					if contractgit.IsRefusal(err) {
+						return nil, err
+					}
 					return nil, refuseBatch("BATCH_JOIN_REREAD", "goal "+member.GoalID+" fold no longer applies: "+err.Error())
 				}
 			}
@@ -213,6 +253,9 @@ func AssembleBranchMembers(root, base string, members []BranchMember) (prefixes 
 				return nil, err
 			}
 			if err := applyBranchCommit(root, workspace.Dir, build.Commit); err != nil {
+				if contractgit.IsRefusal(err) {
+					return nil, err
+				}
 				return nil, refuseBatch("BATCH_JOIN_REREAD", "goal "+member.GoalID+" build no longer applies: "+err.Error())
 			}
 			after, err := workspace.Snapshot("HEAD")

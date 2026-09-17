@@ -16,6 +16,7 @@ import (
 
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/gittree"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/landing"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/testpolicy/contractgit"
 )
 
 const (
@@ -276,6 +277,9 @@ func transitionChangesTestingContract(repo, before, after string) (bool, error) 
 }
 
 func unitTransitionMatches(repo, before, after string, unit UnitStatus) (string, bool, error) {
+	if err := contractgit.CheckCommitContract(repo, before, after, unit.Commit, "unit "+unit.Unit+" commit "+unit.Commit); err != nil {
+		return "", false, err
+	}
 	got, err := transitionDigest(repo, before, after)
 	if err != nil || got == unit.Digest {
 		return got, got == unit.Digest, err
@@ -306,8 +310,23 @@ func applyCommit(worktree, commit string) error {
 	if err != nil {
 		return err
 	}
+	beforeOut, err := gitOutput(worktree, "write-tree")
+	if err != nil {
+		return err
+	}
+	before := strings.TrimSpace(string(beforeOut))
+	if err := contractgit.PreflightCommitAttributes(worktree, before, commit); err != nil {
+		return err
+	}
 	_, err = gitInput(worktree, patch, "apply", "--index", "--3way", "-")
-	return err
+	if err != nil {
+		return err
+	}
+	afterOut, err := gitOutput(worktree, "write-tree")
+	if err != nil {
+		return err
+	}
+	return contractgit.CheckCommitContract(worktree, before, strings.TrimSpace(string(afterOut)), commit, "commit "+commit)
 }
 
 func commitCoAuthors(repo, commit string) ([]string, error) {
@@ -511,6 +530,9 @@ func requireLandOutputAbsent(out string) error {
 }
 
 func PrepareLanding(req LandRequest) (LandResult, error) {
+	if _, err := branchMergeDriverArgs(); err != nil {
+		return LandResult{}, err
+	}
 	if req.PushTransport == nil {
 		req.PushTransport = GitPushTransport{}
 	}

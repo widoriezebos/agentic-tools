@@ -7,6 +7,7 @@ import (
 	"path/filepath"
 	"strings"
 
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/testpolicy/contractgit"
 	"golang.org/x/sys/unix"
 )
 
@@ -201,6 +202,9 @@ type RebaseResult struct {
 // Rebase rebases this detached worktree and aborts before returning a
 // conflicted answer.
 func (d *DetachedWorktree) Rebase(upstream string, gitArgs ...string) (RebaseResult, error) {
+	if len(gitArgs) == 0 {
+		return RebaseResult{}, &contractgit.Refusal{Code: contractgit.DriverUnresolvedCode, Detail: "detached rebase has no metasystem merge-driver arguments; run the verb from an installed metasystem binary"}
+	}
 	workspace := Workspace{Dir: d.root}
 	args := append(append([]string{}, gitArgs...), "rebase", upstream)
 	stdout, stderr, code, err := workspace.gitProbe(d.top, nil, nil, args...)

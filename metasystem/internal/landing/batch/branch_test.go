@@ -171,12 +171,6 @@ func TestBatchCompositionMergesTestingContractBySurface(t *testing.T) {
 		t.Fatalf("composed residual groups = %v", got)
 	}
 
-	saved := batchMergeDriverArgs
-	batchMergeDriverArgs = func() []string { return nil }
-	t.Cleanup(func() { batchMergeDriverArgs = saved })
-	if _, err := AssembleBranchMembers(bed.root, baseTree, []BranchMember{memberA, memberB}); err == nil {
-		t.Fatal("the same composition unexpectedly succeeded without the merge-driver arguments")
-	}
 }
 
 func TestBatchCompositionRefusesNamedTestingContractConflictCleanly(t *testing.T) {
@@ -234,9 +228,12 @@ func batchContractFixture() testpolicy.Contract {
 func batchContractWithAddition(contract testpolicy.Contract, name string, target int64) testpolicy.Contract {
 	id := name + "-group"
 	contract.Groups = append(contract.Groups, batchContractGroup(id, target))
-	last := len(contract.Surfaces) - 1
-	contract.Surfaces = append(contract.Surfaces[:last], batchContractSurfaceFixture(name, id), contract.Surfaces[last])
-	contract.Surfaces[len(contract.Surfaces)-1].Standard = append(contract.Surfaces[len(contract.Surfaces)-1].Standard, id)
+	contract.Surfaces = append(contract.Surfaces, batchContractSurfaceFixture(name, id))
+	for index := range contract.Surfaces {
+		if contract.Surfaces[index].ID == contract.Fallback {
+			contract.Surfaces[index].Standard = append(contract.Surfaces[index].Standard, id)
+		}
+	}
 	contract.Unknown = append(contract.Unknown, id)
 	return contract
 }

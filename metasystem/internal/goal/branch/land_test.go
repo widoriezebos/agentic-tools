@@ -366,9 +366,12 @@ func branchContractFixture() testpolicy.Contract {
 func branchContractWithAddition(contract testpolicy.Contract, name string, target int64) testpolicy.Contract {
 	id := name + "-group"
 	contract.Groups = append(contract.Groups, branchContractGroup(id, target))
-	last := len(contract.Surfaces) - 1
-	contract.Surfaces = append(contract.Surfaces[:last], branchContractSurfaceFixture(name, id), contract.Surfaces[last])
-	contract.Surfaces[len(contract.Surfaces)-1].Standard = append(contract.Surfaces[len(contract.Surfaces)-1].Standard, id)
+	contract.Surfaces = append(contract.Surfaces, branchContractSurfaceFixture(name, id))
+	for index := range contract.Surfaces {
+		if contract.Surfaces[index].ID == contract.Fallback {
+			contract.Surfaces[index].Standard = append(contract.Surfaces[index].Standard, id)
+		}
+	}
 	contract.Unknown = append(contract.Unknown, id)
 	return contract
 }

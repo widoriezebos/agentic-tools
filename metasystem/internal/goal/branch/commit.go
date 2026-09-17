@@ -104,7 +104,11 @@ func gitInput(repo string, input []byte, args ...string) ([]byte, error) {
 }
 
 func gitInputEnv(repo string, env []string, input []byte, args ...string) ([]byte, error) {
-	cmd := exec.Command("git", branchGitCommand(repo, args...)...)
+	full, err := branchGitCommand(repo, args...)
+	if err != nil {
+		return nil, err
+	}
+	cmd := exec.Command("git", full...)
 	cmd.Env = gittree.ScrubbedEnviron(append([]string{"LC_ALL=C"}, env...)...)
 	cmd.Stdin = bytes.NewReader(input)
 	var stderr bytes.Buffer

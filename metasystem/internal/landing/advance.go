@@ -32,6 +32,10 @@ func Advance(root, upstream string, stdout, stderr io.Writer) error {
 	if root == "" || upstream == "" {
 		return fmt.Errorf("landing advance requires --root and --upstream")
 	}
+	driverArgs, err := contractgit.RuntimeDriverArgs()
+	if err != nil {
+		return err
+	}
 	release, err := lease.LockBounded(lease.LockPath(root), "landing advance")
 	if err != nil {
 		return &advanceRefusal{code: "advance-checkout-locked", detail: err.Error()}
@@ -82,7 +86,7 @@ func Advance(root, upstream string, stdout, stderr io.Writer) error {
 	if err != nil {
 		return err
 	}
-	rebase, rebaseErr := detachedWorktree.Rebase(upstream, contractgit.RuntimeDriverArgs()...)
+	rebase, rebaseErr := detachedWorktree.Rebase(upstream, driverArgs...)
 	closeErr := detachedWorktree.Close()
 	if rebaseErr != nil || closeErr != nil {
 		return errors.Join(rebaseErr, closeErr)

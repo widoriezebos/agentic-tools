@@ -31,7 +31,10 @@ func TestDriverArgsRunQuotedExecutable(t *testing.T) {
 	if err := os.Link(testBinary, driver); err != nil {
 		t.Fatal(err)
 	}
-	args := DriverArgs(func() (string, error) { return driver, nil })
+	args, err := DriverArgs(func() (string, error) { return driver, nil })
+	if err != nil {
+		t.Fatal(err)
+	}
 	command := exec.Command("git", append(append([]string{"-C", repo}, args...), "merge", "--no-edit", theirs)...)
 	command.Env = append(os.Environ(), "METASYSTEM_CONTRACT_DRIVER_HELPER=1")
 	if output, err := command.CombinedOutput(); err != nil {
@@ -45,18 +48,20 @@ func TestDriverArgsRunQuotedExecutable(t *testing.T) {
 	}
 }
 
+func TestDriverArgsUnresolvableExecutableRefuses(t *testing.T) {
+	testDriverArgsUnresolvableExecutableRefuses(t)
+}
+
 func TestDriverArgsUnresolvableExecutableFallsBack(t *testing.T) {
-	repo, _, theirs := contractMergeRepository(t)
+	testDriverArgsUnresolvableExecutableRefuses(t)
+}
+
+func testDriverArgsUnresolvableExecutableRefuses(t *testing.T) {
+	t.Helper()
 	missing := filepath.Join(t.TempDir(), "missing", "metasystem")
-	if args := DriverArgs(func() (string, error) { return missing, nil }); len(args) != 0 {
-		t.Fatalf("unresolvable executable produced Git arguments: %v", args)
-	}
-	command := exec.Command("git", "-C", repo, "merge", "--no-edit", theirs)
-	if output, err := command.CombinedOutput(); err == nil {
-		t.Fatalf("default text merge unexpectedly resolved the fixture:\n%s", output)
-	}
-	if unmerged := git(t, repo, "diff", "--name-only", "--diff-filter=U"); unmerged != "metasystem/testing.json" {
-		t.Fatalf("default merge unmerged paths = %q", unmerged)
+	args, err := DriverArgs(func() (string, error) { return missing, nil })
+	if err == nil || len(args) != 0 || !strings.Contains(err.Error(), DriverUnresolvedCode) || !strings.Contains(err.Error(), "installed metasystem binary") {
+		t.Fatalf("unresolvable executable args=%v err=%v", args, err)
 	}
 }
 

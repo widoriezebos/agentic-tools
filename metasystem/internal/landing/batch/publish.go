@@ -13,6 +13,7 @@ import (
 
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/gittree"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/testpolicy"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/testpolicy/contractgit"
 )
 
 func PublishJoin(store Store, batchID string, unit Unit, actor string, at time.Time, plan func(string, string, string) (testpolicy.Plan, error), handover func() error) error {
@@ -71,6 +72,9 @@ func PublishJoin(store Store, batchID string, unit Unit, actor string, at time.T
 }
 
 func planJoinedUnit(root, baseTree string, unit Unit, unitTree string, plan func(string, string, string) (testpolicy.Plan, error)) (_ testpolicy.Plan, err error) {
+	if _, err := batchMergeDriverArgs(); err != nil {
+		return testpolicy.Plan{}, err
+	}
 	baseCommit, err := commitForWorkspaceTree(root, baseTree)
 	if err != nil {
 		return testpolicy.Plan{}, err
@@ -115,7 +119,13 @@ func planJoinedUnit(root, baseTree string, unit Unit, unitTree string, plan func
 	if err != nil {
 		return testpolicy.Plan{}, err
 	}
-	if output, applyErr := runPlanningGit(planningRoot, patch, "-c", "core.useReplaceRefs=false", "-c", "core.hooksPath=/dev/null", "apply", "--index", "--3way", "--binary", "--whitespace=nowarn", "-"); applyErr != nil {
+	if err := contractgit.PreflightPatchAttributes(planningRoot, baseCommit, "unit "+unit.GoalID, patch); err != nil {
+		return testpolicy.Plan{}, err
+	}
+	if output, applyErr := runPlanningMergeGit(planningRoot, patch, "-c", "core.useReplaceRefs=false", "-c", "core.hooksPath=/dev/null", "apply", "--index", "--3way", "--binary", "--whitespace=nowarn", "-"); applyErr != nil {
+		if contractgit.IsRefusal(applyErr) {
+			return testpolicy.Plan{}, applyErr
+		}
 		return testpolicy.Plan{}, fmt.Errorf("select joined unit %s: apply at batch base: %s: %w", unit.GoalID, strings.TrimSpace(string(output)), applyErr)
 	}
 	candidate, err := (gittree.Workspace{Dir: planningRoot}).StagedTree()
@@ -124,6 +134,9 @@ func planJoinedUnit(root, baseTree string, unit Unit, unitTree string, plan func
 	}
 	if candidate != unitTree {
 		return testpolicy.Plan{}, fmt.Errorf("select joined unit %s: candidate tree=%s want=%s", unit.GoalID, candidate, unitTree)
+	}
+	if err := contractgit.CheckPatchContract(planningRoot, baseCommit, candidate, patch, "unit "+unit.GoalID); err != nil {
+		return testpolicy.Plan{}, err
 	}
 	if output, commitErr := runPlanningGit(clone, nil, "-c", "user.name=MetaSystem", "-c", "user.email=metasystem@invalid", "-c", "core.hooksPath=/dev/null", "commit", "--quiet", "-m", "temporary batch unit plan"); commitErr != nil {
 		return testpolicy.Plan{}, fmt.Errorf("select joined unit %s: commit planning candidate: %s: %w", unit.GoalID, strings.TrimSpace(string(output)), commitErr)
@@ -179,6 +192,10 @@ func runPlanningGit(dir string, stdin []byte, args ...string) ([]byte, error) {
 	command := exec.Command("git", args...)
 	command.Dir, command.Env, command.Stdin = dir, gittree.ScrubbedEnviron(), bytes.NewReader(stdin)
 	return command.CombinedOutput()
+}
+
+func runPlanningMergeGit(dir string, stdin []byte, args ...string) ([]byte, error) {
+	return runBatchMergeGit(dir, stdin, args...)
 }
 
 func pathExists(path string) bool {

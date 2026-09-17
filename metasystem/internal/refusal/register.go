@@ -185,6 +185,9 @@ var Rows = []Row{
 	{Code: "TESTING_MERGE_CONFLICT", Owner: "internal/testpolicy/contractmerge", Site: "merge.go", Shape: Question},
 	{Code: "TESTING_CONTRACT_INVALID", Owner: "internal/testpolicy/contractmerge", Site: "merge.go", Shape: Question},
 	{Code: "TESTING_ADD_TESTS_REFUSED", Owner: "internal/testpolicy/contractmerge", Site: "addtests.go", Shape: Question},
+	{Code: "TESTING_MERGE_DRIVER_UNRESOLVED", Owner: "internal/testpolicy/contractgit", Site: "driver.go", Shape: Agent, Override: "run the verb from an installed metasystem binary", Commands: 1},
+	{Code: "TESTING_MERGE_ATTRIBUTE_MISUSE", Owner: "internal/testpolicy/contractgit", Site: "transition.go", Shape: Question},
+	{Code: "TESTING_CONTRACT_HAND_MERGED", Owner: "internal/landing/batch", Site: "join.go", Shape: Question},
 
 	{Code: "advance-checkout-locked", Owner: "internal/landing", Site: "advance.go:36", Shape: Agent, Override: "wait, then fetch, advance, push", Commands: 3},
 	{Code: "advance-not-on-branch", Owner: "internal/landing", Site: "advance.go:46", Shape: Agent, Override: "git switch <branch>; fetch, advance, push", Commands: 4},
