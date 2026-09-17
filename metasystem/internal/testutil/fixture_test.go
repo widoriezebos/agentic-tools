@@ -1,10 +1,15 @@
 package testutil
 
 import (
+	"bufio"
 	"errors"
 	"fmt"
 	"io"
 	"os"
+	"os/exec"
+	"path/filepath"
+	"slices"
+	"strconv"
 	"strings"
 	"syscall"
 	"testing"
@@ -26,6 +31,139 @@ func (*recordingTB) Logf(string, ...any)              {}
 func (r *recordingTB) Fatalf(format string, a ...any) { panic(fmt.Sprintf(format, a...)) }
 func (r *recordingTB) Cleanup(cleanup func())         { r.cleanups = append(r.cleanups, cleanup) }
 func (r *recordingTB) Errorf(f string, a ...any)      { r.errs = append(r.errs, fmt.Sprintf(f, a...)) }
+
+func TestFixtureWritesItsOwnershipRecord(t *testing.T) {
+	fixture, record := Fixture(t), filepath.Join(filepath.Dir(t.TempDir()), "fixture-owner")
+	data, err := os.ReadFile(record)
+	failOnFixtureError(t, err)
+	key, err := identity.ParseKey(string(data))
+	got, gotErr := identity.EncodeKey(key)
+	want, wantErr := identity.EncodeKey(fixture.Key())
+	if err != nil || gotErr != nil || wantErr != nil || got != want {
+		t.Fatalf("ownership record key = %+v, parse error %v, encoding errors %v, %v; want %+v", key, err, gotErr, wantErr, fixture.Key())
+	}
+}
+
+func TestBinaryExitScanNamesAChildThatOutlivedItsTest(t *testing.T) {
+	reader, writer, err := os.Pipe()
+	failOnFixtureError(t, err)
+	releaseReader, releaseWriter, err := os.Pipe()
+	failOnFixtureError(t, err)
+	defer func() { _ = writer.Close(); _ = releaseWriter.Close() }()
+	outputReader, outputWriter, err := os.Pipe()
+	failOnFixtureError(t, err)
+	command := exec.Command(os.Args[0], "-test.run=^TestBinaryExitScanHelper$", "-test.count=1")
+	command.Env, command.ExtraFiles, command.Stdout, command.Stderr = append(os.Environ(), "TESTUTIL_EXIT_SCAN_HELPER=1"), []*os.File{reader, releaseReader}, outputWriter, outputWriter
+	failOnFixtureError(t, command.Start())
+	_ = errors.Join(reader.Close(), releaseReader.Close(), outputWriter.Close())
+	helper, _, err := (identity.KernelProber{}).Probe(int64(command.Process.Pid))
+	failOnFixtureError(t, err)
+	defer identity.SignalExact(identity.KernelProber{}, helper.Ref(), syscall.SIGKILL)
+	_ = outputReader.SetReadDeadline(time.Now().Add(30 * time.Second))
+	buffered := bufio.NewReader(outputReader)
+	line, err := buffered.ReadString('\n')
+	failOnFixtureError(t, err)
+	pid, err := strconv.ParseInt(strings.TrimSpace(line), 10, 64)
+	failOnFixtureError(t, err)
+	child, state, err := (identity.KernelProber{}).Probe(pid)
+	if err != nil || state != identity.Alive {
+		t.Fatalf("probe helper child: state=%v err=%v", state, err)
+	}
+	defer identity.SignalExact(identity.KernelProber{}, child.Ref(), syscall.SIGKILL)
+	failOnFixtureError(t, releaseWriter.Close())
+	rest, readErr := io.ReadAll(buffered)
+	if readErr != nil {
+		t.Fatalf("read exit-scan helper output: %v; output=%q", readErr, line+string(rest))
+	}
+	waited := make(chan error, 1)
+	go func() { waited <- command.Wait() }()
+	select {
+	case err = <-waited:
+	case <-time.After(30 * time.Second):
+		_ = identity.SignalExact(identity.KernelProber{}, helper.Ref(), syscall.SIGKILL)
+		t.Fatal("exit-scan helper did not exit within 30 seconds")
+	}
+	if err == nil || !strings.Contains(line+string(rest), fmt.Sprintf("test=%q pid=%d ", "TestBinaryExitScanHelper", pid)) {
+		t.Fatalf("helper error=%v output=%q", err, line+string(rest))
+	}
+	waitForFixtureExit(t, child.Ref())
+}
+
+func TestBinaryExitScanHelper(t *testing.T) {
+	if os.Getenv("TESTUTIL_EXIT_SCAN_HELPER") == "" {
+		t.Skip("helper process only")
+	}
+	input, release := os.NewFile(3, "exit-scan-input"), os.NewFile(4, "exit-scan-release")
+	var fixture *ProcessFixture
+	t.Cleanup(func() {
+		command := fixture.Shell("trap '' TERM\nprintf '%d\\n' $$\nread -r _")
+		stdout, _ := command.StdoutPipe()
+		command.Stdin, command.Stderr = input, os.Stderr
+		failOnFixtureError(t, command.Start())
+		_ = stdout.(*os.File).SetReadDeadline(time.Now().Add(30 * time.Second))
+		line, readErr := bufio.NewReader(stdout).ReadString('\n')
+		failOnFixtureError(t, readErr)
+		fmt.Fprint(os.Stdout, line)
+		_, readErr = io.Copy(io.Discard, release)
+		failOnFixtureError(t, readErr)
+	})
+	fixture = Fixture(t)
+}
+
+func TestShellPrologueCarriesTheTagIntoArgv(t *testing.T) {
+	for _, tagged := range []bool{true, false} {
+		t.Run(fmt.Sprint("tagged=", tagged), func(t *testing.T) {
+			fixture := Fixture(t)
+			script := filepath.Join(t.TempDir(), "fixture.sh")
+			failOnFixtureError(t, os.WriteFile(script, []byte(ShellPrologue+"printf '%s|' \"$@\"; printf '\\n'\nread -r _ || :\n"), 0o700))
+			args := []string{"a", "b c"}
+			if !tagged {
+				args = []string{fixture.tag, "a"}
+			}
+			command := exec.Command("/bin/sh", append([]string{script}, args...)...)
+			command.Env = fixture.Env(os.Environ())
+			if !tagged {
+				command.Env = slices.DeleteFunc(command.Env, func(entry string) bool { return strings.HasPrefix(entry, identity.FixtureOwnerEnv+"=") })
+			}
+			input, _ := command.StdinPipe()
+			output, _ := command.StdoutPipe()
+			failOnFixtureError(t, command.Start())
+			fixture.Record(command.Process.Pid)
+			ref := fixture.refs[len(fixture.refs)-1]
+			killFixtureProcessAtCleanup(t, fixture, command.Process, ref)
+			_ = output.(*os.File).SetReadDeadline(time.Now().Add(30 * time.Second))
+			line, err := bufio.NewReader(output).ReadString('\n')
+			failOnFixtureError(t, err)
+			want := strings.Join(args, "|") + "|\n"
+			if line != want {
+				t.Fatalf("arguments = %q, want %q", line, want)
+			}
+			exact, state, err := (identity.KernelProber{}).Probe(ref.Pid)
+			if err != nil || state != identity.Alive || !identity.SameIdentity(exact, ref) {
+				t.Fatalf("probe script: state=%v err=%v", state, err)
+			}
+			if tagged {
+				key, carrier, ok := identity.FixtureTag(exact)
+				got, gotErr := identity.EncodeKey(key)
+				want, wantErr := identity.EncodeKey(fixture.Key())
+				if !ok || gotErr != nil || wantErr != nil || got != want || carrier != identity.FixtureCarrierArgvWord {
+					t.Fatalf("fixture tag = %+v, %q, %v, encoding errors %v, %v; want %+v", key, carrier, ok, gotErr, wantErr, fixture.Key())
+				}
+			} else if len(exact.Argv) < 3 || !slices.Equal(exact.Argv[len(exact.Argv)-3:], append([]string{script}, args...)) {
+				t.Fatalf("untagged argv = %q", exact.Argv)
+			}
+			_ = input.Close()
+			waited := make(chan error, 1)
+			go func() { waited <- command.Wait() }()
+			select {
+			case err = <-waited:
+				failOnFixtureError(t, err)
+			case <-time.After(30 * time.Second):
+				t.Fatal("script did not exit within 30 seconds")
+			}
+		})
+	}
+}
 
 // Custodian-log assertions belong with the cleanup path that owns and retains
 // that log; this witness proves the fixture's direct recorded-child cleanup.

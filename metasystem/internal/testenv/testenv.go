@@ -12,8 +12,10 @@ import (
 	"os/exec"
 	"path/filepath"
 	"strings"
+	"sync"
 	"syscall"
 	"testing"
+	"time"
 
 	"golang.org/x/sys/unix"
 
@@ -53,6 +55,24 @@ var inheritedControlPrefixes = []string{
 	"METASYSTEM_HOOK_DELEGATE_",
 	"METASYSTEM_PROOF_",
 	"METASYSTEM_SUITE_PROGRESS_",
+}
+
+var fixtureKeys struct {
+	sync.Mutex
+	keys []identity.FixtureKey
+}
+
+// RegisterFixtureKey records a key minted by this test binary for its exit scan.
+func RegisterFixtureKey(key identity.FixtureKey) {
+	fixtureKeys.Lock()
+	defer fixtureKeys.Unlock()
+	fixtureKeys.keys = append(fixtureKeys.keys, key)
+}
+
+func registeredFixtureKeys() []identity.FixtureKey {
+	fixtureKeys.Lock()
+	defer fixtureKeys.Unlock()
+	return append([]identity.FixtureKey(nil), fixtureKeys.keys...)
 }
 
 // Declaration captures a selector that a test launcher deliberately supplies
@@ -136,8 +156,55 @@ func Main(m *testing.M, declarations ...Declaration) (code int) {
 			return 2
 		}
 	}
-	code = m.Run()
+	code = exitScan(m.Run(), registeredFixtureKeys(), identity.FixtureSurvivors, identity.KernelProber{}, syscall.Kill, os.Stderr)
 	return code
+}
+
+type fixtureScanFunc func(identity.FixtureKey) ([]identity.FixtureSurvivor, error)
+
+func exitScan(code int, keys []identity.FixtureKey, scan fixtureScanFunc, prober identity.Prober, signal identity.SignalFunc, output io.Writer) int {
+	failed := false
+	for _, key := range keys {
+		survivors, err := scan(key)
+		if err != nil {
+			fmt.Fprintf(output, "fixture exit scan: test=%q error=%v\n", key.Test, err)
+			failed = true
+			continue
+		}
+		for _, survivor := range survivors {
+			exact, state, probeErr := prober.Probe(survivor.Ref.Pid)
+			if probeErr == nil && state == identity.Alive && identity.SameIdentity(exact, survivor.Ref) && exact.Zombie {
+				continue
+			}
+			fmt.Fprintf(output, "fixture child outlived test: test=%q pid=%d exe=%q argv=%q\n", key.Test, survivor.Ref.Pid, survivor.Exe, survivor.Argv)
+			failed = true
+			if survivor.Class == identity.FixtureSurvivorCertain {
+				_ = identity.SignalExact(prober, survivor.Ref, syscall.SIGKILL, signal)
+				waitForFixtureExit(prober, survivor.Ref)
+			}
+		}
+	}
+	if failed && code == 0 {
+		return 1
+	}
+	return code
+}
+
+func waitForFixtureExit(prober identity.Prober, ref identity.Ref) {
+	ticker := time.NewTicker(10 * time.Millisecond)
+	defer ticker.Stop()
+	deadline := time.After(5 * time.Second)
+	for {
+		exact, state, err := prober.Probe(ref.Pid)
+		if err == nil && (state == identity.Dead || state == identity.Alive && (!identity.SameIdentity(exact, ref) || exact.Zombie)) {
+			return
+		}
+		select {
+		case <-ticker.C:
+		case <-deadline:
+			return
+		}
+	}
 }
 
 func startFixtureCustodian(registry string) error {

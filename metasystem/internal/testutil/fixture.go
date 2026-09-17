@@ -13,10 +13,18 @@ import (
 	"time"
 
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/identity"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/testenv"
 	"golang.org/x/sys/unix"
 )
 
 const fixtureLeashEnv = "METASYSTEM_FIXTURE_LEASH"
+
+const ShellPrologue = `if [ -n "${METASYSTEM_FIXTURE_OWNER-}" ]; then
+  tag="METASYSTEM_FIXTURE_OWNER=$METASYSTEM_FIXTURE_OWNER"
+  [ "${1-}" = "$tag" ] || exec /bin/sh "$0" "$tag" "$@"
+  shift
+fi
+`
 
 type fixtureTB interface {
 	Cleanup(func())
@@ -39,7 +47,16 @@ type ProcessFixture struct {
 
 func Fixture(t testing.TB) *ProcessFixture {
 	t.Helper()
-	return newProcessFixture(t, t.Name(), identity.KernelProber{}, syscall.Kill)
+	fixture := newProcessFixture(t, t.Name(), identity.KernelProber{}, syscall.Kill)
+	encoded, err := identity.EncodeKey(fixture.key)
+	if err != nil {
+		t.Fatalf("encode process fixture ownership: %v", err)
+	}
+	record := filepath.Join(filepath.Dir(t.TempDir()), "fixture-owner")
+	if err := os.WriteFile(record, []byte(encoded), 0o600); err != nil {
+		t.Fatalf("write process fixture ownership record: %v", err)
+	}
+	return fixture
 }
 
 func newProcessFixture(t fixtureTB, testName string, prober identity.Prober, signal identity.SignalFunc) *ProcessFixture {
@@ -66,6 +83,7 @@ func newProcessFixture(t fixtureTB, testName string, prober identity.Prober, sig
 		held: make(map[identity.Ref]bool), leash: leash,
 	}
 	t.Cleanup(fixture.cleanup)
+	testenv.RegisterFixtureKey(key)
 	return fixture
 }
 
