@@ -9,13 +9,13 @@
 - Origin: human
 - Next step: Opened in the name of Wido by seat m1e from the enrolled pane on his word 2026-09-16 20:35 CEST. Design revision 2 (plans/red-on-main-gets-an-owner-on-the-ledger-design.md, one Fable round, one Codex critique folded) splits the build into U0 (common), U1a/U1b (option A) or U2a/U2b (option B), U3 and U4, with U5 as BA17. Wido ruled the shape 2026-09-17 05:52Z: option A, the red register plans/goals/trunk-red.json, and every entry references the branch that carries the fix (branch name, the commit it pointed at when the entry was written, and whether it is open or merged; never a diff or a patch id), so the entry stays valid when that branch reaches main. R-93 is untouched. Still open for Wido: the BA12b exemption question. Landed in lane 12 (attempt proof-mu53bjy2-050819c669e9597c): U0 seam 48cf3e7da (trunk red types, identity, unbound ledger owner seam); U0 hold 7d9c7fdbb (HoldTrunkRed keeps the red durably on the batch record and calls no owner); U0 recording c4afe7394 (EnsureTrunkRedRecorded calls the owner outside the batch lock and writes only while the batch is still held with the same opid). Nothing calls this code yet. Carried into later units: a red whose id matches a resolved ledger entry must open an owned entry (merge by identity in the shape unit and BA17); HoldTrunkRed replaces an earlier hold outright, so reopen and clear must clear or carry old opids and entries; joiners include ejected, withdrawn, return-pending and terminal units (a BA12b question); a durability-unknown write refuses its retry, so callers load and compare the opid; refs returned for a batch that has moved on are dropped with nil returned, so the tick loop cannot tell stored from dropped; store.Update rewrites the record even when nothing changed, and an owner error whose text varies per call adds a refusal line every tick. U2, the common reader, needs only U0 and can be briefed now; U3 waits on BA11a and BA12b, and DONE 2, 3 and 5 wait on BA12b, BA6b and brief-b's rollout flip after BA15, so this goal cannot conclude before that flip. Next: after Wido's A/B ruling, the option's first unit, briefed to Codex sol, after asking m1e.
 - OpenedAt: 2026-09-16T18:33:32Z
-- Revision: 8
-- Budget: elapsedLimit=1d attemptLimit=10 reservedJobMinutesLimit=1200 activeJobLimit=1 reviewRoundLimit=3
-- BudgetExceptions: 0
-- Approved: by=human:Wido at=2026-09-16T18:33:43Z revision=3 opid=59H3FWXMQ8980VYPFTKD0H2WB5-m1e-c6925449 authority=proven digest=e237155a515473407e947efb78189c22dbff1fe4af2f41f35ef14f9dffc77a50
+- Revision: 9
+- Budget: elapsedLimit=5d attemptLimit=20 reservedJobMinutesLimit=1200 activeJobLimit=1 reviewRoundLimit=3
+- BudgetExceptions: 1
+- Approved: by=human:Wido at=2026-09-17T06:05:36Z revision=9 opid=PEBKEC66ZC75FBGMYY4JZH5F5J-m1e-c6925449 authority=proven digest=3d3ca1fdf54bacde1a01b34ee2bf80ea4c03ffade08c03c4fc8b4e395cc99260
 - Sliced: machine=m1b lineage=main-1789560571-22295-8d907a revision=5 at=2026-09-17T04:02:45Z
-- Claimed: machine=m1b lineage=main-1789560571-22295-8d907a at=2026-09-17T02:17:31Z revision=5 accountingRevision=5 episodeAt=2026-09-17T02:17:31Z episodeRevision=5
-- StopCapability: generation=5 revision=5 machine=m1b claimEpoch=3 fenceEpoch=0
+- Claimed: machine=m1b lineage=main-1789560571-22295-8d907a at=2026-09-17T06:05:36Z revision=9 accountingRevision=9 episodeAt=2026-09-17T02:17:31Z episodeRevision=5
+- StopCapability: generation=9 revision=9 machine=m1b claimEpoch=3 fenceEpoch=0
 
 History:
 - 2026-09-16T18:33:32Z YTABBWXAVKBEZJAEDK2ADTBK6T-m1e-c6925449 open actor=human:Wido targets=red-on-main-gets-an-owner-on-the-ledger
@@ -26,4 +26,5 @@ History:
 - 2026-09-17T04:02:45Z Y51KK2JK4C3R9GWWZF0HAD6T33-m1b-d0e95724 slice-start actor=m1b+main-1789560571-22295-8d907a targets=red-on-main-gets-an-owner-on-the-ledger
 - 2026-09-17T05:53:04Z YWSA5PR080D6Z83HAWJB2SW7J8-m1b-d0e95724 edit actor=m1b+main-1789560571-22295-8d907a targets=red-on-main-gets-an-owner-on-the-ledger
 - 2026-09-17T05:57:12Z WN1VK38E465RRAZMTX12HXEQ2H-m1b-d0e95724 edit actor=m1b+main-1789560571-22295-8d907a targets=red-on-main-gets-an-owner-on-the-ledger
-Integrity: sha256=af7ac5ca226623b74be2f338947c27eb800cadb2d8793ffed3321ea6cb669a01
+- 2026-09-17T06:05:36Z PEBKEC66ZC75FBGMYY4JZH5F5J-m1e-c6925449 set-budget actor=human:Wido targets=red-on-main-gets-an-owner-on-the-ledger displaced=m1b+main-1789560571-22295-8d907a@2026-09-17T02:17:31Z
+Integrity: sha256=75d25cecd5669c7e76279e710a24e1ab1ef9b903985ec49b211dce6727a8cd1c
