@@ -1,0 +1,15 @@
+{
+  "schemaVersion": 1,
+  "projectRisk": {"severity": 1, "exposure": 1, "reversibility": "revert", "detection": "immediate", "recovery": "bounded"},
+  "fallback": "residual",
+  "surfaces": [
+    {"id":"goal","paths":["metasystem/internal/goal/**"],"dependsOn":[],"standard":["goal-decision-standard"],"deep":[],"critical":[]},
+    {"id":"residual","paths":[],"dependsOn":[],"standard":["goal-decision-standard"],"deep":[],"critical":[]}
+  ],
+  "groups": [
+    {"id":"goal-decision-standard","kind":"unit","adapter":"go","cwd":"metasystem","inputs":["metasystem/go.mod","metasystem/internal/goal/**"],"outputs":[],"tools":[],"obligations":[],"platforms":["any"],"targetMs":30000,"packages":["internal/goal","cmd/metasystem"],"tests":["TestBudgetTupleIsCompletePositiveAndCanonical"]}
+  ],
+  "always": {"canary":[],"standard":[]},
+  "unknown": ["goal-decision-standard"],
+  "cadence": []
+}

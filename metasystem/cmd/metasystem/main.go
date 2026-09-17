@@ -29,6 +29,15 @@ type family struct {
 func families() []family {
 	return []family{
 		{
+			name:    "testing",
+			summary: "semantic maintenance of the testing contract",
+			verbs: []verb{
+				{"merge", "three-way merge a testing contract by surface, group, and list value", runTestingMerge},
+				{"add-tests", "add verified Go test names to one testing group", runTestingAddTests},
+				{"merge-driver", "run the testing contract Git merge driver, or print its setup", runTestingMergeDriver},
+			},
+		},
+		{
 			name:    "test",
 			summary: "risk-selected common application testing with retained proof and reuse",
 			verbs: []verb{

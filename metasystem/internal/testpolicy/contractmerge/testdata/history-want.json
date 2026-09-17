@@ -1,0 +1,16 @@
+{
+  "schemaVersion": 1,
+  "projectRisk": {"severity": 1, "exposure": 1, "reversibility": "revert", "detection": "immediate", "recovery": "bounded"},
+  "fallback": "residual",
+  "surfaces": [
+    {"id":"goal","paths":["metasystem/internal/goal/**"],"dependsOn":[],"standard":["goal-decision-standard","batch-buildb-standard"],"deep":[],"critical":[]},
+    {"id":"residual","paths":[],"dependsOn":[],"standard":["goal-decision-standard","batch-buildb-standard"],"deep":[],"critical":[]}
+  ],
+  "groups": [
+    {"id":"goal-decision-standard","kind":"unit","adapter":"go","cwd":"metasystem","inputs":["metasystem/go.mod","metasystem/internal/goal/**","metasystem/internal/readsubject/**","metasystem/cmd/metasystem/goal_list.go"],"outputs":[],"tools":[],"obligations":[],"platforms":["any"],"targetMs":30000,"packages":["internal/goal","cmd/metasystem"],"tests":["TestBudgetTupleIsCompletePositiveAndCanonical","TestGoalBranchTestingContractIncludesReadDependencies","TestGoalListJSONKeepsItsShapeAndRequiresHistoryFlag"]},
+    {"id":"batch-buildb-standard","kind":"unit","adapter":"go","cwd":"metasystem","inputs":["metasystem/go.mod","metasystem/internal/landing/batch/**"],"outputs":[],"tools":[],"obligations":[],"platforms":["any"],"targetMs":20000,"packages":["internal/landing/batch"],"tests":["TestBatchOwnerReportsResumeEnumerationFailure"]}
+  ],
+  "always": {"canary":[],"standard":[]},
+  "unknown": ["goal-decision-standard"],
+  "cadence": []
+}

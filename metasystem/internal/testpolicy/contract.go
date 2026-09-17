@@ -7,6 +7,7 @@ import (
 	"io"
 	"os"
 	"path/filepath"
+	"reflect"
 	"regexp"
 	"sort"
 	"strings"
@@ -98,6 +99,11 @@ type Group struct {
 	Tests            json.RawMessage `json:"tests,omitempty"`
 	Race             bool            `json:"race,omitempty"`
 	Coverage         bool            `json:"coverage,omitempty"`
+	// RaceSet and CoverageSet preserve an explicit false across a load/write
+	// cycle. In this contract, spelling out a disabled expensive mode is an
+	// intentional declaration rather than the same document as omission.
+	RaceSet     bool `json:"-"`
+	CoverageSet bool `json:"-"`
 	// Shards splits a whole-package go group's discovered tests round-robin
 	// into this many concurrent go test launches inside the one group; zero
 	// or one runs the group as a single launch. Coverage is merged from the
@@ -109,6 +115,71 @@ type Group struct {
 	Reports       []string          `json:"reports,omitempty"`
 	Format        string            `json:"format,omitempty"`
 	ExpectedTests []ExpectedTest    `json:"expectedTests,omitempty"`
+}
+
+type groupWithoutMethods Group
+
+func (group *Group) UnmarshalJSON(data []byte) error {
+	decoder := json.NewDecoder(bytes.NewReader(data))
+	decoder.DisallowUnknownFields()
+	var decoded groupWithoutMethods
+	if err := decoder.Decode(&decoded); err != nil {
+		return err
+	}
+	var fields map[string]json.RawMessage
+	if err := json.Unmarshal(data, &fields); err != nil {
+		return err
+	}
+	*group = Group(decoded)
+	_, group.RaceSet = fields["race"]
+	_, group.CoverageSet = fields["coverage"]
+	return nil
+}
+
+func (group Group) MarshalJSON() ([]byte, error) {
+	value := reflect.ValueOf(groupWithoutMethods(group))
+	typ := value.Type()
+	var out bytes.Buffer
+	out.WriteByte('{')
+	written := 0
+	for i := 0; i < typ.NumField(); i++ {
+		field := typ.Field(i)
+		tag := strings.Split(field.Tag.Get("json"), ",")
+		if len(tag) == 0 || tag[0] == "" || tag[0] == "-" {
+			continue
+		}
+		omitEmpty := len(tag) > 1 && tag[1] == "omitempty"
+		explicitFalse := field.Name == "Race" && group.RaceSet || field.Name == "Coverage" && group.CoverageSet
+		if omitEmpty && jsonEmptyValue(value.Field(i)) && !explicitFalse {
+			continue
+		}
+		encoded, err := json.Marshal(value.Field(i).Interface())
+		if err != nil {
+			return nil, err
+		}
+		if written > 0 {
+			out.WriteByte(',')
+		}
+		name, _ := json.Marshal(tag[0])
+		out.Write(name)
+		out.WriteByte(':')
+		out.Write(encoded)
+		written++
+	}
+	out.WriteByte('}')
+	return out.Bytes(), nil
+}
+
+func jsonEmptyValue(value reflect.Value) bool {
+	switch value.Kind() {
+	case reflect.Array, reflect.Map, reflect.Slice, reflect.String:
+		return value.Len() == 0
+	case reflect.Bool, reflect.Int, reflect.Int8, reflect.Int16, reflect.Int32, reflect.Int64,
+		reflect.Uint, reflect.Uint8, reflect.Uint16, reflect.Uint32, reflect.Uint64, reflect.Uintptr,
+		reflect.Interface, reflect.Pointer:
+		return value.IsZero()
+	}
+	return false
 }
 
 func Decode(data []byte) (Contract, error) {

@@ -176,6 +176,9 @@ var Rows = []Row{
 	{Code: "TEST_GROUP_SELECTION_REFUSED", Owner: "internal/testpolicy", Site: "select.go:109", Shape: Question},
 	{Code: "STOP_LOCATOR_UNAVAILABLE", Owner: "internal/hostsetup", Site: "setup.go:112", Shape: Question},
 	{Code: "TEST_POLICY_COVERAGE_FLOOR_LOWERED", Owner: "cmd/metasystem", Site: "test.go:355", Shape: Question},
+	{Code: "TESTING_MERGE_CONFLICT", Owner: "internal/testpolicy/contractmerge", Site: "merge.go", Shape: Question},
+	{Code: "TESTING_CONTRACT_INVALID", Owner: "internal/testpolicy/contractmerge", Site: "merge.go", Shape: Question},
+	{Code: "TESTING_ADD_TESTS_REFUSED", Owner: "internal/testpolicy/contractmerge", Site: "addtests.go", Shape: Question},
 
 	{Code: "advance-checkout-locked", Owner: "internal/landing", Site: "advance.go:36", Shape: Agent, Override: "wait, then fetch, advance, push", Commands: 3},
 	{Code: "advance-not-on-branch", Owner: "internal/landing", Site: "advance.go:46", Shape: Agent, Override: "git switch <branch>; fetch, advance, push", Commands: 4},
