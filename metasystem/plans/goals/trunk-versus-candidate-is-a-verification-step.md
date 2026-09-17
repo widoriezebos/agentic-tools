@@ -1,6 +1,6 @@
 # trunk-versus-candidate-is-a-verification-step
 
-- State: approved
+- State: queued
 - Priority: 2
 - Sequence: 61
 - Risk: severity=2 novelty=2 exposure=3 accumulation=2 basis="severity 2: without a same-input comparison a behaviour change hides behind a text change, as a Stop-message build did on 2026-09-13; novelty 2: the engine has no notion of running one input against two trees; exposure 3: every landing that changes an output the seat or the human reads; accumulation 2: each hand-crafted comparison is redone per landing"
@@ -9,10 +9,8 @@
 - Origin: human
 - Next step: Design in the verification-loop program page: what an input is (fixture row, command, Stop payload), how the accepted tree is materialised beside the candidate, how outputs are classified, and the declaration a landing carries. Then build the verb, the classifier and the gate refusal.
 - OpenedAt: 2026-09-14T19:26:09Z
-- Revision: 83
-- Budget: elapsedLimit=4h attemptLimit=6 reservedJobMinutesLimit=720 activeJobLimit=1 reviewRoundLimit=2
+- Revision: 84
 - BudgetExceptions: 0
-- Approved: by=human:Wido at=2026-09-14T19:26:15Z revision=2 opid=AA518S7DT15ZAQCA093Y1EYRVV-m1e-c6925449 authority=proven digest=3a306357c87cc7d1d983338ca68cafd137b42d032b55b484caa7a317ba3a3e01
 
 History:
 - 2026-09-14T19:26:09Z F328BFJ3QRXCKXGDJQ0YCMNB25-m1e-c6925449 open actor=human:Wido targets=trunk-versus-candidate-is-a-verification-step
@@ -98,4 +96,5 @@ History:
 - 2026-09-17T06:21:48Z KXFTT0EWX9ZWFJQ6S4N60WVNS8-m1e-c6925449 set-priority actor=human:Wido targets=adoption-filled-delivery-passes-on-trunk,beds-run-under-the-oldest-supported-bash,brief-declares-the-round-boundary,builder-proves-each-rule-by-mutation,busy-seat-shells-are-ended,codex-jobs-run-through-a-metasystem-verb,coordinator-context-stays-under-budget,critique-closes-on-folded-proof,cross-cutting-change-inventories-its-readers,deep-sections-cannot-stay-red-unseen,degraded-stop-forms-have-one-source,delegate-sandbox-runs-the-beds,engine-policy-binding-survives-drift-and-load,every-round-gets-an-independent-read,evidence-and-build-output-have-retention-and-stay-unindexed,failures-show-observed-against-expected,fixture-runners-and-fakes-bound-their-own-life,follow-up-brief-cannot-cite-fresh-trunk-files,human-goal-verbs-forgiving,member-size-gate,proof-runs-reap-what-they-armed-and-a-census-names-the-rest,round-proof-feeds-the-next-brief,seat-landings-run-the-selected-sections,seat-successor-continues-a-handoff-without-a-human,small-change-lane,stop-capability-follows-the-lease-epoch,stop-decision-surface-is-a-gate,stop-gate-sees-harness-tracked-work,stop-hook-never-forces-an-empty-turn,stop-response-carries-a-structured-report-reference,test-environment-edges-are-closed,testing-surfaces-declare-their-mirror,tests-never-wait-on-wall-time,trunk-versus-candidate-is-a-verification-step reason=priority-order subject=small-change-lane from=1:40 to=1:39 requested-sequence=59
 - 2026-09-17T06:21:54Z PWZJ92JMATF0A4J0955BW1HQTM-m1e-c6925449 set-priority actor=human:Wido targets=cross-cutting-change-inventories-its-readers,deep-sections-cannot-stay-red-unseen,degraded-stop-forms-have-one-source,failures-show-observed-against-expected,member-size-gate,seat-landings-run-the-selected-sections,stop-capability-follows-the-lease-epoch,stop-decision-surface-is-a-gate,stop-response-carries-a-structured-report-reference,test-environment-edges-are-closed,testing-surfaces-declare-their-mirror,trunk-versus-candidate-is-a-verification-step reason=priority-order subject=seat-landings-run-the-selected-sections from=1:39 to=1:38 requested-sequence=60
 - 2026-09-17T06:22:00Z AF17KZN0EH6PNS80FHY0QDPW76-m1e-c6925449 set-priority actor=human:Wido targets=cross-cutting-change-inventories-its-readers,deep-sections-cannot-stay-red-unseen,degraded-stop-forms-have-one-source,failures-show-observed-against-expected,member-size-gate,stop-capability-follows-the-lease-epoch,stop-decision-surface-is-a-gate,stop-response-carries-a-structured-report-reference,test-environment-edges-are-closed,testing-surfaces-declare-their-mirror,trunk-versus-candidate-is-a-verification-step reason=priority-order subject=trunk-versus-candidate-is-a-verification-step from=1:38 to=2:61 requested-sequence=61
-Integrity: sha256=2e1d634768cde0a39a517e8e732e08f35fdaa8e57476f5252463c92a508e9dbb
+- 2026-09-17T06:23:01Z JX1C79Q5KK0YXZQXBA643BB12N-m1e-c6925449 unapprove actor=human:Wido targets=trunk-versus-candidate-is-a-verification-step reason=Wido 2026-09-17 06:22Z: held until goals-live-on-branches lands; a goal becomes one branch and one proof at the merge, and this goal's landing shape changes with it. Re-scope in one pass after that landing; approval then, not before.
+Integrity: sha256=2ad26c8d1b4a5c013446e3dd423e1ab350889a657f967aed9eaeb9d1c4fda709
