@@ -60,6 +60,36 @@ func TestGoldenClaimedFileRoundTrips(t *testing.T) {
 	}
 }
 
+func TestEmptyReadItemListPreservesRecordBytesAndDigest(t *testing.T) {
+	file := claimedGolden()
+	before := RenderFile(file)
+	file.ReadItems = []ReadItem{}
+	after := RenderFile(file)
+	if string(after) != string(before) || IntegrityDigest(before[:strings.LastIndex(string(before), "Integrity:")]) != IntegrityDigest(after[:strings.LastIndex(string(after), "Integrity:")]) {
+		t.Fatalf("empty read-item list changed an existing record:\n%s\n---\n%s", before, after)
+	}
+}
+
+func TestReadItemsRoundTripBesideNextStep(t *testing.T) {
+	file := claimedGolden()
+	file.ReadItems = []ReadItem{
+		{ID: "critic-1", Read: "critic", Text: "Name the edge case.", State: ReadItemOpen, AddedAt: "2026-09-17T10:00:00Z"},
+		{ID: "critic-2", Read: "critic", Text: "Intentional behavior.", State: ReadItemAccepted, AddedAt: "2026-09-17T10:00:00Z", ChangedAt: "2026-09-17T11:00:00Z", ClosingReference: "not a defect"},
+	}
+	rendered := RenderFile(file)
+	parsed, problems := ParseFile(rendered)
+	if len(problems) != 0 || string(RenderFile(parsed)) != string(rendered) {
+		t.Fatalf("read-item record did not round-trip: problems=%v\n%s", problems, rendered)
+	}
+	text := string(rendered)
+	next := strings.Index(text, "- Next step:")
+	block := strings.Index(text, "Open read items (fix unit critic): 1")
+	opened := strings.Index(text, "- OpenedAt:")
+	if next < 0 || block < next || opened < block || parsed.NextStep != file.NextStep {
+		t.Fatalf("read fix unit is not immediately beside the unchanged Next step:\n%s", rendered)
+	}
+}
+
 func episodeGolden() *GoalFile {
 	f := claimedGolden()
 	f.Revision = 5

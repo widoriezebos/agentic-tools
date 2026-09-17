@@ -15,6 +15,7 @@ import (
 	"time"
 
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/config"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/goal"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/validate"
 )
 
@@ -46,12 +47,13 @@ type Options struct {
 	DesignCalls  string
 	Note         string
 
-	RefEpoch string
-	RefSHA1  string
-	Field    string
-	Was      string
-	NowValue string
-	Reason   string
+	RefEpoch  string
+	RefSHA1   string
+	Field     string
+	Was       string
+	NowValue  string
+	Reason    string
+	ReadItems func(string) ([]string, bool, error)
 
 	Summary string
 	All     bool
@@ -343,8 +345,8 @@ func Retro(opts Options) Result {
 // Stats implements `receipt stats`.
 func Stats(opts Options) Result {
 	data, err := os.ReadFile(opts.File)
-	if err != nil {
-		return ok("receipts=0")
+	if err != nil && !os.IsNotExist(err) {
+		return fail(2, "cannot read receipt file: %v", err)
 	}
 	lines := readLines(string(data))
 	if !opts.All {
@@ -416,7 +418,44 @@ func Stats(opts Options) Result {
 	if n > 0 {
 		out = append(out, fmt.Sprintf("span_days=%.1f", float64(last-first)/86400))
 	}
+	readItems := opts.ReadItems
+	if readItems == nil && opts.Root != "" {
+		if hasGitCheckout(opts.Root) {
+			readItems = goal.ReadItemsForRetro
+		}
+	}
+	if readItems != nil {
+		lines, present, readErr := readItems(opts.Root)
+		if readErr != nil {
+			return fail(2, "cannot read goal ledger for retro: %v", readErr)
+		}
+		if present {
+			out = append(out, "Open read items")
+			if len(lines) == 0 {
+				out = append(out, "none")
+			} else {
+				out = append(out, lines...)
+			}
+		}
+	}
 	return ok(out...)
+}
+
+func hasGitCheckout(root string) bool {
+	directory, err := filepath.Abs(root)
+	if err != nil {
+		return false
+	}
+	for {
+		if _, err := os.Stat(filepath.Join(directory, ".git")); err == nil {
+			return true
+		}
+		parent := filepath.Dir(directory)
+		if parent == directory {
+			return false
+		}
+		directory = parent
+	}
 }
 
 // Check implements `receipt check`.

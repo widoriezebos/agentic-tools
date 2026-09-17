@@ -68,6 +68,18 @@ func TestHCL03EveryRowReal(t *testing.T) {
 	}
 }
 
+func TestHCL03GoalDoneReadItemsOpenRow(t *testing.T) {
+	for _, row := range Rows {
+		if row.Code == "GOAL_DONE_READ_ITEMS_OPEN" {
+			if row.Owner != "internal/goal" || row.Shape != Question || row.Override != "" {
+				t.Fatalf("GOAL_DONE_READ_ITEMS_OPEN row = %+v", row)
+			}
+			return
+		}
+	}
+	t.Fatal("GOAL_DONE_READ_ITEMS_OPEN has no refusal-register row")
+}
+
 func TestHCL03HandoffCancelRows(t *testing.T) {
 	wants := map[string]Row{
 		"HANDOFF_HUMAN_UNPROVEN": {Owner: "internal/steward", Shape: Identity},

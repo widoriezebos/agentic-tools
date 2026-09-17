@@ -91,6 +91,26 @@ func TestO13ReceiptProvenanceParsesWithOldRows(t *testing.T) {
 	}
 }
 
+func TestRetroStatsListsOpenReadItemsAndLedgerDefects(t *testing.T) {
+	opts := baseOptions(t)
+	opts.ReadItems = func(root string) ([]string, bool, error) {
+		if root != opts.Root {
+			t.Fatalf("read-items root = %q, want %q", root, opts.Root)
+		}
+		return []string{
+			`goal=live state=queued open=1`,
+			`item goal=live read=critic id=critic-1 text="Follow up."`,
+			`goal=done state=done open=0`,
+			`LEDGER DEFECT goal=done concluded with open read item read=critic id=critic-1 text="Impossible."`,
+		}, true, nil
+	}
+	result := Stats(opts)
+	joined := strings.Join(result.Out, "\n")
+	if result.Code != 0 || !strings.Contains(joined, "Open read items\n") || !strings.Contains(joined, "goal=live state=queued open=1") || !strings.Contains(joined, "goal=done state=done open=0") || !strings.Contains(joined, "LEDGER DEFECT") {
+		t.Fatalf("retro stats omitted read ledger: %+v", result)
+	}
+}
+
 func TestReadMetricsAreOptionalAndNumeric(t *testing.T) {
 	opts := baseOptions(t)
 	opts.Type, opts.Outcome = "review", "shipped"

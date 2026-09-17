@@ -81,6 +81,7 @@ var Rows = []Row{
 	{Code: "BATCH_RECOVERY_NOT_PUSHED", Owner: "internal/landing/batch", Site: "recovery.go", Shape: Question},
 	{Code: "BATCH_WAIT_BOUND", Owner: "internal/landing/batch", Site: "wait.go", Shape: Question},
 	{Code: "GOAL_REVISION_MOVED", Owner: "cmd/metasystem", Site: "proof_run.go", Shape: Question},
+	{Code: "GOAL_DONE_READ_ITEMS_OPEN", Owner: "internal/goal", Site: "verbs.go", Shape: Question},
 	{Code: "TRUNK_RED_OWNER_UNBOUND", Owner: "internal/landing/batch", Site: "trunkred.go:69", Shape: Question},
 	{Code: "TRUNK_RED_RECORD_PENDING", Owner: "internal/landing/batch", Site: "trunkred_record.go:11", Shape: Question},
 	{Code: "TRUNK_RED_RECORD_FAILED", Owner: "internal/landing/batch", Site: "trunkred_record.go:21", Shape: Question},

@@ -528,6 +528,7 @@ func families() []family {
 				{"carry", "human-only: name the live successor carrying an abandoned goal, or carry a landing past one named refusal or testing group", runGoalCarry},
 				{"engine-floor", "human-only: record the oldest engine commit every enrolled seat runs; the first abandon refuses without it", runGoalEngineFloor},
 				{"set-next", "rewrite the Current goal's next step", runGoalSetNext},
+				{"read-items", "record, close, or list non-breaking read findings", runGoalReadItems},
 				{"promote", "move a queued goal to Current", runGoalPromote},
 				{"park", "park a goal; parking the Current one requires --then or --and-none", runGoalPark},
 				{"unpark", "return a parked goal to the queue", runGoalUnpark},

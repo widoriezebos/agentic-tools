@@ -484,9 +484,13 @@ func runGoalShow(args []string) int {
 		}
 		state = "archived"
 	}
-	printJSON(map[string]any{
+	page := map[string]any{
 		"root": *root, "world": "synced", "tip": p.Tip, "where": state, "goal": goalDisplayRecord(f, *history),
-	})
+	}
+	if blocks := goal.OpenReadItemBlocks(f); len(blocks) > 0 {
+		page["openReadItems"] = blocks
+	}
+	printJSON(page)
 	return 0
 }
 
@@ -542,8 +546,10 @@ func nextSyncedWithProjector(root, machine string, fetchFirst bool, project func
 	switch selection.Kind {
 	case goal.NextSelectionContinue:
 		fmt.Println("continue your claimed goal: " + selection.GoalID)
+		printOpenReadItemBlocks(p.Tree.Live[selection.GoalID])
 	case goal.NextSelectionReady:
 		fmt.Println("next ready goal: " + selection.GoalID)
+		printOpenReadItemBlocks(p.Tree.Live[selection.GoalID])
 	default:
 		if len(requiredLabels) > 0 {
 			matched := false
@@ -581,6 +587,15 @@ func nextSyncedWithProjector(root, machine string, fetchFirst bool, project func
 		fmt.Printf("trunk red %s owned by %s since %s\n", entry.ID, owner, entry.Owner.Since)
 	}
 	return 0
+}
+
+func printOpenReadItemBlocks(file *goal.GoalFile) {
+	for _, block := range goal.OpenReadItemBlocks(file) {
+		fmt.Println(block.Heading)
+		for _, item := range block.Items {
+			fmt.Printf("- %s: %s\n", item.ID, item.Text)
+		}
+	}
 }
 
 func trunkRedOwnedLine(entry goal.TrunkRedEntry) string {

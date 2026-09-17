@@ -332,9 +332,17 @@ func TestLastArcGoalConclusionRaisesRetroDebtWhenSweepFails(t *testing.T) {
 		t.Fatalf("set arc: %+v %v", res, err)
 	}
 	request := verbReq(root, "01J5X00000000000000000RS12", "mac-a")
-	request.SweepBranch = func(string) error { return fmt.Errorf("fixture sweep refused") }
+	debtVisibleAtSweep := false
+	request.SweepBranch = func(string) error {
+		open, err := retrodebt.Open(root)
+		debtVisibleAtSweep = err == nil && len(open) == 1 && open[0].Kind == retrodebt.KindArc
+		if !debtVisibleAtSweep {
+			return fmt.Errorf("sweep ran before arc retro debt")
+		}
+		return fmt.Errorf("fixture sweep refused")
+	}
 	result, doneErr := Done(request, "retro-sweep", "Arc done.")
-	if result.Outcome != OutcomeConfirmed || doneErr == nil || !strings.Contains(doneErr.Error(), "fixture sweep refused") {
+	if result.Outcome != OutcomeConfirmed || doneErr == nil || !strings.Contains(doneErr.Error(), "fixture sweep refused") || !debtVisibleAtSweep {
 		t.Fatalf("done with failed sweep = %+v, %v", result, doneErr)
 	}
 	open, err := retrodebt.Open(root)

@@ -24,6 +24,8 @@ No model context waits. A delegate that launches a job, a proof or a landing ret
 
 Before dispatching a code read or critique, the seat prepares the reader's private copy and completes and reads `scripts/agents/templates/review-brief.md`: it records the copy's path and exact commit or diff, writes a focused numbered checklist whose items name file line ranges or fixture rows, and sets a numeric tool-call budget at which the reader stops and reports unchecked items. Each round uses a fresh reader and never resumes a reader from an earlier round. After findings are folded, a confirmation read uses the template's scoped variant and checks only those folded findings.
 
+At a read's return, before landing the build, the seat records every non-breaking finding with `metasystem goal read-items add --id <goal> --read <label> --item "<text>"`; breaking findings still gate the landing.
+
 Before dispatching a design author or a revision, the seat fills in `scripts/agents/templates/design-brief.md`: the context pack, a numeric tool-call budget, and a word-count page-size ceiling. Every revision goes to a fresh delegate and is never resumed; this is an exception to the follow-up resume described in the paragraph beginning "Corrections use". The seat writes one `type=design` receipt for each revision and records that delegate's tokens and calls as `design_tokens` and `design_calls`.
 
 ## The Collaboration Loop

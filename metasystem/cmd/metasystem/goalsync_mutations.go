@@ -14,6 +14,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"sort"
 	"strconv"
 	"strings"
 	"time"
@@ -676,6 +677,206 @@ func printSyncResult(res goal.PublishResult, err error) int {
 	printJSON(map[string]any{"outcome": res.Outcome, "tip": res.Tip, "detail": res.Detail})
 	if res.Outcome != goal.OutcomeConfirmed {
 		return 1
+	}
+	return 0
+}
+
+func runGoalReadItems(args []string) int {
+	if len(args) == 0 {
+		fmt.Fprintln(os.Stderr, "usage: metasystem goal read-items add|close|list [flags]")
+		return 2
+	}
+	switch args[0] {
+	case "add":
+		return runGoalReadItemsAdd(args[1:])
+	case "close":
+		return runGoalReadItemsClose(args[1:])
+	case "list":
+		return runGoalReadItemsList(args[1:])
+	default:
+		fmt.Fprintf(os.Stderr, "unknown goal read-items verb %q\n", args[0])
+		return 2
+	}
+}
+
+func readItemMutationRequest(verb, root, by, lineage string) (goal.VerbRequest, bool) {
+	if !converted(root) {
+		fmt.Fprintln(os.Stderr, "goal read-items works the synced backlog; this checkout still carries the legacy ledger")
+		return goal.VerbRequest{}, false
+	}
+	req, err := syncReq(verb, root, by, lineage)
+	if err != nil {
+		fmt.Fprintln(os.Stderr, err)
+		return goal.VerbRequest{}, false
+	}
+	return req, true
+}
+
+func runGoalReadItemsAdd(args []string) int {
+	flags := flag.NewFlagSet("goal read-items add", flag.ContinueOnError)
+	root := pathFlag(flags, "root", ".", "checkout root")
+	id := flags.String("id", "", "goal id")
+	read := flags.String("read", "", "read label")
+	by := flags.String("by", "", "the directing human")
+	lineage := flags.String("lineage", "", "coordinator lineage")
+	itemsFile := flags.String("items-file", "", "one item per line")
+	var items repeatedStrings
+	flags.Var(&items, "item", "read item (repeatable)")
+	if flags.Parse(args) != nil || flags.NArg() != 0 || *id == "" || *read == "" || (len(items) == 0) == (*itemsFile == "") {
+		fmt.Fprintln(os.Stderr, "usage: metasystem goal read-items add --id GOAL --read LABEL (--item TEXT ... | --items-file PATH)")
+		return 2
+	}
+	texts := []string(items)
+	if *itemsFile != "" {
+		var err error
+		texts, err = readItemsFile(*itemsFile)
+		if err != nil {
+			fmt.Fprintln(os.Stderr, err)
+			return 1
+		}
+		if len(texts) == 0 {
+			fmt.Fprintln(os.Stderr, "--items-file contains no read items")
+			return 2
+		}
+	}
+	req, ok := readItemMutationRequest("read-items add", *root, *by, *lineage)
+	if !ok {
+		return 1
+	}
+	result, err := goal.AddReadItems(req, *id, *read, texts)
+	return printSyncResult(result, err)
+}
+
+func readItemsFile(path string) ([]string, error) {
+	data, err := os.ReadFile(path)
+	if err != nil {
+		return nil, err
+	}
+	var items []string
+	for _, line := range strings.Split(strings.ReplaceAll(string(data), "\r\n", "\n"), "\n") {
+		line = strings.TrimSpace(line)
+		if line != "" && !strings.HasPrefix(line, "#") {
+			items = append(items, line)
+		}
+	}
+	return items, nil
+}
+
+func runGoalReadItemsClose(args []string) int {
+	flags := flag.NewFlagSet("goal read-items close", flag.ContinueOnError)
+	root := pathFlag(flags, "root", ".", "checkout root")
+	id := flags.String("id", "", "goal id")
+	item := flags.String("item", "", "read item id")
+	by := flags.String("by", "", "the directing human")
+	lineage := flags.String("lineage", "", "coordinator lineage")
+	fixed := flags.String("fixed", "", "commit that fixed the item")
+	moved := flags.String("moved", "", "open goal receiving the item")
+	accepted := flags.String("accepted", "", "reason this is not a defect")
+	if flags.Parse(args) != nil || flags.NArg() != 0 || *id == "" || *item == "" {
+		fmt.Fprintln(os.Stderr, "usage: metasystem goal read-items close --id GOAL --item ITEM (--fixed COMMIT | --moved GOAL | --accepted REASON)")
+		return 2
+	}
+	closure := goal.ReadItemClosure{}
+	flags.Visit(func(f *flag.Flag) {
+		switch f.Name {
+		case "fixed":
+			closure.Fixed = fixed
+		case "moved":
+			closure.Moved = moved
+		case "accepted":
+			closure.Accepted = accepted
+		}
+	})
+	req, ok := readItemMutationRequest("read-items close", *root, *by, *lineage)
+	if !ok {
+		return 1
+	}
+	result, err := goal.CloseReadItem(req, *id, *item, closure)
+	return printSyncResult(result, err)
+}
+
+type readItemsGoalJSON struct {
+	Goal  string          `json:"goal"`
+	State string          `json:"state"`
+	Items []goal.ReadItem `json:"items"`
+}
+
+func runGoalReadItemsList(args []string) int {
+	flags := flag.NewFlagSet("goal read-items list", flag.ContinueOnError)
+	root := pathFlag(flags, "root", ".", "checkout root")
+	id := flags.String("id", "", "one goal id")
+	openOnly := flags.Bool("open", false, "only open items")
+	jsonOutput := flags.Bool("json", false, "machine-readable output")
+	if flags.Parse(args) != nil || flags.NArg() != 0 {
+		return 2
+	}
+	if !converted(*root) {
+		fmt.Fprintln(os.Stderr, "goal read-items list reads the synced backlog")
+		return 1
+	}
+	endpoint, err := goal.ResolveEndpoint(*root)
+	if err != nil {
+		fmt.Fprintln(os.Stderr, err)
+		return 1
+	}
+	now, err := goalCommandNow(*root)
+	if err != nil {
+		fmt.Fprintln(os.Stderr, err)
+		return 1
+	}
+	projection, err := goal.Project(endpoint, false, now)
+	if err != nil {
+		fmt.Fprintln(os.Stderr, err)
+		return 1
+	}
+	all := map[string]*goal.GoalFile{}
+	for goalID, file := range projection.Tree.Live {
+		all[goalID] = file
+	}
+	for goalID, file := range projection.Tree.Done {
+		all[goalID] = file
+	}
+	for goalID, file := range projection.Tree.Abandoned {
+		all[goalID] = file
+	}
+	ids := make([]string, 0, len(all))
+	if *id != "" {
+		if all[*id] == nil {
+			fmt.Fprintf(os.Stderr, "no goal %q on the accepted tree\n", *id)
+			return 1
+		}
+		ids = append(ids, *id)
+	} else {
+		for goalID, file := range all {
+			if len(file.ReadItems) > 0 {
+				ids = append(ids, goalID)
+			}
+		}
+		sort.Strings(ids)
+	}
+	rows := make([]readItemsGoalJSON, 0, len(ids))
+	for _, goalID := range ids {
+		file := all[goalID]
+		items := make([]goal.ReadItem, 0, len(file.ReadItems))
+		for _, readItem := range file.ReadItems {
+			if !*openOnly || readItem.State == goal.ReadItemOpen {
+				items = append(items, readItem)
+			}
+		}
+		rows = append(rows, readItemsGoalJSON{Goal: goalID, State: file.State, Items: items})
+	}
+	if *jsonOutput {
+		printJSON(map[string]any{"goals": rows, "tip": projection.Tip})
+		return 0
+	}
+	for _, row := range rows {
+		for _, readItem := range row.Items {
+			fmt.Printf("goal=%s state=%s read=%s item=%s itemState=%s text=%s", row.Goal, row.State, readItem.Read, readItem.ID, readItem.State, strconv.Quote(readItem.Text))
+			if readItem.ClosingReference != "" {
+				fmt.Printf(" closingReference=%s", strconv.Quote(readItem.ClosingReference))
+			}
+			fmt.Println()
+		}
 	}
 	return 0
 }

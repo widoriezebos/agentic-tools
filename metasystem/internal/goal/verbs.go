@@ -1769,16 +1769,13 @@ func Done(r VerbRequest, id, conclusion string) (PublishResult, error) {
 	if err != nil || (result.Outcome != OutcomeConfirmed && result.Outcome != OutcomeConfirmedLate) {
 		return result, err
 	}
-	var sweepErr error
-	if r.SweepBranch != nil {
-		sweepErr = r.SweepBranch(id)
-	}
 	var retroErr error
+	var archived *GoalFile
 	tree, treeErr := loadTree(r.Endpoint.Root, result.Tip)
 	if treeErr != nil {
 		retroErr = fmt.Errorf("goal done confirmed but arc retro debt could not be classified: %w", treeErr)
 	} else {
-		archived := tree.Done[id]
+		archived = tree.Done[id]
 		if archived != nil && archived.Arc != "" {
 			lastInArc := true
 			for _, live := range tree.Live {
@@ -1792,6 +1789,21 @@ func Done(r VerbRequest, id, conclusion string) (PublishResult, error) {
 					retroErr = fmt.Errorf("goal done confirmed but its arc retro debt did not land: %w", err)
 				}
 			}
+		}
+	}
+	var sweepErr error
+	if r.SweepBranch != nil {
+		sweepErr = r.SweepBranch(id)
+	}
+	if archived != nil {
+		var accepted []string
+		for _, item := range archived.ReadItems {
+			if item.State == ReadItemAccepted {
+				accepted = append(accepted, item.ID+": "+item.ClosingReference)
+			}
+		}
+		if len(accepted) > 0 {
+			result.Detail = "accepted read items: " + strings.Join(accepted, "; ")
 		}
 	}
 	if sweepErr != nil {
@@ -2112,6 +2124,15 @@ func doneRequest(r VerbRequest, id, conclusion string) PublishRequest {
 			f, exists := t.Live[id]
 			if !exists {
 				return nil, fmt.Errorf("goal %s is not live; nothing to conclude", id)
+			}
+			var openReadItems []string
+			for _, item := range f.ReadItems {
+				if item.State == ReadItemOpen {
+					openReadItems = append(openReadItems, item.ID)
+				}
+			}
+			if len(openReadItems) > 0 {
+				return nil, &DoneReadItemsOpenError{Goal: id, ItemIDs: openReadItems}
 			}
 			for _, obligation := range f.ReviewObligations {
 				if obligation.State == "open" {

@@ -68,6 +68,7 @@ type GoalFile struct {
 	Obligation        *GovernedObligation
 	ReviewObligations []ReviewObligation
 	AcceptedRisks     []AcceptedRiskRecord
+	ReadItems         []ReadItem
 	// StopCapability is the narrow authority minted with one claimed
 	// revision. StopFence is present only after that authority closed launch
 	// admission for the revision.
@@ -170,6 +171,18 @@ func (r RiskRecord) scoreArgs() string {
 
 type ReviewObligation struct{ Finding, Chain, Artifact, Test, Fixture, State string }
 type AcceptedRiskRecord struct{ Finding, Chain, By, Opid string }
+
+// ReadItem is one non-breaking finding returned by an independent read.
+// AddedAt records creation; ChangedAt records the one transition out of open.
+type ReadItem struct {
+	ID               string `json:"id"`
+	Read             string `json:"read"`
+	Text             string `json:"text"`
+	State            string `json:"state"`
+	ClosingReference string `json:"closingReference,omitempty"`
+	AddedAt          string `json:"addedAt"`
+	ChangedAt        string `json:"changedAt,omitempty"`
+}
 
 // GoalNormApprovalClaim is the durable scope-norm exception beside a budget.
 type GoalNormApprovalClaim struct {
@@ -505,6 +518,7 @@ func ParseFile(data []byte) (*GoalFile, []Problem) {
 	lines := strings.Split(strings.ReplaceAll(string(body), "\r\n", "\n"), "\n")
 	section := ""
 	seen := map[string]bool{}
+	var readItemHeadings []string
 	for i, raw := range lines {
 		line := strings.TrimRight(raw, " \t")
 		switch {
@@ -521,6 +535,11 @@ func ParseFile(data []byte) (*GoalFile, []Problem) {
 			section = "history"
 		case line == "LegacyNotes:":
 			section = "legacy"
+		case strings.HasPrefix(line, "Open read items (fix unit "):
+			// This derived, human-facing heading sits beside the structured
+			// ReadItem fields immediately after Next step.
+			section = ""
+			readItemHeadings = append(readItemHeadings, line)
 		case section == "history" && strings.HasPrefix(line, "- "):
 			h, err := ParseHistoryLine(line)
 			if err != nil {
@@ -662,6 +681,23 @@ func ParseFile(data []byte) (*GoalFile, []Problem) {
 		if !bareReviewID(risk.Finding) || !bareReviewID(risk.Chain) || !bareReviewID(risk.By) || !bareReviewID(risk.Opid) {
 			addProblem("AcceptedRisk is incomplete or malformed")
 		}
+	}
+	readItemIDs := map[string]bool{}
+	for _, item := range f.ReadItems {
+		if err := validateReadItem(item); err != nil {
+			addProblem("ReadItem %s: %v", item.ID, err)
+		}
+		if readItemIDs[item.ID] {
+			addProblem("duplicate ReadItem id %s", item.ID)
+		}
+		readItemIDs[item.ID] = true
+	}
+	var expectedReadItemHeadings []string
+	for _, block := range OpenReadItemBlocks(f) {
+		expectedReadItemHeadings = append(expectedReadItemHeadings, block.Heading)
+	}
+	if strings.Join(readItemHeadings, "\n") != strings.Join(expectedReadItemHeadings, "\n") {
+		addProblem("Open read items headings do not match the structured open items")
 	}
 	if f.State == StateClaimed && f.Claimed != nil && f.Claimed.Revision == 0 && f.Budget != nil {
 		addProblem("Budget: a structured tuple requires a revision-bound claim record")
@@ -994,7 +1030,7 @@ func parseFileField(f *GoalFile, field string, seen map[string]bool, addProblem 
 		addProblem("field without colon: %q", field)
 		return
 	}
-	if seen[key] && key != "ReviewObligation" && key != "AcceptedRisk" {
+	if seen[key] && key != "ReviewObligation" && key != "AcceptedRisk" && key != "ReadItem" {
 		addProblem("duplicate field %q — the last write would silently win", key)
 		return
 	}
@@ -1068,6 +1104,27 @@ func parseFileField(f *GoalFile, field string, seen map[string]bool, addProblem 
 			return
 		}
 		f.AcceptedRisks = append(f.AcceptedRisks, AcceptedRiskRecord{Finding: rec["finding"], Chain: rec["chain"], By: rec["by"], Opid: rec["opid"]})
+	case "ReadItem":
+		without, text, present, err := cutQuotedRecordField(value, "text")
+		if err != nil || !present {
+			addProblem("ReadItem: text= %v", err)
+			return
+		}
+		without, closing, present, err := cutQuotedRecordField(without, "closingReference")
+		if err != nil || !present {
+			addProblem("ReadItem: closingReference= %v", err)
+			return
+		}
+		rec, err := parseKVRecord(without, []string{"id", "read", "state", "addedAt", "changedAt"}, nil, "")
+		if err != nil {
+			addProblem("ReadItem: %v", err)
+			return
+		}
+		changed := rec["changedAt"]
+		if changed == "-" {
+			changed = ""
+		}
+		f.ReadItems = append(f.ReadItems, ReadItem{ID: rec["id"], Read: rec["read"], Text: text, State: rec["state"], ClosingReference: closing, AddedAt: rec["addedAt"], ChangedAt: changed})
 	case "State":
 		f.State = value
 	case "Tier":
@@ -1614,6 +1671,17 @@ func RenderFile(f *GoalFile) []byte {
 	}
 	if f.NextStep != "" {
 		fmt.Fprintf(&b, "- Next step: %s\n", f.NextStep)
+	}
+	for _, block := range OpenReadItemBlocks(f) {
+		fmt.Fprintln(&b, block.Heading)
+		for _, item := range block.Items {
+			renderReadItem(&b, item)
+		}
+	}
+	for _, item := range f.ReadItems {
+		if item.State != ReadItemOpen {
+			renderReadItem(&b, item)
+		}
 	}
 	if f.Conclude != "" {
 		fmt.Fprintf(&b, "- Concluded: %s\n", f.Conclude)
