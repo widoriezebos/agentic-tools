@@ -13,6 +13,27 @@ DONE 4 and 5; units 4, 7 (split into 7a and 7b), 8, 10a and 10b. Displaced: revi
 a per-unit test receipt (`GOAL_LAND_UNPROVEN` per unit), a revision 1 shape that the critique fold "the landing
 pushes with a lease against the trunk commit it prepared from" had kept; the lease rule itself stands, for the series.
 
+Boundary amendment, 2026-09-17 18:05, on a conflict that the build of unit 10b found; the answer is Wido's, relayed by
+m1e. Section 10 puts a goal branch into a batch as one member, brief B sends every batch commit through `commit.sh`
+(R15, BA14a), and section 11 said `commit.sh` is untouched. The boundary had no declaration for a branch member: a
+branch member has no implementer chain, so `landing observe --chain` returns a would-refuse code for its critic root
+or its branch tip, and under the boundary's observe mode that commit would land with the would-refuse verdict, without
+`Goal-Revision`, and without the checks every declaration meets. Wido's answer is yes: the boundary admits a branch
+member's commit on a critic-root attestation that is validated again at the landing root and bound to the landed
+bytes, without an implementer job record, as a fourth declaration beside `--chain`, `--direct-fix` and `--carried`
+(10.1, unit 10c). Unit 10c is built right after this goal merges and does not gate the merge. Until it lands, the
+batch lane reads the verdict trailer of each commit it makes for a branch member and fails the series with
+`BATCH_LAND_UNPROVENANCED` unless the verdict is `pass` (unit 10b); nothing is pushed and the goal is ejected, so a
+branch goal lands through the single-goal lane (section 6). A chain member is unchanged. The batch lane takes
+critic-root attestations only, and Wido asked that this be one verb rather than a rule a seat must remember: unit 10c
+also adds `goal branch read`, which gates the unit's tree, dispatches the critic and records the attestation (10.1).
+What stays a restriction is what carries safety: the batch lane admits a unit only on an engine-launched review bound
+to its bytes. Seats read branch units through the verb when 10c lands. Second, the 13:53 amendment's red record line
+also carries the candidate's retry identity (the tree id after the record and the reads are filtered out), and the
+retry check compares that stored identity, so the check never reads L's objects and works from any clone. What
+changed: sections 5, 10 and 11, unit 10b, and the new section 10.1 and unit 10c. Witness: a branch member whose commit
+carries a would-refuse verdict fails its series before the push, and a chain member's does not.
+
 Landing amendment, 2026-09-17 13:53, rulings of the goal's holder (m1c) and the coordinator (m1e) on two conflicts
 that the read of units 5 to 7b found in this page. No design round and no critique round. First, where L lives before
 its proof: 6.2 pushes the landing branch only after a green receipt, while 6.4, 6.5 and 6.9 name L at a red proof.
@@ -154,7 +175,8 @@ closed code-critic root whose subject is `commit:<id>`; the verb checks the clos
 round, `ReturnBindsSubject` on the tree, a clean register) and records them. `--reader-record <path>`: a prose read
 under `records/misc/` naming the commit id and the unit digest; the verb records its sha256. A reader-record
 attestation is as strong as the record, the hand lane's trust today, unchanged; the batch lane takes critic-root
-attestations only (section 10).
+attestations only, at the join and again at the commit boundary, and `goal branch read` produces them
+(section 10, 10.1).
 
 5.1 The cheap gate is the unit's only machine check (revision 3). `scripts/agents/go-gate.sh --fast` (gofmt, vet,
 staticcheck, the refusal register, the engine build) runs on the unit's tree and its observation is recorded in the
@@ -388,9 +410,10 @@ unlanded; until then the hand lane keeps the stack as diffs and lands nothing of
 
 ## 10. What changes in brief B
 
-Brief B stands; its member is a goal's landing set (the land-ready prefix of section 5 taken whole, revision 3), not
-a unit, so one batch proof covers several goals landing together. A member's units are one closed set of branch
-commits beside a chain, and these rows take it:
+Brief B stands; its member is a goal's landing set (the land-ready prefix of section 5 taken whole, revision 3), not a
+unit, so one batch proof covers several goals landing together. A member's units are one closed set of branch commits
+standing where a chain stands, beside chain members in the same batch; the commit boundary admits them by their
+attestations (10.1), and these rows take it:
 
 - BA2 gains a branch reader as row BA2b: `landing batch join --goal G (--last | --through <commit>)` fetches
   `goal/G`, validates the range, requires for every unit of the prefix a critic-root attestation with verdict LAND
@@ -419,6 +442,36 @@ commits beside a chain, and these rows take it:
 Every named row re-estimates; a row passing 300 splits at its witness boundary. Brief B's DONE (1) to (5) stand,
 with "unit" read as the member.
 
+10.1 The commit boundary for a branch member (unit 10c). Every batch commit goes through `scripts/agents/commit.sh`
+(brief B, R15, BA14a). A branch member has no implementer chain, so its commits carry a fourth declaration,
+`--attested <unit commit> --attested-snapshot <branch tip> --attested-base <endpoint tip>` (names as the build lands
+them), decided in `landing observe` beside `--chain`, `--direct-fix` and `--carried`; `commit.sh` forwards it and
+decides nothing. The verb refuses when: the id is not a commit in the repository; the attestation at
+`metasystem/records/reads/G/<commit>.json` in the snapshot fails section 5's checks (canonical form, self-digest,
+goal, unit, verdict LAND, the subject recomputed from the commit, the fold range, the fast-gate observation on the
+unit's tree, the test-change rule), run by the same function the join runs; the source is not a critic root whose
+closure `readsubject` re-reads from the landing root's job store and binds to `commit:<id>` at the recorded round;
+`--goal` is not the attestation's goal; the candidate change from HEAD, less the folded paths, the receipt ledger and
+the reads directory, does not hash to the attested unit digest, or a folded path does not hash to its recorded fold
+digest; the change reaches a destructive path and the member's fold range carries no `Goal-Plan` commit; or the checks
+every declaration meets refuse (path classes, the held goal at its revision, the receipt ledger row, the test
+receipt's series rule). It passes as `Landing-Provenance: attested=<commit> goal=G unit=<unit> critic=<root>/<round>
+change=<digest>` with `Landing-Provenance-Verdict: pass` under its own bar and the `Goal-Revision` trailer. A
+reader-record attestation refuses. `--attested` beside `--chain` or `--direct-fix` refuses `conflicting-declarations`.
+The batch lane reads the verdict trailer of every commit it makes for a branch member and treats anything but `pass`
+as a landing failure before the push (unit 10b), so a would-refuse under the boundary's observe mode never reaches
+trunk. The closed-chain gate is not touched: a chain member still needs its chain, and a branch member still needs a
+critic-root attestation per unit at the join. A branch member and chain members join the same batch in join order.
+What the boundary no longer asks of a branch member is an implementer job record; the critic's closure over the commit
+and the holder's pushed branch stand in its place (section 11). A seat gets that attestation from one verb, `goal
+branch read --goal G --unit <commit>` (name as the build lands it). It runs `scripts/agents/go-gate.sh --fast` on the
+unit's tree when no observation of that tree is recorded, dispatches a code-critic root on `commit:<id>` through
+`delegate` with a brief the verb writes, and returns at once with the job id; it never waits on a model. Once the root
+closes, the same verb with `--collect` writes the attestation through `goal branch commit --kind read --root-job` with
+the recorded gate run; a root still open writes nothing and says so, and a root whose register is not clean refuses,
+so the unit is fixed and read again. A seat never chooses a source. `--reader-record` stays for the hand lane only,
+where a person lands on their own authority; the join and the boundary refuse its attestations. Witness: unit 10c.
+
 ## 11. What changes in existing behaviour
 
 Under R-115-m1e: a reader names `commit:<id>` and an attestation instead of a diff file and its sha256; a landing
@@ -429,9 +482,10 @@ landing per goal. The hand lane's per-unit deep proof ends when unit 7a lands; u
 lands a goal's whole land-ready prefix under one proof, as lane 12 did for five units under proof-mu53bjy2 on
 2026-09-17, and a shorter prefix only on the human's word (6.1); a red at a landing is fixed inside the landing (6.5
 to 6.7), by hand under the same rules until unit 7b lands; the lock is taken once per landing (7.1). Untouched: the
-receipt rule (one row per trunk commit), `commit.sh`, `ledger-preserve.sh`, `sync-transport.sh` for `main`, the
-lock, the goal store and its publication, the ledgers, brief B's DONE, integration-branch's boundary.
-human-carried-landing's carry can name a branch commit; no conflict. No question is open for Wido.
+receipt rule (one row per trunk commit), `ledger-preserve.sh`, `sync-transport.sh` for `main`, the lock, the goal
+store and its publication, the ledgers, brief B's DONE, integration-branch's boundary. `commit.sh` gains one forwarded
+flag and no decision, and `goal branch` gains `read` (10.1). human-carried-landing's carry can name a branch commit;
+no conflict. No question is open for Wido: he answered yes to 10.1 on 2026-09-17.
 
 ## Proof of DONE
 
@@ -469,6 +523,7 @@ on trunk without their unit. Files are under `internal/goal/branch/` unless a pa
 | 9. Sweep and conclusion. | `sweep.go`, `internal/goal/verbs.go`, `cmd/metasystem/goal.go` | 8 | A plan-only tail refuses; an unknown commit refuses; a tip advanced between check and delete refuses; a `Goal-Last` landing sweeps; `goal done` sweeps; a parked goal without a branch is listed; an abandoned branch survives a plain sweep; a `landing/` branch of no live landing is listed and deleted only on the word (6.9). | 300 |
 | 10a. Batch reader and per-member check. After BA2 and BA4. | `internal/landing/batch/branch.go`, `join.go` | 10 | A fixture branch of three units with critic-root attestations joins as one member and certifies each unit's bytes; a reader-record attestation on one unit refuses `BATCH_JOIN_UNREAD` for the member; a two-goal batch passes with each unit compared to its own transition inside its member; a moved trunk in a unit file refuses `BATCH_JOIN_REREAD`; a second member of one goal refuses `BATCH_GOAL_ELSEWHERE`. | 290 |
 | 10b. Batch identity rows and goal ejection. After 10a, BA12b, BA14b and BA15. | `record.go`, `return.go`, `red.go`, `receipts.go`, `land_apply.go`, `recovery.go`, `cmd/metasystem/landing_batch_verbs.go`, the inventory | 10 | Record and receipt carry the member's commit ids and last unit; `Next` names the last unit; a failing group that names one member's unit ejects that goal whole with the failure on its `Next step`, the survivors form a new tree and `landing/<batch-id>` is rebuilt from them under its lease (6.9); recovery finds each landed unit by `Goal-Source` and finishes the member once; `validate moved-effects` reports zero problems. | 320 |
+| 10c. Commit boundary for a branch member. After 10b; built after this goal merges. | `internal/landing/observe.go`, `internal/landing/attested.go`, `attest.go`, `cmd/metasystem/landing_verbs.go`, `internal/landing/batch/transport.go`, `internal/landing/batch/join.go`, `cmd/metasystem/landing_batch_land.go`, `internal/landing/batch/recovery.go`, `internal/goal/attention.go`, `internal/refusal/register.go`, `scripts/agents/commit.sh`, `scripts/agents/landing-promotion.json`, `cmd/metasystem/goal_branch.go`, `internal/goal/branch/read.go`, `docs/project-rules.md` | 10.1 | `landing observe --attested` on a fixture unit commit with a critic-root attestation passes with a `pass` verdict and a goal revision, and `commit.sh` lands it with its trailers; a reader-record source, a critic root missing from the job store or a round off by one, an extra changed file or a changed fold byte, a held goal at a moved revision, and a destructive change without a `Goal-Plan` fold each refuse and nothing is committed; `--attested` with `--chain` refuses; `CommitBuild` passes the attested declaration and never a critic root or a branch tip as `--chain`; a branch member joins beside a chain member and both land; recovery finds a branch member's commits by `Goal-Source`; the census reads the new provenance line; `goal branch read` on a fixture unit runs the fast gate once for a tree, dispatches one code-critic root on `commit:<id>` through a fake delegate and returns without waiting, and its `--collect` writes a critic-root attestation that `landing observe --attested` passes when the root closed clean, writes nothing while the root is open, and refuses a root with open findings. | 550 (the read verb about 250), witnesses about 320 more |
 | 11. First mover. After unit 3. | `records/misc/fixture-children-branch-move.md` | 9 | Proof of DONE 2. | 60, records only |
 
 ### Builds (process reset, 2026-09-17)
