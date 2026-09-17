@@ -7,7 +7,9 @@ import (
 	"os/exec"
 	"path/filepath"
 	"strings"
+	"sync"
 	"testing"
+	"time"
 
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/steward"
 )
@@ -28,13 +30,14 @@ func TestLandedRearmDecidesFromTheThreeFacts(t *testing.T) {
 	diverged.HeadIsAncestor = false
 	d := decideLandedRearm(diverged, "/c")
 	if d.Rearm || !strings.Contains(d.Refusal, "TEST_POLICY_ENGINE_REQUIRED") || !strings.Contains(d.Refusal, base.Source) ||
-		!strings.Contains(d.Refusal, base.Tip) || !strings.Contains(d.Refusal, "not an ancestor") || !strings.Contains(d.Refusal, landedRearmCommand("/c")) {
+		!strings.Contains(d.Refusal, base.Tip) || !strings.Contains(d.Refusal, "cause=engine-behind-tip") || !strings.Contains(d.Refusal, "fact=head-diverged") ||
+		!strings.Contains(d.Refusal, "not an ancestor") || !strings.Contains(d.Refusal, landedRearmCommand("/c")) {
 		t.Fatalf("a diverged checkout was not refused with the two commits and the command: %+v", d)
 	}
 	dirty := landed
 	dirty.DirtyEnginePaths = []string{"metasystem/cmd/metasystem/main.go"}
 	d = decideLandedRearm(dirty, "/c")
-	if d.Rearm || !strings.Contains(d.Refusal, "dirty in engine inputs (metasystem/cmd/metasystem/main.go)") || !strings.Contains(d.Refusal, landedRearmCommand("/c")) {
+	if d.Rearm || !strings.Contains(d.Refusal, "fact=dirty-engine-paths") || !strings.Contains(d.Refusal, "dirty in engine inputs (metasystem/cmd/metasystem/main.go)") || !strings.Contains(d.Refusal, landedRearmCommand("/c")) {
 		t.Fatalf("a checkout dirty in an engine input was not refused naming the path and the command: %+v", d)
 	}
 	// A delivery run that names the exact index it proves keeps the manual
@@ -42,20 +45,26 @@ func TestLandedRearmDecidesFromTheThreeFacts(t *testing.T) {
 	named := landed
 	named.NamedDeliveryTree = true
 	d = decideLandedRearm(named, "/c")
-	if d.Rearm || !strings.Contains(d.Refusal, "names the exact index it proves") || !strings.Contains(d.Refusal, landedRearmCommand("/c")) {
+	if d.Rearm || !strings.Contains(d.Refusal, "fact=named-delivery-tree") || !strings.Contains(d.Refusal, "names the exact index it proves") || !strings.Contains(d.Refusal, landedRearmCommand("/c")) {
 		t.Fatalf("a delivery run naming its tree was not kept on the manual path: %+v", d)
 	}
 	// The engine is never rebuilt under a live attempt of this installation.
 	busy := landed
 	busy.LiveAttempts = []string{"proof-live-1"}
 	d = decideLandedRearm(busy, "/c")
-	if d.Rearm || !strings.Contains(d.Refusal, "live (proof-live-1)") {
+	if d.Rearm || !strings.Contains(d.Refusal, "fact=live-attempt") || !strings.Contains(d.Refusal, "live (proof-live-1)") {
 		t.Fatalf("a rebuild under a live attempt was not refused: %+v", d)
 	}
 }
 
 type landedRearmFixture struct {
 	remote, projectRoot, installation string
+}
+
+func readLandedRearmFactsForTest(ctx context.Context, installation, projectRoot, prefix, source string, ownsTip func(string) bool) (landedRearmFacts, error) {
+	return readLandedRearmFacts(ctx, steward.SystemRearmClock(), 20, installation, projectRoot, prefix, source, func(tip string) (bool, error) {
+		return ownsTip(tip), nil
+	})
 }
 
 func landedGit(t *testing.T, dir string, args ...string) string {
@@ -117,7 +126,7 @@ func TestLandedRearmReadsTheCheckoutAgainstItsRemote(t *testing.T) {
 	fixture := newLandedRearmFixture(t)
 	head := landedGit(t, fixture.projectRoot, "rev-parse", "HEAD")
 	notOwned := func(string) bool { return false }
-	facts, err := readLandedRearmFacts(context.Background(), fixture.installation, fixture.projectRoot, "metasystem", head, notOwned)
+	facts, err := readLandedRearmFactsForTest(context.Background(), fixture.installation, fixture.projectRoot, "metasystem", head, notOwned)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -129,7 +138,7 @@ func TestLandedRearmReadsTheCheckoutAgainstItsRemote(t *testing.T) {
 		t.Fatalf("a clean checkout behind the tip was not read as landed-only: %+v", facts)
 	}
 	// An engine that owns the tip needs no other fact.
-	owned, err := readLandedRearmFacts(context.Background(), fixture.installation, fixture.projectRoot, "metasystem", head, func(string) bool { return true })
+	owned, err := readLandedRearmFactsForTest(context.Background(), fixture.installation, fixture.projectRoot, "metasystem", head, func(string) bool { return true })
 	if err != nil || !owned.SourceOwnsTip {
 		t.Fatalf("an engine owning the tip was not reported so: %+v %v", owned, err)
 	}
@@ -137,14 +146,14 @@ func TestLandedRearmReadsTheCheckoutAgainstItsRemote(t *testing.T) {
 	if err := os.WriteFile(filepath.Join(fixture.installation, "docs", "notes.md"), []byte("notes, edited\n"), 0o644); err != nil {
 		t.Fatal(err)
 	}
-	facts, err = readLandedRearmFacts(context.Background(), fixture.installation, fixture.projectRoot, "metasystem", head, notOwned)
+	facts, err = readLandedRearmFactsForTest(context.Background(), fixture.installation, fixture.projectRoot, "metasystem", head, notOwned)
 	if err != nil || len(facts.DirtyEnginePaths) != 0 {
 		t.Fatalf("a docs edit counted as engine dirt: %+v %v", facts.DirtyEnginePaths, err)
 	}
 	if err := os.WriteFile(filepath.Join(fixture.installation, "cmd", "metasystem", "extra.go"), []byte("package main\n"), 0o644); err != nil {
 		t.Fatal(err)
 	}
-	facts, err = readLandedRearmFacts(context.Background(), fixture.installation, fixture.projectRoot, "metasystem", head, notOwned)
+	facts, err = readLandedRearmFactsForTest(context.Background(), fixture.installation, fixture.projectRoot, "metasystem", head, notOwned)
 	if err != nil || strings.Join(facts.DirtyEnginePaths, ",") != "metasystem/cmd/metasystem/extra.go" {
 		t.Fatalf("an untracked engine file was not listed as dirt: %+v %v", facts.DirtyEnginePaths, err)
 	}
@@ -153,21 +162,21 @@ func TestLandedRearmReadsTheCheckoutAgainstItsRemote(t *testing.T) {
 	}
 	// A local commit the remote lacks: the checkout is not an ancestor.
 	landedGit(t, fixture.projectRoot, "commit", "-qam", "local only")
-	facts, err = readLandedRearmFacts(context.Background(), fixture.installation, fixture.projectRoot, "metasystem", head, notOwned)
+	facts, err = readLandedRearmFactsForTest(context.Background(), fixture.installation, fixture.projectRoot, "metasystem", head, notOwned)
 	if err != nil || facts.HeadIsAncestor {
 		t.Fatalf("a checkout with a local commit was read as an ancestor of the tip: %+v %v", facts, err)
 	}
 	// A landing ref that cannot be fetched is judged as last fetched: an
 	// engine that owns it runs, a re-arm from it is refused.
 	landedGit(t, fixture.projectRoot, "remote", "set-url", "origin", filepath.Join(t.TempDir(), "absent.git"))
-	facts, err = readLandedRearmFacts(context.Background(), fixture.installation, fixture.projectRoot, "metasystem", head, notOwned)
+	facts, err = readLandedRearmFactsForTest(context.Background(), fixture.installation, fixture.projectRoot, "metasystem", head, notOwned)
 	if err != nil || facts.FetchErr == nil || facts.Tip != remoteTip {
 		t.Fatalf("a failed fetch was not recorded against the last fetched tip: %+v %v", facts, err)
 	}
-	if d := decideLandedRearm(facts, fixture.projectRoot); d.Rearm || !strings.Contains(d.Refusal, "could not be fetched") {
+	if d := decideLandedRearm(facts, fixture.projectRoot); d.Rearm || !strings.Contains(d.Refusal, "fact=fetch-failed") || !strings.Contains(d.Refusal, "could not be fetched") {
 		t.Fatalf("a re-arm from an unfetchable tip was not refused: %+v", d)
 	}
-	if owned, err := readLandedRearmFacts(context.Background(), fixture.installation, fixture.projectRoot, "metasystem", head, func(string) bool { return true }); err != nil || !owned.SourceOwnsTip {
+	if owned, err := readLandedRearmFactsForTest(context.Background(), fixture.installation, fixture.projectRoot, "metasystem", head, func(string) bool { return true }); err != nil || !owned.SourceOwnsTip {
 		t.Fatalf("an engine owning the last fetched tip was refused for the fetch: %+v %v", owned, err)
 	}
 }
@@ -175,13 +184,13 @@ func TestLandedRearmReadsTheCheckoutAgainstItsRemote(t *testing.T) {
 func TestLandedRearmFastForwardsRebuildsAndReArms(t *testing.T) {
 	fixture := newLandedRearmFixture(t)
 	head := landedGit(t, fixture.projectRoot, "rev-parse", "HEAD")
-	facts, err := readLandedRearmFacts(context.Background(), fixture.installation, fixture.projectRoot, "metasystem", head, func(string) bool { return false })
+	facts, err := readLandedRearmFactsForTest(context.Background(), fixture.installation, fixture.projectRoot, "metasystem", head, func(string) bool { return false })
 	if err != nil {
 		t.Fatal(err)
 	}
 	var rebuiltIn, upInstallation, upScope string
 	locked := 0
-	previousRebuild, previousUp, previousOpen, previousLock := landedRearmRebuild, landedRearmUp, landedRearmOpenEnrollment, landedRearmMutationLock
+	previousFastForward, previousRebuild, previousUp, previousOpen, previousLock := landedRearmFastForward, landedRearmRebuild, landedRearmUp, landedRearmOpenEnrollment, landedRearmMutationLock
 	upResult := upOutcome{Line: "up outcome=armed authority=writer re-armed=\"generation=2 previous=1\"", Outcome: "armed"}
 	var upErr error
 	enrolledGeneration := 2
@@ -195,7 +204,7 @@ func TestLandedRearmFastForwardsRebuildsAndReArms(t *testing.T) {
 	}
 	landedRearmMutationLock = func(string) (func(), error) { locked++; return func() { locked-- }, nil }
 	t.Cleanup(func() {
-		landedRearmRebuild, landedRearmUp, landedRearmOpenEnrollment, landedRearmMutationLock = previousRebuild, previousUp, previousOpen, previousLock
+		landedRearmFastForward, landedRearmRebuild, landedRearmUp, landedRearmOpenEnrollment, landedRearmMutationLock = previousFastForward, previousRebuild, previousUp, previousOpen, previousLock
 	})
 	record, err := landedRearmAct(context.Background(), fixture.installation, fixture.projectRoot, facts, 1)
 	if err != nil {
@@ -225,19 +234,141 @@ func TestLandedRearmFastForwardsRebuildsAndReArms(t *testing.T) {
 	}
 	// An enrollment that did not advance is a refusal with up's own words.
 	enrolledGeneration = 3
-	if _, err := landedRearmAct(context.Background(), fixture.installation, fixture.projectRoot, facts, 3); err == nil || !strings.Contains(err.Error(), "no runtime ancestor") {
+	if _, err := landedRearmAct(context.Background(), fixture.installation, fixture.projectRoot, facts, 3); err == nil || !strings.Contains(err.Error(), "cause=rearm-failed") || !strings.Contains(err.Error(), "no runtime ancestor") {
 		t.Fatalf("an enrollment that did not advance was not refused with up's words: %v", err)
 	}
 	// A refused decision runs none of the three acts and takes no lock.
 	rebuiltIn, upInstallation, locked = "", "", 0
 	diverged := facts
 	diverged.HeadIsAncestor = false
-	if _, err := landedRearmAct(context.Background(), fixture.installation, fixture.projectRoot, diverged, 3); err == nil || rebuiltIn != "" || upInstallation != "" || locked != 0 {
+	if _, err := landedRearmAct(context.Background(), fixture.installation, fixture.projectRoot, diverged, 3); err == nil || !strings.Contains(err.Error(), "cause=engine-behind-tip") || rebuiltIn != "" || upInstallation != "" || locked != 0 {
 		t.Fatalf("a refusal reached the acts: err=%v rebuild=%s up=%s locked=%d", err, rebuiltIn, upInstallation, locked)
+	}
+	landedRearmFastForward = func(context.Context, string, string) error { return errors.New("blocked") }
+	if _, err := performLandedRearm(context.Background(), fixture.installation, fixture.projectRoot, facts, 3); err == nil || !strings.Contains(err.Error(), "cause=fast-forward-blocked") {
+		t.Fatalf("fast-forward failure lost its cause: %v", err)
+	}
+	landedRearmFastForward = func(context.Context, string, string) error { return nil }
+	landedRearmRebuild = func(context.Context, string) error { return errors.New("compiler failed") }
+	if _, err := performLandedRearm(context.Background(), fixture.installation, fixture.projectRoot, facts, 3); err == nil || !strings.Contains(err.Error(), "cause=rebuild-failed") {
+		t.Fatalf("rebuild failure lost its cause: %v", err)
+	}
+	landedRearmRebuild = previousRebuild
+	landedRearmMutationLock = func(string) (func(), error) { return nil, errors.New("busy") }
+	if _, err := landedRearmAct(context.Background(), fixture.installation, fixture.projectRoot, facts, 3); err == nil || !strings.Contains(err.Error(), "cause=mutation-lock") {
+		t.Fatalf("mutation-lock failure lost its cause: %v", err)
 	}
 	// The real up seam runs the rebuilt binary's own up verb from the
 	// installation with the checkout as --repo.
 	if !strings.HasSuffix(runtimeUpCommandFor(fixture.installation, fixture.projectRoot), filepath.Join("bin", "metasystem")+" up --repo "+fixture.projectRoot) {
 		t.Fatal("the up seam does not name the rebuilt binary's own up")
+	}
+}
+
+type scheduledRearmTimer struct {
+	due   time.Time
+	ready chan time.Time
+	fired bool
+}
+
+type scheduledRearmClock struct {
+	mu     sync.Mutex
+	now    time.Time
+	timers []*scheduledRearmTimer
+}
+
+func newScheduledRearmClock() *scheduledRearmClock {
+	return &scheduledRearmClock{now: time.Date(2026, 9, 17, 12, 0, 0, 0, time.UTC)}
+}
+
+func (clock *scheduledRearmClock) Now() time.Time {
+	clock.mu.Lock()
+	defer clock.mu.Unlock()
+	return clock.now
+}
+
+func (clock *scheduledRearmClock) After(duration time.Duration) <-chan time.Time {
+	clock.mu.Lock()
+	defer clock.mu.Unlock()
+	timer := &scheduledRearmTimer{due: clock.now.Add(duration), ready: make(chan time.Time, 1)}
+	clock.timers = append(clock.timers, timer)
+	return timer.ready
+}
+
+func (clock *scheduledRearmClock) advance(duration time.Duration) {
+	clock.mu.Lock()
+	defer clock.mu.Unlock()
+	clock.now = clock.now.Add(duration)
+	for _, timer := range clock.timers {
+		if !timer.fired && !timer.due.After(clock.now) {
+			timer.fired = true
+			timer.ready <- clock.now
+		}
+	}
+}
+
+func TestLandedRearmJudgmentIsProgressBounded(t *testing.T) {
+	fixture := newLandedRearmFixture(t)
+	head := landedGit(t, fixture.projectRoot, "rev-parse", "HEAD")
+	previousFetch := landedRearmFetch
+	t.Cleanup(func() { landedRearmFetch = previousFetch })
+	clock := newScheduledRearmClock()
+	landedRearmFetch = func(ctx context.Context, injected steward.RearmClock, seconds int, _, _, _ string) error {
+		return steward.RunRearmStep(ctx, injected, time.Duration(seconds)*time.Second, "fetch", func(_ context.Context, funcProgress func()) error {
+			clock.advance(15 * time.Second)
+			funcProgress()
+			return nil
+		})
+	}
+	facts, err := readLandedRearmFacts(context.Background(), clock, 20, fixture.installation, fixture.projectRoot, "metasystem", head, func(string) (bool, error) {
+		err := steward.RunRearmStep(context.Background(), clock, 20*time.Second, "compare", func(_ context.Context, funcProgress func()) error {
+			clock.advance(15 * time.Second)
+			funcProgress()
+			return nil
+		})
+		return err == nil, err
+	})
+	if err != nil || !facts.SourceOwnsTip {
+		t.Fatalf("two progressing 15-second steps inherited a 20-second total: facts=%+v err=%v", facts, err)
+	}
+}
+
+func TestLandedRearmRefusesAStalledTipCompareByName(t *testing.T) {
+	fixture := newLandedRearmFixture(t)
+	head := landedGit(t, fixture.projectRoot, "rev-parse", "HEAD")
+	previousFetch, previousAncestry, previousDirty := landedRearmFetch, landedRearmAncestry, landedRearmDirty
+	t.Cleanup(func() {
+		landedRearmFetch, landedRearmAncestry, landedRearmDirty = previousFetch, previousAncestry, previousDirty
+	})
+	landedRearmFetch = func(context.Context, steward.RearmClock, int, string, string, string) error { return nil }
+	ancestryCalls, dirtyCalls := 0, 0
+	landedRearmAncestry = func(context.Context, steward.RearmClock, int, string, string, string) (bool, error) {
+		ancestryCalls++
+		return true, nil
+	}
+	landedRearmDirty = func(context.Context, steward.RearmClock, int, string, string) ([]string, error) {
+		dirtyCalls++
+		return nil, nil
+	}
+	clock := newScheduledRearmClock()
+	_, err := readLandedRearmFacts(context.Background(), clock, 20, fixture.installation, fixture.projectRoot, "metasystem", head, func(string) (bool, error) {
+		stall := steward.RunRearmStep(context.Background(), clock, 20*time.Second, "compare", func(ctx context.Context, _ func()) error {
+			clock.advance(21 * time.Second)
+			<-ctx.Done()
+			return ctx.Err()
+		})
+		return false, stall
+	})
+	refusal := judgmentRefusal(err, engineCheckoutFacts(fixture.projectRoot), "compare the enrolled engine with the landed tip")
+	if err == nil || !strings.Contains(refusal.Error(), "cause=judgment-stalled step=compare seconds=20") || ancestryCalls != 0 || dirtyCalls != 0 {
+		t.Fatalf("stalled compare did not refuse before later probes: err=%v refusal=%v ancestry=%d dirty=%d", err, refusal, ancestryCalls, dirtyCalls)
+	}
+
+	_, err = readLandedRearmFacts(context.Background(), clock, 20, fixture.installation, fixture.projectRoot, "metasystem", head, func(string) (bool, error) {
+		return false, errors.New("compare process failed")
+	})
+	refusal = judgmentRefusal(err, engineCheckoutFacts(fixture.projectRoot), "compare the enrolled engine with the landed tip")
+	if err == nil || !strings.Contains(refusal.Error(), "cause=judgment-failed") || ancestryCalls != 0 || dirtyCalls != 0 {
+		t.Fatalf("failed compare did not refuse before later probes: err=%v refusal=%v ancestry=%d dirty=%d", err, refusal, ancestryCalls, dirtyCalls)
 	}
 }

@@ -19,7 +19,8 @@ import (
 )
 
 const (
-	landingRefConfigKey        = "metasystem.steward.landing-ref"
+	landingRefConfigKey = "metasystem.steward.landing-ref"
+	// rearm-resolve-seconds is the longest an external judgment step may be silent.
 	rearmResolveSecondsConfig  = "metasystem.steward.rearm-resolve-seconds"
 	defaultRearmResolveSeconds = 20
 	witnessDigestCacheName     = "rearm-witness-digests.json"
@@ -34,7 +35,7 @@ var (
 	witnessDigestCacheWriter = writeWitnessDigestCache
 	witnessGitCommandRunner  = runWitnessGitCommand
 	projectionDiffRunner     = diffEngineProjection
-	archivedEngineDigester   = archivedEngineDigestAtCommit
+	archivedEngineDigester   = archivedEngineDigestAtCommitWithClock
 )
 
 type classifiedJudgmentError struct {
@@ -109,8 +110,21 @@ func gitOutputContext(ctx context.Context, root string, args ...string) (string,
 	return strings.TrimSpace(string(out)), nil
 }
 
-func witnessTimeoutError(seconds int) error {
-	return classifiedJudgment(fmt.Sprintf("witness resolution exceeded the configured %d-second bound (%s)", seconds, rearmResolveSecondsConfig), ErrJudgmentStalled)
+func gitOutputWithProgressDeadline(clock RearmClock, seconds int, step, root string, args ...string) (string, error) {
+	var stdout, stderr bytes.Buffer
+	err := RunRearmStep(context.Background(), clock, time.Duration(seconds)*time.Second, step, func(ctx context.Context, progress func()) error {
+		cmd := exec.CommandContext(ctx, "git", append([]string{"-C", root}, args...)...)
+		cmd.Stdout = RearmProgressWriter(&stdout, progress)
+		cmd.Stderr = RearmProgressWriter(&stderr, progress)
+		return cmd.Run()
+	})
+	if err != nil {
+		if errors.Is(err, ErrJudgmentStalled) {
+			return "", err
+		}
+		return "", fmt.Errorf("git %s: %w (%s)", strings.Join(args, " "), err, strings.TrimSpace(stderr.String()))
+	}
+	return strings.TrimSpace(stdout.String()), nil
 }
 
 type witnessCandidate struct {
@@ -118,13 +132,13 @@ type witnessCandidate struct {
 	changes                   []projectionDiffEntry
 }
 
-func runWitnessGitCommand(ctx context.Context, root string, input []byte, args ...string) ([]byte, error) {
+func runWitnessGitCommand(ctx context.Context, root string, input []byte, progress func(), args ...string) ([]byte, error) {
 	cmd := exec.CommandContext(ctx, "git", append([]string{"-C", root}, args...)...)
 	if input != nil {
 		cmd.Stdin = bytes.NewReader(input)
 	}
 	var stdout, stderr bytes.Buffer
-	cmd.Stdout, cmd.Stderr = &stdout, &stderr
+	cmd.Stdout, cmd.Stderr = RearmProgressWriter(&stdout, progress), RearmProgressWriter(&stderr, progress)
 	if err := cmd.Run(); err != nil {
 		return nil, fmt.Errorf("git %s: %w (%s)", strings.Join(args, " "), err, strings.TrimSpace(stderr.String()))
 	}
@@ -181,21 +195,33 @@ func parseWitnessLog(raw []byte) ([]witnessCandidate, error) {
 	return candidates, nil
 }
 
-func readWitnessCandidates(ctx context.Context, installationRoot, ref string) ([]witnessCandidate, error) {
+// witnessGitStep runs one git command under the silence bound: every byte
+// the command writes counts as progress, so a long but live walk is not a stall.
+func witnessGitStep(clock RearmClock, seconds int, step, root string, input []byte, args ...string) ([]byte, error) {
+	var out []byte
+	err := RunRearmStep(context.Background(), clock, time.Duration(seconds)*time.Second, step, func(stepContext context.Context, progress func()) error {
+		var runErr error
+		out, runErr = witnessGitCommandRunner(stepContext, root, input, progress, args...)
+		return runErr
+	})
+	return out, err
+}
+
+func readWitnessCandidates(clock RearmClock, seconds int, installationRoot, ref string) ([]witnessCandidate, error) {
 	args := []string{"log", "--topo-order", "--no-abbrev", "--raw", "-z", "--no-renames", "--no-ext-diff", "--ignore-submodules=none", "--diff-merges=first-parent", "--format=%x01%H %T %P", ref}
-	raw, err := witnessGitCommandRunner(ctx, installationRoot, nil, args...)
+	raw, err := witnessGitStep(clock, seconds, "list-witness-history", installationRoot, nil, args...)
 	if err != nil {
 		return nil, err
 	}
 	return parseWitnessLog(raw)
 }
 
-func readWitnessPrefixTrees(ctx context.Context, installationRoot, prefix string, candidates []witnessCandidate) error {
+func readWitnessPrefixTrees(clock RearmClock, seconds int, installationRoot, prefix string, candidates []witnessCandidate) error {
 	var input strings.Builder
 	for _, candidate := range candidates {
 		fmt.Fprintf(&input, "%s:%s\n", candidate.commit, prefix)
 	}
-	out, err := witnessGitCommandRunner(ctx, installationRoot, []byte(input.String()), "cat-file", "--batch-check=%(objectname)")
+	out, err := witnessGitStep(clock, seconds, "resolve-witness-trees", installationRoot, []byte(input.String()), "cat-file", "--batch-check=%(objectname)")
 	if err != nil {
 		return err
 	}
@@ -241,14 +267,13 @@ func witnessProjectionClasses(candidates []witnessCandidate, policy behaviorsurf
 // First-parent edges that preserve the ENGINE projection form classes, and
 // every member of a class shares one cached or computed digest.
 func resolveWitnessStamp(repoRoot, installationRoot, ref, hex12 string) (string, error) {
+	return resolveWitnessStampWithClock(SystemRearmClock(), repoRoot, installationRoot, ref, hex12)
+}
+
+func resolveWitnessStampWithClock(clock RearmClock, repoRoot, installationRoot, ref, hex12 string) (string, error) {
 	seconds := RearmResolveSeconds(installationRoot)
-	ctx, cancel := context.WithTimeout(context.Background(), time.Duration(seconds)*time.Second)
-	defer cancel()
-	toplevelBytes, err := witnessGitCommandRunner(ctx, installationRoot, nil, "rev-parse", "--show-toplevel")
+	toplevelBytes, err := witnessGitStep(clock, seconds, "resolve-toplevel", installationRoot, nil, "rev-parse", "--show-toplevel")
 	if err != nil {
-		if ctx.Err() != nil {
-			return "", witnessTimeoutError(seconds)
-		}
 		return "", err
 	}
 	toplevel := strings.TrimSpace(string(toplevelBytes))
@@ -270,18 +295,12 @@ func resolveWitnessStamp(repoRoot, installationRoot, ref, hex12 string) (string,
 		witnessDigestCacheWriter(cachePath, repoRoot, digests)
 		return commit, resultErr
 	}
-	candidates, err := readWitnessCandidates(ctx, installationRoot, ref)
+	candidates, err := readWitnessCandidates(clock, seconds, installationRoot, ref)
 	if err != nil {
-		if ctx.Err() != nil {
-			return finish("", witnessTimeoutError(seconds))
-		}
 		return finish("", err)
 	}
 	if prefix != "" {
-		if err := readWitnessPrefixTrees(ctx, installationRoot, prefix, candidates); err != nil {
-			if ctx.Err() != nil {
-				return finish("", witnessTimeoutError(seconds))
-			}
+		if err := readWitnessPrefixTrees(clock, seconds, installationRoot, prefix, candidates); err != nil {
 			return finish("", err)
 		}
 	}
@@ -291,9 +310,6 @@ func resolveWitnessStamp(repoRoot, installationRoot, ref, hex12 string) (string,
 	}
 	classDigests := make(map[int]string, len(members))
 	for index, candidate := range candidates {
-		if ctx.Err() != nil {
-			return finish("", witnessTimeoutError(seconds))
-		}
 		class := classes[index]
 		digest, ready := classDigests[class]
 		if !ready {
@@ -309,11 +325,8 @@ func resolveWitnessStamp(repoRoot, installationRoot, ref, hex12 string) (string,
 				if prefix != "" {
 					archiveSpec += ":" + prefix
 				}
-				digest, err = witnessTreeDigester(ctx, toplevel, archiveSpec, policy)
+				digest, err = witnessTreeDigester(context.Background(), toplevel, archiveSpec, policy, clock, seconds)
 				if err != nil {
-					if ctx.Err() != nil {
-						return finish("", witnessTimeoutError(seconds))
-					}
 					return finish("", err)
 				}
 			}
@@ -327,7 +340,7 @@ func resolveWitnessStamp(repoRoot, installationRoot, ref, hex12 string) (string,
 			return finish(candidate.commit, nil)
 		}
 	}
-	return finish("", classifiedJudgment(fmt.Sprintf("witness digest matches no commit reachable from %s within the %d-second bound", ref, seconds), ErrNotOwned))
+	return finish("", classifiedJudgment(fmt.Sprintf("witness digest matches no commit reachable from %s", ref), ErrNotOwned))
 }
 
 func readWitnessDigestCache(path string) map[string]string {
@@ -352,7 +365,7 @@ func writeWitnessDigestCache(path, repoRoot string, entries map[string]string) {
 	_, _ = atomicfile.WriteText(path, string(append(data, '\n')), repoRoot)
 }
 
-func digestArchivedTree(ctx context.Context, toplevel, tree string, policy behaviorsurface.Policy) (string, error) {
+func digestArchivedTree(ctx context.Context, toplevel, tree string, policy behaviorsurface.Policy, clock RearmClock, seconds int) (string, error) {
 	directory, err := os.MkdirTemp("", "metasystem-rearm-witness-*")
 	if err != nil {
 		return "", err
@@ -367,10 +380,13 @@ func digestArchivedTree(ctx context.Context, toplevel, tree string, policy behav
 		return "", err
 	}
 	archiveCommand := exec.CommandContext(ctx, "git", "-C", toplevel, "archive", "--format=tar", tree)
-	archiveCommand.Stdout = archive
 	var archiveError bytes.Buffer
-	archiveCommand.Stderr = &archiveError
-	archiveErr := archiveCommand.Run()
+	archiveErr := RunRearmStep(ctx, clock, time.Duration(seconds)*time.Second, "archive-witness-tree", func(stepContext context.Context, progress func()) error {
+		archiveCommand = exec.CommandContext(stepContext, "git", "-C", toplevel, "archive", "--format=tar", tree)
+		archiveCommand.Stdout = RearmProgressWriter(archive, progress)
+		archiveCommand.Stderr = RearmProgressWriter(&archiveError, progress)
+		return archiveCommand.Run()
+	})
 	closeErr := archive.Close()
 	if archiveErr != nil {
 		return "", fmt.Errorf("git archive %s: %w (%s)", tree, archiveErr, strings.TrimSpace(archiveError.String()))
@@ -382,25 +398,39 @@ func digestArchivedTree(ctx context.Context, toplevel, tree string, policy behav
 	if err := os.Mkdir(extract, 0o700); err != nil {
 		return "", err
 	}
-	cmd := exec.CommandContext(ctx, "tar", "-xf", archivePath, "-C", extract)
-	if out, err := cmd.CombinedOutput(); err != nil {
-		return "", fmt.Errorf("extract archived tree: %w (%s)", err, strings.TrimSpace(string(out)))
+	var extractOutput bytes.Buffer
+	extractErr := RunRearmStep(ctx, clock, time.Duration(seconds)*time.Second, "extract-witness-tree", func(stepContext context.Context, progress func()) error {
+		cmd := exec.CommandContext(stepContext, "tar", "-xvf", archivePath, "-C", extract)
+		cmd.Stdout = RearmProgressWriter(&extractOutput, progress)
+		cmd.Stderr = RearmProgressWriter(&extractOutput, progress)
+		return cmd.Run()
+	})
+	if extractErr != nil {
+		return "", fmt.Errorf("extract archived tree: %w (%s)", extractErr, strings.TrimSpace(extractOutput.String()))
 	}
 	return policy.Digest(extract, behaviorsurface.Engine)
 }
 
 func resolveLandedBuild(repoRoot, installationRoot, landingRef, stamp string) (string, error) {
+	return resolveLandedBuildWithClock(SystemRearmClock(), repoRoot, installationRoot, landingRef, stamp)
+}
+
+func resolveLandedBuildWithClock(clock RearmClock, repoRoot, installationRoot, landingRef, stamp string) (string, error) {
 	commit := ""
+	seconds := RearmResolveSeconds(installationRoot)
 	switch {
 	case commitBuildStamp.MatchString(stamp):
-		out, err := exec.Command("git", "-C", installationRoot, "rev-parse", "--verify", "--quiet", stamp+"^{commit}").Output()
+		out, err := gitOutputWithProgressDeadline(clock, seconds, "resolve-build-stamp", installationRoot, "rev-parse", "--verify", "--quiet", stamp+"^{commit}")
 		if err != nil {
+			if errors.Is(err, ErrJudgmentStalled) {
+				return "", err
+			}
 			return "", classifiedJudgment(fmt.Sprintf("rebuilt engine carries unresolved build stamp %q; automatic re-arm is bounded to landed commits", stamp), ErrNotOwned)
 		}
-		commit = strings.TrimSpace(string(out))
+		commit = out
 	case witnessBuildStamp.MatchString(stamp):
 		var err error
-		commit, err = resolveWitnessStamp(repoRoot, installationRoot, landingRef, witnessBuildStamp.FindStringSubmatch(stamp)[1])
+		commit, err = resolveWitnessStampWithClock(clock, repoRoot, installationRoot, landingRef, witnessBuildStamp.FindStringSubmatch(stamp)[1])
 		if err != nil {
 			return "", fmt.Errorf("rebuilt engine was built from %s, which is not proven landed on %s: %w", stamp, landingRef, err)
 		}
@@ -411,8 +441,12 @@ func resolveLandedBuild(repoRoot, installationRoot, landingRef, stamp string) (s
 		}
 		return "", classifiedJudgment(fmt.Sprintf("rebuilt engine carries build stamp %s; automatic re-arm is bounded to landed commits", shown), ErrNotOwned)
 	}
-	if err := exec.Command("git", "-C", installationRoot, "merge-base", "--is-ancestor", commit, landingRef).Run(); err != nil {
-		return "", classifiedJudgment(fmt.Sprintf("rebuilt engine was built from %s, which is not landed on %s", stamp, landingRef), ErrNotOwned)
+	if _, err := gitOutputWithProgressDeadline(clock, seconds, "compare-build-ancestry", installationRoot, "merge-base", "--is-ancestor", commit, landingRef); err != nil {
+		var exitError *exec.ExitError
+		if errors.As(err, &exitError) && exitError.ExitCode() == 1 {
+			return "", classifiedJudgment(fmt.Sprintf("rebuilt engine was built from %s, which is not landed on %s", stamp, landingRef), ErrNotOwned)
+		}
+		return "", err
 	}
 	return commit, nil
 }
@@ -420,26 +454,26 @@ func resolveLandedBuild(repoRoot, installationRoot, landingRef, stamp string) (s
 var enrollmentSkewPathspecs = [...]string{"internal", "cmd", "scripts/agents"}
 
 func verifyEnrollmentLandedSource(installationRoot, sourceCommit, landedCommit string) error {
+	return verifyEnrollmentLandedSourceWithClock(SystemRearmClock(), installationRoot, sourceCommit, landedCommit)
+}
+
+func verifyEnrollmentLandedSourceWithClock(clock RearmClock, installationRoot, sourceCommit, landedCommit string) error {
 	if sourceCommit == landedCommit {
 		return nil
 	}
 	seconds := RearmResolveSeconds(installationRoot)
-	ctx, cancel := context.WithTimeout(context.Background(), time.Duration(seconds)*time.Second)
-	defer cancel()
-	ancestor := exec.CommandContext(ctx, "git", "-C", installationRoot, "merge-base", "--is-ancestor", sourceCommit, landedCommit)
-	if out, err := ancestor.CombinedOutput(); err != nil {
-		if ctx.Err() != nil {
-			return witnessTimeoutError(seconds)
+	_, ancestorErr := gitOutputWithProgressDeadline(clock, seconds, "compare-enrollment-ancestry", installationRoot, "merge-base", "--is-ancestor", sourceCommit, landedCommit)
+	if ancestorErr != nil {
+		var exitError *exec.ExitError
+		if errors.As(ancestorErr, &exitError) && exitError.ExitCode() == 1 {
+			return classifiedJudgment(fmt.Sprintf("enrollment records landed source %q but executable stamp source %q is not its ancestor", landedCommit, sourceCommit), ErrNotOwned)
 		}
-		return classifiedJudgment(fmt.Sprintf("enrollment records landed source %q but executable stamp source %q is not its ancestor (%s)", landedCommit, sourceCommit, strings.TrimSpace(string(out))), ErrNotOwned)
+		return ancestorErr
 	}
 	args := []string{"log", "--format=", "--name-only", "--ancestry-path", "--diff-merges=first-parent", sourceCommit + ".." + landedCommit, "--"}
 	args = append(args, enrollmentSkewPathspecs[:]...)
-	changedPaths, err := gitOutputContext(ctx, installationRoot, args...)
+	changedPaths, err := gitOutputWithProgressDeadline(clock, seconds, "read-enrollment-skew", installationRoot, args...)
 	if err != nil {
-		if ctx.Err() != nil {
-			return witnessTimeoutError(seconds)
-		}
 		return fmt.Errorf("read enrollment engine-and-agent-script skew: %w", err)
 	}
 	if changedPaths != "" {
@@ -449,14 +483,18 @@ func verifyEnrollmentLandedSource(installationRoot, sourceCommit, landedCommit s
 }
 
 func verifyEnrollmentBuildSource(installationRoot, stamp, sourceCommit, landedCommit string) error {
-	err := verifyEnrollmentLandedSource(installationRoot, sourceCommit, landedCommit)
+	return verifyEnrollmentBuildSourceWithClock(SystemRearmClock(), installationRoot, stamp, sourceCommit, landedCommit)
+}
+
+func verifyEnrollmentBuildSourceWithClock(clock RearmClock, installationRoot, stamp, sourceCommit, landedCommit string) error {
+	err := verifyEnrollmentLandedSourceWithClock(clock, installationRoot, sourceCommit, landedCommit)
 	if err == nil || !witnessBuildStamp.MatchString(stamp) {
 		return err
 	}
 	// A witness names ENGINE content rather than one commit. Its resolver
 	// deliberately chooses the newest matching commit, which may be a
 	// ledger-only descendant of the commit recorded by enrollment.
-	if reverseErr := verifyEnrollmentLandedSource(installationRoot, landedCommit, sourceCommit); reverseErr == nil {
+	if reverseErr := verifyEnrollmentLandedSourceWithClock(clock, installationRoot, landedCommit, sourceCommit); reverseErr == nil {
 		return nil
 	}
 	return err
@@ -526,11 +564,11 @@ func projectionChange(entries []projectionDiffEntry, policy behaviorsurface.Poli
 	return "", false, nil
 }
 
-func diffEngineProjection(ctx context.Context, installationRoot, sourceCommit, destinationCommit string) ([]byte, error) {
+func diffEngineProjection(ctx context.Context, installationRoot, sourceCommit, destinationCommit string, progress func()) ([]byte, error) {
 	args := []string{"diff-tree", "-r", "-z", "--no-commit-id", "--no-abbrev", "--no-renames", "--no-ext-diff", "--ignore-submodules=none", "--relative", sourceCommit, destinationCommit}
 	cmd := exec.CommandContext(ctx, "git", append([]string{"-C", installationRoot}, args...)...)
 	var stdout, stderr bytes.Buffer
-	cmd.Stdout, cmd.Stderr = &stdout, &stderr
+	cmd.Stdout, cmd.Stderr = RearmProgressWriter(&stdout, progress), RearmProgressWriter(&stderr, progress)
 	if err := cmd.Run(); err != nil {
 		return nil, fmt.Errorf("git %s: %w (%s)", strings.Join(args, " "), err, strings.TrimSpace(stderr.String()))
 	}
@@ -538,7 +576,16 @@ func diffEngineProjection(ctx context.Context, installationRoot, sourceCommit, d
 }
 
 func compareEngineProjection(ctx context.Context, installationRoot, sourceCommit, destinationCommit string, policy behaviorsurface.Policy) error {
-	raw, err := projectionDiffRunner(ctx, installationRoot, sourceCommit, destinationCommit)
+	return compareEngineProjectionWithClock(ctx, installationRoot, sourceCommit, destinationCommit, policy, SystemRearmClock(), RearmResolveSeconds(installationRoot))
+}
+
+func compareEngineProjectionWithClock(ctx context.Context, installationRoot, sourceCommit, destinationCommit string, policy behaviorsurface.Policy, clock RearmClock, seconds int) error {
+	var raw []byte
+	err := RunRearmStep(ctx, clock, time.Duration(seconds)*time.Second, "compare-engine-projection", func(stepContext context.Context, progress func()) error {
+		var diffErr error
+		raw, diffErr = projectionDiffRunner(stepContext, installationRoot, sourceCommit, destinationCommit, progress)
+		return diffErr
+	})
 	if err != nil {
 		return err
 	}
@@ -557,11 +604,11 @@ func compareEngineProjection(ctx context.Context, installationRoot, sourceCommit
 		message := fmt.Sprintf("enrolled source %s and destination %s have different ENGINE projections (first changed path %q)", sourceCommit, destinationCommit, changedPath)
 		return classifiedJudgment(message, ErrProjectionDiffers)
 	}
-	sourceDigest, err := archivedEngineDigester(ctx, installationRoot, sourceCommit, policy)
+	sourceDigest, err := archivedEngineDigester(ctx, installationRoot, sourceCommit, policy, clock, seconds)
 	if err != nil {
 		return fmt.Errorf("read enrolled source ENGINE projection: %w", err)
 	}
-	destinationDigest, err := archivedEngineDigester(ctx, installationRoot, destinationCommit, policy)
+	destinationDigest, err := archivedEngineDigester(ctx, installationRoot, destinationCommit, policy, clock, seconds)
 	if err != nil {
 		return fmt.Errorf("read destination ENGINE projection: %w", err)
 	}
@@ -577,6 +624,12 @@ func compareEngineProjection(ctx context.Context, installationRoot, sourceCommit
 // the commit that genuinely supplied the executable; later destination
 // commits may reuse it only while the complete ENGINE projection is equal.
 func (b *EnrolledBinary) VerifySourceAtDestination(installationRoot, destinationCommit string) error {
+	return b.VerifySourceAtDestinationWithClock(SystemRearmClock(), installationRoot, destinationCommit)
+}
+
+// VerifySourceAtDestinationWithClock is the injected-clock form used by a
+// landed re-arm judgment.
+func (b *EnrolledBinary) VerifySourceAtDestinationWithClock(clock RearmClock, installationRoot, destinationCommit string) error {
 	if b == nil || b.file == nil {
 		return fmt.Errorf("the enrolled engine is not open")
 	}
@@ -584,7 +637,7 @@ func (b *EnrolledBinary) VerifySourceAtDestination(installationRoot, destination
 		return fmt.Errorf("captured policy destination %q is not a full commit id", destinationCommit)
 	}
 	stamp := b.BuildStamp()
-	sourceCommit, err := resolveLandedBuild(b.repoRoot, installationRoot, destinationCommit, stamp)
+	sourceCommit, err := resolveLandedBuildWithClock(clock, b.repoRoot, installationRoot, destinationCommit, stamp)
 	if err != nil {
 		return err
 	}
@@ -592,7 +645,7 @@ func (b *EnrolledBinary) VerifySourceAtDestination(installationRoot, destination
 	// still has to prove its actual pinned build stamp, ancestry and complete
 	// ENGINE projection below; it does not invent a machine landing record.
 	if b.Install.LandedCommit != "" {
-		if err := verifyEnrollmentBuildSource(installationRoot, stamp, sourceCommit, b.Install.LandedCommit); err != nil {
+		if err := verifyEnrollmentBuildSourceWithClock(clock, installationRoot, stamp, sourceCommit, b.Install.LandedCommit); err != nil {
 			return err
 		}
 	}
@@ -602,24 +655,24 @@ func (b *EnrolledBinary) VerifySourceAtDestination(installationRoot, destination
 	if b.Install.LandedCommit == "" && b.Install.LandingRef != "" {
 		return fmt.Errorf("enrollment has a landing ref without a landed source")
 	}
-	seconds := RearmResolveSeconds(installationRoot)
-	ctx, cancel := context.WithTimeout(context.Background(), time.Duration(seconds)*time.Second)
-	defer cancel()
 	policy, err := behaviorsurface.Load()
 	if err != nil {
 		return err
 	}
-	if err := compareEngineProjection(ctx, installationRoot, sourceCommit, destinationCommit, policy); err != nil {
-		if ctx.Err() != nil {
-			return witnessTimeoutError(seconds)
-		}
+	seconds := RearmResolveSeconds(installationRoot)
+	err = compareEngineProjectionWithClock(context.Background(), installationRoot, sourceCommit, destinationCommit, policy, clock, seconds)
+	if err != nil {
 		return err
 	}
 	return nil
 }
 
 func archivedEngineDigestAtCommit(ctx context.Context, installationRoot, commit string, policy behaviorsurface.Policy) (string, error) {
-	toplevel, err := gitOutputContext(ctx, installationRoot, "rev-parse", "--show-toplevel")
+	return archivedEngineDigestAtCommitWithClock(ctx, installationRoot, commit, policy, SystemRearmClock(), RearmResolveSeconds(installationRoot))
+}
+
+func archivedEngineDigestAtCommitWithClock(ctx context.Context, installationRoot, commit string, policy behaviorsurface.Policy, clock RearmClock, seconds int) (string, error) {
+	toplevel, err := gitOutputWithProgressDeadline(clock, seconds, "resolve-archive-toplevel", installationRoot, "rev-parse", "--show-toplevel")
 	if err != nil {
 		return "", err
 	}
@@ -633,5 +686,5 @@ func archivedEngineDigestAtCommit(ctx context.Context, installationRoot, commit 
 	if prefix != "." {
 		archiveSpec = commit + ":" + filepath.ToSlash(prefix)
 	}
-	return digestArchivedTree(ctx, toplevel, archiveSpec, policy)
+	return digestArchivedTree(ctx, toplevel, archiveSpec, policy, clock, seconds)
 }

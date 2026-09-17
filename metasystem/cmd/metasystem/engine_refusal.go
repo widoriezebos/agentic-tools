@@ -1,0 +1,78 @@
+package main
+
+import (
+	"errors"
+	"fmt"
+	"os/exec"
+	"path/filepath"
+	"strings"
+
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/enginecause"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/gittree"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/steward"
+)
+
+const engineRefusalCode = "TEST_POLICY_ENGINE_REQUIRED"
+
+func engineRefusal(token string, facts []enginecause.Fact, detail string) error {
+	return enginecause.Refuse(token, facts, detail)
+}
+
+func engineCheckoutFacts(checkout string) []enginecause.Fact {
+	return []enginecause.Fact{enginecause.Path("checkout", checkout)}
+}
+
+func linkedWorktreeMainCheckout(installation string) (string, bool) {
+	read := func(option string) string {
+		command := exec.Command("git", "-C", installation, "rev-parse", "--path-format=absolute", option)
+		command.Env = gittree.ScrubbedEnviron()
+		output, err := command.Output()
+		if err != nil {
+			return ""
+		}
+		return filepath.Clean(strings.TrimSpace(string(output)))
+	}
+	common, gitDir := read("--git-common-dir"), read("--git-dir")
+	if common == "" || gitDir == "" || common == gitDir {
+		return "", false
+	}
+	return filepath.Dir(common), true
+}
+
+func enrollmentRefusal(installation string, cause error) error {
+	facts := engineCheckoutFacts(installation)
+	if checkout, linked := linkedWorktreeMainCheckout(installation); linked {
+		facts = append(facts, enginecause.Path("linked-worktree", checkout))
+	}
+	return engineRefusal("not-enrolled", facts, fmt.Sprintf("retained destination engine is not authenticated: %v", cause))
+}
+
+func judgmentRefusal(cause error, facts []enginecause.Fact, detail string) error {
+	token := "judgment-failed"
+	switch {
+	case errors.Is(cause, steward.ErrJudgmentStalled):
+		token = "judgment-stalled"
+		if step, seconds, ok := steward.JudgmentStall(cause); ok {
+			facts = append([]enginecause.Fact{enginecause.Value("step", step), enginecause.Value("seconds", fmt.Sprint(seconds))}, facts...)
+		}
+	case errors.Is(cause, steward.ErrNotOwned):
+		token = "engine-behind-tip"
+	}
+	return engineRefusal(token, facts, detail+": "+cause.Error())
+}
+
+func decisionMismatchRefusal(candidateTree, policyBaseCommit, baseContractDigest string, decision testingPlanOutput) error {
+	fields := []struct{ name, ours, engine string }{
+		{"candidate-tree", candidateTree, decision.CandidateTree},
+		{"policy-base-commit", policyBaseCommit, decision.PolicyBaseCommit},
+		{"base-contract-digest", baseContractDigest, decision.BaseContractDigest},
+	}
+	for _, field := range fields {
+		if field.ours != field.engine {
+			return engineRefusal("decision-mismatch", []enginecause.Fact{
+				enginecause.Value("field", field.name), enginecause.Value("ours", field.ours), enginecause.Value("engine", field.engine),
+			}, "retained trusted-base engine returned a mismatched policy decision")
+		}
+	}
+	return nil
+}

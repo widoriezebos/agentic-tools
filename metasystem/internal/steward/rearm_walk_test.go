@@ -22,7 +22,7 @@ func observeWitnessWalk(t *testing.T, digester func(context.Context, string, str
 		witnessGitCommandRunner, witnessTreeDigester = originalRunner, originalDigester
 	})
 	counts := &witnessWalkCounts{}
-	witnessGitCommandRunner = func(ctx context.Context, root string, input []byte, args ...string) ([]byte, error) {
+	witnessGitCommandRunner = func(ctx context.Context, root string, input []byte, progress func(), args ...string) ([]byte, error) {
 		if len(args) > 0 && args[0] == "log" {
 			counts.logs++
 		}
@@ -30,14 +30,14 @@ func observeWitnessWalk(t *testing.T, digester func(context.Context, string, str
 			counts.batches++
 			counts.batchInput = string(input)
 		}
-		return originalRunner(ctx, root, input, args...)
+		return originalRunner(ctx, root, input, progress, args...)
 	}
-	witnessTreeDigester = func(ctx context.Context, toplevel, tree string, policy behaviorsurface.Policy) (string, error) {
+	witnessTreeDigester = func(ctx context.Context, toplevel, tree string, policy behaviorsurface.Policy, clock RearmClock, seconds int) (string, error) {
 		counts.archives++
 		if digester != nil {
 			return digester(ctx, toplevel, tree, policy)
 		}
-		return originalDigester(ctx, toplevel, tree, policy)
+		return originalDigester(ctx, toplevel, tree, policy, clock, seconds)
 	}
 	return counts
 }
@@ -160,7 +160,7 @@ func TestWitnessHistoryParserPreservesNULDelimitedPathsAndRenames(t *testing.T) 
 	counts := observeWitnessWalk(t, func(context.Context, string, string, behaviorsurface.Policy) (string, error) {
 		return "", nil
 	})
-	candidates, err := readWitnessCandidates(context.Background(), root, "HEAD")
+	candidates, err := readWitnessCandidates(SystemRearmClock(), RearmResolveSeconds(root), root, "HEAD")
 	if err != nil || len(candidates) != 2 {
 		t.Fatalf("read NUL-delimited history: candidates=%d err=%v", len(candidates), err)
 	}

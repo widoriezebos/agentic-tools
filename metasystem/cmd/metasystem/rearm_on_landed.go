@@ -16,6 +16,7 @@ import (
 	"time"
 
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/behaviorsurface"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/enginecause"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/gittree"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/landing"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/proofrun"
@@ -64,8 +65,10 @@ type landedRearmDecision struct {
 }
 
 func landedRearmCommand(checkout string) string {
-	return "git fetch origin && git reset --hard origin/main && scripts/agents/go-build.sh && bin/metasystem up --repo " + checkout
+	return "scripts/agents/go-build.sh && bin/metasystem up --repo " + shellQuote(checkout)
 }
+
+func shellQuote(value string) string { return "'" + strings.ReplaceAll(value, "'", "'\\''") + "'" }
 
 // decideLandedRearm applies DONE's two clauses: a run whose enrolled engine
 // is behind the tip by landed commits only re-arms itself; a run whose
@@ -75,32 +78,40 @@ func decideLandedRearm(facts landedRearmFacts, checkout string) landedRearmDecis
 	if facts.SourceOwnsTip {
 		return landedRearmDecision{}
 	}
-	prefix := fmt.Sprintf("TEST_POLICY_ENGINE_REQUIRED: the enrolled engine was built from %s and the landed tip of %s is %s", facts.Source, facts.LandingRef, facts.Tip)
+	observed := []enginecause.Fact{
+		enginecause.Value("source", facts.Source), enginecause.Value("landing-ref", facts.LandingRef), enginecause.Value("tip", facts.Tip),
+		enginecause.Value("remote", facts.Remote), enginecause.Path("checkout", checkout),
+	}
 	if facts.FetchErr != nil {
-		return landedRearmDecision{Refusal: fmt.Sprintf("%s as last fetched; the landing ref could not be fetched (%v), so the run cannot bring the checkout to a landed tip; run: %s", prefix, facts.FetchErr, landedRearmCommand(checkout))}
+		outcomeFacts := append(observed, enginecause.Value("fact", "fetch-failed"))
+		return landedRearmDecision{Refusal: engineRefusal("engine-behind-tip", outcomeFacts, fmt.Sprintf("the landing ref could not be fetched (%v), so the run cannot bring the checkout to a landed tip", facts.FetchErr)).Error()}
 	}
 	if !facts.HeadIsAncestor {
-		return landedRearmDecision{Refusal: fmt.Sprintf("%s; the checkout's HEAD %s is not an ancestor of that tip, so the run cannot bring the checkout to it; run: %s", prefix, facts.Head, landedRearmCommand(checkout))}
+		observed = append(observed, enginecause.Value("fact", "head-diverged"), enginecause.Value("head", facts.Head))
+		return landedRearmDecision{Refusal: engineRefusal("engine-behind-tip", observed, "the checkout's HEAD is not an ancestor of that tip, so the run cannot bring the checkout to it").Error()}
 	}
 	if len(facts.DirtyEnginePaths) > 0 {
-		return landedRearmDecision{Refusal: fmt.Sprintf("%s; the checkout is dirty in engine inputs (%s), so the run does not rebuild under them; land or stash them, then run: %s", prefix, strings.Join(facts.DirtyEnginePaths, ", "), landedRearmCommand(checkout))}
+		observed = append(observed, enginecause.Value("fact", "dirty-engine-paths"))
+		for _, path := range facts.DirtyEnginePaths {
+			observed = append(observed, enginecause.Path("path", path))
+		}
+		return landedRearmDecision{Refusal: engineRefusal("engine-behind-tip", observed, "the checkout is dirty in engine inputs ("+strings.Join(facts.DirtyEnginePaths, ", ")+"), so the run does not rebuild under them").Error()}
 	}
 	if facts.NamedDeliveryTree {
-		return landedRearmDecision{Refusal: fmt.Sprintf("%s; this delivery run names the exact index it proves, and bringing the checkout to the tip would move that index under it; carry the staged work onto the tip first (git fetch origin && git merge --ff-only origin/main, or a three-way apply), rebuild and re-arm: %s", prefix, landedRearmCommand(checkout))}
+		observed = append(observed, enginecause.Value("fact", "named-delivery-tree"))
+		return landedRearmDecision{Refusal: engineRefusal("engine-behind-tip", observed, "this delivery run names the exact index it proves, and bringing the checkout to the tip would move that index under it").Error()}
 	}
 	if len(facts.LiveAttempts) > 0 {
-		return landedRearmDecision{Refusal: fmt.Sprintf("%s; a proof attempt of this installation is live (%s) and the engine is never rebuilt under a live attempt; rerun when it has ended, or then run: %s", prefix, strings.Join(facts.LiveAttempts, ", "), landedRearmCommand(checkout))}
+		observed = append(observed, enginecause.Value("fact", "live-attempt"), enginecause.Value("attempt", facts.LiveAttempts[0]))
+		return landedRearmDecision{Refusal: engineRefusal("engine-behind-tip", observed, "a proof attempt of this installation is live ("+strings.Join(facts.LiveAttempts, ", ")+") and the engine is never rebuilt under a live attempt").Error()}
 	}
 	return landedRearmDecision{Rearm: true}
 }
 
 // landingRefParts reads the landing ref the way the trusted policy base
 // does and splits it into the remote and branch the fetch needs.
-func landingRefParts(projectRoot string) (ref, remote, branch string, err error) {
-	command := exec.Command("git", "-C", projectRoot, "config", "--local", "--no-includes", "--get", "metasystem.steward.landing-ref")
-	command.Env = gittree.ScrubbedEnviron()
-	data, err := command.Output()
-	ref = strings.TrimSpace(string(data))
+func landingRefParts(ctx context.Context, clock steward.RearmClock, seconds int, projectRoot string) (ref, remote, branch string, err error) {
+	ref, err = landedRearmGitStep(ctx, clock, seconds, "read-landing-ref", projectRoot, "config", "--local", "--no-includes", "--get", "metasystem.steward.landing-ref")
 	tail := strings.TrimPrefix(ref, "refs/remotes/")
 	remote, branch, qualified := strings.Cut(tail, "/")
 	if err != nil || tail == ref || !qualified || remote == "" || branch == "" {
@@ -115,12 +126,19 @@ func landingRefParts(projectRoot string) (ref, remote, branch string, err error)
 // background maintenance under a rebuild.
 var landedRearmGitPins = []string{"-c", "core.useReplaceRefs=false", "-c", "core.hooksPath=/dev/null", "-c", "gc.auto=0", "-c", "maintenance.auto=false"}
 
-func landedRearmGit(ctx context.Context, dir string, args ...string) (string, error) {
-	command := exec.CommandContext(ctx, "git", append(append([]string{"-C", dir}, landedRearmGitPins...), args...)...)
-	command.Env = gittree.ScrubbedEnviron()
+func landedRearmGitStep(ctx context.Context, clock steward.RearmClock, seconds int, step, dir string, args ...string) (string, error) {
 	var stdout, stderr bytes.Buffer
-	command.Stdout, command.Stderr = &stdout, &stderr
-	if err := command.Run(); err != nil {
+	err := steward.RunRearmStep(ctx, clock, time.Duration(seconds)*time.Second, step, func(stepContext context.Context, progress func()) error {
+		command := exec.CommandContext(stepContext, "git", append(append([]string{"-C", dir}, landedRearmGitPins...), args...)...)
+		command.Env = gittree.ScrubbedEnviron()
+		command.Stdout = steward.RearmProgressWriter(&stdout, progress)
+		command.Stderr = steward.RearmProgressWriter(&stderr, progress)
+		return command.Run()
+	})
+	if err != nil {
+		if errors.Is(err, steward.ErrJudgmentStalled) {
+			return "", err
+		}
 		return "", fmt.Errorf("git %s: %w: %s", strings.Join(args, " "), err, strings.TrimSpace(stderr.String()))
 	}
 	return strings.TrimSpace(stdout.String()), nil
@@ -131,8 +149,8 @@ func landedRearmGit(ctx context.Context, dir string, args ...string) (string, er
 // without a remote to fetch it from: then, as when the remote is
 // unreachable, the local ref is judged as before and only a re-arm is
 // refused (a re-arm from a tip that could not be fetched is a stale base).
-func fetchLandingRef(ctx context.Context, projectRoot, remote, branch string) error {
-	_, err := landedRearmGit(ctx, projectRoot, "fetch", "--quiet", remote, branch)
+func fetchLandingRef(ctx context.Context, clock steward.RearmClock, seconds int, projectRoot, remote, branch string) error {
+	_, err := landedRearmGitStep(ctx, clock, seconds, "fetch-landing-ref", projectRoot, "fetch", "--progress", remote, branch)
 	return err
 }
 
@@ -140,18 +158,18 @@ func fetchLandingRef(ctx context.Context, projectRoot, remote, branch string) er
 // tree) or untracked that the behavior-surface policy classifies as ENGINE,
 // top-relative under the installation prefix: the same classification
 // go-build.sh applies before it stamps a build dirty.
-func dirtyEnginePaths(ctx context.Context, installation, prefix string) ([]string, error) {
+func dirtyEnginePaths(ctx context.Context, clock steward.RearmClock, seconds int, installation, prefix string) ([]string, error) {
 	policy, err := behaviorsurface.Load()
 	if err != nil {
 		return nil, err
 	}
 	// --no-relative: an inherited diff.relative would strip the installation
 	// prefix and let every engine path slip past the classification.
-	changed, err := landedRearmGit(ctx, installation, "diff", "--name-only", "--no-renames", "--no-relative", "-z", "HEAD", "--")
+	changed, err := landedRearmGitStep(ctx, clock, seconds, "list-dirty-engine-paths", installation, "diff", "--name-only", "--no-renames", "--no-relative", "-z", "HEAD", "--")
 	if err != nil {
 		return nil, err
 	}
-	untracked, err := landedRearmGit(ctx, installation, "ls-files", "--others", "--exclude-standard", "--full-name", "-z")
+	untracked, err := landedRearmGitStep(ctx, clock, seconds, "list-untracked-engine-paths", installation, "ls-files", "--others", "--exclude-standard", "--full-name", "-z")
 	if err != nil {
 		return nil, err
 	}
@@ -177,37 +195,67 @@ func dirtyEnginePaths(ctx context.Context, installation, prefix string) ([]strin
 	return dirty, nil
 }
 
+var (
+	landedRearmClock    steward.RearmClock = steward.SystemRearmClock()
+	landedRearmFetch                       = fetchLandingRef
+	landedRearmAncestry                    = func(ctx context.Context, clock steward.RearmClock, seconds int, projectRoot, head, tip string) (bool, error) {
+		_, err := landedRearmGitStep(ctx, clock, seconds, "compare-checkout-ancestry", projectRoot, "merge-base", "--is-ancestor", head, tip)
+		if err == nil {
+			return true, nil
+		}
+		var exitError *exec.ExitError
+		if errors.As(err, &exitError) && exitError.ExitCode() == 1 {
+			return false, nil
+		}
+		return false, err
+	}
+	landedRearmDirty    = dirtyEnginePaths
+	landedRearmAttempts = proofrun.ReadAttempts
+)
+
 // readLandedRearmFacts fetches the landing ref and reads the three facts the
 // decision needs: source names the enrolled engine's commit, ownsTip says
 // whether that engine still owns the ENGINE projection at a commit.
-func readLandedRearmFacts(ctx context.Context, installation, projectRoot, prefix, source string, ownsTip func(tip string) bool) (landedRearmFacts, error) {
-	ref, remote, branch, err := landingRefParts(projectRoot)
+func readLandedRearmFacts(ctx context.Context, clock steward.RearmClock, seconds int, installation, projectRoot, prefix, source string, ownsTip func(tip string) (bool, error)) (landedRearmFacts, error) {
+	ref, remote, branch, err := landingRefParts(ctx, clock, seconds, projectRoot)
 	if err != nil {
 		return landedRearmFacts{}, err
 	}
 	facts := landedRearmFacts{LandingRef: ref, Remote: remote, Branch: branch, Source: source}
-	facts.FetchErr = fetchLandingRef(ctx, projectRoot, remote, branch)
-	workspace := gittree.Workspace{Dir: projectRoot}
-	facts.Tip, err = workspace.ResolveCommit(ref)
+	facts.FetchErr = landedRearmFetch(ctx, clock, seconds, projectRoot, remote, branch)
+	if errors.Is(facts.FetchErr, steward.ErrJudgmentStalled) {
+		return facts, facts.FetchErr
+	}
+	facts.Tip, err = landedRearmGitStep(ctx, clock, seconds, "resolve-landing-tip", projectRoot, "rev-parse", "--verify", ref+"^{commit}")
 	if err != nil {
 		return facts, fmt.Errorf("resolve trusted testing policy base %s: %w", ref, err)
 	}
-	head, unborn, err := workspace.HeadCommit()
-	if err != nil || unborn {
+	head, err := landedRearmGitStep(ctx, clock, seconds, "resolve-checkout-head", projectRoot, "rev-parse", "--verify", "HEAD^{commit}")
+	if err != nil {
 		return facts, fmt.Errorf("testing requires a committed project HEAD")
 	}
 	facts.Head = head
-	facts.SourceOwnsTip = ownsTip(facts.Tip)
-	if facts.SourceOwnsTip {
-		return facts, nil
-	}
-	_, ancestorErr := landedRearmGit(ctx, projectRoot, "merge-base", "--is-ancestor", head, facts.Tip)
-	facts.HeadIsAncestor = ancestorErr == nil
-	facts.DirtyEnginePaths, err = dirtyEnginePaths(ctx, installation, prefix)
+	facts.SourceOwnsTip, err = ownsTip(facts.Tip)
 	if err != nil {
 		return facts, err
 	}
-	attempts, err := proofrun.ReadAttempts(installation)
+	if facts.SourceOwnsTip {
+		return facts, nil
+	}
+	facts.HeadIsAncestor, err = landedRearmAncestry(ctx, clock, seconds, projectRoot, head, facts.Tip)
+	if err != nil {
+		return facts, err
+	}
+	facts.DirtyEnginePaths, err = landedRearmDirty(ctx, clock, seconds, installation, prefix)
+	if err != nil {
+		return facts, err
+	}
+	var attempts []proofrun.Attempt
+	err = steward.RunRearmStep(ctx, clock, time.Duration(seconds)*time.Second, "read-proof-attempts", func(context.Context, func()) error {
+		var readErr error
+		attempts, readErr = landedRearmAttempts(installation)
+		return readErr
+	})
 	if err != nil {
 		return facts, fmt.Errorf("read this installation's proof attempts: %w", err)
 	}
@@ -288,10 +336,12 @@ var upOutcomeField = regexp.MustCompile(`\boutcome=([A-Za-z_-]+)`)
 // there and re-arms the enrollment; the record names what changed.
 func performLandedRearm(ctx context.Context, installation, projectRoot string, facts landedRearmFacts, previousGeneration int) (*proofrun.EngineRearm, error) {
 	if err := landedRearmFastForward(ctx, installation, facts.Tip); err != nil {
-		return nil, fmt.Errorf("TEST_POLICY_ENGINE_REQUIRED: fast-forward the checkout to the landed tip %s: %w; run: %s", facts.Tip, err, landedRearmCommand(projectRoot))
+		facts := append(engineCheckoutFacts(projectRoot), enginecause.Value("tip", facts.Tip))
+		return nil, engineRefusal("fast-forward-blocked", facts, fmt.Sprintf("fast-forward the checkout to the landed tip: %v", err))
 	}
 	if err := landedRearmRebuild(ctx, installation); err != nil {
-		return nil, fmt.Errorf("TEST_POLICY_ENGINE_REQUIRED: rebuild the engine at the landed tip %s: %w; run: %s", facts.Tip, err, landedRearmCommand(projectRoot))
+		facts := append(engineCheckoutFacts(projectRoot), enginecause.Value("tip", facts.Tip))
+		return nil, engineRefusal("rebuild-failed", facts, fmt.Sprintf("rebuild the engine at the landed tip: %v", err))
 	}
 	// up mints the generation first and proves the session and the
 	// components after; a run launched detached (no runtime ancestor) or
@@ -305,9 +355,9 @@ func performLandedRearm(ctx context.Context, installation, projectRoot string, f
 	pinned, openErr := landedRearmOpenEnrollment(installation)
 	if openErr != nil || pinned.Generation <= previousGeneration {
 		if upErr != nil {
-			return nil, fmt.Errorf("TEST_POLICY_ENGINE_REQUIRED: re-arm the enrollment on the landed tip %s: %w", facts.Tip, upErr)
+			return nil, engineRefusal("rearm-failed", engineCheckoutFacts(projectRoot), fmt.Sprintf("re-arm the enrollment on the landed tip %s: %v", facts.Tip, upErr))
 		}
-		return nil, fmt.Errorf("TEST_POLICY_ENGINE_REQUIRED: re-arm the enrollment on the landed tip %s: the enrollment did not advance past generation %d (%v; up said: %s)", facts.Tip, previousGeneration, openErr, result.Line)
+		return nil, engineRefusal("rearm-failed", engineCheckoutFacts(projectRoot), fmt.Sprintf("re-arm the enrollment on the landed tip %s: the enrollment did not advance past generation %d (%v; up said: %s)", facts.Tip, previousGeneration, openErr, result.Line))
 	}
 	record.Generation = pinned.Generation
 	return record, nil
@@ -327,7 +377,7 @@ func landedRearmAct(ctx context.Context, installation, projectRoot string, facts
 	}
 	lock, err := landedRearmMutationLock(installation)
 	if err != nil {
-		return nil, fmt.Errorf("TEST_POLICY_ENGINE_REQUIRED: take the proof mutation lock before rebuilding the engine: %w", err)
+		return nil, engineRefusal("mutation-lock", engineCheckoutFacts(projectRoot), "take the proof mutation lock before rebuilding the engine: "+err.Error())
 	}
 	defer lock()
 	// The live check is repeated under the lock: an attempt admitted
@@ -397,20 +447,20 @@ func landedRearm(installation, projectRoot, prefix string, namedDeliveryTree boo
 	}
 	defer pinned.Close()
 	seconds := steward.RearmResolveSeconds(installation)
-	ctx, cancel := context.WithTimeout(context.Background(), time.Duration(seconds)*time.Second)
-	defer cancel()
 	source := pinned.Install.LandedCommit
 	if source == "" {
 		source = pinned.BuildStamp()
 	}
-	facts, err := readLandedRearmFacts(ctx, installation, projectRoot, prefix, source, func(tip string) bool {
-		return pinned.VerifySourceAtDestination(installation, tip) == nil
+	facts, err := readLandedRearmFacts(context.Background(), landedRearmClock, seconds, installation, projectRoot, prefix, source, func(tip string) (bool, error) {
+		verifyErr := pinned.VerifySourceAtDestinationWithClock(landedRearmClock, installation, tip)
+		if errors.Is(verifyErr, steward.ErrNotOwned) {
+			return false, nil
+		}
+		return verifyErr == nil, verifyErr
 	})
 	if err != nil {
-		if ctx.Err() != nil {
-			return nil, fmt.Errorf("TEST_POLICY_ENGINE_REQUIRED: judging the enrolled engine against the landed tip exceeded %d seconds", seconds)
-		}
-		return nil, err
+		facts := append(engineCheckoutFacts(projectRoot), enginecause.Value("source", source))
+		return nil, judgmentRefusal(err, facts, "judging the enrolled engine against the landed tip failed")
 	}
 	facts.NamedDeliveryTree = namedDeliveryTree
 	if decision := decideLandedRearm(facts, projectRoot); decision.Rearm {

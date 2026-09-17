@@ -10,6 +10,8 @@ import (
 	"strconv"
 	"strings"
 	"testing"
+
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/enginecause"
 )
 
 var (
@@ -46,6 +48,24 @@ func TestHCL03EveryCodeRowed(t *testing.T) {
 		}
 	}
 	t.Logf("collected %d refusal-shaped tokens", len(collected))
+}
+
+func TestHCL03EngineCausesEachCarryARemedy(t *testing.T) {
+	maximum := 0
+	for _, cause := range enginecause.Table {
+		if cause.Commands > maximum {
+			maximum = cause.Commands
+		}
+	}
+	for _, row := range Rows {
+		if row.Code == "TEST_POLICY_ENGINE_REQUIRED" {
+			if row.Override != "the run: command of the line's cause (internal/enginecause.Table)" || row.Commands != maximum {
+				t.Fatalf("engine refusal register row does not name the cause table and its maximum command count: %+v maximum=%d", row, maximum)
+			}
+			return
+		}
+	}
+	t.Fatal("TEST_POLICY_ENGINE_REQUIRED has no refusal register row")
 }
 
 func TestHCL03EveryRowReal(t *testing.T) {

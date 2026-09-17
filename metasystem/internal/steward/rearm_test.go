@@ -81,13 +81,13 @@ func TestSourceAtDestinationDecidesDriftByKindAndContent(t *testing.T) {
 	originalDiff, originalArchive := projectionDiffRunner, archivedEngineDigester
 	t.Cleanup(func() { projectionDiffRunner, archivedEngineDigester = originalDiff, originalArchive })
 	diffCalls, archiveCalls := 0, 0
-	projectionDiffRunner = func(ctx context.Context, root, from, to string) ([]byte, error) {
+	projectionDiffRunner = func(ctx context.Context, root, from, to string, progress func()) ([]byte, error) {
 		diffCalls++
-		return originalDiff(ctx, root, from, to)
+		return originalDiff(ctx, root, from, to, progress)
 	}
-	archivedEngineDigester = func(ctx context.Context, root, commit string, loaded behaviorsurface.Policy) (string, error) {
+	archivedEngineDigester = func(ctx context.Context, root, commit string, loaded behaviorsurface.Policy, clock RearmClock, seconds int) (string, error) {
 		archiveCalls++
-		return originalArchive(ctx, root, commit, loaded)
+		return originalArchive(ctx, root, commit, loaded, clock, seconds)
 	}
 	cases := []struct {
 		name             string
@@ -206,13 +206,13 @@ func TestVerifySourceAtDestinationHumanEnrollmentAndMachineRearm(t *testing.T) {
 	originalDiff, originalArchive := projectionDiffRunner, archivedEngineDigester
 	t.Cleanup(func() { projectionDiffRunner, archivedEngineDigester = originalDiff, originalArchive })
 	diffCalls, archiveCalls := 0, 0
-	projectionDiffRunner = func(ctx context.Context, root, from, to string) ([]byte, error) {
+	projectionDiffRunner = func(ctx context.Context, root, from, to string, progress func()) ([]byte, error) {
 		diffCalls++
-		return originalDiff(ctx, root, from, to)
+		return originalDiff(ctx, root, from, to, progress)
 	}
-	archivedEngineDigester = func(ctx context.Context, root, commit string, policy behaviorsurface.Policy) (string, error) {
+	archivedEngineDigester = func(ctx context.Context, root, commit string, policy behaviorsurface.Policy, clock RearmClock, seconds int) (string, error) {
 		archiveCalls++
-		return originalArchive(ctx, root, commit, policy)
+		return originalArchive(ctx, root, commit, policy, clock, seconds)
 	}
 	assertFast := func() {
 		t.Helper()
@@ -380,7 +380,7 @@ func TestWitnessResolverWalksPastTheSixtyFourthCandidate(t *testing.T) {
 		witnessGitCommandRunner, witnessTreeDigester = originalRunner, originalDigester
 	})
 	logCalls, batchCalls, archiveCalls := 0, 0, 0
-	witnessGitCommandRunner = func(ctx context.Context, root string, input []byte, args ...string) ([]byte, error) {
+	witnessGitCommandRunner = func(ctx context.Context, root string, input []byte, progress func(), args ...string) ([]byte, error) {
 		if len(args) > 0 && args[0] == "log" {
 			logCalls++
 			if !strings.Contains("\x00"+strings.Join(args, "\x00")+"\x00", "\x00-z\x00") {
@@ -390,11 +390,11 @@ func TestWitnessResolverWalksPastTheSixtyFourthCandidate(t *testing.T) {
 		if len(args) > 0 && args[0] == "cat-file" {
 			batchCalls++
 		}
-		return originalRunner(ctx, root, input, args...)
+		return originalRunner(ctx, root, input, progress, args...)
 	}
-	witnessTreeDigester = func(ctx context.Context, toplevel, tree string, loaded behaviorsurface.Policy) (string, error) {
+	witnessTreeDigester = func(ctx context.Context, toplevel, tree string, loaded behaviorsurface.Policy, clock RearmClock, seconds int) (string, error) {
 		archiveCalls++
-		return originalDigester(ctx, toplevel, tree, loaded)
+		return originalDigester(ctx, toplevel, tree, loaded, clock, seconds)
 	}
 	resolved, err := resolveWitnessStamp(root, root, ref, digest[:12])
 	if err != nil || resolved != first {
@@ -478,7 +478,7 @@ func TestWitnessResolverRefusesUnlandedTreeDigest(t *testing.T) {
 	original := witnessTreeDigester
 	t.Cleanup(func() { witnessTreeDigester = original })
 	_ = os.Remove(filepath.Join(root, "artifacts", "agents", "steward", witnessDigestCacheName))
-	witnessTreeDigester = func(context.Context, string, string, behaviorsurface.Policy) (string, error) {
+	witnessTreeDigester = func(context.Context, string, string, behaviorsurface.Policy, RearmClock, int) (string, error) {
 		return "", errors.New("injected digest failure")
 	}
 	if _, err := resolveLandedBuild(root, root, ref, "witness-"+digest[:12]); err == nil || !strings.Contains(err.Error(), "injected digest failure") || errors.Is(err, ErrNotOwned) || errors.Is(err, ErrJudgmentStalled) {
@@ -509,9 +509,9 @@ func TestWitnessResolverPersistsTreeDigestsAcrossResolutions(t *testing.T) {
 	})
 	digestCalls := 0
 	cacheWrites := 0
-	witnessTreeDigester = func(ctx context.Context, toplevel, tree string, loaded behaviorsurface.Policy) (string, error) {
+	witnessTreeDigester = func(ctx context.Context, toplevel, tree string, loaded behaviorsurface.Policy, clock RearmClock, seconds int) (string, error) {
 		digestCalls++
-		return original(ctx, toplevel, tree, loaded)
+		return original(ctx, toplevel, tree, loaded, clock, seconds)
 	}
 	witnessDigestCacheWriter = func(path, anchor string, entries map[string]string) {
 		cacheWrites++
@@ -548,21 +548,38 @@ func TestWitnessResolverWritesCacheOnceOnExpiry(t *testing.T) {
 	})
 	digestCalls := 0
 	cacheWrites := 0
-	witnessTreeDigester = func(ctx context.Context, _, _ string, _ behaviorsurface.Policy) (string, error) {
+	stalled := make(chan chan time.Time, 1)
+	witnessTreeDigester = func(_ context.Context, _, _ string, _ behaviorsurface.Policy, _ RearmClock, seconds int) (string, error) {
 		digestCalls++
 		if digestCalls == 1 {
 			return strings.Repeat("f", 64), nil
 		}
-		<-ctx.Done()
-		return "", ctx.Err()
+		timer := make(chan time.Time, 1)
+		stalled <- timer
+		<-timer
+		return "", classifiedJudgment(fmt.Sprintf("digest exceeded the configured %d-second bound (%s)", seconds, rearmResolveSecondsConfig), ErrJudgmentStalled)
 	}
 	witnessDigestCacheWriter = func(path, anchor string, entries map[string]string) {
 		cacheWrites++
 		writeWitnessDigestCache(path, anchor, entries)
 	}
-	resolved, err := resolveWitnessStamp(root, root, ref, "000000000000")
-	if err == nil || resolved != "" || !strings.Contains(err.Error(), "exceeded the configured 1-second bound") || !errors.Is(err, ErrJudgmentStalled) || errors.Is(err, ErrNotOwned) {
-		t.Fatalf("resolver expiry was not loud: resolved=%q err=%v", resolved, err)
+	clock := newManualRearmClock()
+	type resolution struct {
+		commit string
+		err    error
+	}
+	result := make(chan resolution, 1)
+	go func() {
+		commit, err := resolveWitnessStampWithClock(clock, root, root, ref, "000000000000")
+		result <- resolution{commit, err}
+	}()
+	timer := <-stalled
+	clock.advance(2 * time.Second)
+	timer <- clock.Now()
+	resolved := <-result
+	err := resolved.err
+	if err == nil || resolved.commit != "" || !strings.Contains(err.Error(), "exceeded the configured 1-second bound") || !errors.Is(err, ErrJudgmentStalled) || errors.Is(err, ErrNotOwned) {
+		t.Fatalf("resolver expiry was not loud: resolved=%q err=%v", resolved.commit, err)
 	}
 	if digestCalls < 2 || cacheWrites != 1 {
 		t.Fatalf("expiry used %d digest calls and %d cache writes, want at least two calls and exactly one write", digestCalls, cacheWrites)

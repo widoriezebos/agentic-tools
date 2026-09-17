@@ -20,6 +20,7 @@ import (
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/atomicfile"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/behaviorsurface"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/config"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/enginecause"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/gittree"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/goal"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/identity"
@@ -352,11 +353,10 @@ func prepareTesting(request testingSelectionRequest) (testingPreparation, error)
 			return testingPreparation{}, basePlanErr
 		}
 		if afterDigest, digestErr := fileSHA256(policyEngine); digestErr != nil || afterDigest != policyEngineDigest {
-			return testingPreparation{}, fmt.Errorf("TEST_POLICY_ENGINE_REQUIRED: retained trusted-base engine changed during policy selection")
+			return testingPreparation{}, engineRefusal("enrollment-drift", engineCheckoutFacts(installation), "retained trusted-base engine changed during policy selection")
 		}
-		if basePlan.CandidateTree != candidateTree || basePlan.PolicyBaseCommit != policyBaseCommit ||
-			basePlan.BaseContractDigest != baseContractDigest {
-			return testingPreparation{}, fmt.Errorf("TEST_POLICY_ENGINE_REQUIRED: retained trusted-base engine returned a mismatched policy decision")
+		if mismatch := decisionMismatchRefusal(candidateTree, policyBaseCommit, baseContractDigest, basePlan); mismatch != nil {
+			return testingPreparation{}, mismatch
 		}
 		plan = basePlan.Plan
 	}
@@ -435,25 +435,28 @@ func trustedPolicyEngine(installation, policyBaseCommit string, firstTransition 
 	if !firstTransition {
 		pinned, openErr := steward.OpenEnrolledBinary(installation)
 		if openErr != nil {
-			return "", "", false, fmt.Errorf("TEST_POLICY_ENGINE_REQUIRED: retained destination engine is not authenticated: %w", openErr)
+			return "", "", false, enrollmentRefusal(installation, openErr)
 		}
 		identity := pinned.Install
 		defer pinned.Close()
 		if sourceErr := pinned.VerifySourceAtDestination(installation, policyBaseCommit); sourceErr != nil {
-			return "", "", false, fmt.Errorf("TEST_POLICY_ENGINE_REQUIRED: retained destination engine does not bind the captured policy base: %w", sourceErr)
+			facts := append(engineCheckoutFacts(installation), enginecause.Value("destination", policyBaseCommit))
+			return "", "", false, judgmentRefusal(sourceErr, facts, "retained destination engine does not bind the captured policy base")
 		}
 		if prepareErr := pinned.PrepareForExecution(); prepareErr != nil {
-			return "", "", false, fmt.Errorf("TEST_POLICY_ENGINE_REQUIRED: retain destination engine descriptor: %w", prepareErr)
+			return "", "", false, engineRefusal(enginecause.TokenEngineUnavailable, engineCheckoutFacts(installation), "retain destination engine descriptor: "+prepareErr.Error())
 		}
 		engine = steward.EnrolledExecutionPath(installation, identity)
 	}
 	engineInfo, err := os.Stat(engine)
 	if err != nil || !engineInfo.Mode().IsRegular() || engineInfo.Mode().Perm()&0o111 == 0 {
-		return "", "", false, fmt.Errorf("TEST_POLICY_ENGINE_REQUIRED: retained immutable trusted-base engine is unavailable at %s", engine)
+		facts := append(engineCheckoutFacts(installation), enginecause.Path("engine", engine))
+		return "", "", false, engineRefusal(enginecause.TokenEngineUnavailable, facts, "retained immutable trusted-base engine is unavailable")
 	}
 	digest, err := fileSHA256(engine)
 	if err != nil {
-		return "", "", false, fmt.Errorf("TEST_POLICY_ENGINE_REQUIRED: hash retained trusted-base engine: %w", err)
+		facts := append(engineCheckoutFacts(installation), enginecause.Path("engine", engine))
+		return "", "", false, engineRefusal(enginecause.TokenEngineUnavailable, facts, "hash retained trusted-base engine: "+err.Error())
 	}
 	currentInfo, currentErr := os.Stat(current)
 	return engine, digest, currentErr == nil && os.SameFile(engineInfo, currentInfo), nil
@@ -475,16 +478,16 @@ func planWithTrustedPolicyEngine(engine string, request testingSelectionRequest,
 	command.Env = testingEnvironment(os.Environ())
 	data, err := command.CombinedOutput()
 	if err != nil {
-		return testingPlanOutput{}, fmt.Errorf("TEST_POLICY_ENGINE_REQUIRED: retained trusted-base engine could not decide version-1 policy: %v: %s", err, strings.TrimSpace(string(data)))
+		return testingPlanOutput{}, engineRefusal("child-failed", []enginecause.Fact{enginecause.Path("engine", engine)}, fmt.Sprintf("retained trusted-base engine could not decide version-1 policy: %v: %s", err, strings.TrimSpace(string(data))))
 	}
 	decoder := json.NewDecoder(strings.NewReader(string(data)))
 	decoder.DisallowUnknownFields()
 	var output testingPlanOutput
 	if err := decoder.Decode(&output); err != nil {
-		return testingPlanOutput{}, fmt.Errorf("TEST_POLICY_ENGINE_REQUIRED: retained trusted-base engine returned malformed policy output: %w", err)
+		return testingPlanOutput{}, engineRefusal("child-output", []enginecause.Fact{enginecause.Path("engine", engine)}, "retained trusted-base engine returned malformed policy output: "+err.Error())
 	}
 	if err := decoder.Decode(&struct{}{}); err != io.EOF {
-		return testingPlanOutput{}, fmt.Errorf("TEST_POLICY_ENGINE_REQUIRED: retained trusted-base engine returned trailing policy output")
+		return testingPlanOutput{}, engineRefusal("child-output", []enginecause.Fact{enginecause.Path("engine", engine)}, "retained trusted-base engine returned trailing policy output")
 	}
 	return output, nil
 }
