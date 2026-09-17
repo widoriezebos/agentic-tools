@@ -58,7 +58,8 @@ if [[ "$fixture_scenario" == batch-two-units-disjoint-groups ]]; then
 fi
 
 if [[ "$fixture_scenario" == batch-land-trunk-moved ]]; then
-  (cd "$root" && go test -count=1 -run '^TestLandingBranchLeasesEndpointAndDeletesCandidateAtomically$' ./internal/landing/batch)
+  (cd "$root" && go test -count=1 -run '^TestBatchLandTrunkMovedRebasesOrReopens$' ./cmd/metasystem)
+  (cd "$root" && go test -count=1 -run '^TestBatchLandingMovedInputReturnsOpenOnNewBase$' ./internal/landing/batch)
   echo "land batch-land-trunk-moved fixture passed"
   exit 0
 fi

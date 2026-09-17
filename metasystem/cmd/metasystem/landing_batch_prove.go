@@ -65,6 +65,9 @@ func executeBatchProof(root, id, actor, window string, sample proofrun.LoadSampl
 	if len(record.Units) == 0 {
 		return fmt.Errorf("BATCH_PROOF_STATE_REFUSED: batch %s has no joined units", id)
 	}
+	if record.State == batch.StateSealed && record.Proof != nil && record.Proof.Status == "union-uncovered" && record.Proof.Tree == record.TipTree {
+		return nil
+	}
 	if err := dependencies.rearm(root, record.BaseTree); err != nil {
 		return err
 	}
@@ -82,9 +85,6 @@ func executeBatchProof(root, id, actor, window string, sample proofrun.LoadSampl
 	}
 	if record.State != batch.StateSealed {
 		return fmt.Errorf("BATCH_PROOF_STATE_REFUSED: batch %s is not sealed", id)
-	}
-	if record.Proof != nil && record.Proof.Status == "union-uncovered" && record.Proof.Tree == record.TipTree {
-		return nil
 	}
 	joined := slices.DeleteFunc(slices.Clone(record.Units), func(unit batch.Unit) bool { return unit.State != batch.UnitJoined })
 	if len(joined) == 0 {

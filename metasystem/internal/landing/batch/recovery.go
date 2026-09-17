@@ -48,8 +48,11 @@ func RecoverPushedSeries(store Store, id, actor string, at time.Time, seams Reco
 		if !ok || unit.P6Done {
 			continue
 		}
-		if seams.Finalize == nil || seams.Finalize(unit, commit) != nil {
-			return fmt.Errorf("BATCH_P6_REFUSED: unit %s finalization failed", snapshot.GoalID)
+		if seams.Finalize == nil {
+			return fmt.Errorf("BATCH_P6_REFUSED: unit %s finalization helper is absent", snapshot.GoalID)
+		}
+		if finalizeErr := seams.Finalize(unit, commit); finalizeErr != nil {
+			return fmt.Errorf("BATCH_P6_REFUSED: unit %s finalization failed: %w", snapshot.GoalID, finalizeErr)
 		}
 		if err := store.Update(id, func(next *Record) error {
 			for index := range next.Units {
@@ -73,8 +76,11 @@ func RecoverPushedSeries(store Store, id, actor string, at time.Time, seams Reco
 		}
 	}
 	if complete && record.Landing != nil && !record.Landing.CleanupDone {
-		if seams.Cleanup == nil || seams.Cleanup() != nil {
-			return fmt.Errorf("BATCH_P6_REFUSED: landing cleanup failed")
+		if seams.Cleanup == nil {
+			return fmt.Errorf("BATCH_P6_REFUSED: landing cleanup helper is absent")
+		}
+		if cleanupErr := seams.Cleanup(); cleanupErr != nil {
+			return fmt.Errorf("BATCH_P6_REFUSED: landing cleanup failed: %w", cleanupErr)
 		}
 		if err := store.Update(id, func(next *Record) error { next.Landing.CleanupDone = true; return nil }); err != nil {
 			return err

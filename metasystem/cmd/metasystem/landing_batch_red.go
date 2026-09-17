@@ -24,6 +24,11 @@ func init() {
 var productionTrunkRedLedgerOwner = func(string) batch.LedgerOwner { return batch.UnboundLedgerOwner{} }
 var batchDiagnosticLauncher = launchBatchDiagnostic
 
+var batchDiagnosisSeams = struct {
+	commitForTree func(string, string, string) (string, error)
+	diagnose      func(batch.Store, string, string, []batch.RedGroup, string, time.Time, batch.RedSeams) error
+}{commitForTree, batch.DiagnoseRed}
+
 func executeBatchDiagnosis(root, id, actor string, at time.Time) error {
 	store := batch.NewStore(root, nil)
 	record, err := store.Load(id)
@@ -34,19 +39,19 @@ func executeBatchDiagnosis(root, id, actor string, at time.Time) error {
 	if len(joined) == 0 || record.Proof == nil {
 		return fmt.Errorf("batch %s has no diagnostic authority member or proof", id)
 	}
-	baseCommit, err := commitForTree(root, "origin/main", record.BaseTree)
+	baseCommit, err := batchDiagnosisSeams.commitForTree(root, "origin/main", record.BaseTree)
 	if err != nil {
 		return err
 	}
-	machine, err := goal.ResolveMachine(root)
-	if err != nil {
-		return err
-	}
-	return batch.DiagnoseRed(store, id, actor, record.Proof.RedGroups, "", at, batch.RedSeams{
+	return batchDiagnosisSeams.diagnose(store, id, actor, record.Proof.RedGroups, record.Proof.PrefixGoal, at, batch.RedSeams{
 		Run: func(request batch.DiagnosticRequest) (batch.DiagnosticResult, error) {
 			return batchDiagnosticLauncher(root, id, request)
 		},
 		MintOpid: func() (string, error) {
+			machine, err := goal.ResolveMachine(root)
+			if err != nil {
+				return "", err
+			}
 			ulid, err := goal.NewOperationULID()
 			if err != nil {
 				return "", err

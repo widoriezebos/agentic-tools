@@ -36,6 +36,10 @@ type PrefixBudgetRefusal struct{ Reason string }
 
 func (refusal *PrefixBudgetRefusal) Error() string { return refusal.Reason }
 
+type PrefixRevisionRefusal struct{ Reason string }
+
+func (refusal *PrefixRevisionRefusal) Error() string { return refusal.Reason }
+
 // ComposePrefixReceipts reuses only identity-equal terminal evidence. A
 // prefix with no identity differences creates no attempt.
 func ComposePrefixReceipts(store Store, id, actor string, at time.Time, seams PrefixReceiptSeams) error {
@@ -61,6 +65,13 @@ func ComposePrefixReceipts(store Store, id, actor string, at time.Time, seams Pr
 		}
 		result, runErr := seams.Execute(unit.GoalID, tree, slices.Clone(record.Proof.SelectedGroups))
 		if runErr != nil {
+			var revision *PrefixRevisionRefusal
+			if errors.As(runErr, &revision) {
+				if err := RequestReturn(store, id, unit.GoalID, UnitEjected, revision.Error(), actor, at); err != nil {
+					return err
+				}
+				return ReassembleSurvivors(store, id, actor, at)
+			}
 			var budget *PrefixBudgetRefusal
 			if errors.As(runErr, &budget) {
 				if err := RequestReturn(store, id, unit.GoalID, UnitWithdrawnBudget, budget.Error(), actor, at); err != nil {
@@ -71,11 +82,15 @@ func ComposePrefixReceipts(store Store, id, actor string, at time.Time, seams Pr
 			return runErr
 		}
 		if len(result.Red) != 0 {
-			_ = store.Update(id, func(current *Record) error {
+			if err := store.Update(id, func(current *Record) error {
 				current.Proof.Status, current.Proof.Failure = "prefix-red", unit.GoalID
+				current.Proof.RedGroups = slices.Clone(result.Red)
+				current.Proof.PrefixGoal = unit.GoalID
 				current.Transition(StateDiagnosing, at, "prefix-proof", actor, unit.GoalID)
 				return nil
-			})
+			}); err != nil {
+				return fmt.Errorf("persist prefix red for %s: %w", unit.GoalID, err)
+			}
 			return &PrefixRedError{GoalID: unit.GoalID, Groups: result.Red}
 		}
 		receipt.AttemptID, receipt.ResultPath, receipt.Executed, receipt.Reused = result.AttemptID, result.ResultPath, slices.Clone(result.Executed), result.Reused

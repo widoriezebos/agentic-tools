@@ -24,11 +24,15 @@ func Seal(store Store, id, baseTree, owner string, at time.Time, plan func(strin
 }
 
 func sealBatch(root, baseTree, owner string, at time.Time, record *Record, plan func(string, string, string) (testpolicy.Plan, error), gate batchGateExec, assemble func(string, string, []Unit) ([]string, error)) error {
-	prefixes, err := assemble(root, baseTree, record.Units)
+	units := joinedUnits(record.Units)
+	if len(units) == 0 {
+		return fmt.Errorf("BATCH_PROOF_STATE_REFUSED: batch %s has no joined units", record.BatchID)
+	}
+	prefixes, err := assemble(root, baseTree, units)
 	if err != nil {
 		return err
 	}
-	for index, unit := range record.Units {
+	for index, unit := range units {
 		boundary := baseTree
 		if index > 0 {
 			boundary = prefixes[index-1]
@@ -41,12 +45,12 @@ func sealBatch(root, baseTree, owner string, at time.Time, record *Record, plan 
 	candidate := *record
 	candidate.BaseTree, candidate.PrefixTrees = baseTree, prefixes
 	candidate.TipTree = prefixes[len(prefixes)-1]
-	if err := runSealGate(root, candidate.TipTree, record.Units, gate); err != nil {
+	if err := runSealGate(root, candidate.TipTree, units, gate); err != nil {
 		return err
 	}
 	candidate.SelectedGroups = nil
 	candidate.Seal = map[string]Claim{}
-	for _, unit := range record.Units {
+	for _, unit := range units {
 		selection, planErr := plan(root, unit.GoalID, candidate.TipTree)
 		if planErr != nil {
 			return planErr

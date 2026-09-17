@@ -27,7 +27,9 @@ type Proof struct {
 	Passed          []string            `json:"passed,omitempty"`
 	Reuse           map[string]string   `json:"reuse,omitempty"`
 	GroupIdentities map[string]string   `json:"groupIdentities,omitempty"`
+	InputManifests  map[string][]string `json:"inputManifests,omitempty"`
 	RedGroups       []RedGroup          `json:"redGroups,omitempty"`
+	PrefixGoal      string              `json:"prefixGoal,omitempty"`
 	Failure         string              `json:"failure,omitempty"`
 }
 
@@ -103,6 +105,12 @@ func FinishProof(store Store, id, actor string, result proofrun.TestResult, laun
 		record.Proof.BaseTree = result.CandidateTree
 		record.Proof.Launchers = result.LaunchCounts.Test + result.LaunchCounts.Build + result.LaunchCounts.Other
 		for _, group := range result.Groups {
+			if len(group.InputManifest) != 0 {
+				if record.Proof.InputManifests == nil {
+					record.Proof.InputManifests = map[string][]string{}
+				}
+				record.Proof.InputManifests[group.ID] = slices.Clone(group.InputManifest)
+			}
 			if group.ExecutionIdentity != "" {
 				if record.Proof.GroupIdentities == nil {
 					record.Proof.GroupIdentities = map[string]string{}

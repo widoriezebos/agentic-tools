@@ -120,3 +120,35 @@ func TestBatchSealRegates(t *testing.T)                   { sealWitness(t, "rega
 func TestBatchSelectionUnionClosesAtCeiling(t *testing.T) { sealWitness(t, "ceiling") }
 func TestBatchSealExecutesChangedInputs(t *testing.T)     { sealWitness(t, "inputs") }
 func TestBatchSealDryRunsTheBoundary(t *testing.T)        { sealWitness(t, "boundary") }
+
+func TestBatchSealExcludesReturnedUnits(t *testing.T) {
+	bed := assemblyFixture(t)
+	claim := bed.record.Units[0].Claim
+	bed.record.Units = []Unit{
+		{GoalID: "goal-a", Chain: "chain-a", Claim: claim, State: UnitJoined},
+		{GoalID: "goal-b", Chain: "chain-b", Claim: claim, State: UnitJoined, ChangedPaths: []string{"b.go"}},
+		{GoalID: "goal-c", Chain: "chain-c", Claim: claim, State: UnitJoined},
+	}
+	bed.record.State = StateDiagnosing
+	bed.record.Proof = &Proof{Status: "failed", AttemptID: "tip-red"}
+	store := NewStore(bed.root, nil)
+	must(t, store.Create(bed.record))
+	must(t, DiagnoseRed(store, testBatchID, "owner", []RedGroup{{ID: "group", InputManifest: []string{"b.go"}}}, "", time.Unix(2, 0), RedSeams{Run: func(DiagnosticRequest) (DiagnosticResult, error) {
+		return DiagnosticResult{AttemptID: "base-green"}, nil
+	}}))
+	must(t, settleReturn(store, testBatchID, "goal-b", ReturnHandedBack, "owner", time.Unix(3, 0)))
+	plan := func(_, goalID, _ string) (testpolicy.Plan, error) {
+		return testpolicy.Plan{SelectedGroups: []string{goalID}}, nil
+	}
+	gate := func(string, gateStep) gateStepResult { return gateStepResult{RunID: "green"} }
+	must(t, Seal(store, testBatchID, bed.base, "owner", time.Unix(4, 0), plan, gate))
+	record := load(t, store)
+	want, err := assembleUnits(bed.root, bed.base, []Unit{bed.record.Units[0], bed.record.Units[2]})
+	must(t, err)
+	if !slices.Equal(record.PrefixTrees, want) || record.TipTree != want[len(want)-1] {
+		t.Fatalf("sealed prefixes=%v tip=%s, want survivors %v", record.PrefixTrees, record.TipTree, want)
+	}
+	if _, sealed := record.Seal["goal-b"]; sealed {
+		t.Fatalf("returned goal-b remained in seal: %+v", record.Seal)
+	}
+}

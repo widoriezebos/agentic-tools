@@ -46,6 +46,37 @@ func LandLandingBranch(root, id, baseCommit, tip string) error {
 		"--force-with-lease="+landingBranchRef(id)+":"+tip)
 }
 
+// AbandonLandingBranch removes an unlanded candidate against its exact tip
+// before a proof-input-changing trunk move returns the batch to open.
+func AbandonLandingBranch(root, id, expectedTip, detachAt string) error {
+	present, err := remoteLandingBranchPresent(root, id)
+	if err != nil {
+		return err
+	}
+	if !present {
+		return CleanupLandingBranch(root, id, detachAt)
+	}
+	if err := runLandingGit(root, "BATCH_LANDING_BRANCH_MOVED", "push", "origin", ":"+landingBranchRef(id),
+		"--force-with-lease="+landingBranchRef(id)+":"+expectedTip); err != nil {
+		present, lookupErr := remoteLandingBranchPresent(root, id)
+		if lookupErr == nil && !present {
+			return CleanupLandingBranch(root, id, detachAt)
+		}
+		return err
+	}
+	return CleanupLandingBranch(root, id, detachAt)
+}
+
+func remoteLandingBranchPresent(root, id string) (bool, error) {
+	command := exec.Command("git", "-C", root, "ls-remote", "--heads", "origin", landingBranchRef(id))
+	command.Env = gittree.ScrubbedEnviron()
+	output, err := command.CombinedOutput()
+	if err != nil {
+		return false, fmt.Errorf("BATCH_LANDING_BRANCH_MOVED: inspect %s: %s: %w", landingBranchRef(id), strings.TrimSpace(string(output)), err)
+	}
+	return len(strings.TrimSpace(string(output))) != 0, nil
+}
+
 // CleanupLandingBranch leaves no checked-out landing branch after the remote
 // transaction, which also makes this cleanup safe to repeat after recovery.
 func CleanupLandingBranch(root, id, tip string) error {

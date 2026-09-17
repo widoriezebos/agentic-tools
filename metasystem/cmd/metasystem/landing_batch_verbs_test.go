@@ -44,7 +44,7 @@ func TestBatchTaggedCapabilityWitnessExecutesInProof(t *testing.T) {
 		"TestBatchProofCoversTheUnion", "TestBatchProofAcceptsReusableSuccess", "TestBatchProofRearmsBaseBeforePlanningEvenWhenTreeMatches",
 		"TestBatchSupervisorTakeoverRebindsJoinedClaims", "TestGoalHandoverTargetRootFlagFlows", "TestLandingBatchJoinVerbPublishesOutsideFlock",
 		"TestBatchProductionReturnAndForwardHandoverArguments", "TestBatchTrunkRedLedgerOwnerCapability",
-		"TestBatchProofUnionUsesRealMemberRiskSelection",
+		"TestBatchProofUnionUsesRealMemberRiskSelection", "TestBatchProofDurableUnionRefusalSkipsSecondRearm",
 		"TestBatchProofRefusalTransitions",
 	}
 	command := exec.Command("go", "test", "-count=1", "-tags", "batchtest",

@@ -19,6 +19,14 @@ type batchRecordFields struct {
 	Seal           map[string]Claim `json:"seal,omitempty"`
 }
 
+type assemblyConflict struct {
+	GoalID string
+	Cause  error
+}
+
+func (conflict *assemblyConflict) Error() string { return conflict.Cause.Error() }
+func (conflict *assemblyConflict) Unwrap() error { return conflict.Cause }
+
 func joinRefusal(record Record) error {
 	if record.ClosedReason != "" {
 		return refuseBatch("BATCH_CLOSED", "batch "+record.BatchID+" closed at "+record.ClosedReason)
@@ -48,10 +56,10 @@ func assembleUnits(root, base string, units []Unit) (prefixes []string, err erro
 			paths.Env = gittree.ScrubbedEnviron()
 			raw, _ := paths.Output()
 			if len(raw) == 0 {
-				return nil, refuseBatch("BATCH_JOIN_CONFLICT", "unit "+unit.GoalID+" does not apply: "+strings.TrimSpace(string(output)))
+				return nil, &assemblyConflict{GoalID: unit.GoalID, Cause: refuseBatch("BATCH_JOIN_CONFLICT", "unit "+unit.GoalID+" does not apply: "+strings.TrimSpace(string(output)))}
 			}
 			conflicts := strings.Split(strings.TrimSuffix(string(raw), "\x00"), "\x00")
-			return nil, refuseBatch("BATCH_JOIN_CONFLICT", "unit "+unit.GoalID+" paths "+strings.Join(conflicts, ", "))
+			return nil, &assemblyConflict{GoalID: unit.GoalID, Cause: refuseBatch("BATCH_JOIN_CONFLICT", "unit "+unit.GoalID+" paths "+strings.Join(conflicts, ", "))}
 		}
 		next, snapshotErr := workspace.Snapshot("HEAD")
 		if snapshotErr != nil {

@@ -2,6 +2,8 @@ package main
 
 import (
 	"encoding/json"
+	"errors"
+	"fmt"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -213,6 +215,369 @@ func TestPrefixReceiptAllowsIdentityReuseAndBindsRevisions(t *testing.T) {
 		!strings.Contains(joined, "--expected-goal-revision 7 --expected-accounting-revision 5") {
 		t.Fatalf("prefix receipt argv=%v", args)
 	}
+}
+
+func TestPrefixReceiptAcceptsSufficientReusableExit(t *testing.T) {
+	const batchID = "01j5x00000000000000000ba22"
+	root := t.TempDir()
+	if err := os.MkdirAll(filepath.Join(root, "artifacts", "agents", "proof-runs", "batch"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	fake := filepath.Join(root, "fake-metasystem")
+	script := `#!/usr/bin/env bash
+set -euo pipefail
+result=
+while (( $# )); do
+  if [[ "$1" == --result ]]; then result=$2; shift 2; else shift; fi
+done
+printf '%s\n' '{"delivery":{"sufficient":true},"groups":[{"id":"same","status":"reused","reuseAttempt":"tip-attempt"}]}' >"$result"
+exit 76
+`
+	if err := os.WriteFile(fake, []byte(script), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	original := batchPrefixReceiptExecutable
+	t.Cleanup(func() { batchPrefixReceiptExecutable = original })
+	batchPrefixReceiptExecutable = func() (string, error) { return fake, nil }
+	claim := batch.Claim{Machine: "landing", Lineage: "owner", Epoch: 1, Revision: 7, AccountingRevision: 5}
+	record := batch.Record{Schema: 1, BatchID: batchID, State: batch.StateLanding, BaseTree: "base", PrefixTrees: []string{"prefix", "tip"}, TipTree: "tip",
+		Units: []batch.Unit{{GoalID: "goal-a", Chain: "chain-a", Claim: claim, State: batch.UnitJoined}, {GoalID: "goal-b", Chain: "chain-b", Claim: claim, State: batch.UnitJoined}},
+		Proof: &batch.Proof{Status: "green", SelectedGroups: []string{"same"}},
+	}
+	store := batch.NewStore(root, nil)
+	if err := store.Create(record); err != nil {
+		t.Fatal(err)
+	}
+	err := batch.ComposePrefixReceipts(store, batchID, "owner", time.Unix(3, 0), batch.PrefixReceiptSeams{Execute: func(goalID, tree string, groups []string) (batch.PrefixRunResult, error) {
+		return executeBatchPrefixReceipt(root, batchID, record, goalID, tree, groups)
+	}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	stored, err := store.Load(batchID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	receipt := stored.Receipts["goal-a"]
+	if receipt.AttemptID != "" || len(receipt.Executed) != 0 || receipt.Reused["same"] != "tip-attempt" {
+		t.Fatalf("reusable prefix receipt=%+v", receipt)
+	}
+}
+
+func TestPrefixReceiptPersistsRedResultFromExitOne(t *testing.T) {
+	const batchID = "01j5x00000000000000000ba23"
+	root := t.TempDir()
+	if err := os.MkdirAll(filepath.Join(root, "artifacts", "agents", "proof-runs", "batch"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	fake := filepath.Join(root, "fake-metasystem")
+	script := `#!/usr/bin/env bash
+set -euo pipefail
+result=
+while (( $# )); do
+  if [[ "$1" == --result ]]; then result=$2; shift 2; else shift; fi
+done
+printf '%s\n' '{"attemptId":"prefix-attempt","groups":[{"id":"red-group","status":"failed","nativeLaunched":true,"logPath":"red.log","logDigest":"sha256:red","inputManifest":["source/**"]}]}' >"$result"
+exit 1
+`
+	if err := os.WriteFile(fake, []byte(script), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	original := batchPrefixReceiptExecutable
+	t.Cleanup(func() { batchPrefixReceiptExecutable = original })
+	batchPrefixReceiptExecutable = func() (string, error) { return fake, nil }
+	claim := batch.Claim{Machine: "landing", Lineage: "owner", Epoch: 1, Revision: 7, AccountingRevision: 5}
+	record := batch.Record{Schema: 1, BatchID: batchID, State: batch.StateLanding, BaseTree: "base", PrefixTrees: []string{"prefix", "tip"}, TipTree: "tip",
+		Units: []batch.Unit{{GoalID: "goal-a", Chain: "chain-a", Claim: claim, State: batch.UnitJoined}, {GoalID: "goal-b", Chain: "chain-b", Claim: claim, State: batch.UnitJoined}},
+		Proof: &batch.Proof{Status: "green", SelectedGroups: []string{"red-group"}},
+	}
+	store := batch.NewStore(root, nil)
+	if err := store.Create(record); err != nil {
+		t.Fatal(err)
+	}
+	err := batch.ComposePrefixReceipts(store, batchID, "owner", time.Unix(3, 0), batch.PrefixReceiptSeams{Execute: func(goalID, tree string, groups []string) (batch.PrefixRunResult, error) {
+		return executeBatchPrefixReceipt(root, batchID, record, goalID, tree, groups)
+	}})
+	var prefixRed *batch.PrefixRedError
+	if !errors.As(err, &prefixRed) {
+		t.Fatalf("prefix red error=%T %v", err, err)
+	}
+	stored, loadErr := store.Load(batchID)
+	if loadErr != nil {
+		t.Fatal(loadErr)
+	}
+	if stored.State != batch.StateDiagnosing || stored.Proof.Status != "prefix-red" || stored.Proof.PrefixGoal != "goal-a" ||
+		len(stored.Proof.RedGroups) != 1 || stored.Proof.RedGroups[0].ID != "red-group" || stored.Units[0].State != batch.UnitJoined {
+		t.Fatalf("prefix red record=%+v", stored)
+	}
+}
+
+func TestPrefixReceiptClassifiesRevisionMove(t *testing.T) {
+	root := t.TempDir()
+	fake := filepath.Join(root, "fake-metasystem")
+	script := fmt.Sprintf("#!/usr/bin/env bash\nprintf '%%s\\n' 'GOAL_REVISION_MOVED: goal-a changed after seal' >&2\nexit %d\n", proofrun.ExitAdmissionRefused)
+	if err := os.WriteFile(fake, []byte(script), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	original := batchPrefixReceiptExecutable
+	t.Cleanup(func() { batchPrefixReceiptExecutable = original })
+	batchPrefixReceiptExecutable = func() (string, error) { return fake, nil }
+	record := batch.Record{Units: []batch.Unit{{GoalID: "goal-a", Claim: batch.Claim{Revision: 7, AccountingRevision: 5}}}}
+	_, err := executeBatchPrefixReceipt(root, "batch", record, "goal-a", "tree", []string{"same"})
+	var revision *batch.PrefixRevisionRefusal
+	if !errors.As(err, &revision) || !strings.Contains(revision.Error(), "GOAL_REVISION_MOVED") {
+		t.Fatalf("revision refusal=%T %v", err, err)
+	}
+}
+
+func TestBatchDiagnosisForwardsStoredPrefixEvidence(t *testing.T) {
+	const batchID = "01j5x00000000000000000ba20"
+	root := t.TempDir()
+	claim := batch.Claim{Machine: "seat", Lineage: "seat-lineage", Epoch: 1, Revision: 2, AccountingRevision: 1}
+	record := batch.Record{Schema: 1, BatchID: batchID, State: batch.StateDiagnosing, BaseTree: "base", TipTree: "tip",
+		Units: []batch.Unit{{GoalID: "goal-a", Chain: "chain-a", Claim: claim, State: batch.UnitJoined}},
+		Proof: &batch.Proof{Status: "prefix-red", PrefixGoal: "goal-a", RedGroups: []batch.RedGroup{{ID: "red", InputManifest: []string{"a.go"}}}},
+	}
+	store := batch.NewStore(root, nil)
+	if err := store.Create(record); err != nil {
+		t.Fatal(err)
+	}
+	original := batchDiagnosisSeams
+	t.Cleanup(func() { batchDiagnosisSeams = original })
+	batchDiagnosisSeams.commitForTree = func(string, string, string) (string, error) { return "base-commit", nil }
+	var groups []batch.RedGroup
+	var prefixGoal string
+	batchDiagnosisSeams.diagnose = func(_ batch.Store, _, _ string, gotGroups []batch.RedGroup, gotGoal string, _ time.Time, _ batch.RedSeams) error {
+		groups, prefixGoal = gotGroups, gotGoal
+		return nil
+	}
+	if err := executeBatchDiagnosis(root, batchID, "owner", time.Unix(2, 0)); err != nil {
+		t.Fatal(err)
+	}
+	if len(groups) != 1 || groups[0].ID != "red" || prefixGoal != "goal-a" {
+		t.Fatalf("diagnosis groups=%+v prefixGoal=%q", groups, prefixGoal)
+	}
+}
+
+func TestBatchLandTrunkMovedRebasesOrReopens(t *testing.T) {
+	for _, test := range []struct {
+		name, movedPath, manifest, childFailure string
+		reopen                                  bool
+	}{
+		{name: "disjoint", movedPath: "plans/goals/ledger.md", manifest: "source/**"},
+		{name: "selected-input", movedPath: "source/input.go", manifest: "source/**", reopen: true},
+		{name: "selected-input-conflict", movedPath: "unit.txt", manifest: "unit.txt", reopen: true},
+		{name: "held-refusal", movedPath: "plans/goals/ledger.md", manifest: "source/**", childFailure: "held", reopen: true},
+		{name: "verify-refusal", movedPath: "plans/goals/ledger.md", manifest: "source/**", childFailure: "verify", reopen: true},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			root, peer, origin, baseCommit, baseTree, tip := movedBatchGitFixture(t)
+			if err := os.WriteFile(filepath.Join(peer, filepath.FromSlash(test.movedPath)), []byte("moved\n"), 0o644); err != nil {
+				t.Fatal(err)
+			}
+			runBatchFixtureGit(t, peer, "add", "--", test.movedPath)
+			runBatchFixtureGit(t, peer, "commit", "-qm", "move trunk")
+			runBatchFixtureGit(t, peer, "push", "-q", "origin", "main")
+			movedCommit := strings.TrimSpace(runBatchFixtureGit(t, peer, "rev-parse", "HEAD"))
+			movedTree := strings.TrimSpace(runBatchFixtureGit(t, peer, "rev-parse", "HEAD^{tree}"))
+			candidateTree := strings.TrimSpace(runBatchFixtureGit(t, root, "rev-parse", tip+"^{tree}"))
+			patch := runBatchFixtureGit(t, root, "diff", "--binary", baseCommit, tip)
+			chainDir := filepath.Join(root, "artifacts", "agents", "landing-batches", "chains", "chain-a")
+			if err := os.MkdirAll(chainDir, 0o755); err != nil {
+				t.Fatal(err)
+			}
+			if err := os.WriteFile(filepath.Join(chainDir, "diff.patch"), []byte(patch), 0o644); err != nil {
+				t.Fatal(err)
+			}
+			claim := batch.Claim{Machine: "landing", Lineage: "owner", Epoch: 1, Revision: 1, AccountingRevision: 1}
+			record := batch.Record{Schema: 1, BatchID: "01j5x00000000000000000ba21", State: batch.StateLanding, BaseTree: baseTree,
+				PrefixTrees: []string{candidateTree}, TipTree: candidateTree,
+				Units:   []batch.Unit{{GoalID: "goal-a", Chain: "chain-a", Claim: claim, State: batch.UnitJoined}},
+				Proof:   &batch.Proof{Status: "green", AttemptID: "tip-proof", SelectedGroups: []string{"selected"}, InputManifests: map[string][]string{"selected": {test.manifest}}},
+				Landing: &batch.LandingProgress{Base: baseTree, BranchTip: tip, Commits: map[string]string{}},
+				History: []batch.HistoryEntry{{At: time.Unix(1, 0).UTC().Format(time.RFC3339Nano), To: batch.StateLanding, Actor: "owner"}},
+			}
+			store := batch.NewStore(root, nil)
+			if err := store.Create(record); err != nil {
+				t.Fatal(err)
+			}
+			originalChild := batchChildRunner
+			originalPush := batchMovedEndpointPush
+			t.Cleanup(func() { batchChildRunner, batchMovedEndpointPush = originalChild, originalPush })
+			var children [][]string
+			pushes, refusedPushes := 0, 0
+			batchChildRunner = func(_ string, _ string, args ...string) error {
+				children = append(children, append([]string(nil), args...))
+				if test.childFailure == "held" && len(args) > 1 && args[0] == "landing" && args[1] == "held" {
+					return errors.New("held refusal")
+				}
+				if test.childFailure == "verify" && len(args) > 1 && args[0] == "test" && args[1] == "verify" {
+					return errors.New("verify refusal")
+				}
+				return nil
+			}
+			batchMovedEndpointPush = func(root, id, base, tip string) error {
+				pushes++
+				return originalPush(root, id, base, tip)
+			}
+			seams := batch.LandSeams{
+				Prepare:       func(string) error { return nil },
+				Apply:         func(batch.Unit) error { return nil },
+				AppendReceipt: func(batch.Unit, batch.PrefixReceipt) error { return nil },
+				Commit:        func(batch.Unit, batch.PrefixReceipt) (string, error) { return tip, nil },
+				Held:          func(string, string) error { return nil },
+				PublishBranch: func(expected, next string) error {
+					return batch.PublishLandingBranch(root, record.BatchID, expected, next)
+				},
+				Push: func(string, string) error {
+					refusedPushes++
+					return batch.LandLandingBranch(root, record.BatchID, baseCommit, tip)
+				},
+				Origin: func() (string, error) {
+					commit, _, err := fetchBatchOrigin(root)
+					return commit, err
+				},
+				RecoverPush: func(currentOrigin, currentBaseTree, currentTip string) (batch.PushRecovery, error) {
+					return recoverMovedBatchPush(root, record.BatchID, record, baseCommit, currentOrigin, currentBaseTree, currentTip)
+				},
+				Cleanup: func() error { return batch.CleanupLandingBranch(root, record.BatchID, gitHead(root)) },
+			}
+			if err := batch.LandSeries(store, record.BatchID, "owner", time.Unix(2, 0), seams); err != nil {
+				t.Fatal(err)
+			}
+			landed, err := store.Load(record.BatchID)
+			if err != nil {
+				t.Fatal(err)
+			}
+			mainTip := strings.TrimSpace(runBatchFixtureGit(t, origin, "rev-parse", "refs/heads/main"))
+			branchRef := "refs/heads/landing/01j5x00000000000000000ba21"
+			if test.reopen {
+				wantChildren := 0
+				if test.childFailure == "held" {
+					wantChildren = 1
+				} else if test.childFailure == "verify" {
+					wantChildren = 2
+				}
+				if landed.State != batch.StateOpen && landed.State != batch.StateDissolved || landed.BaseTree != movedTree || landed.Landing != nil || mainTip != movedCommit || len(children) != wantChildren || pushes != 0 || refusedPushes != 1 {
+					t.Fatalf("input move record=%+v main=%s children=%v pushes=%d refused=%d", landed, mainTip, children, pushes, refusedPushes)
+				}
+				if test.name == "selected-input-conflict" && (landed.State != batch.StateDissolved || landed.Units[0].State != batch.UnitReturnPending || landed.Units[0].Outcome != batch.UnitEjected) {
+					t.Fatalf("conflicting unit was not ejected before dissolve: %+v", landed)
+				}
+				if landed.State == batch.StateOpen {
+					if err := finishBatchLanding(root, store, record.BatchID, "owner", time.Unix(2, 0)); err != nil {
+						t.Fatalf("open input-move path entered P6 recovery: %v", err)
+					}
+				}
+			} else {
+				if landed.State != batch.StateLanding || landed.Landing == nil || !landed.Landing.PushComplete || mainTip != landed.Landing.PushedTip || len(children) != 2 || children[0][0] != "landing" || children[1][0] != "test" || children[1][1] != "verify" || pushes != 1 || refusedPushes != 1 {
+					t.Fatalf("disjoint record=%+v main=%s children=%v pushes=%d refused=%d", landed, mainTip, children, pushes, refusedPushes)
+				}
+				if err := exec.Command("git", "--git-dir", origin, "merge-base", "--is-ancestor", movedCommit, landed.Landing.PushedTip).Run(); err != nil {
+					t.Fatalf("rebased tip does not descend from moved origin: %v", err)
+				}
+			}
+			if err := exec.Command("git", "--git-dir", origin, "show-ref", "--verify", "--quiet", branchRef).Run(); err == nil {
+				t.Fatalf("candidate branch %s survived recovery", branchRef)
+			}
+		})
+	}
+}
+
+func TestBatchRebasedVerifyUsesIdentityComposition(t *testing.T) {
+	args := batchRebasedVerifyArgs("/landing", "goal-a", "tree-a", []string{"one", "two"})
+	if got := strings.Join(args, " "); got != "test verify --root /landing --goal goal-a --tree tree-a --mode auto --purpose delivery --groups one,two" {
+		t.Fatalf("rebased verify argv=%v", args)
+	}
+}
+
+func TestBatchProofInputsMovedIncludesEnginePaths(t *testing.T) {
+	record := batch.Record{Proof: &batch.Proof{SelectedGroups: []string{"docs"}, InputManifests: map[string][]string{"docs": {"metasystem/docs/**"}}}}
+	if !batchProofInputsMoved(record, []string{"metasystem/internal/other/x.go"}, "metasystem") {
+		t.Fatal("an engine path outside the selected manifest did not require a new proof")
+	}
+}
+
+func TestBatchMovedPushRecoveryDoesNotRetryUnchangedOrigin(t *testing.T) {
+	root, _, origin, baseCommit, baseTree, tip := movedBatchGitFixture(t)
+	originalPush := batchMovedEndpointPush
+	t.Cleanup(func() { batchMovedEndpointPush = originalPush })
+	pushes := 0
+	batchMovedEndpointPush = func(string, string, string, string) error {
+		pushes++
+		return nil
+	}
+	recovery, err := recoverMovedBatchPush(root, "01j5x00000000000000000ba21", batch.Record{}, baseCommit, baseCommit, baseTree, tip)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if recovery.Pushed || recovery.Reopen || pushes != 0 {
+		t.Fatalf("unchanged origin recovery=%+v pushes=%d", recovery, pushes)
+	}
+	mainTip := strings.TrimSpace(runBatchFixtureGit(t, origin, "rev-parse", "refs/heads/main"))
+	if mainTip != baseCommit {
+		t.Fatalf("unchanged origin moved main from %s to %s", baseCommit, mainTip)
+	}
+}
+
+func movedBatchGitFixture(t *testing.T) (root, peer, origin, baseCommit, baseTree, tip string) {
+	t.Helper()
+	base := t.TempDir()
+	origin, root, peer = filepath.Join(base, "origin.git"), filepath.Join(base, "landing"), filepath.Join(base, "peer")
+	if output, err := exec.Command("git", "init", "-q", "--bare", origin).CombinedOutput(); err != nil {
+		t.Fatalf("init origin: %v: %s", err, output)
+	}
+	if output, err := exec.Command("git", "init", "-q", "-b", "main", root).CombinedOutput(); err != nil {
+		t.Fatalf("init landing: %v: %s", err, output)
+	}
+	runBatchFixtureGit(t, root, "config", "user.name", "Fixture")
+	runBatchFixtureGit(t, root, "config", "user.email", "fixture@example.com")
+	for path, contents := range map[string]string{"source/input.go": "base\n", "plans/goals/ledger.md": "base\n", "unit.txt": "base\n"} {
+		full := filepath.Join(root, filepath.FromSlash(path))
+		if err := os.MkdirAll(filepath.Dir(full), 0o755); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(full, []byte(contents), 0o644); err != nil {
+			t.Fatal(err)
+		}
+	}
+	runBatchFixtureGit(t, root, "add", ".")
+	runBatchFixtureGit(t, root, "commit", "-qm", "base")
+	runBatchFixtureGit(t, root, "remote", "add", "origin", origin)
+	runBatchFixtureGit(t, root, "push", "-q", "-u", "origin", "main")
+	baseCommit = strings.TrimSpace(runBatchFixtureGit(t, root, "rev-parse", "HEAD"))
+	baseTree = strings.TrimSpace(runBatchFixtureGit(t, root, "rev-parse", "HEAD^{tree}"))
+	if output, err := exec.Command("git", "clone", "-q", origin, peer).CombinedOutput(); err != nil {
+		t.Fatalf("clone peer: %v: %s", err, output)
+	}
+	runBatchFixtureGit(t, peer, "config", "user.name", "Peer")
+	runBatchFixtureGit(t, peer, "config", "user.email", "peer@example.com")
+	if err := batch.PrepareLandingBranch(root, "01j5x00000000000000000ba21", baseCommit); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(root, "unit.txt"), []byte("candidate\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	runBatchFixtureGit(t, root, "add", "unit.txt")
+	runBatchFixtureGit(t, root, "commit", "-qm", "candidate")
+	tip = strings.TrimSpace(runBatchFixtureGit(t, root, "rev-parse", "HEAD"))
+	if err := batch.PublishLandingBranch(root, "01j5x00000000000000000ba21", "", tip); err != nil {
+		t.Fatal(err)
+	}
+	return root, peer, origin, baseCommit, baseTree, tip
+}
+
+func runBatchFixtureGit(t *testing.T, root string, args ...string) string {
+	t.Helper()
+	commandArgs := append([]string{"-C", root}, args...)
+	if strings.HasSuffix(root, ".git") {
+		commandArgs = append([]string{"--git-dir", root}, args...)
+	}
+	output, err := exec.Command("git", commandArgs...).CombinedOutput()
+	if err != nil {
+		t.Fatalf("git %v: %v: %s", commandArgs, err, output)
+	}
+	return string(output)
 }
 
 func TestBatchMovedEffectsInventoryIsComplete(t *testing.T) {

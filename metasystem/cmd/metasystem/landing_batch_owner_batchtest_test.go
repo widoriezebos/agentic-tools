@@ -336,7 +336,8 @@ func TestBatchProofCoversTheUnion(t *testing.T) {
 				t.Fatalf("runner charged without durable admission: record=%+v err=%v", admitted, err)
 			}
 			return proofrun.TestResult{AttemptID: "attempt-tip", LaunchCounts: proofrun.LaunchCounts{Test: 1, Build: 1}, Delivery: proofrun.DeliveryJudgment{Sufficient: true}, Groups: []proofrun.GroupResult{
-				{ID: "common", NativeLaunched: true}, {ID: "member-only-crosscut", ReuseAttempt: "attempt-member"},
+				{ID: "common", InputManifest: []string{"common/**"}, NativeLaunched: true},
+				{ID: "member-only-crosscut", InputManifest: []string{"cross/**"}, ReuseAttempt: "attempt-member"},
 			}}, nil
 		},
 	}
@@ -352,6 +353,42 @@ func TestBatchProofCoversTheUnion(t *testing.T) {
 		finished.Proof == nil || finished.Proof.AttemptID != "attempt-tip" || finished.Proof.Launchers != 2 ||
 		!slices.Equal(finished.Proof.Executions, []string{"common"}) || finished.Proof.Reuse["member-only-crosscut"] != "attempt-member" {
 		t.Fatalf("events=%v proof=%+v state=%s", events, finished.Proof, finished.State)
+	}
+	if !slices.Equal(finished.Proof.InputManifests["common"], []string{"common/**"}) ||
+		!slices.Equal(finished.Proof.InputManifests["member-only-crosscut"], []string{"cross/**"}) {
+		t.Fatalf("proof input manifests=%v", finished.Proof.InputManifests)
+	}
+}
+
+func TestBatchProofDurableUnionRefusalSkipsSecondRearm(t *testing.T) {
+	const batchID = "01j5x00000000000000000ba19"
+	root := t.TempDir()
+	store := batch.NewStore(root, nil)
+	claim := batch.Claim{Machine: "seat", Lineage: "seat-lineage", Epoch: 1, Revision: 2, AccountingRevision: 1}
+	record := batch.Record{Schema: 1, BatchID: batchID, State: batch.StateSealed, BaseTree: "base", TipTree: "tip",
+		Units: []batch.Unit{{GoalID: "goal-a", Chain: "chain-a", Claim: claim, State: batch.UnitJoined}}}
+	record.SelectedGroups = []string{"sealed-only"}
+	if err := store.Create(record); err != nil {
+		t.Fatal(err)
+	}
+	rearms, plans, launches := 0, 0, 0
+	deps := batchProofDependencies{
+		rearm: func(string, string) error { rearms++; return nil },
+		plan: func(string, string, string, testpolicy.Mode) (testpolicy.Plan, error) {
+			plans++
+			return testpolicy.Plan{RequiredMode: testpolicy.ModeStandard, ExecutedMode: testpolicy.ModeStandard, SelectedGroups: []string{"other"}}, nil
+		},
+		launch: func(batchProofLaunch) (proofrun.TestResult, error) { launches++; return proofrun.TestResult{}, nil },
+	}
+	if err := executeBatchProof(root, batchID, "owner", "full", proofrun.LoadSample{}, time.Unix(1, 0), deps); err == nil || !strings.Contains(err.Error(), "BATCH_PROOF_UNION_UNCOVERED") {
+		t.Fatalf("first union refusal=%v", err)
+	}
+	firstRearms, firstPlans := rearms, plans
+	if err := executeBatchProof(root, batchID, "owner", "full", proofrun.LoadSample{}, time.Unix(2, 0), deps); err != nil {
+		t.Fatal(err)
+	}
+	if rearms != firstRearms || plans != firstPlans || launches != 0 {
+		t.Fatalf("second unchanged tick rearmed=%d/%d planned=%d/%d launched=%d", rearms, firstRearms, plans, firstPlans, launches)
 	}
 }
 
