@@ -222,7 +222,6 @@ func reapDeadOwner(owner Ref, log io.Writer, runtime custodianRuntime) error {
 	if halfBound := runtime.bound / 2; quietWindow > halfBound {
 		quietWindow = halfBound
 	}
-	ownerValue, _ := EncodeRef(owner)
 	var quietSince time.Time
 	for {
 		survivors, err := FixtureSurvivorsOfDeadOwner(runtime.prober, owner)
@@ -241,7 +240,7 @@ func reapDeadOwner(owner Ref, log io.Writer, runtime custodianRuntime) error {
 					quietSince = time.Now()
 				}
 				if time.Since(quietSince) >= quietWindow {
-					fmt.Fprintf(log, "fixture-custodian owner=%s action=complete\n", ownerValue)
+					fmt.Fprint(log, FixtureCustodianCompletionLine(owner))
 					return nil
 				}
 			} else {
@@ -256,6 +255,13 @@ func reapDeadOwner(owner Ref, log io.Writer, runtime custodianRuntime) error {
 		time.Sleep(runtime.poll)
 	}
 }
+
+// FixtureCustodianCompletionLine returns the complete line written after an owner has been reaped.
+func FixtureCustodianCompletionLine(owner Ref) string {
+	ownerValue, _ := EncodeRef(owner)
+	return fmt.Sprintf("fixture-custodian owner=%s action=complete\n", ownerValue)
+}
+
 func sameExactRef(left, right Ref) bool {
 	return left.Pid == right.Pid && left.Mode() == right.Mode() && left.StartedAtUnixMicro == right.StartedAtUnixMicro &&
 		left.StartTicks == right.StartTicks && left.BootID == right.BootID

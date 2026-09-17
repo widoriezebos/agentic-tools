@@ -128,10 +128,14 @@ func Main(m *testing.M, declarations ...Declaration) (code int) {
 			return 2
 		}
 		watch := os.NewFile(3, "fixture-owner-watch")
-		defer watch.Close()
-		if err := identity.RunCustodian(owner, watch, os.Stderr); err != nil {
+		err = identity.RunCustodian(owner, watch, os.Stderr)
+		_ = watch.Close()
+		if err != nil {
 			fmt.Fprintln(os.Stderr, "run fixture custodian:", err)
 			return 2
+		}
+		if logPath := os.Getenv(identity.FixtureCustodianLogEnv); logPath != "" {
+			removeQuietFixtureCustodianLog(logPath, owner, os.Stderr)
 		}
 		return 0
 	}
@@ -236,7 +240,7 @@ func startFixtureCustodian(registry string) error {
 		reader.Close()
 		writer.Close()
 	}()
-	logPath := registry + ".custodian.log"
+	logPath := fmt.Sprintf("%s.custodian-%d.log", registry, exact.Pid)
 	logFile, err := os.OpenFile(logPath, os.O_WRONLY|os.O_CREATE|os.O_APPEND|unix.O_NOFOLLOW, 0o600)
 	if err != nil {
 		return err
@@ -268,6 +272,32 @@ func startFixtureCustodian(registry string) error {
 		return err
 	}
 	return nil
+}
+
+func removeQuietFixtureCustodianLog(path string, owner identity.Ref, stderr *os.File) {
+	if quietFixtureCustodianLog(path, owner, stderr) {
+		_ = os.Remove(path)
+	}
+}
+
+func quietFixtureCustodianLog(path string, owner identity.Ref, stderr *os.File) bool {
+	fd, err := unix.Open(path, unix.O_RDONLY|unix.O_CLOEXEC|unix.O_NOFOLLOW, 0)
+	if err != nil {
+		return false
+	}
+	log := os.NewFile(uintptr(fd), path)
+	defer log.Close()
+	logInfo, logErr := log.Stat()
+	stderrInfo, stderrErr := stderr.Stat()
+	if logErr != nil || stderrErr != nil || !logInfo.Mode().IsRegular() || !stderrInfo.Mode().IsRegular() || !os.SameFile(logInfo, stderrInfo) {
+		return false
+	}
+	contents, err := io.ReadAll(log)
+	if err != nil || string(contents) != identity.FixtureCustodianCompletionLine(owner) {
+		return false
+	}
+	pathInfo, err := os.Lstat(path)
+	return err == nil && pathInfo.Mode().IsRegular() && os.SameFile(logInfo, pathInfo)
 }
 
 func prepare(declarations []Declaration) (func() error, error) {
@@ -488,12 +518,20 @@ func removeDeadRegistryHomes(root string) {
 	if err != nil {
 		return
 	}
+	oldestKept := time.Now().Add(-7 * 24 * time.Hour)
 	for _, entry := range entries {
+		path := filepath.Join(root, entry.Name())
+		if isFixtureCustodianLog(entry.Name()) {
+			info, err := entry.Info()
+			if err == nil && info.Mode().IsRegular() && info.ModTime().Before(oldestKept) {
+				_ = os.Remove(path)
+			}
+			continue
+		}
 		if !entry.IsDir() || entry.Type()&os.ModeSymlink != 0 || !strings.HasPrefix(entry.Name(), registryHomePrefix) {
 			continue
 		}
-		home := filepath.Join(root, entry.Name())
-		owner, err := openRegistryOwner(home)
+		owner, err := openRegistryOwner(path)
 		if err != nil {
 			continue
 		}
@@ -501,9 +539,25 @@ func removeDeadRegistryHomes(root string) {
 			_ = owner.Close()
 			continue
 		}
-		_ = os.RemoveAll(home)
+		_ = os.RemoveAll(path)
 		_ = owner.Close()
 	}
+}
+
+func isFixtureCustodianLog(name string) bool {
+	if !strings.HasPrefix(name, registryHomePrefix) {
+		return false
+	}
+	if strings.HasSuffix(name, ".custodian.log") {
+		return true
+	}
+	stem, found := strings.CutSuffix(name, ".log")
+	marker := strings.LastIndex(stem, ".custodian-")
+	if !found || marker < 0 {
+		return false
+	}
+	digits := stem[marker+len(".custodian-"):]
+	return digits != "" && strings.IndexFunc(digits, func(r rune) bool { return r < '0' || r > '9' }) < 0
 }
 
 func lockWouldBlock(err error) bool {

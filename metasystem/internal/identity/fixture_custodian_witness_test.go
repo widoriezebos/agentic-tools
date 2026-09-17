@@ -5,6 +5,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"slices"
 	"strconv"
 	"strings"
 	"syscall"
@@ -99,9 +100,13 @@ func runLauncherDeathWitness(t *testing.T, exported bool) {
 	t.Cleanup(func() { _ = syscall.Kill(-command.Process.Pid, syscall.SIGKILL); _, _ = command.Process.Wait() })
 	owner := waitWitnessRef(t, filepath.Join(dir, "ownerpid"), filepath.Join(dir, "launcher.stderr"))
 	child := waitWitnessRef(t, filepath.Join(dir, "pid0"), filepath.Join(dir, "launcher.stderr"))
-	defer SignalExact(KernelProber{}, child, syscall.SIGKILL)
+	t.Cleanup(func() { _ = SignalExact(KernelProber{}, child, syscall.SIGKILL) })
+	logPath, _ := os.ReadFile(filepath.Join(dir, "logpath"))
+	t.Cleanup(func() { _ = os.Remove(string(logPath)) })
 	other := waitWitnessRef(t, filepath.Join(dir, "pid1"), filepath.Join(dir, "launcher.stderr"))
-	defer SignalExact(KernelProber{}, other, syscall.SIGKILL)
+	t.Cleanup(func() { _ = SignalExact(KernelProber{}, other, syscall.SIGKILL) })
+	custodian := waitWitnessCustodian(t, owner)
+	t.Cleanup(func() { _ = SignalExact(KernelProber{}, custodian, syscall.SIGKILL) })
 	var shell Ref
 	if exported {
 		shell = waitWitnessRef(t, filepath.Join(dir, "shellpid"), filepath.Join(dir, "launcher.stderr"))
@@ -115,13 +120,45 @@ func runLauncherDeathWitness(t *testing.T, exported bool) {
 	if exported && AliveRef(KernelProber{}, shell) != Alive {
 		t.Fatal("intermediate shell died with the exported launcher")
 	}
-	logPath, _ := os.ReadFile(filepath.Join(dir, "logpath"))
 	waitWitnessLog(t, string(logPath), "dead-launcher="+launcherValue)
 }
 
 func TestKilledTestBinaryLeavesNoFixtureChild(t *testing.T) { custodianWitness(t, false) }
 func TestCustodianReapsStoppedAndDetached(t *testing.T)     { custodianWitness(t, true) }
 
+func TestQuietCustodianRemovesItsLog(t *testing.T) {
+	if dir := os.Getenv("FIXTURE_QUIET_CUSTODIAN_WITNESS"); dir != "" {
+		exact, state, err := (KernelProber{}).Probe(int64(os.Getpid()))
+		if err != nil || state != Alive {
+			t.Fatalf("probe quiet owner: state=%s err=%v", state, err)
+		}
+		logPath := fmt.Sprintf("%s.custodian-%d.log", os.Getenv("METASYSTEM_SUPERVISION_REGISTRY_HOME"), os.Getpid())
+		checkWitness(t, func() error { _, err := os.Stat(logPath); return err }())
+		checkWitness(t, os.WriteFile(filepath.Join(dir, "logpath"), []byte(logPath), 0o600))
+		custodian := waitWitnessCustodian(t, exact.Ref())
+		checkWitness(t, os.WriteFile(filepath.Join(dir, "custodianpid"), []byte(strconv.FormatInt(custodian.Pid, 10)), 0o600))
+		waitWitnessFile(t, filepath.Join(dir, "release"))
+		return
+	}
+	dir := t.TempDir()
+	command := exec.Command(os.Args[0], "-test.run=^"+t.Name()+"$", "-test.count=1")
+	command.Env = append(os.Environ(), "FIXTURE_QUIET_CUSTODIAN_WITNESS="+dir, FixtureCustodianStartEnv+"=1")
+	startWitnessCommand(t, command, filepath.Join(dir, "owner.stderr"), true)
+	t.Cleanup(func() { _ = command.Process.Kill(); _, _ = command.Process.Wait() })
+	custodian := waitWitnessRef(t, filepath.Join(dir, "custodianpid"), filepath.Join(dir, "owner.stderr"))
+	t.Cleanup(func() { _ = SignalExact(KernelProber{}, custodian, syscall.SIGKILL) })
+	logPath, err := os.ReadFile(filepath.Join(dir, "logpath"))
+	checkWitness(t, err)
+	t.Cleanup(func() { _ = os.Remove(string(logPath)) })
+	waitWitnessFile(t, string(logPath))
+	checkWitness(t, os.WriteFile(filepath.Join(dir, "release"), nil, 0o600))
+	if err := command.Wait(); err != nil {
+		output, _ := os.ReadFile(filepath.Join(dir, "owner.stderr"))
+		t.Fatalf("quiet owner exit: %v output=%q", err, output)
+	}
+	waitWitnessDead(t, custodian)
+	waitWitnessFileGone(t, string(logPath))
+}
 func TestCustodianRejectsRuntimePollerAsWatch(t *testing.T) {
 	exact, state, err := (KernelProber{}).Probe(int64(os.Getpid()))
 	if err != nil || state != Alive {
@@ -137,6 +174,7 @@ func TestCustodianRejectsRuntimePollerAsWatch(t *testing.T) {
 	command.Env = append(os.Environ(), FixtureCustodianEnv+"=1", FixtureCustodianOwnerEnv+"="+owner)
 	command.Stdout, command.Stderr = output, output
 	checkWitness(t, command.Start())
+	t.Cleanup(func() { _ = command.Process.Kill() })
 	done := make(chan error, 1)
 	go func() { done <- command.Wait() }()
 	var waitErr error
@@ -173,11 +211,18 @@ func custodianWitness(t *testing.T, hard bool) {
 	checkWitness(t, err)
 	t.Cleanup(func() { _ = syscall.Kill(-command.Process.Pid, syscall.SIGKILL); _, _ = command.Process.Wait() })
 	refs := make([]Ref, 2)
+	var logPath []byte
 	for i := range refs {
 		pidPath := filepath.Join(dir, "pid"+strconv.Itoa(i))
 		refs[i] = waitWitnessRef(t, pidPath, filepath.Join(dir, "owner.stderr"), pidPath+".stderr")
-		defer SignalExact(KernelProber{}, refs[i], syscall.SIGKILL)
+		t.Cleanup(func() { _ = SignalExact(KernelProber{}, refs[i], syscall.SIGKILL) })
+		if i == 0 {
+			logPath, _ = os.ReadFile(filepath.Join(dir, "logpath"))
+			t.Cleanup(func() { _ = os.Remove(string(logPath)) })
+		}
 	}
+	custodian := waitWitnessCustodian(t, owner.Ref())
+	t.Cleanup(func() { _ = SignalExact(KernelProber{}, custodian, syscall.SIGKILL) })
 	if hard {
 		checkWitness(t, os.WriteFile(filepath.Join(dir, "stop"), nil, 0o600))
 		waitWitnessFile(t, filepath.Join(dir, "stopped"))
@@ -189,13 +234,15 @@ func custodianWitness(t *testing.T, hard bool) {
 	for _, ref := range refs {
 		waitWitnessDead(t, ref)
 	}
-	logPath, _ := os.ReadFile(filepath.Join(dir, "logpath"))
-	log := waitWitnessLog(t, string(logPath), "owner="+ownerValue+" action=complete")
-	if hard {
-		for _, ref := range refs {
-			if !strings.Contains(string(log), "action=kill pid="+strconv.FormatInt(ref.Pid, 10)+" ") {
-				t.Fatalf("custodian log %q omits pid %d", log, ref.Pid)
-			}
+	waitWitnessLog(t, string(logPath), "owner="+ownerValue+" action=complete")
+	waitWitnessDead(t, custodian)
+	log, err := os.ReadFile(string(logPath))
+	if err != nil {
+		t.Fatalf("read completed custodian log: %v", err)
+	}
+	for _, ref := range refs {
+		if !strings.Contains(string(log), "action=kill pid="+strconv.FormatInt(ref.Pid, 10)+" ") {
+			t.Fatalf("custodian log %q omits pid %d", log, ref.Pid)
 		}
 	}
 }
@@ -218,10 +265,11 @@ func runWitnessOwner(t *testing.T, dir string) {
 	if registry == "" {
 		t.Fatal("witness owner has no test registry home")
 	}
-	checkWitness(t, os.WriteFile(filepath.Join(dir, "logpath"), []byte(registry+".custodian.log"), 0o600))
+	checkWitness(t, os.WriteFile(filepath.Join(dir, "logpath"), []byte(fmt.Sprintf("%s.custodian-%d.log", registry, os.Getpid())), 0o600))
 	for i, command := range commands {
 		command.Env = append(os.Environ(), word)
 		startWitnessCommand(t, command, filepath.Join(dir, "pid"+strconv.Itoa(i)+".stderr"), false)
+		t.Cleanup(func() { _ = command.Process.Kill(); _, _ = command.Process.Wait() })
 	}
 	for {
 		if _, err := os.Stat(filepath.Join(dir, "stop")); err == nil {
@@ -282,13 +330,46 @@ func waitWitnessFile(t *testing.T, path string) {
 	t.Fatalf("fixture child did not publish %s", filepath.Base(path))
 }
 
+func waitWitnessFileGone(t *testing.T, path string) {
+	var observed error
+	for deadline := time.Now().Add(wiringBound); time.Now().Before(deadline); time.Sleep(10 * time.Millisecond) {
+		if _, observed = os.Lstat(path); os.IsNotExist(observed) {
+			return
+		}
+	}
+	t.Fatalf("fixture custodian log remained: path=%s state=%v", path, observed)
+}
+func waitWitnessCustodian(t *testing.T, owner Ref) Ref {
+	ownerValue, err := EncodeRef(owner)
+	checkWitness(t, err)
+	want, observed := FixtureCustodianOwnerEnv+"="+ownerValue, "no matching child"
+	for deadline := time.Now().Add(wiringBound); time.Now().Before(deadline); time.Sleep(10 * time.Millisecond) {
+		pids, err := AllPids()
+		if err != nil {
+			observed = err.Error()
+			continue
+		}
+		for _, pid := range pids {
+			if parent, known := ParentPid(pid); !known || parent != owner.Pid {
+				continue
+			}
+			exact, state, probeErr := (KernelProber{}).Probe(pid)
+			observed = fmt.Sprintf("pid=%d state=%s err=%v", pid, state, probeErr)
+			if probeErr == nil && state == Alive && exact.EnvironKnown && slices.Contains(exact.Environ, want) {
+				return exact.Ref()
+			}
+		}
+	}
+	t.Fatalf("fixture custodian for owner %d was not found: %s", owner.Pid, observed)
+	return Ref{}
+}
 func waitWitnessLog(t *testing.T, path, want string) []byte {
 	for deadline := time.Now().Add(wiringBound); time.Now().Before(deadline); time.Sleep(10 * time.Millisecond) {
 		if data, err := os.ReadFile(path); err == nil && strings.Contains(string(data), want) {
 			return data
 		}
 	}
-	t.Fatalf("fixture custodian log did not publish %q", want)
+	t.Fatalf("fixture custodian log did not publish %q: log=%q", want, func() []byte { data, _ := os.ReadFile(path); return data }())
 	return nil
 }
 

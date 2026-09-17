@@ -16,6 +16,8 @@ import (
 	"time"
 
 	"golang.org/x/sys/unix"
+
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/identity"
 )
 
 func TestPrepareClearsAmbientControlsPinsRegistryAndRestoresDeclarations(t *testing.T) {
@@ -154,12 +156,40 @@ func TestRemoveDeadRegistryHomesKeepsLiveAndUnrelatedDirectories(t *testing.T) {
 	if err := os.Symlink(unrelated, symlink); err != nil {
 		t.Fatal(err)
 	}
-	old := time.Now().Add(-2 * time.Hour)
+	old := time.Now().Add(-8 * 24 * time.Hour)
 	for _, path := range []string{live.path, unrelated} {
 		if err := os.Chtimes(path, old, old); err != nil {
 			t.Fatal(err)
 		}
 	}
+	file := func(name string, age bool) string {
+		path := filepath.Join(root, name)
+		checkTestenv(t, os.WriteFile(path, []byte("log"), 0o600))
+		if age {
+			checkTestenv(t, os.Chtimes(path, old, old))
+		}
+		return path
+	}
+	removed := []string{
+		file(registryHomePrefix+"old.custodian.log", true),
+		file(registryHomePrefix+"old.custodian-123.log", true),
+	}
+	kept := []string{
+		file(registryHomePrefix+"young.custodian.log", false),
+		file(registryHomePrefix+"young.custodian-123.log", false),
+		file(registryHomePrefix+"old.custodian-x.log", true),
+		file(registryHomePrefix+"old.txt", true),
+		file("other.custodian-1.log", true),
+		file(filepath.Base(dead.path)+".custodian-456.log", false),
+	}
+	oldDirectory := filepath.Join(root, registryHomePrefix+"old.custodian-789.log")
+	checkTestenv(t, os.Mkdir(oldDirectory, 0o700))
+	checkTestenv(t, os.Chtimes(oldDirectory, old, old))
+	kept = append(kept, oldDirectory)
+	linkTarget := file("old-log-link-target", true)
+	logSymlink := filepath.Join(root, registryHomePrefix+"old-link.custodian-789.log")
+	checkTestenv(t, os.Symlink(linkTarget, logSymlink))
+	kept = append(kept, logSymlink, linkTarget)
 
 	removeDeadRegistryHomes(root)
 	removeDeadRegistryHomes(root)
@@ -173,6 +203,88 @@ func TestRemoveDeadRegistryHomesKeepsLiveAndUnrelatedDirectories(t *testing.T) {
 	}
 	if info, err := os.Lstat(symlink); err != nil || info.Mode()&os.ModeSymlink == 0 {
 		t.Fatalf("cleanup followed or removed registry-shaped symlink: %v", err)
+	}
+	for _, path := range removed {
+		if _, err := os.Lstat(path); !os.IsNotExist(err) {
+			t.Errorf("old custodian log survived cleanup: %s: %v", filepath.Base(path), err)
+		}
+	}
+	for _, path := range kept {
+		if _, err := os.Lstat(path); err != nil {
+			t.Errorf("cleanup removed kept path %s: %v", filepath.Base(path), err)
+		}
+	}
+}
+
+func TestQuietFixtureCustodianLogDecision(t *testing.T) {
+	owner := liveTestOwner(t)
+	completion := identity.FixtureCustodianCompletionLine(owner)
+	other := owner
+	other.Pid++
+	for _, test := range []struct {
+		name, content string
+		remove        bool
+	}{
+		{"completion alone", completion, true},
+		{"kill", completion + "fixture-custodian action=kill pid=1\n", false},
+		{"kill owner", completion + "fixture-custodian action=kill-owner\n", false},
+		{"race report", completion + "WARNING: DATA RACE\n", false},
+		{"panic", "panic: runtime failure\n" + completion, false},
+		{"twice", completion + completion, false},
+		{"no newline", strings.TrimSuffix(completion, "\n"), false},
+		{"another owner", identity.FixtureCustodianCompletionLine(other), false},
+		{"empty", "", false},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			log, err := os.Create(filepath.Join(t.TempDir(), "custodian.log"))
+			checkTestenv(t, err)
+			t.Cleanup(func() { _ = log.Close() })
+			_, err = log.WriteString(test.content)
+			checkTestenv(t, err)
+			removeQuietFixtureCustodianLog(log.Name(), owner, log)
+			_, err = os.Lstat(log.Name())
+			if test.remove != os.IsNotExist(err) {
+				t.Fatalf("removed=%t, want %t: %v", os.IsNotExist(err), test.remove, err)
+			}
+		})
+	}
+
+	target, err := os.Create(filepath.Join(t.TempDir(), "target.log"))
+	checkTestenv(t, err)
+	defer target.Close()
+	_, err = target.WriteString(completion)
+	checkTestenv(t, err)
+	link := target.Name() + ".link"
+	checkTestenv(t, os.Symlink(target.Name(), link))
+	removeQuietFixtureCustodianLog(link, owner, target)
+	for _, path := range []string{link, target.Name()} {
+		if _, err := os.Lstat(path); err != nil {
+			t.Fatalf("symlink case removed %s: %v", path, err)
+		}
+	}
+
+	different, err := os.Create(filepath.Join(t.TempDir(), "different.log"))
+	checkTestenv(t, err)
+	defer different.Close()
+	_, err = different.WriteString(completion)
+	checkTestenv(t, err)
+	removeQuietFixtureCustodianLog(different.Name(), owner, target)
+	if _, err := os.Lstat(different.Name()); err != nil {
+		t.Fatalf("different regular file was removed: %v", err)
+	}
+}
+
+func liveTestOwner(t *testing.T) identity.Ref {
+	exact, state, err := (identity.KernelProber{}).Probe(int64(os.Getpid()))
+	if err != nil || state != identity.Alive {
+		t.Fatalf("probe test owner: state=%s err=%v", state, err)
+	}
+	return exact.Ref()
+}
+
+func checkTestenv(t *testing.T, err error) {
+	if err != nil {
+		t.Fatal(err)
 	}
 }
 
@@ -295,6 +407,7 @@ func startRegistryOwnerProcess(t *testing.T) (*exec.Cmd, string) {
 	if err := command.Start(); err != nil {
 		t.Fatal(err)
 	}
+	t.Cleanup(func() { _ = command.Process.Kill(); _ = command.Wait() })
 	scanner := bufio.NewScanner(stdout)
 	if !scanner.Scan() {
 		_ = command.Process.Kill()
