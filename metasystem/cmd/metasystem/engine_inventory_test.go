@@ -43,6 +43,7 @@ var engineBindingStandardTests = []string{
 	"TestUnenrolledLinkedWorktreeNamesItsMainCheckout",
 	"TestVerifyDoesNotKeyLegacyCandidateDigestByWholeTreeReceipt",
 	"TestVerifyRecoversCandidateDigestFromNewestSufficientAttempt",
+	"TestDiagnosticsReadersFollowTheCandidatePair",
 }
 
 func TestEngineBindingWitnessInventory(t *testing.T) {
