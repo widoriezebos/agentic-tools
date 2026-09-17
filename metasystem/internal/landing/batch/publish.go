@@ -1,9 +1,17 @@
 package batch
 
 import (
+	"bytes"
+	"errors"
+	"fmt"
+	"os"
+	"os/exec"
+	"path/filepath"
 	"slices"
+	"strings"
 	"time"
 
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/gittree"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/testpolicy"
 )
 
@@ -24,7 +32,11 @@ func PublishJoin(store Store, batchID string, unit Unit, actor string, at time.T
 				return err
 			}
 			tip := prefixes[len(prefixes)-1]
-			selection, err := plan(store.root, unit.GoalID, tip)
+			unitPrefixes, err := assembleUnits(store.root, record.BaseTree, []Unit{unit})
+			if err != nil || len(unitPrefixes) != 1 {
+				return fmt.Errorf("select joined unit %s: prefixes=%d: %w", unit.GoalID, len(unitPrefixes), err)
+			}
+			selection, err := planJoinedUnit(store.root, record.BaseTree, unit, unitPrefixes[0], plan)
 			if err != nil {
 				return err
 			}
@@ -56,6 +68,122 @@ func PublishJoin(store Store, batchID string, unit Unit, actor string, at time.T
 		}
 		return store.seams.publish(UnitJoined)
 	})
+}
+
+func planJoinedUnit(root, baseTree string, unit Unit, unitTree string, plan func(string, string, string) (testpolicy.Plan, error)) (_ testpolicy.Plan, err error) {
+	baseCommit, err := commitForWorkspaceTree(root, baseTree)
+	if err != nil {
+		return testpolicy.Plan{}, err
+	}
+	top, err := (gittree.Workspace{Dir: root}).TopLevel()
+	if err != nil {
+		return testpolicy.Plan{}, err
+	}
+	canonicalRoot, err := filepath.EvalSymlinks(root)
+	if err != nil {
+		return testpolicy.Plan{}, fmt.Errorf("select joined unit %s: resolve workspace: %w", unit.GoalID, err)
+	}
+	prefix, err := filepath.Rel(top, canonicalRoot)
+	if err != nil {
+		return testpolicy.Plan{}, fmt.Errorf("select joined unit %s: resolve workspace prefix: %w", unit.GoalID, err)
+	}
+	if strings.HasPrefix(prefix, "..") {
+		return testpolicy.Plan{}, fmt.Errorf("select joined unit %s: workspace %s is outside repository %s", unit.GoalID, root, top)
+	}
+	temporary, err := os.MkdirTemp("", "metasystem-batch-plan.")
+	if err != nil {
+		return testpolicy.Plan{}, err
+	}
+	defer func() { err = errors.Join(err, os.RemoveAll(temporary)) }()
+	clone := filepath.Join(temporary, "worktree")
+	if output, cloneErr := runPlanningGit("", nil, "clone", "--shared", "--no-checkout", "--quiet", top, clone); cloneErr != nil {
+		return testpolicy.Plan{}, fmt.Errorf("select joined unit %s: clone planning workspace: %s: %w", unit.GoalID, strings.TrimSpace(string(output)), cloneErr)
+	}
+	planningRoot := clone
+	if prefix != "." {
+		planningRoot = filepath.Join(clone, prefix)
+	}
+	if output, checkoutErr := runPlanningGit(clone, nil, "checkout", "--quiet", "--detach", baseCommit); checkoutErr != nil {
+		return testpolicy.Plan{}, fmt.Errorf("select joined unit %s: checkout batch base: %s: %w", unit.GoalID, strings.TrimSpace(string(output)), checkoutErr)
+	}
+	if source := filepath.Join(canonicalRoot, "artifacts"); pathExists(source) && !pathExists(filepath.Join(planningRoot, "artifacts")) {
+		if err := os.Symlink(source, filepath.Join(planningRoot, "artifacts")); err != nil {
+			return testpolicy.Plan{}, fmt.Errorf("select joined unit %s: expose planning records: %w", unit.GoalID, err)
+		}
+	}
+	patch, err := joinedUnitPatch(root, unit)
+	if err != nil {
+		return testpolicy.Plan{}, err
+	}
+	if output, applyErr := runPlanningGit(planningRoot, patch, "-c", "core.useReplaceRefs=false", "-c", "core.hooksPath=/dev/null", "apply", "--index", "--3way", "--binary", "--whitespace=nowarn", "-"); applyErr != nil {
+		return testpolicy.Plan{}, fmt.Errorf("select joined unit %s: apply at batch base: %s: %w", unit.GoalID, strings.TrimSpace(string(output)), applyErr)
+	}
+	candidate, err := (gittree.Workspace{Dir: planningRoot}).StagedTree()
+	if err != nil {
+		return testpolicy.Plan{}, fmt.Errorf("select joined unit %s: candidate tree=%s want=%s: %w", unit.GoalID, candidate, unitTree, err)
+	}
+	if candidate != unitTree {
+		return testpolicy.Plan{}, fmt.Errorf("select joined unit %s: candidate tree=%s want=%s", unit.GoalID, candidate, unitTree)
+	}
+	if output, commitErr := runPlanningGit(clone, nil, "-c", "user.name=MetaSystem", "-c", "user.email=metasystem@invalid", "-c", "core.hooksPath=/dev/null", "commit", "--quiet", "-m", "temporary batch unit plan"); commitErr != nil {
+		return testpolicy.Plan{}, fmt.Errorf("select joined unit %s: commit planning candidate: %s: %w", unit.GoalID, strings.TrimSpace(string(output)), commitErr)
+	}
+	const policyRef = "refs/remotes/metasystem-batch/base"
+	if output, refErr := runPlanningGit(clone, nil, "update-ref", policyRef, baseCommit); refErr != nil {
+		return testpolicy.Plan{}, fmt.Errorf("select joined unit %s: pin planning base: %s: %w", unit.GoalID, strings.TrimSpace(string(output)), refErr)
+	}
+	if output, configErr := runPlanningGit(clone, nil, "config", "--local", "metasystem.steward.landing-ref", policyRef); configErr != nil {
+		return testpolicy.Plan{}, fmt.Errorf("select joined unit %s: configure planning base: %s: %w", unit.GoalID, strings.TrimSpace(string(output)), configErr)
+	}
+	return plan(planningRoot, unit.GoalID, candidate)
+}
+
+func commitForWorkspaceTree(root, tree string) (string, error) {
+	workspace := gittree.Workspace{Dir: root}
+	top, err := workspace.TopLevel()
+	if err != nil {
+		return "", err
+	}
+	search := func(args ...string) string {
+		command := exec.Command("git", append([]string{"-C", top}, args...)...)
+		command.Env = gittree.ScrubbedEnviron()
+		output, commandErr := command.Output()
+		if commandErr != nil {
+			return ""
+		}
+		for _, commit := range strings.Fields(string(output)) {
+			if candidate, candidateErr := workspace.TreeOf(commit); candidateErr == nil && candidate == tree {
+				return commit
+			}
+		}
+		return ""
+	}
+	if commit := search("rev-list", "--all", "--reflog"); commit != "" {
+		return commit, nil
+	}
+	if commit := search("rev-list", "--first-parent", "FETCH_HEAD"); commit != "" {
+		return commit, nil
+	}
+	return "", fmt.Errorf("select joined unit: no commit names batch base tree %s", tree)
+}
+
+func joinedUnitPatch(root string, unit Unit) ([]byte, error) {
+	if len(unit.Builds) != 0 {
+		member, _ := branchMemberOf(unit)
+		return branchMemberPatch(root, member)
+	}
+	return os.ReadFile(filepath.Join(root, "artifacts", "agents", "landing-batches", "chains", unit.Chain, "diff.patch"))
+}
+
+func runPlanningGit(dir string, stdin []byte, args ...string) ([]byte, error) {
+	command := exec.Command("git", args...)
+	command.Dir, command.Env, command.Stdin = dir, gittree.ScrubbedEnviron(), bytes.NewReader(stdin)
+	return command.CombinedOutput()
+}
+
+func pathExists(path string) bool {
+	_, err := os.Lstat(path)
+	return err == nil
 }
 func ReconcileJoins(store Store, batchID, tree, actor string, at time.Time, read func(string, string, string, string) (Claim, error)) error {
 	if read == nil {

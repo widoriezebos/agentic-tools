@@ -11,6 +11,7 @@ import (
 	"strconv"
 	"strings"
 
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/config"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/gittree"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/testpolicy"
 )
@@ -35,6 +36,11 @@ type fixtureSelection struct {
 	Unmapped       []string
 }
 type patchChange map[string]bool // path -> deleted
+type gateChange struct {
+	Deleted, BaseAbsent bool
+	baseKnown           bool
+}
+type gateChanges map[string]gateChange
 
 func isSharedFixtureHarness(path string) bool {
 	switch path {
@@ -45,15 +51,32 @@ func isSharedFixtureHarness(path string) bool {
 }
 
 func runJoinGate(unitTree string, patch, fixtureMap []byte, unit *Unit, execute batchGateExec) error {
+	root := ""
+	if unit.SeatRoot != "" {
+		configured, _, err := config.Get(config.GetParams{Key: config.BatchRootKey, ConfPath: filepath.Join(unit.SeatRoot, "metasystem.conf")})
+		if err != nil {
+			return err
+		}
+		root = configured
+	}
+	return runJoinGateAt(root, unitTree, patch, fixtureMap, unit, execute)
+}
+
+func runJoinGateAt(root, unitTree string, patch, fixtureMap []byte, unit *Unit, execute batchGateExec) error {
 	unit.Gate = nil
 	groups := parseFixtureBedGroups(fixtureMap)
-	paths := patchChangedPaths(patch)
+	changes := patchGateChanges(patch)
+	paths := changes.paths()
 	fixtures := fixtureGroupsForChangedBeds(paths, groups)
 	if len(fixtures.Unmapped) != 0 {
 		return refuseBatch("BATCH_JOIN_GATE_RED", "unmapped fixture bed "+strings.Join(fixtures.Unmapped, ", "))
 	}
 	steps := []gateStep{{Name: "fast gate", Args: []string{"bash", "scripts/agents/go-gate.sh", "--fast"}}}
-	for _, pkg := range changedGoPackages(paths) {
+	packages, err := changedGoPackages(root, unitTree, changes)
+	if err != nil {
+		return err
+	}
+	for _, pkg := range packages {
 		steps = append(steps, gateStep{Name: "package " + pkg, Args: []string{"go", "test", "-count=1", "-timeout", "900s", pkg}})
 	}
 	for _, group := range fixtures.Groups {
@@ -235,9 +258,27 @@ func isFixtureBedPath(path string) bool {
 	return (dir == "scripts" || dir == "scripts/agents") && strings.Contains(name, "fixtures") && strings.HasSuffix(name, ".sh")
 }
 
-func changedGoPackages(paths patchChange) []string {
+func changedGoPackages(root, tree string, changes gateChanges) ([]string, error) {
 	set := map[string]bool{}
-	for changed, deleted := range paths {
+	modulePrefix := ""
+	for changed := range changes {
+		if strings.HasPrefix(filepath.ToSlash(changed), "metasystem/") {
+			modulePrefix = "metasystem"
+			break
+		}
+	}
+	directoryExists := func(dir string) (bool, error) {
+		if root == "" {
+			return true, nil
+		}
+		path := strings.TrimPrefix(filepath.ToSlash(filepath.Join(modulePrefix, dir)), "./")
+		if path == "" || path == "." {
+			path = modulePrefix
+		}
+		entries, err := (gittree.Workspace{Dir: root}).Entries(tree, []string{strings.TrimSuffix(path, "/") + "/"})
+		return len(entries) != 0, err
+	}
+	for changed, change := range changes {
 		changed = strings.TrimPrefix(filepath.ToSlash(changed), "metasystem/")
 		if strings.HasSuffix(changed, ".go") {
 			dir := filepath.ToSlash(filepath.Dir(changed))
@@ -245,8 +286,21 @@ func changedGoPackages(paths patchChange) []string {
 			if dir != "." {
 				pkg = "./" + dir
 			}
-			if deleted {
+			if change.Deleted {
+				if change.BaseAbsent {
+					continue
+				}
 				parent := filepath.ToSlash(filepath.Dir(dir))
+				for parent != "." {
+					exists, err := directoryExists(parent)
+					if err != nil {
+						return nil, err
+					}
+					if exists {
+						break
+					}
+					parent = filepath.ToSlash(filepath.Dir(parent))
+				}
 				pkg = "./..."
 				if parent != "." {
 					pkg = "./" + parent + "/..."
@@ -260,23 +314,58 @@ func changedGoPackages(paths patchChange) []string {
 		packages = append(packages, pkg)
 	}
 	sort.Strings(packages)
-	return packages
+	return packages, nil
 }
 
 func patchChangedPaths(patch []byte) patchChange {
-	set := patchChange{}
+	return patchGateChanges(patch).paths()
+}
+
+func (changes gateChanges) paths() patchChange {
+	paths := patchChange{}
+	for path, change := range changes {
+		paths[path] = change.Deleted
+	}
+	return paths
+}
+
+func mergeGateChanges(target gateChanges, next gateChanges) {
+	for path, change := range next {
+		if prior, ok := target[path]; ok {
+			prior.Deleted = change.Deleted
+			target[path] = prior
+		} else {
+			target[path] = change
+		}
+	}
+}
+
+func patchGateChanges(patch []byte) gateChanges {
+	set := gateChanges{}
 	old := ""
 	header := false
+	update := func(path string, deleted, baseAbsent, baseKnown bool) {
+		path = strings.TrimPrefix(strings.TrimPrefix(path, "a/"), "b/")
+		if path == "" || path == "/dev/null" {
+			return
+		}
+		change, present := set[path]
+		if !present || baseKnown && !change.baseKnown {
+			change.BaseAbsent, change.baseKnown = baseAbsent, baseKnown
+		}
+		change.Deleted = deleted
+		set[path] = change
+	}
 	for _, line := range bytes.Split(patch, []byte("\n")) {
 		if bytes.HasPrefix(line, []byte("diff --git ")) {
 			if _, changed, ok := strings.Cut(string(line), " b/"); ok {
-				set[changed] = false
+				update(decodePatchPath(changed), false, false, false)
 			}
 			header, old = true, ""
 		} else if header && bytes.HasPrefix(line, []byte("rename from ")) {
-			set[decodePatchPath(string(line[len("rename from "):]))] = true
+			update(decodePatchPath(string(line[len("rename from "):])), true, false, true)
 		} else if header && bytes.HasPrefix(line, []byte("rename to ")) {
-			set[decodePatchPath(string(line[len("rename to "):]))] = false
+			update(decodePatchPath(string(line[len("rename to "):])), false, true, true)
 		} else if header && bytes.HasPrefix(line, []byte("--- ")) {
 			old = decodePatchPath(string(line[4:]))
 		} else if header && bytes.HasPrefix(line, []byte("+++ ")) {
@@ -285,9 +374,7 @@ func patchChangedPaths(patch []byte) patchChange {
 			if deleted {
 				changed = old
 			}
-			if changed != "" && changed != "/dev/null" {
-				set[strings.TrimPrefix(strings.TrimPrefix(changed, "a/"), "b/")] = deleted
-			}
+			update(changed, deleted, old == "/dev/null", true)
 			header = false
 		}
 	}

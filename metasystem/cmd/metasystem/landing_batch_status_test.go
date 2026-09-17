@@ -27,7 +27,13 @@ func TestBatchStatusExposesReturnRevisionHeadroomOwnerLockSampleAndDeadline(t *t
 		batchStatusOwner, batchStatusLock, batchStatusSample, batchStatusNow = originalOwner, originalLock, originalSample, originalNow
 	})
 	batchStatusOwner = func(string) (int64, identity.Liveness, error) { return 41, identity.Alive, nil }
-	batchStatusLock = func(string) string { return "landing-batch-owner 41" }
+	configuredLock := filepath.Join(t.TempDir(), "configured-proof-lock")
+	batchStatusLock = func(lockDir string) string {
+		if lockDir != configuredLock {
+			t.Fatalf("status lock directory=%q, want %q", lockDir, configuredLock)
+		}
+		return "landing-batch-owner 41"
+	}
 	batchStatusSample = func(string) proofrun.LoadSample { return proofrun.LoadSample{OverlapKnown: true, OverlappingHost: 1} }
 	now := time.Date(2030, 1, 1, 0, 30, 0, 0, time.UTC)
 	batchStatusNow = func() time.Time { return now }
@@ -63,7 +69,7 @@ func TestBatchStatusExposesReturnRevisionHeadroomOwnerLockSampleAndDeadline(t *t
 	record.PrefixTrees = []string{"prefix-a"}
 	record.Landing = &batch.LandingProgress{BranchTip: "branch-tip"}
 	record.History = []batch.HistoryEntry{{At: "2030-01-01T00:00:00Z", Verb: "join"}}
-	view := batchRecordStatus(record, settings)
+	view := batchRecordStatus(record, settings, configuredLock)
 	if view.Owner != "41" || view.OwnerLiveness == "" || !strings.Contains(view.Lock, "41") || view.ProofStatus != "green" ||
 		len(view.Headroom) != 1 || view.Headroom[0].Status != string(dispatchcore.BudgetKnown) || view.Headroom[0].AttemptsLeft != 1 ||
 		view.Headroom[0].ReservedMinutesLeft != 100 || view.Headroom[0].HasDiagnosticHeadroom || view.Deadline != "2030-01-01T00:45:00Z" ||

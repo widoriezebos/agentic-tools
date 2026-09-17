@@ -13,7 +13,9 @@ import (
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/identity"
 )
 
-const defaultTestRunLock, defaultTestRunQueue, batchOwnerSeat = "/tmp/metasystem-testrun-lock", "/tmp/metasystem-testrun-queue", "landing-batch-owner"
+const DefaultProofLockDir = "/tmp/metasystem-testrun-lock"
+
+const defaultTestRunLock, defaultTestRunQueue, batchOwnerSeat = DefaultProofLockDir, "/tmp/metasystem-testrun-queue", "landing-batch-owner"
 
 // ProofLockOwner reports the owner record for the configured proof lock.
 // An empty directory selects the same package default used by newProofLock.

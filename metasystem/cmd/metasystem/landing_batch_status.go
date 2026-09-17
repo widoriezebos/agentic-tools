@@ -89,8 +89,12 @@ func statusHeadroom(root, goalID string, now time.Time, capMinutes uint64) batch
 	return view
 }
 
-func batchRecordStatus(record batch.Record, settings config.BatchLanding) batchStatusView {
-	view := batchStatusView{BatchID: record.BatchID, State: record.State, Lock: batchStatusLock(""), Sample: batchStatusSample(settings.Root)}
+func batchRecordStatus(record batch.Record, settings config.BatchLanding, configuredLockDir ...string) batchStatusView {
+	lockDir := batch.DefaultProofLockDir
+	if len(configuredLockDir) != 0 && configuredLockDir[0] != "" {
+		lockDir = configuredLockDir[0]
+	}
+	view := batchStatusView{BatchID: record.BatchID, State: record.State, Lock: batchStatusLock(lockDir), Sample: batchStatusSample(settings.Root)}
 	if record.Proof != nil {
 		view.Reason, view.ProofStatus = record.Proof.Failure, record.Proof.Status
 	}
@@ -149,6 +153,7 @@ func runBatchStatus(args []string) int {
 	root := pathFlag(flags, "root", ".", "seat checkout root")
 	landingRoot := pathFlag(flags, "landing-root", "", "resolved dedicated landing checkout")
 	maxWait := flags.Duration("max-wait", config.DefaultBatchMaxWait, "maximum wait for another unit")
+	lockDir := flags.String("lock-dir", batch.DefaultProofLockDir, "configured proof lock directory")
 	id := flags.String("batch", "", "batch id")
 	goalID := flags.String("goal", "", "goal id")
 	if flags.Parse(args) != nil || flags.NArg() != 0 || *id != "" && *goalID != "" {
@@ -177,7 +182,7 @@ func runBatchStatus(args []string) int {
 	}
 	views := make([]batchStatusView, 0, len(records))
 	for _, record := range records {
-		views = append(views, batchRecordStatus(record, settings))
+		views = append(views, batchRecordStatus(record, settings, *lockDir))
 	}
 	printJSON(views)
 	return 0
@@ -191,6 +196,7 @@ func runBatchWait(args []string) int {
 	root := pathFlag(flags, "root", ".", "seat checkout root")
 	landingRoot := pathFlag(flags, "landing-root", "", "resolved dedicated landing checkout")
 	maxWait := flags.Duration("max-wait", config.DefaultBatchMaxWait, "maximum wait for another unit")
+	lockDir := flags.String("lock-dir", batch.DefaultProofLockDir, "configured proof lock directory")
 	bound := flags.Duration("bound", 6*time.Hour, "hard wait bound")
 	id := flags.String("batch", "", "batch id")
 	goalID := flags.String("goal", "", "goal id")
@@ -217,6 +223,6 @@ func runBatchWait(args []string) int {
 		fmt.Fprintln(os.Stderr, err)
 		return 1
 	}
-	printJSON(batchRecordStatus(record, settings))
+	printJSON(batchRecordStatus(record, settings, *lockDir))
 	return 0
 }

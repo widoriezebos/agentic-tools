@@ -53,11 +53,15 @@ func TestBatchOwnerSearch(t *testing.T) {
 		}
 	})
 	t.Run("W12b named units run alone serially in join order", func(t *testing.T) {
-		_, store := diagnosingBed(t)
-		must(t, store.Update(testBatchID, func(record *Record) error {
-			record.Units = append(record.Units, Unit{GoalID: "goal-c", Chain: "chain-c", Claim: Claim{Machine: "seat", Lineage: "l", Epoch: 1, Revision: 9, AccountingRevision: 7}, State: UnitJoined, ChangedPaths: []string{"c.go"}})
-			return nil
-		}))
+		bed := assemblyFixture(t)
+		unnamedTail := Unit{GoalID: "goal-c", Chain: "chain-c", Claim: Claim{Machine: "seat", Lineage: "l", Epoch: 1, Revision: 9, AccountingRevision: 7}, State: UnitJoined, ChangedPaths: []string{"c.go"}}
+		bed.record.Units[0].ChangedPaths = []string{"a.go"}
+		bed.record.Units[1].ChangedPaths = []string{"b.go"}
+		bed.record.Units = []Unit{bed.record.Units[0], unnamedTail, bed.record.Units[1]}
+		bed.record.State = StateDiagnosing
+		bed.record.Proof = &Proof{Status: "failed", AttemptID: "tip-attempt"}
+		store := NewStore(bed.root, nil)
+		must(t, store.Create(bed.record))
 		groups := []RedGroup{{ID: "group", InputManifest: []string{"a.go", "b.go"}}}
 		var requests []DiagnosticRequest
 		calls := 0
@@ -75,9 +79,10 @@ func TestBatchOwnerSearch(t *testing.T) {
 		for _, request := range requests {
 			gotGoals = append(gotGoals, request.GoalID)
 		}
-		if !slices.Equal(gotGoals, []string{"goal-c", "goal-c", "goal-a", "goal-b"}) ||
-			requests[0].Claim.Revision != 9 || requests[2].Claim.Revision != 7 || requests[3].Claim.Revision != 8 ||
-			record.Units[0].State != UnitJoined || record.Units[1].State != UnitReturnPending || record.Units[2].State != UnitJoined || record.State != StateOpen {
+		if !slices.Equal(gotGoals, []string{"goal-b", "goal-c", "goal-a", "goal-b"}) ||
+			requests[0].Claim.Revision != 8 || requests[1].Claim.Revision != 9 || requests[1].Claim.AccountingRevision != 7 ||
+			requests[2].Claim.Revision != 7 || requests[3].Claim.Revision != 8 ||
+			record.Units[0].State != UnitJoined || record.Units[1].State != UnitJoined || record.Units[2].State != UnitReturnPending || record.State != StateOpen {
 			t.Fatalf("requests=%+v record=%+v", requests, record)
 		}
 	})

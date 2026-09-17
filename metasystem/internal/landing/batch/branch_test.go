@@ -182,8 +182,10 @@ func TestBatchSealBranchDeletionUsesParentPackage(t *testing.T) {
 	member, err := ReadGoalBranch(BranchReadRequest{Repo: bed.root, EndpointTip: bed.base, BranchTip: tip, GoalID: "goal-a", Last: true})
 	must(t, err)
 	unit := BindBranchMember(Unit{GoalID: "goal-a", ChangedPaths: []string{"metasystem/gone/value.go"}}, member)
+	sealedTree, err := AssembleBranchMembers(bed.root, branchGit(t, bed.root, "rev-parse", bed.base+"^{tree}"), []BranchMember{member})
+	must(t, err)
 	var packages []string
-	err = runSealGate(bed.root, "sealed-tree", []Unit{unit}, func(_ string, step gateStep) gateStepResult {
+	err = runSealGate(bed.root, sealedTree[0], []Unit{unit}, func(_ string, step gateStep) gateStepResult {
 		if strings.HasPrefix(step.Name, "package ") {
 			packages = append(packages, strings.TrimPrefix(step.Name, "package "))
 		}

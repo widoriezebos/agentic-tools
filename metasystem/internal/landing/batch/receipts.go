@@ -10,8 +10,9 @@ import (
 // PrefixReceipt records how one exact prefix obtained every selected group.
 type PrefixReceipt struct {
 	GoalID, Tree, AttemptID, ResultPath string
-	CommitIDs, Units                    []string
-	LastUnit                            string
+	CommitIDs                           []string `json:"CommitIDs,omitempty"`
+	Units                               []string `json:"Units,omitempty"`
+	LastUnit                            string   `json:"LastUnit,omitempty"`
 	Reused                              map[string]string
 	Executed                            []string
 }

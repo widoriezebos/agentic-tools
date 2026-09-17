@@ -1,12 +1,17 @@
 package batch
 
 import (
+	"errors"
 	"os"
 	"os/exec"
 	"slices"
 	"strings"
+	"sync"
+	"sync/atomic"
 	"testing"
 	"time"
+
+	"golang.org/x/sys/unix"
 
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/gittree"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/goal"
@@ -150,5 +155,66 @@ func TestBatchSealExcludesReturnedUnits(t *testing.T) {
 	}
 	if _, sealed := record.Seal["goal-b"]; sealed {
 		t.Fatalf("returned goal-b remained in seal: %+v", record.Seal)
+	}
+}
+
+func TestBatchSealReleasesLockDuringGateAndRefusesChangedCandidate(t *testing.T) {
+	bed := assemblyFixture(t)
+	store := NewStore(bed.root, nil)
+	must(t, store.Create(bed.record))
+	var lockDepth atomic.Int32
+	store.seams.flock = func(fd, operation int) error {
+		if operation == unix.LOCK_UN {
+			lockDepth.Add(-1)
+			return unix.Flock(fd, operation)
+		}
+		if err := unix.Flock(fd, operation); err != nil {
+			return err
+		}
+		lockDepth.Add(1)
+		return nil
+	}
+	gateStarted, releaseGate := make(chan struct{}), make(chan struct{})
+	var gateOnce sync.Once
+	var gateHeldLock atomic.Bool
+	gate := func(string, gateStep) gateStepResult {
+		gateOnce.Do(func() {
+			gateHeldLock.Store(lockDepth.Load() != 0)
+			close(gateStarted)
+			<-releaseGate
+		})
+		return gateStepResult{RunID: "seal-green"}
+	}
+	plan := func(_, goalID, _ string) (testpolicy.Plan, error) {
+		return testpolicy.Plan{SelectedGroups: []string{goalID}}, nil
+	}
+	sealDone := make(chan error, 1)
+	go func() { sealDone <- Seal(store, testBatchID, bed.base, "owner", time.Unix(3, 0), plan, gate) }()
+	<-gateStarted
+	if gateHeldLock.Load() {
+		close(releaseGate)
+		<-sealDone
+		t.Fatal("seal gate ran while the batch flock was held")
+	}
+	join := joiningUnit("goal-c", "chain-c")
+	must(t, PublishJoin(store, testBatchID, join, "seat+goal-c", time.Unix(2, 0), plan, func() error { return nil }))
+	close(releaseGate)
+	err := <-sealDone
+	var changed *SealChangedDuringGateRefusal
+	if !errors.As(err, &changed) || changed.BatchID != testBatchID || !strings.Contains(err.Error(), "changed during the gate") {
+		t.Fatalf("changed-candidate refusal=%T %v", err, err)
+	}
+	record := load(t, store)
+	if record.State != StateOpen || len(joinedUnits(record.Units)) != 3 || record.Seal != nil {
+		t.Fatalf("changed seal wrote stale state: %+v", record)
+	}
+
+	unchanged := assemblyFixture(t)
+	unchangedStore := NewStore(unchanged.root, nil)
+	must(t, unchangedStore.Create(unchanged.record))
+	must(t, Seal(unchangedStore, testBatchID, unchanged.base, "owner", time.Unix(4, 0), plan,
+		func(string, gateStep) gateStepResult { return gateStepResult{RunID: "seal-green"} }))
+	if sealed := load(t, unchangedStore); sealed.State != StateSealed || len(sealed.Seal) != 2 {
+		t.Fatalf("unchanged candidate did not seal: %+v", sealed)
 	}
 }

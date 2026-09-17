@@ -7,6 +7,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"slices"
 	"strings"
 	"testing"
 	"time"
@@ -14,6 +15,7 @@ import (
 	"golang.org/x/sys/unix"
 
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/config"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/gittree"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/hostload"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/identity"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/proofrun"
@@ -326,6 +328,53 @@ func joiningUnit(goalID, chain string) Unit {
 
 func joinPlanMode(mode testpolicy.Mode) func(string, string, string) (testpolicy.Plan, error) {
 	return func(string, string, string) (testpolicy.Plan, error) { return testpolicy.Plan{RequiredMode: mode}, nil }
+}
+
+func TestBatchJoinSelectsGroupsFromEachUnitsOwnTree(t *testing.T) {
+	bed, store := joinBed(t)
+	plan := func(_, _ string, tree string) (testpolicy.Plan, error) {
+		selected := []string{"shared"}
+		if strings.Contains(bedGit(t, bed.root, "show", tree+":a.go"), "A = 1") {
+			selected = append(selected, "group-a")
+		}
+		if strings.Contains(bedGit(t, bed.root, "show", tree+":b.go"), "B = 1") {
+			selected = append(selected, "group-b")
+		}
+		return testpolicy.Plan{SelectedGroups: selected}, nil
+	}
+	must(t, PublishJoin(store, testBatchID, joiningUnit("goal-a", "chain-a"), "seat+goal-a", time.Unix(1, 0), plan, func() error { return nil }))
+	must(t, PublishJoin(store, testBatchID, joiningUnit("goal-b", "chain-b"), "seat+goal-b", time.Unix(2, 0), plan, func() error { return nil }))
+	record := load(t, store)
+	if !slices.Equal(record.Units[0].SelectedGroups, []string{"shared", "group-a"}) ||
+		!slices.Equal(record.Units[1].SelectedGroups, []string{"shared", "group-b"}) {
+		t.Fatalf("per-unit selections=%v / %v", record.Units[0].SelectedGroups, record.Units[1].SelectedGroups)
+	}
+	named := namedDiagnosticUnits(record.Units, []RedGroup{{ID: "group-a"}})
+	if !named["goal-a"] || named["goal-b"] {
+		t.Fatalf("group-a named units=%v", named)
+	}
+}
+
+func TestBatchJoinPlanningPinsMergeBaseToBatchBase(t *testing.T) {
+	bed, store := joinBed(t)
+	must(t, store.Update(testBatchID, func(record *Record) error {
+		record.BaseTree, record.TipTree = bed.moved, bed.moved
+		return nil
+	}))
+	must(t, os.WriteFile(filepath.Join(bed.root, "newer-trunk"), []byte("newer\n"), 0o644))
+	bedGit(t, bed.root, "add", "newer-trunk")
+	bedGit(t, bed.root, "commit", "-qm", "newer trunk")
+	plan := func(root, _ string, _ string) (testpolicy.Plan, error) {
+		policyRef := bedGit(t, root, "config", "--local", "--get", "metasystem.steward.landing-ref")
+		mergeBase := bedGit(t, root, "merge-base", "HEAD", policyRef)
+		mergeBaseTree, err := (gittree.Workspace{Dir: root}).TreeOf(mergeBase)
+		must(t, err)
+		if mergeBaseTree != bed.moved {
+			t.Fatalf("planning merge-base tree=%s want batch base=%s", mergeBaseTree, bed.moved)
+		}
+		return testpolicy.Plan{SelectedGroups: []string{"group-a"}}, nil
+	}
+	must(t, PublishJoin(store, testBatchID, joiningUnit("goal-a", "chain-a"), "seat+goal-a", time.Unix(1, 0), plan, func() error { return nil }))
 }
 
 func TestBatchJoinPublicationHoldsTheFlock(t *testing.T) {
