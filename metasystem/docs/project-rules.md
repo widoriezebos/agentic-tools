@@ -15,6 +15,8 @@ Replace this file when adopting the metasystem. Keep facts concrete and reposito
 ## Commands
 
 - Testing contract: `testing.json`, selected through `testing.contract=testing.json` in `metasystem.conf`. `bin/metasystem test list --root .` describes it, `test check` validates it without compiling, `test plan --goal <goal> --mode auto` resolves the actual risk-selected groups, `test run` executes the selected stages, and `test verify` consumes sufficient retained evidence without rerunning it. `metasystem testing merge --base <file> --ours <file> --theirs <file> --out <file>` merges concurrent contract edits by surface, group, and list identity; `testing merge-driver` prints the Git driver setup and accepts Git's `%O %A %B` order; `testing add-tests --file <file> --group <id> --tests <name,...>` verifies and adds named Go tests.
+
+Batch landing and goal branch verbs merge `testing.json` by surface without checkout setup. The checked-in attributes select the driver, and these verbs supply its temporary Git configuration themselves. For hand merges, local setup remains optional: `git config merge.metasystem-testing.name 'metasystem testing.json merge by surface'` and `git config merge.metasystem-testing.driver 'metasystem testing merge-driver %O %A %B'` enable the same behavior.
 - Fast focused test: `<command>`
 - Full unit suite: `<command>`
 - Integration/end-to-end suite: `<command>`

@@ -5,6 +5,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"reflect"
 	"slices"
 	"strings"
 	"testing"
@@ -12,6 +13,8 @@ import (
 
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/dispatch"
 	goalbranch "github.com/widoriezebos/agentic-tools/metasystem/internal/goal/branch"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/testpolicy"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/testpolicy/contractmerge"
 )
 
 type goalBranchBed struct {
@@ -150,6 +153,135 @@ func TestBatchBranchMembersCheckEachGoalTransition(t *testing.T) {
 	if err != nil || len(prefixes) != 2 || branchGit(t, bed.root, "show", prefixes[1]+":metasystem/a-3.txt") != "goal-a/3" || branchGit(t, bed.root, "show", prefixes[1]+":metasystem/b-1.txt") != "goal-b/1" {
 		t.Fatalf("two-goal prefixes=%v err=%v", prefixes, err)
 	}
+}
+
+func TestBatchCompositionMergesTestingContractBySurface(t *testing.T) {
+	bed, memberA, memberB := testingContractMembers(t, "member-a", 1100, "member-b", 1200)
+	t.Setenv("METASYSTEM_CONTRACT_DRIVER_HELPER", "1")
+	baseTree := branchGit(t, bed.root, "rev-parse", bed.base+"^{tree}")
+	prefixes, err := AssembleBranchMembers(bed.root, baseTree, []BranchMember{memberA, memberB})
+	if err != nil {
+		t.Fatal(err)
+	}
+	merged := decodeBatchContract(t, branchGit(t, bed.root, "show", prefixes[1]+":metasystem/testing.json"))
+	if got := batchContractIDs(merged.Groups); !reflect.DeepEqual(got, []string{"base-group", "member-a-group", "member-b-group"}) {
+		t.Fatalf("composed groups = %v", got)
+	}
+	if got := batchContractSurface(t, merged, "residual").Standard; !reflect.DeepEqual(got, []string{"base-group", "member-a-group", "member-b-group"}) {
+		t.Fatalf("composed residual groups = %v", got)
+	}
+
+	saved := batchMergeDriverArgs
+	batchMergeDriverArgs = func() []string { return nil }
+	t.Cleanup(func() { batchMergeDriverArgs = saved })
+	if _, err := AssembleBranchMembers(bed.root, baseTree, []BranchMember{memberA, memberB}); err == nil {
+		t.Fatal("the same composition unexpectedly succeeded without the merge-driver arguments")
+	}
+}
+
+func TestBatchCompositionRefusesNamedTestingContractConflictCleanly(t *testing.T) {
+	bed, memberA, memberB := testingContractMembers(t, "shared", 1100, "shared", 1200)
+	t.Setenv("METASYSTEM_CONTRACT_DRIVER_HELPER", "1")
+	baseTree := branchGit(t, bed.root, "rev-parse", bed.base+"^{tree}")
+	_, err := AssembleBranchMembers(bed.root, baseTree, []BranchMember{memberA, memberB})
+	if err == nil || !strings.Contains(err.Error(), "BATCH_JOIN_REREAD:") ||
+		!strings.Contains(err.Error(), `TESTING_MERGE_CONFLICT: group "shared-group" field targetMs`) {
+		t.Fatalf("named testing contract conflict = %v", err)
+	}
+	if status := branchGit(t, bed.root, "status", "--porcelain=v1", "--untracked-files=all"); status != "" {
+		t.Fatalf("refused composition left repository changes: %q", status)
+	}
+}
+
+func testingContractMembers(t *testing.T, first string, firstTarget int64, second string, secondTarget int64) (goalBranchBed, BranchMember, BranchMember) {
+	t.Helper()
+	root := t.TempDir()
+	branchGit(t, root, "init", "-q", "-b", "main")
+	branchGit(t, root, "config", "user.name", "Batch Fixture")
+	branchGit(t, root, "config", "user.email", "batch@example.invalid")
+	branchWrite(t, root, ".gitattributes", "metasystem/testing.json merge=metasystem-testing\n")
+	writeBatchContract(t, root, batchContractFixture())
+	branchGit(t, root, "add", ".")
+	branchGit(t, root, "commit", "-qm", "base")
+	base := branchGit(t, root, "rev-parse", "HEAD")
+	member := func(goalID, name string, target int64) BranchMember {
+		branchGit(t, root, "reset", "-q", "--hard", base)
+		writeBatchContract(t, root, batchContractWithAddition(batchContractFixture(), name, target))
+		branchGit(t, root, "add", "metasystem/testing.json")
+		branchGit(t, root, "commit", "-qm", goalID)
+		commit := branchGit(t, root, "rev-parse", "HEAD")
+		digest, err := goalbranch.UnitDigest(root, commit)
+		must(t, err)
+		return BranchMember{GoalID: goalID, Tip: commit, Builds: []BranchBuild{{Units: []string{"testing"}, Commit: commit, Digest: digest}}}
+	}
+	memberA := member("goal-a", first, firstTarget)
+	memberB := member("goal-b", second, secondTarget)
+	return goalBranchBed{root: root, base: base}, memberA, memberB
+}
+
+func batchContractFixture() testpolicy.Contract {
+	return testpolicy.Contract{SchemaVersion: 1,
+		ProjectRisk: testpolicy.ProjectRisk{Severity: 1, Exposure: 1, Reversibility: "revert", Detection: "immediate", Recovery: "bounded"},
+		Fallback:    "residual",
+		Surfaces: []testpolicy.Surface{
+			batchContractSurfaceFixture("base", "base-group"),
+			{ID: "residual", Paths: []string{}, DependsOn: []string{}, Standard: []string{"base-group"}, Deep: []string{}, Critical: []string{}},
+		},
+		Groups: []testpolicy.Group{batchContractGroup("base-group", 1000)}, Always: testpolicy.Always{Canary: []string{}, Standard: []string{}},
+		Unknown: []string{"base-group"}, Cadence: []string{}}
+}
+
+func batchContractWithAddition(contract testpolicy.Contract, name string, target int64) testpolicy.Contract {
+	id := name + "-group"
+	contract.Groups = append(contract.Groups, batchContractGroup(id, target))
+	last := len(contract.Surfaces) - 1
+	contract.Surfaces = append(contract.Surfaces[:last], batchContractSurfaceFixture(name, id), contract.Surfaces[last])
+	contract.Surfaces[len(contract.Surfaces)-1].Standard = append(contract.Surfaces[len(contract.Surfaces)-1].Standard, id)
+	contract.Unknown = append(contract.Unknown, id)
+	return contract
+}
+
+func batchContractGroup(id string, target int64) testpolicy.Group {
+	return testpolicy.Group{ID: id, Kind: "unit", Adapter: "go", CWD: ".", Inputs: []string{"go.mod"}, Outputs: []string{},
+		Tools: []testpolicy.Tool{}, Obligations: []string{}, Platforms: []string{"any"}, TargetMS: target,
+		Packages: []string{"./example"}, Tests: json.RawMessage(`["TestExample"]`)}
+}
+
+func batchContractSurfaceFixture(id, group string) testpolicy.Surface {
+	return testpolicy.Surface{ID: id, Paths: []string{id + "/**"}, DependsOn: []string{}, Standard: []string{group}, Deep: []string{}, Critical: []string{}}
+}
+
+func writeBatchContract(t *testing.T, root string, contract testpolicy.Contract) {
+	t.Helper()
+	data, err := contractmerge.Render(contract)
+	must(t, err)
+	branchWrite(t, root, "metasystem/testing.json", string(data))
+}
+
+func decodeBatchContract(t *testing.T, data string) testpolicy.Contract {
+	t.Helper()
+	contract, err := testpolicy.Decode([]byte(data))
+	must(t, err)
+	return contract
+}
+
+func batchContractIDs(groups []testpolicy.Group) []string {
+	ids := make([]string, len(groups))
+	for i := range groups {
+		ids[i] = groups[i].ID
+	}
+	return ids
+}
+
+func batchContractSurface(t *testing.T, contract testpolicy.Contract, id string) testpolicy.Surface {
+	t.Helper()
+	for _, surface := range contract.Surfaces {
+		if surface.ID == id {
+			return surface
+		}
+	}
+	t.Fatalf("surface %s is absent", id)
+	return testpolicy.Surface{}
 }
 
 func TestBatchBranchMemberRefusesMovedTrunk(t *testing.T) {

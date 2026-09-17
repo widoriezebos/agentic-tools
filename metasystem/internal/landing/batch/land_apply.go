@@ -17,7 +17,7 @@ func ApplyCertifiedPatch(root, worktree, chain string) error {
 	if err != nil {
 		return err
 	}
-	command := exec.Command("git", "-C", worktree, "-c", "core.useReplaceRefs=false", "-c", "core.hooksPath=/dev/null", "apply", "--index", "--3way", "--binary", "--whitespace=nowarn", "-")
+	command := exec.Command("git", batchMergeGitCommand(worktree, "-c", "core.useReplaceRefs=false", "-c", "core.hooksPath=/dev/null", "apply", "--index", "--3way", "--binary", "--whitespace=nowarn", "-")...)
 	command.Env, command.Stdin = gittree.ScrubbedEnviron(), bytes.NewReader(patch)
 	if output, err := command.CombinedOutput(); err != nil {
 		return fmt.Errorf("apply certified patch for %s: %s: %w", chain, bytes.TrimSpace(output), err)

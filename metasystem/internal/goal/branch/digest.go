@@ -16,7 +16,7 @@ type Entry struct {
 }
 
 func gitOutput(repo string, args ...string) ([]byte, error) {
-	cmd := exec.Command("git", append([]string{"-C", repo}, args...)...)
+	cmd := exec.Command("git", branchGitCommand(repo, args...)...)
 	cmd.Env = gittree.ScrubbedEnviron("LC_ALL=C")
 	var stderr bytes.Buffer
 	cmd.Stderr = &stderr

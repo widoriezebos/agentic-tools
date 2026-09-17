@@ -8,6 +8,7 @@ import (
 
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/gittree"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/lease"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/testpolicy/contractgit"
 )
 
 type advanceRefusal struct {
@@ -81,7 +82,7 @@ func Advance(root, upstream string, stdout, stderr io.Writer) error {
 	if err != nil {
 		return err
 	}
-	rebase, rebaseErr := detachedWorktree.Rebase(upstream)
+	rebase, rebaseErr := detachedWorktree.Rebase(upstream, contractgit.RuntimeDriverArgs()...)
 	closeErr := detachedWorktree.Close()
 	if rebaseErr != nil || closeErr != nil {
 		return errors.Join(rebaseErr, closeErr)

@@ -1,6 +1,7 @@
 package branch
 
 import (
+	"bytes"
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
@@ -236,6 +237,10 @@ func verifyUnitPreimages(repo, tree string, unit UnitStatus) error {
 	}
 	var changed []string
 	for _, entry := range entries {
+		if entry.Path == "metasystem/testing.json" {
+			// Its three blob versions are validated by the contract merge driver.
+			continue
+		}
 		mode, blob, present, err := treeEntry(repo, tree, entry.Path)
 		if err != nil {
 			return err
@@ -252,12 +257,48 @@ func verifyUnitPreimages(repo, tree string, unit UnitStatus) error {
 }
 
 func transitionDigest(repo, before, after string) (string, error) {
-	raw, err := gitOutput(repo, "diff-tree", "-r", "-z", "--no-renames", "--full-index", before, after)
+	raw, err := transitionRaw(repo, before, after)
 	if err != nil {
 		return "", err
 	}
 	sum := sha256.Sum256(raw)
 	return hex.EncodeToString(sum[:]), nil
+}
+
+func transitionRaw(repo, before, after string, pathspec ...string) ([]byte, error) {
+	args := []string{"diff-tree", "-r", "-z", "--no-renames", "--full-index", before, after}
+	return gitOutput(repo, append(args, pathspec...)...)
+}
+
+func transitionChangesTestingContract(repo, before, after string) (bool, error) {
+	raw, err := transitionRaw(repo, before, after, "--", "metasystem/testing.json")
+	return len(raw) != 0, err
+}
+
+func unitTransitionMatches(repo, before, after string, unit UnitStatus) (string, bool, error) {
+	got, err := transitionDigest(repo, before, after)
+	if err != nil || got == unit.Digest {
+		return got, got == unit.Digest, err
+	}
+	originalDigest, err := transitionDigest(repo, unit.Commit+"^", unit.Commit)
+	if err != nil || originalDigest != unit.Digest {
+		return got, false, err
+	}
+	originalContract, err := transitionChangesTestingContract(repo, unit.Commit+"^", unit.Commit)
+	if err != nil {
+		return got, false, err
+	}
+	appliedContract, err := transitionChangesTestingContract(repo, before, after)
+	if err != nil || !originalContract || !appliedContract {
+		return got, false, err
+	}
+	withoutContract := []string{"--", ".", ":(exclude)metasystem/testing.json"}
+	original, err := transitionRaw(repo, unit.Commit+"^", unit.Commit, withoutContract...)
+	if err != nil {
+		return got, false, err
+	}
+	applied, err := transitionRaw(repo, before, after, withoutContract...)
+	return got, bytes.Equal(original, applied), err
 }
 
 func applyCommit(worktree, commit string) error {
@@ -568,11 +609,11 @@ func PrepareLanding(req LandRequest) (LandResult, error) {
 			if err != nil {
 				return nil, nil, err
 			}
-			digest, err := transitionDigest(worktree, strings.TrimSpace(string(treeOut)), strings.TrimSpace(string(appliedOut)))
+			digest, matches, err := unitTransitionMatches(worktree, strings.TrimSpace(string(treeOut)), strings.TrimSpace(string(appliedOut)), group.status)
 			if err != nil {
 				return nil, nil, err
 			}
-			if digest != group.status.Digest {
+			if !matches {
 				return nil, nil, operationRefusal(UnitRereadCode, "unit %s applies with digest %s, not attested digest %s", group.status.Unit, digest, group.status.Digest)
 			}
 			message, _, err := landingMessage(req.Repo, group, req.GoalID, req.Seat, req.Last && index == len(groups)-1)

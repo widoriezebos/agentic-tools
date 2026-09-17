@@ -69,7 +69,7 @@ func assembleUnits(root, base string, units []Unit) (prefixes []string, err erro
 		if err != nil {
 			return nil, err
 		}
-		command := exec.Command("git", "-C", workspace.Dir, "-c", "core.useReplaceRefs=false", "-c", "core.hooksPath=/dev/null", "apply", "--index", "--3way", "--binary", "--whitespace=nowarn", "-")
+		command := exec.Command("git", batchMergeGitCommand(workspace.Dir, "-c", "core.useReplaceRefs=false", "-c", "core.hooksPath=/dev/null", "apply", "--index", "--3way", "--binary", "--whitespace=nowarn", "-")...)
 		command.Env, command.Stdin = gittree.ScrubbedEnviron(), bytes.NewReader(patch)
 		if output, applyErr := command.CombinedOutput(); applyErr != nil {
 			paths := exec.Command("git", "-C", workspace.Dir, "diff", "--name-only", "--diff-filter=U", "-z")
@@ -132,7 +132,7 @@ func applyBranchCommit(repo, worktree, commit string) error {
 	if err != nil {
 		return err
 	}
-	command := exec.Command("git", "-C", worktree, "-c", "core.useReplaceRefs=false", "-c", "core.hooksPath=/dev/null", "apply", "--index", "--3way", "--binary", "--whitespace=nowarn", "-")
+	command := exec.Command("git", batchMergeGitCommand(worktree, "-c", "core.useReplaceRefs=false", "-c", "core.hooksPath=/dev/null", "apply", "--index", "--3way", "--binary", "--whitespace=nowarn", "-")...)
 	command.Env, command.Stdin = gittree.ScrubbedEnviron(), bytes.NewReader(patch)
 	if output, err := command.CombinedOutput(); err != nil {
 		return fmt.Errorf("apply branch commit %s: %s: %w", commit, strings.TrimSpace(string(output)), err)
@@ -141,14 +141,51 @@ func applyBranchCommit(repo, worktree, commit string) error {
 }
 
 func treeTransitionDigest(repo, before, after string) (string, error) {
-	command := exec.Command("git", "-C", repo, "-c", "core.useReplaceRefs=false", "diff-tree", "-r", "-z", "--no-renames", "--full-index", before, after)
-	command.Env = gittree.ScrubbedEnviron("LC_ALL=C")
-	raw, err := command.Output()
+	raw, err := treeTransitionRaw(repo, before, after)
 	if err != nil {
 		return "", err
 	}
 	sum := sha256.Sum256(raw)
 	return hex.EncodeToString(sum[:]), nil
+}
+
+func treeTransitionRaw(repo, before, after string, pathspec ...string) ([]byte, error) {
+	args := []string{"-C", repo, "-c", "core.useReplaceRefs=false", "diff-tree", "-r", "-z", "--no-renames", "--full-index", before, after}
+	args = append(args, pathspec...)
+	command := exec.Command("git", args...)
+	command.Env = gittree.ScrubbedEnviron("LC_ALL=C")
+	return command.Output()
+}
+
+func transitionChangesTestingContract(repo, before, after string) (bool, error) {
+	raw, err := treeTransitionRaw(repo, before, after, "--", "metasystem/testing.json")
+	return len(raw) != 0, err
+}
+
+func transitionMatchesBuild(repo, before, after, commit, want string) (string, bool, error) {
+	got, err := treeTransitionDigest(repo, before, after)
+	if err != nil || got == want {
+		return got, got == want, err
+	}
+	originalDigest, err := treeTransitionDigest(repo, commit+"^", commit)
+	if err != nil || originalDigest != want {
+		return got, false, err
+	}
+	originalContract, err := transitionChangesTestingContract(repo, commit+"^", commit)
+	if err != nil {
+		return got, false, err
+	}
+	appliedContract, err := transitionChangesTestingContract(repo, before, after)
+	if err != nil || !originalContract || !appliedContract {
+		return got, false, err
+	}
+	withoutContract := []string{"--", ".", ":(exclude)metasystem/testing.json"}
+	original, err := treeTransitionRaw(repo, commit+"^", commit, withoutContract...)
+	if err != nil {
+		return got, false, err
+	}
+	applied, err := treeTransitionRaw(repo, before, after, withoutContract...)
+	return got, bytes.Equal(original, applied), err
 }
 
 // AssembleBranchMembers applies each member as a contiguous sequence and
@@ -182,11 +219,11 @@ func AssembleBranchMembers(root, base string, members []BranchMember) (prefixes 
 			if err != nil {
 				return nil, err
 			}
-			digest, err := treeTransitionDigest(root, before, after)
+			digest, matches, err := transitionMatchesBuild(root, before, after, build.Commit, build.Digest)
 			if err != nil {
 				return nil, err
 			}
-			if digest != build.Digest {
+			if !matches {
 				return nil, refuseBatch("BATCH_JOIN_REREAD", fmt.Sprintf("goal %s build %s applies as %s, not %s", member.GoalID, strings.Join(build.Units, "+"), digest, build.Digest))
 			}
 		}

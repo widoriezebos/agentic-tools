@@ -13,6 +13,7 @@ import (
 
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/gittree"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/lease"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/testpolicy/contractmerge"
 )
 
 type advanceFixture struct {
@@ -169,6 +170,57 @@ func TestAdvanceLeavesRegistersUntouched(t *testing.T) {
 	}
 	if !strings.Contains(output.String(), "advance: up to date with refs/remotes/origin/main") {
 		t.Fatalf("second advance output = %q", output.String())
+	}
+}
+
+func TestAdvanceRebaseMergesTestingContractBySurface(t *testing.T) {
+	root := t.TempDir()
+	runAdvanceGit(t, root, "init", "-q", "-b", "main")
+	configureAdvanceGit(t, root)
+	fixture := func(name string) []byte {
+		t.Helper()
+		data, err := os.ReadFile(filepath.Join("..", "testpolicy", "contractmerge", "testdata", "history-"+name+".json"))
+		if err != nil {
+			t.Fatal(err)
+		}
+		return data
+	}
+	writeAdvanceFile(t, root, ".gitattributes", "metasystem/testing.json merge=metasystem-testing\n")
+	writeAdvanceFile(t, root, ".gitignore", "artifacts/\n")
+	writeAdvanceFile(t, root, "metasystem/testing.json", string(fixture("base")))
+	runAdvanceGit(t, root, "add", ".")
+	runAdvanceGit(t, root, "commit", "-qm", "base")
+	base := runAdvanceGit(t, root, "rev-parse", "HEAD")
+	writeAdvanceFile(t, root, "metasystem/testing.json", string(fixture("ours")))
+	runAdvanceGit(t, root, "add", "metasystem/testing.json")
+	runAdvanceGit(t, root, "commit", "-qm", "landing testing contract")
+	landing := runAdvanceGit(t, root, "rev-parse", "HEAD")
+	runAdvanceGit(t, root, "switch", "--quiet", "-c", "upstream", base)
+	writeAdvanceFile(t, root, "metasystem/testing.json", string(fixture("theirs")))
+	runAdvanceGit(t, root, "add", "metasystem/testing.json")
+	runAdvanceGit(t, root, "commit", "-qm", "upstream testing contract")
+	runAdvanceGit(t, root, "switch", "--quiet", "main")
+
+	t.Setenv("METASYSTEM_CONTRACT_DRIVER_HELPER", "1")
+	if err := Advance(root, "upstream", &bytes.Buffer{}, &bytes.Buffer{}); err != nil {
+		t.Fatal(err)
+	}
+	if head := runAdvanceGit(t, root, "rev-parse", "HEAD"); head == landing {
+		t.Fatal("surface-aware rebase did not move the landing commit")
+	}
+	got, err := os.ReadFile(filepath.Join(root, "metasystem", "testing.json"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	want, err := contractmerge.MergeBytes(fixture("base"), fixture("theirs"), fixture("ours"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !bytes.Equal(got, want) {
+		t.Fatalf("rebased testing contract differs from semantic merge:\n%s", got)
+	}
+	if status := runAdvanceGit(t, root, "status", "--porcelain=v1"); status != "" {
+		t.Fatalf("surface-aware rebase left changes: %q", status)
 	}
 }
 

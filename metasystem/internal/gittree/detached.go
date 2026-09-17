@@ -200,9 +200,10 @@ type RebaseResult struct {
 
 // Rebase rebases this detached worktree and aborts before returning a
 // conflicted answer.
-func (d *DetachedWorktree) Rebase(upstream string) (RebaseResult, error) {
+func (d *DetachedWorktree) Rebase(upstream string, gitArgs ...string) (RebaseResult, error) {
 	workspace := Workspace{Dir: d.root}
-	stdout, stderr, code, err := workspace.gitProbe(d.top, nil, nil, "rebase", upstream)
+	args := append(append([]string{}, gitArgs...), "rebase", upstream)
+	stdout, stderr, code, err := workspace.gitProbe(d.top, nil, nil, args...)
 	if err != nil {
 		return RebaseResult{}, err
 	}

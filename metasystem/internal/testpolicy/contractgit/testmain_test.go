@@ -1,7 +1,6 @@
-package landing
+package contractgit
 
 import (
-	"fmt"
 	"os"
 	"testing"
 
@@ -17,12 +16,11 @@ func TestMain(m *testing.M) {
 		base, baseErr := os.ReadFile(os.Args[3])
 		ours, oursErr := os.ReadFile(os.Args[4])
 		theirs, theirsErr := os.ReadFile(os.Args[5])
-		merged, err := contractmerge.MergeBytes(base, ours, theirs)
-		if baseErr != nil || oursErr != nil || theirsErr != nil || err != nil {
-			fmt.Fprintln(os.Stderr, err)
+		if baseErr != nil || oursErr != nil || theirsErr != nil {
 			os.Exit(1)
 		}
-		if err := os.WriteFile(os.Args[4], merged, 0o644); err != nil {
+		merged, err := contractmerge.MergeBytes(base, ours, theirs)
+		if err != nil || os.WriteFile(os.Args[4], merged, 0o644) != nil {
 			os.Exit(1)
 		}
 		os.Exit(0)
