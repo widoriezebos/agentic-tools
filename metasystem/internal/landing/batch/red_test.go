@@ -54,31 +54,58 @@ func TestBatchOwnerSearch(t *testing.T) {
 	})
 	t.Run("W12b named units run alone serially in join order", func(t *testing.T) {
 		_, store := diagnosingBed(t)
-		groups := []RedGroup{{ID: "group", InputManifest: []string{"*.go"}}}
-		var trees []string
+		must(t, store.Update(testBatchID, func(record *Record) error {
+			record.Units = append(record.Units, Unit{GoalID: "goal-c", Chain: "chain-c", Claim: Claim{Machine: "seat", Lineage: "l", Epoch: 1, Revision: 9, AccountingRevision: 7}, State: UnitJoined, ChangedPaths: []string{"c.go"}})
+			return nil
+		}))
+		groups := []RedGroup{{ID: "group", InputManifest: []string{"a.go", "b.go"}}}
+		var requests []DiagnosticRequest
 		calls := 0
 		err := DiagnoseRed(store, testBatchID, "owner", groups, "", time.Unix(2, 0), RedSeams{Run: func(request DiagnosticRequest) (DiagnosticResult, error) {
-			trees = append(trees, request.Tree)
+			requests = append(requests, request)
 			calls++
-			if calls == 3 {
+			if calls == 4 {
 				return DiagnosticResult{AttemptID: "b", Groups: groups}, nil
 			}
 			return DiagnosticResult{AttemptID: "green"}, nil
 		}})
 		must(t, err)
 		record := load(t, store)
-		if len(trees) != 3 || record.Units[0].State != UnitJoined || record.Units[1].State != UnitReturnPending || record.State != StateOpen {
-			t.Fatalf("trees=%v record=%+v", trees, record)
+		gotGoals := []string{}
+		for _, request := range requests {
+			gotGoals = append(gotGoals, request.GoalID)
+		}
+		if !slices.Equal(gotGoals, []string{"goal-c", "goal-c", "goal-a", "goal-b"}) ||
+			requests[0].Claim.Revision != 9 || requests[2].Claim.Revision != 7 || requests[3].Claim.Revision != 8 ||
+			record.Units[0].State != UnitJoined || record.Units[1].State != UnitReturnPending || record.Units[2].State != UnitJoined || record.State != StateOpen {
+			t.Fatalf("requests=%+v record=%+v", requests, record)
 		}
 	})
-	t.Run("W12c prefix red names its constructed unit", func(t *testing.T) {
+	t.Run("W12c three named units eject C and name its landed partners", func(t *testing.T) {
 		_, store := diagnosingBed(t)
-		err := DiagnoseRed(store, testBatchID, "owner", failing, "goal-b", time.Unix(2, 0), RedSeams{Run: func(DiagnosticRequest) (DiagnosticResult, error) {
+		must(t, store.Update(testBatchID, func(record *Record) error {
+			record.Units = append(record.Units, Unit{GoalID: "goal-c", Chain: "chain-c", Claim: Claim{Machine: "seat", Lineage: "l", Epoch: 1, Revision: 9, AccountingRevision: 7}, State: UnitJoined, ChangedPaths: []string{"c.go"}})
+			return nil
+		}))
+		groups := []RedGroup{{ID: "group", InputManifest: []string{"*.go"}, LogPath: "logs/group.log", Failures: []Failure{{Name: "TestC"}}}}
+		calls := 0
+		err := DiagnoseRed(store, testBatchID, "owner", groups, "", time.Unix(2, 0), RedSeams{Run: func(DiagnosticRequest) (DiagnosticResult, error) {
+			calls++
+			if calls == 4 {
+				return DiagnosticResult{AttemptID: "attempt-c", Groups: groups}, nil
+			}
 			return DiagnosticResult{AttemptID: "base"}, nil
 		}})
 		must(t, err)
-		if record := load(t, store); record.Units[0].State != UnitJoined || record.Units[1].State != UnitReturnPending {
-			t.Fatalf("prefix classification=%+v", record.Units)
+		record := load(t, store)
+		failure := record.Units[2].Failure
+		for _, want := range []string{"attempt-c", "group", "logs/group.log", "TestC", "goal-a", "goal-b"} {
+			if !strings.Contains(failure, want) {
+				t.Fatalf("failure %q does not contain %q; record=%+v", failure, want, record)
+			}
+		}
+		if calls != 4 || record.Units[0].State != UnitJoined || record.Units[1].State != UnitJoined || record.Units[2].State != UnitReturnPending {
+			t.Fatalf("calls=%d record=%+v", calls, record)
 		}
 	})
 	for _, test := range []struct {

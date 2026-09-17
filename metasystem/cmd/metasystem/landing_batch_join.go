@@ -42,6 +42,7 @@ type batchJoinDependencies struct {
 	handover  func(batchJoinRequest, string, batch.Claim) error
 	ensure    func(string) error
 	author    func(string, *goal.GoalFile) (string, string, string, error)
+	prober    identity.Prober
 }
 
 var batchJoinDependenciesForCommand = productionBatchJoinDependencies
@@ -66,7 +67,7 @@ func productionBatchJoinDependencies() batchJoinDependencies {
 			return batch.RunJoinGate(tree, patch, fixtures, unit, execute)
 		},
 		plan: productionJoinPlan, publish: batch.PublishJoin,
-		handover: productionForwardHandover, ensure: ensureBatchOwner, author: productionBatchAuthor,
+		handover: productionForwardHandover, ensure: ensureBatchOwner, author: productionBatchAuthor, prober: identity.KernelProber{},
 	}
 }
 
@@ -106,13 +107,23 @@ func executeBatchJoin(request batchJoinRequest, dependencies batchJoinDependenci
 		return batch.Record{}, err
 	}
 	actor := binding.Machine + "+" + binding.Lineage
-	store := batch.NewStore(request.LandingRoot, identity.KernelProber{})
-	record, err := batch.FindOrCreateOpen(store, baseTree, id, actor, request.At)
+	store := batch.NewStore(request.LandingRoot, dependencies.prober)
+	if err := dependencies.transport(request.LandingRoot, chain); err != nil {
+		return batch.Record{}, err
+	}
+	record := batch.Record{BatchID: id, BaseTree: baseTree, TipTree: baseTree, State: batch.StateOpen}
+	records, err := store.Records()
 	if err != nil {
 		return batch.Record{}, err
 	}
-	if err := dependencies.transport(request.LandingRoot, chain); err != nil {
-		return batch.Record{}, err
+	foundOpen := false
+	for _, candidate := range records {
+		if candidate.State == batch.StateOpen && candidate.ClosedReason == "" {
+			if foundOpen {
+				return batch.Record{}, fmt.Errorf("more than one open landing batch exists")
+			}
+			record, foundOpen = candidate, true
+		}
 	}
 	unit := batch.Unit{GoalID: request.GoalID, Chain: request.ChainID, SeatRoot: request.SeatRoot, State: batch.UnitJoining,
 		Claim: batch.Claim{Machine: binding.Machine, Lineage: binding.Lineage, Epoch: uint64(binding.Capability.ClaimEpoch),
@@ -140,6 +151,16 @@ func executeBatchJoin(request batchJoinRequest, dependencies batchJoinDependenci
 	}
 	if err := dependencies.gate(request.LandingRoot, prefixes[0], chain.Patch, fixtureMap, &unit); err != nil {
 		return batch.Record{}, err
+	}
+	// The unit was prepared on the open batch's own base, which trunk may have
+	// passed since; only a batch that changed under the preparation refuses.
+	prepared := record
+	record, err = batch.FindOrCreateOpen(store, baseTree, id, actor, request.At)
+	if err != nil {
+		return batch.Record{}, err
+	}
+	if record.BaseTree != prepared.BaseTree {
+		return batch.Record{}, fmt.Errorf("BATCH_JOIN_BASE_MOVED: open batch base changed during preparation")
 	}
 	handover := func() error { return dependencies.handover(request, record.BatchID, unit.Claim) }
 	if err := dependencies.publish(store, record.BatchID, unit, actor, request.At, dependencies.plan, handover); err != nil {

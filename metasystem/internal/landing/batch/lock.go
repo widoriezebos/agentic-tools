@@ -15,6 +15,16 @@ import (
 
 const defaultTestRunLock, defaultTestRunQueue, batchOwnerSeat = "/tmp/metasystem-testrun-lock", "/tmp/metasystem-testrun-queue", "landing-batch-owner"
 
+// ProofLockOwner reports the owner record for the configured proof lock.
+// An empty directory selects the same package default used by newProofLock.
+func ProofLockOwner(lockDir string) string {
+	data, err := os.ReadFile(filepath.Join(cmp.Or(lockDir, defaultTestRunLock), "owner"))
+	if err != nil {
+		return "free"
+	}
+	return strings.TrimSpace(string(data))
+}
+
 type lockPoll uint8
 
 const lockAcquired, lockQueued, lockStaleRemoved lockPoll = 0, 1, 2

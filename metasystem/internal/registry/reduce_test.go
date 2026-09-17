@@ -24,6 +24,11 @@ func raw(event, tag string, extra map[string]any) map[string]any {
 	for key, value := range extra {
 		record[key] = value
 	}
+	if event == EventRelaunched {
+		if _, present := record["landingOwnerTag"]; !present {
+			record["landingOwnerTag"] = "landing-" + tag
+		}
+	}
 	return record
 }
 

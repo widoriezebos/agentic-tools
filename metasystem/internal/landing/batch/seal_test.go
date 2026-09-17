@@ -31,19 +31,21 @@ func goalBed(id string) []byte {
 func assemblyFixture(t *testing.T) assemblyBed {
 	root := t.TempDir()
 	must(t, os.MkdirAll(root+"/plans/goals", 0o755))
-	for _, id := range []string{"goal-a", "goal-b"} {
+	for _, id := range []string{"goal-a", "goal-b", "goal-c"} {
 		must(t, os.WriteFile(root+"/plans/goals/"+id+".md", goalBed(id), 0o644))
 	}
-	script := `set -eu; cd "$1"; git init -q -b main; git config user.name Test; git config user.email test@example.com; printf 'package p\nvar A = 0\n' >a.go; printf 'package p\nvar B = 0\n' >b.go; printf 'base\n' >trunk; git add .; git commit -qm base
-base=$(git rev-parse HEAD); mkdir -p artifacts/agents/landing-batches/chains/{chain-a,chain-b,conflict}; printf 'package p\nvar A = 1\n' >a.go; git diff --binary HEAD >artifacts/agents/landing-batches/chains/chain-a/diff.patch; git add a.go; git commit -qm chain-a; printf 'package p\nvar B = 1\n' >b.go; git diff --binary HEAD >artifacts/agents/landing-batches/chains/chain-b/diff.patch; git add b.go; git commit -qm chain-b
+	script := `set -eu; cd "$1"; git init -q -b main; git config user.name Test; git config user.email test@example.com; printf 'package p\nvar A = 0\n' >a.go; printf 'package p\nvar B = 0\n' >b.go; printf 'package p\nvar C = 0\n' >c.go; printf 'base\n' >trunk; git add .; git commit -qm base
+base=$(git rev-parse HEAD); mkdir -p artifacts/agents/landing-batches/chains/{chain-a,chain-b,chain-c,conflict}; printf 'package p\nvar A = 1\n' >a.go; git diff --binary HEAD >artifacts/agents/landing-batches/chains/chain-a/diff.patch; git add a.go; git commit -qm chain-a; printf 'package p\nvar B = 1\n' >b.go; git diff --binary HEAD >artifacts/agents/landing-batches/chains/chain-b/diff.patch; git add b.go; git commit -qm chain-b; printf 'package p\nvar C = 1\n' >c.go; git diff --binary HEAD >artifacts/agents/landing-batches/chains/chain-c/diff.patch; git add c.go; git commit -qm chain-c
 git reset -q --hard "$base"; printf 'package p\nvar A = 2\n' >a.go; printf 'package p\nvar B = 2\n' >b.go; git diff --binary HEAD >artifacts/agents/landing-batches/chains/conflict/diff.patch; git reset -q --hard "$base"; printf 'moved\n' >trunk; git add trunk; git commit -qm moved`
 	command := exec.Command("bash", "-c", script, "ba4-fixture", root)
 	command.Env = gittree.ScrubbedEnviron()
 	must(t, command.Run())
 	base := bedGit(t, root, "rev-parse", "HEAD~1^{tree}")
 	moved := bedGit(t, root, "rev-parse", "HEAD^{tree}")
-	claim := Claim{Machine: "seat", Lineage: "l", Epoch: 1, Revision: 9, AccountingRevision: 9}
-	units := []Unit{{GoalID: "goal-a", Chain: "chain-a", Claim: claim, State: UnitJoined}, {GoalID: "goal-b", Chain: "chain-b", Claim: claim, State: UnitJoined}}
+	units := []Unit{
+		{GoalID: "goal-a", Chain: "chain-a", Claim: Claim{Machine: "seat", Lineage: "l", Epoch: 1, Revision: 7, AccountingRevision: 5}, State: UnitJoined},
+		{GoalID: "goal-b", Chain: "chain-b", Claim: Claim{Machine: "seat", Lineage: "l", Epoch: 1, Revision: 8, AccountingRevision: 6}, State: UnitJoined},
+	}
 	return assemblyBed{root: root, base: base, moved: moved, record: Record{Schema: 1, BatchID: testBatchID, TipTree: base, State: StateOpen, Units: units, batchRecordFields: batchRecordFields{BaseTree: base}}}
 }
 func sealedFixture(t *testing.T) (assemblyBed, Record, []string, int, func(string, string, string) (testpolicy.Plan, error)) {

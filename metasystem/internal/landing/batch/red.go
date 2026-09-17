@@ -14,6 +14,7 @@ import (
 type DiagnosticRequest struct {
 	Tree, GoalID string
 	Groups       []string
+	Claim        Claim
 	NeverReuse   bool
 }
 
@@ -53,19 +54,19 @@ func DiagnoseRed(store Store, id, actor string, failing []RedGroup, prefixGoal s
 	if len(joined) == 0 || seams.Run == nil {
 		return fmt.Errorf("batch %s has no diagnostic runner or joined units", id)
 	}
-	authority := joined[len(joined)-1].GoalID
+	authority := joined[len(joined)-1]
 	groupIDs := make([]string, 0, len(failing))
 	for _, group := range failing {
 		groupIDs = append(groupIDs, group.ID)
 	}
-	run := func(tree string) (DiagnosticResult, bool, error) {
-		result, runErr := seams.Run(DiagnosticRequest{Tree: tree, GoalID: authority, Groups: slices.Clone(groupIDs), NeverReuse: true})
+	run := func(tree string, unit Unit) (DiagnosticResult, bool, error) {
+		result, runErr := seams.Run(DiagnosticRequest{Tree: tree, GoalID: unit.GoalID, Groups: slices.Clone(groupIDs), Claim: unit.Claim, NeverReuse: true})
 		if runErr != nil {
 			var refusal *DiagnosticRefusal
 			if errors.As(runErr, &refusal) {
 				next := "diagnostic refusal: " + refusal.Status
 				if seams.UpdateNext != nil {
-					if editErr := seams.UpdateNext(authority, next); editErr != nil {
+					if editErr := seams.UpdateNext(authority.GoalID, next); editErr != nil {
 						return DiagnosticResult{}, false, errors.Join(runErr, editErr)
 					}
 				}
@@ -74,7 +75,7 @@ func DiagnoseRed(store Store, id, actor string, failing []RedGroup, prefixGoal s
 		}
 		return result, false, runErr
 	}
-	base, held, err := run(record.BaseTree)
+	base, held, err := run(record.BaseTree, authority)
 	if err != nil {
 		return err
 	}
@@ -93,7 +94,7 @@ func DiagnoseRed(store Store, id, actor string, failing []RedGroup, prefixGoal s
 	}
 	if len(named) == 1 {
 		for goalID := range named {
-			if err := RequestReturn(store, id, goalID, UnitEjected, diagnosticFailure(base, failing), actor, at); err != nil {
+			if err := RequestReturn(store, id, goalID, UnitEjected, diagnosticFailure(base, failing, nil), actor, at); err != nil {
 				return err
 			}
 		}
@@ -106,7 +107,7 @@ func DiagnoseRed(store Store, id, actor string, failing []RedGroup, prefixGoal s
 		if assembleErr != nil {
 			return assembleErr
 		}
-		result, held, runErr := run(trees[len(trees)-1])
+		result, held, runErr := run(trees[len(trees)-1], unnamed[len(unnamed)-1])
 		if held {
 			return nil
 		}
@@ -126,7 +127,7 @@ func DiagnoseRed(store Store, id, actor string, failing []RedGroup, prefixGoal s
 		if assembleErr != nil {
 			return assembleErr
 		}
-		result, held, runErr := run(trees[len(trees)-1])
+		result, held, runErr := run(trees[len(trees)-1], unit)
 		if runErr != nil {
 			return runErr
 		}
@@ -137,7 +138,7 @@ func DiagnoseRed(store Store, id, actor string, failing []RedGroup, prefixGoal s
 			survivors = candidate
 			continue
 		}
-		if err := RequestReturn(store, id, unit.GoalID, UnitEjected, diagnosticFailure(result, failing), actor, at); err != nil {
+		if err := RequestReturn(store, id, unit.GoalID, UnitEjected, diagnosticFailure(result, failing, survivors), actor, at); err != nil {
 			return err
 		}
 	}
@@ -176,16 +177,29 @@ func diagnosticPathMatches(pattern, changed string) bool {
 	return matched
 }
 
-func diagnosticFailure(result DiagnosticResult, fallback []RedGroup) string {
+func diagnosticFailure(result DiagnosticResult, fallback []RedGroup, landedPartners []Unit) string {
 	groups := result.Groups
 	if len(groups) == 0 {
 		groups = fallback
 	}
-	ids := make([]string, 0, len(groups))
+	ids, logs, failures := make([]string, 0, len(groups)), []string{}, []string{}
 	for _, group := range groups {
 		ids = append(ids, group.ID)
+		if group.LogPath != "" {
+			logs = append(logs, group.LogPath)
+		}
+		for _, failure := range group.Failures {
+			if failure.Name != "" {
+				failures = append(failures, failure.Name)
+			}
+		}
 	}
-	return fmt.Sprintf("attempt=%s groups=%s", result.AttemptID, strings.Join(ids, ","))
+	partners := make([]string, 0, len(landedPartners))
+	for _, unit := range landedPartners {
+		partners = append(partners, unit.GoalID)
+	}
+	return fmt.Sprintf("attempt=%s groups=%s logs=%s failures=%s landed-partners=%s", result.AttemptID,
+		strings.Join(ids, ","), strings.Join(logs, ","), strings.Join(failures, ","), strings.Join(partners, ","))
 }
 
 func holdAndRecordTrunkRed(store Store, record Record, actor string, result DiagnosticResult, seams RedSeams, at time.Time) error {

@@ -148,6 +148,11 @@ type testingSelectionRequest struct {
 	LandedRearm bool
 }
 
+func admitTestingRun(request testingSelectionRequest, admission proofLaunchAdmission) (proofrun.Attempt, proofrun.LaunchResult, bool, error) {
+	admission.ExecuteAfresh = request.Purpose == testpolicy.PurposeCadence || request.NoReuse
+	return admitProofLaunch(admission)
+}
+
 func parseTestingSelection(name string, args []string, execution bool) (testingSelectionRequest, bool, int) {
 	flags := flag.NewFlagSet(name, flag.ContinueOnError)
 	request := testingSelectionRequest{}
@@ -836,9 +841,8 @@ func runTestRun(args []string) int {
 		SharedEngine: engine, SharedManifestDigest: manifestDigest, ComponentIdentities: identities,
 		// A cadence attempt is the fresh sweep: it never inherits a
 		// reusable-success answer from an earlier run of its goal.
-		ExecuteAfresh:             request.Purpose == testpolicy.PurposeCadence || request.NoReuse,
 		RequireDiagnosticHeadroom: request.RequireDiagnosticHeadroom}
-	attempt, decision, joined, err := admitProofLaunch(admission)
+	attempt, decision, joined, err := admitTestingRun(request, admission)
 	if err != nil {
 		fmt.Fprintln(os.Stderr, "metasystem test run:", err)
 		return proofrun.ExitAdmissionRefused

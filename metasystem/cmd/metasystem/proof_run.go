@@ -545,7 +545,7 @@ func admitProofLaunch(request proofLaunchAdmission) (proofrun.Attempt, proofrun.
 		GoalRevision: binding.Revision, AccountingRevision: accountingRevision, BudgetEpoch: projection.WeightEpoch,
 		ReservedMinutes: uint64(capValue), Identity: proofIdentity, Launcher: launcher, ReservationOwner: reservationOwner,
 		RetryDecisionPath: request.RetryDecision, Now: now,
-		ComponentIdentities: request.ComponentIdentities,
+		ComponentIdentities: request.ComponentIdentities, ExecuteAfresh: request.ExecuteAfresh,
 	}
 	decision, noChild, err := proofrun.NoChildDecisionLocked(reservation)
 	if err != nil {

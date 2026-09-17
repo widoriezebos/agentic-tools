@@ -33,11 +33,14 @@ func TestParseRecordRejections(t *testing.T) {
 		{"relaunched without tags", raw2(map[string]any{
 			"event": EventRelaunched, "generation": 1.0, "retiredThrough": 0.0,
 		}), "component tags"},
+		{"relaunched without landing owner", raw2(map[string]any{
+			"event": EventRelaunched, "generation": 1.0, "watcherTag": "w", "reaperTag": "r", "retiredThrough": 0.0,
+		}), "component tags"},
 		{"relaunched generation zero", raw2(map[string]any{
-			"event": EventRelaunched, "generation": 0.0, "watcherTag": "w", "reaperTag": "r", "retiredThrough": 0.0,
+			"event": EventRelaunched, "generation": 0.0, "watcherTag": "w", "reaperTag": "r", "landingOwnerTag": "l", "retiredThrough": 0.0,
 		}), "generation"},
 		{"relaunched negative watermark", raw2(map[string]any{
-			"event": EventRelaunched, "generation": 1.0, "watcherTag": "w", "reaperTag": "r", "retiredThrough": -1.0,
+			"event": EventRelaunched, "generation": 1.0, "watcherTag": "w", "reaperTag": "r", "landingOwnerTag": "l", "retiredThrough": -1.0,
 		}), "retiredThrough"},
 		{"launched bad component", raw2(map[string]any{
 			"event": EventLaunched, "generation": 1.0, "component": "janitor", "pid": 4.0, "pidStartedAt": 5.0,

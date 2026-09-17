@@ -8,13 +8,11 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"io"
 	"os"
 	"os/exec"
 	"path/filepath"
 	"slices"
 	"strings"
-	"sync"
 	"syscall"
 	"testing"
 	"time"
@@ -137,8 +135,8 @@ func TestBatchOwnerHoldsTheLease(t *testing.T) {
 		if mode != "hold-dead" {
 			defer held.retire()
 		}
-		holder, err := lease.CurrentHolder(root)
-		if err != nil || holder.OwnerLineage != landingOwnerLineage || holder.ClaimEpoch < 1 {
+		holder, err := lease.RequireHolder(root, int64(os.Getpid()), nil)
+		if err != nil || !holder.Holder || holder.ClaimEpoch == nil || *holder.ClaimEpoch < 1 {
 			fmt.Printf("holder=%+v err=%v\n", holder, err)
 			os.Exit(24)
 		}
@@ -180,62 +178,48 @@ func TestBatchOwnerHoldsTheLease(t *testing.T) {
 
 func TestBatchOwnerWiringBound(t *testing.T) {
 	if os.Getenv("GO_WANT_BATCH_OWNER_SIGNAL_HELPER") != "" {
-		signalWake, _, cleanup := batchOwnerSignals()
-		defer cleanup()
 		root := os.Getenv("BATCH_OWNER_TEST_ROOT")
-		settings, err := config.NewBatchLanding(root, time.Minute, time.Now)
-		if err != nil {
-			fmt.Println(err)
-			os.Exit(24)
+		batchOwnerAcquire = func(string) (batchOwnerLease, error) {
+			return batchOwnerLease{root: root, pid: int64(os.Getpid()), epoch: 1}, nil
 		}
-		stop, loopWake := make(chan struct{}), make(chan struct{}, 1)
-		var stopOnce sync.Once
-		// The loop's timer never fires (After below), so only SIGUSR1 can bring a second Resume.
-		// Closing stdin is the parent's give-up, and it stops the loop.
-		go func() {
-			_, _ = io.Copy(io.Discard, os.Stdin)
-			stopOnce.Do(func() { close(stop) })
-		}()
-		calls := 0
-		owner, err := batch.NewOwner(batch.OwnerOptions{
-			Store: batch.NewStore(root, nil), Settings: settings, Actor: "fixture", PID: int64(os.Getpid()), Now: time.Now,
-			FetchTree: func() (string, error) { return "tree", nil },
-			ReadClaim: func(string, string, string, string) (batch.Claim, error) { return batch.Claim{}, nil },
-			Rebind:    func(string, string) error { return nil }, Mint: func() (string, error) { return "opid", nil },
-			LogRed: func(string, batch.TrunkRedRecordOutcome) {}, BaseCommit: func(string) (string, error) { return "commit", nil },
-			RunDiagnostic: func(string, batch.DiagnosticRequest, batch.Claim) (batch.DiagnosticResult, error) {
-				return batch.DiagnosticResult{}, nil
-			},
-			DescendsFrom: func(string, string) (bool, error) { return false, nil }, Sample: func() proofrun.LoadSample { return proofrun.LoadSample{} },
-			Admission: func(proofrun.LoadSample) proofrun.AdmissionCap { return proofrun.AdmissionCap{} },
-			Launch:    func(string, proofrun.LoadSample, string) error { return nil },
-			After:     func(time.Duration) <-chan time.Time { return make(chan time.Time) },
-			Report:    func(string, error) {}, Glob: func(string) ([]string, error) {
-				calls++
-				if calls == 1 {
-					fmt.Println("READY")
-				} else {
-					fmt.Println("TICK")
-					stopOnce.Do(func() { close(stop) })
-				}
-				return nil, nil
-			},
-		})
-		if err != nil {
-			fmt.Println(err)
-			os.Exit(25)
+		batchOwnerConstruct = func(settings config.BatchLanding, held batchOwnerLease, now func() time.Time) (*batch.Owner, error) {
+			calls := 0
+			return batch.NewOwner(batch.OwnerOptions{
+				Store: batch.NewStore(root, nil), Settings: settings, Actor: "fixture", PID: held.pid, Now: now,
+				FetchTree: func() (string, error) { return "tree", nil },
+				ReadClaim: func(string, string, string, string) (batch.Claim, error) { return batch.Claim{}, nil },
+				Rebind:    func(string, string) error { return nil }, Mint: func() (string, error) { return "opid", nil },
+				LogRed: func(string, batch.TrunkRedRecordOutcome) {}, BaseCommit: func(string) (string, error) { return "commit", nil },
+				RunDiagnostic: func(string, batch.DiagnosticRequest, batch.Claim) (batch.DiagnosticResult, error) {
+					return batch.DiagnosticResult{}, nil
+				},
+				DescendsFrom: func(string, string) (bool, error) { return false, nil }, Sample: func() proofrun.LoadSample { return proofrun.LoadSample{} },
+				Admission: func(proofrun.LoadSample) proofrun.AdmissionCap { return proofrun.AdmissionCap{} },
+				Launch:    func(string, proofrun.LoadSample, string) error { return nil },
+				After:     func(time.Duration) <-chan time.Time { return make(chan time.Time) },
+				Report:    func(string, error) {}, Glob: func(string) ([]string, error) {
+					calls++
+					if calls == 1 {
+						fmt.Println("READY")
+					} else {
+						fmt.Println("TICK")
+					}
+					return nil, nil
+				},
+			})
 		}
-		go func() { <-signalWake; loopWake <- struct{}{} }()
-		owner.Loop(time.Minute, loopWake, stop)
-		return
+		seat := os.Getenv("BATCH_OWNER_TEST_SEAT")
+		os.Exit(runBatchOwner([]string{"--root", seat, "--landing-root", root, "--max-wait", "1m", "--interval", "1m"}))
 	}
-	root := t.TempDir()
+	root, seat := t.TempDir(), t.TempDir()
+	for _, repo := range []string{root, seat} {
+		if err := exec.Command("git", "init", "-q", repo).Run(); err != nil {
+			t.Fatal(err)
+		}
+	}
 	command := exec.Command(os.Args[0], "-test.run=^TestBatchOwnerWiringBound$")
-	command.Env = append(os.Environ(), "GO_WANT_BATCH_OWNER_SIGNAL_HELPER=1", "BATCH_OWNER_TEST_ROOT="+root)
-	stdin, err := command.StdinPipe()
-	if err != nil {
-		t.Fatal(err)
-	}
+	command.Env = append(os.Environ(), "GO_WANT_BATCH_OWNER_SIGNAL_HELPER=1", "BATCH_OWNER_TEST_ROOT="+root,
+		"BATCH_OWNER_TEST_SEAT="+seat, "METASYSTEM_GOAL_NOW=2026-09-17T10:00:00Z")
 	stdout, err := command.StdoutPipe()
 	if err != nil {
 		t.Fatal(err)
@@ -269,13 +253,14 @@ func TestBatchOwnerWiringBound(t *testing.T) {
 			}
 			observed = line
 		case <-bound.C:
-			_ = stdin.Close()
 			_ = command.Process.Kill()
 			_ = command.Wait()
 			t.Fatalf("SIGUSR1 did not reach the owner loop within %s", wiringBound)
 		}
 	}
-	_ = stdin.Close()
+	if err := syscall.Kill(command.Process.Pid, syscall.SIGTERM); err != nil {
+		t.Fatal(err)
+	}
 	if err := command.Wait(); err != nil {
 		t.Fatal(err)
 	}
@@ -368,6 +353,152 @@ func TestBatchProofCoversTheUnion(t *testing.T) {
 		!slices.Equal(finished.Proof.Executions, []string{"common"}) || finished.Proof.Reuse["member-only-crosscut"] != "attempt-member" {
 		t.Fatalf("events=%v proof=%+v state=%s", events, finished.Proof, finished.State)
 	}
+}
+
+func batchProofRefusalBed(t *testing.T) (string, string, batch.Store, batch.Record) {
+	t.Helper()
+	root := t.TempDir()
+	for _, args := range [][]string{{"init", "-q", "-b", "main", root}, {"-C", root, "config", "user.name", "Fixture"}, {"-C", root, "config", "user.email", "fixture@example.com"}} {
+		if output, err := exec.Command("git", args...).CombinedOutput(); err != nil {
+			t.Fatalf("git %v: %v %s", args, err, output)
+		}
+	}
+	if err := os.WriteFile(filepath.Join(root, "a.txt"), []byte("base-a\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(root, "b.txt"), []byte("base-b\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	for _, args := range [][]string{{"-C", root, "add", "."}, {"-C", root, "commit", "-qm", "base"}} {
+		if output, err := exec.Command("git", args...).CombinedOutput(); err != nil {
+			t.Fatalf("git %v: %v %s", args, err, output)
+		}
+	}
+	base := strings.TrimSpace(string(mustOutput(t, exec.Command("git", "-C", root, "rev-parse", "HEAD^{tree}"))))
+	for _, item := range []struct{ chain, file, body string }{{"chain-a", "a.txt", "unit-a\n"}, {"chain-b", "b.txt", "unit-b\n"}} {
+		if err := os.WriteFile(filepath.Join(root, item.file), []byte(item.body), 0o644); err != nil {
+			t.Fatal(err)
+		}
+		patch := mustOutput(t, exec.Command("git", "-C", root, "diff", "--binary", "HEAD", "--", item.file))
+		dir := filepath.Join(root, "artifacts", "agents", "landing-batches", "chains", item.chain)
+		if err := os.MkdirAll(dir, 0o755); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(filepath.Join(dir, "diff.patch"), patch, 0o644); err != nil {
+			t.Fatal(err)
+		}
+		if output, err := exec.Command("git", "-C", root, "checkout", "--", item.file).CombinedOutput(); err != nil {
+			t.Fatalf("restore %s: %v %s", item.file, err, output)
+		}
+	}
+	claimA := batch.Claim{Machine: "seat", Lineage: "a", Epoch: 1, Revision: 7, AccountingRevision: 5}
+	claimB := batch.Claim{Machine: "seat", Lineage: "b", Epoch: 1, Revision: 8, AccountingRevision: 6}
+	record := batch.Record{Schema: 1, BatchID: "01j5x00000000000000000ba12", State: batch.StateSealed, BaseTree: base,
+		SelectedGroups: []string{"required"}, Seal: map[string]batch.Claim{"goal-a": claimA, "goal-b": claimB}, Units: []batch.Unit{
+			{GoalID: "goal-a", Chain: "chain-a", Claim: claimA, State: batch.UnitJoined},
+			{GoalID: "goal-b", Chain: "chain-b", Claim: claimB, State: batch.UnitJoined},
+		}}
+	prefixes, err := batch.AssembleUnits(root, base, record.Units)
+	if err != nil {
+		t.Fatal(err)
+	}
+	record.PrefixTrees, record.TipTree = prefixes, prefixes[len(prefixes)-1]
+	store := batch.NewStore(root, nil)
+	if err := store.Create(record); err != nil {
+		t.Fatal(err)
+	}
+	return root, record.BatchID, store, record
+}
+
+func TestBatchProofRefusalTransitions(t *testing.T) {
+	plan := func(groups ...string) func(string, string, string, testpolicy.Mode) (testpolicy.Plan, error) {
+		return func(string, string, string, testpolicy.Mode) (testpolicy.Plan, error) {
+			return testpolicy.Plan{RequiredMode: testpolicy.ModeStandard, ExecutedMode: testpolicy.ModeStandard, SelectedGroups: groups}, nil
+		}
+	}
+	reseal := func(store batch.Store, claims map[string]batch.Claim) func(string, string, string, string, time.Time) error {
+		return func(_, id, actor, _ string, at time.Time) error {
+			return store.Update(id, func(record *batch.Record) error {
+				record.Seal = claims
+				record.SelectedGroups = []string{"required"}
+				record.Transition(batch.StateSealed, at, "seal", actor, "")
+				return nil
+			})
+		}
+	}
+	t.Run("union uncovered is durable and never launches", func(t *testing.T) {
+		root, id, store, _ := batchProofRefusalBed(t)
+		launches := 0
+		err := executeBatchProof(root, id, "owner", "full", proofrun.LoadSample{}, time.Unix(10, 0), batchProofDependencies{
+			rearm: func(string, string) error { return nil }, plan: plan("other"), launch: func(batchProofLaunch) (proofrun.TestResult, error) {
+				launches++
+				return proofrun.TestResult{}, nil
+			},
+		})
+		record, loadErr := store.Load(id)
+		refusals := 0
+		for _, event := range record.History {
+			if event.Verb == "prove-refused" {
+				refusals++
+			}
+		}
+		if err == nil || !strings.Contains(err.Error(), "BATCH_PROOF_UNION_UNCOVERED") || loadErr != nil || launches != 0 ||
+			record.Proof == nil || record.Proof.Status != "union-uncovered" || refusals != 1 {
+			t.Fatalf("error=%v load=%v launches=%d refusals=%d record=%+v", err, loadErr, launches, refusals, record)
+		}
+	})
+	t.Run("capacity refusal returns to sealed without diagnosis", func(t *testing.T) {
+		root, id, store, _ := batchProofRefusalBed(t)
+		err := executeBatchProof(root, id, "owner", "full", proofrun.LoadSample{}, time.Unix(10, 0), batchProofDependencies{
+			rearm: func(string, string) error { return nil }, plan: plan("required"), launch: func(batchProofLaunch) (proofrun.TestResult, error) {
+				return proofrun.TestResult{}, &batchProofAdmissionRefusal{kind: "capacity", reason: "ADMISSION_REFUSED capacity"}
+			},
+		})
+		record, loadErr := store.Load(id)
+		if err != nil || loadErr != nil || record.State != batch.StateSealed || record.Proof == nil || record.Proof.Status != "admission-refused" {
+			t.Fatalf("error=%v load=%v record=%+v", err, loadErr, record)
+		}
+	})
+	t.Run("revision refusal returns head and excludes its patch", func(t *testing.T) {
+		root, id, store, original := batchProofRefusalBed(t)
+		err := executeBatchProof(root, id, "owner", "full", proofrun.LoadSample{}, time.Unix(10, 0), batchProofDependencies{
+			rearm: func(string, string) error { return nil }, plan: plan("required"), launch: func(batchProofLaunch) (proofrun.TestResult, error) {
+				return proofrun.TestResult{}, &batchProofAdmissionRefusal{kind: "revision", reason: "GOAL_REVISION_MOVED"}
+			},
+		})
+		record, loadErr := store.Load(id)
+		bAtTip, showErr := exec.Command("git", "-C", root, "show", record.TipTree+":b.txt").Output()
+		if err != nil || loadErr != nil || showErr != nil || record.Units[1].State != batch.UnitReturnPending || record.State != batch.StateOpen ||
+			record.TipTree == original.TipTree || strings.TrimSpace(string(bAtTip)) != "base-b" {
+			t.Fatalf("error=%v load=%v show=%v b=%q record=%+v", err, loadErr, showErr, bAtTip, record)
+		}
+	})
+	t.Run("budget refusal withdraws head and next launch uses survivor tip", func(t *testing.T) {
+		root, id, store, original := batchProofRefusalBed(t)
+		var launches []batchProofLaunch
+		deps := batchProofDependencies{rearm: func(string, string) error { return nil }, plan: plan("required"), launch: func(request batchProofLaunch) (proofrun.TestResult, error) {
+			launches = append(launches, request)
+			if len(launches) == 1 {
+				return proofrun.TestResult{}, &batchProofAdmissionRefusal{kind: "budget", reason: "BATCH_MEMBER_BUDGET_REFUSED"}
+			}
+			return proofrun.TestResult{AttemptID: "survivor", Delivery: proofrun.DeliveryJudgment{Sufficient: true}}, nil
+		}}
+		if err := executeBatchProof(root, id, "owner", "full", proofrun.LoadSample{}, time.Unix(10, 0), deps); err != nil {
+			t.Fatal(err)
+		}
+		withdrawn, err := store.Load(id)
+		if err != nil || withdrawn.Units[1].State != batch.UnitReturnPending || withdrawn.Units[1].Outcome != batch.UnitWithdrawnBudget ||
+			withdrawn.TipTree == original.TipTree || len(launches) != 1 {
+			t.Fatalf("withdrawn=%+v launches=%+v err=%v", withdrawn, launches, err)
+		}
+		deps.seal = reseal(store, map[string]batch.Claim{"goal-a": withdrawn.Units[0].Claim})
+		if err := executeBatchProof(root, id, "owner", "full", proofrun.LoadSample{}, time.Unix(11, 0), deps); err != nil {
+			t.Fatal(err)
+		}
+		if len(launches) != 2 || launches[1].GoalID != "goal-a" || launches[1].Tree != withdrawn.TipTree || launches[1].Tree == original.TipTree {
+			t.Fatalf("launches=%+v withdrawn=%+v", launches, withdrawn)
+		}
+	})
 }
 
 func TestBatchProofAcceptsReusableSuccess(t *testing.T) {
@@ -697,6 +828,26 @@ func TestBatchProductionReturnAndForwardHandoverArguments(t *testing.T) {
 }
 
 func TestLandingBatchJoinVerbPublishesOutsideFlock(t *testing.T) {
+	t.Run("failed preparation does not create an empty batch", func(t *testing.T) {
+		landing := t.TempDir()
+		dependencies := batchJoinDependencies{
+			binding: func(string, string, time.Time) (dispatchcore.GoalBinding, error) {
+				return dispatchcore.GoalBinding{Revision: 2, Machine: "seat", Lineage: "lineage", File: &goal.GoalFile{Claimed: &goal.ClaimRecord{AccountingRevision: 1}}, Capability: goal.StopCapability{ClaimEpoch: 1}}, nil
+			},
+			chain: func(string, string, string, uint64) (batch.CertifiedChain, error) {
+				return batch.CertifiedChain{ID: "chain", Patch: []byte("patch")}, nil
+			},
+			base: func(string) (string, error) { return "base", nil }, mint: func() (string, error) { return "01j5x00000000000000000ba98", nil },
+			transport: func(string, batch.CertifiedChain) error { return errors.New("transport refused") },
+		}
+		if _, err := executeBatchJoin(batchJoinRequest{SeatRoot: t.TempDir(), LandingRoot: landing, GoalID: "goal", ChainID: "chain", At: time.Unix(1, 0)}, dependencies); err == nil {
+			t.Fatal("failed transport unexpectedly joined")
+		}
+		records, err := batch.NewStore(landing, nil).Records()
+		if err != nil || len(records) != 0 {
+			t.Fatalf("failed preparation left records=%+v err=%v", records, err)
+		}
+	})
 	originalDependencies, originalClock := batchJoinDependenciesForCommand, batchJoinClock
 	t.Cleanup(func() { batchJoinDependenciesForCommand, batchJoinClock = originalDependencies, originalClock })
 	now := time.Unix(30, 0).UTC()
@@ -747,6 +898,8 @@ func TestLandingBatchJoinVerbPublishesOutsideFlock(t *testing.T) {
 	}
 	events := []string{}
 	dependencies := productionBatchJoinDependencies()
+	fakeRef := identity.Ref{Pid: 99123, StartedAtSec: 55}
+	dependencies.prober = processRefProber{exact: identity.Exact{Pid: fakeRef.Pid, StartedAt: time.Unix(fakeRef.StartedAtSec, 0)}, state: identity.Alive}
 	dependencies.binding = func(string, string, time.Time) (dispatchcore.GoalBinding, error) {
 		file := &goal.GoalFile{Claimed: &goal.ClaimRecord{AccountingRevision: 4}}
 		return dispatchcore.GoalBinding{Revision: 5, Machine: "seat-machine", Lineage: "seat-lineage", File: file,
@@ -755,7 +908,9 @@ func TestLandingBatchJoinVerbPublishesOutsideFlock(t *testing.T) {
 	dependencies.chain = func(string, string, string, uint64) (batch.CertifiedChain, error) {
 		return batch.CertifiedChain{ID: "chain-a", Patch: patch}, nil
 	}
-	dependencies.base = func(string) (string, error) { return base, nil }
+	// Trunk moved after the open batch took its base: the join still joins that batch.
+	const movedTrunkTree = "4b825dc642cb6eb9a060e54bf8d69288fbee4904"
+	dependencies.base = func(string) (string, error) { return movedTrunkTree, nil }
 	dependencies.mint = func() (string, error) { return "01j5x00000000000000000ba99", nil }
 	dependencies.author = func(string, *goal.GoalFile) (string, string, string, error) {
 		return "Fixture", "Fixture", "fixture@example.com", nil
@@ -775,6 +930,14 @@ func TestLandingBatchJoinVerbPublishesOutsideFlock(t *testing.T) {
 	dependencies.fixtures = func(string) ([]byte, error) { return nil, nil }
 	dependencies.plan = func(string, string, string) (testpolicy.Plan, error) {
 		return testpolicy.Plan{RequiredMode: testpolicy.ModeStandard, ExecutedMode: testpolicy.ModeStandard}, nil
+	}
+	publish := dependencies.publish
+	dependencies.publish = func(store batch.Store, id string, unit batch.Unit, actor string, at time.Time,
+		plan func(string, string, string) (testpolicy.Plan, error), handover func() error) error {
+		if got := store.Liveness(fakeRef); got != identity.Alive {
+			t.Fatalf("join store ignored injected prober: %s", got)
+		}
+		return publish(store, id, unit, actor, at, plan, handover)
 	}
 	dependencies.handover = func(request batchJoinRequest, gotBatch string, source batch.Claim) error {
 		events = append(events, "forward-handover")
@@ -809,7 +972,7 @@ func TestLandingBatchJoinVerbPublishesOutsideFlock(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(record.Units) != 1 || record.Units[0].SeatRoot != seat || record.Units[0].State != batch.UnitJoined ||
+	if len(record.Units) != 1 || record.Units[0].SeatRoot != seat || record.Units[0].State != batch.UnitJoined || record.BaseTree != base ||
 		strings.Join(events, ",") != "transport,gate,forward-handover,ensure-owner" {
 		t.Fatalf("joined record=%+v events=%v", record, events)
 	}

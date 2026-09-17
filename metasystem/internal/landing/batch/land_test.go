@@ -68,7 +68,7 @@ func TestBatchLandingResumeRebuildsCompleteSeries(t *testing.T) {
 	}
 }
 
-func TestBatchDelegationRules(t *testing.T) {
+func TestBatchLandingRequiresGreenProofActor(t *testing.T) {
 	bed, _ := landingBed(t)
 	bed.record.History = append(bed.record.History, HistoryEntry{At: time.Unix(3, 0).UTC().Format(time.RFC3339Nano), Verb: "prove", From: StateProving, To: StateLanding, Actor: "landing-owner"})
 	store := NewStore(bed.root, nil)
@@ -176,6 +176,100 @@ git commit -q "$@"`)
 	}
 	if args := string(contents(t, filepath.Join(root, "wrapper.args"))); !strings.Contains(args, "--chain chain-a --goal goal-a --test-receipt receipt.json -F") {
 		t.Fatalf("wrapper args=%q", args)
+	}
+}
+
+func TestCommitWithRealWrapperWritesBatchTrailersAndExplicitIdentity(t *testing.T) {
+	root := t.TempDir()
+	for _, dir := range []string{"scripts/agents", "bin", "artifacts/agents/mains"} {
+		must(t, os.MkdirAll(filepath.Join(root, dir), 0o755))
+	}
+	realWrapper, err := os.ReadFile(filepath.Join("..", "..", "..", "scripts", "agents", "commit.sh"))
+	must(t, err)
+	must(t, os.WriteFile(filepath.Join(root, "scripts", "agents", "commit.sh"), realWrapper, 0o755))
+	engine := `#!/usr/bin/env bash
+set -euo pipefail
+verb=${1:-}; noun=${2:-}
+if [[ "$verb $noun" == "brain fence" ]]; then printf '{}\n'; exit 0; fi
+if [[ "$verb $noun" == "lease require-holder" ]]; then printf '{"claimEpoch":1}\n'; exit 0; fi
+if [[ "$verb $noun" == "lease run-held" ]]; then
+  while (($#)) && [[ "$1" != -- ]]; do shift; done
+  shift
+  exec "$@"
+fi
+if [[ "$verb $noun" == "json get" ]]; then
+  field=
+  while (($#)); do if [[ "$1" == --field ]]; then field=$2; break; fi; shift; done
+  case "$field" in
+    claimEpoch) echo 1 ;;
+    provenance) echo 'chain=chain-a change=aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa' ;;
+    verdictTrailer) echo 'pass bar=area' ;;
+    code) echo reviewed-chain ;;
+    mode) echo observe ;;
+    goalRevision) echo 7 ;;
+    refusal|detail) echo '' ;;
+    *) echo '' ;;
+  esac
+  exit 0
+fi
+if [[ "$verb $noun" == "proc started-at" ]]; then echo 1; exit 0; fi
+if [[ "$verb $noun" == "util token-hex" ]]; then echo 0123456789abcdef0123456789abcdef; exit 0; fi
+if [[ "$verb $noun" == "lease commit-token" ]]; then
+  token=
+  while (($#)); do if [[ "$1" == --path ]]; then token=$2; break; fi; shift; done
+  mkdir -p "$(dirname "$token")"; printf '{}\n' >"$token"; exit 0
+fi
+if [[ "$verb $noun" == "config conf-value" ]]; then echo testing.json; exit 0; fi
+if [[ "$verb $noun" == "test verify" ]]; then exit 0; fi
+if [[ "$verb $noun" == "behavior-surface select" ]]; then cat >/dev/null; exit 0; fi
+if [[ "$verb $noun" == "landing observe" ]]; then
+  printf '{"provenance":"chain=chain-a change=aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa","verdictTrailer":"pass bar=area","code":"reviewed-chain","mode":"observe","goalRevision":7}\n'
+  exit 0
+fi
+if [[ "$verb $noun" == "gate weight-add" ]]; then cat >/dev/null; exit 0; fi
+printf 'unexpected fake engine command: %s\n' "$*" >&2
+exit 40
+`
+	must(t, os.WriteFile(filepath.Join(root, "bin", "metasystem"), []byte(engine), 0o755))
+	build := `#!/usr/bin/env bash
+set -euo pipefail
+out=
+while (($#)); do if [[ "$1" == --out ]]; then out=$2; shift 2; else shift; fi; done
+cp "$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd -P)/bin/metasystem" "$out"
+chmod +x "$out"
+`
+	must(t, os.WriteFile(filepath.Join(root, "scripts", "agents", "go-build.sh"), []byte(build), 0o755))
+	must(t, os.WriteFile(filepath.Join(root, "metasystem.conf"), []byte("testing.contract=testing.json\n"), 0o644))
+	must(t, os.WriteFile(filepath.Join(root, "testing.json"), []byte("{}\n"), 0o644))
+	must(t, os.WriteFile(filepath.Join(root, ".gitignore"), []byte("artifacts/agents/\n"), 0o644))
+	must(t, os.WriteFile(filepath.Join(root, "source.txt"), []byte("base\n"), 0o644))
+	must(t, exec.Command("git", "init", "-q", "-b", "main", root).Run())
+	must(t, exec.Command("git", "-C", root, "config", "user.name", "Ambient Other").Run())
+	must(t, exec.Command("git", "-C", root, "config", "user.email", "ambient@example.com").Run())
+	must(t, exec.Command("git", "-C", root, "config", "metasystem.goal.machine", "m1l").Run())
+	must(t, exec.Command("git", "-C", root, "add", ".").Run())
+	must(t, exec.Command("git", "-C", root, "commit", "-qm", "base").Run())
+	must(t, os.WriteFile(filepath.Join(root, "source.txt"), []byte("landed\n"), 0o644))
+	must(t, exec.Command("git", "-C", root, "add", "source.txt").Run())
+	t.Setenv("GIT_AUTHOR_NAME", "Ambient Other")
+	t.Setenv("GIT_AUTHOR_EMAIL", "other@example.net")
+	t.Setenv("GIT_COMMITTER_NAME", "Ambient Other")
+	t.Setenv("GIT_COMMITTER_EMAIL", "other@example.net")
+	t.Setenv("METASYSTEM_OWNER_LINEAGE", "landing-m1l")
+	must(t, CommitWithWrapper(root, "chain-a", "goal-a", "receipt.json", "land goal a\n", "Wido Explicit", "wido@example.com", "m1l+landing-m1l"))
+	message := runGitOutput(t, root, "show", "-s", "--format=%B", "HEAD")
+	for _, trailer := range []string{
+		"Machine: m1l+landing-m1l", "Goal-Item: goal-a", "Goal-Revision: 7",
+		"Landing-Provenance: chain=chain-a change=aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+		"Landing-Provenance-Verdict: pass bar=area", "Landed-By: m1l+landing-m1l",
+	} {
+		if !strings.Contains(message, trailer) {
+			t.Fatalf("real commit message omitted %q:\n%s", trailer, message)
+		}
+	}
+	identityLine := strings.TrimSpace(runGitOutput(t, root, "show", "-s", "--format=%an|%ae|%cn|%ce", "HEAD"))
+	if identityLine != "Wido Explicit|wido@example.com|Wido Explicit|wido@example.com" {
+		t.Fatalf("real commit used ambient identity: %q", identityLine)
 	}
 }
 

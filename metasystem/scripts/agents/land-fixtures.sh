@@ -46,7 +46,7 @@ if [[ "$fixture_scenario" == batch-owner-holds-lease ]]; then
 fi
 
 if [[ "$fixture_scenario" == batch-lands-by-agent-commit ]]; then
-  (cd "$root" && go test -count=1 -run '^TestCommitWithWrapperUsesTempRepoTokenAndExplicitIdentity$' ./internal/landing/batch)
+  (cd "$root" && go test -count=1 -run '^TestCommitWithRealWrapperWritesBatchTrailersAndExplicitIdentity$' ./internal/landing/batch)
   echo "land batch-lands-by-agent-commit fixture passed"
   exit 0
 fi

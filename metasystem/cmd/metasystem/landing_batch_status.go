@@ -5,10 +5,11 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
-	"strings"
 	"time"
 
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/config"
+	dispatchcore "github.com/widoriezebos/agentic-tools/metasystem/internal/dispatch"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/goal"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/identity"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/landing/batch"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/proofrun"
@@ -18,13 +19,8 @@ func init() { compiledBatchCapabilities[waitStatusDocsAndInventory] = struct{}{}
 
 var batchWaitClock = batch.WaitClock{Now: time.Now, After: time.After}
 var batchStatusOwner = inspectBatchOwner
-var batchStatusLock = func() string {
-	data, err := os.ReadFile("/tmp/metasystem-testrun-lock/owner")
-	if err != nil {
-		return "free"
-	}
-	return strings.TrimSpace(string(data))
-}
+var batchStatusLock = batch.ProofLockOwner
+var batchStatusNow = time.Now
 var batchStatusSample = func(root string) proofrun.LoadSample {
 	return proofrun.SampleLoad(root, "", int64(os.Getpid()), time.Now())
 }
@@ -41,22 +37,65 @@ type batchStatusUnit struct {
 }
 
 type batchStatusView struct {
-	BatchID       string              `json:"batchId"`
-	State         string              `json:"state"`
-	Reason        string              `json:"reason,omitempty"`
-	Owner         string              `json:"owner"`
-	OwnerLiveness string              `json:"ownerLiveness"`
-	Lock          string              `json:"lock"`
-	Headroom      string              `json:"headroom"`
-	Deadline      string              `json:"deadline,omitempty"`
-	Sample        proofrun.LoadSample `json:"sample"`
-	Units         []batchStatusUnit   `json:"units"`
+	BatchID       string                `json:"batchId"`
+	State         string                `json:"state"`
+	Reason        string                `json:"reason,omitempty"`
+	Owner         string                `json:"owner"`
+	OwnerLiveness string                `json:"ownerLiveness"`
+	Lock          string                `json:"lock"`
+	ProofStatus   string                `json:"proofStatus,omitempty"`
+	Headroom      []batchStatusHeadroom `json:"headroom"`
+	Deadline      string                `json:"deadline,omitempty"`
+	Sample        proofrun.LoadSample   `json:"sample"`
+	Units         []batchStatusUnit     `json:"units"`
+}
+
+type batchStatusHeadroom struct {
+	GoalID                string `json:"goalId"`
+	Status                string `json:"status"`
+	AttemptsLeft          uint64 `json:"attemptsLeft"`
+	ReservedMinutesLeft   uint64 `json:"reservedMinutesLeft"`
+	HasDiagnosticHeadroom bool   `json:"hasDiagnosticHeadroom"`
+}
+
+func statusHeadroom(root, goalID string, now time.Time, capMinutes uint64) batchStatusHeadroom {
+	view := batchStatusHeadroom{GoalID: goalID, Status: string(dispatchcore.BudgetUnknown)}
+	data, err := os.ReadFile(filepath.Join(root, "plans", "goals", goalID+".md"))
+	if err != nil {
+		return view
+	}
+	file, problems := goal.ParseFile(data)
+	if len(problems) != 0 {
+		return view
+	}
+	projection := dispatchcore.ProjectBudget(root, file, now)
+	view.Status = string(projection.Status)
+	if projection.Status != dispatchcore.BudgetKnown {
+		return view
+	}
+	if projection.Limits.AttemptLimit >= projection.Attempts {
+		view.AttemptsLeft = projection.Limits.AttemptLimit - projection.Attempts
+	}
+	if projection.Limits.ReservedJobMinutesLimit >= projection.ReservedJobMinutes {
+		view.ReservedMinutesLeft = projection.Limits.ReservedJobMinutesLimit - projection.ReservedJobMinutes
+	}
+	view.HasDiagnosticHeadroom = capMinutes <= ^uint64(0)/2 && view.AttemptsLeft >= 2 && view.ReservedMinutesLeft >= 2*capMinutes
+	return view
 }
 
 func batchRecordStatus(record batch.Record, settings config.BatchLanding) batchStatusView {
-	view := batchStatusView{BatchID: record.BatchID, State: record.State, Lock: batchStatusLock(), Sample: batchStatusSample(settings.Root), Headroom: "required-at-P2"}
+	view := batchStatusView{BatchID: record.BatchID, State: record.State, Lock: batchStatusLock(""), Sample: batchStatusSample(settings.Root)}
 	if record.Proof != nil {
-		view.Reason, view.Headroom = record.Proof.Failure, record.Proof.Status
+		view.Reason, view.ProofStatus = record.Proof.Failure, record.Proof.Status
+	}
+	capMinutes, _, _, capErr := dispatchcore.ResolveCap(filepath.Join(settings.Root, "metasystem.conf"), "proof", "main", "proof", "", "")
+	if capErr != nil || capMinutes < 1 {
+		capMinutes = 120
+	}
+	for _, unit := range record.Units {
+		if _, sealed := record.Seal[unit.GoalID]; sealed {
+			view.Headroom = append(view.Headroom, statusHeadroom(settings.Root, unit.GoalID, batchStatusNow().UTC(), uint64(capMinutes)))
+		}
 	}
 	pid, live, err := batchStatusOwner(settings.Root)
 	view.Owner, view.OwnerLiveness = fmt.Sprint(pid), fmt.Sprint(live)
@@ -167,5 +206,3 @@ func runBatchWait(args []string) int {
 	printJSON(batchRecordStatus(record, settings))
 	return 0
 }
-
-var _ = filepath.Separator

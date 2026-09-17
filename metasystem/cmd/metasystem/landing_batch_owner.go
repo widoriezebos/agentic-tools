@@ -47,6 +47,9 @@ var batchOwnerEnsure = batchOwnerEnsureSeams{
 	launch:  launchBatchOwner,
 }
 
+var batchOwnerAcquire = acquireBatchOwner
+var batchOwnerConstruct = newProductionBatchOwner
+
 func inspectBatchOwner(root string) (int64, identity.Liveness, error) {
 	return inspectBatchOwnerWith(root, identity.KernelProber{}, lease.CurrentHolder, lease.AnnouncementsFor)
 }
@@ -356,10 +359,8 @@ func newProductionBatchOwner(settings config.BatchLanding, held batchOwnerLease,
 			line, _ := json.Marshal(map[string]any{"component": "landing-owner", "batch": id, "trunkRed": outcome})
 			fmt.Fprintln(os.Stderr, string(line))
 		},
-		BaseCommit: func(tree string) (string, error) { return commitForTree(settings.Root, "origin/main", tree) },
-		RunDiagnostic: func(id string, request batch.DiagnosticRequest, claim batch.Claim) (batch.DiagnosticResult, error) {
-			return launchBatchDiagnostic(settings.Root, id, request, claim)
-		},
+		BaseCommit:    func(tree string) (string, error) { return commitForTree(settings.Root, "origin/main", tree) },
+		RunDiagnostic: clearingDiagnostic(settings.Root),
 		DescendsFrom: func(descendant, ancestor string) (bool, error) {
 			_, err := gitOutput(settings.Root, "merge-base", "--is-ancestor", ancestor, descendant)
 			if err == nil {
@@ -448,13 +449,13 @@ func runBatchOwner(args []string) int {
 		fmt.Fprintln(os.Stderr, err)
 		return 2
 	}
-	held, err := acquireBatchOwner(settings.Root)
+	held, err := batchOwnerAcquire(settings.Root)
 	if err != nil {
 		fmt.Fprintln(os.Stderr, err)
 		return 1
 	}
 	defer held.retire()
-	owner, err := newProductionBatchOwner(settings, held, time.Now)
+	owner, err := batchOwnerConstruct(settings, held, time.Now)
 	if err != nil {
 		fmt.Fprintln(os.Stderr, err)
 		return 1

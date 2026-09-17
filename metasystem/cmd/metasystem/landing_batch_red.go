@@ -32,14 +32,13 @@ func executeBatchDiagnosis(root, id, actor string, at time.Time) error {
 	if len(joined) == 0 || record.Proof == nil {
 		return fmt.Errorf("batch %s has no diagnostic authority member or proof", id)
 	}
-	head := joined[len(joined)-1]
 	baseCommit, err := commitForTree(root, "origin/main", record.BaseTree)
 	if err != nil {
 		return err
 	}
 	return batch.DiagnoseRed(store, id, actor, record.Proof.RedGroups, "", at, batch.RedSeams{
 		Run: func(request batch.DiagnosticRequest) (batch.DiagnosticResult, error) {
-			return launchBatchDiagnostic(root, id, request, head.Claim)
+			return launchBatchDiagnostic(root, id, request)
 		},
 		MintOpid:   func() (string, error) { return goal.NewOperationULID() },
 		Ledger:     productionTrunkRedLedgerOwner(root),
@@ -50,19 +49,41 @@ func executeBatchDiagnosis(root, id, actor string, at time.Time) error {
 	})
 }
 
-func launchBatchDiagnostic(root, batchID string, request batch.DiagnosticRequest, claim batch.Claim) (batch.DiagnosticResult, error) {
+func batchDiagnosticArgs(root string, request batch.DiagnosticRequest, resultPath string) []string {
+	return []string{"test", "run", "--root", root, "--goal", request.GoalID, "--tree", request.Tree, "--mode", "canary",
+		"--purpose", "diagnostic", "--groups", strings.Join(request.Groups, ","), "--no-reuse", "--result", resultPath,
+		"--expected-goal-revision", fmt.Sprint(request.Claim.Revision), "--expected-accounting-revision", fmt.Sprint(request.Claim.AccountingRevision)}
+}
+
+var batchDiagnosticExecute = func(binary string, args []string, dir string, environment []string) ([]byte, int, error) {
+	command := exec.Command(binary, args...)
+	command.Dir, command.Env = dir, environment
+	output, err := command.CombinedOutput()
+	status := -1
+	if command.ProcessState != nil {
+		status = command.ProcessState.ExitCode()
+	}
+	return output, status, err
+}
+
+// clearingDiagnostic is the owner's trunk-red clearing run. That path hands the member's claim beside the
+// request, and the launcher reads the expected revisions from the request, so the claim goes in first.
+func clearingDiagnostic(root string) func(string, batch.DiagnosticRequest, batch.Claim) (batch.DiagnosticResult, error) {
+	return func(batchID string, request batch.DiagnosticRequest, claim batch.Claim) (batch.DiagnosticResult, error) {
+		request.Claim = claim
+		return launchBatchDiagnostic(root, batchID, request)
+	}
+}
+
+func launchBatchDiagnostic(root, batchID string, request batch.DiagnosticRequest) (batch.DiagnosticResult, error) {
 	binary, err := os.Executable()
 	if err != nil {
 		return batch.DiagnosticResult{}, err
 	}
 	resultPath := filepath.Join(root, "artifacts", "agents", "proof-runs", "batch", batchID+"-diagnostic.json")
-	args := []string{"test", "run", "--root", root, "--goal", request.GoalID, "--tree", request.Tree, "--mode", "canary",
-		"--purpose", "diagnostic", "--groups", strings.Join(request.Groups, ","), "--no-reuse", "--result", resultPath,
-		"--expected-goal-revision", fmt.Sprint(claim.Revision), "--expected-accounting-revision", fmt.Sprint(claim.AccountingRevision)}
-	command := exec.Command(binary, args...)
-	command.Dir, command.Env = root, append(gittree.ScrubbedEnviron(), "METASYSTEM_OWNER_LINEAGE="+landingOwnerLineage)
-	output, runErr := command.CombinedOutput()
-	if runErr != nil && command.ProcessState != nil && command.ProcessState.ExitCode() == proofrun.ExitAdmissionRefused {
+	args := batchDiagnosticArgs(root, request, resultPath)
+	output, status, runErr := batchDiagnosticExecute(binary, args, root, append(gittree.ScrubbedEnviron(), "METASYSTEM_OWNER_LINEAGE="+landingOwnerLineage))
+	if runErr != nil && status == proofrun.ExitAdmissionRefused {
 		return batch.DiagnosticResult{}, &batch.DiagnosticRefusal{Status: strings.TrimSpace(string(output))}
 	}
 	var result proofrun.TestResult

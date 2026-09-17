@@ -45,6 +45,7 @@ func TestBatchTaggedCapabilityWitnessExecutesInProof(t *testing.T) {
 		"TestBatchSupervisorTakeoverRebindsJoinedClaims", "TestGoalHandoverTargetRootFlagFlows", "TestLandingBatchJoinVerbPublishesOutsideFlock",
 		"TestBatchProductionReturnAndForwardHandoverArguments", "TestBatchTrunkRedLedgerOwnerCapability",
 		"TestBatchProofUnionUsesRealMemberRiskSelection",
+		"TestBatchProofRefusalTransitions",
 	}
 	command := exec.Command("go", "test", "-count=1", "-tags", "batchtest",
 		"-json", "-run", "^("+strings.Join(names, "|")+")$", "./cmd/metasystem")

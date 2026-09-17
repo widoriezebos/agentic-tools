@@ -154,7 +154,7 @@ func ParseRecord(raw map[string]any) (*Record, error) {
 		record.WatcherTag, _ = raw["watcherTag"].(string)
 		record.ReaperTag, _ = raw["reaperTag"].(string)
 		record.LandingOwnerTag, _ = raw["landingOwnerTag"].(string)
-		if record.WatcherTag == "" || record.ReaperTag == "" {
+		if record.WatcherTag == "" || record.ReaperTag == "" || record.LandingOwnerTag == "" {
 			return nil, fmt.Errorf("relaunched %s: missing component tags", record.OwnerTag)
 		}
 		if record.RetiredThrough, ok = number(raw["retiredThrough"]); !ok || record.RetiredThrough < 0 {

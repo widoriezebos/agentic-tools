@@ -7,6 +7,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"slices"
 	"strconv"
 	"strings"
 	"syscall"
@@ -149,6 +150,66 @@ func armingOptions(root string) EnsureOptions {
 		Root: root, MetasystemRoot: root, Scope: root, Command: armingOwnerCommand,
 		Fingerprint: "fingerprint-a", IntervalSec: 1, WatcherCap: 330,
 		WaitScaleMilli: 1, OwnerTagPrefix: "metasystem-supervision-owner-test-", FenceGeneration: 12,
+	}
+}
+
+func TestProductionArmingTakeoverStopsAndRelaunchesLandingOwner(t *testing.T) {
+	root := t.TempDir()
+	if err := os.MkdirAll(SupervisionDir(root), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	document := stateDocument{SchemaVersion: 1, Generation: 1, Components: map[string]stateComponent{}}
+	for index, component := range productionComponentSet {
+		document.Components[string(component)] = stateComponent{Pid: int64(41 + index), PidStartedAt: int64(101 + index), InstanceTag: "old-" + string(component)}
+	}
+	payload, err := json.Marshal(document)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(SupervisionDir(root), "state.json"), payload, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	originalControl := takeoverComponentControl
+	t.Cleanup(func() { takeoverComponentControl = originalControl })
+	alive := map[int64]bool{41: true, 42: true, 43: true}
+	tags := map[int64]string{41: "old-watcher", 42: "old-reaper", 43: "old-landing-owner"}
+	takeoverComponentControl = func() recordedComponentControl {
+		return recordedComponentControl{
+			prober: armingProbeFunc(func(pid int64) (identity.Exact, identity.Liveness, error) {
+				if alive[pid] {
+					return identity.Exact{Pid: pid, StartedAt: time.Unix(pid+60, 0), Argv: []string{tags[pid]}, ArgvKnown: true}, identity.Alive, nil
+				}
+				return identity.Exact{}, identity.Dead, nil
+			}),
+			groupAbsent: func(pid int64) (bool, error) { return !alive[pid], nil },
+			signalGroup: func(pid int64, signal syscall.Signal) error {
+				if signal != syscall.SIGTERM {
+					t.Fatalf("takeover signal=%v, want TERM", signal)
+				}
+				alive[pid] = false
+				return nil
+			},
+		}
+	}
+	stopped, err := stopTakeoverComponents(root, root, "", 1, false)
+	if err != nil || len(stopped) != len(productionComponentSet) {
+		t.Fatalf("production takeover stopped=%+v err=%v", stopped, err)
+	}
+	landingStopped := false
+	for _, outcome := range stopped {
+		landingStopped = landingStopped || outcome.Component == "landing-batch-owner" && outcome.Result == ShutdownStopped
+	}
+	if !landingStopped {
+		t.Fatalf("production takeover omitted landing owner: %+v", stopped)
+	}
+	world := newWorld()
+	owner := newOwner(world)
+	owner.SeedGeneration, owner.generation = 1, 1
+	if exit := owner.Cycle(time.Unix(20, 0)); exit != nil {
+		t.Fatalf("production relaunch exited: %+v", exit)
+	}
+	if !slices.ContainsFunc(world.launched, func(held Held) bool { return held.Component == LandingOwner && held.Generation == 2 }) {
+		t.Fatalf("production relaunch omitted landing owner: %+v", world.launched)
 	}
 }
 
