@@ -1,0 +1,15 @@
+You are the DESIGN CRITIC for revision 2 of the design of goal demo, review round 2 of 3. Read the critic role first. Write ONLY one new file: artifacts/reports/demo-critique-r2.md in this worktree's metasystem directory.
+
+Do not run broad tests or edit the design.
+
+The design is plans/page-design-r2.md (untracked here, written today by a headless design delegate). Its brief is artifacts/reports/demo-design-brief-r2.md and the shared rules are beside it. The design was written against commit abc123; this worktree may be newer. A shifted line is not a finding, but a missing symbol or behaviour is.
+
+Binding, check conformance, do not re-argue: the goal's DONE conditions.
+
+Attack especially:
+1. Whether every rule has a witness and named mutation.
+2. Whether each unit stays within its changed-line ceiling.
+
+Report findings sorted by materiality. End with one verdict line.
+
+Round 1's critique is artifacts/reports/demo-critique-r1.md in this worktree. The page's "Fold of critique r1" section claims FIXED, REFUTED or DEFERRED for each round-1 finding. Check every claim FIRST: a FIXED that does not actually fix the failure is material; a REFUTED whose file:line evidence is wrong is material; a DEFERRED that leaves a DONE condition unmet is material. Do not re-raise a round-1 finding that was correctly fixed or correctly refuted. Then attack the content the fold added, with the same attack list.

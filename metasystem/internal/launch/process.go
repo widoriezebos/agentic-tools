@@ -22,14 +22,15 @@ func (p OSProcesses) SelfRef() (identity.Ref, error) {
 
 type osChild struct {
 	command *exec.Cmd
-	log     *os.File
+	files   []*os.File
 }
 
 func (child *osChild) Wait() (int, error) {
 	err := child.command.Wait()
-	closeErr := child.log.Close()
-	if closeErr != nil && err == nil {
-		err = closeErr
+	for _, file := range child.files {
+		if closeErr := file.Close(); closeErr != nil && err == nil {
+			err = closeErr
+		}
 	}
 	if child.command.ProcessState == nil {
 		return 1, err
@@ -47,12 +48,24 @@ func (p OSProcesses) StartChild(spec Command) (Child, identity.Ref, error) {
 	}
 	command := exec.Command(spec.Program, spec.Args...)
 	command.Dir = spec.Directory
-	command.Env = append(os.Environ(), spec.Environment...)
+	command.Env = childEnvironment(os.Environ(), spec.Environment)
 	command.Stdin = strings.NewReader(spec.Stdin)
+	files := []*os.File{log}
 	command.Stdout, command.Stderr = log, log
+	if spec.StdoutPath != "" {
+		stdout, openErr := os.OpenFile(spec.StdoutPath, os.O_CREATE|os.O_WRONLY|os.O_TRUNC, 0o600)
+		if openErr != nil {
+			log.Close()
+			return nil, identity.Ref{}, openErr
+		}
+		files = append(files, stdout)
+		command.Stdout = stdout
+	}
 	command.SysProcAttr = &syscall.SysProcAttr{Setpgid: true}
 	if err := command.Start(); err != nil {
-		log.Close()
+		for _, file := range files {
+			file.Close()
+		}
 		return nil, identity.Ref{}, err
 	}
 	pid := int64(command.Process.Pid)
@@ -60,10 +73,29 @@ func (p OSProcesses) StartChild(spec Command) (Child, identity.Ref, error) {
 	if err != nil || state != identity.Alive {
 		_ = syscall.Kill(-int(pid), syscall.SIGKILL)
 		_, _ = command.Process.Wait()
-		log.Close()
+		for _, file := range files {
+			file.Close()
+		}
 		return nil, identity.Ref{}, fmt.Errorf("child pid %d is not observable: %s: %w", pid, state, err)
 	}
-	return &osChild{command: command, log: log}, exact.Ref(), nil
+	return &osChild{command: command, files: files}, exact.Ref(), nil
+}
+
+func childEnvironment(parent, overrides []string) []string {
+	keys := map[string]bool{}
+	for _, entry := range overrides {
+		if index := strings.IndexByte(entry, '='); index >= 0 {
+			keys[entry[:index]] = true
+		}
+	}
+	environment := make([]string, 0, len(parent)+len(overrides))
+	for _, entry := range parent {
+		index := strings.IndexByte(entry, '=')
+		if index < 0 || !keys[entry[:index]] {
+			environment = append(environment, entry)
+		}
+	}
+	return append(environment, overrides...)
 }
 func (OSProcesses) SignalGroup(pgid int64, signal syscall.Signal) error {
 	err := syscall.Kill(-int(pgid), signal)

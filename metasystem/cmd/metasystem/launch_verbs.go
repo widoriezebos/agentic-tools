@@ -18,8 +18,10 @@ func launchManager() *launch.Manager {
 	processes := launch.OSProcesses{Prober: prober}
 	home, _ := os.UserHomeDir()
 	executable, _ := os.Executable()
-	adapter := launch.CodexExec{Binary: "codex", Model: "gpt-5.6-sol", Effort: "xhigh", SessionsRoot: filepath.Join(home, ".codex", "sessions"), CommonTemplate: filepath.Join(filepath.Dir(executable), "..", "scripts", "agents", "templates", "design-common.md"), Now: time.Now, Scanner: launch.KernelProcessScanner{Prober: prober}}
-	return &launch.Manager{Store: launch.Store{}, Adapters: map[string]launch.Adapter{"codex-exec": adapter},
+	scanner := launch.KernelProcessScanner{Prober: prober}
+	codex := launch.CodexExec{Binary: "codex", Model: "gpt-5.6-sol", Effort: "xhigh", SessionsRoot: filepath.Join(home, ".codex", "sessions"), CommonTemplate: filepath.Join(filepath.Dir(executable), "..", "scripts", "agents", "templates", "design-common.md"), Now: time.Now, Scanner: scanner}
+	claude := launch.ClaudeHeadless{Binary: "claude", ProjectsRoot: filepath.Join(home, ".claude", "projects"), Scanner: scanner}
+	return &launch.Manager{Store: launch.Store{}, Adapters: map[string]launch.Adapter{"codex-exec": codex, "claude-headless": claude},
 		Processes: processes, Prober: prober, Supervisor: launch.OSSupervisorStarter{Prober: prober}, Now: time.Now,
 		Sleep: time.Sleep, Grace: 2 * time.Second, Poll: 50 * time.Millisecond, StartCap: launch.DefaultWaitTimeout}
 }
@@ -30,8 +32,10 @@ func runLaunchStart(args []string) int {
 	directory := flags.String("dir", ".", "working directory")
 	goal := flags.String("goal", "", "goal id")
 	tag := flags.String("tag", "", "launch tag")
-	model := flags.String("model", "gpt-5.6-sol", "model")
+	model := flags.String("model", "", "model")
 	effort := flags.String("effort", "xhigh", "reasoning effort")
+	resume := flags.String("resume-session", "", "Claude session id")
+	page := flags.String("page", "", "page file")
 	var inputs, outputs multiFlag
 	flags.Var(&inputs, "input", "additional input file (repeatable)")
 	flags.Var(&outputs, "output", "output file to copy into launch state (repeatable)")
@@ -39,19 +43,51 @@ func runLaunchStart(args []string) int {
 		return 2
 	}
 	if *kind == "" || *brief == "" || flags.NArg() != 0 {
-		fmt.Fprintln(os.Stderr, "usage: metasystem launch start --kind <build|critique> --brief <file> [--dir <directory>] [--goal <id>] [--tag <tag>] [--input <file>]... [--output <file>]...")
+		fmt.Fprintln(os.Stderr, "usage: metasystem launch start --kind <build|design|read|critique> --brief <file> [--dir <directory>] [--goal <id>] [--tag <tag>] [--model <model>] [--resume-session <id>] [--page <file>] [--input <file>]... [--output <file>]...")
 		return 2
 	}
 	data := map[string]json.RawMessage{}
-	data["model"], _ = json.Marshal(*model)
+	if *model != "" {
+		data["model"], _ = json.Marshal(*model)
+	}
 	data["effort"], _ = json.Marshal(*effort)
+	if *resume != "" {
+		data["resumeSession"], _ = json.Marshal(*resume)
+	}
 	record, err := launchManager().Start(launch.StartSpec{Kind: *kind, Brief: *brief, WorkingDirectory: *directory,
-		Goal: *goal, Tag: *tag, Inputs: inputs, Outputs: outputs, AdapterData: data})
+		Goal: *goal, Tag: *tag, Page: *page, Inputs: inputs, Outputs: outputs, AdapterData: data})
 	if record.ID != "" {
 		fmt.Println(launchReport(record))
 	}
 	if err != nil {
 		fmt.Fprintln(os.Stderr, "launch start:", err)
+		return 1
+	}
+	return 0
+}
+func runLaunchRoundTask(args []string) int {
+	flags := flag.NewFlagSet("launch round-task", flag.ContinueOnError)
+	tag := flags.String("tag", "", "launch tag")
+	round := flags.Int("round", 0, "task number")
+	previous := flags.String("previous", "", "previous task file")
+	out := flags.String("out", "", "output file")
+	constraints := flags.String("constraints", "0", "constraint count")
+	if flags.Parse(args) != nil || flags.NArg() != 0 || *tag == "" || (*round != 2 && *round != 3) || *previous == "" || *out == "" {
+		fmt.Fprintln(os.Stderr, "usage: metasystem launch round-task --tag <tag> --round <2|3> --previous <file> --out <file> [--constraints <n>]")
+		return 2
+	}
+	data, err := os.ReadFile(*previous)
+	if err != nil {
+		fmt.Fprintln(os.Stderr, "launch round-task:", err)
+		return 1
+	}
+	result, err := launch.RoundTask(*tag, *round, data, *constraints)
+	if err != nil {
+		fmt.Fprintln(os.Stderr, "launch round-task:", err)
+		return 1
+	}
+	if err := os.WriteFile(*out, result, 0o600); err != nil {
+		fmt.Fprintln(os.Stderr, "launch round-task:", err)
 		return 1
 	}
 	return 0
@@ -155,8 +191,12 @@ func launchReport(record launch.Record) string {
 		exit = strconv.Itoa(*record.ExitCode)
 	}
 	verdict := strings.ReplaceAll(record.Measurement.Verdict, "\n", " ")
-	return fmt.Sprintf("id=%s state=%s directory=%s exit=%s result-lines=%d result-words=%d calls=%d compactions=%d peak-context=%d calls-above-200k=%d material=%d verdict=%q",
+	page := fmt.Sprintf("page-lines=%d page-words=%d", record.Measurement.PageLines, record.Measurement.PageWords)
+	if record.Measurement.PageMissing {
+		page = "page=missing"
+	}
+	return fmt.Sprintf("id=%s state=%s directory=%s exit=%s result-lines=%d result-words=%d result-tail=%q calls=%d turns=%d compactions=%d peak-context=%d calls-above-200k=%d %s material=%d verdict=%q",
 		record.ID, record.State, filepath.Join(root, record.ID), exit, record.Measurement.ResultLines, record.Measurement.ResultWords,
-		record.Measurement.Calls, record.Measurement.Compactions, record.Measurement.PeakContext,
-		record.Measurement.CallsAbove200, record.Measurement.MaterialCount, verdict)
+		record.Measurement.ResultTail, record.Measurement.Calls, record.Measurement.Turns, record.Measurement.Compactions, record.Measurement.PeakContext,
+		record.Measurement.CallsAbove200, page, record.Measurement.MaterialCount, verdict)
 }

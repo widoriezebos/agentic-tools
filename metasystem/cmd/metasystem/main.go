@@ -429,7 +429,7 @@ func families() []family {
 			name:    "launch",
 			summary: "owned external agent processes with durable state and exact cancellation",
 			verbs: []verb{
-				{"start", "start a build or critique and return after its child is recorded", runLaunchStart}, {"supervise", "own one launch child through its terminal state (internal)", runLaunchSupervise}, {"wait", "wait up to a bounded timeout for a terminal launch", runLaunchWait}, {"status", "show and reconcile one launch", runLaunchStatus}, {"list", "show and reconcile every launch", runLaunchList}, {"cancel", "end a launch group and prove every recorded process dead", runLaunchCancel}, {"census", "name orphan records, live terminal processes, and idle plugin brokers", runLaunchCensus},
+				{"start", "start an agent process and return after its child is recorded", runLaunchStart}, {"supervise", "own one launch child through its terminal state (internal)", runLaunchSupervise}, {"wait", "wait up to a bounded timeout for a terminal launch", runLaunchWait}, {"status", "show and reconcile one launch", runLaunchStatus}, {"list", "show and reconcile every launch", runLaunchList}, {"cancel", "end a launch group and prove every recorded process dead", runLaunchCancel}, {"census", "name orphan records, live terminal processes, and idle plugin brokers", runLaunchCensus}, {"round-task", "derive a critique task from its predecessor", runLaunchRoundTask},
 			},
 		},
 		{

@@ -41,8 +41,13 @@ type Measurement struct {
 	Compactions   int    `json:"compactions"`
 	PeakContext   int64  `json:"peakContext"`
 	CallsAbove200 int    `json:"callsAbove200K"`
+	Turns         int    `json:"turns"`
 	ResultLines   int    `json:"resultLines"`
 	ResultWords   int    `json:"resultWords"`
+	ResultTail    string `json:"resultTail"`
+	PageLines     int    `json:"pageLines"`
+	PageWords     int    `json:"pageWords"`
+	PageMissing   bool   `json:"pageMissing"`
 	MaterialCount int    `json:"materialCount"`
 	Verdict       string `json:"verdict"`
 }

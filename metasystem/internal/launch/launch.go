@@ -15,8 +15,8 @@ import (
 const DefaultWaitTimeout = 240 * time.Second
 
 type Command struct {
-	Program, Directory, Stdin, LogPath string
-	Args, Environment                  []string
+	Program, Directory, Stdin, LogPath, StdoutPath string
+	Args, Environment                              []string
 }
 type Adapter interface {
 	Command(Record, string) (Command, error)
@@ -34,9 +34,9 @@ type SupervisorStarter interface {
 	StartSupervisor(id, stateDir string) (identity.Ref, error)
 }
 type StartSpec struct {
-	ID, Kind, Goal, Tag, WorkingDirectory, Brief string
-	Inputs, Outputs                              []string
-	AdapterData                                  map[string]json.RawMessage
+	ID, Kind, Goal, Tag, WorkingDirectory, Brief, Page string
+	Inputs, Outputs                                    []string
+	AdapterData                                        map[string]json.RawMessage
 }
 type Manager struct {
 	Store      Store
@@ -52,7 +52,8 @@ type Manager struct {
 }
 
 func (m *Manager) Start(spec StartSpec) (Record, error) {
-	if spec.Kind != "build" && spec.Kind != "critique" {
+	adapterName := adapterForKind(spec.Kind)
+	if adapterName == "" {
 		return Record{}, fmt.Errorf("launch kind %q is not available", spec.Kind)
 	}
 	if m.Supervisor == nil {
@@ -76,7 +77,10 @@ func (m *Manager) Start(spec StartSpec) (Record, error) {
 	if err != nil {
 		return Record{}, err
 	}
-	record := Record{ID: id, Kind: spec.Kind, Adapter: "codex-exec", Goal: spec.Goal, Tag: spec.Tag,
+	if inputs[0].Bytes == 0 {
+		return Record{}, errors.New("launch brief is empty")
+	}
+	record := Record{ID: id, Kind: spec.Kind, Adapter: adapterName, Goal: spec.Goal, Tag: spec.Tag,
 		WorkingDirectory: absDir, Inputs: inputs, State: Starting, StartedAt: m.Now().UTC().Format(time.RFC3339Nano),
 		AdapterData: spec.AdapterData}
 	if record.AdapterData == nil {
@@ -84,6 +88,9 @@ func (m *Manager) Start(spec StartSpec) (Record, error) {
 	}
 	setString(record.AdapterData, "brief", inputs[0].Path)
 	setStrings(record.AdapterData, "declaredOutputs", spec.Outputs)
+	if spec.Page != "" {
+		setString(record.AdapterData, "page", spec.Page)
+	}
 	if err := m.Store.Create(record); err != nil {
 		return Record{}, err
 	}
@@ -217,15 +224,13 @@ func (m *Manager) Supervise(id string) (Record, error) {
 		for key, value := range adapterData {
 			record.AdapterData[key] = value
 		}
-		if exitCode == 0 {
-			record.State = Completed
-		} else {
-			record.State = Failed
-			record.Reason = fmt.Sprintf("exit-%d", exitCode)
-		}
-		for _, problem := range []error{waitErr, measureErr, copyErr} {
-			if problem != nil {
-				record.Reason = problem.Error()
+		record.State, record.Reason = adapterOutcome(adapter, exitCode, measureErr)
+		if record.Reason == "" {
+			for _, problem := range []error{waitErr, measureErr, copyErr} {
+				if problem != nil {
+					record.Reason = problem.Error()
+					break
+				}
 			}
 		}
 		return nil
@@ -382,13 +387,44 @@ func (m *Manager) Census() ([]string, error) {
 		}
 	}
 	for _, adapter := range m.Adapters {
-		strays, strayErr := adapter.Strays()
+		var strays []string
+		var strayErr error
+		if aware, ok := adapter.(interface {
+			StraysFor([]Record) ([]string, error)
+		}); ok {
+			strays, strayErr = aware.StraysFor(records)
+		} else {
+			strays, strayErr = adapter.Strays()
+		}
 		if strayErr != nil {
 			return nil, strayErr
 		}
 		lines = append(lines, strays...)
 	}
 	return lines, nil
+}
+
+func adapterForKind(kind string) string {
+	switch kind {
+	case "build", "critique":
+		return "codex-exec"
+	case "design", "read":
+		return "claude-headless"
+	default:
+		return ""
+	}
+}
+
+func adapterOutcome(adapter Adapter, exitCode int, measureErr error) (State, string) {
+	if owner, ok := adapter.(interface {
+		Outcome(int, error) (State, string)
+	}); ok {
+		return owner.Outcome(exitCode, measureErr)
+	}
+	if exitCode == 0 {
+		return Completed, ""
+	}
+	return Failed, fmt.Sprintf("exit-%d", exitCode)
 }
 func copyDeclaredOutputs(record Record, stateDir string) ([]Output, error) {
 	var paths []string

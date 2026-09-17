@@ -47,7 +47,6 @@ adapter-deadline-fixtures	adapter deadline fixtures
 enumeration-mode-fixtures	enumeration mode fixtures
 runtime-contract-audits	runtime contract audits
 agent-protocol-fixtures	agent protocol fixtures
-headless-launchers-fixtures	headless launchers fixtures
 dispatcher-adapter-and-mission-runner-fixtures	dispatcher, adapter, and mission-runner fixtures
 workflow-tooling-fixtures	workflow tooling fixtures
 adoption-fixtures	adoption fixtures

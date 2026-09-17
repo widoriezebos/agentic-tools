@@ -1,0 +1,10 @@
+You are the DESIGN CRITIC for revision 3 of the design of goal demo, review round 3 of 3, the LAST round. Read artifacts/reports/demo-critique-r3.md in this worktree's report.
+
+The design is plans/page-design-r3.md (untracked here). Its brief is artifacts/reports/demo-design-brief-r3.md (the seat's fold prompt with its binding seat constraints C1-7; check conformance to them, do not re-argue them) and shared material.
+The design revision 3 was written in this worktree against its own tree: a cited symbol, branch, file, line or behaviour that does not exist here IS a finding.
+
+Round 2's critique is artifacts/reports/demo-critique-r2.md in this worktree, and round 1's is demo-critique-r1.md beside it. The page's "Fold of critique r2" section claims FIXED, REFUTED, DEFERRED or ESCALATED for each round-2 finding. Check every claim FIRST, running each critic's named mutation against the r3 text:
+- A FIXED that does not actually fix the failure is material.
+- A REFUTED whose file:line evidence is wrong is material.
+- A DEFERRED or ESCALATED that leaves a DONE condition unmet without an Escalation section is material.
+Do not re-raise a finding that was correctly fixed or refuted in an earlier round. Then attack the content the fold added, using the same attack list. This is the last round: separate what blocks a build (material) from what a builder can settle inside a unit (not material), and be exact about which is which.

@@ -14,7 +14,6 @@ scripts/agents/fixture-bed-scenarios-fixtures.sh	section/fixture-bed-scenarios-f
 scripts/agents/flight-recorder-fixtures.sh	section/flight-recorder-fixtures
 scripts/agents/go-gate.sh	section/gate-fence-fixtures
 scripts/agents/goal-cli-fixtures.sh	section/goal-cli-fixtures
-scripts/agents/headless-launchers-fixtures.sh	section/headless-launchers-fixtures
 scripts/agents/health-fixtures.sh	section/supervision-and-census-fixtures
 scripts/agents/land-fixtures.sh	section/land-fixtures
 scripts/agents/lease-succession-fixtures.sh	section/lease-succession-fixtures
