@@ -80,6 +80,8 @@ var Rows = []Row{
 	{Code: "APPROVAL_EXPIRED", Owner: "internal/goal", Site: "approval.go:301", Shape: Agent, Override: "goal approve", Commands: 1},
 	{Code: "RELAY_AFTER_ENROLLMENT", Owner: "internal/goal", Site: "approval.go:329", Shape: Identity},
 	{Code: "GOAL_NORM_REFUSED", Owner: "internal/goal", Site: "norm.go:95", Shape: Agent, Override: "goal set-budget then --approved-ref", Commands: 2},
+	{Code: "GOAL_BRANCH_RANGE", Owner: "internal/goal/branch", Site: "range.go", Shape: Question},
+	{Code: "GOAL_BRANCH_ENDPOINT_UNSUPPORTED", Owner: "cmd/metasystem", Site: "goal_branch.go", Shape: Question},
 	{Code: "GOAL_SPLIT_REFUSED", Owner: "internal/goal", Site: "split.go:240", Shape: Agent},
 	{Code: "SPLIT_RATIFY_REFUSED", Owner: "internal/goal", Site: "split.go:334", Shape: Question},
 	{Code: "SWEEP_DUPLICATE_GOAL", Owner: "internal/goal", Site: "approval.go:85", Shape: Question},

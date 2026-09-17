@@ -505,6 +505,7 @@ func families() []family {
 			name:    "goal",
 			summary: "the goal ledger: the thread of intent that survives every turn (D67)",
 			verbs: []verb{
+				{"branch", "inspect goal/<goal-id> branches (check)", runGoalBranch},
 				{"handover", "transfer this holder's claim to the guarded landing owner", runGoalHandover},
 				{"open", "declare a goal; Current when none exists, queued otherwise", runGoalOpen},
 				{"abandon", "human-only: record that a goal will never be worked and why; retained with its reason, satisfies no dependency, never pruned, reopenable", runGoalAbandon},
