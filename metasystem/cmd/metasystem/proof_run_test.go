@@ -157,7 +157,8 @@ func workerAuthorizedAttemptFixture(t *testing.T) (string, string, proofrun.Atte
 	}
 	attempt, _, err := proofrun.ReserveLocked(proofrun.AdmissionRequest{
 		ControlRoot: controlRoot, ExecutionRoot: executionRoot, GoalID: "standing-validation", GoalRevision: 2,
-		AccountingRevision: 2, ReservedMinutes: 2, Identity: proofIdentity, Launcher: launcher,
+		AccountingRevision: 2, CandidateGoalID: "standing-validation", CandidateRevision: 2,
+		ReservedMinutes: 2, Identity: proofIdentity, Launcher: launcher,
 		Now: time.Date(2026, 9, 18, 12, 0, 0, 0, time.UTC),
 	})
 	if err != nil {
