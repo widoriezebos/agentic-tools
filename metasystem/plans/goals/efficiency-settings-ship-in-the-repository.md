@@ -1,0 +1,16 @@
+# efficiency-settings-ship-in-the-repository
+
+- State: queued
+- Risk: severity=2 novelty=2 exposure=2 accumulation=2 basis="Configuration read at launch on every seat; a wrong value costs tokens or a compaction, never product code."
+- Tier: 2
+- Intent: Every token-efficiency setting a seat runs with is tracked configuration in the repository, read by the verbs, not a per-machine file or a memory rule. DONE: (1) the seat context window (200K), the delegate window per launch kind (build and design by brief 200K, read 400K), the Codex model and effort for builds (gpt-5.6-sol, xhigh), the wait cap (240 s) and the compaction handoff rule live in tracked configuration under metasystem/ and .claude/settings.json, with one verb that prints each value and its source; (2) a fresh clone on a new machine runs with them without settings.local.json, ~/.codex/config.toml or a memory file; (3) context status reports the window and its source.
+- Origin: human
+- Next step: Evidence 2026-09-17: the 200K window sits in each seat's git-ignored settings.local.json, the Codex effort in ~/.codex/config.toml, the wait cap in a memory file; a fresh checkout would run at 16 September's cost (240M weighted tokens per 13K lines against 84M per 12K on 17 September). No design first: brief the configuration keys and the source-printing verb, build, read. The launchers of delegate-launchers-become-go-verbs read these keys; delegate-runs-stay-under-200k-context is the delegate half.
+- OpenedAt: 2026-09-17T13:39:27Z
+- Revision: 1
+- Budget: elapsedLimit=4h attemptLimit=6 reservedJobMinutesLimit=720 activeJobLimit=1 reviewRoundLimit=2
+- BudgetExceptions: 0
+
+History:
+- 2026-09-17T13:39:27Z ZBDB0RDD8WWHMXBCP3ADCN2FBT-m1e-c6925449 open actor=human:Wido targets=efficiency-settings-ship-in-the-repository
+Integrity: sha256=da9ca68141cf72d2fd239e2a76d00f22b5fda4d5eb7649a64e6f75f0bbd4ff19
