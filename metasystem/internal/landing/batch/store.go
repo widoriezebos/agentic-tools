@@ -1,6 +1,7 @@
 package batch
 
 import (
+	"bytes"
 	"encoding/json"
 	"fmt"
 	"os"
@@ -76,6 +77,10 @@ func (store Store) updateLocked(id string, mutate func(*Record) error) error {
 	if err != nil {
 		return err
 	}
+	before, err := json.Marshal(record)
+	if err != nil {
+		return err
+	}
 	prior := record
 	prior.Units, prior.History = slices.Clone(record.Units), slices.Clone(record.History)
 	if err := mutate(&record); err != nil {
@@ -98,6 +103,10 @@ func (store Store) updateLocked(id string, mutate func(*Record) error) error {
 	}
 	if len(record.History) < len(prior.History) || !slices.Equal(record.History[:len(prior.History)], prior.History) {
 		return fmt.Errorf("batch history is append-only")
+	}
+	after, err := json.Marshal(record)
+	if err != nil || bytes.Equal(before, after) {
+		return err
 	}
 	return store.write(record)
 }

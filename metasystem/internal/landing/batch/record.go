@@ -47,6 +47,7 @@ type Record struct {
 	History  []HistoryEntry `json:"history"`
 	TrunkRed *TrunkRedHold  `json:"trunkRed,omitempty"`
 
+	CensusHold bool `json:"censusHold,omitempty"`
 	batchRecordFields
 }
 
