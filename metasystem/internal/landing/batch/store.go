@@ -15,8 +15,9 @@ import (
 )
 
 type batchSeams struct {
-	prober identity.Prober
-	flock  func(int, int) error
+	prober  identity.Prober
+	flock   func(int, int) error
+	publish func(string) error
 }
 type Store struct {
 	root  string
@@ -27,7 +28,7 @@ func NewStore(root string, prober identity.Prober) Store {
 	if prober == nil {
 		prober = identity.KernelProber{}
 	}
-	return Store{root: root, seams: batchSeams{prober: prober, flock: unix.Flock}}
+	return Store{root: root, seams: batchSeams{prober: prober, flock: unix.Flock, publish: func(string) error { return nil }}}
 }
 func (s Store) Liveness(p identity.Ref) identity.Liveness {
 	return identity.AliveRef(s.seams.prober, p)
@@ -61,28 +62,30 @@ func (store Store) Create(record Record) error {
 }
 func (store Store) Update(id string, mutate func(*Record) error) error {
 	return store.locked(func() error {
-		record, err := store.Load(id)
-		if err != nil {
-			return err
-		}
-		prior := record
-		prior.Units, prior.History = slices.Clone(record.Units), slices.Clone(record.History)
-		if err := mutate(&record); err != nil {
-			return err
-		}
-		if record.BatchID != id || record.Schema != prior.Schema || len(record.Units) < len(prior.Units) {
-			return fmt.Errorf("batch identity and existing units are immutable")
-		}
-		for index := range prior.Units {
-			if record.Units[index].GoalID != prior.Units[index].GoalID || record.Units[index].Chain != prior.Units[index].Chain || record.Units[index].Claim != prior.Units[index].Claim {
-				return fmt.Errorf("batch unit identity and revisions are immutable")
-			}
-		}
-		if len(record.History) < len(prior.History) || !slices.Equal(record.History[:len(prior.History)], prior.History) {
-			return fmt.Errorf("batch history is append-only")
-		}
-		return store.write(record)
+		return store.updateLocked(id, mutate)
 	})
+}
+func (store Store) updateLocked(id string, mutate func(*Record) error) error {
+	record, err := store.Load(id)
+	if err != nil {
+		return err
+	}
+	prior := record
+	prior.Units, prior.History = slices.Clone(record.Units), slices.Clone(record.History)
+	if err := mutate(&record); err != nil {
+		return err
+	}
+	sameUnit := func(next, old Unit) bool {
+		return next.GoalID == old.GoalID && next.Chain == old.Chain && next.Claim == old.Claim
+	}
+	unitsImmutable := len(record.Units) >= len(prior.Units) && slices.EqualFunc(record.Units[:len(prior.Units)], prior.Units, sameUnit)
+	if record.BatchID != id || record.Schema != prior.Schema || !unitsImmutable {
+		return fmt.Errorf("batch identity and existing units are immutable")
+	}
+	if len(record.History) < len(prior.History) || !slices.Equal(record.History[:len(prior.History)], prior.History) {
+		return fmt.Errorf("batch history is append-only")
+	}
+	return store.write(record)
 }
 func (store Store) locked(change func() error) error {
 	path := filepath.Join(store.root, "artifacts", "agents", "locks", "landing-batches.lock")

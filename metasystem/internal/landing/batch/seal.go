@@ -45,6 +45,7 @@ func sealBatch(root, baseTree, owner string, at time.Time, record *Record, plan 
 		if claimErr != nil {
 			return claimErr
 		}
+		claim.Machine, claim.Lineage = "", ""
 		candidate.Seal[unit.GoalID] = claim
 	}
 	candidate.Transition(StateSealed, at, "seal", owner, "")
@@ -94,5 +95,5 @@ func claimAt(root, tree, batchID, goalID string) (Claim, error) {
 	if len(problems) != 0 || file.Claimed == nil || file.Claimed.HandedOver.Batch != batchID {
 		return Claim{}, fmt.Errorf("goal ledger entry %s has no valid handed-over claim for batch %s: %v", goalID, batchID, problems)
 	}
-	return Claim{Revision: file.Claimed.Revision, AccountingRevision: file.Claimed.AccountingRevision}, nil
+	return Claim{Machine: file.Claimed.HandedOver.FromMachine, Lineage: file.Claimed.HandedOver.FromLineage, Revision: file.Claimed.Revision, AccountingRevision: file.Claimed.AccountingRevision}, nil
 }
