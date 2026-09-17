@@ -53,11 +53,12 @@ func (l *RegistryLedger) base(event string) map[string]any {
 
 // AppendRelaunched is the GATING write-ahead: a failure
 // here means launch_set launches nothing this cycle.
-func (l *RegistryLedger) AppendRelaunched(generation int64, watcherTag, reaperTag string, retiredThrough int64) error {
+func (l *RegistryLedger) AppendRelaunched(generation int64, watcherTag, reaperTag, landingOwnerTag string, retiredThrough int64) error {
 	record := l.base(registry.EventRelaunched)
 	record["generation"] = generation
 	record["watcherTag"] = watcherTag
 	record["reaperTag"] = reaperTag
+	record["landingOwnerTag"] = landingOwnerTag
 	record["retiredThrough"] = retiredThrough
 	if err := l.Append(record); err != nil {
 		return fmt.Errorf("relaunched append (write-ahead): %w", err)

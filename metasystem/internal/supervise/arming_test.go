@@ -93,8 +93,8 @@ func armingOwnerHelper(args []string) error {
 		Fingerprint: fingerprint, WatcherCap: watcherCap,
 	}
 	generation := checkout.PriorGeneration() + 1
-	held := make([]Held, 0, 2)
-	for _, component := range []Component{Watcher, Reaper} {
+	held := make([]Held, 0, len(productionComponentSet))
+	for _, component := range productionComponentSet {
 		componentTag := tag + "-" + string(component) + "-1"
 		command := exec.Command(os.Args[0], "-test.run=^TestTakeoverComponentHelper$", "--", "--takeover-component-helper", componentTag)
 		command.SysProcAttr = &syscall.SysProcAttr{Setsid: true}
@@ -120,6 +120,11 @@ func armingOwnerHelper(args []string) error {
 		return err
 	}
 	if err := writeArmingHelperJSON(filepath.Join(supervisionDir, "reaper.heartbeat.json"), map[string]any{
+		"observedAtEpoch": now,
+	}); err != nil {
+		return err
+	}
+	if err := writeArmingHelperJSON(filepath.Join(supervisionDir, "landing-owner.heartbeat.json"), map[string]any{
 		"observedAtEpoch": now,
 	}); err != nil {
 		return err
@@ -179,7 +184,7 @@ func previousOwnerLedger(t *testing.T, path, checkoutPath string, owner ArmingOw
 func appendPreviousOwnerRows(t *testing.T, path, checkoutPath string, result EnsureResult) {
 	t.Helper()
 	held, err := recordedHeld(checkoutPath)
-	if err != nil || len(held) != 2 {
+	if err != nil || len(held) != len(productionComponentSet) {
 		t.Fatalf("read previous owner components: held=%+v err=%v", held, err)
 	}
 	tags := map[Component]string{}
@@ -187,7 +192,7 @@ func appendPreviousOwnerRows(t *testing.T, path, checkoutPath string, result Ens
 		tags[component.Component] = component.Tag
 	}
 	ledger := previousOwnerLedger(t, path, checkoutPath, result.Owner)
-	if err := ledger.AppendRelaunched(result.Generation, tags[Watcher], tags[Reaper], 0); err != nil {
+	if err := ledger.AppendRelaunched(result.Generation, tags[Watcher], tags[Reaper], tags[LandingOwner], 0); err != nil {
 		t.Fatal(err)
 	}
 	for _, component := range held {
@@ -200,7 +205,7 @@ func appendPreviousOwnerRows(t *testing.T, path, checkoutPath string, result Ens
 func appendPreviousOwnerRelaunched(t *testing.T, path, checkoutPath string, owner ArmingOwner, generation int64) {
 	t.Helper()
 	ledger := previousOwnerLedger(t, path, checkoutPath, owner)
-	if err := ledger.AppendRelaunched(generation, owner.InstanceTag+"-watcher-1", owner.InstanceTag+"-reaper-1", 0); err != nil {
+	if err := ledger.AppendRelaunched(generation, owner.InstanceTag+"-watcher-1", owner.InstanceTag+"-reaper-1", owner.InstanceTag+"-landing-owner-1", 0); err != nil {
 		t.Fatal(err)
 	}
 }
@@ -1327,7 +1332,8 @@ func exerciseCheckoutCustodyInvariant(t *testing.T) {
 			if err := json.Unmarshal(stateBytes, &document); err != nil {
 				t.Fatal(err)
 			}
-			for _, componentName := range []string{string(Watcher), string(Reaper)} {
+			for _, kind := range productionComponentSet {
+				componentName := string(kind)
 				component := document.Components[componentName]
 				ref := identity.Ref{
 					Pid: component.Pid, StartedAtSec: component.PidStartedAt,
@@ -1403,7 +1409,7 @@ func exerciseCheckoutCustodyInvariant(t *testing.T) {
 	assertOtherCheckoutsUntouched("relaunch")
 
 	components, err := recordedHeld(requestedRoot)
-	if err != nil || len(components) != 2 {
+	if err != nil || len(components) != len(productionComponentSet) {
 		t.Fatalf("read requested checkout components for dead-component reap: components=%+v err=%v", components, err)
 	}
 	control := recordedComponentControl{

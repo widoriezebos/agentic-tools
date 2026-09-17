@@ -67,24 +67,24 @@ func newOwnerBed(t *testing.T, record Record, now time.Time) *ownerBed {
 		}
 		return ReturnLedgerGoal{}, nil
 	}}
-	bed.owner = &Owner{store: bed.store, settings: settings, actor: "landing+owner", ownerSeams: ownerSeams{now: func() time.Time { return bed.now }, fetchTree: func() (string, error) { return bed.tree, bed.fetchErr }, readClaim: readClaim, returns: returns, rebind: func(id string) error {
-		bed.ticks = append(bed.ticks, id)
-		bed.events = append(bed.events, "rebind:"+id)
-		return nil
-	}, sample: func() proofrun.LoadSample {
-		if len(bed.samples) == 0 {
-			return bed.sample
-		}
-		sample := bed.samples[0]
-		bed.samples = bed.samples[1:]
-		return sample
-	}, admission: func(proofrun.LoadSample) proofrun.AdmissionCap { return proofrun.AdmissionCap{Max: 8} }, launch: func(id string, sample proofrun.LoadSample, window string) error {
-		bed.launches++
-		bed.launched, bed.window = sample, window
-		return nil
-	}, lock: func(id string) *proofLock {
-		return newProofLock(bed.store, bed.lockDir, bed.queueDir, "batch:"+id, 7, func() time.Time { return bed.now })
-	}, after: func(time.Duration) <-chan time.Time { return make(chan time.Time) }, report: func(string, error) {}, locks: map[string]*proofLock{}}}
+	bed.owner, err = NewOwner(OwnerOptions{Store: bed.store, Settings: settings, Actor: "landing+owner", PID: 7,
+		LockDir: bed.lockDir, QueueDir: bed.queueDir, Now: func() time.Time { return bed.now }, FetchTree: func() (string, error) { return bed.tree, bed.fetchErr }, ReadClaim: readClaim, Returns: returns, Rebind: func(id string) error {
+			bed.ticks = append(bed.ticks, id)
+			bed.events = append(bed.events, "rebind:"+id)
+			return nil
+		}, Sample: func() proofrun.LoadSample {
+			if len(bed.samples) == 0 {
+				return bed.sample
+			}
+			sample := bed.samples[0]
+			bed.samples = bed.samples[1:]
+			return sample
+		}, Admission: func(proofrun.LoadSample) proofrun.AdmissionCap { return proofrun.AdmissionCap{Max: 8} }, Launch: func(id string, sample proofrun.LoadSample, window string) error {
+			bed.launches++
+			bed.launched, bed.window = sample, window
+			return nil
+		}, After: func(time.Duration) <-chan time.Time { return make(chan time.Time) }, Report: func(string, error) {}})
+	must(t, err)
 	return bed
 }
 
@@ -185,4 +185,23 @@ func TestBatchOwnerResumesEveryLiveBatch(t *testing.T) {
 	must(t, bed.store.Create(ownerRecord("01j5x00000000000000000ba04", StateHeldTrunkRed, joined)))
 	bed.owner.Resume()
 	witness(t, slices.Equal(bed.ticks, []string{testBatchID, "01j5x00000000000000000ba02", "01j5x00000000000000000ba04"}) && bed.launches == 0, "ticks=%v launches=%d", bed.ticks, bed.launches)
+}
+
+func TestBatchOwnerReportsResumeEnumerationFailure(t *testing.T) {
+	bed := newOwnerBed(t, ownerRecord(testBatchID, StateOpen, time.Time{}), time.Unix(5, 0))
+	reported := make(chan error, 1)
+	bed.owner.glob = func(string) ([]string, error) { return nil, os.ErrPermission }
+	bed.owner.report = func(id string, err error) {
+		if id != "" {
+			t.Fatalf("enumeration failure reported as batch %q", id)
+		}
+		reported <- err
+	}
+	bed.owner.Resume()
+	select {
+	case err := <-reported:
+		witness(t, strings.Contains(err.Error(), "enumerate landing batches") && strings.Contains(err.Error(), os.ErrPermission.Error()), "reported error=%v", err)
+	default:
+		t.Fatal("Resume dropped the Glob failure")
+	}
 }

@@ -137,6 +137,7 @@ func runTestPlan(args []string) int {
 
 type testingSelectionRequest struct {
 	Root, GoalID, Tree, CapMin, RetryDecision, ResultPath string
+	ExpectedGoalRevision, ExpectedAccountingRevision      uint64
 	Mode                                                  testpolicy.Mode
 	Purpose                                               testpolicy.Purpose
 	Groups                                                []string
@@ -161,6 +162,8 @@ func parseTestingSelection(name string, args []string, execution bool) (testingS
 		flags.StringVar(&request.CapMin, "cap-min", "", "reserved proof minutes")
 		flags.StringVar(&request.RetryDecision, "retry-decision", "", "accountable version-1 retry decision")
 		flags.StringVar(&request.ResultPath, "result", "", "atomic result projection path")
+		flags.Uint64Var(&request.ExpectedGoalRevision, "expected-goal-revision", 0, "sealed goal revision")
+		flags.Uint64Var(&request.ExpectedAccountingRevision, "expected-accounting-revision", 0, "sealed accounting revision")
 	}
 	if flags.Parse(args) != nil || flags.NArg() != 0 || request.Root == "" {
 		fmt.Fprintf(os.Stderr, "usage: metasystem %s --root INSTALLATION [--goal ID] [--tree TREE] [--mode auto|standard|deep|canary] [--purpose delivery|diagnostic|cadence] [--groups ID,ID]\n", name)
@@ -181,6 +184,10 @@ func parseTestingSelection(name string, args []string, execution bool) (testingS
 		}
 	}
 	request.Mode, request.Purpose = testpolicy.Mode(*mode), testpolicy.Purpose(*purpose)
+	if (request.ExpectedGoalRevision == 0) != (request.ExpectedAccountingRevision == 0) {
+		fmt.Fprintln(os.Stderr, "expected goal and accounting revisions must be supplied together")
+		return request, false, 2
+	}
 	return request, *jsonOutput, 0
 }
 
@@ -811,8 +818,9 @@ func runTestRun(args []string) int {
 	}
 	admission := proofLaunchAdmission{ControlRoot: prepared.Installation,
 		ExecutionRoot: prepared.ProjectRoot, ConfPath: prepared.ConfPath, GoalID: request.GoalID, RetryDecision: request.RetryDecision,
-		CapMin:     request.CapMin,
-		ScopeClass: "selected", CommandClass: "testing", IdentityInputs: append([]string{prepared.CandidateTree, prepared.ContractDigest,
+		CapMin: request.CapMin, ExpectedGoalRevision: request.ExpectedGoalRevision,
+		ExpectedAccountingRevision: request.ExpectedAccountingRevision,
+		ScopeClass:                 "selected", CommandClass: "testing", IdentityInputs: append([]string{prepared.CandidateTree, prepared.ContractDigest,
 			prepared.BaseContractDigest, prepared.PolicyEngineDigest, candidateEngine.Digest, prepared.BehaviorPolicyDigest, planDigest}, identityInputs...), Environment: prepared.Environment,
 		SharedEngine: engine, SharedManifestDigest: manifestDigest, ComponentIdentities: identities,
 		// A cadence attempt is the fresh sweep: it never inherits a

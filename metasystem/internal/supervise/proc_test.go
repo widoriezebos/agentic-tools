@@ -172,7 +172,7 @@ func TestRegistryLedgerRecords(t *testing.T) {
 			return nil
 		},
 	}
-	if err := ledger.AppendRelaunched(2, "w2", "r2", 1); err != nil {
+	if err := ledger.AppendRelaunched(2, "w2", "r2", "l2", 1); err != nil {
 		t.Fatal(err)
 	}
 	if err := ledger.AppendLaunched(Held{Component: Watcher, Tag: "w2", Generation: 2,
@@ -185,13 +185,13 @@ func TestRegistryLedgerRecords(t *testing.T) {
 	}
 	relaunched := records[0]
 	if relaunched["event"] != registry.EventRelaunched || relaunched["engine"] != "go" ||
-		relaunched["ownerTag"] != "tag-a" || relaunched["retiredThrough"] != int64(1) {
+		relaunched["ownerTag"] != "tag-a" || relaunched["retiredThrough"] != int64(1) || relaunched["landingOwnerTag"] != "l2" {
 		t.Fatalf("relaunched record malformed: %+v", relaunched)
 	}
 
 	// Write-ahead is GATING: a failed relaunched append is an error.
 	fail = true
-	if err := ledger.AppendRelaunched(3, "w3", "r3", 2); err == nil {
+	if err := ledger.AppendRelaunched(3, "w3", "r3", "l3", 2); err == nil {
 		t.Fatal("a failed write-ahead must return an error (SLC-R6-006)")
 	}
 	// Exited is best-effort: a failed append is swallowed.

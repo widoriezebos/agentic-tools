@@ -541,7 +541,7 @@ func recordedHeld(root string) ([]Held, error) {
 		return nil, fmt.Errorf("recorded supervision state is malformed: %w", err)
 	}
 	var held []Held
-	for _, kind := range []Component{Watcher, Reaper} {
+	for _, kind := range productionComponentSet {
 		component, exists := document.Components[string(kind)]
 		if !exists {
 			continue
@@ -611,10 +611,14 @@ func waitForRecordedGroupAbsence(control recordedComponentControl, pgid int64, w
 }
 
 func supervisionComponentName(component Component) string {
-	if component == Reaper {
+	switch component {
+	case Reaper:
 		return "job-reaper"
+	case LandingOwner:
+		return "landing-batch-owner"
+	default:
+		return "repo-watcher"
 	}
-	return "repo-watcher"
 }
 
 func stopRecordedComponent(control recordedComponentControl, held Held, scaleMilli int) (ComponentOutcome, error) {
@@ -703,7 +707,7 @@ func taggedTakeoverComponents(root, ownerTag string, processes []census.Process)
 		tag := processArgument(fields, "--tag")
 		repo := processArgument(fields, "--repo")
 		component := Component(componentName)
-		if (component != Watcher && component != Reaper) ||
+		if (component != Watcher && component != Reaper && component != LandingOwner) ||
 			!strings.HasPrefix(tag, ownerTag+"-"+componentName+"-") {
 			continue
 		}
@@ -754,10 +758,12 @@ func mergeTakeoverComponents(recorded, discovered []Held) ([]Held, error) {
 	}
 	sort.Slice(held, func(i, j int) bool {
 		rank := func(component Component) int {
-			if component == Watcher {
-				return 0
+			for index, production := range productionComponentSet {
+				if component == production {
+					return index
+				}
 			}
-			return 1
+			return len(productionComponentSet)
 		}
 		if rank(held[i].Component) != rank(held[j].Component) {
 			return rank(held[i].Component) < rank(held[j].Component)

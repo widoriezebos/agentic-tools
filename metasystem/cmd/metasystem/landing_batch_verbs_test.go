@@ -35,7 +35,7 @@ func TestBatchVerbsUnavailableWithoutFilesystemWrites(t *testing.T) {
 
 func TestBatchTaggedCapabilityWitnessExecutesInProof(t *testing.T) {
 	command := exec.Command("go", "test", "-count=1", "-tags", "batchtest",
-		"-run", "^(TestBatchCapabilitiesGate|TestGoalHandoverRequiresCompleteInputs|TestGoalHandoverTargetAuthenticationFailsClosed)$", "./cmd/metasystem")
+		"-run", "^(TestBatchCapabilitiesGate|TestGoalHandoverRequiresCompleteInputs|TestGoalHandoverTargetAuthenticationFailsClosed|TestBatchJoinSpawnsOneOwner|TestBatchOwnerHoldsTheLease|TestBatchOwnerWiringBound|TestBatchProductionReturnTargetClassifiesCustody|TestBatchProofCoversTheUnion|TestBatchProofAcceptsReusableSuccess|TestBatchSupervisorTakeoverRebindsJoinedClaims|TestGoalHandoverTargetRootFlagFlows|TestLandingBatchJoinVerbPublishesOutsideFlock)$", "./cmd/metasystem")
 	command.Dir = "../.."
 	if output, err := command.CombinedOutput(); err != nil {
 		t.Fatalf("tagged batch capability witness: %v\n%s", err, output)
@@ -46,15 +46,27 @@ func TestBatchRuntimeInputsCannotRegisterCapability(t *testing.T) {
 	t.Setenv("GO_WANT_BATCH_RUNTIME_INPUT_HELPER", "1")
 	t.Setenv("METASYSTEM_BATCH_CAPABILITIES", string(recordStoreHistoryAndProberSeam))
 	command := exec.Command("go", "test", "-count=1", "-run",
-		"^TestBatchProductionRegistryEmpty$", "./cmd/metasystem")
+		"^TestBatchProductionRegistryContainsOnlyBuiltUnits$", "./cmd/metasystem")
 	command.Dir = "../.."
 	if output, err := command.CombinedOutput(); err != nil {
 		t.Fatalf("runtime input registered a batch capability: %v\n%s", err, output)
 	}
 }
 
-func TestBatchProductionRegistryEmpty(t *testing.T) {
-	if os.Getenv("GO_WANT_BATCH_RUNTIME_INPUT_HELPER") == "1" && len(compiledBatchCapabilities) != 0 {
-		t.Fatalf("production registered %d batch capabilities", len(compiledBatchCapabilities))
+func TestBatchProductionRegistryContainsOnlyBuiltUnits(t *testing.T) {
+	if os.Getenv("GO_WANT_BATCH_RUNTIME_INPUT_HELPER") != "1" {
+		return
+	}
+	want := map[batchCapability]bool{
+		ownerVerbAndTick: true, productionSupervisorTakeover: true,
+		proofPlanningAndTipLaunch: true, revisionBoundAdmissionAndDiagnosticHeadroom: true,
+	}
+	if len(compiledBatchCapabilities) != len(want) {
+		t.Fatalf("production registered %d batch capabilities, want %d", len(compiledBatchCapabilities), len(want))
+	}
+	for capability := range compiledBatchCapabilities {
+		if !want[capability] {
+			t.Fatalf("production registered unbuilt capability %s", capability)
+		}
 	}
 }

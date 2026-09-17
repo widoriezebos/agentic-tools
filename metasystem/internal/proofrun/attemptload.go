@@ -61,6 +61,13 @@ func sampleLoad(root, selfAttempt string, launcher int64, now time.Time) LoadSam
 	return sample
 }
 
+// SampleLoad exposes the one authoritative load sample used by proof
+// admission. Batch ownership uses the same census as an ordinary proof
+// attempt; a second sampler would make the two policies disagree.
+func SampleLoad(root, selfAttempt string, launcher int64, now time.Time) LoadSample {
+	return sampleLoad(root, selfAttempt, launcher, now)
+}
+
 // Loaded reports whether the sample shows a crowded host: the one-minute
 // load at or above the cores, or another top-level proof launcher on the
 // host with the load already at half the cores. One other launcher on an

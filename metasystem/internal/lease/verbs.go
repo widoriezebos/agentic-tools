@@ -715,6 +715,23 @@ func AnnouncementsFor(root string, pid int64) []Announcement {
 	return out
 }
 
+// AnnouncementsForOwnerLineage returns the durable process identities that
+// have represented one logical owner. Landing return uses these records to
+// distinguish a dead source instance from a restarted source checkout.
+func AnnouncementsForOwnerLineage(root, lineage string) []Announcement {
+	records, err := readAnnouncements(resolveRoot(root), false)
+	if err != nil {
+		return nil
+	}
+	var out []Announcement
+	for _, rec := range records {
+		if announcementLineage(&rec.Ann) == lineage {
+			out = append(out, rec.Ann)
+		}
+	}
+	return out
+}
+
 // CheckoutForeignToLineage reports whether the checkout lease exists,
 // reads validly, and carries a DIFFERENT owner lineage — the one state
 // that makes a mission runner's checkout reclaim someone else's business:

@@ -2,7 +2,7 @@ package batch
 
 import "time"
 
-const StateOpen, StateSealed, StateProving, StateDiagnosing, StateLanding, StateLanded, StateHeldTrunkRed, StateDissolved = "open", "sealed", "proving", "diagnosing", "landing", "landed", "held-trunk-red", "dissolved"
+const StateOpen, StateSealed, StateProving, StateDiagnosing, StateLanding, StateLanded, StateHeldTrunkRed, StateHeldUnclassified, StateDissolved = "open", "sealed", "proving", "diagnosing", "landing", "landed", "held-trunk-red", "held-unclassified", "dissolved"
 
 const UnitJoining, UnitJoined, UnitReturnPending, UnitWithdrawnBudget, UnitEjected, UnitLanded = "joining", "joined", "return-pending", "withdrawn-budget", "ejected", "landed"
 
@@ -22,11 +22,12 @@ type unitRecordFields struct {
 	ReturnDisposition string `json:"returnDisposition,omitempty"`
 }
 type Unit struct {
-	GoalID string `json:"goalId"`
-	Chain  string `json:"chain"`
-	Claim  Claim  `json:"claim"`
-	State  string `json:"state"`
-	Gate   runIDs `json:"gate,omitempty"`
+	GoalID   string `json:"goalId"`
+	Chain    string `json:"chain"`
+	SeatRoot string `json:"seatRoot,omitempty"`
+	Claim    Claim  `json:"claim"`
+	State    string `json:"state"`
+	Gate     runIDs `json:"gate,omitempty"`
 
 	unitRecordFields
 }
@@ -46,6 +47,7 @@ type Record struct {
 	Units    []Unit         `json:"units"`
 	History  []HistoryEntry `json:"history"`
 	TrunkRed *TrunkRedHold  `json:"trunkRed,omitempty"`
+	Proof    *Proof         `json:"proof,omitempty"`
 
 	CensusHold bool `json:"censusHold,omitempty"`
 	batchRecordFields

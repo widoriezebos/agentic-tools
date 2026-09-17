@@ -13,13 +13,23 @@ import (
 // behavior is provable with fakes and the process-touching edges live
 // in cmd wiring.
 
-// Component names the two supervised components.
+// Component names one production-supervised component.
 type Component string
 
 const (
-	Watcher Component = "watcher"
-	Reaper  Component = "reaper"
+	Watcher      Component = "watcher"
+	Reaper       Component = "reaper"
+	LandingOwner Component = "landing-owner"
 )
+
+var productionComponentSet = [...]Component{Watcher, Reaper, LandingOwner}
+
+// ProductionComponents returns the complete ordered component set. Every
+// production enumeration uses this one source so takeover cannot strand the
+// landing owner outside a supervision generation.
+func ProductionComponents() []Component {
+	return append([]Component(nil), productionComponentSet[:]...)
+}
 
 // Held is what the owner HOLDS IN MEMORY about a component it
 // launched: teardown uses exactly this, never a re-read state file
@@ -50,7 +60,7 @@ type Checkout interface {
 	PublishState(held []Held) error
 }
 
-// Components launches and observes the supervised pair.
+// Components launches and observes the supervised set.
 type Components interface {
 	// Launch starts one component detached and returns its identity.
 	Launch(component Component, tag string, generation int64) (identity.Ref, error)
@@ -79,7 +89,7 @@ type WatcherRepairRequests interface {
 type Ledger interface {
 	// AppendRelaunched is the GATING write-ahead: if it
 	// fails, nothing launches this cycle.
-	AppendRelaunched(generation int64, watcherTag, reaperTag string, retiredThrough int64) error
+	AppendRelaunched(generation int64, watcherTag, reaperTag, landingOwnerTag string, retiredThrough int64) error
 	// AppendLaunched records one component's identity; failures are
 	// retried at every observation.
 	AppendLaunched(held Held) error
@@ -397,16 +407,19 @@ func (o *Owner) relaunchSet() error {
 	o.retiredThrough = RetireWatermark(o.retiredThrough, verified, recorded)
 
 	next := o.generation + 1
-	watcherTag := fmt.Sprintf("%s-watcher-%d", o.TagPrefix, next)
-	reaperTag := fmt.Sprintf("%s-reaper-%d", o.TagPrefix, next)
+	tags := map[Component]string{}
+	for _, component := range productionComponentSet {
+		tags[component] = fmt.Sprintf("%s-%s-%d", o.TagPrefix, component, next)
+	}
 	// WRITE-AHEAD GATES THE LAUNCH: an owner that cannot
 	// record intent must not create processes.
-	if err := o.Ledger.AppendRelaunched(next, watcherTag, reaperTag, o.retiredThrough); err != nil {
+	if err := o.Ledger.AppendRelaunched(next, tags[Watcher], tags[Reaper], tags[LandingOwner], o.retiredThrough); err != nil {
 		return fmt.Errorf("write-ahead refused, launching nothing: %w", err)
 	}
 	o.generation = next
 	o.held = unproven
-	for component, tag := range map[Component]string{Watcher: watcherTag, Reaper: reaperTag} {
+	for _, component := range productionComponentSet {
+		tag := tags[component]
 		ref, err := o.Components.Launch(component, tag, next)
 		if err != nil {
 			continue // the breaker sees the missing component next cycle
@@ -487,7 +500,7 @@ func (o *Owner) retryOwedAppends() (persistentFailure bool) {
 }
 
 func (o *Owner) observeComponents() Observation {
-	if len(o.currentGenerationHeld()) < 2 {
+	if len(o.currentGenerationHeld()) < len(productionComponentSet) {
 		return Failing
 	}
 	worst := Healthy

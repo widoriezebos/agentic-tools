@@ -128,6 +128,22 @@ func TestParseRecordAcceptsKilledListAndDiagnosis(t *testing.T) {
 	}
 }
 
+func TestLandingOwnerIsProductionRegistryComponent(t *testing.T) {
+	relaunched, err := ParseRecord(raw2(map[string]any{
+		"event": EventRelaunched, "generation": 2.0, "watcherTag": "w2", "reaperTag": "r2",
+		"landingOwnerTag": "l2", "retiredThrough": 1.0,
+	}))
+	if err != nil || relaunched.LandingOwnerTag != "l2" {
+		t.Fatalf("relaunched landing owner=%+v err=%v", relaunched, err)
+	}
+	launched, err := ParseRecord(raw2(map[string]any{
+		"event": EventLaunched, "generation": 2.0, "component": "landing-owner", "pid": 41.0, "pidStartedAt": 5.0,
+	}))
+	if err != nil || launched.Component != "landing-owner" {
+		t.Fatalf("launched landing owner=%+v err=%v", launched, err)
+	}
+}
+
 func TestTornMarkerParsesBare(t *testing.T) {
 	record, err := ParseRecord(map[string]any{
 		"schemaVersion": 1.0, "event": TornEvent, "checkoutPath": "", "at": "not-a-time",

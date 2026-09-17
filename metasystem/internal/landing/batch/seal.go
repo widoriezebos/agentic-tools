@@ -95,5 +95,10 @@ func claimAt(root, tree, batchID, goalID string) (Claim, error) {
 	if len(problems) != 0 || file.Claimed == nil || file.Claimed.HandedOver.Batch != batchID {
 		return Claim{}, fmt.Errorf("goal ledger entry %s has no valid handed-over claim for batch %s: %v", goalID, batchID, problems)
 	}
-	return Claim{Machine: file.Claimed.HandedOver.FromMachine, Lineage: file.Claimed.HandedOver.FromLineage, Revision: file.Claimed.Revision, AccountingRevision: file.Claimed.AccountingRevision}, nil
+	return Claim{Machine: file.Claimed.HandedOver.FromMachine, Lineage: file.Claimed.HandedOver.FromLineage, Epoch: file.Claimed.HandedOver.FromEpoch, Revision: file.Claimed.Revision, AccountingRevision: file.Claimed.AccountingRevision}, nil
+}
+
+// ReadClaimAt exposes the sealed-tree claim reader to the production owner.
+func ReadClaimAt(root, tree, batchID, goalID string) (Claim, error) {
+	return claimAt(root, tree, batchID, goalID)
 }

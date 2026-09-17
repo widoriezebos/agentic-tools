@@ -8,10 +8,12 @@ import (
 	"os"
 	"os/signal"
 	"path/filepath"
+	"strings"
 	"syscall"
 	"time"
 
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/atomicfile"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/config"
 	dispatchpkg "github.com/widoriezebos/agentic-tools/metasystem/internal/dispatch"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/fixtureauth"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/identity"
@@ -37,7 +39,7 @@ import (
 // it down deliberately by signal, or replaces it when its heartbeat goes stale.
 func runSuperviseComponent(args []string) int {
 	flags := flag.NewFlagSet("supervise component", flag.ContinueOnError)
-	component := flags.String("component", "", "watcher | reaper")
+	component := flags.String("component", "", "watcher | reaper | landing-owner")
 	repo := pathFlag(flags, "repo", "", "checkout root the component operates on")
 	metasystemRoot := flags.String("metasystem-root", "", "installation root containing config and runtime adapters")
 	scope := flags.String("scope", "", "census scope (git toplevel); defaults to --repo")
@@ -62,7 +64,7 @@ func runSuperviseComponent(args []string) int {
 		fmt.Fprintln(os.Stderr, "supervise component: --component, --tag, --heartbeat required")
 		return 2
 	}
-	if *component == "watcher" || *component == "reaper" {
+	if *component == "watcher" || *component == "reaper" || *component == "landing-owner" {
 		if *repo == "" {
 			fmt.Fprintln(os.Stderr, "supervise component: --repo is required for the "+*component)
 			return 2
@@ -99,6 +101,9 @@ func runSuperviseComponent(args []string) int {
 	}
 
 	stop := make(chan os.Signal, 1)
+	wake := make(chan os.Signal, 1)
+	signal.Notify(wake, syscall.SIGUSR1)
+	defer signal.Stop(wake)
 	if *ignoreTerm {
 		signal.Ignore(syscall.SIGTERM)
 		signal.Notify(stop, syscall.SIGINT)
@@ -126,6 +131,13 @@ func runSuperviseComponent(args []string) int {
 			reaperPass()
 			return nil
 		}
+	case "landing-owner":
+		release, pass, ok := setupLandingOwner(*repo)
+		if !ok {
+			return 1
+		}
+		defer release()
+		work = pass
 	default:
 		// An unknown component still beats, so a mislabelled owner launch is
 		// observable rather than a silent no-op.
@@ -171,8 +183,54 @@ func runSuperviseComponent(args []string) int {
 			if err := work(); err != nil {
 				fmt.Fprintln(os.Stderr, "supervise component:", err)
 			}
+		case <-wake:
+			beat()
+			if err := work(); err != nil {
+				fmt.Fprintln(os.Stderr, "supervise component:", err)
+			}
 		}
 	}
+}
+
+func setupLandingOwner(repo string) (release func(), pass func() error, ok bool) {
+	noWork := func() error { return nil }
+	if !batchCapabilitiesAvailable() {
+		return func() {}, noWork, true
+	}
+	conf := filepath.Join(repo, "metasystem.conf")
+	rawRoot, _, err := config.Get(config.GetParams{Key: config.BatchRootKey, ConfPath: conf, Default: "", DefaultSet: true})
+	if err != nil {
+		fmt.Fprintln(os.Stderr, "supervise component landing-owner:", err)
+		return nil, nil, false
+	}
+	resolved, err := resolvePathFlag(rawRoot)
+	if rawRoot == "" || err != nil || resolved != filepath.Clean(repo) {
+		return func() {}, noWork, true
+	}
+	rawWait, _, err := config.Get(config.GetParams{Key: config.BatchMaxWaitKey, ConfPath: conf,
+		Default: config.DefaultBatchMaxWait.String(), DefaultSet: true})
+	wait, parseErr := time.ParseDuration(strings.TrimSpace(rawWait))
+	if err != nil || parseErr != nil {
+		fmt.Fprintln(os.Stderr, "supervise component landing-owner: invalid batch wait")
+		return nil, nil, false
+	}
+	settings, err := config.NewBatchLanding(repo, wait, time.Now)
+	if err != nil {
+		fmt.Fprintln(os.Stderr, "supervise component landing-owner:", err)
+		return nil, nil, false
+	}
+	held, err := acquireBatchOwner(repo)
+	if err != nil {
+		fmt.Fprintln(os.Stderr, "supervise component landing-owner:", err)
+		return nil, nil, false
+	}
+	owner, err := newProductionBatchOwner(settings, held, time.Now)
+	if err != nil {
+		held.retire()
+		fmt.Fprintln(os.Stderr, "supervise component landing-owner:", err)
+		return nil, nil, false
+	}
+	return held.retire, func() error { owner.Resume(); return nil }, true
 }
 
 // heartbeatWriter returns a never-failing closure that rewrites the component's

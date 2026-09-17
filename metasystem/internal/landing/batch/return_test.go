@@ -24,6 +24,7 @@ func TestBatchReturnIsCrashSafeAndOnce(t *testing.T) {
 		{"dead target", ReturnTargetDead, "", ReturnReleased, "", false, 0, 1},
 		{"restarted target", ReturnTargetRestarted, "", ReturnReleased, "", false, 0, 1},
 		{"unknown then live", ReturnTargetUnknown, "", ReturnHandedBack, "", false, 1, 0},
+		{"occupied source", ReturnTargetOccupied, "", ReturnReleased, "", false, 0, 1},
 		{"ledger read error", ReturnTargetLive, "", ReturnHandedBack, "", true, 1, 0},
 		{"claimed under another batch", ReturnTargetLive, "", ReturnAlreadyReturned, "other-batch", false, 0, 0},
 		{"source pair holds under this batch", ReturnTargetLive, "", ReturnAlreadyReturned, "source", false, 0, 0},
@@ -55,7 +56,7 @@ func TestBatchReturnIsCrashSafeAndOnce(t *testing.T) {
 					}
 					return ledger, nil
 				},
-				Target: func(source Claim) ReturnTarget {
+				Target: func(unit Unit) ReturnTarget {
 					targets++
 					if test.target == ReturnTargetUnknown && targets == 1 {
 						return ReturnTarget{State: ReturnTargetUnknown}
@@ -64,7 +65,11 @@ func TestBatchReturnIsCrashSafeAndOnce(t *testing.T) {
 					if state == ReturnTargetUnknown {
 						state = ReturnTargetLive
 					}
-					return ReturnTarget{State: state, Epoch: 9}
+					reason := ""
+					if state == ReturnTargetOccupied {
+						reason = "source machine holds goal-b"
+					}
+					return ReturnTarget{State: state, Epoch: 9, Reason: reason}
 				},
 				HandBack: func(_ string, source Claim, epoch uint64) error {
 					handBacks++
@@ -74,7 +79,11 @@ func TestBatchReturnIsCrashSafeAndOnce(t *testing.T) {
 				},
 				Release: func(_ string, next string) error {
 					releases++
-					witness(t, next == "ejected: broken proof; Repair the unit.", "release next=%q", next)
+					want := "ejected: broken proof; Repair the unit."
+					if test.target == ReturnTargetOccupied {
+						want = "source machine holds goal-b; " + want
+					}
+					witness(t, next == want, "release next=%q", next)
 					ledger.Claimed = false
 					return nil
 				},
@@ -131,4 +140,34 @@ func TestBatchTerminalStateRequiresReturnPending(t *testing.T) {
 	must(t, ReconcileJoins(store, testBatchID, "tree-a", "landing+owner", time.Unix(3, 0), nil))
 	unit = load(t, store).Units[0]
 	witness(t, unit.State == UnitReturnPending && unit.Outcome == UnitEjected && unit.Failure == "join-incomplete" && unit.ReturnDisposition == "" && handBacks == 0, "join failure returned instead of pending: %+v", unit)
+}
+
+func TestBatchFailedHandbackSeesOccupiedSourceOnNextTick(t *testing.T) {
+	store := returnBed(t)
+	must(t, RequestReturn(store, testBatchID, "goal-a", UnitEjected, "broken proof", "landing+owner", time.Unix(1, 0)))
+	targets, releases := 0, 0
+	seams := ReturnSeams{
+		Read: func(string, string, string) (ReturnLedgerGoal, error) {
+			return ReturnLedgerGoal{Claimed: true, Machine: "landing", Lineage: "owner", Batch: testBatchID}, nil
+		},
+		Target: func(Unit) ReturnTarget {
+			targets++
+			if targets == 1 {
+				return ReturnTarget{State: ReturnTargetLive, Epoch: 8}
+			}
+			return ReturnTarget{State: ReturnTargetOccupied, Reason: "source machine holds goal-b"}
+		},
+		HandBack: func(string, Claim, uint64) error { return errors.New("source stopped before handback") },
+		Release: func(_ string, next string) error {
+			releases++
+			witness(t, next == "source machine holds goal-b; ejected: broken proof", "occupied Next=%q", next)
+			return nil
+		},
+	}
+	witness(t, ReturnUnits(store, testBatchID, "tree-a", "landing+owner", time.Unix(2, 0), seams) != nil, "failed handback returned success")
+	witness(t, load(t, store).Units[0].State == UnitReturnPending, "failed handback did not remain pending")
+	must(t, ReturnUnits(store, testBatchID, "tree-b", "landing+owner", time.Unix(3, 0), seams))
+	unit := load(t, store).Units[0]
+	witness(t, targets == 2 && releases == 1 && unit.State == UnitEjected && unit.ReturnDisposition == ReturnReleased,
+		"targets=%d releases=%d unit=%+v", targets, releases, unit)
 }

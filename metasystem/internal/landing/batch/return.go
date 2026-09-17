@@ -2,24 +2,48 @@ package batch
 
 import (
 	"fmt"
+	"path/filepath"
 	"time"
+
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/gittree"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/goal"
 )
 
-const ReturnTargetLive, ReturnTargetDead, ReturnTargetRestarted, ReturnTargetUnknown = "live-same-instance", "dead", "restarted", "unknown"
+const ReturnTargetLive, ReturnTargetDead, ReturnTargetRestarted, ReturnTargetOccupied, ReturnTargetUnknown = "live-same-instance", "dead", "restarted", "occupied", "unknown"
 
 type ReturnLedgerGoal struct {
 	Claimed                       bool
 	Machine, Lineage, Batch, Next string
 }
 type ReturnTarget struct {
-	State string
-	Epoch uint64
+	State  string
+	Epoch  uint64
+	Reason string
 }
 type ReturnSeams struct {
 	Read     func(root, tree, goalID string) (ReturnLedgerGoal, error)
-	Target   func(Claim) ReturnTarget
+	Target   func(Unit) ReturnTarget
 	HandBack func(goalID string, source Claim, reboundEpoch uint64) error
 	Release  func(goalID, next string) error
+}
+
+// ReadReturnLedgerGoal reads return custody from the exact fetched tree used
+// for the rest of an owner tick.
+func ReadReturnLedgerGoal(root, tree, goalID string) (ReturnLedgerGoal, error) {
+	data, present, err := (gittree.Workspace{Dir: root}).FileAt(tree, filepath.ToSlash(filepath.Join("plans", "goals", goalID+".md")))
+	if err != nil || !present {
+		return ReturnLedgerGoal{}, fmt.Errorf("goal ledger entry %s is absent from tree %s: %w", goalID, tree, err)
+	}
+	file, problems := goal.ParseFile(data)
+	if len(problems) != 0 {
+		return ReturnLedgerGoal{}, fmt.Errorf("goal ledger entry %s is invalid: %v", goalID, problems)
+	}
+	out := ReturnLedgerGoal{Next: file.NextStep}
+	if file.Claimed != nil {
+		out.Claimed, out.Machine, out.Lineage = true, file.Claimed.Machine, file.Claimed.Lineage
+		out.Batch = file.Claimed.HandedOver.Batch
+	}
+	return out, nil
 }
 
 func RequestReturn(store Store, batchID, goalID, outcome, reason, actor string, at time.Time) error {
@@ -66,12 +90,15 @@ func ReturnUnits(store Store, batchID, tree, actor string, at time.Time, seams R
 				}
 				continue
 			}
-			target := seams.Target(unit.Claim)
+			target := seams.Target(unit)
 			switch target.State {
 			case ReturnTargetLive:
 				err = seams.HandBack(unit.GoalID, unit.Claim, target.Epoch)
-			case ReturnTargetDead, ReturnTargetRestarted:
+			case ReturnTargetDead, ReturnTargetRestarted, ReturnTargetOccupied:
 				next := unit.Outcome + ": " + unit.Failure
+				if target.Reason != "" {
+					next = target.Reason + "; " + next
+				}
 				if ledger.Next != "" {
 					next += "; " + ledger.Next
 				}

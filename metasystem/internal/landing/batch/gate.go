@@ -18,6 +18,10 @@ type gateStepResult struct {
 	ExitCode int
 }
 type batchGateExec func(unitTree string, step gateStep) gateStepResult
+
+type GateStep = gateStep
+type GateStepResult = gateStepResult
+type GateExecutor = batchGateExec
 type fixtureSelection struct {
 	Groups         []string
 	CoveredByProof bool
@@ -61,6 +65,10 @@ func runJoinGate(unitTree string, patch, fixtureMap []byte, unit *Unit, execute 
 		}
 	}
 	return nil
+}
+
+func RunJoinGate(unitTree string, patch, fixtureMap []byte, unit *Unit, execute GateExecutor) error {
+	return runJoinGate(unitTree, patch, fixtureMap, unit, execute)
 }
 
 func parseFixtureBedGroups(data []byte) map[string][]string {

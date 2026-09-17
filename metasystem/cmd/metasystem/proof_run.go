@@ -268,6 +268,7 @@ func legacyProofLaunchAllowed(root string) bool {
 type proofLaunchAdmission struct {
 	ControlRoot, ExecutionRoot, ConfPath, GoalID, CapMin, RetryDecision string
 	ScopeClass, CommandClass                                            string
+	ExpectedGoalRevision, ExpectedAccountingRevision                    uint64
 	Sections                                                            []string
 	IdentityInputs                                                      []string
 	Environment                                                         []string
@@ -309,6 +310,11 @@ func admitProofLaunch(request proofLaunchAdmission) (proofrun.Attempt, proofrun.
 		}
 		if request.GoalID != "" && request.GoalID != attempt.GoalID {
 			return proofrun.Attempt{}, proofrun.LaunchResult{}, false, fmt.Errorf("proof parent goal %s does not match requested goal %s", attempt.GoalID, request.GoalID)
+		}
+		if request.ExpectedGoalRevision != 0 && (attempt.GoalRevision != request.ExpectedGoalRevision ||
+			attempt.AccountingRevision != request.ExpectedAccountingRevision) {
+			return proofrun.Attempt{}, proofrun.LaunchResult{}, false, fmt.Errorf("GOAL_REVISION_MOVED: expected goal/accounting revisions %d/%d, found %d/%d",
+				request.ExpectedGoalRevision, request.ExpectedAccountingRevision, attempt.GoalRevision, attempt.AccountingRevision)
 		}
 		if len(request.ComponentIdentities) > 0 {
 			heldGoal, lockErr := goalrevision.Acquire(request.ControlRoot, attempt.GoalID, attempt.GoalRevision, "joined-testing-admission")
@@ -516,6 +522,18 @@ func admitProofLaunch(request proofLaunchAdmission) (proofrun.Attempt, proofrun.
 	accountingRevision := binding.File.Claimed.AccountingRevision
 	if accountingRevision == 0 {
 		accountingRevision = binding.Revision
+	}
+	if request.ExpectedGoalRevision != 0 && (binding.Revision != request.ExpectedGoalRevision || accountingRevision != request.ExpectedAccountingRevision) {
+		return proofrun.Attempt{}, proofrun.LaunchResult{}, false, fmt.Errorf("GOAL_REVISION_MOVED: expected goal/accounting revisions %d/%d, found %d/%d",
+			request.ExpectedGoalRevision, request.ExpectedAccountingRevision, binding.Revision, accountingRevision)
+	}
+	if request.ExpectedGoalRevision != 0 {
+		attemptHeadroom := projection.Limits.AttemptLimit >= projection.Attempts && projection.Limits.AttemptLimit-projection.Attempts >= 2
+		minuteHeadroom := uint64(capValue) <= ^uint64(0)/2 && projection.Limits.ReservedJobMinutesLimit >= projection.ReservedJobMinutes &&
+			projection.Limits.ReservedJobMinutesLimit-projection.ReservedJobMinutes >= 2*uint64(capValue)
+		if !attemptHeadroom || !minuteHeadroom {
+			return proofrun.Attempt{}, proofrun.LaunchResult{}, false, fmt.Errorf("BATCH_MEMBER_BUDGET_REFUSED: goal %s needs two attempts and %d reserved minutes of P2 headroom", request.GoalID, 2*uint64(capValue))
+		}
 	}
 	checkoutFence, fenceErr := stopfence.Read(request.ControlRoot)
 	if fenceErr != nil || checkoutFence.State == stopfence.StateClosed {
