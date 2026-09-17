@@ -1,9 +1,7 @@
 package steward
 
 import (
-	"crypto/sha256"
-	"encoding/hex"
-	"fmt"
+	"encoding/json"
 	"os"
 	"path/filepath"
 	"strings"
@@ -12,37 +10,28 @@ import (
 
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/identity"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/stopreport"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/stopreport/stopreporttest"
 )
 
 func hookDeliveryFixture(t *testing.T, root, sessionKey, attempt, healthSection, extra string, blocked bool) (string, HookDeliveryReference) {
 	t.Helper()
-	id := sessionKey + "-" + attempt
-	dir := filepath.Join(root, "artifacts", "agents", "supervision", "stop-verdicts")
-	if err := os.MkdirAll(dir, 0o755); err != nil {
-		t.Fatal(err)
+	if sessionKey != stopreport.SessionKey("claude", "s") {
+		t.Fatalf("fixture session key %q does not name claude/s", sessionKey)
 	}
-	reservation, err := stopreport.ReserveShortestAlias(root, id)
-	if err != nil {
-		t.Fatal(err)
+	published := stopreporttest.Publish(t, stopreporttest.Options{
+		Root: root, Runtime: "claude", Session: "s", Attempt: attempt, ShouldBlock: blocked,
+		HealthLine: healthSection, ExtraReport: extra,
+	})
+	return string(published.Payload), deliveryReference(published)
+}
+func deliveryReference(published stopreporttest.Published) HookDeliveryReference {
+	return HookDeliveryReference{
+		Installation: published.Response.Report.Installation,
+		ID:           published.Response.Report.ID,
+		Alias:        published.Response.Report.Alias,
+		Path:         published.Response.Report.Path,
+		SHA256:       published.Response.Report.SHA256,
 	}
-	command := "metasystem report stop-status --id " + reservation.Alias
-	visible := "Just completed: unknown for this turn.\nNo task in flight; Stop allowed; Report: " + command
-	payload := fmt.Sprintf(`{"systemMessage":%q}`, visible)
-	if blocked {
-		visible = "Just completed: unknown for this turn.\nTask: test; Stop blocked; Do not stop. Run this command; read and act on its report: " + command
-		payload = fmt.Sprintf(`{"decision":"block","reason":%q}`, visible)
-	}
-	report := fmt.Sprintf("# Task: test; Stop blocked\n\n<!-- metasystem-stop-report-v1 {\"installation\":%q,\"runtime\":\"claude\",\"session\":\"s\",\"sessionKey\":%q,\"attempt\":%q,\"mainId\":\"m\",\"machine\":\"bed\",\"lineage\":\"lineage\",\"observedAt\":\"2026-09-13T12:00:00Z\",\"claimEpoch\":1} -->\n\n## Console text\n\n```text\n%s\n```\n\n## Health\n\n```json\n{\"line\":%q}\n```\n\n%s", root, sessionKey, attempt, visible, healthSection, extra)
-	path := filepath.Join(dir, id+".md")
-	if err := os.WriteFile(path, []byte(report), 0o644); err != nil {
-		t.Fatal(err)
-	}
-	digest := sha256.Sum256([]byte(report))
-	digestText := hex.EncodeToString(digest[:])
-	if err := stopreport.PublishAlias(reservation, digestText); err != nil {
-		t.Fatal(err)
-	}
-	return payload, HookDeliveryReference{Installation: root, ID: id, Alias: reservation.Alias, Path: path, SHA256: digestText}
 }
 
 func TestCompleteHookAttemptBindsPayloadToExactReportHealthSection(t *testing.T) {
@@ -73,32 +62,27 @@ func TestCompleteHookAttemptBindsPayloadToExactReportHealthSection(t *testing.T)
 	}
 }
 
-func TestVerifyHookDeliveryRejectsOutcomeSpecificSuffixDrift(t *testing.T) {
-	for _, test := range []struct {
-		name, replacement string
-		blocked           bool
-	}{
-		{name: "old block suffix", blocked: true, replacement: "; Read: "},
-		{name: "allowance suffix on block", blocked: true, replacement: "; Report: "},
-		{name: "old allowance suffix", replacement: "; Read, then continue lawful work before stopping: "},
-		{name: "block suffix on allowance", replacement: "; Do not stop. Run this command; read and act on its report: "},
-	} {
-		t.Run(test.name, func(t *testing.T) {
-			root, err := filepath.EvalSymlinks(t.TempDir())
-			if err != nil {
-				t.Fatal(err)
-			}
-			health := "HEALTH healthy — runner=alive"
-			payload, delivery := hookDeliveryFixture(t, root, stopreport.SessionKey("claude", "s"), strings.Repeat("e", 32), health, "", test.blocked)
-			current := "; Report: "
-			if test.blocked {
-				current = "; Do not stop. Run this command; read and act on its report: "
-			}
-			payload = strings.Replace(payload, current, test.replacement, 1)
-			if err := verifyHookDelivery(root, payload, health, delivery); err == nil {
-				t.Fatal("delivery verifier accepted an outcome-specific suffix mismatch")
-			}
-		})
+func TestVerifyHookDeliveryRejectsPayloadOutsideReportConsoleText(t *testing.T) {
+	root, err := filepath.EvalSymlinks(t.TempDir())
+	if err != nil {
+		t.Fatal(err)
+	}
+	published := stopreporttest.Publish(t, stopreporttest.Options{
+		Root: root, Runtime: "claude", Session: "outside", Attempt: strings.Repeat("e", 32), HealthLine: "HEALTH healthy — runner=alive",
+	})
+	var payload map[string]any
+	if err := json.Unmarshal(published.Payload, &payload); err != nil {
+		t.Fatal(err)
+	}
+	payload["systemMessage"] = payload["systemMessage"].(string) + " outside"
+	changed, _ := json.Marshal(payload)
+	response := published.Response
+	response.PayloadSHA256 = stopreport.PayloadSHA256(changed)
+	if err := stopreport.WriteResponse(root, changed, response); err != nil {
+		t.Fatal(err)
+	}
+	if err := verifyHookDelivery(root, string(changed), "HEALTH healthy — runner=alive", deliveryReference(published)); err == nil || !strings.Contains(err.Error(), "console text") {
+		t.Fatalf("delivery verifier accepted text outside the report: %v", err)
 	}
 }
 
@@ -110,17 +94,154 @@ func TestVerifyHookDeliveryRejectsPayloadOutcomeMismatch(t *testing.T) {
 		}
 		health := "HEALTH healthy — runner=alive"
 		payload, delivery := hookDeliveryFixture(t, root, stopreport.SessionKey("claude", "s"), strings.Repeat("f", 32), health, "", blocked)
-		if blocked {
-			payload = strings.Replace(payload, "; Stop blocked;", "; Stop allowed;", 1)
-		} else {
-			payload = strings.Replace(payload, "; Stop allowed;", "; Stop blocked;", 1)
+		resolved, err := stopreport.ReadResponse(root, []byte(payload))
+		if err != nil {
+			t.Fatal(err)
 		}
+		var object map[string]any
+		if err := json.Unmarshal([]byte(payload), &object); err != nil {
+			t.Fatal(err)
+		}
+		visible := object["systemMessage"]
+		if blocked {
+			visible = object["reason"]
+			object = map[string]any{"systemMessage": visible}
+		} else {
+			object = map[string]any{"decision": "block", "reason": visible}
+		}
+		changed, _ := json.Marshal(object)
+		resolved.PayloadSHA256 = stopreport.PayloadSHA256(changed)
+		if err := stopreport.WriteResponse(root, changed, resolved); err != nil {
+			t.Fatal(err)
+		}
+		payload = string(changed)
 		if err := verifyHookDelivery(root, payload, health, delivery); err == nil {
-			t.Fatalf("delivery verifier accepted blocked=%t with the opposite visible outcome", blocked)
+			t.Fatalf("delivery verifier accepted blocked=%t with the opposite payload shape", blocked)
 		}
 	}
 }
 
+func TestHookDeliveryResolvesTheReportFromTheResponseRecord(t *testing.T) {
+	for _, runtime := range []string{"claude", "codex"} {
+		t.Run(runtime, func(t *testing.T) {
+			for _, blocked := range []bool{false, true} {
+				t.Run(map[bool]string{false: "allowed", true: "blocked"}[blocked], func(t *testing.T) {
+					for _, test := range []struct {
+						name      string
+						delivery  bool
+						humanLine func(string) string
+					}{
+						{name: "changed wording", delivery: true, humanLine: stopreporttest.ChangedHumanLine},
+						{name: "without reference flags", humanLine: stopreporttest.ChangedHumanLine},
+					} {
+						t.Run(test.name, func(t *testing.T) {
+							root, err := filepath.EvalSymlinks(t.TempDir())
+							if err != nil {
+								t.Fatal(err)
+							}
+							health := "HEALTH healthy — runner=alive"
+							published := stopreporttest.Publish(t, stopreporttest.Options{
+								Root: root, Runtime: runtime, Session: "resolved", Attempt: strings.Repeat("a", 32),
+								ShouldBlock: blocked, HealthLine: health, HumanLine: test.humanLine,
+							})
+							delivery := HookDeliveryReference{}
+							if test.delivery {
+								delivery = deliveryReference(published)
+							}
+							if err := verifyHookDelivery(root, string(published.Payload), health, delivery); err != nil {
+								t.Fatalf("response-record delivery was refused: %v", err)
+							}
+						})
+					}
+				})
+			}
+		})
+	}
+}
+func TestHookDeliveryRefusesAResponseWithoutTheReportField(t *testing.T) {
+	type refusal struct {
+		name, want string
+		mutate     func(*testing.T, string, stopreporttest.Published) ([]byte, HookDeliveryReference)
+	}
+	cases := []refusal{
+		{name: "missing record", want: "unreadable", mutate: func(t *testing.T, _ string, published stopreporttest.Published) ([]byte, HookDeliveryReference) {
+			t.Helper()
+			if err := os.Remove(published.ResponsePath); err != nil {
+				t.Fatal(err)
+			}
+			return published.Payload, HookDeliveryReference{}
+		}},
+		{name: "missing report field", want: "report", mutate: func(t *testing.T, _ string, published stopreporttest.Published) ([]byte, HookDeliveryReference) {
+			t.Helper()
+			var object map[string]any
+			data, _ := os.ReadFile(published.ResponsePath)
+			if json.Unmarshal(data, &object) != nil {
+				t.Fatal("decode response fixture")
+			}
+			delete(object, "report")
+			data, _ = json.Marshal(object)
+			if err := os.WriteFile(published.ResponsePath, data, 0o600); err != nil {
+				t.Fatal(err)
+			}
+			return published.Payload, HookDeliveryReference{}
+		}},
+		{name: "reference flags disagree", want: "alias flag", mutate: func(t *testing.T, _ string, published stopreporttest.Published) ([]byte, HookDeliveryReference) {
+			delivery := deliveryReference(published)
+			delivery.Alias += "f"
+			return published.Payload, delivery
+		}},
+		{name: "payload shape disagrees", want: "payload shape", mutate: func(t *testing.T, root string, published stopreporttest.Published) ([]byte, HookDeliveryReference) {
+			var object map[string]any
+			if json.Unmarshal(published.Payload, &object) != nil {
+				t.Fatal("decode payload fixture")
+			}
+			visible := object["systemMessage"]
+			if published.Response.ShouldBlock {
+				visible = object["reason"]
+				object = map[string]any{"systemMessage": visible}
+			} else {
+				object = map[string]any{"decision": "block", "reason": visible}
+			}
+			payload, _ := json.Marshal(object)
+			response := published.Response
+			response.PayloadSHA256 = stopreport.PayloadSHA256(payload)
+			if err := stopreport.WriteResponse(root, payload, response); err != nil {
+				t.Fatal(err)
+			}
+			return payload, HookDeliveryReference{}
+		}},
+		{name: "report digest changed", want: "digest", mutate: func(t *testing.T, _ string, published stopreporttest.Published) ([]byte, HookDeliveryReference) {
+			if err := os.WriteFile(published.Response.Report.Path, append(published.Report, []byte("changed\n")...), 0o644); err != nil {
+				t.Fatal(err)
+			}
+			return published.Payload, HookDeliveryReference{}
+		}},
+	}
+	for _, runtime := range []string{"claude", "codex"} {
+		t.Run(runtime, func(t *testing.T) {
+			for _, blocked := range []bool{false, true} {
+				t.Run(map[bool]string{false: "allowed", true: "blocked"}[blocked], func(t *testing.T) {
+					for _, test := range cases {
+						t.Run(test.name, func(t *testing.T) {
+							root, err := filepath.EvalSymlinks(t.TempDir())
+							if err != nil {
+								t.Fatal(err)
+							}
+							published := stopreporttest.Publish(t, stopreporttest.Options{
+								Root: root, Runtime: runtime, Session: "refusal", Attempt: strings.Repeat("b", 32),
+								ShouldBlock: blocked, HealthLine: "HEALTH healthy — runner=alive", HumanLine: stopreporttest.ChangedHumanLine,
+							})
+							payload, delivery := test.mutate(t, root, published)
+							if err := verifyHookDelivery(root, string(payload), "HEALTH healthy — runner=alive", delivery); err == nil || !strings.Contains(err.Error(), test.want) {
+								t.Fatalf("%s was accepted: %v", test.name, err)
+							}
+						})
+					}
+				})
+			}
+		})
+	}
+}
 func TestCompleteHookAttemptAcceptsInstallationWithAncestorSymlink(t *testing.T) {
 	physicalParent, err := filepath.EvalSymlinks(t.TempDir())
 	if err != nil {

@@ -10,6 +10,8 @@ import (
 
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/goal"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/report"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/stopreport"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/stopreport/stopreporttest"
 )
 
 func stopOutputFixture(t *testing.T, runtime string, blocked bool, attempt string) (string, string) {
@@ -125,6 +127,119 @@ func TestMapStopOutputUsesOnePublicFieldAndExactReport(t *testing.T) {
 	}
 }
 
+func TestMapStopOutputWritesTheResponseRecord(t *testing.T) {
+	forStopOutputCases(t, func(t *testing.T, runtime string, blocked bool) {
+		root, presentationPath := stopOutputFixture(t, runtime, blocked, strings.Repeat(runtime[:1], 32))
+		var presentation report.StopPresentationResult
+		data, err := os.ReadFile(presentationPath)
+		if err != nil || json.Unmarshal(data, &presentation) != nil {
+			t.Fatalf("read presentation: %v", err)
+		}
+		payloadObject := map[string]any{"systemMessage": presentation.HumanLine}
+		if blocked {
+			payloadObject = map[string]any{"decision": "block", "reason": presentation.HumanLine}
+		}
+		payload, err := json.Marshal(payloadObject)
+		if err != nil {
+			t.Fatal(err)
+		}
+		readOnly := filepath.Join(t.TempDir(), "read-only")
+		if err := os.Mkdir(readOnly, 0o500); err != nil {
+			t.Fatal(err)
+		}
+		if err := MapStopOutput(runtime, presentationPath, filepath.Join(readOnly, "provider.json")); err == nil {
+			t.Fatal("mapping unexpectedly wrote into a read-only output directory")
+		}
+		response, err := stopreport.ReadResponse(root, payload)
+		if err != nil {
+			t.Fatalf("response was not written before the payload write: %v", err)
+		}
+		if response.Runtime != runtime || response.ShouldBlock != blocked || response.Report.Alias != presentation.Report.Alias {
+			t.Fatalf("response = %+v", response)
+		}
+		output := filepath.Join(t.TempDir(), "provider.json")
+		if err := MapStopOutput(runtime, presentationPath, output); err != nil {
+			t.Fatal(err)
+		}
+		wire, err := os.ReadFile(output)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if string(wire) != string(payload)+"\n" {
+			t.Fatalf("payload wire changed: got %q want %q", wire, append(payload, '\n'))
+		}
+	})
+}
+func TestMapStopOutputAcceptsChangedWording(t *testing.T) {
+	forStopOutputCases(t, func(t *testing.T, runtime string, blocked bool) {
+		root := filepath.Join(t.TempDir(), "installation")
+		if err := os.MkdirAll(filepath.Join(root, "scripts", "agents"), 0o755); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(filepath.Join(root, "metasystem.conf"), []byte("metasystem.runtimes="+runtime+"\n"), 0o644); err != nil {
+			t.Fatal(err)
+		}
+		root, _ = filepath.EvalSymlinks(root)
+		published := stopreporttest.Publish(t, stopreporttest.Options{
+			Root: root, Runtime: runtime, Session: "changed", Attempt: strings.Repeat(runtime[:1], 32),
+			ShouldBlock: blocked, HumanLine: stopreporttest.ChangedHumanLine,
+		})
+		if err := os.Remove(published.ResponsePath); err != nil {
+			t.Fatal(err)
+		}
+		presentationPath := writePublishedPresentation(t, published, blocked)
+		output := filepath.Join(t.TempDir(), "provider.json")
+		if err := MapStopOutput(runtime, presentationPath, output); err != nil {
+			t.Fatalf("changed wording was refused: %v", err)
+		}
+		payload, err := os.ReadFile(output)
+		if err != nil {
+			t.Fatal(err)
+		}
+		response, err := stopreport.ReadResponse(published.Identity.Installation, payload)
+		if err != nil || response.Report.Alias != published.Response.Report.Alias {
+			t.Fatalf("changed wording response = %+v, %v", response, err)
+		}
+	})
+}
+func forStopOutputCases(t *testing.T, run func(*testing.T, string, bool)) {
+	t.Helper()
+	for _, runtime := range []string{"claude", "codex"} {
+		for _, blocked := range []bool{false, true} {
+			t.Run(runtime+map[bool]string{false: "/allowed", true: "/blocked"}[blocked], func(t *testing.T) {
+				run(t, runtime, blocked)
+			})
+		}
+	}
+}
+func writePublishedPresentation(t *testing.T, published stopreporttest.Published, blocked bool) string {
+	t.Helper()
+	var source *string
+	if blocked {
+		value := "fixture"
+		source = &value
+	}
+	presentation := report.StopPresentationResult{
+		SchemaVersion: report.StopPresentationSchemaVersion,
+		Identity:      published.Identity,
+		Control:       report.StopControl{ShouldBlock: blocked, BlockSource: source, JudgmentAvailable: true},
+		HumanLine:     stopreporttest.ChangedHumanLine(published.Response.Report.Alias),
+		Report: report.StopReportReference{
+			Id: published.Response.Report.ID, Alias: published.Response.Report.Alias,
+			Path: published.Response.Report.Path, SHA256: published.Response.Report.SHA256,
+			ReadCommand: "metasystem report stop-status --id " + published.Response.Report.Alias,
+		},
+	}
+	data, err := json.Marshal(presentation)
+	if err != nil {
+		t.Fatal(err)
+	}
+	path := filepath.Join(t.TempDir(), "presentation.json")
+	if err := os.WriteFile(path, data, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	return path
+}
 func TestMapStopOutputRejectsChangedReportBeforePublication(t *testing.T) {
 	_, presentationPath := stopOutputFixture(t, "codex", true, strings.Repeat("f", 32))
 	var presentation report.StopPresentationResult
@@ -163,7 +278,7 @@ func TestMapStopOutputRejectsDecisionOrRequiredBooleanChangedAfterPresentation(t
 		t.Fatal(err)
 	}
 	output := filepath.Join(t.TempDir(), "provider.json")
-	if err := MapStopOutput("codex", presentationPath, output); err == nil || !strings.Contains(err.Error(), "report reference is inconsistent") {
+	if err := MapStopOutput("codex", presentationPath, output); err == nil || !strings.Contains(err.Error(), "immutable report") {
 		t.Fatalf("decision changed after presentation was accepted: %v", err)
 	}
 
@@ -186,61 +301,40 @@ func TestMapStopOutputRejectsDecisionOrRequiredBooleanChangedAfterPresentation(t
 	if err := json.Unmarshal(data, &raw); err != nil {
 		t.Fatal(err)
 	}
-	raw["needsYourDecision"] = true
+	raw["control"].(map[string]any)["blockSource"] = "unexpected"
 	data, _ = json.Marshal(raw)
 	if err := os.WriteFile(presentationPath, data, 0o644); err != nil {
 		t.Fatal(err)
 	}
-	if err := MapStopOutput("codex", presentationPath, filepath.Join(t.TempDir(), "changed-flag.json")); err == nil || !strings.Contains(err.Error(), "report reference is inconsistent") {
-		t.Fatalf("changed intervention flag was accepted without matching text: %v", err)
+	if err := MapStopOutput("codex", presentationPath, filepath.Join(t.TempDir(), "changed-source.json")); err == nil || !strings.Contains(err.Error(), "block source") {
+		t.Fatalf("decision with an inconsistent block source was accepted: %v", err)
 	}
 }
 
-func TestMapStopOutputRejectsNonImperativeOrUnboundAlias(t *testing.T) {
+func TestMapStopOutputRejectsUnboundReportReference(t *testing.T) {
 	for _, test := range []struct {
-		name    string
-		blocked bool
-		change  func(*report.StopPresentationResult)
+		name   string
+		change func(*report.StopPresentationResult)
 	}{
-		{name: "old block suffix", blocked: true, change: func(value *report.StopPresentationResult) {
-			value.HumanLine = strings.Replace(value.HumanLine, "; Do not stop. Run this command; read and act on its report: ", "; Read: ", 1)
-		}},
-		{name: "old allowance suffix", change: func(value *report.StopPresentationResult) {
-			value.HumanLine = strings.Replace(value.HumanLine, "; Report: ", "; Read, then continue lawful work before stopping: ", 1)
-		}},
-		{name: "status label", blocked: true, change: func(value *report.StopPresentationResult) {
-			value.HumanLine = strings.Replace(value.HumanLine, "; Do not stop. Run this command; read and act on its report: ", "; status: ", 1)
-		}},
-		{name: "partial block instruction", blocked: true, change: func(value *report.StopPresentationResult) {
-			value.HumanLine = strings.Replace(value.HumanLine, "; Do not stop. Run this command; read and act on its report: ", "; Run this command; read and act on its report: ", 1)
-		}},
-		{name: "block suffix on allowance", change: func(value *report.StopPresentationResult) {
-			value.HumanLine = strings.Replace(value.HumanLine, "; Report: ", "; Do not stop. Run this command; read and act on its report: ", 1)
-		}},
-		{name: "allowance suffix on block", blocked: true, change: func(value *report.StopPresentationResult) {
-			value.HumanLine = strings.Replace(value.HumanLine, "; Do not stop. Run this command; read and act on its report: ", "; Report: ", 1)
-		}},
-		{name: "changed outcome", blocked: true, change: func(value *report.StopPresentationResult) {
-			value.HumanLine = strings.Replace(value.HumanLine, "; Stop blocked;", "; Stop allowed;", 1)
-		}},
-		{name: "truncated command", blocked: true, change: func(value *report.StopPresentationResult) {
-			value.HumanLine = strings.TrimSuffix(value.HumanLine, value.Report.Alias)
-		}},
-		{name: "quoted command", blocked: true, change: func(value *report.StopPresentationResult) {
-			value.HumanLine = strings.Replace(value.HumanLine, value.Report.ReadCommand, "`"+value.Report.ReadCommand+"`", 1)
-		}},
 		{name: "trailing text", change: func(value *report.StopPresentationResult) {
 			value.HumanLine += " now"
 		}},
-		{name: "substituted alias", blocked: true, change: func(value *report.StopPresentationResult) {
-			old := value.Report.Alias
+		{name: "substituted alias", change: func(value *report.StopPresentationResult) {
 			value.Report.Alias = "f"
 			value.Report.ReadCommand = "metasystem report stop-status --id f"
-			value.HumanLine = strings.TrimSuffix(value.HumanLine, old) + "f"
+		}},
+		{name: "unbound read command", change: func(value *report.StopPresentationResult) {
+			value.Report.ReadCommand += "f"
+		}},
+		{name: "changed digest", change: func(value *report.StopPresentationResult) {
+			value.Report.SHA256 = strings.Repeat("f", 64)
+		}},
+		{name: "changed path", change: func(value *report.StopPresentationResult) {
+			value.Report.Path += ".other"
 		}},
 	} {
 		t.Run(test.name, func(t *testing.T) {
-			_, presentationPath := stopOutputFixture(t, "codex", test.blocked, strings.Repeat("c", 32))
+			_, presentationPath := stopOutputFixture(t, "codex", true, strings.Repeat("c", 32))
 			data, err := os.ReadFile(presentationPath)
 			if err != nil {
 				t.Fatal(err)

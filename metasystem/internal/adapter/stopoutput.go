@@ -13,11 +13,12 @@ import (
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/atomicfile"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/report"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/runtimes"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/stopreport"
 )
 
 // MapStopOutput serializes one already-decided presentation into the sole
 // human-visible field supported by the runtime's candidate Stop contract. It
-// never judges, records, or spends a refusal.
+// never judges or spends a refusal.
 func MapStopOutput(runtime, inputPath, outputPath string) error {
 	declaration, ok := runtimes.Lookup(runtime)
 	if !ok || declaration.ExpectedStopDelivery == "" {
@@ -48,33 +49,12 @@ func MapStopOutput(runtime, inputPath, outputPath string) error {
 	if err := report.ValidateStopHumanLine(presentation.HumanLine); err != nil {
 		return err
 	}
-	lines := bytes.Split([]byte(presentation.HumanLine), []byte("\n"))
-	if len(lines) != 2 || !bytes.HasPrefix(lines[0], []byte("Just completed: ")) || !bytes.HasSuffix(lines[0], []byte(".")) ||
-		!(bytes.HasPrefix(lines[1], []byte("Task: ")) || bytes.HasPrefix(lines[1], []byte("Task unknown;")) ||
-			bytes.HasPrefix(lines[1], []byte("No task in flight;"))) {
-		return fmt.Errorf("stop presentation does not contain the required completion and task lines")
-	}
-	outcome := "Stop allowed"
-	reportSuffix := "; Report: "
-	if presentation.Control.ShouldBlock {
-		outcome = "Stop blocked"
-		reportSuffix = "; Do not stop. Run this command; read and act on its report: "
-	}
 	if presentation.Control.ShouldBlock != (presentation.Control.BlockSource != nil) {
-		return fmt.Errorf("stop presentation line or block source does not match its decision")
-	}
-	intervention := ""
-	switch {
-	case presentation.NeedsYourDecision && presentation.NeedsSupervisionRepair:
-		intervention = "; needs your decision and supervision repair"
-	case presentation.NeedsYourDecision:
-		intervention = "; needs your decision"
-	case presentation.NeedsSupervisionRepair:
-		intervention = "; needs supervision repair"
+		return fmt.Errorf("stop presentation block source does not match its decision")
 	}
 	wantCommand := "metasystem report stop-status --id " + presentation.Report.Alias
 	if presentation.Report.Id == "" || presentation.Report.Alias == "" || presentation.Report.ReadCommand != wantCommand ||
-		!bytes.HasSuffix(lines[1], []byte("; "+outcome+intervention+reportSuffix+wantCommand)) {
+		presentation.Report.Path == "" || presentation.Report.SHA256 == "" {
 		return fmt.Errorf("stop presentation report reference is inconsistent")
 	}
 	reportBytes, identity, err := report.ReadStopStatus(presentation.Identity.Installation, presentation.Report.Alias)
@@ -103,6 +83,27 @@ func MapStopOutput(runtime, inputPath, outputPath string) error {
 		return fmt.Errorf("stop output already exists")
 	} else if !os.IsNotExist(err) {
 		return fmt.Errorf("inspect Stop output: %w", err)
+	}
+	visibleField := "systemMessage"
+	if presentation.Control.ShouldBlock {
+		visibleField = "reason"
+	}
+	response := stopreport.Response{
+		SchemaVersion: stopreport.ResponseSchemaVersion,
+		Runtime:       runtime,
+		ShouldBlock:   presentation.Control.ShouldBlock,
+		VisibleField:  visibleField,
+		PayloadSHA256: stopreport.PayloadSHA256(encoded),
+		Report: stopreport.ResponseReportReference{
+			Installation: presentation.Identity.Installation,
+			ID:           presentation.Report.Id,
+			Alias:        presentation.Report.Alias,
+			Path:         presentation.Report.Path,
+			SHA256:       presentation.Report.SHA256,
+		},
+	}
+	if err := stopreport.WriteResponse(presentation.Identity.Installation, encoded, response); err != nil {
+		return err
 	}
 	durable, err := atomicfile.WriteText(outputPath, string(encoded)+"\n", "")
 	if err != nil {

@@ -6,9 +6,11 @@ import (
 	"flag"
 	"fmt"
 	"os"
+	"strings"
 	"time"
 
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/report"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/stopreport"
 )
 
 func runReportStopPresent(args []string) int {
@@ -115,6 +117,51 @@ func runReportStopStatus(args []string) int {
 		return 1
 	}
 	return 0
+}
+
+func runReportStopResponse(args []string) int {
+	flags := flag.NewFlagSet("report stop-response", flag.ContinueOnError)
+	root := pathFlag(flags, "root", "", "explicit metasystem installation")
+	payloadFile := flags.String("payload-file", "", "file containing one runtime Stop payload")
+	runtime := flags.String("runtime", "", "expected report runtime")
+	session := flags.String("session", "", "expected report session")
+	jsonOutput := flags.Bool("json", false, "print the response record instead of the report")
+	if flags.Parse(args) != nil {
+		return 2
+	}
+	if *root == "" || *payloadFile == "" || len(flags.Args()) != 0 {
+		fmt.Fprintln(os.Stderr, "usage: metasystem report stop-response --root INSTALLATION --payload-file FILE [--runtime R] [--session S] [--json]")
+		return 2
+	}
+	resolvedRoot, err := report.StopStatusRoot(*root)
+	if err != nil {
+		return reportStopResponseError(err)
+	}
+	payload, err := os.ReadFile(*payloadFile)
+	if err != nil {
+		return reportStopResponseError(err)
+	}
+	resolved, err := stopreport.ResolveResponse(resolvedRoot, payload, *runtime, *session)
+	if err != nil {
+		return reportStopResponseError(err)
+	}
+	output := resolved.Report
+	if *jsonOutput {
+		output, err = json.Marshal(resolved.Response)
+		if err != nil {
+			return reportStopResponseError(err)
+		}
+		output = append(output, '\n')
+	}
+	if _, err := os.Stdout.Write(output); err != nil {
+		return reportStopResponseError(err)
+	}
+	return 0
+}
+func reportStopResponseError(err error) int {
+	message := strings.NewReplacer("\r", " ", "\n", " ").Replace(err.Error())
+	fmt.Fprintln(os.Stderr, "report stop-response:", message)
+	return 1
 }
 
 // runReportStopBlock prints the stop-hook block decision, leading with any caller

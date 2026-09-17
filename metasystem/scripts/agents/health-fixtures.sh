@@ -38,6 +38,7 @@ ms=${METASYSTEM_BIN:-$root/bin/metasystem}
 source_ms=$ms
 
 tmp=$(mktemp -d "${TMPDIR:-/tmp}/metasystem-health.XXXXXX")
+tmp=$(cd "$tmp" && pwd -P)
 osascript_calls=$tmp/osascript.log
 mkdir -p "$tmp/notify-shim"
 cat >"$tmp/notify-shim/osascript" <<'OSASCRIPT_SHIM'
@@ -242,7 +243,13 @@ hook_report_sha=$("$ms" util sha256 <"$hook_report_path")
 mkdir -p "$hook_report_dir/aliases"
 printf '{"schemaVersion":1,"state":"published","alias":"%s","reportId":"%s","sha256":"%s"}\n' \
   "$hook_report_alias" "$hook_report_id" "$hook_report_sha" >"$hook_report_dir/aliases/$hook_report_alias.json"
-printf '{"systemMessage":"Just completed: unknown for this turn.\\nNo task in flight; Stop allowed; Report: metasystem report stop-status --id %s"}\n' "$hook_report_alias" >"$tmp/hook-response.json"
+hook_payload=$(printf '{"systemMessage":"Just completed: unknown for this turn.\\nNo task in flight; Stop allowed; Report: metasystem report stop-status --id %s"}' "$hook_report_alias")
+printf '%s\n' "$hook_payload" >"$tmp/hook-response.json"
+hook_payload_sha=$(printf '%s' "$hook_payload" | "$ms" util sha256)
+mkdir -p "$hook_report_dir/responses"
+printf '{"schemaVersion":1,"runtime":"fake","shouldBlock":false,"visibleField":"systemMessage","payloadSha256":"%s","report":{"installation":"%s","id":"%s","alias":"%s","path":"%s","sha256":"%s"}}\n' \
+  "$hook_payload_sha" "$repo" "$hook_report_id" "$hook_report_alias" "$hook_report_path" "$hook_report_sha" \
+  >"$hook_report_dir/responses/$hook_payload_sha.json"
 "$ms" steward hook-complete --repo "$repo" --generation "$hook_generation" --attempt "$hook_attempt_seq" \
   --result OK --outcome EMITTED --health-line 'HEALTH fixture' --payload-file "$tmp/hook-response.json" \
   --installation "$repo" --report-id "$hook_report_id" --report-alias "$hook_report_alias" --report-path "$hook_report_path" --report-sha256 "$hook_report_sha" \

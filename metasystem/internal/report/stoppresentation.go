@@ -665,17 +665,17 @@ func PresentStop(root, inputPath, outputPath string, now time.Time) (StopPresent
 	}
 	completion := deriveStopCompletion(input, reportDir)
 	firstLine := completionLine(completion)
-	readCommand := "metasystem report stop-status --id " + reservation.Alias
+	result := StopPresentationResult{
+		SchemaVersion: StopPresentationSchemaVersion, Identity: input.Identity, Control: input.Control,
+		NeedsYourDecision: decision, NeedsSupervisionRepair: repair,
+		Report: stopReportReference(reportID, reservation.Alias, reportPath),
+	}
 	title, titleKind, _ := stopTitle(input)
-	secondLine := compactStopLine(title, titleKind, input.Control.ShouldBlock, decision, repair, readCommand)
-	humanLine := firstLine + "\n" + secondLine
+	humanLine := stopHumanLine(firstLine, title, titleKind, input.Control.ShouldBlock, decision, repair, result.Report)
 	if err := ValidateStopHumanLine(humanLine); err != nil {
 		return StopPresentationResult{}, fmt.Errorf("compact Stop lines violate their byte or line contract: %w", err)
 	}
-	result := StopPresentationResult{
-		SchemaVersion: StopPresentationSchemaVersion, Identity: input.Identity, Control: input.Control,
-		HumanLine: humanLine, NeedsYourDecision: decision, NeedsSupervisionRepair: repair,
-	}
+	result.HumanLine = humanLine
 	markdown, err := renderStopReport(input, humanLine, completion, decision, repair)
 	if err != nil {
 		return StopPresentationResult{}, err
@@ -699,7 +699,7 @@ func PresentStop(root, inputPath, outputPath string, now time.Time) (StopPresent
 		}
 		return StopPresentationResult{}, fmt.Errorf("verify Stop report alias: %w", err)
 	}
-	result.Report = StopReportReference{Id: reportID, Alias: reservation.Alias, Path: reportPath, ReadCommand: readCommand, SHA256: reportSHA}
+	result.Report.SHA256 = reportSHA
 	encoded, err := json.Marshal(result)
 	if err != nil {
 		return StopPresentationResult{}, err
@@ -716,12 +716,23 @@ func PresentStop(root, inputPath, outputPath string, now time.Time) (StopPresent
 	if !durable {
 		return StopPresentationResult{}, fmt.Errorf("publish Stop presentation: crash durability is unknown")
 	}
-	if err := pruneStopReports(reportDir, input.Identity.SessionKey, reportPath, now.UTC()); err != nil {
+	if err := pruneStopReports(resolvedRoot, reportDir, input.Identity.SessionKey, reportPath, now.UTC()); err != nil {
 		fmt.Fprintf(os.Stderr, "report stop-present: prune old Stop reports: %v\n", err)
 	}
 	return result, nil
 }
 
+func stopReportReference(id, alias, path string) StopReportReference {
+	return StopReportReference{
+		Id:          id,
+		Alias:       alias,
+		Path:        path,
+		ReadCommand: "metasystem report stop-status --id " + alias,
+	}
+}
+func stopHumanLine(firstLine, title, titleKind string, shouldBlock, decision, repair bool, reference StopReportReference) string {
+	return firstLine + "\n" + compactStopLine(title, titleKind, shouldBlock, decision, repair, reference.ReadCommand)
+}
 func lockStopPresentation(lockFile *os.File) error {
 	err := unix.Flock(int(lockFile.Fd()), unix.LOCK_EX|unix.LOCK_NB)
 	deadline := time.Now().Add(stopPresentationLockWait)
@@ -1341,7 +1352,7 @@ func writeBacklogSummary(report *strings.Builder, judgment *goal.TurnVerdictFact
 	}
 }
 
-func pruneStopReports(dir, sessionKey, current string, now time.Time) error {
+func pruneStopReports(root, dir, sessionKey, current string, now time.Time) error {
 	paths, err := filepath.Glob(filepath.Join(dir, sessionKey+"-*.md"))
 	if err != nil {
 		return err
@@ -1362,6 +1373,10 @@ func pruneStopReports(dir, sessionKey, current string, now time.Time) error {
 	for index, item := range entries {
 		if item.path == current || index < stopReportRetentionCount || now.Sub(item.mod) < stopReportRetentionAge {
 			continue
+		}
+		reportID := strings.TrimSuffix(filepath.Base(item.path), ".md")
+		if err := stopreport.RemoveResponsesForReport(root, reportID); err != nil {
+			return err
 		}
 		if err := os.Remove(item.path); err != nil {
 			return err

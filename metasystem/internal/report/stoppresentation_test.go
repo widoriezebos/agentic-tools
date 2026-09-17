@@ -16,6 +16,8 @@ import (
 
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/goal"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/steward"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/stopreport"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/stopreport/stopreporttest"
 )
 
 func stopPresentationRoot(t *testing.T) string {
@@ -1300,5 +1302,45 @@ func TestPresentStopSupportsParallelReportsAndRetentionBoundary(t *testing.T) {
 	}
 	if len(paths) != stopReportRetentionCount {
 		t.Fatalf("retained %d reports, want %d", len(paths), stopReportRetentionCount)
+	}
+}
+func TestStopLineIsRenderedFromTheReportReference(t *testing.T) {
+	reference := stopReportReference(strings.Repeat("a", 64)+"-"+strings.Repeat("b", 32), "abc", "/installation/report.md")
+	if reference.ReadCommand != "metasystem report stop-status --id "+reference.Alias {
+		t.Fatalf("read command %q was not derived from alias %q", reference.ReadCommand, reference.Alias)
+	}
+	reference.ReadCommand = "read the reference-owned command"
+	line := stopHumanLine("Completed.", "x", "task", false, false, false, reference)
+	if !strings.HasSuffix(line, reference.ReadCommand) {
+		t.Fatalf("Stop line did not render Report.ReadCommand: %q", line)
+	}
+}
+func TestPruneRemovesTheResponseRecordWithItsReport(t *testing.T) {
+	root := stopPresentationRoot(t)
+	old := time.Date(2026, 9, 14, 12, 0, 0, 0, time.UTC)
+	published := make([]stopreporttest.Published, stopReportRetentionCount+1)
+	for index := range published {
+		published[index] = stopreporttest.Publish(t, stopreporttest.Options{
+			Root: root, Runtime: "claude", Session: "retention", Attempt: fmt.Sprintf("%032x", index+1),
+		})
+		when := old.Add(time.Duration(index) * time.Second)
+		if err := os.Chtimes(published[index].Response.Report.Path, when, when); err != nil {
+			t.Fatal(err)
+		}
+	}
+	reportDir := filepath.Join(root, "artifacts", "agents", "supervision", "stop-verdicts")
+	current := published[len(published)-1].Response.Report.Path
+	if err := pruneStopReports(root, reportDir, stopreport.SessionKey("claude", "retention"), current, old.Add(48*time.Hour)); err != nil {
+		t.Fatal(err)
+	}
+	pruned := published[0]
+	if _, err := os.Lstat(pruned.Response.Report.Path); !os.IsNotExist(err) {
+		t.Fatalf("pruned report remains: %v", err)
+	}
+	if _, err := os.Lstat(pruned.ResponsePath); !os.IsNotExist(err) {
+		t.Fatalf("pruned report response remains: %v", err)
+	}
+	if _, err := stopreport.ResolveResponse(root, pruned.Payload, "", ""); err == nil {
+		t.Fatal("a response whose report was pruned still resolved")
 	}
 }

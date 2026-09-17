@@ -26,6 +26,14 @@ the report retains and verifies its full identity and digest. Presentation
 failure cannot create or clear a block and retains the established one-line
 degraded form.
 
+Before emitting a report-bearing payload, the adapter exclusively publishes an
+engine-side response record under `artifacts/agents/supervision/stop-verdicts/responses/`,
+keyed by the SHA-256 of the payload after trimming leading and trailing ASCII
+whitespace. The record carries the runtime decision, visible field and full
+immutable report reference. Delivery verification and fixture lookup resolve
+that record, verify the payload shape, report identity, digest and exact
+console-text containment, and never interpret human wording as a reference.
+
 The same rule applies while a foreground `metasystem wait` command holds the
 runtime. Every adapter must implement this exact operation:
 

@@ -354,6 +354,7 @@ func families() []family {
 			verbs: []verb{
 				{"stop-input", "compose one Stop presentation input from captured files", runReportStopInput},
 				{"stop-present", "publish one immutable Stop report and its compact presentation", runReportStopPresent},
+				{"stop-response", "resolve one runtime Stop payload to its immutable report", runReportStopResponse},
 				{"stop-status", "read one exact immutable Stop report", runReportStopStatus},
 				{"stop-block", "print the stop-hook block that refuses to end a turn with idle open work", runReportStopBlock},
 				{"turn-verdict", "the one structured turn-end decision: scan, goal, block-once state", runReportTurnVerdict},

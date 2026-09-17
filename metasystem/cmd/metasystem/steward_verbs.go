@@ -254,8 +254,8 @@ func runStewardHookComplete(args []string) int {
 			return 1
 		}
 	}
-	if *result == string(steward.ComponentOK) && (*healthLine == "" || *payloadFile == "" || *reportPath == "" || *reportID == "" || *reportAlias == "" || *reportSHA == "" || *installation == "") {
-		fmt.Fprintln(os.Stderr, "steward hook-complete: OK requires health, payload, and exact Stop report reference flags")
+	if *result == string(steward.ComponentOK) && (*healthLine == "" || *payloadFile == "") {
+		fmt.Fprintln(os.Stderr, "steward hook-complete: OK requires health and payload flags")
 		return 2
 	}
 	_, err := steward.CompleteHookAttemptWithDelivery(*repo, *generation, *attempt, steward.ComponentResult(*result),
