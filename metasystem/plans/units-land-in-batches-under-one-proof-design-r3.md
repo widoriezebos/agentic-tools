@@ -317,8 +317,8 @@ R15. Each commit is an agent commit through commit.sh with its chain, by the lea
 marker, `Machine: m1l+main-...`, `Goal-Item`, `Landing-Provenance: chain=<J>`, `Landed-By: <seat>` and a pass verdict, with author and committer equal to the goal approver's `goal.human.<name>` identity. W15b `TestBatchDelegationRules`: no label, a label naming a batch not in `landing`, or an owner actor
 differing from the record: `goal-item-not-held`; a claim re-made after dispatch: `goal-revision-moved`;
 all present: pass. (W15b is superseded by BLB-R3-001 in brief B: observe and held pass unmodified and nothing
-delegates, so the test of that name is gone; `TestBatchLandingRequiresGreenProofActor` keeps the landing-side
-rule that only the green proof's actor lands.)
+delegates. The test keeps its name, because the protected test contract lists it and a landing cannot drop or
+rename a listed test; it now checks the landing-side rule that only the green proof's actor lands.)
 Mutations: call `git commit` directly; accept the label without the batch state; drop the revision check.
 
 R16. The series receipt rule and the atomic push. W16, scenario `batch-two-units-disjoint-groups`: unit A changes internal/testpolicy (`policy-canary`),

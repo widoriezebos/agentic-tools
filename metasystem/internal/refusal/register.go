@@ -48,6 +48,7 @@ var Rows = []Row{
 	{Code: "BATCH_SEAL_GATE_RED", Owner: "internal/landing/batch", Site: "seal.go", Shape: Question},
 	{Code: "BATCH_UNIT_ELSEWHERE", Owner: "internal/landing/batch", Site: "join.go", Shape: Question},
 	{Code: "BATCH_JOIN_AUTHOR_UNBOUND", Owner: "cmd/metasystem", Site: "landing_batch_join.go", Shape: Question},
+	{Code: "BATCH_JOIN_BASE_MOVED", Owner: "cmd/metasystem", Site: "landing_batch_join.go", Shape: Question},
 	{Code: "BATCH_JOIN_REVISION_MOVED", Owner: "cmd/metasystem", Site: "landing_batch_join.go", Shape: Question},
 	{Code: "BATCH_BASE_MOVED", Owner: "cmd/metasystem", Site: "landing_batch_prove.go", Shape: Question},
 	{Code: "BATCH_MEMBER_BUDGET_REFUSED", Owner: "cmd/metasystem", Site: "landing_batch_prove.go", Shape: Question},

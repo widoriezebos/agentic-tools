@@ -283,7 +283,6 @@ func LandSeries(store Store, id, actor string, at time.Time, seams LandSeams) er
 			if !pushed {
 				return nil
 			}
-			tip = progress.PushedTip
 		} else {
 			progress.PushComplete, progress.PushedTip = true, tip
 			progress.RefusedOrigin, progress.RefusedBase, progress.PushRounds = "", "", 0

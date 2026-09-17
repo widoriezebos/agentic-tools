@@ -201,7 +201,11 @@ func TestBatchLandingHeldRefusalNamesCause(t *testing.T) {
 	}
 }
 
-func TestBatchLandingRequiresGreenProofActor(t *testing.T) {
+// TestBatchDelegationRules keeps the name the protected test contract lists for
+// batch-buildcd-standard: a landing cannot drop or rename a listed test. Since
+// BLB-R3-001 nothing delegates; the test checks the landing-side rule that
+// only the green proof's actor lands.
+func TestBatchDelegationRules(t *testing.T) {
 	bed, _ := landingBed(t)
 	bed.record.History = append(bed.record.History, HistoryEntry{At: time.Unix(3, 0).UTC().Format(time.RFC3339Nano), Verb: "prove", From: StateProving, To: StateLanding, Actor: "landing-owner"})
 	store := NewStore(bed.root, nil)
