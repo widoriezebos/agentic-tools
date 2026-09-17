@@ -71,10 +71,10 @@ func TestGoalListJSONKeepsItsShapeAndRequiresHistoryFlag(t *testing.T) {
 		if code != 0 || json.Unmarshal([]byte(output), &envelope) != nil {
 			t.Fatalf("%v did not emit JSON: code=%d bytes=%d", flags, code, len(output))
 		}
-		if len(envelope) != 11 {
+		if len(envelope) != 12 {
 			t.Fatalf("JSON envelope keys changed: %v", reflect.ValueOf(envelope).MapKeys())
 		}
-		for _, key := range []string{"root", "world", "tip", "banners", "open", "queued", "approved", "claimed", "parked", "done", "abandoned"} {
+		for _, key := range []string{"root", "world", "tip", "banners", "open", "queued", "approved", "claimed", "parked", "done", "abandoned", "trunkRed"} {
 			if _, ok := envelope[key]; !ok {
 				t.Fatalf("JSON envelope lost %s", key)
 			}
