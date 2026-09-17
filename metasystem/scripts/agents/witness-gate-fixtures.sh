@@ -22,8 +22,8 @@ fi
 unset METASYSTEM_FIXTURE_SCENARIO
 if (( ! fixture_bed_child )); then
   fixture_bed_script=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd -P)/$(basename "${BASH_SOURCE[0]}")
-  run_fixture_bed_scenarios witness-gate "witness-gate fixtures passed (21 isolated legs)" \
-    "$fixture_bed_script" authority-and-scope equality-and-weights frozen-consumers cost-banner
+  run_fixture_bed_scenarios witness-gate "witness-gate fixtures passed (22 isolated legs)" \
+    "$fixture_bed_script" outer-context-standalone authority-and-scope equality-and-weights frozen-consumers cost-banner
 fi
 # This bed creates every witness it exercises. A parent validation's witness
 # describes another root and must not turn these producer legs into consumers.
@@ -56,8 +56,34 @@ make_leg() { # name
   leg_bin=$tmp/$1/bin
   mkdir -p "$leg_tree/scripts/agents" "$leg_tree/internal/fixture" \
     "$leg_tree/cmd/metasystem" "$leg_tree/docs" "$leg_tree/bin" "$leg_bin"
-  cp "$root/scripts/agents/go-gate.sh" "$leg_tree/scripts/agents/go-gate.sh"
-  chmod +x "$leg_tree/scripts/agents/go-gate.sh"
+  cp "$root/scripts/agents/go-gate.sh" "$leg_tree/scripts/agents/go-gate-impl.sh"
+  cp "$root/scripts/agents/fixture-budget.sh" "$leg_tree/scripts/agents/fixture-budget.sh"
+  cat >"$leg_tree/scripts/agents/go-gate.sh" <<'SH'
+#!/usr/bin/env bash
+set -euo pipefail
+root=$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd -P)
+proof_auth_bin=${METASYSTEM_PROOF_AUTH_BIN:-$root/bin/metasystem}
+if [[ -n "${METASYSTEM_PROOF_CONTROL_ROOT:-}" || -n "${METASYSTEM_PROOF_ATTEMPT:-}" ]]; then
+  if [[ -x "$proof_auth_bin" ]] \
+    && "$proof_auth_bin" proof-run worker-authorized --root "$root" >/dev/null 2>&1; then
+    exec bash "$root/scripts/agents/go-gate-impl.sh" "$@"
+  fi
+  source "$root/scripts/agents/fixture-budget.sh"
+  harness_fixture_exec_without_outer_proof env \
+    METASYSTEM_PROOF_AUTH_BIN="$root/scripts/agents/fixture-worker-auth.sh" \
+    bash "$root/scripts/agents/go-gate-impl.sh" "$@"
+fi
+source "$root/scripts/agents/fixture-budget.sh"
+harness_fixture_exec_without_outer_proof bash "$root/scripts/agents/go-gate-impl.sh" "$@"
+SH
+  cat >"$leg_tree/scripts/agents/fixture-worker-auth.sh" <<'SH'
+#!/usr/bin/env bash
+set -euo pipefail
+root=$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd -P)
+[[ $# -eq 4 && "$1 $2 $3" == 'proof-run worker-authorized --root' && "$4" == "$root" ]]
+SH
+  chmod +x "$leg_tree/scripts/agents/go-gate.sh" "$leg_tree/scripts/agents/go-gate-impl.sh" \
+    "$leg_tree/scripts/agents/fixture-worker-auth.sh"
   printf 'module github.com/widoriezebos/agentic-tools/metasystem\n\ngo 1.24\n' >"$leg_tree/go.mod"
   : >"$leg_tree/metasystem.conf"
   printf 'package fixture\n' >"$leg_tree/internal/fixture/fixture.go"
@@ -76,7 +102,10 @@ case "${1:-}" in
     [[ $# -eq 4 && ${2:-} == -o && -n ${3:-} && ${4:-} == ./cmd/metasystem ]] \
       || { echo "fixture go: unsupported build request: $*" >&2; exit 86; }
     cp "$WITNESS_FIXTURE_SOURCE_ENGINE" "$3"
-    chmod +x "$3" ;;
+    chmod +x "$3"
+    if [[ -n "${WITNESS_FIXTURE_STANDALONE_BUILD_MARKER:-}" ]]; then
+      printf 'standalone build\n' >"$WITNESS_FIXTURE_STANDALONE_BUILD_MARKER"
+    fi ;;
   run)
     [[ ${2:-} == ./cmd/metasystem ]]
     shift 2
@@ -87,6 +116,8 @@ case "${1:-}" in
     shift
     if [[ "$*" == 'GOOS GOARCH GOFLAGS GOWORK GOEXPERIMENT CGO_ENABLED GOTOOLCHAIN' ]]; then
       printf 'darwin\narm64\n\noff\n\n0\nauto\n'
+    elif [[ "$*" == GOTOOLCHAIN ]]; then
+      printf 'auto\n'
     else
       echo "fixture go: unsupported env request: $*" >&2
       exit 86
@@ -102,6 +133,7 @@ GO
 set -euo pipefail
 case "${1:-}/${2:-}" in
   gate/register|gate/fence) exit 0 ;;
+  proof-run/worker-authorized) exit 2 ;;
   behavior-surface/skip-allowed)
     echo 'stale binary policy denies every skip' >&2
     exit 91 ;;
@@ -163,7 +195,7 @@ run_engine_acceptance() { # name, tree, fixture bin, witness, state root, run id
   local marker=$tmp/$name/build-marker build_root_marker=$tmp/$name/build-root-marker output=$tmp/$name/accept.out
   (
     cd "$tree"
-    env PATH="$fixture_bin:$PATH" WITNESS_FIXTURE_SOURCE_ENGINE="$source_engine" \
+    harness_fixture_without_outer_proof env PATH="$fixture_bin:$PATH" WITNESS_FIXTURE_SOURCE_ENGINE="$source_engine" \
       GOMODCACHE="$tmp/shared-module-cache" WITNESS_FIXTURE_EXPECT_GOMODCACHE="$tmp/shared-module-cache" \
       WITNESS_FIXTURE_BUILD_MARKER="$marker" METASYSTEM_ALLOW_CONCURRENT_GATE=1 \
       WITNESS_FIXTURE_BUILD_ROOT_MARKER="$build_root_marker" \
@@ -191,7 +223,7 @@ run_engine_acceptance() { # name, tree, fixture bin, witness, state root, run id
 run_refusal() { # name, tree, fixture bin, witness, state root, run id, scope
   local name=$1 tree=$2 fixture_bin=$3 witness=$4 state_root=$5 run=$6 scope=$7
   local output=$tmp/$name/refusal.out rc=0
-  local command=(env PATH="$fixture_bin:$PATH" WITNESS_FIXTURE_SOURCE_ENGINE="$source_engine"
+  local command=(harness_fixture_without_outer_proof env PATH="$fixture_bin:$PATH" WITNESS_FIXTURE_SOURCE_ENGINE="$source_engine"
     WITNESS_FIXTURE_BUILD_MARKER="$tmp/$name/unexpected-build" METASYSTEM_ALLOW_CONCURRENT_GATE=1)
   [[ -z "$witness" ]] || command+=(METASYSTEM_GATE_WITNESS="$witness")
   [[ -z "$state_root" ]] || command+=(METASYSTEM_GATE_WITNESS_ROOT="$state_root")
@@ -213,7 +245,7 @@ run_recheck_refusal() { # name, tree, fixture bin, witness, state root, run id, 
   set +e
   (
     cd "$tree"
-    env PATH="$fixture_bin:$PATH" WITNESS_FIXTURE_SOURCE_ENGINE="$source_engine" \
+    harness_fixture_without_outer_proof env PATH="$fixture_bin:$PATH" WITNESS_FIXTURE_SOURCE_ENGINE="$source_engine" \
       WITNESS_FIXTURE_BUILD_MARKER="$tmp/$name/build-marker" \
       WITNESS_FIXTURE_MUTATE_AFTER_CHECK="$mutation" METASYSTEM_ALLOW_CONCURRENT_GATE=1 \
       METASYSTEM_GATE_WITNESS="$witness" METASYSTEM_GATE_WITNESS_ROOT="$state_root" \
@@ -229,6 +261,33 @@ run_recheck_refusal() { # name, tree, fixture bin, witness, state root, run id, 
   grep -Fq 'gofmt itself failed' "$output" \
     || { echo "witness-gate fixture $name: post-build mismatch did not reach the full gate" >&2; sed -n '1,100p' "$output" >&2; exit 1; }
 }
+
+if [[ "$fixture_scenario" == outer-context-standalone ]]; then
+make_leg outer-context-standalone
+mkdir -p "$tmp/planted-outer-control"
+export METASYSTEM_PROOF_CONTROL_ROOT="$tmp/planted-outer-control"
+export METASYSTEM_PROOF_ATTEMPT=proof-fixture-outer
+standalone_marker=$tmp/outer-context-standalone/standalone-build
+set +e
+(
+  cd "$leg_tree"
+  harness_fixture_without_outer_proof env PATH="$leg_bin:$PATH" \
+    WITNESS_FIXTURE_SOURCE_ENGINE="$source_engine" \
+    WITNESS_FIXTURE_BUILD_MARKER="$tmp/outer-context-standalone/build-marker" \
+    WITNESS_FIXTURE_STANDALONE_BUILD_MARKER="$standalone_marker" \
+    METASYSTEM_ALLOW_CONCURRENT_GATE=1 bash scripts/agents/go-gate.sh
+) >"$tmp/outer-context-standalone/output" 2>&1
+outer_context_rc=$?
+set -e
+[[ $outer_context_rc -ne 0 ]] \
+  || { echo "witness-gate outer-context-standalone fixture: broken full proof passed" >&2; exit 1; }
+[[ -f "$standalone_marker" && $(<"$standalone_marker") == 'standalone build' ]] \
+  || { echo "witness-gate outer-context-standalone fixture: inherited proof context skipped the standalone build" >&2; exit 1; }
+grep -Fq 'gofmt itself failed' "$tmp/outer-context-standalone/output" \
+  || { echo "witness-gate outer-context-standalone fixture: standalone branch did not reach the broken proof" >&2; exit 1; }
+echo "witness-gate outer-context-standalone fixture passed"
+exit 0
+fi
 
 if [[ "$fixture_scenario" == authority-and-scope ]]; then
 # 1. A live PID carrying a different start identity has no ancestry authority.
@@ -271,7 +330,7 @@ run_engine_acceptance changed-payload "$changed_payload_tree" "$changed_payload_
 set +e
 (
   cd "$changed_payload_tree"
-  env PATH="$changed_payload_bin:$PATH" WITNESS_FIXTURE_SOURCE_ENGINE="$source_engine" \
+  harness_fixture_without_outer_proof env PATH="$changed_payload_bin:$PATH" WITNESS_FIXTURE_SOURCE_ENGINE="$source_engine" \
     METASYSTEM_GATE_WITNESS="$changed_payload_witness" METASYSTEM_GATE_WITNESS_ROOT="$changed_payload_root" \
     METASYSTEM_GATE_WITNESS_RUN="$changed_payload_run" METASYSTEM_GATE_WITNESS_CONSUMER_SCOPE=DELIVERY \
     bash scripts/agents/go-gate.sh --witness-check-only
@@ -470,7 +529,7 @@ run_check_only_acceptance() { # tree, fixture bin, witness, state root, run id
     || { echo "witness-gate fixture: usable exported witness banner was not frozen" >&2; exit 1; }
   (
     cd "$tree"
-    env PATH="$fixture_bin:$PATH" WITNESS_FIXTURE_SOURCE_ENGINE="$source_engine" \
+    harness_fixture_without_outer_proof env PATH="$fixture_bin:$PATH" WITNESS_FIXTURE_SOURCE_ENGINE="$source_engine" \
       METASYSTEM_GATE_WITNESS="$witness" METASYSTEM_GATE_WITNESS_ROOT="$state_root" \
       METASYSTEM_GATE_WITNESS_RUN="$run" METASYSTEM_GATE_WITNESS_CONSUMER_SCOPE=ENGINE \
       bash scripts/agents/go-gate.sh --witness-check-only >/dev/null
@@ -483,7 +542,7 @@ run_frozen_flag_refusal() { # tree, fixture bin, witness, state root, run id
   set +e
   (
     cd "$tree"
-    env PATH="$fixture_bin:$PATH" WITNESS_FIXTURE_SOURCE_ENGINE="$source_engine" \
+    harness_fixture_without_outer_proof env PATH="$fixture_bin:$PATH" WITNESS_FIXTURE_SOURCE_ENGINE="$source_engine" \
       GOFLAGS='-modfile=outside.mod' METASYSTEM_GATE_WITNESS="$witness" \
       METASYSTEM_GATE_WITNESS_ROOT="$state_root" METASYSTEM_GATE_WITNESS_RUN="$run" \
       METASYSTEM_GATE_WITNESS_CONSUMER_SCOPE=ENGINE \

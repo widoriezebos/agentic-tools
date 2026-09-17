@@ -6,6 +6,19 @@
 # - this file is the only owner of harness cap values; and
 # - load scaling is extra headroom, never the reason an idle run passes.
 
+# A temporary fixture repository is an independent execution root. Scrub the
+# bed launcher's proof locators so its commands take the same branch everywhere.
+harness_fixture_proof_scrub=(env \
+  -u METASYSTEM_PROOF_CONTROL_ROOT -u METASYSTEM_PROOF_ATTEMPT \
+  -u METASYSTEM_PROOF_RECORD_KEY -u METASYSTEM_PROOF_CREATION_CLAIM \
+  -u METASYSTEM_PROOF_AUTH_BIN -u METASYSTEM_PROOF_RUN_ROOT \
+  -u METASYSTEM_PROOF_RUN_ID -u METASYSTEM_PROOF_LAUNCHER_REF \
+  -u METASYSTEM_PROOF_BED_REGISTRY)
+
+harness_fixture_without_outer_proof() { "${harness_fixture_proof_scrub[@]}" "$@"; }
+
+harness_fixture_exec_without_outer_proof() { exec "${harness_fixture_proof_scrub[@]}" "$@"; }
+
 harness_fixture_warn_if_engine_stale() { # metasystem root
   local harness_root=$1 engine newest
   engine=${METASYSTEM_BIN:-$harness_root/bin/metasystem}

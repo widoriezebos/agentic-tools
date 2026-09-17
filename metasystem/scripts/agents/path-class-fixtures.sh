@@ -2,12 +2,13 @@
 set -euo pipefail
 
 root=$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd -P)
+source "$root/scripts/agents/fixture-budget.sh"
 tmp=$(mktemp -d "${TMPDIR:-/tmp}/metasystem-path-class.XXXXXX")
 tmp=$(cd "$tmp" && pwd -P)
 trap 'rm -rf "$tmp"' EXIT
 
 fixture_git() {
-  env -i PATH="$PATH" HOME="${HOME:-/tmp}" TMPDIR="${TMPDIR:-/tmp}" git "$@"
+  harness_fixture_without_outer_proof env -i PATH="$PATH" HOME="${HOME:-/tmp}" TMPDIR="${TMPDIR:-/tmp}" git "$@"
 }
 
 build_fixture_engine() { # installation root
@@ -154,7 +155,7 @@ write_fixture_goal() { # goal file, machine, lineage
 landing_git() { # repository, git arguments...
   local repository=$1
   shift
-  env -i "${landing_fixture_env[@]}" git -C "$repository" "$@"
+  harness_fixture_without_outer_proof env -i "${landing_fixture_env[@]}" git -C "$repository" "$@"
 }
 
 make_wrapper_fixture() { # fixture name
@@ -222,7 +223,7 @@ expect_wrapper_exit_two() { # fixture, output file, wrapper arguments...
   set +e
   (
     cd "$fixture"
-    env -i "${landing_fixture_env[@]}" \
+    harness_fixture_without_outer_proof env -i "${landing_fixture_env[@]}" \
       METASYSTEM_OWNER_LINEAGE=L \
       scripts/agents/commit.sh __lease-held 1 "$@"
   ) >"$output" 2>&1
@@ -265,7 +266,7 @@ SH
   set +e
   (
     cd "$fixture"
-    env -i "${landing_fixture_env[@]}" \
+    harness_fixture_without_outer_proof env -i "${landing_fixture_env[@]}" \
       METASYSTEM_OWNER_LINEAGE=L \
       scripts/agents/commit.sh __lease-held 1 --goal fx \
         --direct-fix register-carriage -m injected
@@ -288,7 +289,7 @@ SH
   set +e
   (
     cd "$fixture"
-    env -i "${landing_fixture_env[@]}" \
+    harness_fixture_without_outer_proof env -i "${landing_fixture_env[@]}" \
       METASYSTEM_OWNER_LINEAGE=L \
       scripts/agents/commit.sh __lease-held 1 --goal fx \
         --direct-fix register-carriage -m changed
@@ -305,7 +306,7 @@ SH
   rm "$fixture/.git/hooks/commit-msg"
   (
     cd "$fixture"
-    env -i "${landing_fixture_env[@]}" \
+    harness_fixture_without_outer_proof env -i "${landing_fixture_env[@]}" \
       METASYSTEM_OWNER_LINEAGE=L \
       scripts/agents/commit.sh __lease-held 1 --goal fx \
         --direct-fix register-carriage -q -m successful
@@ -327,8 +328,8 @@ TestLandForwardsGoalToEvaluator() {
   remote=$tmp/land-goal-origin.git
   message=$tmp/land-goal-message.txt
   output=$tmp/land-goal.out
-  env -i "${landing_fixture_env[@]}" git init --bare -q "$remote"
-  env -i "${landing_fixture_env[@]}" git --git-dir="$remote" symbolic-ref HEAD refs/heads/main
+  harness_fixture_without_outer_proof env -i "${landing_fixture_env[@]}" git init --bare -q "$remote"
+  harness_fixture_without_outer_proof env -i "${landing_fixture_env[@]}" git --git-dir="$remote" symbolic-ref HEAD refs/heads/main
   landing_git "$fixture" remote add origin "$remote"
   landing_git "$fixture" push -q -u origin main
 
@@ -336,7 +337,7 @@ TestLandForwardsGoalToEvaluator() {
   printf 'land an owned record\n' >"$message"
   (
     cd "$fixture"
-    env -i "${landing_fixture_env[@]}" METASYSTEM_OWNER_LINEAGE=L bash scripts/agents/land.sh -m "$message" \
+    harness_fixture_without_outer_proof env -i "${landing_fixture_env[@]}" METASYSTEM_OWNER_LINEAGE=L bash scripts/agents/land.sh -m "$message" \
       --goal fx --direct-fix register-carriage --skip-transport plans/fx-note.md
   ) >"$output" 2>&1 || {
     echo "TestLandForwardsGoalToEvaluator: land.sh did not carry the held goal" >&2
@@ -352,7 +353,7 @@ TestLandForwardsGoalToEvaluator() {
   set +e
   refusal=$(
     cd "$fixture"
-    env -i "${landing_fixture_env[@]}" METASYSTEM_OWNER_LINEAGE=other bash scripts/agents/land.sh -m "$message" \
+    harness_fixture_without_outer_proof env -i "${landing_fixture_env[@]}" METASYSTEM_OWNER_LINEAGE=other bash scripts/agents/land.sh -m "$message" \
       --goal fx --direct-fix register-carriage --skip-transport plans/fx-note.md 2>&1
   )
   status=$?

@@ -139,6 +139,57 @@ func TestProofRunLimitsDefaultSilentlyWhenOperationalKnobsAreAbsent(t *testing.T
 	}
 }
 
+func workerAuthorizedAttemptFixture(t *testing.T) (string, string, proofrun.Attempt) {
+	t.Helper()
+	controlRoot, _ := proofExtensionGoalFixture(t)
+	controlRoot, err := canonicalProofRoot(controlRoot)
+	if err != nil {
+		t.Fatal(err)
+	}
+	executionRoot := t.TempDir()
+	proofIdentity, err := proofrun.BuildProofIdentity(controlRoot, filepath.Join(controlRoot, "metasystem.conf"), "full", "worker-root", nil, 2)
+	if err != nil {
+		t.Fatal(err)
+	}
+	launcher, err := proofrun.ProcessIdentityForPID(int64(os.Getppid()), nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	attempt, _, err := proofrun.ReserveLocked(proofrun.AdmissionRequest{
+		ControlRoot: controlRoot, ExecutionRoot: executionRoot, GoalID: "standing-validation", GoalRevision: 2,
+		AccountingRevision: 2, ReservedMinutes: 2, Identity: proofIdentity, Launcher: launcher,
+		Now: time.Date(2026, 9, 18, 12, 0, 0, 0, time.UTC),
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("METASYSTEM_PROOF_CONTROL_ROOT", controlRoot)
+	t.Setenv("METASYSTEM_PROOF_ATTEMPT", attempt.AttemptID)
+	t.Setenv("METASYSTEM_PROOF_RECORD_KEY", "")
+	t.Setenv("METASYSTEM_PROOF_CREATION_CLAIM", "")
+	return controlRoot, executionRoot, attempt
+}
+
+func TestWorkerAuthorizedAcceptsTheAdmittedRoot(t *testing.T) {
+	_, root, _ := workerAuthorizedAttemptFixture(t)
+	code, _, stderr := captureCommandOutput(t, false, true, func() int {
+		return runProofRunWorkerAuthorized([]string{"--root", root})
+	})
+	if code != 0 || stderr != "" {
+		t.Fatalf("admitted execution root was not authorized: code=%d stderr=%q", code, stderr)
+	}
+}
+
+func TestWorkerAuthorizedRefusesAForeignRoot(t *testing.T) {
+	foreign, root, attempt := workerAuthorizedAttemptFixture(t)
+	code, _, stderr := captureCommandOutput(t, false, true, func() int {
+		return runProofRunWorkerAuthorized([]string{"--root", foreign})
+	})
+	if code != 3 || !strings.Contains(stderr, foreign) || !strings.Contains(stderr, attempt.ExecutionRoot) {
+		t.Fatalf("foreign root refusal = code=%d stderr=%q; want both %q and %q", code, stderr, foreign, root)
+	}
+}
+
 func TestSuiteProgressPrinterSurfacesDeepestLiveSection(t *testing.T) {
 	root := t.TempDir()
 	progress := filepath.Join(root, "artifacts", "agents", "supervision", "suite-progress.jsonl")

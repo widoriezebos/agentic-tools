@@ -202,7 +202,8 @@ func runProofRunWorkerAuthorized(args []string) int {
 	if flags.Parse(args) != nil || flags.NArg() != 0 || *executionRoot == "" {
 		return 2
 	}
-	if _, err := canonicalProofRoot(*executionRoot); err != nil {
+	canonicalExecution, err := canonicalProofRoot(*executionRoot)
+	if err != nil {
 		fmt.Fprintln(os.Stderr, "proof-run worker-authorized:", err)
 		return 2
 	}
@@ -220,6 +221,24 @@ func runProofRunWorkerAuthorized(args []string) int {
 		os.Getenv("METASYSTEM_PROOF_RECORD_KEY"), os.Getenv("METASYSTEM_PROOF_CREATION_CLAIM"), int64(os.Getppid()))
 	if err != nil {
 		fmt.Fprintln(os.Stderr, "proof-run worker-authorized:", err)
+		return 3
+	}
+	authorizedRoot := canonicalControl
+	if attemptID := os.Getenv("METASYSTEM_PROOF_ATTEMPT"); attemptID != "" {
+		attempt, readErr := proofrun.ReadAttempt(canonicalControl, attemptID)
+		if readErr != nil {
+			fmt.Fprintln(os.Stderr, "proof-run worker-authorized:", readErr)
+			return 3
+		}
+		authorizedRoot, err = canonicalProofRoot(attempt.ExecutionRoot)
+		if err != nil {
+			fmt.Fprintln(os.Stderr, "proof-run worker-authorized:", err)
+			return 3
+		}
+	}
+	if canonicalExecution != authorizedRoot {
+		fmt.Fprintf(os.Stderr, "proof-run worker-authorized: supplied root %q does not match admitted execution root %q\n",
+			canonicalExecution, authorizedRoot)
 		return 3
 	}
 	return 0

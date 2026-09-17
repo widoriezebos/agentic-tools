@@ -8,6 +8,7 @@
 set -euo pipefail
 
 root=$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd -P)
+source "$root/scripts/agents/fixture-budget.sh"
 unset METASYSTEM_BIN
 
 TestRealCommitWrapperStampsParseableObservation() {
@@ -55,12 +56,12 @@ SH
   chmod +x "$fixture/scripts/audit-metasystem.sh" "$fixture/scripts/agents/go-gate.sh" "$fixture/bin/metasystem"
 
   fixture_git() {
-    env -i PATH="$PATH" HOME="${HOME:-/tmp}" TMPDIR="${TMPDIR:-/tmp}" git -C "$fixture" "$@"
+    harness_fixture_without_outer_proof env -i PATH="$PATH" HOME="${HOME:-/tmp}" TMPDIR="${TMPDIR:-/tmp}" git -C "$fixture" "$@"
   }
   goal_bound_fixture_commit() { # installation root, wrapper arguments
     local installation=$1
     shift
-    env -i PATH="$PATH" HOME="${HOME:-/tmp}" TMPDIR="${TMPDIR:-/tmp}" \
+    harness_fixture_without_outer_proof env -i PATH="$PATH" HOME="${HOME:-/tmp}" TMPDIR="${TMPDIR:-/tmp}" \
       METASYSTEM_OWNER_LINEAGE=human \
       "$installation/scripts/agents/commit.sh" __lease-held 1 --goal fx "$@"
   }
@@ -129,7 +130,7 @@ SH
   cp "$fixture/scripts/audit-metasystem.sh" "$vendored_install/scripts/audit-metasystem.sh"
   cp "$fixture/scripts/agents/go-gate.sh" "$vendored_install/scripts/agents/go-gate.sh"
   vendored_git() {
-    env -i PATH="$PATH" HOME="${HOME:-/tmp}" TMPDIR="${TMPDIR:-/tmp}" git -C "$vendored_fixture" "$@"
+    harness_fixture_without_outer_proof env -i PATH="$PATH" HOME="${HOME:-/tmp}" TMPDIR="${TMPDIR:-/tmp}" git -C "$vendored_fixture" "$@"
   }
   vendored_git init -q -b main
   vendored_git config user.name fixture
@@ -227,7 +228,7 @@ SH
     && "$malformed" == *"The landing judge may be older than this policy. A human must rebuild and re-arm it from the landed policy commit or a descendant, then retry. If that judge supports the record version, repair the record through a reviewed implementation chain."* ]] \
     || { echo "TestRealCommitWrapperStampsParseableObservation: malformed policy did not fail closed: $malformed" >&2; exit 1; }
 
-  env -i PATH="$PATH" HOME="${HOME:-/tmp}" TMPDIR="${TMPDIR:-/tmp}" \
+  harness_fixture_without_outer_proof env -i PATH="$PATH" HOME="${HOME:-/tmp}" TMPDIR="${TMPDIR:-/tmp}" \
     "$fixture/scripts/agents/commit.sh" __lease-held human -q -m "human remains sovereign"
   human_message=$(fixture_git log -1 --format=%B)
   [[ "$human_message" == *"human remains sovereign"* ]] \
@@ -374,7 +375,7 @@ SH
 chmod +x "$fixture_root/scripts/agents/go-gate.sh"
 git -C "$fixture_root" add scripts/agents/go-gate.sh
 set +e
-refusal=$("$fixture_root/scripts/agents/commit.sh" __lease-held human -m "must refuse" 2>&1)
+refusal=$(harness_fixture_without_outer_proof "$fixture_root/scripts/agents/commit.sh" __lease-held human -m "must refuse" 2>&1)
 status=$?
 set -e
 [[ $status -ne 0 ]] \
@@ -401,7 +402,7 @@ chmod +x "$proof_out"
 SH
 chmod +x "$fixture_root/scripts/agents/go-gate.sh"
 git -C "$fixture_root" add scripts/agents/go-gate.sh
-"$fixture_root/scripts/agents/commit.sh" __lease-held human -q -m "concludes green" \
+harness_fixture_without_outer_proof "$fixture_root/scripts/agents/commit.sh" __lease-held human -q -m "concludes green" \
   || { echo "static re-proof fixture: a green fast gate blocked the commit" >&2; exit 1; }
 [[ "$(git -C "$fixture_root" log --format=%s -1)" == "concludes green" ]] \
   || { echo "static re-proof fixture: the green-gate commit did not land" >&2; exit 1; }
@@ -421,7 +422,7 @@ printf 'evaluator unavailable\n' >>"$fixture_root/README"
 git -C "$fixture_root" add README
 before_failure=$(git -C "$fixture_root" rev-parse HEAD)
 set +e
-evaluator_failure=$(METASYSTEM_OWNER_LINEAGE=fixture-lineage STATIC_REPROOF_EVALUATOR_FAIL=1 \
+evaluator_failure=$(harness_fixture_without_outer_proof env METASYSTEM_OWNER_LINEAGE=fixture-lineage STATIC_REPROOF_EVALUATOR_FAIL=1 \
   "$fixture_root/scripts/agents/commit.sh" __lease-held 1 -m "must refuse unavailable evaluator" 2>&1)
 status=$?
 set -e
@@ -434,7 +435,7 @@ set -e
   || { echo "static re-proof fixture: evaluator failure did not refuse an agent honestly: $evaluator_failure" >&2; exit 1; }
 [[ "$(git -C "$fixture_root" rev-parse HEAD)" == "$before_failure" ]] \
   || { echo "static re-proof fixture: evaluator failure created an agent commit" >&2; exit 1; }
-STATIC_REPROOF_EVALUATOR_FAIL=1 \
+harness_fixture_without_outer_proof env STATIC_REPROOF_EVALUATOR_FAIL=1 \
   "$fixture_root/scripts/agents/commit.sh" __lease-held human -q -m "human remains sovereign over evaluator failure" \
   || { echo "static re-proof fixture: evaluator failure changed the human path" >&2; exit 1; }
 human_fallback=$(git -C "$fixture_root" log -1 --format=%B)
@@ -448,7 +449,7 @@ printf 'unreadable landing base\n' >>"$fixture_root/README"
 git -C "$fixture_root" add README
 before_failure=$(git -C "$fixture_root" rev-parse HEAD)
 set +e
-base_failure=$(METASYSTEM_OWNER_LINEAGE=fixture-lineage STATIC_REPROOF_BASE_UNREADABLE=1 \
+base_failure=$(harness_fixture_without_outer_proof env METASYSTEM_OWNER_LINEAGE=fixture-lineage STATIC_REPROOF_BASE_UNREADABLE=1 \
   "$fixture_root/scripts/agents/commit.sh" __lease-held 1 -m "must refuse unreadable base" 2>&1)
 status=$?
 set -e
@@ -494,7 +495,7 @@ SH
 chmod +x "$fixture_root/bin/metasystem"
 printf 'weight-refused\n' >>"$fixture_root/README"
 git -C "$fixture_root" add README
-"$fixture_root/scripts/agents/commit.sh" __lease-held human -q -m "concludes despite weight refusal" \
+harness_fixture_without_outer_proof "$fixture_root/scripts/agents/commit.sh" __lease-held human -q -m "concludes despite weight refusal" \
   || { echo "static re-proof fixture: a weight bookkeeping failure refused a lawful landing" >&2; exit 1; }
 [[ "$(git -C "$fixture_root" log --format=%s -1)" == "concludes despite weight refusal" ]] \
   || { echo "static re-proof fixture: the weight-refusal commit did not land" >&2; exit 1; }
@@ -507,7 +508,7 @@ printf 'package red\n' >"$fixture_root/internal/red/red.go"
 git -C "$fixture_root" add internal/red/red.go
 printf 'package repaired\n' >"$fixture_root/internal/red/red.go"
 set +e
-diverged=$("$fixture_root/scripts/agents/commit.sh" __lease-held human -m "must refuse divergence" 2>&1)
+diverged=$(harness_fixture_without_outer_proof "$fixture_root/scripts/agents/commit.sh" __lease-held human -m "must refuse divergence" 2>&1)
 status=$?
 set -e
 [[ $status -ne 0 ]] \
@@ -515,7 +516,7 @@ set -e
 grep -Fq "not what the commit would record" <<<"$diverged" \
   || { echo "static re-proof fixture: the divergence refusal did not name the remedy: $diverged" >&2; exit 1; }
 git -C "$fixture_root" add internal/red/red.go
-"$fixture_root/scripts/agents/commit.sh" __lease-held human -q -m "converged concludes" \
+harness_fixture_without_outer_proof "$fixture_root/scripts/agents/commit.sh" __lease-held human -q -m "converged concludes" \
   || { echo "static re-proof fixture: a converged gate input blocked the commit" >&2; exit 1; }
 
 # Leg 5 (IL28-R1-3, mutation): an environment guard placed BEFORE the
@@ -534,7 +535,7 @@ printf 'package stray\n' >"$fixture_root/internal/red/stray.go"
 printf 'tick\n' >>"$fixture_root/README"
 git -C "$fixture_root" add README
 set +e
-stray=$("$fixture_root/scripts/agents/commit.sh" __lease-held human -m "must refuse stray" 2>&1)
+stray=$(harness_fixture_without_outer_proof "$fixture_root/scripts/agents/commit.sh" __lease-held human -m "must refuse stray" 2>&1)
 status=$?
 set -e
 [[ $status -ne 0 ]] \
@@ -554,7 +555,7 @@ git -C "$fixture_root" add internal/red/alpha.txt internal/red/beta.txt
 before_head=$(git -C "$fixture_root" rev-parse HEAD)
 staged_tree=$(git -C "$fixture_root" write-tree)
 set +e
-selected=$("$fixture_root/scripts/agents/commit.sh" __lease-held human -m "must roll back" internal/red/alpha.txt 2>&1)
+selected=$(harness_fixture_without_outer_proof "$fixture_root/scripts/agents/commit.sh" __lease-held human -m "must roll back" internal/red/alpha.txt 2>&1)
 status=$?
 set -e
 [[ $status -ne 0 ]] \
@@ -568,7 +569,7 @@ grep -Fq "never judged" <<<"$selected" \
 [[ "$(git -C "$fixture_root" write-tree)" == "$staged_tree" ]] \
   || { echo "static re-proof fixture: the rollback did not preserve the proved index tree" >&2; exit 1; }
 engine_before=$(shasum -a 256 "$fixture_root/bin/metasystem" | cut -d' ' -f1)
-"$fixture_root/scripts/agents/commit.sh" __lease-held human -q -m "plain message concludes" \
+harness_fixture_without_outer_proof "$fixture_root/scripts/agents/commit.sh" __lease-held human -q -m "plain message concludes" \
   || { echo "static re-proof fixture: a plain -m commit was blocked" >&2; exit 1; }
 [[ "$(git -C "$fixture_root" rev-parse 'HEAD^{tree}')" == "$staged_tree" ]] \
   || { echo "static re-proof fixture: the concluding commit did not record the proved tree" >&2; exit 1; }
@@ -593,7 +594,7 @@ git -C "$fixture_root" push -q origin refs/heads/main:refs/heads/main
 git -C "$fixture_root" push -q transport refs/heads/main:refs/heads/main
 printf 'landed\n' >"$fixture_root/internal/red/landed.txt"
 git -C "$fixture_root" add internal/red/landed.txt
-"$fixture_root/scripts/agents/commit.sh" __lease-held human --push -q -m "push lands both remotes" \
+harness_fixture_without_outer_proof "$fixture_root/scripts/agents/commit.sh" __lease-held human --push -q -m "push lands both remotes" \
   || { echo "static re-proof fixture: --push refused a lawful landing" >&2; exit 1; }
 pushed_head=$(git -C "$fixture_root" rev-parse HEAD)
 [[ "$(git -C "$origin_bare" rev-parse main)" == "$pushed_head" ]] \
@@ -652,7 +653,7 @@ exit 1
 SH
 git -C "$fixture_root" add scripts/audit-metasystem.sh
 set +e
-audited=$("$fixture_root/scripts/agents/commit.sh" __lease-held human -m "must refuse audit" 2>&1)
+audited=$(harness_fixture_without_outer_proof "$fixture_root/scripts/agents/commit.sh" __lease-held human -m "must refuse audit" 2>&1)
 status=$?
 set -e
 [[ $status -ne 0 ]] \
@@ -671,7 +672,7 @@ printf 'internal/red/generated.go\n' >>"$fixture_root/.gitignore"
 git -C "$fixture_root" add .gitignore
 printf 'package red\n' >"$fixture_root/internal/red/generated.go"
 set +e
-shadowed=$("$fixture_root/scripts/agents/commit.sh" __lease-held human -m "must refuse ignored" 2>&1)
+shadowed=$(harness_fixture_without_outer_proof "$fixture_root/scripts/agents/commit.sh" __lease-held human -m "must refuse ignored" 2>&1)
 status=$?
 set -e
 [[ $status -ne 0 ]] \
@@ -679,7 +680,7 @@ set -e
 grep -Fq "generated.go" <<<"$shadowed" \
   || { echo "static re-proof fixture: the ignored refusal did not name the file: $shadowed" >&2; exit 1; }
 rm "$fixture_root/internal/red/generated.go"
-"$fixture_root/scripts/agents/commit.sh" __lease-held human -q -m "audit and stage converge" \
+harness_fixture_without_outer_proof "$fixture_root/scripts/agents/commit.sh" __lease-held human -q -m "audit and stage converge" \
   || { echo "static re-proof fixture: the converged tail commit was blocked" >&2; exit 1; }
 
 # Leg 10: every landing names the machine it came from — the wrapper
@@ -702,7 +703,7 @@ ln -s "$directory_target" "$fixture_root/docs"
 ln -s "$subdirectory_target" "$fixture_root/internal/gaterun"
 git -C "$fixture_root" add docs internal/gaterun
 set +e
-directory_symlink=$($fixture_root/scripts/agents/commit.sh __lease-held human -m "must refuse directory symlink" 2>&1)
+directory_symlink=$(harness_fixture_without_outer_proof "$fixture_root/scripts/agents/commit.sh" __lease-held human -m "must refuse directory symlink" 2>&1)
 status=$?
 set -e
 [[ $status -ne 0 ]] \

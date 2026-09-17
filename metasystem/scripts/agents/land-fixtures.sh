@@ -161,7 +161,7 @@ prepare_receipt_environment() { # process identity file, registry
 }
 
 receipt_env_run() {
-  env -i "${receipt_environment[@]}" "$@"
+  harness_fixture_without_outer_proof env -i "${receipt_environment[@]}" "$@"
 }
 
 receipt_checkout_env_run() { # checkout, command...
@@ -258,17 +258,6 @@ cleanup_land_fixture() {
   exit "$status"
 }
 trap cleanup_land_fixture EXIT
-
-clear_independent_fixture_context() {
-  unset METASYSTEM_PROOF_CONTROL_ROOT METASYSTEM_PROOF_ATTEMPT \
-    METASYSTEM_PROOF_RUN_ROOT METASYSTEM_PROOF_RUN_ID \
-    METASYSTEM_PROOF_RECORD_KEY METASYSTEM_PROOF_CREATION_CLAIM \
-    METASYSTEM_PROOF_AUTH_BIN METASYSTEM_HOOK_DELEGATE_STATE_ROOT \
-    METASYSTEM_HOOK_DELEGATE_INSTALLATION_ROOT METASYSTEM_HOOK_DELEGATE_JOB \
-    METASYSTEM_SUITE_PROGRESS_ACTIVE METASYSTEM_SUITE_PROGRESS_ROOT \
-    METASYSTEM_SUITE_PROGRESS_LOG METASYSTEM_ENUMERATION_ENGINE_DEPENDENCY \
-    METASYSTEM_ENUMERATION_STAGE_RESULTS_OUT
-}
 
 extract_fixture_git_archive() { # repository, destination, archive file, git archive arguments...
   local repository=$1 destination=$2 archive=$3
@@ -831,7 +820,6 @@ arm_receipt_runner() { # checkout, engine
 }
 
 if is_carried_scenario; then
-  clear_independent_fixture_context
   make_leg "$fixture_scenario"
   arm_receipt_runner "$leg_local" "$leg_local/bin/metasystem"
   carried_fixture_start=$(receipt_env_run "$leg_local/bin/metasystem" proc started-at --pid "$$")
@@ -961,7 +949,7 @@ if is_carried_scenario; then
 	fi
 	set +e
 	(cd "$leg_local" && METASYSTEM_OWNER_LINEAGE=land-receipt-fixture \
-	  env "${crash_environment[@]}" bash scripts/agents/land.sh \
+	  harness_fixture_without_outer_proof env "${crash_environment[@]}" bash scripts/agents/land.sh \
 	    -m "$carried_message" --goal fx --carried "$carried_word" \
 	    --staged-only --skip-transport) >"$intent_failure_output" 2>&1
 	intent_failure_rc=$?
@@ -1020,7 +1008,7 @@ if is_carried_scenario; then
 	  || { echo "land carried-crash-local fixture: peer move was not ledger-only: $moved_origin_paths" >&2; exit 1; }
 	local_rerun_output=$leg_root/local-rerun.out
 	(cd "$leg_local" && METASYSTEM_OWNER_LINEAGE=land-receipt-fixture \
-	  bash scripts/agents/land.sh -m "$carried_message" --goal fx --carried "$carried_word" \
+	  harness_fixture_without_outer_proof bash scripts/agents/land.sh -m "$carried_message" --goal fx --carried "$carried_word" \
 	    --skip-transport) >"$local_rerun_output" 2>&1 \
 	  || { echo "land carried-crash-local fixture: local recovery did not finish" >&2; cat "$local_rerun_output" >&2; exit 1; }
 	git -C "$leg_local" fetch -q origin
@@ -1064,7 +1052,7 @@ if is_carried_scenario; then
 	set +e
 	(cd "$leg_local" && METASYSTEM_OWNER_LINEAGE=land-receipt-fixture \
 	  METASYSTEM_LAND_FIXTURE_CRASH=after-push \
-	  bash scripts/agents/land.sh -m "$carried_message" --goal fx --carried "$carried_word" \
+	  harness_fixture_without_outer_proof bash scripts/agents/land.sh -m "$carried_message" --goal fx --carried "$carried_word" \
 	    --staged-only --skip-transport) >"$crash_output" 2>&1
 	crash_rc=$?
 	set -e
@@ -1079,7 +1067,7 @@ if is_carried_scenario; then
 	git -C "$leg_local" diff --cached --quiet \
 	  || { echo "land carried-crash fixture: crash rerun unexpectedly has a staged set" >&2; exit 1; }
 	(cd "$leg_local" && METASYSTEM_OWNER_LINEAGE=land-receipt-fixture \
-	  bash scripts/agents/land.sh -m "$carried_message" --goal fx --carried "$carried_word" \
+	  harness_fixture_without_outer_proof bash scripts/agents/land.sh -m "$carried_message" --goal fx --carried "$carried_word" \
 	    --skip-transport) >"$rerun_output" 2>&1 \
 	  || { echo "land carried-crash fixture: rerun did not complete the record" >&2; cat "$rerun_output" >&2; exit 1; }
 	grep -Fq "already landed as $crashed_commit; completing the record" "$rerun_output" \
@@ -1102,7 +1090,7 @@ if is_carried_scenario; then
 	set +e
 	(cd "$leg_local" && METASYSTEM_GOAL_NOW=$carried_now \
 	  METASYSTEM_OWNER_LINEAGE=land-receipt-fixture METASYSTEM_LAND_FIXTURE_CRASH=after-push \
-	  bash scripts/agents/land.sh -m "$carried_message" --goal fx --carried "$carried_word" \
+	  harness_fixture_without_outer_proof bash scripts/agents/land.sh -m "$carried_message" --goal fx --carried "$carried_word" \
 	    --staged-only --skip-transport) >"$crash_output" 2>&1
 	crash_rc=$?
 	set -e
@@ -1134,7 +1122,7 @@ if is_carried_scenario; then
 	fi
 	set +e
 	(cd "$leg_peer" && METASYSTEM_GOAL_NOW=$run_clock METASYSTEM_OWNER_LINEAGE=land-receipt-fixture-b \
-	  bash scripts/agents/land.sh -m "$carried_message" --goal fx-b --carried "$peer_word" \
+	  harness_fixture_without_outer_proof bash scripts/agents/land.sh -m "$carried_message" --goal fx-b --carried "$peer_word" \
 	    --staged-only --skip-transport) >"$peer_output" 2>&1
 	peer_rc=$?
 	set -e
@@ -1158,7 +1146,7 @@ if is_carried_scenario; then
 	  || { echo "land $fixture_scenario fixture: seat B wrote a reservation despite seat A's debt" >&2; printf '%s\n' "$seat_b_goal" >&2; exit 1; }
 	seat_a_rerun=$leg_root/seat-a-rerun.out
 	(cd "$leg_local" && METASYSTEM_GOAL_NOW=$run_clock METASYSTEM_OWNER_LINEAGE=land-receipt-fixture \
-	  bash scripts/agents/land.sh -m "$carried_message" --goal fx --carried "$carried_word" \
+	  harness_fixture_without_outer_proof bash scripts/agents/land.sh -m "$carried_message" --goal fx --carried "$carried_word" \
 	    --staged-only --skip-transport) >"$seat_a_rerun" 2>&1 \
 	  || { echo "land $fixture_scenario fixture: seat A did not complete its pushed record" >&2; cat "$seat_a_rerun" >&2; exit 1; }
 	grep -Fq "already landed as $seat_a_commit; completing the record" "$seat_a_rerun" \
@@ -1166,7 +1154,7 @@ if is_carried_scenario; then
 	if [[ "$fixture_scenario" == carried-two-seat ]]; then
 	  set +e
 	  (cd "$leg_peer" && METASYSTEM_GOAL_NOW=$run_clock METASYSTEM_OWNER_LINEAGE=land-receipt-fixture-b \
-	    bash scripts/agents/land.sh -m "$carried_message" --goal fx-b --carried "$peer_word" \
+	    harness_fixture_without_outer_proof bash scripts/agents/land.sh -m "$carried_message" --goal fx-b --carried "$peer_word" \
 	      --staged-only --skip-transport) >"$leg_root/seat-b-rerun.out" 2>&1
 	  peer_rerun_rc=$?
 	  set -e
@@ -1181,7 +1169,7 @@ if is_carried_scenario; then
   if [[ "$fixture_scenario" == carried-asks || "$fixture_scenario" == carried-ledger-path ]]; then
     set +e
     (cd "$leg_local" && METASYSTEM_OWNER_LINEAGE=land-receipt-fixture \
-      bash scripts/agents/land.sh -m "$carried_message" --goal fx --carried "$carried_word" \
+      harness_fixture_without_outer_proof bash scripts/agents/land.sh -m "$carried_message" --goal fx --carried "$carried_word" \
         --staged-only --skip-transport) >"$carried_output" 2>&1
     carried_rc=$?
     set -e
@@ -1203,7 +1191,7 @@ if is_carried_scenario; then
   carried_land_args=(-m "$carried_message" --goal fx --carried "$carried_word" --staged-only --skip-transport)
   [[ "$fixture_scenario" != carried-red-battery ]] || carried_land_args+=(--direct-fix register-carriage)
   (cd "$leg_local" && METASYSTEM_OWNER_LINEAGE=land-receipt-fixture \
-    bash scripts/agents/land.sh "${carried_land_args[@]}") >"$carried_output" 2>&1 || {
+    harness_fixture_without_outer_proof bash scripts/agents/land.sh "${carried_land_args[@]}") >"$carried_output" 2>&1 || {
 	  echo "land $fixture_scenario fixture: carried landing did not complete" >&2
 	  echo "land $fixture_scenario fixture: retained test run output" >&2
 	  [[ ! -f "$leg_root/carried-test.out" ]] || sed -n '1,240p' "$leg_root/carried-test.out" >&2
@@ -1285,7 +1273,7 @@ if is_carried_scenario; then
 	  || { echo "land carried-second fixture: second goal carry returned no word" >&2; exit 1; }
 	second_output=$leg_root/second-land.out
 	(cd "$leg_local" && METASYSTEM_OWNER_LINEAGE=land-receipt-fixture \
-	  bash scripts/agents/land.sh -m "$carried_message" --goal fx --carried "$second_word" \
+	  harness_fixture_without_outer_proof bash scripts/agents/land.sh -m "$carried_message" --goal fx --carried "$second_word" \
 	    --staged-only --skip-transport) >"$second_output" 2>&1 \
 	  || { echo "land carried-second fixture: second landing failed" >&2; cat "$second_output" >&2; exit 1; }
 	second_commit=$(git -C "$leg_local" log --format=%H --grep="^Carry: $second_word$" -1)
@@ -1413,7 +1401,6 @@ install_cutover_engine() { # checkout, engine
 
 make_brain_source_leg() { # name
   local name=$1 source_top source_prefix legacy ledger digest manifest fixture_start migrate_out leg_identity_matches
-  clear_independent_fixture_context
   # These disposable roots need their own witness because the parent's witness describes a different repository.
   unset METASYSTEM_GATE_WITNESS METASYSTEM_GATE_WITNESS_ROOT \
     METASYSTEM_GATE_WITNESS_RUN METASYSTEM_GATE_WITNESS_EXPORT \
@@ -1543,7 +1530,7 @@ assert_land_brain_refusal() { # root, expected, command...
   shift 2
   before=$(git -C "$checkout" rev-parse HEAD)
   set +e
-  output=$("$@" 2>&1)
+  output=$(harness_fixture_without_outer_proof "$@" 2>&1)
   rc=$?
   set -e
   after=$(git -C "$checkout" rev-parse HEAD)
@@ -1649,7 +1636,7 @@ SH
   set +e
   (
     cd "$leg_local"
-    env PATH="$normal_bin:$PATH" LAND_FIXTURE_REAL_GIT="$real_git" \
+    harness_fixture_without_outer_proof env PATH="$normal_bin:$PATH" LAND_FIXTURE_REAL_GIT="$real_git" \
       LAND_FIXTURE_TRIGGER="$normal_trigger" LAND_FIXTURE_PEER="$leg_peer" \
       LAND_FIXTURE_PUSHES="$normal_pushes" METASYSTEM_OWNER_LINEAGE=fixture-lineage \
       bash scripts/agents/land.sh -m "$normal_message" --skip-transport \
@@ -1703,7 +1690,7 @@ SH
   set +e
   (
     cd "$leg_local"
-    env PATH="$retry_bin:$PATH" LAND_FIXTURE_REAL_GIT="$real_git" \
+    harness_fixture_without_outer_proof env PATH="$retry_bin:$PATH" LAND_FIXTURE_REAL_GIT="$real_git" \
       LAND_FIXTURE_TRIGGER="$retry_trigger" LAND_FIXTURE_PEER="$leg_peer" \
       LAND_FIXTURE_PUSHES="$retry_pushes" METASYSTEM_OWNER_LINEAGE=fixture-lineage \
       bash scripts/agents/land.sh -m "$retry_message" --skip-transport \
@@ -1733,7 +1720,7 @@ SH
   wrapper_before=$(git -C "$leg_local" rev-parse HEAD)
   set +e
   wrapper_typed=$(cd "$leg_local" && METASYSTEM_OWNER_LINEAGE=fixture-lineage \
-    bash scripts/agents/commit.sh -m x --trailer 'Machine: forged+human' 2>&1)
+    harness_fixture_without_outer_proof bash scripts/agents/commit.sh -m x --trailer 'Machine: forged+human' 2>&1)
   wrapper_typed_rc=$?
   set -e
   [[ $wrapper_typed_rc == 2 && "$wrapper_typed" == *"commit refused: Machine is stamped by the wrapper, never typed"* \
@@ -1742,7 +1729,7 @@ SH
     exit 1
   }
   set +e
-  wrapper_lineage=$(cd "$leg_local" && env -u METASYSTEM_OWNER_LINEAGE bash scripts/agents/commit.sh -m x 2>&1)
+  wrapper_lineage=$(cd "$leg_local" && harness_fixture_without_outer_proof env -u METASYSTEM_OWNER_LINEAGE bash scripts/agents/commit.sh -m x 2>&1)
   wrapper_lineage_rc=$?
   set -e
   [[ $wrapper_lineage_rc == 2 && "$wrapper_lineage" == *"agent commit refused: the lease holder has a claim epoch but no owner lineage; export METASYSTEM_OWNER_LINEAGE in the seat's shell"* ]] || {
@@ -1754,7 +1741,7 @@ SH
   set +e
   (
     cd "$leg_local"
-    METASYSTEM_OWNER_LINEAGE=fixture-lineage bash scripts/agents/land.sh -m "$wrapper_message" \
+    METASYSTEM_OWNER_LINEAGE=fixture-lineage harness_fixture_without_outer_proof bash scripts/agents/land.sh -m "$wrapper_message" \
       --skip-transport --direct-fix register-carriage "$wrapper_record"
   ) >"$leg_root/wrapper-missing-goal.out" 2>&1
   wrapper_missing_rc=$?
@@ -1797,7 +1784,7 @@ SH
   set +e
   (
     cd "$leg_local"
-    env PATH="$commit_push_bin:$PATH" LAND_FIXTURE_REAL_GIT="$real_git" \
+    harness_fixture_without_outer_proof env PATH="$commit_push_bin:$PATH" LAND_FIXTURE_REAL_GIT="$real_git" \
       LAND_FIXTURE_TRIGGER="$commit_push_trigger" LAND_FIXTURE_PEER="$leg_peer" \
       LAND_FIXTURE_LOCAL="$commit_push_local_root" LAND_FIXTURE_PEER_ROOT="$commit_push_peer_root" \
       LAND_FIXTURE_PUSHES="$commit_push_pushes" METASYSTEM_OWNER_LINEAGE=fixture-lineage \
@@ -1856,7 +1843,7 @@ SH
   set +e
   (
     cd "$leg_local"
-    env PATH="$rejected_bin:$PATH" LAND_FIXTURE_REAL_GIT="$real_git" \
+    harness_fixture_without_outer_proof env PATH="$rejected_bin:$PATH" LAND_FIXTURE_REAL_GIT="$real_git" \
       LAND_FIXTURE_TRIGGER="$rejected_trigger" LAND_FIXTURE_PEER="$leg_peer" \
       LAND_FIXTURE_LOCAL="$rejected_local_root" LAND_FIXTURE_PEER_ROOT="$rejected_peer_root" \
       LAND_FIXTURE_PUSHES="$rejected_pushes" METASYSTEM_OWNER_LINEAGE=fixture-lineage \
@@ -1880,7 +1867,7 @@ SH
   git -C "$leg_local" add "$stack_l1_record"
   (
     cd "$leg_local"
-    METASYSTEM_OWNER_LINEAGE=fixture-lineage bash scripts/agents/commit.sh \
+    METASYSTEM_OWNER_LINEAGE=fixture-lineage harness_fixture_without_outer_proof bash scripts/agents/commit.sh \
       --goal ship-widget --direct-fix register-carriage -m "lower lawful commit"
   ) >"$leg_root/stack-l1.out" 2>&1
   move_goal_out_of_claimed_state "$leg_peer"
@@ -1906,7 +1893,7 @@ SH
   set +e
   (
     cd "$leg_local"
-    METASYSTEM_OWNER_LINEAGE=fixture-lineage bash scripts/agents/land.sh -m "$stack_message" \
+    METASYSTEM_OWNER_LINEAGE=fixture-lineage harness_fixture_without_outer_proof bash scripts/agents/land.sh -m "$stack_message" \
       --skip-transport --goal ship-gadget --direct-fix register-carriage "$stack_l2_record"
   ) >"$stack_output" 2>&1
   stack_rc=$?
@@ -1924,7 +1911,7 @@ SH
   printf '%s\n' "fixture positive control" >"$positive_message"
   (
     cd "$leg_local"
-    METASYSTEM_OWNER_LINEAGE=fixture-lineage bash scripts/agents/land.sh -m "$positive_message" \
+    METASYSTEM_OWNER_LINEAGE=fixture-lineage harness_fixture_without_outer_proof bash scripts/agents/land.sh -m "$positive_message" \
       --skip-transport --goal ship-widget --direct-fix register-carriage "$positive_record"
   ) >"$positive_output" 2>&1
   positive_commit=$(git -C "$leg_local" rev-parse HEAD)
@@ -2005,7 +1992,7 @@ JSON
   set +e
   (
     cd "$leg_local"
-    "$source_engine" landing test-receipt --root . --tree "$recert_candidate_tree" \
+    harness_fixture_without_outer_proof "$source_engine" landing test-receipt --root . --tree "$recert_candidate_tree" \
       --command "grep -q 'recertified chain change' $recert_path" --goal ship-widget --cap-min 1
   ) >"$leg_root/recert-receipt.out" 2>&1
   recert_receipt_rc=$?
@@ -2040,7 +2027,7 @@ SH
   set +e
   (
     cd "$leg_local"
-    env PATH="$recert_bin:$PATH" LAND_FIXTURE_REAL_GIT="$real_git" \
+    harness_fixture_without_outer_proof env PATH="$recert_bin:$PATH" LAND_FIXTURE_REAL_GIT="$real_git" \
       LAND_FIXTURE_TRIGGER="$recert_trigger" LAND_FIXTURE_PEER="$leg_peer" \
       LAND_FIXTURE_PUSHES="$recert_pushes" METASYSTEM_OWNER_LINEAGE=fixture-lineage \
       bash scripts/agents/land.sh -m "$recert_message" --skip-transport \
@@ -2096,7 +2083,7 @@ SH
   set +e
   (
     cd "$leg_local"
-    "$source_engine" landing test-receipt --root . --tree "$moved_candidate_tree" \
+    harness_fixture_without_outer_proof "$source_engine" landing test-receipt --root . --tree "$moved_candidate_tree" \
       --command "grep -q 'recertified chain change' $recert_path" --goal ship-widget --cap-min 1
   ) >"$leg_root/recert-moved-receipt.out" 2>&1
   moved_receipt_rc=$?
@@ -2112,7 +2099,7 @@ SH
   set +e
   (
     cd "$leg_local"
-    METASYSTEM_OWNER_LINEAGE=fixture-lineage bash scripts/agents/land.sh -m "$recert_message" \
+    METASYSTEM_OWNER_LINEAGE=fixture-lineage harness_fixture_without_outer_proof bash scripts/agents/land.sh -m "$recert_message" \
       --skip-transport --chain "$recert_root" --goal ship-widget \
       --recertification "$moved_relative" --test-receipt "$moved_receipt" "$recert_path"
   ) >"$leg_root/recert-moved.out" 2>&1
@@ -2149,7 +2136,7 @@ if [[ "$fixture_scenario" == brain-land-refuses ]]; then
   mkdir -p "$leg_local/records/misc"
   printf '%s\n' "plain brain record" >"$leg_local/records/misc/brain-fixture-record.md"
   git -C "$leg_local" add records/misc/brain-fixture-record.md
-  METASYSTEM_OWNER_LINEAGE=fixture-lineage bash "$leg_local/scripts/agents/commit.sh" -F "$message" records/misc/brain-fixture-record.md >/dev/null
+  METASYSTEM_OWNER_LINEAGE=fixture-lineage harness_fixture_without_outer_proof bash "$leg_local/scripts/agents/commit.sh" -F "$message" records/misc/brain-fixture-record.md >/dev/null
   corrupt_head=$(git -C "$leg_local" rev-parse HEAD)
   printf '%s\n' '{broken' >"$leg_local/artifacts/agents/brain.json"
   remedy="this checkout's brain declaration is unreadable"
@@ -2183,7 +2170,7 @@ if [[ "$fixture_scenario" == brain-absent-node-proceeds ]]; then
 	mkdir -p "$node/records/misc"
 	printf '%s\n' "node landing" >"$node/$node_record"
 	printf '%s\n' "absent node landing" >"$leg_root/node-message.txt"
-	METASYSTEM_OWNER_LINEAGE=fixture-lineage bash "$node/scripts/agents/land.sh" -m "$leg_root/node-message.txt" \
+	METASYSTEM_OWNER_LINEAGE=fixture-lineage harness_fixture_without_outer_proof bash "$node/scripts/agents/land.sh" -m "$leg_root/node-message.txt" \
 		--skip-transport --direct-fix register-carriage "$node_record" >/dev/null
 	node_message=$(git -C "$node" show -s --format=%B HEAD)
 	grep -Eq '^Landing-Provenance: .* goal-free$' <<<"$node_message" || {
@@ -2315,7 +2302,7 @@ git -C "$leg_local" remote add transport "$retry_transport"
 printf 'local landing\n' >"$leg_local/payload.txt"
 (
   cd "$leg_local"
-  env PATH="$retry_bin:$PATH" LAND_FIXTURE_REAL_GIT="$real_git" \
+  harness_fixture_without_outer_proof env PATH="$retry_bin:$PATH" LAND_FIXTURE_REAL_GIT="$real_git" \
     LAND_FIXTURE_PEER="$leg_peer" \
     LAND_FIXTURE_PUSH_ATTEMPTS="$retry_attempts" \
     LAND_FIXTURE_PUSH_SENTINEL="$retry_sentinel" \
@@ -2383,7 +2370,7 @@ printf 'fixture preserves the failing step code\n' >"$failure_message"
 set +e
 (
   cd "$leg_local"
-  env PATH="$failure_bin:$PATH" LAND_FIXTURE_REAL_GIT="$real_git" \
+  harness_fixture_without_outer_proof env PATH="$failure_bin:$PATH" LAND_FIXTURE_REAL_GIT="$real_git" \
     LAND_FIXTURE_GIT_LOG="$failure_log" \
     bash scripts/agents/land.sh -m "$failure_message" --skip-transport payload.txt
 ) >"$failure_output" 2>&1
@@ -2429,7 +2416,7 @@ set +e
 (
   cd "$leg_local"
   METASYSTEM_ALLOW_NEW_PLAN=1 \
-    bash scripts/agents/land.sh -m "$new_plan_message" --skip-transport plans/new.md
+    harness_fixture_without_outer_proof bash scripts/agents/land.sh -m "$new_plan_message" --skip-transport plans/new.md
 ) >"$new_plan_output" 2>&1
 new_plan_rc=$?
 set -e
@@ -2452,7 +2439,7 @@ if grep -Fq '== STEP: fetch origin' "$new_plan_output"; then
 fi
 (
   cd "$leg_local"
-  bash scripts/agents/land.sh -m "$new_plan_message" --staged-only \
+  harness_fixture_without_outer_proof bash scripts/agents/land.sh -m "$new_plan_message" --staged-only \
     --allow-new-plan --skip-transport
 ) >"$allowed_output" 2>&1 || {
   echo "land new-plan fixture: --allow-new-plan did not admit the same staged plan" >&2
@@ -2478,7 +2465,7 @@ printf 'fixture forwards a goal item\n' >"$goal_message"
 (
   cd "$leg_local"
   LAND_FIXTURE_GOAL_LOG="$goal_log" \
-    bash scripts/agents/land.sh -m "$goal_message" --goal fx --skip-transport payload.txt
+    harness_fixture_without_outer_proof bash scripts/agents/land.sh -m "$goal_message" --goal fx --skip-transport payload.txt
 ) >"$goal_output" 2>&1 || {
   echo "land goal fixture: --goal was not accepted and forwarded" >&2
   sed -n '1,160p' "$goal_output" >&2
@@ -2506,7 +2493,7 @@ printf 'receipt line landing\n' >"$leg_local/payload.txt"
 set +e
 (
   cd "$leg_local"
-  bash scripts/agents/land.sh -m "$receipt_line_message" --goal fx --skip-transport payload.txt
+  harness_fixture_without_outer_proof bash scripts/agents/land.sh -m "$receipt_line_message" --goal fx --skip-transport payload.txt
 ) >"$receipt_line_refusal" 2>&1
 receipt_line_rc=$?
 set -e
@@ -2530,7 +2517,7 @@ git -C "$leg_local" diff --cached --quiet -- \
   || { echo "land receipt-line fixture: the named receipt command failed" >&2; cat "$leg_root/receipt-add.out" >&2; exit 1; }
 (
   cd "$leg_local"
-  bash scripts/agents/land.sh -m "$receipt_line_message" --goal fx --skip-transport payload.txt memory/receipts.log
+  harness_fixture_without_outer_proof bash scripts/agents/land.sh -m "$receipt_line_message" --goal fx --skip-transport payload.txt memory/receipts.log
 ) >"$receipt_line_output" 2>&1 || {
   echo "land receipt-line fixture: the landing with its receipt line was refused" >&2
   sed -n '1,160p' "$receipt_line_output" >&2
@@ -2552,7 +2539,7 @@ grep -Fq '|goal=fx|' <<<"$receipt_line_entries" \
 printf 'records only\n' >>"$leg_local/plans/existing.md"
 (
   cd "$leg_local"
-  bash scripts/agents/land.sh -m "$receipt_line_message" --goal fx --skip-transport plans/existing.md
+  harness_fixture_without_outer_proof bash scripts/agents/land.sh -m "$receipt_line_message" --goal fx --skip-transport plans/existing.md
 ) >"$receipt_line_records_output" 2>&1 || {
   echo "land receipt-line fixture: a records-only landing without a receipt line was refused" >&2
   sed -n '1,160p' "$receipt_line_records_output" >&2
@@ -2568,7 +2555,6 @@ fi
 # 5. Tier 1 runs the declared command against the staged candidate before the
 # commit boundary, then carries the root job and exact receipt path together.
 if [[ "$fixture_scenario" == tier-one ]]; then
-clear_independent_fixture_context
 make_leg tier-one
 tier_one_log=$leg_root/tier-one.log
 tier_one_message=$leg_root/message.txt
@@ -2578,7 +2564,7 @@ printf 'fixture creates a tree-bound tier-one receipt\n' >"$tier_one_message"
 (
   cd "$leg_local"
   METASYSTEM_OWNER_LINEAGE=land-receipt-fixture LAND_FIXTURE_TIER_ONE_LOG="$tier_one_log" \
-    bash scripts/agents/land.sh -m "$tier_one_message" --goal fx \
+    harness_fixture_without_outer_proof bash scripts/agents/land.sh -m "$tier_one_message" --goal fx \
       --direct-fix tier-1 --root-job tier-one-root \
       --tests "test \"\$(cat payload.txt)\" = tier-one\\ landing" \
       --skip-transport payload.txt
@@ -2612,7 +2598,6 @@ fi
 # receipt for another tree before commit, and lands with the exact candidate's
 # full-battery receipt and bar-a provenance.
 if [[ "$fixture_scenario" == full-width-chain ]]; then
-clear_independent_fixture_context
 make_leg full-width-chain
 export METASYSTEM_OWNER_LINEAGE=land-receipt-fixture
 full_chain_message=$leg_root/message.txt
@@ -2631,7 +2616,7 @@ full_chain_base=$(git -C "$leg_local" rev-parse HEAD)
 set +e
 (
   cd "$leg_local"
-  bash scripts/agents/land.sh -m "$full_chain_message" --chain full-chain --goal fx \
+  harness_fixture_without_outer_proof bash scripts/agents/land.sh -m "$full_chain_message" --chain full-chain --goal fx \
     --tests true --test-receipt receipt.json --staged-only --skip-transport
 ) >"$full_chain_usage_output" 2>&1
 full_chain_usage_rc=$?
@@ -2653,7 +2638,7 @@ fi
 full_chain_other_tree=$(git -C "$leg_local" rev-parse HEAD^{tree})
 (
   cd "$leg_local"
-  "$source_engine" landing test-receipt --root . \
+  harness_fixture_without_outer_proof "$source_engine" landing test-receipt --root . \
     --tree "$full_chain_other_tree" --command "$full_battery_command" --goal fx --cap-min 3
 ) >/dev/null
 full_chain_other_receipt=artifacts/agents/landing/receipts/$full_chain_other_tree.json
@@ -2691,7 +2676,7 @@ JSON
 set +e
 (
   cd "$leg_local"
-  bash scripts/agents/land.sh -m "$full_chain_message" --chain full-chain --goal fx \
+  harness_fixture_without_outer_proof bash scripts/agents/land.sh -m "$full_chain_message" --chain full-chain --goal fx \
     --staged-only --skip-transport
 ) >"$full_chain_missing_output" 2>&1
 full_chain_missing_rc=$?
@@ -2716,7 +2701,7 @@ printf 'testing.contract=testing.json\n' >>"$leg_local/metasystem.conf"
 set +e
 (
   cd "$leg_local"
-  bash scripts/agents/land.sh -m "$full_chain_message" --chain full-chain --goal fx \
+  harness_fixture_without_outer_proof bash scripts/agents/land.sh -m "$full_chain_message" --chain full-chain --goal fx \
     --staged-only --skip-transport
 ) >"$full_chain_missing_output" 2>&1
 full_chain_schema2_rc=$?
@@ -2735,7 +2720,7 @@ grep -Fqx "land refused: chain full-chain requires sufficient schema-2 testing e
 set +e
 (
   cd "$leg_local"
-  bash scripts/agents/land.sh -m "$full_chain_message" --chain full-chain --goal fx \
+  harness_fixture_without_outer_proof bash scripts/agents/land.sh -m "$full_chain_message" --chain full-chain --goal fx \
     --test-receipt "$full_chain_other_receipt" --staged-only --skip-transport
 ) >"$full_chain_mismatch_output" 2>&1
 full_chain_mismatch_rc=$?
@@ -2755,14 +2740,14 @@ fi
 
 (
   cd "$leg_local"
-  "$source_engine" landing test-receipt --root . \
+  harness_fixture_without_outer_proof "$source_engine" landing test-receipt --root . \
     --tree "$full_chain_candidate" --command "$full_battery_command" --goal fx --cap-min 3
 ) >/dev/null
 full_chain_receipt=artifacts/agents/landing/receipts/$full_chain_candidate.json
 (
   cd "$leg_local"
   LAND_FIXTURE_CHAIN_LOG="$full_chain_log" \
-    bash scripts/agents/land.sh -m "$full_chain_message" --chain full-chain --goal fx \
+    harness_fixture_without_outer_proof bash scripts/agents/land.sh -m "$full_chain_message" --chain full-chain --goal fx \
       --test-receipt "$full_chain_receipt" --staged-only --skip-transport
 ) >"$full_chain_landing_output" 2>&1 || {
   echo "land full-width-chain fixture: matching receipt did not land" >&2
@@ -2815,7 +2800,7 @@ cat >"$leg_local/artifacts/agents/full-chain-2/rounds/1/review.json" <<JSON
 JSON
 (
   cd "$leg_local"
-  "$source_engine" landing test-receipt --root . \
+  harness_fixture_without_outer_proof "$source_engine" landing test-receipt --root . \
     --tree "$full_chain_candidate_2" --command "$full_battery_command" --goal fx --cap-min 1
 ) >/dev/null
 full_chain_receipt_2=artifacts/agents/landing/receipts/$full_chain_candidate_2.json
@@ -2826,7 +2811,7 @@ printf 'payload=drift\n' >>"$leg_local/payload.txt"
 set +e
 (
   cd "$leg_local"
-  bash scripts/agents/land.sh -m "$full_chain_message" --chain full-chain-2 --goal fx \
+  harness_fixture_without_outer_proof bash scripts/agents/land.sh -m "$full_chain_message" --chain full-chain-2 --goal fx \
     --test-receipt "$full_chain_receipt_2" --staged-only --skip-transport
 ) >"$full_chain_drift_output" 2>&1
 full_chain_drift_rc=$?
@@ -2879,7 +2864,7 @@ appender_pid=$!
 set +e
 (
   cd "$leg_local"
-  bash scripts/agents/land.sh -m "$full_chain_message" --chain full-chain-2 --goal fx \
+  harness_fixture_without_outer_proof bash scripts/agents/land.sh -m "$full_chain_message" --chain full-chain-2 --goal fx \
     --test-receipt "$full_chain_receipt_2" --staged-only --skip-transport
 ) >"$full_chain_passing_output" 2>&1
 full_chain_passing_rc=$?
@@ -2922,7 +2907,7 @@ cp "$leg_local/records/narrator-digest.log" "$full_chain_digest_before"
 set +e
 (
   cd "$leg_local"
-  bash scripts/agents/land.sh -m "$full_chain_contended_message" \
+  harness_fixture_without_outer_proof bash scripts/agents/land.sh -m "$full_chain_contended_message" \
     --goal fx --direct-fix register-carriage --skip-transport -- memory/receipts.log
 ) >"$full_chain_contended_output" 2>&1
 full_chain_contended_rc=$?
@@ -2954,7 +2939,7 @@ full_chain_committed_receipts=$leg_root/receipts.committed
 printf 'fixture carries the contended digest\n' >"$full_chain_repair_message"
 (
   cd "$leg_local"
-  bash scripts/agents/land.sh -m "$full_chain_repair_message" \
+  harness_fixture_without_outer_proof bash scripts/agents/land.sh -m "$full_chain_repair_message" \
     --goal fx --direct-fix register-carriage --skip-transport -- records/narrator-digest.log
 ) >"$full_chain_repair_output" 2>&1 || {
   echo "land full-width-chain fixture: contended register repair failed" >&2
@@ -2981,7 +2966,6 @@ fi
 # goal-verb commit. The two drift probes run first on the same receipt so the
 # cross-tip projection cannot weaken the exact checkout posture.
 if [[ "$fixture_scenario" == ledger-move-lands ]]; then
-clear_independent_fixture_context
 echo "land ledger-move-lands fixture: one candidate engine build"
 make_leg ledger-move-lands
 arm_receipt_runner "$leg_local" "$leg_local/bin/metasystem"
@@ -3059,7 +3043,6 @@ fi
 # 11. A records-only peer commit changes the workspace projection but not a
 # selected execution identity, so site 8 reaches retained-proof verification.
 if [[ "$fixture_scenario" == records-move-lands ]]; then
-clear_independent_fixture_context
 echo "land records-move-lands fixture: one candidate engine build"
 make_leg records-move-lands
 arm_receipt_runner "$leg_local" "$leg_local/bin/metasystem"
@@ -3106,7 +3089,6 @@ fi
 # The pre-rebase receipt is accepted exactly, but the post-rebase proof wall
 # refuses the local commit before it can reach origin.
 if [[ "$fixture_scenario" == input-move-refuses ]]; then
-clear_independent_fixture_context
 echo "land input-move-refuses fixture: one candidate engine build"
 make_leg input-move-refuses
 arm_receipt_runner "$leg_local" "$leg_local/bin/metasystem"
@@ -3144,7 +3126,6 @@ fi
 # candidate engine writes the newer receipt shape in the peer clone for the
 # same tree, which the enrolled older reader must reject after it is copied.
 if [[ "$fixture_scenario" == receipt-cutover ]]; then
-clear_independent_fixture_context
 echo "land receipt-cutover fixture: one candidate engine build and one pinned old-engine build"
 # The pre-cutover source is archived once; a provisionally stamped build of it
 # claims the seed goal inside make_leg, and the seed-stamped build below is the
