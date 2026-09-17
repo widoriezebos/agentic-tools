@@ -55,6 +55,7 @@ List only rules that cannot be inferred from code or tooling and apply broadly i
   exact receipt; commits remain local until one range-held check passes; one
   push publishes the series; recovery identifies units by their individual
   origin trailers and finalizes each once.
+- A Codex job on a seat machine starts through `metasystem launch start`; the plugin's slash commands and the codex-rescue agent are not used on seat machines.
 
 ## Paper prose
 

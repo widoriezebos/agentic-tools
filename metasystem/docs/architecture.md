@@ -130,6 +130,7 @@ One line per package; the package doc is the full story.
 | `janitor` | the machine-wide sweep that closes dead claims |
 | `jsonedit` | shell-facing JSON verb decisions |
 | `lease` | checkout write-authority: announce, classify, hold, renew, sweep |
+| `launch` | external agent process lifecycle, durable launch records, adapters, measurement, and cancellation |
 | `lock` | the supervision registry's acquisition discipline |
 | `mission` | mission lifecycle decisions: ledger, fences, state, ask/answer |
 | `missionrunner` | the engine that launches and drives mission cycles |
@@ -171,6 +172,7 @@ it does; this table adds where the decisions live.
 | `event` | `events` |
 | `json` | `jsonedit` |
 | `lease` | `lease` |
+| `launch` | `launch` |
 | `mission` | `mission`, `missionrunner`, `contract`, `config` |
 | `evidence` | `evidence` |
 | `supervise` | `supervise`, `registry`, `lock`, `identity`, `census`, `dispatch` |
