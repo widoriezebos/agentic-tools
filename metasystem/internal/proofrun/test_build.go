@@ -676,6 +676,10 @@ func runTestGroup(ctx context.Context, request TestRunRequest, group testpolicy.
 		ToolIdentities: map[string]string{}, ReportDigests: map[string]string{}, StartedAt: started.Format(time.RFC3339Nano),
 		ProgressRule: progressRule(limits)}
 	defer func() {
+		if group.Adapter == "section" && result.NotRunReason == "" && result.NativeExitStatus != nil &&
+			(*result.NativeExitStatus != 0 || result.Status != "passed") {
+			result.NotRunReason = scriptFailureReason(result.LogPath, *result.NativeExitStatus)
+		}
 		if result.Status == "passed" || result.Status == "reused" || result.LogPath == "" {
 			return
 		}
