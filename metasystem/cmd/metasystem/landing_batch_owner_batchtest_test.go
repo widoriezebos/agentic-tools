@@ -874,6 +874,14 @@ func TestLandingBatchJoinVerbPublishesOutsideFlock(t *testing.T) {
 		})
 	}
 	dependencies.fixtures = func(string) ([]byte, error) { return nil, nil }
+	dependencies.protectedTests = func(_, baseTree, candidateTree string) error {
+		flockFree("protected tests")
+		events = append(events, "protected-tests")
+		if baseTree != base || candidateTree == baseTree {
+			t.Fatalf("protected test trees base=%s candidate=%s", baseTree, candidateTree)
+		}
+		return nil
+	}
 	dependencies.plan = func(string, string, string) (testpolicy.Plan, error) {
 		return testpolicy.Plan{RequiredMode: testpolicy.ModeStandard, ExecutedMode: testpolicy.ModeStandard}, nil
 	}
@@ -919,7 +927,7 @@ func TestLandingBatchJoinVerbPublishesOutsideFlock(t *testing.T) {
 		t.Fatal(err)
 	}
 	if len(record.Units) != 1 || record.Units[0].SeatRoot != seat || record.Units[0].State != batch.UnitJoined || record.BaseTree != base ||
-		strings.Join(events, ",") != "transport,gate,forward-handover,ensure-owner" {
+		strings.Join(events, ",") != "transport,gate,protected-tests,forward-handover,ensure-owner" {
 		t.Fatalf("joined record=%+v events=%v", record, events)
 	}
 }

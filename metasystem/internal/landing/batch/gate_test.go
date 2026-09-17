@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"reflect"
 	"regexp"
@@ -11,6 +12,9 @@ import (
 	"sort"
 	"strings"
 	"testing"
+
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/gittree"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/testpolicy"
 )
 
 func gatePatch(paths ...string) []byte {
@@ -66,6 +70,13 @@ func TestBatchJoinRunsItsOwnGate(t *testing.T) {
 
 func TestBatchJoinRefusesRedStep(t *testing.T) {
 	unit := Unit{}
+	static := runJoinGate("unit-tree", nil, fixtureMap(t), &unit,
+		func(_ string, step gateStep) gateStepResult {
+			return gateStepResult{RunID: "red-static", ExitCode: 1, Detail: "staticcheck: unused assignment"}
+		})
+	if static == nil || !strings.Contains(static.Error(), "BATCH_JOIN_GATE_RED") || !strings.Contains(static.Error(), "fast gate") || !strings.Contains(static.Error(), "staticcheck") {
+		t.Fatalf("red static refusal=%v", static)
+	}
 	err := runJoinGate("unit-tree", gatePatch("metasystem/internal/landing/batch/gate.go"), fixtureMap(t), &unit,
 		func(_ string, step gateStep) gateStepResult {
 			if strings.Contains(step.Name, "./internal/landing/batch") {
@@ -79,6 +90,97 @@ func TestBatchJoinRefusesRedStep(t *testing.T) {
 	err = runJoinGate("unit-tree", nil, fixtureMap(t), &unit, func(string, gateStep) gateStepResult { return gateStepResult{} })
 	if err == nil || !strings.Contains(err.Error(), "returned no run id") {
 		t.Fatalf("missing run refusal=%v", err)
+	}
+}
+
+func TestBatchJoinRefusesDroppedProtectedTest(t *testing.T) {
+	contract := testpolicy.Contract{Groups: []testpolicy.Group{{
+		ID: "landing-command-standard", Packages: []string{"cmd/metasystem", "internal/landing/batch"},
+		Tests: json.RawMessage(`["TestProtectedJoin","TestSharedName"]`),
+	}}}
+	trees := map[string]map[string]map[string]bool{
+		"base": {
+			"cmd/metasystem":         {"TestProtectedJoin": true, "TestSharedName": true},
+			"internal/landing/batch": {"TestSharedName": true},
+		},
+		"candidate": {
+			"cmd/metasystem":         {"TestSharedName": true},
+			"internal/landing/batch": {"TestSharedName": true},
+		},
+	}
+	read := func(tree, pkg string) (map[string]bool, error) { return trees[tree][pkg], nil }
+	err := checkProtectedTestContract(contract, "base", "candidate", read)
+	if err == nil || !strings.Contains(err.Error(), "BATCH_JOIN_TEST_DROPPED") ||
+		!strings.Contains(err.Error(), "landing-command-standard") || !strings.Contains(err.Error(), "cmd/metasystem") ||
+		!strings.Contains(err.Error(), "TestProtectedJoin") {
+		t.Fatalf("dropped protected test refusal=%v", err)
+	}
+	trees["candidate"]["cmd/metasystem"]["TestProtectedJoin"] = true
+	if err := checkProtectedTestContract(contract, "base", "candidate", read); err != nil {
+		t.Fatalf("preserved protected tests refused: %v", err)
+	}
+	delete(trees["candidate"]["internal/landing/batch"], "TestSharedName")
+	err = checkProtectedTestContract(contract, "base", "candidate", read)
+	if err == nil || !strings.Contains(err.Error(), "internal/landing/batch") || !strings.Contains(err.Error(), "TestSharedName") {
+		t.Fatalf("duplicate base definition was not protected in each package: %v", err)
+	}
+
+	root := t.TempDir()
+	for _, arguments := range [][]string{{"init", "-q"}, {"config", "user.name", "Fixture"}, {"config", "user.email", "fixture@example.invalid"}} {
+		command := exec.Command("git", arguments...)
+		command.Dir = root
+		if output, commandErr := command.CombinedOutput(); commandErr != nil {
+			t.Fatalf("git %v: %v: %s", arguments, commandErr, output)
+		}
+	}
+	group := testpolicy.Group{ID: "protected", Kind: "unit", Adapter: "go", CWD: ".", Inputs: []string{"pkg/**"},
+		Obligations: []string{"protected"}, Platforms: []string{"any"}, TargetMS: 1, Packages: []string{"./pkg"}, Tests: json.RawMessage(`["TestProtected"]`)}
+	fixtureContract := testpolicy.Contract{SchemaVersion: 1,
+		ProjectRisk: testpolicy.ProjectRisk{Severity: 1, Exposure: 1, Reversibility: "revert", Detection: "immediate", Recovery: "bounded"},
+		Surfaces:    []testpolicy.Surface{{ID: "app", Paths: []string{"pkg/**"}, Standard: []string{"protected"}, Critical: []string{"protected"}}},
+		Groups:      []testpolicy.Group{group}, Always: testpolicy.Always{Canary: []string{"protected"}}, Unknown: []string{"protected"}, Cadence: []string{}}
+	contractData, marshalErr := json.Marshal(fixtureContract)
+	if marshalErr != nil {
+		t.Fatal(marshalErr)
+	}
+	for path, data := range map[string][]byte{
+		"metasystem/testing.json":      contractData,
+		"metasystem/pkg/value_test.go": []byte("package pkg\nimport \"testing\"\nfunc TestProtected(t *testing.T) {}\n"),
+	} {
+		path = filepath.Join(root, filepath.FromSlash(path))
+		if mkdirErr := os.MkdirAll(filepath.Dir(path), 0o755); mkdirErr != nil {
+			t.Fatal(mkdirErr)
+		}
+		if writeErr := os.WriteFile(path, data, 0o644); writeErr != nil {
+			t.Fatal(writeErr)
+		}
+	}
+	for _, arguments := range [][]string{{"add", "."}, {"commit", "-q", "-m", "base"}} {
+		command := exec.Command("git", arguments...)
+		command.Dir = root
+		if output, commandErr := command.CombinedOutput(); commandErr != nil {
+			t.Fatalf("git %v: %v: %s", arguments, commandErr, output)
+		}
+	}
+	base := bedGit(t, root, "rev-parse", "HEAD^{tree}")
+	testPath := filepath.Join(root, "metasystem", "pkg", "value_test.go")
+	if writeErr := os.WriteFile(testPath, []byte("package pkg\nimport \"testing\"\nfunc TestRenamed(t *testing.T) {}\n"), 0o644); writeErr != nil {
+		t.Fatal(writeErr)
+	}
+	bedGit(t, root, "add", ".")
+	candidate := bedGit(t, root, "write-tree")
+	err = CheckProtectedTests(root, base, candidate)
+	if err == nil || !strings.Contains(err.Error(), "BATCH_JOIN_TEST_DROPPED") || !strings.Contains(err.Error(), "protected") || !strings.Contains(err.Error(), "./pkg") || !strings.Contains(err.Error(), "TestProtected") {
+		t.Fatalf("real candidate dropped-test refusal=%v", err)
+	}
+}
+
+func TestBatchProtectedTestsAcceptTheBaseTree(t *testing.T) {
+	root := filepath.Join("..", "..", "..", "..")
+	tree, err := (gittree.Workspace{Dir: root}).TreeOf("HEAD")
+	must(t, err)
+	if err := CheckProtectedTests(root, tree, tree); err != nil {
+		t.Fatalf("base tree rejected its own listed tests: %v", err)
 	}
 }
 

@@ -336,6 +336,11 @@ the engine's `metasystem goal` family (`internal/goal`).
   test union, proves one tip, creates exact prefix receipts, builds every unit
   commit locally in join order, and publishes the complete series with one
   push. Red diagnosis may eject units, but never changes the survivors' order.
+- **Batch withdrawal** — `landing batch withdraw --goal G`, issued by the
+  lineage that joined G before its batch is sealed. It records a pending
+  voluntary withdrawal and removes G from the queued candidate; the landing
+  owner alone hands the claim back or releases it. A sealed batch refuses the
+  request, so the joiner waits for that batch and requeues any follow-up work.
 - **Batch hold** — a durable `held-trunk-red` or `held-unclassified` state.
   Trunk red means the fresh base diagnostic was red or no member could be
   named; unclassified means diagnostic admission itself refused. Both are

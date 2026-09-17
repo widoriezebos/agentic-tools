@@ -33,12 +33,3 @@ func runBatchVerbSkeleton(_ []string) int {
 	}
 	return 0
 }
-
-func runBatchWithdraw(_ []string) int {
-	if !batchCapabilitiesAvailable() {
-		fmt.Fprintln(os.Stderr, "BATCH_UNAVAILABLE: automatic batch landing is not compiled in")
-		return 1
-	}
-	fmt.Fprintln(os.Stderr, "BATCH_WITHDRAW_UNBUILT: landing batch withdraw is not built yet; nothing was withdrawn")
-	return 1
-}

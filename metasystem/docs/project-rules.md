@@ -47,15 +47,19 @@ List only rules that cannot be inferred from code or tooling and apply broadly i
 - Only the goal's current claim holder writes `goal/<goal-id>` on the configured remote, and every rewrite uses an explicit force-with-lease. A goal branch carries product changes only in `Goal-Unit` commits, design and decision records only in `Goal-Plan` commits, and one validated read attestation plus its optional prose record only in `Goal-Read` commits; goal-store paths, append-only registers, and malformed paths under `records/reads/` belong to none of those classes.
 - Automatic batch landing is fail-closed until every compile-time capability,
   including the separately owned trunk-red ledger owner, is present. A join
-  hands the unit's claim to the landing owner; only that owner may advance the
-  record, diagnose red, make the unit's approver-attributed commit, push the
-  complete series, and return or release the claim.
+  hands the unit's claim to the landing owner; apart from the recorded
+  joiner's pre-seal withdrawal request, only that owner may advance the batch
+  lifecycle, diagnose red, make the unit's approver-attributed commit, push
+  the complete series, and return or release the claim.
 - Batch proof and landing preserve original join order. Every diagnostic run
   is fresh and charged to the authority member; every earlier prefix has an
   exact receipt; commits remain local until one range-held check passes; one
   push publishes the series; recovery identifies units by their individual
   origin trailers and finalizes each once.
 - A Codex job on a seat machine starts through `metasystem launch start`; the plugin's slash commands and the codex-rescue agent are not used on seat machines.
+- A joining seat may withdraw its own queued unit with `landing batch
+  withdraw --goal G` only before seal; the owner remains the only process that
+  returns or releases the handed-over claim.
 
 ## Paper prose
 

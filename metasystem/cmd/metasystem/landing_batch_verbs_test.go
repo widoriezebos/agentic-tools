@@ -12,24 +12,6 @@ import (
 	"testing"
 )
 
-func TestBatchWithdrawRefusesUntilImplemented(t *testing.T) {
-	root := t.TempDir()
-	stderr, code := captureStderr(t, func() int {
-		return runLandingBatch([]string{"withdraw", "--root", root, "--goal", "g"})
-	})
-	const want = "BATCH_WITHDRAW_UNBUILT: landing batch withdraw is not built yet; nothing was withdrawn\n"
-	if code != 1 || stderr != want {
-		t.Fatalf("withdraw code=%d stderr=%q, want code=1 stderr=%q", code, stderr, want)
-	}
-	entries, err := os.ReadDir(root)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if len(entries) != 0 {
-		t.Fatalf("withdraw wrote %d entries, want none", len(entries))
-	}
-}
-
 func TestBatchVerbsUnavailableWithoutFilesystemWrites(t *testing.T) {
 	root := t.TempDir()
 	missing := requiredBatchCapabilities[0]

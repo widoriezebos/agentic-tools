@@ -35,7 +35,6 @@ type Defect struct{ Code, Why string }
 var Rows = []Row{
 	{Code: "LAUNCH_ALREADY_SUPERVISED", Owner: "internal/launch", Site: "launch.go", Shape: Question},
 	{Code: "BATCH_UNAVAILABLE", Owner: "cmd/metasystem", Site: "landing_batch_verbs.go:29", Shape: Question},
-	{Code: "BATCH_WITHDRAW_UNBUILT", Owner: "cmd/metasystem", Site: "landing_batch_verbs.go:42", Shape: Question},
 	{Code: "BATCH_CHAIN_CONFLICT", Owner: "internal/landing/batch", Site: "chain.go", Shape: Question},
 	{Code: "BATCH_CLOSED", Owner: "internal/landing/batch", Site: "join.go", Shape: Question},
 	{Code: "BATCH_GOAL_ELSEWHERE", Owner: "internal/landing/batch", Site: "join.go", Shape: Question},
@@ -43,6 +42,7 @@ var Rows = []Row{
 	{Code: "BATCH_JOIN_REREAD", Owner: "internal/landing/batch", Site: "join.go", Shape: Question},
 	{Code: "BATCH_JOIN_UNREAD", Owner: "internal/landing/batch", Site: "branch.go", Shape: Question},
 	{Code: "BATCH_JOIN_GATE_RED", Owner: "internal/landing/batch", Site: "gate.go", Shape: Question},
+	{Code: "BATCH_JOIN_TEST_DROPPED", Owner: "internal/landing/batch", Site: "gate.go", Shape: Question},
 	{Code: "BATCH_JOIN_CHAIN_NOT_IMPLEMENTATION", Owner: "internal/landing/batch", Site: "chain.go", Shape: Question},
 	{Code: "BATCH_JOIN_CHAIN_REQUIRED", Owner: "internal/landing/batch", Site: "chain.go", Shape: Question},
 	{Code: "BATCH_JOIN_CHAIN_REVISION_MOVED", Owner: "internal/landing/batch", Site: "chain.go", Shape: Question},
@@ -80,6 +80,7 @@ var Rows = []Row{
 	{Code: "BATCH_P6_REFUSED", Owner: "internal/landing/batch", Site: "recovery.go", Shape: Question},
 	{Code: "BATCH_RECOVERY_NOT_PUSHED", Owner: "internal/landing/batch", Site: "recovery.go", Shape: Question},
 	{Code: "BATCH_WAIT_BOUND", Owner: "internal/landing/batch", Site: "wait.go", Shape: Question},
+	{Code: "BATCH_WITHDRAW_REFUSED", Owner: "internal/landing/batch", Site: "withdraw.go", Shape: Question},
 	{Code: "GOAL_REVISION_MOVED", Owner: "cmd/metasystem", Site: "proof_run.go", Shape: Question},
 	{Code: "GOAL_DONE_READ_ITEMS_OPEN", Owner: "internal/goal", Site: "verbs.go", Shape: Question},
 	{Code: "TRUNK_RED_OWNER_UNBOUND", Owner: "internal/landing/batch", Site: "trunkred.go:69", Shape: Question},

@@ -202,7 +202,7 @@ func validateRecord(record Record) error {
 		return fmt.Errorf("held trunk-red record is incomplete")
 	}
 	for _, unit := range record.Units {
-		if unit.GoalID == "" || unit.Chain == "" || unit.Claim.Machine == "" || unit.Claim.Lineage == "" || unit.Claim.Epoch == 0 || unit.Claim.Revision == 0 || unit.Claim.AccountingRevision == 0 || !strings.Contains("|joining|joined|return-pending|withdrawn-budget|ejected|landed|", "|"+unit.State+"|") {
+		if unit.GoalID == "" || unit.Chain == "" || unit.Claim.Machine == "" || unit.Claim.Lineage == "" || unit.Claim.Epoch == 0 || unit.Claim.Revision == 0 || unit.Claim.AccountingRevision == 0 || !strings.Contains("|joining|joined|return-pending|withdrawn|withdrawn-budget|ejected|landed|", "|"+unit.State+"|") {
 			return fmt.Errorf("batch unit identity, revisions, or state are incomplete")
 		}
 		if unit.State == UnitReturnPending && (!terminalUnitState(unit.Outcome) || strings.TrimSpace(unit.Failure) == "" || unit.ReturnDisposition != "") {
@@ -213,7 +213,7 @@ func validateRecord(record Record) error {
 }
 
 func terminalUnitState(state string) bool {
-	return state == UnitEjected || state == UnitWithdrawnBudget || state == UnitLanded
+	return state == UnitEjected || state == UnitWithdrawn || state == UnitWithdrawnBudget || state == UnitLanded
 }
 
 func returnDisposition(disposition string) bool {

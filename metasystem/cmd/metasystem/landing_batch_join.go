@@ -39,6 +39,7 @@ type batchJoinDependencies struct {
 	transportMember func(batchJoinRequest, batch.BranchMember) error
 	assemble        func(string, string, []batch.Unit) ([]string, error)
 	fixtures        func(string) ([]byte, error)
+	protectedTests  func(string, string, string) error
 	gate            func(string, string, []byte, []byte, *batch.Unit) error
 	plan            func(string, string, string) (testpolicy.Plan, error)
 	publish         func(batch.Store, string, batch.Unit, string, time.Time, func(string, string, string) (testpolicy.Plan, error), func() error) error
@@ -66,6 +67,7 @@ func productionBatchJoinDependencies() batchJoinDependencies {
 		fixtures: func(root string) ([]byte, error) {
 			return os.ReadFile(filepath.Join(root, "scripts", "agents", "fixture-bed-groups.tsv"))
 		},
+		protectedTests: batch.CheckProtectedTests,
 		gate: func(root, tree string, patch, fixtures []byte, unit *batch.Unit) error {
 			execute := productionJoinGate(root)
 			return batch.RunJoinGate(tree, patch, fixtures, unit, execute)
@@ -214,6 +216,12 @@ func executeBatchJoin(request batchJoinRequest, dependencies batchJoinDependenci
 	if err := dependencies.gate(request.LandingRoot, prefixes[0], patch, fixtureMap, &unit); err != nil {
 		return batch.Record{}, err
 	}
+	if dependencies.protectedTests == nil {
+		return batch.Record{}, fmt.Errorf("BATCH_JOIN_TEST_DROPPED: protected test gate is unavailable")
+	}
+	if err := dependencies.protectedTests(request.LandingRoot, record.BaseTree, prefixes[0]); err != nil {
+		return batch.Record{}, err
+	}
 	// The candidate was prepared on the open batch's own base, which trunk may have
 	// passed since; only a batch that changed under the preparation refuses.
 	prepared := record
@@ -262,7 +270,7 @@ func productionJoinGate(root string) batch.GateExecutor {
 			args[0] = binary
 		}
 		command := exec.Command(args[0], args[1:]...)
-		command.Dir, command.Env = detached.Workspace().Dir, gittree.ScrubbedEnviron()
+		command.Dir, command.Env = batchModuleRoot(detached.Workspace().Dir), gittree.ScrubbedEnviron()
 		output, commandErr := command.CombinedOutput()
 		if commandErr != nil {
 			fmt.Fprintf(os.Stderr, "landing batch join gate %s: %s\n", step.Name, strings.TrimSpace(string(output)))
@@ -270,11 +278,23 @@ func productionJoinGate(root string) batch.GateExecutor {
 			if command.ProcessState != nil {
 				code = command.ProcessState.ExitCode()
 			}
-			return batch.GateStepResult{ExitCode: code}
+			return joinGateFailure(code, output)
 		}
 		digest := sha256.Sum256([]byte(tree + "\x00" + step.Name + "\x00" + strings.Join(step.Args, "\x00")))
 		return batch.GateStepResult{RunID: "join-" + hex.EncodeToString(digest[:8])}
 	}
+}
+
+func joinGateFailure(exitCode int, output []byte) batch.GateStepResult {
+	return batch.GateStepResult{ExitCode: exitCode, Detail: strings.TrimSpace(string(output))}
+}
+
+func batchModuleRoot(checkout string) string {
+	nested := filepath.Join(checkout, "metasystem")
+	if info, err := os.Stat(filepath.Join(nested, "go.mod")); err == nil && !info.IsDir() {
+		return nested
+	}
+	return checkout
 }
 
 func productionJoinPlan(root, goalID, tree string) (testpolicy.Plan, error) {

@@ -4,7 +4,7 @@ import "time"
 
 const StateOpen, StateSealed, StateProving, StateDiagnosing, StateLanding, StateLanded, StateHeldTrunkRed, StateHeldUnclassified, StateDissolved = "open", "sealed", "proving", "diagnosing", "landing", "landed", "held-trunk-red", "held-unclassified", "dissolved"
 
-const UnitJoining, UnitJoined, UnitReturnPending, UnitWithdrawnBudget, UnitEjected, UnitLanded = "joining", "joined", "return-pending", "withdrawn-budget", "ejected", "landed"
+const UnitJoining, UnitJoined, UnitReturnPending, UnitWithdrawn, UnitWithdrawnBudget, UnitEjected, UnitLanded = "joining", "joined", "return-pending", "withdrawn", "withdrawn-budget", "ejected", "landed"
 
 const ReturnHandedBack, ReturnReleased, ReturnAlreadyReturned = "handed-back", "released", "already-returned"
 

@@ -151,6 +151,77 @@ func TestBatchEjectAndReassemble(t *testing.T) {
 	}
 }
 
+func TestBatchSingleOwnerRedEjectsAndSurvivorsLand(t *testing.T) {
+	_, store := diagnosingBed(t)
+	handBacks := 0
+	returns := ReturnSeams{
+		Read: func(string, string, string) (ReturnLedgerGoal, error) {
+			return ReturnLedgerGoal{Claimed: true, Machine: "landing", Lineage: "owner", Batch: testBatchID}, nil
+		},
+		Target: func(Unit) ReturnTarget { return ReturnTarget{State: ReturnTargetLive, Epoch: 9} },
+		HandBack: func(string, Claim, uint64) error {
+			handBacks++
+			return nil
+		},
+		Release: func(string, string) error { t.Fatal("live joiner claim was released"); return nil },
+	}
+	failing := []RedGroup{{ID: "group", InputManifest: []string{"a.go"}, LogPath: "logs/group.log", Failures: []Failure{{Name: "TestOwnedFailure"}}}}
+	must(t, DiagnoseRed(store, testBatchID, "owner", failing, "", time.Unix(2, 0), RedSeams{Run: func(request DiagnosticRequest) (DiagnosticResult, error) {
+		if request.Tree != load(t, store).BaseTree || !request.NeverReuse {
+			t.Fatalf("base diagnostic request=%+v", request)
+		}
+		return DiagnosticResult{AttemptID: "base-green"}, nil
+	}}))
+	reassembled := load(t, store)
+	if reassembled.Units[0].State != UnitReturnPending || reassembled.Units[1].State != UnitJoined || reassembled.State != StateOpen {
+		t.Fatalf("red classification=%+v", reassembled)
+	}
+	for _, want := range []string{"base-green", "group", "logs/group.log", "TestOwnedFailure"} {
+		if !strings.Contains(reassembled.Units[0].Failure, want) {
+			t.Fatalf("ejection failure %q lacks %q", reassembled.Units[0].Failure, want)
+		}
+	}
+	must(t, ReturnUnits(store, testBatchID, "tree", "owner", time.Unix(3, 0), returns))
+	if ejected := load(t, store).Units[0]; ejected.State != UnitEjected || ejected.ReturnDisposition != ReturnHandedBack {
+		t.Fatalf("ejected custody=%+v", ejected)
+	}
+	must(t, store.Update(testBatchID, func(record *Record) error {
+		record.State = StateLanding
+		record.Proof = &Proof{Status: "green", AttemptID: "survivor-green"}
+		record.Receipts = map[string]PrefixReceipt{"goal-b": {GoalID: "goal-b", Tree: record.TipTree, AttemptID: "survivor-green"}}
+		record.History = append(record.History, HistoryEntry{At: time.Unix(3, 0).UTC().Format(time.RFC3339Nano), Verb: "prove", From: StateProving, To: StateLanding, Actor: "owner"})
+		return nil
+	}))
+	var events []string
+	must(t, LandSeries(store, testBatchID, "owner", time.Unix(4, 0), greenLandSeams(&events)))
+	wantEvents := []string{"apply:goal-b", "receipt:goal-b", "commit:goal-b", "held", "push", "cleanup"}
+	if !slices.Equal(events, wantEvents) || !load(t, store).Landing.PushComplete {
+		t.Fatalf("survivor landing events=%v record=%+v", events, load(t, store))
+	}
+	finalized := 0
+	must(t, RecoverPushedSeries(store, testBatchID, "owner", time.Unix(5, 0), RecoverySeams{
+		OriginCommit: func(unit Unit) (string, bool, error) {
+			if unit.GoalID != "goal-b" {
+				t.Fatalf("recovery inspected ejected unit %+v", unit)
+			}
+			return "commit-b", true, nil
+		},
+		Finalize: func(unit Unit, commit string) error {
+			if unit.GoalID != "goal-b" || commit != "commit-b" {
+				t.Fatalf("finalize unit=%+v commit=%s", unit, commit)
+			}
+			finalized++
+			return nil
+		},
+		Cleanup: func() error { t.Fatal("landing cleanup ran twice"); return nil },
+	}))
+	must(t, ReturnUnits(store, testBatchID, "tree", "owner", time.Unix(6, 0), returns))
+	landed := load(t, store)
+	if landed.State != StateLanded || landed.Units[0].State != UnitEjected || landed.Units[1].State != UnitLanded || !landed.Units[1].P6Done || finalized != 1 || handBacks != 2 {
+		t.Fatalf("final landed batch=%+v finalized=%d handbacks=%d", landed, finalized, handBacks)
+	}
+}
+
 func TestBatchDiagnosticRefusalHoldsWithoutEjection(t *testing.T) {
 	_, store := diagnosingBed(t)
 	var next string

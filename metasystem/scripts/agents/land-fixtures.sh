@@ -28,15 +28,58 @@ else
   [[ $fixture_bed_child_rc -eq 1 ]] || exit "$fixture_bed_child_rc"
 fi
 unset METASYSTEM_FIXTURE_SCENARIO
+fixture_isolated_home=
+if (( fixture_bed_child )); then
+  fixture_isolated_home=$(mktemp -d "${TMPDIR:-/tmp}/metasystem-land-home.XXXXXX")
+  mkdir -p "$fixture_isolated_home/registry"
+  export HOME=$fixture_isolated_home
+  export METASYSTEM_SUPERVISION_REGISTRY_HOME=$fixture_isolated_home/registry
+  trap 'rm -rf "$fixture_isolated_home"' EXIT
+fi
 if (( ! fixture_bed_child )); then
   fixture_bed_script=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd -P)/$(basename "${BASH_SOURCE[0]}")
-  run_fixture_bed_scenarios land "land fixtures passed (33 isolated legs)" \
+  run_fixture_bed_scenarios land "land fixtures passed (38 isolated legs)" \
     "$fixture_bed_script" early-reader-large-producer push-retry step-failure new-plan goal receipt-line tier-one full-width-chain build-stamp \
     brain-land-refuses brain-absent-node-proceeds ledger-move-lands records-move-lands \
     input-move-refuses receipt-cutover carried-fresh carried-prefixed carried-second carried-red-battery \
     carried-intent-failure carried-crash-local carried-asks carried-ledger-path carried-crash \
     carried-two-seat carried-debt-abandoned carried-debt-expired abandonment-refuses-every-push-route batch-owner-holds-lease \
-    batch-lands-by-agent-commit batch-two-units-disjoint-groups batch-land-trunk-moved batch-land-resumes
+    batch-lands-by-agent-commit batch-two-units-disjoint-groups batch-land-trunk-moved batch-land-resumes \
+    batch-red-ejects-owner-and-lands-survivors batch-conflicting-join-refused batch-join-static-red-refused \
+    batch-join-dropped-test-refused batch-withdraw-before-and-after-seal
+fi
+
+if [[ "$fixture_scenario" == batch-red-ejects-owner-and-lands-survivors ]]; then
+  (cd "$root" && go test -count=1 -run '^TestBatchSingleOwnerRedEjectsAndSurvivorsLand$' ./internal/landing/batch)
+  echo "land batch-red-ejects-owner-and-lands-survivors fixture passed"
+  exit 0
+fi
+
+if [[ "$fixture_scenario" == batch-conflicting-join-refused ]]; then
+  (cd "$root" && go test -count=1 -run '^(TestBatchJoinPrechecksBeforePublication|TestBatchJoinConflictNamesFiles)$' ./internal/landing/batch)
+  echo "land batch-conflicting-join-refused fixture passed"
+  exit 0
+fi
+
+if [[ "$fixture_scenario" == batch-join-static-red-refused ]]; then
+  (cd "$root" && go test -count=1 -run '^TestBatchJoinRefusesRedStep$' ./internal/landing/batch)
+  (cd "$root" && go test -count=1 -run '^TestLandingBatchJoinRefusesRedFastStaticGate$' ./cmd/metasystem)
+  echo "land batch-join-static-red-refused fixture passed"
+  exit 0
+fi
+
+if [[ "$fixture_scenario" == batch-join-dropped-test-refused ]]; then
+  (cd "$root" && go test -count=1 -run '^TestBatchJoinRefusesDroppedProtectedTest$' ./internal/landing/batch)
+  (cd "$root" && go test -count=1 -run '^TestLandingBatchJoinRefusesDroppedListedTest$' ./cmd/metasystem)
+  echo "land batch-join-dropped-test-refused fixture passed"
+  exit 0
+fi
+
+if [[ "$fixture_scenario" == batch-withdraw-before-and-after-seal ]]; then
+  (cd "$root" && go test -count=1 -run '^TestBatchWithdrawBeforeSealAndRefusesAfterSeal$' ./internal/landing/batch)
+  (cd "$root" && go test -count=1 -run '^TestBatchWithdrawCommandUsesRecordedJoinerIdentity$' ./cmd/metasystem)
+  echo "land batch-withdraw-before-and-after-seal fixture passed"
+  exit 0
 fi
 
 if [[ "$fixture_scenario" == batch-owner-holds-lease ]]; then
@@ -210,6 +253,7 @@ cleanup_land_fixture() {
     fi
   done
   rm -rf "$tmp"
+  [[ -z "$fixture_isolated_home" ]] || rm -rf "$fixture_isolated_home"
   (( cleanup_status == 0 )) || status=1
   exit "$status"
 }

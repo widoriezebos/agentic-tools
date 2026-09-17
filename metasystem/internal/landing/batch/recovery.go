@@ -27,7 +27,7 @@ func RecoverPushedSeries(store Store, id, actor string, at time.Time, seams Reco
 		return fmt.Errorf("BATCH_RECOVERY_NOT_PUSHED: batch %s has no completed push", id)
 	}
 	for _, snapshot := range record.Units {
-		if snapshot.P6Done {
+		if snapshot.P6Done || snapshot.State != UnitJoined && snapshot.Outcome != UnitLanded {
 			continue
 		}
 		commit, found := "", false
@@ -96,7 +96,7 @@ func RecoverPushedSeries(store Store, id, actor string, at time.Time, seams Reco
 	}
 	complete := true
 	for _, unit := range record.Units {
-		if unit.State == UnitJoined || !unit.P6Done {
+		if unit.State == UnitJoining || unit.State == UnitJoined || unit.Outcome == UnitLanded && !unit.P6Done {
 			complete = false
 		}
 	}
@@ -113,7 +113,7 @@ func RecoverPushedSeries(store Store, id, actor string, at time.Time, seams Reco
 	}
 	return store.Update(id, func(next *Record) error {
 		for _, unit := range next.Units {
-			if unit.State == UnitJoined || !unit.P6Done {
+			if unit.State == UnitJoining || unit.State == UnitJoined || unit.Outcome == UnitLanded && !unit.P6Done {
 				return nil
 			}
 		}
