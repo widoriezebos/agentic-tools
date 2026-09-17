@@ -42,6 +42,11 @@ var stopArmingComponentPattern = regexp.MustCompile(`^component=([^ ]+) outcome=
 // an overlapping presenter is wedged. Tests shorten it to prove the timeout.
 var stopPresentationLockWait = 100 * time.Millisecond
 
+// stopPresentationLock takes the presentation lock. Tests that prove parallel
+// presenters serialize replace it with a blocking lock so the outcome never
+// depends on how long the other presenter holds it under machine load.
+var stopPresentationLock = lockStopPresentation
+
 type StopIdentity = stopreport.Identity
 
 type StopControl struct {
@@ -643,7 +648,7 @@ func PresentStop(root, inputPath, outputPath string, now time.Time) (StopPresent
 	if info, statErr := lockFile.Stat(); statErr != nil || !info.Mode().IsRegular() {
 		return StopPresentationResult{}, fmt.Errorf("stop report lock is not a regular file")
 	}
-	if err := lockStopPresentation(lockFile); err != nil {
+	if err := stopPresentationLock(lockFile); err != nil {
 		return StopPresentationResult{}, err
 	}
 	defer func() { _ = unix.Flock(int(lockFile.Fd()), unix.LOCK_UN) }()

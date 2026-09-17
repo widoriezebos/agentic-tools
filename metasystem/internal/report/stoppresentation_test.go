@@ -1252,6 +1252,9 @@ func TestPresentStopRejectsMissingRequiredNestedObjectAndSymlinkedReportDirector
 }
 
 func TestPresentStopSupportsParallelReportsAndRetentionBoundary(t *testing.T) {
+	previous := stopPresentationLock
+	stopPresentationLock = func(lockFile *os.File) error { return unix.Flock(int(lockFile.Fd()), unix.LOCK_EX) }
+	t.Cleanup(func() { stopPresentationLock = previous })
 	root := stopPresentationRoot(t)
 	old := time.Date(2026, 9, 11, 10, 0, 0, 0, time.UTC)
 	reportDir := filepath.Join(root, "artifacts", "agents", "supervision", "stop-verdicts")
