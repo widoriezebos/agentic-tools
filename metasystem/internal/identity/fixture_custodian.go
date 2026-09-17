@@ -11,14 +11,15 @@ import (
 )
 
 const (
-	FixtureCustodianEnv      = "METASYSTEM_FIXTURE_CUSTODIAN"
-	FixtureCustodianOwnerEnv = "METASYSTEM_FIXTURE_CUSTODIAN_OWNER"
-	FixtureCustodianLogEnv   = "METASYSTEM_FIXTURE_CUSTODIAN_LOG"
-	FixtureCustodianChainEnv = "METASYSTEM_FIXTURE_CUSTODIAN_CHAIN"
-	RunOwnerEnv              = "METASYSTEM_RUN_OWNER"
-	custodianPoll            = 250 * time.Millisecond
-	custodianBound           = 5 * time.Second
-	custodianHaltMargin      = time.Second
+	FixtureCustodianEnv        = "METASYSTEM_FIXTURE_CUSTODIAN"
+	FixtureCustodianOwnerEnv   = "METASYSTEM_FIXTURE_CUSTODIAN_OWNER"
+	FixtureCustodianLogEnv     = "METASYSTEM_FIXTURE_CUSTODIAN_LOG"
+	FixtureCustodianChainEnv   = "METASYSTEM_FIXTURE_CUSTODIAN_CHAIN"
+	FixtureCustodianRecordsEnv = "METASYSTEM_FIXTURE_CUSTODIAN_RECORDS"
+	RunOwnerEnv                = "METASYSTEM_RUN_OWNER"
+	custodianPoll              = 250 * time.Millisecond
+	custodianBound             = 5 * time.Second
+	custodianHaltMargin        = time.Second
 )
 
 // ExportRunOwner preserves an existing run owner or appends the caller's exact identity.
@@ -80,13 +81,15 @@ func resolveRunOwner(prober Prober, parent func(int64) (int64, bool), owner Ref,
 }
 
 type custodianRuntime struct {
-	prober Prober
-	self   Ref
-	chain  []Ref
-	sender SignalFunc
-	poll   time.Duration
-	bound  time.Duration
-	halt   func(int)
+	prober  Prober
+	self    Ref
+	chain   []Ref
+	sender  SignalFunc
+	scan    func(Prober, Ref) ([]FixtureSurvivor, error)
+	poll    time.Duration
+	bound   time.Duration
+	halt    func(int)
+	records string
 }
 
 // RunCustodian watches the owner and its launcher chain, kills the owner after launcher loss, and reaps its attributed children.
@@ -113,7 +116,8 @@ func RunCustodian(owner Ref, watch io.Reader, ready io.WriteCloser, log io.Write
 	}
 	return runCustodian(owner, watch, log, custodianRuntime{
 		prober: prober, self: exact.Ref(), chain: chain,
-		poll: custodianPoll, bound: custodianBound, halt: os.Exit,
+		scan: FixtureSurvivorsOfDeadOwner, poll: custodianPoll, bound: custodianBound, halt: os.Exit,
+		records: os.Getenv(FixtureCustodianRecordsEnv),
 	})
 }
 
@@ -223,16 +227,38 @@ func armCustodianHalt(runtime custodianRuntime) func() {
 func reapDeadOwner(owner Ref, log io.Writer, runtime custodianRuntime) error {
 	stop := armCustodianHalt(runtime)
 	defer stop()
+	if AliveRef(runtime.prober, owner) != Dead {
+		return fmt.Errorf("identity: fixture custodian owner %d is not proved dead", owner.Pid)
+	}
+	recorded, err := fixtureCustodianRecords(runtime.records, log)
+	if err != nil {
+		return err
+	}
+	for _, ref := range recorded {
+		signalErr := SignalExact(runtime.prober, ref, syscall.SIGKILL, runtime.sender)
+		fmt.Fprintf(log, "fixture-custodian action=kill pid=%d carrier=record result=%v\n", ref.Pid, signalErr)
+	}
 	deadline := time.Now().Add(runtime.bound)
 	quietWindow := time.Second + runtime.poll
 	if halfBound := runtime.bound / 2; quietWindow > halfBound {
 		quietWindow = halfBound
 	}
 	var quietSince time.Time
+	scanUnavailable := false
+	scan := runtime.scan
+	if scan == nil {
+		scan = FixtureSurvivorsOfDeadOwner
+	}
 	for {
-		survivors, err := FixtureSurvivorsOfDeadOwner(runtime.prober, owner)
+		for encoded, ref := range recorded {
+			exact, state, probeErr := runtime.prober.Probe(ref.Pid)
+			if probeErr == nil && (state == Dead || state == Alive && (!SameIdentity(exact, ref) || exact.Zombie)) {
+				delete(recorded, encoded)
+			}
+		}
+		survivors, err := scan(runtime.prober, owner)
+		actionable := 0
 		if err == nil {
-			actionable := 0
 			for _, survivor := range survivors {
 				if survivor.Class != FixtureSurvivorCertain || sameExactRef(survivor.Ref, runtime.self) {
 					continue
@@ -241,16 +267,22 @@ func reapDeadOwner(owner Ref, log io.Writer, runtime custodianRuntime) error {
 				signalErr := SignalExact(runtime.prober, survivor.Ref, syscall.SIGKILL, runtime.sender)
 				fmt.Fprintf(log, "fixture-custodian action=kill pid=%d carrier=%s result=%v\n", survivor.Ref.Pid, survivor.Carrier, signalErr)
 			}
-			if actionable == 0 {
-				if quietSince.IsZero() {
-					quietSince = time.Now()
+		} else if !scanUnavailable {
+			fmt.Fprintf(log, "fixture-custodian scan=unavailable error=%v\n", err)
+			scanUnavailable = true
+		}
+		if actionable == 0 && len(recorded) == 0 {
+			if quietSince.IsZero() {
+				quietSince = time.Now()
+			}
+			if time.Since(quietSince) >= quietWindow {
+				if runtime.records != "" {
+					if removeErr := os.Remove(runtime.records); removeErr != nil && !os.IsNotExist(removeErr) {
+						return fmt.Errorf("identity: remove fixture custodian records: %w", removeErr)
+					}
 				}
-				if time.Since(quietSince) >= quietWindow {
-					fmt.Fprint(log, FixtureCustodianCompletionLine(owner))
-					return nil
-				}
-			} else {
-				quietSince = time.Time{}
+				fmt.Fprint(log, FixtureCustodianCompletionLine(owner))
+				return nil
 			}
 		} else {
 			quietSince = time.Time{}
@@ -260,6 +292,43 @@ func reapDeadOwner(owner Ref, log io.Writer, runtime custodianRuntime) error {
 		}
 		time.Sleep(runtime.poll)
 	}
+}
+
+func fixtureCustodianRecords(path string, log io.Writer) (map[string]Ref, error) {
+	live := make(map[string]Ref)
+	if path == "" {
+		return live, nil
+	}
+	contents, err := os.ReadFile(path)
+	if err != nil {
+		return nil, fmt.Errorf("identity: read fixture custodian records: %w", err)
+	}
+	lastNewline := strings.LastIndexByte(string(contents), '\n')
+	if lastNewline < 0 {
+		return live, nil
+	}
+	released := make(map[string]bool)
+	for index, line := range strings.Split(string(contents[:lastNewline]), "\n") {
+		if len(line) < 2 || line[0] != '+' && line[0] != '-' {
+			fmt.Fprintf(log, "fixture-custodian error=malformed-record line=%d\n", index+1)
+			continue
+		}
+		ref, parseErr := ParseRef(line[1:])
+		encoded, encodeErr := EncodeRef(ref)
+		if parseErr != nil || encodeErr != nil {
+			fmt.Fprintf(log, "fixture-custodian error=malformed-record line=%d\n", index+1)
+			continue
+		}
+		if line[0] == '+' {
+			live[encoded] = ref
+		} else {
+			released[encoded] = true
+		}
+	}
+	for encoded := range released {
+		delete(live, encoded)
+	}
+	return live, nil
 }
 
 // FixtureCustodianCompletionLine returns the complete line written after an owner has been reaped.

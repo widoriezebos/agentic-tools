@@ -74,7 +74,7 @@ func TestFixtureRefusesWithoutARunningCustodian(t *testing.T) {
 func TestCustodianVariablesNeverReachFixtureChildren(t *testing.T) {
 	leash := os.Stdin
 	fixture := &ProcessFixture{tag: identity.FixtureOwnerEnv + "=fixture", leash: leash}
-	base := []string{identity.FixtureCustodianEnv + "=1", identity.FixtureCustodianOwnerEnv + "=owner", identity.FixtureCustodianLogEnv + "=log", identity.FixtureCustodianChainEnv + "=chain", identity.FixtureCustodianEnv + "_UNKNOWN=value", identity.FixtureOwnerEnv + "=inherited", "KEEP=value"}
+	base := []string{identity.FixtureCustodianEnv + "=1", identity.FixtureCustodianOwnerEnv + "=owner", identity.FixtureCustodianLogEnv + "=log", identity.FixtureCustodianChainEnv + "=chain", identity.FixtureCustodianRecordsEnv + "=records", identity.FixtureCustodianEnv + "_UNKNOWN=value", identity.FixtureOwnerEnv + "=inherited", "KEEP=value"}
 	transforms := []func([]string) []string{testenv.WithoutInheritedControls, fixture.Env}
 	wants := [][]string{{identity.FixtureOwnerEnv + "=inherited", "KEEP=value"}, {"KEEP=value", fixture.tag, fixtureLeashEnv + "=" + leash.Name()}}
 	for index, transform := range transforms {
@@ -542,6 +542,63 @@ func TestRecordedChildIsReprovedBeforeKill(t *testing.T) {
 	}
 }
 
+func TestFixtureRecordsAndReleasesEachChild(t *testing.T) {
+	owner := fixtureTeardownExact(int64(os.Getpid()), 1)
+	child := fixtureTeardownExact(500, 2)
+	encoded, err := identity.EncodeRef(child.Ref())
+	failOnFixtureError(t, err)
+	for _, test := range []struct {
+		name        string
+		hold, stays bool
+		wantAfter   string
+	}{
+		{"recorded child already gone", false, false, "+" + encoded + "\n-" + encoded + "\n"},
+		{"held child killed", true, false, "+" + encoded + "\n-" + encoded + "\n"},
+		{"child remains live", true, true, "+" + encoded + "\n"},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			childProbes, childAlive := 0, true
+			prober := fixtureProbeFunc(func(pid int64) (identity.Exact, identity.Liveness, error) {
+				if pid == owner.Pid {
+					return owner, identity.Alive, nil
+				}
+				childProbes++
+				if !childAlive || !test.hold && childProbes > 1 {
+					return identity.Exact{}, identity.Dead, nil
+				}
+				return child, identity.Alive, nil
+			})
+			recorder := &recordingTB{}
+			fixture := makeProcessFixture(recorder, t.Name(), owner.Ref(), true, prober, func(int, syscall.Signal) error {
+				if !test.stays {
+					childAlive = false
+				}
+				return nil
+			})
+			recorder.Cleanup(fixture.cleanup)
+			fixture.scan = noFixtureSurvivors
+			fixture.waitBound = time.Millisecond
+			fixture.records = filepath.Join(t.TempDir(), "records")
+			failOnFixtureError(t, os.WriteFile(fixture.records, nil, 0o600))
+			if test.hold {
+				fixture.Hold(500)
+			} else {
+				fixture.Record(500)
+			}
+			contents, err := os.ReadFile(fixture.records)
+			failOnFixtureError(t, err)
+			if want := "+" + encoded + "\n"; string(contents) != want {
+				t.Fatalf("record before cleanup = %q, want %q", contents, want)
+			}
+			recorder.cleanups[0]()
+			contents, err = os.ReadFile(fixture.records)
+			failOnFixtureError(t, err)
+			if string(contents) != test.wantAfter {
+				t.Fatalf("record after cleanup = %q, want %q; failures=%v", contents, test.wantAfter, recorder.errs)
+			}
+		})
+	}
+}
 func TestKeyScanNamesAnUnrecordedTaggedGrandchild(t *testing.T) {
 	prober, recorder := identity.KernelProber{}, &recordingTB{}
 	fixture := newProcessFixture(recorder, t.Name(), runningBinaryCustodian(), true, prober, syscall.Kill)

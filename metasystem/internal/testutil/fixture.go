@@ -34,21 +34,26 @@ type fixtureTB interface {
 }
 
 type ProcessFixture struct {
-	t      fixtureTB
-	key    identity.FixtureKey
-	tag    string
-	prober identity.Prober
-	signal identity.SignalFunc
-	refs   []identity.Ref
-	scan   func(identity.FixtureKey) ([]identity.FixtureSurvivor, error)
-	held   map[identity.Ref]bool
-	leash  *os.File
+	t         fixtureTB
+	key       identity.FixtureKey
+	tag       string
+	prober    identity.Prober
+	signal    identity.SignalFunc
+	refs      []identity.Ref
+	scan      func(identity.FixtureKey) ([]identity.FixtureSurvivor, error)
+	held      map[identity.Ref]bool
+	released  map[identity.Ref]bool
+	records   string
+	leash     *os.File
+	waitBound time.Duration
 }
 
 func Fixture(t testing.TB) *ProcessFixture {
 	t.Helper()
 	custodian, present := testenv.FixtureCustodian()
-	return newRecordedProcessFixture(t, t.Name(), t.TempDir, custodian, present, identity.KernelProber{}, syscall.Kill)
+	fixture := newRecordedProcessFixture(t, t.Name(), t.TempDir, custodian, present, identity.KernelProber{}, syscall.Kill)
+	fixture.records, _ = testenv.FixtureCustodianRecords()
+	return fixture
 }
 
 func newRecordedProcessFixture(t fixtureTB, testName string, tempDir func() string, custodian identity.Ref, custodianPresent bool, prober identity.Prober, signal identity.SignalFunc) *ProcessFixture {
@@ -107,7 +112,7 @@ func makeProcessFixture(t fixtureTB, testName string, custodian identity.Ref, cu
 	fixture := &ProcessFixture{
 		t: t, key: key, tag: identity.FixtureOwnerEnv + "=" + encoded,
 		prober: prober, signal: signal, scan: identity.FixtureSurvivors,
-		held: make(map[identity.Ref]bool), leash: leash,
+		held: make(map[identity.Ref]bool), released: make(map[identity.Ref]bool), leash: leash, waitBound: 5 * time.Second,
 	}
 	return fixture
 }
@@ -171,6 +176,7 @@ func (f *ProcessFixture) record(pid int, held bool) {
 	}
 	f.refs = append(f.refs, exact.Ref())
 	f.held[exact.Ref()] = held
+	f.appendRecord('+', exact.Ref())
 }
 
 func (f *ProcessFixture) cleanup() {
@@ -185,6 +191,7 @@ func (f *ProcessFixture) cleanup() {
 func (f *ProcessFixture) stopRecordedChild(ref identity.Ref, held bool) {
 	exact, state, err := f.prober.Probe(ref.Pid)
 	if err == nil && (state == identity.Dead || state == identity.Alive && !identity.SameIdentity(exact, ref)) {
+		f.release(ref)
 		return
 	}
 	if err != nil || state != identity.Alive {
@@ -192,6 +199,7 @@ func (f *ProcessFixture) stopRecordedChild(ref identity.Ref, held bool) {
 		return
 	}
 	if exact.Zombie {
+		f.release(ref)
 		return
 	}
 	signalErr := identity.SignalExact(f.prober, ref, syscall.SIGKILL, f.signal)
@@ -208,13 +216,15 @@ func (f *ProcessFixture) stopRecordedChild(ref identity.Ref, held bool) {
 func (f *ProcessFixture) waitForExits(refs []identity.Ref) {
 	ticker := time.NewTicker(10 * time.Millisecond)
 	defer ticker.Stop()
-	deadline := time.After(5 * time.Second)
+	deadline := time.After(f.waitBound)
 	for {
 		var pending []identity.Ref
 		for _, ref := range refs {
 			exact, state, err := f.prober.Probe(ref.Pid)
 			if err != nil || state == identity.Unknown || state == identity.Alive && identity.SameIdentity(exact, ref) && !exact.Zombie {
 				pending = append(pending, ref)
+			} else {
+				f.release(ref)
 			}
 		}
 		if len(pending) == 0 {
@@ -228,6 +238,36 @@ func (f *ProcessFixture) waitForExits(refs []identity.Ref) {
 			}
 			return
 		}
+	}
+}
+
+func (f *ProcessFixture) release(ref identity.Ref) {
+	if f.released[ref] {
+		return
+	}
+	f.released[ref] = true
+	f.appendRecord('-', ref)
+}
+
+func (f *ProcessFixture) appendRecord(operation byte, ref identity.Ref) {
+	if f.records == "" {
+		return
+	}
+	encoded, err := identity.EncodeRef(ref)
+	if err != nil {
+		f.t.Errorf("write process fixture custodian record: %v", err)
+		return
+	}
+	file, err := os.OpenFile(f.records, os.O_WRONLY|os.O_APPEND, 0)
+	if err != nil {
+		f.t.Errorf("write process fixture custodian record: %v", err)
+		return
+	}
+	line := string(operation) + encoded + "\n"
+	written, writeErr := file.Write([]byte(line))
+	closeErr := file.Close()
+	if writeErr != nil || closeErr != nil || written != len(line) {
+		f.t.Errorf("write process fixture custodian record: wrote %d of %d bytes: write=%v close=%v", written, len(line), writeErr, closeErr)
 	}
 }
 

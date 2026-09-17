@@ -1,6 +1,7 @@
 package identity
 
 import (
+	"errors"
 	"fmt"
 	"os"
 	"os/exec"
@@ -133,8 +134,10 @@ func TestQuietCustodianRemovesItsLog(t *testing.T) {
 			t.Fatalf("probe quiet owner: state=%s err=%v", state, err)
 		}
 		logPath := fmt.Sprintf("%s.custodian-%d.log", os.Getenv("METASYSTEM_SUPERVISION_REGISTRY_HOME"), os.Getpid())
+		recordsPath := fmt.Sprintf("%s.fixture-refs-%d", os.Getenv("METASYSTEM_SUPERVISION_REGISTRY_HOME"), os.Getpid())
 		checkWitness(t, func() error { _, err := os.Stat(logPath); return err }())
 		checkWitness(t, os.WriteFile(filepath.Join(dir, "logpath"), []byte(logPath), 0o600))
+		checkWitness(t, os.WriteFile(filepath.Join(dir, "recordspath"), []byte(recordsPath), 0o600))
 		custodian := waitWitnessCustodian(t, exact.Ref())
 		checkWitness(t, os.WriteFile(filepath.Join(dir, "custodianpid"), []byte(strconv.FormatInt(custodian.Pid, 10)), 0o600))
 		waitWitnessFile(t, filepath.Join(dir, "release"))
@@ -149,8 +152,11 @@ func TestQuietCustodianRemovesItsLog(t *testing.T) {
 	t.Cleanup(func() { _ = SignalExact(KernelProber{}, custodian, syscall.SIGKILL) })
 	logPath, err := os.ReadFile(filepath.Join(dir, "logpath"))
 	checkWitness(t, err)
+	recordsPath, err := os.ReadFile(filepath.Join(dir, "recordspath"))
+	checkWitness(t, err)
 	t.Cleanup(func() { _ = os.Remove(string(logPath)) })
 	waitWitnessFile(t, string(logPath))
+	waitWitnessFile(t, string(recordsPath))
 	checkWitness(t, os.WriteFile(filepath.Join(dir, "release"), nil, 0o600))
 	if err := command.Wait(); err != nil {
 		output, _ := os.ReadFile(filepath.Join(dir, "owner.stderr"))
@@ -158,6 +164,7 @@ func TestQuietCustodianRemovesItsLog(t *testing.T) {
 	}
 	waitWitnessDead(t, custodian)
 	waitWitnessFileGone(t, string(logPath))
+	waitWitnessFileGone(t, string(recordsPath))
 }
 func TestCustodianRejectsRuntimePollerAsWatch(t *testing.T) {
 	exact, state, err := (KernelProber{}).Probe(int64(os.Getpid()))
@@ -230,7 +237,7 @@ func custodianWitness(t *testing.T, hard bool) {
 	ownerValue, err := EncodeRef(owner.Ref())
 	checkWitness(t, err)
 	t.Cleanup(func() { _ = syscall.Kill(-command.Process.Pid, syscall.SIGKILL); _, _ = command.Process.Wait() })
-	refs := make([]Ref, 2)
+	refs := make([]Ref, 3)
 	var logPath []byte
 	for i := range refs {
 		pidPath := filepath.Join(dir, "pid"+strconv.Itoa(i))
@@ -265,6 +272,9 @@ func custodianWitness(t *testing.T, hard bool) {
 			t.Fatalf("custodian log %q omits pid %d", log, ref.Pid)
 		}
 	}
+	if !strings.Contains(string(log), "action=kill pid="+strconv.FormatInt(refs[2].Pid, 10)+" carrier=record") {
+		t.Fatalf("custodian log %q does not reap untagged pid %d through its record", log, refs[2].Pid)
+	}
 }
 
 func runWitnessOwner(t *testing.T, dir string) {
@@ -279,7 +289,11 @@ func runWitnessOwner(t *testing.T, dir string) {
 	checkWitness(t, os.WriteFile(script, []byte(body), 0o700))
 	detached := exec.Command("/bin/sh", "-c", `exec /bin/sh "$1" "$2"`, "sh", script, filepath.Join(dir, "pid0"))
 	detached.SysProcAttr = &syscall.SysProcAttr{Setsid: true}
-	commands := []*exec.Cmd{detached, exec.Command("/bin/sh", "-c", `printf %s $$ > "$2"; while :; do sleep 1; done`, "sh", word, filepath.Join(dir, "pid1"))}
+	commands := []*exec.Cmd{
+		detached,
+		exec.Command("/bin/sh", "-c", `printf %s $$ > "$2"; while :; do sleep 1; done`, "sh", word, filepath.Join(dir, "pid1")),
+		exec.Command("/bin/sh", "-c", `printf %s $$ > "$1"; while :; do sleep 1; done`, "sh", filepath.Join(dir, "pid2")),
+	}
 	commands[1].SysProcAttr = &syscall.SysProcAttr{Setsid: true}
 	registry := os.Getenv("METASYSTEM_SUPERVISION_REGISTRY_HOME")
 	if registry == "" {
@@ -287,9 +301,21 @@ func runWitnessOwner(t *testing.T, dir string) {
 	}
 	checkWitness(t, os.WriteFile(filepath.Join(dir, "logpath"), []byte(fmt.Sprintf("%s.custodian-%d.log", registry, os.Getpid())), 0o600))
 	for i, command := range commands {
-		command.Env = append(os.Environ(), word)
+		command.Env = slices.DeleteFunc(os.Environ(), func(entry string) bool { return strings.HasPrefix(entry, FixtureOwnerEnv+"=") })
+		if i < 2 {
+			command.Env = append(command.Env, word)
+		}
 		startWitnessCommand(t, command, filepath.Join(dir, "pid"+strconv.Itoa(i)+".stderr"), false)
-		t.Cleanup(func() { _ = command.Process.Kill(); _, _ = command.Process.Wait() })
+		refValue := liveWitnessProcessRef(t, int64(command.Process.Pid), 0)
+		ref, err := ParseRef(refValue)
+		checkWitness(t, err)
+		t.Cleanup(func() { _ = SignalExact(KernelProber{}, ref, syscall.SIGKILL); _, _ = command.Process.Wait() })
+		if i == 2 {
+			records, err := os.OpenFile(fmt.Sprintf("%s.fixture-refs-%d", registry, os.Getpid()), os.O_WRONLY|os.O_APPEND, 0)
+			checkWitness(t, err)
+			_, writeErr := records.WriteString("+" + refValue + "\n")
+			checkWitness(t, errors.Join(writeErr, records.Close()))
+		}
 	}
 	for {
 		if _, err := os.Stat(filepath.Join(dir, "stop")); err == nil {

@@ -1,14 +1,90 @@
 package identity
 
 import (
+	"fmt"
 	"io"
 	"os"
+	"path/filepath"
+	"slices"
 	"strings"
 	"syscall"
 	"testing"
 	"time"
 )
 
+func TestCustodianReapsRecordedRefsWithoutTheTable(t *testing.T) {
+	a, b := fixtureExact(500, 50).Ref(), fixtureExact(501, 51).Ref()
+	aValue, _ := EncodeRef(a)
+	bValue, _ := EncodeRef(b)
+	recycled := fixtureExact(500, 50)
+	if recycled.StartTicks != 0 {
+		recycled.StartTicks++
+	} else {
+		recycled.StartedAt = recycled.StartedAt.Add(time.Microsecond)
+	}
+	for _, test := range []struct {
+		name, contents  string
+		current         Exact
+		keepAlive       bool
+		wantSignals     []int64
+		wantLog         string
+		unwantLog       string
+		wantError       string
+		wantRecordFile  bool
+		wantCompleteLog bool
+	}{
+		{name: "live record", contents: "+" + aValue + "\n", current: fixtureExact(500, 50), wantSignals: []int64{500}, wantLog: "carrier=record", wantCompleteLog: true},
+		{name: "live record remains alive", contents: "+" + aValue + "\n", current: fixtureExact(500, 50), keepAlive: true, wantSignals: []int64{500}, wantLog: "carrier=record", wantError: "fixture custodian cleanup exceeded", wantRecordFile: true},
+		{name: "released record", contents: "+" + aValue + "\n-" + aValue + "\n", current: fixtureExact(500, 50), wantCompleteLog: true},
+		{name: "torn final record", contents: "+" + aValue + "\n+" + bValue, current: fixtureExact(500, 50), wantSignals: []int64{500}, unwantLog: "pid=501", wantCompleteLog: true},
+		{name: "recycled pid", contents: "+" + aValue + "\n", current: recycled, wantLog: "recorded process is gone", wantCompleteLog: true},
+		{name: "malformed record", contents: "not-a-record\n", wantLog: "error=malformed-record line=1", wantCompleteLog: true},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			records := filepath.Join(t.TempDir(), "records")
+			if err := os.WriteFile(records, []byte(test.contents), 0o600); err != nil {
+				t.Fatal(err)
+			}
+			processes := fixtureTable{}
+			if test.current.Pid != 0 {
+				processes[test.current.Pid] = test.current
+			}
+			var signaled []int64
+			var log strings.Builder
+			runtime := custodianRuntime{
+				prober: processes, records: records, poll: time.Millisecond, bound: 20 * time.Millisecond,
+				scan: func(Prober, Ref) ([]FixtureSurvivor, error) { return nil, fmt.Errorf("denied kern.proc.all") },
+				sender: func(pid int, _ syscall.Signal) error {
+					signaled = append(signaled, int64(pid))
+					if !test.keepAlive {
+						delete(processes, int64(pid))
+					}
+					return nil
+				},
+			}
+			err := reapDeadOwner(fixtureExact(700, 70).Ref(), &log, runtime)
+			if test.wantError == "" && err != nil || test.wantError != "" && (err == nil || !strings.Contains(err.Error(), test.wantError)) {
+				t.Fatalf("reapDeadOwner error = %v, want containing %q", err, test.wantError)
+			}
+			if !slices.Equal(signaled, test.wantSignals) {
+				t.Fatalf("signals = %v, want %v", signaled, test.wantSignals)
+			}
+			if test.wantLog != "" && !strings.Contains(log.String(), test.wantLog) {
+				t.Fatalf("log %q does not contain %q", log.String(), test.wantLog)
+			}
+			if test.unwantLog != "" && strings.Contains(log.String(), test.unwantLog) {
+				t.Fatalf("log %q contains torn record %q", log.String(), test.unwantLog)
+			}
+			if strings.Count(log.String(), "scan=unavailable error=denied kern.proc.all") != 1 || strings.Contains(log.String(), "action=complete") != test.wantCompleteLog {
+				t.Fatalf("custodian log = %q", log.String())
+			}
+			_, statErr := os.Lstat(records)
+			if test.wantRecordFile && statErr != nil || !test.wantRecordFile && !os.IsNotExist(statErr) {
+				t.Fatalf("record file state after cleanup: %v; want retained=%t", statErr, test.wantRecordFile)
+			}
+		})
+	}
+}
 func TestControlledLaunchersExportTheirOwnRef(t *testing.T) {
 	backing := make([]string, 1)
 	got, err := ExportRunOwner(backing[:0])

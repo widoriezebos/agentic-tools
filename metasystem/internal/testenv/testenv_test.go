@@ -217,6 +217,40 @@ func TestRemoveDeadRegistryHomesKeepsLiveAndUnrelatedDirectories(t *testing.T) {
 	}
 }
 
+func TestAgedSweepRemovesFixtureRecordFiles(t *testing.T) {
+	root := t.TempDir()
+	old := time.Now().Add(-8 * 24 * time.Hour)
+	makeFile := func(name string, age bool) string {
+		path := filepath.Join(root, name)
+		checkTestenv(t, os.WriteFile(path, nil, 0o600))
+		if age {
+			checkTestenv(t, os.Chtimes(path, old, old))
+		}
+		return path
+	}
+	removed := makeFile(registryHomePrefix+"old.fixture-refs-123", true)
+	kept := []string{
+		makeFile(registryHomePrefix+"young.fixture-refs-123", false),
+		makeFile(registryHomePrefix+"old.fixture-refs-not-pid", true),
+	}
+	directory := filepath.Join(root, registryHomePrefix+"old.fixture-refs-456")
+	checkTestenv(t, os.Mkdir(directory, 0o700))
+	checkTestenv(t, os.Chtimes(directory, old, old))
+	target := makeFile("record-link-target", true)
+	link := filepath.Join(root, registryHomePrefix+"old.fixture-refs-789")
+	checkTestenv(t, os.Symlink(target, link))
+	kept = append(kept, directory, target, link)
+	removeDeadRegistryHomes(root)
+	if _, err := os.Lstat(removed); !os.IsNotExist(err) {
+		t.Fatalf("old fixture record survived cleanup: %v", err)
+	}
+	for _, path := range kept {
+		if _, err := os.Lstat(path); err != nil {
+			t.Errorf("cleanup removed kept path %s: %v", filepath.Base(path), err)
+		}
+	}
+}
+
 func TestQuietFixtureCustodianLogDecision(t *testing.T) {
 	owner := liveTestOwner(t)
 	completion := identity.FixtureCustodianCompletionLine(owner)
@@ -277,16 +311,20 @@ func TestQuietFixtureCustodianLogDecision(t *testing.T) {
 
 func TestCustodianStartRefusesACustodianThatExitsAtOnce(t *testing.T) {
 	for script, want := range map[string]string{"exit 2": "exit status 2", "printf 'notready\\n' >&4": "custodian exited before ready"} {
-		_, err := startFixtureCustodian(func() *exec.Cmd { return exec.Command("/bin/sh", "-c", script) }, filepath.Join(t.TempDir(), "registry"))
+		_, _, err := startFixtureCustodian(func() *exec.Cmd { return exec.Command("/bin/sh", "-c", script) }, filepath.Join(t.TempDir(), "registry"))
 		if err == nil || !strings.Contains(err.Error(), want) {
 			t.Fatalf("script %q: start error = %v, want text %q", script, err, want)
 		}
 	}
 	binaryRef, _ := FixtureCustodian()
 	var command *exec.Cmd
-	ref, err := startFixtureCustodian(func() *exec.Cmd { command = exec.Command(os.Args[0]); return command }, filepath.Join(t.TempDir(), "registry"))
+	registry := filepath.Join(t.TempDir(), "registry")
+	ref, records, err := startFixtureCustodian(func() *exec.Cmd { command = exec.Command(os.Args[0]); return command }, registry)
 	checkTestenv(t, err)
 	t.Cleanup(func() { _ = identity.SignalExact(identity.KernelProber{}, ref, syscall.SIGKILL); _ = command.Wait() })
+	if info, statErr := os.Stat(records); statErr != nil || !info.Mode().IsRegular() || records != fmt.Sprintf("%s.fixture-refs-%d", registry, os.Getpid()) {
+		t.Fatalf("custodian records = %q, info=%v err=%v", records, info, statErr)
+	}
 	if exact, state, probeErr := (identity.KernelProber{}).Probe(ref.Pid); probeErr != nil || state != identity.Alive || !identity.SameIdentity(exact, ref) || exact.Zombie {
 		t.Fatalf("started custodian: state=%s exact=%+v err=%v", state, exact, probeErr)
 	}
