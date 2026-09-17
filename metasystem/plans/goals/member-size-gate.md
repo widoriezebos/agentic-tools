@@ -1,15 +1,15 @@
 # member-size-gate
 
 - State: approved
-- Priority: 1
-- Sequence: 43
+- Priority: 2
+- Sequence: 62
 - Risk: severity=1 novelty=2 exposure=2 accumulation=1 basis="severity 1: a refused slice is re-sliced, nothing lands wrongly; novelty 2: goal slice gains a measured refusal; exposure 2: every slice; accumulation 1: nothing builds on the count"
 - Tier: 2
 - Intent: Delivery-efficiency phase D, delegate loop. Goal slice refuses a member whose design names more than a set number of files or moves more than one owner, with the count in the refusal, so a member is split before its build rather than after nineteen rounds. Why: the stop-decisions member touched twenty-two files and five thousand lines and replaced the deadline parent in one build; Wido's rule of 2026-09-10 is one mechanism per member. DONE: a fixture slices an oversized member draft and is refused with the count; a compliant draft passes; the limits live in metasystem.conf. every mechanism in this goal lives in the Go engine, the ledger verbs and the adapter contract, never in one runtime; it is proven on at least two runtimes.
 - Origin: human
 - Next step: Design page: the two limits, where they are read, the refusal text, the fixture; then build.
 - OpenedAt: 2026-09-14T15:31:38Z
-- Revision: 95
+- Revision: 96
 - Budget: elapsedLimit=4h attemptLimit=6 reservedJobMinutesLimit=720 activeJobLimit=1 reviewRoundLimit=2
 - BudgetExceptions: 0
 - Approved: by=human:Wido at=2026-09-14T18:54:11Z revision=3 opid=YYX0BJJ1AW3MSF8A9C00KP2RQX-m1e-c6925449 authority=proven digest=c279ab9fba4a1840722b4f58b0d0caed4c66663515df38827daf0e5a1f3c8ae0
@@ -110,4 +110,5 @@ History:
 - 2026-09-17T06:21:48Z KXFTT0EWX9ZWFJQ6S4N60WVNS8-m1e-c6925449 set-priority actor=human:Wido targets=adoption-filled-delivery-passes-on-trunk,beds-run-under-the-oldest-supported-bash,brief-declares-the-round-boundary,builder-proves-each-rule-by-mutation,busy-seat-shells-are-ended,codex-jobs-run-through-a-metasystem-verb,coordinator-context-stays-under-budget,critique-closes-on-folded-proof,cross-cutting-change-inventories-its-readers,deep-sections-cannot-stay-red-unseen,degraded-stop-forms-have-one-source,delegate-sandbox-runs-the-beds,engine-policy-binding-survives-drift-and-load,every-round-gets-an-independent-read,evidence-and-build-output-have-retention-and-stay-unindexed,failures-show-observed-against-expected,fixture-runners-and-fakes-bound-their-own-life,follow-up-brief-cannot-cite-fresh-trunk-files,human-goal-verbs-forgiving,member-size-gate,proof-runs-reap-what-they-armed-and-a-census-names-the-rest,round-proof-feeds-the-next-brief,seat-landings-run-the-selected-sections,seat-successor-continues-a-handoff-without-a-human,small-change-lane,stop-capability-follows-the-lease-epoch,stop-decision-surface-is-a-gate,stop-gate-sees-harness-tracked-work,stop-hook-never-forces-an-empty-turn,stop-response-carries-a-structured-report-reference,test-environment-edges-are-closed,testing-surfaces-declare-their-mirror,tests-never-wait-on-wall-time,trunk-versus-candidate-is-a-verification-step reason=priority-order subject=small-change-lane from=1:46 to=1:45 requested-sequence=59
 - 2026-09-17T06:21:54Z PWZJ92JMATF0A4J0955BW1HQTM-m1e-c6925449 set-priority actor=human:Wido targets=cross-cutting-change-inventories-its-readers,deep-sections-cannot-stay-red-unseen,degraded-stop-forms-have-one-source,failures-show-observed-against-expected,member-size-gate,seat-landings-run-the-selected-sections,stop-capability-follows-the-lease-epoch,stop-decision-surface-is-a-gate,stop-response-carries-a-structured-report-reference,test-environment-edges-are-closed,testing-surfaces-declare-their-mirror,trunk-versus-candidate-is-a-verification-step reason=priority-order subject=seat-landings-run-the-selected-sections from=1:45 to=1:44 requested-sequence=60
 - 2026-09-17T06:22:00Z AF17KZN0EH6PNS80FHY0QDPW76-m1e-c6925449 set-priority actor=human:Wido targets=cross-cutting-change-inventories-its-readers,deep-sections-cannot-stay-red-unseen,degraded-stop-forms-have-one-source,failures-show-observed-against-expected,member-size-gate,stop-capability-follows-the-lease-epoch,stop-decision-surface-is-a-gate,stop-response-carries-a-structured-report-reference,test-environment-edges-are-closed,testing-surfaces-declare-their-mirror,trunk-versus-candidate-is-a-verification-step reason=priority-order subject=trunk-versus-candidate-is-a-verification-step from=1:44 to=1:43 requested-sequence=61
-Integrity: sha256=7d7336fa6d51db853d13cdf851894ca45a3431a27459ee2a188a2be9983453b3
+- 2026-09-17T06:22:06Z 1ZQV32H218CFWZRG7K6HJSWBDY-m1e-c6925449 set-priority actor=human:Wido targets=cross-cutting-change-inventories-its-readers,degraded-stop-forms-have-one-source,member-size-gate,stop-decision-surface-is-a-gate,testing-surfaces-declare-their-mirror reason=priority-order subject=member-size-gate from=1:43 to=2:62 requested-sequence=62
+Integrity: sha256=8566f11a79e2936856be040f935410621629ec3308c42c7fc98bb77faca31b30
