@@ -1,6 +1,6 @@
 # fixture-children-cannot-outlive-their-test
 
-- State: claimed
+- State: parked
 - Priority: 1
 - Sequence: 5
 - Risk: severity=3 novelty=1 exposure=3 accumulation=3 basis="severity 3: sixteen orphans took the machine to a load average of 40 and starved every seat for hours; novelty 1: this is the known fixture-leak class in a new place, with the code identified; exposure 3: the fixture runs in internal/goal, which every deep proof selects; accumulation 3: each aborted run adds burners that ignore TERM and never exit"
@@ -9,12 +9,11 @@
 - Origin: human
 - Next step: 2026-09-17 06:28Z m1c: units 1, 2, 3a, 3c, 3b, 4a, 4b, 5a, 5b0, 5b, 5b2, 5c, 5d and 5e are landed (the last six under proof-mu54noqv-5bdf1f9e702e5fb3, deep, 54/54, trunk 0671cc471). Unit 5f (every test binary starts a custodian it has proved, decisions items 1, 2 and 6) is built at 300 lines as tree 9120d7cd9 on base 76753e5dd; the seat runs ruling R5's sandbox-and-host start check and go-gate --fast, then a fresh reader reads it. Unit 5g (the record file, decisions item 4) has its build brief written and follows 5f. Units 6 to 12 follow unit 5.
 - OpenedAt: 2026-09-16T06:19:56Z
-- Revision: 45
+- Revision: 46
 - Budget: elapsedLimit=5d attemptLimit=16 reservedJobMinutesLimit=720 activeJobLimit=1 reviewRoundLimit=2
 - BudgetExceptions: 2
 - Approved: by=human:Wido at=2026-09-17T06:04:58Z revision=40 opid=NTFE6YCNE230MH5BS2P5D401H5-m1e-c6925449 authority=proven digest=091e016b79ab746bd91fd7e1e52d9a496a463ad6336293816895bc993bbce501
-- Claimed: machine=m1c lineage=main-1789560465-86072-c7b126 at=2026-09-17T06:04:58Z revision=40 accountingRevision=40 episodeAt=2026-09-16T18:42:59Z episodeRevision=31 idleSeconds=10
-- StopCapability: generation=40 revision=40 machine=m1c claimEpoch=6 fenceEpoch=0
+- Parked: by=human:Wido at=2026-09-17T10:58:55Z displaced=m1c+main-1789560465-86072-c7b126@2026-09-17T06:04:58Z because=Wido 2026-09-17: first mover of goals-live-on-branches; pickup trigger: goals-live-on-branches unit 3 (push with lease) on main; units 5g and 6-12 then build on goal/fixture-children-cannot-outlive-their-test
 
 History:
 - 2026-09-16T06:19:56Z KZ4JS51YKMW6TAMMQSB3EKBFX7-m1c-c6925449 open actor=human:Wido targets=fixture-children-cannot-outlive-their-test reason=TierOverride: derived=3 set=2 why=the four risk answers derive tier 3, but the defect is one identified fixture with a known fix shape and no design unknowns: a bare busy loop replaced by a sleeping wait, reaping by recorded pid, and teardown that survives an abort. Tier 2 fits the work, not the blast radius.
@@ -62,4 +61,5 @@ History:
 - 2026-09-17T06:15:07Z YSZ9TSMXR6KDMN6Q77323288GS-m1e-c6925449 done actor=human:Wido targets=adoption-filled-delivery-passes-on-trunk,beds-run-under-the-oldest-supported-bash,brief-declares-the-round-boundary,builder-proves-each-rule-by-mutation,busy-seat-shells-are-ended,codex-jobs-run-through-a-metasystem-verb,coordinator-context-stays-under-budget,critique-closes-on-folded-proof,cross-cutting-change-inventories-its-readers,deep-sections-cannot-stay-red-unseen,degraded-stop-forms-have-one-source,delegate-launchers-become-go-verbs,delegate-runs-stay-under-200k-context,delegate-sandbox-runs-the-beds,design-rounds-read-less-and-repeat-less,engine-policy-binding-survives-drift-and-load,every-round-gets-an-independent-read,evidence-and-build-output-have-retention-and-stay-unindexed,failures-show-observed-against-expected,fast-gate-runs-the-ratchet-and-honours-groups,fixture-children-cannot-outlive-their-test,fixture-runners-and-fakes-bound-their-own-life,fleet-doctor-repairs-what-stops-other-seats,follow-up-brief-cannot-cite-fresh-trunk-files,human-break-glass-commit-keeps-the-ledger-valid,human-goal-verbs-forgiving,member-size-gate,one-steward-per-checkout-on-its-own-root,proof-admission-fits-a-seat-proving-several-units,proof-runs-reap-what-they-armed-and-a-census-names-the-rest,receipt-admission-caps-concurrent-batteries,receipt-writer-follows-the-worktree-it-runs-in,red-on-main-gets-an-owner-on-the-ledger,round-proof-feeds-the-next-brief,seat-landings-run-the-selected-sections,seat-successor-continues-a-handoff-without-a-human,seats-spend-tokens-in-bounded-sessions,small-change-lane,spend-fence-reports-tokens-per-model-and-cause,stop-capability-follows-the-lease-epoch,stop-decision-surface-is-a-gate,stop-gate-sees-harness-tracked-work,stop-hook-never-forces-an-empty-turn,stop-response-carries-a-structured-report-reference,test-environment-edges-are-closed,testing-surfaces-declare-their-mirror,tests-never-wait-on-wall-time,trunk-versus-candidate-is-a-verification-step,units-run-through-one-launcher,waits-run-outside-model-contexts reason=priority-order from=1:10 to=1:9
 - 2026-09-17T06:21:30Z 6GS97Q5R6B8WT2Q5XX6ZCTGCFD-m1e-c6925449 set-priority actor=human:Wido targets=delegate-launchers-become-go-verbs,delegate-runs-stay-under-200k-context,fixture-children-cannot-outlive-their-test,spend-fence-reports-tokens-per-model-and-cause,waits-run-outside-model-contexts reason=priority-order subject=fixture-children-cannot-outlive-their-test from=1:9 to=1:5 requested-sequence=5
 - 2026-09-17T06:28:14Z QX48D1FMFQXF5HDM5R1FE34YC9-m1c-fde8080b edit actor=m1c+main-1789560465-86072-c7b126 targets=fixture-children-cannot-outlive-their-test
-Integrity: sha256=7ffc7669a00d0c3ee53b5606a30513099ac3ef07a76c04b52ed5abd4f7f89b41
+- 2026-09-17T10:58:55Z ZMNCRCP2A45P9QTBEXW8E18WVR-m1e-c6925449 park actor=human:Wido targets=fixture-children-cannot-outlive-their-test displaced=m1c+main-1789560465-86072-c7b126@2026-09-17T06:04:58Z reason=Wido 2026-09-17: first mover of goals-live-on-branches; pickup trigger: goals-live-on-branches unit 3 (push with lease) on main; units 5g and 6-12 then build on goal/fixture-children-cannot-outlive-their-test
+Integrity: sha256=71d3295710b3f7233d1611f7fe645841519b88f36c84b1ab3e5819fea62cf5ec
