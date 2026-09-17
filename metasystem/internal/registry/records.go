@@ -154,7 +154,11 @@ func ParseRecord(raw map[string]any) (*Record, error) {
 		record.WatcherTag, _ = raw["watcherTag"].(string)
 		record.ReaperTag, _ = raw["reaperTag"].(string)
 		record.LandingOwnerTag, _ = raw["landingOwnerTag"].(string)
-		if record.WatcherTag == "" || record.ReaperTag == "" || record.LandingOwnerTag == "" {
+		// landingOwnerTag stays optional on read: the registry is append-only and
+		// every engine reduces all of it, including the relaunched records written
+		// before the landing owner component existed. Requiring the tag would make
+		// every such registry unreadable.
+		if record.WatcherTag == "" || record.ReaperTag == "" {
 			return nil, fmt.Errorf("relaunched %s: missing component tags", record.OwnerTag)
 		}
 		if record.RetiredThrough, ok = number(raw["retiredThrough"]); !ok || record.RetiredThrough < 0 {

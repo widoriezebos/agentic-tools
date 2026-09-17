@@ -33,9 +33,6 @@ func TestParseRecordRejections(t *testing.T) {
 		{"relaunched without tags", raw2(map[string]any{
 			"event": EventRelaunched, "generation": 1.0, "retiredThrough": 0.0,
 		}), "component tags"},
-		{"relaunched without landing owner", raw2(map[string]any{
-			"event": EventRelaunched, "generation": 1.0, "watcherTag": "w", "reaperTag": "r", "retiredThrough": 0.0,
-		}), "component tags"},
 		{"relaunched generation zero", raw2(map[string]any{
 			"event": EventRelaunched, "generation": 0.0, "watcherTag": "w", "reaperTag": "r", "landingOwnerTag": "l", "retiredThrough": 0.0,
 		}), "generation"},
@@ -85,6 +82,20 @@ func TestParseRecordRejections(t *testing.T) {
 			}
 		})
 	}
+	// A relaunched record written before the landing owner component existed
+	// carries no landingOwnerTag. It must stay readable: the registry is
+	// append-only and a refusal here makes every older registry unreadable.
+	t.Run("relaunched without landing owner stays readable", func(t *testing.T) {
+		record, err := ParseRecord(raw2(map[string]any{
+			"event": EventRelaunched, "generation": 1.0, "watcherTag": "w", "reaperTag": "r", "retiredThrough": 0.0,
+		}))
+		if err != nil {
+			t.Fatalf("refused a relaunched record from before the landing owner component: %v", err)
+		}
+		if record.LandingOwnerTag != "" || record.WatcherTag != "w" || record.ReaperTag != "r" {
+			t.Fatalf("record=%+v", record)
+		}
+	})
 }
 
 // raw2 builds a base valid arming record and overlays the mutation.
