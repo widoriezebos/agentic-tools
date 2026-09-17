@@ -346,8 +346,9 @@ func TestBatchDiagnosisForwardsStoredPrefixEvidence(t *testing.T) {
 	if err := store.Create(record); err != nil {
 		t.Fatal(err)
 	}
-	original := batchDiagnosisSeams
-	t.Cleanup(func() { batchDiagnosisSeams = original })
+	originalDiagnosis, originalOwner := batchDiagnosisSeams, productionTrunkRedLedgerOwner
+	t.Cleanup(func() { batchDiagnosisSeams, productionTrunkRedLedgerOwner = originalDiagnosis, originalOwner })
+	productionTrunkRedLedgerOwner = func(string) (batch.LedgerOwner, error) { return batch.UnboundLedgerOwner{}, nil }
 	batchDiagnosisSeams.commitForTree = func(string, string, string) (string, error) { return "base-commit", nil }
 	var groups []batch.RedGroup
 	var prefixGoal string

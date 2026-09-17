@@ -21,7 +21,7 @@ func init() {
 	compiledBatchCapabilities[ejectionAndRedScheduling] = struct{}{}
 }
 
-var productionTrunkRedLedgerOwner = func(string) batch.LedgerOwner { return batch.UnboundLedgerOwner{} }
+var productionTrunkRedLedgerOwner = productionBatchLedgerOwner
 var batchDiagnosticLauncher = launchBatchDiagnostic
 
 var batchDiagnosisSeams = struct {
@@ -30,6 +30,10 @@ var batchDiagnosisSeams = struct {
 }{commitForTree, batch.DiagnoseRed}
 
 func executeBatchDiagnosis(root, id, actor string, at time.Time) error {
+	ledgerOwner, err := productionTrunkRedLedgerOwner(root)
+	if err != nil {
+		return err
+	}
 	store := batch.NewStore(root, nil)
 	record, err := store.Load(id)
 	if err != nil {
@@ -58,7 +62,7 @@ func executeBatchDiagnosis(root, id, actor string, at time.Time) error {
 			}
 			return goal.Opid(ulid, machine, landingOwnerLineage), nil
 		},
-		Ledger:     productionTrunkRedLedgerOwner(root),
+		Ledger:     ledgerOwner,
 		BaseCommit: baseCommit,
 		UpdateNext: func(goalID, status string) error {
 			return batchChildRunner(root, landingOwnerLineage, "goal", "edit", "--root", root, "--id", goalID, "--next", status, "--lineage", landingOwnerLineage)

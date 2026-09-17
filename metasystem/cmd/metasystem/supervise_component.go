@@ -132,7 +132,7 @@ func runSuperviseComponent(args []string) int {
 			return nil
 		}
 	case "landing-owner":
-		release, pass, ok := setupLandingOwner(*repo)
+		release, pass, ok := setupLandingOwner(*metasystemRoot, *repo)
 		if !ok {
 			return 1
 		}
@@ -192,45 +192,88 @@ func runSuperviseComponent(args []string) int {
 	}
 }
 
-func setupLandingOwner(repo string) (release func(), pass func() error, ok bool) {
+func setupLandingOwner(metasystemRoot, repo string) (release func(), pass func() error, ok bool) {
 	noWork := func() error { return nil }
 	if !batchCapabilitiesAvailable() {
 		return func() {}, noWork, true
 	}
-	conf := filepath.Join(repo, "metasystem.conf")
-	rawRoot, _, err := config.Get(config.GetParams{Key: config.BatchRootKey, ConfPath: conf, Default: "", DefaultSet: true})
-	if err != nil {
-		fmt.Fprintln(os.Stderr, "supervise component landing-owner:", err)
-		return nil, nil, false
+
+	var activePass func() error
+	var held *batchOwnerLease
+	var announced *batchOwnerLease
+	var settings config.BatchLanding
+	var inputs productionBatchOwnerInputs
+	release = func() {
+		if announced != nil {
+			announced.retire()
+		}
 	}
-	resolved, err := resolvePathFlag(rawRoot)
-	if rawRoot == "" || err != nil || resolved != filepath.Clean(repo) {
-		return func() {}, noWork, true
+	pass = func() error {
+		if activePass != nil {
+			return activePass()
+		}
+		conf := filepath.Join(metasystemRoot, "metasystem.conf")
+		rawRoot, _, err := config.Get(config.GetParams{Key: config.BatchRootKey, ConfPath: conf, Default: "", DefaultSet: true})
+		if errors.Is(err, os.ErrNotExist) {
+			return nil
+		}
+		if err != nil {
+			return err
+		}
+		if rawRoot == "" {
+			return nil
+		}
+		resolved, err := resolvePathFlag(rawRoot)
+		if err != nil {
+			return err
+		}
+		if resolved != filepath.Clean(repo) {
+			return nil
+		}
+		rawWait, _, err := config.Get(config.GetParams{Key: config.BatchMaxWaitKey, ConfPath: conf,
+			Default: config.DefaultBatchMaxWait.String(), DefaultSet: true})
+		if err != nil {
+			return err
+		}
+		wait, err := time.ParseDuration(strings.TrimSpace(rawWait))
+		if err != nil {
+			return fmt.Errorf("invalid batch wait: %w", err)
+		}
+		settings, err = config.NewBatchLanding(repo, wait, time.Now)
+		if err != nil {
+			return err
+		}
+		inputs, err = resolveProductionBatchOwnerInputs(repo)
+		if err != nil {
+			return err
+		}
+		if held == nil {
+			acquired, err := acquireBatchOwnerForComponent(repo)
+			if acquired.announced {
+				announced = &acquired
+			}
+			if err != nil {
+				return err
+			}
+			held = &acquired
+			announced = held
+		}
+		owner, err := batchOwnerConstruct(settings, *held, inputs, time.Now)
+		if err != nil {
+			return err
+		}
+		activePass = func() error {
+			if err := batchOwnerRequire(*held); err != nil {
+				activePass = nil
+				held = nil
+				return err
+			}
+			batchOwnerResume(owner)
+			return nil
+		}
+		return activePass()
 	}
-	rawWait, _, err := config.Get(config.GetParams{Key: config.BatchMaxWaitKey, ConfPath: conf,
-		Default: config.DefaultBatchMaxWait.String(), DefaultSet: true})
-	wait, parseErr := time.ParseDuration(strings.TrimSpace(rawWait))
-	if err != nil || parseErr != nil {
-		fmt.Fprintln(os.Stderr, "supervise component landing-owner: invalid batch wait")
-		return nil, nil, false
-	}
-	settings, err := config.NewBatchLanding(repo, wait, time.Now)
-	if err != nil {
-		fmt.Fprintln(os.Stderr, "supervise component landing-owner:", err)
-		return nil, nil, false
-	}
-	held, err := acquireBatchOwner(repo)
-	if err != nil {
-		fmt.Fprintln(os.Stderr, "supervise component landing-owner:", err)
-		return nil, nil, false
-	}
-	owner, err := newProductionBatchOwner(settings, held, time.Now)
-	if err != nil {
-		held.retire()
-		fmt.Fprintln(os.Stderr, "supervise component landing-owner:", err)
-		return nil, nil, false
-	}
-	return held.retire, func() error { owner.Resume(); return nil }, true
+	return release, pass, true
 }
 
 // heartbeatWriter returns a never-failing closure that rewrites the component's

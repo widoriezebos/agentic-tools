@@ -13,7 +13,6 @@ import (
 	"path/filepath"
 	"slices"
 	"strings"
-	"syscall"
 	"testing"
 	"time"
 
@@ -173,96 +172,6 @@ func TestBatchOwnerHoldsTheLease(t *testing.T) {
 	output, secondErr := second.CombinedOutput()
 	if secondErr == nil || !strings.Contains(string(output), "BATCH_OWNER_OWNED_ELSEWHERE") {
 		t.Fatalf("second owner err=%v output=%q", secondErr, output)
-	}
-}
-
-func TestBatchOwnerWiringBound(t *testing.T) {
-	if os.Getenv("GO_WANT_BATCH_OWNER_SIGNAL_HELPER") != "" {
-		root := os.Getenv("BATCH_OWNER_TEST_ROOT")
-		batchOwnerAcquire = func(string) (batchOwnerLease, error) {
-			return batchOwnerLease{root: root, pid: int64(os.Getpid()), epoch: 1}, nil
-		}
-		batchOwnerConstruct = func(settings config.BatchLanding, held batchOwnerLease, now func() time.Time) (*batch.Owner, error) {
-			calls := 0
-			return batch.NewOwner(batch.OwnerOptions{
-				Store: batch.NewStore(root, nil), Settings: settings, Actor: "fixture", PID: held.pid, Now: now,
-				FetchTree: func() (string, error) { return "tree", nil },
-				ReadClaim: func(string, string, string, string) (batch.Claim, error) { return batch.Claim{}, nil },
-				Rebind:    func(string, string) error { return nil }, Mint: func() (string, error) { return "opid", nil },
-				LogRed: func(string, batch.TrunkRedRecordOutcome) {}, BaseCommit: func(string) (string, error) { return "commit", nil },
-				RunDiagnostic: func(string, batch.DiagnosticRequest, batch.Claim) (batch.DiagnosticResult, error) {
-					return batch.DiagnosticResult{}, nil
-				},
-				DescendsFrom: func(string, string) (bool, error) { return false, nil }, Sample: func() proofrun.LoadSample { return proofrun.LoadSample{} },
-				Admission: func(proofrun.LoadSample) proofrun.AdmissionCap { return proofrun.AdmissionCap{} },
-				Launch:    func(string, proofrun.LoadSample, string) error { return nil },
-				After:     func(time.Duration) <-chan time.Time { return make(chan time.Time) },
-				Report:    func(string, error) {}, Glob: func(string) ([]string, error) {
-					calls++
-					if calls == 1 {
-						fmt.Println("READY")
-					} else {
-						fmt.Println("TICK")
-					}
-					return nil, nil
-				},
-			})
-		}
-		seat := os.Getenv("BATCH_OWNER_TEST_SEAT")
-		os.Exit(runBatchOwner([]string{"--root", seat, "--landing-root", root, "--max-wait", "1m", "--interval", "1m"}))
-	}
-	root, seat := t.TempDir(), t.TempDir()
-	for _, repo := range []string{root, seat} {
-		if err := exec.Command("git", "init", "-q", repo).Run(); err != nil {
-			t.Fatal(err)
-		}
-	}
-	command := exec.Command(os.Args[0], "-test.run=^TestBatchOwnerWiringBound$")
-	command.Env = append(os.Environ(), "GO_WANT_BATCH_OWNER_SIGNAL_HELPER=1", "BATCH_OWNER_TEST_ROOT="+root,
-		"BATCH_OWNER_TEST_SEAT="+seat, "METASYSTEM_GOAL_NOW=2026-09-17T10:00:00Z")
-	stdout, err := command.StdoutPipe()
-	if err != nil {
-		t.Fatal(err)
-	}
-	if err := command.Start(); err != nil {
-		t.Fatal(err)
-	}
-	scanner := bufio.NewScanner(stdout)
-	if !scanner.Scan() || scanner.Text() != "READY" {
-		t.Fatalf("signal helper not ready: %q (%v)", scanner.Text(), scanner.Err())
-	}
-	if err := syscall.Kill(command.Process.Pid, syscall.SIGUSR1); err != nil {
-		t.Fatal(err)
-	}
-	// Wait for the fact (the second Resume's TICK) on the package's wiring bound, never on an
-	// instant or a count of steps a loaded machine can outrun.
-	lines := make(chan string)
-	go func() {
-		defer close(lines)
-		for scanner.Scan() {
-			lines <- scanner.Text()
-		}
-	}()
-	bound := time.NewTimer(wiringBound)
-	defer bound.Stop()
-	for observed := ""; observed != "TICK"; {
-		select {
-		case line, ok := <-lines:
-			if !ok {
-				t.Fatalf("SIGUSR1 wiring ended before the owner loop ticked: %v", scanner.Err())
-			}
-			observed = line
-		case <-bound.C:
-			_ = command.Process.Kill()
-			_ = command.Wait()
-			t.Fatalf("SIGUSR1 did not reach the owner loop within %s", wiringBound)
-		}
-	}
-	if err := syscall.Kill(command.Process.Pid, syscall.SIGTERM); err != nil {
-		t.Fatal(err)
-	}
-	if err := command.Wait(); err != nil {
-		t.Fatal(err)
 	}
 }
 

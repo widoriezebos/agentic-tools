@@ -12,11 +12,29 @@ import (
 	"testing"
 )
 
+func TestBatchWithdrawRefusesUntilImplemented(t *testing.T) {
+	root := t.TempDir()
+	stderr, code := captureStderr(t, func() int {
+		return runLandingBatch([]string{"withdraw", "--root", root, "--goal", "g"})
+	})
+	const want = "BATCH_WITHDRAW_UNBUILT: landing batch withdraw is not built yet; nothing was withdrawn\n"
+	if code != 1 || stderr != want {
+		t.Fatalf("withdraw code=%d stderr=%q, want code=1 stderr=%q", code, stderr, want)
+	}
+	entries, err := os.ReadDir(root)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(entries) != 0 {
+		t.Fatalf("withdraw wrote %d entries, want none", len(entries))
+	}
+}
+
 func TestBatchVerbsUnavailableWithoutFilesystemWrites(t *testing.T) {
 	root := t.TempDir()
-	t.Setenv("METASYSTEM_BATCH_CAPABILITIES", strings.Join([]string{
-		string(recordStoreHistoryAndProberSeam), string(trunkRedLedgerOwner),
-	}, ","))
+	missing := requiredBatchCapabilities[0]
+	delete(compiledBatchCapabilities, missing)
+	defer func() { compiledBatchCapabilities[missing] = struct{}{} }()
 	commands := [][]string{
 		{"landing", "batch", "join"}, {"landing", "batch", "status"},
 		{"landing", "batch", "withdraw"}, {"landing", "batch", "owner"},
@@ -91,31 +109,34 @@ func TestBatchTaggedCapabilityWitnessRejectsMissingTest(t *testing.T) {
 
 func TestBatchRuntimeInputsCannotRegisterCapability(t *testing.T) {
 	t.Setenv("GO_WANT_BATCH_RUNTIME_INPUT_HELPER", "1")
-	t.Setenv("METASYSTEM_BATCH_CAPABILITIES", string(recordStoreHistoryAndProberSeam))
+	t.Setenv("METASYSTEM_BATCH_CAPABILITIES", "runtimeOnlyCapability")
 	command := exec.Command("go", "test", "-count=1", "-run",
-		"^TestBatchProductionRegistryContainsOnlyBuiltUnits$", "./cmd/metasystem")
+		"^TestBatchProductionRegistryComplete$", "./cmd/metasystem")
 	command.Dir = "../.."
 	if output, err := command.CombinedOutput(); err != nil {
 		t.Fatalf("runtime input registered a batch capability: %v\n%s", err, output)
 	}
 }
 
-func TestBatchProductionRegistryContainsOnlyBuiltUnits(t *testing.T) {
+func TestBatchProductionRegistryComplete(t *testing.T) {
 	if os.Getenv("GO_WANT_BATCH_RUNTIME_INPUT_HELPER") != "1" {
 		return
 	}
-	want := map[batchCapability]bool{
-		ownerVerbAndTick: true, productionSupervisorTakeover: true,
-		proofPlanningAndTipLaunch: true, revisionBoundAdmissionAndDiagnosticHeadroom: true,
-		freshBaseDiagnosis: true, ejectionAndRedScheduling: true, prefixReceipts: true,
-		landingTransportHelpers: true, atomicSeriesAndRecovery: true, waitStatusDocsAndInventory: true,
+	if len(compiledBatchCapabilities) != len(requiredBatchCapabilities) {
+		t.Fatalf("production registered %d batch capabilities, want %d", len(compiledBatchCapabilities), len(requiredBatchCapabilities))
 	}
-	if len(compiledBatchCapabilities) != len(want) {
-		t.Fatalf("production registered %d batch capabilities, want %d", len(compiledBatchCapabilities), len(want))
-	}
-	for capability := range compiledBatchCapabilities {
-		if !want[capability] {
-			t.Fatalf("production registered unbuilt capability %s", capability)
+	for _, capability := range requiredBatchCapabilities {
+		if _, ok := compiledBatchCapabilities[capability]; !ok {
+			t.Fatalf("production did not register required capability %s", capability)
 		}
+	}
+	root := syncedClaimedGoalFixture(t)
+	seamOwner, err := batchLedgerOwner(root)
+	if err != nil || !isLedgerTrunkRedOwner(seamOwner) {
+		t.Fatalf("batch ledger owner type %T error=%v, want ledger adapter", seamOwner, err)
+	}
+	productionOwner, err := productionTrunkRedLedgerOwner(root)
+	if err != nil || !isLedgerTrunkRedOwner(productionOwner) {
+		t.Fatalf("production trunk-red owner type %T error=%v, want ledger adapter", productionOwner, err)
 	}
 }

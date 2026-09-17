@@ -56,7 +56,7 @@ func TestFirstTrunkRedHoldUsesLedgerOwnerOpid(t *testing.T) {
 	}
 	originalOwner, originalLauncher := productionTrunkRedLedgerOwner, batchDiagnosticLauncher
 	t.Cleanup(func() { productionTrunkRedLedgerOwner, batchDiagnosticLauncher = originalOwner, originalLauncher })
-	productionTrunkRedLedgerOwner = func(string) batch.LedgerOwner { return owner }
+	productionTrunkRedLedgerOwner = func(string) (batch.LedgerOwner, error) { return owner, nil }
 	batchDiagnosticLauncher = func(string, string, batch.DiagnosticRequest) (batch.DiagnosticResult, error) {
 		return batch.DiagnosticResult{AttemptID: "attempt-red", Groups: []batch.RedGroup{{ID: "fast", Status: "failed"}}}, nil
 	}

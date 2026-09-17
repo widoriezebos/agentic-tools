@@ -11,7 +11,11 @@ import (
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/landing/batch"
 )
 
-func init() { productionTrunkRedLedgerOwner = newBatchTestFileLedgerOwner }
+func init() {
+	productionTrunkRedLedgerOwner = func(root string) (batch.LedgerOwner, error) {
+		return newBatchTestFileLedgerOwner(root), nil
+	}
+}
 
 type batchTestFileLedgerOwner struct{ path string }
 

@@ -34,7 +34,10 @@ func TestBatchTrunkRedLedgerOwnerCapability(t *testing.T) {
 	}
 	restore()
 	root := t.TempDir()
-	owner := productionTrunkRedLedgerOwner(root)
+	owner, err := productionTrunkRedLedgerOwner(root)
+	if err != nil {
+		t.Fatal(err)
+	}
 	red := batch.TrunkRed{BatchID: "batch", AttemptID: "attempt", BaseTree: "tree", Groups: []batch.RedGroup{{ID: "group", Status: "failed"}}}
 	first, err := owner.Record("op-1", red)
 	if err != nil {
