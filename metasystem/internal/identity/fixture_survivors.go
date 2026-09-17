@@ -17,6 +17,7 @@ type FixtureCarrier string
 
 const FixtureCarrierArgvWord FixtureCarrier = "argv-word"
 const FixtureCarrierEnvironment FixtureCarrier = "environment"
+const FixtureCarrierRecord FixtureCarrier = "record"
 
 type FixtureSurvivorClass string
 
@@ -125,9 +126,12 @@ func scanFixtureSurvivors(prober Prober, matches func(FixtureKey) bool, includeG
 			}
 			continue
 		}
+		if exact.ArgvKnown && containsFixtureTagWord(exact.Argv) || exact.EnvironKnown && containsFixtureTagWord(exact.Environ) {
+			continue
+		}
 		if exact.ExeKnown {
 			if key, ok := fixtureOwnershipRecord(exact.Exe); ok && matches(key) {
-				observation.key = key
+				observation.key, observation.carrier = key, FixtureCarrierRecord
 				certain = append(certain, observation)
 				continue
 			}
@@ -142,12 +146,21 @@ func scanFixtureSurvivors(prober Prober, matches func(FixtureKey) bool, includeG
 	}
 	for _, observation := range unreadable {
 		_, underGoTmp := goTmpRoot(observation.exact.Exe)
-		if includeGoTmpUnreadable && observation.exact.ExeKnown && underGoTmp || sharesFixtureScope(observation, certain) {
+		if includeGoTmpUnreadable && observation.exact.ExeKnown && underGoTmp || ledByFixtureSurvivor(observation, certain) {
 			result = append(result, observation.survivor(FixtureSurvivorUnreadable))
 		}
 	}
 	sort.Slice(result, func(i, j int) bool { return result[i].Ref.Pid < result[j].Ref.Pid })
 	return result, nil
+}
+
+func containsFixtureTagWord(words []string) bool {
+	for _, word := range words {
+		if strings.HasPrefix(word, fixtureOwnerPrefix) {
+			return true
+		}
+	}
+	return false
 }
 
 func (observation fixtureObservation) survivor(class FixtureSurvivorClass) FixtureSurvivor {
@@ -157,13 +170,13 @@ func (observation fixtureObservation) survivor(class FixtureSurvivorClass) Fixtu
 	}
 }
 
-func sharesFixtureScope(observation fixtureObservation, certain []fixtureObservation) bool {
+func ledByFixtureSurvivor(observation fixtureObservation, certain []fixtureObservation) bool {
 	for _, candidate := range certain {
 		if SameIdentity(observation.exact, candidate.key.Owner) {
 			continue
 		}
-		if observation.scope.pgid > 1 && observation.scope.pgid == candidate.scope.pgid ||
-			observation.scope.sid > 1 && observation.scope.sid == candidate.scope.sid {
+		if observation.scope.pgid > 1 && observation.scope.pgid == candidate.exact.Pid ||
+			observation.scope.sid > 1 && observation.scope.sid == candidate.exact.Pid {
 			return true
 		}
 	}
@@ -184,20 +197,21 @@ func goTmpRoot(executable string) (string, bool) {
 
 func fixtureOwnershipRecord(executable string) (FixtureKey, bool) {
 	directory := filepath.Dir(filepath.Clean(executable))
-	cacheRoot, ok := goTmpRoot(executable)
-	if !ok {
-		return FixtureKey{}, false
-	}
-	for directory != cacheRoot {
+	for {
 		data, err := os.ReadFile(filepath.Join(directory, "fixture-owner"))
 		if err == nil {
 			key, parseErr := ParseKey(strings.TrimSpace(string(data)))
-			return key, parseErr == nil
+			topLevelTest, _, _ := strings.Cut(key.Test, "/")
+			// Top-level test names are Go identifiers, so makeTempDir removes no other symbols.
+			return key, parseErr == nil && strings.HasPrefix(filepath.Base(directory), strings.ToValidUTF8(topLevelTest[:min(len(topLevelTest), 64)], ""))
 		}
 		if !os.IsNotExist(err) {
 			return FixtureKey{}, false
 		}
-		directory = filepath.Dir(directory)
+		parent := filepath.Dir(directory)
+		if parent == directory {
+			return FixtureKey{}, false
+		}
+		directory = parent
 	}
-	return FixtureKey{}, false
 }

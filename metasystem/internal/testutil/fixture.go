@@ -47,19 +47,37 @@ type ProcessFixture struct {
 
 func Fixture(t testing.TB) *ProcessFixture {
 	t.Helper()
-	fixture := newProcessFixture(t, t.Name(), identity.KernelProber{}, syscall.Kill)
+	return newRecordedProcessFixture(t, t.Name(), t.TempDir, identity.KernelProber{}, syscall.Kill)
+}
+
+func newRecordedProcessFixture(t fixtureTB, testName string, tempDir func() string, prober identity.Prober, signal identity.SignalFunc) *ProcessFixture {
+	fixture := makeProcessFixture(t, testName, prober, signal)
+	registered := false
+	defer func() {
+		if !registered {
+			fixture.closeLeash()
+		}
+	}()
 	encoded, err := identity.EncodeKey(fixture.key)
 	if err != nil {
 		t.Fatalf("encode process fixture ownership: %v", err)
 	}
-	record := filepath.Join(filepath.Dir(t.TempDir()), "fixture-owner")
+	record := filepath.Join(filepath.Dir(tempDir()), "fixture-owner")
 	if err := os.WriteFile(record, []byte(encoded), 0o600); err != nil {
 		t.Fatalf("write process fixture ownership record: %v", err)
 	}
+	registerProcessFixture(t, fixture)
+	registered = true
 	return fixture
 }
 
 func newProcessFixture(t fixtureTB, testName string, prober identity.Prober, signal identity.SignalFunc) *ProcessFixture {
+	fixture := makeProcessFixture(t, testName, prober, signal)
+	registerProcessFixture(t, fixture)
+	return fixture
+}
+
+func makeProcessFixture(t fixtureTB, testName string, prober identity.Prober, signal identity.SignalFunc) *ProcessFixture {
 	owner, state, err := prober.Probe(int64(os.Getpid()))
 	if err != nil || state != identity.Alive || !owner.Ref().NativeExact() {
 		t.Fatalf("create process fixture: owner identity is unproven: state=%v err=%v", state, err)
@@ -82,9 +100,12 @@ func newProcessFixture(t fixtureTB, testName string, prober identity.Prober, sig
 		prober: prober, signal: signal, scan: identity.FixtureSurvivors,
 		held: make(map[identity.Ref]bool), leash: leash,
 	}
-	t.Cleanup(fixture.cleanup)
-	testenv.RegisterFixtureKey(key)
 	return fixture
+}
+
+func registerProcessFixture(t fixtureTB, fixture *ProcessFixture) {
+	t.Cleanup(fixture.cleanup)
+	testenv.RegisterFixtureKey(fixture.key)
 }
 
 func openFixtureLeash() (*os.File, error) {

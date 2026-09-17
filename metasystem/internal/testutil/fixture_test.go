@@ -44,6 +44,147 @@ func TestFixtureWritesItsOwnershipRecord(t *testing.T) {
 	}
 }
 
+func TestCensusFindsAnUntaggedExecutableByRecord(t *testing.T) {
+	if os.Getenv("TESTUTIL_UNTAGGED_EXECUTABLE_HELPER") != "" {
+		ready, release := os.NewFile(4, "fixture-copy-ready"), os.NewFile(3, "fixture-copy-release")
+		_, err := ready.Write([]byte{1})
+		failOnFixtureError(t, errors.Join(err, ready.Close()))
+		_, err = io.Copy(io.Discard, release)
+		failOnFixtureError(t, err)
+		return
+	}
+	root := t.TempDir()
+	for _, layout := range []struct {
+		name  string
+		goTmp bool
+	}{{"plain temporary root", false}, {"go-tmp under TMPDIR", true}} {
+		t.Run(layout.name, func(t *testing.T) {
+			t.Setenv("TMPDIR", root)
+			if layout.goTmp {
+				goTmp := filepath.Join(root, "go-tmp")
+				failOnFixtureError(t, os.MkdirAll(goTmp, 0o700))
+				t.Setenv("GOTMPDIR", goTmp)
+			} else {
+				unsetFixtureEnvironment(t, "GOTMPDIR")
+			}
+			fixture := Fixture(t)
+			positiveDirectory := t.TempDir()
+			outsideDirectory, err := os.MkdirTemp(root, "outside-")
+			failOnFixtureError(t, err)
+			t.Cleanup(func() { _ = os.RemoveAll(outsideDirectory) })
+			wrongDirectory, err := os.MkdirTemp(root, "WrongDirectory-")
+			failOnFixtureError(t, err)
+			t.Cleanup(func() { _ = os.RemoveAll(wrongDirectory) })
+			record, err := os.ReadFile(filepath.Join(filepath.Dir(positiveDirectory), "fixture-owner"))
+			failOnFixtureError(t, err)
+			failOnFixtureError(t, os.WriteFile(filepath.Join(wrongDirectory, "fixture-owner"), record, 0o600))
+
+			positive := startUntaggedFixtureCopy(t, fixture, positiveDirectory)
+			outside := startUntaggedFixtureCopy(t, fixture, outsideDirectory)
+			wrong := startUntaggedFixtureCopy(t, fixture, wrongDirectory)
+			got, err := identity.FixtureSurvivors(fixture.Key())
+			if err != nil || len(got) != 1 {
+				t.Fatalf("fixture scan = %#v, %v; want one result", got, err)
+			}
+			gotKey, gotKeyErr := identity.EncodeKey(got[0].Key)
+			wantKey, wantKeyErr := identity.EncodeKey(fixture.Key())
+			if got[0].Ref.Pid != positive.exact.Pid || got[0].Exe != positive.exact.Exe ||
+				got[0].Class != identity.FixtureSurvivorCertain || got[0].Carrier != identity.FixtureCarrierRecord ||
+				gotKeyErr != nil || wantKeyErr != nil || gotKey != wantKey {
+				t.Fatalf("fixture scan = %#v, %v; key encodings %q/%q errors %v/%v; want only record-backed pid %d exe %q", got, err, gotKey, wantKey, gotKeyErr, wantKeyErr, positive.exact.Pid, positive.exact.Exe)
+			}
+			for _, processCopy := range []*untaggedFixtureCopy{positive, outside, wrong} {
+				failOnFixtureError(t, processCopy.release.Close())
+				failOnFixtureError(t, processCopy.command.Wait())
+			}
+		})
+	}
+}
+
+func TestFixtureCleanupReadsOwnershipRecordBeforeTempDirRemoval(t *testing.T) {
+	recorder := &recordingTB{}
+	perTestDirectory, err := os.MkdirTemp("/tmp", t.Name())
+	failOnFixtureError(t, err)
+	t.Cleanup(func() { _ = os.RemoveAll(perTestDirectory) })
+	tempDirectory := filepath.Join(perTestDirectory, "001")
+	newRecordedProcessFixture(recorder, t.Name(), func() string {
+		failOnFixtureError(t, os.MkdirAll(tempDirectory, 0o700))
+		recorder.Cleanup(func() { _ = os.RemoveAll(perTestDirectory) })
+		return tempDirectory
+	}, identity.KernelProber{}, syscall.Kill)
+	processCopy := startUntaggedFixtureCopy(t, nil, tempDirectory)
+	for index := len(recorder.cleanups) - 1; index >= 0; index-- {
+		recorder.cleanups[index]()
+	}
+	_ = processCopy.release.Close()
+	_, _ = processCopy.command.Process.Wait()
+	failures := strings.Join(recorder.errs, "\n")
+	for _, want := range []string{"unrecorded fixture child found running at teardown", fmt.Sprintf("pid=%d", processCopy.exact.Pid), fmt.Sprintf("exe=%q", processCopy.exact.Exe)} {
+		if !strings.Contains(failures, want) {
+			t.Fatalf("cleanup failures %q do not contain %q", failures, want)
+		}
+	}
+}
+
+type untaggedFixtureCopy struct {
+	command *exec.Cmd
+	exact   identity.Exact
+	release *os.File
+}
+
+func startUntaggedFixtureCopy(t *testing.T, fixture *ProcessFixture, directory string) *untaggedFixtureCopy {
+	t.Helper()
+	binary := filepath.Join(directory, "fixture-copy")
+	data, err := os.ReadFile(os.Args[0])
+	failOnFixtureError(t, err)
+	failOnFixtureError(t, os.WriteFile(binary, data, 0o700))
+	releaseReader, releaseWriter, err := os.Pipe()
+	failOnFixtureError(t, err)
+	readyReader, readyWriter, err := os.Pipe()
+	failOnFixtureError(t, err)
+	command := exec.Command(binary, "-test.run=^TestCensusFindsAnUntaggedExecutableByRecord$", "-test.count=1")
+	command.Env = append(slices.DeleteFunc(os.Environ(), func(entry string) bool {
+		return strings.HasPrefix(entry, identity.FixtureOwnerEnv+"=") || strings.HasPrefix(entry, "TESTUTIL_UNTAGGED_EXECUTABLE_HELPER=")
+	}), "TESTUTIL_UNTAGGED_EXECUTABLE_HELPER=1")
+	command.ExtraFiles = []*os.File{releaseReader, readyWriter}
+	failOnFixtureError(t, command.Start())
+	_ = errors.Join(releaseReader.Close(), readyWriter.Close())
+	processCopy := &untaggedFixtureCopy{command: command, release: releaseWriter}
+	t.Cleanup(func() {
+		if processCopy.exact.Ref().NativeExact() {
+			_ = identity.SignalExact(identity.KernelProber{}, processCopy.exact.Ref(), syscall.SIGKILL)
+		} else {
+			_ = command.Process.Kill()
+		}
+	})
+	var ready [1]byte
+	_, err = io.ReadFull(readyReader, ready[:])
+	_ = readyReader.Close()
+	failOnFixtureError(t, err)
+	var state identity.Liveness
+	processCopy.exact, state, err = (identity.KernelProber{}).Probe(int64(command.Process.Pid))
+	if err != nil || state != identity.Alive || !processCopy.exact.Ref().NativeExact() || !processCopy.exact.ExeKnown {
+		t.Fatalf("probe fixture copy: state=%v exact=%+v err=%v", state, processCopy.exact, err)
+	}
+	if fixture != nil {
+		fixture.Hold(int(processCopy.exact.Pid))
+	}
+	return processCopy
+}
+
+func unsetFixtureEnvironment(t *testing.T, name string) {
+	t.Helper()
+	value, present := os.LookupEnv(name)
+	failOnFixtureError(t, os.Unsetenv(name))
+	t.Cleanup(func() {
+		if present {
+			_ = os.Setenv(name, value)
+		} else {
+			_ = os.Unsetenv(name)
+		}
+	})
+}
+
 func TestBinaryExitScanNamesAChildThatOutlivedItsTest(t *testing.T) {
 	reader, writer, err := os.Pipe()
 	failOnFixtureError(t, err)
