@@ -4,7 +4,7 @@ Goal: units-land-in-batches-under-one-proof (tier 3, priority 1, sequence 1). Re
 round, 2026-09-16. Author: Claude Fable 5.1 design delegate, headless, seat m1e. Citations are origin/main
 8c95ad54f read in worktree crit-blb, paths under metasystem/ unless absolute. Inputs, in
 rank: Wido's answers after critique r2 (W1 lane 4 by hand as Go verbs, no scripts; W2 fully automatic,
-agent commits, no human act from join to push; W3 the bash launchers land now, the next goal ports them to
+agent commits named for the goal's approver since the attribution amendment, no human act from join to push; W3 the bash launchers land now, the next goal ports them to
 Go); the r2 page; the Codex critique r2 (revise 12); the r1 answers (Q1 diagnostic runs exempt from the
 lock; Q2 a dedicated landing checkout; Q3 best-effort quiet window); DONE (1)-(5); the r3 substrate
 plans/proof-admission-fits-a-seat-proving-several-units-design.md; the seat constraints C1-C13. Rules: one
@@ -170,7 +170,21 @@ rebuilds the branch, the ejected commit absent from the new tip), BA14a (a moved
 landing tip refuses, the fast-forward lands all or nothing and the branch is deleted), BA13 (the attempt
 names the tip commit).
 
-D8. Green lands as a series of agent commits by commit.sh, one atomic push (C6, C7, DONE 5). Where: inside the owner's lock hold after green, so no engine run is between its fetch and its
+Amendment, attribution (Wido's ruling, 2026-09-17, recorded as rule 6.10 of
+plans/goals-live-on-branches-design.md: when a human in the loop granted the authority, the commits name
+that human). W2's "agent commits" keeps its meaning, the commit.sh boundary with its chain, landing
+observe and the receipt; it no longer implies a machine identity. D8 runs each unit's commit.sh with
+author and committer set to the approver of that unit's goal, the ledger's `Approved.By`, whose git
+identity the landing checkout's configuration names in `goal.human.<name>` as `Name <email>`; the ambient
+`user.name` and `user.email` are never used. The join (D2) refuses a member whose approver has no
+identity there, `BATCH_JOIN_AUTHOR_UNBOUND`, so the seal never writes a commit it cannot attribute. The
+owner rides in a `Landed-By: <seat>` trailer beside R15's trailers. No human act is added, and nothing
+reads identity to tell a human commit from an agent one. The fast-forward keeps the commit objects, so
+the endpoint shows each unit's approver. Witness: W15 (author and committer equal the approver's
+configured identity, `Landed-By` names the owner, an ambient `user.email` naming another person changes
+nothing) and the join refusal of an unbound approver.
+
+D8. Green lands as a series of agent commits by commit.sh, each authored and committed as its goal's approver (amendment, attribution), one atomic push (C6, C7, DONE 5). Where: inside the owner's lock hold after green, so no engine run is between its fetch and its
 fast-forward while the series reaches origin (m1b's race). Per unit in join order, in the landing checkout at the batch base: apply the certified patch (index and
 worktree equal the prefix tree), append its receipt row (`scripts/receipt.sh add`, receiptline.go:142),
 then run `scripts/agents/commit.sh --chain <J> --goal <G> --test-receipt <tip receipt> -F <message>` as
@@ -300,7 +314,7 @@ refuses `BATCH_REOPEN_SAME_TREE`; a trunk commit meeting the group's inputs reop
 any call.
 
 R15. Each commit is an agent commit through commit.sh with its chain, by the lease-holding owner. W15, scenario `batch-lands-by-agent-commit`: the built owner lands one unit; the commit carries the guard
-marker, `Machine: m1l+main-...`, `Goal-Item`, `Landing-Provenance: chain=<J>` and a pass verdict. W15b `TestBatchDelegationRules`: no label, a label naming a batch not in `landing`, or an owner actor
+marker, `Machine: m1l+main-...`, `Goal-Item`, `Landing-Provenance: chain=<J>`, `Landed-By: <seat>` and a pass verdict, with author and committer equal to the goal approver's `goal.human.<name>` identity. W15b `TestBatchDelegationRules`: no label, a label naming a batch not in `landing`, or an owner actor
 differing from the record: `goal-item-not-held`; a claim re-made after dispatch: `goal-revision-moved`;
 all present: pass.
 Mutations: call `git commit` directly; accept the label without the batch state; drop the revision check.
