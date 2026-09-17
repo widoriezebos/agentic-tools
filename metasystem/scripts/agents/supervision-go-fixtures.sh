@@ -63,16 +63,17 @@ wait_until() { # seconds, description, command...
 registry="$tmp/registry.jsonl"
 
 # state_ready: the state carries the go engine stamp at generation 1 with
-# exactly the watcher and reaper components (json strip of both leaving {}
-# plus both present is set equality, no more and no less).
+# exactly the watcher, reaper and landing-owner components (json strip of all
+# three leaving {} plus all present is set equality, no more and no less).
 state_ready() { # state file
   local state=$1
   [[ "$("$bin" json get --file "$state" --field engine 2>/dev/null)" == go ]] || return 1
   [[ "$("$bin" json get --file "$state" --field generation 2>/dev/null)" == 1 ]] || return 1
   "$bin" json get --file "$state" --field components.watcher >/dev/null 2>&1 || return 1
   "$bin" json get --file "$state" --field components.reaper >/dev/null 2>&1 || return 1
+  "$bin" json get --file "$state" --field components.landing-owner >/dev/null 2>&1 || return 1
   "$bin" json get --file "$state" --field components 2>/dev/null >"$tmp/state-components.json" || return 1
-  [[ "$("$bin" json strip --file "$tmp/state-components.json" --key watcher --key reaper 2>/dev/null)" == '{}' ]]
+  [[ "$("$bin" json strip --file "$tmp/state-components.json" --key watcher --key reaper --key landing-owner 2>/dev/null)" == '{}' ]] || return 1
 }
 
 # last_owner_exit prints the newest registry "exited" event for an owner

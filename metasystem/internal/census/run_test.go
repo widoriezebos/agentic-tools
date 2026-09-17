@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 	"time"
 )
@@ -121,5 +122,59 @@ func TestRunFixtureCensusSuccessPath(t *testing.T) {
 	}
 	if !announced {
 		t.Fatalf("4103 not classified ANNOUNCED: %+v", v.Inventory)
+	}
+}
+
+// The owner publishes watcher, reaper and landing-owner; a state from an owner
+// before the landing owner has only the first two. Both read as a complete set,
+// the landing owner's identity is carried when present, and an unknown or a
+// missing required component still refuses.
+func TestReadSupervisionSnapshotAcceptsTheLandingOwner(t *testing.T) {
+	component := func(name string) string {
+		return fmt.Sprintf(`"%s":{"pid":7,"pidStartedAt":100,"instanceTag":"%s-t"}`, name, name)
+	}
+	cases := []struct {
+		name       string
+		components []string
+		wantIDs    []string
+		wantErr    bool
+	}{
+		{"three components", []string{"watcher", "reaper", "landing-owner"}, []string{"owner", "watcher", "reaper", "landing-owner"}, false},
+		{"two components", []string{"watcher", "reaper"}, []string{"owner", "watcher", "reaper"}, false},
+		{"unknown component", []string{"watcher", "reaper", "landing-owner", "extra"}, nil, true},
+		{"reaper missing", []string{"watcher", "landing-owner"}, nil, true},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			root := t.TempDir()
+			dir := filepath.Join(root, "artifacts", "agents", "supervision")
+			if err := os.MkdirAll(dir, 0o755); err != nil {
+				t.Fatal(err)
+			}
+			entries := make([]string, 0, len(tc.components))
+			for _, name := range tc.components {
+				entries = append(entries, component(name))
+			}
+			state := fmt.Sprintf(`{"generation":3,"owner":{"pid":6,"pidStartedAt":100,"instanceTag":"owner-t"},"components":{%s}}`,
+				strings.Join(entries, ","))
+			if err := os.WriteFile(filepath.Join(dir, "state.json"), []byte(state), 0o644); err != nil {
+				t.Fatal(err)
+			}
+			ids, generation, _, err := readSupervisionSnapshot(root)
+			if tc.wantErr {
+				if err == nil || !strings.Contains(err.Error(), "no complete instance set") {
+					t.Fatalf("err = %v, want the incomplete instance set refusal", err)
+				}
+				return
+			}
+			if err != nil || generation != 3 || len(ids) != len(tc.wantIDs) {
+				t.Fatalf("ids = %+v generation = %d err = %v", ids, generation, err)
+			}
+			for _, name := range tc.wantIDs {
+				if ids[name].InstanceTag != name+"-t" {
+					t.Fatalf("identity %s = %+v", name, ids[name])
+				}
+			}
+		})
 	}
 }

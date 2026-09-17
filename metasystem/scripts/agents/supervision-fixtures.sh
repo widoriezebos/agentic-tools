@@ -2101,6 +2101,7 @@ prepare_process_acceptance() {
   watcher_start=$(json_field "$acceptance_state" components.watcher.pidStartedAt)
   reaper_pid=$(json_field "$acceptance_state" components.reaper.pid)
   reaper_start=$(json_field "$acceptance_state" components.reaper.pidStartedAt)
+  landing_owner_pid=$(json_field "$acceptance_state" components.landing-owner.pid)
 }
 
 assert_minimal_running_status() { # output file
@@ -2109,7 +2110,8 @@ assert_minimal_running_status() { # output file
     "steward-runner pid $runner_pid started $runner_start: running" \
     "supervision-owner pid $owner_pid tag $owner_tag generation $owner_generation: running" \
     "repo-watcher pid $watcher_pid: running" \
-    "job-reaper pid $reaper_pid: running"
+    "job-reaper pid $reaper_pid: running" \
+    "landing-batch-owner pid $landing_owner_pid: running"
 }
 
 stop_minimal_acceptance() { # output file
@@ -2121,6 +2123,7 @@ stop_minimal_acceptance() { # output file
     "supervision-owner pid $owner_pid tag $owner_tag generation $owner_generation: stopped (TERM, exited reason=shutdown)" \
     "repo-watcher pid $watcher_pid: already gone (by the owner)" \
     "job-reaper pid $reaper_pid: already gone (by the owner)" \
+    "landing-batch-owner pid $landing_owner_pid: already gone (by the owner)" \
     "stopped $repo; start again: metasystem arm --repo $repo"
   fence_changed=$(json_field "$repo/artifacts/agents/supervision/transition.json" changedAt)
   fence_by_verb=$(json_field "$repo/artifacts/agents/supervision/transition.json" by.verb)
@@ -2242,7 +2245,8 @@ if [[ "$fixture_scenario" == stop-everything ]]; then
     "steward-runner pid $runner_pid started $runner_start: running" \
     "supervision-owner pid $owner_pid tag $owner_tag generation $owner_generation: running" \
     "repo-watcher pid $watcher_pid: running" \
-    "job-reaper pid $reaper_pid: running"
+    "job-reaper pid $reaper_pid: running" \
+    "landing-batch-owner pid $landing_owner_pid: running"
   "$repo/bin/metasystem" stop --repo "$repo" >"$tmp/stop-everything.stop"
   assert_exact_stdout stop-everything-stop "$tmp/stop-everything.stop" \
     "checkout $repo" \
@@ -2253,6 +2257,7 @@ if [[ "$fixture_scenario" == stop-everything ]]; then
     "supervision-owner pid $owner_pid tag $owner_tag generation $owner_generation: stopped (TERM, exited reason=shutdown)" \
     "repo-watcher pid $watcher_pid: already gone (by the owner)" \
     "job-reaper pid $reaper_pid: already gone (by the owner)" \
+    "landing-batch-owner pid $landing_owner_pid: already gone (by the owner)" \
     "stopped $repo; start again: metasystem arm --repo $repo"
   [[ "$(json_field "$repo/artifacts/agents/jobs/stop-fixture-job.json" status)" == cancelled ]] \
     || { echo "stop-everything left its fake job non-terminal" >&2; exit 1; }
@@ -2295,7 +2300,7 @@ if [[ "$fixture_scenario" == status-is-live ]]; then
   # on; only the verdict text differs between the two pages.
   sed -E 's/: running$//' "$tmp/status-is-live.before" | tail -n +2 >"$tmp/status-is-live.status-identities"
   sed -E 's/: (stopped|already gone|killed).*//' "$tmp/status-is-live.stop" \
-    | sed -n '/^steward-runner /p;/^supervision-owner /p;/^repo-watcher /p;/^job-reaper /p' \
+    | sed -n '/^steward-runner /p;/^supervision-owner /p;/^repo-watcher /p;/^job-reaper /p;/^landing-batch-owner /p' \
     >"$tmp/status-is-live.stop-identities"
   cmp -s "$tmp/status-is-live.status-identities" "$tmp/status-is-live.stop-identities" \
     || { echo "status and stop did not name the same live identities" >&2; exit 1; }
@@ -3159,9 +3164,9 @@ for s45_class in CUSTODY ANNOUNCED UNTRACKED; do
 done
 json_field "$tmp/s45-state.json" components >"$tmp/s45-components.json" \
   || { echo "S4-5: the state carries no components" >&2; exit 1; }
-[[ "$("$ms" json strip --file "$tmp/s45-components.json" --key watcher --key reaper)" == '{}' ]] \
-  || { echo "S4-5: state components beyond watcher and reaper" >&2; cat "$tmp/s45-components.json" >&2; exit 1; }
-for s45_component in watcher reaper; do
+[[ "$("$ms" json strip --file "$tmp/s45-components.json" --key watcher --key reaper --key landing-owner)" == '{}' ]] \
+  || { echo "S4-5: state components beyond watcher, reaper and landing-owner" >&2; cat "$tmp/s45-components.json" >&2; exit 1; }
+for s45_component in watcher reaper landing-owner; do
   for s45_key in pid pidStartedAt instanceTag heartbeat; do
     json_field "$tmp/s45-state.json" "components.$s45_component.$s45_key" >/dev/null \
       || { echo "S4-5: component $s45_component is missing $s45_key" >&2; exit 1; }

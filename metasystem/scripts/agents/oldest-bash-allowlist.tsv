@@ -129,7 +129,6 @@ bare-test	scripts/agents/supervision-fixtures.sh	e5e1a54d9e06cf8639b17b7c4676089
 bare-test	scripts/agents/supervision-fixtures.sh	e941b91ee51ab99eacaf90a103894977a5921f222eb8f068b6ecf0aaf9311afa	[[ "$observed" =~ ^[0-9]+$ && "$observed" -gt "$first" ]]
 bare-test	scripts/agents/supervision-fixtures.sh	e9eaca1d448f58a21a87c03344f6790060224f926e8030d0a7912c5420448b9a	[[ "$decision_surface_stop_hook_assertions" =~ $decision_pattern_regex ]]
 bare-test	scripts/agents/supervision-fixtures.sh	ef5a98ae989018787859aae126ec6eef3f0e455eb3845d554863888d2298b451	[[ "$(census_field "$1" verdict)" == "$2" ]]
-bare-test	scripts/agents/supervision-go-fixtures.sh	8e7a1f9f2543a7cdfe39d7d1e869430739a416495a87b08a224177fb49b2e286	[[ "$("$bin" json strip --file "$tmp/state-components.json" --key watcher --key reaper 2>/dev/null)" == '{}' ]]
 bare-test	scripts/agents/supervision-hook-fixtures.sh	2c29e93dcb91bf54d1a9c9af81602f9885e4395dc1ec851d8c0ece4c9d721941	[[ $($engine json get --value "$ancestor" --field pid) == $$ \\n&& $($engine json get --value "$ancestor" --field runtime) == "$runtime" ]]
 bare-test	scripts/agents/witness-gate-fixtures.sh	0632409191e1bb1bc88a455fbaa0d6c8e0cb1ff275ea67fe18108595d79c76a1	[[ "$wrong_start_pid" == $$ ]]
 bare-test	scripts/agents/witness-gate-fixtures.sh	296e54f9f5a419aa7198dd34d1c7e6b93e1e172c07be013643af5601acf684d5	[[ -n "${METASYSTEM_GATE_WITNESS_EXPORT:-}" && -d "$METASYSTEM_GATE_WITNESS_EXPORT" ]]

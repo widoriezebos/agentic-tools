@@ -458,8 +458,15 @@ func readSupervisionSnapshot(metasystemRoot string) (map[string]identityRecord, 
 	if state.Generation == nil || *state.Generation < 1 {
 		return nil, 0, "", fmt.Errorf("supervision state has an invalid generation")
 	}
-	if len(state.Components) != 2 || state.Components["watcher"].Pid == nil ||
-		state.Components["reaper"].Pid == nil || state.Owner == nil {
+	// The owner launches watcher, reaper and landing-owner. A state written by
+	// an owner from before the landing owner carries only the first two, so the
+	// landing owner is verified when present and no other component is accepted.
+	for name := range state.Components {
+		if !supervisionComponent(name) {
+			return nil, 0, "", fmt.Errorf("supervision state has no complete instance set")
+		}
+	}
+	if state.Components["watcher"].Pid == nil || state.Components["reaper"].Pid == nil || state.Owner == nil {
 		return nil, 0, "", fmt.Errorf("supervision state has no complete instance set")
 	}
 	ids := map[string]identityRecord{}
@@ -473,8 +480,11 @@ func readSupervisionSnapshot(metasystemRoot string) (map[string]identityRecord, 
 	if err := add("owner", state.Owner.Pid, state.Owner.Started, state.Owner.InstanceTag); err != nil {
 		return nil, 0, "", err
 	}
-	for _, name := range []string{"watcher", "reaper"} {
-		c := state.Components[name]
+	for _, name := range supervisionComponentOrder {
+		c, present := state.Components[name]
+		if !present && name == "landing-owner" {
+			continue
+		}
 		if err := add(name, c.Pid, c.Started, c.InstanceTag); err != nil {
 			return nil, 0, "", err
 		}
@@ -483,13 +493,28 @@ func readSupervisionSnapshot(metasystemRoot string) (map[string]identityRecord, 
 	return ids, *state.Generation, hex.EncodeToString(sum[:]), nil
 }
 
-// verifySupervisionSnapshot checks each of owner/watcher/reaper: it must be
+// supervisionComponentOrder is the owner's component set in launch order.
+var supervisionComponentOrder = []string{"watcher", "reaper", "landing-owner"}
+
+func supervisionComponent(name string) bool {
+	for _, known := range supervisionComponentOrder {
+		if name == known {
+			return true
+		}
+	}
+	return false
+}
+
+// verifySupervisionSnapshot checks the owner and each recorded component: it must be
 // alive (by the fixture identity file when set, else the kernel) and its
 // command must carry its tag. A dead identity yields supervision-not-live; a
 // live one whose command lacks the tag yields supervision-tag-mismatch.
 func verifySupervisionSnapshot(ids map[string]identityRecord, probe identity.FixtureProbe, errors *[]string) {
-	for _, name := range []string{"owner", "watcher", "reaper"} {
-		id := ids[name]
+	for _, name := range append([]string{"owner"}, supervisionComponentOrder...) {
+		id, present := ids[name]
+		if !present {
+			continue
+		}
 		if !identityAlive(id.Pid, id.Started, probe) {
 			*errors = append(*errors, fmt.Sprintf("supervision-not-live:%s:pid=%d", name, id.Pid))
 			continue
