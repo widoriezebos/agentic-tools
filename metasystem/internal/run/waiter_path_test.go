@@ -93,7 +93,11 @@ func TestWaitPathAbsentEndsWhenThePathGoesAway(t *testing.T) {
 		path := "/tmp/metasystem-path-permission"
 		clock := newPathWaitClock()
 		statErr := errors.New("permission denied by fixture")
-		stat := func(string) (os.FileInfo, error) { return nil, statErr }
+		observations := 0
+		stat := func(string) (os.FileInfo, error) {
+			observations++
+			return nil, statErr
+		}
 		root := t.TempDir()
 		result := (&Store{Root: root, Prober: waitTestProber{live: true}}).Wait(
 			context.Background(), pathWaitRequest(path, "absent", 2*time.Second), clock.options(stat),
@@ -104,6 +108,9 @@ func TestWaitPathAbsentEndsWhenThePathGoesAway(t *testing.T) {
 		}
 		if rowErr != nil || !strings.Contains(row.LastPollError, statErr.Error()) || row.LastPollAt == "" {
 			t.Fatalf("stat error was not retained: row=%+v err=%v", row, rowErr)
+		}
+		if observations != 3 {
+			t.Fatalf("stat-error observations = %d, want initial, loop, and final observations", observations)
 		}
 	})
 }
@@ -158,7 +165,11 @@ func TestWaitPathPresentEndsWhenTheFileAppears(t *testing.T) {
 func TestWaitPathEndsAtItsDeadline(t *testing.T) {
 	path := "/tmp/metasystem-path-deadline"
 	clock := newPathWaitClock()
-	options := clock.options(func(string) (os.FileInfo, error) { return nil, fs.ErrNotExist })
+	observations := 0
+	options := clock.options(func(string) (os.FileInfo, error) {
+		observations++
+		return nil, fs.ErrNotExist
+	})
 	result := (&Store{Root: t.TempDir(), Prober: waitTestProber{live: true}}).Wait(
 		context.Background(), pathWaitRequest(path, "present", 3*time.Second), options,
 	)
@@ -167,6 +178,70 @@ func TestWaitPathEndsAtItsDeadline(t *testing.T) {
 	}
 	if len(clock.sleeps) != 1 || clock.sleeps[0] != 3*time.Second {
 		t.Fatalf("deadline sleeps = %v", clock.sleeps)
+	}
+	if observations != 3 {
+		t.Fatalf("deadline observations = %d, want initial, loop, and final observations", observations)
+	}
+}
+
+func TestWaitPathSeesAChangeDuringItsFinalSleep(t *testing.T) {
+	modTime := time.Date(2026, 9, 17, 9, 59, 0, 123, time.UTC)
+	for _, until := range []string{"present", "absent"} {
+		t.Run(until, func(t *testing.T) {
+			path := "/tmp/metasystem-path-final-" + until
+			clock := newPathWaitClock()
+			ready := false
+			observations := 0
+			options := clock.options(func(string) (os.FileInfo, error) {
+				observations++
+				if ready == (until == "present") {
+					return fakePathInfo{name: filepath.Base(path), size: 7, mode: 0o600, modTime: modTime}, nil
+				}
+				return nil, fs.ErrNotExist
+			})
+			options.Sleep = func(_ context.Context, duration time.Duration) error {
+				clock.sleeps = append(clock.sleeps, duration)
+				clock.now = clock.now.Add(duration)
+				clock.boot += duration
+				ready = true
+				return nil
+			}
+
+			result := (&Store{Root: t.TempDir(), Prober: waitTestProber{live: true}}).Wait(
+				context.Background(), pathWaitRequest(path, until, 3*time.Second), options,
+			)
+			wantEvidence := path + ":absent"
+			if until == "present" {
+				wantEvidence = path + ":size=7:mtime=" + modTime.Format(time.RFC3339Nano)
+			}
+			if result.ExitCode != ExitGreen || result.SourceOutcome != until || result.SourceEvidence != wantEvidence {
+				t.Fatalf("final observation result = %+v", result)
+			}
+			if observations != 3 || len(clock.sleeps) != 1 || clock.sleeps[0] != 3*time.Second {
+				t.Fatalf("observations=%d sleeps=%v", observations, clock.sleeps)
+			}
+		})
+	}
+}
+
+func TestWaitPathFinalObservationIsOnlyForPathWaits(t *testing.T) {
+	clock := newPathWaitClock()
+	observations := 0
+	options := clock.options(nil)
+	options.Observe = func(context.Context, WaitSelector, WaiterTarget, string) (SourceObservation, error) {
+		observations++
+		return SourceObservation{
+			Pending: true, Incarnation: WaiterTarget{Generation: 1, LaunchNonce: "n"},
+			Outcome: "running", Evidence: "run:r:g1",
+		}, nil
+	}
+	result := (&Store{Root: t.TempDir(), Prober: waitTestProber{live: true}}).Wait(
+		context.Background(),
+		WaitRequest{Selector: WaitSelector{Kind: "run", TargetID: "r"}, Owner: mainCaller, RuntimeSession: "runtime-1", Timeout: 3 * time.Second},
+		options,
+	)
+	if result.ExitCode != ExitWaitDeadline || observations != 2 {
+		t.Fatalf("result=%+v observations=%d, want no observation at the deadline", result, observations)
 	}
 }
 

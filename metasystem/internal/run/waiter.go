@@ -854,6 +854,15 @@ func (s *Store) waitLoop(ctx context.Context, rowPath string, row Waiter, option
 			return s.finishV2(ctx, rowPath, row, options, ExitWaiterIO, "failed", "the wall clock moved before the wait registration time", "clock-drift", "", row.LastCheckedTip, "", iterationStamps)
 		}
 		if !now.Before(deadline) || bootElapsed.Nanoseconds() >= row.BootDeadlineNanos {
+			// Path waits have no hint receiver, so a condition that changes during
+			// the final bounded sleep must be observed before the deadline is final.
+			if row.Selector.Kind == "path" {
+				observation, observeErr := readWaitSource(ctx, row.Selector, row.Target, row.LastCheckedTip, options)
+				observationStamps := observedAfterRead(options, false)
+				if observeErr == nil && !observation.Temporary && !observation.Pending {
+					return s.finishV2(ctx, rowPath, row, options, observation.ExitCode, "ready", observation.Reason, observation.Outcome, observation.Evidence, observation.LedgerTip, observation.TerminalStamp, observationStamps)
+				}
+			}
 			return s.finishV2(ctx, rowPath, row, options, ExitWaitDeadline, "deadline", "this wait reached its deadline", "wait-deadline", "", row.LastCheckedTip, "", iterationStamps)
 		}
 		if options.Actionable != nil {
