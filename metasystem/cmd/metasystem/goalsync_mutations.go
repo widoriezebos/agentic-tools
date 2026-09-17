@@ -20,6 +20,7 @@ import (
 
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/atomicfile"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/brain"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/config"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/counselor"
 	dispatchcore "github.com/widoriezebos/agentic-tools/metasystem/internal/dispatch"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/fixtureauth"
@@ -31,6 +32,83 @@ import (
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/lease"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/supervise"
 )
+
+var goalHandoverProber identity.Prober = identity.KernelProber{}
+
+func goalHandoverTargetLiveness(seatRoot, targetMachine, targetLineage string, targetEpoch int64) (identity.Liveness, error) {
+	now, err := goalCommandNow(seatRoot)
+	if err != nil {
+		return identity.Unknown, err
+	}
+	landing, err := config.ResolveBatchLanding(filepath.Join(seatRoot, "metasystem.conf"), seatRoot, func() time.Time { return now })
+	if err != nil {
+		return identity.Unknown, err
+	}
+	machine, err := goal.ResolveMachine(landing.Root)
+	if err != nil || machine != targetMachine {
+		return identity.Unknown, fmt.Errorf("configured landing checkout is machine %q, not target %q", machine, targetMachine)
+	}
+	holder, err := lease.CurrentHolder(landing.Root)
+	if err != nil {
+		return identity.Unknown, err
+	}
+	if holder.OwnerLineage != targetLineage || holder.ClaimEpoch != targetEpoch {
+		return identity.Unknown, fmt.Errorf("landing holder is %s at epoch %d, not %s at epoch %d", holder.OwnerLineage, holder.ClaimEpoch, targetLineage, targetEpoch)
+	}
+	for _, announcement := range lease.AnnouncementsFor(landing.Root, holder.Pid) {
+		lineage := announcement.OwnerLineage
+		if lineage == "" {
+			lineage = announcement.MainId
+		}
+		if announcement.MainId == holder.MainId && lineage == targetLineage {
+			ref := identity.Ref{Pid: announcement.Pid, StartedAtSec: announcement.PidStartedAt,
+				StartTicks: announcement.PidStartTicks, BootID: announcement.BootID}
+			return identity.AliveRef(goalHandoverProber, ref), nil
+		}
+	}
+	return identity.Unknown, nil
+}
+
+func runGoalHandoverMutation(args []string) int {
+	if !batchCapabilitiesAvailable() {
+		return runBatchVerbSkeleton(nil)
+	}
+	flags := flag.NewFlagSet("goal handover", flag.ContinueOnError)
+	root := pathFlag(flags, "root", ".", "seat checkout root")
+	id := flags.String("id", "", "goal id")
+	lineage := flags.String("lineage", "", "current holder lineage")
+	targetMachine := flags.String("target-machine", "", "target machine")
+	targetLineage := flags.String("target-lineage", "", "target lineage")
+	targetEpoch := flags.Int64("target-claim-epoch", 0, "target claim epoch")
+	batch := flags.String("batch", "", "landing batch id")
+	if flags.Parse(args) != nil {
+		return 2
+	}
+	if *id == "" || *targetMachine == "" || *targetLineage == "" || *targetEpoch < 1 || *batch == "" {
+		fmt.Fprintln(os.Stderr, "goal handover needs --id, --target-machine, --target-lineage, --target-claim-epoch, and --batch")
+		return 2
+	}
+	if !converted(*root) {
+		fmt.Fprintln(os.Stderr, "goal handover works the synced backlog; this checkout still carries the legacy ledger")
+		return 1
+	}
+	req, err := syncReq("handover", *root, "", *lineage)
+	if err != nil {
+		fmt.Fprintln(os.Stderr, err)
+		return 1
+	}
+	liveness := func() (identity.Liveness, error) {
+		if req.Actor.Machine == *targetMachine && req.Actor.Lineage == *targetLineage {
+			if req.ClaimEpoch != *targetEpoch || req.ClaimEpoch < 1 {
+				return identity.Unknown, fmt.Errorf("the current target pair is not authenticated at epoch %d", *targetEpoch)
+			}
+			return identity.Alive, nil
+		}
+		return goalHandoverTargetLiveness(*root, *targetMachine, *targetLineage, *targetEpoch)
+	}
+	res, err := goal.Handover(req, *id, *targetMachine, *targetLineage, *targetEpoch, *batch, liveness)
+	return printSyncResult(res, err)
+}
 
 func printCarryMutation(res goal.PublishResult, detail string, err error) int {
 	if err != nil {

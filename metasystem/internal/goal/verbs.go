@@ -27,6 +27,7 @@ import (
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/fixtureauth"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/governance"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/humanauthority"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/identity"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/proofrun"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/readsubject"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/refusal"
@@ -937,6 +938,67 @@ func Claim(r VerbRequest, id string, budgets ...Budget) (PublishResult, error) {
 		return PublishResult{}, fmt.Errorf("the budget and any norm approval were bound by the human's approval; goal claim carries no tuple or --approved-ref")
 	}
 	return Publish(r.Endpoint, claimRequest(r, id, nil))
+}
+
+// Handover transfers one claim from its current holder to one authenticated
+// live target without starting a new claim or budget episode.
+func Handover(r VerbRequest, id, targetMachine, targetLineage string, targetClaimEpoch int64, batch string, targetLiveness func() (identity.Liveness, error)) (PublishResult, error) {
+	if r.Actor.Human != "" {
+		return PublishResult{}, fmt.Errorf("handover is agent-only; moving another holder's claim remains a human steal")
+	}
+	if err := ValidateMachineNickname(targetMachine); err != nil || strings.TrimSpace(targetLineage) == "" || targetClaimEpoch < 1 || strings.TrimSpace(batch) == "" || targetLiveness == nil {
+		return PublishResult{}, fmt.Errorf("handover requires a target machine, lineage, positive claim epoch, batch, and liveness verifier")
+	}
+	args := map[string]string{"targetMachine": targetMachine, "targetLineage": targetLineage,
+		"targetClaimEpoch": strconv.FormatInt(targetClaimEpoch, 10), "batch": batch}
+	return Publish(r.Endpoint, PublishRequest{
+		Opid: r.opid(), Machine: r.Actor.Machine, Lineage: r.Actor.Lineage,
+		Intent: Intent{Verb: "handover", Targets: []string{id}, Args: claimIntentArgs(r, args)}, Message: "goal handover " + id,
+		Mutate: func(tip string) ([]Change, error) {
+			t, err := loadTree(r.Endpoint.Root, tip)
+			if err != nil {
+				return nil, err
+			}
+			f := t.Live[id]
+			if f == nil {
+				return nil, fmt.Errorf("goal %s is not live; nothing to hand over", id)
+			}
+			if opidLanded(f, r) {
+				return nil, AlreadyApplied{}
+			}
+			if f.State != StateClaimed || f.Claimed == nil || f.StopCapability == nil {
+				return nil, fmt.Errorf("goal %s has no complete claimed authority to hand over", id)
+			}
+			if !ownPair(f.Claimed, r.Actor) {
+				return nil, fmt.Errorf("goal %s is claimed by %s+%s; a foreign release is a human act (steal has its own verb)", id, f.Claimed.Machine, f.Claimed.Lineage)
+			}
+			currentEpoch := f.StopCapability.ClaimEpoch
+			samePair := f.Claimed.Machine == targetMachine && f.Claimed.Lineage == targetLineage
+			if samePair {
+				if r.ClaimEpoch != targetClaimEpoch || targetClaimEpoch <= currentEpoch {
+					return nil, fmt.Errorf("goal %s same-pair handover is an epoch rebind: authenticated target epoch %d must be higher than current epoch %d", id, targetClaimEpoch, currentEpoch)
+				}
+			} else if r.ClaimEpoch != currentEpoch {
+				return nil, fmt.Errorf("goal %s handover caller epoch %d does not match the current holder epoch %d", id, r.ClaimEpoch, currentEpoch)
+			}
+			liveness, livenessErr := targetLiveness()
+			if livenessErr != nil || liveness != identity.Alive {
+				return nil, fmt.Errorf("goal %s handover target %s+%s has %s liveness; a live announced target is required", id, targetMachine, targetLineage, liveness)
+			}
+			claim, capability := *f.Claimed, *f.StopCapability
+			touch(f, r, "handover", []string{id})
+			claim.Machine, claim.Lineage = targetMachine, targetLineage
+			if !samePair {
+				claim.HandedOver = HandedOver{FromMachine: r.Actor.Machine, FromLineage: r.Actor.Lineage, FromEpoch: uint64(currentEpoch), Batch: batch}
+			}
+			f.Claimed = &claim
+			f.Episode, f.Parked, f.Abandoned = nil, nil, nil
+			f.StopCapability = &StopCapability{Generation: capability.Generation, Revision: claim.Revision,
+				Machine: targetMachine, ClaimEpoch: targetClaimEpoch, FenceEpoch: capability.FenceEpoch}
+			return ackDisplacements(t, r, []Change{{Path: livePath(id), Content: RenderFile(f)}}), nil
+		},
+		Validate: func(commit string) error { return ValidateCommit(r.Endpoint.Root, commit) },
+	})
 }
 
 // claimRequest builds the verb's complete transaction request — the

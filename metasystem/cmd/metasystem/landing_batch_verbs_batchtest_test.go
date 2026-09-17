@@ -12,7 +12,6 @@ func TestBatchCapabilitiesGate(t *testing.T) {
 		{"landing", "batch", "join"}, {"landing", "batch", "status"},
 		{"landing", "batch", "withdraw"}, {"landing", "batch", "owner"},
 		{"landing", "batch", "tick"}, {"landing", "batch", "wait"},
-		{"goal", "handover"},
 	}
 	for _, command := range commands {
 		if code := dispatch(command); code != 0 {
@@ -30,5 +29,17 @@ func TestBatchCapabilitiesGate(t *testing.T) {
 				t.Fatalf("missing %s = code %d, stderr %q", capability, code, stderr)
 			}
 		})
+	}
+}
+
+func TestGoalHandoverRequiresCompleteInputs(t *testing.T) {
+	stderr, code := captureStderr(t, func() int { return dispatch([]string{"goal", "handover"}) })
+	if code != 2 || !strings.Contains(stderr, "goal handover needs") {
+		t.Fatalf("empty handover = code %d, stderr %q", code, stderr)
+	}
+}
+func TestGoalHandoverTargetAuthenticationFailsClosed(t *testing.T) {
+	if state, _ := goalHandoverTargetLiveness(t.TempDir(), "landing", "lineage", 1); state.String() != "unknown" {
+		t.Fatalf("unconfigured target liveness = %s, want unknown", state)
 	}
 }

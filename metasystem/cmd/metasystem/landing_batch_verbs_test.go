@@ -35,7 +35,7 @@ func TestBatchVerbsUnavailableWithoutFilesystemWrites(t *testing.T) {
 
 func TestBatchTaggedCapabilityWitnessExecutesInProof(t *testing.T) {
 	command := exec.Command("go", "test", "-count=1", "-tags", "batchtest",
-		"-run", "^TestBatchCapabilitiesGate$", "./cmd/metasystem")
+		"-run", "^(TestBatchCapabilitiesGate|TestGoalHandoverRequiresCompleteInputs|TestGoalHandoverTargetAuthenticationFailsClosed)$", "./cmd/metasystem")
 	command.Dir = "../.."
 	if output, err := command.CombinedOutput(); err != nil {
 		t.Fatalf("tagged batch capability witness: %v\n%s", err, output)

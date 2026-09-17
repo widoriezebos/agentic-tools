@@ -24,7 +24,7 @@ func runLandingBatch(args []string) int {
 	return run(args[1:])
 }
 
-func runGoalHandover(args []string) int { return runBatchVerbSkeleton(args) }
+func runGoalHandover(args []string) int { return runGoalHandoverMutation(args) }
 
 func runBatchVerbSkeleton(_ []string) int {
 	if !batchCapabilitiesAvailable() {
