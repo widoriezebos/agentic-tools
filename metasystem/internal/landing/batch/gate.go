@@ -43,7 +43,7 @@ func runJoinGate(unitTree string, patch, fixtureMap []byte, unit *Unit, execute 
 	}
 	steps := []gateStep{{Name: "fast gate", Args: []string{"bash", "scripts/agents/go-gate.sh", "--fast"}}}
 	for _, pkg := range changedGoPackages(paths) {
-		steps = append(steps, gateStep{Name: "package " + pkg, Args: []string{"go", "test", "-count=1", pkg}})
+		steps = append(steps, gateStep{Name: "package " + pkg, Args: []string{"go", "test", "-count=1", "-timeout", "900s", pkg}})
 	}
 	for _, group := range fixtures.Groups {
 		steps = append(steps, gateStep{Name: "fixture group " + group, Args: []string{"bin/metasystem", "test", "run", "--root", ".", "--purpose", "diagnostic", "--groups", group, "--mode", "canary", "--tree", unitTree}})

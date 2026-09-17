@@ -36,6 +36,8 @@ type Record struct {
 	State   string         `json:"state"`
 	Units   []Unit         `json:"units"`
 	History []HistoryEntry `json:"history"`
+
+	batchRecordFields
 }
 
 func (record *Record) Transition(to string, at time.Time, verb, actor, detail string) {
