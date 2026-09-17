@@ -35,12 +35,13 @@ type HistoryEntry struct {
 	Detail string `json:"detail,omitempty"`
 }
 type Record struct {
-	Schema  int            `json:"schema"`
-	BatchID string         `json:"batchId"`
-	TipTree string         `json:"tipTree"`
-	State   string         `json:"state"`
-	Units   []Unit         `json:"units"`
-	History []HistoryEntry `json:"history"`
+	Schema   int            `json:"schema"`
+	BatchID  string         `json:"batchId"`
+	TipTree  string         `json:"tipTree"`
+	State    string         `json:"state"`
+	Units    []Unit         `json:"units"`
+	History  []HistoryEntry `json:"history"`
+	TrunkRed *TrunkRedHold  `json:"trunkRed,omitempty"`
 
 	batchRecordFields
 }
