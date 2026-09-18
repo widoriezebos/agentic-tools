@@ -300,7 +300,10 @@ func prepareTestingOnce(request testingSelectionRequest) (testingPreparation, er
 	// behind the landing ref by landed commits only, the run fetches,
 	// fast-forwards, rebuilds and re-arms before it judges anything.
 	var engineRearm *proofrun.EngineRearm
-	if request.LandedRearm {
+	_, policyBaseBeforeRearmErr := trustedTestingPolicyBase(projectRoot, workspace)
+	// A non-delivery plan remains informative without a configured destination;
+	// delivery still enters re-arm so missing landing authority is a refusal.
+	if request.LandedRearm && (request.Purpose == testpolicy.PurposeDelivery || policyBaseBeforeRearmErr == nil) {
 		namedDeliveryTree := request.Tree != "" && request.Purpose == testpolicy.PurposeDelivery
 		rearm, rearmErr := landedRearm(installation, projectRoot, prefix, namedDeliveryTree)
 		if rearmErr != nil {
