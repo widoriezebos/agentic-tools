@@ -84,9 +84,9 @@ type HookExpireConflictError struct {
 	Outcome string
 }
 
-// HookDeliveryReference is the immutable report retained before a Stop
-// payload was emitted. Completion re-reads it instead of trusting arbitrary
-// bytes in the provider envelope.
+// HookDeliveryReference carries optional legacy command fields that are
+// cross-checked against the report reference resolved from the Stop response
+// record.
 type HookDeliveryReference struct {
 	Installation string
 	ID           string
@@ -417,9 +417,9 @@ func CompleteHookAttempt(repoRoot string, generation int, attemptSeq int64, resu
 	return completeHookAttempt(repoRoot, generation, attemptSeq, result, outcome, healthLine, payload, nil, stopElapsedSec, now)
 }
 
-// CompleteHookAttemptWithDelivery verifies the exact report named by the
-// payload before recording OK/EMITTED. Failure evidence remains recordable
-// without a report reference.
+// CompleteHookAttemptWithDelivery resolves the exact report from the Stop
+// response record and compares any supplied legacy reference fields before
+// recording OK/EMITTED. Failure evidence remains recordable without a report.
 func CompleteHookAttemptWithDelivery(repoRoot string, generation int, attemptSeq int64, result ComponentResult, outcome, healthLine, payload string, delivery HookDeliveryReference, stopElapsedSec *int64, now time.Time) (ComponentEvidence, error) {
 	return completeHookAttempt(repoRoot, generation, attemptSeq, result, outcome, healthLine, payload, &delivery, stopElapsedSec, now)
 }
