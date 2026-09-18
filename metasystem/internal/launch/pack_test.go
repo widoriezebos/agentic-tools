@@ -126,6 +126,7 @@ func TestPackCheckAdmitsAFilledBrief(t *testing.T) {
 }
 
 func TestPackCheckChecksEveryShippedTemplatePlaceholder(t *testing.T) {
+	t.Parallel()
 	pattern := regexp.MustCompile(`<[^<>]+>`)
 	directory := filepath.Join("..", "..", "scripts", "agents", "templates")
 	for _, row := range []struct {

@@ -401,6 +401,7 @@ func TestCorrectUsageFields(t *testing.T) {
 }
 
 func TestCorrectKeepsTokenUsageCompleteWithoutTighteningOldRows(t *testing.T) {
+	t.Parallel()
 	opts := baseOptions(t)
 	opts.Type, opts.Outcome = "design", "shipped"
 	opts.DesignTokens, opts.DesignCalls = "2432374", "7"

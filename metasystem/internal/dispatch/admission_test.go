@@ -138,6 +138,7 @@ func TestEveryBudgetRefusalNamesObservedAndOpenCaps(t *testing.T) {
 }
 
 func TestProofAdmissionEvaluatesAuthorityAndCandidateLenses(t *testing.T) {
+	t.Parallel()
 	now := time.Date(2026, 8, 28, 10, 0, 0, 0, time.UTC)
 	candidate := func() *goal.GoalFile {
 		budget := &goal.Budget{ElapsedLimit: "4h", AttemptLimit: 1, ReservedJobMinutesLimit: 100, ActiveJobLimit: 1, ReviewRoundLimit: 1}

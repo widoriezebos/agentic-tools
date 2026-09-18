@@ -618,6 +618,7 @@ func proofProcessCompletionFacts(state identity.Liveness, log, completion, requi
 }
 
 func TestProofProcessWaitNeedsCompletionRequiredRowAndExit(t *testing.T) {
+	t.Parallel()
 	completion := "fixture-custodian owner=exact action=complete\n"
 	required := "fixture-custodian action=kill pid=42 carrier=record"
 	t.Run("all facts converge", func(t *testing.T) {

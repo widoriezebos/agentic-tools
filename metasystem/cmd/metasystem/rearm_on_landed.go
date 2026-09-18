@@ -149,6 +149,16 @@ func landingRefParts(ctx context.Context, clock steward.RearmClock, seconds int,
 // background maintenance under a rebuild.
 var landedRearmGitPins = []string{"-c", "core.useReplaceRefs=false", "-c", "core.hooksPath=/dev/null", "-c", "gc.auto=0", "-c", "maintenance.auto=false"}
 
+type landedRearmGitCommandFactory func(context.Context, ...string) *exec.Cmd
+type landedRearmGitCommandContextKey struct{}
+
+func landedRearmGitCommand(ctx context.Context, args ...string) *exec.Cmd {
+	if factory, ok := ctx.Value(landedRearmGitCommandContextKey{}).(landedRearmGitCommandFactory); ok {
+		return factory(ctx, args...)
+	}
+	return exec.CommandContext(ctx, "git", args...)
+}
+
 func landedRearmGitStep(ctx context.Context, clock steward.RearmClock, seconds int, step, dir string, args ...string) (string, error) {
 	output, err := landedRearmGitOutputStep(ctx, clock, seconds, step, dir, args...)
 	return strings.TrimSpace(output), err
@@ -157,8 +167,10 @@ func landedRearmGitStep(ctx context.Context, clock steward.RearmClock, seconds i
 func landedRearmGitOutputStep(ctx context.Context, clock steward.RearmClock, seconds int, step, dir string, args ...string) (string, error) {
 	var stdout, stderr bytes.Buffer
 	err := steward.RunRearmStep(ctx, clock, time.Duration(seconds)*time.Second, step, func(stepContext context.Context, progress func()) error {
-		command := exec.CommandContext(stepContext, "git", append(append([]string{"-C", dir}, landedRearmGitPins...), args...)...)
-		command.Env = gittree.ScrubbedEnviron()
+		command := landedRearmGitCommand(stepContext, append(append([]string{"-C", dir}, landedRearmGitPins...), args...)...)
+		if command.Env == nil {
+			command.Env = gittree.ScrubbedEnviron()
+		}
 		command.Stdout = steward.RearmProgressWriter(&stdout, progress)
 		command.Stderr = steward.RearmProgressWriter(&stderr, progress)
 		return command.Run()

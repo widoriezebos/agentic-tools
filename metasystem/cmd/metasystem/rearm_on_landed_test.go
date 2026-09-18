@@ -13,6 +13,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/gittree"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/steward"
 )
 
@@ -80,11 +81,11 @@ func landedGit(t *testing.T, dir string, args ...string) string {
 	return strings.TrimSpace(string(out))
 }
 
-func failLandedGitSubcommand(t *testing.T, subcommand string) {
-	failLandedGitSubcommandWithStatus(t, subcommand, 128)
+func failLandedGitSubcommand(t *testing.T, ctx context.Context, subcommand string) context.Context {
+	return failLandedGitSubcommandWithStatus(t, ctx, subcommand, 128)
 }
 
-func failLandedGitSubcommandWithStatus(t *testing.T, subcommand string, status int) {
+func failLandedGitSubcommandWithStatus(t *testing.T, ctx context.Context, subcommand string, status int) context.Context {
 	t.Helper()
 	realGit, err := exec.LookPath("git")
 	if err != nil {
@@ -105,13 +106,18 @@ exec "${LANDED_REARM_REAL_GIT:?}" "$@"
 	if err := os.WriteFile(wrapper, []byte(script), 0o755); err != nil {
 		t.Fatal(err)
 	}
-	t.Setenv("LANDED_REARM_REAL_GIT", realGit)
-	t.Setenv("LANDED_REARM_FAIL_GIT_SUBCOMMAND", subcommand)
-	t.Setenv("LANDED_REARM_FAIL_GIT_STATUS", fmt.Sprint(status))
-	t.Setenv("PATH", dir+string(os.PathListSeparator)+os.Getenv("PATH"))
+	factory := landedRearmGitCommandFactory(func(commandContext context.Context, args ...string) *exec.Cmd {
+		command := exec.CommandContext(commandContext, wrapper, args...)
+		command.Env = append(gittree.ScrubbedEnviron(),
+			"LANDED_REARM_REAL_GIT="+realGit,
+			"LANDED_REARM_FAIL_GIT_SUBCOMMAND="+subcommand,
+			"LANDED_REARM_FAIL_GIT_STATUS="+fmt.Sprint(status))
+		return command
+	})
+	return context.WithValue(ctx, landedRearmGitCommandContextKey{}, factory)
 }
 
-func stallLandedGitSubcommandOnce(t *testing.T, subcommand string) string {
+func stallLandedGitSubcommandOnce(t *testing.T, ctx context.Context, subcommand string) (context.Context, string) {
 	t.Helper()
 	realGit, err := exec.LookPath("git")
 	if err != nil {
@@ -142,13 +148,17 @@ exec "${LANDED_REARM_REAL_GIT:?}" "$@"
 	if err := os.WriteFile(wrapper, []byte(script), 0o755); err != nil {
 		t.Fatal(err)
 	}
-	t.Setenv("LANDED_REARM_REAL_GIT", realGit)
-	t.Setenv("LANDED_REARM_STALL_GIT_SUBCOMMAND", subcommand)
-	t.Setenv("LANDED_REARM_GIT_STALLED_ONCE", marker)
-	t.Setenv("LANDED_REARM_GIT_STARTED_FIFO", started)
-	t.Setenv("LANDED_REARM_GIT_RELEASE_FIFO", release)
-	t.Setenv("PATH", dir+string(os.PathListSeparator)+os.Getenv("PATH"))
-	return started
+	factory := landedRearmGitCommandFactory(func(commandContext context.Context, args ...string) *exec.Cmd {
+		command := exec.CommandContext(commandContext, wrapper, args...)
+		command.Env = append(gittree.ScrubbedEnviron(),
+			"LANDED_REARM_REAL_GIT="+realGit,
+			"LANDED_REARM_STALL_GIT_SUBCOMMAND="+subcommand,
+			"LANDED_REARM_GIT_STALLED_ONCE="+marker,
+			"LANDED_REARM_GIT_STARTED_FIFO="+started,
+			"LANDED_REARM_GIT_RELEASE_FIFO="+release)
+		return command
+	})
+	return context.WithValue(ctx, landedRearmGitCommandContextKey{}, factory), started
 }
 
 // newLandedRearmFixture is a checkout with its installation under
@@ -288,8 +298,8 @@ func TestLandedRearmFactsFailOnARepositoryFailureInsteadOfJudgingHeadUnlanded(t 
 		t.Fatalf("exit status 1 did not remain a false fact without an error: facts=%+v err=%v", facts, err)
 	}
 
-	failLandedGitSubcommand(t, "merge-base")
-	_, failureErr := readLandedRearmFactsForTest(context.Background(), fixture.installation, fixture.projectRoot, "metasystem", head, notOwned)
+	ctx := failLandedGitSubcommand(t, context.Background(), "merge-base")
+	_, failureErr := readLandedRearmFactsForTest(ctx, fixture.installation, fixture.projectRoot, "metasystem", head, notOwned)
 	if failureErr == nil || !strings.Contains(failureErr.Error(), "git merge-base --is-ancestor") ||
 		!strings.Contains(failureErr.Error(), "fatal: not a git repository (or any of the parent directories)") ||
 		errors.Is(failureErr, steward.ErrNotOwned) || errors.Is(failureErr, steward.ErrJudgmentStalled) {
@@ -298,6 +308,7 @@ func TestLandedRearmFactsFailOnARepositoryFailureInsteadOfJudgingHeadUnlanded(t 
 }
 
 func TestLandedRearmRefusesARepositoryFailureReadingTheLandingRefWithGitDetail(t *testing.T) {
+	t.Parallel()
 	t.Run("negative and malformed values keep the shape message", func(t *testing.T) {
 		fixture := newLandedRearmFixture(t)
 		want := "trusted testing policy base requires local metasystem.steward.landing-ref shaped refs/remotes/<remote>/<branch>"
@@ -316,8 +327,8 @@ func TestLandedRearmRefusesARepositoryFailureReadingTheLandingRefWithGitDetail(t
 	t.Run("repository failure", func(t *testing.T) {
 		fixture := newLandedRearmFixture(t)
 		head := landedGit(t, fixture.projectRoot, "rev-parse", "HEAD")
-		failLandedGitSubcommand(t, "config")
-		_, err := readLandedRearmFactsForTest(context.Background(), fixture.installation, fixture.projectRoot, "metasystem", head, func(string) bool { return false })
+		ctx := failLandedGitSubcommand(t, context.Background(), "config")
+		_, err := readLandedRearmFactsForTest(ctx, fixture.installation, fixture.projectRoot, "metasystem", head, func(string) bool { return false })
 		refusal := judgmentRefusal(err, engineCheckoutFacts(fixture.projectRoot), "judging the enrolled engine against the landed tip failed")
 		if err == nil || !strings.Contains(refusal.Error(), "cause=judgment-failed") || !strings.Contains(refusal.Error(), "git config") ||
 			!strings.Contains(refusal.Error(), "fatal: not a git repository (or any of the parent directories)") ||
@@ -329,11 +340,11 @@ func TestLandedRearmRefusesARepositoryFailureReadingTheLandingRefWithGitDetail(t
 	t.Run("stall", func(t *testing.T) {
 		fixture := newLandedRearmFixture(t)
 		head := landedGit(t, fixture.projectRoot, "rev-parse", "HEAD")
-		started := stallLandedGitSubcommandOnce(t, "config")
+		ctx, started := stallLandedGitSubcommandOnce(t, context.Background(), "config")
 		clock := newScheduledRearmClock()
 		result := make(chan error, 1)
 		go func() {
-			_, err := readLandedRearmFacts(context.Background(), clock, 20, fixture.installation, fixture.projectRoot, "metasystem", head, func(string) (bool, error) { return false, nil })
+			_, err := readLandedRearmFacts(ctx, clock, 20, fixture.installation, fixture.projectRoot, "metasystem", head, func(string) (bool, error) { return false, nil })
 			result <- err
 		}()
 		if _, err := os.ReadFile(started); err != nil {
@@ -351,11 +362,12 @@ func TestLandedRearmRefusesARepositoryFailureReadingTheLandingRefWithGitDetail(t
 }
 
 func TestLandedRearmRefusesARepositoryFailureResolvingCheckoutHeadWithGitDetail(t *testing.T) {
+	t.Parallel()
 	t.Run("negative answer keeps the no-HEAD message", func(t *testing.T) {
 		fixture := newLandedRearmFixture(t)
 		head := landedGit(t, fixture.projectRoot, "rev-parse", "HEAD")
-		failLandedGitSubcommandWithStatus(t, "HEAD^{commit}", 1)
-		_, err := readLandedRearmFactsForTest(context.Background(), fixture.installation, fixture.projectRoot, "metasystem", head, func(string) bool { return false })
+		ctx := failLandedGitSubcommandWithStatus(t, context.Background(), "HEAD^{commit}", 1)
+		_, err := readLandedRearmFactsForTest(ctx, fixture.installation, fixture.projectRoot, "metasystem", head, func(string) bool { return false })
 		if err == nil || err.Error() != "testing requires a committed project HEAD" {
 			t.Fatalf("checkout-HEAD negative answer changed its no-HEAD result: %v", err)
 		}
@@ -364,8 +376,8 @@ func TestLandedRearmRefusesARepositoryFailureResolvingCheckoutHeadWithGitDetail(
 	t.Run("repository failure", func(t *testing.T) {
 		fixture := newLandedRearmFixture(t)
 		head := landedGit(t, fixture.projectRoot, "rev-parse", "HEAD")
-		failLandedGitSubcommand(t, "HEAD^{commit}")
-		_, err := readLandedRearmFactsForTest(context.Background(), fixture.installation, fixture.projectRoot, "metasystem", head, func(string) bool { return false })
+		ctx := failLandedGitSubcommand(t, context.Background(), "HEAD^{commit}")
+		_, err := readLandedRearmFactsForTest(ctx, fixture.installation, fixture.projectRoot, "metasystem", head, func(string) bool { return false })
 		refusal := judgmentRefusal(err, engineCheckoutFacts(fixture.projectRoot), "judging the enrolled engine against the landed tip failed")
 		if err == nil || !strings.Contains(refusal.Error(), "cause=judgment-failed") || !strings.Contains(refusal.Error(), "resolve-checkout-head") ||
 			!strings.Contains(refusal.Error(), "git rev-parse --verify HEAD^{commit}") ||
@@ -378,11 +390,11 @@ func TestLandedRearmRefusesARepositoryFailureResolvingCheckoutHeadWithGitDetail(
 	t.Run("stall", func(t *testing.T) {
 		fixture := newLandedRearmFixture(t)
 		head := landedGit(t, fixture.projectRoot, "rev-parse", "HEAD")
-		started := stallLandedGitSubcommandOnce(t, "HEAD^{commit}")
+		ctx, started := stallLandedGitSubcommandOnce(t, context.Background(), "HEAD^{commit}")
 		clock := newScheduledRearmClock()
 		result := make(chan error, 1)
 		go func() {
-			_, err := readLandedRearmFacts(context.Background(), clock, 20, fixture.installation, fixture.projectRoot, "metasystem", head, func(string) (bool, error) { return false, nil })
+			_, err := readLandedRearmFacts(ctx, clock, 20, fixture.installation, fixture.projectRoot, "metasystem", head, func(string) (bool, error) { return false, nil })
 			result <- err
 		}()
 		if _, err := os.ReadFile(started); err != nil {

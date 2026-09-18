@@ -278,6 +278,7 @@ func TestLandFixtureConfigurationsPinProofAdmission(t *testing.T) {
 }
 
 func TestLandFixtureScenarioRegistryMatchesCount(t *testing.T) {
+	t.Parallel()
 	data, err := os.ReadFile(filepath.Join("..", "..", "scripts", "agents", "land-fixtures.sh"))
 	if err != nil {
 		t.Fatal(err)

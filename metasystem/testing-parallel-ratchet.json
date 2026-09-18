@@ -32,7 +32,7 @@
     "github.com/widoriezebos/agentic-tools/metasystem/internal/fixtureauth": 4,
     "github.com/widoriezebos/agentic-tools/metasystem/internal/gaterun": 42,
     "github.com/widoriezebos/agentic-tools/metasystem/internal/gittree": 63,
-    "github.com/widoriezebos/agentic-tools/metasystem/internal/goal": 589,
+    "github.com/widoriezebos/agentic-tools/metasystem/internal/goal": 0,
     "github.com/widoriezebos/agentic-tools/metasystem/internal/goal/branch": 76,
     "github.com/widoriezebos/agentic-tools/metasystem/internal/goalbudget": 7,
     "github.com/widoriezebos/agentic-tools/metasystem/internal/goalrevision": 4,
@@ -91,5 +91,12 @@
     "github.com/widoriezebos/agentic-tools/metasystem/internal/wiredoc": 7
   },
   "exempt": [
+    {"package":"github.com/widoriezebos/agentic-tools/metasystem/cmd/metasystem","test":"TestBatchOwnerLoopStopJoinsCadenceTick","reason":"swaps process-wide batchOwnerRequire, batchOwnerResume, and cadence seams"},
+    {"package":"github.com/widoriezebos/agentic-tools/metasystem/cmd/metasystem","test":"TestCandidateGoalTransitionUnderLockIsBeforeOrAfter","reason":"swaps process-wide proofAdmissionUnderLocks, proofAdmissionBeforePublish, and proofAdmissionAfterPublish seams"},
+    {"package":"github.com/widoriezebos/agentic-tools/metasystem/cmd/metasystem","test":"TestProofAdmissionLocksReciprocalGoalsInSortedOrder","reason":"swaps the process-wide proofAdmissionLockOrder seam"},
+    {"package":"github.com/widoriezebos/agentic-tools/metasystem/cmd/metasystem","test":"TestProofAdmissionAcquireWaitZeroNamesBothGoalsAndBusyPath","reason":"swaps the process-wide goalrevision.AcquireWait seam"},
+    {"package":"github.com/widoriezebos/agentic-tools/metasystem/cmd/metasystem","test":"TestLandingOwnerComponentReleaseJoinsCadenceTick","reason":"swaps process-wide batch-owner cadence seams"},
+    {"package":"github.com/widoriezebos/agentic-tools/metasystem/cmd/metasystem","test":"TestLandingOwnerComponentReleaseLeavesNoCadenceChild","reason":"swaps process-wide batch-owner cadence seams"},
+    {"package":"github.com/widoriezebos/agentic-tools/metasystem/internal/landing/batch","test":"TestReassembleSurvivorsAdoptsPublishedEquivalentTreeAfterStoreLoss","reason":"sets process-wide GIT_AUTHOR_DATE and GIT_COMMITTER_DATE to force distinct equivalent commits"}
   ]
 }

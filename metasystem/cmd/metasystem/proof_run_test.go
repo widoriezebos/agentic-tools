@@ -48,10 +48,9 @@ func candidateProofLaunchAdmission(request proofLaunchAdmission) proofLaunchAdmi
 	if request.CommandClass == "testing" && request.CandidateTree == "" {
 		request.CandidateTree = strings.Repeat("b", 40)
 	}
-	if proofAdmissionBeforePublish == nil {
-		proofAdmissionBeforePublish = func(reservation *proofrun.AdmissionRequest) {
+	if request.BeforePublish == nil {
+		request.BeforePublish = func(reservation *proofrun.AdmissionRequest) {
 			*reservation = proofrun.WithTestHostLoadSampler(*reservation, "0")
-			proofAdmissionBeforePublish = nil
 		}
 	}
 	return request
@@ -59,14 +58,13 @@ func candidateProofLaunchAdmission(request proofLaunchAdmission) proofLaunchAdmi
 
 func admitCandidateProofLaunch(t *testing.T, request proofLaunchAdmission) (proofrun.Attempt, proofrun.LaunchResult, bool, error) {
 	t.Helper()
-	previous := proofAdmissionBeforePublish
-	proofAdmissionBeforePublish = func(reservation *proofrun.AdmissionRequest) {
+	previous := request.BeforePublish
+	request.BeforePublish = func(reservation *proofrun.AdmissionRequest) {
 		if previous != nil {
 			previous(reservation)
 		}
 		*reservation = proofrun.WithTestHostLoadSampler(*reservation, "0")
 	}
-	defer func() { proofAdmissionBeforePublish = previous }()
 	return admitProofLaunch(candidateProofLaunchAdmission(request))
 }
 
@@ -454,6 +452,7 @@ func TestCandidateCannotUseAuthorityEarnedExtension(t *testing.T) {
 }
 
 func TestOneLiveChargedAttemptCountsForBothLenses(t *testing.T) {
+	t.Parallel()
 	root, now := proofExtensionGoalFixture(t)
 	amendSyncedGoalFixture(t, root, "bound authority concurrency", func(file *goal.GoalFile) {
 		file.Budget.AttemptLimit = 6
@@ -469,17 +468,18 @@ func TestOneLiveChargedAttemptCountsForBothLenses(t *testing.T) {
 	other := addProofCandidateGoal(t, root, "candidate-other", "", &goal.RiskRecord{
 		Severity: 1, Novelty: 1, Exposure: 1, Accumulation: 1, Basis: "Authority concurrency witness."})
 	announceProofFixtureHolder(t, root)
-	t.Setenv("METASYSTEM_GOAL_NOW", now.Format(time.RFC3339))
+	beforePublish := false
 	launch := func(goalID, tree string) (proofrun.Attempt, error) {
 		attempt, _, _, err := admitCandidateProofLaunch(t, proofLaunchAdmission{
 			ControlRoot: root, ExecutionRoot: root, ConfPath: filepath.Join(root, "metasystem.conf"),
 			GoalID: goalID, AuthorityGoalID: "standing-validation", CapMin: "1", ScopeClass: "full",
-			CommandClass: "testing", CandidateTree: tree,
+			CommandClass: "testing", CandidateTree: tree, Now: now,
+			BeforePublish: func(*proofrun.AdmissionRequest) { beforePublish = true },
 		})
 		return attempt, err
 	}
 	first, err := launch(candidate.Id, strings.Repeat("b", 40))
-	if err != nil || first.AttemptID == "" || first.GoalID != "standing-validation" || first.CandidateGoalID != candidate.Id {
+	if err != nil || !beforePublish || first.AttemptID == "" || first.GoalID != "standing-validation" || first.CandidateGoalID != candidate.Id {
 		t.Fatalf("first two-lens launch: attempt=%+v err=%v", first, err)
 	}
 	binding, err := dispatchcore.ResolveGoalBinding(root, "standing-validation", now)
@@ -504,6 +504,7 @@ func TestOneLiveChargedAttemptCountsForBothLenses(t *testing.T) {
 }
 
 func TestCandidateCannotEscapeAuthorityElapsedLimit(t *testing.T) {
+	t.Parallel()
 	root, now := proofExtensionGoalFixture(t)
 	amendSyncedGoalFixture(t, root, "expire authority elapsed budget", func(file *goal.GoalFile) {
 		file.Budget.ElapsedLimit = "1m"
@@ -512,10 +513,9 @@ func TestCandidateCannotEscapeAuthorityElapsedLimit(t *testing.T) {
 	candidate := addProofCandidateGoal(t, root, "candidate-elapsed", "", &goal.RiskRecord{
 		Severity: 1, Novelty: 1, Exposure: 1, Accumulation: 1, Basis: "Elapsed authority witness."})
 	announceProofFixtureHolder(t, root)
-	t.Setenv("METASYSTEM_GOAL_NOW", now.Format(time.RFC3339))
 	attempt, _, _, err := admitCandidateProofLaunch(t, proofLaunchAdmission{
 		ControlRoot: root, ExecutionRoot: root, ConfPath: filepath.Join(root, "metasystem.conf"), GoalID: candidate.Id,
-		AuthorityGoalID: "standing-validation", CapMin: "1", ScopeClass: "full", CommandClass: "testing",
+		AuthorityGoalID: "standing-validation", CapMin: "1", ScopeClass: "full", CommandClass: "testing", Now: now,
 	})
 	if err == nil || attempt.AttemptID != "" || !strings.Contains(err.Error(), "standing-validation") || !strings.Contains(err.Error(), "elapsedLimit") {
 		t.Fatalf("candidate escaped the authority clock: attempt=%+v err=%v", attempt, err)
@@ -523,6 +523,7 @@ func TestCandidateCannotEscapeAuthorityElapsedLimit(t *testing.T) {
 }
 
 func TestCandidateExtensionIsRefusedUntilCandidateBecomesAuthority(t *testing.T) {
+	t.Parallel()
 	root, now := proofExtensionGoalFixture(t)
 	candidate := addProofCandidateGoal(t, root, "candidate-extension", "", &goal.RiskRecord{
 		Severity: 1, Novelty: 1, Exposure: 1, Accumulation: 1, Basis: "Candidate extension witness."})
@@ -546,10 +547,9 @@ func TestCandidateExtensionIsRefusedUntilCandidateBecomesAuthority(t *testing.T)
 	goalSyncMutationGit(t, root, "update-ref", goal.LocalLedgerBranch, "HEAD")
 	goalSyncMutationGit(t, root, "update-ref", goal.AcceptedRef, "HEAD")
 	announceProofFixtureHolder(t, root)
-	t.Setenv("METASYSTEM_GOAL_NOW", now.Format(time.RFC3339))
 	first, _, _, err := admitCandidateProofLaunch(t, proofLaunchAdmission{
 		ControlRoot: root, ExecutionRoot: root, ConfPath: filepath.Join(root, "metasystem.conf"), GoalID: candidate.Id,
-		AuthorityGoalID: "standing-validation", CapMin: "1", ScopeClass: "full", CommandClass: "testing", CandidateTree: strings.Repeat("b", 40),
+		AuthorityGoalID: "standing-validation", CapMin: "1", ScopeClass: "full", CommandClass: "testing", CandidateTree: strings.Repeat("b", 40), Now: now,
 	})
 	if err != nil || first.AttemptID == "" {
 		t.Fatalf("first candidate charge: attempt=%+v err=%v", first, err)
@@ -558,7 +558,7 @@ func TestCandidateExtensionIsRefusedUntilCandidateBecomesAuthority(t *testing.T)
 		t.Fatal(err)
 	}
 	request := proofLaunchAdmission{ControlRoot: root, ExecutionRoot: root, ConfPath: filepath.Join(root, "metasystem.conf"), GoalID: candidate.Id,
-		AuthorityGoalID: "standing-validation", CapMin: "1", ScopeClass: "full", CommandClass: "testing", CandidateTree: strings.Repeat("c", 40)}
+		AuthorityGoalID: "standing-validation", CapMin: "1", ScopeClass: "full", CommandClass: "testing", CandidateTree: strings.Repeat("c", 40), Now: now}
 	attempt, _, _, err := admitCandidateProofLaunch(t, request)
 	for _, want := range []string{"CANDIDATE_EXTENSION_REFUSED", candidate.Id, "attemptLimit", "claim " + candidate.Id + " as authority", "goal set-budget"} {
 		if err == nil || !strings.Contains(err.Error(), want) || attempt.AttemptID != "" {

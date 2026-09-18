@@ -54,15 +54,11 @@ func adoptionShapedWithEnvironment(root string, ledgerBytes []byte, environment 
 	return true, "", nil
 }
 
-// headTracksLedger reports whether the checkout containing root tracks
+// headTracksLedgerWithEnvironment reports whether the checkout containing root tracks
 // plans/goals.md at HEAD, resolved against root's own prefix (git does
 // that: a nested checkout and a toplevel one ask the same question). Not
 // a git work tree, or a work tree with no commit yet, tracks nothing.
 // Any other git failure is an error: the guard fails closed.
-func headTracksLedger(root string) (bool, error) {
-	return headTracksLedgerWithEnvironment(root, nil)
-}
-
 func headTracksLedgerWithEnvironment(root string, environment []string) (bool, error) {
 	out, err := gitInWithEnvironment(root, environment, "rev-parse", "--is-inside-work-tree")
 	if err != nil {

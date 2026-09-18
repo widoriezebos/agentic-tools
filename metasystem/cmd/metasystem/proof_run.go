@@ -312,12 +312,14 @@ type proofLaunchAdmission struct {
 	CandidateTree                                                                        string
 	ScopeClass, CommandClass                                                             string
 	CandidateRevision, ExpectedGoalRevision, ExpectedAccountingRevision                  uint64
+	Now                                                                                  time.Time
 	Sections                                                                             []string
 	IdentityInputs                                                                       []string
 	Environment                                                                          []string
 	SharedEngine                                                                         string
 	SharedManifestDigest                                                                 string
 	ComponentIdentities                                                                  map[string]string
+	BeforePublish                                                                        func(*proofrun.AdmissionRequest)
 	ForceAttempt                                                                         bool
 	RequireDiagnosticHeadroom                                                            bool
 }
@@ -586,9 +588,12 @@ func admitProofLaunch(request proofLaunchAdmission) (proofrun.Attempt, proofrun.
 	if err != nil {
 		return proofrun.Attempt{}, proofrun.LaunchResult{}, false, fmt.Errorf("proof caller classification failed: %w", err)
 	}
-	now, err := goalCommandNow(request.ControlRoot)
-	if err != nil {
-		return proofrun.Attempt{}, proofrun.LaunchResult{}, false, err
+	now := request.Now
+	if now.IsZero() {
+		now, err = goalCommandNow(request.ControlRoot)
+		if err != nil {
+			return proofrun.Attempt{}, proofrun.LaunchResult{}, false, err
+		}
 	}
 	parentRoot, parentAttempt := os.Getenv("METASYSTEM_PROOF_CONTROL_ROOT"), os.Getenv("METASYSTEM_PROOF_ATTEMPT")
 	if parentRoot != "" || parentAttempt != "" {
@@ -965,6 +970,9 @@ func admitProofLaunch(request proofLaunchAdmission) (proofrun.Attempt, proofrun.
 	}
 	if proofAdmissionBeforePublish != nil {
 		proofAdmissionBeforePublish(&reservation)
+	}
+	if request.BeforePublish != nil {
+		request.BeforePublish(&reservation)
 	}
 	attempt, decision, err := proofrun.ReserveLocked(reservation)
 	if err != nil || attempt.AttemptID == "" {

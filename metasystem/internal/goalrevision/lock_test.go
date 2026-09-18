@@ -9,6 +9,7 @@ import (
 )
 
 func TestAcquireUsesAcquireWaitSeam(t *testing.T) {
+	t.Parallel()
 	data, err := os.ReadFile("lock.go")
 	if err != nil {
 		t.Fatal(err)
