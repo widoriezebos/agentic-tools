@@ -267,7 +267,9 @@ func runCustodian(owner Ref, watch io.Reader, log io.Writer, runtime custodianRu
 		}
 		stop := armCustodianHalt(log, runtime)
 		var lostMember Ref
-		for _, member := range runtime.chain {
+		// The chain runs from the owner's parent outward to the run owner, so the outermost loss is the cause of the others.
+		for index := len(runtime.chain) - 1; index >= 0; index-- {
+			member := runtime.chain[index]
 			exact, state, _ := runtime.prober.Probe(member.Pid)
 			if state == Dead || state == Alive && (!SameIdentity(exact, member) || exact.Zombie || exact.Exiting) {
 				lostMember = member

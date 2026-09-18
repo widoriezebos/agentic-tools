@@ -930,6 +930,53 @@ func TestCustodianLostLauncherWhenOwnerAndLauncherDieTogether(t *testing.T) {
 	}
 }
 
+func TestCustodianLostLauncherNamesTheOutermostLostMember(t *testing.T) {
+	t.Parallel()
+
+	owner, shell, launcher := fixtureExact(700, 70), fixtureExact(701, 71), fixtureExact(702, 72)
+	shellValue, err := EncodeRef(shell.Ref())
+	if err != nil {
+		t.Fatal(err)
+	}
+	launcherValue, err := EncodeRef(launcher.Ref())
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, test := range []struct {
+		name    string
+		alive   []Exact
+		want    string
+		notWant string
+	}{
+		{name: "both launchers lost", alive: []Exact{owner}, want: launcherValue, notWant: shellValue},
+		{name: "only shell lost", alive: []Exact{owner, launcher}, want: shellValue, notWant: launcherValue},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			processes := make(fixtureTable, len(test.alive))
+			for _, exact := range test.alive {
+				processes[exact.Pid] = exact
+			}
+			var log strings.Builder
+			runtime := custodianRuntime{
+				prober: processes, chain: []Ref{shell.Ref(), launcher.Ref()}, poll: time.Millisecond, bound: 5 * time.Millisecond,
+				clock: newManualCustodianClock(), scan: func(Prober, Ref) ([]FixtureSurvivor, error) { return nil, nil },
+				sender: func(pid int, _ syscall.Signal) error {
+					delete(processes, int64(pid))
+					return nil
+				},
+			}
+			if err := runCustodian(owner.Ref(), strings.NewReader(""), &log, runtime); err != nil {
+				t.Fatal(err)
+			}
+			killLine := "action=kill-owner dead-launcher="
+			if strings.Count(log.String(), killLine+test.want) != 1 || strings.Count(log.String(), killLine) != 1 ||
+				strings.Contains(log.String(), killLine+test.notWant) || !strings.HasSuffix(log.String(), FixtureCustodianCompletionLine(owner.Ref())) {
+				t.Fatalf("custodian log=%q, want outermost lost member %s exactly once, not %s, followed by completion", log.String(), test.want, test.notWant)
+			}
+		})
+	}
+}
+
 func TestCustodianLostLauncherZombieKillsLiveOwner(t *testing.T) {
 	t.Parallel()
 
