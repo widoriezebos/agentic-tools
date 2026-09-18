@@ -39,25 +39,37 @@ fixture_bed_prepare_hook=${fixture_bed_prepare_hook:-}
 fixture_bed_mint_capability=${fixture_bed_mint_capability:-harness_fixture_bed_mint_capability}
 fixture_bed_scenario_verdict=${fixture_bed_scenario_verdict:-}
 fixture_bed_parent_extra_cleanup=${fixture_bed_parent_extra_cleanup:-}
+readonly fixture_bed_term_grace_sec=5
+readonly fixture_bed_kill_grace_sec=5
+
+fixture_bed_process_set_alive() { # process-group leader pid
+  local pgid=$1
+  kill -0 -- "-$pgid" 2>/dev/null || kill -0 "$pgid" 2>/dev/null
+}
+
+fixture_bed_signal_process_set() { # signal, process-group leader pid
+  local signal=$1 pgid=$2
+  kill -"$signal" -- "-$pgid" 2>/dev/null || kill -"$signal" "$pgid" 2>/dev/null || true
+}
 
 fixture_bed_reap_group() { # process-group leader pid
   local pgid=$1 deadline
-  kill -TERM -- "-$pgid" 2>/dev/null || true
+  fixture_bed_signal_process_set TERM "$pgid"
   echo "group $pgid: TERM sent" >&2
-  deadline=$((SECONDS + 5))
-  while kill -0 -- "-$pgid" 2>/dev/null && (( SECONDS < deadline )); do
+  deadline=$((SECONDS + fixture_bed_term_grace_sec))
+  while fixture_bed_process_set_alive "$pgid" && (( SECONDS < deadline )); do
     sleep 0.25
   done
-  if kill -0 -- "-$pgid" 2>/dev/null; then
-    kill -KILL -- "-$pgid" 2>/dev/null || true
-    echo "group $pgid: alive after 5s grace; KILL sent" >&2
+  if fixture_bed_process_set_alive "$pgid"; then
+    fixture_bed_signal_process_set KILL "$pgid"
+    echo "group $pgid: alive after ${fixture_bed_term_grace_sec}s grace; KILL sent" >&2
   fi
   wait "$pgid" 2>/dev/null || true
-  deadline=$((SECONDS + 5))
-  while kill -0 -- "-$pgid" 2>/dev/null && (( SECONDS < deadline )); do
+  deadline=$((SECONDS + fixture_bed_kill_grace_sec))
+  while fixture_bed_process_set_alive "$pgid" && (( SECONDS < deadline )); do
     sleep 0.25
   done
-  if kill -0 -- "-$pgid" 2>/dev/null; then
+  if fixture_bed_process_set_alive "$pgid"; then
     echo "$fixture_bed_parent_bed fixture scenario left process group $pgid alive after KILL: $fixture_bed_parent_scenario" >&2
     return 1
   fi

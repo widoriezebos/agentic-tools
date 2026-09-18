@@ -53,7 +53,8 @@ func BootClock() (string, time.Duration, error) {
 // { tv_sec int64; tv_usec int32; pad int32 } on 64-bit darwin.
 const kinfoStartSecOffset = 0
 const kinfoStartUsecOffset = 8
-const kinfoStatOffset, zombieStatus = 36, 5 // SZOMB is 5 in Darwin's sys/proc.h.
+const kinfoFlagOffset, processExitingFlag = 32, 0x00002000 // P_WEXIT in Darwin's sys/proc.h.
+const kinfoStatOffset, zombieStatus = 36, 5                // SZOMB is 5 in Darwin's sys/proc.h.
 
 func (KernelProber) ReadStart(pid int64) (Exact, Liveness, error) {
 	if pid < 1 {
@@ -79,8 +80,16 @@ func (KernelProber) ReadStart(pid int64) (Exact, Liveness, error) {
 	if sec <= 0 || usec < 0 || usec > 999999 {
 		return Exact{}, Unknown, fmt.Errorf("identity: pid %d start time is implausible (sec=%d usec=%d)", pid, sec, usec)
 	}
-	exact := Exact{Pid: pid, StartedAt: time.Unix(sec, int64(usec)*1000), Zombie: raw[kinfoStatOffset] == zombieStatus}
+	exact := Exact{
+		Pid: pid, StartedAt: time.Unix(sec, int64(usec)*1000),
+		Zombie:  raw[kinfoStatOffset] == zombieStatus,
+		Exiting: darwinProcessExiting(raw),
+	}
 	return exact, Alive, nil
+}
+
+func darwinProcessExiting(raw []byte) bool {
+	return binary.LittleEndian.Uint32(raw[kinfoFlagOffset:])&processExitingFlag != 0
 }
 
 func (KernelProber) ReadArgv(pid int64) ([]string, bool) {

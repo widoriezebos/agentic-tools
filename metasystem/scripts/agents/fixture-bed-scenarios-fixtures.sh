@@ -70,6 +70,13 @@ fi
 root=${FIXTURE_BED_SOURCE_ROOT:?}
 source "$root/scripts/agents/fixture-budget.sh"
 source "$root/scripts/agents/fixture-bed-scenarios.sh"
+fixture_bed_publish_custodian_log() {
+  [[ -z "${FIXTURE_BED_CUSTODIAN_LOG_FILE:-}" ]] \
+    || printf '%s\n' "$harness_fixture_custodian_log" >"$FIXTURE_BED_CUSTODIAN_LOG_FILE"
+}
+if [[ -n "${FIXTURE_BED_CUSTODIAN_LOG_FILE:-}" ]]; then
+  fixture_bed_prepare_hook=fixture_bed_publish_custodian_log
+fi
 fixture_bed_child=0
 fixture_scenario=
 if fixture_scenario=$(harness_fixture_bed_child_scenario fixture-bed-inner "$@"); then
@@ -144,9 +151,9 @@ assert_no_group_survivor() { # direct child pid, grandchild pid
   fi
 }
 
-wait_fixture_ref_gone() { # description, pid, exact ref
-  local description=$1 pid=$2 ref=$3 current deadline
-  deadline=$((SECONDS + $(harness_fixture_cap suite-watchdog-reap)))
+wait_fixture_ref_gone() { # description, pid, exact ref, optional cap name
+  local description=$1 pid=$2 ref=$3 cap=${4:-suite-watchdog-reap} current deadline
+  deadline=$((SECONDS + $(harness_fixture_cap "$cap")))
   while current=$(harness_fixture_engine_call proc ref --pid "$pid" 2>/dev/null) \
       && [[ "$current" == "$ref" ]] && (( SECONDS < deadline )); do
     sleep "$METASYSTEM_FIXTURE_POLL_INTERVAL_SEC"
@@ -157,9 +164,9 @@ wait_fixture_ref_gone() { # description, pid, exact ref
   fi
 }
 
-wait_fixture_log_line() { # log, fixed line fragment
-  local log=$1 fragment=$2 deadline
-  deadline=$((SECONDS + $(harness_fixture_cap suite-watchdog-reap)))
+wait_fixture_log_line() { # log, fixed line fragment, optional cap name
+  local log=$1 fragment=$2 cap=${3:-suite-watchdog-reap} deadline
+  deadline=$((SECONDS + $(harness_fixture_cap "$cap")))
   while (( SECONDS < deadline )); do
     [[ -f "$log" ]] && grep -Fq "$fragment" "$log" && return 0
     sleep "$METASYSTEM_FIXTURE_POLL_INTERVAL_SEC"
@@ -1223,22 +1230,75 @@ if [[ "$fixture_scenario" == signal-reaps-group ]]; then
 fi
 
 if [[ "$fixture_scenario" == hang-leash ]]; then
+  hang_leash_started=$SECONDS
+  hang_leash_outer_custodian_log=${harness_fixture_custodian_log:-}
+  interrupt_owner= interrupt_child_pid= interrupt_grandchild_pid=
+  leash_owner= leash_pid= custodian_owner= custodian_child=
+  interrupt_custodian_log_file= leash_log_file= custodian_log_file=
+
+  hang_leash_show_custodian_log() { # label, log path
+    local label=$1 path=$2
+    if [[ -n "$path" && -f "$path" ]]; then
+      echo "custodian-log $label path=$path" >&2
+      cat "$path" >&2
+    else
+      echo "custodian-log $label path=${path:-unavailable} content=unavailable" >&2
+    fi
+  }
+
+  hang_leash_show_custodian_log_path() { # label, file containing log path
+    local label=$1 path_file=$2 path=
+    if [[ -n "$path_file" && -s "$path_file" ]]; then
+      IFS= read -r path <"$path_file" || true
+    fi
+    hang_leash_show_custodian_log "$label" "$path"
+  }
+
+  hang_leash_diagnostics() {
+    local pid
+    set +e
+    echo "fixture-bed-scenarios fixture: hang-leash failure diagnostics elapsed=$((SECONDS - hang_leash_started))s" >&2
+    hang_leash_show_custodian_log outer "$hang_leash_outer_custodian_log"
+    hang_leash_show_custodian_log_path interrupt "$interrupt_custodian_log_file"
+    hang_leash_show_custodian_log_path leash "$leash_log_file"
+    hang_leash_show_custodian_log_path disabled "$custodian_log_file"
+    echo "pid-states:" >&2
+    for pid in "$interrupt_owner" "$interrupt_child_pid" "$interrupt_grandchild_pid" \
+        "$leash_owner" "$leash_pid" "$custodian_owner" "$custodian_child"; do
+      [[ "$pid" =~ ^[1-9][0-9]*$ ]] || continue
+      ps -o pid=,ppid=,pgid=,state=,etime=,command= -p "$pid" >&2 \
+        || echo "pid $pid: gone" >&2
+    done
+  }
+
+  hang_leash_exit() {
+    local status=$?
+    trap - EXIT
+    (( status == 0 )) || hang_leash_diagnostics
+    rm -rf "$tmp" 2>/dev/null || true
+    exit "$status"
+  }
+  trap hang_leash_exit EXIT
+
   inner=$tmp/inner-bed.sh
   write_inner_bed "$inner"
+  hang_leash_int_wait_sec=$((10 * (fixture_bed_term_grace_sec + fixture_bed_kill_grace_sec)))
 
   # The ordinary bed cleanup still empties the process group after an INT.
   interrupt_output=$tmp/hang-interrupt.out
   interrupt_child=$tmp/hang-interrupt-child.pid
   interrupt_grandchild=$tmp/hang-interrupt-grandchild.pid
+  interrupt_custodian_log_file=$tmp/hang-interrupt-custodian.log-path
   set -m
   FIXTURE_BED_SOURCE_ROOT="$root" FIXTURE_BED_INNER_SCENARIOS=hang \
     FIXTURE_BED_CHILD_PID_FILE="$interrupt_child" \
     FIXTURE_BED_GRANDCHILD_PID_FILE="$interrupt_grandchild" \
+    FIXTURE_BED_CUSTODIAN_LOG_FILE="$interrupt_custodian_log_file" \
     "$inner" "$harness_fixture_tag" >"$interrupt_output" 2>&1 9>&- &
   interrupt_owner=$!
   set +m
   harness_fixture_hold_pid "$interrupt_owner"
-  interrupt_deadline=$((SECONDS + $(harness_fixture_cap bed-scenario)))
+  interrupt_deadline=$((SECONDS + hang_leash_int_wait_sec))
   while [[ ! -s "$interrupt_child" || ! -s "$interrupt_grandchild" ]] \
       && kill -0 "$interrupt_owner" 2>/dev/null && (( SECONDS < interrupt_deadline )); do
     sleep "$METASYSTEM_FIXTURE_POLL_INTERVAL_SEC"
@@ -1254,7 +1314,7 @@ if [[ "$fixture_scenario" == hang-leash ]]; then
   harness_fixture_hold_pid "$interrupt_grandchild_pid"
   interrupt_grandchild_ref=$(harness_fixture_engine_call proc ref --pid "$interrupt_grandchild_pid")
   kill -INT "$interrupt_owner"
-  interrupt_deadline=$((SECONDS + $(harness_fixture_cap bed-scenario)))
+  interrupt_deadline=$((SECONDS + hang_leash_int_wait_sec))
   while kill -0 "$interrupt_owner" 2>/dev/null && (( SECONDS < interrupt_deadline )); do
     sleep "$METASYSTEM_FIXTURE_POLL_INTERVAL_SEC"
   done
@@ -1334,8 +1394,8 @@ LEASH_CHILD
   leash_ref=$(harness_fixture_engine_call proc ref --pid "$leash_pid")
   kill -KILL "$leash_owner"
   wait "$leash_owner" 2>/dev/null || true
-  wait_fixture_ref_gone "leashed child after owner KILL" "$leash_pid" "$leash_ref"
-  wait_fixture_log_line "$leash_log" "action=complete"
+  wait_fixture_ref_gone "leashed child after owner KILL" "$leash_pid" "$leash_ref" suite-watchdog-wait
+  wait_fixture_log_line "$leash_log" "action=complete" suite-watchdog-wait
   if grep -Fq "action=kill pid=$leash_pid" "$leash_log"; then
     echo "fixture-bed-scenarios fixture: custodian signaled leashed child $leash_pid instead of observing its exit" >&2
     cat "$leash_log" >&2

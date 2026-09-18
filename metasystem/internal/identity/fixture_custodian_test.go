@@ -20,6 +20,58 @@ type custodianRecordProber struct {
 	probes           int
 }
 
+type delayedCustodianExitProber struct {
+	child        Exact
+	probes       int
+	exitingAfter int
+	exitAfter    int
+}
+
+type releasedCustodianDescendantProber struct {
+	child      Exact
+	liveProbes int
+	probes     int
+}
+
+type timedCustodianExitProber struct {
+	clock    *manualCustodianClock
+	started  time.Time
+	children map[int64]Exact
+	exitAt   map[int64]time.Duration
+}
+
+func (prober timedCustodianExitProber) Probe(pid int64) (Exact, Liveness, error) {
+	child, present := prober.children[pid]
+	if !present || prober.clock.Now().Sub(prober.started) >= prober.exitAt[pid] {
+		return Exact{}, Dead, nil
+	}
+	return child, Alive, nil
+}
+
+func (prober *delayedCustodianExitProber) Probe(pid int64) (Exact, Liveness, error) {
+	if pid != prober.child.Pid {
+		return Exact{}, Dead, nil
+	}
+	prober.probes++
+	if prober.probes > prober.exitAfter {
+		return Exact{}, Dead, nil
+	}
+	child := prober.child
+	child.Exiting = prober.probes > prober.exitingAfter
+	return child, Alive, nil
+}
+
+func (prober *releasedCustodianDescendantProber) Probe(pid int64) (Exact, Liveness, error) {
+	if pid != prober.child.Pid {
+		return Exact{}, Dead, nil
+	}
+	prober.probes++
+	if prober.probes > prober.liveProbes {
+		return Exact{}, Dead, nil
+	}
+	return prober.child, Alive, nil
+}
+
 type manualCustodianClock struct {
 	mu     sync.Mutex
 	now    time.Time
@@ -126,7 +178,370 @@ func TestCustodianUsesConfiguredTiming(t *testing.T) {
 	}
 }
 
+func TestCustodianLeashWaitsForDelayedExitAfterOldWindow(t *testing.T) {
+	t.Parallel()
+
+	clock := newManualCustodianClock()
+	child := fixtureExact(500, 50)
+	childValue, err := EncodeRef(child.Ref())
+	if err != nil {
+		t.Fatal(err)
+	}
+	records := filepath.Join(t.TempDir(), "records")
+	if err := os.WriteFile(records, []byte("+"+childValue+"\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	prober := &delayedCustodianExitProber{child: child, exitingAfter: 7, exitAfter: 12}
+	leashCalls := 0
+	var signals []int64
+	var log strings.Builder
+	runtime := custodianRuntime{
+		prober: prober, records: records, poll: time.Second, bound: 5 * time.Second,
+		clock: clock,
+		leash: func() (bool, error) {
+			leashCalls++
+			return leashCalls <= 7, nil
+		},
+		closeWatch: func() error { return nil },
+		scan:       func(Prober, Ref) ([]FixtureSurvivor, error) { return nil, nil },
+		sender: func(pid int, _ syscall.Signal) error {
+			signals = append(signals, int64(pid))
+			return nil
+		},
+	}
+	started := clock.Now()
+	if err := reapDeadOwner(fixtureExact(700, 70).Ref(), &log, runtime); err != nil {
+		t.Fatal(err)
+	}
+	elapsed := clock.Now().Sub(started)
+	wantBound := 10 * runtime.bound
+	if elapsed <= runtime.bound || elapsed >= wantBound {
+		t.Fatalf("custodian waited %s, want beyond old %s window and below derived %s bound", elapsed, runtime.bound, wantBound)
+	}
+	if len(signals) != 0 || strings.Contains(log.String(), "action=kill pid=500") {
+		t.Fatalf("custodian signaled exiting child after delayed leash release: signals=%v log=%q", signals, log.String())
+	}
+	if !strings.Contains(log.String(), "action=release pid=500 carrier=record") {
+		t.Fatalf("custodian did not observe delayed child exit: %q", log.String())
+	}
+}
+
+func TestCustodianLeashWaitsWhenFirstProbeFindsReleasedFIFO(t *testing.T) {
+	t.Parallel()
+
+	clock := newManualCustodianClock()
+	child := fixtureExact(500, 50)
+	childValue, err := EncodeRef(child.Ref())
+	if err != nil {
+		t.Fatal(err)
+	}
+	records := filepath.Join(t.TempDir(), "records")
+	if err := os.WriteFile(records, []byte("+"+childValue+"\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	prober := &delayedCustodianExitProber{child: child, exitAfter: 5}
+	var signals []int64
+	var log strings.Builder
+	runtime := custodianRuntime{
+		prober: prober, records: records, poll: time.Second, bound: 5 * time.Second,
+		clock:      clock,
+		leash:      func() (bool, error) { return false, nil },
+		closeWatch: func() error { return nil },
+		scan:       func(Prober, Ref) ([]FixtureSurvivor, error) { return nil, nil },
+		sender: func(pid int, _ syscall.Signal) error {
+			signals = append(signals, int64(pid))
+			return nil
+		},
+	}
+	if err := reapDeadOwner(fixtureExact(700, 70).Ref(), &log, runtime); err != nil {
+		t.Fatal(err)
+	}
+	if prober.probes <= custodianSettledScans {
+		t.Fatalf("child was observed for only %d probes, want beyond convergence", prober.probes)
+	}
+	if len(signals) != 0 || strings.Contains(log.String(), "action=kill pid=500") {
+		t.Fatalf("custodian signaled exiting child after an initially released leash: signals=%v log=%q", signals, log.String())
+	}
+	if !strings.Contains(log.String(), "action=release pid=500 carrier=record") {
+		t.Fatalf("custodian did not observe child exit after an initially released leash: %q", log.String())
+	}
+}
+
+func TestCustodianLeashLiveSetChangeResetsDerivedBound(t *testing.T) {
+	t.Parallel()
+
+	clock := newManualCustodianClock()
+	started := clock.Now()
+	first, last := fixtureExact(500, 50), fixtureExact(501, 51)
+	firstValue, err := EncodeRef(first.Ref())
+	if err != nil {
+		t.Fatal(err)
+	}
+	lastValue, err := EncodeRef(last.Ref())
+	if err != nil {
+		t.Fatal(err)
+	}
+	records := filepath.Join(t.TempDir(), "records")
+	if err := os.WriteFile(records, []byte("+"+firstValue+"\n+"+lastValue+"\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	prober := timedCustodianExitProber{
+		clock: clock, started: started,
+		children: map[int64]Exact{first.Pid: first, last.Pid: last},
+		exitAt:   map[int64]time.Duration{first.Pid: 45 * time.Second, last.Pid: 60 * time.Second},
+	}
+	var signals []int64
+	var log strings.Builder
+	runtime := custodianRuntime{
+		prober: prober, records: records, poll: time.Second, bound: 5 * time.Second,
+		clock: clock,
+		leash: func() (bool, error) {
+			return clock.Now().Sub(started) < 60*time.Second, nil
+		},
+		closeWatch: func() error { return nil },
+		scan:       func(Prober, Ref) ([]FixtureSurvivor, error) { return nil, nil },
+		sender: func(pid int, _ syscall.Signal) error {
+			signals = append(signals, int64(pid))
+			return nil
+		},
+	}
+	if err := reapDeadOwner(fixtureExact(700, 70).Ref(), &log, runtime); err != nil {
+		t.Fatal(err)
+	}
+	if len(signals) != 0 || clock.Now().Sub(started) < 60*time.Second {
+		t.Fatalf("custodian did not preserve the reset leash window: elapsed=%s signals=%v log=%q", clock.Now().Sub(started), signals, log.String())
+	}
+	for _, pid := range []int64{first.Pid, last.Pid} {
+		if !strings.Contains(log.String(), fmt.Sprintf("action=release pid=%d carrier=record", pid)) {
+			t.Fatalf("custodian did not observe child %d exit after live-set change: %q", pid, log.String())
+		}
+	}
+}
+
+func TestCustodianNeverSignalsAReleasedLeashedDescendant(t *testing.T) {
+	t.Parallel()
+
+	clock := newManualCustodianClock()
+	child := fixtureExact(500, 50)
+	gone := fixtureExact(501, 51)
+	childValue, err := EncodeRef(child.Ref())
+	if err != nil {
+		t.Fatal(err)
+	}
+	childIdentity, err := EncodeRef(child.Ref())
+	if err != nil {
+		t.Fatal(err)
+	}
+	goneIdentity, err := EncodeRef(gone.Ref())
+	if err != nil {
+		t.Fatal(err)
+	}
+	records := filepath.Join(t.TempDir(), "records")
+	if err := os.WriteFile(records, []byte("+"+childValue+"\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	prober := &releasedCustodianDescendantProber{child: child, liveProbes: 3}
+	leashCalls := 0
+	var signals []int64
+	var log strings.Builder
+	runtime := custodianRuntime{
+		prober: prober, records: records, poll: time.Millisecond, bound: 5 * time.Millisecond,
+		clock: clock,
+		leash: func() (bool, error) {
+			leashCalls++
+			return leashCalls <= 3, nil
+		},
+		closeWatch: func() error { return nil },
+		observed: map[string]Ref{
+			childIdentity: child.Ref(),
+			goneIdentity:  gone.Ref(),
+		},
+		scan: func(Prober, Ref) ([]FixtureSurvivor, error) {
+			return []FixtureSurvivor{
+				{Class: FixtureSurvivorCertain, Ref: child.Ref(), Carrier: FixtureCarrierRecord},
+				{Class: FixtureSurvivorCertain, Ref: gone.Ref(), Carrier: FixtureCarrierEnvironment},
+			}, nil
+		},
+		sender: func(pid int, _ syscall.Signal) error {
+			signals = append(signals, int64(pid))
+			return nil
+		},
+	}
+	if err := reapDeadOwner(fixtureExact(700, 70).Ref(), &log, runtime); err != nil {
+		t.Fatal(err)
+	}
+	if len(signals) != 0 {
+		t.Fatalf("released descendants were signaled: %v log=%q", signals, log.String())
+	}
+	for _, want := range []string{
+		"action=release pid=500 carrier=record",
+		"action=release pid=501 carrier=descendant",
+		"action=complete",
+	} {
+		if !strings.Contains(log.String(), want) {
+			t.Fatalf("custodian log %q omits %q", log.String(), want)
+		}
+	}
+	for _, pid := range []int64{child.Pid, gone.Pid} {
+		if strings.Contains(log.String(), fmt.Sprintf("action=kill pid=%d", pid)) {
+			t.Fatalf("custodian logged a kill for released descendant %d: %q", pid, log.String())
+		}
+	}
+}
+
+func TestCustodianKillsARunningOrphanWithoutAHeldLeashAfterSettledScans(t *testing.T) {
+	t.Parallel()
+
+	clock := newManualCustodianClock()
+	started := clock.Now()
+	child := fixtureExact(500, 50)
+	exiting := fixtureExact(501, 51)
+	exiting.Exiting = true
+	childValue, err := EncodeRef(child.Ref())
+	if err != nil {
+		t.Fatal(err)
+	}
+	exitingValue, err := EncodeRef(exiting.Ref())
+	if err != nil {
+		t.Fatal(err)
+	}
+	records := filepath.Join(t.TempDir(), "records")
+	if err := os.WriteFile(records, []byte("+"+childValue+"\n+"+exitingValue+"\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	processes := fixtureTable{child.Pid: child, exiting.Pid: exiting}
+	var signals []int64
+	signalElapsed := make(map[int64]time.Duration)
+	var log strings.Builder
+	runtime := custodianRuntime{
+		prober: processes, records: records, poll: time.Millisecond, bound: 20 * time.Millisecond,
+		clock: clock, leash: func() (bool, error) { return false, nil }, closeWatch: func() error { return nil },
+		scan: func(Prober, Ref) ([]FixtureSurvivor, error) { return nil, nil },
+		sender: func(pid int, _ syscall.Signal) error {
+			signals = append(signals, int64(pid))
+			signalElapsed[int64(pid)] = clock.Now().Sub(started)
+			delete(processes, int64(pid))
+			return nil
+		},
+	}
+	if err := reapDeadOwner(fixtureExact(700, 70).Ref(), &log, runtime); err != nil {
+		t.Fatal(err)
+	}
+	wantElapsed := time.Duration(custodianSettledScans) * runtime.poll
+	if !slices.Equal(signals, []int64{child.Pid, exiting.Pid}) || signalElapsed[child.Pid] != wantElapsed {
+		t.Fatalf("orphan signals=%v times=%v, want running child first after %s; log=%q", signals, signalElapsed, wantElapsed, log.String())
+	}
+	if signalElapsed[exiting.Pid] < fixtureCustodianLeashBound(runtime.bound) {
+		t.Fatalf("exiting child was signaled after %s, before derived grace %s; log=%q", signalElapsed[exiting.Pid], fixtureCustodianLeashBound(runtime.bound), log.String())
+	}
+}
+
+func TestCustodianHardHaltBoundsBlockedLeashProbe(t *testing.T) {
+	t.Parallel()
+
+	clock := newManualCustodianClock()
+	var halted []int
+	leashCalls := 0
+	runtime := custodianRuntime{
+		prober: fixtureTable{}, poll: time.Millisecond, bound: 5 * time.Millisecond,
+		clock: clock, halt: func(code int) { halted = append(halted, code) },
+		leash: func() (bool, error) {
+			leashCalls++
+			if leashCalls == 1 {
+				clock.Advance(5*time.Millisecond + custodianHaltMargin)
+			}
+			return false, nil
+		},
+		scan: func(Prober, Ref) ([]FixtureSurvivor, error) { return nil, nil },
+	}
+	if err := reapDeadOwner(fixtureExact(700, 70).Ref(), io.Discard, runtime); err != nil {
+		t.Fatal(err)
+	}
+	if !slices.Equal(halted, []int{2}) || leashCalls != custodianSettledScans {
+		t.Fatalf("hard halt exits=%v, want one for a blocked leash probe", halted)
+	}
+}
+
+func TestFixtureBedInterruptUsesCleanupFactsAndReportsFailures(t *testing.T) {
+	t.Parallel()
+
+	root := filepath.Clean(filepath.Join("..", ".."))
+	if override := os.Getenv("FIXTURE_SOURCE_ROOT"); override != "" {
+		root = override
+	}
+	harness := readLauncherSource(t, filepath.Join(root, "scripts", "agents", "fixture-bed-scenarios.sh"))
+	for _, want := range []string{
+		"fixture_bed_term_grace_sec=5",
+		"fixture_bed_kill_grace_sec=5",
+		`kill -0 -- "-$pgid" 2>/dev/null || kill -0 "$pgid" 2>/dev/null`,
+		`kill -"$signal" -- "-$pgid" 2>/dev/null || kill -"$signal" "$pgid" 2>/dev/null`,
+		"deadline=$((SECONDS + fixture_bed_term_grace_sec))",
+		"deadline=$((SECONDS + fixture_bed_kill_grace_sec))",
+	} {
+		if !strings.Contains(harness, want) {
+			t.Fatalf("fixture bed cleanup omits production timing %q", want)
+		}
+	}
+	if strings.Count(harness, `while fixture_bed_process_set_alive "$pgid"`) != 2 {
+		t.Fatal("fixture bed cleanup does not use the process-set fact before and after KILL")
+	}
+	killAt := strings.Index(harness, `fixture_bed_signal_process_set KILL "$pgid"`)
+	waitAt := strings.Index(harness, `wait "$pgid"`)
+	if killAt < 0 || waitAt < killAt {
+		t.Fatalf("fixture bed cleanup can block in wait before KILL: kill=%d wait=%d", killAt, waitAt)
+	}
+
+	fixture := readLauncherSource(t, filepath.Join(root, "scripts", "agents", "fixture-bed-scenarios-fixtures.sh"))
+	for _, want := range []string{
+		`local description=$1 pid=$2 ref=$3 cap=${4:-suite-watchdog-reap} current deadline`,
+		`local log=$1 fragment=$2 cap=${3:-suite-watchdog-reap} deadline`,
+		`deadline=$((SECONDS + $(harness_fixture_cap "$cap")))`,
+	} {
+		if !strings.Contains(fixture, want) {
+			t.Fatalf("fixture log wait omits cap selection %q", want)
+		}
+	}
+	start := strings.Index(fixture, `if [[ "$fixture_scenario" == hang-leash ]]`)
+	if start < 0 {
+		t.Fatal("hang-leash scenario start was not found")
+	}
+	end := strings.Index(fixture[start:], `if [[ "$fixture_scenario" == command-substitution-failure ]]`)
+	if end < 0 {
+		t.Fatal("hang-leash scenario end was not found")
+	}
+	hang := fixture[start : start+end]
+	interruptEnd := strings.Index(hang, `leash_child=$tmp/leash-child.sh`)
+	if interruptEnd < 0 {
+		t.Fatal("hang-leash INT leg boundary was not found")
+	}
+	interruptLeg := hang[:interruptEnd]
+	for _, want := range []string{
+		`hang_leash_int_wait_sec=$((10 * (fixture_bed_term_grace_sec + fixture_bed_kill_grace_sec)))`,
+		`wait_fixture_ref_gone "leashed child after owner KILL" "$leash_pid" "$leash_ref" suite-watchdog-wait`,
+		`wait_fixture_log_line "$leash_log" "action=complete" suite-watchdog-wait`,
+		`wait_fixture_log_line "$custodian_log" "action=kill pid=$custodian_child"`,
+		"set -m",
+		"set +m",
+		`kill -INT "$interrupt_owner"`,
+		"hang-leash failure diagnostics elapsed=",
+		"custodian-log ",
+		"pid-states:",
+	} {
+		if !strings.Contains(hang, want) {
+			t.Fatalf("hang-leash scenario omits %q", want)
+		}
+	}
+	if strings.Contains(interruptLeg, "harness_fixture_cap bed-scenario") {
+		t.Fatal("hang-leash INT leg still depends on the scenario cap")
+	}
+	if strings.Contains(hang, "FIXTURE_CHILD_STOP") {
+		t.Fatal("hang-leash disabled-leash child is stopped instead of proving cleanup of a running orphan")
+	}
+}
+
 func TestCustodianReapsRecordedRefsWithoutTheTable(t *testing.T) {
+	t.Parallel()
+
 	a, b := fixtureExact(500, 50).Ref(), fixtureExact(501, 51).Ref()
 	aValue, _ := EncodeRef(a)
 	bValue, _ := EncodeRef(b)
@@ -150,10 +565,12 @@ func TestCustodianReapsRecordedRefsWithoutTheTable(t *testing.T) {
 		hasLeash         bool
 		leashStates      []bool
 		leashAlwaysHeld  bool
+		wantSignalAfter  time.Duration
 	}{
 		{name: "live record", contents: "+" + aValue + "\n", current: fixtureExact(500, 50), wantSignals: []int64{500}, wantLog: "carrier=record", wantCompleteLog: true},
 		{name: "leashed record exits during grace", contents: "+" + aValue + "\n", current: fixtureExact(500, 50), wantLog: "action=release pid=500 carrier=record", unwantLog: "action=kill pid=", wantCompleteLog: true, diesOnLaterProbe: true, hasLeash: true, leashStates: []bool{true, true, false}},
-		{name: "leashed record never exits", contents: "+" + aValue + "\n", current: fixtureExact(500, 50), wantSignals: []int64{500}, wantLog: "action=kill pid=500 carrier=record", wantCompleteLog: true, hasLeash: true, leashAlwaysHeld: true},
+		{name: "leashed record never exits", contents: "+" + aValue + "\n", current: fixtureExact(500, 50), wantSignals: []int64{500}, wantLog: "action=kill pid=500 carrier=record", wantCompleteLog: true, hasLeash: true, leashAlwaysHeld: true, wantSignalAfter: 200 * time.Millisecond},
+		{name: "released leash kills stable live record", contents: "+" + aValue + "\n", current: fixtureExact(500, 50), wantSignals: []int64{500}, wantLog: "action=kill pid=500 carrier=record", wantCompleteLog: true, hasLeash: true, leashStates: []bool{false}, wantSignalAfter: time.Duration(custodianSettledScans) * time.Millisecond},
 		{name: "no leash signals at once", contents: "+" + aValue + "\n", current: fixtureExact(500, 50), wantSignals: []int64{500}, wantLog: "action=kill pid=500 carrier=record", wantCompleteLog: true, diesOnLaterProbe: true},
 		{name: "dead record without leash keeps its line", contents: "+" + aValue + "\n", wantLog: "action=kill pid=500 carrier=record result=recorded process is gone", wantCompleteLog: true},
 		{name: "live record remains alive", contents: "+" + aValue + "\n", current: fixtureExact(500, 50), keepAlive: true, wantSignals: []int64{500}, wantLog: "carrier=record", wantError: "fixture custodian cleanup exceeded", wantRecordFile: true},
@@ -164,6 +581,7 @@ func TestCustodianReapsRecordedRefsWithoutTheTable(t *testing.T) {
 	} {
 		t.Run(test.name, func(t *testing.T) {
 			clock := newManualCustodianClock()
+			started := clock.Now()
 			records := filepath.Join(t.TempDir(), "records")
 			if err := os.WriteFile(records, []byte(test.contents), 0o600); err != nil {
 				t.Fatal(err)
@@ -173,6 +591,7 @@ func TestCustodianReapsRecordedRefsWithoutTheTable(t *testing.T) {
 				processes[test.current.Pid] = test.current
 			}
 			var signaled []int64
+			var signalElapsed time.Duration
 			var log strings.Builder
 			prober := &custodianRecordProber{fixtureTable: processes}
 			if test.diesOnLaterProbe {
@@ -201,6 +620,7 @@ func TestCustodianReapsRecordedRefsWithoutTheTable(t *testing.T) {
 				scan:  func(Prober, Ref) ([]FixtureSurvivor, error) { return nil, fmt.Errorf("denied kern.proc.all") },
 				sender: func(pid int, _ syscall.Signal) error {
 					signaled = append(signaled, int64(pid))
+					signalElapsed = clock.Now().Sub(started)
 					if !test.keepAlive {
 						delete(processes, int64(pid))
 					}
@@ -219,6 +639,9 @@ func TestCustodianReapsRecordedRefsWithoutTheTable(t *testing.T) {
 			}
 			if !slices.Equal(signaled, test.wantSignals) {
 				t.Fatalf("signals = %v, want %v", signaled, test.wantSignals)
+			}
+			if test.wantSignalAfter > 0 && signalElapsed != test.wantSignalAfter {
+				t.Fatalf("signal after %s, want derived leash bound %s", signalElapsed, test.wantSignalAfter)
 			}
 			if test.hasLeash && leashCalls < 2 {
 				t.Fatalf("leash seam checks = %d, want at least 2", leashCalls)
@@ -525,8 +948,13 @@ func TestNestedCustodiansDoNotSignalEachOther(t *testing.T) {
 		t.Fatal(err)
 	}
 	slices.Sort(signaled)
-	if !slices.Equal(signaled, []int64{702, 703, 705, 706}) || AliveRef(processes, ownerCustodian.Ref()) != Alive || AliveRef(processes, unreadable.Ref()) != Alive {
+	if !slices.Equal(signaled, []int64{702, 703, 705, 706, 707}) || AliveRef(processes, ownerCustodian.Ref()) != Alive || AliveRef(processes, unreadable.Ref()) != Dead {
 		t.Fatalf("launcher custodian signaled=%v nested-state=%s unreadable-state=%s log=%q", signaled, AliveRef(processes, ownerCustodian.Ref()), AliveRef(processes, unreadable.Ref()), launcherLog.String())
+	}
+	for _, want := range []string{"action=observe pid=707 carrier=descendant", "action=kill pid=707 carrier=descendant"} {
+		if !strings.Contains(launcherLog.String(), want) {
+			t.Fatalf("launcher custodian log=%q, want %q", launcherLog.String(), want)
+		}
 	}
 	var ownerLog strings.Builder
 	ownerRuntime := custodianRuntime{prober: processes, self: ownerCustodian.Ref(), poll: time.Millisecond, bound: 5 * time.Millisecond, clock: newManualCustodianClock(), scan: func(Prober, Ref) ([]FixtureSurvivor, error) { return nil, nil }}

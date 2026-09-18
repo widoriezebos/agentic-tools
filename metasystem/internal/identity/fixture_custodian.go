@@ -28,6 +28,7 @@ const (
 	custodianBound             = 5 * time.Second
 	custodianHaltMargin        = time.Second
 	custodianSettledScans      = 2
+	custodianLeashBoundFactor  = 10
 )
 
 var errFixtureCustodianOwnerNotAlive = errors.New("fixture custodian owner is not alive")
@@ -106,6 +107,27 @@ type custodianRuntime struct {
 	leash       func() (bool, error)
 	closeWatch  func() error
 	observed    map[string]Ref
+}
+
+type custodianScanConvergence struct {
+	unchanged int
+}
+
+func (convergence *custodianScanConvergence) reset() {
+	convergence.unchanged = 0
+}
+
+func (convergence *custodianScanConvergence) settled(changed bool) bool {
+	if changed {
+		convergence.reset()
+		return false
+	}
+	convergence.unchanged++
+	return convergence.unchanged >= custodianSettledScans
+}
+
+func fixtureCustodianLeashBound(bound time.Duration) time.Duration {
+	return custodianLeashBoundFactor * bound
 }
 
 type custodianTimer interface {
@@ -330,11 +352,11 @@ func fixtureDescendants(
 		}
 		before, state, probeErr := prober.Probe(pid)
 		if probeErr != nil || state != Alive || before.Pid != pid || !before.Ref().NativeExact() ||
-			!before.EnvironKnown || isFixtureCustodian(before) || !descendsFromFacts(pid, owner.Pid, parentPid) {
+			isFixtureCustodian(before) || !descendsFromFacts(pid, owner.Pid, parentPid) {
 			continue
 		}
 		after, state, probeErr := prober.Probe(pid)
-		if probeErr == nil && state == Alive && after.EnvironKnown && SameIdentity(after, before.Ref()) &&
+		if probeErr == nil && state == Alive && SameIdentity(after, before.Ref()) &&
 			!isFixtureCustodian(after) && descendsFromFacts(pid, owner.Pid, parentPid) {
 			descendants = append(descendants, after.Ref())
 		}
@@ -451,17 +473,36 @@ func reapDeadOwner(owner Ref, log io.Writer, runtime custodianRuntime) error {
 	if err != nil {
 		return err
 	}
-	waitFixtureCustodianLeash(recorded, log, runtime)
+	released, signaled := waitFixtureCustodianLeash(recorded, log, runtime)
 	tracked := make(map[string]Ref, len(recorded)+len(runtime.observed))
-	for _, ref := range recorded {
-		signalErr := SignalExact(runtime.prober, ref, syscall.SIGKILL, runtime.sender)
-		fmt.Fprintf(log, "fixture-custodian action=kill pid=%d carrier=record result=%v\n", ref.Pid, signalErr)
+	for identity, ref := range signaled {
+		tracked[identity] = ref
 	}
 	for identity, ref := range recorded {
+		if _, exited := released[identity]; exited {
+			continue
+		}
+		if _, killed := signaled[identity]; killed {
+			continue
+		}
+		signalErr := SignalExact(runtime.prober, ref, syscall.SIGKILL, runtime.sender)
+		fmt.Fprintf(log, "fixture-custodian action=kill pid=%d carrier=record result=%v\n", ref.Pid, signalErr)
 		tracked[identity] = ref
 	}
 	for identity, ref := range runtime.observed {
-		if _, recorded := tracked[identity]; !recorded {
+		if _, exited := released[identity]; exited {
+			continue
+		}
+		if _, recorded := tracked[identity]; recorded {
+			continue
+		}
+		exact, state, probeErr := runtime.prober.Probe(ref.Pid)
+		if fixtureCustodianIdentityReleased(exact, state, probeErr, ref) {
+			released[identity] = ref
+			fmt.Fprintf(log, "fixture-custodian action=release pid=%d carrier=descendant\n", ref.Pid)
+			continue
+		}
+		if probeErr == nil && state == Alive && SameIdentity(exact, ref) && !exact.Zombie {
 			signalErr := SignalExact(runtime.prober, ref, syscall.SIGKILL, runtime.sender)
 			fmt.Fprintf(log, "fixture-custodian action=kill pid=%d carrier=descendant result=%v\n", ref.Pid, signalErr)
 		}
@@ -470,7 +511,7 @@ func reapDeadOwner(owner Ref, log io.Writer, runtime custodianRuntime) error {
 	clock, _ := runtime.timing()
 	progressSince := clock.Now()
 	lowestRemaining := -1
-	settledScans := 0
+	var convergence custodianScanConvergence
 	seen := make(map[string]struct{})
 	scanUnavailable := false
 	scanCount := 0
@@ -490,8 +531,13 @@ func reapDeadOwner(owner Ref, log io.Writer, runtime custodianRuntime) error {
 				if survivor.Class != FixtureSurvivorCertain || sameExactRef(survivor.Ref, runtime.self) {
 					continue
 				}
-				actionable++
 				identity, encodeErr := EncodeRef(survivor.Ref)
+				if encodeErr == nil {
+					if _, exited := released[identity]; exited {
+						continue
+					}
+				}
+				actionable++
 				if encodeErr == nil {
 					if _, known := seen[identity]; !known {
 						seen[identity] = struct{}{}
@@ -512,12 +558,8 @@ func reapDeadOwner(owner Ref, log io.Writer, runtime custodianRuntime) error {
 			progressSince = passFinished
 			lowestRemaining = remaining
 		}
-		if newDescendants == 0 {
-			settledScans++
-		} else {
-			settledScans = 0
-		}
-		if remaining == 0 && settledScans >= custodianSettledScans {
+		settled := convergence.settled(newDescendants > 0)
+		if remaining == 0 && settled {
 			if runtime.records != "" {
 				if removeErr := os.Remove(runtime.records); removeErr != nil && !os.IsNotExist(removeErr) {
 					return fmt.Errorf("identity: remove fixture custodian records: %w", removeErr)
@@ -534,39 +576,81 @@ func reapDeadOwner(owner Ref, log io.Writer, runtime custodianRuntime) error {
 	}
 }
 
-func waitFixtureCustodianLeash(recorded map[string]Ref, log io.Writer, runtime custodianRuntime) {
+func waitFixtureCustodianLeash(recorded map[string]Ref, log io.Writer, runtime custodianRuntime) (map[string]Ref, map[string]Ref) {
+	released := make(map[string]Ref)
+	signaled := make(map[string]Ref)
 	if runtime.leash == nil {
-		return
+		return released, signaled
 	}
 	if runtime.closeWatch != nil {
 		if err := runtime.closeWatch(); err != nil {
 			fmt.Fprintf(log, "fixture-custodian leash=unavailable error=close-watch: %v\n", err)
-			return
+			return released, signaled
 		}
 	}
 	clock, _ := runtime.timing()
 	progressSince := clock.Now()
-	previousRemaining := len(recorded)
+	var emptyConvergence custodianScanConvergence
+	var runningConvergence custodianScanConvergence
+	var previousLive map[string]Exact
+	var previousRunning map[string]Exact
+	bound := fixtureCustodianLeashBound(runtime.bound)
 	for {
-		for _, ref := range releasedFixtureCustodianRecords(recorded, runtime.prober) {
+		stop := armCustodianHalt(log, runtime)
+		inactive := make(map[string]Ref, len(released)+len(signaled))
+		for identity, ref := range released {
+			inactive[identity] = ref
+		}
+		for identity, ref := range signaled {
+			inactive[identity] = ref
+		}
+		justReleased, live := probeFixtureCustodianRecords(recorded, inactive, runtime.prober)
+		for identity, ref := range justReleased {
+			released[identity] = ref
 			fmt.Fprintf(log, "fixture-custodian action=release pid=%d carrier=record\n", ref.Pid)
 		}
 		checkedAt := clock.Now()
-		if len(recorded) < previousRemaining {
+		changed := !sameFixtureCustodianRecordSet(previousLive, live)
+		if changed {
 			progressSince = checkedAt
 		}
-		previousRemaining = len(recorded)
+		previousLive = live
+		running := fixtureCustodianRunningRecords(live)
+		runningChanged := !sameFixtureCustodianRecordSet(previousRunning, running)
+		previousRunning = running
 		held, err := runtime.leash()
+		stop()
 		if err != nil {
 			fmt.Fprintf(log, "fixture-custodian leash=unavailable error=%v\n", err)
-			return
+			return released, signaled
 		}
-		if !held {
-			return
+		if held {
+			emptyConvergence.reset()
+			runningConvergence.reset()
+		} else if len(running) > 0 {
+			emptyConvergence.reset()
+			if runningConvergence.settled(runningChanged) {
+				for identity := range running {
+					ref := recorded[identity]
+					signalErr := SignalExact(runtime.prober, ref, syscall.SIGKILL, runtime.sender)
+					fmt.Fprintf(log, "fixture-custodian action=kill pid=%d carrier=record result=%v\n", ref.Pid, signalErr)
+					signaled[identity] = ref
+				}
+				if len(running) == len(live) {
+					return released, signaled
+				}
+			}
+		} else {
+			runningConvergence.reset()
+			if len(live) > 0 {
+				emptyConvergence.reset()
+			} else if emptyConvergence.settled(changed) {
+				return released, signaled
+			}
 		}
-		remaining := runtime.bound - checkedAt.Sub(progressSince)
+		remaining := bound - checkedAt.Sub(progressSince)
 		if remaining <= 0 {
-			return
+			return released, signaled
 		}
 		pause := runtime.poll
 		if remaining < pause {
@@ -577,19 +661,53 @@ func waitFixtureCustodianLeash(recorded map[string]Ref, log io.Writer, runtime c
 }
 
 func pruneFixtureCustodianRecords(recorded map[string]Ref, prober Prober) {
-	releasedFixtureCustodianRecords(recorded, prober)
+	released, _ := probeFixtureCustodianRecords(recorded, nil, prober)
+	for identity := range released {
+		delete(recorded, identity)
+	}
 }
 
-func releasedFixtureCustodianRecords(recorded map[string]Ref, prober Prober) []Ref {
-	var released []Ref
+func probeFixtureCustodianRecords(recorded, alreadyReleased map[string]Ref, prober Prober) (map[string]Ref, map[string]Exact) {
+	released := make(map[string]Ref)
+	live := make(map[string]Exact)
 	for encoded, ref := range recorded {
+		if _, known := alreadyReleased[encoded]; known {
+			continue
+		}
 		exact, state, err := prober.Probe(ref.Pid)
-		if err == nil && (state == Dead || state == Alive && (!SameIdentity(exact, ref) || exact.Zombie)) {
-			delete(recorded, encoded)
-			released = append(released, ref)
+		if fixtureCustodianIdentityReleased(exact, state, err, ref) {
+			released[encoded] = ref
+		} else if err == nil && state == Alive && SameIdentity(exact, ref) && !exact.Zombie {
+			live[encoded] = exact
 		}
 	}
-	return released
+	return released, live
+}
+
+func fixtureCustodianIdentityReleased(exact Exact, state Liveness, err error, ref Ref) bool {
+	return err == nil && (state == Dead || state == Alive && (!SameIdentity(exact, ref) || exact.Zombie))
+}
+
+func fixtureCustodianRunningRecords(live map[string]Exact) map[string]Exact {
+	running := make(map[string]Exact)
+	for identity, exact := range live {
+		if !exact.Exiting {
+			running[identity] = exact
+		}
+	}
+	return running
+}
+
+func sameFixtureCustodianRecordSet(left, right map[string]Exact) bool {
+	if len(left) != len(right) {
+		return false
+	}
+	for encoded := range left {
+		if _, present := right[encoded]; !present {
+			return false
+		}
+	}
+	return true
 }
 
 func fixtureCustodianLeash(path string) func() (bool, error) {

@@ -34,3 +34,13 @@ func TestParseProcStat(t *testing.T) {
 		}
 	}
 }
+
+func TestProcStatExitingFlag(t *testing.T) {
+	t.Parallel()
+
+	running := "1234 (sleep) S 1 1234 1234 0 -1 4194304 100 0 0 0 0 0 0 0 20 0 1 0 555555 1000 1 0"
+	exiting := "1234 (sleep) S 1 1234 1234 0 -1 4194308 100 0 0 0 0 0 0 0 20 0 1 0 555555 1000 1 0"
+	if procStatExiting(running) || !procStatExiting(exiting) || procStatExiting("malformed") {
+		t.Fatal("Linux PF_EXITING parsing did not distinguish running, exiting, and malformed stat lines")
+	}
+}

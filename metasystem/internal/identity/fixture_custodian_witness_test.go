@@ -7,6 +7,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"runtime"
 	"slices"
 	"sort"
 	"strconv"
@@ -19,10 +20,12 @@ import (
 )
 
 const (
-	launcherWitnessMode   = "FIXTURE_LAUNCHER_WITNESS_MODE"
-	launcherBasePath      = "PATH=/usr/bin:/bin"
-	witnessCustodianPoll  = 50 * time.Millisecond
-	witnessCustodianBound = 5 * time.Second
+	launcherWitnessMode       = "FIXTURE_LAUNCHER_WITNESS_MODE"
+	exitingWitnessMode        = "FIXTURE_EXITING_WITNESS_MODE"
+	platformBinaryWitnessMode = "FIXTURE_PLATFORM_BINARY_WITNESS_MODE"
+	launcherBasePath          = "PATH=/usr/bin:/bin"
+	witnessCustodianPoll      = 50 * time.Millisecond
+	witnessCustodianBound     = 5 * time.Second
 )
 
 func witnessEnvironment(environment []string) []string {
@@ -33,22 +36,125 @@ func witnessEnvironment(environment []string) []string {
 }
 
 func witnessKernelBound(poll, bound time.Duration) time.Duration {
-	cycles := time.Duration(custodianSettledScans + 1) // owner-death detection, then settled cleanup scans
-	return 10 * cycles * (bound + custodianHaltMargin + poll)
+	cleanupScans := time.Duration(custodianSettledScans + 1)
+	ownerProof := bound + custodianHaltMargin + poll
+	leash := fixtureCustodianLeashBound(bound) + poll
+	cleanup := cleanupScans * (bound + custodianHaltMargin + poll)
+	return 10 * (ownerProof + leash + cleanup)
 }
 
 func TestWitnessBoundDerivesFromCustodianTiming(t *testing.T) {
 	t.Parallel()
 
 	baseline := witnessKernelBound(50*time.Millisecond, 5*time.Second)
-	cycles := time.Duration(custodianSettledScans + 1)
-	want := 10 * cycles * (5*time.Second + custodianHaltMargin + 50*time.Millisecond)
-	if baseline != want {
-		t.Fatalf("witness bound %s, want tenfold of %d production cycles (%s)", baseline, cycles, want)
+	cleanupScans := time.Duration(custodianSettledScans + 1)
+	minimum := 10 * ((5*time.Second + custodianHaltMargin + 50*time.Millisecond) +
+		(10*5*time.Second + 50*time.Millisecond) +
+		cleanupScans*(5*time.Second+custodianHaltMargin+50*time.Millisecond))
+	if baseline < minimum {
+		t.Fatalf("witness bound %s is less than tenfold production timing %s", baseline, minimum)
 	}
 	if changed := witnessKernelBound(100*time.Millisecond, 7*time.Second); changed == baseline {
 		t.Fatalf("witness bound stayed %s after poll and bound changed", changed)
 	}
+}
+
+func TestKernelProberReportsExitingBeforeProcessDeath(t *testing.T) {
+	t.Parallel()
+
+	if os.Getenv(exitingWitnessMode) == "child" {
+		allocation := make([]byte, 3<<30)
+		for offset := 0; offset < len(allocation); offset += 2 << 20 {
+			allocation[offset] = 1
+		}
+		runtime.KeepAlive(allocation)
+		os.Exit(0)
+	}
+
+	dir := t.TempDir()
+	stderrPath := filepath.Join(dir, "exiting.stderr")
+	command := exec.Command(os.Args[0], "-test.run=^"+t.Name()+"$", "-test.count=1")
+	command.Env = append(os.Environ(), exitingWitnessMode+"=child")
+	startWitnessCommand(t, command, stderrPath, true)
+	done := make(chan error, 1)
+	go func() { done <- command.Wait() }()
+
+	seenExiting := false
+	var probeFailure error
+	var failure string
+	waitWitnessWithClock(dir, "kernel exiting flag before process death", witnessCustodianBound, time.Millisecond, time.Now, time.Sleep,
+		func() (bool, string) {
+			exact, state, err := (KernelProber{}).Probe(int64(command.Process.Pid))
+			if err != nil {
+				probeFailure = err
+				return true, fmt.Sprintf("state=%s exiting=%t probe=%v", state, exact.Exiting, err)
+			}
+			if state == Alive {
+				seenExiting = seenExiting || exact.Exiting
+				return false, fmt.Sprintf("state=%s exiting=%t zombie=%t", state, exact.Exiting, exact.Zombie)
+			}
+			return state == Dead, fmt.Sprintf("state=%s exiting=%t zombie=%t", state, exact.Exiting, exact.Zombie)
+		}, func(message string) { failure = message })
+	if probeFailure != nil || failure != "" {
+		_ = command.Process.Kill()
+	}
+	waitErr := <-done
+	output, _ := os.ReadFile(stderrPath)
+	if probeFailure != nil {
+		t.Fatalf("probe exiting child: %v; wait=%v output=%q", probeFailure, waitErr, output)
+	}
+	if failure != "" {
+		t.Fatalf("%s; wait=%v output=%q", failure, waitErr, output)
+	}
+	if waitErr != nil {
+		t.Fatalf("exiting child failed: %v output=%q", waitErr, output)
+	}
+	if !seenExiting {
+		t.Fatalf("kernel probe never reported Exiting before child death; output=%q", output)
+	}
+}
+
+func TestCustodianObservesAPlatformBinaryChild(t *testing.T) {
+	t.Parallel()
+
+	if dir := os.Getenv(platformBinaryWitnessMode); dir != "" {
+		_, state, err := (KernelProber{}).Probe(int64(os.Getpid()))
+		if err != nil || state != Alive {
+			t.Fatalf("probe platform-binary owner: state=%s err=%v", state, err)
+		}
+		checkWitness(t, os.WriteFile(filepath.Join(dir, "ownerpid"), []byte(strconv.Itoa(os.Getpid())), 0o600))
+		registry := os.Getenv("METASYSTEM_SUPERVISION_REGISTRY_HOME")
+		if registry == "" {
+			t.Fatal("platform-binary owner has no test registry home")
+		}
+		checkWitness(t, os.WriteFile(filepath.Join(dir, "logpath"), []byte(fmt.Sprintf("%s.custodian-%d.log", registry, os.Getpid())), 0o600))
+		command := exec.Command("/bin/sh", "-c", "exec tail -f /dev/null")
+		command.Env = slices.DeleteFunc(os.Environ(), func(entry string) bool { return strings.HasPrefix(entry, FixtureOwnerEnv+"=") })
+		startWitnessCommand(t, command, filepath.Join(dir, "platform.stderr"), false)
+		checkWitness(t, os.WriteFile(filepath.Join(dir, "platformpid"), []byte(strconv.Itoa(command.Process.Pid)), 0o600))
+		refValue := liveWitnessProcessRef(t, int64(command.Process.Pid), 0)
+		ref, err := ParseRef(refValue)
+		checkWitness(t, err)
+		t.Cleanup(func() { _ = SignalExact(KernelProber{}, ref, syscall.SIGKILL); _, _ = command.Process.Wait() })
+		holdWitnessProcess(t)
+		return
+	}
+
+	dir := t.TempDir()
+	command := exec.Command(os.Args[0], "-test.run=^"+t.Name()+"$", "-test.count=1")
+	command.Env = witnessEnvironment(append(os.Environ(), platformBinaryWitnessMode+"="+dir))
+	command.SysProcAttr = &syscall.SysProcAttr{Setpgid: true}
+	startWitnessCommand(t, command, filepath.Join(dir, "owner.stderr"), true)
+	t.Cleanup(func() { _ = syscall.Kill(-command.Process.Pid, syscall.SIGKILL); _, _ = command.Process.Wait() })
+	owner := waitWitnessRef(t, dir, filepath.Join(dir, "ownerpid"), filepath.Join(dir, "owner.stderr"))
+	child := waitWitnessRef(t, dir, filepath.Join(dir, "platformpid"), filepath.Join(dir, "owner.stderr"), filepath.Join(dir, "platform.stderr"))
+	t.Cleanup(func() { _ = SignalExact(KernelProber{}, child, syscall.SIGKILL) })
+	custodian := waitWitnessCustodian(t, dir, owner)
+	t.Cleanup(func() { _ = SignalExact(KernelProber{}, custodian, syscall.SIGKILL) })
+	logPath, err := os.ReadFile(filepath.Join(dir, "logpath"))
+	checkWitness(t, err)
+	t.Cleanup(func() { _ = os.Remove(string(logPath)) })
+	waitWitnessCustodianObserved(t, dir, string(logPath), child)
 }
 
 func TestLauncherDeathKillsTheTest(t *testing.T) {

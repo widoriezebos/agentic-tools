@@ -138,21 +138,24 @@ func TestCensusFindsAnUntaggedExecutableByRecord(t *testing.T) {
 			outside := startUntaggedFixtureCopy(t, fixture, outsideDirectory)
 			wrong := startUntaggedFixtureCopy(t, fixture, wrongDirectory)
 			got, err := identity.FixtureSurvivors(fixture.Key())
-			if err != nil || len(got) != 2 {
-				t.Fatalf("fixture scan = %#v, %v; want copied binary and its custodian", got, err)
+			if err != nil || len(got) != 1 {
+				t.Fatalf("fixture scan = %#v, %v; want copied binary alone", got, err)
 			}
 			custodianRef := encodeFixtureRef(t, positive.custodian)
-			if encodeFixtureRef(t, got[0].Ref) == custodianRef {
-				got[0], got[1] = got[1], got[0]
+			if slices.ContainsFunc(got, func(survivor identity.FixtureSurvivor) bool {
+				return encodeFixtureRef(t, survivor.Ref) == custodianRef
+			}) {
+				t.Fatalf("fixture scan = %#v; custodian %+v must be absent", got, positive.custodian)
 			}
 			gotKey, gotKeyErr := identity.EncodeKey(got[0].Key)
 			wantKey, wantKeyErr := identity.EncodeKey(fixture.Key())
-			custodianKey, custodianKeyErr := identity.EncodeKey(got[1].Key)
-			if got[0].Ref.Pid != positive.exact.Pid || got[0].Exe != positive.exact.Exe || encodeFixtureRef(t, got[1].Ref) != custodianRef ||
+			if got[0].Ref.Pid != positive.exact.Pid || got[0].Exe != positive.exact.Exe ||
 				got[0].Class != identity.FixtureSurvivorCertain || got[0].Carrier != identity.FixtureCarrierRecord ||
-				got[1].Class != identity.FixtureSurvivorCertain || got[1].Carrier != identity.FixtureCarrierRecord ||
-				gotKeyErr != nil || custodianKeyErr != nil || wantKeyErr != nil || gotKey != wantKey || custodianKey != wantKey {
-				t.Fatalf("fixture scan = %#v; key encodings %q/%q/%q errors %v/%v/%v; want record-backed pid %d exe %q and custodian %+v", got, gotKey, custodianKey, wantKey, gotKeyErr, custodianKeyErr, wantKeyErr, positive.exact.Pid, positive.exact.Exe, positive.custodian)
+				gotKeyErr != nil || wantKeyErr != nil || gotKey != wantKey {
+				t.Fatalf("fixture scan = %#v; key encodings %q/%q errors %v/%v; want record-backed pid %d exe %q without custodian %+v", got, gotKey, wantKey, gotKeyErr, wantKeyErr, positive.exact.Pid, positive.exact.Exe, positive.custodian)
+			}
+			if state := identity.AliveRef(identity.KernelProber{}, positive.custodian); state != identity.Alive {
+				t.Fatalf("custodian %+v state after fixture scan = %s, want alive", positive.custodian, state)
 			}
 			for _, processCopy := range []*untaggedFixtureCopy{positive, outside, wrong} {
 				failOnFixtureError(t, processCopy.release.Close())

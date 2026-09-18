@@ -80,7 +80,10 @@ func (KernelProber) ReadStart(pid int64) (Exact, Liveness, error) {
 		return Exact{}, Unknown, fmt.Errorf("identity: %w", err)
 	}
 	started := time.Unix(boot, 0).Add(time.Duration(startTicks) * (time.Second / userHZ))
-	return Exact{Pid: pid, StartedAt: started, StartTicks: startTicks, BootID: bootIdentity, Zombie: procStatZombie(statLine)}, Alive, nil
+	return Exact{
+		Pid: pid, StartedAt: started, StartTicks: startTicks, BootID: bootIdentity,
+		Zombie: procStatZombie(statLine), Exiting: procStatExiting(statLine),
+	}, Alive, nil
 }
 
 func (KernelProber) ReadArgv(pid int64) ([]string, bool) {
@@ -167,6 +170,20 @@ func parseProcStat(stat string) (startTicks int64, ppid int64, err error) {
 func procStatZombie(stat string) bool {
 	closing := strings.LastIndexByte(stat, ')')
 	return closing >= 0 && strings.HasPrefix(strings.TrimSpace(stat[closing+1:]), "Z ")
+}
+
+func procStatExiting(stat string) bool {
+	const processExitingFlag = 0x00000004 // PF_EXITING in Linux's sched.h.
+	closing := strings.LastIndexByte(stat, ')')
+	if closing < 0 {
+		return false
+	}
+	fields := strings.Fields(stat[closing+1:])
+	if len(fields) <= 6 {
+		return false
+	}
+	flags, err := strconv.ParseUint(fields[6], 10, 64)
+	return err == nil && flags&processExitingFlag != 0
 }
 
 // bootTimeEpoch reads btime (boot time, epoch seconds) from /proc/stat.

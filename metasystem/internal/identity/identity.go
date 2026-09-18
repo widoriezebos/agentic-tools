@@ -37,6 +37,7 @@ type Exact struct {
 	StartTicks int64     // linux: /proc/<pid>/stat field 22, clock-step-immune; 0 elsewhere
 	BootID     string    // linux: /proc/sys/kernel/random/boot_id; "" elsewhere
 	Zombie     bool      // the process has exited and awaits collection by its parent
+	Exiting    bool      // the kernel is tearing the process down but identity is still readable
 	Argv       []string  // valid only when ArgvKnown; see below
 	Environ    []string  // valid only when EnvironKnown
 	Exe        string    // valid only when ExeKnown

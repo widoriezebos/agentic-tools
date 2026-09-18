@@ -64,6 +64,19 @@ func TestDecodeAllPidsRejectsDriftAndFiltersNonProcesses(t *testing.T) {
 	}
 }
 
+func TestDarwinProcessFlagsReportExiting(t *testing.T) {
+	t.Parallel()
+
+	raw := make([]byte, kinfoStatOffset+1)
+	if darwinProcessExiting(raw) {
+		t.Fatal("zero Darwin process flags reported exiting")
+	}
+	binary.LittleEndian.PutUint32(raw[kinfoFlagOffset:], processExitingFlag)
+	if !darwinProcessExiting(raw) {
+		t.Fatal("Darwin P_WEXIT flag did not report exiting")
+	}
+}
+
 func TestProcessCwdSelf(t *testing.T) {
 	wd, err := os.Getwd()
 	if err != nil {
