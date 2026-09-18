@@ -23,8 +23,18 @@ const fixtureLeashEnv = "METASYSTEM_FIXTURE_LEASH"
 
 const ShellPrologue = `if [ -n "${METASYSTEM_FIXTURE_OWNER-}" ]; then
   tag="METASYSTEM_FIXTURE_OWNER=$METASYSTEM_FIXTURE_OWNER"
-  [ "${1-}" = "$tag" ] || exec /bin/sh "$0" "$tag" "$@"
+  attempt_tag=
+  [ -z "${METASYSTEM_FIXTURE_ATTEMPT-}" ] || attempt_tag="METASYSTEM_FIXTURE_ATTEMPT=$METASYSTEM_FIXTURE_ATTEMPT"
+  if [ "${1-}" != "$tag" ]; then
+    [ -z "$attempt_tag" ] || exec /bin/sh "$0" "$tag" "$attempt_tag" "$@"
+    exec /bin/sh "$0" "$tag" "$@"
+  fi
+  if [ -n "$attempt_tag" ] && [ "${2-}" != "$attempt_tag" ]; then
+    shift
+    exec /bin/sh "$0" "$tag" "$attempt_tag" "$@"
+  fi
   shift
+  [ -z "$attempt_tag" ] || shift
 fi
 `
 
@@ -157,8 +167,21 @@ func (f *ProcessFixture) Env(base []string) []string {
 }
 
 func (f *ProcessFixture) Shell(script string, args ...string) *exec.Cmd {
-	command := exec.Command("/bin/sh", append([]string{"-c", "shift\n" + script, "sh", f.tag}, args...)...)
-	command.Env = f.Env(os.Environ())
+	return f.shell(os.Environ(), script, args...)
+}
+
+func (f *ProcessFixture) shell(base []string, script string, args ...string) *exec.Cmd {
+	environment := f.Env(base)
+	carriers := []string{f.tag}
+	for _, entry := range environment {
+		if strings.HasPrefix(entry, identity.FixtureAttemptEnv+"=") {
+			carriers = append(carriers, entry)
+			break
+		}
+	}
+	commandArgs := append([]string{"-c", fmt.Sprintf("shift %d\n", len(carriers)) + script, "sh"}, carriers...)
+	command := exec.Command("/bin/sh", append(commandArgs, args...)...)
+	command.Env = environment
 	return command
 }
 

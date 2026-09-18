@@ -278,6 +278,11 @@ func TestEnvironmentDigestIgnoresCacheAndTemporaryLocations(t *testing.T) {
 	if digestEnvironment(firstOwner) != digestEnvironment(secondOwner) {
 		t.Fatal("a new run owner's exact process reference changed the environment digest")
 	}
+	firstAttempt := append(append([]string(nil), base...), identity.FixtureAttemptEnv+"=attempt-a")
+	secondAttempt := append(append([]string(nil), base...), identity.FixtureAttemptEnv+"=attempt-b")
+	if digestEnvironment(firstAttempt) != digestEnvironment(secondAttempt) {
+		t.Fatal("a new fixture attempt tag changed the environment digest")
+	}
 	changed := []string{"PATH=/usr/bin", "HOME=/Users/seat", "GOFLAGS=-mod=vendor", "GOCACHE=/a/go-cache"}
 	if digestEnvironment(base) == digestEnvironment(changed) {
 		t.Fatal("a changed build flag kept the environment digest")

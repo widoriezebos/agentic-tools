@@ -68,7 +68,7 @@ func TestLauncherReapsSurvivorsIntoTheVerdict(t *testing.T) {
 		}
 		signals = append(signals, int64(pid))
 		return nil
-	}, time.Unix(200, 0), &verdict)
+	}, fixtureAttemptOwnership{startedAt: time.Unix(200, 0)}, &verdict)
 	if !failed || len(signals) != 2 || signals[0] != freshPID || signals[1] != oldPID {
 		t.Fatalf("reap failed=%t signals=%v, want KILL for %d and %d", failed, signals, freshPID, oldPID)
 	}
@@ -94,7 +94,7 @@ func TestLauncherReapsSurvivorsIntoTheVerdict(t *testing.T) {
 	if failed := reapFixtureSurvivors(census.FixtureProcessProber(withoutFresh), withoutFresh, func(pid int, _ syscall.Signal) error {
 		signals = append(signals, int64(pid))
 		return nil
-	}, time.Unix(200, 0), &verdict); failed || len(signals) != 1 || signals[0] != oldPID {
+	}, fixtureAttemptOwnership{startedAt: time.Unix(200, 0)}, &verdict); failed || len(signals) != 1 || signals[0] != oldPID {
 		t.Fatalf("old-only reap failed=%t signals=%v verdict=%q", failed, signals, verdict.String())
 	}
 
@@ -149,6 +149,39 @@ func TestLauncherReapsSurvivorsIntoTheVerdict(t *testing.T) {
 			t.Fatalf("unreadable launch log=%q err=%v", log, err)
 		}
 	})
+}
+
+func TestForeignFixtureSurvivorDoesNotFailProofAttempt(t *testing.T) {
+	t.Parallel()
+
+	base := int64(os.Getpid()) * 30
+	attemptOwner := proofSurvivorRef(base+1, 11)
+	foreignOwner := proofSurvivorRef(base+2, 12)
+	foreign := proofSurvivorProcess(base+10, 210)
+	foreign.Environ = []string{proofSurvivorTag(t, identity.FixtureKey{Owner: foreignOwner, Test: "TestForeign", Nonce: "00000001"})}
+
+	var signals []int64
+	var verdict bytes.Buffer
+	failed := reapFixtureSurvivors(census.FixtureProcessProber([]census.Process{foreign}), []census.Process{foreign}, func(pid int, _ syscall.Signal) error {
+		signals = append(signals, int64(pid))
+		return nil
+	}, fixtureAttemptOwnership{owner: attemptOwner, attemptID: "attempt-a", startedAt: time.Unix(200, 0)}, &verdict)
+	if failed || len(signals) != 0 || !strings.Contains(verdict.String(), "fixture-survivor pid="+strconvInt(foreign.Pid)) ||
+		!strings.Contains(verdict.String(), " foreign") {
+		t.Fatalf("foreign survivor failed=%t signals=%v verdict=%q", failed, signals, verdict.String())
+	}
+
+	owned := foreign
+	owned.Pid++
+	owned.Argv += " " + identity.FixtureAttemptEnv + "=attempt-a"
+	signals, verdict = nil, bytes.Buffer{}
+	failed = reapFixtureSurvivors(census.FixtureProcessProber([]census.Process{owned}), []census.Process{owned}, func(pid int, _ syscall.Signal) error {
+		signals = append(signals, int64(pid))
+		return nil
+	}, fixtureAttemptOwnership{owner: attemptOwner, attemptID: "attempt-a", startedAt: time.Unix(200, 0)}, &verdict)
+	if !failed || len(signals) != 1 || signals[0] != owned.Pid || strings.Contains(verdict.String(), " foreign") {
+		t.Fatalf("owned survivor failed=%t signals=%v verdict=%q", failed, signals, verdict.String())
+	}
 }
 
 func writeProofProcessTable(t *testing.T, path string, rows []census.Process) {

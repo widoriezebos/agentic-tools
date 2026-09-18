@@ -1587,7 +1587,7 @@ func testingEnvironment(environment []string) []string {
 func inheritedTestingEnvironment(prepared, inherited []string) []string {
 	allowed := map[string]bool{"METASYSTEM_PROOF_CONTROL_ROOT": true, "METASYSTEM_PROOF_ATTEMPT": true,
 		"METASYSTEM_PROOF_RECORD_KEY": true, "METASYSTEM_PROOF_CREATION_CLAIM": true, "METASYSTEM_PROOF_AUTH_BIN": true,
-		identity.RunOwnerEnv: true}
+		identity.RunOwnerEnv: true, identity.FixtureAttemptEnv: true}
 	values := make(map[string]string, len(prepared)+len(allowed))
 	for _, entry := range prepared {
 		name, value, ok := strings.Cut(entry, "=")

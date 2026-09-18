@@ -216,6 +216,7 @@ func LaunchSuite(options LaunchOptions) int {
 	if options.AttemptID != "" {
 		suite.Env = append(suite.Env,
 			"METASYSTEM_PROOF_ATTEMPT="+options.AttemptID,
+			identity.FixtureAttemptEnv+"="+options.AttemptID,
 		)
 	}
 	suite.SysProcAttr = &syscall.SysProcAttr{Setpgid: true}
@@ -413,7 +414,9 @@ func LaunchSuite(options LaunchOptions) int {
 		} else if signal == nil {
 			signal = syscall.Kill
 		}
-		survivorFailure = reapFixtureSurvivors(reapProber, processes, signal, launcherExact.StartedAt, combinedErr)
+		survivorFailure = reapFixtureSurvivors(reapProber, processes, signal, fixtureAttemptOwnership{
+			owner: launcherExact.Ref(), attemptID: options.AttemptID, startedAt: launcherExact.StartedAt,
+		}, combinedErr)
 	}
 	defer os.Remove(donePath)
 	if closeAfterCleanup {
@@ -561,6 +564,7 @@ func proofChildEnvironment(environment []string) []string {
 		"METASYSTEM_PROOF_AUTH_BIN":       true,
 		"METASYSTEM_PROOF_RUN_ROOT":       true,
 		"METASYSTEM_PROOF_RUN_ID":         true,
+		identity.FixtureAttemptEnv:        true,
 	}
 	base := environment
 	if len(base) == 0 {

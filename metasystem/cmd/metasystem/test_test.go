@@ -517,9 +517,11 @@ func TestRunOwnerSurvivesTestingWorkerFilters(t *testing.T) {
 		t.Fatalf("testing environment filtered the run owner incorrectly: %v", prepared)
 	}
 	worker := inheritedTestingEnvironment([]string{"PATH=/fixture/bin"}, []string{
-		"METASYSTEM_PROOF_CONTROL_ROOT=/proof", identity.RunOwnerEnv + "=" + owner, "UNRELATED=drop",
+		"METASYSTEM_PROOF_CONTROL_ROOT=/proof", identity.RunOwnerEnv + "=" + owner,
+		identity.FixtureAttemptEnv + "=attempt-a", "UNRELATED=drop",
 	})
-	if joined := strings.Join(worker, "\n"); !strings.Contains(joined, identity.RunOwnerEnv+"="+owner) || strings.Contains(joined, "UNRELATED=") {
+	if joined := strings.Join(worker, "\n"); !strings.Contains(joined, identity.RunOwnerEnv+"="+owner) ||
+		!strings.Contains(joined, identity.FixtureAttemptEnv+"=attempt-a") || strings.Contains(joined, "UNRELATED=") {
 		t.Fatalf("worker inheritance filtered the run owner incorrectly: %v", worker)
 	}
 }

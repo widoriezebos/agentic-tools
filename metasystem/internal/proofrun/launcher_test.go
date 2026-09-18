@@ -218,7 +218,11 @@ func TestRunOwnerSurvivesProofFiltersToLeafCommand(t *testing.T) {
 	const owner = "outer-exact-ref"
 	environment := proofChildEnvironment([]string{
 		"PATH=" + os.Getenv("PATH"), "METASYSTEM_PROOF_CONTROL_ROOT=/old", identity.RunOwnerEnv + "=" + owner,
+		identity.FixtureAttemptEnv + "=foreign-attempt",
 	})
+	if strings.Contains(strings.Join(environment, "\n"), identity.FixtureAttemptEnv+"=foreign-attempt") {
+		t.Fatalf("proof child environment retained a foreign fixture attempt: %v", environment)
+	}
 	leaf := groupTestEnvironment(TestRunRequest{Environment: environment}, testpolicy.Group{})
 	command, err := explicitEnvironmentCommand(context.Background(), t.TempDir(), leaf,
 		[]string{"sh", "-c", `printf '%s' "$METASYSTEM_RUN_OWNER"`})

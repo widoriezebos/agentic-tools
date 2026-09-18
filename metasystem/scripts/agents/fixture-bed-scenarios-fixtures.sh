@@ -53,8 +53,18 @@ set -euo pipefail
 
 if [ -n "${METASYSTEM_FIXTURE_OWNER-}" ]; then
   tag="METASYSTEM_FIXTURE_OWNER=$METASYSTEM_FIXTURE_OWNER"
-  [ "${1-}" = "$tag" ] || exec /bin/sh "$0" "$tag" "$@"
+  attempt_tag=
+  [ -z "${METASYSTEM_FIXTURE_ATTEMPT-}" ] || attempt_tag="METASYSTEM_FIXTURE_ATTEMPT=$METASYSTEM_FIXTURE_ATTEMPT"
+  if [ "${1-}" != "$tag" ]; then
+    [ -z "$attempt_tag" ] || exec /bin/sh "$0" "$tag" "$attempt_tag" "$@"
+    exec /bin/sh "$0" "$tag" "$@"
+  fi
+  if [ -n "$attempt_tag" ] && [ "${2-}" != "$attempt_tag" ]; then
+    shift
+    exec /bin/sh "$0" "$tag" "$attempt_tag" "$@"
+  fi
   shift
+  [ -z "$attempt_tag" ] || shift
 fi
 
 root=${FIXTURE_BED_SOURCE_ROOT:?}
@@ -1270,8 +1280,18 @@ if [[ "$fixture_scenario" == hang-leash ]]; then
 #!/bin/sh
 if [ -n "${METASYSTEM_FIXTURE_OWNER-}" ]; then
   tag="METASYSTEM_FIXTURE_OWNER=$METASYSTEM_FIXTURE_OWNER"
-  [ "${1-}" = "$tag" ] || exec /bin/sh "$0" "$tag" "$@"
+  attempt_tag=
+  [ -z "${METASYSTEM_FIXTURE_ATTEMPT-}" ] || attempt_tag="METASYSTEM_FIXTURE_ATTEMPT=$METASYSTEM_FIXTURE_ATTEMPT"
+  if [ "${1-}" != "$tag" ]; then
+    [ -z "$attempt_tag" ] || exec /bin/sh "$0" "$tag" "$attempt_tag" "$@"
+    exec /bin/sh "$0" "$tag" "$@"
+  fi
+  if [ -n "$attempt_tag" ] && [ "${2-}" != "$attempt_tag" ]; then
+    shift
+    exec /bin/sh "$0" "$tag" "$attempt_tag" "$@"
+  fi
   shift
+  [ -z "$attempt_tag" ] || shift
 fi
 printf '%s\n' "$$" >"${FIXTURE_CHILD_PID_FILE:?}"
 trap '' TERM

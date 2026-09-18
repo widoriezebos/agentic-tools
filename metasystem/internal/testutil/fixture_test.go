@@ -302,11 +302,22 @@ func TestBinaryExitScanNamesAChildThatOutlivedItsTest(t *testing.T) {
 	failOnFixtureError(t, err)
 	command := exec.Command(os.Args[0], "-test.run=^TestBinaryExitScanHelper$", "-test.count=1")
 	command.Env, command.ExtraFiles, command.Stdout, command.Stderr = append(os.Environ(), "TESTUTIL_EXIT_SCAN_HELPER=1"), []*os.File{reader, releaseReader}, outputWriter, outputWriter
+	command.SysProcAttr = &syscall.SysProcAttr{Setpgid: true}
 	failOnFixtureError(t, command.Start())
 	_ = errors.Join(reader.Close(), releaseReader.Close(), outputWriter.Close())
 	helper, _, err := (identity.KernelProber{}).Probe(int64(command.Process.Pid))
 	failOnFixtureError(t, err)
-	defer identity.SignalExact(identity.KernelProber{}, helper.Ref(), syscall.SIGKILL)
+	t.Cleanup(func() {
+		if command.ProcessState == nil {
+			_ = identity.SignalExact(identity.KernelProber{}, helper.Ref(), syscall.SIGKILL)
+			_, _ = command.Process.Wait()
+		}
+	})
+	helperGroup, err := syscall.Getpgid(command.Process.Pid)
+	failOnFixtureError(t, err)
+	if helperGroup != command.Process.Pid {
+		t.Fatalf("exit-scan helper group = %d, want leader %d", helperGroup, command.Process.Pid)
+	}
 	_ = outputReader.SetReadDeadline(time.Now().Add(30 * time.Second))
 	buffered := bufio.NewReader(outputReader)
 	line, err := buffered.ReadString('\n')
@@ -318,10 +329,14 @@ func TestBinaryExitScanNamesAChildThatOutlivedItsTest(t *testing.T) {
 	if err != nil || state != identity.Alive {
 		t.Fatalf("probe helper child: state=%v err=%v", state, err)
 	}
-	defer identity.SignalExact(identity.KernelProber{}, child.Ref(), syscall.SIGKILL)
+	t.Cleanup(func() {
+		_ = identity.SignalExact(identity.KernelProber{}, child.Ref(), syscall.SIGKILL)
+		waitForFixtureExit(t, child.Ref())
+	})
 	if childEnv != "" {
 		t.Fatalf("custodian variable reached live fixture child: %s", childEnv)
 	}
+	failOnFixtureError(t, writer.Close())
 	failOnFixtureError(t, releaseWriter.Close())
 	rest, readErr := io.ReadAll(buffered)
 	if readErr != nil {
@@ -335,20 +350,24 @@ func TestBinaryExitScanNamesAChildThatOutlivedItsTest(t *testing.T) {
 		_ = identity.SignalExact(identity.KernelProber{}, helper.Ref(), syscall.SIGKILL)
 		t.Fatal("exit-scan helper did not exit within 30 seconds")
 	}
-	if err == nil || !strings.Contains(line+string(rest), fmt.Sprintf("test=%q pid=%d ", "TestBinaryExitScanHelper", pid)) {
+	if err != nil {
 		t.Fatalf("helper error=%v output=%q", err, line+string(rest))
 	}
 	waitForFixtureExit(t, child.Ref())
+	if err := syscall.Kill(-helperGroup, 0); !errors.Is(err, syscall.ESRCH) {
+		t.Fatalf("helper process group %d still exists: %v", helperGroup, err)
+	}
 }
 
 func TestBinaryExitScanHelper(t *testing.T) {
 	if os.Getenv("TESTUTIL_EXIT_SCAN_HELPER") == "" {
-		t.Skip("helper process only")
+		return
 	}
 	input, release := os.NewFile(3, "exit-scan-input"), os.NewFile(4, "exit-scan-release")
 	var fixture *ProcessFixture
 	t.Cleanup(func() {
-		command := fixture.Shell("trap '' TERM\nprintf '%d|' $$\nenv | sed -n 's/^\\(METASYSTEM_FIXTURE_CUSTODIAN[^=]*\\)=.*/\\1/p'\nprintf '\\n'\nread -r _")
+		defer fixture.closeLeash()
+		command := fixture.Shell("trap '' TERM\nprintf '%d|' $$\nenv | sed -n 's/^\\(METASYSTEM_FIXTURE_CUSTODIAN[^=]*\\)=.*/\\1/p'\nprintf '\\n'\nread -r _\nexec /usr/bin/tail -f /dev/null")
 		stdout, _ := command.StdoutPipe()
 		command.Stdin, command.Stderr = input, os.Stderr
 		failOnFixtureError(t, command.Start())
@@ -358,8 +377,22 @@ func TestBinaryExitScanHelper(t *testing.T) {
 		fmt.Fprint(os.Stdout, line)
 		_, readErr = io.Copy(io.Discard, release)
 		failOnFixtureError(t, readErr)
+		failOnFixtureError(t, input.Close())
+		child, state, probeErr := (identity.KernelProber{}).Probe(int64(command.Process.Pid))
+		if probeErr != nil || state != identity.Alive {
+			t.Fatalf("probe exit-scan child for cleanup: state=%s err=%v", state, probeErr)
+		}
+		signalErr := identity.SignalExact(identity.KernelProber{}, child.Ref(), syscall.SIGKILL)
+		if signalErr != nil && signalErr != identity.ErrGone {
+			t.Fatalf("signal exit-scan child: %v", signalErr)
+		}
+		waitForFixtureExit(t, child.Ref())
+		if waitErr := command.Wait(); waitErr == nil {
+			t.Fatal("exit-scan child ignored SIGKILL")
+		}
 	})
-	fixture = Fixture(t)
+	custodian, present := testenv.FixtureCustodian()
+	fixture = makeProcessFixture(t, t.Name(), custodian, present, identity.KernelProber{}, syscall.Kill)
 }
 
 func TestShellPrologueCarriesTheTagIntoArgv(t *testing.T) {
@@ -415,6 +448,30 @@ func TestShellPrologueCarriesTheTagIntoArgv(t *testing.T) {
 			}
 		})
 	}
+	t.Run("proof attempt tag", func(t *testing.T) {
+		t.Parallel()
+
+		fixture := Fixture(t)
+		base := append(os.Environ(), identity.FixtureAttemptEnv+"=attempt-a")
+		command := fixture.shell(base, "printf '%s|' \"$@\"; printf '\\n'; read -r _ || :", "a", "b c")
+		input, _ := command.StdinPipe()
+		output, _ := command.StdoutPipe()
+		failOnFixtureError(t, command.Start())
+		fixture.Record(command.Process.Pid)
+		ref := fixture.refs[len(fixture.refs)-1]
+		killFixtureProcessAtCleanup(t, fixture, command.Process, ref)
+		line, err := bufio.NewReader(output).ReadString('\n')
+		failOnFixtureError(t, err)
+		if line != "a|b c|\n" {
+			t.Fatalf("arguments = %q, want user arguments only", line)
+		}
+		exact, state, err := (identity.KernelProber{}).Probe(ref.Pid)
+		if err != nil || state != identity.Alive || !slices.Contains(exact.Argv, identity.FixtureAttemptEnv+"=attempt-a") {
+			t.Fatalf("proof attempt carrier = argv %q state=%s err=%v", exact.Argv, state, err)
+		}
+		failOnFixtureError(t, input.Close())
+		failOnFixtureError(t, command.Wait())
+	})
 }
 
 // Custodian-log assertions belong with the cleanup path that owns and retains

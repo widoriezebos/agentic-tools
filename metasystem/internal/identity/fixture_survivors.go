@@ -12,6 +12,7 @@ import (
 )
 
 const FixtureOwnerEnv = "METASYSTEM_FIXTURE_OWNER"
+const FixtureAttemptEnv = "METASYSTEM_FIXTURE_ATTEMPT"
 const fixtureOwnerPrefix = FixtureOwnerEnv + "="
 
 type FixtureCarrier string

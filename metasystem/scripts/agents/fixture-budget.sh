@@ -23,8 +23,18 @@ harness_fixture_prologue() {
   cat <<'FIXTURE_PROLOGUE'
 if [ -n "${METASYSTEM_FIXTURE_OWNER-}" ]; then
   tag="METASYSTEM_FIXTURE_OWNER=$METASYSTEM_FIXTURE_OWNER"
-  [ "${1-}" = "$tag" ] || exec /bin/sh "$0" "$tag" "$@"
+  attempt_tag=
+  [ -z "${METASYSTEM_FIXTURE_ATTEMPT-}" ] || attempt_tag="METASYSTEM_FIXTURE_ATTEMPT=$METASYSTEM_FIXTURE_ATTEMPT"
+  if [ "${1-}" != "$tag" ]; then
+    [ -z "$attempt_tag" ] || exec /bin/sh "$0" "$tag" "$attempt_tag" "$@"
+    exec /bin/sh "$0" "$tag" "$@"
+  fi
+  if [ -n "$attempt_tag" ] && [ "${2-}" != "$attempt_tag" ]; then
+    shift
+    exec /bin/sh "$0" "$tag" "$attempt_tag" "$@"
+  fi
   shift
+  [ -z "$attempt_tag" ] || shift
 fi
 FIXTURE_PROLOGUE
 }
