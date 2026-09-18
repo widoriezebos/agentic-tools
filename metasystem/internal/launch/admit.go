@@ -48,6 +48,9 @@ func (m *Manager) Admit(spec StartSpec) error {
 }
 
 func (m *Manager) admit(spec StartSpec, settings Settings) error {
+	if _, err := m.CheckPack(spec); err != nil {
+		return err
+	}
 	paths := append([]string{spec.Brief}, spec.Inputs...)
 	if spec.Page != "" {
 		paths = append(paths, spec.Page)

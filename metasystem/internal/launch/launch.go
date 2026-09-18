@@ -41,18 +41,19 @@ type StartSpec struct {
 	AdapterData                                        map[string]json.RawMessage
 }
 type Manager struct {
-	Store         Store
-	Adapters      map[string]Adapter
-	Processes     ProcessSystem
-	Prober        identity.Prober
-	Supervisor    SupervisorStarter
-	Now           func() time.Time
-	Sleep         func(time.Duration)
-	Grace         time.Duration
-	Poll          time.Duration
-	StartCap      time.Duration
-	Settings      Settings
-	SettingsError error
+	Store             Store
+	Adapters          map[string]Adapter
+	TemplateDirectory string
+	Processes         ProcessSystem
+	Prober            identity.Prober
+	Supervisor        SupervisorStarter
+	Now               func() time.Time
+	Sleep             func(time.Duration)
+	Grace             time.Duration
+	Poll              time.Duration
+	StartCap          time.Duration
+	Settings          Settings
+	SettingsError     error
 }
 
 func (m *Manager) resolvedSettings() (Settings, error) {

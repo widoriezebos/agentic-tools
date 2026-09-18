@@ -23,6 +23,8 @@ Contents: <commit SHA, or base and candidate identifying the exact diff>
 Each item names its complete read boundary. Use line ranges for source and
 document checks, and fixture row names or ranges for fixture checks.
 
+Batch independent reads: when several files or ranges are needed and none depends on another's content, request them all in one turn, never one per turn.
+
 1. `<file>:<start>-<end>` — <behavior or contract to check>
 2. `<fixture file>:<row name or start-end>` — <scenario to check>
 

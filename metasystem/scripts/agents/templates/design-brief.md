@@ -11,6 +11,8 @@ Reason: <why this draft or revision is needed>
 Read this pack first. Open another file only to check one of the cited lines
 below; do not widen the read beyond that check.
 
+Batch independent reads: when several files or ranges are needed and none depends on another's content, request them all in one turn, never one per turn.
+
 Diagnosis or prior revision:
 
 <insert the diagnosis for a first draft, or the complete prior revision for
@@ -31,6 +33,12 @@ Cited code excerpts:
 Example page:
 
 <insert one page whose structure or level of detail is the example>
+
+## Recurring findings
+
+Filled by the seat from the records of goal retro-flags-repeated-critique-findings for the goals this design touches, or the words `none recorded`.
+
+<recurring finding classes, or none recorded>
 
 ## Tool-call budget
 

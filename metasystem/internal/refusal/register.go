@@ -36,6 +36,8 @@ var Rows = []Row{
 	{Code: "LAUNCH_ALREADY_SUPERVISED", Owner: "internal/launch", Site: "launch.go", Shape: Question},
 	{Code: "LAUNCH_SETTING_INVALID", Owner: "internal/launch", Site: "settings.go", Shape: Question},
 	{Code: "LAUNCH_BRIEF_OVERSIZE", Owner: "internal/launch", Site: "admit.go", Shape: Question},
+	{Code: "LAUNCH_BRIEF_PACK_UNFILLED", Owner: "internal/launch", Site: "pack.go", Shape: Question},
+	{Code: "LAUNCH_BRIEF_PACK_DRIFTED", Owner: "internal/launch", Site: "pack.go", Shape: Question},
 	{Code: "LAUNCH_BUILD_UNSIZED", Owner: "internal/launch", Site: "admit.go", Shape: Question},
 	{Code: "LAUNCH_BUILD_OVERSIZE", Owner: "internal/launch", Site: "admit.go", Shape: Question},
 	{Code: "LAUNCH_READ_UNSPLIT", Owner: "internal/launch", Site: "admit.go", Shape: Question},

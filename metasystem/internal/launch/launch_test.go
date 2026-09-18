@@ -94,7 +94,20 @@ func manager(t *testing.T) (*Manager, *fakeProcesses, *fakeProber, *time.Time) {
 	now := time.Date(2026, 9, 17, 12, 0, 0, 0, time.UTC)
 	probe := &fakeProber{states: map[int64]identity.Liveness{10: identity.Alive, 20: identity.Alive}}
 	processes := &fakeProcesses{probe: probe, self: ref(10), child: ref(20)}
+	templates := filepath.Join(t.TempDir(), "templates")
+	if err := os.MkdirAll(templates, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	for _, name := range []string{"design-brief.md", "review-brief.md"} {
+		if err := os.WriteFile(filepath.Join(templates, name), []byte("filled fixture\n"), 0o600); err != nil {
+			t.Fatal(err)
+		}
+	}
 	m := &Manager{Store: Store{Root: t.TempDir()}, Adapters: map[string]Adapter{"codex-exec": fakeAdapter{}}, Processes: processes, Prober: probe, Now: func() time.Time { return now }, Sleep: func(d time.Duration) { now = now.Add(d) }, Grace: time.Second, Poll: time.Second}
+	field := reflect.ValueOf(m).Elem().FieldByName("TemplateDirectory")
+	if field.IsValid() {
+		field.SetString(templates)
+	}
 	return m, processes, probe, &now
 }
 func brief(t *testing.T) string {
