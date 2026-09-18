@@ -78,6 +78,7 @@ fixture_bed_parent_cleanup() {
   if [[ -n "$fixture_bed_parent_extra_cleanup" ]]; then
     "$fixture_bed_parent_extra_cleanup" || true
   fi
+  harness_fixture_reap || status=1
   return "$status"
 }
 
@@ -86,6 +87,7 @@ run_fixture_bed_scenarios() { # bed name, success line, script, scenario names..
   local scenario_cap scenario_started scenario_deadline scenario_elapsed
   local failed_names=() failed_rcs=() failed_logs=()
   shift 3
+  harness_fixture_owner "$fixture_bed_harness_root"
   if [[ ! "${METASYSTEM_FIXTURE_CAP_SCALE_MILLI:-}" =~ ^[1-9][0-9]*$ ]]; then
     harness_fixture_budget_init "$fixture_bed_harness_root"
   fi
@@ -125,16 +127,18 @@ run_fixture_bed_scenarios() { # bed name, success line, script, scenario names..
   while (( queued_at < total || ${#live_pids[@]} > 0 )); do
     while (( queued_at < total && ${#live_pids[@]} < scenario_slots )); do
       scenario=${queued[$queued_at]}
+      harness_fixture_key "$bed-$scenario"
       log=$log_root/$queued_at.log
       capability=$("$fixture_bed_mint_capability" "$log_root" "$queued_at" "$scenario")
       echo "$bed fixture scenario started: $scenario" >&2
       set -m
-      METASYSTEM_FIXTURE_BED=$bed \
+      METASYSTEM_FIXTURE_OWNER="$harness_fixture_key_value" \
+        METASYSTEM_FIXTURE_BED=$bed \
         METASYSTEM_FIXTURE_SCENARIO_NAME=$scenario \
         METASYSTEM_FIXTURE_LEG_FILE=$log.leg \
         METASYSTEM_FIXTURE_FAILURE_MARKER=$log.failure \
         "$script" --fixture-bed-child "$scenario" "$capability" \
-        </dev/null >"$log" 2>&1 &
+        </dev/null >"$log" 2>&1 9>&- &
       live_pids+=("$!")
       set +m
       live_names+=("$scenario")

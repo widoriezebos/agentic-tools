@@ -1,6 +1,7 @@
 package identity
 
 import (
+	"errors"
 	"fmt"
 	"io"
 	"os"
@@ -8,6 +9,8 @@ import (
 	"strings"
 	"syscall"
 	"time"
+
+	"golang.org/x/sys/unix"
 )
 
 const (
@@ -16,6 +19,7 @@ const (
 	FixtureCustodianLogEnv     = "METASYSTEM_FIXTURE_CUSTODIAN_LOG"
 	FixtureCustodianChainEnv   = "METASYSTEM_FIXTURE_CUSTODIAN_CHAIN"
 	FixtureCustodianRecordsEnv = "METASYSTEM_FIXTURE_CUSTODIAN_RECORDS"
+	FixtureCustodianLeashEnv   = "METASYSTEM_FIXTURE_CUSTODIAN_LEASH"
 	RunOwnerEnv                = "METASYSTEM_RUN_OWNER"
 	custodianPoll              = 250 * time.Millisecond
 	custodianBound             = 5 * time.Second
@@ -81,15 +85,17 @@ func resolveRunOwner(prober Prober, parent func(int64) (int64, bool), owner Ref,
 }
 
 type custodianRuntime struct {
-	prober  Prober
-	self    Ref
-	chain   []Ref
-	sender  SignalFunc
-	scan    func(Prober, Ref) ([]FixtureSurvivor, error)
-	poll    time.Duration
-	bound   time.Duration
-	halt    func(int)
-	records string
+	prober     Prober
+	self       Ref
+	chain      []Ref
+	sender     SignalFunc
+	scan       func(Prober, Ref) ([]FixtureSurvivor, error)
+	poll       time.Duration
+	bound      time.Duration
+	halt       func(int)
+	records    string
+	leash      func() (bool, error)
+	closeWatch func() error
 }
 
 // RunCustodian watches the owner and its launcher chain, kills the owner after launcher loss, and reaps its attributed children.
@@ -114,10 +120,15 @@ func RunCustodian(owner Ref, watch io.Reader, ready io.WriteCloser, log io.Write
 		_, _ = io.WriteString(ready, "ready\n")
 		_ = ready.Close()
 	}
+	var closeWatch func() error
+	if closer, ok := watch.(io.Closer); ok {
+		closeWatch = closer.Close
+	}
 	return runCustodian(owner, watch, log, custodianRuntime{
 		prober: prober, self: exact.Ref(), chain: chain,
 		scan: FixtureSurvivorsOfDeadOwner, poll: custodianPoll, bound: custodianBound, halt: os.Exit,
-		records: os.Getenv(FixtureCustodianRecordsEnv),
+		records: os.Getenv(FixtureCustodianRecordsEnv), closeWatch: closeWatch,
+		leash: fixtureCustodianLeash(os.Getenv(FixtureCustodianLeashEnv)),
 	})
 }
 
@@ -236,6 +247,7 @@ func reapDeadOwner(owner Ref, log io.Writer, runtime custodianRuntime) error {
 	if err != nil {
 		return err
 	}
+	waitFixtureCustodianLeash(recorded, log, runtime)
 	for _, ref := range recorded {
 		signalErr := SignalExact(runtime.prober, ref, syscall.SIGKILL, runtime.sender)
 		fmt.Fprintf(log, "fixture-custodian action=kill pid=%d carrier=record result=%v\n", ref.Pid, signalErr)
@@ -254,12 +266,7 @@ func reapDeadOwner(owner Ref, log io.Writer, runtime custodianRuntime) error {
 	}
 	for {
 		stop := armCustodianHalt(log, runtime)
-		for encoded, ref := range recorded {
-			exact, state, probeErr := runtime.prober.Probe(ref.Pid)
-			if probeErr == nil && (state == Dead || state == Alive && (!SameIdentity(exact, ref) || exact.Zombie)) {
-				delete(recorded, encoded)
-			}
-		}
+		pruneFixtureCustodianRecords(recorded, runtime.prober)
 		survivors, err := scan(runtime.prober, owner)
 		actionable := 0
 		if err == nil {
@@ -302,6 +309,82 @@ func reapDeadOwner(owner Ref, log io.Writer, runtime custodianRuntime) error {
 			return fmt.Errorf("identity: fixture custodian cleanup exceeded %s: %v", runtime.bound, err)
 		}
 		time.Sleep(runtime.poll)
+	}
+}
+
+func waitFixtureCustodianLeash(recorded map[string]Ref, log io.Writer, runtime custodianRuntime) {
+	if runtime.leash == nil {
+		return
+	}
+	if runtime.closeWatch != nil {
+		if err := runtime.closeWatch(); err != nil {
+			fmt.Fprintf(log, "fixture-custodian leash=unavailable error=close-watch: %v\n", err)
+			return
+		}
+	}
+	progressSince := time.Now()
+	previousRemaining := len(recorded)
+	for {
+		for _, ref := range releasedFixtureCustodianRecords(recorded, runtime.prober) {
+			fmt.Fprintf(log, "fixture-custodian action=release pid=%d carrier=record\n", ref.Pid)
+		}
+		checkedAt := time.Now()
+		if len(recorded) < previousRemaining {
+			progressSince = checkedAt
+		}
+		previousRemaining = len(recorded)
+		held, err := runtime.leash()
+		if err != nil {
+			fmt.Fprintf(log, "fixture-custodian leash=unavailable error=%v\n", err)
+			return
+		}
+		if !held {
+			return
+		}
+		remaining := runtime.bound - checkedAt.Sub(progressSince)
+		if remaining <= 0 {
+			return
+		}
+		pause := runtime.poll
+		if remaining < pause {
+			pause = remaining
+		}
+		time.Sleep(pause)
+	}
+}
+
+func pruneFixtureCustodianRecords(recorded map[string]Ref, prober Prober) {
+	releasedFixtureCustodianRecords(recorded, prober)
+}
+
+func releasedFixtureCustodianRecords(recorded map[string]Ref, prober Prober) []Ref {
+	var released []Ref
+	for encoded, ref := range recorded {
+		exact, state, err := prober.Probe(ref.Pid)
+		if err == nil && (state == Dead || state == Alive && (!SameIdentity(exact, ref) || exact.Zombie)) {
+			delete(recorded, encoded)
+			released = append(released, ref)
+		}
+	}
+	return released
+}
+
+func fixtureCustodianLeash(path string) func() (bool, error) {
+	if path == "" {
+		return nil
+	}
+	return func() (bool, error) {
+		descriptor, err := unix.Open(path, unix.O_WRONLY|unix.O_NONBLOCK|unix.O_CLOEXEC, 0)
+		if errors.Is(err, unix.ENXIO) {
+			return false, nil
+		}
+		if err != nil {
+			return false, err
+		}
+		if err := unix.Close(descriptor); err != nil {
+			return false, err
+		}
+		return true, nil
 	}
 }
 

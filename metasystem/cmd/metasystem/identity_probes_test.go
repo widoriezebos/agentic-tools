@@ -51,6 +51,23 @@ func TestProcessRefPrintsOneExactEncodedLineOrNothing(t *testing.T) {
 	}
 }
 
+func TestProcFixtureKeyPrintsAnEncodedKey(t *testing.T) {
+	exact, state, err := (identity.KernelProber{}).Probe(int64(os.Getpid()))
+	if err != nil || state != identity.Alive {
+		t.Fatalf("probe fixture-key owner: state=%s err=%v", state, err)
+	}
+	owner, err := identity.EncodeRef(exact.Ref())
+	if err != nil {
+		t.Fatal(err)
+	}
+	var output bytes.Buffer
+	code := runFixtureKeyWithReader([]string{"--owner", owner, "--test", t.Name()}, strings.NewReader("\x01\x23\x45\x67"), &output)
+	key, parseErr := identity.ParseKey(strings.TrimSpace(output.String()))
+	if code != 0 || parseErr != nil || key.Owner != exact.Ref() || key.Test != t.Name() || key.Nonce != "01234567" {
+		t.Fatalf("proc fixture-key exit=%d output=%q key=%+v err=%v", code, output.String(), key, parseErr)
+	}
+}
+
 func TestProcessProbeReportsTerminalAndSessionLeader(t *testing.T) {
 	output, code := captureStdout(t, func() int {
 		return runIdentityProbe([]string{"--pid", fmt.Sprint(os.Getpid())})

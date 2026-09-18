@@ -1,6 +1,8 @@
 package main
 
 import (
+	"crypto/rand"
+	"encoding/hex"
 	"encoding/json"
 	"flag"
 	"fmt"
@@ -31,6 +33,38 @@ func runIdentityRefWithProber(args []string, prober identity.Prober, output io.W
 	encoded, err := identity.EncodeRef(exact.Ref())
 	if err != nil {
 		return 1
+	}
+	if _, err := fmt.Fprintln(output, encoded); err != nil {
+		return 1
+	}
+	return 0
+}
+
+func runFixtureKey(args []string) int {
+	return runFixtureKeyWithReader(args, rand.Reader, os.Stdout)
+}
+
+func runFixtureKeyWithReader(args []string, random io.Reader, output io.Writer) int {
+	flags := flag.NewFlagSet("proc fixture-key", flag.ContinueOnError)
+	ownerValue := flags.String("owner", "", "exact fixture owner reference")
+	testName := flags.String("test", "", "fixture scenario name")
+	if flags.Parse(args) != nil || flags.NArg() != 0 || *testName == "" {
+		return 2
+	}
+	owner, err := identity.ParseRef(*ownerValue)
+	if err != nil {
+		fmt.Fprintln(os.Stderr, "proc fixture-key: invalid --owner:", err)
+		return 2
+	}
+	nonce := make([]byte, 4)
+	if _, err := io.ReadFull(random, nonce); err != nil {
+		fmt.Fprintln(os.Stderr, "proc fixture-key: create nonce:", err)
+		return 1
+	}
+	encoded, err := identity.EncodeKey(identity.FixtureKey{Owner: owner, Test: *testName, Nonce: hex.EncodeToString(nonce)})
+	if err != nil {
+		fmt.Fprintln(os.Stderr, "proc fixture-key:", err)
+		return 2
 	}
 	if _, err := fmt.Fprintln(output, encoded); err != nil {
 		return 1
@@ -72,6 +106,11 @@ func runFixtureCustodian(args []string) int {
 		fmt.Fprintf(os.Stderr, "proc custodian: watch descriptor 3 is not a pipe read end: flags=%#x err=%v\n", watchFlags, err)
 		return 2
 	}
+	var readyStat unix.Stat_t
+	if err := unix.Fstat(4, &readyStat); err != nil || readyStat.Mode&unix.S_IFMT != unix.S_IFIFO {
+		fmt.Fprintln(os.Stderr, "proc custodian: ready descriptor 4 is unavailable; it must be a pipe:", err)
+		return 2
+	}
 	if _, err := syscall.Setsid(); err != nil {
 		sid, sidErr := unix.Getsid(0)
 		if sidErr != nil || sid != os.Getpid() {
@@ -107,7 +146,8 @@ func runFixtureCustodian(args []string) int {
 	}
 	watch := os.NewFile(3, "fixture-owner-watch")
 	defer watch.Close()
-	if err := identity.RunCustodian(owner, watch, nil, logFile); err != nil {
+	ready := os.NewFile(4, "fixture-custodian-ready")
+	if err := identity.RunCustodian(owner, watch, ready, logFile); err != nil {
 		fmt.Fprintln(os.Stderr, "proc custodian:", err)
 		return 1
 	}
@@ -121,7 +161,7 @@ func closeInheritedDescriptors() error {
 	}
 	for _, entry := range entries {
 		descriptor, parseErr := strconv.Atoi(entry.Name())
-		if parseErr != nil || descriptor <= 3 {
+		if parseErr != nil || descriptor <= 4 {
 			continue
 		}
 		flags, flagErr := unix.FcntlInt(uintptr(descriptor), unix.F_GETFD, 0)
@@ -192,6 +232,7 @@ func runIdentityProbe(args []string) int {
 		result["startTicks"] = exact.StartTicks
 		result["bootId"] = exact.BootID
 		result["argv"] = exact.Argv
+		result["zombie"] = exact.Zombie
 		terminalID, terminalKnown := identity.ControllingTerminalIdentity(*pid)
 		result["terminalKnown"] = terminalKnown
 		result["terminalId"] = terminalID

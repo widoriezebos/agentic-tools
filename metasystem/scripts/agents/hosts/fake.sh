@@ -1,6 +1,12 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
+if [ -n "${METASYSTEM_FIXTURE_OWNER-}" ]; then
+  tag="METASYSTEM_FIXTURE_OWNER=$METASYSTEM_FIXTURE_OWNER"
+  [ "${1-}" = "$tag" ] || exec /bin/sh "$0" "$tag" "$@"
+  shift
+fi
+
 usage() {
   cat <<'USAGE' >&2
 Usage:
@@ -39,7 +45,12 @@ if [[ ${METASYSTEM_FAKE_HOST_HOLD:-0} == 1 ]]; then
     trap 'exit 0' TERM
   fi
   : >"$turn_dir/host-ready"
-  while true; do sleep 1; done
+  if [[ -n ${METASYSTEM_FIXTURE_LEASH:-} ]]; then
+    exec 3<"$METASYSTEM_FIXTURE_LEASH"
+    read -r _ <&3
+  else
+    while true; do sleep 1; done
+  fi
 fi
 
 behaviors=$(sed -n 's/.*FAKEHOST:\([a-z-][a-z-]*\).*/\1/p' "$prompt" | sort -u)

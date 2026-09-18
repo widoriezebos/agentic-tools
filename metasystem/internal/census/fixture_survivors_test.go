@@ -134,3 +134,33 @@ func TestCensusReapsOnlyDeadOwnedSurvivors(t *testing.T) {
 		}
 	}
 }
+
+func TestFixtureSurvivorScanExcludesItsOwnProcess(t *testing.T) {
+	self := int64(os.Getpid())
+	owner := survivorRef(self+1, 201)
+	key := identity.FixtureKey{Owner: owner, Test: "TestSelf", Nonce: "00000005"}
+	process := survivorProcess(self, 202)
+	process.Environ = []string{survivorTag(t, key)}
+	rows := []Process{process}
+	prober := FixtureProcessProber(rows)
+
+	lines, certain, err := FixtureSurvivorLines(prober, rows)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(lines) != 0 || certain {
+		t.Fatalf("scan listed its own process: lines=%v certain=%t", lines, certain)
+	}
+
+	var signals []int
+	survivors, err := ReapFixtureSurvivors(prober, rows, FixtureSurvivorSelection{Key: &key}, func(pid int, signal syscall.Signal) error {
+		signals = append(signals, pid)
+		return nil
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(survivors) != 0 || len(signals) != 0 {
+		t.Fatalf("reap saw own-process survivors %#v and signals %v, want neither", survivors, signals)
+	}
+}

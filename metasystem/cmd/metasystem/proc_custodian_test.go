@@ -63,12 +63,21 @@ func TestProcCustodianProcessBoundaries(t *testing.T) {
 		process := startProcCustodianProcess(t, []*os.File{watchReader, heldWriter}, false, false, false)
 		process.watchWriter = watchWriter
 		_ = heldWriter.Close()
-		eof := make(chan error, 1)
-		go func() { var data [1]byte; _, err := heldReader.Read(data[:]); eof <- err }()
+		ready := make(chan struct {
+			data string
+			err  error
+		}, 1)
+		go func() {
+			data, err := io.ReadAll(heldReader)
+			ready <- struct {
+				data string
+				err  error
+			}{string(data), err}
+		}()
 		select {
-		case err := <-eof:
-			if err != io.EOF {
-				t.Fatalf("descriptor 4 reader returned %v, want EOF", err)
+		case result := <-ready:
+			if result.err != nil || result.data != "ready\n" {
+				t.Fatalf("descriptor 4 read = %q, %v; want ready and EOF", result.data, result.err)
 			}
 		case <-time.After(procCustodianTestBound):
 			t.Fatal("custodian kept inherited descriptor 4 open")

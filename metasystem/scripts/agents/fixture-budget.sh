@@ -19,6 +19,156 @@ harness_fixture_without_outer_proof() { "${harness_fixture_proof_scrub[@]}" "$@"
 
 harness_fixture_exec_without_outer_proof() { exec "${harness_fixture_proof_scrub[@]}" "$@"; }
 
+harness_fixture_prologue() {
+  cat <<'FIXTURE_PROLOGUE'
+if [ -n "${METASYSTEM_FIXTURE_OWNER-}" ]; then
+  tag="METASYSTEM_FIXTURE_OWNER=$METASYSTEM_FIXTURE_OWNER"
+  [ "${1-}" = "$tag" ] || exec /bin/sh "$0" "$tag" "$@"
+  shift
+fi
+FIXTURE_PROLOGUE
+}
+
+harness_fixture_engine_call() {
+  env -u METASYSTEM_FIXTURE_OWNER "${harness_fixture_engine:?}" "$@"
+}
+
+harness_fixture_key() { # scenario
+  local scenario=$1 key
+  key=$(harness_fixture_engine_call proc fixture-key \
+    --owner "${METASYSTEM_RUN_OWNER:?}" --test "$scenario") || return 1
+  printf '%s\n' "$key" >>"${harness_fixture_reap_file:?}" || return 1
+  harness_fixture_key_value=$key
+  harness_fixture_tag="METASYSTEM_FIXTURE_OWNER=$key"
+  export harness_fixture_key_value harness_fixture_tag
+}
+
+harness_fixture_owner() { # metasystem root
+  local harness_root=${1:-${root:-}} ready probe monitor=0
+  [[ -n "$harness_root" ]] || { echo "fixture owner needs the metasystem root" >&2; return 1; }
+  harness_fixture_engine=${METASYSTEM_BIN:-$harness_root/bin/metasystem}
+  [[ -x "$harness_fixture_engine" ]] \
+    || { echo "fixture owner needs an executable metasystem binary: $harness_fixture_engine" >&2; return 1; }
+  METASYSTEM_RUN_OWNER=$(harness_fixture_engine_call proc ref --pid $$) \
+    || { echo "fixture owner could not prove its exact identity" >&2; return 1; }
+  export METASYSTEM_RUN_OWNER
+  harness_fixture_owner_root=$harness_root
+  harness_fixture_owner_dir=$(mktemp -d "${TMPDIR:-/tmp}/metasystem-fixture-owner.XXXXXX") || return 1
+  harness_fixture_reap_file=$harness_fixture_owner_dir/keys
+  harness_fixture_record_file=$harness_fixture_owner_dir/records
+  harness_fixture_hold_file=$harness_fixture_owner_dir/held
+  harness_fixture_custodian_log=$harness_fixture_owner_dir/custodian.log
+  harness_fixture_leash=$harness_fixture_owner_dir/leash
+  harness_fixture_ready=$harness_fixture_owner_dir/ready
+  export harness_fixture_engine harness_fixture_owner_root harness_fixture_reap_file \
+    harness_fixture_record_file harness_fixture_hold_file harness_fixture_custodian_log
+  : >"$harness_fixture_reap_file"
+  : >"$harness_fixture_record_file"
+  : >"$harness_fixture_hold_file"
+  chmod 600 "$harness_fixture_reap_file" "$harness_fixture_record_file" "$harness_fixture_hold_file"
+  mkfifo -m 600 "$harness_fixture_leash" "$harness_fixture_ready"
+  exec 8<>"$harness_fixture_leash"
+  exec 9>"$harness_fixture_leash"
+  exec 8>&-
+  case $- in *m*) monitor=1; set +m ;; esac
+  env -u METASYSTEM_FIXTURE_OWNER \
+    -u METASYSTEM_FIXTURE_CUSTODIAN \
+    -u METASYSTEM_FIXTURE_CUSTODIAN_OWNER \
+    -u METASYSTEM_FIXTURE_CUSTODIAN_LOG \
+    -u METASYSTEM_FIXTURE_CUSTODIAN_CHAIN \
+    -u METASYSTEM_FIXTURE_CUSTODIAN_RECORDS \
+    METASYSTEM_FIXTURE_CUSTODIAN=1 \
+    METASYSTEM_FIXTURE_CUSTODIAN_OWNER="$METASYSTEM_RUN_OWNER" \
+    METASYSTEM_FIXTURE_CUSTODIAN_LOG="$harness_fixture_custodian_log" \
+    METASYSTEM_FIXTURE_CUSTODIAN_CHAIN= \
+    METASYSTEM_FIXTURE_CUSTODIAN_RECORDS="$harness_fixture_record_file" \
+    METASYSTEM_FIXTURE_CUSTODIAN_LEASH="$harness_fixture_leash" \
+    "$harness_fixture_engine" proc custodian \
+      --owner "$METASYSTEM_RUN_OWNER" --log "$harness_fixture_custodian_log" \
+      3<"$harness_fixture_leash" 4>"$harness_fixture_ready" 9>&- &
+  harness_fixture_custodian_pid=$!
+  (( monitor == 0 )) || set -m
+  ready=
+  IFS= read -r ready <"$harness_fixture_ready" || true
+  if [[ "$ready" != ready ]]; then
+    wait "$harness_fixture_custodian_pid" 2>/dev/null || true
+    echo "fixture custodian exited before ready; log tail:" >&2
+    tail -n 8 "$harness_fixture_custodian_log" >&2 2>/dev/null || true
+    return 1
+  fi
+  probe=$(harness_fixture_engine_call proc probe --pid "$harness_fixture_custodian_pid") || {
+    echo "fixture custodian probe failed; log tail:" >&2
+    tail -n 8 "$harness_fixture_custodian_log" >&2 2>/dev/null || true
+    return 1
+  }
+  if [[ "$probe" != *'"liveness":"alive"'* \
+      || "$probe" != *"\"sessionLeaderPid\":$harness_fixture_custodian_pid"* \
+      || "$probe" != *'"zombie":false'* ]]; then
+    echo "fixture custodian failed its live session-leader probe: $probe" >&2
+    tail -n 8 "$harness_fixture_custodian_log" >&2 2>/dev/null || true
+    return 1
+  fi
+  METASYSTEM_FIXTURE_LEASH=$harness_fixture_leash
+  export METASYSTEM_FIXTURE_LEASH
+  harness_fixture_key bed
+}
+
+harness_fixture_record_pid() { # pid
+  local pid=$1 ref
+  [[ "$pid" =~ ^[1-9][0-9]*$ ]] || { echo "fixture record needs a positive pid: $pid" >&2; return 1; }
+  ref=$(harness_fixture_engine_call proc ref --pid "$pid") || {
+    echo "fixture child $pid exited before its identity could be recorded" >&2
+    return 0
+  }
+  printf '+%s\n' "$ref" >>"${harness_fixture_record_file:?}"
+}
+
+harness_fixture_hold_pid() { # pid
+  local pid=$1 ref
+  [[ "$pid" =~ ^[1-9][0-9]*$ ]] || { echo "fixture hold needs a positive pid: $pid" >&2; return 1; }
+  ref=$(harness_fixture_engine_call proc ref --pid "$pid") || {
+    echo "fixture held child $pid exited before its identity could be recorded" >&2
+    return 0
+  }
+  printf '+%s\n' "$ref" >>"${harness_fixture_record_file:?}"
+  printf '%s\n' "$ref" >>"${harness_fixture_hold_file:?}"
+}
+
+harness_fixture_reap() {
+  local key output rc=0 scan_rc ref pid current deadline reap_cap
+  while IFS= read -r key; do
+    [[ -n "$key" ]] || continue
+    set +e
+    output=$(harness_fixture_engine_call proc fixture-survivors \
+      --key "$key" --reap --root "${harness_fixture_owner_root:?}" 2>&1)
+    scan_rc=$?
+    set -e
+    [[ -z "$output" ]] || printf '%s\n' "$output"
+    if (( scan_rc == 1 )); then
+      rc=1
+    elif (( scan_rc != 0 )); then
+      echo "fixture survivor scan failed with status $scan_rc for key $key" >&2
+      rc=1
+    fi
+  done <"${harness_fixture_reap_file:?}"
+  reap_cap=$(harness_fixture_cap suite-watchdog-reap)
+  while IFS= read -r ref; do
+    [[ -n "$ref" ]] || continue
+    pid=${ref#pid=}; pid=${pid%%;*}
+    deadline=$((SECONDS + reap_cap))
+    while current=$(harness_fixture_engine_call proc ref --pid "$pid" 2>/dev/null) \
+        && [[ "$current" == "$ref" ]] && (( SECONDS < deadline )); do
+      sleep "$METASYSTEM_FIXTURE_POLL_INTERVAL_SEC"
+    done
+    if current=$(harness_fixture_engine_call proc ref --pid "$pid" 2>/dev/null) \
+        && [[ "$current" == "$ref" ]]; then
+      echo "fixture held child remained alive at teardown: $ref" >&2
+      rc=1
+    fi
+  done <"${harness_fixture_hold_file:?}"
+  return "$rc"
+}
+
 harness_fixture_warn_if_engine_stale() { # metasystem root
   local harness_root=$1 engine newest
   engine=${METASYSTEM_BIN:-$harness_root/bin/metasystem}
@@ -416,13 +566,15 @@ harness_fixture_budget_init() { # metasystem root
   else
     # Calibrate by timing one live census scan under the calibration cap, then
     # derive the cap scale from the elapsed milliseconds.
-    local ms_bin probe_dir probe_started probe_pid probe_deadline probe_elapsed_ms probe_scale
+    local ms_bin probe_dir probe_started probe_pid probe_deadline probe_elapsed_ms probe_scale saved_exit_trap
     ms_bin="${METASYSTEM_BIN:-$harness_root/bin/metasystem}"
     probe_dir=$(mktemp -d "${TMPDIR:-/tmp}/metasystem-fixture-probe.XXXXXX") || return 1
-    probe_started=$("$ms_bin" util now-ns)
-    "$ms_bin" proc census --repo "$harness_root" --root "$harness_root" \
+    saved_exit_trap=$(trap -p EXIT || true)
+    trap 'rm -rf "$probe_dir"' EXIT
+    probe_started=$(env -u METASYSTEM_FIXTURE_OWNER "$ms_bin" util now-ns)
+    env -u METASYSTEM_FIXTURE_OWNER "$ms_bin" proc census --repo "$harness_root" --root "$harness_root" \
       --fingerprint fixture-budget-probe --interval 60 \
-      --output "$probe_dir/census.json" >/dev/null 2>&1 &
+      --output "$probe_dir/census.json" >/dev/null 2>&1 9>&- &
     probe_pid=$!
     probe_deadline=$((SECONDS + calibration_cap))
     while kill -0 "$probe_pid" 2>/dev/null && (( SECONDS < probe_deadline )); do
@@ -432,12 +584,14 @@ harness_fixture_budget_init() { # metasystem root
       kill "$probe_pid" 2>/dev/null || true
       wait "$probe_pid" 2>/dev/null || true
       rm -rf "$probe_dir"
+      if [[ -n "$saved_exit_trap" ]]; then eval "$saved_exit_trap"; else trap - EXIT; fi
       echo "fixture calibration timed out: census probe (scaled cap: ${calibration_cap}s)" >&2
       return 1
     fi
     wait "$probe_pid" 2>/dev/null || true
     rm -rf "$probe_dir"
-    probe_elapsed_ms=$(( ($("$ms_bin" util now-ns) - probe_started) / 1000000 ))
+    if [[ -n "$saved_exit_trap" ]]; then eval "$saved_exit_trap"; else trap - EXIT; fi
+    probe_elapsed_ms=$(( ($(env -u METASYSTEM_FIXTURE_OWNER "$ms_bin" util now-ns) - probe_started) / 1000000 ))
     (( probe_elapsed_ms >= 1 )) || probe_elapsed_ms=1
     probe_scale=$(( (probe_elapsed_ms + 249) / 250 ))
     # Floor 8 (was 3): the probe is one-shot, so a calm probe moment

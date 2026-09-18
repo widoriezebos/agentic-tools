@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"io"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"slices"
 	"strings"
@@ -11,6 +12,22 @@ import (
 	"testing"
 	"time"
 )
+
+type custodianRecordProber struct {
+	fixtureTable
+	diesOnLaterProbe int64
+	probes           int
+}
+
+func (prober *custodianRecordProber) Probe(pid int64) (Exact, Liveness, error) {
+	if pid == prober.diesOnLaterProbe {
+		prober.probes++
+		if prober.probes > 1 {
+			delete(prober.fixtureTable, pid)
+		}
+	}
+	return prober.fixtureTable.Probe(pid)
+}
 
 func TestCustodianReapsRecordedRefsWithoutTheTable(t *testing.T) {
 	a, b := fixtureExact(500, 50).Ref(), fixtureExact(501, 51).Ref()
@@ -23,17 +40,25 @@ func TestCustodianReapsRecordedRefsWithoutTheTable(t *testing.T) {
 		recycled.StartedAt = recycled.StartedAt.Add(time.Microsecond)
 	}
 	for _, test := range []struct {
-		name, contents  string
-		current         Exact
-		keepAlive       bool
-		wantSignals     []int64
-		wantLog         string
-		unwantLog       string
-		wantError       string
-		wantRecordFile  bool
-		wantCompleteLog bool
+		name, contents   string
+		current          Exact
+		keepAlive        bool
+		wantSignals      []int64
+		wantLog          string
+		unwantLog        string
+		wantError        string
+		wantRecordFile   bool
+		wantCompleteLog  bool
+		diesOnLaterProbe bool
+		hasLeash         bool
+		leashStates      []bool
+		leashAlwaysHeld  bool
 	}{
 		{name: "live record", contents: "+" + aValue + "\n", current: fixtureExact(500, 50), wantSignals: []int64{500}, wantLog: "carrier=record", wantCompleteLog: true},
+		{name: "leashed record exits during grace", contents: "+" + aValue + "\n", current: fixtureExact(500, 50), wantLog: "action=release pid=500 carrier=record", unwantLog: "action=kill pid=", wantCompleteLog: true, diesOnLaterProbe: true, hasLeash: true, leashStates: []bool{true, true, false}},
+		{name: "leashed record never exits", contents: "+" + aValue + "\n", current: fixtureExact(500, 50), wantSignals: []int64{500}, wantLog: "action=kill pid=500 carrier=record", wantCompleteLog: true, hasLeash: true, leashAlwaysHeld: true},
+		{name: "no leash signals at once", contents: "+" + aValue + "\n", current: fixtureExact(500, 50), wantSignals: []int64{500}, wantLog: "action=kill pid=500 carrier=record", wantCompleteLog: true, diesOnLaterProbe: true},
+		{name: "dead record without leash keeps its line", contents: "+" + aValue + "\n", wantLog: "action=kill pid=500 carrier=record result=recorded process is gone", wantCompleteLog: true},
 		{name: "live record remains alive", contents: "+" + aValue + "\n", current: fixtureExact(500, 50), keepAlive: true, wantSignals: []int64{500}, wantLog: "carrier=record", wantError: "fixture custodian cleanup exceeded", wantRecordFile: true},
 		{name: "released record", contents: "+" + aValue + "\n-" + aValue + "\n", current: fixtureExact(500, 50), wantCompleteLog: true},
 		{name: "torn final record", contents: "+" + aValue + "\n+" + bValue, current: fixtureExact(500, 50), wantSignals: []int64{500}, unwantLog: "pid=501", wantCompleteLog: true},
@@ -51,9 +76,30 @@ func TestCustodianReapsRecordedRefsWithoutTheTable(t *testing.T) {
 			}
 			var signaled []int64
 			var log strings.Builder
+			prober := &custodianRecordProber{fixtureTable: processes}
+			if test.diesOnLaterProbe {
+				prober.diesOnLaterProbe = test.current.Pid
+			}
+			leashCalls := 0
+			watchCloses := 0
+			var leash func() (bool, error)
+			if test.hasLeash {
+				leash = func() (bool, error) {
+					leashCalls++
+					if test.leashAlwaysHeld {
+						return true, nil
+					}
+					index := leashCalls - 1
+					if index >= len(test.leashStates) {
+						index = len(test.leashStates) - 1
+					}
+					return test.leashStates[index], nil
+				}
+			}
 			runtime := custodianRuntime{
-				prober: processes, records: records, poll: time.Millisecond, bound: 20 * time.Millisecond,
-				scan: func(Prober, Ref) ([]FixtureSurvivor, error) { return nil, fmt.Errorf("denied kern.proc.all") },
+				prober: prober, records: records, poll: time.Millisecond, bound: 20 * time.Millisecond,
+				leash: leash,
+				scan:  func(Prober, Ref) ([]FixtureSurvivor, error) { return nil, fmt.Errorf("denied kern.proc.all") },
 				sender: func(pid int, _ syscall.Signal) error {
 					signaled = append(signaled, int64(pid))
 					if !test.keepAlive {
@@ -62,6 +108,12 @@ func TestCustodianReapsRecordedRefsWithoutTheTable(t *testing.T) {
 					return nil
 				},
 			}
+			if test.hasLeash {
+				runtime.closeWatch = func() error {
+					watchCloses++
+					return nil
+				}
+			}
 			err := reapDeadOwner(fixtureExact(700, 70).Ref(), &log, runtime)
 			if test.wantError == "" && err != nil || test.wantError != "" && (err == nil || !strings.Contains(err.Error(), test.wantError)) {
 				t.Fatalf("reapDeadOwner error = %v, want containing %q", err, test.wantError)
@@ -69,11 +121,17 @@ func TestCustodianReapsRecordedRefsWithoutTheTable(t *testing.T) {
 			if !slices.Equal(signaled, test.wantSignals) {
 				t.Fatalf("signals = %v, want %v", signaled, test.wantSignals)
 			}
+			if test.hasLeash && leashCalls < 2 {
+				t.Fatalf("leash seam checks = %d, want at least 2", leashCalls)
+			}
+			if test.hasLeash && watchCloses != 1 {
+				t.Fatalf("watch closes = %d, want 1", watchCloses)
+			}
 			if test.wantLog != "" && !strings.Contains(log.String(), test.wantLog) {
 				t.Fatalf("log %q does not contain %q", log.String(), test.wantLog)
 			}
 			if test.unwantLog != "" && strings.Contains(log.String(), test.unwantLog) {
-				t.Fatalf("log %q contains torn record %q", log.String(), test.unwantLog)
+				t.Fatalf("log %q contains forbidden text %q", log.String(), test.unwantLog)
 			}
 			if strings.Count(log.String(), "scan=unavailable error=denied kern.proc.all") != 1 || strings.Contains(log.String(), "action=complete") != test.wantCompleteLog {
 				t.Fatalf("custodian log = %q", log.String())
@@ -99,6 +157,63 @@ func TestControlledLaunchersExportTheirOwnRef(t *testing.T) {
 	if preserved, err := ExportRunOwner(existing); err != nil || len(preserved) != 2 || preserved[1] != existing[1] {
 		t.Fatalf("existing run owner changed: %v, %v", preserved, err)
 	}
+
+	root := filepath.Clean(filepath.Join("..", ".."))
+	sourceRoot := os.Getenv("FIXTURE_SOURCE_ROOT")
+	if sourceRoot == "" {
+		sourceRoot = root
+	}
+	engine := filepath.Join(t.TempDir(), "metasystem")
+	build := exec.Command("go", "build", "-o", engine, "./cmd/metasystem")
+	build.Dir = root
+	if output, err := build.CombinedOutput(); err != nil {
+		t.Fatalf("build proc ref witness: %v\n%s", err, output)
+	}
+	command := exec.Command("sh", "-c", "metasystem proc ref --pid $$")
+	command.Env = append(os.Environ(), "PATH="+filepath.Dir(engine)+":"+os.Getenv("PATH"))
+	var output strings.Builder
+	command.Stdout = &output
+	if err := command.Start(); err != nil {
+		t.Fatal(err)
+	}
+	shellPID := int64(command.Process.Pid)
+	if err := command.Wait(); err != nil {
+		t.Fatalf("shell proc ref: %v, output=%q", err, output.String())
+	}
+	shellRef, err := ParseRef(strings.TrimSpace(output.String()))
+	if err != nil || shellRef.Pid != shellPID || !shellRef.NativeExact() {
+		t.Fatalf("shell proc ref = %+v, %v; shell pid=%d output=%q", shellRef, err, shellPID, output.String())
+	}
+
+	gate := readLauncherSource(t, filepath.Join(sourceRoot, "scripts", "agents", "go-gate.sh"))
+	exportAt, firstTestAt := strings.Index(gate, "export METASYSTEM_RUN_OWNER"), strings.Index(gate, "go test -count=1")
+	if exportAt < 0 || firstTestAt < 0 || exportAt > firstTestAt {
+		t.Fatalf("go-gate run owner export position=%d, first go test position=%d", exportAt, firstTestAt)
+	}
+	bed := readLauncherSource(t, filepath.Join(sourceRoot, "scripts", "agents", "fixture-bed-scenarios.sh"))
+	ownerAt, childAt := strings.Index(bed, "harness_fixture_owner \"$fixture_bed_harness_root\""), strings.Index(bed, "\"$script\" --fixture-bed-child")
+	if ownerAt < 0 || childAt < 0 || ownerAt > childAt {
+		t.Fatalf("fixture bed owner position=%d, first scenario child position=%d", ownerAt, childAt)
+	}
+	budget := readLauncherSource(t, filepath.Join(sourceRoot, "scripts", "agents", "fixture-budget.sh"))
+	ownerStart, ownerEnd := strings.Index(budget, "harness_fixture_owner()"), strings.Index(budget, "harness_fixture_record_pid()")
+	if ownerStart < 0 || ownerEnd <= ownerStart {
+		t.Fatal("fixture owner helper boundaries were not found")
+	}
+	ownerSource := budget[ownerStart:ownerEnd]
+	ownerRefAt, ownerExportAt, custodianAt := strings.Index(ownerSource, "METASYSTEM_RUN_OWNER=$("), strings.Index(ownerSource, "export METASYSTEM_RUN_OWNER"), strings.Index(ownerSource, "proc custodian")
+	if ownerRefAt < 0 || ownerExportAt < ownerRefAt || custodianAt < ownerExportAt {
+		t.Fatalf("fixture owner ref=%d export=%d first child=%d", ownerRefAt, ownerExportAt, custodianAt)
+	}
+}
+
+func readLauncherSource(t *testing.T, path string) string {
+	t.Helper()
+	contents, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return string(contents)
 }
 
 func TestRunOwnerResolution(t *testing.T) {

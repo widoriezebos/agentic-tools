@@ -4,6 +4,12 @@ set -euo pipefail
 root=$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd -P)
 bin=${METASYSTEM_BIN:-$root/bin/metasystem}
 
+if [ -n "${METASYSTEM_FIXTURE_OWNER-}" ]; then
+  tag="METASYSTEM_FIXTURE_OWNER=$METASYSTEM_FIXTURE_OWNER"
+  [ "${1-}" = "$tag" ] || exec /bin/sh "$0" "$tag" "$@"
+  shift
+fi
+
 case ${1:-} in
   __printing)
     progress=$2 suite=$3 section=$4
@@ -37,7 +43,15 @@ case ${1:-} in
     ;;
   __detached)
     trap '' TERM
-    while :; do sleep 1; done
+    if [ -n "${METASYSTEM_DETACHED_READY-}" ]; then
+      : >"$METASYSTEM_DETACHED_READY"
+    fi
+    if [ -n "${METASYSTEM_FIXTURE_LEASH-}" ]; then
+      exec 3<"$METASYSTEM_FIXTURE_LEASH"
+      read -r _ <&3
+    else
+      while :; do sleep 1; done
+    fi
     ;;
   __stopped)
     bed=$2 progress=$3 suite=$4 section=$5 fixture_bin=$6
@@ -50,25 +64,36 @@ case ${1:-} in
       --wait-sec 2 --progress-sec 1 >/dev/null
     detached_pid=$("$fixture_bin" supervise launch-detached --cwd "$bed" \
       --execution-guard-root "$bed" --execution-guard-owner "stopped suite detached member" \
-      -- bash "$root/scripts/agents/suite-progress-fixtures.sh" __detached)
+      --env "METASYSTEM_DETACHED_READY=$tmp/detached.ready" \
+      -- bash "$root/scripts/agents/suite-progress-fixtures.sh" "$harness_fixture_tag" __detached)
     echo "$detached_pid" >"$tmp/detached.pid"
     printf 'evidence written before stop\n' >"$tmp/evidence.txt"
     printf '{"suite":"%s","section":"%s","event":"start","at":"%s","depth":0}\n' \
       "$suite" "$section" "$(date -u +%Y-%m-%dT%H:%M:%SZ)" >>"$progress"
     # The watchdog ends a suite for the supervisor's dead or runaway verdict
-    # and for a cancellation intent, never for silence (decision 3 of the
-    # hang-detection design); this suite writes the verdict in the
-    # supervisor's place, then stops itself, so the stop ladder is what the
-    # leg proves.
-    printf '{"suite":"%s","section":"%s","event":"verdict","at":"%s","depth":0,"verdict":"dead"}\n' \
-      "$suite" "$section" "$(date -u +%Y-%m-%dT%H:%M:%SZ)" >>"$progress"
-    kill -STOP $$
+    # and for a cancellation intent, never for silence. An inspection release lets
+    # the parent inspect the stopped suite before a sibling publishes that same
+    # verdict; the watchdog still owns the CONT/TERM/KILL ladder.
+    if [[ -n ${METASYSTEM_STOPPED_WITNESS_RELEASE:-} ]]; then
+      (
+        kill -STOP $$
+        while [[ ! -e "$METASYSTEM_STOPPED_WITNESS_RELEASE" ]]; do sleep 0.05; done
+        printf '{"suite":"%s","section":"%s","event":"verdict","at":"%s","depth":0,"verdict":"dead"}\n' \
+          "$suite" "$section" "$(date -u +%Y-%m-%dT%H:%M:%SZ)" >>"$progress"
+      ) &
+      wait
+    else
+      printf '{"suite":"%s","section":"%s","event":"verdict","at":"%s","depth":0,"verdict":"dead"}\n' \
+        "$suite" "$section" "$(date -u +%Y-%m-%dT%H:%M:%SZ)" >>"$progress"
+      kill -STOP $$
+    fi
     exit 99
     ;;
 esac
 
 [[ -x "$bin" ]] || { echo "suite-progress fixture: build bin/metasystem first" >&2; exit 1; }
 source "$root/scripts/agents/fixture-budget.sh"
+harness_fixture_owner "$root"
 harness_fixture_budget_init "$root"
 wait_cap=$(harness_fixture_cap suite-watchdog-wait)
 reap_cap=$(harness_fixture_cap suite-watchdog-reap)
@@ -76,12 +101,11 @@ tmp=$(mktemp -d "${TMPDIR:-/tmp}/suite-progress-fixtures.XXXXXX")
 tmp=$(cd "$tmp" && pwd -P)
 owned_pids=()
 cleanup() {
-  local pid
-  for pid in ${owned_pids[@]+"${owned_pids[@]}"}; do
-    [[ "$pid" =~ ^[1-9][0-9]*$ ]] || continue
-    kill "$pid" 2>/dev/null || true
-  done
+  local status=$?
+  trap - EXIT
+  harness_fixture_reap || status=1
   rm -rf "$tmp"
+  return "$status"
 }
 trap cleanup EXIT
 
@@ -94,9 +118,23 @@ launch_fixture() { # bed, suite, section, banner, extra launcher flags -- comman
     -u METASYSTEM_HOOK_DELEGATE_STATE_ROOT -u METASYSTEM_HOOK_DELEGATE_INSTALLATION_ROOT \
     -u METASYSTEM_HOOK_DELEGATE_JOB -u METASYSTEM_PROOF_RECORD_KEY \
     -u METASYSTEM_PROOF_CREATION_CLAIM -u METASYSTEM_PROOF_AUTH_BIN \
+    METASYSTEM_FIXTURE_OWNER="$harness_fixture_key_value" \
     "$bin" proof-run launch --suite "$suite" --root "$bed" --control-root "$bed" --conf "$root/metasystem.conf" \
     --progress "$bed/progress.jsonl" --log "$bed/logs/suite.log" --tmp "$bed/tmp" \
-    --banner "$banner" --selected "$section" "$@"
+    --banner "$banner" --selected "$section" "$@" 9>&-
+}
+
+wait_for_exact_death() { # name, pid, exact ref
+  local name=$1 pid=$2 ref=$3 current deadline
+  deadline=$((SECONDS + reap_cap))
+  while current=$(harness_fixture_engine_call proc ref --pid "$pid" 2>/dev/null) \
+      && [[ "$current" == "$ref" ]] && (( SECONDS < deadline )); do
+    sleep "$METASYSTEM_FIXTURE_POLL_INTERVAL_SEC"
+  done
+  if current=$(harness_fixture_engine_call proc ref --pid "$pid" 2>/dev/null) && [[ "$current" == "$ref" ]]; then
+    echo "suite-progress fixture: $name remained alive at $ref" >&2
+    return 1
+  fi
 }
 
 # Output growth keeps a section alive beyond the shortened silence window.
@@ -105,7 +143,7 @@ printing_banner='suite-cost suite=printing witness=armed duration=minutes heartb
 launch_fixture "$printing" printing long-printing "$printing_banner" \
   --silence-ms 300 --section-cap-ms 10000 --evidence-timeout-ms 1000 \
   --evidence-max-bytes 1048576 --poll-ms 50 --term-grace-ms 100 --kill-grace-ms 100 -- \
-  bash "$root/scripts/agents/suite-progress-fixtures.sh" __printing \
+  bash "$root/scripts/agents/suite-progress-fixtures.sh" "$harness_fixture_tag" __printing \
     "$printing/progress.jsonl" printing long-printing
 [[ $(grep -c -xF "$printing_banner" "$printing/logs/suite.log") -eq 1 ]] \
   || { echo "suite-progress fixture: cost banner was not logged exactly once" >&2; exit 1; }
@@ -121,10 +159,11 @@ launch_fixture "$chatty" chatty over-cap \
   'suite-cost suite=chatty witness=armed duration=minutes heartbeat=progress.jsonl logs=logs/suite.log' \
   --silence-ms 2000 --section-cap-ms 400 --evidence-timeout-ms 1000 \
   --evidence-max-bytes 1048576 --poll-ms 50 --term-grace-ms 100 --kill-grace-ms 100 -- \
-  bash "$root/scripts/agents/suite-progress-fixtures.sh" __printing_until \
+  bash "$root/scripts/agents/suite-progress-fixtures.sh" "$harness_fixture_tag" __printing_until \
     "$chatty_release" "$chatty/progress.jsonl" chatty over-cap >"$chatty_out" 2>&1 &
 chatty_pid=$!
 owned_pids+=("$chatty_pid")
+harness_fixture_hold_pid "$chatty_pid"
 chatty_deadline=$((SECONDS + wait_cap))
 chatty_noted=0
 while (( SECONDS < chatty_deadline )); do
@@ -280,13 +319,58 @@ grep -Fq "DROPPED $bounded/source/evidence" "$bounded/result/copy-note.txt" \
 # the suite group, then sweeps the separately detached guard member.
 stopped="$tmp/stopped"
 stopped_out="$tmp/stopped.out"
-if launch_fixture "$stopped" stopped stopped-section \
+launch_fixture "$stopped" stopped stopped-section \
     'suite-cost suite=stopped witness=frozen duration=minutes heartbeat=progress.jsonl logs=logs/suite.log' \
     --silence-ms 300 --section-cap-ms 5000 --evidence-timeout-ms 1000 \
     --evidence-max-bytes 1048576 --poll-ms 50 --term-grace-ms 100 --kill-grace-ms 100 -- \
-    bash "$root/scripts/agents/suite-progress-fixtures.sh" __stopped \
+    env METASYSTEM_STOPPED_WITNESS_RELEASE="$stopped/tmp/assertions.done" \
+      bash "$root/scripts/agents/suite-progress-fixtures.sh" "$harness_fixture_tag" __stopped \
       "$stopped" "$stopped/progress.jsonl" stopped stopped-section "$bin" \
-      >"$stopped_out" 2>&1; then
+      >"$stopped_out" 2>&1 &
+stopped_launcher_pid=$!
+harness_fixture_hold_pid "$stopped_launcher_pid"
+stopped_deadline=$((SECONDS + wait_cap))
+while [[ ! -s "$stopped/tmp/suite.pid" || ! -s "$stopped/tmp/group-child.pid" \
+    || ! -s "$stopped/tmp/detached.pid" || ! -e "$stopped/tmp/detached.ready" ]] \
+    && kill -0 "$stopped_launcher_pid" 2>/dev/null && (( SECONDS < stopped_deadline )); do
+  sleep "$METASYSTEM_FIXTURE_POLL_INTERVAL_SEC"
+done
+if [[ ! -s "$stopped/tmp/suite.pid" || ! -s "$stopped/tmp/group-child.pid" \
+    || ! -s "$stopped/tmp/detached.pid" || ! -e "$stopped/tmp/detached.ready" ]]; then
+  echo "suite-progress fixture: stopped suite did not publish its three pids and detached readiness" >&2
+  wait "$stopped_launcher_pid" 2>/dev/null || true
+  cat "$stopped_out" >&2
+  exit 1
+fi
+suite_pid=$(<"$stopped/tmp/suite.pid")
+group_child_pid=$(<"$stopped/tmp/group-child.pid")
+detached_pid=$(<"$stopped/tmp/detached.pid")
+harness_fixture_hold_pid "$suite_pid"
+harness_fixture_hold_pid "$group_child_pid"
+harness_fixture_hold_pid "$detached_pid"
+stopped_state=
+stopped_deadline=$((SECONDS + wait_cap))
+while (( SECONDS < stopped_deadline )); do
+  stopped_state=$(ps -o state= -p "$suite_pid" 2>/dev/null | tr -d '[:space:]')
+  [[ "$stopped_state" == T* ]] && break
+  kill -0 "$stopped_launcher_pid" 2>/dev/null || break
+  sleep "$METASYSTEM_FIXTURE_POLL_INTERVAL_SEC"
+done
+[[ "$stopped_state" == T* ]] || {
+  echo "suite-progress fixture: suite.pid $suite_pid state=${stopped_state:-absent}, want T while the bed lives" >&2
+  exit 1
+}
+detached_ref=$(harness_fixture_engine_call proc ref --pid "$detached_pid")
+kill -TERM "$detached_pid"
+detached_after_term=$(harness_fixture_engine_call proc ref --pid "$detached_pid" 2>/dev/null || true)
+[[ "$detached_after_term" == "$detached_ref" ]] || {
+  echo "suite-progress fixture: detached.pid $detached_pid did not remain alive at its exact identity after TERM (before=$detached_ref after=${detached_after_term:-dead})" >&2
+  exit 1
+}
+: >"$stopped/tmp/assertions.done"
+stopped_status=0
+wait "$stopped_launcher_pid" || stopped_status=$?
+if (( stopped_status == 0 )); then
   echo "suite-progress fixture: a stopped suite passed" >&2
   exit 1
 fi
@@ -306,6 +390,107 @@ for pid_file in suite.pid group-child.pid detached.pid; do
   fi
 done
 
+# Killing a bed owner leaves no watchdog to help its stopped runner or its
+# detached member. The custodian owns both through the bed's fixture key.
+stopped_owner="$tmp/stopped-owner-killed"
+mkdir -p "$stopped_owner/tmp" "$stopped_owner/logs"
+: >"$stopped_owner/progress.jsonl"
+METASYSTEM_FIXTURE_OWNER="$harness_fixture_key_value" bash -c '
+  set -euo pipefail
+  root=$1 bin=$2 bed=$3
+  source "$root/scripts/agents/fixture-budget.sh"
+  harness_fixture_owner "$root"
+  harness_fixture_key stopped-owner-killed
+  METASYSTEM_FIXTURE_OWNER="$harness_fixture_key_value" \
+    bash "$root/scripts/agents/suite-progress-fixtures.sh" "$harness_fixture_tag" __stopped \
+    "$bed" "$bed/progress.jsonl" stopped-owner stopped-owner-section "$bin" 9>&- &
+  runner=$!
+  harness_fixture_hold_pid "$runner"
+  printf "%s\n" "$runner" >"$bed/tmp/owner-runner.pid"
+  wait "$runner"
+' bash "$root" "$bin" "$stopped_owner" 9>&- >"$stopped_owner/owner.out" 2>&1 &
+stopped_owner_pid=$!
+harness_fixture_hold_pid "$stopped_owner_pid"
+stopped_owner_deadline=$((SECONDS + wait_cap))
+while [[ ! -s "$stopped_owner/tmp/owner-runner.pid" || ! -s "$stopped_owner/tmp/detached.pid" \
+    || ! -e "$stopped_owner/tmp/detached.ready" ]] \
+    && kill -0 "$stopped_owner_pid" 2>/dev/null && (( SECONDS < stopped_owner_deadline )); do
+  sleep "$METASYSTEM_FIXTURE_POLL_INTERVAL_SEC"
+done
+if [[ ! -s "$stopped_owner/tmp/owner-runner.pid" || ! -s "$stopped_owner/tmp/detached.pid" \
+    || ! -e "$stopped_owner/tmp/detached.ready" ]]; then
+  echo "suite-progress fixture: stopped-owner-killed did not publish its runner and detached member" >&2
+  cat "$stopped_owner/owner.out" >&2
+  exit 1
+fi
+stopped_owner_runner=$(<"$stopped_owner/tmp/owner-runner.pid")
+stopped_owner_detached=$(<"$stopped_owner/tmp/detached.pid")
+harness_fixture_hold_pid "$stopped_owner_runner"
+harness_fixture_hold_pid "$stopped_owner_detached"
+stopped_owner_runner_ref=$(harness_fixture_engine_call proc ref --pid "$stopped_owner_runner")
+stopped_owner_detached_ref=$(harness_fixture_engine_call proc ref --pid "$stopped_owner_detached")
+kill -KILL "$stopped_owner_pid"
+wait "$stopped_owner_pid" 2>/dev/null || true
+wait_for_exact_death "stopped-owner-killed runner" "$stopped_owner_runner" "$stopped_owner_runner_ref"
+wait_for_exact_death "stopped-owner-killed detached member" "$stopped_owner_detached" "$stopped_owner_detached_ref"
+
+# The held fake host ignores TERM but still belongs to the shell that started
+# it, so killing that owner leaves no host behind.
+fake_owner="$tmp/fake-host-owner-killed"
+fake_root="$fake_owner/root"
+fake_turn="$fake_root/turn"
+mkdir -p "$fake_root/bin" "$fake_root/scripts/agents/hosts" "$fake_turn"
+cp "$bin" "$fake_root/bin/metasystem"
+cp "$root/scripts/agents/hosts/fake.sh" "$root/scripts/agents/hosts/host-common.sh" \
+  "$fake_root/scripts/agents/hosts/"
+cp "$root/metasystem.conf" "$fake_root/metasystem.conf"
+conf_edit "$fake_root/metasystem.conf" replace-line-first '^metasystem[.]runtimes=.*$' \
+  'metasystem.runtimes=fake'
+printf '{"missionId":"fixture-host","turnId":"fixture-turn","cycle":1}\n' >"$fake_turn/turn.json"
+printf 'FAKEHOST:no-return\n' >"$fake_turn/prompt.md"
+METASYSTEM_FIXTURE_OWNER="$harness_fixture_key_value" bash -c '
+  set -euo pipefail
+  source_root=$1 fixture_root=$2 turn=$3
+  METASYSTEM_BIN="$fixture_root/bin/metasystem"
+  export METASYSTEM_BIN
+  source "$source_root/scripts/agents/fixture-budget.sh"
+  harness_fixture_owner "$fixture_root"
+  harness_fixture_key fake-host-owner-killed
+  METASYSTEM_FAKE_HOST_HOLD=1 METASYSTEM_FAKE_HOST_IGNORE_TERM=1 \
+    METASYSTEM_FIXTURE_OWNER="$harness_fixture_key_value" \
+    "$fixture_root/scripts/agents/hosts/fake.sh" "$harness_fixture_tag" start-turn \
+      --mission fixture-host --turn-id fixture-turn --prompt "$turn/prompt.md" \
+      --result "$turn/result.json" --instance-tag fixture-host 9>&- &
+  host=$!
+  harness_fixture_hold_pid "$host"
+  printf "%s\n" "$host" >"$turn/host.pid"
+  wait "$host"
+' bash "$root" "$fake_root" "$fake_turn" 9>&- >"$fake_owner/owner.out" 2>&1 &
+fake_owner_pid=$!
+harness_fixture_hold_pid "$fake_owner_pid"
+fake_deadline=$((SECONDS + wait_cap))
+while [[ ! -s "$fake_turn/host.pid" || ! -e "$fake_turn/host-ready" ]] \
+    && kill -0 "$fake_owner_pid" 2>/dev/null && (( SECONDS < fake_deadline )); do
+  sleep "$METASYSTEM_FIXTURE_POLL_INTERVAL_SEC"
+done
+if [[ ! -s "$fake_turn/host.pid" || ! -e "$fake_turn/host-ready" ]]; then
+  echo "suite-progress fixture: fake-host-owner-killed did not reach host-ready" >&2
+  cat "$fake_owner/owner.out" >&2
+  exit 1
+fi
+fake_host_pid=$(<"$fake_turn/host.pid")
+harness_fixture_hold_pid "$fake_host_pid"
+fake_host_ref=$(harness_fixture_engine_call proc ref --pid "$fake_host_pid")
+kill -TERM "$fake_host_pid"
+fake_host_after_term=$(harness_fixture_engine_call proc ref --pid "$fake_host_pid" 2>/dev/null || true)
+[[ "$fake_host_after_term" == "$fake_host_ref" ]] || {
+  echo "suite-progress fixture: fake host $fake_host_pid did not remain alive at its exact identity after TERM" >&2
+  exit 1
+}
+kill -KILL "$fake_owner_pid"
+wait "$fake_owner_pid" 2>/dev/null || true
+wait_for_exact_death "fake-host-owner-killed host" "$fake_host_pid" "$fake_host_ref"
+
 # A mismatched start identity authorizes neither supervision shutdown nor a
 # signal. The live process remains until this fixture, which spawned it, reaps.
 # The watchdog attempts a stop only on the supervisor's verdict (decision 3
@@ -319,9 +504,10 @@ mkdir -p "$recycle"
   printf '{"suite":"recycle","section":"guard","event":"verdict","at":"%s","depth":0,"verdict":"dead"}\n' "$(date -u +%Y-%m-%dT%H:%M:%SZ)"
 } >"$recycle/progress.jsonl"
 : >"$recycle/log"
-sleep "$wait_cap" &
+METASYSTEM_FIXTURE_OWNER="$harness_fixture_key_value" sleep "$wait_cap" 9>&- &
 recycle_pid=$!
 owned_pids+=("$recycle_pid")
+harness_fixture_hold_pid "$recycle_pid"
 if "$bin" proof-run watchdog --suite recycle --root "$recycle" \
     --conf "$root/metasystem.conf" \
     --progress "$recycle/progress.jsonl" --done "$recycle/done" --log "$recycle/log" \

@@ -512,17 +512,21 @@ gate_sc_out=$(go run honnef.co/go/tools/cmd/staticcheck@v0.8.0 ./... 2>&1) \
   || gate_static_reds+=("staticcheck 2026.2 (module v0.8.0) refused (or could not run):
 $gate_sc_out")
 
-if [[ "$gate_fast" == 1 ]]; then
-  gate_refusal_out=$(go test -count=1 ./internal/refusal 2>&1) \
-    || gate_static_reds+=("refusal register failed:
-$gate_refusal_out")
-fi
-
 gate_build_scratch=$(mktemp "${TMPDIR:-/tmp}/metasystem-gate-collect.XXXXXX")
 if ! bash scripts/agents/go-build.sh --out "$gate_build_scratch" >/dev/null 2>&1; then
   gate_static_reds+=("build failed (go-build.sh)")
   rm -f "$gate_build_scratch"
   gate_build_scratch=
+fi
+if [[ -n "$gate_build_scratch" ]]; then
+  METASYSTEM_RUN_OWNER=$("$gate_build_scratch" proc ref --pid $$) \
+    || gate_static_reds+=("run owner export failed")
+  export METASYSTEM_RUN_OWNER
+fi
+if [[ "$gate_fast" == 1 ]]; then
+  gate_refusal_out=$(go test -count=1 ./internal/refusal 2>&1) \
+    || gate_static_reds+=("refusal register failed:
+$gate_refusal_out")
 fi
 gate_hook_start_scope=script-fixture
 # wow.md marks both template and adopted installations. The audit source is a

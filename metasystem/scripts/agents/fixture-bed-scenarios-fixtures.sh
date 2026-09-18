@@ -24,8 +24,9 @@ fixture_check_failed() { # description
 if (( ! fixture_bed_child )); then
   fixture_bed_script=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd -P)/$(basename "${BASH_SOURCE[0]}")
   run_fixture_bed_scenarios fixture-bed-scenarios \
-    "fixture-bed-scenarios fixtures passed (26 isolated scenarios)" \
+    "fixture-bed-scenarios fixtures passed (27 isolated scenarios)" \
     "$fixture_bed_script" budget-standalone budget-inherited ceiling-reaps-group signal-reaps-group \
+    hang-leash \
     command-substitution-failure collects-every-failure \
     assert-keeps-going-under-errexit assert-finish-exits-from-count \
     require-stops-with-terminal-record assert-duplicate-label-refused \
@@ -50,6 +51,12 @@ write_inner_bed() { # destination
 #!/usr/bin/env bash
 set -euo pipefail
 
+if [ -n "${METASYSTEM_FIXTURE_OWNER-}" ]; then
+  tag="METASYSTEM_FIXTURE_OWNER=$METASYSTEM_FIXTURE_OWNER"
+  [ "${1-}" = "$tag" ] || exec /bin/sh "$0" "$tag" "$@"
+  shift
+fi
+
 root=${FIXTURE_BED_SOURCE_ROOT:?}
 source "$root/scripts/agents/fixture-budget.sh"
 source "$root/scripts/agents/fixture-bed-scenarios.sh"
@@ -73,10 +80,12 @@ case "$fixture_scenario" in
     ;;
   hang)
     printf '%s\n' "$$" >"${FIXTURE_BED_CHILD_PID_FILE:?}"
-    bash -c 'trap "" TERM; sleep 600' &
+    bash -c 'trap "" TERM; exec 3<"$METASYSTEM_FIXTURE_LEASH"; read -r _ <&3' \
+      bash "METASYSTEM_FIXTURE_OWNER=$METASYSTEM_FIXTURE_OWNER" &
     fixture_grandchild_pid=$!
     printf '%s\n' "$fixture_grandchild_pid" >"${FIXTURE_BED_GRANDCHILD_PID_FILE:?}"
-    sleep 600
+    exec 3<"$METASYSTEM_FIXTURE_LEASH"
+    read -r _ <&3
     ;;
   json-read-fails | exit-fails) ;;
   pass)
@@ -123,6 +132,31 @@ assert_no_group_survivor() { # direct child pid, grandchild pid
     echo "fixture-bed-scenarios fixture left process group $child_pid alive" >&2
     return 1
   fi
+}
+
+wait_fixture_ref_gone() { # description, pid, exact ref
+  local description=$1 pid=$2 ref=$3 current deadline
+  deadline=$((SECONDS + $(harness_fixture_cap suite-watchdog-reap)))
+  while current=$(harness_fixture_engine_call proc ref --pid "$pid" 2>/dev/null) \
+      && [[ "$current" == "$ref" ]] && (( SECONDS < deadline )); do
+    sleep "$METASYSTEM_FIXTURE_POLL_INTERVAL_SEC"
+  done
+  if current=$(harness_fixture_engine_call proc ref --pid "$pid" 2>/dev/null) && [[ "$current" == "$ref" ]]; then
+    echo "fixture-bed-scenarios fixture: $description remained alive at $ref" >&2
+    return 1
+  fi
+}
+
+wait_fixture_log_line() { # log, fixed line fragment
+  local log=$1 fragment=$2 deadline
+  deadline=$((SECONDS + $(harness_fixture_cap suite-watchdog-reap)))
+  while (( SECONDS < deadline )); do
+    [[ -f "$log" ]] && grep -Fq "$fragment" "$log" && return 0
+    sleep "$METASYSTEM_FIXTURE_POLL_INTERVAL_SEC"
+  done
+  echo "fixture-bed-scenarios fixture: custodian log did not contain $fragment" >&2
+  [[ ! -f "$log" ]] || cat "$log" >&2
+  return 1
 }
 
 fixture_assert_source_path=metasystem/scripts/agents/fixture-bed-scenarios-fixtures.sh
@@ -1073,7 +1107,7 @@ if [[ "$fixture_scenario" == budget-standalone ]]; then
   (
     unset METASYSTEM_FIXTURE_CAP_SCALE METASYSTEM_FIXTURE_CAP_SCALE_MILLI
     FIXTURE_BED_SOURCE_ROOT="$root" FIXTURE_BED_INNER_SCENARIOS=print-scale \
-      "$inner"
+      "$inner" "$harness_fixture_tag"
   ) >"$output" 2>&1
   standalone_milli=$(sed -n '/^[0-9][0-9]*$/{p;q;}' "$output")
   [[ "$standalone_milli" =~ ^[0-9]+$ \
@@ -1094,11 +1128,11 @@ if [[ "$fixture_scenario" == budget-inherited ]]; then
     export METASYSTEM_FIXTURE_CAP_SCALE=3
     unset METASYSTEM_FIXTURE_CAP_SCALE_MILLI
     FIXTURE_BED_SOURCE_ROOT="$root" FIXTURE_BED_INNER_SCENARIOS=print-scale \
-      "$inner"
+      "$inner" "$harness_fixture_tag"
   ) >"$operator_output" 2>&1
   METASYSTEM_FIXTURE_CAP_SCALE=3 METASYSTEM_FIXTURE_CAP_SCALE_MILLI=3000 \
     FIXTURE_BED_SOURCE_ROOT="$root" FIXTURE_BED_INNER_SCENARIOS=print-scale \
-    "$inner" >"$parent_output" 2>&1
+    "$inner" "$harness_fixture_tag" >"$parent_output" 2>&1
   operator_milli=$(sed -n '/^[0-9][0-9]*$/{p;q;}' "$operator_output")
   [[ "$operator_milli" == 3000 ]] || fixture_check_failed \
     "operator budget scale observed=$operator_milli expected=3000"
@@ -1119,7 +1153,7 @@ if [[ "$fixture_scenario" == ceiling-reaps-group ]]; then
     FIXTURE_BED_SOURCE_ROOT="$root" FIXTURE_BED_INNER_SCENARIOS=hang \
     FIXTURE_BED_CHILD_PID_FILE="$child_file" \
     FIXTURE_BED_GRANDCHILD_PID_FILE="$grandchild_file" \
-    "$inner" >"$output" 2>&1
+    "$inner" "$harness_fixture_tag" >"$output" 2>&1
   inner_rc=$?
   set -e
   [[ $inner_rc -eq 1 ]] || {
@@ -1143,10 +1177,10 @@ if [[ "$fixture_scenario" == signal-reaps-group ]]; then
   child_file=$tmp/child.pid
   grandchild_file=$tmp/grandchild.pid
   write_inner_bed "$inner"
-  FIXTURE_BED_SOURCE_ROOT="$root" FIXTURE_BED_INNER_SCENARIOS=hang \
+    FIXTURE_BED_SOURCE_ROOT="$root" FIXTURE_BED_INNER_SCENARIOS=hang \
     FIXTURE_BED_CHILD_PID_FILE="$child_file" \
     FIXTURE_BED_GRANDCHILD_PID_FILE="$grandchild_file" \
-    "$inner" >"$output" 2>&1 &
+    "$inner" "$harness_fixture_tag" >"$output" 2>&1 &
   inner_pid=$!
   signal_deadline=$((SECONDS + $(harness_fixture_cap bed-scenario)))
   while [[ ! -s "$grandchild_file" ]] && kill -0 "$inner_pid" 2>/dev/null \
@@ -1178,13 +1212,164 @@ if [[ "$fixture_scenario" == signal-reaps-group ]]; then
   exit 0
 fi
 
+if [[ "$fixture_scenario" == hang-leash ]]; then
+  inner=$tmp/inner-bed.sh
+  write_inner_bed "$inner"
+
+  # The ordinary bed cleanup still empties the process group after an INT.
+  interrupt_output=$tmp/hang-interrupt.out
+  interrupt_child=$tmp/hang-interrupt-child.pid
+  interrupt_grandchild=$tmp/hang-interrupt-grandchild.pid
+  set -m
+  FIXTURE_BED_SOURCE_ROOT="$root" FIXTURE_BED_INNER_SCENARIOS=hang \
+    FIXTURE_BED_CHILD_PID_FILE="$interrupt_child" \
+    FIXTURE_BED_GRANDCHILD_PID_FILE="$interrupt_grandchild" \
+    "$inner" "$harness_fixture_tag" >"$interrupt_output" 2>&1 9>&- &
+  interrupt_owner=$!
+  set +m
+  harness_fixture_hold_pid "$interrupt_owner"
+  interrupt_deadline=$((SECONDS + $(harness_fixture_cap bed-scenario)))
+  while [[ ! -s "$interrupt_child" || ! -s "$interrupt_grandchild" ]] \
+      && kill -0 "$interrupt_owner" 2>/dev/null && (( SECONDS < interrupt_deadline )); do
+    sleep "$METASYSTEM_FIXTURE_POLL_INTERVAL_SEC"
+  done
+  [[ -s "$interrupt_child" && -s "$interrupt_grandchild" ]] || {
+    echo "fixture-bed-scenarios fixture: hang-leash INT leg did not publish both pids" >&2
+    cat "$interrupt_output" >&2
+    exit 1
+  }
+  interrupt_child_pid=$(<"$interrupt_child")
+  interrupt_grandchild_pid=$(<"$interrupt_grandchild")
+  harness_fixture_hold_pid "$interrupt_child_pid"
+  harness_fixture_hold_pid "$interrupt_grandchild_pid"
+  interrupt_grandchild_ref=$(harness_fixture_engine_call proc ref --pid "$interrupt_grandchild_pid")
+  kill -INT "$interrupt_owner"
+  interrupt_deadline=$((SECONDS + $(harness_fixture_cap bed-scenario)))
+  while kill -0 "$interrupt_owner" 2>/dev/null && (( SECONDS < interrupt_deadline )); do
+    sleep "$METASYSTEM_FIXTURE_POLL_INTERVAL_SEC"
+  done
+  if kill -0 "$interrupt_owner" 2>/dev/null; then
+    echo "fixture-bed-scenarios fixture: hang-leash INT leg did not exit after INT" >&2
+    cat "$interrupt_output" >&2
+    fixture_bed_reap_group "$interrupt_owner" || true
+    wait "$interrupt_owner" 2>/dev/null || true
+    exit 1
+  fi
+  interrupt_status=0
+  wait "$interrupt_owner" || interrupt_status=$?
+  [[ $interrupt_status -eq 130 ]] || {
+    echo "fixture-bed-scenarios fixture: hang-leash INT bed exited $interrupt_status, want 130" >&2
+    cat "$interrupt_output" >&2
+    exit 1
+  }
+  wait_fixture_ref_gone "hang grandchild after bed INT" \
+    "$interrupt_grandchild_pid" "$interrupt_grandchild_ref"
+
+  leash_child=$tmp/leash-child.sh
+  cat >"$leash_child" <<'LEASH_CHILD'
+#!/bin/sh
+if [ -n "${METASYSTEM_FIXTURE_OWNER-}" ]; then
+  tag="METASYSTEM_FIXTURE_OWNER=$METASYSTEM_FIXTURE_OWNER"
+  [ "${1-}" = "$tag" ] || exec /bin/sh "$0" "$tag" "$@"
+  shift
+fi
+printf '%s\n' "$$" >"${FIXTURE_CHILD_PID_FILE:?}"
+trap '' TERM
+exec 3<"${METASYSTEM_FIXTURE_LEASH:?}"
+read -r _ <&3
+LEASH_CHILD
+  chmod +x "$leash_child"
+
+  # Closing the owner's leash releases the reader before the custodian needs
+  # to signal it; the completed log is re-read on every poll.
+  leash_pid_file=$tmp/leash-fast.pid
+  leash_log_file=$tmp/leash-fast.log-path
+  bash -c '
+    set -euo pipefail
+    root=$1 child=$2 pid_file=$3 log_file=$4
+    source "$root/scripts/agents/fixture-budget.sh"
+    harness_fixture_owner "$root"
+    harness_fixture_key hang-leash-fast
+    printf "%s\n" "$harness_fixture_custodian_log" >"$log_file"
+    METASYSTEM_FIXTURE_OWNER="$harness_fixture_key_value" \
+      FIXTURE_CHILD_PID_FILE="$pid_file" "$child" "$harness_fixture_tag" 9>&- &
+    child_pid=$!
+    harness_fixture_hold_pid "$child_pid"
+    wait "$child_pid"
+  ' bash "$root" "$leash_child" "$leash_pid_file" "$leash_log_file" 9>&- &
+  leash_owner=$!
+  harness_fixture_hold_pid "$leash_owner"
+  leash_deadline=$((SECONDS + $(harness_fixture_cap bed-scenario)))
+  while [[ ! -s "$leash_pid_file" || ! -s "$leash_log_file" ]] \
+      && kill -0 "$leash_owner" 2>/dev/null && (( SECONDS < leash_deadline )); do
+    sleep "$METASYSTEM_FIXTURE_POLL_INTERVAL_SEC"
+  done
+  [[ -s "$leash_pid_file" && -s "$leash_log_file" ]] || {
+    echo "fixture-bed-scenarios fixture: leash-fast owner did not publish its child and log" >&2
+    exit 1
+  }
+  leash_pid=$(<"$leash_pid_file")
+  leash_log=$(<"$leash_log_file")
+  harness_fixture_hold_pid "$leash_pid"
+  leash_ref=$(harness_fixture_engine_call proc ref --pid "$leash_pid")
+  kill -KILL "$leash_owner"
+  wait "$leash_owner" 2>/dev/null || true
+  wait_fixture_ref_gone "leashed child after owner KILL" "$leash_pid" "$leash_ref"
+  wait_fixture_log_line "$leash_log" "action=complete"
+  if grep -Fq "action=kill pid=$leash_pid" "$leash_log"; then
+    echo "fixture-bed-scenarios fixture: custodian signaled leashed child $leash_pid instead of observing its exit" >&2
+    cat "$leash_log" >&2
+    exit 1
+  fi
+
+  # With the leash removed, the same ownership record leaves the custodian as
+  # the safety and its log names the child it kills.
+  custodian_pid_file=$tmp/leash-disabled.pid
+  custodian_log_file=$tmp/leash-disabled.log-path
+  bash -c '
+    set -euo pipefail
+    root=$1 child=$2 pid_file=$3 log_file=$4
+    source "$root/scripts/agents/fixture-budget.sh"
+    harness_fixture_owner "$root"
+    harness_fixture_key hang-leash-disabled
+    printf "%s\n" "$harness_fixture_custodian_log" >"$log_file"
+    METASYSTEM_FIXTURE_OWNER="$harness_fixture_key_value" \
+      METASYSTEM_FIXTURE_LEASH= FIXTURE_CHILD_PID_FILE="$pid_file" \
+      /bin/sh -c "$(sed "s|exec 3<.*|while :; do sleep 1; done|; /read -r _ <&3/d" "$child")" \
+      sh "$harness_fixture_tag" 9>&- &
+    child_pid=$!
+    harness_fixture_hold_pid "$child_pid"
+    wait "$child_pid"
+  ' bash "$root" "$leash_child" "$custodian_pid_file" "$custodian_log_file" 9>&- &
+  custodian_owner=$!
+  harness_fixture_hold_pid "$custodian_owner"
+  custodian_deadline=$((SECONDS + $(harness_fixture_cap bed-scenario)))
+  while [[ ! -s "$custodian_pid_file" || ! -s "$custodian_log_file" ]] \
+      && kill -0 "$custodian_owner" 2>/dev/null && (( SECONDS < custodian_deadline )); do
+    sleep "$METASYSTEM_FIXTURE_POLL_INTERVAL_SEC"
+  done
+  [[ -s "$custodian_pid_file" && -s "$custodian_log_file" ]] || {
+    echo "fixture-bed-scenarios fixture: leash-disabled owner did not publish its child and log" >&2
+    exit 1
+  }
+  custodian_child=$(<"$custodian_pid_file")
+  custodian_log=$(<"$custodian_log_file")
+  harness_fixture_hold_pid "$custodian_child"
+  custodian_ref=$(harness_fixture_engine_call proc ref --pid "$custodian_child")
+  kill -KILL "$custodian_owner"
+  wait "$custodian_owner" 2>/dev/null || true
+  wait_fixture_log_line "$custodian_log" "action=kill pid=$custodian_child"
+  wait_fixture_ref_gone "leash-disabled child after owner KILL" "$custodian_child" "$custodian_ref"
+  exit 0
+fi
+
 if [[ "$fixture_scenario" == command-substitution-failure ]]; then
   inner=$tmp/inner-bed.sh
   output=$tmp/command-substitution.out
   write_inner_bed "$inner"
   set +e
   FIXTURE_BED_SOURCE_ROOT="$root" FIXTURE_BED_INNER_SCENARIOS='json-read-fails exit-fails' \
-    "$inner" >"$output" 2>&1
+    "$inner" "$harness_fixture_tag" >"$output" 2>&1
   inner_rc=$?
   set -e
   [[ $inner_rc -eq 1 ]] || {
@@ -1215,7 +1400,7 @@ if [[ "$fixture_scenario" == collects-every-failure ]]; then
   write_inner_bed "$inner"
   set +e
   FIXTURE_BED_SOURCE_ROOT="$root" FIXTURE_BED_INNER_SCENARIOS='fail-one pass fail-two' \
-    "$inner" >"$output" 2>&1
+    "$inner" "$harness_fixture_tag" >"$output" 2>&1
   inner_rc=$?
   set -e
   [[ $inner_rc -eq 1 ]] || {

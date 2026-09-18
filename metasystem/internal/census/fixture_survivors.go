@@ -2,6 +2,7 @@ package census
 
 import (
 	"fmt"
+	"os"
 	"strconv"
 	"strings"
 	"syscall"
@@ -61,7 +62,11 @@ func FixtureProcessProber(processes []Process) identity.Prober {
 func ScanFixtureSurvivors(prober identity.Prober, processes []Process, selection FixtureSurvivorSelection) ([]identity.FixtureSurvivor, error) {
 	table := newFixtureProcessTable(processes)
 	pids := make([]int64, 0, len(processes))
+	self := int64(os.Getpid())
 	for _, process := range processes {
+		if process.Pid == self {
+			continue
+		}
 		pids = append(pids, process.Pid)
 	}
 	return identity.ScanFixtureSurvivors(pids, prober, func(pid int64) identity.FixtureProcessScope {

@@ -1036,7 +1036,7 @@ func runTestRun(args []string) int {
 	if !prepared.FirstTestingTransition {
 		workerEngine = prepared.PolicyEngine
 	}
-	workerEnvironment, err := identity.ExportRunOwner(prepared.Environment)
+	workerEnvironment, err := testingWorkerEnvironment(prepared.Environment)
 	if err != nil {
 		fmt.Fprintln(os.Stderr, "metasystem test run: export run owner:", err)
 		return retainIncompleteProofAttempt(prepared.Installation, attempt.AttemptID, joined, 1)
@@ -1085,6 +1085,10 @@ func runTestRun(args []string) int {
 		}
 	}
 	return launchStatus
+}
+
+func testingWorkerEnvironment(environment []string) ([]string, error) {
+	return identity.ExportRunOwner(environment)
 }
 
 func testingCandidateManifest(workspace gittree.Workspace, candidateTree string) (string, error) {
