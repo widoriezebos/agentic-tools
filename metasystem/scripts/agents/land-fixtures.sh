@@ -713,34 +713,34 @@ BACKLOG
   if [[ "$fixture_scenario" == tier-one || "$fixture_scenario" == full-width-chain ]] || is_workspace_receipt_scenario || is_carried_scenario; then
     git -C "$leg_seed" update-ref refs/heads/metasystem/goals HEAD
     git -C "$leg_seed" update-ref refs/metasystem/goals/accepted HEAD
-    receipt_fixture_start=$("$source_engine" proc started-at --pid "$$")
-    "$source_engine" lease announce --root "$leg_seed" --session "land-$fixture_scenario-seed" \
+    seed_goal_engine=$source_engine
+    if [[ "$fixture_scenario" == receipt-cutover ]]; then
+      # A receipt cutover's deciding engine authors every goal record it
+      # validates. Goal-record keys are closed and have their own fleet-floor
+      # rollout; this scenario exercises the receipt cutover, not that rollout.
+      seed_goal_engine=$cutover_seed_goal_engine
+    fi
+    receipt_fixture_start=$("$seed_goal_engine" proc started-at --pid "$$")
+    "$seed_goal_engine" lease announce --root "$leg_seed" --session "land-$fixture_scenario-seed" \
       --pid "$$" --start "$receipt_fixture_start" --tag "land-$fixture_scenario-seed" \
       --runtime fake --owner-lineage land-receipt-fixture >/dev/null
-    METASYSTEM_OWNER_LINEAGE=land-receipt-fixture "$source_engine" goal open --root "$leg_seed" \
+    METASYSTEM_OWNER_LINEAGE=land-receipt-fixture "$seed_goal_engine" goal open --root "$leg_seed" \
       --id fx --origin human --intent "Create an exact fixture-local landing receipt." \
       --next "Run the bounded fixture receipt." \
       --risk severity=1,novelty=1,exposure=1,accumulation=1 \
       --basis "This disposable fixture executes only its bounded local landing receipt." >/dev/null
-    "$source_engine" goal approve --root "$leg_seed" --id fx --by Wido \
+    "$seed_goal_engine" goal approve --root "$leg_seed" --id fx --by Wido \
       --lineage land-receipt-fixture --elapsed-limit 4h --attempt-limit 4 \
       --reserved-job-minutes-limit 12 --active-job-limit 1 --review-round-limit 0 \
       --fixture-human-authority
-    seed_claim_engine=$source_engine
-    if [[ "$fixture_scenario" == receipt-cutover ]]; then
-      # The pre-cutover engine claims the seed goal itself: the cutover leg's
-      # older reader then meets a claim record in the grammar it writes, not
-      # the candidate's (the claim grammar grew episode keys on 2026-09-11).
-      seed_claim_engine=$cutover_seed_claim_engine
-    fi
-    "$seed_claim_engine" goal claim --root "$leg_seed" --id fx --lineage land-receipt-fixture >/dev/null
+    "$seed_goal_engine" goal claim --root "$leg_seed" --id fx --lineage land-receipt-fixture >/dev/null
     git -C "$leg_seed" reset -q --hard refs/metasystem/goals/accepted
     if [[ "$fixture_scenario" == receipt-cutover ]]; then
       # In the cutover leg H0 is the one complete seed tip, including the fx
       # goal produced by the fixture's verbs. No engine-install commit follows.
       receipt_seed_build_stamp=$(git -C "$leg_seed" rev-parse HEAD)
     fi
-    "$source_engine" lease retire --root "$leg_seed" --session "land-$fixture_scenario-seed" \
+    "$seed_goal_engine" lease retire --root "$leg_seed" --session "land-$fixture_scenario-seed" \
       --pid "$$" --start "$receipt_fixture_start" >/dev/null
   fi
   if is_workspace_receipt_scenario; then
@@ -3154,16 +3154,28 @@ echo "land receipt-cutover fixture: one candidate engine build and one pinned ol
 # claims the seed goal inside make_leg, and the seed-stamped build below is the
 # engine the cutover leg enrolls.
 cutover_old_source=$tmp/receipt-cutover-old-src
-cutover_seed_claim_engine=$tmp/receipt-cutover-seed-claim-engine
+cutover_seed_goal_engine=$tmp/receipt-cutover-seed-goal-engine
 cutover_source_top=$(git -C "$root" rev-parse --show-toplevel)
 mkdir -p "$cutover_old_source"
 extract_fixture_git_archive "$cutover_source_top" "$cutover_old_source" \
   "$tmp/receipt-cutover-old-source.tar" 6bc19ba1c metasystem/ || exit 1
-METASYSTEM_BUILD_STAMP=receipt-cutover-seed-claim \
-  bash "$cutover_old_source/metasystem/scripts/agents/go-build.sh" --out "$cutover_seed_claim_engine" >/dev/null
+METASYSTEM_BUILD_STAMP=receipt-cutover-seed-goal \
+  bash "$cutover_old_source/metasystem/scripts/agents/go-build.sh" --out "$cutover_seed_goal_engine" >/dev/null
 make_leg receipt-cutover
+# Both clones model the same seat before and after its engine cutover. The
+# candidate proof therefore carries the same claimed machine as the old proof.
+git -C "$leg_peer" config metasystem.goal.machine fixture-machine
 cutover_old_engine=$leg_root/old-engine
 cutover_moved_remote=$leg_root/moved-origin.git
+if grep -Eq '^- Approved: .* episode=' "$leg_seed/plans/goals/fx.md"; then
+  echo "land receipt-cutover fixture: the pinned goal writer emitted candidate-only approval grammar" >&2
+  exit 1
+fi
+if grep -Eq '^- Claimed: .* (episodeAt|episodeRevision|episodeObligationRevision)=' \
+    "$leg_seed/plans/goals/fx.md"; then
+  echo "land receipt-cutover fixture: the pinned goal writer emitted candidate-only claim grammar" >&2
+  exit 1
+fi
 cmp -s "$leg_seed/scripts/agents/landing-promotion.json" \
   "$cutover_old_source/metasystem/scripts/agents/landing-promotion.json" || {
   echo "land receipt-cutover fixture: the seed does not carry the pinned version-one promotion record" >&2
