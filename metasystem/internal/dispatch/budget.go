@@ -316,10 +316,15 @@ func projectBudgetWithoutRun(repoRoot string, file *goal.GoalFile, now time.Time
 	}
 	consumptionKey := goal.BudgetEpisodeRevision(file)
 	episodeAt := time.Time{}
+	dischargeEpisodeRevision := uint64(0)
 	if claimed {
 		episodeAtText := file.Claimed.EpisodeAt
+		dischargeEpisodeRevision = file.Claimed.EpisodeRevision
 		if episodeAtText == "" {
 			episodeAtText = file.Claimed.At
+		}
+		if dischargeEpisodeRevision == 0 {
+			dischargeEpisodeRevision = accountingRevision
 		}
 		var err error
 		episodeAt, err = time.Parse(time.RFC3339, episodeAtText)
@@ -327,7 +332,7 @@ func projectBudgetWithoutRun(repoRoot string, file *goal.GoalFile, now time.Time
 			return unknownBudget(file.Id, revision, recordPath, "the claim episode timestamp is malformed")
 		}
 	}
-	budgetStartedAt, weightEpoch, startUnknown := obligationBudgetStart(repoRoot, file, episodeAt, consumptionKey)
+	budgetStartedAt, weightEpoch, startUnknown := obligationBudgetStart(repoRoot, file, episodeAt, dischargeEpisodeRevision)
 	if startUnknown != nil {
 		return unknownBudget(file.Id, revision, startUnknown.Record, startUnknown.Reason)
 	}
