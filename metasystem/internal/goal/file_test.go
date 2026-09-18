@@ -70,6 +70,21 @@ func TestEmptyReadItemListPreservesRecordBytesAndDigest(t *testing.T) {
 	}
 }
 
+func TestStopSurfaceMovePermissionRoundTripsAndRejectsOtherValues(t *testing.T) {
+	file := claimedGolden()
+	file.StopSurfaceMoves = true
+	rendered := RenderFile(file)
+	parsed, problems := ParseFile(rendered)
+	if len(problems) != 0 || !parsed.StopSurfaceMoves || string(RenderFile(parsed)) != string(rendered) {
+		t.Fatalf("StopSurface permission did not round-trip: permission=%v problems=%v\n%s", parsed.StopSurfaceMoves, problems, rendered)
+	}
+
+	invalid := strings.Replace(string(rendered), "- StopSurface: moves", "- StopSurface: anything", 1)
+	if _, problems := ParseFile([]byte(withFreshIntegrity(invalid))); !problemsContain(problems, `StopSurface "anything" is not moves`) {
+		t.Fatalf("invalid StopSurface permission problems = %v", problems)
+	}
+}
+
 func TestReadItemsRoundTripBesideNextStep(t *testing.T) {
 	file := claimedGolden()
 	file.ReadItems = []ReadItem{

@@ -6,6 +6,7 @@ import (
 	"encoding/hex"
 	"fmt"
 	"go/ast"
+	"go/format"
 	"go/parser"
 	"go/token"
 	"io/fs"
@@ -16,6 +17,7 @@ import (
 	"sort"
 	"strconv"
 	"strings"
+	"time"
 
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/gittree"
 )
@@ -155,7 +157,7 @@ func AuditStopDecisionSurface(root string, options StopSurfaceOptions) (StopSurf
 
 // DeclareStopDecisionSurface writes one declaration for the complete current
 // removed set. The audit remains the authority that accepts the new file.
-func DeclareStopDecisionSurface(root string, options StopSurfaceOptions, goal, reason string) (string, error) {
+func DeclareStopDecisionSurface(root string, options StopSurfaceOptions, goalID, reason string) (string, error) {
 	inspection, err := inspectStopDecisionSurface(root, options)
 	if err != nil {
 		return "", err
@@ -163,26 +165,24 @@ func DeclareStopDecisionSurface(root string, options StopSurfaceOptions, goal, r
 	if len(inspection.removed) == 0 {
 		return "", fmt.Errorf("stop decision surface declaration refused: no assertions were removed")
 	}
-	if !stopGoalPattern.MatchString(goal) {
-		return "", fmt.Errorf("stop decision surface declaration refused: goal %q is not a valid ledger id", goal)
+	if !stopGoalPattern.MatchString(goalID) {
+		return "", fmt.Errorf("stop decision surface declaration refused: goal %q is not a valid ledger id", goalID)
 	}
 	if reason != strings.TrimSpace(reason) || reason == "" || strings.ContainsAny(reason, "\r\n") {
 		return "", fmt.Errorf("stop decision surface declaration refused: reason must be one non-empty line")
 	}
-	goalPath := filepath.Join(root, "plans", "goals", goal+".md")
-	info, err := os.Stat(goalPath)
-	if err != nil || !info.Mode().IsRegular() {
-		return "", fmt.Errorf("stop decision surface declaration refused: goal %s has no ledger file", goal)
+	if err := requireStopSurfaceGoalPermission(root, goalID); err != nil {
+		return "", fmt.Errorf("stop decision surface declaration refused: %w", err)
 	}
 
 	rows := declarationRows(inspection.removed)
 	digest := stopMoveDigest(rows)
-	relative := filepath.ToSlash(filepath.Join(stopMoveDirectory, goal+"-"+digest[:12]+".txt"))
+	relative := filepath.ToSlash(filepath.Join(stopMoveDirectory, goalID+"-"+digest[:12]+".txt"))
 	absolute := filepath.Join(root, filepath.FromSlash(relative))
 	if err := os.MkdirAll(filepath.Dir(absolute), 0o755); err != nil {
 		return "", fmt.Errorf("create stop decision move directory: %w", err)
 	}
-	content := "goal: " + goal + "\nreason: " + reason + "\nmoved:\n" + strings.Join(rows, "\n") + "\n"
+	content := "goal: " + goalID + "\nreason: " + reason + "\nmoved:\n" + strings.Join(rows, "\n") + "\n"
 	file, err := os.OpenFile(absolute, os.O_WRONLY|os.O_CREATE|os.O_EXCL, 0o644)
 	if err != nil {
 		return "", fmt.Errorf("write stop decision move declaration: %w", err)
@@ -396,7 +396,16 @@ func extractGoStopSurface(surface map[stopSurfaceKey]int, path string, content [
 
 	masked := bytes.Clone(content)
 	executableLines := map[int]bool{}
-	keptStrings := goStopDecisionStrings(parsed)
+	keptStrings, syntaxAssertions := goStopDecisionSyntax(parsed)
+	for _, assertion := range syntaxAssertions {
+		var normalized bytes.Buffer
+		if err := format.Node(&normalized, files, assertion); err != nil {
+			return fmt.Errorf("normalize Stop assertion in %s: %w", path, err)
+		}
+		line := strings.Join(strings.Fields(normalized.String()), " ")
+		surface[stopSurfaceKey{File: path, Line: line}]++
+		maskStopSurfaceSpan(masked, files, assertion.Pos(), assertion.End())
+	}
 	ast.Inspect(parsed, func(node ast.Node) bool {
 		switch value := node.(type) {
 		case *ast.FuncDecl:
@@ -429,8 +438,9 @@ func extractGoStopSurface(surface map[stopSurfaceKey]int, path string, content [
 	return nil
 }
 
-func goStopDecisionStrings(parsed *ast.File) map[*ast.BasicLit]bool {
+func goStopDecisionSyntax(parsed *ast.File) (map[*ast.BasicLit]bool, []ast.Node) {
 	kept := map[*ast.BasicLit]bool{}
+	var assertions []ast.Node
 	for _, declaration := range parsed.Decls {
 		function, ok := declaration.(*ast.FuncDecl)
 		if !ok || function.Body == nil {
@@ -449,15 +459,17 @@ func goStopDecisionStrings(parsed *ast.File) map[*ast.BasicLit]bool {
 					kept[value] = true
 				}
 			case *ast.KeyValueExpr:
-				if key, keyOK := stringLiteral(value.Key); keyOK && key == "decision" {
-					if decision, decisionOK := stringLiteral(value.Value); decisionOK && (decision == "block" || decision == "allow") {
-						keepStringLiterals(kept, value)
+				if !insideStopSurfaceMetadata(ancestors) {
+					if key, keyOK := stringLiteral(value.Key); keyOK && key == "decision" {
+						if decision, decisionOK := stringLiteral(value.Value); decisionOK && (decision == "block" || decision == "allow") {
+							assertions = append(assertions, value)
+						}
 					}
 				}
 			case *ast.BinaryExpr:
-				if value.Op == token.EQL || value.Op == token.NEQ {
+				if !insideStopSurfaceMetadata(ancestors) && (value.Op == token.EQL || value.Op == token.NEQ) {
 					if decisionIndexComparedWithControl(value.X, value.Y) || decisionIndexComparedWithControl(value.Y, value.X) {
-						keepStringLiterals(kept, value)
+						assertions = append(assertions, value)
 					}
 				}
 			}
@@ -465,7 +477,7 @@ func goStopDecisionStrings(parsed *ast.File) map[*ast.BasicLit]bool {
 			return true
 		})
 	}
-	return kept
+	return kept, assertions
 }
 
 func insideStopSurfaceMetadata(ancestors []ast.Node) bool {
@@ -519,15 +531,6 @@ func decisionIndexComparedWithControl(indexed, control ast.Expr) bool {
 	key, keyOK := stringLiteral(index.Index)
 	decision, decisionOK := stringLiteral(control)
 	return keyOK && key == "decision" && decisionOK && (decision == "block" || decision == "allow")
-}
-
-func keepStringLiterals(kept map[*ast.BasicLit]bool, root ast.Node) {
-	ast.Inspect(root, func(node ast.Node) bool {
-		if literal, ok := node.(*ast.BasicLit); ok && literal.Kind == token.STRING && !embeddedSourceLiteral(literal.Value) {
-			kept[literal] = true
-		}
-		return true
-	})
 }
 
 func maskStopSurfaceSpan(content []byte, files *token.FileSet, start, end token.Pos) {
@@ -598,16 +601,118 @@ func newStopMoveDeclarations(root string, workspace gittree.Workspace, baseTree 
 			problems = append(problems, err.Error())
 			continue
 		}
-		goalPath := filepath.Join(root, "plans", "goals", declaration.goal+".md")
-		info, statErr := os.Stat(goalPath)
-		if statErr != nil || !info.Mode().IsRegular() {
-			problems = append(problems, fmt.Sprintf("%s names goal %s without a candidate ledger file", relative, declaration.goal))
+		if err := requireStopSurfaceGoalPermission(root, declaration.goal); err != nil {
+			problems = append(problems, fmt.Sprintf("%s: %v", relative, err))
 			continue
 		}
 		declarations = append(declarations, declaration)
 	}
 	sort.Slice(declarations, func(i, j int) bool { return declarations[i].path < declarations[j].path })
 	return declarations, problems, nil
+}
+
+func requireStopSurfaceGoalPermission(root, goalID string) error {
+	goalPath := filepath.Join(root, "plans", "goals", goalID+".md")
+	info, err := os.Stat(goalPath)
+	if err != nil || !info.Mode().IsRegular() {
+		return stopSurfaceGoalRefusal("goal %s has no live ledger record", goalID)
+	}
+	content, err := os.ReadFile(goalPath)
+	if err != nil {
+		return stopSurfaceGoalRefusal("goal %s record is unreadable: %v", goalID, err)
+	}
+	state, permitted, err := parseStopSurfaceGoalRecord(goalID, content)
+	if err != nil {
+		return stopSurfaceGoalRefusal("goal %s record is invalid: %v", goalID, err)
+	}
+	if state == "done" || state == "abandoned" {
+		return stopSurfaceGoalRefusal("goal %s is %s", goalID, state)
+	}
+	if !permitted {
+		return stopSurfaceGoalRefusal("goal %s does not permit Stop-surface moves", goalID)
+	}
+	return nil
+}
+
+func stopSurfaceGoalRefusal(format string, args ...any) error {
+	return fmt.Errorf("STOP_SURFACE_GOAL_REFUSED "+format, args...)
+}
+
+// parseStopSurfaceGoalRecord reads the integrity-stamped fields that decide
+// whether a live goal may authorize a Stop-surface move. The canonical goal
+// parser owns the complete record; this projection stays local because goal's
+// proof path already depends on audit.
+func parseStopSurfaceGoalRecord(goalID string, content []byte) (string, bool, error) {
+	normalized := strings.ReplaceAll(string(content), "\r\n", "\n")
+	const integrityPrefix = "Integrity: sha256="
+	integrityAt := strings.LastIndex(normalized, integrityPrefix)
+	if integrityAt < 0 || integrityAt > 0 && normalized[integrityAt-1] != '\n' {
+		return "", false, fmt.Errorf("missing Integrity line")
+	}
+	body := normalized[:integrityAt]
+	digest := strings.TrimSpace(normalized[integrityAt+len(integrityPrefix):])
+	sum := sha256.Sum256([]byte(body))
+	if digest != hex.EncodeToString(sum[:]) {
+		return "", false, fmt.Errorf("integrity mismatch")
+	}
+
+	fields := map[string]string{}
+	heading := ""
+	historyLines := 0
+	inHistory := false
+	for _, raw := range strings.Split(body, "\n") {
+		line := strings.TrimRight(raw, " \t")
+		switch {
+		case strings.HasPrefix(line, "# "):
+			if heading != "" {
+				return "", false, fmt.Errorf("multiple goal headings")
+			}
+			heading = strings.TrimSpace(strings.TrimPrefix(line, "# "))
+		case line == "History:":
+			inHistory = true
+		case inHistory && strings.HasPrefix(line, "- "):
+			historyLines++
+		case !inHistory && strings.HasPrefix(line, "- "):
+			key, value, found := strings.Cut(strings.TrimPrefix(line, "- "), ":")
+			if !found {
+				return "", false, fmt.Errorf("field without colon")
+			}
+			_, duplicate := fields[key]
+			repeatable := key == "ReviewObligation" || key == "AcceptedRisk" || key == "ReadItem"
+			if duplicate && !repeatable {
+				return "", false, fmt.Errorf("duplicate field %s", key)
+			}
+			if !duplicate {
+				fields[key] = strings.TrimSpace(value)
+			}
+		}
+	}
+	if heading != goalID {
+		return "", false, fmt.Errorf("heading %q does not match its file", heading)
+	}
+	state := fields["State"]
+	switch state {
+	case "queued", "approved", "claimed", "parked", "done", "abandoned":
+	default:
+		return "", false, fmt.Errorf("invalid State %q", state)
+	}
+	if fields["Intent"] == "" || fields["Origin"] == "" || fields["OpenedAt"] == "" || fields["Revision"] == "" || historyLines == 0 {
+		return "", false, fmt.Errorf("missing required goal fields or History")
+	}
+	if fields["Origin"] != "human" && fields["Origin"] != "main" {
+		return "", false, fmt.Errorf("invalid Origin %q", fields["Origin"])
+	}
+	if _, err := time.Parse(time.RFC3339, fields["OpenedAt"]); err != nil {
+		return "", false, fmt.Errorf("invalid OpenedAt")
+	}
+	if revision, err := strconv.ParseUint(fields["Revision"], 10, 64); err != nil || revision == 0 {
+		return "", false, fmt.Errorf("invalid Revision")
+	}
+	permission, present := fields["StopSurface"]
+	if present && permission != "moves" {
+		return "", false, fmt.Errorf("invalid StopSurface permission %q", permission)
+	}
+	return state, present, nil
 }
 
 func parseStopMoveDeclaration(path string, content []byte) (stopMoveDeclaration, error) {

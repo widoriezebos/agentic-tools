@@ -29,13 +29,16 @@ type GoalFile struct {
 	Risk     *RiskRecord
 	Intent   string
 	Origin   string
-	NextStep string
-	Conclude string // done only
-	OpenedAt string // ISO 8601, written once at open
-	Revision uint64 // 1 at creation, +1 per verb write
-	Blocked  []string
-	Labels   []string
-	Arc      string
+	// StopSurfaceMoves is the explicit permission for a declaration that
+	// removes or changes a Stop-decision assertion.
+	StopSurfaceMoves bool
+	NextStep         string
+	Conclude         string // done only
+	OpenedAt         string // ISO 8601, written once at open
+	Revision         uint64 // 1 at creation, +1 per verb write
+	Blocked          []string
+	Labels           []string
+	Arc              string
 	// Pinned names the ONE machine that may claim this goal — set when
 	// the work needs a setup, network, or resource only that machine
 	// has. Empty means any machine may claim.
@@ -1138,6 +1141,12 @@ func parseFileField(f *GoalFile, field string, seen map[string]bool, addProblem 
 		f.Intent = value
 	case "Origin":
 		f.Origin = value
+	case "StopSurface":
+		if value != "moves" {
+			addProblem("StopSurface %q is not moves", value)
+			return
+		}
+		f.StopSurfaceMoves = true
 	case "Next step":
 		f.NextStep = value
 	case "Concluded":
@@ -1668,6 +1677,9 @@ func RenderFile(f *GoalFile) []byte {
 	fmt.Fprintf(&b, "- Intent: %s\n", f.Intent)
 	if f.Origin != "" {
 		fmt.Fprintf(&b, "- Origin: %s\n", f.Origin)
+	}
+	if f.StopSurfaceMoves {
+		b.WriteString("- StopSurface: moves\n")
 	}
 	if f.NextStep != "" {
 		fmt.Fprintf(&b, "- Next step: %s\n", f.NextStep)
