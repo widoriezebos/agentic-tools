@@ -7,6 +7,8 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/goal"
 )
 
 func TestAuditDependencyRatchetRelayReportsPathLineAndExit(t *testing.T) {
@@ -146,6 +148,77 @@ func TestAuditStopDecisionSurfaceVerb(t *testing.T) {
 	})
 	if code != 2 {
 		t.Fatalf("invalid invocation exit = %d, want 2", code)
+	}
+}
+
+func TestAuditStopDecisionSurfaceRefusesRecordTheGoalParserRejects(t *testing.T) {
+	t.Parallel()
+	root := t.TempDir()
+	writeAuditStopFixture(t, root, "a_test.go", auditStopGoFixture("want := Verdict{ShouldBlock: true}\n"))
+	runAuditStopGit(t, root, "init", "-q", "-b", "main")
+	runAuditStopGit(t, root, "config", "--local", "user.name", "Stop Surface Fixture")
+	runAuditStopGit(t, root, "config", "--local", "user.email", "stop-surface@invalid")
+	runAuditStopGit(t, root, "config", "--local", "commit.gpgsign", "false")
+	runAuditStopGit(t, root, "add", "-A")
+	runAuditStopGit(t, root, "commit", "-q", "-m", "base")
+	writeAuditStopFixture(t, root, "a_test.go", auditStopGoFixture(""))
+
+	const goalID = "move-stop"
+	canonical := goal.RenderFile(&goal.GoalFile{
+		Id:               goalID,
+		State:            goal.StateQueued,
+		Intent:           "Exercise the Stop decision surface.",
+		Origin:           goal.OriginHuman,
+		StopSurfaceMoves: true,
+		OpenedAt:         "2026-09-18T08:00:00Z",
+		Revision:         1,
+		History: []goal.HistoryLine{{
+			At: "2026-09-18T08:00:00Z", Opid: "01J5X00000000000000000ST00-fixture-1a2b3c4d",
+			Verb: "open", Actor: "human:fixture", Targets: []string{goalID}, Keep: -1,
+		}},
+	})
+	goalPath := filepath.Join("plans", "goals", goalID+".md")
+	writeAuditStopFixture(t, root, goalPath, string(canonical))
+
+	code, stdout, stderr := captureCommandOutput(t, true, true, func() int {
+		return runAuditStopDecisionSurface([]string{"--root", root, "--declare", "--goal", goalID, "--reason", "r"})
+	})
+	if code != 0 || stderr != "" {
+		t.Fatalf("canonical declaration = code %d, stdout %q, stderr %q", code, stdout, stderr)
+	}
+	declarationPath := strings.TrimSpace(stdout)
+	declaration, err := os.ReadFile(filepath.Join(root, filepath.FromSlash(declarationPath)))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Remove(filepath.Join(root, filepath.FromSlash(declarationPath))); err != nil {
+		t.Fatal(err)
+	}
+
+	malformed := strings.Replace(string(canonical), "\n\nHistory:", "\n- Unknown: malformed\n\nHistory:", 1)
+	integrityAt := strings.LastIndex(malformed, "Integrity: sha256=")
+	if integrityAt < 0 {
+		t.Fatal("canonical goal record lacks Integrity line")
+	}
+	body := malformed[:integrityAt]
+	malformed = body + "Integrity: sha256=" + goal.IntegrityDigest([]byte(body)) + "\n"
+	writeAuditStopFixture(t, root, goalPath, malformed)
+
+	code, stdout, stderr = captureCommandOutput(t, true, true, func() int {
+		return runAuditStopDecisionSurface([]string{"--root", root, "--declare", "--goal", goalID, "--reason", "r"})
+	})
+	if code != 1 || stdout != "" || !strings.Contains(stderr, "STOP_SURFACE_GOAL_REFUSED") ||
+		!strings.Contains(stderr, `unknown field "Unknown"`) {
+		t.Fatalf("parser-rejected declaration = code %d, stdout %q, stderr %q", code, stdout, stderr)
+	}
+
+	writeAuditStopFixture(t, root, declarationPath, string(declaration))
+	code, stdout, stderr = captureCommandOutput(t, true, true, func() int {
+		return runAuditStopDecisionSurface([]string{"--root", root})
+	})
+	if code != 1 || !strings.Contains(stdout, "moved 0, removed 1") ||
+		!strings.Contains(stderr, "STOP_SURFACE_GOAL_REFUSED") || !strings.Contains(stderr, `unknown field "Unknown"`) {
+		t.Fatalf("parser-rejected audit = code %d, stdout %q, stderr %q", code, stdout, stderr)
 	}
 }
 

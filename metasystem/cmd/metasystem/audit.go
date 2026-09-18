@@ -10,6 +10,7 @@ import (
 	"strings"
 
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/audit"
+	goalpkg "github.com/widoriezebos/agentic-tools/metasystem/internal/goal"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/parallelratchet"
 )
 
@@ -211,7 +212,7 @@ func runAuditStopDecisionSurface(args []string) int {
 		fmt.Fprintln(os.Stderr, "usage: metasystem audit stop-decision-surface [--root INSTALLATION] [--base COMMIT] [--json] [--declare --goal GOAL --reason TEXT]")
 		return 2
 	}
-	options := audit.StopSurfaceOptions{Base: *base}
+	options := audit.StopSurfaceOptions{Base: *base, GoalRecord: goalpkg.StopSurfaceGoalReader}
 	if *declare {
 		path, err := audit.DeclareStopDecisionSurface(*root, options, *goal, *reason)
 		if err != nil {

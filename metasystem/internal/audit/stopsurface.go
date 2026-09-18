@@ -17,7 +17,6 @@ import (
 	"sort"
 	"strconv"
 	"strings"
-	"time"
 
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/gittree"
 )
@@ -27,17 +26,30 @@ const (
 )
 
 var (
-	stopGoPattern   = regexp.MustCompile(`ShouldBlock|BlockSource|IdleRefusal|CountSpent|\\?"decision\\?"\s*:\s*\\?"(?:block|allow)\\?"|\[\s*"decision"\s*\]\s*(?:==|!=)\s*"(?:block|allow)"`)
+	stopGoPattern   = regexp.MustCompile(`ShouldBlock|BlockSource|IdleRefusal|CountSpent|\\?"decision\\?"\s*:\s*\\?"(?:block|allow)\\?"|\[\s*"decision"\s*\]\s*\)*\s*(?:==|!=)\s*"(?:block|allow)"`)
 	stopWirePattern = regexp.MustCompile(`\\?"decision\\?"\s*:\s*\\?"(?:block|allow)\\?"`)
 	stopBedPattern  = regexp.MustCompile(`"decision":"(block|allow)"|stop response outcome=|stop response decision=`)
 	stopGoalPattern = regexp.MustCompile(`^[a-z0-9][a-z0-9-]*$`)
 	stopDigestName  = regexp.MustCompile(`^(.+)-([0-9a-f]{12})\.txt$`)
 )
 
+// StopSurfaceGoalRecord carries the canonical goal fields the Stop surface
+// is permitted to trust.
+type StopSurfaceGoalRecord struct {
+	State            string
+	StopSurfaceMoves bool
+}
+
+// StopSurfaceGoalReader validates a goal record and projects only the fields
+// that authorize a Stop-surface move.
+type StopSurfaceGoalReader func(goalID string, content []byte) (StopSurfaceGoalRecord, []string)
+
 // StopSurfaceOptions selects the historical tree compared with the current
-// installation. An empty Base follows the repository's normal landing base.
+// installation and supplies the canonical goal-record reader. An empty Base
+// follows the repository's normal landing base.
 type StopSurfaceOptions struct {
-	Base string
+	Base       string
+	GoalRecord StopSurfaceGoalReader
 }
 
 // StopSurfaceLine is one normalized assertion occurrence. Equal entries may
@@ -114,7 +126,7 @@ func AuditStopDecisionSurface(root string, options StopSurfaceOptions) (StopSurf
 		Removed:  []StopSurfaceLine{},
 		Problems: []string{},
 	}
-	declarations, problems, err := newStopMoveDeclarations(root, inspection.workspace, inspection.baseTree)
+	declarations, problems, err := newStopMoveDeclarations(root, inspection.workspace, inspection.baseTree, options.GoalRecord)
 	if err != nil {
 		return StopSurfaceResult{}, err
 	}
@@ -171,7 +183,7 @@ func DeclareStopDecisionSurface(root string, options StopSurfaceOptions, goalID,
 	if reason != strings.TrimSpace(reason) || reason == "" || strings.ContainsAny(reason, "\r\n") {
 		return "", fmt.Errorf("stop decision surface declaration refused: reason must be one non-empty line")
 	}
-	if err := requireStopSurfaceGoalPermission(root, goalID); err != nil {
+	if err := requireStopSurfaceGoalPermission(root, goalID, options.GoalRecord); err != nil {
 		return "", fmt.Errorf("stop decision surface declaration refused: %w", err)
 	}
 
@@ -516,6 +528,7 @@ func unquotedString(raw string) string {
 }
 
 func stringLiteral(expression ast.Expr) (string, bool) {
+	expression = unwrapParentheses(expression)
 	literal, ok := expression.(*ast.BasicLit)
 	if !ok || literal.Kind != token.STRING {
 		return "", false
@@ -523,7 +536,19 @@ func stringLiteral(expression ast.Expr) (string, bool) {
 	return unquotedString(literal.Value), true
 }
 
+func unwrapParentheses(expression ast.Expr) ast.Expr {
+	for {
+		parenthesized, ok := expression.(*ast.ParenExpr)
+		if !ok {
+			return expression
+		}
+		expression = parenthesized.X
+	}
+}
+
 func decisionIndexComparedWithControl(indexed, control ast.Expr) bool {
+	indexed = unwrapParentheses(indexed)
+	control = unwrapParentheses(control)
 	index, ok := indexed.(*ast.IndexExpr)
 	if !ok {
 		return false
@@ -569,7 +594,7 @@ func expandStopSurfaceDifference(left, right map[stopSurfaceKey]int) []StopSurfa
 	return lines
 }
 
-func newStopMoveDeclarations(root string, workspace gittree.Workspace, baseTree string) ([]stopMoveDeclaration, []string, error) {
+func newStopMoveDeclarations(root string, workspace gittree.Workspace, baseTree string, reader StopSurfaceGoalReader) ([]stopMoveDeclaration, []string, error) {
 	directory := filepath.Join(root, filepath.FromSlash(stopMoveDirectory))
 	entries, err := os.ReadDir(directory)
 	if os.IsNotExist(err) {
@@ -601,7 +626,7 @@ func newStopMoveDeclarations(root string, workspace gittree.Workspace, baseTree 
 			problems = append(problems, err.Error())
 			continue
 		}
-		if err := requireStopSurfaceGoalPermission(root, declaration.goal); err != nil {
+		if err := requireStopSurfaceGoalPermission(root, declaration.goal, reader); err != nil {
 			problems = append(problems, fmt.Sprintf("%s: %v", relative, err))
 			continue
 		}
@@ -611,7 +636,10 @@ func newStopMoveDeclarations(root string, workspace gittree.Workspace, baseTree 
 	return declarations, problems, nil
 }
 
-func requireStopSurfaceGoalPermission(root, goalID string) error {
+func requireStopSurfaceGoalPermission(root, goalID string, reader StopSurfaceGoalReader) error {
+	if reader == nil {
+		return stopSurfaceGoalRefusal("no goal record reader")
+	}
 	goalPath := filepath.Join(root, "plans", "goals", goalID+".md")
 	info, err := os.Stat(goalPath)
 	if err != nil || !info.Mode().IsRegular() {
@@ -621,14 +649,14 @@ func requireStopSurfaceGoalPermission(root, goalID string) error {
 	if err != nil {
 		return stopSurfaceGoalRefusal("goal %s record is unreadable: %v", goalID, err)
 	}
-	state, permitted, err := parseStopSurfaceGoalRecord(goalID, content)
-	if err != nil {
-		return stopSurfaceGoalRefusal("goal %s record is invalid: %v", goalID, err)
+	record, problems := reader(goalID, content)
+	if len(problems) != 0 {
+		return stopSurfaceGoalRefusal("goal %s record is invalid: %s", goalID, problems[0])
 	}
-	if state == "done" || state == "abandoned" {
-		return stopSurfaceGoalRefusal("goal %s is %s", goalID, state)
+	if record.State == "done" || record.State == "abandoned" {
+		return stopSurfaceGoalRefusal("goal %s is %s", goalID, record.State)
 	}
-	if !permitted {
+	if !record.StopSurfaceMoves {
 		return stopSurfaceGoalRefusal("goal %s does not permit Stop-surface moves", goalID)
 	}
 	return nil
@@ -636,83 +664,6 @@ func requireStopSurfaceGoalPermission(root, goalID string) error {
 
 func stopSurfaceGoalRefusal(format string, args ...any) error {
 	return fmt.Errorf("STOP_SURFACE_GOAL_REFUSED "+format, args...)
-}
-
-// parseStopSurfaceGoalRecord reads the integrity-stamped fields that decide
-// whether a live goal may authorize a Stop-surface move. The canonical goal
-// parser owns the complete record; this projection stays local because goal's
-// proof path already depends on audit.
-func parseStopSurfaceGoalRecord(goalID string, content []byte) (string, bool, error) {
-	normalized := strings.ReplaceAll(string(content), "\r\n", "\n")
-	const integrityPrefix = "Integrity: sha256="
-	integrityAt := strings.LastIndex(normalized, integrityPrefix)
-	if integrityAt < 0 || integrityAt > 0 && normalized[integrityAt-1] != '\n' {
-		return "", false, fmt.Errorf("missing Integrity line")
-	}
-	body := normalized[:integrityAt]
-	digest := strings.TrimSpace(normalized[integrityAt+len(integrityPrefix):])
-	sum := sha256.Sum256([]byte(body))
-	if digest != hex.EncodeToString(sum[:]) {
-		return "", false, fmt.Errorf("integrity mismatch")
-	}
-
-	fields := map[string]string{}
-	heading := ""
-	historyLines := 0
-	inHistory := false
-	for _, raw := range strings.Split(body, "\n") {
-		line := strings.TrimRight(raw, " \t")
-		switch {
-		case strings.HasPrefix(line, "# "):
-			if heading != "" {
-				return "", false, fmt.Errorf("multiple goal headings")
-			}
-			heading = strings.TrimSpace(strings.TrimPrefix(line, "# "))
-		case line == "History:":
-			inHistory = true
-		case inHistory && strings.HasPrefix(line, "- "):
-			historyLines++
-		case !inHistory && strings.HasPrefix(line, "- "):
-			key, value, found := strings.Cut(strings.TrimPrefix(line, "- "), ":")
-			if !found {
-				return "", false, fmt.Errorf("field without colon")
-			}
-			_, duplicate := fields[key]
-			repeatable := key == "ReviewObligation" || key == "AcceptedRisk" || key == "ReadItem"
-			if duplicate && !repeatable {
-				return "", false, fmt.Errorf("duplicate field %s", key)
-			}
-			if !duplicate {
-				fields[key] = strings.TrimSpace(value)
-			}
-		}
-	}
-	if heading != goalID {
-		return "", false, fmt.Errorf("heading %q does not match its file", heading)
-	}
-	state := fields["State"]
-	switch state {
-	case "queued", "approved", "claimed", "parked", "done", "abandoned":
-	default:
-		return "", false, fmt.Errorf("invalid State %q", state)
-	}
-	if fields["Intent"] == "" || fields["Origin"] == "" || fields["OpenedAt"] == "" || fields["Revision"] == "" || historyLines == 0 {
-		return "", false, fmt.Errorf("missing required goal fields or History")
-	}
-	if fields["Origin"] != "human" && fields["Origin"] != "main" {
-		return "", false, fmt.Errorf("invalid Origin %q", fields["Origin"])
-	}
-	if _, err := time.Parse(time.RFC3339, fields["OpenedAt"]); err != nil {
-		return "", false, fmt.Errorf("invalid OpenedAt")
-	}
-	if revision, err := strconv.ParseUint(fields["Revision"], 10, 64); err != nil || revision == 0 {
-		return "", false, fmt.Errorf("invalid Revision")
-	}
-	permission, present := fields["StopSurface"]
-	if present && permission != "moves" {
-		return "", false, fmt.Errorf("invalid StopSurface permission %q", permission)
-	}
-	return state, present, nil
 }
 
 func parseStopMoveDeclaration(path string, content []byte) (stopMoveDeclaration, error) {

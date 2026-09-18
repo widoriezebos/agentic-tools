@@ -20,7 +20,7 @@ var completeStopGoPatternFragments = []string{
 	"IdleRefusal",
 	"CountSpent",
 	`\\?"decision\\?"\s*:\s*\\?"(?:block|allow)\\?"`,
-	`\[\s*"decision"\s*\]\s*(?:==|!=)\s*"(?:block|allow)"`,
+	`\[\s*"decision"\s*\]\s*\)*\s*(?:==|!=)\s*"(?:block|allow)"`,
 }
 
 var requiredRepositoryStopSurfaceAssertions = []struct {
@@ -53,9 +53,6 @@ type stopSurfaceFixture struct {
 
 func newStopSurfaceFixture(t *testing.T, files []stopSurfaceFile, contents map[string]string, includeList bool) *stopSurfaceFixture {
 	t.Helper()
-	t.Setenv("GIT_CONFIG_GLOBAL", os.DevNull)
-	t.Setenv("GIT_CONFIG_SYSTEM", os.DevNull)
-	t.Setenv("GIT_CONFIG_NOSYSTEM", "1")
 	fixture := &stopSurfaceFixture{t: t, root: t.TempDir()}
 	fixture.git("init", "-q", "-b", "main")
 	fixture.git("config", "--local", "user.name", "Stop Surface Fixture")
@@ -132,11 +129,59 @@ func (f *stopSurfaceFixture) commit(message string) string {
 
 func (f *stopSurfaceFixture) audit(options StopSurfaceOptions) StopSurfaceResult {
 	f.t.Helper()
+	if options.GoalRecord == nil {
+		options.GoalRecord = stopSurfaceGoalReaderStub
+	}
 	result, err := AuditStopDecisionSurface(f.root, options)
 	if err != nil {
 		f.t.Fatal(err)
 	}
 	return result
+}
+
+func stopSurfaceTestOptions() StopSurfaceOptions {
+	return StopSurfaceOptions{GoalRecord: stopSurfaceGoalReaderStub}
+}
+
+func stopSurfaceTestOptionsWithBase(base string) StopSurfaceOptions {
+	return StopSurfaceOptions{Base: base, GoalRecord: stopSurfaceGoalReaderStub}
+}
+
+func stopSurfaceGoalReaderStub(goalID string, content []byte) (StopSurfaceGoalRecord, []string) {
+	record := StopSurfaceGoalRecord{}
+	heading := ""
+	var problems []string
+	for _, raw := range strings.Split(strings.ReplaceAll(string(content), "\r\n", "\n"), "\n") {
+		line := strings.TrimSpace(raw)
+		if strings.HasPrefix(line, "# ") {
+			heading = strings.TrimSpace(strings.TrimPrefix(line, "# "))
+			continue
+		}
+		if !strings.HasPrefix(line, "- ") {
+			continue
+		}
+		key, value, found := strings.Cut(strings.TrimPrefix(line, "- "), ":")
+		if !found {
+			continue
+		}
+		switch key {
+		case "State":
+			record.State = strings.TrimSpace(value)
+		case "StopSurface":
+			record.StopSurfaceMoves = strings.TrimSpace(value) == "moves"
+		case "Unknown":
+			problems = append(problems, `unknown field "Unknown"`)
+		}
+	}
+	if heading == "" {
+		problems = append(problems, "missing goal heading")
+	} else if heading != goalID {
+		problems = append(problems, fmt.Sprintf("heading %q does not match its file", heading))
+	}
+	if record.State == "" {
+		problems = append(problems, "missing State")
+	}
+	return record, problems
 }
 
 func (f *stopSurfaceFixture) declare(goal, reason string, moves []StopSurfaceLine) string {
@@ -174,7 +219,7 @@ func TestStopSurfaceReportsAdditions(t *testing.T) {
 	fixture.write("a_test.go", goStopSurfaceFixture("fixture", "want := Verdict{\tShouldBlock:   true}\n"))
 	fixture.write("scripts/agents/bed-fixtures.sh", "#!/usr/bin/env bash\nwant='{\"decision\":\"block\"}'\n")
 
-	result := fixture.audit(StopSurfaceOptions{})
+	result := fixture.audit(stopSurfaceTestOptions())
 	if result.Refused() {
 		t.Fatalf("additive surface refused: %+v", result)
 	}
@@ -195,7 +240,7 @@ func TestStopSurfaceDiscoversOnlyFixtureBeds(t *testing.T) {
 	fixture.write("scripts/agents/nested/base-fixtures.sh", "#!/usr/bin/env bash\nwant='{\"decision\":\"allow\"}'\n")
 	fixture.write("scripts/agents/emit.sh", "#!/usr/bin/env bash\nprintf '{\"decision\":\"block\"}'\n")
 
-	result := fixture.audit(StopSurfaceOptions{})
+	result := fixture.audit(stopSurfaceTestOptions())
 	want := []StopSurfaceLine{{File: "scripts/agents/nested/base-fixtures.sh", Line: `want='{"decision":"allow"}'`}}
 	if result.Refused() || !slices.Equal(result.Added, want) {
 		t.Fatalf("fixture-bed discovery result = %#v, want additions %#v", result, want)
@@ -209,7 +254,7 @@ func TestStopSurfaceDiscoversAssertionsOutsideTheOldList(t *testing.T) {
 	}, true)
 	fixture.write(path, goStopSurfaceFixture("nested", "want := Verdict{ShouldBlock: true}\n"))
 
-	added := fixture.audit(StopSurfaceOptions{})
+	added := fixture.audit(stopSurfaceTestOptions())
 	wantAdded := StopSurfaceLine{File: path, Line: "want := Verdict{ShouldBlock: true}"}
 	if added.Refused() || !slices.Contains(added.Added, wantAdded) {
 		t.Fatalf("unlisted addition result = %+v, want addition %+v", added, wantAdded)
@@ -217,13 +262,13 @@ func TestStopSurfaceDiscoversAssertionsOutsideTheOldList(t *testing.T) {
 
 	fixture.commit("add assertion outside the old list")
 	fixture.write(path, goStopSurfaceFixture("nested", ""))
-	removed := fixture.audit(StopSurfaceOptions{})
+	removed := fixture.audit(stopSurfaceTestOptions())
 	if !removed.Refused() || !slices.Contains(removed.Removed, wantAdded) {
 		t.Fatalf("unlisted removal result = %+v, want refusal for %+v", removed, wantAdded)
 	}
 
 	fixture.write(path, goStopSurfaceFixture("nested", "want := Verdict{ShouldBlock: false}\n"))
-	inverted := fixture.audit(StopSurfaceOptions{})
+	inverted := fixture.audit(stopSurfaceTestOptions())
 	wantInverted := StopSurfaceLine{File: path, Line: "want := Verdict{ShouldBlock: false}"}
 	if !inverted.Refused() || !slices.Contains(inverted.Removed, wantAdded) || !slices.Contains(inverted.Added, wantInverted) {
 		t.Fatalf("unlisted inversion result = %+v, want removal %+v and addition %+v", inverted, wantAdded, wantInverted)
@@ -242,7 +287,7 @@ func TestStopSurfaceReportsHookWireDecisionAddition(t *testing.T) {
 	}, false)
 	fixture.write(path, goStopSurfaceFixture("nested", hookWireBlockAssertion))
 
-	result := fixture.audit(StopSurfaceOptions{})
+	result := fixture.audit(stopSurfaceTestOptions())
 	want := StopSurfaceLine{File: path, Line: hookWireBlockAssertion}
 	if result.Refused() || !slices.Equal(result.Added, []StopSurfaceLine{want}) {
 		t.Fatalf("wire-decision addition result = %+v, want only %+v", result, want)
@@ -256,10 +301,25 @@ func TestStopSurfaceReportsMultilineDecisionAddition(t *testing.T) {
 	}, false)
 	fixture.write(path, goStopSurfaceFixture("nested", "if payload[\"decision\"] !=\n\t\"block\" {}\n"))
 
-	result := fixture.audit(StopSurfaceOptions{})
+	result := fixture.audit(stopSurfaceTestOptions())
 	want := StopSurfaceLine{File: path, Line: `payload["decision"] != "block"`}
 	if result.Refused() || !slices.Equal(result.Added, []StopSurfaceLine{want}) {
 		t.Fatalf("multiline addition result = %+v, want only %+v", result, want)
+	}
+}
+
+func TestStopSurfaceReportsParenthesizedMultilineDecisionAddition(t *testing.T) {
+	t.Parallel()
+	const path = "nested/parenthesized_multiline_decision_test.go"
+	fixture := newStopSurfaceFixture(t, nil, map[string]string{
+		path: goStopSurfaceFixture("nested", ""),
+	}, false)
+	fixture.write(path, goStopSurfaceFixture("nested", "if (payload[\"decision\"]) !=\n\t\"block\" {}\n"))
+
+	result := fixture.audit(stopSurfaceTestOptions())
+	want := StopSurfaceLine{File: path, Line: `(payload["decision"]) != "block"`}
+	if result.Refused() || !slices.Equal(result.Added, []StopSurfaceLine{want}) {
+		t.Fatalf("parenthesized multiline addition result = %+v, want only %+v", result, want)
 	}
 }
 
@@ -270,10 +330,25 @@ func TestStopSurfaceRefusesMultilineDecisionRemoval(t *testing.T) {
 	}, false)
 	fixture.write(path, goStopSurfaceFixture("nested", ""))
 
-	result := fixture.audit(StopSurfaceOptions{})
+	result := fixture.audit(stopSurfaceTestOptions())
 	want := StopSurfaceLine{File: path, Line: `payload["decision"] != "block"`}
 	if !result.Refused() || !slices.Equal(result.Removed, []StopSurfaceLine{want}) {
 		t.Fatalf("multiline removal result = %+v, want refusal for %+v", result, want)
+	}
+}
+
+func TestStopSurfaceRefusesParenthesizedMultilineDecisionRemoval(t *testing.T) {
+	t.Parallel()
+	const path = "nested/parenthesized_multiline_decision_test.go"
+	fixture := newStopSurfaceFixture(t, nil, map[string]string{
+		path: goStopSurfaceFixture("nested", "if (payload[\"decision\"]) !=\n\t\"block\" {}\n"),
+	}, false)
+	fixture.write(path, goStopSurfaceFixture("nested", ""))
+
+	result := fixture.audit(stopSurfaceTestOptions())
+	want := StopSurfaceLine{File: path, Line: `(payload["decision"]) != "block"`}
+	if !result.Refused() || !slices.Equal(result.Removed, []StopSurfaceLine{want}) {
+		t.Fatalf("parenthesized multiline removal result = %+v, want refusal for %+v", result, want)
 	}
 }
 
@@ -284,12 +359,29 @@ func TestStopSurfaceRefusesMultilineDecisionInversion(t *testing.T) {
 	}, false)
 	fixture.write(path, goStopSurfaceFixture("nested", "if payload[\"decision\"] !=\n\t\"allow\" {}\n"))
 
-	result := fixture.audit(StopSurfaceOptions{})
+	result := fixture.audit(stopSurfaceTestOptions())
 	wantRemoved := StopSurfaceLine{File: path, Line: `payload["decision"] != "block"`}
 	wantAdded := StopSurfaceLine{File: path, Line: `payload["decision"] != "allow"`}
 	if !result.Refused() || !slices.Equal(result.Removed, []StopSurfaceLine{wantRemoved}) ||
 		!slices.Equal(result.Added, []StopSurfaceLine{wantAdded}) {
 		t.Fatalf("multiline inversion result = %+v, want removal %+v and addition %+v", result, wantRemoved, wantAdded)
+	}
+}
+
+func TestStopSurfaceRefusesParenthesizedMultilineDecisionInversion(t *testing.T) {
+	t.Parallel()
+	const path = "nested/parenthesized_multiline_decision_test.go"
+	fixture := newStopSurfaceFixture(t, nil, map[string]string{
+		path: goStopSurfaceFixture("nested", "if (payload[\"decision\"]) !=\n\t\"block\" {}\n"),
+	}, false)
+	fixture.write(path, goStopSurfaceFixture("nested", "if (payload[\"decision\"]) !=\n\t\"allow\" {}\n"))
+
+	result := fixture.audit(stopSurfaceTestOptions())
+	wantRemoved := StopSurfaceLine{File: path, Line: `(payload["decision"]) != "block"`}
+	wantAdded := StopSurfaceLine{File: path, Line: `(payload["decision"]) != "allow"`}
+	if !result.Refused() || !slices.Equal(result.Removed, []StopSurfaceLine{wantRemoved}) ||
+		!slices.Equal(result.Added, []StopSurfaceLine{wantAdded}) {
+		t.Fatalf("parenthesized multiline inversion result = %+v, want removal %+v and addition %+v", result, wantRemoved, wantAdded)
 	}
 }
 
@@ -300,7 +392,7 @@ func TestStopSurfaceRefusesHookWireDecisionRemoval(t *testing.T) {
 	}, false)
 	fixture.write(path, goStopSurfaceFixture("nested", ""))
 
-	result := fixture.audit(StopSurfaceOptions{})
+	result := fixture.audit(stopSurfaceTestOptions())
 	want := StopSurfaceLine{File: path, Line: hookWireBlockAssertion}
 	if !result.Refused() || !slices.Equal(result.Removed, []StopSurfaceLine{want}) {
 		t.Fatalf("wire-decision removal result = %+v, want refusal for %+v", result, want)
@@ -314,7 +406,7 @@ func TestStopSurfaceRefusesHookWireDecisionInversion(t *testing.T) {
 	}, false)
 	fixture.write(path, goStopSurfaceFixture("nested", hookWireAllowAssertion))
 
-	result := fixture.audit(StopSurfaceOptions{})
+	result := fixture.audit(stopSurfaceTestOptions())
 	wantRemoved := StopSurfaceLine{File: path, Line: hookWireBlockAssertion}
 	wantAdded := StopSurfaceLine{File: path, Line: hookWireAllowAssertion}
 	if !result.Refused() || !slices.Equal(result.Removed, []StopSurfaceLine{wantRemoved}) ||
@@ -334,7 +426,7 @@ func TestStopSurfaceIgnoresFileLevelDecisionMetadata(t *testing.T) {
 		"func TestFixture() {\n\t" + hookWireAllowAssertion + "\n}\n"
 	fixture.write(path, candidate)
 
-	result := fixture.audit(StopSurfaceOptions{})
+	result := fixture.audit(stopSurfaceTestOptions())
 	want := StopSurfaceLine{File: path, Line: hookWireAllowAssertion}
 	if result.Refused() || !slices.Equal(result.Added, []StopSurfaceLine{want}) {
 		t.Fatalf("file-level metadata result = %+v, want only real assertion %+v", result, want)
@@ -349,7 +441,7 @@ func TestStopSurfaceIgnoresCommentedDecisionText(t *testing.T) {
 	body := "// if verdict.ShouldBlock { panic(\"block\") }\n" + hookWireAllowAssertion
 	fixture.write(path, goStopSurfaceFixture("nested", body))
 
-	result := fixture.audit(StopSurfaceOptions{})
+	result := fixture.audit(stopSurfaceTestOptions())
 	want := StopSurfaceLine{File: path, Line: hookWireAllowAssertion}
 	if result.Refused() || !slices.Equal(result.Added, []StopSurfaceLine{want}) {
 		t.Fatalf("commented decision result = %+v, want only real assertion %+v", result, want)
@@ -364,7 +456,7 @@ func TestStopSurfaceIgnoresSurfaceLineMetadata(t *testing.T) {
 	body := "want := []StopSurfaceLine{{File: \"other_test.go\", Line: `if strings.Contains(out, \"decision\":\"allow\") {}`}}\n" + hookWireBlockAssertion
 	fixture.write(path, goStopSurfaceFixture("nested", body))
 
-	result := fixture.audit(StopSurfaceOptions{})
+	result := fixture.audit(stopSurfaceTestOptions())
 	want := StopSurfaceLine{File: path, Line: hookWireBlockAssertion}
 	if result.Refused() || !slices.Equal(result.Added, []StopSurfaceLine{want}) {
 		t.Fatalf("surface-line metadata result = %+v, want only real assertion %+v", result, want)
@@ -379,7 +471,7 @@ func TestStopSurfaceIgnoresEmbeddedPackageSource(t *testing.T) {
 	body := `fixture.write(path, "package nested; var payload = \"decision\":\"allow\"")` + "\n" + hookWireBlockAssertion
 	fixture.write(path, goStopSurfaceFixture("nested", body))
 
-	result := fixture.audit(StopSurfaceOptions{})
+	result := fixture.audit(stopSurfaceTestOptions())
 	want := StopSurfaceLine{File: path, Line: hookWireBlockAssertion}
 	if result.Refused() || !slices.Equal(result.Added, []StopSurfaceLine{want}) {
 		t.Fatalf("embedded package source result = %+v, want only real assertion %+v", result, want)
@@ -394,7 +486,7 @@ func TestStopSurfaceIgnoresEmbeddedEscapedNewlineSource(t *testing.T) {
 	body := `fixture.write(path, "var payload = \"decision\":\"allow\"\n")` + "\n" + hookWireBlockAssertion
 	fixture.write(path, goStopSurfaceFixture("nested", body))
 
-	result := fixture.audit(StopSurfaceOptions{})
+	result := fixture.audit(stopSurfaceTestOptions())
 	want := StopSurfaceLine{File: path, Line: hookWireBlockAssertion}
 	if result.Refused() || !slices.Equal(result.Added, []StopSurfaceLine{want}) {
 		t.Fatalf("embedded escaped-newline source result = %+v, want only real assertion %+v", result, want)
@@ -407,7 +499,7 @@ func TestStopSurfaceRefusesAnUndeclaredRemoval(t *testing.T) {
 	}, true)
 	fixture.write("a_test.go", goStopSurfaceFixture("fixture", ""))
 
-	result := fixture.audit(StopSurfaceOptions{})
+	result := fixture.audit(stopSurfaceTestOptions())
 	if !result.Refused() || len(result.Removed) != 2 {
 		t.Fatalf("removal result = %+v", result)
 	}
@@ -443,7 +535,7 @@ func TestStopSurfaceRefusesAnInvertedDecision(t *testing.T) {
 			}
 			fixture := newStopSurfaceFixture(t, []stopSurfaceFile{{Kind: test.kind, Path: path}}, map[string]string{path: oldContent}, true)
 			fixture.write(path, newContent)
-			result := fixture.audit(StopSurfaceOptions{})
+			result := fixture.audit(stopSurfaceTestOptions())
 			if !result.Refused() || len(result.Removed) != 1 || len(result.Added) != 1 {
 				t.Fatalf("inversion result = %+v", result)
 			}
@@ -459,7 +551,7 @@ func TestStopSurfaceAdmitsADeclaredMove(t *testing.T) {
 		fixture.write("a_test.go", goStopSurfaceFixture("fixture", ""))
 		fixture.declare("move-stop", "the Stop policy changed", []StopSurfaceLine{{File: "a_test.go", Line: "want := Verdict{ShouldBlock: true}"}})
 
-		result := fixture.audit(StopSurfaceOptions{})
+		result := fixture.audit(stopSurfaceTestOptions())
 		if result.Refused() || len(result.Moved) != 1 || result.Moved[0].Goal != "move-stop" || len(result.Removed) != 0 {
 			t.Fatalf("declared move result = %+v", result)
 		}
@@ -470,7 +562,7 @@ func TestStopSurfaceAdmitsADeclaredMove(t *testing.T) {
 			"a_test.go": goStopSurfaceFixture("fixture", "first := Verdict{ShouldBlock: true}\nsecond := Verdict{BlockSource: source}\n"),
 		}, true)
 		fixture.write("a_test.go", goStopSurfaceFixture("fixture", "second := Verdict{BlockSource: source}\nfirst := Verdict{ShouldBlock: true}\n"))
-		result := fixture.audit(StopSurfaceOptions{})
+		result := fixture.audit(stopSurfaceTestOptions())
 		if result.Refused() || len(result.Added) != 0 || len(result.Moved) != 0 {
 			t.Fatalf("reorder changed the surface: %+v", result)
 		}
@@ -506,14 +598,14 @@ func TestStopSurfaceRefusesUnpermittedGoalAtDeclarationAndAudit(t *testing.T) {
 	t.Run("declaration creation", func(t *testing.T) {
 		fixture, _ := stopSurfaceRemovedAssertionFixture(t)
 		fixture.writeGoal("unrelated", "queued", false)
-		_, err := DeclareStopDecisionSurface(fixture.root, StopSurfaceOptions{}, "unrelated", "policy")
+		_, err := DeclareStopDecisionSurface(fixture.root, stopSurfaceTestOptions(), "unrelated", "policy")
 		requireStopSurfaceGoalRefusal(t, err)
 	})
 	t.Run("audit acceptance", func(t *testing.T) {
 		fixture, removed := stopSurfaceRemovedAssertionFixture(t)
 		fixture.writeGoal("unrelated", "queued", false)
 		fixture.declare("unrelated", "policy", []StopSurfaceLine{removed})
-		requireStopSurfaceAuditGoalRefusal(t, fixture.audit(StopSurfaceOptions{}))
+		requireStopSurfaceAuditGoalRefusal(t, fixture.audit(stopSurfaceTestOptions()))
 	})
 }
 
@@ -521,24 +613,71 @@ func TestStopSurfaceRefusesDummyGoalRecordAtDeclarationAndAudit(t *testing.T) {
 	t.Run("declaration creation", func(t *testing.T) {
 		fixture, _ := stopSurfaceRemovedAssertionFixture(t)
 		fixture.write("plans/goals/move-stop.md", "# Move Stop\n")
-		_, err := DeclareStopDecisionSurface(fixture.root, StopSurfaceOptions{}, "move-stop", "policy")
+		_, err := DeclareStopDecisionSurface(fixture.root, stopSurfaceTestOptions(), "move-stop", "policy")
 		requireStopSurfaceGoalRefusal(t, err)
 	})
 	t.Run("audit acceptance", func(t *testing.T) {
 		fixture, removed := stopSurfaceRemovedAssertionFixture(t)
 		fixture.write("plans/goals/move-stop.md", "# Move Stop\n")
 		fixture.declare("move-stop", "policy", []StopSurfaceLine{removed})
-		requireStopSurfaceAuditGoalRefusal(t, fixture.audit(StopSurfaceOptions{}))
+		requireStopSurfaceAuditGoalRefusal(t, fixture.audit(stopSurfaceTestOptions()))
+	})
+}
+
+func TestStopSurfaceRefusesMovesWithoutGoalRecordReader(t *testing.T) {
+	t.Parallel()
+	t.Run("declaration creation", func(t *testing.T) {
+		fixture, _ := stopSurfaceRemovedAssertionFixture(t)
+		_, err := DeclareStopDecisionSurface(fixture.root, StopSurfaceOptions{}, "move-stop", "policy")
+		requireStopSurfaceGoalRefusal(t, err)
+		if !strings.Contains(err.Error(), "no goal record reader") {
+			t.Fatalf("nil-reader declaration refusal = %v", err)
+		}
+	})
+	t.Run("audit acceptance", func(t *testing.T) {
+		fixture, removed := stopSurfaceRemovedAssertionFixture(t)
+		fixture.declare("move-stop", "policy", []StopSurfaceLine{removed})
+		result, err := AuditStopDecisionSurface(fixture.root, StopSurfaceOptions{})
+		if err != nil {
+			t.Fatal(err)
+		}
+		requireStopSurfaceAuditGoalRefusal(t, result)
+		if !strings.Contains(result.Problems[0], "no goal record reader") {
+			t.Fatalf("nil-reader audit refusal = %+v", result)
+		}
+	})
+}
+
+func TestStopSurfaceRefusesGoalRecordWithParseProblems(t *testing.T) {
+	t.Parallel()
+	t.Run("declaration creation", func(t *testing.T) {
+		fixture, _ := stopSurfaceRemovedAssertionFixture(t)
+		fixture.writeGoal("move-stop", "queued", true, "Unknown: malformed")
+		_, err := DeclareStopDecisionSurface(fixture.root, stopSurfaceTestOptions(), "move-stop", "policy")
+		requireStopSurfaceGoalRefusal(t, err)
+		if !strings.Contains(err.Error(), `unknown field "Unknown"`) {
+			t.Fatalf("parse-problem declaration refusal = %v", err)
+		}
+	})
+	t.Run("audit acceptance", func(t *testing.T) {
+		fixture, removed := stopSurfaceRemovedAssertionFixture(t)
+		fixture.writeGoal("move-stop", "queued", true, "Unknown: malformed")
+		fixture.declare("move-stop", "policy", []StopSurfaceLine{removed})
+		result := fixture.audit(stopSurfaceTestOptions())
+		requireStopSurfaceAuditGoalRefusal(t, result)
+		if !strings.Contains(result.Problems[0], `unknown field "Unknown"`) {
+			t.Fatalf("parse-problem audit refusal = %+v", result)
+		}
 	})
 }
 
 func TestStopSurfaceAdmitsPermittedOpenGoal(t *testing.T) {
 	fixture, _ := stopSurfaceRemovedAssertionFixture(t)
-	path, err := DeclareStopDecisionSurface(fixture.root, StopSurfaceOptions{}, "move-stop", "policy")
+	path, err := DeclareStopDecisionSurface(fixture.root, stopSurfaceTestOptions(), "move-stop", "policy")
 	if err != nil || !strings.Contains(path, "move-stop-") {
 		t.Fatalf("declaration = %q, %v", path, err)
 	}
-	result := fixture.audit(StopSurfaceOptions{})
+	result := fixture.audit(stopSurfaceTestOptions())
 	if result.Refused() || len(result.Moved) != 1 || result.Moved[0].Goal != "move-stop" {
 		t.Fatalf("permitted open goal result = %+v", result)
 	}
@@ -549,11 +688,11 @@ func TestStopSurfaceAdmitsPermittedGoalWithRepeatedRecordFields(t *testing.T) {
 	fixture.writeGoal("move-stop", "queued", true,
 		"AcceptedRisk: finding=first chain=review by=human:fixture opid=first",
 		"AcceptedRisk: finding=second chain=review by=human:fixture opid=second")
-	path, err := DeclareStopDecisionSurface(fixture.root, StopSurfaceOptions{}, "move-stop", "policy")
+	path, err := DeclareStopDecisionSurface(fixture.root, stopSurfaceTestOptions(), "move-stop", "policy")
 	if err != nil || !strings.Contains(path, "move-stop-") {
 		t.Fatalf("declaration with repeated goal fields = %q, %v", path, err)
 	}
-	if result := fixture.audit(StopSurfaceOptions{}); result.Refused() || len(result.Moved) != 1 {
+	if result := fixture.audit(stopSurfaceTestOptions()); result.Refused() || len(result.Moved) != 1 {
 		t.Fatalf("permitted goal with repeated fields result = %+v", result)
 	}
 }
@@ -562,14 +701,14 @@ func TestStopSurfaceRefusesPermittedDoneGoalAtDeclarationAndAudit(t *testing.T) 
 	t.Run("declaration creation", func(t *testing.T) {
 		fixture, _ := stopSurfaceRemovedAssertionFixture(t)
 		fixture.writeGoal("move-stop", "done", true)
-		_, err := DeclareStopDecisionSurface(fixture.root, StopSurfaceOptions{}, "move-stop", "policy")
+		_, err := DeclareStopDecisionSurface(fixture.root, stopSurfaceTestOptions(), "move-stop", "policy")
 		requireStopSurfaceGoalRefusal(t, err)
 	})
 	t.Run("audit acceptance", func(t *testing.T) {
 		fixture, removed := stopSurfaceRemovedAssertionFixture(t)
 		fixture.writeGoal("move-stop", "done", true)
 		fixture.declare("move-stop", "policy", []StopSurfaceLine{removed})
-		requireStopSurfaceAuditGoalRefusal(t, fixture.audit(StopSurfaceOptions{}))
+		requireStopSurfaceAuditGoalRefusal(t, fixture.audit(stopSurfaceTestOptions()))
 	})
 }
 
@@ -626,7 +765,7 @@ func TestStopSurfaceRefusesAFalseDeclaration(t *testing.T) {
 				"a_test.go": goStopSurfaceFixture("fixture", removed.Line+"\n"),
 			}, true)
 			test.build(fixture)
-			if result := fixture.audit(StopSurfaceOptions{}); !result.Refused() {
+			if result := fixture.audit(stopSurfaceTestOptions()); !result.Refused() {
 				t.Fatalf("false declaration passed: %+v", result)
 			}
 		})
@@ -640,7 +779,7 @@ func TestStopSurfaceListRemovalCountsAsRemoval(t *testing.T) {
 	}, true)
 	fixture.write(stopSurfaceListPath, renderStopSurfaceList([]stopSurfaceFile{{Kind: "bed", Path: "scripts/agents/bed-fixtures.sh"}}))
 
-	result := fixture.audit(StopSurfaceOptions{})
+	result := fixture.audit(stopSurfaceTestOptions())
 	if result.Refused() || len(result.Removed) != 0 {
 		t.Fatalf("obsolete list changed discovered surface: %+v", result)
 	}
@@ -653,7 +792,7 @@ func TestStopSurfaceFirstLandingUsesTheCandidateList(t *testing.T) {
 	fixture.write(stopSurfaceListPath, renderStopSurfaceList([]stopSurfaceFile{{Kind: "go", Path: "a_test.go"}}))
 	fixture.write("a_test.go", goStopSurfaceFixture("fixture", "first := Verdict{ShouldBlock: true}\nsecond := Verdict{BlockSource: source}\n"))
 
-	result := fixture.audit(StopSurfaceOptions{})
+	result := fixture.audit(stopSurfaceTestOptions())
 	if result.Refused() || len(result.Added) != 1 || result.Added[0].Line != "second := Verdict{BlockSource: source}" {
 		t.Fatalf("first landing result = %+v", result)
 	}
@@ -667,7 +806,7 @@ func TestStopSurfaceResolvesItsBase(t *testing.T) {
 		base := fixture.git("rev-parse", "HEAD")
 		fixture.write("a_test.go", goStopSurfaceFixture("fixture", "want := Verdict{ShouldBlock: false}\n"))
 		fixture.commit("inversion")
-		result := fixture.audit(StopSurfaceOptions{Base: base})
+		result := fixture.audit(stopSurfaceTestOptionsWithBase(base))
 		if result.Base != base || !result.Refused() || len(result.Removed) != 1 {
 			t.Fatalf("explicit base result = %+v", result)
 		}
@@ -683,7 +822,7 @@ func TestStopSurfaceResolvesItsBase(t *testing.T) {
 		fixture.commit("first branch commit")
 		fixture.write("a_test.go", goStopSurfaceFixture("fixture", "first := Verdict{ShouldBlock: true}\nsecond := Verdict{BlockSource: source}\n"))
 		fixture.commit("second branch commit")
-		result := fixture.audit(StopSurfaceOptions{})
+		result := fixture.audit(stopSurfaceTestOptions())
 		if result.Base != base || result.Refused() || len(result.Added) != 2 {
 			t.Fatalf("merge-base result = %+v", result)
 		}
@@ -695,7 +834,7 @@ func TestStopSurfaceResolvesItsBase(t *testing.T) {
 		}, true)
 		head := fixture.git("rev-parse", "HEAD")
 		fixture.write("a_test.go", goStopSurfaceFixture("fixture", "first := Verdict{ShouldBlock: true}\nsecond := Verdict{BlockSource: source}\n"))
-		result := fixture.audit(StopSurfaceOptions{})
+		result := fixture.audit(stopSurfaceTestOptions())
 		if result.Base != head || result.Refused() || len(result.Added) != 1 {
 			t.Fatalf("HEAD fallback result = %+v", result)
 		}
@@ -708,14 +847,14 @@ func TestStopSurfaceDeclareWritesAnAcceptedDeclaration(t *testing.T) {
 			"a_test.go": goStopSurfaceFixture("fixture", "want := Verdict{ShouldBlock: true}\n"),
 		}, true)
 		fixture.write("a_test.go", goStopSurfaceFixture("fixture", ""))
-		path, err := DeclareStopDecisionSurface(fixture.root, StopSurfaceOptions{}, "move-stop", "the policy changed")
+		path, err := DeclareStopDecisionSurface(fixture.root, stopSurfaceTestOptions(), "move-stop", "the policy changed")
 		if err != nil {
 			t.Fatal(err)
 		}
 		if !strings.HasPrefix(path, stopMoveDirectory+"/move-stop-") {
 			t.Fatalf("declaration path = %q", path)
 		}
-		result := fixture.audit(StopSurfaceOptions{})
+		result := fixture.audit(stopSurfaceTestOptions())
 		if result.Refused() || len(result.Moved) != 1 {
 			t.Fatalf("generated declaration result = %+v", result)
 		}
@@ -725,7 +864,7 @@ func TestStopSurfaceDeclareWritesAnAcceptedDeclaration(t *testing.T) {
 		fixture := newStopSurfaceFixture(t, []stopSurfaceFile{{Kind: "go", Path: "a_test.go"}}, map[string]string{
 			"a_test.go": goStopSurfaceFixture("fixture", "want := Verdict{ShouldBlock: true}\n"),
 		}, true)
-		if _, err := DeclareStopDecisionSurface(fixture.root, StopSurfaceOptions{}, "move-stop", "policy"); err == nil {
+		if _, err := DeclareStopDecisionSurface(fixture.root, stopSurfaceTestOptions(), "move-stop", "policy"); err == nil {
 			t.Fatal("declaration passed without a removal")
 		}
 	})
@@ -735,7 +874,7 @@ func TestStopSurfaceDeclareWritesAnAcceptedDeclaration(t *testing.T) {
 			"a_test.go": goStopSurfaceFixture("fixture", "want := Verdict{ShouldBlock: true}\n"),
 		}, true)
 		fixture.write("a_test.go", goStopSurfaceFixture("fixture", ""))
-		if _, err := DeclareStopDecisionSurface(fixture.root, StopSurfaceOptions{}, "missing-goal", "policy"); err == nil {
+		if _, err := DeclareStopDecisionSurface(fixture.root, stopSurfaceTestOptions(), "missing-goal", "policy"); err == nil {
 			t.Fatal("declaration passed without a ledger goal")
 		}
 	})
@@ -745,7 +884,7 @@ func TestStopSurfaceDeclareWritesAnAcceptedDeclaration(t *testing.T) {
 			"a_test.go": goStopSurfaceFixture("fixture", "want := Verdict{ShouldBlock: true}\n"),
 		}, true)
 		fixture.write("a_test.go", goStopSurfaceFixture("fixture", ""))
-		if _, err := DeclareStopDecisionSurface(fixture.root, StopSurfaceOptions{}, "move-stop", ""); err == nil {
+		if _, err := DeclareStopDecisionSurface(fixture.root, stopSurfaceTestOptions(), "move-stop", ""); err == nil {
 			t.Fatal("declaration passed with an empty reason")
 		}
 	})
