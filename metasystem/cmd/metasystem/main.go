@@ -258,6 +258,7 @@ func families() []family {
 				{"claude-derive-result", "derive claude-result.json from a streamed round", runAdapterClaudeDeriveResult},
 				{"claude-settings", "build the Claude job settings from a record", runAdapterClaudeSettings},
 				{"claude-usage", "extract Claude usage from its result", runAdapterClaudeUsage},
+				{"claude-tool-gate", "decide one Claude tool call against the context budget", runAdapterClaudeToolGate},
 				{"claude-result-field", "read a Claude result field with modelUsage collapse", runAdapterClaudeResultField},
 				{"claude-read-roots", "list a record's readRoots minus the workspace", runAdapterClaudeReadRoots},
 				{"claude-append-result", "append a Claude result to the event stream", runAdapterClaudeAppendResult},

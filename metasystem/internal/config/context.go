@@ -12,6 +12,7 @@ const (
 	ContextCeilingTokensKey                 = "context.ceiling.tokens"
 	ContextHandoffMarginTokensKey           = "context.handoff.margin.tokens"
 	ContextHandoffNoteDirectoryPrefix       = "context.handoff.note-directory."
+	ContextToolGateModeKey                  = "context.toolgate.mode"
 	DefaultContextCeilingTokens       int64 = 250000
 	DefaultContextHandoffMarginTokens int64 = 145000
 	// The construction line is 150000 proof tokens minus 3 handoff calls of at most 14454 tokens.
@@ -23,6 +24,7 @@ type Budget struct{ Ceiling, Margin, Trigger int64 }
 var contextKeys = map[string]struct{}{
 	ContextCeilingTokensKey:       {},
 	ContextHandoffMarginTokensKey: {},
+	ContextToolGateModeKey:        {},
 }
 
 var contextRuntimeName = regexp.MustCompile(`^[a-z][a-z0-9-]{0,31}$`)
@@ -33,12 +35,8 @@ func ContextBudget(root string) (Budget, error) {
 }
 
 func contextBudgetFromConf(confPath string) (Budget, error) {
-	for _, key := range Keys(confPath, "context.", nil) {
-		_, known := contextKeys[key]
-		runtime := strings.TrimPrefix(key, ContextHandoffNoteDirectoryPrefix)
-		if !known && (!strings.HasPrefix(key, ContextHandoffNoteDirectoryPrefix) || !contextRuntimeName.MatchString(runtime)) {
-			return Budget{}, contextConfigInvalid(key, "unknown context key")
-		}
+	if err := validateContextKeys(confPath); err != nil {
+		return Budget{}, err
 	}
 	ceiling, err := contextPositiveValue(confPath, ContextCeilingTokensKey, DefaultContextCeilingTokens)
 	if err != nil {
@@ -56,6 +54,33 @@ func contextBudgetFromConf(confPath string) (Budget, error) {
 		return Budget{}, contextConfigInvalid(ContextCeilingTokensKey, "trigger %d exceeds construction line %d", budget.Trigger, ContextConstructionLineTokens)
 	}
 	return budget, nil
+}
+
+func validateContextKeys(confPath string) error {
+	for _, key := range Keys(confPath, "context.", nil) {
+		_, known := contextKeys[key]
+		runtime := strings.TrimPrefix(key, ContextHandoffNoteDirectoryPrefix)
+		if !known && (!strings.HasPrefix(key, ContextHandoffNoteDirectoryPrefix) || !contextRuntimeName.MatchString(runtime)) {
+			return contextConfigInvalid(key, "unknown context key")
+		}
+	}
+	return nil
+}
+
+// ToolGateMode reads whether the Claude tool gate observes or denies calls.
+func ToolGateMode(root string) (string, error) {
+	confPath := filepath.Join(root, "metasystem.conf")
+	if err := validateContextKeys(confPath); err != nil {
+		return "", err
+	}
+	mode, err := budgetLawValue(confPath, ContextToolGateModeKey, "observe")
+	if err != nil {
+		return "", contextConfigInvalid(ContextToolGateModeKey, "%v", err)
+	}
+	if mode != "observe" && mode != "deny" {
+		return "", contextConfigInvalid(ContextToolGateModeKey, "must be observe or deny, got %q", mode)
+	}
+	return mode, nil
 }
 
 // ContextHandoffNoteDirectory resolves the directory that may contain a

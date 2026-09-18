@@ -47,7 +47,7 @@ func TestContextConfKeysDocumented(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	for _, text := range []string{"context.ceiling.tokens=250000", "context.handoff.margin.tokens=145000", "context.handoff.note-directory.codex=", "trigger 105000", "106638"} {
+	for _, text := range []string{"context.ceiling.tokens=250000", "context.handoff.margin.tokens=145000", "context.handoff.note-directory.codex=", "context.toolgate.mode=observe", "trigger 105000", "106638"} {
 		if !strings.Contains(string(content), text) {
 			t.Fatalf("metasystem.conf does not document %q", text)
 		}
@@ -60,6 +60,16 @@ func TestNoKeyLowersTheConstructionLine(t *testing.T) {
 	}
 	for key := range contextKeys {
 		t.Run(key, func(t *testing.T) {
+			if key == ContextToolGateModeKey {
+				for _, mode := range []string{"observe", "deny"} {
+					root := t.TempDir()
+					putFile(t, filepath.Join(root, "metasystem.conf"), fmt.Sprintf("%s=%d\n%s=%s\n", ContextCeilingTokensKey, DefaultContextHandoffMarginTokens+ContextConstructionLineTokens, key, mode))
+					if budget, err := ContextBudget(root); err != nil || budget.Trigger != ContextConstructionLineTokens {
+						t.Fatalf("%s=%s changed the construction line: budget=%+v err=%v", key, mode, budget, err)
+					}
+				}
+				return
+			}
 			boundary, direction := DefaultContextCeilingTokens-ContextConstructionLineTokens, int64(-1)
 			if key == ContextCeilingTokensKey {
 				boundary, direction = DefaultContextHandoffMarginTokens+ContextConstructionLineTokens, 1
@@ -74,6 +84,30 @@ func TestNoKeyLowersTheConstructionLine(t *testing.T) {
 				t.Fatalf("%s lowered the construction line: %v", key, err)
 			}
 		})
+	}
+}
+
+func TestToolGateModeRefusesOtherValues(t *testing.T) {
+	clearContextEnvironment(t)
+	root := t.TempDir()
+	if mode, err := ToolGateMode(root); err != nil || mode != "observe" {
+		t.Fatalf("absent mode = %q, %v", mode, err)
+	}
+	putFile(t, filepath.Join(root, "metasystem.conf"), ContextToolGateModeKey+"=deny\n")
+	if mode, err := ToolGateMode(root); err != nil || mode != "deny" {
+		t.Fatalf("deny mode = %q, %v", mode, err)
+	}
+	putFile(t, filepath.Join(root, "metasystem.conf"), ContextToolGateModeKey+"=audit\n")
+	if _, err := ToolGateMode(root); err == nil || !strings.Contains(err.Error(), ContextToolGateModeKey) || !strings.Contains(err.Error(), "audit") {
+		t.Fatalf("audit mode was not refused by key and value: %v", err)
+	}
+}
+
+func TestShippedToolGateModeIsObserve(t *testing.T) {
+	root := filepath.Join("..", "..")
+	mode, err := ToolGateMode(root)
+	if err != nil || mode != "observe" {
+		t.Fatalf("shipped tool gate mode = %q, %v", mode, err)
 	}
 }
 

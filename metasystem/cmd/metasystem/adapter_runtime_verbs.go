@@ -8,10 +8,14 @@ import (
 	"fmt"
 	"os"
 	"strings"
+	"time"
 
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/adapter"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/atif"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/config"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/delegate"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/goal"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/identity"
 	usagepkg "github.com/widoriezebos/agentic-tools/metasystem/internal/usage"
 )
 
@@ -246,6 +250,47 @@ func runAdapterClaudeUsage(args []string) int {
 	if err := ports.Usage(*result, *output); err != nil {
 		fmt.Fprintln(os.Stderr, err)
 		return 1
+	}
+	return 0
+}
+
+var (
+	toolGateProcessBirth = identity.ProcessBirth
+	toolGateClock        = time.Now
+)
+
+// runAdapterClaudeToolGate decides one Claude PreToolUse call. Once flags are
+// valid the hook fails open: every diagnostic path exits successfully.
+func runAdapterClaudeToolGate(args []string) int {
+	flags := flag.NewFlagSet("adapter claude-tool-gate", flag.ContinueOnError)
+	var root string
+	pathFlagVar(flags, &root, "root", "", "installation or containing template root")
+	if flags.Parse(args) != nil {
+		return 2
+	}
+	if root == "" || flags.NArg() != 0 {
+		fmt.Fprintln(os.Stderr, "usage: metasystem adapter claude-tool-gate --root ROOT")
+		return 2
+	}
+	stateRoot, err := goal.ResolveStateRoot(root)
+	if err != nil {
+		fmt.Fprintln(os.Stderr, "metasystem adapter claude-tool-gate:", err)
+		return 0
+	}
+	mode, err := config.ToolGateMode(stateRoot)
+	if err != nil {
+		fmt.Fprintln(os.Stderr, "metasystem adapter claude-tool-gate:", err)
+		return 0
+	}
+	memoryDir, _ := usagepkg.MemoryDirectory(usagepkg.ReadOptions{Installation: stateRoot})
+	startedAt, _ := toolGateProcessBirth(int64(os.Getpid()))
+	err = adapter.RunToolGate(adapter.ToolGateOptions{
+		ShellStartedAt: startedAt, Clock: toolGateClock, MemoryDir: memoryDir, Mode: mode,
+		StateRoot: stateRoot, Installation: stateRoot,
+		Stdin: os.Stdin, Stdout: os.Stdout, Stderr: os.Stderr,
+	})
+	if err != nil {
+		fmt.Fprintln(os.Stderr, "metasystem adapter claude-tool-gate:", err)
 	}
 	return 0
 }
