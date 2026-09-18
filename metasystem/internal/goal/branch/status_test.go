@@ -83,6 +83,20 @@ func TestStatusLandReadyPrefixAndParkSafety(t *testing.T) {
 	}
 }
 
+func TestParkRefusalDoesNotClaimOriginState(t *testing.T) {
+	f := newBranchFixture(t)
+	narrated := git(t, f.root, "commit-tree", f.base+"^{tree}", "-p", f.base, "-m", "unit\n\nGoal-Unit: goal-a/u1")
+	_, err := branch.CheckParkBranch(f.root, "goal-a", "resume commit "+narrated, func() (string, string, bool, error) {
+		t.Fatal("missing local branch must not read origin")
+		return "", "", false, nil
+	})
+	var refusal *branch.OpError
+	if !errors.As(err, &refusal) || refusal.Code != branch.ParkUnpushedCode ||
+		refusal.Message != "this checkout has no goal/goal-a; fetch it and check it out" {
+		t.Fatalf("missing local branch refusal = %v", err)
+	}
+}
+
 func TestStatusAndReadBindWholeBuildList(t *testing.T) {
 	f := newBranchFixture(t)
 	stage(t, f, "metasystem/multi.go", "multi")

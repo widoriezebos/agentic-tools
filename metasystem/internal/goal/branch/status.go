@@ -96,7 +96,7 @@ func CheckParkBranch(repo, goalID, next string, readRemote ParkBranchRemoteReade
 	}
 	if !localPresent {
 		if nextNamesUnitCommit(repo, goalID, next) {
-			return ParkBranchState{}, operationRefusal(ParkUnpushedCode, "Next step names branch work, but origin has no goal/%s", goalID)
+			return ParkBranchState{}, operationRefusal(ParkUnpushedCode, "this checkout has no goal/%s; fetch it and check it out", goalID)
 		}
 		return ParkBranchState{}, nil
 	}

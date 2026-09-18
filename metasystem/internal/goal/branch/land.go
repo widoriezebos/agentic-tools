@@ -148,9 +148,14 @@ func readLandingRecord(repo, tip, goalID string) ([]LandingProof, error) {
 
 func goalPageNamesCommit(page, commit string) bool {
 	want := "land through " + commit
+	inHistory := false
 	for _, line := range strings.Split(strings.ReplaceAll(page, "\r\n", "\n"), "\n") {
 		line = strings.TrimSpace(line)
-		if line == "- Next step: "+want || strings.HasPrefix(line, "- ") && strings.HasSuffix(line, " reason="+want) {
+		if line == "History:" {
+			inHistory = true
+			continue
+		}
+		if line == "- Next step: "+want || inHistory && strings.HasPrefix(line, "- ") && strings.HasSuffix(line, " reason="+want) {
 			return true
 		}
 	}
@@ -257,6 +262,28 @@ func verifyUnitPreimages(repo, tree string, unit UnitStatus) error {
 	return nil
 }
 
+func verifyFoldPreimages(repo, tree string, fold Commit) error {
+	entries, err := RawEntries(repo, fold.ID)
+	if err != nil {
+		return err
+	}
+	var changed []string
+	for _, entry := range entries {
+		mode, blob, present, err := treeEntry(repo, tree, entry.Path)
+		if err != nil {
+			return err
+		}
+		absentSource := strings.Trim(entry.SrcBlob, "0") == ""
+		if absentSource && present || !absentSource && (!present || blob != entry.SrcBlob || mode != entry.SrcMode) {
+			changed = append(changed, entry.Path)
+		}
+	}
+	if len(changed) != 0 {
+		return operationRefusal(UnitRereadCode, "fold %s has stale preimage at paths %s", fold.ID, strings.Join(changed, ", "))
+	}
+	return nil
+}
+
 func transitionDigest(repo, before, after string) (string, error) {
 	raw, err := transitionRaw(repo, before, after)
 	if err != nil {
@@ -305,7 +332,7 @@ func unitTransitionMatches(repo, before, after string, unit UnitStatus) (string,
 	return got, bytes.Equal(original, applied), err
 }
 
-func applyCommit(worktree, commit string) error {
+func applyCommitMode(worktree, commit string, threeWay bool) error {
 	patch, err := gitOutput(worktree, "diff", "--binary", "--full-index", commit+"^", commit)
 	if err != nil {
 		return err
@@ -318,7 +345,11 @@ func applyCommit(worktree, commit string) error {
 	if err := contractgit.PreflightCommitAttributes(worktree, before, commit); err != nil {
 		return err
 	}
-	_, err = gitInput(worktree, patch, "apply", "--index", "--3way", "-")
+	args := []string{"apply", "--index"}
+	if threeWay {
+		args = append(args, "--3way")
+	}
+	_, err = gitInput(worktree, patch, append(args, "-")...)
 	if err != nil {
 		return err
 	}
@@ -328,6 +359,10 @@ func applyCommit(worktree, commit string) error {
 	}
 	return contractgit.CheckCommitContract(worktree, before, strings.TrimSpace(string(afterOut)), commit, "commit "+commit)
 }
+
+func applyCommit(worktree, commit string) error { return applyCommitMode(worktree, commit, true) }
+
+func applyFoldCommit(worktree, commit string) error { return applyCommitMode(worktree, commit, false) }
 
 func commitCoAuthors(repo, commit string) ([]string, error) {
 	out, err := gitOutput(repo, "show", "-s", "--format=%B", commit)
@@ -613,7 +648,14 @@ func PrepareLanding(req LandRequest) (LandResult, error) {
 				return nil, nil, err
 			}
 			for _, fold := range group.folds {
-				if err := applyCommit(worktree, fold.ID); err != nil {
+				foldTreeOut, err := gitOutput(worktree, "write-tree")
+				if err != nil {
+					return nil, nil, err
+				}
+				if err := verifyFoldPreimages(req.Repo, strings.TrimSpace(string(foldTreeOut)), fold); err != nil {
+					return nil, nil, err
+				}
+				if err := applyFoldCommit(worktree, fold.ID); err != nil {
 					return nil, nil, operationRefusal(UnitRereadCode, "fold %s no longer applies to the endpoint: %v", fold.ID, err)
 				}
 			}
@@ -650,7 +692,8 @@ func PrepareLanding(req LandRequest) (LandResult, error) {
 				return nil, nil, err
 			}
 			env := []string{"GIT_AUTHOR_NAME=" + identity.Name, "GIT_AUTHOR_EMAIL=" + identity.Email,
-				"GIT_COMMITTER_NAME=" + identity.Name, "GIT_COMMITTER_EMAIL=" + identity.Email}
+				"GIT_COMMITTER_NAME=" + identity.Name, "GIT_COMMITTER_EMAIL=" + identity.Email,
+				"GIT_AUTHOR_DATE=" + receiptStamp, "GIT_COMMITTER_DATE=" + receiptStamp}
 			if _, err := gitInputEnv(worktree, env, []byte(message), "commit", "--quiet", "-F", "-"); err != nil {
 				return nil, nil, err
 			}

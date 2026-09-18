@@ -39,8 +39,8 @@ that the read of units 5 to 7b found in this page. No design round and no critiq
 its proof: 6.2 pushes the landing branch only after a green receipt, while 6.4, 6.5 and 6.9 name L at a red proof.
 `land-prep` builds L locally, in its landing worktree, before the proof; the proof runs on L's project tree; the
 leased push of `landing/<goal-id>` happens only after a green receipt, so 6.2 stands, and on red nothing is pushed.
-The red record line and the red loop name the local L commit id (40 hex digits, in the landing worktree's object
-store) and its tree id, and the red loop runs on the host that built L, so it needs no remote ref. Witness: a red
+The red record line and the red loop name the local L commit id and its tree id; L has no ref and may be pruned, so
+the record line also carries its retry identity, and the red loop runs on the host that built L. Witness: a red
 proof reaches the red loop with L unpushed and origin's landing ref unchanged, and the command that calls the red loop
 computes the change set from the prefix's entries and folded paths against E (6.5). Second, the human's word for
 `--through` (6.1) is only a `Next step` or history line of the exact form `land through <full commit id>`. Park's
@@ -156,8 +156,8 @@ to "the landing lane alone writes the integration branch", which binds product-w
 
 ## 4. Parking and moving
 
-`goal park` checks before it publishes: when `goal/<goal-id>` exists on origin or the goal's `Next step` names a unit
-commit, the local branch must equal origin's tip (`GOAL_PARK_UNPUSHED` otherwise), and park writes a `Next step` line
+`goal park` checks before it publishes: when the checkout has `goal/<goal-id>`, the local branch must equal origin's
+tip (`GOAL_PARK_UNPUSHED` otherwise), and park writes a `Next step` line
 naming the last unit, its commit id and its state (built, read clean, needs read); the holder then removes the
 worktree. A goal with no branch parks as today. Resuming on any enrolled machine: claim, fetch, `git worktree add
 <path> goal/<goal-id>`, continue; records, attestations and plans come with the branch.
@@ -398,8 +398,9 @@ unlanded; until then the hand lane keeps the stack as diffs and lands nothing of
 2. Create the branch at the endpoint tip and push it.
 3. One `Goal-Plan` commit carries the amendments and decision records that exist only in the backup
    (`fixture-children-amendment-witness9.md`, `-amendment-rev6.md`, `-u5d-decisions.md`,
-   `-custodian-seat-rulings.md`) and `records/misc/fixture-children-branch-move.md`, which lists every earlier read
-   record with the diff sha256 it named and the commit that replaced it.
+   `-custodian-seat-rulings.md`) and `records/fixture-children/fixture-children-branch-move.md`, which lists every
+   earlier read record with the diff sha256 it named and the commit that replaced it. The records ride in their own
+   records area because a plan commit refuses `records/misc/`.
 4. Each unlanded unit in order: its diff against its recorded base tree, `git apply --index` in the branch worktree,
    `goal branch commit --kind unit`, `goal branch push`. A unit with an open fix is committed as it stands; the fix
    replaces the commit.
@@ -524,7 +525,7 @@ on trunk without their unit. Files are under `internal/goal/branch/` unless a pa
 | 10a. Batch reader and per-member check. After BA2 and BA4. | `internal/landing/batch/branch.go`, `join.go` | 10 | A fixture branch of three units with critic-root attestations joins as one member and certifies each unit's bytes; a reader-record attestation on one unit refuses `BATCH_JOIN_UNREAD` for the member; a two-goal batch passes with each unit compared to its own transition inside its member; a moved trunk in a unit file refuses `BATCH_JOIN_REREAD`; a second member of one goal refuses `BATCH_GOAL_ELSEWHERE`. | 290 |
 | 10b. Batch identity rows and goal ejection. After 10a, BA12b, BA14b and BA15. | `record.go`, `return.go`, `red.go`, `receipts.go`, `land_apply.go`, `recovery.go`, `cmd/metasystem/landing_batch_verbs.go`, the inventory | 10 | Record and receipt carry the member's commit ids and last unit; `Next` names the last unit; a failing group that names one member's unit ejects that goal whole with the failure on its `Next step`, the survivors form a new tree and `landing/<batch-id>` is rebuilt from them under its lease (6.9); recovery finds each landed unit by `Goal-Source` and finishes the member once; `validate moved-effects` reports zero problems. | 320 |
 | 10c. Commit boundary for a branch member. After 10b; built after this goal merges. | `internal/landing/observe.go`, `internal/landing/attested.go`, `attest.go`, `cmd/metasystem/landing_verbs.go`, `internal/landing/batch/transport.go`, `internal/landing/batch/join.go`, `cmd/metasystem/landing_batch_land.go`, `internal/landing/batch/recovery.go`, `internal/goal/attention.go`, `internal/refusal/register.go`, `scripts/agents/commit.sh`, `scripts/agents/landing-promotion.json`, `cmd/metasystem/goal_branch.go`, `internal/goal/branch/read.go`, `docs/project-rules.md` | 10.1 | `landing observe --attested` on a fixture unit commit with a critic-root attestation passes with a `pass` verdict and a goal revision, and `commit.sh` lands it with its trailers; a reader-record source, a critic root missing from the job store or a round off by one, an extra changed file or a changed fold byte, a held goal at a moved revision, and a destructive change without a `Goal-Plan` fold each refuse and nothing is committed; `--attested` with `--chain` refuses; `CommitBuild` passes the attested declaration and never a critic root or a branch tip as `--chain`; a branch member joins beside a chain member and both land; recovery finds a branch member's commits by `Goal-Source`; the census reads the new provenance line; `goal branch read` on a fixture unit runs the fast gate once for a tree, dispatches one code-critic root on `commit:<id>` through a fake delegate and returns without waiting, and its `--collect` writes a critic-root attestation that `landing observe --attested` passes when the root closed clean, writes nothing while the root is open, and refuses a root with open findings. | 550 (the read verb about 250), witnesses about 320 more |
-| 11. First mover. After unit 3. | `records/misc/fixture-children-branch-move.md` | 9 | Proof of DONE 2. | 60, records only |
+| 11. First mover. After unit 3. | `records/fixture-children/fixture-children-branch-move.md` | 9 | Proof of DONE 2. | 60, records only |
 
 ### Builds (process reset, 2026-09-17)
 

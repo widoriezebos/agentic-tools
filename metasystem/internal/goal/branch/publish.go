@@ -82,11 +82,17 @@ func LandPush(req LandPushRequest) (PreparedLanding, error) {
 	}
 	transport := GitPushTransport{}
 	endpoint, present, err := transport.RemoteTip(req.Repo, req.Remote, req.EndpointRef)
-	if err != nil || !present || endpoint != prepared.Endpoint {
+	if err != nil || !present {
 		return PreparedLanding{}, operationRefusal(LandTrunkMovedCode, "endpoint holds %s, not prepared tip %s", endpoint, prepared.Endpoint)
 	}
 	landingRef := "refs/heads/" + prepared.Branch
 	landingTip, present, err := transport.RemoteTip(req.Repo, req.Remote, landingRef)
+	if err == nil && endpoint == prepared.Landing && !present {
+		return prepared, nil
+	}
+	if endpoint != prepared.Endpoint {
+		return PreparedLanding{}, operationRefusal(LandTrunkMovedCode, "endpoint holds %s, not prepared tip %s", endpoint, prepared.Endpoint)
+	}
 	if err != nil || !present || landingTip != prepared.Landing {
 		return PreparedLanding{}, operationRefusal(LandBranchMovedCode, "landing branch holds %s, not prepared tip %s", landingTip, prepared.Landing)
 	}
@@ -102,6 +108,9 @@ func LandPush(req LandPushRequest) (PreparedLanding, error) {
 		if err := req.Hooks.AfterRemoteRead(); err != nil {
 			return PreparedLanding{}, err
 		}
+	}
+	if err := checkClaim(req.CheckClaim); err != nil {
+		return PreparedLanding{}, err
 	}
 	outcome, pushErr := pushLandingAtomically(req, prepared)
 	if outcome == CASRefused {

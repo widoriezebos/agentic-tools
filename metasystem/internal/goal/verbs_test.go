@@ -1059,8 +1059,44 @@ func TestParkRecordsPushedBranchSummary(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if got := tree.Live["branched"].NextStep; got != "goal/branched last unit u1 commit "+strings.Repeat("a", 40)+" is read clean" {
+	if got := tree.Live["branched"].NextStep; got != "Build u1.; goal/branched last unit u1 commit "+strings.Repeat("a", 40)+" is read clean" {
 		t.Fatalf("Next step = %q", got)
+	}
+}
+
+func TestParkKeepsNextStepNarrativeAndAddsBranchSummary(t *testing.T) {
+	_, root, _ := twoClones(t)
+	seedLedger(t, root)
+	if result, err := Open(verbReq(root, "01J5X00000000000000000E2B0", "mac-a"), "branched-narrative", "Branch work.", "main", "Finish the explanation for the next holder."); err != nil || result.Outcome != OutcomeConfirmed {
+		t.Fatalf("open: %+v %v", result, err)
+	}
+	summaries := []string{
+		"goal/branched-narrative last unit u1 commit " + strings.Repeat("a", 40) + " is built",
+		"goal/branched-narrative last unit u1 commit " + strings.Repeat("b", 40) + " is read clean",
+	}
+	for index, summary := range summaries {
+		req := verbReq(root, fmt.Sprintf("01J5X00000000000000000E2B%d", index+1), "mac-a")
+		req.ParkBranchCheck = func(_, _ string) (string, error) { return summary, nil }
+		result, err := Park(req, "branched-narrative", "handoff")
+		if err != nil || result.Outcome != OutcomeConfirmed {
+			t.Fatalf("park %d: %+v %v", index, result, err)
+		}
+		tree, loadErr := loadTree(root, result.Tip)
+		if loadErr != nil {
+			t.Fatal(loadErr)
+		}
+		got := tree.Live["branched-narrative"].NextStep
+		if !strings.Contains(got, "Finish the explanation for the next holder.") || !strings.Contains(got, summary) {
+			t.Fatalf("park %d Next step = %q", index, got)
+		}
+		if index == 1 && strings.Contains(got, summaries[0]) {
+			t.Fatalf("second park stacked the old summary: %q", got)
+		}
+		if index == 0 {
+			if unparked, unparkErr := Unpark(verbReq(root, "01J5X00000000000000000E2B3", "mac-a"), "branched-narrative"); unparkErr != nil || unparked.Outcome != OutcomeConfirmed {
+				t.Fatalf("unpark: %+v %v", unparked, unparkErr)
+			}
+		}
 	}
 }
 

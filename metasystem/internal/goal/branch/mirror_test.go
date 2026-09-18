@@ -3,14 +3,25 @@ package branch_test
 import (
 	"errors"
 	"path/filepath"
+	"strings"
 	"testing"
 
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/goal/branch"
 )
 
+type recordingFetchTransport struct {
+	branch.GitPushTransport
+	destination *string
+}
+
+func (r recordingFetchTransport) Fetch(repo, remote, ref, destination string) error {
+	*r.destination = destination
+	return r.GitPushTransport.Fetch(repo, remote, ref, destination)
+}
+
 func mirrorRequest(f *branchFixture, transport string) branch.MirrorRequest {
 	return branch.MirrorRequest{Repo: f.root, Origin: "origin", Transport: transport, EndpointTip: f.base,
-		GoalID: "goal-a", CheckClaim: claimAllowed}
+		GoalID: "goal-a", OpID: "mirror-test", CheckClaim: claimAllowed}
 }
 
 func TestTransportMirrorAndLeasedDelete(t *testing.T) {
@@ -63,4 +74,60 @@ func TestTransportMirrorAndLeasedDelete(t *testing.T) {
 		git(t, transport, "rev-parse", "refs/heads/goal/goal-a") != other {
 		t.Fatalf("moved leased delete = %v", err)
 	}
+}
+
+func TestMirrorDeleteReconcilesUnknownOutcome(t *testing.T) {
+	t.Run("mirror operation id", func(t *testing.T) {
+		f := newBranchFixture(t)
+		transport := filepath.Join(t.TempDir(), "transport.git")
+		git(t, filepath.Dir(transport), "init", "-q", "--bare", transport)
+		git(t, f.root, "remote", "add", "transport", transport)
+		commitUnit(t, f, "u1", "metasystem/code.go", "one")
+		if _, err := branch.Push(pushRequest(f, "mirror-op-origin")); err != nil {
+			t.Fatal(err)
+		}
+		destination := ""
+		req := mirrorRequest(f, "transport")
+		req.OpID = "mirror-op"
+		req.PushTransport = recordingFetchTransport{destination: &destination}
+		if _, err := branch.Mirror(req); err != nil || !strings.HasSuffix(destination, "/mirror-op") {
+			t.Fatalf("mirror destination = %q, err=%v", destination, err)
+		}
+	})
+
+	t.Run("delete completed", func(t *testing.T) {
+		f := newBranchFixture(t)
+		tip := commitUnit(t, f, "u1", "metasystem/code.go", "one")
+		git(t, f.root, "push", "-q", "origin", tip+":refs/heads/goal/goal-a")
+		err := branch.Delete(branch.DeleteRequest{Repo: f.root, Remote: "origin", GoalID: "goal-a", Expected: tip,
+			CheckClaim: claimAllowed, PushTransport: unknownAfterLanding{}})
+		if err != nil || git(t, f.root, "ls-remote", "--refs", "origin", "refs/heads/goal/goal-a") != "" {
+			t.Fatalf("completed unknown delete = %v", err)
+		}
+	})
+
+	t.Run("delete not completed", func(t *testing.T) {
+		f := newBranchFixture(t)
+		tip := commitUnit(t, f, "u1", "metasystem/code.go", "one")
+		git(t, f.root, "push", "-q", "origin", tip+":refs/heads/goal/goal-a")
+		err := branch.Delete(branch.DeleteRequest{Repo: f.root, Remote: "origin", GoalID: "goal-a", Expected: tip,
+			CheckClaim: claimAllowed, PushTransport: unknownWithoutLanding{}})
+		var refusal *branch.OpError
+		if !errors.As(err, &refusal) || refusal.Code != branch.PushUnknownCode {
+			t.Fatalf("incomplete unknown delete = %v", err)
+		}
+	})
+
+	t.Run("sweep delete completed", func(t *testing.T) {
+		f := newBranchFixture(t)
+		commitUnit(t, f, "u1", "metasystem/code.go", "one")
+		if _, err := branch.Push(pushRequest(f, "unknown-sweep-origin")); err != nil {
+			t.Fatal(err)
+		}
+		result, err := branch.Sweep(branch.SweepRequest{Repo: f.root, Remote: "origin", EndpointTip: f.base,
+			GoalID: "goal-a", Abandoned: true, CheckClaim: claimAllowed, PushTransport: unknownAfterLanding{}})
+		if err != nil || !result.Deleted || git(t, f.root, "ls-remote", "--refs", "origin", "refs/heads/goal/goal-a") != "" {
+			t.Fatalf("completed unknown sweep delete = %+v, %v", result, err)
+		}
+	})
 }

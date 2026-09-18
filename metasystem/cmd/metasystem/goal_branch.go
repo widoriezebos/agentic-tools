@@ -891,7 +891,7 @@ func runGoalBranchPush(args []string) int {
 	if *mirror {
 		result, err := branch.Mirror(branch.MirrorRequest{
 			Repo: *root, Origin: endpoint.Remote, Transport: "transport", EndpointTip: endpointTip,
-			GoalID: *goalID, CheckClaim: check,
+			GoalID: *goalID, OpID: *opid, CheckClaim: check,
 		})
 		if err != nil {
 			fmt.Fprintln(os.Stderr, err)

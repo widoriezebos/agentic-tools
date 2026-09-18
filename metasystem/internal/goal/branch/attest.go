@@ -758,8 +758,10 @@ func CommitRead(req CommitReadRequest) (string, Attestation, error) {
 	if att.Source.Kind == "reader-record" && att.Carry == nil {
 		readerRecord = att.Source.ReaderRecord
 	}
-	if err := adoptionCheckoutClean(commitReq, state, []string{rel, bundleRel, readerRecord}); err != nil {
-		return "", Attestation{}, err
+	if state.adopt {
+		if err := adoptionCheckoutClean(commitReq, state, []string{rel, bundleRel, readerRecord}); err != nil {
+			return "", Attestation{}, err
+		}
 	}
 	patch, err := prospectiveReadPatch(req.Repo, generated, readerRecord)
 	if err != nil {
@@ -773,13 +775,33 @@ func CommitRead(req CommitReadRequest) (string, Attestation, error) {
 	if err != nil {
 		return "", Attestation{}, err
 	}
+	indexBeforeOut, err := gitOutput(req.Repo, "write-tree")
+	if err != nil {
+		return "", Attestation{}, err
+	}
+	indexBefore := strings.TrimSpace(string(indexBeforeOut))
+	rollbackMaterialized := func(cause error) error {
+		var cleanup []string
+		if _, err := gitOutput(req.Repo, "read-tree", indexBefore); err != nil {
+			cleanup = append(cleanup, err.Error())
+		}
+		for path := range generated {
+			if err := os.Remove(filepath.Join(req.Repo, filepath.FromSlash(path))); err != nil && !os.IsNotExist(err) {
+				cleanup = append(cleanup, err.Error())
+			}
+		}
+		if len(cleanup) != 0 {
+			return fmt.Errorf("%v; read materialization rollback failed: %s", cause, strings.Join(cleanup, "; "))
+		}
+		return cause
+	}
 	for path, contents := range generated {
 		abs := filepath.Join(req.Repo, filepath.FromSlash(path))
 		if err := os.MkdirAll(filepath.Dir(abs), 0o755); err != nil {
-			return "", Attestation{}, err
+			return "", Attestation{}, rollbackMaterialized(err)
 		}
 		if err := os.WriteFile(abs, contents, 0o644); err != nil {
-			return "", Attestation{}, err
+			return "", Attestation{}, rollbackMaterialized(err)
 		}
 	}
 	paths = []string{rel}
@@ -791,10 +813,10 @@ func CommitRead(req CommitReadRequest) (string, Attestation, error) {
 	}
 	args := append([]string{"add", "--"}, paths...)
 	if _, err := gitOutput(req.Repo, args...); err != nil {
-		return "", Attestation{}, err
+		return "", Attestation{}, rollbackMaterialized(err)
 	}
 	if err := installCommitOnto(commitReq, state, preparedTip); err != nil {
-		return "", Attestation{}, err
+		return "", Attestation{}, rollbackMaterialized(err)
 	}
 	return preparedTip, att, nil
 }

@@ -425,7 +425,7 @@ func TestRecoveryCompletesParkWhenGoalBranchIsPushed(t *testing.T) {
 		t.Fatal(err)
 	}
 	file := projection.Tree.Live["pushed-park"]
-	if file == nil || file.State != StateParked || file.Claimed != nil || file.NextStep != summary {
+	if file == nil || file.State != StateParked || file.Claimed != nil || file.NextStep != "Build u1.; "+summary {
 		t.Fatalf("recovered pushed park: %+v", file)
 	}
 }

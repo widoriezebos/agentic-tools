@@ -215,6 +215,40 @@ func TestAmendInstallFailureRestoresCheckout(t *testing.T) {
 	}
 }
 
+func TestAmendInstallFailureRollsBackMovedCheckout(t *testing.T) {
+	f := newBranchFixture(t)
+	prepareTrackedAmendFixture(t, f)
+	unit := commitUnit(t, f, "u1", "metasystem/code.go", "one")
+	readPath := "metasystem/records/reads/goal-a/" + unit + ".json"
+	f.commit(t, readPath, "{}", "read\n\nGoal-Read: goal-a/u1 "+unit)
+	git(t, f.root, "switch", "--quiet", "-c", "other")
+	stage(t, f, "metasystem/code.go", "two")
+	lockPath := filepath.Join(f.root, ".git", "refs", "heads", "goal", "goal-a.lock")
+	if err := os.MkdirAll(filepath.Dir(lockPath), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(lockPath, nil, 0o644); err != nil {
+		t.Fatal(err)
+	}
+	before := snapshotCheckout(t, f.root)
+	readBefore, readErr := os.ReadFile(filepath.Join(f.root, filepath.FromSlash(readPath)))
+	if readErr != nil {
+		t.Fatal(readErr)
+	}
+
+	_, err := branch.CommitStaged(branch.CommitRequest{
+		Repo: f.root, Remote: "origin", EndpointTip: f.base, GoalID: "goal-a", Unit: "u1", OpID: "amend-moved-install-failure",
+		Kind: branch.Unit, Amend: true, CheckClaim: claimAllowed,
+	})
+	if err == nil || !strings.Contains(err.Error(), "cannot lock ref") {
+		t.Fatalf("locked moved amend error = %v", err)
+	}
+	requireCheckoutUnchanged(t, f.root, before)
+	if got, err := os.ReadFile(filepath.Join(f.root, filepath.FromSlash(readPath))); err != nil || string(got) != string(readBefore) {
+		t.Fatalf("failed amend changed read record = %q, %v", got, err)
+	}
+}
+
 func TestCommitRefusesNonHolder(t *testing.T) {
 	f := newBranchFixture(t)
 	stage(t, f, "metasystem/code.go", "one")
@@ -313,6 +347,82 @@ func TestAmendDropsReadOfReplacedBuildAndReplaysLaterPlan(t *testing.T) {
 	}
 	if got := git(t, f.root, "show", tip+":metasystem/plans/later.md"); got != "later" {
 		t.Fatalf("replayed plan=%q", got)
+	}
+}
+
+func TestAmendDroppingReadStillChecksReplayedTree(t *testing.T) {
+	f := newBranchFixture(t)
+	unit := commitUnit(t, f, "u1", "metasystem/code.go", "one")
+	f.commit(t, "metasystem/records/reads/goal-a/"+unit+".json", "{}", "read\n\nGoal-Read: goal-a/u1 "+unit)
+	hooks := filepath.Join(f.root, ".fixture-hooks")
+	if err := os.MkdirAll(hooks, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	hook := `#!/bin/sh
+if test -n "$GOAL_TREE_HOOK" || test -e "$GIT_DIR/goal-tree-hook-ran"; then exit 0; fi
+touch "$GIT_DIR/goal-tree-hook-ran"
+printf 'injected\n' > metasystem/injected.go
+git add metasystem/injected.go
+GOAL_TREE_HOOK=1 git commit --amend --no-edit --quiet
+`
+	if err := os.WriteFile(filepath.Join(hooks, "post-commit"), []byte(hook), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	git(t, f.root, "config", "core.hooksPath", hooks)
+	stage(t, f, "metasystem/code.go", "two")
+	_, err := branch.CommitStaged(branch.CommitRequest{
+		Repo: f.root, Remote: "origin", EndpointTip: f.base, GoalID: "goal-a", Unit: "u1", OpID: "amend-tree-check",
+		Kind: branch.Unit, Amend: true, CheckClaim: claimAllowed,
+	})
+	var refusal *branch.OpError
+	if !errors.As(err, &refusal) || refusal.Code != branch.RangeCode || !strings.Contains(err.Error(), "replayed branch") {
+		t.Fatalf("replayed-tree check = %v", err)
+	}
+}
+
+func TestPlainCommitKeepsDirtyLedgerWithoutAdoption(t *testing.T) {
+	f := newBranchFixture(t)
+	write(t, f.root, "metasystem/memory/receipts.log", "seed\n")
+	git(t, f.root, "add", ".")
+	git(t, f.root, "commit", "-qm", "tracked ledger")
+	git(t, f.root, "push", "-q", "origin", "HEAD:main")
+	f.base = git(t, f.root, "rev-parse", "HEAD")
+	write(t, f.root, "metasystem/memory/receipts.log", "dirty ledger\n")
+	stage(t, f, "metasystem/code.go", "one")
+	if _, err := branch.CommitStaged(branch.CommitRequest{
+		Repo: f.root, Remote: "origin", EndpointTip: f.base, GoalID: "goal-a", Unit: "u1", OpID: "plain-dirty-ledger",
+		Kind: branch.Unit, CheckClaim: claimAllowed,
+	}); err != nil {
+		t.Fatal(err)
+	}
+	if got, err := os.ReadFile(filepath.Join(f.root, "metasystem/memory/receipts.log")); err != nil || string(got) != "dirty ledger\n" {
+		t.Fatalf("dirty ledger = %q, %v", got, err)
+	}
+}
+
+func TestAdoptionUntrackedCollisionRefusesStale(t *testing.T) {
+	f := newBranchFixture(t)
+	commitUnit(t, f, "u1", "metasystem/one.go", "one")
+	if _, err := branch.Push(pushRequest(f, "collision-first")); err != nil {
+		t.Fatal(err)
+	}
+	other := cloneBranchFixture(t, f)
+	if _, err := branch.Push(pushRequest(other, "collision-adopt")); err != nil {
+		t.Fatal(err)
+	}
+	commitUnit(t, other, "u2", "metasystem/collision.go", "remote")
+	if _, err := branch.Push(pushRequest(other, "collision-remote")); err != nil {
+		t.Fatal(err)
+	}
+	write(t, f.root, "metasystem/collision.go", "local untracked")
+	stage(t, f, "metasystem/next.go", "next")
+	_, err := branch.CommitStaged(branch.CommitRequest{
+		Repo: f.root, Remote: "origin", EndpointTip: f.base, GoalID: "goal-a", Unit: "u3", OpID: "collision-local",
+		Kind: branch.Unit, CheckClaim: claimAllowed,
+	})
+	var refusal *branch.OpError
+	if !errors.As(err, &refusal) || refusal.Code != branch.StaleCode || !strings.Contains(err.Error(), "Untracked working tree") {
+		t.Fatalf("untracked collision = %v", err)
 	}
 }
 

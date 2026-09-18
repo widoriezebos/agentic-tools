@@ -7,18 +7,18 @@ type MirrorHooks struct {
 }
 
 type MirrorRequest struct {
-	Repo, Origin, Transport, EndpointTip, GoalID string
-	CheckClaim                                   func() error
-	PushTransport                                PushTransport
-	Hooks                                        MirrorHooks
+	Repo, Origin, Transport, EndpointTip, GoalID, OpID string
+	CheckClaim                                         func() error
+	PushTransport                                      PushTransport
+	Hooks                                              MirrorHooks
 }
 
 func Mirror(req MirrorRequest) (PushResult, error) {
 	if req.PushTransport == nil {
 		req.PushTransport = GitPushTransport{}
 	}
-	if !validName(req.GoalID) || req.Origin == "" || req.Transport == "" {
-		return PushResult{}, fmt.Errorf("transport mirror needs a goal, origin, and transport")
+	if !validName(req.GoalID) || req.Origin == "" || req.Transport == "" || req.OpID == "" {
+		return PushResult{}, fmt.Errorf("transport mirror needs a goal, origin, transport, and operation id")
 	}
 	if err := checkClaim(req.CheckClaim); err != nil {
 		return PushResult{}, err
@@ -31,8 +31,7 @@ func Mirror(req MirrorRequest) (PushResult, error) {
 	if !present {
 		return PushResult{}, fmt.Errorf("origin has no %s", ref)
 	}
-	opid := "mirror-" + req.GoalID
-	if err := fetchAndValidate(req.Repo, req.Origin, req.EndpointTip, req.GoalID, opid, originTip, req.PushTransport); err != nil {
+	if err := fetchAndValidate(req.Repo, req.Origin, req.EndpointTip, req.GoalID, req.OpID, originTip, req.PushTransport); err != nil {
 		return PushResult{}, err
 	}
 	transportTip, transportPresent, err := req.PushTransport.RemoteTip(req.Repo, req.Transport, ref)
@@ -92,8 +91,14 @@ func Delete(req DeleteRequest) error {
 		}
 	}
 	outcome, pushErr := req.PushTransport.Push(req.Repo, req.Remote, ref, req.Expected, "")
-	if outcome != CASLanded {
+	if outcome == CASRefused {
 		return operationRefusal(LeaseMovedCode, "%s moved before leased deletion: %v", req.Remote, pushErr)
+	}
+	if outcome == CASUnknown {
+		observed, present, err := req.PushTransport.RemoteTip(req.Repo, req.Remote, ref)
+		if err != nil || present {
+			return operationRefusal(PushUnknownCode, "%s delete outcome is unknown; it now holds %s: %v", req.Remote, observed, pushErr)
+		}
 	}
 	return nil
 }

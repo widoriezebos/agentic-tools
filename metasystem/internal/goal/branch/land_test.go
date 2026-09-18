@@ -297,6 +297,77 @@ func TestGoalLandingPreparationSeries(t *testing.T) {
 	requireAbsent(t, movedOut)
 }
 
+func TestGoalLandingCommitDatesComeFromReceiptStamp(t *testing.T) {
+	f := newLandFixture(t)
+	result, err := branch.PrepareLanding(landRequest(t, f, filepath.Join(t.TempDir(), "dated")))
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, commit := range strings.Fields(git(t, f.root, "rev-list", f.base+".."+result.Landing)) {
+		if dates := git(t, f.root, "show", "-s", "--format=%aI|%cI", commit); dates != "2026-09-17T10:00:00Z|2026-09-17T10:00:00Z" {
+			t.Fatalf("landing commit %s dates = %s", commit, dates)
+		}
+	}
+}
+
+func TestLandThroughIgnoresStopFenceReason(t *testing.T) {
+	f := newLandFixture(t)
+	req := landRequest(t, f, filepath.Join(t.TempDir(), "stop-fence"))
+	req.Last, req.Through = false, f.units[1]
+	req.GoalPage = "- Stop fence: stopId=s1 reason=land through " + f.units[1] + "\n\nHistory:\n- 2026-09-17T10:00:00Z op stop actor=human:Wido reason=wait\n"
+	_, err := branch.PrepareLanding(req)
+	requireLandCode(t, err, branch.LandPartialCode)
+
+	req.Out = filepath.Join(t.TempDir(), "history-word")
+	req.GoalPage = "- Next step: wait\n\nHistory:\n- 2026-09-17T10:00:00Z op answer actor=human:Wido reason=land through " + f.units[1] + "\n"
+	_, err = branch.PrepareLanding(req)
+	if err == nil {
+		t.Fatal("history word unexpectedly matched the full-landing receipt")
+	}
+	var refusal *branch.OpError
+	if !errors.As(err, &refusal) || refusal.Code == branch.LandPartialCode {
+		t.Fatalf("history word was not accepted: %v", err)
+	}
+}
+
+func TestGoalLandingRefusesFoldWithStalePreimage(t *testing.T) {
+	f := newBranchFixture(t)
+	write(t, f.root, "metasystem/memory/receipts.log", "1|1970-01-01T00:00:00Z|RECEIPT|type=seed|outcome=shipped\n")
+	write(t, f.root, "metasystem/plans/goal-a.md", "first\nsecond\n")
+	git(t, f.root, "add", ".")
+	git(t, f.root, "commit", "-qm", "landing fold base")
+	git(t, f.root, "push", "-q", "origin", "HEAD:main")
+	f.base = git(t, f.root, "rev-parse", "HEAD")
+	git(t, f.root, "config", "goal.human.Wido", "Wido Approver <wido@example.invalid>")
+	stage(t, f, "metasystem/plans/goal-a.md", "branch first\nsecond\n")
+	if _, err := branch.CommitStaged(branch.CommitRequest{Repo: f.root, Remote: "origin", EndpointTip: f.base,
+		GoalID: "goal-a", OpID: "stale-fold", Kind: branch.Plan, CheckClaim: claimAllowed}); err != nil {
+		t.Fatal(err)
+	}
+	unit := commitUnit(t, f, "u1", "metasystem/code.go", "unit\n")
+	readUnit(t, f, "u1", unit)
+	if _, err := branch.Push(pushRequest(f, "stale-fold-push")); err != nil {
+		t.Fatal(err)
+	}
+	branchTip := git(t, f.root, "rev-parse", "refs/heads/goal/goal-a")
+	worktree := filepath.Join(t.TempDir(), "endpoint")
+	git(t, f.root, "worktree", "add", "--quiet", "--detach", worktree, f.base)
+	write(t, worktree, "metasystem/plans/goal-a.md", "first\nendpoint second\n")
+	git(t, worktree, "add", ".")
+	git(t, worktree, "commit", "-qm", "endpoint changes fold preimage")
+	endpoint := git(t, worktree, "rev-parse", "HEAD")
+	receipt := filepath.Join(t.TempDir(), "receipt.json")
+	writeLandingReceipt(t, receipt, strings.Repeat("0", 40), "stale-fold")
+	req := branch.LandRequest{Repo: f.root, Remote: "origin", EndpointTip: endpoint, BranchTip: branchTip,
+		GoalID: "goal-a", Out: filepath.Join(t.TempDir(), "stale-fold-out"), TestReceipt: receipt, Last: true, LandingReady: true,
+		GoalPage: "ready", ApprovedBy: "human:Wido", Seat: "seat-a", CheckClaim: claimAllowed}
+	_, err := branch.PrepareLanding(req)
+	requireLandCode(t, err, branch.UnitRereadCode)
+	if !strings.Contains(err.Error(), "has stale preimage") || !strings.Contains(err.Error(), "metasystem/plans/goal-a.md") {
+		t.Fatalf("stale fold refusal = %v", err)
+	}
+}
+
 func TestBranchLandingSyncMergesTestingContractBySurface(t *testing.T) {
 	f := newBranchFixture(t)
 	write(t, f.root, ".gitattributes", "metasystem/testing.json merge=metasystem-testing\n")

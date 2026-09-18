@@ -99,3 +99,34 @@ func TestGoalLandingPublicationAndVerification(t *testing.T) {
 		})
 	}
 }
+
+func TestLandPushRerunAfterPublishedCrashReportsLanded(t *testing.T) {
+	fixture := newLandFixture(t)
+	out, prepared := preparedLanding(t, fixture)
+	git(t, fixture.root, "push", "-q", "--atomic", "origin",
+		prepared.Landing+":refs/heads/main", ":refs/heads/landing/goal-a")
+	result, err := branch.LandPush(branch.LandPushRequest{Repo: fixture.root, Remote: "origin", EndpointRef: "refs/heads/main",
+		GoalID: "goal-a", Prepared: out, CheckClaim: claimAllowed})
+	if err != nil || result != (branch.PreparedLanding{Endpoint: prepared.Endpoint, Candidate: prepared.Candidate,
+		Landing: prepared.Landing, Branch: prepared.Branch}) {
+		t.Fatalf("published rerun = %+v, %v", result, err)
+	}
+}
+
+func TestLandPushRechecksClaimBeforePush(t *testing.T) {
+	fixture := newLandFixture(t)
+	out, prepared := preparedLanding(t, fixture)
+	checks := 0
+	_, err := branch.LandPush(branch.LandPushRequest{Repo: fixture.root, Remote: "origin", EndpointRef: "refs/heads/main",
+		GoalID: "goal-a", Prepared: out, CheckClaim: func() error {
+			checks++
+			if checks == 2 {
+				return errors.New("claim moved before push")
+			}
+			return nil
+		}})
+	requirePublishCode(t, err, branch.NotHolderCode)
+	if checks != 2 || git(t, fixture.origin, "rev-parse", "refs/heads/main") != prepared.Endpoint {
+		t.Fatalf("claim checks=%d endpoint moved", checks)
+	}
+}

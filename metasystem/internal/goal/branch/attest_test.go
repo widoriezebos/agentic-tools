@@ -267,6 +267,64 @@ func TestAttestationCarryPreservesUnitAndFoldBytes(t *testing.T) {
 	if att.Carry == nil || att.Carry.FromCommit != c.unit || att.Carry.ToCommit != unit {
 		t.Fatalf("carry = %+v", att.Carry)
 	}
+	if want := git(t, c.fixture.root, "rev-parse", c.unit+"^{tree}"); att.Carry.FromTree != want {
+		t.Fatalf("carry from tree = %s, want %s", att.Carry.FromTree, want)
+	}
+	if want := git(t, c.fixture.root, "rev-parse", unit+"^{tree}"); att.Carry.ToTree != want {
+		t.Fatalf("carry to tree = %s, want %s", att.Carry.ToTree, want)
+	}
+}
+
+func TestReadInstallRefusalLeavesNothingStaged(t *testing.T) {
+	f := newBranchFixture(t)
+	unit := commitUnit(t, f, "u1", "metasystem/code.go", "one")
+	record := readerRecord(t, f, unit)
+	lockPath := filepath.Join(f.root, ".git", "refs", "heads", "goal", "goal-a.lock")
+	if err := os.MkdirAll(filepath.Dir(lockPath), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(lockPath, nil, 0o644); err != nil {
+		t.Fatal(err)
+	}
+	_, _, err := branch.CommitRead(branch.CommitReadRequest{
+		Repo: f.root, Remote: "origin", EndpointTip: f.base, GoalID: "goal-a", Unit: "u1", OpID: "read-install-refusal",
+		CheckClaim: claimAllowed, ReaderRecord: record, GateRunID: "fast", GateTree: unitTree(t, f, unit),
+	})
+	if err == nil || !strings.Contains(err.Error(), "cannot lock ref") {
+		t.Fatalf("locked read install = %v", err)
+	}
+	attestation := filepath.Join(f.root, "metasystem", "records", "reads", "goal-a", unit+".json")
+	if _, statErr := os.Stat(attestation); !os.IsNotExist(statErr) {
+		t.Fatalf("refused read left attestation: %v", statErr)
+	}
+	if staged := git(t, f.root, "diff", "--cached", "--name-only"); staged != "" {
+		t.Fatalf("refused read left staged paths: %q", staged)
+	}
+	if status := git(t, f.root, "status", "--porcelain=v1", "--untracked-files=all"); status != "?? "+record {
+		t.Fatalf("refused read status = %q", status)
+	}
+}
+
+func TestReadCommitKeepsDirtyLedgerWithoutAdoption(t *testing.T) {
+	f := newBranchFixture(t)
+	write(t, f.root, "metasystem/memory/receipts.log", "seed\n")
+	git(t, f.root, "add", ".")
+	git(t, f.root, "commit", "-qm", "tracked ledger")
+	git(t, f.root, "push", "-q", "origin", "HEAD:main")
+	f.base = git(t, f.root, "rev-parse", "HEAD")
+	unit := commitUnit(t, f, "u1", "metasystem/code.go", "one")
+	record := readerRecord(t, f, unit)
+	write(t, f.root, "metasystem/memory/receipts.log", "dirty ledger\n")
+	_, _, err := branch.CommitRead(branch.CommitReadRequest{
+		Repo: f.root, Remote: "origin", EndpointTip: f.base, GoalID: "goal-a", Unit: "u1", OpID: "read-dirty-ledger",
+		CheckClaim: claimAllowed, ReaderRecord: record, GateRunID: "fast", GateTree: unitTree(t, f, unit),
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got, readErr := os.ReadFile(filepath.Join(f.root, "metasystem/memory/receipts.log")); readErr != nil || string(got) != "dirty ledger\n" {
+		t.Fatalf("dirty ledger = %q, %v", got, readErr)
+	}
 }
 
 func TestAttestationCarryRefusesChangedUnitOrFold(t *testing.T) {

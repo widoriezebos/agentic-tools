@@ -458,11 +458,11 @@ func installCommitOnto(req CommitRequest, state commitBranchState, newTip string
 	}
 	currentCommit := strings.TrimSpace(string(currentCommitOut))
 	if _, err := gitOutput(req.Repo, "read-tree", "-m", "-u", indexTree, newTip); err != nil {
-		return err
+		return operationRefusal(StaleCode, "installing goal branch tip %s failed: %v", newTip, err)
 	}
 	rollbackCheckout := func(cause error) error {
 		if _, rollbackErr := gitOutput(req.Repo, "read-tree", "-m", "-u", newTip, indexTree); rollbackErr != nil {
-			return fmt.Errorf("%v; checkout rollback failed: %w", cause, rollbackErr)
+			return operationRefusal(StaleCode, "%v; checkout rollback failed: %v", cause, rollbackErr)
 		}
 		return cause
 	}
@@ -481,8 +481,10 @@ func installCommitOnto(req CommitRequest, state commitBranchState, newTip string
 }
 
 func commitStagedOnto(req CommitRequest, state commitBranchState, subject, trailer string) (string, error) {
-	if err := adoptionCheckoutClean(req, state, nil); err != nil {
-		return "", err
+	if state.adopt {
+		if err := adoptionCheckoutClean(req, state, nil); err != nil {
+			return "", err
+		}
 	}
 	patch, err := gitOutput(req.Repo, "diff", "--cached", "--binary", "--full-index")
 	if err != nil {
@@ -496,6 +498,27 @@ func commitStagedOnto(req CommitRequest, state commitBranchState, subject, trail
 		return "", err
 	}
 	return newTip, nil
+}
+
+func treeWithoutPaths(repo, tree string, paths []string) (string, error) {
+	if len(paths) == 0 {
+		return tree, nil
+	}
+	scratch, err := os.MkdirTemp("", "goal-branch-tree-*")
+	if err != nil {
+		return "", err
+	}
+	defer os.RemoveAll(scratch)
+	env := []string{"GIT_INDEX_FILE=" + filepath.Join(scratch, "index")}
+	if _, err := gitInputEnv(repo, env, nil, "read-tree", tree); err != nil {
+		return "", err
+	}
+	args := append([]string{"update-index", "--force-remove", "--"}, paths...)
+	if _, err := gitInputEnv(repo, env, nil, args...); err != nil {
+		return "", err
+	}
+	out, err := gitInputEnv(repo, env, nil, "write-tree")
+	return strings.TrimSpace(string(out)), err
 }
 
 func amendUnit(req CommitRequest, state commitBranchState) (string, error) {
@@ -566,14 +589,20 @@ func amendUnit(req CommitRequest, state commitBranchState) (string, error) {
 	if _, err := gitOutput(worktree, "commit", "--quiet", "--amend", "-m", subject, "-m", trailer); err != nil {
 		return "", err
 	}
-	skippedRead := false
+	var skippedPaths []string
 	for _, commit := range strings.Fields(string(suffixOut)) {
 		info, err := KindOf(worktree, commit, req.GoalID)
 		if err != nil {
 			return "", err
 		}
 		if info.Kind == Read && info.CommitID == target {
-			skippedRead = true
+			entries, err := RawEntries(worktree, commit)
+			if err != nil {
+				return "", err
+			}
+			for _, entry := range entries {
+				skippedPaths = append(skippedPaths, entry.Path)
+			}
 			continue
 		}
 		if _, err := gitOutput(worktree, "cherry-pick", "--quiet", commit); err != nil {
@@ -589,8 +618,14 @@ func amendUnit(req CommitRequest, state commitBranchState) (string, error) {
 	if err != nil {
 		return "", err
 	}
-	if !state.adopt && !skippedRead && strings.TrimSpace(string(newTreeOut)) != wantedTree {
-		return "", operationRefusal(RangeCode, "the replayed branch does not equal the staged tree")
+	if !state.adopt {
+		wantedTree, err = treeWithoutPaths(req.Repo, wantedTree, skippedPaths)
+		if err != nil {
+			return "", err
+		}
+		if strings.TrimSpace(string(newTreeOut)) != wantedTree {
+			return "", operationRefusal(RangeCode, "the replayed branch does not equal the staged tree")
+		}
 	}
 	if _, err := ValidateRange(worktree, req.EndpointTip, newTip, req.GoalID); err != nil {
 		return "", err

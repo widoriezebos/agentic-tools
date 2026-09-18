@@ -2262,6 +2262,22 @@ func Park(r VerbRequest, id, because string) (PublishResult, error) {
 	return Publish(r.Endpoint, parkRequest(r, id, because))
 }
 
+func parkNextStep(next, goalID, summary string) string {
+	if summary == "" {
+		return next
+	}
+	prefix := "goal/" + goalID + " "
+	parts := strings.Split(next, "; ")
+	kept := parts[:0]
+	for _, part := range parts {
+		if strings.TrimSpace(part) != "" && !strings.HasPrefix(part, prefix) {
+			kept = append(kept, part)
+		}
+	}
+	kept = append(kept, summary)
+	return strings.Join(kept, "; ")
+}
+
 // parkRequest builds the verb's complete transaction request — the
 // ONE mutation semantics both the live verb and recovery replay
 // run (recovery rebuilds through the real verb paths).
@@ -2321,7 +2337,7 @@ func parkRequest(r VerbRequest, id, because string) PublishRequest {
 				Because: because, Displaced: displaced,
 			}
 			if branchSummary != "" {
-				f.NextStep = branchSummary
+				f.NextStep = parkNextStep(f.NextStep, id, branchSummary)
 			}
 			leaveOrDropEpisode(f, r)
 			if err := clearClaimBinding(f); err != nil {

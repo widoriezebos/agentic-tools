@@ -150,6 +150,19 @@ func TestValidateRangeRefusals(t *testing.T) {
 			f.base = git(t, f.root, "commit-tree", common+"^{tree}", "-p", common, "-m", "endpoint advances")
 			return tip
 		}},
+		{"side unit outside endpoint history", func(f *branchFixture, t *testing.T) string {
+			common := f.base
+			side := git(t, f.root, "commit-tree", common+"^{tree}", "-p", common, "-m", "outside branch base")
+			write(t, f.root, "metasystem/side.go", "side")
+			git(t, f.root, "add", "metasystem/side.go")
+			tree := git(t, f.root, "write-tree")
+			tip := git(t, f.root, "commit-tree", tree, "-p", side, "-m", "side unit\n\nGoal-Unit: goal-a/side")
+			f.base = git(t, f.root, "commit-tree", common+"^{tree}", "-p", common, "-m", "endpoint advances")
+			return tip
+		}},
+		{"plan record in read prose area", func(f *branchFixture, t *testing.T) string {
+			return f.commit(t, "metasystem/records/misc/plan.md", "wrong area", "plan\n\nGoal-Plan: goal-a")
+		}},
 		{"unrelated history", func(f *branchFixture, t *testing.T) string {
 			return git(t, f.root, "commit-tree", f.base+"^{tree}", "-m", "root\n\nGoal-Unit: goal-a/u")
 		}},
@@ -160,7 +173,7 @@ func TestValidateRangeRefusals(t *testing.T) {
 			tip := test.makeTip(f, t)
 			_, err := branch.ValidateRange(f.root, f.base, tip, "goal-a")
 			var refusal *branch.RangeError
-			if !errors.As(err, &refusal) || refusal.Code != "GOAL_BRANCH_RANGE" || !strings.Contains(err.Error(), tip) {
+			if !errors.As(err, &refusal) || refusal.Code != "GOAL_BRANCH_RANGE" || test.name != "side unit outside endpoint history" && !strings.Contains(err.Error(), tip) {
 				t.Fatalf("tip %s: %v", tip, err)
 			}
 			if test.name == "unrelated history" && !strings.Contains(refusal.Reason, "no common history") {
@@ -168,6 +181,9 @@ func TestValidateRangeRefusals(t *testing.T) {
 			}
 			if test.name == "branch base outside endpoint history" && !strings.Contains(refusal.Reason, "expected exactly one kind trailer") {
 				t.Fatalf("outside-base refusal changed: %v", err)
+			}
+			if test.name == "side unit outside endpoint history" && !strings.Contains(refusal.Reason, "expected exactly one kind trailer") {
+				t.Fatalf("side-unit refusal changed: %v", err)
 			}
 		})
 	}
