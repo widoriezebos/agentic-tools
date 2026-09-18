@@ -154,12 +154,32 @@ func TestFastGoGatePublishesCollectedBuildWithoutRecompiling(t *testing.T) {
 		}
 	}
 	count := filepath.Join(root, "build-count")
+	runOwnerAnswer := filepath.Join(root, "run-owner-answer")
+	runOwnerSeen := filepath.Join(root, "run-owner-seen")
+	refAssignment := `ref="pid=$4;micro=100000123"`
+	if runtime.GOOS == "linux" {
+		refAssignment = `ref="pid=$4;ticks=7001;boot=fixture-boot"`
+	}
+	collectedEngine := `#!/usr/bin/env bash
+set -euo pipefail
+if [[ "$#" == 4 && "$1" == proc && "$2" == ref && "$3" == --pid && "$4" =~ ^[1-9][0-9]*$ ]]; then
+  ` + refAssignment + `
+  printf '%s\n' "$ref" >"$FAST_GATE_RUN_OWNER_ANSWER"
+  printf '%s\n' "$ref"
+  exit 0
+fi
+printf 'unexpected collected engine invocation:' >&2
+printf ' %q' "$@" >&2
+printf '\n' >&2
+exit 97
+`
 	goHelper := `#!/usr/bin/env bash
 set -euo pipefail
 case "${1:-}" in
   version) echo 'go version fixture' ;;
   env) echo local ;;
-  vet|test) ;;
+  vet) ;;
+  test) printf '%s\n' "${METASYSTEM_RUN_OWNER:-}" >"$FAST_GATE_RUN_OWNER_SEEN" ;;
   run) ;;
   build)
     count=0
@@ -171,7 +191,9 @@ case "${1:-}" in
       shift
     done
     [[ -n "$out" ]]
-    printf 'one collected engine\n' >"$out"
+    cat >"$out" <<'FAST_GATE_COLLECTED_ENGINE'
+` + collectedEngine + `FAST_GATE_COLLECTED_ENGINE
+    chmod 700 "$out"
     ;;
   *) exit 97 ;;
 esac
@@ -182,11 +204,15 @@ esac
 	if err := os.WriteFile(filepath.Join(root, "helpers", "gofmt"), []byte("#!/usr/bin/env bash\nexit 0\n"), 0o700); err != nil {
 		t.Fatal(err)
 	}
+	gateEnvironment := func() []string {
+		return append(filteredCoverageScriptEnvironment(), "FAST_GATE_BUILD_COUNT="+count,
+			"FAST_GATE_RUN_OWNER_ANSWER="+runOwnerAnswer, "FAST_GATE_RUN_OWNER_SEEN="+runOwnerSeen,
+			"METASYSTEM_BUILD_STAMP=fixture", "PATH="+filepath.Join(root, "helpers")+string(os.PathListSeparator)+os.Getenv("PATH"))
+	}
 	output := filepath.Join(root, "proof-engine")
 	command := exec.Command("bash", filepath.Join(root, "scripts", "agents", "go-gate.sh"), "--fast", "--proof-out", output)
 	command.Dir = root
-	command.Env = append(filteredCoverageScriptEnvironment(), "FAST_GATE_BUILD_COUNT="+count,
-		"METASYSTEM_BUILD_STAMP=fixture", "PATH="+filepath.Join(root, "helpers")+string(os.PathListSeparator)+os.Getenv("PATH"))
+	command.Env = gateEnvironment()
 	diagnostic, err := command.CombinedOutput()
 	if err != nil {
 		t.Fatalf("focused fast gate failed: %v\n%s", err, diagnostic)
@@ -196,8 +222,17 @@ esac
 	}
 	builds, countErr := os.ReadFile(count)
 	engine, engineErr := os.ReadFile(output)
-	if countErr != nil || strings.TrimSpace(string(builds)) != "1" || engineErr != nil || string(engine) != "one collected engine\n" {
+	if countErr != nil || strings.TrimSpace(string(builds)) != "1" || engineErr != nil || string(engine) != collectedEngine {
 		t.Fatalf("fast gate builds=%q countErr=%v engine=%q engineErr=%v", builds, countErr, engine, engineErr)
+	}
+	answeredOwner, answerErr := os.ReadFile(runOwnerAnswer)
+	seenOwner, seenErr := os.ReadFile(runOwnerSeen)
+	if answerErr != nil || seenErr != nil || strings.Count(string(answeredOwner), "\n") != 1 || strings.TrimSpace(string(answeredOwner)) == "" || string(seenOwner) != string(answeredOwner) {
+		t.Fatalf("go test run owner=%q err=%v, want collected stub answer %q err=%v", seenOwner, seenErr, answeredOwner, answerErr)
+	}
+	unexpectedOutput, unexpectedErr := exec.Command(output, "unexpected").CombinedOutput()
+	if unexpectedErr == nil || !strings.Contains(string(unexpectedOutput), "unexpected collected engine invocation: unexpected") {
+		t.Fatalf("collected stub accepted unexpected arguments: err=%v output=%q", unexpectedErr, unexpectedOutput)
 	}
 
 	// Any wow.md filesystem entry makes this an installation. A dangling
@@ -209,10 +244,9 @@ esac
 	governedOutput := filepath.Join(root, "governed-proof-engine")
 	governed := exec.Command("bash", filepath.Join(root, "scripts", "agents", "go-gate.sh"), "--fast", "--proof-out", governedOutput)
 	governed.Dir = root
-	governed.Env = append(filteredCoverageScriptEnvironment(), "FAST_GATE_BUILD_COUNT="+count,
-		"METASYSTEM_BUILD_STAMP=fixture", "PATH="+filepath.Join(root, "helpers")+string(os.PathListSeparator)+os.Getenv("PATH"))
+	governed.Env = gateEnvironment()
 	governedDiagnostic, governedErr := governed.CombinedOutput()
-	if governedErr == nil || !strings.Contains(string(governedDiagnostic), "SessionStart exit audit failed") {
+	if governedErr == nil || !strings.Contains(string(governedDiagnostic), "SessionStart exit audit failed") || strings.Contains(string(governedDiagnostic), "run owner export failed") {
 		t.Fatalf("dangling installation marker did not fail through the candidate SessionStart audit: %v\n%s", governedErr, governedDiagnostic)
 	}
 
@@ -228,10 +262,9 @@ esac
 	auditSignalOutput := filepath.Join(root, "audit-signal-proof-engine")
 	auditSignal := exec.Command("bash", filepath.Join(root, "scripts", "agents", "go-gate.sh"), "--fast", "--proof-out", auditSignalOutput)
 	auditSignal.Dir = root
-	auditSignal.Env = append(filteredCoverageScriptEnvironment(), "FAST_GATE_BUILD_COUNT="+count,
-		"METASYSTEM_BUILD_STAMP=fixture", "PATH="+filepath.Join(root, "helpers")+string(os.PathListSeparator)+os.Getenv("PATH"))
+	auditSignal.Env = gateEnvironment()
 	auditSignalDiagnostic, auditSignalErr := auditSignal.CombinedOutput()
-	if auditSignalErr == nil || !strings.Contains(string(auditSignalDiagnostic), "SessionStart exit audit failed") {
+	if auditSignalErr == nil || !strings.Contains(string(auditSignalDiagnostic), "SessionStart exit audit failed") || strings.Contains(string(auditSignalDiagnostic), "run owner export failed") {
 		t.Fatalf("dangling audit-source signal did not fail through the candidate SessionStart audit: %v\n%s", auditSignalErr, auditSignalDiagnostic)
 	}
 }
@@ -605,7 +638,7 @@ func filteredCoverageScriptEnvironment() []string {
 			continue
 		}
 		switch key {
-		case "GO_WANT_COVERAGE_SCRIPT_HELPER", "COVERAGE_SCRIPT_HELPER", "COVERAGE_SCRIPT_REUSE_STATUS", "COVERAGE_SCRIPT_LAUNCH_COUNT", "METASYSTEM_BIN", "METASYSTEM_PROOFRUN_TEST_CANDIDATE_ENGINE", "PATH":
+		case "GO_WANT_COVERAGE_SCRIPT_HELPER", "COVERAGE_SCRIPT_HELPER", "COVERAGE_SCRIPT_REUSE_STATUS", "COVERAGE_SCRIPT_LAUNCH_COUNT", "FAST_GATE_BUILD_COUNT", "FAST_GATE_RUN_OWNER_ANSWER", "FAST_GATE_RUN_OWNER_SEEN", "METASYSTEM_BIN", "METASYSTEM_PROOFRUN_TEST_CANDIDATE_ENGINE", "METASYSTEM_RUN_OWNER", "PATH":
 			continue
 		}
 		result = append(result, entry)
