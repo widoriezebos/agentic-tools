@@ -121,7 +121,7 @@ func ScanFixtureSurvivors(pids []int64, prober Prober, scope func(int64) Fixture
 	if selection.Owner != nil {
 		wantedOwner, err = EncodeRef(*selection.Owner)
 		if err == nil {
-			switch AliveRef(prober, *selection.Owner) {
+			switch fixtureOwnerLiveness(prober, *selection.Owner) {
 			case Alive:
 				return nil, fmt.Errorf("identity: fixture owner %s is alive", wantedOwner)
 			case Unknown:
@@ -157,7 +157,7 @@ func ScanFixtureSurvivors(pids []int64, prober Prober, scope func(int64) Fixture
 			}
 			observation.key, observation.carrier = key, carrier
 			if wholeTable {
-				switch AliveRef(prober, key.Owner) {
+				switch fixtureOwnerLiveness(prober, key.Owner) {
 				case Alive:
 					continue
 				case Unknown:
@@ -178,7 +178,7 @@ func ScanFixtureSurvivors(pids []int64, prober Prober, scope func(int64) Fixture
 				}
 				observation.key, observation.carrier = key, FixtureCarrierRecord
 				if wholeTable {
-					switch AliveRef(prober, key.Owner) {
+					switch fixtureOwnerLiveness(prober, key.Owner) {
 					case Alive:
 						continue
 					case Unknown:
@@ -213,6 +213,21 @@ func ScanFixtureSurvivors(pids []int64, prober Prober, scope func(int64) Fixture
 	}
 	sort.Slice(result, func(i, j int) bool { return result[i].Ref.Pid < result[j].Ref.Pid })
 	return result, nil
+}
+
+func fixtureOwnerLiveness(prober Prober, owner Ref) Liveness {
+	exact, state, _ := prober.Probe(owner.Pid)
+	if state != Alive {
+		return state
+	}
+	comparison := Compare(exact, owner)
+	if comparison.Mode == CompareInvalid {
+		return Unknown
+	}
+	if !comparison.Matches || exact.Zombie {
+		return Dead
+	}
+	return Alive
 }
 
 func containsFixtureTagWord(words []string) bool {

@@ -10,6 +10,7 @@ import (
 	"runtime"
 	"strconv"
 	"strings"
+	"sync"
 	"syscall"
 	"testing"
 	"time"
@@ -33,13 +34,15 @@ func waitFixtureRef(t *testing.T, ref identity.Ref, want identity.Liveness) {
 	defer deadline.Stop()
 	for {
 		exact, state, err := prober.Probe(ref.Pid)
-		if err == nil && (want == identity.Dead && (state == identity.Dead || state == identity.Alive && !identity.SameIdentity(exact, ref)) || want == identity.Alive && state == identity.Alive && identity.SameIdentity(exact, ref) && exact.ArgvKnown && strings.Contains(strings.Join(exact.Argv, " "), identity.FixtureOwnerEnv+"=")) {
+		same := state == identity.Alive && identity.SameIdentity(exact, ref)
+		_, _, tagged := identity.FixtureTag(exact)
+		if err == nil && (want == identity.Dead && (state == identity.Dead || state == identity.Alive && (!same || exact.Zombie)) || want == identity.Alive && same && !exact.Zombie && tagged) {
 			return
 		}
 		select {
 		case <-ticker.C:
 		case <-deadline.C:
-			t.Fatalf("pid %d state=%s err=%v, want %s", ref.Pid, state, err, want)
+			t.Fatalf("pid %d state=%s zombie=%t same-identity=%t err=%v, want %s", ref.Pid, state, exact.Zombie, same, err, want)
 		}
 	}
 }
@@ -154,24 +157,13 @@ func TestProcFixtureSurvivorsVerb(t *testing.T) {
 }
 
 func TestProcFixtureSurvivorsReapsALiveSurvivor(t *testing.T) {
-	if os.Getenv("GO_WANT_FIXTURE_SURVIVOR_CHILD") == "1" {
-		if _, err := bufio.NewReader(os.Stdin).ReadString('\n'); err != nil {
-			os.Exit(2)
-		}
-		os.Exit(runProcSetsid([]string{"--", "/bin/sh", "-c", `trap '' TERM; exec 3<"$1"; read line <&3`, "sh", os.Getenv("FIXTURE_SURVIVOR_FIFO"), identity.FixtureOwnerEnv + "=" + os.Getenv(identity.FixtureOwnerEnv)}))
-	}
-	executable, err := os.Executable()
-	if err != nil {
-		t.Fatal(err)
-	}
 	directory := t.TempDir()
 	fifo := filepath.Join(directory, "hold")
 	if err := syscall.Mkfifo(fifo, 0o600); err != nil {
 		t.Fatal(err)
 	}
-	owner := exec.Command("/bin/sh", "-c", `IFS= read -r tag; export METASYSTEM_FIXTURE_OWNER="$tag"; "$1" -test.run=^TestProcFixtureSurvivorsReapsALiveSurvivor$ & printf '%s\n' "$!"; wait`, "sh", executable)
+	owner := exec.Command("/bin/sh", "-c", `IFS= read -r tag; export METASYSTEM_FIXTURE_OWNER="$tag"; /usr/bin/perl -MPOSIX -e 'POSIX::setsid(); exec @ARGV' -- /bin/sh -c 'exec 3<"$1"; read line <&3' sh "$1" "METASYSTEM_FIXTURE_OWNER=$tag" & printf '%s\n' "$!"; wait`, "sh", fifo)
 	owner.SysProcAttr = &syscall.SysProcAttr{Setpgid: true}
-	owner.Env = append(os.Environ(), "GO_WANT_FIXTURE_SURVIVOR_CHILD=1", "FIXTURE_SURVIVOR_FIFO="+fifo)
 	input, err := owner.StdinPipe()
 	if err != nil {
 		t.Fatal(err)
@@ -183,17 +175,36 @@ func TestProcFixtureSurvivorsReapsALiveSurvivor(t *testing.T) {
 	if err := owner.Start(); err != nil {
 		t.Fatal(err)
 	}
-	t.Cleanup(func() { _ = syscall.Kill(-owner.Process.Pid, syscall.SIGKILL); _ = owner.Wait() })
+	var ownerWaitOnce sync.Once
+	var ownerWaitErr error
+	ownerReaped := false
+	waitOwner := func() error {
+		ownerWaitOnce.Do(func() {
+			ownerWaitErr = owner.Wait()
+			ownerReaped = true
+		})
+		return ownerWaitErr
+	}
+	t.Cleanup(func() {
+		if !ownerReaped {
+			_ = syscall.Kill(-owner.Process.Pid, syscall.SIGKILL)
+		}
+		_ = waitOwner()
+	})
 	ownerExact, state, err := (identity.KernelProber{}).Probe(int64(owner.Process.Pid))
+	ownerRef := ownerExact.Ref()
+	if ownerRef.NativeExact() {
+		t.Cleanup(func() { _ = identity.SignalExact(identity.KernelProber{}, ownerRef, syscall.SIGKILL) })
+	}
 	if err != nil || state != identity.Alive {
 		t.Fatalf("owner probe state=%s err=%v", state, err)
 	}
-	ownerRef := ownerExact.Ref()
 	key := identity.FixtureKey{Owner: ownerRef, Test: t.Name(), Nonce: "a1b2c3d4"}
 	encodedKey, _ := identity.EncodeKey(key)
 	if _, err := fmt.Fprintln(input, encodedKey); err != nil {
 		t.Fatal(err)
 	}
+	_ = input.Close()
 	line, err := bufio.NewReader(output).ReadString('\n')
 	if err != nil {
 		t.Fatal(err)
@@ -203,19 +214,20 @@ func TestProcFixtureSurvivorsReapsALiveSurvivor(t *testing.T) {
 		t.Fatal(err)
 	}
 	childExact, state, err := (identity.KernelProber{}).Probe(pid)
+	childRef := childExact.Ref()
+	if childRef.NativeExact() {
+		t.Cleanup(func() { _ = identity.SignalExact(identity.KernelProber{}, childRef, syscall.SIGKILL) })
+	}
 	if err != nil || state != identity.Alive {
 		t.Fatalf("child probe state=%s err=%v", state, err)
-	}
-	childRef := childExact.Ref()
-	t.Cleanup(func() { _ = identity.SignalExact(identity.KernelProber{}, childRef, syscall.SIGKILL) })
-	if _, err := fmt.Fprintln(input, "go"); err != nil {
-		t.Fatal(err)
 	}
 	waitFixtureRef(t, childRef, identity.Alive)
 	if err := identity.SignalExact(identity.KernelProber{}, ownerRef, syscall.SIGKILL); err != nil {
 		t.Fatal(err)
 	}
+	_ = waitOwner()
 	waitFixtureRef(t, ownerRef, identity.Dead)
+	waitFixtureRef(t, childRef, identity.Alive)
 	root := t.TempDir()
 	ownerText, _ := identity.EncodeRef(ownerRef)
 	code, stdout, stderr := captureCommandOutput(t, true, true, func() int { return runFixtureSurvivors([]string{"--owner", ownerText, "--reap", "--root", root}) })

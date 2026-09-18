@@ -280,6 +280,33 @@ func TestFixtureScanReadsTheGivenSource(t *testing.T) {
 	}
 }
 
+func TestScanFixtureSurvivorsCountsAZombieOwnerAsDead(t *testing.T) {
+	owner := fixtureExact(800, 80)
+	owner.Zombie = true
+	key := FixtureKey{Owner: owner.Ref(), Test: "TestZombieOwner", Nonce: "00000001"}
+	child := fixtureExact(900, 90)
+	child.Environ, child.EnvironKnown = []string{fixtureWord(t, key)}, true
+	prober := fixtureScanProber{exacts: map[int64]Exact{owner.Pid: owner, child.Pid: child}}
+	scope := func(pid int64) FixtureProcessScope {
+		return FixtureProcessScope{Pgid: pid, Sid: pid, Ppid: 1, Signalable: true}
+	}
+
+	for _, test := range []struct {
+		name      string
+		selection FixtureSurvivorSelection
+	}{
+		{"selected owner", FixtureSurvivorSelection{Owner: &key.Owner}},
+		{"whole table", FixtureSurvivorSelection{}},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			got, err := ScanFixtureSurvivors([]int64{child.Pid}, prober, scope, test.selection)
+			if err != nil || len(got) != 1 || got[0].Ref.Pid != child.Pid || got[0].Class != FixtureSurvivorCertain {
+				t.Fatalf("scan with zombie owner = %#v, %v; want child as one certain survivor", got, err)
+			}
+		})
+	}
+}
+
 func TestOwnershipRecordMustBeARegularFile(t *testing.T) {
 	key := FixtureKey{Owner: fixtureExact(800, 80).Ref(), Test: "TestOwnershipRecordMustBeARegularFile", Nonce: "a1b2c3d4"}
 	encoded, err := EncodeKey(key)
