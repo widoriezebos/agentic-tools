@@ -30,6 +30,12 @@ fi
 unset METASYSTEM_FIXTURE_SCENARIO
 fixture_isolated_home=
 if (( fixture_bed_child )); then
+  fixture_outer_gomodcache=$(go env GOMODCACHE)
+  fixture_outer_gocache=$(go env GOCACHE)
+  fixture_outer_gopath=$(go env GOPATH)
+  export GOMODCACHE=$fixture_outer_gomodcache
+  export GOCACHE=$fixture_outer_gocache
+  export GOPATH=$fixture_outer_gopath
   fixture_isolated_home=$(mktemp -d "${TMPDIR:-/tmp}/metasystem-land-home.XXXXXX")
   mkdir -p "$fixture_isolated_home/registry"
   export HOME=$fixture_isolated_home
