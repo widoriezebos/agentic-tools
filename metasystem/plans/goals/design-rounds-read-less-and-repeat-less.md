@@ -1,6 +1,6 @@
 # design-rounds-read-less-and-repeat-less
 
-- State: approved
+- State: parked
 - Priority: 1
 - Sequence: 18
 - Risk: severity=2 novelty=2 exposure=3 accumulation=2 basis="severity 2: a wrong context-pack check can refuse a design launch or admit an unfilled brief, and a wrong receipt field misstates spend; no process is signalled and no ledger or landing path changes; novelty 2: the context pack, call budget, page ceiling and receipt token fields exist (fb6839a44, e700328e1), while the excerpt check, the batching instruction, the per-request usage fields and the recurring-findings section are new; exposure 3: every design and code-read round on every seat; accumulation 2: re-read context adds up per round and per day but leaves no state behind"
@@ -9,10 +9,11 @@
 - Origin: human
 - Next step: pickup: the first three design rounds after re-arm (DONE d report shape at M1b SP/direct/design-rounds-done-d-report-shape.md)
 - OpenedAt: 2026-09-15T15:21:21Z
-- Revision: 37
+- Revision: 38
 - Budget: elapsedLimit=1d attemptLimit=10 reservedJobMinutesLimit=720 activeJobLimit=1 reviewRoundLimit=2
 - BudgetExceptions: 0
 - Approved: by=human:Wido at=2026-09-15T15:21:33Z revision=3 opid=J2VMCFT7FWJGHXAJ6EN9V8X7HX-m1e-c6925449 authority=proven digest=8c19df04c2f2fc605199d7bf8dccc780e12cc3fe27392ebe8c51ea3f8711f23b
+- Parked: by=human:Wido at=2026-09-18T21:52:06Z because=pickup: the first three design rounds after re-arm (DONE d report shape at M1b SP/direct/design-rounds-done-d-report-shape.md)
 
 History:
 - 2026-09-15T15:21:21Z 50MQ1DM7SNCPNJPWCEM3S3N1V5-m1e-c6925449 open actor=human:Wido targets=design-rounds-read-less-and-repeat-less
@@ -52,4 +53,5 @@ History:
 - 2026-09-18T14:58:55Z MZFFSA7G7W72W5R4T327JF9ZPD-m1e-c6925449 done actor=human:Wido targets=adoption-filled-delivery-passes-on-trunk,beds-run-under-the-oldest-supported-bash,brief-declares-the-round-boundary,builder-proves-each-rule-by-mutation,busy-seat-shells-are-ended,codex-jobs-run-through-a-metasystem-verb,coordinator-context-stays-under-budget,critique-closes-on-folded-proof,cross-cutting-change-inventories-its-readers,deep-sections-cannot-stay-red-unseen,delegate-sandbox-runs-the-beds,design-rounds-read-less-and-repeat-less,engine-policy-binding-survives-drift-and-load,every-round-gets-an-independent-read,evidence-and-build-output-have-retention-and-stay-unindexed,failures-show-observed-against-expected,fixture-runners-and-fakes-bound-their-own-life,fleet-doctor-repairs-what-stops-other-seats,follow-up-brief-cannot-cite-fresh-trunk-files,human-goal-verbs-forgiving,proof-runs-reap-what-they-armed-and-a-census-names-the-rest,round-proof-feeds-the-next-brief,seat-successor-continues-a-handoff-without-a-human,stop-capability-follows-the-lease-epoch,stop-decision-surface-is-a-gate,stop-hook-never-forces-an-empty-turn,stop-response-carries-a-structured-report-reference,test-environment-edges-are-closed,testing-surfaces-declare-their-mirror,tests-never-wait-on-wall-time,units-run-through-one-launcher reason=priority-order from=1:19 to=1:18
 - 2026-09-18T20:05:31Z 40T9Z1GTR67TBN2RC4JTSQ5V3T-m1e-c6925449 edit actor=human:Wido targets=design-rounds-read-less-and-repeat-less
 - 2026-09-18T21:51:58Z 0M7E8QMS865SKFWTRREA4B5D4T-m1e-c6925449 edit actor=human:Wido targets=design-rounds-read-less-and-repeat-less
-Integrity: sha256=89e81b85a54b0b5f09756a5ca6e9e3a1ea3780f6c134c687e83d592967ed400f
+- 2026-09-18T21:52:06Z JBMWQR4176YEN0HT6GYMEDF78V-m1e-c6925449 park actor=human:Wido targets=design-rounds-read-less-and-repeat-less reason=pickup: the first three design rounds after re-arm (DONE d report shape at M1b SP/direct/design-rounds-done-d-report-shape.md)
+Integrity: sha256=9dfca6237bd354fcb584892da8d266c92664b2886f073f9ced071e077b9216fa
