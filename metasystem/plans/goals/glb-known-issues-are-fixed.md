@@ -7,9 +7,9 @@
 - Tier: 2
 - Intent: The known issues that goals-live-on-branches merges with are fixed forward right after the merge. DONE, each fixed with a witness or recorded as not a defect with the reason: (1) the Build A read notes that C1 unit 0 did not build (hact-20260912/m1e-tools-0917/glb-read-glbA.md, hact-20260912/m1e-tools-0917/glb-read-glbA-fix.md); (2) Build B read notes 7-16 (hact-20260912/m1e-tools-0917/glb-read-glbB.md); (3) B fix read notes 2-9 (hact-20260912/m1e-tools-0917/glb-read-glbBX.md; note 1 is in C2); (4) C1 read notes 5-13 (hact-20260912/m1e-tools-0917/glb-read-glbC1.md; the three breaking items and note 4 are fixed before the merge); (5) the callers of the old land.sh (reset-land.sh and the rest) move to the new landing script installed under its own name; (6) C2's read non-breaking items once it returns; (7) the goal's Next lists each open item until it is fixed.
 - Origin: human
-- Next step: units 1, fix-1 and fix-2 on main a2d38afad38379fcd9a4747f18adbe3035958309 (wave 3d). Next: closing read on a2d38afad38379fcd9a4747f18adbe3035958309, then conclude from the pane.
+- Next step: fix-3 on main d2713932efcdc9a3adee0493bd8196f3996e1bb4 after units 1, fix-1 and fix-2 (wave 3d); remaining: the closing read on that tip, then conclude.
 - OpenedAt: 2026-09-17T13:59:47Z
-- Revision: 7
+- Revision: 8
 - Labels: known-issue
 - Budget: elapsedLimit=4h attemptLimit=6 reservedJobMinutesLimit=720 activeJobLimit=1 reviewRoundLimit=2
 - BudgetExceptions: 0
@@ -23,4 +23,5 @@ History:
 - 2026-09-17T15:56:22Z 6EGXY0A9WZ9YMZ85S9V4NNBN7E-m1c-fde8080b edit actor=m1c+main-1789560465-86072-c7b126 targets=glb-known-issues-are-fixed
 - 2026-09-18T07:08:00Z EMJJMSMC4V4A6X8T01SPSD2AEG-m1e-c6925449 edit actor=human:Wido targets=glb-known-issues-are-fixed
 - 2026-09-18T14:57:24Z KAG9XZ1ASV5J4JC5857N19Q9V2-m1e-c6925449 edit actor=human:Wido targets=glb-known-issues-are-fixed
-Integrity: sha256=68e2fe0f952e2b9ecf486d314adc402c68b4b8cf934926102827c3637704c468
+- 2026-09-18T20:05:37Z XHHHV02GCBZ2RX5X077AMGT9AR-m1e-c6925449 edit actor=human:Wido targets=glb-known-issues-are-fixed
+Integrity: sha256=f56d81d9e6f1523e107268097688d8f0633b20973eaa097fd57423fc98c2a8f2
