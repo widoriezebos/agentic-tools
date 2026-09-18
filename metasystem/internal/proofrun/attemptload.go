@@ -33,10 +33,11 @@ type AttemptLoad struct {
 // LoadAttribution names a terminal taken under load in the record.
 const LoadAttribution = "load"
 
-// TestHostLoadEnvironment lets a subprocess fixture replace the machine load
-// and launcher census with a zero-load host and the named number of other
-// launchers. Ordinary processes do not set it and keep the production readers.
+// TestHostLoadEnvironment names the legacy ambient control that production
+// sampling deliberately ignores. Binary tests set it to prove it has no effect.
 const TestHostLoadEnvironment = "METASYSTEM_TEST_PROOF_HOST_LOAD"
+
+const testHostLoadCommandPrefix = "metasystem-test-proof-host-load="
 
 // loadSeams are the readers the sample is taken from; tests script them.
 type loadReaders struct {
@@ -49,9 +50,36 @@ type loadReaders struct {
 }
 
 var loadSeams loadReaders
+var commandLoadOptions []loadSampleOption
+
+type loadSampleSettings struct {
+	fixtureRaw string
+	fixtureSet bool
+}
+
+type loadSampleOption func(*loadSampleSettings)
+
+// withTestHostLoad is the explicit same-package test seam for a deterministic
+// zero-load host with the named launcher count. Production callers pass no
+// option and can never activate the fixture through inherited process state.
+func withTestHostLoad(raw string) loadSampleOption {
+	return func(settings *loadSampleSettings) {
+		settings.fixtureRaw, settings.fixtureSet = raw, true
+	}
+}
 
 func init() {
 	loadSeams = realLoadReaders()
+	if command := filepath.Base(os.Args[0]); strings.HasPrefix(command, testHostLoadCommandPrefix) {
+		commandLoadOptions = []loadSampleOption{withTestHostLoad(strings.TrimPrefix(command, testHostLoadCommandPrefix))}
+	}
+}
+
+// TestHostLoadCommandName returns the explicit process name used by command
+// fixtures to inject their deterministic sampler. An ordinary process name,
+// regardless of its environment, always selects the production readers.
+func TestHostLoadCommandName(raw string) string {
+	return testHostLoadCommandPrefix + raw
 }
 
 func realLoadReaders() loadReaders {
@@ -62,20 +90,23 @@ func realLoadReaders() loadReaders {
 	}
 }
 
-func testHostLoad(now time.Time) (hostload.Sample, int, bool, bool) {
-	raw, set := os.LookupEnv(TestHostLoadEnvironment)
-	if !set {
-		return hostload.Sample{}, 0, false, false
-	}
+func testHostLoad(raw string, now time.Time) (hostload.Sample, int, bool) {
 	launchers, err := strconv.Atoi(raw)
 	if err != nil || launchers < 0 {
-		return hostload.Sample{At: now.UTC().Format(time.RFC3339Nano), Detail: TestHostLoadEnvironment + " must be a non-negative integer"}, 0, false, true
+		return hostload.Sample{At: now.UTC().Format(time.RFC3339Nano), Detail: "test host load must be a non-negative integer"}, 0, false
 	}
-	return hostload.Sample{At: now.UTC().Format(time.RFC3339Nano), Available: true, Cores: 18}, launchers, true, true
+	return hostload.Sample{At: now.UTC().Format(time.RFC3339Nano), Available: true, Cores: 18}, launchers, true
 }
 
-func sampleNestedProofLauncher(self int64) (bool, bool) {
-	if _, _, _, set := testHostLoad(time.Time{}); set {
+func sampleNestedProofLauncher(self int64, options ...loadSampleOption) (bool, bool) {
+	settings := loadSampleSettings{}
+	for _, option := range commandLoadOptions {
+		option(&settings)
+	}
+	for _, option := range options {
+		option(&settings)
+	}
+	if settings.fixtureSet {
 		return false, true
 	}
 	return loadSeams.nested(self)
@@ -85,12 +116,17 @@ func sampleNestedProofLauncher(self int64) (bool, bool) {
 // host's other top-level proof launchers at now. The attempt's own launcher
 // is the self every path uses (reserve and every finalize alike), so its
 // family (the battery's nested bed launchers, its parents) never counts.
-func sampleLoad(root, selfAttempt string, launcher int64, now time.Time) LoadSample {
-	testSample, testLaunchers, testKnown, testOverride := testHostLoad(now)
+func sampleLoad(root, selfAttempt string, launcher int64, now time.Time, options ...loadSampleOption) LoadSample {
+	settings := loadSampleSettings{}
+	for _, option := range commandLoadOptions {
+		option(&settings)
+	}
+	for _, option := range options {
+		option(&settings)
+	}
 	sample := LoadSample{}
-	if testOverride {
-		sample.Sample = testSample
-		sample.OverlappingHost, sample.OverlapKnown = testLaunchers, testKnown
+	if settings.fixtureSet {
+		sample.Sample, sample.OverlappingHost, sample.OverlapKnown = testHostLoad(settings.fixtureRaw, now)
 	} else {
 		sample.Sample = loadSeams.host(now)
 		if count, known := loadSeams.launchers(launcher); known {

@@ -6,7 +6,6 @@ import (
 	"path/filepath"
 	"testing"
 
-	"github.com/widoriezebos/agentic-tools/metasystem/internal/proofrun"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/testenv"
 )
 
@@ -20,11 +19,6 @@ var declaredContextCostCandidateEngine string
 func TestMain(m *testing.M) {
 	if os.Getenv("METASYSTEM_CONTEXT_COST_PROOF") == "1" {
 		declaredContextCostCandidateEngine = os.Getenv("METASYSTEM_BIN")
-	}
-	if _, set := os.LookupEnv(proofrun.TestHostLoadEnvironment); !set {
-		if err := os.Setenv(proofrun.TestHostLoadEnvironment, "0"); err != nil {
-			panic(err)
-		}
 	}
 	os.Exit(testenv.Main(m))
 }

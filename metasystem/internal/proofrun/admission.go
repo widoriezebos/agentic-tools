@@ -48,18 +48,36 @@ func ResolveAdmissionCap(confPath string, cores int) (AdmissionCap, error) {
 }
 
 // Refuses reports whether this cap refuses a top-level reserve that observed sample, given whether the
-// reserving process is nested under a live proof launcher. An unknown host (the process table could not be
-// read) and a nested reserve are always admitted: a blind reading must not stall a seat, and a nested receipt
-// whose parent already holds the slot would deadlock its battery.
+// reserving process is nested under a live proof launcher. An enabled cap
+// refuses an unknown host overlap rather than admitting work without a census.
+// A nested receipt whose parent already holds the slot remains admitted because
+// refusing it would deadlock its battery.
 func (admission AdmissionCap) Refuses(sample LoadSample, nested, nestedKnown bool) bool {
-	if admission.Max <= 0 || !sample.OverlapKnown || !nestedKnown || nested {
+	if admission.Max <= 0 {
 		return false
 	}
-	return sample.OverlappingHost >= admission.Max
+	if nestedKnown && nested {
+		return false
+	}
+	if !sample.OverlapKnown {
+		return true
+	}
+	if sample.OverlappingHost < admission.Max {
+		return false
+	}
+	return true
 }
 
 // RefusalReason renders the complete retryable admission refusal.
-func (admission AdmissionCap) RefusalReason(observed int) string {
+func (admission AdmissionCap) RefusalReason(sample LoadSample, nestedKnown bool) string {
+	if !sample.OverlapKnown {
+		return fmt.Sprintf("ADMISSION_OVERLAP_UNKNOWN rank=host-load key=%s admitted=%d source=%s retry=retry-when-host-census-is-readable temporary=yes ruling=%s expires-when=%s land",
+			admission.Key, admission.Max, admission.Source, AdmissionCapRuling, AdmissionCapExpiry)
+	}
+	if !nestedKnown {
+		return fmt.Sprintf("ADMISSION_NESTING_UNKNOWN rank=host-load key=%s admitted=%d observed=%d source=%s retry=retry-when-host-census-is-readable temporary=yes ruling=%s expires-when=%s land",
+			admission.Key, admission.Max, sample.OverlappingHost, admission.Source, AdmissionCapRuling, AdmissionCapExpiry)
+	}
 	return fmt.Sprintf("ADMISSION_REFUSED rank=host-load key=%s admitted=%d observed=%d source=%s retry=retry-when-a-launcher-ends temporary=yes ruling=%s expires-when=%s land",
-		admission.Key, admission.Max, observed, admission.Source, AdmissionCapRuling, AdmissionCapExpiry)
+		admission.Key, admission.Max, sample.OverlappingHost, admission.Source, AdmissionCapRuling, AdmissionCapExpiry)
 }

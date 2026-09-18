@@ -258,7 +258,7 @@ func TestAdmissionSlotLifecycleAndRefusalLeavesNoState(t *testing.T) {
 	}
 }
 func TestAdmissionRefusalNamesItsExpiryAndRuling(t *testing.T) {
-	reason := (AdmissionCap{Max: 2, Key: AdmissionCapKey, Source: "configured"}).RefusalReason(3)
+	reason := (AdmissionCap{Max: 2, Key: AdmissionCapKey, Source: "configured"}).RefusalReason(LoadSample{OverlappingHost: 3, OverlapKnown: true}, true)
 	for _, part := range []string{AdmissionCapKey, "admitted=2", "observed=3", "ruling=R-111-m1e", "tests-never-wait-on-wall-time:1e,2,3b", "engine-policy-binding-survives-drift-and-load:U4a,U4b"} {
 		if !strings.Contains(reason, part) {
 			t.Fatalf("reason %q does not contain %q", reason, part)
@@ -268,12 +268,23 @@ func TestAdmissionRefusalNamesItsExpiryAndRuling(t *testing.T) {
 func TestAdmissionCapAdmitsWhenOverlapIsUnknown(t *testing.T) {
 	request := admissionRequest(t, 1, 99, false, false)
 	attempt, decision, err := ReserveLocked(candidateAdmission(request))
-	if err != nil || decision.Disposition != DispositionExecuted || attempt.Load == nil || attempt.Load.Start.OverlapKnown {
+	if err != nil || decision.Disposition != DispositionAdmissionRefused || decision.ExitStatus != ExitAdmissionRefused ||
+		!strings.Contains(decision.Reason, "ADMISSION_OVERLAP_UNKNOWN") || !reflect.DeepEqual(attempt, Attempt{}) {
 		t.Fatalf("unknown overlap reserve = %+v, %+v, %v", attempt, decision, err)
 	}
-	stored, err := ReadAttempt(request.ControlRoot, attempt.AttemptID)
-	if err != nil || stored.Load == nil || stored.Load.Start.OverlapKnown {
-		t.Fatalf("unknown overlap was not recorded: %+v, %v", stored.Load, err)
+	stored, err := ReadAttempts(request.ControlRoot)
+	if err != nil || len(stored) != 0 {
+		t.Fatalf("unknown overlap refusal retained attempts: %+v, %v", stored, err)
+	}
+}
+
+func TestInvalidFixtureHostLoadRefusesUnknownOverlap(t *testing.T) {
+	request := admissionRequest(t, 1, 0, true, false)
+	request.loadOptions = []loadSampleOption{withTestHostLoad("invalid")}
+	attempt, decision, err := ReserveLocked(candidateAdmission(request))
+	if err != nil || decision.Disposition != DispositionAdmissionRefused ||
+		!strings.Contains(decision.Reason, "ADMISSION_OVERLAP_UNKNOWN") || !reflect.DeepEqual(attempt, Attempt{}) {
+		t.Fatalf("invalid fixture reserve = %+v, %+v, %v", attempt, decision, err)
 	}
 }
 func TestAdmissionCapRefusalPredicate(t *testing.T) {
@@ -284,12 +295,24 @@ func TestAdmissionCapRefusalPredicate(t *testing.T) {
 			}
 		})
 	}
-	check("unknown-host", 1, 99, false, false, true, false)
+	check("unknown-host", 1, 99, false, false, true, true)
 	check("disabled", 0, 99, true, false, true, false)
 	check("nested", 1, 99, true, true, true, false)
-	check("nested-unknown", 1, 99, true, false, false, false)
+	check("nested-unknown-at-cap", 1, 99, true, false, false, true)
+	check("nested-unknown-below-cap", 2, 1, true, false, false, false)
 	check("at-cap", 2, 2, true, false, true, true)
 	check("below-cap", 2, 1, true, false, true, false)
+}
+
+func TestAdmissionCapRefusesUnknownNestingAtCapacity(t *testing.T) {
+	cap := AdmissionCap{Max: 2, Key: AdmissionCapKey, Source: "configured"}
+	sample := LoadSample{OverlappingHost: 2, OverlapKnown: true}
+	if !cap.Refuses(sample, false, false) {
+		t.Fatal("an unreadable nesting census admitted a launcher at capacity")
+	}
+	if reason := cap.RefusalReason(sample, false); !strings.Contains(reason, "ADMISSION_NESTING_UNKNOWN") {
+		t.Fatalf("unknown nesting reason = %q", reason)
+	}
 }
 func TestAdmissionCapUsesTheRecordedStartSample(t *testing.T) {
 	request := admissionRequest(t, 2, 0, true, false)
@@ -326,7 +349,11 @@ func TestReserveSkipsTheNestedCensusWhenTheCapCannotRefuse(t *testing.T) {
 				return false, true
 			}
 			attempt, decision, err := ReserveLocked(candidateAdmission(request))
-			if err != nil || decision.Disposition != DispositionExecuted || attempt.AttemptID == "" {
+			wantDisposition := DispositionExecuted
+			if !test.overlapKnown && test.admissionMax > 0 {
+				wantDisposition = DispositionAdmissionRefused
+			}
+			if err != nil || decision.Disposition != wantDisposition || wantDisposition == DispositionExecuted && attempt.AttemptID == "" {
 				t.Fatalf("reserve = %+v, %+v, %v", attempt, decision, err)
 			}
 			if calls != test.wantNestedCalls {

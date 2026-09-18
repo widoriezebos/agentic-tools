@@ -179,7 +179,7 @@ func TestTrunkRedRecordOwnClearAndCloseTransactions(t *testing.T) {
 
 	clear := trunkRedVerbReq(root, "01J5X0000000000000000000R3", "mac-a")
 	clear.Now = second.Now.Add(time.Hour)
-	result, err = ClearTrunkRed(clear, TrunkRedClearArgs{Entry: identity, Attempt: "green-1", BaseCommit: "base-3", BaseTree: "tree-3", Group: "fast"})
+	result, err = ClearTrunkRed(clear, TrunkRedClearArgs{Entry: identity, Attempt: "green-1", BaseCommit: "base-3", BaseTree: "tree-3", Group: "fast", ExpectedEntry: entry})
 	if err != nil || result.Outcome != OutcomeConfirmed {
 		t.Fatalf("clear: %+v %v", result, err)
 	}
@@ -244,9 +244,14 @@ func TestTrunkRedRecoveryRebuildsRecordOwnAndClear(t *testing.T) {
 	if reports, err := Recover(own.Endpoint); err != nil || len(reports) == 0 {
 		t.Fatalf("recover own: %+v %v", reports, err)
 	}
+	ownedProjection, err := Project(own.Endpoint, false, time.Now())
+	if err != nil || len(ownedProjection.Tree.TrunkRed) != 1 {
+		t.Fatalf("project owned entry: %+v %v", ownedProjection, err)
+	}
 
 	clear := trunkRedVerbReq(root, "01J5X0000000000000000000S3", "mac-a")
-	clearRequest := trunkRedClearRequest(clear, TrunkRedClearArgs{Entry: identity, Attempt: "green-r", BaseCommit: "base-green", BaseTree: "tree-green", Group: "fast"})
+	clearRequest := trunkRedClearRequest(clear, TrunkRedClearArgs{Entry: identity, Attempt: "green-r", BaseCommit: "base-green", BaseTree: "tree-green", Group: "fast",
+		ExpectedEntry: ownedProjection.Tree.TrunkRed[0]})
 	createDeadTrunkRedEntry(t, root, clearRequest)
 	if reports, err := Recover(clear.Endpoint); err != nil || len(reports) == 0 {
 		t.Fatalf("recover clear: %+v %v", reports, err)

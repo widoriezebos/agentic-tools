@@ -19,6 +19,8 @@ var (
 	hyphenCode      = regexp.MustCompile(`^[a-z0-9]+(?:-[a-z0-9]+)*-(?:refused|unreadable|malformed|unavailable)$`)
 )
 
+const refusalSiteWindowRadius = 2
+
 func TestHCL03EveryCodeRowed(t *testing.T) {
 	collected := collectRefusalTokens(t, moduleRoot(t))
 	rowed := make(map[string]struct{}, len(Rows))
@@ -48,6 +50,189 @@ func TestHCL03EveryCodeRowed(t *testing.T) {
 		}
 	}
 	t.Logf("collected %d refusal-shaped tokens", len(collected))
+}
+
+func TestHCL03EveryRowedSiteNamesAnEmission(t *testing.T) {
+	root := moduleRoot(t)
+	identifiers := refusalCodeIdentifiers(t, root)
+	for _, row := range Rows {
+		file, line, ok := strings.Cut(row.Site, ":")
+		lineNumber, err := strconv.Atoi(line)
+		if !ok || err != nil || lineNumber < 1 {
+			t.Errorf("row %s site %q does not name a positive line", row.Code, row.Site)
+			continue
+		}
+		data, err := os.ReadFile(filepath.Join(root, filepath.FromSlash(row.Owner), filepath.FromSlash(file)))
+		if err != nil {
+			t.Errorf("row %s site %q cannot be read from owner %q: %v", row.Code, row.Site, row.Owner, err)
+			continue
+		}
+		lines := strings.Split(string(data), "\n")
+		first := max(1, lineNumber-refusalSiteWindowRadius)
+		last := min(len(lines), lineNumber+refusalSiteWindowRadius)
+		emissionLines := refusalEmissionLines(t, file, data, row.Code, identifiers[row.Code])
+		if lineNumber > len(lines) || !windowContainsEmission(emissionLines, first, last) {
+			t.Errorf("row %s site %q does not name an emitted string or identifier within the %d-line emission window",
+				row.Code, row.Site, refusalSiteWindowRadius)
+		}
+	}
+}
+
+func refusalCodeIdentifiers(t *testing.T, root string) map[string][]string {
+	t.Helper()
+	identifiers := map[string][]string{}
+	err := filepath.Walk(root, func(path string, info os.FileInfo, err error) error {
+		if err != nil {
+			return err
+		}
+		if info.IsDir() || !strings.HasSuffix(path, ".go") || strings.HasSuffix(path, "_test.go") {
+			return nil
+		}
+		file, err := parser.ParseFile(token.NewFileSet(), path, nil, 0)
+		if err != nil {
+			return err
+		}
+		for _, declaration := range file.Decls {
+			general, ok := declaration.(*ast.GenDecl)
+			if !ok {
+				continue
+			}
+			for _, specification := range general.Specs {
+				values, ok := specification.(*ast.ValueSpec)
+				if !ok {
+					continue
+				}
+				for index, expression := range values.Values {
+					if index >= len(values.Names) {
+						break
+					}
+					literal, ok := expression.(*ast.BasicLit)
+					if !ok || literal.Kind != token.STRING {
+						continue
+					}
+					value, err := strconv.Unquote(literal.Value)
+					if err == nil {
+						identifiers[value] = append(identifiers[value], values.Names[index].Name)
+					}
+				}
+			}
+		}
+		return nil
+	})
+	if err != nil {
+		t.Fatalf("collect refusal identifiers: %v", err)
+	}
+	return identifiers
+}
+
+func refusalEmissionLines(t *testing.T, path string, source []byte, code string, identifiers []string) map[int]bool {
+	t.Helper()
+	if filepath.Ext(path) != ".go" {
+		emissions := map[int]bool{}
+		for index, line := range strings.Split(string(source), "\n") {
+			trimmed := strings.TrimSpace(line)
+			if !strings.HasPrefix(trimmed, "#") && strings.Contains(line, code) {
+				emissions[index+1] = true
+			}
+		}
+		return emissions
+	}
+	identifierSet := map[string]bool{}
+	for _, identifier := range identifiers {
+		identifierSet[identifier] = true
+	}
+	fset := token.NewFileSet()
+	file, err := parser.ParseFile(fset, "site.go", source, 0)
+	if err != nil {
+		t.Fatalf("parse refusal owner: %v", err)
+	}
+	emissions := map[int]bool{}
+	var stack []ast.Node
+	var walk func(ast.Node)
+	walk = func(node ast.Node) {
+		if node == nil {
+			return
+		}
+		candidate := false
+		switch value := node.(type) {
+		case *ast.BasicLit:
+			text, unquoteErr := strconv.Unquote(value.Value)
+			candidate = value.Kind == token.STRING && unquoteErr == nil && strings.Contains(text, code)
+		case *ast.Ident:
+			candidate = identifierSet[value.Name]
+		}
+		if candidate && refusalOccurrenceIsEmitted(node, stack) {
+			emissions[fset.Position(node.Pos()).Line] = true
+		}
+		stack = append(stack, node)
+		ast.Inspect(node, func(child ast.Node) bool {
+			if child == node {
+				return true
+			}
+			if child != nil {
+				walk(child)
+			}
+			return false
+		})
+		stack = stack[:len(stack)-1]
+	}
+	walk(file)
+	return emissions
+}
+
+func refusalOccurrenceIsEmitted(node ast.Node, stack []ast.Node) bool {
+	position := node.Pos()
+	for index := len(stack) - 1; index >= 0; index-- {
+		switch parent := stack[index].(type) {
+		case *ast.CallExpr:
+			return positionInExpressions(position, parent.Args)
+		case *ast.ReturnStmt:
+			return positionInExpressions(position, parent.Results)
+		case *ast.AssignStmt:
+			return positionInExpressions(position, parent.Rhs)
+		case *ast.CompositeLit:
+			return true
+		case *ast.BinaryExpr:
+			if parent.Op == token.EQL || parent.Op == token.NEQ || parent.Op == token.LSS || parent.Op == token.LEQ ||
+				parent.Op == token.GTR || parent.Op == token.GEQ {
+				return false
+			}
+		case *ast.ValueSpec:
+			return false
+		}
+	}
+	return false
+}
+
+func positionInExpressions(position token.Pos, expressions []ast.Expr) bool {
+	for _, expression := range expressions {
+		if expression.Pos() <= position && position <= expression.End() {
+			return true
+		}
+	}
+	return false
+}
+
+func windowContainsEmission(lines map[int]bool, first, last int) bool {
+	for line := first; line <= last; line++ {
+		if lines[line] {
+			return true
+		}
+	}
+	return false
+}
+
+func TestHCL03SiteValidatorRejectsNonEmissionReference(t *testing.T) {
+	source := []byte("package fixture\nconst refusalCode = \"SITE_DRIFT\"\nfunc emit(observed string) error {\n\tif observed == refusalCode { return nil }\n\tassigned := observed == refusalCode\n\tconsume(observed == refusalCode)\n\tvalues := []bool{observed == refusalCode}\n\tif assigned || values[0] { return observed == refusalCode }\n\treturn fmt.Errorf(\"SITE_DRIFT: emitted\")\n}\n")
+	lines := refusalEmissionLines(t, "fixture.go", source, "SITE_DRIFT", []string{"refusalCode"})
+	for _, rejected := range []int{2, 4, 5, 6, 7, 8} {
+		if lines[rejected] {
+			t.Fatalf("emission lines = %v, comparison-only line %d was accepted", lines, rejected)
+		}
+	}
+	if !lines[9] {
+		t.Fatalf("emission lines = %v, want the returned error on line 9", lines)
+	}
 }
 
 func TestHCL03EngineCausesEachCarryARemedy(t *testing.T) {

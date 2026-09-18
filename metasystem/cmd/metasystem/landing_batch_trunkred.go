@@ -13,9 +13,10 @@ import (
 )
 
 type ledgerTrunkRedOwner struct {
-	endpoint goal.Endpoint
-	actor    goal.Actor
-	now      func() time.Time
+	endpoint               goal.Endpoint
+	actor                  goal.Actor
+	now                    func() time.Time
+	beforeClearTransaction func() error
 }
 
 func newLedgerTrunkRedOwner(root, machine, lineage string) (batch.LedgerOwner, error) {
@@ -79,9 +80,14 @@ func (owner ledgerTrunkRedOwner) Clear(opid string, ref batch.EntryRef, green ba
 		return err
 	}
 	branchMerged := false
+	expectedEntry := goal.TrunkRedEntry{}
 	for _, entry := range projection.Tree.TrunkRed {
-		if entry.ID != ref.ID || entry.FixBranch.Commit == "" {
+		if entry.ID != ref.ID {
 			continue
+		}
+		expectedEntry = entry
+		if entry.FixBranch.Commit == "" {
+			break
 		}
 		_, objectErr := goalBranchGit(owner.endpoint.Root, "cat-file", "-e", entry.FixBranch.Commit)
 		if objectErr != nil {
@@ -105,9 +111,15 @@ func (owner ledgerTrunkRedOwner) Clear(opid string, ref batch.EntryRef, green ba
 		}
 		break
 	}
+	if owner.beforeClearTransaction != nil {
+		if err := owner.beforeClearTransaction(); err != nil {
+			return err
+		}
+	}
 	_, err = owner.runJournaled(opid, func() (goal.PublishResult, error) {
 		return goal.ClearTrunkRed(request, goal.TrunkRedClearArgs{Entry: ref.ID, Attempt: green.AttemptID,
-			BaseCommit: green.BaseCommit, BaseTree: green.BaseTree, Group: green.Group, BranchMerged: branchMerged})
+			BaseCommit: green.BaseCommit, BaseTree: green.BaseTree, Group: green.Group, BranchMerged: branchMerged,
+			ExpectedEntry: expectedEntry})
 	})
 	return err
 }

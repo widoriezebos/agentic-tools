@@ -188,7 +188,7 @@ func newPendingWaitVerdictFixture(t *testing.T, kind string, readyBacklog bool) 
 				Platform: "fixture/fixture", Toolchain: strings.Repeat("3", 64),
 			}, "full", "fixture", []string{"gate"}, 1)
 			deadline := now.Add(10 * time.Minute)
-			attempt, result, reserveErr := proofrun.ReserveLocked(proofrun.AdmissionRequest{
+			admissionRequest := proofrun.WithTestHostLoadSampler(proofrun.AdmissionRequest{
 				ControlRoot: root, ExecutionRoot: root, GoalID: pendingWaitGoalID,
 				GoalRevision: 2, AccountingRevision: 2, CandidateGoalID: pendingWaitGoalID, CandidateRevision: 2, ReservedMinutes: 10,
 				Identity: proofIdentity, Launcher: proofrun.ProcessIdentity{Pid: 90, PidStartedAt: 900},
@@ -198,7 +198,8 @@ func newPendingWaitVerdictFixture(t *testing.T, kind string, readyBacklog bool) 
 					GoalRevision: 2, ObligationRevision: 1, AttemptOrdinal: 1,
 					Deadline: deadline.Format(time.RFC3339Nano),
 				},
-			})
+			}, "0")
+			attempt, result, reserveErr := proofrun.ReserveLocked(admissionRequest)
 			if reserveErr != nil || result.Disposition != proofrun.DispositionExecuted {
 				t.Fatalf("reserve pending attempt: result=%+v err=%v", result, reserveErr)
 			}

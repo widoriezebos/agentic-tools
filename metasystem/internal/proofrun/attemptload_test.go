@@ -50,31 +50,16 @@ func TestSampleLoadExportUsesTheProofCensus(t *testing.T) {
 func TestSubprocessHostLoadSeamOverridesReadersOnlyWhenSet(t *testing.T) {
 	now := time.Unix(7, 0)
 	installFakeLoad(t, hostload.Sample{Available: true, Cores: 12, Load1m: 6}, 2, true)
-
-	previous, present := os.LookupEnv(TestHostLoadEnvironment)
-	if err := os.Unsetenv(TestHostLoadEnvironment); err != nil {
-		t.Fatal(err)
-	}
-	t.Cleanup(func() {
-		if present {
-			_ = os.Setenv(TestHostLoadEnvironment, previous)
-		} else {
-			_ = os.Unsetenv(TestHostLoadEnvironment)
-		}
-	})
 	production := SampleLoad(t.TempDir(), "proof-self", 41, now)
 	if production.Cores != 12 || production.Load1m != 6 || production.OverlappingHost != 2 || !production.OverlapKnown {
 		t.Fatalf("unset subprocess seam changed the installed readers: %+v", production)
 	}
 
-	if err := os.Setenv(TestHostLoadEnvironment, "3"); err != nil {
-		t.Fatal(err)
-	}
-	isolated := SampleLoad(t.TempDir(), "proof-self", 41, now)
+	isolated := sampleLoad(t.TempDir(), "proof-self", 41, now, withTestHostLoad("3"))
 	if isolated.Cores != 18 || isolated.Load1m != 0 || isolated.OverlappingHost != 3 || !isolated.OverlapKnown || isolated.At != now.UTC().Format(time.RFC3339Nano) {
 		t.Fatalf("subprocess seam sample = %+v", isolated)
 	}
-	if nested, known := sampleNestedProofLauncher(41); nested || !known {
+	if nested, known := sampleNestedProofLauncher(41, withTestHostLoad("3")); nested || !known {
 		t.Fatalf("subprocess seam nested census = %v, known=%v", nested, known)
 	}
 }

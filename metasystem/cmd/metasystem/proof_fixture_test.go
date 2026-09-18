@@ -66,18 +66,15 @@ func (fixture proofBinaryFixture) command(environment []string, executable strin
 		environment = os.Environ()
 	}
 	prefix := proofrun.TestHostLoadEnvironment + "="
-	load := "0"
-	if ambient, set := os.LookupEnv(proofrun.TestHostLoadEnvironment); set {
-		load = ambient
-	}
-	isolated := make([]string, 0, len(environment)+1)
+	isolated := make([]string, 0, len(environment))
 	for _, entry := range environment {
 		if !strings.HasPrefix(entry, prefix) {
 			isolated = append(isolated, entry)
 		}
 	}
 	command := exec.Command(executable, args...)
-	command.Env = append(isolated, prefix+load)
+	command.Args[0] = proofrun.TestHostLoadCommandName("0")
+	command.Env = isolated
 	return command
 }
 
@@ -99,17 +96,13 @@ func TestProofAttemptBinaryFixturePinsAdmissionInputs(t *testing.T) {
 	if len(command.Args) != 3 || command.Args[1] != "test" || command.Args[2] != "run" {
 		t.Fatalf("fixture command args = %q", command.Args)
 	}
-	seen := 0
+	if command.Args[0] != proofrun.TestHostLoadCommandName("0") {
+		t.Fatalf("fixture command sampler option = %q", command.Args[0])
+	}
 	for _, entry := range command.Env {
 		if strings.HasPrefix(entry, proofrun.TestHostLoadEnvironment+"=") {
-			seen++
-			if entry != proofrun.TestHostLoadEnvironment+"=0" {
-				t.Fatalf("fixture host load input = %q", entry)
-			}
+			t.Fatalf("fixture command retained ambient host load input %q", entry)
 		}
-	}
-	if seen != 1 {
-		t.Fatalf("fixture host load input appears %d times in %q", seen, command.Env)
 	}
 }
 

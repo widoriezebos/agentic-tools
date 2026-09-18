@@ -224,6 +224,14 @@ type AdmissionRequest struct {
 	// attempt even when every selected group can reuse exact green evidence.
 	// Live duplicates and retry decisions still apply.
 	ForceAttempt bool
+	loadOptions  []loadSampleOption
+}
+
+// WithTestHostLoadSampler gives test code an explicit deterministic sampler
+// without making ambient process state an admission input.
+func WithTestHostLoadSampler(request AdmissionRequest, raw string) AdmissionRequest {
+	request.loadOptions = append(request.loadOptions, withTestHostLoad(raw))
+	return request
 }
 
 // AccountedGoal returns the goal whose budget consumption owns the attempt.
@@ -681,18 +689,18 @@ func ReserveLocked(request AdmissionRequest) (Attempt, LaunchResult, error) {
 	} else if _, statErr := os.Lstat(path); statErr == nil || !os.IsNotExist(statErr) {
 		return Attempt{}, LaunchResult{}, fmt.Errorf("proof attempt id %s is already retained", id)
 	}
-	start := sampleLoad(request.ControlRoot, id, request.Launcher.Pid, now)
+	start := sampleLoad(request.ControlRoot, id, request.Launcher.Pid, now, request.loadOptions...)
 	admission, err := ResolveAdmissionCap(request.ConfPath, start.Cores)
 	if err != nil {
 		return Attempt{}, LaunchResult{}, err
 	}
 	nested, nestedKnown := false, false
 	if admission.Max > 0 && start.OverlapKnown {
-		nested, nestedKnown = sampleNestedProofLauncher(request.Launcher.Pid)
+		nested, nestedKnown = sampleNestedProofLauncher(request.Launcher.Pid, request.loadOptions...)
 	}
 	if admission.Refuses(start, nested, nestedKnown) {
 		return Attempt{}, LaunchResult{SchemaVersion: 1, Disposition: DispositionAdmissionRefused,
-			ExitStatus: ExitAdmissionRefused, Reason: admission.RefusalReason(start.OverlappingHost)}, nil
+			ExitStatus: ExitAdmissionRefused, Reason: admission.RefusalReason(start, nestedKnown)}, nil
 	}
 	attempt := Attempt{
 		SchemaVersion: CandidateAttemptSchemaVersion, AttemptID: id, GoalID: request.GoalID,
