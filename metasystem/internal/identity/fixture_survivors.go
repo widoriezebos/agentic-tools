@@ -148,7 +148,7 @@ func ScanFixtureSurvivors(pids []int64, prober Prober, scope func(int64) Fixture
 	var certain, unreadable, unowned []fixtureObservation
 	for _, pid := range pids {
 		exact, state, probeErr := prober.Probe(pid)
-		if probeErr != nil || state != Alive || !exact.Ref().NativeExact() {
+		if probeErr != nil || state != Alive || !exact.Ref().NativeExact() || isFixtureCustodian(exact) {
 			continue
 		}
 		observation := fixtureObservation{exact: exact, scope: scope(pid)}

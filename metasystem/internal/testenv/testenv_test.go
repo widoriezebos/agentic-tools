@@ -253,6 +253,7 @@ func TestAgedSweepRemovesFixtureRecordFiles(t *testing.T) {
 
 func TestQuietFixtureCustodianLogDecision(t *testing.T) {
 	owner := liveTestOwner(t)
+	watch := identity.FixtureCustodianWatchLine(owner)
 	completion := identity.FixtureCustodianCompletionLine(owner)
 	other := owner
 	other.Pid++
@@ -260,14 +261,17 @@ func TestQuietFixtureCustodianLogDecision(t *testing.T) {
 		name, content string
 		remove        bool
 	}{
-		{"completion alone", completion, true},
-		{"kill", completion + "fixture-custodian action=kill pid=1\n", false},
-		{"kill owner", completion + "fixture-custodian action=kill-owner\n", false},
-		{"race report", completion + "WARNING: DATA RACE\n", false},
-		{"panic", "panic: runtime failure\n" + completion, false},
-		{"twice", completion + completion, false},
-		{"no newline", strings.TrimSuffix(completion, "\n"), false},
-		{"another owner", identity.FixtureCustodianCompletionLine(other), false},
+		{"watch and completion", watch + completion, true},
+		{"descendant observation", watch + "fixture-custodian action=observe pid=41 carrier=descendant identity=exact\n" + completion, true},
+		{"unavailable observation", watch + "fixture-custodian observation=unavailable error=not enough memory\n" + completion, true},
+		{"completion alone", completion, false},
+		{"kill", watch + completion + "fixture-custodian action=kill pid=1\n", false},
+		{"kill owner", watch + completion + "fixture-custodian action=kill-owner\n", false},
+		{"race report", watch + completion + "WARNING: DATA RACE\n", false},
+		{"panic", "panic: runtime failure\n" + watch + completion, false},
+		{"twice", watch + completion + completion, false},
+		{"no newline", watch + strings.TrimSuffix(completion, "\n"), false},
+		{"another owner", watch + identity.FixtureCustodianCompletionLine(other), false},
 		{"empty", "", false},
 	} {
 		t.Run(test.name, func(t *testing.T) {
@@ -287,7 +291,7 @@ func TestQuietFixtureCustodianLogDecision(t *testing.T) {
 	target, err := os.Create(filepath.Join(t.TempDir(), "target.log"))
 	checkTestenv(t, err)
 	defer target.Close()
-	_, err = target.WriteString(completion)
+	_, err = target.WriteString(watch + completion)
 	checkTestenv(t, err)
 	link := target.Name() + ".link"
 	checkTestenv(t, os.Symlink(target.Name(), link))
@@ -301,7 +305,7 @@ func TestQuietFixtureCustodianLogDecision(t *testing.T) {
 	different, err := os.Create(filepath.Join(t.TempDir(), "different.log"))
 	checkTestenv(t, err)
 	defer different.Close()
-	_, err = different.WriteString(completion)
+	_, err = different.WriteString(watch + completion)
 	checkTestenv(t, err)
 	removeQuietFixtureCustodianLog(different.Name(), owner, target)
 	if _, err := os.Lstat(different.Name()); err != nil {
@@ -317,11 +321,14 @@ func TestCustodianStartRefusesACustodianThatExitsAtOnce(t *testing.T) {
 		}
 	}
 	binaryRef, _ := FixtureCustodian()
+	const testPoll, testBound = 50 * time.Millisecond, 500 * time.Millisecond
+	t.Setenv(identity.FixtureCustodianPollEnv, testPoll.String())
+	t.Setenv(identity.FixtureCustodianBoundEnv, testBound.String())
 	var command *exec.Cmd
 	registry := filepath.Join(t.TempDir(), "registry")
 	ref, records, err := startFixtureCustodian(func() *exec.Cmd { command = exec.Command(os.Args[0]); return command }, registry)
 	checkTestenv(t, err)
-	t.Cleanup(func() { _ = identity.SignalExact(identity.KernelProber{}, ref, syscall.SIGKILL); _ = command.Wait() })
+	reapCustodianAfterTest(t, command, ref, testPoll, testBound)
 	if info, statErr := os.Stat(records); statErr != nil || !info.Mode().IsRegular() || records != fmt.Sprintf("%s.fixture-refs-%d", registry, os.Getpid()) {
 		t.Fatalf("custodian records = %q, info=%v err=%v", records, info, statErr)
 	}
@@ -330,6 +337,64 @@ func TestCustodianStartRefusesACustodianThatExitsAtOnce(t *testing.T) {
 	}
 	if current, present := FixtureCustodian(); !present || binaryRef != current {
 		t.Fatalf("binary custodian changed: before=%+v after=%+v/%t", binaryRef, current, present)
+	}
+	t.Run("passes explicit timing", func(t *testing.T) {
+		t.Setenv(identity.FixtureCustodianPollEnv, "17ms")
+		t.Setenv(identity.FixtureCustodianBoundEnv, "500ms")
+		var timedCommand *exec.Cmd
+		timedRegistry := filepath.Join(t.TempDir(), "registry")
+		timedRef, _, err := startFixtureCustodian(func() *exec.Cmd {
+			timedCommand = exec.Command(os.Args[0])
+			return timedCommand
+		}, timedRegistry)
+		checkTestenv(t, err)
+		reapCustodianAfterTest(t, timedCommand, timedRef, 17*time.Millisecond, 500*time.Millisecond)
+		for _, want := range []string{
+			identity.FixtureCustodianPollEnv + "=17ms",
+			identity.FixtureCustodianBoundEnv + "=500ms",
+		} {
+			found := false
+			for _, entry := range timedCommand.Env {
+				found = found || entry == want
+			}
+			if !found {
+				t.Fatalf("custodian environment omitted %q", want)
+			}
+		}
+	})
+	t.Run("cleanup wait is bounded", func(t *testing.T) {
+		expired := make(chan time.Time, 1)
+		expired <- time.Unix(1, 0)
+		if custodianReaped(make(chan error), expired) {
+			t.Fatal("expired custodian cleanup reported a reap")
+		}
+	})
+}
+
+func reapCustodianAfterTest(t *testing.T, command *exec.Cmd, ref identity.Ref, poll, bound time.Duration) {
+	t.Helper()
+	done := make(chan error, 1)
+	go func() { done <- command.Wait() }()
+	t.Cleanup(func() {
+		started := time.Now()
+		_ = identity.SignalExact(identity.KernelProber{}, ref, syscall.SIGKILL)
+		timer := time.NewTimer(10 * (bound + poll))
+		defer timer.Stop()
+		if custodianReaped(done, timer.C) {
+			return
+		}
+		exact, state, err := (identity.KernelProber{}).Probe(ref.Pid)
+		t.Errorf("custodian %d did not report exit after %s (bound %s): state=%s same=%t zombie=%t probe=%v",
+			ref.Pid, time.Since(started), 10*(bound+poll), state, identity.SameIdentity(exact, ref), exact.Zombie, err)
+	})
+}
+
+func custodianReaped(done <-chan error, bound <-chan time.Time) bool {
+	select {
+	case <-done:
+		return true
+	case <-bound:
+		return false
 	}
 }
 

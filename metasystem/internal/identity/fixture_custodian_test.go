@@ -8,6 +8,7 @@ import (
 	"path/filepath"
 	"slices"
 	"strings"
+	"sync"
 	"syscall"
 	"testing"
 	"time"
@@ -19,6 +20,76 @@ type custodianRecordProber struct {
 	probes           int
 }
 
+type manualCustodianClock struct {
+	mu     sync.Mutex
+	now    time.Time
+	timers map[*manualCustodianTimer]struct{}
+}
+
+type manualCustodianTimer struct {
+	clock    *manualCustodianClock
+	deadline time.Time
+	action   func()
+	stopped  bool
+	fired    bool
+}
+
+func newManualCustodianClock() *manualCustodianClock {
+	return &manualCustodianClock{now: time.Unix(1, 0), timers: make(map[*manualCustodianTimer]struct{})}
+}
+
+func (clock *manualCustodianClock) Now() time.Time {
+	clock.mu.Lock()
+	defer clock.mu.Unlock()
+	return clock.now
+}
+
+func (clock *manualCustodianClock) After(duration time.Duration) <-chan time.Time {
+	clock.Advance(duration)
+	ready := make(chan time.Time, 1)
+	ready <- clock.Now()
+	return ready
+}
+
+func (clock *manualCustodianClock) AfterFunc(duration time.Duration, action func()) custodianTimer {
+	clock.mu.Lock()
+	defer clock.mu.Unlock()
+	timer := &manualCustodianTimer{clock: clock, deadline: clock.now.Add(duration), action: action}
+	clock.timers[timer] = struct{}{}
+	return timer
+}
+
+func (clock *manualCustodianClock) Sleep(duration time.Duration) { clock.Advance(duration) }
+
+func (clock *manualCustodianClock) Advance(duration time.Duration) {
+	clock.mu.Lock()
+	clock.now = clock.now.Add(duration)
+	var actions []func()
+	for timer := range clock.timers {
+		if timer.stopped || timer.fired || timer.deadline.After(clock.now) {
+			continue
+		}
+		timer.fired = true
+		delete(clock.timers, timer)
+		actions = append(actions, timer.action)
+	}
+	clock.mu.Unlock()
+	for _, action := range actions {
+		action()
+	}
+}
+
+func (timer *manualCustodianTimer) Stop() bool {
+	timer.clock.mu.Lock()
+	defer timer.clock.mu.Unlock()
+	if timer.stopped || timer.fired {
+		return false
+	}
+	timer.stopped = true
+	delete(timer.clock.timers, timer)
+	return true
+}
+
 func (prober *custodianRecordProber) Probe(pid int64) (Exact, Liveness, error) {
 	if pid == prober.diesOnLaterProbe {
 		prober.probes++
@@ -27,6 +98,32 @@ func (prober *custodianRecordProber) Probe(pid int64) (Exact, Liveness, error) {
 		}
 	}
 	return prober.fixtureTable.Probe(pid)
+}
+
+func TestCustodianUsesConfiguredTiming(t *testing.T) {
+	t.Parallel()
+
+	values := map[string]string{
+		FixtureCustodianPollEnv:  "17ms",
+		FixtureCustodianBoundEnv: "23s",
+	}
+	poll, bound, err := custodianTiming(func(name string) (string, bool) {
+		value, present := values[name]
+		return value, present
+	})
+	if err != nil || poll != 17*time.Millisecond || bound != 23*time.Second {
+		t.Fatalf("configured timing poll=%s bound=%s err=%v", poll, bound, err)
+	}
+	for _, name := range []string{FixtureCustodianPollEnv, FixtureCustodianBoundEnv} {
+		values[name] = "0s"
+		if _, _, err := custodianTiming(func(key string) (string, bool) {
+			value, present := values[key]
+			return value, present
+		}); err == nil || !strings.Contains(err.Error(), name) {
+			t.Fatalf("invalid %s was accepted: %v", name, err)
+		}
+		delete(values, name)
+	}
 }
 
 func TestCustodianReapsRecordedRefsWithoutTheTable(t *testing.T) {
@@ -66,6 +163,7 @@ func TestCustodianReapsRecordedRefsWithoutTheTable(t *testing.T) {
 		{name: "malformed record", contents: "not-a-record\n", wantLog: "error=malformed-record line=1", wantCompleteLog: true},
 	} {
 		t.Run(test.name, func(t *testing.T) {
+			clock := newManualCustodianClock()
 			records := filepath.Join(t.TempDir(), "records")
 			if err := os.WriteFile(records, []byte(test.contents), 0o600); err != nil {
 				t.Fatal(err)
@@ -98,6 +196,7 @@ func TestCustodianReapsRecordedRefsWithoutTheTable(t *testing.T) {
 			}
 			runtime := custodianRuntime{
 				prober: prober, records: records, poll: time.Millisecond, bound: 20 * time.Millisecond,
+				clock: clock,
 				leash: leash,
 				scan:  func(Prober, Ref) ([]FixtureSurvivor, error) { return nil, fmt.Errorf("denied kern.proc.all") },
 				sender: func(pid int, _ syscall.Signal) error {
@@ -239,19 +338,21 @@ func TestRunOwnerResolution(t *testing.T) {
 
 type custodianTable struct {
 	fixtureTable
-	ownerUntil time.Time
-	ownerState Liveness
+	ownerStates []Liveness
+	ownerProbes int
 }
 
 func (table *custodianTable) Probe(pid int64) (Exact, Liveness, error) {
 	if pid == 700 {
-		if time.Now().Before(table.ownerUntil) {
-			if table.ownerState == Alive {
-				return table.fixtureTable.Probe(pid)
-			}
-			return Exact{}, table.ownerState, nil
+		state := Dead
+		if table.ownerProbes < len(table.ownerStates) {
+			state = table.ownerStates[table.ownerProbes]
+			table.ownerProbes++
 		}
-		return Exact{}, Dead, nil
+		if state == Alive {
+			return table.fixtureTable.Probe(pid)
+		}
+		return Exact{}, state, nil
 	}
 	return table.fixtureTable.Probe(pid)
 }
@@ -276,8 +377,10 @@ func TestCustodianWaitsForDeadOwnerAndExcludesItself(t *testing.T) {
 	if err := reapDeadOwner(owner, &log, runtime); err == nil || len(signaled) != 0 {
 		t.Fatalf("live owner allowed reap: signaled=%v err=%v", signaled, err)
 	}
-	table := &custodianTable{fixtureTable: processes, ownerUntil: time.Now().Add(40 * time.Millisecond), ownerState: Alive}
+	delete(processes, owner.Pid)
+	table := &custodianTable{fixtureTable: processes, ownerStates: []Liveness{Alive, Alive, Dead}}
 	runtime.prober, runtime.bound = table, 30*time.Millisecond
+	runtime.clock = newManualCustodianClock()
 	if err := runCustodian(owner, strings.NewReader(""), &log, runtime); err != nil || len(signaled) != 2 || signaled[0] != 702 || signaled[1] != 703 {
 		t.Fatalf("custodian signaled=%v err=%v; want children 702 and 703 after owner death, never self 701", signaled, err)
 	}
@@ -286,26 +389,173 @@ func TestCustodianWaitsForDeadOwnerAndExcludesItself(t *testing.T) {
 	}
 }
 
-func TestCustodianHardHaltBoundsBlockedScan(t *testing.T) {
-	release, halted, done := make(chan struct{}), make(chan int, 1), make(chan error, 1)
-	oldPids := survivorPids
-	survivorPids = func() ([]int64, error) { <-release; return nil, nil }
-	runtime := custodianRuntime{prober: fixtureTable{}, poll: time.Millisecond, bound: 5 * time.Millisecond,
-		halt: func(code int) { halted <- code }}
+func TestCustodianReapsObservedDescendantsAfterReparenting(t *testing.T) {
+	t.Parallel()
+
+	owner, self := fixtureExact(700, 70), fixtureExact(701, 71)
+	child, grandchild, unrelated := fixtureExact(702, 72), fixtureExact(703, 73), fixtureExact(704, 74)
+	reused, unstable := fixtureExact(705, 75), fixtureExact(706, 76)
+	for _, exact := range []*Exact{&self, &child, &grandchild, &unrelated, &reused, &unstable} {
+		exact.EnvironKnown = true
+	}
+	processes := fixtureTable{
+		owner.Pid: owner, self.Pid: self, child.Pid: child, grandchild.Pid: grandchild, unrelated.Pid: unrelated,
+		reused.Pid: reused, unstable.Pid: unstable,
+	}
+	parents := map[int64]int64{
+		self.Pid: owner.Pid, child.Pid: owner.Pid, grandchild.Pid: child.Pid, unrelated.Pid: 1,
+		reused.Pid: owner.Pid, unstable.Pid: owner.Pid,
+	}
+	unstableParentReads := 0
+	table := &custodianTable{fixtureTable: processes, ownerStates: []Liveness{Alive, Alive, Alive, Dead}}
+	var signaled []int64
+	runtime := custodianRuntime{
+		prober: table, self: self.Ref(), poll: time.Millisecond, bound: 5 * time.Millisecond,
+		clock: newManualCustodianClock(),
+		descendants: func(prober Prober, ownerRef Ref) ([]Ref, error) {
+			refs, err := fixtureDescendants(prober, ownerRef,
+				func() ([]int64, error) {
+					return []int64{owner.Pid, self.Pid, child.Pid, grandchild.Pid, unrelated.Pid, reused.Pid, unstable.Pid}, nil
+				},
+				func(pid int64) (int64, bool) {
+					if pid == unstable.Pid {
+						unstableParentReads++
+						if unstableParentReads > 1 {
+							return 1, true
+						}
+					}
+					parent, known := parents[pid]
+					return parent, known
+				},
+			)
+			parents[child.Pid], parents[grandchild.Pid] = 1, 1
+			processes[reused.Pid] = fixtureExact(reused.Pid, 7_500)
+			return refs, err
+		},
+		scan: func(Prober, Ref) ([]FixtureSurvivor, error) { return nil, nil },
+		sender: func(pid int, _ syscall.Signal) error {
+			signaled = append(signaled, int64(pid))
+			delete(processes, int64(pid))
+			return nil
+		},
+	}
 	var log strings.Builder
-	go func() { done <- reapDeadOwner(fixtureExact(700, 70).Ref(), &log, runtime) }()
-	t.Cleanup(func() { close(release); <-done; survivorPids = oldPids })
-	select {
-	case code := <-halted:
-		if code != 2 {
-			t.Fatalf("hard halt exit=%d, want 2", code)
-		}
-		want := fmt.Sprintf("fixture-custodian action=halt after=%s\n", runtime.bound+custodianHaltMargin)
+	if err := runCustodian(owner.Ref(), strings.NewReader(""), &log, runtime); err != nil {
+		t.Fatal(err)
+	}
+	slices.Sort(signaled)
+	if !slices.Equal(signaled, []int64{child.Pid, grandchild.Pid}) {
+		t.Fatalf("signaled=%v, want reparented child and grandchild but not reused pid %d", signaled, reused.Pid)
+	}
+	for _, want := range []string{
+		"action=watch", "action=observe pid=702 carrier=descendant", "action=observe pid=703 carrier=descendant",
+		"action=kill pid=702 carrier=descendant", "action=kill pid=703 carrier=descendant", "action=complete",
+	} {
 		if !strings.Contains(log.String(), want) {
-			t.Fatalf("hard halt log=%q, want %q", log.String(), want)
+			t.Fatalf("custodian log %q omits %q", log.String(), want)
 		}
-	case <-time.After(runtime.bound + custodianHaltMargin + 250*time.Millisecond):
-		t.Fatal("blocked fixture scan was not hard-halted")
+	}
+	if strings.Contains(log.String(), "pid=701 carrier=descendant") || strings.Contains(log.String(), "pid=704 carrier=descendant") ||
+		strings.Contains(log.String(), "pid=706 carrier=descendant") {
+		t.Fatalf("custodian log %q observed itself, an unrelated process, or an unstable parent edge", log.String())
+	}
+}
+
+func TestCustodianOwnerDeathDuringObservationIsQuiet(t *testing.T) {
+	t.Parallel()
+
+	owner := fixtureExact(700, 70)
+	for _, states := range [][]Liveness{{Alive, Dead}, {Alive, Alive, Dead}} {
+		table := &custodianTable{fixtureTable: fixtureTable{owner.Pid: owner}, ownerStates: states}
+		var log strings.Builder
+		runtime := custodianRuntime{
+			prober: table, poll: time.Millisecond, bound: 5 * time.Millisecond, clock: newManualCustodianClock(),
+			descendants: func(prober Prober, ownerRef Ref) ([]Ref, error) {
+				return fixtureDescendants(prober, ownerRef,
+					func() ([]int64, error) { return []int64{owner.Pid}, nil },
+					func(int64) (int64, bool) { return 0, true },
+				)
+			},
+			scan: func(Prober, Ref) ([]FixtureSurvivor, error) { return nil, nil },
+		}
+		if err := runCustodian(owner.Ref(), strings.NewReader(""), &log, runtime); err != nil {
+			t.Fatal(err)
+		}
+		want := FixtureCustodianWatchLine(owner.Ref()) + FixtureCustodianCompletionLine(owner.Ref())
+		if log.String() != want {
+			t.Fatalf("owner states %v log=%q, want quiet %q", states, log.String(), want)
+		}
+	}
+}
+
+func TestNestedCustodiansDoNotSignalEachOther(t *testing.T) {
+	t.Parallel()
+
+	launcher, launcherCustodian := fixtureExact(700, 70), fixtureExact(701, 71)
+	shell, owner, ownerCustodian := fixtureExact(702, 72), fixtureExact(703, 73), fixtureExact(704, 74)
+	child, grandchild, unreadable := fixtureExact(705, 75), fixtureExact(706, 76), fixtureExact(707, 77)
+	for _, exact := range []*Exact{&shell, &owner, &child, &grandchild} {
+		exact.EnvironKnown = true
+	}
+	marker := FixtureCustodianEnv + "=1"
+	launcherCustodian.Environ, launcherCustodian.EnvironKnown = []string{marker}, true
+	key := FixtureKey{Owner: launcher.Ref(), Test: t.Name(), Nonce: "00000001"}
+	ownerCustodian.Environ, ownerCustodian.EnvironKnown = []string{marker, fixtureWord(t, key)}, true
+	processes := fixtureTable{700: launcher, 701: launcherCustodian, 702: shell, 703: owner, 704: ownerCustodian, 705: child, 706: grandchild, 707: unreadable}
+	parents := map[int64]int64{701: 700, 702: 700, 703: 702, 704: 703, 705: 703, 706: 705, 707: 703}
+	survivors, err := ScanFixtureSurvivors([]int64{704}, processes, func(int64) FixtureProcessScope { return FixtureProcessScope{} }, FixtureSurvivorSelection{Key: &key})
+	if err != nil || len(survivors) != 0 {
+		t.Fatalf("nested custodian survivor selection=%v err=%v, want none", survivors, err)
+	}
+	table := &custodianTable{fixtureTable: processes, ownerStates: []Liveness{Alive, Alive, Alive, Dead}}
+	var signaled []int64
+	runtime := custodianRuntime{prober: table, self: launcherCustodian.Ref(), poll: time.Millisecond, bound: 5 * time.Millisecond, clock: newManualCustodianClock(),
+		descendants: func(prober Prober, root Ref) ([]Ref, error) {
+			refs, scanErr := fixtureDescendants(prober, root, func() ([]int64, error) { return []int64{700, 701, 702, 703, 704, 705, 706, 707}, nil }, func(pid int64) (int64, bool) { parent, ok := parents[pid]; return parent, ok })
+			delete(processes, launcher.Pid)
+			return refs, scanErr
+		},
+		scan: func(Prober, Ref) ([]FixtureSurvivor, error) { return nil, nil }, sender: func(pid int, _ syscall.Signal) error {
+			signaled = append(signaled, int64(pid))
+			delete(processes, int64(pid))
+			return nil
+		}}
+	var launcherLog strings.Builder
+	if err := runCustodian(launcher.Ref(), strings.NewReader(""), &launcherLog, runtime); err != nil {
+		t.Fatal(err)
+	}
+	slices.Sort(signaled)
+	if !slices.Equal(signaled, []int64{702, 703, 705, 706}) || AliveRef(processes, ownerCustodian.Ref()) != Alive || AliveRef(processes, unreadable.Ref()) != Alive {
+		t.Fatalf("launcher custodian signaled=%v nested-state=%s unreadable-state=%s log=%q", signaled, AliveRef(processes, ownerCustodian.Ref()), AliveRef(processes, unreadable.Ref()), launcherLog.String())
+	}
+	var ownerLog strings.Builder
+	ownerRuntime := custodianRuntime{prober: processes, self: ownerCustodian.Ref(), poll: time.Millisecond, bound: 5 * time.Millisecond, clock: newManualCustodianClock(), scan: func(Prober, Ref) ([]FixtureSurvivor, error) { return nil, nil }}
+	if err := reapLostLauncher(owner.Ref(), launcher.Ref(), &ownerLog, ownerRuntime); err != nil || !strings.Contains(ownerLog.String(), "dead-launcher=") {
+		t.Fatalf("nested custodian did not finish its launcher-loss reap: err=%v log=%q", err, ownerLog.String())
+	}
+}
+
+func TestCustodianHardHaltBoundsBlockedScan(t *testing.T) {
+	t.Parallel()
+
+	clock := newManualCustodianClock()
+	var halted []int
+	runtime := custodianRuntime{prober: fixtureTable{}, poll: time.Millisecond, bound: 5 * time.Millisecond,
+		clock: clock, halt: func(code int) { halted = append(halted, code) },
+		scan: func(Prober, Ref) ([]FixtureSurvivor, error) {
+			clock.Advance(5*time.Millisecond + custodianHaltMargin)
+			return nil, nil
+		}}
+	var log strings.Builder
+	if err := reapDeadOwner(fixtureExact(700, 70).Ref(), &log, runtime); err != nil {
+		t.Fatal(err)
+	}
+	if !slices.Equal(halted, []int{2, 2}) {
+		t.Fatalf("hard halt exits=%v, want one per blocked scan", halted)
+	}
+	want := fmt.Sprintf("fixture-custodian action=halt after=%s\n", runtime.bound+custodianHaltMargin)
+	if strings.Count(log.String(), want) != 2 {
+		t.Fatalf("hard halt log=%q, want two %q lines", log.String(), want)
 	}
 }
 
@@ -320,12 +570,13 @@ func TestCustodianSlowScansComplete(t *testing.T) {
 		t.Fatal(err)
 	}
 	processes := fixtureTable{recorded.Pid: fixtureExact(recorded.Pid, 71)}
-	halted := make(chan int, 1)
+	clock := newManualCustodianClock()
+	var halted []int
 	runtime := custodianRuntime{
 		prober: processes, records: records, poll: time.Millisecond, bound: 5 * time.Millisecond,
-		halt: func(code int) { halted <- code },
+		clock: clock, halt: func(code int) { halted = append(halted, code) },
 		scan: func(Prober, Ref) ([]FixtureSurvivor, error) {
-			time.Sleep(600 * time.Millisecond)
+			clock.Advance(600 * time.Millisecond)
 			return nil, nil
 		},
 		sender: func(pid int, _ syscall.Signal) error {
@@ -340,10 +591,44 @@ func TestCustodianSlowScansComplete(t *testing.T) {
 	if want := FixtureCustodianCompletionLine(owner); !strings.HasSuffix(log.String(), want) {
 		t.Fatalf("slow fixture scan log=%q, want suffix %q", log.String(), want)
 	}
-	select {
-	case code := <-halted:
-		t.Fatalf("slow fixture scans hard-halted with code %d: log=%q", code, log.String())
-	default:
+	if len(halted) != 0 {
+		t.Fatalf("slow fixture scans hard-halted with codes %v: log=%q", halted, log.String())
+	}
+}
+
+func TestCustodianConvergesAfterTwoScansWithoutNewDescendants(t *testing.T) {
+	t.Parallel()
+
+	owner := fixtureExact(700, 70).Ref()
+	first, late := fixtureExact(801, 81), fixtureExact(802, 82)
+	processes := fixtureTable{}
+	clock := newManualCustodianClock()
+	pass := 0
+	runtime := custodianRuntime{
+		prober: processes, poll: 250 * time.Millisecond, bound: 5 * time.Second, clock: clock,
+		scan: func(Prober, Ref) ([]FixtureSurvivor, error) {
+			pass++
+			switch pass {
+			case 1:
+				processes[first.Pid] = first
+				return []FixtureSurvivor{{Class: FixtureSurvivorCertain, Ref: first.Ref(), Carrier: FixtureCarrierEnvironment}}, nil
+			case 3:
+				processes[late.Pid] = late
+				return []FixtureSurvivor{{Class: FixtureSurvivorCertain, Ref: late.Ref(), Carrier: FixtureCarrierEnvironment}}, nil
+			default:
+				return nil, nil
+			}
+		},
+		sender: func(pid int, _ syscall.Signal) error {
+			delete(processes, int64(pid))
+			return nil
+		},
+	}
+	if err := reapDeadOwner(owner, io.Discard, runtime); err != nil {
+		t.Fatal(err)
+	}
+	if pass != 5 {
+		t.Fatalf("cleanup scans=%d, want 5: a late new identity resets exactly two settling scans", pass)
 	}
 }
 
@@ -351,8 +636,10 @@ func TestCustodianCleanupBoundRequiresProgress(t *testing.T) {
 	owner := fixtureExact(700, 70).Ref()
 	processes := fixtureTable{}
 	nextPid := int64(800)
+	clock := newManualCustodianClock()
 	runtime := custodianRuntime{
 		prober: processes, poll: time.Millisecond, bound: 5 * time.Millisecond,
+		clock: clock,
 		scan: func(Prober, Ref) ([]FixtureSurvivor, error) {
 			nextPid++
 			exact := fixtureExact(nextPid, nextPid)
@@ -364,9 +651,9 @@ func TestCustodianCleanupBoundRequiresProgress(t *testing.T) {
 			return nil
 		},
 	}
-	started := time.Now()
+	started := clock.Now()
 	err := reapDeadOwner(owner, io.Discard, runtime)
-	elapsed := time.Since(started)
+	elapsed := clock.Now().Sub(started)
 	if err == nil || !strings.Contains(err.Error(), "fixture custodian cleanup exceeded") {
 		t.Fatalf("respawning fixture cleanup error=%v after %s", err, elapsed)
 	}
@@ -376,26 +663,25 @@ func TestCustodianCleanupBoundRequiresProgress(t *testing.T) {
 }
 
 func TestCustodianCleanupBoundStopsARespawningSet(t *testing.T) {
-	owner, survivor := fixtureExact(700, 70).Ref(), fixtureExact(801, 81)
+	owner := fixtureExact(700, 70).Ref()
 	processes := fixtureTable{}
 	records := filepath.Join(t.TempDir(), "records")
 	if err := os.WriteFile(records, nil, 0o600); err != nil {
 		t.Fatal(err)
 	}
-	forceReturn := make(chan struct{})
-	defer close(forceReturn)
 	pass := 0
+	nextPID := int64(800)
+	clock := newManualCustodianClock()
 	runtime := custodianRuntime{
 		prober: processes, records: records, poll: time.Millisecond, bound: 5 * time.Millisecond,
+		clock: clock,
 		scan: func(Prober, Ref) ([]FixtureSurvivor, error) {
 			pass++
-			select {
-			case <-forceReturn:
-			default:
-				if pass%2 == 0 {
-					return nil, nil
-				}
+			if pass%2 == 0 {
+				return nil, nil
 			}
+			nextPID++
+			survivor := fixtureExact(nextPID, nextPID)
 			processes[survivor.Pid] = survivor
 			return []FixtureSurvivor{{Class: FixtureSurvivorCertain, Ref: survivor.Ref(), Carrier: FixtureCarrierEnvironment}}, nil
 		},
@@ -404,20 +690,14 @@ func TestCustodianCleanupBoundStopsARespawningSet(t *testing.T) {
 			return nil
 		},
 	}
-	started := time.Now()
-	done := make(chan error, 1)
-	go func() { done <- reapDeadOwner(owner, io.Discard, runtime) }()
-	select {
-	case err := <-done:
-		elapsed := time.Since(started)
-		if err == nil || !strings.Contains(err.Error(), "fixture custodian cleanup exceeded") || elapsed < runtime.bound {
-			t.Fatalf("respawning fixture cleanup error=%v after %s", err, elapsed)
-		}
-		if _, err := os.Stat(records); err != nil {
-			t.Fatalf("respawning fixture cleanup removed records: %v", err)
-		}
-	case <-time.After(20 * runtime.bound):
-		t.Fatalf("respawning fixture cleanup did not stop within %s", 20*runtime.bound)
+	started := clock.Now()
+	err := reapDeadOwner(owner, io.Discard, runtime)
+	elapsed := clock.Now().Sub(started)
+	if err == nil || !strings.Contains(err.Error(), "fixture custodian cleanup exceeded") || elapsed < runtime.bound {
+		t.Fatalf("respawning fixture cleanup error=%v after %s", err, elapsed)
+	}
+	if _, err := os.Stat(records); err != nil {
+		t.Fatalf("respawning fixture cleanup removed records: %v", err)
 	}
 }
 
@@ -428,8 +708,10 @@ func TestCustodianCleanupBoundAllowsSlowProgress(t *testing.T) {
 		processes[pid] = fixtureExact(pid, pid)
 	}
 	removedThisPass := false
+	clock := newManualCustodianClock()
 	runtime := custodianRuntime{
 		prober: processes, poll: time.Millisecond, bound: 5 * time.Millisecond,
+		clock: clock,
 		scan: func(Prober, Ref) ([]FixtureSurvivor, error) {
 			removedThisPass = false
 			survivors := make([]FixtureSurvivor, 0, len(processes))
@@ -446,11 +728,11 @@ func TestCustodianCleanupBoundAllowsSlowProgress(t *testing.T) {
 			return nil
 		},
 	}
-	started := time.Now()
+	started := clock.Now()
 	if err := reapDeadOwner(owner, io.Discard, runtime); err != nil {
 		t.Fatalf("shrinking fixture cleanup returned %v with %d survivors", err, len(processes))
 	}
-	if elapsed := time.Since(started); elapsed <= runtime.bound {
+	if elapsed := clock.Now().Sub(started); elapsed <= runtime.bound {
 		t.Fatalf("shrinking fixture cleanup took %s, want longer than bound %s", elapsed, runtime.bound)
 	}
 }
@@ -461,9 +743,10 @@ func TestCustodianKeepsSeparateProofAndCleanupBudgets(t *testing.T) {
 	child.Environ, child.EnvironKnown = []string{fixtureWord(t, key)}, true
 	processes := fixtureTable{702: child}
 	installFixtureScanTable(t, processes)
-	prober := &custodianTable{fixtureTable: processes, ownerUntil: time.Now().Add(45 * time.Millisecond), ownerState: Unknown}
+	prober := &custodianTable{fixtureTable: processes, ownerStates: []Liveness{Unknown, Unknown, Dead}}
 	var signaled []int64
 	runtime := custodianRuntime{prober: prober, poll: time.Millisecond, bound: 60 * time.Millisecond,
+		clock: newManualCustodianClock(),
 		sender: func(pid int, _ syscall.Signal) error {
 			signaled = append(signaled, int64(pid))
 			delete(processes, int64(pid))

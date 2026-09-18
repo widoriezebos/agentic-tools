@@ -290,6 +290,11 @@ func startFixtureCustodian(build func() *exec.Cmd, registry string) (identity.Re
 	command.Env = append(command.Env, identity.FixtureCustodianEnv+"=1", identity.FixtureCustodianOwnerEnv+"="+owner,
 		identity.FixtureCustodianLogEnv+"="+logPath, identity.FixtureCustodianChainEnv+"="+strings.Join(chainValues, "|"),
 		identity.FixtureCustodianRecordsEnv+"="+recordsPath)
+	for _, name := range []string{identity.FixtureCustodianPollEnv, identity.FixtureCustodianBoundEnv} {
+		if value, present := os.LookupEnv(name); present {
+			command.Env = append(command.Env, name+"="+value)
+		}
+	}
 	command.ExtraFiles = []*os.File{reader, readyWriter}
 	command.Stderr = logFile
 	command.SysProcAttr = &syscall.SysProcAttr{Setsid: true}
@@ -344,11 +349,30 @@ func quietFixtureCustodianLog(path string, owner identity.Ref, stderr *os.File) 
 		return false
 	}
 	contents, err := io.ReadAll(log)
-	if err != nil || string(contents) != identity.FixtureCustodianCompletionLine(owner) {
+	if err != nil || !quietFixtureCustodianContents(string(contents), owner) {
 		return false
 	}
 	pathInfo, err := os.Lstat(path)
 	return err == nil && pathInfo.Mode().IsRegular() && os.SameFile(logInfo, pathInfo)
+}
+
+func quietFixtureCustodianContents(contents string, owner identity.Ref) bool {
+	if !strings.HasSuffix(contents, "\n") {
+		return false
+	}
+	lines := strings.Split(strings.TrimSuffix(contents, "\n"), "\n")
+	watch := strings.TrimSuffix(identity.FixtureCustodianWatchLine(owner), "\n")
+	complete := strings.TrimSuffix(identity.FixtureCustodianCompletionLine(owner), "\n")
+	if len(lines) < 2 || lines[0] != watch || lines[len(lines)-1] != complete {
+		return false
+	}
+	for _, line := range lines[1 : len(lines)-1] {
+		if !strings.HasPrefix(line, "fixture-custodian action=observe ") &&
+			!strings.HasPrefix(line, "fixture-custodian observation=unavailable ") {
+			return false
+		}
+	}
+	return true
 }
 
 func prepare(declarations []Declaration) (func() error, error) {
