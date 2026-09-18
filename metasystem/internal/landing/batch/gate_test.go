@@ -54,16 +54,17 @@ func TestBatchJoinRunsItsOwnGate(t *testing.T) {
 		trees = append(trees, tree)
 		return execute(tree, step)
 	}))
-	if !slices.Equal(unit.Gate, []string{"self-1", "self-2", "self-3", "self-4", "self-5", "self-6", "self-7"}) || len(calls) != 7 || !slices.Equal(trees, []string{"unit-tree", "unit-tree", "unit-tree", "unit-tree", "unit-tree", "unit-tree", "unit-tree"}) {
+	if !slices.Equal(unit.Gate, []string{"self-1", "self-2", "self-3", "self-4", "self-5", "self-6", "self-7", "self-8"}) || len(calls) != 8 || !slices.Equal(trees, []string{"unit-tree", "unit-tree", "unit-tree", "unit-tree", "unit-tree", "unit-tree", "unit-tree", "unit-tree"}) {
 		t.Fatalf("gate runs=%v calls=%v trees=%v", unit.Gate, calls, trees)
 	}
 	if !slices.Equal(calls[0].Args, []string{"bash", "scripts/agents/go-gate.sh", "--fast"}) ||
 		!slices.Equal(calls[1].Args, []string{"go", "test", "-count=1", "-timeout", "900s", "./cmd/..."}) ||
 		!slices.Equal(calls[2].Args, []string{"go", "test", "-count=1", "-timeout", "900s", "./internal/..."}) ||
 		!slices.Equal(calls[3].Args, []string{"go", "test", "-count=1", "-timeout", "900s", "./internal/landing/batch"}) ||
-		!slices.Equal(calls[4].Args, []string{"bin/metasystem", "test", "run", "--root", ".", "--purpose", "diagnostic", "--groups", "section/land-fixtures", "--mode", "canary", "--tree", "unit-tree"}) ||
-		!slices.Equal(calls[5].Args, []string{"bin/metasystem", "test", "run", "--root", ".", "--purpose", "diagnostic", "--groups", "section/other-fixtures", "--mode", "canary", "--tree", "unit-tree"}) ||
-		!slices.Equal(calls[6].Args, []string{"bin/metasystem", "test", "run", "--root", ".", "--purpose", "diagnostic", "--groups", "section/supervision-and-census-fixtures", "--mode", "canary", "--tree", "unit-tree"}) {
+		!slices.Equal(calls[4].Args, []string{"go", "test", "-count=1", "-timeout", "40m", "-tags", "batchtest", "./cmd/metasystem"}) ||
+		!slices.Equal(calls[5].Args, []string{"bin/metasystem", "test", "run", "--root", ".", "--purpose", "diagnostic", "--groups", "section/land-fixtures", "--mode", "canary", "--tree", "unit-tree"}) ||
+		!slices.Equal(calls[6].Args, []string{"bin/metasystem", "test", "run", "--root", ".", "--purpose", "diagnostic", "--groups", "section/other-fixtures", "--mode", "canary", "--tree", "unit-tree"}) ||
+		!slices.Equal(calls[7].Args, []string{"bin/metasystem", "test", "run", "--root", ".", "--purpose", "diagnostic", "--groups", "section/supervision-and-census-fixtures", "--mode", "canary", "--tree", "unit-tree"}) {
 		t.Fatalf("gate commands=%v", calls)
 	}
 }

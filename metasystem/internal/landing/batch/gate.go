@@ -63,13 +63,12 @@ func runJoinGateAt(root, unitTree string, patch, fixtureMap []byte, unit *Unit, 
 		return refuseBatch("BATCH_JOIN_GATE_RED", "unmapped fixture bed "+strings.Join(fixtures.Unmapped, ", "))
 	}
 	steps := []gateStep{{Name: "fast gate", Args: []string{"bash", "scripts/agents/go-gate.sh", "--fast"}}}
-	packages, err := changedGoPackages(root, unitTree, changes)
+	moduleRoot := unitGateModuleRoot(root)
+	selection, err := unitPackagesFromChanges(moduleRoot, unitTree, changes)
 	if err != nil {
 		return err
 	}
-	for _, pkg := range packages {
-		steps = append(steps, gateStep{Name: "package " + pkg, Args: []string{"go", "test", "-count=1", "-timeout", "900s", pkg}})
-	}
+	steps = append(steps, JoinGatePackageSteps(selection)...)
 	for _, group := range fixtures.Groups {
 		steps = append(steps, gateStep{Name: "fixture group " + group, Args: []string{"bin/metasystem", "test", "run", "--root", ".", "--purpose", "diagnostic", "--groups", group, "--mode", "canary", "--tree", unitTree}})
 	}
@@ -80,8 +79,8 @@ func runJoinGateAt(root, unitTree string, patch, fixtureMap []byte, unit *Unit, 
 		}
 		if result.ExitCode != 0 {
 			detail := fmt.Sprintf("%s exited %d", step.Name, result.ExitCode)
-			if strings.TrimSpace(result.Detail) != "" {
-				detail += ": " + strings.TrimSpace(result.Detail)
+			if failure := GateFailureDetail(result.Detail); failure != "" {
+				detail += ": " + failure
 			}
 			return refuseBatch("BATCH_JOIN_GATE_RED", detail)
 		}
@@ -256,26 +255,46 @@ func isFixtureBedPath(path string) bool {
 
 func changedGoPackages(root, tree string, changes gateChanges) ([]string, error) {
 	set := map[string]bool{}
+	moduleRoot := unitGateModuleRoot(root)
 	modulePrefix := ""
-	for changed := range changes {
-		if strings.HasPrefix(filepath.ToSlash(changed), "metasystem/") {
-			modulePrefix = "metasystem"
-			break
+	if moduleRoot != "" {
+		workspace := gittree.Workspace{Dir: moduleRoot}
+		prefix, err := workspace.Prefix()
+		if err != nil {
+			return nil, err
+		}
+		modulePrefix = prefix
+		resolved, err := moduleTree(workspace, tree)
+		if err != nil {
+			return nil, err
+		}
+		tree = resolved
+	} else {
+		for changed := range changes {
+			if strings.HasPrefix(filepath.ToSlash(changed), "metasystem/") {
+				modulePrefix = "metasystem/"
+				break
+			}
 		}
 	}
 	directoryExists := func(dir string) (bool, error) {
 		if root == "" {
 			return true, nil
 		}
-		path := strings.TrimPrefix(filepath.ToSlash(filepath.Join(modulePrefix, dir)), "./")
-		if path == "" || path == "." {
-			path = modulePrefix
+		workspaceRoot := moduleRoot
+		path := strings.TrimPrefix(filepath.ToSlash(dir), "./")
+		if workspaceRoot == "" {
+			workspaceRoot = root
+			path = filepath.ToSlash(filepath.Join(strings.TrimSuffix(modulePrefix, "/"), path))
 		}
-		entries, err := (gittree.Workspace{Dir: root}).Entries(tree, []string{strings.TrimSuffix(path, "/") + "/"})
+		if path == "" || path == "." {
+			path = strings.TrimSuffix(modulePrefix, "/")
+		}
+		entries, err := (gittree.Workspace{Dir: workspaceRoot}).Entries(tree, []string{path})
 		return len(entries) != 0, err
 	}
 	for changed, change := range changes {
-		changed = strings.TrimPrefix(filepath.ToSlash(changed), "metasystem/")
+		changed = strings.TrimPrefix(filepath.ToSlash(changed), modulePrefix)
 		if strings.HasSuffix(changed, ".go") {
 			dir := filepath.ToSlash(filepath.Dir(changed))
 			pkg := "."
