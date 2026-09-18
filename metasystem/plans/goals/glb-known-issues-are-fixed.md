@@ -9,7 +9,7 @@
 - Origin: human
 - Next step: fix-3 on main d2713932efcdc9a3adee0493bd8196f3996e1bb4 after units 1, fix-1 and fix-2 (wave 3d); remaining: the closing read on that tip, then conclude.
 - OpenedAt: 2026-09-17T13:59:47Z
-- Revision: 8
+- Revision: 9
 - Labels: known-issue
 - Budget: elapsedLimit=4h attemptLimit=6 reservedJobMinutesLimit=720 activeJobLimit=1 reviewRoundLimit=2
 - BudgetExceptions: 0
@@ -24,4 +24,5 @@ History:
 - 2026-09-18T07:08:00Z EMJJMSMC4V4A6X8T01SPSD2AEG-m1e-c6925449 edit actor=human:Wido targets=glb-known-issues-are-fixed
 - 2026-09-18T14:57:24Z KAG9XZ1ASV5J4JC5857N19Q9V2-m1e-c6925449 edit actor=human:Wido targets=glb-known-issues-are-fixed
 - 2026-09-18T20:05:37Z XHHHV02GCBZ2RX5X077AMGT9AR-m1e-c6925449 edit actor=human:Wido targets=glb-known-issues-are-fixed
-Integrity: sha256=f56d81d9e6f1523e107268097688d8f0633b20973eaa097fd57423fc98c2a8f2
+- 2026-09-18T21:50:35Z AAGT9Z15BKXJNMY2C0G2KDPF44-m1e-c6925449 edit actor=human:Wido targets=glb-known-issues-are-fixed
+Integrity: sha256=6906359fc8de2d05b08861d6121dd12c48ea1edd17a257ac0fc562a14892f7da
