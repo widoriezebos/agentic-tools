@@ -144,6 +144,76 @@ printf '{"suite":"fixture","section":"only","event":"end","at":"%s","depth":0}\n
 	}
 }
 
+func TestLaunchSuiteKeepsAnInheritedRunOwner(t *testing.T) {
+	if os.Getenv("GO_WANT_LAUNCH_RUN_OWNER_HELPER") == "1" {
+		value := os.Getenv(identity.RunOwnerEnv)
+		ref, err := identity.ParseRef(value)
+		if err != nil {
+			fmt.Fprintln(os.Stderr, err)
+			os.Exit(98)
+		}
+		encoded, err := identity.EncodeRef(ref)
+		if err != nil || encoded != value {
+			fmt.Fprintln(os.Stderr, "run owner lost exact identity")
+			os.Exit(98)
+		}
+		if err := os.WriteFile(os.Getenv("LAUNCH_RUN_OWNER_MARKER"), []byte(encoded), 0o600); err != nil {
+			os.Exit(98)
+		}
+		os.Exit(0)
+	}
+
+	root := t.TempDir()
+	conf := filepath.Join(root, "metasystem.conf")
+	if err := os.WriteFile(conf, []byte("metasystem.runtimes=fake\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	processFile := filepath.Join(root, "processes.json")
+	if err := os.WriteFile(processFile, []byte("[]\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("METASYSTEM_CENSUS_PROCESS_FILE", processFile)
+	watchdog := filepath.Join(root, "watchdog.sh")
+	writeExecutable(t, watchdog, "#!/usr/bin/env bash\ndone_path=\nwhile (($#)); do if [[ $1 == --done ]]; then done_path=$2; shift 2; else shift; fi; done\nwhile [[ ! -e $done_path ]]; do sleep 0.01; done\n")
+	exact, state, err := (identity.KernelProber{}).Probe(int64(os.Getpid()))
+	if err != nil || state != identity.Alive {
+		t.Fatalf("probe inherited run owner: state=%s err=%v", state, err)
+	}
+	owner, err := identity.EncodeRef(exact.Ref())
+	if err != nil {
+		t.Fatal(err)
+	}
+	marker := filepath.Join(root, "run-owner")
+	launch := func(suite, value string) int {
+		return LaunchSuite(LaunchOptions{Suite: suite, Root: root, ConfPath: conf,
+			ProgressPath: filepath.Join(root, suite+".progress.jsonl"), LogPath: filepath.Join(root, suite+".log"), Banner: "run owner fixture",
+			Silence: time.Second, SectionCap: time.Second, EvidenceTimeout: time.Second, EvidenceMax: 1024,
+			Poll: 5 * time.Millisecond, TermGrace: time.Millisecond, KillGrace: time.Millisecond,
+			WatchdogExecutable: watchdog, Command: []string{os.Args[0], "-test.run=^TestLaunchSuiteKeepsAnInheritedRunOwner$"},
+			Environment: []string{"PATH=" + os.Getenv("PATH"), "GO_WANT_LAUNCH_RUN_OWNER_HELPER=1", "LAUNCH_RUN_OWNER_MARKER=" + marker, identity.RunOwnerEnv + "=" + value}})
+	}
+	if result := launch("inherited-run-owner", owner); result != 0 {
+		t.Fatalf("valid inherited run owner result=%d", result)
+	}
+	if value, err := os.ReadFile(marker); err != nil || string(value) != owner {
+		t.Fatalf("worker run owner=%q err=%v, want full ref %q", value, err, owner)
+	}
+	recycled := exact.Ref()
+	if recycled.StartTicks != 0 {
+		recycled.StartTicks++
+	} else {
+		recycled.StartedAtUnixMicro++
+		recycled.StartedAtSec = recycled.StartedAtUnixMicro / 1_000_000
+	}
+	recycledValue, err := identity.EncodeRef(recycled)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if result := launch("recycled-run-owner", recycledValue); result == 0 {
+		t.Fatal("recycled inherited run owner was accepted")
+	}
+}
+
 func TestRunOwnerSurvivesProofFiltersToLeafCommand(t *testing.T) {
 	const owner = "outer-exact-ref"
 	environment := proofChildEnvironment([]string{

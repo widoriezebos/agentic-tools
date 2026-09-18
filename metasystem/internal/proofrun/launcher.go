@@ -15,6 +15,7 @@ import (
 	"syscall"
 	"time"
 
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/census"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/identity"
 	metarun "github.com/widoriezebos/agentic-tools/metasystem/internal/run"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/stopfence"
@@ -397,6 +398,23 @@ func LaunchSuite(options LaunchOptions) int {
 	watchdogCopies.Wait()
 	watchdogErrWait := watchdog.Wait()
 	copies.Wait()
+	survivorFailure := false
+	processes, processErr := census.EnumerateConfiguredProcesses(filepath.Dir(options.ConfPath))
+	if processErr != nil {
+		fmt.Fprintln(combinedErr, "suite launcher: fixture survivor table is unreadable:", processErr)
+	} else {
+		reapProber := prober
+		signal := identity.SignalFunc(options.Signal)
+		if os.Getenv("METASYSTEM_CENSUS_PROCESS_FILE") != "" {
+			reapProber = census.FixtureProcessProber(processes)
+			if signal == nil {
+				signal = func(int, syscall.Signal) error { return nil }
+			}
+		} else if signal == nil {
+			signal = syscall.Kill
+		}
+		survivorFailure = reapFixtureSurvivors(reapProber, processes, signal, launcherExact.StartedAt, combinedErr)
+	}
 	defer os.Remove(donePath)
 	if closeAfterCleanup {
 		if err := claim.Close(); err != nil {
@@ -408,6 +426,9 @@ func LaunchSuite(options LaunchOptions) int {
 
 	result := exitStatus(suiteErrWait)
 	if doneErr != nil {
+		result = 1
+	}
+	if survivorFailure {
 		result = 1
 	}
 	if watchdogErrWait != nil {

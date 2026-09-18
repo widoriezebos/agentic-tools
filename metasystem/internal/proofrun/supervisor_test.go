@@ -19,6 +19,7 @@ import (
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/identity"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/testenv"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/testpolicy"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/testutil"
 )
 
 func TestSupervisorProductionLimitsAndGoTimeoutDisabled(t *testing.T) {
@@ -314,6 +315,86 @@ func TestSupervisorKillsSIGQUITIgnoringBusyChildAfterCounterRises(t *testing.T) 
 	})
 }
 
+type treeSignalProbeResult struct {
+	exact identity.Exact
+	state identity.Liveness
+	err   error
+}
+
+type treeSignalProber map[int64]treeSignalProbeResult
+
+func (prober treeSignalProber) Probe(pid int64) (identity.Exact, identity.Liveness, error) {
+	result := prober[pid]
+	return result.exact, result.state, result.err
+}
+
+func TestTreeSignalSparesOnlyAProvedCustodian(t *testing.T) {
+	commands := make([]*exec.Cmd, 7)
+	refs := make([]identity.Ref, len(commands))
+	for index := range commands {
+		command := exec.Command("sleep", "60")
+		if err := command.Start(); err != nil {
+			t.Fatal(err)
+		}
+		commands[index] = command
+		exact, state, err := (identity.KernelProber{}).Probe(int64(command.Process.Pid))
+		if err != nil || state != identity.Alive {
+			_ = command.Process.Kill()
+			_ = command.Wait()
+			t.Fatalf("probe fixture process %d: state=%s err=%v", command.Process.Pid, state, err)
+		}
+		refs[index] = exact.Ref()
+		ref := refs[index]
+		t.Cleanup(func() {
+			_ = identity.SignalExact(identity.KernelProber{}, ref, syscall.SIGKILL)
+			_ = command.Wait()
+		})
+	}
+
+	probe := treeSignalProber{}
+	for _, ref := range refs {
+		probe[ref.Pid] = treeSignalProbeResult{exact: identity.Exact{Pid: ref.Pid, StartedAt: time.UnixMicro(ref.StartedAtUnixMicro), StartTicks: ref.StartTicks, BootID: ref.BootID}, state: identity.Alive}
+	}
+	proved := probe[refs[1].Pid]
+	proved.exact.Environ, proved.exact.EnvironKnown = []string{"A=b", identity.FixtureCustodianEnv + "=1"}, true
+	probe[refs[1].Pid] = proved
+	probe[refs[2].Pid] = treeSignalProbeResult{err: fmt.Errorf("probe denied"), state: identity.Unknown}
+	probe[refs[3].Pid] = treeSignalProbeResult{state: identity.Dead}
+	unreadable := probe[refs[4].Pid]
+	unreadable.exact.EnvironKnown = false
+	probe[refs[4].Pid] = unreadable
+	missing := probe[refs[5].Pid]
+	missing.exact.Environ, missing.exact.EnvironKnown = []string{"A=b"}, true
+	probe[refs[5].Pid] = missing
+	wrong := probe[refs[6].Pid]
+	wrong.exact.Environ, wrong.exact.EnvironKnown = []string{identity.FixtureCustodianEnv + "=0"}, true
+	probe[refs[6].Pid] = wrong
+
+	received := map[syscall.Signal]map[int]int{}
+	sender := func(pid int, signal syscall.Signal) error {
+		if received[signal] == nil {
+			received[signal] = map[int]int{}
+		}
+		received[signal][pid]++
+		return nil
+	}
+	members := make([]int, 0, len(refs)-1)
+	for _, ref := range refs[1:] {
+		members = append(members, int(ref.Pid))
+	}
+	for _, signal := range []syscall.Signal{syscall.SIGQUIT, syscall.SIGKILL} {
+		signalProcessTree(members, int(refs[0].Pid), signal, probe, sender)
+		if received[signal][int(refs[1].Pid)] != 0 {
+			t.Fatalf("proved custodian %d received %s", refs[1].Pid, signal)
+		}
+		for _, ref := range append([]identity.Ref{refs[0]}, refs[2:]...) {
+			if received[signal][int(ref.Pid)] != 1 {
+				t.Fatalf("pid %d received %s %d times, want once; all=%v", ref.Pid, signal, received[signal][int(ref.Pid)], received[signal])
+			}
+		}
+	}
+}
+
 func TestRunawayAndDeadAreFailedDeliveryStatuses(t *testing.T) {
 	for _, status := range []string{"runaway", "dead"} {
 		reason := status + " reason carried on the group line"
@@ -344,6 +425,17 @@ type scriptedTreeReader struct {
 type readingUntilReportedTreeReader struct {
 	reported *bool
 	waiting  bool
+}
+
+type custodianKillTreeReader struct {
+	fixture *supervisorHelperFixture
+}
+
+func (reader custodianKillTreeReader) Sample(rootPID int) (processTreeSample, error) {
+	if len(reader.fixture.custodians) < 2 {
+		return processTreeSample{}, fmt.Errorf("helper did not announce its custodian and fixture child")
+	}
+	return processTreeSample{Members: []int{rootPID, int(reader.fixture.custodians[0].Pid)}}, nil
 }
 
 type readinessGatedTreeReader struct {
@@ -409,6 +501,59 @@ func (reader *scriptedTreeReader) Sample(rootPID int) (processTreeSample, error)
 
 func (reader *readingUntilReportedTreeReader) Sample(rootPID int) (processTreeSample, error) {
 	return processTreeSample{Members: []int{rootPID}, Waiting: reader.waiting && !*reader.reported}, nil
+}
+
+func TestSupervisorKillSparesTheFixtureCustodian(t *testing.T) {
+	helper := newSupervisorHelperFixture(t, "custodian-reaped-child")
+	t.Cleanup(func() {
+		if helper.command.Process != nil {
+			if exact, state, err := (identity.KernelProber{}).Probe(int64(helper.command.Process.Pid)); err == nil && state == identity.Alive {
+				_ = identity.SignalExact(identity.KernelProber{}, exact.Ref(), syscall.SIGKILL)
+			}
+		}
+		for _, ref := range helper.custodians {
+			_ = identity.SignalExact(identity.KernelProber{}, ref, syscall.SIGKILL)
+		}
+	})
+	ctx, cancel := context.WithCancel(context.Background())
+	options := supervisorOptionsForTest(t, 0, 5*time.Second)
+	options.Context = ctx
+	options.Activity = newOutputActivity(time.Now())
+	options.Reader = &readinessGatedTreeReader{
+		ready: helper.ready, keepAlive: helper.keepAlive, activity: options.Activity, readyActivity: &helper.readyActivity,
+		reader: custodianKillTreeReader{fixture: helper}, onSample: func(int, processTreeSample) { cancel() },
+	}
+	outcome := superviseCommand(helper.command, options)
+	if outcome.Verdict != "cancelled" || outcome.WaitErr == nil {
+		t.Fatalf("cancelled supervisor outcome=%+v", outcome)
+	}
+	if len(helper.custodians) != 2 {
+		t.Fatalf("helper announced refs=%v, want custodian and child", helper.custodians)
+	}
+	custodian, child := helper.custodians[0], helper.custodians[1]
+	waitProofProcessDead(t, custodian)
+	logPath := fmt.Sprintf("%s.custodian-%d.log", os.Getenv("METASYSTEM_SUPERVISION_REGISTRY_HOME"), helper.command.Process.Pid)
+	log, err := os.ReadFile(logPath)
+	if err != nil || !strings.Contains(string(log), "action=kill pid="+strconv.FormatInt(child.Pid, 10)) {
+		t.Fatalf("custodian log %s omitted the kill for pid %d: log=%q err=%v", logPath, child.Pid, log, err)
+	}
+	exact, state, err := (identity.KernelProber{}).Probe(child.Pid)
+	if err != nil || state != identity.Dead && (state != identity.Alive || identity.SameIdentity(exact, child) && !exact.Zombie) {
+		t.Fatalf("fixture child %d remained at its exact identity: state=%s zombie=%t err=%v", child.Pid, state, exact.Zombie, err)
+	}
+}
+
+func waitProofProcessDead(t *testing.T, ref identity.Ref) {
+	t.Helper()
+	observed := identity.Unknown
+	for deadline := time.Now().Add(5 * time.Second); time.Now().Before(deadline); time.Sleep(10 * time.Millisecond) {
+		exact, state, err := (identity.KernelProber{}).Probe(ref.Pid)
+		observed = state
+		if err == nil && (state == identity.Dead || state == identity.Alive && (!identity.SameIdentity(exact, ref) || exact.Zombie)) {
+			return
+		}
+	}
+	t.Fatalf("process %d did not become dead; state=%s", ref.Pid, observed)
 }
 
 func (reader *readinessGatedTreeReader) Sample(rootPID int) (processTreeSample, error) {
@@ -650,7 +795,7 @@ func TestSupervisorHelperCustodianAccountingUsesExactIdentity(t *testing.T) {
 
 func supervisorHelperHasNestedProcess(mode string) bool {
 	switch mode {
-	case "setsid-child", "reaped-child", "retained-child", "stage-writer":
+	case "setsid-child", "reaped-child", "retained-child", "stage-writer", "custodian-reaped-child":
 		return true
 	default:
 		return false
@@ -782,9 +927,53 @@ func TestSupervisorProcessHelper(t *testing.T) {
 			}
 			sequence++
 		}
+	case "custodian-reaped-child":
+		child, err := startTaggedSupervisorFixtureChild(t)
+		if err != nil {
+			os.Exit(36)
+		}
+		announceSupervisorHelperReady(child)
+		select {}
 	default:
 		os.Exit(34)
 	}
+}
+
+func startTaggedSupervisorFixtureChild(t *testing.T) (identity.Ref, error) {
+	fixture := testutil.Fixture(t)
+	fd, err := strconv.Atoi(os.Getenv("SUPERVISOR_NESTED_STDIN_FD"))
+	if err != nil || fd < 3 {
+		return identity.Ref{}, fmt.Errorf("fixture child stdin descriptor is unavailable")
+	}
+	input := os.NewFile(uintptr(fd), "supervisor-fixture-child-stdin")
+	command := fixture.Shell("trap '' TERM HUP; printf 'ready\\n'; cat >/dev/null")
+	command.Stdin = input
+	command.SysProcAttr = &syscall.SysProcAttr{Setsid: true}
+	stdout, err := command.StdoutPipe()
+	if err != nil {
+		return identity.Ref{}, err
+	}
+	if err := command.Start(); err != nil {
+		return identity.Ref{}, err
+	}
+	fixture.Record(command.Process.Pid)
+	if t.Failed() {
+		_ = command.Process.Kill()
+		return identity.Ref{}, fmt.Errorf("record fixture child")
+	}
+	if line, readErr := bufio.NewReader(stdout).ReadString('\n'); readErr != nil || line != "ready\n" {
+		_ = command.Process.Kill()
+		return identity.Ref{}, fmt.Errorf("fixture child readiness=%q err=%v", line, readErr)
+	}
+	exact, state, err := (identity.KernelProber{}).Probe(int64(command.Process.Pid))
+	if err != nil || state != identity.Alive {
+		_ = command.Process.Kill()
+		return identity.Ref{}, fmt.Errorf("probe fixture child: state=%s err=%v", state, err)
+	}
+	if err := command.Process.Release(); err != nil {
+		return identity.Ref{}, err
+	}
+	return exact.Ref(), nil
 }
 
 func announceSupervisorHelperReady(descendants ...identity.Ref) {

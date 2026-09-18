@@ -12,6 +12,8 @@ import (
 	"sync"
 	"syscall"
 	"time"
+
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/identity"
 )
 
 const (
@@ -61,6 +63,8 @@ type supervisorOptions struct {
 	Activity        *outputActivity
 	StageResultPath string
 	Reader          processTreeReader
+	Prober          identity.Prober
+	Signal          identity.SignalFunc
 	OnReading       func(reading string)
 	OnVerdict       func(verdict string)
 }
@@ -200,6 +204,12 @@ func superviseCommand(command *exec.Cmd, options supervisorOptions) supervisorOu
 	if options.Context == nil {
 		options.Context = context.Background()
 	}
+	if options.Prober == nil {
+		options.Prober = identity.KernelProber{}
+	}
+	if options.Signal == nil {
+		options.Signal = syscall.Kill
+	}
 	riseSeconds := consumptionRise(options.Limits.ZeroConsumptionWindow).Seconds()
 	if err := command.Start(); err != nil {
 		return supervisorOutcome{WaitErr: err}
@@ -256,13 +266,13 @@ func superviseCommand(command *exec.Cmd, options supervisorOptions) supervisorOu
 	for {
 		select {
 		case <-options.Context.Done():
-			killProcessTree(lastMembers, command.Process.Pid)
+			killProcessTree(lastMembers, command.Process.Pid, options.Prober, options.Signal)
 			outcome.Verdict = "cancelled"
 			outcome.Reason = options.Context.Err().Error()
 			return finishWait(<-waited)
 		case waitErr := <-waited:
 			if options.Context.Err() != nil {
-				killProcessTree(lastMembers, command.Process.Pid)
+				killProcessTree(lastMembers, command.Process.Pid, options.Prober, options.Signal)
 				outcome.Verdict = "cancelled"
 				outcome.Reason = options.Context.Err().Error()
 			}
@@ -278,7 +288,7 @@ func superviseCommand(command *exec.Cmd, options supervisorOptions) supervisorOu
 					continue
 				}
 				recordVerdict("invalid", fmt.Sprintf("process reader failed three consecutive samples: %v", sampleErr))
-				killProcessTree(lastMembers, command.Process.Pid)
+				killProcessTree(lastMembers, command.Process.Pid, options.Prober, options.Signal)
 				return finishWait(<-waited)
 			}
 			readerFailures = 0
@@ -327,19 +337,19 @@ func superviseCommand(command *exec.Cmd, options supervisorOptions) supervisorOu
 
 			if dumpRequested {
 				if outcome.CPUSeconds-dumpCPU >= riseSeconds {
-					killProcessTree(lastMembers, command.Process.Pid)
+					killProcessTree(lastMembers, command.Process.Pid, options.Prober, options.Signal)
 					outcome.Dump = "dump: not produced, the process kept computing"
 					return finishWait(<-waited)
 				}
 				if options.Limits.ZeroConsumptionWindow <= 0 {
-					killProcessTree(lastMembers, command.Process.Pid)
+					killProcessTree(lastMembers, command.Process.Pid, options.Prober, options.Signal)
 					outcome.Dump = "dump: killed while writing"
 					return finishWait(<-waited)
 				}
 				quietFor := sampledAt.Sub(dumpStarted)
 				if options.Limits.ZeroConsumptionWindow > 0 && outcome.CPUSeconds-dumpCPU < riseSeconds && quietFor >= options.Limits.ZeroConsumptionWindow &&
 					sampledAt.Sub(options.Activity.Last()) >= options.Limits.ZeroConsumptionWindow {
-					killProcessTree(lastMembers, command.Process.Pid)
+					killProcessTree(lastMembers, command.Process.Pid, options.Prober, options.Signal)
 					outcome.Dump = "dump: killed while writing"
 					return finishWait(<-waited)
 				}
@@ -367,7 +377,7 @@ func superviseCommand(command *exec.Cmd, options supervisorOptions) supervisorOu
 				}
 			}
 			if outcome.Verdict == "runaway" || outcome.Verdict == "dead" {
-				signalProcessTree(lastMembers, command.Process.Pid, syscall.SIGQUIT)
+				signalProcessTree(lastMembers, command.Process.Pid, syscall.SIGQUIT, options.Prober, options.Signal)
 				dumpRequested = true
 				dumpCPU = outcome.CPUSeconds
 				dumpStarted = sampledAt
@@ -399,17 +409,31 @@ func stageResultGrew(path string, previous *int64) bool {
 	return grew
 }
 
-func signalProcessTree(members []int, rootPID int, signal syscall.Signal) {
+func signalProcessTree(members []int, rootPID int, signal syscall.Signal, prober identity.Prober, sender identity.SignalFunc) {
 	pids := uniqueProcessIDs(members, rootPID)
 	for index := len(pids) - 1; index >= 0; index-- {
-		if err := syscall.Kill(pids[index], signal); err != nil && !errors.Is(err, syscall.ESRCH) {
+		exact, state, probeErr := prober.Probe(int64(pids[index]))
+		if probeErr == nil && state == identity.Alive && exact.EnvironKnown &&
+			containsExactEnvironmentEntry(exact.Environ, identity.FixtureCustodianEnv+"=1") {
+			continue
+		}
+		if err := sender(pids[index], signal); err != nil && !errors.Is(err, syscall.ESRCH) {
 			continue
 		}
 	}
 }
 
-func killProcessTree(members []int, rootPID int) {
-	signalProcessTree(members, rootPID, syscall.SIGKILL)
+func killProcessTree(members []int, rootPID int, prober identity.Prober, sender identity.SignalFunc) {
+	signalProcessTree(members, rootPID, syscall.SIGKILL, prober, sender)
+}
+
+func containsExactEnvironmentEntry(environment []string, wanted string) bool {
+	for _, entry := range environment {
+		if entry == wanted {
+			return true
+		}
+	}
+	return false
 }
 
 func uniqueProcessIDs(members []int, rootPID int) []int {
