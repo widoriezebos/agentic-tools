@@ -9,7 +9,7 @@
 - Origin: human
 - Next step: fix-bed-abandonment on main d2713932efcdc9a3adee0493bd8196f3996e1bb4; remaining: the closing re-read of the dm-g2read breaking items, then conclude; buildcd 30 s targetMs stays a stable-state item.
 - OpenedAt: 2026-09-17T13:57:10Z
-- Revision: 10
+- Revision: 11
 - Labels: known-issue
 - Budget: elapsedLimit=4h attemptLimit=6 reservedJobMinutesLimit=720 activeJobLimit=1 reviewRoundLimit=2
 - BudgetExceptions: 0
@@ -26,4 +26,5 @@ History:
 - 2026-09-18T14:56:44Z SH2SY5T2G3Q2F1CGGTBDSBS3CH-m1e-c6925449 edit actor=human:Wido targets=batch-landing-known-issues-are-fixed displaced=m1b+main-1789560571-22295-8d907a@2026-09-18T14:09:05Z
 - 2026-09-18T14:59:51Z J0TXX6390B5A5DM7JST552KQT7-m1e-c6925449 release actor=human:Wido targets=batch-landing-known-issues-are-fixed displaced=m1b+main-1789560571-22295-8d907a@2026-09-18T14:09:05Z
 - 2026-09-18T20:05:43Z T72PQHQHAWS9F15FFZF44CEXE9-m1e-c6925449 edit actor=human:Wido targets=batch-landing-known-issues-are-fixed
-Integrity: sha256=f28ad62b397653529fe5450190030354e229f4406297ae493da77ae3eebf5cb9
+- 2026-09-18T21:51:00Z PVR3Q8GFE9N62TY5P8NQX7FCYW-m1e-c6925449 edit actor=human:Wido targets=batch-landing-known-issues-are-fixed
+Integrity: sha256=0ef70704afed441985908feee7ddc6701566b7f9b5f6bb21528cfb6731936e64
