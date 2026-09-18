@@ -1,6 +1,6 @@
 # goals-live-on-branches
 
-- State: claimed
+- State: parked
 - Priority: 1
 - Sequence: 3
 - Risk: severity=2 novelty=3 exposure=3 accumulation=2 basis="severity 2: a mistaken push or rewrite loses reviewed work that main does not hold yet, recoverable from the reader's records; novelty 3: seats push branches for the first time and two landing lanes gain a new input; exposure 3: every goal's build, read, park and landing; accumulation 2: stale branches pile up if cleanup fails, visible in ls-remote"
@@ -9,12 +9,11 @@
 - Origin: human
 - Next step: pickup: the first goal-branch lane after re-arm
 - OpenedAt: 2026-09-16T21:00:37Z
-- Revision: 18
+- Revision: 19
 - Budget: elapsedLimit=5d attemptLimit=20 reservedJobMinutesLimit=1200 activeJobLimit=1 reviewRoundLimit=3
 - BudgetExceptions: 0
 - Approved: by=human:Wido at=2026-09-17T06:11:05Z revision=3 opid=9G1X6V4RVS6PSRJ3VKT9E3JEHY-m1e-c6925449 authority=proven digest=7574df33c8b680dfb680f22b17d9e639c0085a18f7e29effd7433837cee1d102
-- Claimed: machine=m1c lineage=main-1789560465-86072-c7b126 at=2026-09-18T00:30:40Z revision=15 accountingRevision=10 episodeAt=2026-09-17T11:00:18Z episodeRevision=10 idleSeconds=2474
-- StopCapability: generation=15 revision=15 machine=m1c claimEpoch=6 fenceEpoch=0
+- Parked: by=human:Wido at=2026-09-18T21:51:50Z displaced=m1c+main-1789560465-86072-c7b126@2026-09-18T00:30:40Z because=pickup: the first goal-branch lane after re-arm
 
 History:
 - 2026-09-16T21:00:37Z CNC78J1TDXB8EMQH6V4Z1DTQSP-m1c-fde8080b open actor=human:Wido targets=goals-live-on-branches
@@ -35,4 +34,5 @@ History:
 - 2026-09-18T07:07:49Z ZZGR286PFSCV9JF1STPSD9C79R-m1e-c6925449 edit actor=human:Wido targets=goals-live-on-branches displaced=m1c+main-1789560465-86072-c7b126@2026-09-18T00:30:40Z
 - 2026-09-18T20:05:55Z 848ZGMDF3GSYJ5J0E8S7B6F6DK-m1e-c6925449 edit actor=human:Wido targets=goals-live-on-branches displaced=m1c+main-1789560465-86072-c7b126@2026-09-18T00:30:40Z
 - 2026-09-18T21:51:41Z B6XMS1XM4CE4GTB0QWBY06R1PD-m1e-c6925449 edit actor=human:Wido targets=goals-live-on-branches displaced=m1c+main-1789560465-86072-c7b126@2026-09-18T00:30:40Z
-Integrity: sha256=ad77a75a4818248f22ae6f71b9d8194169e96aadc9fc3207d03141ab79e2813f
+- 2026-09-18T21:51:50Z HJ2ZZA0Q73HYMSVG6W79H7KKDQ-m1e-c6925449 park actor=human:Wido targets=goals-live-on-branches displaced=m1c+main-1789560465-86072-c7b126@2026-09-18T00:30:40Z reason=pickup: the first goal-branch lane after re-arm
+Integrity: sha256=20748cbee92a3d639188853c2362788268e9acf9235e121369d181a3d495ae99
