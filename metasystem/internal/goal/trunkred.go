@@ -378,13 +378,20 @@ type EntryRef struct {
 
 // RecordTrunkRed publishes one batch observation through the goal transaction journal.
 func RecordTrunkRed(r VerbRequest, args TrunkRedRecordArgs) (PublishResult, error) {
-	if strings.TrimSpace(args.Batch) == "" {
-		return PublishResult{}, fmt.Errorf("trunk-red record requires a batch")
-	}
-	if len(args.Groups) == 0 {
-		return PublishResult{}, fmt.Errorf("trunk-red record requires at least one group")
+	if args.Cadence == nil && args.CadenceClaim == nil && trunkRedBatchObservation(args) {
+		if strings.TrimSpace(args.Batch) == "" {
+			return PublishResult{}, fmt.Errorf("trunk-red record requires a batch")
+		}
+		if len(args.Groups) == 0 {
+			return PublishResult{}, fmt.Errorf("trunk-red record requires at least one group")
+		}
 	}
 	return Publish(r.Endpoint, trunkRedRecordRequest(r, args))
+}
+
+func trunkRedBatchObservation(args TrunkRedRecordArgs) bool {
+	return args.Batch != "" || args.Attempt != "" || args.BaseCommit != "" || args.BaseTree != "" || args.SeenAt != "" ||
+		args.OwnerMachine != "" || args.Groups != nil || args.CadenceClaimOpid != ""
 }
 
 func trunkRedRecordRequest(r VerbRequest, args TrunkRedRecordArgs) PublishRequest {

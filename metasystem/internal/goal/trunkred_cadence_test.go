@@ -26,6 +26,44 @@ func cadenceStatusFixture(key CadenceClaimKey, started time.Time, status string)
 	}
 }
 
+func TestTrunkRedBatchGuardsExcludeCadenceRecords(t *testing.T) {
+	root := soloLedgerRepo(t)
+	now := time.Date(2026, 9, 17, 0, 0, 0, 0, time.UTC)
+	batchRequest := trunkRedVerbReq(root, "01J5X0000000000000000000D1", "mac-a")
+	batchRequest.Now = now
+
+	withoutBatch := trunkRedRecordFixture("tr-fast-no-batch", "", "attempt", "base", batchRequest.stamp())
+	if _, err := RecordTrunkRed(batchRequest, withoutBatch); err == nil || err.Error() != "trunk-red record requires a batch" {
+		t.Fatalf("batch record without batch error = %v", err)
+	}
+	withoutGroups := TrunkRedRecordArgs{Batch: "batch", Attempt: "attempt", BaseCommit: "base", BaseTree: "tree", SeenAt: batchRequest.stamp()}
+	if _, err := RecordTrunkRed(batchRequest, withoutGroups); err == nil || err.Error() != "trunk-red record requires at least one group" {
+		t.Fatalf("batch record without groups error = %v", err)
+	}
+
+	claimRequest := trunkRedVerbReq(root, "01J5X0000000000000000000D2", "mac-a")
+	claimRequest.Now = now.Add(time.Minute)
+	claim := CadenceClaim{Key: cadenceKeyFixture(), OwnerMachine: "mac-a", Opid: claimRequest.opid(),
+		ClaimedAt: claimRequest.stamp(), LeaseUntil: claimRequest.Now.Add(time.Hour).Format(time.RFC3339)}
+	claimed, err := RecordTrunkRed(claimRequest, TrunkRedRecordArgs{CadenceClaim: &claim})
+	if err != nil || claimed.Outcome != OutcomeConfirmed {
+		t.Fatalf("cadence claim without batch = %+v, %v", claimed, err)
+	}
+
+	publishRequest := trunkRedVerbReq(root, "01J5X0000000000000000000D3", "mac-a")
+	publishRequest.Now = now.Add(2 * time.Minute)
+	status := cadenceStatusFixture(claim.Key, claimRequest.Now, "passed")
+	status.Opid = publishRequest.opid()
+	published, err := RecordTrunkRed(publishRequest, TrunkRedRecordArgs{Cadence: &status, CadenceClaimOpid: claim.Opid})
+	if err != nil || published.Outcome != OutcomeConfirmed {
+		t.Fatalf("cadence publication without batch or red groups = %+v, %v", published, err)
+	}
+	projection, err := ProjectAt(root, published.Tip, publishRequest.Now)
+	if err != nil || projection.Tree.Cadence == nil || projection.Tree.Cadence.Opid != publishRequest.opid() || projection.Tree.CadenceClaim != nil || len(projection.Tree.TrunkRed) != 0 {
+		t.Fatalf("cadence-only publication = %+v, %v", projection.Tree, err)
+	}
+}
+
 func TestCadenceClaimDeduplicatesTreeAcrossMachines(t *testing.T) {
 	root := soloLedgerRepo(t)
 	now := time.Date(2026, 9, 17, 1, 0, 0, 0, time.UTC)
