@@ -197,6 +197,10 @@ func runSuperviseComponent(args []string) (code int) {
 }
 
 func setupLandingOwner(metasystemRoot, repo string) (release func() error, pass func() error, ok bool) {
+	return setupLandingOwnerWithCadence(metasystemRoot, repo, newBatchOwnerCadence())
+}
+
+func setupLandingOwnerWithCadence(metasystemRoot, repo string, cadence *batchOwnerCadence) (release func() error, pass func() error, ok bool) {
 	noWork := func() error { return nil }
 	if !batchCapabilitiesAvailable() {
 		return noWork, noWork, true
@@ -209,6 +213,7 @@ func setupLandingOwner(metasystemRoot, repo string) (release func() error, pass 
 	var inputs productionBatchOwnerInputs
 	clock := cadenceProductionClock
 	release = func() error {
+		cadence.stop()
 		if announced != nil {
 			return announced.retire()
 		}
@@ -274,7 +279,7 @@ func setupLandingOwner(metasystemRoot, repo string) (release func() error, pass 
 				held = nil
 				return err
 			}
-			runBatchOwnerPass(owner, *held, repo, clock)
+			runBatchOwnerPass(owner, *held, repo, clock, cadence)
 			return nil
 		}
 		return activePass()

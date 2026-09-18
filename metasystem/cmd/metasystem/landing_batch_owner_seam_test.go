@@ -8,6 +8,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"syscall"
 	"testing"
@@ -515,7 +516,10 @@ func TestBatchOwnerCadenceWiringBound(t *testing.T) {
 	batchOwnerRequire = func(batchOwnerLease) error { return nil }
 	batchOwnerResume = func(*batch.Owner) { order = append(order, "landing") }
 	var launched func()
-	batchOwnerCadenceStart = func(tick func()) { launched = tick }
+	batchOwnerCadenceStart = func(tick func()) {
+		launched = tick
+		tick()
+	}
 	batchOwnerCadenceTick = func(string, batchOwnerLease, func() time.Time) error {
 		order = append(order, "cadence")
 		return errors.New("injected cadence failure")
@@ -533,11 +537,73 @@ func TestBatchOwnerCadenceWiringBound(t *testing.T) {
 	if err := loopBatchOwner(nil, batchOwnerLease{epoch: 3}, "landing-root", clock, time.Minute, make(chan struct{}), stop); err != nil {
 		t.Fatal(err)
 	}
-	if launched == nil || strings.Join(order, ",") != "landing" {
+	if launched == nil {
 		t.Fatalf("owner order=%v launched=%t", order, launched != nil)
 	}
-	launched()
 	if strings.Join(order, ",") != "landing,cadence" || reports != 1 {
 		t.Fatalf("cadence order=%v reports=%d", order, reports)
+	}
+}
+
+func TestBatchOwnerLoopStopJoinsCadenceTick(t *testing.T) {
+	originalRequire, originalResume := batchOwnerRequire, batchOwnerResume
+	originalStart, originalTick, originalReport := batchOwnerCadenceStart, batchOwnerCadenceTick, batchOwnerCadenceReport
+	t.Cleanup(func() {
+		batchOwnerRequire, batchOwnerResume = originalRequire, originalResume
+		batchOwnerCadenceStart, batchOwnerCadenceTick, batchOwnerCadenceReport = originalStart, originalTick, originalReport
+	})
+
+	started, finish := make(chan struct{}), make(chan struct{})
+	starts := 0
+	batchOwnerRequire = func(batchOwnerLease) error { return nil }
+	batchOwnerResume = func(*batch.Owner) {}
+	batchOwnerCadenceStart = func(tick func()) {
+		starts++
+		go tick()
+	}
+	batchOwnerCadenceTick = func(string, batchOwnerLease, func() time.Time) error {
+		close(started)
+		<-finish
+		return nil
+	}
+	batchOwnerCadenceReport = func(error) {}
+
+	stop := make(chan struct{})
+	close(stop)
+	cadence := newBatchOwnerCadence()
+	done := make(chan error, 1)
+	go func() {
+		done <- loopBatchOwnerWithCadence(nil, batchOwnerLease{}, "landing-root", time.Now, time.Minute, make(chan struct{}), stop, cadence)
+	}()
+	<-started
+	<-cadence.stopping
+	runtime.Gosched()
+
+	returnedBeforeTick := false
+	select {
+	case err := <-done:
+		returnedBeforeTick = true
+		if err != nil {
+			t.Errorf("owner loop stop error=%v", err)
+		}
+	default:
+	}
+	runBatchOwnerPass(nil, batchOwnerLease{}, "landing-root", time.Now, cadence)
+	if starts != 1 {
+		t.Errorf("cadence starts after stop=%d, want one admitted tick", starts)
+	}
+	close(finish)
+	if !returnedBeforeTick {
+		if err := <-done; err != nil {
+			t.Errorf("owner loop stop error=%v", err)
+		}
+	}
+	select {
+	case <-cadence.done:
+	default:
+		t.Error("owner loop returned without completing its cadence stop")
+	}
+	if returnedBeforeTick {
+		t.Fatal("owner loop stop returned before its in-flight cadence tick ended")
 	}
 }

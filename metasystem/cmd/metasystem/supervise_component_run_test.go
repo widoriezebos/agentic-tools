@@ -10,6 +10,8 @@ import (
 	"path/filepath"
 	stdruntime "runtime"
 	"strings"
+	"sync"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -24,6 +26,7 @@ import (
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/obligationstate"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/run"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/steward"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/testutil"
 )
 
 func TestLandingOwnerComponentKeepsHeartbeatLoopOnSetupErrors(t *testing.T) {
@@ -73,7 +76,7 @@ func TestLandingOwnerComponentKeepsHeartbeatLoopOnSetupErrors(t *testing.T) {
 	}
 }
 
-func landingOwnerRetryFixture(t *testing.T) (string, func() error, func() error) {
+func landingOwnerRetryRoot(t *testing.T) string {
 	t.Helper()
 	isolateGlobalGitConfig(t)
 	originalLineage, hadLineage := os.LookupEnv("METASYSTEM_OWNER_LINEAGE")
@@ -91,11 +94,28 @@ func landingOwnerRetryFixture(t *testing.T) (string, func() error, func() error)
 	if err := os.WriteFile(filepath.Join(root, "metasystem.conf"), []byte(conf), 0o644); err != nil {
 		t.Fatal(err)
 	}
+	return root
+}
+
+func landingOwnerRetryFixture(t *testing.T) (string, func() error, func() error) {
+	t.Helper()
+	root := landingOwnerRetryRoot(t)
 	release, pass, ok := setupLandingOwner(root, root)
 	if !ok {
 		t.Fatal("landing owner setup stopped the component")
 	}
 	return root, pass, release
+}
+
+func landingOwnerRetryFixtureWithCadence(t *testing.T) (string, func() error, func() error, *batchOwnerCadence) {
+	t.Helper()
+	root := landingOwnerRetryRoot(t)
+	cadence := newBatchOwnerCadence()
+	release, pass, ok := setupLandingOwnerWithCadence(root, root, cadence)
+	if !ok {
+		t.Fatal("landing owner setup stopped the component")
+	}
+	return root, pass, release, cadence
 }
 
 func TestLandingOwnerComponentRetriesAfterEnrollmentAppears(t *testing.T) {
@@ -383,6 +403,165 @@ func TestLandingOwnerComponentCadenceWiringBound(t *testing.T) {
 	}
 	if starts != 1 || ticks != 1 || reports != 1 {
 		t.Fatalf("cadence starts=%d ticks=%d reports=%d", starts, ticks, reports)
+	}
+}
+
+func TestLandingOwnerComponentReleaseJoinsCadenceTick(t *testing.T) {
+	originalStart, originalTick, originalReport := batchOwnerCadenceStart, batchOwnerCadenceTick, batchOwnerCadenceReport
+	t.Cleanup(func() {
+		batchOwnerCadenceStart, batchOwnerCadenceTick, batchOwnerCadenceReport = originalStart, originalTick, originalReport
+	})
+
+	started, finish, tickDone := make(chan struct{}), make(chan struct{}), make(chan struct{})
+	batchOwnerCadenceStart = func(tick func()) { go tick() }
+	batchOwnerCadenceTick = func(string, batchOwnerLease, func() time.Time) error {
+		close(started)
+		<-finish
+		close(tickDone)
+		return cadenceRefusal{code: cadenceFetchRefused, detail: "injected fetch refusal"}
+	}
+	var releaseReturned atomic.Bool
+	type cadenceReport struct {
+		line         string
+		afterRelease bool
+	}
+	reported := make(chan cadenceReport, 1)
+	batchOwnerCadenceReport = func(err error) {
+		reported <- cadenceReport{line: err.Error(), afterRelease: releaseReturned.Load()}
+	}
+
+	root, pass, release, cadence := landingOwnerRetryFixtureWithCadence(t)
+	goalSyncMutationGit(t, root, "config", "metasystem.goal.machine", "mac-cli")
+	if err := pass(); err != nil {
+		t.Fatal(err)
+	}
+	<-started
+	released := make(chan error, 1)
+	go func() {
+		err := release()
+		releaseReturned.Store(true)
+		released <- err
+	}()
+	<-cadence.stopping
+	stdruntime.Gosched()
+
+	releasedBeforeTick := false
+	select {
+	case err := <-released:
+		releasedBeforeTick = true
+		if err != nil {
+			t.Errorf("release error=%v", err)
+		}
+	default:
+	}
+	close(finish)
+	if !releasedBeforeTick {
+		if err := <-released; err != nil {
+			t.Errorf("release error=%v", err)
+		}
+	}
+	<-tickDone
+	report := <-reported
+	select {
+	case <-cadence.done:
+	default:
+		t.Error("fixture release returned without completing its cadence stop")
+	}
+	if releasedBeforeTick {
+		t.Fatal("landing-owner fixture release returned before its cadence tick ended")
+	}
+	if report.line != "CADENCE_FETCH_REFUSED: injected fetch refusal" || report.afterRelease {
+		t.Fatalf("cadence refusal report=%q after-release=%t", report.line, report.afterRelease)
+	}
+}
+
+func TestLandingOwnerComponentReleaseLeavesNoCadenceChild(t *testing.T) {
+	originalStart, originalTick, originalReport := batchOwnerCadenceStart, batchOwnerCadenceTick, batchOwnerCadenceReport
+	t.Cleanup(func() {
+		batchOwnerCadenceStart, batchOwnerCadenceTick, batchOwnerCadenceReport = originalStart, originalTick, originalReport
+	})
+
+	var fixture *testutil.ProcessFixture
+	if _, err := identity.AllPids(); err == nil {
+		fixture = testutil.Fixture(t)
+	}
+	child := exec.Command("/bin/sh", "-c", "IFS= read -r line")
+	if fixture != nil {
+		child = fixture.Shell("IFS= read -r line")
+	}
+	input, err := child.StdinPipe()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := child.Start(); err != nil {
+		t.Fatal(err)
+	}
+	var waitOnce sync.Once
+	var childErr error
+	waitChild := func() error {
+		waitOnce.Do(func() { childErr = child.Wait() })
+		return childErr
+	}
+	t.Cleanup(func() {
+		_ = input.Close()
+		if child.ProcessState == nil {
+			_ = child.Process.Kill()
+		}
+		_ = waitChild()
+	})
+	if fixture != nil {
+		fixture.Record(child.Process.Pid)
+	}
+
+	started, tickDone := make(chan struct{}), make(chan struct{})
+	batchOwnerCadenceStart = func(tick func()) { go tick() }
+	batchOwnerCadenceTick = func(string, batchOwnerLease, func() time.Time) error {
+		close(started)
+		err := waitChild()
+		close(tickDone)
+		return err
+	}
+	batchOwnerCadenceReport = func(error) {}
+
+	root, pass, release, cadence := landingOwnerRetryFixtureWithCadence(t)
+	goalSyncMutationGit(t, root, "config", "metasystem.goal.machine", "mac-cli")
+	if err := pass(); err != nil {
+		t.Fatal(err)
+	}
+	<-started
+	released := make(chan error, 1)
+	go func() { released <- release() }()
+	<-cadence.stopping
+	stdruntime.Gosched()
+
+	releasedBeforeChild := false
+	select {
+	case err := <-released:
+		releasedBeforeChild = true
+		if err != nil {
+			t.Errorf("release error=%v", err)
+		}
+	default:
+	}
+	if err := input.Close(); err != nil {
+		t.Error(err)
+	}
+	if !releasedBeforeChild {
+		if err := <-released; err != nil {
+			t.Errorf("release error=%v", err)
+		}
+	}
+	<-tickDone
+	select {
+	case <-cadence.done:
+	default:
+		t.Error("fixture release returned without completing its cadence stop")
+	}
+	if releasedBeforeChild {
+		t.Fatal("landing-owner fixture release returned with its cadence child still running")
+	}
+	if child.ProcessState == nil || !child.ProcessState.Exited() {
+		t.Fatalf("cadence child state=%v, want reaped exit before release", child.ProcessState)
 	}
 }
 
