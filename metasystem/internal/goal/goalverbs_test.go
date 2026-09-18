@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/identity"
+	"golang.org/x/sys/unix"
 )
 
 var human = Caller{Class: "HUMAN"}
@@ -472,6 +473,43 @@ func TestConcurrentVerbsSerialize(t *testing.T) {
 	}
 	if !s.BaselineMatches() {
 		t.Fatal("baseline out of step after concurrent writes")
+	}
+}
+
+func TestWithLockDeadlineUsesInjectedClock(t *testing.T) {
+	t.Parallel()
+	s := testStore(t)
+	path := filepath.Join(s.Root, "artifacts", "agents", "goal.lock")
+	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	holder, err := os.OpenFile(path, os.O_CREATE|os.O_RDWR, 0o644)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer holder.Close()
+	if err := unix.Flock(int(holder.Fd()), unix.LOCK_EX|unix.LOCK_NB); err != nil {
+		t.Fatal(err)
+	}
+	defer unix.Flock(int(holder.Fd()), unix.LOCK_UN)
+
+	now := time.Date(2000, 1, 1, 0, 0, 0, 0, time.UTC)
+	s.Now = func() time.Time { return now }
+	sleeps := 0
+	s.sleep = func(time.Duration) {
+		sleeps++
+		now = now.Add(lockDeadline + time.Nanosecond)
+	}
+	called := false
+	_, err = s.withLock(func() (Result, error) {
+		called = true
+		return Result{}, nil
+	})
+	if err == nil || !strings.Contains(err.Error(), "goal lock is busy") {
+		t.Fatalf("contended lock result: %v", err)
+	}
+	if called || sleeps != 1 {
+		t.Fatalf("contended lock called=%t injected sleeps=%d", called, sleeps)
 	}
 }
 

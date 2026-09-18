@@ -516,6 +516,7 @@ type PublishRequest struct {
 	// read remains the only authority for a waiting caller.
 	HintConfirmed func(root string, targets []string, publicationID, bootID string, bootNanos int64)
 	bootClock     func() (string, time.Duration, error)
+	now           func() time.Time
 }
 
 func hintConfirmedWaiters(root string, req PublishRequest, publicationID, bootID string, bootNanos int64) {
@@ -637,7 +638,11 @@ func runTransaction(e Endpoint, req PublishRequest) (PublishResult, error) {
 	if deadline <= 0 {
 		deadline = DefaultPublishDeadline
 	}
-	stopAt := time.Now().Add(deadline)
+	now := req.now
+	if now == nil {
+		now = time.Now
+	}
+	stopAt := now().Add(deadline)
 	bootClock := req.bootClock
 	if bootClock == nil {
 		bootClock = identity.BootClock
@@ -792,7 +797,7 @@ func runTransaction(e Endpoint, req PublishRequest) (PublishResult, error) {
 			// Someone advanced the branch. The rebuilt world decides:
 			// the loop continues inside the deadline; Mutate on the
 			// new tip classifies loss and idempotent success.
-			if time.Now().After(stopAt) {
+			if now().After(stopAt) {
 				if err := MarkTerminal(e.Root, req.Opid, OutcomeExpired,
 					fmt.Sprintf("deadline after %d attempts; last refusal: %v", attempt, pushErr)); err != nil {
 					return PublishResult{}, err

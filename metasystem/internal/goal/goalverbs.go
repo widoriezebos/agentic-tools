@@ -47,12 +47,13 @@ func (c Caller) origin() string {
 	return OriginMain
 }
 
-// Store binds one checkout for verb execution. Prober and Now are seams
-// for tests; nil means kernel and wall clock.
+// Store binds one checkout for verb execution. Prober, Now, and sleep are
+// seams for tests; nil means kernel and wall clock.
 type Store struct {
 	Root            string
 	Prober          identity.Prober
 	Now             func() time.Time
+	sleep           func(time.Duration)
 	verdictDeps     turnVerdictDependencies
 	projectionDeps  projectionDependencies
 	registryWriter  sessionStopRegistryWriterFunc
@@ -82,6 +83,14 @@ func (s *Store) now() time.Time {
 
 func (s *Store) nowISO() string {
 	return s.now().UTC().Format("2006-01-02T15:04:05Z")
+}
+
+func (s *Store) pause(duration time.Duration) {
+	if s.sleep != nil {
+		s.sleep(duration)
+		return
+	}
+	time.Sleep(duration)
 }
 
 // Result is one verb's outcome for stdout.
@@ -114,15 +123,15 @@ func (s *Store) withLock(fn func() (Result, error)) (Result, error) {
 		return Result{}, fmt.Errorf("goal lock cannot be opened: %w", err)
 	}
 	defer f.Close()
-	deadline := time.Now().Add(lockDeadline)
+	deadline := s.now().Add(lockDeadline)
 	for {
 		if err := unix.Flock(int(f.Fd()), unix.LOCK_EX|unix.LOCK_NB); err == nil {
 			break
 		}
-		if time.Now().After(deadline) {
+		if s.now().After(deadline) {
 			return Result{}, fmt.Errorf("goal lock is busy; refusing after %s", lockDeadline)
 		}
-		time.Sleep(20 * time.Millisecond)
+		s.pause(20 * time.Millisecond)
 	}
 	defer unix.Flock(int(f.Fd()), unix.LOCK_UN)
 	return fn()

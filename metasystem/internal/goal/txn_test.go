@@ -1,8 +1,10 @@
 package goal
 
 import (
+	"bufio"
 	"bytes"
 	"context"
+	"encoding/json"
 	"fmt"
 	"os"
 	"os/exec"
@@ -15,6 +17,7 @@ import (
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/identity"
 	metarun "github.com/widoriezebos/agentic-tools/metasystem/internal/run"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/testutil"
+	"golang.org/x/sys/unix"
 )
 
 func TestLandingMessageAcceptsAttestedBranchProvenance(t *testing.T) {
@@ -162,81 +165,107 @@ type installedGoalWaitResult struct {
 }
 
 type installedGoalWaitProcess struct {
-	command *exec.Cmd
-	done    chan installedGoalWaitResult
+	command    *exec.Cmd
+	done       chan installedGoalWaitResult
+	registered chan error
 }
 
 func startInstalledGoalWait(t *testing.T, binary, root string, args ...string) *installedGoalWaitProcess {
 	t.Helper()
+	eventsPath := filepath.Join(root, "artifacts", "agents", "events.jsonl")
+	if err := os.MkdirAll(filepath.Dir(eventsPath), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Remove(eventsPath); err != nil && !os.IsNotExist(err) {
+		t.Fatal(err)
+	}
+	if err := unix.Mkfifo(eventsPath, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	eventPipe, err := os.OpenFile(eventsPath, os.O_RDWR, 0o600)
+	if err != nil {
+		t.Fatal(err)
+	}
 	allArgs := append([]string{"wait", "--root", root}, args...)
 	command := exec.Command(binary, allArgs...)
 	var output bytes.Buffer
 	command.Stdout, command.Stderr = &output, &output
 	if err := command.Start(); err != nil {
+		_ = eventPipe.Close()
 		t.Fatal(err)
 	}
-	process := &installedGoalWaitProcess{command: command, done: make(chan installedGoalWaitResult, 1)}
+	process := &installedGoalWaitProcess{
+		command: command, done: make(chan installedGoalWaitResult, 1),
+		registered: make(chan error, 1),
+	}
 	go func() {
 		err := command.Wait()
 		process.done <- installedGoalWaitResult{output: output.String(), err: err}
+	}()
+	go func() {
+		decoder := json.NewDecoder(bufio.NewReader(eventPipe))
+		for {
+			var event struct {
+				Event string `json:"event"`
+			}
+			if err := decoder.Decode(&event); err != nil {
+				process.registered <- err
+				return
+			}
+			if event.Event == "wait-registered" {
+				process.registered <- nil
+				return
+			}
+		}
 	}()
 	t.Cleanup(func() {
 		if command.ProcessState == nil {
 			_ = command.Process.Kill()
 			<-process.done
 		}
+		_ = eventPipe.Close()
 	})
 	return process
 }
 
 func waitForInstalledGoalRow(t *testing.T, root, lineage, target string, process *installedGoalWaitProcess) metarun.Waiter {
 	t.Helper()
-	deadline := time.Now().Add(20 * time.Second)
-	for time.Now().Before(deadline) {
-		select {
-		case result := <-process.done:
-			t.Fatalf("installed goal waiter exited before it became pending: err=%v output=%s", result.err, result.output)
-		default:
+	select {
+	case result := <-process.done:
+		t.Fatalf("installed goal waiter exited before it became pending: err=%v output=%s", result.err, result.output)
+	case err := <-process.registered:
+		if err != nil {
+			t.Fatalf("read installed goal waiter registration signal: %v", err)
 		}
-		rows, failures := metarun.PendingWaitersForLineages(root, []string{lineage})
-		if len(failures) != 0 {
-			t.Fatalf("read installed goal waiter: %v", failures)
-		}
-		for _, row := range rows {
-			if row.TargetID == target {
-				return row
-			}
-		}
-		time.Sleep(25 * time.Millisecond)
 	}
-	_ = process.command.Process.Kill()
-	<-process.done
-	t.Fatalf("installed goal waiter for %s did not become pending within 20 seconds", target)
+	rows, failures := metarun.PendingWaitersForLineages(root, []string{lineage})
+	if len(failures) != 0 {
+		t.Fatalf("read installed goal waiter: %v", failures)
+	}
+	for _, row := range rows {
+		if row.TargetID == target {
+			return row
+		}
+	}
+	t.Fatalf("installed goal waiter signalled registration without a pending row for %s", target)
 	return metarun.Waiter{}
 }
 
 func awaitInstalledGoalWait(t *testing.T, process *installedGoalWaitProcess, wantExit int) string {
 	t.Helper()
-	select {
-	case result := <-process.done:
-		exit := 0
-		if result.err != nil {
-			status, ok := result.err.(*exec.ExitError)
-			if !ok {
-				t.Fatalf("installed goal waiter failed without an exit status: %v output=%s", result.err, result.output)
-			}
-			exit = status.ExitCode()
+	result := <-process.done
+	exit := 0
+	if result.err != nil {
+		status, ok := result.err.(*exec.ExitError)
+		if !ok {
+			t.Fatalf("installed goal waiter failed without an exit status: %v output=%s", result.err, result.output)
 		}
-		if exit != wantExit {
-			t.Fatalf("installed goal waiter exit=%d want=%d output=%s", exit, wantExit, result.output)
-		}
-		return result.output
-	case <-time.After(25 * time.Second):
-		_ = process.command.Process.Kill()
-		<-process.done
-		t.Fatal("installed goal waiter exceeded its 25-second completion ceiling")
-		return ""
+		exit = status.ExitCode()
 	}
+	if exit != wantExit {
+		t.Fatalf("installed goal waiter exit=%d want=%d output=%s", exit, wantExit, result.output)
+	}
+	return result.output
 }
 
 func testInstalledGoalWaits(t *testing.T, binary string) {
@@ -643,6 +672,51 @@ func TestBenignAdvancementRetriesWithinTheDeadline(t *testing.T) {
 		if out := mustGit(t, a, "cat-file", "-p", "origin/main:plans/goals/"+id+".md"); out == "" {
 			t.Fatalf("goal %s must be on the branch", id)
 		}
+	}
+}
+
+func TestPublishRetryDeadlineUsesInjectedClock(t *testing.T) {
+	t.Parallel()
+	_, publisher, competitor := twoClones(t)
+	start := time.Date(2000, 1, 1, 0, 0, 0, 0, time.UTC)
+	clockReads := 0
+	deadline := time.Hour
+	result, err := Publish(endpointFor(publisher), PublishRequest{
+		Opid: "op-clock-deadline", Machine: "mac-a", Lineage: "l1",
+		Intent: testIntentFor("open"), Message: "goal open clock-deadline",
+		Mutate: func(string) ([]Change, error) {
+			return []Change{goalChange("clock-deadline", "# clock-deadline\nState: queued\n")}, nil
+		},
+		Deadline: deadline,
+		now: func() time.Time {
+			clockReads++
+			if clockReads == 1 {
+				return start
+			}
+			return start.Add(deadline + time.Nanosecond)
+		},
+		BeforePush: func(attempt int) error {
+			if attempt != 1 {
+				return fmt.Errorf("expired transaction reached attempt %d", attempt)
+			}
+			other, otherErr := Publish(endpointFor(competitor), PublishRequest{
+				Opid: "op-clock-competitor", Machine: "mac-b", Lineage: "l1",
+				Intent: testIntentFor("open"), Message: "goal open clock-competitor",
+				Mutate: func(string) ([]Change, error) {
+					return []Change{goalChange("clock-competitor", "# clock-competitor\nState: queued\n")}, nil
+				},
+			})
+			if otherErr != nil || other.Outcome != OutcomeConfirmed {
+				return fmt.Errorf("competitor publish: %+v %v", other, otherErr)
+			}
+			return nil
+		},
+	})
+	if err != nil || result.Outcome != OutcomeExpired || result.Detail != "1 attempts" {
+		t.Fatalf("fake deadline result=%+v err=%v", result, err)
+	}
+	if clockReads != 2 {
+		t.Fatalf("retry deadline clock reads=%d want=2", clockReads)
 	}
 }
 
