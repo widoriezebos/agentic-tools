@@ -40,6 +40,58 @@ func TestAuditDependencyRatchetRelayReportsPathLineAndExit(t *testing.T) {
 	}
 }
 
+func TestAuditParallelRatchetVerbRefusesAndLowers(t *testing.T) {
+	t.Parallel()
+	root := t.TempDir()
+	writeAuditStopFixture(t, root, "go.mod", "module example.test/ratchet\n\ngo 1.27\n")
+	writeAuditStopFixture(t, root, "pkg/serial_test.go", "package pkg\n\nimport \"testing\"\n\nfunc TestSerial(t *testing.T) {}\n")
+	baseline := filepath.Join(root, "testing-parallel-ratchet.json")
+	writeAuditStopFixture(t, root, "testing-parallel-ratchet.json", "{\n  \"packages\": {\"example.test/ratchet/pkg\": 0},\n  \"exempt\": []\n}\n")
+
+	code, stdout, stderr := captureCommandOutput(t, true, true, func() int {
+		return runAuditParallelRatchet([]string{"--root", root})
+	})
+	for _, want := range []string{"package example.test/ratchet/pkg", "test TestSerial", "pkg/serial_test.go:5", "recorded serial count 0, actual 1", "PARALLEL_RATCHET_REFUSED"} {
+		if !strings.Contains(stderr, want) {
+			t.Errorf("refusal lacks %q: %s", want, stderr)
+		}
+	}
+	if code != 1 || stdout != "" {
+		t.Fatalf("refusal = code %d, stdout %q, stderr %q", code, stdout, stderr)
+	}
+
+	writeAuditStopFixture(t, root, "testing-parallel-ratchet.json", "{\n  \"packages\": {\"example.test/ratchet/pkg\": 2},\n  \"exempt\": []\n}\n")
+	code, stdout, stderr = captureCommandOutput(t, true, true, func() int {
+		return runAuditParallelRatchet([]string{"--root", root, "--update"})
+	})
+	if code != 0 || stderr != "" || !strings.Contains(stdout, "package example.test/ratchet/pkg dropped from 2 to 1 serial tests") {
+		t.Fatalf("lowering update = code %d, stdout %q, stderr %q", code, stdout, stderr)
+	}
+	updated, err := os.ReadFile(baseline)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(string(updated), `"example.test/ratchet/pkg": 1`) {
+		t.Fatalf("updated baseline did not lower the count:\n%s", updated)
+	}
+
+	writeAuditStopFixture(t, root, "testing-parallel-ratchet.json", "{\n  \"packages\": {\"example.test/ratchet/pkg\": 0},\n  \"exempt\": []\n}\n")
+	before, err := os.ReadFile(baseline)
+	if err != nil {
+		t.Fatal(err)
+	}
+	code, _, stderr = captureCommandOutput(t, true, true, func() int {
+		return runAuditParallelRatchet([]string{"--root", root, "--update"})
+	})
+	after, err := os.ReadFile(baseline)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if code != 1 || !strings.Contains(stderr, "edit the baseline by hand to raise a count") || string(after) != string(before) {
+		t.Fatalf("raising update = code %d, stderr %q, changed=%t", code, stderr, string(after) != string(before))
+	}
+}
+
 func TestAuditStopDecisionSurfaceVerb(t *testing.T) {
 	root := t.TempDir()
 	t.Setenv("GIT_CONFIG_GLOBAL", os.DevNull)

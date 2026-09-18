@@ -8,6 +8,7 @@ import (
 	"io"
 	"os"
 	"path/filepath"
+	"sync"
 	"testing"
 )
 
@@ -16,11 +17,24 @@ type capturedStream struct {
 	err  error
 }
 
+var (
+	stdoutCaptureMu sync.Mutex
+	stderrCaptureMu sync.Mutex
+)
+
 // captureCommandOutput drains both capture pipes while the command runs.
 // Callers select which standard streams to redirect so one-stream captures
 // can be nested without intercepting the stream owned by an outer capture.
 func captureCommandOutput(t *testing.T, captureStdout, captureStderr bool, run func() int) (int, string, string) {
 	t.Helper()
+	if captureStdout {
+		stdoutCaptureMu.Lock()
+		defer stdoutCaptureMu.Unlock()
+	}
+	if captureStderr {
+		stderrCaptureMu.Lock()
+		defer stderrCaptureMu.Unlock()
+	}
 	outRead, outWrite, err := os.Pipe()
 	if err != nil {
 		t.Fatalf("create the standard output capture pipe: %v", err)
@@ -53,7 +67,12 @@ func captureCommandOutput(t *testing.T, captureStdout, captureStderr bool, run f
 			os.Stderr = errWrite
 		}
 		defer func() {
-			os.Stdout, os.Stderr = originalOut, originalErr
+			if captureStdout {
+				os.Stdout = originalOut
+			}
+			if captureStderr {
+				os.Stderr = originalErr
+			}
 			_ = outWrite.Close()
 			_ = errWrite.Close()
 		}()
@@ -71,6 +90,63 @@ func captureCommandOutput(t *testing.T, captureStdout, captureStderr bool, run f
 		t.Fatalf("read captured standard error: %v", stderr.err)
 	}
 	return code, string(stdout.data), string(stderr.data)
+}
+
+func TestCaptureCommandOutputAllowsNestedAndConcurrentDisjointStreams(t *testing.T) {
+	t.Parallel()
+	code, stdout, stderr := captureCommandOutput(t, true, false, func() int {
+		_, _ = os.Stdout.WriteString("outer-before\n")
+		innerCode, innerStdout, innerStderr := captureCommandOutput(t, false, true, func() int {
+			_, _ = os.Stderr.WriteString("inner\n")
+			return 17
+		})
+		if innerCode != 17 || innerStdout != "" || innerStderr != "inner\n" {
+			t.Errorf("nested capture = code %d, stdout %q, stderr %q", innerCode, innerStdout, innerStderr)
+		}
+		_, _ = os.Stdout.WriteString("outer-after\n")
+		return 23
+	})
+	if code != 23 || stdout != "outer-before\nouter-after\n" || stderr != "" {
+		t.Fatalf("outer capture = code %d, stdout %q, stderr %q", code, stdout, stderr)
+	}
+
+	type captureResult struct {
+		code, stream   int
+		stdout, stderr string
+	}
+	ready := make(chan struct{}, 2)
+	release := make(chan struct{})
+	results := make(chan captureResult, 2)
+	go func() {
+		code, stdout, stderr := captureCommandOutput(t, true, false, func() int {
+			ready <- struct{}{}
+			<-release
+			_, _ = os.Stdout.WriteString("stdout\n")
+			return 31
+		})
+		results <- captureResult{code: code, stream: 1, stdout: stdout, stderr: stderr}
+	}()
+	go func() {
+		code, stdout, stderr := captureCommandOutput(t, false, true, func() int {
+			ready <- struct{}{}
+			<-release
+			_, _ = os.Stderr.WriteString("stderr\n")
+			return 37
+		})
+		results <- captureResult{code: code, stream: 2, stdout: stdout, stderr: stderr}
+	}()
+	<-ready
+	<-ready
+	close(release)
+	for range 2 {
+		result := <-results
+		if result.stream == 1 && (result.code != 31 || result.stdout != "stdout\n" || result.stderr != "") {
+			t.Errorf("concurrent stdout capture = %#v", result)
+		}
+		if result.stream == 2 && (result.code != 37 || result.stdout != "" || result.stderr != "stderr\n") {
+			t.Errorf("concurrent stderr capture = %#v", result)
+		}
+	}
 }
 
 func TestCaptureCommandOutputDrainsLargeStreams(t *testing.T) {

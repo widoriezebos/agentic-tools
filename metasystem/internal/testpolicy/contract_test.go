@@ -10,6 +10,8 @@ import (
 	"sort"
 	"strings"
 	"testing"
+
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/parallelratchet"
 )
 
 func TestContractRejectsMissingNoopAndUnknownFields(t *testing.T) {
@@ -171,6 +173,23 @@ func TestMetaSystemContractNamesOnlyUntaggedGoTests(t *testing.T) {
 				t.Errorf("go group %s names test %s which is absent without build tags", group.ID, name)
 			}
 		}
+	}
+}
+
+func TestRepositoryParallelRatchetRefusesSerialTestRegressions(t *testing.T) {
+	t.Parallel()
+	root := filepath.Join("..", "..")
+	ratchet, err := parallelratchet.ReadParallelRatchet(filepath.Join(root, "testing-parallel-ratchet.json"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	inventory, err := parallelratchet.ScanParallelTests(root)
+	if err != nil {
+		t.Fatal(err)
+	}
+	_, violations := parallelratchet.CheckParallelRatchet(ratchet, inventory)
+	for _, violation := range violations {
+		t.Error(violation.String())
 	}
 }
 

@@ -7,7 +7,7 @@
 # and the fixtures that drive it have something to drive.
 # Sourced by validate-metasystem.sh; also runnable standalone.
 #
-# Fast mode (go-gate.sh --fast) runs only the dependency ratchet and static
+# Fast mode (go-gate.sh --fast) runs only the dependency and parallel ratchets and static
 # stages — gofmt, vet, staticcheck, refusal register — plus the engine build:
 # seconds end to end, for tight edit loops. It is not a landing gate: no race
 # tests, no cross-builds, no govulncheck, no coverage ratchet, and it refuses the
@@ -144,6 +144,13 @@ if [[ "$gate_fast" == 1 ]]; then
   if [[ "$gate_dependency_rc" != 0 ]]; then
     printf '%s\n' "$gate_dependency_out" >&2
     exit "$gate_dependency_rc"
+  fi
+  gate_parallel_rc=0
+  gate_parallel_out=$(go run ./cmd/metasystem audit parallel-ratchet --root "$root" 2>&1) \
+    || gate_parallel_rc=$?
+  if [[ "$gate_parallel_rc" != 0 ]]; then
+    printf '%s\n' "$gate_parallel_out" >&2
+    exit "$gate_parallel_rc"
   fi
 fi
 
@@ -590,9 +597,9 @@ if [[ "$gate_fast" == 1 ]]; then
   rm -f "$gate_build_scratch"
   gate_build_scratch=
   if [[ "$gate_hook_start_scope" == installation ]]; then
-    echo "go gate: fast mode passed (dependency ratchet, gofmt, vet, staticcheck, refusal register, SessionStart exit audit, Stop decision surface audit, build); the full gate remains the landing requirement"
+    echo "go gate: fast mode passed (dependency ratchet, parallel ratchet, gofmt, vet, staticcheck, refusal register, SessionStart exit audit, Stop decision surface audit, build); the full gate remains the landing requirement"
   else
-    echo "go gate: fast mode passed (dependency ratchet, gofmt, vet, staticcheck, refusal register, build); the full gate remains the landing requirement"
+    echo "go gate: fast mode passed (dependency ratchet, parallel ratchet, gofmt, vet, staticcheck, refusal register, build); the full gate remains the landing requirement"
   fi
   exit 0
 fi
