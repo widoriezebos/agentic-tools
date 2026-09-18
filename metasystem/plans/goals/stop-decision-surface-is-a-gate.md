@@ -7,9 +7,9 @@
 - Tier: 3
 - Intent: A change that moves a Stop decision must say so, enforced by the machinery. On 2026-09-13 a build quietly closed the third-refusal release and the delegate-job exemption; it was caught only by a scratchpad script (decision-surface.sh) that extracts every assertion naming a Stop decision and diffs it against trunk. That guard lives outside the repository, so no other seat has it and nothing enforces it. DONE: the check runs in the gate; a change moving any assertion that names a Stop decision is refused unless the landing declares the moved assertions and the goal permitting the change; additions are reported, removals and changes refused without that declaration.
 - Origin: human
-- Next step: 2026-09-18 direct mode (m1e): closing read dm-g49read returned NOT YET (D1, D2 breaking; D3 material); fix-3 brief dm-g49fix ready. Next: fix-3 Codex job on the wave 3d tip, then re-read, conclude.
+- Next step: fix-3 (Stop-surface moves gated on live goal permission) on main a2d38afad38379fcd9a4747f18adbe3035958309. Next: closing re-read on a2d38afad38379fcd9a4747f18adbe3035958309 of D1, D2 (breaking) and D3; the proposed group stop-decision-surface-standard is a stable-state item.
 - OpenedAt: 2026-09-14T16:16:14Z
-- Revision: 109
+- Revision: 110
 - Budget: elapsedLimit=1d attemptLimit=10 reservedJobMinutesLimit=1200 activeJobLimit=1 reviewRoundLimit=3
 - BudgetExceptions: 0
 - Approved: by=human:Wido at=2026-09-14T18:54:24Z revision=2 opid=90XPDEVA986F5HF56X2C2EXQY8-m1e-c6925449 authority=proven digest=3ddae773a96ecaaab5e32b5b9d04e0536a88604b28d2deb5669b392cc93c3c39
@@ -124,4 +124,5 @@ History:
 - 2026-09-18T03:09:32Z KTEPJAX26HZV8C68KDCCYZC8JH-m1e-c6925449 done actor=human:Wido targets=cross-cutting-change-inventories-its-readers,degraded-stop-forms-have-one-source,stop-decision-surface-is-a-gate,testing-surfaces-declare-their-mirror reason=priority-order from=1:50 to=1:49
 - 2026-09-18T07:01:22Z EP9B9866PH2PJEDG65V64ZXJVZ-m1e-c6925449 edit actor=human:Wido targets=stop-decision-surface-is-a-gate
 - 2026-09-18T07:10:19Z 8D2NVN7Y99BY3RDJBMR146Y1JR-m1e-c6925449 edit actor=human:Wido targets=stop-decision-surface-is-a-gate
-Integrity: sha256=29bd034d97c19a311647ae0a904d084286ededed4e6366e599d65c6189d2a1b7
+- 2026-09-18T14:57:56Z 81WSKP2CHQ1QEFJJXW3SVD30NK-m1e-c6925449 edit actor=human:Wido targets=stop-decision-surface-is-a-gate
+Integrity: sha256=941c75161a6557db77ffcb414f4bd388172407de0efa92106f3b6802254cb701
