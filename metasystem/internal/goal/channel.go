@@ -151,7 +151,7 @@ func ValidateChannelTree(root, commit string) []Problem {
 		return nil
 	}
 
-	files, err := readCommitGoalBlobs(root, commit, paths)
+	files, err := readCommitGoalBlobs(root, commit, paths, nil)
 	if err != nil {
 		return []Problem{channelProblem("channel-json", ChannelPrefix, fmt.Sprintf("cannot read the committed channel tree: %v", err))}
 	}

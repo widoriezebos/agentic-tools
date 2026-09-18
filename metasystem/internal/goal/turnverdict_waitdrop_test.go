@@ -15,6 +15,7 @@ func writeJob(t *testing.T, f *pendingWaitVerdictFixture, status string, round i
 }
 
 func TestRegisteredWaitDropReasons(t *testing.T) {
+	t.Parallel()
 	const unreadable = "plans/broken.md: permission denied"
 	annPath := func(f *pendingWaitVerdictFixture) string {
 		return filepath.Join(f.root, "artifacts", "agents", "mains", pendingWaitSession+"-41.json")
@@ -40,8 +41,8 @@ func TestRegisteredWaitDropReasons(t *testing.T) {
 			writePendingWaitJSON(t, annPath(f), map[string]any{"bad": true})
 		}},
 		{name: "owner-announcement-missing", branch: "owner-announcement-missing", mutate: func(_ *testing.T, f *pendingWaitVerdictFixture) { _ = os.Remove(annPath(f)) }},
-		{name: "boot-clock", branch: "boot-clock", mutate: func(_ *testing.T, _ *pendingWaitVerdictFixture) {
-			turnVerdictBootClock = func() (string, time.Duration, error) { return "", 0, os.ErrInvalid }
+		{name: "boot-clock", branch: "boot-clock", mutate: func(_ *testing.T, f *pendingWaitVerdictFixture) {
+			f.store.verdictDeps.bootClock = func() (string, time.Duration, error) { return "", 0, os.ErrInvalid }
 		}},
 		{name: "row-unreadable", branch: "row-unreadable", mutate: func(t *testing.T, f *pendingWaitVerdictFixture) {
 			old := metarun.WaiterPath(f.root, f.row.Kind, f.row.TargetID, f.row.OwnerDigest)

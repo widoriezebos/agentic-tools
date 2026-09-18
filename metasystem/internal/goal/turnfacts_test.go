@@ -3,6 +3,7 @@ package goal
 import "testing"
 
 func TestFreezeTurnVerdictFactsDoesNotMutateCallerScan(t *testing.T) {
+	t.Parallel()
 	scan := ScanResult{
 		Jobs: []JobFact{{Id: "job-1", MainId: "main-1", Ownership: "unknown"}},
 		Runs: []RunFact{{Id: "run-1", MainId: "other", Ownership: "unknown"}},

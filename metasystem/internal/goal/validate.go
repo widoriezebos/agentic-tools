@@ -596,8 +596,12 @@ func findCycle(t *TreeGoals) string {
 // ReadCommitGoals lists and reads the live ledger plus both concluded-goal
 // locations of one commit — the validator's and the projection's shared
 // reader.
-func ReadCommitGoals(root, commit string) (map[string][]byte, error) {
-	out, err := gitIn(root, "ls-tree", "-r", "--name-only", commit, "--", goalsPrefix, recordsGoalsPrefix)
+func ReadCommitGoals(root, commit string, environments ...[]string) (map[string][]byte, error) {
+	var environment []string
+	if len(environments) > 0 {
+		environment = environments[0]
+	}
+	out, err := gitInWithEnvironment(root, environment, "ls-tree", "-r", "--name-only", commit, "--", goalsPrefix, recordsGoalsPrefix)
 	if err != nil {
 		return nil, fmt.Errorf("cannot list the ledger tree of %s: %w", commit, err)
 	}
@@ -609,10 +613,10 @@ func ReadCommitGoals(root, commit string) (map[string][]byte, error) {
 		}
 		paths = append(paths, p)
 	}
-	return readCommitGoalBlobs(root, commit, paths)
+	return readCommitGoalBlobs(root, commit, paths, environment)
 }
 
-func readCommitGoalBlobs(root, commit string, paths []string) (map[string][]byte, error) {
+func readCommitGoalBlobs(root, commit string, paths []string, environment []string) (map[string][]byte, error) {
 	files := make(map[string][]byte, len(paths))
 	if len(paths) == 0 {
 		return files, nil
@@ -622,9 +626,8 @@ func readCommitGoalBlobs(root, commit string, paths []string) (map[string][]byte
 		input.WriteString(commit + ":./" + goalPath + "\n")
 	}
 	args := []string{"cat-file", "--batch"}
-	cmd := exec.Command("git", args...)
+	cmd := commandWithEnvironment(environment, "git", args...)
 	cmd.Dir = root
-	cmd.Env = environWithoutGitSteering()
 	cmd.Stdin = strings.NewReader(input.String())
 	var stdout, stderr bytes.Buffer
 	cmd.Stdout = &stdout

@@ -18,6 +18,7 @@ import (
 // arc members remain independently claimable.
 
 func TestByWithoutProofIsRefusedForStoppingRows(t *testing.T) {
+	t.Parallel()
 	root := t.TempDir()
 	now := time.Date(2026, 9, 9, 10, 0, 0, 0, time.UTC)
 	request := VerbRequest{Endpoint: Endpoint{Root: root}, Actor: Actor{Human: "Wido"}}
@@ -63,6 +64,7 @@ func TestByWithoutProofIsRefusedForStoppingRows(t *testing.T) {
 }
 
 func TestArcStoppingRowsRejectHumanNameWithoutProof(t *testing.T) {
+	t.Parallel()
 	_, a, b := twoClones(t)
 	seedLedger(t, a)
 	arcBed(t, a, "authority-arc", "ap", "AP")
@@ -98,6 +100,7 @@ func TestArcStoppingRowsRejectHumanNameWithoutProof(t *testing.T) {
 }
 
 func TestUnparkGradeFollowsTheStandingApproval(t *testing.T) {
+	t.Parallel()
 	_, root := oneClone(t)
 	seedLedger(t, root)
 	open := verbReq(root, "01J5X0000000000000000000B0", "human")
@@ -130,6 +133,7 @@ func TestUnparkGradeFollowsTheStandingApproval(t *testing.T) {
 }
 
 func TestClaimIsAgentOnlyAndPairKeyed(t *testing.T) {
+	t.Parallel()
 	_, a, _ := twoClones(t)
 	seedLedger(t, a)
 	if res, err := Open(verbReq(a, "01J5X00000000000000000AK00", "mac-a"), "pair-keyed", "Pair semantics.", "main", "Go."); err != nil || res.Outcome != OutcomeConfirmed {
@@ -175,6 +179,7 @@ func TestClaimIsAgentOnlyAndPairKeyed(t *testing.T) {
 }
 
 func TestHumanOriginGoalsAreHumanReserved(t *testing.T) {
+	t.Parallel()
 	_, a, _ := twoClones(t)
 	seedLedger(t, a)
 	if res, err := Open(verbReq(a, "01J5X00000000000000000HG00", "mac-a"), "human-owned", "Wido's standing wish.", OriginHuman, "Go."); err != nil || res.Outcome != OutcomeConfirmed {
@@ -215,6 +220,7 @@ func TestHumanOriginGoalsAreHumanReserved(t *testing.T) {
 }
 
 func TestEditChecksAuthorityAndTheBlockerInvariant(t *testing.T) {
+	t.Parallel()
 	_, a, b := twoClones(t)
 	seedLedger(t, a)
 	for _, leg := range []struct{ ulid, id string }{
@@ -287,6 +293,7 @@ func arcBed(t *testing.T, a, arc, prefix, code string) {
 }
 
 func TestStealCascadesAcrossTheArc(t *testing.T) {
+	t.Parallel()
 	_, a, b := twoClones(t)
 	seedLedger(t, a)
 	arcBed(t, a, "steal-arc", "st", "SC")
@@ -314,6 +321,7 @@ func TestStealCascadesAcrossTheArc(t *testing.T) {
 }
 
 func TestReopenAdoptsTheArcState(t *testing.T) {
+	t.Parallel()
 	_, a, b := twoClones(t)
 	seedLedger(t, a)
 	arcBed(t, a, "adopt-arc", "ra", "RA")
@@ -382,6 +390,7 @@ func TestReopenAdoptsTheArcState(t *testing.T) {
 }
 
 func TestSetArcComposesMovesUnderTheMatrix(t *testing.T) {
+	t.Parallel()
 	_, a, _ := twoClones(t)
 	seedLedger(t, a)
 
@@ -448,6 +457,7 @@ func TestSetArcComposesMovesUnderTheMatrix(t *testing.T) {
 }
 
 func TestPruneRetainsKeepSurvivorsBlockers(t *testing.T) {
+	t.Parallel()
 	_, a, _ := twoClones(t)
 	seedLedger(t, a)
 	mk := func(ulid, id string, blocked []string) {
@@ -490,7 +500,10 @@ func TestPruneRetainsKeepSurvivorsBlockers(t *testing.T) {
 }
 
 func TestValidatorAllowsIndependentArcMembers(t *testing.T) {
+	t.Parallel(
 	// An arc is grouping only: members may be in different states.
+	)
+
 	one := vGoal("mix-one", StateQueued)
 	one.Arc = "the-arc"
 	two := vGoal("mix-two", StateParked)
@@ -535,6 +548,7 @@ func TestValidatorAllowsIndependentArcMembers(t *testing.T) {
 }
 
 func TestForeignClaimMakesTheWholeMixedArcCascadeAHumanAct(t *testing.T) {
+	t.Parallel()
 	_, a, b := twoClones(t)
 	seedLedger(t, a)
 	for index, id := range []string{"mixed-one", "mixed-two", "mixed-parked"} {
@@ -631,6 +645,7 @@ func TestForeignClaimMakesTheWholeMixedArcCascadeAHumanAct(t *testing.T) {
 }
 
 func TestMixedArcJoinUsesOwnPairOrNewestAllParkedRecord(t *testing.T) {
+	t.Parallel()
 	t.Run("all parked copies newest", func(t *testing.T) {
 		_, root := oneClone(t)
 		seedLedger(t, root)
@@ -719,6 +734,7 @@ func TestMixedArcJoinUsesOwnPairOrNewestAllParkedRecord(t *testing.T) {
 }
 
 func TestClaimedArcToForeignClaimedArcLandsQueuedOnBothSurfaces(t *testing.T) {
+	t.Parallel()
 	_, a, b := twoClones(t)
 	seedLedger(t, a)
 	arcBed(t, a, "trade-src", "ts", "TS")
@@ -784,6 +800,7 @@ func TestClaimedArcToForeignClaimedArcLandsQueuedOnBothSurfaces(t *testing.T) {
 }
 
 func TestParkThenDetachComposesInOneHandSession(t *testing.T) {
+	t.Parallel()
 	_, a, _ := twoClones(t)
 	seedLedger(t, a)
 	arcBed(t, a, "pd-arc", "pd", "PD")

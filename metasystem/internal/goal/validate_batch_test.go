@@ -10,6 +10,7 @@ import (
 )
 
 func TestReadCommitGoalsUsesOneBatchBlobRead(t *testing.T) {
+	t.Parallel()
 	_, root := oneClone(t)
 	seedLedger(t, root)
 	opened, err := Open(verbReq(root, "01J5X00000000000000000B001", "mac-a"), "batch-read", "Exercise one batch read.", "main", "Read it.")
@@ -28,9 +29,9 @@ func TestReadCommitGoalsUsesOneBatchBlobRead(t *testing.T) {
 	if err := os.WriteFile(wrapper, []byte(script), 0o755); err != nil {
 		t.Fatal(err)
 	}
-	t.Setenv("PATH", binDir+string(os.PathListSeparator)+os.Getenv("PATH"))
+	environment := testEnvironment(os.Environ(), "PATH="+binDir+string(os.PathListSeparator)+os.Getenv("PATH"))
 
-	files, err := ReadCommitGoals(root, tip)
+	files, err := ReadCommitGoals(root, tip, environment)
 	if err != nil {
 		t.Fatal(err)
 	}

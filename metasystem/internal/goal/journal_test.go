@@ -18,6 +18,7 @@ func testIntentFor(verb string) Intent {
 }
 
 func TestJournalEntryIsDurableBeforeAction(t *testing.T) {
+	t.Parallel()
 	root := t.TempDir()
 	in := Intent{
 		Verb: "edit", Targets: []string{"fix-it"},
@@ -47,6 +48,7 @@ func TestJournalEntryIsDurableBeforeAction(t *testing.T) {
 }
 
 func TestJournalRefusesADuplicateOpid(t *testing.T) {
+	t.Parallel()
 	root := t.TempDir()
 	if _, err := CreateEntry(root, "op-2", "m", "l", testIntentFor("claim")); err != nil {
 		t.Fatal(err)
@@ -57,6 +59,7 @@ func TestJournalRefusesADuplicateOpid(t *testing.T) {
 }
 
 func TestJournalPhasesAreMonotonic(t *testing.T) {
+	t.Parallel()
 	root := t.TempDir()
 	if _, err := CreateEntry(root, "op-3", "m", "l", testIntentFor("claim")); err != nil {
 		t.Fatal(err)
@@ -79,6 +82,7 @@ func TestJournalPhasesAreMonotonic(t *testing.T) {
 }
 
 func TestPushedBlocksOwnCloneMutations(t *testing.T) {
+	t.Parallel()
 	root := t.TempDir()
 	if _, err := CreateEntry(root, "op-4", "m", "l", testIntentFor("claim")); err != nil {
 		t.Fatal(err)
@@ -139,6 +143,7 @@ func ownerOf(pid int64) (OwnerIdentity, error) {
 }
 
 func TestALiveOwnersEntryIsNeverTouched(t *testing.T) {
+	t.Parallel()
 	root := t.TempDir()
 	if _, err := CreateEntry(root, "op-5", "m", "l", testIntentFor("claim")); err != nil {
 		t.Fatal(err)
@@ -155,6 +160,7 @@ func TestALiveOwnersEntryIsNeverTouched(t *testing.T) {
 }
 
 func TestADeadOwnersEntryIsTakenOverAndCompleted(t *testing.T) {
+	t.Parallel()
 	root := t.TempDir()
 	if _, err := CreateEntry(root, "op-6", "m", "l", testIntentFor("claim")); err != nil {
 		t.Fatal(err)
@@ -179,6 +185,7 @@ func TestADeadOwnersEntryIsTakenOverAndCompleted(t *testing.T) {
 }
 
 func TestConfirmedLateCorrectsOnlyTerminals(t *testing.T) {
+	t.Parallel()
 	root := t.TempDir()
 	if _, err := CreateEntry(root, "op-7", "m", "l", testIntentFor("done")); err != nil {
 		t.Fatal(err)
@@ -215,6 +222,7 @@ func TestConfirmedLateCorrectsOnlyTerminals(t *testing.T) {
 }
 
 func TestTheOneRecoveryRule(t *testing.T) {
+	t.Parallel()
 	created := Entry{Phase: PhaseCreated}
 	pushed := Entry{Phase: PhasePushed}
 	terminalLost := Entry{Phase: PhaseTerminal, Outcome: OutcomeLost}
@@ -248,6 +256,7 @@ func TestTheOneRecoveryRule(t *testing.T) {
 }
 
 func TestDeadlineReadsTheEntryStamp(t *testing.T) {
+	t.Parallel()
 	e := Entry{Deadline: time.Now().Add(-time.Second).UTC().Format(time.RFC3339)}
 	if !PastDeadline(e, time.Now()) {
 		t.Fatal("a passed stamp is past")

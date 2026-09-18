@@ -7,6 +7,7 @@ import (
 )
 
 func TestBudgetTupleIsCompletePositiveAndCanonical(t *testing.T) {
+	t.Parallel()
 	budget, err := NewBudget("8h", 3, 180, 2, 3)
 	if err != nil {
 		t.Fatal(err)
@@ -27,6 +28,7 @@ func TestBudgetTupleIsCompletePositiveAndCanonical(t *testing.T) {
 }
 
 func TestElapsedBreachDurationAppliesGraceAtTheStopBoundary(t *testing.T) {
+	t.Parallel()
 	budget := Budget{ElapsedLimit: "1m", AttemptLimit: 1, ReservedJobMinutesLimit: 1, ActiveJobLimit: 1}
 	for _, test := range []struct {
 		percent uint64
@@ -50,6 +52,7 @@ func TestElapsedBreachDurationAppliesGraceAtTheStopBoundary(t *testing.T) {
 }
 
 func TestBudgetValidationNamesEveryInvalidLimit(t *testing.T) {
+	t.Parallel()
 	tests := []struct {
 		name     string
 		budget   Budget
@@ -90,6 +93,7 @@ func TestBudgetValidationNamesEveryInvalidLimit(t *testing.T) {
 }
 
 func TestStoredBudgetRequiresCompleteNumericLimits(t *testing.T) {
+	t.Parallel()
 	valid := map[string]string{
 		"elapsedLimit": "8h", "attemptLimit": "2",
 		"reservedJobMinutesLimit": "60", "activeJobLimit": "1", "reviewRoundLimit": "3",

@@ -10,6 +10,7 @@ import (
 )
 
 func TestPriorityReconcile(t *testing.T) {
+	t.Parallel()
 	t.Run("same-priority", func(t *testing.T) {
 		root, base := priorityReconcileBed(t, rankedPriorityGoals(1, "a", "b", "c", "d", "e"), nil)
 		for _, id := range []string{"b", "d"} {
@@ -151,6 +152,7 @@ func TestPriorityReconcile(t *testing.T) {
 }
 
 func TestReconcileEditRowSeesAnAbandonedArchive(t *testing.T) {
+	t.Parallel()
 	baseIntent := "before"
 	newIntent := "after"
 	row := MappedVerb{
@@ -216,6 +218,7 @@ func humanReconcileReq(root, ulid string) VerbRequest {
 }
 
 func TestReconcilePublishesHandEditsUnderTheHuman(t *testing.T) {
+	t.Parallel()
 	a, _ := reconcileBed(t)
 	editFile(t, a, goalsPrefix+"editable.md", func(f *GoalFile) {
 		f.Intent = "Reconciled intent."
@@ -267,6 +270,7 @@ func TestReconcilePublishesHandEditsUnderTheHuman(t *testing.T) {
 }
 
 func TestReconcileObservesRawLabelsAndPublishesCanonicalLabels(t *testing.T) {
+	t.Parallel()
 	a, _ := reconcileBed(t)
 	editFile(t, a, goalsPrefix+"editable.md", func(f *GoalFile) {
 		f.Labels = []string{"zeta", "alpha", "zeta"}
@@ -299,6 +303,7 @@ func TestReconcileObservesRawLabelsAndPublishesCanonicalLabels(t *testing.T) {
 }
 
 func TestReconcileConflictNamesGoalAndField(t *testing.T) {
+	t.Parallel()
 	a, tip := reconcileBed(t)
 	_ = tip
 	// The hand edit parks; a competitor concludes the goal on the
@@ -321,6 +326,7 @@ func TestReconcileConflictNamesGoalAndField(t *testing.T) {
 }
 
 func TestReconcileWithoutAHumanRefuses(t *testing.T) {
+	t.Parallel()
 	a, _ := reconcileBed(t)
 	req := humanReconcileReq(a, "01J5X00000000000000000P040")
 	req.Actor.Human = ""
@@ -330,6 +336,7 @@ func TestReconcileWithoutAHumanRefuses(t *testing.T) {
 }
 
 func TestReconcileAppliesEveryRowKind(t *testing.T) {
+	t.Parallel()
 	a, _ := reconcileBed(t)
 
 	// Hand-park the existing goal AND hand-create a new one in the
@@ -397,6 +404,7 @@ func TestReconcileAppliesEveryRowKind(t *testing.T) {
 }
 
 func TestReconcileOpenConflictOnExistingGoal(t *testing.T) {
+	t.Parallel()
 	a, _ := reconcileBed(t)
 	// A hand-created file whose id LANDS on the canonical branch
 	// before the reconcile: the open row's before-predicate fails on
@@ -415,6 +423,7 @@ func TestReconcileOpenConflictOnExistingGoal(t *testing.T) {
 }
 
 func TestConcurrentFieldEditConflictsInsteadOfOverwriting(t *testing.T) {
+	t.Parallel()
 	a, _ := reconcileBed(t)
 	// The hand edit changes intent A→B; a competitor lands A→C on
 	// the canonical branch first. The replay must CONFLICT naming
@@ -444,6 +453,7 @@ func TestConcurrentFieldEditConflictsInsteadOfOverwriting(t *testing.T) {
 }
 
 func TestHandArcMoveMapsToItsVerbs(t *testing.T) {
+	t.Parallel()
 	a, _ := reconcileBed(t)
 	// A hand-set arc maps to set-arc and replays with the base-arc
 	// comparison (F11: arc IS on the closed surface).
@@ -472,6 +482,7 @@ func TestHandArcMoveMapsToItsVerbs(t *testing.T) {
 }
 
 func TestHandOriginEditIsOutsideTheSurface(t *testing.T) {
+	t.Parallel()
 	a, tip := reconcileBed(t)
 	editFile(t, a, goalsPrefix+"editable.md", func(f *GoalFile) {
 		f.Origin = "rewritten-provenance"
@@ -491,6 +502,7 @@ func TestHandOriginEditIsOutsideTheSurface(t *testing.T) {
 // same membership matrix as the verbs.
 
 func TestHandParkOfAClaimedGoalDisplacesThePair(t *testing.T) {
+	t.Parallel()
 	a, tip := reconcileBed(t)
 	if res, err := claimApprovedForTest(t, verbReq(a, "01J5X00000000000000000RP00", "mac-b"), "editable", testBudget()); err != nil || res.Outcome != OutcomeConfirmed {
 		t.Fatalf("foreign claim: %+v %v", res, err)
@@ -524,6 +536,7 @@ func TestHandParkOfAClaimedGoalDisplacesThePair(t *testing.T) {
 }
 
 func TestHandParkAgainstQueuedConflictsWithALandedClaim(t *testing.T) {
+	t.Parallel()
 	a, _ := reconcileBed(t)
 	// The hand park is made against QUEUED...
 	editFile(t, a, goalsPrefix+"editable.md", func(f *GoalFile) {
@@ -555,6 +568,7 @@ func TestHandParkAgainstQueuedConflictsWithALandedClaim(t *testing.T) {
 }
 
 func TestHandJoinIntoForeignClaimedArcLandsQueued(t *testing.T) {
+	t.Parallel()
 	a, _ := reconcileBed(t)
 	// A foreign pair claims an arc; the hand moves a fresh queued
 	// goal into it.
@@ -598,6 +612,7 @@ func TestHandJoinIntoForeignClaimedArcLandsQueued(t *testing.T) {
 // A blocker concluded by hand at reconcile lifts the park its open
 // recorded, exactly as the done verb does.
 func TestHandDoneOfABlockerLiftsItsPark(t *testing.T) {
+	t.Parallel()
 	_, a, _ := twoClones(t)
 	seedLedger(t, a)
 	risk := RiskRecord{Severity: 1, Novelty: 1, Exposure: 1, Accumulation: 1, Basis: "fixture"}

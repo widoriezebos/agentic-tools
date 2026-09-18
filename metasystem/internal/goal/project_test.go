@@ -7,6 +7,7 @@ import (
 )
 
 func TestProjectionReadsTheAcceptedTreeOnly(t *testing.T) {
+	t.Parallel()
 	_, a, b := twoClones(t)
 	seedLedger(t, a)
 	if res, err := Open(verbReq(a, "01J5X00000000000000000E000", "mac-a"), "seen", "Visible.", "main", "Go."); err != nil || res.Outcome != OutcomeConfirmed {
@@ -48,6 +49,7 @@ func TestProjectionReadsTheAcceptedTreeOnly(t *testing.T) {
 }
 
 func TestNextFiltersCandidatesButNeverTheHeldClaim(t *testing.T) {
+	t.Parallel()
 	root := t.TempDir()
 	seedGoalNormConfig(t, root)
 	held := vGoal("held", StateClaimed)
@@ -85,6 +87,7 @@ func TestNextFiltersCandidatesButNeverTheHeldClaim(t *testing.T) {
 }
 
 func TestNextTreatsArcMemberPinsIndependently(t *testing.T) {
+	t.Parallel()
 	root := t.TempDir()
 	seedGoalNormConfig(t, root)
 	foreign := approvedGoalFixture(vGoal("foreign-pinned", StateQueued), testBudget())
@@ -105,6 +108,7 @@ func TestNextTreatsArcMemberPinsIndependently(t *testing.T) {
 }
 
 func TestProjectionBannersStalenessAndLocalMode(t *testing.T) {
+	t.Parallel()
 	repo := soloLedgerRepo(t)
 	e := Endpoint{Root: repo, Remote: "local", Branch: "refs/heads/main"}
 	// Read far in the future: the staleness banner names the age;
@@ -132,6 +136,7 @@ func TestProjectionBannersStalenessAndLocalMode(t *testing.T) {
 }
 
 func TestSyncModeMismatchRefusesByName(t *testing.T) {
+	t.Parallel()
 	repo := soloLedgerRepo(t)
 	// The ledger says local; the config says remote: the forbidden
 	// promotion refuses naming the goal.
@@ -171,6 +176,7 @@ func soloLedgerRepo(t *testing.T) string {
 }
 
 func TestWorkingDurationGrammar(t *testing.T) {
+	t.Parallel()
 	for token, want := range map[string]time.Duration{
 		"30m":   30 * time.Minute,
 		"2h30m": 2*time.Hour + 30*time.Minute,

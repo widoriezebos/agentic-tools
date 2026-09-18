@@ -3,6 +3,7 @@ package goal
 import "testing"
 
 func TestNextStepNamesAPendingHumanWord(t *testing.T) {
+	t.Parallel()
 	tests := []struct {
 		name     string
 		nextStep string

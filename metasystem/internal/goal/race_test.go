@@ -15,6 +15,7 @@ import (
 // end-to-end in scripts/agents/goal-cli-fixtures.sh.)
 
 func TestConcurrentPublishesBothLandThroughTheCAS(t *testing.T) {
+	t.Parallel()
 	_, a, b := twoClones(t)
 	seedLedger(t, a)
 
@@ -61,6 +62,7 @@ func TestConcurrentPublishesBothLandThroughTheCAS(t *testing.T) {
 }
 
 func TestConcurrentSameGoalRaceNamesOneWinner(t *testing.T) {
+	t.Parallel()
 	_, a, b := twoClones(t)
 	seedLedger(t, a)
 
@@ -120,6 +122,7 @@ func TestConcurrentSameGoalRaceNamesOneWinner(t *testing.T) {
 }
 
 func TestConcurrentSplitMembersClaimIndependently(t *testing.T) {
+	t.Parallel()
 	_, a, b := twoClones(t)
 	seedLedger(t, a)
 	if res, err := Open(verbReq(a, "01J5X00000000000000000CJ00", "mac-a"), "concurrent-parent", "Independent work.", OriginMain, "Split it."); err != nil || res.Outcome != OutcomeConfirmed {
@@ -181,6 +184,7 @@ func TestConcurrentSplitMembersClaimIndependently(t *testing.T) {
 }
 
 func TestSplitMemberDependencyStillOwnsClaimOrdering(t *testing.T) {
+	t.Parallel()
 	_, a, b := twoClones(t)
 	seedLedger(t, a)
 	if res, err := Open(verbReq(a, "01J5X00000000000000000CD00", "mac-a"), "dependency-parent", "Ordered work.", OriginMain, "Split it."); err != nil || res.Outcome != OutcomeConfirmed {
@@ -211,6 +215,7 @@ func TestSplitMemberDependencyStillOwnsClaimOrdering(t *testing.T) {
 }
 
 func TestAcceptedRefCASHoldsUnderRaceAndNeverRewinds(t *testing.T) {
+	t.Parallel()
 	_, a, b := twoClones(t)
 	seedLedger(t, a)
 	baseline, err := FetchAdvance(endpointFor(a))
@@ -259,6 +264,7 @@ func TestAcceptedRefCASHoldsUnderRaceAndNeverRewinds(t *testing.T) {
 }
 
 func TestConcurrentSameFieldReconcileNeverSilentlyOverwrites(t *testing.T) {
+	t.Parallel()
 	_, a, b := twoClones(t)
 	seedLedger(t, a)
 	res, err := Open(verbReq(a, "01J5X00000000000000000CF10", "mac-a"), "contested-field", "Original intent.", "main", "Go.")

@@ -2,6 +2,7 @@ package goal
 
 import (
 	"os"
+	"os/exec"
 	"path/filepath"
 	"strings"
 	"testing"
@@ -43,6 +44,7 @@ func reconcileBed(t *testing.T) (string, string) {
 }
 
 func TestBaseIsPersistedNotHead(t *testing.T) {
+	t.Parallel()
 	a, tip := reconcileBed(t)
 	// HEAD moves mid-session (an ordinary code commit): the base
 	// stays the recorded materialized commit.
@@ -65,6 +67,7 @@ func TestBaseIsPersistedNotHead(t *testing.T) {
 }
 
 func TestCaptureIsStableAndDiffNamesTheDeltas(t *testing.T) {
+	t.Parallel()
 	a, tip := reconcileBed(t)
 	// Hand edits: change one file, add one, remove none.
 	editablePath := filepath.Join(a, "plans", "goals", "editable.md")
@@ -109,6 +112,7 @@ func TestCaptureIsStableAndDiffNamesTheDeltas(t *testing.T) {
 }
 
 func TestRefreshPreservesPostCaptureEdits(t *testing.T) {
+	t.Parallel()
 	a, _ := reconcileBed(t)
 	snap, err := CaptureSnapshot(a)
 	if err != nil {
@@ -145,6 +149,7 @@ func TestRefreshPreservesPostCaptureEdits(t *testing.T) {
 }
 
 func TestRefreshOnlyCompletesADiedRefresh(t *testing.T) {
+	t.Parallel()
 	a, _ := reconcileBed(t)
 	res, err := Open(verbReq(a, "01J5X00000000000000000R020", "mac-a"), "crashed", "Died mid-refresh.", "main", "Go.")
 	if err != nil || res.Outcome != OutcomeConfirmed {
@@ -192,6 +197,7 @@ func TestRefreshOnlyCompletesADiedRefresh(t *testing.T) {
 }
 
 func TestRefreshOnlyResolvesTheCrashedPublishWindow(t *testing.T) {
+	t.Parallel()
 	a, tip := reconcileBed(t)
 	// The hand edit stands in the worktree; the crash fell INSIDE the
 	// publish window (Publishing=true, Commit still the BASE).
@@ -290,6 +296,7 @@ func TestRefreshOnlyResolvesTheCrashedPublishWindow(t *testing.T) {
 }
 
 func TestRefreshPreservesAPostCaptureCreation(t *testing.T) {
+	t.Parallel()
 	_, a, _ := twoClones(t)
 	seedLedger(t, a)
 	res, err := Open(verbReq(a, "01J5X00000000000000000RC00", "mac-a"), "fresh-row", "Row.", "main", "Go.")
@@ -327,6 +334,7 @@ func TestRefreshPreservesAPostCaptureCreation(t *testing.T) {
 }
 
 func TestRefreshNeverFollowsAPostCaptureSymlink(t *testing.T) {
+	t.Parallel()
 	a, _ := reconcileBed(t)
 	snap, err := CaptureSnapshot(a)
 	if err != nil {
@@ -372,6 +380,14 @@ func TestRefreshNeverFollowsAPostCaptureSymlink(t *testing.T) {
 }
 
 func TestVerbsAreImmuneToGitEnvironmentSteering(t *testing.T) {
+	t.Parallel()
+	if root := os.Getenv("GOAL_STEERING_HELPER_ROOT"); root != "" {
+		res, err := Open(verbReq(root, "01J5X00000000000000000EV00", "mac-a"), "steered-not", "Immune.", "main", "Go.")
+		if err != nil || res.Outcome != OutcomeConfirmed {
+			t.Fatalf("the steered environment must not move the transaction: %+v %v", res, err)
+		}
+		return
+	}
 	_, a, _ := twoClones(t)
 	seedLedger(t, a)
 	// A hostile-or-accidental environment points at ANOTHER
@@ -380,13 +396,11 @@ func TestVerbsAreImmuneToGitEnvironmentSteering(t *testing.T) {
 	// remote regardless.
 	decoy := filepath.Join(t.TempDir(), "decoy")
 	mustGit(t, t.TempDir(), "init", "-q", "-b", "main", decoy)
-	t.Setenv("GIT_DIR", filepath.Join(decoy, ".git"))
-	t.Setenv("GIT_CONFIG_COUNT", "1")
-	t.Setenv("GIT_CONFIG_KEY_0", "remote.origin.url")
-	t.Setenv("GIT_CONFIG_VALUE_0", "steered://wrong")
-	res, err := Open(verbReq(a, "01J5X00000000000000000EV00", "mac-a"), "steered-not", "Immune.", "main", "Go.")
-	if err != nil || res.Outcome != OutcomeConfirmed {
-		t.Fatalf("the steered environment must not move the transaction: %+v %v", res, err)
+	cmd := exec.Command(os.Args[0], "-test.run=^TestVerbsAreImmuneToGitEnvironmentSteering$", "-test.count=1")
+	cmd.Env = testEnvironment(environWithoutGitSteering(), "GOAL_STEERING_HELPER_ROOT="+a,
+		"GIT_DIR="+filepath.Join(decoy, ".git"), "GIT_CONFIG_COUNT=1", "GIT_CONFIG_KEY_0=remote.origin.url", "GIT_CONFIG_VALUE_0=steered://wrong")
+	if output, err := cmd.CombinedOutput(); err != nil {
+		t.Fatalf("steered subprocess: %v\n%s", err, output)
 	}
 	// The verification reads through the package's own scrubbed git
 	// runner — the TEST process still carries the steering env, and a
@@ -398,6 +412,7 @@ func TestVerbsAreImmuneToGitEnvironmentSteering(t *testing.T) {
 }
 
 func TestRefreshRefusesASymlinkedGoalDirectory(t *testing.T) {
+	t.Parallel()
 	a, tip := reconcileBed(t)
 	snap, err := CaptureSnapshot(a)
 	if err != nil {
@@ -418,6 +433,7 @@ func TestRefreshRefusesASymlinkedGoalDirectory(t *testing.T) {
 }
 
 func TestOverlappingReconcileClaimsAreSerialized(t *testing.T) {
+	t.Parallel()
 	a, _ := reconcileBed(t)
 	// A standing FRESH lock refuses the second claimant instead of
 	// letting it overwrite the first's pending record.
@@ -448,6 +464,7 @@ func TestOverlappingReconcileClaimsAreSerialized(t *testing.T) {
 }
 
 func TestReconcileRefusesASymlinkedGoalDirectoryBeforeCapture(t *testing.T) {
+	t.Parallel()
 	a, _ := reconcileBed(t)
 	// The directory identity flips BEFORE the session: capture
 	// through the link would publish outside bytes long before

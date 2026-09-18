@@ -11,6 +11,7 @@ import (
 )
 
 func TestApprovalTokensRenderTheInstalledTuple(t *testing.T) {
+	t.Parallel()
 	budget := testBudget()
 	args := budgetIntentArgs(budget)
 	wantResume := "goal=fleet-channel resume elapsed=" + args["elapsedLimit"] + " attempts=" + args["attemptLimit"] + " minutes=" + args["reservedJobMinutesLimit"] + " active=" + args["activeJobLimit"]
@@ -24,6 +25,7 @@ func TestApprovalTokensRenderTheInstalledTuple(t *testing.T) {
 }
 
 func TestContainsContiguousFieldsMatchesExactlyOnce(t *testing.T) {
+	t.Parallel()
 	token := "goal=g resume elapsed=4h"
 	tests := []struct {
 		name string
@@ -50,6 +52,7 @@ func TestContainsContiguousFieldsMatchesExactlyOnce(t *testing.T) {
 }
 
 func TestAskedAppendsTheAskedMarkerOnce(t *testing.T) {
+	t.Parallel()
 	for _, test := range []struct {
 		name, initial, want string
 	}{
@@ -95,6 +98,7 @@ func TestAskedAppendsTheAskedMarkerOnce(t *testing.T) {
 }
 
 func TestAnswerRecordsAuthenticatedChannelWordOnce(t *testing.T) {
+	t.Parallel()
 	_, root, _ := twoClones(t)
 	seedLedger(t, root)
 	if result, err := Open(verbReq(root, "01J5X0000000000000000000E0", "mac-a"), "answered", "Record the answer.", "main", "Wait."); err != nil || result.Outcome != OutcomeConfirmed {
@@ -138,6 +142,7 @@ func TestAnswerRecordsAuthenticatedChannelWordOnce(t *testing.T) {
 }
 
 func TestAuthenticatedChannelApprovalRequiresTheTokenOnce(t *testing.T) {
+	t.Parallel()
 	t.Run("lookup and strict token", func(t *testing.T) {
 		_, root, _ := twoClones(t)
 		seedLedger(t, root)
@@ -243,6 +248,7 @@ func governanceChannelAuthority(proof AnswerProof) governance.RecordedChannelAut
 }
 
 func TestHistoryLineApprovedRefRoundTripsOnConsumersOnly(t *testing.T) {
+	t.Parallel()
 	for _, verb := range []string{"resume", "set-obligation"} {
 		line := HistoryLine{At: "2026-09-03T12:00:00Z", Opid: Opid("01J5X0000000000000000000J0", "mac-a", verb), Verb: verb, Actor: "human:wido", Targets: []string{"g"}, Keep: -1, ApprovedRef: "answer-operation"}
 		file := &GoalFile{Id: "g", State: StateQueued, Intent: "Round trip.", Origin: OriginMain, NextStep: "Wait.", OpenedAt: line.At, Revision: 1, History: []HistoryLine{line}}

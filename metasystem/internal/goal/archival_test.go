@@ -9,6 +9,7 @@ import (
 )
 
 func TestConcludedRecordsParseFromBothSoakLocations(t *testing.T) {
+	t.Parallel()
 	legacy := vGoal("legacy-done", StateDone)
 	recorded := vGoal("recorded-done", StateDone)
 	files := vTree(vRoot(), nil, []*GoalFile{recorded})
@@ -34,6 +35,7 @@ func TestConcludedRecordsParseFromBothSoakLocations(t *testing.T) {
 }
 
 func TestRecordsArchiveUsesTheSameIntegrityValidation(t *testing.T) {
+	t.Parallel()
 	files := vTree(vRoot(), nil, []*GoalFile{vGoal("recorded", StateDone)})
 	p := recordsGoalsPrefix + "recorded.md"
 	files[p] = []byte(strings.Replace(string(files[p]), "Shipped and verified.", "Changed after rendering.", 1))
@@ -44,6 +46,7 @@ func TestRecordsArchiveUsesTheSameIntegrityValidation(t *testing.T) {
 }
 
 func TestLegacyArchiveIsReadOnlyButItsRecordsCanReopen(t *testing.T) {
+	t.Parallel()
 	repo := soloLedgerRepo(t)
 	endpoint := Endpoint{Root: repo, Remote: "local", Branch: "refs/heads/main"}
 	accepted, err := goalGit(repo, nil, "rev-parse", AcceptedRef)
@@ -92,6 +95,7 @@ func TestLegacyArchiveIsReadOnlyButItsRecordsCanReopen(t *testing.T) {
 }
 
 func TestEngineRefusesNewLegacyArchiveWrites(t *testing.T) {
+	t.Parallel()
 	_, repo := oneClone(t)
 	seedLedger(t, repo)
 	forbidden := vGoal("forbidden-legacy", StateDone)
@@ -108,6 +112,7 @@ func TestEngineRefusesNewLegacyArchiveWrites(t *testing.T) {
 }
 
 func TestReconciliationCaptureIncludesBothConclusionLocations(t *testing.T) {
+	t.Parallel()
 	repo := t.TempDir()
 	legacy := vGoal("legacy", StateDone)
 	recorded := vGoal("recorded", StateDone)
@@ -134,6 +139,7 @@ func TestReconciliationCaptureIncludesBothConclusionLocations(t *testing.T) {
 }
 
 func TestReconciliationRefusesASymlinkedRecordsGoalDirectory(t *testing.T) {
+	t.Parallel()
 	repo := t.TempDir()
 	if err := os.MkdirAll(filepath.Join(repo, filepath.FromSlash(recordsRoot)), 0o755); err != nil {
 		t.Fatal(err)

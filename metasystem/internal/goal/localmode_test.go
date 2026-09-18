@@ -47,6 +47,7 @@ func localReq(root, ulid string) VerbRequest {
 }
 
 func TestLocalMigrationBootstrapsItsBranch(t *testing.T) {
+	t.Parallel()
 	r := localBed(t)
 	digest := sha256HexBytes([]byte(canonical))
 	opts := MigrateOptions{
@@ -85,6 +86,7 @@ func TestLocalMigrationBootstrapsItsBranch(t *testing.T) {
 }
 
 func TestSyncModeGateHoldsAtFetchAndMutation(t *testing.T) {
+	t.Parallel()
 	_, a, _ := twoClones(t)
 	digest := migrateBed(t, a)
 	res, err := Migrate(verbReq(a, "01J5X00000000000000000SG00", "mac-a"), migrateOpts(t, a, digest))
@@ -125,6 +127,7 @@ func TestSyncModeGateHoldsAtFetchAndMutation(t *testing.T) {
 }
 
 func TestMigrateRerunSurvivesTheCutoverCheckout(t *testing.T) {
+	t.Parallel()
 	_, a, _ := twoClones(t)
 	digest := migrateBed(t, a)
 	opts := migrateOpts(t, a, digest)

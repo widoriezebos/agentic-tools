@@ -32,6 +32,7 @@ const fixtureContextLine = "CONTEXT: 121K of trigger 100K (proof line 150K, maxi
 // The ladder keeps its leading rows (goal-cli-fixtures.sh:1082-1090 reads them
 // by position) and the line sits directly above the full-verdict path.
 func TestTurnVerdictPrintsTheContextLine(t *testing.T) {
+	t.Parallel()
 	store := &Store{Root: servingBed(t, "bed-m1", nil), Now: func() time.Time { return time.Unix(1786800000, 0) }}
 	verdict, err := store.TurnVerdict(
 		ScanResult{Open: []Item{openItem("OPEN-WORK fixture: finish it")}}, "context-line", "", "",
@@ -49,6 +50,7 @@ func TestTurnVerdictPrintsTheContextLine(t *testing.T) {
 
 // supervision-hook-fixtures.sh:1096 compares the whole allowance display.
 func TestTurnVerdictHandoffAllowanceStaysExact(t *testing.T) {
+	t.Parallel()
 	store := testStore(t)
 	verdict, err := store.TurnVerdict(ScanResult{}, "context-line", "", "", TurnVerdictOptions{
 		ContextLine:     fixtureContextLine,
@@ -77,23 +79,6 @@ type pendingWaitVerdictFixture struct {
 	row         metarun.Waiter
 	scan        ScanResult
 	bootElapsed time.Duration
-}
-
-func isolatePendingWaitFixtureGit(t *testing.T) {
-	t.Helper()
-	for _, name := range []string{"GIT_OBJECT_DIRECTORY", "GIT_ALTERNATE_OBJECT_DIRECTORIES"} {
-		value, present := os.LookupEnv(name)
-		if err := os.Unsetenv(name); err != nil {
-			t.Fatal(err)
-		}
-		t.Cleanup(func() {
-			if present {
-				_ = os.Setenv(name, value)
-			} else {
-				_ = os.Unsetenv(name)
-			}
-		})
-	}
 }
 
 func writePendingWaitJSON(t *testing.T, path string, value any) {
@@ -127,7 +112,6 @@ func pendingWaitClaim(landing bool) *GoalFile {
 
 func newPendingWaitVerdictFixture(t *testing.T, kind string, readyBacklog bool) *pendingWaitVerdictFixture {
 	t.Helper()
-	isolatePendingWaitFixtureGit(t)
 	landing := kind == "landing"
 	files := map[string]*GoalFile{pendingWaitGoalID: pendingWaitClaim(landing)}
 	if readyBacklog {
@@ -141,6 +125,7 @@ func newPendingWaitVerdictFixture(t *testing.T, kind string, readyBacklog bool) 
 		42: {Pid: 42, StartedAt: time.Unix(200, 0), StartTicks: 420, BootID: pendingWaitBootID},
 	}
 	store := &Store{Root: root, Now: func() time.Time { return now }, Prober: prober}
+	store.verdictDeps.bootClock = func() (string, time.Duration, error) { return pendingWaitBootID, bootElapsed, nil }
 	writePendingWaitJSON(t, sessionStopLeasePath(root), sessionStopLease{
 		HolderMainId: pendingWaitMainID, Pid: 41, PidStartedAt: 100,
 		PidStartTicks: 410, BootID: pendingWaitBootID, ClaimEpoch: 7,
@@ -237,9 +222,6 @@ func newPendingWaitVerdictFixture(t *testing.T, kind string, readyBacklog bool) 
 		LastObservedBootNanos: (bootElapsed - 5*time.Second).Nanoseconds(), OpenWorkSignature: scan.OpenWorkSignature(),
 		State: "pending", Delivery: "blocking",
 	}
-	previousBootClock := turnVerdictBootClock
-	turnVerdictBootClock = func() (string, time.Duration, error) { return pendingWaitBootID, bootElapsed, nil }
-	t.Cleanup(func() { turnVerdictBootClock = previousBootClock })
 	fixture := &pendingWaitVerdictFixture{root: root, store: store, row: row, scan: scan, bootElapsed: bootElapsed}
 	fixture.writeRow(t)
 	return fixture
@@ -269,6 +251,7 @@ func (fixture *pendingWaitVerdictFixture) verdict(t *testing.T, scan ScanResult)
 }
 
 func TestSessionAbsentReadsNoWait(t *testing.T) {
+	t.Parallel()
 	primeOpenSignature := func(fixture *pendingWaitVerdictFixture) {
 		t.Helper()
 		state, err := fixture.store.loadVerdictState()
@@ -291,12 +274,11 @@ func TestSessionAbsentReadsNoWait(t *testing.T) {
 	absentFixture := newPendingWaitVerdictFixture(t, "job", false)
 	primeOpenSignature(absentFixture)
 	clockReads := 0
-	previousBootClock := turnVerdictBootClock
-	turnVerdictBootClock = func() (string, time.Duration, error) {
+	previousBootClock := absentFixture.store.verdictDeps.bootClock
+	absentFixture.store.verdictDeps.bootClock = func() (string, time.Duration, error) {
 		clockReads++
 		return previousBootClock()
 	}
-	t.Cleanup(func() { turnVerdictBootClock = previousBootClock })
 	absent, err := absentFixture.store.TurnVerdict(absentFixture.scan, pendingWaitSession, "", pendingWaitMainID, TurnVerdictOptions{
 		SessionAbsent: true,
 	})
@@ -320,6 +302,7 @@ func TestSessionAbsentReadsNoWait(t *testing.T) {
 }
 
 func TestPendingWaitTurnVerdict(t *testing.T) {
+	t.Parallel()
 	t.Run("work waits suppress matching open work and their own unwatched join", func(t *testing.T) {
 		liveDelegate := newPendingWaitVerdictFixture(t, "job", false)
 		if err := os.Remove(metarun.WaiterPath(liveDelegate.root, liveDelegate.row.Kind, liveDelegate.row.TargetID, liveDelegate.row.OwnerDigest)); err != nil {
@@ -704,6 +687,7 @@ func TestPendingWaitTurnVerdict(t *testing.T) {
 // goal-block, open-work-block, clear, and NO re-block of the unchanged
 // goal.
 func TestVerdictDualSlotSequence(t *testing.T) {
+	t.Parallel()
 	s := testStore(t)
 	mustOpen(t, s, mainHolder, "g", "the goal", "Ship it.")
 
@@ -757,6 +741,7 @@ func TestVerdictDualSlotSequence(t *testing.T) {
 // Precedence — busy suppresses everything; human-waits suppress
 // the goal clause; stale plans never block; unreadable vetoes both ways.
 func TestPrecedenceLadder(t *testing.T) {
+	t.Parallel()
 	s := testStore(t)
 	mustOpen(t, s, mainHolder, "g", "the goal", "Ship it.")
 
@@ -789,6 +774,7 @@ func TestPrecedenceLadder(t *testing.T) {
 }
 
 func TestInfrastructureVerdictNeverBlocks(t *testing.T) {
+	t.Parallel()
 	assertInfrastructure := func(t *testing.T, verdict Verdict, err error, component, detail string) {
 		t.Helper()
 		if err != nil || verdict.ShouldBlock || verdict.Class != "infrastructure" || verdict.LedgerStatus != "degraded" ||
@@ -840,15 +826,14 @@ func TestInfrastructureVerdictNeverBlocks(t *testing.T) {
 		if err := os.WriteFile(brain.Path(store.Root), append(data, '\n'), 0o644); err != nil {
 			t.Fatal(err)
 		}
-		previous := brainStatusWriter
-		brainStatusWriter = func(string, brain.Record, time.Time) error { return fmt.Errorf("fixture status failure") }
-		t.Cleanup(func() { brainStatusWriter = previous })
+		store.verdictDeps.brainStatusWriter = func(string, brain.Record, time.Time) error { return fmt.Errorf("fixture status failure") }
 		verdict, err := store.TurnVerdict(ScanResult{}, "status-write", "", "")
 		assertInfrastructure(t, verdict, err, "status-write", "fixture status failure")
 	})
 }
 
 func TestTurnVerdictAllowsTheStopUnderARecordedHandoff(t *testing.T) {
+	t.Parallel()
 	openWork := ScanResult{Open: []Item{openItem("plans/handoff.md next: continue this session")}}
 
 	t.Run("same session precedes open work", func(t *testing.T) {
@@ -971,6 +956,7 @@ func TestTurnVerdictAllowsTheStopUnderARecordedHandoff(t *testing.T) {
 }
 
 func TestHandoffAllowanceCarriesFrozenFacts(t *testing.T) {
+	t.Parallel()
 	store := testStore(t)
 	scan := ScanResult{Open: []Item{{
 		Kind: "plan", Id: "handoff-plan", Detail: "plans/handoff.md next: continue this session",
@@ -1011,10 +997,9 @@ func TestHandoffAllowanceCarriesFrozenFacts(t *testing.T) {
 }
 
 func TestInfrastructurePersistenceFailurePreservesSeatActionableRefusal(t *testing.T) {
+	t.Parallel()
 	store := &Store{Root: servingBed(t, "bed-m1", nil), Now: func() time.Time { return time.Unix(1786800000, 0) }}
-	previous := verdictStateWriter
-	verdictStateWriter = func(string, []byte) error { return fmt.Errorf("fixture state write failure") }
-	t.Cleanup(func() { verdictStateWriter = previous })
+	store.verdictDeps.stateWriter = func(string, []byte) error { return fmt.Errorf("fixture state write failure") }
 	verdict, err := store.TurnVerdict(ScanResult{Open: []Item{openItem("OPEN-WORK fixture: finish it")}}, "seat-block", "", "")
 	if err != nil || !verdict.ShouldBlock || verdict.Class != "seat-actionable" ||
 		!strings.Contains(verdict.Display, "observed refusal remains blocking") {
@@ -1026,6 +1011,7 @@ func TestInfrastructurePersistenceFailurePreservesSeatActionableRefusal(t *testi
 }
 
 func TestInfrastructureStatusWriteFailurePreservesSeatActionableRefusal(t *testing.T) {
+	t.Parallel()
 	store := &Store{Root: servingBed(t, "bed-m1", nil), Now: func() time.Time { return time.Unix(1786800000, 0) }}
 	record := brain.Record{Schema: 1, Ledger: ExistingLedgerIdentity(store.Root), Machine: "bed-m1", DeclaredBy: "Wido", DeclaredAt: "2026-09-12T00:00:00Z"}
 	data, err := json.Marshal(record)
@@ -1038,9 +1024,7 @@ func TestInfrastructureStatusWriteFailurePreservesSeatActionableRefusal(t *testi
 	if err := os.WriteFile(brain.Path(store.Root), append(data, '\n'), 0o644); err != nil {
 		t.Fatal(err)
 	}
-	previous := brainStatusWriter
-	brainStatusWriter = func(string, brain.Record, time.Time) error { return fmt.Errorf("fixture status failure") }
-	t.Cleanup(func() { brainStatusWriter = previous })
+	store.verdictDeps.brainStatusWriter = func(string, brain.Record, time.Time) error { return fmt.Errorf("fixture status failure") }
 	verdict, err := store.TurnVerdict(ScanResult{Open: []Item{openItem("OPEN-WORK fixture: finish it")}}, "status-block", "", "")
 	if err != nil || !verdict.ShouldBlock || verdict.Class != "seat-actionable" ||
 		!strings.Contains(verdict.Display, "observed refusal remains blocking") {
@@ -1051,6 +1035,7 @@ func TestInfrastructureStatusWriteFailurePreservesSeatActionableRefusal(t *testi
 // Pre-adoption absence is advisory; post-adoption deletion is
 // degraded with the all-clear vetoed and reconcile named.
 func TestAbsenceAdvisoryVsDeletionDegraded(t *testing.T) {
+	t.Parallel()
 	s := testStore(t)
 	v, _ := s.TurnVerdict(ScanResult{}, "s", "", "")
 	if v.LedgerStatus != "absent" || v.ShouldBlock || !strings.Contains(v.Display, "`goal open` starts one") || !strings.Contains(v.Display, "NOTHING LEFT") {
@@ -1068,6 +1053,7 @@ func TestAbsenceAdvisoryVsDeletionDegraded(t *testing.T) {
 // The queued-only ledger blocks once naming the first queued
 // goal, never a silent all-clear.
 func TestQueuedOnlyVerdict(t *testing.T) {
+	t.Parallel()
 	s := testStore(t)
 	mustOpen(t, s, mainHolder, "a", "goal a", "Do a.")
 	mustOpen(t, s, mainHolder, "b", "goal b", "Do b.")
@@ -1103,6 +1089,7 @@ func TestQueuedOnlyVerdict(t *testing.T) {
 }
 
 func TestQueuedOnlyVerdictIgnoresLegacyBlockOnceDigest(t *testing.T) {
+	t.Parallel()
 	s := testStore(t)
 	mustOpen(t, s, mainHolder, "legacy-queue", "legacy queued goal", "Promote it.")
 	if _, err := s.Done(mainHolder, "legacy-queue", "landed", "", true); err != nil {
@@ -1132,6 +1119,7 @@ func TestQueuedOnlyVerdictIgnoresLegacyBlockOnceDigest(t *testing.T) {
 }
 
 func TestClaimedSessionReblocksOnceWhenTheSharedQueueChanges(t *testing.T) {
+	t.Parallel()
 	_, root := oneClone(t)
 	seedLedger(t, root)
 	mustGit(t, root, "config", "metasystem.goal.machine", "mac-a")
@@ -1190,6 +1178,7 @@ func TestClaimedSessionReblocksOnceWhenTheSharedQueueChanges(t *testing.T) {
 }
 
 func TestClaimedSessionBaselinesAnUnchangedQueueWithoutFalseChange(t *testing.T) {
+	t.Parallel()
 	_, root := oneClone(t)
 	seedLedger(t, root)
 	mustGit(t, root, "config", "metasystem.goal.machine", "mac-a")
@@ -1223,6 +1212,7 @@ func TestClaimedSessionBaselinesAnUnchangedQueueWithoutFalseChange(t *testing.T)
 // A goal-free declaration over a moved world blocks
 // once; renewal re-arms the all-clear.
 func TestGoalFreeStaleness(t *testing.T) {
+	t.Parallel()
 	s := testStore(t)
 	if _, err := s.DeclareFree(human); err != nil {
 		t.Fatal(err)
@@ -1263,6 +1253,7 @@ func TestGoalFreeStaleness(t *testing.T) {
 // The sessions map caps at 128 oldest-evicted, session ids
 // normalize, and concurrent verdicts serialize under the flock.
 func TestSessionMapCapAndHygiene(t *testing.T) {
+	t.Parallel()
 	s := testStore(t)
 	mustOpen(t, s, mainHolder, "g", "goal", "Do.")
 
@@ -1311,6 +1302,7 @@ func TestSessionMapCapAndHygiene(t *testing.T) {
 // clear resets, same surfaces again; concurrent calls surface exactly
 // once.
 func TestWatchdogProtocol(t *testing.T) {
+	t.Parallel()
 	s := testStore(t)
 	mustOpen(t, s, mainHolder, "g", "goal", "Do.")
 
@@ -1364,6 +1356,7 @@ func TestWatchdogProtocol(t *testing.T) {
 // Unreadable-veto tail: inventory failure (as Unreadable) vetoes even when the
 // ledger is goal-free-fresh — no all-clear over unknown activity.
 func TestInventoryFailureVetoes(t *testing.T) {
+	t.Parallel()
 	s := testStore(t)
 	if _, err := s.DeclareFree(human); err != nil {
 		t.Fatal(err)
@@ -1378,6 +1371,7 @@ func TestInventoryFailureVetoes(t *testing.T) {
 // keys on lifecycle tags so a reused job id re-arms, and run warnings ride
 // above the ladder.
 func TestUnwatchedAndWarnings(t *testing.T) {
+	t.Parallel()
 	s := testStore(t)
 	mustOpen(t, s, mainHolder, "g", "goal", "Do.")
 
@@ -1431,6 +1425,7 @@ func TestUnwatchedAndWarnings(t *testing.T) {
 }
 
 func TestUnwatchedRunIgnoresRawLiveWaiter(t *testing.T) {
+	t.Parallel()
 	fixture := newPendingWaitVerdictFixture(t, "run", false)
 	scan := fixture.scan
 	scan.Runs = []RunFact{{
@@ -1466,6 +1461,7 @@ func TestUnwatchedRunIgnoresRawLiveWaiter(t *testing.T) {
 }
 
 func TestTwoConsecutiveStopsStaleRow(t *testing.T) {
+	t.Parallel()
 	fixture := newPendingWaitVerdictFixture(t, "job", false)
 	scan := fixture.scan
 	scan.Jobs = []JobFact{{
@@ -1537,6 +1533,7 @@ func TestTwoConsecutiveStopsStaleRow(t *testing.T) {
 }
 
 func TestForgedAssociationRefused(t *testing.T) {
+	t.Parallel()
 	fixture := newPendingWaitVerdictFixture(t, "job", false)
 	scan := fixture.scan
 	scan.Jobs = []JobFact{{
@@ -1560,6 +1557,7 @@ func TestForgedAssociationRefused(t *testing.T) {
 }
 
 func TestHumanRunWatchedSignal(t *testing.T) {
+	t.Parallel()
 	fixture := newPendingWaitVerdictFixture(t, "run", false)
 	prober := fixture.store.Prober.(idleFixtureProber)
 	registeredBirth := time.Unix(200, 1_000)
@@ -1612,6 +1610,7 @@ func TestHumanRunWatchedSignal(t *testing.T) {
 }
 
 func TestWatchedJobUsesAuthenticatedWait(t *testing.T) {
+	t.Parallel()
 	raw := newPendingWaitVerdictFixture(t, "job", false)
 	if err := os.Remove(metarun.WaiterPath(raw.root, raw.row.Kind, raw.row.TargetID, raw.row.OwnerDigest)); err != nil {
 		t.Fatal(err)
@@ -1643,6 +1642,7 @@ func TestWatchedJobUsesAuthenticatedWait(t *testing.T) {
 // order, and any unreadable run record freezes the cursor so a delayed
 // green is never skipped.
 func TestGreenPrefixConsistency(t *testing.T) {
+	t.Parallel()
 	s := testStore(t)
 	mustOpen(t, s, mainHolder, "g", "goal", "Do.")
 
@@ -1677,6 +1677,7 @@ func TestGreenPrefixConsistency(t *testing.T) {
 // A HUMAN caller (empty mainId) owns human-launched runs (null
 // coordinates): the unwatched rule fires for them too.
 func TestHumanOwnsHumanRuns(t *testing.T) {
+	t.Parallel()
 	s := testStore(t)
 	mustOpen(t, s, mainHolder, "g", "goal", "Do.")
 	humanRun := RunFact{Id: "h-run", MainId: "", Generation: 1, Nonce: "n", Status: "running"}
@@ -1696,6 +1697,7 @@ func TestHumanOwnsHumanRuns(t *testing.T) {
 // run's conclusion must not let the cursor advance past it, and a torn
 // record on disk freezes the cursor even when the scan looked clean.
 func TestGreenCursorRereadsDisk(t *testing.T) {
+	t.Parallel()
 	s := testStore(t)
 	mustOpen(t, s, mainHolder, "g", "goal", "Do.")
 	writeGreen := func(id string, seq int) {

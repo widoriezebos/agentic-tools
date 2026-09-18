@@ -50,6 +50,7 @@ func acceptedTree(t *testing.T, root string, now time.Time) (*TreeGoals, string)
 }
 
 func TestCarryLifecycleLandsThroughTheJournal(t *testing.T) {
+	t.Parallel()
 	base := time.Now().UTC().Truncate(time.Second)
 	root, other, human := carryBed(t, base)
 	proof := testHumanAuthority(t, root, base)
@@ -225,16 +226,14 @@ func TestCarryLifecycleLandsThroughTheJournal(t *testing.T) {
 	commit := mustGit(t, other, "rev-parse", "HEAD")
 	mustGit(t, other, "push", "-q", "origin", "main")
 
-	previous := carriedCounselorAppend
-	t.Cleanup(func() { carriedCounselorAppend = previous })
 	var appended []string
-	BindCarriedCounselorAppend(func(_ string, goalID string, row HistoryLine, _ time.Time) error {
+	writer := bindCarriedCounselorAppend(nil, func(_ string, goalID string, row HistoryLine, _ time.Time) error {
 		appended = append(appended, goalID+":"+row.Opid)
 		return nil
 	})
 	// A nil bind is a no-op: the recorder stays the writer.
-	BindCarriedCounselorAppend(nil)
-	if err := carriedCounselorAppend(root, "probe", HistoryLine{Opid: "probe-row"}, base); err != nil || len(appended) != 1 || appended[0] != "probe:probe-row" {
+	writer = bindCarriedCounselorAppend(writer, nil)
+	if err := writer(root, "probe", HistoryLine{Opid: "probe-row"}, base); err != nil || len(appended) != 1 || appended[0] != "probe:probe-row" {
 		t.Fatalf("nil bind replaced the writer: %v %v", err, appended)
 	}
 	appended = nil
@@ -253,6 +252,7 @@ func TestCarryLifecycleLandsThroughTheJournal(t *testing.T) {
 		t.Fatalf("carried of an unknown entry = %v", err)
 	}
 	complete := carryVerb(seat, "01J5X00000000000000000C013", 8)
+	complete.Endpoint.ConfigureCarriedCounselorAppend(writer)
 	result, err = Carried(complete, entry)
 	if err != nil || result.Outcome != OutcomeConfirmed {
 		t.Fatalf("carried: %+v %v", result, err)
@@ -263,7 +263,9 @@ func TestCarryLifecycleLandsThroughTheJournal(t *testing.T) {
 	if result, err := Carried(complete, entry); err != nil || result.Outcome != OutcomeConfirmed || result.Detail != "idempotent" {
 		t.Fatalf("carried replay: %+v %v", result, err)
 	}
-	if err := RepairCarriedCounselor(endpointFor(root), live, complete.Now); err != nil || len(appended) != 2 {
+	repairEndpoint := endpointFor(root)
+	repairEndpoint.ConfigureCarriedCounselorAppend(writer)
+	if err := RepairCarriedCounselor(repairEndpoint, live, complete.Now); err != nil || len(appended) != 2 {
 		t.Fatalf("repair = %v, appended %v", err, appended)
 	}
 	if err := RepairCarriedCounselor(endpointFor(root), "01J5X00000000000000000C995-mac-a-1a2b3c4d", complete.Now); err == nil || !strings.Contains(err.Error(), "is absent") {
@@ -313,6 +315,7 @@ func TestCarryLifecycleLandsThroughTheJournal(t *testing.T) {
 	record := CarriedArgs{Goal: "g", ApprovedRef: live, Carrying: row, Commit: commit, Project: strings.Repeat("b", 40), Workspace: workspace,
 		Past: "missing-declaration", Battery: "green", Judge: "base", JudgeDigest: strings.Repeat("e", 64), Ledger: ledger, By: "human:wido"}
 	rebuilt := carryVerb(seat, "01J5X00000000000000000C016", 11)
+	rebuilt.Endpoint.ConfigureCarriedCounselorAppend(writer)
 	if result, err := CarriedFromCommit(rebuilt, record); err != nil || result.Outcome != OutcomeConfirmed || result.Detail != "idempotent" {
 		t.Fatalf("carried from commit replay: %+v %v", result, err)
 	}
@@ -327,6 +330,7 @@ func TestCarryLifecycleLandsThroughTheJournal(t *testing.T) {
 }
 
 func TestCarryReadersAndJournalGuards(t *testing.T) {
+	t.Parallel()
 	if !ValidCarryToken("carry workspace="+strings.Repeat("a", 40)+" goal=g past=missing-declaration") ||
 		ValidCarryToken("carry workspace=short goal=g past=x") || ValidCarryToken(" carry workspace="+strings.Repeat("a", 40)+" goal=g past=x") {
 		t.Fatal("carry token shape")
@@ -425,6 +429,7 @@ func openCarryWordForAbandonTest(t *testing.T, base time.Time) (root, other stri
 }
 
 func TestAbandonRefusesOpenCarryWords(t *testing.T) {
+	t.Parallel()
 	base := time.Date(2026, 9, 13, 9, 0, 0, 0, time.UTC)
 	t.Run("missing anchor", func(t *testing.T) {
 		_, root := oneClone(t)
@@ -565,11 +570,9 @@ func landedCarryForAbandonTest(t *testing.T, base time.Time) (root string, human
 	mustGit(t, other, "commit", "-qm", "recorded carried change", "-m", "Carry: "+ref)
 	commit = mustGit(t, other, "rev-parse", "HEAD")
 	mustGit(t, other, "push", "-q", "origin", "main")
-	previous := carriedCounselorAppend
-	t.Cleanup(func() { carriedCounselorAppend = previous })
-	BindCarriedCounselorAppend(func(string, string, HistoryLine, time.Time) error { return nil })
 	seat := carryVerb(human, "01J5X00000000000000000D060", 5)
 	seat.Actor.Human = ""
+	seat.Endpoint.ConfigureCarriedCounselorAppend(func(string, string, HistoryLine, time.Time) error { return nil })
 	args := CarriedArgs{
 		Goal: "g", ApprovedRef: ref, Carrying: reservation, Commit: commit, Project: strings.Repeat("b", 40), Workspace: word.Workspace,
 		Past: word.Past, Battery: "green", Judge: "base", JudgeDigest: strings.Repeat("d", 64), Ledger: ledger, By: "human:wido",
@@ -629,6 +632,7 @@ func openNextCarryGoalForAbandonTest(t *testing.T, root string, now time.Time) {
 }
 
 func TestAbandonKeepsReviewDebtReachable(t *testing.T) {
+	t.Parallel()
 	base := time.Date(2026, 9, 13, 11, 0, 0, 0, time.UTC)
 	root, human, proof, _, commit, ordinaryFinding := landedCarryForAbandonTest(t, base)
 	openNextCarryGoalForAbandonTest(t, root, base.Add(13*time.Minute))
@@ -733,6 +737,7 @@ func TestAbandonKeepsReviewDebtReachable(t *testing.T) {
 }
 
 func TestAbandonedCarriedReviewCanBeWaived(t *testing.T) {
+	t.Parallel()
 	base := time.Date(2026, 9, 13, 13, 0, 0, 0, time.UTC)
 	root, human, _, _, commit, ordinaryFinding := landedCarryForAbandonTest(t, base)
 	fenceBefore := freezeCarriedGoalForAbandonTest(t, root, base.Add(13*time.Minute), "01J5X00000000000000000D079")
@@ -790,6 +795,7 @@ func TestAbandonedCarriedReviewCanBeWaived(t *testing.T) {
 }
 
 func TestAbandonKeepsClosedCarryHistoryVisible(t *testing.T) {
+	t.Parallel()
 	base := time.Date(2026, 9, 13, 15, 0, 0, 0, time.UTC)
 	root, human, _, ref, commit, _ := landedCarryForAbandonTest(t, base)
 	abandon := carryVerb(human, "01J5X00000000000000000D090", 7)
@@ -865,6 +871,7 @@ func TestAbandonKeepsClosedCarryHistoryVisible(t *testing.T) {
 }
 
 func TestDeclareFreeAndLabelDelta(t *testing.T) {
+	t.Parallel()
 	labels, err := ApplyLabelDelta([]string{"b", "a"}, []string{"c"}, []string{"a"})
 	if err != nil || strings.Join(labels, ",") != "b,c" {
 		t.Fatalf("label delta = %v, %v", labels, err)

@@ -8,6 +8,7 @@ import (
 )
 
 func TestUnapproveWithdrawsApprovedAndClaimedWork(t *testing.T) {
+	t.Parallel()
 	t.Run("approved work returns to queued", func(t *testing.T) {
 		_, root := oneClone(t)
 		seedLedger(t, root)
@@ -81,6 +82,7 @@ func TestUnapproveWithdrawsApprovedAndClaimedWork(t *testing.T) {
 }
 
 func TestUnapproveRequiresCompleteHumanAuthority(t *testing.T) {
+	t.Parallel()
 	_, root := oneClone(t)
 	request := verbReq(root, "01J5X00000000000000000RA00", "mac-a")
 	if _, err := Unapprove(request, "missing", "because", nil); err == nil || !strings.Contains(err.Error(), "human-only") {
@@ -96,6 +98,7 @@ func TestUnapproveRequiresCompleteHumanAuthority(t *testing.T) {
 }
 
 func TestApproveRefusalsAndProvenReratification(t *testing.T) {
+	t.Parallel()
 	_, root := oneClone(t)
 	seedLedger(t, root)
 	if result, err := Open(verbReq(root, "01J5X00000000000000000RR00", "mac-a"), "ratify-once", "Ratify one exact payload.", OriginMain, "Wait."); err != nil || result.Outcome != OutcomeConfirmed {
@@ -140,6 +143,7 @@ func TestApproveRefusalsAndProvenReratification(t *testing.T) {
 }
 
 func TestApprovalRequiredNamesEveryClaimProducingPath(t *testing.T) {
+	t.Parallel()
 	file := vGoal("not-approved", StateQueued)
 	for _, verb := range []string{"claim", "arc claim", "steal", "set-arc claim", "reconcile set-arc claim", "resume"} {
 		t.Run(verb, func(t *testing.T) {
@@ -151,6 +155,7 @@ func TestApprovalRequiredNamesEveryClaimProducingPath(t *testing.T) {
 }
 
 func TestExecutionGateRejectsIntentAndBudgetDigestEdits(t *testing.T) {
+	t.Parallel()
 	_, root := oneClone(t)
 	seedGoalNormConfig(t, root)
 	approved := approvedGoalFixture(vGoal("digest-bound", StateQueued), testBudget())
@@ -172,6 +177,7 @@ func TestExecutionGateRejectsIntentAndBudgetDigestEdits(t *testing.T) {
 }
 
 func TestApprovalRecordRejectsEveryIncompleteBindingClass(t *testing.T) {
+	t.Parallel()
 	if err := (*GoalFile)(nil).ValidateApprovalRecord(); err != nil {
 		t.Fatalf("an absent approval record should need no validation: %v", err)
 	}
@@ -204,6 +210,7 @@ func TestApprovalRecordRejectsEveryIncompleteBindingClass(t *testing.T) {
 }
 
 func TestRelayedSweepExpiresAtReviewDate(t *testing.T) {
+	t.Parallel()
 	_, root := oneClone(t)
 	seedLedger(t, root)
 	seedGoalNormConfig(t, root)
@@ -253,6 +260,7 @@ func TestRelayedSweepExpiresAtReviewDate(t *testing.T) {
 }
 
 func TestApprovalExpiryUsesReviewDateAndFinalHorizon(t *testing.T) {
+	t.Parallel()
 	relayed := &GoalFile{Approved: &ApprovalRecord{Authority: ApprovalAuthorityRelayed, ReviewBy: "2026-09-02"}}
 	if expired, why := relayed.ApprovalExpired(ApprovalHorizon{Now: time.Date(2026, 9, 3, 0, 0, 0, 0, time.UTC)}); !expired || !strings.Contains(why, "review date 2026-09-02 has passed") {
 		t.Fatalf("review-date expiry was not deterministic: expired=%v why=%q", expired, why)
@@ -264,6 +272,7 @@ func TestApprovalExpiryUsesReviewDateAndFinalHorizon(t *testing.T) {
 }
 
 func TestSweepListingBindsIntentBudgetAndDisplayedApproval(t *testing.T) {
+	t.Parallel()
 	budget := testBudget()
 	approved := approvedGoalFixture(vGoal("listed-approved", StateQueued), budget)
 	approved.NormApproval = &GoalNormApprovalClaim{ApprovedRef: "R-400", Minutes: 1600, GoalRevision: approved.Revision}
@@ -296,6 +305,7 @@ func TestSweepListingBindsIntentBudgetAndDisplayedApproval(t *testing.T) {
 }
 
 func TestProvenSweepWithNoEligibleChangesIsExplicitNoOp(t *testing.T) {
+	t.Parallel()
 	_, root := oneClone(t)
 	seedLedger(t, root)
 	if result, err := Open(verbReq(root, "01J5X00000000000000000PN00", "mac-a"), "already-proven", "Already approved.", OriginMain, "Wait."); err != nil || result.Outcome != OutcomeConfirmed {
@@ -319,6 +329,7 @@ func TestProvenSweepWithNoEligibleChangesIsExplicitNoOp(t *testing.T) {
 }
 
 func TestGoalNormCheckCoversWithinAndOverNormRemedies(t *testing.T) {
+	t.Parallel()
 	_, root := oneClone(t)
 	seedGoalNormConfig(t, root)
 	within := Budget{ReservedJobMinutesLimit: 1200, ReviewRoundLimit: 3}
@@ -341,6 +352,7 @@ func TestGoalNormCheckCoversWithinAndOverNormRemedies(t *testing.T) {
 }
 
 func TestOverNormApprovalRefusesWithoutAndPassesWithCoveringToken(t *testing.T) {
+	t.Parallel()
 	_, root := oneClone(t)
 	seedLedger(t, root)
 	seedGoalNormConfig(t, root)
@@ -383,6 +395,7 @@ func TestOverNormApprovalRefusesWithoutAndPassesWithCoveringToken(t *testing.T) 
 }
 
 func TestFleetEnrollmentValidationAndIdempotence(t *testing.T) {
+	t.Parallel()
 	_, root := oneClone(t)
 	seedLedger(t, root)
 	request := verbReq(root, "01J5X00000000000000000EN00", "mac-a")

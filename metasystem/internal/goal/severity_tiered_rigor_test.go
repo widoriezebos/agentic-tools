@@ -6,6 +6,7 @@ import (
 )
 
 func TestConcludeRefusesWithReviewObligations(t *testing.T) {
+	t.Parallel()
 	root := obligationAuthorityLocalRoot(t, "review-goal")
 	req := obligationAuthorityVerbReq(root, "01J5X00000000000000000SR10", "mac-a")
 	obligation := ReviewObligation{Finding: "F-1", Chain: "critic-a", Artifact: "NEW metasystem/a file.go", Test: "prove: it works", State: "open"}
@@ -20,6 +21,7 @@ func TestConcludeRefusesWithReviewObligations(t *testing.T) {
 }
 
 func TestSTR3GapDischargeSelectVerb(t *testing.T) {
+	t.Parallel()
 	root := obligationAuthorityLocalRoot(t, "review-goal")
 	req := obligationAuthorityVerbReq(root, "01J5X00000000000000000SR20", "mac-a")
 	obligations := []ReviewObligation{

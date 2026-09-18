@@ -71,6 +71,7 @@ func testTerminalAuthority(t *testing.T, root string, now time.Time) *humanautho
 }
 
 func TestBreachStopFenceAndHumanResumeAreOneWayTransactions(t *testing.T) {
+	t.Parallel()
 	_, root, _ := twoClones(t)
 	seedLedger(t, root)
 	if res, err := Open(verbReq(root, "01J5X00000000000000000S000", "mac-a"), "stop-me", "Bound this work.", "main", "Run it."); err != nil || res.Outcome != OutcomeConfirmed {
@@ -253,6 +254,7 @@ func fencedSetBudgetBed(t *testing.T, state StopBatchState) (string, Budget, Bud
 }
 
 func TestSetBudgetLiftsCompletedFenceInOneTransaction(t *testing.T) {
+	t.Parallel()
 	root, _, next, stopped, set := fencedSetBudgetBed(t, StopBatchComplete)
 	result, err := setBudgetApprovedForTest(t, set, stopped.Id, next)
 	if err != nil || result.Outcome != OutcomeConfirmed {
@@ -277,6 +279,7 @@ func TestSetBudgetLiftsCompletedFenceInOneTransaction(t *testing.T) {
 }
 
 func TestSetBudgetFencedSameTupleRefusesWithoutMutation(t *testing.T) {
+	t.Parallel()
 	root, budget, _, stopped, set := fencedSetBudgetBed(t, StopBatchComplete)
 	before := RenderFile(stopped)
 	beforeTip := acceptedTip(t, root)
@@ -298,6 +301,7 @@ func TestSetBudgetFencedSameTupleRefusesWithoutMutation(t *testing.T) {
 }
 
 func TestSetBudgetFencedIncompleteBatchNamesRemedy(t *testing.T) {
+	t.Parallel()
 	root, _, next, stopped, set := fencedSetBudgetBed(t, StopBatchOpen)
 	before := RenderFile(stopped)
 	result, err := setBudgetApprovedForTest(t, set, stopped.Id, next)
@@ -315,6 +319,7 @@ func TestSetBudgetFencedIncompleteBatchNamesRemedy(t *testing.T) {
 }
 
 func TestSetBudgetFencedOtherClaimNamesConflict(t *testing.T) {
+	t.Parallel()
 	root, _, next, stopped, set := fencedSetBudgetBed(t, StopBatchComplete)
 	otherID := "other-live-claim"
 	if result, err := Open(verbReq(root, "01J5X00000000000000000FB40", "mac-a"), otherID, "Occupy the stopped goal's machine.", OriginHuman, "Remain live."); err != nil || result.Outcome != OutcomeConfirmed {
@@ -343,6 +348,7 @@ func TestSetBudgetFencedOtherClaimNamesConflict(t *testing.T) {
 }
 
 func TestAbandonOfABreachStoppedClaimKeepsTheFenceFreesTheQuotaAndEnforcesTheDependencyRule(t *testing.T) {
+	t.Parallel()
 	_, root, _ := twoClones(t)
 	seedLedger(t, root)
 	configureAbandonFloorTest(t, strings.Repeat("a", 40))
@@ -523,6 +529,7 @@ func stopBatchForAbandoned(t *testing.T, file *GoalFile, state StopBatchState, n
 }
 
 func TestReopenFromAbandonedRequiresTheStopBatchComplete(t *testing.T) {
+	t.Parallel()
 	_, root := oneClone(t)
 	seedLedger(t, root)
 	configureAbandonFloorTest(t, strings.Repeat("a", 40))
@@ -583,6 +590,7 @@ func TestReopenFromAbandonedRequiresTheStopBatchComplete(t *testing.T) {
 }
 
 func TestReopenFromAbandonedIsBoundToTheClaimantCheckoutAndCarriedRecovers(t *testing.T) {
+	t.Parallel()
 	_, rootA, rootB := twoClones(t)
 	seedLedger(t, rootA)
 	configureAbandonFloorTest(t, strings.Repeat("a", 40))
@@ -698,6 +706,7 @@ func TestReopenFromAbandonedIsBoundToTheClaimantCheckoutAndCarriedRecovers(t *te
 }
 
 func TestRelayedResumeIsBoundOncePerGoalPerRuling(t *testing.T) {
+	t.Parallel()
 	_, root, _ := twoClones(t)
 	seedLedger(t, root)
 	if result, err := Open(verbReq(root, "01J5X00000000000000000S100", "mac-a"), "one-relayed-resume", "Bound this work.", "main", "Run it."); err != nil || result.Outcome != OutcomeConfirmed {
@@ -774,6 +783,7 @@ func TestRelayedResumeIsBoundOncePerGoalPerRuling(t *testing.T) {
 }
 
 func TestResumeRequiresHumanAuthority(t *testing.T) {
+	t.Parallel()
 	_, err := Resume(ResumeRequest{
 		VerbRequest: VerbRequest{Actor: Actor{Human: "argv-is-not-authority"}},
 		Budget:      Budget{ElapsedLimit: "1h", AttemptLimit: 1, ReservedJobMinutesLimit: 1, ActiveJobLimit: 1},
@@ -784,6 +794,7 @@ func TestResumeRequiresHumanAuthority(t *testing.T) {
 }
 
 func TestResumeRefusesInvalidFreshBudgetWithHumanAuthority(t *testing.T) {
+	t.Parallel()
 	root := t.TempDir()
 	now := time.Date(2026, 8, 29, 12, 0, 0, 0, time.UTC)
 	_, err := Resume(ResumeRequest{
@@ -801,6 +812,7 @@ func TestResumeRefusesInvalidFreshBudgetWithHumanAuthority(t *testing.T) {
 }
 
 func TestStopBatchRefusesContradictionsAndCompleteIsAbsorbing(t *testing.T) {
+	t.Parallel()
 	stamp := "2026-08-29T12:00:00Z"
 	complete := StopBatch{
 		StopID: "stop-bounded-r2-f1", GoalID: "bounded", GoalRevision: 2,

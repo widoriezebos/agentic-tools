@@ -11,6 +11,7 @@ import (
 )
 
 func TestAnnouncementLifecycleTokenStableWhenUnassociated(t *testing.T) {
+	t.Parallel()
 	base := goal.SessionStopAnnouncementForTest{
 		SessionId: "session-original", MainId: "main-1", Pid: 1, PidStartedAt: 2,
 		Runtime: "fake", InstanceTag: "tag", CommandHash: strings.Repeat("a", 64),

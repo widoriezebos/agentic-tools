@@ -580,7 +580,7 @@ func recoverConfirmedEffect(e Endpoint, tip string, entry Entry) error {
 		}
 		return raiseSplitOldArcDebt(e, tip, entry.Intent.Targets[0], entry.Opid, timeNowUTC())
 	case "carried":
-		return carriedAfterConfirmed(e.Root, entry.Intent.Args["approvedRef"], timeNowUTC())(tip)
+		return carriedAfterConfirmed(e, entry.Intent.Args["approvedRef"], timeNowUTC())(tip)
 	default:
 		return nil
 	}

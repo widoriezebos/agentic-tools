@@ -157,6 +157,7 @@ func (owner ledgerTrunkRedOwner) runJournaled(opid string, publish func() (goal.
 			}
 			return owner.publishAndClassify(opid, publish)
 		}
+		configureCarriedCounselor(&owner.endpoint)
 		if _, recoverErr := goal.Recover(owner.endpoint); recoverErr != nil {
 			return goal.PublishResult{}, recoverErr
 		}

@@ -14,6 +14,7 @@ import (
 )
 
 func TestNextPriority(t *testing.T) {
+	t.Parallel()
 	root := t.TempDir()
 	seedGoalNormConfig(t, root)
 
@@ -208,13 +209,11 @@ func TestNextPriority(t *testing.T) {
 	})
 
 	t.Run("configuration-loads-once", func(t *testing.T) {
-		previous := loadClaimAdmissionTierBoxes
 		loads := 0
-		loadClaimAdmissionTierBoxes = func(path string) (*config.TierBoxSet, error) {
+		loader := func(path string) (*config.TierBoxSet, error) {
 			loads++
-			return previous(path)
+			return config.LoadTierBoxSet(path)
 		}
-		defer func() { loadClaimAdmissionTierBoxes = previous }()
 
 		root := t.TempDir()
 		seedGoalNormConfig(t, root)
@@ -230,6 +229,7 @@ func TestNextPriority(t *testing.T) {
 		projection := Projection{Root: root, Tree: &TreeGoals{Live: map[string]*GoalFile{
 			one.Id: one, two.Id: two, three.Id: three,
 		}, Done: map[string]*GoalFile{}}}
+		projection.claimAdmissionLoader = loader
 		frontier, err := Next(projection, "m1")
 		if err != nil || strings.Join(frontier.Ready, ",") != "one,two,three" || loads != 1 {
 			t.Fatalf("multi-goal frontier loaded configuration %d times: frontier=%+v err=%v", loads, frontier, err)
@@ -244,6 +244,7 @@ func nextPriorityGoal(id string, priority uint8, sequence uint64, pin string) *G
 }
 
 func TestPriorityUnranked(t *testing.T) {
+	t.Parallel()
 	t.Run("sort-last", func(t *testing.T) {
 		unrankedA := vGoal("a-unranked", StateQueued)
 		unrankedB := vGoal("b-unranked", StateParked)
@@ -365,6 +366,7 @@ func insertRankFields(file *GoalFile, fields string) []byte {
 }
 
 func TestPriorityReordersAndResequences(t *testing.T) {
+	t.Parallel()
 	t.Run("insert", func(t *testing.T) {
 		root := rankedGoalBed(t, map[string][2]uint64{
 			"a": {1, 1}, "b": {1, 2}, "c": {1, 3},
@@ -467,6 +469,7 @@ func TestPriorityReordersAndResequences(t *testing.T) {
 }
 
 func TestPriorityLifecycle(t *testing.T) {
+	t.Parallel()
 	t.Run("done-reopen", func(t *testing.T) {
 		root := rankedGoalBed(t, map[string][2]uint64{
 			"a": {1, 1}, "b": {1, 2}, "c": {1, 3},
@@ -611,6 +614,7 @@ func TestPriorityLifecycle(t *testing.T) {
 }
 
 func TestPriorityRace(t *testing.T) {
+	t.Parallel()
 	t.Run("same-position", func(t *testing.T) {
 		a, b := priorityRaceBed(t, []*GoalFile{
 			rankedGoal("a", 1, 1), rankedGoal("b", 1, 2),
@@ -776,6 +780,7 @@ func TestPriorityRace(t *testing.T) {
 }
 
 func TestPriorityRecovery(t *testing.T) {
+	t.Parallel()
 	t.Run("unlanded", func(t *testing.T) {
 		root := rankedGoalBed(t, map[string][2]uint64{"target": {1, 1}})
 		opid := Opid("01J5X000000000000000000W10", "mac-a", "lin-1")

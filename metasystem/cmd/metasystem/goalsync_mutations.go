@@ -68,6 +68,16 @@ func bindHandoverTargetRoot(request *goal.VerbRequest, targetRoot string) {
 	request.HandoverTargetRoot = targetRoot
 }
 
+func configureCarriedCounselor(endpoint *goal.Endpoint) {
+	endpoint.ConfigureCarriedCounselorAppend(func(root, _ string, row goal.HistoryLine, _ time.Time) error {
+		line, err := counselor.CarriedLandingLine(row)
+		if err != nil {
+			return err
+		}
+		return counselor.AppendCarriedLanding(root, line)
+	})
+}
+
 func goalHandoverTargetLiveness(root, targetMachine, targetLineage string, targetEpoch int64) (identity.Liveness, error) {
 	machine, err := goal.ResolveMachine(root)
 	if err != nil || machine != targetMachine {
@@ -385,6 +395,7 @@ func runGoalCarried(args []string) int {
 		fmt.Fprintln(os.Stderr, err)
 		return 1
 	}
+	configureCarriedCounselor(&req.Endpoint)
 	selected := 0
 	if *entry != "" {
 		selected++
@@ -559,6 +570,7 @@ func syncReqClassifiedWithTerminalGrade(root, by, lineageFlag string, observedPr
 	if err != nil {
 		return goal.VerbRequest{}, err
 	}
+	configureCarriedCounselor(&e)
 	machine, err := goal.ResolveMachine(root)
 	if err != nil {
 		return goal.VerbRequest{}, err
@@ -1594,9 +1606,12 @@ func runGoalSetPriority(args []string) int {
 	return runGoalSetPriorityWithAuthority(args, proveEnrolledGoalHumanAuthority)
 }
 
-func configureAbandonFleetFloor() {
-	goal.ConfigureAbandonFleetFloor(
+func configureAbandonFleetFloor(request *goal.VerbRequest) {
+	request.ConfigureAbandon(
 		func() string { return supervise.BuildStamp },
+		func(root, ancestor, descendant string) (bool, error) {
+			return goal.IsAncestor(root, ancestor, descendant)
+		},
 		func(floor string, isAncestor func(a, b string) (bool, error), now time.Time) ([]string, error) {
 			return supervise.EngineFloorProblems(floor, isAncestor, identity.KernelProber{}, now)
 		},
@@ -1637,7 +1652,7 @@ func runGoalAbandon(args []string) int {
 		fmt.Fprintln(os.Stderr, err)
 		return 1
 	}
-	configureAbandonFleetFloor()
+	configureAbandonFleetFloor(&request)
 	result, err := goal.Abandon(request, *id, goal.AbandonSpec{Because: *because, Carried: *carried, Waive: waive, Also: also}, &proof)
 	return printSyncResult(result, err)
 }

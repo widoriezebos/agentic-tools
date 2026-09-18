@@ -370,6 +370,7 @@ func runGoalMigrate(args []string) int {
 		fmt.Fprintf(os.Stderr, "goal migrate: %v\n", err)
 		return 1
 	}
+	configureCarriedCounselor(&endpoint)
 	res, err := goal.Migrate(goal.VerbRequest{
 		Endpoint: endpoint, Actor: actor, Ulid: ulid, Now: time.Now(), CallerClass: classification.Class,
 	}, goal.MigrateOptions{
@@ -499,6 +500,7 @@ func runGoalRecover(args []string) int {
 		fmt.Fprintf(os.Stderr, "goal recover: %v\n", err)
 		return 1
 	}
+	configureCarriedCounselor(&endpoint)
 	now, err := goalCommandNow(*root)
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "goal recover: %v\n", err)

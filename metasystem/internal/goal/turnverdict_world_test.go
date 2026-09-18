@@ -13,6 +13,7 @@ import (
 // claim may suppress separate claimable backlog, which is covered by the idle
 // invariant fixtures.
 func TestTurnVerdictConvertedClaimHasTheFloor(t *testing.T) {
+	t.Parallel()
 	root := servingBed(t, "bed-m1", map[string]*GoalFile{
 		"ship-it": {
 			Id: "ship-it", State: "claimed", Intent: "Ship the whole thing", Origin: "main",
@@ -40,6 +41,7 @@ func TestTurnVerdictConvertedClaimHasTheFloor(t *testing.T) {
 // A converted queue without valid structured budgets is visible in backlog
 // order but is not the claimable backlog this invariant blocks on.
 func TestTurnVerdictConvertedBudgetlessQueueIsQuiet(t *testing.T) {
+	t.Parallel()
 	root := servingBed(t, "bed-m1", map[string]*GoalFile{
 		"older": {
 			Id: "older", State: "queued", Intent: "First in line", Origin: "main",
@@ -62,6 +64,7 @@ func TestTurnVerdictConvertedBudgetlessQueueIsQuiet(t *testing.T) {
 
 // A fresh goal-free declaration on the root record is the all-clear.
 func TestTurnVerdictConvertedFreshFreeIsAllClear(t *testing.T) {
+	t.Parallel()
 	root := servingBed(t, "bed-m1", nil)
 	scan, err := ScanDigest(root)
 	if err != nil {

@@ -77,6 +77,7 @@ func expectProblem(t *testing.T, problems []Problem, fragment string) {
 }
 
 func TestAValidTreeValidates(t *testing.T) {
+	t.Parallel()
 	blocker := vGoal("base", StateDone)
 	claimed := vGoal("current-work", StateClaimed)
 	claimed.Blocked = []string{"base"}
@@ -89,6 +90,7 @@ func TestAValidTreeValidates(t *testing.T) {
 }
 
 func TestIntegrityTamperRefusesByName(t *testing.T) {
+	t.Parallel()
 	files := vTree(vRoot(), []*GoalFile{vGoal("g", StateQueued)}, nil)
 	key := goalsPrefix + "g.md"
 	files[key] = []byte(strings.Replace(string(files[key]), "Do the thing", "Do another thing", 1))
@@ -96,6 +98,7 @@ func TestIntegrityTamperRefusesByName(t *testing.T) {
 }
 
 func TestPlacementAndStateMustAgree(t *testing.T) {
+	t.Parallel()
 	stray := vGoal("stray", StateDone)
 	files := vTree(vRoot(), []*GoalFile{stray}, nil)
 	expectProblem(t, problemsOf(files), "State done outside the archive")
@@ -120,6 +123,7 @@ func abandonedFixtureBytes(id string, blocked ...string) []byte {
 }
 
 func TestArchivedAbandonedRecordParsesIntoItsOwnMap(t *testing.T) {
+	t.Parallel()
 	files := vTree(vRoot(), nil, nil)
 	files[recordsGoalsPrefix+"x.md"] = abandonedFixtureBytes("x")
 	tree, problems := ParseTreeFiles(files)
@@ -136,6 +140,7 @@ func TestArchivedAbandonedRecordParsesIntoItsOwnMap(t *testing.T) {
 }
 
 func TestValidateTreeRefusesALiveGoalBlockedByAnAbandonedGoal(t *testing.T) {
+	t.Parallel()
 	files := vTree(vRoot(), []*GoalFile{func() *GoalFile {
 		f := vGoal("dependent", StateQueued)
 		f.Blocked = []string{"abandoned-blocker"}
@@ -152,11 +157,13 @@ func TestValidateTreeRefusesALiveGoalBlockedByAnAbandonedGoal(t *testing.T) {
 }
 
 func TestMissingRootRecordRefuses(t *testing.T) {
+	t.Parallel()
 	files := vTree(nil, []*GoalFile{vGoal("g", StateQueued)}, nil)
 	expectProblem(t, problemsOf(files), "root record is missing")
 }
 
 func TestDanglingBlockerRefuses(t *testing.T) {
+	t.Parallel()
 	g := vGoal("g", StateQueued)
 	g.Blocked = []string{"ghost"}
 	files := vTree(vRoot(), []*GoalFile{g}, nil)
@@ -164,6 +171,7 @@ func TestDanglingBlockerRefuses(t *testing.T) {
 }
 
 func TestComposedCycleRefuses(t *testing.T) {
+	t.Parallel()
 	a := vGoal("a", StateQueued)
 	a.Blocked = []string{"b"}
 	b := vGoal("b", StateQueued)
@@ -175,6 +183,7 @@ func TestComposedCycleRefuses(t *testing.T) {
 }
 
 func TestClaimedImpliesBlockersDone(t *testing.T) {
+	t.Parallel()
 	open := vGoal("open-dep", StateQueued)
 	claimed := vGoal("eager", StateClaimed)
 	claimed.Blocked = []string{"open-dep"}
@@ -183,6 +192,7 @@ func TestClaimedImpliesBlockersDone(t *testing.T) {
 }
 
 func TestBlockedDoneRefuses(t *testing.T) {
+	t.Parallel()
 	open := vGoal("still-open", StateQueued)
 	concluded := vGoal("hasty", StateDone)
 	concluded.Blocked = []string{"still-open"}
@@ -191,6 +201,7 @@ func TestBlockedDoneRefuses(t *testing.T) {
 }
 
 func TestQuotaIsOneClaimPerMachine(t *testing.T) {
+	t.Parallel()
 	first := vGoal("first", StateClaimed)
 	second := vGoal("second", StateClaimed)
 	files := vTree(vRoot(), []*GoalFile{first, second}, nil)
@@ -215,6 +226,7 @@ func TestQuotaIsOneClaimPerMachine(t *testing.T) {
 }
 
 func TestGoalFreeExcludesQueuedAndClaimed(t *testing.T) {
+	t.Parallel()
 	root := vRoot()
 	root.Free = &FreeRecord{Declared: "2026-08-20T11:00:00Z", Origin: "main", Digest: strings.Repeat("cd", 32)}
 	files := vTree(root, []*GoalFile{vGoal("g", StateQueued)}, nil)
@@ -228,6 +240,7 @@ func TestGoalFreeExcludesQueuedAndClaimed(t *testing.T) {
 }
 
 func TestGoalInBothLiveAndArchiveRefuses(t *testing.T) {
+	t.Parallel()
 	twin := vGoal("twin", StateQueued)
 	twinDone := vGoal("twin", StateDone)
 	files := vTree(vRoot(), []*GoalFile{twin}, []*GoalFile{twinDone})
@@ -235,6 +248,7 @@ func TestGoalInBothLiveAndArchiveRefuses(t *testing.T) {
 }
 
 func TestFileNameAndIdMustAgree(t *testing.T) {
+	t.Parallel()
 	g := vGoal("actual", StateQueued)
 	files := vTree(vRoot(), nil, nil)
 	files[goalsPrefix+"pretend.md"] = RenderFile(g)
@@ -242,6 +256,7 @@ func TestFileNameAndIdMustAgree(t *testing.T) {
 }
 
 func TestValidateCommitReadsARealTree(t *testing.T) {
+	t.Parallel()
 	_, a, _ := twoClones(t)
 	e := endpointFor(a)
 

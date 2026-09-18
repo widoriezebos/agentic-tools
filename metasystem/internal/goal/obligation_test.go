@@ -7,6 +7,7 @@ import (
 )
 
 func TestGovernedObligationRoundTripsTypedAssumptionsAndTriggers(t *testing.T) {
+	t.Parallel()
 	f := claimedGolden()
 	f.Id = "governed"
 	f.Budget = &Budget{ElapsedLimit: "2h", AttemptLimit: 3, ReservedJobMinutesLimit: 90, ActiveJobLimit: 1}
@@ -39,6 +40,7 @@ func TestGovernedObligationRoundTripsTypedAssumptionsAndTriggers(t *testing.T) {
 }
 
 func TestLegacyTwoFieldAuthorityMarkerRemainsReadable(t *testing.T) {
+	t.Parallel()
 	f := claimedGolden()
 	f.Id = "legacy-authority"
 	f.Budget = &Budget{ElapsedLimit: "2h", AttemptLimit: 3, ReservedJobMinutesLimit: 90, ActiveJobLimit: 1}
@@ -67,6 +69,7 @@ func TestLegacyTwoFieldAuthorityMarkerRemainsReadable(t *testing.T) {
 }
 
 func TestGovernedObligationRoundTripsEveryLawfulState(t *testing.T) {
+	t.Parallel()
 	for _, state := range []ObligationState{ObligationDraft, ObligationObserve, ObligationLimited, ObligationEnforced} {
 		t.Run(string(state), func(t *testing.T) {
 			f := claimedGolden()

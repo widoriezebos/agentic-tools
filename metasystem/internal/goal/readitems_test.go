@@ -26,6 +26,7 @@ func readItemBed(t *testing.T, ids ...string) string {
 }
 
 func TestReadItemsAddIsIdempotent(t *testing.T) {
+	t.Parallel()
 	root := readItemBed(t, "source")
 	if result, err := AddReadItems(readItemRequest(root, 10), "source", "read-a", []string{"Polish the error."}); err != nil || result.Outcome != OutcomeConfirmed {
 		t.Fatalf("first add: %+v %v", result, err)
@@ -41,6 +42,7 @@ func TestReadItemsAddIsIdempotent(t *testing.T) {
 }
 
 func TestReadItemIDsStayStableAcrossAddCalls(t *testing.T) {
+	t.Parallel()
 	root := readItemBed(t, "source")
 	first, err := AddReadItems(readItemRequest(root, 20), "source", "review", []string{"First.", "Second."})
 	if err != nil || first.Outcome != OutcomeConfirmed {
@@ -58,6 +60,7 @@ func TestReadItemIDsStayStableAcrossAddCalls(t *testing.T) {
 }
 
 func TestReadItemsCloseNeedsExactlyOneWay(t *testing.T) {
+	t.Parallel()
 	root := readItemBed(t, "source")
 	commit, moved, accepted := "HEAD", "target", "not a defect"
 	for _, closure := range []ReadItemClosure{{}, {Fixed: &commit, Moved: &moved}, {Fixed: &commit, Accepted: &accepted}} {
@@ -68,6 +71,7 @@ func TestReadItemsCloseNeedsExactlyOneWay(t *testing.T) {
 }
 
 func TestReadItemsFixedRefusesUnknownCommit(t *testing.T) {
+	t.Parallel()
 	root := readItemBed(t, "source")
 	unknown := strings.Repeat("f", 40)
 	if _, err := CloseReadItem(readItemRequest(root, 40), "source", "read-1", ReadItemClosure{Fixed: &unknown}); err == nil || !strings.Contains(err.Error(), "does not resolve to a commit") {
@@ -76,6 +80,7 @@ func TestReadItemsFixedRefusesUnknownCommit(t *testing.T) {
 }
 
 func TestReadItemsMoveIsAtomicAndRefusesDoneTarget(t *testing.T) {
+	t.Parallel()
 	root := readItemBed(t, "source", "target", "done-target")
 	added, err := AddReadItems(readItemRequest(root, 50), "source", "critic", []string{"Keep this visible."})
 	if err != nil || added.Outcome != OutcomeConfirmed {
@@ -118,6 +123,7 @@ func TestReadItemsMoveIsAtomicAndRefusesDoneTarget(t *testing.T) {
 }
 
 func TestReadItemsAcceptedRefusesBlankReason(t *testing.T) {
+	t.Parallel()
 	root := readItemBed(t, "source")
 	blank := "  "
 	if _, err := CloseReadItem(readItemRequest(root, 60), "source", "read-1", ReadItemClosure{Accepted: &blank}); err == nil || !strings.Contains(err.Error(), "non-blank reason") {
@@ -126,6 +132,7 @@ func TestReadItemsAcceptedRefusesBlankReason(t *testing.T) {
 }
 
 func TestReadItemsCloseRefusesClosedItem(t *testing.T) {
+	t.Parallel()
 	root := readItemBed(t, "source")
 	if result, err := AddReadItems(readItemRequest(root, 61), "source", "critic", []string{"One decision."}); err != nil || result.Outcome != OutcomeConfirmed {
 		t.Fatalf("add: %+v %v", result, err)
@@ -141,6 +148,7 @@ func TestReadItemsCloseRefusesClosedItem(t *testing.T) {
 }
 
 func TestDoneRefusesOpenReadItemIDsAndPassesWhenClosed(t *testing.T) {
+	t.Parallel()
 	root := readItemBed(t, "source")
 	added, err := AddReadItems(readItemRequest(root, 70), "source", "read-z", []string{"Explain the fallback.", "Name the invariant."})
 	if err != nil || added.Outcome != OutcomeConfirmed {
@@ -196,6 +204,7 @@ func assertTerminalReadItemRefusal(t *testing.T, root, goalID, itemID string, be
 }
 
 func TestEveryTerminalGoalTransitionRefusesOpenReadItems(t *testing.T) {
+	t.Parallel()
 	t.Run("split", func(t *testing.T) {
 		root := readItemBed(t, "split-parent")
 		if result, err := AddReadItems(readItemRequest(root, 100), "split-parent", "critic", []string{"Keep the parent live."}); err != nil || result.Outcome != OutcomeConfirmed {
@@ -299,6 +308,7 @@ func TestEveryTerminalGoalTransitionRefusesOpenReadItems(t *testing.T) {
 }
 
 func TestRetroReadItemsListsOpenAndFlagsConcludedDefect(t *testing.T) {
+	t.Parallel()
 	live := vGoal("live-read", StateQueued)
 	live.ReadItems = []ReadItem{{ID: "critic-1", Read: "critic", Text: "Follow up.", State: ReadItemOpen, AddedAt: "2026-09-17T10:00:00Z"}}
 	doneBytes := string(RenderFile(vGoal("done-read", StateDone)))

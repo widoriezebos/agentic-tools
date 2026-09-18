@@ -35,6 +35,7 @@ func budgetExtensionBed(t *testing.T) (string, VerbRequest, BudgetExtensionOffer
 }
 
 func TestExtendBudgetRaisesOnlyConsumptionMembersAndWritesMarker(t *testing.T) {
+	t.Parallel()
 	root, req, offer, claimRevision := budgetExtensionBed(t)
 	result, err := ExtendBudget(req, "earned-raise", offer)
 	if err != nil || result.Outcome != OutcomeConfirmed {
@@ -85,6 +86,7 @@ func TestExtendBudgetRaisesOnlyConsumptionMembersAndWritesMarker(t *testing.T) {
 }
 
 func TestExtendBudgetAcceptsApprovalEarlierInTheSameSecond(t *testing.T) {
+	t.Parallel()
 	root, req, offer, _ := budgetExtensionBed(t)
 	req.Now = time.Date(2026, 8, 20, 22, 0, 0, 0, time.UTC)
 	result, err := ExtendBudget(req, "earned-raise", offer)
@@ -105,6 +107,7 @@ func TestExtendBudgetAcceptsApprovalEarlierInTheSameSecond(t *testing.T) {
 }
 
 func TestExtendBudgetRecoveryReplaysJournaledOffer(t *testing.T) {
+	t.Parallel()
 	root, req, offer, _ := budgetExtensionBed(t)
 	publish := extendBudgetRequest(req, "earned-raise", offer)
 	entry := Entry{Opid: publish.Opid, Machine: req.Actor.Machine, Lineage: req.Actor.Lineage, Intent: publish.Intent}
@@ -124,6 +127,7 @@ func TestExtendBudgetRecoveryReplaysJournaledOffer(t *testing.T) {
 }
 
 func TestBudgetExtensionMarkerSurvivesClaimLifecycle(t *testing.T) {
+	t.Parallel()
 	root, req, offer, _ := budgetExtensionBed(t)
 	extended, err := ExtendBudget(req, "earned-raise", offer)
 	if err != nil || extended.Outcome != OutcomeConfirmed {
@@ -174,6 +178,7 @@ func TestBudgetExtensionMarkerSurvivesClaimLifecycle(t *testing.T) {
 }
 
 func TestBudgetExtensionMarkerSurvivesHumanActsStealAndSplit(t *testing.T) {
+	t.Parallel()
 	root, req, offer, _ := budgetExtensionBed(t)
 	extended, err := ExtendBudget(req, "earned-raise", offer)
 	if err != nil || extended.Outcome != OutcomeConfirmed {
@@ -268,6 +273,7 @@ func TestBudgetExtensionMarkerSurvivesHumanActsStealAndSplit(t *testing.T) {
 }
 
 func TestReconcileRefusesBudgetExtensionEdits(t *testing.T) {
+	t.Parallel()
 	base := approvedGoalFixture(vGoal("extension-edit", StateQueued), testBudget())
 	base.State = StateClaimed
 	base.Claimed = &ClaimRecord{Machine: "mac-a", Lineage: "lin-1", At: base.History[0].At, Revision: 1, AccountingRevision: 1}

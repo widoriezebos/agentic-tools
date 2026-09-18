@@ -15,6 +15,7 @@ func landingReq(root, ulid, machine string, at time.Time) VerbRequest {
 }
 
 func TestLandReadyOpensTheSlotBesideAWorkingClaim(t *testing.T) {
+	t.Parallel()
 	_, a, b := twoClones(t)
 	seedLedger(t, a)
 	budget := testBudget()
@@ -173,6 +174,7 @@ func TestLandReadyOpensTheSlotBesideAWorkingClaim(t *testing.T) {
 }
 
 func TestSamePairReclaimKeepsItsEpisodeAndAnotherPairStartsFresh(t *testing.T) {
+	t.Parallel()
 	_, a, b := twoClones(t)
 	seedLedger(t, a)
 	budget := testBudget()
@@ -269,6 +271,7 @@ func TestSamePairReclaimKeepsItsEpisodeAndAnotherPairStartsFresh(t *testing.T) {
 }
 
 func TestParksDropOrKeepTheEpisodeByWhoParks(t *testing.T) {
+	t.Parallel()
 	_, a, _ := twoClones(t)
 	seedLedger(t, a)
 	budget := testBudget()
@@ -369,6 +372,7 @@ func TestParksDropOrKeepTheEpisodeByWhoParks(t *testing.T) {
 }
 
 func TestSetBudgetKeepsTheLandingSlotAndUnapproveDropsIt(t *testing.T) {
+	t.Parallel()
 	_, a, _ := twoClones(t)
 	seedLedger(t, a)
 	budget := testBudget()
@@ -407,6 +411,7 @@ func TestSetBudgetKeepsTheLandingSlotAndUnapproveDropsIt(t *testing.T) {
 }
 
 func TestLandingAndEpisodeRecordsRoundTripAndValidate(t *testing.T) {
+	t.Parallel()
 	file := episodeGolden()
 	file.Claimed.IdleSeconds = 90
 	file.Landing = &LandingRecord{At: "2026-08-20T03:00:00Z", Opid: "01J5X0000000000000000000C5-mac-studio-1a2b3c4d"}
@@ -477,6 +482,7 @@ func TestLandingAndEpisodeRecordsRoundTripAndValidate(t *testing.T) {
 }
 
 func TestHandEditsOfLandingAndEpisodeFollowTheirVerbs(t *testing.T) {
+	t.Parallel()
 	base := episodeGolden()
 	base.Landing = &LandingRecord{At: "2026-08-20T03:00:00Z", Opid: "01J5X0000000000000000000C5-mac-studio-1a2b3c4d"}
 	// Adding, changing or dropping the slot by hand refuses.
@@ -546,6 +552,7 @@ func TestHandEditsOfLandingAndEpisodeFollowTheirVerbs(t *testing.T) {
 }
 
 func TestRecoveryReplaysADeadOwnersLandReady(t *testing.T) {
+	t.Parallel()
 	_, a, _ := twoClones(t)
 	seedLedger(t, a)
 	if res, err := Open(verbReq(a, "01J5X00000000000000000NR00", "mac-a"), "built", "Built work of a dead owner.", OriginMain, "Land it."); err != nil || res.Outcome != OutcomeConfirmed {
@@ -570,6 +577,7 @@ func TestRecoveryReplaysADeadOwnersLandReady(t *testing.T) {
 }
 
 func TestResumeIsNotBlockedByALandingClaim(t *testing.T) {
+	t.Parallel()
 	_, root, _ := twoClones(t)
 	seedLedger(t, root)
 	budget := Budget{ElapsedLimit: "1m", AttemptLimit: 2, ReservedJobMinutesLimit: 20, ActiveJobLimit: 1}
@@ -643,6 +651,7 @@ func TestResumeIsNotBlockedByALandingClaim(t *testing.T) {
 }
 
 func TestOwnPairLeavesKeepTheEpisodeOnEveryPath(t *testing.T) {
+	t.Parallel()
 	_, a, _ := twoClones(t)
 	seedLedger(t, a)
 	budget := testBudget()
@@ -784,6 +793,7 @@ func TestOwnPairLeavesKeepTheEpisodeOnEveryPath(t *testing.T) {
 }
 
 func TestLandReadyRefusesAFencedClaimAndAFencedLandingClaimKeepsItsSlot(t *testing.T) {
+	t.Parallel()
 	_, root, _ := twoClones(t)
 	seedLedger(t, root)
 	budget := Budget{ElapsedLimit: "1m", AttemptLimit: 2, ReservedJobMinutesLimit: 20, ActiveJobLimit: 1}
@@ -858,6 +868,7 @@ func TestLandReadyRefusesAFencedClaimAndAFencedLandingClaimKeepsItsSlot(t *testi
 }
 
 func TestReleaseStealAndSetArcClearTheLandingSlot(t *testing.T) {
+	t.Parallel()
 	_, a, b := twoClones(t)
 	seedLedger(t, a)
 	budget := testBudget()
@@ -927,6 +938,7 @@ func TestReleaseStealAndSetArcClearTheLandingSlot(t *testing.T) {
 }
 
 func TestAPersonsBudgetActsAndDoneDropTheKeptEpisode(t *testing.T) {
+	t.Parallel()
 	_, a, _ := twoClones(t)
 	seedLedger(t, a)
 	budget := testBudget()
@@ -991,6 +1003,7 @@ func TestAPersonsBudgetActsAndDoneDropTheKeptEpisode(t *testing.T) {
 }
 
 func TestLeaveAndResumeEpisodeCarryTheObligationRevision(t *testing.T) {
+	t.Parallel()
 	f := episodeGolden()
 	f.Obligation = &GovernedObligation{Revision: 4}
 	leaveEpisode(f, "2026-08-20T03:00:00Z")

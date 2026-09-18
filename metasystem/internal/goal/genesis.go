@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"os"
 	"os/exec"
+	"path/filepath"
 	"strings"
 )
 
@@ -30,6 +31,10 @@ import (
 // probe failure (git unreadable), which the caller treats as not shaped —
 // a probe that cannot read refuses rather than authorizes.
 func AdoptionShaped(root string, ledgerBytes []byte) (shaped bool, reason string, err error) {
+	return adoptionShapedWithEnvironment(root, ledgerBytes, nil)
+}
+
+func adoptionShapedWithEnvironment(root string, ledgerBytes []byte, environment []string) (shaped bool, reason string, err error) {
 	if ledgerBytes != nil {
 		parsed, problems := Parse(ledgerBytes)
 		if len(problems) > 0 {
@@ -39,7 +44,7 @@ func AdoptionShaped(root string, ledgerBytes []byte) (shaped bool, reason string
 			return false, "the ledger already carries goals but has no accepted baseline; only the lease holder may re-baseline an initialized project (a deleted goals-accepted.json is restored, not re-adopted)", nil
 		}
 	}
-	tracked, err := headTracksLedger(root)
+	tracked, err := headTracksLedgerWithEnvironment(root, environment)
 	if err != nil {
 		return false, "", err
 	}
@@ -55,7 +60,11 @@ func AdoptionShaped(root string, ledgerBytes []byte) (shaped bool, reason string
 // a git work tree, or a work tree with no commit yet, tracks nothing.
 // Any other git failure is an error: the guard fails closed.
 func headTracksLedger(root string) (bool, error) {
-	out, err := gitIn(root, "rev-parse", "--is-inside-work-tree")
+	return headTracksLedgerWithEnvironment(root, nil)
+}
+
+func headTracksLedgerWithEnvironment(root string, environment []string) (bool, error) {
+	out, err := gitInWithEnvironment(root, environment, "rev-parse", "--is-inside-work-tree")
 	if err != nil {
 		if strings.Contains(strings.ToLower(err.Error()), "not a git repository") {
 			return false, nil
@@ -67,14 +76,14 @@ func headTracksLedger(root string) (bool, error) {
 		// tree, so no tracked ledger at a work-tree path.
 		return false, nil
 	}
-	if _, err := gitIn(root, "rev-parse", "--verify", "-q", "HEAD^{commit}"); err != nil {
+	if _, err := gitInWithEnvironment(root, environment, "rev-parse", "--verify", "-q", "HEAD^{commit}"); err != nil {
 		var exit *exec.ExitError
 		if errors.As(err, &exit) && exit.ExitCode() == 1 {
 			return false, nil // unborn HEAD: nothing committed yet
 		}
 		return false, err
 	}
-	out, err = gitIn(root, "ls-tree", "--name-only", "HEAD", "--", "plans/goals.md")
+	out, err = gitInWithEnvironment(root, environment, "ls-tree", "--name-only", "HEAD", "--", "plans/goals.md")
 	if err != nil {
 		return false, err
 	}
@@ -90,9 +99,12 @@ func headTracksLedger(root string) (bool, error) {
 // siblings would let the caller — deliberately or accidentally — point
 // the probe at a repository of its choosing.
 func gitIn(root string, args ...string) (string, error) {
-	cmd := exec.Command("git", args...)
+	return gitInWithEnvironment(root, nil, args...)
+}
+
+func gitInWithEnvironment(root string, environment []string, args ...string) (string, error) {
+	cmd := commandWithEnvironment(environment, "git", args...)
 	cmd.Dir = root
-	cmd.Env = environWithoutGitSteering()
 	var stdout, stderr bytes.Buffer
 	cmd.Stdout = &stdout
 	cmd.Stderr = &stderr
@@ -104,6 +116,32 @@ func gitIn(root string, args ...string) (string, error) {
 		return "", fmt.Errorf("git %s: %v", strings.Join(args, " "), err)
 	}
 	return stdout.String(), nil
+}
+
+func commandWithEnvironment(environment []string, name string, args ...string) *exec.Cmd {
+	environment = environWithoutGitSteeringFrom(environment)
+	path := ""
+	for _, entry := range environment {
+		key, value, found := strings.Cut(entry, "=")
+		if !found || key != "PATH" {
+			continue
+		}
+		for _, directory := range filepath.SplitList(value) {
+			if !filepath.IsAbs(directory) {
+				continue
+			}
+			candidate := filepath.Join(directory, name)
+			if info, err := os.Stat(candidate); err == nil && !info.IsDir() && info.Mode().Perm()&0o111 != 0 {
+				path = candidate
+				break
+			}
+		}
+		break
+	}
+	if path == "" {
+		path = filepath.Join(string(os.PathSeparator), "__metasystem_missing__", name)
+	}
+	return &exec.Cmd{Path: path, Args: append([]string{name}, args...), Env: environment}
 }
 
 // gitError is an exec.ExitError that also speaks git's stderr, so errors.As
@@ -123,6 +161,10 @@ func (e *gitError) Unwrap() error { return e.ExitError }
 // environWithoutGitSteering is the process environment minus every
 // variable that redirects git away from the probed directory.
 func environWithoutGitSteering() []string {
+	return environWithoutGitSteeringFrom(nil)
+}
+
+func environWithoutGitSteeringFrom(environment []string) []string {
 	steering := map[string]bool{
 		"GIT_DIR": true, "GIT_WORK_TREE": true, "GIT_COMMON_DIR": true,
 		"GIT_INDEX_FILE": true, "GIT_CEILING_DIRECTORIES": true,
@@ -134,7 +176,10 @@ func environWithoutGitSteering() []string {
 		"GIT_REPLACE_REF_BASE": true,
 	}
 	var out []string
-	for _, entry := range os.Environ() {
+	if environment == nil {
+		environment = os.Environ()
+	}
+	for _, entry := range environment {
 		name, _, _ := strings.Cut(entry, "=")
 		if steering[name] || strings.HasPrefix(name, "GIT_CONFIG_KEY_") || strings.HasPrefix(name, "GIT_CONFIG_VALUE_") {
 			continue

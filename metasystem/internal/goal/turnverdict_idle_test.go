@@ -60,7 +60,7 @@ func installIdleLiveClaim(t *testing.T, root, lineage string) identity.Prober {
 
 func seedPendingWaitIdleCounter(t *testing.T, fixture *pendingWaitVerdictFixture, blocks int) ClaimableBudgetedWork {
 	t.Helper()
-	work, err := readClaimableBudgetedWork(fixture.root, fixture.store.Now(), fixture.store.Prober)
+	work, err := readClaimableBudgetedWork(fixture.root, fixture.store.Now(), fixture.store.Prober, fixture.store.projectionDeps)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -91,6 +91,7 @@ func pendingWaitIdleOutcome(t *testing.T, fixture *pendingWaitVerdictFixture) (V
 }
 
 func TestPendingWaitIdleBacklog(t *testing.T) {
+	t.Parallel()
 	t.Run("work waits have the live delegate counter effect", func(t *testing.T) {
 		liveDelegate := newPendingWaitVerdictFixture(t, "job", true)
 		liveDelegate.row.OpenWorkSignature = ""
@@ -251,6 +252,7 @@ func TestPendingWaitIdleBacklog(t *testing.T) {
 }
 
 func TestIdleBacklogDisplayLimitsAndPreservesGoalOrder(t *testing.T) {
+	t.Parallel()
 	tests := []struct {
 		name    string
 		work    ClaimableBudgetedWork
@@ -296,6 +298,7 @@ func TestIdleBacklogDisplayLimitsAndPreservesGoalOrder(t *testing.T) {
 }
 
 func TestPriorityIdleProjection(t *testing.T) {
+	t.Parallel()
 	ranked := budgetedQueuedGoal("z-ranked-first", "2026-08-23T00:00:02Z")
 	ranked.Priority, ranked.Sequence = 1, 1
 	pinned := budgetedQueuedGoal("a-local-pin-second", "2026-08-23T00:00:01Z")
@@ -352,6 +355,7 @@ func TestPriorityIdleProjection(t *testing.T) {
 }
 
 func TestNextAndIdleRefusalIgnoreAnAbandonedGoal(t *testing.T) {
+	t.Parallel()
 	_, root := oneClone(t)
 	seedLedger(t, root)
 	mustGit(t, root, "config", "metasystem.goal.machine", "bed-m1")
@@ -404,6 +408,7 @@ func TestNextAndIdleRefusalIgnoreAnAbandonedGoal(t *testing.T) {
 }
 
 func TestRefusedBacklogIsReportedWithoutBlocking(t *testing.T) {
+	t.Parallel()
 	refused := budgetedQueuedGoal("refused-backlog", "2026-08-23T00:00:00Z")
 	refused.Budget.ReservedJobMinutesLimit = 2400
 	refused.Priority, refused.Sequence = 1, 1
@@ -458,6 +463,7 @@ func TestRefusedBacklogIsReportedWithoutBlocking(t *testing.T) {
 }
 
 func TestIdleBacklogBlocksTwiceThenDefersClaimAndPreparesStewardContinuation(t *testing.T) {
+	t.Parallel()
 	root := servingBed(t, "bed-m1", map[string]*GoalFile{
 		"waiting": budgetedQueuedGoal("waiting", "2026-08-23T00:00:00Z"),
 	})
@@ -536,6 +542,7 @@ func TestIdleBacklogBlocksTwiceThenDefersClaimAndPreparesStewardContinuation(t *
 }
 
 func TestIdleBacklogContinuesThisMachinesHeldClaimWithoutAnotherClaim(t *testing.T) {
+	t.Parallel()
 	held := budgetedQueuedGoal("held", "2026-08-22T00:00:00Z")
 	held.State = StateClaimed
 	held.Revision = 2
@@ -582,6 +589,7 @@ func TestIdleBacklogContinuesThisMachinesHeldClaimWithoutAnotherClaim(t *testing
 }
 
 func TestIdleBacklogContinuationSkipsAGoalWaitingOnAHumanWord(t *testing.T) {
+	t.Parallel()
 	waitsForHuman := budgetedQueuedGoal("waits-for-human", "2026-08-23T00:00:00Z")
 	waitsForHuman.NextStep = "RULING NEEDED: choose the release boundary"
 	waitsForHuman.Priority, waitsForHuman.Sequence = 1, 1
@@ -626,6 +634,7 @@ func TestIdleBacklogContinuationSkipsAGoalWaitingOnAHumanWord(t *testing.T) {
 }
 
 func TestIdleBacklogContinuationLeavesAHeldGoalThatWaitsOnAHumanWord(t *testing.T) {
+	t.Parallel()
 	held := budgetedQueuedGoal("held-for-human", "2026-08-22T00:00:00Z")
 	held.State = StateClaimed
 	held.Revision = 2
@@ -681,6 +690,7 @@ func TestIdleBacklogContinuationLeavesAHeldGoalThatWaitsOnAHumanWord(t *testing.
 }
 
 func TestIdleBacklogWithOnlyHumanWaitingGoalsPreparesNoContinuation(t *testing.T) {
+	t.Parallel()
 	first := budgetedQueuedGoal("first-human-wait", "2026-08-23T00:00:00Z")
 	first.NextStep = "QUESTION TO THE HUMAN: which option should proceed?"
 	second := budgetedQueuedGoal("second-human-wait", "2026-08-23T00:00:01Z")
@@ -733,6 +743,7 @@ func TestIdleBacklogWithOnlyHumanWaitingGoalsPreparesNoContinuation(t *testing.T
 }
 
 func TestMismatchedSessionStopMarkerDoesNotGateIdleEscalation(t *testing.T) {
+	t.Parallel()
 	now := time.Date(2026, 9, 2, 10, 1, 0, 0, time.UTC)
 	root := servingBed(t, "bed-m1", map[string]*GoalFile{
 		"waiting": budgetedQueuedGoal("waiting", "2026-08-23T00:00:00Z"),
@@ -767,6 +778,7 @@ func TestMismatchedSessionStopMarkerDoesNotGateIdleEscalation(t *testing.T) {
 }
 
 func TestIdleEscalationPreservesAnIndependentOpenWorkBlock(t *testing.T) {
+	t.Parallel()
 	root := servingBed(t, "bed-m1", map[string]*GoalFile{
 		"waiting": budgetedQueuedGoal("waiting", "2026-08-23T00:00:00Z"),
 	})
@@ -806,6 +818,7 @@ func TestIdleEscalationPreservesAnIndependentOpenWorkBlock(t *testing.T) {
 }
 
 func TestIdleBacklogDigestChangeResetsTheRefusalCount(t *testing.T) {
+	t.Parallel()
 	root := servingBed(t, "bed-m1", map[string]*GoalFile{
 		"waiting": budgetedQueuedGoal("waiting", "2026-08-23T00:00:00Z"),
 	})
@@ -825,6 +838,7 @@ func TestIdleBacklogDigestChangeResetsTheRefusalCount(t *testing.T) {
 }
 
 func TestIdleBacklogFailedIntentStillEndsAndNamesTheFailure(t *testing.T) {
+	t.Parallel()
 	waiting := budgetedQueuedGoal("waiting", "2026-08-23T00:00:00Z")
 	waiting.Pinned = "bed-m1"
 	root := servingBed(t, "bed-m1", map[string]*GoalFile{"waiting": waiting})
@@ -866,11 +880,10 @@ func TestIdleBacklogFailedIntentStillEndsAndNamesTheFailure(t *testing.T) {
 }
 
 func TestStopHookActivePreservesTheIdleCountWhenDigestReadIsUnavailable(t *testing.T) {
+	t.Parallel()
 	root := servingBed(t, "bed-m1", map[string]*GoalFile{
 		"waiting": budgetedQueuedGoal("waiting", "2026-08-23T00:00:00Z"),
 	})
-	originalFetch := fetchForProjection
-	t.Cleanup(func() { fetchForProjection = originalFetch })
 	var incident IdleEscalationEvent
 	store := &Store{
 		Root: root,
@@ -884,7 +897,7 @@ func TestStopHookActivePreservesTheIdleCountWhenDigestReadIsUnavailable(t *testi
 	if err != nil || !first.ShouldBlock || !strings.Contains(first.Display, "refusal 1 of 3") {
 		t.Fatalf("the initial readable refusal was not stored: %+v %v", first, err)
 	}
-	fetchForProjection = func(Endpoint) (AdvanceResult, error) {
+	store.projectionDeps.fetch = func(Endpoint) (AdvanceResult, error) {
 		return AdvanceResult{}, errors.New("canonical ledger unavailable")
 	}
 	options.StopHookActive = true
@@ -905,14 +918,10 @@ func TestStopHookActivePreservesTheIdleCountWhenDigestReadIsUnavailable(t *testi
 }
 
 func TestThreeUnreadableLedgerStopsRecordIncidentRaiseAlarmAndEnd(t *testing.T) {
+	t.Parallel()
 	root := servingBed(t, "bed-m1", map[string]*GoalFile{
 		"waiting": budgetedQueuedGoal("waiting", "2026-08-23T00:00:00Z"),
 	})
-	originalFetch := fetchForProjection
-	t.Cleanup(func() { fetchForProjection = originalFetch })
-	fetchForProjection = func(Endpoint) (AdvanceResult, error) {
-		return AdvanceResult{}, errors.New("canonical ledger unreadable")
-	}
 	var incident IdleEscalationEvent
 	prepared := false
 	alarmRaised := false
@@ -930,6 +939,9 @@ func TestThreeUnreadableLedgerStopsRecordIncidentRaiseAlarmAndEnd(t *testing.T) 
 			alarmRaised = true
 			return nil
 		},
+	}
+	store.projectionDeps.fetch = func(Endpoint) (AdvanceResult, error) {
+		return AdvanceResult{}, errors.New("canonical ledger unreadable")
 	}
 	options := TurnVerdictOptions{}
 	for stop := 1; stop <= 3; stop++ {
@@ -954,19 +966,16 @@ func TestThreeUnreadableLedgerStopsRecordIncidentRaiseAlarmAndEnd(t *testing.T) 
 }
 
 func TestFreshLedgerFailureAndFetchTimeoutBlockTheStop(t *testing.T) {
+	t.Parallel()
 	root := servingBed(t, "bed-m1", map[string]*GoalFile{
 		"waiting": budgetedQueuedGoal("waiting", "2026-08-23T00:00:00Z"),
 	})
-	originalFetch, originalTimeout := fetchForProjection, freshProjectionTimeout
-	t.Cleanup(func() {
-		fetchForProjection, freshProjectionTimeout = originalFetch, originalTimeout
-	})
-
 	t.Run("fetch failure", func(t *testing.T) {
-		fetchForProjection = func(Endpoint) (AdvanceResult, error) {
+		store := &Store{Root: root}
+		store.projectionDeps.fetch = func(Endpoint) (AdvanceResult, error) {
 			return AdvanceResult{}, errors.New("canonical remote unavailable")
 		}
-		verdict, err := (&Store{Root: root}).TurnVerdict(ScanResult{}, "fetch-failure", "", "main-1")
+		verdict, err := store.TurnVerdict(ScanResult{}, "fetch-failure", "", "main-1")
 		if err != nil || !verdict.ShouldBlock || verdict.BlockSource == nil || *verdict.BlockSource != "uncertainty" ||
 			!strings.Contains(verdict.Display, "canonical remote unavailable") {
 			t.Fatalf("a fresh-ledger failure must return a structured block: %+v %v", verdict, err)
@@ -977,17 +986,23 @@ func TestFreshLedgerFailureAndFetchTimeoutBlockTheStop(t *testing.T) {
 	})
 
 	t.Run("fetch timeout", func(t *testing.T) {
-		freshProjectionTimeout = 20 * time.Millisecond
+		store := &Store{Root: root}
+		deadline := make(chan time.Time)
+		releaseFetch := make(chan struct{})
+		t.Cleanup(func() { close(releaseFetch) })
+		store.projectionDeps.timeout = 20 * time.Millisecond
+		store.projectionDeps.deadline = deadline
 		// The fetch outlives the verdict by a wide margin, so the proof is
 		// that the verdict returned without it (the fetch is still asleep),
 		// not a wall-clock figure a loaded box inflates.
 		fetched := make(chan struct{})
-		fetchForProjection = func(Endpoint) (AdvanceResult, error) {
-			time.Sleep(10 * time.Second)
+		store.projectionDeps.fetch = func(Endpoint) (AdvanceResult, error) {
+			deadline <- time.Time{}
+			<-releaseFetch
 			close(fetched)
 			return AdvanceResult{}, nil
 		}
-		verdict, err := (&Store{Root: root}).TurnVerdict(ScanResult{}, "fetch-timeout", "", "main-1")
+		verdict, err := store.TurnVerdict(ScanResult{}, "fetch-timeout", "", "main-1")
 		select {
 		case <-fetched:
 			t.Fatal("the bounded fetch did not release the verdict before the fetch returned")
@@ -1000,6 +1015,7 @@ func TestFreshLedgerFailureAndFetchTimeoutBlockTheStop(t *testing.T) {
 }
 
 func TestMissingAcceptedGoalTreeReferenceBlocksAsUncertainty(t *testing.T) {
+	t.Parallel()
 	root := servingBed(t, "bed-m1", map[string]*GoalFile{
 		"waiting": budgetedQueuedGoal("waiting", "2026-08-23T00:00:00Z"),
 	})
@@ -1014,6 +1030,7 @@ func TestMissingAcceptedGoalTreeReferenceBlocksAsUncertainty(t *testing.T) {
 }
 
 func TestUnreadableTurnVerdictStateAllowsAsInfrastructure(t *testing.T) {
+	t.Parallel()
 	root := servingBed(t, "bed-m1", nil)
 	writeIdleJSON(t, filepath.Join(root, "artifacts", "agents", "turn-verdict-state.json"), map[string]any{
 		"schemaVersion": 2,
@@ -1028,6 +1045,7 @@ func TestUnreadableTurnVerdictStateAllowsAsInfrastructure(t *testing.T) {
 }
 
 func TestMissingTemplateStateRootAllowsAsInfrastructure(t *testing.T) {
+	t.Parallel()
 	outer := t.TempDir()
 	if err := os.MkdirAll(filepath.Join(outer, "development"), 0o755); err != nil {
 		t.Fatal(err)
@@ -1043,6 +1061,7 @@ func TestMissingTemplateStateRootAllowsAsInfrastructure(t *testing.T) {
 }
 
 func TestTemplateCheckoutTurnVerdictUsesTheMetasystemStateRoot(t *testing.T) {
+	t.Parallel()
 	standalone := servingBed(t, "bed-m1", map[string]*GoalFile{
 		"waiting": budgetedQueuedGoal("waiting", "2026-08-23T00:00:00Z"),
 	})
@@ -1098,6 +1117,7 @@ func sessionStopFixture(t *testing.T, store *Store, session, main string, epoch 
 }
 
 func TestValidSessionStopBypassesHangingFetchAndSpendsExactlyOnce(t *testing.T) {
+	t.Parallel()
 	now := time.Date(2026, 9, 2, 10, 1, 0, 0, time.UTC)
 	root := servingBed(t, "bed-m1", map[string]*GoalFile{
 		"waiting": budgetedQueuedGoal("waiting", "2026-08-23T00:00:00Z"),
@@ -1107,19 +1127,11 @@ func TestValidSessionStopBypassesHangingFetchAndSpendsExactlyOnce(t *testing.T) 
 	}}
 	marker := sessionStopFixture(t, store, "human-local-only", "main-1", 7)
 
-	originalFetch, originalTimeout := fetchForProjection, freshProjectionTimeout
 	remoteStarted := make(chan struct{}, 1)
-	releaseRemote := make(chan struct{})
-	fetchForProjection = func(Endpoint) (AdvanceResult, error) {
+	store.projectionDeps.fetch = func(Endpoint) (AdvanceResult, error) {
 		remoteStarted <- struct{}{}
-		<-releaseRemote
-		return AdvanceResult{}, errors.New("hanging remote released")
+		return AdvanceResult{}, errors.New("canonical remote unavailable")
 	}
-	freshProjectionTimeout = 20 * time.Millisecond
-	t.Cleanup(func() {
-		close(releaseRemote)
-		fetchForProjection, freshProjectionTimeout = originalFetch, originalTimeout
-	})
 
 	first, err := store.TurnVerdict(ScanResult{}, marker.SessionId, "", marker.HolderMainId)
 	if err != nil || first.ShouldBlock || !strings.Contains(first.Display, "authorized once") {
@@ -1141,7 +1153,7 @@ func TestValidSessionStopBypassesHangingFetchAndSpendsExactlyOnce(t *testing.T) 
 		t.Fatalf("the allowed human stop left its marker available: %v", err)
 	}
 
-	fetchForProjection = func(Endpoint) (AdvanceResult, error) {
+	store.projectionDeps.fetch = func(Endpoint) (AdvanceResult, error) {
 		return AdvanceResult{}, errors.New("canonical remote unavailable after the one human stop")
 	}
 	second, err := store.TurnVerdict(ScanResult{}, marker.SessionId, "", marker.HolderMainId)
@@ -1156,6 +1168,7 @@ func TestValidSessionStopBypassesHangingFetchAndSpendsExactlyOnce(t *testing.T) 
 }
 
 func TestFetchDeadlineLeavesNewlyValidSessionStopUnspent(t *testing.T) {
+	t.Parallel()
 	now := time.Date(2026, 9, 2, 10, 1, 0, 0, time.UTC)
 	root := servingBed(t, "bed-m1", map[string]*GoalFile{
 		"waiting": budgetedQueuedGoal("waiting", "2026-08-23T00:00:00Z"),
@@ -1173,21 +1186,22 @@ func TestFetchDeadlineLeavesNewlyValidSessionStopUnspent(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	originalFetch, originalTimeout := fetchForProjection, freshProjectionTimeout
 	markerPublished := make(chan struct{})
 	releaseRemote := make(chan struct{})
-	fetchForProjection = func(Endpoint) (AdvanceResult, error) {
+	deadline := make(chan time.Time)
+	store.projectionDeps.fetch = func(Endpoint) (AdvanceResult, error) {
 		if err := os.WriteFile(markerPath, markerBytes, 0o644); err != nil {
 			return AdvanceResult{}, err
 		}
 		close(markerPublished)
+		deadline <- time.Time{}
 		<-releaseRemote
 		return AdvanceResult{}, errors.New("hanging remote released")
 	}
-	freshProjectionTimeout = 20 * time.Millisecond
+	store.projectionDeps.timeout = 20 * time.Millisecond
+	store.projectionDeps.deadline = deadline
 	t.Cleanup(func() {
 		close(releaseRemote)
-		fetchForProjection, freshProjectionTimeout = originalFetch, originalTimeout
 	})
 
 	aborted, err := store.TurnVerdict(ScanResult{}, marker.SessionId, "", marker.HolderMainId)
@@ -1214,6 +1228,7 @@ func TestFetchDeadlineLeavesNewlyValidSessionStopUnspent(t *testing.T) {
 }
 
 func TestBlockedHumanVerdictLeavesValidSessionStopUnspent(t *testing.T) {
+	t.Parallel()
 	now := time.Date(2026, 9, 2, 10, 1, 0, 0, time.UTC)
 	root := servingBed(t, "bed-m1", map[string]*GoalFile{
 		"waiting": budgetedQueuedGoal("waiting", "2026-08-23T00:00:00Z"),
@@ -1241,6 +1256,7 @@ func TestBlockedHumanVerdictLeavesValidSessionStopUnspent(t *testing.T) {
 }
 
 func TestSessionStopLibraryAndConsumerRequireHumanClassificationProof(t *testing.T) {
+	t.Parallel()
 	root := servingBed(t, "bed-m1", map[string]*GoalFile{
 		"waiting": budgetedQueuedGoal("waiting", "2026-08-23T00:00:00Z"),
 	})
@@ -1278,11 +1294,11 @@ func TestSessionStopLibraryAndConsumerRequireHumanClassificationProof(t *testing
 }
 
 func TestIdleRefusalSurvivesALostCounter(t *testing.T) {
+	t.Parallel()
 	root := servingBed(t, "bed-m1", map[string]*GoalFile{"waiting": budgetedQueuedGoal("waiting", "2026-08-23T00:00:00Z")})
-	previous := verdictStateWriter
-	verdictStateWriter = func(string, []byte) error { return errors.New("fixture verdict-state write failure") }
-	t.Cleanup(func() { verdictStateWriter = previous })
-	verdict, err := (&Store{Root: root}).TurnVerdict(ScanResult{}, "lost-counter", "", "main-1")
+	store := &Store{Root: root}
+	store.verdictDeps.stateWriter = func(string, []byte) error { return errors.New("fixture verdict-state write failure") }
+	verdict, err := store.TurnVerdict(ScanResult{}, "lost-counter", "", "main-1")
 	if err != nil || !verdict.ShouldBlock || verdict.Class != "idle-with-backlog" || verdict.CountSpent ||
 		!strings.Contains(verdict.Display, "IDLE WITH BACKLOG") || !strings.Contains(verdict.Display, "count could not be spent") {
 		t.Fatalf("idle refusal did not survive its lost counter: %+v %v", verdict, err)
@@ -1296,6 +1312,7 @@ func TestIdleRefusalSurvivesALostCounter(t *testing.T) {
 }
 
 func TestSessionStopInfrastructurePreservesAuthority(t *testing.T) {
+	t.Parallel()
 	now := time.Date(2026, 9, 2, 10, 1, 0, 0, time.UTC)
 	t.Run("marker read failure", func(t *testing.T) {
 		root := servingBed(t, "bed-m1", nil)
@@ -1321,9 +1338,7 @@ func TestSessionStopInfrastructurePreservesAuthority(t *testing.T) {
 		})
 		store := &Store{Root: root, Now: func() time.Time { return now }, Prober: idleFixtureProber{41: {Pid: 41, StartedAt: time.Unix(100, 0)}}}
 		marker := sessionStopFixture(t, store, "consume-failure", "main-1", 7)
-		previous := sessionStopRegistryWriter
-		sessionStopRegistryWriter = func(string, string, string) (bool, error) { return false, errors.New("fixture consume failure") }
-		t.Cleanup(func() { sessionStopRegistryWriter = previous })
+		store.registryWriter = func(string, string, string) (bool, error) { return false, errors.New("fixture consume failure") }
 		verdict, err := store.TurnVerdict(ScanResult{}, marker.SessionId, "", marker.HolderMainId)
 		if err != nil || verdict.ShouldBlock || verdict.Class != "infrastructure" || !strings.Contains(verdict.Display, "consume failure") {
 			t.Fatalf("consume failure did not allow as infrastructure: %+v %v", verdict, err)
@@ -1345,17 +1360,16 @@ func TestSessionStopInfrastructurePreservesAuthority(t *testing.T) {
 }
 
 func TestSessionStopLostAuthorizationKeepsDecidedVerdict(t *testing.T) {
+	t.Parallel()
 	now := time.Date(2026, 9, 2, 10, 1, 0, 0, time.UTC)
 	root := servingBed(t, "bed-m1", map[string]*GoalFile{
 		"waiting": budgetedQueuedGoal("waiting", "2026-08-23T00:00:00Z"),
 	})
 	store := &Store{Root: root, Now: func() time.Time { return now }, Prober: idleFixtureProber{41: {Pid: 41, StartedAt: time.Unix(100, 0)}}}
 	marker := sessionStopFixture(t, store, "lost-authorization", "main-1", 7)
-	previous := consumeSessionStopForVerdict
-	consumeSessionStopForVerdict = func(*Store, string, string) (SessionStop, bool, string, error) {
+	store.verdictDeps.consumeSessionStop = func(*Store, string, string) (SessionStop, bool, string, error) {
 		return marker, false, "SESSION STOP authorization expired before this stop", nil
 	}
-	t.Cleanup(func() { consumeSessionStopForVerdict = previous })
 
 	verdict, err := store.TurnVerdict(ScanResult{Open: []Item{{Kind: "plan", Id: "open", Detail: "OPEN-WORK open: finish it"}}}, marker.SessionId, "", marker.HolderMainId)
 	if err != nil || !verdict.ShouldBlock || verdict.Class != "seat-actionable" ||
@@ -1368,15 +1382,14 @@ func TestSessionStopLostAuthorizationKeepsDecidedVerdict(t *testing.T) {
 }
 
 func TestSessionStopConsumeErrorKeepsDecidedBlock(t *testing.T) {
+	t.Parallel()
 	now := time.Date(2026, 9, 2, 10, 1, 0, 0, time.UTC)
 	root := servingBed(t, "bed-m1", map[string]*GoalFile{
 		"waiting": budgetedQueuedGoal("waiting", "2026-08-23T00:00:00Z"),
 	})
 	store := &Store{Root: root, Now: func() time.Time { return now }, Prober: idleFixtureProber{41: {Pid: 41, StartedAt: time.Unix(100, 0)}}}
 	marker := sessionStopFixture(t, store, "consume-error-decided", "main-1", 7)
-	previous := sessionStopRegistryWriter
-	sessionStopRegistryWriter = func(string, string, string) (bool, error) { return false, errors.New("fixture consume failure") }
-	t.Cleanup(func() { sessionStopRegistryWriter = previous })
+	store.registryWriter = func(string, string, string) (bool, error) { return false, errors.New("fixture consume failure") }
 	openWork := ScanResult{Open: []Item{{Kind: "plan", Id: "open", Detail: "OPEN-WORK open: finish it"}}}
 
 	verdict, err := store.TurnVerdict(openWork, marker.SessionId, "", marker.HolderMainId)
@@ -1392,7 +1405,7 @@ func TestSessionStopConsumeErrorKeepsDecidedBlock(t *testing.T) {
 		t.Fatalf("a failed consume reported consumption: %v", err)
 	}
 
-	sessionStopRegistryWriter = previous
+	store.registryWriter = nil
 	quiet, err := store.TurnVerdict(ScanResult{}, marker.SessionId, "", marker.HolderMainId)
 	if err != nil || quiet.ShouldBlock || !strings.Contains(quiet.Display, "authorized once") {
 		t.Fatalf("the unspent authorization did not cover the next quiet stop once: %+v %v", quiet, err)
@@ -1404,24 +1417,25 @@ func TestSessionStopConsumeErrorKeepsDecidedBlock(t *testing.T) {
 }
 
 func TestSessionStopConsumeWithUnknownDurabilityIsSpent(t *testing.T) {
+	t.Parallel(
 	// The registry is written but its crash durability cannot be proved: the
 	// authorization is spent, the stop it authorized is allowed, and the
 	// verdict says the record's durability is unknown instead of claiming an
 	// unspent authorization the next stop would find consumed.
+	)
+
 	now := time.Date(2026, 9, 2, 10, 1, 0, 0, time.UTC)
 	root := servingBed(t, "bed-m1", map[string]*GoalFile{
 		"waiting": budgetedQueuedGoal("waiting", "2026-08-23T00:00:00Z"),
 	})
 	store := &Store{Root: root, Now: func() time.Time { return now }, Prober: idleFixtureProber{41: {Pid: 41, StartedAt: time.Unix(100, 0)}}}
 	marker := sessionStopFixture(t, store, "durability-unknown", "main-1", 7)
-	previous := sessionStopRegistryWriter
-	sessionStopRegistryWriter = func(path, content, root string) (bool, error) {
+	store.registryWriter = func(path, content, root string) (bool, error) {
 		if _, err := atomicfile.WriteText(path, content, root); err != nil {
 			return false, err
 		}
 		return false, nil
 	}
-	t.Cleanup(func() { sessionStopRegistryWriter = previous })
 	openWork := ScanResult{Open: []Item{{Kind: "plan", Id: "open", Detail: "OPEN-WORK open: finish it"}}}
 
 	verdict, err := store.TurnVerdict(openWork, marker.SessionId, "", marker.HolderMainId)
@@ -1432,7 +1446,7 @@ func TestSessionStopConsumeWithUnknownDurabilityIsSpent(t *testing.T) {
 	if _, err := os.Stat(sessionStopPath(root, marker.SessionId)); !os.IsNotExist(err) {
 		t.Fatalf("the spent marker was left in place: %v", err)
 	}
-	sessionStopRegistryWriter = previous
+	store.registryWriter = nil
 	spent, err := store.TurnVerdict(ScanResult{}, marker.SessionId, "", marker.HolderMainId)
 	if err != nil || !spent.ShouldBlock || strings.Contains(spent.Display, "authorized once") {
 		t.Fatalf("a spent authorization covered a second stop: %+v %v", spent, err)
@@ -1440,6 +1454,7 @@ func TestSessionStopConsumeWithUnknownDurabilityIsSpent(t *testing.T) {
 }
 
 func TestSessionStopIsHolderBoundSingleUseAndConsumedAcrossQuietTurns(t *testing.T) {
+	t.Parallel()
 	now := time.Date(2026, 9, 2, 10, 1, 0, 0, time.UTC)
 	root := servingBed(t, "bed-m1", map[string]*GoalFile{
 		"waiting": budgetedQueuedGoal("waiting", "2026-08-23T00:00:00Z"),
@@ -1491,6 +1506,7 @@ func TestSessionStopIsHolderBoundSingleUseAndConsumedAcrossQuietTurns(t *testing
 }
 
 func TestSessionStopConsumeOnUseSurvivesAbsentOrFailedSessionEnd(t *testing.T) {
+	t.Parallel()
 	now := time.Date(2026, 9, 2, 10, 1, 0, 0, time.UTC)
 	for _, test := range []struct {
 		name       string
@@ -1553,6 +1569,7 @@ func TestSessionStopConsumeOnUseSurvivesAbsentOrFailedSessionEnd(t *testing.T) {
 }
 
 func TestSessionStopConsumeErrorAllowsWithoutAuthorization(t *testing.T) {
+	t.Parallel()
 	now := time.Date(2026, 9, 2, 10, 1, 0, 0, time.UTC)
 	root := servingBed(t, "bed-m1", map[string]*GoalFile{
 		"waiting": budgetedQueuedGoal("waiting", "2026-08-23T00:00:00Z"),
@@ -1577,6 +1594,7 @@ func TestSessionStopConsumeErrorAllowsWithoutAuthorization(t *testing.T) {
 }
 
 func TestSessionStopCannotCrossASessionEndWithoutAStopHook(t *testing.T) {
+	t.Parallel()
 	now := time.Date(2026, 9, 2, 10, 1, 0, 0, time.UTC)
 	root := servingBed(t, "bed-m1", map[string]*GoalFile{
 		"waiting": budgetedQueuedGoal("waiting", "2026-08-23T00:00:00Z"),
@@ -1601,6 +1619,7 @@ func TestSessionStopCannotCrossASessionEndWithoutAStopHook(t *testing.T) {
 }
 
 func TestSessionEndDurablySpendsUnusedStopAuthorizationBeforeAnnouncementRetirement(t *testing.T) {
+	t.Parallel()
 	now := time.Date(2026, 9, 2, 10, 1, 0, 0, time.UTC)
 	root := servingBed(t, "bed-m1", map[string]*GoalFile{
 		"waiting": budgetedQueuedGoal("waiting", "2026-08-23T00:00:00Z"),
@@ -1636,6 +1655,7 @@ func TestSessionEndDurablySpendsUnusedStopAuthorizationBeforeAnnouncementRetirem
 }
 
 func TestClaudeTurnExitRequiresDelegateWorkNotMerelyALiveSeat(t *testing.T) {
+	t.Parallel()
 	root := servingBed(t, "bed-m1", map[string]*GoalFile{
 		"waiting": budgetedQueuedGoal("waiting", "2026-08-23T00:00:00Z"),
 	})

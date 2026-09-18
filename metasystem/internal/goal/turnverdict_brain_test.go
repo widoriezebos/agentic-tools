@@ -12,6 +12,7 @@ import (
 )
 
 func TestBrainTurnVerdictFollowsVerdictAndNeverEnforcesIdleBacklog(t *testing.T) {
+	t.Parallel()
 	approved := budgetedQueuedGoal("approved", "2026-09-07T00:00:00Z")
 	held := &GoalFile{Id: "held", State: StateClaimed, Intent: "Held work", Origin: OriginMain,
 		NextStep: "Release it.", OpenedAt: "2026-09-07T00:01:00Z", Revision: 2,
@@ -79,6 +80,7 @@ func TestBrainTurnVerdictFollowsVerdictAndNeverEnforcesIdleBacklog(t *testing.T)
 }
 
 func TestCorruptBrainTurnVerdictKeepsItsRemedyAfterTheBrainSummary(t *testing.T) {
+	t.Parallel()
 	root := servingBed(t, "bed-m1", map[string]*GoalFile{})
 	if err := os.MkdirAll(filepath.Dir(brain.Path(root)), 0o755); err != nil {
 		t.Fatal(err)
@@ -100,6 +102,7 @@ func TestCorruptBrainTurnVerdictKeepsItsRemedyAfterTheBrainSummary(t *testing.T)
 }
 
 func TestUndeclaredCheckoutDropsOnlyBrainDraftScannerFailure(t *testing.T) {
+	t.Parallel()
 	scan := ScanResult{
 		Questions:  []Item{{Kind: "question", Id: "ask-one"}},
 		Drafts:     []Item{{Kind: "draft", Id: "draft-one"}},

@@ -7,6 +7,7 @@ import (
 )
 
 func TestSeverityTieredRigorAcceptedRiskLifecycle(t *testing.T) {
+	t.Parallel()
 	root := obligationAuthorityLocalRoot(t, "risk-goal")
 	proof := proveObligationHuman(t, root)
 	req := obligationAuthorityVerbReq(root, "01J5X00000000000000000SR30", "mac-a")
@@ -80,6 +81,7 @@ func TestSeverityTieredRigorAcceptedRiskLifecycle(t *testing.T) {
 }
 
 func TestSeverityTieredRigorReviewObligationRefusals(t *testing.T) {
+	t.Parallel()
 	root := obligationAuthorityLocalRoot(t, "review-refusals")
 	owner := obligationAuthorityVerbReq(root, "01J5X00000000000000000SR40", "mac-a")
 	obligation := ReviewObligation{Finding: "F-1", Chain: "critic-a", Artifact: "metasystem/a.go", Test: "prove: a"}
@@ -133,6 +135,7 @@ func TestSeverityTieredRigorReviewObligationRefusals(t *testing.T) {
 }
 
 func TestSeverityTieredRigorUtilityWrappers(t *testing.T) {
+	t.Parallel()
 	root := obligationAuthorityLocalRoot(t, "utility-goal")
 	req := obligationAuthorityVerbReq(root, "01J5X00000000000000000SR50", "mac-a")
 	req.CallerClass, req.EpochAuthority = "MAIN", EpochAuthorityHolder

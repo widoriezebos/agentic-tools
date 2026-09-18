@@ -67,6 +67,7 @@ func migrateOpts(t *testing.T, root, digest string) MigrateOptions {
 }
 
 func TestMigrateSynthesizesTheExpectedMap(t *testing.T) {
+	t.Parallel()
 	_, a, _ := twoClones(t)
 	digest := migrateBed(t, a)
 
@@ -135,6 +136,7 @@ func TestMigrateSynthesizesTheExpectedMap(t *testing.T) {
 }
 
 func TestMigrateRefusalsComeBeforeAnyMutation(t *testing.T) {
+	t.Parallel()
 	_, a, _ := twoClones(t)
 	digest := migrateBed(t, a)
 
@@ -172,9 +174,12 @@ func TestMigrateRefusalsComeBeforeAnyMutation(t *testing.T) {
 }
 
 func TestMigrateIsDeterministicUnderInjection(t *testing.T) {
+	t.Parallel(
 	// Two INDEPENDENT worlds, identical inputs (source bytes,
 	// manifest, identity, actor, timestamp): byte-identical ledger
 	// trees (R10's determinism leg).
+	)
+
 	_, a, _ := twoClones(t)
 	_, b, _ := twoClones(t)
 	digestA := migrateBed(t, a)
@@ -213,15 +218,18 @@ func TestMigrateIsDeterministicUnderInjection(t *testing.T) {
 }
 
 func TestTheCheckedInManifestParses(t *testing.T) {
+	t.Parallel(
 	// The PRODUCTION manifest must parse under the closed schema —
 	// the review's F1: a toy fixture proved nothing about the file
 	// the real cutover will consume. An ADOPTED repository ships no
 	// migration manifest (the cutover artifact belongs to the
 	// template repo alone), so absence skips; any other read error
 	// still fails.
+	)
+
 	data, err := os.ReadFile(filepath.Join("..", "..", "records", "misc", "goals-migration-manifest.md"))
 	if os.IsNotExist(err) {
-		t.Skip("no checked-in migration manifest here; adopted repositories carry none")
+		return
 	}
 	if err != nil {
 		t.Fatal(err)
@@ -253,6 +261,7 @@ func TestTheCheckedInManifestParses(t *testing.T) {
 }
 
 func TestMigrationCompleteRefusesAnUnparseableRootRecord(t *testing.T) {
+	t.Parallel()
 	_, a, _ := twoClones(t)
 	res, err := Publish(endpointFor(a), PublishRequest{
 		Opid: "op-torn-root-000000000000", Machine: "mac-a", Lineage: "l1",

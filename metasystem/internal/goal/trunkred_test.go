@@ -12,6 +12,7 @@ import (
 )
 
 func TestTrunkRedBranchReferenceRoundTripsAndValidates(t *testing.T) {
+	t.Parallel()
 	branch := TrunkRedBranch{Name: "fix/red", Commit: "abc123", State: TrunkRedBranchOpen}
 	data, err := json.Marshal(branch)
 	if err != nil || string(data) != `{"name":"fix/red","commit":"abc123","state":"open"}` {
@@ -31,6 +32,7 @@ func TestTrunkRedBranchReferenceRoundTripsAndValidates(t *testing.T) {
 	}
 }
 func TestTrunkRedVerdictSplitsByOwnerMachine(t *testing.T) {
+	t.Parallel()
 	closed := &TrunkRedClosure{At: "closed"}
 	tree := &TreeGoals{Live: map[string]*GoalFile{}, TrunkRed: []TrunkRedEntry{
 		{ID: "mine", Owner: TrunkRedOwner{Machine: "m1"}},
@@ -43,6 +45,7 @@ func TestTrunkRedVerdictSplitsByOwnerMachine(t *testing.T) {
 	}
 }
 func TestTrunkRedDoesNotChangeSelection(t *testing.T) {
+	t.Parallel()
 	frontier := NextVerdict{Ready: []string{"ready"}}
 	want := SelectNext(frontier)
 	frontier.TrunkRedOwned = []TrunkRedEntry{{ID: "red"}}
@@ -61,6 +64,7 @@ func testTrunkRedEntry(id, identity, opened string) TrunkRedEntry {
 }
 
 func TestTrunkRedRegisterParsesRendersAndJoinsEveryReader(t *testing.T) {
+	t.Parallel()
 	early := testTrunkRedEntry("tr-fast-a", "tr-fast-a", "2026-09-17T01:00:00Z")
 	late := testTrunkRedEntry("tr-fast-b", "tr-fast-b", "2026-09-17T02:00:00Z")
 	rendered := RenderTrunkRed([]TrunkRedEntry{late, early})
@@ -106,6 +110,7 @@ func trunkRedRecordFixture(identity, batch, attempt, base, seen string) TrunkRed
 }
 
 func TestTrunkRedMutationBoundariesRejectInvalidAuthorityAndShape(t *testing.T) {
+	t.Parallel()
 	root := soloLedgerRepo(t)
 	request := trunkRedVerbReq(root, "01J5X0000000000000000000Q1", "mac-a")
 	tip := mustGit(t, root, "rev-parse", AcceptedRef)
@@ -150,6 +155,7 @@ func TestTrunkRedMutationBoundariesRejectInvalidAuthorityAndShape(t *testing.T) 
 }
 
 func TestTrunkRedRecordOwnClearAndCloseTransactions(t *testing.T) {
+	t.Parallel()
 	root := soloLedgerRepo(t)
 	identity := "tr-fast-0123456789ab"
 	first := trunkRedVerbReq(root, "01J5X0000000000000000000R1", "mac-a")
@@ -228,6 +234,7 @@ func TestTrunkRedRecordOwnClearAndCloseTransactions(t *testing.T) {
 }
 
 func TestTrunkRedRecoveryRebuildsRecordOwnAndClear(t *testing.T) {
+	t.Parallel()
 	root := soloLedgerRepo(t)
 	identity := "tr-fast-recovery0001"
 	record := trunkRedVerbReq(root, "01J5X0000000000000000000S1", "mac-a")

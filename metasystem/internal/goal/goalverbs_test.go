@@ -53,6 +53,7 @@ func mustOpen(t *testing.T, s *Store, caller Caller, id, intent, next string) {
 // Open with no Current goal lands Current — the one-command
 // program start; a second open queues behind it.
 func TestOpenPromotesWhenEmpty(t *testing.T) {
+	t.Parallel()
 	s := testStore(t)
 	mustOpen(t, s, mainHolder, "first", "The first program", "Start it.")
 	ledger, problems, err := s.ReadLedger()
@@ -75,6 +76,7 @@ func TestOpenPromotesWhenEmpty(t *testing.T) {
 
 // The transition table: every legal move and its idempotence refusal.
 func TestTransitionTableMatrix(t *testing.T) {
+	t.Parallel()
 	s := testStore(t)
 	mustOpen(t, s, mainHolder, "a", "goal a", "Do a.")
 	mustOpen(t, s, mainHolder, "b", "goal b", "Do b.")
@@ -162,6 +164,7 @@ func TestTransitionTableMatrix(t *testing.T) {
 // Declare-free renews on a standing declaration (the one
 // idempotence exception), refreshing the digest as the world moves.
 func TestGoalFreeRenew(t *testing.T) {
+	t.Parallel()
 	s := testStore(t)
 	if _, err := s.DeclareFree(human); err != nil {
 		t.Fatal(err)
@@ -187,6 +190,7 @@ func TestGoalFreeRenew(t *testing.T) {
 // The advisory human gate: done/park on a human-origin goal refuses a
 // non-HUMAN caller, directly and through reconcile's replay.
 func TestHumanGate(t *testing.T) {
+	t.Parallel()
 	s := testStore(t)
 	mustOpen(t, s, human, "precious", "The human's own program", "Do it.")
 
@@ -202,6 +206,7 @@ func TestHumanGate(t *testing.T) {
 // marking a human-origin goal done is refused for MAIN and accepted for
 // HUMAN; origin rewrites and illegal jumps always refuse.
 func TestReconcileReplaysAuthority(t *testing.T) {
+	t.Parallel()
 	s := testStore(t)
 	mustOpen(t, s, human, "precious", "The human's own program", "Do it.")
 
@@ -245,6 +250,7 @@ func TestReconcileReplaysAuthority(t *testing.T) {
 // adoption of an unbaselined ledger, the crash window (ledger written,
 // baseline stale), and restoration after post-adoption deletion.
 func TestBaselineLifecycle(t *testing.T) {
+	t.Parallel()
 	s := testStore(t)
 
 	// Genesis: a hand-written legal ledger, no baseline.
@@ -291,6 +297,7 @@ func TestBaselineLifecycle(t *testing.T) {
 // Illegal replay deltas refuse: deleting a standing goal, editing a
 // queued goal in place, jumping done -> current.
 func TestReconcileRefusesIllegalDeltas(t *testing.T) {
+	t.Parallel()
 	s := testStore(t)
 	mustOpen(t, s, mainHolder, "a", "goal a", "Do a.")
 	mustOpen(t, s, mainHolder, "b", "goal b", "Do b.")
@@ -309,6 +316,7 @@ func TestReconcileRefusesIllegalDeltas(t *testing.T) {
 
 // Prune keeps the newest ten done goals and reports every drop.
 func TestPruneReportsDrops(t *testing.T) {
+	t.Parallel()
 	s := testStore(t)
 	mustOpen(t, s, mainHolder, "seed", "seed goal", "Do.")
 	ledger, _, _ := s.ReadLedger()
@@ -344,6 +352,7 @@ func TestPruneReportsDrops(t *testing.T) {
 // after the runner is provably dead. Env-stripping is irrelevant by
 // construction: the fact is read from disk.
 func TestGoalMutationRefusesActiveMission(t *testing.T) {
+	t.Parallel()
 	s := testStore(t)
 	mustOpen(t, s, mainHolder, "g", "goal", "Do.")
 
@@ -385,6 +394,7 @@ func TestGoalMutationRefusesActiveMission(t *testing.T) {
 // The refusal edges the matrix test does not reach: promote on every
 // wrong section, read-side helpers, and the empty-checkout read.
 func TestVerbRefusalEdges(t *testing.T) {
+	t.Parallel()
 	s := testStore(t)
 	if ledger, problems, err := s.ReadLedger(); ledger != nil || problems != nil || err != nil {
 		t.Fatal("empty checkout read was not clean-empty")
@@ -442,6 +452,7 @@ func TestVerbRefusalEdges(t *testing.T) {
 // Concurrent verbs serialize under the flock: two goroutines opening
 // distinct goals both land, and the ledger stays legal.
 func TestConcurrentVerbsSerialize(t *testing.T) {
+	t.Parallel()
 	s := testStore(t)
 	mustOpen(t, s, mainHolder, "root-goal", "the root", "Do.")
 	done := make(chan error, 2)
@@ -469,6 +480,7 @@ func TestConcurrentVerbsSerialize(t *testing.T) {
 // goals — that is a corrupted initialized project, restored by its
 // holder, never re-adopted by a passing genesis caller.
 func TestGenesisRefusesPopulatedLedgerForNonHolder(t *testing.T) {
+	t.Parallel()
 	s := testStore(t)
 	if _, err := s.Open(mainHolder, "real-goal", "intent", "next"); err != nil {
 		t.Fatal(err)
@@ -497,6 +509,7 @@ func TestGenesisRefusesPopulatedLedgerForNonHolder(t *testing.T) {
 // A genuinely goal-free genesis (the adopt skeleton shape) is still
 // admitted for a non-holder — the legitimate provisioning path.
 func TestGenesisAdmitsGoalFreeLedgerForNonHolder(t *testing.T) {
+	t.Parallel()
 	s := testStore(t)
 	if _, err := s.DeclareFree(human); err != nil {
 		t.Fatalf("declare-free: %v", err)
@@ -516,6 +529,7 @@ func TestGenesisAdmitsGoalFreeLedgerForNonHolder(t *testing.T) {
 // caller never earned holder-only authority — while the same state
 // stays reachable for a holder-authorized (non-genesis) caller.
 func TestReconcileRefusesGenesisCallerOnceBaselined(t *testing.T) {
+	t.Parallel()
 	s := testStore(t)
 	if _, err := s.Open(mainHolder, "real-goal", "intent", "next"); err != nil {
 		t.Fatal(err)
@@ -558,6 +572,7 @@ func TestReconcileRefusesGenesisCallerOnceBaselined(t *testing.T) {
 // is the holder's to restore, and rm-then-reconcile must not become a
 // ledger rewrite a merge carries. The human keeps today's rule.
 func TestGenesisRefusesTrackedLedgerForNonHolder(t *testing.T) {
+	t.Parallel()
 	s := testStore(t)
 	gitOK(t, s.Root, "init", "-q")
 	if _, err := s.DeclareFree(human); err != nil {
@@ -593,6 +608,7 @@ func TestGenesisRefusesTrackedLedgerForNonHolder(t *testing.T) {
 // ancestry (the adopt fixtures, the kit gate, a session whose
 // announcement lapsed) all seed through here.
 func TestGenesisAdmitsAdoptionShapedLedgerForMachinery(t *testing.T) {
+	t.Parallel()
 	s := testStore(t)
 	os.MkdirAll(filepath.Join(s.Root, "plans"), 0o755)
 	os.WriteFile(LedgerPath(s.Root), []byte(goalFreeLedger), 0o644)

@@ -37,12 +37,34 @@ const boundedCaptureGrace = 5 * time.Second
 
 type attentionGitRun func(context.Context, string, []byte, ...string) (string, error)
 
-// waitGitRunner is injectable because a wait must prove that every Git stage,
-// not only network fetch, returns when its remaining budget expires.
-var waitGitRunner attentionGitRun = runAttentionGit
+type waitGitContextFunc func(context.Context, time.Duration, []string) (context.Context, context.CancelFunc)
 
-var waitGitContext = func(parent context.Context, budget time.Duration, _ []string) (context.Context, context.CancelFunc) {
-	return context.WithTimeout(parent, budget)
+type waitGitDependencies struct {
+	run         attentionGitRun
+	withTimeout waitGitContextFunc
+}
+
+type waitGitDependenciesKey struct{}
+
+func withWaitGitDependencies(ctx context.Context, dependencies waitGitDependencies) context.Context {
+	return context.WithValue(ctx, waitGitDependenciesKey{}, dependencies)
+}
+
+func waitDependencies(ctx context.Context) waitGitDependencies {
+	dependencies, _ := ctx.Value(waitGitDependenciesKey{}).(waitGitDependencies)
+	if dependencies.run == nil {
+		dependencies.run = runAttentionGit
+	}
+	if dependencies.withTimeout == nil {
+		dependencies.withTimeout = func(parent context.Context, budget time.Duration, _ []string) (context.Context, context.CancelFunc) {
+			return context.WithTimeout(parent, budget)
+		}
+	}
+	return dependencies
+}
+
+func runWaitGit(ctx context.Context, root string, stdin []byte, args ...string) (string, error) {
+	return waitDependencies(ctx).run(ctx, root, stdin, args...)
 }
 
 func runAttentionGit(ctx context.Context, root string, stdin []byte, args ...string) (string, error) {
@@ -115,9 +137,9 @@ func waitGit(ctx context.Context, root string, stdin []byte, args ...string) (st
 	if budget <= 0 {
 		return "", context.DeadlineExceeded
 	}
-	readCtx, cancel := waitGitContext(ctx, budget, args)
+	readCtx, cancel := waitDependencies(ctx).withTimeout(ctx, budget, args)
 	defer cancel()
-	return waitGitRunner(readCtx, root, stdin, args...)
+	return runWaitGit(readCtx, root, stdin, args...)
 }
 
 func resolveWaitEndpoint(ctx context.Context, root string) (Endpoint, error) {
@@ -184,39 +206,40 @@ func captureWaitTip(ctx context.Context, e Endpoint, budget time.Duration) (Boun
 	}
 	opid := "read-" + ulid
 	fail := func(cause error) (BoundedCapture, error) {
-		cleanupWaitTip(e, opid)
+		cleanupWaitTip(ctx, e, opid)
 		return BoundedCapture{}, cause
 	}
 	fetchCtx, cancel := context.WithTimeout(ctx, budget)
 	defer cancel()
 	if e.LocalMode() {
-		tip, readErr := waitGitRunner(fetchCtx, e.Root, nil, "rev-parse", "--verify", LocalLedgerBranch)
+		tip, readErr := runWaitGit(fetchCtx, e.Root, nil, "rev-parse", "--verify", LocalLedgerBranch)
 		if readErr != nil && fetchCtx.Err() == nil {
-			tip, readErr = waitGitRunner(fetchCtx, e.Root, nil, "rev-parse", "--verify", "HEAD")
+			tip, readErr = runWaitGit(fetchCtx, e.Root, nil, "rev-parse", "--verify", "HEAD")
 		}
 		if readErr != nil {
 			return fail(readErr)
 		}
 		return BoundedCapture{Tip: strings.TrimSpace(tip), OperationID: opid}, nil
 	}
-	_, err = waitGitRunner(fetchCtx, e.Root, nil, "fetch", "--no-tags", "--refmap=", e.Remote, "+"+e.Branch+":"+fetchRefFor(opid))
+	_, err = runWaitGit(fetchCtx, e.Root, nil, "fetch", "--no-tags", "--refmap=", e.Remote, "+"+e.Branch+":"+fetchRefFor(opid))
 	if err != nil {
 		return fail(err)
 	}
-	tip, err := waitGitRunner(fetchCtx, e.Root, nil, "rev-parse", "--verify", fetchRefFor(opid))
+	tip, err := runWaitGit(fetchCtx, e.Root, nil, "rev-parse", "--verify", fetchRefFor(opid))
 	if err != nil {
 		return fail(err)
 	}
 	return BoundedCapture{Tip: strings.TrimSpace(tip), OperationID: opid}, nil
 }
 
-func cleanupWaitTip(e Endpoint, opid string) {
+func cleanupWaitTip(parent context.Context, e Endpoint, opid string) {
 	if e.LocalMode() || opid == "" {
 		return
 	}
 	cleanupCtx, cancel := context.WithTimeout(context.Background(), boundedCaptureGrace)
 	defer cancel()
-	_, _ = waitGitRunner(cleanupCtx, e.Root, nil, "update-ref", "-d", fetchRefFor(opid))
+	cleanupCtx = withWaitGitDependencies(cleanupCtx, waitDependencies(parent))
+	_, _ = runWaitGit(cleanupCtx, e.Root, nil, "update-ref", "-d", fetchRefFor(opid))
 }
 
 func waitTreeIdentity(ctx context.Context, root, commit string) (string, error) {
@@ -622,8 +645,7 @@ func CaptureTipBounded(e Endpoint, budget time.Duration) (BoundedCapture, error)
 		"fetch", "--no-tags", "--refmap=", e.Remote,
 		"+" + e.Branch + ":" + fetchRefFor(opid),
 	}
-	cmd := exec.Command("git", args...)
-	cmd.Env = environWithoutGitSteering()
+	cmd := commandWithEnvironment(e.commandEnv, "git", args...)
 	cmd.SysProcAttr = &syscall.SysProcAttr{Setpgid: true}
 	var stdout, stderr bytes.Buffer
 	cmd.Stdout = &stdout
@@ -680,7 +702,7 @@ func CaptureTipBounded(e Endpoint, budget time.Duration) (BoundedCapture, error)
 		}
 	}
 
-	tipOut, err := goalGit(e.Root, nil, "rev-parse", "--verify", fetchRefFor(opid))
+	tipOut, err := goalGitWithEnvironment(e.Root, e.commandEnv, nil, "rev-parse", "--verify", fetchRefFor(opid))
 	if err != nil {
 		return fail(err)
 	}
@@ -691,8 +713,9 @@ func captureLocalTipBounded(e Endpoint, budget time.Duration) (string, error) {
 	ctx, cancel := context.WithTimeout(context.Background(), budget)
 	defer cancel()
 	read := func(ref string) (string, error) {
-		cmd := exec.CommandContext(ctx, "git", "-C", e.Root, "-c", "core.logAllRefUpdates=false", "rev-parse", "--verify", ref)
-		cmd.Env = environWithoutGitSteering()
+		base := commandWithEnvironment(e.commandEnv, "git", "-C", e.Root, "-c", "core.logAllRefUpdates=false", "rev-parse", "--verify", ref)
+		cmd := exec.CommandContext(ctx, base.Path, base.Args[1:]...)
+		cmd.Env = base.Env
 		var stdout, stderr bytes.Buffer
 		cmd.Stdout, cmd.Stderr = &stdout, &stderr
 		if err := cmd.Run(); err != nil {
@@ -772,7 +795,7 @@ func ObserveLedgerForWait(ctx context.Context, root string, selector metarun.Wai
 	if err != nil {
 		return metarun.SourceObservation{Temporary: true}, err
 	}
-	defer cleanupWaitTip(endpoint, captured.OperationID)
+	defer cleanupWaitTip(ctx, endpoint, captured.OperationID)
 	incarnation := metarun.WaiterTarget{StartedAt: "ledger:" + selector.After, ProofDigest: ledgerEndpointIdentity(endpoint)}
 	if pinned != (metarun.WaiterTarget{}) && lastTip == captured.Tip {
 		return metarun.SourceObservation{Pending: true, Incarnation: incarnation, Outcome: "pending", Evidence: "ledger:" + captured.Tip, LedgerTip: captured.Tip}, nil

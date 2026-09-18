@@ -53,6 +53,9 @@ type Store struct {
 	Root            string
 	Prober          identity.Prober
 	Now             func() time.Time
+	verdictDeps     turnVerdictDependencies
+	projectionDeps  projectionDependencies
+	registryWriter  sessionStopRegistryWriterFunc
 	ResolveIdleSeat func() (Actor, int64, error)
 	// ClaimIdleGoal exposes the external claim boundary for tests and callers
 	// that audit it. TurnVerdict must never cross this boundary: the steward

@@ -14,6 +14,7 @@ import (
 )
 
 func TestDepStateAnswersAbandonedFromTheAbandonedMap(t *testing.T) {
+	t.Parallel()
 	tree := &TreeGoals{
 		Live: map[string]*GoalFile{}, Done: map[string]*GoalFile{"finished": {Id: "finished", State: StateDone}},
 		Abandoned: map[string]*GoalFile{"stopped": {Id: "stopped", State: StateAbandoned}},
@@ -27,6 +28,7 @@ func TestDepStateAnswersAbandonedFromTheAbandonedMap(t *testing.T) {
 }
 
 func TestAbandonAllowsACarrySuccessor(t *testing.T) {
+	t.Parallel()
 	_, root := oneClone(t)
 	seedLedger(t, root)
 	configureAbandonFloorTest(t, strings.Repeat("a", 40))
@@ -76,6 +78,7 @@ func TestAbandonAllowsACarrySuccessor(t *testing.T) {
 }
 
 func TestAbandonLeavesEarlierSuccessorRecordsIntact(t *testing.T) {
+	t.Parallel()
 	_, root := oneClone(t)
 	seedLedger(t, root)
 	configureAbandonFloorTest(t, strings.Repeat("a", 40))
@@ -129,7 +132,7 @@ func testBudget() Budget {
 }
 
 func verbReq(root, ulid, machine string) VerbRequest {
-	return VerbRequest{
+	request := VerbRequest{
 		Endpoint:        endpointFor(root),
 		Actor:           Actor{Machine: machine, Lineage: "lin-1"},
 		Ulid:            ulid,
@@ -137,6 +140,12 @@ func verbReq(root, ulid, machine string) VerbRequest {
 		ClaimEpoch:      1,
 		ParkBranchCheck: func(string, string) (string, error) { return "", nil },
 	}
+	request.ConfigureAbandon(
+		func() string { return strings.Repeat("a", 40) },
+		func(string, string, string) (bool, error) { return true, nil },
+		func(string, func(string, string) (bool, error), time.Time) ([]string, error) { return nil, nil },
+	)
+	return request
 }
 
 func goalHumanProof(t *testing.T, root string, now time.Time) *humanauthority.Proof {
@@ -170,6 +179,7 @@ func seedLedger(t *testing.T, root string) {
 }
 
 func TestEngineFloorIsAProvenHumanRootHistoryLine(t *testing.T) {
+	t.Parallel()
 	_, root := oneClone(t)
 	seedLedger(t, root)
 	req := verbReq(root, "01J5X000000000000000000EF0", "mac-a")
@@ -203,6 +213,7 @@ func TestEngineFloorIsAProvenHumanRootHistoryLine(t *testing.T) {
 }
 
 func TestOpenClaimDoneLifecycle(t *testing.T) {
+	t.Parallel()
 	_, a, _ := twoClones(t)
 	seedLedger(t, a)
 
@@ -262,6 +273,7 @@ func TestOpenClaimDoneLifecycle(t *testing.T) {
 }
 
 func TestDonePublishesRecordsOwnedArchiveToRemoteTip(t *testing.T) {
+	t.Parallel()
 	origin, repo := oneClone(t)
 	seedLedger(t, repo)
 
@@ -296,6 +308,7 @@ func TestDonePublishesRecordsOwnedArchiveToRemoteTip(t *testing.T) {
 }
 
 func TestLastArcGoalConclusionRaisesRetroDebt(t *testing.T) {
+	t.Parallel()
 	_, root, _ := twoClones(t)
 	seedLedger(t, root)
 	for index, id := range []string{"retro-one", "retro-two"} {
@@ -324,6 +337,7 @@ func TestLastArcGoalConclusionRaisesRetroDebt(t *testing.T) {
 }
 
 func TestLastArcGoalConclusionRaisesRetroDebtWhenSweepFails(t *testing.T) {
+	t.Parallel()
 	_, root := oneClone(t)
 	seedLedger(t, root)
 	if res, err := Open(verbReq(root, "01J5X00000000000000000RS10", "mac-a"), "retro-sweep", "Finish the arc.", "main", "Go."); err != nil || res.Outcome != OutcomeConfirmed {
@@ -353,6 +367,7 @@ func TestLastArcGoalConclusionRaisesRetroDebtWhenSweepFails(t *testing.T) {
 }
 
 func TestBudgetedClaimRevisionLaws(t *testing.T) {
+	t.Parallel()
 	a := riskLocalRoot(t, "budget-revision-bed")
 
 	t.Run("claim requires the complete budget and binds its revision", func(t *testing.T) {
@@ -412,6 +427,7 @@ func TestBudgetedClaimRevisionLaws(t *testing.T) {
 }
 
 func TestSetBudgetKeepsForeignHolderClaimEpoch(t *testing.T) {
+	t.Parallel()
 	for _, tc := range []struct {
 		name       string
 		actorEpoch int64
@@ -448,6 +464,7 @@ func TestSetBudgetKeepsForeignHolderClaimEpoch(t *testing.T) {
 }
 
 func TestRebindEpochFollowsTheAuthenticatedHolderOnly(t *testing.T) {
+	t.Parallel()
 	file := &GoalFile{Id: "epoch-authority", StopCapability: &StopCapability{ClaimEpoch: 5}}
 	tests := []struct {
 		name    string
@@ -507,6 +524,7 @@ func publishClaimFixtureMutation(t *testing.T, root, id, opid string, mutate fun
 }
 
 func TestSetBudgetUnchangedIsNoOp(t *testing.T) {
+	t.Parallel()
 	root := riskLocalRoot(t, "unchanged-budget-bed")
 	request := obligationAuthorityVerbReq(root, "01J5X00000000000000000EA00", "mac-a")
 	if result, err := openClaimForTest(t, request, "unchanged-budget", "Keep the tuple stable.", OriginMain, "Observe it.", testBudget()); err != nil || result.Outcome != OutcomeConfirmed {
@@ -569,6 +587,7 @@ func TestSetBudgetUnchangedIsNoOp(t *testing.T) {
 }
 
 func TestSetBudgetPinsLegacyAnchor(t *testing.T) {
+	t.Parallel()
 	for _, withObligation := range []bool{false, true} {
 		t.Run(fmt.Sprintf("live obligation %v", withObligation), func(t *testing.T) {
 			root := obligationAuthorityLocalRoot(t, "legacy-anchor")
@@ -622,6 +641,7 @@ func TestSetBudgetPinsLegacyAnchor(t *testing.T) {
 }
 
 func TestSetBudgetRejectsContradictoryLegacyOrigin(t *testing.T) {
+	t.Parallel()
 	root := obligationAuthorityLocalRoot(t, "contradictory-legacy")
 	publishClaimFixtureMutation(t, root, "contradictory-legacy", "fixture-contradictory-legacy", func(file *GoalFile) {
 		file.Claimed.AccountingRevision = 1
@@ -657,6 +677,7 @@ func TestSetBudgetRejectsContradictoryLegacyOrigin(t *testing.T) {
 }
 
 func TestSetBudgetStartsFirstEpisodeForRevisionlessMigration(t *testing.T) {
+	t.Parallel()
 	root := obligationAuthorityLocalRoot(t, "revisionless-migration")
 	publishClaimFixtureMutation(t, root, "revisionless-migration", "fixture-revisionless-migration", func(file *GoalFile) {
 		file.Budget = nil
@@ -715,6 +736,7 @@ func TestSetBudgetStartsFirstEpisodeForRevisionlessMigration(t *testing.T) {
 // continues it, the unheld hour idle. Another pair still starts fresh
 // (TestStealStartsNewEpisode, and the landing tests).
 func TestReleaseReclaimKeepsTheEpisodeForTheSamePair(t *testing.T) {
+	t.Parallel()
 	root := riskLocalRoot(t, "release-reclaim-bed")
 	claim := obligationAuthorityVerbReq(root, "01J5X00000000000000000ER00", "mac-a")
 	if result, err := openClaimForTest(t, claim, "release-reclaim", "Restart ownership.", OriginMain, "Claim twice.", testBudget()); err != nil || result.Outcome != OutcomeConfirmed {
@@ -747,6 +769,7 @@ func TestReleaseReclaimKeepsTheEpisodeForTheSamePair(t *testing.T) {
 }
 
 func TestStealStartsNewEpisode(t *testing.T) {
+	t.Parallel()
 	root := riskLocalRoot(t, "steal-episode-bed")
 	claim := obligationAuthorityVerbReq(root, "01J5X00000000000000000ES00", "mac-a")
 	if result, err := openClaimForTest(t, claim, "steal-episode", "Transfer ownership.", OriginMain, "Steal it.", testBudget()); err != nil || result.Outcome != OutcomeConfirmed {
@@ -775,6 +798,7 @@ func TestStealStartsNewEpisode(t *testing.T) {
 }
 
 func TestLabelVerbWritesCanonicalWholeFields(t *testing.T) {
+	t.Parallel()
 	_, a, _ := twoClones(t)
 	seedLedger(t, a)
 
@@ -848,6 +872,7 @@ func TestLabelVerbWritesCanonicalWholeFields(t *testing.T) {
 }
 
 func TestOpenClaimCarriesLabels(t *testing.T) {
+	t.Parallel()
 	_, a, _ := twoClones(t)
 	seedLedger(t, a)
 	res, err := openClaimForTest(t, verbReq(a, "01J5X00000000000000000Q540", "mac-a"), "held-label", "Claimed at creation.", "main", "Go.", testBudget(), "custody")
@@ -864,6 +889,7 @@ func TestOpenClaimCarriesLabels(t *testing.T) {
 }
 
 func TestSameGoalClaimRaceOneWinnerNamed(t *testing.T) {
+	t.Parallel()
 	_, a, b := twoClones(t)
 	seedLedger(t, a)
 	if res, err := Open(verbReq(a, "01J5X0000000000000000000D3", "mac-a"), "contested", "One goal, two machines.", "main", "Race."); err != nil || res.Outcome != OutcomeConfirmed {
@@ -886,6 +912,7 @@ func TestSameGoalClaimRaceOneWinnerNamed(t *testing.T) {
 }
 
 func TestClaimRefusalsAreNamed(t *testing.T) {
+	t.Parallel()
 	_, a, _ := twoClones(t)
 	seedLedger(t, a)
 	if res, err := Open(verbReq(a, "01J5X0000000000000000000D6", "mac-a"), "dep", "The blocker.", "main", "First."); err != nil || res.Outcome != OutcomeConfirmed {
@@ -930,6 +957,7 @@ func TestClaimRefusalsAreNamed(t *testing.T) {
 }
 
 func TestClaimQuotaRefusalNamesTheHeldGoalAndRelease(t *testing.T) {
+	t.Parallel()
 	_, root := oneClone(t)
 	seedLedger(t, root)
 	for index, id := range []string{"held-work", "next-work"} {
@@ -954,6 +982,7 @@ func TestClaimQuotaRefusalNamesTheHeldGoalAndRelease(t *testing.T) {
 }
 
 func TestReleaseIsOwnerOrHuman(t *testing.T) {
+	t.Parallel()
 	_, a, b := twoClones(t)
 	seedLedger(t, a)
 	if res, err := Open(verbReq(a, "01J5X0000000000000000000D9", "mac-a"), "held", "Held by A.", "main", "Work."); err != nil || res.Outcome != OutcomeConfirmed {
@@ -990,6 +1019,7 @@ func TestReleaseIsOwnerOrHuman(t *testing.T) {
 }
 
 func TestOpenClearsGoalFreeInTheSameCommit(t *testing.T) {
+	t.Parallel()
 	_, a, _ := twoClones(t)
 	// Seed a root record WITH a Goal-free declaration.
 	root := vRoot()
@@ -1022,6 +1052,7 @@ func TestOpenClearsGoalFreeInTheSameCommit(t *testing.T) {
 }
 
 func TestParkUnparkCycle(t *testing.T) {
+	t.Parallel()
 	_, a, b := twoClones(t)
 	seedLedger(t, a)
 	if res, err := Open(verbReq(a, "01J5X0000000000000000000E0", "mac-a"), "pausable", "Pausable work.", "main", "Go."); err != nil || res.Outcome != OutcomeConfirmed {
@@ -1078,6 +1109,7 @@ func TestParkUnparkCycle(t *testing.T) {
 }
 
 func TestParkRecordsPushedBranchSummary(t *testing.T) {
+	t.Parallel()
 	_, root, _ := twoClones(t)
 	seedLedger(t, root)
 	if result, err := Open(verbReq(root, "01J5X00000000000000000E2A0", "mac-a"), "branched", "Branch work.", "main", "Build u1."); err != nil || result.Outcome != OutcomeConfirmed {
@@ -1104,6 +1136,7 @@ func TestParkRecordsPushedBranchSummary(t *testing.T) {
 }
 
 func TestParkKeepsNextStepNarrativeAndAddsBranchSummary(t *testing.T) {
+	t.Parallel()
 	_, root, _ := twoClones(t)
 	seedLedger(t, root)
 	if result, err := Open(verbReq(root, "01J5X00000000000000000E2B0", "mac-a"), "branched-narrative", "Branch work.", "main", "Finish the explanation for the next holder."); err != nil || result.Outcome != OutcomeConfirmed {
@@ -1140,6 +1173,7 @@ func TestParkKeepsNextStepNarrativeAndAddsBranchSummary(t *testing.T) {
 }
 
 func TestReopenGuardsClaimedDependents(t *testing.T) {
+	t.Parallel()
 	_, a, _ := twoClones(t)
 	seedLedger(t, a)
 	if res, err := Open(verbReq(a, "01J5X0000000000000000000E7", "mac-a"), "base", "The base.", "main", "First."); err != nil || res.Outcome != OutcomeConfirmed {
@@ -1191,6 +1225,7 @@ func TestReopenGuardsClaimedDependents(t *testing.T) {
 }
 
 func TestReopenFromAbandonedIsProvenHumanUnrankedUnapprovedAndKeepsTheEvent(t *testing.T) {
+	t.Parallel()
 	_, root := oneClone(t)
 	seedLedger(t, root)
 	configureAbandonFloorTest(t, strings.Repeat("a", 40))
@@ -1256,6 +1291,7 @@ func TestReopenFromAbandonedIsProvenHumanUnrankedUnapprovedAndKeepsTheEvent(t *t
 }
 
 func TestDeclareFreeExclusivityAndRenewal(t *testing.T) {
+	t.Parallel()
 	_, a, _ := twoClones(t)
 	seedLedger(t, a)
 	if res, err := Open(verbReq(a, "01J5X0000000000000000000EF", "mac-a"), "open-one", "Work.", "main", "Go."); err != nil || res.Outcome != OutcomeConfirmed {
@@ -1285,6 +1321,7 @@ func TestDeclareFreeExclusivityAndRenewal(t *testing.T) {
 }
 
 func TestEditAcceptsAMultiKilobyteIntent(t *testing.T) {
+	t.Parallel()
 	_, a, _ := twoClones(t)
 	seedLedger(t, a)
 	if res, err := Open(verbReq(a, "01J5X0000000000000000000F4", "mac-a"), "verbose", "Short.", "main", "Go."); err != nil || res.Outcome != OutcomeConfirmed {
@@ -1307,6 +1344,7 @@ func TestEditAcceptsAMultiKilobyteIntent(t *testing.T) {
 }
 
 func TestStealNeedsItsHumanAndRecordsIt(t *testing.T) {
+	t.Parallel()
 	_, a, b := twoClones(t)
 	seedLedger(t, a)
 	if res, err := openClaimForTest(t, verbReq(a, "01J5X0000000000000000000F6", "mac-a"), "wanted", "Wanted work.", "main", "Go.", testBudget()); err != nil || res.Outcome != OutcomeConfirmed {
@@ -1338,6 +1376,7 @@ func TestStealNeedsItsHumanAndRecordsIt(t *testing.T) {
 }
 
 func TestPruneKeepsTheClosureAndTheNewest(t *testing.T) {
+	t.Parallel()
 	_, a, _ := twoClones(t)
 	seedLedger(t, a)
 	// Three archived goals of increasing age: ancient (chained under
@@ -1406,6 +1445,7 @@ func TestPruneKeepsTheClosureAndTheNewest(t *testing.T) {
 }
 
 func TestPruneRetainsAbandonedGoalsAndTheirPrerequisitesOutsideKeep(t *testing.T) {
+	t.Parallel()
 	_, root := oneClone(t)
 	seedLedger(t, root)
 	configureAbandonFloorTest(t, strings.Repeat("a", 40))
@@ -1456,6 +1496,7 @@ func TestPruneRetainsAbandonedGoalsAndTheirPrerequisitesOutsideKeep(t *testing.T
 }
 
 func TestArcClaimsAsOneUnit(t *testing.T) {
+	t.Parallel()
 	_, a, b := twoClones(t)
 	seedLedger(t, a)
 	// Two members of one arc, plus a bystander.
@@ -1538,6 +1579,7 @@ func TestArcClaimsAsOneUnit(t *testing.T) {
 }
 
 func TestMemberDoneLeavesSiblingClaimed(t *testing.T) {
+	t.Parallel()
 	_, a, _ := twoClones(t)
 	seedLedger(t, a)
 	for i, id := range []string{"pair-one", "pair-two"} {
@@ -1589,6 +1631,7 @@ func TestMemberDoneLeavesSiblingClaimed(t *testing.T) {
 }
 
 func TestParkCascadePinsOneAcknowledgment(t *testing.T) {
+	t.Parallel()
 	_, a, b := twoClones(t)
 	seedLedger(t, a)
 	for i, id := range []string{"casc-one", "casc-two"} {
@@ -1710,6 +1753,7 @@ func TestParkCascadePinsOneAcknowledgment(t *testing.T) {
 }
 
 func TestDetachReleasesWithoutSplittingTheQuota(t *testing.T) {
+	t.Parallel()
 	_, a, _ := twoClones(t)
 	seedLedger(t, a)
 	for i, id := range []string{"det-one", "det-two"} {
@@ -1747,6 +1791,7 @@ func TestDetachReleasesWithoutSplittingTheQuota(t *testing.T) {
 }
 
 func TestQueuedJoinsClaimedArcUnderTheClaimantOnly(t *testing.T) {
+	t.Parallel()
 	_, a, b := twoClones(t)
 	seedLedger(t, a)
 	if res, err := openClaimForTest(t, verbReq(a, "01J5X00000000000000000D300", "mac-a"), "anchor", "The anchor.", "main", "Go.", testBudget()); err != nil || res.Outcome != OutcomeConfirmed {
@@ -1808,6 +1853,7 @@ func TestQueuedJoinsClaimedArcUnderTheClaimantOnly(t *testing.T) {
 }
 
 func TestFreshNoOpsAbandonHonestly(t *testing.T) {
+	t.Parallel()
 	_, a, b := twoClones(t)
 	seedLedger(t, a)
 	if res, err := openClaimForTest(t, verbReq(a, "01J5X00000000000000000F900", "mac-a"), "held-fast", "Held.", "main", "Go.", testBudget()); err != nil || res.Outcome != OutcomeConfirmed {
@@ -1846,6 +1892,7 @@ func TestFreshNoOpsAbandonHonestly(t *testing.T) {
 // Pinning itself is a human act, refuses over a foreign claim, and
 // "-" clears it.
 func TestMachinePinning(t *testing.T) {
+	t.Parallel()
 	_, a, b := twoClones(t)
 	seedLedger(t, a)
 	if res, err := Open(verbReq(a, "01J5X0000000000000000000P1", "mac-a"), "gpu-work", "Needs the big machine.", "main", "Train."); err != nil || res.Outcome != OutcomeConfirmed {
@@ -1970,6 +2017,7 @@ func TestMachinePinning(t *testing.T) {
 // and parks the blocked goal with the blocker recorded; the park lifts
 // by itself when every blocker is done. A person's open is unchanged.
 func TestSeatOpenNamesItsBlockerAndTheParkReturnsOnDone(t *testing.T) {
+	t.Parallel()
 	_, a, b := twoClones(t)
 	seedLedger(t, a)
 	risk := RiskRecord{Severity: 1, Novelty: 1, Exposure: 1, Accumulation: 1, Basis: "fixture"}

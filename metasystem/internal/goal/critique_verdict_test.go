@@ -15,6 +15,7 @@ func critiqueVerdict(t *testing.T, fact JobFact) (string, bool) {
 }
 
 func TestCritiqueVerdictShowsZeroMaterialFold(t *testing.T) {
+	t.Parallel()
 	display, blocked := critiqueVerdict(t, JobFact{Id: "critic", MainId: "other", Status: "completed", Role: "design-critic", ReviewRoundLimit: 2, CritiqueRound: 2})
 	want := "design critique round 2 of 2 folded: 0 material"
 	if strings.Count("\n"+display+"\n", "\n"+want+"\n") != 1 || blocked {
@@ -23,6 +24,7 @@ func TestCritiqueVerdictShowsZeroMaterialFold(t *testing.T) {
 }
 
 func TestCritiqueVerdictShowsMechanicalFallingFold(t *testing.T) {
+	t.Parallel()
 	for _, tc := range []struct {
 		name    string
 		falling bool
@@ -38,6 +40,7 @@ func TestCritiqueVerdictShowsMechanicalFallingFold(t *testing.T) {
 }
 
 func TestCritiqueVerdictOmitsCycleWithoutDesignCritic(t *testing.T) {
+	t.Parallel()
 	withFields := JobFact{Id: "critic", MainId: "other", Status: "completed", Role: "code-critic", ReviewRoundLimit: 2, CritiqueRound: 2, CritiqueMaterial: 1, CritiqueMechanical: true, CritiqueFalling: true}
 	display, blocked := critiqueVerdict(t, withFields)
 	withoutFields := withFields

@@ -17,17 +17,9 @@ import (
 
 func configureAbandonFloorTest(t *testing.T, stamp string) {
 	t.Helper()
-	oldStamp := abandonBuildStamp
-	oldAncestor := abandonIsAncestor
-	oldRegistry := abandonRegistryProblems
-	abandonBuildStamp = func() string { return stamp }
-	abandonIsAncestor = func(string, string, string) (bool, error) { return true, nil }
-	abandonRegistryProblems = func(string, func(string, string) (bool, error), time.Time) ([]string, error) { return nil, nil }
-	t.Cleanup(func() {
-		abandonBuildStamp = oldStamp
-		abandonIsAncestor = oldAncestor
-		abandonRegistryProblems = oldRegistry
-	})
+	if stamp != strings.Repeat("a", 40) {
+		t.Fatalf("unsupported abandon test build stamp %q", stamp)
+	}
 }
 
 func recordAbandonFloorTest(t *testing.T, root, ulid string) {
@@ -41,6 +33,7 @@ func recordAbandonFloorTest(t *testing.T, root, ulid string) {
 }
 
 func TestAbandonOfALandReadyClaimClearsTheLandingBinding(t *testing.T) {
+	t.Parallel()
 	_, root := oneClone(t)
 	seedLedger(t, root)
 	configureAbandonFloorTest(t, strings.Repeat("a", 40))
@@ -74,6 +67,7 @@ func TestAbandonOfALandReadyClaimClearsTheLandingBinding(t *testing.T) {
 }
 
 func TestAbandonRepairsBlockerParksForCarriedWaivedAndAlso(t *testing.T) {
+	t.Parallel()
 	tests := []struct {
 		name string
 		spec AbandonSpec
@@ -138,6 +132,7 @@ func TestAbandonRepairsBlockerParksForCarriedWaivedAndAlso(t *testing.T) {
 }
 
 func TestAbandonWaiverLiftsAParkWhoseMarkerNamesAnAlreadyDoneBlocker(t *testing.T) {
+	t.Parallel()
 	_, root := oneClone(t)
 	seedLedger(t, root)
 	configureAbandonFloorTest(t, strings.Repeat("a", 40))
@@ -192,6 +187,7 @@ func TestAbandonWaiverLiftsAParkWhoseMarkerNamesAnAlreadyDoneBlocker(t *testing.
 }
 
 func TestAbandonCarryDoesNotMoveAWaivedParkToTheSuccessor(t *testing.T) {
+	t.Parallel()
 	_, root := oneClone(t)
 	seedLedger(t, root)
 	configureAbandonFloorTest(t, strings.Repeat("a", 40))
@@ -233,6 +229,7 @@ func TestAbandonCarryDoesNotMoveAWaivedParkToTheSuccessor(t *testing.T) {
 }
 
 func TestAbandonRefusalsStartWithAuthorityReasonAndArgumentGrammar(t *testing.T) {
+	t.Parallel()
 	root := t.TempDir()
 	if err := os.WriteFile(filepath.Join(root, "metasystem.conf"), []byte("metasystem.runtimes=fake\n"), 0o644); err != nil {
 		t.Fatal(err)
@@ -255,6 +252,7 @@ func TestAbandonRefusalsStartWithAuthorityReasonAndArgumentGrammar(t *testing.T)
 }
 
 func TestAbandonCarriedRepointsEveryDependent(t *testing.T) {
+	t.Parallel()
 	_, root := oneClone(t)
 	seedLedger(t, root)
 	configureAbandonFloorTest(t, strings.Repeat("a", 40))
@@ -326,6 +324,7 @@ func TestAbandonCarriedRepointsEveryDependent(t *testing.T) {
 }
 
 func TestAbandonRefusesUncoveredLiveDependents(t *testing.T) {
+	t.Parallel()
 	_, root := oneClone(t)
 	seedLedger(t, root)
 	configureAbandonFloorTest(t, strings.Repeat("a", 40))
@@ -359,6 +358,7 @@ func TestAbandonRefusesUncoveredLiveDependents(t *testing.T) {
 }
 
 func TestAbandonWaiveRemovesTheEdgeWithARecordedReason(t *testing.T) {
+	t.Parallel()
 	_, root := oneClone(t)
 	seedLedger(t, root)
 	configureAbandonFloorTest(t, strings.Repeat("a", 40))
@@ -402,6 +402,7 @@ func TestAbandonWaiveRemovesTheEdgeWithARecordedReason(t *testing.T) {
 }
 
 func TestAbandonWaiveRefusesBlankAndDuplicateReasons(t *testing.T) {
+	t.Parallel()
 	root := t.TempDir()
 	if err := os.WriteFile(filepath.Join(root, "metasystem.conf"), []byte("metasystem.runtimes=fake\n"), 0o644); err != nil {
 		t.Fatal(err)
@@ -437,6 +438,7 @@ func TestAbandonWaiveRefusesBlankAndDuplicateReasons(t *testing.T) {
 }
 
 func TestAbandonRefusalsAreOrderedInputFirst(t *testing.T) {
+	t.Parallel()
 	root := t.TempDir()
 	if err := os.WriteFile(filepath.Join(root, "metasystem.conf"), []byte("metasystem.runtimes=fake\n"), 0o644); err != nil {
 		t.Fatal(err)
@@ -489,6 +491,7 @@ func TestAbandonRefusalsAreOrderedInputFirst(t *testing.T) {
 }
 
 func TestAbandonRefusesWithoutProofOrAReason(t *testing.T) {
+	t.Parallel()
 	root := t.TempDir()
 	if err := os.WriteFile(filepath.Join(root, "metasystem.conf"), []byte("metasystem.runtimes=fake\n"), 0o644); err != nil {
 		t.Fatal(err)
@@ -517,6 +520,7 @@ func TestAbandonRefusesWithoutProofOrAReason(t *testing.T) {
 }
 
 func TestAbandonAlsoCascadesToNamedDependentsOnly(t *testing.T) {
+	t.Parallel()
 	_, root := oneClone(t)
 	seedLedger(t, root)
 	configureAbandonFloorTest(t, strings.Repeat("a", 40))
@@ -588,6 +592,7 @@ func TestAbandonAlsoCascadesToNamedDependentsOnly(t *testing.T) {
 }
 
 func TestAbandonToleratesItsOwnUnfinishedPrerequisites(t *testing.T) {
+	t.Parallel()
 	_, root := oneClone(t)
 	seedLedger(t, root)
 	configureAbandonFloorTest(t, strings.Repeat("a", 40))
@@ -614,6 +619,7 @@ func TestAbandonToleratesItsOwnUnfinishedPrerequisites(t *testing.T) {
 }
 
 func TestAbandonRefusesWithoutTheFleetFloor(t *testing.T) {
+	t.Parallel()
 	_, root := oneClone(t)
 	seedLedger(t, root)
 	if result, err := Open(verbReq(root, "01J5X00000000000000000Z000", "mac-a"), "primary", "intent", "main", "next"); err != nil || result.Outcome != OutcomeConfirmed {
@@ -622,12 +628,7 @@ func TestAbandonRefusesWithoutTheFleetFloor(t *testing.T) {
 	req := verbReq(root, "01J5X00000000000000000Z100", "mac-a")
 	req.Actor.Human = "Wido"
 	proof := goalHumanProof(t, root, req.Now)
-	oldStamp, oldAncestor, oldRegistry := abandonBuildStamp, abandonIsAncestor, abandonRegistryProblems
-	t.Cleanup(func() {
-		abandonBuildStamp, abandonIsAncestor, abandonRegistryProblems = oldStamp, oldAncestor, oldRegistry
-	})
-	abandonBuildStamp = func() string { return strings.Repeat("a", 40) }
-	abandonRegistryProblems = func(string, func(string, string) (bool, error), time.Time) ([]string, error) { return nil, nil }
+	req.ConfigureAbandon(func() string { return strings.Repeat("a", 40) }, func(string, string, string) (bool, error) { return true, nil }, func(string, func(string, string) (bool, error), time.Time) ([]string, error) { return nil, nil })
 	if _, err := Abandon(req, "primary", AbandonSpec{Because: "obsolete"}, proof); err == nil || !strings.Contains(err.Error(), "ledger has no record that the fleet runs it") {
 		t.Fatalf("missing floor: %v", err)
 	}
@@ -636,28 +637,28 @@ func TestAbandonRefusesWithoutTheFleetFloor(t *testing.T) {
 	if result, err := EngineFloor(floorReq, strings.Repeat("b", 40), goalHumanProof(t, root, floorReq.Now)); err != nil || result.Outcome != OutcomeConfirmed {
 		t.Fatalf("engine floor: %+v %v", result, err)
 	}
-	abandonBuildStamp = func() string { return "dev" }
+	req.abandon.buildStamp = func() string { return "dev" }
 	if _, err := Abandon(req, "primary", AbandonSpec{Because: "obsolete"}, proof); err == nil || !strings.Contains(err.Error(), "cannot be placed against the fleet floor") {
 		t.Fatalf("bare dev build: %v", err)
 	}
-	abandonBuildStamp = func() string { return "dev-" + strings.Repeat("a", 40) + "-dirty" }
-	abandonIsAncestor = func(string, string, string) (bool, error) { return false, nil }
+	req.abandon.buildStamp = func() string { return "dev-" + strings.Repeat("a", 40) + "-dirty" }
+	req.abandon.isAncestor = func(string, string, string) (bool, error) { return false, nil }
 	if _, err := Abandon(req, "primary", AbandonSpec{Because: "obsolete"}, proof); err == nil || !strings.Contains(err.Error(), "(dirty build) is below the fleet floor") {
 		t.Fatalf("dirty build below floor: %v", err)
 	}
-	abandonBuildStamp = func() string { return strings.Repeat("a", 40) }
+	req.abandon.buildStamp = func() string { return strings.Repeat("a", 40) }
 	if _, err := Abandon(req, "primary", AbandonSpec{Because: "obsolete"}, proof); err == nil || !strings.Contains(err.Error(), "is below the fleet floor") {
 		t.Fatalf("clean build below floor: %v", err)
 	}
-	abandonIsAncestor = func(string, string, string) (bool, error) { return true, nil }
-	abandonRegistryProblems = func(string, func(string, string) (bool, error), time.Time) ([]string, error) {
+	req.abandon.isAncestor = func(string, string, string) (bool, error) { return true, nil }
+	req.abandon.registryProblems = func(string, func(string, string) (bool, error), time.Time) ([]string, error) {
 		return []string{"checkout /fixture (LiveVerified) runs engine old, below the fleet floor " + strings.Repeat("b", 40) + "; rebuild and re-arm it (metasystem up), close or sweep the stale claim, or record a lower floor only if every other seat runs that"}, nil
 	}
 	if _, err := Abandon(req, "primary", AbandonSpec{Because: "obsolete"}, proof); err == nil || !strings.Contains(err.Error(), "LiveVerified") {
 		t.Fatalf("registry contradiction: %v", err)
 	}
 
-	abandonRegistryProblems = func(string, func(string, string) (bool, error), time.Time) ([]string, error) { return nil, nil }
+	req.abandon.registryProblems = func(string, func(string, string) (bool, error), time.Time) ([]string, error) { return nil, nil }
 	jobDir := filepath.Join(root, "artifacts", "agents", "jobs")
 	if err := os.MkdirAll(jobDir, 0o755); err != nil {
 		t.Fatal(err)
@@ -672,6 +673,7 @@ func TestAbandonRefusesWithoutTheFleetFloor(t *testing.T) {
 }
 
 func TestAbandonCompactsTheDepartedPriorityLikeDone(t *testing.T) {
+	t.Parallel()
 	_, root := oneClone(t)
 	seedLedger(t, root)
 	configureAbandonFloorTest(t, strings.Repeat("a", 40))
@@ -704,6 +706,7 @@ func TestAbandonCompactsTheDepartedPriorityLikeDone(t *testing.T) {
 }
 
 func TestAbandonLocksEveryGoalInTheSetAndRefusesAnyRecordChange(t *testing.T) {
+	t.Parallel()
 	tests := []struct {
 		name       string
 		competitor func(root string) (string, error)
@@ -794,8 +797,7 @@ func TestAbandonLocksEveryGoalInTheSetAndRefusesAnyRecordChange(t *testing.T) {
 			}
 
 			injected := false
-			oldHook := abandonBeforePush
-			abandonBeforePush = func(attempt int) error {
+			beforePush := func(attempt int) error {
 				if injected {
 					return nil
 				}
@@ -833,9 +835,8 @@ func TestAbandonLocksEveryGoalInTheSetAndRefusesAnyRecordChange(t *testing.T) {
 				}
 				return nil
 			}
-			t.Cleanup(func() { abandonBeforePush = oldHook })
-
 			req := verbReq(root, "01J5X000000000000000001E40", "mac-a")
+			req.abandon.beforePush = beforePush
 			req.Actor.Human = "Wido"
 			result, err := Abandon(req, "lock-primary", AbandonSpec{Because: "superseded", Also: []string{"lock-dependent"}}, goalHumanProof(t, root, req.Now))
 			if err != nil {

@@ -34,8 +34,12 @@ func writeFile(t *testing.T, path, body string) {
 }
 
 func wantShaped(t *testing.T, root string, ledger []byte, want bool, reasonPart string) {
+	wantShapedWithEnvironment(t, root, ledger, nil, want, reasonPart)
+}
+
+func wantShapedWithEnvironment(t *testing.T, root string, ledger []byte, environment []string, want bool, reasonPart string) {
 	t.Helper()
-	shaped, reason, err := AdoptionShaped(root, ledger)
+	shaped, reason, err := adoptionShapedWithEnvironment(root, ledger, environment)
 	if err != nil {
 		t.Fatalf("AdoptionShaped: %v", err)
 	}
@@ -51,6 +55,7 @@ func wantShaped(t *testing.T, root string, ledger []byte, want bool, reasonPart 
 // root that is not a git work tree, or one whose history carries no
 // ledger yet — unborn HEAD, or commits without the ledger.
 func TestAdoptionShapedOutsideAndBeforeHistory(t *testing.T) {
+	t.Parallel()
 	plain := t.TempDir()
 	wantShaped(t, plain, []byte(goalFreeLedger), true, "")
 	wantShaped(t, plain, nil, true, "")
@@ -74,6 +79,7 @@ func TestAdoptionShapedOutsideAndBeforeHistory(t *testing.T) {
 // question is asked against the root's own prefix, so a nested checkout
 // is judged by its own plans/goals.md, not the toplevel's.
 func TestAdoptionShapedRefusesTrackedLedgerAtRootPrefix(t *testing.T) {
+	t.Parallel()
 	top := t.TempDir()
 	gitOK(t, top, "init", "-q")
 	writeFile(t, filepath.Join(top, "plans", "goals.md"), goalFreeLedger)
@@ -100,9 +106,10 @@ func TestAdoptionShapedRefusesTrackedLedgerAtRootPrefix(t *testing.T) {
 
 // A probe that cannot run git refuses rather than authorizes.
 func TestAdoptionShapedFailsClosedWithoutGit(t *testing.T) {
+	t.Parallel()
 	root := t.TempDir()
-	t.Setenv("PATH", t.TempDir())
-	shaped, _, err := AdoptionShaped(root, []byte(goalFreeLedger))
+	environment := testEnvironment(os.Environ(), "PATH="+t.TempDir())
+	shaped, _, err := adoptionShapedWithEnvironment(root, []byte(goalFreeLedger), environment)
 	if err == nil || shaped {
 		t.Fatalf("want a probe error and not shaped; got shaped=%v err=%v", shaped, err)
 	}
@@ -113,6 +120,7 @@ func TestAdoptionShapedFailsClosedWithoutGit(t *testing.T) {
 // deliberately, or inherited from a git hook or rebase subprocess —
 // must not redirect the guard.
 func TestAdoptionShapedIgnoresGitSteeringEnv(t *testing.T) {
+	t.Parallel()
 	tracked := t.TempDir()
 	gitOK(t, tracked, "init", "-q")
 	writeFile(t, filepath.Join(tracked, "plans", "goals.md"), goalFreeLedger)
@@ -121,12 +129,10 @@ func TestAdoptionShapedIgnoresGitSteeringEnv(t *testing.T) {
 
 	empty := t.TempDir()
 	gitOK(t, empty, "init", "-q")
-	t.Setenv("GIT_DIR", filepath.Join(empty, ".git"))
-	t.Setenv("GIT_WORK_TREE", empty)
-	wantShaped(t, tracked, []byte(goalFreeLedger), false, "committed history")
+	environment := testEnvironment(os.Environ(), "GIT_DIR="+filepath.Join(empty, ".git"), "GIT_WORK_TREE="+empty)
+	wantShapedWithEnvironment(t, tracked, []byte(goalFreeLedger), environment, false, "committed history")
 
 	plain := t.TempDir()
-	t.Setenv("GIT_DIR", filepath.Join(tracked, ".git"))
-	t.Setenv("GIT_WORK_TREE", tracked)
-	wantShaped(t, plain, []byte(goalFreeLedger), true, "")
+	environment = testEnvironment(os.Environ(), "GIT_DIR="+filepath.Join(tracked, ".git"), "GIT_WORK_TREE="+tracked)
+	wantShapedWithEnvironment(t, plain, []byte(goalFreeLedger), environment, true, "")
 }

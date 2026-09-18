@@ -11,6 +11,7 @@ import (
 // root fields that are shaped rather than merely nonempty.
 
 func TestGoalIdCapsAtOneHundredCharacters(t *testing.T) {
+	t.Parallel()
 	if !validId(strings.Repeat("a", 100)) {
 		t.Fatal("one hundred characters is the lawful maximum")
 	}
@@ -20,6 +21,7 @@ func TestGoalIdCapsAtOneHundredCharacters(t *testing.T) {
 }
 
 func TestFileGrammarRefusesTheMalformed(t *testing.T) {
+	t.Parallel()
 	for _, leg := range []struct {
 		name     string
 		mutate   func(*GoalFile)
@@ -48,7 +50,10 @@ func TestFileGrammarRefusesTheMalformed(t *testing.T) {
 }
 
 func TestDuplicateFieldsRefuseByName(t *testing.T) {
+	t.Parallel(
 	// A second State line must refuse, not silently win.
+	)
+
 	rendered := string(RenderFile(vGoal("dup-probe", StateQueued)))
 	doctored := strings.Replace(rendered, "- State: queued", "- State: queued\n- State: done", 1)
 	doctored = withFreshIntegrity(doctored)
@@ -67,8 +72,11 @@ func TestDuplicateFieldsRefuseByName(t *testing.T) {
 }
 
 func TestRecordGrammarIsClosed(t *testing.T) {
+	t.Parallel(
 	// An unknown key inside a Claimed record refuses; a stray token
 	// refuses; History timestamps bind to RFC3339.
+	)
+
 	f := vGoal("closed-probe", StateClaimed)
 	rendered := string(RenderFile(f))
 	doctored := withFreshIntegrity(strings.Replace(rendered, "at=2026-08-20T10:05:00Z", "at=2026-08-20T10:05:00Z smuggled=yes", 1))
@@ -83,6 +91,7 @@ func TestRecordGrammarIsClosed(t *testing.T) {
 }
 
 func TestRootFieldsAreShapedNotMerelyNonempty(t *testing.T) {
+	t.Parallel()
 	for _, leg := range []struct {
 		name     string
 		mutate   func(*RootRecord)
@@ -114,8 +123,11 @@ func withFreshIntegrity(doc string) string {
 }
 
 func TestOriginDomainAndImmutabilityAreProven(t *testing.T) {
+	t.Parallel(
 	// The parser's Origin domain: out-of-domain
 	// provenance refuses by name.
+	)
+
 	f := vGoal("origin-probe", StateQueued)
 	f.Origin = "elsewhere"
 	_, problems := ParseFile(RenderFile(f))

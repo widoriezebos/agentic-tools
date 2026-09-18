@@ -41,6 +41,7 @@ func expectRefusal(t *testing.T, label string, res PublishResult, err error, nee
 // scoped, expires within seven days, coexists with others, round-trips
 // through the root record, and revokes.
 func TestGrantRecordsAPowerOfAttorneyWithinItsBounds(t *testing.T) {
+	t.Parallel()
 	root := attorneyBed(t)
 	human := attorneyReq(root, 0, "mac-a")
 	human.Actor.Human = "Wido"
@@ -143,6 +144,7 @@ func TestGrantRecordsAPowerOfAttorneyWithinItsBounds(t *testing.T) {
 // A seat approves and set-budgets a tier-1 goal under a live entry as its
 // own act, within the box, and is refused outside the entry.
 func TestApproveAndSetBudgetUnderPowerOfAttorney(t *testing.T) {
+	t.Parallel()
 	root := attorneyBed(t)
 	human := attorneyReq(root, 10, "mac-a")
 	human.Actor.Human = "Wido"
@@ -272,6 +274,7 @@ func withUlid(r VerbRequest, n int) VerbRequest {
 // An entry outside R-95-m1e's bounds stays readable on a landed ledger but
 // is never honoured, so a hand edit of the section grants nothing.
 func TestAPowerOfAttorneyOutsideItsBoundsIsNeverLive(t *testing.T) {
+	t.Parallel()
 	now := time.Date(2026, 9, 12, 12, 0, 0, 0, time.UTC)
 	sound := PowerOfAttorneyEntry{ID: Opid("01J5X00000000000000000PB00", "mac-a", "lin-1"), By: "human:Wido", Tiers: []uint8{1},
 		Verbs: []string{"approve"}, Since: "2026-09-12T09:00:00Z", Expires: "2026-09-18"}
@@ -306,6 +309,7 @@ func TestAPowerOfAttorneyOutsideItsBoundsIsNeverLive(t *testing.T) {
 // standing one is itself an attorney act: a person's proven, relayed or
 // channel approval is never rewritten by approve or set-budget.
 func TestAnAttorneyActNeverRewritesAPersonsApproval(t *testing.T) {
+	t.Parallel()
 	for _, authority := range []string{ApprovalAuthorityProven, ApprovalAuthorityRelayed, ApprovalAuthorityChannel} {
 		f := &GoalFile{Id: "held", Approved: &ApprovalRecord{Authority: authority}}
 		if err := attorneyMayRebind(f, "entry"); err == nil || !strings.Contains(err.Error(), authority) {
@@ -350,6 +354,7 @@ func TestAnAttorneyActNeverRewritesAPersonsApproval(t *testing.T) {
 // tier-2 goal, a missing reason, an entry without the verb and a bare
 // unpark refuse; recovery closes an interrupted attorney unpark by name.
 func TestUnparkUnderPowerOfAttorney(t *testing.T) {
+	t.Parallel()
 	root := attorneyBed(t)
 	human := attorneyReq(root, 40, "mac-a")
 	human.Actor.Human = "Wido"

@@ -13,7 +13,6 @@ import (
 	"encoding/json"
 	"fmt"
 	"os"
-	"os/exec"
 	"path/filepath"
 	"sort"
 	"strings"
@@ -25,11 +24,12 @@ import (
 
 // Projection is one read of the accepted world.
 type Projection struct {
-	Root    string
-	Tip     string
-	Tree    *TreeGoals
-	Banners []string
-	Horizon ApprovalHorizon
+	Root                 string
+	Tip                  string
+	Tree                 *TreeGoals
+	Banners              []string
+	Horizon              ApprovalHorizon
+	claimAdmissionLoader tierBoxLoader
 }
 
 // StaleThreshold is how old an accepted tree may grow before the
@@ -39,18 +39,44 @@ const StaleThreshold = 30 * time.Minute
 // The Stop hook budget is sixty seconds, shipped in the registration templates
 // under metasystem/scripts/enforcement and owned by the hook's deadline parent.
 // A fresh projection keeps its existing tighter bound within that budget.
-var (
-	freshFetchProcessTimeout = 3 * time.Second
-	freshProjectionTimeout   = 4 * time.Second
-	fetchForProjection       = boundedFetchAdvance
+const (
+	defaultFreshFetchProcessTimeout = 3 * time.Second
+	defaultFreshProjectionTimeout   = 4 * time.Second
 )
+
+type projectionDependencies struct {
+	fetch          func(Endpoint) (AdvanceResult, error)
+	timeout        time.Duration
+	processTimeout time.Duration
+	deadline       <-chan time.Time
+}
+
+func (dependencies projectionDependencies) withDefaults() projectionDependencies {
+	if dependencies.fetch == nil {
+		dependencies.fetch = func(endpoint Endpoint) (AdvanceResult, error) {
+			return boundedFetchAdvance(endpoint, dependencies.processTimeout)
+		}
+	}
+	if dependencies.timeout <= 0 {
+		dependencies.timeout = defaultFreshProjectionTimeout
+	}
+	if dependencies.processTimeout <= 0 {
+		dependencies.processTimeout = defaultFreshFetchProcessTimeout
+	}
+	return dependencies
+}
 
 // Project reads the accepted tree. With fetchFirst, the read-side
 // validator runs before the read (the --fetch flag); otherwise the
 // read is offline-capable and banners staleness.
 func Project(e Endpoint, fetchFirst bool, now time.Time) (Projection, error) {
+	return project(e, fetchFirst, now, projectionDependencies{})
+}
+
+func project(e Endpoint, fetchFirst bool, now time.Time, dependencies projectionDependencies) (Projection, error) {
+	dependencies = dependencies.withDefaults()
 	if fetchFirst {
-		if err := fetchProjectionWithinDeadline(e); err != nil {
+		if err := fetchProjectionWithinDeadline(e, dependencies); err != nil {
 			return Projection{}, err
 		}
 	}
@@ -98,20 +124,25 @@ func Project(e Endpoint, fetchFirst bool, now time.Time) (Projection, error) {
 	return p, nil
 }
 
-func fetchProjectionWithinDeadline(e Endpoint) error {
+func fetchProjectionWithinDeadline(e Endpoint, dependencies projectionDependencies) error {
 	done := make(chan error, 1)
-	fetch := fetchForProjection
+	fetch := dependencies.fetch
 	go func(fetch func(Endpoint) (AdvanceResult, error)) {
 		_, err := fetch(e)
 		done <- err
 	}(fetch)
-	timer := time.NewTimer(freshProjectionTimeout)
-	defer timer.Stop()
+	deadline := dependencies.deadline
+	var timer *time.Timer
+	if deadline == nil {
+		timer = time.NewTimer(dependencies.timeout)
+		deadline = timer.C
+		defer timer.Stop()
+	}
 	select {
 	case err := <-done:
 		return err
-	case <-timer.C:
-		return fmt.Errorf("fresh canonical ledger fetch timed out after %s", freshProjectionTimeout)
+	case <-deadline:
+		return fmt.Errorf("fresh canonical ledger fetch timed out after %s", dependencies.timeout)
 	}
 }
 
@@ -120,7 +151,7 @@ func fetchProjectionWithinDeadline(e Endpoint) error {
 // projection deadline as well keeps both the child and its caller within the
 // sixty-second Stop budget shipped under metasystem/scripts/enforcement and
 // owned by the hook's deadline parent.
-func boundedFetchAdvance(e Endpoint) (AdvanceResult, error) {
+func boundedFetchAdvance(e Endpoint, processTimeout time.Duration) (AdvanceResult, error) {
 	if e.LocalMode() {
 		return FetchAdvance(e)
 	}
@@ -128,7 +159,7 @@ func boundedFetchAdvance(e Endpoint) (AdvanceResult, error) {
 	if err != nil {
 		return AdvanceResult{}, err
 	}
-	fetched, err := captureRemoteTipWithinDeadline(e, nonce)
+	fetched, err := captureRemoteTipWithinDeadline(e, nonce, processTimeout)
 	if err != nil {
 		return AdvanceResult{}, err
 	}
@@ -162,18 +193,17 @@ func boundedFetchAdvance(e Endpoint) (AdvanceResult, error) {
 	return AdvanceResult{Tip: fetched, Advanced: true, Detail: detail}, nil
 }
 
-func captureRemoteTipWithinDeadline(e Endpoint, nonce string) (string, error) {
+func captureRemoteTipWithinDeadline(e Endpoint, nonce string, processTimeout time.Duration) (string, error) {
 	ref := fetchRefFor(nonce)
 	args := []string{
 		"-C", e.Root, "-c", "core.logAllRefUpdates=false",
 		"fetch", "--no-tags", "--refmap=", e.Remote, "+" + e.Branch + ":" + ref,
 	}
-	cmd := exec.Command("git", args...)
-	cmd.Env = environWithoutGitSteering()
+	cmd := commandWithEnvironment(e.commandEnv, "git", args...)
 	var stdout, stderr bytes.Buffer
 	cmd.Stdout = &stdout
 	cmd.Stderr = &stderr
-	if err := boundedexec.Run(cmd, boundedexec.FixedBound(freshFetchProcessTimeout, "Stop-hook fresh-ledger fetch"), "fresh canonical ledger fetch"); err != nil {
+	if err := boundedexec.Run(cmd, boundedexec.FixedBound(processTimeout, "Stop-hook fresh-ledger fetch"), "fresh canonical ledger fetch"); err != nil {
 		return "", fmt.Errorf("git fetch: %w (%s)", err, strings.TrimSpace(stderr.String()))
 	}
 	out, err := goalGit(e.Root, nil, "rev-parse", "--verify", ref)
@@ -296,10 +326,10 @@ func acceptedGoalWorld(root string) (bool, error) {
 // ReadClaimableBudgetedWork performs the fresh canonical read and the one
 // process-liveness join used by every runtime-independent owner.
 func ReadClaimableBudgetedWork(root string, now time.Time) (ClaimableBudgetedWork, error) {
-	return readClaimableBudgetedWork(root, now, identity.KernelProber{})
+	return readClaimableBudgetedWork(root, now, identity.KernelProber{}, projectionDependencies{})
 }
 
-func readClaimableBudgetedWork(root string, now time.Time, prober identity.Prober) (ClaimableBudgetedWork, error) {
+func readClaimableBudgetedWork(root string, now time.Time, prober identity.Prober, dependencies projectionDependencies) (ClaimableBudgetedWork, error) {
 	resolved, err := ResolveStateRoot(root)
 	if err != nil {
 		return ClaimableBudgetedWork{}, err
@@ -320,7 +350,7 @@ func readClaimableBudgetedWork(root string, now time.Time, prober identity.Probe
 	if err != nil {
 		return ClaimableBudgetedWork{}, err
 	}
-	projection, err := Project(endpoint, true, now)
+	projection, err := project(endpoint, true, now, dependencies)
 	if err != nil {
 		return ClaimableBudgetedWork{}, err
 	}
@@ -632,7 +662,7 @@ func Next(p Projection, machine string, requiredLabels ...string) (NextVerdict, 
 			v.TrunkRedElsewhere = append(v.TrunkRedElsewhere, entry)
 		}
 	}
-	admission := newClaimAdmissionContext(p.Root)
+	admission := newClaimAdmissionContext(p.Root, p.claimAdmissionLoader)
 	for _, id := range OrderedOpenGoalIDs(t.Live) {
 		f := t.Live[id]
 		switch f.State {

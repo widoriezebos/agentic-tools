@@ -32,6 +32,7 @@ const canonical = `# Goals
 // Parse and Serialize round-trip byte-stably on canonical input, and every
 // section lands in its place.
 func TestParseRoundTrip(t *testing.T) {
+	t.Parallel()
 	ledger, problems := Parse([]byte(canonical))
 	if len(problems) != 0 {
 		t.Fatalf("canonical ledger has problems: %v", problems)
@@ -56,6 +57,7 @@ func TestParseRoundTrip(t *testing.T) {
 // The revision scopes to the Current block alone: queued/done edits never
 // re-arm it, any wording change to the step does.
 func TestRevisionScopesToCurrentBlock(t *testing.T) {
+	t.Parallel()
 	ledger, _ := Parse([]byte(canonical))
 	before := ledger.Revision()
 
@@ -75,6 +77,7 @@ func TestRevisionScopesToCurrentBlock(t *testing.T) {
 // Zero-current legality: bare emptiness refuses; a queue or a declaration
 // stands in; a declaration with standing queue refuses.
 func TestZeroCurrentLegality(t *testing.T) {
+	t.Parallel()
 	_, problems := Parse([]byte("# Goals\n"))
 	if len(problems) == 0 {
 		t.Fatal("undeclared absence parsed clean")
@@ -113,6 +116,7 @@ func TestZeroCurrentLegality(t *testing.T) {
 
 // Every byte bound refuses, and structural defects name themselves.
 func TestBoundsAndStructure(t *testing.T) {
+	t.Parallel()
 	cases := []struct{ name, body string }{
 		{"intent-bound", "# Goals\n\n## Current goal: a — " + strings.Repeat("x", 161) + "\n- Origin: main\n- Next step: Do.\n"},
 		{"id-bound", "# Goals\n\n## Current goal: " + strings.Repeat("a", 65) + " — ok\n- Origin: main\n- Next step: Do.\n"},
@@ -135,6 +139,7 @@ func TestBoundsAndStructure(t *testing.T) {
 // The scan digest is a set digest over plan streams: adding a stream
 // changes it, editing content does not, goals.md never counts.
 func TestScanDigestIsSetLevel(t *testing.T) {
+	t.Parallel()
 	root := t.TempDir()
 	plans := filepath.Join(root, "plans")
 	os.MkdirAll(plans, 0o755)

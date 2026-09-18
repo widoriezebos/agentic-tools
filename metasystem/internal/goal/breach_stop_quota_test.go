@@ -27,6 +27,7 @@ func breachStoppedGoalForTest(id, machine string) *GoalFile {
 }
 
 func TestBreachStoppedClaimLeavesMachineQuotaOpenButKeepsResumeFence(t *testing.T) {
+	t.Parallel()
 	_, root, _ := twoClones(t)
 	seedLedger(t, root)
 	budget := Budget{ElapsedLimit: "1m", AttemptLimit: 2, ReservedJobMinutesLimit: 20, ActiveJobLimit: 1}
@@ -99,6 +100,7 @@ func TestBreachStoppedClaimLeavesMachineQuotaOpenButKeepsResumeFence(t *testing.
 }
 
 func TestResumeWaitsUntilMachinesOtherLiveClaimIsReleased(t *testing.T) {
+	t.Parallel()
 	_, root, _ := twoClones(t)
 	seedLedger(t, root)
 	budget := Budget{ElapsedLimit: "1m", AttemptLimit: 2, ReservedJobMinutesLimit: 20, ActiveJobLimit: 1}
@@ -191,6 +193,7 @@ func TestResumeWaitsUntilMachinesOtherLiveClaimIsReleased(t *testing.T) {
 }
 
 func TestResumeAllowsAnotherLiveClaimInTheSameArc(t *testing.T) {
+	t.Parallel()
 	_, root, _ := twoClones(t)
 	seedLedger(t, root)
 	arcBed(t, root, "resume-together", "resume-arc", "RA")
@@ -252,6 +255,7 @@ func TestResumeAllowsAnotherLiveClaimInTheSameArc(t *testing.T) {
 }
 
 func TestNextSeparatesFencedClaimAndSelectsReadyWork(t *testing.T) {
+	t.Parallel()
 	root := t.TempDir()
 	seedGoalNormConfig(t, root)
 	fenced := breachStoppedGoalForTest("fenced-a", "mac-a")
@@ -274,6 +278,7 @@ func TestNextSeparatesFencedClaimAndSelectsReadyWork(t *testing.T) {
 }
 
 func TestFencedClaimStaysVisibleWithoutBecomingCurrentOrIdleContinuation(t *testing.T) {
+	t.Parallel()
 	fenced := breachStoppedGoalForTest("fenced-a", "bed-m1")
 	ready := budgetedQueuedGoal("working-b", "2026-08-23T00:03:00Z")
 	root := servingBed(t, "bed-m1", map[string]*GoalFile{
@@ -316,6 +321,7 @@ func TestFencedClaimStaysVisibleWithoutBecomingCurrentOrIdleContinuation(t *test
 }
 
 func TestTurnVerdictShowsLiveCurrentGoalBesideFencedClaim(t *testing.T) {
+	t.Parallel()
 	fenced := breachStoppedGoalForTest("fenced-a", "bed-m1")
 	fenced.Priority, fenced.Sequence = 1, 1
 	live := &GoalFile{

@@ -20,6 +20,7 @@ func restampFixture(t *testing.T, id string) (string, VerbRequest) {
 }
 
 func TestRestampMovesTheStopCapabilityToTheLeaseEpoch(t *testing.T) {
+	t.Parallel()
 	root, request := restampFixture(t, "epoch-move")
 	before, _ := acceptedTree(t, root, request.Now)
 	beforeFile := before.Live["epoch-move"]
@@ -52,6 +53,7 @@ func TestRestampMovesTheStopCapabilityToTheLeaseEpoch(t *testing.T) {
 }
 
 func TestRestampRefusesAForeignPairALowerEpochAndAnUnclaimedGoal(t *testing.T) {
+	t.Parallel()
 	t.Run("foreign pair", func(t *testing.T) {
 		_, request := restampFixture(t, "foreign-pair")
 		request.Ulid = "01J5X00000000000000000CF10"
@@ -121,6 +123,7 @@ func TestRestampRefusesAForeignPairALowerEpochAndAnUnclaimedGoal(t *testing.T) {
 }
 
 func TestRestampIsANoOpWhenTheEpochsAgree(t *testing.T) {
+	t.Parallel()
 	root, request := restampFixture(t, "already-current")
 	before := acceptedTip(t, root)
 	request.Ulid = "01J5X00000000000000000CN10"

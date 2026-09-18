@@ -29,6 +29,7 @@ func seedGoalNormConfig(t *testing.T, root string) {
 }
 
 func TestSplitDraftGrammarIsClosedAndCanonical(t *testing.T) {
+	t.Parallel()
 	draft := []byte("# split parent\n\n## member parent-two\n- Intent: Second.\n- Next step: Go.\n- Labels: z, a, a\n\n## member parent-one\n- Intent: First.\n- Next step: Go.\n")
 	members, err := ParseMemberDraft(draft, "parent")
 	if err != nil {
@@ -47,6 +48,7 @@ func TestSplitDraftGrammarIsClosedAndCanonical(t *testing.T) {
 }
 
 func TestSplitIsAtomicPermanentAndRewritesDependencies(t *testing.T) {
+	t.Parallel()
 	_, root := oneClone(t)
 	seedLedger(t, root)
 	if res, err := Open(verbReq(root, "01J5X00000000000000000S100", "mac-a"), "old-blocker", "External prerequisite.", OriginMain, "Finish it."); err != nil || res.Outcome != OutcomeConfirmed {
@@ -120,6 +122,7 @@ func TestSplitIsAtomicPermanentAndRewritesDependencies(t *testing.T) {
 }
 
 func TestSliceStartIsImmutableAndBlocksSplit(t *testing.T) {
+	t.Parallel()
 	_, root := oneClone(t)
 	seedLedger(t, root)
 	seedGoalNormConfig(t, root)
@@ -150,6 +153,7 @@ func TestSliceStartIsImmutableAndBlocksSplit(t *testing.T) {
 }
 
 func TestHumanCanRatifyAMainOriginSplitWithFreshProof(t *testing.T) {
+	t.Parallel()
 	_, root := oneClone(t)
 	seedLedger(t, root)
 	if res, err := Open(verbReq(root, "01J5X00000000000000000SH00", "mac-a"), "human-ratifies-main", "Main-origin intent.", OriginMain, "Split it."); err != nil || res.Outcome != OutcomeConfirmed {
@@ -171,6 +175,7 @@ func TestHumanCanRatifyAMainOriginSplitWithFreshProof(t *testing.T) {
 }
 
 func TestSplitPreconditionsRefuseByNameAndHumanOriginInherits(t *testing.T) {
+	t.Parallel()
 	t.Run("foreign claim", func(t *testing.T) {
 		_, a, b := twoClones(t)
 		seedLedger(t, a)
@@ -241,6 +246,7 @@ func TestSplitPreconditionsRefuseByNameAndHumanOriginInherits(t *testing.T) {
 }
 
 func TestSplitDebtFailureStaysPushedAndRecoveryCompletesIt(t *testing.T) {
+	t.Parallel()
 	_, root := oneClone(t)
 	seedLedger(t, root)
 	if res, err := Open(verbReq(root, "01J5X00000000000000000SD00", "mac-a"), "debt-parent", "Exercise debt recovery.", OriginMain, "Split it."); err != nil || res.Outcome != OutcomeConfirmed {
@@ -282,6 +288,7 @@ func TestSplitDebtFailureStaysPushedAndRecoveryCompletesIt(t *testing.T) {
 }
 
 func TestDeadAbsentSliceStartAbandonsWithoutMarkingGoal(t *testing.T) {
+	t.Parallel()
 	_, root := oneClone(t)
 	seedLedger(t, root)
 	seedGoalNormConfig(t, root)
@@ -318,6 +325,7 @@ func TestDeadAbsentSliceStartAbandonsWithoutMarkingGoal(t *testing.T) {
 }
 
 func TestSplitPrechecksReadTheArchive(t *testing.T) {
+	t.Parallel()
 	_, root := oneClone(t)
 	seedLedger(t, root)
 	configureAbandonFloorTest(t, strings.Repeat("a", 40))
@@ -352,6 +360,7 @@ func TestSplitPrechecksReadTheArchive(t *testing.T) {
 }
 
 func TestGoalNormRefusesAndPublishesStrictApproval(t *testing.T) {
+	t.Parallel()
 	_, root := oneClone(t)
 	seedLedger(t, root)
 	seedGoalNormConfig(t, root)
@@ -405,6 +414,7 @@ func TestGoalNormRefusesAndPublishesStrictApproval(t *testing.T) {
 }
 
 func TestOverNormApprovalComposesWithClaimAndSteal(t *testing.T) {
+	t.Parallel()
 	_, a, b := twoClones(t)
 	seedLedger(t, a)
 	if res, err := Open(verbReq(a, "01J5X00000000000000000NS00", "mac-a"), "over-steal", "Approved exception.", OriginMain, "Work."); err != nil || res.Outcome != OutcomeConfirmed {
@@ -435,6 +445,7 @@ func TestOverNormApprovalComposesWithClaimAndSteal(t *testing.T) {
 }
 
 func TestGoalNormApprovalGrammarIsDistinctAndUnambiguous(t *testing.T) {
+	t.Parallel()
 	minutes, rounds, revision, ok := StrictApprovalQuadruple("approve goal=large-goal minutes=1600 reviewRounds=3 goalRevision=4", "large-goal")
 	if !ok || minutes != 1600 || rounds != 3 || revision != 4 {
 		t.Fatalf("strict goal approval did not parse: minutes=%d rounds=%d revision=%d ok=%v", minutes, rounds, revision, ok)
@@ -451,6 +462,7 @@ func TestGoalNormApprovalGrammarIsDistinctAndUnambiguous(t *testing.T) {
 }
 
 func TestSplitAndSliceStartRaceHasExactlyOneWinner(t *testing.T) {
+	t.Parallel()
 	_, a, b := twoClones(t)
 	seedLedger(t, a)
 	if res, err := openClaimForTest(t, verbReq(a, "01J5X00000000000000000RC00", "mac-a"), "race-parent", "Race the boundary.", OriginMain, "Choose one.", testBudget()); err != nil || res.Outcome != OutcomeConfirmed {
@@ -489,6 +501,7 @@ func TestSplitAndSliceStartRaceHasExactlyOneWinner(t *testing.T) {
 }
 
 func TestParkedEverSlicedParentStillRefusesSplit(t *testing.T) {
+	t.Parallel()
 	_, root := oneClone(t)
 	seedLedger(t, root)
 	if res, err := openClaimForTest(t, verbReq(root, "01J5X00000000000000000PS00", "mac-a"), "parked-sliced", "Started work.", OriginMain, "Pause.", testBudget()); err != nil || res.Outcome != OutcomeConfirmed {
@@ -512,6 +525,7 @@ func TestParkedEverSlicedParentStillRefusesSplit(t *testing.T) {
 }
 
 func TestGoalNormApprovalHistoryStalenessAndAtRestCoverage(t *testing.T) {
+	t.Parallel()
 	_, root := oneClone(t)
 	seedLedger(t, root)
 	for index, id := range []string{"history-large", "approval-carrier", "stale-large"} {
@@ -561,6 +575,7 @@ func TestGoalNormApprovalHistoryStalenessAndAtRestCoverage(t *testing.T) {
 }
 
 func TestReconcileRefusesGeneratedScopeBoundaryFields(t *testing.T) {
+	t.Parallel()
 	base := vGoal("boundary-fields", StateQueued)
 	tests := []struct {
 		name string
@@ -589,6 +604,7 @@ func TestReconcileRefusesGeneratedScopeBoundaryFields(t *testing.T) {
 }
 
 func TestValidatorRefusesADecomposedParentMadeLiveAgain(t *testing.T) {
+	t.Parallel()
 	root := vRoot()
 	root.Decomposed = []DecomposedEntry{{Id: "retired-parent", Opid: Opid("01J5X00000000000000000SV00", "mac-a", "lin-1"), At: "2026-08-20T10:00:00Z"}}
 	problems := ValidateTree(&TreeGoals{Root: root, Live: map[string]*GoalFile{"retired-parent": vGoal("retired-parent", StateQueued)}, Done: map[string]*GoalFile{}})
@@ -602,6 +618,7 @@ func TestValidatorRefusesADecomposedParentMadeLiveAgain(t *testing.T) {
 // so it stays inside BlockedBy, and the park lifts only when the last
 // member is done.
 func TestSplitMovesABlockerParkToTheFirstMember(t *testing.T) {
+	t.Parallel()
 	_, root := oneClone(t)
 	seedLedger(t, root)
 	risk := RiskRecord{Severity: 1, Novelty: 1, Exposure: 1, Accumulation: 1, Basis: "fixture"}

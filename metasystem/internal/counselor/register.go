@@ -193,16 +193,6 @@ func carriedAcceptedRiskLine(root string, in CarriedAcceptedRiskAppend) (accepte
 	return line, nil
 }
 
-func init() {
-	goal.BindCarriedCounselorAppend(func(root, _ string, row goal.HistoryLine, _ time.Time) error {
-		line, err := CarriedLandingLine(row)
-		if err != nil {
-			return err
-		}
-		return AppendCarriedLanding(root, line)
-	})
-}
-
 func AppendAcceptedRisk(root string, in AcceptedRiskAppend) error {
 	title := strings.TrimSpace(in.Title)
 	if title == "" {

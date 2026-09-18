@@ -9,6 +9,7 @@ import (
 )
 
 func TestTurnVerdictBoundsRunHistoryAndWritesTheFullDisplay(t *testing.T) {
+	t.Parallel()
 	store := testStore(t)
 	runs := make([]RunFact, 0, 200)
 	for i := 0; i < 200; i++ {
@@ -66,6 +67,7 @@ func TestTurnVerdictBoundsRunHistoryAndWritesTheFullDisplay(t *testing.T) {
 }
 
 func TestTurnVerdictPrintsTheFirstThreeOfFourGreenContinuations(t *testing.T) {
+	t.Parallel()
 	store := testStore(t)
 	runs := []RunFact{
 		{Id: "green-a", Status: "green", TerminalSeq: 1, ExpectGreen: "continue alpha"},
@@ -88,6 +90,7 @@ func TestTurnVerdictPrintsTheFirstThreeOfFourGreenContinuations(t *testing.T) {
 }
 
 func TestTurnVerdictPrintsOneHungRunInFull(t *testing.T) {
+	t.Parallel()
 	store := testStore(t)
 	verdict, err := store.TurnVerdict(ScanResult{Runs: []RunFact{{Id: "hung-one", Hung: true, ExpectHung: "inspect it"}}}, "hung-session", "", "main-1")
 	if err != nil {
@@ -102,6 +105,7 @@ func TestTurnVerdictPrintsOneHungRunInFull(t *testing.T) {
 }
 
 func TestRenderTurnVerdictLeadsWithBrainSummaryBeforeVerdict(t *testing.T) {
+	t.Parallel()
 	display := renderTurnVerdict(
 		Verdict{Display: "OPEN WORK (1)\nOPEN-WORK open-plan: finish it"},
 		[]string{"BRAIN SEAT: one ask awaits Wido"},
@@ -116,6 +120,7 @@ func TestRenderTurnVerdictLeadsWithBrainSummaryBeforeVerdict(t *testing.T) {
 }
 
 func TestTurnVerdictTrimsActionableItemsFromTheBottom(t *testing.T) {
+	t.Parallel()
 	var actionable []string
 	for i := 0; i < 40; i++ {
 		actionable = append(actionable, fmt.Sprintf("OPEN-WORK item-%02d: %s", i, strings.Repeat("work", 40)))
@@ -131,6 +136,7 @@ func TestTurnVerdictTrimsActionableItemsFromTheBottom(t *testing.T) {
 }
 
 func TestRunWarningSummariesCoverEveryClass(t *testing.T) {
+	t.Parallel()
 	classes := []runWarningClass{runLooksHung, runEndedUnknown, runWentRed, runLivenessUnknown, runUnsupervised}
 	var warnings []runWarning
 	for _, class := range classes {
@@ -147,6 +153,7 @@ func TestRunWarningSummariesCoverEveryClass(t *testing.T) {
 }
 
 func TestTurnVerdictReportsArtifactWriteFailureWithoutChangingTheDecision(t *testing.T) {
+	t.Parallel()
 	store := testStore(t)
 	blockedDirectory := filepath.Join(store.Root, "artifacts", "agents", "supervision", "stop-verdicts")
 	if err := os.MkdirAll(filepath.Dir(blockedDirectory), 0o755); err != nil {

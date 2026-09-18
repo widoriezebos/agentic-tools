@@ -114,6 +114,7 @@ func expectChannelProblem(t *testing.T, problems []Problem, code string) {
 }
 
 func TestMarshalChannelRoundTripsEveryStruct(t *testing.T) {
+	t.Parallel()
 	fixture := validChannelFixture()
 	ref := ChannelRef{Provider: "telegram", ID: "1", ThreadID: ""}
 	posting := ChannelPosting{Kind: "question", By: "mac-a", At: channelTestTime}
@@ -146,6 +147,7 @@ func TestMarshalChannelRoundTripsEveryStruct(t *testing.T) {
 }
 
 func TestValidateChannelTreeAndCommitAcceptValidTree(t *testing.T) {
+	t.Parallel()
 	_, root := oneClone(t)
 	tip := commitChannelFiles(t, root, validChannelFixture().files(t))
 	if problems := ValidateChannelTree(root, tip); len(problems) != 0 {
@@ -157,6 +159,7 @@ func TestValidateChannelTreeAndCommitAcceptValidTree(t *testing.T) {
 }
 
 func TestValidateChannelTreeRefusalTable(t *testing.T) {
+	t.Parallel()
 	postedRejection := func() ChannelRejection {
 		ref := ChannelRef{Provider: "telegram", ID: "rejection", ThreadID: "question-post"}
 		return ChannelRejection{Ref: ref, Reason: "late", At: channelTestTime, PostRef: &ref, By: "mac-a"}
@@ -201,6 +204,7 @@ func TestValidateChannelTreeRefusalTable(t *testing.T) {
 }
 
 func TestValidateChannelTreeSecretAndClosedNullEdges(t *testing.T) {
+	t.Parallel()
 	tests := []struct {
 		name   string
 		code   string
@@ -254,6 +258,7 @@ func TestValidateChannelTreeSecretAndClosedNullEdges(t *testing.T) {
 }
 
 func TestValidateChannelTreeJSONEdges(t *testing.T) {
+	t.Parallel()
 	tests := []struct {
 		name   string
 		mutate func(*channelFixture, *testing.T)
@@ -280,6 +285,7 @@ func TestValidateChannelTreeJSONEdges(t *testing.T) {
 }
 
 func TestChannelTimeRequiresCanonicalSecondPrecision(t *testing.T) {
+	t.Parallel()
 	tests := []struct {
 		name    string
 		value   string
@@ -301,6 +307,7 @@ func TestChannelTimeRequiresCanonicalSecondPrecision(t *testing.T) {
 }
 
 func TestValidateChannelTreeAbsentIsSilent(t *testing.T) {
+	t.Parallel()
 	_, root := oneClone(t)
 	tip := commitChannelFiles(t, root, vTree(vRoot(), []*GoalFile{vGoal(channelTestGoalID, StateQueued)}, nil))
 	if problems := ValidateChannelTree(root, tip); problems != nil {
@@ -316,6 +323,7 @@ func channelPosting(kind, by string) *ChannelPosting {
 }
 
 func TestChannelQuestionTuple(t *testing.T) {
+	t.Parallel()
 	question := validChannelFixture().question
 	question.Posting = channelPosting("receipt", "mac-a")
 	got := question.Tuple()
@@ -326,6 +334,7 @@ func TestChannelQuestionTuple(t *testing.T) {
 }
 
 func TestChannelQuestionTupleAtMarksOnlyStaleCanonicalPosting(t *testing.T) {
+	t.Parallel()
 	question := validChannelFixture().question
 	question.Posting = channelPosting("question", "mac-b")
 	postedAt := time.Date(2026, time.September, 4, 12, 34, 56, 0, time.UTC)
@@ -345,6 +354,7 @@ func TestChannelQuestionTupleAtMarksOnlyStaleCanonicalPosting(t *testing.T) {
 }
 
 func TestClassifyChannelTransitionMatrix(t *testing.T) {
+	t.Parallel()
 	_, root := oneClone(t)
 	tip := mustGit(t, root, "rev-parse", "HEAD")
 	e := endpointFor(root)
@@ -396,6 +406,7 @@ func TestClassifyChannelTransitionMatrix(t *testing.T) {
 }
 
 func TestClassifyChannelTransitionAlreadyAppliedAndForeignTuple(t *testing.T) {
+	t.Parallel()
 	_, root := oneClone(t)
 	mustGit(t, root, "commit", "--allow-empty", "-q", "-m", "own transaction", "-m", "Goal-Transaction: own-opid")
 	tip := mustGit(t, root, "rev-parse", "HEAD")
@@ -413,6 +424,7 @@ func TestClassifyChannelTransitionAlreadyAppliedAndForeignTuple(t *testing.T) {
 }
 
 func TestRejectionIntentClosedRequiresLateReason(t *testing.T) {
+	t.Parallel()
 	_, root := oneClone(t)
 	tip := mustGit(t, root, "rev-parse", "HEAD")
 	row := ChannelMatrix["rejection intent"]
@@ -427,6 +439,7 @@ func TestRejectionIntentClosedRequiresLateReason(t *testing.T) {
 }
 
 func TestListAndSilenceIntentsRejectClosedQuestions(t *testing.T) {
+	t.Parallel()
 	_, root := oneClone(t)
 	tip := mustGit(t, root, "rev-parse", "HEAD")
 	closed := ChannelTuple{State: "closed", ThreadNull: false, ReceiptRefNull: true}
@@ -441,6 +454,7 @@ func TestListAndSilenceIntentsRejectClosedQuestions(t *testing.T) {
 }
 
 func TestTakeOverRequiresStaleForeignPosting(t *testing.T) {
+	t.Parallel()
 	_, root := oneClone(t)
 	tip := mustGit(t, root, "rev-parse", "HEAD")
 	e := endpointFor(root)
@@ -473,6 +487,7 @@ func TestTakeOverRequiresStaleForeignPosting(t *testing.T) {
 }
 
 func TestChannelInboxMutateThreeBranches(t *testing.T) {
+	t.Parallel()
 	_, root := oneClone(t)
 	e := endpointFor(root)
 	recordPath := ChannelPrefix + "inbox/team/telegram-42.json"
@@ -509,6 +524,7 @@ func TestChannelInboxMutateThreeBranches(t *testing.T) {
 }
 
 func TestChannelOpidHasGoalOperationShape(t *testing.T) {
+	t.Parallel()
 	ulid, opid, err := ChannelOpid("mac-a", "lineage-a")
 	if err != nil {
 		t.Fatal(err)

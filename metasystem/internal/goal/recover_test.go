@@ -56,6 +56,7 @@ func strandEntryAt(t *testing.T, root, opid, machine string, phase Phase, intent
 }
 
 func TestRecoveryCompletesADeadOwnersOpen(t *testing.T) {
+	t.Parallel()
 	_, a, _ := twoClones(t)
 	seedLedger(t, a)
 	// A dead owner's CREATED open: never pushed, fully rebuildable.
@@ -104,6 +105,7 @@ func TestRecoveryCompletesADeadOwnersOpen(t *testing.T) {
 }
 
 func TestRecoveryRebuildsAnswer(t *testing.T) {
+	t.Parallel()
 	_, root, _ := twoClones(t)
 	seedLedger(t, root)
 	if result, err := Open(verbReq(root, "01J5X0000000000000000000K0", "mac-a"), "answer-recovery", "Recover an answer.", "main", "Wait."); err != nil || result.Outcome != OutcomeConfirmed {
@@ -152,6 +154,7 @@ func TestRecoveryRebuildsAnswer(t *testing.T) {
 }
 
 func TestRecoveryRefusesOpenClaimWithoutHumanApproval(t *testing.T) {
+	t.Parallel()
 	_, a, _ := twoClones(t)
 	seedLedger(t, a)
 	opid := Opid("01J5X00000000000000000Q005", "mac-a", "lin-1")
@@ -179,6 +182,7 @@ func TestRecoveryRefusesOpenClaimWithoutHumanApproval(t *testing.T) {
 }
 
 func TestRecoveryRefusesJournaledSetBudgetAuthority(t *testing.T) {
+	t.Parallel()
 	_, root, _ := twoClones(t)
 	seedLedger(t, root)
 	request := verbReq(root, "01J5X00000000000000000QE00", "mac-a")
@@ -225,6 +229,7 @@ func TestRecoveryRefusesJournaledSetBudgetAuthority(t *testing.T) {
 }
 
 func TestRecoveryUnblocksAStrandedPush(t *testing.T) {
+	t.Parallel()
 	_, a, _ := twoClones(t)
 	seedLedger(t, a)
 	// A dead owner's PUSHED claim on a goal that exists: the block
@@ -275,6 +280,7 @@ func TestRecoveryUnblocksAStrandedPush(t *testing.T) {
 }
 
 func TestRecoveryClosesUnrebuildableVerbsByName(t *testing.T) {
+	t.Parallel()
 	_, a, _ := twoClones(t)
 	seedLedger(t, a)
 	opid := Opid("01J5X00000000000000000Q050", "mac-a", "lin-1")
@@ -298,6 +304,7 @@ func TestRecoveryClosesUnrebuildableVerbsByName(t *testing.T) {
 }
 
 func TestRecoveryRefusesToReplayAbandonEngineFloorAndAbandonedReopen(t *testing.T) {
+	t.Parallel()
 	endpoint := endpointFor(t.TempDir())
 	for index, test := range []struct {
 		verb string
@@ -351,6 +358,7 @@ func TestRecoveryRefusesToReplayAbandonEngineFloorAndAbandonedReopen(t *testing.
 }
 
 func TestRecoveryRebuildsParkAndEdit(t *testing.T) {
+	t.Parallel()
 	_, a, _ := twoClones(t)
 	seedLedger(t, a)
 	if res, err := Open(verbReq(a, "01J5X00000000000000000Q100", "mac-a"), "target", "Work.", "main", "Go."); err != nil || res.Outcome != OutcomeConfirmed {
@@ -430,6 +438,7 @@ func claimedParkRecoveryFixture(t *testing.T, id string) (string, string) {
 }
 
 func TestRecoveryRefusesParkWhenGoalBranchIsUnpushed(t *testing.T) {
+	t.Parallel()
 	root, opid := claimedParkRecoveryFixture(t, "unpushed-park")
 	reports, err := RecoverWithPolicy(endpointFor(root), fixtureParkRecoveryPolicy{check: func(goalID, next string) (string, error) {
 		if goalID != "unpushed-park" || next != "Build u1." {
@@ -455,6 +464,7 @@ func TestRecoveryRefusesParkWhenGoalBranchIsUnpushed(t *testing.T) {
 }
 
 func TestRecoveryCompletesParkWhenGoalBranchIsPushed(t *testing.T) {
+	t.Parallel()
 	root, opid := claimedParkRecoveryFixture(t, "pushed-park")
 	summary := "goal/pushed-park last unit u1 commit " + strings.Repeat("a", 40) + " is read clean"
 	if _, err := RecoverWithPolicy(endpointFor(root), fixtureParkRecoveryPolicy{check: func(goalID, next string) (string, error) {
@@ -477,6 +487,7 @@ func TestRecoveryCompletesParkWhenGoalBranchIsPushed(t *testing.T) {
 }
 
 func TestParkFailsClosedWithoutBranchChecker(t *testing.T) {
+	t.Parallel()
 	_, root, _ := twoClones(t)
 	seedLedger(t, root)
 	if result, err := Open(verbReq(root, "01J5X00000000000000000PN00", "mac-a"), "nil-check", "Work.", OriginMain, "Build."); err != nil || result.Outcome != OutcomeConfirmed {
@@ -491,6 +502,7 @@ func TestParkFailsClosedWithoutBranchChecker(t *testing.T) {
 }
 
 func TestRecoveryReplaysOwnReleaseAndRefusesHumanRequiredStoppingActs(t *testing.T) {
+	t.Parallel()
 	_, root, _ := twoClones(t)
 	seedLedger(t, root)
 
@@ -627,6 +639,7 @@ func TestRecoveryReplaysOwnReleaseAndRefusesHumanRequiredStoppingActs(t *testing
 }
 
 func TestRecoveryNamedStoppingIntentsPreserveTypedOutcomes(t *testing.T) {
+	t.Parallel()
 	t.Run("already applied park confirms", func(t *testing.T) {
 		_, root, _ := twoClones(t)
 		seedLedger(t, root)
@@ -703,6 +716,7 @@ func TestRecoveryNamedStoppingIntentsPreserveTypedOutcomes(t *testing.T) {
 }
 
 func TestRecoveryConfirmsASightedPushWithoutRebuilding(t *testing.T) {
+	t.Parallel()
 	_, a, _ := twoClones(t)
 	seedLedger(t, a)
 	// The operation LANDED (its opid is canonical) but the owner
@@ -748,6 +762,7 @@ func TestRecoveryConfirmsASightedPushWithoutRebuilding(t *testing.T) {
 }
 
 func TestRecoveryHandlesOwnEntriesAndDoneRebuild(t *testing.T) {
+	t.Parallel()
 	_, a, _ := twoClones(t)
 	seedLedger(t, a)
 	// The test process OWNS these entries: recovery abandons its own
@@ -801,6 +816,7 @@ func TestRecoveryHandlesOwnEntriesAndDoneRebuild(t *testing.T) {
 }
 
 func TestRecoveryRunsTheRealVerbSemanticsAcrossAnArc(t *testing.T) {
+	t.Parallel()
 	_, a, b := twoClones(t)
 	seedLedger(t, a)
 	seedGoalNormConfig(t, a)
@@ -868,6 +884,7 @@ func TestRecoveryRunsTheRealVerbSemanticsAcrossAnArc(t *testing.T) {
 }
 
 func TestRecoveryRefusesAStrandedOriginRewrite(t *testing.T) {
+	t.Parallel()
 	_, a, _ := twoClones(t)
 	seedLedger(t, a)
 	if res, err := Open(verbReq(a, "01J5X00000000000000000Q200", "mac-a"), "prov", "Work.", "main", "Go."); err != nil || res.Outcome != OutcomeConfirmed {
@@ -900,6 +917,7 @@ func TestRecoveryRefusesAStrandedOriginRewrite(t *testing.T) {
 }
 
 func TestRecoveryRefusesJournaledHumanDone(t *testing.T) {
+	t.Parallel()
 	_, a, _ := twoClones(t)
 	seedLedger(t, a)
 	if res, err := Open(verbReq(a, "01J5X00000000000000000Q300", "mac-a"), "hand-held", "Work.", OriginMain, "Go."); err != nil || res.Outcome != OutcomeConfirmed {
@@ -937,6 +955,7 @@ func TestRecoveryRefusesJournaledHumanDone(t *testing.T) {
 }
 
 func TestRecoveryCompletesMainSplitAndRejectsHumanOrDoctoredDrafts(t *testing.T) {
+	t.Parallel()
 	t.Run("created main split completes", func(t *testing.T) {
 		_, root := oneClone(t)
 		seedLedger(t, root)
@@ -1018,6 +1037,7 @@ func TestRecoveryCompletesMainSplitAndRejectsHumanOrDoctoredDrafts(t *testing.T)
 }
 
 func TestRecoveryClassifiesOldArcDebtAfterDecomposedParentWasPruned(t *testing.T) {
+	t.Parallel()
 	_, root := oneClone(t)
 	seedLedger(t, root)
 	if res, err := Open(verbReq(root, "01J5X00000000000000000RP00", "mac-a"), "pruned-split", "Prune after split.", OriginMain, "Split it."); err != nil || res.Outcome != OutcomeConfirmed {
@@ -1057,6 +1077,7 @@ func TestRecoveryClassifiesOldArcDebtAfterDecomposedParentWasPruned(t *testing.T
 }
 
 func TestRecoveryCompletesADeadOwnersBlockerOpen(t *testing.T) {
+	t.Parallel()
 	_, a, _ := twoClones(t)
 	seedLedger(t, a)
 	if res, err := Open(verbReq(a, "01J5X00000000000000000Q100", "mac-a"), "held", "Work the blocker holds.", OriginHuman, "Wait."); err != nil || res.Outcome != OutcomeConfirmed {

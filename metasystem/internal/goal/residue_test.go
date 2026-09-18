@@ -10,6 +10,7 @@ import (
 // The R-4 gate runs BEFORE any transaction: a residue-naming conclusion
 // without a resolvable goal link refuses at the door.
 func TestDoneRefusesUnscheduledResidueInTheConclusion(t *testing.T) {
+	t.Parallel()
 	root := t.TempDir()
 	request := VerbRequest{Endpoint: Endpoint{Root: root}}
 

@@ -12,32 +12,36 @@ import (
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/humanauthority"
 )
 
-var (
-	abandonBuildStamp = func() string { return "dev" }
-	abandonIsAncestor = func(root, ancestor, descendant string) (bool, error) {
-		_, err := gitIn(root, "merge-base", "--is-ancestor", ancestor, descendant)
-		if err == nil {
-			return true, nil
-		}
-		var commandErr *gitError
-		if errors.As(err, &commandErr) && commandErr.ExitCode() == 1 {
-			return false, nil
-		}
-		return false, err
-	}
-	abandonRegistryProblems = func(string, func(a, b string) (bool, error), time.Time) ([]string, error) {
-		return nil, fmt.Errorf("the fleet engine registry checker is not configured")
-	}
-	abandonBeforePush func(attempt int) error
-)
+type abandonDependencies struct {
+	buildStamp       func() string
+	isAncestor       func(root, ancestor, descendant string) (bool, error)
+	registryProblems func(string, func(string, string) (bool, error), time.Time) ([]string, error)
+	beforePush       func(attempt int) error
+}
 
-// ConfigureAbandonFleetFloor joins the ledger policy to the executing
-// engine's supervision view. The command entrypoint calls it before invoking
-// Abandon; keeping the join there avoids making the ledger package depend on
-// dispatch through supervision.
-func ConfigureAbandonFleetFloor(buildStamp func() string, registryProblems func(string, func(a, b string) (bool, error), time.Time) ([]string, error)) {
-	abandonBuildStamp = buildStamp
-	abandonRegistryProblems = registryProblems
+func (dependencies abandonDependencies) withDefaults() abandonDependencies {
+	if dependencies.buildStamp == nil {
+		dependencies.buildStamp = func() string { return "dev" }
+	}
+	if dependencies.isAncestor == nil {
+		dependencies.isAncestor = func(root, ancestor, descendant string) (bool, error) {
+			_, err := gitIn(root, "merge-base", "--is-ancestor", ancestor, descendant)
+			if err == nil {
+				return true, nil
+			}
+			var commandErr *gitError
+			if errors.As(err, &commandErr) && commandErr.ExitCode() == 1 {
+				return false, nil
+			}
+			return false, err
+		}
+	}
+	if dependencies.registryProblems == nil {
+		dependencies.registryProblems = func(string, func(string, string) (bool, error), time.Time) ([]string, error) {
+			return nil, fmt.Errorf("the fleet engine registry checker is not configured")
+		}
+	}
+	return dependencies
 }
 
 // EngineFloor records the oldest engine commit every enrolled seat is known
@@ -245,11 +249,12 @@ func validateAbandonArguments(id string, spec AbandonSpec) (abandonArguments, er
 }
 
 func requireAbandonFleetFloor(r VerbRequest, tree *TreeGoals) error {
+	dependencies := r.abandon.withDefaults()
 	floor := ""
 	if tree != nil {
 		floor = newestEngineFloor(tree.Root)
 	}
-	stamp := abandonBuildStamp()
+	stamp := dependencies.buildStamp()
 	if floor == "" {
 		return fmt.Errorf("abandon writes a state that engines older than this build refuse, and the ledger has no record that the fleet runs it; after every enrolled seat has rebuilt and re-armed (metasystem supervise status --repo <checkout> on each machine), a human records the floor: metasystem goal engine-floor --root . --commit %s --by <name>", stamp)
 	}
@@ -257,7 +262,7 @@ func requireAbandonFleetFloor(r VerbRequest, tree *TreeGoals) error {
 	if !ok {
 		return fmt.Errorf("this engine's build (%s) cannot be placed against the fleet floor %s; build it with scripts/agents/go-build.sh", stamp, floor)
 	}
-	atOrAbove, err := abandonIsAncestor(r.Endpoint.Root, floor, commit)
+	atOrAbove, err := dependencies.isAncestor(r.Endpoint.Root, floor, commit)
 	if err != nil {
 		return fmt.Errorf("place this engine's build against fleet floor %s: %w", floor, err)
 	}
@@ -268,8 +273,8 @@ func requireAbandonFleetFloor(r VerbRequest, tree *TreeGoals) error {
 		}
 		return fmt.Errorf("this engine's build (%s)%s is below the fleet floor %s; build it with scripts/agents/go-build.sh", stamp, dirtyText, floor)
 	}
-	problems, err := abandonRegistryProblems(floor, func(ancestor, descendant string) (bool, error) {
-		return abandonIsAncestor(r.Endpoint.Root, ancestor, descendant)
+	problems, err := dependencies.registryProblems(floor, func(ancestor, descendant string) (bool, error) {
+		return dependencies.isAncestor(r.Endpoint.Root, ancestor, descendant)
 	}, r.Now)
 	if err != nil {
 		return err
@@ -463,7 +468,7 @@ func abandonRequest(r VerbRequest, id string, spec AbandonSpec, arguments abando
 			return ackDisplacements(tree, r, ordered), nil
 		},
 		Validate:   func(commit string) error { return ValidateCommit(r.Endpoint.Root, commit) },
-		BeforePush: abandonBeforePush,
+		BeforePush: r.abandon.beforePush,
 	}
 }
 

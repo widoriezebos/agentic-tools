@@ -22,6 +22,7 @@ func rootGolden() *RootRecord {
 }
 
 func TestGoldenRootRecordRoundTrips(t *testing.T) {
+	t.Parallel()
 	bytes1 := RenderRoot(rootGolden())
 	parsed, problems := ParseRoot(bytes1)
 	if len(problems) != 0 {
@@ -39,6 +40,7 @@ func TestGoldenRootRecordRoundTrips(t *testing.T) {
 }
 
 func TestRootWithGoalFreeRoundTrips(t *testing.T) {
+	t.Parallel()
 	r := rootGolden()
 	r.Free = &FreeRecord{Declared: "2026-08-21T00:00:00Z", Origin: "main", Digest: "abc123"}
 	parsed, problems := ParseRoot(RenderRoot(r))
@@ -51,6 +53,7 @@ func TestRootWithGoalFreeRoundTrips(t *testing.T) {
 }
 
 func TestRootDecompositionRetainsOldArcAfterArchivePrune(t *testing.T) {
+	t.Parallel()
 	r := rootGolden()
 	r.Decomposed = []DecomposedEntry{{
 		Id: "split-parent", Opid: "01J5X0000000000000000000A1-mac-studio-1a2b3c4d",
@@ -67,6 +70,7 @@ func TestRootDecompositionRetainsOldArcAfterArchivePrune(t *testing.T) {
 }
 
 func TestRootRefusalsAreNamed(t *testing.T) {
+	t.Parallel()
 	r := rootGolden()
 	r.Identity = ""
 	_, problems := ParseRoot(RenderRoot(r))
@@ -89,6 +93,7 @@ func TestRootRefusalsAreNamed(t *testing.T) {
 }
 
 func TestEngineFloorHistoryLineCarriesAHumanAndCommit(t *testing.T) {
+	t.Parallel()
 	for _, test := range []struct {
 		name   string
 		actor  string

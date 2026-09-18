@@ -75,6 +75,7 @@ func servingBed(t *testing.T, machine string, files map[string]*GoalFile) string
 }
 
 func TestServingProjectionConvertedClaimCarriesOnlyIdentityAndIntent(t *testing.T) {
+	t.Parallel()
 	root := servingBed(t, "bed-m1", map[string]*GoalFile{
 		"ship-it": {
 			Id: "ship-it", State: "claimed", Intent: "Ship the whole thing", Origin: "main",
@@ -89,6 +90,7 @@ func TestServingProjectionConvertedClaimCarriesOnlyIdentityAndIntent(t *testing.
 }
 
 func TestServingProjectionForeignClaimServesNothing(t *testing.T) {
+	t.Parallel()
 	root := servingBed(t, "bed-m1", map[string]*GoalFile{
 		"theirs": {
 			Id: "theirs", State: "claimed", Intent: "Someone else's", Origin: "main",
@@ -102,6 +104,7 @@ func TestServingProjectionForeignClaimServesNothing(t *testing.T) {
 }
 
 func TestServingProjectionAlwaysServesLiveClaimInsteadOfFencedClaim(t *testing.T) {
+	t.Parallel()
 	fenced := breachStoppedGoalForTest("fenced-first", "bed-m1")
 	fenced.Priority, fenced.Sequence = 1, 1
 	live := &GoalFile{

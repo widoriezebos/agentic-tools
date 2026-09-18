@@ -6,6 +6,7 @@ import (
 )
 
 func TestRepairAcceptsARewoundRemoteUnderAHuman(t *testing.T) {
+	t.Parallel()
 	origin, a, _ := twoClones(t)
 	publishGoal(t, a, "op-first", "goal-first", nil)
 	if _, err := FetchAdvance(endpointFor(a)); err != nil {
@@ -60,6 +61,7 @@ func TestRepairAcceptsARewoundRemoteUnderAHuman(t *testing.T) {
 }
 
 func TestRepairStillRefusesAForeignLedger(t *testing.T) {
+	t.Parallel()
 	_, a, _ := twoClones(t)
 	publishGoal(t, a, "op-mine", "goal-mine", nil)
 	if _, err := FetchAdvance(endpointFor(a)); err != nil {
@@ -89,6 +91,7 @@ func TestRepairStillRefusesAForeignLedger(t *testing.T) {
 }
 
 func TestDescendantRevertAcceptsWithThePrefixDiagnosis(t *testing.T) {
+	t.Parallel()
 	_, a, b := twoClones(t)
 
 	// Version 1 of the goal file, then version 2 with one more

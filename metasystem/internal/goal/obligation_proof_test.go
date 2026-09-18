@@ -11,6 +11,7 @@ import (
 )
 
 func TestReviewObligationFixtureRoundTrip(t *testing.T) {
+	t.Parallel()
 	f := claimedGolden()
 	f.ReviewObligations = []ReviewObligation{
 		{Finding: "F-1", Chain: "critic", Artifact: "a.go", Test: "prove: a", Fixture: `group:section/a`, State: "open"},
@@ -27,6 +28,7 @@ func TestReviewObligationFixtureRoundTrip(t *testing.T) {
 	}
 }
 func TestFixtureObligationLifecycle(t *testing.T) {
+	t.Parallel()
 	root := obligationAuthorityLocalRoot(t, "review-proof")
 	req := obligationAuthorityVerbReq(root, "01J5X00000000000000000SP01", "mac-a")
 	obligation := ReviewObligation{Finding: "F-1", Chain: "design-critic", Artifact: "a.go", Test: "prove: group:a", Fixture: "group:section/a"}
@@ -59,6 +61,7 @@ func TestFixtureObligationLifecycle(t *testing.T) {
 	}
 }
 func TestFixtureObligationEvidenceRefusals(t *testing.T) {
+	t.Parallel()
 	root := t.TempDir()
 	valid := fixtureEvidence(t, root)
 	obligation := ReviewObligation{Finding: "F-1", Chain: "design-critic", Artifact: "a.go", Fixture: "group:section/a"}

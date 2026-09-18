@@ -289,16 +289,21 @@ type claimAdmissionBoxResult struct {
 
 type claimAdmissionContext struct {
 	repoRoot string
+	loader   tierBoxLoader
 	loaded   bool
 	set      *config.TierBoxSet
 	loadErr  error
 	resolved map[uint8]claimAdmissionBoxResult
 }
 
-var loadClaimAdmissionTierBoxes = config.LoadTierBoxSet
+type tierBoxLoader func(string) (*config.TierBoxSet, error)
 
-func newClaimAdmissionContext(repoRoot string) *claimAdmissionContext {
-	return &claimAdmissionContext{repoRoot: repoRoot, resolved: map[uint8]claimAdmissionBoxResult{}}
+func newClaimAdmissionContext(repoRoot string, loader ...tierBoxLoader) *claimAdmissionContext {
+	load := tierBoxLoader(config.LoadTierBoxSet)
+	if len(loader) > 0 && loader[0] != nil {
+		load = loader[0]
+	}
+	return &claimAdmissionContext{repoRoot: repoRoot, loader: load, resolved: map[uint8]claimAdmissionBoxResult{}}
 }
 
 func (c *claimAdmissionContext) tierBox(tier uint8) (Budget, error) {
@@ -309,7 +314,7 @@ func (c *claimAdmissionContext) tierBox(tier uint8) (Budget, error) {
 		return result.box, result.err
 	}
 	if !c.loaded {
-		c.set, c.loadErr = loadClaimAdmissionTierBoxes(filepath.Join(c.repoRoot, "metasystem.conf"))
+		c.set, c.loadErr = c.loader(filepath.Join(c.repoRoot, "metasystem.conf"))
 		c.loaded = true
 	}
 	if c.loadErr != nil {

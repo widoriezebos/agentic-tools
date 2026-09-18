@@ -46,6 +46,7 @@ func detachedWaitFixture(t *testing.T, kind string, readyBacklog bool) *pendingW
 }
 
 func TestLocalWaitAllowsTheStopWhileItsProcessLives(t *testing.T) {
+	t.Parallel()
 	fixture := detachedWaitFixture(t, "local", true)
 	verdict := fixture.verdict(t, fixture.scan)
 	waitLine := "WAITING: compile the release (pid 42) until " + fixture.row.Deadline
@@ -56,6 +57,7 @@ func TestLocalWaitAllowsTheStopWhileItsProcessLives(t *testing.T) {
 }
 
 func TestLocalWaitOfADeadProcessDoesNotAllowTheStop(t *testing.T) {
+	t.Parallel()
 	for _, test := range []struct {
 		name       string
 		mutate     func(*pendingWaitVerdictFixture)
@@ -106,6 +108,7 @@ func (p *countingWaitProber) Probe(pid int64) (identity.Exact, identity.Liveness
 }
 
 func TestHumanWaitAllowsTheStopUntilItsDeadline(t *testing.T) {
+	t.Parallel()
 	fixture := detachedWaitFixture(t, "human", true)
 	counter := &countingWaitProber{base: fixture.store.Prober}
 	fixture.store.Prober = counter
@@ -145,7 +148,7 @@ func TestHumanWaitAllowsTheStopUntilItsDeadline(t *testing.T) {
 
 func readClaimableWorkForTest(t *testing.T, fixture *pendingWaitVerdictFixture) ClaimableBudgetedWork {
 	t.Helper()
-	work, err := readClaimableBudgetedWork(fixture.root, fixture.store.Now(), fixture.store.Prober)
+	work, err := readClaimableBudgetedWork(fixture.root, fixture.store.Now(), fixture.store.Prober, fixture.store.projectionDeps)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -153,6 +156,7 @@ func readClaimableWorkForTest(t *testing.T, fixture *pendingWaitVerdictFixture) 
 }
 
 func TestLocalWaitCoversTheJobItNames(t *testing.T) {
+	t.Parallel()
 	fixture := detachedWaitFixture(t, "local", false)
 	fixture.row.JobID = "background-job"
 	fixture.writeRow(t)

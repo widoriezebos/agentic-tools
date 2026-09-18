@@ -18,6 +18,7 @@ import (
 )
 
 func TestLandingMessageAcceptsAttestedBranchProvenance(t *testing.T) {
+	t.Parallel()
 	commit := strings.Repeat("a", 40)
 	message := "landed\n\nGoal-Item: goal-a\nLanding-Provenance: attested=" + commit + " goal=goal-a unit=u1 critic=critic-a/1 change=" + strings.Repeat("d", 64) + "\nLanding-Provenance-Verdict: pass bar=e\n"
 	matched, provenance, err := matchLandingMessage(message, "goal-a", "")
@@ -30,6 +31,7 @@ func TestLandingMessageAcceptsAttestedBranchProvenance(t *testing.T) {
 }
 
 func TestWaitGoalLandingAndHumanAct(t *testing.T) {
+	t.Parallel()
 	repo := t.TempDir()
 	mustGit(t, repo, "init", "-q", "-b", "main")
 	if err := os.WriteFile(filepath.Join(repo, "README.md"), []byte("seed\n"), 0o644); err != nil {
@@ -354,6 +356,7 @@ func goalChange(id, body string) Change {
 }
 
 func TestPublishLandsWithParentAndTrailer(t *testing.T) {
+	t.Parallel()
 	origin, a, _ := twoClones(t)
 	e := endpointFor(a)
 	oldTip := mustGit(t, a, "rev-parse", "origin/main")
@@ -411,9 +414,7 @@ func TestPublishLandsWithParentAndTrailer(t *testing.T) {
 }
 
 func TestWaitPublishedAtOwners(t *testing.T) {
-	originalClock := goalPublicationBootClock
-	defer func() { goalPublicationBootClock = originalClock }()
-	goalPublicationBootClock = func() (string, time.Duration, error) { return "goal-boot", 4 * time.Hour, nil }
+	t.Parallel()
 	origin, clone := oneClone(t)
 	e := endpointFor(clone)
 	hinted := false
@@ -424,6 +425,7 @@ func TestWaitPublishedAtOwners(t *testing.T) {
 		Mutate: func(string) ([]Change, error) {
 			return []Change{goalChange("goal-a", "# goal-a\nState: queued\n")}, nil
 		},
+		bootClock: func() (string, time.Duration, error) { return "goal-boot", 4 * time.Hour, nil },
 		HintConfirmed: func(root string, targets []string, publicationID, bootID string, bootNanos int64) {
 			if root != clone || strings.Join(targets, ",") != "goal-a" {
 				t.Fatalf("hint target root=%q targets=%v", root, targets)
@@ -452,7 +454,7 @@ func TestWaitPublishedAtOwners(t *testing.T) {
 
 	_, first, competitor := twoClones(t)
 	clockReads := 0
-	goalPublicationBootClock = func() (string, time.Duration, error) {
+	bootClock := func() (string, time.Duration, error) {
 		clockReads++
 		return "goal-boot", time.Duration(clockReads+4) * time.Hour, nil
 	}
@@ -463,6 +465,7 @@ func TestWaitPublishedAtOwners(t *testing.T) {
 		Mutate: func(string) ([]Change, error) {
 			return []Change{goalChange("retry-hint", "# retry-hint\nState: queued\n")}, nil
 		},
+		bootClock: bootClock,
 		BeforePush: func(attempt int) error {
 			attempts = attempt
 			if attempt != 1 {
@@ -470,6 +473,7 @@ func TestWaitPublishedAtOwners(t *testing.T) {
 			}
 			other, otherErr := Publish(endpointFor(competitor), PublishRequest{
 				Opid: "op-retry-competitor", Machine: "mac-b", Lineage: "l1", Intent: testIntentFor("open"), Message: "goal open retry-other",
+				bootClock: bootClock,
 				Mutate: func(string) ([]Change, error) {
 					return []Change{goalChange("retry-other", "# retry-other\nState: queued\n")}, nil
 				},
@@ -508,6 +512,7 @@ func TestWaitPublishedAtOwners(t *testing.T) {
 }
 
 func TestSameTargetRaceExactlyOneWins(t *testing.T) {
+	t.Parallel()
 	_, a, b := twoClones(t)
 
 	// A wins the target first.
@@ -549,6 +554,7 @@ func TestSameTargetRaceExactlyOneWins(t *testing.T) {
 }
 
 func TestLeaseRefusalOnMidflightCompetitor(t *testing.T) {
+	t.Parallel()
 	_, a, b := twoClones(t)
 	e := endpointFor(a)
 
@@ -590,6 +596,7 @@ func TestLeaseRefusalOnMidflightCompetitor(t *testing.T) {
 }
 
 func TestBenignAdvancementRetriesWithinTheDeadline(t *testing.T) {
+	t.Parallel()
 	_, a, b := twoClones(t)
 
 	// The competitor's commit touches a DIFFERENT goal: lawful work,
@@ -640,6 +647,7 @@ func TestBenignAdvancementRetriesWithinTheDeadline(t *testing.T) {
 }
 
 func TestPushedEntryBlocksTheWholeClone(t *testing.T) {
+	t.Parallel()
 	_, a, _ := twoClones(t)
 	// A stranded pushed entry (a crashed process's) blocks every new
 	// mutation on this clone until classified — process-independent.
@@ -662,6 +670,7 @@ func TestPushedEntryBlocksTheWholeClone(t *testing.T) {
 }
 
 func TestValidationRefusalIsRejectedByName(t *testing.T) {
+	t.Parallel()
 	_, a, _ := twoClones(t)
 	res, err := Publish(endpointFor(a), PublishRequest{
 		Opid: "op-invalid", Machine: "mac-a", Lineage: "l1",
@@ -693,6 +702,7 @@ func TestValidationRefusalIsRejectedByName(t *testing.T) {
 }
 
 func TestSingleMachineModeCASNeverMovesHead(t *testing.T) {
+	t.Parallel()
 	repo := filepath.Join(t.TempDir(), "solo")
 	mustGit(t, t.TempDir(), "init", "-q", "-b", "main", repo)
 	if err := os.WriteFile(filepath.Join(repo, "README.md"), []byte("solo\n"), 0o644); err != nil {
@@ -730,6 +740,7 @@ func TestSingleMachineModeCASNeverMovesHead(t *testing.T) {
 }
 
 func TestPushFailureClassifierSeparatesLeaseFromTransport(t *testing.T) {
+	t.Parallel()
 	for _, c := range []struct {
 		output string
 		want   CASOutcome
@@ -747,11 +758,14 @@ func TestPushFailureClassifierSeparatesLeaseFromTransport(t *testing.T) {
 }
 
 func TestTransactionsAddressTheTreeUnderASubdirectoryRoot(t *testing.T) {
+	t.Parallel(
 	// The REAL repository's shape: the goal root sits one level below
 	// the git toplevel. Every rev:path read and raw index write must
 	// address the tree under that prefix — the toplevel-rooted forms
 	// pass every toplevel-rooted fixture and then refuse (or worse,
 	// write beside the ledger) on the deployment layout itself.
+	)
+
 	origin, a, _ := twoClones(t)
 	_ = origin
 	sub := filepath.Join(a, "nested")
@@ -779,6 +793,7 @@ func TestTransactionsAddressTheTreeUnderASubdirectoryRoot(t *testing.T) {
 }
 
 func TestABrokenAcceptedRefRefusesMutations(t *testing.T) {
+	t.Parallel()
 	_, a, _ := twoClones(t)
 	seedLedger(t, a)
 	// The accepted ref EXISTS but points at a blob: identity and
@@ -796,6 +811,7 @@ func TestABrokenAcceptedRefRefusesMutations(t *testing.T) {
 }
 
 func TestAMalformedAcceptedRefFileRefusesMutations(t *testing.T) {
+	t.Parallel()
 	_, a, _ := twoClones(t)
 	seedLedger(t, a)
 	// git WARNS and ignores a broken loose ref (exit 1, same as
@@ -818,6 +834,7 @@ func TestAMalformedAcceptedRefFileRefusesMutations(t *testing.T) {
 }
 
 func TestADanglingAcceptedRefSymlinkRefusesMutations(t *testing.T) {
+	t.Parallel()
 	_, a, _ := twoClones(t)
 	seedLedger(t, a)
 	refFile := filepath.Join(a, ".git", "refs", "metasystem", "goals", "accepted")
@@ -839,6 +856,7 @@ func TestADanglingAcceptedRefSymlinkRefusesMutations(t *testing.T) {
 }
 
 func TestGoalGitParsesStdoutCleanOfStderrWarnings(t *testing.T) {
+	t.Parallel()
 	repo := filepath.Join(t.TempDir(), "clean")
 	mustGit(t, t.TempDir(), "init", "-q", "-b", "main", repo)
 	mustGit(t, repo, "commit", "-q", "--allow-empty", "-m", "seed")
@@ -848,8 +866,8 @@ func TestGoalGitParsesStdoutCleanOfStderrWarnings(t *testing.T) {
 	if err := os.WriteFile(wrapper, []byte("#!/bin/sh\necho 'warning: stderr noise' >&2\nexec /usr/bin/git \"$@\"\n"), 0o755); err != nil {
 		t.Fatal(err)
 	}
-	t.Setenv("PATH", filepath.Dir(wrapper)+":"+os.Getenv("PATH"))
-	out, err := goalGit(repo, nil, "rev-parse", "--verify", "HEAD")
+	environment := testEnvironment(os.Environ(), "PATH="+filepath.Dir(wrapper)+":"+os.Getenv("PATH"))
+	out, err := goalGitWithEnvironment(repo, environment, nil, "rev-parse", "--verify", "HEAD")
 	if err != nil {
 		t.Fatal(err)
 	}

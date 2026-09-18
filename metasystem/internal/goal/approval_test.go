@@ -6,6 +6,7 @@ import (
 )
 
 func TestBudgetEpisodeRevisionTransitions(t *testing.T) {
+	t.Parallel()
 	root := riskLocalRoot(t, "budget-episode-transitions")
 	budget := testBudget()
 	open := obligationAuthorityVerbReq(root, "01J5X00000000000000000BE00", "mac-a")
@@ -98,6 +99,7 @@ func TestBudgetEpisodeRevisionTransitions(t *testing.T) {
 }
 
 func TestSTR3MigrationBootstrap01ApprovedAndClaimedLegacyGoals(t *testing.T) {
+	t.Parallel()
 	root := riskLocalRoot(t, "migration-bed")
 	legacyBudget := Budget{ElapsedLimit: "4h", AttemptLimit: 4, ReservedJobMinutesLimit: 240, ActiveJobLimit: 1, ReviewRoundLimit: 3}
 	for index, id := range []string{"legacy-approved", "legacy-claimed"} {
@@ -179,6 +181,7 @@ func TestSTR3MigrationBootstrap01ApprovedAndClaimedLegacyGoals(t *testing.T) {
 }
 
 func TestClassifySweepInstallsTierLawForAnAlreadyTieredLedger(t *testing.T) {
+	t.Parallel()
 	root := riskLocalRoot(t, "tiered-sweep-bed")
 	for index, fixture := range []struct {
 		id   string
@@ -226,6 +229,7 @@ func TestClassifySweepInstallsTierLawForAnAlreadyTieredLedger(t *testing.T) {
 }
 
 func TestClassifySweepRecoverySkipsRowsAlreadyApplied(t *testing.T) {
+	t.Parallel()
 	root := riskLocalRoot(t, "classification-recovery-bed")
 	if result, err := OpenTiered(obligationAuthorityVerbReq(root, "01J5X00000000000000000MD00", "mac-a"), "already-tiered", "Keep the incumbent tier.", OriginMain, "Classify it.", 2, nil); err != nil || result.Outcome != OutcomeConfirmed {
 		t.Fatalf("open already-tiered fixture: %+v %v", result, err)
@@ -292,6 +296,7 @@ func legacyClaimedFixture(id string, budget Budget) *GoalFile {
 }
 
 func TestAgentCannotApprove(t *testing.T) {
+	t.Parallel()
 	_, root := oneClone(t)
 	seedLedger(t, root)
 	if result, err := Open(verbReq(root, "01J5X00000000000000000AP00", "mac-a"), "needs-human", "Only a human admits execution.", OriginMain, "Wait."); err != nil || result.Outcome != OutcomeConfirmed {
@@ -310,6 +315,7 @@ func TestAgentCannotApprove(t *testing.T) {
 func ptrBudget(budget Budget) *Budget { return &budget }
 
 func TestApprovedGoalClaimsAndPayloadEditsInvalidateBinding(t *testing.T) {
+	t.Parallel()
 	_, root := oneClone(t)
 	seedLedger(t, root)
 	if result, err := Open(verbReq(root, "01J5X00000000000000000AB00", "mac-a"), "bound-work", "The reviewed intent.", OriginMain, "Run it."); err != nil || result.Outcome != OutcomeConfirmed {
@@ -344,6 +350,7 @@ func TestApprovedGoalClaimsAndPayloadEditsInvalidateBinding(t *testing.T) {
 }
 
 func TestProofBearingSetBudgetRatifiesMatchingLegacyClaim(t *testing.T) {
+	t.Parallel()
 	_, root := oneClone(t)
 	seedLedger(t, root)
 	budget := testBudget()
@@ -371,6 +378,7 @@ func TestProofBearingSetBudgetRatifiesMatchingLegacyClaim(t *testing.T) {
 }
 
 func TestApproveBatchRefusesClaimedMember(t *testing.T) {
+	t.Parallel()
 	_, root := oneClone(t)
 	seedLedger(t, root)
 	for index, id := range []string{"batch-claimed", "batch-waiting"} {
@@ -394,6 +402,7 @@ func TestApproveBatchRefusesClaimedMember(t *testing.T) {
 }
 
 func TestUnapprovedExecutionPathsRefuseApprovalRequired(t *testing.T) {
+	t.Parallel()
 	t.Run("claim", func(t *testing.T) {
 		_, root := oneClone(t)
 		seedLedger(t, root)
@@ -472,6 +481,7 @@ func TestUnapprovedExecutionPathsRefuseApprovalRequired(t *testing.T) {
 }
 
 func TestApprovedOverNormWithoutCoveringNormApprovalRefusesExecution(t *testing.T) {
+	t.Parallel()
 	over := Budget{ElapsedLimit: "1h", AttemptLimit: 1, ReservedJobMinutesLimit: 2400, ActiveJobLimit: 1}
 	assertNormRefused := func(t *testing.T, result PublishResult, err error) {
 		t.Helper()
@@ -532,6 +542,7 @@ func TestApprovedOverNormWithoutCoveringNormApprovalRefusesExecution(t *testing.
 }
 
 func TestSweepBindsListedIntentAndPreservesClaimedWork(t *testing.T) {
+	t.Parallel()
 	_, root := oneClone(t)
 	seedLedger(t, root)
 	budget := testBudget()
@@ -599,6 +610,7 @@ func TestSweepBindsListedIntentAndPreservesClaimedWork(t *testing.T) {
 }
 
 func TestApprovalSweepDoesNotApproveOverNormGoalWithoutNormApproval(t *testing.T) {
+	t.Parallel()
 	_, root := oneClone(t)
 	seedLedger(t, root)
 	seedGoalNormConfig(t, root)
@@ -633,6 +645,7 @@ func TestApprovalSweepDoesNotApproveOverNormGoalWithoutNormApproval(t *testing.T
 }
 
 func TestFleetEnrollmentExpiresRelayedClaimAndStealEverywhere(t *testing.T) {
+	t.Parallel()
 	_, a, b := twoClones(t)
 	seedLedger(t, a)
 	for index, id := range []string{"relay-running", "relay-waiting"} {
@@ -674,6 +687,7 @@ func TestFleetEnrollmentExpiresRelayedClaimAndStealEverywhere(t *testing.T) {
 }
 
 func TestApprovedToAllParkedArcIsLegalOnVerbAndReconcile(t *testing.T) {
+	t.Parallel()
 	_, root := oneClone(t)
 	seedLedger(t, root)
 	for index, id := range []string{"parked-one", "parked-two", "approved-joiner"} {

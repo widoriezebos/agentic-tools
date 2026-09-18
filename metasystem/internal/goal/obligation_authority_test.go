@@ -65,6 +65,7 @@ func proveObligationHuman(t *testing.T, root string) humanauthority.Proof {
 }
 
 func TestEnrolledAncestryWithRelayedFlagsLeavesNoLandedTemporaryMark(t *testing.T) {
+	t.Parallel()
 	root := obligationAuthorityLocalRoot(t, "enrolled-precedence")
 	if err := os.WriteFile(filepath.Join(root, "metasystem.conf"), []byte("metasystem.governance.correlation-policy=A\n"), 0o644); err != nil {
 		t.Fatal(err)
@@ -171,6 +172,7 @@ func obligationAuthorityVerbReq(root, ulid, machine string) VerbRequest {
 }
 
 func TestOnlyHumanProofAndChosenPolicyCanActivateAnObligation(t *testing.T) {
+	t.Parallel()
 	root := obligationAuthorityLocalRoot(t, "governed")
 	proof := proveObligationHuman(t, root)
 	human := obligationAuthorityVerbReq(root, "01J5X00000000000000000Q542", "mac-a")
@@ -204,6 +206,7 @@ func TestOnlyHumanProofAndChosenPolicyCanActivateAnObligation(t *testing.T) {
 }
 
 func TestRecordedRelayCanOnlyReplaceSetObligationAncestry(t *testing.T) {
+	t.Parallel()
 	root := obligationAuthorityLocalRoot(t, "temporary-governed")
 	if err := os.WriteFile(filepath.Join(root, "metasystem.conf"), []byte("metasystem.governance.correlation-policy=\n"), 0o644); err != nil {
 		t.Fatal(err)
@@ -266,6 +269,7 @@ func TestRecordedRelayCanOnlyReplaceSetObligationAncestry(t *testing.T) {
 }
 
 func TestRelayedSetObligationIsBoundOncePerGoalPerRuling(t *testing.T) {
+	t.Parallel()
 	root := obligationAuthorityLocalRoot(t, "one-relayed-obligation")
 	if err := os.WriteFile(filepath.Join(root, "metasystem.conf"), []byte("metasystem.governance.correlation-policy=A\n"), 0o644); err != nil {
 		t.Fatal(err)
@@ -290,6 +294,7 @@ func TestRelayedSetObligationIsBoundOncePerGoalPerRuling(t *testing.T) {
 }
 
 func TestPruneRetainsRelayedUseForAReopenedGoalIdentifier(t *testing.T) {
+	t.Parallel()
 	_, root, _ := twoClones(t)
 	seedLedger(t, root)
 	if err := os.WriteFile(filepath.Join(root, "metasystem.conf"), []byte("metasystem.governance.correlation-policy=A\n"), 0o644); err != nil {

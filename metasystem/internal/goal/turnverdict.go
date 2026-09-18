@@ -333,7 +333,42 @@ func (waits registeredWaits) lines() []string {
 	return lines
 }
 
-var turnVerdictBootClock = identity.BootClock
+type turnVerdictDependencies struct {
+	bootClock          func() (string, time.Duration, error)
+	stateWriter        func(string, []byte) error
+	brainStatusWriter  func(string, brain.Record, time.Time) error
+	consumeSessionStop func(*Store, string, string) (SessionStop, bool, string, error)
+}
+
+func (s *Store) turnBootClock() func() (string, time.Duration, error) {
+	if s.verdictDeps.bootClock != nil {
+		return s.verdictDeps.bootClock
+	}
+	return identity.BootClock
+}
+
+func (s *Store) turnStateWriter() func(string, []byte) error {
+	if s.verdictDeps.stateWriter != nil {
+		return s.verdictDeps.stateWriter
+	}
+	return atomicWrite
+}
+
+func (s *Store) turnBrainStatusWriter() func(string, brain.Record, time.Time) error {
+	if s.verdictDeps.brainStatusWriter != nil {
+		return s.verdictDeps.brainStatusWriter
+	}
+	return brain.WriteStatus
+}
+
+func (s *Store) turnSessionStopConsumer() func(*Store, string, string) (SessionStop, bool, string, error) {
+	if s.verdictDeps.consumeSessionStop != nil {
+		return s.verdictDeps.consumeSessionStop
+	}
+	return func(store *Store, sessionID, mainID string) (SessionStop, bool, string, error) {
+		return store.consumeSessionStop(sessionID, mainID)
+	}
+}
 
 // IdleEscalationEvent is the package-neutral handoff from the goal verdict to
 // the steward. The command layer supplies the steward-backed callbacks so the
@@ -458,7 +493,7 @@ func (s *Store) TurnVerdict(scan ScanResult, sessionId, watchdogDigest, mainId s
 		var workErr error
 		workRead := !humanAuthorized && !brainSeat
 		if workRead {
-			work, workErr = readClaimableBudgetedWork(s.Root, s.now(), s.prober())
+			work, workErr = readClaimableBudgetedWork(s.Root, s.now(), s.prober(), s.projectionDeps)
 		}
 		waits := registeredWaits{}
 		var waitDropReasons []string
@@ -503,7 +538,7 @@ func (s *Store) TurnVerdict(scan ScanResult, sessionId, watchdogDigest, mainId s
 		verdictPersistenceFailed := false
 		if brainState.State == brain.Declared {
 			verdict.BrainStatusDue = brain.StatusDue(s.Root, s.now())
-			if err := brainStatusWriter(s.Root, *brainState.Record, s.now()); err != nil {
+			if err := s.turnBrainStatusWriter()(s.Root, *brainState.Record, s.now()); err != nil {
 				failure := infrastructureFailure{"status-write", err}
 				if !verdict.ShouldBlock {
 					return Result{}, failure
@@ -534,7 +569,7 @@ func (s *Store) TurnVerdict(scan ScanResult, sessionId, watchdogDigest, mainId s
 		}
 		humanStopConsumed := false
 		if humanAuthorized && verdictStateSaved && !verdictPersistenceFailed {
-			marker, consumed, consumeDetail, err := consumeSessionStopForVerdict(s, sessionId, mainId)
+			marker, consumed, consumeDetail, err := s.turnSessionStopConsumer()(s, sessionId, mainId)
 			if err != nil && !verdict.ShouldBlock {
 				// Nothing was decided, so the failed consume is the only
 				// finding: an infrastructure allowance, the marker unspent.
@@ -637,7 +672,7 @@ func (s *Store) registeredWaits(work ClaimableBudgetedWork, sessionID, mainID st
 	if !ok {
 		return nil, []string{"registered waits not credited at " + reason}
 	}
-	bootID, bootElapsed, err := turnVerdictBootClock()
+	bootID, bootElapsed, err := s.turnBootClock()()
 	bootProblem := err != nil || bootID == ""
 	claimed := make(map[string]bool, len(work.Claimed)+len(work.Landing))
 	for _, id := range work.Claimed {
@@ -1969,15 +2004,7 @@ func (s *Store) saveVerdictState(state *verdictState) error {
 	if err != nil {
 		return err
 	}
-	return verdictStateWriter(statePath(s.Root), append(data, '\n'))
-}
-
-var verdictStateWriter = atomicWrite
-
-var brainStatusWriter = brain.WriteStatus
-
-var consumeSessionStopForVerdict = func(store *Store, sessionID, mainID string) (SessionStop, bool, string, error) {
-	return store.consumeSessionStop(sessionID, mainID)
+	return s.turnStateWriter()(statePath(s.Root), append(data, '\n'))
 }
 
 // isoDaysBefore subtracts days from an ISO stamp lexically-safely.

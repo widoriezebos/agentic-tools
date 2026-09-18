@@ -21,6 +21,7 @@ func riskLocalRoot(t *testing.T, seedID string) string {
 }
 
 func TestSTR4R1RaiseTransaction(t *testing.T) {
+	t.Parallel()
 	root := riskLocalRoot(t, "raise-bed")
 	if err := os.WriteFile(filepath.Join(root, "metasystem.conf"), []byte("metasystem.runtimes=fake\nmetasystem.governance.correlation-policy=A\n"), 0o644); err != nil {
 		t.Fatal(err)
@@ -176,6 +177,7 @@ func TestSTR4R1RaiseTransaction(t *testing.T) {
 }
 
 func TestSTR4R1FourDowngradesRefused(t *testing.T) {
+	t.Parallel()
 	root := riskLocalRoot(t, "downgrade-bed")
 	budget := Budget{ElapsedLimit: "1h", AttemptLimit: 3, ReservedJobMinutesLimit: 360, ActiveJobLimit: 1, ReviewRoundLimit: 0}
 	type downgrade struct {
@@ -234,6 +236,7 @@ func TestSTR4R1FourDowngradesRefused(t *testing.T) {
 }
 
 func TestRiskOverridesAboveAndBelow(t *testing.T) {
+	t.Parallel()
 	root := riskLocalRoot(t, "override-bed")
 	budget := Budget{ElapsedLimit: "1h", AttemptLimit: 3, ReservedJobMinutesLimit: 360, ActiveJobLimit: 1, ReviewRoundLimit: 0}
 	low := RiskRecord{Severity: 1, Novelty: 1, Exposure: 1, Accumulation: 1, Basis: "routine"}
@@ -264,6 +267,7 @@ func TestRiskOverridesAboveAndBelow(t *testing.T) {
 }
 
 func TestSTR4R1FiveMemberExceptions(t *testing.T) {
+	t.Parallel()
 	root := riskLocalRoot(t, "exception-bed")
 	low := RiskRecord{Severity: 3, Novelty: 1, Exposure: 1, Accumulation: 1, Basis: "severe"}
 	box := Budget{ElapsedLimit: "8h", AttemptLimit: 10, ReservedJobMinutesLimit: 1200, ActiveJobLimit: 1, ReviewRoundLimit: 3}
@@ -304,6 +308,7 @@ func TestSTR4R1FiveMemberExceptions(t *testing.T) {
 }
 
 func TestSTR4R1ShapeFreeDerivation(t *testing.T) {
+	t.Parallel()
 	low := RiskRecord{Severity: 1, Novelty: 1, Exposure: 1, Accumulation: 1, Basis: "same files, routine consequence"}
 	high := low
 	high.Severity = 3
@@ -331,6 +336,7 @@ func TestSTR4R1ShapeFreeDerivation(t *testing.T) {
 }
 
 func TestSTR4R1NilRiskDigest(t *testing.T) {
+	t.Parallel()
 	budget := Budget{ElapsedLimit: "1h", AttemptLimit: 1, ReservedJobMinutesLimit: 5, ActiveJobLimit: 1, ReviewRoundLimit: 0}
 	legacy := ApprovalDigest("unchanged intent", 1, budget)
 	if got := ApprovalDigest("unchanged intent", 1, budget, nil); got != legacy {
@@ -343,6 +349,7 @@ func TestSTR4R1NilRiskDigest(t *testing.T) {
 }
 
 func TestSTR4R1SweepBackfill(t *testing.T) {
+	t.Parallel()
 	tree := &TreeGoals{Root: &RootRecord{}, Live: map[string]*GoalFile{
 		"tierless": {Id: "tierless", Tier: 0},
 		"tiered":   {Id: "tiered", Tier: 3},
@@ -406,6 +413,7 @@ func TestSTR4R1SweepBackfill(t *testing.T) {
 }
 
 func TestRiskRecordRendersAboveTierAndRoundTrips(t *testing.T) {
+	t.Parallel()
 	risk := &RiskRecord{Severity: 2, Novelty: 1, Exposure: 3, Accumulation: 2, Basis: "quoted basis"}
 	file := &GoalFile{Id: "risk-render", State: StateQueued, Tier: 3, Risk: risk, Intent: "intent", Origin: OriginMain, NextStep: "next", OpenedAt: "2026-09-04T10:00:00Z", Revision: 1, History: []HistoryLine{{At: "2026-09-04T10:00:00Z", Opid: "01J5X0000000000000000000C0-mac-a-1a2b3c4d", Verb: "open", Actor: "mac-a+lineage", Targets: []string{"risk-render"}, Keep: -1}}}
 	rendered := string(RenderFile(file))
@@ -427,6 +435,7 @@ func TestRiskRecordRendersAboveTierAndRoundTrips(t *testing.T) {
 // left half the backlog recorded above its derivation, so this is the
 // everyday edit, not the exception.
 func TestRestatedAnswersNeverLowerARecordedTier(t *testing.T) {
+	t.Parallel()
 	root := riskLocalRoot(t, "restate-bed")
 	if err := os.WriteFile(filepath.Join(root, "metasystem.conf"), []byte("metasystem.runtimes=fake\nmetasystem.governance.correlation-policy=A\n"), 0o644); err != nil {
 		t.Fatal(err)

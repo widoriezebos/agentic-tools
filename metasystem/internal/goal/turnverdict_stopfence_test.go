@@ -7,6 +7,7 @@ import (
 )
 
 func TestTurnVerdictDoesNotBlockAndDescribesTheDurableStopPhase(t *testing.T) {
+	t.Parallel()
 	for _, test := range []struct {
 		name      string
 		phase     string

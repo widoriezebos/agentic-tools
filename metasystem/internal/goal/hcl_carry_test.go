@@ -19,6 +19,7 @@ func requireCarryAsk(t *testing.T, err error, code string) {
 }
 
 func TestHCL40CarriedVerbsRequireRemote(t *testing.T) {
+	t.Parallel()
 	root := t.TempDir()
 	request := VerbRequest{Endpoint: Endpoint{Root: root, Remote: "local", Branch: "refs/heads/metasystem/goals"}, Now: time.Now().UTC()}
 	_, err := Carry(request, CarryArgs{}, nil)
@@ -30,6 +31,7 @@ func TestHCL40CarriedVerbsRequireRemote(t *testing.T) {
 }
 
 func TestHCL39FormatOneReservationAndRecordAsk(t *testing.T) {
+	t.Parallel()
 	bed := t.TempDir()
 	origin := filepath.Join(bed, "origin.git")
 	mustGit(t, bed, "init", "-q", "--bare", "-b", "main", origin)
@@ -63,6 +65,7 @@ func TestHCL39FormatOneReservationAndRecordAsk(t *testing.T) {
 }
 
 func TestHCL45ConfirmedCarriedEntryIsIdempotent(t *testing.T) {
+	t.Parallel()
 	root := t.TempDir()
 	opid := "01J5X0000000000000000H450"
 	intent := Intent{Verb: "carried", Targets: []string{"g"}, Args: map[string]string{}}
@@ -79,6 +82,7 @@ func TestHCL45ConfirmedCarriedEntryIsIdempotent(t *testing.T) {
 }
 
 func TestHCL48QuotedWhyCannotForgeKeyedFields(t *testing.T) {
+	t.Parallel()
 	now := time.Date(2026, 9, 11, 10, 0, 0, 0, time.UTC)
 	realSuperseded := "01ARZ3NDEKTSV4RRFFQ69G5FAY-mac-a-1a2b3c4d"
 	forged := "01ARZ3NDEKTSV4RRFFQ69G5FAX-mac-a-1a2b3c4d"
@@ -92,6 +96,7 @@ func TestHCL48QuotedWhyCannotForgeKeyedFields(t *testing.T) {
 }
 
 func TestHCL39FormatOneRejectsCarryingAndCarriedRows(t *testing.T) {
+	t.Parallel()
 	for _, verb := range []string{"carrying", "carried"} {
 		file := vGoal("g", StateClaimed)
 		file.History = append(file.History, HistoryLine{Verb: verb})
@@ -134,6 +139,7 @@ func cloneStringMap(input map[string]string) map[string]string {
 }
 
 func TestHCL60CarriedReplayMismatchNamesTargetThenFourteenFields(t *testing.T) {
+	t.Parallel()
 	intent := map[string]string{
 		"commit": strings.Repeat("1", 40), "workspace": strings.Repeat("2", 40), "tree": strings.Repeat("3", 40),
 		"past": "missing-declaration", "battery": "green", "missing": "-", "failing": "-", "judge": "base",
@@ -164,6 +170,7 @@ func TestHCL60CarriedReplayMismatchNamesTargetThenFourteenFields(t *testing.T) {
 }
 
 func TestHCL60SupersedePreconditions(t *testing.T) {
+	t.Parallel()
 	now := time.Date(2026, 9, 11, 12, 0, 0, 0, time.UTC)
 	target := "01ARZ3NDEKTSV4RRFFQ69G5FAY-seat-a-1a2b3c4d"
 	foreign := "01ARZ3NDEKTSV4RRFFQ69G5FAY-seat-b-1a2b3c4d"
@@ -228,6 +235,7 @@ func TestHCL60SupersedePreconditions(t *testing.T) {
 }
 
 func TestHCL60DoneRefusesOpenWordAndPassesExpiredWord(t *testing.T) {
+	t.Parallel()
 	now := time.Date(2026, 9, 11, 12, 0, 0, 0, time.UTC)
 	word := "01ARZ3NDEKTSV4RRFFQ69G5FAW-seat-a-1a2b3c4d"
 	openTree, openFile := hclCarryTree("g", word, now.Add(time.Hour))
@@ -241,6 +249,7 @@ func TestHCL60DoneRefusesOpenWordAndPassesExpiredWord(t *testing.T) {
 }
 
 func TestHCL60CarryDebtAsksAtTheWord(t *testing.T) {
+	t.Parallel()
 	now := time.Date(2026, 9, 11, 12, 0, 0, 0, time.UTC)
 	tests := []struct {
 		name, want string

@@ -21,6 +21,7 @@ func openInboxQuestion(id, goalID, wants string) *ChannelQuestion {
 }
 
 func TestReadChannelTree(t *testing.T) {
+	t.Parallel()
 	t.Run("missing directory is empty", func(t *testing.T) {
 		_, root := oneClone(t)
 		tip := mustGit(t, root, "rev-parse", "HEAD")
@@ -56,6 +57,7 @@ func TestReadChannelTree(t *testing.T) {
 }
 
 func TestMatchChannelInboundThreadReferences(t *testing.T) {
+	t.Parallel()
 	question := openInboxQuestion(channelTestQuestionID, channelTestGoalID, "token")
 	postRef := &ChannelRef{Provider: "telegram", ID: "rejection-post", ThreadID: "question-post"}
 	question.Rejected = []ChannelRejection{{Ref: ChannelRef{Provider: "telegram", ID: "reply", ThreadID: "question-post"}, PostRef: postRef}}
@@ -91,6 +93,7 @@ func matchByToken(tree *ChannelTree, record ChannelInbound) (string, bool) {
 }
 
 func TestMatchChannelInboundUnthreadedTokens(t *testing.T) {
+	t.Parallel()
 	q1 := openInboxQuestion("01J5X0000000000000000000Q1", "goal-one", "goal=one resume elapsed=1d attempts=10 minutes=1200 active=1")
 	q2 := openInboxQuestion("01J5X0000000000000000000Q2", "goal-two", "goal=two start")
 	record := ChannelInbound{Destination: "team", Outcome: "verified"}
@@ -167,6 +170,7 @@ func channelPublishNow() time.Time {
 }
 
 func TestChannelInboundPublishAtomicAnswerReplayLateAndLoss(t *testing.T) {
+	t.Parallel()
 	question := openInboxQuestion(channelTestQuestionID, channelTestGoalID, "required token")
 	a, b := channelPublishBed(t, question)
 	eA := endpointFor(a)
@@ -236,6 +240,7 @@ func TestChannelInboundPublishAtomicAnswerReplayLateAndLoss(t *testing.T) {
 }
 
 func TestChannelInboundPublishBudgetAnswerRows(t *testing.T) {
+	t.Parallel()
 	tests := []struct {
 		name         string
 		messageID    string
@@ -292,14 +297,14 @@ func TestChannelInboundPublishBudgetAnswerRows(t *testing.T) {
 				answerCalls++
 				return answerRow.From(tuple, me)
 			}
-			ChannelMatrix["answer budget"] = budgetProbe
-			ChannelMatrix["answer"] = answerProbe
-			defer func() {
-				ChannelMatrix["answer budget"] = budgetRow
-				ChannelMatrix["answer"] = answerRow
-			}()
+			matrix := make(map[string]ChannelTransition, len(ChannelMatrix))
+			for name, row := range ChannelMatrix {
+				matrix[name] = row
+			}
+			matrix["answer budget"] = budgetProbe
+			matrix["answer"] = answerProbe
 
-			result, err := Publish(e, ChannelInboundRequest(e, "mac-a", "lineage-a", opid, record, channelPublishNow(), nil))
+			result, err := Publish(e, ChannelInboundRequest(e, "mac-a", "lineage-a", opid, record, channelPublishNow(), nil, matrix))
 			if err != nil || result.Outcome != OutcomeConfirmed {
 				t.Fatalf("budget answer publish: result=%+v err=%v", result, err)
 			}
@@ -335,6 +340,7 @@ func TestChannelInboundPublishBudgetAnswerRows(t *testing.T) {
 }
 
 func TestChannelInboundFreshRetryLosesAfterAbandonedAttempt(t *testing.T) {
+	t.Parallel()
 	question := openInboxQuestion(channelTestQuestionID, channelTestGoalID, "token")
 	a, b := channelPublishBed(t, question)
 	record := publishRecord("42", 123)
@@ -366,6 +372,7 @@ func TestChannelInboundFreshRetryLosesAfterAbandonedAttempt(t *testing.T) {
 }
 
 func TestChannelAnswerDispositionAndApprovalULID(t *testing.T) {
+	t.Parallel()
 	question := openInboxQuestion(channelTestQuestionID, channelTestGoalID, "approve exactly")
 	record := publishRecord("42", 123)
 	record.Text = question.Wants
@@ -394,6 +401,7 @@ func TestChannelAnswerDispositionAndApprovalULID(t *testing.T) {
 }
 
 func TestChannelInboundPresentWithoutTrailerRefuses(t *testing.T) {
+	t.Parallel()
 	question := openInboxQuestion(channelTestQuestionID, channelTestGoalID, "token")
 	a, _ := channelPublishBed(t, question)
 	record := publishRecord("42", 123)

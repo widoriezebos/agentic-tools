@@ -233,6 +233,12 @@ type VerbRequest struct {
 	ParkBranchCheck func(goalID, next string) (string, error)
 	// SweepBranch removes recoverable branch work after a confirmed conclusion.
 	SweepBranch func(goalID string) error
+	abandon     abandonDependencies
+}
+
+// ConfigureAbandon binds the executing engine and fleet view to this request.
+func (r *VerbRequest) ConfigureAbandon(buildStamp func() string, isAncestor func(string, string, string) (bool, error), registryProblems func(string, func(string, string) (bool, error), time.Time) ([]string, error)) {
+	r.abandon = abandonDependencies{buildStamp: buildStamp, isAncestor: isAncestor, registryProblems: registryProblems}
 }
 
 const EpochAuthorityHolder = "holder"
@@ -4970,21 +4976,16 @@ func valueOrDash(value string) string {
 
 func listOrDash(value string) string { return valueOrDash(strings.TrimSpace(value)) }
 
-var carriedCounselorAppend = func(string, string, HistoryLine, time.Time) error {
-	return fmt.Errorf("the carried counselor writer is not bound")
-}
-
-// BindCarriedCounselorAppend connects the upward counselor owner without a
-// goal-to-counselor import cycle. It is called during counselor package init.
-func BindCarriedCounselorAppend(appendLine func(string, string, HistoryLine, time.Time) error) {
-	if appendLine != nil {
-		carriedCounselorAppend = appendLine
+func bindCarriedCounselorAppend(current, candidate func(string, string, HistoryLine, time.Time) error) func(string, string, HistoryLine, time.Time) error {
+	if candidate != nil {
+		return candidate
 	}
+	return current
 }
 
-func carriedAfterConfirmed(root, approvedRef string, now time.Time) func(string) error {
+func carriedAfterConfirmed(endpoint Endpoint, approvedRef string, now time.Time) func(string) error {
 	return func(tip string) error {
-		tree, err := loadTree(root, tip)
+		tree, err := loadTree(endpoint.Root, tip)
 		if err != nil {
 			return err
 		}
@@ -4992,7 +4993,10 @@ func carriedAfterConfirmed(root, approvedRef string, now time.Time) func(string)
 		if !ok || !strings.HasPrefix(row.Reason, "landed ") {
 			return nil
 		}
-		return carriedCounselorAppend(root, goalID, row, now)
+		if endpoint.carriedCounselorAppend == nil {
+			return fmt.Errorf("the carried counselor writer is not bound")
+		}
+		return endpoint.carriedCounselorAppend(endpoint.Root, goalID, row, now)
 	}
 }
 
@@ -5007,7 +5011,10 @@ func RepairCarriedCounselor(endpoint Endpoint, approvedRef string, now time.Time
 	if !ok {
 		return fmt.Errorf("carried row for %s is absent", approvedRef)
 	}
-	return carriedCounselorAppend(endpoint.Root, goalID, row, now)
+	if endpoint.carriedCounselorAppend == nil {
+		return fmt.Errorf("the carried counselor writer is not bound")
+	}
+	return endpoint.carriedCounselorAppend(endpoint.Root, goalID, row, now)
 }
 
 // Carried completes an existing local carried intent under its entry.
@@ -5173,7 +5180,7 @@ func carriedRequestMode(r VerbRequest, args CarriedArgs, recovering bool) Publis
 				path = donePath(args.Goal)
 			}
 			return []Change{{Path: path, Content: RenderFile(file)}}, nil
-		}, Validate: func(commit string) error { return ValidateCommit(r.Endpoint.Root, commit) }, AfterConfirmed: carriedAfterConfirmed(r.Endpoint.Root, args.ApprovedRef, r.Now)}
+		}, Validate: func(commit string) error { return ValidateCommit(r.Endpoint.Root, commit) }, AfterConfirmed: carriedAfterConfirmed(r.Endpoint, args.ApprovedRef, r.Now)}
 }
 
 func valueOrLanded(value string) string {

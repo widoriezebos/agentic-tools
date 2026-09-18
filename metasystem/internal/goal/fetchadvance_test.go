@@ -27,6 +27,7 @@ func publishGoal(t *testing.T, root, opid, id string, extra []*GoalFile) Publish
 }
 
 func TestTwoClonesConvergeByFetchAlone(t *testing.T) {
+	t.Parallel()
 	_, a, b := twoClones(t)
 
 	// Different-goal mutations from two clones both publish;
@@ -77,6 +78,7 @@ func TestTwoClonesConvergeByFetchAlone(t *testing.T) {
 }
 
 func TestRewoundBranchRefusesUntilRepair(t *testing.T) {
+	t.Parallel()
 	origin, a, _ := twoClones(t)
 	seedTip := mustGit(t, origin, "rev-parse", "refs/heads/main")
 	publishGoal(t, a, "op-r", "goal-r", nil)
@@ -98,6 +100,7 @@ func TestRewoundBranchRefusesUntilRepair(t *testing.T) {
 }
 
 func TestTornTipRefusesNamingFileAndRule(t *testing.T) {
+	t.Parallel()
 	origin, a, b := twoClones(t)
 	publishGoal(t, a, "op-t", "goal-t", nil)
 	if _, err := FetchAdvance(endpointFor(a)); err != nil {
@@ -128,6 +131,7 @@ func TestTornTipRefusesNamingFileAndRule(t *testing.T) {
 }
 
 func TestForeignLedgerRefusesByName(t *testing.T) {
+	t.Parallel()
 	_, a, _ := twoClones(t)
 	publishGoal(t, a, "op-f", "goal-f", nil)
 	if _, err := FetchAdvance(endpointFor(a)); err != nil {
@@ -175,6 +179,7 @@ func writeInWorktree(t *testing.T, root, rel, content string) {
 }
 
 func TestMutationsRunTheAcceptanceGates(t *testing.T) {
+	t.Parallel()
 	origin, a, _ := twoClones(t)
 	publishGoal(t, a, "op-gate", "gated", nil)
 	if _, err := FetchAdvance(endpointFor(a)); err != nil {

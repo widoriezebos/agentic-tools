@@ -36,7 +36,7 @@ func ReadChannelTree(e Endpoint, tip string) (*ChannelTree, error) {
 	if len(paths) == 0 {
 		return tree, nil
 	}
-	files, err := readCommitGoalBlobs(e.Root, tip, paths)
+	files, err := readCommitGoalBlobs(e.Root, tip, paths, nil)
 	if err != nil {
 		return nil, fmt.Errorf("read channel tree at %s: %w", short(tip), err)
 	}
@@ -169,7 +169,11 @@ func channelTokenMatchCount(text, token string) int {
 
 // ChannelInboundRequest builds the create-once transaction for one inbound
 // provider message. Its callback redoes replay and match decisions at every tip.
-func ChannelInboundRequest(e Endpoint, machine, lineage, opid string, record ChannelInbound, now time.Time, decided *ChannelInbound) PublishRequest {
+func ChannelInboundRequest(e Endpoint, machine, lineage, opid string, record ChannelInbound, now time.Time, decided *ChannelInbound, matrices ...map[string]ChannelTransition) PublishRequest {
+	matrix := ChannelMatrix
+	if len(matrices) > 0 && matrices[0] != nil {
+		matrix = matrices[0]
+	}
 	recordPath := ChannelPrefix + "inbox/" + record.Destination + "/" + record.Provider + "-" + record.MessageID + ".json"
 	initialOutcome := record.Outcome
 	initialQuestion := record.Question
@@ -240,7 +244,7 @@ func ChannelInboundRequest(e Endpoint, machine, lineage, opid string, record Cha
 				if question.Answer != nil {
 					writer = question.Answer.Opid
 				}
-				apply, classifyErr := ClassifyChannelTransition(e, tip, questionID, opid, machine, writer, true, question.Tuple(), ChannelMatrix[rowName])
+				apply, classifyErr := ClassifyChannelTransition(e, tip, questionID, opid, machine, writer, true, question.Tuple(), matrix[rowName])
 				if classifyErr != nil {
 					return nil, classifyErr
 				}

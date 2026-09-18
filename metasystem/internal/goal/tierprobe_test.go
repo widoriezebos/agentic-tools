@@ -3,6 +3,7 @@ package goal
 import "testing"
 
 func TestTierProbeCountsRecordedAndDerivedTiers(t *testing.T) {
+	t.Parallel()
 	risk := func(s, n, e, a uint8) *RiskRecord {
 		return &RiskRecord{Severity: s, Novelty: n, Exposure: e, Accumulation: a, Basis: "probe"}
 	}

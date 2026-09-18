@@ -26,6 +26,7 @@ func handedOverTree(files ...*GoalFile) *TreeGoals {
 }
 
 func TestHandedOverClaimRoundTripsWithoutChangingExistingClaims(t *testing.T) {
+	t.Parallel()
 	existing := RenderFile(claimedGolden())
 	parsed, problems := ParseFile(existing)
 	if len(problems) != 0 || parsed.Claimed.HandedOver.present() || strings.Contains(string(existing), "- HandedOver:") || string(RenderFile(parsed)) != string(existing) {
@@ -41,6 +42,7 @@ func TestHandedOverClaimRoundTripsWithoutChangingExistingClaims(t *testing.T) {
 }
 
 func TestHandedOverRecordRequiresEveryCoordinate(t *testing.T) {
+	t.Parallel()
 	rendered := string(RenderFile(handedOverGoal("handed-grammar", "landing", "landing-lineage")))
 	for _, test := range []struct{ old, replacement, want string }{
 		{"fromMachine=seat-a ", "", "missing fromMachine="},
@@ -56,6 +58,7 @@ func TestHandedOverRecordRequiresEveryCoordinate(t *testing.T) {
 }
 
 func TestHandedOverClaimsUseOneDerivedLandingPair(t *testing.T) {
+	t.Parallel()
 	expectProblem(t, ValidateTree(handedOverTree(vGoal("seat-one", StateClaimed), vGoal("seat-two", StateClaimed))), "quota is one claim per machine")
 
 	first := handedOverGoal("handed-one", "landing", "landing-lineage")
@@ -69,6 +72,7 @@ func TestHandedOverClaimsUseOneDerivedLandingPair(t *testing.T) {
 }
 
 func TestHandedOverClaimsDoNotConsumeLandingSlots(t *testing.T) {
+	t.Parallel()
 	first := handedOverGoal("landing-one", "landing", "landing-lineage")
 	second := handedOverGoal("landing-two", "landing", "landing-lineage")
 	for _, file := range []*GoalFile{first, second} {
@@ -80,6 +84,7 @@ func TestHandedOverClaimsDoNotConsumeLandingSlots(t *testing.T) {
 }
 
 func TestHandedOverClaimGuards(t *testing.T) {
+	t.Parallel()
 	tests := []struct {
 		name, want string
 		mutate     func(*GoalFile)
@@ -140,6 +145,7 @@ func handoverBed(t *testing.T, id string, rich bool) (string, VerbRequest) {
 	return root, req
 }
 func TestGoalHandoverAppliesCompleteFieldTable(t *testing.T) {
+	t.Parallel()
 	root, req := handoverBed(t, "field-complete", true)
 	before, _ := loadTree(root, acceptedTip(t, root))
 	req.Ulid, req.Now = "01J5X00000000000000000HB02", req.Now.Add(time.Minute)
@@ -244,6 +250,7 @@ func setHandoverTargetRoot(t *testing.T, request *VerbRequest, root string) {
 }
 
 func TestGoalHandBackClearsHandedOverAndValidates(t *testing.T) {
+	t.Parallel()
 	root, source, holder := handBackBed(t, true)
 	source.Ulid = "01J5X00000000000000000HC03"
 	if result, err := openClaimForTest(t, source, "other-member", "Land another member.", OriginMain, "Hand it over.", testBudget()); err != nil || result.Outcome != OutcomeConfirmed {
@@ -274,6 +281,7 @@ func TestGoalHandBackClearsHandedOverAndValidates(t *testing.T) {
 }
 
 func TestGoalHandBackRefusals(t *testing.T) {
+	t.Parallel()
 	tests := []struct {
 		name, machine, lineage, batch, targetRoot, want string
 		epoch                                           int64
@@ -336,7 +344,11 @@ func handedOverTerminalClearsRecord(t *testing.T, done bool) {
 		t.Fatalf("terminal state retained handover: %+v", file)
 	}
 }
-func TestHandedOverClaimReleaseClearsRecord(t *testing.T) { handedOverTerminalClearsRecord(t, false) }
+func TestHandedOverClaimReleaseClearsRecord(t *testing.T) {
+	t.Parallel()
+	handedOverTerminalClearsRecord(t, false)
+}
 func TestHandedOverClaimConclusionClearsRecord(t *testing.T) {
+	t.Parallel()
 	handedOverTerminalClearsRecord(t, true)
 }

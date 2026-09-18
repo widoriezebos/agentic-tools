@@ -31,6 +31,7 @@ func claimedGolden() *GoalFile {
 }
 
 func TestGoldenClaimedFileRoundTrips(t *testing.T) {
+	t.Parallel()
 	golden := claimedGolden()
 	bytes1 := RenderFile(golden)
 	parsed, problems := ParseFile(bytes1)
@@ -61,6 +62,7 @@ func TestGoldenClaimedFileRoundTrips(t *testing.T) {
 }
 
 func TestEmptyReadItemListPreservesRecordBytesAndDigest(t *testing.T) {
+	t.Parallel()
 	file := claimedGolden()
 	before := RenderFile(file)
 	file.ReadItems = []ReadItem{}
@@ -71,6 +73,7 @@ func TestEmptyReadItemListPreservesRecordBytesAndDigest(t *testing.T) {
 }
 
 func TestStopSurfaceMovePermissionRoundTripsAndRejectsOtherValues(t *testing.T) {
+	t.Parallel()
 	file := claimedGolden()
 	file.StopSurfaceMoves = true
 	rendered := RenderFile(file)
@@ -86,6 +89,7 @@ func TestStopSurfaceMovePermissionRoundTripsAndRejectsOtherValues(t *testing.T) 
 }
 
 func TestReadItemsRoundTripBesideNextStep(t *testing.T) {
+	t.Parallel()
 	file := claimedGolden()
 	file.ReadItems = []ReadItem{
 		{ID: "critic-1", Read: "critic", Text: "Name the edge case.", State: ReadItemOpen, AddedAt: "2026-09-17T10:00:00Z"},
@@ -106,6 +110,7 @@ func TestReadItemsRoundTripBesideNextStep(t *testing.T) {
 }
 
 func TestApprovalEpisodeRevisionGrammar(t *testing.T) {
+	t.Parallel()
 	file := approvedGoalFixture(vGoal("approval-episode", StateQueued), testBudget())
 	rendered := RenderFile(file)
 	if !strings.Contains(string(rendered), " episode=2") {
@@ -135,6 +140,7 @@ func TestApprovalEpisodeRevisionGrammar(t *testing.T) {
 }
 
 func TestBudgetEpisodeRevisionLegacyMinimum(t *testing.T) {
+	t.Parallel()
 	budget := testBudget()
 	base := &GoalFile{Budget: &budget, Approved: &ApprovalRecord{Revision: 9}}
 	tests := []struct {
@@ -169,6 +175,7 @@ func TestBudgetEpisodeRevisionLegacyMinimum(t *testing.T) {
 }
 
 func TestLegacyApprovalWithReadItemsRoundTripsByteIdentical(t *testing.T) {
+	t.Parallel()
 	file := approvedGoalFixture(vGoal("legacy-approval-read", StateQueued), testBudget())
 	file.Approved.EpisodeRevision = 0
 	file.ReadItems = []ReadItem{{ID: "critic-1", Read: "critic", Text: "Keep the legacy grammar beside this open item.", State: ReadItemOpen, AddedAt: "2026-09-17T10:00:00Z"}}
@@ -198,6 +205,7 @@ func episodeGolden() *GoalFile {
 }
 
 func TestClaimedEpisodeRoundTrip(t *testing.T) {
+	t.Parallel()
 	for _, obligationRevision := range []uint64{0, 4} {
 		t.Run(fmt.Sprintf("obligation revision %d", obligationRevision), func(t *testing.T) {
 			file := episodeGolden()
@@ -215,6 +223,7 @@ func TestClaimedEpisodeRoundTrip(t *testing.T) {
 }
 
 func TestEpisodeObligationRevisionParse(t *testing.T) {
+	t.Parallel()
 	legacy := string(RenderFile(claimedGolden()))
 	thirdOnly := strings.Replace(legacy, " accountingRevision=2", " accountingRevision=2 episodeObligationRevision=1", 1)
 	if _, problems := ParseFile([]byte(withFreshIntegrity(thirdOnly))); !problemsContain(problems, "Claimed episodeObligationRevision requires the episode binding (episodeAt and episodeRevision)") {
@@ -229,6 +238,7 @@ func TestEpisodeObligationRevisionParse(t *testing.T) {
 }
 
 func TestEpisodeBindingContradictionsRefuse(t *testing.T) {
+	t.Parallel()
 	base := string(RenderFile(claimedGolden()))
 	for _, test := range []struct {
 		name, suffix, want string
@@ -285,6 +295,7 @@ func TestEpisodeBindingContradictionsRefuse(t *testing.T) {
 }
 
 func TestSTR2P2A05ZeroClaimRevisionObligationIsAProblemNotAPanic(t *testing.T) {
+	t.Parallel()
 	f := vGoal("zero-claim-obligation", StateClaimed)
 	f.Budget = &Budget{ElapsedLimit: "1h", AttemptLimit: 1, ReservedJobMinutesLimit: 5, ActiveJobLimit: 1, ReviewRoundLimit: 0}
 	f.Claimed = &ClaimRecord{Machine: "mac-a", Lineage: "m1", At: f.OpenedAt}
@@ -299,6 +310,7 @@ func TestSTR2P2A05ZeroClaimRevisionObligationIsAProblemNotAPanic(t *testing.T) {
 }
 
 func TestLegacyFourMemberBudgetUsesGoalTierReviewRounds(t *testing.T) {
+	t.Parallel()
 	for _, test := range []struct {
 		name string
 		tier uint8
@@ -323,6 +335,7 @@ func TestLegacyFourMemberBudgetUsesGoalTierReviewRounds(t *testing.T) {
 }
 
 func TestLegacyBudgetAndNormApprovalShareInferredReviewRounds(t *testing.T) {
+	t.Parallel()
 	file := vGoal("both-legacy-rounds", StateQueued)
 	file.Budget = &Budget{ElapsedLimit: "4h", AttemptLimit: 4, ReservedJobMinutesLimit: 240, ActiveJobLimit: 1, ReviewRoundLimit: 3}
 	file.NormApproval = &GoalNormApprovalClaim{ApprovedRef: "R-legacy", Minutes: 240, ReviewRounds: 3, GoalRevision: 1}
@@ -341,6 +354,7 @@ func TestLegacyBudgetAndNormApprovalShareInferredReviewRounds(t *testing.T) {
 }
 
 func TestMixedLegacyReviewRoundMemberUsesExplicitValue(t *testing.T) {
+	t.Parallel()
 	for _, test := range []struct {
 		name         string
 		legacyBudget bool
@@ -371,6 +385,7 @@ func TestMixedLegacyReviewRoundMemberUsesExplicitValue(t *testing.T) {
 }
 
 func TestSTR3Gap04ObligationRoundTrip(t *testing.T) {
+	t.Parallel()
 	f := claimedGolden()
 	f.ReviewObligations = []ReviewObligation{{
 		Finding: "F-1", Chain: "critic-root", Artifact: `NEW metasystem/a path/quoted "name".go`,
@@ -397,6 +412,7 @@ func TestSTR3Gap04ObligationRoundTrip(t *testing.T) {
 }
 
 func TestSTR3GapDischargeSelect(t *testing.T) {
+	t.Parallel()
 	obligations := []ReviewObligation{
 		{Finding: "F-1", Chain: "chain-a", State: "open"},
 		{Finding: "F-1", Chain: "chain-b", State: "open"},
@@ -419,6 +435,7 @@ func TestSTR3GapDischargeSelect(t *testing.T) {
 }
 
 func TestLabelsParseRawAndUnlabeledFilesStayUnchanged(t *testing.T) {
+	t.Parallel()
 	f := claimedGolden()
 	unlabeled := string(RenderFile(f))
 	if strings.Contains(unlabeled, "- Labels:") {
@@ -442,6 +459,7 @@ func TestLabelsParseRawAndUnlabeledFilesStayUnchanged(t *testing.T) {
 }
 
 func TestGoldenArchivedFileCarriesExplicitDoneState(t *testing.T) {
+	t.Parallel()
 	done := &GoalFile{
 		Id:       "custody-death-proof",
 		State:    StateDone,
@@ -465,6 +483,7 @@ func TestGoldenArchivedFileCarriesExplicitDoneState(t *testing.T) {
 }
 
 func TestAbandonRecordMustBindItsEvent(t *testing.T) {
+	t.Parallel()
 	fixture := func() *GoalFile {
 		file := vGoal("bound-abandon", StateAbandoned)
 		file.Revision = 2
@@ -559,6 +578,7 @@ func TestAbandonRecordMustBindItsEvent(t *testing.T) {
 }
 
 func TestHistoryKeysStopIdAndCarriedOnlyOnAbandonLines(t *testing.T) {
+	t.Parallel()
 	base := vGoal("history-keys", StateQueued)
 	base.Revision = 2
 	base.History = append(base.History, HistoryLine{
@@ -630,6 +650,7 @@ func TestHistoryKeysStopIdAndCarriedOnlyOnAbandonLines(t *testing.T) {
 }
 
 func TestTamperedBytesFailIntegrityByName(t *testing.T) {
+	t.Parallel()
 	bytes := RenderFile(claimedGolden())
 	tampered := strings.Replace(string(bytes), "session-a", "session-b", 1)
 	_, problems := ParseFile([]byte(tampered))
@@ -645,6 +666,7 @@ func TestTamperedBytesFailIntegrityByName(t *testing.T) {
 }
 
 func TestMissingIntegrityLineRefuses(t *testing.T) {
+	t.Parallel()
 	bytes := RenderFile(claimedGolden())
 	body, _, _ := splitIntegrity(bytes)
 	_, problems := ParseFile(body)
@@ -660,6 +682,7 @@ func TestMissingIntegrityLineRefuses(t *testing.T) {
 }
 
 func TestStateRecordAgreementIsValidated(t *testing.T) {
+	t.Parallel()
 	f := claimedGolden()
 	f.State = StateQueued // record says claimed, state says queued
 	_, problems := ParseFile(RenderFile(f))
@@ -675,6 +698,7 @@ func TestStateRecordAgreementIsValidated(t *testing.T) {
 }
 
 func TestClaimRevisionMustExistAndKeepItsHistoryTimestamp(t *testing.T) {
+	t.Parallel()
 	for _, test := range []struct {
 		name   string
 		mutate func(*GoalFile)
@@ -707,6 +731,7 @@ func TestClaimRevisionMustExistAndKeepItsHistoryTimestamp(t *testing.T) {
 }
 
 func TestHistoryGrammarRoundTripsEveryField(t *testing.T) {
+	t.Parallel()
 	line := HistoryLine{
 		At:        "2026-08-20T01:00:00Z",
 		Opid:      "01J5X0000000000000000000F5-intel-nuc-9f8e7d6c",
@@ -732,6 +757,7 @@ func TestHistoryGrammarRoundTripsEveryField(t *testing.T) {
 }
 
 func TestHistoryLineResumedField(t *testing.T) {
+	t.Parallel()
 	line := HistoryLine{
 		At: "2026-09-18T10:00:00Z", Opid: "01J5X0000000000000000000R8-mac-a-1a2b3c4d",
 		Verb: "set-budget", Actor: "human:Wido", Targets: []string{"fenced-goal"}, Resumed: "stop-fenced-r4-f1", Keep: -1,
@@ -777,6 +803,7 @@ func TestHistoryLineResumedField(t *testing.T) {
 }
 
 func TestResumeHistoryRoundTripsVerbatimTemporaryAuthority(t *testing.T) {
+	t.Parallel()
 	line := HistoryLine{
 		At: "2026-09-01T10:00:00Z", Opid: "01J5X0000000000000000000F6-intel-nuc-9f8e7d6c",
 		Verb: "resume", Actor: "human:Wido", Targets: []string{"a-goal"}, Keep: -1,
@@ -799,6 +826,7 @@ func TestResumeHistoryRoundTripsVerbatimTemporaryAuthority(t *testing.T) {
 }
 
 func TestLandedTemporaryAuthorityRoundTripsAfterRulingRenewal(t *testing.T) {
+	t.Parallel()
 	line := HistoryLine{
 		At: "2026-09-07T10:00:00Z", Opid: "01J5X0000000000000000000F7-intel-nuc-9f8e7d6c",
 		Verb: "resume", Actor: "human:Wido", Targets: []string{"a-goal"}, Keep: -1,
@@ -817,6 +845,7 @@ func TestLandedTemporaryAuthorityRoundTripsAfterRulingRenewal(t *testing.T) {
 }
 
 func TestHistoryReasonCannotSupplyAMissingRecordedWord(t *testing.T) {
+	t.Parallel()
 	line := `- 2026-09-01T10:00:00Z 01J5X0000000000000000000F8-intel-nuc-9f8e7d6c resume actor=human:Wido targets=a-goal authorityOutcome=TEMPORARY_HUMAN_WORD authorityReviewBy=2026-09-06 authorityRuling=R-32-m1 reason=mentions temporaryHumanWord="not a marker"`
 	if _, err := ParseHistoryLine(line); err == nil || !strings.Contains(err.Error(), "TemporaryHumanWord is missing") {
 		t.Fatalf("reason text completed an otherwise malformed authority marker: %v", err)
@@ -824,6 +853,7 @@ func TestHistoryReasonCannotSupplyAMissingRecordedWord(t *testing.T) {
 }
 
 func TestPruneKeepFieldIsLawful(t *testing.T) {
+	t.Parallel()
 	parsed, err := ParseHistoryLine("- 2026-08-20T03:00:00Z 01J5X0000000000000000000A6-mac-studio-1a2b3c4d prune actor=mac-studio+session-a targets=old-one,old-two keep=50")
 	if err != nil {
 		t.Fatalf("prune keep= line must parse: %v", err)
@@ -834,6 +864,7 @@ func TestPruneKeepFieldIsLawful(t *testing.T) {
 }
 
 func TestUnknownHistoryKeyRefuses(t *testing.T) {
+	t.Parallel()
 	_, err := ParseHistoryLine("- 2026-08-20T03:00:00Z 01J5X0000000000000000000A0-mac-a-1a2b3c4d verb actor=a+b sneaky=1")
 	if err == nil || !strings.Contains(err.Error(), "unknown History key") {
 		t.Fatalf("unknown key must refuse by name, got %v", err)
@@ -841,6 +872,7 @@ func TestUnknownHistoryKeyRefuses(t *testing.T) {
 }
 
 func TestHistoryPrefixIsADiagnosticHelper(t *testing.T) {
+	t.Parallel()
 	full := claimedGolden().History
 	if !HistoryIsPrefix(full[:2], full) {
 		t.Fatal("a strict prefix must be detected")
@@ -856,6 +888,7 @@ func TestHistoryPrefixIsADiagnosticHelper(t *testing.T) {
 }
 
 func TestOpidAttributesExecution(t *testing.T) {
+	t.Parallel()
 	a := Opid("01J5X0000000000000000000A0", "mac-studio", "session-a")
 	b := Opid("01J5X0000000000000000000A0", "mac-studio", "session-b")
 	if a == b {
@@ -867,6 +900,7 @@ func TestOpidAttributesExecution(t *testing.T) {
 }
 
 func TestParkedRecordRoundTripsWithDisplacementAndFreeText(t *testing.T) {
+	t.Parallel()
 	f := claimedGolden()
 	f.State = StateParked
 	f.Claimed = nil
@@ -889,6 +923,7 @@ func TestParkedRecordRoundTripsWithDisplacementAndFreeText(t *testing.T) {
 }
 
 func TestParkedRecordCarriesItsBlockerAndRequiresTheEdge(t *testing.T) {
+	t.Parallel()
 	f := claimedGolden()
 	f.State = StateParked
 	f.Claimed = nil
@@ -920,6 +955,7 @@ func TestParkedRecordCarriesItsBlockerAndRequiresTheEdge(t *testing.T) {
 }
 
 func TestHistoryLineCarriesAPowerOfAttorney(t *testing.T) {
+	t.Parallel()
 	entry := Opid("01J5X00000000000000000PA00", "mac-a", "lin-1")
 	line := HistoryLine{At: "2026-09-12T10:00:00Z", Opid: Opid("01J5X00000000000000000PA01", "mac-a", "lin-1"), Verb: "approve",
 		Actor: "mac-a+lin-1", Targets: []string{"small"}, Keep: -1, AuthorityOutcome: AuthorityOutcomePowerOfAttorney, AuthorityRuling: entry}

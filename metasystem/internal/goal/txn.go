@@ -27,9 +27,17 @@ import (
 
 // Endpoint is the resolved synchronization endpoint.
 type Endpoint struct {
-	Root   string // repository worktree root
-	Remote string // goal.sync-remote; "local" is single-machine mode
-	Branch string // goal.sync-branch, fully qualified
+	Root                   string // repository worktree root
+	Remote                 string // goal.sync-remote; "local" is single-machine mode
+	Branch                 string // goal.sync-branch, fully qualified
+	commandEnv             []string
+	carriedCounselorAppend func(string, string, HistoryLine, time.Time) error
+}
+
+// ConfigureCarriedCounselorAppend binds the caller-owned counselor writer to
+// this endpoint. A nil writer leaves an existing binding unchanged.
+func (e *Endpoint) ConfigureCarriedCounselorAppend(appendLine func(string, string, HistoryLine, time.Time) error) {
+	e.carriedCounselorAppend = bindCarriedCounselorAppend(e.carriedCounselorAppend, appendLine)
 }
 
 // LocalLedgerBranch is the dedicated single-machine ledger branch —
@@ -72,16 +80,20 @@ func txnRefFor(opid string) string   { return "refs/metasystem/goals/txn/" + opi
 // goalGit runs one git invocation in the repository with the
 // engine's determinism pins.
 func goalGit(root string, extraEnv []string, args ...string) (string, error) {
+	return goalGitWithEnvironment(root, nil, extraEnv, args...)
+}
+
+func goalGitWithEnvironment(root string, environment, extraEnv []string, args ...string) (string, error) {
 	full := append([]string{
 		"-C", root,
 		"-c", "core.logAllRefUpdates=false",
 	}, args...)
-	cmd := exec.Command("git", full...)
+	cmd := commandWithEnvironment(environment, "git", full...)
 	// The scrubbed base, never os.Environ: -C does not defeat an
 	// inherited GIT_DIR, and injected config can replace the remote
 	// URL — the transaction must be steerable by NOTHING but its
 	// arguments.
-	cmd.Env = append(environWithoutGitSteering(), extraEnv...)
+	cmd.Env = append(cmd.Env, extraEnv...)
 	// stdout is the PARSED channel and stderr the diagnostic one: a git
 	// wrapper printing a warning must never pollute a tip a caller
 	// parses (goal-git-stderr-pollution).
@@ -503,9 +515,8 @@ type PublishRequest struct {
 	// HintConfirmed is a best-effort acceleration seam. The canonical ledger
 	// read remains the only authority for a waiting caller.
 	HintConfirmed func(root string, targets []string, publicationID, bootID string, bootNanos int64)
+	bootClock     func() (string, time.Duration, error)
 }
-
-var goalPublicationBootClock = identity.BootClock
 
 func hintConfirmedWaiters(root string, req PublishRequest, publicationID, bootID string, bootNanos int64) {
 	hint := req.HintConfirmed
@@ -627,7 +638,11 @@ func runTransaction(e Endpoint, req PublishRequest) (PublishResult, error) {
 		deadline = DefaultPublishDeadline
 	}
 	stopAt := time.Now().Add(deadline)
-	beganBootID, beganBootElapsed, beganBootErr := goalPublicationBootClock()
+	bootClock := req.bootClock
+	if bootClock == nil {
+		bootClock = identity.BootClock
+	}
+	beganBootID, beganBootElapsed, beganBootErr := bootClock()
 	if beganBootErr != nil {
 		beganBootID, beganBootElapsed = "", 0
 	}

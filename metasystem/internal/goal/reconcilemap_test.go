@@ -27,6 +27,7 @@ func editFile(t *testing.T, root, rel string, transform func(*GoalFile)) {
 }
 
 func TestHandEditsMapToTheSmallestVerbSet(t *testing.T) {
+	t.Parallel()
 	a, tip := reconcileBed(t)
 	// One file: a state change (queued → parked) AND a field change
 	// (next step) — the pinned precedence maps the state verb first,
@@ -60,6 +61,7 @@ func TestHandEditsMapToTheSmallestVerbSet(t *testing.T) {
 }
 
 func TestHandEditToAbandonedHasNoReconcileGrammar(t *testing.T) {
+	t.Parallel()
 	t.Run("live state change", func(t *testing.T) {
 		root, tip := reconcileBed(t)
 		editFile(t, root, livePath("editable"), func(file *GoalFile) {
@@ -96,6 +98,7 @@ func TestHandEditToAbandonedHasNoReconcileGrammar(t *testing.T) {
 }
 
 func TestGeneratedFieldTamperRefusesByFileAndField(t *testing.T) {
+	t.Parallel()
 	a, tip := reconcileBed(t)
 	editFile(t, a, goalsPrefix+"editable.md", func(f *GoalFile) {
 		f.Revision = 99
@@ -131,6 +134,7 @@ func TestGeneratedFieldTamperRefusesByFileAndField(t *testing.T) {
 }
 
 func TestHandCreatedFileMapsToOpen(t *testing.T) {
+	t.Parallel()
 	a, tip := reconcileBed(t)
 	created := &GoalFile{
 		Id: "hand-opened", State: StateQueued,
@@ -156,6 +160,7 @@ func TestHandCreatedFileMapsToOpen(t *testing.T) {
 }
 
 func TestHandDeletionIsUnmappable(t *testing.T) {
+	t.Parallel()
 	a, tip := reconcileBed(t)
 	if err := os.Remove(filepath.Join(a, "plans", "goals", "editable.md")); err != nil {
 		t.Fatal(err)
@@ -171,6 +176,7 @@ func TestHandDeletionIsUnmappable(t *testing.T) {
 }
 
 func TestWhitespaceOnlyChangeNamesTheClosedSurface(t *testing.T) {
+	t.Parallel()
 	a, tip := reconcileBed(t)
 	abs := filepath.Join(a, "plans", "goals", "editable.md")
 	data, err := os.ReadFile(abs)
@@ -191,6 +197,7 @@ func TestWhitespaceOnlyChangeNamesTheClosedSurface(t *testing.T) {
 }
 
 func TestFullArcHandParkMapsToOneCascade(t *testing.T) {
+	t.Parallel()
 	_, a, _ := twoClones(t)
 	seedLedger(t, a)
 	for i, id := range []string{"harc-one", "harc-two"} {
@@ -244,6 +251,7 @@ func TestFullArcHandParkMapsToOneCascade(t *testing.T) {
 }
 
 func TestHandGrammarRefusalArms(t *testing.T) {
+	t.Parallel()
 	a, tip := reconcileBed(t)
 
 	// Root-record hand edits have no grammar.
@@ -327,6 +335,7 @@ func TestHandGrammarRefusalArms(t *testing.T) {
 }
 
 func TestUnparkAndLenientDisplacedRoundTrip(t *testing.T) {
+	t.Parallel()
 	a, _ := reconcileBed(t)
 	// Park through the verb so the base carries a parked state, then
 	// re-materialize and hand-unpark.
@@ -356,6 +365,7 @@ func TestUnparkAndLenientDisplacedRoundTrip(t *testing.T) {
 }
 
 func TestHandParkWithAForeignTokenRefusesUnrewritten(t *testing.T) {
+	t.Parallel()
 	a, tip := reconcileBed(t)
 	// The human typed a token the park grammar does not know. The
 	// lenient path must NOT rebuild the line into a clean placeholder
@@ -382,6 +392,7 @@ func TestHandParkWithAForeignTokenRefusesUnrewritten(t *testing.T) {
 }
 
 func TestHandParkWithDuplicateKeysRefusesUnrewritten(t *testing.T) {
+	t.Parallel()
 	a, tip := reconcileBed(t)
 	// A duplicate by= must reach the strict parser intact: the old
 	// rebuild laundered "by=original by= at=" into a clean
@@ -408,6 +419,7 @@ func TestHandParkWithDuplicateKeysRefusesUnrewritten(t *testing.T) {
 }
 
 func TestHandParkWithABlockerTokenRefuses(t *testing.T) {
+	t.Parallel()
 	a, tip := reconcileBed(t)
 	abs := filepath.Join(a, "plans", "goals", "editable.md")
 	data, err := os.ReadFile(abs)

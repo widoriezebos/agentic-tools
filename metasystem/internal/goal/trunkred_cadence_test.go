@@ -27,6 +27,7 @@ func cadenceStatusFixture(key CadenceClaimKey, started time.Time, status string)
 }
 
 func TestTrunkRedBatchGuardsExcludeCadenceRecords(t *testing.T) {
+	t.Parallel()
 	root := soloLedgerRepo(t)
 	now := time.Date(2026, 9, 17, 0, 0, 0, 0, time.UTC)
 	batchRequest := trunkRedVerbReq(root, "01J5X0000000000000000000D1", "mac-a")
@@ -65,6 +66,7 @@ func TestTrunkRedBatchGuardsExcludeCadenceRecords(t *testing.T) {
 }
 
 func TestCadenceClaimDeduplicatesTreeAcrossMachines(t *testing.T) {
+	t.Parallel()
 	root := soloLedgerRepo(t)
 	now := time.Date(2026, 9, 17, 1, 0, 0, 0, time.UTC)
 	first := trunkRedVerbReq(root, "01J5X0000000000000000000C1", "mac-a")
@@ -101,6 +103,7 @@ func TestCadenceClaimDeduplicatesTreeAcrossMachines(t *testing.T) {
 }
 
 func TestCadenceRedPublishesOwnerlessUntilHumanNamesGoal(t *testing.T) {
+	t.Parallel()
 	root := soloLedgerRepo(t)
 	now := time.Date(2026, 9, 17, 2, 0, 0, 0, time.UTC)
 	claimRequest := trunkRedVerbReq(root, "01J5X0000000000000000000C3", "mac-a")
@@ -149,6 +152,7 @@ func TestCadenceRedPublishesOwnerlessUntilHumanNamesGoal(t *testing.T) {
 }
 
 func TestCadenceStateAbsentLeavesLedgerBytesUnchanged(t *testing.T) {
+	t.Parallel()
 	root := soloLedgerRepo(t)
 	seed := publishTrunkRed(t, root, []TrunkRedEntry{})
 	before, err := goalGit(root, nil, "show", seed.Tip+":"+trunkRedPath)
@@ -175,6 +179,7 @@ func TestCadenceStateAbsentLeavesLedgerBytesUnchanged(t *testing.T) {
 }
 
 func TestCadenceDeadClaimIsRecoverableAfterLease(t *testing.T) {
+	t.Parallel()
 	root := soloLedgerRepo(t)
 	now := time.Date(2026, 9, 17, 4, 0, 0, 0, time.UTC)
 	first := trunkRedVerbReq(root, "01J5X0000000000000000000C7", "mac-a")
