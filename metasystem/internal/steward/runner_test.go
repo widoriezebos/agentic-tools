@@ -1,6 +1,7 @@
 package steward
 
 import (
+	"context"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -10,7 +11,34 @@ import (
 	"time"
 
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/identity"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/testenv"
 )
+
+func reapStewardRunnerFixture(t *testing.T, root string) {
+	t.Helper()
+	testenv.ReapFixtureProcessGroups(t, []testenv.FixtureProcessGroup{{
+		Verb: "steward run",
+		Resolve: func() (int, bool, error) {
+			runner, present := LiveRunner(root)
+			return int(runner.Pid), present, nil
+		},
+	}}, testenv.FixtureCleanup{
+		Verb: "steward disarm",
+		Run: func(ctx context.Context) error {
+			result := make(chan error, 1)
+			go func() {
+				_, err := Disarm(root)
+				result <- err
+			}()
+			select {
+			case err := <-result:
+				return err
+			case <-ctx.Done():
+				return ctx.Err()
+			}
+		},
+	})
+}
 
 func TestArmTemporaryRefusesContentFreeRemoteWord(t *testing.T) {
 	for _, test := range []struct {
@@ -157,6 +185,7 @@ func TestArmRefusesWithoutANotifier(t *testing.T) {
 
 func TestArmConfirmsTheGuardAndDisarmEndsIt(t *testing.T) {
 	root := reviveRepo(t) // notify-command configured
+	reapStewardRunnerFixture(t, root)
 	bin, err := filepath.Abs("../../bin/metasystem")
 	if err != nil {
 		t.Fatal(err)
@@ -164,7 +193,6 @@ func TestArmConfirmsTheGuardAndDisarmEndsIt(t *testing.T) {
 	if _, statErr := os.Stat(bin); statErr != nil {
 		t.Skipf("engine binary not built at %s", bin)
 	}
-	t.Cleanup(func() { _, _ = Disarm(root) })
 	msg, err := Arm(root, bin)
 	if err != nil || !strings.Contains(msg, "armed") {
 		t.Fatalf("arm returns only once the repository is guarded: %q %v", msg, err)
@@ -210,6 +238,7 @@ func TestArmConfirmsTheGuardAndDisarmEndsIt(t *testing.T) {
 
 func TestKilledStewardIsRestoredByOneWatcherRepairPass(t *testing.T) {
 	root := reviveRepo(t)
+	reapStewardRunnerFixture(t, root)
 	bin, err := filepath.Abs("../../bin/metasystem")
 	if err != nil {
 		t.Fatal(err)
@@ -217,7 +246,6 @@ func TestKilledStewardIsRestoredByOneWatcherRepairPass(t *testing.T) {
 	if _, statErr := os.Stat(bin); statErr != nil {
 		t.Skipf("engine binary not built at %s", bin)
 	}
-	t.Cleanup(func() { _, _ = Disarm(root) })
 	if _, err := Arm(root, bin); err != nil {
 		t.Fatal(err)
 	}
@@ -312,6 +340,7 @@ func TestSlowFirstAttemptSurvivesSecondEnsureAndWatcherRepair(t *testing.T) {
 
 func TestWatcherReplacesAliveRunnerWithOverdueAttempt(t *testing.T) {
 	root := reviveRepo(t)
+	reapStewardRunnerFixture(t, root)
 	bin, err := filepath.Abs("../../bin/metasystem")
 	if err != nil {
 		t.Fatal(err)
@@ -350,7 +379,6 @@ func TestWatcherReplacesAliveRunnerWithOverdueAttempt(t *testing.T) {
 		case <-time.After(5 * time.Second):
 			t.Errorf("stuck fixture process did not exit")
 		}
-		_, _ = Disarm(root)
 	})
 	exact, state, err := identity.KernelProber{}.Probe(int64(stuck.Process.Pid))
 	if err != nil || state != identity.Alive {

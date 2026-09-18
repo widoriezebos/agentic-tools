@@ -22,6 +22,8 @@ import (
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/report"
 	metarun "github.com/widoriezebos/agentic-tools/metasystem/internal/run"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/steward"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/supervise"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/testenv"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/testutil"
 	usagecore "github.com/widoriezebos/agentic-tools/metasystem/internal/usage"
 )
@@ -1011,6 +1013,66 @@ exec "${METASYSTEM_WAIT_REAL_ENGINE:?}" "$@"
 	return hook, canonical, wrapper
 }
 
+func reapPendingWaitFixtureChildren(t *testing.T, fixture *testutil.ProcessFixture, canonical, root string) {
+	t.Helper()
+	cleanupEnvironment := func() []string {
+		environment := make([]string, 0, len(os.Environ())+1)
+		for _, value := range os.Environ() {
+			if !strings.HasPrefix(value, "METASYSTEM_FIXTURE_CAP_SCALE_MILLI=") {
+				environment = append(environment, value)
+			}
+		}
+		return fixture.Env(append(environment, "METASYSTEM_FIXTURE_CAP_SCALE_MILLI=250"))
+	}
+	run := func(arguments ...string) func(context.Context) error {
+		return func(ctx context.Context) error {
+			command := exec.CommandContext(ctx, canonical, arguments...)
+			command.Env = cleanupEnvironment()
+			output, err := command.CombinedOutput()
+			if err != nil || ctx.Err() != nil {
+				return fmt.Errorf("context=%v run=%v output=%s", ctx.Err(), err, output)
+			}
+			return nil
+		}
+	}
+	testenv.ReapFixtureProcessGroups(t, []testenv.FixtureProcessGroup{
+		{
+			Verb: "steward run",
+			Resolve: func() (int, bool, error) {
+				runner, present := steward.LiveRunner(root)
+				return int(runner.Pid), present, nil
+			},
+		},
+		{
+			Verb: "supervise owner",
+			Resolve: func() (int, bool, error) {
+				owner, err := supervise.ReadArmingOwner(root)
+				if os.IsNotExist(err) {
+					return 0, false, nil
+				}
+				if err != nil {
+					return 0, false, err
+				}
+				ref := identity.Ref{
+					Pid: owner.Pid, StartedAtSec: owner.PidStartedAt,
+					StartTicks: owner.PidStartTicks, BootID: owner.BootID,
+				}
+				switch state := identity.AliveTaggedRef(identity.KernelProber{}, ref, owner.InstanceTag); state {
+				case identity.Alive:
+					return int(owner.Pid), true, nil
+				case identity.Dead:
+					return 0, false, nil
+				default:
+					return 0, false, fmt.Errorf("supervision owner pid=%d identity is %s", owner.Pid, state)
+				}
+			},
+		},
+	},
+		testenv.FixtureCleanup{Verb: "up --shutdown", Run: run("up", "--metasystem-root", root, "--repo", root, "--shutdown")},
+		testenv.FixtureCleanup{Verb: "steward disarm", Run: run("steward", "disarm", "--repo", root)},
+	)
+}
+
 func pendingWaitHookEnvironment(wrapper, canonical, now string) []string {
 	environment := make([]string, 0, len(os.Environ())+4)
 	for _, value := range os.Environ() {
@@ -1391,6 +1453,7 @@ func TestRegisteredLocalAndHumanWaitsInstalledVerdicts(t *testing.T) {
 	fixture := testutil.Fixture(t)
 	session, _ := pendingWaitVerdictCommandFixtureWithOptions(t, root, "fake", pendingWaitVerdictCommandOptions{jobStatus: "pending"})
 	hook, canonical, wrapper := installPendingWaitHookFixture(t, root, binary)
+	reapPendingWaitFixtureChildren(t, fixture, canonical, root)
 	wrapperSource := `#!/bin/sh
 if [ "${1:-}" = up ]; then printf '%s\n' 'up outcome=already-healthy'; exit 0; fi
 if [ "${1:-}" = health ]; then
@@ -1473,42 +1536,7 @@ func TestPendingWaitFromChildShell(t *testing.T) {
 	})
 	runtimeSession := "8d91c146-8460-4bf1-9a48-04bc577c3aa4"
 	hook, canonical, wrapper := installPendingWaitHookFixture(t, root, binary)
-	shutdownOutputDir := t.TempDir()
-	t.Cleanup(func() {
-		stdout, stdoutErr := os.Create(filepath.Join(shutdownOutputDir, "shutdown.stdout"))
-		stderr, stderrErr := os.Create(filepath.Join(shutdownOutputDir, "shutdown.stderr"))
-		if stdoutErr != nil || stderrErr != nil {
-			t.Errorf("prepare supervision shutdown output: stdout=%v stderr=%v", stdoutErr, stderrErr)
-			return
-		}
-		ctx, cancel := boundedFixtureContext(t, 15*time.Second)
-		defer cancel()
-		cleanupEnvironment := make([]string, 0, len(os.Environ())+1)
-		for _, value := range os.Environ() {
-			if !strings.HasPrefix(value, "METASYSTEM_FIXTURE_CAP_SCALE_MILLI=") {
-				cleanupEnvironment = append(cleanupEnvironment, value)
-			}
-		}
-		cleanupEnvironment = fixture.Env(append(cleanupEnvironment, "METASYSTEM_FIXTURE_CAP_SCALE_MILLI=250"))
-		shutdown := exec.CommandContext(ctx, canonical, "up", "--metasystem-root", root, "--repo", root, "--shutdown")
-		shutdown.Env = cleanupEnvironment
-		shutdown.Stdout, shutdown.Stderr = stdout, stderr
-		shutdownErr := shutdown.Run()
-		disarm := exec.CommandContext(ctx, canonical, "steward", "disarm", "--repo", root)
-		disarm.Env = cleanupEnvironment
-		disarm.Stdout, disarm.Stderr = stdout, stderr
-		disarmErr := disarm.Run()
-		closeStdoutErr, closeStderrErr := stdout.Close(), stderr.Close()
-		if ctx.Err() != nil || shutdownErr != nil || disarmErr != nil || closeStdoutErr != nil || closeStderrErr != nil {
-			output, _ := os.ReadFile(filepath.Join(shutdownOutputDir, "shutdown.stdout"))
-			problem, _ := os.ReadFile(filepath.Join(shutdownOutputDir, "shutdown.stderr"))
-			t.Errorf("clean up fixture supervision: deadline=%v shutdown=%v disarm=%v close=(%v,%v) stdout=%s stderr=%s",
-				ctx.Err(), shutdownErr, disarmErr, closeStdoutErr, closeStderrErr, output, problem)
-		}
-		if waitErr := fixture.WaitForNoUnrecordedChildren(ctx); waitErr != nil {
-			t.Errorf("wait for fixture supervision to exit after shutdown: %v", waitErr)
-		}
-	})
+	reapPendingWaitFixtureChildren(t, fixture, canonical, root)
 
 	startPayload := fmt.Sprintf(`{"session_id":%q,"cwd":%q,"source":"clear"}`, runtimeSession, root)
 	startHook := runPendingWaitHook(t, fixture, hook, wrapper, canonical, "start", startPayload, "associated-start", "")

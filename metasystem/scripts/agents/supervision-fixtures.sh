@@ -492,6 +492,41 @@ wait_for_child_exit() { # name, child pid
   return "$result"
 }
 
+process_group_is_gone() { # process-group id
+  ! kill -0 -- "-$1" 2>/dev/null
+}
+
+wait_for_process_group_exit() { # name, process-group id
+  local name=$1 pid=$2
+  wait_until "$name" process_group_is_gone "$pid"
+}
+
+reap_operator_steward_group() {
+  local record pid
+  [[ -n "${operator_harness:-}" ]] || return 0
+  pid=${operator_steward_pid:-}
+  if [[ -z "$pid" ]]; then
+    record=$operator_harness/artifacts/agents/steward/runner.json
+    if [[ -s "$record" && -x "${operator_engine:-}" ]]; then
+      pid=$($operator_engine json get --file "$record" --field pid 2>/dev/null || true)
+    fi
+  fi
+  [[ -n "$pid" ]] || return 0
+  [[ "$pid" =~ ^[1-9][0-9]*$ ]] \
+    || { echo "operator steward runner has invalid pid=$pid" >&2; return 1; }
+  if process_group_is_gone "$pid"; then
+    wait "$pid" 2>/dev/null || true
+    return 0
+  fi
+  kill -KILL -- "-$pid" 2>/dev/null \
+    || { echo "operator steward runner pid=$pid process-group kill failed" >&2; return 1; }
+  if ! wait_for_process_group_exit "operator steward runner pid=$pid" "$pid"; then
+    echo "operator steward runner pid=$pid process group survived SIGKILL" >&2
+    return 1
+  fi
+  wait "$pid" 2>/dev/null || true
+}
+
 cleanup_started=0
 cleanup() {
   local status=$? keep
@@ -512,6 +547,9 @@ cleanup() {
       "$operator_harness/scripts/agents/arm-supervision.sh" \
         --repo "$operator_harness" --shutdown >/dev/null 2>&1 || true
     fi
+  fi
+  if ! reap_operator_steward_group; then
+    status=1
   fi
   for harness_path in ${fixture_harness_roots[@]+"${fixture_harness_roots[@]}"}; do
     if [[ -x "$harness_path/scripts/agents/arm-supervision.sh" ]]; then
@@ -1290,6 +1328,11 @@ wait_for_child_exit "nested ordinary operator arming" "$operator_driver" \
   || { operator_driver_rc=$?; cat "$tmp/operator-arm.out" >&2; exit "$operator_driver_rc"; }
 grep -Fq 'up outcome=armed authority=writer' "$tmp/operator-arm.out" \
   || { cat "$tmp/operator-arm.out" >&2; exit 1; }
+operator_steward_record=$operator_harness/artifacts/agents/steward/runner.json
+operator_steward_pid=$($operator_engine json get --file "$operator_steward_record" --field pid 2>/dev/null || true)
+[[ "$operator_steward_pid" =~ ^[1-9][0-9]*$ ]] \
+  && ! process_group_is_gone "$operator_steward_pid" \
+  || { echo "nested operator path did not start its steward runner in process group pid=$operator_steward_pid" >&2; exit 1; }
 [[ -s "$operator_harness/artifacts/agents/supervision/last-census.json" ]] \
   || { echo "nested operator path did not write control state at the vendored installation" >&2; exit 1; }
 [[ ! -e "$operator_scope/artifacts" ]] \

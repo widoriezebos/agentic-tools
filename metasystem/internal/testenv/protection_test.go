@@ -1,6 +1,7 @@
 package testenv
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
 	"go/ast"
@@ -12,6 +13,7 @@ import (
 	"sort"
 	"strconv"
 	"strings"
+	"syscall"
 	"testing"
 	"time"
 )
@@ -48,13 +50,232 @@ func TestEveryPackageUsesSharedMain(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	problems, err := auditTestPackages(root)
-	if err != nil {
-		t.Fatal(err)
+	t.Run("shared TestMain", func(t *testing.T) {
+		problems, err := auditTestPackages(root)
+		if err != nil {
+			t.Fatal(err)
+		}
+		for _, problem := range problems {
+			t.Error(problem)
+		}
+	})
+	t.Run("fixture engine children use shared reaper", func(t *testing.T) {
+		problems, err := auditFixtureEngineChildren(root)
+		if err != nil {
+			t.Fatal(err)
+		}
+		for _, problem := range problems {
+			t.Error(problem)
+		}
+
+		synthetic := t.TempDir()
+		writeAuditFixture(t, synthetic, "internal/fixture/unguarded_test.go", `package fixture
+import "os/exec"
+func child() { _ = exec.Command("/tmp/engine-pin", "steward", "run") }
+`)
+		problems, err = auditFixtureEngineChildren(synthetic)
+		if err != nil || len(problems) != 1 || !strings.Contains(problems[0], "unguarded_test.go") {
+			t.Fatalf("unguarded fixture engine child problems=%v err=%v", problems, err)
+		}
+		writeAuditFixture(t, synthetic, "internal/fixture/unguarded_test.go", `package fixture
+import (
+    "os/exec"
+    "github.com/widoriezebos/agentic-tools/metasystem/internal/testenv"
+)
+func child() {
+    testenv.ReapFixtureProcessGroups(nil, nil)
+    _ = exec.Command("/tmp/engine-pin", "steward", "run")
+}
+`)
+		if problems, err = auditFixtureEngineChildren(synthetic); err != nil || len(problems) != 0 {
+			t.Fatalf("shared-reaper fixture engine child problems=%v err=%v", problems, err)
+		}
+	})
+	t.Run("fixture process groups are killed and awaited", func(t *testing.T) {
+		recorder := &fixtureProcessGroupRecorder{}
+		killed, waited := false, false
+		reapFixtureProcessGroups(recorder, []FixtureProcessGroup{{
+			Verb: "steward run", Resolve: func() (int, bool, error) { return 42, true, nil },
+		}}, nil, fixtureProcessGroupOps{
+			groupID: func(pid int) (int, error) { return pid, nil },
+			signal: func(pid int, signal syscall.Signal) error {
+				if pid == -42 && signal == syscall.SIGKILL {
+					killed = true
+				}
+				return nil
+			},
+			wait: func(ctx context.Context, target int) error {
+				waited = true
+				if _, present := ctx.Deadline(); !present {
+					return fmt.Errorf("exit wait has no deadline")
+				}
+				if target != -42 || !killed {
+					return context.DeadlineExceeded
+				}
+				return nil
+			},
+			cleanupContext: testFixtureContext,
+			exitContext:    testFixtureContext,
+		})
+		recorder.runCleanups()
+		if !killed || !waited || len(recorder.errors) != 0 {
+			t.Fatalf("group killed=%t waited=%t cleanup errors=%v", killed, waited, recorder.errors)
+		}
+
+		survivor := &fixtureProcessGroupRecorder{}
+		reapFixtureProcessGroups(survivor, []FixtureProcessGroup{{
+			Verb: "steward run", Resolve: func() (int, bool, error) { return 43, true, nil },
+		}}, nil, fixtureProcessGroupOps{
+			groupID:        func(pid int) (int, error) { return pid, nil },
+			signal:         func(int, syscall.Signal) error { return nil },
+			wait:           func(context.Context, int) error { return context.DeadlineExceeded },
+			cleanupContext: testFixtureContext,
+			exitContext:    testFixtureContext,
+		})
+		survivor.runCleanups()
+		if got := strings.Join(survivor.errors, "\n"); !strings.Contains(got, "fixture child outlived test") || !strings.Contains(got, "pid=43") || !strings.Contains(got, `verb="steward run"`) {
+			t.Fatalf("survivor failure = %q", got)
+		}
+
+		wrongGroup := &fixtureProcessGroupRecorder{}
+		reapFixtureProcessGroups(wrongGroup, []FixtureProcessGroup{{
+			Verb: "supervise owner", Resolve: func() (int, bool, error) { return 42, true, nil },
+		}}, nil, fixtureProcessGroupOps{
+			groupID:        func(int) (int, error) { return 7, nil },
+			signal:         func(int, syscall.Signal) error { return syscall.ESRCH },
+			wait:           func(context.Context, int) error { return nil },
+			cleanupContext: testFixtureContext,
+			exitContext:    testFixtureContext,
+		})
+		wrongGroup.runCleanups()
+		if got := strings.Join(wrongGroup.errors, "\n"); !strings.Contains(got, "not started in its own process group") || !strings.Contains(got, "pid=42") || !strings.Contains(got, `verb="supervise owner"`) {
+			t.Fatalf("wrong-group failure = %q", got)
+		}
+
+		freshContexts := &fixtureProcessGroupRecorder{}
+		var created int
+		var cancelFirst context.CancelFunc
+		secondRan := false
+		reapFixtureProcessGroups(freshContexts, nil, []FixtureCleanup{
+			{Verb: "first stop", Run: func(context.Context) error { cancelFirst(); return nil }},
+			{Verb: "second stop", Run: func(ctx context.Context) error {
+				secondRan = ctx.Err() == nil
+				return ctx.Err()
+			}},
+		}, fixtureProcessGroupOps{
+			groupID: func(pid int) (int, error) { return pid, nil },
+			signal:  func(int, syscall.Signal) error { return nil },
+			wait:    func(context.Context, int) error { return nil },
+			cleanupContext: func() (context.Context, context.CancelFunc) {
+				created++
+				ctx, cancel := context.WithCancel(context.Background())
+				if created == 1 {
+					cancelFirst = cancel
+				}
+				return ctx, cancel
+			},
+			exitContext: testFixtureContext,
+		})
+		freshContexts.runCleanups()
+		if !secondRan || created != 2 || len(freshContexts.errors) != 1 || !strings.Contains(freshContexts.errors[0], `verb="first stop"`) {
+			t.Fatalf("fresh cleanup contexts: second-ran=%t created=%d errors=%v", secondRan, created, freshContexts.errors)
+		}
+	})
+	t.Run("supervision operator trap reaps its steward group", func(t *testing.T) {
+		data, err := os.ReadFile(filepath.Join(root, "scripts", "agents", "supervision-fixtures.sh"))
+		if err != nil {
+			t.Fatal(err)
+		}
+		source := string(data)
+		start := strings.Index(source, "reap_operator_steward_group()")
+		end := strings.Index(source, "\ncleanup_started=0")
+		if start < 0 || end <= start {
+			t.Fatal("supervision fixture has no operator steward process-group reaper before its EXIT trap")
+		}
+		reaper := source[start:end]
+		for _, required := range []string{`kill -KILL -- "-$pid"`, `wait_for_process_group_exit`, `operator steward runner pid=$pid`} {
+			if !strings.Contains(reaper, required) {
+				t.Errorf("operator steward reaper lacks %q", required)
+			}
+		}
+		cleanupStart := strings.Index(source, "cleanup() {")
+		trap := strings.Index(source, "trap cleanup EXIT")
+		if cleanupStart < 0 || trap <= cleanupStart || !strings.Contains(source[cleanupStart:trap], "reap_operator_steward_group") {
+			t.Error("the supervision fixture EXIT cleanup does not invoke the operator steward process-group reaper")
+		}
+	})
+}
+
+type fixtureProcessGroupRecorder struct {
+	cleanups []func()
+	errors   []string
+}
+
+func (*fixtureProcessGroupRecorder) Helper() {}
+
+func (r *fixtureProcessGroupRecorder) Cleanup(cleanup func()) {
+	r.cleanups = append(r.cleanups, cleanup)
+}
+
+func (r *fixtureProcessGroupRecorder) Errorf(format string, arguments ...any) {
+	r.errors = append(r.errors, fmt.Sprintf(format, arguments...))
+}
+
+func (r *fixtureProcessGroupRecorder) runCleanups() {
+	for index := len(r.cleanups) - 1; index >= 0; index-- {
+		r.cleanups[index]()
 	}
-	for _, problem := range problems {
-		t.Error(problem)
+}
+
+func testFixtureContext() (context.Context, context.CancelFunc) {
+	return context.WithTimeout(context.Background(), time.Second)
+}
+
+func auditFixtureEngineChildren(root string) ([]string, error) {
+	var problems []string
+	for _, top := range []string{"cmd", "internal"} {
+		scanRoot := filepath.Join(root, top)
+		if _, err := os.Stat(scanRoot); os.IsNotExist(err) {
+			continue
+		} else if err != nil {
+			return nil, err
+		}
+		err := filepath.WalkDir(scanRoot, func(path string, entry fs.DirEntry, walkErr error) error {
+			if walkErr != nil {
+				return walkErr
+			}
+			if entry.IsDir() {
+				if path != root && skippedDirectory(entry.Name()) {
+					return filepath.SkipDir
+				}
+				return nil
+			}
+			if strings.HasPrefix(entry.Name(), ".") || strings.HasPrefix(entry.Name(), "_") || !strings.HasSuffix(entry.Name(), "_test.go") {
+				return nil
+			}
+			data, err := os.ReadFile(path)
+			if err != nil {
+				return err
+			}
+			compact := strings.Join(strings.Fields(string(data)), "")
+			startsEngineChild := strings.Contains(compact, "exec.Command") &&
+				(strings.Contains(compact, "engine-pin") || strings.Contains(compact, `"steward","run"`))
+			if !startsEngineChild || strings.Contains(compact, "ReapFixtureProcessGroups(") {
+				return nil
+			}
+			relative, err := filepath.Rel(root, path)
+			if err != nil {
+				return err
+			}
+			problems = append(problems, filepath.ToSlash(relative)+" starts an engine-pin or steward run child without testenv.ReapFixtureProcessGroups")
+			return nil
+		})
+		if err != nil {
+			return nil, err
+		}
 	}
+	sort.Strings(problems)
+	return problems, nil
 }
 
 func TestTestEnvironmentStandardInventoryMatchesPackageTests(t *testing.T) {

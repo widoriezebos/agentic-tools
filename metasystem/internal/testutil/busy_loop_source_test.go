@@ -98,7 +98,7 @@ func TestFixtureSourcesHaveNoBareBusyLoop(t *testing.T) {
 	}
 
 	allowed := map[string]string{
-		"scripts/agents/supervision-fixtures.sh:3664": "the loop advances a completed-invocation counter, exits when output appears, and refuses at its fixed budget",
+		"scripts/agents/supervision-fixtures.sh:3707": "the loop advances a completed-invocation counter, exits when output appears, and refuses at its fixed budget",
 	}
 	used := make(map[string]bool, len(allowed))
 	var unexpected []string

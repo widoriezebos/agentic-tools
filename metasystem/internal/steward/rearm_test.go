@@ -279,6 +279,7 @@ func newRearmBed(t *testing.T, startRunner bool) rearmBed {
 	t.Helper()
 	t.Setenv("METASYSTEM_SUPERVISION_REGISTRY_HOME", t.TempDir())
 	root := initRearmRepo(t)
+	reapStewardRunnerFixture(t, root)
 	first := commitRearmTree(t, root, "first")
 	second := commitRearmTree(t, root, "second")
 	ref := "refs/remotes/origin/trunk"
@@ -308,7 +309,6 @@ func newRearmBed(t *testing.T, startRunner bool) rearmBed {
 	if err := os.Rename(replacement, engine); err != nil {
 		t.Fatal(err)
 	}
-	t.Cleanup(func() { _, _ = Disarm(root) })
 	return rearmBed{root: root, engine: engine, replacement: replacement, first: first, second: second}
 }
 
