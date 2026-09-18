@@ -82,15 +82,29 @@ type BudgetProjection struct {
 	Unknown                 *BudgetUnknownEvidence
 }
 
+// ConsumptionProjection is the spending view of a budgeted candidate goal.
+// Unlike BudgetProjection, it does not require or project claim ownership.
+type ConsumptionProjection BudgetProjection
+
 const reviewChainCountedField = "reviewChainCounted"
 
 func obligationBudgetStart(repoRoot string, file *goal.GoalFile, episodeAt time.Time, episodeRevision uint64) (time.Time, *uint64, *BudgetUnknownEvidence) {
-	if file.Obligation == nil && file.Claimed.EpisodeObligationRevision == 0 {
+	episodeObligationRevision := uint64(0)
+	if file.Claimed != nil {
+		episodeObligationRevision = file.Claimed.EpisodeObligationRevision
+	} else if file.Episode != nil {
+		episodeObligationRevision = file.Episode.EpisodeObligationRevision
+	}
+	if file.Obligation == nil && episodeObligationRevision == 0 {
 		return episodeAt, nil, nil
 	}
-	selectedObligationRevision := file.Claimed.EpisodeObligationRevision
+	selectedObligationRevision := episodeObligationRevision
 	if file.Obligation != nil {
 		selectedObligationRevision = file.Obligation.Revision
+	}
+	revisionCeiling := file.Revision
+	if file.Claimed != nil {
+		revisionCeiling = file.Claimed.Revision
 	}
 	logicalPath := "artifacts/agents/validation-weight.json"
 	path := filepath.Join(repoRoot, filepath.FromSlash(logicalPath))
@@ -146,7 +160,7 @@ func obligationBudgetStart(repoRoot string, file *goal.GoalFile, episodeAt time.
 			return time.Time{}, nil, &BudgetUnknownEvidence{Code: BudgetUnknown, Record: logicalPath, Reason: "consumed-proof ledger has an incomplete or unauthorized entry"}
 		}
 		seenProofs[proofKey] = true
-		if asString(proof["goalId"]) == file.Id && uint64(goalRevision) >= episodeRevision && uint64(goalRevision) <= file.Claimed.Revision &&
+		if asString(proof["goalId"]) == file.Id && uint64(goalRevision) >= episodeRevision && uint64(goalRevision) <= revisionCeiling &&
 			uint64(obligationRevision) == selectedObligationRevision && !consumedAt.Before(episodeAt) &&
 			(consumedAt.After(latest) || consumedAt.Equal(latest) && uint64(proofEpoch) > latestProofEpoch) {
 			latest = consumedAt.UTC()
@@ -256,78 +270,96 @@ func ProjectBudget(repoRoot string, file *goal.GoalFile, now time.Time) BudgetPr
 	return ProjectBudgetWithoutRun(repoRoot, file, now, "")
 }
 
+// ProjectConsumption reconstructs attempts and minutes for a budgeted goal's
+// human-approved episode, whether or not the goal currently has a claim.
+func ProjectConsumption(repoRoot string, file *goal.GoalFile, now time.Time) ConsumptionProjection {
+	return ConsumptionProjection(projectBudgetWithoutRun(repoRoot, file, now, "", false))
+}
+
 // ProjectBudgetWithoutRun reconstructs spend while omitting one concluding
 // run from its live record and durable terminal charge state.
 func ProjectBudgetWithoutRun(repoRoot string, file *goal.GoalFile, now time.Time, excludeRunID string) BudgetProjection {
+	return projectBudgetWithoutRun(repoRoot, file, now, excludeRunID, true)
+}
+
+func projectBudgetWithoutRun(repoRoot string, file *goal.GoalFile, now time.Time, excludeRunID string, authorityLens bool) BudgetProjection {
 	if file == nil {
 		return unknownBudget("", 0, "plans/goals", "the goal record is missing")
 	}
 	recordPath := goalRecordPath(file.Id)
-	if file.State != goal.StateClaimed || file.Claimed == nil {
+	claimed := file.State == goal.StateClaimed && file.Claimed != nil
+	if authorityLens && !claimed {
 		return unknownBudget(file.Id, 0, recordPath, "the goal has no claim record")
 	}
-	revision := file.Claimed.Revision
-	accountingRevision := file.Claimed.AccountingRevision
-	if accountingRevision == 0 {
-		accountingRevision = revision
+	revision := file.Revision
+	accountingRevision := uint64(0)
+	if claimed {
+		revision = file.Claimed.Revision
+		accountingRevision = file.Claimed.AccountingRevision
+		if accountingRevision == 0 {
+			accountingRevision = revision
+		}
 	}
 	if file.Budget == nil {
-		return unknownBudget(file.Id, revision, recordPath, "the claimed goal has no structured budget")
+		return unknownBudget(file.Id, revision, recordPath, "the goal has no structured budget")
 	}
 	if revision == 0 {
-		return unknownBudget(file.Id, 0, recordPath, "the claim record is revisionless")
+		return unknownBudget(file.Id, 0, recordPath, "the goal record is revisionless")
 	}
-	if err := file.ValidateClaimRevision(); err != nil {
-		return unknownBudget(file.Id, revision, recordPath, err.Error())
+	if claimed {
+		if err := file.ValidateClaimRevision(); err != nil {
+			return unknownBudget(file.Id, revision, recordPath, err.Error())
+		}
 	}
 	if err := file.Budget.Validate(); err != nil {
 		return unknownBudget(file.Id, revision, recordPath, "the budget tuple is malformed: "+err.Error())
 	}
-	episodeAtText := file.Claimed.EpisodeAt
-	episodeRevision := file.Claimed.EpisodeRevision
-	if episodeRevision == 0 {
-		episodeAtText = file.Claimed.At
-		episodeRevision = accountingRevision
+	consumptionKey := goal.BudgetEpisodeRevision(file)
+	episodeAt := time.Time{}
+	if claimed {
+		episodeAtText := file.Claimed.EpisodeAt
+		if episodeAtText == "" {
+			episodeAtText = file.Claimed.At
+		}
+		var err error
+		episodeAt, err = time.Parse(time.RFC3339, episodeAtText)
+		if err != nil {
+			return unknownBudget(file.Id, revision, recordPath, "the claim episode timestamp is malformed")
+		}
 	}
-	episodeAt, err := time.Parse(time.RFC3339, episodeAtText)
-	if err != nil {
-		return unknownBudget(file.Id, revision, recordPath, "the claim episode timestamp is malformed")
-	}
-	budgetStartedAt, weightEpoch, startUnknown := obligationBudgetStart(repoRoot, file, episodeAt, episodeRevision)
+	budgetStartedAt, weightEpoch, startUnknown := obligationBudgetStart(repoRoot, file, episodeAt, consumptionKey)
 	if startUnknown != nil {
 		return unknownBudget(file.Id, revision, startUnknown.Record, startUnknown.Reason)
 	}
-	if now.Before(budgetStartedAt) {
+	if !budgetStartedAt.IsZero() && now.Before(budgetStartedAt) {
 		return unknownBudget(file.Id, revision, recordPath, "CLOCK_REGRESSED: the claim episode origin is later than the observation")
-	}
-	gracePercent, err := config.ElapsedGracePercent(filepath.Join(repoRoot, "metasystem.conf"))
-	if err != nil {
-		return unknownBudget(file.Id, revision, "metasystem.conf", err.Error())
-	}
-	breachLimit, err := file.Budget.ElapsedBreachDuration(gracePercent)
-	if err != nil {
-		return unknownBudget(file.Id, revision, recordPath, err.Error())
-	}
-
-	// The elapsed clock excludes the time nobody held the goal (an own-pair
-	// release or park, then the same pair's claim): idle seconds come off
-	// after the discharge-advanced start is chosen, so a discharge reset is
-	// kept and no gap is subtracted twice.
-	// Every gap ends at the current hold's claim time, so a start at or after
-	// it (a discharge consumed inside this hold) measures a window with no
-	// gap in it and the idle seconds do not apply.
-	idle := time.Duration(file.Claimed.IdleSeconds) * time.Second
-	if claimedAt, parseErr := time.Parse(time.RFC3339, file.Claimed.At); parseErr == nil && !budgetStartedAt.Before(claimedAt) {
-		idle = 0
-	}
-	elapsed := now.Sub(budgetStartedAt) - idle
-	if elapsed < 0 {
-		elapsed = 0
 	}
 	projection := BudgetProjection{
 		Status: BudgetKnown, GoalID: file.Id, GoalRevision: revision,
-		Limits: *file.Budget, StartedAt: budgetStartedAt, WeightEpoch: weightEpoch, Elapsed: elapsed,
-		ElapsedGracePercent: gracePercent, ElapsedBreachLimit: breachLimit,
+		Limits: *file.Budget, StartedAt: budgetStartedAt, WeightEpoch: weightEpoch,
+	}
+	if authorityLens {
+		gracePercent, err := config.ElapsedGracePercent(filepath.Join(repoRoot, "metasystem.conf"))
+		if err != nil {
+			return unknownBudget(file.Id, revision, "metasystem.conf", err.Error())
+		}
+		breachLimit, err := file.Budget.ElapsedBreachDuration(gracePercent)
+		if err != nil {
+			return unknownBudget(file.Id, revision, recordPath, err.Error())
+		}
+		// The elapsed clock excludes the time nobody held the goal (an own-pair
+		// release or park, then the same pair's claim). A discharge inside the
+		// current hold starts a window with no idle gap to subtract.
+		idle := time.Duration(file.Claimed.IdleSeconds) * time.Second
+		if claimedAt, parseErr := time.Parse(time.RFC3339, file.Claimed.At); parseErr == nil && !budgetStartedAt.Before(claimedAt) {
+			idle = 0
+		}
+		projection.Elapsed = now.Sub(budgetStartedAt) - idle
+		if projection.Elapsed < 0 {
+			projection.Elapsed = 0
+		}
+		projection.ElapsedGracePercent = gracePercent
+		projection.ElapsedBreachLimit = breachLimit
 	}
 	jobsDir := filepath.Join(repoRoot, "artifacts", "agents", "jobs")
 	entries, err := os.ReadDir(jobsDir)
@@ -386,7 +418,7 @@ func ProjectBudgetWithoutRun(repoRoot string, file *goal.GoalFile, now time.Time
 			return unknownBudget(file.Id, revision, logicalPath, "the authoritative reservation is revisionless")
 		}
 		if recordRevision > revision {
-			return unknownBudget(file.Id, revision, logicalPath, fmt.Sprintf("goalRevision %d is later than accepted claim revision %d", recordRevision, revision))
+			return unknownBudget(file.Id, revision, logicalPath, fmt.Sprintf("goalRevision %d is later than accepted goal revision %d", recordRevision, revision))
 		}
 		countedCriticRole := ""
 		if countedValue, present := record[reviewChainCountedField]; present {
@@ -409,10 +441,12 @@ func ProjectBudgetWithoutRun(repoRoot string, file *goal.GoalFile, now time.Time
 		if status != "pending-setup" && status != "pending" && status != "running" && !TerminalStatus(status) {
 			return unknownBudget(file.Id, revision, logicalPath, fmt.Sprintf("status %q is outside the reservation lifecycle", status))
 		}
-		if recordRevision < accountingRevision {
+		consumes := consumptionMember(recordGoal, recordRevision, file.Id, consumptionKey)
+		authorizes := authorityLens && recordRevision >= accountingRevision
+		if !consumes && !authorizes {
 			continue
 		}
-		if budgetStartedAt.After(episodeAt) {
+		if consumes && budgetStartedAt.After(episodeAt) {
 			reservationAt := asString(record["startedAt"])
 			if reservationAt == "" {
 				reservationAt = asString(record["createdAt"])
@@ -422,31 +456,33 @@ func ProjectBudgetWithoutRun(repoRoot string, file *goal.GoalFile, now time.Time
 				return unknownBudget(file.Id, revision, logicalPath, "the post-discharge reservation has no readable startedAt or createdAt")
 			}
 			if !startedAt.After(budgetStartedAt) {
-				continue
+				consumes = false
 			}
 		}
 		if !goalbudget.ReservationConsumesBudget(TerminalStatus(status), lens.Phase(), lens.RefusalClass()) {
 			continue
 		}
-		switch countedCriticRole {
-		case "design-critic":
-			if projection.DesignCritiques == math.MaxUint64 {
-				return unknownBudget(file.Id, revision, logicalPath, "design critique chain accounting overflowed")
+		if consumes {
+			switch countedCriticRole {
+			case "design-critic":
+				if projection.DesignCritiques == math.MaxUint64 {
+					return unknownBudget(file.Id, revision, logicalPath, "design critique chain accounting overflowed")
+				}
+				projection.DesignCritiques++
+			case "code-critic":
+				if projection.CodeCritiques == math.MaxUint64 {
+					return unknownBudget(file.Id, revision, logicalPath, "code critique chain accounting overflowed")
+				}
+				projection.CodeCritiques++
 			}
-			projection.DesignCritiques++
-		case "code-critic":
-			if projection.CodeCritiques == math.MaxUint64 {
-				return unknownBudget(file.Id, revision, logicalPath, "code critique chain accounting overflowed")
+			if projection.Attempts == math.MaxUint64 {
+				return unknownBudget(file.Id, revision, logicalPath, "attempt accounting overflowed")
 			}
-			projection.CodeCritiques++
+			projection.Attempts++
 		}
-		if projection.Attempts == math.MaxUint64 {
-			return unknownBudget(file.Id, revision, logicalPath, "attempt accounting overflowed")
-		}
-		projection.Attempts++
 		charge := capMinutes
 		terminal := TerminalStatus(status)
-		if terminal {
+		if terminal && consumes {
 			if !recordHasProcessIdentity(record) {
 				charge = 0
 			} else {
@@ -490,16 +526,18 @@ func ProjectBudgetWithoutRun(repoRoot string, file *goal.GoalFile, now time.Time
 				charge = settledJobMinutes(start, end, capMinutes)
 			}
 		}
-		if charge > math.MaxUint64-projection.ReservedJobMinutes {
-			return unknownBudget(file.Id, revision, logicalPath, "reserved job-minute accounting overflowed")
+		if consumes {
+			if charge > math.MaxUint64-projection.ReservedJobMinutes {
+				return unknownBudget(file.Id, revision, logicalPath, "reserved job-minute accounting overflowed")
+			}
+			projection.ReservedJobMinutes += charge
 		}
-		projection.ReservedJobMinutes += charge
-		if terminal {
+		if terminal && consumes {
 			if charge > math.MaxUint64-projection.ObservedJobMinutes {
 				return unknownBudget(file.Id, revision, logicalPath, "observed job-minute accounting overflowed")
 			}
 			projection.ObservedJobMinutes += charge
-		} else {
+		} else if !terminal && authorizes {
 			if charge > math.MaxUint64-projection.OpenCapMinutes {
 				return unknownBudget(file.Id, revision, logicalPath, "open-cap minute accounting overflowed")
 			}
@@ -516,26 +554,39 @@ func ProjectBudgetWithoutRun(repoRoot string, file *goal.GoalFile, now time.Time
 	}
 	for _, attempt := range proofAttempts {
 		logicalPath := filepath.ToSlash(strings.TrimPrefix(mustProofAttemptPath(repoRoot, attempt.AttemptID), repoRoot+string(filepath.Separator)))
-		if attempt.GoalID != file.Id {
+		consumes := consumptionMember(attempt.AccountedGoal(), attempt.AccountedRevision(), file.Id, consumptionKey)
+		authorizes := authorityLens && attempt.GoalID == file.Id && attempt.AccountingRevision >= accountingRevision
+		if !consumes && !authorizes {
 			continue
 		}
-		if attempt.GoalRevision > revision || attempt.AccountingRevision > revision {
+		if authorizes && (attempt.GoalRevision > revision || attempt.AccountingRevision > revision) {
 			return unknownBudget(file.Id, revision, logicalPath, "the proof reservation is bound to a later goal revision")
 		}
-		if attempt.AccountingRevision < accountingRevision {
-			continue
+		if consumes && attempt.AccountedRevision() > file.Revision {
+			return unknownBudget(file.Id, revision, logicalPath, "the proof reservation is bound to a later candidate revision")
 		}
-		if weightEpoch != nil && !sameUint64(attempt.BudgetEpoch, weightEpoch) {
-			continue
+		if consumes && weightEpoch != nil && !sameUint64(attempt.AccountedBudgetEpoch(), weightEpoch) {
+			consumes = false
 		}
-		if weightEpoch == nil && attempt.BudgetEpoch != nil {
+		if consumes && weightEpoch == nil && attempt.AccountedBudgetEpoch() != nil {
 			return unknownBudget(file.Id, revision, logicalPath, "the proof reservation claims a missing budget epoch")
 		}
-		startedAt, startErr := time.Parse(time.RFC3339Nano, attempt.StartedAt)
-		if startErr != nil {
-			return unknownBudget(file.Id, revision, logicalPath, "the proof reservation has no readable startedAt")
+		if authorizes && weightEpoch != nil && !sameUint64(attempt.BudgetEpoch, weightEpoch) {
+			authorizes = false
 		}
-		if weightEpoch == nil && budgetStartedAt.After(episodeAt) && !startedAt.After(budgetStartedAt) {
+		if authorizes && weightEpoch == nil && attempt.BudgetEpoch != nil {
+			return unknownBudget(file.Id, revision, logicalPath, "the proof reservation claims a missing authority budget epoch")
+		}
+		if consumes {
+			startedAt, startErr := time.Parse(time.RFC3339Nano, attempt.StartedAt)
+			if startErr != nil {
+				return unknownBudget(file.Id, revision, logicalPath, "the proof reservation has no readable startedAt")
+			}
+			if weightEpoch == nil && budgetStartedAt.After(episodeAt) && !startedAt.After(budgetStartedAt) {
+				consumes = false
+			}
+		}
+		if !consumes && !authorizes {
 			continue
 		}
 		if attempt.ReservationOwner != nil {
@@ -564,18 +615,20 @@ func ProjectBudgetWithoutRun(repoRoot string, file *goal.GoalFile, now time.Time
 		// charged what it used, so an attempt that outlived its reservation
 		// shows its true cost (proof-groups-detect-hangs-by-progress-not-
 		// the-clock, decision 3) and a short one gives its slack back.
-		charged := attempt.ReservedMinutes
-		if attempt.Terminal != nil && attempt.ObservedMinutes > 0 {
-			charged = attempt.ObservedMinutes
+		if consumes {
+			charged := attempt.ReservedMinutes
+			if attempt.Terminal != nil && attempt.ObservedMinutes > 0 {
+				charged = attempt.ObservedMinutes
+			}
+			if projection.Attempts == math.MaxUint64 || charged > math.MaxUint64-projection.ReservedJobMinutes ||
+				charged > math.MaxUint64-projection.ProofReservationMinutes {
+				return unknownBudget(file.Id, revision, logicalPath, "proof-attempt accounting overflowed")
+			}
+			projection.Attempts++
+			projection.ReservedJobMinutes += charged
+			projection.ProofReservationMinutes += charged
 		}
-		if projection.Attempts == math.MaxUint64 || charged > math.MaxUint64-projection.ReservedJobMinutes ||
-			charged > math.MaxUint64-projection.ProofReservationMinutes {
-			return unknownBudget(file.Id, revision, logicalPath, "proof-attempt accounting overflowed")
-		}
-		projection.Attempts++
-		projection.ReservedJobMinutes += charged
-		projection.ProofReservationMinutes += charged
-		if attempt.Terminal == nil {
+		if authorizes && attempt.Terminal == nil {
 			if projection.ActiveJobs == math.MaxUint64 {
 				return unknownBudget(file.Id, revision, logicalPath, "active proof-attempt accounting overflowed")
 			}
@@ -595,9 +648,9 @@ func ProjectBudgetWithoutRun(repoRoot string, file *goal.GoalFile, now time.Time
 	for _, state := range states {
 		statePath := obligationstate.RelativePath(repoRoot, state)
 		if state.GoalRevision > revision {
-			return unknownBudget(file.Id, revision, statePath, fmt.Sprintf("goalRevision %d is later than accepted claim revision %d", state.GoalRevision, revision))
+			return unknownBudget(file.Id, revision, statePath, fmt.Sprintf("goalRevision %d is later than accepted goal revision %d", state.GoalRevision, revision))
 		}
-		if state.GoalRevision < accountingRevision {
+		if !consumptionMember(file.Id, state.GoalRevision, file.Id, consumptionKey) {
 			continue
 		}
 		for _, attempt := range state.Attempts {
@@ -625,12 +678,17 @@ func ProjectBudgetWithoutRun(repoRoot string, file *goal.GoalFile, now time.Time
 		}
 		governed := record.Governed
 		if governed.GoalRevision > revision {
-			return unknownBudget(file.Id, revision, logicalPath, fmt.Sprintf("goalRevision %d is later than accepted claim revision %d", governed.GoalRevision, revision))
+			return unknownBudget(file.Id, revision, logicalPath, fmt.Sprintf("goalRevision %d is later than accepted goal revision %d", governed.GoalRevision, revision))
 		}
-		if governed.GoalRevision < accountingRevision {
+		consumes := consumptionMember(record.GoalId, governed.GoalRevision, file.Id, consumptionKey)
+		authorizes := authorityLens && governed.GoalRevision >= accountingRevision
+		if !consumes && !authorizes {
 			continue
 		}
 		if run.Terminal(record.Status) {
+			if !consumes {
+				continue
+			}
 			owned := durable[record.RunId]
 			if owned == nil {
 				return unknownBudget(file.Id, revision, logicalPath, "terminal governed spend has no durable obligation-state owner")
@@ -643,28 +701,30 @@ func ProjectBudgetWithoutRun(repoRoot string, file *goal.GoalFile, now time.Time
 		}
 		if weightEpoch != nil {
 			if !sameUint64(governed.BudgetEpoch, weightEpoch) {
-				continue
+				consumes, authorizes = false, false
 			}
 		} else if governed.BudgetEpoch != nil {
 			return unknownBudget(file.Id, revision, logicalPath, "the governed run claims a missing budget epoch")
-		} else if budgetStartedAt.After(episodeAt) {
+		} else if consumes && budgetStartedAt.After(episodeAt) {
 			startedAt, startErr := time.Parse(time.RFC3339, record.StartedAt)
 			if startErr != nil {
 				return unknownBudget(file.Id, revision, logicalPath, "the governed run has no readable startedAt")
 			}
 			if !startedAt.After(budgetStartedAt) {
-				continue
+				consumes = false
 			}
 		}
 		cost := governed.ExecutionCostMinutes
-		if projection.Attempts == math.MaxUint64 || cost > math.MaxUint64-projection.ReservedJobMinutes ||
-			cost > math.MaxUint64-projection.OpenCapMinutes {
+		if consumes && (projection.Attempts == math.MaxUint64 || cost > math.MaxUint64-projection.ReservedJobMinutes) ||
+			authorizes && cost > math.MaxUint64-projection.OpenCapMinutes {
 			return unknownBudget(file.Id, revision, logicalPath, "governed attempt accounting overflowed")
 		}
-		projection.Attempts++
-		projection.ReservedJobMinutes += cost
-		projection.OpenCapMinutes += cost
-		if !run.Terminal(record.Status) {
+		if consumes {
+			projection.Attempts++
+			projection.ReservedJobMinutes += cost
+		}
+		if authorizes {
+			projection.OpenCapMinutes += cost
 			if projection.ActiveJobs == math.MaxUint64 {
 				return unknownBudget(file.Id, revision, logicalPath, "active execution accounting overflowed")
 			}
@@ -701,7 +761,14 @@ func ProjectBudgetWithoutRun(repoRoot string, file *goal.GoalFile, now time.Time
 		projection.ReservedJobMinutes += attempt.ObservedCostMinutes
 		projection.ObservedJobMinutes += attempt.ObservedCostMinutes
 	}
-	return finishBudgetProjection(projection)
+	if authorityLens {
+		return finishBudgetProjection(projection)
+	}
+	return finishConsumptionProjection(projection)
+}
+
+func consumptionMember(recordGoal string, recordRevision uint64, goalID string, consumptionKey uint64) bool {
+	return recordGoal == goalID && recordRevision >= consumptionKey
 }
 
 func mustProofAttemptPath(root, id string) string {
@@ -798,6 +865,16 @@ func finishBudgetProjection(projection BudgetProjection) BudgetProjection {
 	}
 	if projection.CodeCritiques > uint64(projection.Limits.ReviewRoundLimit) {
 		projection.Breaches = append(projection.Breaches, budgetIntegerBreach("codeCritiques", projection.CodeCritiques, uint64(projection.Limits.ReviewRoundLimit)))
+	}
+	return projection
+}
+
+func finishConsumptionProjection(projection BudgetProjection) BudgetProjection {
+	if projection.Attempts > projection.Limits.AttemptLimit {
+		projection.Breaches = append(projection.Breaches, budgetIntegerBreach("attemptLimit", projection.Attempts, projection.Limits.AttemptLimit))
+	}
+	if projection.ReservedJobMinutes > projection.Limits.ReservedJobMinutesLimit {
+		projection.Breaches = append(projection.Breaches, budgetIntegerBreach("reservedJobMinutesLimit", projection.ReservedJobMinutes, projection.Limits.ReservedJobMinutesLimit))
 	}
 	return projection
 }

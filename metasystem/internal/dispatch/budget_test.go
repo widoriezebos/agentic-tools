@@ -26,6 +26,7 @@ func budgetGoal() *goal.GoalFile {
 		Budget: &goal.Budget{
 			ElapsedLimit: "4h", AttemptLimit: 2, ReservedJobMinutesLimit: 75, ActiveJobLimit: 1,
 		},
+		Approved: &goal.ApprovalRecord{Revision: 3},
 		History: []goal.HistoryLine{
 			{At: "2026-08-28T06:00:00Z"},
 			{At: "2026-08-28T07:00:00Z"},
@@ -43,6 +44,201 @@ func budgetProjectionRoot(t *testing.T) string {
 		t.Fatal(err)
 	}
 	return root
+}
+
+func TestCandidateEpisodeSurvivesClaim(t *testing.T) {
+	root := budgetProjectionRoot(t)
+	writeBudgetJob(t, root, "episode-one", "episode-one", 3, 1, "completed", budgetJobLife{
+		startedAt: "2026-08-28T08:10:00Z", endedAt: "2026-08-28T08:11:00Z", pid: 41,
+	})
+	writeBudgetJob(t, root, "episode-two", "episode-two", 4, 1, "completed", budgetJobLife{
+		startedAt: "2026-08-28T08:12:00Z", endedAt: "2026-08-28T08:13:00Z", pid: 42,
+	})
+	now := time.Date(2026, 8, 28, 12, 0, 0, 0, time.UTC)
+	file := budgetGoal()
+	file.State = goal.StateApproved
+	file.Claimed = nil
+	file.Approved = &goal.ApprovalRecord{Revision: 3, EpisodeRevision: 3}
+	file.Budget.AttemptLimit = 10
+	file.Budget.ReservedJobMinutesLimit = 100
+
+	assertSpent := func(label string, projection ConsumptionProjection) {
+		t.Helper()
+		if projection.Status != BudgetKnown || projection.Attempts != 2 || projection.ReservedJobMinutes != 2 || projection.ObservedJobMinutes != 2 {
+			t.Fatalf("%s consumption = %+v, want two attempts and two minutes", label, projection)
+		}
+	}
+	assertSpent("approved", ProjectConsumption(root, file, now))
+
+	file.State = goal.StateClaimed
+	file.Claimed = &goal.ClaimRecord{
+		Machine: "bed-m1", Lineage: "coordinator", At: file.History[4].At, Revision: 5,
+		AccountingRevision: 5, EpisodeAt: file.History[2].At, EpisodeRevision: 3,
+	}
+	claimed := ProjectBudget(root, file, now)
+	if claimed.Status != BudgetKnown || claimed.Attempts != 2 || claimed.ReservedJobMinutes != 2 || claimed.ObservedJobMinutes != 2 {
+		t.Fatalf("claimed consumption = %+v, want the approved episode's two attempts", claimed)
+	}
+
+	file.State = goal.StateApproved
+	file.Claimed = nil
+	assertSpent("released", ProjectConsumption(root, file, now))
+
+	file.History = append(file.History, goal.HistoryLine{At: "2026-08-28T10:00:00Z"})
+	file.Revision = 6
+	file.State = goal.StateClaimed
+	file.Claimed = &goal.ClaimRecord{
+		Machine: "bed-m1", Lineage: "coordinator", At: file.History[5].At, Revision: 6,
+		AccountingRevision: 6, EpisodeAt: file.History[2].At, EpisodeRevision: 3,
+	}
+	assertSpent("reclaimed", ProjectConsumption(root, file, now))
+
+	file.History = append(file.History, goal.HistoryLine{At: "2026-08-28T10:30:00Z"})
+	file.Revision = 7
+	file.Claimed.Revision = 7
+	file.Claimed.AccountingRevision = 7
+	file.Claimed.At = file.History[6].At
+	file.Approved.Revision = 7
+	assertSpent("risk-raised", ProjectConsumption(root, file, now))
+
+	file.History = append(file.History, goal.HistoryLine{At: "2026-08-28T11:00:00Z"})
+	file.Revision = 8
+	file.Claimed.Revision = 8
+	file.Claimed.AccountingRevision = 8
+	file.Claimed.At = file.History[7].At
+	file.Approved.Revision = 8
+	file.Approved.EpisodeRevision = 8
+	reset := ProjectConsumption(root, file, now)
+	if reset.Status != BudgetKnown || reset.Attempts != 0 || reset.ReservedJobMinutes != 0 {
+		t.Fatalf("set-budget did not start a fresh consumption episode: %+v", reset)
+	}
+}
+
+func TestConsumptionLensSameForClaimedAndUnclaimed(t *testing.T) {
+	root, identity := dispatchProofFixture(t, "consumption-lens")
+	now := time.Date(2026, 8, 28, 9, 0, 0, 0, time.UTC)
+	writeBudgetJob(t, root, "lens-job", "lens-job", 3, 4, "completed", budgetJobLife{
+		startedAt: "2026-08-28T08:10:00Z", endedAt: "2026-08-28T08:12:00Z", pid: 51,
+	})
+	launcher, err := proofrun.CurrentProcessIdentity(nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, _, err := proofrun.ReserveLocked(candidateProofAdmission(proofrun.AdmissionRequest{
+		ControlRoot: root, ExecutionRoot: root, GoalID: "bounded", GoalRevision: 3, AccountingRevision: 3,
+		ReservedMinutes: 5, Identity: identity, Launcher: launcher, Now: now, AttemptID: "lens-proof",
+	})); err != nil {
+		t.Fatal(err)
+	}
+	store := &run.Store{Root: root, Now: func() time.Time { return now }}
+	weightGeneration := uint64(1)
+	store.AdmitGoverned = func(run.GovernedAdmissionRequest) (run.GovernedAdmissionResult, error) {
+		return run.GovernedAdmissionResult{Attempt: run.GovernedAttempt{
+			GoalRevision: 3, ObligationRevision: 6, Recurrence: governance.StandingSharedProcess,
+			WeightGeneration: &weightGeneration, ExecutionCostMinutes: 7, AttemptOrdinal: 1, Budget: *budgetGoal().Budget,
+			BudgetStartedAt: "2026-08-28T08:00:00Z", Breaker: run.BreakerClosed,
+			ExpectedAssumptions: governance.ObligationAssumptions{
+				Recurrence: governance.StandingSharedProcess, Platform: "fixture/os", ToolchainIdentity: "fixture-go",
+				SurfaceDigest: "fixture-digest", MaxActiveJobs: 1, TimingEnvelopeSeconds: 1800, ObservationSource: "run-terminal-record",
+			}, AdmissionDecision: governance.ConsequenceDecision{Apply: true},
+		}}, nil
+	}
+	if _, err := store.Launch(run.Caller{Class: "HUMAN"}, run.LaunchParams{
+		Id: "lens-governed", Kind: "suite", Display: "lens governed", Log: "artifacts/lens-governed.log",
+		GoalId: "bounded", ObligationRevision: 6,
+	}); err != nil {
+		t.Fatal(err)
+	}
+	if err := obligationstate.RecordTerminal(root, "bounded", 3, 9, obligationstate.TerminalAttempt{
+		RunID: "lens-durable", Status: run.StatusGreen, StartedAt: "2026-08-28T08:20:00Z",
+		EndedAt: "2026-08-28T08:29:00Z", PrunedAt: "2026-08-28T08:30:00Z",
+		AttemptOrdinal: 1, ExecutionCostMinutes: 11, ObservedCostMinutes: 9, WeightGeneration: 1, Breaker: run.BreakerClosed,
+	}); err != nil {
+		t.Fatal(err)
+	}
+
+	file := budgetGoal()
+	file.Approved = &goal.ApprovalRecord{Revision: 3, EpisodeRevision: 3}
+	file.Claimed.Revision = 5
+	file.Claimed.AccountingRevision = 5
+	file.Claimed.At = file.History[4].At
+	file.Budget.AttemptLimit = 20
+	file.Budget.ReservedJobMinutesLimit = 200
+	unclaimed := *file
+	unclaimed.State = goal.StateApproved
+	unclaimed.Claimed = nil
+	before := ProjectConsumption(root, &unclaimed, now)
+	claimed := ProjectBudget(root, file, now)
+	if before.Status != BudgetKnown || claimed.Status != BudgetKnown {
+		t.Fatalf("lens status: unclaimed=%+v claimed=%+v", before, claimed)
+	}
+	if before.Attempts != 4 || before.ReservedJobMinutes != 23 || before.ObservedJobMinutes != 11 || before.ProofReservationMinutes != 5 {
+		t.Fatalf("four-store consumption = %+v", before)
+	}
+	if before.Attempts != claimed.Attempts || before.ReservedJobMinutes != claimed.ReservedJobMinutes ||
+		before.ObservedJobMinutes != claimed.ObservedJobMinutes || before.ProofReservationMinutes != claimed.ProofReservationMinutes {
+		t.Fatalf("claimed and unclaimed consumption differ: unclaimed=%+v claimed=%+v", before, claimed)
+	}
+	after := ProjectConsumption(root, &unclaimed, now)
+	if after.Attempts != before.Attempts || after.ReservedJobMinutes != before.ReservedJobMinutes ||
+		after.ObservedJobMinutes != before.ObservedJobMinutes || after.ProofReservationMinutes != before.ProofReservationMinutes {
+		t.Fatalf("release changed consumption: before=%+v after=%+v", before, after)
+	}
+}
+
+func TestConsumptionLensUsesCandidateProofIdentity(t *testing.T) {
+	root, identity := dispatchProofFixture(t, "candidate-consumption")
+	launcher, err := proofrun.CurrentProcessIdentity(nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, _, err := proofrun.ReserveLocked(proofrun.AdmissionRequest{
+		ControlRoot: root, ExecutionRoot: root, GoalID: "authority", GoalRevision: 5, AccountingRevision: 5,
+		CandidateGoalID: "candidate", CandidateRevision: 3, ReservedMinutes: 5,
+		Identity: identity, Launcher: launcher, Now: time.Date(2026, 8, 28, 9, 0, 0, 0, time.UTC), AttemptID: "candidate-charge",
+	}); err != nil {
+		t.Fatal(err)
+	}
+	file := budgetGoal()
+	file.Id = "candidate"
+	file.State = goal.StateApproved
+	file.Revision = 3
+	file.Claimed = nil
+	file.Approved = &goal.ApprovalRecord{Revision: 3, EpisodeRevision: 3}
+	file.Budget.AttemptLimit = 10
+	file.Budget.ReservedJobMinutesLimit = 100
+	projection := ProjectConsumption(root, file, time.Date(2026, 8, 28, 10, 0, 0, 0, time.UTC))
+	if projection.Status != BudgetKnown || projection.Attempts != 1 || projection.ReservedJobMinutes != 5 || projection.ProofReservationMinutes != 5 {
+		t.Fatalf("candidate proof identity was not charged to the candidate: %+v", projection)
+	}
+}
+
+func TestOldEpochProofSkipsPrunedGovernedOwnerValidation(t *testing.T) {
+	root, identity := dispatchProofFixture(t, "old-epoch-owner")
+	file := budgetGoal()
+	file.Obligation = &goal.GovernedObligation{Revision: 6}
+	writeConsumedBudgetProof(t, root, "new-epoch-proof", 3, 6, time.Date(2026, 8, 28, 9, 30, 0, 0, time.UTC))
+	launcher, err := proofrun.CurrentProcessIdentity(nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	oldEpoch := uint64(0)
+	started := time.Date(2026, 8, 28, 9, 40, 0, 0, time.UTC)
+	deadline := started.Add(5 * time.Minute).Format(time.RFC3339Nano)
+	if _, _, err := proofrun.ReserveLocked(candidateProofAdmission(proofrun.AdmissionRequest{
+		ControlRoot: root, ExecutionRoot: root, GoalID: "bounded", GoalRevision: 3, AccountingRevision: 3,
+		BudgetEpoch: &oldEpoch, ReservedMinutes: 5, Identity: identity, Launcher: launcher, Now: started,
+		AttemptID: "old-epoch-owner", ReservationOwner: &proofrun.ReservationOwner{
+			ControlRoot: root, RunID: "pruned-old-owner", RunGeneration: 1, LaunchNonce: "old-epoch-nonce",
+			GoalRevision: 3, ObligationRevision: 6, AttemptOrdinal: 1, BudgetEpoch: &oldEpoch, Deadline: deadline,
+		},
+	})); err != nil {
+		t.Fatal(err)
+	}
+	projection := ProjectBudget(root, file, time.Date(2026, 8, 28, 9, 41, 0, 0, time.UTC))
+	if projection.Status != BudgetKnown || projection.Attempts != 0 || projection.ReservedJobMinutes != 0 {
+		t.Fatalf("old epoch proof validated its pruned owner instead of being ignored: %+v", projection)
+	}
 }
 
 type budgetJobLife struct {
@@ -726,6 +922,8 @@ func TestSTR2P2A01AccountingRevisionPreservesRaisedSpendAndSetBudgetResetsIt(t *
 		t.Fatalf("risk raise changed the elapsed origin while retaining spend: %+v", projection)
 	}
 	file.Claimed.AccountingRevision = file.Claimed.Revision
+	file.Approved.Revision = file.Claimed.Revision
+	file.Approved.EpisodeRevision = file.Claimed.Revision
 	reset := ProjectBudget(root, file, time.Date(2026, 8, 28, 10, 0, 0, 0, time.UTC))
 	if reset.Status != BudgetKnown || reset.Attempts != 0 || reset.ReservedJobMinutes != 0 || reset.ActiveJobs != 0 || reset.CodeCritiques != 0 {
 		t.Fatalf("human set-budget boundary did not reset the tally: %+v", reset)

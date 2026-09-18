@@ -140,13 +140,13 @@ func runTestPlan(args []string) int {
 }
 
 type testingSelectionRequest struct {
-	Root, GoalID, Tree, CapMin, RetryDecision, ResultPath      string
-	ExpectedGoalRevision, ExpectedAccountingRevision           uint64
-	Mode                                                       testpolicy.Mode
-	Purpose                                                    testpolicy.Purpose
-	Groups                                                     []string
-	Carried                                                    bool
-	NoReuse, ForceGroups, RequireDiagnosticHeadroom, AllGroups bool
+	Root, GoalID, AuthorityGoalID, Tree, CapMin, RetryDecision, ResultPath string
+	ExpectedGoalRevision, ExpectedAccountingRevision                       uint64
+	Mode                                                                   testpolicy.Mode
+	Purpose                                                                testpolicy.Purpose
+	Groups                                                                 []string
+	Carried                                                                bool
+	NoReuse, ForceGroups, RequireDiagnosticHeadroom, AllGroups             bool
 	// CadencePreflight plans and revalidates the fetched tree before the cadence
 	// tick claims standing authority. Governed cadence execution does not set it.
 	CadencePreflight bool
@@ -169,6 +169,7 @@ func parseTestingSelection(name string, args []string, execution bool) (testingS
 	request := testingSelectionRequest{}
 	pathFlagVar(flags, &request.Root, "root", "", "MetaSystem installation root")
 	flags.StringVar(&request.GoalID, "goal", "", "accepted goal owning delivery")
+	flags.StringVar(&request.AuthorityGoalID, "authority", "", "claimed goal authorizing the proof reservation")
 	flags.StringVar(&request.Tree, "tree", "", "exact whole-project candidate tree")
 	mode := flags.String("mode", "auto", "auto, standard, deep, or diagnostic canary")
 	purpose := flags.String("purpose", "delivery", "delivery, diagnostic, or cadence")
@@ -188,7 +189,7 @@ func parseTestingSelection(name string, args []string, execution bool) (testingS
 		flags.BoolVar(&request.AllGroups, "all-groups", false, "run every selected delivery group after a failure")
 	}
 	if flags.Parse(args) != nil || flags.NArg() != 0 || request.Root == "" {
-		fmt.Fprintf(os.Stderr, "usage: metasystem %s --root INSTALLATION [--goal ID] [--tree TREE] [--mode auto|standard|deep|canary] [--purpose delivery|diagnostic|cadence] [--groups ID,ID]\n", name)
+		fmt.Fprintf(os.Stderr, "usage: metasystem %s --root INSTALLATION [--goal ID] [--authority ID] [--tree TREE] [--mode auto|standard|deep|canary] [--purpose delivery|diagnostic|cadence] [--groups ID,ID]\n", name)
 		return request, false, 2
 	}
 	if request.PolicyChild && (name != "test plan" || execution) {
@@ -303,6 +304,9 @@ func prepareTestingOnce(request testingSelectionRequest) (testingPreparation, er
 		if err != nil {
 			return testingPreparation{}, err
 		}
+		// The trusted policy engine must judge the same candidate even when a
+		// parent attempt, rather than an explicit flag, supplied its identity.
+		request.GoalID = goalID
 	}
 	// A landed engine is trusted by its landing: when the enrolled engine is
 	// behind the landing ref by landed commits only, the run fetches,
@@ -957,7 +961,8 @@ func runTestRun(args []string) int {
 		return proofrun.ExitAdmissionRefused
 	}
 	admission := proofLaunchAdmission{ControlRoot: prepared.Installation,
-		ExecutionRoot: prepared.ProjectRoot, ConfPath: prepared.ConfPath, GoalID: request.GoalID, RetryDecision: request.RetryDecision,
+		ExecutionRoot: prepared.ProjectRoot, ConfPath: prepared.ConfPath, GoalID: request.GoalID, AuthorityGoalID: request.AuthorityGoalID,
+		CandidateRevision: prepared.AccountingRevision, RetryDecision: request.RetryDecision,
 		CapMin: request.CapMin, ExpectedGoalRevision: request.ExpectedGoalRevision,
 		ExpectedAccountingRevision: request.ExpectedAccountingRevision,
 		ScopeClass:                 "selected", CommandClass: "testing", CandidateTree: prepared.CandidateTree, IdentityInputs: append([]string{prepared.ContractDigest,
@@ -1009,7 +1014,7 @@ func runTestRun(args []string) int {
 		}
 		return decision.ExitStatus
 	}
-	prepared.GoalID, prepared.AccountingRevision = attempt.GoalID, attempt.AccountingRevision
+	prepared.GoalID, prepared.AccountingRevision = attempt.AccountedGoal(), attempt.AccountedRevision()
 	preRequest = testingRunRequest(prepared, "", "", candidateEngine.Path, candidateEngine.Digest, candidateEngine.Commit)
 	preRequest.PreparedGroups, preRequest.PreparationLaunches = preparedGroups, preparationLaunches
 	preRequest.PreparationDurationMS, preRequest.CommandStartedAt = preparationDuration, commandStarted.Format(time.RFC3339Nano)
@@ -1513,12 +1518,12 @@ func testingGoalRisk(root, id string) (testpolicy.GoalRisk, uint64, error) {
 		return testpolicy.GoalRisk{}, 0, err
 	}
 	file := projection.Tree.Live[id]
-	if file == nil || file.Risk == nil || file.Claimed == nil {
-		return testpolicy.GoalRisk{}, 0, fmt.Errorf("goal %s has no accepted risk and accounting lineage", id)
+	if file == nil || file.Risk == nil {
+		return testpolicy.GoalRisk{}, 0, fmt.Errorf("goal %s has no accepted risk and budget episode", id)
 	}
-	accountingRevision := file.Claimed.AccountingRevision
+	accountingRevision := goal.BudgetEpisodeRevision(file)
 	if accountingRevision == 0 {
-		return testpolicy.GoalRisk{}, 0, fmt.Errorf("goal %s has no accepted accounting revision", id)
+		return testpolicy.GoalRisk{}, 0, fmt.Errorf("goal %s has no accepted budget episode", id)
 	}
 	return testpolicy.GoalRisk{Severity: int(file.Risk.Severity), Novelty: int(file.Risk.Novelty),
 		Exposure: int(file.Risk.Exposure), Accumulation: int(file.Risk.Accumulation)}, accountingRevision, nil
@@ -1541,7 +1546,7 @@ func resolveTestingGoal(root, requested string) (string, error) {
 		if err != nil {
 			return "", err
 		}
-		return attempt.GoalID, nil
+		return attempt.AccountedGoal(), nil
 	}
 	return uniqueActiveProofGoal(root, time.Now().UTC())
 }

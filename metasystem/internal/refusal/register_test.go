@@ -100,6 +100,40 @@ func TestHCL03GoalDoneReadItemsOpenRow(t *testing.T) {
 	t.Fatal("GOAL_DONE_READ_ITEMS_OPEN has no refusal-register row")
 }
 
+func TestHCL03ProofAdmissionRowsNameEmissions(t *testing.T) {
+	wants := map[string]string{
+		"CANDIDATE_GOAL_REFUSED":           "proof_run.go:346",
+		"PROOF_AUTHORITY_REQUIRED":         "proof_run.go:388",
+		"PROOF_AUTHORITY_ARC_MATE_REFUSED": "proof_run.go:464",
+	}
+	data, err := os.ReadFile(filepath.Join(moduleRoot(t), "cmd", "metasystem", "proof_run.go"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	lines := strings.Split(string(data), "\n")
+	for code, site := range wants {
+		var got Row
+		for _, row := range Rows {
+			if row.Code == code {
+				got = row
+				break
+			}
+		}
+		line, parseErr := strconv.Atoi(strings.TrimPrefix(site, "proof_run.go:"))
+		if got.Code != code || got.Owner != "cmd/metasystem" || got.Site != site || got.Shape != Question || parseErr != nil {
+			t.Errorf("row %s = %+v, want site=%s question row", code, got, site)
+			continue
+		}
+		found := false
+		for index := max(0, line-3); index < min(len(lines), line+2); index++ {
+			found = found || strings.Contains(lines[index], code)
+		}
+		if !found {
+			t.Errorf("row %s site %s has no emission within two lines", code, site)
+		}
+	}
+}
+
 func TestHCL03HandoffCancelRows(t *testing.T) {
 	wants := map[string]Row{
 		"HANDOFF_HUMAN_UNPROVEN": {Owner: "internal/steward", Shape: Identity},

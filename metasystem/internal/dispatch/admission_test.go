@@ -1,6 +1,8 @@
 package dispatch
 
 import (
+	"crypto/sha256"
+	"fmt"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -11,6 +13,12 @@ import (
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/goal"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/run"
 )
+
+func legacyBudgetApprovalDigest(intent string, budget goal.Budget) string {
+	record := fmt.Sprintf("elapsedLimit=%s attemptLimit=%d reservedJobMinutesLimit=%d activeJobLimit=%d",
+		budget.ElapsedLimit, budget.AttemptLimit, budget.ReservedJobMinutesLimit, budget.ActiveJobLimit)
+	return fmt.Sprintf("%x", sha256.Sum256([]byte("intent="+intent+"\n"+"budget="+record+"\n")))
+}
 
 func admissionBudgetBed(t *testing.T, attemptLimit, reservedLimit, activeLimit uint64) string {
 	t.Helper()
@@ -145,6 +153,13 @@ func reviewChainBudgetBed(t *testing.T) string {
 	file.Budget.ReservedJobMinutesLimit = 1000
 	file.Budget.ActiveJobLimit = 10
 	file.Budget.ReviewRoundLimit = 2
+	file.History[0].Verb = "approve"
+	file.History[0].Actor = "human:Wido"
+	file.Approved = &goal.ApprovalRecord{
+		By: "human:Wido", At: file.History[0].At, Revision: 1, EpisodeRevision: 1,
+		Opid: file.History[0].Opid, Authority: goal.ApprovalAuthorityProven,
+		Digest: legacyBudgetApprovalDigest(file.Intent, *file.Budget),
+	}
 	if err := os.WriteFile(path, goal.RenderFile(file), 0o644); err != nil {
 		t.Fatal(err)
 	}
@@ -296,6 +311,11 @@ func TestGoalRevisionAdmissionKeepsCritiquesAcrossRiskRaiseAndResetsOnFreshClaim
 		file.StopCapability.Generation = 3
 		file.StopCapability.Revision = 3
 		file.Budget.ReviewRoundLimit = 3
+		file.Approved.At = file.History[2].At
+		file.Approved.Revision = 3
+		file.Approved.Opid = file.History[2].Opid
+		file.Approved.Authority = "raise=" + file.History[2].Opid
+		file.Approved.Digest = legacyBudgetApprovalDigest(file.Intent, *file.Budget)
 	})
 	now := time.Date(2026, 8, 28, 10, 0, 0, 0, time.UTC)
 	projection := ProjectBudget(root, loadReviewChainGoal(t, root), now)
@@ -323,12 +343,16 @@ func TestGoalRevisionAdmissionKeepsCritiquesAcrossRiskRaiseAndResetsOnFreshClaim
 		file.StopCapability.Revision = 4
 	})
 	projection = ProjectBudget(root, loadReviewChainGoal(t, root), now.Add(time.Hour))
-	if projection.Status != BudgetKnown || projection.CodeCritiques != 0 || projection.Limits.ReviewRoundLimit != 3 {
-		t.Fatalf("fresh claim did not restart the critique count at zero: %+v", projection)
+	if projection.Status != BudgetKnown || projection.CodeCritiques != 3 || projection.Limits.ReviewRoundLimit != 3 {
+		t.Fatalf("fresh claim did not preserve the human-approved episode's critique count: %+v", projection)
 	}
 	verdict, err = EvaluateGoalRevisionAdmissionForDispatch(root, "bounded", 4, 1, now.Add(time.Hour), "code-critic", "fresh", HazardMechanical)
-	if err != nil || verdict.Refused() {
-		t.Fatalf("fresh claim did not restart critique accounting at zero: verdict=%+v err=%v", verdict, err)
+	if err != nil || !verdict.Refused() || verdict.Refusal == nil {
+		t.Fatalf("fresh claim incorrectly reset critique accounting: verdict=%+v err=%v", verdict, err)
+	}
+	lines = FormatGoalAdmission(GoalAdmissionVerdict{Refusals: []GoalAdmissionRefusal{*verdict.Refusal}})
+	if len(lines) != 1 || !strings.Contains(lines[0], "codeCritiques=3/3") {
+		t.Fatalf("fresh-claim refusal lost the prior episode's chains: %v", lines)
 	}
 }
 

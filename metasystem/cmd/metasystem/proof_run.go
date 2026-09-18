@@ -37,6 +37,7 @@ func runProofRunLaunch(args []string) int {
 	root := pathFlag(flags, "root", "", "metasystem root")
 	controlRootFlag := flags.String("control-root", "", "canonical proof control root")
 	goalID := flags.String("goal", "", "accepted goal owning the proof reservation")
+	authorityGoalID := flags.String("authority", "", "claimed goal authorizing the proof reservation")
 	capMin := flags.String("cap-min", "", "reserved proof minutes")
 	retryDecision := flags.String("retry-decision", "", "accountable version-1 retry decision")
 	resultPath := flags.String("result", "", "atomic structured launch result path")
@@ -132,7 +133,7 @@ func runProofRunLaunch(args []string) int {
 		return status
 	}
 	attempt, decision, joined, err := admitProofLaunch(proofLaunchAdmission{
-		ControlRoot: controlRoot, ExecutionRoot: executionRoot, ConfPath: *conf, GoalID: *goalID,
+		ControlRoot: controlRoot, ExecutionRoot: executionRoot, ConfPath: *conf, GoalID: *goalID, AuthorityGoalID: *authorityGoalID,
 		CapMin: *capMin, RetryDecision: *retryDecision, ScopeClass: *scopeClass,
 		CommandClass: *commandClass, Sections: expected, IdentityInputs: identityInputs,
 	})
@@ -306,18 +307,18 @@ func legacyProofLaunchAllowed(root string) bool {
 }
 
 type proofLaunchAdmission struct {
-	ControlRoot, ExecutionRoot, ConfPath, GoalID, CapMin, RetryDecision string
-	CandidateTree                                                       string
-	ScopeClass, CommandClass                                            string
-	ExpectedGoalRevision, ExpectedAccountingRevision                    uint64
-	Sections                                                            []string
-	IdentityInputs                                                      []string
-	Environment                                                         []string
-	SharedEngine                                                        string
-	SharedManifestDigest                                                string
-	ComponentIdentities                                                 map[string]string
-	ForceAttempt                                                        bool
-	RequireDiagnosticHeadroom                                           bool
+	ControlRoot, ExecutionRoot, ConfPath, GoalID, AuthorityGoalID, CapMin, RetryDecision string
+	CandidateTree                                                                        string
+	ScopeClass, CommandClass                                                             string
+	CandidateRevision, ExpectedGoalRevision, ExpectedAccountingRevision                  uint64
+	Sections                                                                             []string
+	IdentityInputs                                                                       []string
+	Environment                                                                          []string
+	SharedEngine                                                                         string
+	SharedManifestDigest                                                                 string
+	ComponentIdentities                                                                  map[string]string
+	ForceAttempt                                                                         bool
+	RequireDiagnosticHeadroom                                                            bool
 }
 
 func canonicalProofRoot(path string) (string, error) {
@@ -332,10 +333,148 @@ func canonicalProofRoot(path string) (string, error) {
 	return filepath.Clean(resolved), nil
 }
 
+type proofGoalRoles struct {
+	Candidate         *goal.GoalFile
+	Authority         *goal.GoalFile
+	CandidateRevision uint64
+}
+
+func candidateGoalRefusal(id, state, detail string) error {
+	if detail != "" {
+		detail = " " + detail
+	}
+	return fmt.Errorf("CANDIDATE_GOAL_REFUSED: candidate goal %s state=%s%s", id, state, detail)
+}
+
+func candidateGoalForProof(tree *goal.TreeGoals, id, machine string) (*goal.GoalFile, uint64, error) {
+	if tree == nil {
+		return nil, 0, candidateGoalRefusal(id, "absent", "accepted goal projection is empty")
+	}
+	file := tree.Live[id]
+	if file == nil {
+		if tree.Done[id] != nil {
+			return nil, 0, candidateGoalRefusal(id, goal.StateDone, "")
+		}
+		return nil, 0, candidateGoalRefusal(id, "absent", "")
+	}
+	switch file.State {
+	case goal.StateQueued, goal.StateDone, goal.StateParked, goal.StateAbandoned:
+		return nil, 0, candidateGoalRefusal(id, file.State, "")
+	case goal.StateApproved, goal.StateClaimed:
+	default:
+		return nil, 0, candidateGoalRefusal(id, file.State, "")
+	}
+	if file.Budget == nil || file.Approved == nil {
+		return nil, 0, candidateGoalRefusal(id, "no-budget", "")
+	}
+	if file.IsFencedClaim() {
+		return nil, 0, candidateGoalRefusal(id, "fenced", "stopId="+file.StopFence.StopID)
+	}
+	if file.State == goal.StateClaimed && (file.Claimed == nil || file.Claimed.Machine != machine) {
+		claimedMachine := "unknown"
+		if file.Claimed != nil && file.Claimed.Machine != "" {
+			claimedMachine = file.Claimed.Machine
+		}
+		return nil, 0, candidateGoalRefusal(id, "claimed", "machine="+claimedMachine)
+	}
+	revision := goal.BudgetEpisodeRevision(file)
+	if revision == 0 {
+		return nil, 0, candidateGoalRefusal(id, "no-budget-episode", "")
+	}
+	return file, revision, nil
+}
+
+func proofAuthorityRefusal(id, detail string) error {
+	return fmt.Errorf("PROOF_AUTHORITY_REQUIRED: authority goal %s %s", id, detail)
+}
+
+func enforceBoundProofGoals(kind, boundGoal, candidateGoal, authorityGoal string) error {
+	if authorityGoal != "" || candidateGoal != "" && candidateGoal != boundGoal {
+		return proofAuthorityRefusal(boundGoal, "is fixed by the "+kind+"; --goal and --authority cannot select another goal")
+	}
+	return nil
+}
+
+func resolveProofGoalRoles(root, candidateID, authorityID string, now time.Time) (proofGoalRoles, error) {
+	endpoint, err := goal.ResolveEndpoint(root)
+	if err != nil {
+		return proofGoalRoles{}, err
+	}
+	projection, err := goal.Project(endpoint, false, now)
+	if err != nil {
+		return proofGoalRoles{}, fmt.Errorf("resolve proof goals: %w", err)
+	}
+	machine, machineErr := goal.ResolveMachine(root)
+	// The pre-enrollment human path already admits a proof bound to the
+	// candidate's own claim. Preserve that compatibility without allowing an
+	// unclaimed candidate to select some other machine's authority.
+	if machineErr != nil {
+		file := projection.Tree.Live[candidateID]
+		if file == nil || file.State != goal.StateClaimed || file.Claimed == nil ||
+			(authorityID != "" && authorityID != candidateID) {
+			return proofGoalRoles{}, machineErr
+		}
+		machine = file.Claimed.Machine
+	}
+	candidate, candidateRevision, err := candidateGoalForProof(projection.Tree, candidateID, machine)
+	if err != nil {
+		return proofGoalRoles{}, err
+	}
+	liveAuthority := func(id string) (*goal.GoalFile, error) {
+		file := projection.Tree.Live[id]
+		if file == nil || file.State != goal.StateClaimed || file.Claimed == nil {
+			return nil, proofAuthorityRefusal(id, "is not a live claim")
+		}
+		if file.Claimed.Machine != machine {
+			return nil, proofAuthorityRefusal(id, "is claimed on machine "+file.Claimed.Machine)
+		}
+		if file.IsFencedClaim() {
+			return nil, proofAuthorityRefusal(id, "is fenced by stop "+file.StopFence.StopID)
+		}
+		return file, nil
+	}
+	if candidate.State == goal.StateClaimed {
+		if authorityID != "" && authorityID != candidateID {
+			return proofGoalRoles{}, proofAuthorityRefusal(authorityID, "cannot replace the candidate's own live claim "+candidateID)
+		}
+		return proofGoalRoles{Candidate: candidate, Authority: candidate, CandidateRevision: candidateRevision}, nil
+	}
+	var authority *goal.GoalFile
+	if authorityID != "" {
+		authority, err = liveAuthority(authorityID)
+		if err != nil {
+			return proofGoalRoles{}, err
+		}
+	} else {
+		for _, id := range goal.OrderedOpenGoalIDs(projection.Tree.Live) {
+			file := projection.Tree.Live[id]
+			if file.State != goal.StateClaimed || file.Claimed == nil || file.Claimed.Machine != machine || file.IsFencedClaim() {
+				continue
+			}
+			if authority != nil {
+				return proofGoalRoles{}, proofAuthorityRefusal("", "is ambiguous; pass --authority <goal-id>")
+			}
+			authority = file
+		}
+		if authority == nil {
+			return proofGoalRoles{}, proofAuthorityRefusal("", "has no live unfenced claim on machine "+machine)
+		}
+	}
+	if candidate.Arc != "" && candidate.Arc == authority.Arc {
+		return proofGoalRoles{}, fmt.Errorf("PROOF_AUTHORITY_ARC_MATE_REFUSED: candidate goal %s and authority goal %s share arc %s; claim %s as its own authority",
+			candidate.Id, authority.Id, candidate.Arc, candidate.Id)
+	}
+	return proofGoalRoles{Candidate: candidate, Authority: authority, CandidateRevision: candidateRevision}, nil
+}
+
 func admitProofLaunch(request proofLaunchAdmission) (proofrun.Attempt, proofrun.LaunchResult, bool, error) {
 	classifiedCaller, err := classifyVerbCaller(request.ControlRoot, int64(os.Getppid()))
 	if err != nil {
 		return proofrun.Attempt{}, proofrun.LaunchResult{}, false, fmt.Errorf("proof caller classification failed: %w", err)
+	}
+	now, err := goalCommandNow(request.ControlRoot)
+	if err != nil {
+		return proofrun.Attempt{}, proofrun.LaunchResult{}, false, err
 	}
 	parentRoot, parentAttempt := os.Getenv("METASYSTEM_PROOF_CONTROL_ROOT"), os.Getenv("METASYSTEM_PROOF_ATTEMPT")
 	if parentRoot != "" || parentAttempt != "" {
@@ -350,8 +489,8 @@ func admitProofLaunch(request proofLaunchAdmission) (proofrun.Attempt, proofrun.
 		if err != nil {
 			return proofrun.Attempt{}, proofrun.LaunchResult{}, false, err
 		}
-		if request.GoalID != "" && request.GoalID != attempt.GoalID {
-			return proofrun.Attempt{}, proofrun.LaunchResult{}, false, fmt.Errorf("proof parent goal %s does not match requested goal %s", attempt.GoalID, request.GoalID)
+		if request.GoalID != "" && request.GoalID != attempt.AccountedGoal() {
+			return proofrun.Attempt{}, proofrun.LaunchResult{}, false, fmt.Errorf("proof parent candidate goal %s does not match requested goal %s", attempt.AccountedGoal(), request.GoalID)
 		}
 		if request.ExpectedGoalRevision != 0 && (attempt.GoalRevision != request.ExpectedGoalRevision ||
 			attempt.AccountingRevision != request.ExpectedAccountingRevision) {
@@ -395,6 +534,7 @@ func admitProofLaunch(request proofLaunchAdmission) (proofrun.Attempt, proofrun.
 	}
 	var reservationOwner *proofrun.ReservationOwner
 	delegateRevision := uint64(0)
+	boundAuthority := false
 	delegateState, delegateInstallation, delegateJob := "", "", ""
 	governedRoot, governedID := os.Getenv("METASYSTEM_PROOF_RUN_ROOT"), os.Getenv("METASYSTEM_PROOF_RUN_ID")
 	if governedRoot != "" || governedID != "" {
@@ -415,10 +555,10 @@ func admitProofLaunch(request proofLaunchAdmission) (proofrun.Attempt, proofrun.
 		if err := proofrun.AuthenticateAncestor(int64(os.Getppid()), ancestor); err != nil {
 			return proofrun.Attempt{}, proofrun.LaunchResult{}, false, fmt.Errorf("governed proof custody: %w", err)
 		}
-		if request.GoalID != "" && request.GoalID != record.GoalId {
-			return proofrun.Attempt{}, proofrun.LaunchResult{}, false, fmt.Errorf("governed run goal %s does not match requested goal %s", record.GoalId, request.GoalID)
+		if err := enforceBoundProofGoals("governed run", record.GoalId, request.GoalID, request.AuthorityGoalID); err != nil {
+			return proofrun.Attempt{}, proofrun.LaunchResult{}, false, err
 		}
-		request.GoalID = record.GoalId
+		request.GoalID, request.AuthorityGoalID, boundAuthority = record.GoalId, record.GoalId, true
 		started, err := time.Parse(time.RFC3339, record.StartedAt)
 		if err != nil || record.Governed.ExecutionCostMinutes == 0 {
 			return proofrun.Attempt{}, proofrun.LaunchResult{}, false, fmt.Errorf("governed run has no valid proof deadline")
@@ -450,19 +590,34 @@ func admitProofLaunch(request proofLaunchAdmission) (proofrun.Attempt, proofrun.
 		if resolvedGoal == "" || !revisionOK {
 			return proofrun.Attempt{}, proofrun.LaunchResult{}, false, fmt.Errorf("native delegate reservation has no accepted goal binding")
 		}
-		if request.GoalID != "" && request.GoalID != resolvedGoal {
-			return proofrun.Attempt{}, proofrun.LaunchResult{}, false, fmt.Errorf("native delegate goal %s does not match requested goal %s", resolvedGoal, request.GoalID)
+		if err := enforceBoundProofGoals("native delegate", resolvedGoal, request.GoalID, request.AuthorityGoalID); err != nil {
+			return proofrun.Attempt{}, proofrun.LaunchResult{}, false, err
 		}
-		request.GoalID, delegateRevision = resolvedGoal, resolvedRevision
+		request.GoalID, request.AuthorityGoalID, delegateRevision, boundAuthority = resolvedGoal, resolvedGoal, resolvedRevision, true
 	}
 	if request.GoalID == "" && classifiedCaller.Class == lease.ClassMain && classifiedCaller.Holder {
-		request.GoalID, err = uniqueActiveProofGoal(request.ControlRoot, time.Now().UTC())
+		request.GoalID, err = uniqueActiveProofGoal(request.ControlRoot, now)
 		if err != nil {
 			return proofrun.Attempt{}, proofrun.LaunchResult{}, false, err
 		}
 	}
 	if request.GoalID == "" {
 		return proofrun.Attempt{}, proofrun.LaunchResult{}, false, fmt.Errorf("top-level proof launch requires --goal")
+	}
+	roles, err := resolveProofGoalRoles(request.ControlRoot, request.GoalID, request.AuthorityGoalID, now)
+	if err != nil {
+		return proofrun.Attempt{}, proofrun.LaunchResult{}, false, err
+	}
+	if boundAuthority && roles.Authority.Id != request.GoalID {
+		return proofrun.Attempt{}, proofrun.LaunchResult{}, false, proofAuthorityRefusal(request.AuthorityGoalID, "does not match the bound proof context")
+	}
+	authorityGoalID := roles.Authority.Id
+	candidateRevision := roles.CandidateRevision
+	if request.CandidateRevision != 0 {
+		if request.CandidateRevision != candidateRevision {
+			return proofrun.Attempt{}, proofrun.LaunchResult{}, false, candidateGoalRefusal(request.GoalID, "moved", fmt.Sprintf("budgetEpisodeRevision=%d expected=%d", candidateRevision, request.CandidateRevision))
+		}
+		candidateRevision = request.CandidateRevision
 	}
 	var capValue int64
 	if reservationOwner != nil {
@@ -477,11 +632,7 @@ func admitProofLaunch(request proofLaunchAdmission) (proofrun.Attempt, proofrun.
 			return proofrun.Attempt{}, proofrun.LaunchResult{}, false, fmt.Errorf("resolve proof reservation: %w", err)
 		}
 	}
-	now, err := goalCommandNow(request.ControlRoot)
-	if err != nil {
-		return proofrun.Attempt{}, proofrun.LaunchResult{}, false, err
-	}
-	binding, err := dispatchcore.ResolveGoalBinding(request.ControlRoot, request.GoalID, now)
+	binding, err := dispatchcore.ResolveGoalBinding(request.ControlRoot, authorityGoalID, now)
 	if err != nil {
 		return proofrun.Attempt{}, proofrun.LaunchResult{}, false, err
 	}
@@ -505,7 +656,7 @@ func admitProofLaunch(request proofLaunchAdmission) (proofrun.Attempt, proofrun.
 		request.CommandClass, request.Sections, behaviorsurface.SupportedVersion)
 	proofIdentity = proofrun.BindIdentityInputs(proofIdentity, request.IdentityInputs)
 	candidateTree := proofAdmissionCandidateTree(request)
-	heldGoal, err := goalrevision.Acquire(request.ControlRoot, request.GoalID, binding.Revision, "proof-admission")
+	heldGoal, err := goalrevision.Acquire(request.ControlRoot, authorityGoalID, binding.Revision, "proof-admission")
 	if err != nil {
 		return proofrun.Attempt{}, proofrun.LaunchResult{}, false, err
 	}
@@ -524,7 +675,7 @@ func admitProofLaunch(request proofLaunchAdmission) (proofrun.Attempt, proofrun.
 		runRecord, readErr := (&runpkg.Store{Root: request.ControlRoot}).Read(reservationOwner.RunID)
 		if readErr != nil || runRecord == nil || runRecord.Governed == nil || runRecord.Status != runpkg.StatusRunning ||
 			runRecord.Pid == nil || runRecord.PidStartedAt == nil || runRecord.Generation != reservationOwner.RunGeneration ||
-			runRecord.LaunchNonce != reservationOwner.LaunchNonce || runRecord.GoalId != request.GoalID ||
+			runRecord.LaunchNonce != reservationOwner.LaunchNonce || runRecord.GoalId != authorityGoalID ||
 			runRecord.Governed.GoalRevision != reservationOwner.GoalRevision ||
 			runRecord.Governed.ObligationRevision != reservationOwner.ObligationRevision ||
 			runRecord.Governed.AttemptOrdinal != reservationOwner.AttemptOrdinal {
@@ -542,7 +693,7 @@ func admitProofLaunch(request proofLaunchAdmission) (proofrun.Attempt, proofrun.
 		revision, revisionOK := lens.GoalRevision()
 		claimEpoch, claimEpochOK := lens.ClaimEpoch()
 		if verifyErr != nil || !verified.Delegate || verified.JobID != delegateJob || readErr != nil ||
-			lens.GoalID() != request.GoalID || !revisionOK || revision != binding.Revision ||
+			lens.GoalID() != authorityGoalID || !revisionOK || revision != binding.Revision ||
 			lens.MachineID() != binding.Machine || !claimEpochOK || claimEpoch != binding.Capability.ClaimEpoch {
 			return proofrun.Attempt{}, proofrun.LaunchResult{}, false, fmt.Errorf("native delegate proof custody changed before reservation")
 		}
@@ -558,7 +709,7 @@ func admitProofLaunch(request proofLaunchAdmission) (proofrun.Attempt, proofrun.
 				if holderErr == nil && holder.OwnerLineage == binding.File.Claimed.Lineage {
 					return proofrun.Attempt{}, proofrun.LaunchResult{}, false, fmt.Errorf(
 						"active coordinator does not own the claimed goal reservation: lease claim epoch %d differs from stop capability claim epoch %d; run metasystem goal restamp --id %s",
-						*classifiedCaller.ClaimEpoch, binding.Capability.ClaimEpoch, request.GoalID)
+						*classifiedCaller.ClaimEpoch, binding.Capability.ClaimEpoch, authorityGoalID)
 				}
 			}
 			return proofrun.Attempt{}, proofrun.LaunchResult{}, false, fmt.Errorf("active coordinator does not own the claimed goal reservation")
@@ -567,13 +718,17 @@ func admitProofLaunch(request proofLaunchAdmission) (proofrun.Attempt, proofrun.
 	} else if classifiedCaller.Class != lease.ClassHuman {
 		return proofrun.Attempt{}, proofrun.LaunchResult{}, false, fmt.Errorf("proof caller has no authenticated goal reservation context")
 	}
-	binding, err = dispatchcore.ResolveGoalBinding(request.ControlRoot, request.GoalID, now)
+	binding, err = dispatchcore.ResolveGoalBinding(request.ControlRoot, authorityGoalID, now)
 	if err != nil || binding.Fence != nil || reservationOwner != nil && binding.Revision != reservationOwner.GoalRevision {
 		return proofrun.Attempt{}, proofrun.LaunchResult{}, false, fmt.Errorf("proof reservation lost its accepted goal authority")
 	}
 	projection := dispatchcore.ProjectBudget(request.ControlRoot, binding.File, now)
 	if projection.Status != dispatchcore.BudgetKnown {
 		return proofrun.Attempt{}, proofrun.LaunchResult{}, false, fmt.Errorf("proof reservation budget projection is unknown")
+	}
+	candidateProjection := dispatchcore.ProjectConsumption(request.ControlRoot, roles.Candidate, now)
+	if candidateProjection.Status != dispatchcore.BudgetKnown {
+		return proofrun.Attempt{}, proofrun.LaunchResult{}, false, candidateGoalRefusal(request.GoalID, "budget-unknown", "consumption projection is unknown")
 	}
 	accountingRevision := binding.File.Claimed.AccountingRevision
 	if accountingRevision == 0 {
@@ -588,7 +743,7 @@ func admitProofLaunch(request proofLaunchAdmission) (proofrun.Attempt, proofrun.
 		minuteHeadroom := uint64(capValue) <= ^uint64(0)/2 && projection.Limits.ReservedJobMinutesLimit >= projection.ReservedJobMinutes &&
 			projection.Limits.ReservedJobMinutesLimit-projection.ReservedJobMinutes >= 2*uint64(capValue)
 		if !attemptHeadroom || !minuteHeadroom {
-			return proofrun.Attempt{}, proofrun.LaunchResult{}, false, fmt.Errorf("BATCH_MEMBER_BUDGET_REFUSED: goal %s needs two attempts and %d reserved minutes of P2 headroom", request.GoalID, 2*uint64(capValue))
+			return proofrun.Attempt{}, proofrun.LaunchResult{}, false, fmt.Errorf("BATCH_MEMBER_BUDGET_REFUSED: goal %s needs two attempts and %d reserved minutes of P2 headroom", authorityGoalID, 2*uint64(capValue))
 		}
 	}
 	checkoutFence, fenceErr := stopfence.Read(request.ControlRoot)
@@ -596,9 +751,9 @@ func admitProofLaunch(request proofLaunchAdmission) (proofrun.Attempt, proofrun.
 		return proofrun.Attempt{}, proofrun.LaunchResult{}, false, fmt.Errorf("proof reservation lost checkout-fence authority")
 	}
 	reservation := proofrun.AdmissionRequest{
-		ControlRoot: request.ControlRoot, ExecutionRoot: request.ExecutionRoot, ConfPath: request.ConfPath, GoalID: request.GoalID,
+		ControlRoot: request.ControlRoot, ExecutionRoot: request.ExecutionRoot, ConfPath: request.ConfPath, GoalID: authorityGoalID,
 		GoalRevision: binding.Revision, AccountingRevision: accountingRevision, BudgetEpoch: projection.WeightEpoch,
-		CandidateGoalID: request.GoalID, CandidateRevision: accountingRevision, CandidateBudgetEpoch: projection.WeightEpoch,
+		CandidateGoalID: request.GoalID, CandidateRevision: candidateRevision, CandidateBudgetEpoch: candidateProjection.WeightEpoch,
 		CandidateTree:   candidateTree,
 		ReservedMinutes: uint64(capValue), Identity: proofIdentity, Launcher: launcher, ReservationOwner: reservationOwner,
 		RetryDecisionPath: request.RetryDecision, Now: now,
@@ -612,14 +767,17 @@ func admitProofLaunch(request proofLaunchAdmission) (proofrun.Attempt, proofrun.
 		return proofrun.Attempt{}, decision, false, nil
 	}
 	if reservationOwner == nil {
-		verdict, err := dispatchcore.EvaluateGoalRevisionAdmissionForDispatch(request.ControlRoot, request.GoalID, binding.Revision,
+		verdict, err := dispatchcore.EvaluateGoalRevisionAdmissionForDispatch(request.ControlRoot, authorityGoalID, binding.Revision,
 			uint64(capValue), now, "implementer", "fresh", dispatchcore.HazardMechanical)
 		if err != nil {
 			return proofrun.Attempt{}, proofrun.LaunchResult{}, false, err
 		}
 		if verdict.Extension != nil {
+			if request.GoalID != authorityGoalID {
+				return proofrun.Attempt{}, proofrun.LaunchResult{}, false, fmt.Errorf("proof reservation refused: candidate goal %s cannot use authority goal %s's earned budget extension", request.GoalID, authorityGoalID)
+			}
 			if !extensionAuthorized {
-				return proofrun.Attempt{}, proofrun.LaunchResult{}, false, fmt.Errorf("proof reservation found an extension for goal %s, but only its claim holder pair may apply it", request.GoalID)
+				return proofrun.Attempt{}, proofrun.LaunchResult{}, false, fmt.Errorf("proof reservation found an extension for goal %s, but only its claim holder pair may apply it", authorityGoalID)
 			}
 			if delegateJob == "" {
 				holder, holderErr := lease.CurrentHolder(request.ControlRoot)
@@ -635,10 +793,10 @@ func admitProofLaunch(request proofLaunchAdmission) (proofrun.Attempt, proofrun.
 			extensionRequest := goal.VerbRequest{Endpoint: endpoint,
 				Actor: goal.Actor{Machine: binding.Machine, Lineage: binding.Lineage}, Ulid: ulid, Now: now,
 				CallerClass: classifiedCaller.Class}
-			if _, extendErr := goal.ExtendBudget(extensionRequest, request.GoalID, verdict.Extension.GoalOffer()); extendErr != nil {
+			if _, extendErr := goal.ExtendBudget(extensionRequest, authorityGoalID, verdict.Extension.GoalOffer()); extendErr != nil {
 				return proofrun.Attempt{}, proofrun.LaunchResult{}, false, fmt.Errorf("proof reservation extend budget: %w", extendErr)
 			}
-			binding, err = dispatchcore.ResolveGoalBinding(request.ControlRoot, request.GoalID, now)
+			binding, err = dispatchcore.ResolveGoalBinding(request.ControlRoot, authorityGoalID, now)
 			if err != nil || binding.Revision != reservation.GoalRevision {
 				return proofrun.Attempt{}, proofrun.LaunchResult{}, false, fmt.Errorf("proof reservation lost its goal binding after budget extension")
 			}
@@ -648,7 +806,7 @@ func admitProofLaunch(request proofLaunchAdmission) (proofrun.Attempt, proofrun.
 			}
 			reservation.BudgetEpoch = projection.WeightEpoch
 			reservation.CandidateBudgetEpoch = projection.WeightEpoch
-			verdict, err = dispatchcore.EvaluateGoalRevisionAdmissionForDispatch(request.ControlRoot, request.GoalID, binding.Revision,
+			verdict, err = dispatchcore.EvaluateGoalRevisionAdmissionForDispatch(request.ControlRoot, authorityGoalID, binding.Revision,
 				uint64(capValue), now, "implementer", "fresh", dispatchcore.HazardMechanical)
 			if err != nil {
 				return proofrun.Attempt{}, proofrun.LaunchResult{}, false, err
@@ -660,7 +818,7 @@ func admitProofLaunch(request proofLaunchAdmission) (proofrun.Attempt, proofrun.
 			if detail == "" {
 				detail = verdict.PolicyRefusal
 			}
-			return proofrun.Attempt{}, proofrun.LaunchResult{}, false, fmt.Errorf("proof reservation refused for goal %s revision %d: %s", request.GoalID, binding.Revision, detail)
+			return proofrun.Attempt{}, proofrun.LaunchResult{}, false, fmt.Errorf("proof reservation refused for goal %s revision %d: %s", authorityGoalID, binding.Revision, detail)
 		}
 	}
 	attempt, decision, err := proofrun.ReserveLocked(reservation)

@@ -24,6 +24,7 @@ import (
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/proofrun"
 	runpkg "github.com/widoriezebos/agentic-tools/metasystem/internal/run"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/stopfence"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/testpolicy"
 )
 
 func candidateProofAdmission(request proofrun.AdmissionRequest) proofrun.AdmissionRequest {
@@ -51,6 +52,255 @@ func TestProofAdmissionCandidateTreeUsesProofIdentityAccessor(t *testing.T) {
 	}}
 	if got := proofAdmissionCandidateTree(request); got != tree {
 		t.Fatalf("proof admission candidate tree = %q, want %q", got, tree)
+	}
+}
+
+func addProofCandidateGoal(t *testing.T, root, id, arc string, risk *goal.RiskRecord) *goal.GoalFile {
+	t.Helper()
+	budget := goal.Budget{ElapsedLimit: "4h", AttemptLimit: 8, ReservedJobMinutesLimit: 480, ActiveJobLimit: 2, ReviewRoundLimit: 3}
+	openedAt, approvedAt := "2026-08-30T08:10:00Z", "2026-08-30T08:11:00Z"
+	openOpid := goal.Opid("01ARZ3NDEKTSV4RRFFQ69G5FAV", "mac-cli", id)
+	approvalOpid := goal.Opid("01ARZ3NDEKTSV4RRFFQ69G5FAW", "mac-cli", id)
+	file := &goal.GoalFile{
+		Id: id, State: goal.StateApproved, Tier: 3, Risk: risk, Intent: "Prove candidate " + id + ".", Arc: arc,
+		Origin: goal.OriginMain, NextStep: "Prove it.", OpenedAt: openedAt, Revision: 2, Budget: &budget,
+		Approved: &goal.ApprovalRecord{By: "human:Wido", At: approvedAt, Revision: 2, EpisodeRevision: 2,
+			Opid: approvalOpid, Authority: goal.ApprovalAuthorityProven},
+		History: []goal.HistoryLine{
+			{At: openedAt, Opid: openOpid, Verb: "open", Actor: "mac-cli+" + id, Targets: []string{id}, Keep: -1},
+			{At: approvedAt, Opid: approvalOpid, Verb: "approve", Actor: "human:Wido", Targets: []string{id}, Keep: -1},
+		},
+	}
+	file.Approved.Digest = goal.ApprovalDigest(file.Intent, file.Tier, budget, risk)
+	path := filepath.Join(root, "plans", "goals", id+".md")
+	if err := os.WriteFile(path, goal.RenderFile(file), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	goalSyncMutationGit(t, root, "add", filepath.ToSlash(filepath.Join("plans", "goals", id+".md")))
+	goalSyncMutationGit(t, root, "commit", "-q", "-m", "add proof candidate "+id)
+	goalSyncMutationGit(t, root, "update-ref", goal.LocalLedgerBranch, "HEAD")
+	goalSyncMutationGit(t, root, "update-ref", goal.AcceptedRef, "HEAD")
+	return file
+}
+
+func TestCandidateGoalSelectsThePlanRisk(t *testing.T) {
+	root := syncedClaimedGoalFixture(t)
+	high := &goal.RiskRecord{Severity: 3, Novelty: 3, Exposure: 3, Accumulation: 3, Basis: "Candidate risk requires cross-cutting proof."}
+	candidate := addProofCandidateGoal(t, root, "candidate-high", "", high)
+	risk, revision, err := testingGoalRisk(root, candidate.Id)
+	if err != nil || revision != goal.BudgetEpisodeRevision(candidate) || risk.Accumulation != 3 {
+		t.Fatalf("candidate risk=%+v revision=%d err=%v", risk, revision, err)
+	}
+	contract := testpolicy.Contract{
+		ProjectRisk: testpolicy.ProjectRisk{Severity: 1, Exposure: 1, Reversibility: "revert", Detection: "immediate", Recovery: "bounded"},
+		Surfaces:    []testpolicy.Surface{{ID: "candidate", Paths: []string{"src/**"}, Standard: []string{"standard"}, CrossCutting: []string{"cross-cutting"}}},
+		Groups: []testpolicy.Group{
+			{ID: "standard"},
+			{ID: "cross-cutting", Obligations: []string{"cross-cutting"}},
+		},
+	}
+	lowPlan, lowErr := testpolicy.Select(contract, testpolicy.SelectionRequest{ChangedPaths: []string{"src/change.go"}, RequestedMode: testpolicy.ModeAuto, Purpose: testpolicy.PurposeDelivery})
+	highPlan, highErr := testpolicy.Select(contract, testpolicy.SelectionRequest{ChangedPaths: []string{"src/change.go"}, GoalRisk: risk, RequestedMode: testpolicy.ModeAuto, Purpose: testpolicy.PurposeDelivery})
+	if lowErr != nil || highErr != nil {
+		t.Fatalf("select low=%v high=%v", lowErr, highErr)
+	}
+	has := func(values []string, target string) bool {
+		for _, value := range values {
+			if value == target {
+				return true
+			}
+		}
+		return false
+	}
+	if has(lowPlan.SelectedGroups, "cross-cutting") || !has(highPlan.SelectedGroups, "cross-cutting") {
+		t.Fatalf("candidate risk did not select its cross-cutting plan: low=%+v high=%+v", lowPlan, highPlan)
+	}
+	request, _, code := parseTestingSelection("test run", []string{"--root", root, "--goal", candidate.Id, "--authority", "standing-validation"}, true)
+	if code != 0 || request.GoalID != candidate.Id || request.AuthorityGoalID != "standing-validation" {
+		t.Fatalf("testing selection lost candidate or authority: request=%+v code=%d", request, code)
+	}
+}
+
+func TestCandidateGoalEligibilityTable(t *testing.T) {
+	budget := &goal.Budget{ElapsedLimit: "4h", AttemptLimit: 4, ReservedJobMinutesLimit: 240, ActiveJobLimit: 2}
+	approved := func(state string) *goal.GoalFile {
+		return &goal.GoalFile{Id: "candidate", State: state, Revision: 3, Budget: budget,
+			Approved: &goal.ApprovalRecord{Revision: 3, EpisodeRevision: 3}}
+	}
+	tests := []struct {
+		name, wantState string
+		file            *goal.GoalFile
+		done            bool
+		admitted        bool
+	}{
+		{name: "absent", wantState: "absent"},
+		{name: "queued", wantState: goal.StateQueued, file: approved(goal.StateQueued)},
+		{name: "no budget", wantState: "no-budget", file: func() *goal.GoalFile { f := approved(goal.StateApproved); f.Budget = nil; return f }()},
+		{name: "done", wantState: goal.StateDone, file: approved(goal.StateDone), done: true},
+		{name: "parked", wantState: goal.StateParked, file: approved(goal.StateParked)},
+		{name: "fenced", wantState: "fenced", file: func() *goal.GoalFile {
+			f := approved(goal.StateClaimed)
+			f.Claimed = &goal.ClaimRecord{Machine: "m1"}
+			f.StopFence = &goal.StopFence{StopID: "stop-candidate"}
+			return f
+		}()},
+		{name: "claimed on m2", wantState: "claimed", file: func() *goal.GoalFile {
+			f := approved(goal.StateClaimed)
+			f.Claimed = &goal.ClaimRecord{Machine: "m2"}
+			return f
+		}()},
+		{name: "approved unclaimed", file: approved(goal.StateApproved), admitted: true},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			tree := &goal.TreeGoals{Live: map[string]*goal.GoalFile{}, Done: map[string]*goal.GoalFile{}}
+			if test.file != nil {
+				if test.done {
+					tree.Done[test.file.Id] = test.file
+				} else {
+					tree.Live[test.file.Id] = test.file
+				}
+			}
+			file, revision, err := candidateGoalForProof(tree, "candidate", "m1")
+			if test.admitted {
+				if err != nil || file == nil || revision != 3 {
+					t.Fatalf("approved candidate refused: file=%+v revision=%d err=%v", file, revision, err)
+				}
+				return
+			}
+			if err == nil || !strings.Contains(err.Error(), "CANDIDATE_GOAL_REFUSED") || !strings.Contains(err.Error(), "state="+test.wantState) {
+				t.Fatalf("ineligible candidate file=%+v revision=%d err=%v", file, revision, err)
+			}
+		})
+	}
+}
+
+func TestCandidateLaunchStillNeedsTheClaimHolder(t *testing.T) {
+	root, now := proofExtensionGoalFixture(t)
+	addProofCandidateGoal(t, root, "candidate-holder", "", &goal.RiskRecord{Severity: 1, Novelty: 1, Exposure: 1, Accumulation: 1, Basis: "Holder witness."})
+	parent, state, err := (identity.KernelProber{}).Probe(int64(os.Getppid()))
+	if err != nil || state != identity.Alive {
+		t.Fatalf("probe parent: state=%s err=%v", state, err)
+	}
+	if _, err := lease.AnnounceWithPair(root, "candidate-nonholder", parent.Pid, parent.StartedAt.Unix(), parent.StartTicks, parent.BootID, "candidate-nonholder", "fake", "m1"); err != nil {
+		t.Fatal(err)
+	}
+	leasePath := filepath.Join(root, "artifacts", "agents", "mains", "worktree-lease.json")
+	data, err := os.ReadFile(leasePath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var checkoutLease lease.Lease
+	if err := json.Unmarshal(data, &checkoutLease); err != nil {
+		t.Fatal(err)
+	}
+	checkoutLease.HolderMainId = "main-that-does-not-own-the-caller"
+	data, err = json.Marshal(checkoutLease)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(leasePath, data, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("METASYSTEM_GOAL_NOW", now.Format(time.RFC3339))
+	attempt, _, _, err := admitProofLaunch(candidateProofLaunchAdmission(proofLaunchAdmission{
+		ControlRoot: root, ExecutionRoot: root, ConfPath: filepath.Join(root, "metasystem.conf"),
+		GoalID: "candidate-holder", AuthorityGoalID: "standing-validation", CapMin: "1", ScopeClass: "full", CommandClass: "testing",
+	}))
+	if err == nil || !strings.Contains(err.Error(), "active coordinator does not own the claimed goal reservation") || attempt.AttemptID != "" {
+		t.Fatalf("candidate bypassed the claim holder: attempt=%+v err=%v", attempt, err)
+	}
+}
+
+func TestCandidateUsesResolvedAuthority(t *testing.T) {
+	root, now := proofExtensionGoalFixture(t)
+	candidate := addProofCandidateGoal(t, root, "candidate-authority", "", &goal.RiskRecord{
+		Severity: 1, Novelty: 1, Exposure: 1, Accumulation: 1, Basis: "Separate candidate and authority witness.",
+	})
+	announceProofFixtureHolder(t, root)
+	t.Setenv("METASYSTEM_GOAL_NOW", now.Format(time.RFC3339))
+	attempt, result, noChild, err := admitProofLaunch(candidateProofLaunchAdmission(proofLaunchAdmission{
+		ControlRoot: root, ExecutionRoot: root, ConfPath: filepath.Join(root, "metasystem.conf"),
+		GoalID: candidate.Id, AuthorityGoalID: "standing-validation", CapMin: "1", ScopeClass: "full", CommandClass: "testing",
+	}))
+	if err != nil || noChild || result.Disposition != proofrun.DispositionExecuted {
+		t.Fatalf("cross-candidate admission failed: attempt=%+v result=%+v noChild=%t err=%v", attempt, result, noChild, err)
+	}
+	stored, err := proofrun.ReadAttempt(root, attempt.AttemptID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if stored.GoalID != "standing-validation" || stored.AccountedGoal() != candidate.Id ||
+		stored.AccountedRevision() != goal.BudgetEpisodeRevision(candidate) {
+		t.Fatalf("candidate/authority tuple collapsed: attempt=%+v", stored)
+	}
+}
+
+func TestCandidateCannotUseAuthorityEarnedExtension(t *testing.T) {
+	root, now := proofExtensionGoalFixture(t)
+	addProofCandidateGoal(t, root, "candidate-no-extension", "", &goal.RiskRecord{Severity: 1, Novelty: 1, Exposure: 1, Accumulation: 1, Basis: "Extension authority witness."})
+	jobs := filepath.Join(root, "artifacts", "agents", "jobs")
+	if err := os.MkdirAll(jobs, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	writeTemp(t, jobs, "authority-spent.json", map[string]any{
+		"jobId": "authority-spent", "operationId": "authority-spent", "goalId": "standing-validation", "goalRevision": 2,
+		"capMin": 1, "status": "completed", "startedAt": "2026-08-30T08:20:00Z", "endedAt": "2026-08-30T08:21:00Z",
+	})
+	announceProofFixtureHolder(t, root)
+	t.Setenv("METASYSTEM_GOAL_NOW", now.Format(time.RFC3339))
+	attempt, _, _, err := admitProofLaunch(candidateProofLaunchAdmission(proofLaunchAdmission{
+		ControlRoot: root, ExecutionRoot: root, ConfPath: filepath.Join(root, "metasystem.conf"),
+		GoalID: "candidate-no-extension", AuthorityGoalID: "standing-validation", CapMin: "1", ScopeClass: "full", CommandClass: "testing",
+	}))
+	if err == nil || !strings.Contains(err.Error(), "candidate goal candidate-no-extension cannot use authority goal standing-validation's earned budget extension") || attempt.AttemptID != "" {
+		t.Fatalf("candidate used the authority's extension: attempt=%+v err=%v", attempt, err)
+	}
+	data, readErr := os.ReadFile(filepath.Join(root, "plans", "goals", "standing-validation.md"))
+	if readErr != nil {
+		t.Fatal(readErr)
+	}
+	file, problems := goal.ParseFile(data)
+	if len(problems) != 0 || file.BudgetExtension != nil {
+		t.Fatalf("cross-candidate refusal mutated the authority: extension=%+v problems=%v", file.BudgetExtension, problems)
+	}
+}
+
+func TestBoundProofContextsRequireTheirOwnAuthority(t *testing.T) {
+	for _, test := range []struct {
+		name, kind, candidate, authority string
+	}{
+		{name: "governed candidate differs", kind: "governed run", candidate: "candidate"},
+		{name: "governed authority flag", kind: "governed run", authority: "run-goal"},
+		{name: "delegate candidate differs", kind: "native delegate", candidate: "candidate"},
+		{name: "delegate authority flag", kind: "native delegate", authority: "run-goal"},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			err := enforceBoundProofGoals(test.kind, "run-goal", test.candidate, test.authority)
+			if err == nil || !strings.Contains(err.Error(), "PROOF_AUTHORITY_REQUIRED") || !strings.Contains(err.Error(), "run-goal") {
+				t.Fatalf("bound context accepted candidate=%q authority=%q: %v", test.candidate, test.authority, err)
+			}
+		})
+	}
+}
+
+func TestArcMateAuthorityIsRefused(t *testing.T) {
+	root := syncedClaimedGoalFixture(t)
+	now := time.Date(2026, 8, 30, 9, 0, 0, 0, time.UTC)
+	amendSyncedGoalFixture(t, root, "put authority in arc-a", func(file *goal.GoalFile) { file.Arc = "arc-a" })
+	addProofCandidateGoal(t, root, "candidate-arc", "arc-a", &goal.RiskRecord{Severity: 1, Novelty: 1, Exposure: 1, Accumulation: 1, Basis: "Arc witness."})
+	addProofCandidateGoal(t, root, "candidate-outside", "arc-b", &goal.RiskRecord{Severity: 1, Novelty: 1, Exposure: 1, Accumulation: 1, Basis: "Outside arc witness."})
+	for _, authority := range []string{"standing-validation", ""} {
+		roles, err := resolveProofGoalRoles(root, "candidate-arc", authority, now)
+		if err == nil || !strings.Contains(err.Error(), "PROOF_AUTHORITY_ARC_MATE_REFUSED") ||
+			!strings.Contains(err.Error(), "candidate-arc") || !strings.Contains(err.Error(), "standing-validation") ||
+			!strings.Contains(err.Error(), "arc-a") || roles.Authority != nil {
+			t.Fatalf("arc mate authority=%q roles=%+v err=%v", authority, roles, err)
+		}
+	}
+	roles, err := resolveProofGoalRoles(root, "candidate-outside", "standing-validation", now)
+	if err != nil || roles.Candidate.Id != "candidate-outside" || roles.Authority.Id != "standing-validation" {
+		t.Fatalf("outside-arc authority refused: roles=%+v err=%v", roles, err)
 	}
 }
 
