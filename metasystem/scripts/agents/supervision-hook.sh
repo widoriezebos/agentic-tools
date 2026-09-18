@@ -428,12 +428,6 @@ emit_fixed_json_notice() { # fixed lines, joined by JSON newlines
   for line in "$@"; do text="$text"'\n'"$line"; done
   printf '{"systemMessage":"%s"}\n' "$text"
 }
-emit_raw_stop_allowance() { # optional fixed prefix line (plain text, no quotes or backslashes)
-  local qualifiers=${1:-}
-  printf '{"systemMessage":"Task unknown; Stop allowed; needs supervision repair; stop-hook-output-was-unreadable%s. The steward must restore supervision. Status unavailable."}\n' "$qualifiers"
-}
-raw_missing_engine_stop='{"systemMessage":"Task unknown; Stop allowed; needs supervision repair; engine missing. Rebuild bin/metasystem. Status unavailable."}'
-raw_engine_skew_stop='{"systemMessage":"Task unknown; Stop allowed; needs supervision repair; engine does not answer path state-root. Rebuild bin/metasystem. Status unavailable."}'
 internal_skip_result='METASYSTEM_INTERNAL_HOOK_SKIP_V1'
 
 # Git steering inherited from another repository must not redirect checkout
@@ -1082,6 +1076,110 @@ if [[ "$event" == start ]]; then
 fi
 # SessionStart cannot pass this dispatcher.
 
+# BEGIN GENERATED degraded Stop forms
+declare -ar degraded_stop_cause_keys=(
+  unreadable-output
+  engine-missing
+  engine-skew
+  staging-failed
+  deadline-expired
+  bootstrap-failed
+  bare
+)
+declare -ar degraded_stop_cause_texts=(
+  stop-hook-output-was-unreadable
+  'engine missing'
+  'engine does not answer path state-root'
+  'payload staging failed'
+  'stop deadline expired'
+  hook-bootstrap-failed
+  ''
+)
+declare -ar degraded_stop_cause_remedies=(
+  'The steward must restore supervision.'
+  'Rebuild bin/metasystem.'
+  'Rebuild bin/metasystem.'
+  'The steward must restore supervision.'
+  'The steward must restore supervision.'
+  'The steward must restore supervision.'
+  ''
+)
+declare -ar degraded_stop_cause_qualifiers=(
+  'condition-log-failed,no-resolved-checkout'
+  ''
+  ''
+  ''
+  'record-update-failed,condition-log-failed,no-resolved-checkout'
+  ''
+  ''
+)
+declare -ar degraded_stop_qualifier_keys=(
+  record-update-failed
+  condition-log-failed
+  no-resolved-checkout
+)
+declare -ar degraded_stop_qualifier_texts=(
+  'record update failed'
+  'condition log failed'
+  'no resolved checkout'
+)
+
+# degraded_stop_form renders one fixed provider payload without consulting the
+# environment, filesystem, engine, or any command outside the shell.
+degraded_stop_form() { # allowed|blocked cause-key [qualifier-key...]
+  local outcome=${1-} cause=${2-} cause_index=-1 index qualifier qualifier_index
+  local cause_text remedy admitted qualifiers= message outcome_word
+  local requested=(false false false)
+  (( $# >= 2 )) || return 2
+  shift 2
+  case "$outcome" in
+    allowed) outcome_word=allowed ;;
+    blocked) outcome_word=blocked ;;
+    *) return 2 ;;
+  esac
+  for index in "${!degraded_stop_cause_keys[@]}"; do
+    if [[ "${degraded_stop_cause_keys[$index]}" == "$cause" ]]; then
+      cause_index=$index
+      break
+    fi
+  done
+  (( cause_index >= 0 )) || return 2
+  [[ "$outcome" != blocked || "$cause" == bare ]] || return 2
+  cause_text=${degraded_stop_cause_texts[$cause_index]}
+  remedy=${degraded_stop_cause_remedies[$cause_index]}
+  admitted=${degraded_stop_cause_qualifiers[$cause_index]}
+  for qualifier in "$@"; do
+    qualifier_index=-1
+    for index in "${!degraded_stop_qualifier_keys[@]}"; do
+      if [[ "${degraded_stop_qualifier_keys[$index]}" == "$qualifier" ]]; then
+        qualifier_index=$index
+        break
+      fi
+    done
+    (( qualifier_index >= 0 )) || return 2
+    case ",$admitted," in
+      *",$qualifier,"*) ;;
+      *) return 2 ;;
+    esac
+    requested[$qualifier_index]=true
+  done
+  for index in "${!degraded_stop_qualifier_keys[@]}"; do
+    [[ "${requested[$index]}" != true ]] || qualifiers="$qualifiers; ${degraded_stop_qualifier_texts[$index]}"
+  done
+  message="Task unknown; Stop $outcome_word; needs supervision repair;"
+  if [[ "$cause" == bare ]]; then
+    message="$message Status unavailable."
+  else
+    message="$message $cause_text$qualifiers. $remedy Status unavailable."
+  fi
+  if [[ "$outcome" == blocked ]]; then
+    builtin printf '{"decision":"block","reason":"%s"}\n' "$message"
+  else
+    builtin printf '{"systemMessage":"%s"}\n' "$message"
+  fi
+}
+# END GENERATED degraded Stop forms
+
 [[ "$runtime" =~ ^[a-z][a-z0-9-]{0,31}$ ]] || exit 2
 case "$event" in receipt|stop|end) ;; *) exit 2 ;; esac
 
@@ -1113,14 +1211,14 @@ if [[ "$event" == stop && "${METASYSTEM_STOP_DEADLINE_PARENT:-}" != "$PPID" ]]; 
     || deadline_dir=$(mktemp -d "/tmp/metasystem-stop-deadline.XXXXXX" 2>/dev/null) \
     || true
   if [[ -z "$deadline_dir" ]]; then
-    printf '%s\n' '{"systemMessage":"Task unknown; Stop allowed; needs supervision repair; payload staging failed. The steward must restore supervision. Status unavailable."}'
+    degraded_stop_form allowed staging-failed
     exit 0
   fi
   deadline_stdout=$deadline_dir/stdout
   deadline_stderr=$deadline_dir/stderr
   deadline_payload=$deadline_dir/payload
   if ! command cat >"$deadline_payload"; then
-    printf '%s\n' '{"systemMessage":"Task unknown; Stop allowed; needs supervision repair; payload staging failed. The steward must restore supervision. Status unavailable."}'
+    degraded_stop_form allowed staging-failed
     rm -f "$deadline_stdout" "$deadline_stderr" "$deadline_payload" || true
     rmdir "$deadline_dir" 2>/dev/null || true
     exit 0
@@ -1298,7 +1396,7 @@ if [[ "$event" == stop && "${METASYSTEM_STOP_DEADLINE_PARENT:-}" != "$PPID" ]]; 
       fi
     elif (( deadline_rc == 0 )); then
       deadline_raw=$(command cat "$deadline_stdout" 2>/dev/null || true)
-      [[ "$deadline_raw" == "$raw_missing_engine_stop" ]] && deadline_valid=true
+      [[ "$deadline_raw" == "$(degraded_stop_form allowed engine-missing)" ]] && deadline_valid=true
     fi
     if (( deadline_rc != 0 )) || [[ "$deadline_valid" != true ]]; then
       while [[ ! -f "$deadline_resolution_ready" ]] &&
@@ -1311,10 +1409,14 @@ if [[ "$event" == stop && "${METASYSTEM_STOP_DEADLINE_PARENT:-}" != "$PPID" ]]; 
       deadline_capture_engine_coordinates
       deadline_log_stop_condition stop-hook-output-was-unreadable stop-worker
       deadline_log_stop_outcome invalid-worker-output-allow
-      deadline_qualifiers=
-      [[ -z "$deadline_log_failure" ]] || deadline_qualifiers='; condition log failed'
-      [[ -n "$deadline_repo" ]] || deadline_qualifiers="$deadline_qualifiers; no resolved checkout"
-      emit_raw_stop_allowance "$deadline_qualifiers"
+      deadline_form_qualifiers=()
+      [[ -z "$deadline_log_failure" ]] || deadline_form_qualifiers+=(condition-log-failed)
+      [[ -n "$deadline_repo" ]] || deadline_form_qualifiers+=(no-resolved-checkout)
+      if (( ${#deadline_form_qualifiers[@]} )); then
+        degraded_stop_form allowed unreadable-output "${deadline_form_qualifiers[@]}"
+      else
+        degraded_stop_form allowed unreadable-output
+      fi
     else
       deadline_stop_resolver
       deadline_capture_engine_coordinates
@@ -1446,16 +1548,20 @@ if [[ "$event" == stop && "${METASYSTEM_STOP_DEADLINE_PARENT:-}" != "$PPID" ]]; 
       deadline_record_failure="the stop-refusal record could not be read or atomically updated"
   fi
   deadline_log_stop_condition stop-deadline-expired stop-deadline
-  deadline_qualifiers=
-  [[ -z "$deadline_record_failure" ]] || deadline_qualifiers='; record update failed'
-  [[ -z "$deadline_log_failure" ]] || deadline_qualifiers="$deadline_qualifiers; condition log failed"
-  [[ -n "$deadline_repo" ]] || deadline_qualifiers="$deadline_qualifiers; no resolved checkout"
+  deadline_form_qualifiers=()
+  [[ -z "$deadline_record_failure" ]] || deadline_form_qualifiers+=(record-update-failed)
+  [[ -z "$deadline_log_failure" ]] || deadline_form_qualifiers+=(condition-log-failed)
+  [[ -n "$deadline_repo" ]] || deadline_form_qualifiers+=(no-resolved-checkout)
   if [[ -n "$deadline_record_failure" ]]; then
     deadline_log_stop_outcome deadline-expired-record-failure-allow "$deadline_elapsed_sec"
   else
     deadline_log_stop_outcome deadline-expired-allow "$deadline_elapsed_sec"
   fi
-  printf '{"systemMessage":"Task unknown; Stop allowed; needs supervision repair; stop deadline expired%s. The steward must restore supervision. Status unavailable."}\n' "$deadline_qualifiers"
+  if (( ${#deadline_form_qualifiers[@]} )); then
+    degraded_stop_form allowed deadline-expired "${deadline_form_qualifiers[@]}"
+  else
+    degraded_stop_form allowed deadline-expired
+  fi
   if [[ "$deadline_worker_waited" == true ]]; then
     rm -f "$deadline_stdout" "$deadline_stderr" "$deadline_payload" \
       "$deadline_resolution_session" "$deadline_resolution_root" "$deadline_resolution_ready" || true
@@ -1507,7 +1613,7 @@ canonical=$world_installation/bin/metasystem
 ms=${METASYSTEM_BIN:-$canonical}
 if [[ ! -x "$canonical" || ! -x "$ms" ]]; then
   if [[ "$event" == stop ]]; then
-    printf '%s\n' "$raw_missing_engine_stop"
+    degraded_stop_form allowed engine-missing
   elif [[ "$event" == start ]]; then
     printf '%s\n' '{"systemMessage":"Metasystem engine missing: this session received no role context; if this checkout is a declared brain it is uninstructed until the engine is rebuilt: run scripts/agents/go-build.sh, then start a new session"}'
   fi
@@ -1527,7 +1633,7 @@ payload=$(mktemp "${TMPDIR:-/tmp}/metasystem-supervision-hook.XXXXXX")
 stop_work_dir=
 if [[ "$event" == stop ]]; then
   stop_work_dir=$(mktemp -d "${TMPDIR:-/tmp}/metasystem-stop-presentation.XXXXXX") || {
-    printf '%s\n' '{"systemMessage":"Task unknown; Stop allowed; needs supervision repair; payload staging failed. The steward must restore supervision. Status unavailable."}'
+    degraded_stop_form allowed staging-failed
     exit 0
   }
 fi
@@ -1549,7 +1655,7 @@ if (( repo_rc == 1 )); then
   exit 0
 elif (( repo_rc != 0 )) || ! hook_root_is_one_line "$repo"; then
   if [[ "$event" == stop ]]; then
-    printf '%s\n' "$raw_engine_skew_stop"
+    degraded_stop_form allowed engine-skew
   fi
   exit 0
 fi
@@ -2036,9 +2142,9 @@ stop_delivery_ready=false
 presentation_file=
 fallback_stop_payload() { # retained control
   if [[ "$1" == true ]]; then
-    response=$("$ms" json object decision=block reason='Task unknown; Stop blocked; needs supervision repair; Status unavailable.')
+    response=$(degraded_stop_form blocked bare)
   else
-    response=$("$ms" json object systemMessage='Task unknown; Stop allowed; needs supervision repair; Status unavailable.')
+    response=$(degraded_stop_form allowed bare)
   fi
   stop_delivery_ready=false
 }

@@ -43,9 +43,9 @@ func populateHostInstallation(t *testing.T, installation string) {
 	if err := os.MkdirAll(filepath.Join(installation, "scripts", "agents"), 0o755); err != nil {
 		t.Fatal(err)
 	}
-	writeHostFile(t, filepath.Join(installation, "scripts", "enforcement", "claude-code-hooks.json"), claudeHooks, 0o644)
-	writeHostFile(t, filepath.Join(installation, "scripts", "enforcement", "codex-hooks.json"), codexHooks, 0o644)
-	writeHostFile(t, filepath.Join(installation, "scripts", "enforcement", "devin-hooks.json"), devinHooks, 0o644)
+	writeHostFile(t, filepath.Join(installation, "scripts", "enforcement", "claude-code-hooks.json"), hostHookFixture(t, "claude-code"), 0o644)
+	writeHostFile(t, filepath.Join(installation, "scripts", "enforcement", "codex-hooks.json"), hostHookFixture(t, "codex"), 0o644)
+	writeHostFile(t, filepath.Join(installation, "scripts", "enforcement", "devin-hooks.json"), hostHookFixture(t, "devin"), 0o644)
 	writeHostFile(t, filepath.Join(installation, "skills", "demo", "SKILL.md"), "demo skill\n", 0o640)
 	writeHostFile(t, filepath.Join(installation, "skills", "demo", "agents", "claude-profile.md"), "claude profile\n", 0o644)
 	writeHostFile(t, filepath.Join(installation, "skills", "demo", "agents", "devin", "AGENT.md"), "devin profile\n", 0o644)
@@ -65,9 +65,14 @@ func writeHostFile(t *testing.T, path, content string, mode os.FileMode) {
 	}
 }
 
-const claudeHooks = `{"hooks":{"SessionStart":[{"matcher":"startup|resume|clear|compact","hooks":[{"type":"command","command":"bash scripts/agents/supervision-hook.sh claude start","timeout":15}]}],"Stop":[{"hooks":[{"type":"command","command":"(bash scripts/agents/supervision-hook.sh claude stop) || printf '%s\\n' '{\"systemMessage\":\"Task unknown; Stop allowed; needs supervision repair; hook-bootstrap-failed. The steward must restore supervision. Status unavailable.\"}'","timeout":60}]}],"SessionEnd":[{"hooks":[{"type":"command","command":"bash scripts/agents/supervision-hook.sh claude end","timeout":3}]}]}}`
-const codexHooks = `{"hooks":{"SessionStart":[{"matcher":"startup|resume|clear|compact","hooks":[{"type":"command","command":"bash scripts/agents/supervision-hook.sh codex start","timeout":15}]}],"Stop":[{"hooks":[{"type":"command","command":"(bash scripts/agents/supervision-hook.sh codex stop) || printf '%s\\n' '{\"systemMessage\":\"Task unknown; Stop allowed; needs supervision repair; hook-bootstrap-failed. The steward must restore supervision. Status unavailable.\"}'","timeout":60}]}],"SessionEnd":[{"hooks":[{"type":"command","command":"bash scripts/agents/supervision-hook.sh codex end","timeout":3}]}]}}`
-const devinHooks = `{"hooks":{"SessionStart":[{"hooks":[{"type":"command","command":"bash scripts/agents/supervision-hook.sh devin start","timeout":15}]}],"Stop":[{"hooks":[{"type":"command","command":"bash scripts/agents/supervision-hook.sh devin stop","timeout":60}]}],"SessionEnd":[{"hooks":[{"type":"command","command":"bash scripts/agents/supervision-hook.sh devin end","timeout":3}]}]}}`
+func hostHookFixture(t *testing.T, name string) string {
+	t.Helper()
+	contents, err := os.ReadFile(filepath.Join(hostSetupModuleRoot(t), "scripts", "enforcement", name+"-hooks.json"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	return string(contents)
+}
 
 func TestSetupNestedDefaultsAllPreservesUnrelatedStateModesAndIsIdempotent(t *testing.T) {
 	repo, _ := hostFixture(t, true)
@@ -649,7 +654,7 @@ func TestSetupSupportsNestedAdoptedInstallationWithoutOwningParent(t *testing.T)
 	writeHostFile(t, parentSettings, "{\n  \"foreign\": true\n}\n", 0o640)
 	writeHostFile(t, filepath.Join(repo, "AGENTS.md"), "parent instructions\n", 0o600)
 	writeHostFile(t, filepath.Join(installation, "AGENTS.md"), "nested instructions\n", 0o640)
-	writeHostFile(t, filepath.Join(installation, ".codex", "hooks.json"), codexHooks, 0o640)
+	writeHostFile(t, filepath.Join(installation, ".codex", "hooks.json"), hostHookFixture(t, "codex"), 0o640)
 	capture := filepath.Join(t.TempDir(), "nested hook capture")
 	writeHostFile(t, filepath.Join(installation, "scripts", "agents", "supervision-hook.sh"), "#!/usr/bin/env bash\nprintf '%s\\n' \"$PWD|$*\" >\"$HOOK_CAPTURE\"\n", 0o755)
 

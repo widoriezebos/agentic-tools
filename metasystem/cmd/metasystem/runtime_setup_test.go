@@ -29,9 +29,9 @@ func setupCLIFixture(t *testing.T) (repo, installation string) {
 	if err := os.MkdirAll(filepath.Join(installation, "scripts", "agents"), 0o755); err != nil {
 		t.Fatal(err)
 	}
-	setupCLIWrite(t, filepath.Join(installation, "scripts", "enforcement", "claude-code-hooks.json"), cliClaudeHooks, 0o644)
-	setupCLIWrite(t, filepath.Join(installation, "scripts", "enforcement", "codex-hooks.json"), cliCodexHooks, 0o644)
-	setupCLIWrite(t, filepath.Join(installation, "scripts", "enforcement", "devin-hooks.json"), cliDevinHooks, 0o644)
+	setupCLIWrite(t, filepath.Join(installation, "scripts", "enforcement", "claude-code-hooks.json"), runtimeHookFixture(t, "claude-code"), 0o644)
+	setupCLIWrite(t, filepath.Join(installation, "scripts", "enforcement", "codex-hooks.json"), runtimeHookFixture(t, "codex"), 0o644)
+	setupCLIWrite(t, filepath.Join(installation, "scripts", "enforcement", "devin-hooks.json"), runtimeHookFixture(t, "devin"), 0o644)
 	setupCLIWrite(t, filepath.Join(installation, "skills", "demo", "SKILL.md"), "demo\n", 0o644)
 	setupCLIWrite(t, filepath.Join(installation, "skills", "demo", "agents", "claude-profile.md"), "claude\n", 0o644)
 	setupCLIWrite(t, filepath.Join(installation, "skills", "demo", "agents", "devin", "AGENT.md"), "devin\n", 0o644)
@@ -49,9 +49,18 @@ func setupCLIWrite(t *testing.T, path, content string, mode os.FileMode) {
 	}
 }
 
-const cliClaudeHooks = `{"hooks":{"SessionStart":[{"matcher":"startup|resume|clear|compact","hooks":[{"type":"command","command":"bash scripts/agents/supervision-hook.sh claude start","timeout":15}]}],"Stop":[{"hooks":[{"type":"command","command":"(bash scripts/agents/supervision-hook.sh claude stop) || printf '%s\\n' '{\"systemMessage\":\"Task unknown; Stop allowed; needs supervision repair; hook-bootstrap-failed. The steward must restore supervision. Status unavailable.\"}'","timeout":60}]}],"SessionEnd":[{"hooks":[{"type":"command","command":"bash scripts/agents/supervision-hook.sh claude end","timeout":3}]}]}}`
-const cliCodexHooks = `{"hooks":{"SessionStart":[{"matcher":"startup|resume|clear|compact","hooks":[{"type":"command","command":"bash scripts/agents/supervision-hook.sh codex start","timeout":15}]}],"Stop":[{"hooks":[{"type":"command","command":"(bash scripts/agents/supervision-hook.sh codex stop) || printf '%s\\n' '{\"systemMessage\":\"Task unknown; Stop allowed; needs supervision repair; hook-bootstrap-failed. The steward must restore supervision. Status unavailable.\"}'","timeout":60}]}],"SessionEnd":[{"hooks":[{"type":"command","command":"bash scripts/agents/supervision-hook.sh codex end","timeout":3}]}]}}`
-const cliDevinHooks = `{"hooks":{"SessionStart":[{"hooks":[{"type":"command","command":"bash scripts/agents/supervision-hook.sh devin start","timeout":15}]}],"Stop":[{"hooks":[{"type":"command","command":"bash scripts/agents/supervision-hook.sh devin stop","timeout":60}]}],"SessionEnd":[{"hooks":[{"type":"command","command":"bash scripts/agents/supervision-hook.sh devin end","timeout":3}]}]}}`
+func runtimeHookFixture(t *testing.T, name string) string {
+	t.Helper()
+	root, err := filepath.Abs(filepath.Join("..", ".."))
+	if err != nil {
+		t.Fatal(err)
+	}
+	contents, err := os.ReadFile(filepath.Join(root, "scripts", "enforcement", name+"-hooks.json"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	return string(contents)
+}
 
 func TestRuntimeSetupCLIConfiguresAllByDefaultChecksAndSelectsNone(t *testing.T) {
 	repo, _ := setupCLIFixture(t)

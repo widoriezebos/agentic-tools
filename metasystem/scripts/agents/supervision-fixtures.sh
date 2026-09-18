@@ -2,6 +2,7 @@
 set -euo pipefail
 
 fixture_bed_root=$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd -P)
+source "$fixture_bed_root/scripts/agents/stop-degraded-forms.sh"
 source "$fixture_bed_root/scripts/agents/fixture-budget.sh"
 fixture_bed_child=0
 fixture_scenario=
@@ -1610,7 +1611,7 @@ cp "$nested_hook" "$copied_dir/supervision-hook.sh"
 cp "$nested_installation/scripts/agents/evidence-gc.sh" "$copied_dir/evidence-gc.sh"
 ln -s "$nested_hook" "$copied_dir/hook-link.sh"
 copied_log_before=$(wc -c <"$nested_primary_log" | tr -d '[:space:]')
-  missing_engine_allowance='{"systemMessage":"Task unknown; Stop allowed; needs supervision repair; engine missing. Rebuild bin/metasystem. Status unavailable."}'
+  missing_engine_allowance=$(degraded_stop_form allowed engine-missing)
 for copied_kind in copy link; do
   copied_hook=$copied_dir/supervision-hook.sh
   [[ "$copied_kind" != link ]] || copied_hook=$copied_dir/hook-link.sh
@@ -1652,7 +1653,7 @@ cp -R "$nested_installation/scripts/agents/adapters" "$no_world/scripts/agents/a
     || { echo "an installation outside Git spent ${no_world_elapsed}s waiting for a resolver it did not start" >&2; exit 1; }
   [[ ! -e "$no_world/artifacts" ]] \
     || { echo "an installation outside Git guessed a governed world" >&2; cat "$tmp/no-world.out" >&2; exit 1; }
-  no_world_expected='{"systemMessage":"Task unknown; Stop allowed; needs supervision repair; stop-hook-output-was-unreadable; condition log failed; no resolved checkout. The steward must restore supervision. Status unavailable."}'
+  no_world_expected=$(degraded_stop_form allowed unreadable-output no-resolved-checkout condition-log-failed)
   [[ $(<"$tmp/no-world.out") == "$no_world_expected" ]] \
     && ! grep -Fq '"decision":"block"' "$tmp/no-world.out" \
     || { echo "an installation outside Git did not use the unreadable-output allowance" >&2; cat "$tmp/no-world.out" >&2; exit 1; }
@@ -1693,7 +1694,7 @@ run_nested_holder_stop engine-skew "$skew_root" \
 run_nested_holder_stop engine-skew-malformed "$skew_root" \
   "$skew_root/scripts/agents/supervision-hook.sh" "$tmp/engine-skew-malformed.out" \
   env -u METASYSTEM_BIN "METASYSTEM_SKEW_REAL_ENGINE=$ms" METASYSTEM_SKEW_MALFORMED_ROOT=1
-engine_skew_expected='{"systemMessage":"Task unknown; Stop allowed; needs supervision repair; engine does not answer path state-root. Rebuild bin/metasystem. Status unavailable."}'
+engine_skew_expected=$(degraded_stop_form allowed engine-skew)
 for skew_output in "$tmp/engine-skew.out" "$tmp/engine-skew-malformed.out"; do
   [[ $(<"$skew_output") == "$engine_skew_expected" ]] \
     || { echo "engine skew did not emit its fixed hook-skew allowance" >&2; cat "$skew_output" >&2; exit 1; }
@@ -1826,7 +1827,7 @@ chmod +x "$deadline_engine"
   fi
   record=$expected_root/artifacts/agents/supervision/stop-refusals/$session_id.json
     if [[ "$slow_root" == 1 ]]; then
-      unresolved_record_expected='{"systemMessage":"Task unknown; Stop allowed; needs supervision repair; stop deadline expired; record update failed; condition log failed; no resolved checkout. The steward must restore supervision. Status unavailable."}'
+      unresolved_record_expected=$(degraded_stop_form allowed deadline-expired no-resolved-checkout record-update-failed condition-log-failed)
       [[ $(<"$output") == "$unresolved_record_expected" ]] \
         || { echo "$session_id did not emit the fixed unresolved-root record-failure allowance" >&2; cat "$output" >&2; exit 1; }
       unexpected_record=$(find "$nested_scope" "$nested_worktree" -type f \

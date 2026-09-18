@@ -2,13 +2,55 @@ package hooks
 
 import (
 	"encoding/json"
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 )
 
-const codexShipped = `{"hooks":{"SessionStart":[{"matcher":"startup|resume|clear|compact","hooks":[{"type":"command","command":"bash scripts/agents/supervision-hook.sh codex start","timeout":15}]}],"Stop":[{"hooks":[{"type":"command","command":"(bash scripts/agents/supervision-hook.sh codex stop) || printf '%s\\n' '{\"systemMessage\":\"Task unknown; Stop allowed; needs supervision repair; hook-bootstrap-failed. The steward must restore supervision. Status unavailable.\"}'","timeout":60}]}],"SessionEnd":[{"hooks":[{"type":"command","command":"bash scripts/agents/supervision-hook.sh codex end","timeout":3}]}]}}`
-const claudeShipped = `{"hooks":{"SessionStart":[{"matcher":"startup|resume|clear|compact","hooks":[{"type":"command","command":"bash scripts/agents/supervision-hook.sh claude start","timeout":15}]}],"Stop":[{"hooks":[{"type":"command","command":"(bash scripts/agents/supervision-hook.sh claude stop) || printf '%s\\n' '{\"systemMessage\":\"Task unknown; Stop allowed; needs supervision repair; hook-bootstrap-failed. The steward must restore supervision. Status unavailable.\"}'","timeout":60}]}],"SessionEnd":[{"hooks":[{"type":"command","command":"bash scripts/agents/supervision-hook.sh claude end","timeout":3}]}]}}`
-const devinShipped = `{"hooks":{"SessionStart":[{"hooks":[{"type":"command","command":"bash scripts/agents/supervision-hook.sh devin start","timeout":15}]}],"Stop":[{"hooks":[{"type":"command","command":"bash scripts/agents/supervision-hook.sh devin stop","timeout":60}]}],"SessionEnd":[{"hooks":[{"type":"command","command":"bash scripts/agents/supervision-hook.sh devin end","timeout":3}]}]}}`
+var codexShipped = readShippedHooksFixture("codex")
+var claudeShipped = readShippedHooksFixture("claude-code")
+var devinShipped = readShippedHooksFixture("devin")
+
+func readShippedHooksFixture(name string) string {
+	contents, err := os.ReadFile(filepath.Join("..", "..", "scripts", "enforcement", name+"-hooks.json"))
+	if err != nil {
+		panic(err)
+	}
+	var source struct {
+		Hooks json.RawMessage `json:"hooks"`
+	}
+	if err := json.Unmarshal(contents, &source); err != nil {
+		panic(err)
+	}
+	fixture, err := json.Marshal(struct {
+		Hooks json.RawMessage `json:"hooks"`
+	}{Hooks: source.Hooks})
+	if err != nil {
+		panic(err)
+	}
+	return string(fixture)
+}
+
+func shippedStopCommand(t *testing.T, shipped string) string {
+	t.Helper()
+	var fixture struct {
+		Hooks struct {
+			Stop []struct {
+				Hooks []struct {
+					Command string `json:"command"`
+				} `json:"hooks"`
+			} `json:"Stop"`
+		} `json:"hooks"`
+	}
+	if err := json.Unmarshal([]byte(shipped), &fixture); err != nil {
+		t.Fatal(err)
+	}
+	if len(fixture.Hooks.Stop) != 1 || len(fixture.Hooks.Stop[0].Hooks) != 1 {
+		t.Fatal("shipped fixture has no single Stop command")
+	}
+	return fixture.Hooks.Stop[0].Hooks[0].Command
+}
 
 func TestMergeSplitsOwnedHandlerFromForeignSiblingWhenMatcherChanges(t *testing.T) {
 	live := []byte(`{"foreignTop":{"kept":true},"hooks":{"SessionStart":[{"matcher":"startup|resume|clear","groupField":"foreign","hooks":[{"type":"command","command":"cd \"$CLAUDE_PROJECT_DIR/metasystem\" && bash scripts/agents/supervision-hook.sh claude start","timeout":15},{"type":"command","command":"foreign-command","timeout":7}]}],"ForeignEvent":[{"matcher":"x","hooks":[{"command":"foreign-event"}]}]}}`)
@@ -175,7 +217,7 @@ func TestClaudeMergeReplacesTheBlockFallbackLauncher(t *testing.T) {
 		t.Fatal(err)
 	}
 	text := string(merged)
-	want := renderGitRequiredCommand("claude", "stop", "metasystem", shippedFallback(`(bash scripts/agents/supervision-hook.sh claude stop) || printf '%s\n' '{"systemMessage":"Task unknown; Stop allowed; needs supervision repair; hook-bootstrap-failed. The steward must restore supervision. Status unavailable."}'`))
+	want := renderGitRequiredCommand("claude", "stop", "metasystem", shippedFallback(shippedStopCommand(t, claudeShipped)))
 	if strings.Count(text, "supervision-hook.sh claude stop") != 1 || strings.Contains(text, `\"decision\":\"block\"`) || !strings.Contains(text, jsonString(t, want)) {
 		t.Fatalf("the block fallback launcher was not replaced by the shipped degraded one: %s", text)
 	}

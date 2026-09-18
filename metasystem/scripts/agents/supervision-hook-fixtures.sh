@@ -38,6 +38,7 @@ set -euo pipefail
 
 root=$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd -P)
 ms="${METASYSTEM_BIN:-$root/bin/metasystem}"
+source "$root/scripts/agents/stop-degraded-forms.sh"
 # The engine under test may arrive read-only. Every staged copy of an engine is
 # a fresh writable file, so a later stub or a second copy replaces it cleanly.
 cp_engine() { # source destination
@@ -90,7 +91,6 @@ fi
 if [[ "$fixture_scenario" == launcher-fallback ]]; then
 harness_fixture_bed_leg shipped-launcher-fallback
 grep -Fq 'hook-bootstrap-failed' "$launcher" \
-  && grep -Fq 'Status unavailable' "$launcher" \
   && ! grep -Fq 'Stop hook launcher failed before a safe verdict; stopping is refused' "$launcher" \
   || { echo "Claude Stop launcher fallback is not a degraded allowance" >&2; exit 1; }
 # The shipped Stop launcher line itself, run where the hook cannot bootstrap
@@ -105,7 +105,7 @@ launcher_bed=$(mktemp -d "${TMPDIR:-/tmp}/metasystem-launcher-fixture.XXXXXX")
 launcher_out=$(cd "$launcher_bed" && bash -c "$launcher_stop" 2>/dev/null) \
   || { echo "the shipped Claude Stop launcher exited nonzero on a bootstrap failure" >&2; exit 1; }
 rm -rf "$launcher_bed"
-launcher_expected='{"systemMessage":"Task unknown; Stop allowed; needs supervision repair; hook-bootstrap-failed. The steward must restore supervision. Status unavailable."}'
+launcher_expected=$(degraded_stop_form allowed bootstrap-failed)
 [[ "$launcher_out" == "$launcher_expected" ]] \
   && ! grep -Fq '"decision":"block"' <<<"$launcher_out" \
   || { echo "the shipped Claude Stop launcher did not allow with a degraded notice on a bootstrap failure: $launcher_out" >&2; exit 1; }
@@ -129,7 +129,7 @@ hook_process_pid=
 hook_process_path=
 brain_fake_pid=
 brain_fake_path=
-missing_engine_expected='{"systemMessage":"Task unknown; Stop allowed; needs supervision repair; engine missing. Rebuild bin/metasystem. Status unavailable."}'
+missing_engine_expected=$(degraded_stop_form allowed engine-missing)
 stop_hook_process() {
   local command stop_deadline
   [[ -n "$hook_process_pid" ]] || return 0
@@ -1345,8 +1345,8 @@ if [[ "$fixture_scenario" == stop-failure-paths ]]; then
 # An uncaught early command error is converted by the deadline parent, while
 # captured pre-verdict failures and unreadable verdict output all allow the
 # Stop with their degraded diagnostic.
-unreadable_stop_allowance='{"systemMessage":"Task unknown; Stop allowed; needs supervision repair; stop-hook-output-was-unreadable. The steward must restore supervision. Status unavailable."}'
-status_unavailable_allowance='{"systemMessage":"Task unknown; Stop allowed; needs supervision repair; Status unavailable."}'
+unreadable_stop_allowance=$(degraded_stop_form allowed unreadable-output)
+status_unavailable_allowance=$(degraded_stop_form allowed bare)
 assert_failure_allows runtime-list runtime-list fixed "$unreadable_stop_allowance"
 assert_failure_allows hook-attempt hook-attempt report 'attempt evidence could not be recorded'
 assert_failure_allows turn-verdict turn-verdict fixed "$status_unavailable_allowance"
@@ -1617,7 +1617,7 @@ METASYSTEM_BIN="$coordinate_engine" METASYSTEM_COORDINATE_REAL_ENGINE="$ms" \
     <"$tmp/coordinate-payload.json" >"$tmp/coordinate.out" 2>"$tmp/coordinate.err" || coordinate_rc=$?
 (( coordinate_rc == 0 )) \
   || { echo "deadline coordinate fixture returned $coordinate_rc" >&2; cat "$tmp/coordinate.err" >&2; exit 1; }
-coordinate_expected='{"systemMessage":"Task unknown; Stop allowed; needs supervision repair; stop-hook-output-was-unreadable. The steward must restore supervision. Status unavailable."}'
+coordinate_expected=$(degraded_stop_form allowed unreadable-output)
 [[ $(<"$tmp/coordinate.out") == "$coordinate_expected" ]] \
   || { echo "deadline coordinate fixture lost its fixed degraded allowance" >&2; cat "$tmp/coordinate.out" >&2; exit 1; }
 if grep -Fq '"decision":"block"' "$tmp/coordinate.out"; then
@@ -1644,7 +1644,7 @@ chmod +x "$slow_resolution_engine"
 printf '%s\n' '{broken' >"$tmp/slow-resolution-malformed.json"
 printf '{"session_id":"slow-resolution-runtime","cwd":"%s","hook_event_name":"Stop"}\n' \
   "$line_root" >"$tmp/slow-resolution-runtime.json"
-slow_resolution_expected='{"systemMessage":"Task unknown; Stop allowed; needs supervision repair; stop-hook-output-was-unreadable. The steward must restore supervision. Status unavailable."}'
+slow_resolution_expected=$(degraded_stop_form allowed unreadable-output)
 for slow_resolution_case in malformed runtime; do
   slow_resolution_log_start=$(wc -l <"$line_root/artifacts/agents/supervision/hooks.log")
   slow_resolution_started=$SECONDS
@@ -1716,7 +1716,7 @@ killed_rc=$?
 set -e
 [[ "$killed_rc" -eq 0 ]] \
   || { echo "supervision hook kill fixture did not convert the worker failure to a provider response" >&2; exit 1; }
-killed_expected='{"systemMessage":"Task unknown; Stop allowed; needs supervision repair; stop-hook-output-was-unreadable. The steward must restore supervision. Status unavailable."}'
+killed_expected=$(degraded_stop_form allowed unreadable-output)
 [[ $(<"$tmp/killed.out") == "$killed_expected" ]] \
   || { echo "supervision hook kill fixture did not emit its fixed degraded allowance" >&2; cat "$tmp/killed.out" >&2; exit 1; }
 if grep -Fq '"decision":"block"' "$tmp/killed.out"; then
@@ -1781,7 +1781,7 @@ fi
 exec "${METASYSTEM_DEADLINE_REAL_ENGINE:?}" "$@"
 SH
 chmod +x "$deadline_engine"
-deadline_expected='{"systemMessage":"Task unknown; Stop allowed; needs supervision repair; stop deadline expired. The steward must restore supervision. Status unavailable."}'
+deadline_expected=$(degraded_stop_form allowed deadline-expired)
 if [[ "$fixture_scenario" == deadline-expiry ]]; then
 harness_fixture_bed_leg deadline-expiry-and-repeat
 # The worker window is at least ten times the worst observed head time before the first asserted
@@ -1925,7 +1925,7 @@ mv "$line_root/bin/metasystem.absent" "$line_root/bin/metasystem"
   || { echo "supervision hook deadline fixture without an engine exited $deadline_noengine_rc" >&2; cat "$tmp/deadline-noengine.err" >&2; exit 1; }
 [[ $(grep -c . "$tmp/deadline-noengine.out") -eq 1 ]] \
   || { echo "supervision hook deadline fixture without an engine did not print exactly one line" >&2; cat "$tmp/deadline-noengine.out" >&2; exit 1; }
-deadline_noengine_expected='{"systemMessage":"Task unknown; Stop allowed; needs supervision repair; engine missing. Rebuild bin/metasystem. Status unavailable."}'
+deadline_noengine_expected=$(degraded_stop_form allowed engine-missing)
 [[ $(<"$tmp/deadline-noengine.out") == "$deadline_noengine_expected" ]] \
   || { echo "supervision hook deadline fixture without an engine did not preserve the missing-engine allowance" >&2; cat "$tmp/deadline-noengine.out" >&2; exit 1; }
 deadline_noengine_log_after=$(wc -c <"$line_root/artifacts/agents/supervision/hooks.log" | tr -d '[:space:]')
@@ -1974,7 +1974,7 @@ METASYSTEM_BIN="$prefix_engine" METASYSTEM_PREFIX_DEADLINE_ENGINE="$deadline_eng
   || { echo "supervision hook deadline record-failure fixture exited $deadline_record_failure_rc" >&2; cat "$tmp/deadline-record-failure.err" >&2; exit 1; }
 [[ $(grep -c . "$tmp/deadline-record-failure.out") -eq 1 ]] \
   || { echo "supervision hook deadline record-failure fixture did not print exactly one line" >&2; cat "$tmp/deadline-record-failure.out" >&2; exit 1; }
-deadline_record_failure_expected='{"systemMessage":"Task unknown; Stop allowed; needs supervision repair; stop deadline expired; record update failed. The steward must restore supervision. Status unavailable."}'
+deadline_record_failure_expected=$(degraded_stop_form allowed deadline-expired record-update-failed)
 [[ $(<"$tmp/deadline-record-failure.out") == "$deadline_record_failure_expected" ]] \
   || { echo "supervision hook deadline record-failure fixture did not emit its fixed allowance" >&2; cat "$tmp/deadline-record-failure.out" >&2; exit 1; }
 sed -n "$((deadline_record_failure_log_start + 1)),\$p" \
@@ -2006,7 +2006,7 @@ chmod 0644 "$line_root/artifacts/agents/supervision/hooks.log"
 [[ $(grep -c . "$tmp/deadline-prefix.out") -eq 1 ]] \
   || { echo "supervision hook deadline fixture with a refusing json engine did not print exactly one line" >&2; cat "$tmp/deadline-prefix.out" >&2; exit 1; }
 # The fixed fallback retains the log failure as a qualifier on the one line.
-deadline_prefix_expected='{"systemMessage":"Task unknown; Stop allowed; needs supervision repair; stop deadline expired; condition log failed. The steward must restore supervision. Status unavailable."}'
+deadline_prefix_expected=$(degraded_stop_form allowed deadline-expired condition-log-failed)
 [[ $(<"$tmp/deadline-prefix.out") == "$deadline_prefix_expected" ]] \
   || { echo "supervision hook deadline fixture with a refusing json engine did not allow with one fixed notice" >&2; cat "$tmp/deadline-prefix.out" >&2; exit 1; }
 exit 0
@@ -2103,7 +2103,7 @@ METASYSTEM_BIN="$failure_engine" \
     || missing_template_rc=$?
 (( missing_template_rc == 0 )) \
   || { echo "missing template state fixture returned $missing_template_rc" >&2; exit 1; }
-missing_template_expected='{"systemMessage":"Task unknown; Stop allowed; needs supervision repair; engine missing. Rebuild bin/metasystem. Status unavailable."}'
+missing_template_expected=$(degraded_stop_form allowed engine-missing)
 [[ $(<"$tmp/missing-template.out") == "$missing_template_expected" ]] \
   || { echo "missing template state fixture did not use the missing-engine allowance" >&2; cat "$tmp/missing-template.out" >&2; exit 1; }
 if grep -Fq '"decision":"block"' "$tmp/missing-template.out"; then
