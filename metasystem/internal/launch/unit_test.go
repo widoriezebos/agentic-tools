@@ -1,8 +1,11 @@
 package launch
 
 import (
+	"crypto/sha256"
 	"encoding/json"
 	"errors"
+	"fmt"
+	"io/fs"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -18,6 +21,18 @@ type recordingGit struct {
 	diff           []byte
 	calls          [][]string
 	envs           [][]string
+}
+
+type recordingOSGit struct {
+	runner OSGitRunner
+	calls  [][]string
+	envs   [][]string
+}
+
+func (git *recordingOSGit) Run(directory string, environment []string, args ...string) ([]byte, error) {
+	git.calls = append(git.calls, append([]string(nil), args...))
+	git.envs = append(git.envs, append([]string(nil), environment...))
+	return git.runner.Run(directory, environment, args...)
 }
 
 func (git *recordingGit) Run(_ string, env []string, args ...string) ([]byte, error) {
@@ -39,12 +54,18 @@ type completingStarter struct {
 	failKind, holdKind string
 	order, ids         []string
 	readOutput         string
+	onStart            func(Record) error
 }
 
 func (starter *completingStarter) StartSupervisor(id, _ string) (identity.Ref, error) {
 	starter.ids = append(starter.ids, id)
 	record, _ := starter.m.Store.Read(id)
 	starter.order = append(starter.order, record.Kind)
+	if starter.onStart != nil {
+		if err := starter.onStart(record); err != nil {
+			return identity.Ref{}, err
+		}
+	}
 	starter.m.Store.Update(id, func(current *Record) error {
 		if record.Kind == starter.holdKind {
 			supervisor, child := ref(10), ref(20)
@@ -145,7 +166,7 @@ func TestRunRecordNamesEveryStep(t *testing.T) {
 	for _, step := range result.Record.Rounds[0].Steps {
 		names = append(names, step.Name)
 	}
-	if !slices.Equal(names, []string{"build", "read", "proof:check"}) {
+	if !slices.Equal(names, []string{"build", "proof:check", "read"}) {
 		t.Fatalf("steps=%v", names)
 	}
 	if _, err := os.Stat(filepath.Join(fixture.runner.runDir(result.Record.ID), "run.json")); err != nil {
@@ -168,10 +189,10 @@ func TestRunStopsAtTheCapAndResumeContinues(t *testing.T) {
 	}
 }
 
-func TestReadRunsBeforeAnyProofCommand(t *testing.T) {
+func TestProofRunsBeforeTheRead(t *testing.T) {
 	fixture := newUnitFixture(t, "")
 	_, err := fixture.runner.Advance(UnitRequest{Plan: fixture.plan})
-	if err != nil || !slices.Equal(fixture.starter.order, []string{"build", "read", "proof"}) {
+	if err != nil || !slices.Equal(fixture.starter.order, []string{"build", "proof", "read"}) {
 		t.Fatalf("order=%v err=%v", fixture.starter.order, err)
 	}
 }
@@ -184,6 +205,19 @@ func TestEveryOutcomeEndsAtAwaitingJudgement(t *testing.T) {
 			result, err := fixture.runner.Advance(UnitRequest{Plan: fixture.plan})
 			if err != nil || result.Record.State != "awaiting-judgement" || result.Record.Rounds[0].Outcome != row.want {
 				t.Fatalf("result=%+v err=%v", result, err)
+			}
+			if row.want == "proof-red" {
+				for _, step := range result.Record.Rounds[0].Steps {
+					if strings.HasPrefix(step.Name, "read") && (step.State != StepSkipped || step.Reason != "proof-red") {
+						t.Fatalf("read step=%+v", step)
+					}
+				}
+				if slices.Contains(fixture.starter.order, "read") {
+					t.Fatalf("order=%v", fixture.starter.order)
+				}
+			}
+			if row.want == "read-failed" && !slices.Contains(fixture.starter.order, "proof") {
+				t.Fatalf("order=%v", fixture.starter.order)
 			}
 		})
 	}
@@ -304,13 +338,13 @@ func TestEachRoundReadsFreshWithThePreviousReadAsInput(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	read := second.Record.Rounds[1].Steps[1]
+	read := stepNamed(t, second.Record.Rounds[1], "read")
 	launched, _ := fixture.manager.Store.Read(read.LaunchID)
 	var paths []string
 	for _, input := range launched.Inputs {
 		paths = append(paths, input.Path)
 	}
-	if !slices.Contains(paths, output) || !slices.Contains(paths, second.Record.Rounds[1].FollowUp) || second.Record.Rounds[0].Steps[1].LaunchID == read.LaunchID {
+	if !slices.Contains(paths, output) || !slices.Contains(paths, second.Record.Rounds[1].FollowUp) || stepNamed(t, second.Record.Rounds[0], "read").LaunchID == read.LaunchID {
 		t.Fatalf("inputs=%v", paths)
 	}
 }
@@ -349,8 +383,57 @@ func TestFollowUpStartsTheNextRoundOnTheSameWorktree(t *testing.T) {
 	}
 }
 
+func TestProofThatMovesTheRepositoryEndsTheRound(t *testing.T) {
+	for _, row := range []struct {
+		name, moved string
+		effect      func(*testing.T, string)
+	}{
+		{"commit", "head", func(t *testing.T, repo string) {
+			writeFile(t, filepath.Join(repo, "committed"), "new\n")
+			runGit(t, repo, "add", "committed")
+			runGit(t, repo, "commit", "-m", "proof commit")
+		}},
+		{"ref", "refs", func(t *testing.T, repo string) { runGit(t, repo, "update-ref", "refs/heads/x", "HEAD") }},
+		{"index", "index", func(t *testing.T, repo string) {
+			writeFile(t, filepath.Join(repo, "staged"), "new\n")
+			runGit(t, repo, "add", "staged")
+		}},
+		{"tree", "tree", func(t *testing.T, repo string) { writeFile(t, filepath.Join(repo, "tracked"), "changed\n") }},
+		{"none", "", nil},
+	} {
+		t.Run(row.name, func(t *testing.T) {
+			fixture, repo := newGitUnitFixture(t)
+			fixture.starter.onStart = func(record Record) error {
+				if record.Kind == "proof" && row.effect != nil {
+					row.effect(t, repo)
+				}
+				return nil
+			}
+			result, err := fixture.runner.Advance(UnitRequest{Plan: fixture.plan})
+			if err != nil {
+				t.Fatal(err)
+			}
+			if row.effect == nil {
+				if result.Record.Rounds[0].Outcome != "green" {
+					t.Fatalf("outcome=%s", result.Record.Rounds[0].Outcome)
+				}
+				return
+			}
+			if result.Record.Rounds[0].Outcome != "proof-wrote" || result.Record.State != "awaiting-judgement" {
+				t.Fatalf("record=%+v", result.Record)
+			}
+			for _, step := range result.Record.Rounds[0].Steps {
+				if strings.HasPrefix(step.Name, "read") && (step.State != StepSkipped || !strings.HasPrefix(step.Reason, "proof-wrote:") || !strings.Contains(step.Reason, row.moved)) {
+					t.Fatalf("read step=%+v", step)
+				}
+			}
+		})
+	}
+}
+
 func TestUnitRunNeverWritesToTheRepository(t *testing.T) {
-	fixture := newUnitFixture(t, "")
+	fixture, repo := newGitUnitFixture(t)
+	before := repositoryDigest(t, repo)
 	first, err := fixture.runner.Advance(UnitRequest{Plan: fixture.plan})
 	if err != nil {
 		t.Fatal(err)
@@ -360,14 +443,110 @@ func TestUnitRunNeverWritesToTheRepository(t *testing.T) {
 	if _, err := fixture.runner.Advance(UnitRequest{Resume: first.Record.ID, FollowUp: follow}); err != nil {
 		t.Fatal(err)
 	}
-	for index, call := range fixture.git.calls {
-		if !slices.Contains([]string{"rev-parse", "ls-files", "add", "diff"}, call[0]) {
+	after := repositoryDigest(t, repo)
+	if before != after {
+		t.Fatalf("repository changed\nbefore=%s\nafter=%s", before, after)
+	}
+	git := fixture.runner.Git.(*recordingOSGit)
+	for index, call := range git.calls {
+		if !slices.Contains([]string{"rev-parse", "for-each-ref", "ls-files", "add", "diff"}, call[0]) {
 			t.Fatalf("git call=%v", call)
 		}
-		if call[0] == "add" && !envOutside(fixture.git.envs[index], first.Record.Worktree) {
-			t.Fatalf("add env=%v", fixture.git.envs[index])
+		if call[0] == "add" && !envOutside(git.envs[index], first.Record.Worktree) {
+			t.Fatalf("add env=%v", git.envs[index])
 		}
 	}
+}
+
+func newGitUnitFixture(t *testing.T) (unitFixture, string) {
+	t.Helper()
+	fixture := newUnitFixture(t, "")
+	repo := t.TempDir()
+	runGit(t, repo, "init")
+	runGit(t, repo, "config", "user.email", "test@example.invalid")
+	runGit(t, repo, "config", "user.name", "Test")
+	writeFile(t, filepath.Join(repo, "tracked"), "original\n")
+	runGit(t, repo, "add", "tracked")
+	runGit(t, repo, "commit", "-m", "base")
+	data, err := os.ReadFile(fixture.plan)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var plan UnitPlan
+	if err := json.Unmarshal(data, &plan); err != nil {
+		t.Fatal(err)
+	}
+	plan.Worktree = repo
+	plan.Base = strings.TrimSpace(runGit(t, repo, "rev-parse", "HEAD"))
+	plan.Proof[0].Dir = repo
+	data, err = json.Marshal(plan)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(fixture.plan, data, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	fixture.runner.Git = &recordingOSGit{}
+	return fixture, repo
+}
+
+func repositoryDigest(t *testing.T, repo string) string {
+	t.Helper()
+	digest := sha256.New()
+	err := filepath.WalkDir(repo, func(path string, entry fs.DirEntry, walkErr error) error {
+		if walkErr != nil {
+			return walkErr
+		}
+		if entry.IsDir() {
+			return nil
+		}
+		info, err := entry.Info()
+		if err != nil {
+			return err
+		}
+		data, err := os.ReadFile(path)
+		if err != nil {
+			return err
+		}
+		sum := sha256.Sum256(data)
+		relative, err := filepath.Rel(repo, path)
+		if err != nil {
+			return err
+		}
+		_, _ = fmt.Fprintf(digest, "%s %d %x\n", relative, info.Size(), sum)
+		return nil
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	head := runGit(t, repo, "rev-parse", "HEAD")
+	refs := runGit(t, repo, "for-each-ref", "--format=%(refname) %(objectname)")
+	indexPath := strings.TrimSpace(runGit(t, repo, "rev-parse", "--path-format=absolute", "--git-path", "index"))
+	index, err := os.ReadFile(indexPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	indexSum := sha256.Sum256(index)
+	_, _ = fmt.Fprintf(digest, "head=%srefs=%sindex=%x\n", head, refs, indexSum)
+	return fmt.Sprintf("%x", digest.Sum(nil))
+}
+
+func writeFile(t *testing.T, path, content string) {
+	t.Helper()
+	if err := os.WriteFile(path, []byte(content), 0o600); err != nil {
+		t.Fatal(err)
+	}
+}
+
+func stepNamed(t *testing.T, round UnitRound, name string) UnitStep {
+	t.Helper()
+	for _, step := range round.Steps {
+		if step.Name == name {
+			return step
+		}
+	}
+	t.Fatalf("step %s not found in %+v", name, round.Steps)
+	return UnitStep{}
 }
 
 func envOutside(env []string, worktree string) bool {

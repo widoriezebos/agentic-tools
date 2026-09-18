@@ -2,6 +2,7 @@ package launch
 
 import (
 	"bytes"
+	"crypto/sha256"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -234,42 +235,16 @@ func (runner *UnitRunner) advanceRunning(record *UnitRunRecord, plan UnitPlan, d
 	if capped, err := runner.advanceStep(record, round, 0, buildSpec, deadline); err != nil || capped {
 		return runner.result(*record, round, build, capped), err
 	}
-	diffPath := filepath.Join(round.Directory, "worktree.diff")
-	if _, err := os.Stat(diffPath); os.IsNotExist(err) {
-		if err := runner.writeDiff(plan.Worktree, plan.Base, diffPath); err != nil {
-			return UnitResult{}, err
-		}
-	}
 	if build.State != StepPassed {
 		if len(round.Steps) == 1 {
-			round.Steps = append(round.Steps, UnitStep{Name: "read", State: StepSkipped, Reason: "build-failed", Model: round.ReadModel})
 			for _, command := range proofCommands(plan) {
 				round.Steps = append(round.Steps, UnitStep{Name: "proof:" + command.Name, State: StepSkipped, Reason: "build-failed"})
 			}
+			round.Steps = append(round.Steps, UnitStep{Name: "read", State: StepSkipped, Reason: "build-failed", Model: round.ReadModel})
 		}
 		return runner.finish(record, round, "build-failed")
 	}
 	if len(round.Steps) == 1 {
-		settings, settingsErr := runner.Manager.resolvedSettings()
-		if settingsErr != nil {
-			return UnitResult{}, settingsErr
-		}
-		choice, err := ChooseReadMode(diffPath, settings.ReadSplitLines)
-		if err != nil {
-			return UnitResult{}, err
-		}
-		if choice.Mode == "package" {
-			var directories []string
-			for directory := range choice.Directories {
-				directories = append(directories, directory)
-			}
-			sort.Strings(directories)
-			for _, directory := range directories {
-				round.Steps = append(round.Steps, UnitStep{Name: "read:" + directory, State: StepPending, Model: round.ReadModel, Mode: "package"})
-			}
-		} else {
-			round.Steps = append(round.Steps, UnitStep{Name: "read", State: StepPending, Model: round.ReadModel, Mode: choice.Mode})
-		}
 		for _, command := range proofCommands(plan) {
 			round.Steps = append(round.Steps, UnitStep{Name: "proof:" + command.Name, State: StepPending})
 		}
@@ -277,49 +252,17 @@ func (runner *UnitRunner) advanceRunning(record *UnitRunRecord, plan UnitPlan, d
 			return UnitResult{}, err
 		}
 	}
-	readEnd := 1
-	for readEnd < len(round.Steps) && strings.HasPrefix(round.Steps[readEnd].Name, "read") {
-		readEnd++
-	}
-	readInputs := append(append(append([]string{}, plan.Read.Inputs...), previous...), round.FollowUp)
-	if round.FollowUp == "" {
-		readInputs = readInputs[:len(readInputs)-1]
-	}
-	for index := 1; index < readEnd; index++ {
-		step := &round.Steps[index]
-		if step.State == StepPending || step.State == StepStarting {
-			packageName := strings.TrimPrefix(step.Name, "read:")
-			if step.Name == "read" {
-				packageName = ""
-			}
-			spec := StartSpec{Kind: "read", Goal: plan.Goal, Tag: plan.Unit, WorkingDirectory: plan.Worktree, Brief: plan.Read.Brief,
-				Inputs: readInputs, Outputs: plan.Read.Outputs, Model: plan.Read.Model, DiffFile: diffPath, Package: packageName, Wide: step.Mode == "wide"}
-			if _, err := runner.startStep(record, round, index, spec); err != nil {
-				return UnitResult{}, err
-			}
-		}
-	}
-	for index := 1; index < readEnd; index++ {
-		step := &round.Steps[index]
-		if capped, err := runner.waitStep(record, round, index, deadline); err != nil || capped {
-			return runner.result(*record, round, step, capped), err
-		}
-	}
-	for index := 1; index < readEnd; index++ {
-		if round.Steps[index].State != StepPassed {
-			if err := runner.skipAfter(record, round, readEnd, "read-failed"); err != nil {
-				return UnitResult{}, err
-			}
-			return runner.finish(record, round, "read-failed")
-		}
-	}
 	if err := proofMayStart(*round); err != nil {
 		return UnitResult{}, err
 	}
 	commands := proofCommands(plan)
+	before, err := runner.savedRepositorySnapshot(round.Directory, "proof-before.json", plan.Worktree)
+	if err != nil {
+		return UnitResult{}, err
+	}
 	red := false
 	for offset, command := range commands {
-		index := readEnd + offset
+		index := 1 + offset
 		briefPath := filepath.Join(round.Directory, "proof-"+command.Name+".json")
 		if _, err := os.Stat(briefPath); os.IsNotExist(err) {
 			data, _ := json.Marshal(PlainBrief{command.Argv, command.Dir, command.Env})
@@ -333,10 +276,93 @@ func (runner *UnitRunner) advanceRunning(record *UnitRunRecord, plan UnitPlan, d
 		}
 		red = red || round.Steps[index].State != StepPassed
 	}
+	after, err := runner.savedRepositorySnapshot(round.Directory, "proof-after.json", plan.Worktree)
+	if err != nil {
+		return UnitResult{}, err
+	}
+	moved := before.changed(after)
+	diffPath := filepath.Join(round.Directory, "worktree.diff")
+	if _, err := os.Stat(diffPath); os.IsNotExist(err) {
+		if err := runner.writeDiff(plan.Worktree, plan.Base, diffPath); err != nil {
+			return UnitResult{}, err
+		}
+	}
+	readStart, err := runner.appendReadSteps(record, round, diffPath)
+	if err != nil {
+		return UnitResult{}, err
+	}
+	if len(moved) != 0 {
+		if err := runner.skipAfter(record, round, readStart, "proof-wrote:"+strings.Join(moved, ",")); err != nil {
+			return UnitResult{}, err
+		}
+		return runner.finish(record, round, "proof-wrote")
+	}
 	if red {
+		if err := runner.skipAfter(record, round, readStart, "proof-red"); err != nil {
+			return UnitResult{}, err
+		}
 		return runner.finish(record, round, "proof-red")
 	}
+	readInputs := append(append(append([]string{}, plan.Read.Inputs...), previous...), round.FollowUp)
+	if round.FollowUp == "" {
+		readInputs = readInputs[:len(readInputs)-1]
+	}
+	for index := readStart; index < len(round.Steps); index++ {
+		step := &round.Steps[index]
+		if step.State == StepPending || step.State == StepStarting {
+			packageName := strings.TrimPrefix(step.Name, "read:")
+			if step.Name == "read" {
+				packageName = ""
+			}
+			spec := StartSpec{Kind: "read", Goal: plan.Goal, Tag: plan.Unit, WorkingDirectory: plan.Worktree, Brief: plan.Read.Brief,
+				Inputs: readInputs, Outputs: plan.Read.Outputs, Model: plan.Read.Model, DiffFile: diffPath, Package: packageName, Wide: step.Mode == "wide"}
+			if _, err := runner.startStep(record, round, index, spec); err != nil {
+				return UnitResult{}, err
+			}
+		}
+	}
+	for index := readStart; index < len(round.Steps); index++ {
+		step := &round.Steps[index]
+		if capped, err := runner.waitStep(record, round, index, deadline); err != nil || capped {
+			return runner.result(*record, round, step, capped), err
+		}
+	}
+	for index := readStart; index < len(round.Steps); index++ {
+		if round.Steps[index].State != StepPassed {
+			return runner.finish(record, round, "read-failed")
+		}
+	}
 	return runner.finish(record, round, "green")
+}
+
+func (runner *UnitRunner) appendReadSteps(record *UnitRunRecord, round *UnitRound, diffPath string) (int, error) {
+	readStart := len(round.Steps)
+	for index := 1; index < len(round.Steps); index++ {
+		if strings.HasPrefix(round.Steps[index].Name, "read") {
+			return index, nil
+		}
+	}
+	settings, err := runner.Manager.resolvedSettings()
+	if err != nil {
+		return 0, err
+	}
+	choice, err := ChooseReadMode(diffPath, settings.ReadSplitLines)
+	if err != nil {
+		return 0, err
+	}
+	if choice.Mode == "package" {
+		var directories []string
+		for directory := range choice.Directories {
+			directories = append(directories, directory)
+		}
+		sort.Strings(directories)
+		for _, directory := range directories {
+			round.Steps = append(round.Steps, UnitStep{Name: "read:" + directory, State: StepPending, Model: round.ReadModel, Mode: "package"})
+		}
+	} else {
+		round.Steps = append(round.Steps, UnitStep{Name: "read", State: StepPending, Model: round.ReadModel, Mode: choice.Mode})
+	}
+	return readStart, runner.save(*record)
 }
 
 func (runner *UnitRunner) advanceStep(record *UnitRunRecord, round *UnitRound, index int, spec StartSpec, deadline time.Time) (bool, error) {
@@ -469,11 +495,109 @@ func (runner *UnitRunner) writeDiff(worktree, base, target string) error {
 	return err
 }
 
-func proofMayStart(round UnitRound) error {
-	for _, step := range round.Steps {
-		if strings.HasPrefix(step.Name, "read") && step.State != StepPassed {
-			return fmt.Errorf("proof requires every read launch to be completed")
+type repositorySnapshot struct {
+	Head  string `json:"head"`
+	Refs  string `json:"refs"`
+	Index string `json:"index"`
+	Tree  string `json:"tree"`
+}
+
+func (snapshot repositorySnapshot) changed(after repositorySnapshot) []string {
+	var changed []string
+	for _, value := range []struct {
+		name          string
+		before, after string
+	}{
+		{"head", snapshot.Head, after.Head},
+		{"refs", snapshot.Refs, after.Refs},
+		{"index", snapshot.Index, after.Index},
+		{"tree", snapshot.Tree, after.Tree},
+	} {
+		if value.before != value.after {
+			changed = append(changed, value.name)
 		}
+	}
+	return changed
+}
+
+func (runner *UnitRunner) savedRepositorySnapshot(directory, name, worktree string) (repositorySnapshot, error) {
+	path := filepath.Join(directory, name)
+	if data, err := os.ReadFile(path); err == nil {
+		var snapshot repositorySnapshot
+		if err := json.Unmarshal(data, &snapshot); err != nil {
+			return repositorySnapshot{}, err
+		}
+		return snapshot, nil
+	} else if !os.IsNotExist(err) {
+		return repositorySnapshot{}, err
+	}
+	snapshot, err := runner.snapshotRepository(worktree)
+	if err != nil {
+		return repositorySnapshot{}, err
+	}
+	data, err := json.Marshal(snapshot)
+	if err != nil {
+		return repositorySnapshot{}, err
+	}
+	if _, err := atomicfile.WriteText(path, string(data)+"\n", runner.root()); err != nil {
+		return repositorySnapshot{}, err
+	}
+	return snapshot, nil
+}
+
+func (runner *UnitRunner) snapshotRepository(worktree string) (repositorySnapshot, error) {
+	git := runner.Git
+	if git == nil {
+		git = OSGitRunner{}
+	}
+	head, err := git.Run(worktree, nil, "rev-parse", "HEAD")
+	if err != nil {
+		return repositorySnapshot{}, err
+	}
+	refs, err := git.Run(worktree, nil, "for-each-ref", "--format=%(refname) %(objectname)")
+	if err != nil {
+		return repositorySnapshot{}, err
+	}
+	indexPath, err := git.Run(worktree, nil, "rev-parse", "--path-format=absolute", "--git-path", "index")
+	if err != nil {
+		return repositorySnapshot{}, err
+	}
+	indexData, err := os.ReadFile(strings.TrimSpace(string(indexPath)))
+	if err != nil {
+		return repositorySnapshot{}, err
+	}
+	objectsPath, err := git.Run(worktree, nil, "rev-parse", "--path-format=absolute", "--git-path", "objects")
+	if err != nil {
+		return repositorySnapshot{}, err
+	}
+	temporary, err := os.MkdirTemp("", "metasystem-unit-snapshot.")
+	if err != nil {
+		return repositorySnapshot{}, err
+	}
+	defer os.RemoveAll(temporary)
+	index := filepath.Join(temporary, "index")
+	if err := os.WriteFile(index, indexData, 0o600); err != nil {
+		return repositorySnapshot{}, err
+	}
+	objectDir := filepath.Join(temporary, "objects")
+	if err := os.MkdirAll(objectDir, 0o700); err != nil {
+		return repositorySnapshot{}, err
+	}
+	environment := []string{"GIT_INDEX_FILE=" + index, "GIT_OBJECT_DIRECTORY=" + objectDir, "GIT_ALTERNATE_OBJECT_DIRECTORIES=" + strings.TrimSpace(string(objectsPath))}
+	if _, err := git.Run(worktree, environment, "add", "-A", "--", "."); err != nil {
+		return repositorySnapshot{}, err
+	}
+	tree, err := git.Run(worktree, environment, "diff", "--cached", "--raw", "HEAD", "--", ".")
+	if err != nil {
+		return repositorySnapshot{}, err
+	}
+	indexDigest := sha256.Sum256(indexData)
+	return repositorySnapshot{Head: string(head), Refs: string(refs), Index: fmt.Sprintf("%x", indexDigest), Tree: string(tree)}, nil
+}
+
+func proofMayStart(round UnitRound) error {
+	if len(round.Steps) == 0 || round.Steps[0].Name != "build" || round.Steps[0].State != StepPassed {
+		return fmt.Errorf("proof requires the build launch to be completed")
 	}
 	return nil
 }

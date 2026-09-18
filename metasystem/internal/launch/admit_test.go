@@ -103,6 +103,18 @@ func TestOversizeBriefRefusesAndListsInputsLargestFirst(t *testing.T) {
 	}
 }
 
+func TestOversizeUnitsPageRefuses(t *testing.T) {
+	m, _, _, _ := manager(t)
+	m.Settings = DefaultSettings()
+	m.Settings.BriefCap = 8
+	brief := writeLaunchFile(t, "brief", "x\n")
+	page := writeLaunchFile(t, "units", "| Unit | Size |\n|---|---|\n| a | 1 |\n"+strings.Repeat("x", 80))
+	err := m.Admit(StartSpec{Kind: "build", Brief: brief, UnitsPage: page, Units: []string{"a"}})
+	if err == nil || !strings.HasPrefix(err.Error(), "LAUNCH_BRIEF_OVERSIZE") || !strings.Contains(err.Error(), "input="+page) {
+		t.Fatalf("error=%v", err)
+	}
+}
+
 func TestBuildSizeComesFromTheUnitRowsOrTheBriefLine(t *testing.T) {
 	page := writeLaunchFile(t, "page", "| Unit | Changed lines |\n|---|---|\n| alpha. first | 400 plus witness 20 |\n| beta | 30 |\n")
 	units, size, err := buildSize(StartSpec{UnitsPage: page, Units: []string{"beta", "alpha"}})

@@ -10,7 +10,11 @@ import (
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/launch"
 )
 
-var unitRunner = func() *launch.UnitRunner {
+type unitAdvancer interface {
+	Advance(launch.UnitRequest) (launch.UnitResult, error)
+}
+
+var unitRunner = func() unitAdvancer {
 	manager := launchManager()
 	return &launch.UnitRunner{Manager: manager, Git: launch.OSGitRunner{}}
 }
@@ -43,7 +47,11 @@ func runUnitRun(args []string) int {
 		fmt.Printf("run=%s round=%d state=running step=%s launch=%s\n", result.Record.ID, result.Round, result.Step, result.Launch)
 		return 3
 	}
-	fmt.Println(unitJudgementLine(result.Record, runner.Manager))
+	var manager *launch.Manager
+	if concrete, ok := runner.(*launch.UnitRunner); ok {
+		manager = concrete.Manager
+	}
+	fmt.Println(unitJudgementLine(result.Record, manager))
 	return 0
 }
 
@@ -81,7 +89,7 @@ func unitJudgementLine(record launch.UnitRunRecord, manager *launch.Manager) str
 }
 
 func unitLaunchState(manager *launch.Manager, step launch.UnitStep) string {
-	if step.LaunchID != "" {
+	if manager != nil && step.LaunchID != "" {
 		if record, err := manager.Store.Read(step.LaunchID); err == nil {
 			return string(record.State)
 		}

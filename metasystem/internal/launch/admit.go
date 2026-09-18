@@ -52,6 +52,9 @@ func (m *Manager) admit(spec StartSpec, settings Settings) error {
 	if spec.Page != "" {
 		paths = append(paths, spec.Page)
 	}
+	if spec.UnitsPage != "" && spec.UnitsPage != spec.Page {
+		paths = append(paths, spec.UnitsPage)
+	}
 	if spec.Kind == "critique" {
 		var common string
 		codexAdapter := false
