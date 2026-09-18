@@ -465,6 +465,53 @@ func TestFailureNamesOneComponentAndRemedy(t *testing.T) {
 	}
 }
 
+func TestUpRestampsTheClaimedGoalsStopCapability(t *testing.T) {
+	called := false
+	options := Options{
+		Root: "/fixture",
+		RestampStopCapability: func(root, lineage string, claimEpoch int64) (StopCapabilityRestampResult, error) {
+			called = true
+			if root != "/fixture" || lineage != "lineage-a" || claimEpoch != 5 {
+				t.Fatalf("restamp inputs = %q %q %d", root, lineage, claimEpoch)
+			}
+			return StopCapabilityRestampResult{GoalID: "claimed-work", FromEpoch: 1, ToEpoch: 5, Restamped: true}, nil
+		},
+	}
+	component := stopCapabilityOutcome(options, "lineage-a", 5)
+	if !called || component.Component != "stop-capability" || component.Outcome != "restamped" || component.Detail != "from 1 to 5" {
+		t.Fatalf("restamp component = %+v, called=%t", component, called)
+	}
+
+	options.RestampStopCapability = func(string, string, int64) (StopCapabilityRestampResult, error) {
+		return StopCapabilityRestampResult{GoalID: "claimed-work", FromEpoch: 5, ToEpoch: 5}, nil
+	}
+	if current := stopCapabilityOutcome(options, "lineage-a", 5); current.Outcome != "current" || current.Detail != "goal=claimed-work epoch=5" {
+		t.Fatalf("current component = %+v", current)
+	}
+
+	options.RestampStopCapability = func(string, string, int64) (StopCapabilityRestampResult, error) {
+		return StopCapabilityRestampResult{}, nil
+	}
+	if absent := stopCapabilityOutcome(options, "lineage-a", 5); absent.Outcome != "no-claimed-goal" {
+		t.Fatalf("no-claim component = %+v", absent)
+	}
+}
+
+func TestUpStaysArmedWhenTheRestampCannotRun(t *testing.T) {
+	options := Options{
+		Root: "/fixture",
+		RestampStopCapability: func(string, string, int64) (StopCapabilityRestampResult, error) {
+			return StopCapabilityRestampResult{GoalID: "claimed-work", FromEpoch: 1, ToEpoch: 5}, errors.New("goal store is unavailable")
+		},
+	}
+	result := Result{Components: []ComponentOutcome{stopCapabilityOutcome(options, "lineage-a", 5)}, Outcome: "armed", Authority: "writer"}
+	component := result.Components[0]
+	if result.ExitCode() != 0 || result.Outcome != "armed" || component.Outcome != "deferred" ||
+		component.Detail != "goal store is unavailable" || component.Remedy != "metasystem goal restamp --id claimed-work" {
+		t.Fatalf("restamp failure changed arming: %+v", result)
+	}
+}
+
 func TestRecoveryRequiresTheRestrictedIfDownFence(t *testing.T) {
 	t.Setenv("METASYSTEM_EXECUTION_ID", "delegate-execution")
 	result := Run(Options{RecoverOnly: true})

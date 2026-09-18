@@ -336,7 +336,7 @@ wait_for_pid_exit() { # name, pid
 runner_pid=$(read_runner_pid)
 [[ -n "$runner_pid" ]] || fail "initial arm recorded no runner pid"
 wait_for_healthy healthy || fail "armed repository did not become healthy"
-for role in steward-runner supervision-owner repo-watcher census-freshness narrator-freshness session-main hook-freshness stop-hook-duration context-budget claimed-goal-appetite nonterminal-jobs capability-snapshots; do
+for role in steward-runner supervision-owner repo-watcher census-freshness narrator-freshness session-main hook-freshness stop-hook-duration context-budget claimed-goal-appetite stop-capability-epoch nonterminal-jobs capability-snapshots; do
   grep -Fq "$role=alive" "$tmp/healthy.out" || fail "healthy line omitted $role"
 done
 grep -Fq 'stop-hook-duration=alive (the last Stop carried no measurement)' "$tmp/healthy.out" \

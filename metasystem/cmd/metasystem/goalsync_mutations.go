@@ -1458,6 +1458,10 @@ func runSyncOnly(name string, run func(req goal.VerbRequest, f *syncFlags) (goal
 		if !ok {
 			return 2
 		}
+		if name == "restamp" && f.by != "" {
+			fmt.Fprintln(os.Stderr, "goal restamp acts only for the caller's own pair and does not accept --by")
+			return 2
+		}
 		if !converted(f.root) {
 			fmt.Fprintf(os.Stderr, "goal %s works the synced backlog; this checkout still carries the legacy ledger\n", name)
 			return 1
@@ -2685,6 +2689,9 @@ var (
 			return goal.Claim(req, f.id, *budget)
 		}
 		return goal.Claim(req, f.id)
+	}, "id")
+	runGoalRestamp = runSyncOnly("restamp", func(req goal.VerbRequest, f *syncFlags) (goal.PublishResult, error) {
+		return goal.Restamp(req, f.id)
 	}, "id")
 	runGoalRelease = runSyncOnly("release", func(req goal.VerbRequest, f *syncFlags) (goal.PublishResult, error) {
 		if f.arc != "" {

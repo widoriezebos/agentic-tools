@@ -55,6 +55,7 @@ const (
 	RoleLedgerAttention   HealthRole = "ledger-attention"
 	// Keep the published role name stable for existing health consumers.
 	RoleClaimedGoalBudget   HealthRole = "claimed-goal-appetite"
+	RoleStopCapabilityEpoch HealthRole = "stop-capability-epoch"
 	RoleClaimedGoalDelivery HealthRole = "claimed-goal-delivery"
 	RoleTrunkRed            HealthRole = "trunk-red"
 	RoleSpendFence          HealthRole = "spend-fence"
@@ -77,6 +78,7 @@ var healthRoleOrder = []HealthRole{
 	RoleContext,
 	RoleLedgerAttention,
 	RoleClaimedGoalBudget,
+	RoleStopCapabilityEpoch,
 	RoleClaimedGoalDelivery,
 	RoleTrunkRed,
 	RoleSpendFence,
@@ -423,6 +425,7 @@ func evaluateHealthRoles(repoRoot, metasystemRoot string, now time.Time, prober 
 		timed(func() RoleVerdict { return checkContextBudget(repoRoot, metasystemRoot, now, prober) }),
 		timed(func() RoleVerdict { return checkLedgerAttention(repoRoot, now) }),
 		timed(func() RoleVerdict { return checkClaimedGoalBudgets(repoRoot, now) }),
+		timed(func() RoleVerdict { return checkStopCapabilityEpoch(repoRoot, now) }),
 		timed(func() RoleVerdict { return checkClaimedGoalDelivery(repoRoot, now) }),
 		timed(func() RoleVerdict { return checkTrunkRed(repoRoot, now) }),
 		spendRole,
@@ -749,7 +752,7 @@ func hasLawfulAutomaticRemedy(role RoleVerdict, roles []RoleVerdict) bool {
 		// The watcher repairs the steward process whose failed tick also stops
 		// narration. An isolated narrator failure has no separate automatic act.
 		return roleIsDead(RoleStewardRunner)
-	case RoleClaimedGoalBudget:
+	case RoleClaimedGoalBudget, RoleStopCapabilityEpoch:
 		return !role.NoAutomaticRemedy
 	default:
 		return false
@@ -1205,6 +1208,99 @@ func checkClaimedGoalBudgets(repoRoot string, now time.Time) RoleVerdict {
 		return roleAlive(RoleClaimedGoalBudget, fmt.Sprintf("riskUnanswered=%d; there are no claimed goals", riskUnanswered))
 	}
 	return roleAlive(RoleClaimedGoalBudget, fmt.Sprintf("riskUnanswered=%d; %s", riskUnanswered, strings.Join(known, "; ")))
+}
+
+func checkStopCapabilityEpoch(repoRoot string, now time.Time) RoleVerdict {
+	if !goal.NewWorld(repoRoot) {
+		return roleAlive(RoleStopCapabilityEpoch, "the goal store has no claimed goals")
+	}
+	endpoint, err := goal.ResolveEndpoint(repoRoot)
+	if err != nil {
+		return roleUnknown(RoleStopCapabilityEpoch, "the goal store endpoint is unreadable: "+err.Error(),
+			"metasystem goal list --root "+strconv.Quote(repoRoot))
+	}
+	projection, err := goal.Project(endpoint, false, now)
+	if err != nil {
+		return roleUnknown(RoleStopCapabilityEpoch, "the goal store is unreadable: "+err.Error(),
+			"metasystem goal list --root "+strconv.Quote(repoRoot))
+	}
+	machine, err := goal.ResolveMachine(repoRoot)
+	if err != nil {
+		return roleUnknown(RoleStopCapabilityEpoch, "the enrolled machine is unreadable: "+err.Error(),
+			"repair the machine enrollment, then rerun metasystem health")
+	}
+	var claimed []*goal.GoalFile
+	for _, id := range goal.SortedGoalIds(projection.Tree.Live) {
+		file := projection.Tree.Live[id]
+		if file.State == goal.StateClaimed && file.Claimed != nil && file.Claimed.Machine == machine {
+			claimed = append(claimed, file)
+		}
+	}
+	if len(claimed) == 0 {
+		return roleAlive(RoleStopCapabilityEpoch, "this machine has no claimed goal")
+	}
+	holder, found, err := readStopCapabilityHolder(repoRoot)
+	if !found && err == nil {
+		return roleAlive(RoleStopCapabilityEpoch, "there is no live lease holder to compare")
+	}
+	if err != nil {
+		return roleUnknown(RoleStopCapabilityEpoch, "the checkout lease is unreadable: "+err.Error(),
+			"repair the checkout lease, then rerun metasystem health")
+	}
+	var current []string
+	for _, file := range claimed {
+		if file.StopCapability == nil {
+			return roleUnknown(RoleStopCapabilityEpoch,
+				fmt.Sprintf("claimed goal %s has no stop capability to compare", file.Id),
+				"repair the claimed goal record, then rerun metasystem health")
+		}
+		capabilityEpoch := file.StopCapability.ClaimEpoch
+		if capabilityEpoch == holder.ClaimEpoch {
+			current = append(current, fmt.Sprintf("%s epoch=%d", file.Id, capabilityEpoch))
+			continue
+		}
+		if file.Claimed.Lineage == holder.OwnerLineage {
+			return roleDead(RoleStopCapabilityEpoch,
+				fmt.Sprintf("goal %s stop capability claim epoch %d differs from live lease claim epoch %d under owner lineage %s",
+					file.Id, capabilityEpoch, holder.ClaimEpoch, holder.OwnerLineage),
+				fmt.Sprintf("metasystem goal restamp --id %s, or re-arm with metasystem up", file.Id))
+		}
+		role := roleDead(RoleStopCapabilityEpoch,
+			fmt.Sprintf("goal %s was claimed under owner lineage %s but the live lease belongs to owner lineage %s",
+				file.Id, file.Claimed.Lineage, holder.OwnerLineage),
+			"release the goal under the lineage that claimed it and claim it again, or hand it over with metasystem goal handover")
+		role.NoAutomaticRemedy = true
+		return role
+	}
+	return roleAlive(RoleStopCapabilityEpoch, "stop capability epochs match the live lease: "+strings.Join(current, ", "))
+}
+
+type stopCapabilityHolder struct {
+	HolderMainID string `json:"holderMainId"`
+	OwnerLineage string `json:"ownerLineage"`
+	Pid          int64  `json:"pid"`
+	Revision     int64  `json:"revision"`
+	ClaimEpoch   int64  `json:"claimEpoch"`
+}
+
+func readStopCapabilityHolder(repoRoot string) (stopCapabilityHolder, bool, error) {
+	path := filepath.Join(repoRoot, "artifacts", "agents", "mains", "worktree-lease.json")
+	data, err := os.ReadFile(path)
+	if os.IsNotExist(err) {
+		return stopCapabilityHolder{}, false, nil
+	}
+	if err != nil {
+		return stopCapabilityHolder{}, false, err
+	}
+	var holder stopCapabilityHolder
+	if err := json.Unmarshal(data, &holder); err != nil || holder.HolderMainID == "" ||
+		holder.Pid < 1 || holder.Revision < 1 || holder.ClaimEpoch < 1 {
+		return stopCapabilityHolder{}, false, fmt.Errorf("checkout lease schema is invalid")
+	}
+	if holder.OwnerLineage == "" {
+		holder.OwnerLineage = holder.HolderMainID
+	}
+	return holder, true, nil
 }
 
 func stopFiringEvidenceSummary(batch goal.StopBatch) string {

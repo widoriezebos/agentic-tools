@@ -7,6 +7,8 @@ import (
 	"path/filepath"
 	"strconv"
 
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/goal"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/lease"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/stateroot"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/up"
 )
@@ -65,6 +67,61 @@ func printUpResult(result up.Result) int {
 		fmt.Println(line)
 	}
 	return result.ExitCode()
+}
+
+func restampStopCapabilityForUp(root, lineage string, claimEpoch int64) (up.StopCapabilityRestampResult, error) {
+	if !goal.NewWorld(root) {
+		return up.StopCapabilityRestampResult{}, nil
+	}
+	endpoint, err := goal.ResolveEndpoint(root)
+	if err != nil {
+		return up.StopCapabilityRestampResult{}, err
+	}
+	now, err := goalCommandNow(root)
+	if err != nil {
+		return up.StopCapabilityRestampResult{}, err
+	}
+	projection, err := goal.Project(endpoint, false, now)
+	if err != nil {
+		return up.StopCapabilityRestampResult{}, err
+	}
+	machine, err := goal.ResolveMachine(root)
+	if err != nil {
+		return up.StopCapabilityRestampResult{}, err
+	}
+	for _, id := range goal.SortedGoalIds(projection.Tree.Live) {
+		file := projection.Tree.Live[id]
+		if file.State != goal.StateClaimed || file.Claimed == nil ||
+			file.Claimed.Machine != machine || file.Claimed.Lineage != lineage {
+			continue
+		}
+		result := up.StopCapabilityRestampResult{GoalID: id, ToEpoch: claimEpoch}
+		if file.StopCapability == nil {
+			return result, fmt.Errorf("claimed goal %s has no stop capability", id)
+		}
+		result.FromEpoch = file.StopCapability.ClaimEpoch
+		if result.FromEpoch == claimEpoch {
+			return result, nil
+		}
+		if result.FromEpoch > claimEpoch {
+			return result, fmt.Errorf("stop capability epoch %d is ahead of live lease epoch %d", result.FromEpoch, claimEpoch)
+		}
+		classification := lease.ClassifyResult{Class: lease.ClassMain, Holder: true, ClaimEpoch: &claimEpoch}
+		request, err := syncReqClassified(root, "", lineage, nil, classification)
+		if err != nil {
+			return result, err
+		}
+		published, err := goal.Restamp(request, id)
+		if err != nil {
+			return result, err
+		}
+		if published.Outcome != goal.OutcomeConfirmed {
+			return result, fmt.Errorf("goal restamp ended %s: %s", published.Outcome, published.Detail)
+		}
+		result.Restamped = true
+		return result, nil
+	}
+	return up.StopCapabilityRestampResult{}, nil
 }
 
 func runUp(args []string) int {
@@ -134,7 +191,8 @@ func runUp(args []string) int {
 		StartTime: *start, Tag: *tag, Runtime: *runtimeName, OwnerLineage: *ownerLineage,
 		RuntimeSession: *runtimeSession, NoRuntimeSession: *noRuntimeSession, StartSource: *startSource,
 		MaxCap: *maxCap, RecoverOnly: *recoverOnly, IfDown: *ifDown, WaitScaleMilli: scale,
-		CallerPid: int64(os.Getppid()),
+		CallerPid:             int64(os.Getppid()),
+		RestampStopCapability: restampStopCapabilityForUp,
 	}
 	if *printScheduler {
 		fmt.Println(up.SchedulerEntry(options))

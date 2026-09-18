@@ -551,6 +551,16 @@ func admitProofLaunch(request proofLaunchAdmission) (proofrun.Attempt, proofrun.
 		machine, machineErr := goal.ResolveMachine(request.ControlRoot)
 		if machineErr != nil || !classifiedCaller.Holder || classifiedCaller.ClaimEpoch == nil ||
 			*classifiedCaller.ClaimEpoch != binding.Capability.ClaimEpoch || machine != binding.Machine {
+			if machineErr == nil && classifiedCaller.Holder && classifiedCaller.ClaimEpoch != nil &&
+				machine == binding.Machine && *classifiedCaller.ClaimEpoch != binding.Capability.ClaimEpoch &&
+				binding.File.Claimed != nil {
+				holder, holderErr := lease.CurrentHolder(request.ControlRoot)
+				if holderErr == nil && holder.OwnerLineage == binding.File.Claimed.Lineage {
+					return proofrun.Attempt{}, proofrun.LaunchResult{}, false, fmt.Errorf(
+						"active coordinator does not own the claimed goal reservation: lease claim epoch %d differs from stop capability claim epoch %d; run metasystem goal restamp --id %s",
+						*classifiedCaller.ClaimEpoch, binding.Capability.ClaimEpoch, request.GoalID)
+				}
+			}
 			return proofrun.Attempt{}, proofrun.LaunchResult{}, false, fmt.Errorf("active coordinator does not own the claimed goal reservation")
 		}
 		extensionAuthorized = true

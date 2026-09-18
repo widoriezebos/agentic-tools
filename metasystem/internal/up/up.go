@@ -25,24 +25,34 @@ import (
 
 // Options are the complete inputs to ordinary and recovery-only arming.
 type Options struct {
-	Root             string
-	MetasystemRoot   string
-	Scope            string
-	Binary           string
-	Session          string
-	Pid              int64
-	StartTime        int64
-	Tag              string
-	Runtime          string
-	OwnerLineage     string
-	RuntimeSession   string
-	NoRuntimeSession bool
-	StartSource      string
-	MaxCap           int64
-	RecoverOnly      bool
-	IfDown           bool
-	WaitScaleMilli   int
-	CallerPid        int64
+	Root                  string
+	MetasystemRoot        string
+	Scope                 string
+	Binary                string
+	Session               string
+	Pid                   int64
+	StartTime             int64
+	Tag                   string
+	Runtime               string
+	OwnerLineage          string
+	RuntimeSession        string
+	NoRuntimeSession      bool
+	StartSource           string
+	MaxCap                int64
+	RecoverOnly           bool
+	IfDown                bool
+	WaitScaleMilli        int
+	CallerPid             int64
+	RestampStopCapability func(root, lineage string, claimEpoch int64) (StopCapabilityRestampResult, error)
+}
+
+// StopCapabilityRestampResult reports the accepted claim inspected during
+// arming and whether its capability moved.
+type StopCapabilityRestampResult struct {
+	GoalID    string
+	FromEpoch int64
+	ToEpoch   int64
+	Restamped bool
 }
 
 // ComponentOutcome is one typed and actionable component result.
@@ -121,6 +131,32 @@ func failure(components []ComponentOutcome, component string, err error, remedy 
 		Component: component, Outcome: "failed", Detail: err.Error(), Remedy: remedy,
 	})
 	return Result{Components: components, Outcome: "failed", Failed: component, Remedy: remedy}
+}
+
+func stopCapabilityOutcome(options Options, lineage string, claimEpoch int64) ComponentOutcome {
+	if options.RestampStopCapability == nil {
+		return ComponentOutcome{Component: "stop-capability", Outcome: "no-claimed-goal"}
+	}
+	result, err := options.RestampStopCapability(options.Root, lineage, claimEpoch)
+	if err != nil {
+		goalID := result.GoalID
+		if goalID == "" {
+			goalID = "<goal>"
+		}
+		return ComponentOutcome{
+			Component: "stop-capability", Outcome: "deferred", Detail: err.Error(),
+			Remedy: "metasystem goal restamp --id " + goalID,
+		}
+	}
+	if result.GoalID == "" {
+		return ComponentOutcome{Component: "stop-capability", Outcome: "no-claimed-goal"}
+	}
+	if result.Restamped {
+		return ComponentOutcome{Component: "stop-capability", Outcome: "restamped",
+			Detail: fmt.Sprintf("from %d to %d", result.FromEpoch, result.ToEpoch)}
+	}
+	return ComponentOutcome{Component: "stop-capability", Outcome: "current",
+		Detail: fmt.Sprintf("goal=%s epoch=%d", result.GoalID, result.ToEpoch)}
 }
 
 type sessionIdentity struct {
@@ -707,6 +743,19 @@ func ordinaryBody(options Options) (Result, rearmFact) {
 		components = append(components, ComponentOutcome{
 			Component: "checkout-lease", Outcome: "holder", Detail: "main=" + holderName,
 		})
+		lineage := session.OwnerLineage
+		if lineage == "" {
+			lineage = view.MainId
+		}
+		if view.ClaimEpoch == nil {
+			components = append(components, ComponentOutcome{
+				Component: "stop-capability", Outcome: "deferred",
+				Detail: "the holder classification has no claim epoch",
+				Remedy: "metasystem goal restamp --id <goal>",
+			})
+		} else {
+			components = append(components, stopCapabilityOutcome(options, lineage, *view.ClaimEpoch))
+		}
 	}
 	components, supervision, failed := ensureSupervision(options, enrolled, components)
 	if failed != nil {

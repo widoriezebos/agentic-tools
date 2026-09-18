@@ -200,6 +200,124 @@ func TestClaimedGoalWithoutStructuredBudgetIsDead(t *testing.T) {
 	}
 }
 
+func stopCapabilityHealthGoal() *goal.GoalFile {
+	file := structuredHealthGoal()
+	file.StopCapability = &goal.StopCapability{
+		Generation: file.Claimed.Revision, Revision: file.Claimed.Revision,
+		Machine: file.Claimed.Machine, ClaimEpoch: 1,
+	}
+	return file
+}
+
+func writeHealthLease(t *testing.T, root, lineage string, epoch int64) {
+	t.Helper()
+	path := filepath.Join(root, "artifacts", "agents", "mains", "worktree-lease.json")
+	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	data, err := json.Marshal(stopCapabilityHolder{
+		HolderMainID: "main-health", OwnerLineage: lineage, Pid: 1,
+		Revision: epoch, ClaimEpoch: epoch,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(path, data, 0o600); err != nil {
+		t.Fatal(err)
+	}
+}
+
+func TestStopCapabilityEpochHealth(t *testing.T) {
+	now := time.Date(2026, 9, 17, 8, 0, 0, 0, time.UTC)
+	if !KnownHealthRole(RoleStopCapabilityEpoch) {
+		t.Fatal("stop capability epoch is absent from the closed health schema")
+	}
+
+	t.Run("equal epochs", func(t *testing.T) {
+		root := convertedBed(t, "bed-m1", map[string]*goal.GoalFile{"bounded-goal": stopCapabilityHealthGoal()})
+		writeHealthLease(t, root, "coordinator", 1)
+		role := checkStopCapabilityEpoch(root, now)
+		if role.Status != HealthAlive || !strings.Contains(role.Reason, "bounded-goal epoch=1") {
+			t.Fatalf("equal epochs = %+v", role)
+		}
+	})
+
+	t.Run("no claimed goal", func(t *testing.T) {
+		root := convertedBed(t, "bed-m1", nil)
+		writeHealthLease(t, root, "coordinator", 5)
+		role := checkStopCapabilityEpoch(root, now)
+		if role.Status != HealthAlive || !strings.Contains(role.Reason, "no claimed goal") {
+			t.Fatalf("no claimed goal = %+v", role)
+		}
+	})
+
+	t.Run("no lease holder", func(t *testing.T) {
+		root := convertedBed(t, "bed-m1", map[string]*goal.GoalFile{"bounded-goal": stopCapabilityHealthGoal()})
+		role := checkStopCapabilityEpoch(root, now)
+		if role.Status != HealthAlive || !strings.Contains(role.Reason, "no live lease holder") {
+			t.Fatalf("no holder = %+v", role)
+		}
+	})
+
+	t.Run("same lineage divergence", func(t *testing.T) {
+		root := convertedBed(t, "bed-m1", map[string]*goal.GoalFile{"bounded-goal": stopCapabilityHealthGoal()})
+		writeHealthLease(t, root, "coordinator", 5)
+		role := checkStopCapabilityEpoch(root, now)
+		if role.Status != HealthDead || !strings.Contains(role.Reason, "bounded-goal") ||
+			!strings.Contains(role.Reason, "claim epoch 1") || !strings.Contains(role.Reason, "claim epoch 5") ||
+			!strings.Contains(role.Remedy, "metasystem goal restamp --id bounded-goal") ||
+			!strings.Contains(role.Remedy, "metasystem up") {
+			t.Fatalf("same-lineage divergence = %+v", role)
+		}
+	})
+
+	t.Run("foreign lineage divergence", func(t *testing.T) {
+		root := convertedBed(t, "bed-m1", map[string]*goal.GoalFile{"bounded-goal": stopCapabilityHealthGoal()})
+		writeHealthLease(t, root, "replacement-lineage", 5)
+		role := checkStopCapabilityEpoch(root, now)
+		if role.Status != HealthDead || !strings.Contains(role.Reason, "coordinator") ||
+			!strings.Contains(role.Reason, "replacement-lineage") ||
+			role.Remedy != "release the goal under the lineage that claimed it and claim it again, or hand it over with metasystem goal handover" {
+			t.Fatalf("foreign-lineage divergence = %+v", role)
+		}
+	})
+
+	t.Run("unreadable goal store", func(t *testing.T) {
+		root := convertedBed(t, "bed-m1", map[string]*goal.GoalFile{"bounded-goal": stopCapabilityHealthGoal()})
+		path := filepath.Join(root, "plans", "goals", "bounded-goal.md")
+		if err := os.WriteFile(path, []byte("not a goal record\n"), 0o644); err != nil {
+			t.Fatal(err)
+		}
+		for _, args := range [][]string{{"add", "plans/goals/bounded-goal.md"}, {"commit", "-q", "-m", "corrupt accepted goal"}, {"update-ref", goal.AcceptedRef, "HEAD"}} {
+			command := exec.Command("git", append([]string{"-C", root}, args...)...)
+			command.Env = gittree.ScrubbedEnviron()
+			if output, err := command.CombinedOutput(); err != nil {
+				t.Fatalf("git %v: %v\n%s", args, err, output)
+			}
+		}
+		writeHealthLease(t, root, "coordinator", 5)
+		role := checkStopCapabilityEpoch(root, now)
+		if role.Status != HealthUnknown || !strings.Contains(role.Reason, "goal store is unreadable") {
+			t.Fatalf("unreadable store = %+v", role)
+		}
+	})
+
+	t.Run("unreadable lease", func(t *testing.T) {
+		root := convertedBed(t, "bed-m1", map[string]*goal.GoalFile{"bounded-goal": stopCapabilityHealthGoal()})
+		path := filepath.Join(root, "artifacts", "agents", "mains", "worktree-lease.json")
+		if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(path, []byte("{"), 0o600); err != nil {
+			t.Fatal(err)
+		}
+		role := checkStopCapabilityEpoch(root, now)
+		if role.Status != HealthUnknown || !strings.Contains(role.Reason, "checkout lease is unreadable") {
+			t.Fatalf("unreadable lease = %+v", role)
+		}
+	})
+}
+
 func structuredHealthGoal() *goal.GoalFile {
 	history := bedHistory("bounded-goal", "open")
 	history[0].At = "2026-08-28T07:00:00Z"

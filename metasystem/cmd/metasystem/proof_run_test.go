@@ -560,6 +560,57 @@ func TestSupervisorTakeoverRefusesStaleEpochProof(t *testing.T) {
 	}
 }
 
+func TestProofGateAdmitsAfterTheStopCapabilityIsRestamped(t *testing.T) {
+	root, now := proofExtensionGoalFixture(t)
+	announceProofFixtureHolder(t, root)
+	leasePath := filepath.Join(root, "artifacts", "agents", "mains", "worktree-lease.json")
+	leaseBytes, err := os.ReadFile(leasePath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var current lease.Lease
+	if err := json.Unmarshal(leaseBytes, &current); err != nil {
+		t.Fatal(err)
+	}
+	current.ClaimEpoch = 5
+	current.Revision++
+	leaseBytes, err = json.Marshal(current)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(leasePath, leaseBytes, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("METASYSTEM_GOAL_NOW", now.Format(time.RFC3339))
+	admission := candidateProofLaunchAdmission(proofLaunchAdmission{
+		ControlRoot: root, ExecutionRoot: root, ConfPath: filepath.Join(root, "metasystem.conf"), GoalID: "standing-validation",
+		CapMin: "1", ScopeClass: "full", CommandClass: "testing",
+	})
+	attempt, _, _, err := admitProofLaunch(admission)
+	wantStart := "active coordinator does not own the claimed goal reservation"
+	if err == nil || !strings.HasPrefix(err.Error(), wantStart) || !strings.Contains(err.Error(), "lease claim epoch 5") ||
+		!strings.Contains(err.Error(), "stop capability claim epoch 1") ||
+		!strings.Contains(err.Error(), "metasystem goal restamp --id standing-validation") || attempt.AttemptID != "" {
+		t.Fatalf("stale capability refusal: attempt=%+v err=%v", attempt, err)
+	}
+
+	endpoint, err := goal.ResolveEndpoint(root)
+	if err != nil {
+		t.Fatal(err)
+	}
+	result, err := goal.Restamp(goal.VerbRequest{
+		Endpoint: endpoint, Actor: goal.Actor{Machine: "mac-cli", Lineage: "m1"},
+		Ulid: "01J5X00000000000000000CP10", Now: now, ClaimEpoch: 5, CallerClass: lease.ClassMain,
+	}, "standing-validation")
+	if err != nil || result.Outcome != goal.OutcomeConfirmed {
+		t.Fatalf("restamp: %+v %v", result, err)
+	}
+	attempt, decision, joined, err := admitProofLaunch(admission)
+	if err != nil || joined || decision.Disposition != proofrun.DispositionExecuted || attempt.AttemptID == "" {
+		t.Fatalf("proof admission after restamp: attempt=%+v decision=%+v joined=%v err=%v", attempt, decision, joined, err)
+	}
+}
+
 func announceProofFixtureHolder(t *testing.T, root string) {
 	t.Helper()
 	parent, state, err := (identity.KernelProber{}).Probe(int64(os.Getppid()))

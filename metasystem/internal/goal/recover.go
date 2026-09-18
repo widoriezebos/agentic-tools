@@ -318,6 +318,7 @@ func requestForEntry(e Endpoint, entry Entry, parkChecks ...func(string, string)
 		}
 		r.ClaimEpoch = epoch
 	}
+	r.CallerClass = entry.Intent.Args["callerClass"]
 	if r.opid() != entry.Opid {
 		return PublishRequest{}, fmt.Errorf("the entry's opid %s does not derive from its recorded identity; close it by hand", entry.Opid)
 	}
@@ -412,6 +413,11 @@ func requestForEntry(e Endpoint, entry Entry, parkChecks ...func(string, string)
 			return claimArcRequest(r, target, budget), nil
 		}
 		return claimRequest(r, target, budget), nil
+	case "restamp":
+		if r.CallerClass != "MAIN" {
+			return PublishRequest{}, fmt.Errorf("the stored restamp intent is not from a MAIN lease holder; close it by hand")
+		}
+		return restampRequest(r, target), nil
 	case "set-budget":
 		return PublishRequest{}, fmt.Errorf("APPROVAL_REQUIRED: set-budget is proof-bearing and cannot be replayed from journal text; re-run it from the human authority boundary and close this entry by hand")
 	case "extend-budget":

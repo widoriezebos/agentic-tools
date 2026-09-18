@@ -35,6 +35,12 @@ not paths.
   the epoch it was created under; a job whose epoch is below the lease's is
   stale by definition. Distinct from **revision**, which increments on
   every lease write and exists only for compare-and-swap.
+
+  A claimed goal's stop capability carries the lease epoch that authorized
+  its claim. Re-arming with `metasystem up` restamps that capability when the
+  same holder's live epoch has advanced; `metasystem goal restamp --id <goal>`
+  performs the same repair directly.
+
 - **Lineage** (`ownerLineage`) — the identity of the *logical* writer,
   which can outlive any single process. A mission's staging, resume, and
   every host turn all derive the same lineage (`mission-<hash>`), so when

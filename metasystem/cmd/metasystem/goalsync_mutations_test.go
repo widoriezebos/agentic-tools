@@ -228,6 +228,17 @@ func TestStoppingRequestCarriesEnrolledGradeWithoutFallingBack(t *testing.T) {
 	}
 }
 
+func TestRestampVerbRefusesTheByFlag(t *testing.T) {
+	missingRoot := filepath.Join(t.TempDir(), "no-ledger")
+	code, stdout, stderr := captureCommandOutput(t, true, true, func() int {
+		return runGoalRestamp([]string{"--root", missingRoot, "--id", "standing-validation", "--by", "Wido"})
+	})
+	const reason = "goal restamp acts only for the caller's own pair and does not accept --by\n"
+	if code != 2 || stdout != "" || stderr != reason {
+		t.Fatalf("restamp --by refusal: code=%d stdout=%q stderr=%q", code, stdout, stderr)
+	}
+}
+
 func TestParkAcceptsFixtureHumanAuthorityAtTheCommandEdge(t *testing.T) {
 	root := syncedClaimedGoalFixture(t)
 	amendSyncedGoalFixture(t, root, "human-origin park fixture", func(file *goal.GoalFile) {

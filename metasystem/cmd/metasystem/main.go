@@ -547,6 +547,7 @@ func families() []family {
 				{"declare-free", "declare (or renew) the absence of intent over the current plans world", runGoalDeclareFree},
 				{"prune", "drop done goals beyond the newest ten, reporting every drop", runGoalPrune},
 				{"claim", "claim a goal (or its whole arc with --arc) for this machine", runGoalClaim},
+				{"restamp", "move this holder's stop capability to the live lease epoch", runGoalRestamp},
 				{"approve", "human-only (or a seat --under a power of attorney): approve exact goal intent and budget for execution, or run the grandfather sweep", runGoalApprove},
 				{"classify-sweep", "human-confirmed classification of every open tierless goal", runGoalClassifySweep},
 				{"tier-probe", "report the backlog's recorded and derived tiers and the goals a person may lower", runGoalTierProbe},

@@ -455,12 +455,17 @@ func (l LostToCompetitor) Error() string {
 // classification, lawful when the callback found this operation's own opid.
 // A carried operation may instead find its ApprovedRef because one human word
 // is consumed exactly once and a fresh-opid replay is lawful there alone. A
-// semantic no-op without either proof is
-// NothingToDo — the journal's truth predicate is the opid, and a
-// confirmed entry whose opid is nowhere would be a lie.
+// semantic no-op without either proof is NothingToDo unless a verb
+// explicitly defines the already-satisfied state as successful.
 type AlreadyApplied struct{}
 
 func (AlreadyApplied) Error() string { return "already applied" }
+
+// AlreadySatisfied is a successful operation whose requested state already
+// holds. It records a terminal journal result without writing a ledger commit.
+type AlreadySatisfied struct{ Reason string }
+
+func (a AlreadySatisfied) Error() string { return "already satisfied: " + a.Reason }
 
 // NothingToDo classifies a fresh operation whose desired state
 // already holds without this opid's involvement: abandoned by its
@@ -479,8 +484,8 @@ type PublishRequest struct {
 	// Mutate produces the changes for exactly the given tip — called
 	// again on every rebuild, so the verb re-reads and re-decides on
 	// the current world. Returning LostToCompetitor or
-	// AlreadyApplied classifies the rebuilt tip; any other error is
-	// a definite rejection by name.
+	// AlreadyApplied and AlreadySatisfied classify the rebuilt tip; any other
+	// error is a definite rejection by name.
 	Mutate func(tip string) ([]Change, error)
 	// Validate runs the full read-set revalidation on the built
 	// commit's tree. Nil skips — the layers land in order.
@@ -553,6 +558,11 @@ func Publish(e Endpoint, req PublishRequest) (PublishResult, error) {
 			CleanupRefs(e, nonce)
 			if capErr != nil {
 				return PublishResult{}, capErr
+			}
+			if strings.HasPrefix(existing.Evidence, "already satisfied: ") {
+				hintConfirmedWaiters(e.Root, req, tip, "", 0)
+				return PublishResult{Outcome: OutcomeConfirmed, Tip: tip,
+					Detail: strings.TrimPrefix(existing.Evidence, "already satisfied: ")}, nil
 			}
 			present, trErr := TrailerPresent(e, tip, req.Opid)
 			if trErr != nil {
@@ -805,6 +815,12 @@ func terminalFromMutate(e Endpoint, req PublishRequest, tip string, err error) (
 		}
 		CleanupRefs(e, opid)
 		return PublishResult{Outcome: OutcomeConfirmed, Tip: tip, Detail: "idempotent"}, nil
+	case AlreadySatisfied:
+		if mErr := MarkTerminal(e.Root, opid, OutcomeConfirmed, "already satisfied: "+v.Reason); mErr != nil {
+			return PublishResult{}, mErr
+		}
+		CleanupRefs(e, opid)
+		return PublishResult{Outcome: OutcomeConfirmed, Tip: tip, Detail: v.Reason}, nil
 	case NothingToDo:
 		if mErr := MarkTerminal(e.Root, opid, OutcomeAbandoned, v.Reason); mErr != nil {
 			return PublishResult{}, mErr
