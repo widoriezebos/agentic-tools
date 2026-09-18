@@ -1289,11 +1289,25 @@ if [[ "$fixture_scenario" == hang-leash ]]; then
   interrupt_child=$tmp/hang-interrupt-child.pid
   interrupt_grandchild=$tmp/hang-interrupt-grandchild.pid
   interrupt_custodian_log_file=$tmp/hang-interrupt-custodian.log-path
+  interrupt_launcher_probe_status=0
+  interrupt_launcher_probe_output=$(harness_fixture_engine_call proc default-signals -- \
+    /bin/sh -c 'trap - INT; kill -INT $$; echo alive' 2>&1) \
+    || interrupt_launcher_probe_status=$?
+  if [[ "$interrupt_launcher_probe_output" == *alive* ]] \
+      || [[ "$interrupt_launcher_probe_status" =~ ^(2|126|127)$ ]]; then
+    interrupt_launcher_probe_reason=$interrupt_launcher_probe_output
+    [[ -n "$interrupt_launcher_probe_reason" ]] \
+      || interrupt_launcher_probe_reason="exit code $interrupt_launcher_probe_status"
+    echo "fixture-bed-scenarios fixture: hang-leash INT leg cannot deliver INT through the launcher: $interrupt_launcher_probe_reason" >&2
+    exit 1
+  fi
   set -m
+  # A non-interactive shell's background job inherits INT and QUIT ignored, and Bash cannot trap a signal ignored at entry.
   FIXTURE_BED_SOURCE_ROOT="$root" FIXTURE_BED_INNER_SCENARIOS=hang \
     FIXTURE_BED_CHILD_PID_FILE="$interrupt_child" \
     FIXTURE_BED_GRANDCHILD_PID_FILE="$interrupt_grandchild" \
     FIXTURE_BED_CUSTODIAN_LOG_FILE="$interrupt_custodian_log_file" \
+    "$harness_fixture_engine" proc default-signals -- \
     "$inner" "$harness_fixture_tag" >"$interrupt_output" 2>&1 9>&- &
   interrupt_owner=$!
   set +m
