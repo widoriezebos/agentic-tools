@@ -43,32 +43,69 @@ func ConfiguredProcessFixture(metasystemRoot string) ([]Process, bool, error) {
 // vanishes between enumeration and
 // probing is simply dropped (it was not live).
 func EnumerateProcesses() ([]Process, error) {
-	pids, err := identity.AllPids()
+	return liveProductionProcessSource().enumerate()
+}
+
+type productionProcessSource struct {
+	pids          func() ([]int64, error)
+	prober        identity.Prober
+	processGroup  func(int) (int, error)
+	parentProcess func(int64) (int64, bool)
+}
+
+func liveProductionProcessSource() productionProcessSource {
+	return productionProcessSource{
+		pids: identity.AllPids, prober: identity.KernelProber{},
+		processGroup: unix.Getpgid, parentProcess: identity.ParentPid,
+	}
+}
+
+func (source productionProcessSource) enumerate() ([]Process, error) {
+	return source.enumerateProcesses(false)
+}
+
+func (source productionProcessSource) enumerateFixtureSurvivors() ([]Process, error) {
+	return source.enumerateProcesses(true)
+}
+
+func (source productionProcessSource) enumerateProcesses(retainEmptyArgv bool) ([]Process, error) {
+	pids, err := source.pids()
 	if err != nil {
 		return nil, fmt.Errorf("process enumeration failed: %w", err)
 	}
-	prober := identity.KernelProber{}
 	var processes []Process
 	for _, pid := range pids {
-		exact, state, err := prober.Probe(pid)
+		exact, state, err := source.prober.Probe(pid)
 		if err != nil || state != identity.Alive {
 			continue
 		}
-		argv := strings.Join(exact.Argv, " ")
-		if argv == "" {
+		argv := ""
+		if exact.ArgvKnown {
+			argv = strings.Join(exact.Argv, " ")
+		}
+		if argv == "" && !retainEmptyArgv {
 			continue
 		}
-		pgid, perr := unix.Getpgid(int(pid))
+		pgid, perr := source.processGroup(int(pid))
 		if perr != nil {
 			pgid = 0
 		}
-		ppid, _ := identity.ParentPid(pid)
+		ppid, _ := source.parentProcess(pid)
+		environ := exact.Environ
+		if !exact.EnvironKnown {
+			environ = nil
+		}
+		executable := exact.Exe
+		if !exact.ExeKnown {
+			executable = ""
+		}
 		processes = append(processes, Process{
 			Pid: pid, PPID: ppid, PGID: int64(pgid),
 			Started: exact.StartedAt.Unix(), StartedExactMicro: exact.StartedAt.UnixMicro(),
 			StartTicks: exact.StartTicks, BootID: exact.BootID, Argv: argv,
-			Environ: exact.Environ, Exe: exact.Exe,
+			Environ: environ, Exe: executable,
 			Cwd: "", CwdError: false, Alive: true,
+			Unreadable: argv == "" || !exact.ArgvKnown || !exact.EnvironKnown,
 		})
 	}
 	return processes, nil

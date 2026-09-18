@@ -843,15 +843,13 @@ func TestSupervisorProcessHelper(t *testing.T) {
 		busyForCPU(duration)
 	case "busy-forever":
 		announceSupervisorHelperReady()
-		//lint:ignore SA5002 This helper is the busy process tree that the supervisor rows judge.
-		for {
-		}
+		busyForCPU(500 * time.Millisecond)
+		select {}
 	case "ignore-quit-busy":
 		signal.Ignore(syscall.SIGQUIT)
 		announceSupervisorHelperReady()
-		//lint:ignore SA5002 This helper is the busy process tree that the supervisor rows judge.
-		for {
-		}
+		busyForCPU(500 * time.Millisecond)
+		select {}
 	case "setsid-child":
 		child, custodians, err := startNestedSupervisorHelper(true, "busy-forever")
 		if err != nil {
@@ -914,7 +912,8 @@ func TestSupervisorProcessHelper(t *testing.T) {
 		}
 		announceSupervisorHelperReady()
 		sequence := 1
-		for {
+		cpuDeadline := processCPU() + 500*time.Millisecond
+		for processCPU() < cpuDeadline {
 			busyForCPU(50 * time.Millisecond)
 			file, err := os.OpenFile(args[0], os.O_APPEND|os.O_WRONLY, 0o600)
 			if err != nil {
@@ -927,6 +926,7 @@ func TestSupervisorProcessHelper(t *testing.T) {
 			}
 			sequence++
 		}
+		select {}
 	case "custodian-reaped-child":
 		child, err := startTaggedSupervisorFixtureChild(t)
 		if err != nil {

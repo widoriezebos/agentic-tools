@@ -150,9 +150,13 @@ func FixtureSurvivorLine(prober identity.Prober, survivor identity.FixtureSurviv
 
 // FixtureSurvivorSource selects the authorized configured table or the live kernel table.
 func FixtureSurvivorSource(metasystemRoot string) (identity.Prober, []Process, bool, error) {
+	return fixtureSurvivorSource(metasystemRoot, liveProductionProcessSource())
+}
+
+func fixtureSurvivorSource(metasystemRoot string, source productionProcessSource) (identity.Prober, []Process, bool, error) {
 	if processes, configured, err := ConfiguredProcessFixture(metasystemRoot); configured || err != nil {
 		return FixtureProcessProber(processes), processes, true, err
 	}
-	processes, err := EnumerateProcesses()
-	return identity.KernelProber{}, processes, false, err
+	processes, err := source.enumerateFixtureSurvivors()
+	return source.prober, processes, false, err
 }
