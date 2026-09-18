@@ -1,6 +1,7 @@
 package batch
 
 import (
+	"errors"
 	"fmt"
 	"path/filepath"
 	"strings"
@@ -112,11 +113,12 @@ func (owner *Owner) Tick(id string) error {
 	if err != nil {
 		return err
 	}
-	if record.State == StateLanding {
-		if _, unbound := owner.store.LedgerOwner().(UnboundLedgerOwner); !unbound {
-			if err := clearGreenTipEntries(record.Proof, trunkRedClearSeams{mint: owner.mint, ledger: owner.store.LedgerOwner(), descendsFrom: owner.descendsFrom}); err != nil {
-				owner.report(id, fmt.Errorf("clear green tip trunk-red entries: %w", err))
-			}
+	if record.State == StateLanding || record.State == StateLanded {
+		if err := owner.clearGreenTipTrunkRed(id, record, at); err != nil {
+			owner.report(id, fmt.Errorf("clear green tip trunk-red entries: %w", err))
+		}
+		if record.State == StateLanded {
+			return owner.release(id)
 		}
 	}
 	if record.State == StateDiagnosing || record.State == StateLanding {
@@ -139,10 +141,13 @@ func (owner *Owner) Tick(id string) error {
 		if outcome != "" && owner.logRed != nil {
 			owner.logRed(id, outcome)
 		}
+		if errors.Is(recordErr, ErrTrunkRedRecordPending) {
+			return nil
+		}
 		return recordErr
 	}
 	if record.State == StateHeldTrunkRed && record.TrunkRed != nil && len(record.TrunkRed.Entries) != 0 {
-		if tree == record.BaseTree || tree == record.TrunkRed.Red.BaseTree {
+		if tree == record.BaseTree || tree == record.TrunkRed.Red.BaseTree || tree == record.TrunkRed.CheckedTree {
 			return owner.release(id)
 		}
 		baseCommit, err := owner.baseCommit(tree)
@@ -185,6 +190,67 @@ func (owner *Owner) Tick(id string) error {
 		return lock.release()
 	}
 	return lock.whileHeld(func() error { return owner.launch(id, sample, window) })
+}
+
+func greenTipClearDetail(proof *Proof) string {
+	if proof == nil {
+		return ""
+	}
+	return "attempt=" + proof.AttemptID + " base=" + proof.BaseCommit
+}
+
+func greenTipClearStatus(record Record) (pending, complete bool) {
+	detail := greenTipClearDetail(record.Proof)
+	if detail == "" || record.Proof.Status != "green" || record.Proof.BaseCommit == "" {
+		return false, true
+	}
+	for _, entry := range record.History {
+		if entry.Detail != detail {
+			continue
+		}
+		switch entry.Verb {
+		case "trunk-red-clear-pending":
+			pending = true
+		case "trunk-red-clear-complete":
+			complete = true
+		}
+	}
+	return pending, complete
+}
+
+func (owner *Owner) clearGreenTipTrunkRed(id string, record Record, at time.Time) error {
+	if _, unbound := owner.store.LedgerOwner().(UnboundLedgerOwner); unbound {
+		return nil
+	}
+	pending, complete := greenTipClearStatus(record)
+	if complete {
+		return nil
+	}
+	detail := greenTipClearDetail(record.Proof)
+	if !pending {
+		if err := owner.store.Update(id, func(current *Record) error {
+			if current.Proof == nil || greenTipClearDetail(current.Proof) != detail || (current.State != StateLanding && current.State != StateLanded) {
+				return fmt.Errorf("batch %s moved before trunk-red clearing was recorded", id)
+			}
+			current.Transition(current.State, at, "trunk-red-clear-pending", owner.actor, detail)
+			return nil
+		}); err != nil {
+			return err
+		}
+	}
+	if err := clearGreenTipEntries(record.Proof, trunkRedClearSeams{mint: owner.mint, ledger: owner.store.LedgerOwner(), descendsFrom: owner.descendsFrom}); err != nil {
+		return err
+	}
+	return owner.store.Update(id, func(current *Record) error {
+		if current.Proof == nil || greenTipClearDetail(current.Proof) != detail || (current.State != StateLanding && current.State != StateLanded) {
+			return fmt.Errorf("batch %s moved before trunk-red clearing completed", id)
+		}
+		_, alreadyComplete := greenTipClearStatus(*current)
+		if !alreadyComplete {
+			current.Transition(current.State, at, "trunk-red-clear-complete", owner.actor, detail)
+		}
+		return nil
+	})
 }
 
 func (owner *Owner) release(id string) error {
@@ -258,7 +324,8 @@ func (owner *Owner) Resume() {
 			owner.report(id, loadErr)
 			continue
 		}
-		if record.State == StateLanded || record.State == StateDissolved {
+		_, clearComplete := greenTipClearStatus(record)
+		if record.State == StateDissolved || record.State == StateLanded && clearComplete {
 			continue
 		}
 		if tickErr := owner.Tick(id); tickErr != nil {

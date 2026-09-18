@@ -149,7 +149,7 @@ func acquireBatchOwnerWithRetention(root string, retainAnnouncement bool) (batch
 		"landing-owner", "metasystem", landingOwnerLineage); err != nil {
 		held.announced = held.hasAnnouncement()
 		if !retainAnnouncement {
-			held.retire()
+			err = errors.Join(err, held.retire())
 		}
 		return held, fmt.Errorf("BATCH_OWNER_OWNED_ELSEWHERE: %w", err)
 	}
@@ -157,20 +157,21 @@ func acquireBatchOwnerWithRetention(root string, retainAnnouncement bool) (batch
 	holder, err := lease.RequireHolder(root, pid, nil)
 	if err != nil {
 		if !retainAnnouncement {
-			held.retire()
+			err = errors.Join(err, held.retire())
 		}
 		return held, fmt.Errorf("BATCH_OWNER_OWNED_ELSEWHERE: holder proof failed: %w", err)
 	}
 	if !holder.Holder || holder.ClaimEpoch == nil || holder.MainId == nil {
+		proofErr := fmt.Errorf("BATCH_OWNER_OWNED_ELSEWHERE: holder proof returned class=%s holder=%t", holder.Class, holder.Holder)
 		if !retainAnnouncement {
-			held.retire()
+			proofErr = errors.Join(proofErr, held.retire())
 		}
-		return held, fmt.Errorf("BATCH_OWNER_OWNED_ELSEWHERE: holder proof returned class=%s holder=%t", holder.Class, holder.Holder)
+		return held, proofErr
 	}
 	held.epoch = *holder.ClaimEpoch
 	if err := batchOwnerSetenv("METASYSTEM_OWNER_LINEAGE", landingOwnerLineage); err != nil {
 		if !retainAnnouncement {
-			held.retire()
+			err = errors.Join(err, held.retire())
 		}
 		return held, err
 	}
@@ -199,14 +200,11 @@ func (held batchOwnerLease) require() error {
 	return nil
 }
 
-func (held batchOwnerLease) retire() {
+func (held batchOwnerLease) retire() error {
 	if !held.announced {
-		return
+		return nil
 	}
-	if _, err := os.Stat(held.root); errors.Is(err, os.ErrNotExist) {
-		return
-	}
-	_ = batchOwnerRetire(held.root, held.session, held.pid, held.started)
+	return batchOwnerRetire(held.root, held.session, held.pid, held.started)
 }
 
 func resolveBatchOwnerSettings(seatRoot, landingRoot string, maxWait time.Duration, now func() time.Time) (config.BatchLanding, error) {
@@ -509,7 +507,7 @@ func parseBatchOwner(args []string, verb string) (config.BatchLanding, time.Dura
 	return settings, *interval, err
 }
 
-func runBatchOwner(args []string) int {
+func runBatchOwner(args []string) (code int) {
 	if !batchCapabilitiesAvailable() {
 		return runBatchVerbSkeleton(nil)
 	}
@@ -528,7 +526,12 @@ func runBatchOwner(args []string) int {
 		fmt.Fprintln(os.Stderr, err)
 		return 1
 	}
-	defer held.retire()
+	defer func() {
+		if retireErr := held.retire(); retireErr != nil {
+			fmt.Fprintln(os.Stderr, retireErr)
+			code = 1
+		}
+	}()
 	owner, err := batchOwnerConstruct(settings, held, inputs, time.Now)
 	if err != nil {
 		fmt.Fprintln(os.Stderr, err)
@@ -565,7 +568,7 @@ func loopBatchOwner(owner *batch.Owner, held batchOwnerLease, interval time.Dura
 	}
 }
 
-func runBatchTick(args []string) int {
+func runBatchTick(args []string) (code int) {
 	if !batchCapabilitiesAvailable() {
 		return runBatchVerbSkeleton(nil)
 	}
@@ -598,7 +601,12 @@ func runBatchTick(args []string) int {
 		fmt.Fprintln(os.Stderr, err)
 		return 1
 	}
-	defer held.retire()
+	defer func() {
+		if retireErr := held.retire(); retireErr != nil {
+			fmt.Fprintln(os.Stderr, retireErr)
+			code = 1
+		}
+	}()
 	owner, err := batchOwnerConstruct(settings, held, inputs, func() time.Time { return now })
 	if err == nil {
 		err = batchOwnerRequire(held)

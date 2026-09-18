@@ -45,17 +45,8 @@ func reopenHeldAfterDiagnostic(store Store, id, newBaseTree, newBaseCommit, acto
 		if err != nil {
 			return errors.Join(clearErr, err)
 		}
-		if err := store.Update(id, func(current *Record) error {
-			if current.State != StateHeldTrunkRed || current.TrunkRed == nil || current.TrunkRed.Opid != record.TrunkRed.Opid {
-				return fmt.Errorf("batch %s moved before the new base red was recorded", id)
-			}
-			current.Transition(StateDiagnosing, at, "diagnose", actor, "new base tree")
-			return nil
-		}); err != nil {
-			return errors.Join(clearErr, err)
-		}
 		red := TrunkRed{AttemptID: result.AttemptID, BaseCommit: newBaseCommit, BaseTree: newBaseTree, Groups: result.Groups}
-		if err := store.HoldTrunkRed(id, red, opid, at, actor); err != nil {
+		if err := store.reholdTrunkRed(id, record.TrunkRed.Opid, red, opid, at, actor); err != nil {
 			return errors.Join(clearErr, err)
 		}
 		_, recordErr := store.WithLedgerOwner(seams.ledger).EnsureTrunkRedRecorded(id, seams.mint, at, actor)
@@ -66,8 +57,17 @@ func reopenHeldAfterDiagnostic(store Store, id, newBaseTree, newBaseCommit, acto
 		return err
 	}
 	cleared, err := clearHeldTrunkRedEntries(refs, result, newBaseTree, newBaseCommit, seams)
-	if clearErr := errors.Join(discoveryErr, err); clearErr != nil || !cleared {
+	if clearErr := errors.Join(discoveryErr, err); clearErr != nil {
 		return clearErr
+	}
+	if !cleared {
+		return store.Update(id, func(current *Record) error {
+			if current.State != StateHeldTrunkRed || current.TrunkRed == nil || current.TrunkRed.Opid != record.TrunkRed.Opid {
+				return fmt.Errorf("batch %s moved before its clearing tree was saved", id)
+			}
+			current.TrunkRed.CheckedTree = newBaseTree
+			return nil
+		})
 	}
 	return applyHeldReopen(store, id, newBaseTree, actor, at, prepared)
 }
@@ -173,7 +173,7 @@ func clearGreenTipEntries(proof *Proof, seams trunkRedClearSeams) error {
 			return err
 		}
 		if err := seams.ledger.Clear(opid, EntryRef{ID: entry.ID, Group: entry.Group}, Green{
-			AttemptID: proof.AttemptID, BaseCommit: proof.BaseCommit, BaseTree: proof.BaseTree, Group: entry.Group,
+			AttemptID: proof.AttemptID, BaseCommit: proof.BaseCommit, Group: entry.Group,
 		}); err != nil {
 			return err
 		}

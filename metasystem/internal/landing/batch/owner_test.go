@@ -128,8 +128,8 @@ func TestBatchOwnerRecordsHeldTrunkRed(t *testing.T) {
 		bed.owner.store = bed.store
 		mintCalls := 0
 		bed.owner.mint = func() (string, error) { mintCalls++; return "opid-2", nil }
-		if err := bed.owner.Tick(testBatchID); !errors.Is(err, ErrTrunkRedRecordPending) {
-			t.Fatalf("pending tick error=%v", err)
+		if err := bed.owner.Tick(testBatchID); err != nil {
+			t.Fatalf("pending ledger transaction was reported as a tick error: %v", err)
 		}
 		var failed *TrunkRedRecordFailed
 		if err := bed.owner.Tick(testBatchID); !errors.As(err, &failed) {
@@ -158,6 +158,91 @@ func TestBatchOwnerRecordsHeldTrunkRed(t *testing.T) {
 			t.Fatalf("outcomes=%v record=%+v", bed.redOutcomes, load(t, bed.store))
 		}
 	})
+}
+
+func TestBatchOwnerSkipsRecordedHoldAndReleasesLockBeforeLedger(t *testing.T) {
+	now := time.Unix(10, 0)
+	t.Run("recorded hold", func(t *testing.T) {
+		record := ownerRecord(testBatchID, StateHeldTrunkRed, now.Add(-time.Minute))
+		record.TrunkRed.Red = TrunkRed{BaseTree: "tree", Groups: []RedGroup{{ID: "fast"}}}
+		record.TrunkRed.Entries = []EntryRef{{ID: "entry", Group: "fast"}}
+		bed := newOwnerBed(t, record, now)
+		calls := 0
+		bed.store = bed.store.WithLedgerOwner(recordOwner(func(string, TrunkRed) ([]EntryRef, error) {
+			calls++
+			return nil, errors.New("record should not be called")
+		}))
+		bed.owner.store = bed.store
+		must(t, bed.owner.Tick(testBatchID))
+		if calls != 0 || len(bed.redOutcomes) != 0 {
+			t.Fatalf("recorded hold called ledger %d times and logged %v", calls, bed.redOutcomes)
+		}
+	})
+	t.Run("proof lock release", func(t *testing.T) {
+		record := ownerRecord(testBatchID, StateHeldTrunkRed, now.Add(-time.Minute))
+		record.TrunkRed.Red = TrunkRed{BaseTree: "old", Groups: []RedGroup{{ID: "fast"}}}
+		bed := newOwnerBed(t, record, now)
+		lock := bed.owner.lock(testBatchID)
+		if state, err := lock.poll(); err != nil || state != lockAcquired {
+			t.Fatalf("acquire fixture proof lock: state=%v error=%v", state, err)
+		}
+		bed.owner.locks[testBatchID] = lock
+		bed.store = bed.store.WithLedgerOwner(recordOwner(func(string, TrunkRed) ([]EntryRef, error) {
+			if _, err := os.Stat(bed.lockDir); !errors.Is(err, os.ErrNotExist) {
+				t.Fatalf("ledger call retained the proof lock: %v", err)
+			}
+			return []EntryRef{{ID: "entry", Group: "fast"}}, nil
+		}))
+		bed.owner.store = bed.store
+		must(t, bed.owner.Tick(testBatchID))
+	})
+}
+
+func TestBatchOwnerSavesGreenTreeThatCannotClear(t *testing.T) {
+	now := time.Unix(10, 0)
+	assembly, store, ledger := heldReopenBed(t)
+	record := load(t, store)
+	bed := newOwnerBed(t, record, now)
+	bed.tree = assembly.moved
+	ledger.open[0].LastBaseCommit = "commit-" + assembly.moved
+	bed.store = store.WithLedgerOwner(ledger)
+	bed.owner.store = bed.store
+	diagnostics := 0
+	bed.owner.runDiagnostic = func(string, DiagnosticRequest, Claim) (DiagnosticResult, error) {
+		diagnostics++
+		return DiagnosticResult{AttemptID: "green"}, nil
+	}
+	must(t, bed.owner.Tick(testBatchID))
+	must(t, bed.owner.Tick(testBatchID))
+	if record := load(t, bed.store); record.TrunkRed.CheckedTree != assembly.moved || diagnostics != 1 {
+		t.Fatalf("blocked green tree=%q diagnostics=%d, want saved tree and one run", record.TrunkRed.CheckedTree, diagnostics)
+	}
+}
+
+func TestBatchOwnerRetriesGreenTipClearAfterLandingFinishes(t *testing.T) {
+	now := time.Unix(10, 0)
+	record := ownerRecord(testBatchID, StateLanding, now.Add(-time.Minute))
+	record.Proof = &Proof{Status: "green", AttemptID: "tip-green", BaseCommit: "next-commit", Passed: []string{"fast"}}
+	bed := newOwnerBed(t, record, now)
+	ledger := &clearingLedger{open: []OpenEntry{{ID: "entry", Group: "fast", LastBaseCommit: "old-commit"}}, openErrors: []error{os.ErrPermission, nil}}
+	bed.store = bed.store.WithLedgerOwner(ledger)
+	bed.owner.store = bed.store
+	bed.owner.launch = func(string, proofrun.LoadSample, string) error {
+		bed.launches++
+		return bed.store.Update(testBatchID, func(record *Record) error { record.State = StateLanded; return nil })
+	}
+	var reports []error
+	bed.owner.report = func(_ string, errorValue error) { reports = append(reports, errorValue) }
+	must(t, bed.owner.Tick(testBatchID))
+	if record := load(t, bed.store); record.State != StateLanded || len(ledger.cleared) != 0 || len(reports) != 1 {
+		t.Fatalf("first pass record=%+v clears=%+v reports=%v", record, ledger.cleared, reports)
+	}
+	bed.owner.Resume()
+	final := load(t, bed.store)
+	_, complete := greenTipClearStatus(final)
+	if len(ledger.cleared) != 1 || ledger.cleared[0].green.AttemptID != "tip-green" || !complete || bed.launches != 1 {
+		t.Fatalf("retry record=%+v clears=%+v launches=%d", final, ledger.cleared, bed.launches)
+	}
 }
 
 func TestBatchOwnerResumesLandingAfterTrunkRedClearError(t *testing.T) {

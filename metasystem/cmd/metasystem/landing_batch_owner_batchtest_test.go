@@ -132,7 +132,11 @@ func TestBatchOwnerHoldsTheLease(t *testing.T) {
 			os.Exit(23)
 		}
 		if mode != "hold-dead" {
-			defer held.retire()
+			defer func() {
+				if err := held.retire(); err != nil {
+					fmt.Println(err)
+				}
+			}()
 		}
 		holder, err := lease.RequireHolder(root, int64(os.Getpid()), nil)
 		if err != nil || !holder.Holder || holder.ClaimEpoch == nil || *holder.ClaimEpoch < 1 {
@@ -607,7 +611,11 @@ func TestBatchSupervisorTakeoverRebindsJoinedClaims(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	t.Cleanup(replacement.retire)
+	t.Cleanup(func() {
+		if err := replacement.retire(); err != nil {
+			t.Errorf("retire replacement owner: %v", err)
+		}
+	})
 	if replacement.epoch != 2 {
 		t.Fatalf("replacement owner epoch=%d, want real lease takeover epoch 2", replacement.epoch)
 	}

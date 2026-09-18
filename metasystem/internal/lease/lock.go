@@ -52,6 +52,32 @@ func acquireBounded(path, what string) (*fileLock, error) {
 	}
 }
 
+// acquireBoundedExisting takes a lock only when its directory and lock file
+// still exist. Retirement uses it so a disappearing checkout stays gone.
+func acquireBoundedExisting(path, what string) (*fileLock, bool, error) {
+	f, err := os.OpenFile(path, os.O_RDWR, 0o644)
+	if os.IsNotExist(err) {
+		return nil, false, nil
+	}
+	if err != nil {
+		return nil, false, fmt.Errorf("checkout lease lock cannot be opened: %w", err)
+	}
+	wait := lockWaitSeconds()
+	deadline := time.Now().Add(time.Duration(wait * float64(time.Second)))
+	for {
+		if err := unix.Flock(int(f.Fd()), unix.LOCK_EX|unix.LOCK_NB); err == nil {
+			return &fileLock{f: f}, true, nil
+		}
+		if time.Now().After(deadline) {
+			f.Close()
+			return nil, true, fmt.Errorf("checkout lease lock is busy for %s after %gs; "+
+				"another lease-gated operation holds it. If this call is nested inside "+
+				"one, pass --lease-held; otherwise retry in a moment", what, wait)
+		}
+		time.Sleep(50 * time.Millisecond)
+	}
+}
+
 func (l *fileLock) release() {
 	if l == nil || l.f == nil {
 		return

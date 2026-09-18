@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"os"
 	"os/exec"
+	"slices"
 	"strings"
 	"testing"
 )
@@ -101,8 +102,16 @@ func TestBatchRuntimeInputsCannotRegisterCapability(t *testing.T) {
 }
 
 func TestBatchProductionRegistryComplete(t *testing.T) {
-	if os.Getenv("GO_WANT_BATCH_RUNTIME_INPUT_HELPER") != "1" {
-		return
+	want := []batchCapability{
+		recordStoreHistoryAndProberSeam, chainReaderIdentityUniquenessAndTransport, joinGate, assemblyConflictCeilingAndSeal,
+		handedOverClaimCardinality, fieldCompleteHandover, serializedJoinPublication, crashSafeTerminalReturn,
+		censusOnTheInjectedProber, boundedRolloutConfiguration, fifoLockAndStartRule, ownerVerbAndTick,
+		productionSupervisorTakeover, registerPreservingFastForward, proofPlanningAndTipLaunch,
+		revisionBoundAdmissionAndDiagnosticHeadroom, freshBaseDiagnosis, ejectionAndRedScheduling, trunkRedLedgerOwner,
+		prefixReceipts, landingTransportHelpers, atomicSeriesAndRecovery, waitStatusDocsAndInventory,
+	}
+	if !slices.Equal(requiredBatchCapabilities[:], want) {
+		t.Fatalf("required batch capability registry=%v, want literal production inventory %v", requiredBatchCapabilities, want)
 	}
 	if len(compiledBatchCapabilities) != len(requiredBatchCapabilities) {
 		t.Fatalf("production registered %d batch capabilities, want %d", len(compiledBatchCapabilities), len(requiredBatchCapabilities))
@@ -113,11 +122,7 @@ func TestBatchProductionRegistryComplete(t *testing.T) {
 		}
 	}
 	root := syncedClaimedGoalFixture(t)
-	seamOwner, err := batchLedgerOwner(root)
-	if err != nil || !isLedgerTrunkRedOwner(seamOwner) {
-		t.Fatalf("batch ledger owner type %T error=%v, want ledger adapter", seamOwner, err)
-	}
-	productionOwner, err := productionTrunkRedLedgerOwner(root)
+	productionOwner, err := productionBatchLedgerOwner(root)
 	if err != nil || !isLedgerTrunkRedOwner(productionOwner) {
 		t.Fatalf("production trunk-red owner type %T error=%v, want ledger adapter", productionOwner, err)
 	}

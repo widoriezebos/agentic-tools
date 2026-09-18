@@ -103,6 +103,9 @@ func (store Store) EnsureTrunkRedRecorded(id string, mint func() (string, error)
 		if current.State != StateHeldTrunkRed || current.TrunkRed == nil || current.TrunkRed.Opid != used || len(current.TrunkRed.Entries) != 0 {
 			return TrunkRedRecordMovedOn, nil
 		}
+		if mint == nil {
+			return "", errors.Join(err, errors.New("mint trunk-red retry operation: mint is unavailable"))
+		}
 		next, mintErr := mint()
 		if mintErr != nil {
 			return "", errors.Join(err, mintErr)

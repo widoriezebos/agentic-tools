@@ -167,6 +167,13 @@ func TestGoCollectionKeepsSubtestsAndDetectsMissingTerminalEvents(t *testing.T) 
 	if complete || len(missing) == 0 || missing[0].Status != "missing-terminal" {
 		t.Fatalf("partial Go report claimed complete: missing=%+v complete=%v", missing, complete)
 	}
+	failedOutput := []byte("" +
+		`{"Action":"run","Package":"example/app","Test":"TestApplication"}` + "\n" +
+		`{"Action":"fail","Package":"example/app","Test":"TestApplication"}` + "\n")
+	observed, _, _, complete = parseGoJSON(failedOutput, []NativeTestIdentity{{Classname: "example/app", Name: "TestApplication", Status: "expected"}})
+	if !complete || len(observed) != 1 || observed[0].Status != "failed" || observed[0].Report != "go-test-json" {
+		t.Fatalf("named Go failure lacks its synthetic report identity: observed=%+v complete=%v", observed, complete)
+	}
 }
 
 func TestTestEnvironmentStandardInventoryMatchesObserved(t *testing.T) {

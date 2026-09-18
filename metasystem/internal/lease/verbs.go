@@ -4,6 +4,7 @@ import (
 	"crypto/rand"
 	"encoding/hex"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -270,28 +271,35 @@ func AssociateSession(root, mainID, runtimeSession, event, startSource string) e
 	return fmt.Errorf("main announcement %s was not found", mainID)
 }
 
-// Retire removes this process's announcement.
+// Retire removes this process's announcement and its protocol cursor.
 func Retire(root, session string, pid, start int64) error {
 	root = resolveRoot(root)
-	lock, err := acquireBounded(registryLockPath(root), "lease")
+	lock, exists, err := acquireBoundedExisting(registryLockPath(root), "lease retirement")
 	if err != nil {
 		return err
+	}
+	if !exists {
+		return nil
 	}
 	defer lock.release()
 	records, err := readAnnouncements(root, false)
 	if err != nil {
 		return err
 	}
+	var retireErrors []error
 	for _, rec := range records {
 		matchesSession := rec.Ann.RuntimeSession == session ||
 			(rec.Ann.RuntimeSession == "" && rec.Ann.SessionId == session)
 		if rec.Ann.Pid == pid && rec.Ann.PidStartedAt == start && matchesSession {
-			if err := os.Remove(rec.Path); err != nil && !os.IsNotExist(err) {
-				return err
+			cursor := filepath.Join(root, "artifacts/agents/mains", rec.Ann.MainId+".protocol-cursor.json")
+			for _, path := range []string{cursor, cursor + ".lock", rec.Path} {
+				if removeErr := os.Remove(path); removeErr != nil && !os.IsNotExist(removeErr) {
+					retireErrors = append(retireErrors, fmt.Errorf("remove %s: %w", path, removeErr))
+				}
 			}
 		}
 	}
-	return nil
+	return errors.Join(retireErrors...)
 }
 
 // ClassifyResult is ClassifyVerb's report: who the caller is, whether it

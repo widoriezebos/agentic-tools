@@ -37,6 +37,7 @@ func TestLandingOwnerComponentKeepsHeartbeatLoopOnSetupErrors(t *testing.T) {
 		t.Fatal("missing configuration stopped the component before its heartbeat loop")
 	}
 	defer release()
+	pass = landingOwnerReportedPass(repo, pass)
 	if err := pass(); err != nil {
 		t.Fatalf("missing configuration should mean no batch root: %v", err)
 	}
@@ -49,16 +50,32 @@ func TestLandingOwnerComponentKeepsHeartbeatLoopOnSetupErrors(t *testing.T) {
 	if err := pass(); err == nil || !strings.Contains(err.Error(), "invalid batch wait") {
 		t.Fatalf("setup error=%v, want invalid batch wait from configuration below the checkout root", err)
 	}
+	errorPath := landingOwnerErrorPath(repo)
+	if data, err := os.ReadFile(errorPath); err != nil || !strings.Contains(string(data), "invalid batch wait") {
+		t.Fatalf("durable setup error=%q error=%v", data, err)
+	}
+	changed, err := writeLandingOwnerError(repo, errors.New("invalid batch wait: fixture"))
+	if err != nil || !changed {
+		t.Fatalf("changed setup error record: changed=%t error=%v", changed, err)
+	}
+	changed, err = writeLandingOwnerError(repo, errors.New("invalid batch wait: fixture"))
+	if err != nil || changed {
+		t.Fatalf("unchanged setup error rewrote its record: changed=%t error=%v", changed, err)
+	}
 	if err := os.WriteFile(conf, nil, 0o644); err != nil {
 		t.Fatal(err)
 	}
 	if err := pass(); err != nil {
 		t.Fatalf("later setup pass did not retry corrected configuration: %v", err)
 	}
+	if _, err := os.Stat(errorPath); !errors.Is(err, os.ErrNotExist) {
+		t.Fatalf("successful setup left a stale error record: %v", err)
+	}
 }
 
-func landingOwnerRetryFixture(t *testing.T) (string, func() error, func()) {
+func landingOwnerRetryFixture(t *testing.T) (string, func() error, func() error) {
 	t.Helper()
+	isolateGlobalGitConfig(t)
 	originalLineage, hadLineage := os.LookupEnv("METASYSTEM_OWNER_LINEAGE")
 	t.Cleanup(func() {
 		if hadLineage {

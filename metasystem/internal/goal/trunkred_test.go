@@ -2,9 +2,13 @@ package goal
 
 import (
 	"encoding/json"
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 	"time"
+
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/brain"
 )
 
 func TestTrunkRedBranchReferenceRoundTripsAndValidates(t *testing.T) {
@@ -99,6 +103,50 @@ func TestTrunkRedRegisterParsesRendersAndJoinsEveryReader(t *testing.T) {
 func trunkRedRecordFixture(identity, batch, attempt, base, seen string) TrunkRedRecordArgs {
 	return TrunkRedRecordArgs{Batch: batch, Attempt: attempt, BaseCommit: base, BaseTree: "tree-" + base, SeenAt: seen,
 		OwnerMachine: "mac-a", Groups: []TrunkRedRecordGroup{{Identity: identity, Group: "fast", Status: "failed", Failures: []TrunkRedFailure{}}}}
+}
+
+func TestTrunkRedMutationBoundariesRejectInvalidAuthorityAndShape(t *testing.T) {
+	root := soloLedgerRepo(t)
+	request := trunkRedVerbReq(root, "01J5X0000000000000000000Q1", "mac-a")
+	tip := mustGit(t, root, "rev-parse", AcceptedRef)
+	for name, args := range map[string]TrunkRedRecordArgs{
+		"empty batch":  trunkRedRecordFixture("tr-fast-empty-batch", "", "attempt", "base", request.stamp()),
+		"empty groups": {Batch: "batch", Attempt: "attempt", BaseCommit: "base", BaseTree: "tree", SeenAt: request.stamp()},
+	} {
+		t.Run(name, func(t *testing.T) {
+			if _, err := RecordTrunkRed(request, args); err == nil {
+				t.Fatalf("%s record was accepted", name)
+			}
+			if got := mustGit(t, root, "rev-parse", AcceptedRef); got != tip {
+				t.Fatalf("%s record moved accepted tip from %s to %s", name, tip, got)
+			}
+		})
+	}
+
+	identity := "tr-fast-brainfence"
+	result, err := RecordTrunkRed(request, trunkRedRecordFixture(identity, "batch", "attempt", "base", request.stamp()))
+	if err != nil || result.Outcome != OutcomeConfirmed {
+		t.Fatalf("record fixture: %+v %v", result, err)
+	}
+	record := brain.Record{Schema: brain.Schema, Ledger: ExistingLedgerIdentity(root), Machine: "brain", DeclaredBy: "Wido", DeclaredAt: "2026-09-17T00:00:00Z"}
+	data, err := json.Marshal(record)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.MkdirAll(filepath.Dir(brain.Path(root)), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(brain.Path(root), append(data, '\n'), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	before := mustGit(t, root, "rev-parse", AcceptedRef)
+	own := trunkRedVerbReq(root, "01J5X0000000000000000000Q2", "mac-a")
+	if _, err := OwnTrunkRed(own, TrunkRedOwnArgs{Entry: identity, Goal: "solo-goal"}); err == nil || !strings.Contains(err.Error(), "act trunk-red own is fenced") {
+		t.Fatalf("brain-owned trunk-red mutation error=%v", err)
+	}
+	if after := mustGit(t, root, "rev-parse", AcceptedRef); after != before {
+		t.Fatalf("brain fence moved accepted tip from %s to %s", before, after)
+	}
 }
 
 func TestTrunkRedRecordOwnClearAndCloseTransactions(t *testing.T) {

@@ -123,6 +123,14 @@ func TestTrunkRedHoldRetryAndRehold(t *testing.T) {
 	if len(record.History) != 3 || record.History[1].Verb != "trunk-red-recorded" || record.History[2].Verb != "trunk-red-hold" {
 		t.Fatalf("re-hold history=%+v", record.History)
 	}
+	must(t, store.Update(testBatchID, func(record *Record) error { record.State = StateDiagnosing; return nil }))
+	before = recordBytes(t, store)
+	if err := store.HoldTrunkRed(testBatchID, second, "op-1", secondAt.Add(time.Minute), "actor"); err == nil || !strings.Contains(err.Error(), "cannot reuse trunk-red opid") {
+		t.Fatalf("re-hold reused an earlier opid: %v", err)
+	}
+	if after := recordBytes(t, store); string(after) != string(before) {
+		t.Fatal("refused duplicate opid changed the batch record")
+	}
 }
 
 func TestTrunkRedHoldTakesJoinersAndRefusesOtherStates(t *testing.T) {

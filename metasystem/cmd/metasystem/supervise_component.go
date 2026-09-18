@@ -37,7 +37,7 @@ import (
 // A transient error in either job is logged and the loop continues — a
 // component must not die on a bad scan or an unreadable record; the owner tears
 // it down deliberately by signal, or replaces it when its heartbeat goes stale.
-func runSuperviseComponent(args []string) int {
+func runSuperviseComponent(args []string) (code int) {
 	flags := flag.NewFlagSet("supervise component", flag.ContinueOnError)
 	component := flags.String("component", "", "watcher | reaper | landing-owner")
 	repo := pathFlag(flags, "repo", "", "checkout root the component operates on")
@@ -136,8 +136,12 @@ func runSuperviseComponent(args []string) int {
 		if !ok {
 			return 1
 		}
-		defer release()
-		work = pass
+		defer func() {
+			if releaseCode := reportLandingOwnerRelease(release); releaseCode != 0 {
+				code = 1
+			}
+		}()
+		work = landingOwnerReportedPass(*repo, pass)
 	default:
 		// An unknown component still beats, so a mislabelled owner launch is
 		// observable rather than a silent no-op.
@@ -192,10 +196,10 @@ func runSuperviseComponent(args []string) int {
 	}
 }
 
-func setupLandingOwner(metasystemRoot, repo string) (release func(), pass func() error, ok bool) {
+func setupLandingOwner(metasystemRoot, repo string) (release func() error, pass func() error, ok bool) {
 	noWork := func() error { return nil }
 	if !batchCapabilitiesAvailable() {
-		return func() {}, noWork, true
+		return noWork, noWork, true
 	}
 
 	var activePass func() error
@@ -203,10 +207,11 @@ func setupLandingOwner(metasystemRoot, repo string) (release func(), pass func()
 	var announced *batchOwnerLease
 	var settings config.BatchLanding
 	var inputs productionBatchOwnerInputs
-	release = func() {
+	release = func() error {
 		if announced != nil {
-			announced.retire()
+			return announced.retire()
 		}
+		return nil
 	}
 	pass = func() error {
 		if activePass != nil {
@@ -274,6 +279,48 @@ func setupLandingOwner(metasystemRoot, repo string) (release func(), pass func()
 		return activePass()
 	}
 	return release, pass, true
+}
+
+func landingOwnerErrorPath(repo string) string {
+	return filepath.Join(supervise.SupervisionDir(repo), "landing-owner.last-error")
+}
+
+func writeLandingOwnerError(repo string, passErr error) (bool, error) {
+	path := landingOwnerErrorPath(repo)
+	if passErr == nil {
+		if err := os.Remove(path); err != nil && !errors.Is(err, os.ErrNotExist) {
+			return false, err
+		}
+		return false, nil
+	}
+	want := passErr.Error() + "\n"
+	if current, err := os.ReadFile(path); err == nil && string(current) == want {
+		return false, nil
+	}
+	durable, err := atomicfile.WriteText(path, want, repo)
+	if err != nil {
+		return false, err
+	}
+	if !durable {
+		return true, fmt.Errorf("landing owner error record durability is unknown")
+	}
+	return true, nil
+}
+
+func landingOwnerReportedPass(repo string, pass func() error) func() error {
+	return func() error {
+		passErr := pass()
+		_, recordErr := writeLandingOwnerError(repo, passErr)
+		return errors.Join(passErr, recordErr)
+	}
+}
+
+func reportLandingOwnerRelease(release func() error) int {
+	if err := release(); err != nil {
+		fmt.Fprintln(os.Stderr, "supervise component landing-owner release:", err)
+		return 1
+	}
+	return 0
 }
 
 // heartbeatWriter returns a never-failing closure that rewrites the component's

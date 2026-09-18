@@ -259,6 +259,24 @@ func TestTrunkRedFailedOutcomeMintsOneNewOpid(t *testing.T) {
 	})
 }
 
+func TestTrunkRedFailedOutcomeRefusesMissingMint(t *testing.T) {
+	failed := &TrunkRedRecordFailed{Outcome: "aborted", Evidence: "ledger rejected the write"}
+	store := heldTrunkRedStore(t, recordOwner(func(string, TrunkRed) ([]EntryRef, error) { return nil, failed }))
+	before := recordBytes(t, store)
+	var panicValue any
+	var err error
+	func() {
+		defer func() { panicValue = recover() }()
+		_, err = store.EnsureTrunkRedRecorded(testBatchID, nil, time.Time{}, "actor")
+	}()
+	if panicValue != nil {
+		t.Fatalf("failed ledger outcome with no mint panicked: %v", panicValue)
+	}
+	if !errors.Is(err, failed) || !strings.Contains(err.Error(), "mint is unavailable") || string(recordBytes(t, store)) != string(before) {
+		t.Fatalf("missing mint error=%v or changed the batch record", err)
+	}
+}
+
 func applyTrunkRedTestChange(t *testing.T, store Store, action string) {
 	t.Helper()
 	must(t, store.Update(testBatchID, func(record *Record) error {

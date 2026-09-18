@@ -20,9 +20,10 @@ import (
 )
 
 func TestBatchLedgerOwnerDefaultRefusesUnbound(t *testing.T) {
+	isolateGlobalGitConfig(t)
 	root := t.TempDir()
 	goalSyncMutationGit(t, root, "init", "-q", "-b", "main")
-	owner, err := batchLedgerOwner(root)
+	owner, err := productionBatchLedgerOwner(root)
 	if err == nil || owner != nil || !strings.Contains(err.Error(), "no machine nickname is enrolled") {
 		t.Fatalf("unbound batch ledger owner=(%T, %v), want missing machine enrollment refusal", owner, err)
 	}
@@ -30,7 +31,7 @@ func TestBatchLedgerOwnerDefaultRefusesUnbound(t *testing.T) {
 
 func TestBatchLedgerOwnerUsesLandingIdentity(t *testing.T) {
 	root := syncedClaimedGoalFixture(t)
-	owner, err := batchLedgerOwner(root)
+	owner, err := productionBatchLedgerOwner(root)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -41,6 +42,12 @@ func TestBatchLedgerOwnerUsesLandingIdentity(t *testing.T) {
 	if ledgerOwner.actor.Machine != "mac-cli" || ledgerOwner.actor.Lineage != landingOwnerLineage {
 		t.Fatalf("batch ledger owner actor=%+v, want mac-cli+%s", ledgerOwner.actor, landingOwnerLineage)
 	}
+}
+
+func isolateGlobalGitConfig(t *testing.T) {
+	t.Helper()
+	t.Setenv("HOME", t.TempDir())
+	t.Setenv("XDG_CONFIG_HOME", t.TempDir())
 }
 
 func TestBatchOwnerWiringBound(t *testing.T) {
@@ -159,7 +166,9 @@ func TestBatchOwnerReleaseDoesNotRecreateRemovedRoot(t *testing.T) {
 	if err := os.RemoveAll(root); err != nil {
 		t.Fatal(err)
 	}
-	held.retire()
+	if err := held.retire(); err != nil {
+		t.Fatal(err)
+	}
 	if _, err := os.Stat(root); !errors.Is(err, os.ErrNotExist) {
 		t.Fatalf("release recreated a removed checkout root: %v", err)
 	}
@@ -172,11 +181,20 @@ func TestBatchOwnerNextProcessRecoversReleasedAndKilledHolder(t *testing.T) {
 		if err != nil {
 			t.Fatal(err)
 		}
-		if mode != "hold-dead" {
-			defer held.retire()
-		}
 		fmt.Println("READY")
-		if mode != "once" {
+		switch mode {
+		case "once":
+			if err := held.retire(); err != nil {
+				t.Fatal(err)
+			}
+		case "hold-release":
+			_, _ = os.Stdin.Read(make([]byte, 1))
+			if err := held.retire(); err != nil {
+				t.Fatal(err)
+			}
+			fmt.Println("RETIRED")
+			_, _ = os.Stdin.Read(make([]byte, 1))
+		case "hold-dead":
 			_, _ = os.Stdin.Read(make([]byte, 1))
 		}
 		return
@@ -184,7 +202,7 @@ func TestBatchOwnerNextProcessRecoversReleasedAndKilledHolder(t *testing.T) {
 
 	root := t.TempDir()
 	goalSyncMutationGit(t, root, "init", "-q")
-	startHolder := func(mode string) (*exec.Cmd, io.WriteCloser) {
+	startHolder := func(mode string) (*exec.Cmd, io.WriteCloser, *bufio.Scanner) {
 		t.Helper()
 		command := exec.Command(os.Args[0], "-test.run=^TestBatchOwnerNextProcessRecoversReleasedAndKilledHolder$")
 		command.Env = append(os.Environ(), "GO_WANT_BATCH_OWNER_RELEASE_HELPER="+mode, "BATCH_OWNER_TEST_ROOT="+root)
@@ -203,7 +221,13 @@ func TestBatchOwnerNextProcessRecoversReleasedAndKilledHolder(t *testing.T) {
 		if !scanner.Scan() || scanner.Text() != "READY" {
 			t.Fatalf("%s holder did not acquire the fixture lease: %q (%v)", mode, scanner.Text(), scanner.Err())
 		}
-		return command, stdin
+		t.Cleanup(func() {
+			if command.ProcessState == nil {
+				_ = command.Process.Kill()
+				_ = command.Wait()
+			}
+		})
+		return command, stdin, scanner
 	}
 	runOnce := func(label string) {
 		t.Helper()
@@ -214,7 +238,24 @@ func TestBatchOwnerNextProcessRecoversReleasedAndKilledHolder(t *testing.T) {
 		}
 	}
 
-	released, releasedInput := startHolder("hold-release")
+	released, releasedInput, releasedOutput := startHolder("hold-release")
+	announcements := lease.AnnouncementsFor(root, int64(released.Process.Pid))
+	if len(announcements) != 1 {
+		t.Fatalf("released holder announcements=%d, want one before retirement", len(announcements))
+	}
+	announcementPath := filepath.Join(root, "artifacts", "agents", "mains", fmt.Sprintf("landing-owner-%d-%d.json", released.Process.Pid, released.Process.Pid))
+	cursorPath := filepath.Join(root, "artifacts", "agents", "mains", announcements[0].MainId+".protocol-cursor.json")
+	if _, err := releasedInput.Write([]byte("r")); err != nil {
+		t.Fatal(err)
+	}
+	if !releasedOutput.Scan() || releasedOutput.Text() != "RETIRED" {
+		t.Fatalf("release helper did not retire while alive: %q (%v)", releasedOutput.Text(), releasedOutput.Err())
+	}
+	for _, path := range []string{announcementPath, cursorPath, cursorPath + ".lock"} {
+		if _, err := os.Stat(path); !errors.Is(err, os.ErrNotExist) {
+			t.Fatalf("live released holder left %s: %v", filepath.Base(path), err)
+		}
+	}
 	if err := releasedInput.Close(); err != nil {
 		t.Fatal(err)
 	}
@@ -223,7 +264,7 @@ func TestBatchOwnerNextProcessRecoversReleasedAndKilledHolder(t *testing.T) {
 	}
 	runOnce("released")
 
-	dead, deadInput := startHolder("hold-dead")
+	dead, deadInput, _ := startHolder("hold-dead")
 	defer deadInput.Close()
 	if err := dead.Process.Kill(); err != nil {
 		t.Fatal(err)
@@ -232,6 +273,72 @@ func TestBatchOwnerNextProcessRecoversReleasedAndKilledHolder(t *testing.T) {
 		t.Fatal("killed owner exited successfully")
 	}
 	runOnce("unreleased dead")
+}
+
+func TestBatchOwnerRetirementErrorsReachEveryCaller(t *testing.T) {
+	retireErr := errors.New("injected retirement failure")
+	tests := []struct {
+		name string
+		run  func(*testing.T) (int, string)
+	}{
+		{name: "manual owner", run: func(t *testing.T) (int, string) {
+			root := syncedClaimedGoalFixture(t)
+			seat := t.TempDir()
+			goalSyncMutationGit(t, seat, "init", "-q")
+			originalAcquire, originalConstruct, originalRequire, originalRetire := batchOwnerAcquire, batchOwnerConstruct, batchOwnerRequire, batchOwnerRetire
+			t.Cleanup(func() {
+				batchOwnerAcquire, batchOwnerConstruct, batchOwnerRequire, batchOwnerRetire = originalAcquire, originalConstruct, originalRequire, originalRetire
+			})
+			batchOwnerAcquire = func(string) (batchOwnerLease, error) {
+				return batchOwnerLease{root: root, session: "fixture", pid: int64(os.Getpid()), started: 1, epoch: 1, announced: true}, nil
+			}
+			batchOwnerConstruct = func(config.BatchLanding, batchOwnerLease, productionBatchOwnerInputs, func() time.Time) (*batch.Owner, error) {
+				return &batch.Owner{}, nil
+			}
+			batchOwnerRequire = func(batchOwnerLease) error { return errors.New("stop owner loop") }
+			batchOwnerRetire = func(string, string, int64, int64) error { return retireErr }
+			code, _, stderr := captureCommandOutput(t, false, true, func() int {
+				return runBatchOwner([]string{"--root", seat, "--landing-root", root, "--max-wait", "1m", "--interval", "1m"})
+			})
+			return code, stderr
+		}},
+		{name: "manual tick", run: func(t *testing.T) (int, string) {
+			root := syncedClaimedGoalFixture(t)
+			seat := t.TempDir()
+			goalSyncMutationGit(t, seat, "init", "-q")
+			originalAcquire, originalConstruct, originalRequire, originalTick, originalRetire := batchOwnerAcquire, batchOwnerConstruct, batchOwnerRequire, batchOwnerTick, batchOwnerRetire
+			t.Cleanup(func() {
+				batchOwnerAcquire, batchOwnerConstruct, batchOwnerRequire, batchOwnerTick, batchOwnerRetire = originalAcquire, originalConstruct, originalRequire, originalTick, originalRetire
+			})
+			batchOwnerAcquire = func(string) (batchOwnerLease, error) {
+				return batchOwnerLease{root: root, session: "fixture", pid: int64(os.Getpid()), started: 1, epoch: 1, announced: true}, nil
+			}
+			batchOwnerConstruct = func(config.BatchLanding, batchOwnerLease, productionBatchOwnerInputs, func() time.Time) (*batch.Owner, error) {
+				return &batch.Owner{}, nil
+			}
+			batchOwnerRequire = func(batchOwnerLease) error { return nil }
+			batchOwnerTick = func(*batch.Owner, string) error { return nil }
+			batchOwnerRetire = func(string, string, int64, int64) error { return retireErr }
+			code, _, stderr := captureCommandOutput(t, false, true, func() int {
+				return runBatchTick([]string{"--root", seat, "--landing-root", root, "--max-wait", "1m", "--batch", "01j5x00000000000000000ba98"})
+			})
+			return code, stderr
+		}},
+		{name: "supervised release", run: func(t *testing.T) (int, string) {
+			code, _, stderr := captureCommandOutput(t, false, true, func() int {
+				return reportLandingOwnerRelease(func() error { return retireErr })
+			})
+			return code, stderr
+		}},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			code, report := test.run(t)
+			if code != 1 || !strings.Contains(report, retireErr.Error()) {
+				t.Fatalf("retirement result code=%d report=%q, want surfaced failure", code, report)
+			}
+		})
+	}
 }
 
 func TestBatchTickStopsBeforePassAfterLeaseLoss(t *testing.T) {

@@ -433,7 +433,7 @@ func parseGoJSON(output []byte, expected []NativeTestIdentity) (observed, missin
 	}
 	for key, status := range terminal {
 		parts := strings.SplitN(key, "\x00", 2)
-		item := NativeTestIdentity{Classname: parts[0], Name: parts[1], Status: map[string]string{"pass": "passed", "fail": "failed", "skip": "skipped"}[status]}
+		item := NativeTestIdentity{Report: "go-test-json", Classname: parts[0], Name: parts[1], Status: map[string]string{"pass": "passed", "fail": "failed", "skip": "skipped"}[status]}
 		if len(expectedNames) > 0 && !goExpectedName(expectedNames, item.Classname, item.Name) {
 			unexpected = append(unexpected, item)
 		} else {

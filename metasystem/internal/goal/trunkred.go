@@ -9,6 +9,8 @@ import (
 	"strconv"
 	"strings"
 	"time"
+
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/brain"
 )
 
 const (
@@ -376,6 +378,12 @@ type EntryRef struct {
 
 // RecordTrunkRed publishes one batch observation through the goal transaction journal.
 func RecordTrunkRed(r VerbRequest, args TrunkRedRecordArgs) (PublishResult, error) {
+	if strings.TrimSpace(args.Batch) == "" {
+		return PublishResult{}, fmt.Errorf("trunk-red record requires a batch")
+	}
+	if len(args.Groups) == 0 {
+		return PublishResult{}, fmt.Errorf("trunk-red record requires at least one group")
+	}
 	return Publish(r.Endpoint, trunkRedRecordRequest(r, args))
 }
 
@@ -558,6 +566,9 @@ type TrunkRedOwnArgs struct {
 
 // OwnTrunkRed assigns the machine responsible for an open entry and its fix goal.
 func OwnTrunkRed(r VerbRequest, args TrunkRedOwnArgs) (PublishResult, error) {
+	if detail := brain.Fence(r.Endpoint.Root, "trunk-red own", ExistingLedgerIdentity(r.Endpoint.Root)); detail != "" {
+		return PublishResult{}, fmt.Errorf("%s", detail)
+	}
 	if (args.By == "") != (r.Actor.Human == "") || args.By != "" && args.By != r.Actor.Human {
 		return PublishResult{}, fmt.Errorf("trunk-red own human form must carry the same named human in the actor and --by")
 	}

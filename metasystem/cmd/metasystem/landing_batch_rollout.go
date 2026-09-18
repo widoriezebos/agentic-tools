@@ -9,7 +9,6 @@ func init() {
 	for _, capability := range requiredBatchCapabilities {
 		compiledBatchCapabilities[capability] = struct{}{}
 	}
-	batchLedgerOwner = productionBatchLedgerOwner
 }
 
 // productionBatchLedgerOwner uses the landing identity that mints trunk-red operation identifiers.

@@ -270,8 +270,12 @@ func TestRunHeldRunsForHolder(t *testing.T) {
 
 func TestRetireRemovesAnnouncement(t *testing.T) {
 	root := t.TempDir()
-	announceSelf(t, root)
+	mainID := announceSelf(t, root)
 	self := int64(os.Getpid())
+	cursor := filepath.Join(root, "artifacts", "agents", "mains", mainID+".protocol-cursor.json")
+	if err := os.WriteFile(cursor+".lock", []byte("fixture\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
 	if err := Retire(root, "my sess", self, selfStart(t)); err != nil {
 		t.Fatalf("retire: %v", err)
 	}
@@ -281,6 +285,26 @@ func TestRetireRemovesAnnouncement(t *testing.T) {
 	}
 	if len(recs) != 0 {
 		t.Fatalf("retire should remove the announcement, %d remain", len(recs))
+	}
+	for _, path := range []string{cursor, cursor + ".lock"} {
+		if _, err := os.Stat(path); !os.IsNotExist(err) {
+			t.Fatalf("retire left %s: %v", filepath.Base(path), err)
+		}
+	}
+}
+
+func TestRetireDoesNotCreateADeletedCheckout(t *testing.T) {
+	root := t.TempDir()
+	announceSelf(t, root)
+	self := int64(os.Getpid())
+	if err := os.RemoveAll(root); err != nil {
+		t.Fatal(err)
+	}
+	if err := Retire(root, "my sess", self, selfStart(t)); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := os.Stat(root); !os.IsNotExist(err) {
+		t.Fatalf("retirement recreated deleted checkout: %v", err)
 	}
 }
 

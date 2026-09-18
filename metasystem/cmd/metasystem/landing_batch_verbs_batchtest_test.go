@@ -15,13 +15,27 @@ func TestBatchCapabilitiesGate(t *testing.T) {
 	if !batchCapabilitiesAvailable() {
 		t.Fatal("all batchtest capabilities must be registered")
 	}
+	commands := [][]string{
+		{"landing", "batch", "join"}, {"landing", "batch", "status"}, {"landing", "batch", "withdraw"},
+		{"landing", "batch", "owner"}, {"landing", "batch", "tick"}, {"landing", "batch", "wait"}, {"goal", "handover"},
+	}
 	for _, capability := range batchTestCapabilities {
 		t.Run(string(capability), func(t *testing.T) {
 			restore := unregisterBatchCapabilityForTest(capability)
 			defer restore()
-			stderr, code := captureStderr(t, func() int { return dispatch([]string{"landing", "batch", "status"}) })
-			if code != 1 || !strings.Contains(stderr, "BATCH_UNAVAILABLE") {
-				t.Fatalf("missing %s = code %d, stderr %q", capability, code, stderr)
+			for _, command := range commands {
+				t.Run(strings.Join(command, "-"), func(t *testing.T) {
+					root := t.TempDir()
+					args := append(append([]string{}, command...), "--root", root)
+					stderr, code := captureStderr(t, func() int { return dispatch(args) })
+					if code != 1 || !strings.Contains(stderr, "BATCH_UNAVAILABLE") {
+						t.Fatalf("missing %s for %v = code %d, stderr %q", capability, command, code, stderr)
+					}
+					entries, err := os.ReadDir(root)
+					if err != nil || len(entries) != 0 {
+						t.Fatalf("missing %s for %v touched the filesystem: entries=%v error=%v", capability, command, entries, err)
+					}
+				})
 			}
 		})
 	}
