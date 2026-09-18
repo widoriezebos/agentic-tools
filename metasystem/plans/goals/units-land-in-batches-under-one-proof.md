@@ -1,6 +1,6 @@
 # units-land-in-batches-under-one-proof
 
-- State: claimed
+- State: approved
 - Priority: 1
 - Sequence: 1
 - Risk: severity=3 novelty=3 exposure=3 accumulation=2 basis="Wido 2026-09-16 15:35 and 15:50 CEST: create batches of release candidates, make sure they are all green already with cheap tests, then batch them into a single release tested with the expensive test, with chances of green as high as they can be, so the price is paid once for many landings; design it like that and get it implemented with highest priority because if this is the biggest bottleneck we better solve it first. Precedents: U2c plus U2d plus U2e proved as one stack (proof-mu41vx96, 53 of 53); the U3b-1a plus 1b stack. Seat m1e landing lanes do this by hand today. Every landing pays a 20 to 45 minute deep proof under the one testrun lock; on 2026-09-16 a trunk flake at a 2 s margin turned a 53-group proof red and the lane lost its slot."
@@ -9,12 +9,10 @@
 - Origin: human
 - Next step: 2026-09-18 direct mode (m1e): none; reads C and D done. Next: conclude together with batch-landing-known-issues when its closing read (dm-g2read) returns CONCLUDE; the batch verbs get their end-to-end machinery test after the stable state.
 - OpenedAt: 2026-09-16T13:45:00Z
-- Revision: 42
+- Revision: 43
 - Budget: elapsedLimit=5d attemptLimit=20 reservedJobMinutesLimit=1200 activeJobLimit=1 reviewRoundLimit=3
 - BudgetExceptions: 1
 - Approved: by=human:Wido at=2026-09-17T06:05:10Z revision=32 opid=9SM144F0E2F8TXWZVS92BVJ3JA-m1e-c6925449 authority=proven digest=be2a6acf3d7fab09d0b7689c2a5b182bbbc0d371a3d808e8f2e1f7e31b521372
-- Claimed: machine=m1e lineage=main-1789030447-51011-2956ea at=2026-09-17T06:05:10Z revision=32 accountingRevision=32 episodeAt=2026-09-16T23:24:49Z episodeRevision=22 idleSeconds=489
-- StopCapability: generation=32 revision=32 machine=m1e claimEpoch=2 fenceEpoch=0
 
 History:
 - 2026-09-16T13:45:00Z 2V898K1J58M679D106Y0DXP2TV-m1e-c6925449 open actor=human:Wido targets=units-land-in-batches-under-one-proof
@@ -59,4 +57,5 @@ History:
 - 2026-09-17T13:57:22Z GNBQVJR45FWDRM5XAKEBY8S7HS-m1e-c6925449 edit actor=human:Wido targets=units-land-in-batches-under-one-proof displaced=m1e+main-1789030447-51011-2956ea@2026-09-17T06:05:10Z
 - 2026-09-17T16:09:06Z 6K005BEHC9RNR577NPNAZPZDJM-m1e-c6925449 edit actor=human:Wido targets=units-land-in-batches-under-one-proof displaced=m1e+main-1789030447-51011-2956ea@2026-09-17T06:05:10Z
 - 2026-09-18T07:07:25Z GXJJQSJYH59JRJQFST47QYVYDZ-m1e-c6925449 edit actor=human:Wido targets=units-land-in-batches-under-one-proof displaced=m1e+main-1789030447-51011-2956ea@2026-09-17T06:05:10Z
-Integrity: sha256=ae370f16cf5011e2de3d6bad1659eb0aa45a6ef67fd98056e3236173636d158a
+- 2026-09-18T21:51:09Z 73XJ9G7DRHPCS15V3TJWHT81F1-m1e-c6925449 release actor=human:Wido targets=units-land-in-batches-under-one-proof displaced=m1e+main-1789030447-51011-2956ea@2026-09-17T06:05:10Z
+Integrity: sha256=8f30f335e656b0fd23bbce13fc1ed8c0dbc98744f9a01caee9375cd4b710cf65
