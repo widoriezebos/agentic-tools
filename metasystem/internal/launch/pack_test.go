@@ -1,9 +1,11 @@
 package launch
 
 import (
+	"fmt"
 	"os"
 	"path/filepath"
 	"reflect"
+	"regexp"
 	"strings"
 	"testing"
 
@@ -120,6 +122,66 @@ func TestPackCheckAdmitsAFilledBrief(t *testing.T) {
 	m.Settings.BriefCap = 1
 	if err := m.Admit(StartSpec{Kind: "design", Brief: design, WorkingDirectory: directory}); err == nil || !strings.HasPrefix(err.Error(), "LAUNCH_BRIEF_OVERSIZE") {
 		t.Fatalf("oversize filled design error=%v", err)
+	}
+}
+
+func TestPackCheckChecksEveryShippedTemplatePlaceholder(t *testing.T) {
+	pattern := regexp.MustCompile(`<[^<>]+>`)
+	directory := filepath.Join("..", "..", "scripts", "agents", "templates")
+	for _, row := range []struct {
+		kind string
+		name string
+	}{
+		{kind: "design", name: "design-brief.md"},
+		{kind: "read", name: "review-brief.md"},
+	} {
+		t.Run(row.kind, func(t *testing.T) {
+			template, err := os.ReadFile(filepath.Join(directory, row.name))
+			if err != nil {
+				t.Fatal(err)
+			}
+			matches := pattern.FindAllIndex(template, -1)
+			if len(matches) == 0 {
+				t.Fatal("shipped template has no placeholders")
+			}
+
+			m, _, _, _ := manager(t)
+			m.TemplateDirectory = directory
+			brief := writeLaunchFile(t, row.kind+"-unfilled.md", string(template))
+			_, err = m.CheckPack(StartSpec{Kind: row.kind, Brief: brief, WorkingDirectory: t.TempDir()})
+			want := []string{"LAUNCH_BRIEF_PACK_UNFILLED kind=" + row.kind}
+			for _, match := range matches {
+				token := strings.Join(strings.Fields(string(template[match[0]:match[1]])), " ")
+				line := 1 + strings.Count(string(template[:match[0]]), "\n")
+				want = append(want, "placeholder="+token+" line="+fmt.Sprint(line))
+			}
+			if err == nil || err.Error() != strings.Join(want, "\n") {
+				t.Fatalf("unfilled shipped template error:\n%v\nwant:\n%s", err, strings.Join(want, "\n"))
+			}
+
+			filled := pattern.ReplaceAll(template, []byte("filled"))
+			brief = writeLaunchFile(t, row.kind+"-filled.md", string(filled))
+			if err := m.Admit(StartSpec{Kind: row.kind, Brief: brief, WorkingDirectory: t.TempDir()}); err != nil {
+				t.Fatalf("filled shipped template: %v", err)
+			}
+
+			for _, match := range matches {
+				token := string(template[match[0]:match[1]])
+				if !strings.Contains(token, "\n") {
+					continue
+				}
+				collapsed := strings.Join(strings.Fields(token), " ")
+				rewrapped := strings.Replace(collapsed, " ", "\n       ", 1)
+				brief = writeLaunchFile(t, row.kind+"-rewrapped.md", rewrapped+"\n")
+				_, err := m.CheckPack(StartSpec{Kind: row.kind, Brief: brief, WorkingDirectory: t.TempDir()})
+				want := "LAUNCH_BRIEF_PACK_UNFILLED kind=" + row.kind + "\nplaceholder=" + collapsed + " line=1"
+				if err == nil || err.Error() != want {
+					t.Fatalf("rewrapped placeholder error=%v want=%q", err, want)
+				}
+				return
+			}
+			t.Fatal("shipped template has no multi-line placeholder")
+		})
 	}
 }
 

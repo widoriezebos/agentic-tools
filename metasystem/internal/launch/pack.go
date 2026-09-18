@@ -13,7 +13,7 @@ import (
 const defaultTemplateDirectory = "scripts/agents/templates"
 
 var (
-	placeholderPattern = regexp.MustCompile(`<[^<>\n]+>`)
+	placeholderPattern = regexp.MustCompile(`<[^<>]+>`)
 	citedRangePattern  = regexp.MustCompile("`([^`\\n]+):([0-9]+)-([0-9]+)`")
 	fencePattern       = regexp.MustCompile("^([ \\t]+)(`{3,})[^`]*$")
 )
@@ -95,16 +95,20 @@ type keptPlaceholder struct {
 func keptPlaceholders(template, brief []byte) []keptPlaceholder {
 	known := map[string]bool{}
 	for _, match := range placeholderPattern.FindAll(template, -1) {
-		known[string(match)] = true
+		known[collapsePlaceholder(match)] = true
 	}
 	var kept []keptPlaceholder
 	for _, match := range placeholderPattern.FindAllIndex(brief, -1) {
-		token := string(brief[match[0]:match[1]])
+		token := collapsePlaceholder(brief[match[0]:match[1]])
 		if known[token] {
 			kept = append(kept, keptPlaceholder{token: token, line: 1 + bytes.Count(brief[:match[0]], []byte("\n"))})
 		}
 	}
 	return kept
+}
+
+func collapsePlaceholder(token []byte) string {
+	return strings.Join(strings.Fields(string(token)), " ")
 }
 
 func citedRanges(brief []byte) []citedRange {

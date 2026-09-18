@@ -400,6 +400,83 @@ func TestCorrectUsageFields(t *testing.T) {
 	}
 }
 
+func TestCorrectKeepsTokenUsageCompleteWithoutTighteningOldRows(t *testing.T) {
+	opts := baseOptions(t)
+	opts.Type, opts.Outcome = "design", "shipped"
+	opts.DesignTokens, opts.DesignCalls = "2432374", "7"
+	addUsage(&opts)
+	if result := Add(opts); result.Code != 0 {
+		t.Fatalf("seed add failed: %+v", result)
+	}
+	data, err := os.ReadFile(opts.File)
+	if err != nil {
+		t.Fatal(err)
+	}
+	original := strings.TrimSuffix(string(data), "\n")
+	opts.RefEpoch = strings.SplitN(original, "|", 2)[0]
+	opts.RefSHA1 = fmt.Sprintf("%x", sha1.Sum([]byte(original)))
+	opts.Reason = "usage correction"
+
+	opts.Field, opts.Was, opts.NowValue = "requests", "28", ""
+	before := string(data)
+	if result := Correct(opts); result.Code != 2 ||
+		result.Err[0] != "RECEIPT_USAGE_INCOMPLETE missing fields: requests" {
+		t.Fatalf("usage was blanked before tokens: %+v", result)
+	}
+	data, _ = os.ReadFile(opts.File)
+	if string(data) != before {
+		t.Fatalf("refused correction changed the ledger: %s", data)
+	}
+
+	opts.Field, opts.Was, opts.NowValue = "design_tokens", "2432374", ""
+	if result := Correct(opts); result.Code != 0 {
+		t.Fatalf("token blanking failed: %+v", result)
+	}
+	opts.Field, opts.Was, opts.NowValue = "requests", "28", ""
+	if result := Correct(opts); result.Code != 0 {
+		t.Fatalf("usage blanking after tokens failed: %+v", result)
+	}
+
+	old := "1000|1970-01-01T00:16:40Z|RECEIPT|type=review|outcome=shipped|goal=old|built_by=delegate|read_tokens=10|note="
+	oldOpts := baseOptions(t)
+	if err := os.MkdirAll(filepath.Dir(oldOpts.File), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(oldOpts.File, []byte(old+"\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	oldOpts.RefEpoch = "1000"
+	oldOpts.RefSHA1 = fmt.Sprintf("%x", sha1.Sum([]byte(old)))
+	oldOpts.Reason = "old row correction"
+	for _, correction := range []struct{ field, was, now string }{
+		{field: "goal", was: "old", now: "new"},
+		{field: "built_by", was: "delegate", now: "coordinator"},
+		{field: "read_tokens", was: "10", now: "11"},
+	} {
+		oldOpts.Field, oldOpts.Was, oldOpts.NowValue = correction.field, correction.was, correction.now
+		if result := Correct(oldOpts); result.Code != 0 {
+			t.Fatalf("old row %s correction failed: %+v", correction.field, result)
+		}
+	}
+
+	incomplete := "2000|1970-01-01T00:33:20Z|RECEIPT|type=review|outcome=shipped|read_tokens=|requests=1|tool_calls=2|peak_context=3|cache_read_tokens=4|note="
+	if err := os.WriteFile(oldOpts.File, []byte(incomplete+"\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	oldOpts.RefEpoch = "2000"
+	oldOpts.RefSHA1 = fmt.Sprintf("%x", sha1.Sum([]byte(incomplete)))
+	oldOpts.Field, oldOpts.Was, oldOpts.NowValue = "read_tokens", "", "10"
+	before = incomplete + "\n"
+	if result := Correct(oldOpts); result.Code != 2 ||
+		result.Err[0] != "RECEIPT_USAGE_INCOMPLETE missing fields: output_tokens" {
+		t.Fatalf("tokens were added to incomplete usage: %+v", result)
+	}
+	data, _ = os.ReadFile(oldOpts.File)
+	if string(data) != before {
+		t.Fatalf("refused token correction changed the ledger: %s", data)
+	}
+}
+
 func TestCorrectRefusals(t *testing.T) {
 	opts := baseOptions(t)
 	opts.Field, opts.Was, opts.NowValue, opts.Reason = "note", "x", "y", "r"

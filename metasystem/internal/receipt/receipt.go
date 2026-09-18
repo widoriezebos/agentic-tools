@@ -139,6 +139,17 @@ var (
 	goalIDRe = regexp.MustCompile(`^[a-z0-9][a-z0-9-]*$`)
 )
 
+var usageFields = []struct {
+	flag  string
+	field string
+}{
+	{flag: "requests", field: "requests"},
+	{flag: "tool-calls", field: "tool_calls"},
+	{flag: "peak-context", field: "peak_context"},
+	{flag: "cache-read-tokens", field: "cache_read_tokens"},
+	{flag: "output-tokens", field: "output_tokens"},
+}
+
 // ValidGoalValue reports whether an optional receipt goal has the ledger's
 // identifier shape.
 func ValidGoalValue(value string) bool {
@@ -199,32 +210,22 @@ func Add(opts Options) Result {
 	if opts.DesignCalls != "" && !epochRe.MatchString(opts.DesignCalls) {
 		return fail(2, "invalid --design-calls: %s", opts.DesignCalls)
 	}
-	usageFields := []struct {
-		flag  string
-		field string
-		value string
-	}{
-		{"requests", "requests", opts.Requests},
-		{"tool-calls", "tool_calls", opts.ToolCalls},
-		{"peak-context", "peak_context", opts.PeakContext},
-		{"cache-read-tokens", "cache_read_tokens", opts.CacheReadTokens},
-		{"output-tokens", "output_tokens", opts.OutputTokens},
+	usageValues := map[string]string{
+		"requests":          opts.Requests,
+		"tool_calls":        opts.ToolCalls,
+		"peak_context":      opts.PeakContext,
+		"cache_read_tokens": opts.CacheReadTokens,
+		"output_tokens":     opts.OutputTokens,
 	}
 	for _, field := range usageFields {
-		if field.value != "" && !epochRe.MatchString(field.value) {
-			return fail(2, "invalid --%s: %s", field.flag, field.value)
+		if value := usageValues[field.field]; value != "" && !epochRe.MatchString(value) {
+			return fail(2, "invalid --%s: %s", field.flag, value)
 		}
 	}
-	if opts.ReadTokens != "" || opts.DesignTokens != "" {
-		var missing []string
-		for _, field := range usageFields {
-			if field.value == "" {
-				missing = append(missing, field.field)
-			}
-		}
-		if len(missing) > 0 {
-			return fail(2, "RECEIPT_USAGE_INCOMPLETE missing fields: %s", strings.Join(missing, ", "))
-		}
+	usageValues["read_tokens"] = opts.ReadTokens
+	usageValues["design_tokens"] = opts.DesignTokens
+	if result := incompleteUsage(usageValues); result != nil {
+		return *result
 	}
 	if err := os.MkdirAll(filepath.Dir(opts.File), 0o755); err != nil {
 		return fail(2, "cannot create receipt directory: %v", err)
@@ -271,8 +272,8 @@ func Add(opts Options) Result {
 		line += "|design_calls=" + opts.DesignCalls
 	}
 	for _, field := range usageFields {
-		if field.value != "" {
-			line += "|" + field.field + "=" + field.value
+		if value := usageValues[field.field]; value != "" {
+			line += "|" + field.field + "=" + value
 		}
 	}
 	line += fmt.Sprintf("|critique_waived=%s|waiver_stream=%s|note=%s\n", class, stream, noPipes(note))
@@ -355,6 +356,24 @@ func Correct(opts Options) Result {
 	if !strings.Contains("|"+original+"|", "|"+opts.Field+"="+was+"|") {
 		return fail(2, "correction --was value does not match field %s on the original line", opts.Field)
 	}
+	effective := ledgerFields(original)
+	for _, candidate := range readLines(string(data)) {
+		fields := ledgerFields(candidate)
+		if fields["ref_epoch"] != opts.RefEpoch || fields["ref_sha1"] != opts.RefSHA1 {
+			continue
+		}
+		if field, found := fields["field"]; found {
+			effective[field] = fields["now"]
+		}
+	}
+	previous := effective[opts.Field]
+	effective[opts.Field] = nowValue
+	if (isUsageField(opts.Field) && nowValue == "") ||
+		(isTokenField(opts.Field) && previous == "" && nowValue != "") {
+		if result := incompleteUsage(effective); result != nil {
+			return *result
+		}
+	}
 	now := opts.now().UTC()
 	line := fmt.Sprintf("%d|%s|CORRECTION|ref_epoch=%s|ref_sha1=%s|field=%s|was=%s|now=%s|reason=%s\n",
 		now.Unix(), now.Format("2006-01-02T15:04:05Z"), opts.RefEpoch, opts.RefSHA1, opts.Field, was, nowValue, reason)
@@ -362,6 +381,47 @@ func Correct(opts Options) Result {
 		return fail(2, "cannot write receipt file: %v", err)
 	}
 	return ok(fmt.Sprintf("correction recorded in %s; original line unchanged", opts.File))
+}
+
+func incompleteUsage(values map[string]string) *Result {
+	if values["read_tokens"] == "" && values["design_tokens"] == "" {
+		return nil
+	}
+	var missing []string
+	for _, field := range usageFields {
+		if values[field.field] == "" {
+			missing = append(missing, field.field)
+		}
+	}
+	if len(missing) == 0 {
+		return nil
+	}
+	result := fail(2, "RECEIPT_USAGE_INCOMPLETE missing fields: %s", strings.Join(missing, ", "))
+	return &result
+}
+
+func ledgerFields(line string) map[string]string {
+	fields := map[string]string{}
+	for _, part := range strings.Split(line, "|") {
+		key, value, found := strings.Cut(part, "=")
+		if found {
+			fields[key] = value
+		}
+	}
+	return fields
+}
+
+func isUsageField(name string) bool {
+	for _, field := range usageFields {
+		if name == field.field {
+			return true
+		}
+	}
+	return false
+}
+
+func isTokenField(name string) bool {
+	return name == "read_tokens" || name == "design_tokens"
 }
 
 // Retro implements `receipt retro`.
