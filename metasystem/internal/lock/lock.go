@@ -95,6 +95,10 @@ type Options struct {
 	Wait time.Duration
 	// Poll is the re-inspection interval while waiting.
 	Poll time.Duration
+	// Now reads the clock used to bound the wait; nil means time.Now.
+	Now func() time.Time
+	// Sleep waits between inspections; nil means time.Sleep.
+	Sleep func(time.Duration)
 	// Probe proves holder liveness. Required.
 	Probe Probe
 	// Codec renders and parses the owner file; nil means the default
@@ -145,6 +149,12 @@ func Acquire(path string, self Identity, opts Options) (*Lock, error) {
 	if opts.Poll <= 0 {
 		opts.Poll = 25 * time.Millisecond
 	}
+	if opts.Now == nil {
+		opts.Now = time.Now
+	}
+	if opts.Sleep == nil {
+		opts.Sleep = time.Sleep
+	}
 	if opts.Codec == nil {
 		opts.Codec = identityJSON{}
 	}
@@ -154,7 +164,7 @@ func Acquire(path string, self Identity, opts Options) (*Lock, error) {
 	}
 	defer os.RemoveAll(private)
 
-	deadline := time.Now().Add(opts.Wait)
+	deadline := opts.Now().Add(opts.Wait)
 	var sawOwnerlessAt time.Time
 	for {
 		if err := os.Rename(private, path); err == nil {
@@ -185,7 +195,7 @@ func Acquire(path string, self Identity, opts Options) (*Lock, error) {
 				}
 				continue
 			case Alive, Unknown:
-				if time.Now().After(deadline) {
+				if opts.Now().After(deadline) {
 					state := Alive
 					if opts.Probe(holder) == Unknown {
 						state = Unknown
@@ -198,9 +208,9 @@ func Acquire(path string, self Identity, opts Options) (*Lock, error) {
 			// after the bounded window (REG-4). The window starts at
 			// first observation, not at Acquire entry.
 			if sawOwnerlessAt.IsZero() {
-				sawOwnerlessAt = time.Now()
+				sawOwnerlessAt = opts.Now()
 			}
-			if time.Since(sawOwnerlessAt) >= opts.Wait {
+			if opts.Now().Sub(sawOwnerlessAt) >= opts.Wait {
 				if err := removeIfOwnerless(path); err != nil {
 					return nil, fmt.Errorf("lock: garbage removal: %w", err)
 				}
@@ -214,11 +224,11 @@ func Acquire(path string, self Identity, opts Options) (*Lock, error) {
 		default:
 			// Unreadable owner file: uninspectable is alive.
 			sawOwnerlessAt = time.Time{}
-			if time.Now().After(deadline) {
+			if opts.Now().After(deadline) {
 				return nil, &HolderError{Path: path, Holder: Identity{}, State: Unknown, Cause: readErr}
 			}
 		}
-		time.Sleep(opts.Poll)
+		opts.Sleep(opts.Poll)
 	}
 }
 

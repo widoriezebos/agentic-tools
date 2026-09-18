@@ -15,6 +15,104 @@ func alive(Identity) Liveness   { return Alive }
 func dead(Identity) Liveness    { return Dead }
 func unknown(Identity) Liveness { return Unknown }
 
+type fakeClock struct {
+	mu    sync.Mutex
+	now   time.Time
+	slept time.Duration
+}
+
+func newFakeClock() *fakeClock {
+	return &fakeClock{now: time.Date(2026, 9, 18, 12, 0, 0, 0, time.UTC)}
+}
+
+func (c *fakeClock) Now() time.Time {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	return c.now
+}
+
+func (c *fakeClock) Sleep(duration time.Duration) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	c.now = c.now.Add(duration)
+	c.slept += duration
+}
+
+func (c *fakeClock) Slept() time.Duration {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	return c.slept
+}
+
+func (c *fakeClock) options(wait, poll time.Duration, probe Probe) Options {
+	return Options{Wait: wait, Poll: poll, Now: c.Now, Sleep: c.Sleep, Probe: probe}
+}
+
+type contentionState int
+
+const (
+	contentionRunning contentionState = iota
+	contentionBlocked
+	contentionHolding
+	contentionDone
+)
+
+type contentionSchedule struct {
+	mu     sync.Mutex
+	ready  *sync.Cond
+	states []contentionState
+}
+
+func newContentionSchedule(workers int) *contentionSchedule {
+	schedule := &contentionSchedule{states: make([]contentionState, workers)}
+	schedule.ready = sync.NewCond(&schedule.mu)
+	return schedule
+}
+
+func (s *contentionSchedule) sleep(worker int) func(time.Duration) {
+	return func(time.Duration) {
+		s.mu.Lock()
+		defer s.mu.Unlock()
+		s.states[worker] = contentionBlocked
+		s.ready.Broadcast()
+		for s.states[worker] == contentionBlocked {
+			s.ready.Wait()
+		}
+	}
+}
+
+func (s *contentionSchedule) waitUntilOthersBlocked(worker int) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.states[worker] = contentionHolding
+	for {
+		allBlocked := true
+		for other, state := range s.states {
+			if other != worker && state != contentionBlocked && state != contentionDone {
+				allBlocked = false
+				break
+			}
+		}
+		if allBlocked {
+			return
+		}
+		s.ready.Wait()
+	}
+}
+
+func (s *contentionSchedule) finishAndWakeNext(worker int) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.states[worker] = contentionDone
+	for other, state := range s.states {
+		if state == contentionBlocked {
+			s.states[other] = contentionRunning
+			break
+		}
+	}
+	s.ready.Broadcast()
+}
+
 func lockPath(t *testing.T) string {
 	t.Helper()
 	return filepath.Join(t.TempDir(), "registry.lock.d")
@@ -44,6 +142,9 @@ func TestAcquireReleaseRoundTrip(t *testing.T) {
 // without a readable owner file — there is no ownerless window.
 func TestNoOwnerlessWindowUnderContention(t *testing.T) {
 	path := lockPath(t)
+	const workerCount = 8
+	clock := newFakeClock()
+	schedule := newContentionSchedule(workerCount)
 	var ownerless atomic.Int64
 	stop := make(chan struct{})
 	var observer sync.WaitGroup
@@ -73,24 +174,34 @@ func TestNoOwnerlessWindowUnderContention(t *testing.T) {
 	var workers sync.WaitGroup
 	var heldConcurrently atomic.Int64
 	var maxConcurrent atomic.Int64
-	for i := 0; i < 8; i++ {
+	for i := 0; i < workerCount; i++ {
 		workers.Add(1)
 		go func(worker int) {
 			defer workers.Done()
 			self := Identity{Pid: int64(1000 + worker), PidStartedAt: int64(worker + 1)}
-			held, err := Acquire(path, self, Options{Wait: 10 * time.Second, Poll: time.Millisecond, Probe: alive})
+			opts := Options{
+				Wait: 10 * time.Second, Poll: time.Millisecond,
+				Now: clock.Now, Sleep: schedule.sleep(worker), Probe: alive,
+			}
+			held, err := Acquire(path, self, opts)
 			if err != nil {
 				t.Errorf("worker %d: %v", worker, err)
+				schedule.finishAndWakeNext(worker)
 				return
 			}
 			if now := heldConcurrently.Add(1); now > maxConcurrent.Load() {
 				maxConcurrent.Store(now)
 			}
-			time.Sleep(2 * time.Millisecond)
-			heldConcurrently.Add(-1)
+			if heldConcurrently.Load() == 1 {
+				schedule.waitUntilOthersBlocked(worker)
+			} else {
+				t.Errorf("worker %d acquired while another worker held the lock", worker)
+			}
 			if err := held.Release(); err != nil {
 				t.Errorf("worker %d release: %v", worker, err)
 			}
+			heldConcurrently.Add(-1)
+			schedule.finishAndWakeNext(worker)
 		}(i)
 	}
 	workers.Wait()
@@ -126,14 +237,19 @@ func TestUnknownNeverAuthorizesTakeover(t *testing.T) {
 	if _, err := Acquire(path, Identity{Pid: 1, PidStartedAt: 1}, Options{Wait: time.Second, Probe: alive}); err != nil {
 		t.Fatal(err)
 	}
-	_, err := Acquire(path, Identity{Pid: 2, PidStartedAt: 2},
-		Options{Wait: 150 * time.Millisecond, Poll: 10 * time.Millisecond, Probe: unknown})
+	clock := newFakeClock()
+	const wait = 150 * time.Millisecond
+	const poll = 10 * time.Millisecond
+	_, err := Acquire(path, Identity{Pid: 2, PidStartedAt: 2}, clock.options(wait, poll, unknown))
 	var holderErr *HolderError
 	if !errors.As(err, &holderErr) || holderErr.State != Unknown {
 		t.Fatalf("unknown liveness must wait out and fail naming the unproven holder: %v", err)
 	}
 	if holder, _ := Holder(path); holder.Pid != 1 {
 		t.Fatal("the unproven holder lost its lock")
+	}
+	if got, want := clock.Slept(), wait+poll; got != want {
+		t.Fatalf("logical wait = %v, want %v", got, want)
 	}
 }
 
@@ -142,8 +258,9 @@ func TestLiveHolderKeepsTheLock(t *testing.T) {
 	if _, err := Acquire(path, Identity{Pid: 1, PidStartedAt: 1}, Options{Wait: time.Second, Probe: alive}); err != nil {
 		t.Fatal(err)
 	}
+	clock := newFakeClock()
 	_, err := Acquire(path, Identity{Pid: 2, PidStartedAt: 2},
-		Options{Wait: 100 * time.Millisecond, Poll: 10 * time.Millisecond, Probe: alive})
+		clock.options(100*time.Millisecond, 10*time.Millisecond, alive))
 	var holderErr *HolderError
 	if !errors.As(err, &holderErr) || holderErr.Holder.Pid != 1 || holderErr.State != Alive {
 		t.Fatalf("live holder must be named in the refusal: %v", err)
@@ -157,14 +274,18 @@ func TestOwnerlessDirectoryIsGarbageAfterWindow(t *testing.T) {
 	if err := os.MkdirAll(path, 0o755); err != nil {
 		t.Fatal(err)
 	}
-	started := time.Now()
+	clock := newFakeClock()
+	const wait = 150 * time.Millisecond
 	held, err := Acquire(path, Identity{Pid: 3, PidStartedAt: 3},
-		Options{Wait: 150 * time.Millisecond, Poll: 10 * time.Millisecond, Probe: alive})
+		clock.options(wait, 10*time.Millisecond, alive))
 	if err != nil {
 		t.Fatalf("garbage lock not taken: %v", err)
 	}
-	if waited := time.Since(started); waited < 150*time.Millisecond {
-		t.Fatalf("garbage taken before the bounded window elapsed (%v)", waited)
+	if got := clock.Slept(); got != wait {
+		t.Fatalf("garbage takeover followed a logical wait of %v, want %v", got, wait)
+	}
+	if holder, err := Holder(path); err != nil || holder.Pid != 3 {
+		t.Fatalf("garbage takeover did not publish the successor: %+v %v", holder, err)
 	}
 	if err := held.Release(); err != nil {
 		t.Fatal(err)
@@ -221,8 +342,9 @@ func TestUnreadableOwnerIsUninspectableAlive(t *testing.T) {
 		t.Fatal(err)
 	}
 	defer os.Chmod(ownerPath, 0o644)
+	clock := newFakeClock()
 	_, err := Acquire(path, Identity{Pid: 2, PidStartedAt: 2},
-		Options{Wait: 120 * time.Millisecond, Poll: 10 * time.Millisecond, Probe: dead})
+		clock.options(120*time.Millisecond, 10*time.Millisecond, dead))
 	var holderErr *HolderError
 	if !errors.As(err, &holderErr) || holderErr.State != Unknown {
 		t.Fatalf("an unreadable owner must refuse as unproven, got %v", err)
@@ -275,7 +397,8 @@ func TestTakeoverRaceHasOneWinner(t *testing.T) {
 				}
 				return Alive // a fellow taker is alive; wait behind it
 			}
-			if _, err := Acquire(path, self, Options{Wait: 300 * time.Millisecond, Poll: time.Millisecond, Probe: probe}); err == nil {
+			clock := newFakeClock()
+			if _, err := Acquire(path, self, clock.options(300*time.Millisecond, time.Millisecond, probe)); err == nil {
 				winners <- self
 			}
 		}(i)

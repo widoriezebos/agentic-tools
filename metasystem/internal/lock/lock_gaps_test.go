@@ -57,8 +57,9 @@ func TestGarbageOwnerFileContentIsUnknownHolder(t *testing.T) {
 	if err := os.WriteFile(filepath.Join(path, "owner.json"), []byte("not json"), 0o644); err != nil {
 		t.Fatal(err)
 	}
+	clock := newFakeClock()
 	_, err := Acquire(path, Identity{Pid: 2, PidStartedAt: 2},
-		Options{Wait: 120 * time.Millisecond, Poll: 10 * time.Millisecond, Probe: dead})
+		clock.options(120*time.Millisecond, 10*time.Millisecond, dead))
 	if err == nil {
 		t.Fatal("an unparseable owner file must never be taken over")
 	}
