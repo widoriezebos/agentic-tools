@@ -30,6 +30,32 @@ func rearmGit(t *testing.T, root string, args ...string) string {
 	return strings.TrimSpace(string(out))
 }
 
+func failRearmGitSubcommand(t *testing.T, subcommand string) {
+	t.Helper()
+	realGit, err := exec.LookPath("git")
+	if err != nil {
+		t.Fatal(err)
+	}
+	dir := t.TempDir()
+	wrapper := filepath.Join(dir, "git")
+	script := `#!/usr/bin/env bash
+set -euo pipefail
+for argument in "$@"; do
+  if [[ "$argument" == "${REARM_FAIL_GIT_SUBCOMMAND:?}" ]]; then
+    printf '%s\n' 'fatal: not a git repository (or any of the parent directories)' >&2
+    exit 128
+  fi
+done
+exec "${REARM_REAL_GIT:?}" "$@"
+`
+	if err := os.WriteFile(wrapper, []byte(script), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("REARM_REAL_GIT", realGit)
+	t.Setenv("REARM_FAIL_GIT_SUBCOMMAND", subcommand)
+	t.Setenv("PATH", dir+string(os.PathListSeparator)+os.Getenv("PATH"))
+}
+
 func writeRearmFile(t *testing.T, path, content string) {
 	t.Helper()
 	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
@@ -343,6 +369,84 @@ func TestEnrollmentLandedSourceUsesEngineScriptSkewRule(t *testing.T) {
 	})
 }
 
+func TestLandedBuildResolutionSeparatesAMissingObjectFromARepositoryFailure(t *testing.T) {
+	root := initRearmRepo(t)
+	landed := commitRearmTree(t, root, "landed")
+	ref := "refs/remotes/origin/trunk"
+	rearmGit(t, root, "update-ref", ref, landed)
+
+	if resolved, err := resolveLandedBuild(root, root, ref, landed); err != nil || resolved != landed {
+		t.Fatalf("known landed build did not resolve: resolved=%q err=%v", resolved, err)
+	}
+	missing := strings.Repeat("f", 40)
+	_, missingErr := resolveLandedBuild(root, root, ref, missing)
+	wantMissing := fmt.Sprintf("rebuilt engine carries unresolved build stamp %q; automatic re-arm is bounded to landed commits", missing)
+	if missingErr == nil || missingErr.Error() != wantMissing || !errors.Is(missingErr, ErrNotOwned) || errors.Is(missingErr, ErrJudgmentStalled) {
+		t.Fatalf("missing object changed its judgment: %v", missingErr)
+	}
+
+	failRearmGitSubcommand(t, "rev-parse")
+	_, failureErr := resolveLandedBuild(root, root, ref, landed)
+	if failureErr == nil || !strings.Contains(failureErr.Error(), "git rev-parse --verify --quiet") ||
+		!strings.Contains(failureErr.Error(), "fatal: not a git repository (or any of the parent directories)") ||
+		errors.Is(failureErr, ErrNotOwned) || errors.Is(failureErr, ErrJudgmentStalled) {
+		t.Fatalf("repository failure became an ownership judgment: %v", failureErr)
+	}
+}
+
+func TestLandedBuildResolutionSeparatesNotAnAncestorFromARepositoryFailure(t *testing.T) {
+	root := initRearmRepo(t)
+	base := commitRearmTree(t, root, "base")
+	rearmGit(t, root, "checkout", "-qb", "side", base)
+	side := commitRearmTree(t, root, "side")
+	rearmGit(t, root, "checkout", "-q", "trunk")
+	landed := commitRearmTree(t, root, "landed")
+	ref := "refs/remotes/origin/trunk"
+	rearmGit(t, root, "update-ref", ref, landed)
+
+	_, notAncestorErr := resolveLandedBuild(root, root, ref, side)
+	wantNotAncestor := fmt.Sprintf("rebuilt engine was built from %s, which is not landed on %s", side, ref)
+	if notAncestorErr == nil || notAncestorErr.Error() != wantNotAncestor || !errors.Is(notAncestorErr, ErrNotOwned) || errors.Is(notAncestorErr, ErrJudgmentStalled) {
+		t.Fatalf("non-ancestor changed its judgment: %v", notAncestorErr)
+	}
+
+	failRearmGitSubcommand(t, "merge-base")
+	_, failureErr := resolveLandedBuild(root, root, ref, side)
+	if failureErr == nil || !strings.Contains(failureErr.Error(), "git merge-base --is-ancestor") ||
+		!strings.Contains(failureErr.Error(), "fatal: not a git repository (or any of the parent directories)") ||
+		errors.Is(failureErr, ErrNotOwned) || errors.Is(failureErr, ErrJudgmentStalled) {
+		t.Fatalf("repository failure became an ownership judgment: %v", failureErr)
+	}
+}
+
+func TestEnrollmentBuildSourceCheckSeparatesNotAnAncestorFromARepositoryFailure(t *testing.T) {
+	root := initRearmRepo(t)
+	base := commitRearmTree(t, root, "base")
+	writeRearmFile(t, filepath.Join(root, "plans", "goals", "landed.md"), "landed record\n")
+	rearmGit(t, root, "add", ".")
+	rearmGit(t, root, "commit", "-qm", "landed record")
+	landed := rearmGit(t, root, "rev-parse", "HEAD")
+	if err := verifyEnrollmentBuildSource(root, base, base, landed); err != nil {
+		t.Fatalf("known ancestor did not pass the enrollment check: %v", err)
+	}
+	rearmGit(t, root, "checkout", "-qb", "side", base)
+	side := commitRearmTree(t, root, "side")
+
+	notAncestorErr := verifyEnrollmentBuildSource(root, side, side, landed)
+	wantNotAncestor := fmt.Sprintf("enrollment records landed source %q but executable stamp source %q is not its ancestor", landed, side)
+	if notAncestorErr == nil || notAncestorErr.Error() != wantNotAncestor || !errors.Is(notAncestorErr, ErrNotOwned) || errors.Is(notAncestorErr, ErrJudgmentStalled) {
+		t.Fatalf("non-ancestor changed its enrollment judgment: %v", notAncestorErr)
+	}
+
+	failRearmGitSubcommand(t, "merge-base")
+	failureErr := verifyEnrollmentBuildSource(root, side, side, landed)
+	if failureErr == nil || !strings.Contains(failureErr.Error(), "git merge-base --is-ancestor") ||
+		!strings.Contains(failureErr.Error(), "fatal: not a git repository (or any of the parent directories)") ||
+		errors.Is(failureErr, ErrNotOwned) || errors.Is(failureErr, ErrJudgmentStalled) {
+		t.Fatalf("repository failure became an enrollment judgment: %v", failureErr)
+	}
+}
+
 func TestEnrollmentSkewPathspecsMatchDispatch(t *testing.T) {
 	script, err := os.ReadFile(filepath.Join("..", "..", "scripts", "agents", "dispatch.sh"))
 	if err != nil {
@@ -614,6 +718,55 @@ func TestLandingRefReadIgnoresGlobalConfigurationAndOrdinaryBranchMovement(t *te
 	if got := rearmGit(t, root, "rev-parse", ref); got != first {
 		t.Fatalf("ordinary branch movement advanced the remote-tracking ref: got=%s want=%s", got, first)
 	}
+}
+
+func TestOwnedLandingRefReadSeparatesAnUnresolvedRefFromARepositoryFailure(t *testing.T) {
+	root := initRearmRepo(t)
+	landed := commitRearmTree(t, root, "landed")
+	ref := "refs/remotes/origin/trunk"
+	rearmGit(t, root, "config", "--local", landingRefConfigKey, ref)
+
+	_, unresolvedErr := readOwnedLandingRef(root)
+	wantUnresolved := fmt.Sprintf("the installation owns no resolving remote-tracking landing ref (%s is %s)", landingRefConfigKey, ref)
+	if unresolvedErr == nil || unresolvedErr.Error() != wantUnresolved || errors.Is(unresolvedErr, ErrNotOwned) || errors.Is(unresolvedErr, ErrJudgmentStalled) {
+		t.Fatalf("unresolved ref changed its result: %v", unresolvedErr)
+	}
+	rearmGit(t, root, "update-ref", ref, landed)
+	if resolved, err := readOwnedLandingRef(root); err != nil || resolved != ref {
+		t.Fatalf("resolving owned ref was not returned: resolved=%q err=%v", resolved, err)
+	}
+
+	failRearmGitSubcommand(t, "rev-parse")
+	_, failureErr := readOwnedLandingRef(root)
+	if failureErr == nil || !strings.Contains(failureErr.Error(), "git rev-parse --verify --quiet") ||
+		!strings.Contains(failureErr.Error(), "fatal: not a git repository (or any of the parent directories)") ||
+		errors.Is(failureErr, ErrNotOwned) || errors.Is(failureErr, ErrJudgmentStalled) {
+		t.Fatalf("repository failure became an unresolved-ref result: %v", failureErr)
+	}
+}
+
+func TestMintPlanReportsARepositoryFailureAsAFailureNotAsDrift(t *testing.T) {
+	t.Run("unresolved landing ref remains drift", func(t *testing.T) {
+		bed := newRearmBed(t, false)
+		ref := "refs/remotes/origin/trunk"
+		rearmGit(t, bed.root, "update-ref", "-d", ref)
+		_, err := ReArmRebuiltEngine(bed.root, bed.root, bed.engine)
+		want := fmt.Sprintf("%s: the installation owns no resolving remote-tracking landing ref (%s is %s)", ErrEnrollmentDrift, landingRefConfigKey, ref)
+		if err == nil || err.Error() != want || !errors.Is(err, ErrEnrollmentDrift) {
+			t.Fatalf("unresolved ref changed its mint-plan drift: %v", err)
+		}
+	})
+
+	t.Run("repository failure is a failed step", func(t *testing.T) {
+		bed := newRearmBed(t, false)
+		failRearmGitSubcommand(t, "merge-base")
+		_, err := ReArmRebuiltEngine(bed.root, bed.root, bed.engine)
+		if err == nil || !strings.Contains(err.Error(), "resolve landed build") || !strings.Contains(err.Error(), "git merge-base --is-ancestor") ||
+			!strings.Contains(err.Error(), "fatal: not a git repository (or any of the parent directories)") ||
+			errors.Is(err, ErrEnrollmentDrift) || errors.Is(err, ErrNotOwned) || errors.Is(err, ErrJudgmentStalled) {
+			t.Fatalf("repository failure became mint-plan drift: %v", err)
+		}
+	})
 }
 
 func TestIdentityPublicationKeepsAndClearsDurabilityDoubt(t *testing.T) {

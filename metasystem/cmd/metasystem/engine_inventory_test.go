@@ -29,6 +29,7 @@ var engineBindingStandardTests = []string{
 	"TestFrozenPublicVersionOneSelectionProbesRunAgainstCandidateExecutable",
 	"TestFrozenWorkerProbeReaderAcceptsCandidateGroupFields",
 	"TestLandedRearmDecidesFromTheThreeFacts",
+	"TestLandedRearmFactsFailOnARepositoryFailureInsteadOfJudgingHeadUnlanded",
 	"TestLandedRearmFastForwardsRebuildsAndReArms",
 	"TestLandedRearmJudgmentIsProgressBounded",
 	"TestLandedRearmReadsTheCheckoutAgainstItsRemote",

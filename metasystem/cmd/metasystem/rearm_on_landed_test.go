@@ -78,6 +78,32 @@ func landedGit(t *testing.T, dir string, args ...string) string {
 	return strings.TrimSpace(string(out))
 }
 
+func failLandedGitSubcommand(t *testing.T, subcommand string) {
+	t.Helper()
+	realGit, err := exec.LookPath("git")
+	if err != nil {
+		t.Fatal(err)
+	}
+	dir := t.TempDir()
+	wrapper := filepath.Join(dir, "git")
+	script := `#!/usr/bin/env bash
+set -euo pipefail
+for argument in "$@"; do
+  if [[ "$argument" == "${LANDED_REARM_FAIL_GIT_SUBCOMMAND:?}" ]]; then
+    printf '%s\n' 'fatal: not a git repository (or any of the parent directories)' >&2
+    exit 128
+  fi
+done
+exec "${LANDED_REARM_REAL_GIT:?}" "$@"
+`
+	if err := os.WriteFile(wrapper, []byte(script), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("LANDED_REARM_REAL_GIT", realGit)
+	t.Setenv("LANDED_REARM_FAIL_GIT_SUBCOMMAND", subcommand)
+	t.Setenv("PATH", dir+string(os.PathListSeparator)+os.Getenv("PATH"))
+}
+
 // newLandedRearmFixture is a checkout with its installation under
 // metasystem/ and a local remote whose main is the landing ref; the remote
 // then lands a commit that changes an engine input (a fake landing).
@@ -194,6 +220,33 @@ func TestLandedRearmReadsTheCheckoutAgainstItsRemote(t *testing.T) {
 	}
 	if owned, err := readLandedRearmFactsForTest(context.Background(), fixture.installation, fixture.projectRoot, "metasystem", head, func(string) bool { return true }); err != nil || !owned.SourceOwnsTip {
 		t.Fatalf("an engine owning the last fetched tip was refused for the fetch: %+v %v", owned, err)
+	}
+}
+
+func TestLandedRearmFactsFailOnARepositoryFailureInsteadOfJudgingHeadUnlanded(t *testing.T) {
+	fixture := newLandedRearmFixture(t)
+	head := landedGit(t, fixture.projectRoot, "rev-parse", "HEAD")
+	notOwned := func(string) bool { return false }
+	facts, err := readLandedRearmFactsForTest(context.Background(), fixture.installation, fixture.projectRoot, "metasystem", head, notOwned)
+	if err != nil || !facts.HeadIsAncestor {
+		t.Fatalf("known ancestor did not produce a true fact: facts=%+v err=%v", facts, err)
+	}
+
+	if err := os.WriteFile(filepath.Join(fixture.installation, "cmd", "metasystem", "main.go"), []byte("package main\n// local failure-test commit\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	landedGit(t, fixture.projectRoot, "commit", "-qam", "local only")
+	facts, err = readLandedRearmFactsForTest(context.Background(), fixture.installation, fixture.projectRoot, "metasystem", head, notOwned)
+	if err != nil || facts.HeadIsAncestor {
+		t.Fatalf("exit status 1 did not remain a false fact without an error: facts=%+v err=%v", facts, err)
+	}
+
+	failLandedGitSubcommand(t, "merge-base")
+	_, failureErr := readLandedRearmFactsForTest(context.Background(), fixture.installation, fixture.projectRoot, "metasystem", head, notOwned)
+	if failureErr == nil || !strings.Contains(failureErr.Error(), "git merge-base --is-ancestor") ||
+		!strings.Contains(failureErr.Error(), "fatal: not a git repository (or any of the parent directories)") ||
+		errors.Is(failureErr, steward.ErrNotOwned) || errors.Is(failureErr, steward.ErrJudgmentStalled) {
+		t.Fatalf("repository failure became a false ancestry fact: %v", failureErr)
 	}
 }
 

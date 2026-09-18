@@ -46,6 +46,13 @@ type classifiedJudgmentError struct {
 func (e *classifiedJudgmentError) Error() string { return e.message }
 func (e *classifiedJudgmentError) Unwrap() error { return e.cause }
 
+type gitCommandFailure struct {
+	cause error
+}
+
+func (e *gitCommandFailure) Error() string { return e.cause.Error() }
+func (e *gitCommandFailure) Unwrap() error { return e.cause }
+
 // Judgment classes let callers distinguish a negative ownership verdict from
 // a stalled decision without coupling that choice to message text.
 var (
@@ -56,6 +63,11 @@ var (
 
 func classifiedJudgment(message string, cause error) error {
 	return &classifiedJudgmentError{message: message, cause: cause}
+}
+
+func gitSaidNo(err error) bool {
+	var exitError *exec.ExitError
+	return errors.As(err, &exitError) && exitError.ExitCode() == 1
 }
 
 var (
@@ -95,8 +107,12 @@ func readOwnedLandingRef(installationRoot string) (string, error) {
 	if tail == value || !qualified || remote == "" || branch == "" {
 		return "", fmt.Errorf("the installation owns no remote-tracking landing ref (%s is %s; expected refs/remotes/<remote>/<branch>)", landingRefConfigKey, value)
 	}
-	if _, err := exec.Command("git", "-C", installationRoot, "rev-parse", "--verify", "--quiet", value+"^{commit}").Output(); err != nil {
-		return "", fmt.Errorf("the installation owns no resolving remote-tracking landing ref (%s is %s)", landingRefConfigKey, value)
+	if _, err := gitOutputContext(context.Background(), installationRoot, "rev-parse", "--verify", "--quiet", value+"^{commit}"); err != nil {
+		message := fmt.Sprintf("the installation owns no resolving remote-tracking landing ref (%s is %s)", landingRefConfigKey, value)
+		if gitSaidNo(err) {
+			return "", classifiedJudgment(message, err)
+		}
+		return "", &gitCommandFailure{cause: err}
 	}
 	return value, nil
 }
@@ -425,7 +441,10 @@ func resolveLandedBuildWithClock(clock RearmClock, repoRoot, installationRoot, l
 			if errors.Is(err, ErrJudgmentStalled) {
 				return "", err
 			}
-			return "", classifiedJudgment(fmt.Sprintf("rebuilt engine carries unresolved build stamp %q; automatic re-arm is bounded to landed commits", stamp), ErrNotOwned)
+			if gitSaidNo(err) {
+				return "", classifiedJudgment(fmt.Sprintf("rebuilt engine carries unresolved build stamp %q; automatic re-arm is bounded to landed commits", stamp), ErrNotOwned)
+			}
+			return "", err
 		}
 		commit = out
 	case witnessBuildStamp.MatchString(stamp):
@@ -442,8 +461,7 @@ func resolveLandedBuildWithClock(clock RearmClock, repoRoot, installationRoot, l
 		return "", classifiedJudgment(fmt.Sprintf("rebuilt engine carries build stamp %s; automatic re-arm is bounded to landed commits", shown), ErrNotOwned)
 	}
 	if _, err := gitOutputWithProgressDeadline(clock, seconds, "compare-build-ancestry", installationRoot, "merge-base", "--is-ancestor", commit, landingRef); err != nil {
-		var exitError *exec.ExitError
-		if errors.As(err, &exitError) && exitError.ExitCode() == 1 {
+		if gitSaidNo(err) {
 			return "", classifiedJudgment(fmt.Sprintf("rebuilt engine was built from %s, which is not landed on %s", stamp, landingRef), ErrNotOwned)
 		}
 		return "", err
@@ -464,8 +482,7 @@ func verifyEnrollmentLandedSourceWithClock(clock RearmClock, installationRoot, s
 	seconds := RearmResolveSeconds(installationRoot)
 	_, ancestorErr := gitOutputWithProgressDeadline(clock, seconds, "compare-enrollment-ancestry", installationRoot, "merge-base", "--is-ancestor", sourceCommit, landedCommit)
 	if ancestorErr != nil {
-		var exitError *exec.ExitError
-		if errors.As(ancestorErr, &exitError) && exitError.ExitCode() == 1 {
+		if gitSaidNo(ancestorErr) {
 			return classifiedJudgment(fmt.Sprintf("enrollment records landed source %q but executable stamp source %q is not its ancestor", landedCommit, sourceCommit), ErrNotOwned)
 		}
 		return ancestorErr
@@ -488,7 +505,7 @@ func verifyEnrollmentBuildSource(installationRoot, stamp, sourceCommit, landedCo
 
 func verifyEnrollmentBuildSourceWithClock(clock RearmClock, installationRoot, stamp, sourceCommit, landedCommit string) error {
 	err := verifyEnrollmentLandedSourceWithClock(clock, installationRoot, sourceCommit, landedCommit)
-	if err == nil || !witnessBuildStamp.MatchString(stamp) {
+	if err == nil || !witnessBuildStamp.MatchString(stamp) || !errors.Is(err, ErrNotOwned) {
 		return err
 	}
 	// A witness names ENGINE content rather than one commit. Its resolver

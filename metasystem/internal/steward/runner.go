@@ -323,10 +323,17 @@ func ReArmRebuiltEngine(repoRoot, installationRoot, invokingBinary string) (ReAr
 		}
 		landingRef, err := readOwnedLandingRef(installationRoot)
 		if err != nil {
+			var commandFailure *gitCommandFailure
+			if errors.As(err, &commandFailure) {
+				return mintPlan{}, fmt.Errorf("read owned landing ref: %w", err)
+			}
 			return mintPlan{}, fmt.Errorf("%w: %v", ErrEnrollmentDrift, err)
 		}
 		sourceCommit, err := resolveLandedBuild(repoRoot, installationRoot, landingRef, bytes.Stamp)
 		if err != nil {
+			if !errors.Is(err, ErrNotOwned) {
+				return mintPlan{}, fmt.Errorf("resolve landed build: %w", err)
+			}
 			return mintPlan{}, fmt.Errorf("%w: rebuilt engine at %s: %v", ErrEnrollmentDrift, prior.InstallPath, err)
 		}
 		landedCommit, err := gitOutputContext(context.Background(), installationRoot, "rev-parse", "--verify", "HEAD^{commit}")
@@ -334,6 +341,9 @@ func ReArmRebuiltEngine(repoRoot, installationRoot, invokingBinary string) (ReAr
 			return mintPlan{}, fmt.Errorf("%w: resolve landed source at checkout HEAD: %v", ErrEnrollmentDrift, err)
 		}
 		if err := verifyEnrollmentBuildSource(installationRoot, bytes.Stamp, sourceCommit, landedCommit); err != nil {
+			if !errors.Is(err, ErrNotOwned) {
+				return mintPlan{}, fmt.Errorf("verify enrollment build source: %w", err)
+			}
 			return mintPlan{}, fmt.Errorf("%w: rebuilt engine at %s: %v", ErrEnrollmentDrift, prior.InstallPath, err)
 		}
 		witnessed, witnessedAt := prior.HumanWitnessedGeneration, prior.HumanWitnessedAt
