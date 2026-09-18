@@ -44,12 +44,15 @@ if (( fixture_bed_child )); then
 fi
 if (( ! fixture_bed_child )); then
   fixture_bed_script=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd -P)/$(basename "${BASH_SOURCE[0]}")
-  run_fixture_bed_scenarios land "land fixtures passed (38 isolated legs)" \
+  run_fixture_bed_scenarios land "land fixtures passed (45 isolated legs)" \
     "$fixture_bed_script" early-reader-large-producer push-retry step-failure new-plan goal receipt-line tier-one full-width-chain build-stamp \
     brain-land-refuses brain-absent-node-proceeds ledger-move-lands records-move-lands \
     input-move-refuses receipt-cutover carried-fresh carried-prefixed carried-second carried-red-battery \
     carried-intent-failure carried-crash-local carried-asks carried-ledger-path carried-crash \
-    carried-two-seat carried-debt-abandoned carried-debt-expired abandonment-refuses-every-push-route batch-owner-holds-lease \
+    carried-two-seat carried-debt-abandoned carried-debt-expired \
+    abandonment-route-normal abandonment-route-retry abandonment-route-wrapper \
+    abandonment-route-commit-push-range abandonment-route-commit-push-rejected \
+    abandonment-route-stack abandonment-route-positive abandonment-route-recertified batch-owner-holds-lease \
     batch-lands-by-agent-commit batch-two-units-disjoint-groups batch-land-trunk-moved batch-land-resumes \
     batch-red-ejects-owner-and-lands-survivors batch-conflicting-join-refused batch-join-static-red-refused \
     batch-join-dropped-test-refused batch-withdraw-before-and-after-seal
@@ -1630,7 +1633,7 @@ move_goal_out_of_claimed_state() { # checkout
   return "$status"
 }
 
-if [[ "$fixture_scenario" == abandonment-refuses-every-push-route ]]; then
+if [[ "$fixture_scenario" == abandonment-route-normal ]]; then
   prepare_abandonment_landing_leg abandonment-normal
   normal_output=$leg_root/normal.out
   normal_message=$leg_root/normal-message.txt
@@ -1687,6 +1690,11 @@ SH
     exit 1
   fi
 
+  echo "abandonment-route-normal passed"
+  exit 0
+fi
+
+if [[ "$fixture_scenario" == abandonment-route-retry ]]; then
   prepare_abandonment_landing_leg abandonment-retry
   retry_output=$leg_root/retry.out
   retry_message=$leg_root/retry-message.txt
@@ -1710,6 +1718,8 @@ fi
 exec "$LAND_FIXTURE_REAL_GIT" "$@"
 SH
   chmod +x "$retry_bin/git"
+  export -f move_goal_out_of_claimed_state
+  export source_engine
   set +e
   (
     cd "$leg_local"
@@ -1734,6 +1744,11 @@ SH
   grep -Fq 'goal ship-widget is abandoned at ' "$retry_output"
   [[ $(wc -l <"$retry_pushes" | tr -d ' ') == 1 ]] || { echo "abandonment retry route made more than one push attempt" >&2; exit 1; }
 
+  echo "abandonment-route-retry passed"
+  exit 0
+fi
+
+if [[ "$fixture_scenario" == abandonment-route-wrapper ]]; then
   prepare_abandonment_landing_leg abandonment-wrapper
   wrapper_message=$leg_root/wrapper-message.txt
   wrapper_record=records/misc/abandonment-wrapper.md
@@ -1776,6 +1791,11 @@ SH
     exit 1
   }
 
+  echo "abandonment-route-wrapper passed"
+  exit 0
+fi
+
+if [[ "$fixture_scenario" == abandonment-route-commit-push-range ]]; then
   prepare_abandonment_landing_leg abandonment-commit-push-range
   commit_push_record=records/misc/abandonment-commit-push-range.md
   commit_push_output=$leg_root/commit-push-range.out
@@ -1804,6 +1824,8 @@ fi
 exec "$LAND_FIXTURE_REAL_GIT" "$@"
 SH
   chmod +x "$commit_push_bin/git"
+  export -f move_goal_out_of_claimed_state
+  export source_engine
   set +e
   (
     cd "$leg_local"
@@ -1833,6 +1855,11 @@ SH
     exit 1
   fi
 
+  echo "abandonment-route-commit-push-range passed"
+  exit 0
+fi
+
+if [[ "$fixture_scenario" == abandonment-route-commit-push-rejected ]]; then
   prepare_abandonment_landing_leg abandonment-commit-push-rejected
   rejected_record=records/misc/abandonment-commit-push-rejected.md
   rejected_output=$leg_root/commit-push-rejected.out
@@ -1880,6 +1907,11 @@ SH
   grep -Fq '[rejected]' "$rejected_output"
   grep -Fq 'landing push failed at origin; the commit stands locally' "$rejected_output"
 
+  echo "abandonment-route-commit-push-rejected passed"
+  exit 0
+fi
+
+if [[ "$fixture_scenario" == abandonment-route-stack ]]; then
   prepare_abandonment_landing_leg abandonment-stack
   stack_l1_record=records/misc/abandonment-stack-l1.md
   stack_message=$leg_root/stack-message.txt
@@ -1925,6 +1957,11 @@ SH
   grep -Fq "held refused: goal-item-not-held: $stack_l1: goal ship-widget is abandoned at " "$stack_output"
   [[ ! -s "$stack_pushes" ]] || { echo "two-commit stack reached push" >&2; exit 1; }
 
+  echo "abandonment-route-stack passed"
+  exit 0
+fi
+
+if [[ "$fixture_scenario" == abandonment-route-positive ]]; then
   prepare_abandonment_landing_leg abandonment-positive
   positive_record=records/misc/abandonment-positive.md
   positive_message=$leg_root/positive-message.txt
@@ -1949,6 +1986,11 @@ SH
   [[ $(grep -Fxc 'Goal-Item: ship-widget' <<<"$positive_message_text") == 1 ]]
   [[ $(LC_ALL=C grep -Ec '^Goal-Revision: [1-9][0-9]*$' <<<"$positive_message_text") == 1 ]]
 
+  echo "abandonment-route-positive passed"
+  exit 0
+fi
+
+if [[ "$fixture_scenario" == abandonment-route-recertified ]]; then
   # The recertified route is seeded below so it retains the exact conformance
   # records and both the pre-push success and parent-moved refusal controls.
   prepare_abandonment_landing_leg abandonment-recertified
@@ -1999,7 +2041,7 @@ JSON
     if grep -Fqx "$recert_source_refusal" "$leg_root/recertify.out"; then
       echo "SKIPPED recertified route"
       echo "$recert_source_refusal"
-      echo "abandonment-refuses-every-push-route passed with recertified route skipped"
+      echo "abandonment-route-recertified passed"
       exit 0
     fi
     cat "$leg_root/recertify.out" >&2
@@ -2047,6 +2089,8 @@ fi
 exec "$LAND_FIXTURE_REAL_GIT" "$@"
 SH
   chmod +x "$recert_bin/git"
+  export -f move_goal_out_of_claimed_state
+  export source_engine
   set +e
   (
     cd "$leg_local"
@@ -2090,7 +2134,7 @@ SH
     if grep -Fqx "$recert_source_refusal" "$leg_root/recertify-moved.out"; then
       echo "SKIPPED recertified moved-goal route"
       echo "$recert_source_refusal"
-      echo "abandonment-refuses-every-push-route passed with recertified moved-goal route skipped"
+      echo "abandonment-route-recertified passed"
       exit 0
     fi
     cat "$leg_root/recertify-moved.out" >&2
@@ -2137,7 +2181,7 @@ SH
     exit 1
   fi
 
-  echo "abandonment-refuses-every-push-route passed"
+  echo "abandonment-route-recertified passed"
   exit 0
 fi
 

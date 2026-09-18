@@ -277,6 +277,95 @@ func TestLandFixtureConfigurationsPinProofAdmission(t *testing.T) {
 	}
 }
 
+func TestLandFixtureScenarioRegistryMatchesCount(t *testing.T) {
+	data, err := os.ReadFile(filepath.Join("..", "..", "scripts", "agents", "land-fixtures.sh"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	source := string(data)
+	const countPrefix = `run_fixture_bed_scenarios land "land fixtures passed (`
+	start := strings.Index(source, countPrefix)
+	if start < 0 {
+		t.Fatal("land fixture scenario registry is absent")
+	}
+	registry := source[start+len(countPrefix):]
+	const countSuffix = ` isolated legs)" \`
+	countEnd := strings.Index(registry, countSuffix)
+	if countEnd < 0 {
+		t.Fatal("land fixture scenario count is absent")
+	}
+	declared, err := strconv.Atoi(registry[:countEnd])
+	if err != nil {
+		t.Fatalf("land fixture scenario count %q is not numeric: %v", registry[:countEnd], err)
+	}
+	registry = registry[countEnd+len(countSuffix):]
+	const scriptArgument = `"$fixture_bed_script"`
+	scriptEnd := strings.Index(registry, scriptArgument)
+	if scriptEnd < 0 {
+		t.Fatal("land fixture scenario registry has no script argument")
+	}
+	registry = registry[scriptEnd+len(scriptArgument):]
+	registryEnd := strings.Index(registry, "\nfi")
+	if registryEnd < 0 {
+		t.Fatal("land fixture scenario registry has no closing branch")
+	}
+	scenarios := strings.Fields(strings.ReplaceAll(registry[:registryEnd], "\\\n", " "))
+	if declared != len(scenarios) {
+		t.Fatalf("land fixture success count = %d, registered scenarios = %d", declared, len(scenarios))
+	}
+
+	want := []string{
+		"early-reader-large-producer",
+		"push-retry",
+		"step-failure",
+		"new-plan",
+		"goal",
+		"receipt-line",
+		"tier-one",
+		"full-width-chain",
+		"build-stamp",
+		"brain-land-refuses",
+		"brain-absent-node-proceeds",
+		"ledger-move-lands",
+		"records-move-lands",
+		"input-move-refuses",
+		"receipt-cutover",
+		"carried-fresh",
+		"carried-prefixed",
+		"carried-second",
+		"carried-red-battery",
+		"carried-intent-failure",
+		"carried-crash-local",
+		"carried-asks",
+		"carried-ledger-path",
+		"carried-crash",
+		"carried-two-seat",
+		"carried-debt-abandoned",
+		"carried-debt-expired",
+		"abandonment-route-normal",
+		"abandonment-route-retry",
+		"abandonment-route-wrapper",
+		"abandonment-route-commit-push-range",
+		"abandonment-route-commit-push-rejected",
+		"abandonment-route-stack",
+		"abandonment-route-positive",
+		"abandonment-route-recertified",
+		"batch-owner-holds-lease",
+		"batch-lands-by-agent-commit",
+		"batch-two-units-disjoint-groups",
+		"batch-land-trunk-moved",
+		"batch-land-resumes",
+		"batch-red-ejects-owner-and-lands-survivors",
+		"batch-conflicting-join-refused",
+		"batch-join-static-red-refused",
+		"batch-join-dropped-test-refused",
+		"batch-withdraw-before-and-after-seal",
+	}
+	if strings.Join(scenarios, "\n") != strings.Join(want, "\n") {
+		t.Fatalf("land fixture scenarios = %q, want %q", scenarios, want)
+	}
+}
+
 func isExecCommandCall(call *ast.CallExpr) bool {
 	selector, ok := call.Fun.(*ast.SelectorExpr)
 	if !ok {
