@@ -1,6 +1,6 @@
 # glb-known-issues-are-fixed
 
-- State: approved
+- State: done
 - Priority: 1
 - Sequence: 4
 - Risk: severity=2 novelty=2 exposure=2 accumulation=2 basis="Fixes to landed goal-branch code, each with a witness; a wrong fix is caught by its witness and the goal's proof."
@@ -8,8 +8,9 @@
 - Intent: The known issues that goals-live-on-branches merges with are fixed forward right after the merge. DONE, each fixed with a witness or recorded as not a defect with the reason: (1) the Build A read notes that C1 unit 0 did not build (hact-20260912/m1e-tools-0917/glb-read-glbA.md, hact-20260912/m1e-tools-0917/glb-read-glbA-fix.md); (2) Build B read notes 7-16 (hact-20260912/m1e-tools-0917/glb-read-glbB.md); (3) B fix read notes 2-9 (hact-20260912/m1e-tools-0917/glb-read-glbBX.md; note 1 is in C2); (4) C1 read notes 5-13 (hact-20260912/m1e-tools-0917/glb-read-glbC1.md; the three breaking items and note 4 are fixed before the merge); (5) the callers of the old land.sh (reset-land.sh and the rest) move to the new landing script installed under its own name; (6) C2's read non-breaking items once it returns; (7) the goal's Next lists each open item until it is fixed.
 - Origin: human
 - Next step: fix-3 on main d2713932efcdc9a3adee0493bd8196f3996e1bb4 after units 1, fix-1 and fix-2 (wave 3d); remaining: the closing read on that tip, then conclude.
+- Concluded: Concluded 09-18: the known issues that goals-live-on-branches merged with are fixed with a witness or recorded as not a defect with the reason: the Build A, Build B, B fix and C1 read notes, the callers of the old land.sh moved to the landing script installed under its own name, and C2's non-breaking items. Units 1, fix-1, fix-2 and fix-3 are on main, and the closing read on d2713932e found nothing breaking.
 - OpenedAt: 2026-09-17T13:59:47Z
-- Revision: 9
+- Revision: 10
 - Labels: known-issue
 - Budget: elapsedLimit=4h attemptLimit=6 reservedJobMinutesLimit=720 activeJobLimit=1 reviewRoundLimit=2
 - BudgetExceptions: 0
@@ -25,4 +26,5 @@ History:
 - 2026-09-18T14:57:24Z KAG9XZ1ASV5J4JC5857N19Q9V2-m1e-c6925449 edit actor=human:Wido targets=glb-known-issues-are-fixed
 - 2026-09-18T20:05:37Z XHHHV02GCBZ2RX5X077AMGT9AR-m1e-c6925449 edit actor=human:Wido targets=glb-known-issues-are-fixed
 - 2026-09-18T21:50:35Z AAGT9Z15BKXJNMY2C0G2KDPF44-m1e-c6925449 edit actor=human:Wido targets=glb-known-issues-are-fixed
-Integrity: sha256=6906359fc8de2d05b08861d6121dd12c48ea1edd17a257ac0fc562a14892f7da
+- 2026-09-18T21:55:13Z JEN6XG86WCEPHZSSV0JTSVBPN9-m1e-c6925449 done actor=human:Wido targets=adoption-filled-delivery-passes-on-trunk,beds-run-under-the-oldest-supported-bash,brief-declares-the-round-boundary,build-jobs-fit-one-builder-context,builder-proves-each-rule-by-mutation,busy-seat-shells-are-ended,codex-jobs-run-through-a-metasystem-verb,coordinator-context-stays-under-budget,critique-closes-on-folded-proof,cross-cutting-change-inventories-its-readers,deep-sections-cannot-stay-red-unseen,delegate-launchers-become-go-verbs,delegate-runs-stay-under-200k-context,delegate-sandbox-runs-the-beds,design-rounds-read-less-and-repeat-less,efficiency-settings-ship-in-the-repository,engine-policy-binding-survives-drift-and-load,every-round-gets-an-independent-read,evidence-and-build-output-have-retention-and-stay-unindexed,failures-show-observed-against-expected,fixture-children-cannot-outlive-their-test,fixture-runners-and-fakes-bound-their-own-life,fleet-doctor-repairs-what-stops-other-seats,follow-up-brief-cannot-cite-fresh-trunk-files,glb-known-issues-are-fixed,go-tests-run-in-parallel,human-goal-verbs-forgiving,one-steward-per-checkout-on-its-own-root,proof-admission-fits-a-seat-proving-several-units,proof-runs-reap-what-they-armed-and-a-census-names-the-rest,reads-keep-the-whole-diff-in-context,receipt-writer-follows-the-worktree-it-runs-in,red-on-main-known-issues-are-fixed,round-proof-feeds-the-next-brief,seat-successor-continues-a-handoff-without-a-human,seats-spend-tokens-in-bounded-sessions,spend-fence-reports-tokens-per-model-and-cause,stop-capability-follows-the-lease-epoch,stop-decision-surface-is-a-gate,stop-hook-never-forces-an-empty-turn,stop-response-carries-a-structured-report-reference,test-environment-edges-are-closed,testing-surfaces-declare-their-mirror,tests-never-wait-on-wall-time,unit-gate-runs-reverse-dependents,waits-run-outside-model-contexts
+Integrity: sha256=6d3818a6f80305f9ba1b8df3c2dba5a68a884aa468990f97da717af2b57b5a00
