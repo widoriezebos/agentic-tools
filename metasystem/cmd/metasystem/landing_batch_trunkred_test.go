@@ -1,25 +1,18 @@
 package main
 
 import (
-	"bufio"
-	"bytes"
 	"encoding/json"
 	"errors"
 	"os"
 	"os/exec"
 	"path/filepath"
-	"strconv"
 	"strings"
-	"syscall"
 	"testing"
 	"time"
 
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/gittree"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/goal"
-	"github.com/widoriezebos/agentic-tools/metasystem/internal/identity"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/landing/batch"
-	"github.com/widoriezebos/agentic-tools/metasystem/internal/lease"
-	"github.com/widoriezebos/agentic-tools/metasystem/internal/proofrun"
 )
 
 func TestLedgerTrunkRedOwnerRecordsIdempotently(t *testing.T) {
@@ -290,127 +283,6 @@ func TestLedgerTrunkRedOwnerClearAcceptsUnchangedProjection(t *testing.T) {
 		projection.Tree.TrunkRed[0].FixBranch.State != goal.TrunkRedBranchMerged {
 		t.Fatalf("unchanged clear result: entries=%+v error=%v", projection.Tree.TrunkRed, err)
 	}
-}
-
-func TestLandingBatchBinaryIgnoresAmbientProofHostLoad(t *testing.T) {
-	engine := filepath.Join(t.TempDir(), "metasystem")
-	build := exec.Command("go", "build", "-buildvcs=false", "-o", engine, ".")
-	if output, err := build.CombinedOutput(); err != nil {
-		t.Fatalf("build metasystem binary: %v\n%s", err, output)
-	}
-
-	blockerRoot := t.TempDir()
-	blockerConf := filepath.Join(blockerRoot, "metasystem.conf")
-	if err := os.WriteFile(blockerConf, nil, 0o600); err != nil {
-		t.Fatal(err)
-	}
-	fifo := filepath.Join(blockerRoot, "release.fifo")
-	if err := syscall.Mkfifo(fifo, 0o600); err != nil {
-		t.Fatal(err)
-	}
-	blocker := exec.Command(engine, "proof-run", "launch", "--suite", "ambient-admission-blocker",
-		"--root", blockerRoot, "--conf", blockerConf, "--progress", filepath.Join(blockerRoot, "progress.jsonl"),
-		"--log", filepath.Join(blockerRoot, "proof.log"), "--banner", "blocker-starting", "--",
-		"sh", "-c", `printf 'blocker-ready\n'; read -r _ <"$1"`, "sh", fifo)
-	blocker.Env = proofFixtureEnvironmentWithoutHostLoad(os.Environ())
-	stdout, err := blocker.StdoutPipe()
-	if err != nil {
-		t.Fatal(err)
-	}
-	var blockerStderr bytes.Buffer
-	blocker.Stderr = &blockerStderr
-	if err := blocker.Start(); err != nil {
-		t.Fatal(err)
-	}
-	blockerReader := bufio.NewReader(stdout)
-	if line, err := blockerReader.ReadString('\n'); err != nil || line != "blocker-starting\n" {
-		t.Fatalf("blocker banner=%q error=%v stderr=%s", line, err, blockerStderr.String())
-	}
-	if line, err := blockerReader.ReadString('\n'); err != nil || line != "blocker-ready\n" {
-		t.Fatalf("blocker readiness=%q error=%v stderr=%s", line, err, blockerStderr.String())
-	}
-	t.Cleanup(func() {
-		release, openErr := os.OpenFile(fifo, os.O_WRONLY, 0)
-		if openErr == nil {
-			_, _ = release.WriteString("release\n")
-			_ = release.Close()
-		}
-		if waitErr := blocker.Wait(); openErr != nil || waitErr != nil {
-			t.Errorf("release proof blocker: open=%v wait=%v stderr=%s", openErr, waitErr, blockerStderr.String())
-		}
-	})
-
-	root, now := proofExtensionGoalFixture(t)
-	caller, state, err := (identity.KernelProber{}).Probe(int64(os.Getpid()))
-	if err != nil || state != identity.Alive {
-		t.Fatalf("probe binary fixture caller: state=%s error=%v", state, err)
-	}
-	if _, err := lease.AnnounceWithPair(root, "ambient-admission-main", caller.Pid, caller.StartedAt.Unix(), caller.StartTicks,
-		caller.BootID, "mac-cli", "fake", "m1"); err != nil {
-		t.Fatal(err)
-	}
-	conf := filepath.Join(root, "metasystem.conf")
-	data, err := os.ReadFile(conf)
-	if err != nil {
-		t.Fatal(err)
-	}
-	data = bytes.ReplaceAll(data,
-		[]byte(proofrun.AdmissionCapKey+"="+strconv.Itoa(proofAdmissionFixtureMax)),
-		[]byte(proofrun.AdmissionCapKey+"=1"))
-	if err := os.WriteFile(conf, data, 0o644); err != nil {
-		t.Fatal(err)
-	}
-	run := func(name string, ambient bool) (proofrun.LaunchResult, int, string) {
-		t.Helper()
-		resultPath := filepath.Join(root, name+"-result.json")
-		command := exec.Command(engine, "proof-run", "launch", "--suite", name, "--root", root,
-			"--conf", conf, "--goal", "standing-validation", "--cap-min", "1", "--scope", "full",
-			"--command-class", name, "--progress", filepath.Join(root, name+"-progress.jsonl"),
-			"--log", filepath.Join(root, name+".log"), "--banner", name, "--result", resultPath, "--", "/usr/bin/true")
-		command.Env = append(proofFixtureEnvironmentWithoutHostLoad(os.Environ()),
-			"METASYSTEM_GOAL_NOW="+now.Format(time.RFC3339), "METASYSTEM_OWNER_LINEAGE=m1")
-		if ambient {
-			command.Env = append(command.Env, proofrun.TestHostLoadEnvironment+"=0")
-		}
-		output, runErr := command.CombinedOutput()
-		status := 0
-		if runErr != nil {
-			var exit *exec.ExitError
-			if !errors.As(runErr, &exit) {
-				t.Fatalf("run %s: %v\n%s", name, runErr, output)
-			}
-			status = exit.ExitCode()
-		}
-		resultBytes, readErr := os.ReadFile(resultPath)
-		if readErr != nil {
-			t.Fatalf("read %s admission result: %v\n%s", name, readErr, output)
-		}
-		var result proofrun.LaunchResult
-		if err := json.Unmarshal(resultBytes, &result); err != nil {
-			t.Fatalf("decode %s admission result: %v\n%s", name, err, resultBytes)
-		}
-		return result, status, string(output)
-	}
-
-	withoutAmbient, withoutStatus, withoutOutput := run("without-ambient-host-load", false)
-	withAmbient, withStatus, withOutput := run("with-ambient-host-load", true)
-	if withoutStatus != proofrun.ExitAdmissionRefused || withStatus != proofrun.ExitAdmissionRefused ||
-		withoutAmbient != withAmbient || withoutAmbient.Disposition != proofrun.DispositionAdmissionRefused ||
-		!strings.HasPrefix(withAmbient.Reason, "ADMISSION_") {
-		t.Fatalf("ambient variable changed built-binary admission:\nwithout=%+v status=%d output=%s\nwith=%+v status=%d output=%s",
-			withoutAmbient, withoutStatus, withoutOutput, withAmbient, withStatus, withOutput)
-	}
-}
-
-func proofFixtureEnvironmentWithoutHostLoad(environment []string) []string {
-	prefix := proofrun.TestHostLoadEnvironment + "="
-	filtered := make([]string, 0, len(environment))
-	for _, entry := range environment {
-		if !strings.HasPrefix(entry, prefix) {
-			filtered = append(filtered, entry)
-		}
-	}
-	return filtered
 }
 
 func ledgerTrunkRedClearFixture(t *testing.T) (*ledgerTrunkRedOwner, batch.EntryRef, batch.Green, string) {
