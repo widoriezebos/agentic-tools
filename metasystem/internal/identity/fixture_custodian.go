@@ -258,7 +258,7 @@ func reapDeadOwner(owner Ref, log io.Writer, runtime custodianRuntime) error {
 	}
 	var quietSince time.Time
 	var progressSince time.Time
-	previousRemaining := -1
+	lowestRemaining := -1
 	scanUnavailable := false
 	scan := runtime.scan
 	if scan == nil {
@@ -285,10 +285,10 @@ func reapDeadOwner(owner Ref, log io.Writer, runtime custodianRuntime) error {
 		stop()
 		remaining := actionable + len(recorded)
 		passFinished := time.Now()
-		if previousRemaining < 0 || remaining < previousRemaining {
+		if lowestRemaining < 0 || remaining < lowestRemaining {
 			progressSince = passFinished
+			lowestRemaining = remaining
 		}
-		previousRemaining = remaining
 		if remaining == 0 {
 			if quietSince.IsZero() {
 				quietSince = passFinished
