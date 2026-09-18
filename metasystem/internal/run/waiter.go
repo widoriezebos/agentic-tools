@@ -170,6 +170,9 @@ type Waiter struct {
 	Runtime               string          `json:"runtime,omitempty"`
 	Mode                  string          `json:"mode,omitempty"`
 	AtEntry               bool            `json:"atEntry,omitempty"`
+	Label                 string          `json:"label,omitempty"`
+	Question              string          `json:"question,omitempty"`
+	JobID                 string          `json:"jobId,omitempty"`
 	Selector              WaitSelector    `json:"selector,omitempty"`
 	GoalID                string          `json:"goalId,omitempty"`
 	Target                WaiterTarget    `json:"target"`
@@ -437,8 +440,8 @@ func ValidWaitID(value string) bool { return nonceRe.MatchString(value) }
 // classification, so malformed input cannot be mistaken for an authority
 // refusal.
 func ValidateWaitSelector(selector WaitSelector) error {
-	if selector.Kind != "job" && selector.Kind != "run" && selector.Kind != "attempt" && selector.Kind != "goal" && selector.Kind != "path" {
-		return fmt.Errorf("wait needs a job, run, attempt, goal, or path selector")
+	if selector.Kind != "job" && selector.Kind != "run" && selector.Kind != "attempt" && selector.Kind != "goal" && selector.Kind != "path" && selector.Kind != "local" && selector.Kind != "human" {
+		return fmt.Errorf("wait needs a job, run, attempt, goal, path, local, or human selector")
 	}
 	if !waitIdentifierRe.MatchString(selector.TargetID) {
 		return fmt.Errorf("wait target identifier is invalid")
@@ -488,6 +491,17 @@ func ValidateWaitSelector(selector WaitSelector) error {
 		}
 		if selector.Poll == "channel" && (selector.Event != "human-act" || selector.Verb != "answer" || selector.Question == "") {
 			return fmt.Errorf("channel polling applies only to an answer wait with a question identifier")
+		}
+	} else if selector.Kind == "human" {
+		if strings.TrimSpace(selector.Question) == "" {
+			return fmt.Errorf("human wait requires a question")
+		}
+		if selector.GoalID != "" || selector.Event != "" || selector.After != "" || selector.Verb != "" || selector.Chain != "" || selector.Poll != "" {
+			return fmt.Errorf("ledger event arguments apply only to goal waits")
+		}
+	} else if selector.Kind == "local" {
+		if selector.GoalID != "" || selector.Event != "" || selector.After != "" || selector.Verb != "" || selector.Question != "" || selector.Chain != "" || selector.Poll != "" {
+			return fmt.Errorf("local wait accepts no ledger event arguments")
 		}
 	} else if selector.Event != "" || selector.After != "" || selector.Verb != "" || selector.Question != "" || selector.Chain != "" || selector.Poll != "" {
 		return fmt.Errorf("ledger event arguments apply only to goal waits")

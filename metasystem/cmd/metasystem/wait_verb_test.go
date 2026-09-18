@@ -1380,6 +1380,84 @@ exec "${METASYSTEM_WAIT_REAL_ENGINE:?}" "$@"
 	}
 }
 
+func TestRegisteredLocalAndHumanWaitsInstalledVerdicts(t *testing.T) {
+	candidate := os.Getenv("METASYSTEM_WAIT_BINARY")
+	if candidate == "" {
+		return
+	}
+	binary := testutil.InstalledWaitBinary(t, candidate)
+	root := t.TempDir()
+	session, _ := pendingWaitVerdictCommandFixtureWithOptions(t, root, "fake", pendingWaitVerdictCommandOptions{jobStatus: "pending"})
+	hook, canonical, wrapper := installPendingWaitHookFixture(t, root, binary)
+	wrapperSource := `#!/bin/sh
+if [ "${1:-}" = up ]; then printf '%s\n' 'up outcome=already-healthy'; exit 0; fi
+if [ "${1:-}" = health ]; then
+  printf '%s\n' '{"schemaVersion":1,"exitCode":0,"line":"HEALTH healthy — ","interventions":[],"verdict":{"schema":1,"observedAt":"2026-09-18T10:00:00Z","observation":1,"aggregate":"healthy","roles":[],"shouldAlert":false,"findingDigest":""}}'
+  exit 0
+fi
+exec "${METASYSTEM_WAIT_REAL_ENGINE:?}" "$@"
+`
+	if err := os.WriteFile(wrapper, []byte(wrapperSource), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	payload := fmt.Sprintf(`{"session_id":%q,"cwd":%q,"hook_event_name":"Stop"}`, session, root)
+
+	child := exec.Command("tail", "-f", "/dev/null")
+	if err := child.Start(); err != nil {
+		t.Fatal(err)
+	}
+	childStopped := false
+	stopChild := func() {
+		t.Helper()
+		if childStopped {
+			return
+		}
+		childStopped = true
+		if err := child.Process.Kill(); err != nil {
+			t.Errorf("kill tracked child: %v", err)
+		}
+		if err := child.Wait(); err != nil {
+			var exitErr *exec.ExitError
+			if !errors.As(err, &exitErr) {
+				t.Errorf("reap tracked child: %v", err)
+			}
+		}
+	}
+	t.Cleanup(stopChild)
+
+	register := exec.Command(canonical, "wait", "register", "--root", root, "--pid", fmt.Sprint(child.Process.Pid), "--label", "installed local build", "--job", "wait-stop-job", "--timeout", "1h", "--json")
+	registerOutput, err := register.CombinedOutput()
+	var local metarun.Waiter
+	if err != nil || json.Unmarshal(registerOutput, &local) != nil || local.Kind != "local" {
+		t.Fatalf("register installed local wait: err=%v output=%s row=%+v", err, registerOutput, local)
+	}
+	liveHook := runPendingWaitHook(t, hook, wrapper, canonical, "stop", payload, "registered-local-live", local.RegisteredAt)
+	artifact := filepath.Join(root, "artifacts", "agents", "supervision", "stop-verdicts", session+".txt")
+	liveArtifact, artifactErr := os.ReadFile(artifact)
+	if strings.Contains(liveHook.stdout, `"decision":"block"`) || artifactErr != nil || !strings.Contains(string(liveArtifact), "WAITING: installed local build") {
+		t.Fatalf("live registered local wait did not allow Stop: stdout=%s stderr=%s", liveHook.stdout, liveHook.stderr)
+	}
+
+	stopChild()
+	deadHook := runPendingWaitHook(t, hook, wrapper, canonical, "stop", payload, "registered-local-dead", local.RegisteredAt)
+	deadArtifact, artifactErr := os.ReadFile(artifact)
+	if !strings.Contains(deadHook.stdout, `"decision":"block"`) || artifactErr != nil || strings.Contains(string(deadArtifact), "WAITING: installed local build") {
+		t.Fatalf("dead registered local wait allowed Stop: stdout=%s stderr=%s artifactErr=%v artifact=%s", deadHook.stdout, deadHook.stderr, artifactErr, deadArtifact)
+	}
+
+	humanCommand := exec.Command(canonical, "wait", "register", "--root", root, "--human", "--question", "May the installed run stop?", "--timeout", "1h", "--json")
+	humanOutput, err := humanCommand.CombinedOutput()
+	var human metarun.Waiter
+	if err != nil || json.Unmarshal(humanOutput, &human) != nil || human.Kind != "human" {
+		t.Fatalf("register installed human wait: err=%v output=%s row=%+v", err, humanOutput, human)
+	}
+	humanHook := runPendingWaitHook(t, hook, wrapper, canonical, "stop", payload, "registered-human", human.RegisteredAt)
+	humanArtifact, artifactErr := os.ReadFile(artifact)
+	if strings.Contains(humanHook.stdout, `"decision":"block"`) || artifactErr != nil || !strings.Contains(string(humanArtifact), "WAITING: human answer to May the installed run stop?") {
+		t.Fatalf("registered human wait did not allow Stop: stdout=%s stderr=%s", humanHook.stdout, humanHook.stderr)
+	}
+}
+
 func TestPendingWaitFromChildShell(t *testing.T) {
 	candidate := os.Getenv("METASYSTEM_WAIT_BINARY")
 	if candidate == "" {

@@ -222,6 +222,7 @@ type registeredWait struct {
 	coveredRunID string
 	coveredRun   run.WaiterTarget
 	humanAct     bool
+	detached     bool
 	landing      bool
 }
 
@@ -252,7 +253,7 @@ func (waits registeredWaits) matchingSignature(signature string) registeredWaits
 
 func (waits registeredWaits) suppressOpenWork(signature, currentGoalID string, waitingOnHuman []Item) bool {
 	for _, wait := range waits.matchingSignature(signature) {
-		if !wait.humanAct || wait.goalID == currentGoalID && waitingOnHumanForGoal(waitingOnHuman, wait.goalID) {
+		if wait.detached || !wait.humanAct || wait.goalID == currentGoalID && waitingOnHumanForGoal(waitingOnHuman, wait.goalID) {
 			return true
 		}
 	}
@@ -272,7 +273,7 @@ func waitingOnHumanForGoal(items []Item, goalID string) bool {
 
 func (waits registeredWaits) hasWorkInFlight() bool {
 	for _, wait := range waits {
-		if !wait.humanAct {
+		if wait.detached || !wait.humanAct {
 			return true
 		}
 	}
@@ -313,6 +314,14 @@ func (watches authenticatedWatches) watchesRun(fact RunFact) bool {
 func (waits registeredWaits) lines() []string {
 	lines := make([]string, 0, len(waits))
 	for _, wait := range waits {
+		if wait.row.Kind == "local" {
+			lines = append(lines, fmt.Sprintf("WAITING: %s (pid %d) until %s", wait.row.Label, wait.row.Pid, wait.row.Deadline))
+			continue
+		}
+		if wait.row.Kind == "human" {
+			lines = append(lines, fmt.Sprintf("WAITING: human answer to %s until %s", wait.row.Question, wait.row.Deadline))
+			continue
+		}
 		target := wait.row.Kind + " " + wait.row.TargetID
 		if wait.landing {
 			target = "landing for goal " + wait.goalID
@@ -629,9 +638,7 @@ func (s *Store) registeredWaits(work ClaimableBudgetedWork, sessionID, mainID st
 		return nil, []string{"registered waits not credited at " + reason}
 	}
 	bootID, bootElapsed, err := turnVerdictBootClock()
-	if err != nil || bootID == "" {
-		return nil, []string{"registered waits not credited at " + waitDrop("boot-clock", "err", err, "bootId", bootID)}
-	}
+	bootProblem := err != nil || bootID == ""
 	claimed := make(map[string]bool, len(work.Claimed)+len(work.Landing))
 	for _, id := range work.Claimed {
 		claimed[id] = true
@@ -644,6 +651,10 @@ func (s *Store) registeredWaits(work ClaimableBudgetedWork, sessionID, mainID st
 	for _, path := range paths {
 		reason = ""
 		row, ok := registeredWaitAtOwnerPath(s.Root, path, &reason)
+		if ok && bootProblem && row.Kind != "human" {
+			reasons = append(reasons, registeredWaitDrop(&row, path, waitDrop("boot-clock", "err", err, "bootId", bootID)))
+			continue
+		}
 		if !ok || !s.registeredWaitEligible(row, sessionID, mainID, lineage, lease.ClaimEpoch, bootID, bootElapsed, &reason) {
 			reasons = append(reasons, registeredWaitDrop(&row, path, reason))
 			continue
@@ -775,15 +786,22 @@ func (s *Store) registeredWaitOwner(sessionID, mainID string, reason *string) (s
 }
 func (s *Store) registeredWaitEligible(row run.Waiter, sessionID, mainID, lineage string, claimEpoch int64, bootID string, bootElapsed time.Duration, reason *string) bool {
 	selectorErr := run.ValidateWaitSelector(row.Selector)
-	if row.SchemaVersion != 2 || row.State != "pending" || row.Delivery != "blocking" || row.Result != nil ||
+	delivery := "blocking"
+	targetRequired := true
+	if row.Kind == "local" {
+		delivery, targetRequired = "harness", false
+	} else if row.Kind == "human" {
+		delivery, targetRequired = "human", false
+	}
+	if row.SchemaVersion != 2 || row.State != "pending" || row.Delivery != delivery || row.Result != nil ||
 		!run.ValidWaitID(row.WaitID) || !run.ValidWaitID(row.Nonce) || row.MainId != mainID ||
 		row.Session != sessionID || row.RuntimeSession != sessionID ||
 		(row.OwnerLineage != lineage && row.OwnerLineage != mainID) ||
 		row.OwnerDigest != run.OwnerDigest(mainID) || row.ClaimEpoch == nil || *row.ClaimEpoch != claimEpoch ||
-		row.Kind != row.Selector.Kind || row.TargetID != row.Selector.TargetID || row.Target == (run.WaiterTarget{}) ||
+		row.Kind != row.Selector.Kind || row.TargetID != row.Selector.TargetID || targetRequired && row.Target == (run.WaiterTarget{}) ||
 		(row.OpenWorkSignature != "" && !sessionStopDigest.MatchString(row.OpenWorkSignature)) ||
 		selectorErr != nil {
-		*reason = waitDrop("row-coordinates", "schemaVersion", row.SchemaVersion, "wantSchemaVersion", 2, "state", row.State, "wantState", "pending", "delivery", row.Delivery, "wantDelivery", "blocking", "resultPresent", row.Result != nil, "wantResultPresent", false, "waitIdValid", run.ValidWaitID(row.WaitID), "wantWaitIdValid", true, "nonceValid", run.ValidWaitID(row.Nonce), "wantNonceValid", true, "mainId", row.MainId, "wantMainId", mainID, "session", row.Session, "wantSession", sessionID, "runtimeSession", row.RuntimeSession, "wantRuntimeSession", sessionID, "ownerLineage", row.OwnerLineage, "lineage", lineage, "lineageMainId", mainID, "ownerDigest", row.OwnerDigest, "wantOwnerDigest", run.OwnerDigest(mainID), "claimEpoch", row.ClaimEpoch, "wantClaimEpoch", claimEpoch, "kind", row.Kind, "selectorKind", row.Selector.Kind, "goalId", row.GoalID, "selectorGoalId", row.Selector.GoalID, "targetId", row.TargetID, "selectorTargetId", row.Selector.TargetID, "targetZero", row.Target == (run.WaiterTarget{}), "wantTargetZero", false, "openWorkSignature", row.OpenWorkSignature, "selectorError", selectorErr)
+		*reason = waitDrop("row-coordinates", "schemaVersion", row.SchemaVersion, "wantSchemaVersion", 2, "state", row.State, "wantState", "pending", "delivery", row.Delivery, "wantDelivery", delivery, "resultPresent", row.Result != nil, "wantResultPresent", false, "waitIdValid", run.ValidWaitID(row.WaitID), "wantWaitIdValid", true, "nonceValid", run.ValidWaitID(row.Nonce), "wantNonceValid", true, "mainId", row.MainId, "wantMainId", mainID, "session", row.Session, "wantSession", sessionID, "runtimeSession", row.RuntimeSession, "wantRuntimeSession", sessionID, "ownerLineage", row.OwnerLineage, "lineage", lineage, "lineageMainId", mainID, "ownerDigest", row.OwnerDigest, "wantOwnerDigest", run.OwnerDigest(mainID), "claimEpoch", row.ClaimEpoch, "wantClaimEpoch", claimEpoch, "kind", row.Kind, "selectorKind", row.Selector.Kind, "goalId", row.GoalID, "selectorGoalId", row.Selector.GoalID, "targetId", row.TargetID, "selectorTargetId", row.Selector.TargetID, "targetZero", row.Target == (run.WaiterTarget{}), "targetRequired", targetRequired, "openWorkSignature", row.OpenWorkSignature, "selectorError", selectorErr)
 		return false
 	}
 	if row.Kind == "goal" {
@@ -795,6 +813,41 @@ func (s *Store) registeredWaitEligible(row run.Waiter, sessionID, mainID, lineag
 		*reason = waitDrop("row-coordinates", "kind", row.Kind, "goalId", row.GoalID, "selectorGoalId", row.Selector.GoalID)
 		return false
 	}
+	registeredAt, registeredErr := time.Parse(time.RFC3339Nano, row.RegisteredAt)
+	deadline, deadlineErr := time.Parse(time.RFC3339Nano, row.Deadline)
+	now := s.now().UTC()
+	if row.Kind == "local" || row.Kind == "human" {
+		jobErr := error(nil)
+		if row.JobID != "" {
+			jobErr = run.ValidateWaitSelector(run.WaitSelector{Kind: "job", TargetID: row.JobID})
+		}
+		metadataOK := row.Kind == "local" && strings.TrimSpace(row.Label) != "" && row.Question == "" ||
+			row.Kind == "human" && strings.TrimSpace(row.Question) != "" && row.Question == row.Selector.Question && row.Label == "" && row.JobID == ""
+		if !metadataOK || jobErr != nil {
+			*reason = waitDrop("row-coordinates", "kind", row.Kind, "label", row.Label, "question", row.Question, "selectorQuestion", row.Selector.Question, "jobId", row.JobID, "jobError", jobErr)
+			return false
+		}
+		if registeredErr != nil || deadlineErr != nil || !now.Before(deadline) || !deadline.After(registeredAt) || deadline.Sub(registeredAt) > 24*time.Hour {
+			*reason = waitDrop("row-wall-clock", "registeredAt", row.RegisteredAt, "deadline", row.Deadline, "now", now.Format(time.RFC3339Nano), "registeredError", registeredErr, "deadlineError", deadlineErr)
+			return false
+		}
+		if row.Kind == "human" {
+			return true
+		}
+		liveness, mode := identity.AliveRefComparison(s.prober(), identity.Ref{
+			Pid: row.Pid, StartedAtSec: row.PidStartedAt, StartedAtUnixMicro: row.PidStartedAtMicro,
+			StartTicks: row.PidStartTicks, BootID: row.BootID,
+		})
+		if liveness != identity.Alive || mode != identity.CompareDarwinMicroseconds && mode != identity.CompareLinuxTicksBootID {
+			*reason = waitDrop("row-process", "pid", row.Pid, "pidStartedAt", row.PidStartedAt, "pidStartedAtMicro", row.PidStartedAtMicro, "pidStartTicks", row.PidStartTicks, "bootId", row.BootID, "liveness", liveness.String(), "mode", mode)
+			return false
+		}
+		if row.RegisteredBootID == "" || row.RegisteredBootID != bootID {
+			*reason = waitDrop("row-boot-clock", "registeredBootId", row.RegisteredBootID, "bootId", bootID)
+			return false
+		}
+		return true
+	}
 	liveness, mode := identity.AliveRefComparison(s.prober(), identity.Ref{
 		Pid: row.Pid, StartedAtSec: row.PidStartedAt, StartedAtUnixMicro: row.PidStartedAtMicro,
 		StartTicks: row.PidStartTicks, BootID: row.BootID,
@@ -803,10 +856,7 @@ func (s *Store) registeredWaitEligible(row run.Waiter, sessionID, mainID, lineag
 		*reason = waitDrop("row-process", "pid", row.Pid, "pidStartedAt", row.PidStartedAt, "pidStartedAtMicro", row.PidStartedAtMicro, "pidStartTicks", row.PidStartTicks, "bootId", row.BootID, "liveness", liveness.String(), "mode", mode)
 		return false
 	}
-	registeredAt, registeredErr := time.Parse(time.RFC3339Nano, row.RegisteredAt)
-	deadline, deadlineErr := time.Parse(time.RFC3339Nano, row.Deadline)
 	lastObserved, observedErr := time.Parse(time.RFC3339Nano, row.LastObservedAt)
-	now := s.now().UTC()
 	if registeredErr != nil || deadlineErr != nil || observedErr != nil || registeredAt.After(lastObserved) ||
 		lastObserved.After(now) || now.Sub(lastObserved) > 30*time.Second || !now.Before(deadline) ||
 		!deadline.After(registeredAt) || deadline.Sub(registeredAt) > 24*time.Hour || row.RemainingNanos <= 0 {
@@ -828,6 +878,14 @@ func (s *Store) registeredWaitSource(work ClaimableBudgetedWork, claimed map[str
 	wait := registeredWait{row: row}
 	claimedIDs := append(append([]string{}, work.Claimed...), work.Landing...)
 	switch row.Kind {
+	case "local":
+		wait.coveredJobID = row.JobID
+		wait.detached = true
+		return wait, true
+	case "human":
+		wait.humanAct = true
+		wait.detached = true
+		return wait, true
 	case "job":
 		goalID, _, ok := s.pendingWaitJob(row, reason)
 		if !ok || !claimed[goalID] {

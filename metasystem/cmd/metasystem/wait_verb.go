@@ -61,6 +61,12 @@ var waitAdapterPathForRuntime = func(root, runtimeName string) (string, error) {
 }
 
 func runWait(args []string) int {
+	if len(args) > 0 && args[0] == "register" {
+		return runWaitRegister(args[1:])
+	}
+	if len(args) > 0 && args[0] == "end" {
+		return runWaitEnd(args[1:])
+	}
 	if len(args) > 0 && args[0] == "notify" {
 		return runWaitNotify(args[1:])
 	}
@@ -202,25 +208,12 @@ func runWaitCommand(args []string, poll func(context.Context) error, callerPID i
 		fmt.Fprintln(os.Stderr, err)
 		return metarun.ExitWaiterIO
 	}
-	view, err := classifyVerbCaller(stateRoot, callerPID)
+	resolved, code, err := resolveWaitCaller(stateRoot, callerPID)
 	if err != nil {
-		fmt.Fprintln(os.Stderr, "wait caller identity is uncertain:", err)
-		return metarun.ExitWaiterUnknown
+		fmt.Fprintln(os.Stderr, err)
+		return code
 	}
-	if view.Class != lease.ClassMain || !view.Holder || view.Announcement == nil {
-		fmt.Fprintln(os.Stderr, "wait registration is eligible only for the live checkout holder's main session")
-		return metarun.ExitWaiterBusy
-	}
-	lineage := view.Announcement.OwnerLineage
-	if lineage == "" {
-		lineage = view.MainId
-	}
-	runtimeSession := view.Announcement.EffectiveRuntimeSession()
-	if runtimeSession == "" {
-		fmt.Fprintln(os.Stderr, "wait registration requires the main's authenticated runtime session")
-		return metarun.ExitWaiterBusy
-	}
-	owner := metarun.Caller{Class: view.Class, MainId: view.MainId, OwnerLineage: lineage, ClaimEpoch: view.ClaimEpoch, SessionId: runtimeSession}
+	view, owner, runtimeSession := resolved.view, resolved.owner, resolved.runtimeSession
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
 	var resumeRow metarun.Waiter
