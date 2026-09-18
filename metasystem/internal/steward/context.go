@@ -311,7 +311,7 @@ func contextVerdict(reading usage.Reading, budget config.Budget, installationRoo
 	reason := fmt.Sprintf("%d thousand tokens this call, trigger %d, proof line %d, proof maximum %d, ceiling %d",
 		display, budget.Trigger/1000, ProofP95Tokens/1000, ProofMaxTokens/1000, budget.Ceiling/1000)
 	if tokens > ProofMaxTokens {
-		remedy := "metasystem context handoff --root " + installationRoot
+		remedy := contextHandoffRemedy(installationRoot)
 		if diagnostic {
 			remedy = statusRemedy
 		}
@@ -323,10 +323,14 @@ func contextVerdict(reading usage.Reading, budget config.Budget, installationRoo
 		if diagnostic {
 			reason += "; over the trigger"
 		} else {
-			reason += "; over the trigger: run metasystem context handoff --root " + installationRoot
+			reason += "; over the trigger: run " + contextHandoffRemedy(installationRoot)
 		}
 	}
 	return labelContextDiagnostic(roleAlive(RoleContext, reason), diagnostic)
+}
+
+func contextHandoffRemedy(installationRoot string) string {
+	return "metasystem context handoff --root " + installationRoot + " --note <configured-note-path> --no-delegates"
 }
 
 func labelContextDiagnostic(verdict RoleVerdict, diagnostic bool) RoleVerdict {

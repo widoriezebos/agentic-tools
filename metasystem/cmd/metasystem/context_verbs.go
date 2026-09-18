@@ -10,6 +10,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/config"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/goal"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/identity"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/lease"
@@ -50,6 +51,7 @@ type contextHandoffOutput struct {
 }
 
 var classifyContextHandoffCaller, currentContextHandoffHolder, hookContextHandoffDelegate = lease.ClassifyAt, lease.CurrentHolder, lease.HookDelegate
+var contextHandoffNow = func() time.Time { return time.Now().UTC() }
 
 func runContextStatus(args []string) int {
 	flags := flag.NewFlagSet("context status", flag.ContinueOnError)
@@ -141,23 +143,32 @@ func runContextHandoff(args []string) int {
 	root := pathFlag(flags, "root", "", "installation or containing template root")
 	cancel := flags.String("cancel", "", "live handoff nonce to cancel")
 	by := flags.String("by", "", "name of the attending human")
+	note := flags.String("note", "", "lessons note in the runtime's configured directory")
+	noDelegates := flags.Bool("no-delegates", false, "declare that no background task remains in flight")
 	asJSON := flags.Bool("json", false, "print a bounded result")
 	var scratchValues []string
+	var delegateValues []string
 	flags.Func("scratch", "purpose=P,path=REL[,required=true|false]", func(value string) error {
 		scratchValues = append(scratchValues, value)
+		return nil
+	})
+	flags.Func("delegate", "id=ID[,asked=TEXT][,output=PATH]", func(value string) error {
+		delegateValues = append(delegateValues, value)
 		return nil
 	})
 	if flags.Parse(args) != nil {
 		return 2
 	}
-	cancelSupplied, bySupplied := false, false
+	cancelSupplied, bySupplied, noteSupplied, noDelegatesSupplied := false, false, false, false
 	flags.Visit(func(option *flag.Flag) {
 		cancelSupplied = cancelSupplied || option.Name == "cancel"
 		bySupplied = bySupplied || option.Name == "by"
+		noteSupplied = noteSupplied || option.Name == "note"
+		noDelegatesSupplied = noDelegatesSupplied || option.Name == "no-delegates"
 	})
-	if *root == "" || flags.NArg() != 0 || (cancelSupplied && (*cancel == "" || len(scratchValues) != 0)) ||
+	if *root == "" || flags.NArg() != 0 || (cancelSupplied && (*cancel == "" || len(scratchValues) != 0 || len(delegateValues) != 0 || noteSupplied || noDelegatesSupplied)) ||
 		(bySupplied && (!cancelSupplied || strings.TrimSpace(*by) == "")) {
-		fmt.Fprintln(os.Stderr, "usage: metasystem context handoff --root ROOT [--scratch purpose=P,path=REL[,required=true|false]]... [--json] | --root ROOT --cancel NONCE [--by HUMAN]")
+		fmt.Fprintln(os.Stderr, contextHandoffUsage)
 		return 2
 	}
 	stateRoot, err := goal.ResolveStateRoot(*root)
@@ -193,11 +204,56 @@ func runContextHandoff(args []string) int {
 		fmt.Fprintln(os.Stderr, "metasystem context handoff:", err)
 		return 2
 	}
+	declarations, err := parseContextDelegates(delegateValues)
+	if err != nil || (len(delegateValues) != 0 && *noDelegates) {
+		if err == nil {
+			err = fmt.Errorf("--delegate and --no-delegates cannot be combined")
+		}
+		fmt.Fprintln(os.Stderr, "metasystem context handoff:", err)
+		return 2
+	}
+	if *note == "" {
+		return contextVerbError("handoff", &steward.HandoffRefusal{Code: "HANDOFF_NOTE_MISSING"})
+	}
 	caller, err := contextHandoffCaller(stateRoot)
 	if err != nil {
 		return contextVerbError("handoff", err)
 	}
-	result, err := steward.Handoff(stateRoot, caller, scratch, time.Now().UTC(), filepath.Join(stateRoot, "memory", "receipts.log"))
+	caller, err = steward.ResolveHandoffCaller(stateRoot, caller)
+	if err != nil {
+		return contextVerbError("handoff", err)
+	}
+	toplevel := contextHandoffToplevel(stateRoot)
+	readOptions := usagepkg.ReadOptions{Toplevel: toplevel, Installation: stateRoot}
+	transcript, transcriptResolved := "", false
+	claudeMemory := ""
+	if caller.Runtime == "claude" {
+		if candidate, reason := usagepkg.ClaudeTranscript(caller.Session, readOptions); reason == "" {
+			transcript, transcriptResolved = candidate, true
+		}
+		if candidate, reason := usagepkg.MemoryDirectory(readOptions); reason == "" {
+			claudeMemory = candidate
+		}
+	}
+	tasks, notices, err := usagepkg.InFlightTasks(transcript, readOptions)
+	if err != nil {
+		return contextVerbError("handoff", err)
+	}
+	for _, notice := range notices {
+		fmt.Fprintln(os.Stderr, notice.Text)
+	}
+	now := contextHandoffNow()
+	delegates, err := contextHandoffDelegates(declarations, *noDelegates, transcriptResolved, tasks, now)
+	if err != nil {
+		return contextVerbError("handoff", err)
+	}
+	noteDirectory, err := config.ContextHandoffNoteDirectory(stateRoot, caller.Runtime, claudeMemory)
+	if err != nil {
+		return contextVerbError("handoff", err)
+	}
+	result, err := steward.Handoff(stateRoot, caller, steward.HandoffRecord{
+		Scratch: scratch, Delegates: delegates, NotePath: *note, NoteDirectory: noteDirectory,
+	}, now, filepath.Join(stateRoot, "memory", "receipts.log"))
 	if err != nil {
 		return contextVerbError("handoff", err)
 	}
@@ -208,6 +264,116 @@ func runContextHandoff(args []string) int {
 		fmt.Printf("handoff recorded: %s state=%s sha256=%s\n", result.Nonce, result.StatePath, result.StateDigest)
 	}
 	return 0
+}
+
+const contextHandoffUsage = "usage: metasystem context handoff --root ROOT --note PATH (--no-delegates | --delegate id=ID[,asked=TEXT][,output=PATH]...) [--scratch purpose=P,path=REL[,required=true|false]]... [--json] | --root ROOT --cancel NONCE [--by HUMAN]"
+
+type contextDelegateArg struct {
+	id, asked, output   string
+	askedSet, outputSet bool
+}
+
+func parseContextDelegates(values []string) ([]contextDelegateArg, error) {
+	result := make([]contextDelegateArg, 0, len(values))
+	seen := make(map[string]bool, len(values))
+	for _, value := range values {
+		fields := map[string]string{}
+		for _, item := range strings.Split(value, ",") {
+			key, field, ok := strings.Cut(item, "=")
+			_, duplicate := fields[key]
+			if !ok || duplicate || (key != "id" && key != "asked" && key != "output") {
+				return nil, fmt.Errorf("--delegate must be id=ID[,asked=TEXT][,output=PATH]")
+			}
+			fields[key] = field
+		}
+		id := strings.TrimSpace(fields["id"])
+		if id == "" || seen[id] {
+			return nil, fmt.Errorf("--delegate must name one unique non-empty id")
+		}
+		seen[id] = true
+		_, askedSet := fields["asked"]
+		_, outputSet := fields["output"]
+		result = append(result, contextDelegateArg{id: id, asked: fields["asked"], output: fields["output"], askedSet: askedSet, outputSet: outputSet})
+	}
+	return result, nil
+}
+
+func contextHandoffDelegates(declarations []contextDelegateArg, noDelegates, transcriptResolved bool, tasks []usagepkg.Task, now time.Time) ([]steward.HandoffDelegate, error) {
+	if noDelegates {
+		var ids []string
+		for _, task := range tasks {
+			if task.InFlight {
+				ids = append(ids, task.ID)
+			}
+		}
+		if len(ids) > 0 {
+			return nil, &steward.HandoffRefusal{Code: "HANDOFF_TASKS_IN_FLIGHT", Detail: "ids=" + strings.Join(ids, ",")}
+		}
+		return nil, nil
+	}
+	if len(declarations) == 0 {
+		return nil, &steward.HandoffRefusal{Code: "HANDOFF_DELEGATES_UNDECLARED"}
+	}
+	byID := make(map[string]usagepkg.Task, len(tasks))
+	for _, task := range tasks {
+		byID[task.ID] = task
+	}
+	declared := make(map[string]bool, len(declarations))
+	result := make([]steward.HandoffDelegate, 0, len(declarations))
+	for _, declaration := range declarations {
+		delegate := steward.HandoffDelegate{ID: declaration.id, Asked: declaration.asked, Output: declaration.output,
+			DeclaredAt: now.Format(time.RFC3339Nano)}
+		if transcriptResolved {
+			task, known := byID[declaration.id]
+			if !known {
+				return nil, &steward.HandoffRefusal{Code: "HANDOFF_DELEGATE_UNKNOWN", Detail: "id=" + declaration.id}
+			}
+			if declaration.outputSet && declaration.output != task.Output {
+				return nil, &steward.HandoffRefusal{Code: "HANDOFF_DELEGATE_OUTPUT_MISMATCH", Detail: "id=" + declaration.id}
+			}
+			if !declaration.askedSet {
+				delegate.Asked = task.Asked
+			}
+			if !declaration.outputSet {
+				delegate.Output = task.Output
+			}
+			delegate.ToolUseID, delegate.Kind, delegate.Terminal = task.ToolUseID, task.Kind, !task.InFlight
+		}
+		var missing []string
+		if delegate.Asked == "" {
+			missing = append(missing, "asked")
+		}
+		if delegate.Output == "" {
+			missing = append(missing, "output")
+		}
+		if len(missing) > 0 {
+			return nil, &steward.HandoffRefusal{Code: "HANDOFF_DELEGATE_INCOMPLETE", Detail: "id=" + declaration.id + " missing=" + strings.Join(missing, ",")}
+		}
+		declared[declaration.id] = true
+		result = append(result, delegate)
+	}
+	if transcriptResolved {
+		for _, task := range tasks {
+			if task.InFlight && !declared[task.ID] {
+				return nil, &steward.HandoffRefusal{Code: "HANDOFF_DELEGATE_UNDECLARED", Detail: "id=" + task.ID}
+			}
+		}
+	}
+	return result, nil
+}
+
+func contextHandoffToplevel(root string) string {
+	current := filepath.Clean(root)
+	for {
+		if info, err := os.Stat(filepath.Join(current, ".git")); err == nil && (info.IsDir() || info.Mode().IsRegular()) {
+			return current
+		}
+		parent := filepath.Dir(current)
+		if parent == current {
+			return root
+		}
+		current = parent
+	}
 }
 
 func contextHandoffCaller(stateRoot string) (steward.HandoffCaller, error) {

@@ -672,7 +672,9 @@ func TestContextHandoffVerb(t *testing.T) {
 	container = link
 	useContextHandoffIdentity(t, filepath.Join(link, "metasystem"))
 	contextMust(t, os.WriteFile(filepath.Join(root, "proof.txt"), []byte("bounded proof\n"), 0o644))
-	code, output, problem := captureContextVerb(t, dispatch, "context", "handoff", "--root", container, "--scratch", "purpose=proof,path=proof.txt,required=true", "--scratch", "purpose=second,path=proof.txt,required=false")
+	code, output, problem := captureContextVerb(t, dispatch, "context", "handoff", "--root", container,
+		"--note", contextHandoffNotePath(container), "--no-delegates",
+		"--scratch", "purpose=proof,path=proof.txt,required=true", "--scratch", "purpose=second,path=proof.txt,required=false")
 	if code != 0 || problem != "" || !strings.HasPrefix(output, "handoff recorded: ") || !strings.Contains(output, " state=") || !strings.Contains(output, " sha256=") {
 		t.Fatalf("text handoff = code %d stdout %q stderr %q", code, output, problem)
 	}
@@ -691,7 +693,7 @@ func TestContextHandoffVerb(t *testing.T) {
 	classifyContextHandoffCaller = func(string, string, int64) (lease.Classification, error) {
 		return lease.Classification{Class: lease.ClassDelegate, Pid: 4343}, nil
 	}
-	code, output, problem = captureContextVerb(t, runContextHandoff, "--root", container, "--json")
+	code, output, problem = captureContextVerb(t, runContextHandoff, "--root", container, "--note", contextHandoffNotePath(container), "--no-delegates", "--json")
 	var projection map[string]any
 	if err := json.Unmarshal([]byte(output), &projection); err != nil || code != 0 || problem != "" || len(projection) != 4 || projection["nonce"] == "" || projection["statePath"] == "" ||
 		projection["digest"] == "" || projection["intentPath"] == "" || strings.Contains(output, "disposable") {
@@ -707,16 +709,256 @@ func TestContextHandoffVerb(t *testing.T) {
 	if _, err := os.Stat(intentPath); err != nil {
 		t.Fatalf("intent path is not live: %v", err)
 	}
-	code, _, problem = captureContextVerb(t, runContextHandoff, "--root", container, "--scratch", "purpose=required,path=missing\nfile,required=true")
+	code, _, problem = captureContextVerb(t, runContextHandoff, "--root", container, "--note", contextHandoffNotePath(container), "--no-delegates", "--scratch", "purpose=required,path=missing\nfile,required=true")
 	if code != 9 || !strings.HasPrefix(problem, "HANDOFF_REFERENCE ") || strings.Count(problem, "\n") != 1 {
 		t.Fatalf("refused handoff = code %d stderr %q", code, problem)
 	}
 	hookContextHandoffDelegate = func(string, string, string, int64) (lease.HookDelegateResult, error) {
 		return lease.HookDelegateResult{}, nil
 	}
-	code, _, problem = captureContextVerb(t, runContextHandoff, "--root", container)
+	code, _, problem = captureContextVerb(t, runContextHandoff, "--root", container, "--note", contextHandoffNotePath(container), "--no-delegates")
 	if code != 9 || !strings.HasPrefix(problem, "HANDOFF_NOT_HOLDER") {
 		t.Fatalf("wrong delegate = code %d stderr %q", code, problem)
+	}
+}
+
+const (
+	contextAgentTaskID     = "ab3e7e704e393e416"
+	contextAgentTaskOutput = "/private/tmp/claude-501/<slug>/<session>/tasks/ab3e7e704e393e416.output"
+	contextBashTaskID      = "b2rs8m65o"
+	contextBashTaskOutput  = "/private/tmp/claude-501/<slug>/<session>/tasks/b2rs8m65o.output"
+)
+
+func TestHandoffRefusals(t *testing.T) {
+	t.Run("tasks-in-flight", func(t *testing.T) {
+		container, root := contextHandoffCommandRoot(t)
+		note := contextClaudeHandoffFixture(t, root, "tasks-in-flight", []string{"agent-running"}, contextAgentTaskOutput+"\n")
+		useContextHandoffIdentityFor(t, root, "claude", "tasks-in-flight", 100)
+		code, _, problem := captureContextVerb(t, runContextHandoff, "--root", container, "--note", note, "--no-delegates")
+		if code != 9 || problem != "HANDOFF_TASKS_IN_FLIGHT ids="+contextAgentTaskID+"\n" {
+			t.Fatalf("tasks-in-flight refusal = code %d stderr %q", code, problem)
+		}
+	})
+	t.Run("delegate-undeclared", func(t *testing.T) {
+		container, root := contextHandoffCommandRoot(t)
+		note := contextClaudeHandoffFixture(t, root, "delegate-undeclared", []string{"agent-running", "bash-running"}, contextAgentTaskOutput+"\n")
+		useContextHandoffIdentityFor(t, root, "claude", "delegate-undeclared", 100)
+		code, _, problem := captureContextVerb(t, runContextHandoff, "--root", container, "--note", note, "--delegate", "id="+contextAgentTaskID)
+		if code != 9 || problem != "HANDOFF_DELEGATE_UNDECLARED id="+contextBashTaskID+"\n" {
+			t.Fatalf("delegate-undeclared refusal = code %d stderr %q", code, problem)
+		}
+	})
+	t.Run("delegate-unknown", func(t *testing.T) {
+		container, root := contextHandoffCommandRoot(t)
+		note := contextClaudeHandoffFixture(t, root, "delegate-unknown", []string{"agent-running"}, "/tmp/unknown.out\n")
+		useContextHandoffIdentityFor(t, root, "claude", "delegate-unknown", 100)
+		code, _, problem := captureContextVerb(t, runContextHandoff, "--root", container, "--note", note, "--delegate", "id=unknown,asked=work,output=/tmp/unknown.out")
+		if code != 9 || problem != "HANDOFF_DELEGATE_UNKNOWN id=unknown\n" {
+			t.Fatalf("delegate-unknown refusal = code %d stderr %q", code, problem)
+		}
+	})
+	t.Run("delegate-output-mismatch", func(t *testing.T) {
+		container, root := contextHandoffCommandRoot(t)
+		note := contextClaudeHandoffFixture(t, root, "delegate-output-mismatch", []string{"agent-running"}, "/tmp/wrong.out\n")
+		useContextHandoffIdentityFor(t, root, "claude", "delegate-output-mismatch", 100)
+		code, _, problem := captureContextVerb(t, runContextHandoff, "--root", container, "--note", note, "--delegate", "id="+contextAgentTaskID+",output=/tmp/wrong.out")
+		if code != 9 || problem != "HANDOFF_DELEGATE_OUTPUT_MISMATCH id="+contextAgentTaskID+"\n" {
+			t.Fatalf("delegate-output-mismatch refusal = code %d stderr %q", code, problem)
+		}
+	})
+	t.Run("delegates-undeclared", func(t *testing.T) {
+		container, root := contextHandoffCommandRoot(t)
+		useContextHandoffIdentity(t, root)
+		code, _, problem := captureContextVerb(t, runContextHandoff, "--root", container, "--note", contextHandoffNotePath(container))
+		if code != 9 || problem != "HANDOFF_DELEGATES_UNDECLARED\n" {
+			t.Fatalf("delegates-undeclared refusal = code %d stderr %q", code, problem)
+		}
+	})
+	t.Run("delegate-incomplete-without-transcript", func(t *testing.T) {
+		container, root := contextHandoffCommandRoot(t)
+		useContextHandoffIdentity(t, root)
+		note := contextHandoffNotePath(container)
+		for _, test := range []struct {
+			declaration string
+			want        string
+		}{
+			{"id=manual", "HANDOFF_DELEGATE_INCOMPLETE id=manual missing=asked,output\n"},
+			{"id=manual,asked=finish", "HANDOFF_DELEGATE_INCOMPLETE id=manual missing=output\n"},
+		} {
+			code, _, problem := captureContextVerb(t, runContextHandoff, "--root", container, "--note", note, "--delegate", test.declaration)
+			if code != 9 || problem != test.want {
+				t.Fatalf("declaration %q = code %d stderr %q", test.declaration, code, problem)
+			}
+		}
+		writeContextHandoffNote(t, note, "manual output: /tmp/manual.out\n", time.Date(2026, 9, 18, 11, 59, 0, 0, time.UTC))
+		code, _, problem := captureContextVerb(t, runContextHandoff, "--root", container, "--note", note,
+			"--delegate", "id=manual,asked=finish,output=/tmp/manual.out")
+		if code != 0 || problem != "" {
+			t.Fatalf("complete transcript-free declaration = code %d stderr %q", code, problem)
+		}
+	})
+	for _, test := range []struct {
+		name string
+		run  func(*testing.T, string, string)
+	}{
+		{"note-missing", func(t *testing.T, container, _ string) {
+			code, _, problem := captureContextVerb(t, runContextHandoff, "--root", container, "--no-delegates")
+			if code != 9 || problem != "HANDOFF_NOTE_MISSING\n" {
+				t.Fatalf("note-missing refusal = code %d stderr %q", code, problem)
+			}
+		}},
+		{"note-outside-memory", func(t *testing.T, container, _ string) {
+			outside := filepath.Join(t.TempDir(), "lessons.md")
+			writeContextHandoffNote(t, outside, "lessons\n", time.Date(2026, 9, 18, 11, 59, 0, 0, time.UTC))
+			code, _, problem := captureContextVerb(t, runContextHandoff, "--root", container, "--note", outside, "--no-delegates")
+			if code != 9 || problem != "HANDOFF_NOTE_OUTSIDE_MEMORY path="+outside+"\n" {
+				t.Fatalf("note-outside-memory refusal = code %d stderr %q", code, problem)
+			}
+		}},
+		{"note-symlink", func(t *testing.T, container, _ string) {
+			target := filepath.Join(t.TempDir(), "lessons.md")
+			writeContextHandoffNote(t, target, "lessons\n", time.Date(2026, 9, 18, 11, 59, 0, 0, time.UTC))
+			link := filepath.Join(filepath.Dir(contextHandoffNotePath(container)), "linked.md")
+			contextMust(t, os.Symlink(target, link))
+			code, _, problem := captureContextVerb(t, runContextHandoff, "--root", container, "--note", link, "--no-delegates")
+			if code != 9 || problem != "HANDOFF_NOTE_OUTSIDE_MEMORY path="+link+"\n" {
+				t.Fatalf("note-symlink refusal = code %d stderr %q", code, problem)
+			}
+		}},
+		{"note-lacks-output", func(t *testing.T, container, _ string) {
+			note := contextHandoffNotePath(container)
+			code, _, problem := captureContextVerb(t, runContextHandoff, "--root", container, "--note", note,
+				"--delegate", "id=manual,asked=finish,output=/tmp/missing.out")
+			if code != 9 || problem != "HANDOFF_NOTE_LACKS_OUTPUT path="+note+"\n" {
+				t.Fatalf("note-lacks-output refusal = code %d stderr %q", code, problem)
+			}
+		}},
+		{"note-stale", func(t *testing.T, container, root string) {
+			started := time.Date(2026, 9, 18, 11, 0, 0, 0, time.UTC)
+			useContextHandoffIdentityFor(t, root, "fake", "seat-session", started.Unix())
+			note := contextHandoffNotePath(container)
+			writeContextHandoffNote(t, note, "lessons\n", started.Add(-time.Second))
+			code, _, problem := captureContextVerb(t, runContextHandoff, "--root", container, "--note", note, "--no-delegates")
+			if code != 9 || !strings.HasPrefix(problem, "HANDOFF_NOTE_STALE note="+note+" ") {
+				t.Fatalf("note-stale refusal = code %d stderr %q", code, problem)
+			}
+		}},
+		{"note-same-second", func(t *testing.T, container, root string) {
+			started := time.Date(2026, 9, 18, 11, 0, 0, 0, time.UTC)
+			useContextHandoffIdentityFor(t, root, "fake", "seat-session", started.Unix())
+			note := contextHandoffNotePath(container)
+			writeContextHandoffNote(t, note, "same lessons\n", started)
+			first := recordContextHandoff(t, container)
+			if first.nonce == "" {
+				t.Fatal("first same-second note did not record")
+			}
+			code, _, problem := captureContextVerb(t, runContextHandoff, "--root", container, "--note", note, "--no-delegates")
+			if code != 9 || !strings.HasPrefix(problem, "HANDOFF_NOTE_STALE note="+note+" ") {
+				t.Fatalf("note-same-second refusal = code %d stderr %q", code, problem)
+			}
+		}},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			container, root := contextHandoffCommandRoot(t)
+			useContextHandoffIdentity(t, root)
+			test.run(t, container, root)
+		})
+	}
+}
+
+func TestHandoffRecordsDeclaredTasksFromTheTranscript(t *testing.T) {
+	container, root := contextHandoffCommandRoot(t)
+	session := "declared-tasks"
+	note := contextClaudeHandoffFixture(t, root, session, []string{"agent-running", "bash-completed"},
+		contextAgentTaskOutput+"\n"+contextBashTaskOutput+"\n")
+	useContextHandoffIdentityFor(t, root, "claude", session, 100)
+	code, output, problem := captureContextVerb(t, runContextHandoff, "--root", container, "--note", note,
+		"--delegate", "id="+contextAgentTaskID, "--delegate", "id="+contextBashTaskID)
+	if code != 0 || problem != "" {
+		t.Fatalf("declared task handoff = code %d stdout %q stderr %q", code, output, problem)
+	}
+	fields := strings.Fields(output)
+	state := readContextHandoffState(t, strings.TrimPrefix(fields[3], "state="))
+	if len(state.Delegates) != 2 || state.Delegates[0].ID != contextAgentTaskID || state.Delegates[0].Kind != "agent" ||
+		state.Delegates[0].Asked != "Token diagnosis for 2026-09-15" || state.Delegates[0].Output != contextAgentTaskOutput || state.Delegates[0].Terminal ||
+		state.Delegates[1].ID != contextBashTaskID || state.Delegates[1].Kind != "bash" || state.Delegates[1].Output != contextBashTaskOutput || !state.Delegates[1].Terminal {
+		t.Fatalf("recorded delegates = %+v", state.Delegates)
+	}
+	canonicalNote, err := filepath.EvalSymlinks(note)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if state.LessonsNote == nil || state.LessonsNote.Path != canonicalNote || state.LessonsNote.SHA256 == "" {
+		t.Fatalf("recorded lessons note = %+v", state.LessonsNote)
+	}
+
+	t.Run("unknown status notice", func(t *testing.T) {
+		container, root := contextHandoffCommandRoot(t)
+		note := contextClaudeHandoffFixture(t, root, "unknown-status", []string{"unknown-status"}, contextAgentTaskOutput+"\n")
+		useContextHandoffIdentityFor(t, root, "claude", "unknown-status", 100)
+		code, _, problem := captureContextVerb(t, runContextHandoff, "--root", container, "--note", note, "--delegate", "id="+contextAgentTaskID)
+		want := "task " + contextAgentTaskID + " status paused: treated as in flight\n"
+		if code != 0 || problem != want {
+			t.Fatalf("unknown-status notice = code %d stderr %q", code, problem)
+		}
+	})
+}
+
+func TestHandoffRecordsNoEmptyDelegateField(t *testing.T) {
+	container, root := contextHandoffCommandRoot(t)
+	useContextHandoffIdentity(t, root)
+	note := contextHandoffNotePath(container)
+	writeContextHandoffNote(t, note, "/tmp/manual.out\n", time.Date(2026, 9, 18, 11, 59, 0, 0, time.UTC))
+	code, output, problem := captureContextVerb(t, runContextHandoff, "--root", container, "--note", note,
+		"--delegate", "id=manual,asked=finish,output=/tmp/manual.out")
+	if code != 0 || problem != "" {
+		t.Fatalf("complete delegate handoff = code %d stderr %q", code, problem)
+	}
+	fields := strings.Fields(output)
+	state := readContextHandoffState(t, strings.TrimPrefix(fields[3], "state="))
+	if len(state.Delegates) != 1 || state.Delegates[0].Asked == "" || state.Delegates[0].Output == "" {
+		t.Fatalf("recorded delegate has an empty field: %+v", state.Delegates)
+	}
+}
+
+func TestHandoffNoteSameSecondPassesWithANewDigest(t *testing.T) {
+	container, root := contextHandoffCommandRoot(t)
+	started := time.Date(2026, 9, 18, 11, 0, 0, 0, time.UTC)
+	useContextHandoffIdentityFor(t, root, "fake", "seat-session", started.Unix())
+	note := contextHandoffNotePath(container)
+	writeContextHandoffNote(t, note, "first lessons\n", started)
+	first := recordContextHandoff(t, container)
+	writeContextHandoffNote(t, note, "changed lessons\n", started)
+	second := recordContextHandoff(t, container)
+	if first.nonce == second.nonce {
+		t.Fatalf("same-second note digest did not produce a replacement: %+v %+v", first, second)
+	}
+}
+
+func TestHandoffNoteDirectoryIsPerRuntime(t *testing.T) {
+	container, root := contextHandoffCommandRoot(t)
+	directory := filepath.Join(root, ".codex-handoff-memory")
+	note := filepath.Join(directory, "lessons.md")
+	writeContextHandoffNote(t, note, "output /tmp/codex-task.out\n", time.Date(2026, 9, 18, 11, 59, 0, 0, time.UTC))
+	conf := filepath.Join(root, "metasystem.conf")
+	handle, err := os.OpenFile(conf, os.O_APPEND|os.O_WRONLY, 0o644)
+	contextMust(t, err)
+	_, err = fmt.Fprintln(handle, "context.handoff.note-directory.codex="+directory)
+	contextMust(t, errors.Join(err, handle.Close()))
+	useContextHandoffIdentityFor(t, root, "codex", "codex-session", 100)
+	code, output, problem := captureContextVerb(t, runContextHandoff, "--root", container, "--note", note,
+		"--delegate", "id=codex-task,asked=finish,output=/tmp/codex-task.out")
+	if code != 0 || problem != "" {
+		t.Fatalf("Codex note handoff = code %d stderr %q", code, problem)
+	}
+	fields := strings.Fields(output)
+	state := readContextHandoffState(t, strings.TrimPrefix(fields[3], "state="))
+	canonicalNote, err := filepath.EvalSymlinks(note)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if state.Seat.Runtime != "codex" || state.LessonsNote == nil || state.LessonsNote.Path != canonicalNote {
+		t.Fatalf("Codex handoff state = %+v", state)
 	}
 }
 
@@ -903,7 +1145,7 @@ func TestContextPruneVerb(t *testing.T) {
 
 func TestContextVerbUsage(t *testing.T) {
 	root := contextCommandRoot(t)
-	const handoffUsage = "usage: metasystem context handoff --root ROOT [--scratch purpose=P,path=REL[,required=true|false]]... [--json] | --root ROOT --cancel NONCE [--by HUMAN]\n"
+	const handoffUsage = contextHandoffUsage + "\n"
 	for _, test := range []struct {
 		run  func([]string) int
 		args []string
@@ -918,6 +1160,9 @@ func TestContextVerbUsage(t *testing.T) {
 		{runContextHandoff, []string{"--root", root, "--scratch", "purpose=p,path=x,required=1"}},
 		{runContextHandoff, []string{"--root", root, "--scratch", "purpose=p,path=x,required="}},
 		{runContextHandoff, []string{"--root", root, "--scratch", "purpose=,purpose=p,path=x"}},
+		{runContextHandoff, []string{"--root", root, "--delegate", "id="}},
+		{runContextHandoff, []string{"--root", root, "--delegate", "id=a,unknown=value"}},
+		{runContextHandoff, []string{"--root", root, "--note", "/tmp/note", "--delegate", "id=a,asked=x,output=y", "--no-delegates"}},
 		{runContextHandoff, []string{"--root", root, "--cancel", "0000000000000000", "--scratch", "purpose=p,path=x"}},
 		{runContextHandoff, []string{"--root", root, "--cancel="}},
 		{runContextHandoff, []string{"--root", root, "--by", "Wido"}},
@@ -930,7 +1175,7 @@ func TestContextVerbUsage(t *testing.T) {
 	} {
 		code, _, problem := captureContextVerb(t, test.run, test.args...)
 		byCase := strings.Contains(strings.Join(test.args, "\x00"), "--by")
-		if code != 2 || (byCase && problem != handoffUsage) || (!byCase && !(strings.HasPrefix(problem, "usage: metasystem context ") || strings.Contains(problem, "--scratch must be"))) {
+		if code != 2 || (byCase && problem != handoffUsage) || (!byCase && !(strings.HasPrefix(problem, "usage: metasystem context ") || strings.Contains(problem, "--scratch must be") || strings.Contains(problem, "--delegate"))) {
 			t.Fatalf("args %q = code %d stderr %q", test.args, code, problem)
 		}
 	}
@@ -940,7 +1185,7 @@ type contextHandoffRecord struct{ nonce, state, digest string }
 
 func recordContextHandoff(t *testing.T, root string) contextHandoffRecord {
 	t.Helper()
-	code, output, problem := captureContextVerb(t, runContextHandoff, "--root", root)
+	code, output, problem := captureContextVerb(t, runContextHandoff, "--root", root, "--note", contextHandoffNotePath(root), "--no-delegates")
 	fields := strings.Fields(output)
 	if code != 0 || problem != "" || len(fields) != 5 {
 		t.Fatalf("record handoff = code %d stdout %q stderr %q", code, output, problem)
@@ -961,23 +1206,90 @@ func contextHandoffCommandRoot(t *testing.T) (string, string) {
 	contextMust(t, os.MkdirAll(root, 0o755))
 	seedClaimLaunchGoal(t, root)
 	goalSyncMutationGit(t, root, "config", "metasystem.goal.machine", "m-test")
+	noteDirectory := filepath.Join(root, ".handoff-memory")
 	files := map[string]string{
-		"metasystem.conf": "metasystem.runtimes=fake\nrole.steward-continuation.runtime=fake\nrole.steward-continuation.model.fake=fixture\n",
+		"metasystem.conf": "metasystem.runtimes=fake,claude,codex\ncontext.handoff.note-directory.fake=" + noteDirectory + "\nrole.steward-continuation.runtime=fake\nrole.steward-continuation.model.fake=fixture\n",
 		"scripts/agents/roles/steward-continuation.md":                "# Role\n",
 		"scripts/agents/roles/steward-continuation.requirements.json": "{\"required\":[]}\n",
 		"scripts/agents/schemas/steward-continuation.schema.json":     "{\"type\":\"object\"}\n",
 		"scripts/agents/permissions/workspace.json":                   "{\"write\":[\"workspace\"]}\n",
 		"memory/receipts.log":                                         "",
+		".handoff-memory/lessons.md":                                  "# Lessons\n\nContinue from the recorded state.\n",
 	}
 	for relative, body := range files {
 		writeTestingFixtureFile(t, filepath.Join(root, filepath.FromSlash(relative)), []byte(body), 0o644)
 	}
+	modified := time.Date(2026, 9, 18, 11, 59, 0, 0, time.UTC)
+	contextMust(t, os.Chtimes(filepath.Join(noteDirectory, "lessons.md"), modified, modified))
 	canonicalRoot, err := filepath.EvalSymlinks(root)
 	contextMust(t, err)
 	contextMust(t, steward.MintIdentity(steward.RepoIdentityPath(root), steward.InstallIdentity{
 		RepoIdentity: canonicalRoot, Generation: 1, InstallPath: "/bin/true", MintedAt: time.Now().UTC().Format(time.RFC3339),
 	}))
 	return container, root
+}
+
+func contextHandoffNotePath(root string) string {
+	if filepath.Base(filepath.Clean(root)) != "metasystem" {
+		root = filepath.Join(root, "metasystem")
+	}
+	return filepath.Join(root, ".handoff-memory", "lessons.md")
+}
+
+func contextClaudeHandoffFixture(t *testing.T, root, session string, fixtures []string, noteBody string) string {
+	t.Helper()
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+	toplevel := contextHandoffToplevel(root)
+	project := filepath.Join(home, ".claude", "projects", contextClaudeSlug(toplevel))
+	if err := os.MkdirAll(filepath.Join(project, "memory"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	var transcript bytes.Buffer
+	for _, fixture := range fixtures {
+		data, err := os.ReadFile(filepath.Join("..", "..", "internal", "usage", "testdata", "tasks", fixture+".jsonl"))
+		if err != nil {
+			t.Fatal(err)
+		}
+		transcript.Write(data)
+		if len(data) > 0 && data[len(data)-1] != '\n' {
+			transcript.WriteByte('\n')
+		}
+	}
+	writeTestingFixtureFile(t, filepath.Join(project, session+".jsonl"), transcript.Bytes(), 0o600)
+	note := filepath.Join(project, "memory", "lessons.md")
+	writeContextHandoffNote(t, note, noteBody, time.Date(2026, 9, 18, 11, 59, 0, 0, time.UTC))
+	return note
+}
+
+func contextClaudeSlug(path string) string {
+	value := []byte(path)
+	for index, character := range value {
+		if character >= 'A' && character <= 'Z' || character >= 'a' && character <= 'z' || character >= '0' && character <= '9' {
+			continue
+		}
+		value[index] = '-'
+	}
+	return string(value)
+}
+
+func writeContextHandoffNote(t *testing.T, path, body string, modified time.Time) {
+	t.Helper()
+	writeTestingFixtureFile(t, path, []byte(body), 0o600)
+	contextMust(t, os.Chtimes(path, modified, modified))
+}
+
+func readContextHandoffState(t *testing.T, path string) steward.HandoffState {
+	t.Helper()
+	data, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var state steward.HandoffState
+	if err := json.Unmarshal(data, &state); err != nil {
+		t.Fatal(err)
+	}
+	return state
 }
 
 func contextMust(t *testing.T, err error) {
@@ -987,19 +1299,25 @@ func contextMust(t *testing.T, err error) {
 }
 
 func useContextHandoffIdentity(t *testing.T, root string) {
+	useContextHandoffIdentityFor(t, root, "fake", "seat-session", 100)
+}
+
+func useContextHandoffIdentityFor(t *testing.T, root, runtimeName, session string, startedAt int64) {
 	t.Helper()
 	oldClassify, oldHolder, oldHook := classifyContextHandoffCaller, currentContextHandoffHolder, hookContextHandoffDelegate
 	oldProof := proveSessionStopHuman
+	oldNow := contextHandoffNow
+	contextHandoffNow = func() time.Time { return time.Date(2026, 9, 18, 12, 0, 0, 0, time.UTC) }
 	classifyContextHandoffCaller = func(stateRoot, installation string, _ int64) (lease.Classification, error) {
 		if stateRoot != root || installation != root {
 			t.Fatalf("handoff classified roots (%q, %q), want %q", stateRoot, installation, root)
 		}
-		announcement := &lease.Announcement{SessionId: "seat-session", MainId: "main-context", Pid: 4242,
-			PidStartedAt: 100, PidStartTicks: 700, BootID: "boot-fixture", Runtime: "fake", InstanceTag: "main-tag"}
+		announcement := &lease.Announcement{SessionId: session, MainId: "main-context", Pid: 4242,
+			PidStartedAt: startedAt, PidStartTicks: 700, BootID: "boot-fixture", Runtime: runtimeName, InstanceTag: "main-tag"}
 		return lease.Classification{Class: lease.ClassMain, MainId: announcement.MainId, Announcement: announcement}, nil
 	}
 	currentContextHandoffHolder = func(string) (lease.CurrentHolderView, error) {
-		return lease.CurrentHolderView{MainId: "main-context", SessionId: "seat-session", ClaimEpoch: 7}, nil
+		return lease.CurrentHolderView{MainId: "main-context", SessionId: session, ClaimEpoch: 7}, nil
 	}
 	hookContextHandoffDelegate = func(_, _ string, jobID string, _ int64) (lease.HookDelegateResult, error) {
 		return lease.HookDelegateResult{Delegate: true, JobID: jobID}, nil
@@ -1010,6 +1328,7 @@ func useContextHandoffIdentity(t *testing.T, root string) {
 	t.Cleanup(func() {
 		classifyContextHandoffCaller, currentContextHandoffHolder, hookContextHandoffDelegate = oldClassify, oldHolder, oldHook
 		proveSessionStopHuman = oldProof
+		contextHandoffNow = oldNow
 	})
 }
 

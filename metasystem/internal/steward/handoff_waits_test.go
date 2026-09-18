@@ -171,7 +171,7 @@ func TestRecordOnlyHandoffStillRefusesInFlightWaits(t *testing.T) {
 	path := filepath.Join(run.WaitersDir(root), "record-only.json")
 	for _, state := range run.WaiterStates {
 		_, before := writeHandoffWaiter(t, root, "record-only", run.Waiter{State: state.Name})
-		_, err := captureHandoff(root, handoffMainCaller(), nil, handoffCaptureNow)
+		_, err := captureHandoff(root, handoffMainCaller(), HandoffRecord{}, handoffCaptureNow)
 		var refusal *HandoffRefusal
 		if state.Class == run.WaiterStateInFlight && (!errors.As(err, &refusal) || refusal.Code != "HANDOFF_WAIT_IN_FLIGHT") {
 			t.Errorf("in-flight class %q returned %v", state.Name, err)

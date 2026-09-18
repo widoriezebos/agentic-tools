@@ -672,7 +672,7 @@ func (bed *contextCostBed) stopReport(output string) string {
 func (bed *contextCostBed) requireLiveRole(stop contextCostStop) {
 	bed.t.Helper()
 	bed.requireExpectedLiveRole(stop.label, stop.role)
-	want := "context-budget=alive (120 thousand tokens this call, trigger 105, proof line 150, proof maximum 200, ceiling 250; over the trigger: run metasystem context handoff --root " + bed.installation + ")"
+	want := "context-budget=alive (120 thousand tokens this call, trigger 105, proof line 150, proof maximum 200, ceiling 250; over the trigger: run metasystem context handoff --root " + bed.installation + " --note <configured-note-path> --no-delegates)"
 	if stop.reportRole != want {
 		bed.t.Fatalf("%s %s Stop report role=%q, want %q", bed.runtime, stop.label, stop.reportRole, want)
 	}

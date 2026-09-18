@@ -966,6 +966,8 @@ set -euo pipefail
 installation=$1 runtime=$2 session=$3 tag=$4 handoff_file=$5 stop_output=$6
 stop_error=$7 forwarding_engine=$8 manifest=$9 foreign=${10}
 engine=$installation/bin/metasystem
+note_directory=$installation/.handoff-memory
+note=$note_directory/lessons.md
 stage=claim
 report_failed_stage() {
   local status=$?
@@ -993,11 +995,14 @@ $engine goal approve --root "$installation" --id handoff-fixture --by Wido \
   --elapsed-limit 8h --attempt-limit 10 --reserved-job-minutes-limit 1200 \
   --active-job-limit 1 --review-round-limit 3 --fixture-human-authority >/dev/null
 printf '%s\n' "metasystem.runtimes=$runtime" \
+  "context.handoff.note-directory.$runtime=$note_directory" \
   "role.steward-continuation.runtime=$runtime" \
   "role.steward-continuation.model.$runtime=fixture" >"$installation/metasystem.conf"
 $engine goal claim --root "$installation" --id handoff-fixture >/dev/null
+mkdir -p "$note_directory"
+printf '%s\n' '# Lessons' '' 'Continue the handoff fixture.' >"$note"
 stage=handoff
-$engine context handoff --root "$installation" >"$handoff_file"
+$engine context handoff --root "$installation" --note "$note" --no-delegates >"$handoff_file"
 stop_session=$session
 [[ $foreign != true ]] || stop_session=$session-foreign
 stage=Stop

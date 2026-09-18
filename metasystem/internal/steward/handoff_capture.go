@@ -74,6 +74,15 @@ type ScratchArg struct {
 	Required bool
 }
 
+// HandoffRecord is the caller's complete record-time declaration. The note
+// directory is resolved from runtime configuration before this boundary.
+type HandoffRecord struct {
+	Scratch       []ScratchArg
+	Delegates     []HandoffDelegate
+	NotePath      string
+	NoteDirectory string
+}
+
 type HandoffRefusal struct {
 	Code   string
 	Detail string
@@ -120,6 +129,8 @@ type capturedHandoff struct {
 	scratch   []capturedSource
 	landings  HandoffLastLandings
 	messages  []HandoffMessage
+	delegates []HandoffDelegate
+	note      *HandoffNote
 	authority HandoffCaller
 }
 
@@ -347,6 +358,17 @@ func admitHandoffCaller(root string, caller HandoffCaller) (HandoffCaller, error
 		}
 	}
 	return caller, nil
+}
+
+// ResolveHandoffCaller completes the runtime identity of an admitted caller.
+// Delegate commands need these recorded facts before they can resolve the
+// runtime-owned note and transcript paths.
+func ResolveHandoffCaller(stateRoot string, caller HandoffCaller) (HandoffCaller, error) {
+	root, err := handoffCanonicalRoot(stateRoot)
+	if err != nil {
+		return HandoffCaller{}, err
+	}
+	return admitHandoffCaller(root, caller)
 }
 
 func selectHandoffGoal(root string, now time.Time) (*goal.GoalFile, string, error) {
@@ -596,7 +618,7 @@ func captureHandoffMessages(root string) ([]HandoffMessage, error) {
 	return messages, nil
 }
 
-func captureHandoff(root string, caller HandoffCaller, scratch []ScratchArg, now time.Time) (capturedHandoff, error) {
+func captureHandoff(root string, caller HandoffCaller, record HandoffRecord, now time.Time) (capturedHandoff, error) {
 	authority, err := admitHandoffCaller(root, caller)
 	if err != nil {
 		return capturedHandoff{}, err
@@ -622,7 +644,7 @@ func captureHandoff(root string, caller HandoffCaller, scratch []ScratchArg, now
 	if err != nil {
 		return capturedHandoff{}, err
 	}
-	scratchSources, err := captureScratch(root, scratch)
+	scratchSources, err := captureScratch(root, record.Scratch)
 	if err != nil {
 		return capturedHandoff{}, err
 	}
@@ -635,7 +657,74 @@ func captureHandoff(root string, caller HandoffCaller, scratch []ScratchArg, now
 		return capturedHandoff{}, err
 	}
 	return capturedHandoff{goal: file, goalState: state, jobs: jobs, plans: plans, scratch: scratchSources,
-		landings: landings, messages: messages, authority: authority}, nil
+		landings: landings, messages: messages, delegates: record.Delegates, authority: authority}, nil
+}
+
+func captureLessonsNote(record HandoffRecord, authority HandoffCaller, now time.Time, previousDigest string) (*HandoffNote, error) {
+	if record.NotePath == "" {
+		return nil, refusal("HANDOFF_NOTE_MISSING", "")
+	}
+	notePath, err := filepath.Abs(record.NotePath)
+	if err != nil {
+		return nil, refusal("HANDOFF_NOTE_OUTSIDE_MEMORY", "path="+record.NotePath)
+	}
+	notePath = filepath.Clean(notePath)
+	directory := filepath.Clean(record.NoteDirectory)
+	directoryInfo, directoryErr := os.Lstat(directory)
+	if directoryErr != nil || !directoryInfo.IsDir() || directoryInfo.Mode()&os.ModeSymlink != 0 {
+		return nil, refusal("HANDOFF_NOTE_OUTSIDE_MEMORY", "path="+record.NotePath)
+	}
+	noteInfo, noteErr := os.Lstat(notePath)
+	if noteErr != nil || !noteInfo.Mode().IsRegular() || noteInfo.Mode()&os.ModeSymlink != 0 {
+		return nil, refusal("HANDOFF_NOTE_OUTSIDE_MEMORY", "path="+record.NotePath)
+	}
+	canonicalDirectory, directoryErr := canonicalExistingPath(directory)
+	canonicalNote, noteErr := canonicalExistingPath(notePath)
+	if directoryErr != nil || noteErr != nil {
+		return nil, refusal("HANDOFF_NOTE_OUTSIDE_MEMORY", "path="+record.NotePath)
+	}
+	if _, inside := relativePathInside(canonicalDirectory, canonicalNote); !inside || canonicalNote == canonicalDirectory {
+		return nil, refusal("HANDOFF_NOTE_OUTSIDE_MEMORY", "path="+record.NotePath)
+	}
+	data, err := os.ReadFile(canonicalNote)
+	if err != nil {
+		return nil, refusal("HANDOFF_NOTE_OUTSIDE_MEMORY", "path="+record.NotePath)
+	}
+	for _, delegate := range record.Delegates {
+		if !bytes.Contains(data, []byte(delegate.Output)) {
+			return nil, refusal("HANDOFF_NOTE_LACKS_OUTPUT", "path="+record.NotePath)
+		}
+	}
+	digest := testableDigest(data)
+	modified := noteInfo.ModTime().UTC()
+	modifiedSecond := modified.Truncate(time.Second)
+	sessionStarted := time.Unix(authority.Ref.StartedAtSec, 0).UTC()
+	stale := modifiedSecond.Before(sessionStarted) ||
+		(modifiedSecond.Equal(sessionStarted) && previousDigest != "" && previousDigest == digest) ||
+		!modified.Before(now)
+	if stale {
+		return nil, refusal("HANDOFF_NOTE_STALE", fmt.Sprintf("note=%s modified=%s session=%s", record.NotePath,
+			modifiedSecond.Format(time.RFC3339), sessionStarted.Format(time.RFC3339)))
+	}
+	return &HandoffNote{Path: canonicalNote, ModifiedAt: modified, SHA256: digest}, nil
+}
+
+func handoffNoteDigest(root string, intent *Intent) (string, error) {
+	if intent == nil || intent.Handoff == nil {
+		return "", nil
+	}
+	data, err := os.ReadFile(intent.Handoff.StatePath)
+	if err != nil {
+		return "", err
+	}
+	var state HandoffState
+	if err := decodeStrictHandoffJSON(data, &state); err != nil {
+		return "", err
+	}
+	if state.LessonsNote == nil {
+		return "", nil
+	}
+	return state.LessonsNote.SHA256, nil
 }
 
 func ensureHandoffParent(root string) (string, error) {
@@ -854,7 +943,8 @@ func buildHandoffState(root, nonce, dir string, capture capturedHandoff, now tim
 			Claimant: HandoffClaimant{Machine: claim.Machine, Lineage: claim.Lineage, At: claim.At, Revision: claim.Revision}},
 		NextStep: HandoffNextStep{Text: capture.goal.NextStep, References: planReferences},
 		OpenJobs: jobStates, LastLandings: capture.landings, Scratch: scratchReferences,
-		MessagesOwed: capture.messages, Engine: captureHandoffEngine(root), Disposable: HandoffDisposable,
+		MessagesOwed: capture.messages, Delegates: capture.delegates, LessonsNote: capture.note,
+		Engine: captureHandoffEngine(root), Disposable: HandoffDisposable,
 	}
 	state, _, stateData, manifestData, err := fitHandoffState(root, dir, state)
 	if err != nil {
@@ -949,7 +1039,7 @@ func readLiveHandoffIntents(root string) ([]Intent, error) {
 // Handoff captures a bounded immutable continuation state and publishes one
 // replacement authorization. Every refusal before directory creation leaves
 // no nonce state or intent.
-func Handoff(stateRoot string, caller HandoffCaller, scratch []ScratchArg, now time.Time, receiptFile string) (HandoffResult, error) {
+func Handoff(stateRoot string, caller HandoffCaller, record HandoffRecord, now time.Time, receiptFile string) (HandoffResult, error) {
 	root, err := handoffCanonicalRoot(stateRoot)
 	if err != nil {
 		return HandoffResult{}, err
@@ -965,7 +1055,7 @@ func Handoff(stateRoot string, caller HandoffCaller, scratch []ScratchArg, now t
 		return HandoffResult{}, err
 	}
 	defer arbitration.Release()
-	capture, err := captureHandoff(root, caller, scratch, now)
+	capture, err := captureHandoff(root, caller, record, now)
 	if err != nil {
 		return HandoffResult{}, err
 	}
@@ -993,6 +1083,14 @@ func Handoff(stateRoot string, caller HandoffCaller, scratch []ScratchArg, now t
 			return HandoffResult{}, fmt.Errorf("more than one live handoff already names session %s", handoffs[index].Handoff.Session)
 		}
 		predecessor = &handoffs[index]
+	}
+	previousDigest, err := handoffNoteDigest(root, predecessor)
+	if err != nil {
+		return HandoffResult{}, fmt.Errorf("read previous handoff note: %w", err)
+	}
+	capture.note, err = captureLessonsNote(record, capture.authority, now, previousDigest)
+	if err != nil {
+		return HandoffResult{}, err
 	}
 	const previewNonce = "0000000000000000"
 	if _, err := buildHandoffState(root, previewNonce, HandoffDir(root, previewNonce), capture, now, false); err != nil {

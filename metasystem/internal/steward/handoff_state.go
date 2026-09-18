@@ -128,16 +128,24 @@ type HandoffOpenWork struct {
 	PidStartedAt        int64            `json:"pidStartedAt,omitempty"`
 }
 
-// HandoffDelegate is one declared delegate task. U3b-2a fills it; this unit
-// only declares it and carries it through the bound and the overflow.
+// HandoffDelegate is one task the predecessor explicitly leaves for its
+// successor. Transcript-backed declarations carry the launching tool facts.
 type HandoffDelegate struct {
 	ID         string `json:"id"`
-	ToolUseID  string `json:"toolUseId"`
-	Kind       string `json:"kind"`
-	Asked      string `json:"asked,omitempty"`
-	Output     string `json:"output,omitempty"`
+	ToolUseID  string `json:"toolUseId,omitempty"`
+	Kind       string `json:"kind,omitempty"`
+	Asked      string `json:"asked"`
+	Output     string `json:"output"`
 	DeclaredAt string `json:"declaredAt"`
 	Terminal   bool   `json:"terminal,omitempty"`
+}
+
+// HandoffNote identifies the lessons file that was complete when the state
+// was written.
+type HandoffNote struct {
+	Path       string    `json:"path"`
+	ModifiedAt time.Time `json:"modifiedAt"`
+	SHA256     string    `json:"sha256"`
 }
 
 // HandoffEngine is the engine that wrote the state.
@@ -174,6 +182,7 @@ type HandoffState struct {
 	MessagesOwed  []HandoffMessage               `json:"messagesOwed,omitempty"`
 	OpenWork      []HandoffOpenWork              `json:"openWork,omitempty"`
 	Delegates     []HandoffDelegate              `json:"delegates,omitempty"`
+	LessonsNote   *HandoffNote                   `json:"lessonsNote,omitempty"`
 	Engine        *HandoffEngine                 `json:"engine,omitempty"`
 	Manifest      *dispatch.CompositionReference `json:"manifest,omitempty"`
 	Disposable    string                         `json:"disposable"`
@@ -329,6 +338,26 @@ func validateHandoffMessages(messages []HandoffMessage) error {
 	return nil
 }
 
+func validateHandoffDelegates(delegates []HandoffDelegate) error {
+	seen := make(map[string]bool, len(delegates))
+	for _, delegate := range delegates {
+		if delegate.ID == "" || delegate.Asked == "" || delegate.Output == "" || delegate.DeclaredAt == "" {
+			return fmt.Errorf("handoff delegate %q is incomplete", delegate.ID)
+		}
+		if seen[delegate.ID] {
+			return fmt.Errorf("handoff delegate %q is duplicated", delegate.ID)
+		}
+		seen[delegate.ID] = true
+		if (delegate.ToolUseID == "") != (delegate.Kind == "") || (delegate.Kind != "" && delegate.Kind != "agent" && delegate.Kind != "bash") {
+			return fmt.Errorf("handoff delegate %q has invalid transcript identity", delegate.ID)
+		}
+		if _, err := time.Parse(time.RFC3339Nano, delegate.DeclaredAt); err != nil {
+			return fmt.Errorf("handoff delegate %q has invalid declaredAt", delegate.ID)
+		}
+	}
+	return nil
+}
+
 func validateHandoffLists(root, ownedDir string, jobs []HandoffOpenJob, landings HandoffLastLandings, scratch []HandoffReference, messages []HandoffMessage) error {
 	if err := validateHandoffJobs(root, ownedDir, jobs); err != nil {
 		return err
@@ -406,6 +435,18 @@ func validateHandoffState(root, nonce, goalID string, binding HandoffBinding, st
 	}
 	if len(state.Delegates) > maxHandoffDelegates {
 		return fmt.Errorf("handoff inline delegates exceeds %d", maxHandoffDelegates)
+	}
+	if err := validateHandoffDelegates(append(append([]HandoffDelegate{}, state.Delegates...), manifest.Delegates...)); err != nil {
+		return err
+	}
+	if state.LessonsNote != nil {
+		if !filepath.IsAbs(state.LessonsNote.Path) || filepath.Clean(state.LessonsNote.Path) != state.LessonsNote.Path ||
+			state.LessonsNote.ModifiedAt.IsZero() || !handoffDigestPattern.MatchString(state.LessonsNote.SHA256) {
+			return fmt.Errorf("handoff lessonsNote is incomplete")
+		}
+		if !state.LessonsNote.ModifiedAt.Before(state.WrittenAt) {
+			return fmt.Errorf("handoff lessonsNote modifiedAt must precede writtenAt")
+		}
 	}
 	if len(state.LastLandings.History)+len(manifest.LastLandings.History) > maxHandoffLandings ||
 		len(state.LastLandings.Receipts)+len(manifest.LastLandings.Receipts) > maxHandoffLandings {

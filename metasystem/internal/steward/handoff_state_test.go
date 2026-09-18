@@ -189,7 +189,7 @@ func rewriteManifest(t *testing.T, fixture stagedHandoffFixture, mutate func(map
 func TestHandoffStateRoundTripSchema2(t *testing.T) {
 	captureRoot := handoffCaptureRepo(t, "claimed")
 	useHandoffNonces(t, "2000000000000002")
-	result, err := Handoff(captureRoot, handoffMainCaller(), nil, handoffCaptureNow, filepath.Join(captureRoot, "memory", "receipts.log"))
+	result, err := Handoff(captureRoot, handoffMainCaller(), handoffTestRecord(t, captureRoot, nil), handoffCaptureNow, filepath.Join(captureRoot, "memory", "receipts.log"))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -228,6 +228,36 @@ func TestHandoffStateReadsSchema1(t *testing.T) {
 	fixture = rewriteState(t, fixture, func(value map[string]any) { value["schemaVersion"] = 1 })
 	if _, err := verifyBoundHandoffState(root, "1000000000000001", "fix-it", fixture.binding); err != nil {
 		t.Fatalf("schema-1 state with absent new fields must read: %v", err)
+	}
+}
+
+func TestHandoffStateWithoutANoteStillReads(t *testing.T) {
+	root := stagedRepo(t)
+	fixture := writeStagedHandoffFixture(t, root, "2000000000000004")
+	if _, err := verifyBoundHandoffState(root, "2000000000000004", "fix-it", fixture.binding); err != nil {
+		t.Fatalf("schema-2 state written before lessonsNote must read: %v", err)
+	}
+}
+
+func TestHandoffStateVerifierChecksLessonsNoteOrder(t *testing.T) {
+	root := stagedRepo(t)
+	fixture := writeStagedHandoffFixture(t, root, "2000000000000005")
+	fixture = rewriteState(t, fixture, func(value map[string]any) {
+		value["lessonsNote"] = map[string]any{
+			"path":       filepath.Join(root, "memory", "lessons.md"),
+			"modifiedAt": fixture.binding.RecordedAt.Format(time.RFC3339Nano),
+			"sha256":     strings.Repeat("a", 64),
+		}
+	})
+	if _, err := verifyBoundHandoffState(root, "2000000000000005", "fix-it", fixture.binding); err == nil || !strings.Contains(err.Error(), "lessonsNote modifiedAt must precede writtenAt") {
+		t.Fatalf("unordered lessonsNote must refuse: %v", err)
+	}
+	fixture = rewriteState(t, fixture, func(value map[string]any) {
+		note := value["lessonsNote"].(map[string]any)
+		note["modifiedAt"] = fixture.binding.RecordedAt.Add(-time.Nanosecond).Format(time.RFC3339Nano)
+	})
+	if _, err := verifyBoundHandoffState(root, "2000000000000005", "fix-it", fixture.binding); err != nil {
+		t.Fatalf("ordered lessonsNote must verify: %v", err)
 	}
 }
 

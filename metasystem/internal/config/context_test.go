@@ -28,6 +28,18 @@ func TestContextBudgetConfigDefaultsAndAccessor(t *testing.T) {
 	if got, err := ContextBudget(root); err != nil || got != (Budget{250002, 145002, 105000}) {
 		t.Fatalf("fixture layers = %+v, err=%v", got, err)
 	}
+
+	committedRoot := t.TempDir()
+	claudeDirectory := filepath.Join(committedRoot, "claude-memory")
+	codexDirectory := filepath.Join(committedRoot, "codex-memory")
+	putFile(t, filepath.Join(committedRoot, "metasystem.conf"),
+		"metasystem.runtimes=claude,codex\n"+ContextHandoffNoteDirectoryPrefix+"codex="+committedRoot+"//codex-memory\n")
+	if got, err := ContextHandoffNoteDirectory(committedRoot, "claude", claudeDirectory); err != nil || got != claudeDirectory {
+		t.Fatalf("Claude note directory = %q err=%v", got, err)
+	}
+	if got, err := ContextHandoffNoteDirectory(committedRoot, "codex", claudeDirectory); err != nil || got != codexDirectory {
+		t.Fatalf("Codex note directory = %q err=%v", got, err)
+	}
 }
 
 func TestContextConfKeysDocumented(t *testing.T) {
@@ -35,7 +47,7 @@ func TestContextConfKeysDocumented(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	for _, text := range []string{"context.ceiling.tokens=250000", "context.handoff.margin.tokens=145000", "trigger 105000", "106638"} {
+	for _, text := range []string{"context.ceiling.tokens=250000", "context.handoff.margin.tokens=145000", "context.handoff.note-directory.codex=", "trigger 105000", "106638"} {
 		if !strings.Contains(string(content), text) {
 			t.Fatalf("metasystem.conf does not document %q", text)
 		}

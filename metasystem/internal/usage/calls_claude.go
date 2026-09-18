@@ -38,6 +38,38 @@ func claudeTranscript(opts ReadOptions, session string) (path string, reason str
 	return "", fmt.Sprintf("unknown (no transcript at %s)", strings.Join(candidates, " or "))
 }
 
+// ClaudeTranscript resolves the transcript that belongs to one Claude
+// session without reading or changing usage evidence.
+func ClaudeTranscript(session string, opts ReadOptions) (path string, reason string) {
+	return claudeTranscript(opts, session)
+}
+
+// MemoryDirectory resolves the Claude project memory directory independently
+// of any caller-supplied transcript path.
+func MemoryDirectory(opts ReadOptions) (path string, reason string) {
+	home, reason := callHome(opts)
+	if reason != "" {
+		return "", reason
+	}
+	projects := filepath.Join(home, ".claude", "projects")
+	var candidates []string
+	for _, cwd := range []string{opts.Toplevel, opts.Installation} {
+		if cwd == "" {
+			continue
+		}
+		candidate := filepath.Join(projects, claudeSlug(cwd), "memory")
+		candidates = append(candidates, candidate)
+		if !pathWithin(projects, candidate) {
+			continue
+		}
+		info, err := os.Lstat(candidate)
+		if err == nil && info.IsDir() && info.Mode()&os.ModeSymlink == 0 {
+			return candidate, ""
+		}
+	}
+	return "", fmt.Sprintf("unknown (no memory directory at %s)", strings.Join(candidates, " or "))
+}
+
 func claudeSlug(cwd string) string {
 	bytes := []byte(cwd)
 	for index, value := range bytes {

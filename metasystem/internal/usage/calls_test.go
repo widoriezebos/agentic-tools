@@ -278,6 +278,60 @@ func TestMissingTranscriptAnswersUnknownWithThePath(t *testing.T) {
 	}
 }
 
+func TestMemoryDirectoryResolvesTheProjectDirectory(t *testing.T) {
+	home := t.TempDir()
+	toplevel := filepath.Join(t.TempDir(), "checkout")
+	installation := filepath.Join(toplevel, "metasystem")
+	want := filepath.Join(home, ".claude", "projects", claudeSlug(toplevel), "memory")
+	if err := os.MkdirAll(want, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	got, reason := MemoryDirectory(ReadOptions{Home: home, Toplevel: toplevel, Installation: installation})
+	if got != want || reason != "" {
+		t.Fatalf("memory directory = %q reason=%q, want %q", got, reason, want)
+	}
+}
+
+func TestMemoryDirectoryRefusesEscapes(t *testing.T) {
+	t.Run("transcript path is not an input", func(t *testing.T) {
+		home := t.TempDir()
+		transcriptDirectory := filepath.Join(t.TempDir(), "memory")
+		if err := os.MkdirAll(transcriptDirectory, 0o755); err != nil {
+			t.Fatal(err)
+		}
+		got, reason := MemoryDirectory(ReadOptions{Home: home, Toplevel: "/expected/project", Transcript: transcriptDirectory})
+		if got != "" || !strings.Contains(reason, "no memory directory") {
+			t.Fatalf("transcript selected memory directory %q reason=%q", got, reason)
+		}
+	})
+	t.Run("another project slug", func(t *testing.T) {
+		home := t.TempDir()
+		other := filepath.Join(home, ".claude", "projects", claudeSlug("/other/project"), "memory")
+		if err := os.MkdirAll(other, 0o755); err != nil {
+			t.Fatal(err)
+		}
+		got, reason := MemoryDirectory(ReadOptions{Home: home, Toplevel: "/expected/project"})
+		if got != "" || !strings.Contains(reason, claudeSlug("/expected/project")) {
+			t.Fatalf("other slug selected memory directory %q reason=%q", got, reason)
+		}
+	})
+	t.Run("symlinked memory directory", func(t *testing.T) {
+		home := t.TempDir()
+		project := "/expected/project"
+		memory := filepath.Join(home, ".claude", "projects", claudeSlug(project), "memory")
+		if err := os.MkdirAll(filepath.Dir(memory), 0o755); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.Symlink(t.TempDir(), memory); err != nil {
+			t.Fatal(err)
+		}
+		got, reason := MemoryDirectory(ReadOptions{Home: home, Toplevel: project})
+		if got != "" || !strings.Contains(reason, "no memory directory") {
+			t.Fatalf("symlink selected memory directory %q reason=%q", got, reason)
+		}
+	})
+}
+
 func TestCallsFiltersBySinceAndRegistersSessionsOnce(t *testing.T) {
 	stateRoot := t.TempDir()
 	home := t.TempDir()
