@@ -723,7 +723,16 @@ func (v *goalBranchTestChanges) Set(value string) error {
 	return nil
 }
 
+type goalBranchCommitDependencies struct {
+	Gate  func(string) (string, error)
+	NewID func(string) (string, error)
+}
+
 func runGoalBranchCommit(args []string) int {
+	return runGoalBranchCommitWith(args, goalBranchCommitDependencies{Gate: readGate})
+}
+
+func runGoalBranchCommitWith(args []string, dependencies goalBranchCommitDependencies) int {
 	flags := flag.NewFlagSet("goal branch commit", flag.ContinueOnError)
 	root := pathFlag(flags, "root", ".", "checkout root")
 	goalID := flags.String("goal", "", "goal id")
@@ -770,12 +779,21 @@ func runGoalBranchCommit(args []string) int {
 	if branch.Kind(*kindName) == branch.Read {
 		var commit string
 		err = withGoalBranchCommitToken(*root, func() error {
-			var commitErr error
-			commit, _, commitErr = branch.CommitRead(branch.CommitReadRequest{
+			request := branch.CommitReadRequest{
 				Repo: *root, Remote: endpoint.Remote, EndpointTip: endpointTip, GoalID: *goalID, Units: units, OpID: operationID,
 				CheckClaim: check, RootJob: *rootJob, ReaderRecord: *readerRecord, Carry: *carry,
-				GateRunID: *gateRun, GateTree: *gateTree, TestsChanged: tests,
-			})
+				TestsChanged: tests,
+			}
+			observation, observeErr := branch.ResolveCommitReadGate(request, dependencies.Gate, dependencies.NewID)
+			if observeErr != nil {
+				return observeErr
+			}
+			if (*gateRun != "" && *gateRun != observation.RunID) || (*gateTree != "" && *gateTree != observation.Tree) {
+				return fmt.Errorf("%s: recorded fast-gate observation is run %s on tree %s", branch.ReadUngatedCode, observation.RunID, observation.Tree)
+			}
+			request.GateRunID, request.GateTree = observation.RunID, observation.Tree
+			var commitErr error
+			commit, _, commitErr = branch.CommitRead(request)
 			return commitErr
 		})
 		if err != nil {

@@ -19,11 +19,12 @@ const (
 type Class string
 
 const (
-	ClassExcluded  Class = "excluded"
-	ClassRead      Class = "read"
-	ClassReadProse Class = "read-prose"
-	ClassPlan      Class = "plan"
-	ClassUnit      Class = "unit"
+	ClassExcluded    Class = "excluded"
+	ClassRead        Class = "read"
+	ClassReadClosure Class = "read-closure"
+	ClassReadProse   Class = "read-prose"
+	ClassPlan        Class = "plan"
+	ClassUnit        Class = "unit"
 )
 
 type KindInfo struct {
@@ -149,6 +150,16 @@ func readPath(path string) (goal, commit string, ok bool) {
 	return goal, commit, ok && ok2 && goal != "" && !strings.Contains(file, "/") && hex40(commit)
 }
 
+func readClosurePath(path string) (goal, commit string, ok bool) {
+	rest, ok := strings.CutPrefix(path, "metasystem/records/reads/")
+	if !ok {
+		return "", "", false
+	}
+	goal, file, ok := strings.Cut(rest, "/")
+	commit, ok2 := strings.CutSuffix(file, ".closure.json")
+	return goal, commit, ok && ok2 && goal != "" && !strings.Contains(file, "/") && hex40(commit)
+}
+
 func PathClass(path string) Class {
 	for _, excluded := range landing.WorkspaceExclusions() {
 		name := "metasystem/" + strings.TrimSuffix(excluded, "/")
@@ -158,6 +169,9 @@ func PathClass(path string) Class {
 	}
 	if _, _, ok := readPath(path); ok {
 		return ClassRead
+	}
+	if _, _, ok := readClosurePath(path); ok {
+		return ClassReadClosure
 	}
 	if path == "metasystem/records/reads" || strings.HasPrefix(path, "metasystem/records/reads/") {
 		return ClassExcluded
@@ -202,7 +216,7 @@ func ValidateRange(repo, endpointTip, tip, goalID string) ([]Commit, error) {
 		if err != nil {
 			return nil, err
 		}
-		reads, prose := 0, 0
+		reads, closures, prose := 0, 0, 0
 		if kind.Kind == Unit && len(entries) == 0 {
 			return nil, refuse(id, "kind unit requires at least one tree entry")
 		}
@@ -216,6 +230,10 @@ func ValidateRange(repo, endpointTip, tip, goalID string) ([]Commit, error) {
 					g, c, _ := readPath(entry.Path)
 					reads++
 					allowed = reads == 1 && g == goalID && c == kind.CommitID
+				case ClassReadClosure:
+					g, c, _ := readClosurePath(entry.Path)
+					closures++
+					allowed = closures == 1 && g == goalID && c == kind.CommitID
 				case ClassReadProse:
 					prose++
 					allowed = prose <= 1

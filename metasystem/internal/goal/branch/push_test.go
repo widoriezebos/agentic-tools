@@ -76,6 +76,34 @@ func TestPushPublishesAmendAndSecondCloneAdopts(t *testing.T) {
 	}
 }
 
+func TestAdoptRemoteTipRestoresHeadWhenTheRefUpdateFails(t *testing.T) {
+	f := newBranchFixture(t)
+	first := commitUnit(t, f, "u1", "metasystem/code.go", "one")
+	if _, err := branch.Push(pushRequest(f, "restore-first")); err != nil {
+		t.Fatal(err)
+	}
+	other := cloneBranchFixture(t, f)
+	if _, err := branch.Push(pushRequest(other, "restore-adopt")); err != nil {
+		t.Fatal(err)
+	}
+	commitUnit(t, other, "u2", "metasystem/other.go", "two")
+	if _, err := branch.Push(pushRequest(other, "restore-second")); err != nil {
+		t.Fatal(err)
+	}
+	request := pushRequest(f, "restore-failed-update")
+	request.Hooks.BeforeAdoptionRefMove = func() error {
+		moved := git(t, f.root, "commit-tree", first+"^{tree}", "-p", first, "-m", "local move\n\nGoal-Plan: goal-a")
+		git(t, f.root, "update-ref", "refs/heads/goal/goal-a", moved, first)
+		return nil
+	}
+	if _, err := branch.Push(request); err == nil {
+		t.Fatal("adoption with a failed ref transaction succeeded")
+	}
+	if got := git(t, f.root, "symbolic-ref", "-q", "HEAD"); got != "refs/heads/goal/goal-a" {
+		t.Fatalf("HEAD stayed detached at %s", got)
+	}
+}
+
 type unknownAfterLanding struct{ branch.GitPushTransport }
 
 func (t unknownAfterLanding) Push(repo, remote, ref, expected, tip string) (branch.CASOutcome, error) {

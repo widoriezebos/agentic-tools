@@ -1,6 +1,9 @@
 package branch_test
 
 import (
+	"crypto/sha256"
+	"encoding/hex"
+	"encoding/json"
 	"errors"
 	"os"
 	"path/filepath"
@@ -11,6 +14,162 @@ import (
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/gittree"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/goal/branch"
 )
+
+func TestBindLandedUnitRefusesOmittedFold(t *testing.T) {
+	f := newBranchFixture(t)
+	write(t, f.root, "metasystem/code.go", "base code")
+	write(t, f.root, "metasystem/plans/goal-a.md", "base plan")
+	git(t, f.root, "add", ".")
+	git(t, f.root, "commit", "-qm", "fold base")
+	git(t, f.root, "push", "-q", "origin", "HEAD:main")
+	f.base = git(t, f.root, "rev-parse", "HEAD")
+	stage(t, f, "metasystem/plans/goal-a.md", "folded plan")
+	if _, err := branch.CommitStaged(branch.CommitRequest{Repo: f.root, Remote: "origin", EndpointTip: f.base,
+		GoalID: "goal-a", OpID: "fold-plan", Kind: branch.Plan, CheckClaim: claimAllowed}); err != nil {
+		t.Fatal(err)
+	}
+	unit := commitUnit(t, f, "u1", "metasystem/code.go", "unit code")
+	writeReadJob(t, f.root, "critic-fold", unit, "completed", false)
+	readCommit, _, err := branch.CommitRead(branch.CommitReadRequest{Repo: f.root, Remote: "origin", EndpointTip: f.base,
+		GoalID: "goal-a", Unit: "u1", OpID: "fold-read", RootJob: "critic-fold", CheckClaim: claimAllowed,
+		GateRunID: "fold-fast", GateTree: unitTree(t, f, unit)})
+	if err != nil {
+		t.Fatal(err)
+	}
+	git(t, f.root, "switch", "--quiet", "--detach", unit)
+	write(t, f.root, "metasystem/plans/goal-a.md", "base plan")
+	omitted, err := (gittree.Workspace{Dir: f.root}).Snapshot(unit)
+	if err != nil {
+		t.Fatal(err)
+	}
+	baseTree := git(t, f.root, "rev-parse", f.base+"^{tree}")
+	if _, err := branch.BindLandedUnit(f.root, readCommit, f.base, "goal-a", unit, baseTree, omitted); err == nil ||
+		!strings.Contains(err.Error(), "metasystem/plans/goal-a.md") {
+		t.Fatalf("omitted fold = %v", err)
+	}
+	applied := unitTree(t, f, unit)
+	if _, err := branch.BindLandedUnit(f.root, readCommit, f.base, "goal-a", unit, baseTree, applied); err != nil {
+		t.Fatalf("applied fold: %v", err)
+	}
+}
+
+func rewriteLegacyAttestation(t *testing.T, root, path string) {
+	t.Helper()
+	data, err := os.ReadFile(filepath.Join(root, filepath.FromSlash(path)))
+	if err != nil {
+		t.Fatal(err)
+	}
+	var att branch.Attestation
+	if err := json.Unmarshal(data, &att); err != nil {
+		t.Fatal(err)
+	}
+	att.Source.ClosureSHA256 = ""
+	att.SHA256 = ""
+	digestInput, err := json.Marshal(att)
+	if err != nil {
+		t.Fatal(err)
+	}
+	sum := sha256.Sum256(digestInput)
+	att.SHA256 = hex.EncodeToString(sum[:])
+	data, err = json.MarshalIndent(att, "", "  ")
+	if err != nil {
+		t.Fatal(err)
+	}
+	write(t, root, path, string(append(data, '\n')))
+}
+
+func TestCriticAttestationSurvivesFreshCloneWithoutJobStore(t *testing.T) {
+	f := newBranchFixture(t)
+	unit := commitUnit(t, f, "u1", "metasystem/code.go", "one")
+	writeReadJob(t, f.root, "critic-portable", unit, "completed", false)
+	readCommit, att, err := branch.CommitRead(branch.CommitReadRequest{Repo: f.root, Remote: "origin", EndpointTip: f.base,
+		GoalID: "goal-a", Unit: "u1", OpID: "portable-read", RootJob: "critic-portable", CheckClaim: claimAllowed,
+		GateRunID: "portable-fast", GateTree: unitTree(t, f, unit)})
+	if err != nil || att.Source.ClosureSHA256 == "" {
+		t.Fatalf("portable read=%s source=%+v err=%v", readCommit, att.Source, err)
+	}
+	if _, err := branch.Push(pushRequest(f, "portable-push")); err != nil {
+		t.Fatal(err)
+	}
+	clone := filepath.Join(t.TempDir(), "fresh")
+	git(t, filepath.Dir(clone), "clone", "-q", "--branch", "goal/goal-a", f.origin, clone)
+	if _, err := os.Stat(filepath.Join(clone, "artifacts", "agents")); !os.IsNotExist(err) {
+		t.Fatalf("fresh clone unexpectedly has job store: %v", err)
+	}
+	baseTree := git(t, clone, "rev-parse", f.base+"^{tree}")
+	unitTree := git(t, clone, "rev-parse", unit+"^{tree}")
+	if _, err := branch.BindLandedUnit(clone, readCommit, f.base, "goal-a", unit, baseTree, unitTree); err != nil {
+		t.Fatalf("portable closure in fresh clone: %v", err)
+	}
+
+	bundlePath := "metasystem/records/reads/goal-a/" + unit + ".closure.json"
+	bundle, err := os.ReadFile(filepath.Join(clone, filepath.FromSlash(bundlePath)))
+	if err != nil {
+		t.Fatal(err)
+	}
+	write(t, clone, bundlePath, string(append(bundle, ' ')))
+	git(t, clone, "add", bundlePath)
+	git(t, clone, "commit", "-qm", "tampered closure snapshot")
+	tampered := git(t, clone, "rev-parse", "HEAD")
+	if _, err := branch.ValidateAttestationAt(clone, tampered, f.base, "goal-a", "u1", unit); err == nil || !strings.Contains(err.Error(), "fails its digest") {
+		t.Fatalf("tampered closure = %v", err)
+	}
+	for _, unsafe := range []string{"../escape.json", "/absolute.json", "C:/absolute.json"} {
+		git(t, clone, "switch", "--quiet", "--detach", readCommit)
+		var bundleDocument struct {
+			SchemaVersion int               `json:"schemaVersion"`
+			RootJob       string            `json:"rootJob"`
+			Files         map[string]string `json:"files"`
+		}
+		if err := json.Unmarshal(bundle, &bundleDocument); err != nil {
+			t.Fatal(err)
+		}
+		bundleDocument.Files[unsafe] = "{}\n"
+		maliciousBundle, err := json.MarshalIndent(bundleDocument, "", "  ")
+		if err != nil {
+			t.Fatal(err)
+		}
+		maliciousBundle = append(maliciousBundle, '\n')
+		bundleSum := sha256.Sum256(maliciousBundle)
+		attestationData, err := os.ReadFile(filepath.Join(clone, filepath.FromSlash("metasystem/records/reads/goal-a/"+unit+".json")))
+		if err != nil {
+			t.Fatal(err)
+		}
+		var maliciousAttestation branch.Attestation
+		if err := json.Unmarshal(attestationData, &maliciousAttestation); err != nil {
+			t.Fatal(err)
+		}
+		maliciousAttestation.Source.ClosureSHA256 = hex.EncodeToString(bundleSum[:])
+		maliciousAttestation.SHA256 = ""
+		attestationDigestInput, _ := json.Marshal(maliciousAttestation)
+		attestationSum := sha256.Sum256(attestationDigestInput)
+		maliciousAttestation.SHA256 = hex.EncodeToString(attestationSum[:])
+		maliciousData, _ := json.MarshalIndent(maliciousAttestation, "", "  ")
+		write(t, clone, bundlePath, string(maliciousBundle))
+		write(t, clone, "metasystem/records/reads/goal-a/"+unit+".json", string(append(maliciousData, '\n')))
+		git(t, clone, "add", "metasystem/records/reads/goal-a")
+		git(t, clone, "commit", "-qm", "unsafe closure snapshot")
+		unsafeSnapshot := git(t, clone, "rev-parse", "HEAD")
+		if _, err := branch.ValidateAttestationAt(clone, unsafeSnapshot, f.base, "goal-a", "u1", unit); err == nil || !strings.Contains(err.Error(), "unsafe path") {
+			t.Fatalf("unsafe closure path %q = %v", unsafe, err)
+		}
+	}
+
+	attestationPath := "metasystem/records/reads/goal-a/" + unit + ".json"
+	rewriteLegacyAttestation(t, f.root, attestationPath)
+	git(t, f.root, "add", attestationPath)
+	git(t, f.root, "rm", "-q", bundlePath)
+	git(t, f.root, "commit", "-qm", "legacy attestation snapshot")
+	legacy := git(t, f.root, "rev-parse", "HEAD")
+	if _, err := branch.ValidateAttestationAt(f.root, legacy, f.base, "goal-a", "u1", unit); err != nil {
+		t.Fatalf("legacy attestation with local job store: %v", err)
+	}
+	git(t, f.root, "push", "-q", "origin", legacy+":refs/heads/legacy-attestation")
+	git(t, clone, "fetch", "-q", "origin", "legacy-attestation")
+	if _, err := branch.ValidateAttestationAt(clone, legacy, f.base, "goal-a", "u1", unit); err == nil || !strings.Contains(err.Error(), "code-critic root") {
+		t.Fatalf("legacy attestation without local job store = %v", err)
+	}
+}
 
 func writeReadJob(t *testing.T, root, job, commit, status string, openFinding bool) {
 	t.Helper()

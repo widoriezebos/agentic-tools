@@ -31,11 +31,12 @@ type AttestationSubject struct {
 }
 
 type AttestationSource struct {
-	Kind         string `json:"kind"`
-	RootJob      string `json:"rootJob,omitempty"`
-	Round        int64  `json:"round,omitempty"`
-	ReaderRecord string `json:"readerRecord,omitempty"`
-	RecordSHA256 string `json:"recordSha256,omitempty"`
+	Kind          string `json:"kind"`
+	RootJob       string `json:"rootJob,omitempty"`
+	Round         int64  `json:"round,omitempty"`
+	ClosureSHA256 string `json:"closureSha256,omitempty"`
+	ReaderRecord  string `json:"readerRecord,omitempty"`
+	RecordSHA256  string `json:"recordSha256,omitempty"`
 }
 
 type GateObservation struct {
@@ -76,6 +77,12 @@ type Attestation struct {
 	SHA256        string             `json:"sha256"`
 }
 
+type closureBundle struct {
+	SchemaVersion int               `json:"schemaVersion"`
+	RootJob       string            `json:"rootJob"`
+	Files         map[string]string `json:"files"`
+}
+
 type CommitReadRequest struct {
 	Repo, Remote, EndpointTip, GoalID, Unit, OpID string
 	Units                                         []string
@@ -105,6 +112,10 @@ func (e *LandedUnitError) LandingAttestationCode() string { return e.Code }
 
 func attestationPath(goalID, commit string) string {
 	return "metasystem/records/reads/" + goalID + "/" + commit + ".json"
+}
+
+func closureBundlePath(goalID, commit string) string {
+	return "metasystem/records/reads/" + goalID + "/" + commit + ".closure.json"
 }
 
 func computeSubject(repo, commit string) (AttestationSubject, readsubject.ReadSubject, error) {
@@ -240,29 +251,40 @@ func fileSHA256At(repo, snapshot, path string) (string, []byte, error) {
 	return hex.EncodeToString(sum[:]), data, nil
 }
 
-func directSource(req CommitReadRequest, subject AttestationSubject, read readsubject.ReadSubject) (AttestationSource, error) {
+func directSource(req CommitReadRequest, subject AttestationSubject, read readsubject.ReadSubject) (AttestationSource, []byte, error) {
 	if (req.RootJob == "") == (req.ReaderRecord == "") {
-		return AttestationSource{}, fmt.Errorf("read needs exactly one of --root-job or --reader-record")
+		return AttestationSource{}, nil, fmt.Errorf("read needs exactly one of --root-job or --reader-record")
 	}
 	if req.RootJob != "" {
-		closure, err := dispatch.ValidateCommitCriticClosure(req.Repo, req.RootJob, read)
+		closure, files, err := dispatch.CommitCriticClosureFiles(filepath.Join(req.Repo, "artifacts", "agents"), req.RootJob, read)
 		if err != nil {
-			return AttestationSource{}, err
+			return AttestationSource{}, nil, err
 		}
-		return AttestationSource{Kind: "critic-root", RootJob: req.RootJob, Round: closure.Round}, nil
+		bundle := closureBundle{SchemaVersion: 1, RootJob: req.RootJob, Files: make(map[string]string, len(files))}
+		for path, data := range files {
+			bundle.Files[path] = string(data)
+		}
+		data, err := json.MarshalIndent(bundle, "", "  ")
+		if err != nil {
+			return AttestationSource{}, nil, err
+		}
+		data = append(data, '\n')
+		sum := sha256.Sum256(data)
+		return AttestationSource{Kind: "critic-root", RootJob: req.RootJob, Round: closure.Round,
+			ClosureSHA256: hex.EncodeToString(sum[:])}, data, nil
 	}
 	if !safeReaderRecord(req.ReaderRecord) {
-		return AttestationSource{}, fmt.Errorf("reader record must be a repository-relative path under metasystem/records/misc")
+		return AttestationSource{}, nil, fmt.Errorf("reader record must be a repository-relative path under metasystem/records/misc")
 	}
 	digest, data, err := fileSHA256(filepath.Join(req.Repo, filepath.FromSlash(req.ReaderRecord)))
 	if err != nil {
-		return AttestationSource{}, err
+		return AttestationSource{}, nil, err
 	}
 	text := string(data)
 	if !strings.Contains(text, subject.Commit) || !strings.Contains(text, subject.UnitDigest) {
-		return AttestationSource{}, fmt.Errorf("reader record must name commit %s and unit digest %s", subject.Commit, subject.UnitDigest)
+		return AttestationSource{}, nil, fmt.Errorf("reader record must name commit %s and unit digest %s", subject.Commit, subject.UnitDigest)
 	}
-	return AttestationSource{Kind: "reader-record", ReaderRecord: req.ReaderRecord, RecordSHA256: digest}, nil
+	return AttestationSource{Kind: "reader-record", ReaderRecord: req.ReaderRecord, RecordSHA256: digest}, nil, nil
 }
 
 func sameFoldDigests(a, b []Fold) bool {
@@ -294,6 +316,68 @@ func readAttestationAt(repo, snapshot, goalID, commit string) (Attestation, erro
 		return Attestation{}, operationRefusal(ReadInvalidCode, "attestation %s is not in its canonical form", rel)
 	}
 	return att, nil
+}
+
+func safeClosureBundlePath(path string) bool {
+	windowsAbsolute := len(path) >= 3 && ((path[0] >= 'a' && path[0] <= 'z') || (path[0] >= 'A' && path[0] <= 'Z')) && path[1] == ':' && path[2] == '/'
+	if path == "" || filepath.IsAbs(path) || filepath.VolumeName(path) != "" || windowsAbsolute || strings.Contains(path, `\`) {
+		return false
+	}
+	clean := filepath.ToSlash(filepath.Clean(filepath.FromSlash(path)))
+	return clean == path && clean != "." && clean != ".." && !strings.HasPrefix(clean, "../")
+}
+
+func withClosureBundle(repo, snapshot, goalID, commit string, source AttestationSource, use func(string) error) error {
+	path := closureBundlePath(goalID, commit)
+	data, err := fileAt(repo, snapshot, path)
+	if err != nil {
+		return operationRefusal(ReadInvalidCode, "critic closure bundle for %s is unreadable", commit)
+	}
+	sum := sha256.Sum256(data)
+	if hex.EncodeToString(sum[:]) != source.ClosureSHA256 {
+		return operationRefusal(ReadInvalidCode, "critic closure bundle for %s fails its digest", commit)
+	}
+	var bundle closureBundle
+	decoder := json.NewDecoder(bytes.NewReader(data))
+	decoder.DisallowUnknownFields()
+	if err := decoder.Decode(&bundle); err != nil || bundle.SchemaVersion != 1 || bundle.RootJob != source.RootJob {
+		return operationRefusal(ReadInvalidCode, "critic closure bundle for %s is malformed", commit)
+	}
+	canonical, err := json.MarshalIndent(bundle, "", "  ")
+	if err != nil || !bytes.Equal(data, append(canonical, '\n')) {
+		return operationRefusal(ReadInvalidCode, "critic closure bundle for %s is not in its canonical form", commit)
+	}
+	temporary, err := os.MkdirTemp("", "goal-read-closure-*")
+	if err != nil {
+		return err
+	}
+	defer os.RemoveAll(temporary)
+	for path, content := range bundle.Files {
+		if !safeClosureBundlePath(path) {
+			return operationRefusal(ReadInvalidCode, "critic closure bundle for %s has unsafe path %q", commit, path)
+		}
+		target := filepath.Join(temporary, filepath.FromSlash(path))
+		if err := os.MkdirAll(filepath.Dir(target), 0o755); err != nil {
+			return err
+		}
+		if err := os.WriteFile(target, []byte(content), 0o644); err != nil {
+			return err
+		}
+	}
+	return use(temporary)
+}
+
+func validateCriticSource(repo, snapshot, goalID, commit string, source AttestationSource, read readsubject.ReadSubject) (readsubject.Closure, error) {
+	var closure readsubject.Closure
+	var err error
+	if source.ClosureSHA256 == "" {
+		return dispatch.ValidateCommitCriticClosure(repo, source.RootJob, read)
+	}
+	err = withClosureBundle(repo, snapshot, goalID, commit, source, func(agentsRoot string) error {
+		closure, err = dispatch.ValidateCommitCriticClosureAt(agentsRoot, source.RootJob, read)
+		return err
+	})
+	return closure, err
 }
 
 func validateAttestation(repo, snapshot, endpointTip, goalID, unit, commit string, seen map[string]bool) (Attestation, error) {
@@ -339,12 +423,12 @@ func validateAttestation(repo, snapshot, endpointTip, goalID, unit, commit strin
 	}
 	switch att.Source.Kind {
 	case "critic-root":
-		closure, err := dispatch.ValidateCommitCriticClosure(repo, att.Source.RootJob, read)
+		closure, err := validateCriticSource(repo, snapshot, goalID, commit, att.Source, read)
 		if err != nil || closure.Round != att.Source.Round {
-			return Attestation{}, operationRefusal(ReadInvalidCode, "critic source for %s is not a clean bound closure", commit)
+			return Attestation{}, operationRefusal(ReadInvalidCode, "critic source for %s is not a clean bound closure: %v", commit, err)
 		}
 	case "reader-record":
-		if !safeReaderRecord(att.Source.ReaderRecord) {
+		if att.Source.ClosureSHA256 != "" || !safeReaderRecord(att.Source.ReaderRecord) {
 			return Attestation{}, operationRefusal(ReadInvalidCode, "reader record path is outside records/misc")
 		}
 		digest, data, err := fileSHA256At(repo, snapshot, att.Source.ReaderRecord)
@@ -407,8 +491,8 @@ func treeEntryAt(repo, tree, path string) (string, error) {
 	return meta, nil
 }
 
-func rootGoalRevision(repo, job, goalID string) (uint64, error) {
-	record, err := dispatch.ReadRecordObject(filepath.Join(repo, "artifacts", "agents", "jobs", job+".json"))
+func rootGoalRevisionAt(agentsRoot, job, goalID string) (uint64, error) {
+	record, err := dispatch.ReadRecordObject(filepath.Join(agentsRoot, "jobs", job+".json"))
 	if err != nil {
 		return 0, err
 	}
@@ -418,6 +502,19 @@ func rootGoalRevision(repo, job, goalID string) (uint64, error) {
 		return 0, fmt.Errorf("critic root %s is not bound to goal %s at a revision", job, goalID)
 	}
 	return revision, nil
+}
+
+func attestedGoalRevision(repo, snapshot, goalID, commit string, source AttestationSource) (uint64, error) {
+	if source.ClosureSHA256 == "" {
+		return rootGoalRevisionAt(filepath.Join(repo, "artifacts", "agents"), source.RootJob, goalID)
+	}
+	var revision uint64
+	err := withClosureBundle(repo, snapshot, goalID, commit, source, func(agentsRoot string) error {
+		var err error
+		revision, err = rootGoalRevisionAt(agentsRoot, source.RootJob, goalID)
+		return err
+	})
+	return revision, err
 }
 
 // BindLandedUnit validates the persisted evidence and binds one prospective
@@ -449,7 +546,7 @@ func BindLandedUnit(repo, snapshot, endpointTip, goalID, commit, beforeTree, aft
 	if att.Source.Kind != "critic-root" {
 		return result, nil
 	}
-	result.GoalRevision, err = rootGoalRevision(repo, att.Source.RootJob, goalID)
+	result.GoalRevision, err = attestedGoalRevision(repo, snapshot, goalID, commit, att.Source)
 	if err != nil {
 		return LandedUnit{}, &LandedUnitError{Code: "invalid", Err: err}
 	}
@@ -490,10 +587,10 @@ func BindLandedUnit(repo, snapshot, endpointTip, goalID, commit, beforeTree, aft
 		}
 	}
 	for path, foldCommit := range lastFold {
-		before, beforeErr := treeEntryAt(repo, beforeTree, path)
+		_, beforeErr := treeEntryAt(repo, beforeTree, path)
 		after, afterErr := treeEntryAt(repo, afterTree, path)
 		want, wantErr := treeEntryAt(repo, foldCommit, prefix+path)
-		if beforeErr != nil || afterErr != nil || wantErr != nil || before != after && after != want {
+		if beforeErr != nil || afterErr != nil || wantErr != nil || after != want {
 			return LandedUnit{}, &LandedUnitError{Code: "change-mismatch", Err: fmt.Errorf("folded path %s does not match %s", path, foldCommit)}
 		}
 		result.FoldPaths = append(result.FoldPaths, path)
@@ -527,7 +624,7 @@ func unitCommitInRange(repo, endpointTip, tip, goalID string, units []string) (s
 	return "", operationRefusal(ReadInvalidCode, "goal branch has no build %s", unitList(units))
 }
 
-func prospectiveReadPatch(repo, attestationPath string, data []byte, readerRecord string) ([]byte, error) {
+func prospectiveReadPatch(repo string, generated map[string][]byte, readerRecord string) ([]byte, error) {
 	scratch, err := os.MkdirTemp("", "goal-read-index-*")
 	if err != nil {
 		return nil, err
@@ -541,13 +638,15 @@ func prospectiveReadPatch(repo, attestationPath string, data []byte, readerRecor
 	if _, err := gitInputEnv(repo, env, nil, "read-tree", strings.TrimSpace(string(tree))); err != nil {
 		return nil, err
 	}
-	blob, err := gitInput(repo, data, "hash-object", "-w", "--path="+attestationPath, "--stdin")
-	if err != nil {
-		return nil, err
-	}
-	entry := "100644," + strings.TrimSpace(string(blob)) + "," + attestationPath
-	if _, err := gitInputEnv(repo, env, nil, "update-index", "--add", "--cacheinfo", entry); err != nil {
-		return nil, err
+	for path, data := range generated {
+		blob, err := gitInput(repo, data, "hash-object", "-w", "--path="+path, "--stdin")
+		if err != nil {
+			return nil, err
+		}
+		entry := "100644," + strings.TrimSpace(string(blob)) + "," + path
+		if _, err := gitInputEnv(repo, env, nil, "update-index", "--add", "--cacheinfo", entry); err != nil {
+			return nil, err
+		}
 	}
 	if readerRecord != "" {
 		if _, err := gitInputEnv(repo, env, nil, "add", "--", readerRecord); err != nil {
@@ -601,6 +700,7 @@ func CommitRead(req CommitReadRequest) (string, Attestation, error) {
 		Verdict: "LAND", Gate: GateObservation{Kind: "go-gate-fast", Tree: req.GateTree, RunID: req.GateRunID},
 		Folds: folds, TestsChanged: append([]TestChange(nil), req.TestsChanged...),
 	}
+	var bundleData []byte
 	sort.Slice(att.TestsChanged, func(i, j int) bool { return att.TestsChanged[i].Path < att.TestsChanged[j].Path })
 	if req.Carry != "" {
 		prior, err := ValidateAttestation(req.Repo, req.EndpointTip, req.GoalID, list, req.Carry)
@@ -611,9 +711,15 @@ func CommitRead(req CommitReadRequest) (string, Attestation, error) {
 			return "", Attestation{}, operationRefusal(ReadStaleCode, "carry from %s does not preserve the unit and fold bytes", req.Carry)
 		}
 		att.Source = prior.Source
+		if prior.Source.ClosureSHA256 != "" {
+			bundleData, err = fileAt(req.Repo, "", closureBundlePath(req.GoalID, req.Carry))
+			if err != nil {
+				return "", Attestation{}, err
+			}
+		}
 		att.Carry = &Carry{FromCommit: req.Carry, FromTree: prior.Subject.Tree, ToCommit: unitCommit, ToTree: subject.Tree}
 	} else {
-		att.Source, err = directSource(req, subject, read)
+		att.Source, bundleData, err = directSource(req, subject, read)
 		if err != nil {
 			return "", Attestation{}, err
 		}
@@ -628,11 +734,20 @@ func CommitRead(req CommitReadRequest) (string, Attestation, error) {
 	}
 	data = append(data, '\n')
 	rel := attestationPath(req.GoalID, unitCommit)
+	bundleRel := ""
+	generated := map[string][]byte{rel: data}
+	if len(bundleData) != 0 {
+		bundleRel = closureBundlePath(req.GoalID, unitCommit)
+		generated[bundleRel] = bundleData
+	}
 	paths, err := stagedPaths(req.Repo)
 	if err != nil {
 		return "", Attestation{}, err
 	}
 	paths = append(paths, rel)
+	if bundleRel != "" {
+		paths = append(paths, bundleRel)
+	}
 	if att.Source.Kind == "reader-record" && att.Carry == nil {
 		paths = append(paths, att.Source.ReaderRecord)
 	}
@@ -643,10 +758,10 @@ func CommitRead(req CommitReadRequest) (string, Attestation, error) {
 	if att.Source.Kind == "reader-record" && att.Carry == nil {
 		readerRecord = att.Source.ReaderRecord
 	}
-	if err := adoptionCheckoutClean(commitReq, state, []string{rel, readerRecord}); err != nil {
+	if err := adoptionCheckoutClean(commitReq, state, []string{rel, bundleRel, readerRecord}); err != nil {
 		return "", Attestation{}, err
 	}
-	patch, err := prospectiveReadPatch(req.Repo, rel, data, readerRecord)
+	patch, err := prospectiveReadPatch(req.Repo, generated, readerRecord)
 	if err != nil {
 		return "", Attestation{}, err
 	}
@@ -658,14 +773,19 @@ func CommitRead(req CommitReadRequest) (string, Attestation, error) {
 	if err != nil {
 		return "", Attestation{}, err
 	}
-	abs := filepath.Join(req.Repo, filepath.FromSlash(rel))
-	if err := os.MkdirAll(filepath.Dir(abs), 0o755); err != nil {
-		return "", Attestation{}, err
-	}
-	if err := os.WriteFile(abs, data, 0o644); err != nil {
-		return "", Attestation{}, err
+	for path, contents := range generated {
+		abs := filepath.Join(req.Repo, filepath.FromSlash(path))
+		if err := os.MkdirAll(filepath.Dir(abs), 0o755); err != nil {
+			return "", Attestation{}, err
+		}
+		if err := os.WriteFile(abs, contents, 0o644); err != nil {
+			return "", Attestation{}, err
+		}
 	}
 	paths = []string{rel}
+	if bundleRel != "" {
+		paths = append(paths, bundleRel)
+	}
 	if att.Source.Kind == "reader-record" && att.Carry == nil {
 		paths = append(paths, att.Source.ReaderRecord)
 	}

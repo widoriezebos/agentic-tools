@@ -130,11 +130,12 @@ func testBudget() Budget {
 
 func verbReq(root, ulid, machine string) VerbRequest {
 	return VerbRequest{
-		Endpoint:   endpointFor(root),
-		Actor:      Actor{Machine: machine, Lineage: "lin-1"},
-		Ulid:       ulid,
-		Now:        time.Date(2026, 8, 20, 22, 0, 0, 0, time.UTC),
-		ClaimEpoch: 1,
+		Endpoint:        endpointFor(root),
+		Actor:           Actor{Machine: machine, Lineage: "lin-1"},
+		Ulid:            ulid,
+		Now:             time.Date(2026, 8, 20, 22, 0, 0, 0, time.UTC),
+		ClaimEpoch:      1,
+		ParkBranchCheck: func(string, string) (string, error) { return "", nil },
 	}
 }
 

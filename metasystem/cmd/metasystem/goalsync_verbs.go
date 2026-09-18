@@ -504,7 +504,7 @@ func runGoalRecover(args []string) int {
 		fmt.Fprintf(os.Stderr, "goal recover: %v\n", err)
 		return 1
 	}
-	reports, err := goal.RecoverWithPolicy(endpoint, dispatchcore.GoalRecoveryPolicy{Now: now})
+	reports, err := goal.RecoverWithPolicy(endpoint, goalRecoveryPolicy{GoalRecoveryPolicy: dispatchcore.GoalRecoveryPolicy{Now: now}, root: *root})
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "goal recover: %v\n", err)
 		return 1

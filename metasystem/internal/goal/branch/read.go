@@ -31,6 +31,12 @@ type BranchReadResult struct {
 	State, RootJob, GateRunID, AttestationCommit string
 }
 
+type ReadGateRequest struct {
+	Repo, GoalID, UnitCommit string
+	Gate                     func(string) (string, error)
+	NewID                    func(string) (string, error)
+}
+
 type branchReadRecord struct {
 	SchemaVersion     int    `json:"schemaVersion"`
 	Goal              string `json:"goal"`
@@ -90,6 +96,76 @@ func saveBranchReadRecord(common, path string, record branchReadRecord) error {
 	}
 	_, err = atomicfile.WriteText(path, string(append(data, '\n')), common)
 	return err
+}
+
+func resolveReadGate(request ReadGateRequest, common, recordPath string, record branchReadRecord, subject AttestationSubject) (branchReadRecord, GateObservation, error) {
+	if record.GateRunID == "" {
+		if request.Gate == nil {
+			return record, GateObservation{}, fmt.Errorf("goal branch read has no gate command")
+		}
+		detached, err := (gittree.Workspace{Dir: request.Repo}).NewDetachedCommitWorktree(request.UnitCommit)
+		if err != nil {
+			return record, GateObservation{}, err
+		}
+		lastLine, gateErr := request.Gate(detached.Workspace().Dir)
+		closeErr := detached.Close()
+		if gateErr != nil {
+			return record, GateObservation{}, errors.Join(operationRefusal(ReadUngatedCode, "%s", strings.TrimSpace(lastLine)), closeErr)
+		}
+		if closeErr != nil {
+			return record, GateObservation{}, closeErr
+		}
+		newID := request.NewID
+		if newID == nil {
+			newID = branchReadID
+		}
+		record.GateRunID, err = newID("goal-read-gate")
+		if err != nil {
+			return record, GateObservation{}, err
+		}
+		if err := saveBranchReadRecord(common, recordPath, record); err != nil {
+			return record, GateObservation{}, err
+		}
+	}
+	return record, GateObservation{Kind: "go-gate-fast", Tree: subject.Tree, RunID: record.GateRunID}, nil
+}
+
+func ResolveReadGate(request ReadGateRequest) (GateObservation, error) {
+	subject, _, err := computeSubject(request.Repo, request.UnitCommit)
+	if err != nil {
+		return GateObservation{}, err
+	}
+	common, recordPath, _, err := branchReadPaths(request.Repo, request.GoalID, request.UnitCommit)
+	if err != nil {
+		return GateObservation{}, err
+	}
+	record, err := loadBranchReadRecord(recordPath)
+	if err != nil {
+		return GateObservation{}, err
+	}
+	if record.Goal != "" && (record.Goal != request.GoalID || record.UnitCommit != request.UnitCommit || record.Tree != subject.Tree) {
+		return GateObservation{}, fmt.Errorf("goal branch read record does not match the requested unit")
+	}
+	record.Goal, record.UnitCommit, record.Tree = request.GoalID, request.UnitCommit, subject.Tree
+	_, observation, err := resolveReadGate(request, common, recordPath, record, subject)
+	return observation, err
+}
+
+func ResolveCommitReadGate(request CommitReadRequest, gate func(string) (string, error), newID func(string) (string, error)) (GateObservation, error) {
+	units, err := requestUnits(CommitRequest{Unit: request.Unit, Units: request.Units})
+	if err != nil || len(units) == 0 {
+		return GateObservation{}, fmt.Errorf("read commits need one or more distinct unit names")
+	}
+	state, err := inspectCommitBranch(CommitRequest{Repo: request.Repo, Remote: request.Remote, EndpointTip: request.EndpointTip,
+		GoalID: request.GoalID, Units: units, OpID: request.OpID, Kind: Read, Transport: request.Transport})
+	if err != nil {
+		return GateObservation{}, err
+	}
+	commit, err := unitCommitInRange(request.Repo, request.EndpointTip, state.baseTip, request.GoalID, units)
+	if err != nil {
+		return GateObservation{}, err
+	}
+	return ResolveReadGate(ReadGateRequest{Repo: request.Repo, GoalID: request.GoalID, UnitCommit: commit, Gate: gate, NewID: newID})
 }
 
 func branchReadID(prefix string) (string, error) {
@@ -212,33 +288,10 @@ func RunBranchRead(request BranchReadRequest) (result BranchReadResult, err erro
 	if request.Collect {
 		return result, operationRefusal(ReadInvalidCode, "no critic root has been dispatched for unit %s", request.UnitCommit)
 	}
-	if record.GateRunID == "" {
-		if request.Gate == nil {
-			return result, fmt.Errorf("goal branch read has no gate command")
-		}
-		detached, detachErr := (gittree.Workspace{Dir: request.Repo}).NewDetachedCommitWorktree(request.UnitCommit)
-		if detachErr != nil {
-			return result, detachErr
-		}
-		lastLine, gateErr := request.Gate(detached.Workspace().Dir)
-		closeErr := detached.Close()
-		if gateErr != nil {
-			return result, errors.Join(operationRefusal(ReadUngatedCode, "%s", strings.TrimSpace(lastLine)), closeErr)
-		}
-		if closeErr != nil {
-			return result, closeErr
-		}
-		newID := request.NewID
-		if newID == nil {
-			newID = branchReadID
-		}
-		record.GateRunID, err = newID("goal-read-gate")
-		if err != nil {
-			return result, err
-		}
-		if err := saveBranchReadRecord(common, recordPath, record); err != nil {
-			return result, err
-		}
+	record, _, err = resolveReadGate(ReadGateRequest{Repo: request.Repo, GoalID: request.GoalID,
+		UnitCommit: request.UnitCommit, Gate: request.Gate, NewID: request.NewID}, common, recordPath, record, subject)
+	if err != nil {
+		return result, err
 	}
 	brief := branchReadBrief(request.GoalID, request.UnitCommit)
 	if _, err := atomicfile.WriteText(briefPath, brief, common); err != nil {

@@ -72,9 +72,10 @@ func (GitPushTransport) Push(repo, remote, ref, expected, tip string) (CASOutcom
 }
 
 type PushHooks struct {
-	AfterRemoteRead      func() error
-	AfterPush            func() error
-	AfterAdoptionRefMove func() error
+	AfterRemoteRead       func() error
+	AfterPush             func() error
+	BeforeAdoptionRefMove func() error
+	AfterAdoptionRefMove  func() error
 }
 
 type PushRequest struct {
@@ -187,7 +188,7 @@ func updateBranchAndOrigin(repo, goalID, oldBranch, newBranch, newOrigin string)
 	return err
 }
 
-func adoptRemoteTip(repo, goalID, localTip, remoteTip string, afterRefMove func() error) error {
+func adoptRemoteTip(repo, goalID, localTip, remoteTip string, beforeRefMove, afterRefMove func() error) error {
 	ref := goalBranchRef(goalID)
 	currentOut, _ := gitOutput(repo, "symbolic-ref", "-q", "HEAD")
 	current := strings.TrimSpace(string(currentOut))
@@ -212,7 +213,20 @@ func adoptRemoteTip(repo, goalID, localTip, remoteTip string, afterRefMove func(
 			return err
 		}
 	}
+	if beforeRefMove != nil {
+		if err := beforeRefMove(); err != nil {
+			if current == ref {
+				_, restoreErr := gitOutput(repo, "symbolic-ref", "HEAD", ref)
+				return errors.Join(err, restoreErr)
+			}
+			return err
+		}
+	}
 	if err := updateBranchAndOrigin(repo, goalID, localTip, remoteTip, remoteTip); err != nil {
+		if current == ref {
+			_, restoreErr := gitOutput(repo, "symbolic-ref", "HEAD", ref)
+			return errors.Join(err, restoreErr)
+		}
 		return err
 	}
 	if afterRefMove != nil {
@@ -342,7 +356,7 @@ func Push(req PushRequest) (PushResult, error) {
 		if err := fetchAndValidate(req.Repo, req.Remote, req.EndpointTip, req.GoalID, req.OpID, remoteTip, req.Transport); err != nil {
 			return PushResult{}, err
 		}
-		if err := adoptRemoteTip(req.Repo, req.GoalID, "", remoteTip, req.Hooks.AfterAdoptionRefMove); err != nil {
+		if err := adoptRemoteTip(req.Repo, req.GoalID, "", remoteTip, req.Hooks.BeforeAdoptionRefMove, req.Hooks.AfterAdoptionRefMove); err != nil {
 			return PushResult{}, err
 		}
 		return PushResult{State: "adopted", Tip: remoteTip}, nil
@@ -369,7 +383,7 @@ func Push(req PushRequest) (PushResult, error) {
 			return PushResult{}, err
 		}
 		if remoteBuiltOnLocal {
-			if err := adoptRemoteTip(req.Repo, req.GoalID, localTip, remoteTip, req.Hooks.AfterAdoptionRefMove); err != nil {
+			if err := adoptRemoteTip(req.Repo, req.GoalID, localTip, remoteTip, req.Hooks.BeforeAdoptionRefMove, req.Hooks.AfterAdoptionRefMove); err != nil {
 				return PushResult{}, err
 			}
 			return PushResult{State: "adopted", Tip: remoteTip}, nil
@@ -380,7 +394,7 @@ func Push(req PushRequest) (PushResult, error) {
 		}
 		if !builtOnRemote && !(originPresent && remoteTip == originTip) {
 			if originPresent && localTip == originTip {
-				if err := adoptRemoteTip(req.Repo, req.GoalID, localTip, remoteTip, req.Hooks.AfterAdoptionRefMove); err != nil {
+				if err := adoptRemoteTip(req.Repo, req.GoalID, localTip, remoteTip, req.Hooks.BeforeAdoptionRefMove, req.Hooks.AfterAdoptionRefMove); err != nil {
 					return PushResult{}, err
 				}
 				return PushResult{State: "adopted", Tip: remoteTip}, nil

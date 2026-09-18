@@ -37,6 +37,33 @@ import (
 
 var goalHandoverProber identity.Prober = identity.KernelProber{}
 
+type goalRecoveryPolicy struct {
+	dispatchcore.GoalRecoveryPolicy
+	root string
+}
+
+func (p goalRecoveryPolicy) ParkBranchCheck(endpoint goal.Endpoint) func(string, string) (string, error) {
+	return goalParkBranchCheck(p.root, endpoint)
+}
+
+func goalParkBranchCheck(root string, endpoint goal.Endpoint) func(string, string) (string, error) {
+	return func(goalID, next string) (string, error) {
+		readRemote := func() (string, string, bool, error) {
+			if endpoint.Branch != "refs/heads/main" {
+				return "", "", false, fmt.Errorf("GOAL_BRANCH_ENDPOINT_UNSUPPORTED: endpoint %s is not refs/heads/main", endpoint.Branch)
+			}
+			endpointTip, err := goalBranchEndpointTip(root, endpoint)
+			if err != nil {
+				return "", "", false, err
+			}
+			originTip, present, err := goalBranchOriginTip(root, endpoint, goalID)
+			return endpointTip, originTip, present, err
+		}
+		state, err := goalbranch.CheckParkBranch(root, goalID, next, readRemote)
+		return state.Summary, err
+	}
+}
+
 func bindHandoverTargetRoot(request *goal.VerbRequest, targetRoot string) {
 	request.HandoverTargetRoot = targetRoot
 }
@@ -1322,21 +1349,7 @@ func trySyncMutation(name string, args []string) (int, bool) {
 			res, err := goal.ParkArc(req, f.id, f.because)
 			return printSyncResult(res, err), true
 		}
-		req.ParkBranchCheck = func(goalID, next string) (string, error) {
-			readRemote := func() (string, string, bool, error) {
-				if req.Endpoint.Branch != "refs/heads/main" {
-					return "", "", false, fmt.Errorf("GOAL_BRANCH_ENDPOINT_UNSUPPORTED: endpoint %s is not refs/heads/main", req.Endpoint.Branch)
-				}
-				endpointTip, err := goalBranchEndpointTip(f.root, req.Endpoint)
-				if err != nil {
-					return "", "", false, err
-				}
-				originTip, present, err := goalBranchOriginTip(f.root, req.Endpoint, goalID)
-				return endpointTip, originTip, present, err
-			}
-			state, err := goalbranch.CheckParkBranch(f.root, goalID, next, readRemote)
-			return state.Summary, err
-		}
+		req.ParkBranchCheck = goalParkBranchCheck(f.root, req.Endpoint)
 		res, err := goal.Park(req, f.id, f.because)
 		return printSyncResult(res, err), true
 	case "unpark":

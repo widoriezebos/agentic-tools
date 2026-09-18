@@ -248,6 +248,12 @@ type humanAuthorityRequired struct {
 
 func (e humanAuthorityRequired) Error() string { return e.detail }
 
+type parkBranchSafetyUnavailable struct{}
+
+func (parkBranchSafetyUnavailable) Error() string {
+	return "park branch safety is unavailable; run goal park again"
+}
+
 // GradeRefused reports a valid human proof whose grade is lower than the
 // transition requires.
 type GradeRefused struct {
@@ -2284,12 +2290,12 @@ func parkRequest(r VerbRequest, id, because string) PublishRequest {
 			if f.State != StateQueued && f.State != StateApproved && f.State != StateClaimed {
 				return nil, fmt.Errorf("goal %s is %s; only queued, approved, or claimed goals park", id, f.State)
 			}
-			branchSummary := ""
-			if r.ParkBranchCheck != nil {
-				branchSummary, err = r.ParkBranchCheck(id, f.NextStep)
-				if err != nil {
-					return nil, err
-				}
+			if r.ParkBranchCheck == nil {
+				return nil, parkBranchSafetyUnavailable{}
+			}
+			branchSummary, err := r.ParkBranchCheck(id, f.NextStep)
+			if err != nil {
+				return nil, err
 			}
 			if f.Origin == OriginHuman {
 				missing := fmt.Sprintf("goal %s was opened by the human; an agent cannot silently remove a standing human reservation (park is a human act here)", id)

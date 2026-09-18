@@ -11,6 +11,18 @@ import (
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/humanauthority"
 )
 
+type fixtureParkRecoveryPolicy struct {
+	check func(string, string) (string, error)
+}
+
+func (p fixtureParkRecoveryPolicy) BreachStop(Endpoint, Entry) (PublishRequest, func(), error) {
+	return PublishRequest{}, nil, errors.New("breach-stop is outside this fixture")
+}
+
+func (p fixtureParkRecoveryPolicy) ParkBranchCheck(Endpoint) func(string, string) (string, error) {
+	return p.check
+}
+
 // strandEntry journals an operation as a dead foreign owner left it.
 func strandEntry(t *testing.T, root string, opid string, phase Phase, intent Intent) {
 	t.Helper()
@@ -305,7 +317,7 @@ func TestRecoveryRebuildsParkAndEdit(t *testing.T) {
 		Verb: "park", Targets: []string{"target"},
 		Args: map[string]string{"because": "recovered pause"},
 	})
-	if _, err := Recover(endpointFor(a)); err != nil {
+	if _, err := RecoverWithPolicy(endpointFor(a), fixtureParkRecoveryPolicy{check: func(string, string) (string, error) { return "", nil }}); err != nil {
 		t.Fatal(err)
 	}
 	p, err := Project(endpointFor(a), true, time.Now())
@@ -353,6 +365,82 @@ func TestRecoveryRebuildsParkAndEdit(t *testing.T) {
 	}
 	if !carries(edited, parkOpid) || !carries(edited, unparkOpid) || !carries(edited, editOpid) {
 		t.Fatal("each replayable recovery carries its original opid")
+	}
+}
+
+func claimedParkRecoveryFixture(t *testing.T, id string) (string, string) {
+	t.Helper()
+	_, root, _ := twoClones(t)
+	seedLedger(t, root)
+	if result, err := Open(verbReq(root, "01J5X00000000000000000PR00", "mac-a"), id, "Branch-backed work.", OriginMain, "Build u1."); err != nil || result.Outcome != OutcomeConfirmed {
+		t.Fatalf("open: %+v %v", result, err)
+	}
+	if result, err := claimApprovedForTest(t, verbReq(root, "01J5X00000000000000000PR01", "mac-a"), id, testBudget()); err != nil || result.Outcome != OutcomeConfirmed {
+		t.Fatalf("claim: %+v %v", result, err)
+	}
+	opid := Opid("01J5X00000000000000000PR02", "mac-a", "lin-1")
+	strandEntry(t, root, opid, PhaseCreated, Intent{Verb: "park", Targets: []string{id}, Args: map[string]string{"because": "recover handoff"}})
+	return root, opid
+}
+
+func TestRecoveryRefusesParkWhenGoalBranchIsUnpushed(t *testing.T) {
+	root, opid := claimedParkRecoveryFixture(t, "unpushed-park")
+	reports, err := RecoverWithPolicy(endpointFor(root), fixtureParkRecoveryPolicy{check: func(goalID, next string) (string, error) {
+		if goalID != "unpushed-park" || next != "Build u1." {
+			t.Fatalf("branch check goal=%q next=%q", goalID, next)
+		}
+		return "", errors.New("GOAL_PARK_UNPUSHED: local goal branch is ahead of origin")
+	}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	entry, err := ReadEntry(root, opid)
+	if err != nil || entry.Phase != PhaseTerminal || entry.Outcome != OutcomeRejected || !strings.Contains(entry.Evidence, "GOAL_PARK_UNPUSHED") {
+		t.Fatalf("entry=%+v reports=%+v err=%v", entry, reports, err)
+	}
+	projection, err := Project(endpointFor(root), true, time.Now())
+	if err != nil {
+		t.Fatal(err)
+	}
+	file := projection.Tree.Live["unpushed-park"]
+	if file == nil || file.State != StateClaimed || file.Claimed == nil || file.NextStep != "Build u1." {
+		t.Fatalf("refused recovery changed goal: %+v", file)
+	}
+}
+
+func TestRecoveryCompletesParkWhenGoalBranchIsPushed(t *testing.T) {
+	root, opid := claimedParkRecoveryFixture(t, "pushed-park")
+	summary := "goal/pushed-park last unit u1 commit " + strings.Repeat("a", 40) + " is read clean"
+	if _, err := RecoverWithPolicy(endpointFor(root), fixtureParkRecoveryPolicy{check: func(goalID, next string) (string, error) {
+		return summary, nil
+	}}); err != nil {
+		t.Fatal(err)
+	}
+	entry, err := ReadEntry(root, opid)
+	if err != nil || entry.Phase != PhaseTerminal || entry.Outcome != OutcomeConfirmed {
+		t.Fatalf("entry=%+v err=%v", entry, err)
+	}
+	projection, err := Project(endpointFor(root), true, time.Now())
+	if err != nil {
+		t.Fatal(err)
+	}
+	file := projection.Tree.Live["pushed-park"]
+	if file == nil || file.State != StateParked || file.Claimed != nil || file.NextStep != summary {
+		t.Fatalf("recovered pushed park: %+v", file)
+	}
+}
+
+func TestParkFailsClosedWithoutBranchChecker(t *testing.T) {
+	_, root, _ := twoClones(t)
+	seedLedger(t, root)
+	if result, err := Open(verbReq(root, "01J5X00000000000000000PN00", "mac-a"), "nil-check", "Work.", OriginMain, "Build."); err != nil || result.Outcome != OutcomeConfirmed {
+		t.Fatalf("open: %+v %v", result, err)
+	}
+	request := verbReq(root, "01J5X00000000000000000PN01", "mac-a")
+	request.ParkBranchCheck = nil
+	result, err := Park(request, "nil-check", "handoff")
+	if err != nil || result.Outcome != OutcomeRejected || !strings.Contains(result.Detail, "run goal park again") {
+		t.Fatalf("nil checker park: %+v %v", result, err)
 	}
 }
 

@@ -268,7 +268,7 @@ func requestUnits(req CommitRequest) ([]string, error) {
 }
 
 func validateCommitPaths(kind Kind, paths []string, goalID string) error {
-	reads, prose := 0, 0
+	reads, closures, prose := 0, 0, 0
 	seen := map[string]bool{}
 	for _, path := range paths {
 		if seen[path] {
@@ -279,7 +279,7 @@ func validateCommitPaths(kind Kind, paths []string, goalID string) error {
 		allowed := kind == Unit && class == ClassUnit ||
 			kind == Plan && (class == ClassPlan || path == landingRecordPath(goalID))
 		if kind == Read {
-			allowed = class == ClassRead || class == ClassReadProse
+			allowed = class == ClassRead || class == ClassReadClosure || class == ClassReadProse
 		}
 		if !allowed {
 			return operationRefusal(RangeCode, "path %s has class %s, which kind %s does not allow", path, class, kind)
@@ -290,9 +290,12 @@ func validateCommitPaths(kind Kind, paths []string, goalID string) error {
 		if class == ClassReadProse {
 			prose++
 		}
+		if class == ClassReadClosure {
+			closures++
+		}
 	}
-	if kind == Read && (reads != 1 || prose > 1) {
-		return operationRefusal(RangeCode, "read commit needs one attestation and at most one prose record; found %d and %d", reads, prose)
+	if kind == Read && (reads != 1 || closures > 1 || prose > 1) {
+		return operationRefusal(RangeCode, "read commit needs one attestation, at most one closure bundle, and at most one prose record; found %d, %d, and %d", reads, closures, prose)
 	}
 	return nil
 }

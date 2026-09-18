@@ -27,7 +27,10 @@ type critiqueState struct {
 }
 
 func loadCritiqueState(repoRoot string) critiqueState {
-	agents := filepath.Join(repoRoot, "artifacts", "agents")
+	return loadCritiqueStateAt(filepath.Join(repoRoot, "artifacts", "agents"))
+}
+
+func loadCritiqueStateAt(agents string) critiqueState {
 	state := critiqueState{agents: agents, records: map[string]map[string]any{}}
 	paths, _ := filepath.Glob(filepath.Join(agents, "jobs", "*.json"))
 	for _, path := range paths {

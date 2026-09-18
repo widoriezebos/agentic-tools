@@ -2,6 +2,7 @@ package main
 
 import (
 	"encoding/json"
+	"errors"
 	"fmt"
 	"os"
 	"os/exec"
@@ -466,6 +467,83 @@ func TestGoalBranchCommitAcceptsBuildUnitList(t *testing.T) {
 	if !strings.Contains(message, "Goal-Unit: standing-validation/5+6+7a+7b") {
 		t.Fatalf("multi-unit message=%q", message)
 	}
+}
+
+func TestCommitReadRefusesUnrecordedFastGateRun(t *testing.T) {
+	setup := func(t *testing.T) (root, unit, tree, record string) {
+		t.Helper()
+		root, _, base := goalBranchCLIFixture(t, "m1")
+		writeTestingFixtureFile(t, filepath.Join(root, "metasystem", "read.go"), []byte("package fixture\n"), 0o644)
+		goalSyncMutationGit(t, root, "add", "metasystem/read.go")
+		unit, err := branch.CommitStaged(branch.CommitRequest{Repo: root, Remote: "upstream", EndpointTip: base,
+			GoalID: "standing-validation", Unit: "u1", OpID: "gate-unit", Kind: branch.Unit, CheckClaim: func() error { return nil }})
+		if err != nil {
+			t.Fatal(err)
+		}
+		digest, err := branch.UnitDigest(root, unit)
+		if err != nil {
+			t.Fatal(err)
+		}
+		record = "metasystem/records/misc/command-read.md"
+		writeTestingFixtureFile(t, filepath.Join(root, filepath.FromSlash(record)), []byte(unit+" "+digest+"\n"), 0o644)
+		return root, unit, goalSyncMutationGit(t, root, "rev-parse", unit+"^{tree}"), record
+	}
+	args := func(root, record string) []string {
+		return []string{"--goal", "standing-validation", "--kind", "read", "--unit", "u1", "--reader-record", record, "--root", root}
+	}
+
+	t.Run("made-up observation", func(t *testing.T) {
+		root, unit, tree, record := setup(t)
+		commandArgs := append(args(root, record), "--gate-run", "made-up", "--gate-tree", tree)
+		code, _, stderr := captureCommandOutput(t, true, true, func() int {
+			return runGoalBranchCommitWith(commandArgs, goalBranchCommitDependencies{
+				Gate:  func(string) (string, error) { return "go gate: fast mode passed", nil },
+				NewID: func(string) (string, error) { return "recorded-run", nil },
+			})
+		})
+		if code == 0 || !strings.Contains(stderr, branch.ReadUngatedCode) || !strings.Contains(stderr, "recorded-run") {
+			t.Fatalf("made-up gate: code=%d stderr=%q", code, stderr)
+		}
+		if _, err := os.Stat(filepath.Join(root, "metasystem", "records", "reads", "standing-validation", unit+".json")); !os.IsNotExist(err) {
+			t.Fatalf("made-up gate wrote attestation: %v", err)
+		}
+	})
+
+	t.Run("red gate", func(t *testing.T) {
+		root, unit, _, record := setup(t)
+		code, _, stderr := captureCommandOutput(t, true, true, func() int {
+			return runGoalBranchCommitWith(args(root, record), goalBranchCommitDependencies{
+				Gate: func(string) (string, error) { return "go gate: staticcheck failed", errors.New("exit 1") },
+			})
+		})
+		if code == 0 || !strings.Contains(stderr, branch.ReadUngatedCode) || !strings.Contains(stderr, "staticcheck failed") {
+			t.Fatalf("red gate: code=%d stderr=%q", code, stderr)
+		}
+		if _, err := os.Stat(filepath.Join(root, "metasystem", "records", "reads", "standing-validation", unit+".json")); !os.IsNotExist(err) {
+			t.Fatalf("red gate wrote attestation: %v", err)
+		}
+	})
+
+	t.Run("recorded observation", func(t *testing.T) {
+		root, unit, tree, record := setup(t)
+		code, stdout, stderr := captureCommandOutput(t, true, true, func() int {
+			return runGoalBranchCommitWith(args(root, record), goalBranchCommitDependencies{
+				Gate:  func(string) (string, error) { return "go gate: fast mode passed", nil },
+				NewID: func(string) (string, error) { return "recorded-run", nil },
+			})
+		})
+		if code != 0 || len(strings.TrimSpace(stdout)) != 40 || stderr != "" {
+			t.Fatalf("recorded gate: code=%d stdout=%q stderr=%q", code, stdout, stderr)
+		}
+		data, err := os.ReadFile(filepath.Join(root, "metasystem", "records", "reads", "standing-validation", unit+".json"))
+		if err != nil {
+			t.Fatal(err)
+		}
+		var att branch.Attestation
+		if err := json.Unmarshal(data, &att); err != nil || att.Gate.RunID != "recorded-run" || att.Gate.Tree != tree {
+			t.Fatalf("attestation gate=%+v err=%v", att.Gate, err)
+		}
+	})
 }
 
 func TestGoalBranchHelpNamesPush(t *testing.T) {

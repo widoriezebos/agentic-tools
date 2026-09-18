@@ -55,30 +55,72 @@ func ValidateHumanCarriedCritic(repoRoot, rootJob, commit string) error {
 // ValidateCommitCriticClosure proves that a closed code-critic chain is bound
 // to the exact persisted commit subject supplied by its consumer.
 func ValidateCommitCriticClosure(repoRoot, rootJob string, subject readsubject.ReadSubject) (readsubject.Closure, error) {
-	state := loadCritiqueState(repoRoot)
+	return ValidateCommitCriticClosureAt(filepath.Join(repoRoot, "artifacts", "agents"), rootJob, subject)
+}
+
+// ValidateCommitCriticClosureAt validates a closure from an explicit agents
+// root so persisted evidence can be checked without the checkout that wrote it.
+func ValidateCommitCriticClosureAt(agentsRoot, rootJob string, subject readsubject.ReadSubject) (readsubject.Closure, error) {
+	closure, _, err := validateCommitCriticClosureAt(agentsRoot, rootJob, subject)
+	return closure, err
+}
+
+// CommitCriticClosureFiles returns the exact chain evidence needed to repeat
+// closure validation below another agents root.
+func CommitCriticClosureFiles(agentsRoot, rootJob string, subject readsubject.ReadSubject) (readsubject.Closure, map[string][]byte, error) {
+	closure, members, err := validateCommitCriticClosureAt(agentsRoot, rootJob, subject)
+	if err != nil {
+		return readsubject.Closure{}, nil, err
+	}
+	paths := make([]string, 0, len(members)+2)
+	for _, member := range members {
+		paths = append(paths, member.path)
+	}
+	round := fmt.Sprint(closure.Round)
+	paths = append(paths,
+		filepath.Join(agentsRoot, rootJob, "rounds", round, "subject.json"),
+		filepath.Join(agentsRoot, rootJob, "rounds", round, "return.json"),
+	)
+	files := make(map[string][]byte, len(paths))
+	for _, path := range paths {
+		data, readErr := os.ReadFile(path)
+		if readErr != nil {
+			return readsubject.Closure{}, nil, readErr
+		}
+		rel, relErr := filepath.Rel(agentsRoot, path)
+		if relErr != nil {
+			return readsubject.Closure{}, nil, relErr
+		}
+		files[filepath.ToSlash(rel)] = data
+	}
+	return closure, files, nil
+}
+
+func validateCommitCriticClosureAt(agentsRoot, rootJob string, subject readsubject.ReadSubject) (readsubject.Closure, []chainMember, error) {
+	state := loadCritiqueStateAt(agentsRoot)
 	root, present := state.records[rootJob]
 	if !present || asString(root["role"]) != "code-critic" {
-		return readsubject.Closure{}, fmt.Errorf("expected %s to be a code-critic root", rootJob)
+		return readsubject.Closure{}, nil, fmt.Errorf("expected %s to be a code-critic root", rootJob)
 	}
-	members, err := chainMembers(filepath.Join(repoRoot, "artifacts", "agents", "jobs"), rootJob)
+	members, err := chainMembers(filepath.Join(agentsRoot, "jobs"), rootJob)
 	if err != nil {
-		return readsubject.Closure{}, err
+		return readsubject.Closure{}, nil, err
 	}
 	records := make([]map[string]any, 0, len(members))
 	for _, member := range members {
 		records = append(records, member.record)
 	}
-	closure, closurePresent, err := readsubject.ReadClosedClosure(filepath.Join(repoRoot, "artifacts", "agents"), root, records)
+	closure, closurePresent, err := readsubject.ReadClosedClosure(agentsRoot, root, records)
 	if err != nil {
-		return readsubject.Closure{}, err
+		return readsubject.Closure{}, nil, err
 	}
 	if !closurePresent {
-		return readsubject.Closure{}, fmt.Errorf("code-critic root %s has no clean closure", rootJob)
+		return readsubject.Closure{}, nil, fmt.Errorf("code-critic root %s has no clean closure", rootJob)
 	}
 	if closure.Subject.Kind != readsubject.SubjectCommit || !closure.Subject.Equal(subject) {
-		return readsubject.Closure{}, fmt.Errorf("code-critic root %s did not close on commit subject %s", rootJob, subject.Digest())
+		return readsubject.Closure{}, nil, fmt.Errorf("code-critic root %s did not close on commit subject %s", rootJob, subject.Digest())
 	}
-	return closure, nil
+	return closure, members, nil
 }
 
 const (

@@ -32,6 +32,12 @@ type SensitiveRecoveryPolicy interface {
 	BreachStop(Endpoint, Entry) (PublishRequest, func(), error)
 }
 
+// ParkRecoveryPolicy supplies the live branch precondition to a recovered
+// park. Journal text cannot reconstruct the remote branch observation.
+type ParkRecoveryPolicy interface {
+	ParkBranchCheck(Endpoint) func(goalID, next string) (string, error)
+}
+
 // Recover runs the rule over the whole journal. Verbs whose stored
 // intent cannot be rebuilt generically (reconcile re-runs from the
 // checkout it captures; migrate re-runs from its reviewed inputs)
@@ -193,7 +199,16 @@ func completeFromIntent(e Endpoint, entry Entry, policy SensitiveRecoveryPolicy)
 			req, release, rebuildErr = policy.BreachStop(e, taken)
 		}
 	} else {
-		req, rebuildErr = requestForEntry(e, taken)
+		var parkCheck func(string, string) (string, error)
+		if taken.Intent.Verb == "park" {
+			if parkPolicy, ok := policy.(ParkRecoveryPolicy); ok {
+				parkCheck = parkPolicy.ParkBranchCheck(e)
+			}
+			if journaledHuman && parkCheck == nil {
+				parkCheck = func(string, string) (string, error) { return "", nil }
+			}
+		}
+		req, rebuildErr = requestForEntry(e, taken, parkCheck)
 	}
 	if release != nil {
 		defer release()
@@ -227,14 +242,18 @@ func recoveryHumanBoundaryRequest(req PublishRequest, journaledHuman bool) Publi
 	if !hasConditionalRecoveryHumanBoundary(req.Intent.Verb) {
 		return req
 	}
-	mutate := req.Mutate
 	verb := req.Intent.Verb
+	mutate := req.Mutate
 	req.Mutate = func(tip string) ([]Change, error) {
 		changes, err := mutate(tip)
 		if err != nil {
 			var required humanAuthorityRequired
 			if errors.As(err, &required) {
 				return nil, errors.New(recoveryHumanBoundaryDetail(verb, &required))
+			}
+			var unavailable parkBranchSafetyUnavailable
+			if journaledHuman && errors.As(err, &unavailable) {
+				return nil, errors.New(recoveryHumanBoundaryDetail(verb, nil))
 			}
 			return changes, err
 		}
@@ -278,7 +297,7 @@ func recoveryHumanBoundaryDetail(verb string, required *humanAuthorityRequired) 
 // identically, and the derived opid — the entry's ulid under the
 // entry's pair — IS the entry's opid, so every rebuilt history
 // line carries the original operation with no injection seam.
-func requestForEntry(e Endpoint, entry Entry) (PublishRequest, error) {
+func requestForEntry(e Endpoint, entry Entry, parkChecks ...func(string, string) (string, error)) (PublishRequest, error) {
 	if len(entry.Opid) < 27 {
 		return PublishRequest{}, fmt.Errorf("the entry's opid %q is not <ulid>-<machine>-<hash>; close it by hand", entry.Opid)
 	}
@@ -288,6 +307,9 @@ func requestForEntry(e Endpoint, entry Entry) (PublishRequest, error) {
 		Ulid:        entry.Opid[:26],
 		Now:         timeNowUTC(),
 		ApprovedRef: entry.Intent.Args["approvedRef"],
+	}
+	if len(parkChecks) != 0 {
+		r.ParkBranchCheck = parkChecks[0]
 	}
 	if raw := entry.Intent.Args["claimEpoch"]; raw != "" {
 		epoch, err := strconv.ParseInt(raw, 10, 64)
