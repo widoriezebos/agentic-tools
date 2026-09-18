@@ -2,14 +2,14 @@
 
 - State: approved
 - Priority: 1
-- Sequence: 37
+- Sequence: 36
 - Risk: severity=2 novelty=2 exposure=3 accumulation=2 basis="severity 2: refused runs and manual re-arms, no wrong landing; novelty 2: changes the policy-binding judgment and its timing; exposure 3: every engine run on every seat; accumulation 2: worse with load and landing rate"
 - Tier: 2
 - Intent: Seats lose engine runs to TEST_POLICY_ENGINE_REQUIRED refusals unrelated to the candidate: 'witness resolution exceeded the configured 20-second bound' under load and after ledger-only drift; 'retained trusted-base engine returned a mismatched policy decision' when the enrolled checkout, engine and tree sit on different tips; every test plan refused after a seat lands engine code until a manual re-arm; and a dirty memory/receipts.log blocking the fast-forward. On 2026-09-15 m1e, m1b and m1c each lost runs and re-arm cycles to these. DONE: ledger-only drift never requires a re-arm or fails policy binding; witness resolution does not time out at a load average of 30 on the test machine; test plan and test run re-arm themselves after a landed engine change; each refusal names which cause it is; a fixture proves each.
 - Origin: human
 - Next step: U4b exit-status classification on main a2d38afad38379fcd9a4747f18adbe3035958309 (wave 3d). Next: M1b lists what remains with the U3e-2b return; closing read after that.
 - OpenedAt: 2026-09-15T05:55:22Z
-- Revision: 84
+- Revision: 85
 - Budget: elapsedLimit=4h attemptLimit=6 reservedJobMinutesLimit=720 activeJobLimit=1 reviewRoundLimit=2
 - BudgetExceptions: 0
 - Approved: by=human:Wido at=2026-09-15T05:55:30Z revision=2 opid=AHEG73BFDFM935QEF6CY7BZJPK-m1e-c6925449 authority=proven digest=63ceddd30a86381c144ea03b4a78f9c82678b39aa1fb788e44c9b185ccf0a392
@@ -100,4 +100,5 @@ History:
 - 2026-09-18T07:09:06Z CJW8NQHBR875QWE1GNRXK19Y3H-m1e-c6925449 edit actor=human:Wido targets=engine-policy-binding-survives-drift-and-load
 - 2026-09-18T14:57:08Z EF4ZXVXRPN606HBNGZ6MTTS5E8-m1e-c6925449 edit actor=human:Wido targets=engine-policy-binding-survives-drift-and-load
 - 2026-09-18T14:58:43Z DPXCN7TGWX2BEJ2ECE4RKCWFWM-m1e-c6925449 done actor=human:Wido targets=beds-run-under-the-oldest-supported-bash,cross-cutting-change-inventories-its-readers,deep-sections-cannot-stay-red-unseen,delegate-sandbox-runs-the-beds,engine-policy-binding-survives-drift-and-load,every-round-gets-an-independent-read,failures-show-observed-against-expected,human-goal-verbs-forgiving,round-proof-feeds-the-next-brief,stop-capability-follows-the-lease-epoch,stop-decision-surface-is-a-gate,stop-gate-sees-harness-tracked-work,stop-response-carries-a-structured-report-reference,test-environment-edges-are-closed,testing-surfaces-declare-their-mirror,tests-never-wait-on-wall-time reason=priority-order from=1:38 to=1:37
-Integrity: sha256=333a92634cbfb21ca883771131a3dbf8e96c1772daedd7a45e7788a5a52fdc12
+- 2026-09-18T14:58:55Z MZFFSA7G7W72W5R4T327JF9ZPD-m1e-c6925449 done actor=human:Wido targets=adoption-filled-delivery-passes-on-trunk,beds-run-under-the-oldest-supported-bash,brief-declares-the-round-boundary,builder-proves-each-rule-by-mutation,busy-seat-shells-are-ended,codex-jobs-run-through-a-metasystem-verb,coordinator-context-stays-under-budget,critique-closes-on-folded-proof,cross-cutting-change-inventories-its-readers,deep-sections-cannot-stay-red-unseen,delegate-sandbox-runs-the-beds,design-rounds-read-less-and-repeat-less,engine-policy-binding-survives-drift-and-load,every-round-gets-an-independent-read,evidence-and-build-output-have-retention-and-stay-unindexed,failures-show-observed-against-expected,fixture-runners-and-fakes-bound-their-own-life,fleet-doctor-repairs-what-stops-other-seats,follow-up-brief-cannot-cite-fresh-trunk-files,human-goal-verbs-forgiving,proof-runs-reap-what-they-armed-and-a-census-names-the-rest,round-proof-feeds-the-next-brief,seat-successor-continues-a-handoff-without-a-human,stop-capability-follows-the-lease-epoch,stop-decision-surface-is-a-gate,stop-hook-never-forces-an-empty-turn,stop-response-carries-a-structured-report-reference,test-environment-edges-are-closed,testing-surfaces-declare-their-mirror,tests-never-wait-on-wall-time,units-run-through-one-launcher reason=priority-order from=1:37 to=1:36
+Integrity: sha256=8fd85821841ceec023e82217b8f04ad6397203cdf1acde0fc45777a3925ff51f

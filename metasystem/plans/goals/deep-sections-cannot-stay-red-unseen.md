@@ -2,14 +2,14 @@
 
 - State: approved
 - Priority: 1
-- Sequence: 43
+- Sequence: 42
 - Risk: severity=3 novelty=2 exposure=3 accumulation=3 basis="severity 3: a red that only a deep section sees can sit on trunk for days and then fail an unrelated landing; novelty 2: needs a rule for when deep groups run outside a deep landing and where the result is seen; exposure 3: every deep-only section; accumulation 3: reds pile up unseen and each blocks the next deep landing"
 - Tier: 2
 - Intent: A red in a section that only a deep group runs must surface within a bounded time, not at the next unrelated deep landing. On 2026-09-14 m1c found witness-gate-fixtures red on trunk since 2026-09-09 (goal witness-bed-fakes-the-proof-engine-build). The section is only in proof-and-landing's deep group, standard landings never ran it, and a deep cadence run exists (internal/testpolicy/select.go:158-161, ruling R-3) yet did not surface it. DONE: the reason the cadence run missed it is recorded; every deep-only section runs against the trunk tip on a declared cadence or trigger; its result is recorded where seats and the next landing see it; a red names or opens a goal; and a fixture proves a planted deep-only red surfaces without a deep landing.
 - Origin: human
 - Next step: unit f on main a2d38afad38379fcd9a4747f18adbe3035958309 (wave 3d; c, d, e landed 09-18 00:16 to 04:25Z). Next: closing audit read on a2d38afad38379fcd9a4747f18adbe3035958309 covering units c to f and the bed leg.
 - OpenedAt: 2026-09-14T21:10:18Z
-- Revision: 105
+- Revision: 106
 - Budget: elapsedLimit=4h attemptLimit=6 reservedJobMinutesLimit=720 activeJobLimit=1 reviewRoundLimit=2
 - BudgetExceptions: 0
 - Approved: by=human:Wido at=2026-09-14T21:10:24Z revision=2 opid=D4QTYGNFY8CS198KS87BTM9WZM-m1e-c6925449 authority=proven digest=6e2f938a4cb7e2bdf8544531232f9784c55b3c9ebf62c69c44c647b053138e21
@@ -121,4 +121,5 @@ History:
 - 2026-09-18T07:10:06Z XZR1VFEF68JYPSJKH9BD602PYG-m1e-c6925449 edit actor=human:Wido targets=deep-sections-cannot-stay-red-unseen
 - 2026-09-18T14:56:52Z Q1NPGV74T16GGCZM14JWZBZA7V-m1e-c6925449 edit actor=human:Wido targets=deep-sections-cannot-stay-red-unseen
 - 2026-09-18T14:58:43Z DPXCN7TGWX2BEJ2ECE4RKCWFWM-m1e-c6925449 done actor=human:Wido targets=beds-run-under-the-oldest-supported-bash,cross-cutting-change-inventories-its-readers,deep-sections-cannot-stay-red-unseen,delegate-sandbox-runs-the-beds,engine-policy-binding-survives-drift-and-load,every-round-gets-an-independent-read,failures-show-observed-against-expected,human-goal-verbs-forgiving,round-proof-feeds-the-next-brief,stop-capability-follows-the-lease-epoch,stop-decision-surface-is-a-gate,stop-gate-sees-harness-tracked-work,stop-response-carries-a-structured-report-reference,test-environment-edges-are-closed,testing-surfaces-declare-their-mirror,tests-never-wait-on-wall-time reason=priority-order from=1:44 to=1:43
-Integrity: sha256=595b7fb0cd47f5c774bd69ff27d28066a6d5eb6fb6a14b85eb8232a13980da3b
+- 2026-09-18T14:58:55Z MZFFSA7G7W72W5R4T327JF9ZPD-m1e-c6925449 done actor=human:Wido targets=adoption-filled-delivery-passes-on-trunk,beds-run-under-the-oldest-supported-bash,brief-declares-the-round-boundary,builder-proves-each-rule-by-mutation,busy-seat-shells-are-ended,codex-jobs-run-through-a-metasystem-verb,coordinator-context-stays-under-budget,critique-closes-on-folded-proof,cross-cutting-change-inventories-its-readers,deep-sections-cannot-stay-red-unseen,delegate-sandbox-runs-the-beds,design-rounds-read-less-and-repeat-less,engine-policy-binding-survives-drift-and-load,every-round-gets-an-independent-read,evidence-and-build-output-have-retention-and-stay-unindexed,failures-show-observed-against-expected,fixture-runners-and-fakes-bound-their-own-life,fleet-doctor-repairs-what-stops-other-seats,follow-up-brief-cannot-cite-fresh-trunk-files,human-goal-verbs-forgiving,proof-runs-reap-what-they-armed-and-a-census-names-the-rest,round-proof-feeds-the-next-brief,seat-successor-continues-a-handoff-without-a-human,stop-capability-follows-the-lease-epoch,stop-decision-surface-is-a-gate,stop-hook-never-forces-an-empty-turn,stop-response-carries-a-structured-report-reference,test-environment-edges-are-closed,testing-surfaces-declare-their-mirror,tests-never-wait-on-wall-time,units-run-through-one-launcher reason=priority-order from=1:43 to=1:42
+Integrity: sha256=4af22c45331438305462e2f1a0ca6aae11aeb3d206c1ee8c6ad5d4e459ef8fc9

@@ -2,14 +2,14 @@
 
 - State: approved
 - Priority: 1
-- Sequence: 48
+- Sequence: 47
 - Risk: severity=3 novelty=2 exposure=3 accumulation=2 basis="severity 3: an undeclared Stop-decision change is how the loop broke; novelty 2: the extraction exists as a script, the gate integration and declaration are new; exposure 3: every landing that touches the Stop path; accumulation 2: each undetected inversion compounds across seats"
 - Tier: 3
 - Intent: A change that moves a Stop decision must say so, enforced by the machinery. On 2026-09-13 a build quietly closed the third-refusal release and the delegate-job exemption; it was caught only by a scratchpad script (decision-surface.sh) that extracts every assertion naming a Stop decision and diffs it against trunk. That guard lives outside the repository, so no other seat has it and nothing enforces it. DONE: the check runs in the gate; a change moving any assertion that names a Stop decision is refused unless the landing declares the moved assertions and the goal permitting the change; additions are reported, removals and changes refused without that declaration.
 - Origin: human
 - Next step: fix-3 (Stop-surface moves gated on live goal permission) on main a2d38afad38379fcd9a4747f18adbe3035958309. Next: closing re-read on a2d38afad38379fcd9a4747f18adbe3035958309 of D1, D2 (breaking) and D3; the proposed group stop-decision-surface-standard is a stable-state item.
 - OpenedAt: 2026-09-14T16:16:14Z
-- Revision: 111
+- Revision: 112
 - Budget: elapsedLimit=1d attemptLimit=10 reservedJobMinutesLimit=1200 activeJobLimit=1 reviewRoundLimit=3
 - BudgetExceptions: 0
 - Approved: by=human:Wido at=2026-09-14T18:54:24Z revision=2 opid=90XPDEVA986F5HF56X2C2EXQY8-m1e-c6925449 authority=proven digest=3ddae773a96ecaaab5e32b5b9d04e0536a88604b28d2deb5669b392cc93c3c39
@@ -126,4 +126,5 @@ History:
 - 2026-09-18T07:10:19Z 8D2NVN7Y99BY3RDJBMR146Y1JR-m1e-c6925449 edit actor=human:Wido targets=stop-decision-surface-is-a-gate
 - 2026-09-18T14:57:56Z 81WSKP2CHQ1QEFJJXW3SVD30NK-m1e-c6925449 edit actor=human:Wido targets=stop-decision-surface-is-a-gate
 - 2026-09-18T14:58:43Z DPXCN7TGWX2BEJ2ECE4RKCWFWM-m1e-c6925449 done actor=human:Wido targets=beds-run-under-the-oldest-supported-bash,cross-cutting-change-inventories-its-readers,deep-sections-cannot-stay-red-unseen,delegate-sandbox-runs-the-beds,engine-policy-binding-survives-drift-and-load,every-round-gets-an-independent-read,failures-show-observed-against-expected,human-goal-verbs-forgiving,round-proof-feeds-the-next-brief,stop-capability-follows-the-lease-epoch,stop-decision-surface-is-a-gate,stop-gate-sees-harness-tracked-work,stop-response-carries-a-structured-report-reference,test-environment-edges-are-closed,testing-surfaces-declare-their-mirror,tests-never-wait-on-wall-time reason=priority-order from=1:49 to=1:48
-Integrity: sha256=3b72c46a76451caf31603b4589c9f1898ec04f4a843dae93fe9a803334902cd0
+- 2026-09-18T14:58:55Z MZFFSA7G7W72W5R4T327JF9ZPD-m1e-c6925449 done actor=human:Wido targets=adoption-filled-delivery-passes-on-trunk,beds-run-under-the-oldest-supported-bash,brief-declares-the-round-boundary,builder-proves-each-rule-by-mutation,busy-seat-shells-are-ended,codex-jobs-run-through-a-metasystem-verb,coordinator-context-stays-under-budget,critique-closes-on-folded-proof,cross-cutting-change-inventories-its-readers,deep-sections-cannot-stay-red-unseen,delegate-sandbox-runs-the-beds,design-rounds-read-less-and-repeat-less,engine-policy-binding-survives-drift-and-load,every-round-gets-an-independent-read,evidence-and-build-output-have-retention-and-stay-unindexed,failures-show-observed-against-expected,fixture-runners-and-fakes-bound-their-own-life,fleet-doctor-repairs-what-stops-other-seats,follow-up-brief-cannot-cite-fresh-trunk-files,human-goal-verbs-forgiving,proof-runs-reap-what-they-armed-and-a-census-names-the-rest,round-proof-feeds-the-next-brief,seat-successor-continues-a-handoff-without-a-human,stop-capability-follows-the-lease-epoch,stop-decision-surface-is-a-gate,stop-hook-never-forces-an-empty-turn,stop-response-carries-a-structured-report-reference,test-environment-edges-are-closed,testing-surfaces-declare-their-mirror,tests-never-wait-on-wall-time,units-run-through-one-launcher reason=priority-order from=1:48 to=1:47
+Integrity: sha256=7815e48470eafe4d5c6a7297233b9e1aa33b95a9fe955ba32dd9421fcb86f63e
