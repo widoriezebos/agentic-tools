@@ -23,6 +23,7 @@ import (
 	"syscall"
 	"time"
 
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/census"
 	channelphase "github.com/widoriezebos/agentic-tools/metasystem/internal/channel/phase"
 	dispatchpkg "github.com/widoriezebos/agentic-tools/metasystem/internal/dispatch"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/fixtureauth"
@@ -44,6 +45,7 @@ func stewardCensusFor(repo string) steward.WorkerCensus {
 
 var stewardHealthNow = time.Now
 var stewardPreviewHealthAt = steward.PreviewHealthAt
+var stewardObserveHealth = steward.ObserveHealth
 
 func stewardClockRoot(explicit, fallback string) string {
 	if explicit != "" {
@@ -134,7 +136,7 @@ func runStewardHealth(args []string) int {
 		}
 		return verdict.ExitCode()
 	}
-	verdict, err := steward.ObserveHealth(*repo, now, nil)
+	verdict, err := stewardObserveHealth(*repo, now, nil)
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "health: health evidence is unknown: %v\n", err)
 		return 2
@@ -146,7 +148,24 @@ func runStewardHealth(args []string) int {
 		return 2
 	}
 	fmt.Println(verdict.Line())
-	return verdict.ExitCode()
+	code := verdict.ExitCode()
+	prober, processes, _, enumErr := census.FixtureSurvivorSource(*metasystemRoot)
+	if enumErr != nil {
+		fmt.Printf("fixture-survivors: process table is unreadable: %v\n", enumErr)
+		return code
+	}
+	lines, certain, scanErr := census.FixtureSurvivorLines(prober, processes)
+	if scanErr != nil {
+		fmt.Printf("fixture-survivors: process table is unreadable: %v\n", scanErr)
+		return code
+	}
+	for _, line := range lines {
+		fmt.Println(line)
+	}
+	if code == 0 && certain {
+		return 1
+	}
+	return code
 }
 
 func runHealthAcknowledgeAlert(args []string) int {

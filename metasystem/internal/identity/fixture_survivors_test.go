@@ -1,12 +1,28 @@
 package identity
 
 import (
+	"errors"
 	"os"
 	"path/filepath"
 	"runtime"
 	"testing"
 	"time"
 )
+
+type fixtureScanProber struct {
+	exacts  map[int64]Exact
+	unknown map[int64]bool
+}
+
+func (prober fixtureScanProber) Probe(pid int64) (Exact, Liveness, error) {
+	if prober.unknown[pid] {
+		return Exact{}, Unknown, errors.New("fixture probe denied")
+	}
+	if exact, ok := prober.exacts[pid]; ok {
+		return exact, Alive, nil
+	}
+	return Exact{}, Dead, nil
+}
 
 type fixtureTable map[int64]Exact
 
@@ -43,8 +59,8 @@ func installFixtureScanTable(t *testing.T, table fixtureTable) {
 		return pids, nil
 	}
 	fixtureSurvivorProber = table
-	fixtureSurvivorScope = func(pid int64) fixtureProcessScope {
-		return fixtureProcessScope{pgid: 900, sid: 901, signalable: true}
+	fixtureSurvivorScope = func(pid int64) FixtureProcessScope {
+		return FixtureProcessScope{Pgid: 900, Sid: 901, Signalable: true}
 	}
 	t.Cleanup(func() { survivorPids, fixtureSurvivorProber, fixtureSurvivorScope = oldPids, oldProber, oldScope })
 }
@@ -87,8 +103,8 @@ func TestFixtureScanClassifiesScopedUnreadableProcess(t *testing.T) {
 	unreadable := fixtureExact(702, 72)
 	table := fixtureTable{701: child, 702: unreadable}
 	installFixtureScanTable(t, table)
-	fixtureSurvivorScope = func(pid int64) fixtureProcessScope {
-		return fixtureProcessScope{pgid: 701, sid: pid + 100, signalable: true}
+	fixtureSurvivorScope = func(pid int64) FixtureProcessScope {
+		return FixtureProcessScope{Pgid: 701, Sid: pid + 100, Signalable: true}
 	}
 	got, err := FixtureSurvivorsOfDeadOwner(table, owner)
 	if err != nil || len(got) != 2 || got[1].Class != FixtureSurvivorUnreadable {
@@ -105,8 +121,8 @@ func TestFixtureScanClassifiesGoTmpUnreadableProcess(t *testing.T) {
 	unreadable.Exe, unreadable.ExeKnown = filepath.Join(t.TempDir(), "go-tmp", "TestOther99", "metasystem"), true
 	table := fixtureTable{701: child, 702: unreadable}
 	installFixtureScanTable(t, table)
-	fixtureSurvivorScope = func(pid int64) fixtureProcessScope {
-		return fixtureProcessScope{pgid: pid, sid: pid + 100, signalable: true}
+	fixtureSurvivorScope = func(pid int64) FixtureProcessScope {
+		return FixtureProcessScope{Pgid: pid, Sid: pid + 100, Signalable: true}
 	}
 	got, err := FixtureSurvivorsOfDeadOwner(table, owner)
 	if err != nil || len(got) != 2 || got[1].Ref.Pid != 702 || got[1].Class != FixtureSurvivorUnreadable {
@@ -124,16 +140,16 @@ func TestFixtureSurvivorsRequiresUnreadableProcessToBeLedByCertainSurvivor(t *te
 	shared.Exe, shared.ExeKnown = filepath.Join(t.TempDir(), "go-tmp", "TestOther99", "metasystem"), true
 	table := fixtureTable{701: child, 702: led, 703: shared, 704: fixtureExact(704, 74)}
 	installFixtureScanTable(t, table)
-	fixtureSurvivorScope = func(pid int64) fixtureProcessScope {
+	fixtureSurvivorScope = func(pid int64) FixtureProcessScope {
 		switch pid {
 		case 701:
-			return fixtureProcessScope{pgid: 900, sid: 1001, signalable: true}
+			return FixtureProcessScope{Pgid: 900, Sid: 1001, Signalable: true}
 		case 702:
-			return fixtureProcessScope{pgid: 701, sid: 1002, signalable: true}
+			return FixtureProcessScope{Pgid: 701, Sid: 1002, Signalable: true}
 		case 703:
-			return fixtureProcessScope{pgid: 900, sid: 1003, signalable: true}
+			return FixtureProcessScope{Pgid: 900, Sid: 1003, Signalable: true}
 		default:
-			return fixtureProcessScope{pgid: pid, sid: pid + 100, signalable: true}
+			return FixtureProcessScope{Pgid: pid, Sid: pid + 100, Signalable: true}
 		}
 	}
 	got, err := FixtureSurvivors(key)
@@ -200,4 +216,101 @@ func fixtureRecordExecutable(t *testing.T, directoryPrefix string, key FixtureKe
 		t.Fatal(err)
 	}
 	return filepath.Join(directory, "bin", "metasystem")
+}
+
+func TestFixtureScanReadsTheGivenSource(t *testing.T) {
+	deadOwner := fixtureExact(800, 80).Ref()
+	unknownOwner := fixtureExact(801, 81).Ref()
+	liveOwner := fixtureExact(802, 82)
+	mismatchedOwner := fixtureExact(803, 83).Ref()
+	deadKey := FixtureKey{Owner: deadOwner, Test: "TestDead", Nonce: "00000001"}
+	unknownKey := FixtureKey{Owner: unknownOwner, Test: "TestUnknown", Nonce: "00000002"}
+	liveKey := FixtureKey{Owner: liveOwner.Ref(), Test: "TestLive", Nonce: "00000003"}
+	mismatchedKey := FixtureKey{Owner: mismatchedOwner, Test: "TestMismatched", Nonce: "00000004"}
+	tagged := func(pid, token int64, key FixtureKey) Exact {
+		exact := fixtureExact(pid, token)
+		exact.Argv, exact.ArgvKnown = []string{"/bin/sh", fixtureWord(t, key)}, true
+		exact.EnvironKnown = true
+		return exact
+	}
+	root := filepath.Join(t.TempDir(), "go-tmp", "TestOther99")
+	if err := os.MkdirAll(root, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	unowned := fixtureExact(904, 94)
+	unowned.ArgvKnown, unowned.EnvironKnown = true, true
+	unowned.Exe, unowned.ExeKnown = filepath.Join(root, "unowned"), true
+	unreadable := fixtureExact(905, 95)
+	unreadable.Exe, unreadable.ExeKnown = filepath.Join(root, "unreadable"), true
+	prober := fixtureScanProber{
+		exacts: map[int64]Exact{
+			802: liveOwner,
+			803: fixtureExact(803, 1_000_000),
+			900: tagged(900, 90, deadKey),
+			901: tagged(901, 91, unknownKey),
+			902: tagged(902, 92, liveKey),
+			903: tagged(903, 93, mismatchedKey),
+			904: unowned,
+			905: unreadable,
+		},
+		unknown: map[int64]bool{801: true},
+	}
+	oldPids, oldProber, oldScope := survivorPids, fixtureSurvivorProber, fixtureSurvivorScope
+	survivorPids = func() ([]int64, error) { return nil, errors.New("package pid source used") }
+	fixtureSurvivorProber = fakeProber{state: Unknown, err: errors.New("package prober used")}
+	fixtureSurvivorScope = func(int64) FixtureProcessScope { panic("package scope used") }
+	t.Cleanup(func() { survivorPids, fixtureSurvivorProber, fixtureSurvivorScope = oldPids, oldProber, oldScope })
+
+	pids := []int64{900, 901, 902, 903, 904, 905}
+	got, err := ScanFixtureSurvivors(pids, prober, func(pid int64) FixtureProcessScope {
+		return FixtureProcessScope{Pgid: pid, Sid: pid, Ppid: 1, Signalable: true}
+	}, FixtureSurvivorSelection{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(got) != 5 || got[0].Ref.Pid != 900 || got[0].Class != FixtureSurvivorCertain ||
+		got[1].Ref.Pid != 901 || got[1].Class != FixtureSurvivorUnreadable ||
+		got[2].Ref.Pid != 903 || got[2].Class != FixtureSurvivorCertain ||
+		got[3].Ref.Pid != 904 || got[3].Class != FixtureSurvivorUnowned ||
+		got[4].Ref.Pid != 905 || got[4].Class != FixtureSurvivorUnreadable {
+		t.Fatalf("whole-table scan = %#v; want dead, unknown, mismatched, unowned, and unreadable classes", got)
+	}
+	if got[0].Ppid != 1 || got[0].Started.IsZero() {
+		t.Fatalf("scan dropped process metadata: %#v", got[0])
+	}
+}
+
+func TestOwnershipRecordMustBeARegularFile(t *testing.T) {
+	key := FixtureKey{Owner: fixtureExact(800, 80).Ref(), Test: "TestOwnershipRecordMustBeARegularFile", Nonce: "a1b2c3d4"}
+	encoded, err := EncodeKey(key)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, test := range []struct {
+		name  string
+		build func(string) error
+	}{
+		{"symlink", func(path string) error {
+			target := filepath.Join(t.TempDir(), "target")
+			if err := os.WriteFile(target, []byte(encoded), 0o600); err != nil {
+				return err
+			}
+			return os.Symlink(target, path)
+		}},
+		{"directory", func(path string) error { return os.Mkdir(path, 0o700) }},
+		{"oversized", func(path string) error { return os.WriteFile(path, make([]byte, 4097), 0o600) }},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			directory, err := os.MkdirTemp(t.TempDir(), "TestOwnershipRecordMustBeARegularFile")
+			if err != nil {
+				t.Fatal(err)
+			}
+			if err := test.build(filepath.Join(directory, "fixture-owner")); err != nil {
+				t.Fatal(err)
+			}
+			if got, ok := fixtureOwnershipRecord(filepath.Join(directory, "bin", "child")); ok {
+				t.Fatalf("fixtureOwnershipRecord accepted %s: %#v", test.name, got)
+			}
+		})
+	}
 }

@@ -93,6 +93,7 @@ func families() []family {
 			summary: "process identity and census: who is running, provably",
 			verbs: []verb{
 				{"custodian", "reap fixture children after their exact owner dies", runFixtureCustodian},
+				{"fixture-survivors", "name or reap fixture children that outlived their owner", runFixtureSurvivors},
 				{"ref", "print a pid's exact process reference", runIdentityRef},
 				{"started-at", "print a pid's start time in epoch seconds", runIdentityStartedAt},
 				{"probe", "print a pid's exact identity as JSON", runIdentityProbe},

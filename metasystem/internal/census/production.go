@@ -62,8 +62,9 @@ func EnumerateProcesses() ([]Process, error) {
 		if perr != nil {
 			pgid = 0
 		}
+		ppid, _ := identity.ParentPid(pid)
 		processes = append(processes, Process{
-			Pid: pid, PPID: 0, PGID: int64(pgid),
+			Pid: pid, PPID: ppid, PGID: int64(pgid),
 			Started: exact.StartedAt.Unix(), StartedExactMicro: exact.StartedAt.UnixMicro(),
 			StartTicks: exact.StartTicks, BootID: exact.BootID, Argv: argv,
 			Environ: exact.Environ, Exe: exact.Exe,

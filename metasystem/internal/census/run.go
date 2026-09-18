@@ -47,6 +47,7 @@ type Process struct {
 	Cwd        string   `json:"cwd"`
 	CwdError   bool     `json:"cwdError"`
 	Alive      bool     `json:"alive"`
+	Unreadable bool     `json:"unreadable,omitempty"`
 }
 
 // InventoryItem is one classified process in the verdict.
@@ -423,7 +424,7 @@ func enumerateFixture(metasystemRoot, processFile string) ([]Process, error) {
 		return nil, fmt.Errorf("process enumeration fixture is unreadable: %w", err)
 	}
 	for i, row := range rows {
-		if row.Argv == "" {
+		if row.Argv == "" && !row.Unreadable {
 			return nil, fmt.Errorf("process enumeration fixture has unreadable argv")
 		}
 		if row.StartedExactMicro == 0 {

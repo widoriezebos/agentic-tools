@@ -8,6 +8,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/census"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/identity"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/steward"
 )
@@ -145,5 +146,60 @@ func TestHealthAcknowledgmentIsRegisteredAtTheTopLevel(t *testing.T) {
 	})
 	if code != 2 || !strings.Contains(stderr, "--episode is required") || strings.Contains(stderr, "unknown family") {
 		t.Fatalf("acknowledge-alert must route through health: code=%d stderr=%q", code, stderr)
+	}
+}
+
+func TestHealthNamesTheCertainFixtureSurvivor(t *testing.T) {
+	root := t.TempDir()
+	if err := os.WriteFile(filepath.Join(root, "metasystem.conf"), []byte("metasystem.runtimes=fake\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	processFile := filepath.Join(t.TempDir(), "processes.json")
+	t.Setenv("METASYSTEM_CENSUS_PROCESS_FILE", processFile)
+	base := int64(os.Getpid()) * 10
+	deadOwner := commandSurvivorRef(base+1, 201)
+	liveOwner := commandSurvivorRef(base+2, 202)
+	deadKey := identity.FixtureKey{Owner: deadOwner, Test: "TestHealthDead", Nonce: "00000001"}
+	liveKey := identity.FixtureKey{Owner: liveOwner, Test: "TestHealthLive", Nonce: "00000002"}
+	dead := commandSurvivorProcess(base+10, 210)
+	dead.Exe, dead.Argv = "/tmp/fixture-dead", "/bin/sh fixture-dead"
+	dead.Environ = []string{commandSurvivorTag(t, deadKey)}
+	live := commandSurvivorProcess(base+11, 211)
+	live.Environ = []string{commandSurvivorTag(t, liveKey)}
+	liveOwnerRow := commandSurvivorProcess(liveOwner.Pid, 202)
+	unreadable := commandSurvivorProcess(base+12, 212)
+	unreadable.PGID, unreadable.Unreadable = dead.Pid, true
+	writeCommandProcessFile(t, processFile, []census.Process{dead, live, liveOwnerRow, unreadable})
+
+	originalObserve := stewardObserveHealth
+	stewardObserveHealth = func(string, time.Time, identity.Prober) (steward.HealthVerdict, error) {
+		return steward.HealthVerdict{Schema: 1, ObservedAt: time.Now(), Aggregate: "healthy"}, nil
+	}
+	t.Cleanup(func() { stewardObserveHealth = originalObserve })
+	run := func(args ...string) (string, string, int) {
+		code, stdout, stderr := captureCommandOutput(t, true, true, func() int {
+			return runStewardHealth(append([]string{"--repo", root, "--metasystem-root", root}, args...))
+		})
+		return stdout, stderr, code
+	}
+	stdout, stderr, code := run()
+	if code != 1 || stderr != "" || !strings.HasPrefix(stdout, "HEALTH healthy") ||
+		!strings.Contains(stdout, "fixture-survivor pid=") || !strings.Contains(stdout, "exe=/tmp/fixture-dead") ||
+		!strings.Contains(stdout, `argv="/bin/sh fixture-dead"`) || !strings.Contains(stdout, "fixture-survivor? pid=") ||
+		strings.Contains(stdout, "TestHealthLive") {
+		t.Fatalf("health survivor output = code %d stdout %q stderr %q", code, stdout, stderr)
+	}
+
+	writeCommandProcessFile(t, processFile, []census.Process{live, liveOwnerRow})
+	stdout, stderr, code = run()
+	if code != 0 || stderr != "" || strings.Contains(stdout, "fixture-survivor") || !strings.HasPrefix(stdout, "HEALTH healthy") {
+		t.Fatalf("healthy survivor-free output = code %d stdout %q stderr %q", code, stdout, stderr)
+	}
+	if err := os.WriteFile(processFile, []byte("not json\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	stdout, stderr, code = run()
+	if code != 0 || stderr != "" || strings.Count(stdout, "process table is unreadable") != 1 {
+		t.Fatalf("unreadable health table = code %d stdout %q stderr %q", code, stdout, stderr)
 	}
 }

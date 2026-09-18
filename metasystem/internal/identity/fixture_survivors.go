@@ -6,6 +6,7 @@ import (
 	"path/filepath"
 	"sort"
 	"strings"
+	"time"
 
 	"golang.org/x/sys/unix"
 )
@@ -28,13 +29,17 @@ const (
 )
 
 type FixtureSurvivor struct {
-	Class   FixtureSurvivorClass
-	Ref     Ref
-	Pgid    int64
-	Exe     string
-	Argv    []string
-	Key     FixtureKey
-	Carrier FixtureCarrier
+	Class     FixtureSurvivorClass
+	Ref       Ref
+	Pgid      int64
+	Ppid      int64
+	Started   time.Time
+	Exe       string
+	ExeKnown  bool
+	Argv      []string
+	ArgvKnown bool
+	Key       FixtureKey
+	Carrier   FixtureCarrier
 }
 
 func FixtureTag(exact Exact) (FixtureKey, FixtureCarrier, bool) {
@@ -58,85 +63,138 @@ func FixtureTag(exact Exact) (FixtureKey, FixtureCarrier, bool) {
 
 var fixtureSurvivorProber Prober = KernelProber{}
 
-type fixtureProcessScope struct {
-	pgid, sid  int64
-	signalable bool
+// FixtureProcessScope carries process-table facts that are outside an exact identity probe.
+type FixtureProcessScope struct {
+	Pgid, Sid  int64
+	Ppid       int64
+	Signalable bool
 }
 
-var fixtureSurvivorScope = func(pid int64) fixtureProcessScope {
+var fixtureSurvivorScope = func(pid int64) FixtureProcessScope {
 	pgid, pgErr := unix.Getpgid(int(pid))
 	sid, sidErr := unix.Getsid(int(pid))
 	signalable := unix.Kill(int(pid), 0) == nil && pgErr == nil && sidErr == nil
-	return fixtureProcessScope{int64(pgid), int64(sid), signalable}
+	return FixtureProcessScope{Pgid: int64(pgid), Sid: int64(sid), Signalable: signalable}
+}
+
+// FixtureSurvivorSelection chooses one scan contract. Its zero value scans the whole process table.
+type FixtureSurvivorSelection struct {
+	Key   *FixtureKey
+	Owner *Ref
 }
 
 // FixtureSurvivors returns processes for key, including unreadable processes only when their process group or session ties them to a certain result.
 func FixtureSurvivors(key FixtureKey) ([]FixtureSurvivor, error) {
-	wanted, err := EncodeKey(key)
-	if err != nil {
-		return nil, err
-	}
-	return scanFixtureSurvivors(fixtureSurvivorProber, func(candidate FixtureKey) bool {
-		encoded, encodeErr := EncodeKey(candidate)
-		return encodeErr == nil && encoded == wanted
-	}, false)
-}
-
-// FixtureSurvivorsOfDeadOwner returns processes for owner's fixtures, including unreadable processes under go-tmp or tied to a certain result by process group or session.
-func FixtureSurvivorsOfDeadOwner(prober Prober, owner Ref) ([]FixtureSurvivor, error) {
-	wanted, err := EncodeRef(owner)
-	if prober == nil || err != nil {
-		return nil, fmt.Errorf("identity: fixture owner is not exactly inspectable")
-	}
-	switch AliveRef(prober, owner) {
-	case Alive:
-		return nil, fmt.Errorf("identity: fixture owner %d is alive", owner.Pid)
-	case Unknown:
-		return nil, fmt.Errorf("identity: fixture owner %d cannot be proved dead", owner.Pid)
-	}
-	return scanFixtureSurvivors(prober, func(candidate FixtureKey) bool {
-		encoded, encodeErr := EncodeRef(candidate.Owner)
-		return encodeErr == nil && encoded == wanted
-	}, true)
-}
-
-type fixtureObservation struct {
-	exact   Exact
-	scope   fixtureProcessScope
-	key     FixtureKey
-	carrier FixtureCarrier
-}
-
-func scanFixtureSurvivors(prober Prober, matches func(FixtureKey) bool, includeGoTmpUnreadable bool) ([]FixtureSurvivor, error) {
 	pids, err := survivorPids()
 	if err != nil {
 		return nil, fmt.Errorf("identity: enumerate fixture processes: %w", err)
 	}
-	var certain, unreadable []fixtureObservation
+	return ScanFixtureSurvivors(pids, fixtureSurvivorProber, fixtureSurvivorScope, FixtureSurvivorSelection{Key: &key})
+}
+
+// FixtureSurvivorsOfDeadOwner returns processes for owner's fixtures, including unreadable processes under go-tmp or tied to a certain result by process group or session.
+func FixtureSurvivorsOfDeadOwner(prober Prober, owner Ref) ([]FixtureSurvivor, error) {
+	pids, err := survivorPids()
+	if err != nil {
+		return nil, fmt.Errorf("identity: enumerate fixture processes: %w", err)
+	}
+	return ScanFixtureSurvivors(pids, prober, fixtureSurvivorScope, FixtureSurvivorSelection{Owner: &owner})
+}
+
+type fixtureObservation struct {
+	exact   Exact
+	scope   FixtureProcessScope
+	key     FixtureKey
+	carrier FixtureCarrier
+}
+
+// ScanFixtureSurvivors classifies fixture processes from exactly the supplied source.
+func ScanFixtureSurvivors(pids []int64, prober Prober, scope func(int64) FixtureProcessScope, selection FixtureSurvivorSelection) ([]FixtureSurvivor, error) {
+	if prober == nil || scope == nil || selection.Key != nil && selection.Owner != nil {
+		return nil, fmt.Errorf("identity: invalid fixture survivor scan")
+	}
+	var wantedKey, wantedOwner string
+	var err error
+	if selection.Key != nil {
+		wantedKey, err = EncodeKey(*selection.Key)
+	}
+	if selection.Owner != nil {
+		wantedOwner, err = EncodeRef(*selection.Owner)
+		if err == nil {
+			switch AliveRef(prober, *selection.Owner) {
+			case Alive:
+				return nil, fmt.Errorf("identity: fixture owner %s is alive", wantedOwner)
+			case Unknown:
+				return nil, fmt.Errorf("identity: fixture owner %s cannot be proved dead", wantedOwner)
+			}
+		}
+	}
+	if err != nil {
+		return nil, fmt.Errorf("identity: fixture owner is not exactly inspectable")
+	}
+	matches := func(key FixtureKey) bool {
+		if selection.Key != nil {
+			encoded, encodeErr := EncodeKey(key)
+			return encodeErr == nil && encoded == wantedKey
+		}
+		if selection.Owner != nil {
+			encoded, encodeErr := EncodeRef(key.Owner)
+			return encodeErr == nil && encoded == wantedOwner
+		}
+		return true
+	}
+	wholeTable := selection.Key == nil && selection.Owner == nil
+	var certain, unreadable, unowned []fixtureObservation
 	for _, pid := range pids {
 		exact, state, probeErr := prober.Probe(pid)
 		if probeErr != nil || state != Alive || !exact.Ref().NativeExact() {
 			continue
 		}
-		observation := fixtureObservation{exact: exact, scope: fixtureSurvivorScope(pid)}
+		observation := fixtureObservation{exact: exact, scope: scope(pid)}
 		if key, carrier, ok := FixtureTag(exact); ok {
-			if matches(key) {
-				observation.key, observation.carrier = key, carrier
-				certain = append(certain, observation)
+			if !matches(key) {
+				continue
 			}
+			observation.key, observation.carrier = key, carrier
+			if wholeTable {
+				switch AliveRef(prober, key.Owner) {
+				case Alive:
+					continue
+				case Unknown:
+					unreadable = append(unreadable, observation)
+					continue
+				}
+			}
+			certain = append(certain, observation)
 			continue
 		}
 		if exact.ArgvKnown && containsFixtureTagWord(exact.Argv) || exact.EnvironKnown && containsFixtureTagWord(exact.Environ) {
 			continue
 		}
 		if exact.ExeKnown {
-			if key, ok := fixtureOwnershipRecord(exact.Exe); ok && matches(key) {
+			if key, ok := fixtureOwnershipRecord(exact.Exe); ok {
+				if !matches(key) {
+					continue
+				}
 				observation.key, observation.carrier = key, FixtureCarrierRecord
+				if wholeTable {
+					switch AliveRef(prober, key.Owner) {
+					case Alive:
+						continue
+					case Unknown:
+						unreadable = append(unreadable, observation)
+						continue
+					}
+				}
 				certain = append(certain, observation)
 				continue
 			}
+			if _, underGoTmp := goTmpRoot(exact.Exe); wholeTable && underGoTmp && exact.ArgvKnown && exact.EnvironKnown {
+				unowned = append(unowned, observation)
+				continue
+			}
 		}
-		if !exact.ArgvKnown && !exact.EnvironKnown && observation.scope.signalable {
+		if !exact.ArgvKnown && !exact.EnvironKnown && observation.scope.Signalable {
 			unreadable = append(unreadable, observation)
 		}
 	}
@@ -146,9 +204,12 @@ func scanFixtureSurvivors(prober Prober, matches func(FixtureKey) bool, includeG
 	}
 	for _, observation := range unreadable {
 		_, underGoTmp := goTmpRoot(observation.exact.Exe)
-		if includeGoTmpUnreadable && observation.exact.ExeKnown && underGoTmp || ledByFixtureSurvivor(observation, certain) {
+		if observation.key.Owner.Pid != 0 || selection.Key == nil && observation.exact.ExeKnown && underGoTmp || ledByFixtureSurvivor(observation, certain) {
 			result = append(result, observation.survivor(FixtureSurvivorUnreadable))
 		}
+	}
+	for _, observation := range unowned {
+		result = append(result, observation.survivor(FixtureSurvivorUnowned))
 	}
 	sort.Slice(result, func(i, j int) bool { return result[i].Ref.Pid < result[j].Ref.Pid })
 	return result, nil
@@ -165,8 +226,11 @@ func containsFixtureTagWord(words []string) bool {
 
 func (observation fixtureObservation) survivor(class FixtureSurvivorClass) FixtureSurvivor {
 	return FixtureSurvivor{
-		Class: class, Ref: observation.exact.Ref(), Pgid: observation.scope.pgid,
-		Exe: observation.exact.Exe, Argv: observation.exact.Argv, Key: observation.key, Carrier: observation.carrier,
+		Class: class, Ref: observation.exact.Ref(), Pgid: observation.scope.Pgid, Ppid: observation.scope.Ppid,
+		Started: observation.exact.StartedAt,
+		Exe:     observation.exact.Exe, ExeKnown: observation.exact.ExeKnown,
+		Argv: observation.exact.Argv, ArgvKnown: observation.exact.ArgvKnown,
+		Key: observation.key, Carrier: observation.carrier,
 	}
 }
 
@@ -175,8 +239,8 @@ func ledByFixtureSurvivor(observation fixtureObservation, certain []fixtureObser
 		if SameIdentity(observation.exact, candidate.key.Owner) {
 			continue
 		}
-		if observation.scope.pgid > 1 && observation.scope.pgid == candidate.exact.Pid ||
-			observation.scope.sid > 1 && observation.scope.sid == candidate.exact.Pid {
+		if observation.scope.Pgid > 1 && observation.scope.Pgid == candidate.exact.Pid ||
+			observation.scope.Sid > 1 && observation.scope.Sid == candidate.exact.Pid {
 			return true
 		}
 	}
@@ -198,8 +262,16 @@ func goTmpRoot(executable string) (string, bool) {
 func fixtureOwnershipRecord(executable string) (FixtureKey, bool) {
 	directory := filepath.Dir(filepath.Clean(executable))
 	for {
-		data, err := os.ReadFile(filepath.Join(directory, "fixture-owner"))
+		path := filepath.Join(directory, "fixture-owner")
+		info, err := os.Lstat(path)
 		if err == nil {
+			if !info.Mode().IsRegular() || info.Size() > 4096 {
+				return FixtureKey{}, false
+			}
+			data, readErr := os.ReadFile(path)
+			if readErr != nil {
+				return FixtureKey{}, false
+			}
 			key, parseErr := ParseKey(strings.TrimSpace(string(data)))
 			topLevelTest, _, _ := strings.Cut(key.Test, "/")
 			// Top-level test names are Go identifiers, so makeTempDir removes no other symbols.
