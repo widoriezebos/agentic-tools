@@ -7,9 +7,9 @@
 - Tier: 2
 - Intent: The known issues that batch landing (units-land-in-batches-under-one-proof) merges with are fixed forward right after the merge. DONE: (1) the four breaking items of the C+D read (MATERIAL 1 prefix receipt exit 76 aborts the landing, 2 Seal re-applies ejected units, 3 a prefix red loses its groups, 4 a moved trunk re-pushes on every tick) and their riders are fixed with witnesses, by blb FIX 1 unless it rode the merge; (2) C+D read MATERIAL 5-10 and its twelve minors are fixed with witnesses or recorded as not a defect with the reason; (3) Build B's read minors are fixed or recorded the same way; (4) BA14c, the two-tip landing-branch publication of the r3 amendment (candidate branch pushed before the proof, receipt-bearing series after green), is built; (5) while item 1 is open no seat routes a real landing through landing batch; (6) the goal's Next lists each open item until it is fixed. Read files: hact-20260912/m1e-tools-0917/blb-buildcd2-read-items.md and blb-buildb-read-items.md.
 - Origin: human
-- Next step: 2026-09-18 direct mode (m1e): closing read dm-g2read running on d6bde1f22 since 08:26 local 09-18. Next: conclude on CONCLUDE, fix brief on NOT YET.
+- Next step: fix-2 and fix-3 on main a2d38afad38379fcd9a4747f18adbe3035958309 (wave 3d). Next: closing re-read on a2d38afad38379fcd9a4747f18adbe3035958309 of the dm-g2read breaking items (post-push re-arm, capacity refusal classed as budget, BA14c two-tip); batch-buildcd-standard above its 30 s targetMs is a stable-state item.
 - OpenedAt: 2026-09-17T13:57:10Z
-- Revision: 7
+- Revision: 8
 - Labels: known-issue
 - Budget: elapsedLimit=4h attemptLimit=6 reservedJobMinutesLimit=720 activeJobLimit=1 reviewRoundLimit=2
 - BudgetExceptions: 0
@@ -25,4 +25,5 @@ History:
 - 2026-09-17T18:10:38Z B7KWRNKSHPQ0AV0XC7HKCSDH9A-m1e-c6925449 edit actor=human:Wido targets=batch-landing-known-issues-are-fixed
 - 2026-09-18T07:07:37Z CYD08HTRXQVGADXYFH4HEXSEZ2-m1e-c6925449 edit actor=human:Wido targets=batch-landing-known-issues-are-fixed
 - 2026-09-18T14:09:05Z VX1W40WNY90QQDD2GAQGNXNYPZ-m1b-d0e95724 claim actor=m1b+main-1789560571-22295-8d907a targets=batch-landing-known-issues-are-fixed
-Integrity: sha256=8eb114f363fc6e3512c3a3fa9ea0498852758d439dd6b2f59bcbbe2b04e984d2
+- 2026-09-18T14:56:44Z SH2SY5T2G3Q2F1CGGTBDSBS3CH-m1e-c6925449 edit actor=human:Wido targets=batch-landing-known-issues-are-fixed displaced=m1b+main-1789560571-22295-8d907a@2026-09-18T14:09:05Z
+Integrity: sha256=dbee4aa42ac67f13dd64a5874007e5c6fe5d85013ba52d5e49819cf33a061e5c
