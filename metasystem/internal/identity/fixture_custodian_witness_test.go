@@ -163,8 +163,13 @@ func TestQuietCustodianRemovesItsLog(t *testing.T) {
 		t.Fatalf("quiet owner exit: %v output=%q", err, output)
 	}
 	waitWitnessDead(t, custodian)
-	waitWitnessFileGone(t, string(logPath))
-	waitWitnessFileGone(t, string(recordsPath))
+	_, logState := os.Lstat(string(logPath))
+	_, recordsState := os.Lstat(string(recordsPath))
+	if !os.IsNotExist(logState) || !os.IsNotExist(recordsState) {
+		log, _ := os.ReadFile(string(logPath))
+		t.Fatalf("quiet custodian artifacts remained: log=%s state=%v records=%s state=%v content=%q",
+			logPath, logState, recordsPath, recordsState, log)
+	}
 }
 func TestCustodianRejectsRuntimePollerAsWatch(t *testing.T) {
 	exact, state, err := (KernelProber{}).Probe(int64(os.Getpid()))
@@ -261,11 +266,13 @@ func custodianWitness(t *testing.T, hard bool) {
 	for _, ref := range refs {
 		waitWitnessDead(t, ref)
 	}
-	waitWitnessLog(t, string(logPath), "owner="+ownerValue+" action=complete")
 	waitWitnessDead(t, custodian)
 	log, err := os.ReadFile(string(logPath))
 	if err != nil {
-		t.Fatalf("read completed custodian log: %v", err)
+		t.Fatalf("read completed custodian log: %v log=%q", err, log)
+	}
+	if want := "owner=" + ownerValue + " action=complete"; !strings.Contains(string(log), want) {
+		t.Fatalf("custodian log %q does not contain %q", log, want)
 	}
 	for _, ref := range refs {
 		if !strings.Contains(string(log), "action=kill pid="+strconv.FormatInt(ref.Pid, 10)+" ") {
@@ -376,15 +383,6 @@ func waitWitnessFile(t *testing.T, path string) {
 	t.Fatalf("fixture child did not publish %s", filepath.Base(path))
 }
 
-func waitWitnessFileGone(t *testing.T, path string) {
-	var observed error
-	for deadline := time.Now().Add(wiringBound); time.Now().Before(deadline); time.Sleep(10 * time.Millisecond) {
-		if _, observed = os.Lstat(path); os.IsNotExist(observed) {
-			return
-		}
-	}
-	t.Fatalf("fixture custodian log remained: path=%s state=%v", path, observed)
-}
 func waitWitnessCustodian(t *testing.T, owner Ref) Ref {
 	ownerValue, err := EncodeRef(owner)
 	checkWitness(t, err)

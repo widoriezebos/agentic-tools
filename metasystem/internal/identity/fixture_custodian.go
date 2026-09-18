@@ -153,7 +153,7 @@ func runCustodian(owner Ref, watch io.Reader, log io.Writer, runtime custodianRu
 			watchEOF = nil
 		case <-poll.C:
 		}
-		stop := armCustodianHalt(runtime)
+		stop := armCustodianHalt(log, runtime)
 		ownerState := AliveRef(runtime.prober, owner)
 		var deadMember Ref
 		if ownerState == Alive {
@@ -175,7 +175,7 @@ func runCustodian(owner Ref, watch io.Reader, log io.Writer, runtime custodianRu
 			if watchEOF != nil {
 				continue
 			}
-			if dead, err := proveOwnerDead(owner, runtime); err != nil {
+			if dead, err := proveOwnerDead(owner, log, runtime); err != nil {
 				return err
 			} else if dead {
 				return reapDeadOwner(owner, log, runtime)
@@ -184,8 +184,8 @@ func runCustodian(owner Ref, watch io.Reader, log io.Writer, runtime custodianRu
 	}
 }
 
-func proveOwnerDead(owner Ref, runtime custodianRuntime) (bool, error) {
-	stop := armCustodianHalt(runtime)
+func proveOwnerDead(owner Ref, log io.Writer, runtime custodianRuntime) (bool, error) {
+	stop := armCustodianHalt(log, runtime)
 	defer stop()
 	deadline := time.Now().Add(runtime.bound)
 	for {
@@ -200,7 +200,7 @@ func proveOwnerDead(owner Ref, runtime custodianRuntime) (bool, error) {
 }
 
 func reapLostLauncher(owner, member Ref, log io.Writer, runtime custodianRuntime) error {
-	stop := armCustodianHalt(runtime)
+	stop := armCustodianHalt(log, runtime)
 	err := SignalExact(runtime.prober, owner, syscall.SIGKILL, runtime.sender)
 	memberValue, _ := EncodeRef(member)
 	fmt.Fprintf(log, "fixture-custodian action=kill-owner dead-launcher=%s result=%v\n", memberValue, err)
@@ -216,17 +216,19 @@ func reapLostLauncher(owner, member Ref, log io.Writer, runtime custodianRuntime
 	return reapDeadOwner(owner, log, runtime)
 }
 
-func armCustodianHalt(runtime custodianRuntime) func() {
+func armCustodianHalt(log io.Writer, runtime custodianRuntime) func() {
 	if runtime.halt == nil {
 		return func() {}
 	}
-	timer := time.AfterFunc(runtime.bound+custodianHaltMargin, func() { runtime.halt(2) })
+	after := runtime.bound + custodianHaltMargin
+	timer := time.AfterFunc(after, func() {
+		fmt.Fprintf(log, "fixture-custodian action=halt after=%s\n", after)
+		runtime.halt(2)
+	})
 	return func() { timer.Stop() }
 }
 
 func reapDeadOwner(owner Ref, log io.Writer, runtime custodianRuntime) error {
-	stop := armCustodianHalt(runtime)
-	defer stop()
 	if AliveRef(runtime.prober, owner) != Dead {
 		return fmt.Errorf("identity: fixture custodian owner %d is not proved dead", owner.Pid)
 	}
@@ -238,18 +240,20 @@ func reapDeadOwner(owner Ref, log io.Writer, runtime custodianRuntime) error {
 		signalErr := SignalExact(runtime.prober, ref, syscall.SIGKILL, runtime.sender)
 		fmt.Fprintf(log, "fixture-custodian action=kill pid=%d carrier=record result=%v\n", ref.Pid, signalErr)
 	}
-	deadline := time.Now().Add(runtime.bound)
 	quietWindow := time.Second + runtime.poll
 	if halfBound := runtime.bound / 2; quietWindow > halfBound {
 		quietWindow = halfBound
 	}
 	var quietSince time.Time
+	var progressSince time.Time
+	previousRemaining := -1
 	scanUnavailable := false
 	scan := runtime.scan
 	if scan == nil {
 		scan = FixtureSurvivorsOfDeadOwner
 	}
 	for {
+		stop := armCustodianHalt(log, runtime)
 		for encoded, ref := range recorded {
 			exact, state, probeErr := runtime.prober.Probe(ref.Pid)
 			if probeErr == nil && (state == Dead || state == Alive && (!SameIdentity(exact, ref) || exact.Zombie)) {
@@ -271,11 +275,18 @@ func reapDeadOwner(owner Ref, log io.Writer, runtime custodianRuntime) error {
 			fmt.Fprintf(log, "fixture-custodian scan=unavailable error=%v\n", err)
 			scanUnavailable = true
 		}
-		if actionable == 0 && len(recorded) == 0 {
+		stop()
+		remaining := actionable + len(recorded)
+		passFinished := time.Now()
+		if previousRemaining < 0 || remaining < previousRemaining {
+			progressSince = passFinished
+		}
+		previousRemaining = remaining
+		if remaining == 0 {
 			if quietSince.IsZero() {
-				quietSince = time.Now()
+				quietSince = passFinished
 			}
-			if time.Since(quietSince) >= quietWindow {
+			if passFinished.Sub(quietSince) >= quietWindow {
 				if runtime.records != "" {
 					if removeErr := os.Remove(runtime.records); removeErr != nil && !os.IsNotExist(removeErr) {
 						return fmt.Errorf("identity: remove fixture custodian records: %w", removeErr)
@@ -287,7 +298,7 @@ func reapDeadOwner(owner Ref, log io.Writer, runtime custodianRuntime) error {
 		} else {
 			quietSince = time.Time{}
 		}
-		if !time.Now().Before(deadline) {
+		if remaining > 0 && passFinished.Sub(progressSince) >= runtime.bound {
 			return fmt.Errorf("identity: fixture custodian cleanup exceeded %s: %v", runtime.bound, err)
 		}
 		time.Sleep(runtime.poll)

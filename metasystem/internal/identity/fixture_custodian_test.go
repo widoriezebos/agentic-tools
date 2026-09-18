@@ -177,15 +177,120 @@ func TestCustodianHardHaltBoundsBlockedScan(t *testing.T) {
 	survivorPids = func() ([]int64, error) { <-release; return nil, nil }
 	runtime := custodianRuntime{prober: fixtureTable{}, poll: time.Millisecond, bound: 5 * time.Millisecond,
 		halt: func(code int) { halted <- code }}
-	go func() { done <- reapDeadOwner(fixtureExact(700, 70).Ref(), io.Discard, runtime) }()
+	var log strings.Builder
+	go func() { done <- reapDeadOwner(fixtureExact(700, 70).Ref(), &log, runtime) }()
 	t.Cleanup(func() { close(release); <-done; survivorPids = oldPids })
 	select {
 	case code := <-halted:
 		if code != 2 {
 			t.Fatalf("hard halt exit=%d, want 2", code)
 		}
+		want := fmt.Sprintf("fixture-custodian action=halt after=%s\n", runtime.bound+custodianHaltMargin)
+		if !strings.Contains(log.String(), want) {
+			t.Fatalf("hard halt log=%q, want %q", log.String(), want)
+		}
 	case <-time.After(runtime.bound + custodianHaltMargin + 250*time.Millisecond):
 		t.Fatal("blocked fixture scan was not hard-halted")
+	}
+}
+
+func TestCustodianSlowScansComplete(t *testing.T) {
+	owner, recorded := fixtureExact(700, 70).Ref(), fixtureExact(701, 71).Ref()
+	recordedValue, err := EncodeRef(recorded)
+	if err != nil {
+		t.Fatal(err)
+	}
+	records := filepath.Join(t.TempDir(), "records")
+	if err := os.WriteFile(records, []byte("+"+recordedValue+"\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	processes := fixtureTable{recorded.Pid: fixtureExact(recorded.Pid, 71)}
+	halted := make(chan int, 1)
+	runtime := custodianRuntime{
+		prober: processes, records: records, poll: time.Millisecond, bound: 5 * time.Millisecond,
+		halt: func(code int) { halted <- code },
+		scan: func(Prober, Ref) ([]FixtureSurvivor, error) {
+			time.Sleep(600 * time.Millisecond)
+			return nil, nil
+		},
+		sender: func(pid int, _ syscall.Signal) error {
+			delete(processes, int64(pid))
+			return nil
+		},
+	}
+	var log strings.Builder
+	if err := reapDeadOwner(owner, &log, runtime); err != nil {
+		t.Fatalf("slow fixture scans returned %v: log=%q", err, log.String())
+	}
+	if want := FixtureCustodianCompletionLine(owner); !strings.HasSuffix(log.String(), want) {
+		t.Fatalf("slow fixture scan log=%q, want suffix %q", log.String(), want)
+	}
+	select {
+	case code := <-halted:
+		t.Fatalf("slow fixture scans hard-halted with code %d: log=%q", code, log.String())
+	default:
+	}
+}
+
+func TestCustodianCleanupBoundRequiresProgress(t *testing.T) {
+	owner := fixtureExact(700, 70).Ref()
+	processes := fixtureTable{}
+	nextPid := int64(800)
+	runtime := custodianRuntime{
+		prober: processes, poll: time.Millisecond, bound: 5 * time.Millisecond,
+		scan: func(Prober, Ref) ([]FixtureSurvivor, error) {
+			nextPid++
+			exact := fixtureExact(nextPid, nextPid)
+			processes[nextPid] = exact
+			return []FixtureSurvivor{{Class: FixtureSurvivorCertain, Ref: exact.Ref(), Carrier: FixtureCarrierEnvironment}}, nil
+		},
+		sender: func(pid int, _ syscall.Signal) error {
+			delete(processes, int64(pid))
+			return nil
+		},
+	}
+	started := time.Now()
+	err := reapDeadOwner(owner, io.Discard, runtime)
+	elapsed := time.Since(started)
+	if err == nil || !strings.Contains(err.Error(), "fixture custodian cleanup exceeded") {
+		t.Fatalf("respawning fixture cleanup error=%v after %s", err, elapsed)
+	}
+	if elapsed < runtime.bound || elapsed >= custodianHaltMargin {
+		t.Fatalf("respawning fixture cleanup took %s, want at least %s and less than %s", elapsed, runtime.bound, custodianHaltMargin)
+	}
+}
+
+func TestCustodianCleanupBoundAllowsSlowProgress(t *testing.T) {
+	owner := fixtureExact(700, 70).Ref()
+	processes := fixtureTable{}
+	for pid := int64(800); pid < 810; pid++ {
+		processes[pid] = fixtureExact(pid, pid)
+	}
+	removedThisPass := false
+	runtime := custodianRuntime{
+		prober: processes, poll: time.Millisecond, bound: 5 * time.Millisecond,
+		scan: func(Prober, Ref) ([]FixtureSurvivor, error) {
+			removedThisPass = false
+			survivors := make([]FixtureSurvivor, 0, len(processes))
+			for _, exact := range processes {
+				survivors = append(survivors, FixtureSurvivor{Class: FixtureSurvivorCertain, Ref: exact.Ref(), Carrier: FixtureCarrierEnvironment})
+			}
+			return survivors, nil
+		},
+		sender: func(pid int, _ syscall.Signal) error {
+			if !removedThisPass {
+				delete(processes, int64(pid))
+				removedThisPass = true
+			}
+			return nil
+		},
+	}
+	started := time.Now()
+	if err := reapDeadOwner(owner, io.Discard, runtime); err != nil {
+		t.Fatalf("shrinking fixture cleanup returned %v with %d survivors", err, len(processes))
+	}
+	if elapsed := time.Since(started); elapsed <= runtime.bound {
+		t.Fatalf("shrinking fixture cleanup took %s, want longer than bound %s", elapsed, runtime.bound)
 	}
 }
 
