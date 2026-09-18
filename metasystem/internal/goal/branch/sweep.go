@@ -160,7 +160,7 @@ func cleanGoalWorktrees(repo, goalID string) ([]string, error) {
 	return paths, nil
 }
 
-func cleanupGoalWorktrees(repo, goalID, endpointTip string, paths []string) error {
+func cleanupGoalWorktrees(repo, goalID, endpointTip, localTip string, paths []string) error {
 	for _, path := range paths {
 		same, _ := filepath.Abs(path)
 		root, _ := filepath.Abs(repo)
@@ -180,11 +180,24 @@ func cleanupGoalWorktrees(repo, goalID, endpointTip string, paths []string) erro
 			return err
 		}
 	}
-	_, err := gitOutput(repo, "update-ref", "-d", goalBranchRef(goalID))
-	return err
+	if localTip == "" {
+		return nil
+	}
+	ref := goalBranchRef(goalID)
+	if _, err := gitOutput(repo, "update-ref", "-d", ref, localTip); err != nil {
+		observed, present, readErr := localBranchTip(repo, ref)
+		if readErr != nil {
+			return readErr
+		}
+		if !present {
+			observed = "absent"
+		}
+		return operationRefusal(LeaseMovedCode, "%s moved from expected tip %s to %s", ref, localTip, observed)
+	}
+	return nil
 }
 
-func checkSweepTip(req SweepRequest, tip string) error {
+func checkSweepTip(req SweepRequest, place, tip string) error {
 	if req.Abandoned {
 		return nil
 	}
@@ -201,12 +214,35 @@ func checkSweepTip(req SweepRequest, tip string) error {
 	if err != nil {
 		return err
 	}
+	var unlanded []string
 	for _, commit := range commits {
 		if !sources[commit.ID] && !droppedCommit(req.Repo, req.EndpointTip, req.GoalID, commit.ID, req.Dropped) {
-			return operationRefusal(SweepUnlandedCode, "commit %s (%s %s) is neither a landed Goal-Source nor a declared dropped commit", commit.ID, commit.Kind, commit.Unit)
+			unlanded = append(unlanded, fmt.Sprintf("%s (%s %s)", commit.ID, commit.Kind, commit.Unit))
 		}
 	}
+	if len(unlanded) > 0 {
+		if len(unlanded) > 8 {
+			unlanded = append(unlanded[:8], fmt.Sprintf("and %d more", len(unlanded)-8))
+		}
+		return operationRefusal(SweepUnlandedCode, "goal/%s at %s tip %s has unlanded commits: %s", req.GoalID, place, tip, strings.Join(unlanded, ", "))
+	}
 	return nil
+}
+
+func sweepTipCovered(repo, tip string, checked []string) (bool, error) {
+	for _, checkedTip := range checked {
+		if tip == checkedTip {
+			return true, nil
+		}
+		covered, err := ancestor(repo, tip, checkedTip)
+		if err != nil {
+			return false, err
+		}
+		if covered {
+			return true, nil
+		}
+	}
+	return false, nil
 }
 
 func Sweep(req SweepRequest) (SweepResult, error) {
@@ -242,36 +278,45 @@ func Sweep(req SweepRequest) (SweepResult, error) {
 	if !originPresent && !transportPresent && !localPresent && len(worktrees) == 0 {
 		return SweepResult{GoalID: req.GoalID}, nil
 	}
-	if originPresent {
-		if err := fetchAndValidate(req.Repo, req.Remote, req.EndpointTip, req.GoalID, "sweep-origin-"+req.GoalID, originTip, req.PushTransport); err != nil {
-			return SweepResult{}, err
-		}
-	}
+	resultTip := localTip
 	if transportPresent {
-		if err := fetchAndValidate(req.Repo, req.Transport, req.EndpointTip, req.GoalID, "sweep-transport-"+req.GoalID, transportTip, req.PushTransport); err != nil {
-			return SweepResult{}, err
-		}
+		resultTip = transportTip
 	}
-	checkedTip := originTip
-	if !originPresent {
-		checkedTip = transportTip
-		if !transportPresent {
-			checkedTip = localTip
-		}
+	if originPresent {
+		resultTip = originTip
 	}
-	if err := checkSweepTip(req, checkedTip); err != nil {
-		return SweepResult{}, err
+	tips := []struct {
+		place   string
+		tip     string
+		present bool
+		remote  bool
+		opid    string
+	}{
+		{place: req.Remote, tip: originTip, present: originPresent, remote: true, opid: "sweep-origin-" + req.GoalID},
+		{place: req.Transport, tip: transportTip, present: transportPresent, remote: true, opid: "sweep-transport-" + req.GoalID},
+		{place: "local", tip: localTip, present: localPresent},
 	}
-	if transportPresent && transportTip != checkedTip {
-		covered, err := ancestor(req.Repo, transportTip, checkedTip)
-		if err != nil {
-			return SweepResult{}, err
+	var checked []string
+	for _, candidate := range tips {
+		if !candidate.present {
+			continue
 		}
-		if !covered {
-			if err := checkSweepTip(req, transportTip); err != nil {
+		if candidate.remote {
+			if err := fetchAndValidate(req.Repo, candidate.place, req.EndpointTip, req.GoalID, candidate.opid, candidate.tip, req.PushTransport); err != nil {
 				return SweepResult{}, err
 			}
 		}
+		covered, err := sweepTipCovered(req.Repo, candidate.tip, checked)
+		if err != nil {
+			return SweepResult{}, err
+		}
+		if covered {
+			continue
+		}
+		if err := checkSweepTip(req, candidate.place, candidate.tip); err != nil {
+			return SweepResult{}, err
+		}
+		checked = append(checked, candidate.tip)
 	}
 	if req.Hooks.AfterRemoteRead != nil {
 		if err := req.Hooks.AfterRemoteRead(); err != nil {
@@ -288,8 +333,8 @@ func Sweep(req SweepRequest) (SweepResult, error) {
 			return SweepResult{}, err
 		}
 	}
-	if err := cleanupGoalWorktrees(req.Repo, req.GoalID, req.EndpointTip, worktrees); err != nil {
+	if err := cleanupGoalWorktrees(req.Repo, req.GoalID, req.EndpointTip, localTip, worktrees); err != nil {
 		return SweepResult{}, err
 	}
-	return SweepResult{GoalID: req.GoalID, Tip: checkedTip, Deleted: true}, nil
+	return SweepResult{GoalID: req.GoalID, Tip: resultTip, Deleted: true}, nil
 }

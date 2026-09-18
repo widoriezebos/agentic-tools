@@ -173,7 +173,7 @@ var Rows = []Row{
 	{Code: "GOAL_LAND_VERIFY", Owner: "internal/goal/branch", Site: "verify.go:46", Shape: Question},
 	{Code: "GOAL_LAND_AUTHOR_UNBOUND", Owner: "internal/goal/branch", Site: "land.go:210", Shape: Question},
 	{Code: "GOAL_LAND_TRUNK_RED", Owner: "internal/goal/branch", Site: "red.go:215", Shape: Question},
-	{Code: "GOAL_SWEEP_UNLANDED", Owner: "internal/goal/branch", Site: "sweep.go:206", Shape: Question},
+	{Code: "GOAL_SWEEP_UNLANDED", Owner: "internal/goal/branch", Site: "sweep.go:227", Shape: Question},
 	{Code: "GOAL_READ_UNGATED", Owner: "internal/goal/branch", Site: "attest.go:408", Shape: Question},
 	{Code: "GOAL_READ_TESTS_UNNAMED", Owner: "internal/goal/branch", Site: "attest.go:208", Shape: Question},
 	{Code: "GOAL_READ_STALE", Owner: "internal/goal/branch", Site: "attest.go:420", Shape: Question},
