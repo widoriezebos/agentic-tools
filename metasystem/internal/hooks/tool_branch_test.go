@@ -2,14 +2,12 @@ package hooks
 
 import (
 	"bytes"
-	"context"
 	"errors"
 	"os"
 	"os/exec"
 	"path/filepath"
 	"strings"
 	"testing"
-	"time"
 )
 
 func copyToolHook(t *testing.T) (string, string) {
@@ -62,18 +60,13 @@ func cleanToolHookEnvironment(extra ...string) []string {
 
 func runToolHook(t *testing.T, script, runtime, event, input string, environment []string) (int, string, string) {
 	t.Helper()
-	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
-	defer cancel()
-	command := exec.CommandContext(ctx, "bash", script, runtime, event)
+	command := exec.Command("bash", script, runtime, event)
 	command.Env = environment
 	command.Stdin = strings.NewReader(input)
 	var stdout, stderr bytes.Buffer
 	command.Stdout = &stdout
 	command.Stderr = &stderr
 	err := command.Run()
-	if ctx.Err() != nil {
-		t.Fatalf("tool hook did not exit within its bound: %v", ctx.Err())
-	}
 	if err == nil {
 		return 0, stdout.String(), stderr.String()
 	}

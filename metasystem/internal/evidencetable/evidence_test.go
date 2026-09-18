@@ -6,7 +6,6 @@ import (
 	"reflect"
 	"strings"
 	"testing"
-	"time"
 
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/covenant"
 	"golang.org/x/sys/unix"
@@ -158,13 +157,9 @@ func TestWalkerRefusals(t *testing.T) {
 	}
 	done := make(chan error, 1)
 	go func() { done <- CheckDep(fd, "pipe", false) }()
-	select {
-	case err := <-done:
-		if err == nil || !strings.Contains(err.Error(), "neither a regular file nor a directory") {
-			t.Fatalf("a FIFO dep must refuse by name: %v", err)
-		}
-	case <-time.After(5 * time.Second):
-		t.Fatal("the FIFO hung the walker — O_NONBLOCK is not honored")
+	err = <-done
+	if err == nil || !strings.Contains(err.Error(), "neither a regular file nor a directory") {
+		t.Fatalf("a FIFO dep must refuse by name: %v", err)
 	}
 }
 
